@@ -31,7 +31,7 @@ async fn test_sop_evolution_fuel_increase() {
     let evolver = Arc::new(StandardEvolver::new());
     let intel = Arc::new(SisyphusIntel::new(simulator, reflector, evolver));
     
-    let synthesizer = Arc::new(sisyphus_intel::TemplateSynthesizer::new(tool_executor.clone()));
+    let synthesizer = Arc::new(sisyphus_intel::GoalDrivenSynthesizer::new(tool_executor.clone()));
     let kernel = SisyphusKernel::new(state_store, tool_executor.clone(), intel, synthesizer);
     
     let sop_id = "test_evolution_sop";

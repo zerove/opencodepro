@@ -22,60 +22,181 @@ pub trait FlowSynthesizer: Send + Sync {
     async fn synthesize(&self, goal: &str, context: &ExecutionContext) -> Result<SynthesisResult, String>;
 }
 
-pub struct TemplateSynthesizer {
+#[derive(Debug, Clone, PartialEq)]
+enum ActionType {
+    Fetch,
+    Process,
+    Sink,
+    Search,
+    Validate,
+}
+
+/// Goal-driven SOP synthesis engine.
+///
+/// Parses a natural-language goal into a DAG of typed actions:
+///   - Fetch/Read/Get → fetch node
+///   - Process/Transform/Convert → process node
+///   - Store/Save/Write → sink node
+///   - Search/Find/Query → search node
+///   - Validate/Check/Verify → validate node
+///
+/// Multiple actions are chained as a linear pipeline in detection order.
+/// When "parallel" appears in the goal, the first two actions fan out
+/// and converge into a single merge node.
+fn classify_goal(goal: &str) -> Vec<ActionType> {
+    let goal_lower = goal.to_lowercase();
+    let mut actions = Vec::new();
+
+    let verb_map: [(&[&str], ActionType); 5] = [
+        (&["fetch", "load", "get", "read", "retrieve", "download", "pull"] as &[&str], ActionType::Fetch),
+        (&["process", "transform", "convert", "parse", "compute", "analyze", "calculate", "build"], ActionType::Process),
+        (&["store", "save", "write", "sink", "persist", "archive", "upload"], ActionType::Sink),
+        (&["search", "find", "query", "lookup", "discover", "scan"], ActionType::Search),
+        (&["validate", "check", "verify", "test", "inspect", "audit", "lint"], ActionType::Validate),
+    ];
+
+    for (verbs, action) in &verb_map {
+        if verbs.iter().any(|v| goal_lower.contains(v)) && !actions.contains(action) {
+            actions.push(action.clone());
+        }
+    }
+
+    if actions.is_empty() {
+        actions.push(ActionType::Fetch);
+    }
+    actions
+}
+
+fn tool_id_for_action(action: &ActionType) -> &str {
+    match action {
+        ActionType::Fetch    => "fast_tool",
+        ActionType::Process  => "fast_tool",
+        ActionType::Sink     => "fast_tool",
+        ActionType::Search   => "fast_tool",
+        ActionType::Validate => "fast_tool",
+    }
+}
+
+fn action_label(action: &ActionType) -> &str {
+    match action {
+        ActionType::Fetch    => "fetch",
+        ActionType::Process  => "process",
+        ActionType::Sink     => "sink",
+        ActionType::Search   => "search",
+        ActionType::Validate => "validate",
+    }
+}
+
+fn build_plan_description(actions: &[ActionType], parallel: bool) -> String {
+    let labels: Vec<&str> = actions.iter().map(action_label).collect();
+    if parallel && actions.len() >= 2 {
+        format!("Fan-out: {} → Merge → {}", labels[0], labels[1])
+    } else {
+        format!("Linear Pipeline: {}", labels.join(" -> "))
+    }
+}
+
+pub struct GoalDrivenSynthesizer {
     pub tool_executor: Arc<dyn sisyphus_types::ToolExecutor>,
 }
 
-impl TemplateSynthesizer {
+impl GoalDrivenSynthesizer {
     pub fn new(tool_executor: Arc<dyn sisyphus_types::ToolExecutor>) -> Self {
         Self { tool_executor }
     }
 }
 
 #[async_trait]
-impl FlowSynthesizer for TemplateSynthesizer {
+impl FlowSynthesizer for GoalDrivenSynthesizer {
     async fn synthesize(&self, goal: &str, _context: &ExecutionContext) -> Result<SynthesisResult, String> {
+        let actions = classify_goal(goal);
+        let is_parallel = goal.to_lowercase().contains("parallel");
         let mut graph = SOPGraph::new();
-        
-        if goal.contains("complex") {
-            let n1 = graph.add_node(Arc::new(sisyphus_types::WasmSOPNode {
-                name: "fetch".into(),
-                tool_id: "fast_tool".into(),
-                fuel_limit: 1_000_000,
-                executor: self.tool_executor.clone(),
-            }));
-            let n2 = graph.add_node(Arc::new(sisyphus_types::WasmSOPNode {
-                name: "process".into(),
-                tool_id: "fast_tool".into(),
-                fuel_limit: 1_000_000,
-                executor: self.tool_executor.clone(),
-            }));
-            let n3 = graph.add_node(Arc::new(sisyphus_types::WasmSOPNode {
-                name: "sink".into(),
-                tool_id: "fast_tool".into(),
-                fuel_limit: 1_000_000,
-                executor: self.tool_executor.clone(),
-            }));
-            graph.add_edge(n1, n2);
-            graph.add_edge(n2, n3);
-            
-            Ok(SynthesisResult {
-                graph,
-                start_node: n1,
-                plan_description: "Linear Pipeline: Fetch -> Process -> Sink".into(),
-            })
-        } else {
-            let n1 = graph.add_node(Arc::new(sisyphus_types::WasmSOPNode {
+
+        if actions.is_empty() {
+            let n = graph.add_node(Arc::new(sisyphus_types::WasmSOPNode {
                 name: "default".into(),
                 tool_id: "fast_tool".into(),
                 fuel_limit: 1_000_000,
                 executor: self.tool_executor.clone(),
             }));
-            
+            return Ok(SynthesisResult {
+                graph,
+                start_node: n,
+                plan_description: "Default single-node task".into(),
+            });
+        }
+
+        if actions.len() == 1 {
+            let action = &actions[0];
+            let label = action_label(action);
+            let n = graph.add_node(Arc::new(sisyphus_types::WasmSOPNode {
+                name: label.into(),
+                tool_id: tool_id_for_action(action).into(),
+                fuel_limit: 1_000_000,
+                executor: self.tool_executor.clone(),
+            }));
+            return Ok(SynthesisResult {
+                graph,
+                start_node: n,
+                plan_description: format!("Single-node task: {}", label),
+            });
+        }
+
+        if is_parallel && actions.len() >= 2 {
+            // Fan-out: multiple independent nodes, converge into merge node
+            let n1 = graph.add_node(Arc::new(sisyphus_types::WasmSOPNode {
+                name: action_label(&actions[0]).into(),
+                tool_id: tool_id_for_action(&actions[0]).into(),
+                fuel_limit: 1_000_000,
+                executor: self.tool_executor.clone(),
+            }));
+            let n2 = graph.add_node(Arc::new(sisyphus_types::WasmSOPNode {
+                name: action_label(&actions[1]).into(),
+                tool_id: tool_id_for_action(&actions[1]).into(),
+                fuel_limit: 1_000_000,
+                executor: self.tool_executor.clone(),
+            }));
+            let merge = graph.add_node(Arc::new(sisyphus_types::WasmSOPNode {
+                name: "merge".into(),
+                tool_id: "fast_tool".into(),
+                fuel_limit: 1_000_000,
+                executor: self.tool_executor.clone(),
+            }));
+            graph.add_edge(n1, merge);
+            graph.add_edge(n2, merge);
+
             Ok(SynthesisResult {
                 graph,
                 start_node: n1,
-                plan_description: "Simple Single-Node Task".into(),
+                plan_description: format!("Fan-out: {} and {} → Merge", action_label(&actions[0]), action_label(&actions[1])),
+            })
+        } else {
+            // Linear pipeline
+            let mut prev = None;
+            let mut first_idx = None;
+
+            for action in &actions {
+                let label = action_label(action);
+                let n = graph.add_node(Arc::new(sisyphus_types::WasmSOPNode {
+                    name: label.into(),
+                    tool_id: tool_id_for_action(action).into(),
+                    fuel_limit: 1_000_000,
+                    executor: self.tool_executor.clone(),
+                }));
+                if first_idx.is_none() {
+                    first_idx = Some(n);
+                }
+                if let Some(p) = prev {
+                    graph.add_edge(p, n);
+                }
+                prev = Some(n);
+            }
+
+            Ok(SynthesisResult {
+                graph,
+                start_node: first_idx.unwrap(),
+                plan_description: build_plan_description(&actions, false),
             })
         }
     }
@@ -203,68 +324,34 @@ impl SisyphusIntel {
 }
 
 
-pub struct ExperienceSimulator {
-    pub state_store: Arc<dyn sisyphus_types::StateStore>,
-}
-
-impl ExperienceSimulator {
-    pub fn new(state_store: Arc<dyn sisyphus_types::StateStore>) -> Self {
-        Self { state_store }
-    }
-}
-
-#[async_trait]
-impl Simulator for ExperienceSimulator {
-    async fn simulate(&self, _graph: &SOPGraph, _context: &ExecutionContext, sop_id: &str) -> Result<SimulationResult, String> {
-        let history_key = format!("history:{}", sop_id);
-        let history_val = self.state_store.get_state_json(&history_key).await
-            .map_err(|e| e.to_string())?;
-        
-        if let Some(val) = history_val {
-            let hist: sisyphus_types::ExecutionHistory = serde_json::from_value(val).map_err(|e| e.to_string())?;
-            if hist.records.is_empty() {
-                return Err("No historical records available".into());
-            }
-            
-            let total = hist.records.len() as f64;
-            let successes = hist.records.iter().filter(|r| r.success).count() as f64;
-            let avg_cost = hist.records.iter().map(|r| r.cost).sum::<u64>() / hist.records.len() as u64;
-            
-            Ok(SimulationResult {
-                path_id: "experience-driven".into(),
-                success_probability: successes / total,
-                estimated_cost: avg_cost,
-                predicted_outcome: format!("Based on {} historical runs", hist.records.len()),
-            })
-        } else {
-            // Fallback: If no experience, return a neutral prediction instead of error
-            Ok(SimulationResult {
-                path_id: "cold-start".into(),
-                success_probability: 0.5,
-                estimated_cost: 100,
-                predicted_outcome: "Cold start: no historical data".into(),
-            })
-        }
-    }
-}
-
 // ---------------------------------------------------------------------------
-// MonteCarloSimulator — Rayon-parallel random-walk simulation
+// MonteCarloSimulator — Experience-weighted random-walk simulation
 // ---------------------------------------------------------------------------
+//
+// Combines Monte Carlo sampling with historical experience:
+// - When state_store is available, queries past execution records to bias
+//   edge transition probabilities and cost estimates.
+// - Without history, falls back to a uniform random walk.
+// - Uses Rayon for parallel iterations.
 
 pub struct MonteCarloSimulator {
     pub iterations: usize,
+    pub state_store: Option<Arc<dyn sisyphus_types::StateStore>>,
 }
 
 impl MonteCarloSimulator {
     pub fn new(iterations: usize) -> Self {
-        Self { iterations }
+        Self { iterations, state_store: None }
+    }
+
+    pub fn with_state_store(iterations: usize, store: Arc<dyn sisyphus_types::StateStore>) -> Self {
+        Self { iterations, state_store: Some(store) }
     }
 }
 
 #[async_trait]
 impl Simulator for MonteCarloSimulator {
-    async fn simulate(&self, graph: &SOPGraph, _context: &ExecutionContext, _sop_id: &str) -> Result<SimulationResult, String> {
+    async fn simulate(&self, graph: &SOPGraph, _context: &ExecutionContext, sop_id: &str) -> Result<SimulationResult, String> {
         let num_nodes = graph.graph.node_count();
         if num_nodes == 0 {
             return Ok(SimulationResult {
@@ -277,7 +364,30 @@ impl Simulator for MonteCarloSimulator {
 
         let nodes: Vec<_> = graph.graph.node_indices().collect();
 
-        // Each iteration is an independent random walk → trivial parallelism.
+        // --- Experience prior (async, outside rayon) ---
+        let (hist_success_rate, hist_avg_cost) = if let Some(ref store) = self.state_store {
+            let history_key = format!("history:{}", sop_id);
+            match store.get_state_json(&history_key).await {
+                Ok(Some(val)) => {
+                    if let Ok(hist) = serde_json::from_value::<sisyphus_types::ExecutionHistory>(val) {
+                        let total = hist.records.len() as f64;
+                        let successes = hist.records.iter().filter(|r| r.success).count() as f64;
+                        let avg_cost = if !hist.records.is_empty() {
+                            hist.records.iter().map(|r| r.cost).sum::<u64>() / hist.records.len() as u64
+                        } else {
+                            0
+                        };
+                        (successes / total.max(1.0), avg_cost)
+                    } else {
+                        (0.5, 100u64)
+                    }
+                }
+                _ => (0.5, 100u64),
+            }
+        } else {
+            (0.5, 100u64)
+        };
+
         let (best_path, max_score, final_cost) = (0..self.iterations)
             .into_par_iter()
             .map(|_| {
@@ -292,7 +402,8 @@ impl Simulator for MonteCarloSimulator {
                 loop {
                     let name = graph.graph.node_weight(current).unwrap().name().to_string();
                     path_parts.push(name);
-                    prob *= 0.9;
+                    let step_prob = 0.9 * hist_success_rate + 0.1 * 0.9;
+                    prob *= step_prob;
                     cost += 10;
 
                     let neighbors: Vec<_> = graph.graph.neighbors(current).collect();
@@ -310,24 +421,71 @@ impl Simulator for MonteCarloSimulator {
                 |a, b| if a.1 > b.1 { a } else { b },
             );
 
+        let blended_cost = if final_cost > 0 { final_cost } else { hist_avg_cost };
+
         Ok(SimulationResult {
             path_id: best_path,
             success_probability: max_score.max(0.0),
-            estimated_cost: final_cost,
-            predicted_outcome: "Optimal Path Found".into(),
+            estimated_cost: blended_cost,
+            predicted_outcome: format!("MC with history: {} iterations, prior_success={:.2}", self.iterations, hist_success_rate),
         })
     }
 }
 
 // ---------------------------------------------------------------------------
-// StandardReflector — data-driven trace analysis
+// StandardReflector — error-categorizing trace analysis
 // ---------------------------------------------------------------------------
+
+/// Error classification for targeted reflection and evolution.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ErrorCategory {
+    ResourceExhausted,
+    Timeout,
+    TypeError,
+    Crash,
+    Unknown,
+}
+
+impl ErrorCategory {
+    /// Classify an error message string into an ErrorCategory.
+    pub fn classify(output: &str) -> Self {
+        if output.contains("ResourceExhausted") || output.contains("fuel") || output.contains("out of memory") {
+            ErrorCategory::ResourceExhausted
+        } else if output.contains("timeout") || output.contains("Timeout") || output.contains("deadline") {
+            ErrorCategory::Timeout
+        } else if output.contains("TypeError") || output.contains("type") || output.contains("mismatch") {
+            ErrorCategory::TypeError
+        } else if output.contains("panic") || output.contains("crash") || output.contains("segfault") {
+            ErrorCategory::Crash
+        } else {
+            ErrorCategory::Unknown
+        }
+    }
+
+    /// Severity weight for deviation calculation.
+    pub fn severity(&self) -> f64 {
+        match self {
+            ErrorCategory::Crash => 1.0,
+            ErrorCategory::ResourceExhausted => 0.8,
+            ErrorCategory::TypeError => 0.6,
+            ErrorCategory::Timeout => 0.5,
+            ErrorCategory::Unknown => 0.7,
+        }
+    }
+}
+
+// Keep internal helpers for backward compat
+fn classify_error(output: &str) -> ErrorCategory {
+    ErrorCategory::classify(output)
+}
+
+fn severity_weight(category: &ErrorCategory) -> f64 {
+    category.severity()
+}
 
 pub struct StandardReflector;
 
 impl StandardReflector {
-    /// Parse a trace string into structured node records.
-    /// Supports JSON-line format: one `RecordedNode` per line.
     fn parse_trace(trace: &str) -> Vec<RecordedNode> {
         trace
             .lines()
@@ -335,7 +493,6 @@ impl StandardReflector {
             .collect()
     }
 
-    /// Analyse structured records and produce (deviation, suggestions).
     fn analyze(records: &[RecordedNode]) -> (f64, Vec<String>) {
         if records.is_empty() {
             return (0.0, vec!["No execution records available".into()]);
@@ -345,11 +502,8 @@ impl StandardReflector {
         let error_count = records.iter().filter(|r| r.status == "error").count();
         let failure_rate = error_count as f64 / total;
 
-        // Deviation is a weighted combination of failure rate and error severity
-        let deviation = failure_rate * 0.7
-            + (error_count as f64 / total).min(1.0) * 0.3;
-
         let mut suggestions: Vec<String> = Vec::new();
+        let mut severity_sum = 0.0;
 
         if error_count > 0 {
             let errors: Vec<&str> = records
@@ -358,26 +512,50 @@ impl StandardReflector {
                 .map(|r| r.output.as_str())
                 .collect();
 
+            // Categorize errors and suggest targeted mitigations
+            let mut categories: Vec<ErrorCategory> = errors.iter().map(|e| classify_error(e)).collect();
+            categories.dedup();
+
+            let avg_severity: f64 = categories.iter().map(severity_weight).sum::<f64>()
+                / categories.len() as f64;
+            severity_sum = avg_severity;
+
+            for cat in &categories {
+                match cat {
+                    ErrorCategory::ResourceExhausted => {
+                        suggestions.push(
+                            "Resource exhaustion — increase fuel or split long-running nodes".into()
+                        );
+                    }
+                    ErrorCategory::Timeout => {
+                        suggestions.push(
+                            "Timeout — shorten execution path or raise timeout ceiling".into()
+                        );
+                    }
+                    ErrorCategory::TypeError => {
+                        suggestions.push(
+                            "Type mismatch — verify node input/output contracts".into()
+                        );
+                    }
+                    ErrorCategory::Crash => {
+                        suggestions.push(
+                            "Node crash — review tool implementation for panics or segfaults".into()
+                        );
+                    }
+                    ErrorCategory::Unknown => {
+                        suggestions.push(
+                            "Unknown error — add structured error handling to node".into()
+                        );
+                    }
+                }
+            }
+
             let error_summary = if errors.len() <= 3 {
                 errors.join("; ")
             } else {
-                format!(
-                    "{} errors (first 3: {})",
-                    errors.len(),
-                    errors[..3].join("; ")
-                )
+                format!("{} errors (first 3: {})", errors.len(), errors[..3].join("; "))
             };
             suggestions.push(format!("Node failures detected: {}", error_summary));
-
-            if errors.iter().any(|e| e.contains("ResourceExhausted")) {
-                suggestions.push(
-                    "Resource exhaustion detected — consider increasing fuel limits or splitting long-running nodes"
-                        .into(),
-                );
-            }
-            if errors.iter().any(|e| e.contains("timeout") || e.contains("Timeout")) {
-                suggestions.push("Timeouts detected — consider shorter execution paths or higher timeouts".into());
-            }
         }
 
         if failure_rate > 0.5 {
@@ -391,6 +569,9 @@ impl StandardReflector {
         if empty_outputs > records.len() / 2 {
             suggestions.push("Most nodes returned empty output — check tool implementations".into());
         }
+
+        // Deviation blends failure rate with categorized severity
+        let deviation = failure_rate * 0.6 + severity_sum * 0.3;
 
         if deviation < 0.3 {
             suggestions.push("SOP is performing within expected parameters".into());
@@ -530,5 +711,35 @@ mod tests {
         let result = sim.simulate(&graph, &ctx, "empty").await.unwrap();
         assert_eq!(result.success_probability, 0.0);
         assert_eq!(result.estimated_cost, 0);
+    }
+
+    // ErrorCategory::classify
+    #[test]
+    fn test_error_category_classify() {
+        assert_eq!(ErrorCategory::classify("ResourceExhausted: fuel limit"), ErrorCategory::ResourceExhausted);
+        assert_eq!(ErrorCategory::classify("fuel exhausted"), ErrorCategory::ResourceExhausted);
+        assert_eq!(ErrorCategory::classify("out of memory error"), ErrorCategory::ResourceExhausted);
+        
+        assert_eq!(ErrorCategory::classify("timeout exceeded"), ErrorCategory::Timeout);
+        assert_eq!(ErrorCategory::classify("deadline exceeded"), ErrorCategory::Timeout);
+        assert_eq!(ErrorCategory::classify("Timeout after 30s"), ErrorCategory::Timeout);
+        
+        assert_eq!(ErrorCategory::classify("TypeError: mismatch"), ErrorCategory::TypeError);
+        assert_eq!(ErrorCategory::classify("type mismatch"), ErrorCategory::TypeError);
+        
+        assert_eq!(ErrorCategory::classify("panic: index out of bounds"), ErrorCategory::Crash);
+        assert_eq!(ErrorCategory::classify("segfault"), ErrorCategory::Crash);
+        assert_eq!(ErrorCategory::classify("crash in module"), ErrorCategory::Crash);
+        
+        assert_eq!(ErrorCategory::classify("unknown error"), ErrorCategory::Unknown);
+    }
+
+    #[test]
+    fn test_error_category_severity() {
+        assert_eq!(ErrorCategory::Crash.severity(), 1.0);
+        assert_eq!(ErrorCategory::ResourceExhausted.severity(), 0.8);
+        assert_eq!(ErrorCategory::TypeError.severity(), 0.6);
+        assert_eq!(ErrorCategory::Timeout.severity(), 0.5);
+        assert_eq!(ErrorCategory::Unknown.severity(), 0.7);
     }
 }

@@ -20,12 +20,12 @@ impl MySisyphusBridge {
         let state_store = Arc::new(MfsStore::new("sqlite::memory:").await.expect("Failed to init MFS Store"));
         let tool_executor = Arc::new(WasmToolExecutor::new());
         
-        let simulator = Arc::new(sisyphus_intel::ExperienceSimulator::new(state_store.clone()));
+        let simulator = Arc::new(sisyphus_intel::MonteCarloSimulator::with_state_store(1000, state_store.clone()));
         let reflector = Arc::new(StandardReflector);
         let evolver = Arc::new(sisyphus_intel::StandardEvolver::new());
         let intel = Arc::new(SisyphusIntel::new(simulator, reflector, evolver));
         
-        let synthesizer = Arc::new(sisyphus_intel::TemplateSynthesizer::new(tool_executor.clone()));
+        let synthesizer = Arc::new(sisyphus_intel::GoalDrivenSynthesizer::new(tool_executor.clone()));
         
         let kernel = Arc::new(SisyphusKernel::new(state_store, tool_executor, intel, synthesizer));
         

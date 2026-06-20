@@ -74,6 +74,30 @@ impl Executor {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Cognitive execution — iterative predict → execute → reflect → evolve
+// ---------------------------------------------------------------------------
+
+const MAX_COGNITIVE_ITERATIONS: usize = 3;
+const CONVERGENCE_THRESHOLD: f64 = 0.3;
+
+/// A single iteration in a cognitive execution cycle.
+pub struct CognitiveIteration {
+    pub iteration: usize,
+    pub prediction: sisyphus_intel::SimulationResult,
+    pub deviation_score: f64,
+    pub suggestions: Vec<String>,
+    pub evolved: bool,
+}
+
+/// Full report from a recursive cognitive execution.
+pub struct CognitiveReport {
+    pub iterations: usize,
+    pub converged: bool,
+    pub final_deviation: f64,
+    pub history: Vec<CognitiveIteration>,
+}
+
 pub struct SisyphusKernel {
     pub executor: Executor,
     pub state_store: Arc<MfsStore>,
@@ -115,8 +139,11 @@ impl SisyphusKernel {
         Ok(SOPGraph::from_config(&config, self.tool_executor.clone()))
     }
 
-
-
+    /// Execute a natural-language goal through the full cognitive pipeline.
+    ///
+    /// 1. Synthesize a SOP graph from the goal string
+    /// 2. Execute with recursive cognition (auto-retry on high deviation)
+    /// 3. Return the result plus a detailed cognitive report
     pub async fn execute_goal(
         &self,
         goal: &str,
@@ -124,94 +151,147 @@ impl SisyphusKernel {
     ) -> Result<(NodeOutput, String), String> {
         let ctx = ExecutionContext::new();
         
-        // 1. Synthesize
         let synthesis = self.synthesizer.synthesize(goal, &ctx).await?;
         let graph = synthesis.graph;
         let start_node = synthesis.start_node;
+        let plan_desc = synthesis.plan_description;
         
-        // 2. Execute with cognition
         let (res, report, _) = self.execute_with_cognition(&graph, start_node, sop_id).await?;
-        Ok((res, format!("Plan: {} | Cognition: {}", synthesis.plan_description, report)))
+        Ok((res, format!("Plan: {} | {}", plan_desc, report)))
     }
 
+    /// Execute a SOP graph with recursive cognitive feedback.
+    ///
+    /// Loop: predict → execute → reflect → evolve
+    ///   - If deviation < CONVERGENCE_THRESHOLD (0.3): stop, converged.
+    ///   - If deviation >= threshold AND evolved graph available: re-execute.
+    ///   - Max MAX_COGNITIVE_ITERATIONS (3) iterations.
+    /// Returns (result, report_string, opt_evolved_graph).
+    #[allow(unused_assignments)]
     pub async fn execute_with_cognition(
         &self,
         sop_graph: &SOPGraph,
         start_node: NodeIndex,
-        _sop_id: &str,
+        sop_id: &str,
     ) -> Result<(NodeOutput, String, Option<SOPGraph>), String> {
-        let ctx = ExecutionContext::new();
-        
-        // 1. Predict
-        let prediction = self.intel.simulator.simulate(sop_graph, &ctx, _sop_id).await?;
-        
-        // 2. Execute
-        let final_ctx = self.executor.execute(sop_graph, start_node).await?;
-        let result = final_ctx.get_result(sop_graph.graph.node_weight(start_node).unwrap().name())
-            .ok_or("Execution failed to produce result")?;
-        
-        // 3. Build per-node trace records
-        let mut trace_lines: Vec<String> = Vec::new();
-        for node in sop_graph.graph.node_indices() {
-            let name = sop_graph.graph.node_weight(node).unwrap().name().to_string();
-            let output = final_ctx
-                .get_result(&name)
-                .map(|v| v.to_string())
-                .unwrap_or_else(|| "no_result".into());
-            let status = if output.contains("ResourceExhausted") {
-                "error"
+        let mut own_graph: Option<SOPGraph> = None;
+        let mut current_ref: &SOPGraph = sop_graph;
+        let mut current_start = start_node;
+        let mut iterations: Vec<CognitiveIteration> = Vec::new();
+        let mut final_result: NodeOutput = serde_json::Value::Null;
+        let mut final_evolved: Option<SOPGraph> = None;
+
+        for iteration in 0..MAX_COGNITIVE_ITERATIONS {
+            let ctx = ExecutionContext::new();
+            
+            // 1. Predict
+            let prediction = self.intel.simulator.simulate(current_ref, &ctx, sop_id).await?;
+            
+            // 2. Execute
+            let final_ctx = self.executor.execute(current_ref, current_start).await?;
+            let result = final_ctx.get_result(
+                current_ref.graph.node_weight(current_start).unwrap().name()
+            ).ok_or("Execution failed to produce result")?;
+            final_result = result.clone();
+            
+            // 3. Build per-node trace records
+            let mut trace_lines: Vec<String> = Vec::new();
+            for node in current_ref.graph.node_indices() {
+                let name = current_ref.graph.node_weight(node).unwrap().name().to_string();
+                let output = final_ctx
+                    .get_result(&name)
+                    .map(|v| v.to_string())
+                    .unwrap_or_else(|| "no_result".into());
+                let status = if output.contains("ResourceExhausted") {
+                    "error"
+                } else {
+                    "ok"
+                };
+                let record = serde_json::json!({
+                    "node": name,
+                    "status": status,
+                    "output": output,
+                });
+                trace_lines.push(record.to_string());
+            }
+            let trace = trace_lines.join("\n");
+            
+            // 4. Reflect
+            let reflection = self.intel.reflector.reflect(&trace, &prediction).await?;
+            
+            // Persist history
+            let history_key = format!("history:{}", sop_id);
+            let mut history: sisyphus_types::ExecutionHistory = self.state_store.get_state_json(&history_key).await
+                .map_err(|e| format!("MFS history load error: {}", e))?
+                .and_then(|val| serde_json::from_value(val).ok())
+                .unwrap_or_else(|| sisyphus_types::ExecutionHistory {
+                    sop_id: sop_id.to_string(),
+                    records: Vec::new(),
+                });
+
+            history.records.push(sisyphus_types::HistoryRecord {
+                timestamp: std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs(),
+                trace: trace.clone(),
+                deviation_score: reflection.deviation_score,
+                success: !trace.contains("ResourceExhausted"),
+                cost: 10 * (trace.lines().count() as u64),
+            });
+            let _ = self.state_store.set_state_json(&history_key, serde_json::to_value(history).unwrap()).await;
+            
+            // 5. Evolve
+            let evolved = self.intel.evolver.evolve(current_ref, &reflection).ok();
+            let has_evolved = evolved.is_some();
+            
+            if let Some(ref eg) = evolved {
+                let _ = self.save_sop(sop_id, eg).await;
+            }
+            
+            iterations.push(CognitiveIteration {
+                iteration,
+                prediction,
+                deviation_score: reflection.deviation_score,
+                suggestions: reflection.suggested_improvements,
+                evolved: has_evolved,
+            });
+            
+            // Check convergence
+            if reflection.deviation_score < CONVERGENCE_THRESHOLD || !has_evolved {
+                final_evolved = evolved;
+                break;
+            }
+            
+            // Re-execute with evolved graph
+            if let Some(eg) = evolved {
+                current_start = eg.graph.node_indices().next().unwrap_or(start_node);
+                own_graph = Some(eg);
+                current_ref = own_graph.as_ref().unwrap();
             } else {
-                "ok"
-            };
-            let record = serde_json::json!({
-                "node": name,
-                "status": status,
-                "output": output,
-            });
-            trace_lines.push(record.to_string());
+                break;
+            }
         }
-        let trace = trace_lines.join("\n");
-        
-        // 4. Reflect
-        let reflection = self.intel.reflector.reflect(&trace, &prediction).await?;
-        
-        let history_key = format!("history:{}", _sop_id);
-        let mut history: sisyphus_types::ExecutionHistory = self.state_store.get_state_json(&history_key).await
-            .map_err(|e| format!("MFS history load error: {}", e))?
-            .and_then(|val| serde_json::from_value(val).ok())
-            .unwrap_or_else(|| sisyphus_types::ExecutionHistory {
-                sop_id: _sop_id.to_string(),
-                records: Vec::new(),
-            });
 
-        history.records.push(sisyphus_types::HistoryRecord {
-            timestamp: std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_secs(),
-            trace: trace.clone(),
-            deviation_score: reflection.deviation_score,
-            success: !trace.contains("ResourceExhausted"),
-            cost: 10 * (trace.lines().count() as u64),
-        });
+        let converged = iterations.last()
+            .map(|i| i.deviation_score < CONVERGENCE_THRESHOLD)
+            .unwrap_or(false);
 
-        let _ = self.state_store.set_state_json(&history_key, serde_json::to_value(history).unwrap()).await;
+        let iteration_details: Vec<String> = iterations.iter().map(|i| {
+            format!(
+                "iter[{}]: deviation={:.2}, evolved={}, suggestions={:?}",
+                i.iteration, i.deviation_score, i.evolved, i.suggestions
+            )
+        }).collect();
 
-        let evolved_graph = self.intel.evolver.evolve(sop_graph, &reflection).ok();
-        
-        if let Some(ref evolved) = evolved_graph {
-            let _ = self.save_sop(_sop_id, evolved).await;
-        }
-        
         let report = format!(
-            "Prediction: {} (Prob: {:.2}) | Reflection: Deviation {:.2}, Suggestions: {:?}",
-            prediction.predicted_outcome, 
-            prediction.success_probability, 
-            reflection.deviation_score, 
-            reflection.suggested_improvements
+            "CognitiveLoop: {} iterations, converged={} | {}",
+            iterations.len(),
+            converged,
+            iteration_details.join(" -> ")
         );
         
-        Ok((result, report, evolved_graph))
+        Ok((final_result, report, final_evolved))
     }
 
 }
