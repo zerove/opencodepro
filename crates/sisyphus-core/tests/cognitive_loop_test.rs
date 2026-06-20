@@ -108,7 +108,7 @@ async fn test_recursive_loop_max_iterations() {
     let start_node = graph.add_node(node);
     
     // Should hit max iterations (3) and still return a result
-    let (result, report, _evolved) = kernel.execute_with_cognition(&graph, start_node, sop_id).await.unwrap();
+    let (_result, report, _evolved) = kernel.execute_with_cognition(&graph, start_node, sop_id).await.unwrap();
     
     // Debug: print the report
     eprintln!("REPORT: {}", report);

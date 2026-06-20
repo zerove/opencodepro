@@ -166,6 +166,7 @@ impl SisyphusKernel {
     ///   - If deviation < CONVERGENCE_THRESHOLD (0.3): stop, converged.
     ///   - If deviation >= threshold AND evolved graph available: re-execute.
     ///   - Max MAX_COGNITIVE_ITERATIONS (3) iterations.
+    ///
     /// Returns (result, report_string, opt_evolved_graph).
     #[allow(unused_assignments)]
     pub async fn execute_with_cognition(
