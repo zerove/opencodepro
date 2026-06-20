@@ -14,11 +14,15 @@ use sisyphus_intel::SisyphusIntel;
 
 pub struct Executor;
 
+impl Default for Executor {
+    fn default() -> Self { Self::new() }
+}
+
 impl Executor {
     pub fn new() -> Self { Self }
 
     pub async fn execute(&self, sop_graph: &SOPGraph, _start_node: NodeIndex) -> Result<Arc<ExecutionContext>, String> {
-        if let Err(_) = toposort(&sop_graph.graph, None) {
+        if toposort(&sop_graph.graph, None).is_err() {
             return Err("SOPGraph contains cycles".to_string());
         }
 
