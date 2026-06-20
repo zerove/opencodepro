@@ -80,6 +80,10 @@ pub struct ExecutionContext {
     pub results: Arc<RwLock<HashMap<String, NodeOutput>>>,
 }
 
+impl Default for ExecutionContext {
+    fn default() -> Self { Self::new() }
+}
+
 impl ExecutionContext {
     pub fn new() -> Self {
         Self {
@@ -191,6 +195,10 @@ pub struct SOPGraph {
     pub graph: DiGraph<Arc<dyn SOPNode>, ()>,
 }
 
+impl Default for SOPGraph {
+    fn default() -> Self { Self::new() }
+}
+
 impl SOPGraph {
     pub fn new() -> Self {
         Self { graph: DiGraph::new() }
@@ -241,3 +249,107 @@ impl SOPGraph {
         self.graph.add_edge(from, to, ());
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    struct MockToolExecutor;
+    #[async_trait]
+    impl ToolExecutor for MockToolExecutor {
+        async fn execute(&self, _tool_id: &str, _args: Vec<u8>, _fuel_limit: u64) -> Result<Vec<u8>, String> {
+            Ok(b"mock_output".to_vec())
+        }
+    }
+
+    #[test]
+    fn test_empty_graph() {
+        let graph = SOPGraph::new();
+        assert_eq!(graph.graph.node_count(), 0);
+    }
+
+    #[test]
+    fn test_add_node_edge() {
+        let mut graph = SOPGraph::new();
+        let executor = Arc::new(MockToolExecutor);
+        
+        let node1 = Arc::new(WasmSOPNode {
+            name: "node1".to_string(),
+            tool_id: "tool1".to_string(),
+            fuel_limit: 100,
+            executor: executor.clone(),
+        });
+        let node2 = Arc::new(WasmSOPNode {
+            name: "node2".to_string(),
+            tool_id: "tool2".to_string(),
+            fuel_limit: 100,
+            executor: executor.clone(),
+        });
+
+        let idx1 = graph.add_node(node1);
+        let idx2 = graph.add_node(node2);
+        
+        assert_eq!(graph.graph.node_count(), 2);
+        
+        graph.add_edge(idx1, idx2);
+        assert_eq!(graph.graph.edge_count(), 1);
+    }
+
+    #[test]
+    fn test_set_get_result() {
+        let ctx = ExecutionContext::new();
+        let val = json!({"status": "ok"});
+        ctx.set_result("node1".to_string(), val.clone());
+        assert_eq!(ctx.get_result("node1"), Some(val));
+    }
+
+    #[test]
+    fn test_get_missing() {
+        let ctx = ExecutionContext::new();
+        assert_eq!(ctx.get_result("missing"), None);
+    }
+
+    #[test]
+    fn test_interpolate() {
+        let ctx = ExecutionContext::new();
+        ctx.set_result("node1".to_string(), json!("hello"));
+        ctx.set_result("node2".to_string(), json!(123));
+        
+        let template = "Greeting: {{node1.output}}, ID: {{node2.output}}";
+        let result = ctx.interpolate(template);
+        assert_eq!(result, "Greeting: hello, ID: 123");
+    }
+
+    #[test]
+    fn test_config_roundtrip() {
+        let mut graph = SOPGraph::new();
+        let executor = Arc::new(MockToolExecutor);
+        
+        let node1 = Arc::new(WasmSOPNode {
+            name: "node1".to_string(),
+            tool_id: "tool1".to_string(),
+            fuel_limit: 100,
+            executor: executor.clone(),
+        });
+        let node2 = Arc::new(WasmSOPNode {
+            name: "node2".to_string(),
+            tool_id: "tool2".to_string(),
+            fuel_limit: 100,
+            executor: executor.clone(),
+        });
+
+        let idx1 = graph.add_node(node1);
+        let idx2 = graph.add_node(node2);
+        graph.add_edge(idx1, idx2);
+
+        let config = SOPGraphConfig::from_graph(&graph);
+        assert_eq!(config.nodes.len(), 2);
+        assert_eq!(config.edges.len(), 1);
+
+        let rebuilt_graph = SOPGraph::from_config(&config, executor);
+        assert_eq!(rebuilt_graph.graph.node_count(), 2);
+        assert_eq!(rebuilt_graph.graph.edge_count(), 1);
+    }
+}
+
