@@ -172,6 +172,37 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_get_missing_key() {
+        let (store, _) = setup_store().await;
+        let val = store.get_state_json("nonexistent").await.unwrap();
+        assert_eq!(val, None);
+    }
+
+    #[tokio::test]
+    async fn test_overwrite_value() {
+        let (store, _) = setup_store().await;
+        store.set_state_json("k", json!("first")).await.unwrap();
+        store.set_state_json("k", json!("second")).await.unwrap();
+        let val = store.get_state_json("k").await.unwrap().unwrap();
+        assert_eq!(val, json!("second"));
+    }
+
+    #[tokio::test]
+    async fn test_update_then_revert() {
+        let (store, _) = setup_store().await;
+
+        store.set_state_json("k", json!("v1")).await.unwrap();
+
+        let snap = store.take_snapshot().await.unwrap();
+
+        store.set_state_json("k", json!("v2")).await.unwrap();
+        assert_eq!(store.get_state_json("k").await.unwrap().unwrap(), json!("v2"));
+
+        store.restore_snapshot(snap).await.unwrap();
+        assert_eq!(store.get_state_json("k").await.unwrap().unwrap(), json!("v1"));
+    }
+
+    #[tokio::test]
     async fn test_snapshot_restore() {
         let (store, _) = setup_store().await;
         
