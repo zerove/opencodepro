@@ -4,7 +4,10 @@ use sisyphus_types::ToolExecutor;
 #[tokio::test]
 async fn test_hello_wasm_tool() {
     let executor = WasmToolExecutor::new();
-    let result = executor.execute("hello", vec![], 1000).await.expect("Execution failed");
+    let result = executor
+        .execute("hello", vec![], 1000)
+        .await
+        .expect("Execution failed");
 
     let result_str = String::from_utf8(result).expect("Invalid UTF-8 result");
     assert_eq!(result_str, "Hello from WASM!");

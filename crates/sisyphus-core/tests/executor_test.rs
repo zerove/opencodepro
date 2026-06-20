@@ -1,7 +1,7 @@
-use std::sync::Arc;
-use sisyphus_core::{Executor, SOPGraph, SOPNode, NodeOutput};
 use async_trait::async_trait;
 use serde_json::Value;
+use sisyphus_core::{Executor, NodeOutput, SOPGraph, SOPNode};
+use std::sync::Arc;
 
 // ---------------------------------------------------------------------------
 // Mock node that returns a fixed name-based result.
@@ -13,10 +13,16 @@ struct MockNode {
 
 impl MockNode {
     fn new(name: &str) -> Self {
-        Self { name: name.into(), should_fail: false }
+        Self {
+            name: name.into(),
+            should_fail: false,
+        }
     }
     fn failing(name: &str) -> Self {
-        Self { name: name.into(), should_fail: true }
+        Self {
+            name: name.into(),
+            should_fail: true,
+        }
     }
 }
 
@@ -29,10 +35,17 @@ impl SOPNode for MockNode {
             Ok(Value::String(format!("result_{}", self.name)))
         }
     }
-    fn name(&self) -> &str { &self.name }
-    fn as_any(&self) -> &dyn std::any::Any { self }
+    fn name(&self) -> &str {
+        &self.name
+    }
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
     fn to_kind(&self) -> sisyphus_types::NodeKind {
-        sisyphus_types::NodeKind::Wasm { tool_id: "mock".into(), fuel_limit: 100 }
+        sisyphus_types::NodeKind::Wasm {
+            tool_id: "mock".into(),
+            fuel_limit: 100,
+        }
     }
 }
 
@@ -62,8 +75,14 @@ async fn test_linear_dag() {
     let executor = Executor::new();
     let ctx = executor.execute(&graph, n1).await.unwrap();
 
-    assert_eq!(ctx.get_result("step1").unwrap(), Value::String("result_step1".into()));
-    assert_eq!(ctx.get_result("step2").unwrap(), Value::String("result_step2".into()));
+    assert_eq!(
+        ctx.get_result("step1").unwrap(),
+        Value::String("result_step1".into())
+    );
+    assert_eq!(
+        ctx.get_result("step2").unwrap(),
+        Value::String("result_step2".into())
+    );
 }
 
 #[tokio::test]
@@ -93,9 +112,18 @@ async fn test_parallel_execution() {
     let executor = Executor::new();
     let ctx = executor.execute(&graph, n1).await.unwrap();
 
-    assert_eq!(ctx.get_result("task1").unwrap(), Value::String("result_task1".into()));
-    assert_eq!(ctx.get_result("task2").unwrap(), Value::String("result_task2".into()));
-    assert_eq!(ctx.get_result("task3").unwrap(), Value::String("result_task3".into()));
+    assert_eq!(
+        ctx.get_result("task1").unwrap(),
+        Value::String("result_task1".into())
+    );
+    assert_eq!(
+        ctx.get_result("task2").unwrap(),
+        Value::String("result_task2".into())
+    );
+    assert_eq!(
+        ctx.get_result("task3").unwrap(),
+        Value::String("result_task3".into())
+    );
 }
 
 #[tokio::test]

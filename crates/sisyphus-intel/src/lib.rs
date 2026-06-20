@@ -1,11 +1,11 @@
-use sisyphus_types::{SOPGraph, ExecutionContext};
-use serde::{Serialize, Deserialize};
-use std::sync::Arc;
 use async_trait::async_trait;
+use petgraph::graph::NodeIndex;
 use rand::rngs::SmallRng;
 use rand::{Rng, SeedableRng};
 use rayon::prelude::*;
-use petgraph::graph::NodeIndex;
+use serde::{Deserialize, Serialize};
+use sisyphus_types::{CompositeGraph, ExecutionContext, SOPGraph, SOPGraphConfig};
+use std::sync::Arc;
 
 // ---------------------------------------------------------------------------
 // Flow Synthesis
@@ -19,7 +19,11 @@ pub struct SynthesisResult {
 
 #[async_trait]
 pub trait FlowSynthesizer: Send + Sync {
-    async fn synthesize(&self, goal: &str, context: &ExecutionContext) -> Result<SynthesisResult, String>;
+    async fn synthesize(
+        &self,
+        goal: &str,
+        context: &ExecutionContext,
+    ) -> Result<SynthesisResult, String>;
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -48,11 +52,41 @@ fn classify_goal(goal: &str) -> Vec<ActionType> {
     let mut actions = Vec::new();
 
     let verb_map: [(&[&str], ActionType); 5] = [
-        (&["fetch", "load", "get", "read", "retrieve", "download", "pull"] as &[&str], ActionType::Fetch),
-        (&["process", "transform", "convert", "parse", "compute", "analyze", "calculate", "build"], ActionType::Process),
-        (&["store", "save", "write", "sink", "persist", "archive", "upload"], ActionType::Sink),
-        (&["search", "find", "query", "lookup", "discover", "scan"], ActionType::Search),
-        (&["validate", "check", "verify", "test", "inspect", "audit", "lint"], ActionType::Validate),
+        (
+            &[
+                "fetch", "load", "get", "read", "retrieve", "download", "pull",
+            ] as &[&str],
+            ActionType::Fetch,
+        ),
+        (
+            &[
+                "process",
+                "transform",
+                "convert",
+                "parse",
+                "compute",
+                "analyze",
+                "calculate",
+                "build",
+            ],
+            ActionType::Process,
+        ),
+        (
+            &[
+                "store", "save", "write", "sink", "persist", "archive", "upload",
+            ],
+            ActionType::Sink,
+        ),
+        (
+            &["search", "find", "query", "lookup", "discover", "scan"],
+            ActionType::Search,
+        ),
+        (
+            &[
+                "validate", "check", "verify", "test", "inspect", "audit", "lint",
+            ],
+            ActionType::Validate,
+        ),
     ];
 
     for (verbs, action) in &verb_map {
@@ -69,20 +103,20 @@ fn classify_goal(goal: &str) -> Vec<ActionType> {
 
 fn tool_id_for_action(action: &ActionType) -> &str {
     match action {
-        ActionType::Fetch    => "fast_tool",
-        ActionType::Process  => "fast_tool",
-        ActionType::Sink     => "fast_tool",
-        ActionType::Search   => "fast_tool",
+        ActionType::Fetch => "fast_tool",
+        ActionType::Process => "fast_tool",
+        ActionType::Sink => "fast_tool",
+        ActionType::Search => "fast_tool",
         ActionType::Validate => "fast_tool",
     }
 }
 
 fn action_label(action: &ActionType) -> &str {
     match action {
-        ActionType::Fetch    => "fetch",
-        ActionType::Process  => "process",
-        ActionType::Sink     => "sink",
-        ActionType::Search   => "search",
+        ActionType::Fetch => "fetch",
+        ActionType::Process => "process",
+        ActionType::Sink => "sink",
+        ActionType::Search => "search",
         ActionType::Validate => "validate",
     }
 }
@@ -108,7 +142,11 @@ impl GoalDrivenSynthesizer {
 
 #[async_trait]
 impl FlowSynthesizer for GoalDrivenSynthesizer {
-    async fn synthesize(&self, goal: &str, _context: &ExecutionContext) -> Result<SynthesisResult, String> {
+    async fn synthesize(
+        &self,
+        goal: &str,
+        _context: &ExecutionContext,
+    ) -> Result<SynthesisResult, String> {
         let actions = classify_goal(goal);
         let is_parallel = goal.to_lowercase().contains("parallel");
         let mut graph = SOPGraph::new();
@@ -169,7 +207,11 @@ impl FlowSynthesizer for GoalDrivenSynthesizer {
             Ok(SynthesisResult {
                 graph,
                 start_node: n1,
-                plan_description: format!("Fan-out: {} and {} → Merge", action_label(&actions[0]), action_label(&actions[1])),
+                plan_description: format!(
+                    "Fan-out: {} and {} → Merge",
+                    action_label(&actions[0]),
+                    action_label(&actions[1])
+                ),
             })
         } else {
             // Linear pipeline
@@ -202,6 +244,28 @@ impl FlowSynthesizer for GoalDrivenSynthesizer {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Composite (parallel) synthesis — multiple goals → CompositeGraph
+// ---------------------------------------------------------------------------
+
+/// Synthesize multiple goals into a single CompositeGraph.
+/// Each goal becomes an independent sub-graph with no cross-dependencies,
+/// so they can be executed in parallel by CompositeExecutor.
+pub async fn synthesize_composite(
+    goals: &[&str],
+    synthesizer: &dyn FlowSynthesizer,
+    ctx: &ExecutionContext,
+) -> Result<CompositeGraph, String> {
+    let mut composite = CompositeGraph::new();
+    for (i, goal) in goals.iter().enumerate() {
+        let sop_id = format!("goal_{}", i);
+        let result = synthesizer.synthesize(goal, ctx).await?;
+        let config = SOPGraphConfig::from_graph(&result.graph);
+        composite.add_graph(&sop_id, config);
+    }
+    Ok(composite)
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SimulationResult {
     pub path_id: String,
@@ -212,7 +276,12 @@ pub struct SimulationResult {
 
 #[async_trait]
 pub trait Simulator: Send + Sync {
-    async fn simulate(&self, graph: &SOPGraph, context: &ExecutionContext, sop_id: &str) -> Result<SimulationResult, String>;
+    async fn simulate(
+        &self,
+        graph: &SOPGraph,
+        context: &ExecutionContext,
+        sop_id: &str,
+    ) -> Result<SimulationResult, String>;
 }
 
 // ---------------------------------------------------------------------------
@@ -231,7 +300,12 @@ pub trait FuelPricer: Send + Sync {
 pub struct SimpleFuelPricer;
 
 impl FuelPricer for SimpleFuelPricer {
-    fn price_fuel(&self, _node_name: &str, current_fuel: u64, _prediction: &SimulationResult) -> u64 {
+    fn price_fuel(
+        &self,
+        _node_name: &str,
+        current_fuel: u64,
+        _prediction: &SimulationResult,
+    ) -> u64 {
         current_fuel * 2
     }
 }
@@ -273,9 +347,14 @@ impl AdaptiveFuelPricer {
 }
 
 impl FuelPricer for AdaptiveFuelPricer {
-    fn price_fuel(&self, _node_name: &str, current_fuel: u64, prediction: &SimulationResult) -> u64 {
+    fn price_fuel(
+        &self,
+        _node_name: &str,
+        current_fuel: u64,
+        prediction: &SimulationResult,
+    ) -> u64 {
         let estimated = prediction.estimated_cost;
-        
+
         let new_fuel = if estimated > current_fuel {
             // Need more fuel: add headroom
             ((estimated as f64) * self.headroom_factor) as u64
@@ -285,7 +364,7 @@ impl FuelPricer for AdaptiveFuelPricer {
         } else {
             current_fuel
         };
-        
+
         new_fuel.clamp(self.min_fuel, self.max_fuel)
     }
 }
@@ -312,11 +391,20 @@ pub struct ReflectionReport {
 
 #[async_trait]
 pub trait Reflector: Send + Sync {
-    async fn reflect(&self, trace: &str, predicted: &SimulationResult) -> Result<ReflectionReport, String>;
+    async fn reflect(
+        &self,
+        trace: &str,
+        predicted: &SimulationResult,
+    ) -> Result<ReflectionReport, String>;
 }
 
 pub trait SOPEvolver: Send + Sync {
-    fn evolve(&self, graph: &SOPGraph, report: &ReflectionReport, prediction: &SimulationResult) -> Result<SOPGraph, String>;
+    fn evolve(
+        &self,
+        graph: &SOPGraph,
+        report: &ReflectionReport,
+        prediction: &SimulationResult,
+    ) -> Result<SOPGraph, String>;
 }
 
 pub struct StandardEvolver {
@@ -324,12 +412,16 @@ pub struct StandardEvolver {
 }
 
 impl Default for StandardEvolver {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl StandardEvolver {
     pub fn new() -> Self {
-        Self { fuel_pricer: Arc::new(SimpleFuelPricer) }
+        Self {
+            fuel_pricer: Arc::new(SimpleFuelPricer),
+        }
     }
 
     pub fn with_fuel_pricer(fuel_pricer: Arc<dyn FuelPricer>) -> Self {
@@ -338,18 +430,31 @@ impl StandardEvolver {
 }
 
 impl SOPEvolver for StandardEvolver {
-    fn evolve(&self, graph: &SOPGraph, report: &ReflectionReport, prediction: &SimulationResult) -> Result<SOPGraph, String> {
+    fn evolve(
+        &self,
+        graph: &SOPGraph,
+        report: &ReflectionReport,
+        prediction: &SimulationResult,
+    ) -> Result<SOPGraph, String> {
         let mut new_graph = SOPGraph::new();
         let mut node_map = std::collections::HashMap::new();
 
-        let needs_retry = report.suggested_improvements.iter().any(|s| s.contains("retry logic"));
-        let needs_fuel = report.suggested_improvements.iter().any(|s| s.contains("ResourceExhausted") || s.contains("fuel limit"));
+        let needs_retry = report
+            .suggested_improvements
+            .iter()
+            .any(|s| s.contains("retry logic"));
+        let needs_fuel = report
+            .suggested_improvements
+            .iter()
+            .any(|s| s.contains("ResourceExhausted") || s.contains("fuel limit"));
 
         for node_idx in graph.graph.node_indices() {
             let node = graph.graph.node_weight(node_idx).unwrap();
             let name = node.name().to_string();
-            
-            let mut evolved_node: Arc<dyn sisyphus_types::SOPNode> = if let Some(wasm_node) = node.as_any().downcast_ref::<sisyphus_types::WasmSOPNode>() {
+
+            let mut evolved_node: Arc<dyn sisyphus_types::SOPNode> = if let Some(wasm_node) =
+                node.as_any().downcast_ref::<sisyphus_types::WasmSOPNode>()
+            {
                 let mut fuel = wasm_node.fuel_limit;
                 if needs_fuel {
                     // Use adaptive fuel pricing
@@ -380,8 +485,12 @@ impl SOPEvolver for StandardEvolver {
 
         for edge in graph.graph.edge_indices() {
             let (source, target) = graph.graph.edge_endpoints(edge).unwrap();
-            let new_source = node_map.get(&source).ok_or("Source node not found in evolved graph")?;
-            let new_target = node_map.get(&target).ok_or("Target node not found in evolved graph")?;
+            let new_source = node_map
+                .get(&source)
+                .ok_or("Source node not found in evolved graph")?;
+            let new_target = node_map
+                .get(&target)
+                .ok_or("Target node not found in evolved graph")?;
             new_graph.add_edge(*new_source, *new_target);
         }
 
@@ -400,11 +509,18 @@ pub struct SisyphusIntel {
 }
 
 impl SisyphusIntel {
-    pub fn new(simulator: Arc<dyn Simulator>, reflector: Arc<dyn Reflector>, evolver: Arc<dyn SOPEvolver>) -> Self {
-        Self { simulator, reflector, evolver }
+    pub fn new(
+        simulator: Arc<dyn Simulator>,
+        reflector: Arc<dyn Reflector>,
+        evolver: Arc<dyn SOPEvolver>,
+    ) -> Self {
+        Self {
+            simulator,
+            reflector,
+            evolver,
+        }
     }
 }
-
 
 // ---------------------------------------------------------------------------
 // MonteCarloSimulator — Experience-weighted random-walk simulation
@@ -423,17 +539,28 @@ pub struct MonteCarloSimulator {
 
 impl MonteCarloSimulator {
     pub fn new(iterations: usize) -> Self {
-        Self { iterations, state_store: None }
+        Self {
+            iterations,
+            state_store: None,
+        }
     }
 
     pub fn with_state_store(iterations: usize, store: Arc<dyn sisyphus_types::StateStore>) -> Self {
-        Self { iterations, state_store: Some(store) }
+        Self {
+            iterations,
+            state_store: Some(store),
+        }
     }
 }
 
 #[async_trait]
 impl Simulator for MonteCarloSimulator {
-    async fn simulate(&self, graph: &SOPGraph, _context: &ExecutionContext, sop_id: &str) -> Result<SimulationResult, String> {
+    async fn simulate(
+        &self,
+        graph: &SOPGraph,
+        _context: &ExecutionContext,
+        sop_id: &str,
+    ) -> Result<SimulationResult, String> {
         let num_nodes = graph.graph.node_count();
         if num_nodes == 0 {
             return Ok(SimulationResult {
@@ -451,11 +578,14 @@ impl Simulator for MonteCarloSimulator {
             let history_key = format!("history:{}", sop_id);
             match store.get_state_json(&history_key).await {
                 Ok(Some(val)) => {
-                    if let Ok(hist) = serde_json::from_value::<sisyphus_types::ExecutionHistory>(val) {
+                    if let Ok(hist) =
+                        serde_json::from_value::<sisyphus_types::ExecutionHistory>(val)
+                    {
                         let total = hist.records.len() as f64;
                         let successes = hist.records.iter().filter(|r| r.success).count() as f64;
                         let avg_cost = if !hist.records.is_empty() {
-                            hist.records.iter().map(|r| r.cost).sum::<u64>() / hist.records.len() as u64
+                            hist.records.iter().map(|r| r.cost).sum::<u64>()
+                                / hist.records.len() as u64
                         } else {
                             0
                         };
@@ -503,13 +633,20 @@ impl Simulator for MonteCarloSimulator {
                 |a, b| if a.1 > b.1 { a } else { b },
             );
 
-        let blended_cost = if final_cost > 0 { final_cost } else { hist_avg_cost };
+        let blended_cost = if final_cost > 0 {
+            final_cost
+        } else {
+            hist_avg_cost
+        };
 
         Ok(SimulationResult {
             path_id: best_path,
             success_probability: max_score.max(0.0),
             estimated_cost: blended_cost,
-            predicted_outcome: format!("MC with history: {} iterations, prior_success={:.2}", self.iterations, hist_success_rate),
+            predicted_outcome: format!(
+                "MC with history: {} iterations, prior_success={:.2}",
+                self.iterations, hist_success_rate
+            ),
         })
     }
 }
@@ -531,13 +668,25 @@ pub enum ErrorCategory {
 impl ErrorCategory {
     /// Classify an error message string into an ErrorCategory.
     pub fn classify(output: &str) -> Self {
-        if output.contains("ResourceExhausted") || output.contains("fuel") || output.contains("out of memory") {
+        if output.contains("ResourceExhausted")
+            || output.contains("fuel")
+            || output.contains("out of memory")
+        {
             ErrorCategory::ResourceExhausted
-        } else if output.contains("timeout") || output.contains("Timeout") || output.contains("deadline") {
+        } else if output.contains("timeout")
+            || output.contains("Timeout")
+            || output.contains("deadline")
+        {
             ErrorCategory::Timeout
-        } else if output.contains("TypeError") || output.contains("type") || output.contains("mismatch") {
+        } else if output.contains("TypeError")
+            || output.contains("type")
+            || output.contains("mismatch")
+        {
             ErrorCategory::TypeError
-        } else if output.contains("panic") || output.contains("crash") || output.contains("segfault") {
+        } else if output.contains("panic")
+            || output.contains("crash")
+            || output.contains("segfault")
+        {
             ErrorCategory::Crash
         } else {
             ErrorCategory::Unknown
@@ -595,39 +744,40 @@ impl StandardReflector {
                 .collect();
 
             // Categorize errors and suggest targeted mitigations
-            let mut categories: Vec<ErrorCategory> = errors.iter().map(|e| classify_error(e)).collect();
+            let mut categories: Vec<ErrorCategory> =
+                errors.iter().map(|e| classify_error(e)).collect();
             categories.dedup();
 
-            let avg_severity: f64 = categories.iter().map(severity_weight).sum::<f64>()
-                / categories.len() as f64;
+            let avg_severity: f64 =
+                categories.iter().map(severity_weight).sum::<f64>() / categories.len() as f64;
             severity_sum = avg_severity;
 
             for cat in &categories {
                 match cat {
                     ErrorCategory::ResourceExhausted => {
                         suggestions.push(
-                            "Resource exhaustion — increase fuel or split long-running nodes".into()
+                            "Resource exhaustion — increase fuel or split long-running nodes"
+                                .into(),
                         );
                     }
                     ErrorCategory::Timeout => {
                         suggestions.push(
-                            "Timeout — shorten execution path or raise timeout ceiling".into()
+                            "Timeout — shorten execution path or raise timeout ceiling".into(),
                         );
                     }
                     ErrorCategory::TypeError => {
-                        suggestions.push(
-                            "Type mismatch — verify node input/output contracts".into()
-                        );
+                        suggestions
+                            .push("Type mismatch — verify node input/output contracts".into());
                     }
                     ErrorCategory::Crash => {
                         suggestions.push(
-                            "Node crash — review tool implementation for panics or segfaults".into()
+                            "Node crash — review tool implementation for panics or segfaults"
+                                .into(),
                         );
                     }
                     ErrorCategory::Unknown => {
-                        suggestions.push(
-                            "Unknown error — add structured error handling to node".into()
-                        );
+                        suggestions
+                            .push("Unknown error — add structured error handling to node".into());
                     }
                 }
             }
@@ -635,7 +785,11 @@ impl StandardReflector {
             let error_summary = if errors.len() <= 3 {
                 errors.join("; ")
             } else {
-                format!("{} errors (first 3: {})", errors.len(), errors[..3].join("; "))
+                format!(
+                    "{} errors (first 3: {})",
+                    errors.len(),
+                    errors[..3].join("; ")
+                )
             };
             suggestions.push(format!("Node failures detected: {}", error_summary));
         }
@@ -649,7 +803,8 @@ impl StandardReflector {
             .filter(|r| r.status == "ok" && (r.output.is_empty() || r.output == "null"))
             .count();
         if empty_outputs > records.len() / 2 {
-            suggestions.push("Most nodes returned empty output — check tool implementations".into());
+            suggestions
+                .push("Most nodes returned empty output — check tool implementations".into());
         }
 
         // Deviation blends failure rate with categorized severity
@@ -665,7 +820,11 @@ impl StandardReflector {
 
 #[async_trait]
 impl Reflector for StandardReflector {
-    async fn reflect(&self, trace: &str, _predicted: &SimulationResult) -> Result<ReflectionReport, String> {
+    async fn reflect(
+        &self,
+        trace: &str,
+        _predicted: &SimulationResult,
+    ) -> Result<ReflectionReport, String> {
         let records = Self::parse_trace(trace);
         let (deviation, suggestions) = if records.is_empty() {
             // Fallback: basic string analysis when no structured records found
@@ -703,7 +862,11 @@ mod tests {
     use super::*;
 
     fn make_record(node: &str, status: &str, output: &str) -> RecordedNode {
-        RecordedNode { node: node.into(), status: status.into(), output: output.into() }
+        RecordedNode {
+            node: node.into(),
+            status: status.into(),
+            output: output.into(),
+        }
     }
 
     // StandardReflector::parse_trace
@@ -747,7 +910,10 @@ mod tests {
 
     #[test]
     fn test_analyze_errors() {
-        let r = vec![make_record("a", "ok", "out"), make_record("b", "error", "boom")];
+        let r = vec![
+            make_record("a", "ok", "out"),
+            make_record("b", "error", "boom"),
+        ];
         let (dev, s) = StandardReflector::analyze(&r);
         assert!(dev > 0.3);
         assert!(s.iter().any(|x| x.contains("Node failures")));
@@ -762,7 +928,11 @@ mod tests {
 
     #[test]
     fn test_analyze_empty_outputs() {
-        let r = vec![make_record("a", "ok", ""), make_record("b", "ok", "null"), make_record("c", "ok", "real")];
+        let r = vec![
+            make_record("a", "ok", ""),
+            make_record("b", "ok", "null"),
+            make_record("c", "ok", "real"),
+        ];
         let (_, s) = StandardReflector::analyze(&r);
         assert!(s.iter().any(|x| x.contains("empty output")));
     }
@@ -771,7 +941,12 @@ mod tests {
     #[tokio::test]
     async fn test_reflect_structured() {
         let trace = r#"{"node":"x","status":"ok","output":"data"}"#;
-        let pred = SimulationResult { path_id: "t".into(), success_probability: 0.9, estimated_cost: 10, predicted_outcome: "ok".into() };
+        let pred = SimulationResult {
+            path_id: "t".into(),
+            success_probability: 0.9,
+            estimated_cost: 10,
+            predicted_outcome: "ok".into(),
+        };
         let report = StandardReflector.reflect(trace, &pred).await.unwrap();
         assert_eq!(report.deviation_score, 0.0);
     }
@@ -779,7 +954,12 @@ mod tests {
     #[tokio::test]
     async fn test_reflect_fallback() {
         let trace = "ResourceExhausted";
-        let pred = SimulationResult { path_id: "t".into(), success_probability: 0.5, estimated_cost: 100, predicted_outcome: "?".into() };
+        let pred = SimulationResult {
+            path_id: "t".into(),
+            success_probability: 0.5,
+            estimated_cost: 100,
+            predicted_outcome: "?".into(),
+        };
         let report = StandardReflector.reflect(trace, &pred).await.unwrap();
         assert_eq!(report.deviation_score, 0.8);
     }
@@ -798,22 +978,55 @@ mod tests {
     // ErrorCategory::classify
     #[test]
     fn test_error_category_classify() {
-        assert_eq!(ErrorCategory::classify("ResourceExhausted: fuel limit"), ErrorCategory::ResourceExhausted);
-        assert_eq!(ErrorCategory::classify("fuel exhausted"), ErrorCategory::ResourceExhausted);
-        assert_eq!(ErrorCategory::classify("out of memory error"), ErrorCategory::ResourceExhausted);
-        
-        assert_eq!(ErrorCategory::classify("timeout exceeded"), ErrorCategory::Timeout);
-        assert_eq!(ErrorCategory::classify("deadline exceeded"), ErrorCategory::Timeout);
-        assert_eq!(ErrorCategory::classify("Timeout after 30s"), ErrorCategory::Timeout);
-        
-        assert_eq!(ErrorCategory::classify("TypeError: mismatch"), ErrorCategory::TypeError);
-        assert_eq!(ErrorCategory::classify("type mismatch"), ErrorCategory::TypeError);
-        
-        assert_eq!(ErrorCategory::classify("panic: index out of bounds"), ErrorCategory::Crash);
+        assert_eq!(
+            ErrorCategory::classify("ResourceExhausted: fuel limit"),
+            ErrorCategory::ResourceExhausted
+        );
+        assert_eq!(
+            ErrorCategory::classify("fuel exhausted"),
+            ErrorCategory::ResourceExhausted
+        );
+        assert_eq!(
+            ErrorCategory::classify("out of memory error"),
+            ErrorCategory::ResourceExhausted
+        );
+
+        assert_eq!(
+            ErrorCategory::classify("timeout exceeded"),
+            ErrorCategory::Timeout
+        );
+        assert_eq!(
+            ErrorCategory::classify("deadline exceeded"),
+            ErrorCategory::Timeout
+        );
+        assert_eq!(
+            ErrorCategory::classify("Timeout after 30s"),
+            ErrorCategory::Timeout
+        );
+
+        assert_eq!(
+            ErrorCategory::classify("TypeError: mismatch"),
+            ErrorCategory::TypeError
+        );
+        assert_eq!(
+            ErrorCategory::classify("type mismatch"),
+            ErrorCategory::TypeError
+        );
+
+        assert_eq!(
+            ErrorCategory::classify("panic: index out of bounds"),
+            ErrorCategory::Crash
+        );
         assert_eq!(ErrorCategory::classify("segfault"), ErrorCategory::Crash);
-        assert_eq!(ErrorCategory::classify("crash in module"), ErrorCategory::Crash);
-        
-        assert_eq!(ErrorCategory::classify("unknown error"), ErrorCategory::Unknown);
+        assert_eq!(
+            ErrorCategory::classify("crash in module"),
+            ErrorCategory::Crash
+        );
+
+        assert_eq!(
+            ErrorCategory::classify("unknown error"),
+            ErrorCategory::Unknown
+        );
     }
 
     #[test]
@@ -829,7 +1042,12 @@ mod tests {
     #[test]
     fn test_simple_fuel_pricer() {
         let pricer = SimpleFuelPricer;
-        let pred = SimulationResult { path_id: "t".into(), success_probability: 0.5, estimated_cost: 100, predicted_outcome: "?".into() };
+        let pred = SimulationResult {
+            path_id: "t".into(),
+            success_probability: 0.5,
+            estimated_cost: 100,
+            predicted_outcome: "?".into(),
+        };
         assert_eq!(pricer.price_fuel("node1", 1000, &pred), 2000);
         assert_eq!(pricer.price_fuel("node1", 5000, &pred), 10000);
     }
@@ -838,7 +1056,12 @@ mod tests {
     fn test_adaptive_fuel_pricer_increase() {
         // Use low bounds to test increase logic without clamping
         let pricer = AdaptiveFuelPricer::new().with_bounds(100, 100_000);
-        let pred = SimulationResult { path_id: "t".into(), success_probability: 0.5, estimated_cost: 5000, predicted_outcome: "?".into() };
+        let pred = SimulationResult {
+            path_id: "t".into(),
+            success_probability: 0.5,
+            estimated_cost: 5000,
+            predicted_outcome: "?".into(),
+        };
         let new_fuel = pricer.price_fuel("node1", 1000, &pred);
         assert!(new_fuel > 1000);
         assert_eq!(new_fuel, (5000.0 * 1.5) as u64); // 7500
@@ -848,7 +1071,12 @@ mod tests {
     fn test_adaptive_fuel_pricer_shrink() {
         // Use low bounds to test shrink logic without clamping
         let pricer = AdaptiveFuelPricer::new().with_bounds(100, 100_000);
-        let pred = SimulationResult { path_id: "t".into(), success_probability: 0.5, estimated_cost: 2000, predicted_outcome: "?".into() };
+        let pred = SimulationResult {
+            path_id: "t".into(),
+            success_probability: 0.5,
+            estimated_cost: 2000,
+            predicted_outcome: "?".into(),
+        };
         let new_fuel = pricer.price_fuel("node1", 10000, &pred);
         assert!(new_fuel < 10000);
         assert_eq!(new_fuel, (10000.0 * 0.8) as u64); // 8000
@@ -857,9 +1085,19 @@ mod tests {
     #[test]
     fn test_adaptive_fuel_pricer_bounds() {
         let pricer = AdaptiveFuelPricer::new().with_bounds(500_000, 5_000_000);
-        let pred_low = SimulationResult { path_id: "t".into(), success_probability: 0.5, estimated_cost: 100, predicted_outcome: "?".into() };
-        let pred_high = SimulationResult { path_id: "t".into(), success_probability: 0.5, estimated_cost: 10_000_000, predicted_outcome: "?".into() };
-        
+        let pred_low = SimulationResult {
+            path_id: "t".into(),
+            success_probability: 0.5,
+            estimated_cost: 100,
+            predicted_outcome: "?".into(),
+        };
+        let pred_high = SimulationResult {
+            path_id: "t".into(),
+            success_probability: 0.5,
+            estimated_cost: 10_000_000,
+            predicted_outcome: "?".into(),
+        };
+
         // Below min should clamp to min
         assert_eq!(pricer.price_fuel("node1", 100_000, &pred_low), 500_000);
         // Above max should clamp to max

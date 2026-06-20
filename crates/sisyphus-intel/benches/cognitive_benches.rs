@@ -1,7 +1,7 @@
+use async_trait::async_trait;
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use sisyphus_intel::*;
-use sisyphus_types::{SOPGraph, ExecutionContext, ToolExecutor, WasmSOPNode};
-use async_trait::async_trait;
+use sisyphus_types::{ExecutionContext, SOPGraph, ToolExecutor, WasmSOPNode};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -12,7 +12,12 @@ struct BenchExecutor;
 
 #[async_trait]
 impl ToolExecutor for BenchExecutor {
-    async fn execute(&self, _tool_id: &str, _args: Vec<u8>, _fuel_limit: u64) -> Result<Vec<u8>, String> {
+    async fn execute(
+        &self,
+        _tool_id: &str,
+        _args: Vec<u8>,
+        _fuel_limit: u64,
+    ) -> Result<Vec<u8>, String> {
         Ok(b"bench-output".to_vec())
     }
 }
@@ -32,21 +37,27 @@ fn bench_synthesis(c: &mut Criterion) {
     group.bench_function("single_action", |b| {
         b.to_async(&rt).iter(|| async {
             let ctx = ExecutionContext::new();
-            synthesizer.synthesize(black_box("fetch data"), black_box(&ctx)).await
+            synthesizer
+                .synthesize(black_box("fetch data"), black_box(&ctx))
+                .await
         })
     });
 
     group.bench_function("linear_pipeline", |b| {
         b.to_async(&rt).iter(|| async {
             let ctx = ExecutionContext::new();
-            synthesizer.synthesize(black_box("fetch process store"), black_box(&ctx)).await
+            synthesizer
+                .synthesize(black_box("fetch process store"), black_box(&ctx))
+                .await
         })
     });
 
     group.bench_function("parallel_fan_out", |b| {
         b.to_async(&rt).iter(|| async {
             let ctx = ExecutionContext::new();
-            synthesizer.synthesize(black_box("fetch and process parallel"), black_box(&ctx)).await
+            synthesizer
+                .synthesize(black_box("fetch and process parallel"), black_box(&ctx))
+                .await
         })
     });
 
@@ -62,14 +73,16 @@ fn bench_simulation(c: &mut Criterion) {
 
     // Build a multi-node graph
     let mut graph = SOPGraph::new();
-    let nodes: Vec<_> = (0..10).map(|i| {
-        graph.add_node(Arc::new(WasmSOPNode {
-            name: format!("node_{}", i),
-            tool_id: "fast_tool".into(),
-            fuel_limit: 1_000_000,
-            executor: executor.clone(),
-        }))
-    }).collect();
+    let nodes: Vec<_> = (0..10)
+        .map(|i| {
+            graph.add_node(Arc::new(WasmSOPNode {
+                name: format!("node_{}", i),
+                tool_id: "fast_tool".into(),
+                fuel_limit: 1_000_000,
+                executor: executor.clone(),
+            }))
+        })
+        .collect();
     // Chain them linearly
     for i in 0..9 {
         graph.add_edge(nodes[i], nodes[i + 1]);
@@ -84,7 +97,8 @@ fn bench_simulation(c: &mut Criterion) {
     group.bench_function("mc_1000_iter", |b| {
         b.to_async(&rt).iter(|| async {
             let ctx = ExecutionContext::new();
-            sim.simulate(black_box(&graph), black_box(&ctx), black_box("bench_sop")).await
+            sim.simulate(black_box(&graph), black_box(&ctx), black_box("bench_sop"))
+                .await
         })
     });
 
@@ -99,11 +113,21 @@ fn bench_reflection(c: &mut Criterion) {
     let reflector = StandardReflector;
 
     // Build a trace with mixed results
-    let trace: String = (0..100).map(|i| {
-        let status = if i % 10 == 0 { "error" } else { "ok" };
-        let output = if i % 10 == 0 { "ResourceExhausted: fuel" } else { "completed" };
-        format!(r#"{{"node":"n{}","status":"{}","output":"{}"}}"#, i, status, output)
-    }).collect::<Vec<_>>().join("\n");
+    let trace: String = (0..100)
+        .map(|i| {
+            let status = if i % 10 == 0 { "error" } else { "ok" };
+            let output = if i % 10 == 0 {
+                "ResourceExhausted: fuel"
+            } else {
+                "completed"
+            };
+            format!(
+                r#"{{"node":"n{}","status":"{}","output":"{}"}}"#,
+                i, status, output
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
 
     let prediction = SimulationResult {
         path_id: "bench".into(),
@@ -118,7 +142,9 @@ fn bench_reflection(c: &mut Criterion) {
 
     group.bench_function("reflect_100_nodes", |b| {
         b.to_async(&rt).iter(|| async {
-            reflector.reflect(black_box(&trace), black_box(&prediction)).await
+            reflector
+                .reflect(black_box(&trace), black_box(&prediction))
+                .await
         })
     });
 
@@ -133,14 +159,16 @@ fn bench_evolution(c: &mut Criterion) {
 
     // Build a 20-node graph
     let mut graph = SOPGraph::new();
-    let nodes: Vec<_> = (0..20).map(|i| {
-        graph.add_node(Arc::new(WasmSOPNode {
-            name: format!("task_{}", i),
-            tool_id: "fast_tool".into(),
-            fuel_limit: 1_000_000,
-            executor: executor.clone(),
-        }))
-    }).collect();
+    let nodes: Vec<_> = (0..20)
+        .map(|i| {
+            graph.add_node(Arc::new(WasmSOPNode {
+                name: format!("task_{}", i),
+                tool_id: "fast_tool".into(),
+                fuel_limit: 1_000_000,
+                executor: executor.clone(),
+            }))
+        })
+        .collect();
     for i in 0..19 {
         graph.add_edge(nodes[i], nodes[i + 1]);
     }
@@ -170,7 +198,11 @@ fn bench_evolution(c: &mut Criterion) {
     group.bench_function("evolve_simple_pricer", |b| {
         b.iter(|| {
             let evolver = StandardEvolver::new();
-            evolver.evolve(black_box(&graph), black_box(&report), black_box(&prediction))
+            evolver.evolve(
+                black_box(&graph),
+                black_box(&report),
+                black_box(&prediction),
+            )
         })
     });
 
@@ -178,7 +210,11 @@ fn bench_evolution(c: &mut Criterion) {
     group.bench_function("evolve_adaptive_pricer", |b| {
         b.iter(|| {
             let evolver = StandardEvolver::with_fuel_pricer(Arc::new(AdaptiveFuelPricer::new()));
-            evolver.evolve(black_box(&graph), black_box(&report), black_box(&prediction))
+            evolver.evolve(
+                black_box(&graph),
+                black_box(&report),
+                black_box(&prediction),
+            )
         })
     });
 
@@ -193,7 +229,11 @@ fn bench_evolution(c: &mut Criterion) {
     group.bench_function("evolve_noop", |b| {
         b.iter(|| {
             let evolver = StandardEvolver::new();
-            evolver.evolve(black_box(&graph), black_box(&clean_report), black_box(&prediction))
+            evolver.evolve(
+                black_box(&graph),
+                black_box(&clean_report),
+                black_box(&prediction),
+            )
         })
     });
 
@@ -209,7 +249,11 @@ fn bench_error_category(c: &mut Criterion) {
     group.sample_size(100);
 
     group.bench_function("classify_resource_exhausted", |b| {
-        b.iter(|| ErrorCategory::classify(black_box("ResourceExhausted: fuel limit exceeded at module")))
+        b.iter(|| {
+            ErrorCategory::classify(black_box(
+                "ResourceExhausted: fuel limit exceeded at module",
+            ))
+        })
     });
 
     group.bench_function("classify_timeout", |b| {

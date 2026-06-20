@@ -37,9 +37,11 @@ fn main() {
                 .unwrap_or_else(|_| panic!("Failed to write {:?}", wasm_path));
 
             println!("cargo:rerun-if-changed={}", path.display());
-            println!("cargo:warning=Compiled {} -> {}", 
+            println!(
+                "cargo:warning=Compiled {} -> {}",
                 path.file_name().unwrap().to_str().unwrap(),
-                wasm_path.file_name().unwrap().to_str().unwrap());
+                wasm_path.file_name().unwrap().to_str().unwrap()
+            );
         }
     }
 }

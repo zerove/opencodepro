@@ -1,9 +1,9 @@
-use sisyphus_core::{SOPGraph, Executor};
-use sisyphus_types::WasmSOPNode;
+use sisyphus_core::{Executor, SOPGraph};
 use sisyphus_sandbox::WasmToolExecutor;
+use sisyphus_types::WasmSOPNode;
 use std::sync::Arc;
-use tokio::task::JoinSet;
 use std::time::Instant;
+use tokio::task::JoinSet;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -52,18 +52,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let start = Instant::now();
     for _ in 0..concurrency {
-        let graph_ref = Arc::new(SOPGraph { 
-            graph: graph.graph.clone() // Simplified for test
+        let graph_ref = Arc::new(SOPGraph {
+            graph: graph.graph.clone(), // Simplified for test
         });
         let exec_ref = Executor::new();
-        
+
         set.spawn(async move {
             let mut success = 0;
             let mut failure = 0;
             for _ in 0..iterations {
                 // In a real scenario, we'd clone the graph structure
                 // Here we just verify the executor can handle the concurrency
-                match exec_ref.execute(&SOPGraph { graph: graph_ref.graph.clone() }, root).await {
+                match exec_ref
+                    .execute(
+                        &SOPGraph {
+                            graph: graph_ref.graph.clone(),
+                        },
+                        root,
+                    )
+                    .await
+                {
                     Ok(_) => success += 1,
                     Err(_) => failure += 1,
                 }
@@ -82,8 +90,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let duration = start.elapsed();
     println!("✅ Stress test completed in {:?}", duration);
-    println!("Total Success: {}, Total Failure: {}", total_success, total_failure);
-    println!("SOPs/sec: {:.2}", (total_success + total_failure) as f64 / duration.as_secs_f64());
+    println!(
+        "Total Success: {}, Total Failure: {}",
+        total_success, total_failure
+    );
+    println!(
+        "SOPs/sec: {:.2}",
+        (total_success + total_failure) as f64 / duration.as_secs_f64()
+    );
 
     Ok(())
 }

@@ -12,7 +12,9 @@ pub struct WasmToolExecutor {
 }
 
 impl Default for WasmToolExecutor {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl WasmToolExecutor {
@@ -36,16 +38,14 @@ impl WasmToolExecutor {
 
     async fn load_wasm_bytes(&self, tool_id: &str) -> Result<Vec<u8>, String> {
         let wasm_path = self.tools_path.join(format!("{}.wasm", tool_id));
-        tokio::fs::read(&wasm_path)
-            .await
-            .map_err(|e| {
-                format!(
-                    "Failed to read WASM binary '{}' ({}): {}",
-                    tool_id,
-                    wasm_path.display(),
-                    e
-                )
-            })
+        tokio::fs::read(&wasm_path).await.map_err(|e| {
+            format!(
+                "Failed to read WASM binary '{}' ({}): {}",
+                tool_id,
+                wasm_path.display(),
+                e
+            )
+        })
     }
 
     async fn get_or_compile_module(&self, tool_id: &str) -> Result<Module, String> {
@@ -54,12 +54,10 @@ impl WasmToolExecutor {
         }
         let wasm_bytes = self.load_wasm_bytes(tool_id).await?;
         let engine = self.engine.clone();
-        let module = tokio::task::spawn_blocking(move || {
-            Module::new(&engine, &wasm_bytes)
-        })
-        .await
-        .map_err(|e| format!("Compilation task failed: {}", e))?
-        .map_err(|e| format!("Failed to compile WASM module '{}': {}", tool_id, e))?;
+        let module = tokio::task::spawn_blocking(move || Module::new(&engine, &wasm_bytes))
+            .await
+            .map_err(|e| format!("Compilation task failed: {}", e))?
+            .map_err(|e| format!("Failed to compile WASM module '{}': {}", tool_id, e))?;
         self.module_cache
             .insert(tool_id.to_string(), module.clone());
         Ok(module)
@@ -78,13 +76,13 @@ impl ToolExecutor for WasmToolExecutor {
 
         let linker = Linker::new(&self.engine);
         let mut store = Store::new(&self.engine, ());
-        store.set_fuel(fuel_limit).map_err(|e| {
-            format!("Failed to set fuel for '{}': {}", tool_id, e)
-        })?;
+        store
+            .set_fuel(fuel_limit)
+            .map_err(|e| format!("Failed to set fuel for '{}': {}", tool_id, e))?;
 
-        let instance = linker.instantiate(&mut store, &module).map_err(|e| {
-            format!("Failed to instantiate WASM module '{}': {}", tool_id, e)
-        })?;
+        let instance = linker
+            .instantiate(&mut store, &module)
+            .map_err(|e| format!("Failed to instantiate WASM module '{}': {}", tool_id, e))?;
 
         // 5. Look for the "execute" export with dynamic signature handling
         let execute_func = instance

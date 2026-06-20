@@ -1,11 +1,11 @@
-use tonic::{transport::Server, Request, Response, Status};
-use sisyphus_bridge::sisyphus_bridge_server::{SisyphusBridgeServer, SisyphusBridge};
+use sisyphus_bridge::sisyphus_bridge_server::{SisyphusBridge, SisyphusBridgeServer};
 use sisyphus_bridge::{ExecuteSopRequest, SopResponse};
 use sisyphus_core::{SOPGraph, SisyphusKernel, WasmSOPNode};
-use sisyphus_sandbox::WasmToolExecutor;
-use sisyphus_mem::MfsStore;
 use sisyphus_intel::{SisyphusIntel, StandardReflector};
+use sisyphus_mem::MfsStore;
+use sisyphus_sandbox::WasmToolExecutor;
 use std::sync::Arc;
+use tonic::{transport::Server, Request, Response, Status};
 
 pub mod sisyphus_bridge {
     tonic::include_proto!("sisyphus.bridge");
@@ -17,21 +17,34 @@ pub struct MySisyphusBridge {
 
 impl MySisyphusBridge {
     pub async fn new() -> Self {
-        let state_store = Arc::new(MfsStore::new("sqlite::memory:").await.expect("Failed to init MFS Store"));
+        let state_store = Arc::new(
+            MfsStore::new("sqlite::memory:")
+                .await
+                .expect("Failed to init MFS Store"),
+        );
         let tool_executor = Arc::new(WasmToolExecutor::new());
-        
-        let simulator = Arc::new(sisyphus_intel::MonteCarloSimulator::with_state_store(1000, state_store.clone()));
+
+        let simulator = Arc::new(sisyphus_intel::MonteCarloSimulator::with_state_store(
+            1000,
+            state_store.clone(),
+        ));
         let reflector = Arc::new(StandardReflector);
         let evolver = Arc::new(sisyphus_intel::StandardEvolver::new());
         let intel = Arc::new(SisyphusIntel::new(simulator, reflector, evolver));
-        
-        let synthesizer = Arc::new(sisyphus_intel::GoalDrivenSynthesizer::new(tool_executor.clone()));
-        
-        let kernel = Arc::new(SisyphusKernel::new(state_store, tool_executor, intel, synthesizer));
-        
+
+        let synthesizer = Arc::new(sisyphus_intel::GoalDrivenSynthesizer::new(
+            tool_executor.clone(),
+        ));
+
+        let kernel = Arc::new(SisyphusKernel::new(
+            state_store,
+            tool_executor,
+            intel,
+            synthesizer,
+        ));
+
         Self { kernel }
     }
-
 }
 
 #[tonic::async_trait]
@@ -47,12 +60,10 @@ impl SisyphusBridge for MySisyphusBridge {
             let goal = &req.sop_id[5..];
             let sop_id = format!("synth_{}", goal);
             match self.kernel.execute_goal(goal, &sop_id).await {
-                Ok((result, report)) => {
-                    Ok(Response::new(SopResponse {
-                        status: "SUCCESS".into(),
-                        result: format!("Result: {} | Cognition: {}", result, report),
-                    }))
-                }
+                Ok((result, report)) => Ok(Response::new(SopResponse {
+                    status: "SUCCESS".into(),
+                    result: format!("Result: {} | Cognition: {}", result, report),
+                })),
                 Err(e) => {
                     println!("[ERROR] Goal execution failed for {}: {}", goal, e);
                     Err(Status::internal(e))
@@ -74,10 +85,18 @@ impl SisyphusBridge for MySisyphusBridge {
                     g
                 }
             };
-            
-            let start_node = graph.graph.node_indices().next().ok_or_else(|| Status::internal("Graph empty"))?;
-            
-            match self.kernel.execute_with_cognition(&graph, start_node, &req.sop_id).await {
+
+            let start_node = graph
+                .graph
+                .node_indices()
+                .next()
+                .ok_or_else(|| Status::internal("Graph empty"))?;
+
+            match self
+                .kernel
+                .execute_with_cognition(&graph, start_node, &req.sop_id, None)
+                .await
+            {
                 Ok((result, report, evolved_graph)) => {
                     if evolved_graph.is_some() {
                         println!("SOP evolved for sop_id={}", req.sop_id);
@@ -94,7 +113,6 @@ impl SisyphusBridge for MySisyphusBridge {
             }
         }
     }
-
 }
 
 #[tokio::main]
@@ -102,7 +120,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let addr = "[::1]:50051".parse()?;
     let bridge = MySisyphusBridge::new().await;
 
-    println!("Sisyphus High-Performance Cognitive Bridge listening on {}", addr);
+    println!(
+        "Sisyphus High-Performance Cognitive Bridge listening on {}",
+        addr
+    );
 
     Server::builder()
         .add_service(SisyphusBridgeServer::new(bridge))
