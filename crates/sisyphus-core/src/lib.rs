@@ -242,7 +242,7 @@ impl SisyphusKernel {
             let _ = self.state_store.set_state_json(&history_key, serde_json::to_value(history).unwrap()).await;
             
             // 5. Evolve
-            let evolved = self.intel.evolver.evolve(current_ref, &reflection).ok();
+            let evolved = self.intel.evolver.evolve(current_ref, &reflection, &prediction).ok();
             let has_evolved = evolved.is_some();
             
             if let Some(ref eg) = evolved {
