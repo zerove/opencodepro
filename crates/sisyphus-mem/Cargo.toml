@@ -2,6 +2,9 @@
 name = "sisyphus-mem"
 version = "0.1.0"
 edition = "2024"
+authors = ["Sisyphus Team"]
+description = "Memory-First State: DashMap L1 + SQLite L2 with snapshot/restore"
+license = "MIT"
 
 [dependencies]
 dashmap = "6.0"

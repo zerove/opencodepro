@@ -2,6 +2,9 @@
 name = "sisyphus-bridge"
 version = "0.1.0"
 edition = "2021"
+authors = ["Sisyphus Team"]
+description = "gRPC bridge server for Sisyphus cognitive engine"
+license = "MIT"
 
 [dependencies]
 tonic = "0.12"

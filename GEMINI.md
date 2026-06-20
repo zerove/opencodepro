@@ -1,37 +1,53 @@
-# OpenCodePro - Workspace Context
+# Sisyphus 26.0 — Cognitive Execution Engine
 
-This workspace has been initialized as a fresh, empty repository for development. This file (`GEMINI.md`) serves as the foundational instruction context for Gemini CLI and other AI development assistants working in this project.
+Asynchronous, memory-first cognitive engine for predictive SOP (Standard Operating Procedure) execution.
+Built in Rust with async-reactive architecture.
 
 ## Project Overview
 
-*   **Status:** Newly initialized workspace.
-*   **Purpose:** [TODO: Describe the primary purpose, features, and goals of this project]
-*   **Target Stack:** [TODO: Specify primary technologies e.g., React/TypeScript, Rust, Python, Go]
+*   **Status:** Active development
+*   **Purpose:** Cognitive execution engine with predictive simulation, reflection-based learning, and autonomous SOP evolution
+*   **Target Stack:** Rust (async, tokio), Wasmtime (sandbox), SQLite (persistence), gRPC (bridge)
 
-As the project structure is created, please update this file with specific architectural decisions and tech stack details.
+## Architecture
+
+```
+SisyphusBridge (gRPC)
+       ↓
+SisyphusKernel — orchestrator
+  ├── Executor — DAG-based async SOP execution with JoinSet
+  ├── MfsStore — Memory-First State (DashMap L1 + SQLite L2)
+  ├── ToolExecutor — Wasmtime sandbox (fuel-limited, module cached)
+  └── SisyphusIntel — cognitive loop
+       ├── Simulator — Monte Carlo / Experience-driven prediction
+       ├── Reflector — trace analysis & deviation scoring
+       └── Evolver — autonomous SOP mutation (fuel, retry logic)
+```
+
+**Core Loop**: `Synthesize → Predict → Execute → Reflect → Evolve`
 
 ---
 
 ## Build & Run Commands
 
-Once the tech stack and dependencies are configured, update this section with the exact commands.
-
 ### Build & Package
-*   Build command: `[TODO: e.g., npm run build / cargo build]`
-*   Production build: `[TODO: e.g., npm run build:prod / cargo build --release]`
+*   Build all crates: `cargo build`
+*   Production build: `cargo build --release`
+*   Check (fast): `cargo check`
 
 ### Run & Dev
-*   Development server: `[TODO: e.g., npm run dev / cargo run]`
-*   Production run: `[TODO: e.g., npm start]`
+*   Bridge server: `cargo run -p sisyphus-bridge`
+*   Integration stress: `cargo run -p sisyphus-core --bin integration_stress`
+*   Bridge client: `cargo run -p sisyphus-bridge --bin client`
 
 ### Testing
-*   Run unit tests: `[TODO: e.g., npm test / cargo test]`
-*   Run specific test: `[TODO: e.g., npm test -- -t "test-name"]`
-*   Test coverage: `[TODO: e.g., npm run coverage]`
+*   All tests: `cargo test`
+*   Specific crate tests: `cargo test -p sisyphus-mem`
+*   Specific test: `cargo test -- -t test_name`
 
 ### Formatting & Linting
-*   Lint code: `[TODO: e.g., npm run lint / cargo clippy]`
-*   Format code: `[TODO: e.g., npm run format / cargo fmt]`
+*   Lint: `cargo clippy`
+*   Format: `cargo fmt`
 
 ---
 

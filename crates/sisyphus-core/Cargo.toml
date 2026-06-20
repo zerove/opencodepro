@@ -2,6 +2,9 @@
 name = "sisyphus-core"
 version = "0.1.0"
 edition = "2021"
+authors = ["Sisyphus Team"]
+description = "Kernel orchestrator: DAG-based async SOP execution with predictive cognition"
+license = "MIT"
 
 [dependencies]
 petgraph = "0.6"

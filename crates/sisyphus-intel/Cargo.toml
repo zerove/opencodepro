@@ -2,6 +2,9 @@
 name = "sisyphus-intel"
 version = "0.1.0"
 edition = "2021"
+authors = ["Sisyphus Team"]
+description = "Cognitive loop: flow synthesis, Monte Carlo simulation, reflection, evolution"
+license = "MIT"
 
 [dependencies]
 sisyphus-types = { path = "../sisyphus-types" }

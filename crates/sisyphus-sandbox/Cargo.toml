@@ -2,6 +2,9 @@
 name = "sisyphus-sandbox"
 version = "0.1.0"
 edition = "2021"
+authors = ["Sisyphus Team"]
+description = "Wasmtime sandbox executor with fuel limits and module caching"
+license = "MIT"
 
 [build-dependencies]
 wat = "1"

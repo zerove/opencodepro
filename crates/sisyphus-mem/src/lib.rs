@@ -4,11 +4,6 @@ use dashmap::DashMap;
 use sqlx::{sqlite::SqlitePoolOptions, SqlitePool};
 use std::sync::Arc;
 
-#[async_trait]
-pub trait ToolExecutor: Send + Sync {
-    async fn execute(&self, tool_id: &str, args: Vec<u8>, fuel_limit: u64) -> Result<Vec<u8>, String>;
-}
-
 pub struct Snapshot {
     data: std::collections::HashMap<String, serde_json::Value>,
 }

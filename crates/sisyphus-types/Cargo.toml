@@ -2,6 +2,9 @@
 name = "sisyphus-types"
 version = "0.1.0"
 edition = "2021"
+authors = ["Sisyphus Team"]
+description = "Core types and traits for Sisyphus cognitive engine"
+license = "MIT"
 
 [dependencies]
 async-trait = "0.1"
