@@ -11,6 +11,10 @@ pub struct WasmToolExecutor {
     module_cache: Arc<DashMap<String, Module>>,
 }
 
+impl Default for WasmToolExecutor {
+    fn default() -> Self { Self::new() }
+}
+
 impl WasmToolExecutor {
     pub fn new() -> Self {
         let mut config = Config::new();

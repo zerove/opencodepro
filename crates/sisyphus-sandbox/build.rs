@@ -17,7 +17,7 @@ fn main() {
         let entry = entry.expect("Failed to read entry");
         let path = entry.path();
 
-        if path.extension().map_or(false, |e| e == "wat") {
+        if path.extension().is_some_and(|e| e == "wat") {
             let wasm_path = path.with_extension("wasm");
 
             // Skip if .wasm is newer than .wat
@@ -30,11 +30,11 @@ fn main() {
             }
 
             let wat_content = std::fs::read_to_string(&path)
-                .expect(&format!("Failed to read {:?}", path));
+                .unwrap_or_else(|_| panic!("Failed to read {:?}", path));
             let wasm_bytes = wat::parse_str(&wat_content)
-                .expect(&format!("Failed to parse {:?}", path));
+                .unwrap_or_else(|_| panic!("Failed to parse {:?}", path));
             std::fs::write(&wasm_path, wasm_bytes)
-                .expect(&format!("Failed to write {:?}", wasm_path));
+                .unwrap_or_else(|_| panic!("Failed to write {:?}", wasm_path));
 
             println!("cargo:rerun-if-changed={}", path.display());
             println!("cargo:warning=Compiled {} -> {}", 
