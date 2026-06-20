@@ -125,6 +125,10 @@ pub trait SOPEvolver: Send + Sync {
 
 pub struct StandardEvolver;
 
+impl Default for StandardEvolver {
+    fn default() -> Self { Self::new() }
+}
+
 impl StandardEvolver {
     pub fn new() -> Self {
         Self
@@ -428,5 +432,103 @@ impl Reflector for StandardReflector {
             suggested_improvements: suggestions,
             evolved_sop_structure: None,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_record(node: &str, status: &str, output: &str) -> RecordedNode {
+        RecordedNode { node: node.into(), status: status.into(), output: output.into() }
+    }
+
+    // StandardReflector::parse_trace
+    #[test]
+    fn test_parse_valid_json_lines() {
+        let trace = r#"{"node":"a","status":"ok","output":"done"}
+{"node":"b","status":"error","output":"crash"}"#;
+        let records = StandardReflector::parse_trace(trace);
+        assert_eq!(records.len(), 2);
+        assert_eq!(records[0].node, "a");
+        assert_eq!(records[1].status, "error");
+    }
+
+    #[test]
+    fn test_parse_skip_invalid() {
+        let trace = "bad\n{\"node\":\"a\",\"status\":\"ok\",\"output\":\"\"}\ngarbage";
+        let records = StandardReflector::parse_trace(trace);
+        assert_eq!(records.len(), 1);
+    }
+
+    #[test]
+    fn test_parse_empty() {
+        assert!(StandardReflector::parse_trace("").is_empty());
+    }
+
+    // StandardReflector::analyze
+    #[test]
+    fn test_analyze_empty() {
+        let (dev, s) = StandardReflector::analyze(&[]);
+        assert_eq!(dev, 0.0);
+        assert!(s.iter().any(|x| x.contains("No execution records")));
+    }
+
+    #[test]
+    fn test_analyze_all_ok() {
+        let r = vec![make_record("a", "ok", "out"), make_record("b", "ok", "out")];
+        let (dev, s) = StandardReflector::analyze(&r);
+        assert_eq!(dev, 0.0);
+        assert!(s.iter().any(|x| x.contains("within expected parameters")));
+    }
+
+    #[test]
+    fn test_analyze_errors() {
+        let r = vec![make_record("a", "ok", "out"), make_record("b", "error", "boom")];
+        let (dev, s) = StandardReflector::analyze(&r);
+        assert!(dev > 0.3);
+        assert!(s.iter().any(|x| x.contains("Node failures")));
+    }
+
+    #[test]
+    fn test_analyze_resource_exhausted() {
+        let r = vec![make_record("a", "error", "ResourceExhausted")];
+        let (_, s) = StandardReflector::analyze(&r);
+        assert!(s.iter().any(|x| x.contains("Resource exhaustion")));
+    }
+
+    #[test]
+    fn test_analyze_empty_outputs() {
+        let r = vec![make_record("a", "ok", ""), make_record("b", "ok", "null"), make_record("c", "ok", "real")];
+        let (_, s) = StandardReflector::analyze(&r);
+        assert!(s.iter().any(|x| x.contains("empty output")));
+    }
+
+    // StandardReflector::reflect (async)
+    #[tokio::test]
+    async fn test_reflect_structured() {
+        let trace = r#"{"node":"x","status":"ok","output":"data"}"#;
+        let pred = SimulationResult { path_id: "t".into(), success_probability: 0.9, estimated_cost: 10, predicted_outcome: "ok".into() };
+        let report = StandardReflector.reflect(trace, &pred).await.unwrap();
+        assert_eq!(report.deviation_score, 0.0);
+    }
+
+    #[tokio::test]
+    async fn test_reflect_fallback() {
+        let trace = "ResourceExhausted";
+        let pred = SimulationResult { path_id: "t".into(), success_probability: 0.5, estimated_cost: 100, predicted_outcome: "?".into() };
+        let report = StandardReflector.reflect(trace, &pred).await.unwrap();
+        assert_eq!(report.deviation_score, 0.8);
+    }
+
+    // MonteCarloSimulator
+    #[tokio::test]
+    async fn test_monte_carlo_empty_graph() {
+        let graph = SOPGraph::new();
+        let sim = MonteCarloSimulator::new(10);
+        let ctx = ExecutionContext::new();
+        let result = sim.simulate(&graph, &ctx, "empty").await.unwrap();
+        assert_eq!(result.success_probability, 0.0);
+        assert_eq!(result.estimated_cost, 0);
     }
 }
