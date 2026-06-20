@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+package sisyphus.bridge;
+
+service SisyphusBridge {
+  rpc ExecuteSOP (ExecuteSOPRequest) returns (SOPResponse);
+}
+
+message ExecuteSOPRequest {
+  string sop_id = 1;
+  map<string, string> args = 2;
+}
+
+message SOPResponse {
+  string status = 1;
+  string result = 2;
+}

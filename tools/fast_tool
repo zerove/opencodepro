@@ -1,0 +1,4 @@
+#!/bin/sh
+while read line; do
+  echo "Fast tool result for $line"
+done

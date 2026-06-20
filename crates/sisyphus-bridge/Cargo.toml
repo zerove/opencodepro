@@ -1,0 +1,18 @@
+[package]
+name = "sisyphus-bridge"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tonic = "0.12"
+prost = "0.13"
+tokio = { version = "1", features = ["full"] }
+sisyphus-core = { path = "../sisyphus-core" }
+sisyphus-sandbox = { path = "../sisyphus-sandbox" }
+sisyphus-mem = { path = "../sisyphus-mem" }
+sisyphus-intel = { path = "../sisyphus-intel" }
+serde_json = "1.0"
+async-trait = "0.1"
+
+[build-dependencies]
+tonic-build = "0.12"

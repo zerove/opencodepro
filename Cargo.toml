@@ -1,0 +1,20 @@
+[workspace]
+members = [
+    "crates/sisyphus-core",
+    "crates/sisyphus-bridge",
+    "crates/sisyphus-sandbox",
+    "crates/sisyphus-intel",
+    "crates/sisyphus-mem", "crates/sisyphus-types",
+]
+resolver = "2"
+
+[profile.dev]
+debug = 0
+opt-level = 0
+codegen-units = 1
+incremental = false
+
+[profile.release]
+panic = "abort"
+lto = "thin"
+codegen-units = 1
