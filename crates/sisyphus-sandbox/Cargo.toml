@@ -13,6 +13,8 @@ wat = "1"
 async-trait = "0.1"
 tokio = { version = "1", features = ["full"] }
 sisyphus-types = { path = "../sisyphus-types" }
+sisyphus-metrics = { path = "../sisyphus-metrics" }
 dashmap = "6.0"
 wasmtime = { version = "25", default-features = false, features = ["cranelift", "pooling-allocator"] }
+tracing = { workspace = true }
 

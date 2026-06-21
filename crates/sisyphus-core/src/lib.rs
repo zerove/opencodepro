@@ -4,10 +4,12 @@ use petgraph::visit::EdgeRef;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Instant;
 use tokio::task::JoinSet;
 
 use sisyphus_intel::SisyphusIntel;
 use sisyphus_mem::MfsStore;
+use sisyphus_metrics::record_cognitive_iteration;
 pub use sisyphus_types::{
     CompositeGraph, DataMapping, ExecutionContext, GraphDependency, NodeOutput, SOPGraph,
     SOPGraphConfig, SOPNode, StateStore, ToolExecutor, WasmSOPNode,
@@ -34,7 +36,15 @@ impl Executor {
         _start_node: NodeIndex,
         initial_ctx: Option<Arc<ExecutionContext>>,
     ) -> Result<Arc<ExecutionContext>, String> {
+        let span = tracing::info_span!(
+            "executor.execute",
+            graph_nodes = sop_graph.graph.node_count()
+        );
+        let _enter = span.enter();
+
+        let start = Instant::now();
         if toposort(&sop_graph.graph, None).is_err() {
+            tracing::error!("SOPGraph contains cycles");
             return Err("SOPGraph contains cycles".to_string());
         }
         let ctx = initial_ctx.unwrap_or_else(|| Arc::new(ExecutionContext::new()));
@@ -50,13 +60,21 @@ impl Executor {
             in_degree.insert(node, degree);
         }
 
+        tracing::debug!(
+            "Starting DAG execution with {} ready nodes",
+            in_degree.values().filter(|&&d| d == 0).count()
+        );
+
         for (&node, &degree) in in_degree.iter() {
             if degree == 0 {
                 let node_ref = Arc::clone(sop_graph.graph.node_weight(node).unwrap());
                 let ctx_ref = Arc::clone(&ctx);
                 join_set.spawn(async move {
+                    let node_span = tracing::info_span!("executor.node", node = node_ref.name());
+                    let _enter = node_span.enter();
                     let name = node_ref.name().to_string();
                     let result = node_ref.execute(&ctx_ref).await;
+                    tracing::debug!(node = %name, "Node execution completed");
                     (node, name, result)
                 });
             }
@@ -66,9 +84,14 @@ impl Executor {
             let (node, name, result) = res.map_err(|e| e.to_string())?;
             let output = match result {
                 Ok(out) => out,
-                Err(e) => Value::String(e),
+                Err(e) => {
+                    tracing::warn!(node = %name, error = %e, "Node execution failed");
+                    Value::String(e)
+                }
             };
-            ctx.set_result(name, output);
+            ctx.set_result(name.clone(), output);
+            tracing::debug!(node = %name, "Node result stored");
+
             for edge in sop_graph.graph.edges(node) {
                 let target = edge.target();
                 if let Some(degree) = in_degree.get_mut(&target) {
@@ -77,14 +100,24 @@ impl Executor {
                         let node_ref = Arc::clone(sop_graph.graph.node_weight(target).unwrap());
                         let ctx_ref = Arc::clone(&ctx);
                         join_set.spawn(async move {
+                            let node_span =
+                                tracing::info_span!("executor.node", node = node_ref.name());
+                            let _enter = node_span.enter();
                             let name = node_ref.name().to_string();
                             let result = node_ref.execute(&ctx_ref).await;
+                            tracing::debug!(node = %name, "Node execution completed");
                             (target, name, result)
                         });
                     }
                 }
             }
         }
+
+        let duration = start.elapsed();
+        tracing::info!(
+            duration_ms = duration.as_millis(),
+            "DAG execution completed"
+        );
         Ok(ctx)
     }
 
@@ -129,6 +162,12 @@ pub struct CognitiveReport {
 /// Resolves execution order for a CompositeGraph via topological sort
 /// over the dependency graph.
 pub struct DependencyResolver;
+
+impl Default for DependencyResolver {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl DependencyResolver {
     pub fn new() -> Self {
@@ -292,6 +331,9 @@ impl SisyphusKernel {
         sop_id: &str,
         initial_ctx: Option<Arc<ExecutionContext>>,
     ) -> Result<(NodeOutput, String, Option<SOPGraph>), String> {
+        let span = tracing::info_span!("kernel.execute_with_cognition", sop_id = %sop_id, graph_nodes = sop_graph.graph.node_count());
+        let _enter = span.enter();
+
         let mut own_graph: Option<SOPGraph> = None;
         let mut current_ref: &SOPGraph = sop_graph;
         let mut current_start = start_node;
@@ -303,14 +345,21 @@ impl SisyphusKernel {
         let initial_ctx_for_iter = initial_ctx;
 
         for iteration in 0..MAX_COGNITIVE_ITERATIONS {
+            let iter_start = Instant::now();
+            let iter_span = tracing::info_span!("cognitive_iteration", iteration, sop_id = %sop_id);
+            let _iter_enter = iter_span.enter();
+
             let ctx = ExecutionContext::new();
 
             // 1. Predict
+            let pred_start = Instant::now();
             let prediction = self
                 .intel
                 .simulator
                 .simulate(current_ref, &ctx, sop_id)
                 .await?;
+            let pred_duration = pred_start.elapsed();
+            tracing::debug!(path_id = %prediction.path_id, success_prob = prediction.success_probability, estimated_cost = prediction.estimated_cost, duration_ms = pred_duration.as_millis(), "Simulation completed");
 
             let exec_ctx = if iteration == 0 {
                 initial_ctx_for_iter.clone()
@@ -354,7 +403,15 @@ impl SisyphusKernel {
             let trace = trace_lines.join("\n");
 
             // 4. Reflect
+            let reflect_start = Instant::now();
             let reflection = self.intel.reflector.reflect(&trace, &prediction).await?;
+            let reflect_duration = reflect_start.elapsed();
+            tracing::debug!(
+                deviation = reflection.deviation_score,
+                suggestions = reflection.suggested_improvements.len(),
+                duration_ms = reflect_duration.as_millis(),
+                "Reflection completed"
+            );
 
             // Persist history
             let history_key = format!("history:{}", sop_id);
@@ -385,17 +442,25 @@ impl SisyphusKernel {
                 .await;
 
             // 5. Evolve
+            let evolve_start = Instant::now();
             let evolved = self
                 .intel
                 .evolver
                 .evolve(current_ref, &reflection, &prediction)
                 .ok();
+            let evolve_duration = evolve_start.elapsed();
             let has_evolved = evolved.is_some();
+            tracing::debug!(
+                evolved = has_evolved,
+                duration_ms = evolve_duration.as_millis(),
+                "Evolution completed"
+            );
 
             if let Some(ref eg) = evolved {
                 let _ = self.save_sop(sop_id, eg).await;
             }
 
+            let iter_duration = iter_start.elapsed();
             iterations.push(CognitiveIteration {
                 iteration,
                 prediction,
@@ -403,6 +468,15 @@ impl SisyphusKernel {
                 suggestions: reflection.suggested_improvements,
                 evolved: has_evolved,
             });
+
+            // Record cognitive iteration metric
+            record_cognitive_iteration(
+                sop_id,
+                iteration,
+                reflection.deviation_score,
+                reflection.deviation_score < CONVERGENCE_THRESHOLD,
+                iter_duration.as_secs_f64(),
+            );
 
             // Check convergence
             if reflection.deviation_score < CONVERGENCE_THRESHOLD || !has_evolved {
@@ -440,6 +514,13 @@ impl SisyphusKernel {
             iterations.len(),
             converged,
             iteration_details.join(" -> ")
+        );
+
+        tracing::info!(
+            iterations = iterations.len(),
+            converged,
+            final_deviation = iterations.last().map(|i| i.deviation_score).unwrap_or(0.0),
+            "Cognitive loop completed"
         );
 
         Ok((final_result, report, final_evolved))

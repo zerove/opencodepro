@@ -1,0 +1,788 @@
+<!DOCTYPE HTML>
+<html lang="en" class="light sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Sisyphus — Cognitive Computation Engine</title>
+        <meta name="robots" content="noindex">
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="favicon-de23e50b.svg">
+        <link rel="shortcut icon" href="favicon-8114d1fc.png">
+        <link rel="stylesheet" href="css/variables-8adf115d.css">
+        <link rel="stylesheet" href="css/general-0392ca55.css">
+        <link rel="stylesheet" href="css/chrome-fc474251.css">
+        <link rel="stylesheet" href="css/print-9e4910d8.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="fonts/fonts-9644e21d.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" id="mdbook-highlight-css" href="highlight-493f70e1.css">
+        <link rel="stylesheet" id="mdbook-tomorrow-night-css" href="tomorrow-night-4c0ae647.css">
+        <link rel="stylesheet" id="mdbook-ayu-highlight-css" href="ayu-highlight-3fdfc3ac.css">
+
+        <!-- Custom theme stylesheets -->
+
+
+        <!-- Provide site root and default themes to javascript -->
+        <script>
+            const path_to_root = "";
+            const default_light_theme = "light";
+            const default_dark_theme = "navy";
+            window.path_to_searchindex_js = "searchindex-9aca3f2e.js";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="toc-f5eeceea.js"></script>
+    </head>
+    <body>
+    <div id="mdbook-help-container">
+        <div id="mdbook-help-popup">
+            <h2 class="mdbook-help-title">Keyboard shortcuts</h2>
+            <div>
+                <p>Press <kbd>←</kbd> or <kbd>→</kbd> to navigate between chapters</p>
+                <p>Press <kbd>S</kbd> or <kbd>/</kbd> to search in the book</p>
+                <p>Press <kbd>?</kbd> to show this help</p>
+                <p>Press <kbd>Esc</kbd> to hide this help</p>
+            </div>
+        </div>
+    </div>
+    <div id="mdbook-body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                let theme = localStorage.getItem('mdbook-theme');
+                let sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            const default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? default_dark_theme : default_light_theme;
+            let theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="mdbook-sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            let sidebar = null;
+            const sidebar_toggle = document.getElementById("mdbook-sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+                sidebar_toggle.checked = false;
+            }
+            if (sidebar === 'visible') {
+                sidebar_toggle.checked = true;
+            } else {
+                html.classList.remove('sidebar-visible');
+            }
+        </script>
+
+        <nav id="mdbook-sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="toc.html"></iframe>
+            </noscript>
+            <div id="mdbook-sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="mdbook-page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="mdbook-menu-bar-hover-placeholder"></div>
+                <div id="mdbook-menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="mdbook-sidebar-toggle" class="icon-button" for="mdbook-sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="mdbook-sidebar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M0 96C0 78.3 14.3 64 32 64H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32C14.3 128 0 113.7 0 96zM0 256c0-17.7 14.3-32 32-32H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32c-17.7 0-32-14.3-32-32zM448 416c0 17.7-14.3 32-32 32H32c-17.7 0-32-14.3-32-32s14.3-32 32-32H416c17.7 0 32 14.3 32 32z"/></svg></span>
+                        </label>
+                        <button id="mdbook-theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="mdbook-theme-list">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M371.3 367.1c27.3-3.9 51.9-19.4 67.2-42.9L600.2 74.1c12.6-19.5 9.4-45.3-7.6-61.2S549.7-4.4 531.1 9.6L294.4 187.2c-24 18-38.2 46.1-38.4 76.1L371.3 367.1zm-19.6 25.4l-116-104.4C175.9 290.3 128 339.6 128 400c0 3.9 .2 7.8 .6 11.6c1.8 17.5-10.2 36.4-27.8 36.4H96c-17.7 0-32 14.3-32 32s14.3 32 32 32H240c61.9 0 112-50.1 112-112c0-2.5-.1-5-.2-7.5z"/></svg></span>
+                        </button>
+                        <ul id="mdbook-theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-default_theme">Auto</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-ayu">Ayu</button></li>
+                        </ul>
+                        <button id="mdbook-search-toggle" class="icon-button" type="button" title="Search (`/`)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="/ s" aria-controls="mdbook-searchbar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M416 208c0 45.9-14.9 88.3-40 122.7L502.6 457.4c12.5 12.5 12.5 32.8 0 45.3s-32.8 12.5-45.3 0L330.7 376c-34.4 25.2-76.8 40-122.7 40C93.1 416 0 322.9 0 208S93.1 0 208 0S416 93.1 416 208zM208 352c79.5 0 144-64.5 144-144s-64.5-144-144-144S64 128.5 64 208s64.5 144 144 144z"/></svg></span>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">Sisyphus — Cognitive Computation Engine</h1>
+
+                    <div class="right-buttons">
+                        <a href="print.html" title="Print this book" aria-label="Print this book">
+                            <span class=fa-svg id="print-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M128 0C92.7 0 64 28.7 64 64v96h64V64H354.7L384 93.3V160h64V93.3c0-17-6.7-33.3-18.7-45.3L400 18.7C388 6.7 371.7 0 354.7 0H128zM384 352v32 64H128V384 368 352H384zm64 32h32c17.7 0 32-14.3 32-32V256c0-35.3-28.7-64-64-64H64c-35.3 0-64 28.7-64 64v96c0 17.7 14.3 32 32 32H64v64c0 35.3 28.7 64 64 64H384c35.3 0 64-28.7 64-64V384zm-16-88c-13.3 0-24-10.7-24-24s10.7-24 24-24s24 10.7 24 24s-10.7 24-24 24z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/zeronhq/sisyphus-wasm" title="Git repository" aria-label="Git repository">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z"/></svg></span>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="mdbook-search-wrapper" class="hidden">
+                    <form id="mdbook-searchbar-outer" class="searchbar-outer">
+                        <div class="search-wrapper">
+                            <input type="search" id="mdbook-searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="mdbook-searchresults-outer" aria-describedby="searchresults-header">
+                            <div class="spinner-wrapper">
+                                <span class=fa-svg id="fa-spin"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M304 48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zm0 416c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM48 304c26.5 0 48-21.5 48-48s-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48zm464-48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM142.9 437c18.7-18.7 18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zm0-294.2c18.7-18.7 18.7-49.1 0-67.9S93.7 56.2 75 75s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zM369.1 437c18.7 18.7 49.1 18.7 67.9 0s18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9z"/></svg></span>
+                            </div>
+                        </div>
+                    </form>
+                    <div id="mdbook-searchresults-outer" class="searchresults-outer hidden">
+                        <div id="mdbook-searchresults-header" class="searchresults-header"></div>
+                        <ul id="mdbook-searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('mdbook-sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('mdbook-sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#mdbook-sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="mdbook-content" class="content">
+                    <main>
+                        <h1 id="sisyphus--cognitive-computation-engine"><a class="header" href="#sisyphus--cognitive-computation-engine">Sisyphus — Cognitive Computation Engine</a></h1>
+<p>Sisyphus is a <strong>cognitive computation engine</strong> for building autonomous AI agents that plan, execute, and improve their behavior through a recursive <strong>observe–orient–decide–act</strong> (OODA) loop.</p>
+<h2 id="what-it-does"><a class="header" href="#what-it-does">What It Does</a></h2>
+<p>At its core, Sisyphus takes a high-level goal (expressed in natural language) and:</p>
+<ol>
+<li><strong>Synthesizes</strong> a Standard Operating Procedure (SOP) — a directed acyclic graph (DAG) of executable sub-steps.</li>
+<li><strong>Executes</strong> the SOP in parallel across available nodes, respecting dependencies.</li>
+<li><strong>Simulates</strong> outcomes via Monte Carlo tree search to predict success probability.</li>
+<li><strong>Reflects</strong> on execution results — computing a <em>deviation score</em> between predicted and actual outcomes.</li>
+<li><strong>Evolves</strong> the SOP — retrying failed nodes, increasing fuel budgets, or restructuring the graph.</li>
+</ol>
+<p>This loop continues until the goal converges (deviation below threshold) or a maximum iteration limit is reached.</p>
+<h2 id="why-sisyphus"><a class="header" href="#why-sisyphus">Why Sisyphus?</a></h2>
+<ul>
+<li><strong>Self-improving</strong>: The engine learns from every execution, evolving its SOPs without human intervention.</li>
+<li><strong>Safe by design</strong>: WASM sandboxing for tool code execution with fuel limits and memory bounds.</li>
+<li><strong>Observable</strong>: Built-in Prometheus metrics for every cognitive operation.</li>
+<li><strong>Composable</strong>: Each crate is independent; use just the parts you need.</li>
+</ul>
+<h2 id="project-status"><a class="header" href="#project-status">Project Status</a></h2>
+<p>Sisyphus is in <strong>active development</strong> (v0.1.0). The core cognitive loop is functional and tested, with WASM tool execution, multi-level caching, and Prometheus metrics integration.</p>
+<h2 id="next-steps"><a class="header" href="#next-steps">Next Steps</a></h2>
+<ul>
+<li>Read the <a href="#architecture-overview">Architecture Overview</a> for a high-level system design.</li>
+<li>Dive into the <a href="#key-concepts">Key Concepts</a> to understand SOPs, cognitive loops, and DAG execution.</li>
+<li>Check the <a href="#crate-reference">Crate Reference</a> for detailed API documentation.</li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="architecture-overview"><a class="header" href="#architecture-overview">Architecture Overview</a></h1>
+<p>Sisyphus is organized as a <strong>Rust workspace</strong> with seven interdependent crates, each responsible for a distinct concern:</p>
+<pre><code>┌─────────────────────────────────────────────────┐
+│                   sisyphus-bridge                 │
+│           HTTP/gRPC API · Entry Points            │
+├─────────────────────────────────────────────────┤
+│                   sisyphus-core                   │
+│        Kernel · Orchestration · Cognitive Loop    │
+├────────┬────────┬────────┬────────┬──────────────┤
+│  types  │  intel  │   mem   │ sandbox │  metrics   │
+│   datatypes │cognition│storage  │WASM run │ observability│
+└────────┴────────┴────────┴────────┴──────────────┘
+</code></pre>
+<h2 id="dependency-flow"><a class="header" href="#dependency-flow">Dependency Flow</a></h2>
+<pre><code class="language-mermaid">graph TD
+    bridge --&gt; core
+    core --&gt; types
+    core --&gt; intel
+    core --&gt; mem
+    core --&gt; sandbox
+    core --&gt; metrics
+    intel --&gt; types
+    intel --&gt; metrics
+    mem --&gt; types
+    mem --&gt; metrics
+    sandbox --&gt; types
+    sandbox --&gt; metrics
+    metrics --&gt; types
+</code></pre>
+<h2 id="data-flow-cognitive-cycle"><a class="header" href="#data-flow-cognitive-cycle">Data Flow (Cognitive Cycle)</a></h2>
+<pre><code>         ┌──────────┐
+         │  GOAL    │
+         └────┬─────┘
+              ▼
+     ┌────────────────┐
+     │   Synthesize    │  sisyphus-intel
+     │   SOP from goal │
+     └───────┬────────┘
+              ▼
+     ┌────────────────┐
+     │  Execute SOP   │  sisyphus-core (DAG runner)
+     │  (parallel)    │  sisyphus-sandbox (WASM tools)
+     └───────┬────────┘
+              ▼
+     ┌────────────────┐
+     │   Simulate     │  sisyphus-intel (Monte Carlo)
+     │   Outcomes     │
+     └───────┬────────┘
+              ▼
+     ┌────────────────┐
+     │   Reflect      │  sisyphus-intel (deviation)
+     │   Compare      │
+     └───────┬────────┘
+              ▼
+     ┌────────────────┐
+     │   Evolve SOP   │  sisyphus-intel (mutate)
+     │   or Converge  │
+     └───────┬────────┘
+              │
+      ┌───────┴───────┐
+      ▼               ▼
+  Converged?      Loop back
+      │           to Execute
+      ▼
+   Return result
+</code></pre>
+<h2 id="key-design-decisions"><a class="header" href="#key-design-decisions">Key Design Decisions</a></h2>
+<ul>
+<li><strong>No <code>async</code> in trait methods</strong>: The system uses <code>async_trait</code> for trait methods that need async execution.</li>
+<li><strong>WASM-first tooling</strong>: All external tool code runs in sandboxed WASM instances with fuel and memory limits.</li>
+<li><strong>Metrics everywhere</strong>: Every significant operation records Prometheus metrics for observability.</li>
+<li><strong>Two-level cache</strong>: L1 (in-memory <code>DashMap</code>) + L2 (SQLite via <code>sqlx</code>) for fast key-value storage.</li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="crate-reference"><a class="header" href="#crate-reference">Crate Reference</a></h1>
+<p>Sisyphus is structured as a Rust workspace with seven crates:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Crate</th><th>Description</th><th>Dependencies</th></tr>
+</thead>
+<tbody>
+<tr><td><a href="#sisyphus-types--core-data-structures">sisyphus-types</a></td><td>Core data structures: SOP graph, execution context, configuration</td><td>None (standalone)</td></tr>
+<tr><td><a href="#sisyphus-metrics--observability">sisyphus-metrics</a></td><td>Prometheus observability instrumentation</td><td>types</td></tr>
+<tr><td><a href="#sisyphus-sandbox--wasm-runtime">sisyphus-sandbox</a></td><td>WASM sandbox runtime for tool execution</td><td>types, metrics</td></tr>
+<tr><td><a href="#sisyphus-intel--cognition--simulation">sisyphus-intel</a></td><td>Cognition: simulation, reflection, SOP evolution</td><td>types, metrics</td></tr>
+<tr><td><a href="#sisyphus-mem--memory--caching">sisyphus-mem</a></td><td>Multi-level cache (L1 DashMap + L2 SQLite)</td><td>types, metrics</td></tr>
+<tr><td><a href="#sisyphus-core--kernel--orchestration">sisyphus-core</a></td><td>Kernel: DAG executor, cognitive loop, orchestration</td><td>types, intel, mem, sandbox, metrics</td></tr>
+<tr><td><a href="#sisyphus-bridge--entry-point--api">sisyphus-bridge</a></td><td>HTTP/gRPC API server, CLI entry points</td><td>core (all transitive)</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="crate-dependency-graph"><a class="header" href="#crate-dependency-graph">Crate Dependency Graph</a></h2>
+<pre><code>sisyphus-bridge → sisyphus-core
+                    ├── sisyphus-types
+                    ├── sisyphus-intel → sisyphus-types, sisyphus-metrics
+                    ├── sisyphus-mem   → sisyphus-types, sisyphus-metrics
+                    ├── sisyphus-sandbox → sisyphus-types, sisyphus-metrics
+                    └── sisyphus-metrics → sisyphus-types
+</code></pre>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="sisyphus-core--kernel--orchestration"><a class="header" href="#sisyphus-core--kernel--orchestration">sisyphus-core — Kernel &amp; Orchestration</a></h1>
+<p>The central crate that orchestrates the entire cognitive loop. It depends on all other crates.</p>
+<h2 id="key-components"><a class="header" href="#key-components">Key Components</a></h2>
+<h3 id="sisyphuskernel"><a class="header" href="#sisyphuskernel"><code>SisyphusKernel</code></a></h3>
+<p>The main entry point for the cognitive loop. Holds references to the SOP synthesizer, simulator, reflector, evolver, memory store, and WASM tool executor.</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>pub struct SisyphusKernel {
+    pub intel: Arc&lt;SisyphusIntel&gt;,
+    pub mem: Arc&lt;dyn MemoryStore&gt;,
+    pub executor: Arc&lt;WasmToolExecutor&gt;,
+}
+<span class="boring">}</span></code></pre>
+<h3 id="cognitiveloopexecute_goal"><a class="header" href="#cognitiveloopexecute_goal"><code>CognitiveLoop::execute_goal()</code></a></h3>
+<p>The primary cognitive cycle:</p>
+<ol>
+<li><strong>Synthesize</strong>: Convert natural-language goal into SOP graph via <code>SisyphusIntel::synthesize_sop()</code>.</li>
+<li><strong>Execute</strong>: Run the SOP graph using the DAG executor, respecting node dependencies.</li>
+<li><strong>Simulate</strong>: Run Monte Carlo simulation over execution traces via <code>StandardReflector::simulate_paths()</code>.</li>
+<li><strong>Reflect</strong>: Compare predicted vs. actual outcomes via <code>StandardReflector::reflect()</code>.</li>
+<li><strong>Evolve</strong>: If deviation &gt; threshold, mutate the SOP via <code>StandardReflector::evolve()</code>.</li>
+<li><strong>Loop</strong>: Repeat steps 2–5 until convergence or max iterations.</li>
+</ol>
+<h3 id="dagexecutor"><a class="header" href="#dagexecutor"><code>DagExecutor</code></a></h3>
+<p>Executes a <code>SOPGraph</code> with topological ordering. Nodes with zero in-degree execute in parallel via <code>tokio::task::JoinSet</code>. Results propagate through the graph via <code>Arc&lt;ExecutionContext&gt;</code> sharing.</p>
+<h2 id="cli"><a class="header" href="#cli">CLI</a></h2>
+<p>The crate includes a binary <code>integration_stress</code> that runs an end-to-end in-process integration test.</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="sisyphus-types--core-data-structures"><a class="header" href="#sisyphus-types--core-data-structures">sisyphus-types — Core Data Structures</a></h1>
+<p>Standalone crate (zero dependencies) providing the data model used by all other crates.</p>
+<h2 id="key-types"><a class="header" href="#key-types">Key Types</a></h2>
+<h3 id="sopgraph"><a class="header" href="#sopgraph"><code>SOPGraph</code></a></h3>
+<p>A directed acyclic graph (DAG) of nodes, using <code>petgraph::graph::DiGraph</code>. Each node is a <code>SOPNode</code> containing metadata like name, description, tool type, and required fuel.</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>pub struct SOPGraph {
+    pub graph: DiGraph&lt;SOPNode, f64&gt;,
+    pub metadata: SOPMetadata,
+}
+<span class="boring">}</span></code></pre>
+<h3 id="sopnode"><a class="header" href="#sopnode"><code>SOPNode</code></a></h3>
+<p>A single node in the SOP graph.</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>pub struct SOPNode {
+    name: String,
+    description: String,
+    tool_type: String,
+    fuel_budget: u64,
+    max_retries: u32,
+    retry_count: u32,
+    timeout_ms: u64,
+}
+<span class="boring">}</span></code></pre>
+<h3 id="executioncontext"><a class="header" href="#executioncontext"><code>ExecutionContext</code></a></h3>
+<p>Thread-safe shared context for storing named values (<code>String</code> → <code>serde_json::Value</code>). Passed as <code>Arc&lt;ExecutionContext&gt;</code> through the DAG, enabling parallel node access.</p>
+<h3 id="executionresult"><a class="header" href="#executionresult"><code>ExecutionResult</code></a></h3>
+<p>Result of a single node execution, containing the output value, execution duration, and fuel consumed.</p>
+<h3 id="cognitivereport"><a class="header" href="#cognitivereport"><code>CognitiveReport</code></a></h3>
+<p>Full report from a cognitive loop iteration, including:</p>
+<ul>
+<li>Channel trace with step-by-step reasoning</li>
+<li>Reflection report with deviation scores</li>
+<li>Simulation result with predicted success probability</li>
+</ul>
+<h3 id="config"><a class="header" href="#config"><code>Config</code></a></h3>
+<p>TOML-deserializable configuration struct for all Sisyphus components (fuel limits, pool sizes, paths, etc.).</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="sisyphus-intel--cognition--simulation"><a class="header" href="#sisyphus-intel--cognition--simulation">sisyphus-intel — Cognition &amp; Simulation</a></h1>
+<p>Provides the cognitive capabilities: Monte Carlo simulation, structured reflection, and SOP evolution.</p>
+<h2 id="key-components-1"><a class="header" href="#key-components-1">Key Components</a></h2>
+<h3 id="sisyphusintel"><a class="header" href="#sisyphusintel"><code>SisyphusIntel</code></a></h3>
+<p>Holds the synthesizer and reflector. Orchestrates goal synthesis and the cognitive loop’s reasoning steps.</p>
+<h3 id="standardreflector"><a class="header" href="#standardreflector"><code>StandardReflector</code></a></h3>
+<p>Three core responsibilities:</p>
+<ol>
+<li>
+<p><strong>Simulation</strong> (<code>simulate_paths</code>): Runs Monte Carlo over the SOP graph — samples execution paths from source to sink nodes, computing path probabilities and blended costs.</p>
+</li>
+<li>
+<p><strong>Reflection</strong> (<code>reflect</code>): Compares simulated predictions against actual execution traces. Computes a <em>deviation score</em> (0.0 = perfect match) and generates structured improvement suggestions.</p>
+</li>
+<li>
+<p><strong>Evolution</strong> (<code>evolve</code>): Mutates the SOP graph based on reflection output — adds retry wrappers around failed nodes, adjusts fuel budgets via <code>AdaptiveFuelPricer</code>, and restructures subgraphs as needed.</p>
+</li>
+</ol>
+<h3 id="adaptivefuelpricer"><a class="header" href="#adaptivefuelpricer"><code>AdaptiveFuelPricer</code></a></h3>
+<p>Exponential backoff fuel pricer that increases fuel for nodes that ran out, and decreases it for nodes that consistently succeed.</p>
+<h3 id="montecarlosimulator"><a class="header" href="#montecarlosimulator"><code>MonteCarloSimulator</code></a></h3>
+<p>Core simulation engine using random path sampling through the DAG to estimate:</p>
+<ul>
+<li>Success probability per path</li>
+<li>Expected execution cost</li>
+<li>Best path identification</li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="sisyphus-mem--memory--caching"><a class="header" href="#sisyphus-mem--memory--caching">sisyphus-mem — Memory &amp; Caching</a></h1>
+<p>Two-level cache store for SOP execution history, intermediate results, and configuration.</p>
+<h2 id="architecture"><a class="header" href="#architecture">Architecture</a></h2>
+<pre><code>┌──────────┐     ┌──────────┐
+│   L1     │     │   L2     │
+│ DashMap  │────▶│  SQLite  │
+│ (memory) │     │  (disk)  │
+└──────────┘     └──────────┘
+</code></pre>
+<ul>
+<li><strong>L1</strong>: In-memory <code>DashMap&lt;String, serde_json::Value&gt;</code> for sub-millisecond reads. No persistence.</li>
+<li><strong>L2</strong>: SQLite via <code>sqlx</code> for persistent storage. Fallback when L1 misses.</li>
+</ul>
+<h3 id="write-strategy"><a class="header" href="#write-strategy">Write Strategy</a></h3>
+<p>Writes go to L2 (SQLite) first, then update L1. This ensures durability even if the process crashes before L1 sync.</p>
+<h3 id="read-strategy"><a class="header" href="#read-strategy">Read Strategy</a></h3>
+<p>Reads check L1 first. On miss, query L2, and if found, populate L1 before returning.</p>
+<h2 id="key-operations"><a class="header" href="#key-operations">Key Operations</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Operation</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>set(key, value)</code></td><td>Write to L2 → update L1</td></tr>
+<tr><td><code>get(key)</code></td><td>Check L1 → check L2 → return</td></tr>
+<tr><td><code>snapshot()</code></td><td>Dump all entries into a <code>Snapshot</code> struct</td></tr>
+<tr><td><code>restore(snapshot)</code></td><td>Restore from a previously taken snapshot</td></tr>
+</tbody>
+</table>
+</div>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="sisyphus-sandbox--wasm-runtime"><a class="header" href="#sisyphus-sandbox--wasm-runtime">sisyphus-sandbox — WASM Runtime</a></h1>
+<p>Provides a sandboxed WASM runtime for executing tool code safely within the cognitive loop.</p>
+<h2 id="key-component-wasmtoolexecutor"><a class="header" href="#key-component-wasmtoolexecutor">Key Component: <code>WasmToolExecutor</code></a></h2>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>pub struct WasmToolExecutor {
+    engine: Engine,
+    module_cache: Arc&lt;Mutex&lt;HashMap&lt;String, Module&gt;&gt;&gt;,
+}
+<span class="boring">}</span></code></pre>
+<h3 id="construction"><a class="header" href="#construction">Construction</a></h3>
+<p><code>WasmToolExecutor::new()</code> creates a Wasmtime <code>Engine</code> with:</p>
+<ul>
+<li><strong>Pooling instance allocation</strong>: Pre-allocated memory pools for fast instantiation.</li>
+<li><strong>Memory limits</strong>: Max 1 MB memory per instance (<code>max_memory_size(10 * 65536)</code>).</li>
+<li><strong>Fuel metering</strong>: Configurable fuel limits to prevent runaway execution.</li>
+</ul>
+<h3 id="execution-flow"><a class="header" href="#execution-flow">Execution Flow</a></h3>
+<ol>
+<li><strong>Load</strong>: Read WASM binary from the filesystem (path: <code>wasm_tools/{tool_id}.wasm</code>).</li>
+<li><strong>Compile</strong>: Compile into a Wasmtime <code>Module</code> (with caching to avoid recompilation).</li>
+<li><strong>Instantiate</strong>: Create an instance with fuel and memory limits.</li>
+<li><strong>Call</strong>: Invoke the <code>run</code> export function with input bytes.</li>
+<li><strong>Return</strong>: Return the result bytes or an error (fuel exhaustion, memory exhaustion, etc.).</li>
+</ol>
+<h3 id="fuel-system"><a class="header" href="#fuel-system">Fuel System</a></h3>
+<p>Wasmtime’s fuel metering tracks WASM instruction consumption. When fuel runs out, execution is immediately aborted with a <code>ResourceExhausted</code> error, which the cognitive loop interprets as a signal to retry with more fuel.</p>
+<h2 id="console-output-capture"><a class="header" href="#console-output-capture">Console Output Capture</a></h2>
+<p>The executor captures WASM module stdout/stderr via <code>WasmtimeConsole</code> and routes it through <code>tracing</code>.</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="sisyphus-metrics--observability"><a class="header" href="#sisyphus-metrics--observability">sisyphus-metrics — Observability</a></h1>
+<p>Prometheus metrics instrumentation for all Sisyphus operations. Uses the standard <code>metrics</code> crate with <code>metrics-exporter-prometheus</code>.</p>
+<h2 id="metrics-dashboard"><a class="header" href="#metrics-dashboard">Metrics Dashboard</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Metric</th><th>Type</th><th>Labels</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>sisyphus_sop_executions_total</code></td><td>Counter</td><td><code>sop_id</code>, <code>status</code></td><td>Total SOP executions</td></tr>
+<tr><td><code>sisyphus_sop_execution_duration_seconds</code></td><td>Histogram</td><td><code>sop_id</code></td><td>SOP execution time</td></tr>
+<tr><td><code>sisyphus_wasm_executions_total</code></td><td>Counter</td><td><code>tool_id</code>, <code>status</code></td><td>WASM tool invocations</td></tr>
+<tr><td><code>sisyphus_wasm_execution_duration_seconds</code></td><td>Histogram</td><td><code>tool_id</code></td><td>WASM execution time</td></tr>
+<tr><td><code>sisyphus_mem_operations_total</code></td><td>Counter</td><td><code>operation</code>, <code>layer</code>, <code>status</code></td><td>Cache operations (get/set)</td></tr>
+<tr><td><code>sisyphus_cognitive_iterations_total</code></td><td>Counter</td><td><code>sop_id</code>, <code>converged</code></td><td>Cognitive loop iterations</td></tr>
+<tr><td><code>sisyphus_reflections_total</code></td><td>Counter</td><td><code>sop_id</code></td><td>Reflection calls</td></tr>
+<tr><td><code>sisyphus_simulations_total</code></td><td>Counter</td><td><code>sop_id</code>, <code>succeeded</code></td><td>Monte Carlo simulations</td></tr>
+<tr><td><code>sisyphus_evolutions_total</code></td><td>Counter</td><td><code>sop_id</code>, <code>evolved</code></td><td>SOP evolution events</td></tr>
+<tr><td><code>sisyphus_bridge_requests_total</code></td><td>Counter</td><td><code>endpoint</code>, <code>status</code></td><td>API request count</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="usage"><a class="header" href="#usage">Usage</a></h2>
+<p>Call <code>init_metrics()</code> at application startup to initialize the Prometheus exporter on port 9100:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>use sisyphus_metrics::init_metrics;
+
+init_metrics();
+// Metrics available at http://localhost:9100/metrics
+<span class="boring">}</span></code></pre>
+<p>Record operations using the typed record functions:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>record_sop_execution("my_sop", true, 1.23);
+record_wasm_execution("my_tool", true, 0.45, 1000);
+record_cognitive_iteration("my_sop", 3, 0.05, true, 2.1);
+<span class="boring">}</span></code></pre>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="sisyphus-bridge--entry-point--api"><a class="header" href="#sisyphus-bridge--entry-point--api">sisyphus-bridge — Entry Point &amp; API</a></h1>
+<p>The binary crate that ties all components together into a runnable application.</p>
+<h2 id="entry-points"><a class="header" href="#entry-points">Entry Points</a></h2>
+<h3 id="mainrs-server"><a class="header" href="#mainrs-server"><code>main.rs</code> (Server)</a></h3>
+<p>A Tonic gRPC server that exposes the cognitive loop as a network service:</p>
+<ul>
+<li><strong><code>ExecuteGoal</code></strong>: Submit a natural-language goal path for execution. The bridge calls <code>SisyphusKernel.execute_goal()</code> and returns the cognitive report.</li>
+<li><strong><code>ExecuteSop</code></strong>: Execute a pre-synthesized SOP by ID, with optional evolution loop.</li>
+</ul>
+<h3 id="clientrs-cli-client"><a class="header" href="#clientrs-cli-client"><code>client.rs</code> (CLI Client)</a></h3>
+<p>A gRPC client binary for interacting with the server:</p>
+<pre><code class="language-bash">cargo run --bin client -- execute-goal --goals /path/to/goal.json
+cargo run --bin client -- sop --sop-id my_sop
+</code></pre>
+<h3 id="stress_testrs-benchmark"><a class="header" href="#stress_testrs-benchmark"><code>stress_test.rs</code> (Benchmark)</a></h3>
+<p>An in-process stress test that synthesizes and executes SOPs in a loop, measuring throughput and latency.</p>
+<h2 id="configuration"><a class="header" href="#configuration">Configuration</a></h2>
+<p>The bridge reads configuration from TOML files and environment variables, constructing the <code>sisyphus_types::Config</code> struct and initializing all subsystems.</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="key-concepts"><a class="header" href="#key-concepts">Key Concepts</a></h1>
+<ul>
+<li><a href="#standard-operating-procedure-sop">Standard Operating Procedure (SOP)</a> — DAG representation of executable procedures</li>
+<li><a href="#cognitive-loop">Cognitive Loop</a> — The recursive observe–orient–decide–act cycle</li>
+<li><a href="#dag-execution">DAG Execution</a> — Parallel execution with dependency resolution</li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="standard-operating-procedure-sop"><a class="header" href="#standard-operating-procedure-sop">Standard Operating Procedure (SOP)</a></h1>
+<p>An SOP is a <strong>directed acyclic graph (DAG)</strong> that represents a procedure to achieve a specific goal.</p>
+<h2 id="structure"><a class="header" href="#structure">Structure</a></h2>
+<pre><code>           ┌──────┐
+           │ Goal │
+           └──┬───┘
+              │
+    ┌─────────┼─────────┐
+    ▼         ▼         ▼
+┌──────┐ ┌──────┐ ┌──────┐
+│Node 1│ │Node 2│ │Node 3│
+│ WASM │ │ WASM │ │ WASM │
+└──┬───┘ └──────┘ └──┬───┘
+   │                  │
+   └──────┬───────────┘
+          ▼
+     ┌────────┐
+     │ Result │
+     └────────┘
+</code></pre>
+<p>Each node contains:</p>
+<ul>
+<li><strong>Name</strong>: Unique identifier within the SOP</li>
+<li><strong>Description</strong>: What this step does (used for synthesis and reflection)</li>
+<li><strong>Tool Type</strong>: Which WASM tool binary to invoke</li>
+<li><strong>Fuel Budget</strong>: WASM instruction limit for this node</li>
+<li><strong>Timeout</strong>: Maximum wall-clock time for execution</li>
+<li><strong>Retry Policy</strong>: Max retries and current retry count</li>
+</ul>
+<h2 id="lifecycle"><a class="header" href="#lifecycle">Lifecycle</a></h2>
+<ol>
+<li><strong>Synthesize</strong>: The <code>StandardReflector</code> generates an SOP graph from a natural-language goal using the synthesizer module.</li>
+<li><strong>Execute</strong>: The <code>DagExecutor</code> runs the SOP with topological ordering.</li>
+<li><strong>Evolve</strong>: After reflection, the SOP may be mutated — new nodes added, fuel budgets adjusted, or subgraphs restructured.</li>
+</ol>
+<h2 id="evolution-operations"><a class="header" href="#evolution-operations">Evolution Operations</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Operation</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><strong>Retry wrapper</strong></td><td>Wrap a failed node with retry logic</td></tr>
+<tr><td><strong>Fuel increase</strong></td><td>Boost fuel budget for nodes that exhausted fuel</td></tr>
+<tr><td><strong>Subgraph restructure</strong></td><td>Reorder or split nodes for better parallelism</td></tr>
+</tbody>
+</table>
+</div>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="cognitive-loop"><a class="header" href="#cognitive-loop">Cognitive Loop</a></h1>
+<p>The recursive <strong>OODA-inspired</strong> cycle that drives Sisyphus’s self-improvement behavior.</p>
+<h2 id="phases"><a class="header" href="#phases">Phases</a></h2>
+<pre><code>1. SYNTHESIZE ─────────────────────────────┐
+   │ Goal → SOP Graph                       │
+   ▼                                        │
+2. EXECUTE ──┐                              │
+   │ SOP →    │ (loop back                  │
+   │ Results  │  on evolve)                 │
+   ▼          │                              │
+3. SIMULATE   │                              │
+   │ Traces → │                              │
+   │ Predictions                             │
+   ▼          │                              │
+4. REFLECT    │                              │
+   │ Actual vs│                              │
+   │ Predicted│                              │
+   ▼          │                              │
+5. DECIDE     │                              │
+   │ Converge?│                              │
+   │          │                              │
+   ├─ Yes ────┘                              │
+   │   Return result                         │
+   │                                          │
+   └─ No ────────────────────────────────────┘
+        Evolve SOP → loop to EXECUTE
+</code></pre>
+<h2 id="convergence"><a class="header" href="#convergence">Convergence</a></h2>
+<p>The loop terminates when one of these conditions is met:</p>
+<ul>
+<li><strong>Deviation threshold</strong>: The reflection deviation score drops below <code>CONVERGENCE_THRESHOLD</code> (typically 0.15).</li>
+<li><strong>Max iterations</strong>: The loop has executed <code>MAX_COGNITIVE_ITERATIONS</code> (default 10) times without converging.</li>
+<li><strong>No evolution</strong>: The evolver returns <code>None</code>, indicating no further improvements are possible.</li>
+</ul>
+<h2 id="metrics"><a class="header" href="#metrics">Metrics</a></h2>
+<p>Each iteration records:</p>
+<ul>
+<li>Iteration number and deviation score</li>
+<li>Whether it converged</li>
+<li>Duration of the iteration</li>
+<li>Evolution actions taken (fuel changes, retry wrapper, etc.)</li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="dag-execution"><a class="header" href="#dag-execution">DAG Execution</a></h1>
+<p>Sisyphus executes SOP graphs using a <strong>parallel topological executor</strong>.</p>
+<h2 id="algorithm"><a class="header" href="#algorithm">Algorithm</a></h2>
+<ol>
+<li><strong>Compute in-degrees</strong> for all nodes in the graph.</li>
+<li><strong>Seed</strong> the ready set with nodes whose in-degree is zero.</li>
+<li><strong>Spawn</strong> ready nodes concurrently via <code>tokio::task::JoinSet</code>.</li>
+<li><strong>Collect</strong> results as they complete → decrement in-degree of downstream nodes.</li>
+<li><strong>Add</strong> newly-ready nodes to the next batch.</li>
+<li><strong>Repeat</strong> until all nodes complete or an error occurs.</li>
+</ol>
+<h2 id="parallelism"><a class="header" href="#parallelism">Parallelism</a></h2>
+<p>Nodes with no dependency relationship execute simultaneously:</p>
+<pre><code>Time ─────────────────────────────────────►
+┌──────┐  ┌──────┐  ┌──────┐
+│Node A│  │Node B│  │Node C│  (parallel)
+└──┬───┘  └──────┘  └──┬───┘
+   │                    │
+   └──────┬─────────────┘
+          ▼
+     ┌────────┐
+     │Node D  │  (sequential — awaits A &amp; C)
+     └────────┘
+</code></pre>
+<h2 id="error-handling"><a class="header" href="#error-handling">Error Handling</a></h2>
+<ul>
+<li>If any node returns an error, the error is propagated up to the caller.</li>
+<li>The cognitive loop catches node errors and evolves the SOP to add retry wrappers.</li>
+<li>Cycle detection: If adding an edge creates a cycle, the operation is rejected with an error.</li>
+</ul>
+<h2 id="fuel--memory"><a class="header" href="#fuel--memory">Fuel &amp; Memory</a></h2>
+<p>Each node executes with its configured fuel budget and memory limit. Nodes that exceed limits are aborted with a descriptive error, which the cognitive loop uses to adjust future executions.</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="configuration-1"><a class="header" href="#configuration-1">Configuration</a></h1>
+<p>Sisyphus is configured via TOML files deserialized into the <code>sisyphus_types::Config</code> struct.</p>
+<h2 id="default-configuration"><a class="header" href="#default-configuration">Default Configuration</a></h2>
+<pre><code class="language-toml">[cognitive_loop]
+max_iterations = 10
+convergence_threshold = 0.15
+
+[executor]
+max_concurrent_tasks = 16
+default_fuel = 100000
+
+[cache]
+l1_capacity = 10000
+sqlite_path = "data/sisyphus.db"
+
+[metrics]
+prometheus_port = 9100
+
+[sandbox]
+max_memory_pages = 10
+default_fuel = 100000
+wasm_tools_dir = "wasm_tools"
+</code></pre>
+<h2 id="override-order"><a class="header" href="#override-order">Override Order</a></h2>
+<ol>
+<li><strong>Default values</strong> (hardcoded in <code>Config::default()</code>)</li>
+<li><strong>Config file</strong> (path set via <code>--config</code> flag or <code>SISYPHUS_CONFIG</code> env var)</li>
+<li><strong>Environment variables</strong> (prefixed with <code>SISYPHUS_</code>, e.g. <code>SISYPHUS_COGNITIVE_LOOP_MAX_ITERATIONS=20</code>)</li>
+</ol>
+<h2 id="environment-variables"><a class="header" href="#environment-variables">Environment Variables</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Variable</th><th>Overrides</th><th>Default</th></tr>
+</thead>
+<tbody>
+<tr><td><code>SISYPHUS_CONFIG</code></td><td>Config file path</td><td>—</td></tr>
+<tr><td><code>SISYPHUS_COGNITIVE_LOOP_MAX_ITERATIONS</code></td><td><code>cognitive_loop.max_iterations</code></td><td>10</td></tr>
+<tr><td><code>SISYPHUS_EXECUTOR_DEFAULT_FUEL</code></td><td><code>executor.default_fuel</code></td><td>100000</td></tr>
+<tr><td><code>SISYPHUS_SANDBOX_WASM_TOOLS_DIR</code></td><td><code>sandbox.wasm_tools_dir</code></td><td><code>wasm_tools</code></td></tr>
+</tbody>
+</table>
+</div>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="contributing"><a class="header" href="#contributing">Contributing</a></h1>
+<h2 id="development-setup"><a class="header" href="#development-setup">Development Setup</a></h2>
+<ol>
+<li><strong>Prerequisites</strong>: Rust 1.96+, Cargo</li>
+<li><strong>Clone</strong>: <code>git clone https://github.com/zeronhq/sisyphus-wasm</code></li>
+<li><strong>Build</strong>: <code>cargo build --workspace</code></li>
+<li><strong>Test</strong>: <code>cargo test --workspace</code></li>
+</ol>
+<h2 id="code-quality"><a class="header" href="#code-quality">Code Quality</a></h2>
+<p>The CI pipeline enforces:</p>
+<ul>
+<li><strong>Formatting</strong>: <code>cargo fmt --all --check</code></li>
+<li><strong>Linting</strong>: <code>cargo clippy --workspace --all-targets</code> (zero warnings required)</li>
+<li><strong>Tests</strong>: <code>cargo test --workspace</code> (all must pass)</li>
+<li><strong>Supply chain</strong>: <code>cargo deny check</code> (licenses, bans, advisories)</li>
+</ul>
+<h2 id="project-structure"><a class="header" href="#project-structure">Project Structure</a></h2>
+<pre><code>crates/
+  sisyphus-types/    — Core data structures (no deps)
+  sisyphus-metrics/  — Prometheus observability
+  sisyphus-sandbox/  — WASM sandbox runtime
+  sisyphus-intel/    — Cognition &amp; simulation
+  sisyphus-mem/      — Multi-level cache
+  sisyphus-core/     — Kernel &amp; orchestration
+  sisyphus-bridge/   — Entry point &amp; API
+book/                — mdBook documentation
+</code></pre>
+<h2 id="guidelines"><a class="header" href="#guidelines">Guidelines</a></h2>
+<ul>
+<li><strong>No <code>unwrap()</code> in production code</strong> — use <code>expect("descriptive message")</code> or propagate with <code>?</code>.</li>
+<li><strong>No <code>as any</code> or <code>@ts-ignore</code> equivalents</strong> — maintain type safety.</li>
+<li><strong>Test coverage</strong> — add tests for new functionality, especially edge cases.</li>
+<li><strong>Metrics</strong> — instrument significant operations via <code>sisyphus_metrics</code>.</li>
+</ul>
+<h2 id="wasm-tool-development"><a class="header" href="#wasm-tool-development">WASM Tool Development</a></h2>
+<p>Tool WASM binaries go in <code>wasm_tools/</code> at the workspace root. Each binary should export a <code>run</code> function that accepts and returns byte arrays.</p>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+
+            </nav>
+
+        </div>
+
+        <template id=fa-eye><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M288 32c-80.8 0-145.5 36.8-192.6 80.6C48.6 156 17.3 208 2.5 243.7c-3.3 7.9-3.3 16.7 0 24.6C17.3 304 48.6 356 95.4 399.4C142.5 443.2 207.2 480 288 480s145.5-36.8 192.6-80.6c46.8-43.5 78.1-95.4 93-131.1c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C433.5 68.8 368.8 32 288 32zM432 256c0 79.5-64.5 144-144 144s-144-64.5-144-144s64.5-144 144-144s144 64.5 144 144zM288 192c0 35.3-28.7 64-64 64c-11.5 0-22.3-3-31.6-8.4c-.2 2.8-.4 5.5-.4 8.4c0 53 43 96 96 96s96-43 96-96s-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6z"/></svg></span></template>
+        <template id=fa-eye-slash><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M38.8 5.1C28.4-3.1 13.3-1.2 5.1 9.2S-1.2 34.7 9.2 42.9l592 464c10.4 8.2 25.5 6.3 33.7-4.1s6.3-25.5-4.1-33.7L525.6 386.7c39.6-40.6 66.4-86.1 79.9-118.4c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C465.5 68.8 400.8 32 320 32c-68.2 0-125 26.3-169.3 60.8L38.8 5.1zM223.1 149.5C248.6 126.2 282.7 112 320 112c79.5 0 144 64.5 144 144c0 24.9-6.3 48.3-17.4 68.7L408 294.5c5.2-11.8 8-24.8 8-38.5c0-53-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6c0 10.2-2.4 19.8-6.6 28.3l-90.3-70.8zm223.1 298L373 389.9c-16.4 6.5-34.3 10.1-53 10.1c-79.5 0-144-64.5-144-144c0-6.9 .5-13.6 1.4-20.2L83.1 161.5C60.3 191.2 44 220.8 34.5 243.7c-3.3 7.9-3.3 16.7 0 24.6c14.9 35.7 46.2 87.7 93 131.1C174.5 443.2 239.2 480 320 480c47.8 0 89.9-12.9 126.2-32.5z"/></svg></span></template>
+        <template id=fa-copy><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M502.6 70.63l-61.25-61.25C435.4 3.371 427.2 0 418.7 0H255.1c-35.35 0-64 28.66-64 64l.0195 256C192 355.4 220.7 384 256 384h192c35.2 0 64-28.8 64-64V93.25C512 84.77 508.6 76.63 502.6 70.63zM464 320c0 8.836-7.164 16-16 16H255.1c-8.838 0-16-7.164-16-16L239.1 64.13c0-8.836 7.164-16 16-16h128L384 96c0 17.67 14.33 32 32 32h47.1V320zM272 448c0 8.836-7.164 16-16 16H63.1c-8.838 0-16-7.164-16-16L47.98 192.1c0-8.836 7.164-16 16-16H160V128H63.99c-35.35 0-64 28.65-64 64l.0098 256C.002 483.3 28.66 512 64 512h192c35.2 0 64-28.8 64-64v-32h-47.1L272 448z"/></svg></span></template>
+        <template id=fa-play><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M73 39c-14.8-9.1-33.4-9.4-48.5-.9S0 62.6 0 80V432c0 17.4 9.4 33.4 24.5 41.9s33.7 8.1 48.5-.9L361 297c14.3-8.7 23-24.2 23-41s-8.7-32.2-23-41L73 39z"/></svg></span></template>
+        <template id=fa-clock-rotate-left><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M75 75L41 41C25.9 25.9 0 36.6 0 57.9V168c0 13.3 10.7 24 24 24H134.1c21.4 0 32.1-25.9 17-41l-30.8-30.8C155 85.5 203 64 256 64c106 0 192 86 192 192s-86 192-192 192c-40.8 0-78.6-12.7-109.7-34.4c-14.5-10.1-34.4-6.6-44.6 7.9s-6.6 34.4 7.9 44.6C151.2 495 201.7 512 256 512c141.4 0 256-114.6 256-256S397.4 0 256 0C185.3 0 121.3 28.7 75 75zm181 53c-13.3 0-24 10.7-24 24V256c0 6.4 2.5 12.5 7 17l72 72c9.4 9.4 24.6 9.4 33.9 0s9.4-24.6 0-33.9l-65-65V152c0-13.3-10.7-24-24-24z"/></svg></span></template>
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="elasticlunr-ef4e11c1.min.js"></script>
+        <script src="mark-09e88c2c.min.js"></script>
+        <script src="searcher-09f2665d.js"></script>
+
+        <script src="clipboard-1626706a.min.js"></script>
+        <script src="highlight-abc7f01d.js"></script>
+        <script src="book-c22b7243.js"></script>
+
+        <!-- Custom JS scripts -->
+
+        <script>
+        window.addEventListener('load', function() {
+            window.setTimeout(window.print, 100);
+        });
+        </script>
+
+
+    </div>
+    </body>
+</html>

@@ -10,7 +10,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("🚀 Starting In-Process Integration Stress Test");
 
     // 1. Initialize Core Components
-    let tool_executor = Arc::new(WasmToolExecutor::new());
+    let tool_executor =
+        Arc::new(WasmToolExecutor::new().expect("Failed to create WasmToolExecutor"));
 
     // 2. Setup a Parallel DAG
     // root -> [node_1, node_2, ..., node_10] -> sink

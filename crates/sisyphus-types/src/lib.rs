@@ -118,7 +118,10 @@ impl SOPGraphConfig {
         let mut node_indices = HashMap::new();
 
         for idx in graph.graph.node_indices() {
-            let node = graph.graph.node_weight(idx).unwrap();
+            let node = graph
+                .graph
+                .node_weight(idx)
+                .expect("node_indices yields valid indices");
             nodes.push(SOPNodeConfig {
                 name: node.name().to_string(),
                 kind: node.to_kind(),
@@ -128,7 +131,10 @@ impl SOPGraphConfig {
 
         let mut edges = Vec::new();
         for edge in graph.graph.edge_indices() {
-            let (source, target) = graph.graph.edge_endpoints(edge).unwrap();
+            let (source, target) = graph
+                .graph
+                .edge_endpoints(edge)
+                .expect("edge_indices yields valid endpoints");
             if let (Some(&s), Some(&t)) = (node_indices.get(&source), node_indices.get(&target)) {
                 edges.push((s, t));
             }
@@ -157,17 +163,26 @@ impl ExecutionContext {
     }
 
     pub fn set_result(&self, node_name: String, output: NodeOutput) {
-        let mut results = self.results.write().unwrap();
+        let mut results = self
+            .results
+            .write()
+            .expect("ExecutionContext RwLock poisoned");
         results.insert(node_name, output);
     }
 
     pub fn get_result(&self, node_name: &str) -> Option<NodeOutput> {
-        let results = self.results.read().unwrap();
+        let results = self
+            .results
+            .read()
+            .expect("ExecutionContext RwLock poisoned");
         results.get(node_name).cloned()
     }
 
     pub fn interpolate(&self, template: &str) -> String {
-        let results = self.results.read().unwrap();
+        let results = self
+            .results
+            .read()
+            .expect("ExecutionContext RwLock poisoned");
         let mut output = template.to_string();
         for (name, value) in results.iter() {
             let placeholder = format!("{{{{{}.output}}}}", name);
@@ -332,9 +347,209 @@ impl SOPGraph {
     }
 }
 
+// ── Configuration ────────────────────────────────────────────────────
+
+/// Deserializable TOML configuration for all Sisyphus components.
+///
+/// Use `Config::from_file(path)` or `Config::default()` and override
+/// individual fields via environment variables.
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
+pub struct Config {
+    /// Cognitive loop parameters.
+    #[serde(default = "default_cognitive_loop")]
+    pub cognitive_loop: CognitiveLoopConfig,
+
+    /// DAG executor parameters.
+    #[serde(default = "default_executor")]
+    pub executor: ExecutorConfig,
+
+    /// Two-level cache (L1 DashMap + L2 SQLite) parameters.
+    #[serde(default = "default_cache")]
+    pub cache: CacheConfig,
+
+    /// Prometheus metrics exporter.
+    #[serde(default = "default_metrics")]
+    pub metrics: MetricsConfig,
+
+    /// WASM sandbox parameters.
+    #[serde(default = "default_sandbox")]
+    pub sandbox: SandboxConfig,
+}
+
+impl Config {
+    /// Load configuration from a TOML file path.
+    /// Returns `Err` if the file cannot be read or parsed.
+    pub fn from_file(path: &str) -> Result<Self, String> {
+        let content = std::fs::read_to_string(path)
+            .map_err(|e| format!("Failed to read config file '{}': {}", path, e))?;
+        toml::from_str(&content)
+            .map_err(|e| format!("Failed to parse config file '{}': {}", path, e))
+    }
+
+    /// Load configuration from environment variables, overriding file/default values.
+    /// Prefix: `SISYPHUS_` — e.g. `SISYPHUS_SANDBOX_DEFAULT_FUEL=500000`.
+    pub fn apply_env_overrides(&mut self) {
+        fn env_u64(key: &str) -> Option<u64> {
+            std::env::var(key).ok().and_then(|v| v.parse().ok())
+        }
+        fn env_usize(key: &str) -> Option<usize> {
+            std::env::var(key).ok().and_then(|v| v.parse().ok())
+        }
+        fn env_u32(key: &str) -> Option<u32> {
+            std::env::var(key).ok().and_then(|v| v.parse().ok())
+        }
+        fn env_f64(key: &str) -> Option<f64> {
+            std::env::var(key).ok().and_then(|v| v.parse().ok())
+        }
+        fn env_u16(key: &str) -> Option<u16> {
+            std::env::var(key).ok().and_then(|v| v.parse().ok())
+        }
+        fn env_string(key: &str) -> Option<String> {
+            std::env::var(key).ok()
+        }
+
+        if let Some(v) = env_u32("SISYPHUS_COGNITIVE_LOOP_MAX_ITERATIONS") {
+            self.cognitive_loop.max_iterations = v;
+        }
+        if let Some(v) = env_f64("SISYPHUS_COGNITIVE_LOOP_CONVERGENCE_THRESHOLD") {
+            self.cognitive_loop.convergence_threshold = v;
+        }
+        if let Some(v) = env_usize("SISYPHUS_EXECUTOR_MAX_CONCURRENT_TASKS") {
+            self.executor.max_concurrent_tasks = v;
+        }
+        if let Some(v) = env_u64("SISYPHUS_EXECUTOR_DEFAULT_FUEL") {
+            self.executor.default_fuel = v;
+        }
+        if let Some(v) = env_usize("SISYPHUS_CACHE_L1_CAPACITY") {
+            self.cache.l1_capacity = v;
+        }
+        if let Some(v) = env_string("SISYPHUS_CACHE_SQLITE_PATH") {
+            self.cache.sqlite_path = v;
+        }
+        if let Some(v) = env_u16("SISYPHUS_METRICS_PROMETHEUS_PORT") {
+            self.metrics.prometheus_port = v;
+        }
+        if let Some(v) = env_u32("SISYPHUS_SANDBOX_MAX_MEMORY_PAGES") {
+            self.sandbox.max_memory_pages = v;
+        }
+        if let Some(v) = env_u64("SISYPHUS_SANDBOX_DEFAULT_FUEL") {
+            self.sandbox.default_fuel = v;
+        }
+        if let Some(v) = env_string("SISYPHUS_SANDBOX_WASM_TOOLS_DIR") {
+            self.sandbox.wasm_tools_dir = v;
+        }
+    }
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            cognitive_loop: default_cognitive_loop(),
+            executor: default_executor(),
+            cache: default_cache(),
+            metrics: default_metrics(),
+            sandbox: default_sandbox(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
+pub struct CognitiveLoopConfig {
+    pub max_iterations: u32,
+    pub convergence_threshold: f64,
+}
+
+fn default_cognitive_loop() -> CognitiveLoopConfig {
+    CognitiveLoopConfig {
+        max_iterations: 10,
+        convergence_threshold: 0.15,
+    }
+}
+
+impl Default for CognitiveLoopConfig {
+    fn default() -> Self {
+        default_cognitive_loop()
+    }
+}
+
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
+pub struct ExecutorConfig {
+    pub max_concurrent_tasks: usize,
+    pub default_fuel: u64,
+}
+
+fn default_executor() -> ExecutorConfig {
+    ExecutorConfig {
+        max_concurrent_tasks: 16,
+        default_fuel: 1_000_000,
+    }
+}
+
+impl Default for ExecutorConfig {
+    fn default() -> Self {
+        default_executor()
+    }
+}
+
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
+pub struct CacheConfig {
+    pub l1_capacity: usize,
+    pub sqlite_path: String,
+}
+
+fn default_cache() -> CacheConfig {
+    CacheConfig {
+        l1_capacity: 10_000,
+        sqlite_path: "data/sisyphus.db".to_string(),
+    }
+}
+
+impl Default for CacheConfig {
+    fn default() -> Self {
+        default_cache()
+    }
+}
+
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
+pub struct MetricsConfig {
+    pub prometheus_port: u16,
+}
+
+fn default_metrics() -> MetricsConfig {
+    MetricsConfig { prometheus_port: 9100 }
+}
+
+impl Default for MetricsConfig {
+    fn default() -> Self {
+        default_metrics()
+    }
+}
+
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
+pub struct SandboxConfig {
+    pub max_memory_pages: u32,
+    pub default_fuel: u64,
+    pub wasm_tools_dir: String,
+}
+
+fn default_sandbox() -> SandboxConfig {
+    SandboxConfig {
+        max_memory_pages: 10,
+        default_fuel: 1_000_000,
+        wasm_tools_dir: "wasm_tools".to_string(),
+    }
+}
+
+impl Default for SandboxConfig {
+    fn default() -> Self {
+        default_sandbox()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::prelude::*;
     use serde_json::json;
 
     struct MockToolExecutor;
@@ -349,6 +564,95 @@ mod tests {
             Ok(b"mock_output".to_vec())
         }
     }
+
+    // ── proptest strategies ──────────────────────────────────────────
+
+    fn arb_node_name() -> impl Strategy<Value = String> {
+        "[a-zA-Z_][a-zA-Z0-9_]{0,15}"
+    }
+
+    fn arb_tool_id() -> impl Strategy<Value = String> {
+        "[a-z][a-z0-9_]{0,31}"
+    }
+
+    fn arb_node_kind_depth(depth: u32) -> BoxedStrategy<NodeKind> {
+        if depth == 0 {
+            (arb_tool_id(), 0u64..10_000_000u64)
+                .prop_map(|(tool_id, fuel)| NodeKind::Wasm {
+                    tool_id,
+                    fuel_limit: fuel,
+                })
+                .boxed()
+        } else {
+            prop_oneof![
+                (arb_tool_id(), 0u64..10_000_000u64).prop_map(|(tool_id, fuel)| NodeKind::Wasm {
+                    tool_id,
+                    fuel_limit: fuel
+                }),
+                (arb_node_kind_depth(depth - 1), 0u32..5u32).prop_map(|(child, max_retries)| {
+                    NodeKind::Retry {
+                        child: Box::new(child),
+                        max_retries,
+                    }
+                }),
+            ]
+            .boxed()
+        }
+    }
+
+    fn arb_node_kind() -> BoxedStrategy<NodeKind> {
+        arb_node_kind_depth(3)
+    }
+
+    fn arb_sop_node_config() -> impl Strategy<Value = SOPNodeConfig> {
+        (arb_node_name(), arb_node_kind()).prop_map(|(name, kind)| SOPNodeConfig { name, kind })
+    }
+
+    fn arb_sop_graph_config() -> impl Strategy<Value = SOPGraphConfig> {
+        proptest::collection::vec(arb_sop_node_config(), 0..8).prop_flat_map(|nodes| {
+            let node_count = nodes.len();
+            let max_edges = if node_count < 2 {
+                0
+            } else {
+                (node_count * (node_count - 1)) / 2
+            };
+            let edge_strategy = proptest::collection::vec(
+                (0..node_count, 0..node_count).prop_filter(
+                    "edges must go from lower to higher index (DAG)",
+                    |(s, t)| s < t,
+                ),
+                0..max_edges.saturating_add(1),
+            );
+            (Just(nodes), edge_strategy).prop_map(|(nodes, raw_edges)| {
+                let mut seen = std::collections::HashSet::new();
+                let edges: Vec<(usize, usize)> =
+                    raw_edges.into_iter().filter(|e| seen.insert(*e)).collect();
+                SOPGraphConfig { nodes, edges }
+            })
+        })
+    }
+
+    fn arb_json_value() -> impl Strategy<Value = Value> {
+        prop_oneof![
+            proptest::string::string_regex(".{0,64}")
+                .unwrap()
+                .prop_map(Value::String),
+            any::<i64>().prop_map(|n| json!(n)),
+            any::<f64>().prop_map(|n| json!(n)),
+            proptest::bool::ANY.prop_map(Value::Bool),
+            (
+                0usize..10,
+                proptest::string::string_regex(".{0,16}").unwrap()
+            )
+                .prop_map(|(n, s)| json!({ "key": s, "index": n })),
+        ]
+    }
+
+    fn arb_context_key() -> impl Strategy<Value = String> {
+        "[a-zA-Z0-9_]{1,16}"
+    }
+
+    // ── existing unit tests ──────────────────────────────────────────
 
     #[test]
     fn test_empty_graph() {
@@ -437,5 +741,96 @@ mod tests {
         let rebuilt_graph = SOPGraph::from_config(&config, executor);
         assert_eq!(rebuilt_graph.graph.node_count(), 2);
         assert_eq!(rebuilt_graph.graph.edge_count(), 1);
+    }
+
+    // ── proptest property-based tests ────────────────────────────────
+
+    proptest! {
+        #[test]
+        fn proptest_sop_graph_config_roundtrip(
+            config in arb_sop_graph_config(),
+        ) {
+            let executor = Arc::new(MockToolExecutor);
+            let graph = SOPGraph::from_config(&config, executor.clone());
+            prop_assert_eq!(graph.graph.node_count(), config.nodes.len());
+
+            let roundtrip = SOPGraphConfig::from_graph(&graph);
+            prop_assert_eq!(roundtrip.nodes.len(), config.nodes.len());
+            prop_assert!(roundtrip.edges.len() <= config.edges.len());
+            if config.edges.is_empty() {
+                prop_assert_eq!(roundtrip.edges.len(), 0);
+            }
+
+            let rebuilt = SOPGraph::from_config(&roundtrip, executor.clone());
+            prop_assert_eq!(rebuilt.graph.node_count(), roundtrip.nodes.len());
+            prop_assert_eq!(rebuilt.graph.edge_count(), roundtrip.edges.len());
+
+            for (i, node_cfg) in config.nodes.iter().enumerate() {
+                let node = graph.graph.node_weight(NodeIndex::new(i)).unwrap();
+                prop_assert_eq!(node.name(), &node_cfg.name);
+            }
+        }
+
+        #[test]
+        fn proptest_context_set_get(
+            key in arb_context_key(),
+            value in arb_json_value(),
+        ) {
+            let ctx = ExecutionContext::new();
+            ctx.set_result(key.clone(), value.clone());
+            let retrieved = ctx.get_result(&key);
+            prop_assert_eq!(retrieved, Some(value));
+        }
+
+        #[test]
+        fn proptest_context_interpolate(
+            key in arb_context_key(),
+            value_str in proptest::string::string_regex("[a-zA-Z0-9 ]{0,32}").unwrap(),
+            prefix in proptest::string::string_regex("[a-zA-Z0-9 ]{0,16}").unwrap(),
+            suffix in proptest::string::string_regex("[a-zA-Z0-9 ]{0,16}").unwrap(),
+        ) {
+            let ctx = ExecutionContext::new();
+            let value = Value::String(value_str.clone());
+            ctx.set_result(key.clone(), value);
+
+            let template = [prefix.as_str(), "{{", key.as_str(), ".output}}", suffix.as_str()].concat();
+            let result = ctx.interpolate(&template);
+            let expected = format!("{}{}{}", prefix, value_str, suffix);
+            prop_assert_eq!(result, expected);
+        }
+
+        #[test]
+        fn proptest_context_missing_key_returns_none(
+            key in arb_context_key(),
+        ) {
+            let ctx = ExecutionContext::new();
+            prop_assert_eq!(ctx.get_result(&key), None);
+        }
+
+        #[test]
+        fn proptest_composite_graph_add_operations(
+            graph_ids in proptest::collection::hash_set(arb_node_name(), 0..8),
+        ) {
+            let mut composite = CompositeGraph::new();
+            prop_assert!(composite.graphs.is_empty());
+            prop_assert!(composite.dependencies.is_empty());
+
+            let expected_count = graph_ids.len();
+            for gid in &graph_ids {
+                let config = SOPGraphConfig {
+                    nodes: vec![SOPNodeConfig {
+                        name: gid.clone(),
+                        kind: NodeKind::Wasm {
+                            tool_id: gid.clone(),
+                            fuel_limit: 100,
+                        },
+                    }],
+                    edges: vec![],
+                };
+                composite.add_graph(gid, config);
+            }
+
+            prop_assert_eq!(composite.graphs.len(), expected_count);
+        }
     }
 }

@@ -3,7 +3,7 @@ use sisyphus_types::ToolExecutor;
 
 #[tokio::test]
 async fn test_hello_wasm_tool() {
-    let executor = WasmToolExecutor::new();
+    let executor = WasmToolExecutor::new().unwrap();
     let result = executor
         .execute("hello", vec![], 1000)
         .await
@@ -15,7 +15,7 @@ async fn test_hello_wasm_tool() {
 
 #[tokio::test]
 async fn test_fuel_exhaustion() {
-    let executor = WasmToolExecutor::new();
+    let executor = WasmToolExecutor::new().unwrap();
     let result = executor.execute("infinite_loop", vec![], 100).await;
 
     assert!(result.is_err());
@@ -24,7 +24,7 @@ async fn test_fuel_exhaustion() {
 
 #[tokio::test]
 async fn test_memory_exhaustion() {
-    let executor = WasmToolExecutor::new();
+    let executor = WasmToolExecutor::new().unwrap();
     let result = executor.execute("memory_hog", vec![], 1000).await;
 
     assert!(result.is_err());

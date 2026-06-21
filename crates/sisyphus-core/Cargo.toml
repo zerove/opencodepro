@@ -11,6 +11,8 @@ petgraph = "0.6"
 tokio = { version = "1", features = ["full"] }
 async-trait = "0.1"
 serde_json = "1.0"
+tracing = { workspace = true }
+sisyphus-metrics = { path = "../sisyphus-metrics" }
 sisyphus-sandbox = { path = "../sisyphus-sandbox" }
 sisyphus-types = { path = "../sisyphus-types" }
 sisyphus-mem = { path = "../sisyphus-mem" }

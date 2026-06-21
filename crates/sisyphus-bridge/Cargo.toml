@@ -10,12 +10,16 @@ license = "MIT"
 tonic = "0.12"
 prost = "0.13"
 tokio = { version = "1", features = ["full"] }
+sisyphus-types = { path = "../sisyphus-types" }
 sisyphus-core = { path = "../sisyphus-core" }
 sisyphus-sandbox = { path = "../sisyphus-sandbox" }
 sisyphus-mem = { path = "../sisyphus-mem" }
 sisyphus-intel = { path = "../sisyphus-intel" }
+sisyphus-metrics = { path = "../sisyphus-metrics" }
 serde_json = "1.0"
 async-trait = "0.1"
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
 
 [build-dependencies]
 tonic-build = "0.12"

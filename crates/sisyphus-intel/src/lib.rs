@@ -4,8 +4,10 @@ use rand::rngs::SmallRng;
 use rand::{Rng, SeedableRng};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
+use sisyphus_metrics::{record_evolution, record_reflection, record_simulation};
 use sisyphus_types::{CompositeGraph, ExecutionContext, SOPGraph, SOPGraphConfig};
 use std::sync::Arc;
+use std::time::Instant;
 
 // ---------------------------------------------------------------------------
 // Flow Synthesis
@@ -236,8 +238,8 @@ impl FlowSynthesizer for GoalDrivenSynthesizer {
             }
 
             Ok(SynthesisResult {
+                start_node: first_idx.expect("actions.len() >= 2 so at least one node exists"),
                 graph,
-                start_node: first_idx.unwrap(),
                 plan_description: build_plan_description(&actions, false),
             })
         }
@@ -436,6 +438,14 @@ impl SOPEvolver for StandardEvolver {
         report: &ReflectionReport,
         prediction: &SimulationResult,
     ) -> Result<SOPGraph, String> {
+        let span = tracing::info_span!(
+            "intel.evolve",
+            graph_nodes = graph.graph.node_count(),
+            deviation = report.deviation_score
+        );
+        let _enter = span.enter();
+
+        let start = Instant::now();
         let mut new_graph = SOPGraph::new();
         let mut node_map = std::collections::HashMap::new();
 
@@ -448,8 +458,13 @@ impl SOPEvolver for StandardEvolver {
             .iter()
             .any(|s| s.contains("ResourceExhausted") || s.contains("fuel limit"));
 
+        tracing::debug!(needs_retry, needs_fuel, "Evolution analysis");
+
         for node_idx in graph.graph.node_indices() {
-            let node = graph.graph.node_weight(node_idx).unwrap();
+            let node = graph
+                .graph
+                .node_weight(node_idx)
+                .expect("node_indices yields valid indices");
             let name = node.name().to_string();
 
             let mut evolved_node: Arc<dyn sisyphus_types::SOPNode> = if let Some(wasm_node) =
@@ -459,6 +474,7 @@ impl SOPEvolver for StandardEvolver {
                 if needs_fuel {
                     // Use adaptive fuel pricing
                     fuel = self.fuel_pricer.price_fuel(&name, fuel, prediction);
+                    tracing::debug!(node = %name, new_fuel = fuel, "Fuel adjusted");
                 }
 
                 Arc::new(sisyphus_types::WasmSOPNode {
@@ -477,6 +493,7 @@ impl SOPEvolver for StandardEvolver {
                     child: evolved_node,
                     max_retries: 3,
                 });
+                tracing::debug!(node = %name, "Retry wrapper added");
             }
 
             let new_idx = new_graph.add_node(evolved_node);
@@ -484,7 +501,10 @@ impl SOPEvolver for StandardEvolver {
         }
 
         for edge in graph.graph.edge_indices() {
-            let (source, target) = graph.graph.edge_endpoints(edge).unwrap();
+            let (source, target) = graph
+                .graph
+                .edge_endpoints(edge)
+                .expect("edge_indices yields valid endpoints");
             let new_source = node_map
                 .get(&source)
                 .ok_or("Source node not found in evolved graph")?;
@@ -493,6 +513,23 @@ impl SOPEvolver for StandardEvolver {
                 .ok_or("Target node not found in evolved graph")?;
             new_graph.add_edge(*new_source, *new_target);
         }
+
+        let duration = start.elapsed();
+        let has_evolved = needs_retry || needs_fuel;
+        tracing::info!(
+            evolved = has_evolved,
+            needs_retry,
+            needs_fuel,
+            duration_ms = duration.as_millis(),
+            "Evolution completed"
+        );
+
+        record_evolution(
+            "current_sop",
+            has_evolved,
+            duration.as_secs_f64(),
+            needs_fuel,
+        );
 
         Ok(new_graph)
     }
@@ -561,8 +598,13 @@ impl Simulator for MonteCarloSimulator {
         _context: &ExecutionContext,
         sop_id: &str,
     ) -> Result<SimulationResult, String> {
+        let span = tracing::info_span!("intel.simulate", sop_id = %sop_id, iterations = self.iterations, graph_nodes = graph.graph.node_count());
+        let _enter = span.enter();
+
+        let start = Instant::now();
         let num_nodes = graph.graph.node_count();
         if num_nodes == 0 {
+            tracing::warn!("Empty graph provided for simulation");
             return Ok(SimulationResult {
                 path_id: "empty".into(),
                 success_probability: 0.0,
@@ -600,6 +642,8 @@ impl Simulator for MonteCarloSimulator {
             (0.5, 100u64)
         };
 
+        tracing::debug!(hist_success_rate, hist_avg_cost, "Experience prior loaded");
+
         let (best_path, max_score, final_cost) = (0..self.iterations)
             .into_par_iter()
             .map(|_| {
@@ -612,7 +656,12 @@ impl Simulator for MonteCarloSimulator {
                 let mut current = nodes[start];
 
                 loop {
-                    let name = graph.graph.node_weight(current).unwrap().name().to_string();
+                    let name = graph
+                        .graph
+                        .node_weight(current)
+                        .expect("random walk picks valid indices within nodes")
+                        .name()
+                        .to_string();
                     path_parts.push(name);
                     let step_prob = 0.9 * hist_success_rate + 0.1 * 0.9;
                     prob *= step_prob;
@@ -638,6 +687,16 @@ impl Simulator for MonteCarloSimulator {
         } else {
             hist_avg_cost
         };
+
+        let duration = start.elapsed();
+        tracing::info!(path_id = %best_path, success_probability = max_score, estimated_cost = blended_cost, duration_ms = duration.as_millis(), "Simulation completed");
+
+        record_simulation(
+            sop_id,
+            max_score > 0.0,
+            duration.as_secs_f64(),
+            blended_cost,
+        );
 
         Ok(SimulationResult {
             path_id: best_path,
@@ -825,6 +884,10 @@ impl Reflector for StandardReflector {
         trace: &str,
         _predicted: &SimulationResult,
     ) -> Result<ReflectionReport, String> {
+        let span = tracing::info_span!("intel.reflect", trace_lines = trace.lines().count());
+        let _enter = span.enter();
+
+        let start = Instant::now();
         let records = Self::parse_trace(trace);
         let (deviation, suggestions) = if records.is_empty() {
             // Fallback: basic string analysis when no structured records found
@@ -847,6 +910,16 @@ impl Reflector for StandardReflector {
         } else {
             Self::analyze(&records)
         };
+
+        let duration = start.elapsed();
+        tracing::info!(
+            deviation = deviation,
+            suggestions = suggestions.len(),
+            duration_ms = duration.as_millis(),
+            "Reflection completed"
+        );
+
+        record_reflection("current_sop", deviation, duration.as_secs_f64());
 
         Ok(ReflectionReport {
             original_sop_id: "current_sop".into(),

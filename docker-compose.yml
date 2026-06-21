@@ -1,0 +1,26 @@
+version: "3.9"
+
+services:
+  sisyphus-bridge:
+    build: .
+    ports:
+      - "50051:50051"   # gRPC API
+      - "9100:9100"     # Prometheus metrics
+    volumes:
+      - ./data:/app/data
+      - ./wasm_tools:/app/wasm_tools:ro
+    environment:
+      - RUST_LOG=info,sisyphus=debug
+      - SISYPHUS_CONFIG=/app/config.toml
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+    restart: unless-stopped

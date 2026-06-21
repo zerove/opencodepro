@@ -1,0 +1,6 @@
+target/
+book/
+.git/
+*.md
+*.toml
+**/*.rs.bk

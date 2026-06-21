@@ -224,7 +224,7 @@ async fn test_synthesize_composite_independent_graphs() {
     let ctx = sisyphus_types::ExecutionContext::new();
 
     let goals = ["read config", "process data", "write output"];
-    let goal_refs: Vec<&str> = goals.iter().copied().collect();
+    let goal_refs: Vec<&str> = goals.to_vec();
     let composite = sisyphus_intel::synthesize_composite(&goal_refs, &*kernel.synthesizer, &ctx)
         .await
         .unwrap();

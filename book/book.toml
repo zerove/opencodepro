@@ -1,0 +1,15 @@
+[book]
+title = "Sisyphus — Cognitive Computation Engine"
+authors = ["Sisyphus Contributors"]
+language = "en"
+
+[output.html]
+no-section-label = true
+git-repository-url = "https://github.com/zeronhq/sisyphus-wasm"
+edit-url-template = "https://github.com/zeronhq/sisyphus-wasm/edit/main/book/src/{path}"
+
+[output.html.fold]
+enable = true
+level = 1
+
+[preprocessor]

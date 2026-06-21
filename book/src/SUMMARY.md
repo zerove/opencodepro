@@ -1,0 +1,18 @@
+# Summary
+
+- [Introduction](introduction.md)
+- [Architecture Overview](architecture.md)
+- [Crates](crates.md)
+  - [sisyphus-core — Kernel & Orchestration](crates/core.md)
+  - [sisyphus-types — Data Structures](crates/types.md)
+  - [sisyphus-intel — Cognition & Simulation](crates/intel.md)
+  - [sisyphus-mem — Memory & Caching](crates/mem.md)
+  - [sisyphus-sandbox — WASM Runtime](crates/sandbox.md)
+  - [sisyphus-metrics — Observability](crates/metrics.md)
+  - [sisyphus-bridge — Entry Point & API](crates/bridge.md)
+- [Key Concepts](concepts.md)
+  - [SOP (Standard Operating Procedure)](concepts/sop.md)
+  - [Cognitive Loop](concepts/cognitive-loop.md)
+  - [DAG Execution](concepts/dag-execution.md)
+- [Configuration](configuration.md)
+- [Contributing](contributing.md)

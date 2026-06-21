@@ -1,8 +1,10 @@
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use dashmap::DashMap;
+use sisyphus_metrics::record_mem_operation;
 use sqlx::{SqlitePool, sqlite::SqlitePoolOptions};
 use std::sync::Arc;
+use std::time::Instant;
 
 pub struct Snapshot {
     data: std::collections::HashMap<String, serde_json::Value>,
@@ -49,15 +51,29 @@ impl MfsStore {
 
     /// Captures a point-in-time snapshot of the current state.
     pub async fn take_snapshot(&self) -> Result<Snapshot> {
+        let span = tracing::info_span!("mem.snapshot.take");
+        let _enter = span.enter();
+
+        let start = Instant::now();
         let mut data = std::collections::HashMap::new();
         for entry in self.l1.iter() {
             data.insert(entry.key().clone(), entry.value().clone());
         }
+        let duration = start.elapsed();
+        tracing::info!(
+            keys = data.len(),
+            duration_ms = duration.as_millis(),
+            "Snapshot taken"
+        );
         Ok(Snapshot { data })
     }
 
     /// Restores the state from a given snapshot.
     pub async fn restore_snapshot(&self, snapshot: Snapshot) -> Result<()> {
+        let span = tracing::info_span!("mem.snapshot.restore", keys = snapshot.data.len());
+        let _enter = span.enter();
+
+        let start = Instant::now();
         // 1. Clear L1
         self.l1.clear();
 
@@ -75,6 +91,8 @@ impl MfsStore {
             self.l1.insert(key, value);
         }
 
+        let duration = start.elapsed();
+        tracing::info!(duration_ms = duration.as_millis(), "Snapshot restored");
         Ok(())
     }
 
@@ -97,12 +115,25 @@ impl MfsStore {
 #[async_trait]
 impl sisyphus_types::StateStore for MfsStore {
     async fn get_state_json(&self, key: &str) -> Result<Option<serde_json::Value>, String> {
+        let span = tracing::info_span!("mem.get", key = %key);
+        let _enter = span.enter();
+
+        let start = Instant::now();
         // 1. Try L1
         if let Some(val) = self.l1.get(key) {
+            let duration = start.elapsed();
+            tracing::debug!(
+                layer = "L1",
+                hit = true,
+                duration_ms = duration.as_millis(),
+                "Cache hit"
+            );
+            record_mem_operation("get", "L1", true, duration.as_secs_f64());
             return Ok(Some(val.clone()));
         }
 
         // 2. Try L2
+        let l2_start = Instant::now();
         let row: Option<(String, String)> =
             sqlx::query_as("SELECT key, value FROM state WHERE key = ?")
                 .bind(key)
@@ -115,16 +146,37 @@ impl sisyphus_types::StateStore for MfsStore {
                 serde_json::from_str(&value_str).map_err(|e| e.to_string())?;
             // Update L1
             self.l1.insert(key.to_string(), json_val.clone());
+            let duration = l2_start.elapsed();
+            tracing::debug!(
+                layer = "L2",
+                hit = true,
+                duration_ms = duration.as_millis(),
+                "Cache hit"
+            );
+            record_mem_operation("get", "L2", true, duration.as_secs_f64());
             return Ok(Some(json_val));
         }
 
+        let duration = start.elapsed();
+        tracing::debug!(
+            layer = "L2",
+            hit = false,
+            duration_ms = duration.as_millis(),
+            "Cache miss"
+        );
+        record_mem_operation("get", "L2", false, duration.as_secs_f64());
         Ok(None)
     }
 
     async fn set_state_json(&self, key: &str, value: serde_json::Value) -> Result<(), String> {
+        let span = tracing::info_span!("mem.set", key = %key);
+        let _enter = span.enter();
+
+        let start = Instant::now();
         let value_str = serde_json::to_string(&value).map_err(|e| e.to_string())?;
 
         // Write-Through: Update L2 first to ensure persistence
+        let l2_start = Instant::now();
         sqlx::query(
             "INSERT INTO state (key, value) VALUES (?, ?) 
              ON CONFLICT(key) DO UPDATE SET value = excluded.value",
@@ -135,8 +187,19 @@ impl sisyphus_types::StateStore for MfsStore {
         .await
         .map_err(|e| e.to_string())?;
 
+        let l2_duration = l2_start.elapsed();
+        tracing::debug!(
+            layer = "L2",
+            duration_ms = l2_duration.as_millis(),
+            "Write to L2 completed"
+        );
+
         // Update L1
         self.l1.insert(key.to_string(), value);
+
+        let duration = start.elapsed();
+        tracing::debug!(duration_ms = duration.as_millis(), "Set completed");
+        record_mem_operation("set", "L1", true, duration.as_secs_f64());
 
         Ok(())
     }
