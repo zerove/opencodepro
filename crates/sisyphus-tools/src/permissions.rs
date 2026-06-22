@@ -1,0 +1,83 @@
+use crate::{Permission, PermissionRules, ToolError, ToolResult};
+
+pub fn check_permission(rules: &PermissionRules, tool_name: &str) -> Permission {
+    for (pattern, permission) in rules {
+        if tool_name.contains(pattern) {
+            return permission.clone();
+        }
+    }
+    Permission::Allow
+}
+
+pub struct PermissionChecker {
+    rules: PermissionRules,
+}
+
+impl PermissionChecker {
+    pub fn new(rules: PermissionRules) -> Self {
+        Self { rules }
+    }
+
+    pub fn check(&self, tool_name: &str) -> Permission {
+        check_permission(&self.rules, tool_name)
+    }
+
+    pub fn require(&self, tool_name: &str) -> ToolResult<()> {
+        match self.check(tool_name) {
+            Permission::Allow => Ok(()),
+            Permission::Ask => Ok(()), // In a real system, this would trigger a prompt
+            Permission::Deny => Err(ToolError::PermissionDenied(tool_name.to_string())),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_check_permission_allow_by_default() {
+        let rules: PermissionRules = vec![];
+        assert_eq!(check_permission(&rules, "read"), Permission::Allow);
+    }
+
+    #[test]
+    fn test_check_permission_deny() {
+        let rules = vec![("write".into(), Permission::Deny)];
+        assert_eq!(check_permission(&rules, "write"), Permission::Deny);
+    }
+
+    #[test]
+    fn test_check_permission_allow_explicit() {
+        let rules = vec![("read".into(), Permission::Allow)];
+        assert_eq!(check_permission(&rules, "read"), Permission::Allow);
+    }
+
+    #[test]
+    fn test_check_permission_ask() {
+        let rules = vec![("exec".into(), Permission::Ask)];
+        assert_eq!(check_permission(&rules, "exec"), Permission::Ask);
+    }
+
+    #[test]
+    fn test_check_permission_pattern_match() {
+        let rules = vec![("write".into(), Permission::Deny)];
+        assert_eq!(check_permission(&rules, "write_big"), Permission::Deny);
+    }
+
+    #[test]
+    fn test_permission_checker_require() {
+        let rules = vec![("read".into(), Permission::Allow)];
+        let checker = PermissionChecker::new(rules);
+        assert!(checker.require("read").is_ok());
+    }
+
+    #[test]
+    fn test_permission_checker_deny() {
+        let rules = vec![("write".into(), Permission::Deny)];
+        let checker = PermissionChecker::new(rules);
+        let result = checker.require("write");
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), ToolError::PermissionDenied(_)));
+    }
+}

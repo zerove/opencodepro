@@ -1,7 +1,7 @@
 use sisyphus_bridge::sisyphus_bridge_server::{SisyphusBridge, SisyphusBridgeServer};
 use sisyphus_bridge::{
-    ExecuteSopRequest, HealthCheckRequest, HealthCheckResponse, ListSopsRequest, ListSopsResponse,
-    SopInfo, SopResponse, ExecutionEvent,
+    ExecuteSopRequest, HealthCheckRequest, HealthCheckResponse, ListSoPsRequest, ListSoPsResponse,
+    SopResponse, ExecutionEvent,
 };
 use sisyphus_core::{SOPGraph, SisyphusKernel, WasmSOPNode};
 use sisyphus_intel::{SisyphusIntel, StandardReflector};
@@ -168,16 +168,16 @@ impl SisyphusBridge for MySisyphusBridge {
         }))
     }
 
-    async fn list_sops(
+    async fn list_so_ps(
         &self,
-        _request: Request<ListSopsRequest>,
-    ) -> Result<Response<ListSopsResponse>, Status> {
-        Ok(Response::new(ListSopsResponse {
+        _request: Request<ListSoPsRequest>,
+    ) -> Result<Response<ListSoPsResponse>, Status> {
+        Ok(Response::new(ListSoPsResponse {
             sops: vec![],
         }))
     }
 
-    type StreamExecutionStream = tonic::codegen::BoxStream<Result<ExecutionEvent, Status>>;
+    type StreamExecutionStream = tonic::codegen::BoxStream<ExecutionEvent>;
 
     async fn stream_execution(
         &self,
@@ -185,19 +185,18 @@ impl SisyphusBridge for MySisyphusBridge {
     ) -> Result<Response<Self::StreamExecutionStream>, Status> {
         let req = request.into_inner();
         let sop_id = req.sop_id.clone();
-        let (tx, rx) = mpsc::unbounded_channel();
-        let tx_wrapped = Some(tx);
+
+        // Channel for domain events from kernel → stream
+        let (tx, rx) = mpsc::unbounded_channel::<sisyphus_types::ExecutionEvent>();
 
         let kernel = self.kernel.clone();
         let default_fuel = self.default_fuel;
 
         tokio::spawn(async move {
-            let result = if let Some(goal) = sop_id.strip_prefix("goal:") {
+            let _result: Result<(String, String), String> = if let Some(goal) = sop_id.strip_prefix("goal:") {
                 let synthesized_sop_id = format!("synth_{}", goal);
-                match kernel.execute_goal(goal, &synthesized_sop_id, tx_wrapped.clone()).await {
-                    Ok((result, report)) => Ok((format!("Result: {} | Cognition: {}", result, report), synthesized_sop_id)),
-                    Err(e) => Err(Status::internal(e)),
-                }
+                kernel.execute_goal(goal, &synthesized_sop_id, Some(tx.clone())).await
+                    .map(|(r, report)| (format!("Result: {} | Cognition: {}", r, report), synthesized_sop_id))
             } else {
                 let graph = match kernel.load_sop(&sop_id).await {
                     Ok(g) => g,
@@ -214,69 +213,48 @@ impl SisyphusBridge for MySisyphusBridge {
                         g
                     }
                 };
-                let start_node = graph.graph.node_indices().next().ok_or_else(|| Status::internal("Graph empty"))?;
-                match kernel.execute_with_cognition(&graph, start_node, &sop_id, None, tx_wrapped.clone()).await {
-                    Ok((result, report, _)) => Ok((format!("Result: {} | Cognition: {}", result, report), sop_id)),
-                    Err(e) => Err(Status::internal(e)),
-                }
+                let start_node = match graph.graph.node_indices().next() {
+                    Some(n) => n,
+                    None => return,
+                };
+                kernel.execute_with_cognition(&graph, start_node, &sop_id, None, Some(tx)).await
+                    .map(|(r, report, _)| (format!("Result: {} | Cognition: {}", r, report), sop_id))
             };
-
-            if let Some(ref tx) = tx_wrapped {
-                match result {
-                    Ok((res, _)) => {
-                        let _ = tx.send(Ok(ExecutionEvent {
-                            event_type: 3,
-                            node_name: "".into(),
-                            status: "SUCCESS".into(),
-                            message: res,
-                            timestamp: 0,
-                        }));
-                    }
-                    Err(e) => {
-                        let _ = tx.send(Ok(ExecutionEvent {
-                            event_type: 2,
-                            node_name: "".into(),
-                            status: "FAILED".into(),
-                            message: e.to_string(),
-                            timestamp: 0,
-                        }));
-                    }
-                }
-            }
+            // Kernel sends events through tx; no extra completion event needed.
         });
 
         let output_stream = tokio_stream::wrappers::UnboundedReceiverStream::new(rx)
-            .map(|event| {
-                match event {
-                    sisyphus_types::ExecutionEvent::NodeStarted { node_name } => Ok(ExecutionEvent {
+            .map(|event| -> Result<ExecutionEvent, Status> {
+                Ok(match event {
+                    sisyphus_types::ExecutionEvent::NodeStarted { node_name } => ExecutionEvent {
                         event_type: 0,
                         node_name,
                         status: "STARTED".into(),
                         message: "".into(),
                         timestamp: 0,
-                    }),
-                    sisyphus_types::ExecutionEvent::NodeCompleted { node_name, output } => Ok(ExecutionEvent {
+                    },
+                    sisyphus_types::ExecutionEvent::NodeCompleted { node_name, output } => ExecutionEvent {
                         event_type: 1,
                         node_name,
                         status: "COMPLETED".into(),
                         message: output.to_string(),
                         timestamp: 0,
-                    }),
-                    sisyphus_types::ExecutionEvent::NodeFailed { node_name, error } => Ok(ExecutionEvent {
+                    },
+                    sisyphus_types::ExecutionEvent::NodeFailed { node_name, error } => ExecutionEvent {
                         event_type: 2,
                         node_name,
                         status: "FAILED".into(),
                         message: error,
                         timestamp: 0,
-                    }),
-                    sisyphus_types::ExecutionEvent::ExecutionComplete { result } => Ok(ExecutionEvent {
+                    },
+                    sisyphus_types::ExecutionEvent::ExecutionComplete { result } => ExecutionEvent {
                         event_type: 3,
                         node_name: "".into(),
                         status: "COMPLETE".into(),
                         message: result.to_string(),
                         timestamp: 0,
-                    }),
-                }
+                    },
+                })
             });
 
         Ok(Response::new(Box::pin(output_stream)))

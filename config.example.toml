@@ -1,0 +1,69 @@
+# Sisyphus 认知执行引擎 — 配置文件
+# ============================================================
+# 此文件可通过 `Config::from_file("config.toml")` 加载。
+# 所有字段都有默认值，可省略；环境变量以 `SISYPHUS_*` 前缀覆盖。
+#
+# 使用方式:
+#   SISYPHUS_CONFIG=/path/to/config.toml cargo run -p sisyphus-bridge
+# 或直接放置 config.toml 在工作目录下自动加载。
+
+# ── 认知循环参数 ──────────────────────────────────────────
+[cognitive_loop]
+# 最大认知迭代次数（预测→执行→反思→进化循环上限）
+# 环境变量: SISYPHUS_COGNITIVE_LOOP_MAX_ITERATIONS
+# 类型: u32 | 默认: 10
+max_iterations = 10
+
+# 收敛阈值 — 偏差低于此值时提前停止循环
+# 范围: 0.0 ~ 1.0（越低越严格）
+# 环境变量: SISYPHUS_COGNITIVE_LOOP_CONVERGENCE_THRESHOLD
+# 类型: f64 | 默认: 0.15
+convergence_threshold = 0.15
+
+# ── DAG 执行器参数 ────────────────────────────────────────
+[executor]
+# 最大并行任务数（JoinSet 并发上限）
+# 环境变量: SISYPHUS_EXECUTOR_MAX_CONCURRENT_TASKS
+# 类型: usize | 默认: 16
+max_concurrent_tasks = 16
+
+# 默认 fuel 上限（WASM 指令数）
+# 环境变量: SISYPHUS_EXECUTOR_DEFAULT_FUEL
+# 类型: u64 | 默认: 1000000
+default_fuel = 1_000_000
+
+# ── 两级缓存参数（L1 DashMap + L2 SQLite）────────────────
+[cache]
+# L1 内存缓存容量（条目数）
+# 环境变量: SISYPHUS_CACHE_L1_CAPACITY
+# 类型: usize | 默认: 10000
+l1_capacity = 10_000
+
+# SQLite 持久化存储路径
+# 环境变量: SISYPHUS_CACHE_SQLITE_PATH
+# 类型: string | 默认: "data/sisyphus.db"
+sqlite_path = "data/sisyphus.db"
+
+# ── Prometheus 指标导出 ───────────────────────────────────
+[metrics]
+# Prometheus HTTP 导出端口（监听 0.0.0.0）
+# 环境变量: SISYPHUS_METRICS_PROMETHEUS_PORT
+# 类型: u16 | 默认: 9100
+prometheus_port = 9100
+
+# ── WASM 沙箱参数 ─────────────────────────────────────────
+[sandbox]
+# WASM 线性内存上限（以 64KB 页为单位）
+# 环境变量: SISYPHUS_SANDBOX_MAX_MEMORY_PAGES
+# 类型: u32 | 默认: 10
+max_memory_pages = 10
+
+# 沙箱默认 fuel 上限（WASM 指令数）
+# 环境变量: SISYPHUS_SANDBOX_DEFAULT_FUEL
+# 类型: u64 | 默认: 1000000
+default_fuel = 1_000_000
+
+# WASM 工具二进制文件目录
+# 环境变量: SISYPHUS_SANDBOX_WASM_TOOLS_DIR
+# 类型: string | 默认: "tools"
+wasm_tools_dir = "tools"

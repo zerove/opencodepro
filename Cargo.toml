@@ -8,6 +8,8 @@ members = [
     "crates/sisyphus-types",
     "crates/sisyphus-metrics",
     "crates/sisyphus-tests",
+    "crates/sisyphus-tools",
+    "crates/sisyphus-cli",
 ]
 resolver = "2"
 
@@ -40,6 +42,8 @@ codegen-units = 16
 [profile.dev.package.sisyphus-core]
 codegen-units = 16
 
+[profile.dev.package.tokio]
+codegen-units = 64
 [profile.dev.package.wasmtime]
 codegen-units = 64
 
@@ -60,6 +64,66 @@ codegen-units = 64
 codegen-units = 64
 
 [profile.dev.package.wasmtime-internal-core]
+codegen-units = 64
+
+# reqwest and its heavy transitive deps need more codegen-units to avoid OOM
+[profile.dev.package.reqwest]
+codegen-units = 64
+[profile.dev.package.hyper]
+codegen-units = 64
+[profile.dev.package.h2]
+codegen-units = 256
+[profile.dev.package.syn]
+codegen-units = 128
+[profile.dev.package.proc-macro2]
+codegen-units = 64
+[profile.dev.package.quote]
+codegen-units = 64
+[profile.dev.package.hyper-util]
+codegen-units = 64
+[profile.dev.package.rustls]
+codegen-units = 64
+[profile.dev.package.schannel]
+codegen-units = 64
+[profile.dev.package.windows-sys]
+codegen-units = 256
+[profile.dev.package.tokio-rustls]
+codegen-units = 64
+[profile.dev.package.thiserror-impl]
+codegen-units = 64
+
+# axum-core (tonic transport dep) — large async router internals
+[profile.dev.package.axum-core]
+codegen-units = 64
+
+# openssl (tonic transport transitive dep) — FFI-heavy bindings
+[profile.dev.package.openssl]
+codegen-units = 64
+[profile.dev.package.openssl-sys]
+codegen-units = 64
+
+# regex-automata (ignore + regex dep) — multi-engine DFA/NFA compilation
+[profile.dev.package.regex-automata]
+codegen-units = 64
+
+# clap_builder (sisyphus-cli dep) — large CLI derive machinery
+[profile.dev.package.clap_builder]
+codegen-units = 64
+
+# ignore (sisyphus-tools dep) — recursive filesystem walker with glob + gitignore
+[profile.dev.package.ignore]
+codegen-units = 64
+[profile.dev.package.globset]
+codegen-units = 64
+
+# sisyphus-bridge test binary — links heavy deps (tonic, wasmtime, sqlite3)
+[profile.dev.package.sisyphus-bridge]
+codegen-units = 64
+
+# h2 is already 256, but also add http and http-body which are heavily inlined
+[profile.dev.package.http]
+codegen-units = 128
+[profile.dev.package.http-body]
 codegen-units = 64
 
 [profile.release]
