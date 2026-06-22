@@ -7,8 +7,17 @@ use std::sync::{Arc, RwLock};
 
 pub type NodeOutput = Value;
 
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub enum ExecutionEvent {
+    NodeStarted { node_name: String },
+    NodeCompleted { node_name: String, output: NodeOutput },
+    NodeFailed { node_name: String, error: String },
+    ExecutionComplete { result: NodeOutput },
+}
+
 // ---------------------------------------------------------------------------
 // Cross-graph dependency types
+
 // ---------------------------------------------------------------------------
 
 /// A data mapping from a source graph node output to a target graph parameter.
@@ -353,7 +362,7 @@ impl SOPGraph {
 ///
 /// Use `Config::from_file(path)` or `Config::default()` and override
 /// individual fields via environment variables.
-#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
+#[derive(Clone, Debug, Default, serde::Deserialize, serde::Serialize)]
 pub struct Config {
     /// Cognitive loop parameters.
     #[serde(default = "default_cognitive_loop")]
@@ -441,18 +450,6 @@ impl Config {
     }
 }
 
-impl Default for Config {
-    fn default() -> Self {
-        Self {
-            cognitive_loop: default_cognitive_loop(),
-            executor: default_executor(),
-            cache: default_cache(),
-            metrics: default_metrics(),
-            sandbox: default_sandbox(),
-        }
-    }
-}
-
 #[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
 pub struct CognitiveLoopConfig {
     pub max_iterations: u32,
@@ -536,7 +533,7 @@ fn default_sandbox() -> SandboxConfig {
     SandboxConfig {
         max_memory_pages: 10,
         default_fuel: 1_000_000,
-        wasm_tools_dir: "wasm_tools".to_string(),
+        wasm_tools_dir: "tools".to_string(),
     }
 }
 

@@ -39,6 +39,8 @@ jobs:
   test:
     name: Test
     runs-on: ubuntu-latest
+    env:
+      CARGO_BUILD_JOBS: 1
     steps:
       - uses: actions/checkout@v4
 
@@ -50,8 +52,21 @@ jobs:
         with:
           cache-all-crates: "true"
 
-      - name: cargo test
-        run: cargo test --workspace
+      - name: cargo test (per-crate)
+        run: |
+          for crate in \
+            sisyphus-types \
+            sisyphus-metrics \
+            sisyphus-sandbox \
+            sisyphus-intel \
+            sisyphus-mem \
+            sisyphus-tests \
+            sisyphus-core \
+          ; do
+            echo "=== Testing $crate ==="
+            cargo test -p "$crate" 2>&1
+            echo ""
+          done
 
   cargo-deny:
     name: Supply chain audit

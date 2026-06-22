@@ -1,6 +1,7 @@
 use async_trait::async_trait;
 use serde_json::Value;
-use sisyphus_core::{Executor, NodeOutput, SOPGraph, SOPNode};
+use sisyphus_core::{Executor, NodeOutput, SOPGraph};
+use sisyphus_types::SOPNode;
 use std::sync::Arc;
 
 // ---------------------------------------------------------------------------
@@ -96,7 +97,7 @@ async fn test_cycle_detection() {
     let executor = Executor::new();
     let result = executor.execute(&graph, n1).await;
     assert!(result.is_err());
-    assert!(result.unwrap_err().contains("cycle"));
+    assert!(result.unwrap_err().to_string().contains("cycle"));
 }
 
 #[tokio::test]

@@ -3,4 +3,5 @@ book/
 .git/
 *.md
 *.toml
+!config.example.toml
 **/*.rs.bk

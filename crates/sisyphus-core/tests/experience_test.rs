@@ -60,7 +60,7 @@ async fn test_experience_prediction_convergence() {
     // Run 1: Recursive cognitive loop - iterates until convergence or max iterations
     // First iteration fails (count=0), evolves fuel, second iteration succeeds
     let (_res1, report1, _) = kernel
-        .execute_with_cognition(&graph, start_node, sop_id, None)
+        .execute_with_cognition(&graph, start_node, sop_id, None, None)
         .await
         .unwrap();
     // Should contain deviation info from the iterations
@@ -72,7 +72,7 @@ async fn test_experience_prediction_convergence() {
 
     // Run 2: Should now succeed on first iteration (call_count >= 2)
     let (_res2, report2, _) = kernel
-        .execute_with_cognition(&graph, start_node, sop_id, None)
+        .execute_with_cognition(&graph, start_node, sop_id, None, None)
         .await
         .unwrap();
     assert!(report2.contains("converged=true"));

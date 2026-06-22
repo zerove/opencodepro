@@ -7,6 +7,7 @@ members = [
     "crates/sisyphus-mem",
     "crates/sisyphus-types",
     "crates/sisyphus-metrics",
+    "crates/sisyphus-tests",
 ]
 resolver = "2"
 
@@ -24,6 +25,42 @@ incremental = false
 # (wasmparser ICE requires workspace default codegen-units=1)
 [profile.dev.package.sisyphus-intel]
 codegen-units = 16
+
+# sisyphus-types: proptest tests in lib.rs produce large codegen units
+[profile.dev.package.sisyphus-types]
+codegen-units = 16
+
+# cranelift-codegen (wasmtime 36/45+) is very large; needs more codegen-units to avoid OOM
+[profile.dev.package.cranelift-codegen]
+codegen-units = 256
+
+[profile.dev.package.cranelift-native]
+codegen-units = 16
+
+[profile.dev.package.sisyphus-core]
+codegen-units = 16
+
+[profile.dev.package.wasmtime]
+codegen-units = 64
+
+# wasmtime 45 cranelift crates are even larger; need more codegen-units
+[profile.dev.package.cranelift-entity]
+codegen-units = 64
+
+[profile.dev.package.cranelift-bitset]
+codegen-units = 64
+
+[profile.dev.package.cranelift-control]
+codegen-units = 64
+
+[profile.dev.package.regalloc2]
+codegen-units = 64
+
+[profile.dev.package.wasmtime-internal-cranelift]
+codegen-units = 64
+
+[profile.dev.package.wasmtime-internal-core]
+codegen-units = 64
 
 [profile.release]
 panic = "abort"

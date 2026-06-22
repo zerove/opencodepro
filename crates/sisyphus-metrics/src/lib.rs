@@ -1,11 +1,16 @@
 use metrics_exporter_prometheus::PrometheusBuilder;
+use std::net::SocketAddr;
 use thiserror::Error;
 use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
 /// Initialize metrics and tracing for the Sisyphus system.
-pub fn init_metrics() -> Result<(), MetricsError> {
-    // Initialize Prometheus HTTP exporter (listens on 0.0.0.0:9000 by default)
+///
+/// `prometheus_port` controls the scrape endpoint listen port (default: 9100).
+pub fn init_metrics(prometheus_port: u16) -> Result<(), MetricsError> {
+    // Initialize Prometheus HTTP exporter on the configured port
+    let addr: SocketAddr = ([0, 0, 0, 0], prometheus_port).into();
     PrometheusBuilder::new()
+        .with_http_listener(addr)
         .install()
         .map_err(|_| MetricsError::PrometheusInstallFailed)?;
 

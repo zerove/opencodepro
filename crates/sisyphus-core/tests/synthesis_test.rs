@@ -45,7 +45,7 @@ async fn test_dynamic_synthesis_execution() {
 
     // Test a "fetch, process, store" goal which should synthesize a 3-node DAG
     let (result, report) = kernel
-        .execute_goal("fetch process store task", "dyn_sop_1")
+        .execute_goal("fetch process store task", "dyn_sop_1", None)
         .await
         .unwrap();
 

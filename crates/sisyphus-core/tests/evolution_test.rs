@@ -55,7 +55,7 @@ async fn test_sop_evolution_fuel_increase() {
 
     // First run: should fail and evolve
     let (result, report, evolved) = kernel
-        .execute_with_cognition(&graph, start_node, sop_id, None)
+        .execute_with_cognition(&graph, start_node, sop_id, None, None)
         .await
         .unwrap();
     assert!(
@@ -69,7 +69,7 @@ async fn test_sop_evolution_fuel_increase() {
 
     // Second run: should succeed with increased fuel
     let (result2, _report2, _) = kernel
-        .execute_with_cognition(&evolved_graph, new_start_node, sop_id, None)
+        .execute_with_cognition(&evolved_graph, new_start_node, sop_id, None, None)
         .await
         .unwrap();
     assert!(result2.to_string().contains("Success"));

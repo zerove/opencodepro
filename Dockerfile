@@ -1,37 +1,36 @@
-# syntax=docker/dockerfile:1.7
-# Multi-stage build for sisyphus-bridge (includes all crates)
+# Stage 1: Builder
+FROM rust:1.85-slim-bookworm AS builder
 
-# ── Stage 1: Planner (cargo-chef) ─────────────────────────────────────
-FROM rust:1.81-slim-bookworm AS planner
+# Install build dependencies
+RUN apt-get update && apt-get install -y pkg-config libssl-dev && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
-RUN cargo install cargo-chef
+
+# Copy the entire workspace to ensure all crate dependencies are available
 COPY . .
-RUN cargo chef prepare --recipe-path recipe.json
 
-# ── Stage 2: Builder ──────────────────────────────────────────────────
-FROM rust:1.81-slim-bookworm AS builder
-WORKDIR /app
-RUN apt-get update && apt-get install -y \
-    pkg-config libssl-dev clang lld \
-    && rm -rf /var/lib/apt/lists/*
-
-COPY --from=planner /app/recipe.json recipe.json
-RUN cargo chef cook --release --recipe-path recipe.json
-
-COPY . .
+# Build the bridge service in release mode
 RUN cargo build --release -p sisyphus-bridge
 
-# ── Stage 3: Runtime ──────────────────────────────────────────────────
-FROM debian:bookworm-slim AS runtime
+# Stage 2: Runtime
+FROM gcr.io/distroless/cc-debian12
+
 WORKDIR /app
-RUN apt-get update && apt-get install -y \
-    ca-certificates libssl3 \
-    && rm -rf /var/lib/apt/lists/*
 
+# Copy the compiled binary from the builder stage
 COPY --from=builder /app/target/release/sisyphus-bridge /app/sisyphus-bridge
-COPY --from=builder /app/wasm_tools /app/wasm_tools
 
-EXPOSE 50051
-EXPOSE 9100
+# Copy the WASM tools directory
+COPY --from=builder /app/tools /app/tools
 
+# Copy the example config as the default config
+COPY --from=builder /app/config.example.toml /app/config.toml
+
+# Set environment variables
+ENV SISYPHUS_CONFIG=/app/config.toml
+
+# Expose gRPC and Prometheus ports
+EXPOSE 50051 9100
+
+# Run the bridge service
 ENTRYPOINT ["/app/sisyphus-bridge"]

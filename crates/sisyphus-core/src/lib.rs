@@ -5,15 +5,49 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Instant;
+use tokio::sync::mpsc;
 use tokio::task::JoinSet;
+use thiserror::Error;
 
 use sisyphus_intel::SisyphusIntel;
 use sisyphus_mem::MfsStore;
 use sisyphus_metrics::record_cognitive_iteration;
 pub use sisyphus_types::{
-    CompositeGraph, DataMapping, ExecutionContext, GraphDependency, NodeOutput, SOPGraph,
-    SOPGraphConfig, SOPNode, StateStore, ToolExecutor, WasmSOPNode,
+    CompositeGraph, DataMapping, ExecutionContext, ExecutionEvent, GraphDependency, NodeOutput, SOPGraph,
+    SOPGraphConfig, StateStore, ToolExecutor, WasmSOPNode,
 };
+
+#[derive(Error, Debug)]
+pub enum CoreError {
+    #[error("SOPGraph contains cycles")]
+    CycleDetected,
+    #[error("Cross-graph dependency cycle detected")]
+    DependencyCycleDetected,
+    #[error("Missing source node")]
+    MissingSourceNode,
+    #[error("Missing target node")]
+    MissingTargetNode,
+    #[error("MFS save error: {0}")]
+    MfsSaveError(String),
+    #[error("MFS load error: {0}")]
+    MfsLoadError(String),
+    #[error("SOP {0} not found")]
+    SopNotFound(String),
+    #[error("Execution failed to produce result")]
+    NoResultProduced,
+    #[error("Graph {0} not found in composite")]
+    GraphNotFound(String),
+    #[error("Graph {0} has no nodes")]
+    GraphEmpty(String),
+    #[error("Internal error: {0}")]
+    Internal(String),
+}
+
+impl From<CoreError> for String {
+    fn from(err: CoreError) -> Self {
+        err.to_string()
+    }
+}
 
 pub struct Executor;
 
@@ -35,7 +69,8 @@ impl Executor {
         sop_graph: &SOPGraph,
         _start_node: NodeIndex,
         initial_ctx: Option<Arc<ExecutionContext>>,
-    ) -> Result<Arc<ExecutionContext>, String> {
+        event_tx: Option<mpsc::UnboundedSender<ExecutionEvent>>,
+    ) -> Result<Arc<ExecutionContext>, CoreError> {
         let span = tracing::info_span!(
             "executor.execute",
             graph_nodes = sop_graph.graph.node_count()
@@ -45,7 +80,7 @@ impl Executor {
         let start = Instant::now();
         if toposort(&sop_graph.graph, None).is_err() {
             tracing::error!("SOPGraph contains cycles");
-            return Err("SOPGraph contains cycles".to_string());
+            return Err(CoreError::CycleDetected);
         }
         let ctx = initial_ctx.unwrap_or_else(|| Arc::new(ExecutionContext::new()));
 
@@ -69,28 +104,53 @@ impl Executor {
             if degree == 0 {
                 let node_ref = Arc::clone(sop_graph.graph.node_weight(node).unwrap());
                 let ctx_ref = Arc::clone(&ctx);
+                let tx = event_tx.clone();
                 join_set.spawn(async move {
                     let node_span = tracing::info_span!("executor.node", node = node_ref.name());
                     let _enter = node_span.enter();
                     let name = node_ref.name().to_string();
+                    
+                    if let Some(ref tx) = tx {
+                        let _ = tx.send(ExecutionEvent::NodeStarted { node_name: name.clone() });
+                    }
+
                     let result = node_ref.execute(&ctx_ref).await;
+                    
+                    if let Some(ref tx) = tx {
+                        match &result {
+                            Ok(out) => {
+                                let _ = tx.send(ExecutionEvent::NodeCompleted { 
+                                    node_name: name.clone(), 
+                                    output: out.clone() 
+                                });
+                            }
+                            Err(e) => {
+                                let _ = tx.send(ExecutionEvent::NodeFailed { 
+                                    node_name: name.clone(), 
+                                    error: e.clone() 
+                                });
+                            }
+                        }
+                    }
+
                     tracing::debug!(node = %name, "Node execution completed");
                     (node, name, result)
                 });
             }
         }
 
-        while let Some(res) = join_set.join_next().await {
-            let (node, name, result) = res.map_err(|e| e.to_string())?;
-            let output = match result {
-                Ok(out) => out,
-                Err(e) => {
-                    tracing::warn!(node = %name, error = %e, "Node execution failed");
-                    Value::String(e)
-                }
-            };
-            ctx.set_result(name.clone(), output);
-            tracing::debug!(node = %name, "Node result stored");
+                while let Some(res) = join_set.join_next().await {
+                    let (node, name, result) = res.map_err(|e| CoreError::Internal(e.to_string()))?;
+                    let output = match result {
+                        Ok(out) => out,
+                        Err(e) => {
+                            tracing::warn!(node = %name, error = %e, "Node execution failed");
+                            Value::String(e)
+                        }
+                    };
+                    ctx.set_result(name.clone(), output);
+                    tracing::debug!(node = %name, "Node result stored");
+
 
             for edge in sop_graph.graph.edges(node) {
                 let target = edge.target();
@@ -99,12 +159,36 @@ impl Executor {
                     if *degree == 0 {
                         let node_ref = Arc::clone(sop_graph.graph.node_weight(target).unwrap());
                         let ctx_ref = Arc::clone(&ctx);
+                        let tx = event_tx.clone();
                         join_set.spawn(async move {
                             let node_span =
                                 tracing::info_span!("executor.node", node = node_ref.name());
                             let _enter = node_span.enter();
                             let name = node_ref.name().to_string();
+
+                            if let Some(ref tx) = tx {
+                                let _ = tx.send(ExecutionEvent::NodeStarted { node_name: name.clone() });
+                            }
+
                             let result = node_ref.execute(&ctx_ref).await;
+
+                            if let Some(ref tx) = tx {
+                                match &result {
+                                    Ok(out) => {
+                                        let _ = tx.send(ExecutionEvent::NodeCompleted { 
+                                            node_name: name.clone(), 
+                                            output: out.clone() 
+                                        });
+                                    }
+                                    Err(e) => {
+                                        let _ = tx.send(ExecutionEvent::NodeFailed { 
+                                            node_name: name.clone(), 
+                                            error: e.clone() 
+                                        });
+                                    }
+                                }
+                            }
+
                             tracing::debug!(node = %name, "Node execution completed");
                             (target, name, result)
                         });
@@ -126,8 +210,8 @@ impl Executor {
         &self,
         sop_graph: &SOPGraph,
         start_node: NodeIndex,
-    ) -> Result<Arc<ExecutionContext>, String> {
-        self.execute_with_context(sop_graph, start_node, None).await
+    ) -> Result<Arc<ExecutionContext>, CoreError> {
+        self.execute_with_context(sop_graph, start_node, None, None).await
     }
 }
 
@@ -176,7 +260,7 @@ impl DependencyResolver {
 
     /// Given a CompositeGraph, return sop_ids in execution order.
     /// Uses petgraph to build a dependency DAG and performs topological sort.
-    pub fn resolve(composite: &CompositeGraph) -> Result<Vec<String>, String> {
+    pub fn resolve(composite: &CompositeGraph) -> Result<Vec<String>, CoreError> {
         let mut dep_graph = petgraph::graph::DiGraph::<String, ()>::new();
         let mut node_map = HashMap::new();
 
@@ -202,16 +286,16 @@ impl DependencyResolver {
         for dep in &composite.dependencies {
             let src = node_map
                 .get(&dep.source_sop_id)
-                .ok_or("Missing source node")?;
+                .ok_or(CoreError::MissingSourceNode)?;
             let tgt = node_map
                 .get(&dep.target_sop_id)
-                .ok_or("Missing target node")?;
+                .ok_or(CoreError::MissingTargetNode)?;
             dep_graph.add_edge(*src, *tgt, ());
         }
 
         // Topological sort
         let order = toposort(&dep_graph, None)
-            .map_err(|_| "Cross-graph dependency cycle detected".to_string())?;
+            .map_err(|_| CoreError::DependencyCycleDetected)?;
 
         Ok(order
             .into_iter()
@@ -253,27 +337,27 @@ impl SisyphusKernel {
         }
     }
 
-    pub async fn save_sop(&self, sop_id: &str, graph: &SOPGraph) -> Result<(), String> {
+    pub async fn save_sop(&self, sop_id: &str, graph: &SOPGraph) -> Result<(), CoreError> {
         let config = sisyphus_types::SOPGraphConfig::from_graph(graph);
-        let data = serde_json::to_string(&config).map_err(|e| e.to_string())?;
+        let data = serde_json::to_string(&config).map_err(|e| CoreError::Internal(e.to_string()))?;
         self.state_store
             .set_state_json(&format!("sop:{}", sop_id), serde_json::Value::String(data))
             .await
-            .map_err(|e| format!("MFS save error: {}", e))
+            .map_err(|e| CoreError::MfsSaveError(e))
     }
 
-    pub async fn load_sop(&self, sop_id: &str) -> Result<SOPGraph, String> {
+    pub async fn load_sop(&self, sop_id: &str) -> Result<SOPGraph, CoreError> {
         let data_val = self
             .state_store
             .get_state_json(&format!("sop:{}", sop_id))
             .await
-            .map_err(|e| format!("MFS load error: {}", e))?;
+            .map_err(|e| CoreError::MfsLoadError(e))?;
 
         let data = data_val
             .and_then(|v| v.as_str().map(|s| s.to_string()))
-            .ok_or_else(|| format!("SOP {} not found", sop_id))?;
+            .ok_or_else(|| CoreError::SopNotFound(sop_id.to_string()))?;
         let config: sisyphus_types::SOPGraphConfig =
-            serde_json::from_str(&data).map_err(|e| e.to_string())?;
+            serde_json::from_str(&data).map_err(|e| CoreError::Internal(e.to_string()))?;
         Ok(SOPGraph::from_config(&config, self.tool_executor.clone()))
     }
 
@@ -286,7 +370,7 @@ impl SisyphusKernel {
         let ctx = ExecutionContext::new();
         let composite =
             sisyphus_intel::synthesize_composite(goals, &*self.synthesizer, &ctx).await?;
-        self.execute_composite(&composite).await
+        self.execute_composite(&composite, None).await
     }
 
     /// Execute a natural-language goal through the full cognitive pipeline.
@@ -298,6 +382,7 @@ impl SisyphusKernel {
         &self,
         goal: &str,
         sop_id: &str,
+        event_tx: Option<mpsc::UnboundedSender<ExecutionEvent>>,
     ) -> Result<(NodeOutput, String), String> {
         let ctx = ExecutionContext::new();
 
@@ -307,7 +392,7 @@ impl SisyphusKernel {
         let plan_desc = synthesis.plan_description;
 
         let (res, report, _) = self
-            .execute_with_cognition(&graph, start_node, sop_id, None)
+            .execute_with_cognition(&graph, start_node, sop_id, None, event_tx)
             .await?;
         Ok((res, format!("Plan: {} | {}", plan_desc, report)))
     }
@@ -330,6 +415,7 @@ impl SisyphusKernel {
         start_node: NodeIndex,
         sop_id: &str,
         initial_ctx: Option<Arc<ExecutionContext>>,
+        event_tx: Option<mpsc::UnboundedSender<ExecutionEvent>>,
     ) -> Result<(NodeOutput, String, Option<SOPGraph>), String> {
         let span = tracing::info_span!("kernel.execute_with_cognition", sop_id = %sop_id, graph_nodes = sop_graph.graph.node_count());
         let _enter = span.enter();
@@ -368,7 +454,7 @@ impl SisyphusKernel {
             };
             let final_ctx = self
                 .executor
-                .execute_with_context(current_ref, current_start, exec_ctx)
+                .execute_with_context(current_ref, current_start, exec_ctx, event_tx.clone())
                 .await?;
             let result = final_ctx
                 .get_result(current_ref.graph.node_weight(current_start).unwrap().name())
@@ -537,6 +623,7 @@ impl SisyphusKernel {
     pub async fn execute_composite(
         &self,
         composite: &CompositeGraph,
+        event_tx: Option<mpsc::UnboundedSender<ExecutionEvent>>,
     ) -> Result<CompositeOutput, String> {
         let order = if composite.execution_order.is_empty() {
             DependencyResolver::resolve(composite)?
@@ -580,7 +667,7 @@ impl SisyphusKernel {
             };
 
             let (result, report, _evolved) = self
-                .execute_with_cognition(&graph, start_node, sop_id, dep_ctx)
+                .execute_with_cognition(&graph, start_node, sop_id, dep_ctx, event_tx.clone())
                 .await?;
 
             accumulated.insert(sop_id.clone(), result.clone());

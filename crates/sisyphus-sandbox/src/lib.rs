@@ -5,7 +5,41 @@ use sisyphus_types::ToolExecutor;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Instant;
+use thiserror::Error;
 use wasmtime::*;
+
+#[derive(Error, Debug)]
+pub enum SandboxError {
+    #[error("Failed to create Wasmtime Engine: {0}")]
+    EngineCreationFailed(#[from] wasmtime::Error),
+    #[error("Failed to read WASM binary '{tool_id}' ({path}): {source}")]
+    IoError {
+        tool_id: String,
+        path: PathBuf,
+        source: std::io::Error,
+    },
+    #[error("Compilation task failed: {0}")]
+    TaskJoinError(String),
+    #[error("Failed to compile WASM module '{tool_id}': {source}")]
+    CompileError {
+        tool_id: String,
+        source: wasmtime::Error,
+    },
+    #[error("Failed to set fuel for '{tool_id}': {source}")]
+    FuelError {
+        tool_id: String,
+        source: wasmtime::Error,
+    },
+    #[error("Failed to instantiate WASM module '{tool_id}': {source}")]
+    InstantiationError {
+        tool_id: String,
+        source: wasmtime::Error,
+    },
+    #[error("No 'execute' export in module '{0}'")]
+    MissingExecuteExport(String),
+    #[error("ResourceExhausted: {0}")]
+    ExecutionError(String),
+}
 
 pub struct WasmToolExecutor {
     engine: Engine,
@@ -20,38 +54,54 @@ impl Default for WasmToolExecutor {
 }
 
 impl WasmToolExecutor {
-    pub fn new() -> Result<Self, String> {
+    pub fn new() -> Result<Self, SandboxError> {
+        Self::with_config(None, None)
+    }
+
+    /// Create a `WasmToolExecutor` with optional sandbox configuration overrides.
+    ///
+    /// - `tools_path`: directory containing `.wasm` tool binaries (default: `"tools"`)
+    /// - `max_memory_pages`: WASM linear memory limit in 64 KiB pages (default: `10`)
+    pub fn with_config(
+        tools_path: Option<PathBuf>,
+        max_memory_pages: Option<u32>,
+    ) -> Result<Self, SandboxError> {
+        let tools_path = tools_path.unwrap_or_else(|| PathBuf::from("tools"));
+        let max_memory_pages = max_memory_pages.unwrap_or(10);
+
         let mut config = Config::new();
         config.consume_fuel(true);
         config.max_wasm_stack(1_000_000);
 
         let mut pooling = wasmtime::PoolingAllocationConfig::default();
-        pooling.max_memory_size(10 * 65536);
+        pooling
+            .max_memory_size(max_memory_pages as usize * 65536)
+            // Conservative pool sizes to avoid large pre-allocated mmaps in memory-constrained envs
+            .total_tables(10)
+            .table_elements(100)
+            .total_core_instances(10)
+            .total_memories(10);
         config.allocation_strategy(wasmtime::InstanceAllocationStrategy::Pooling(pooling));
 
-        let engine =
-            Engine::new(&config).map_err(|e| format!("Failed to create Wasmtime Engine: {}", e))?;
+        let engine = Engine::new(&config)?;
 
         Ok(Self {
             engine,
-            tools_path: PathBuf::from("/home/zeron/dev/opencodepro/tools"),
+            tools_path,
             module_cache: Arc::new(DashMap::new()),
         })
     }
 
-    async fn load_wasm_bytes(&self, tool_id: &str) -> Result<Vec<u8>, String> {
+    async fn load_wasm_bytes(&self, tool_id: &str) -> Result<Vec<u8>, SandboxError> {
         let wasm_path = self.tools_path.join(format!("{}.wasm", tool_id));
-        tokio::fs::read(&wasm_path).await.map_err(|e| {
-            format!(
-                "Failed to read WASM binary '{}' ({}): {}",
-                tool_id,
-                wasm_path.display(),
-                e
-            )
+        tokio::fs::read(&wasm_path).await.map_err(|e| SandboxError::IoError {
+            tool_id: tool_id.to_string(),
+            path: wasm_path,
+            source: e,
         })
     }
 
-    async fn get_or_compile_module(&self, tool_id: &str) -> Result<Module, String> {
+    async fn get_or_compile_module(&self, tool_id: &str) -> Result<Module, SandboxError> {
         let span = tracing::info_span!("sandbox.compile_module", tool_id = %tool_id);
         let _enter = span.enter();
 
@@ -73,8 +123,11 @@ impl WasmToolExecutor {
         let compile_start = Instant::now();
         let module = tokio::task::spawn_blocking(move || Module::new(&engine, &wasm_bytes))
             .await
-            .map_err(|e| format!("Compilation task failed: {}", e))?
-            .map_err(|e| format!("Failed to compile WASM module '{}': {}", tool_id, e))?;
+            .map_err(|e| SandboxError::TaskJoinError(e.to_string()))?
+            .map_err(|e| SandboxError::CompileError {
+                tool_id: tool_id.to_string(),
+                source: e,
+            })?;
         let compile_duration = compile_start.elapsed();
         tracing::info!(tool_id = %tool_id, duration_ms = compile_duration.as_millis(), "WASM module compiled");
 
@@ -99,22 +152,28 @@ impl ToolExecutor for WasmToolExecutor {
         let _enter = span.enter();
 
         let exec_start = Instant::now();
-        let module = self.get_or_compile_module(tool_id).await?;
+        let module = self.get_or_compile_module(tool_id).await.map_err(|e| e.to_string())?;
 
         let linker = Linker::new(&self.engine);
         let mut store = Store::new(&self.engine, ());
         store
             .set_fuel(fuel_limit)
-            .map_err(|e| format!("Failed to set fuel for '{}': {}", tool_id, e))?;
+            .map_err(|e| SandboxError::FuelError {
+                tool_id: tool_id.to_string(),
+                source: e,
+            }.to_string())?;
 
         let instance = linker
             .instantiate(&mut store, &module)
-            .map_err(|e| format!("Failed to instantiate WASM module '{}': {}", tool_id, e))?;
+            .map_err(|e| SandboxError::InstantiationError {
+                tool_id: tool_id.to_string(),
+                source: e,
+            }.to_string())?;
 
         // 5. Look for the "execute" export with dynamic signature handling
         let execute_func = instance
             .get_func(&mut store, "execute")
-            .ok_or_else(|| format!("No 'execute' export in module '{}'", tool_id))?;
+            .ok_or_else(|| SandboxError::MissingExecuteExport(tool_id.to_string()).to_string())?;
 
         // Build argument list based on the function's expected parameter count
         let func_ty = execute_func.ty(&store);
@@ -130,7 +189,7 @@ impl ToolExecutor for WasmToolExecutor {
             .map_err(|e| {
                 // Translate traps (fuel exhaustion, stack overflow, memory violation)
                 // into the ResourceExhausted format the tests expect.
-                format!("ResourceExhausted: {}", e)
+                SandboxError::ExecutionError(e.to_string())
             });
         let call_duration = call_start.elapsed();
 
@@ -170,7 +229,7 @@ impl ToolExecutor for WasmToolExecutor {
             }
             Err(e) => {
                 tracing::warn!(error = %e, fuel_consumed, "WASM execution failed");
-                return Err(e);
+                return Err(e.to_string());
             }
         };
 
@@ -192,31 +251,39 @@ impl ToolExecutor for WasmToolExecutor {
 mod tests {
     use super::*;
 
+    /// Helper: create WasmToolExecutor pointed at the workspace-root `tools/` directory.
+    fn test_executor() -> WasmToolExecutor {
+        let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        // CARGO_MANIFEST_DIR = crates/sisyphus-sandbox, tools is at workspace root
+        let tools_path = manifest_dir.parent().unwrap().parent().unwrap().join("tools");
+        WasmToolExecutor::with_config(Some(tools_path), None).unwrap()
+    }
+
     #[tokio::test]
     async fn test_engine_creation() {
-        let executor = WasmToolExecutor::new().unwrap();
+        let executor = test_executor();
         assert_eq!(executor.module_cache.len(), 0);
     }
 
     #[tokio::test]
     async fn test_load_nonexistent_tool() {
-        let executor = WasmToolExecutor::new().unwrap();
+        let executor = test_executor();
         let result = executor.load_wasm_bytes("nonexistent_tool_xyz").await;
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("Failed to read WASM binary"));
+        assert!(result.unwrap_err().to_string().contains("Failed to read WASM binary"));
     }
 
     #[tokio::test]
     async fn test_get_or_compile_nonexistent() {
-        let executor = WasmToolExecutor::new().unwrap();
+        let executor = test_executor();
         let result = executor.get_or_compile_module("nonexistent_tool_xyz").await;
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("Failed to read WASM binary"));
+        assert!(result.unwrap_err().to_string().contains("Failed to read WASM binary"));
     }
 
     #[tokio::test]
     async fn test_get_or_compile_and_cache() {
-        let executor = WasmToolExecutor::new().unwrap();
+        let executor = test_executor();
 
         executor.get_or_compile_module("hello").await.unwrap();
         assert_eq!(executor.module_cache.len(), 1);
@@ -228,14 +295,14 @@ mod tests {
 
     #[tokio::test]
     async fn test_execute_nonexistent_tool() {
-        let executor = WasmToolExecutor::new().unwrap();
+        let executor = test_executor();
         let result = executor.execute("nonexistent_tool_xyz", vec![], 100).await;
         assert!(result.is_err());
     }
 
     #[tokio::test]
     async fn test_execute_hello_valid() {
-        let executor = WasmToolExecutor::new().unwrap();
+        let executor = test_executor();
         let result = executor.execute("hello", vec![], 1000).await;
         assert!(result.is_ok());
         let output = String::from_utf8(result.unwrap()).unwrap();
@@ -244,7 +311,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_execute_fuel_exhaustion() {
-        let executor = WasmToolExecutor::new().unwrap();
+        let executor = test_executor();
         let result = executor.execute("infinite_loop", vec![], 100).await;
         assert!(result.is_err());
         let err = result.unwrap_err();
@@ -257,7 +324,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_execute_memory_exhaustion() {
-        let executor = WasmToolExecutor::new().unwrap();
+        let executor = test_executor();
         let result = executor.execute("memory_hog", vec![], 1000).await;
         assert!(result.is_err());
         let err = result.unwrap_err();
@@ -272,7 +339,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_execute_unknown_export() {
-        let executor = WasmToolExecutor::new().unwrap();
+        let executor = test_executor();
         let result = executor.execute("hello", vec![], 1000).await;
         // hello.wasm has execute export, so this should succeed
         assert!(result.is_ok());

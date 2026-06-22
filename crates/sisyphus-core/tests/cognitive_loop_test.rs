@@ -62,7 +62,7 @@ async fn test_recursive_cognitive_loop_converges() {
 
     // First call: fails twice, evolves fuel, succeeds on 3rd iteration
     let (result, report, evolved) = kernel
-        .execute_with_cognition(&graph, start_node, sop_id, None)
+        .execute_with_cognition(&graph, start_node, sop_id, None, None)
         .await
         .unwrap();
 
@@ -102,7 +102,7 @@ async fn test_execute_goal_with_recursive_cognition() {
 
     // Execute goal with multi-node pipeline
     let (result, report) = kernel
-        .execute_goal("fetch process store", sop_id)
+        .execute_goal("fetch process store", sop_id, None)
         .await
         .unwrap();
 
@@ -150,7 +150,7 @@ async fn test_recursive_loop_max_iterations() {
 
     // Should hit max iterations (3) and still return a result
     let (_result, report, _evolved) = kernel
-        .execute_with_cognition(&graph, start_node, sop_id, None)
+        .execute_with_cognition(&graph, start_node, sop_id, None, None)
         .await
         .unwrap();
 
@@ -189,7 +189,7 @@ async fn test_parallel_goal_synthesis_and_execution() {
 
     // Test parallel goal - fan-out then merge
     let (result, report) = kernel
-        .execute_goal("fetch and process parallel", sop_id)
+        .execute_goal("fetch and process parallel", sop_id, None)
         .await
         .unwrap();
 

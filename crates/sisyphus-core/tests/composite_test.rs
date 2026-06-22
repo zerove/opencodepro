@@ -114,7 +114,7 @@ async fn test_dependency_resolver_cycle() {
 
     let result = sisyphus_core::DependencyResolver::resolve(&composite);
     assert!(result.is_err());
-    assert!(result.unwrap_err().contains("cycle"));
+    assert!(result.unwrap_err().to_string().contains("cycle"));
 }
 
 #[tokio::test]
@@ -130,7 +130,7 @@ async fn test_execute_composite_linear() {
         mappings: vec![],
     });
 
-    let output: CompositeOutput = kernel.execute_composite(&composite).await.unwrap();
+    let output: CompositeOutput = kernel.execute_composite(&composite, None).await.unwrap();
 
     assert_eq!(output.execution_order.len(), 2);
     assert_eq!(output.execution_order[0], "step1");
@@ -150,7 +150,7 @@ async fn test_execute_composite_single_graph() {
     let mut composite = CompositeGraph::new();
     composite.add_graph("solo", make_single_node_config("only", "tool_only"));
 
-    let output = kernel.execute_composite(&composite).await.unwrap();
+    let output = kernel.execute_composite(&composite, None).await.unwrap();
 
     assert_eq!(output.execution_order.len(), 1);
     assert!(output.results.contains_key("solo"));
@@ -166,7 +166,7 @@ async fn test_execute_composite_with_predefined_order() {
     // Override order: alpha first despite being added second
     composite.execution_order = vec!["alpha".into(), "beta".into()];
 
-    let output = kernel.execute_composite(&composite).await.unwrap();
+    let output = kernel.execute_composite(&composite, None).await.unwrap();
 
     assert_eq!(output.execution_order.len(), 2);
     assert_eq!(output.execution_order[0], "alpha");
@@ -179,7 +179,7 @@ async fn test_execute_composite_missing_graph() {
     let mut composite = CompositeGraph::new();
     composite.execution_order = vec!["nonexistent".into()];
 
-    let result = kernel.execute_composite(&composite).await;
+    let result = kernel.execute_composite(&composite, None).await;
     assert!(result.is_err());
 }
 

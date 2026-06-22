@@ -1,30 +1,88 @@
 # sisyphus-intel — Cognition & Simulation
 
-Provides the cognitive capabilities: Monte Carlo simulation, structured reflection, and SOP evolution.
+The "brain" of Sisyphus — four core cognitive capabilities: **flow synthesis**, **simulation**, **reflection**, and **evolution**.
 
-## Key Components
+## Four Cognitive Traits
 
-### `SisyphusIntel`
+### 1. FlowSynthesizer (Synthesis)
 
-Holds the synthesizer and reflector. Orchestrates goal synthesis and the cognitive loop's reasoning steps.
+Converts a natural-language goal into a DAG of typed actions:
 
-### `StandardReflector`
+```rust
+#[async_trait]
+pub trait FlowSynthesizer: Send + Sync {
+    async fn synthesize(&self, goal: &str, context: &ExecutionContext)
+        -> Result<SynthesisResult, String>;
+}
+```
 
-Three core responsibilities:
+**Impl: `GoalDrivenSynthesizer`** — keyword-based parser that maps action verbs (fetch, process, store, search, validate) to linear or parallel DAG pipelines.
 
-1. **Simulation** (`simulate_paths`): Runs Monte Carlo over the SOP graph — samples execution paths from source to sink nodes, computing path probabilities and blended costs.
+### 2. Simulator (Prediction)
 
-2. **Reflection** (`reflect`): Compares simulated predictions against actual execution traces. Computes a *deviation score* (0.0 = perfect match) and generates structured improvement suggestions.
+Estimates success probability and execution cost before running:
 
-3. **Evolution** (`evolve`): Mutates the SOP graph based on reflection output — adds retry wrappers around failed nodes, adjusts fuel budgets via `AdaptiveFuelPricer`, and restructures subgraphs as needed.
+```rust
+#[async_trait]
+pub trait Simulator: Send + Sync {
+    async fn simulate(&self, graph: &SOPGraph, ctx: &ExecutionContext, sop_id: &str)
+        -> Result<SimulationResult, String>;
+}
+```
 
-### `AdaptiveFuelPricer`
+**Impl: `MonteCarloSimulator`** — random path sampling through the DAG. Computes blended path probabilities and estimated costs. Uses execution history from the state store to bias sampling toward historically successful paths.
 
-Exponential backoff fuel pricer that increases fuel for nodes that ran out, and decreases it for nodes that consistently succeed.
+### 3. Reflector (Analysis)
 
-### `MonteCarloSimulator`
+Compares predicted vs actual outcomes:
 
-Core simulation engine using random path sampling through the DAG to estimate:
-- Success probability per path
-- Expected execution cost
-- Best path identification
+```rust
+#[async_trait]
+pub trait Reflector: Send + Sync {
+    async fn reflect(&self, trace: &str, prediction: &SimulationResult)
+        -> Result<ReflectionReport, String>;
+}
+```
+
+**Impl: `StandardReflector`** — string-based error classification building a deviation score (0.0 = perfect match). Generates structured improvement suggestions.
+
+### 4. SOPEvolver (Adaptation)
+
+Mutates the SOP after reflection:
+
+```rust
+#[async_trait]
+pub trait SOPEvolver: Send + Sync {
+    fn evolve(&self, graph: &SOPGraph, report: &ReflectionReport, prediction: &SimulationResult)
+        -> Result<SOPGraph, String>;
+}
+```
+
+**Impl: `StandardEvolver`** — wraps failed nodes in retry logic, adjusts fuel budgets. Uses either `SimpleFuelPricer` (linear) or `AdaptiveFuelPricer` (exponential backoff).
+
+## Error Classification
+
+`ErrorCategory` classifies execution failures:
+
+```rust
+pub enum ErrorCategory {
+    ResourceExhaustion(&'static str),
+    Timeout,
+    DataError,
+    Unknown,
+}
+```
+
+Used by `StandardReflector` to determine severity and generate targeted improvement suggestions.
+
+## Example
+
+```rust
+use sisyphus_intel::*;
+
+let executor = Arc::new(MockExecutor);
+let synthesizer = GoalDrivenSynthesizer::new(executor);
+let ctx = ExecutionContext::new();
+let result = synthesizer.synthesize("fetch process store", &ctx).await?;
+println!("Graph has {} nodes", result.graph.graph.node_count());
+```

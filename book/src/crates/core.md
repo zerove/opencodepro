@@ -1,36 +1,92 @@
 # sisyphus-core — Kernel & Orchestration
 
-The central crate that orchestrates the entire cognitive loop. It depends on all other crates.
+The central crate that orchestrates the entire cognitive loop. Depends on all other crates.
 
-## Key Components
+## Key Types
 
 ### `SisyphusKernel`
 
-The main entry point for the cognitive loop. Holds references to the SOP synthesizer, simulator, reflector, evolver, memory store, and WASM tool executor.
+Main entry point for the cognitive loop. Holds references to all subsystems:
 
 ```rust
 pub struct SisyphusKernel {
+    pub state_store: Arc<dyn StateStore>,
+    pub tool_executor: Arc<dyn ToolExecutor>,
     pub intel: Arc<SisyphusIntel>,
-    pub mem: Arc<dyn MemoryStore>,
-    pub executor: Arc<WasmToolExecutor>,
+    pub synthesizer: Arc<dyn FlowSynthesizer>,
 }
 ```
 
-### `CognitiveLoop::execute_goal()`
+#### Core Methods
 
-The primary cognitive cycle:
+| Method | Description |
+|--------|-------------|
+| `execute_goal(goal, sop_id)` | Full pipeline: synthesize → execute → cognize → evolve |
+| `execute_goals(goals)` | Execute multiple goals concurrently, return composite output |
+| `execute_with_cognition(graph, start, sop_id, ctx)` | Multi-iteration loop: predict → execute → reflect → evolve |
+| `load_sop(sop_id)` | Load a previously saved SOP graph from the state store |
+| `save_sop(sop_id, graph)` | Persist an SOP graph to the state store |
 
-1. **Synthesize**: Convert natural-language goal into SOP graph via `SisyphusIntel::synthesize_sop()`.
-2. **Execute**: Run the SOP graph using the DAG executor, respecting node dependencies.
-3. **Simulate**: Run Monte Carlo simulation over execution traces via `StandardReflector::simulate_paths()`.
-4. **Reflect**: Compare predicted vs. actual outcomes via `StandardReflector::reflect()`.
-5. **Evolve**: If deviation > threshold, mutate the SOP via `StandardReflector::evolve()`.
-6. **Loop**: Repeat steps 2–5 until convergence or max iterations.
+### `Executor`
 
-### `DagExecutor`
+The DAG runner that executes SOP graphs with topological parallelism:
 
-Executes a `SOPGraph` with topological ordering. Nodes with zero in-degree execute in parallel via `tokio::task::JoinSet`. Results propagate through the graph via `Arc<ExecutionContext>` sharing.
+```rust
+let ctx = Executor::new()
+    .execute_with_context(&sop_graph, start_node, None)
+    .await?;
+```
 
-## CLI
+### `CognitiveReport`
 
-The crate includes a binary `integration_stress` that runs an end-to-end in-process integration test.
+Returned from `execute_with_cognition`:
+
+```rust
+pub struct CognitiveReport {
+    pub deviation_score: f64,
+    pub iterations: usize,
+    pub trace: String,
+    pub improvements: Vec<String>,
+}
+```
+
+### `DependencyResolver`
+
+Resolves dependency mappings across composite graphs:
+
+```rust
+pub fn resolve(composite: &CompositeGraph) -> Result<Vec<String>, String>;
+```
+
+## Execution Flow
+
+1. **Synthesize**: `FlowSynthesizer::synthesize()` converts a natural-language goal into an `SOPGraph`
+2. **Execute**: `Executor::execute_with_context()` runs the DAG with topological ordering — independent nodes run in parallel via `tokio::task::JoinSet`
+3. **Simulate**: `MonteCarloSimulator` estimates success probability and cost via random path sampling
+4. **Reflect**: `StandardReflector` compares prediction vs actual trace, producing a deviation score
+5. **Evolve**: If deviation > threshold, `StandardEvolver` mutates the SOP (fuel adjustment, retry wrappers)
+6. **Loop**: Repeat until convergence or max iterations
+
+## Benchmark Binary
+
+`cargo run --release -p sisyphus-core --bin integration_stress` runs an end-to-end in-process stress test.
+
+## Example
+
+```rust
+use sisyphus_core::{SisyphusKernel, Executor, SOPGraph, WasmSOPNode};
+use sisyphus_sandbox::WasmToolExecutor;
+use std::sync::Arc;
+
+// Build a single-node SOP
+let executor = Arc::new(WasmToolExecutor::new()?);
+let tool = WasmSOPNode {
+    name: "greet".into(),
+    tool_id: "hello".into(),
+    executor: executor.clone(),
+    fuel_limit: 1000,
+};
+let mut graph = SOPGraph::new();
+let n = graph.add_node(Arc::new(tool));
+let ctx = Executor::new().execute_with_context(&graph, n, None).await?;
+```

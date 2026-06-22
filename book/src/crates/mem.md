@@ -1,33 +1,58 @@
 # sisyphus-mem — Memory & Caching
 
-Two-level cache store for SOP execution history, intermediate results, and configuration.
+Two-level key-value store for SOP execution history, intermediate results, and configuration state.
 
 ## Architecture
 
 ```
-┌──────────┐     ┌──────────┐
-│   L1     │     │   L2     │
-│ DashMap  │────▶│  SQLite  │
-│ (memory) │     │  (disk)  │
-└──────────┘     └──────────┘
+┌──────────┐   write-through    ┌──────────┐
+│   L1     │ ◄──────────────── │   L2     │
+│ DashMap  │    (L2 → L1)      │  SQLite  │
+│ (memory) │ ────────────────► │  (disk)  │
+└──────────┘    read-through    └──────────┘
+                 (L1 → L2)
 ```
 
-- **L1**: In-memory `DashMap<String, serde_json::Value>` for sub-millisecond reads. No persistence.
-- **L2**: SQLite via `sqlx` for persistent storage. Fallback when L1 misses.
+- **L1**: In-memory `DashMap<String, serde_json::Value>` — sub-millisecond reads
+- **L2**: SQLite via `sqlx` — persistent storage, WAL mode for concurrency
 
-### Write Strategy
+## Key Type: `MfsStore`
 
-Writes go to L2 (SQLite) first, then update L1. This ensures durability even if the process crashes before L1 sync.
+```rust
+pub struct MfsStore {
+    l1: Arc<DashMap<String, serde_json::Value>>,
+    l2: SqlitePool,
+}
+```
 
-### Read Strategy
+### Construction
 
-Reads check L1 first. On miss, query L2, and if found, populate L1 before returning.
+```rust
+// In-memory (for testing)
+let store = MfsStore::new("sqlite::memory:").await?;
 
-## Key Operations
+// Persistent
+let store = MfsStore::new("sqlite:data/state.db").await?;
+```
 
-| Operation | Description |
-|-----------|-------------|
-| `set(key, value)` | Write to L2 → update L1 |
-| `get(key)` | Check L1 → check L2 → return |
-| `snapshot()` | Dump all entries into a `Snapshot` struct |
-| `restore(snapshot)` | Restore from a previously taken snapshot |
+WAL mode and `synchronous=NORMAL` are enabled automatically for performance.
+
+### Read/Write Strategy
+
+| Operation | Path | Atomicity |
+|-----------|------|-----------|
+| `set(key, value)` | Write to L2 SQLite → update L1 DashMap | L2 write is a single SQL `INSERT OR REPLACE` |
+| `get(key)` | Check L1 → miss? → query L2 → populate L1 | L1 get is lock-free DashMap read |
+| `snapshot()` | Dump all entries into `Snapshot` struct | Captures L2 snapshot via `SELECT *` |
+| `restore(snapshot)` | Clear and reload from snapshot | Truncates table, bulk insert |
+
+### Example
+
+```rust
+use sisyphus_mem::MfsStore;
+
+let store = MfsStore::new("sqlite::memory:").await?;
+store.set_state_json("my_key", serde_json::json!({"hello": "world"})).await?;
+let val = store.get_state_json("my_key").await?;
+assert_eq!(val, Some(serde_json::json!({"hello": "world"})));
+```

@@ -1,26 +1,29 @@
-version: "3.9"
-
 services:
-  sisyphus-bridge:
-    build: .
+  bridge:
+    build:
+      context: .
+      dockerfile: Dockerfile
     ports:
-      - "50051:50051"   # gRPC API
-      - "9100:9100"     # Prometheus metrics
-    volumes:
-      - ./data:/app/data
-      - ./wasm_tools:/app/wasm_tools:ro
+      - "50051:50051"
+      - "9100:9100"
     environment:
-      - RUST_LOG=info,sisyphus=debug
       - SISYPHUS_CONFIG=/app/config.toml
+    networks:
+      - sisyphus-net
     restart: unless-stopped
 
   prometheus:
-    image: prom/prometheus:latest
+    image: prom/prometheus
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
     ports:
       - "9090:9090"
-    volumes:
-      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
-    command:
-      - "--config.file=/etc/prometheus/prometheus.yml"
-      - "--storage.tsdb.path=/prometheus"
+    networks:
+      - sisyphus-net
+    depends_on:
+      - bridge
     restart: unless-stopped
+
+networks:
+  sisyphus-net:
+    driver: bridge

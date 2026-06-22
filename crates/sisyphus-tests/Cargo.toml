@@ -1,0 +1,19 @@
+[package]
+name = "sisyphus-tests"
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+sisyphus-core = { path = "../sisyphus-core" }
+sisyphus-intel = { path = "../sisyphus-intel" }
+sisyphus-mem = { path = "../sisyphus-mem" }
+sisyphus-sandbox = { path = "../sisyphus-sandbox" }
+sisyphus-types = { path = "../sisyphus-types" }
+tokio = { version = "1", features = ["full"] }
+serde_json = "1.0"
+async-trait = "0.1"
+petgraph = "0.6"
+tracing = "0.1"
+tracing-subscriber = "0.3"
+tempfile = "3.8"

@@ -4,6 +4,9 @@ package sisyphus.bridge;
 
 service SisyphusBridge {
   rpc ExecuteSOP (ExecuteSOPRequest) returns (SOPResponse);
+  rpc HealthCheck (HealthCheckRequest) returns (HealthCheckResponse);
+  rpc ListSOPs (ListSOPsRequest) returns (ListSOPsResponse);
+  rpc StreamExecution (ExecuteSOPRequest) returns (stream ExecutionEvent);
 }
 
 message ExecuteSOPRequest {
@@ -14,4 +17,37 @@ message ExecuteSOPRequest {
 message SOPResponse {
   string status = 1;
   string result = 2;
+}
+
+message HealthCheckRequest {}
+
+message HealthCheckResponse {
+  string status = 1;
+  string version = 2;
+}
+
+message ListSOPsRequest {}
+
+message ListSOPsResponse {
+  repeated SOPInfo sops = 1;
+}
+
+message SOPInfo {
+  string sop_id = 1;
+  uint64 created_at = 2;
+  uint32 node_count = 3;
+}
+
+message ExecutionEvent {
+  enum EventType {
+    NODE_STARTED = 0;
+    NODE_COMPLETED = 1;
+    NODE_FAILED = 2;
+    EXECUTION_COMPLETE = 3;
+  }
+  EventType event_type = 1;
+  string node_name = 2;
+  string status = 3;
+  string message = 4;
+  uint64 timestamp = 5;
 }

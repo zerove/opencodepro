@@ -1,29 +1,77 @@
 # sisyphus-bridge — Entry Point & API
 
-The binary crate that ties all components together into a runnable application.
+The binary crate that ties all components together into a runnable gRPC service.
 
-## Entry Points
+## Entry Point
 
-### `main.rs` (Server)
+### `main.rs` (gRPC Server)
 
-A Tonic gRPC server that exposes the cognitive loop as a network service:
+A Tonic gRPC server listening on `[::1]:50051`:
 
-- **`ExecuteGoal`**: Submit a natural-language goal path for execution. The bridge calls `SisyphusKernel.execute_goal()` and returns the cognitive report.
-- **`ExecuteSop`**: Execute a pre-synthesized SOP by ID, with optional evolution loop.
-
-### `client.rs` (CLI Client)
-
-A gRPC client binary for interacting with the server:
-
-```bash
-cargo run --bin client -- execute-goal --goals /path/to/goal.json
-cargo run --bin client -- sop --sop-id my_sop
+```protobuf
+service SisyphusBridge {
+  rpc ExecuteSOP (ExecuteSOPRequest) returns (SOPResponse);
+}
 ```
 
-### `stress_test.rs` (Benchmark)
+**`ExecuteSOP`** handles two modes:
+- **Goal execution**: If `sop_id` starts with `"goal:"`, the bridge synthesizes, executes, and runs the cognitive loop
+- **Direct execution**: Otherwise, loads a saved SOP by ID and executes it
 
-An in-process stress test that synthesizes and executes SOPs in a loop, measuring throughput and latency.
+### Request/Response
+
+```protobuf
+message ExecuteSOPRequest {
+  string sop_id = 1;
+  map<string, string> args = 2;
+}
+
+message SOPResponse {
+  string status = 1;   // "SUCCESS" or error string
+  string result = 2;   // Execution result + cognition report
+}
+```
+
+## Initialization Flow
+
+```
+Config (TOML + env vars)
+    │
+    ▼
+MfsStore ← SQLite connection
+    │
+    ▼
+WasmToolExecutor ← tools/ directory
+    │
+    ▼
+SisyphusIntel ← simulator + reflector + evolver
+    │
+    ▼
+GoalDrivenSynthesizer ← tool executor
+    │
+    ▼
+SisyphusKernel ← state_store + tool_executor + intel + synthesizer
+    │
+    ▼
+MySisyphusBridge ← wraps kernel
+    │
+    ▼
+gRPC server ← tonic on [::1]:50051
+```
 
 ## Configuration
 
-The bridge reads configuration from TOML files and environment variables, constructing the `sisyphus_types::Config` struct and initializing all subsystems.
+The bridge reads `config.toml` (or `$SISYPHUS_CONFIG` path) and calls `config.apply_env_overrides()` to merge environment variables. Metrics initialized on the port from `config.metrics.prometheus_port`.
+
+## Running
+
+```bash
+# Build
+cargo build --release -p sisyphus-bridge
+
+# Run with default config
+./target/release/sisyphus-bridge
+
+# Custom config
+SISYPHUS_CONFIG=/etc/sisyphus/prod.toml ./target/release/sisyphus-bridge
+```

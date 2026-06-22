@@ -1,9 +1,16 @@
 use sisyphus_sandbox::WasmToolExecutor;
 use sisyphus_types::ToolExecutor;
+use std::path::PathBuf;
+
+fn test_executor() -> WasmToolExecutor {
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let tools_path = manifest_dir.parent().unwrap().parent().unwrap().join("tools");
+    WasmToolExecutor::with_config(Some(tools_path), None).unwrap()
+}
 
 #[tokio::test]
 async fn test_hello_wasm_tool() {
-    let executor = WasmToolExecutor::new().unwrap();
+    let executor = test_executor();
     let result = executor
         .execute("hello", vec![], 1000)
         .await
@@ -15,7 +22,7 @@ async fn test_hello_wasm_tool() {
 
 #[tokio::test]
 async fn test_fuel_exhaustion() {
-    let executor = WasmToolExecutor::new().unwrap();
+    let executor = test_executor();
     let result = executor.execute("infinite_loop", vec![], 100).await;
 
     assert!(result.is_err());
@@ -24,7 +31,7 @@ async fn test_fuel_exhaustion() {
 
 #[tokio::test]
 async fn test_memory_exhaustion() {
-    let executor = WasmToolExecutor::new().unwrap();
+    let executor = test_executor();
     let result = executor.execute("memory_hog", vec![], 1000).await;
 
     assert!(result.is_err());
