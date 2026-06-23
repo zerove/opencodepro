@@ -1,14 +1,20 @@
 use thiserror::Error;
 
 pub mod bash;
+pub mod config_store;
 pub mod delegate;
+pub mod executor;
+pub mod executor_mcp;
 pub mod explore;
 pub mod file;
-pub mod oracle;
-pub mod plan;
+pub mod librarian;
 pub mod lsp;
 pub mod mcp;
+pub mod metis;
+pub mod momus;
+pub mod oracle;
 pub mod permissions;
+pub mod plan;
 pub mod session;
 pub mod todo;
 pub mod web;
@@ -51,13 +57,20 @@ pub enum Permission {
 pub type PermissionRules = Vec<(String, Permission)>;
 
 pub use bash::*;
+pub use config_store::*;
 pub use delegate::*;
+pub use executor::*;
+pub use executor_mcp::*;
 pub use explore::*;
 pub use file::*;
-pub use oracle::*;
-pub use plan::*;
+pub use librarian::*;
+pub use lsp::*;
+pub use metis::*;
+pub use momus::*;
 pub use mcp::*;
+pub use oracle::*;
 pub use permissions::*;
+pub use plan::*;
 pub use session::*;
 pub use todo::*;
 pub use web::*;
