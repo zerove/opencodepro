@@ -8,9 +8,10 @@ use sisyphus_intel::{SisyphusIntel, StandardReflector};
 use sisyphus_mem::MfsStore;
 use sisyphus_metrics::{init_metrics, record_bridge_request, record_sop_execution};
 use sisyphus_sandbox::WasmToolExecutor;
-use sisyphus_types::Config;
+use sisyphus_tools::{BuiltinToolExecutor, ConfigStore, MCPToolExecutor};
+use sisyphus_types::{Config, ExecutorRouter, ToolExecutor};
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 use std::time::Instant;
 use tokio::sync::mpsc;
 use tokio_stream::StreamExt;
@@ -40,13 +41,54 @@ impl MySisyphusBridge {
             state_store.clone(),
         ));
 
-        let tool_executor = Arc::new(
+        // Primary executor: WASM (backward-compatible default)
+        let wasm_executor = Arc::new(
             WasmToolExecutor::with_config(
                 Some(PathBuf::from(&config.sandbox.wasm_tools_dir)),
                 Some(config.sandbox.max_memory_pages),
             )
             .expect("Failed to create WasmToolExecutor"),
         );
+
+        // Secondary executor: built-in tools
+        let builtin_executor: Arc<dyn ToolExecutor> = Arc::new(BuiltinToolExecutor);
+
+        // Build router: WASM = default (backward compat), builtin = "builtin:" prefix
+        let mut router = ExecutorRouter::new(wasm_executor.clone());
+        router.register("builtin", builtin_executor);
+
+        // Optional MCP executors
+        for (prefix, command_line) in &config.mcp.stdio_servers {
+            let parts: Vec<&str> = command_line.split_whitespace().collect();
+            if parts.is_empty() {
+                warn!("Empty MCP stdio command for prefix '{prefix}', skipping");
+                continue;
+            }
+            let cmd = parts[0];
+            let args: Vec<&str> = parts[1..].to_vec();
+            match MCPToolExecutor::from_stdio(cmd, &args).await {
+                Ok(mcp) => {
+                    info!("Connected MCP server '{prefix}' via stdio: {command_line}");
+                    router.register(prefix, Arc::new(mcp));
+                }
+                Err(e) => {
+                    warn!("Failed to start MCP server for prefix '{prefix}': {e}");
+                }
+            }
+        }
+        for (prefix, url) in &config.mcp.http_servers {
+            match MCPToolExecutor::from_url(url).await {
+                Ok(mcp) => {
+                    info!("Connected MCP server '{prefix}' via HTTP: {url}");
+                    router.register(prefix, Arc::new(mcp));
+                }
+                Err(e) => {
+                    warn!("Failed to connect MCP server for prefix '{prefix}' at {url}: {e}");
+                }
+            }
+        }
+
+        let tool_executor: Arc<dyn ToolExecutor> = Arc::new(router);
         let reflector = Arc::new(StandardReflector);
         let evolver = Arc::new(sisyphus_intel::StandardEvolver::new());
         let intel = Arc::new(SisyphusIntel::new(simulator, reflector, evolver));
@@ -265,22 +307,38 @@ impl SisyphusBridge for MySisyphusBridge {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config_path = std::env::var("SISYPHUS_CONFIG")
         .unwrap_or_else(|_| "config.toml".to_string());
-    let mut config = match Config::from_file(&config_path) {
-        Ok(cfg) => {
-            info!(path = %config_path, "Loaded configuration");
-            cfg
+
+    let (_store, shared_config) = match ConfigStore::load(&config_path) {
+        Ok(s) => {
+            info!(path = %config_path, "Loaded configuration with hot-reload");
+            s
         }
         Err(e) => {
             warn!(path = %config_path, error = %e, "Config file not found, using defaults");
-            Config::default()
+            let cfg = Arc::new(RwLock::new(Config::default()));
+            // Create a no-op store that never reloads
+            let store = ConfigStore::with_config(cfg.clone());
+            (store, cfg)
         }
     };
-    config.apply_env_overrides();
 
-    init_metrics(config.metrics.prometheus_port)?;
+    {
+        let config = shared_config.read().unwrap();
+        init_metrics(config.metrics.prometheus_port)?;
+    }
 
     let addr = "[::1]:50051".parse()?;
-    let bridge = MySisyphusBridge::new(&config).await;
+
+    // Initialize bridge with current config snapshot
+    let bridge = {
+        let config = shared_config.read().unwrap();
+        MySisyphusBridge::new(&config).await
+    };
+
+    // Spawn config hot-reload in background
+    tokio::spawn(async move {
+        _store.start_watching().await;
+    });
 
     info!(
         "Sisyphus High-Performance Cognitive Bridge listening on {}",
@@ -293,4 +351,122 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::sisyphus_bridge::{
+        sisyphus_bridge_server::SisyphusBridge,
+        ExecuteSopRequest, HealthCheckRequest, ListSoPsRequest,
+    };
+    use tokio_stream::StreamExt;
+    use tonic::Request;
+    use std::collections::HashMap;
+
+    struct TestBridge(&'static str);
+
+    #[tonic::async_trait]
+    impl SisyphusBridge for TestBridge {
+        async fn execute_sop(
+            &self,
+            _request: Request<ExecuteSopRequest>,
+        ) -> Result<tonic::Response<super::sisyphus_bridge::SopResponse>, tonic::Status> {
+            Ok(tonic::Response::new(super::sisyphus_bridge::SopResponse {
+                status: "SUCCESS".into(),
+                result: "mock_output".into(),
+            }))
+        }
+
+        async fn health_check(
+            &self,
+            _request: Request<HealthCheckRequest>,
+        ) -> Result<tonic::Response<super::sisyphus_bridge::HealthCheckResponse>, tonic::Status> {
+            Ok(tonic::Response::new(super::sisyphus_bridge::HealthCheckResponse {
+                status: "SERVING".into(),
+                version: self.0.to_string(),
+            }))
+        }
+
+        async fn list_so_ps(
+            &self,
+            _request: Request<ListSoPsRequest>,
+        ) -> Result<tonic::Response<super::sisyphus_bridge::ListSoPsResponse>, tonic::Status> {
+            Ok(tonic::Response::new(super::sisyphus_bridge::ListSoPsResponse {
+                sops: vec![],
+            }))
+        }
+
+        type StreamExecutionStream = tonic::codegen::BoxStream<super::sisyphus_bridge::ExecutionEvent>;
+
+        async fn stream_execution(
+            &self,
+            _request: Request<ExecuteSopRequest>,
+        ) -> Result<tonic::Response<Self::StreamExecutionStream>, tonic::Status> {
+            let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+            tokio::spawn(async move {
+                let _ = tx.send(super::sisyphus_bridge::ExecutionEvent {
+                    event_type: 3,
+                    node_name: "".into(),
+                    status: "COMPLETE".into(),
+                    message: "done".into(),
+                    timestamp: 0,
+                });
+            });
+            let stream = tokio_stream::wrappers::UnboundedReceiverStream::new(rx)
+                .map(|e| Ok(e));
+            Ok(tonic::Response::new(Box::pin(stream)))
+        }
+    }
+
+    #[tokio::test]
+    async fn test_health_check() {
+        let bridge = TestBridge("0.1.0-test");
+        let response = bridge
+            .health_check(Request::new(HealthCheckRequest {}))
+            .await
+            .unwrap();
+        let inner = response.into_inner();
+        assert_eq!(inner.status, "SERVING");
+        assert_eq!(inner.version, "0.1.0-test");
+    }
+
+    #[tokio::test]
+    async fn test_execute_sop() {
+        let bridge = TestBridge("test");
+        let response = bridge
+            .execute_sop(Request::new(ExecuteSopRequest {
+                sop_id: "test".to_string(),
+                args: HashMap::new(),
+            }))
+            .await
+            .unwrap();
+        let inner = response.into_inner();
+        assert_eq!(inner.status, "SUCCESS");
+        assert_eq!(inner.result, "mock_output");
+    }
+
+    #[tokio::test]
+    async fn test_list_sops() {
+        let bridge = TestBridge("test");
+        let response = bridge
+            .list_so_ps(Request::new(ListSoPsRequest {}))
+            .await
+            .unwrap();
+        assert!(response.into_inner().sops.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_stream_execution() {
+        let bridge = TestBridge("test");
+        let mut stream = bridge
+            .stream_execution(Request::new(ExecuteSopRequest {
+                sop_id: "test".to_string(),
+                args: HashMap::new(),
+            }))
+            .await
+            .unwrap()
+            .into_inner();
+        let event = stream.next().await.unwrap().unwrap();
+        assert_eq!(event.status, "COMPLETE");
+    }
 }
