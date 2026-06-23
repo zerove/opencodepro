@@ -3084,6 +3084,7 @@ dependencies = [
  "sisyphus-mem",
  "sisyphus-metrics",
  "sisyphus-sandbox",
+ "sisyphus-tools",
  "sisyphus-types",
  "tokio",
  "tokio-stream",
@@ -3106,6 +3107,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sisyphus-tools",
+ "sisyphus-types",
  "tempfile",
  "tokio",
  "tokio-stream",
@@ -3225,6 +3227,7 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
+ "sisyphus-types",
  "tempfile",
  "thiserror 1.0.69",
  "tokio",
@@ -3239,6 +3242,7 @@ dependencies = [
  "proptest",
  "serde",
  "serde_json",
+ "tokio",
  "toml",
 ]
 

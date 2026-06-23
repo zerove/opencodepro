@@ -291,6 +291,71 @@ pub trait ToolExecutor: Send + Sync {
     ) -> Result<Vec<u8>, String>;
 }
 
+/// Routes tool calls to registered sub-executors based on the tool_id prefix.
+///
+/// The tool_id is split on the first `:` separator. If the prefix matches a
+/// registered executor, it is stripped and the remainder is forwarded. If no
+/// prefix matches or there is no `:`, the `default` executor is used.
+///
+/// # Example
+///
+/// ```ignore
+/// let mut router = ExecutorRouter::new(builtin_executor);
+/// router.register("wasm", wasm_executor);
+/// router.register("mcp", mcp_executor);
+///
+/// // dispatches to builtin_executor.execute("file_read", ...)
+/// router.execute("file_read", args, 0).await;
+///
+/// // dispatches to mcp_executor.execute("echo", ...)
+/// router.execute("mcp:echo", args, 0).await;
+/// ```
+pub struct ExecutorRouter {
+    routers: HashMap<String, Arc<dyn ToolExecutor>>,
+    default: Arc<dyn ToolExecutor>,
+}
+
+impl ExecutorRouter {
+    /// Create a router with the given default executor.
+    ///
+    /// Tools with no matching prefix (or no `:` separator) are dispatched
+    /// to `default`.
+    pub fn new(default: Arc<dyn ToolExecutor>) -> Self {
+        Self {
+            routers: HashMap::new(),
+            default,
+        }
+    }
+
+    /// Register a sub-executor under a prefix.
+    ///
+    /// After registration, tool IDs of the form `"{prefix}:{name}"` will be
+    /// dispatched to this executor with `{name}` as the tool_id.
+    pub fn register(&mut self, prefix: &str, executor: Arc<dyn ToolExecutor>) {
+        self.routers.insert(prefix.to_string(), executor);
+    }
+}
+
+#[async_trait]
+impl ToolExecutor for ExecutorRouter {
+    async fn execute(
+        &self,
+        tool_id: &str,
+        args: Vec<u8>,
+        fuel_limit: u64,
+    ) -> Result<Vec<u8>, String> {
+        if let Some(pos) = tool_id.find(':') {
+            let prefix = &tool_id[..pos];
+            let remainder = &tool_id[pos + 1..];
+            if let Some(executor) = self.routers.get(prefix) {
+                return executor.execute(remainder, args, fuel_limit).await;
+            }
+        }
+        // No prefix match or no ':' — use default
+        self.default.execute(tool_id, args, fuel_limit).await
+    }
+}
+
 pub struct SOPGraph {
     pub graph: DiGraph<Arc<dyn SOPNode>, ()>,
 }
@@ -383,6 +448,10 @@ pub struct Config {
     /// WASM sandbox parameters.
     #[serde(default = "default_sandbox")]
     pub sandbox: SandboxConfig,
+
+    /// Optional MCP tool servers (stdio or HTTP).
+    #[serde(default)]
+    pub mcp: McpConfig,
 }
 
 impl Config {
@@ -541,6 +610,17 @@ impl Default for SandboxConfig {
     fn default() -> Self {
         default_sandbox()
     }
+}
+
+/// Configuration for MCP (Model Context Protocol) tool servers.
+#[derive(Clone, Debug, Default, serde::Deserialize, serde::Serialize)]
+pub struct McpConfig {
+    /// Stdio-based MCP servers: prefix → "command arg1 arg2".
+    #[serde(default)]
+    pub stdio_servers: std::collections::HashMap<String, String>,
+    /// HTTP-based MCP servers: prefix → "http://host:port/path".
+    #[serde(default)]
+    pub http_servers: std::collections::HashMap<String, String>,
 }
 
 #[cfg(test)]
@@ -828,6 +908,97 @@ mod tests {
             }
 
             prop_assert_eq!(composite.graphs.len(), expected_count);
+        }
+    }
+
+    // ── ExecutorRouter tests ─────────────────────────────────────────
+
+    struct PrefixExecutor(&'static str);
+    #[async_trait]
+    impl ToolExecutor for PrefixExecutor {
+        async fn execute(
+            &self,
+            tool_id: &str,
+            _args: Vec<u8>,
+            _fuel_limit: u64,
+        ) -> Result<Vec<u8>, String> {
+            let response = format!("{}:{}", self.0, tool_id);
+            Ok(response.into_bytes())
+        }
+    }
+
+    #[tokio::test]
+    async fn test_router_default_only() {
+        let default = Arc::new(PrefixExecutor("default"));
+        let router = ExecutorRouter::new(default);
+        let result = router.execute("some_tool", vec![], 0).await.unwrap();
+        assert_eq!(String::from_utf8(result).unwrap(), "default:some_tool");
+    }
+
+    #[tokio::test]
+    async fn test_router_prefix_dispatch() {
+        let builtin = Arc::new(PrefixExecutor("builtin"));
+        let wasm = Arc::new(PrefixExecutor("wasm"));
+        let mut router = ExecutorRouter::new(builtin);
+        router.register("wasm", wasm);
+
+        // With prefix: routes to wasm executor
+        let result = router.execute("wasm:my_tool", vec![], 0).await.unwrap();
+        assert_eq!(String::from_utf8(result).unwrap(), "wasm:my_tool");
+
+        // Without prefix: falls back to default (builtin)
+        let result = router.execute("file_read", vec![], 0).await.unwrap();
+        assert_eq!(String::from_utf8(result).unwrap(), "builtin:file_read");
+    }
+
+    #[tokio::test]
+    async fn test_router_unknown_prefix_falls_back() {
+        let default = Arc::new(PrefixExecutor("default"));
+        let mut router = ExecutorRouter::new(default);
+        router.register("wasm", Arc::new(PrefixExecutor("wasm")));
+
+        // Unknown prefix "mcp:" should fall back to default, including the prefix
+        let result = router.execute("mcp:tool", vec![], 0).await.unwrap();
+        assert_eq!(String::from_utf8(result).unwrap(), "default:mcp:tool");
+    }
+
+    #[tokio::test]
+    async fn test_router_empty_tool_id() {
+        let default = Arc::new(PrefixExecutor("default"));
+        let router = ExecutorRouter::new(default);
+        let result = router.execute("", vec![], 0).await.unwrap();
+        assert_eq!(String::from_utf8(result).unwrap(), "default:");
+    }
+
+    #[tokio::test]
+    async fn test_router_colon_only() {
+        let default = Arc::new(PrefixExecutor("default"));
+        let router = ExecutorRouter::new(default);
+        let result = router.execute(":", vec![], 0).await.unwrap();
+        assert_eq!(String::from_utf8(result).unwrap(), "default::");
+    }
+
+    #[tokio::test]
+    async fn test_router_multiple_prefixes() {
+        let default = Arc::new(PrefixExecutor("default"));
+        let wasm = Arc::new(PrefixExecutor("wasm"));
+        let builtin = Arc::new(PrefixExecutor("builtin"));
+        let mcp = Arc::new(PrefixExecutor("mcp"));
+
+        let mut router = ExecutorRouter::new(default);
+        router.register("wasm", wasm);
+        router.register("builtin", builtin);
+        router.register("mcp", mcp);
+
+        let cases = vec![
+            ("wasm:add", "wasm:add"),
+            ("builtin:file_read", "builtin:file_read"),
+            ("mcp:echo", "mcp:echo"),
+            ("no_prefix", "default:no_prefix"),
+        ];
+        for (input, expected) in cases {
+            let result = router.execute(input, vec![], 0).await.unwrap();
+            assert_eq!(String::from_utf8(result).unwrap(), expected, "failed for input '{input}'");
         }
     }
 }
