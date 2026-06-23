@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+sisyphus-types = { path = "../sisyphus-types" }
 sisyphus-tools = { path = "../sisyphus-tools" }
 clap = { version = "4.5", features = ["derive", "env"] }
 ratatui = "0.28"

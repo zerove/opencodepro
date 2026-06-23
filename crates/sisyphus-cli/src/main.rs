@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand, ValueEnum};
@@ -22,12 +22,16 @@ struct Cli {
     interactive: bool,
 
     /// Bridge address (default: http://[::1]:50051)
-    #[arg(short = 'b', long = "bridge", default_value = "http://[::1]:50051", env = "SISYPHUS_BRIDGE")]
-    bridge: String,
+    #[arg(short = 'b', long = "bridge", env = "SISYPHUS_BRIDGE")]
+    bridge: Option<String>,
 
     /// Data directory for todo/session storage
-    #[arg(long = "data-dir", default_value = ".sisyphus", env = "SISYPHUS_DATA_DIR")]
-    data_dir: PathBuf,
+    #[arg(long = "data-dir", env = "SISYPHUS_DATA_DIR")]
+    data_dir: Option<PathBuf>,
+
+    /// Path to Sisyphus TOML config file
+    #[arg(long = "config", env = "SISYPHUS_CONFIG")]
+    config: Option<PathBuf>,
 }
 
 #[derive(Subcommand)]
@@ -70,6 +74,18 @@ enum Commands {
     /// Code search tools
     #[command(subcommand)]
     Explore(ExploreCommands),
+
+    /// External research agent (web search, docs, code examples)
+    #[command(subcommand)]
+    Librarian(LibrarianCommands),
+
+    /// Plan/code/architecture review agent
+    #[command(subcommand)]
+    Momus(MomusCommands),
+
+    /// Pre-planning analysis agent (ambiguity detection, implicit requirements)
+    #[command(subcommand)]
+    Metis(MetisCommands),
 
     /// Language server protocol tools
     #[command(subcommand)]
@@ -186,6 +202,54 @@ enum ExploreCommands {
         root: PathBuf,
         #[arg(short = 'l', default_value = "100")]
         limit: usize,
+    },
+}
+
+#[derive(Subcommand)]
+enum LibrarianCommands {
+    /// Search the web and synthesise findings
+    Research {
+        query: String,
+        /// Research scope: web, docs, code, all
+        #[arg(short = 's', long = "scope", default_value = "all")]
+        scope: String,
+        /// Max results
+        #[arg(short = 'n', default_value = "5")]
+        num: usize,
+    },
+    /// Fetch and display documentation from a URL
+    FetchDocs { url: String },
+    /// Search for code examples for a library/API
+    Examples {
+        query: String,
+        #[arg(short = 'l', default_value = "rust")]
+        language: String,
+    },
+    /// Synthesise findings from a JSON research report
+    Synthesise { report_file: std::path::PathBuf },
+}
+
+#[derive(Subcommand)]
+enum MomusCommands {
+    /// Review a plan file for completeness and consistency
+    ReviewPlan { plan_file: std::path::PathBuf },
+    /// Review a source code file for common issues
+    ReviewCode { path: std::path::PathBuf },
+    /// Review architecture documentation
+    ReviewArch { text: String },
+    /// Review all Rust files in a directory
+    ReviewDir { path: std::path::PathBuf },
+}
+
+#[derive(Subcommand)]
+enum MetisCommands {
+    /// Analyse a request for ambiguities and implicit requirements
+    Analyse {
+        /// Request text (inline)
+        request: Vec<String>,
+        /// Read request from a file
+        #[arg(short = 'f', long = "file")]
+        file: Option<std::path::PathBuf>,
     },
 }
 
@@ -366,15 +430,42 @@ async fn main() -> Result<()> {
 
     let cli = Cli::parse();
 
+    // Resolve config: try file, then env, then defaults
+    // Config overrides the defaults for data_dir and bridge address
+    let (data_dir, bridge_addr) = if let Some(ref config_path) = cli.config {
+        match sisyphus_types::Config::from_file(
+            &config_path.to_string_lossy()
+        ) {
+            Ok(cfg) => {
+                let data_dir = cli.data_dir.clone().unwrap_or_else(|| {
+                    // Derive data_dir from cache.sqlite_path parent, or fallback
+                    let sqlite = PathBuf::from(&cfg.cache.sqlite_path);
+                    sqlite.parent().unwrap_or(Path::new(".sisyphus")).to_path_buf()
+                });
+                let bridge = cli.bridge.clone().unwrap_or_else(|| {
+                    "http://[::1]:50051".to_string()
+                });
+                (data_dir, bridge)
+            }
+            Err(e) => {
+                eprintln!("Warning: failed to load config '{}': {e}", config_path.display());
+                (cli.data_dir.unwrap_or_else(|| PathBuf::from(".sisyphus")),
+                 cli.bridge.unwrap_or_else(|| "http://[::1]:50051".to_string()))
+            }
+        }
+    } else {
+        (cli.data_dir.unwrap_or_else(|| PathBuf::from(".sisyphus")),
+         cli.bridge.unwrap_or_else(|| "http://[::1]:50051".to_string()))
+    };
+
     // Interactive TUI mode
     if cli.interactive || cli.command.is_none() {
-        tui::run(cli.data_dir, cli.bridge).await?;
+        tui::run(data_dir, bridge_addr).await?;
         return Ok(());
     }
 
     // Ensure data directory exists
-    let data_dir = &cli.data_dir;
-    std::fs::create_dir_all(data_dir)?;
+    std::fs::create_dir_all(&data_dir)?;
 
     let cli_perms = permission::CliPermission::load(None).unwrap_or_default();
 
@@ -599,6 +690,169 @@ async fn main() -> Result<()> {
             }
         }
 
+        // ── librarian ───────────────────────────────────
+        Commands::Librarian(sub) => match sub {
+            LibrarianCommands::Research { query, scope, num } => {
+                let scope_enum: sisyphus_tools::ResearchScope = scope.parse()
+                    .map_err(|e: String| anyhow::anyhow!("{e}"))?;
+                let report = sisyphus_tools::research(&query, scope_enum, num).await?;
+                println!("=== Research Report ===");
+                println!("Query: {}", report.query);
+                println!("Sources: {}", report.sources_consulted);
+                println!("Confidence: {:.2}", report.confidence);
+                println!("{}", report.synthesis);
+                println!("\n--- Detailed Findings ---");
+                for (i, f) in report.findings.iter().enumerate() {
+                    println!("[{i}] {} (relevance: {:.1})", f.claim, f.relevance);
+                    println!("    source: {}", f.source_url);
+                }
+            }
+            LibrarianCommands::FetchDocs { url } => {
+                let page = sisyphus_tools::fetch_documentation(&url).await?;
+                println!("Title: {}", page.title);
+                println!("Content length: {} bytes", page.content_length);
+                println!("--- Preview ---");
+                println!("{}", page.content_preview);
+            }
+            LibrarianCommands::Examples { query, language } => {
+                let examples = sisyphus_tools::find_examples(&query, &language).await?;
+                if examples.is_empty() {
+                    println!("No examples found for '{}'.", query);
+                } else {
+                    println!("Found {} example(s):", examples.len());
+                    for (i, ex) in examples.iter().enumerate() {
+                        println!("[{i}] {} (from {})", ex.description, ex.source);
+                        println!("    language: {}", ex.language);
+                        if ex.code.len() > 200 {
+                            println!("    code ({} chars): {}...", ex.code.len(), &ex.code[..200]);
+                        } else {
+                            println!("    code: {}", ex.code);
+                        }
+                    }
+                }
+            }
+            LibrarianCommands::Synthesise { report_file } => {
+                let content = std::fs::read_to_string(&report_file)?;
+                let findings: Vec<sisyphus_tools::ResearchFinding> = serde_json::from_str(&content)?;
+                let synthesis = sisyphus_tools::synthesise(&findings, 10);
+                println!("{}", synthesis);
+            }
+        }
+
+        // ── momus ────────────────────────────────────────
+        Commands::Momus(sub) => match sub {
+            MomusCommands::ReviewPlan { plan_file } => {
+                let content = std::fs::read_to_string(&plan_file)?;
+                let name = plan_file.file_stem()
+                    .map(|s| s.to_string_lossy().to_string())
+                    .unwrap_or_else(|| "unnamed".to_string());
+                let review = sisyphus_tools::review_plan(&content, &name);
+                println!("{}", review.summary);
+                if !review.comments.is_empty() {
+                    println!("\n--- Issues ---");
+                    for c in &review.comments {
+                        println!("  [{}] {} — {}", c.severity, c.category, c.message);
+                        if let Some(s) = &c.suggestion {
+                            println!("       suggestion: {s}");
+                        }
+                    }
+                }
+            }
+            MomusCommands::ReviewCode { path } => {
+                let content = std::fs::read_to_string(&path)?;
+                let review = sisyphus_tools::review_code(&path, &content)?;
+                println!("{}", review.summary);
+                if !review.comments.is_empty() {
+                    println!("\n--- Issues ---");
+                    for c in &review.comments {
+                        if let Some(line) = c.line {
+                            println!("  [{}] {}:{} — {} ({})", c.severity, c.file.as_deref().unwrap_or("?"), line, c.message, c.category);
+                        } else {
+                            println!("  [{}] {} — {}", c.severity, c.message, c.category);
+                        }
+                        if let Some(s) = &c.suggestion {
+                            println!("       suggestion: {s}");
+                        }
+                    }
+                }
+            }
+            MomusCommands::ReviewArch { text } => {
+                let review = sisyphus_tools::review_architecture(&text);
+                println!("{}", review.summary);
+                if !review.comments.is_empty() {
+                    println!("\n--- Issues ---");
+                    for c in &review.comments {
+                        println!("  [{}] {} — {}", c.severity, c.category, c.message);
+                        if let Some(s) = &c.suggestion {
+                            println!("       suggestion: {s}");
+                        }
+                    }
+                }
+            }
+            MomusCommands::ReviewDir { path } => {
+                let walker = std::fs::read_dir(&path)?;
+                let mut reviews = Vec::new();
+                for entry in walker {
+                    let entry = entry?;
+                    let file_path = entry.path();
+                    if file_path.extension().map(|e| e == "rs").unwrap_or(false) {
+                        if let Ok(content) = std::fs::read_to_string(&file_path) {
+                            if let Ok(review) = sisyphus_tools::review_code(&file_path, &content) {
+                                reviews.push(review);
+                            }
+                        }
+                    }
+                }
+                let total_passed = reviews.iter().filter(|r| r.passed).count();
+                let total_failed = reviews.iter().filter(|r| !r.passed).count();
+                println!("Reviewed {} files: {} passed, {} failed", reviews.len(), total_passed, total_failed);
+                for r in &reviews {
+                    println!("  {} — {}", r.target, if r.passed { "✅" } else { "❌" });
+                    for c in &r.comments {
+                        if let Some(line) = c.line {
+                            println!("    [{}] line {}: {}", c.severity, line, c.message);
+                        } else {
+                            println!("    [{}] {}", c.severity, c.message);
+                        }
+                    }
+                }
+            }
+        }
+
+        // ── metis ────────────────────────────────────────
+        Commands::Metis(sub) => match sub {
+            MetisCommands::Analyse { request, file } => {
+                let text = match file {
+                    Some(f) => std::fs::read_to_string(&f)?,
+                    None => request.join(" "),
+                };
+                if text.trim().is_empty() {
+                    anyhow::bail!("No request text provided. Pass inline text or use --file.");
+                }
+                let analysis = sisyphus_tools::analyse(&text);
+                println!("=== Metis Analysis ===");
+                println!("{}", analysis.summary);
+                if !analysis.ambiguities.is_empty() {
+                    println!("\n--- Ambiguities ---");
+                    for a in &analysis.ambiguities {
+                        println!("  [{}] {} — {}", a.severity, a.aspect, a.description);
+                        if !a.options.is_empty() {
+                            println!("    options: {}", a.options.join(" | "));
+                        }
+                        if let Some(r) = &a.recommended {
+                            println!("    recommended: {r}");
+                        }
+                    }
+                }
+                if !analysis.implicit_requirements.is_empty() {
+                    println!("\n--- Implicit Requirements ---");
+                    for i in &analysis.implicit_requirements {
+                        println!("  [conf: {:.1}] {} — {}", i.confidence, i.description, i.rationale);
+                    }
+                }
+            }
+        }
+
         // ── lsp ─────────────────────────────────────────
         Commands::Lsp(sub) => match sub {
             LspCommands::Diagnostics { file, language_id, server, server_args, root_uri } => {
@@ -641,12 +895,12 @@ async fn main() -> Result<()> {
         // ── engine ──────────────────────────────────────
         Commands::Sop(sub) => match sub {
             SopCommands::Run { sop_id } => {
-                let mut client = bridge::BridgeClient::connect(&cli.bridge).await?;
+                let mut client = bridge::BridgeClient::connect(&bridge_addr).await?;
                 let result = client.execute_sop(&sop_id).await?;
                 println!("{result}");
             }
             SopCommands::List => {
-                let mut client = bridge::BridgeClient::connect(&cli.bridge).await?;
+                let mut client = bridge::BridgeClient::connect(&bridge_addr).await?;
                 let sops = client.list_sops().await?;
                 if sops.is_empty() {
                     println!("No SOPs registered.");
@@ -658,7 +912,7 @@ async fn main() -> Result<()> {
             }
         }
         Commands::Health => {
-            let mut client = bridge::BridgeClient::connect(&cli.bridge).await?;
+            let mut client = bridge::BridgeClient::connect(&bridge_addr).await?;
             let resp = client.health_check().await?;
             println!("Status: {}", resp.status);
             println!("Version: {}", resp.version);
