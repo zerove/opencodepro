@@ -1,0 +1,5 @@
+# Limit parallel compilation to prevent OOM on constrained environments
+# (wasmtime + cranelift are extremely memory-hungry; test profile codegen
+#  easily exceeds available RAM even with 2 concurrent rustc processes)
+[build]
+jobs = 1

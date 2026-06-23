@@ -11,6 +11,18 @@ members = [
     "crates/sisyphus-tools",
     "crates/sisyphus-cli",
 ]
+# Exclude heavy crates (wasmtime) from default `cargo check`/`cargo test`
+default-members = [
+    "crates/sisyphus-cli",
+    "crates/sisyphus-core",
+    "crates/sisyphus-intel",
+    "crates/sisyphus-mem",
+    "crates/sisyphus-metrics",
+    "crates/sisyphus-tests",
+    "crates/sisyphus-tools",
+    "crates/sisyphus-types",
+    # sisyphus-bridge, sisyphus-sandbox excluded → add -p to compile explicitly
+]
 resolver = "2"
 
 [workspace.dependencies]
@@ -32,9 +44,9 @@ codegen-units = 16
 [profile.dev.package.sisyphus-types]
 codegen-units = 16
 
-# cranelift-codegen (wasmtime 36/45+) is very large; needs more codegen-units to avoid OOM
+# cranelift-codegen (wasmtime 36/45+) is extremely large; needs many codegen-units to avoid OOM
 [profile.dev.package.cranelift-codegen]
-codegen-units = 256
+codegen-units = 512
 
 [profile.dev.package.cranelift-native]
 codegen-units = 16
@@ -49,22 +61,26 @@ codegen-units = 64
 
 # wasmtime 45 cranelift crates are even larger; need more codegen-units
 [profile.dev.package.cranelift-entity]
-codegen-units = 64
+codegen-units = 256
 
 [profile.dev.package.cranelift-bitset]
-codegen-units = 64
+codegen-units = 256
 
 [profile.dev.package.cranelift-control]
-codegen-units = 64
+codegen-units = 256
 
 [profile.dev.package.regalloc2]
-codegen-units = 64
+codegen-units = 256
 
 [profile.dev.package.wasmtime-internal-cranelift]
-codegen-units = 64
+codegen-units = 256
 
 [profile.dev.package.wasmtime-internal-core]
-codegen-units = 64
+codegen-units = 256
+
+# pulley-interpreter (wasmtime 45) — extremely large single-file interpreter; ICE with codegen-units=1
+[profile.dev.package.pulley-interpreter]
+codegen-units = 256
 
 # reqwest and its heavy transitive deps need more codegen-units to avoid OOM
 [profile.dev.package.reqwest]
@@ -117,8 +133,9 @@ codegen-units = 64
 codegen-units = 64
 
 # sisyphus-bridge test binary — links heavy deps (tonic, wasmtime, sqlite3)
+# test profile is even heavier than dev (extra code paths); set higher to avoid OOM
 [profile.dev.package.sisyphus-bridge]
-codegen-units = 64
+codegen-units = 256
 
 # h2 is already 256, but also add http and http-body which are heavily inlined
 [profile.dev.package.http]

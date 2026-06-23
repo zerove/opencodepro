@@ -214,7 +214,7 @@ pub fn helper() -> u32 {
     #[test]
     fn test_search_patterns_basic() {
         let dir = setup_test_dir();
-        let result = search_patterns(&["fn "], &dir.path(), Some(r"\.rs$"), 2).unwrap();
+        let result = search_patterns(&["fn "], dir.path(), Some(r"\.rs$"), 2).unwrap();
         assert!(result.total_matches >= 4, "expected >=4 matches for 'fn ', got {}", result.total_matches);
         assert!(result.files_scanned >= 2);
     }
@@ -222,14 +222,14 @@ pub fn helper() -> u32 {
     #[test]
     fn test_search_patterns_multiple() {
         let dir = setup_test_dir();
-        let result = search_patterns(&["fn ", "assert"], &dir.path(), Some(r"\.rs$"), 1).unwrap();
+        let result = search_patterns(&["fn ", "assert"], dir.path(), Some(r"\.rs$"), 1).unwrap();
         assert!(result.total_matches >= 5, "expected >=5 matches, got {}", result.total_matches);
     }
 
     #[test]
     fn test_search_patterns_no_filter() {
         let dir = setup_test_dir();
-        let result = search_patterns(&["Sisyphus"], &dir.path(), None, 0).unwrap();
+        let result = search_patterns(&["Sisyphus"], dir.path(), None, 0).unwrap();
         assert_eq!(result.total_matches, 1);
         assert_eq!(result.matches[0].content, "# Sisyphus Project");
     }
@@ -237,7 +237,7 @@ pub fn helper() -> u32 {
     #[test]
     fn test_search_patterns_context() {
         let dir = setup_test_dir();
-        let result = search_patterns(&["assert_eq"], &dir.path(), Some(r"\.rs$"), 2).unwrap();
+        let result = search_patterns(&["assert_eq"], dir.path(), Some(r"\.rs$"), 2).unwrap();
         assert_eq!(result.total_matches, 1);
         let m = &result.matches[0];
         assert!(!m.before.is_empty(), "expected context before match");
@@ -247,7 +247,7 @@ pub fn helper() -> u32 {
     #[test]
     fn test_search_patterns_empty_patterns() {
         let dir = setup_test_dir();
-        let result = search_patterns(&[], &dir.path(), None, 0).unwrap();
+        let result = search_patterns(&[], dir.path(), None, 0).unwrap();
         assert_eq!(result.total_matches, 0);
     }
 
@@ -275,14 +275,14 @@ pub fn helper() -> u32 {
     #[test]
     fn test_find_files_glob_only() {
         let dir = setup_test_dir();
-        let files = find_files("**/*.rs", &dir.path(), None).unwrap();
+        let files = find_files("**/*.rs", dir.path(), None).unwrap();
         assert_eq!(files.len(), 3); // main.rs, lib.rs, utils.rs
     }
 
     #[test]
     fn test_find_files_glob_and_content() {
         let dir = setup_test_dir();
-        let files = find_files("**/*.rs", &dir.path(), Some("fn greet")).unwrap();
+        let files = find_files("**/*.rs", dir.path(), Some("fn greet")).unwrap();
         assert_eq!(files.len(), 1);
         assert!(files[0].ends_with("main.rs"));
     }
@@ -290,14 +290,14 @@ pub fn helper() -> u32 {
     #[test]
     fn test_search_patterns_invalid_regex() {
         let dir = setup_test_dir();
-        let result = search_patterns(&["[invalid"], &dir.path(), None, 0);
+        let result = search_patterns(&["[invalid"], dir.path(), None, 0);
         assert!(result.is_err());
     }
 
     #[test]
     fn test_explore_match_structure() {
         let dir = setup_test_dir();
-        let result = search_patterns(&["helper"], &dir.path(), Some(r"\.rs$"), 0).unwrap();
+        let result = search_patterns(&["helper"], dir.path(), Some(r"\.rs$"), 0).unwrap();
         assert_eq!(result.total_matches, 1);
         let m = &result.matches[0];
         assert!(m.file.to_string_lossy().ends_with("utils.rs"));

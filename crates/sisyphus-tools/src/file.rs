@@ -1,9 +1,10 @@
 use std::fs;
-use std::io::{BufRead, BufReader};
+use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use crate::{ToolError, ToolResult};
 use regex::Regex;
 use ignore::WalkBuilder;
+use tempfile::NamedTempFile;
 
 #[derive(Debug)]
 pub struct GrepMatch {
@@ -46,31 +47,90 @@ pub fn read_lines(path: &Path, offset: usize, limit: usize) -> ToolResult<String
     Ok(result.join("\n"))
 }
 
+/// Atomic write: writes to a temporary file and then renames it to the target path.
+/// This ensures that the target file is never left in a partially written state.
 pub fn write(path: &Path, content: &str) -> ToolResult<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
-    fs::write(path, content).map_err(ToolError::Io)
+
+    // Create a temp file in the same directory as the target to ensure they are on the same mount point
+    let parent = path.parent().unwrap_or_else(|| Path::new("."));
+    let mut temp_file = NamedTempFile::new_in(parent).map_err(ToolError::Io)?;
+    
+    temp_file.write_all(content.as_bytes()).map_err(ToolError::Io)?;
+    temp_file.persist(path).map_err(|e| ToolError::Io(e.error))?;
+    
+    Ok(())
 }
 
 pub fn edit(path: &Path, old_string: &str, new_string: &str) -> ToolResult<()> {
-    let content = read(path)?;
-    let matches: Vec<_> = content.match_indices(old_string).collect();
-
-    if matches.is_empty() {
+    let parent = path.parent().unwrap_or_else(|| Path::new("."));
+    let mut temp_file = NamedTempFile::new_in(parent).map_err(ToolError::Io)?;
+    
+    let file = fs::File::open(path).map_err(ToolError::Io)?;
+    let mut reader = BufReader::new(file);
+    let mut replaced = false;
+    let mut line_buffer = String::new();
+    
+    loop {
+        line_buffer.clear();
+        let bytes_read = reader.read_line(&mut line_buffer).map_err(ToolError::Io)?;
+        if bytes_read == 0 {
+            break; // EOF
+        }
+        
+        if !replaced && line_buffer.contains(old_string) {
+            if line_buffer.matches(old_string).count() > 1 {
+                return Err(ToolError::EditAmbiguous);
+            }
+            let new_line = line_buffer.replace(old_string, new_string);
+            temp_file.write_all(new_line.as_bytes()).map_err(ToolError::Io)?;
+            replaced = true;
+        } else {
+            temp_file.write_all(line_buffer.as_bytes()).map_err(ToolError::Io)?;
+        }
+    }
+    
+    if !replaced {
         return Err(ToolError::EditNoMatch);
     }
-    if matches.len() > 1 {
-        return Err(ToolError::EditAmbiguous);
+    
+    temp_file.persist(path).map_err(|e| ToolError::Io(e.error))?;
+    Ok(())
+}
+
+pub fn edit_all(path: &Path, old_string: &str, new_string: &str) -> ToolResult<usize> {
+    let parent = path.parent().unwrap_or_else(|| Path::new("."));
+    let mut temp_file = NamedTempFile::new_in(parent).map_err(ToolError::Io)?;
+    
+    let file = fs::File::open(path).map_err(ToolError::Io)?;
+    let mut reader = BufReader::new(file);
+    let mut count = 0;
+    let mut line_buffer = String::new();
+    
+    loop {
+        line_buffer.clear();
+        let bytes_read = reader.read_line(&mut line_buffer).map_err(ToolError::Io)?;
+        if bytes_read == 0 {
+            break; // EOF
+        }
+        
+        if line_buffer.contains(old_string) {
+            count += line_buffer.matches(old_string).count();
+            let new_line = line_buffer.replace(old_string, new_string);
+            temp_file.write_all(new_line.as_bytes()).map_err(ToolError::Io)?;
+        } else {
+            temp_file.write_all(line_buffer.as_bytes()).map_err(ToolError::Io)?;
+        }
     }
-
-    let (start, _) = matches[0];
-    let mut new_content = String::with_capacity(content.len() + new_string.len() - old_string.len());
-    new_content.push_str(&content[..start]);
-    new_content.push_str(new_string);
-    new_content.push_str(&content[start + old_string.len()..]);
-
-    write(path, &new_content)
+    
+    if count == 0 {
+        return Err(ToolError::EditNoMatch);
+    }
+    
+    temp_file.persist(path).map_err(|e| ToolError::Io(e.error))?;
+    Ok(count)
 }
 
 pub fn glob(pattern: &str, root: &Path) -> ToolResult<Vec<PathBuf>> {
@@ -106,7 +166,7 @@ pub fn grep(pattern: &str, path: &Path, include: Option<&str>) -> ToolResult<Vec
         let walker = WalkBuilder::new(path).build();
         for entry in walker {
             let entry = entry.map_err(|e| ToolError::GrepError(e.to_string()))?;
-            if entry.file_type().map_or(false, |ft| ft.is_file()) {
+            if entry.file_type().is_some_and(|ft| ft.is_file()) {
                 let file_path = entry.path();
                 if let Some(inc) = include {
                     if !file_path.to_string_lossy().contains(inc) {
@@ -124,7 +184,7 @@ pub fn grep(pattern: &str, path: &Path, include: Option<&str>) -> ToolResult<Vec
 }
 
 fn grep_file(re: &Regex, path: &Path) -> ToolResult<Vec<GrepMatch>> {
-    let content = fs::read_to_string(path).map_err(|e| {
+    let file = fs::File::open(path).map_err(|e| {
         if e.kind() == std::io::ErrorKind::PermissionDenied {
             ToolError::PermissionDenied(path.to_string_lossy().into_owned())
         } else {
@@ -132,13 +192,16 @@ fn grep_file(re: &Regex, path: &Path) -> ToolResult<Vec<GrepMatch>> {
         }
     })?;
 
+    let reader = BufReader::new(file);
     let mut file_matches = Vec::new();
-    for (i, line) in content.lines().enumerate() {
-        if re.is_match(line) {
+    
+    for (i, line) in reader.lines().enumerate() {
+        let line = line?;
+        if re.is_match(&line) {
             file_matches.push(GrepMatch {
                 file: path.to_path_buf(),
                 line: i + 1,
-                content: line.to_string(),
+                content: line,
             });
         }
     }
@@ -210,11 +273,33 @@ mod tests {
     }
 
     #[test]
-    fn test_edit_no_match() {
+    fn test_edit_all_no_match() {
         let (_f, path) = temp_file("hello");
-        let result = edit(&path, "nope", "x");
+        let result = edit_all(&path, "nope", "x");
         assert!(matches!(result.unwrap_err(), ToolError::EditNoMatch));
     }
+
+    #[test]
+    fn test_edit_all_empty_file() {
+        let (_f, path) = temp_file("");
+        let result = edit_all(&path, "any", "thing");
+        assert!(matches!(result.unwrap_err(), ToolError::EditNoMatch));
+    }
+
+    #[test]
+    fn test_glob_no_match() {
+        let dir = tempfile::tempdir().expect("create temp dir");
+        let results = glob("*.nonexistent", dir.path()).unwrap();
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn test_grep_empty_file() {
+        let (_f, path) = temp_file("");
+        let results = grep("pattern", &path, None).unwrap();
+        assert!(results.is_empty());
+    }
+
 
     #[test]
     fn test_edit_ambiguous() {
@@ -224,14 +309,32 @@ mod tests {
     }
 
     #[test]
-    fn test_edit_replace_all() {
+    fn test_edit_all() {
         let (_f, path) = temp_file("ab ab ab");
-        // Use edit for single-replace by targeting the first unique match
-        // (the function only supports single-replace)
-        let content = read(&path).unwrap();
-        let new = content.replace("ab", "xx");
-        write(&path, &new).unwrap();
+        let count = edit_all(&path, "ab", "xx").unwrap();
+        assert_eq!(count, 3);
         assert_eq!(read(&path).unwrap(), "xx xx xx");
+    }
+
+    #[test]
+    fn test_read_empty_file() {
+        let (_f, path) = temp_file("");
+        assert_eq!(read(&path).unwrap(), "");
+    }
+
+    #[test]
+    fn test_read_directory_as_file() {
+        let dir = tempfile::tempdir().expect("create temp dir");
+        let result = read(dir.path());
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_write_empty_content() {
+        let dir = tempfile::tempdir().expect("create temp dir");
+        let path = dir.path().join("empty.txt");
+        write(&path, "").unwrap();
+        assert_eq!(read(&path).unwrap(), "");
     }
 
     #[test]

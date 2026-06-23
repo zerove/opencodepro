@@ -83,8 +83,8 @@ pub fn analyze_file(path: &Path) -> ToolResult<FileAnalysis> {
 
         // Match functions
         if let Some(caps) = fn_re.captures(line) {
-            let is_pub = caps.get(1).map_or(false, |m| m.as_str().contains("pub"));
-            let is_async = caps.get(2).map_or(false, |m| m.as_str().contains("async"));
+            let is_pub = caps.get(1).is_some_and(|m| m.as_str().contains("pub"));
+            let is_async = caps.get(2).is_some_and(|m| m.as_str().contains("async"));
             let name = caps.get(3).map_or("", |m| m.as_str()).to_string();
             let sig = caps.get(0).map_or("", |m| m.as_str()).to_string();
             functions.push(FunctionInfo {
@@ -315,7 +315,7 @@ pub fn run() { loop {} }
         let src_path = dir.path().join("src");
         let paths = vec![src_path.as_path()];
         if let Ok(issues) = code_review(&paths) {
-            assert!(issues.len() >= 1);
+            assert!(!issues.is_empty());
         }
     }
 

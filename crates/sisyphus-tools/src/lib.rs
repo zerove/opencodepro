@@ -6,6 +6,7 @@ pub mod explore;
 pub mod file;
 pub mod oracle;
 pub mod plan;
+pub mod lsp;
 pub mod mcp;
 pub mod permissions;
 pub mod session;

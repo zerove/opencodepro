@@ -79,18 +79,18 @@ pub fn plan_create(name: &str, description: &str, steps: Vec<PlanStep>) -> Plan 
 /// Save a plan to a JSON file.
 pub fn plan_save(plan: &Plan, path: &Path) -> ToolResult<()> {
     if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|e| crate::ToolError::Io(e))?;
+        fs::create_dir_all(parent).map_err(crate::ToolError::Io)?;
     }
     let content = serde_json::to_string_pretty(plan)
         .map_err(|e| crate::ToolError::TodoError(format!("serialize: {e}")))?;
-    fs::write(path, content).map_err(|e| crate::ToolError::Io(e))?;
+    fs::write(path, content).map_err(crate::ToolError::Io)?;
     Ok(())
 }
 
 /// Load a plan from a JSON file.
 pub fn plan_load(path: &Path) -> ToolResult<Plan> {
     let content = fs::read_to_string(path)
-        .map_err(|e| crate::ToolError::Io(e))?;
+        .map_err(crate::ToolError::Io)?;
     let plan: Plan = serde_json::from_str(&content)
         .map_err(|e| crate::ToolError::TodoError(format!("deserialize: {e}")))?;
     Ok(plan)
