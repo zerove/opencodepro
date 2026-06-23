@@ -343,7 +343,7 @@ impl SisyphusKernel {
         self.state_store
             .set_state_json(&format!("sop:{}", sop_id), serde_json::Value::String(data))
             .await
-            .map_err(|e| CoreError::MfsSaveError(e))
+            .map_err(CoreError::MfsSaveError)
     }
 
     pub async fn load_sop(&self, sop_id: &str) -> Result<SOPGraph, CoreError> {
@@ -351,7 +351,7 @@ impl SisyphusKernel {
             .state_store
             .get_state_json(&format!("sop:{}", sop_id))
             .await
-            .map_err(|e| CoreError::MfsLoadError(e))?;
+            .map_err(CoreError::MfsLoadError)?;
 
         let data = data_val
             .and_then(|v| v.as_str().map(|s| s.to_string()))

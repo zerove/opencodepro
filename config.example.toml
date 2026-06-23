@@ -67,3 +67,15 @@ default_fuel = 1_000_000
 # 环境变量: SISYPHUS_SANDBOX_WASM_TOOLS_DIR
 # 类型: string | 默认: "tools"
 wasm_tools_dir = "tools"
+
+# ── MCP 外部工具服务器 ─────────────────────────────────────
+[mcp]
+
+  # 基于 stdio 的 MCP 服务器: prefix = "command --args ..."
+  # 工具以 "prefix:tool_name" 调用
+  [mcp.stdio]
+  # "custom" = "my-mcp-server --port 9000"
+
+  # 基于 HTTP 的 MCP 服务器: prefix = "http://..."
+  [mcp.http]
+  # "remote" = "http://localhost:3000/mcp"
