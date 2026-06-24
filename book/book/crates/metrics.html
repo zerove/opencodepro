@@ -35,10 +35,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-9aca3f2e.js";
+            window.path_to_searchindex_js = "../searchindex-b60e822c.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-f5eeceea.js"></script>
+        <script src="../toc-5a113c67.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -181,7 +181,22 @@
                 <div id="mdbook-content" class="content">
                     <main>
                         <h1 id="sisyphus-metrics--observability"><a class="header" href="#sisyphus-metrics--observability">sisyphus-metrics — Observability</a></h1>
-<p>Prometheus metrics instrumentation for all Sisyphus operations. Uses the standard <code>metrics</code> crate with <code>metrics-exporter-prometheus</code>.</p>
+<p>Prometheus metrics + <code>tracing</code> structured logging for all Sisyphus operations.</p>
+<h2 id="initialization"><a class="header" href="#initialization">Initialization</a></h2>
+<p>Call once at startup with the desired Prometheus scrape port:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>use sisyphus_metrics::init_metrics;
+
+// Expose metrics on http://0.0.0.0:9100/metrics
+init_metrics(9100)?;
+<span class="boring">}</span></code></pre>
+<p>Configures:</p>
+<ul>
+<li><code>metrics-exporter-prometheus</code> with HTTP listener on the specified port</li>
+<li><code>tracing-subscriber</code> with JSON formatting and <code>SISYPHUS_LOG</code> / <code>RUST_LOG</code> env filter support</li>
+<li>Default log level: <code>info</code>, sisyphus crates: <code>debug</code></li>
+</ul>
 <h2 id="metrics-dashboard"><a class="header" href="#metrics-dashboard">Metrics Dashboard</a></h2>
 <div class="table-wrapper">
 <table>
@@ -190,44 +205,51 @@
 </thead>
 <tbody>
 <tr><td><code>sisyphus_sop_executions_total</code></td><td>Counter</td><td><code>sop_id</code>, <code>status</code></td><td>Total SOP executions</td></tr>
-<tr><td><code>sisyphus_sop_execution_duration_seconds</code></td><td>Histogram</td><td><code>sop_id</code></td><td>SOP execution time</td></tr>
+<tr><td><code>sisyphus_sop_execution_duration_seconds</code></td><td>Histogram</td><td><code>sop_id</code></td><td>SOP execution duration</td></tr>
 <tr><td><code>sisyphus_wasm_executions_total</code></td><td>Counter</td><td><code>tool_id</code>, <code>status</code></td><td>WASM tool invocations</td></tr>
-<tr><td><code>sisyphus_wasm_execution_duration_seconds</code></td><td>Histogram</td><td><code>tool_id</code></td><td>WASM execution time</td></tr>
-<tr><td><code>sisyphus_mem_operations_total</code></td><td>Counter</td><td><code>operation</code>, <code>layer</code>, <code>status</code></td><td>Cache operations (get/set)</td></tr>
+<tr><td><code>sisyphus_wasm_execution_duration_seconds</code></td><td>Histogram</td><td><code>tool_id</code></td><td>WASM execution duration</td></tr>
+<tr><td><code>sisyphus_mem_operations_total</code></td><td>Counter</td><td><code>operation</code>, <code>layer</code>, <code>status</code></td><td>Cache get/set operations</td></tr>
 <tr><td><code>sisyphus_cognitive_iterations_total</code></td><td>Counter</td><td><code>sop_id</code>, <code>converged</code></td><td>Cognitive loop iterations</td></tr>
-<tr><td><code>sisyphus_reflections_total</code></td><td>Counter</td><td><code>sop_id</code></td><td>Reflection calls</td></tr>
+<tr><td><code>sisyphus_reflections_total</code></td><td>Counter</td><td><code>sop_id</code></td><td>Reflection invocations</td></tr>
 <tr><td><code>sisyphus_simulations_total</code></td><td>Counter</td><td><code>sop_id</code>, <code>succeeded</code></td><td>Monte Carlo simulations</td></tr>
 <tr><td><code>sisyphus_evolutions_total</code></td><td>Counter</td><td><code>sop_id</code>, <code>evolved</code></td><td>SOP evolution events</td></tr>
-<tr><td><code>sisyphus_bridge_requests_total</code></td><td>Counter</td><td><code>endpoint</code>, <code>status</code></td><td>API request count</td></tr>
+<tr><td><code>sisyphus_bridge_requests_total</code></td><td>Counter</td><td><code>success</code></td><td>gRPC request count</td></tr>
 </tbody>
 </table>
 </div>
-<h2 id="usage"><a class="header" href="#usage">Usage</a></h2>
-<p>Call <code>init_metrics()</code> at application startup to initialize the Prometheus exporter on port 9100:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>use sisyphus_metrics::init_metrics;
-
-init_metrics();
-// Metrics available at http://localhost:9100/metrics
-<span class="boring">}</span></code></pre>
-<p>Record operations using the typed record functions:</p>
+<h2 id="recording"><a class="header" href="#recording">Recording</a></h2>
+<p>Use the typed record functions:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
 </span>record_sop_execution("my_sop", true, 1.23);
 record_wasm_execution("my_tool", true, 0.45, 1000);
 record_cognitive_iteration("my_sop", 3, 0.05, true, 2.1);
+record_bridge_request(true, 1.23);
+record_mem_operation("get", "l1", "hit", 0.001);
+record_simulation("my_sop", true, 0.05);
+record_evolution("my_sop", true, 0.05);
+record_reflection("my_sop", 0.05);
+<span class="boring">}</span></code></pre>
+<h2 id="error-handling"><a class="header" href="#error-handling">Error Handling</a></h2>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>pub enum MetricsError {
+    #[error("Failed to install Prometheus exporter")]
+    PrometheusInstallFailed,
+    #[error("Failed to initialize tracing subscriber")]
+    TracingInitFailed,
+}
 <span class="boring">}</span></code></pre>
 
                     </main>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
-                            <a rel="prev" href="../crates/sandbox.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                            <a rel="prev" href="../crates/tools.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                             </a>
 
-                            <a rel="next prefetch" href="../crates/bridge.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next prefetch" href="../crates/cli.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                             </a>
 
@@ -237,11 +259,11 @@ record_cognitive_iteration("my_sop", 3, 0.05, true, 2.1);
             </div>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
-                    <a rel="prev" href="../crates/sandbox.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                    <a rel="prev" href="../crates/tools.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                     </a>
 
-                    <a rel="next prefetch" href="../crates/bridge.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next prefetch" href="../crates/cli.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                     </a>
             </nav>

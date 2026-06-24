@@ -35,10 +35,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-9aca3f2e.js";
+            window.path_to_searchindex_js = "../searchindex-b60e822c.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-f5eeceea.js"></script>
+        <script src="../toc-5a113c67.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -182,45 +182,114 @@
                     <main>
                         <h1 id="cognitive-loop"><a class="header" href="#cognitive-loop">Cognitive Loop</a></h1>
 <p>The recursive <strong>OODA-inspired</strong> cycle that drives Sisyphus’s self-improvement behavior.</p>
-<h2 id="phases"><a class="header" href="#phases">Phases</a></h2>
-<pre><code>1. SYNTHESIZE ─────────────────────────────┐
-   │ Goal → SOP Graph                       │
-   ▼                                        │
-2. EXECUTE ──┐                              │
-   │ SOP →    │ (loop back                  │
-   │ Results  │  on evolve)                 │
-   ▼          │                              │
-3. SIMULATE   │                              │
-   │ Traces → │                              │
-   │ Predictions                             │
-   ▼          │                              │
-4. REFLECT    │                              │
-   │ Actual vs│                              │
-   │ Predicted│                              │
-   ▼          │                              │
-5. DECIDE     │                              │
-   │ Converge?│                              │
-   │          │                              │
-   ├─ Yes ────┘                              │
-   │   Return result                         │
-   │                                          │
-   └─ No ────────────────────────────────────┘
-        Evolve SOP → loop to EXECUTE
+<h2 id="sequence-diagram"><a class="header" href="#sequence-diagram">Sequence Diagram</a></h2>
+<pre><code class="language-mermaid">sequenceDiagram
+    participant U as User
+    participant B as Bridge
+    participant K as SisyphusKernel
+    participant Synth as GoalDrivenSynthesizer
+    participant Exec as Executor
+    participant Sim as MonteCarloSimulator
+    participant Ref as StandardReflector
+    participant Evo as StandardEvolver
+
+    U-&gt;&gt;B: ExecuteGoal("summarize data")
+    B-&gt;&gt;K: execute_goal()
+    K-&gt;&gt;Synth: synthesize(goal)
+    Synth--&gt;&gt;K: SOPGraph DAG
+
+    loop Until convergence (max 10 iterations)
+        K-&gt;&gt;Sim: simulate(graph)
+        Sim--&gt;&gt;K: SimulationResult
+
+        K-&gt;&gt;Exec: execute_with_context(graph)
+        Exec--&gt;&gt;K: ExecutionContext
+
+        K-&gt;&gt;Ref: reflect(trace, prediction)
+        Ref--&gt;&gt;K: ReflectionReport
+
+        alt deviation &gt; threshold
+            K-&gt;&gt;Evo: evolve(graph, report)
+            Evo--&gt;&gt;K: Mutated SOPGraph
+            K--&gt;&gt;K: Loop back to execute
+        else deviation &lt;= threshold
+            K--&gt;&gt;B: CognitiveReport (converged)
+        end
+    end
+
+    B--&gt;&gt;U: SOPResponse { status, result }
 </code></pre>
-<h2 id="convergence"><a class="header" href="#convergence">Convergence</a></h2>
-<p>The loop terminates when one of these conditions is met:</p>
+<h2 id="phases"><a class="header" href="#phases">Phases</a></h2>
+<pre><code>┌─────────────────────────────────────────────────────┐
+│                   Synthesis                           │
+│           Goal-driven SOP generation                  │
+└──────────────────────┬──────────────────────────────┘
+                       ▼
+┌─────────────────────────────────────────────────────┐
+│               ┌───────────┐                          │
+│               │ Simulate  │ ◄── Monte Carlo          │
+│               └─────┬─────┘     random path sampling │
+│                     │                                │
+│   ┌─────────────────▼──────────────────────┐         │
+│   │             Execute                    │         │
+│   │    DAG parallel topological order      │         │
+│   └─────────────────┬──────────────────────┘         │
+│                     │                                │
+│               ┌─────▼─────┐                          │
+│               │  Reflect  │ ◄── deviation score      │
+│               └─────┬─────┘                          │
+│                     │                                │
+│                     │ deviation &gt; threshold?         │
+│                     │                                │
+│               ┌─────▼─────┐                          │
+│               │   Evolve   │ ◄── mutate SOP          │
+│               └─────┬─────┘                          │
+│                     │                                │
+│                     └── loop ────────────────────────┘
+│                                                     │
+│               convergence → return result            │
+└─────────────────────────────────────────────────────┘
+</code></pre>
+<h2 id="key-implementation-execute_with_cognition"><a class="header" href="#key-implementation-execute_with_cognition">Key Implementation: <code>execute_with_cognition()</code></a></h2>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>// Simplified from sisyphus-core
+async fn execute_with_cognition(
+    &amp;self, graph: &amp;SOPGraph, start: NodeIndex, sop_id: &amp;str, ...
+) -&gt; Result&lt;(NodeOutput, String, Option&lt;SOPGraph&gt;), String&gt; {
+    let mut current_ref = graph.clone();
+    let max_iter = 10;
+
+    for iteration in 0..max_iter {
+        // 1. Predict outcome
+        let prediction = intel.simulator.simulate(&amp;current_ref, &amp;ctx, sop_id).await?;
+
+        // 2. Execute the SOP
+        let final_ctx = executor.execute_with_context(&amp;current_ref, start, None).await?;
+
+        // 3. Build trace and reflect
+        let trace = build_trace(&amp;current_ref, &amp;final_ctx);
+        let reflection = intel.reflector.reflect(&amp;trace, &amp;prediction).await?;
+
+        // 4. Check convergence
+        if reflection.deviation_score &lt; CONVERGENCE_THRESHOLD {
+            return Ok((result, report, None));  // Done
+        }
+
+        // 5. Evolve and retry
+        let evolved = intel.evolver.evolve(&amp;current_ref, &amp;reflection, &amp;prediction)?;
+        current_ref = evolved;
+    }
+
+    Err("Max iterations exceeded".into())
+}
+<span class="boring">}</span></code></pre>
+<h2 id="convergence-conditions"><a class="header" href="#convergence-conditions">Convergence Conditions</a></h2>
+<p>The loop terminates when any of:</p>
 <ul>
-<li><strong>Deviation threshold</strong>: The reflection deviation score drops below <code>CONVERGENCE_THRESHOLD</code> (typically 0.15).</li>
-<li><strong>Max iterations</strong>: The loop has executed <code>MAX_COGNITIVE_ITERATIONS</code> (default 10) times without converging.</li>
-<li><strong>No evolution</strong>: The evolver returns <code>None</code>, indicating no further improvements are possible.</li>
-</ul>
-<h2 id="metrics"><a class="header" href="#metrics">Metrics</a></h2>
-<p>Each iteration records:</p>
-<ul>
-<li>Iteration number and deviation score</li>
-<li>Whether it converged</li>
-<li>Duration of the iteration</li>
-<li>Evolution actions taken (fuel changes, retry wrapper, etc.)</li>
+<li><strong>Deviation threshold</strong>: <code>deviation_score &lt; 0.15</code> (predictions match actuals)</li>
+<li><strong>Max iterations</strong>: Loop runs 10 times without converging</li>
+<li><strong>No evolution</strong>: Evolver returns <code>Ok(graph)</code> with identical structure (no changes possible)</li>
 </ul>
 
                     </main>

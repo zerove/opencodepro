@@ -35,10 +35,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-9aca3f2e.js";
+            window.path_to_searchindex_js = "../searchindex-b60e822c.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-f5eeceea.js"></script>
+        <script src="../toc-5a113c67.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -181,37 +181,90 @@
                 <div id="mdbook-content" class="content">
                     <main>
                         <h1 id="dag-execution"><a class="header" href="#dag-execution">DAG Execution</a></h1>
-<p>Sisyphus executes SOP graphs using a <strong>parallel topological executor</strong>.</p>
+<p>Sisyphus executes SOP graphs using a <strong>parallel topological executor</strong> based on in-degree tracking.</p>
 <h2 id="algorithm"><a class="header" href="#algorithm">Algorithm</a></h2>
-<ol>
-<li><strong>Compute in-degrees</strong> for all nodes in the graph.</li>
-<li><strong>Seed</strong> the ready set with nodes whose in-degree is zero.</li>
-<li><strong>Spawn</strong> ready nodes concurrently via <code>tokio::task::JoinSet</code>.</li>
-<li><strong>Collect</strong> results as they complete → decrement in-degree of downstream nodes.</li>
-<li><strong>Add</strong> newly-ready nodes to the next batch.</li>
-<li><strong>Repeat</strong> until all nodes complete or an error occurs.</li>
-</ol>
-<h2 id="parallelism"><a class="header" href="#parallelism">Parallelism</a></h2>
-<p>Nodes with no dependency relationship execute simultaneously:</p>
-<pre><code>Time ─────────────────────────────────────►
-┌──────┐  ┌──────┐  ┌──────┐
-│Node A│  │Node B│  │Node C│  (parallel)
-└──┬───┘  └──────┘  └──┬───┘
-   │                    │
-   └──────┬─────────────┘
-          ▼
-     ┌────────┐
-     │Node D  │  (sequential — awaits A &amp; C)
-     └────────┘
+<pre><code class="language-mermaid">flowchart TD
+    A[Compute in-degree for all nodes] --&gt; B{Find nodes&lt;br/&gt;with in-degree = 0}
+    B --&gt; C[Spawn ready nodes&lt;br/&gt;via tokio::JoinSet]
+    C --&gt; D[Wait for ANY node&lt;br/&gt;to complete]
+    D --&gt; E[Decrement in-degree&lt;br/&gt;of downstream nodes]
+    E --&gt; F{New nodes&lt;br/&gt;ready?}
+    F --&gt;|Yes| C
+    F --&gt;|No| G{All nodes&lt;br/&gt;done?}
+    G --&gt;|Yes| H[Return&lt;br/&gt;ExecutionContext]
+    G --&gt;|No| D
 </code></pre>
+<h2 id="parallelism-model"><a class="header" href="#parallelism-model">Parallelism Model</a></h2>
+<p>Nodes with no dependency relationship execute simultaneously:</p>
+<pre><code class="language-mermaid">gantt
+    title DAG Execution Timeline
+    dateFormat X
+    axisFormat %s
+
+    section Batch 1
+    Node A (fetch)    : 0, 3
+    Node B (validate) : 0, 2
+    Node C (search)   : 0, 4
+
+    section Batch 2
+    Node D (process)  : 3, 3
+    Node E (merge)    : 4, 2
+
+    section Batch 3
+    Node F (output)   : 6, 1
+</code></pre>
+<h2 id="code-core-executor"><a class="header" href="#code-core-executor">Code: Core Executor</a></h2>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>// Simplified from sisyphus-core::Executor
+pub async fn execute_with_context(
+    &amp;self, sop_graph: &amp;SOPGraph, start_node: NodeIndex, initial_ctx: Option&lt;Arc&lt;ExecutionContext&gt;&gt;,
+) -&gt; Result&lt;Arc&lt;ExecutionContext&gt;, String&gt; {
+    // Validate acyclic
+    toposort(&amp;sop_graph.graph, None).map_err(|_| "SOPGraph contains cycles")?;
+
+    let ctx = initial_ctx.unwrap_or_else(|| Arc::new(ExecutionContext::new()));
+    let mut join_set = JoinSet::new();
+    let mut in_degree: HashMap&lt;NodeIndex, usize&gt; = HashMap::new();
+
+    // Initialize in-degree counts
+    for node in sop_graph.graph.node_indices() {
+        let degree = sop_graph.graph.edges_directed(node, Incoming).count();
+        in_degree.insert(node, degree);
+        if degree == 0 {
+            let ctx = ctx.clone();
+            let node = sop_graph.graph[node].clone();
+            join_set.spawn(async move { node.execute(&amp;ctx).await });
+        }
+    }
+
+    // Process results as they complete
+    while let Some(result) = join_set.join_next().await {
+        let (node_id, output) = result.map_err(|e| format!("Join error: {}", e))??;
+        // Store output in context
+        ctx.set(&amp;sop_graph.graph[node_id].name(), output).await;
+        // Fan-out to downstream nodes
+        for edge in sop_graph.graph.edges_directed(node_id, Outgoing) {
+            let target = edge.target();
+            let degree = in_degree.get_mut(&amp;target).unwrap();
+            *degree -= 1;
+            if *degree == 0 {
+                // Spawn the now-ready node
+            }
+        }
+    }
+
+    Ok(ctx)
+}
+<span class="boring">}</span></code></pre>
 <h2 id="error-handling"><a class="header" href="#error-handling">Error Handling</a></h2>
 <ul>
-<li>If any node returns an error, the error is propagated up to the caller.</li>
-<li>The cognitive loop catches node errors and evolves the SOP to add retry wrappers.</li>
-<li>Cycle detection: If adding an edge creates a cycle, the operation is rejected with an error.</li>
+<li><strong>Cycle detection</strong>: <code>toposort()</code> rejects cyclic graphs before execution begins</li>
+<li><strong>Node errors</strong>: Propagated up; the cognitive loop catches them and evolves the SOP</li>
+<li><strong>Join errors</strong>: Tokio task panics are caught and returned as errors</li>
 </ul>
 <h2 id="fuel--memory"><a class="header" href="#fuel--memory">Fuel &amp; Memory</a></h2>
-<p>Each node executes with its configured fuel budget and memory limit. Nodes that exceed limits are aborted with a descriptive error, which the cognitive loop uses to adjust future executions.</p>
+<p>Each node executes with its configured fuel budget. Wasmtime’s fuel metering tracks WASM instruction consumption. Exhaustion triggers <code>ResourceExhausted</code>, which the cognitive loop uses to adjust fuel for retries.</p>
 
                     </main>
 

@@ -35,10 +35,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-9aca3f2e.js";
+            window.path_to_searchindex_js = "../searchindex-b60e822c.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-f5eeceea.js"></script>
+        <script src="../toc-5a113c67.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -181,36 +181,61 @@
                 <div id="mdbook-content" class="content">
                     <main>
                         <h1 id="sisyphus-mem--memory--caching"><a class="header" href="#sisyphus-mem--memory--caching">sisyphus-mem — Memory &amp; Caching</a></h1>
-<p>Two-level cache store for SOP execution history, intermediate results, and configuration.</p>
+<p>Two-level key-value store for SOP execution history, intermediate results, and configuration state.</p>
 <h2 id="architecture"><a class="header" href="#architecture">Architecture</a></h2>
-<pre><code>┌──────────┐     ┌──────────┐
-│   L1     │     │   L2     │
-│ DashMap  │────▶│  SQLite  │
-│ (memory) │     │  (disk)  │
-└──────────┘     └──────────┘
+<pre><code>┌──────────┐   write-through    ┌──────────┐
+│   L1     │ ◄──────────────── │   L2     │
+│ DashMap  │    (L2 → L1)      │  SQLite  │
+│ (memory) │ ────────────────► │  (disk)  │
+└──────────┘    read-through    └──────────┘
+                 (L1 → L2)
 </code></pre>
 <ul>
-<li><strong>L1</strong>: In-memory <code>DashMap&lt;String, serde_json::Value&gt;</code> for sub-millisecond reads. No persistence.</li>
-<li><strong>L2</strong>: SQLite via <code>sqlx</code> for persistent storage. Fallback when L1 misses.</li>
+<li><strong>L1</strong>: In-memory <code>DashMap&lt;String, serde_json::Value&gt;</code> — sub-millisecond reads</li>
+<li><strong>L2</strong>: SQLite via <code>sqlx</code> — persistent storage, WAL mode for concurrency</li>
 </ul>
-<h3 id="write-strategy"><a class="header" href="#write-strategy">Write Strategy</a></h3>
-<p>Writes go to L2 (SQLite) first, then update L1. This ensures durability even if the process crashes before L1 sync.</p>
-<h3 id="read-strategy"><a class="header" href="#read-strategy">Read Strategy</a></h3>
-<p>Reads check L1 first. On miss, query L2, and if found, populate L1 before returning.</p>
-<h2 id="key-operations"><a class="header" href="#key-operations">Key Operations</a></h2>
+<h2 id="key-type-mfsstore"><a class="header" href="#key-type-mfsstore">Key Type: <code>MfsStore</code></a></h2>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>pub struct MfsStore {
+    l1: Arc&lt;DashMap&lt;String, serde_json::Value&gt;&gt;,
+    l2: SqlitePool,
+}
+<span class="boring">}</span></code></pre>
+<h3 id="construction"><a class="header" href="#construction">Construction</a></h3>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>// In-memory (for testing)
+let store = MfsStore::new("sqlite::memory:").await?;
+
+// Persistent
+let store = MfsStore::new("sqlite:data/state.db").await?;
+<span class="boring">}</span></code></pre>
+<p>WAL mode and <code>synchronous=NORMAL</code> are enabled automatically for performance.</p>
+<h3 id="readwrite-strategy"><a class="header" href="#readwrite-strategy">Read/Write Strategy</a></h3>
 <div class="table-wrapper">
 <table>
 <thead>
-<tr><th>Operation</th><th>Description</th></tr>
+<tr><th>Operation</th><th>Path</th><th>Atomicity</th></tr>
 </thead>
 <tbody>
-<tr><td><code>set(key, value)</code></td><td>Write to L2 → update L1</td></tr>
-<tr><td><code>get(key)</code></td><td>Check L1 → check L2 → return</td></tr>
-<tr><td><code>snapshot()</code></td><td>Dump all entries into a <code>Snapshot</code> struct</td></tr>
-<tr><td><code>restore(snapshot)</code></td><td>Restore from a previously taken snapshot</td></tr>
+<tr><td><code>set(key, value)</code></td><td>Write to L2 SQLite → update L1 DashMap</td><td>L2 write is a single SQL <code>INSERT OR REPLACE</code></td></tr>
+<tr><td><code>get(key)</code></td><td>Check L1 → miss? → query L2 → populate L1</td><td>L1 get is lock-free DashMap read</td></tr>
+<tr><td><code>snapshot()</code></td><td>Dump all entries into <code>Snapshot</code> struct</td><td>Captures L2 snapshot via <code>SELECT *</code></td></tr>
+<tr><td><code>restore(snapshot)</code></td><td>Clear and reload from snapshot</td><td>Truncates table, bulk insert</td></tr>
 </tbody>
 </table>
 </div>
+<h3 id="example"><a class="header" href="#example">Example</a></h3>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>use sisyphus_mem::MfsStore;
+
+let store = MfsStore::new("sqlite::memory:").await?;
+store.set_state_json("my_key", serde_json::json!({"hello": "world"})).await?;
+let val = store.get_state_json("my_key").await?;
+assert_eq!(val, Some(serde_json::json!({"hello": "world"})));
+<span class="boring">}</span></code></pre>
 
                     </main>
 

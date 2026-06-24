@@ -35,10 +35,10 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-9aca3f2e.js";
+            window.path_to_searchindex_js = "searchindex-b60e822c.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-f5eeceea.js"></script>
+        <script src="toc-5a113c67.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -182,6 +182,7 @@
                     <main>
                         <h1 id="configuration"><a class="header" href="#configuration">Configuration</a></h1>
 <p>Sisyphus is configured via TOML files deserialized into the <code>sisyphus_types::Config</code> struct.</p>
+<p>An example configuration file is provided at <code>config.example.toml</code> in the project root.</p>
 <h2 id="default-configuration"><a class="header" href="#default-configuration">Default Configuration</a></h2>
 <pre><code class="language-toml">[cognitive_loop]
 max_iterations = 10
@@ -189,10 +190,10 @@ convergence_threshold = 0.15
 
 [executor]
 max_concurrent_tasks = 16
-default_fuel = 100000
+default_fuel = 1_000_000
 
 [cache]
-l1_capacity = 10000
+l1_capacity = 10_000
 sqlite_path = "data/sisyphus.db"
 
 [metrics]
@@ -200,26 +201,34 @@ prometheus_port = 9100
 
 [sandbox]
 max_memory_pages = 10
-default_fuel = 100000
-wasm_tools_dir = "wasm_tools"
+default_fuel = 1_000_000
+wasm_tools_dir = "tools"
 </code></pre>
 <h2 id="override-order"><a class="header" href="#override-order">Override Order</a></h2>
 <ol>
-<li><strong>Default values</strong> (hardcoded in <code>Config::default()</code>)</li>
-<li><strong>Config file</strong> (path set via <code>--config</code> flag or <code>SISYPHUS_CONFIG</code> env var)</li>
-<li><strong>Environment variables</strong> (prefixed with <code>SISYPHUS_</code>, e.g. <code>SISYPHUS_COGNITIVE_LOOP_MAX_ITERATIONS=20</code>)</li>
+<li><strong>Default values</strong> (hardcoded in each sub-config’s <code>Default</code> impl)</li>
+<li><strong>Config file</strong> (path set via <code>SISYPHUS_CONFIG</code> env var or <code>Config::from_file()</code>)</li>
+<li><strong>Environment variables</strong> (prefixed with <code>SISYPHUS_</code>, highest priority)</li>
 </ol>
 <h2 id="environment-variables"><a class="header" href="#environment-variables">Environment Variables</a></h2>
+<p>All environment variables use the prefix <code>SISYPHUS_</code>:</p>
 <div class="table-wrapper">
 <table>
 <thead>
-<tr><th>Variable</th><th>Overrides</th><th>Default</th></tr>
+<tr><th>Variable</th><th>Overrides</th><th>Type</th><th>Default</th></tr>
 </thead>
 <tbody>
-<tr><td><code>SISYPHUS_CONFIG</code></td><td>Config file path</td><td>—</td></tr>
-<tr><td><code>SISYPHUS_COGNITIVE_LOOP_MAX_ITERATIONS</code></td><td><code>cognitive_loop.max_iterations</code></td><td>10</td></tr>
-<tr><td><code>SISYPHUS_EXECUTOR_DEFAULT_FUEL</code></td><td><code>executor.default_fuel</code></td><td>100000</td></tr>
-<tr><td><code>SISYPHUS_SANDBOX_WASM_TOOLS_DIR</code></td><td><code>sandbox.wasm_tools_dir</code></td><td><code>wasm_tools</code></td></tr>
+<tr><td><code>SISYPHUS_CONFIG</code></td><td>Config file path</td><td>string</td><td><code>config.toml</code></td></tr>
+<tr><td><code>SISYPHUS_COGNITIVE_LOOP_MAX_ITERATIONS</code></td><td><code>cognitive_loop.max_iterations</code></td><td>u32</td><td><code>10</code></td></tr>
+<tr><td><code>SISYPHUS_COGNITIVE_LOOP_CONVERGENCE_THRESHOLD</code></td><td><code>cognitive_loop.convergence_threshold</code></td><td>f64</td><td><code>0.15</code></td></tr>
+<tr><td><code>SISYPHUS_EXECUTOR_MAX_CONCURRENT_TASKS</code></td><td><code>executor.max_concurrent_tasks</code></td><td>usize</td><td><code>16</code></td></tr>
+<tr><td><code>SISYPHUS_EXECUTOR_DEFAULT_FUEL</code></td><td><code>executor.default_fuel</code></td><td>u64</td><td><code>1_000_000</code></td></tr>
+<tr><td><code>SISYPHUS_CACHE_L1_CAPACITY</code></td><td><code>cache.l1_capacity</code></td><td>usize</td><td><code>10_000</code></td></tr>
+<tr><td><code>SISYPHUS_CACHE_SQLITE_PATH</code></td><td><code>cache.sqlite_path</code></td><td>string</td><td><code>data/sisyphus.db</code></td></tr>
+<tr><td><code>SISYPHUS_METRICS_PROMETHEUS_PORT</code></td><td><code>metrics.prometheus_port</code></td><td>u16</td><td><code>9100</code></td></tr>
+<tr><td><code>SISYPHUS_SANDBOX_MAX_MEMORY_PAGES</code></td><td><code>sandbox.max_memory_pages</code></td><td>u32</td><td><code>10</code></td></tr>
+<tr><td><code>SISYPHUS_SANDBOX_DEFAULT_FUEL</code></td><td><code>sandbox.default_fuel</code></td><td>u64</td><td><code>1_000_000</code></td></tr>
+<tr><td><code>SISYPHUS_SANDBOX_WASM_TOOLS_DIR</code></td><td><code>sandbox.wasm_tools_dir</code></td><td>string</td><td><code>tools</code></td></tr>
 </tbody>
 </table>
 </div>

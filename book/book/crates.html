@@ -35,10 +35,10 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-9aca3f2e.js";
+            window.path_to_searchindex_js = "searchindex-b60e822c.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-f5eeceea.js"></script>
+        <script src="toc-5a113c67.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -181,7 +181,7 @@
                 <div id="mdbook-content" class="content">
                     <main>
                         <h1 id="crate-reference"><a class="header" href="#crate-reference">Crate Reference</a></h1>
-<p>Sisyphus is structured as a Rust workspace with seven crates:</p>
+<p>Sisyphus is structured as a Rust workspace with nine crates:</p>
 <div class="table-wrapper">
 <table>
 <thead>
@@ -193,8 +193,10 @@
 <tr><td><a href="crates/sandbox.html">sisyphus-sandbox</a></td><td>WASM sandbox runtime for tool execution</td><td>types, metrics</td></tr>
 <tr><td><a href="crates/intel.html">sisyphus-intel</a></td><td>Cognition: simulation, reflection, SOP evolution</td><td>types, metrics</td></tr>
 <tr><td><a href="crates/mem.html">sisyphus-mem</a></td><td>Multi-level cache (L1 DashMap + L2 SQLite)</td><td>types, metrics</td></tr>
-<tr><td><a href="crates/core.html">sisyphus-core</a></td><td>Kernel: DAG executor, cognitive loop, orchestration</td><td>types, intel, mem, sandbox, metrics</td></tr>
-<tr><td><a href="crates/bridge.html">sisyphus-bridge</a></td><td>HTTP/gRPC API server, CLI entry points</td><td>core (all transitive)</td></tr>
+<tr><td><a href="crates/tools.html">sisyphus-tools</a></td><td>Built-in tools, agents, and executors</td><td>types</td></tr>
+<tr><td><a href="crates/core.html">sisyphus-core</a></td><td>Kernel: DAG executor, cognitive loop, orchestration</td><td>types, intel, mem, sandbox, tools, metrics</td></tr>
+<tr><td><a href="crates/cli.html">sisyphus-cli</a></td><td>Command-line interface with agent subcommands</td><td>types, tools</td></tr>
+<tr><td><a href="crates/bridge.html">sisyphus-bridge</a></td><td>HTTP/gRPC API server, entry point</td><td>core, tools (all transitive)</td></tr>
 </tbody>
 </table>
 </div>
@@ -203,7 +205,9 @@
                     ├── sisyphus-types
                     ├── sisyphus-intel → sisyphus-types, sisyphus-metrics
                     ├── sisyphus-mem   → sisyphus-types, sisyphus-metrics
+                    ├── sisyphus-tools → sisyphus-types
                     ├── sisyphus-sandbox → sisyphus-types, sisyphus-metrics
+                    ├── sisyphus-cli   → sisyphus-types, sisyphus-tools
                     └── sisyphus-metrics → sisyphus-types
 </code></pre>
 

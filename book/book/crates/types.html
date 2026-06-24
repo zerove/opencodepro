@@ -35,10 +35,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-9aca3f2e.js";
+            window.path_to_searchindex_js = "../searchindex-b60e822c.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-f5eeceea.js"></script>
+        <script src="../toc-5a113c67.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -181,44 +181,87 @@
                 <div id="mdbook-content" class="content">
                     <main>
                         <h1 id="sisyphus-types--core-data-structures"><a class="header" href="#sisyphus-types--core-data-structures">sisyphus-types — Core Data Structures</a></h1>
-<p>Standalone crate (zero dependencies) providing the data model used by all other crates.</p>
+<p>Shared types, traits, and configuration used by all other crates.</p>
 <h2 id="key-types"><a class="header" href="#key-types">Key Types</a></h2>
 <h3 id="sopgraph"><a class="header" href="#sopgraph"><code>SOPGraph</code></a></h3>
-<p>A directed acyclic graph (DAG) of nodes, using <code>petgraph::graph::DiGraph</code>. Each node is a <code>SOPNode</code> containing metadata like name, description, tool type, and required fuel.</p>
+<p>A directed acyclic graph (DAG) using <code>petgraph::graph::DiGraph&lt;Arc&lt;dyn SOPNode&gt;, f64&gt;</code>:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
 </span>pub struct SOPGraph {
-    pub graph: DiGraph&lt;SOPNode, f64&gt;,
-    pub metadata: SOPMetadata,
+    pub graph: petgraph::graph::DiGraph&lt;Arc&lt;dyn SOPNode&gt;, f64&gt;,
+    pub metadata: SOPGraphConfig,
 }
 <span class="boring">}</span></code></pre>
-<h3 id="sopnode"><a class="header" href="#sopnode"><code>SOPNode</code></a></h3>
-<p>A single node in the SOP graph.</p>
+<p>Each node implements the <code>SOPNode</code> trait:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
-</span>pub struct SOPNode {
-    name: String,
-    description: String,
-    tool_type: String,
-    fuel_budget: u64,
-    max_retries: u32,
-    retry_count: u32,
-    timeout_ms: u64,
+</span>pub trait SOPNode: Send + Sync {
+    fn name(&amp;self) -&gt; &amp;str;
+    fn execute(&amp;self, ctx: &amp;ExecutionContext) -&gt; impl Future&lt;Output = Result&lt;NodeOutput, String&gt;&gt;;
+}
+<span class="boring">}</span></code></pre>
+<h3 id="wasmsopnode"><a class="header" href="#wasmsopnode"><code>WasmSOPNode</code></a></h3>
+<p>Concrete node implementation backed by a WASM tool:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>pub struct WasmSOPNode {
+    pub name: String,
+    pub tool_id: String,
+    pub executor: Arc&lt;dyn ToolExecutor&gt;,
+    pub fuel_limit: u64,
 }
 <span class="boring">}</span></code></pre>
 <h3 id="executioncontext"><a class="header" href="#executioncontext"><code>ExecutionContext</code></a></h3>
-<p>Thread-safe shared context for storing named values (<code>String</code> → <code>serde_json::Value</code>). Passed as <code>Arc&lt;ExecutionContext&gt;</code> through the DAG, enabling parallel node access.</p>
-<h3 id="executionresult"><a class="header" href="#executionresult"><code>ExecutionResult</code></a></h3>
-<p>Result of a single node execution, containing the output value, execution duration, and fuel consumed.</p>
-<h3 id="cognitivereport"><a class="header" href="#cognitivereport"><code>CognitiveReport</code></a></h3>
-<p>Full report from a cognitive loop iteration, including:</p>
-<ul>
-<li>Channel trace with step-by-step reasoning</li>
-<li>Reflection report with deviation scores</li>
-<li>Simulation result with predicted success probability</li>
-</ul>
+<p>Thread-safe shared context for propagating values through the DAG. Internally an <code>Arc&lt;RwLock&lt;HashMap&lt;String, Value&gt;&gt;&gt;</code>.</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let ctx = ExecutionContext::new();
+ctx.set("key", serde_json::json!("value")).await;
+let val = ctx.get_result("key").await;
+<span class="boring">}</span></code></pre>
+<h3 id="toolexecutor-trait"><a class="header" href="#toolexecutor-trait"><code>ToolExecutor</code> Trait</a></h3>
+<p>The abstraction that decouples <code>sisyphus-core</code> from <code>sisyphus-sandbox</code>:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>#[async_trait]
+pub trait ToolExecutor: Send + Sync {
+    async fn execute(&amp;self, tool_id: &amp;str, args: Vec&lt;u8&gt;, fuel_limit: u64) -&gt; Result&lt;Vec&lt;u8&gt;, String&gt;;
+}
+<span class="boring">}</span></code></pre>
+<h3 id="statestore-trait"><a class="header" href="#statestore-trait"><code>StateStore</code> Trait</a></h3>
+<p>Storage abstraction decoupling <code>sisyphus-core</code> from <code>sisyphus-mem</code>:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>#[async_trait]
+pub trait StateStore: Send + Sync {
+    async fn get_state_json(&amp;self, key: &amp;str) -&gt; Result&lt;Option&lt;serde_json::Value&gt;, String&gt;;
+    async fn set_state_json(&amp;self, key: &amp;str, value: serde_json::Value) -&gt; Result&lt;(), String&gt;;
+}
+<span class="boring">}</span></code></pre>
 <h3 id="config"><a class="header" href="#config"><code>Config</code></a></h3>
-<p>TOML-deserializable configuration struct for all Sisyphus components (fuel limits, pool sizes, paths, etc.).</p>
+<p>TOML-deserializable configuration for all subsystems. Supports environment variable overrides:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let config = Config::from_file("config.toml")?;
+config.apply_env_overrides();
+// SISYPHUS_METRICS__PROMETHEUS_PORT=9090 overrides metrics.prometheus_port
+<span class="boring">}</span></code></pre>
+<h3 id="other-key-types"><a class="header" href="#other-key-types">Other Key Types</a></h3>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>CompositeGraph</code></td><td>Multiple <code>SOPGraph</code>s with cross-graph dependency mappings</td></tr>
+<tr><td><code>DataMapping</code></td><td>Defines how a sink node’s output feeds a downstream graph’s input</td></tr>
+<tr><td><code>GraphDependency</code></td><td>Dependency edge between two SOP graphs</td></tr>
+<tr><td><code>ExecutionHistory</code></td><td>Per-SOP execution records with timestamps and deviation scores</td></tr>
+<tr><td><code>CognitiveReport</code></td><td>Full iteration report from the cognitive loop</td></tr>
+<tr><td><code>NodeOutput</code></td><td>Typed enum for node execution results</td></tr>
+</tbody>
+</table>
+</div>
 
                     </main>
 

@@ -35,10 +35,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-9aca3f2e.js";
+            window.path_to_searchindex_js = "../searchindex-b60e822c.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-f5eeceea.js"></script>
+        <script src="../toc-5a113c67.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -183,37 +183,39 @@
                         <h1 id="standard-operating-procedure-sop"><a class="header" href="#standard-operating-procedure-sop">Standard Operating Procedure (SOP)</a></h1>
 <p>An SOP is a <strong>directed acyclic graph (DAG)</strong> that represents a procedure to achieve a specific goal.</p>
 <h2 id="structure"><a class="header" href="#structure">Structure</a></h2>
-<pre><code>           ┌──────┐
-           │ Goal │
-           └──┬───┘
-              │
-    ┌─────────┼─────────┐
-    ▼         ▼         ▼
-┌──────┐ ┌──────┐ ┌──────┐
-│Node 1│ │Node 2│ │Node 3│
-│ WASM │ │ WASM │ │ WASM │
-└──┬───┘ └──────┘ └──┬───┘
-   │                  │
-   └──────┬───────────┘
-          ▼
-     ┌────────┐
-     │ Result │
-     └────────┘
+<pre><code class="language-mermaid">graph LR
+    G[Goal] --&gt; N1[Node 1&lt;br/&gt;fetch data]
+    G --&gt; N2[Node 2&lt;br/&gt;process]
+    G --&gt; N3[Node 3&lt;br/&gt;validate]
+    N1 --&gt; N4[Node 4&lt;br/&gt;merge]
+    N2 --&gt; N4
+    N3 --&gt; N4
+    N4 --&gt; R(Result)
 </code></pre>
 <p>Each node contains:</p>
 <ul>
 <li><strong>Name</strong>: Unique identifier within the SOP</li>
-<li><strong>Description</strong>: What this step does (used for synthesis and reflection)</li>
+<li><strong>Description</strong>: Semantic description of the step (used for synthesis and reflection)</li>
 <li><strong>Tool Type</strong>: Which WASM tool binary to invoke</li>
-<li><strong>Fuel Budget</strong>: WASM instruction limit for this node</li>
-<li><strong>Timeout</strong>: Maximum wall-clock time for execution</li>
-<li><strong>Retry Policy</strong>: Max retries and current retry count</li>
+<li><strong>Fuel Budget</strong>: WASM instruction limit for this node (default: 10,000)</li>
+<li><strong>Max Retries</strong>: How many times to retry on failure</li>
+<li><strong>Timeout</strong>: Maximum wall-clock time (default: 30s)</li>
 </ul>
 <h2 id="lifecycle"><a class="header" href="#lifecycle">Lifecycle</a></h2>
+<pre><code class="language-mermaid">stateDiagram-v2
+    [*] --&gt; Synthesized: GoalDrivenSynthesizer
+    Synthesized --&gt; Executing: DagExecutor
+    Executing --&gt; Succeeded: All nodes OK
+    Executing --&gt; Failed: Node error
+    Failed --&gt; Evolved: StandardEvolver
+    Evolved --&gt; Executing: Retry with modifications
+    Succeeded --&gt; [*]
+    Failed --&gt; [*]: Max iterations exceeded
+</code></pre>
 <ol>
-<li><strong>Synthesize</strong>: The <code>StandardReflector</code> generates an SOP graph from a natural-language goal using the synthesizer module.</li>
-<li><strong>Execute</strong>: The <code>DagExecutor</code> runs the SOP with topological ordering.</li>
-<li><strong>Evolve</strong>: After reflection, the SOP may be mutated — new nodes added, fuel budgets adjusted, or subgraphs restructured.</li>
+<li><strong>Synthesize</strong>: <code>GoalDrivenSynthesizer</code> generates an SOP graph from a natural-language goal</li>
+<li><strong>Execute</strong>: <code>Executor</code> runs the DAG with topological ordering — independent nodes in parallel</li>
+<li><strong>Evolve</strong>: After reflection, the SOP may be mutated — new nodes added, fuel budgets adjusted, or subgraphs restructured</li>
 </ol>
 <h2 id="evolution-operations"><a class="header" href="#evolution-operations">Evolution Operations</a></h2>
 <div class="table-wrapper">
@@ -222,12 +224,22 @@
 <tr><th>Operation</th><th>Description</th></tr>
 </thead>
 <tbody>
-<tr><td><strong>Retry wrapper</strong></td><td>Wrap a failed node with retry logic</td></tr>
-<tr><td><strong>Fuel increase</strong></td><td>Boost fuel budget for nodes that exhausted fuel</td></tr>
-<tr><td><strong>Subgraph restructure</strong></td><td>Reorder or split nodes for better parallelism</td></tr>
+<tr><td><strong>Retry wrapper</strong></td><td>Wrap a failed node with retry logic (increased fuel)</td></tr>
+<tr><td><strong>Fuel increase</strong></td><td>Boost fuel budget for nodes that exhausted fuel (2× per retry)</td></tr>
+<tr><td><strong>Subgraph restructure</strong></td><td>Reorder or split nodes for better parallelism (future)</td></tr>
 </tbody>
 </table>
 </div>
+<h2 id="sop-graph-config"><a class="header" href="#sop-graph-config">SOP Graph Config</a></h2>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>pub struct SOPGraphConfig {
+    pub max_concurrency: usize,      // Max parallel nodes (default: 16)
+    pub default_fuel: u64,          // Default per-node fuel (default: 10,000)
+    pub default_timeout_ms: u64,    // Default per-node timeout (default: 30,000)
+    pub max_retries: u32,           // Default retries per node (default: 3)
+}
+<span class="boring">}</span></code></pre>
 
                     </main>
 

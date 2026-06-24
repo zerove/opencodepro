@@ -36,10 +36,10 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-9aca3f2e.js";
+            window.path_to_searchindex_js = "searchindex-b60e822c.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-f5eeceea.js"></script>
+        <script src="toc-5a113c67.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -281,7 +281,7 @@
 </ul>
 <div style="break-before: page; page-break-before: always;"></div>
 <h1 id="crate-reference"><a class="header" href="#crate-reference">Crate Reference</a></h1>
-<p>Sisyphus is structured as a Rust workspace with seven crates:</p>
+<p>Sisyphus is structured as a Rust workspace with nine crates:</p>
 <div class="table-wrapper">
 <table>
 <thead>
@@ -293,8 +293,10 @@
 <tr><td><a href="#sisyphus-sandbox--wasm-runtime">sisyphus-sandbox</a></td><td>WASM sandbox runtime for tool execution</td><td>types, metrics</td></tr>
 <tr><td><a href="#sisyphus-intel--cognition--simulation">sisyphus-intel</a></td><td>Cognition: simulation, reflection, SOP evolution</td><td>types, metrics</td></tr>
 <tr><td><a href="#sisyphus-mem--memory--caching">sisyphus-mem</a></td><td>Multi-level cache (L1 DashMap + L2 SQLite)</td><td>types, metrics</td></tr>
-<tr><td><a href="#sisyphus-core--kernel--orchestration">sisyphus-core</a></td><td>Kernel: DAG executor, cognitive loop, orchestration</td><td>types, intel, mem, sandbox, metrics</td></tr>
-<tr><td><a href="#sisyphus-bridge--entry-point--api">sisyphus-bridge</a></td><td>HTTP/gRPC API server, CLI entry points</td><td>core (all transitive)</td></tr>
+<tr><td><a href="#sisyphus-tools--built-in-tools--agents">sisyphus-tools</a></td><td>Built-in tools, agents, and executors</td><td>types</td></tr>
+<tr><td><a href="#sisyphus-core--kernel--orchestration">sisyphus-core</a></td><td>Kernel: DAG executor, cognitive loop, orchestration</td><td>types, intel, mem, sandbox, tools, metrics</td></tr>
+<tr><td><a href="#sisyphus-cli--command-line-interface">sisyphus-cli</a></td><td>Command-line interface with agent subcommands</td><td>types, tools</td></tr>
+<tr><td><a href="#sisyphus-bridge--entry-point--api">sisyphus-bridge</a></td><td>HTTP/gRPC API server, entry point</td><td>core, tools (all transitive)</td></tr>
 </tbody>
 </table>
 </div>
@@ -303,170 +305,518 @@
                     ├── sisyphus-types
                     ├── sisyphus-intel → sisyphus-types, sisyphus-metrics
                     ├── sisyphus-mem   → sisyphus-types, sisyphus-metrics
+                    ├── sisyphus-tools → sisyphus-types
                     ├── sisyphus-sandbox → sisyphus-types, sisyphus-metrics
+                    ├── sisyphus-cli   → sisyphus-types, sisyphus-tools
                     └── sisyphus-metrics → sisyphus-types
 </code></pre>
 <div style="break-before: page; page-break-before: always;"></div>
 <h1 id="sisyphus-core--kernel--orchestration"><a class="header" href="#sisyphus-core--kernel--orchestration">sisyphus-core — Kernel &amp; Orchestration</a></h1>
-<p>The central crate that orchestrates the entire cognitive loop. It depends on all other crates.</p>
-<h2 id="key-components"><a class="header" href="#key-components">Key Components</a></h2>
+<p>The central crate that orchestrates the entire cognitive loop. Depends on all other crates.</p>
+<h2 id="key-types"><a class="header" href="#key-types">Key Types</a></h2>
 <h3 id="sisyphuskernel"><a class="header" href="#sisyphuskernel"><code>SisyphusKernel</code></a></h3>
-<p>The main entry point for the cognitive loop. Holds references to the SOP synthesizer, simulator, reflector, evolver, memory store, and WASM tool executor.</p>
+<p>Main entry point for the cognitive loop. Holds references to all subsystems:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
 </span>pub struct SisyphusKernel {
+    pub state_store: Arc&lt;dyn StateStore&gt;,
+    pub tool_executor: Arc&lt;dyn ToolExecutor&gt;,
     pub intel: Arc&lt;SisyphusIntel&gt;,
-    pub mem: Arc&lt;dyn MemoryStore&gt;,
-    pub executor: Arc&lt;WasmToolExecutor&gt;,
+    pub synthesizer: Arc&lt;dyn FlowSynthesizer&gt;,
 }
 <span class="boring">}</span></code></pre>
-<h3 id="cognitiveloopexecute_goal"><a class="header" href="#cognitiveloopexecute_goal"><code>CognitiveLoop::execute_goal()</code></a></h3>
-<p>The primary cognitive cycle:</p>
-<ol>
-<li><strong>Synthesize</strong>: Convert natural-language goal into SOP graph via <code>SisyphusIntel::synthesize_sop()</code>.</li>
-<li><strong>Execute</strong>: Run the SOP graph using the DAG executor, respecting node dependencies.</li>
-<li><strong>Simulate</strong>: Run Monte Carlo simulation over execution traces via <code>StandardReflector::simulate_paths()</code>.</li>
-<li><strong>Reflect</strong>: Compare predicted vs. actual outcomes via <code>StandardReflector::reflect()</code>.</li>
-<li><strong>Evolve</strong>: If deviation &gt; threshold, mutate the SOP via <code>StandardReflector::evolve()</code>.</li>
-<li><strong>Loop</strong>: Repeat steps 2–5 until convergence or max iterations.</li>
-</ol>
-<h3 id="dagexecutor"><a class="header" href="#dagexecutor"><code>DagExecutor</code></a></h3>
-<p>Executes a <code>SOPGraph</code> with topological ordering. Nodes with zero in-degree execute in parallel via <code>tokio::task::JoinSet</code>. Results propagate through the graph via <code>Arc&lt;ExecutionContext&gt;</code> sharing.</p>
-<h2 id="cli"><a class="header" href="#cli">CLI</a></h2>
-<p>The crate includes a binary <code>integration_stress</code> that runs an end-to-end in-process integration test.</p>
-<div style="break-before: page; page-break-before: always;"></div>
-<h1 id="sisyphus-types--core-data-structures"><a class="header" href="#sisyphus-types--core-data-structures">sisyphus-types — Core Data Structures</a></h1>
-<p>Standalone crate (zero dependencies) providing the data model used by all other crates.</p>
-<h2 id="key-types"><a class="header" href="#key-types">Key Types</a></h2>
-<h3 id="sopgraph"><a class="header" href="#sopgraph"><code>SOPGraph</code></a></h3>
-<p>A directed acyclic graph (DAG) of nodes, using <code>petgraph::graph::DiGraph</code>. Each node is a <code>SOPNode</code> containing metadata like name, description, tool type, and required fuel.</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>pub struct SOPGraph {
-    pub graph: DiGraph&lt;SOPNode, f64&gt;,
-    pub metadata: SOPMetadata,
-}
-<span class="boring">}</span></code></pre>
-<h3 id="sopnode"><a class="header" href="#sopnode"><code>SOPNode</code></a></h3>
-<p>A single node in the SOP graph.</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>pub struct SOPNode {
-    name: String,
-    description: String,
-    tool_type: String,
-    fuel_budget: u64,
-    max_retries: u32,
-    retry_count: u32,
-    timeout_ms: u64,
-}
-<span class="boring">}</span></code></pre>
-<h3 id="executioncontext"><a class="header" href="#executioncontext"><code>ExecutionContext</code></a></h3>
-<p>Thread-safe shared context for storing named values (<code>String</code> → <code>serde_json::Value</code>). Passed as <code>Arc&lt;ExecutionContext&gt;</code> through the DAG, enabling parallel node access.</p>
-<h3 id="executionresult"><a class="header" href="#executionresult"><code>ExecutionResult</code></a></h3>
-<p>Result of a single node execution, containing the output value, execution duration, and fuel consumed.</p>
-<h3 id="cognitivereport"><a class="header" href="#cognitivereport"><code>CognitiveReport</code></a></h3>
-<p>Full report from a cognitive loop iteration, including:</p>
-<ul>
-<li>Channel trace with step-by-step reasoning</li>
-<li>Reflection report with deviation scores</li>
-<li>Simulation result with predicted success probability</li>
-</ul>
-<h3 id="config"><a class="header" href="#config"><code>Config</code></a></h3>
-<p>TOML-deserializable configuration struct for all Sisyphus components (fuel limits, pool sizes, paths, etc.).</p>
-<div style="break-before: page; page-break-before: always;"></div>
-<h1 id="sisyphus-intel--cognition--simulation"><a class="header" href="#sisyphus-intel--cognition--simulation">sisyphus-intel — Cognition &amp; Simulation</a></h1>
-<p>Provides the cognitive capabilities: Monte Carlo simulation, structured reflection, and SOP evolution.</p>
-<h2 id="key-components-1"><a class="header" href="#key-components-1">Key Components</a></h2>
-<h3 id="sisyphusintel"><a class="header" href="#sisyphusintel"><code>SisyphusIntel</code></a></h3>
-<p>Holds the synthesizer and reflector. Orchestrates goal synthesis and the cognitive loop’s reasoning steps.</p>
-<h3 id="standardreflector"><a class="header" href="#standardreflector"><code>StandardReflector</code></a></h3>
-<p>Three core responsibilities:</p>
-<ol>
-<li>
-<p><strong>Simulation</strong> (<code>simulate_paths</code>): Runs Monte Carlo over the SOP graph — samples execution paths from source to sink nodes, computing path probabilities and blended costs.</p>
-</li>
-<li>
-<p><strong>Reflection</strong> (<code>reflect</code>): Compares simulated predictions against actual execution traces. Computes a <em>deviation score</em> (0.0 = perfect match) and generates structured improvement suggestions.</p>
-</li>
-<li>
-<p><strong>Evolution</strong> (<code>evolve</code>): Mutates the SOP graph based on reflection output — adds retry wrappers around failed nodes, adjusts fuel budgets via <code>AdaptiveFuelPricer</code>, and restructures subgraphs as needed.</p>
-</li>
-</ol>
-<h3 id="adaptivefuelpricer"><a class="header" href="#adaptivefuelpricer"><code>AdaptiveFuelPricer</code></a></h3>
-<p>Exponential backoff fuel pricer that increases fuel for nodes that ran out, and decreases it for nodes that consistently succeed.</p>
-<h3 id="montecarlosimulator"><a class="header" href="#montecarlosimulator"><code>MonteCarloSimulator</code></a></h3>
-<p>Core simulation engine using random path sampling through the DAG to estimate:</p>
-<ul>
-<li>Success probability per path</li>
-<li>Expected execution cost</li>
-<li>Best path identification</li>
-</ul>
-<div style="break-before: page; page-break-before: always;"></div>
-<h1 id="sisyphus-mem--memory--caching"><a class="header" href="#sisyphus-mem--memory--caching">sisyphus-mem — Memory &amp; Caching</a></h1>
-<p>Two-level cache store for SOP execution history, intermediate results, and configuration.</p>
-<h2 id="architecture"><a class="header" href="#architecture">Architecture</a></h2>
-<pre><code>┌──────────┐     ┌──────────┐
-│   L1     │     │   L2     │
-│ DashMap  │────▶│  SQLite  │
-│ (memory) │     │  (disk)  │
-└──────────┘     └──────────┘
-</code></pre>
-<ul>
-<li><strong>L1</strong>: In-memory <code>DashMap&lt;String, serde_json::Value&gt;</code> for sub-millisecond reads. No persistence.</li>
-<li><strong>L2</strong>: SQLite via <code>sqlx</code> for persistent storage. Fallback when L1 misses.</li>
-</ul>
-<h3 id="write-strategy"><a class="header" href="#write-strategy">Write Strategy</a></h3>
-<p>Writes go to L2 (SQLite) first, then update L1. This ensures durability even if the process crashes before L1 sync.</p>
-<h3 id="read-strategy"><a class="header" href="#read-strategy">Read Strategy</a></h3>
-<p>Reads check L1 first. On miss, query L2, and if found, populate L1 before returning.</p>
-<h2 id="key-operations"><a class="header" href="#key-operations">Key Operations</a></h2>
+<h4 id="core-methods"><a class="header" href="#core-methods">Core Methods</a></h4>
 <div class="table-wrapper">
 <table>
 <thead>
-<tr><th>Operation</th><th>Description</th></tr>
+<tr><th>Method</th><th>Description</th></tr>
 </thead>
 <tbody>
-<tr><td><code>set(key, value)</code></td><td>Write to L2 → update L1</td></tr>
-<tr><td><code>get(key)</code></td><td>Check L1 → check L2 → return</td></tr>
-<tr><td><code>snapshot()</code></td><td>Dump all entries into a <code>Snapshot</code> struct</td></tr>
-<tr><td><code>restore(snapshot)</code></td><td>Restore from a previously taken snapshot</td></tr>
+<tr><td><code>execute_goal(goal, sop_id)</code></td><td>Full pipeline: synthesize → execute → cognize → evolve</td></tr>
+<tr><td><code>execute_goals(goals)</code></td><td>Execute multiple goals concurrently, return composite output</td></tr>
+<tr><td><code>execute_with_cognition(graph, start, sop_id, ctx)</code></td><td>Multi-iteration loop: predict → execute → reflect → evolve</td></tr>
+<tr><td><code>load_sop(sop_id)</code></td><td>Load a previously saved SOP graph from the state store</td></tr>
+<tr><td><code>save_sop(sop_id, graph)</code></td><td>Persist an SOP graph to the state store</td></tr>
+</tbody>
+</table>
+</div>
+<h3 id="executor"><a class="header" href="#executor"><code>Executor</code></a></h3>
+<p>The DAG runner that executes SOP graphs with topological parallelism:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let ctx = Executor::new()
+    .execute_with_context(&amp;sop_graph, start_node, None)
+    .await?;
+<span class="boring">}</span></code></pre>
+<h3 id="cognitivereport"><a class="header" href="#cognitivereport"><code>CognitiveReport</code></a></h3>
+<p>Returned from <code>execute_with_cognition</code>:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>pub struct CognitiveReport {
+    pub deviation_score: f64,
+    pub iterations: usize,
+    pub trace: String,
+    pub improvements: Vec&lt;String&gt;,
+}
+<span class="boring">}</span></code></pre>
+<h3 id="dependencyresolver"><a class="header" href="#dependencyresolver"><code>DependencyResolver</code></a></h3>
+<p>Resolves dependency mappings across composite graphs:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>pub fn resolve(composite: &amp;CompositeGraph) -&gt; Result&lt;Vec&lt;String&gt;, String&gt;;
+<span class="boring">}</span></code></pre>
+<h2 id="execution-flow"><a class="header" href="#execution-flow">Execution Flow</a></h2>
+<ol>
+<li><strong>Synthesize</strong>: <code>FlowSynthesizer::synthesize()</code> converts a natural-language goal into an <code>SOPGraph</code></li>
+<li><strong>Execute</strong>: <code>Executor::execute_with_context()</code> runs the DAG with topological ordering — independent nodes run in parallel via <code>tokio::task::JoinSet</code></li>
+<li><strong>Simulate</strong>: <code>MonteCarloSimulator</code> estimates success probability and cost via random path sampling</li>
+<li><strong>Reflect</strong>: <code>StandardReflector</code> compares prediction vs actual trace, producing a deviation score</li>
+<li><strong>Evolve</strong>: If deviation &gt; threshold, <code>StandardEvolver</code> mutates the SOP (fuel adjustment, retry wrappers)</li>
+<li><strong>Loop</strong>: Repeat until convergence or max iterations</li>
+</ol>
+<h2 id="benchmark-binary"><a class="header" href="#benchmark-binary">Benchmark Binary</a></h2>
+<p><code>cargo run --release -p sisyphus-core --bin integration_stress</code> runs an end-to-end in-process stress test.</p>
+<h2 id="example"><a class="header" href="#example">Example</a></h2>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>use sisyphus_core::{SisyphusKernel, Executor, SOPGraph, WasmSOPNode};
+use sisyphus_sandbox::WasmToolExecutor;
+use std::sync::Arc;
+
+// Build a single-node SOP
+let executor = Arc::new(WasmToolExecutor::new()?);
+let tool = WasmSOPNode {
+    name: "greet".into(),
+    tool_id: "hello".into(),
+    executor: executor.clone(),
+    fuel_limit: 1000,
+};
+let mut graph = SOPGraph::new();
+let n = graph.add_node(Arc::new(tool));
+let ctx = Executor::new().execute_with_context(&amp;graph, n, None).await?;
+<span class="boring">}</span></code></pre>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="sisyphus-types--core-data-structures"><a class="header" href="#sisyphus-types--core-data-structures">sisyphus-types — Core Data Structures</a></h1>
+<p>Shared types, traits, and configuration used by all other crates.</p>
+<h2 id="key-types-1"><a class="header" href="#key-types-1">Key Types</a></h2>
+<h3 id="sopgraph"><a class="header" href="#sopgraph"><code>SOPGraph</code></a></h3>
+<p>A directed acyclic graph (DAG) using <code>petgraph::graph::DiGraph&lt;Arc&lt;dyn SOPNode&gt;, f64&gt;</code>:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>pub struct SOPGraph {
+    pub graph: petgraph::graph::DiGraph&lt;Arc&lt;dyn SOPNode&gt;, f64&gt;,
+    pub metadata: SOPGraphConfig,
+}
+<span class="boring">}</span></code></pre>
+<p>Each node implements the <code>SOPNode</code> trait:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>pub trait SOPNode: Send + Sync {
+    fn name(&amp;self) -&gt; &amp;str;
+    fn execute(&amp;self, ctx: &amp;ExecutionContext) -&gt; impl Future&lt;Output = Result&lt;NodeOutput, String&gt;&gt;;
+}
+<span class="boring">}</span></code></pre>
+<h3 id="wasmsopnode"><a class="header" href="#wasmsopnode"><code>WasmSOPNode</code></a></h3>
+<p>Concrete node implementation backed by a WASM tool:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>pub struct WasmSOPNode {
+    pub name: String,
+    pub tool_id: String,
+    pub executor: Arc&lt;dyn ToolExecutor&gt;,
+    pub fuel_limit: u64,
+}
+<span class="boring">}</span></code></pre>
+<h3 id="executioncontext"><a class="header" href="#executioncontext"><code>ExecutionContext</code></a></h3>
+<p>Thread-safe shared context for propagating values through the DAG. Internally an <code>Arc&lt;RwLock&lt;HashMap&lt;String, Value&gt;&gt;&gt;</code>.</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let ctx = ExecutionContext::new();
+ctx.set("key", serde_json::json!("value")).await;
+let val = ctx.get_result("key").await;
+<span class="boring">}</span></code></pre>
+<h3 id="toolexecutor-trait"><a class="header" href="#toolexecutor-trait"><code>ToolExecutor</code> Trait</a></h3>
+<p>The abstraction that decouples <code>sisyphus-core</code> from <code>sisyphus-sandbox</code>:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>#[async_trait]
+pub trait ToolExecutor: Send + Sync {
+    async fn execute(&amp;self, tool_id: &amp;str, args: Vec&lt;u8&gt;, fuel_limit: u64) -&gt; Result&lt;Vec&lt;u8&gt;, String&gt;;
+}
+<span class="boring">}</span></code></pre>
+<h3 id="statestore-trait"><a class="header" href="#statestore-trait"><code>StateStore</code> Trait</a></h3>
+<p>Storage abstraction decoupling <code>sisyphus-core</code> from <code>sisyphus-mem</code>:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>#[async_trait]
+pub trait StateStore: Send + Sync {
+    async fn get_state_json(&amp;self, key: &amp;str) -&gt; Result&lt;Option&lt;serde_json::Value&gt;, String&gt;;
+    async fn set_state_json(&amp;self, key: &amp;str, value: serde_json::Value) -&gt; Result&lt;(), String&gt;;
+}
+<span class="boring">}</span></code></pre>
+<h3 id="config"><a class="header" href="#config"><code>Config</code></a></h3>
+<p>TOML-deserializable configuration for all subsystems. Supports environment variable overrides:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let config = Config::from_file("config.toml")?;
+config.apply_env_overrides();
+// SISYPHUS_METRICS__PROMETHEUS_PORT=9090 overrides metrics.prometheus_port
+<span class="boring">}</span></code></pre>
+<h3 id="other-key-types"><a class="header" href="#other-key-types">Other Key Types</a></h3>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>CompositeGraph</code></td><td>Multiple <code>SOPGraph</code>s with cross-graph dependency mappings</td></tr>
+<tr><td><code>DataMapping</code></td><td>Defines how a sink node’s output feeds a downstream graph’s input</td></tr>
+<tr><td><code>GraphDependency</code></td><td>Dependency edge between two SOP graphs</td></tr>
+<tr><td><code>ExecutionHistory</code></td><td>Per-SOP execution records with timestamps and deviation scores</td></tr>
+<tr><td><code>CognitiveReport</code></td><td>Full iteration report from the cognitive loop</td></tr>
+<tr><td><code>NodeOutput</code></td><td>Typed enum for node execution results</td></tr>
 </tbody>
 </table>
 </div>
 <div style="break-before: page; page-break-before: always;"></div>
+<h1 id="sisyphus-intel--cognition--simulation"><a class="header" href="#sisyphus-intel--cognition--simulation">sisyphus-intel — Cognition &amp; Simulation</a></h1>
+<p>The “brain” of Sisyphus — four core cognitive capabilities: <strong>flow synthesis</strong>, <strong>simulation</strong>, <strong>reflection</strong>, and <strong>evolution</strong>.</p>
+<h2 id="four-cognitive-traits"><a class="header" href="#four-cognitive-traits">Four Cognitive Traits</a></h2>
+<h3 id="1-flowsynthesizer-synthesis"><a class="header" href="#1-flowsynthesizer-synthesis">1. FlowSynthesizer (Synthesis)</a></h3>
+<p>Converts a natural-language goal into a DAG of typed actions:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>#[async_trait]
+pub trait FlowSynthesizer: Send + Sync {
+    async fn synthesize(&amp;self, goal: &amp;str, context: &amp;ExecutionContext)
+        -&gt; Result&lt;SynthesisResult, String&gt;;
+}
+<span class="boring">}</span></code></pre>
+<p><strong>Impl: <code>GoalDrivenSynthesizer</code></strong> — keyword-based parser that maps action verbs (fetch, process, store, search, validate) to linear or parallel DAG pipelines.</p>
+<h3 id="2-simulator-prediction"><a class="header" href="#2-simulator-prediction">2. Simulator (Prediction)</a></h3>
+<p>Estimates success probability and execution cost before running:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>#[async_trait]
+pub trait Simulator: Send + Sync {
+    async fn simulate(&amp;self, graph: &amp;SOPGraph, ctx: &amp;ExecutionContext, sop_id: &amp;str)
+        -&gt; Result&lt;SimulationResult, String&gt;;
+}
+<span class="boring">}</span></code></pre>
+<p><strong>Impl: <code>MonteCarloSimulator</code></strong> — random path sampling through the DAG. Computes blended path probabilities and estimated costs. Uses execution history from the state store to bias sampling toward historically successful paths.</p>
+<h3 id="3-reflector-analysis"><a class="header" href="#3-reflector-analysis">3. Reflector (Analysis)</a></h3>
+<p>Compares predicted vs actual outcomes:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>#[async_trait]
+pub trait Reflector: Send + Sync {
+    async fn reflect(&amp;self, trace: &amp;str, prediction: &amp;SimulationResult)
+        -&gt; Result&lt;ReflectionReport, String&gt;;
+}
+<span class="boring">}</span></code></pre>
+<p><strong>Impl: <code>StandardReflector</code></strong> — string-based error classification building a deviation score (0.0 = perfect match). Generates structured improvement suggestions.</p>
+<h3 id="4-sopevolver-adaptation"><a class="header" href="#4-sopevolver-adaptation">4. SOPEvolver (Adaptation)</a></h3>
+<p>Mutates the SOP after reflection:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>#[async_trait]
+pub trait SOPEvolver: Send + Sync {
+    fn evolve(&amp;self, graph: &amp;SOPGraph, report: &amp;ReflectionReport, prediction: &amp;SimulationResult)
+        -&gt; Result&lt;SOPGraph, String&gt;;
+}
+<span class="boring">}</span></code></pre>
+<p><strong>Impl: <code>StandardEvolver</code></strong> — wraps failed nodes in retry logic, adjusts fuel budgets. Uses either <code>SimpleFuelPricer</code> (linear) or <code>AdaptiveFuelPricer</code> (exponential backoff).</p>
+<h2 id="error-classification"><a class="header" href="#error-classification">Error Classification</a></h2>
+<p><code>ErrorCategory</code> classifies execution failures:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>pub enum ErrorCategory {
+    ResourceExhaustion(&amp;'static str),
+    Timeout,
+    DataError,
+    Unknown,
+}
+<span class="boring">}</span></code></pre>
+<p>Used by <code>StandardReflector</code> to determine severity and generate targeted improvement suggestions.</p>
+<h2 id="example-1"><a class="header" href="#example-1">Example</a></h2>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>use sisyphus_intel::*;
+
+let executor = Arc::new(MockExecutor);
+let synthesizer = GoalDrivenSynthesizer::new(executor);
+let ctx = ExecutionContext::new();
+let result = synthesizer.synthesize("fetch process store", &amp;ctx).await?;
+println!("Graph has {} nodes", result.graph.graph.node_count());
+<span class="boring">}</span></code></pre>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="sisyphus-mem--memory--caching"><a class="header" href="#sisyphus-mem--memory--caching">sisyphus-mem — Memory &amp; Caching</a></h1>
+<p>Two-level key-value store for SOP execution history, intermediate results, and configuration state.</p>
+<h2 id="architecture"><a class="header" href="#architecture">Architecture</a></h2>
+<pre><code>┌──────────┐   write-through    ┌──────────┐
+│   L1     │ ◄──────────────── │   L2     │
+│ DashMap  │    (L2 → L1)      │  SQLite  │
+│ (memory) │ ────────────────► │  (disk)  │
+└──────────┘    read-through    └──────────┘
+                 (L1 → L2)
+</code></pre>
+<ul>
+<li><strong>L1</strong>: In-memory <code>DashMap&lt;String, serde_json::Value&gt;</code> — sub-millisecond reads</li>
+<li><strong>L2</strong>: SQLite via <code>sqlx</code> — persistent storage, WAL mode for concurrency</li>
+</ul>
+<h2 id="key-type-mfsstore"><a class="header" href="#key-type-mfsstore">Key Type: <code>MfsStore</code></a></h2>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>pub struct MfsStore {
+    l1: Arc&lt;DashMap&lt;String, serde_json::Value&gt;&gt;,
+    l2: SqlitePool,
+}
+<span class="boring">}</span></code></pre>
+<h3 id="construction"><a class="header" href="#construction">Construction</a></h3>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>// In-memory (for testing)
+let store = MfsStore::new("sqlite::memory:").await?;
+
+// Persistent
+let store = MfsStore::new("sqlite:data/state.db").await?;
+<span class="boring">}</span></code></pre>
+<p>WAL mode and <code>synchronous=NORMAL</code> are enabled automatically for performance.</p>
+<h3 id="readwrite-strategy"><a class="header" href="#readwrite-strategy">Read/Write Strategy</a></h3>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Operation</th><th>Path</th><th>Atomicity</th></tr>
+</thead>
+<tbody>
+<tr><td><code>set(key, value)</code></td><td>Write to L2 SQLite → update L1 DashMap</td><td>L2 write is a single SQL <code>INSERT OR REPLACE</code></td></tr>
+<tr><td><code>get(key)</code></td><td>Check L1 → miss? → query L2 → populate L1</td><td>L1 get is lock-free DashMap read</td></tr>
+<tr><td><code>snapshot()</code></td><td>Dump all entries into <code>Snapshot</code> struct</td><td>Captures L2 snapshot via <code>SELECT *</code></td></tr>
+<tr><td><code>restore(snapshot)</code></td><td>Clear and reload from snapshot</td><td>Truncates table, bulk insert</td></tr>
+</tbody>
+</table>
+</div>
+<h3 id="example-2"><a class="header" href="#example-2">Example</a></h3>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>use sisyphus_mem::MfsStore;
+
+let store = MfsStore::new("sqlite::memory:").await?;
+store.set_state_json("my_key", serde_json::json!({"hello": "world"})).await?;
+let val = store.get_state_json("my_key").await?;
+assert_eq!(val, Some(serde_json::json!({"hello": "world"})));
+<span class="boring">}</span></code></pre>
+<div style="break-before: page; page-break-before: always;"></div>
 <h1 id="sisyphus-sandbox--wasm-runtime"><a class="header" href="#sisyphus-sandbox--wasm-runtime">sisyphus-sandbox — WASM Runtime</a></h1>
-<p>Provides a sandboxed WASM runtime for executing tool code safely within the cognitive loop.</p>
-<h2 id="key-component-wasmtoolexecutor"><a class="header" href="#key-component-wasmtoolexecutor">Key Component: <code>WasmToolExecutor</code></a></h2>
+<p>Provides a sandboxed WASM runtime for executing tool code safely using <a href="https://wasmtime.dev/">Wasmtime</a>.</p>
+<h2 id="key-type-wasmtoolexecutor"><a class="header" href="#key-type-wasmtoolexecutor">Key Type: <code>WasmToolExecutor</code></a></h2>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
 </span>pub struct WasmToolExecutor {
     engine: Engine,
-    module_cache: Arc&lt;Mutex&lt;HashMap&lt;String, Module&gt;&gt;&gt;,
+    tools_path: PathBuf,
+    module_cache: Arc&lt;DashMap&lt;String, Module&gt;&gt;,
 }
 <span class="boring">}</span></code></pre>
-<h3 id="construction"><a class="header" href="#construction">Construction</a></h3>
-<p><code>WasmToolExecutor::new()</code> creates a Wasmtime <code>Engine</code> with:</p>
+<h3 id="construction-1"><a class="header" href="#construction-1">Construction</a></h3>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>// Default — looks for tools/ relative to CWD
+let exec = WasmToolExecutor::new()?;
+
+// Custom path and memory limit
+let exec = WasmToolExecutor::with_config(
+    Some(PathBuf::from("/opt/tools")),
+    Some(20),  // pages (20 × 64 KiB = 1.25 MiB)
+)?;
+<span class="boring">}</span></code></pre>
+<p>Creates a Wasmtime <code>Engine</code> with:</p>
 <ul>
-<li><strong>Pooling instance allocation</strong>: Pre-allocated memory pools for fast instantiation.</li>
-<li><strong>Memory limits</strong>: Max 1 MB memory per instance (<code>max_memory_size(10 * 65536)</code>).</li>
-<li><strong>Fuel metering</strong>: Configurable fuel limits to prevent runaway execution.</li>
+<li><strong>Pooling instance allocation</strong>: Pre-allocated memory pools for fast instantiation</li>
+<li><strong>Memory limits</strong>: Configurable max memory per instance (default: 10 pages = 640 KiB)</li>
+<li><strong>Fuel metering</strong>: Configurable fuel limits to prevent runaway execution (default: 10,000)</li>
+<li><strong>Stack limit</strong>: 1,000,000 max WASM stack frames</li>
 </ul>
-<h3 id="execution-flow"><a class="header" href="#execution-flow">Execution Flow</a></h3>
+<h3 id="execution-flow-1"><a class="header" href="#execution-flow-1">Execution Flow</a></h3>
 <ol>
-<li><strong>Load</strong>: Read WASM binary from the filesystem (path: <code>wasm_tools/{tool_id}.wasm</code>).</li>
-<li><strong>Compile</strong>: Compile into a Wasmtime <code>Module</code> (with caching to avoid recompilation).</li>
-<li><strong>Instantiate</strong>: Create an instance with fuel and memory limits.</li>
-<li><strong>Call</strong>: Invoke the <code>run</code> export function with input bytes.</li>
-<li><strong>Return</strong>: Return the result bytes or an error (fuel exhaustion, memory exhaustion, etc.).</li>
+<li><strong>Load</strong>: Read <code>.wasm</code> binary from <code>{tools_path}/{tool_id}.wasm</code></li>
+<li><strong>Compile</strong>: Compile into a Wasmtime <code>Module</code> (cached in <code>DashMap</code> to avoid recompilation)</li>
+<li><strong>Instantiate</strong>: Create an instance with per-call fuel allocation</li>
+<li><strong>Call</strong>: Invoke the exported <code>run</code> function, passing input bytes</li>
+<li><strong>Return</strong>: Return output bytes, or a fuel/memory exhaustion error</li>
 </ol>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>#[async_trait]
+impl ToolExecutor for WasmToolExecutor {
+    async fn execute(&amp;self, tool_id: &amp;str, args: Vec&lt;u8&gt;, fuel_limit: u64) -&gt; Result&lt;Vec&lt;u8&gt;, String&gt; {
+        // ...
+    }
+}
+<span class="boring">}</span></code></pre>
+<h3 id="error-handling"><a class="header" href="#error-handling">Error Handling</a></h3>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Error</th><th>Meaning</th><th>Cognitive Loop Response</th></tr>
+</thead>
+<tbody>
+<tr><td><code>ResourceExhausted: fuel</code></td><td>Ran out of WASM instructions</td><td>Retry with 2× fuel</td></tr>
+<tr><td><code>ResourceExhausted: memory</code></td><td>Exceeded linear memory limit</td><td>Fail — redesign node</td></tr>
+<tr><td><code>Unknown export: run</code></td><td>WASM module has no <code>run</code> export</td><td>Fail — invalid tool</td></tr>
+<tr><td>I/O error</td><td>Tool file not found</td><td>Fail — missing tool</td></tr>
+</tbody>
+</table>
+</div>
 <h3 id="fuel-system"><a class="header" href="#fuel-system">Fuel System</a></h3>
-<p>Wasmtime’s fuel metering tracks WASM instruction consumption. When fuel runs out, execution is immediately aborted with a <code>ResourceExhausted</code> error, which the cognitive loop interprets as a signal to retry with more fuel.</p>
-<h2 id="console-output-capture"><a class="header" href="#console-output-capture">Console Output Capture</a></h2>
-<p>The executor captures WASM module stdout/stderr via <code>WasmtimeConsole</code> and routes it through <code>tracing</code>.</p>
+<p>Wasmtime’s fuel metering tracks WASM instruction consumption. When fuel runs out, execution is immediately aborted. The cognitive loop interprets this as a signal to retry with increased fuel via <code>AdaptiveFuelPricer</code>.</p>
+<h3 id="console-output-capture"><a class="header" href="#console-output-capture">Console Output Capture</a></h3>
+<p>WASM module stdout/stderr is captured via <code>WasmtimeConsole</code> and routed through <code>tracing</code>.</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="sisyphus-tools--built-in-tools--agents"><a class="header" href="#sisyphus-tools--built-in-tools--agents">sisyphus-tools — Built-in Tools &amp; Agents</a></h1>
+<p>The crate that provides all built-in tool execution, agent functions, and utility operations. Both the CLI and the bridge use this crate to perform real work.</p>
+<h2 id="architecture-1"><a class="header" href="#architecture-1">Architecture</a></h2>
+<pre><code>Tool Executor (BuiltinToolExecutor)
+  ├── File tools   (read, write, edit, glob, grep)
+  ├── Shell tools  (bash_exec)
+  ├── Web tools    (web_search, web_fetch)
+  ├── Agent tools  →  Librarian (research, fetch_docs, examples, synthesise)
+  │                  ├── Metis   (analyse)
+  │                  └── Momus   (review_plan, review_code, review_arch)
+  └── MCP tools    →  External MCP servers via stdio or HTTP
+</code></pre>
+<h2 id="builtintoolexecutor"><a class="header" href="#builtintoolexecutor">BuiltinToolExecutor</a></h2>
+<p>A <code>ToolExecutor</code> that dispatches tool calls by string <code>tool_id</code> with JSON-encoded arguments:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>// All tools follow the same interface
+async fn execute(&amp;self, tool_id: &amp;str, args: Vec&lt;u8&gt;, fuel_limit: u64) -&gt; Result&lt;Vec&lt;u8&gt;, String&gt;
+<span class="boring">}</span></code></pre>
+<h3 id="file-tools"><a class="header" href="#file-tools">File tools</a></h3>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Tool ID</th><th>Args</th><th>Result</th></tr>
+</thead>
+<tbody>
+<tr><td><code>file_read</code></td><td><code>{"path": "..."}</code></td><td><code>{"content": "..."}</code></td></tr>
+<tr><td><code>file_write</code></td><td><code>{"path": "...", "content": "..."}</code></td><td><code>{"bytes_written": N}</code></td></tr>
+<tr><td><code>file_edit</code></td><td><code>{"path": "...", "old": "...", "new": "..."}</code></td><td><code>{"replaced": true}</code></td></tr>
+<tr><td><code>file_edit_all</code></td><td><code>{"path": "...", "old": "...", "new": "..."}</code></td><td><code>{"count": N}</code></td></tr>
+<tr><td><code>file_read_lines</code></td><td><code>{"path": "...", "offset": N, "limit": N}</code></td><td><code>{"content": "..."}</code></td></tr>
+<tr><td><code>glob</code></td><td><code>{"pattern": "...", "root": "..."}</code></td><td><code>{"files": ["..."]}</code></td></tr>
+<tr><td><code>grep</code></td><td><code>{"pattern": "...", "path": "...", "include": "..."}</code></td><td><code>{"matches": [...]}</code></td></tr>
+</tbody>
+</table>
+</div>
+<h3 id="shell-tools"><a class="header" href="#shell-tools">Shell tools</a></h3>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Tool ID</th><th>Args</th><th>Result</th></tr>
+</thead>
+<tbody>
+<tr><td><code>bash_exec</code></td><td><code>{"command": "...", "workdir": "...", "timeout_ms": N}</code></td><td><code>{"stdout": "...", "stderr": "...", "exit_code": N}</code></td></tr>
+</tbody>
+</table>
+</div>
+<h3 id="web-tools"><a class="header" href="#web-tools">Web tools</a></h3>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Tool ID</th><th>Args</th><th>Result</th></tr>
+</thead>
+<tbody>
+<tr><td><code>web_search</code></td><td><code>{"query": "...", "num": N}</code></td><td><code>{"results": [...]}</code></td></tr>
+<tr><td><code>web_fetch</code></td><td><code>{"url": "..."}</code></td><td><code>{"content": "...", "content_type": "..."}</code></td></tr>
+</tbody>
+</table>
+</div>
+<h3 id="agent-tools"><a class="header" href="#agent-tools">Agent tools</a></h3>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Tool ID</th><th>Args</th><th>Result</th></tr>
+</thead>
+<tbody>
+<tr><td><code>librarian/research</code></td><td><code>{"query": "...", "scope": "web|docs|code|all", "num": N}</code></td><td><code>ResearchReport</code> JSON</td></tr>
+<tr><td><code>librarian/fetch_docs</code></td><td><code>{"url": "..."}</code></td><td><code>DocPage</code> JSON</td></tr>
+<tr><td><code>librarian/examples</code></td><td><code>{"query": "...", "language": "..."}</code></td><td><code>[CodeExample]</code> JSON</td></tr>
+<tr><td><code>librarian/synthesise</code></td><td><code>{"findings": [...], "max_points": N}</code></td><td><code>{"synthesis": "..."}</code></td></tr>
+<tr><td><code>metis/analyse</code></td><td><code>{"request": "..."}</code></td><td><code>MetisAnalysis</code> JSON</td></tr>
+<tr><td><code>momus/review_plan</code></td><td><code>{"plan_text": "...", "plan_name": "..."}</code></td><td><code>MomusReview</code> JSON</td></tr>
+<tr><td><code>momus/review_code</code></td><td><code>{"path": "...", "content": "..."}</code></td><td><code>MomusReview</code> JSON</td></tr>
+<tr><td><code>momus/review_code_batch</code></td><td><code>{"files": [{"path": "...", "content": "..."}]}</code></td><td><code>[MomusReview]</code> JSON</td></tr>
+<tr><td><code>momus/review_arch</code></td><td><code>{"arch_text": "..."}</code></td><td><code>MomusReview</code> JSON</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="agent-modules"><a class="header" href="#agent-modules">Agent Modules</a></h2>
+<h3 id="librarian--external-research-agent"><a class="header" href="#librarian--external-research-agent">Librarian — External Research Agent</a></h3>
+<p>Performs multi-source research by searching the web, fetching documentation, and finding code examples. Returns structured reports with attributed findings.</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>// Research a topic across web, docs, or code
+pub async fn research(query: &amp;str, scope: ResearchScope, max_results: usize) -&gt; ToolResult&lt;ResearchReport&gt;;
+
+// Fetch and parse documentation from a URL
+pub async fn fetch_documentation(url: &amp;str) -&gt; ToolResult&lt;DocPage&gt;;
+
+// Find code examples for a library or API
+pub async fn find_examples(query: &amp;str, language: &amp;str) -&gt; ToolResult&lt;Vec&lt;CodeExample&gt;&gt;;
+
+// Synthesise a list of findings into a coherent summary
+pub fn synthesise(findings: &amp;[ResearchFinding], max_points: usize) -&gt; String;
+<span class="boring">}</span></code></pre>
+<h3 id="metis--pre-planning-analysis-agent"><a class="header" href="#metis--pre-planning-analysis-agent">Metis — Pre-Planning Analysis Agent</a></h3>
+<p>Analyses natural language requests to uncover ambiguities and implicit requirements before implementation begins.</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>pub fn analyse(request: &amp;str) -&gt; MetisAnalysis;
+<span class="boring">}</span></code></pre>
+<p><code>MetisAnalysis</code> contains a <code>summary</code>, a list of <code>ambiguities</code> (each with severity, aspect, options, and recommendation), and a list of <code>implicit_requirements</code> (with confidence score and rationale).</p>
+<h3 id="momus--review-agent"><a class="header" href="#momus--review-agent">Momus — Review Agent</a></h3>
+<p>Reviews plans, code, and architecture for completeness, consistency, and adherence to best practices.</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>pub fn review_plan(plan_text: &amp;str, plan_name: &amp;str) -&gt; MomusReview;
+pub fn review_code(path: &amp;Path, content: &amp;str) -&gt; ToolResult&lt;MomusReview&gt;;
+pub fn review_code_batch(files: &amp;[(&amp;Path, &amp;str)]) -&gt; ToolResult&lt;Vec&lt;MomusReview&gt;&gt;;
+pub fn review_architecture(arch_text: &amp;str) -&gt; MomusReview;
+<span class="boring">}</span></code></pre>
+<h2 id="configstore"><a class="header" href="#configstore">ConfigStore</a></h2>
+<p>Loads and watches a TOML configuration file for changes. Returns a shared <code>Arc&lt;RwLock&lt;Config&gt;&gt;</code> that can be hot-reloaded at runtime.</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>// Load from file and start polling for changes
+pub fn load(path: &amp;str) -&gt; Result&lt;(Self, Arc&lt;RwLock&lt;Config&gt;&gt;), String&gt;;
+
+// Create store from existing config (no file watching)
+pub fn with_config(config: Arc&lt;RwLock&lt;Config&gt;&gt;) -&gt; Self;
+
+// Background loop that checks for file changes
+pub async fn start_watching(&amp;self);
+<span class="boring">}</span></code></pre>
+<h2 id="mcptoolexecutor"><a class="header" href="#mcptoolexecutor">MCPToolExecutor</a></h2>
+<p>Connects to external MCP (Model Context Protocol) servers via stdio or HTTP. Each MCP server is registered under a prefix in the <code>ExecutorRouter</code>.</p>
 <div style="break-before: page; page-break-before: always;"></div>
 <h1 id="sisyphus-metrics--observability"><a class="header" href="#sisyphus-metrics--observability">sisyphus-metrics — Observability</a></h1>
-<p>Prometheus metrics instrumentation for all Sisyphus operations. Uses the standard <code>metrics</code> crate with <code>metrics-exporter-prometheus</code>.</p>
+<p>Prometheus metrics + <code>tracing</code> structured logging for all Sisyphus operations.</p>
+<h2 id="initialization"><a class="header" href="#initialization">Initialization</a></h2>
+<p>Call once at startup with the desired Prometheus scrape port:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>use sisyphus_metrics::init_metrics;
+
+// Expose metrics on http://0.0.0.0:9100/metrics
+init_metrics(9100)?;
+<span class="boring">}</span></code></pre>
+<p>Configures:</p>
+<ul>
+<li><code>metrics-exporter-prometheus</code> with HTTP listener on the specified port</li>
+<li><code>tracing-subscriber</code> with JSON formatting and <code>SISYPHUS_LOG</code> / <code>RUST_LOG</code> env filter support</li>
+<li>Default log level: <code>info</code>, sisyphus crates: <code>debug</code></li>
+</ul>
 <h2 id="metrics-dashboard"><a class="header" href="#metrics-dashboard">Metrics Dashboard</a></h2>
 <div class="table-wrapper">
 <table>
@@ -475,53 +825,217 @@
 </thead>
 <tbody>
 <tr><td><code>sisyphus_sop_executions_total</code></td><td>Counter</td><td><code>sop_id</code>, <code>status</code></td><td>Total SOP executions</td></tr>
-<tr><td><code>sisyphus_sop_execution_duration_seconds</code></td><td>Histogram</td><td><code>sop_id</code></td><td>SOP execution time</td></tr>
+<tr><td><code>sisyphus_sop_execution_duration_seconds</code></td><td>Histogram</td><td><code>sop_id</code></td><td>SOP execution duration</td></tr>
 <tr><td><code>sisyphus_wasm_executions_total</code></td><td>Counter</td><td><code>tool_id</code>, <code>status</code></td><td>WASM tool invocations</td></tr>
-<tr><td><code>sisyphus_wasm_execution_duration_seconds</code></td><td>Histogram</td><td><code>tool_id</code></td><td>WASM execution time</td></tr>
-<tr><td><code>sisyphus_mem_operations_total</code></td><td>Counter</td><td><code>operation</code>, <code>layer</code>, <code>status</code></td><td>Cache operations (get/set)</td></tr>
+<tr><td><code>sisyphus_wasm_execution_duration_seconds</code></td><td>Histogram</td><td><code>tool_id</code></td><td>WASM execution duration</td></tr>
+<tr><td><code>sisyphus_mem_operations_total</code></td><td>Counter</td><td><code>operation</code>, <code>layer</code>, <code>status</code></td><td>Cache get/set operations</td></tr>
 <tr><td><code>sisyphus_cognitive_iterations_total</code></td><td>Counter</td><td><code>sop_id</code>, <code>converged</code></td><td>Cognitive loop iterations</td></tr>
-<tr><td><code>sisyphus_reflections_total</code></td><td>Counter</td><td><code>sop_id</code></td><td>Reflection calls</td></tr>
+<tr><td><code>sisyphus_reflections_total</code></td><td>Counter</td><td><code>sop_id</code></td><td>Reflection invocations</td></tr>
 <tr><td><code>sisyphus_simulations_total</code></td><td>Counter</td><td><code>sop_id</code>, <code>succeeded</code></td><td>Monte Carlo simulations</td></tr>
 <tr><td><code>sisyphus_evolutions_total</code></td><td>Counter</td><td><code>sop_id</code>, <code>evolved</code></td><td>SOP evolution events</td></tr>
-<tr><td><code>sisyphus_bridge_requests_total</code></td><td>Counter</td><td><code>endpoint</code>, <code>status</code></td><td>API request count</td></tr>
+<tr><td><code>sisyphus_bridge_requests_total</code></td><td>Counter</td><td><code>success</code></td><td>gRPC request count</td></tr>
 </tbody>
 </table>
 </div>
-<h2 id="usage"><a class="header" href="#usage">Usage</a></h2>
-<p>Call <code>init_metrics()</code> at application startup to initialize the Prometheus exporter on port 9100:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>use sisyphus_metrics::init_metrics;
-
-init_metrics();
-// Metrics available at http://localhost:9100/metrics
-<span class="boring">}</span></code></pre>
-<p>Record operations using the typed record functions:</p>
+<h2 id="recording"><a class="header" href="#recording">Recording</a></h2>
+<p>Use the typed record functions:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
 </span>record_sop_execution("my_sop", true, 1.23);
 record_wasm_execution("my_tool", true, 0.45, 1000);
 record_cognitive_iteration("my_sop", 3, 0.05, true, 2.1);
+record_bridge_request(true, 1.23);
+record_mem_operation("get", "l1", "hit", 0.001);
+record_simulation("my_sop", true, 0.05);
+record_evolution("my_sop", true, 0.05);
+record_reflection("my_sop", 0.05);
+<span class="boring">}</span></code></pre>
+<h2 id="error-handling-1"><a class="header" href="#error-handling-1">Error Handling</a></h2>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>pub enum MetricsError {
+    #[error("Failed to install Prometheus exporter")]
+    PrometheusInstallFailed,
+    #[error("Failed to initialize tracing subscriber")]
+    TracingInitFailed,
+}
 <span class="boring">}</span></code></pre>
 <div style="break-before: page; page-break-before: always;"></div>
-<h1 id="sisyphus-bridge--entry-point--api"><a class="header" href="#sisyphus-bridge--entry-point--api">sisyphus-bridge — Entry Point &amp; API</a></h1>
-<p>The binary crate that ties all components together into a runnable application.</p>
-<h2 id="entry-points"><a class="header" href="#entry-points">Entry Points</a></h2>
-<h3 id="mainrs-server"><a class="header" href="#mainrs-server"><code>main.rs</code> (Server)</a></h3>
-<p>A Tonic gRPC server that exposes the cognitive loop as a network service:</p>
-<ul>
-<li><strong><code>ExecuteGoal</code></strong>: Submit a natural-language goal path for execution. The bridge calls <code>SisyphusKernel.execute_goal()</code> and returns the cognitive report.</li>
-<li><strong><code>ExecuteSop</code></strong>: Execute a pre-synthesized SOP by ID, with optional evolution loop.</li>
-</ul>
-<h3 id="clientrs-cli-client"><a class="header" href="#clientrs-cli-client"><code>client.rs</code> (CLI Client)</a></h3>
-<p>A gRPC client binary for interacting with the server:</p>
-<pre><code class="language-bash">cargo run --bin client -- execute-goal --goals /path/to/goal.json
-cargo run --bin client -- sop --sop-id my_sop
+<h1 id="sisyphus-cli--command-line-interface"><a class="header" href="#sisyphus-cli--command-line-interface">sisyphus-cli — Command-Line Interface</a></h1>
+<p>The CLI binary provides direct access to Sisyphus tools and agents from the terminal. It supports both one-shot commands and an interactive TUI mode.</p>
+<h2 id="installation"><a class="header" href="#installation">Installation</a></h2>
+<pre><code class="language-bash">cargo build --release -p sisyphus-cli
+./target/release/sisyphus-cli --help
 </code></pre>
-<h3 id="stress_testrs-benchmark"><a class="header" href="#stress_testrs-benchmark"><code>stress_test.rs</code> (Benchmark)</a></h3>
-<p>An in-process stress test that synthesizes and executes SOPs in a loop, measuring throughput and latency.</p>
+<h2 id="command-structure"><a class="header" href="#command-structure">Command Structure</a></h2>
+<pre><code>sisyphus [OPTIONS] &lt;COMMAND&gt;
+</code></pre>
+<h3 id="global-options"><a class="header" href="#global-options">Global Options</a></h3>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Flag</th><th>Env</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>-i</code>, <code>--interactive</code></td><td></td><td>Launch interactive TUI mode</td></tr>
+<tr><td><code>-b</code>, <code>--bridge</code></td><td><code>SISYPHUS_BRIDGE</code></td><td>Bridge gRPC address (default: <code>http://[::1]:50051</code>)</td></tr>
+<tr><td><code>--data-dir</code></td><td><code>SISYPHUS_DATA_DIR</code></td><td>Data directory for todo/session storage</td></tr>
+<tr><td><code>--config</code></td><td><code>SISYPHUS_CONFIG</code></td><td>Path to TOML config file</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="file-tools-1"><a class="header" href="#file-tools-1">File Tools</a></h2>
+<pre><code class="language-bash"># Read a file
+sisyphus read path/to/file.txt
+
+# Write content to a file
+sisyphus write path/to/output.txt "file content"
+
+# Execute a shell command
+sisyphus exec "cargo test" --dir /path/to/project
+
+# Search the web
+sisyphus search "Rust async/await" -n 10
+</code></pre>
+<h2 id="agent-subcommands"><a class="header" href="#agent-subcommands">Agent Subcommands</a></h2>
+<h3 id="librarian--external-research-agent-1"><a class="header" href="#librarian--external-research-agent-1">librarian — External Research Agent</a></h3>
+<p>Search the web, fetch documentation, and find code examples.</p>
+<pre><code class="language-bash"># Research a topic (web, docs, code, or all)
+sisyphus librarian research "Rust async" --scope all -n 5
+
+# Fetch and display documentation from a URL
+sisyphus librarian fetch-docs https://doc.rust-lang.org/std/fmt/
+
+# Find code examples for a library or API
+sisyphus librarian examples "serde_json::from_str" -l rust
+
+# Synthesise findings from a JSON research report
+sisyphus librarian synthesise findings.json
+</code></pre>
+<p><code>librarian research</code> supports the following scopes via <code>--scope</code>:</p>
+<ul>
+<li><code>web</code> — Search the web for general information</li>
+<li><code>docs</code> — Fetch documentation pages</li>
+<li><code>code</code> — Find code examples</li>
+<li><code>all</code> — All of the above (default)</li>
+</ul>
+<h3 id="metis--pre-planning-analysis-agent-1"><a class="header" href="#metis--pre-planning-analysis-agent-1">metis — Pre-Planning Analysis Agent</a></h3>
+<p>Analyse a request for ambiguities and implicit requirements before implementation.</p>
+<pre><code class="language-bash"># Analyse inline request text
+sisyphus metis analyse "Add user authentication with OAuth2 support"
+
+# Analyse request from a file
+sisyphus metis analyse --file request.txt
+</code></pre>
+<p>The analysis output includes:</p>
+<ul>
+<li><strong>Summary</strong> — High-level assessment of the request</li>
+<li><strong>Ambiguities</strong> — Aspects that need clarification, with severity levels and suggested resolutions</li>
+<li><strong>Implicit Requirements</strong> — Requirements that can be inferred but aren’t explicitly stated</li>
+</ul>
+<h3 id="momus--plancodearchitecture-review-agent"><a class="header" href="#momus--plancodearchitecture-review-agent">momus — Plan/Code/Architecture Review Agent</a></h3>
+<p>Review plans, source code, and architecture for completeness and consistency.</p>
+<pre><code class="language-bash"># Review a plan file
+sisyphus momus review-plan plan.md
+
+# Review a source code file
+sisyphus momus review-code src/main.rs
+
+# Review architecture documentation inline
+sisyphus momus review-arch "The system uses microservices with message queues"
+
+# Review all Rust files in a directory
+sisyphus momus review-dir src/
+</code></pre>
+<h2 id="task--session-management"><a class="header" href="#task--session-management">Task &amp; Session Management</a></h2>
+<pre><code class="language-bash"># Add a todo item
+sisyphus todo add "Fix login bug" -p high
+
+# List pending todos
+sisyphus todo list --status pending
+
+# Create a new session
+sisyphus session create "Refactoring session"
+
+# List available sessions
+sisyphus session list
+</code></pre>
+<h2 id="bridge-commands"><a class="header" href="#bridge-commands">Bridge Commands</a></h2>
+<pre><code class="language-bash"># Execute a Standard Operating Procedure via the bridge gRPC
+sisyphus sop run goal:deploy_to_staging
+
+# List available SOPs
+sisyphus sop list
+
+# Check bridge health
+sisyphus health
+</code></pre>
+<h2 id="interactive-tui"><a class="header" href="#interactive-tui">Interactive TUI</a></h2>
+<p>Launch the interactive terminal UI:</p>
+<pre><code class="language-bash">sisyphus --interactive
+</code></pre>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="sisyphus-bridge--entry-point--api"><a class="header" href="#sisyphus-bridge--entry-point--api">sisyphus-bridge — Entry Point &amp; API</a></h1>
+<p>The binary crate that ties all components together into a runnable gRPC service.</p>
+<h2 id="entry-point"><a class="header" href="#entry-point">Entry Point</a></h2>
+<h3 id="mainrs-grpc-server"><a class="header" href="#mainrs-grpc-server"><code>main.rs</code> (gRPC Server)</a></h3>
+<p>A Tonic gRPC server listening on <code>[::1]:50051</code>:</p>
+<pre><code class="language-protobuf">service SisyphusBridge {
+  rpc ExecuteSOP (ExecuteSOPRequest) returns (SOPResponse);
+}
+</code></pre>
+<p><strong><code>ExecuteSOP</code></strong> handles two modes:</p>
+<ul>
+<li><strong>Goal execution</strong>: If <code>sop_id</code> starts with <code>"goal:"</code>, the bridge synthesizes, executes, and runs the cognitive loop</li>
+<li><strong>Direct execution</strong>: Otherwise, loads a saved SOP by ID and executes it</li>
+</ul>
+<h3 id="requestresponse"><a class="header" href="#requestresponse">Request/Response</a></h3>
+<pre><code class="language-protobuf">message ExecuteSOPRequest {
+  string sop_id = 1;
+  map&lt;string, string&gt; args = 2;
+}
+
+message SOPResponse {
+  string status = 1;   // "SUCCESS" or error string
+  string result = 2;   // Execution result + cognition report
+}
+</code></pre>
+<h2 id="initialization-flow"><a class="header" href="#initialization-flow">Initialization Flow</a></h2>
+<pre><code>Config (TOML + env vars)
+    │
+    ▼
+MfsStore ← SQLite connection
+    │
+    ▼
+WasmToolExecutor ← tools/ directory
+    │
+    ▼
+SisyphusIntel ← simulator + reflector + evolver
+    │
+    ▼
+GoalDrivenSynthesizer ← tool executor
+    │
+    ▼
+SisyphusKernel ← state_store + tool_executor + intel + synthesizer
+    │
+    ▼
+MySisyphusBridge ← wraps kernel
+    │
+    ▼
+gRPC server ← tonic on [::1]:50051
+</code></pre>
 <h2 id="configuration"><a class="header" href="#configuration">Configuration</a></h2>
-<p>The bridge reads configuration from TOML files and environment variables, constructing the <code>sisyphus_types::Config</code> struct and initializing all subsystems.</p>
+<p>The bridge reads <code>config.toml</code> (or <code>$SISYPHUS_CONFIG</code> path) and calls <code>config.apply_env_overrides()</code> to merge environment variables. Metrics initialized on the port from <code>config.metrics.prometheus_port</code>.</p>
+<h2 id="running"><a class="header" href="#running">Running</a></h2>
+<pre><code class="language-bash"># Build
+cargo build --release -p sisyphus-bridge
+
+# Run with default config
+./target/release/sisyphus-bridge
+
+# Custom config
+SISYPHUS_CONFIG=/etc/sisyphus/prod.toml ./target/release/sisyphus-bridge
+</code></pre>
 <div style="break-before: page; page-break-before: always;"></div>
 <h1 id="key-concepts"><a class="header" href="#key-concepts">Key Concepts</a></h1>
 <ul>
@@ -533,37 +1047,39 @@ cargo run --bin client -- sop --sop-id my_sop
 <h1 id="standard-operating-procedure-sop"><a class="header" href="#standard-operating-procedure-sop">Standard Operating Procedure (SOP)</a></h1>
 <p>An SOP is a <strong>directed acyclic graph (DAG)</strong> that represents a procedure to achieve a specific goal.</p>
 <h2 id="structure"><a class="header" href="#structure">Structure</a></h2>
-<pre><code>           ┌──────┐
-           │ Goal │
-           └──┬───┘
-              │
-    ┌─────────┼─────────┐
-    ▼         ▼         ▼
-┌──────┐ ┌──────┐ ┌──────┐
-│Node 1│ │Node 2│ │Node 3│
-│ WASM │ │ WASM │ │ WASM │
-└──┬───┘ └──────┘ └──┬───┘
-   │                  │
-   └──────┬───────────┘
-          ▼
-     ┌────────┐
-     │ Result │
-     └────────┘
+<pre><code class="language-mermaid">graph LR
+    G[Goal] --&gt; N1[Node 1&lt;br/&gt;fetch data]
+    G --&gt; N2[Node 2&lt;br/&gt;process]
+    G --&gt; N3[Node 3&lt;br/&gt;validate]
+    N1 --&gt; N4[Node 4&lt;br/&gt;merge]
+    N2 --&gt; N4
+    N3 --&gt; N4
+    N4 --&gt; R(Result)
 </code></pre>
 <p>Each node contains:</p>
 <ul>
 <li><strong>Name</strong>: Unique identifier within the SOP</li>
-<li><strong>Description</strong>: What this step does (used for synthesis and reflection)</li>
+<li><strong>Description</strong>: Semantic description of the step (used for synthesis and reflection)</li>
 <li><strong>Tool Type</strong>: Which WASM tool binary to invoke</li>
-<li><strong>Fuel Budget</strong>: WASM instruction limit for this node</li>
-<li><strong>Timeout</strong>: Maximum wall-clock time for execution</li>
-<li><strong>Retry Policy</strong>: Max retries and current retry count</li>
+<li><strong>Fuel Budget</strong>: WASM instruction limit for this node (default: 10,000)</li>
+<li><strong>Max Retries</strong>: How many times to retry on failure</li>
+<li><strong>Timeout</strong>: Maximum wall-clock time (default: 30s)</li>
 </ul>
 <h2 id="lifecycle"><a class="header" href="#lifecycle">Lifecycle</a></h2>
+<pre><code class="language-mermaid">stateDiagram-v2
+    [*] --&gt; Synthesized: GoalDrivenSynthesizer
+    Synthesized --&gt; Executing: DagExecutor
+    Executing --&gt; Succeeded: All nodes OK
+    Executing --&gt; Failed: Node error
+    Failed --&gt; Evolved: StandardEvolver
+    Evolved --&gt; Executing: Retry with modifications
+    Succeeded --&gt; [*]
+    Failed --&gt; [*]: Max iterations exceeded
+</code></pre>
 <ol>
-<li><strong>Synthesize</strong>: The <code>StandardReflector</code> generates an SOP graph from a natural-language goal using the synthesizer module.</li>
-<li><strong>Execute</strong>: The <code>DagExecutor</code> runs the SOP with topological ordering.</li>
-<li><strong>Evolve</strong>: After reflection, the SOP may be mutated — new nodes added, fuel budgets adjusted, or subgraphs restructured.</li>
+<li><strong>Synthesize</strong>: <code>GoalDrivenSynthesizer</code> generates an SOP graph from a natural-language goal</li>
+<li><strong>Execute</strong>: <code>Executor</code> runs the DAG with topological ordering — independent nodes in parallel</li>
+<li><strong>Evolve</strong>: After reflection, the SOP may be mutated — new nodes added, fuel budgets adjusted, or subgraphs restructured</li>
 </ol>
 <h2 id="evolution-operations"><a class="header" href="#evolution-operations">Evolution Operations</a></h2>
 <div class="table-wrapper">
@@ -572,91 +1088,224 @@ cargo run --bin client -- sop --sop-id my_sop
 <tr><th>Operation</th><th>Description</th></tr>
 </thead>
 <tbody>
-<tr><td><strong>Retry wrapper</strong></td><td>Wrap a failed node with retry logic</td></tr>
-<tr><td><strong>Fuel increase</strong></td><td>Boost fuel budget for nodes that exhausted fuel</td></tr>
-<tr><td><strong>Subgraph restructure</strong></td><td>Reorder or split nodes for better parallelism</td></tr>
+<tr><td><strong>Retry wrapper</strong></td><td>Wrap a failed node with retry logic (increased fuel)</td></tr>
+<tr><td><strong>Fuel increase</strong></td><td>Boost fuel budget for nodes that exhausted fuel (2× per retry)</td></tr>
+<tr><td><strong>Subgraph restructure</strong></td><td>Reorder or split nodes for better parallelism (future)</td></tr>
 </tbody>
 </table>
 </div>
+<h2 id="sop-graph-config"><a class="header" href="#sop-graph-config">SOP Graph Config</a></h2>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>pub struct SOPGraphConfig {
+    pub max_concurrency: usize,      // Max parallel nodes (default: 16)
+    pub default_fuel: u64,          // Default per-node fuel (default: 10,000)
+    pub default_timeout_ms: u64,    // Default per-node timeout (default: 30,000)
+    pub max_retries: u32,           // Default retries per node (default: 3)
+}
+<span class="boring">}</span></code></pre>
 <div style="break-before: page; page-break-before: always;"></div>
 <h1 id="cognitive-loop"><a class="header" href="#cognitive-loop">Cognitive Loop</a></h1>
 <p>The recursive <strong>OODA-inspired</strong> cycle that drives Sisyphus’s self-improvement behavior.</p>
-<h2 id="phases"><a class="header" href="#phases">Phases</a></h2>
-<pre><code>1. SYNTHESIZE ─────────────────────────────┐
-   │ Goal → SOP Graph                       │
-   ▼                                        │
-2. EXECUTE ──┐                              │
-   │ SOP →    │ (loop back                  │
-   │ Results  │  on evolve)                 │
-   ▼          │                              │
-3. SIMULATE   │                              │
-   │ Traces → │                              │
-   │ Predictions                             │
-   ▼          │                              │
-4. REFLECT    │                              │
-   │ Actual vs│                              │
-   │ Predicted│                              │
-   ▼          │                              │
-5. DECIDE     │                              │
-   │ Converge?│                              │
-   │          │                              │
-   ├─ Yes ────┘                              │
-   │   Return result                         │
-   │                                          │
-   └─ No ────────────────────────────────────┘
-        Evolve SOP → loop to EXECUTE
+<h2 id="sequence-diagram"><a class="header" href="#sequence-diagram">Sequence Diagram</a></h2>
+<pre><code class="language-mermaid">sequenceDiagram
+    participant U as User
+    participant B as Bridge
+    participant K as SisyphusKernel
+    participant Synth as GoalDrivenSynthesizer
+    participant Exec as Executor
+    participant Sim as MonteCarloSimulator
+    participant Ref as StandardReflector
+    participant Evo as StandardEvolver
+
+    U-&gt;&gt;B: ExecuteGoal("summarize data")
+    B-&gt;&gt;K: execute_goal()
+    K-&gt;&gt;Synth: synthesize(goal)
+    Synth--&gt;&gt;K: SOPGraph DAG
+
+    loop Until convergence (max 10 iterations)
+        K-&gt;&gt;Sim: simulate(graph)
+        Sim--&gt;&gt;K: SimulationResult
+
+        K-&gt;&gt;Exec: execute_with_context(graph)
+        Exec--&gt;&gt;K: ExecutionContext
+
+        K-&gt;&gt;Ref: reflect(trace, prediction)
+        Ref--&gt;&gt;K: ReflectionReport
+
+        alt deviation &gt; threshold
+            K-&gt;&gt;Evo: evolve(graph, report)
+            Evo--&gt;&gt;K: Mutated SOPGraph
+            K--&gt;&gt;K: Loop back to execute
+        else deviation &lt;= threshold
+            K--&gt;&gt;B: CognitiveReport (converged)
+        end
+    end
+
+    B--&gt;&gt;U: SOPResponse { status, result }
 </code></pre>
-<h2 id="convergence"><a class="header" href="#convergence">Convergence</a></h2>
-<p>The loop terminates when one of these conditions is met:</p>
+<h2 id="phases"><a class="header" href="#phases">Phases</a></h2>
+<pre><code>┌─────────────────────────────────────────────────────┐
+│                   Synthesis                           │
+│           Goal-driven SOP generation                  │
+└──────────────────────┬──────────────────────────────┘
+                       ▼
+┌─────────────────────────────────────────────────────┐
+│               ┌───────────┐                          │
+│               │ Simulate  │ ◄── Monte Carlo          │
+│               └─────┬─────┘     random path sampling │
+│                     │                                │
+│   ┌─────────────────▼──────────────────────┐         │
+│   │             Execute                    │         │
+│   │    DAG parallel topological order      │         │
+│   └─────────────────┬──────────────────────┘         │
+│                     │                                │
+│               ┌─────▼─────┐                          │
+│               │  Reflect  │ ◄── deviation score      │
+│               └─────┬─────┘                          │
+│                     │                                │
+│                     │ deviation &gt; threshold?         │
+│                     │                                │
+│               ┌─────▼─────┐                          │
+│               │   Evolve   │ ◄── mutate SOP          │
+│               └─────┬─────┘                          │
+│                     │                                │
+│                     └── loop ────────────────────────┘
+│                                                     │
+│               convergence → return result            │
+└─────────────────────────────────────────────────────┘
+</code></pre>
+<h2 id="key-implementation-execute_with_cognition"><a class="header" href="#key-implementation-execute_with_cognition">Key Implementation: <code>execute_with_cognition()</code></a></h2>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>// Simplified from sisyphus-core
+async fn execute_with_cognition(
+    &amp;self, graph: &amp;SOPGraph, start: NodeIndex, sop_id: &amp;str, ...
+) -&gt; Result&lt;(NodeOutput, String, Option&lt;SOPGraph&gt;), String&gt; {
+    let mut current_ref = graph.clone();
+    let max_iter = 10;
+
+    for iteration in 0..max_iter {
+        // 1. Predict outcome
+        let prediction = intel.simulator.simulate(&amp;current_ref, &amp;ctx, sop_id).await?;
+
+        // 2. Execute the SOP
+        let final_ctx = executor.execute_with_context(&amp;current_ref, start, None).await?;
+
+        // 3. Build trace and reflect
+        let trace = build_trace(&amp;current_ref, &amp;final_ctx);
+        let reflection = intel.reflector.reflect(&amp;trace, &amp;prediction).await?;
+
+        // 4. Check convergence
+        if reflection.deviation_score &lt; CONVERGENCE_THRESHOLD {
+            return Ok((result, report, None));  // Done
+        }
+
+        // 5. Evolve and retry
+        let evolved = intel.evolver.evolve(&amp;current_ref, &amp;reflection, &amp;prediction)?;
+        current_ref = evolved;
+    }
+
+    Err("Max iterations exceeded".into())
+}
+<span class="boring">}</span></code></pre>
+<h2 id="convergence-conditions"><a class="header" href="#convergence-conditions">Convergence Conditions</a></h2>
+<p>The loop terminates when any of:</p>
 <ul>
-<li><strong>Deviation threshold</strong>: The reflection deviation score drops below <code>CONVERGENCE_THRESHOLD</code> (typically 0.15).</li>
-<li><strong>Max iterations</strong>: The loop has executed <code>MAX_COGNITIVE_ITERATIONS</code> (default 10) times without converging.</li>
-<li><strong>No evolution</strong>: The evolver returns <code>None</code>, indicating no further improvements are possible.</li>
-</ul>
-<h2 id="metrics"><a class="header" href="#metrics">Metrics</a></h2>
-<p>Each iteration records:</p>
-<ul>
-<li>Iteration number and deviation score</li>
-<li>Whether it converged</li>
-<li>Duration of the iteration</li>
-<li>Evolution actions taken (fuel changes, retry wrapper, etc.)</li>
+<li><strong>Deviation threshold</strong>: <code>deviation_score &lt; 0.15</code> (predictions match actuals)</li>
+<li><strong>Max iterations</strong>: Loop runs 10 times without converging</li>
+<li><strong>No evolution</strong>: Evolver returns <code>Ok(graph)</code> with identical structure (no changes possible)</li>
 </ul>
 <div style="break-before: page; page-break-before: always;"></div>
 <h1 id="dag-execution"><a class="header" href="#dag-execution">DAG Execution</a></h1>
-<p>Sisyphus executes SOP graphs using a <strong>parallel topological executor</strong>.</p>
+<p>Sisyphus executes SOP graphs using a <strong>parallel topological executor</strong> based on in-degree tracking.</p>
 <h2 id="algorithm"><a class="header" href="#algorithm">Algorithm</a></h2>
-<ol>
-<li><strong>Compute in-degrees</strong> for all nodes in the graph.</li>
-<li><strong>Seed</strong> the ready set with nodes whose in-degree is zero.</li>
-<li><strong>Spawn</strong> ready nodes concurrently via <code>tokio::task::JoinSet</code>.</li>
-<li><strong>Collect</strong> results as they complete → decrement in-degree of downstream nodes.</li>
-<li><strong>Add</strong> newly-ready nodes to the next batch.</li>
-<li><strong>Repeat</strong> until all nodes complete or an error occurs.</li>
-</ol>
-<h2 id="parallelism"><a class="header" href="#parallelism">Parallelism</a></h2>
-<p>Nodes with no dependency relationship execute simultaneously:</p>
-<pre><code>Time ─────────────────────────────────────►
-┌──────┐  ┌──────┐  ┌──────┐
-│Node A│  │Node B│  │Node C│  (parallel)
-└──┬───┘  └──────┘  └──┬───┘
-   │                    │
-   └──────┬─────────────┘
-          ▼
-     ┌────────┐
-     │Node D  │  (sequential — awaits A &amp; C)
-     └────────┘
+<pre><code class="language-mermaid">flowchart TD
+    A[Compute in-degree for all nodes] --&gt; B{Find nodes&lt;br/&gt;with in-degree = 0}
+    B --&gt; C[Spawn ready nodes&lt;br/&gt;via tokio::JoinSet]
+    C --&gt; D[Wait for ANY node&lt;br/&gt;to complete]
+    D --&gt; E[Decrement in-degree&lt;br/&gt;of downstream nodes]
+    E --&gt; F{New nodes&lt;br/&gt;ready?}
+    F --&gt;|Yes| C
+    F --&gt;|No| G{All nodes&lt;br/&gt;done?}
+    G --&gt;|Yes| H[Return&lt;br/&gt;ExecutionContext]
+    G --&gt;|No| D
 </code></pre>
-<h2 id="error-handling"><a class="header" href="#error-handling">Error Handling</a></h2>
+<h2 id="parallelism-model"><a class="header" href="#parallelism-model">Parallelism Model</a></h2>
+<p>Nodes with no dependency relationship execute simultaneously:</p>
+<pre><code class="language-mermaid">gantt
+    title DAG Execution Timeline
+    dateFormat X
+    axisFormat %s
+
+    section Batch 1
+    Node A (fetch)    : 0, 3
+    Node B (validate) : 0, 2
+    Node C (search)   : 0, 4
+
+    section Batch 2
+    Node D (process)  : 3, 3
+    Node E (merge)    : 4, 2
+
+    section Batch 3
+    Node F (output)   : 6, 1
+</code></pre>
+<h2 id="code-core-executor"><a class="header" href="#code-core-executor">Code: Core Executor</a></h2>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>// Simplified from sisyphus-core::Executor
+pub async fn execute_with_context(
+    &amp;self, sop_graph: &amp;SOPGraph, start_node: NodeIndex, initial_ctx: Option&lt;Arc&lt;ExecutionContext&gt;&gt;,
+) -&gt; Result&lt;Arc&lt;ExecutionContext&gt;, String&gt; {
+    // Validate acyclic
+    toposort(&amp;sop_graph.graph, None).map_err(|_| "SOPGraph contains cycles")?;
+
+    let ctx = initial_ctx.unwrap_or_else(|| Arc::new(ExecutionContext::new()));
+    let mut join_set = JoinSet::new();
+    let mut in_degree: HashMap&lt;NodeIndex, usize&gt; = HashMap::new();
+
+    // Initialize in-degree counts
+    for node in sop_graph.graph.node_indices() {
+        let degree = sop_graph.graph.edges_directed(node, Incoming).count();
+        in_degree.insert(node, degree);
+        if degree == 0 {
+            let ctx = ctx.clone();
+            let node = sop_graph.graph[node].clone();
+            join_set.spawn(async move { node.execute(&amp;ctx).await });
+        }
+    }
+
+    // Process results as they complete
+    while let Some(result) = join_set.join_next().await {
+        let (node_id, output) = result.map_err(|e| format!("Join error: {}", e))??;
+        // Store output in context
+        ctx.set(&amp;sop_graph.graph[node_id].name(), output).await;
+        // Fan-out to downstream nodes
+        for edge in sop_graph.graph.edges_directed(node_id, Outgoing) {
+            let target = edge.target();
+            let degree = in_degree.get_mut(&amp;target).unwrap();
+            *degree -= 1;
+            if *degree == 0 {
+                // Spawn the now-ready node
+            }
+        }
+    }
+
+    Ok(ctx)
+}
+<span class="boring">}</span></code></pre>
+<h2 id="error-handling-2"><a class="header" href="#error-handling-2">Error Handling</a></h2>
 <ul>
-<li>If any node returns an error, the error is propagated up to the caller.</li>
-<li>The cognitive loop catches node errors and evolves the SOP to add retry wrappers.</li>
-<li>Cycle detection: If adding an edge creates a cycle, the operation is rejected with an error.</li>
+<li><strong>Cycle detection</strong>: <code>toposort()</code> rejects cyclic graphs before execution begins</li>
+<li><strong>Node errors</strong>: Propagated up; the cognitive loop catches them and evolves the SOP</li>
+<li><strong>Join errors</strong>: Tokio task panics are caught and returned as errors</li>
 </ul>
 <h2 id="fuel--memory"><a class="header" href="#fuel--memory">Fuel &amp; Memory</a></h2>
-<p>Each node executes with its configured fuel budget and memory limit. Nodes that exceed limits are aborted with a descriptive error, which the cognitive loop uses to adjust future executions.</p>
+<p>Each node executes with its configured fuel budget. Wasmtime’s fuel metering tracks WASM instruction consumption. Exhaustion triggers <code>ResourceExhausted</code>, which the cognitive loop uses to adjust fuel for retries.</p>
 <div style="break-before: page; page-break-before: always;"></div>
 <h1 id="configuration-1"><a class="header" href="#configuration-1">Configuration</a></h1>
 <p>Sisyphus is configured via TOML files deserialized into the <code>sisyphus_types::Config</code> struct.</p>
+<p>An example configuration file is provided at <code>config.example.toml</code> in the project root.</p>
 <h2 id="default-configuration"><a class="header" href="#default-configuration">Default Configuration</a></h2>
 <pre><code class="language-toml">[cognitive_loop]
 max_iterations = 10
@@ -664,10 +1313,10 @@ convergence_threshold = 0.15
 
 [executor]
 max_concurrent_tasks = 16
-default_fuel = 100000
+default_fuel = 1_000_000
 
 [cache]
-l1_capacity = 10000
+l1_capacity = 10_000
 sqlite_path = "data/sisyphus.db"
 
 [metrics]
@@ -675,26 +1324,34 @@ prometheus_port = 9100
 
 [sandbox]
 max_memory_pages = 10
-default_fuel = 100000
-wasm_tools_dir = "wasm_tools"
+default_fuel = 1_000_000
+wasm_tools_dir = "tools"
 </code></pre>
 <h2 id="override-order"><a class="header" href="#override-order">Override Order</a></h2>
 <ol>
-<li><strong>Default values</strong> (hardcoded in <code>Config::default()</code>)</li>
-<li><strong>Config file</strong> (path set via <code>--config</code> flag or <code>SISYPHUS_CONFIG</code> env var)</li>
-<li><strong>Environment variables</strong> (prefixed with <code>SISYPHUS_</code>, e.g. <code>SISYPHUS_COGNITIVE_LOOP_MAX_ITERATIONS=20</code>)</li>
+<li><strong>Default values</strong> (hardcoded in each sub-config’s <code>Default</code> impl)</li>
+<li><strong>Config file</strong> (path set via <code>SISYPHUS_CONFIG</code> env var or <code>Config::from_file()</code>)</li>
+<li><strong>Environment variables</strong> (prefixed with <code>SISYPHUS_</code>, highest priority)</li>
 </ol>
 <h2 id="environment-variables"><a class="header" href="#environment-variables">Environment Variables</a></h2>
+<p>All environment variables use the prefix <code>SISYPHUS_</code>:</p>
 <div class="table-wrapper">
 <table>
 <thead>
-<tr><th>Variable</th><th>Overrides</th><th>Default</th></tr>
+<tr><th>Variable</th><th>Overrides</th><th>Type</th><th>Default</th></tr>
 </thead>
 <tbody>
-<tr><td><code>SISYPHUS_CONFIG</code></td><td>Config file path</td><td>—</td></tr>
-<tr><td><code>SISYPHUS_COGNITIVE_LOOP_MAX_ITERATIONS</code></td><td><code>cognitive_loop.max_iterations</code></td><td>10</td></tr>
-<tr><td><code>SISYPHUS_EXECUTOR_DEFAULT_FUEL</code></td><td><code>executor.default_fuel</code></td><td>100000</td></tr>
-<tr><td><code>SISYPHUS_SANDBOX_WASM_TOOLS_DIR</code></td><td><code>sandbox.wasm_tools_dir</code></td><td><code>wasm_tools</code></td></tr>
+<tr><td><code>SISYPHUS_CONFIG</code></td><td>Config file path</td><td>string</td><td><code>config.toml</code></td></tr>
+<tr><td><code>SISYPHUS_COGNITIVE_LOOP_MAX_ITERATIONS</code></td><td><code>cognitive_loop.max_iterations</code></td><td>u32</td><td><code>10</code></td></tr>
+<tr><td><code>SISYPHUS_COGNITIVE_LOOP_CONVERGENCE_THRESHOLD</code></td><td><code>cognitive_loop.convergence_threshold</code></td><td>f64</td><td><code>0.15</code></td></tr>
+<tr><td><code>SISYPHUS_EXECUTOR_MAX_CONCURRENT_TASKS</code></td><td><code>executor.max_concurrent_tasks</code></td><td>usize</td><td><code>16</code></td></tr>
+<tr><td><code>SISYPHUS_EXECUTOR_DEFAULT_FUEL</code></td><td><code>executor.default_fuel</code></td><td>u64</td><td><code>1_000_000</code></td></tr>
+<tr><td><code>SISYPHUS_CACHE_L1_CAPACITY</code></td><td><code>cache.l1_capacity</code></td><td>usize</td><td><code>10_000</code></td></tr>
+<tr><td><code>SISYPHUS_CACHE_SQLITE_PATH</code></td><td><code>cache.sqlite_path</code></td><td>string</td><td><code>data/sisyphus.db</code></td></tr>
+<tr><td><code>SISYPHUS_METRICS_PROMETHEUS_PORT</code></td><td><code>metrics.prometheus_port</code></td><td>u16</td><td><code>9100</code></td></tr>
+<tr><td><code>SISYPHUS_SANDBOX_MAX_MEMORY_PAGES</code></td><td><code>sandbox.max_memory_pages</code></td><td>u32</td><td><code>10</code></td></tr>
+<tr><td><code>SISYPHUS_SANDBOX_DEFAULT_FUEL</code></td><td><code>sandbox.default_fuel</code></td><td>u64</td><td><code>1_000_000</code></td></tr>
+<tr><td><code>SISYPHUS_SANDBOX_WASM_TOOLS_DIR</code></td><td><code>sandbox.wasm_tools_dir</code></td><td>string</td><td><code>tools</code></td></tr>
 </tbody>
 </table>
 </div>
