@@ -285,7 +285,7 @@ pub fn review_code(path: &Path, content: &str) -> ToolResult<MomusReview> {
         } else {
             brace_depth += trimmed.chars().filter(|&c| c == '{').count();
             brace_depth -= trimmed.chars().filter(|&c| c == '}').count();
-            if brace_depth <= 0 {
+            if brace_depth == 0 {
                 in_fn = false;
                 let fn_lines = i - fn_start + 1;
                 if fn_lines > 50 {
@@ -438,8 +438,7 @@ pub fn review_architecture(arch_text: &str) -> MomusReview {
 fn extract_fn_name(line: &str) -> Option<String> {
     let trimmed = line.trim();
     // Match: fn name(  OR  pub fn name(  OR  pub async fn name(
-    if trimmed.starts_with("fn ") {
-        let rest = &trimmed[3..];
+    if let Some(rest) = trimmed.strip_prefix("fn ") {
         let name = rest.split('(').next()?.trim();
         if !name.is_empty() && name.chars().all(|c| c.is_alphanumeric() || c == '_') {
             return Some(name.to_string());

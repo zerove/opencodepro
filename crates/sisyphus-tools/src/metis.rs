@@ -242,9 +242,8 @@ pub fn analyse(request: &str) -> MetisAnalysis {
 
     let actionable = !blocking;
     let summary = if ambiguities.is_empty() && implicit.is_empty() {
-        format!(
-            "✅ Request appears clear. No ambiguities detected, no implicit requirements inferred."
-        )
+        "✅ Request appears clear. No ambiguities detected, no implicit requirements inferred."
+            .to_string()
     } else {
         format!(
             "Analysis found {} ambiguities ({} blocking, {} significant, {} minor) and {} implicit requirement(s). {}",
