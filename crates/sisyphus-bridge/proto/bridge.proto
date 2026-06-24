@@ -7,6 +7,22 @@ service SisyphusBridge {
   rpc HealthCheck (HealthCheckRequest) returns (HealthCheckResponse);
   rpc ListSOPs (ListSOPsRequest) returns (ListSOPsResponse);
   rpc StreamExecution (ExecuteSOPRequest) returns (stream ExecutionEvent);
+
+  // Tool execution — direct access to the ExecutorRouter.
+  // tool_id supports all builtin tools (file_*, glob, grep, bash_exec,
+  // web_search, web_fetch) and agent tools (librarian/*, metis/*, momus/*).
+  rpc ExecuteTool (ExecuteToolRequest) returns (ExecuteToolResponse);
+}
+
+message ExecuteToolRequest {
+  string tool_id = 1;      // e.g. "librarian/research", "metis/analyse"
+  string args_json = 2;    // JSON-encoded arguments (see mdBook crates/tools.md for schemas)
+  uint64 fuel_limit = 3;   // max execution units (0 = default)
+}
+
+message ExecuteToolResponse {
+  string status = 1;       // "SUCCESS" or error message
+  string result_json = 2;  // JSON-encoded result
 }
 
 message ExecuteSOPRequest {

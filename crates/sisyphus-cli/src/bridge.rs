@@ -54,4 +54,23 @@ impl BridgeClient {
             .context("ListSOPs RPC failed")?;
         Ok(response.into_inner().sops)
     }
+
+    /// Execute a built-in or agent tool via the bridge's ExecutorRouter.
+    ///
+    /// `tool_id` can be any BuiltinToolExecutor ID (e.g. "file_read",
+    /// "librarian/research", "metis/analyse") and `args_json` follows the
+    /// JSON schema documented in the mdBook (crates/tools.md).
+    pub async fn execute_tool(&mut self, tool_id: &str, args_json: &str) -> Result<ExecuteToolResponse> {
+        let request = tonic::Request::new(ExecuteToolRequest {
+            tool_id: tool_id.to_string(),
+            args_json: args_json.to_string(),
+            fuel_limit: 0,
+        });
+        let response = self
+            .inner
+            .execute_tool(request)
+            .await
+            .context(format!("ExecuteTool({tool_id}) RPC failed"))?;
+        Ok(response.into_inner())
+    }
 }

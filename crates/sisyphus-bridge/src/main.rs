@@ -1,6 +1,7 @@
 use sisyphus_bridge::sisyphus_bridge_server::{SisyphusBridge, SisyphusBridgeServer};
 use sisyphus_bridge::{
-    ExecuteSopRequest, HealthCheckRequest, HealthCheckResponse, ListSoPsRequest, ListSoPsResponse,
+    ExecuteSopRequest, ExecuteToolRequest, ExecuteToolResponse,
+    HealthCheckRequest, HealthCheckResponse, ListSoPsRequest, ListSoPsResponse,
     SopResponse, ExecutionEvent,
 };
 use sisyphus_core::{SOPGraph, SisyphusKernel, WasmSOPNode};
@@ -301,6 +302,40 @@ impl SisyphusBridge for MySisyphusBridge {
 
         Ok(Response::new(Box::pin(output_stream)))
     }
+
+    async fn execute_tool(
+        &self,
+        request: Request<ExecuteToolRequest>,
+    ) -> Result<Response<ExecuteToolResponse>, Status> {
+        let req = request.into_inner();
+        let tool_id = req.tool_id.clone();
+        let args_json = req.args_json;
+        let fuel = if req.fuel_limit > 0 { req.fuel_limit } else { self.default_fuel };
+
+        let span = info_span!("bridge.execute_tool", tool_id = %tool_id);
+        let _enter = span.enter();
+
+        let args_bytes = args_json.into_bytes();
+        let result = self.kernel.tool_executor.execute(&tool_id, args_bytes, fuel).await;
+
+        match result {
+            Ok(bytes) => {
+                let result_str = String::from_utf8_lossy(&bytes).to_string();
+                record_bridge_request(true, 0.0);
+                Ok(Response::new(ExecuteToolResponse {
+                    status: "SUCCESS".into(),
+                    result_json: result_str,
+                }))
+            }
+            Err(e) => {
+                record_bridge_request(false, 0.0);
+                Ok(Response::new(ExecuteToolResponse {
+                    status: format!("ERROR: {e}"),
+                    result_json: "".into(),
+                }))
+            }
+        }
+    }
 }
 
 #[tokio::main]
@@ -357,7 +392,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 mod tests {
     use super::sisyphus_bridge::{
         sisyphus_bridge_server::SisyphusBridge,
-        ExecuteSopRequest, HealthCheckRequest, ListSoPsRequest,
+        ExecuteSopRequest, ExecuteToolRequest, HealthCheckRequest, ListSoPsRequest,
     };
     use tokio_stream::StreamExt;
     use tonic::Request;
@@ -416,6 +451,17 @@ mod tests {
                 .map(|e| Ok(e));
             Ok(tonic::Response::new(Box::pin(stream)))
         }
+
+        async fn execute_tool(
+            &self,
+            request: Request<ExecuteToolRequest>,
+        ) -> Result<tonic::Response<super::sisyphus_bridge::ExecuteToolResponse>, tonic::Status> {
+            let req = request.into_inner();
+            Ok(tonic::Response::new(super::sisyphus_bridge::ExecuteToolResponse {
+                status: "SUCCESS".into(),
+                result_json: format!("{{\"echo\": \"{}\"}}", req.tool_id),
+            }))
+        }
     }
 
     #[tokio::test]
@@ -468,5 +514,21 @@ mod tests {
             .into_inner();
         let event = stream.next().await.unwrap().unwrap();
         assert_eq!(event.status, "COMPLETE");
+    }
+
+    #[tokio::test]
+    async fn test_execute_tool() {
+        let bridge = TestBridge("test");
+        let response = bridge
+            .execute_tool(Request::new(ExecuteToolRequest {
+                tool_id: "metis/analyse".to_string(),
+                args_json: r#"{"request": "test"}"#.to_string(),
+                fuel_limit: 0,
+            }))
+            .await
+            .unwrap()
+            .into_inner();
+        assert_eq!(response.status, "SUCCESS");
+        assert!(response.result_json.contains("metis/analyse"));
     }
 }
