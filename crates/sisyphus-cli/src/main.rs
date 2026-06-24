@@ -40,8 +40,45 @@ enum Commands {
     // ── file tools ──────────────────────────────────────
     /// Read a file and print its contents
     Read { path: PathBuf },
-    /// Write content to a file
+    /// Read a range of lines from a file (offset/limit)
+    ReadLines {
+        path: PathBuf,
+        /// 0-based line offset to start from
+        #[arg(short = 'o', long = "offset", default_value = "0")]
+        offset: usize,
+        /// Number of lines to read
+        #[arg(short = 'l', long = "limit", default_value = "50")]
+        limit: usize,
+    },
+    /// Write content to a file (atomic create + rename)
     Write { path: PathBuf, content: String },
+    /// Edit a file: replace FIRST occurrence of OLD_STRING with NEW_STRING
+    Edit {
+        path: PathBuf,
+        old_string: String,
+        new_string: String,
+        /// Replace ALL occurrences instead of just the first
+        #[arg(short = 'a', long = "all")]
+        all: bool,
+    },
+    /// Find files matching a glob pattern
+    Glob {
+        pattern: String,
+        /// Root directory to search from (default: .)
+        #[arg(default_value = ".")]
+        root: PathBuf,
+        /// Max results (default: 100)
+        #[arg(short = 'l', default_value = "100")]
+        limit: usize,
+    },
+    /// Regex search across files (grep)
+    Grep {
+        pattern: String,
+        /// File or directory to search
+        path: PathBuf,
+        #[arg(short = 'i')]
+        include: Option<String>,
+    },
     /// Execute a shell command
     Exec {
         command: String,
@@ -497,9 +534,43 @@ async fn main() -> Result<()> {
             let content = sisyphus_tools::file::read(&path)?;
             println!("{content}");
         }
+        Commands::ReadLines { path, offset, limit } => {
+            let content = sisyphus_tools::file::read_lines(&path, offset, limit)?;
+            print!("{content}");
+        }
         Commands::Write { path, content } => {
             sisyphus_tools::file::write(&path, &content)?;
             println!("Written {} bytes to {}", content.len(), path.display());
+        }
+        Commands::Edit { path, old_string, new_string, all } => {
+            if all {
+                let count = sisyphus_tools::file::edit_all(&path, &old_string, &new_string)?;
+                println!("Replaced {} occurrence(s) in {}", count, path.display());
+            } else {
+                sisyphus_tools::file::edit(&path, &old_string, &new_string)?;
+                println!("Replaced first occurrence in {}", path.display());
+            }
+        }
+        Commands::Glob { pattern, root, limit } => {
+            let files = sisyphus_tools::file::glob(&pattern, &root)?;
+            let shown = files.iter().take(limit);
+            for f in shown {
+                println!("{}", f.display());
+            }
+            if files.len() > limit {
+                println!("... and {} more", files.len() - limit);
+            } else if files.is_empty() {
+                println!("No files matched: {pattern}");
+            }
+        }
+        Commands::Grep { pattern, path, include } => {
+            let matches = sisyphus_tools::file::grep(&pattern, &path, include.as_deref())?;
+            for m in &matches {
+                println!("{}:{} — {}", m.file.display(), m.line, m.content.trim());
+            }
+            if matches.is_empty() {
+                println!("No matches for pattern: {pattern}");
+            }
         }
         Commands::Exec { command, dir } => {
             // Permission check (same as TUI shell)
