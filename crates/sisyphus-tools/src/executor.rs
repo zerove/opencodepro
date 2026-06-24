@@ -20,6 +20,15 @@ use serde_json::{json, Value};
 /// | `bash_exec` | `{"command": "...", "workdir": "...", "timeout_ms": N}` | `{"stdout": "...", "stderr": "...", "exit_code": N, "duration_ms": N}` |
 /// | `web_search` | `{"query": "...", "num": N}` | `{"results": [{"title": "...", "url": "...", "snippet": "..."}]}` |
 /// | `web_fetch` | `{"url": "..."}` | `{"content": "...", "content_type": "..."}` |
+/// | `librarian/research` | `{"query": "...", "scope": "web|docs|code|all", "num": N}` | Full `ResearchReport` JSON |
+/// | `librarian/fetch_docs` | `{"url": "..."}` | Full `DocPage` JSON |
+/// | `librarian/examples` | `{"query": "...", "language": "..."}` | `[CodeExample]` JSON array |
+/// | `librarian/synthesise` | `{"findings": [...], "max_points": N}` | `{"synthesis": "..."}` |
+/// | `metis/analyse` | `{"request": "..."}` | Full `MetisAnalysis` JSON |
+/// | `momus/review_plan` | `{"plan_text": "...", "plan_name": "..."}` | Full `MomusReview` JSON |
+/// | `momus/review_code` | `{"path": "...", "content": "..."}` | Full `MomusReview` JSON |
+/// | `momus/review_code_batch` | `{"files": [{"path": "...", "content": "..."}]}` | `[MomusReview]` JSON array |
+/// | `momus/review_arch` | `{"arch_text": "..."}` | Full `MomusReview` JSON |
 pub struct BuiltinToolExecutor;
 
 #[async_trait::async_trait]
@@ -41,6 +50,18 @@ impl sisyphus_types::ToolExecutor for BuiltinToolExecutor {
             "bash_exec" => cmd_bash_exec(args).await,
             "web_search" => cmd_web_search(args).await,
             "web_fetch" => cmd_web_fetch(args).await,
+            // ── librarian ──────────────────────────────
+            "librarian/research" => cmd_librarian_research(args).await,
+            "librarian/fetch_docs" => cmd_librarian_fetch_docs(args).await,
+            "librarian/examples" => cmd_librarian_examples(args).await,
+            "librarian/synthesise" => cmd_librarian_synthesise(args),
+            // ── metis ──────────────────────────────────
+            "metis/analyse" => cmd_metis_analyse(args),
+            // ── momus ──────────────────────────────────
+            "momus/review_plan" => cmd_momus_review_plan(args),
+            "momus/review_code" => cmd_momus_review_code(args),
+            "momus/review_code_batch" => cmd_momus_review_code_batch(args),
+            "momus/review_arch" => cmd_momus_review_arch(args),
             other => Err(format!("unknown builtin tool: {other}")),
         }
     }
@@ -192,6 +213,99 @@ async fn cmd_web_fetch(args: Vec<u8>) -> Result<Vec<u8>, String> {
     }))
 }
 
+// ── librarian commands ──────────────────────────────────────
+
+async fn cmd_librarian_research(args: Vec<u8>) -> Result<Vec<u8>, String> {
+    let v = parse_args(&args)?;
+    let query = str_arg(&v, "query")?;
+    let scope_str = str_arg(&v, "scope").unwrap_or_else(|_| "web".into());
+    let scope: crate::ResearchScope = scope_str
+        .parse()
+        .map_err(|e: String| format!("invalid scope: {e}"))?;
+    let num = usize_arg(&v, "num").unwrap_or(5);
+    let report = crate::research(&query, scope, num).await.map_err(|e| e.to_string())?;
+    ok_json(serde_json::to_value(&report).map_err(|e| format!("serialize: {e}"))?)
+}
+
+async fn cmd_librarian_fetch_docs(args: Vec<u8>) -> Result<Vec<u8>, String> {
+    let v = parse_args(&args)?;
+    let url = str_arg(&v, "url")?;
+    let page = crate::fetch_documentation(&url).await.map_err(|e| e.to_string())?;
+    ok_json(serde_json::to_value(&page).map_err(|e| format!("serialize: {e}"))?)
+}
+
+async fn cmd_librarian_examples(args: Vec<u8>) -> Result<Vec<u8>, String> {
+    let v = parse_args(&args)?;
+    let query = str_arg(&v, "query")?;
+    let language = str_arg(&v, "language").unwrap_or_else(|_| "rust".into());
+    let examples = crate::find_examples(&query, &language).await.map_err(|e| e.to_string())?;
+    ok_json(serde_json::to_value(&examples).map_err(|e| format!("serialize: {e}"))?)
+}
+
+fn cmd_librarian_synthesise(args: Vec<u8>) -> Result<Vec<u8>, String> {
+    let v = parse_args(&args)?;
+    let findings_val = v.get("findings")
+        .ok_or_else(|| "missing 'findings' arg".to_string())?;
+    let findings: Vec<crate::ResearchFinding> = serde_json::from_value(findings_val.clone())
+        .map_err(|e| format!("invalid findings JSON: {e}"))?;
+    let max_points = usize_arg(&v, "max_points").unwrap_or(10);
+    let synthesis = crate::synthesise(&findings, max_points);
+    ok_json(json!({"synthesis": synthesis}))
+}
+
+// ── metis commands ──────────────────────────────────────────
+
+fn cmd_metis_analyse(args: Vec<u8>) -> Result<Vec<u8>, String> {
+    let v = parse_args(&args)?;
+    let request = str_arg(&v, "request")?;
+    let analysis = crate::analyse(&request);
+    ok_json(serde_json::to_value(&analysis).map_err(|e| format!("serialize: {e}"))?)
+}
+
+// ── momus commands ──────────────────────────────────────────
+
+fn cmd_momus_review_plan(args: Vec<u8>) -> Result<Vec<u8>, String> {
+    let v = parse_args(&args)?;
+    let plan_text = str_arg(&v, "plan_text")?;
+    let plan_name = str_arg(&v, "plan_name").unwrap_or_else(|_| "unnamed".into());
+    let review = crate::review_plan(&plan_text, &plan_name);
+    ok_json(serde_json::to_value(&review).map_err(|e| format!("serialize: {e}"))?)
+}
+
+fn cmd_momus_review_code(args: Vec<u8>) -> Result<Vec<u8>, String> {
+    let v = parse_args(&args)?;
+    let path_str = str_arg(&v, "path")?;
+    let content = str_arg(&v, "content")?;
+    let path = std::path::Path::new(&path_str);
+    let review = crate::review_code(path, &content).map_err(|e| e.to_string())?;
+    ok_json(serde_json::to_value(&review).map_err(|e| format!("serialize: {e}"))?)
+}
+
+fn cmd_momus_review_code_batch(args: Vec<u8>) -> Result<Vec<u8>, String> {
+    let v = parse_args(&args)?;
+    let files_val = v.get("files")
+        .ok_or_else(|| "missing 'files' arg".to_string())?;
+    let files: Vec<serde_json::Value> = serde_json::from_value(files_val.clone())
+        .map_err(|e| format!("invalid files JSON: {e}"))?;
+    let mut pairs = Vec::new();
+    for f in &files {
+        let path_str = f.get("path").and_then(|v| v.as_str())
+            .ok_or_else(|| "each file entry must have a 'path' string".to_string())?;
+        let content = f.get("content").and_then(|v| v.as_str())
+            .ok_or_else(|| "each file entry must have a 'content' string".to_string())?;
+        pairs.push((std::path::Path::new(path_str), content));
+    }
+    let reviews = crate::review_code_batch(&pairs).map_err(|e| e.to_string())?;
+    ok_json(serde_json::to_value(&reviews).map_err(|e| format!("serialize: {e}"))?)
+}
+
+fn cmd_momus_review_arch(args: Vec<u8>) -> Result<Vec<u8>, String> {
+    let v = parse_args(&args)?;
+    let arch_text = str_arg(&v, "arch_text")?;
+    let review = crate::review_architecture(&arch_text);
+    ok_json(serde_json::to_value(&review).map_err(|e| format!("serialize: {e}"))?)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -335,5 +449,105 @@ mod tests {
         let result = ex.execute("file_read", args, 0).await;
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("missing"));
+    }
+
+    // ── agent tool tests ────────────────────────────────────
+
+    #[tokio::test]
+    async fn test_executor_unknown_agent_tool() {
+        let ex = BuiltinToolExecutor;
+        let result = ex.execute("librarian/nonexistent", vec![], 0).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("unknown builtin tool"));
+
+        let result = ex.execute("metis/nonexistent", vec![], 0).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_executor_metis_analyse() {
+        let ex = BuiltinToolExecutor;
+        let args = mkargs(json!({"request": "Refactor the login module to use OAuth2"}));
+        let result = assert_ok(ex.execute("metis/analyse", args, 0).await);
+        assert!(result["summary"].as_str().unwrap_or("").len() > 0);
+        assert!(result["ambiguities"].is_array());
+        assert!(result["implicit_requirements"].is_array());
+    }
+
+    #[tokio::test]
+    async fn test_executor_momus_review_plan() {
+        let ex = BuiltinToolExecutor;
+        let plan_text = "- Step 1: Write failing test\n- Step 2: Implement minimum code\n- Step 3: Refactor";
+        let args = mkargs(json!({"plan_text": plan_text, "plan_name": "TDD workflow"}));
+        let result = assert_ok(ex.execute("momus/review_plan", args, 0).await);
+        assert!(result["summary"].as_str().unwrap_or("").len() > 0);
+        assert!(result["comments"].is_array());
+    }
+
+    #[tokio::test]
+    async fn test_executor_momus_review_code() {
+        let ex = BuiltinToolExecutor;
+        let code = "fn add(a: i32, b: i32) -> i32 { a + b }";
+        let args = mkargs(json!({"path": "/fake/lib.rs", "content": code}));
+        let result = assert_ok(ex.execute("momus/review_code", args, 0).await);
+        assert!(result.get("summary").is_some());
+    }
+
+    #[tokio::test]
+    async fn test_executor_momus_review_arch() {
+        let ex = BuiltinToolExecutor;
+        let arch = "The system uses a microservices architecture with message queues.";
+        let args = mkargs(json!({"arch_text": arch}));
+        let result = assert_ok(ex.execute("momus/review_arch", args, 0).await);
+        assert!(result["summary"].as_str().unwrap_or("").len() > 0);
+    }
+
+    #[tokio::test]
+    async fn test_executor_librarian_synthesise() {
+        let ex = BuiltinToolExecutor;
+        let findings = json!([
+            {"claim": "Rust is memory-safe", "source_url": "https://example.com/rust", "source_title": "Rust docs", "relevance": 0.9, "retrieved_at": "2025-01-01"},
+            {"claim": "Rust has zero-cost abstractions", "source_url": "https://example.com/zero", "source_title": "Rust perf", "relevance": 0.8, "retrieved_at": "2025-01-01"},
+        ]);
+        let args = mkargs(json!({"findings": findings, "max_points": 5}));
+        let result = assert_ok(ex.execute("librarian/synthesise", args, 0).await);
+        assert!(result["synthesis"].as_str().unwrap_or("").len() > 0);
+    }
+
+    #[tokio::test]
+    async fn test_executor_librarian_research() {
+        let ex = BuiltinToolExecutor;
+        let args = mkargs(json!({"query": "Rust async/await", "scope": "web", "num": 1}));
+        // May fail in offline env — acceptable
+        let result = ex.execute("librarian/research", args, 0).await;
+        if let Ok(bytes) = result {
+            let v: Value = serde_json::from_slice(&bytes).unwrap();
+            assert!(v["query"].as_str().unwrap_or("").len() > 0);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_executor_momus_review_code_batch() {
+        let ex = BuiltinToolExecutor;
+        let files = json!([
+            {"path": "/fake/main.rs", "content": "fn main() { println!(\"hello\"); }"},
+            {"path": "/fake/lib.rs", "content": "pub fn add(a: i32, b: i32) -> i32 { a + b }"},
+        ]);
+        let args = mkargs(json!({"files": files}));
+        let result = assert_ok(ex.execute("momus/review_code_batch", args, 0).await);
+        assert!(result.as_array().unwrap().len() == 2);
+    }
+
+    #[tokio::test]
+    async fn test_executor_agent_tool_missing_args() {
+        let ex = BuiltinToolExecutor;
+        let result = ex.execute("metis/analyse", mkargs(json!({})), 0).await;
+        assert!(result.is_err());
+
+        let result = ex.execute("momus/review_plan", mkargs(json!({})), 0).await;
+        assert!(result.is_err());
+
+        let result = ex.execute("librarian/research", mkargs(json!({})), 0).await;
+        assert!(result.is_err());
     }
 }
