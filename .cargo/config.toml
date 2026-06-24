@@ -3,3 +3,12 @@
 #  easily exceeds available RAM even with 2 concurrent rustc processes)
 [build]
 jobs = 1
+
+# Workspace-wide commands: exclude crates that trigger rustc 1.96.0 ICE.
+# bridge: type-checking regression in tonic+wasmtime async trait resolution.
+# sandbox: links wasmtime/cranelift (heavy, rarely needed for quick checks).
+# Use `-p sisyphus-bridge` / `-p sisyphus-sandbox` to compile them individually.
+[alias]
+check-all = "check --workspace --exclude sisyphus-bridge --exclude sisyphus-sandbox"
+test-all  = "test  --workspace --exclude sisyphus-bridge --exclude sisyphus-sandbox"
+build-all = "build --workspace --exclude sisyphus-bridge --exclude sisyphus-sandbox"

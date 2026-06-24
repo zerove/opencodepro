@@ -132,10 +132,18 @@ codegen-units = 64
 [profile.dev.package.globset]
 codegen-units = 64
 
-# sisyphus-bridge test binary — links heavy deps (tonic, wasmtime, sqlite3)
-# test profile is even heavier than dev (extra code paths); set higher to avoid OOM
-[profile.dev.package.sisyphus-bridge]
-codegen-units = 256
+# sisyphus-bridge — rustc 1.96.0 ICE: `cargo check -p sisyphus-bridge` crashes with SIGTERM
+# during type resolution (not LLVM). Root cause: tonic+wasmtime async trait type complexity
+# triggers a rustc regression. No profile override can fix this.
+# 
+# RESOLVED in nightly 1.98.0+ (rustc f28ac764c, 2026-06-23). Will ship with 1.97.0 stable (2026-07-09).
+# Project has `rustup override set nightly` active.
+#
+# Workaround (legacy, for 1.96.0): `cargo check-all`/`test-all`/`build-all` aliases auto --exclude,
+# or `RUSTFLAGS="-C lto=off" cargo check -p sisyphus-bridge` (see Makefile).
+# See https://github.com/rust-lang/rust/issues (rustc 1.96.0, LLVM 22.1.2)
+# [profile.dev.package.sisyphus-bridge]
+# codegen-units = N (<-- still crashes regardless of value)
 
 # h2 is already 256, but also add http and http-body which are heavily inlined
 [profile.dev.package.http]
