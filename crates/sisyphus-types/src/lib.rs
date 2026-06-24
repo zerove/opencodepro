@@ -427,9 +427,35 @@ impl SOPGraph {
 ///
 /// Use `Config::from_file(path)` or `Config::default()` and override
 /// individual fields via environment variables.
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
+pub struct LlmConfig {
+    pub api_key: String,
+    pub endpoint: String,
+    pub model: String,
+}
+
+fn default_llm_config() -> LlmConfig {
+    LlmConfig {
+        api_key: "".into(),
+        endpoint: "http://localhost:8000/v1/chat/completions".into(),
+        model: "gpt-4o".into(),
+    }
+}
+
+impl Default for LlmConfig {
+    fn default() -> Self {
+        default_llm_config()
+    }
+}
+
 #[derive(Clone, Debug, Default, serde::Deserialize, serde::Serialize)]
 pub struct Config {
+    /// LLM client parameters.
+    #[serde(default = "default_llm_config")]
+    pub llm: LlmConfig,
+
     /// Cognitive loop parameters.
+
     #[serde(default = "default_cognitive_loop")]
     pub cognitive_loop: CognitiveLoopConfig,
 

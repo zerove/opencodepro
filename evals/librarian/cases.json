@@ -1,0 +1,479 @@
+[
+  {
+    "id": "lib-001-redundancy-easy",
+    "agent": "librarian",
+    "input": {
+      "findings": [
+        {
+          "claim": "React is a JavaScript library for building user interfaces.",
+          "source_url": "https://react.dev",
+          "source_title": "React Official Site",
+          "relevance": 1.0,
+          "retrieved_at": "2026-06-24T10:00:00Z"
+        },
+        {
+          "claim": "React is used to create UIs for web applications using components.",
+          "source_url": "https://developer.mozilla.org/en-US/docs/Learn/Tools/React",
+          "source_title": "MDN Web Docs",
+          "relevance": 0.9,
+          "retrieved_at": "2026-06-24T10:01:00Z"
+        },
+        {
+          "claim": "React is a JS library developed by Meta for building UI components.",
+          "source_url": "https://wikipedia.org/wiki/React_(software)",
+          "source_title": "Wikipedia",
+          "relevance": 0.8,
+          "retrieved_at": "2026-06-24T10:02:00Z"
+        }
+      ]
+    },
+    "expected": {
+      "summary": "A concise synthesis that identifies React as a JavaScript library for building UIs, developed by Meta, without repeating the definition three times."
+    },
+    "criteria": [
+      {
+        "id": "struct-core",
+        "description": "Contains [Core Conclusions] section",
+        "weight": 0.3,
+        "check_type": "keyword",
+        "expected_value": "[Core Conclusions]"
+      },
+      {
+        "id": "struct-evidence",
+        "description": "Contains [Detailed Evidence] section",
+        "weight": 0.3,
+        "check_type": "keyword",
+        "expected_value": "[Detailed Evidence]"
+      },
+      {
+        "id": "no-redundancy",
+        "description": "Does not repeat the basic definition of React more than once",
+        "weight": 0.4,
+        "check_type": "llm_judge",
+        "expected_value": "The output should synthesize the three similar claims into a single cohesive point rather than listing them separately."
+      }
+    ],
+    "metadata": {
+      "category": "synthesis",
+      "difficulty": "easy",
+      "notes": "Tests basic de-duplication of nearly identical claims."
+    }
+  },
+  {
+    "id": "lib-002-attribution-easy",
+    "agent": "librarian",
+    "input": {
+      "findings": [
+        {
+          "claim": "The capital of France is Paris.",
+          "source_url": "https://worldatlas.com/france",
+          "source_title": "World Atlas",
+          "relevance": 1.0,
+          "retrieved_at": "2026-06-24T10:00:00Z"
+        },
+        {
+          "claim": "France is known for its wine and cheese.",
+          "source_url": "https://tourism.france",
+          "source_title": "France Tourism",
+          "relevance": 1.0,
+          "retrieved_at": "2026-06-24T10:01:00Z"
+        }
+      ]
+    },
+    "expected": {
+      "summary": "A report where Paris is attributed to World Atlas and wine/cheese to France Tourism."
+    },
+    "criteria": [
+      {
+        "id": "attr-1",
+        "description": "Correctly attributes Paris to World Atlas",
+        "weight": 0.5,
+        "check_type": "llm_judge",
+        "expected_value": "The output must explicitly link the fact that Paris is the capital of France to the source 'World Atlas'."
+      },
+      {
+        "id": "attr-2",
+        "description": "Correctly attributes wine/cheese to France Tourism",
+        "weight": 0.5,
+        "check_type": "llm_judge",
+        "expected_value": "The output must explicitly link the facts about wine and cheese to the source 'France Tourism'."
+      }
+    ],
+    "metadata": {
+      "category": "attribution",
+      "difficulty": "easy",
+      "notes": "Tests basic source tracking."
+    }
+  },
+  {
+    "id": "lib-003-conflict-medium",
+    "agent": "librarian",
+    "input": {
+      "findings": [
+        {
+          "claim": "The project deadline is June 30th.",
+          "source_url": "https://internal.wiki/project-a",
+          "source_title": "Project Wiki",
+          "relevance": 1.0,
+          "retrieved_at": "2026-06-24T10:00:00Z"
+        },
+        {
+          "claim": "The project deadline has been moved to July 15th.",
+          "source_url": "https://email.archive/manager-update",
+          "source_title": "Manager Email",
+          "relevance": 1.0,
+          "retrieved_at": "2026-06-24T10:05:00Z"
+        },
+        {
+          "claim": "The deadline is June 30th for the MVP, but July 15th for the full release.",
+          "source_url": "https://slack.archive/channel-general",
+          "source_title": "Slack Discussion",
+          "relevance": 1.0,
+          "retrieved_at": "2026-06-24T10:10:00Z"
+        }
+      ]
+    },
+    "expected": {
+      "summary": "A report that identifies the conflict between June 30 and July 15 and resolves it using the Slack context (MVP vs Full Release)."
+    },
+    "criteria": [
+      {
+        "id": "conflict-resolution",
+        "description": "Highlights the conflict and provides the nuanced explanation",
+        "weight": 1.0,
+        "check_type": "llm_judge",
+        "expected_value": "The output must not just pick one date, but explain that June 30 is for MVP and July 15 is for full release."
+      }
+    ],
+    "metadata": {
+      "category": "conflict_resolution",
+      "difficulty": "medium",
+      "notes": "Tests ability to handle contradictory information and find the synthesizing nuance."
+    }
+  },
+  {
+    "id": "lib-004-deep-tech-hard",
+    "agent": "librarian",
+    "input": {
+      "findings": [
+        {
+          "claim": "etcd achieves linearizable reads by using a ReadIndex mechanism to ensure the leader is still valid.",
+          "source_url": "https://etcd.io/docs/linearizability",
+          "source_title": "etcd Docs",
+          "relevance": 1.0,
+          "retrieved_at": "2026-06-24T10:00:00Z"
+        },
+        {
+          "claim": "Lease reads in etcd allow for linearizable reads without needing a full round of heartbeats if the lease is still valid.",
+          "source_url": "https://etcd.io/docs/leases",
+          "source_title": "etcd Leases",
+          "relevance": 0.9,
+          "retrieved_at": "2026-06-24T10:01:00Z"
+        },
+        {
+          "claim": "Raft consensus ensures that a majority of nodes agree on the log before a commit is acknowledged.",
+          "source_url": "https://raft.github.io",
+          "source_title": "Raft Paper",
+          "relevance": 0.8,
+          "retrieved_at": "2026-06-24T10:02:00Z"
+        }
+      ]
+    },
+    "expected": {
+      "summary": "A technical report explaining etcd linearizability, mentioning ReadIndex and Lease reads as the primary mechanisms."
+    },
+    "criteria": [
+      {
+        "id": "tech-readindex",
+        "description": "Mentions ReadIndex",
+        "weight": 0.4,
+        "check_type": "llm_judge",
+        "expected_value": "The agent must explain the ReadIndex mechanism as a way to achieve linearizable reads in etcd."
+      },
+      {
+        "id": "tech-lease",
+        "description": "Mentions Lease reads",
+        "weight": 0.4,
+        "check_type": "llm_judge",
+        "expected_value": "The agent must explain how lease reads provide linearizability without full heartbeat rounds."
+      },
+      {
+        "id": "tech-accuracy",
+        "description": "Correctly relates Raft to the linearizability of etcd",
+        "weight": 0.2,
+        "check_type": "llm_judge",
+        "expected_value": "The report should explain that linearizability is a property of the read operation, supported by the underlying Raft consensus."
+      }
+    ],
+    "metadata": {
+      "category": "deep_research",
+      "difficulty": "hard",
+      "notes": "Tests synthesis of complex distributed systems concepts."
+    }
+  },
+  {
+    "id": "lib-005-comparison-medium",
+    "agent": "librarian",
+    "input": {
+      "findings": [
+        {
+          "claim": "PostgreSQL provides full ACID compliance for all transactions.",
+          "source_url": "https://postgresql.org/docs",
+          "source_title": "Postgres Docs",
+          "relevance": 1.0,
+          "retrieved_at": "2026-06-24T10:00:00Z"
+        },
+        {
+          "claim": "MongoDB supports multi-document ACID transactions since version 4.0.",
+          "source_url": "https://mongodb.com/docs",
+          "source_title": "MongoDB Docs",
+          "relevance": 1.0,
+          "retrieved_at": "2026-06-24T10:01:00Z"
+        },
+        {
+          "claim": "DynamoDB offers transactional writes and reads for ACID compliance within a single region.",
+          "source_url": "https://aws.amazon.com/dynamodb",
+          "source_title": "AWS Docs",
+          "relevance": 1.0,
+          "retrieved_at": "2026-06-24T10:02:00Z"
+        }
+      ]
+    },
+    "expected": {
+      "summary": "A structured comparison of ACID compliance across Postgres, MongoDB, and DynamoDB."
+    },
+    "criteria": [
+      {
+        "id": "comp-all-present",
+        "description": "Mentions all three databases",
+        "weight": 0.6,
+        "check_type": "regex",
+        "expected_value": "PostgreSQL.*MongoDB.*DynamoDB"
+      },
+      {
+        "id": "comp-structure",
+        "description": "Presents the information as a comparison (e.g., list or table)",
+        "weight": 0.4,
+        "check_type": "llm_judge",
+        "expected_value": "The output should be structured to facilitate easy comparison of the ACID properties."
+      }
+    ],
+    "metadata": {
+      "category": "comparison",
+      "difficulty": "medium",
+      "notes": "Tests ability to synthesize a comparison from separate sources."
+    }
+  },
+  {
+    "id": "lib-006-noise-medium",
+    "agent": "librarian",
+    "input": {
+      "findings": [
+        {
+          "claim": "Quantum computing uses qubits to perform calculations using superposition.",
+          "source_url": "https://science.org/quantum",
+          "source_title": "Science Daily",
+          "relevance": 1.0,
+          "retrieved_at": "2026-06-24T10:00:00Z"
+        },
+        {
+          "claim": "The movie \"Quantum Leap\" is a sci-fi series about time travel.",
+          "source_url": "https://imdb.com/quantum-leap",
+          "source_title": "IMDb",
+          "relevance": 0.1,
+          "retrieved_at": "2026-06-24T10:01:00Z"
+        },
+        {
+          "claim": "Quantum entanglement allows particles to be linked regardless of distance.",
+          "source_url": "https://nature.com/quantum",
+          "source_title": "Nature",
+          "relevance": 1.0,
+          "retrieved_at": "2026-06-24T10:02:00Z"
+        },
+        {
+          "claim": "The film \"Ant-Man and the Wasp: Quantumania\" explores the Quantum Realm.",
+          "source_url": "https://marvel.com/quantumania",
+          "source_title": "Marvel",
+          "relevance": 0.1,
+          "retrieved_at": "2026-06-24T10:03:00Z"
+        }
+      ]
+    },
+    "expected": {
+      "summary": "A synthesis of quantum computing technicals, completely ignoring the movies."
+    },
+    "criteria": [
+      {
+        "id": "noise-filtered",
+        "description": "Does not mention movies or IMDb/Marvel",
+        "weight": 1.0,
+        "check_type": "regex",
+        "expected_value": "^((?!movie|film|IMDb|Marvel).)*$"
+      }
+    ],
+    "metadata": {
+      "category": "noise_filtering",
+      "difficulty": "medium",
+      "notes": "Tests ability to filter out irrelevant information based on relevance and context."
+    }
+  },
+  {
+    "id": "lib-007-version-diff-hard",
+    "agent": "librarian",
+    "input": {
+      "findings": [
+        {
+          "claim": "In v1.0, the API uses the /get-user endpoint for fetching profiles.",
+          "source_url": "https://api.docs/v1",
+          "source_title": "API v1 Docs",
+          "relevance": 1.0,
+          "retrieved_at": "2026-06-24T10:00:00Z"
+        },
+        {
+          "claim": "In v2.0, /get-user is deprecated and replaced by /users/{id}.",
+          "source_url": "https://api.docs/v2",
+          "source_title": "API v2 Docs",
+          "relevance": 1.0,
+          "retrieved_at": "2026-06-24T10:01:00Z"
+        },
+        {
+          "claim": "v2.0 introduces mandatory API keys for all requests, whereas v1.0 allowed optional keys for public data.",
+          "source_url": "https://api.docs/v2-changelog",
+          "source_title": "v2 Changelog",
+          "relevance": 1.0,
+          "retrieved_at": "2026-06-24T10:02:00Z"
+        }
+      ]
+    },
+    "expected": {
+      "summary": "A migration-style report highlighting the breaking changes from v1.0 to v2.0."
+    },
+    "criteria": [
+      {
+        "id": "diff-endpoint",
+        "description": "Mentions the change from /get-user to /users/{id}",
+        "weight": 0.5,
+        "check_type": "llm_judge",
+        "expected_value": "The output must clearly state that /get-user was replaced by /users/{id} in v2.0."
+      },
+      {
+        "id": "diff-auth",
+        "description": "Mentions the change in API key requirements",
+        "weight": 0.5,
+        "check_type": "llm_judge",
+        "expected_value": "The output must explain that API keys became mandatory in v2.0, whereas they were optional in v1.0."
+      }
+    ],
+    "metadata": {
+      "category": "version_diff",
+      "difficulty": "hard",
+      "notes": "Tests ability to synthesize a delta/diff between two versions of documentation."
+    }
+  },
+  {
+    "id": "lib-008-implicit-connection-hard",
+    "agent": "librarian",
+    "input": {
+      "findings": [
+        {
+          "claim": "The payment gateway depends on the Identity Service for user authentication.",
+          "source_url": "https://arch.docs/payment",
+          "source_title": "Payment Gateway Arch",
+          "relevance": 1.0,
+          "retrieved_at": "2026-06-24T10:00:00Z"
+        },
+        {
+          "claim": "The Identity Service depends on the Global LDAP server for credential verification.",
+          "source_url": "https://arch.docs/identity",
+          "source_title": "Identity Service Arch",
+          "relevance": 1.0,
+          "retrieved_at": "2026-06-24T10:01:00Z"
+        }
+      ]
+    },
+    "expected": {
+      "summary": "A report that concludes the payment gateway has an implicit dependency on the Global LDAP server."
+    },
+    "criteria": [
+      {
+        "id": "implicit-dep",
+        "description": "Infers the connection between Payment Gateway and LDAP",
+        "weight": 1.0,
+        "check_type": "llm_judge",
+        "expected_value": "The output should explicitly state that the payment gateway depends on LDAP via the Identity Service."
+      }
+    ],
+    "metadata": {
+      "category": "inference",
+      "difficulty": "hard",
+      "notes": "Tests multi-hop synthesis and logical inference."
+    }
+  },
+  {
+    "id": "lib-009-structure-easy",
+    "agent": "librarian",
+    "input": {
+      "findings": [
+        {
+          "claim": "The company was founded in 2010.",
+          "source_url": "https://company.com/about",
+          "source_title": "About Us",
+          "relevance": 1.0,
+          "retrieved_at": "2026-06-24T10:00:00Z"
+        }
+      ]
+    },
+    "expected": {
+      "summary": "A report that follows the mandatory structure even for a single finding."
+    },
+    "criteria": [
+      {
+        "id": "struct-all",
+        "description": "Contains all three mandatory sections",
+        "weight": 1.0,
+        "check_type": "regex",
+        "expected_value": "\\[Core Conclusions\\].*\\[Detailed Evidence\\].*\\[Comprehensive Recommendations\\]"
+      }
+    ],
+    "metadata": {
+      "category": "structure",
+      "difficulty": "easy",
+      "notes": "Tests adherence to the system prompt structure regardless of input size."
+    }
+  },
+  {
+    "id": "lib-010-large-volume-medium",
+    "agent": "librarian",
+    "input": {
+      "findings": [
+        { "claim": "Python is great for AI.", "source_url": "u1", "source_title": "s1", "relevance": 0.9, "retrieved_at": "t" },
+        { "claim": "Python is widely used in machine learning.", "source_url": "u2", "source_title": "s2", "relevance": 0.9, "retrieved_at": "t" },
+        { "claim": "Python has many AI libraries like PyTorch.", "source_url": "u3", "source_title": "s3", "relevance": 0.9, "retrieved_at": "t" },
+        { "claim": "Python is the preferred language for data science.", "source_url": "u4", "source_title": "s4", "relevance": 0.9, "retrieved_at": "t" },
+        { "claim": "Python is used for building LLMs.", "source_url": "u5", "source_title": "s5", "relevance": 0.9, "retrieved_at": "t" },
+        { "claim": "Python is popular for neural networks.", "source_url": "u6", "source_title": "s6", "relevance": 0.9, "retrieved_at": "t" },
+        { "claim": "Python is used in AI research.", "source_url": "u7", "source_title": "s7", "relevance": 0.9, "retrieved_at": "t" },
+        { "claim": "Python is the standard for AI development.", "source_url": "u8", "source_title": "s8", "relevance": 0.9, "retrieved_at": "t" },
+        { "claim": "Python is used for deep learning.", "source_url": "u9", "source_title": "s9", "relevance": 0.9, "retrieved_at": "t" },
+        { "claim": "Python is used for AI agents.", "source_url": "u10", "source_title": "s10", "relevance": 0.9, "retrieved_at": "t" }
+      ]
+    },
+    "expected": {
+      "summary": "A very concise synthesis that doesn't list all 10 findings but groups them into a single strong conclusion about Python's dominance in AI."
+    },
+    "criteria": [
+      {
+        "id": "conciseness",
+        "description": "Does not list findings as a bulleted list of 10 items",
+        "weight": 1.0,
+        "check_type": "llm_judge",
+        "expected_value": "The output should be a synthesized paragraph or a few grouped points, not a repetition of the 10 input claims."
+      }
+    ],
+    "metadata": {
+      "category": "synthesis",
+      "difficulty": "medium",
+      "notes": "Tests high-volume de-duplication."
+    }
+  }
+]

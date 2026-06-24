@@ -64,8 +64,35 @@ pub struct CodeExample {
 }
 
 // ── Research Functions ─────────────────────────────────────
+ 
+const SYNTHESIS_SYSTEM_PROMPT: &str = r#"You are the Librarian, Sisyphus's knowledge synthesis expert.
+Your goal is to transform a collection of raw research findings into a high-density, professional research report.
+
+### MANDATORY STRUCTURE:
+Your output MUST be partitioned into these three sections. You are STRICTLY FORBIDDEN from omitting, renaming, or merging these headers:
+
+1. [Core Conclusions]
+   (A concise summary of the most important takeaways.)
+
+2. [Detailed Evidence]
+   (A deep dive into the findings, grouping related points and providing clear source attribution. Example: "According to [Source Title]...")
+
+3. [Comprehensive Recommendations]
+   (Actionable advice or next steps based on the evidence.)
+
+### STRICT CONSTRAINT:
+The headers "[Core Conclusions]", "[Detailed Evidence]", and "[Comprehensive Recommendations]" must appear exactly as written, including the brackets.
+
+Guidelines:
+- Eliminate redundancy: Synthesize multiple similar claims into one strong point.
+- Prioritize quality: Focus on authoritative and relevant information.
+- Maintain a professional, technical tone.
+- Highlight conflicts: If sources contradict, explain the different perspectives.
+- Handle empty results: If no meaningful information is found, state it clearly.
+"#;
 
 /// Perform a multi-source research query.
+
 ///
 /// Searches the web, fetches top results, and synthesises findings
 /// into a structured report. Returns a `ResearchReport` with
@@ -129,14 +156,22 @@ pub async fn fetch_documentation(url: &str) -> ToolResult<DocPage> {
     let fetched = webfetch(url).await?;
     let preview = fetched.content.chars().take(500).collect::<String>();
 
-    // Extract a title from the first meaningful line
+    // Extract a title: prefer Markdown headers, then the first meaningful line
     let title = fetched.content.lines()
-        .find(|l| {
-            let t = l.trim();
-            !t.is_empty() && t.len() > 10 && t.len() < 200
+        .find(|l| l.trim().starts_with('#'))
+        .and_then(|l| {
+            let t = l.trim().trim_start_matches('#').trim();
+            if t.is_empty() { None } else { Some(t.to_string()) }
         })
-        .unwrap_or(url)
-        .to_string();
+        .or_else(|| {
+            fetched.content.lines()
+                .find(|l| {
+                    let t = l.trim();
+                    !t.is_empty() && t.len() > 5 && t.len() < 200
+                })
+                .map(|l| l.trim().to_string())
+        })
+        .unwrap_or_else(|| url.to_string());
 
     Ok(DocPage {
         url: url.to_string(),
@@ -176,7 +211,8 @@ pub async fn find_examples(query: &str, language: &str) -> ToolResult<Vec<CodeEx
                         in_code = false;
                     } else {
                         in_code = true;
-                        block_lang = trimmed.trim_start_matches("```").to_string();
+                        // Extract language from the opening fence (e.g., ```rust)
+                        block_lang = trimmed.trim_start_matches("```").trim().to_string();
                         if block_lang.is_empty() {
                             block_lang = language.to_string();
                         }
@@ -202,7 +238,7 @@ async fn add_web_results(query: &str, max_results: usize, findings: &mut Vec<Res
                 claim,
                 source_url: r.url.clone(),
                 source_title: r.title.clone(),
-                relevance: 0.8,
+                relevance: 0.5,
                 retrieved_at: now_iso(),
             });
         }
@@ -218,7 +254,7 @@ async fn add_doc_results(query: &str, max_results: usize, findings: &mut Vec<Res
                 claim: format!("[docs] {} — {}", r.title, r.snippet),
                 source_url: r.url.clone(),
                 source_title: r.title.clone(),
-                relevance: 0.7,
+                relevance: 0.5,
                 retrieved_at: now_iso(),
             });
         }
@@ -234,33 +270,33 @@ async fn add_code_results(query: &str, max_results: usize, findings: &mut Vec<Re
                 claim: format!("[code] {} — {}", r.title, r.snippet),
                 source_url: r.url.clone(),
                 source_title: r.title.clone(),
-                relevance: 0.6,
+                relevance: 0.5,
                 retrieved_at: now_iso(),
             });
         }
     }
 }
 
-/// Synthesise multiple findings into a concise summary.
+/// Synthesise multiple findings into a professional research report.
 ///
-/// Useful when you've gathered research from multiple sources
-/// and need a combined TL;DR.
-pub fn synthesise(findings: &[ResearchFinding], max_points: usize) -> String {
+/// Uses an LLM to perform semantic analysis, removing redundancy and 
+/// structuring the output into conclusions, evidence, and recommendations.
+pub async fn synthesise(findings: &[ResearchFinding], client: &(impl crate::metis::LlmClient + ?Sized)) -> Result<String, String> {
     if findings.is_empty() {
-        return "No findings to synthesise.".to_string();
+        return Ok("No findings to synthesise.".to_string());
     }
 
+    // Sort by relevance (highest first) so the most important findings come first
     let mut sorted: Vec<&ResearchFinding> = findings.iter().collect();
     sorted.sort_by(|a, b| b.relevance.partial_cmp(&a.relevance).unwrap_or(std::cmp::Ordering::Equal));
 
-    let mut output = String::new();
-    output.push_str(&format!("Synthesis of {} sources (top {} shown):\n\n", findings.len(), max_points));
-
-    for f in sorted.iter().take(max_points) {
-        output.push_str(&format!("- {} [relevance: {:.1}]\n  source: {}\n\n", f.claim, f.relevance, f.source_url));
+    let mut user_prompt = format!("Synthesise the following {} research findings into a professional report:\n\n", findings.len());
+    for (i, f) in sorted.iter().enumerate() {
+        user_prompt.push_str(&format!("{}. Claim: {}\n   Source: {} ({})\n   Relevance: {:.2}\n\n", 
+            i + 1, f.claim, f.source_title, f.source_url, f.relevance));
     }
 
-    output
+    client.chat(SYNTHESIS_SYSTEM_PROMPT, &user_prompt, false).await
 }
 
 // ── Helpers ─────────────────────────────────────────────────
@@ -288,6 +324,9 @@ fn now_iso() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::metis::DummyLlmClient;
+
+    const DUMMY: DummyLlmClient = DummyLlmClient;
 
     #[test]
     fn test_research_scope_parse() {
@@ -298,14 +337,14 @@ mod tests {
         assert!("unknown".parse::<ResearchScope>().is_err());
     }
 
-    #[test]
-    fn test_synthesise_empty() {
-        let s = synthesise(&[], 5);
+    #[tokio::test]
+    async fn test_synthesise_empty() {
+        let s = synthesise(&[], &DUMMY).await.unwrap();
         assert!(s.contains("No findings"));
     }
 
-    #[test]
-    fn test_synthesise_orders_by_relevance() {
+    #[tokio::test]
+    async fn test_synthesise_orders_by_relevance() {
         let findings = vec![
             ResearchFinding {
                 claim: "low relevance".into(),
@@ -322,14 +361,14 @@ mod tests {
                 retrieved_at: "now".into(),
             },
         ];
-        let s = synthesise(&findings, 5);
+        let s = synthesise(&findings, &DUMMY).await.unwrap();
         let high_pos = s.find("high relevance").unwrap();
         let low_pos = s.find("low relevance").unwrap();
         assert!(high_pos < low_pos, "high relevance should appear first");
     }
 
-    #[test]
-    fn test_synthesise_respects_max_points() {
+    #[tokio::test]
+    async fn test_synthesise_respects_max_points() {
         let findings: Vec<ResearchFinding> = (0..10).map(|i| ResearchFinding {
             claim: format!("finding {}", i),
             source_url: format!("https://{}.com", i),
@@ -338,7 +377,7 @@ mod tests {
             retrieved_at: "now".into(),
         }).collect();
 
-        let s = synthesise(&findings, 3);
+        let s = synthesise(&findings, &DUMMY).await.unwrap();
         let count = s.matches("relevance:").count();
         assert!(count <= 3, "should show at most 3 findings");
     }

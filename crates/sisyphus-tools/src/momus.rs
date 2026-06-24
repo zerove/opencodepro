@@ -1,8 +1,40 @@
 use crate::ToolResult;
+use crate::metis::LlmClient;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
-// ── Types ──────────────────────────────────────────────────
+// --- Types ---
+
+/// LLM response structure for semantic review.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct LlmReviewResponse {
+    pub passed: bool,
+    pub summary: String,
+    pub comments: Vec<LlmReviewComment>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct LlmReviewComment {
+    pub severity: ReviewSeverity,
+    pub category: String,
+    pub file: Option<String>,
+    pub line: Option<usize>,
+    pub message: String,
+    pub suggestion: Option<String>,
+}
+
+impl From<LlmReviewComment> for ReviewComment {
+    fn from(l: LlmReviewComment) -> Self {
+        Self {
+            severity: l.severity,
+            category: l.category,
+            file: l.file,
+            line: l.line,
+            message: l.message,
+            suggestion: l.suggestion,
+        }
+    }
+}
 
 /// Severity of a review finding.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -67,21 +99,45 @@ impl std::fmt::Display for ReviewType {
     }
 }
 
-// ── Plan Review ────────────────────────────────────────────
+// --- Plan Review ---
+
+const PLAN_REVIEW_SYSTEM_PROMPT: &str = r#"You are Momus, a senior engineer and quality gatekeeper.
+Your goal is to review a project plan for completeness, consistency, and verifiability.
+
+Analyze the plan and return a JSON object with the following structure:
+{
+  "passed": true/false,
+  "summary": "Concise summary of the review",
+  "comments": [
+    {
+      "severity": "Blocker|Critical|Major|Minor|Nitpick",
+      "category": "completeness|consistency|clarity|verifiability|structure",
+      "file": null,
+      "line": null,
+      "message": "Detailed explanation of the issue",
+      "suggestion": "How to fix it"
+    }
+  ]
+}
+
+Guidelines:
+1. Completeness: Are all necessary steps present? Is the goal clearly defined?
+2. Verifiability: Does each step have a clear, measurable outcome? Avoid vague terms like 'improve', 'optimize' without metrics.
+3. Consistency: Do steps follow a logical order? Are there missing dependencies?
+4. Structure: Is the plan broken down into atomic, manageable tasks?
+5. Severity:
+   - Blocker: Missing critical steps or fundamentally flawed approach.
+   - Critical: Major gaps that will likely lead to failure.
+   - Major: Significant issues that should be fixed.
+   - Minor: Small improvements or clarifications.
+   - Nitpick: Style or wording suggestions.
+"#;
 
 /// Review a plan (as a string) for completeness, consistency, and verifiability.
-///
-/// Checks performed:
-/// - Empty name / description
-/// - No steps defined
-/// - Steps without clear outcomes
-/// - Missing dependencies between steps
-/// - Ambiguous or unverifiable language
-/// - Missing effort estimates
-pub fn review_plan(plan_text: &str, plan_name: &str) -> MomusReview {
+pub async fn review_plan(client: &dyn LlmClient, plan_text: &str, plan_name: &str) -> MomusReview {
     let mut comments = Vec::new();
 
-    // 1. Completeness checks
+    // 1. Heuristic checks (Fast feedback)
     if plan_name.trim().is_empty() {
         comments.push(ReviewComment {
             severity: ReviewSeverity::Critical,
@@ -111,7 +167,7 @@ pub fn review_plan(plan_text: &str, plan_name: &str) -> MomusReview {
         };
     }
 
-    // 2. Structure checks
+    // Structure checks
     let lines: Vec<&str> = plan_text.lines().collect();
     let step_lines: Vec<(usize, &str)> = lines.iter()
         .enumerate()
@@ -130,7 +186,7 @@ pub fn review_plan(plan_text: &str, plan_name: &str) -> MomusReview {
         });
     }
 
-    // 3. Verifiability checks
+    // Verifiability checks
     let vague_words = ["TODO", "FIXME", "sometime", "later", "maybe", "perhaps", "eventually"];
     for &w in &vague_words {
         for (line_num, line) in lines.iter().enumerate() {
@@ -147,7 +203,7 @@ pub fn review_plan(plan_text: &str, plan_name: &str) -> MomusReview {
         }
     }
 
-    // 4. Outcome clarity
+    // Outcome clarity
     for &(line_num, line) in &step_lines {
         let desc = line.trim_start_matches("- ").trim_start_matches("* ").trim();
         if desc.len() < 15 {
@@ -172,7 +228,7 @@ pub fn review_plan(plan_text: &str, plan_name: &str) -> MomusReview {
         }
     }
 
-    // 5. Scope boundary check
+    // Scope boundary check
     let scope_keywords = ["scope", "boundary", "out of scope", "not in scope", "limitation"];
     let has_scope = scope_keywords.iter().any(|k| plan_text.to_lowercase().contains(k));
     if !has_scope && step_lines.len() > 3 {
@@ -186,26 +242,64 @@ pub fn review_plan(plan_text: &str, plan_name: &str) -> MomusReview {
         });
     }
 
+    // 2. Semantic review (LLM)
+    let user_prompt = format!("Plan Name: {}\n\nPlan Content:\n{}", plan_name, plan_text);
+    let llm_result = client.chat(PLAN_REVIEW_SYSTEM_PROMPT, &user_prompt, true).await;
+
+    let (llm_passed, llm_summary, llm_comments) = match llm_result {
+        Ok(response) => {
+            match serde_json::from_str::<LlmReviewResponse>(&response) {
+                Ok(res) => (res.passed, res.summary, res.comments.into_iter().map(ReviewComment::from).collect()),
+                Err(e) => {
+                    comments.push(ReviewComment {
+                        severity: ReviewSeverity::Minor,
+                        category: "system".into(),
+                        file: None,
+                        line: None,
+                        message: format!("Semantic review failed to parse: {e}"),
+                        suggestion: None,
+                    });
+                    (true, "Semantic review skipped due to parsing error.".to_string(), vec![])
+                }
+            }
+        }
+        Err(e) => {
+            comments.push(ReviewComment {
+                severity: ReviewSeverity::Minor,
+                category: "system".into(),
+                file: None,
+                line: None,
+                message: format!("Semantic review failed: {e}"),
+                suggestion: None,
+            });
+            (true, "Semantic review skipped due to LLM error.".to_string(), vec![])
+        }
+    };
+
+    comments.extend(llm_comments);
+
     // Determine pass/fail
     let blocker_count = comments.iter().filter(|c| c.severity == ReviewSeverity::Blocker).count();
     let critical_count = comments.iter().filter(|c| c.severity == ReviewSeverity::Critical).count();
-    let passed = blocker_count == 0 && critical_count == 0;
+    let passed = (blocker_count == 0 && critical_count == 0) && llm_passed;
 
     let summary = if passed {
         format!(
-            "✅ Plan review PASSED ({} issues: {} major, {} minor, {} nitpick)",
+            "✅ Plan review PASSED ({} issues: {} major, {} minor, {} nitpick). Summary: {}",
             comments.len(),
             comments.iter().filter(|c| c.severity == ReviewSeverity::Major).count(),
             comments.iter().filter(|c| c.severity == ReviewSeverity::Minor).count(),
             comments.iter().filter(|c| c.severity == ReviewSeverity::Nitpick).count(),
+            llm_summary
         )
     } else {
         format!(
-            "❌ Plan review FAILED ({} blockers, {} critical, {} major, {} minor)",
+            "❌ Plan review FAILED ({} blockers, {} critical, {} major, {} minor). Summary: {}",
             blocker_count,
             critical_count,
             comments.iter().filter(|c| c.severity == ReviewSeverity::Major).count(),
             comments.iter().filter(|c| c.severity == ReviewSeverity::Minor).count(),
+            llm_summary
         )
     };
 
@@ -218,22 +312,47 @@ pub fn review_plan(plan_text: &str, plan_name: &str) -> MomusReview {
     }
 }
 
-// ── Code Review ────────────────────────────────────────────
+// --- Code Review ---
+
+const CODE_REVIEW_SYSTEM_PROMPT: &str = r#"You are Momus, a senior engineer and quality gatekeeper.
+Your goal is to perform a deep semantic review of source code.
+
+Analyze the code and return a JSON object with the following structure:
+{
+  "passed": true/false,
+  "summary": "Concise summary of the review",
+  "comments": [
+    {
+      "severity": "Blocker|Critical|Major|Minor|Nitpick",
+      "category": "logic|performance|concurrency|maintainability|security|style",
+      "file": "path/to/file",
+      "line": 123,
+      "message": "Detailed explanation of the issue",
+      "suggestion": "How to fix it"
+    }
+  ]
+}
+
+Guidelines:
+1. Logic: Look for edge cases, off-by-one errors, incorrect state transitions, and potential bugs.
+2. Performance: Identify inefficient algorithms, unnecessary allocations, or blocking calls in async contexts.
+3. Concurrency (Rust specific): Check for deadlocks, race conditions, improper use of Arc/Mutex/RwLock, and async safety.
+4. Maintainability: Evaluate readability, modularity, and adherence to SRP (Single Responsibility Principle).
+5. Security: Look for common vulnerabilities (e.g., injection, overflow, improper validation).
+6. Severity:
+   - Blocker: Critical bugs, security holes, or deadlocks.
+   - Critical: Major logic errors or severe performance issues.
+   - Major: Significant maintainability or correctness issues.
+   - Minor: Small improvements or potential edge cases.
+   - Nitpick: Style, naming, or minor optimizations.
+"#;
 
 /// Review source code for common issues.
-///
-/// Checks performed:
-/// - Long lines (>120 chars)
-/// - TODO/FIXME markers
-/// - Large functions (>50 lines)
-/// - Deep nesting
-/// - Missing documentation on public items
-/// - Repeated string literals (potential magic values)
-pub fn review_code(path: &Path, content: &str) -> ToolResult<MomusReview> {
+pub async fn review_code(client: &dyn LlmClient, path: &Path, content: &str) -> ToolResult<MomusReview> {
     let mut comments = Vec::new();
     let lines: Vec<&str> = content.lines().collect();
 
-    // 1. Line length
+    // 1. Heuristic checks (Fast feedback)
     for (i, line) in lines.iter().enumerate() {
         if line.len() > 120 {
             comments.push(ReviewComment {
@@ -247,7 +366,6 @@ pub fn review_code(path: &Path, content: &str) -> ToolResult<MomusReview> {
         }
     }
 
-    // 2. TODO/FIXME markers
     for (i, line) in lines.iter().enumerate() {
         let upper = line.to_uppercase();
         if upper.contains("TODO") || upper.contains("FIXME") || upper.contains("HACK") || upper.contains("XXX") {
@@ -262,7 +380,6 @@ pub fn review_code(path: &Path, content: &str) -> ToolResult<MomusReview> {
         }
     }
 
-    // 3. Function length heuristic (Rust: fn ... { ... })
     let mut in_fn = false;
     let mut fn_start = 0;
     let mut brace_depth = 0;
@@ -276,7 +393,6 @@ pub fn review_code(path: &Path, content: &str) -> ToolResult<MomusReview> {
                 fn_start = i;
                 fn_name = name;
                 brace_depth = trimmed.chars().filter(|&c| c == '{').count();
-                // Handle one-liners: fn foo() -> T { expr }
                 if brace_depth > 0 && !trimmed.ends_with('{') && !trimmed.contains(';') {
                     brace_depth = 0;
                     in_fn = false;
@@ -302,11 +418,9 @@ pub fn review_code(path: &Path, content: &str) -> ToolResult<MomusReview> {
         }
     }
 
-    // 4. Missing documentation on public items
     for (i, line) in lines.iter().enumerate() {
         let trimmed = line.trim();
         if trimmed.starts_with("pub fn") || trimmed.starts_with("pub struct") || trimmed.starts_with("pub enum") || trimmed.starts_with("pub trait") {
-            // Check if preceded by a doc comment
             let has_doc = i > 0 && (lines[i - 1].trim().starts_with("///") || lines[i - 1].trim().starts_with("//!"));
             if !has_doc {
                 comments.push(ReviewComment {
@@ -321,7 +435,6 @@ pub fn review_code(path: &Path, content: &str) -> ToolResult<MomusReview> {
         }
     }
 
-    // 5. Deep nesting check (indentation based)
     for (i, line) in lines.iter().enumerate() {
         let indent = line.len() - line.trim_start().len();
         if indent > 80 {
@@ -336,12 +449,48 @@ pub fn review_code(path: &Path, content: &str) -> ToolResult<MomusReview> {
         }
     }
 
-    let passed = comments.iter().all(|c| c.severity != ReviewSeverity::Blocker && c.severity != ReviewSeverity::Critical);
+    // 2. Semantic review (LLM)
+    let user_prompt = format!("File: {}\n\nContent:\n{}", path.to_string_lossy(), content);
+    let llm_result = client.chat(CODE_REVIEW_SYSTEM_PROMPT, &user_prompt, true).await;
+
+    let (llm_passed, llm_summary, llm_comments) = match llm_result {
+        Ok(response) => {
+            match serde_json::from_str::<LlmReviewResponse>(&response) {
+                Ok(res) => (res.passed, res.summary, res.comments.into_iter().map(ReviewComment::from).collect()),
+                Err(e) => {
+                    comments.push(ReviewComment {
+                        severity: ReviewSeverity::Minor,
+                        category: "system".into(),
+                        file: Some(path.to_string_lossy().to_string()),
+                        line: None,
+                        message: format!("Semantic review failed to parse: {e}"),
+                        suggestion: None,
+                    });
+                    (true, "Semantic review skipped due to parsing error.".to_string(), vec![])
+                }
+            }
+        }
+        Err(e) => {
+            comments.push(ReviewComment {
+                severity: ReviewSeverity::Minor,
+                category: "system".into(),
+                file: Some(path.to_string_lossy().to_string()),
+                line: None,
+                message: format!("Semantic review failed: {e}"),
+                suggestion: None,
+            });
+            (true, "Semantic review skipped due to LLM error.".to_string(), vec![])
+        }
+    };
+
+    comments.extend(llm_comments);
+
+    let passed = comments.iter().all(|c| c.severity != ReviewSeverity::Blocker && c.severity != ReviewSeverity::Critical) && llm_passed;
 
     let summary = if passed {
-        format!("✅ Code review PASSED ({} issues found)", comments.len())
+        format!("✅ Code review PASSED ({} issues found). Summary: {}", comments.len(), llm_summary)
     } else {
-        format!("❌ Code review FAILED ({} issues found)", comments.len())
+        format!("❌ Code review FAILED ({} issues found). Summary: {}", comments.len(), llm_summary)
     };
 
     Ok(MomusReview {
@@ -354,10 +503,10 @@ pub fn review_code(path: &Path, content: &str) -> ToolResult<MomusReview> {
 }
 
 /// Run code review on a batch of files.
-pub fn review_code_batch(files: &[(&Path, &str)]) -> ToolResult<Vec<MomusReview>> {
+pub async fn review_code_batch(client: &dyn LlmClient, files: &[(&Path, &str)]) -> ToolResult<Vec<MomusReview>> {
     let mut reviews = Vec::new();
     for (path, content) in files {
-        reviews.push(review_code(path, content)?);
+        reviews.push(review_code(client, path, content).await?);
     }
     Ok(reviews)
 }
@@ -369,9 +518,43 @@ pub fn review_code_batch(files: &[(&Path, &str)]) -> ToolResult<Vec<MomusReview>
 /// - Dependency arrows are directional
 /// - No circular dependency descriptions
 /// - Consistent naming
-pub fn review_architecture(arch_text: &str) -> MomusReview {
+const ARCH_REVIEW_SYSTEM_PROMPT: &str = r#"You are Momus, a senior architect and quality gatekeeper.
+Your goal is to review architecture documentation for consistency, modularity, and extensibility.
+
+Analyze the architecture text and return a JSON object with the following structure:
+{
+  "passed": true/false,
+  "summary": "Concise summary of the review",
+  "comments": [
+    {
+      "severity": "Blocker|Critical|Major|Minor|Nitpick",
+      "category": "completeness|decoupling|srp|extensibility|consistency",
+      "file": null,
+      "line": null,
+      "message": "Detailed explanation of the issue",
+      "suggestion": "How to fix it"
+    }
+  ]
+}
+
+Guidelines:
+1. Completeness: Are all major components described? Are interactions and data flows clear?
+2. Decoupling: Are components too tightly coupled? Are there circular dependencies?
+3. SRP (Single Responsibility Principle): Does each component have a clear, single purpose?
+4. Extensibility: Is the design flexible enough to accommodate future changes?
+5. Consistency: Is the terminology consistent throughout the document?
+6. Severity:
+   - Blocker: Fundamental architectural flaws or missing core components.
+   - Critical: Major coupling issues or SRP violations.
+   - Major: Significant gaps in documentation or design.
+   - Minor: Small inconsistencies or suggestions for better decoupling.
+   - Nitpick: Wording or formatting suggestions.
+"#;
+
+pub async fn review_architecture(client: &dyn LlmClient, arch_text: &str) -> MomusReview {
     let mut comments = Vec::new();
 
+    // 1. Heuristic checks (Fast feedback)
     if arch_text.trim().is_empty() {
         comments.push(ReviewComment {
             severity: ReviewSeverity::Blocker,
@@ -416,12 +599,47 @@ pub fn review_architecture(arch_text: &str) -> MomusReview {
         });
     }
 
-    let passed = comments.iter().all(|c| c.severity != ReviewSeverity::Blocker && c.severity != ReviewSeverity::Critical);
+    // 2. Semantic review (LLM)
+    let llm_result = client.chat(ARCH_REVIEW_SYSTEM_PROMPT, arch_text, true).await;
+
+    let (llm_passed, llm_summary, llm_comments) = match llm_result {
+        Ok(response) => {
+            match serde_json::from_str::<LlmReviewResponse>(&response) {
+                Ok(res) => (res.passed, res.summary, res.comments.into_iter().map(ReviewComment::from).collect()),
+                Err(e) => {
+                    comments.push(ReviewComment {
+                        severity: ReviewSeverity::Minor,
+                        category: "system".into(),
+                        file: None,
+                        line: None,
+                        message: format!("Semantic review failed to parse: {e}"),
+                        suggestion: None,
+                    });
+                    (true, "Semantic review skipped due to parsing error.".to_string(), vec![])
+                }
+            }
+        }
+        Err(e) => {
+            comments.push(ReviewComment {
+                severity: ReviewSeverity::Minor,
+                category: "system".into(),
+                file: None,
+                line: None,
+                message: format!("Semantic review failed: {e}"),
+                suggestion: None,
+            });
+            (true, "Semantic review skipped due to LLM error.".to_string(), vec![])
+        }
+    };
+
+    comments.extend(llm_comments);
+
+    let passed = comments.iter().all(|c| c.severity != ReviewSeverity::Blocker && c.severity != ReviewSeverity::Critical) && llm_passed;
 
     let summary = if passed {
-        format!("✅ Architecture review PASSED ({} suggestions)", comments.len())
+        format!("✅ Architecture review PASSED ({} suggestions). Summary: {}", comments.len(), llm_summary)
     } else {
-        format!("❌ Architecture review FAILED ({} issues)", comments.len())
+        format!("❌ Architecture review FAILED ({} issues). Summary: {}", comments.len(), llm_summary)
     };
 
     MomusReview {
@@ -433,7 +651,7 @@ pub fn review_architecture(arch_text: &str) -> MomusReview {
     }
 }
 
-// ── Helpers ─────────────────────────────────────────────────
+// --- Helpers ---
 
 fn extract_fn_name(line: &str) -> Option<String> {
     let trimmed = line.trim();
@@ -457,54 +675,57 @@ fn extract_fn_name(line: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::metis::DummyLlmClient;
     use tempfile::TempDir;
+
+    const DUMMY: DummyLlmClient = DummyLlmClient;
 
     // ── Plan Review ───────────────────────────────────────
 
-    #[test]
-    fn test_review_plan_empty_name() {
-        let review = review_plan("- do something", "");
+    #[tokio::test]
+    async fn test_review_plan_empty_name() {
+        let review = review_plan(&DUMMY, "- do something", "").await;
         assert!(!review.passed);
         assert!(review.comments.iter().any(|c| c.category == "completeness"));
     }
 
-    #[test]
-    fn test_review_plan_empty_body() {
-        let review = review_plan("", "My Plan");
+    #[tokio::test]
+    async fn test_review_plan_empty_body() {
+        let review = review_plan(&DUMMY, "", "My Plan").await;
         assert!(!review.passed);
         // Name is "My Plan" (non-empty) so only 1 issue: empty body blocker
         assert_eq!(review.comments.len(), 1);
         assert_eq!(review.comments[0].severity, ReviewSeverity::Blocker);
     }
 
-    #[test]
-    fn test_review_plan_clean() {
+    #[tokio::test]
+    async fn test_review_plan_clean() {
         let text = "\
 - Implement user authentication with email/password
 - Add session management with JWT tokens
 - Create middleware for route protection
 - Write integration tests for auth flow
 ";
-        let review = review_plan(text, "Auth Implementation");
+        let review = review_plan(&DUMMY, text, "Auth Implementation").await;
         assert!(review.passed, "clean plan should pass: {:?}", review.comments);
     }
 
-    #[test]
-    fn test_review_plan_vague_language() {
+    #[tokio::test]
+    async fn test_review_plan_vague_language() {
         let text = "\
 - setup database TODO: later
 - maybe add caching eventually
 ";
-        let review = review_plan(text, "Infra");
+        let review = review_plan(&DUMMY, text, "Infra").await;
         // Vague language is Minor severity, so the plan still passes
         let vague = review.comments.iter().filter(|c| c.category == "clarity");
         assert!(vague.count() >= 2);
     }
 
-    #[test]
-    fn test_review_plan_short_steps() {
+    #[tokio::test]
+    async fn test_review_plan_short_steps() {
         let text = "- fix it\n- done\n";
-        let review = review_plan(text, "Quick fixes");
+        let review = review_plan(&DUMMY, text, "Quick fixes").await;
         // Short steps are Major severity, test verifies detection (not pass/fail)
         let short = review.comments.iter().filter(|c| c.category == "verifiability");
         assert!(short.count() >= 2);
@@ -512,34 +733,34 @@ mod tests {
         assert!(review.passed);
     }
 
-    #[test]
-    fn test_review_plan_no_scope_multiple_steps() {
+    #[tokio::test]
+    async fn test_review_plan_no_scope_multiple_steps() {
         let text = "\
 - Implement feature A
 - Implement feature B
 - Implement feature C
 - Implement feature D
 ";
-        let review = review_plan(text, "Big Project");
+        let review = review_plan(&DUMMY, text, "Big Project").await;
         let scope_issues = review.comments.iter().filter(|c| c.message.contains("scope"));
         assert!(scope_issues.count() >= 1);
     }
 
     // ── Code Review ───────────────────────────────────────
 
-    #[test]
-    fn test_review_code_long_lines() {
+    #[tokio::test]
+    async fn test_review_code_long_lines() {
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("long.rs");
         let content = format!("fn main() {{\n    println!(\"{}\");\n}}\n", "x".repeat(150));
         std::fs::write(&path, &content).unwrap();
-        let review = review_code(&path, &content).unwrap();
+        let review = review_code(&DUMMY, &path, &content).await.unwrap();
         assert!(!review.comments.is_empty());
         assert!(review.comments.iter().any(|c| c.message.contains("Line too long")));
     }
 
-    #[test]
-    fn test_review_code_todo_markers() {
+    #[tokio::test]
+    async fn test_review_code_todo_markers() {
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("todo.rs");
         let content = "\
@@ -549,13 +770,13 @@ fn foo() {}
 fn bar() {}
 ";
         std::fs::write(&path, &content).unwrap();
-        let review = review_code(&path, &content).unwrap();
+        let review = review_code(&DUMMY, &path, &content).await.unwrap();
         let markers = review.comments.iter().filter(|c| c.message.contains("marker"));
         assert_eq!(markers.count(), 2);
     }
 
-    #[test]
-    fn test_review_code_clean() {
+    #[tokio::test]
+    async fn test_review_code_clean() {
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("clean.rs");
         let content = "\
@@ -565,23 +786,23 @@ pub fn add(a: i32, b: i32) -> i32 {
 }
 ";
         std::fs::write(&path, &content).unwrap();
-        let review = review_code(&path, &content).unwrap();
+        let review = review_code(&DUMMY, &path, &content).await.unwrap();
         // Documented public fn, no issues
         assert!(review.passed);
     }
 
-    #[test]
-    fn test_review_code_undocumented_pub() {
+    #[tokio::test]
+    async fn test_review_code_undocumented_pub() {
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("undoc.rs");
         let content = "pub fn undoc() -> i32 { 42 }\n";
         std::fs::write(&path, &content).unwrap();
-        let review = review_code(&path, &content).unwrap();
+        let review = review_code(&DUMMY, &path, &content).await.unwrap();
         assert!(review.comments.iter().any(|c| c.category == "documentation"));
     }
 
-    #[test]
-    fn test_review_code_long_function() {
+    #[tokio::test]
+    async fn test_review_code_long_function() {
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("longfn.rs");
         let mut content = String::from("pub fn long_function() {\n");
@@ -590,13 +811,13 @@ pub fn add(a: i32, b: i32) -> i32 {
         }
         content.push_str("}\n");
         std::fs::write(&path, &content).unwrap();
-        let review = review_code(&path, &content).unwrap();
+        let review = review_code(&DUMMY, &path, &content).await.unwrap();
         let complex = review.comments.iter().filter(|c| c.category == "complexity");
         assert!(complex.count() >= 1);
     }
 
-    #[test]
-    fn test_review_code_batch() {
+    #[tokio::test]
+    async fn test_review_code_batch() {
         let dir = TempDir::new().unwrap();
         let path1 = dir.path().join("a.rs");
         let path2 = dir.path().join("b.rs");
@@ -609,7 +830,7 @@ pub fn add(a: i32, b: i32) -> i32 {
             (&path1 as &Path, content1),
             (&path2 as &Path, content2),
         ];
-        let reviews = review_code_batch(&files).unwrap();
+        let reviews = review_code_batch(&DUMMY, &files).await.unwrap();
         assert_eq!(reviews.len(), 2);
         // TODO markers are Minor severity, so both still pass
         assert!(reviews[0].passed);
@@ -618,16 +839,50 @@ pub fn add(a: i32, b: i32) -> i32 {
         assert!(!reviews[1].comments.is_empty());
     }
 
-    // ── Architecture Review ───────────────────────────────
+    // --- Architecture Review ---
 
-    #[test]
-    fn test_review_architecture_empty() {
-        let review = review_architecture("");
+const ARCH_REVIEW_SYSTEM_PROMPT: &str = r#"You are Momus, a senior architect and quality gatekeeper.
+Your goal is to review architecture documentation for consistency, modularity, and extensibility.
+
+Analyze the architecture text and return a JSON object with the following structure:
+{
+  "passed": true/false,
+  "summary": "Concise summary of the review",
+  "comments": [
+    {
+      "severity": "Blocker|Critical|Major|Minor|Nitpick",
+      "category": "completeness|decoupling|srp|extensibility|consistency",
+      "file": null,
+      "line": null,
+      "message": "Detailed explanation of the issue",
+      "suggestion": "How to fix it"
+    }
+  ]
+}
+
+Guidelines:
+1. Completeness: Are all major components described? Are interactions and data flows clear?
+2. Decoupling: Are components too tightly coupled? Are there circular dependencies?
+3. SRP (Single Responsibility Principle): Does each component have a clear, single purpose?
+4. Extensibility: Is the design flexible enough to accommodate future changes?
+5. Consistency: Is the terminology consistent throughout the document?
+6. Severity:
+   - Blocker: Fundamental architectural flaws or missing core components.
+   - Critical: Major coupling issues or SRP violations.
+   - Major: Significant gaps in documentation or design.
+   - Minor: Small inconsistencies or suggestions for better decoupling.
+   - Nitpick: Wording or formatting suggestions.
+"#;
+// --- Helpers ---
+
+    #[tokio::test]
+    async fn test_review_architecture_empty() {
+        let review = review_architecture(&DUMMY, "").await;
         assert!(!review.passed);
     }
 
-    #[test]
-    fn test_review_architecture_with_components() {
+    #[tokio::test]
+    async fn test_review_architecture_with_components() {
         let text = "\
 ## Core Engine
 Handles DAG execution.
@@ -637,14 +892,14 @@ gRPC server.
 
 Core Engine --> Bridge: sends events
 ";
-        let review = review_architecture(text);
+        let review = review_architecture(&DUMMY, text).await;
         assert!(review.passed, "should pass: {:?}", review.comments);
     }
 
-    #[test]
-    fn test_review_architecture_missing_deps() {
+    #[tokio::test]
+    async fn test_review_architecture_missing_deps() {
         let text = "## Component A\n## Component B\n";
-        let review = review_architecture(text);
+        let review = review_architecture(&DUMMY, text).await;
         let dep_issues = review.comments.iter().filter(|c| c.message.contains("dependency"));
         assert!(dep_issues.count() >= 1);
     }

@@ -1,0 +1,379 @@
+[
+  {
+    "id": "adr_easy_01",
+    "agent": "scribe",
+    "input": {
+      "context": "Team discussion: 'We need a way to handle JSON in our Rust project. I think serde is the industry standard and has the best performance. Everyone agrees. Let's go with serde.'"
+    },
+    "expected": {
+      "title": "Use serde for JSON serialization",
+      "decision": "Use the serde library for JSON handling in Rust."
+    },
+    "criteria": [
+      {
+        "id": "has_context",
+        "description": "Contains a '## Context' section",
+        "check_type": "keyword",
+        "expected_value": "## Context"
+      },
+      {
+        "id": "has_decision",
+        "description": "Contains a '## Decision' section",
+        "check_type": "keyword",
+        "expected_value": "## Decision"
+      },
+      {
+        "id": "has_consequences",
+        "description": "Contains a '## Consequences' section",
+        "check_type": "keyword",
+        "expected_value": "## Consequences"
+      },
+      {
+        "id": "correct_decision",
+        "description": "Correctly identifies serde as the decision",
+        "check_type": "llm_judge",
+        "expected_value": "The decision must explicitly state the use of the 'serde' library."
+      }
+    ],
+    "metadata": {
+      "category": "adr_generation",
+      "difficulty": "easy",
+      "notes": "Simple consensus decision."
+    }
+  },
+  {
+    "id": "adr_med_01",
+    "agent": "scribe",
+    "input": {
+      "context": "Discussion: 'We are debating between PostgreSQL and MongoDB for the new User Profile service. Alice argues that we need strong ACID guarantees for user data. Bob suggests MongoDB for the flexible schema since profiles change often. After reviewing the requirements, we decided that data integrity is paramount, so we will use PostgreSQL, but we'll use a JSONB column for the flexible parts of the profile.'"
+    },
+    "expected": {
+      "decision": "Use PostgreSQL with JSONB for user profiles."
+    },
+    "criteria": [
+      {
+        "id": "has_structure",
+        "description": "Follows MADR format (Context, Decision, Consequences)",
+        "check_type": "regex",
+        "expected_value": "## Context.*## Decision.*## Consequences"
+      },
+      {
+        "id": "tradeoff_mentioned",
+        "description": "Mentions the trade-off between ACID and schema flexibility",
+        "check_type": "llm_judge",
+        "expected_value": "The context should explain the debate between PostgreSQL (ACID) and MongoDB (flexibility)."
+      },
+      {
+        "id": "hybrid_solution",
+        "description": "Mentions the use of JSONB",
+        "weight": 0.3,
+        "check_type": "llm_judge",
+        "expected_value": "The agent must explicitly mention using a JSONB column in PostgreSQL to handle the flexible parts of the profile."
+      }
+    ],
+    "metadata": {
+      "category": "adr_generation",
+      "difficulty": "medium",
+      "notes": "Decision involves a trade-off and a hybrid solution."
+    }
+  },
+  {
+    "id": "adr_hard_01",
+    "agent": "scribe",
+    "input": {
+      "context": "Long Thread: 'The monolith is becoming a bottleneck. Deployment takes 40 minutes. The Auth team is constantly blocked by the Payments team. We discussed moving everything to microservices, but that's too risky. We also considered just optimizing the CI pipeline. However, the organizational friction is the real issue. We've decided to extract only the Authentication and Authorization logic into a separate 'Identity Service'. This will allow the Auth team to deploy independently. We acknowledge this introduces network latency and requires a new way to handle distributed sessions (JWTs).'"
+    },
+    "expected": {
+      "decision": "Extract Auth logic into a separate Identity Service."
+    },
+    "criteria": [
+      {
+        "id": "complex_context",
+        "description": "Captures organizational friction and deployment bottlenecks",
+        "check_type": "llm_judge",
+        "expected_value": "The context must mention deployment time and team blocking/organizational issues."
+      },
+      {
+        "id": "consequences_detailed",
+        "description": "Lists network latency and JWTs as consequences",
+        "check_type": "llm_judge",
+        "expected_value": "The consequences section must mention network latency and the need for JWTs/distributed sessions."
+      },
+      {
+        "id": "madr_format",
+        "description": "Strict adherence to MADR",
+        "check_type": "regex",
+        "expected_value": "## Context.*## Decision.*## Consequences"
+      }
+    ],
+    "metadata": {
+      "category": "adr_generation",
+      "difficulty": "hard",
+      "notes": "Complex architectural shift with organizational and technical drivers."
+    }
+  },
+  {
+    "id": "adr_med_02",
+    "agent": "scribe",
+    "input": {
+      "context": "Chat: 'Our database is hitting 90% CPU during peak hours. We need a caching layer. We looked at Memcached and Redis. Redis is better because it supports more data structures and persistence. We'll implement Redis with a 15-minute TTL for most keys to avoid stale data. This will reduce DB load but we'll need to handle cache invalidation when users update their profiles.'"
+    },
+    "expected": {
+      "decision": "Implement Redis as a caching layer with 15-minute TTL."
+    },
+    "criteria": [
+      {
+        "id": "performance_driver",
+        "description": "Mentions DB CPU load as the driver",
+        "weight": 0.3,
+        "check_type": "llm_judge",
+        "expected_value": "The agent must identify that the primary driver for the decision is the high CPU load on the database during peak hours."
+      },
+      {
+        "id": "redis_choice",
+        "description": "Explains why Redis over Memcached",
+        "check_type": "llm_judge",
+        "expected_value": "The decision should mention Redis's data structures or persistence as a reason for choosing it over Memcached."
+      },
+      {
+        "id": "invalidation_risk",
+        "description": "Mentions cache invalidation as a consequence",
+        "weight": 0.3,
+        "check_type": "llm_judge",
+        "expected_value": "The agent must list cache invalidation (specifically when users update profiles) as a negative consequence or risk."
+      }
+    ],
+    "metadata": {
+      "category": "adr_generation",
+      "difficulty": "medium",
+      "notes": "Performance-driven decision with specific technical constraints."
+    }
+  },
+  {
+    "id": "doc_easy_01",
+    "agent": "scribe",
+    "input": {
+      "doc_content": "# Project X\n\nVersion: 1.0.0\n\nThis is a great project.",
+      "changes": "Bump the version to 1.1.0"
+    },
+    "expected": {
+      "diff": "Version: 1.0.0 -> Version: 1.1.0"
+    },
+    "criteria": [
+      {
+        "id": "version_updated",
+        "description": "Version is updated to 1.1.0",
+        "check_type": "keyword",
+        "expected_value": "1.1.0"
+      },
+      {
+        "id": "minimal_change",
+        "description": "Does not change other parts of the document",
+        "check_type": "llm_judge",
+        "expected_value": "The suggested update should only affect the version line."
+      }
+    ],
+    "metadata": {
+      "category": "doc_update",
+      "difficulty": "easy",
+      "notes": "Simple string replacement."
+    }
+  },
+  {
+    "id": "doc_med_01",
+    "agent": "scribe",
+    "input": {
+      "doc_content": "## Setup\n\nSet the following environment variables:\n- API_KEY: Your API key\n- DB_URL: Your database connection string",
+      "changes": "We now need a REDIS_URL for the caching layer. It should be a valid redis:// URI."
+    },
+    "expected": {
+      "diff": "Add REDIS_URL to the environment variables list"
+    },
+    "criteria": [
+      {
+        "id": "redis_url_added",
+        "description": "REDIS_URL is added to the list",
+        "check_type": "keyword",
+        "expected_value": "REDIS_URL"
+      },
+      {
+        "id": "description_included",
+        "description": "Includes a description for REDIS_URL",
+        "check_type": "llm_judge",
+        "expected_value": "The update should include a brief description of what REDIS_URL is for."
+      }
+    ],
+    "metadata": {
+      "category": "doc_update",
+      "difficulty": "medium",
+      "notes": "Adding a new item to a list."
+    }
+  },
+  {
+    "id": "doc_hard_01",
+    "agent": "scribe",
+    "input": {
+      "doc_content": "### GET /user\n\nReturns user details.\n\nResponse:\n{\n  \"id\": \"string\",\n  \"name\": \"string\",\n  \"email\": \"string\"\n}",
+      "changes": "The /user endpoint is being updated to support multiple addresses. The response now nests user details inside a 'profile' object, and 'addresses' is now an array of objects."
+    },
+    "expected": {
+      "diff": "Update response schema to nested profile and addresses array"
+    },
+    "criteria": [
+      {
+        "id": "nested_profile",
+        "description": "Response now contains a 'profile' object",
+        "weight": 0.4,
+        "check_type": "llm_judge",
+        "expected_value": "The agent must show that the user details are now nested inside a 'profile' object in the JSON response."
+      },
+      {
+        "id": "addresses_array",
+        "description": "Addresses is now an array",
+        "check_type": "llm_judge",
+        "expected_value": "The updated JSON example must show 'addresses' as an array of objects."
+      },
+      {
+        "id": "precise_diff",
+        "description": "Provides a clear search/replace or diff",
+        "check_type": "llm_judge",
+        "expected_value": "The output should be a structured diff or search/replace block, not just a rewrite of the whole file."
+      }
+    ],
+    "metadata": {
+      "category": "doc_update",
+      "difficulty": "hard",
+      "notes": "Breaking API change requiring schema update."
+    }
+  },
+  {
+    "id": "doc_med_02",
+    "agent": "scribe",
+    "input": {
+      "doc_content": "## Getting Started\n\n1. Run `npm install` to install dependencies.\n2. Run `npm start` to launch the app.",
+      "changes": "We have migrated from npm to bun for faster installation and execution. Update the instructions to use bun."
+    },
+    "expected": {
+      "diff": "Replace npm with bun"
+    },
+    "criteria": [
+      {
+        "id": "bun_install",
+        "description": "npm install replaced by bun install",
+        "check_type": "keyword",
+        "expected_value": "bun install"
+      },
+      {
+        "id": "bun_start",
+        "description": "npm start replaced by bun run start",
+        "check_type": "keyword",
+        "expected_value": "bun run start"
+      }
+    ],
+    "metadata": {
+      "category": "doc_update",
+      "difficulty": "medium",
+      "notes": "Tooling migration update."
+    }
+  },
+  {
+    "id": "ext_easy_01",
+    "agent": "scribe",
+    "input": {
+      "context": "User A: 'Should we use Tailwind CSS for the frontend?'\nUser B: 'Yeah, it'll make styling much faster and keep the bundle size small.'\nUser A: 'Agreed. Let's do it.'"
+    },
+    "expected": {
+      "decision": "Use Tailwind CSS for frontend styling."
+    },
+    "criteria": [
+      {
+        "id": "correct_extraction",
+        "description": "Extracts the decision to use Tailwind",
+        "weight": 1.0,
+        "check_type": "llm_judge",
+        "expected_value": "The agent must correctly extract the consensus decision to use Tailwind CSS for the frontend."
+      }
+    ],
+    "metadata": {
+      "category": "context_extraction",
+      "difficulty": "easy",
+      "notes": "Direct and explicit decision."
+    }
+  },
+  {
+    "id": "ext_med_01",
+    "agent": "scribe",
+    "input": {
+      "context": "Dev 1: 'I think we should use GraphQL. It solves the overfetching problem.'\nDev 2: 'But REST is so much simpler to implement and cache.'\nDev 1: 'True, but our mobile app is struggling with the number of requests.'\nDev 2: 'Fair point. How about we use GraphQL for the public-facing API and keep REST for internal microservice communication?'\nDev 1: 'That sounds like a great compromise. Let's go with that.'"
+    },
+    "expected": {
+      "decision": "Hybrid API approach: GraphQL for public API, REST for internal communication."
+    },
+    "criteria": [
+      {
+        "id": "hybrid_decision",
+        "description": "Correctly identifies the hybrid approach",
+        "check_type": "llm_judge",
+        "expected_value": "The extracted decision must mention both GraphQL (public) and REST (internal)."
+      }
+    ],
+    "metadata": {
+      "category": "context_extraction",
+      "difficulty": "medium",
+      "notes": "Decision emerges from a debate."
+    }
+  },
+  {
+    "id": "ext_hard_01",
+    "agent": "scribe",
+    "input": {
+      "context": "A very long chat log containing 50 messages. Most are about bug fixes, coffee, and random git issues. In the middle, there is a 5-message exchange: 'Wait, how are we handling the DB migration for the v2 schema? We can't have downtime. Maybe a maintenance window? No, the business won't allow that. Let's use a Blue-Green deployment strategy for the database. We'll sync the data in real-time and flip the switch. Okay, that's the plan.' The rest of the chat continues with unrelated topics."
+    },
+    "expected": {
+      "decision": "Use Blue-Green deployment for the v2 database migration."
+    },
+    "criteria": [
+      {
+        "id": "noise_filtering",
+        "description": "Ignores unrelated chat and finds the DB decision",
+        "weight": 0.5,
+        "check_type": "llm_judge",
+        "expected_value": "The agent must ignore the noise about coffee and bug fixes and correctly extract the decision to use a Blue-Green deployment for the database."
+      },
+      {
+        "id": "precise_decision",
+        "description": "Correctly identifies the migration strategy",
+        "check_type": "llm_judge",
+        "expected_value": "The decision must be specifically about Blue-Green deployment for DB migration."
+      }
+    ],
+    "metadata": {
+      "category": "context_extraction",
+      "difficulty": "hard",
+      "notes": "Decision buried in noise."
+    }
+  },
+  {
+    "id": "ext_med_02",
+    "agent": "scribe",
+    "input": {
+      "context": "Discussion: 'For the frontend, we're definitely sticking with React. It's what the team knows. Now, for state management... Redux is too boilerplatey. Let's try Zustand. It's lightweight and easy to set up. Everyone seems okay with that. So, React and Zustand it is.'"
+    },
+    "expected": {
+      "decisions": ["Use React for frontend", "Use Zustand for state management"]
+    },
+    "criteria": [
+      {
+        "id": "multiple_decisions",
+        "description": "Extracts both React and Zustand decisions",
+        "check_type": "llm_judge",
+        "expected_value": "The output must identify both React and Zustand as decided technologies."
+      }
+    ],
+    "metadata": {
+      "category": "context_extraction",
+      "difficulty": "medium",
+      "notes": "Multiple decisions in one conversation."
+    }
+  }
+]

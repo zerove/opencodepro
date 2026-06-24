@@ -1,0 +1,277 @@
+[
+  {
+    "id": "momus-plan-001",
+    "agent": "momus",
+    "input": {
+      "artifact": "Plan: Implement User Profile Picture Upload\nSteps:\n1. Create API endpoint /upload-avatar\n2. Update User table in DB to include avatar_url\n3. Update Frontend Profile page to allow file selection and upload",
+      "context": "Standard feature request for a web application."
+    },
+    "expected": {
+      "critique": "The plan is missing a critical verification step. There are no unit or integration tests mentioned to ensure the upload logic works and handles edge cases (e.g., invalid file types, oversized files)."
+    },
+    "criteria": [
+      {
+        "id": "check-tests",
+        "description": "Must identify the absence of testing steps.",
+        "weight": 1.0,
+        "check_type": "llm_judge",
+        "expected_value": "The agent must explicitly mention that the plan is missing unit, integration, or verification tests."
+      }
+    ],
+    "metadata": {
+      "category": "plan_review",
+      "difficulty": "easy",
+      "notes": "Tests are a basic requirement for any professional plan."
+    }
+  },
+  {
+    "id": "momus-plan-002",
+    "agent": "momus",
+    "input": {
+      "artifact": "Plan: Optimize Database Performance\nSteps:\n1. Analyze slow queries using pg_stat_statements\n2. Add indexes to the 'orders' table on 'customer_id'\n3. Rewrite the 'get_all_orders' query to avoid N+1 problem\nExpected Result: The system will feel faster for the end users.",
+      "context": "Performance optimization task."
+    },
+    "expected": {
+      "critique": "The 'Expected Result' is qualitative and unverifiable. 'Feel faster' is not a technical metric. The plan should define quantitative success criteria, such as 'Reduce p99 latency of get_all_orders from 500ms to <100ms'."
+    },
+    "criteria": [
+      {
+        "id": "check-metrics",
+        "description": "Must identify that the result is not measurable/quantifiable.",
+        "weight": 1.0,
+        "check_type": "llm_judge",
+        "expected_value": "The agent must point out that 'feel faster' is a qualitative description and should be replaced with quantitative metrics (e.g., latency in ms)."
+      }
+    ],
+    "metadata": {
+      "category": "plan_review",
+      "difficulty": "medium",
+      "notes": "Focuses on the verifiability of the plan's outcome."
+    }
+  },
+  {
+    "id": "momus-plan-003",
+    "agent": "momus",
+    "input": {
+      "artifact": "Plan: Database Schema Migration\nSteps:\n1. Deploy new application code that reads from the 'user_email_v2' column\n2. Run SQL migration script to add 'user_email_v2' column to the 'users' table\n3. Backfill data from 'email' to 'user_email_v2'",
+      "context": "Zero-downtime migration for a production system."
+    },
+    "expected": {
+      "critique": "The execution order is logically flawed. Step 1 deploys code that depends on a column that doesn't exist yet (Step 2). This will cause immediate runtime errors in production. The migration (Step 2) must occur before the code deployment (Step 1)."
+    },
+    "criteria": [
+      {
+        "id": "check-order",
+        "description": "Must identify the incorrect sequence of deployment and migration.",
+        "weight": 1.0,
+        "check_type": "llm_judge",
+        "expected_value": "The agent must identify that the database migration (adding the column) must happen before the code deployment that reads from that column."
+      }
+    ],
+    "metadata": {
+      "category": "plan_review",
+      "difficulty": "hard",
+      "notes": "Tests the agent's ability to spot deployment sequence risks."
+    }
+  },
+  {
+    "id": "momus-code-001",
+    "agent": "momus",
+    "input": {
+      "artifact": "void process_data(int* data) {\\n    int* ptr = new int[10];\\n    delete[] ptr;\\n    ptr[0] = 100; // Bug here\\n}",
+      "context": "C++ memory management check."
+    },
+    "expected": {
+      "critique": "The code contains a use-after-free vulnerability. The pointer 'ptr' is deleted on line 3, but then accessed on line 4. This leads to undefined behavior and potential security exploits."
+    },
+    "criteria": [
+      {
+        "id": "check-uaf",
+        "description": "Must identify the use-after-free bug.",
+        "weight": 1.0,
+        "check_type": "llm_judge",
+        "expected_value": "The agent must identify that the pointer is accessed after it has been deleted (use-after-free)."
+      }
+    ],
+    "metadata": {
+      "category": "code_review",
+      "difficulty": "hard",
+      "notes": "Classic memory safety issue."
+    }
+  },
+  {
+    "id": "momus-code-002",
+    "agent": "momus",
+    "input": {
+      "artifact": "public void transfer(Account from, Account to, double amount) {\\n    synchronized(from) {\\n        synchronized(to) {\\n            from.withdraw(amount);\\n            to.deposit(amount);\\n        }\\n    }\\n}",
+      "context": "Java concurrency check. Assume this is called by multiple threads with different account pairs."
+    },
+    "expected": {
+      "critique": "This code is susceptible to deadlocks. If Thread A calls transfer(Acc1, Acc2) and Thread B calls transfer(Acc2, Acc1) simultaneously, they will each hold one lock and wait for the other indefinitely. A consistent locking order (e.g., based on account ID) should be used."
+    },
+    "criteria": [
+      {
+        "id": "check-deadlock",
+        "description": "Must identify the potential for deadlock.",
+        "weight": 1.0,
+        "check_type": "llm_judge",
+        "expected_value": "The agent must identify the risk of deadlock when two threads attempt to transfer funds between the same two accounts in opposite orders."
+      }
+    ],
+    "metadata": {
+      "category": "code_review",
+      "difficulty": "hard",
+      "notes": "Tests concurrency analysis."
+    }
+  },
+  {
+    "id": "momus-code-003",
+    "agent": "momus",
+    "input": {
+      "artifact": "def find_duplicates(items):\\n    duplicates = []\\n    for i in range(len(items)):\\n        for j in range(i + 1, len(items)):\\n            if items[i] == items[j] and items[i] not in duplicates:\\n                duplicates.append(items[i])\\n    return duplicates",
+      "context": "Python algorithm efficiency check. 'items' can contain up to 100,000 elements."
+    },
+    "expected": {
+      "critique": "The current implementation has O(n^2) time complexity due to nested loops and an O(n) membership check in the 'duplicates' list. For 100k elements, this will be prohibitively slow. Using a set to track seen items would reduce the complexity to O(n)."
+    },
+    "criteria": [
+      {
+        "id": "check-complexity",
+        "description": "Must identify the inefficient time complexity and suggest a set.",
+        "weight": 1.0,
+        "check_type": "llm_judge",
+        "expected_value": "The agent must identify the O(n^2) complexity and suggest using a set or hash map to achieve O(n) complexity."
+      }
+    ],
+    "metadata": {
+      "category": "code_review",
+      "difficulty": "medium",
+      "notes": "Tests algorithmic optimization skills."
+    }
+  },
+  {
+    "id": "momus-code-004",
+    "agent": "momus",
+    "input": {
+      "artifact": "class OrderManager {\\n    public void processOrder(Order order) {\\n        if (validate(order)) {\\n            saveToDb(order);\\n            sendConfirmationEmail(order);\\n            generatePdfInvoice(order);\\n            logTransaction(order);\\n        }\\n    }\\n    private boolean validate(Order o) { ... }\\n    private void saveToDb(Order o) { ... }\\n    private void sendConfirmationEmail(Order o) { ... }\\n    private void generatePdfInvoice(Order o) { ... }\\n    private void logTransaction(Order o) { ... }\\n}",
+      "context": "Java class design review."
+    },
+    "expected": {
+      "critique": "The OrderManager class violates the Single Responsibility Principle (SRP). It is handling business logic, persistence, notifications, document generation, and logging. These should be delegated to separate services (e.g., OrderRepository, EmailService, InvoiceService)."
+    },
+    "criteria": [
+      {
+        "id": "check-srp",
+        "description": "Must identify the SRP violation.",
+        "weight": 1.0,
+        "check_type": "llm_judge",
+        "expected_value": "The agent must identify that OrderManager violates the Single Responsibility Principle by handling too many unrelated tasks (DB, Email, PDF, Log)."
+      }
+    ],
+    "metadata": {
+      "category": "code_review",
+      "difficulty": "easy",
+      "notes": "Basic design principle check."
+    }
+  },
+  {
+    "id": "momus-arch-001",
+    "agent": "momus",
+    "input": {
+      "artifact": "Architecture for a Personal Blog:\\n- Infrastructure: Kubernetes cluster with 12 microservices\\n- Messaging: Apache Kafka for all internal communication (Event Sourcing)\\n- Database: MongoDB for metadata, PostgreSQL for content, Redis for full-page caching\\n- Deployment: Multi-region active-active setup with Global Load Balancer",
+      "context": "A simple personal blog with low traffic (1k visits/day)."
+    },
+    "expected": {
+      "critique": "This architecture is a textbook example of over-engineering. For a low-traffic personal blog, the complexity of Kafka, Kubernetes, and a multi-region setup introduces massive operational overhead without any tangible benefit. A simple monolithic application with a single relational database would be more appropriate."
+    },
+    "criteria": [
+      {
+        "id": "check-overengineering",
+        "description": "Must identify that the architecture is overkill/over-engineered.",
+        "weight": 1.0,
+        "check_type": "llm_judge",
+        "expected_value": "The agent must identify that the use of Kubernetes, Kafka, and multi-region setup for a low-traffic blog is excessive over-engineering."
+      }
+    ],
+    "metadata": {
+      "category": "arch_review",
+      "difficulty": "medium",
+      "notes": "Tests the ability to balance complexity vs. requirements."
+    }
+  },
+  {
+    "id": "momus-arch-002",
+    "agent": "momus",
+    "input": {
+      "artifact": "React Component Snippet:\\nimport mysql from 'mysql2';\\n\\nfunction UserList() {\\n  const [users, setUsers] = useState([]);\\n  useEffect(() => {\\n    const conn = mysql.createConnection({\\n      host: 'localhost',\\n      user: 'root',\\n      database: 'test'\\n    });\\n    conn.query('SELECT * FROM users', (err, results) => {\\n      setUsers(results);\\n    });\\n  }, []);\\n  return <ul>{users.map(u => <li>{u.name}</li>)}</ul>;\\n}",
+      "context": "Frontend architecture review."
+    },
+    "expected": {
+      "critique": "The UI component is tightly coupled to the database driver. This is a severe architectural flaw: it exposes database credentials to the client-side, bypasses all security/business logic, and makes the frontend impossible to test without a live DB. A proper API layer (REST/GraphQL) must be introduced."
+    },
+    "criteria": [
+      {
+        "id": "check-coupling",
+        "description": "Must identify the tight coupling between UI and DB.",
+        "weight": 1.0,
+        "check_type": "llm_judge",
+        "expected_value": "The agent must identify the severe architectural flaw of connecting a frontend component directly to a MySQL database."
+      }
+    ],
+    "metadata": {
+      "category": "arch_review",
+      "difficulty": "medium",
+      "notes": "Tests understanding of layering and security."
+    }
+  },
+  {
+    "id": "momus-arch-003",
+    "agent": "momus",
+    "input": {
+      "artifact": "PaymentProcessor Class:\\nclass PaymentProcessor {\\n    public void process(PaymentRequest req) {\\n        if (req.type.equals(\"STRIPE\")) {\\n            // 50 lines of Stripe specific logic\\n        } else if (req.type.equals(\"PAYPAL\")) {\\n            // 50 lines of PayPal specific logic\\n        } else if (req.type.equals(\"SQUARE\")) {\\n            // 50 lines of Square specific logic\\n        } else if (req.type.equals(\"ADYEN\")) {\\n            // 50 lines of Adyen specific logic\\n        } // ... and 10 more providers\\n    }\\n}",
+      "context": "Payment gateway integration architecture."
+    },
+    "expected": {
+      "critique": "The current design lacks extensibility. Adding a new payment provider requires modifying the core PaymentProcessor class, which violates the Open-Closed Principle. The logic should be refactored using the Strategy pattern, where each provider implements a common PaymentStrategy interface."
+    },
+    "criteria": [
+      {
+        "id": "check-strategy",
+        "description": "Must suggest the Strategy pattern or mention extensibility/Open-Closed Principle.",
+        "weight": 1.0,
+        "check_type": "llm_judge",
+        "expected_value": "The agent must suggest the Strategy pattern or refer to the Open-Closed Principle to avoid modifying the core class for every new provider."
+      }
+    ],
+    "metadata": {
+      "category": "arch_review",
+      "difficulty": "hard",
+      "notes": "Tests knowledge of design patterns for extensibility."
+    }
+  },
+  {
+    "id": "momus-arch-004",
+    "agent": "momus",
+    "input": {
+      "artifact": "Module Dependency Graph:\\nModule A -> imports Module B\\nModule B -> imports Module C\\nModule C -> imports Module A",
+      "context": "System dependency analysis."
+    },
+    "expected": {
+      "critique": "The system has a circular dependency (A -> B -> C -> A). This leads to initialization issues, makes the modules impossible to test in isolation, and increases cognitive load. The shared logic should be extracted into a separate 'Common' or 'Core' module that all three depend on."
+    },
+    "criteria": [
+      {
+        "id": "check-circular",
+        "description": "Must identify the circular dependency.",
+        "weight": 1.0,
+        "check_type": "llm_judge",
+        "expected_value": "The agent must identify the circular dependency chain (A -> B -> C -> A) and suggest extracting shared logic."
+      }
+    ],
+    "metadata": {
+      "category": "arch_review",
+      "difficulty": "medium",
+      "notes": "Tests dependency graph analysis."
+    }
+  }
+]

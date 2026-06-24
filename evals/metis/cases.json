@@ -1,0 +1,345 @@
+[
+  {
+    "id": "metis-001",
+    "agent": "metis",
+    "input": {
+      "request": "Implement a REST API endpoint `/health` that returns 200 OK and a JSON body `{\"status\": \"up\"}`."
+    },
+    "expected": {
+      "actionable": true,
+      "ambiguities": [],
+      "implicit_requirements": []
+    },
+    "criteria": [
+      {
+        "id": "crit-001",
+        "description": "Should be marked as actionable",
+        "check_type": "keyword",
+        "expected_value": "true"
+      }
+    ],
+    "metadata": {
+      "category": "clear_requirement",
+      "difficulty": "easy",
+      "notes": "Basic, complete requirement."
+    }
+  },
+  {
+    "id": "metis-002",
+    "agent": "metis",
+    "input": {
+      "request": "Make the system faster."
+    },
+    "expected": {
+      "actionable": false,
+      "ambiguities": [
+        "Missing target component",
+        "Missing performance metric",
+        "Missing baseline"
+      ]
+    },
+    "criteria": [
+      {
+        "id": "crit-002",
+        "description": "Should be marked as non-actionable",
+        "check_type": "keyword",
+        "expected_value": "false"
+      }
+    ],
+    "metadata": {
+      "category": "blocking_ambiguity",
+      "difficulty": "easy",
+      "notes": "Classic example of a goal without a specification."
+    }
+  },
+  {
+    "id": "metis-003",
+    "agent": "metis",
+    "input": {
+      "request": "Implement a high-throughput log processor in Rust that reads from a TCP stream and writes to a database."
+    },
+    "expected": {
+      "actionable": true,
+      "ambiguities": [],
+      "implicit_requirements": [
+        "Backpressure mechanism to prevent memory exhaustion",
+        "Async runtime selection (e.g., Tokio) for I/O",
+        "Connection pooling for database writes",
+        "Error handling for TCP disconnects and DB timeouts"
+      ]
+    },
+    "criteria": [
+      {
+        "id": "crit-003",
+        "description": "Should identify backpressure as an implicit requirement",
+        "check_type": "llm_judge",
+        "expected_value": "The agent must identify the need for backpressure or flow control to prevent memory exhaustion."
+      },
+      {
+        "id": "crit-004",
+        "description": "Should identify async runtime as an implicit requirement",
+        "check_type": "llm_judge",
+        "expected_value": "The agent must identify the need for an asynchronous runtime (like Tokio or async-std) for high-throughput I/O."
+      }
+    ],
+    "metadata": {
+      "category": "implicit_technical",
+      "difficulty": "hard",
+      "notes": "Tests ability to identify senior-level systems engineering constraints in Rust."
+    }
+  },
+  {
+    "id": "metis-004",
+    "agent": "metis",
+    "input": {
+      "request": "Create a new MCP tool for searching local files."
+    },
+    "expected": {
+      "actionable": true,
+      "ambiguities": [],
+      "implicit_requirements": [
+        "Path sanitization to prevent directory traversal attacks",
+        "Permission handling for restricted system folders",
+        "Compliance with MCP tool definition schema",
+        "Handling of large search results via pagination or truncation"
+      ]
+    },
+    "criteria": [
+      {
+        "id": "crit-005",
+        "description": "Should identify path sanitization/security",
+        "check_type": "llm_judge",
+        "expected_value": "The agent must identify the need for path sanitization or validation to prevent directory traversal attacks."
+      }
+    ],
+    "metadata": {
+      "category": "implicit_technical",
+      "difficulty": "medium",
+      "notes": "Tests knowledge of MCP protocol and security best practices."
+    }
+  },
+  {
+    "id": "metis-005",
+    "agent": "metis",
+    "input": {
+      "request": "Improve the UI to be more user-friendly."
+    },
+    "expected": {
+      "actionable": false,
+      "ambiguities": [
+        "The term 'user-friendly' is subjective and lacks concrete, measurable criteria"
+      ]
+    },
+    "criteria": [
+      {
+        "id": "crit-006",
+        "description": "Should flag subjective vocabulary as an ambiguity",
+        "check_type": "llm_judge",
+        "expected_value": "The agent must flag 'user-friendly' as a subjective or vague term that lacks measurable criteria."
+      }
+    ],
+    "metadata": {
+      "category": "subjective_vocabulary",
+      "difficulty": "easy",
+      "notes": "Tests detection of vague, non-technical adjectives."
+    }
+  },
+  {
+    "id": "metis-006",
+    "agent": "metis",
+    "input": {
+      "request": "Implement a gRPC service for user profile management."
+    },
+    "expected": {
+      "actionable": true,
+      "ambiguities": [],
+      "implicit_requirements": [
+        "Definition of .proto files for messages and services",
+        "Implementation of deadline and timeout propagation",
+        "Mapping of domain errors to gRPC status codes",
+        "Interceptors for authentication and logging"
+      ]
+    },
+    "criteria": [
+      {
+        "id": "crit-007",
+        "description": "Should identify Protobuf as a requirement",
+        "check_type": "llm_judge",
+        "expected_value": "The agent must identify the need for Protobuf (.proto) file definitions for the gRPC service."
+      }
+    ],
+    "metadata": {
+      "category": "implicit_technical",
+      "difficulty": "medium",
+      "notes": "Tests gRPC domain knowledge."
+    }
+  },
+  {
+    "id": "metis-007",
+    "agent": "metis",
+    "input": {
+      "request": ""
+    },
+    "expected": {
+      "actionable": false,
+      "ambiguities": [
+        "Empty request"
+      ]
+    },
+    "criteria": [
+      {
+        "id": "crit-008",
+        "description": "Should be non-actionable",
+        "check_type": "keyword",
+        "expected_value": "false"
+      }
+    ],
+    "metadata": {
+      "category": "edge_case",
+      "difficulty": "easy",
+      "notes": "Empty input handling."
+    }
+  },
+  {
+    "id": "metis-008",
+    "agent": "metis",
+    "input": {
+      "request": "asdfghjkl; 12345"
+    },
+    "expected": {
+      "actionable": false,
+      "ambiguities": [
+        "Input is noise or gibberish"
+      ]
+    },
+    "criteria": [
+      {
+        "id": "crit-009",
+        "description": "Should be non-actionable",
+        "check_type": "keyword",
+        "expected_value": "false"
+      }
+    ],
+    "metadata": {
+      "category": "edge_case",
+      "difficulty": "easy",
+      "notes": "Noise input handling."
+    }
+  },
+  {
+    "id": "metis-009",
+    "agent": "metis",
+    "input": {
+      "request": "Add a login page with email and password."
+    },
+    "expected": {
+      "actionable": false,
+      "ambiguities": [
+        "Missing authentication provider or mechanism",
+        "Missing session management strategy (JWT, Cookies, etc.)",
+        "Missing password security requirements (hashing, salting, complexity)"
+      ]
+    },
+    "criteria": [
+      {
+        "id": "crit-010",
+        "description": "Should identify missing auth details",
+        "check_type": "llm_judge",
+        "expected_value": "The agent must identify missing details regarding the authentication provider, session management, or password security."
+      }
+    ],
+    "metadata": {
+      "category": "blocking_ambiguity",
+      "difficulty": "medium",
+      "notes": "Tests ability to see the 'missing middle' in a common feature request."
+    }
+  },
+  {
+    "id": "metis-010",
+    "agent": "metis",
+    "input": {
+      "request": "Build a distributed lock manager using etcd for a cluster of 5 nodes."
+    },
+    "expected": {
+      "actionable": true,
+      "ambiguities": [],
+      "implicit_requirements": [
+        "Lease TTL management to prevent deadlocks on node failure",
+        "Fencing tokens to prevent stale lock holders from writing",
+        "Handling of network partitions and split-brain scenarios",
+        "Retry logic for etcd leader elections"
+      ]
+    },
+    "criteria": [
+      {
+        "id": "crit-011",
+        "description": "Should identify fencing tokens as a critical implicit requirement",
+        "check_type": "llm_judge",
+        "expected_value": "The agent must identify the need for fencing tokens to prevent stale lock holders from modifying data."
+      }
+    ],
+    "metadata": {
+      "category": "implicit_technical",
+      "difficulty": "hard",
+      "notes": "Tests deep distributed systems knowledge."
+    }
+  },
+  {
+    "id": "metis-011",
+    "agent": "metis",
+    "input": {
+      "request": "Refactor the database layer."
+    },
+    "expected": {
+      "actionable": false,
+      "ambiguities": [
+        "Missing scope of the refactor",
+        "Missing objective (e.g., performance, maintainability, or migration)",
+        "Missing impact analysis on existing queries"
+      ]
+    },
+    "criteria": [
+      {
+        "id": "crit-012",
+        "description": "Should identify missing scope",
+        "check_type": "llm_judge",
+        "expected_value": "The agent must identify that the scope of the 'database layer refactor' is missing or underspecified."
+      }
+    ],
+    "metadata": {
+      "category": "blocking_ambiguity",
+      "difficulty": "medium",
+      "notes": "Tests detection of underspecified architectural tasks."
+    }
+  },
+  {
+    "id": "metis-012",
+    "agent": "metis",
+    "input": {
+      "request": "Implement a custom memory pool for a real-time audio processing engine."
+    },
+    "expected": {
+      "actionable": true,
+      "ambiguities": [],
+      "implicit_requirements": [
+        "Lock-free allocation to avoid priority inversion and audio glitches",
+        "Memory alignment requirements for SIMD operations",
+        "Fragmentation management strategy for long-running processes",
+        "Deterministic deallocation timing"
+      ]
+    },
+    "criteria": [
+      {
+        "id": "crit-013",
+        "description": "Should identify lock-free requirements for real-time audio",
+        "check_type": "llm_judge",
+        "expected_value": "The agent must identify the requirement for lock-free allocation to avoid audio glitches and priority inversion."
+      }
+    ],
+    "metadata": {
+      "category": "implicit_technical",
+      "difficulty": "hard",
+      "notes": "Tests specialized domain knowledge (Real-time systems)."
+    }
+  }
+]

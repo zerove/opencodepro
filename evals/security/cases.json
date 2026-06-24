@@ -1,0 +1,314 @@
+[
+  {
+    "id": "sec-mem-01",
+    "agent": "SecurityOracle",
+    "input": {
+      "code": "fn main() {\n    let ptr = Box::into_raw(Box::new(42));\n    unsafe {\n        std::ptr::drop_in_place(ptr);\n        println!(\"Value: {}\", *ptr);\n    }\n}",
+      "language": "rust"
+    },
+    "expected": {
+      "finding": "Use-After-Free (UAF) in unsafe block",
+      "severity": "Critical"
+    },
+    "criteria": [
+      {
+        "id": "crit-01",
+        "description": "Identify Use-After-Free",
+        "weight": 1.0,
+        "check_type": "llm_judge",
+        "expected_value": "The agent must identify that the pointer is dereferenced after being dropped (Use-After-Free)."
+      }
+    ],
+    "metadata": {
+      "category": "Memory Safety",
+      "difficulty": "hard",
+      "notes": "Tests detection of pointer dereference after drop_in_place."
+    }
+  },
+  {
+    "id": "sec-mem-02",
+    "agent": "SecurityOracle",
+    "input": {
+      "code": "fn main() {\n    let data = vec![1, 2, 3];\n    let ptr = data.as_ptr();\n    unsafe {\n        let val = *ptr.offset(10);\n        println!(\"Value: {}\", val);\n    }\n}",
+      "language": "rust"
+    },
+    "expected": {
+      "finding": "Out-of-bounds (OOB) memory access",
+      "severity": "Critical"
+    },
+    "criteria": [
+      {
+        "id": "crit-02",
+        "description": "Identify Out-of-bounds access",
+        "weight": 1.0,
+        "check_type": "llm_judge",
+        "expected_value": "The agent must identify that the code accesses memory beyond the allocation bounds (Out-of-bounds access)."
+      }
+    ],
+    "metadata": {
+      "category": "Memory Safety",
+      "difficulty": "medium",
+      "notes": "Tests detection of offset beyond allocation size."
+    }
+  },
+  {
+    "id": "sec-mem-03",
+    "agent": "SecurityOracle",
+    "input": {
+      "code": "fn main() {\n    let ptr = Box::into_raw(Box::new(10));\n    unsafe {\n        Box::from_raw(ptr);\n        Box::from_raw(ptr);\n    }\n}",
+      "language": "rust"
+    },
+    "expected": {
+      "finding": "Double Free vulnerability",
+      "severity": "Critical"
+    },
+    "criteria": [
+      {
+        "id": "crit-03",
+        "description": "Identify Double Free",
+        "weight": 1.0,
+        "check_type": "llm_judge",
+        "expected_value": "The agent must identify that the same pointer is freed multiple times (Double Free)."
+      }
+    ],
+    "metadata": {
+      "category": "Memory Safety",
+      "difficulty": "medium",
+      "notes": "Tests detection of multiple Box::from_raw calls on the same pointer."
+    }
+  },
+  {
+    "id": "sec-inj-01",
+    "agent": "SecurityOracle",
+    "input": {
+      "code": "def get_user(user_id):\n    query = f\"SELECT * FROM users WHERE id = '{user_id}'\"\n    return db.execute(query)",
+      "language": "python"
+    },
+    "expected": {
+      "finding": "SQL Injection (CWE-89)",
+      "severity": "Critical"
+    },
+    "criteria": [
+      {
+        "id": "crit-04",
+        "description": "Identify SQL Injection",
+        "weight": 1.0,
+        "check_type": "llm_judge",
+        "expected_value": "The agent must identify that user input is interpolated directly into a SQL query, allowing SQL Injection."
+      }
+    ],
+    "metadata": {
+      "category": "Injection",
+      "difficulty": "easy",
+      "notes": "Classic string interpolation in SQL query."
+    }
+  },
+  {
+    "id": "sec-inj-02",
+    "agent": "SecurityOracle",
+    "input": {
+      "code": "const { exec(`ls ${req.query.path}`) }\n",
+      "language": "javascript"
+    },
+    "expected": {
+      "finding": "OS Command Injection (CWE-78)",
+      "severity": "Critical"
+    },
+    "criteria": [
+      {
+        "id": "crit-05",
+        "description": "Identify Command Injection",
+        "weight": 1.0,
+        "check_type": "llm_judge",
+        "expected_value": "The agent must identify that unsanitized user input is passed to a shell execution function, allowing Command Injection."
+      }
+    ],
+    "metadata": {
+      "category": "Injection",
+      "difficulty": "easy",
+      "notes": "Direct use of user input in shell command."
+    }
+  },
+  {
+    "id": "sec-inj-03",
+    "agent": "SecurityOracle",
+    "input": {
+      "code": "function UserProfile({ bio }) {\n  return <div dangerouslySetInnerHTML={{ __html: bio }} />;\n}",
+      "language": "javascript"
+    },
+    "expected": {
+      "finding": "Cross-Site Scripting (XSS) (CWE-79)",
+      "severity": "High"
+    },
+    "criteria": [
+      {
+        "id": "crit-06",
+        "description": "Identify XSS",
+        "weight": 1.0,
+        "check_type": "llm_judge",
+        "expected_value": "The agent must identify that unsanitized input is rendered using dangerouslySetInnerHTML, allowing Cross-Site Scripting (XSS)."
+      }
+    ],
+    "metadata": {
+      "category": "Injection",
+      "difficulty": "medium",
+      "notes": "Use of dangerouslySetInnerHTML with unvalidated input."
+    }
+  },
+  {
+    "id": "sec-inj-04",
+    "agent": "SecurityOracle",
+    "input": {
+      "code": "filter = \"(&(uid=\" + username + \")(objectClass=person))\"\nldap.search(filter)",
+      "language": "java"
+    },
+    "expected": {
+      "finding": "LDAP Injection (CWE-90)",
+      "severity": "High"
+    },
+    "criteria": [
+      {
+        "id": "crit-07",
+        "description": "Identify LDAP Injection",
+        "weight": 1.0,
+        "check_type": "llm_judge",
+        "expected_value": "The agent must identify that user input is concatenated into an LDAP filter, allowing LDAP Injection."
+      }
+    ],
+    "metadata": {
+      "category": "Injection",
+      "difficulty": "medium",
+      "notes": "Unsanitized input in LDAP filter."
+    }
+  },
+  {
+    "id": "sec-perm-01",
+    "agent": "SecurityOracle",
+    "input": {
+      "code": "app.get('/api/user/profile', (req, res) => {\n  const user = db.users.find({ id: req.query.id });\n  res.json(user);\n});",
+      "language": "javascript"
+    },
+    "expected": {
+      "finding": "Insecure Direct Object Reference (IDOR)",
+      "severity": "High"
+    },
+    "criteria": [
+      {
+        "id": "crit-08",
+        "description": "Identify IDOR",
+        "weight": 1.0,
+        "check_type": "llm_judge",
+        "expected_value": "The agent must identify that the API fetches a user profile based on a query ID without verifying if the authenticated user owns that profile (IDOR)."
+      }
+    ],
+    "metadata": {
+      "category": "Permissions",
+      "difficulty": "medium",
+      "notes": "Missing ownership check for the requested resource."
+    }
+  },
+  {
+    "id": "sec-perm-02",
+    "agent": "SecurityOracle",
+    "input": {
+      "code": "app.put('/api/user/settings', (req, res) => {\n  const user = db.users.findById(req.user.id);\n  Object.assign(user, req.body);\n  user.save();\n  res.sendStatus(200);\n});",
+      "language": "javascript"
+    },
+    "expected": {
+      "finding": "Mass Assignment / Privilege Escalation (CWE-285)",
+      "severity": "High"
+    },
+    "criteria": [
+      {
+        "id": "crit-09",
+        "description": "Identify Mass Assignment",
+        "weight": 1.0,
+        "check_type": "llm_judge",
+        "expected_value": "The agent must identify that the entire request body is assigned to the user object, allowing privilege escalation via mass assignment."
+      }
+    ],
+    "metadata": {
+      "category": "Permissions",
+      "difficulty": "hard",
+      "notes": "Directly assigning request body to user object allows changing roles."
+    }
+  },
+  {
+    "id": "sec-prot-01",
+    "agent": "SecurityOracle",
+    "input": {
+      "code": "func (s *server) HeavyTask(ctx context.Context, req *pb.Request) (*pb.Response, error) {\n  // This task takes 30 seconds and consumes 1GB RAM\n  result := performHeavyComputation(req.Data)\n  return &pb.Response{Result: result}, nil\n}",
+      "language": "go"
+    },
+    "expected": {
+      "finding": "Denial of Service (DoS) via missing gRPC deadlines/timeouts",
+      "severity": "Medium"
+    },
+    "criteria": [
+      {
+        "id": "crit-10",
+        "description": "Identify DoS risk",
+        "weight": 1.0,
+        "check_type": "llm_judge",
+        "expected_value": "The agent must identify that a heavy computation is performed without checking the gRPC context deadline, risking a Denial of Service (DoS)."
+      }
+    ],
+    "metadata": {
+      "category": "Protocol",
+      "difficulty": "medium",
+      "notes": "Heavy computation without context deadline check."
+    }
+  },
+  {
+    "id": "sec-prot-02",
+    "agent": "SecurityOracle",
+    "input": {
+      "code": "const config = {\n  api_url: 'http://internal-api.local/v1/auth',\n  timeout: 5000\n};",
+      "language": "javascript"
+    },
+    "expected": {
+      "finding": "Cleartext Transmission of Sensitive Information (CWE-319)",
+      "severity": "Medium"
+    },
+    "criteria": [
+      {
+        "id": "crit-11",
+        "description": "Identify Plaintext Transmission",
+        "weight": 1.0,
+        "check_type": "llm_judge",
+        "expected_value": "The agent must identify that sensitive authentication data is transmitted over an unencrypted HTTP connection (Plaintext Transmission)."
+      }
+    ],
+    "metadata": {
+      "category": "Protocol",
+      "difficulty": "easy",
+      "notes": "Use of HTTP instead of HTTPS for auth endpoint."
+    }
+  },
+  {
+    "id": "sec-prot-03",
+    "agent": "SecurityOracle",
+    "input": {
+      "code": "func (s *server) UploadStream(stream pb.Upload_UploadStreamServer) error {\n  var allData []byte\n  for {\n    req, err := stream.Recv()\n    if err == io.EOF {\n      break\n    }\n    allData = append(allData, req.Chunk...)\n  }\n  return stream.SendAndClose(&pb.Response{})\n}",
+      "language": "go"
+    },
+    "expected": {
+      "finding": "Memory Exhaustion DoS via Unbounded Stream",
+      "severity": "High"
+    },
+    "criteria": [
+      {
+        "id": "crit-12",
+        "description": "Identify Unbounded Stream",
+        "weight": 1.0,
+        "check_type": "llm_judge",
+        "expected_value": "The agent must identify that the stream chunks are appended to a slice without a size limit, risking memory exhaustion (DoS)."
+      }
+    ],
+    "metadata": {
+      "category": "Protocol",
+      "difficulty": "hard",
+      "notes": "Appending stream chunks to a slice without size limit."
+    }
+  }
+]

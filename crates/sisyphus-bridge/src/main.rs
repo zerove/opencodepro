@@ -9,7 +9,7 @@ use sisyphus_intel::{SisyphusIntel, StandardReflector};
 use sisyphus_mem::MfsStore;
 use sisyphus_metrics::{init_metrics, record_bridge_request, record_sop_execution};
 use sisyphus_sandbox::WasmToolExecutor;
-use sisyphus_tools::{BuiltinToolExecutor, ConfigStore, MCPToolExecutor};
+use sisyphus_tools::{BuiltinToolExecutor, ConfigStore, MCPToolExecutor, SkillLoader};
 use sisyphus_types::{Config, ExecutorRouter, ToolExecutor};
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
@@ -29,7 +29,8 @@ pub struct MySisyphusBridge {
 }
 
 impl MySisyphusBridge {
-    pub async fn new(config: &Config) -> Self {
+    pub async fn new(shared_config: Arc<RwLock<Config>>) -> Self {
+        let config = shared_config.read().unwrap();
         let state_store = Arc::new(
             MfsStore::new(&config.cache.sqlite_path)
                 .await
@@ -52,7 +53,21 @@ impl MySisyphusBridge {
         );
 
         // Secondary executor: built-in tools
-        let builtin_executor: Arc<dyn ToolExecutor> = Arc::new(BuiltinToolExecutor);
+        let mut registry = sisyphus_tools::HookRegistry::new();
+        let mut loader = SkillLoader::new()
+            .with_user_dir()
+            .with_project_dir(std::path::Path::new("."));
+        let skills = loader.load_all();
+        for skill in skills {
+            let hooks = sisyphus_tools::hook::hooks_from_skill(&skill.name, &skill.triggers, &skill.instructions);
+            registry.register_all(hooks);
+        }
+
+        let builtin_executor: Arc<dyn ToolExecutor> = Arc::new(BuiltinToolExecutor {
+            registry,
+            llm_client: Arc::new(sisyphus_tools::DynamicLlmClient::new(shared_config.clone())),
+            feedback_store: Arc::new(sisyphus_tools::feedback::FeedbackStore::new().await.expect("Failed to init FeedbackStore")),
+        });
 
         // Build router: WASM = default (backward compat), builtin = "builtin:" prefix
         let mut router = ExecutorRouter::new(wasm_executor.clone());
@@ -364,11 +379,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let addr = "[::1]:50051".parse()?;
 
-    // Initialize bridge with current config snapshot
-    let bridge = {
-        let config = shared_config.read().unwrap();
-        MySisyphusBridge::new(&config).await
-    };
+    // Initialize bridge with shared config for dynamic updates
+    let bridge = MySisyphusBridge::new(shared_config.clone()).await;
 
     // Spawn config hot-reload in background
     tokio::spawn(async move {

@@ -72,6 +72,15 @@ pub struct TriggerDef {
     pub tools: Vec<String>,
     /// 触发描述
     pub description: Option<String>,
+    /// 钩子阶段: "before" 或 "after"（如果设置，此触发器同时作为钩子）
+    #[serde(default)]
+    pub hook_phase: Option<String>,
+    /// 钩子效果: "deny", "inject", "log"（默认 "inject"）
+    #[serde(default)]
+    pub hook_effect: Option<String>,
+    /// 钩子消息/负载（deny 原因、log 消息等）
+    #[serde(default)]
+    pub hook_message: Option<String>,
 }
 
 // ── YAML Frontmatter ──────────────────────────────────────────
@@ -398,6 +407,9 @@ This is the instruction body.
                     pattern: None,
                     tools: vec!["metis_analyse".into()],
                     description: None,
+                    hook_phase: None,
+                    hook_effect: None,
+                    hook_message: None,
                 }],
                 instructions: "metis instructions".into(),
                 source: SkillSource::BuiltIn,

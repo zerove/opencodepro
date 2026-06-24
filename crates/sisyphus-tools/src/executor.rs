@@ -1,5 +1,7 @@
 use std::path::Path;
+use std::sync::Arc;
 use serde_json::{json, Value};
+use crate::metis::LlmClient;
 
 /// A `ToolExecutor` that dispatches tool calls to sisyphus-tools built-in functions.
 ///
@@ -20,6 +22,8 @@ use serde_json::{json, Value};
 /// | `bash_exec` | `{"command": "...", "workdir": "...", "timeout_ms": N}` | `{"stdout": "...", "stderr": "...", "exit_code": N, "duration_ms": N}` |
 /// | `web_search` | `{"query": "...", "num": N}` | `{"results": [{"title": "...", "url": "...", "snippet": "..."}]}` |
 /// | `web_fetch` | `{"url": "..."}` | `{"content": "...", "content_type": "..."}` |
+/// | `feedback/save` | `{"agent_id": "...", "request": "...", "output": "...", "corrected": "...", "tags": [...]}` | `{"status": "saved"}` |
+/// | `feedback/get` | `{"agent_id": "...", "limit": N}` | `[Feedback]` JSON array |
 /// | `librarian/research` | `{"query": "...", "scope": "web|docs|code|all", "num": N}` | Full `ResearchReport` JSON |
 /// | `librarian/fetch_docs` | `{"url": "..."}` | Full `DocPage` JSON |
 /// | `librarian/examples` | `{"query": "...", "language": "..."}` | `[CodeExample]` JSON array |
@@ -29,7 +33,13 @@ use serde_json::{json, Value};
 /// | `momus/review_code` | `{"path": "...", "content": "..."}` | Full `MomusReview` JSON |
 /// | `momus/review_code_batch` | `{"files": [{"path": "...", "content": "..."}]}` | `[MomusReview]` JSON array |
 /// | `momus/review_arch` | `{"arch_text": "..."}` | Full `MomusReview` JSON |
-pub struct BuiltinToolExecutor;
+/// | `security/audit_code` | `{"path": "...", "content": "..."}` | Full `SecurityAuditReport` JSON |
+/// | `security/threat_model` | `{"arch_text": "..."}` | Full `ThreatModelReport` JSON |
+pub struct BuiltinToolExecutor {
+    pub registry: crate::hook::HookRegistry,
+    pub llm_client: Arc<dyn LlmClient>,
+    pub feedback_store: Arc<crate::feedback::FeedbackStore>,
+}
 
 #[async_trait::async_trait]
 impl sisyphus_types::ToolExecutor for BuiltinToolExecutor {
@@ -39,31 +49,52 @@ impl sisyphus_types::ToolExecutor for BuiltinToolExecutor {
         args: Vec<u8>,
         _fuel_limit: u64,
     ) -> Result<Vec<u8>, String> {
-        match tool_id {
-            "file_read" => cmd_file_read(args),
-            "file_write" => cmd_file_write(args),
-            "file_edit" => cmd_file_edit(args),
-            "file_edit_all" => cmd_file_edit_all(args),
-            "file_read_lines" => cmd_file_read_lines(args),
-            "glob" => cmd_glob(args),
-            "grep" => cmd_grep(args),
-            "bash_exec" => cmd_bash_exec(args).await,
-            "web_search" => cmd_web_search(args).await,
-            "web_fetch" => cmd_web_fetch(args).await,
-            // ── librarian ──────────────────────────────
-            "librarian/research" => cmd_librarian_research(args).await,
-            "librarian/fetch_docs" => cmd_librarian_fetch_docs(args).await,
-            "librarian/examples" => cmd_librarian_examples(args).await,
-            "librarian/synthesise" => cmd_librarian_synthesise(args),
-            // ── metis ──────────────────────────────────
-            "metis/analyse" => cmd_metis_analyse(args),
-            // ── momus ──────────────────────────────────
-            "momus/review_plan" => cmd_momus_review_plan(args),
-            "momus/review_code" => cmd_momus_review_code(args),
-            "momus/review_code_batch" => cmd_momus_review_code_batch(args),
-            "momus/review_arch" => cmd_momus_review_arch(args),
-            other => Err(format!("unknown builtin tool: {other}")),
-        }
+        let llm_client = self.llm_client.clone();
+        let feedback_store = self.feedback_store.clone();
+        crate::hook::execute_with_hooks(
+            tool_id,
+            args,
+            &self.registry,
+            move |enriched_args| {
+                let client = llm_client.clone();
+                async move {
+                    match tool_id {
+                        "file_read" => cmd_file_read(enriched_args),
+                        "file_write" => cmd_file_write(enriched_args),
+                        "file_edit" => cmd_file_edit(enriched_args),
+                        "file_edit_all" => cmd_file_edit_all(enriched_args),
+                        "file_read_lines" => cmd_file_read_lines(enriched_args),
+                        "glob" => cmd_glob(enriched_args),
+                        "grep" => cmd_grep(enriched_args),
+                        "bash_exec" => cmd_bash_exec(enriched_args).await,
+                        "web_search" => cmd_web_search(enriched_args).await,
+                        "web_fetch" => cmd_web_fetch(enriched_args).await,
+                        "feedback/save" => cmd_feedback_save(feedback_store.clone(), enriched_args).await,
+                        "feedback/get" => cmd_feedback_get(feedback_store.clone(), enriched_args).await,
+                        "feedback/query" => cmd_feedback_query(feedback_store.clone(), enriched_args).await,
+                        // ── librarian ──────────────────────────────
+                        "librarian/research" => cmd_librarian_research(enriched_args).await,
+                        "librarian/fetch_docs" => cmd_librarian_fetch_docs(enriched_args).await,
+                        "librarian/examples" => cmd_librarian_examples(enriched_args).await,
+                        "librarian/synthesise" => cmd_librarian_synthesise(client.as_ref(), enriched_args).await,
+                        // ── metis ──────────────────────────────────
+                        "metis/analyse" => cmd_metis_analyse(client.as_ref(), enriched_args).await,
+                        // ── momus ──────────────────────────────────
+                        "momus/review_plan" => cmd_momus_review_plan(client.as_ref(), enriched_args).await,
+                        "momus/review_code" => cmd_momus_review_code(client.as_ref(), enriched_args).await,
+                        "momus/review_code_batch" => cmd_momus_review_code_batch(client.as_ref(), enriched_args).await,
+                        "momus/review_arch" => cmd_momus_review_arch(client.as_ref(), enriched_args).await,
+                        "scribe/generate_adr" => cmd_scribe_generate_adr(client.as_ref(), enriched_args).await,
+                        "scribe/update_docs" => cmd_scribe_update_docs(client.as_ref(), enriched_args).await,
+                        "scribe/apply_update" => cmd_scribe_apply_update(enriched_args),
+                        "security/audit_code" => cmd_security_audit_code(client.as_ref(), enriched_args).await,
+                        "security/threat_model" => cmd_security_threat_model(client.as_ref(), enriched_args).await,
+                        other => Err(format!("unknown builtin tool: {other}")),
+                    }
+                }
+            },
+        )
+        .await
     }
 }
 
@@ -76,6 +107,13 @@ fn parse_args(args: &[u8]) -> Result<Value, String> {
     serde_json::from_slice(args).map_err(|e| format!("invalid JSON args: {e}"))
 }
 
+fn str_arg(v: &Value, name: &str) -> Result<String, String> {
+    v.get(name)
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
+        .ok_or_else(|| format!("missing or non-string arg '{name}'"))
+}
+
 fn path_arg(v: &Value, name: &str) -> Result<String, String> {
     v.get(name)
         .and_then(|v| v.as_str())
@@ -83,12 +121,20 @@ fn path_arg(v: &Value, name: &str) -> Result<String, String> {
         .ok_or_else(|| format!("missing or non-string arg '{name}'"))
 }
 
-fn str_arg(v: &Value, name: &str) -> Result<String, String> {
-    v.get(name)
-        .and_then(|v| v.as_str())
-        .map(|s| s.to_string())
-        .ok_or_else(|| format!("missing or non-string arg '{name}'"))
+fn flexible_str_arg(v: &Value, primary: &str, fallback: &str) -> Result<String, String> {
+    flexible_str_arg_multi(v, &[primary, fallback])
 }
+
+fn flexible_str_arg_multi(v: &Value, keys: &[&str]) -> Result<String, String> {
+    for key in keys {
+        if let Some(val) = v.get(*key).and_then(|v| v.as_str()) {
+            return Ok(val.to_string());
+        }
+    }
+    let keys_str: Vec<_> = keys.iter().map(|k| (*k).to_string()).collect();
+    Err(format!("missing or non-string arg in set: {}", keys_str.join(", ")))
+}
+
 
 fn u64_arg(v: &Value, name: &str) -> Result<u64, String> {
     v.get(name)
@@ -217,7 +263,7 @@ async fn cmd_web_fetch(args: Vec<u8>) -> Result<Vec<u8>, String> {
 
 async fn cmd_librarian_research(args: Vec<u8>) -> Result<Vec<u8>, String> {
     let v = parse_args(&args)?;
-    let query = str_arg(&v, "query")?;
+    let query = flexible_str_arg(&v, "query", "content")?;
     let scope_str = str_arg(&v, "scope").unwrap_or_else(|_| "web".into());
     let scope: crate::ResearchScope = scope_str
         .parse()
@@ -236,52 +282,54 @@ async fn cmd_librarian_fetch_docs(args: Vec<u8>) -> Result<Vec<u8>, String> {
 
 async fn cmd_librarian_examples(args: Vec<u8>) -> Result<Vec<u8>, String> {
     let v = parse_args(&args)?;
-    let query = str_arg(&v, "query")?;
+    let query = flexible_str_arg(&v, "query", "content")?;
     let language = str_arg(&v, "language").unwrap_or_else(|_| "rust".into());
     let examples = crate::find_examples(&query, &language).await.map_err(|e| e.to_string())?;
     ok_json(serde_json::to_value(&examples).map_err(|e| format!("serialize: {e}"))?)
 }
 
-fn cmd_librarian_synthesise(args: Vec<u8>) -> Result<Vec<u8>, String> {
+async fn cmd_librarian_synthesise(client: &dyn LlmClient, args: Vec<u8>) -> Result<Vec<u8>, String> {
     let v = parse_args(&args)?;
     let findings_val = v.get("findings")
         .ok_or_else(|| "missing 'findings' arg".to_string())?;
     let findings: Vec<crate::ResearchFinding> = serde_json::from_value(findings_val.clone())
         .map_err(|e| format!("invalid findings JSON: {e}"))?;
-    let max_points = usize_arg(&v, "max_points").unwrap_or(10);
-    let synthesis = crate::synthesise(&findings, max_points);
+    
+    let synthesis = crate::synthesise(&findings, client).await
+        .map_err(|e| format!("synthesis failed: {e}"))?;
+    
     ok_json(json!({"synthesis": synthesis}))
 }
 
 // ── metis commands ──────────────────────────────────────────
 
-fn cmd_metis_analyse(args: Vec<u8>) -> Result<Vec<u8>, String> {
+async fn cmd_metis_analyse(client: &dyn LlmClient, args: Vec<u8>) -> Result<Vec<u8>, String> {
     let v = parse_args(&args)?;
-    let request = str_arg(&v, "request")?;
-    let analysis = crate::analyse(&request);
+    let request = flexible_str_arg(&v, "request", "content")?;
+    let analysis = crate::metis::analyse(&request, client).await.map_err(|e| e.to_string())?;
     ok_json(serde_json::to_value(&analysis).map_err(|e| format!("serialize: {e}"))?)
 }
 
 // ── momus commands ──────────────────────────────────────────
 
-fn cmd_momus_review_plan(args: Vec<u8>) -> Result<Vec<u8>, String> {
+async fn cmd_momus_review_plan(client: &dyn LlmClient, args: Vec<u8>) -> Result<Vec<u8>, String> {
     let v = parse_args(&args)?;
-    let plan_text = str_arg(&v, "plan_text")?;
+    let plan_text = flexible_str_arg_multi(&v, &["plan_text", "artifact", "content"])?;
     let plan_name = str_arg(&v, "plan_name").unwrap_or_else(|_| "unnamed".into());
-    let review = crate::review_plan(&plan_text, &plan_name);
+    let review = crate::review_plan(client, &plan_text, &plan_name).await;
     ok_json(serde_json::to_value(&review).map_err(|e| format!("serialize: {e}"))?)
 }
 
-fn cmd_momus_review_code(args: Vec<u8>) -> Result<Vec<u8>, String> {
+async fn cmd_momus_review_code(client: &dyn LlmClient, args: Vec<u8>) -> Result<Vec<u8>, String> {
     let v = parse_args(&args)?;
-    let path_str = str_arg(&v, "path")?;
-    let content = str_arg(&v, "content")?;
+    let path_str = flexible_str_arg_multi(&v, &["path", "file", "content"])?;
+    let content = flexible_str_arg_multi(&v, &["content", "artifact", "code", "path"])?;
     let path = std::path::Path::new(&path_str);
-    let review = crate::review_code(path, &content).map_err(|e| e.to_string())?;
+    let review = crate::review_code(client, path, &content).await.map_err(|e| e.to_string())?;
     ok_json(serde_json::to_value(&review).map_err(|e| format!("serialize: {e}"))?)
 }
 
-fn cmd_momus_review_code_batch(args: Vec<u8>) -> Result<Vec<u8>, String> {
+async fn cmd_momus_review_code_batch(client: &dyn LlmClient, args: Vec<u8>) -> Result<Vec<u8>, String> {
     let v = parse_args(&args)?;
     let files_val = v.get("files")
         .ok_or_else(|| "missing 'files' arg".to_string())?;
@@ -295,22 +343,161 @@ fn cmd_momus_review_code_batch(args: Vec<u8>) -> Result<Vec<u8>, String> {
             .ok_or_else(|| "each file entry must have a 'content' string".to_string())?;
         pairs.push((std::path::Path::new(path_str), content));
     }
-    let reviews = crate::review_code_batch(&pairs).map_err(|e| e.to_string())?;
+    let reviews = crate::review_code_batch(client, &pairs).await.map_err(|e| e.to_string())?;
     ok_json(serde_json::to_value(&reviews).map_err(|e| format!("serialize: {e}"))?)
 }
 
-fn cmd_momus_review_arch(args: Vec<u8>) -> Result<Vec<u8>, String> {
+async fn cmd_momus_review_arch(client: &dyn LlmClient, args: Vec<u8>) -> Result<Vec<u8>, String> {
     let v = parse_args(&args)?;
-    let arch_text = str_arg(&v, "arch_text")?;
-    let review = crate::review_architecture(&arch_text);
+    let arch_text = flexible_str_arg_multi(&v, &["arch_text", "artifact", "content"])?;
+    let review = crate::review_architecture(client, &arch_text).await;
     ok_json(serde_json::to_value(&review).map_err(|e| format!("serialize: {e}"))?)
+}
+
+// ── scribe commands ──────────────────────────────────────────
+
+async fn cmd_scribe_generate_adr(client: &dyn LlmClient, args: Vec<u8>) -> Result<Vec<u8>, String> {
+    let v = parse_args(&args)?;
+    let context = flexible_str_arg(&v, "context", "content")?;
+    let adr = crate::scribe::generate_adr(client, &context).await?;
+    ok_json(json!({"adr": adr}))
+}
+
+async fn cmd_scribe_update_docs(client: &dyn LlmClient, args: Vec<u8>) -> Result<Vec<u8>, String> {
+    let v = parse_args(&args)?;
+    let doc_content = flexible_str_arg(&v, "doc_content", "content")?;
+    let changes = str_arg(&v, "changes")?;
+    let suggestion = crate::scribe::update_docs(client, &doc_content, &changes).await?;
+    ok_json(json!({"suggestion": suggestion}))
+}
+
+fn cmd_scribe_apply_update(args: Vec<u8>) -> Result<Vec<u8>, String> {
+    let v = parse_args(&args)?;
+    let path_str = path_arg(&v, "path")?;
+    let content = str_arg(&v, "content")?;
+    let path = Path::new(&path_str);
+
+    let forbidden = ["Cargo.toml", "Cargo.lock", ".env", ".git/"];
+    for f in forbidden {
+        if path_str.contains(f) {
+            return Err(format!("writing to {f} is forbidden for scribe/apply_update"));
+        }
+    }
+
+    if content.contains("<<<< SEARCH") {
+        let mut current_content = content.as_str();
+        let mut applied_count = 0;
+
+        while let Some(start_idx) = current_content.find("<<<< SEARCH") {
+            let search_start = start_idx + "<<<< SEARCH".len();
+            let replace_idx = current_content[search_start..].find("==== REPLACE")
+                .map(|i| i + search_start)
+                .ok_or_else(|| "missing ==== REPLACE marker".to_string())?;
+            
+            let search_text = current_content[search_start..replace_idx]
+                .trim_start_matches('\n')
+                .trim_end_matches('\n');
+            
+            let end_idx = current_content[replace_idx..].find(">>>> END")
+                .map(|i| i + replace_idx)
+                .ok_or_else(|| "missing >>>> END marker".to_string())?;
+            
+            let replace_start = replace_idx + "==== REPLACE".len();
+            let replace_text = current_content[replace_start..end_idx]
+                .trim_start_matches('\n')
+                .trim_end_matches('\n');
+
+            crate::file::edit(path, search_text, replace_text).map_err(|e| e.to_string())?;
+            
+            applied_count += 1;
+            current_content = &current_content[end_idx + ">>>> END".len()..];
+        }
+        ok_json(json!({"applied_edits": applied_count}))
+    } else {
+        crate::file::write(path, &content).map_err(|e| e.to_string())?;
+        ok_json(json!({"bytes_written": content.len()}))
+    }
+}
+
+async fn cmd_security_audit_code(client: &dyn LlmClient, args: Vec<u8>) -> Result<Vec<u8>, String> {
+    let v = parse_args(&args)?;
+    let path_str = flexible_str_arg_multi(&v, &["path", "file"]).unwrap_or_else(|_| "snippet.rs".to_string());
+    let content = flexible_str_arg_multi(&v, &["content", "artifact", "code", "path"])?;
+    let path = std::path::Path::new(&path_str);
+    let report = crate::security::audit_code(client, path, &content).await.map_err(|e| e.to_string())?;
+    ok_json(serde_json::to_value(&report).map_err(|e| format!("serialize: {e}"))?)
+}
+
+async fn cmd_security_threat_model(client: &dyn LlmClient, args: Vec<u8>) -> Result<Vec<u8>, String> {
+    let v = parse_args(&args)?;
+    let arch_text = flexible_str_arg_multi(&v, &["arch_text", "artifact", "content"])?;
+    let report = crate::security::threat_model(client, &arch_text).await.map_err(|e| e.to_string())?;
+    ok_json(serde_json::to_value(&report).map_err(|e| format!("serialize: {e}"))?)
+}
+
+// ── feedback commands ──────────────────────────────────────────
+
+async fn cmd_feedback_save(store: Arc<crate::feedback::FeedbackStore>, args: Vec<u8>) -> Result<Vec<u8>, String> {
+    let v = parse_args(&args)?;
+    let agent_id = str_arg(&v, "agent_id")?;
+    let request = str_arg(&v, "request")?;
+    let output = str_arg(&v, "output")?;
+    let corrected = str_arg(&v, "corrected")?;
+    let tags = v.get("tags")
+        .and_then(|t| t.as_array())
+        .map(|t| t.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
+        .unwrap_or_default();
+
+    let feedback = crate::feedback::Feedback::new(
+        agent_id,
+        request,
+        output,
+        corrected,
+        tags,
+    );
+
+    store.save_feedback(feedback).await.map_err(|e| e.to_string())?;
+    ok_json(json!({"status": "saved"}))
+}
+
+async fn cmd_feedback_get(store: Arc<crate::feedback::FeedbackStore>, args: Vec<u8>) -> Result<Vec<u8>, String> {
+    let v = parse_args(&args)?;
+    let agent_id = str_arg(&v, "agent_id")?;
+    let limit = usize_arg(&v, "limit").unwrap_or(10);
+
+    let feedbacks = store.get_recent_feedback(&agent_id, limit).await.map_err(|e| e.to_string())?;
+    ok_json(serde_json::to_value(&feedbacks).map_err(|e| format!("serialize: {e}"))?)
+}
+
+async fn cmd_feedback_query(store: Arc<crate::feedback::FeedbackStore>, args: Vec<u8>) -> Result<Vec<u8>, String> {
+    let v = parse_args(&args)?;
+    let query = str_arg(&v, "query")?;
+    let tags = v.get("tags")
+        .and_then(|t| t.as_array())
+        .map(|t| t.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect());
+
+    let feedbacks = store.query_feedback(&query, tags).await.map_err(|e| e.to_string())?;
+    ok_json(serde_json::to_value(&feedbacks).map_err(|e| format!("serialize: {e}"))?)
 }
 
 #[cfg(test)]
 mod tests {
+
     use super::*;
     use sisyphus_types::ToolExecutor;
     use serde_json::Value;
+    use crate::metis::LlmClient;
+
+    struct MockLlmClient;
+    #[async_trait::async_trait]
+    impl LlmClient for MockLlmClient {
+        async fn chat(&self, _system: &str, user: &str, _json_mode: bool) -> Result<String, String> {
+            Ok(format!(
+                r#"{{"ambiguities": [], "implicit_requirements": [], "summary": "Mock analysis for: {}", "actionable": true}}"#,
+                user
+            ))
+        }
+    }
 
     fn mkargs(val: Value) -> Vec<u8> {
         serde_json::to_vec(&val).unwrap()
@@ -323,7 +510,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_executor_unknown_tool() {
-        let ex = BuiltinToolExecutor;
+        let ex = BuiltinToolExecutor {
+            registry: crate::hook::HookRegistry::new(),
+            llm_client: Arc::new(MockLlmClient),
+            feedback_store: Arc::new(crate::feedback::FeedbackStore::default()),
+        };
         let result = ex.execute("no_such_tool", vec![], 0).await;
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("unknown builtin tool"));
@@ -331,7 +522,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_file_read_write_roundtrip() {
-        let ex = BuiltinToolExecutor;
+        let ex = BuiltinToolExecutor {
+            registry: crate::hook::HookRegistry::new(),
+            llm_client: Arc::new(MockLlmClient),
+            feedback_store: Arc::new(crate::feedback::FeedbackStore::default()),
+        };
         let dir = tempfile::TempDir::new().unwrap();
         let path = dir.path().join("test.txt");
 
@@ -348,7 +543,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_bash_exec() {
-        let ex = BuiltinToolExecutor;
+        let ex = BuiltinToolExecutor {
+            registry: crate::hook::HookRegistry::new(),
+            llm_client: Arc::new(MockLlmClient),
+            feedback_store: Arc::new(crate::feedback::FeedbackStore::default()),
+        };
         let args = mkargs(json!({"command": "echo hello", "timeout_ms": 5000}));
         let result = assert_ok(ex.execute("bash_exec", args, 0).await);
         assert_eq!(result["stdout"].as_str().unwrap().trim(), "hello");
@@ -357,7 +556,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_web_search_executor() {
-        let ex = BuiltinToolExecutor;
+        let ex = BuiltinToolExecutor {
+            registry: crate::hook::HookRegistry::new(),
+            llm_client: Arc::new(MockLlmClient),
+            feedback_store: Arc::new(crate::feedback::FeedbackStore::default()),
+        };
         let args = mkargs(json!({"query": "test", "num": 1}));
         // Web search may fail in offline environments — that's acceptable
         let result = ex.execute("web_search", args, 0).await;
@@ -370,7 +573,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_file_edit() {
-        let ex = BuiltinToolExecutor;
+        let ex = BuiltinToolExecutor {
+            registry: crate::hook::HookRegistry::new(),
+            llm_client: Arc::new(MockLlmClient),
+            feedback_store: Arc::new(crate::feedback::FeedbackStore::default()),
+        };
         let dir = tempfile::TempDir::new().unwrap();
         let path = dir.path().join("edit.txt");
 
@@ -391,7 +598,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_file_edit_all() {
-        let ex = BuiltinToolExecutor;
+        let ex = BuiltinToolExecutor {
+            registry: crate::hook::HookRegistry::new(),
+            llm_client: Arc::new(MockLlmClient),
+            feedback_store: Arc::new(crate::feedback::FeedbackStore::default()),
+        };
         let dir = tempfile::TempDir::new().unwrap();
         let path = dir.path().join("edit_all.txt");
 
@@ -409,7 +620,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_glob_tool() {
-        let ex = BuiltinToolExecutor;
+        let ex = BuiltinToolExecutor {
+            registry: crate::hook::HookRegistry::new(),
+            llm_client: Arc::new(MockLlmClient),
+            feedback_store: Arc::new(crate::feedback::FeedbackStore::default()),
+        };
         let dir = tempfile::TempDir::new().unwrap();
         std::fs::write(dir.path().join("a.rs"), "").unwrap();
         std::fs::write(dir.path().join("b.rs"), "").unwrap();
@@ -426,7 +641,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_bash_exec_failure() {
-        let ex = BuiltinToolExecutor;
+        let ex = BuiltinToolExecutor {
+            registry: crate::hook::HookRegistry::new(),
+            llm_client: Arc::new(MockLlmClient),
+            feedback_store: Arc::new(crate::feedback::FeedbackStore::default()),
+        };
         let args = mkargs(json!({"command": "exit 42", "timeout_ms": 5000}));
         let result = ex.execute("bash_exec", args, 0).await;
         // bash::execute returns Err for non-zero exit codes
@@ -436,7 +655,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_invalid_args() {
-        let ex = BuiltinToolExecutor;
+        let ex = BuiltinToolExecutor {
+            registry: crate::hook::HookRegistry::new(),
+            llm_client: Arc::new(MockLlmClient),
+            feedback_store: Arc::new(crate::feedback::FeedbackStore::default()),
+        };
         let result = ex.execute("file_read", b"not json".to_vec(), 0).await;
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("invalid JSON"));
@@ -444,7 +667,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_missing_required_arg() {
-        let ex = BuiltinToolExecutor;
+        let ex = BuiltinToolExecutor {
+            registry: crate::hook::HookRegistry::new(),
+            llm_client: Arc::new(MockLlmClient),
+            feedback_store: Arc::new(crate::feedback::FeedbackStore::default()),
+        };
         let args = mkargs(json!({}));
         let result = ex.execute("file_read", args, 0).await;
         assert!(result.is_err());
@@ -455,7 +682,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_executor_unknown_agent_tool() {
-        let ex = BuiltinToolExecutor;
+        let ex = BuiltinToolExecutor {
+            registry: crate::hook::HookRegistry::new(),
+            llm_client: Arc::new(MockLlmClient),
+            feedback_store: Arc::new(crate::feedback::FeedbackStore::default()),
+        };
         let result = ex.execute("librarian/nonexistent", vec![], 0).await;
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("unknown builtin tool"));
@@ -466,7 +697,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_executor_metis_analyse() {
-        let ex = BuiltinToolExecutor;
+        let ex = BuiltinToolExecutor {
+            registry: crate::hook::HookRegistry::new(),
+            llm_client: Arc::new(MockLlmClient),
+            feedback_store: Arc::new(crate::feedback::FeedbackStore::default()),
+        };
         let args = mkargs(json!({"request": "Refactor the login module to use OAuth2"}));
         let result = assert_ok(ex.execute("metis/analyse", args, 0).await);
         assert!(result["summary"].as_str().unwrap_or("").len() > 0);
@@ -476,7 +711,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_executor_momus_review_plan() {
-        let ex = BuiltinToolExecutor;
+        let ex = BuiltinToolExecutor {
+            registry: crate::hook::HookRegistry::new(),
+            llm_client: Arc::new(MockLlmClient),
+            feedback_store: Arc::new(crate::feedback::FeedbackStore::default()),
+        };
         let plan_text = "- Step 1: Write failing test\n- Step 2: Implement minimum code\n- Step 3: Refactor";
         let args = mkargs(json!({"plan_text": plan_text, "plan_name": "TDD workflow"}));
         let result = assert_ok(ex.execute("momus/review_plan", args, 0).await);
@@ -486,7 +725,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_executor_momus_review_code() {
-        let ex = BuiltinToolExecutor;
+        let ex = BuiltinToolExecutor {
+            registry: crate::hook::HookRegistry::new(),
+            llm_client: Arc::new(MockLlmClient),
+            feedback_store: Arc::new(crate::feedback::FeedbackStore::default()),
+        };
         let code = "fn add(a: i32, b: i32) -> i32 { a + b }";
         let args = mkargs(json!({"path": "/fake/lib.rs", "content": code}));
         let result = assert_ok(ex.execute("momus/review_code", args, 0).await);
@@ -495,7 +738,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_executor_momus_review_arch() {
-        let ex = BuiltinToolExecutor;
+        let ex = BuiltinToolExecutor {
+            registry: crate::hook::HookRegistry::new(),
+            llm_client: Arc::new(MockLlmClient),
+            feedback_store: Arc::new(crate::feedback::FeedbackStore::default()),
+        };
         let arch = "The system uses a microservices architecture with message queues.";
         let args = mkargs(json!({"arch_text": arch}));
         let result = assert_ok(ex.execute("momus/review_arch", args, 0).await);
@@ -504,7 +751,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_executor_librarian_synthesise() {
-        let ex = BuiltinToolExecutor;
+        let ex = BuiltinToolExecutor {
+            registry: crate::hook::HookRegistry::new(),
+            llm_client: Arc::new(MockLlmClient),
+            feedback_store: Arc::new(crate::feedback::FeedbackStore::default()),
+        };
         let findings = json!([
             {"claim": "Rust is memory-safe", "source_url": "https://example.com/rust", "source_title": "Rust docs", "relevance": 0.9, "retrieved_at": "2025-01-01"},
             {"claim": "Rust has zero-cost abstractions", "source_url": "https://example.com/zero", "source_title": "Rust perf", "relevance": 0.8, "retrieved_at": "2025-01-01"},
@@ -516,7 +767,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_executor_librarian_research() {
-        let ex = BuiltinToolExecutor;
+        let ex = BuiltinToolExecutor {
+            registry: crate::hook::HookRegistry::new(),
+            llm_client: Arc::new(MockLlmClient),
+            feedback_store: Arc::new(crate::feedback::FeedbackStore::default()),
+        };
         let args = mkargs(json!({"query": "Rust async/await", "scope": "web", "num": 1}));
         // May fail in offline env — acceptable
         let result = ex.execute("librarian/research", args, 0).await;
@@ -528,7 +783,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_executor_momus_review_code_batch() {
-        let ex = BuiltinToolExecutor;
+        let ex = BuiltinToolExecutor {
+            registry: crate::hook::HookRegistry::new(),
+            llm_client: Arc::new(MockLlmClient),
+            feedback_store: Arc::new(crate::feedback::FeedbackStore::default()),
+        };
         let files = json!([
             {"path": "/fake/main.rs", "content": "fn main() { println!(\"hello\"); }"},
             {"path": "/fake/lib.rs", "content": "pub fn add(a: i32, b: i32) -> i32 { a + b }"},
@@ -540,7 +799,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_executor_agent_tool_missing_args() {
-        let ex = BuiltinToolExecutor;
+        let ex = BuiltinToolExecutor {
+            registry: crate::hook::HookRegistry::new(),
+            llm_client: Arc::new(MockLlmClient),
+            feedback_store: Arc::new(crate::feedback::FeedbackStore::default()),
+        };
         let result = ex.execute("metis/analyse", mkargs(json!({})), 0).await;
         assert!(result.is_err());
 

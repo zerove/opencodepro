@@ -1,0 +1,53 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "AgentEvaluationCase",
+  "description": "Schema for a single evaluation case to test a Sisyphus specialized agent.",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Unique identifier for the test case."
+    },
+    "agent": {
+      "type": "string",
+      "enum": ["metis", "momus", "librarian"],
+      "description": "The agent being evaluated."
+    },
+    "input": {
+      "type": "object",
+      "description": "The arguments passed to the agent's tool.",
+      "additionalProperties": true
+    },
+    "expected": {
+      "type": "object",
+      "description": "The gold standard output or critical components of the output.",
+      "additionalProperties": true
+    },
+    "criteria": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "description": { "type": "string" },
+          "weight": { "type": "number", "minimum": 0, "maximum": 1 },
+          "check_type": { 
+            "type": "string", 
+            "enum": ["keyword", "regex", "llm_judge", "json_schema"] 
+          },
+          "expected_value": { "type": "string" }
+        },
+        "required": ["id", "description", "check_type"]
+      }
+    },
+    "metadata": {
+      "type": "object",
+      "properties": {
+        "category": { "type": "string" },
+        "difficulty": { "type": "string", "enum": ["easy", "medium", "hard"] },
+        "notes": { "type": "string" }
+      }
+    }
+  },
+  "required": ["id", "agent", "input", "expected", "criteria"]
+}

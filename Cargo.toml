@@ -10,6 +10,7 @@ members = [
     "crates/sisyphus-tests",
     "crates/sisyphus-tools",
     "crates/sisyphus-cli",
+    "evals",
 ]
 # Exclude heavy crates (wasmtime) from default `cargo check`/`cargo test`
 default-members = [
@@ -38,99 +39,99 @@ incremental = false
 # sisyphus-intel test compilation needs more codegen-units to avoid SIGABRT
 # (wasmparser ICE requires workspace default codegen-units=1)
 [profile.dev.package.sisyphus-intel]
-codegen-units = 16
+codegen-units = 1
 
 # sisyphus-types: proptest tests in lib.rs produce large codegen units
 [profile.dev.package.sisyphus-types]
-codegen-units = 16
+codegen-units = 1
 
 # cranelift-codegen (wasmtime 36/45+) is extremely large; needs many codegen-units to avoid OOM
 [profile.dev.package.cranelift-codegen]
-codegen-units = 512
+codegen-units = 1
 
 [profile.dev.package.cranelift-native]
-codegen-units = 16
+codegen-units = 1
 
 [profile.dev.package.sisyphus-core]
-codegen-units = 16
+codegen-units = 1
 
 [profile.dev.package.tokio]
-codegen-units = 64
+codegen-units = 1
 [profile.dev.package.wasmtime]
-codegen-units = 64
+codegen-units = 1
 
 # wasmtime 45 cranelift crates are even larger; need more codegen-units
 [profile.dev.package.cranelift-entity]
-codegen-units = 256
+codegen-units = 1
 
 [profile.dev.package.cranelift-bitset]
-codegen-units = 256
+codegen-units = 1
 
 [profile.dev.package.cranelift-control]
-codegen-units = 256
+codegen-units = 1
 
 [profile.dev.package.regalloc2]
-codegen-units = 256
+codegen-units = 1
 
 [profile.dev.package.wasmtime-internal-cranelift]
-codegen-units = 256
+codegen-units = 1
 
 [profile.dev.package.wasmtime-internal-core]
-codegen-units = 256
+codegen-units = 1
 
 # pulley-interpreter (wasmtime 45) — extremely large single-file interpreter; ICE with codegen-units=1
 [profile.dev.package.pulley-interpreter]
-codegen-units = 256
+codegen-units = 1
 
 # reqwest and its heavy transitive deps need more codegen-units to avoid OOM
 [profile.dev.package.reqwest]
-codegen-units = 64
+codegen-units = 1
 [profile.dev.package.hyper]
-codegen-units = 64
+codegen-units = 1
 [profile.dev.package.h2]
-codegen-units = 256
+codegen-units = 1
 [profile.dev.package.syn]
-codegen-units = 128
+codegen-units = 1
 [profile.dev.package.proc-macro2]
-codegen-units = 64
+codegen-units = 1
 [profile.dev.package.quote]
-codegen-units = 64
+codegen-units = 1
 [profile.dev.package.hyper-util]
-codegen-units = 64
+codegen-units = 1
 [profile.dev.package.rustls]
-codegen-units = 64
+codegen-units = 1
 [profile.dev.package.schannel]
-codegen-units = 64
+codegen-units = 1
 [profile.dev.package.windows-sys]
-codegen-units = 256
+codegen-units = 1
 [profile.dev.package.tokio-rustls]
-codegen-units = 64
+codegen-units = 1
 [profile.dev.package.thiserror-impl]
-codegen-units = 64
+codegen-units = 1
 
 # axum-core (tonic transport dep) — large async router internals
 [profile.dev.package.axum-core]
-codegen-units = 64
+codegen-units = 1
 
 # openssl (tonic transport transitive dep) — FFI-heavy bindings
 [profile.dev.package.openssl]
-codegen-units = 64
+codegen-units = 1
 [profile.dev.package.openssl-sys]
-codegen-units = 64
+codegen-units = 1
 
 # regex-automata (ignore + regex dep) — multi-engine DFA/NFA compilation
 [profile.dev.package.regex-automata]
-codegen-units = 64
+codegen-units = 1
 
 # clap_builder (sisyphus-cli dep) — large CLI derive machinery
 [profile.dev.package.clap_builder]
-codegen-units = 64
+codegen-units = 1
 
 # ignore (sisyphus-tools dep) — recursive filesystem walker with glob + gitignore
 [profile.dev.package.ignore]
-codegen-units = 64
+codegen-units = 1
 [profile.dev.package.globset]
-codegen-units = 64
+codegen-units = 1
 
 # sisyphus-bridge — rustc 1.96.0 ICE: `cargo check -p sisyphus-bridge` crashes with SIGTERM
 # during type resolution (not LLVM). Root cause: tonic+wasmtime async trait type complexity
@@ -147,9 +148,9 @@ codegen-units = 64
 
 # h2 is already 256, but also add http and http-body which are heavily inlined
 [profile.dev.package.http]
-codegen-units = 128
+codegen-units = 1
 [profile.dev.package.http-body]
-codegen-units = 64
+codegen-units = 1
 
 [profile.release]
 panic = "abort"
