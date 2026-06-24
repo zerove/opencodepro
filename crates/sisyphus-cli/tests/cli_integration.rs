@@ -140,3 +140,111 @@ fn test_interactive_mode_flag() {
     // TUI should have printed something before being killed
     assert!(!stdout.is_empty() || !output.status.success());
 }
+
+// ── Agent: metis analyse ───────────────────────────────────
+
+#[test]
+fn test_metis_analyse_inline() {
+    let stdout = run_cli_success(&[
+        "metis", "analyse",
+        "Refactor the user authentication module to support OAuth2",
+    ]);
+    assert!(stdout.contains("Metis Analysis"));
+    assert!(stdout.contains("summary") || stdout.contains("Ambiguities") || stdout.contains("Implicit"));
+}
+
+#[test]
+fn test_metis_analyse_from_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let req_file = dir.path().join("request.txt");
+    std::fs::write(&req_file, "Make the login page faster").unwrap();
+
+    let stdout = run_cli_success(&["metis", "analyse", "--file", req_file.to_str().unwrap()]);
+    assert!(stdout.contains("Metis Analysis"));
+}
+
+// ── Agent: momus review-plan ───────────────────────────────
+
+#[test]
+fn test_momus_review_plan() {
+    let dir = tempfile::tempdir().unwrap();
+    let plan_file = dir.path().join("plan.md");
+    std::fs::write(&plan_file,
+        "- Step 1: Implement the API endpoint\n\
+         - Step 2: Add input validation\n\
+         - Step 3: Write integration tests\n\
+         - Step 4: Deploy to staging\n").unwrap();
+
+    let stdout = run_cli_success(&["momus", "review-plan", plan_file.to_str().unwrap()]);
+    assert!(!stdout.is_empty());
+}
+
+#[test]
+fn test_momus_review_code() {
+    let dir = tempfile::tempdir().unwrap();
+    let code_file = dir.path().join("example.rs");
+    std::fs::write(&code_file,
+        "fn hello() {\n    println!(\"hello world\");\n}\n").unwrap();
+
+    let stdout = run_cli_success(&["momus", "review-code", code_file.to_str().unwrap()]);
+    assert!(!stdout.is_empty());
+}
+
+#[test]
+fn test_momus_review_arch() {
+    let stdout = run_cli_success(&[
+        "momus", "review-arch",
+        "The system uses a microservices architecture with PostgreSQL for persistence \
+         and RabbitMQ for async communication between services.",
+    ]);
+    assert!(!stdout.is_empty());
+}
+
+// ── Agent: librarian synthesise ─────────────────────────────
+
+#[test]
+fn test_librarian_synthesise() {
+    let dir = tempfile::tempdir().unwrap();
+    let findings_file = dir.path().join("findings.json");
+    let findings = serde_json::json!([
+        {"claim": "Rust is memory-safe", "source_url": "https://example.com/a", "source_title": "Source A", "relevance": 0.9, "retrieved_at": "2025-01-01"},
+        {"claim": "Rust has zero-cost abstractions", "source_url": "https://example.com/b", "source_title": "Source B", "relevance": 0.8, "retrieved_at": "2025-01-01"},
+    ]);
+    std::fs::write(&findings_file, serde_json::to_string_pretty(&findings).unwrap()).unwrap();
+
+    let stdout = run_cli_success(&["librarian", "synthesise", findings_file.to_str().unwrap()]);
+    assert!(!stdout.is_empty(), "expected synthesis output, got empty");
+}
+
+// ── Agent: help output ─────────────────────────────────────
+
+#[test]
+fn test_help_contains_agent_subcommands() {
+    let stdout = run_cli_success(&["--help"]);
+    assert!(stdout.contains("librarian"), "--help should list librarian subcommand");
+    assert!(stdout.contains("momus"), "--help should list momus subcommand");
+    assert!(stdout.contains("metis"), "--help should list metis subcommand");
+}
+
+#[test]
+fn test_librarian_help() {
+    let stdout = run_cli_success(&["librarian", "--help"]);
+    assert!(stdout.contains("research"));
+    assert!(stdout.contains("fetch-docs"));
+    assert!(stdout.contains("examples"));
+    assert!(stdout.contains("synthesise"));
+}
+
+#[test]
+fn test_momus_help() {
+    let stdout = run_cli_success(&["momus", "--help"]);
+    assert!(stdout.contains("review-plan"));
+    assert!(stdout.contains("review-code"));
+    assert!(stdout.contains("review-arch"));
+}
+
+#[test]
+fn test_metis_help() {
+    let stdout = run_cli_success(&["metis", "--help"]);
+    assert!(stdout.contains("analyse"));
+}
