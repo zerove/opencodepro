@@ -62,6 +62,8 @@ jobs:
             sisyphus-mem \
             sisyphus-tests \
             sisyphus-core \
+            sisyphus-tools \
+            sisyphus-cli \
           ; do
             echo "=== Testing $crate ==="
             cargo test -p "$crate" 2>&1

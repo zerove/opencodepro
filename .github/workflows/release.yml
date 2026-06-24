@@ -24,7 +24,9 @@ jobs:
         run: cargo build --release --workspace
 
       - name: Generate checksums
-        run: sha256sum target/release/sisyphus-bridge > target/release/sisyphus-bridge.sha256
+        run: |
+          sha256sum target/release/sisyphus-bridge > target/release/sisyphus-bridge.sha256
+          sha256sum target/release/sisyphus-cli > target/release/sisyphus-cli.sha256
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -32,6 +34,8 @@ jobs:
           files: |
             target/release/sisyphus-bridge
             target/release/sisyphus-bridge.sha256
+            target/release/sisyphus-cli
+            target/release/sisyphus-cli.sha256
           body_path: CHANGELOG.md
           draft: true
           prerelease: false
