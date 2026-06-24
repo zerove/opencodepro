@@ -9,6 +9,7 @@ mod lsp;
 mod mcp;
 mod permission;
 mod shell;
+mod skill;
 mod tui;
 
 #[derive(Parser)]
@@ -86,6 +87,10 @@ enum Commands {
     /// Pre-planning analysis agent (ambiguity detection, implicit requirements)
     #[command(subcommand)]
     Metis(MetisCommands),
+
+    /// Skill management (list/show/install skills)
+    #[command(subcommand)]
+    Skill(SkillCommands),
 
     /// Language server protocol tools
     #[command(subcommand)]
@@ -254,6 +259,18 @@ enum MetisCommands {
 }
 
 #[derive(Subcommand)]
+enum SkillCommands {
+    /// List all available skills (from all sources)
+    List,
+    /// Show detailed info for a specific skill
+    Show { name: String },
+    /// Install a skill from a .md file into the user directory
+    Install { path: PathBuf },
+    /// Remove an installed skill
+    Remove { name: String },
+}
+
+#[derive(Subcommand)]
 enum LspCommands {
     /// Get diagnostics for a file
     Diagnostics {
@@ -374,6 +391,8 @@ enum McpCommands {
         #[arg(required = true)]
         connect: Vec<String>,
     },
+    /// Start an MCP server that exposes Sisyphus agent tools via stdio
+    Serve,
 }
 
 #[derive(Subcommand)]
@@ -853,6 +872,22 @@ async fn main() -> Result<()> {
             }
         }
 
+        // ── skill ───────────────────────────────────────
+        Commands::Skill(sub) => match sub {
+            SkillCommands::List => {
+                skill::run_list()?;
+            }
+            SkillCommands::Show { name } => {
+                skill::run_show(&name)?;
+            }
+            SkillCommands::Install { path } => {
+                skill::run_install(&path)?;
+            }
+            SkillCommands::Remove { name } => {
+                skill::run_remove(&name)?;
+            }
+        }
+
         // ── lsp ─────────────────────────────────────────
         Commands::Lsp(sub) => match sub {
             LspCommands::Diagnostics { file, language_id, server, server_args, root_uri } => {
@@ -889,6 +924,9 @@ async fn main() -> Result<()> {
             }
             McpCommands::Call { tool, args, connect } => {
                 mcp::run_call(&tool, args.as_deref(), &connect).await?;
+            }
+            McpCommands::Serve => {
+                mcp::run_serve().await?;
             }
         }
 
