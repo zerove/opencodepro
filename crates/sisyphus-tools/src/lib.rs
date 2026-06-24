@@ -16,6 +16,7 @@ pub mod oracle;
 pub mod permissions;
 pub mod plan;
 pub mod session;
+pub mod skill;
 pub mod todo;
 pub mod web;
 
@@ -72,5 +73,6 @@ pub use oracle::*;
 pub use permissions::*;
 pub use plan::*;
 pub use session::*;
+pub use skill::*;
 pub use todo::*;
 pub use web::*;
