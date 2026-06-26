@@ -26,8 +26,6 @@ pub mod plan;
 pub mod precommit;
 pub use precommit::*;
 pub mod project_rules;
-pub mod roadmap;
-pub use roadmap::*;
 pub mod scaffold;
 pub use scaffold::*;
 pub mod scribe;
