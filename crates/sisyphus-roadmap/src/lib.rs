@@ -1,3 +1,7 @@
+pub mod milestone_generator;
+pub mod resource_optimizer;
+pub mod strategic_reflection;
+
 use serde_json::Value;
 use sisyphus_mem::MfsStore;
 use sisyphus_types::{

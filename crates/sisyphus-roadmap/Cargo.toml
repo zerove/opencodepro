@@ -15,3 +15,4 @@ tracing = { workspace = true }
 thiserror = "1.0"
 sisyphus-types = { path = "../sisyphus-types" }
 sisyphus-mem = { path = "../sisyphus-mem" }
+sisyphus-tools = { path = "../sisyphus-tools" }

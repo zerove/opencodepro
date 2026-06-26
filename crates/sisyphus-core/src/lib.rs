@@ -351,6 +351,12 @@ pub struct SisyphusKernel {
     pub meta_learner: Arc<std::sync::Mutex<MetaLearner>>,
     /// Strategic planning manager for Project → Milestone → Phase → Goal hierarchy.
     pub roadmap_manager: Arc<RoadmapManager>,
+    /// Phase 3 — Strategic reflection engine (LLM-augmented roadmap analysis).
+    pub strategic_reflector: Option<Arc<sisyphus_roadmap::strategic_reflection::StrategicReflector>>,
+    /// Phase 3 — Autonomous milestone generator (LLM-driven roadmap creation).
+    pub milestone_generator: Option<Arc<sisyphus_roadmap::milestone_generator::MilestoneGenerator>>,
+    /// Phase 3 — Resource / cost projection engine (analytics-only).
+    pub resource_optimizer: sisyphus_roadmap::resource_optimizer::ResourceOptimizer,
 }
 
 impl SisyphusKernel {
@@ -371,7 +377,32 @@ impl SisyphusKernel {
             benchmark: Arc::new(std::sync::Mutex::new(ContinuousBenchmark::new(".omo/benchmarks"))),
             meta_learner: Arc::new(std::sync::Mutex::new(MetaLearner::new(".omo/meta"))),
             roadmap_manager: rm,
+            strategic_reflector: None,
+            milestone_generator: None,
+            resource_optimizer: sisyphus_roadmap::resource_optimizer::ResourceOptimizer::new(),
         }
+    }
+
+    /// Attach a StrategicReflector for LLM-augmented roadmap analysis.
+    pub fn with_strategic_reflector(
+        mut self,
+        llm: Arc<dyn sisyphus_tools::metis::LlmClient>,
+    ) -> Self {
+        self.strategic_reflector = Some(Arc::new(
+            sisyphus_roadmap::strategic_reflection::StrategicReflector::new(llm),
+        ));
+        self
+    }
+
+    /// Attach a MilestoneGenerator for LLM-driven roadmap creation.
+    pub fn with_milestone_generator(
+        mut self,
+        llm: Arc<dyn sisyphus_tools::metis::LlmClient>,
+    ) -> Self {
+        self.milestone_generator = Some(Arc::new(
+            sisyphus_roadmap::milestone_generator::MilestoneGenerator::new(llm),
+        ));
+        self
     }
 
     pub async fn save_sop(&self, sop_id: &str, graph: &SOPGraph) -> Result<(), CoreError> {
@@ -529,6 +560,89 @@ impl SisyphusKernel {
             .await
             .ok();
         result.map(|(o, r)| (o, r, health))
+    }
+
+    /// Run strategic reflection on a project's roadmap.
+    ///
+    /// Requires the kernel to have been configured with `with_strategic_reflector()`.
+    /// Returns `None` if no reflector is configured.
+    pub async fn strategic_reflect(
+        &self,
+        project_id: &str,
+    ) -> Option<sisyphus_roadmap::strategic_reflection::StrategicReflection> {
+        let reflector = self.strategic_reflector.as_ref()?;
+        match reflector.reflect(&self.roadmap_manager, project_id).await {
+            Ok(reflection) => {
+                let _ = self.channel.publish("strategic_events", AgentMessage {
+                    from: "kernel".into(),
+                    to: "*".into(),
+                    kind: "StrategicReflectionCompleted".into(),
+                    payload: serde_json::json!({
+                        "project_id": reflection.project_id,
+                        "health_assessment": reflection.health_assessment,
+                        "trajectory": reflection.trajectory,
+                        "recommendations": reflection.recommendations.len(),
+                        "risk_factors": reflection.risk_factors.len(),
+                        "confidence": reflection.confidence,
+                    }),
+                    correlation_id: format!("{}-strategic-reflect", project_id),
+                });
+                Some(reflection)
+            }
+            Err(e) => {
+                tracing::warn!(project_id = %project_id, error = %e, "Strategic reflection failed");
+                None
+            }
+        }
+    }
+
+    /// Generate and persist milestones from a project description.
+    ///
+    /// Requires the kernel to have been configured with `with_milestone_generator()`.
+    /// Returns `None` if no generator is configured.
+    pub async fn generate_milestones(
+        &self,
+        project_id: &str,
+        description: &str,
+    ) -> Option<Vec<sisyphus_types::Milestone>> {
+        let generator = self.milestone_generator.as_ref()?;
+        match generator
+            .generate_milestones(&self.roadmap_manager, project_id, description)
+            .await
+        {
+            Ok(milestones) => {
+                let _ = self.channel.publish("strategic_events", AgentMessage {
+                    from: "kernel".into(),
+                    to: "*".into(),
+                    kind: "MilestonesGenerated".into(),
+                    payload: serde_json::json!({
+                        "project_id": project_id,
+                        "milestone_count": milestones.len(),
+                    }),
+                    correlation_id: format!("{}-milestones", project_id),
+                });
+                Some(milestones)
+            }
+            Err(e) => {
+                tracing::warn!(project_id = %project_id, error = %e, "Milestone generation failed");
+                None
+            }
+        }
+    }
+
+    /// Project remaining costs using the resource optimizer.
+    pub async fn project_costs(
+        &self,
+        project_id: &str,
+        total_goals: usize,
+        completed_goals: usize,
+    ) -> sisyphus_roadmap::resource_optimizer::CostProjection {
+        let outcomes = self
+            .roadmap_manager
+            .get_outcomes(project_id)
+            .await
+            .unwrap_or_default();
+        self.resource_optimizer.project_costs(&outcomes, total_goals, completed_goals)
     }
 
     /// Execute a SOP graph with recursive cognitive feedback.
@@ -958,6 +1072,9 @@ impl SisyphusKernel {
             benchmark: self.benchmark.clone(),
             meta_learner: self.meta_learner.clone(),
             roadmap_manager: self.roadmap_manager.clone(),
+            strategic_reflector: self.strategic_reflector.clone(),
+            milestone_generator: self.milestone_generator.clone(),
+            resource_optimizer: sisyphus_roadmap::resource_optimizer::ResourceOptimizer::new(),
         });
 
         // Spawn all ready graphs (in-degree == 0)

@@ -3551,6 +3551,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sisyphus-mem",
+ "sisyphus-tools",
  "sisyphus-types",
  "thiserror 1.0.69",
  "tokio",
