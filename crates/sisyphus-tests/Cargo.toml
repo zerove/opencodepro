@@ -17,3 +17,4 @@ petgraph = "0.6"
 tracing = "0.1"
 tracing-subscriber = "0.3"
 tempfile = "3.8"
+sisyphus-tools = { version = "0.1.0", path = "../sisyphus-tools" }

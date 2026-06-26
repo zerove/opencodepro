@@ -309,6 +309,39 @@ pub fn render_instructions(skill: &Skill, vars: &HashMap<String, String>) -> Str
     result
 }
 
+/// Copy a SKILL.md file into the user's skill directory, returning the skill name.
+pub fn install_skill(source: &Path) -> Result<String, String> {
+    let home = dirs_next().ok_or("Cannot determine home directory")?;
+    let dest_dir = home.join(".config").join("sisyphus").join("skills");
+    std::fs::create_dir_all(&dest_dir).map_err(|e| format!("Failed to create skill dir: {e}"))?;
+
+    let stem = source
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .ok_or_else(|| "Invalid source filename".to_string())?;
+    let dest = dest_dir.join(format!("{stem}.md"));
+
+    // Parse to validate and extract the skill name
+    let content = std::fs::read_to_string(source).map_err(|e| format!("Cannot read source: {e}"))?;
+    let (meta, _body) = parse_frontmatter(&content);
+    let name = meta.name.unwrap_or_else(|| stem.to_string());
+
+    std::fs::copy(source, &dest).map_err(|e| format!("Failed to copy skill: {e}"))?;
+    Ok(name)
+}
+
+/// Remove an installed skill by name from the user's skill directory.
+pub fn remove_skill(name: &str) -> Result<(), String> {
+    let home = dirs_next().ok_or("Cannot determine home directory")?;
+    let dir = home.join(".config").join("sisyphus").join("skills");
+    let path = dir.join(format!("{name}.md"));
+    if path.exists() {
+        std::fs::remove_file(&path).map_err(|e| format!("Failed to remove skill: {e}"))
+    } else {
+        Err(format!("Skill '{name}' not found"))
+    }
+}
+
 // ── Helpers ───────────────────────────────────────────────────
 
 fn dirs_next() -> Option<PathBuf> {
@@ -430,5 +463,172 @@ This is the instruction body.
         let loader = SkillLoader::new();
         let matched = loader.find_by_tool("metis_analyse", &skills);
         assert_eq!(matched.len(), 2); // both match: one by trigger, one by empty triggers
+    }
+
+    #[test]
+    fn test_parse_frontmatter_only_opening_delimiter() {
+        let content = "---\nno closing delimiter here";
+        let (meta, body) = parse_frontmatter(content);
+        assert_eq!(meta.name, None);
+        assert_eq!(body, content.trim());
+    }
+
+    #[test]
+    fn test_parse_frontmatter_empty_delimiters() {
+        let content = "---\n---\nbody text";
+        let (meta, body) = parse_frontmatter(content);
+        assert_eq!(meta.name, None);
+        assert!(body.contains("body text"));
+    }
+
+    #[test]
+    fn test_parse_frontmatter_malformed_yaml() {
+        let content = "---\nname: [unclosed list\n---\nbody";
+        let (meta, body) = parse_frontmatter(content);
+        assert_eq!(meta.name, None);
+        assert!(body.contains("body"), "should fall back to treating entire content as body");
+    }
+
+    #[test]
+    fn test_parse_frontmatter_extra_fields() {
+        let content = r#"---
+name: extra-fields
+unknown_field: should_be_ignored
+nested:
+  a: 1
+---
+body
+"#;
+        let (meta, body) = parse_frontmatter(content);
+        assert_eq!(meta.name, Some("extra-fields".into()));
+        assert!(body.contains("body"));
+    }
+
+    #[test]
+    fn test_render_instructions_no_vars_match() {
+        let skill = Skill {
+            name: "t".into(),
+            description: "".into(),
+            version: "0.1.0".into(),
+            author: None,
+            tags: vec![],
+            triggers: vec![],
+            instructions: "Hello {{name}}".into(),
+            source: SkillSource::BuiltIn,
+            source_path: None,
+        };
+        let vars = HashMap::new();
+        let result = render_instructions(&skill, &vars);
+        assert_eq!(result, "Hello {{name}}");
+    }
+
+    #[test]
+    fn test_render_instructions_empty() {
+        let skill = Skill {
+            name: "t".into(),
+            description: "".into(),
+            version: "0.1.0".into(),
+            author: None,
+            tags: vec![],
+            triggers: vec![],
+            instructions: "".into(),
+            source: SkillSource::BuiltIn,
+            source_path: None,
+        };
+        let vars = HashMap::new();
+        let result = render_instructions(&skill, &vars);
+        assert_eq!(result, "");
+    }
+
+    #[test]
+    fn test_find_by_tool_no_matching_tool() {
+        let skills = vec![
+            Skill {
+                name: "specific".into(),
+                description: "".into(),
+                version: "0.1.0".into(),
+                author: None,
+                tags: vec![],
+                triggers: vec![TriggerDef {
+                    pattern: None,
+                    tools: vec!["bash_exec".into()],
+                    description: None,
+                    hook_phase: None,
+                    hook_effect: None,
+                    hook_message: None,
+                }],
+                instructions: "".into(),
+                source: SkillSource::BuiltIn,
+                source_path: None,
+            },
+        ];
+        let loader = SkillLoader::new();
+        let matched = loader.find_by_tool("metis_analyse", &skills);
+        assert!(matched.is_empty(), "should not match different tool name");
+    }
+
+    #[test]
+    fn test_find_by_tool_empty_skills() {
+        let loader = SkillLoader::new();
+        let matched = loader.find_by_tool("anything", &[]);
+        assert!(matched.is_empty());
+    }
+
+    #[test]
+    fn test_load_all_empty_dir() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let loader = SkillLoader::new().with_dir(dir.path().to_path_buf());
+        let skills = loader.load_all();
+        assert!(skills.is_empty(), "empty dir should produce no skills");
+    }
+
+    #[test]
+    fn test_load_all_nonexistent_dir() {
+        let loader = SkillLoader::new()
+            .with_dir(PathBuf::from("/tmp/__sisyphus_nonexistent_skills__"));
+        let skills = loader.load_all();
+        assert!(skills.is_empty(), "non-existent dir should be silently skipped");
+    }
+
+    #[test]
+    fn test_classify_source_variants() {
+        let user_dir = Path::new("/home/user/.config/sisyphus/skills");
+        let project_dir = Path::new("/some/project/.sisyphus/skills");
+        let builtin_dir = Path::new("/usr/share/sisyphus/skills");
+
+        assert_eq!(classify_source(user_dir), SkillSource::User);
+        assert_eq!(classify_source(project_dir), SkillSource::Project);
+        assert_eq!(classify_source(builtin_dir), SkillSource::BuiltIn);
+    }
+
+    #[test]
+    fn test_load_all_priority_override() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let builtin_dir = dir.path().join("share").join("skills");
+        let project_dir = dir.path().join("project").join(".sisyphus").join("skills");
+        fs::create_dir_all(&builtin_dir).unwrap();
+        fs::create_dir_all(&project_dir).unwrap();
+
+        fs::write(
+            builtin_dir.join("test-skill.md"),
+            "---\nname: test-skill\n---\nlow priority instructions",
+        )
+        .unwrap();
+        fs::write(
+            project_dir.join("test-skill.md"),
+            "---\nname: test-skill\n---\nhigh priority instructions",
+        )
+        .unwrap();
+
+        let loader = SkillLoader::new()
+            .with_builtin_dir(builtin_dir)
+            .with_dir(project_dir);
+        let skills = loader.load_all();
+        assert_eq!(skills.len(), 1);
+        assert!(
+            skills[0].instructions.contains("high priority"),
+            "higher priority skill should override: got '{}'",
+            skills[0].instructions
+        );
     }
 }

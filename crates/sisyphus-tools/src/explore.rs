@@ -304,4 +304,93 @@ pub fn helper() -> u32 {
         assert_eq!(m.content, "pub fn helper() -> u32 {");
         assert_eq!(m.pattern_index, 0);
     }
+
+    #[test]
+    fn test_search_patterns_no_matches() {
+        let dir = setup_test_dir();
+        let result = search_patterns(&["zzz_nonexistent_zzz"], dir.path(), None, 0).unwrap();
+        assert_eq!(result.total_matches, 0);
+        assert!(result.matches.is_empty());
+    }
+
+    #[test]
+    fn test_search_patterns_nonexistent_root() {
+        let result = search_patterns(&["fn"], Path::new("/tmp/__sisyphus_nonexistent_explore__"), None, 0);
+        assert!(result.is_err(), "ignore::WalkBuilder errors on non-existent root");
+    }
+
+    #[test]
+    fn test_search_patterns_case_sensitive() {
+        let dir = setup_test_dir();
+        let result = search_patterns(&["GREET"], dir.path(), Some(r"\.rs$"), 0).unwrap();
+        assert_eq!(result.total_matches, 0, "regex is case-sensitive by default");
+    }
+
+    #[test]
+    fn test_search_patterns_no_include_filter_no_match_dir() {
+        let dir = setup_test_dir();
+        let result = search_patterns(&["README"], dir.path(), None, 0).unwrap();
+        assert_eq!(result.total_matches, 0, "no .md files should be scanned without include");
+    }
+
+    #[test]
+    fn test_gather_context_empty_paths() {
+        let result = gather_context(&[]).unwrap();
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_find_files_glob_no_match() {
+        let dir = setup_test_dir();
+        let files = find_files("**/*.py", dir.path(), None).unwrap();
+        assert!(files.is_empty(), "no .py files should exist");
+    }
+
+    #[test]
+    fn test_find_files_content_no_match() {
+        let dir = setup_test_dir();
+        let files = find_files("**/*.rs", dir.path(), Some("zzz_nonexistent")).unwrap();
+        assert!(files.is_empty());
+    }
+
+    #[test]
+    fn test_find_files_nonexistent_root() {
+        let result = find_files("**/*.rs", Path::new("/tmp/__sisyphus_nonexistent__"), None);
+        assert!(result.is_ok(), "should handle non-existent root gracefully");
+        let files = result.unwrap();
+        assert!(files.is_empty());
+    }
+
+    #[test]
+    fn test_search_patterns_context_at_file_boundaries() {
+        let dir = setup_test_dir();
+        let result = search_patterns(&["fn greet"], dir.path(), Some(r"main\.rs$"), 5).unwrap();
+        assert_eq!(result.total_matches, 1);
+        let m = &result.matches[0];
+        assert!(m.before.is_empty() || m.before.iter().all(|l| l.is_empty()));
+    }
+
+    #[test]
+    fn test_search_patterns_binary_file_skipped() {
+        let dir = setup_test_dir();
+        let bin = dir.path().join("data.bin");
+        std::fs::write(&bin, [0u8, 159, 146, 150]).unwrap();
+
+        let result = search_patterns(&[".*"], dir.path(), Some(r"\.bin$"), 0).unwrap();
+        assert_eq!(result.total_matches, 0, "binary files should be silently skipped");
+    }
+
+    #[test]
+    fn test_search_patterns_include_suffix_fallback() {
+        let dir = setup_test_dir();
+        let result = search_patterns(&["fn"], dir.path(), Some("[.rs"), 0).unwrap();
+        assert_eq!(result.total_matches, 0, "no files end with '[.rs'");
+    }
+
+    #[test]
+    fn test_find_files_invalid_glob() {
+        let dir = setup_test_dir();
+        let result = find_files("[", dir.path(), None);
+        assert!(result.is_err(), "invalid glob pattern should error");
+    }
 }

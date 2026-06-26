@@ -64,3 +64,107 @@ Suggested Updates:",
     
     client.chat(SCRIBE_SYSTEM_PROMPT, &prompt, false).await
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::metis::DummyLlmClient;
+
+    #[tokio::test]
+    async fn test_generate_adr_passes_context() {
+        let client = DummyLlmClient;
+        let context = "Team decided to use PostgreSQL over MongoDB for strong consistency";
+        let result = generate_adr(&client, context).await;
+        assert!(result.is_ok());
+        let response = result.unwrap();
+        assert!(response.contains(context), "response should echo context");
+    }
+
+    #[tokio::test]
+    async fn test_generate_adr_returns_string() {
+        let client = DummyLlmClient;
+        let result = generate_adr(&client, "some context").await;
+        assert!(result.is_ok());
+        let response = result.unwrap();
+        assert!(!response.is_empty(), "response should not be empty");
+    }
+
+    #[tokio::test]
+    async fn test_update_docs_includes_content() {
+        let client = DummyLlmClient;
+        let doc = "API Reference - Auth Endpoint";
+        let changes = "Add rate limiting section";
+        let result = update_docs(&client, doc, changes).await;
+        assert!(result.is_ok());
+        let response = result.unwrap();
+        // DummyLlmClient echoes user input in the summary field (JSON-escaped)
+        assert!(response.contains(doc), "response should echo doc_content; got: {response}");
+        assert!(response.contains(changes), "response should echo changes; got: {response}");
+    }
+
+    #[tokio::test]
+    async fn test_update_docs_empty_doc() {
+        let client = DummyLlmClient;
+        let result = update_docs(&client, "", "Remove deprecated endpoint").await;
+        assert!(result.is_ok());
+        let response = result.unwrap();
+        assert!(response.contains("Remove deprecated endpoint"), "response should contain changes even with empty doc");
+    }
+
+    #[tokio::test]
+    async fn test_generate_adr_empty_context() {
+        let client = DummyLlmClient;
+        let result = generate_adr(&client, "").await;
+        assert!(result.is_ok(), "should handle empty context gracefully");
+    }
+
+    #[test]
+    fn test_scribe_system_prompt_has_required_sections() {
+        assert!(SCRIBE_SYSTEM_PROMPT.contains("## Context"), "must contain Context header");
+        assert!(SCRIBE_SYSTEM_PROMPT.contains("## Decision"), "must contain Decision header");
+        assert!(SCRIBE_SYSTEM_PROMPT.contains("## Consequences"), "must contain Consequences header");
+        assert!(SCRIBE_SYSTEM_PROMPT.contains("MADR"), "must mention MADR format");
+    }
+
+    #[test]
+    fn test_scribe_system_prompt_non_empty() {
+        assert!(!SCRIBE_SYSTEM_PROMPT.is_empty(), "system prompt should not be empty");
+        assert!(SCRIBE_SYSTEM_PROMPT.len() > 200, "system prompt should be substantial");
+    }
+
+    #[tokio::test]
+    async fn test_update_docs_empty_changes() {
+        let client = DummyLlmClient;
+        let result = update_docs(&client, "Existing doc here", "").await;
+        assert!(result.is_ok(), "should handle empty changes gracefully");
+    }
+
+    #[tokio::test]
+    async fn test_generate_adr_special_chars() {
+        let client = DummyLlmClient;
+        let context = "Use $P@TH and special chars: `!@#$%^&*()_+-=[]{}|;':\"/<>?";
+        let result = generate_adr(&client, context).await;
+        assert!(result.is_ok(), "should handle special characters");
+        let response = result.unwrap();
+        // DummyLlmClient returns JSON with "summary" containing the context
+        assert!(response.contains("special"), "response should relate to context");
+        assert!(response.contains("$P@TH") || response.contains("analyse"),
+            "response should reference context; got: {response}");
+    }
+
+    #[tokio::test]
+    async fn test_generate_adr_long_context() {
+        let client = DummyLlmClient;
+        let long_context = "Decision: ".to_string() + &"A".repeat(5000);
+        let result = generate_adr(&client, &long_context).await;
+        assert!(result.is_ok(), "should handle long context");
+    }
+
+    #[tokio::test]
+    async fn test_update_docs_long_document() {
+        let client = DummyLlmClient;
+        let long_doc = "Doc: ".to_string() + &"B".repeat(3000);
+        let result = update_docs(&client, &long_doc, "Minor update").await;
+        assert!(result.is_ok(), "should handle long document");
+    }
+}

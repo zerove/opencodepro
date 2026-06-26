@@ -3,9 +3,68 @@ use petgraph::graph::{DiGraph, NodeIndex};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 
-pub type NodeOutput = Value;
+/// Strongly-typed wrapper around `serde_json::Value` for SOP node outputs.
+/// Provides type safety and prevents accidental mixing with raw JSON values.
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct NodeOutput(pub Value);
+
+impl NodeOutput {
+    pub fn into_inner(self) -> Value {
+        self.0
+    }
+}
+
+impl Default for NodeOutput {
+    fn default() -> Self {
+        NodeOutput(Value::Null)
+    }
+}
+
+impl From<Value> for NodeOutput {
+    fn from(v: Value) -> Self {
+        NodeOutput(v)
+    }
+}
+
+impl std::ops::Deref for NodeOutput {
+    type Target = Value;
+    fn deref(&self) -> &Value {
+        &self.0
+    }
+}
+
+impl std::ops::DerefMut for NodeOutput {
+    fn deref_mut(&mut self) -> &mut Value {
+        &mut self.0
+    }
+}
+
+impl std::fmt::Display for NodeOutput {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl PartialEq<Value> for NodeOutput {
+    fn eq(&self, other: &Value) -> bool {
+        &self.0 == other
+    }
+}
+
+impl PartialEq<NodeOutput> for Value {
+    fn eq(&self, other: &NodeOutput) -> bool {
+        self == &other.0
+    }
+}
+
+impl PartialEq for NodeOutput {
+    fn eq(&self, other: &Self) -> bool {
+        self.0 == other.0
+    }
+}
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub enum ExecutionEvent {
@@ -16,9 +75,78 @@ pub enum ExecutionEvent {
 }
 
 // ---------------------------------------------------------------------------
-// Cross-graph dependency types
-
+// Project Roadmap types
 // ---------------------------------------------------------------------------
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub enum MilestoneStatus {
+    Pending,
+    InProgress,
+    Completed,
+    Blocked,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct GoalRef {
+    pub goal_id: String,
+    pub description: String,
+    pub status: MilestoneStatus,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct Phase {
+    pub id: String,
+    pub name: String,
+    pub goals: Vec<GoalRef>,
+    pub depends_on: Vec<String>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct Milestone {
+    pub id: String,
+    pub name: String,
+    pub phases: Vec<Phase>,
+    pub status: MilestoneStatus,
+}
+
+impl Milestone {
+    pub fn calculate_progress(&self) -> f64 {
+        let total_goals: usize = self.phases.iter().map(|p| p.goals.len()).sum();
+        if total_goals == 0 {
+            return 0.0;
+        }
+        let completed_goals: usize = self.phases.iter()
+            .flat_map(|p| &p.goals)
+            .filter(|g| g.status == MilestoneStatus::Completed)
+            .count();
+        completed_goals as f64 / total_goals as f64
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct Roadmap {
+    pub milestones: Vec<Milestone>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct Project {
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    pub roadmap: Roadmap,
+}
+
+impl Project {
+    pub fn new(id: String, name: String, description: String) -> Self {
+        Self {
+            id,
+            name,
+            description,
+            roadmap: Roadmap { milestones: Vec::new() },
+        }
+    }
+}
+
 
 /// A data mapping from a source graph node output to a target graph parameter.
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -171,33 +299,49 @@ impl ExecutionContext {
         }
     }
 
+    /// Creates an ExecutionContext with a pre-allocated results HashMap.
+    /// Use when the approximate number of node outputs is known.
+    pub fn with_capacity(n: usize) -> Self {
+        Self {
+            results: Arc::new(RwLock::new(HashMap::with_capacity(n))),
+        }
+    }
+
     pub fn set_result(&self, node_name: String, output: NodeOutput) {
-        let mut results = self
-            .results
-            .write()
-            .expect("ExecutionContext RwLock poisoned");
-        results.insert(node_name, output);
+        match self.results.write() {
+            Ok(mut results) => {
+                results.insert(node_name, output);
+            }
+            Err(e) => {
+                tracing::warn!(error = %e, "ExecutionContext RwLock poisoned in set_result");
+            }
+        }
     }
 
     pub fn get_result(&self, node_name: &str) -> Option<NodeOutput> {
-        let results = self
-            .results
-            .read()
-            .expect("ExecutionContext RwLock poisoned");
-        results.get(node_name).cloned()
+        match self.results.read() {
+            Ok(results) => results.get(node_name).cloned(),
+            Err(e) => {
+                tracing::warn!(error = %e, "ExecutionContext RwLock poisoned in get_result");
+                None
+            }
+        }
     }
 
     pub fn interpolate(&self, template: &str) -> String {
-        let results = self
-            .results
-            .read()
-            .expect("ExecutionContext RwLock poisoned");
+        let results = match self.results.read() {
+            Ok(r) => r,
+            Err(e) => {
+                tracing::warn!(error = %e, "ExecutionContext RwLock poisoned in interpolate");
+                return template.to_string();
+            }
+        };
         let mut output = template.to_string();
-        for (name, value) in results.iter() {
+        for (name, node_output) in results.iter() {
             let placeholder = format!("{{{{{}.output}}}}", name);
-            let val_str = match value {
+            let val_str = match &node_output.0 {
                 Value::String(s) => s.clone(),
-                _ => value.to_string(),
+                _ => node_output.0.to_string(),
             };
             output = output.replace(&placeholder, &val_str);
         }
@@ -228,7 +372,7 @@ impl SOPNode for WasmSOPNode {
             .executor
             .execute(&self.tool_id, args, self.fuel_limit)
             .await?;
-        Ok(Value::String(String::from_utf8_lossy(&result).to_string()))
+        Ok(NodeOutput(Value::String(String::from_utf8_lossy(&result).to_string())))
     }
     fn name(&self) -> &str {
         &self.name
@@ -423,6 +567,29 @@ impl SOPGraph {
 
 // ── Configuration ────────────────────────────────────────────────────
 
+/// Per-agent model override.
+///
+/// Any field set here takes precedence over the base `LlmConfig`.
+/// Missing fields fall back to the base config values.
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
+pub struct AgentLlmOverride {
+    pub model: String,
+    #[serde(default)]
+    pub endpoint: Option<String>,
+    #[serde(default)]
+    pub api_key: Option<String>,
+}
+
+impl Default for AgentLlmOverride {
+    fn default() -> Self {
+        Self {
+            model: "gpt-4o".into(),
+            endpoint: None,
+            api_key: None,
+        }
+    }
+}
+
 /// Deserializable TOML configuration for all Sisyphus components.
 ///
 /// Use `Config::from_file(path)` or `Config::default()` and override
@@ -432,6 +599,9 @@ pub struct LlmConfig {
     pub api_key: String,
     pub endpoint: String,
     pub model: String,
+    /// Per-agent model overrides. Key = agent_id (e.g. "metis", "librarian").
+    #[serde(default)]
+    pub agents: std::collections::HashMap<String, AgentLlmOverride>,
 }
 
 fn default_llm_config() -> LlmConfig {
@@ -439,6 +609,7 @@ fn default_llm_config() -> LlmConfig {
         api_key: "".into(),
         endpoint: "http://localhost:8000/v1/chat/completions".into(),
         model: "gpt-4o".into(),
+        agents: std::collections::HashMap::new(),
     }
 }
 
@@ -478,6 +649,10 @@ pub struct Config {
     /// Optional MCP tool servers (stdio or HTTP).
     #[serde(default)]
     pub mcp: McpConfig,
+
+    /// Bearer token for gRPC bridge authentication. Empty = no auth.
+    #[serde(default)]
+    pub auth_token: String,
 }
 
 impl Config {
@@ -541,6 +716,9 @@ impl Config {
         }
         if let Some(v) = env_string("SISYPHUS_SANDBOX_WASM_TOOLS_DIR") {
             self.sandbox.wasm_tools_dir = v;
+        }
+        if let Some(v) = env_string("SISYPHUS_AUTH_TOKEN") {
+            self.auth_token = v;
         }
     }
 }
@@ -648,6 +826,135 @@ pub struct McpConfig {
     #[serde(default)]
     pub http_servers: std::collections::HashMap<String, String>,
 }
+
+// ---------------------------------------------------------------------------
+// Gap-closing shared types (used across multiple crates)
+// ---------------------------------------------------------------------------
+
+/// Feedback from a user or another agent regarding a specific output.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Feedback {
+    pub agent_id: String,
+    pub original_request: String,
+    pub original_output: String,
+    pub corrected_output: String,
+    pub timestamp: i64,
+    pub tags: Vec<String>,
+}
+
+/// Descriptor for a runtime-loadable WASM plugin tool.
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
+pub struct PluginDescriptor {
+    pub name: String,
+    pub version: String,
+    pub wasm_path: PathBuf,
+    pub tool_id: String,
+    pub fuel_limit: u64,
+    /// SHA-256 hash of the .wasm binary, used for cache invalidation.
+    #[serde(default)]
+    pub checksum: Option<String>,
+}
+
+/// A single vector embedding record for cross-session similarity search.
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
+pub struct VectorRecord {
+    pub key: String,
+    pub embedding: Vec<f32>,
+    pub metadata: serde_json::Value,
+    pub timestamp: u64,
+}
+
+/// Structured message for inter-agent communication.
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
+pub struct AgentMessage {
+    pub from: String,
+    pub to: String,
+    /// Message kind: "request" / "response" / "publish" / "subscribe"
+    pub kind: String,
+    pub payload: serde_json::Value,
+    /// Correlation ID for pairing request/response pairs.
+    pub correlation_id: String,
+}
+
+/// Strategy for selecting which LLM model to route a request to.
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize, PartialEq)]
+pub enum ModelRouteStrategy {
+    /// Pick the cheapest model that meets the complexity threshold.
+    CostOptimized,
+    /// Always use the most capable model.
+    PerformanceOptimized,
+    /// Try models in order; fall back to the next on failure.
+    FallbackChain,
+}
+
+/// State of a circuit breaker protecting a resource.
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize, PartialEq)]
+pub enum CircuitState {
+    Closed,
+    Open,
+    HalfOpen,
+}
+
+/// A single benchmark measurement.
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
+pub struct BenchmarkRun {
+    pub name: String,
+    pub timestamp: u64,
+    pub duration_secs: f64,
+    pub success: bool,
+    pub metrics: serde_json::Value,
+}
+
+/// Configuration for platform-specific behaviour.
+#[derive(Clone, Debug, Default, serde::Deserialize, serde::Serialize)]
+pub struct PlatformConfig {
+    /// Whether the current OS is Windows (inferred at runtime or overridden).
+    pub is_windows: bool,
+    /// Path-style separator (inherited from std::path::MAIN_SEPARATOR).
+    pub path_sep: String,
+    /// SHELL environment variable value (e.g. "/bin/bash", "powershell.exe").
+    pub shell: String,
+}
+
+/// Topological evolution operation on a SOP graph.
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize, PartialEq)]
+pub enum EvolutionOp {
+    /// Increase fuel limit for a named node.
+    AdjustFuel { node_name: String, delta: i64 },
+    /// Wrap a node with a retry decorator.
+    AddRetry { node_name: String, max_retries: u32 },
+    /// Insert a new node between two existing nodes.
+    InsertNode {
+        after_node: String,
+        new_name: String,
+        tool_id: String,
+    },
+    /// Remove a node and re-wire edges around it.
+    RemoveNode { node_name: String },
+    /// Reorder two adjacent nodes.
+    SwapNodes { node_a: String, node_b: String },
+}
+
+/// Configuration for formal verification runners (kani, loom, proptest).
+#[derive(Clone, Debug, Default, serde::Deserialize, serde::Serialize)]
+pub struct FormalVerificationConfig {
+    pub enable_kani: bool,
+    pub enable_loom: bool,
+    pub enable_proptest: bool,
+    pub max_proptest_cases: u32,
+}
+
+/// A single data point for meta-learning (strategy → outcome).
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
+pub struct MetaLearningSample {
+    pub context: serde_json::Value,
+    pub strategy: String,
+    pub success: bool,
+    pub duration_secs: f64,
+    pub timestamp: u64,
+}
+
+// ---------------------------------------------------------------------------
 
 #[cfg(test)]
 mod tests {
@@ -794,8 +1101,9 @@ mod tests {
     fn test_set_get_result() {
         let ctx = ExecutionContext::new();
         let val = json!({"status": "ok"});
-        ctx.set_result("node1".to_string(), val.clone());
-        assert_eq!(ctx.get_result("node1"), Some(val));
+        ctx.set_result("node1".to_string(), NodeOutput(val.clone()));
+        let result = ctx.get_result("node1");
+        assert_eq!(result, Some(NodeOutput(val)));
     }
 
     #[test]
@@ -807,8 +1115,8 @@ mod tests {
     #[test]
     fn test_interpolate() {
         let ctx = ExecutionContext::new();
-        ctx.set_result("node1".to_string(), json!("hello"));
-        ctx.set_result("node2".to_string(), json!(123));
+        ctx.set_result("node1".to_string(), NodeOutput(json!("hello")));
+        ctx.set_result("node2".to_string(), NodeOutput(json!(123)));
 
         let template = "Greeting: {{node1.output}}, ID: {{node2.output}}";
         let result = ctx.interpolate(template);
@@ -880,9 +1188,9 @@ mod tests {
             value in arb_json_value(),
         ) {
             let ctx = ExecutionContext::new();
-            ctx.set_result(key.clone(), value.clone());
+            ctx.set_result(key.clone(), NodeOutput(value.clone()));
             let retrieved = ctx.get_result(&key);
-            prop_assert_eq!(retrieved, Some(value));
+            prop_assert_eq!(retrieved, Some(NodeOutput(value)));
         }
 
         #[test]
@@ -894,7 +1202,7 @@ mod tests {
         ) {
             let ctx = ExecutionContext::new();
             let value = Value::String(value_str.clone());
-            ctx.set_result(key.clone(), value);
+            ctx.set_result(key.clone(), NodeOutput(value));
 
             let template = [prefix.as_str(), "{{", key.as_str(), ".output}}", suffix.as_str()].concat();
             let result = ctx.interpolate(&template);

@@ -421,6 +421,115 @@ mod tests {
         assert_eq!(text, "a\nb");
     }
 
+    #[test]
+    fn test_html_to_text_nested_tags() {
+        let html = "<div><p>hello <b>world</b></p></div>";
+        assert_eq!(html_to_text(html), "hello world");
+    }
+
+    #[test]
+    fn test_html_to_text_extra_whitespace_collapsed() {
+        let html = "<p>  spaces   everywhere  </p>";
+        assert_eq!(html_to_text(html), "spaces everywhere");
+    }
+
+    #[test]
+    fn test_html_to_text_mixed_block_inline() {
+        let html = "<h1>Title</h1><p>Para <a>link</a></p>";
+        let text = html_to_text(html);
+        assert_eq!(text, "Title\nPara link");
+    }
+
+    #[test]
+    fn test_html_to_text_self_closing_tags() {
+        let html = "<hr/><p>after</p>";
+        assert_eq!(html_to_text(html), "after");
+    }
+
+    #[test]
+    fn test_html_to_text_newlines_in_html() {
+        let html = "<p>line1\nline2</p>";
+        assert_eq!(html_to_text(html), "line1line2");
+    }
+
+    #[test]
+    fn test_html_to_text_paragraphs_with_text() {
+        let html = "<p>first</p>\n<p>second</p>\n<p>third</p>";
+        assert_eq!(html_to_text(html), "first\nsecond\nthird");
+    }
+
+    // ── extract_host (pure) ──────────────────────────────
+
+    #[test]
+    fn test_extract_host_https() {
+        assert_eq!(extract_host("https://example.com/path").unwrap(), "example.com");
+    }
+
+    #[test]
+    fn test_extract_host_with_port() {
+        assert_eq!(extract_host("https://example.com:8080/path").unwrap(), "example.com");
+    }
+
+    #[test]
+    fn test_extract_host_http() {
+        assert_eq!(extract_host("http://sub.example.org/page").unwrap(), "sub.example.org");
+    }
+
+    #[test]
+    fn test_extract_host_no_path() {
+        assert_eq!(extract_host("https://example.com").unwrap(), "example.com");
+    }
+
+    #[test]
+    fn test_extract_host_invalid_scheme() {
+        let result = extract_host("ftp://example.com");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_extract_host_empty_string() {
+        let result = extract_host("");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_extract_host_empty_host() {
+        let result = extract_host("https:///path");
+        assert!(result.is_err());
+    }
+
+    // ── extract_port (pure) ──────────────────────────────
+
+    #[test]
+    fn test_extract_port_default_https() {
+        assert_eq!(extract_port("https://example.com"), 443);
+    }
+
+    #[test]
+    fn test_extract_port_default_http() {
+        assert_eq!(extract_port("http://example.com"), 80);
+    }
+
+    #[test]
+    fn test_extract_port_custom() {
+        assert_eq!(extract_port("https://example.com:3000"), 3000);
+    }
+
+    #[test]
+    fn test_extract_port_custom_http() {
+        assert_eq!(extract_port("http://example.com:8080"), 8080);
+    }
+
+    #[test]
+    fn test_extract_port_with_path() {
+        assert_eq!(extract_port("https://example.com:9090/api/v1"), 9090);
+    }
+
+    #[test]
+    fn test_extract_port_missing_scheme_defaults_http() {
+        assert_eq!(extract_port("example.com"), 80);
+    }
+
     // ── websearch + webfetch (network, ignored by default) ─
 
     #[tokio::test]
@@ -432,7 +541,6 @@ mod tests {
                 assert!(results.len() <= 3, "at most num_results items");
             }
             Err(e) => {
-                // Network may be filtered/proxied — skip without panicking
                 eprintln!("websearch skipped (network unavailable): {e}");
             }
         }
@@ -447,7 +555,6 @@ mod tests {
                 assert_eq!(result.content_type, "text/html");
             }
             Err(e) => {
-                // Network may be filtered — skip without panicking
                 eprintln!("webfetch skipped (network unavailable): {e}");
             }
         }

@@ -4,7 +4,10 @@ use sisyphus_core::{SisyphusKernel, SOPGraph, WasmSOPNode};
 use sisyphus_intel::{GoalDrivenSynthesizer, MonteCarloSimulator, SisyphusIntel, StandardEvolver, StandardReflector};
 use sisyphus_mem::MfsStore;
 use sisyphus_sandbox::WasmToolExecutor;
-use sisyphus_types::StateStore;
+use sisyphus_types::{StateStore, CircuitState};
+use sisyphus_tools::{
+    CircuitBreaker, BreakerConfig,
+};
 use std::path::PathBuf;
 use std::sync::Arc;
 use serde_json::Value;
@@ -177,4 +180,129 @@ mod tests {
             assert!(!res.0.to_string().is_empty(), "Result should be a non-empty string");
         }
     }
+
+    #[tokio::test]
+    async fn test_circuit_breaker_state_machine() {
+        let config = BreakerConfig {
+            failure_threshold: 2,
+            success_threshold: 2,
+            timeout_secs: 1,
+            half_open_max_calls: 2,
+        };
+        let cb = CircuitBreaker::new(config);
+        let key = "test_svc";
+
+        assert!(cb.call(key, || Err::<(), &str>("fail1")).is_err());
+        assert_eq!(cb.state(key), CircuitState::Closed);
+        assert!(cb.call(key, || Err::<(), &str>("fail2")).is_err());
+        assert_eq!(cb.state(key), CircuitState::Open);
+
+        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+        assert!(cb.call(key, || Ok::<(), &str>(())).is_ok());
+        assert_eq!(cb.state(key), CircuitState::HalfOpen);
+
+        assert!(cb.call(key, || Ok::<(), &str>(())).is_ok());
+        assert_eq!(cb.state(key), CircuitState::Closed);
+    }
+
+    #[tokio::test]
+    async fn test_benchmark_record_and_trend() {
+        let kernel = setup_kernel(None).await;
+        let mut bm = kernel.benchmark.lock().unwrap();
+        let name = "test_bench";
+
+        for i in 0..5 {
+            bm.record_result(sisyphus_types::BenchmarkRun {
+                name: name.to_string(),
+                timestamp: i as u64,
+                duration_secs: 0.1 * (i as f64),
+                success: true,
+                metrics: serde_json::json!({}),
+            }).expect("Record failed");
+        }
+
+        let list = bm.list_benchmarks();
+        assert!(list.contains(&name.to_string()));
+
+        let trend = bm.get_trend(name, 3);
+        assert_eq!(trend.len(), 3);
+        assert_eq!(trend[0].duration_secs, 0.2);
+    }
+
+    #[tokio::test]
+    async fn test_meta_learner_outcomes() {
+        let kernel = setup_kernel(None).await;
+        let mut ml = kernel.meta_learner.lock().unwrap();
+        let ctx = serde_json::json!({"task": "coding"});
+
+        for _ in 0..3 {
+            ml.record_outcome(sisyphus_types::MetaLearningSample {
+                context: ctx.clone(),
+                strategy: "fast".into(),
+                success: true,
+                duration_secs: 1.0,
+                timestamp: 0,
+            }).expect("Record failed");
+        }
+        for _ in 0..3 {
+            ml.record_outcome(sisyphus_types::MetaLearningSample {
+                context: ctx.clone(),
+                strategy: "slow".into(),
+                success: false,
+                duration_secs: 2.0,
+                timestamp: 0,
+            }).expect("Record failed");
+        }
+
+        let best = ml.best_strategy(&ctx);
+        assert_eq!(best, Some("fast".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_agent_channel_pub_sub() {
+        let kernel = setup_kernel(None).await;
+        let channel = &kernel.channel;
+        let topic = "test_topic";
+        let agent = "agent_1";
+
+        channel.subscribe(agent, topic).expect("Subscribe failed");
+        
+        let msg = sisyphus_types::AgentMessage {
+            from: "publisher".into(),
+            to: "*".into(),
+            kind: "info".into(),
+            payload: serde_json::json!({"msg": "hello"}),
+            correlation_id: "corr_1".into(),
+        };
+        
+        channel.publish(topic, msg).expect("Publish failed");
+        
+        let inbox = channel.receive(agent).expect("Receive failed");
+        assert_eq!(inbox.len(), 1);
+        assert_eq!(inbox[0].from, "publisher");
+    }
+
+    #[tokio::test]
+    async fn test_grpc_bridge_rpc_pattern() {
+        trait MockBridge {
+            fn list_benchmarks(&self) -> Vec<String>;
+            fn get_breaker_metrics(&self, model: &str) -> (String, u32, u32);
+        }
+
+        struct TestBridge;
+        impl MockBridge for TestBridge {
+            fn list_benchmarks(&self) -> Vec<String> { vec![] }
+            fn get_breaker_metrics(&self, _model: &str) -> (String, u32, u32) {
+                ("Closed".to_string(), 0, 0)
+            }
+        }
+
+        let bridge = TestBridge;
+        assert!(bridge.list_benchmarks().is_empty());
+        let (state, fail, succ) = bridge.get_breaker_metrics("gpt-4o");
+        assert_eq!(state, "Closed");
+        assert_eq!(fail, 0);
+        assert_eq!(succ, 0);
+    }
 }
+

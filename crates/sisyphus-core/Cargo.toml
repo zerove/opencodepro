@@ -17,6 +17,8 @@ sisyphus-sandbox = { path = "../sisyphus-sandbox" }
 sisyphus-types = { path = "../sisyphus-types" }
 sisyphus-mem = { path = "../sisyphus-mem" }
 sisyphus-intel = { path = "../sisyphus-intel" }
+sisyphus-tools = { path = "../sisyphus-tools" }
+sisyphus-roadmap = { path = "../sisyphus-roadmap" }
 thiserror = "1.0"
 
 [dev-dependencies]

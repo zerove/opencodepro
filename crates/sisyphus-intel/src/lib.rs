@@ -9,6 +9,14 @@ use sisyphus_types::{CompositeGraph, ExecutionContext, SOPGraph, SOPGraphConfig}
 use std::sync::Arc;
 use std::time::Instant;
 
+pub mod topological_evolver;
+pub mod llm_synthesizer;
+pub mod formal_verification;
+
+pub use topological_evolver::TopologicalSOPEvolver;
+pub use llm_synthesizer::{LlmDrivenSynthesizer, GoalDecomposer, LlmGoalDecomposer, FallbackGoalDecomposer};
+pub use formal_verification::{VerificationRunner, VerificationReport};
+
 // ---------------------------------------------------------------------------
 // Flow Synthesis
 // ---------------------------------------------------------------------------
@@ -29,7 +37,7 @@ pub trait FlowSynthesizer: Send + Sync {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-enum ActionType {
+pub enum ActionType {
     Fetch,
     Process,
     Sink,
@@ -49,7 +57,7 @@ enum ActionType {
 /// Multiple actions are chained as a linear pipeline in detection order.
 /// When "parallel" appears in the goal, the first two actions fan out
 /// and converge into a single merge node.
-fn classify_goal(goal: &str) -> Vec<ActionType> {
+pub(crate) fn classify_goal(goal: &str) -> Vec<ActionType> {
     let goal_lower = goal.to_lowercase();
     let mut actions = Vec::new();
 

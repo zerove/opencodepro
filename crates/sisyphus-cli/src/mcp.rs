@@ -1,8 +1,11 @@
 use anyhow::{Context, Result};
 use std::io::Write;
 use std::path::Path;
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 use tokio::io::{AsyncBufReadExt, BufReader};
+
+/// Global LLM client used by MCP tool handlers.
+static LLM_CLIENT: OnceLock<Arc<dyn sisyphus_tools::metis::LlmClient>> = OnceLock::new();
 
 // ── Tool Registry ─────────────────────────────────────────────
 
@@ -167,7 +170,9 @@ fn tool_registry() -> &'static [ToolDef] {
 
 /// Start an MCP stdio server that exposes Sisyphus agent tools.
 /// Runs until stdin closes.
-pub async fn run_serve() -> Result<()> {
+pub async fn run_serve(client: Arc<dyn sisyphus_tools::metis::LlmClient>) -> Result<()> {
+    LLM_CLIENT.set(client).map_err(|_| anyhow::anyhow!("LLM client already initialized"))?;
+
     let stdin = tokio::io::stdin();
     let reader = BufReader::new(stdin);
     let mut lines = reader.lines();
@@ -308,14 +313,14 @@ async fn handle_tools_call(req: sisyphus_tools::JsonRpcRequest) -> sisyphus_tool
     let args = params.arguments.unwrap_or(serde_json::Value::Object(Default::default()));
 
     let result = match params.name.as_str() {
-        "metis_analyse" => execute_metis_analyse(args),
-        "momus_review_plan" => execute_momus_review_plan(args),
+        "metis_analyse" => execute_metis_analyse(args).await,
+        "momus_review_plan" => execute_momus_review_plan(args).await,
         "momus_review_code" => execute_momus_review_code(args).await,
-        "momus_review_architecture" => execute_momus_review_arch(args),
+        "momus_review_architecture" => execute_momus_review_arch(args).await,
         "librarian_research" => execute_librarian_research(args).await,
         "librarian_fetch_docs" => execute_librarian_fetch_docs(args).await,
         "librarian_find_examples" => execute_librarian_find_examples(args).await,
-        "librarian_synthesise" => execute_librarian_synthesise(args),
+        "librarian_synthesise" => execute_librarian_synthesise(args).await,
         _ => {
             return jsonrpc_error(
                 req.id,
@@ -378,30 +383,37 @@ fn output_json<T: serde::Serialize>(value: T) -> Result<String, String> {
     serde_json::to_string_pretty(&value).map_err(|e| format!("Serialization error: {e}"))
 }
 
-fn execute_metis_analyse(args: serde_json::Value) -> Result<String, String> {
+async fn execute_metis_analyse(args: serde_json::Value) -> Result<String, String> {
+    let client = LLM_CLIENT.get().ok_or("LLM client not initialized")?.clone();
     let request = get_str(&args, "request")?;
-    let analysis = sisyphus_tools::analyse(request);
+    let analysis = sisyphus_tools::metis::analyse(request, &*client)
+        .await
+        .map_err(|e| format!("Analysis error: {e}"))?;
     output_json(&analysis)
 }
 
-fn execute_momus_review_plan(args: serde_json::Value) -> Result<String, String> {
+async fn execute_momus_review_plan(args: serde_json::Value) -> Result<String, String> {
+    let client = LLM_CLIENT.get().ok_or("LLM client not initialized")?;
     let plan_text = get_str(&args, "plan_text")?;
     let plan_name = get_str(&args, "plan_name")?;
-    let review = sisyphus_tools::review_plan(plan_text, plan_name);
+    let review = sisyphus_tools::review_plan(&**client, plan_text, plan_name).await;
     output_json(&review)
 }
 
 async fn execute_momus_review_code(args: serde_json::Value) -> Result<String, String> {
+    let client = LLM_CLIENT.get().ok_or("LLM client not initialized")?;
     let path = get_str(&args, "path")?;
     let content = get_str(&args, "content")?;
-    let review = sisyphus_tools::review_code(Path::new(path), content)
+    let review = sisyphus_tools::review_code(&**client, Path::new(path), content)
+        .await
         .map_err(|e| format!("Code review error: {e}"))?;
     output_json(&review)
 }
 
-fn execute_momus_review_arch(args: serde_json::Value) -> Result<String, String> {
+async fn execute_momus_review_arch(args: serde_json::Value) -> Result<String, String> {
+    let client = LLM_CLIENT.get().ok_or("LLM client not initialized")?;
     let arch_text = get_str(&args, "arch_text")?;
-    let review = sisyphus_tools::review_architecture(arch_text);
+    let review = sisyphus_tools::review_architecture(&**client, arch_text).await;
     output_json(&review)
 }
 
@@ -440,14 +452,14 @@ async fn execute_librarian_find_examples(args: serde_json::Value) -> Result<Stri
     output_json(&examples)
 }
 
-fn execute_librarian_synthesise(args: serde_json::Value) -> Result<String, String> {
+async fn execute_librarian_synthesise(args: serde_json::Value) -> Result<String, String> {
+    let client = LLM_CLIENT.get().ok_or("LLM client not initialized")?;
     let findings_json = get_str(&args, "findings_json")?;
-    let max_points = get_usize(&args, "max_points", 5).clamp(1, 20);
 
     let findings: Vec<sisyphus_tools::ResearchFinding> =
         serde_json::from_str(findings_json).map_err(|e| format!("Invalid findings JSON: {e}"))?;
 
-    let synthesis = sisyphus_tools::synthesise(&findings, max_points);
+    let synthesis = sisyphus_tools::synthesise(&findings, &**client).await?;
     output_text(synthesis)
 }
 

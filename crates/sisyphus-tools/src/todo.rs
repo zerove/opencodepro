@@ -310,4 +310,55 @@ mod tests {
         assert!(matches!("high".parse::<TodoPriority>().unwrap(), TodoPriority::High));
         assert!("urgent".parse::<TodoPriority>().is_err());
     }
+
+    #[test]
+    fn test_todo_update_priority() {
+        let (_d, path) = fresh_db();
+        let item = todo_add(&path, "task", TodoPriority::Low).unwrap();
+        let updated = todo_update(&path, &item.id, None, None, Some(TodoPriority::High)).unwrap();
+        assert_eq!(updated.priority.to_string(), "high");
+    }
+
+    #[test]
+    fn test_todo_list_multiple_items() {
+        let (_d, path) = fresh_db();
+        let _a = todo_add(&path, "first", TodoPriority::Low).unwrap();
+        let _b = todo_add(&path, "second", TodoPriority::Medium).unwrap();
+        let _c = todo_add(&path, "third", TodoPriority::High).unwrap();
+        let items = todo_list(&path, None).unwrap();
+        assert_eq!(items.len(), 3);
+        // Verify all IDs are unique
+        let mut ids: Vec<_> = items.iter().map(|i| i.id.as_str()).collect();
+        ids.sort();
+        ids.dedup();
+        assert_eq!(ids.len(), 3);
+    }
+
+    #[test]
+    fn test_todo_serde_roundtrip() {
+        let item = TodoItem {
+            id: "test-1".into(),
+            content: "payload".into(),
+            status: TodoStatus::InProgress,
+            priority: TodoPriority::Medium,
+            created_at: "2026-01-01T00:00:00.000Z".into(),
+            updated_at: "2026-06-01T00:00:00.000Z".into(),
+        };
+        let json = serde_json::to_string(&item).unwrap();
+        let back: TodoItem = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.id, "test-1");
+        assert_eq!(back.content, "payload");
+        assert!(matches!(back.status, TodoStatus::InProgress));
+    }
+
+    #[test]
+    fn test_now_iso_format() {
+        let ts = now_iso();
+        // ISO 8601 basic check: YYYY-MM-DDTHH:MM:SS.sssZ
+        assert!(ts.len() >= 24, "timestamp too short: {ts}");
+        assert!(ts.ends_with('Z'), "should end with Z: {ts}");
+        assert_eq!(&ts[4..5], "-", "expected dash at pos 4: {ts}");
+        assert_eq!(&ts[7..8], "-", "expected dash at pos 7: {ts}");
+        assert_eq!(&ts[10..11], "T", "expected T at pos 10: {ts}");
+    }
 }

@@ -1,7 +1,8 @@
 use anyhow::{Context, Result};
 use serde::Deserialize;
 use std::path::PathBuf;
-use std::time::Duration;
+use std::pin::pin;
+use tokio::select;
 
 #[derive(Deserialize)]
 struct TaskDef {
@@ -46,41 +47,58 @@ pub async fn run_tasks(file: PathBuf, max_concurrent: usize) -> Result<()> {
     let orchestrator = sisyphus_tools::WorkOrchestrator::new(max_concurrent);
     let (mut rx, handle) = orchestrator.run_all_with_events(units).await;
 
-    // Display progress in real-time
-    let mut completed = 0usize;
-    let total = handle
-        .await
-        .context("task execution failed")?;
-
-    // Collect events until done
     use sisyphus_tools::DelegateEvent;
+    let mut completed = 0usize;
+    let total;
+    let mut handle = pin!(handle);
+
+    // Drain events concurrently with handle to prevent channel deadlock
     loop {
-        match rx.try_recv() {
-            Ok(DelegateEvent::Started { id, name }) => {
-                println!("[{id}] {name} ... running");
+        select! {
+            result = &mut handle => {
+                total = result.context("task execution failed")?.len();
+                break;
             }
-            Ok(DelegateEvent::Completed(report)) => {
-                completed += 1;
-                let status = if report.status == sisyphus_tools::WorkStatus::Completed {
-                    format!("OK ({}ms)", report.duration_ms)
-                } else {
-                    format!("FAIL ({})", report.error.as_deref().unwrap_or("unknown"))
-                };
-                println!("[{}] {} ... {}", report.id, report.name, status);
-            }
-            Ok(DelegateEvent::Progress { id, message }) => {
-                println!("[{id}] {message}");
-            }
-            Err(_) => {
-                if completed == total.len() {
-                    break;
+            event = rx.recv() => {
+                match event {
+                    Some(DelegateEvent::Started { id, name }) => {
+                        println!("[{id}] {name} ... running");
+                    }
+                    Some(DelegateEvent::Completed(report)) => {
+                        completed += 1;
+                        let status = if report.status == sisyphus_tools::WorkStatus::Completed {
+                            format!("OK ({}ms)", report.duration_ms)
+                        } else {
+                            format!("FAIL ({})", report.error.as_deref().unwrap_or("unknown"))
+                        };
+                        println!("[{}] {} ... {}", report.id, report.name, status);
+                    }
+                    Some(DelegateEvent::Progress { id, message }) => {
+                        println!("[{id}] {message}");
+                    }
+                    None => {
+                        total = completed;
+                        break;
+                    }
                 }
-                tokio::time::sleep(Duration::from_millis(50)).await;
             }
         }
     }
 
-    println!("\nDone: {}/{} tasks completed", completed, total.len());
+    // Drain any remaining events (channel may have closed before select! picked them)
+    while let Ok(event) = rx.try_recv() {
+        if let DelegateEvent::Completed(report) = event {
+            completed += 1;
+            let status = if report.status == sisyphus_tools::WorkStatus::Completed {
+                format!("OK ({}ms)", report.duration_ms)
+            } else {
+                format!("FAIL ({})", report.error.as_deref().unwrap_or("unknown"))
+            };
+            println!("[{}] {} ... {}", report.id, report.name, status);
+        }
+    }
+
+    println!("\nDone: {}/{} tasks completed", completed, total);
     Ok(())
 }
 

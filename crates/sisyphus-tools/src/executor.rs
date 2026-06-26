@@ -513,7 +513,7 @@ mod tests {
         let ex = BuiltinToolExecutor {
             registry: crate::hook::HookRegistry::new(),
             llm_client: Arc::new(MockLlmClient),
-            feedback_store: Arc::new(crate::feedback::FeedbackStore::default()),
+            feedback_store: Arc::new(crate::feedback::FeedbackStore::default_dir()),
         };
         let result = ex.execute("no_such_tool", vec![], 0).await;
         assert!(result.is_err());
@@ -525,7 +525,7 @@ mod tests {
         let ex = BuiltinToolExecutor {
             registry: crate::hook::HookRegistry::new(),
             llm_client: Arc::new(MockLlmClient),
-            feedback_store: Arc::new(crate::feedback::FeedbackStore::default()),
+            feedback_store: Arc::new(crate::feedback::FeedbackStore::default_dir()),
         };
         let dir = tempfile::TempDir::new().unwrap();
         let path = dir.path().join("test.txt");
@@ -546,7 +546,7 @@ mod tests {
         let ex = BuiltinToolExecutor {
             registry: crate::hook::HookRegistry::new(),
             llm_client: Arc::new(MockLlmClient),
-            feedback_store: Arc::new(crate::feedback::FeedbackStore::default()),
+            feedback_store: Arc::new(crate::feedback::FeedbackStore::default_dir()),
         };
         let args = mkargs(json!({"command": "echo hello", "timeout_ms": 5000}));
         let result = assert_ok(ex.execute("bash_exec", args, 0).await);
@@ -559,7 +559,7 @@ mod tests {
         let ex = BuiltinToolExecutor {
             registry: crate::hook::HookRegistry::new(),
             llm_client: Arc::new(MockLlmClient),
-            feedback_store: Arc::new(crate::feedback::FeedbackStore::default()),
+            feedback_store: Arc::new(crate::feedback::FeedbackStore::default_dir()),
         };
         let args = mkargs(json!({"query": "test", "num": 1}));
         // Web search may fail in offline environments — that's acceptable
@@ -576,7 +576,7 @@ mod tests {
         let ex = BuiltinToolExecutor {
             registry: crate::hook::HookRegistry::new(),
             llm_client: Arc::new(MockLlmClient),
-            feedback_store: Arc::new(crate::feedback::FeedbackStore::default()),
+            feedback_store: Arc::new(crate::feedback::FeedbackStore::default_dir()),
         };
         let dir = tempfile::TempDir::new().unwrap();
         let path = dir.path().join("edit.txt");
@@ -601,7 +601,7 @@ mod tests {
         let ex = BuiltinToolExecutor {
             registry: crate::hook::HookRegistry::new(),
             llm_client: Arc::new(MockLlmClient),
-            feedback_store: Arc::new(crate::feedback::FeedbackStore::default()),
+            feedback_store: Arc::new(crate::feedback::FeedbackStore::default_dir()),
         };
         let dir = tempfile::TempDir::new().unwrap();
         let path = dir.path().join("edit_all.txt");
@@ -623,7 +623,7 @@ mod tests {
         let ex = BuiltinToolExecutor {
             registry: crate::hook::HookRegistry::new(),
             llm_client: Arc::new(MockLlmClient),
-            feedback_store: Arc::new(crate::feedback::FeedbackStore::default()),
+            feedback_store: Arc::new(crate::feedback::FeedbackStore::default_dir()),
         };
         let dir = tempfile::TempDir::new().unwrap();
         std::fs::write(dir.path().join("a.rs"), "").unwrap();
@@ -644,7 +644,7 @@ mod tests {
         let ex = BuiltinToolExecutor {
             registry: crate::hook::HookRegistry::new(),
             llm_client: Arc::new(MockLlmClient),
-            feedback_store: Arc::new(crate::feedback::FeedbackStore::default()),
+            feedback_store: Arc::new(crate::feedback::FeedbackStore::default_dir()),
         };
         let args = mkargs(json!({"command": "exit 42", "timeout_ms": 5000}));
         let result = ex.execute("bash_exec", args, 0).await;
@@ -658,7 +658,7 @@ mod tests {
         let ex = BuiltinToolExecutor {
             registry: crate::hook::HookRegistry::new(),
             llm_client: Arc::new(MockLlmClient),
-            feedback_store: Arc::new(crate::feedback::FeedbackStore::default()),
+            feedback_store: Arc::new(crate::feedback::FeedbackStore::default_dir()),
         };
         let result = ex.execute("file_read", b"not json".to_vec(), 0).await;
         assert!(result.is_err());
@@ -670,7 +670,7 @@ mod tests {
         let ex = BuiltinToolExecutor {
             registry: crate::hook::HookRegistry::new(),
             llm_client: Arc::new(MockLlmClient),
-            feedback_store: Arc::new(crate::feedback::FeedbackStore::default()),
+            feedback_store: Arc::new(crate::feedback::FeedbackStore::default_dir()),
         };
         let args = mkargs(json!({}));
         let result = ex.execute("file_read", args, 0).await;
@@ -685,7 +685,7 @@ mod tests {
         let ex = BuiltinToolExecutor {
             registry: crate::hook::HookRegistry::new(),
             llm_client: Arc::new(MockLlmClient),
-            feedback_store: Arc::new(crate::feedback::FeedbackStore::default()),
+            feedback_store: Arc::new(crate::feedback::FeedbackStore::default_dir()),
         };
         let result = ex.execute("librarian/nonexistent", vec![], 0).await;
         assert!(result.is_err());
@@ -700,11 +700,11 @@ mod tests {
         let ex = BuiltinToolExecutor {
             registry: crate::hook::HookRegistry::new(),
             llm_client: Arc::new(MockLlmClient),
-            feedback_store: Arc::new(crate::feedback::FeedbackStore::default()),
+            feedback_store: Arc::new(crate::feedback::FeedbackStore::default_dir()),
         };
         let args = mkargs(json!({"request": "Refactor the login module to use OAuth2"}));
         let result = assert_ok(ex.execute("metis/analyse", args, 0).await);
-        assert!(result["summary"].as_str().unwrap_or("").len() > 0);
+        assert!(!result["summary"].as_str().unwrap_or("").is_empty());
         assert!(result["ambiguities"].is_array());
         assert!(result["implicit_requirements"].is_array());
     }
@@ -714,12 +714,12 @@ mod tests {
         let ex = BuiltinToolExecutor {
             registry: crate::hook::HookRegistry::new(),
             llm_client: Arc::new(MockLlmClient),
-            feedback_store: Arc::new(crate::feedback::FeedbackStore::default()),
+            feedback_store: Arc::new(crate::feedback::FeedbackStore::default_dir()),
         };
         let plan_text = "- Step 1: Write failing test\n- Step 2: Implement minimum code\n- Step 3: Refactor";
         let args = mkargs(json!({"plan_text": plan_text, "plan_name": "TDD workflow"}));
         let result = assert_ok(ex.execute("momus/review_plan", args, 0).await);
-        assert!(result["summary"].as_str().unwrap_or("").len() > 0);
+        assert!(!result["summary"].as_str().unwrap_or("").is_empty());
         assert!(result["comments"].is_array());
     }
 
@@ -728,7 +728,7 @@ mod tests {
         let ex = BuiltinToolExecutor {
             registry: crate::hook::HookRegistry::new(),
             llm_client: Arc::new(MockLlmClient),
-            feedback_store: Arc::new(crate::feedback::FeedbackStore::default()),
+            feedback_store: Arc::new(crate::feedback::FeedbackStore::default_dir()),
         };
         let code = "fn add(a: i32, b: i32) -> i32 { a + b }";
         let args = mkargs(json!({"path": "/fake/lib.rs", "content": code}));
@@ -741,12 +741,12 @@ mod tests {
         let ex = BuiltinToolExecutor {
             registry: crate::hook::HookRegistry::new(),
             llm_client: Arc::new(MockLlmClient),
-            feedback_store: Arc::new(crate::feedback::FeedbackStore::default()),
+            feedback_store: Arc::new(crate::feedback::FeedbackStore::default_dir()),
         };
         let arch = "The system uses a microservices architecture with message queues.";
         let args = mkargs(json!({"arch_text": arch}));
         let result = assert_ok(ex.execute("momus/review_arch", args, 0).await);
-        assert!(result["summary"].as_str().unwrap_or("").len() > 0);
+        assert!(!result["summary"].as_str().unwrap_or("").is_empty());
     }
 
     #[tokio::test]
@@ -754,7 +754,7 @@ mod tests {
         let ex = BuiltinToolExecutor {
             registry: crate::hook::HookRegistry::new(),
             llm_client: Arc::new(MockLlmClient),
-            feedback_store: Arc::new(crate::feedback::FeedbackStore::default()),
+            feedback_store: Arc::new(crate::feedback::FeedbackStore::default_dir()),
         };
         let findings = json!([
             {"claim": "Rust is memory-safe", "source_url": "https://example.com/rust", "source_title": "Rust docs", "relevance": 0.9, "retrieved_at": "2025-01-01"},
@@ -762,7 +762,7 @@ mod tests {
         ]);
         let args = mkargs(json!({"findings": findings, "max_points": 5}));
         let result = assert_ok(ex.execute("librarian/synthesise", args, 0).await);
-        assert!(result["synthesis"].as_str().unwrap_or("").len() > 0);
+        assert!(!result["synthesis"].as_str().unwrap_or("").is_empty());
     }
 
     #[tokio::test]
@@ -770,14 +770,14 @@ mod tests {
         let ex = BuiltinToolExecutor {
             registry: crate::hook::HookRegistry::new(),
             llm_client: Arc::new(MockLlmClient),
-            feedback_store: Arc::new(crate::feedback::FeedbackStore::default()),
+            feedback_store: Arc::new(crate::feedback::FeedbackStore::default_dir()),
         };
         let args = mkargs(json!({"query": "Rust async/await", "scope": "web", "num": 1}));
         // May fail in offline env — acceptable
         let result = ex.execute("librarian/research", args, 0).await;
         if let Ok(bytes) = result {
             let v: Value = serde_json::from_slice(&bytes).unwrap();
-            assert!(v["query"].as_str().unwrap_or("").len() > 0);
+            assert!(!v["query"].as_str().unwrap_or("").is_empty());
         }
     }
 
@@ -786,7 +786,7 @@ mod tests {
         let ex = BuiltinToolExecutor {
             registry: crate::hook::HookRegistry::new(),
             llm_client: Arc::new(MockLlmClient),
-            feedback_store: Arc::new(crate::feedback::FeedbackStore::default()),
+            feedback_store: Arc::new(crate::feedback::FeedbackStore::default_dir()),
         };
         let files = json!([
             {"path": "/fake/main.rs", "content": "fn main() { println!(\"hello\"); }"},
@@ -802,7 +802,7 @@ mod tests {
         let ex = BuiltinToolExecutor {
             registry: crate::hook::HookRegistry::new(),
             llm_client: Arc::new(MockLlmClient),
-            feedback_store: Arc::new(crate::feedback::FeedbackStore::default()),
+            feedback_store: Arc::new(crate::feedback::FeedbackStore::default_dir()),
         };
         let result = ex.execute("metis/analyse", mkargs(json!({})), 0).await;
         assert!(result.is_err());

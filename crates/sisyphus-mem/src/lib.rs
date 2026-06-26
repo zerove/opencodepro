@@ -1,24 +1,47 @@
 use anyhow::{Context, Result};
 use async_trait::async_trait;
-use dashmap::DashMap;
+use lru::LruCache;
 use sisyphus_metrics::record_mem_operation;
 use sqlx::{SqlitePool, sqlite::SqlitePoolOptions};
-use std::sync::Arc;
-use std::time::Instant;
+use std::num::NonZeroUsize;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
+use tokio::sync::{mpsc, oneshot};
+
+pub mod vector_memory;
+pub mod user_preferences;
+
+pub use vector_memory::{VectorMemoryStore, ScoredVector, UserMemoryStore};
+pub use user_preferences::UserPreferenceStore;
+
+/// Operations that can be buffered for L2 persistence.
+#[derive(Debug)]
+pub enum WriteOp {
+    Set { key: String, value: serde_json::Value },
+    Delete { key: String },
+    Flush(oneshot::Sender<Result<()>>),
+    Clear,
+}
 
 pub struct Snapshot {
     data: std::collections::HashMap<String, serde_json::Value>,
 }
 
 pub struct MfsStore {
-    l1: Arc<DashMap<String, serde_json::Value>>,
+    l1: Arc<Mutex<LruCache<String, serde_json::Value>>>,
     l2: SqlitePool,
+    write_tx: mpsc::UnboundedSender<WriteOp>,
 }
 
 impl MfsStore {
-    /// Creates a new MfsStore.
+    /// Creates a new MfsStore with a default L1 capacity of 10_000.
     /// `db_url` should be a sqlite connection string (e.g., "sqlite:state.db").
     pub async fn new(db_url: &str) -> Result<Self> {
+        Self::with_capacity(db_url, NonZeroUsize::new(10_000).unwrap()).await
+    }
+
+    /// Creates a new MfsStore with a specific L1 capacity.
+    pub async fn with_capacity(db_url: &str, capacity: NonZeroUsize) -> Result<Self> {
         let pool = SqlitePoolOptions::new()
             .max_connections(5)
             .connect(db_url)
@@ -32,6 +55,9 @@ impl MfsStore {
         sqlx::query("PRAGMA synchronous=NORMAL;")
             .execute(&pool)
             .await?;
+        sqlx::query("PRAGMA mmap_size=268435456;")
+            .execute(&pool)
+            .await?;
 
         // Initialize state table
         sqlx::query(
@@ -43,10 +69,107 @@ impl MfsStore {
         .execute(&pool)
         .await?;
 
+        // Setup async write buffer
+        let (tx, rx) = mpsc::unbounded_channel::<WriteOp>();
+        let pool_clone = pool.clone();
+        
+        tokio::spawn(async move {
+            Self::flush_worker(pool_clone, rx).await;
+        });
+
         Ok(Self {
-            l1: Arc::new(DashMap::new()),
+            l1: Arc::new(Mutex::new(LruCache::new(capacity))),
             l2: pool,
+            write_tx: tx,
         })
+    }
+
+    async fn flush_worker(pool: SqlitePool, mut rx: mpsc::UnboundedReceiver<WriteOp>) {
+        let mut interval = tokio::time::interval(Duration::from_millis(100));
+        let mut buffer = Vec::new();
+
+        loop {
+            tokio::select! {
+                Some(op) = rx.recv() => {
+                    match op {
+                        WriteOp::Set { key, value } => {
+                            buffer.push(WriteOp::Set { key, value });
+                            if buffer.len() >= 100
+                                && let Err(e) = Self::flush_batch(&pool, &mut buffer).await {
+                                    tracing::error!(error = %e, "L2 batch flush failed");
+                                }
+                        }
+                        WriteOp::Delete { key } => {
+                            buffer.push(WriteOp::Delete { key });
+                            if buffer.len() >= 100
+                                && let Err(e) = Self::flush_batch(&pool, &mut buffer).await {
+                                    tracing::error!(error = %e, "L2 batch flush failed");
+                                }
+                        }
+                        WriteOp::Flush(tx) => {
+                            let res = Self::flush_batch(&pool, &mut buffer).await;
+                            let _ = tx.send(res);
+                        }
+                        WriteOp::Clear => {
+                            // Flush current buffer first
+                            if let Err(e) = Self::flush_batch(&pool, &mut buffer).await {
+                                tracing::error!(error = %e, "L2 final flush before clear failed");
+                            }
+                            // Now clear L2
+                            if let Err(e) = sqlx::query("DELETE FROM state").execute(&pool).await {
+                                tracing::error!(error = %e, "L2 clear failed");
+                            }
+                        }
+                    }
+                }
+                _ = interval.tick() => {
+                    if !buffer.is_empty()
+                        && let Err(e) = Self::flush_batch(&pool, &mut buffer).await {
+                            tracing::error!(error = %e, "L2 periodic flush failed");
+                        }
+                }
+            }
+        }
+    }
+
+    async fn flush_batch(pool: &SqlitePool, buffer: &mut Vec<WriteOp>) -> Result<()> {
+        let mut tx = pool.begin().await.context("Failed to begin transaction")?;
+        
+            for op in buffer.drain(..) {
+                match op {
+                    WriteOp::Set { key, value } => {
+                        let value_str = serde_json::to_string(&value)?;
+                        sqlx::query(
+                            "INSERT INTO state (key, value) VALUES (?, ?) 
+                             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                        )
+                        .bind(key)
+                        .bind(&value_str)
+                        .execute(&mut *tx)
+                        .await?;
+                    }
+                    WriteOp::Delete { key } => {
+                        sqlx::query("DELETE FROM state WHERE key = ?")
+                            .bind(key)
+                            .execute(&mut *tx)
+                            .await?;
+                    }
+                    WriteOp::Flush(_) | WriteOp::Clear => {
+                        unreachable!("Flush and Clear ops should not be in the write buffer");
+                    }
+                }
+            }
+        
+        tx.commit().await.context("Failed to commit batch transaction")?;
+        Ok(())
+    }
+
+    /// Forces all buffered writes to be persisted to L2.
+    pub async fn flush(&self) -> Result<()> {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        self.write_tx.send(WriteOp::Flush(tx))
+            .map_err(|e| anyhow::anyhow!("Failed to send flush signal: {e}"))?;
+        rx.await.context("Flush worker dropped oneshot receiver")?
     }
 
     /// Captures a point-in-time snapshot of the current state.
@@ -55,10 +178,12 @@ impl MfsStore {
         let _enter = span.enter();
 
         let start = Instant::now();
+        let cache = self.l1.lock().map_err(|e| anyhow::anyhow!("MFS L1 lock poisoned: {e}"))?;
         let mut data = std::collections::HashMap::new();
-        for entry in self.l1.iter() {
-            data.insert(entry.key().clone(), entry.value().clone());
+        for (key, value) in cache.iter() {
+            data.insert(key.clone(), value.clone());
         }
+        drop(cache);
         let duration = start.elapsed();
         tracing::info!(
             keys = data.len(),
@@ -75,20 +200,29 @@ impl MfsStore {
 
         let start = Instant::now();
         // 1. Clear L1
-        self.l1.clear();
+        self.l1.lock().map_err(|e| anyhow::anyhow!("MFS L1 lock poisoned: {e}"))?.clear();
 
-        // 2. Clear L2
-        sqlx::query("DELETE FROM state").execute(&self.l2).await?;
+        // 2. Clear L2 via buffer to maintain order
+        self.write_tx.send(WriteOp::Clear).map_err(|e| anyhow::anyhow!("Failed to send clear signal: {e}"))?;
+        self.flush().await?;
 
         // 3. Restore from snapshot
-        for (key, value) in snapshot.data {
+        let keys_values: Vec<(String, serde_json::Value)> = snapshot.data.iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
+        for (key, value) in &keys_values {
             let value_str = serde_json::to_string(&value)?;
             sqlx::query("INSERT INTO state (key, value) VALUES (?, ?)")
-                .bind(&key)
+                .bind(key)
                 .bind(&value_str)
                 .execute(&self.l2)
                 .await?;
-            self.l1.insert(key, value);
+        }
+        {
+            let mut cache = self.l1.lock().unwrap();
+            for (key, value) in keys_values {
+                cache.put(key, value);
+            }
         }
 
         let duration = start.elapsed();
@@ -103,12 +237,33 @@ impl MfsStore {
             .fetch_all(&self.l2)
             .await?;
 
+        let mut cache = self.l1.lock().map_err(|e| anyhow::anyhow!("MFS L1 lock poisoned: {e}"))?;
         for (key, value) in rows {
             if let Ok(json_val) = serde_json::from_str::<serde_json::Value>(&value) {
-                self.l1.insert(key, json_val);
+                cache.put(key, json_val);
             }
         }
         Ok(())
+    }
+
+    /// Returns the current L1 capacity.
+    pub fn capacity(&self) -> usize {
+        self.l1.lock().unwrap_or_else(|e| e.into_inner()).cap().get()
+    }
+
+    /// Returns the current L1 size.
+    pub fn len(&self) -> usize {
+        self.l1.lock().unwrap_or_else(|e| e.into_inner()).len()
+    }
+
+    /// Returns `true` if L1 is empty.
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    /// Returns a clone of the underlying SQLite pool.
+    pub fn pool(&self) -> SqlitePool {
+        self.l2.clone()
     }
 }
 
@@ -120,16 +275,19 @@ impl sisyphus_types::StateStore for MfsStore {
 
         let start = Instant::now();
         // 1. Try L1
-        if let Some(val) = self.l1.get(key) {
-            let duration = start.elapsed();
-            tracing::debug!(
-                layer = "L1",
-                hit = true,
-                duration_ms = duration.as_millis(),
-                "Cache hit"
-            );
-            record_mem_operation("get", "L1", true, duration.as_secs_f64());
-            return Ok(Some(val.clone()));
+        {
+            let mut cache = self.l1.lock().map_err(|e| e.to_string())?;
+            if let Some(val) = cache.get(key) {
+                let duration = start.elapsed();
+                tracing::debug!(
+                    layer = "L1",
+                    hit = true,
+                    duration_ms = duration.as_millis(),
+                    "Cache hit"
+                );
+                record_mem_operation("get", "L1", true, duration.as_secs_f64());
+                return Ok(Some(val.clone()));
+            }
         }
 
         // 2. Try L2
@@ -145,7 +303,10 @@ impl sisyphus_types::StateStore for MfsStore {
             let json_val: serde_json::Value =
                 serde_json::from_str(&value_str).map_err(|e| e.to_string())?;
             // Update L1
-            self.l1.insert(key.to_string(), json_val.clone());
+            {
+                let mut cache = self.l1.lock().map_err(|e| e.to_string())?;
+                cache.put(key.to_string(), json_val.clone());
+            }
             let duration = l2_start.elapsed();
             tracing::debug!(
                 layer = "L2",
@@ -173,32 +334,21 @@ impl sisyphus_types::StateStore for MfsStore {
         let _enter = span.enter();
 
         let start = Instant::now();
-        let value_str = serde_json::to_string(&value).map_err(|e| e.to_string())?;
 
-        // Write-Through: Update L2 first to ensure persistence
-        let l2_start = Instant::now();
-        sqlx::query(
-            "INSERT INTO state (key, value) VALUES (?, ?) 
-             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-        )
-        .bind(key)
-        .bind(&value_str)
-        .execute(&self.l2)
-        .await
-        .map_err(|e| e.to_string())?;
+        // Update L1 (immediate)
+        {
+            let mut cache = self.l1.lock().map_err(|e| e.to_string())?;
+            cache.put(key.to_string(), value.clone());
+        }
 
-        let l2_duration = l2_start.elapsed();
-        tracing::debug!(
-            layer = "L2",
-            duration_ms = l2_duration.as_millis(),
-            "Write to L2 completed"
-        );
-
-        // Update L1
-        self.l1.insert(key.to_string(), value);
+        // Queue for L2 persistence (async)
+        self.write_tx.send(WriteOp::Set {
+            key: key.to_string(),
+            value,
+        }).map_err(|e| e.to_string())?;
 
         let duration = start.elapsed();
-        tracing::debug!(duration_ms = duration.as_millis(), "Set completed");
+        tracing::debug!(duration_ms = duration.as_millis(), "Set queued completed");
         record_mem_operation("set", "L1", true, duration.as_secs_f64());
 
         Ok(())
@@ -330,5 +480,35 @@ mod tests {
                 .unwrap();
             assert_eq!(val, json!(i));
         }
+    }
+
+    #[tokio::test]
+    async fn test_lru_eviction() {
+        use std::num::NonZeroUsize;
+        let db_path = ":memory:".to_string();
+        let store = MfsStore::with_capacity(&format!("sqlite:{}", db_path), NonZeroUsize::new(3).unwrap())
+            .await
+            .unwrap();
+
+        // Insert 4 items with capacity 3 - L1 must stay bounded at 3
+        store.set_state_json("a", json!(1)).await.unwrap();
+        store.set_state_json("b", json!(2)).await.unwrap();
+        store.set_state_json("c", json!(3)).await.unwrap();
+        assert_eq!(store.len(), 3, "L1 cache should hold 3 items");
+
+        store.set_state_json("d", json!(4)).await.unwrap();
+        assert_eq!(store.len(), 3, "L1 cache must not exceed capacity after eviction");
+
+        // Force flush to ensure evicted items are persisted to L2
+        store.flush().await.unwrap();
+
+        // All data still accessible via L2 fallback (write-through persistence)
+        assert_eq!(store.get_state_json("a").await.unwrap(), Some(json!(1)), "L2 fallback should serve evicted keys");
+        assert_eq!(store.get_state_json("b").await.unwrap(), Some(json!(2)), "");
+        assert_eq!(store.get_state_json("c").await.unwrap(), Some(json!(3)), "");
+        assert_eq!(store.get_state_json("d").await.unwrap(), Some(json!(4)), "");
+
+        // After fetching from L2, L1 is re-populated; make sure it stays bounded
+        assert_eq!(store.len(), 3, "L1 cache should still be bounded after L2 fallback reads");
     }
 }

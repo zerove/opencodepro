@@ -315,4 +315,116 @@ mod tests {
         assert!(plan.steps[0].dependencies.is_empty());
         assert_eq!(plan.steps[1].dependencies, vec!["step_1"]);
     }
+
+    #[test]
+    fn test_plan_save_creates_parent_dir() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let nested = dir.path().join("sub").join("nested").join("plan.json");
+        let plan = sample_plan();
+        plan_save(&plan, &nested).unwrap();
+        assert!(nested.exists(), "plan_save should create parent directories");
+    }
+
+    #[test]
+    fn test_plan_load_nonexistent() {
+        let result = plan_load(Path::new("/tmp/__sisyphus_nonexistent_plan__.json"));
+        assert!(result.is_err(), "loading non-existent plan should fail");
+    }
+
+    #[test]
+    fn test_plan_load_malformed_json() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("bad.json");
+        fs::write(&path, "{this is not json}").unwrap();
+        let result = plan_load(&path);
+        assert!(result.is_err(), "malformed JSON should fail to load");
+    }
+
+    #[test]
+    fn test_plan_from_requirements_mixed_prefixes() {
+        let reqs = "- First\n* Second\n- Third\n";
+        let plan = plan_from_requirements("Mixed", reqs);
+        assert_eq!(plan.steps.len(), 3);
+    }
+
+    #[test]
+    fn test_plan_from_requirements_empty_string() {
+        let plan = plan_from_requirements("Empty", "");
+        assert_eq!(plan.steps.len(), 0);
+    }
+
+    #[test]
+    fn test_plan_from_requirements_whitespace_only() {
+        let plan = plan_from_requirements("WS", "   \n  \n  ");
+        assert_eq!(plan.steps.len(), 0);
+    }
+
+    #[test]
+    fn test_plan_review_empty_description() {
+        let mut plan = sample_plan();
+        plan.description = "".to_string();
+        let comments = plan_review(&plan);
+        assert!(comments.iter().any(|c| c.contains("description is empty")));
+    }
+
+    #[test]
+    fn test_plan_review_step_empty_description() {
+        let steps = vec![
+            PlanStep {
+                id: "step_1".to_string(),
+                description: "".to_string(),
+                status: PlanStatus::Draft,
+                dependencies: vec![],
+                estimated_effort: None,
+            },
+        ];
+        let plan = plan_create("Bad Step", "Test", steps);
+        let comments = plan_review(&plan);
+        assert!(comments.iter().any(|c| c.contains("empty description")));
+    }
+
+    #[test]
+    fn test_plan_approve_already_approved() {
+        let mut plan = sample_plan();
+        plan_approve(&mut plan);
+        plan_approve(&mut plan);
+        assert_eq!(plan.status, PlanStatus::Approved);
+    }
+
+    #[test]
+    fn test_plan_save_and_load_roundtrip_all_fields() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("full.json");
+
+        let steps = vec![
+            PlanStep {
+                id: "s1".to_string(),
+                description: "Design".to_string(),
+                status: PlanStatus::Draft,
+                dependencies: vec![],
+                estimated_effort: Some("3d".to_string()),
+            },
+            PlanStep {
+                id: "s2".to_string(),
+                description: "Implement".to_string(),
+                status: PlanStatus::Draft,
+                dependencies: vec!["s1".to_string()],
+                estimated_effort: None,
+            },
+        ];
+        let plan = plan_create("Roundtrip", "Full field test", steps);
+        plan_save(&plan, &path).unwrap();
+
+        let loaded = plan_load(&path).unwrap();
+        assert_eq!(loaded.id, plan.id);
+        assert_eq!(loaded.name, plan.name);
+        assert_eq!(loaded.description, plan.description);
+        assert_eq!(loaded.status, plan.status);
+        assert_eq!(loaded.steps.len(), plan.steps.len());
+        assert_eq!(loaded.steps[0].id, plan.steps[0].id);
+        assert_eq!(loaded.steps[0].estimated_effort, plan.steps[0].estimated_effort);
+        assert_eq!(loaded.steps[1].dependencies, plan.steps[1].dependencies);
+        assert_eq!(loaded.created_at, plan.created_at);
+        assert_eq!(loaded.updated_at, plan.updated_at);
+    }
 }

@@ -1160,3 +1160,309 @@ fn render_status(app: &App) -> Line<'static> {
         Span::styled(help, Style::default().fg(Color::DarkGray)),
     ])
 }
+
+// ── Tests ─────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── LogEntry ──────────────────────────────────────────
+
+    #[test]
+    fn test_log_entry_entry_text() {
+        let info = LogEntry::Info("hello".into());
+        let success = LogEntry::Success("done".into());
+        let warn = LogEntry::Warn("caution".into());
+        let error = LogEntry::Error("boom".into());
+        assert_eq!(info.entry_text(), "hello");
+        assert_eq!(success.entry_text(), "done");
+        assert_eq!(warn.entry_text(), "caution");
+        assert_eq!(error.entry_text(), "boom");
+    }
+
+    // ── Panel ─────────────────────────────────────────────
+
+    #[test]
+    fn test_panel_all_returns_five() {
+        assert_eq!(Panel::all().len(), 5);
+    }
+
+    #[test]
+    fn test_panel_names() {
+        assert_eq!(Panel::Shell.name(), "Shell");
+        assert_eq!(Panel::Todos.name(), "Todos");
+        assert_eq!(Panel::Sessions.name(), "Sessions");
+        assert_eq!(Panel::Lsp.name(), "LSP");
+        assert_eq!(Panel::Sop.name(), "SOP");
+    }
+
+    #[test]
+    fn test_panel_all_unique() {
+        let all = Panel::all();
+        let mut dedup = all.to_vec();
+        dedup.dedup();
+        assert_eq!(all.len(), dedup.len());
+    }
+
+    // ── Mode ──────────────────────────────────────────────
+
+    #[test]
+    fn test_mode_equality() {
+        assert_eq!(Mode::Input, Mode::Input);
+        assert_eq!(Mode::Scroll, Mode::Scroll);
+        assert_eq!(Mode::Select, Mode::Select);
+        assert_ne!(Mode::Input, Mode::Scroll);
+    }
+
+    // ── App::new ──────────────────────────────────────────
+
+    #[test]
+    fn test_app_new_initial_state() {
+        let app = App::new(PathBuf::from("/tmp/test"), "localhost:50051".into());
+        assert_eq!(app.active_panel, Panel::Shell);
+        assert_eq!(app.mode, Mode::Input);
+        assert!(app.input.is_empty());
+        assert_eq!(app.log.len(), 1); // welcome message
+        assert_eq!(app.scroll, 0);
+        assert!(app.history.is_empty());
+        assert!(app.history_idx.is_none());
+        assert!(!app.exit_requested);
+        assert!(app.todo_items.is_empty());
+        assert_eq!(app.todo_sel, 0);
+        assert!(app.todo_dirty);
+        assert!(app.sessions.is_empty());
+        assert_eq!(app.session_sel, 0);
+        assert!(app.session_dirty);
+        assert!(app.session_detail.is_none());
+        assert!(app.lsp_input.is_empty());
+        assert_eq!(app.lsp_language, "rust");
+        assert_eq!(app.lsp_server, "rust-analyzer");
+        assert!(app.lsp_diagnostics.is_empty());
+        assert_eq!(app.lsp_status, "idle");
+        assert_eq!(app.sop_status, "disconnected");
+        assert!(app.sop_result.is_none());
+    }
+
+    #[test]
+    fn test_app_new_data_dir() {
+        let app = App::new(PathBuf::from("/my/data"), "127.0.0.1:9999".into());
+        assert_eq!(app.data_dir, PathBuf::from("/my/data"));
+        assert_eq!(app.bridge_address, "127.0.0.1:9999");
+    }
+
+    // ── App::add_log ──────────────────────────────────────
+
+    #[test]
+    fn test_add_log_appends_and_adjusts_scroll() {
+        let mut app = App::new(PathBuf::from("/tmp"), "addr".into());
+        let initial_scroll = app.scroll;
+
+        app.add_log(LogEntry::Info("test".into()));
+        assert_eq!(app.log.len(), 2); // welcome + new
+        assert_eq!(app.scroll, initial_scroll + 1);
+
+        app.add_log(LogEntry::Success("done".into()));
+        assert_eq!(app.log.len(), 3);
+        assert_eq!(app.scroll, 2);
+        assert_eq!(app.log[2].entry_text(), "done");
+    }
+
+    // ── render_status ─────────────────────────────────────
+
+    #[test]
+    fn test_render_status_shows_panel_mode_and_help() {
+        let mut app = App::new(PathBuf::from("/tmp"), "addr".into());
+        app.active_panel = Panel::Shell;
+        app.mode = Mode::Input;
+        let line = render_status(&app);
+        let rendered = line.to_string();
+        assert!(rendered.contains("Shell/INPUT"));
+        assert!(rendered.contains("Enter:"));
+
+        app.mode = Mode::Scroll;
+        let line = render_status(&app);
+        let rendered = line.to_string();
+        assert!(rendered.contains("Shell/SCROLL"));
+        assert!(rendered.contains("Tab/Esc"));
+    }
+
+    #[test]
+    fn test_render_status_todos_panel() {
+        let mut app = App::new(PathBuf::from("/tmp"), "addr".into());
+        app.active_panel = Panel::Todos;
+        let line = render_status(&app);
+        let rendered = line.to_string();
+        assert!(rendered.contains("Todos/SELECT"));
+        assert!(rendered.contains("toggle"));
+    }
+
+    #[test]
+    fn test_render_status_sessions_panel() {
+        let mut app = App::new(PathBuf::from("/tmp"), "addr".into());
+        app.active_panel = Panel::Sessions;
+        let line = render_status(&app);
+        let rendered = line.to_string();
+        assert!(rendered.contains("Sessions/SELECT"));
+        assert!(rendered.contains("refresh"));
+    }
+
+    #[test]
+    fn test_render_status_lsp_panel() {
+        let mut app = App::new(PathBuf::from("/tmp"), "addr".into());
+        app.active_panel = Panel::Lsp;
+        app.mode = Mode::Input;
+        let line = render_status(&app);
+        let rendered = line.to_string();
+        assert!(rendered.contains("LSP/INPUT"));
+        assert!(rendered.contains("Enter: submit"));
+
+        app.mode = Mode::Select;
+        let line = render_status(&app);
+        let rendered = line.to_string();
+        assert!(rendered.contains("LSP/SELECT"));
+        assert!(rendered.contains("f: path"));
+    }
+
+    #[test]
+    fn test_render_status_sop_panel() {
+        let mut app = App::new(PathBuf::from("/tmp"), "addr".into());
+        app.active_panel = Panel::Sop;
+        let line = render_status(&app);
+        let rendered = line.to_string();
+        assert!(rendered.contains("SOP/SELECT"));
+        assert!(rendered.contains("execute"));
+    }
+
+    // ── App todos with tempfile ──────────────────────────
+
+    #[test]
+    fn test_refresh_todos_empty() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut app = App::new(dir.path().to_path_buf(), "addr".into());
+        // todo_dirty starts as true, so refresh reads the file
+        assert!(app.todo_dirty);
+        app.refresh_todos();
+        assert!(app.todo_items.is_empty());
+        assert!(!app.todo_dirty);
+    }
+
+    #[test]
+    fn test_refresh_todos_with_data() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = dir.path().join("todos.json");
+        // Seed a todo via the public API
+        sisyphus_tools::todo_add(&db, "write tests", sisyphus_tools::TodoPriority::High).unwrap();
+
+        let mut app = App::new(dir.path().to_path_buf(), "addr".into());
+        app.todo_dirty = true;
+        app.refresh_todos();
+        assert_eq!(app.todo_items.len(), 1);
+        assert_eq!(app.todo_items[0].content, "write tests");
+        assert_eq!(app.todo_sel, 0);
+    }
+
+    #[test]
+    fn test_toggle_todo_status_cycles() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = dir.path().join("todos.json");
+        let _item = sisyphus_tools::todo_add(&db, "cycle test", sisyphus_tools::TodoPriority::Medium).unwrap();
+
+        let mut app = App::new(dir.path().to_path_buf(), "addr".into());
+        app.todo_dirty = true;
+        app.refresh_todos();
+        assert_eq!(app.todo_items.len(), 1);
+        assert!(matches!(app.todo_items[0].status, sisyphus_tools::TodoStatus::Pending));
+
+        // Pending → InProgress
+        app.toggle_todo_status();
+        app.refresh_todos();
+        assert!(matches!(app.todo_items[0].status, sisyphus_tools::TodoStatus::InProgress));
+
+        // InProgress → Completed
+        app.toggle_todo_status();
+        app.refresh_todos();
+        assert!(matches!(app.todo_items[0].status, sisyphus_tools::TodoStatus::Completed));
+
+        // Completed → Pending
+        app.toggle_todo_status();
+        app.refresh_todos();
+        assert!(matches!(app.todo_items[0].status, sisyphus_tools::TodoStatus::Pending));
+    }
+
+    #[test]
+    fn test_delete_todo_removes_item() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = dir.path().join("todos.json");
+        let _item = sisyphus_tools::todo_add(&db, "delete me", sisyphus_tools::TodoPriority::Low).unwrap();
+
+        let mut app = App::new(dir.path().to_path_buf(), "addr".into());
+        app.todo_dirty = true;
+        app.refresh_todos();
+        assert_eq!(app.todo_items.len(), 1);
+
+        // Select and delete
+        app.delete_todo();
+        app.todo_dirty = true;
+        app.refresh_todos();
+        assert!(app.todo_items.is_empty());
+    }
+
+    #[test]
+    fn test_toggle_todo_empty_no_panic() {
+        let mut app = App::new(PathBuf::from("/tmp/nonexistent"), "addr".into());
+        app.toggle_todo_status(); // should not panic when empty
+        app.delete_todo(); // should not panic when empty
+    }
+
+    // ── App sessions with tempfile ───────────────────────
+
+    #[test]
+    fn test_refresh_sessions_empty() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut app = App::new(dir.path().to_path_buf(), "addr".into());
+        assert!(app.session_dirty);
+        app.refresh_sessions();
+        assert!(app.sessions.is_empty());
+        assert!(!app.session_dirty);
+    }
+
+    #[test]
+    fn test_refresh_sessions_with_data() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = dir.path().join("sessions.json");
+        let _session = sisyphus_tools::session_create(&db, "test-session").unwrap();
+
+        let mut app = App::new(dir.path().to_path_buf(), "addr".into());
+        app.session_dirty = true;
+        app.refresh_sessions();
+        assert_eq!(app.sessions.len(), 1);
+        assert_eq!(app.sessions[0].name, "test-session");
+    }
+
+    #[test]
+    fn test_select_session_loads_detail() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = dir.path().join("sessions.json");
+        let session = sisyphus_tools::session_create(&db, "detail-test").unwrap();
+
+        let mut app = App::new(dir.path().to_path_buf(), "addr".into());
+        app.session_dirty = true;
+        app.refresh_sessions();
+        assert_eq!(app.sessions.len(), 1);
+        assert!(app.session_detail.is_none());
+
+        app.select_session();
+        assert!(app.session_detail.is_some());
+        let detail = app.session_detail.unwrap();
+        assert_eq!(detail.name, "detail-test");
+        assert_eq!(detail.id, session.id);
+    }
+
+    #[test]
+    fn test_select_session_empty_noop() {
+        let mut app = App::new(PathBuf::from("/tmp/nonexistent"), "addr".into());
+        app.select_session(); // should not panic when empty
+        assert!(app.session_detail.is_none());
+    }
+}

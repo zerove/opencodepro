@@ -769,8 +769,8 @@ fn foo() {}
 // FIXME: broken
 fn bar() {}
 ";
-        std::fs::write(&path, &content).unwrap();
-        let review = review_code(&DUMMY, &path, &content).await.unwrap();
+        std::fs::write(&path, content).unwrap();
+        let review = review_code(&DUMMY, &path, content).await.unwrap();
         let markers = review.comments.iter().filter(|c| c.message.contains("marker"));
         assert_eq!(markers.count(), 2);
     }
@@ -785,8 +785,8 @@ pub fn add(a: i32, b: i32) -> i32 {
     a + b
 }
 ";
-        std::fs::write(&path, &content).unwrap();
-        let review = review_code(&DUMMY, &path, &content).await.unwrap();
+        std::fs::write(&path, content).unwrap();
+        let review = review_code(&DUMMY, &path, content).await.unwrap();
         // Documented public fn, no issues
         assert!(review.passed);
     }
@@ -796,8 +796,8 @@ pub fn add(a: i32, b: i32) -> i32 {
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("undoc.rs");
         let content = "pub fn undoc() -> i32 { 42 }\n";
-        std::fs::write(&path, &content).unwrap();
-        let review = review_code(&DUMMY, &path, &content).await.unwrap();
+        std::fs::write(&path, content).unwrap();
+        let review = review_code(&DUMMY, &path, content).await.unwrap();
         assert!(review.comments.iter().any(|c| c.category == "documentation"));
     }
 
@@ -841,7 +841,8 @@ pub fn add(a: i32, b: i32) -> i32 {
 
     // --- Architecture Review ---
 
-const ARCH_REVIEW_SYSTEM_PROMPT: &str = r#"You are Momus, a senior architect and quality gatekeeper.
+    #[allow(dead_code)]
+    const ARCH_REVIEW_SYSTEM_PROMPT: &str = r#"You are Momus, a senior architect and quality gatekeeper.
 Your goal is to review architecture documentation for consistency, modularity, and extensibility.
 
 Analyze the architecture text and return a JSON object with the following structure:

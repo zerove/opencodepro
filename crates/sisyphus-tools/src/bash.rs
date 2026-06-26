@@ -127,4 +127,67 @@ mod tests {
         let result = execute("sleep 0.1", None, 1000).await.unwrap();
         assert!(result.duration.as_millis() >= 100);
     }
+
+    #[tokio::test]
+    async fn test_execute_empty_command() {
+        let result = execute("", None, 5000).await.unwrap();
+        assert!(result.stdout.is_empty());
+        assert_eq!(result.exit_code, 0);
+    }
+
+    #[tokio::test]
+    async fn test_execute_stderr() {
+        let result = execute("echo stderr_msg >&2", None, 5000).await.unwrap();
+        assert!(result.stderr.trim().contains("stderr_msg"));
+        assert_eq!(result.exit_code, 0);
+    }
+
+    #[tokio::test]
+    async fn test_execute_stdout_and_stderr() {
+        let result = execute("echo out; echo err >&2", None, 5000).await.unwrap();
+        assert!(result.stdout.trim() == "out");
+        assert!(result.stderr.trim() == "err");
+    }
+
+    #[tokio::test]
+    async fn test_execute_exit_code_propagation() {
+        let result = execute("exit 42", None, 5000).await;
+        match result.unwrap_err() {
+            ToolError::CommandFailed { code, .. } => assert_eq!(code, 42),
+            _ => panic!("expected CommandFailed with code 42"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_execute_chained_commands() {
+        let result = execute("echo first && echo second", None, 5000).await.unwrap();
+        assert!(result.stdout.contains("first"));
+        assert!(result.stdout.contains("second"));
+    }
+
+    #[tokio::test]
+    async fn test_execute_nonexistent_workdir() {
+        let bad_dir = Path::new("/tmp/__sisyphus_nonexistent_dir__");
+        let result = execute("pwd", Some(bad_dir), 5000).await;
+        assert!(result.is_err(), "should fail with non-existent workdir");
+    }
+
+    #[tokio::test]
+    async fn test_execute_unicode_output() {
+        let result = execute("echo 'Hello 世界 日本語'", None, 5000).await.unwrap();
+        assert!(result.stdout.contains("世界"));
+        assert!(result.stdout.contains("日本語"));
+    }
+
+    #[tokio::test]
+    async fn test_execute_pipeline() {
+        let result = execute("echo 'a b c d e' | wc -w", None, 5000).await.unwrap();
+        assert!(result.stdout.trim() == "5");
+    }
+
+    #[tokio::test]
+    async fn test_execute_quick_timeout() {
+        let result = execute("sleep 5", None, 50).await;
+        assert!(matches!(result.unwrap_err(), ToolError::Timeout(_)));
+    }
 }

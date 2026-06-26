@@ -328,4 +328,93 @@ pub fn run() { loop {} }
         assert_eq!(analysis.line_count, 3);
         assert_eq!(analysis.char_count, content.len());
     }
+
+    #[test]
+    fn test_analyze_file_empty() {
+        let dir = TempDir::new().unwrap();
+        let file = setup_file(&dir, "empty.rs", "");
+        let analysis = analyze_file(&file).unwrap();
+        assert_eq!(analysis.line_count, 0);
+        assert_eq!(analysis.functions.len(), 0);
+        assert_eq!(analysis.imports.len(), 0);
+        assert_eq!(analysis.structs.len(), 0);
+        assert_eq!(analysis.issues.len(), 0);
+    }
+
+    #[test]
+    fn test_analyze_file_not_found() {
+        let result = analyze_file(Path::new("/tmp/__sisyphus_nonexistent_oracle__"));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_analyze_file_no_functions_or_imports() {
+        let dir = TempDir::new().unwrap();
+        let file = setup_file(&dir, "plain.txt", "just some text\nwith no code\nstructures");
+        let analysis = analyze_file(&file).unwrap();
+        assert_eq!(analysis.functions.len(), 0);
+        assert_eq!(analysis.imports.len(), 0);
+        assert_eq!(analysis.structs.len(), 0);
+    }
+
+    #[test]
+    fn test_analyze_directory_empty() {
+        let dir = TempDir::new().unwrap();
+        let summary = analyze_directory(dir.path(), Some(r"\.rs$")).unwrap();
+        assert_eq!(summary.file_count, 0);
+        assert_eq!(summary.total_lines, 0);
+    }
+
+    #[test]
+    fn test_analyze_directory_no_matching_files() {
+        let dir = TempDir::new().unwrap();
+        setup_file(&dir, "data.json", "{\"key\": \"value\"}");
+        setup_file(&dir, "readme.md", "# Readme");
+        let summary = analyze_directory(dir.path(), Some(r"\.rs$")).unwrap();
+        assert_eq!(summary.file_count, 0);
+    }
+
+    #[test]
+    fn test_code_review_empty_paths() {
+        let issues = code_review(&[]).unwrap();
+        assert!(issues.is_empty());
+    }
+
+    #[test]
+    fn test_code_review_nonexistent_path() {
+        let path = Path::new("/tmp/__sisyphus_nonexistent_review__");
+        let issues = code_review(&[path]).unwrap();
+        assert!(issues.is_empty());
+    }
+
+    #[test]
+    fn test_analyze_file_function_no_params() {
+        let dir = TempDir::new().unwrap();
+        let file = setup_file(&dir, "simple.rs", "fn hello() -> &'static str {\n    \"world\"\n}");
+        let analysis = analyze_file(&file).unwrap();
+        assert_eq!(analysis.functions.len(), 1);
+        assert_eq!(analysis.functions[0].name, "hello");
+        assert!(!analysis.functions[0].is_public);
+        assert!(!analysis.functions[0].is_async);
+    }
+
+    #[test]
+    fn test_analyze_file_multi_line_import_not_matched() {
+        let dir = TempDir::new().unwrap();
+        let file = setup_file(&dir, "multi.rs", "\
+use std::collections::{
+    HashMap,
+    VecDeque,
+};
+");
+        let analysis = analyze_file(&file).unwrap();
+        assert_eq!(analysis.imports.len(), 0, "multi-line imports not matched by simple regex");
+    }
+
+    #[test]
+    fn test_issue_severity_display() {
+        assert_eq!(IssueSeverity::Warning.to_string(), "warning");
+        assert_eq!(IssueSeverity::Style.to_string(), "style");
+        assert_eq!(IssueSeverity::Info.to_string(), "info");
+    }
 }

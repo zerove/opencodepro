@@ -33,7 +33,7 @@ impl SOPNode for MockNode {
         if self.should_fail {
             Err(format!("ResourceExhausted: {} failed", self.name))
         } else {
-            Ok(Value::String(format!("result_{}", self.name)))
+            Ok(NodeOutput(Value::String(format!("result_{}", self.name))))
         }
     }
     fn name(&self) -> &str {

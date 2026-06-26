@@ -12,10 +12,21 @@ use thiserror::Error;
 use sisyphus_intel::SisyphusIntel;
 use sisyphus_mem::MfsStore;
 use sisyphus_metrics::record_cognitive_iteration;
+use sisyphus_roadmap::RoadmapManager;
+use sisyphus_tools::{
+    agent_channel::AgentChannel, ContinuousBenchmark, meta_learner::MetaLearner,
+};
+use sisyphus_types::AgentMessage;
 pub use sisyphus_types::{
     CompositeGraph, DataMapping, ExecutionContext, ExecutionEvent, GraphDependency, NodeOutput, SOPGraph,
     SOPGraphConfig, StateStore, ToolExecutor, WasmSOPNode,
 };
+
+#[async_trait::async_trait]
+pub trait Consensus: Send + Sync {
+    async fn is_leader(&self) -> bool;
+    async fn get_leader(&self) -> String;
+}
 
 #[derive(Error, Debug)]
 pub enum CoreError {
@@ -102,7 +113,9 @@ impl Executor {
 
         for (&node, &degree) in in_degree.iter() {
             if degree == 0 {
-                let node_ref = Arc::clone(sop_graph.graph.node_weight(node).unwrap());
+                let node_ref = Arc::clone(
+                    sop_graph.graph.node_weight(node).expect("node should exist in graph"),
+                );
                 let ctx_ref = Arc::clone(&ctx);
                 let tx = event_tx.clone();
                 join_set.spawn(async move {
@@ -111,7 +124,9 @@ impl Executor {
                     let name = node_ref.name().to_string();
                     
                     if let Some(ref tx) = tx {
-                        let _ = tx.send(ExecutionEvent::NodeStarted { node_name: name.clone() });
+                        if let Err(e) = tx.send(ExecutionEvent::NodeStarted { node_name: name.clone() }) {
+                            tracing::warn!(node = %name, error = %e, "Failed to send NodeStarted event");
+                        }
                     }
 
                     let result = node_ref.execute(&ctx_ref).await;
@@ -119,16 +134,20 @@ impl Executor {
                     if let Some(ref tx) = tx {
                         match &result {
                             Ok(out) => {
-                                let _ = tx.send(ExecutionEvent::NodeCompleted { 
+                                if let Err(e) = tx.send(ExecutionEvent::NodeCompleted { 
                                     node_name: name.clone(), 
                                     output: out.clone() 
-                                });
+                                }) {
+                                    tracing::warn!(node = %name, error = %e, "Failed to send NodeCompleted event");
+                                }
                             }
                             Err(e) => {
-                                let _ = tx.send(ExecutionEvent::NodeFailed { 
+                                if let Err(send_err) = tx.send(ExecutionEvent::NodeFailed { 
                                     node_name: name.clone(), 
                                     error: e.clone() 
-                                });
+                                }) {
+                                    tracing::warn!(node = %name, error = %send_err, "Failed to send NodeFailed event");
+                                }
                             }
                         }
                     }
@@ -145,7 +164,7 @@ impl Executor {
                         Ok(out) => out,
                         Err(e) => {
                             tracing::warn!(node = %name, error = %e, "Node execution failed");
-                            Value::String(e)
+                            NodeOutput(Value::String(e))
                         }
                     };
                     ctx.set_result(name.clone(), output);
@@ -167,7 +186,9 @@ impl Executor {
                             let name = node_ref.name().to_string();
 
                             if let Some(ref tx) = tx {
-                                let _ = tx.send(ExecutionEvent::NodeStarted { node_name: name.clone() });
+                                if let Err(e) = tx.send(ExecutionEvent::NodeStarted { node_name: name.clone() }) {
+                                    tracing::warn!(node = %name, error = %e, "Failed to send NodeStarted event");
+                                }
                             }
 
                             let result = node_ref.execute(&ctx_ref).await;
@@ -175,16 +196,20 @@ impl Executor {
                             if let Some(ref tx) = tx {
                                 match &result {
                                     Ok(out) => {
-                                        let _ = tx.send(ExecutionEvent::NodeCompleted { 
+                                        if let Err(e) = tx.send(ExecutionEvent::NodeCompleted { 
                                             node_name: name.clone(), 
                                             output: out.clone() 
-                                        });
+                                        }) {
+                                            tracing::warn!(node = %name, error = %e, "Failed to send NodeCompleted event");
+                                        }
                                     }
                                     Err(e) => {
-                                        let _ = tx.send(ExecutionEvent::NodeFailed { 
+                                        if let Err(send_err) = tx.send(ExecutionEvent::NodeFailed { 
                                             node_name: name.clone(), 
                                             error: e.clone() 
-                                        });
+                                        }) {
+                                            tracing::warn!(node = %name, error = %send_err, "Failed to send NodeFailed event");
+                                        }
                                     }
                                 }
                             }
@@ -262,9 +287,8 @@ impl DependencyResolver {
     /// Uses petgraph to build a dependency DAG and performs topological sort.
     pub fn resolve(composite: &CompositeGraph) -> Result<Vec<String>, CoreError> {
         let mut dep_graph = petgraph::graph::DiGraph::<String, ()>::new();
-        let mut node_map = HashMap::new();
-
-        // Ensure all referenced sop_ids exist as nodes in the dep graph
+        let estimated_nodes = composite.graphs.len() + composite.dependencies.len();
+        let mut node_map: HashMap<String, _> = HashMap::with_capacity(estimated_nodes);
         for sop_id in composite.graphs.keys() {
             if !node_map.contains_key(sop_id) {
                 let idx = dep_graph.add_node(sop_id.clone());
@@ -319,6 +343,14 @@ pub struct SisyphusKernel {
     pub tool_executor: Arc<dyn ToolExecutor>,
     pub intel: Arc<SisyphusIntel>,
     pub synthesizer: Arc<dyn sisyphus_intel::FlowSynthesizer>,
+    /// Inter-agent message bus for pub/sub communication during execution.
+    pub channel: AgentChannel,
+    /// Performance benchmark tracker that records cognitive iteration timings.
+    pub benchmark: Arc<std::sync::Mutex<ContinuousBenchmark>>,
+    /// Meta-learner that records execution outcomes for strategy optimization.
+    pub meta_learner: Arc<std::sync::Mutex<MetaLearner>>,
+    /// Strategic planning manager for Project → Milestone → Phase → Goal hierarchy.
+    pub roadmap_manager: Arc<RoadmapManager>,
 }
 
 impl SisyphusKernel {
@@ -328,20 +360,26 @@ impl SisyphusKernel {
         intel: Arc<SisyphusIntel>,
         synthesizer: Arc<dyn sisyphus_intel::FlowSynthesizer>,
     ) -> Self {
+        let rm = Arc::new(RoadmapManager::new(state_store.clone()));
         Self {
             executor: Executor::new(),
             state_store,
             tool_executor,
             intel,
             synthesizer,
+            channel: AgentChannel::new(),
+            benchmark: Arc::new(std::sync::Mutex::new(ContinuousBenchmark::new(".omo/benchmarks"))),
+            meta_learner: Arc::new(std::sync::Mutex::new(MetaLearner::new(".omo/meta"))),
+            roadmap_manager: rm,
         }
     }
 
     pub async fn save_sop(&self, sop_id: &str, graph: &SOPGraph) -> Result<(), CoreError> {
         let config = sisyphus_types::SOPGraphConfig::from_graph(graph);
-        let data = serde_json::to_string(&config).map_err(|e| CoreError::Internal(e.to_string()))?;
+        let value = serde_json::to_value(&config)
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
         self.state_store
-            .set_state_json(&format!("sop:{}", sop_id), serde_json::Value::String(data))
+            .set_state_json(&format!("sop:{}", sop_id), value)
             .await
             .map_err(CoreError::MfsSaveError)
     }
@@ -353,12 +391,21 @@ impl SisyphusKernel {
             .await
             .map_err(CoreError::MfsLoadError)?;
 
-        let data = data_val
-            .and_then(|v| v.as_str().map(|s| s.to_string()))
-            .ok_or_else(|| CoreError::SopNotFound(sop_id.to_string()))?;
-        let config: sisyphus_types::SOPGraphConfig =
-            serde_json::from_str(&data).map_err(|e| CoreError::Internal(e.to_string()))?;
-        Ok(SOPGraph::from_config(&config, self.tool_executor.clone()))
+        match data_val {
+            None => Err(CoreError::SopNotFound(sop_id.to_string())),
+            Some(Value::String(s)) => {
+                // legacy format: double-wrapped JSON string
+                let config: sisyphus_types::SOPGraphConfig =
+                    serde_json::from_str(&s).map_err(|e| CoreError::Internal(e.to_string()))?;
+                Ok(SOPGraph::from_config(&config, self.tool_executor.clone()))
+            }
+            Some(v) => {
+                // new format: direct JSON value
+                let config: sisyphus_types::SOPGraphConfig =
+                    serde_json::from_value(v).map_err(|e| CoreError::Internal(e.to_string()))?;
+                Ok(SOPGraph::from_config(&config, self.tool_executor.clone()))
+            }
+        }
     }
 
     /// Execute multiple natural-language goals as a composite workflow.
@@ -397,6 +444,93 @@ impl SisyphusKernel {
         Ok((res, format!("Plan: {} | {}", plan_desc, report)))
     }
 
+    /// Execute a goal with project-level roadmap context injected.
+    ///
+    /// Fetches the current progress report for `project_id` from the
+    /// `RoadmapManager` and prepends it as context so the synthesis and
+    /// execution pipeline is aware of the broader project state.
+    pub async fn execute_goal_with_project_context(
+        &self,
+        goal: &str,
+        sop_id: &str,
+        project_id: &str,
+        event_tx: Option<mpsc::UnboundedSender<ExecutionEvent>>,
+    ) -> Result<(NodeOutput, String), String> {
+        let ctx_string = self
+            .roadmap_manager
+            .synthesize_project_context(project_id)
+            .await
+            .map_err(|e| format!("Failed to synthesize project context: {}", e))?;
+        let augmented_goal = format!("{}\n\n---\nCurrent project context:\n{}", goal, ctx_string);
+        self.execute_goal(&augmented_goal, sop_id, event_tx).await
+    }
+
+    /// Execute a project-context-aware goal and automatically record the
+    /// execution outcome, evaluate roadmap health, and apply blocking.
+    ///
+    /// Returns the execution result together with an optional health report.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn execute_and_record(
+        &self,
+        goal: &str,
+        sop_id: &str,
+        project_id: &str,
+        milestone_id: &str,
+        phase_id: &str,
+        goal_id: &str,
+        event_tx: Option<mpsc::UnboundedSender<ExecutionEvent>>,
+    ) -> Result<(NodeOutput, String, Option<sisyphus_roadmap::RoadmapHealth>), String> {
+        let start = std::time::Instant::now();
+        let result = self
+            .execute_goal_with_project_context(goal, sop_id, project_id, event_tx)
+            .await;
+
+        let (success, deviation, error) = match &result {
+            Ok((_output, report)) => {
+                let dev = if report.contains("deviation=") || report.contains("deviation_score") {
+                    Some(0.5) // moderate deviation as fallback
+                } else {
+                    None
+                };
+                (true, dev, None)
+            }
+            Err(e) => (false, None, Some(e.clone())),
+        };
+
+        let outcome = sisyphus_roadmap::ExecutionOutcome {
+            goal_id: goal_id.to_string(),
+            project_id: project_id.to_string(),
+            milestone_id: milestone_id.to_string(),
+            phase_id: phase_id.to_string(),
+            success,
+            deviation_score: deviation,
+            error,
+            timestamp: start.elapsed().as_secs(),
+        };
+
+        let _ = self
+            .roadmap_manager
+            .record_outcome(&outcome)
+            .await;
+
+        // Evaluate health and optionally apply blocking on failure
+        if !success {
+            let health = self
+                .roadmap_manager
+                .apply_blocking(project_id)
+                .await
+                .ok();
+            return result.map(|(o, r)| (o, r, health));
+        }
+
+        let health = self
+            .roadmap_manager
+            .evaluate_health(project_id)
+            .await
+            .ok();
+        result.map(|(o, r)| (o, r, health))
+    }
+
     /// Execute a SOP graph with recursive cognitive feedback.
     ///
     /// Loop: predict → execute → reflect → evolve
@@ -424,18 +558,43 @@ impl SisyphusKernel {
         let mut current_ref: &SOPGraph = sop_graph;
         let mut current_start = start_node;
         let mut iterations: Vec<CognitiveIteration> = Vec::new();
-        let mut final_result: NodeOutput = serde_json::Value::Null;
+        let mut final_result = NodeOutput::default();
         let mut final_evolved: Option<SOPGraph> = None;
         // initial_ctx is passed to the executor on the first iteration only;
         // subsequent iterations (evolved graphs) use fresh contexts.
         let initial_ctx_for_iter = initial_ctx;
+
+        // Publish cognitive loop start event via AgentChannel
+        let _ = self.channel.publish("cognitive_events", AgentMessage {
+            from: "kernel".into(),
+            to: "*".into(),
+            kind: "CognitiveLoopStarted".into(),
+            payload: serde_json::json!({
+                "sop_id": sop_id,
+                "graph_nodes": sop_graph.graph.node_count(),
+                "max_iterations": MAX_COGNITIVE_ITERATIONS,
+            }),
+            correlation_id: format!("{}-start", sop_id),
+        });
 
         for iteration in 0..MAX_COGNITIVE_ITERATIONS {
             let iter_start = Instant::now();
             let iter_span = tracing::info_span!("cognitive_iteration", iteration, sop_id = %sop_id);
             let _iter_enter = iter_span.enter();
 
-            let ctx = ExecutionContext::new();
+            // Publish iteration start via AgentChannel
+            let _ = self.channel.publish("cognitive_events", AgentMessage {
+                from: "kernel".into(),
+                to: "*".into(),
+                kind: "IterationStarted".into(),
+                payload: serde_json::json!({
+                    "sop_id": sop_id,
+                    "iteration": iteration,
+                }),
+                correlation_id: format!("{}-iter-{}", sop_id, iteration),
+            });
+
+            let ctx = ExecutionContext::with_capacity(current_ref.graph.node_count());
 
             // 1. Predict
             let pred_start = Instant::now();
@@ -455,9 +614,15 @@ impl SisyphusKernel {
             let final_ctx = self
                 .executor
                 .execute_with_context(current_ref, current_start, exec_ctx, event_tx.clone())
-                .await?;
+                                .await?;
             let result = final_ctx
-                .get_result(current_ref.graph.node_weight(current_start).unwrap().name())
+                .get_result(
+                    current_ref
+                        .graph
+                        .node_weight(current_start)
+                        .expect("start node should exist")
+                        .name(),
+                )
                 .ok_or("Execution failed to produce result")?;
             final_result = result.clone();
 
@@ -522,10 +687,25 @@ impl SisyphusKernel {
                 success: !trace.contains("ResourceExhausted"),
                 cost: 10 * (trace.lines().count() as u64),
             });
-            let _ = self
+
+            // Keep only the last 100 records to bound storage growth
+            const MAX_HISTORY_RECORDS: usize = 100;
+            if history.records.len() > MAX_HISTORY_RECORDS {
+                let excess = history.records.len() - MAX_HISTORY_RECORDS;
+                history.records.drain(0..excess);
+            }
+
+            if let Err(e) = self
                 .state_store
-                .set_state_json(&history_key, serde_json::to_value(history).unwrap())
-                .await;
+                .set_state_json(&history_key, serde_json::to_value(&history).unwrap())
+                .await
+            {
+                tracing::warn!(
+                    sop_id = %sop_id,
+                    error = %e,
+                    "Failed to persist execution history"
+                );
+            }
 
             // 5. Evolve
             let evolve_start = Instant::now();
@@ -543,13 +723,15 @@ impl SisyphusKernel {
             );
 
             if let Some(ref eg) = evolved {
-                let _ = self.save_sop(sop_id, eg).await;
+                if let Err(e) = self.save_sop(sop_id, eg).await {
+                    tracing::warn!(sop_id = %sop_id, error = %e, "Failed to persist evolved graph");
+                }
             }
 
             let iter_duration = iter_start.elapsed();
             iterations.push(CognitiveIteration {
                 iteration,
-                prediction,
+                prediction: prediction.clone(),
                 deviation_score: reflection.deviation_score,
                 suggestions: reflection.suggested_improvements,
                 evolved: has_evolved,
@@ -563,6 +745,47 @@ impl SisyphusKernel {
                 reflection.deviation_score < CONVERGENCE_THRESHOLD,
                 iter_duration.as_secs_f64(),
             );
+
+            // Record iteration timing to benchmark
+            let success = !trace.contains("ResourceExhausted");
+            if let Ok(mut bm) = self.benchmark.lock() {
+                let run = sisyphus_types::BenchmarkRun {
+                    name: format!("cognitive_iter.{}.{}", sop_id, iteration),
+                    timestamp: std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs(),
+                    duration_secs: iter_duration.as_secs_f64(),
+                    success,
+                    metrics: serde_json::json!({
+                        "deviation": reflection.deviation_score,
+                        "has_evolved": has_evolved,
+                        "prediction_success_prob": prediction.success_probability,
+                    }),
+                };
+                let _ = bm.record_result(run);
+            }
+
+            // Record iteration outcome to meta_learner
+            if let Ok(mut ml) = self.meta_learner.lock() {
+                let sample = sisyphus_types::MetaLearningSample {
+                    context: serde_json::json!({
+                        "sop_id": sop_id,
+                        "iteration": iteration,
+                        "deviation_score": reflection.deviation_score,
+                        "graph_nodes": current_ref.graph.node_count(),
+                        "estimated_cost": prediction.estimated_cost,
+                    }),
+                    strategy: if has_evolved { "evolve" } else { "keep" }.into(),
+                    success,
+                    duration_secs: iter_duration.as_secs_f64(),
+                    timestamp: std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs(),
+                };
+                let _ = ml.record_outcome(sample);
+            }
 
             // Check convergence
             if reflection.deviation_score < CONVERGENCE_THRESHOLD || !has_evolved {
@@ -584,6 +807,59 @@ impl SisyphusKernel {
             .last()
             .map(|i| i.deviation_score < CONVERGENCE_THRESHOLD)
             .unwrap_or(false);
+
+        // Publish cognitive loop completion via AgentChannel
+        let _ = self.channel.publish("cognitive_events", AgentMessage {
+            from: "kernel".into(),
+            to: "*".into(),
+            kind: "CognitiveLoopCompleted".into(),
+            payload: serde_json::json!({
+                "sop_id": sop_id,
+                "iterations": iterations.len(),
+                "converged": converged,
+                "final_deviation": iterations.last().map(|i| i.deviation_score).unwrap_or(0.0),
+            }),
+            correlation_id: format!("{}-complete", sop_id),
+        });
+
+        // Check benchmark baseline for regression
+        if let Ok(bm) = self.benchmark.lock() {
+            if let Some(comparison) = bm.compare_with_baseline(
+                &format!("cognitive_iter.{}.{}", sop_id, iterations.len().saturating_sub(1))
+            ) {
+                if comparison.is_significant {
+                    tracing::warn!(
+                        sop_id = %sop_id,
+                        regression_pct = comparison.regression_pct,
+                        "Performance regression detected in cognitive iteration"
+                    );
+                }
+            }
+        }
+
+        // Learn from this execution and persist insight
+        if let Ok(ml) = self.meta_learner.lock() {
+            let insight = ml.learn();
+            let _ = ml.save_insight(&insight);
+            // Publish insight summary via AgentChannel
+            let _ = self.channel.publish("cognitive_events", AgentMessage {
+                from: "kernel".into(),
+                to: "*".into(),
+                kind: "LearningInsight".into(),
+                payload: serde_json::json!({
+                    "sop_id": sop_id,
+                    "total_samples": insight.total_samples,
+                    "overall_success_rate": insight.overall_success_rate,
+                    "trend": insight.trend,
+                    "strategies": insight.strategies.iter().map(|s| serde_json::json!({
+                        "strategy": s.strategy,
+                        "success_rate": s.success_rate,
+                        "total_uses": s.total_uses,
+                    })).collect::<Vec<_>>(),
+                }),
+                correlation_id: format!("{}-insight", sop_id),
+            });
+        }
 
         let iteration_details: Vec<String> = iterations
             .iter()
@@ -618,7 +894,7 @@ impl SisyphusKernel {
     /// 1. Resolves topological execution order from the dependency DAG.
     /// 2. For each graph, pre-populates its ExecutionContext with outputs
     ///    from dependency graphs (via DataMapping).
-    /// 3. Executes each graph through the cognitive loop.
+    /// 3. Executes independent graphs in parallel through the cognitive loop.
     /// 4. Returns results for all graphs in the composite.
     pub async fn execute_composite(
         &self,
@@ -631,9 +907,31 @@ impl SisyphusKernel {
             composite.execution_order.clone()
         };
 
-        let mut results: HashMap<String, (NodeOutput, String)> = HashMap::new();
-        let mut accumulated: HashMap<String, NodeOutput> = HashMap::new();
+        let order_len = order.len();
+        let mut results: HashMap<String, (NodeOutput, String)> = HashMap::with_capacity(order_len);
+        let accumulated: Arc<std::sync::Mutex<HashMap<String, NodeOutput>>> =
+            Arc::new(std::sync::Mutex::new(HashMap::with_capacity(order_len)));
+        #[allow(clippy::type_complexity)]
+        let mut join_set: JoinSet<(
+            String,
+            Result<(NodeOutput, String, Option<SOPGraph>), String>,
+        )> = JoinSet::new();
 
+        // Build in-degree map from the dependency DAG
+        let in_degree: Arc<std::sync::Mutex<HashMap<String, usize>>> =
+            Arc::new(std::sync::Mutex::new(HashMap::with_capacity(order_len)));
+        {
+            let mut deg = in_degree.lock().unwrap_or_else(|e| e.into_inner());
+            for sop_id in &order {
+                deg.entry(sop_id.clone()).or_insert(0);
+            }
+            for dep in &composite.dependencies {
+                *deg.entry(dep.target_sop_id.clone()).or_insert(0) += 1;
+            }
+        }
+
+        // Pre-build all SOPGraphs so they are not rebuilt per spawn
+        let mut graph_cache: HashMap<String, (SOPGraph, NodeIndex)> = HashMap::with_capacity(order_len);
         for sop_id in &order {
             let config = composite
                 .graphs
@@ -645,38 +943,124 @@ impl SisyphusKernel {
                 .node_indices()
                 .next()
                 .ok_or_else(|| format!("Graph {} has no nodes", sop_id))?;
+            graph_cache.insert(sop_id.clone(), (graph, start_node));
+        }
 
-            let dep_ctx: Option<Arc<ExecutionContext>> = {
-                let ctx = ExecutionContext::new();
-                let mut has_deps = false;
+        // Wrap composite + self in Arcs for parallel spawning
+        let composite = Arc::new(composite.clone());
+        let self_arc = Arc::new(SisyphusKernel {
+            executor: Executor::new(),
+            state_store: self.state_store.clone(),
+            tool_executor: self.tool_executor.clone(),
+            intel: self.intel.clone(),
+            synthesizer: self.synthesizer.clone(),
+            channel: AgentChannel::new(),
+            benchmark: self.benchmark.clone(),
+            meta_learner: self.meta_learner.clone(),
+            roadmap_manager: self.roadmap_manager.clone(),
+        });
+
+        // Spawn all ready graphs (in-degree == 0)
+        {
+            let deg = in_degree.lock().unwrap_or_else(|e| e.into_inner());
+            for sop_id in &order {
+                if *deg.get(sop_id).unwrap_or(&0) == 0 {
+                    if let Some((graph, start_node)) = graph_cache.remove(sop_id) {
+                        let kernel = Arc::clone(&self_arc);
+                        let acc = Arc::clone(&accumulated);
+                        let composite_ref = Arc::clone(&composite);
+                        let tx = event_tx.clone();
+                        let sid = sop_id.clone();
+                        join_set.spawn(async move {
+                            let dep_ctx = build_dep_ctx_for(&sid, &composite_ref, &acc.lock().unwrap_or_else(|e| e.into_inner()));
+                            let result = kernel
+                                .execute_with_cognition(
+                                    &graph, start_node, &sid, dep_ctx, tx,
+                                )
+                                .await;
+                            (sid, result)
+                        });
+                    }
+                }
+            }
+        }
+
+        // Process completed graphs and spawn newly-ready dependents
+        while let Some(res) = join_set.join_next().await {
+            let (completed_id, outcome) = res.map_err(|e| e.to_string())?;
+            let (node_output, report, _evolved) = outcome?;
+
+            {
+                let mut acc = accumulated.lock().unwrap_or_else(|e| e.into_inner());
+                acc.insert(completed_id.clone(), node_output.clone());
+            }
+            results.insert(completed_id.clone(), (node_output, report));
+
+            // Decrement in-degree of dependents and spawn ready ones
+            let ready: Vec<String> = {
+                let mut deg = in_degree.lock().unwrap();
+                let mut ready = Vec::new();
                 for dep in &composite.dependencies {
-                    if dep.target_sop_id == *sop_id {
-                        for mapping in &dep.mappings {
-                            if let Some(output) = accumulated.get(&mapping.source_node) {
-                                ctx.set_result(mapping.target_placeholder.clone(), output.clone());
-                                has_deps = true;
+                    if dep.source_sop_id == completed_id {
+                        if let Some(d) = deg.get_mut(&dep.target_sop_id) {
+                            *d -= 1;
+                            if *d == 0 {
+                                ready.push(dep.target_sop_id.clone());
                             }
                         }
                     }
                 }
-                if has_deps {
-                    Some(Arc::new(ctx))
-                } else {
-                    None
-                }
+                ready
             };
 
-            let (result, report, _evolved) = self
-                .execute_with_cognition(&graph, start_node, sop_id, dep_ctx, event_tx.clone())
-                .await?;
-
-            accumulated.insert(sop_id.clone(), result.clone());
-            results.insert(sop_id.clone(), (result, report));
+            for sid in ready {
+                if let Some((graph, start_node)) = graph_cache.remove(&sid) {
+                    let kernel = Arc::clone(&self_arc);
+                    let acc = Arc::clone(&accumulated);
+                    let composite_ref = Arc::clone(&composite);
+                    let tx = event_tx.clone();
+                    join_set.spawn(async move {
+                        let dep_ctx =
+                            build_dep_ctx_for(&sid, &composite_ref, &acc.lock().unwrap());
+                        let result = kernel
+                            .execute_with_cognition(
+                                &graph, start_node, &sid, dep_ctx, tx,
+                            )
+                            .await;
+                        (sid, result)
+                    });
+                }
+            }
         }
 
         Ok(CompositeOutput {
             results,
             execution_order: order,
         })
+    }
+}
+
+/// Build an optional execution context populated with dependency outputs for a graph.
+fn build_dep_ctx_for(
+    sop_id: &str,
+    composite: &CompositeGraph,
+    accumulated: &HashMap<String, NodeOutput>,
+) -> Option<Arc<ExecutionContext>> {
+    let ctx = ExecutionContext::new();
+    let mut has_deps = false;
+    for dep in &composite.dependencies {
+        if dep.target_sop_id == sop_id {
+            for mapping in &dep.mappings {
+                if let Some(output) = accumulated.get(&mapping.source_node) {
+                    ctx.set_result(mapping.target_placeholder.clone(), output.clone());
+                    has_deps = true;
+                }
+            }
+        }
+    }
+    if has_deps {
+        Some(Arc::new(ctx))
+    } else {
+        None
     }
 }

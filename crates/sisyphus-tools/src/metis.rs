@@ -33,6 +33,19 @@ impl LlmClient for DummyLlmClient {
     }
 }
 
+/// An LLM client that returns a fixed response string.
+///
+/// Useful in tests where a specific JSON output is needed
+/// (e.g., to test `decompose_goal` with a known task plan).
+pub struct FixedResponseClient(pub String);
+
+#[async_trait::async_trait]
+impl LlmClient for FixedResponseClient {
+    async fn chat(&self, _system: &str, _user: &str, _json_mode: bool) -> Result<String, String> {
+        Ok(self.0.clone())
+    }
+}
+
 /// Flags an ambiguity or missing information in a request.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Ambiguity {

@@ -47,7 +47,7 @@ impl FeedbackStore {
         }
     }
 
-    pub fn default() -> Self {
+    pub fn default_dir() -> Self {
         Self::new(".omo/feedback")
     }
 
@@ -66,7 +66,7 @@ impl FeedbackStore {
         feedbacks.push(feedback);
         
         let json = serde_json::to_string_pretty(&feedbacks)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+            .map_err(std::io::Error::other)?;
             
         fs::write(path, json).await?;
         Ok(())
@@ -80,7 +80,7 @@ impl FeedbackStore {
 
         let content = fs::read_to_string(path).await?;
         let feedbacks: Vec<Feedback> = serde_json::from_str(&content)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+            .map_err(std::io::Error::other)?;
             
         Ok(feedbacks)
     }
@@ -89,7 +89,7 @@ impl FeedbackStore {
         let mut feedbacks = self.load_all_for_agent(agent_id).await?;
         
         // Sort by timestamp descending
-        feedbacks.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+        feedbacks.sort_by_key(|a| std::cmp::Reverse(a.timestamp));
         
         let result = feedbacks.into_iter().take(limit).collect();
         Ok(result)
@@ -108,7 +108,7 @@ impl FeedbackStore {
             if path.extension().and_then(|s| s.to_str()) == Some("json") {
                 let content = fs::read_to_string(&path).await?;
                 let feedbacks: Vec<Feedback> = serde_json::from_str(&content)
-                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+                    .map_err(std::io::Error::other)?;
                 all_feedbacks.extend(feedbacks);
             }
         }
@@ -250,9 +250,164 @@ mod tests {
         let dir = unique_temp_dir();
         let store = FeedbackStore::new(&dir);
 
-        // Querying an empty store should return empty, not error
         let results = store.query_feedback("anything", None).await.expect("query on empty store should succeed");
         assert!(results.is_empty(), "empty store should return empty results");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn test_feedback_new_sets_reasonable_timestamp() {
+        let feedback = Feedback::new(
+            "agent_h".to_string(),
+            "test".to_string(),
+            "out".to_string(),
+            "corr".to_string(),
+            vec![],
+        );
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+        assert!(feedback.timestamp > 0, "timestamp should be set");
+        assert!(
+            (feedback.timestamp - now).abs() < 5,
+            "timestamp should be close to current time"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_save_creates_directory_automatically() {
+        let dir = unique_temp_dir();
+        assert!(!dir.exists(), "test dir should not exist yet");
+        let store = FeedbackStore::new(&dir);
+
+        let feedback = sample_feedback("agent_i", "request", "output", "correction", vec!["test"]);
+        store.save_feedback(feedback).await.expect("save should auto-create directory");
+
+        assert!(dir.exists(), "directory should have been created");
+        assert!(dir.join("agent_i.json").exists(), "agent file should exist");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn test_save_appends_multiple_entries() {
+        let dir = unique_temp_dir();
+        let store = FeedbackStore::new(&dir);
+
+        for i in 0..3 {
+            let fb = sample_feedback("agent_j", &format!("req_{}", i), "out", "corr", vec![]);
+            store.save_feedback(fb).await.expect("save should succeed");
+        }
+
+        let all = store.load_all_for_agent("agent_j").await.expect("load should succeed");
+        assert_eq!(all.len(), 3, "should have accumulated 3 entries");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn test_get_recent_returns_all_when_limit_exceeds_count() {
+        let dir = unique_temp_dir();
+        let store = FeedbackStore::new(&dir);
+
+        for i in 0..3 {
+            let mut fb = sample_feedback("agent_k", &format!("req_{}", i), "out", "corr", vec![]);
+            fb.timestamp = i as i64;
+            store.save_feedback(fb).await.expect("save should succeed");
+        }
+
+        let recent = store.get_recent_feedback("agent_k", 99).await.expect("get_recent should succeed");
+        assert_eq!(recent.len(), 3, "should return all entries when limit > count");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn test_get_recent_for_nonexistent_agent_returns_empty() {
+        let dir = unique_temp_dir();
+        let store = FeedbackStore::new(&dir);
+
+        let recent = store.get_recent_feedback("ghost_agent", 5).await.expect("get_recent should succeed");
+        assert!(recent.is_empty(), "nonexistent agent should return empty");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn test_query_no_matches() {
+        let dir = unique_temp_dir();
+        let store = FeedbackStore::new(&dir);
+
+        store.save_feedback(sample_feedback("agent_l", "alpha", "beta", "gamma", vec!["x"])).await.unwrap();
+        store.save_feedback(sample_feedback("agent_l", "delta", "epsilon", "zeta", vec!["y"])).await.unwrap();
+
+        let results = store.query_feedback("ZZZZ_ZZZZ", None).await.expect("query should succeed");
+        assert!(results.is_empty(), "no matches should return empty");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn test_query_with_tags_no_match() {
+        let dir = unique_temp_dir();
+        let store = FeedbackStore::new(&dir);
+
+        store.save_feedback(sample_feedback("agent_m", "alpha", "beta", "gamma", vec!["rust"])).await.unwrap();
+
+        let results = store.query_feedback("alpha", Some(vec!["python".to_string()])).await.expect("query should succeed");
+        assert!(results.is_empty(), "tag mismatch should return empty");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn test_query_when_base_path_not_exists() {
+        let dir = unique_temp_dir();
+        assert!(!dir.exists(), "dir should not exist");
+        let store = FeedbackStore::new(&dir);
+
+        let results = store.query_feedback("anything", None).await.expect("query on nonexistent path should succeed");
+        assert!(results.is_empty(), "should return empty without error");
+        assert!(!dir.exists(), "query should not create the directory");
+    }
+
+    #[tokio::test]
+    async fn test_feedback_with_empty_tags() {
+        let fb = Feedback::new(
+            "agent_n".to_string(),
+            "req".to_string(),
+            "out".to_string(),
+            "corr".to_string(),
+            vec![],
+        );
+        assert!(fb.tags.is_empty(), "empty tags list should be stored as empty");
+    }
+
+    #[tokio::test]
+    async fn test_save_and_query_multiword_query() {
+        let dir = unique_temp_dir();
+        let store = FeedbackStore::new(&dir);
+
+        store.save_feedback(sample_feedback("agent_o",
+            "How to parse JSON in Rust",
+            "use serde_json",
+            "use serde_json with derive",
+            vec!["rust", "json"],
+        )).await.unwrap();
+        store.save_feedback(sample_feedback("agent_o",
+            "How to read a file",
+            "use fs::read_to_string",
+            "use fs::read",
+            vec!["io"],
+        )).await.unwrap();
+
+        let results = store.query_feedback("JSON", None).await.expect("query should succeed");
+        assert_eq!(results.len(), 1, "should find 1 entry matching 'JSON'");
+
+        let results = store.query_feedback("json", None).await.expect("query should succeed");
+        assert_eq!(results.len(), 1, "should be case-insensitive");
 
         let _ = std::fs::remove_dir_all(&dir);
     }

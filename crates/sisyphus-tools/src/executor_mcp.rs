@@ -308,4 +308,76 @@ mod tests {
         assert!(v["content"].is_array());
         assert_eq!(v["content"].as_array().unwrap().len(), 2);
     }
+
+    #[tokio::test]
+    async fn test_mcp_executor_unmapped_tool_passes_through() {
+        let mut responses = mock_initialized_responses();
+        responses.push(json!({
+            "jsonrpc": "2.0", "id": 3,
+            "result": { "content": [{ "type": "text", "text": "direct" }], "is_error": false }
+        }).to_string());
+
+        let transport = MockMcpTransport::new(responses);
+        let ex = MCPToolExecutor::from_transport(Box::new(transport)).await.unwrap();
+        let result = ex.execute("direct_tool", vec![], 0).await.unwrap();
+        let v: Value = serde_json::from_slice(&result).unwrap();
+        assert_eq!(v["content"], "direct");
+    }
+
+    #[tokio::test]
+    async fn test_mcp_executor_sequential_calls() {
+        let mut responses = mock_initialized_responses();
+        for i in 0..3 {
+            responses.push(json!({
+                "jsonrpc": "2.0", "id": 3,
+                "result": { "content": [{ "type": "text", "text": format!("call_{i}") }], "is_error": false }
+            }).to_string());
+        }
+
+        let transport = MockMcpTransport::new(responses);
+        let ex = MCPToolExecutor::from_transport(Box::new(transport)).await.unwrap();
+
+        for i in 0..3 {
+            let result = ex.execute("seq", vec![], 0).await.unwrap();
+            let v: Value = serde_json::from_slice(&result).unwrap();
+            assert_eq!(v["content"], format!("call_{i}"));
+        }
+    }
+
+    #[tokio::test]
+    async fn test_mcp_executor_close_then_execute_fails() {
+        let responses = mock_initialized_responses();
+        let transport = MockMcpTransport::new(responses);
+        let ex = MCPToolExecutor::from_transport(Box::new(transport)).await.unwrap();
+        ex.close().await.unwrap();
+
+        let result = ex.execute("after_close", vec![], 0).await;
+        assert!(result.is_err(), "executing after close should fail");
+    }
+
+    #[tokio::test]
+    async fn test_mcp_executor_transport_fails_on_request() {
+        let transport = MockMcpTransport::new(mock_initialized_responses());
+        let ex = MCPToolExecutor::from_transport(Box::new(transport)).await.unwrap();
+        let result = ex.execute("fail", vec![], 0).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_mcp_executor_tool_map_with_real_name() {
+        let mut responses = mock_initialized_responses();
+        responses.push(json!({
+            "jsonrpc": "2.0", "id": 3,
+            "result": { "content": [{ "type": "text", "text": "via map" }], "is_error": false }
+        }).to_string());
+
+        let transport = MockMcpTransport::new(responses);
+        let mut ex = MCPToolExecutor::from_transport(Box::new(transport)).await.unwrap();
+
+        let tool_name = "some_very_long_mcp_tool_name";
+        ex.map_tool("shortcut", tool_name);
+        let result = ex.execute("shortcut", vec![], 0).await.unwrap();
+        let v: Value = serde_json::from_slice(&result).unwrap();
+        assert_eq!(v["content"], "via map");
+    }
 }

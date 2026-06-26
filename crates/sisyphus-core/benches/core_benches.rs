@@ -1,9 +1,9 @@
 use async_trait::async_trait;
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use sisyphus_core::Executor;
+use sisyphus_core::{Executor, StateStore};
 use sisyphus_mem::MfsStore;
 use sisyphus_sandbox::WasmToolExecutor;
-use sisyphus_types::{ExecutionContext, SOPGraph, ToolExecutor, WasmSOPNode};
+use sisyphus_types::{SOPGraph, ToolExecutor, WasmSOPNode};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;

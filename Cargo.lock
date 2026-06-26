@@ -3458,10 +3458,12 @@ dependencies = [
  "assert_cmd",
  "clap",
  "crossterm",
+ "glob",
  "prost",
  "ratatui",
  "serde",
  "serde_json",
+ "sisyphus-sandbox",
  "sisyphus-tools",
  "sisyphus-types",
  "tempfile",
@@ -3485,7 +3487,9 @@ dependencies = [
  "sisyphus-intel",
  "sisyphus-mem",
  "sisyphus-metrics",
+ "sisyphus-roadmap",
  "sisyphus-sandbox",
+ "sisyphus-tools",
  "sisyphus-types",
  "thiserror 1.0.69",
  "tokio",
@@ -3515,7 +3519,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
- "dashmap",
+ "lru",
  "serde",
  "serde_json",
  "sisyphus-metrics",
@@ -3540,13 +3544,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "sisyphus-roadmap"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "serde",
+ "serde_json",
+ "sisyphus-mem",
+ "sisyphus-types",
+ "thiserror 1.0.69",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "sisyphus-sandbox"
 version = "0.1.0"
 dependencies = [
  "async-trait",
  "dashmap",
+ "hex",
+ "sha2",
  "sisyphus-metrics",
  "sisyphus-types",
+ "tempfile",
  "thiserror 1.0.69",
  "tokio",
  "tracing",
@@ -3565,6 +3586,7 @@ dependencies = [
  "sisyphus-intel",
  "sisyphus-mem",
  "sisyphus-sandbox",
+ "sisyphus-tools",
  "sisyphus-types",
  "tempfile",
  "tokio",
@@ -3588,6 +3610,7 @@ dependencies = [
  "tempfile",
  "thiserror 1.0.69",
  "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -3601,6 +3624,7 @@ dependencies = [
  "serde_json",
  "tokio",
  "toml",
+ "tracing",
 ]
 
 [[package]]

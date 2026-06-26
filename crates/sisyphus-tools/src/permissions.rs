@@ -80,4 +80,46 @@ mod tests {
         assert!(result.is_err());
         assert!(matches!(result.unwrap_err(), ToolError::PermissionDenied(_)));
     }
+
+    #[test]
+    fn test_check_permission_no_match_returns_allow() {
+        let rules = vec![("write".into(), Permission::Deny)];
+        assert_eq!(check_permission(&rules, "read"), Permission::Allow);
+    }
+
+    #[test]
+    fn test_check_permission_first_match_wins() {
+        let rules: PermissionRules = vec![
+            ("read".into(), Permission::Ask),
+            ("read".into(), Permission::Allow),
+        ];
+        assert_eq!(check_permission(&rules, "read"), Permission::Ask);
+    }
+
+    #[test]
+    fn test_permission_checker_ask_returns_ok() {
+        let rules = vec![("exec".into(), Permission::Ask)];
+        let checker = PermissionChecker::new(rules);
+        assert!(checker.require("exec").is_ok());
+    }
+
+    #[test]
+    fn test_permission_checker_empty_rules() {
+        let checker = PermissionChecker::new(vec![]);
+        assert!(checker.require("anything").is_ok());
+    }
+
+    #[test]
+    fn test_permission_checker_multiple_rules() {
+        let rules: PermissionRules = vec![
+            ("write".into(), Permission::Deny),
+            ("exec".into(), Permission::Ask),
+            ("read".into(), Permission::Allow),
+        ];
+        let checker = PermissionChecker::new(rules);
+        assert!(checker.require("write").is_err());
+        assert!(checker.require("exec").is_ok());
+        assert!(checker.require("read").is_ok());
+        assert!(checker.require("delete").is_ok());
+    }
 }

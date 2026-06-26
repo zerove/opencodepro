@@ -234,6 +234,69 @@ mod tests {
         Err(crate::ToolError::TodoError("intentional failure".to_string()))
     }
 
+    #[test]
+    fn test_work_status_display() {
+        assert_eq!(WorkStatus::Pending.to_string(), "pending");
+        assert_eq!(WorkStatus::Running.to_string(), "running");
+        assert_eq!(WorkStatus::Completed.to_string(), "completed");
+        assert_eq!(WorkStatus::Failed.to_string(), "failed");
+    }
+
+    #[test]
+    fn test_work_status_partial_eq() {
+        assert_eq!(WorkStatus::Pending, WorkStatus::Pending);
+        assert_ne!(WorkStatus::Pending, WorkStatus::Running);
+        assert_ne!(WorkStatus::Completed, WorkStatus::Failed);
+    }
+
+    #[test]
+    fn test_work_unit_debug() {
+        let unit = work_unit("id-1", "my task", || async {
+            Ok(json!({}))
+        });
+        let debug = format!("{:?}", unit);
+        assert!(debug.contains("id-1"), "debug should contain id: {debug}");
+        assert!(debug.contains("my task"), "debug should contain name: {debug}");
+    }
+
+    #[test]
+    fn test_work_orchestrator_new() {
+        // Just verify construction doesn't panic
+        let _o = WorkOrchestrator::new(5);
+        let _o2 = WorkOrchestrator::new(0);
+    }
+
+    #[test]
+    fn test_work_report_construction() {
+        let report = WorkReport {
+            id: "r1".into(),
+            name: "report".into(),
+            status: WorkStatus::Completed,
+            result: Some(json!({"done": true})),
+            error: None,
+            duration_ms: 42,
+        };
+        assert_eq!(report.id, "r1");
+        assert_eq!(report.duration_ms, 42);
+        assert!(report.result.is_some());
+        assert!(report.error.is_none());
+    }
+
+    #[test]
+    fn test_delegate_event_variants() {
+        let e1 = DelegateEvent::Started { id: "a".into(), name: "A".into() };
+        let e2 = DelegateEvent::Completed(WorkReport {
+            id: "a".into(), name: "A".into(),
+            status: WorkStatus::Completed,
+            result: None, error: None, duration_ms: 0,
+        });
+        let e3 = DelegateEvent::Progress { id: "a".into(), message: "working".into() };
+        // Verify all variants can be formatted (Debug)
+        let _ = format!("{:?}", e1);
+        let _ = format!("{:?}", e2);
+        let _ = format!("{:?}", e3);
+    }
+
     #[tokio::test]
     async fn test_run_all_basic() {
         let orchestrator = WorkOrchestrator::new(0);

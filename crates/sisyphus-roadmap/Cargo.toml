@@ -1,0 +1,17 @@
+[package]
+name = "sisyphus-roadmap"
+version = "0.1.0"
+edition = "2021"
+authors = ["Sisyphus Team"]
+description = "Strategic planning layer: Project → Milestone → Phase → Goal hierarchy with MfsStore persistence"
+license = "MIT"
+
+[dependencies]
+tokio = { version = "1", features = ["full"] }
+async-trait = "0.1"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tracing = { workspace = true }
+thiserror = "1.0"
+sisyphus-types = { path = "../sisyphus-types" }
+sisyphus-mem = { path = "../sisyphus-mem" }

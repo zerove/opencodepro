@@ -15,6 +15,7 @@ reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"
 async-trait = "0.1"
 serde_yaml = "0.9"
 sisyphus-types = { path = "../sisyphus-types" }
+tracing = { workspace = true }
 tempfile = "3"
 # lsp-types intentionally omitted — OOM on this system. We use minimal custom types instead.
 

@@ -8,6 +8,9 @@ use std::time::Instant;
 use thiserror::Error;
 use wasmtime::*;
 
+pub mod plugin_manager;
+pub use plugin_manager::PluginManager;
+
 #[derive(Error, Debug)]
 pub enum SandboxError {
     #[error("Failed to create Wasmtime Engine: {0}")]
@@ -41,10 +44,11 @@ pub enum SandboxError {
     ExecutionError(String),
 }
 
+#[derive(Clone)]
 pub struct WasmToolExecutor {
     engine: Engine,
     tools_path: PathBuf,
-    module_cache: Arc<DashMap<String, Module>>,
+    pub(crate) module_cache: Arc<DashMap<String, Module>>,
 }
 
 impl Default for WasmToolExecutor {

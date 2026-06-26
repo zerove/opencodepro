@@ -1,29 +1,59 @@
 use thiserror::Error;
 
+pub mod agent_registry;
 pub mod bash;
+pub mod build;
 pub mod config_store;
 pub mod delegate;
+pub mod diagnose;
+pub use diagnose::*;
 pub mod executor;
 pub mod executor_mcp;
 pub mod explore;
 pub mod feedback;
 pub mod file;
+pub mod git;
 pub mod hook;
-pub mod librarian;
 pub mod lsp;
 pub mod llm;
-pub mod mcp;
+pub mod librarian;
 pub mod metis;
 pub mod momus;
 pub mod oracle;
-pub mod security;
+pub mod patch;
 pub mod permissions;
 pub mod plan;
+pub mod precommit;
+pub use precommit::*;
+pub mod project_rules;
+pub mod roadmap;
+pub use roadmap::*;
+pub mod scaffold;
+pub use scaffold::*;
 pub mod scribe;
+pub mod security;
 pub mod session;
 pub mod skill;
 pub mod todo;
 pub mod web;
+
+pub mod agent_channel;
+pub mod architecture;
+pub mod auto_doc;
+pub mod auto_fix;
+pub mod benchmark;
+pub use benchmark::*;
+pub mod bug_fixer;
+pub mod circuit_breaker;
+pub use circuit_breaker::*;
+pub mod dep_manager;
+pub mod mcp;
+pub mod meta_learner;
+pub mod model_router;
+pub use model_router::*;
+pub mod team;
+pub mod test_gen;
+pub mod tool_registry;
 
 #[derive(Error, Debug)]
 pub enum ToolError {
@@ -70,14 +100,20 @@ pub enum Permission {
 
 pub type PermissionRules = Vec<(String, Permission)>;
 
+pub use agent_registry::*;
 pub use bash::*;
+pub use build::*;
+pub use team::*;
+pub use tool_registry::*;
 pub use config_store::*;
 pub use delegate::*;
 pub use executor::*;
 pub use executor_mcp::*;
+pub use mcp::*;
 pub use explore::*;
 pub use feedback::*;
 pub use file::*;
+pub use git::*;
 pub use hook::*;
 pub use librarian::*;
 pub use lsp::*;
@@ -85,9 +121,11 @@ pub use llm::*;
 pub use metis::*;
 pub use momus::*;
 pub use oracle::*;
+pub use patch::*;
 pub use security::*;
 pub use permissions::*;
 pub use plan::*;
+pub use project_rules::*;
 pub use scribe::*;
 pub use session::*;
 pub use skill::*;

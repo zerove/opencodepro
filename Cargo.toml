@@ -10,6 +10,7 @@ members = [
     "crates/sisyphus-tests",
     "crates/sisyphus-tools",
     "crates/sisyphus-cli",
+    "crates/sisyphus-roadmap",
     "evals",
 ]
 # Exclude heavy crates (wasmtime) from default `cargo check`/`cargo test`
@@ -22,6 +23,7 @@ default-members = [
     "crates/sisyphus-tests",
     "crates/sisyphus-tools",
     "crates/sisyphus-types",
+    "crates/sisyphus-roadmap",
     # sisyphus-bridge, sisyphus-sandbox excluded → add -p to compile explicitly
 ]
 resolver = "2"

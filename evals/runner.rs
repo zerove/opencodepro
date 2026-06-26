@@ -9,10 +9,8 @@ use jsonschema::JSONSchema;
 use prettytable::{Table, row};
 use anyhow::{Result, Context};
 
-use reqwest;
-
-use sisyphus_tools::{BuiltinToolExecutor, hook::HookRegistry, feedback::FeedbackStore};
-use sisyphus_types::ToolExecutor;
+use sisyphus_tools::{BuiltinToolExecutor, DynamicLlmClient, hook::HookRegistry, feedback::FeedbackStore};
+use sisyphus_types::{Config, ToolExecutor};
 use sisyphus_tools::metis::LlmClient;
 
 // ── Schema Definitions ──────────────────────────────────────────
@@ -48,7 +46,7 @@ struct Case {
     metadata: Option<Value>,
 }
 
-// ── LLM Clients ──────────────────────────────────────────────────
+// ── Mock LLM Client ────────────────────────────────────────────
 
 struct MockLlmClient;
 
@@ -72,36 +70,6 @@ impl LlmClient for MockLlmClient {
     }
 }
 
-struct ProductionLlmClient {
-    api_key: String,
-    endpoint: String,
-}
-
-#[async_trait]
-impl LlmClient for ProductionLlmClient {
-    async fn chat(&self, system: &str, user: &str, json_mode: bool) -> Result<String, String> {
-        let client = reqwest::Client::new();
-        let payload = json!({
-            "system": system,
-            "user": user,
-            "json_mode": json_mode,
-        });
-
-        let res = client.post(&self.endpoint)
-            .header("Authorization", format!("Bearer {}", self.api_key))
-            .json(&payload)
-            .send()
-            .await
-            .map_err(|e| format!("HTTP request failed: {e}"))?;
-
-        let text = res.text().await.map_err(|e| format!("Failed to read response: {e}"))?;
-        
-        let v: Value = serde_json::from_str(&text).map_err(|e| format!("Invalid JSON from API: {e}"))?;
-        v.get("content").and_then(|c| c.as_str()).map(|s| s.to_string())
-            .ok_or_else(|| "Response missing 'content' field".to_string())
-    }
-}
-
 // ── Eval Runner ─────────────────────────────────────────────────
 
 struct EvalRunner {
@@ -117,14 +85,23 @@ impl EvalRunner {
         let llm_client: Arc<dyn LlmClient> = if api_key == "mock" {
             Arc::new(MockLlmClient)
         } else {
-            Arc::new(OpenAiLlmClient::new(api_key, endpoint, model))
+            let cfg = Config {
+                llm: sisyphus_types::LlmConfig {
+                    api_key,
+                    endpoint,
+                    model,
+                    agents: std::collections::HashMap::new(),
+                },
+                ..Default::default()
+            };
+            Arc::new(DynamicLlmClient::new(Arc::new(std::sync::RwLock::new(cfg))))
         };
 
         Self {
             executor: BuiltinToolExecutor {
                 registry: HookRegistry::new(),
                 llm_client,
-                feedback_store: Arc::new(FeedbackStore::default()),
+                feedback_store: Arc::new(FeedbackStore::default_dir()),
             },
         }
     }

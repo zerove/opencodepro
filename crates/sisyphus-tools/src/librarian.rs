@@ -92,7 +92,6 @@ Guidelines:
 "#;
 
 /// Perform a multi-source research query.
-
 ///
 /// Searches the web, fetches top results, and synthesises findings
 /// into a structured report. Returns a `ResearchReport` with
@@ -457,5 +456,87 @@ mod tests {
                 eprintln!("fetch skipped (network unavailable): {e}");
             }
         }
+    }
+
+    #[test]
+    fn test_research_scope_parse_case_insensitive() {
+        assert_eq!("WEB".parse::<ResearchScope>().unwrap(), ResearchScope::Web);
+        assert_eq!("Docs".parse::<ResearchScope>().unwrap(), ResearchScope::Documentation);
+        assert_eq!("CODE".parse::<ResearchScope>().unwrap(), ResearchScope::CodeExamples);
+        assert_eq!("ALL".parse::<ResearchScope>().unwrap(), ResearchScope::All);
+    }
+
+    #[test]
+    fn test_research_scope_parse_aliases() {
+        assert_eq!("www".parse::<ResearchScope>().unwrap(), ResearchScope::Web);
+        assert_eq!("documentation".parse::<ResearchScope>().unwrap(), ResearchScope::Documentation);
+        assert_eq!("examples".parse::<ResearchScope>().unwrap(), ResearchScope::CodeExamples);
+    }
+
+    #[test]
+    fn test_serde_research_finding() {
+        let finding = ResearchFinding {
+            claim: "Rust is fast".into(),
+            source_url: "https://example.com".into(),
+            source_title: "Example".into(),
+            relevance: 0.95,
+            retrieved_at: "2026-01-01T00:00:00.000Z".into(),
+        };
+        let json = serde_json::to_string(&finding).unwrap();
+        let back: ResearchFinding = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.claim, "Rust is fast");
+        assert!((back.relevance - 0.95).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_serde_research_report() {
+        let report = ResearchReport {
+            query: "rust".into(),
+            findings: vec![
+                ResearchFinding {
+                    claim: "finding 1".into(),
+                    source_url: "https://a.com".into(),
+                    source_title: "A".into(),
+                    relevance: 0.8,
+                    retrieved_at: "now".into(),
+                },
+            ],
+            synthesis: "synthesised text".into(),
+            sources_consulted: 3,
+            confidence: 0.75,
+        };
+        let json = serde_json::to_string_pretty(&report).unwrap();
+        let back: ResearchReport = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.query, "rust");
+        assert_eq!(back.findings.len(), 1);
+        assert!((back.confidence - 0.75).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_serde_code_example() {
+        let example = CodeExample {
+            source: "github.com/rust-lang/rust".into(),
+            language: "rust".into(),
+            code: "fn main() {}".into(),
+            description: "simple example".into(),
+        };
+        let json = serde_json::to_string(&example).unwrap();
+        let back: CodeExample = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.language, "rust");
+        assert!(back.code.contains("main"));
+    }
+
+    #[test]
+    fn test_serde_doc_page() {
+        let page = DocPage {
+            url: "https://doc.rust-lang.org".into(),
+            title: "Rust Docs".into(),
+            content_preview: "The Rust programming language...".into(),
+            content_length: 42,
+        };
+        let json = serde_json::to_string(&page).unwrap();
+        let back: DocPage = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.url, "https://doc.rust-lang.org");
+        assert_eq!(back.content_length, 42);
     }
 }

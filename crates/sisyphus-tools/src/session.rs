@@ -141,6 +141,63 @@ pub fn session_add_message(path: &Path, id: &str, role: &str, content: &str) -> 
     Ok(result)
 }
 
+/// Fork a session — create a new session as a copy of an existing one.
+/// All messages from the original are preserved in the new session.
+pub fn session_fork(path: &Path, id: &str, new_name: &str) -> ToolResult<Session> {
+    let mut store = SessionStore::load_or_empty(path);
+    let original = store.sessions.get(id)
+        .ok_or_else(|| ToolError::TodoError(format!("session not found: {id}")))?
+        .clone();
+
+    let new_id = format!("ses_{:x}", store.next_seq);
+    store.next_seq += 1;
+    let now = now_iso();
+    let forked = Session {
+        id: new_id,
+        name: new_name.to_string(),
+        created_at: now.clone(),
+        updated_at: now.clone(),
+        message_count: original.messages.len() as u64,
+        messages: original.messages,
+        metadata: original.metadata,
+    };
+    let result = forked.clone();
+    store.sessions.insert(forked.id.clone(), forked);
+    store.save(path)?;
+    Ok(result)
+}
+
+/// Continue a session — load the full message history as context for continuation.
+/// Returns the session unchanged; this is a semantic operation that signals
+/// "resuming from this session" to the caller.
+pub fn session_continue(path: &Path, id: &str) -> ToolResult<Session> {
+    let mut store = SessionStore::load_or_empty(path);
+    let session = store.sessions.get_mut(id)
+        .ok_or_else(|| ToolError::TodoError(format!("session not found: {id}")))?;
+    session.updated_at = now_iso();
+    let result = session.clone();
+    store.save(path)?;
+    Ok(result)
+}
+
+/// Undo the last message in a session — removes it and decrements message count.
+pub fn session_undo(path: &Path, id: &str) -> ToolResult<Session> {
+    let mut store = SessionStore::load_or_empty(path);
+    let session = store.sessions.get_mut(id)
+        .ok_or_else(|| ToolError::TodoError(format!("session not found: {id}")))?;
+
+    if session.messages.is_empty() {
+        return Err(ToolError::TodoError("nothing to undo — session is empty".into()));
+    }
+
+    session.messages.pop();
+    session.message_count = session.messages.len() as u64;
+    session.updated_at = now_iso();
+    let result = session.clone();
+    store.save(path)?;
+    Ok(result)
+}
+
 /// Update a session's name.
 pub fn session_rename(path: &Path, id: &str, name: &str) -> ToolResult<Session> {
     let mut store = SessionStore::load_or_empty(path);
@@ -266,5 +323,153 @@ mod tests {
         assert_eq!(fetched.name, "persist test");
         assert_eq!(fetched.message_count, 1);
         assert_eq!(fetched.messages[0].content, "stored!");
+    }
+
+    #[test]
+    fn test_session_rename_not_found() {
+        let (_d, path) = fresh_db();
+        let result = session_rename(&path, "nonexistent", "new name");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_session_add_message_empty_content() {
+        let (_d, path) = fresh_db();
+        let s = session_create(&path, "test").unwrap();
+        let s = session_add_message(&path, &s.id, "user", "").unwrap();
+        assert_eq!(s.message_count, 1);
+        assert_eq!(s.messages[0].content, "");
+    }
+
+    #[test]
+    fn test_session_serde_message_roundtrip() {
+        let msg = Message {
+            role: "user".into(),
+            content: "hello".into(),
+            created_at: "2026-01-01T00:00:00.000Z".into(),
+        };
+        let json = serde_json::to_string(&msg).unwrap();
+        let back: Message = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.role, "user");
+        assert_eq!(back.content, "hello");
+    }
+
+    #[test]
+    fn test_session_serde_session_roundtrip() {
+        let mut metadata = HashMap::new();
+        metadata.insert("key".into(), "val".into());
+        let session = Session {
+            id: "ses_1".into(),
+            name: "test".into(),
+            created_at: "2026-01-01T00:00:00.000Z".into(),
+            updated_at: "2026-06-01T00:00:00.000Z".into(),
+            message_count: 2,
+            messages: vec![
+                Message { role: "user".into(), content: "hi".into(), created_at: "2026-01-01T00:00:00.000Z".into() },
+                Message { role: "assistant".into(), content: "hello".into(), created_at: "2026-01-01T00:00:00.000Z".into() },
+            ],
+            metadata,
+        };
+        let json = serde_json::to_string_pretty(&session).unwrap();
+        let back: Session = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.id, "ses_1");
+        assert_eq!(back.message_count, 2);
+        assert_eq!(back.messages.len(), 2);
+        assert_eq!(back.metadata.get("key").unwrap(), "val");
+    }
+
+    #[test]
+    fn test_session_store_empty_not_exists() {
+        let (_d, path) = fresh_db();
+        let store = SessionStore::load_or_empty(&path);
+        assert!(store.sessions.is_empty());
+        assert_eq!(store.next_seq, 1);
+    }
+
+    #[test]
+    fn test_session_fork() {
+        let (_d, path) = fresh_db();
+        let s1 = session_create(&path, "original").unwrap();
+        let s1 = session_add_message(&path, &s1.id, "user", "hello").unwrap();
+        let s1 = session_add_message(&path, &s1.id, "assistant", "hi").unwrap();
+
+        let fork = session_fork(&path, &s1.id, "forked").unwrap();
+        assert_eq!(fork.name, "forked");
+        assert_eq!(fork.message_count, 2);
+        assert_eq!(fork.messages[0].content, "hello");
+        assert_eq!(fork.messages[1].content, "hi");
+        // Fork has different ID and timestamps
+        assert_ne!(fork.id, s1.id);
+        assert!(fork.created_at >= s1.created_at);
+
+        // Original unchanged
+        let orig = session_get(&path, &s1.id).unwrap();
+        assert_eq!(orig.message_count, 2);
+    }
+
+    #[test]
+    fn test_session_fork_not_found() {
+        let (_d, path) = fresh_db();
+        let result = session_fork(&path, "nonexistent", "forked");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_session_undo() {
+        let (_d, path) = fresh_db();
+        let s = session_create(&path, "chat").unwrap();
+        let s = session_add_message(&path, &s.id, "user", "first").unwrap();
+        let s = session_add_message(&path, &s.id, "assistant", "second").unwrap();
+        assert_eq!(s.message_count, 2);
+
+        let s = session_undo(&path, &s.id).unwrap();
+        assert_eq!(s.message_count, 1);
+        assert_eq!(s.messages[0].content, "first");
+
+        // Undo again — empty
+        let s = session_undo(&path, &s.id).unwrap();
+        assert_eq!(s.message_count, 0);
+        assert!(s.messages.is_empty());
+    }
+
+    #[test]
+    fn test_session_undo_empty() {
+        let (_d, path) = fresh_db();
+        let s = session_create(&path, "empty").unwrap();
+        let result = session_undo(&path, &s.id);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("nothing to undo"));
+    }
+
+    #[test]
+    fn test_session_undo_not_found() {
+        let (_d, path) = fresh_db();
+        let result = session_undo(&path, "ghost");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_session_continue() {
+        let (_d, path) = fresh_db();
+        let s = session_create(&path, "cont").unwrap();
+        let s = session_add_message(&path, &s.id, "user", "msg").unwrap();
+        let updated_before = s.updated_at.clone();
+
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        let continued = session_continue(&path, &s.id).unwrap();
+        assert_eq!(continued.id, s.id);
+        assert_eq!(continued.message_count, 1);
+        // updated_at should be newer
+        assert!(continued.updated_at >= updated_before, "expected update timestamp to advance");
+
+        let fetched = session_get(&path, &s.id).unwrap();
+        assert_eq!(fetched.message_count, 1);
+    }
+
+    #[test]
+    fn test_session_continue_not_found() {
+        let (_d, path) = fresh_db();
+        let result = session_continue(&path, "ghost");
+        assert!(result.is_err());
     }
 }
