@@ -2,26 +2,30 @@ use anyhow::Result;
 use std::path::PathBuf;
 
 /// Resolve language backend from `--lang` option string.
-fn resolve_backend(lang: Option<&str>, cwd: Option<&std::path::Path>) -> Result<Box<dyn sisyphus_tools::build::LanguageBackend>> {
+fn resolve_backend(
+    lang: Option<&str>,
+    cwd: Option<&std::path::Path>,
+) -> Result<Box<dyn sisyphus_tools::build::LanguageBackend>> {
     match lang {
-        Some("rust") | None if cwd.map(|d| d.join("Cargo.toml").exists()).unwrap_or(false) || lang == Some("rust") => {
+        Some("rust") | None
+            if cwd.map(|d| d.join("Cargo.toml").exists()).unwrap_or(false)
+                || lang == Some("rust") =>
+        {
             Ok(Box::new(sisyphus_tools::build::rust::RustBackend))
         }
         Some("node") | Some("ts") | Some("js") => {
             Ok(Box::new(sisyphus_tools::build::node::NodeBackend::new()?))
         }
-        Some("python") | Some("py") => {
-            Ok(Box::new(sisyphus_tools::build::python::PythonBackend::new()?))
-        }
-        Some("go") | Some("golang") => {
-            Ok(Box::new(sisyphus_tools::build::golang::GoBackend))
-        }
-        Some("java") | Some("maven") => {
-            Ok(Box::new(sisyphus_tools::build::java::JavaBackend::new_maven()))
-        }
-        Some("gradle") => {
-            Ok(Box::new(sisyphus_tools::build::java::JavaBackend::new_gradle()))
-        }
+        Some("python") | Some("py") => Ok(Box::new(
+            sisyphus_tools::build::python::PythonBackend::new()?,
+        )),
+        Some("go") | Some("golang") => Ok(Box::new(sisyphus_tools::build::golang::GoBackend)),
+        Some("java") | Some("maven") => Ok(Box::new(
+            sisyphus_tools::build::java::JavaBackend::new_maven(),
+        )),
+        Some("gradle") => Ok(Box::new(
+            sisyphus_tools::build::java::JavaBackend::new_gradle(),
+        )),
         Some("fe") | Some("frontend") | Some("css") | Some("html") => {
             Ok(Box::new(sisyphus_tools::build::frontend::FrontendBackend))
         }
@@ -53,18 +57,22 @@ pub fn run_diagnose(
     if report.check_output.success {
         println!("check: ✅ PASSED");
     } else {
-        println!("check: ❌ FAILED ({} errors, {} warnings)",
+        println!(
+            "check: ❌ FAILED ({} errors, {} warnings)",
             report.check_output.errors.len(),
-            report.check_output.warnings.len());
+            report.check_output.warnings.len()
+        );
     }
 
     if let Some(ref lint) = report.lint_output {
         if lint.success {
             println!("lint:  ✅ PASSED ({} warnings)", lint.warnings.len());
         } else {
-            println!("lint:  ❌ ISSUES FOUND ({} errors, {} warnings)",
+            println!(
+                "lint:  ❌ ISSUES FOUND ({} errors, {} warnings)",
                 lint.errors.len(),
-                lint.warnings.len());
+                lint.warnings.len()
+            );
         }
     } else if !no_lint && !report.check_output.success {
         println!("lint:  ⏭ SKIPPED (check failed)");
@@ -94,14 +102,22 @@ pub fn run_diagnose(
     if !report.all_diagnostics.is_empty() {
         println!();
         let show = report.all_diagnostics.len().min(20);
-        println!("Diagnostics (showing first {}/{}):", show, report.all_diagnostics.len());
+        println!(
+            "Diagnostics (showing first {}/{}):",
+            show,
+            report.all_diagnostics.len()
+        );
         for d in report.all_diagnostics.iter().take(show) {
             let loc = match (&d.file, d.line) {
                 (Some(f), Some(ln)) => format!("{}:{}", f, ln),
                 (Some(f), None) => f.clone(),
                 (None, _) => "<unknown>".to_string(),
             };
-            let code = d.code.as_deref().map(|c| format!("[{c}]")).unwrap_or_default();
+            let code = d
+                .code
+                .as_deref()
+                .map(|c| format!("[{c}]"))
+                .unwrap_or_default();
             println!("  {} {} {} — {}", d.level, code, loc, d.message);
         }
         if report.all_diagnostics.len() > 20 {
@@ -128,7 +144,11 @@ pub fn run_fix(
     let pkg = package.as_deref();
     let backend = resolve_backend(lang.as_deref(), dir)?;
 
-    println!("Running fix (backend: {}){}...", backend.name(), if fix_lint { " + lint fixes" } else { "" });
+    println!(
+        "Running fix (backend: {}){}...",
+        backend.name(),
+        if fix_lint { " + lint fixes" } else { "" }
+    );
     let report = sisyphus_tools::fix_and_diagnose_with(backend.as_ref(), pkg, fix_lint, all, dir)?;
 
     if report.check_output.success {

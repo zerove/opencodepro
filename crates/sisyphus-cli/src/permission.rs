@@ -16,9 +16,7 @@ impl CliPermission {
             p
         });
 
-        let mut this = Self {
-            rules: Vec::new(),
-        };
+        let mut this = Self { rules: Vec::new() };
 
         if config_path.exists() {
             let content = std::fs::read_to_string(&config_path)

@@ -15,7 +15,7 @@ pub async fn exec(
 ) -> Result<sisyphus_tools::BashOutput> {
     // Permission check
     match perms.check("exec") {
-        Some(true) => {}      // allowed
+        Some(true) => {} // allowed
         Some(false) => {
             anyhow::bail!("Permission denied: shell execution is blocked by config");
         }

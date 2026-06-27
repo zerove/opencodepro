@@ -10,11 +10,12 @@ pub fn run_list() -> Result<()> {
 }
 
 pub fn run_generate(template_name: &str, name: &str, dir: &std::path::Path) -> Result<()> {
-    let template = sisyphus_tools::TemplateType::from_str_opt(template_name)
-        .ok_or_else(|| anyhow::anyhow!(
+    let template = sisyphus_tools::TemplateType::from_str_opt(template_name).ok_or_else(|| {
+        anyhow::anyhow!(
             "Unknown template '{}'. Use 'sisyphus init list' to see available templates.",
             template_name
-        ))?;
+        )
+    })?;
 
     let dest = if dir.is_absolute() {
         dir.to_path_buf()

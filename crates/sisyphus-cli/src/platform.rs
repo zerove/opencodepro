@@ -1,5 +1,5 @@
-use std::path::MAIN_SEPARATOR;
 use std::env;
+use std::path::MAIN_SEPARATOR;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PlatformInfo {

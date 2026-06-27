@@ -1,26 +1,30 @@
-use std::path::PathBuf;
 use anyhow::Result;
+use std::path::PathBuf;
 
-fn resolve_backend(lang: Option<&str>, cwd: Option<&std::path::Path>) -> Result<Box<dyn sisyphus_tools::build::LanguageBackend>> {
+fn resolve_backend(
+    lang: Option<&str>,
+    cwd: Option<&std::path::Path>,
+) -> Result<Box<dyn sisyphus_tools::build::LanguageBackend>> {
     match lang {
-        Some("rust") | None if cwd.map(|d| d.join("Cargo.toml").exists()).unwrap_or(false) || lang == Some("rust") => {
+        Some("rust") | None
+            if cwd.map(|d| d.join("Cargo.toml").exists()).unwrap_or(false)
+                || lang == Some("rust") =>
+        {
             Ok(Box::new(sisyphus_tools::build::rust::RustBackend))
         }
         Some("node") | Some("ts") | Some("js") => {
             Ok(Box::new(sisyphus_tools::build::node::NodeBackend::new()?))
         }
-        Some("python") | Some("py") => {
-            Ok(Box::new(sisyphus_tools::build::python::PythonBackend::new()?))
-        }
-        Some("go") | Some("golang") => {
-            Ok(Box::new(sisyphus_tools::build::golang::GoBackend))
-        }
-        Some("java") | Some("maven") => {
-            Ok(Box::new(sisyphus_tools::build::java::JavaBackend::new_maven()))
-        }
-        Some("gradle") => {
-            Ok(Box::new(sisyphus_tools::build::java::JavaBackend::new_gradle()))
-        }
+        Some("python") | Some("py") => Ok(Box::new(
+            sisyphus_tools::build::python::PythonBackend::new()?,
+        )),
+        Some("go") | Some("golang") => Ok(Box::new(sisyphus_tools::build::golang::GoBackend)),
+        Some("java") | Some("maven") => Ok(Box::new(
+            sisyphus_tools::build::java::JavaBackend::new_maven(),
+        )),
+        Some("gradle") => Ok(Box::new(
+            sisyphus_tools::build::java::JavaBackend::new_gradle(),
+        )),
         Some("fe") | Some("frontend") | Some("css") | Some("html") => {
             Ok(Box::new(sisyphus_tools::build::frontend::FrontendBackend))
         }
@@ -39,7 +43,9 @@ fn cwd_or_current(cwd: Option<PathBuf>) -> Option<PathBuf> {
 }
 
 fn print_diags(label: &str, diags: &[sisyphus_tools::build::Diag]) {
-    if diags.is_empty() { return; }
+    if diags.is_empty() {
+        return;
+    }
     println!("  {label}:");
     for d in diags {
         let loc = match (&d.file, d.line) {
@@ -56,7 +62,12 @@ fn print_diags(label: &str, diags: &[sisyphus_tools::build::Diag]) {
     }
 }
 
-pub async fn run_check(package: Option<String>, all: bool, cwd: Option<PathBuf>, lang: Option<String>) -> Result<()> {
+pub async fn run_check(
+    package: Option<String>,
+    all: bool,
+    cwd: Option<PathBuf>,
+    lang: Option<String>,
+) -> Result<()> {
     let dir = cwd.as_deref().or_else(|| Some(std::path::Path::new(".")));
     let backend = resolve_backend(lang.as_deref(), dir)?;
     let dir_ref = cwd_or_current(cwd);
@@ -69,12 +80,21 @@ pub async fn run_check(package: Option<String>, all: bool, cwd: Option<PathBuf>,
     print_diags("Errors", &out.errors);
     print_diags("Warnings", &out.warnings);
     if !out.success {
-        anyhow::bail!("{} error(s), {} warning(s)", out.errors.len(), out.warnings.len());
+        anyhow::bail!(
+            "{} error(s), {} warning(s)",
+            out.errors.len(),
+            out.warnings.len()
+        );
     }
     Ok(())
 }
 
-pub async fn run_build(package: Option<String>, release: bool, cwd: Option<PathBuf>, lang: Option<String>) -> Result<()> {
+pub async fn run_build(
+    package: Option<String>,
+    release: bool,
+    cwd: Option<PathBuf>,
+    lang: Option<String>,
+) -> Result<()> {
     let dir = cwd.as_deref().or_else(|| Some(std::path::Path::new(".")));
     let backend = resolve_backend(lang.as_deref(), dir)?;
     let dir_ref = cwd_or_current(cwd);
@@ -87,7 +107,11 @@ pub async fn run_build(package: Option<String>, release: bool, cwd: Option<PathB
     print_diags("Errors", &out.errors);
     print_diags("Warnings", &out.warnings);
     if !out.success {
-        anyhow::bail!("{} error(s), {} warning(s)", out.errors.len(), out.warnings.len());
+        anyhow::bail!(
+            "{} error(s), {} warning(s)",
+            out.errors.len(),
+            out.warnings.len()
+        );
     }
     Ok(())
 }
@@ -105,8 +129,10 @@ pub async fn run_test(
     let r = backend.test(package.as_deref(), name.as_deref(), all, dir_ref.as_deref())?;
 
     let status = if r.failed == 0 { "ok" } else { "FAILED" };
-    println!("Test result: {status}. {} passed; {} failed; {} ignored; {} measured; {} filtered out",
-        r.passed, r.failed, r.ignored, r.measured, r.filtered_out);
+    println!(
+        "Test result: {status}. {} passed; {} failed; {} ignored; {} measured; {} filtered out",
+        r.passed, r.failed, r.ignored, r.measured, r.filtered_out
+    );
 
     if !r.failures.is_empty() {
         println!("\nFailures:");
@@ -121,7 +147,11 @@ pub async fn run_test(
     Ok(())
 }
 
-pub async fn run_lint(package: Option<String>, cwd: Option<PathBuf>, lang: Option<String>) -> Result<()> {
+pub async fn run_lint(
+    package: Option<String>,
+    cwd: Option<PathBuf>,
+    lang: Option<String>,
+) -> Result<()> {
     let dir = cwd.as_deref().or_else(|| Some(std::path::Path::new(".")));
     let backend = resolve_backend(lang.as_deref(), dir)?;
     let dir_ref = cwd_or_current(cwd);
@@ -154,7 +184,11 @@ pub async fn run_fmt(check_mode: bool, cwd: Option<PathBuf>, lang: Option<String
     Ok(())
 }
 
-pub async fn run_doc(package: Option<String>, cwd: Option<PathBuf>, lang: Option<String>) -> Result<()> {
+pub async fn run_doc(
+    package: Option<String>,
+    cwd: Option<PathBuf>,
+    lang: Option<String>,
+) -> Result<()> {
     let dir = cwd.as_deref().or_else(|| Some(std::path::Path::new(".")));
     let backend = resolve_backend(lang.as_deref(), dir)?;
     let dir_ref = cwd_or_current(cwd);

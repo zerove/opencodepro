@@ -23,7 +23,12 @@ fn run_cli_stderr(args: &[&str]) -> String {
 
 fn run_cli_success(args: &[&str]) -> String {
     let out = run_cli(args);
-    assert!(out.status.success(), "CLI command failed: {args:?}\nstdout: {}\nstderr: {}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "CLI command failed: {args:?}\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
     String::from_utf8_lossy(&out.stdout).to_string()
 }
 
@@ -146,11 +151,14 @@ fn test_interactive_mode_flag() {
 #[test]
 fn test_metis_analyse_inline() {
     let stdout = run_cli_success(&[
-        "metis", "analyse",
+        "metis",
+        "analyse",
         "Refactor the user authentication module to support OAuth2",
     ]);
     assert!(stdout.contains("Metis Analysis"));
-    assert!(stdout.contains("Summary") || stdout.contains("Ambiguities") || stdout.contains("Implicit"));
+    assert!(
+        stdout.contains("Summary") || stdout.contains("Ambiguities") || stdout.contains("Implicit")
+    );
 }
 
 #[test]
@@ -169,11 +177,14 @@ fn test_metis_analyse_from_file() {
 fn test_momus_review_plan() {
     let dir = tempfile::tempdir().unwrap();
     let plan_file = dir.path().join("plan.md");
-    std::fs::write(&plan_file,
+    std::fs::write(
+        &plan_file,
         "- Step 1: Implement the API endpoint\n\
          - Step 2: Add input validation\n\
          - Step 3: Write integration tests\n\
-         - Step 4: Deploy to staging\n").unwrap();
+         - Step 4: Deploy to staging\n",
+    )
+    .unwrap();
 
     let stdout = run_cli_success(&["momus", "review-plan", plan_file.to_str().unwrap()]);
     assert!(!stdout.is_empty());
@@ -183,8 +194,11 @@ fn test_momus_review_plan() {
 fn test_momus_review_code() {
     let dir = tempfile::tempdir().unwrap();
     let code_file = dir.path().join("example.rs");
-    std::fs::write(&code_file,
-        "fn hello() {\n    println!(\"hello world\");\n}\n").unwrap();
+    std::fs::write(
+        &code_file,
+        "fn hello() {\n    println!(\"hello world\");\n}\n",
+    )
+    .unwrap();
 
     let stdout = run_cli_success(&["momus", "review-code", code_file.to_str().unwrap()]);
     assert!(!stdout.is_empty());
@@ -193,7 +207,8 @@ fn test_momus_review_code() {
 #[test]
 fn test_momus_review_arch() {
     let stdout = run_cli_success(&[
-        "momus", "review-arch",
+        "momus",
+        "review-arch",
         "The system uses a microservices architecture with PostgreSQL for persistence \
          and RabbitMQ for async communication between services.",
     ]);
@@ -210,7 +225,11 @@ fn test_librarian_synthesise() {
         {"claim": "Rust is memory-safe", "source_url": "https://example.com/a", "source_title": "Source A", "relevance": 0.9, "retrieved_at": "2025-01-01"},
         {"claim": "Rust has zero-cost abstractions", "source_url": "https://example.com/b", "source_title": "Source B", "relevance": 0.8, "retrieved_at": "2025-01-01"},
     ]);
-    std::fs::write(&findings_file, serde_json::to_string_pretty(&findings).unwrap()).unwrap();
+    std::fs::write(
+        &findings_file,
+        serde_json::to_string_pretty(&findings).unwrap(),
+    )
+    .unwrap();
 
     let stdout = run_cli_success(&["librarian", "synthesise", findings_file.to_str().unwrap()]);
     assert!(!stdout.is_empty(), "expected synthesis output, got empty");
@@ -221,9 +240,18 @@ fn test_librarian_synthesise() {
 #[test]
 fn test_help_contains_agent_subcommands() {
     let stdout = run_cli_success(&["--help"]);
-    assert!(stdout.contains("librarian"), "--help should list librarian subcommand");
-    assert!(stdout.contains("momus"), "--help should list momus subcommand");
-    assert!(stdout.contains("metis"), "--help should list metis subcommand");
+    assert!(
+        stdout.contains("librarian"),
+        "--help should list librarian subcommand"
+    );
+    assert!(
+        stdout.contains("momus"),
+        "--help should list momus subcommand"
+    );
+    assert!(
+        stdout.contains("metis"),
+        "--help should list metis subcommand"
+    );
 }
 
 #[test]
@@ -257,12 +285,7 @@ fn test_edit_first_occurrence() {
     let file_path = dir.path().join("edit.txt");
     std::fs::write(&file_path, "the quick brown fox").unwrap();
 
-    let stdout = run_cli_success(&[
-        "edit",
-        file_path.to_str().unwrap(),
-        "quick",
-        "slow",
-    ]);
+    let stdout = run_cli_success(&["edit", file_path.to_str().unwrap(), "quick", "slow"]);
     assert!(stdout.contains("Replaced first occurrence"));
 
     let content = std::fs::read_to_string(&file_path).unwrap();
@@ -275,13 +298,7 @@ fn test_edit_all_occurrences() {
     let file_path = dir.path().join("edit_all.txt");
     std::fs::write(&file_path, "a-b-a-c-a").unwrap();
 
-    let stdout = run_cli_success(&[
-        "edit",
-        file_path.to_str().unwrap(),
-        "a",
-        "x",
-        "--all",
-    ]);
+    let stdout = run_cli_success(&["edit", file_path.to_str().unwrap(), "a", "x", "--all"]);
     assert!(stdout.contains("3 occurrence(s)"));
 
     let content = std::fs::read_to_string(&file_path).unwrap();
@@ -357,19 +374,45 @@ fn test_todo_add_list_update_delete() {
     let stdout = run_cli_success(&["--data-dir", dir.path().to_str().unwrap(), "todo", "list"]);
     assert!(stdout.contains("No todos found."));
 
-    let stdout = run_cli_success(&["--data-dir", dir.path().to_str().unwrap(), "todo", "add", "test task"]);
+    let stdout = run_cli_success(&[
+        "--data-dir",
+        dir.path().to_str().unwrap(),
+        "todo",
+        "add",
+        "test task",
+    ]);
     assert!(stdout.contains("Created:"));
 
     let stdout = run_cli_success(&["--data-dir", dir.path().to_str().unwrap(), "todo", "list"]);
     assert!(stdout.contains("test task"));
     assert!(stdout.contains("pending"));
 
-    let add_out = run_cli_success(&["--data-dir", dir.path().to_str().unwrap(), "todo", "add", "another task"]);
+    let add_out = run_cli_success(&[
+        "--data-dir",
+        dir.path().to_str().unwrap(),
+        "todo",
+        "add",
+        "another task",
+    ]);
     let id = add_out.split_whitespace().nth(1).unwrap_or("1");
-    let stdout = run_cli_success(&["--data-dir", dir.path().to_str().unwrap(), "todo", "update", id, "-s", "completed"]);
+    let stdout = run_cli_success(&[
+        "--data-dir",
+        dir.path().to_str().unwrap(),
+        "todo",
+        "update",
+        id,
+        "-s",
+        "completed",
+    ]);
     assert!(stdout.contains("Updated:"));
 
-    let stdout = run_cli_success(&["--data-dir", dir.path().to_str().unwrap(), "todo", "delete", id]);
+    let stdout = run_cli_success(&[
+        "--data-dir",
+        dir.path().to_str().unwrap(),
+        "todo",
+        "delete",
+        id,
+    ]);
     assert!(stdout.contains("Deleted:"));
 }
 
@@ -379,28 +422,71 @@ fn test_todo_add_list_update_delete() {
 fn test_session_create_list_get_delete() {
     let dir = tempfile::tempdir().unwrap();
 
-    let stdout = run_cli_success(&["--data-dir", dir.path().to_str().unwrap(), "session", "list"]);
+    let stdout = run_cli_success(&[
+        "--data-dir",
+        dir.path().to_str().unwrap(),
+        "session",
+        "list",
+    ]);
     assert!(stdout.contains("No sessions."));
 
-    let stdout = run_cli_success(&["--data-dir", dir.path().to_str().unwrap(), "session", "create", "test session"]);
+    let stdout = run_cli_success(&[
+        "--data-dir",
+        dir.path().to_str().unwrap(),
+        "session",
+        "create",
+        "test session",
+    ]);
     assert!(stdout.contains("Created session:"));
 
     let parts: Vec<&str> = stdout.split_whitespace().collect();
     let session_id = parts.get(2).copied().unwrap_or("1");
 
-    let stdout = run_cli_success(&["--data-dir", dir.path().to_str().unwrap(), "session", "list"]);
+    let stdout = run_cli_success(&[
+        "--data-dir",
+        dir.path().to_str().unwrap(),
+        "session",
+        "list",
+    ]);
     assert!(stdout.contains("test session"));
 
-    let stdout = run_cli_success(&["--data-dir", dir.path().to_str().unwrap(), "session", "get", session_id]);
+    let stdout = run_cli_success(&[
+        "--data-dir",
+        dir.path().to_str().unwrap(),
+        "session",
+        "get",
+        session_id,
+    ]);
     assert!(stdout.contains("Session:"));
 
-    let stdout = run_cli_success(&["--data-dir", dir.path().to_str().unwrap(), "session", "add-message", session_id, "user", "hello"]);
+    let stdout = run_cli_success(&[
+        "--data-dir",
+        dir.path().to_str().unwrap(),
+        "session",
+        "add-message",
+        session_id,
+        "user",
+        "hello",
+    ]);
     assert!(stdout.contains("Message added"));
 
-    let stdout = run_cli_success(&["--data-dir", dir.path().to_str().unwrap(), "session", "rename", session_id, "renamed session"]);
+    let stdout = run_cli_success(&[
+        "--data-dir",
+        dir.path().to_str().unwrap(),
+        "session",
+        "rename",
+        session_id,
+        "renamed session",
+    ]);
     assert!(stdout.contains("Renamed session"));
 
-    let stdout = run_cli_success(&["--data-dir", dir.path().to_str().unwrap(), "session", "delete", session_id]);
+    let stdout = run_cli_success(&[
+        "--data-dir",
+        dir.path().to_str().unwrap(),
+        "session",
+        "delete",
+        session_id,
+    ]);
     assert!(stdout.contains("Deleted session"));
 }
 
@@ -409,8 +495,11 @@ fn test_session_create_list_get_delete() {
 #[test]
 fn test_plan_create_show_from_description() {
     let stdout = run_cli_success(&[
-        "plan", "create", "my plan",
-        "-d", "Init phase\nBuild phase\nTest phase",
+        "plan",
+        "create",
+        "my plan",
+        "-d",
+        "Init phase\nBuild phase\nTest phase",
     ]);
     assert!(stdout.contains("Plan: my plan"));
     assert!(stdout.contains(" steps"));
@@ -421,11 +510,18 @@ fn test_plan_create_from_file_then_save_show_review_approve() {
     let dir = tempfile::tempdir().unwrap();
 
     let req_file = dir.path().join("reqs.txt");
-    std::fs::write(&req_file, "- Step A: design\n- Step B: implement\n- Step C: verify\n").unwrap();
+    std::fs::write(
+        &req_file,
+        "- Step A: design\n- Step B: implement\n- Step C: verify\n",
+    )
+    .unwrap();
 
     let stdout = run_cli_success(&[
-        "plan", "create", "my plan",
-        "-f", req_file.to_str().unwrap(),
+        "plan",
+        "create",
+        "my plan",
+        "-f",
+        req_file.to_str().unwrap(),
     ]);
     assert!(stdout.contains("3 steps"));
 
@@ -442,14 +538,23 @@ fn test_plan_create_from_file_then_save_show_review_approve() {
         "updated_at": "2025-01-01T00:00:00Z"
     });
     let plan_file = dir.path().join("plan.json");
-    std::fs::write(&plan_file, serde_json::to_string_pretty(&plan_json).unwrap()).unwrap();
+    std::fs::write(
+        &plan_file,
+        serde_json::to_string_pretty(&plan_json).unwrap(),
+    )
+    .unwrap();
 
     let stdout = run_cli_success(&["plan", "show", plan_file.to_str().unwrap()]);
     assert!(stdout.contains("test plan"));
     assert!(stdout.contains("step one"));
 
     let saved = dir.path().join("saved.json");
-    let stdout = run_cli_success(&["plan", "save", plan_file.to_str().unwrap(), saved.to_str().unwrap()]);
+    let stdout = run_cli_success(&[
+        "plan",
+        "save",
+        plan_file.to_str().unwrap(),
+        saved.to_str().unwrap(),
+    ]);
     assert!(stdout.contains("Saved plan"));
     assert!(saved.exists());
 
@@ -466,7 +571,11 @@ fn test_plan_create_from_file_then_save_show_review_approve() {
 fn test_oracle_analyze_file() {
     let dir = tempfile::tempdir().unwrap();
     let rs_file = dir.path().join("hello.rs");
-    std::fs::write(&rs_file, "use std::fmt;\n\nfn greet() -> String {\n    \"hi\".to_string()\n}\n").unwrap();
+    std::fs::write(
+        &rs_file,
+        "use std::fmt;\n\nfn greet() -> String {\n    \"hi\".to_string()\n}\n",
+    )
+    .unwrap();
 
     let stdout = run_cli_success(&["oracle", "analyze-file", rs_file.to_str().unwrap()]);
     assert!(stdout.contains("File:"));
@@ -505,9 +614,11 @@ fn test_explore_search_finds_pattern() {
     std::fs::write(&rs_file, "const SECRET: i32 = 42;\nfn main() {}").unwrap();
 
     let stdout = run_cli_success(&[
-        "explore", "search",
+        "explore",
+        "search",
         "SECRET",
-        "-p", dir.path().to_str().unwrap(),
+        "-p",
+        dir.path().to_str().unwrap(),
     ]);
     assert!(stdout.contains("SECRET"));
 }
@@ -518,9 +629,11 @@ fn test_explore_search_no_match() {
     std::fs::write(dir.path().join("data.txt"), "nothing here").unwrap();
 
     let stdout = run_cli_success(&[
-        "explore", "search",
+        "explore",
+        "search",
         "ZZZZ_NOT_THERE",
-        "-p", dir.path().to_str().unwrap(),
+        "-p",
+        dir.path().to_str().unwrap(),
     ]);
     assert!(stdout.contains("No matches"));
 }
@@ -532,8 +645,10 @@ fn test_explore_find_files() {
     std::fs::write(dir.path().join("lib.rs"), "").unwrap();
 
     let stdout = run_cli_success(&[
-        "explore", "find-files",
-        "*.rs", dir.path().to_str().unwrap(),
+        "explore",
+        "find-files",
+        "*.rs",
+        dir.path().to_str().unwrap(),
     ]);
     assert!(stdout.contains("main.rs"));
     assert!(stdout.contains("lib.rs"));
@@ -544,8 +659,10 @@ fn test_explore_find_files_no_match() {
     let dir = tempfile::tempdir().unwrap();
 
     let stdout = run_cli_success(&[
-        "explore", "find-files",
-        "*.py", dir.path().to_str().unwrap(),
+        "explore",
+        "find-files",
+        "*.py",
+        dir.path().to_str().unwrap(),
     ]);
     assert!(stdout.contains("No files matched"));
 }
@@ -558,10 +675,7 @@ fn test_read_lines_full_file() {
     let file_path = dir.path().join("lines.txt");
     std::fs::write(&file_path, "line1\nline2\nline3\n").unwrap();
 
-    let stdout = run_cli_success(&[
-        "read-lines",
-        file_path.to_str().unwrap(),
-    ]);
+    let stdout = run_cli_success(&["read-lines", file_path.to_str().unwrap()]);
     assert!(stdout.contains("line1"));
     assert!(stdout.contains("line2"));
     assert!(stdout.contains("line3"));
@@ -573,11 +687,7 @@ fn test_read_lines_with_offset() {
     let file_path = dir.path().join("multi.txt");
     std::fs::write(&file_path, "a\nb\nc\nd\ne\n").unwrap();
 
-    let stdout = run_cli_success(&[
-        "read-lines",
-        file_path.to_str().unwrap(),
-        "-o", "2",
-    ]);
+    let stdout = run_cli_success(&["read-lines", file_path.to_str().unwrap(), "-o", "2"]);
     assert!(!stdout.contains("a"));
     assert!(stdout.contains("c"));
     assert!(stdout.contains("e"));
@@ -589,11 +699,7 @@ fn test_read_lines_with_limit() {
     let file_path = dir.path().join("bounded.txt");
     std::fs::write(&file_path, "1\n2\n3\n4\n5\n").unwrap();
 
-    let stdout = run_cli_success(&[
-        "read-lines",
-        file_path.to_str().unwrap(),
-        "-l", "2",
-    ]);
+    let stdout = run_cli_success(&["read-lines", file_path.to_str().unwrap(), "-l", "2"]);
     assert!(stdout.contains("1"));
     assert!(stdout.contains("2"));
     assert!(!stdout.contains("3"));
@@ -634,21 +740,14 @@ fn test_skill_help() {
 
 #[test]
 fn test_delegate_inline_single_command() {
-    let stdout = run_cli_success(&[
-        "delegate", "inline",
-        "echo hello_delegate",
-    ]);
+    let stdout = run_cli_success(&["delegate", "inline", "echo hello_delegate"]);
     assert!(stdout.contains("hello_delegate"));
     assert!(stdout.contains("Done:"));
 }
 
 #[test]
 fn test_delegate_inline_multiple_commands() {
-    let stdout = run_cli_success(&[
-        "delegate", "inline",
-        "echo first",
-        "echo second",
-    ]);
+    let stdout = run_cli_success(&["delegate", "inline", "echo first", "echo second"]);
     assert!(stdout.contains("first"));
     assert!(stdout.contains("second"));
     assert!(stdout.contains("Done: 2/2"));
@@ -693,12 +792,18 @@ fn test_search_help() {
 fn test_health_no_bridge_graceful_error() {
     let out = run_cli(&["health"]);
     // No bridge daemon running in tests — expect graceful failure (not panic)
-    assert!(!out.status.success(), "health should fail without a running bridge");
+    assert!(
+        !out.status.success(),
+        "health should fail without a running bridge"
+    );
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(!stderr.is_empty(), "expected error output when no bridge");
     let stdout = String::from_utf8_lossy(&out.stdout);
     // Should not contain partial "Status:" or "Version:" output
-    assert!(!stdout.contains("Status:"), "should not print status without bridge");
+    assert!(
+        !stdout.contains("Status:"),
+        "should not print status without bridge"
+    );
 }
 
 #[test]

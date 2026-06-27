@@ -1,6 +1,6 @@
+use crate::bridge::BridgeClient;
 use anyhow::{Context, Result};
 use std::path::Path;
-use crate::bridge::BridgeClient;
 
 pub async fn run_list(client: &mut BridgeClient) -> Result<()> {
     let plugins = client.list_plugins().await?;
@@ -9,21 +9,31 @@ pub async fn run_list(client: &mut BridgeClient) -> Result<()> {
     } else {
         println!("Plugins registered on bridge:");
         for p in &plugins {
-            let version_display = if p.version.is_empty() { "?".to_string() } else { p.version.clone() };
-            println!("  {} (v{}) - tool_id: {}, path: {}", p.name, version_display, p.tool_id, p.wasm_path);
+            let version_display = if p.version.is_empty() {
+                "?".to_string()
+            } else {
+                p.version.clone()
+            };
+            println!(
+                "  {} (v{}) - tool_id: {}, path: {}",
+                p.name, version_display, p.tool_id, p.wasm_path
+            );
         }
     }
     Ok(())
 }
 
 pub async fn run_load(client: &mut BridgeClient, path: &Path) -> Result<()> {
-    let filename = path.file_name()
+    let filename = path
+        .file_name()
         .context("Invalid plugin path")?
         .to_string_lossy();
     let name = filename.trim_end_matches(".wasm");
     let wasm_path_str = path.to_string_lossy().to_string();
-    
-    let response = client.load_plugin(name, "1.0.0", &wasm_path_str, name, 0).await?;
+
+    let response = client
+        .load_plugin(name, "1.0.0", &wasm_path_str, name, 0)
+        .await?;
     if response.success {
         println!("Loaded plugin '{}' from {}", name, wasm_path_str);
     } else {
@@ -37,7 +47,7 @@ pub async fn run_watch(path: Option<&Path>) -> Result<()> {
     use std::path::PathBuf;
     use std::time::Duration;
     use tokio::time::sleep;
-    
+
     let tools_dir = match path {
         Some(p) => p.to_path_buf(),
         None => {
@@ -45,9 +55,9 @@ pub async fn run_watch(path: Option<&Path>) -> Result<()> {
             PathBuf::from(&cfg.sandbox.wasm_tools_dir)
         }
     };
-    
+
     println!("Watching for plugin changes in {}...", tools_dir.display());
-    
+
     let mut last_mtime = std::fs::metadata(&tools_dir)?
         .modified()?
         .duration_since(std::time::UNIX_EPOCH)

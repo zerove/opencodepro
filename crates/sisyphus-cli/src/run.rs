@@ -1,26 +1,30 @@
 use anyhow::Result;
 use std::path::PathBuf;
 
-fn resolve_backend(lang: Option<&str>, cwd: Option<&std::path::Path>) -> Result<Box<dyn sisyphus_tools::build::LanguageBackend>> {
+fn resolve_backend(
+    lang: Option<&str>,
+    cwd: Option<&std::path::Path>,
+) -> Result<Box<dyn sisyphus_tools::build::LanguageBackend>> {
     match lang {
-        Some("rust") | None if cwd.map(|d| d.join("Cargo.toml").exists()).unwrap_or(false) || lang == Some("rust") => {
+        Some("rust") | None
+            if cwd.map(|d| d.join("Cargo.toml").exists()).unwrap_or(false)
+                || lang == Some("rust") =>
+        {
             Ok(Box::new(sisyphus_tools::build::rust::RustBackend))
         }
         Some("node") | Some("ts") | Some("js") => {
             Ok(Box::new(sisyphus_tools::build::node::NodeBackend::new()?))
         }
-        Some("python") | Some("py") => {
-            Ok(Box::new(sisyphus_tools::build::python::PythonBackend::new()?))
-        }
-        Some("go") | Some("golang") => {
-            Ok(Box::new(sisyphus_tools::build::golang::GoBackend))
-        }
-        Some("java") | Some("maven") => {
-            Ok(Box::new(sisyphus_tools::build::java::JavaBackend::new_maven()))
-        }
-        Some("gradle") => {
-            Ok(Box::new(sisyphus_tools::build::java::JavaBackend::new_gradle()))
-        }
+        Some("python") | Some("py") => Ok(Box::new(
+            sisyphus_tools::build::python::PythonBackend::new()?,
+        )),
+        Some("go") | Some("golang") => Ok(Box::new(sisyphus_tools::build::golang::GoBackend)),
+        Some("java") | Some("maven") => Ok(Box::new(
+            sisyphus_tools::build::java::JavaBackend::new_maven(),
+        )),
+        Some("gradle") => Ok(Box::new(
+            sisyphus_tools::build::java::JavaBackend::new_gradle(),
+        )),
         Some("fe") | Some("frontend") | Some("css") | Some("html") => {
             Ok(Box::new(sisyphus_tools::build::frontend::FrontendBackend))
         }
@@ -34,11 +38,7 @@ fn resolve_backend(lang: Option<&str>, cwd: Option<&std::path::Path>) -> Result<
     }
 }
 
-pub async fn run_run(
-    args: Vec<String>,
-    lang: Option<String>,
-    cwd: Option<PathBuf>,
-) -> Result<()> {
+pub async fn run_run(args: Vec<String>, lang: Option<String>, cwd: Option<PathBuf>) -> Result<()> {
     let dir = cwd.as_deref().or_else(|| Some(std::path::Path::new(".")));
     let backend = resolve_backend(lang.as_deref(), dir)?;
     let dir_ref = cwd.as_deref();

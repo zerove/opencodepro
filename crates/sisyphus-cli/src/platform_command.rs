@@ -1,8 +1,8 @@
+use crate::platform::normalize_path;
+use anyhow::{anyhow, Result};
 use std::time::Duration;
 use tokio::process::Command;
 use tokio::time::timeout;
-use anyhow::{Result, anyhow};
-use crate::platform::normalize_path;
 
 #[allow(dead_code)]
 #[derive(Debug, Clone)]
@@ -53,20 +53,21 @@ impl CommandBuilder {
 
     pub async fn output(&self) -> Result<ProcessOutput> {
         let mut cmd = self.prepare_command();
-        
+
         if let Some(ref cwd) = self.cwd {
             cmd.current_dir(cwd);
         }
 
         let output_result = if let Some(dur) = self.timeout {
-            timeout(dur, cmd.output()).await
+            timeout(dur, cmd.output())
+                .await
                 .map_err(|_| anyhow!("Command timed out after {:?}", dur))?
         } else {
             cmd.output().await
         };
 
         let output = output_result?;
-        
+
         Ok(ProcessOutput {
             status: output.status.code().unwrap_or(-1),
             stdout: String::from_utf8_lossy(&output.stdout).to_string(),
@@ -76,12 +77,13 @@ impl CommandBuilder {
 
     pub async fn spawn(&self) -> Result<tokio::process::Child> {
         let mut cmd = self.prepare_command();
-        
+
         if let Some(ref cwd) = self.cwd {
             cmd.current_dir(cwd);
         }
 
-        cmd.spawn().map_err(|e| anyhow!("Failed to spawn command: {e}"))
+        cmd.spawn()
+            .map_err(|e| anyhow!("Failed to spawn command: {e}"))
     }
 
     fn prepare_command(&self) -> Command {
@@ -92,7 +94,7 @@ impl CommandBuilder {
                 full_cmd.push(' ');
                 full_cmd.push_str(arg);
             }
-            
+
             // Normalize paths in the command string
             full_cmd = normalize_path(&full_cmd);
 
@@ -116,10 +118,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_command_builder_basic() {
-        let output = CommandBuilder::new("echo")
-            .arg("hello")
-            .output()
-            .await;
+        let output = CommandBuilder::new("echo").arg("hello").output().await;
 
         assert!(output.is_ok());
         let res = output.unwrap();

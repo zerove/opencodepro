@@ -3,25 +3,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand, ValueEnum};
 
-mod bridge;
-mod build;
-mod delegate;
-mod diagnose;
-mod init;
-mod precommit;
-mod run;
-mod git;
-mod lsp;
-mod mcp;
-mod permission;
-mod shell;
-mod skill;
-mod tui;
-mod platform;
-mod platform_command;
-mod shell_compat;
-mod plugin;
-mod remote;
+use sisyphus_cli::*;
 
 #[derive(Parser)]
 #[command(name = "sisyphus", version, about = "Sisyphus Cognitive Engine CLI")]
@@ -554,7 +536,11 @@ enum RunCommands {
 #[derive(Subcommand)]
 enum TodoCommands {
     /// Add a new todo item
-    Add { content: String, #[arg(short = 'p', default_value = "medium")] priority: PriorityArg },
+    Add {
+        content: String,
+        #[arg(short = 'p', default_value = "medium")]
+        priority: PriorityArg,
+    },
     /// List todos, optionally filtered by status
     List {
         #[arg(short = 's')]
@@ -585,7 +571,11 @@ enum SessionCommands {
     /// Delete a session by ID
     Delete { id: String },
     /// Add a message to a session
-    AddMessage { id: String, role: String, content: String },
+    AddMessage {
+        id: String,
+        role: String,
+        content: String,
+    },
     /// Rename a session
     Rename { id: String, name: String },
     /// Fork a session — create a new copy with all messages
@@ -622,7 +612,11 @@ enum OracleCommands {
     /// Analyze a source file (functions, imports, line count)
     AnalyzeFile { path: PathBuf },
     /// Analyze a directory (module summary)
-    AnalyzeDir { path: PathBuf, #[arg(short = 't')] include: Option<String> },
+    AnalyzeDir {
+        path: PathBuf,
+        #[arg(short = 't')]
+        include: Option<String>,
+    },
     /// Review code for potential issues
     CodeReview { paths: Vec<PathBuf> },
 }
@@ -897,7 +891,11 @@ async fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
 
     let platform_info = platform::detect_platform();
-    tracing::info!("Starting Sisyphus CLI on {} (shell: {})", platform_info.os, platform_info.shell);
+    tracing::info!(
+        "Starting Sisyphus CLI on {} (shell: {})",
+        platform_info.os,
+        platform_info.shell
+    );
 
     let cli = Cli::parse();
 
@@ -906,7 +904,10 @@ async fn main() -> Result<()> {
         match sisyphus_types::Config::from_file(&config_path.to_string_lossy()) {
             Ok(cfg) => cfg,
             Err(e) => {
-                eprintln!("Warning: failed to load config '{}': {e}", config_path.display());
+                eprintln!(
+                    "Warning: failed to load config '{}': {e}",
+                    config_path.display()
+                );
                 sisyphus_types::Config::default()
             }
         }
@@ -916,9 +917,15 @@ async fn main() -> Result<()> {
 
     let data_dir = cli.data_dir.clone().unwrap_or_else(|| {
         let sqlite = PathBuf::from(&sisyphus_cfg.cache.sqlite_path);
-        sqlite.parent().unwrap_or(Path::new(".sisyphus")).to_path_buf()
+        sqlite
+            .parent()
+            .unwrap_or(Path::new(".sisyphus"))
+            .to_path_buf()
     });
-    let bridge_addr = cli.bridge.clone().unwrap_or_else(|| "http://[::1]:50051".to_string());
+    let bridge_addr = cli
+        .bridge
+        .clone()
+        .unwrap_or_else(|| "http://[::1]:50051".to_string());
 
     // Interactive TUI mode
     if cli.interactive || cli.command.is_none() {
@@ -953,7 +960,11 @@ async fn main() -> Result<()> {
             let content = sisyphus_tools::file::read(path)?;
             println!("{content}");
         }
-        Commands::ReadLines { path, offset, limit } => {
+        Commands::ReadLines {
+            path,
+            offset,
+            limit,
+        } => {
             let content = sisyphus_tools::file::read_lines(path, *offset, *limit)?;
             print!("{content}");
         }
@@ -961,7 +972,12 @@ async fn main() -> Result<()> {
             sisyphus_tools::file::write(path, content)?;
             println!("Written {} bytes to {}", content.len(), path.display());
         }
-        Commands::Edit { path, old_string, new_string, all } => {
+        Commands::Edit {
+            path,
+            old_string,
+            new_string,
+            all,
+        } => {
             if *all {
                 let count = sisyphus_tools::file::edit_all(path, old_string, new_string)?;
                 println!("Replaced {} occurrence(s) in {}", count, path.display());
@@ -970,7 +986,11 @@ async fn main() -> Result<()> {
                 println!("Replaced first occurrence in {}", path.display());
             }
         }
-        Commands::Glob { pattern, root, limit } => {
+        Commands::Glob {
+            pattern,
+            root,
+            limit,
+        } => {
             let files = sisyphus_tools::file::glob(pattern, root)?;
             let shown = files.iter().take(*limit);
             for f in shown {
@@ -982,7 +1002,11 @@ async fn main() -> Result<()> {
                 println!("No files matched: {pattern}");
             }
         }
-        Commands::Grep { pattern, path, include } => {
+        Commands::Grep {
+            pattern,
+            path,
+            include,
+        } => {
             let matches = sisyphus_tools::file::grep(pattern, path, include.as_deref())?;
             for m in &matches {
                 println!("{}:{} — {}", m.file.display(), m.line, m.content.trim());
@@ -1018,7 +1042,11 @@ async fn main() -> Result<()> {
             if !output.stderr.is_empty() {
                 eprintln!("{}", output.stderr);
             }
-            println!("Exit: {} ({}ms)", output.exit_code, output.duration.as_millis());
+            println!(
+                "Exit: {} ({}ms)",
+                output.exit_code,
+                output.duration.as_millis()
+            );
         }
         Commands::Search { query, num } => {
             let results = sisyphus_tools::web::websearch(query, *num).await?;
@@ -1050,18 +1078,30 @@ async fn main() -> Result<()> {
                 println!("Created: {} ({})", item.id, item.status);
             }
             TodoCommands::List { status } => {
-                let filter = status.as_deref().and_then(|s| s.parse::<sisyphus_tools::TodoStatus>().ok());
+                let filter = status
+                    .as_deref()
+                    .and_then(|s| s.parse::<sisyphus_tools::TodoStatus>().ok());
                 let items = sisyphus_tools::todo_list(&todo_db, filter)?;
                 if items.is_empty() {
                     println!("No todos found.");
                 } else {
                     for item in &items {
-                        println!("  [{}] {} — {} ({})", item.id, item.content, item.status, item.priority);
+                        println!(
+                            "  [{}] {} — {} ({})",
+                            item.id, item.content, item.status, item.priority
+                        );
                     }
                 }
             }
-            TodoCommands::Update { id, content, status, priority } => {
-                let s = status.as_deref().and_then(|s| s.parse::<sisyphus_tools::TodoStatus>().ok());
+            TodoCommands::Update {
+                id,
+                content,
+                status,
+                priority,
+            } => {
+                let s = status
+                    .as_deref()
+                    .and_then(|s| s.parse::<sisyphus_tools::TodoStatus>().ok());
                 let p = priority.clone().map(|p| p.into());
                 let item = sisyphus_tools::todo_update(&todo_db, id, content.as_deref(), s, p)?;
                 println!("Updated: {} — {}", item.id, item.status);
@@ -1070,7 +1110,7 @@ async fn main() -> Result<()> {
                 sisyphus_tools::todo_delete(&todo_db, id)?;
                 println!("Deleted: {id}");
             }
-        }
+        },
 
         // ── session ─────────────────────────────────────
         Commands::Session(sub) => match sub {
@@ -1101,7 +1141,10 @@ async fn main() -> Result<()> {
             }
             SessionCommands::AddMessage { id, role, content } => {
                 let session = sisyphus_tools::session_add_message(&session_db, id, role, content)?;
-                println!("Message added to {} ({} msgs)", session.id, session.message_count);
+                println!(
+                    "Message added to {} ({} msgs)",
+                    session.id, session.message_count
+                );
             }
             SessionCommands::Rename { id, name } => {
                 let session = sisyphus_tools::session_rename(&session_db, id, name)?;
@@ -1109,21 +1152,34 @@ async fn main() -> Result<()> {
             }
             SessionCommands::Fork { id, name } => {
                 let session = sisyphus_tools::session_fork(&session_db, id, name)?;
-                println!("Forked session {} from {} — {} messages", session.id, id, session.message_count);
+                println!(
+                    "Forked session {} from {} — {} messages",
+                    session.id, id, session.message_count
+                );
             }
             SessionCommands::Continue { id } => {
                 let session = sisyphus_tools::session_continue(&session_db, id)?;
-                println!("Continued session {} — {} messages", session.id, session.message_count);
+                println!(
+                    "Continued session {} — {} messages",
+                    session.id, session.message_count
+                );
             }
             SessionCommands::Undo { id } => {
                 let session = sisyphus_tools::session_undo(&session_db, id)?;
-                println!("Undid last message — session {} now has {} messages", session.id, session.message_count);
+                println!(
+                    "Undid last message — session {} now has {} messages",
+                    session.id, session.message_count
+                );
             }
-        }
+        },
 
         // ── plan ────────────────────────────────────────
         Commands::Plan(sub) => match sub {
-            PlanCommands::Create { name, description, file } => {
+            PlanCommands::Create {
+                name,
+                description,
+                file,
+            } => {
                 let reqs = match file {
                     Some(p) => std::fs::read_to_string(p)?,
                     None => description.clone(),
@@ -1166,7 +1222,7 @@ async fn main() -> Result<()> {
                 sisyphus_tools::plan_save(&plan, plan_file)?;
                 println!("Approved plan: {}", plan.name);
             }
-        }
+        },
 
         // ── oracle ──────────────────────────────────────
         Commands::Oracle(sub) => match sub {
@@ -1196,18 +1252,38 @@ async fn main() -> Result<()> {
                     println!("No issues found.");
                 } else {
                     for issue in &issues {
-                        println!("  [{}] {} (line {}) — {}", issue.severity, issue.file.display(), issue.line, issue.message);
+                        println!(
+                            "  [{}] {} (line {}) — {}",
+                            issue.severity,
+                            issue.file.display(),
+                            issue.line,
+                            issue.message
+                        );
                     }
                 }
             }
-        }
+        },
 
         // ── explore ─────────────────────────────────────
         Commands::Explore(sub) => match sub {
-            ExploreCommands::Search { patterns, paths, max_matches: _, context_lines, include } => {
-                let root = paths.first().map(|p| p.as_path()).unwrap_or_else(|| std::path::Path::new("."));
+            ExploreCommands::Search {
+                patterns,
+                paths,
+                max_matches: _,
+                context_lines,
+                include,
+            } => {
+                let root = paths
+                    .first()
+                    .map(|p| p.as_path())
+                    .unwrap_or_else(|| std::path::Path::new("."));
                 let pattern_refs: Vec<&str> = patterns.iter().map(|s| s.as_str()).collect();
-                let results = sisyphus_tools::search_patterns(&pattern_refs, root, include.as_deref(), *context_lines)?;
+                let results = sisyphus_tools::search_patterns(
+                    &pattern_refs,
+                    root,
+                    include.as_deref(),
+                    *context_lines,
+                )?;
                 for m in &results.matches {
                     println!("{}:{} — {}", m.file.display(), m.line, m.content.trim());
                 }
@@ -1215,7 +1291,11 @@ async fn main() -> Result<()> {
                     println!("No matches found.");
                 }
             }
-            ExploreCommands::FindFiles { pattern, root, limit: _ } => {
+            ExploreCommands::FindFiles {
+                pattern,
+                root,
+                limit: _,
+            } => {
                 let files = sisyphus_tools::find_files(pattern, root, None)?;
                 for f in &files {
                     println!("{}", f.display());
@@ -1224,13 +1304,13 @@ async fn main() -> Result<()> {
                     println!("No files matched.");
                 }
             }
-        }
+        },
 
         // ── librarian ───────────────────────────────────
         Commands::Librarian(sub) => match sub {
             LibrarianCommands::Research { query, scope, num } => {
-                let scope_enum: sisyphus_tools::ResearchScope = scope.parse()
-                    .map_err(|e: String| anyhow::anyhow!("{e}"))?;
+                let scope_enum: sisyphus_tools::ResearchScope =
+                    scope.parse().map_err(|e: String| anyhow::anyhow!("{e}"))?;
                 let report = sisyphus_tools::research(query, scope_enum, *num).await?;
                 println!("=== Research Report ===");
                 println!("Query: {}", report.query);
@@ -1269,21 +1349,25 @@ async fn main() -> Result<()> {
             }
             LibrarianCommands::Synthesise { report_file } => {
                 let content = std::fs::read_to_string(report_file)?;
-                let findings: Vec<sisyphus_tools::ResearchFinding> = serde_json::from_str(&content)?;
-                let synthesis = sisyphus_tools::synthesise(&findings, llm_client.as_ref()).await
+                let findings: Vec<sisyphus_tools::ResearchFinding> =
+                    serde_json::from_str(&content)?;
+                let synthesis = sisyphus_tools::synthesise(&findings, llm_client.as_ref())
+                    .await
                     .map_err(|e| anyhow::anyhow!("{}", e))?;
                 println!("{}", synthesis);
             }
-        }
+        },
 
         // ── momus ────────────────────────────────────────
         Commands::Momus(sub) => match sub {
             MomusCommands::ReviewPlan { plan_file } => {
                 let content = std::fs::read_to_string(plan_file)?;
-                let name = plan_file.file_stem()
+                let name = plan_file
+                    .file_stem()
                     .map(|s| s.to_string_lossy().to_string())
                     .unwrap_or_else(|| "unnamed".to_string());
-                let review = sisyphus_tools::review_plan(llm_client.as_ref(), &content, &name).await;
+                let review =
+                    sisyphus_tools::review_plan(llm_client.as_ref(), &content, &name).await;
                 println!("{}", review.summary);
                 if !review.comments.is_empty() {
                     println!("\n--- Issues ---");
@@ -1297,14 +1381,22 @@ async fn main() -> Result<()> {
             }
             MomusCommands::ReviewCode { path } => {
                 let content = std::fs::read_to_string(path)?;
-                let review = sisyphus_tools::review_code(llm_client.as_ref(), path, &content).await
+                let review = sisyphus_tools::review_code(llm_client.as_ref(), path, &content)
+                    .await
                     .map_err(|e| anyhow::anyhow!("{}", e))?;
                 println!("{}", review.summary);
                 if !review.comments.is_empty() {
                     println!("\n--- Issues ---");
                     for c in &review.comments {
                         if let Some(line) = c.line {
-                            println!("  [{}] {}:{} — {} ({})", c.severity, c.file.as_deref().unwrap_or("?"), line, c.message, c.category);
+                            println!(
+                                "  [{}] {}:{} — {} ({})",
+                                c.severity,
+                                c.file.as_deref().unwrap_or("?"),
+                                line,
+                                c.message,
+                                c.category
+                            );
                         } else {
                             println!("  [{}] {} — {}", c.severity, c.message, c.category);
                         }
@@ -1335,7 +1427,13 @@ async fn main() -> Result<()> {
                     let file_path = entry.path();
                     if file_path.extension().map(|e| e == "rs").unwrap_or(false) {
                         if let Ok(content) = std::fs::read_to_string(&file_path) {
-                            if let Ok(review) = sisyphus_tools::review_code(llm_client.as_ref(), &file_path, &content).await {
+                            if let Ok(review) = sisyphus_tools::review_code(
+                                llm_client.as_ref(),
+                                &file_path,
+                                &content,
+                            )
+                            .await
+                            {
                                 reviews.push(review);
                             }
                         }
@@ -1343,7 +1441,12 @@ async fn main() -> Result<()> {
                 }
                 let total_passed = reviews.iter().filter(|r| r.passed).count();
                 let total_failed = reviews.iter().filter(|r| !r.passed).count();
-                println!("Reviewed {} files: {} passed, {} failed", reviews.len(), total_passed, total_failed);
+                println!(
+                    "Reviewed {} files: {} passed, {} failed",
+                    reviews.len(),
+                    total_passed,
+                    total_failed
+                );
                 for r in &reviews {
                     println!("  {} — {}", r.target, if r.passed { "✅" } else { "❌" });
                     for c in &r.comments {
@@ -1355,7 +1458,7 @@ async fn main() -> Result<()> {
                     }
                 }
             }
-        }
+        },
 
         // ── metis ────────────────────────────────────────
         Commands::Metis(sub) => match sub {
@@ -1367,7 +1470,8 @@ async fn main() -> Result<()> {
                 if text.trim().is_empty() {
                     anyhow::bail!("No request text provided. Pass inline text or use --file.");
                 }
-                let analysis = sisyphus_tools::metis::analyse(&text, llm_client.as_ref()).await
+                let analysis = sisyphus_tools::metis::analyse(&text, llm_client.as_ref())
+                    .await
                     .map_err(|e| anyhow::anyhow!("{}", e))?;
                 println!("=== Metis Analysis ===");
                 println!("Summary: {}", analysis.summary);
@@ -1386,11 +1490,14 @@ async fn main() -> Result<()> {
                 if !analysis.implicit_requirements.is_empty() {
                     println!("\n--- Implicit Requirements ---");
                     for i in &analysis.implicit_requirements {
-                        println!("  [conf: {:.1}] {} — {}", i.confidence, i.description, i.rationale);
+                        println!(
+                            "  [conf: {:.1}] {} — {}",
+                            i.confidence, i.description, i.rationale
+                        );
                     }
                 }
             }
-        }
+        },
 
         // ── skill ───────────────────────────────────────
         Commands::Skill(sub) => match sub {
@@ -1406,7 +1513,7 @@ async fn main() -> Result<()> {
             SkillCommands::Remove { name } => {
                 skill::run_remove(name)?;
             }
-        }
+        },
 
         // ── rules ────────────────────────────────────────
         Commands::Rules(sub) => match sub {
@@ -1441,49 +1548,122 @@ async fn main() -> Result<()> {
                     None => println!("No AGENTS.md found."),
                 }
             }
-        }
+        },
 
         // ── lsp ─────────────────────────────────────────
         Commands::Lsp(sub) => match sub {
-            LspCommands::Diagnostics { file, language_id, server, server_args, root_uri } => {
+            LspCommands::Diagnostics {
+                file,
+                language_id,
+                server,
+                server_args,
+                root_uri,
+            } => {
                 lsp::run_diagnostics(file, language_id, server, server_args, root_uri).await?;
             }
-            LspCommands::GotoDef { file, line, col, language_id, server, server_args, root_uri } => {
-                lsp::run_goto_def(file, *line, *col, language_id, server, server_args, root_uri).await?;
+            LspCommands::GotoDef {
+                file,
+                line,
+                col,
+                language_id,
+                server,
+                server_args,
+                root_uri,
+            } => {
+                lsp::run_goto_def(
+                    file,
+                    *line,
+                    *col,
+                    language_id,
+                    server,
+                    server_args,
+                    root_uri,
+                )
+                .await?;
             }
-            LspCommands::FindRefs { file, line, col, language_id, server, server_args, root_uri } => {
-                lsp::run_find_refs(file, *line, *col, language_id, server, server_args, root_uri).await?;
+            LspCommands::FindRefs {
+                file,
+                line,
+                col,
+                language_id,
+                server,
+                server_args,
+                root_uri,
+            } => {
+                lsp::run_find_refs(
+                    file,
+                    *line,
+                    *col,
+                    language_id,
+                    server,
+                    server_args,
+                    root_uri,
+                )
+                .await?;
             }
-            LspCommands::Hover { file, line, col, language_id, server, server_args, root_uri } => {
-                lsp::run_hover(file, *line, *col, language_id, server, server_args, root_uri).await?;
+            LspCommands::Hover {
+                file,
+                line,
+                col,
+                language_id,
+                server,
+                server_args,
+                root_uri,
+            } => {
+                lsp::run_hover(
+                    file,
+                    *line,
+                    *col,
+                    language_id,
+                    server,
+                    server_args,
+                    root_uri,
+                )
+                .await?;
             }
-            LspCommands::Symbols { file, language_id, server, server_args, root_uri } => {
+            LspCommands::Symbols {
+                file,
+                language_id,
+                server,
+                server_args,
+                root_uri,
+            } => {
                 lsp::run_symbols(file, language_id, server, server_args, root_uri).await?;
             }
-        }
+        },
 
         // ── delegate ────────────────────────────────────
         Commands::Delegate(sub) => match sub {
-            DelegateCommands::Run { file, max_concurrent } => {
+            DelegateCommands::Run {
+                file,
+                max_concurrent,
+            } => {
                 delegate::run_tasks(file.clone(), *max_concurrent).await?;
             }
-            DelegateCommands::Inline { commands, max_concurrent } => {
+            DelegateCommands::Inline {
+                commands,
+                max_concurrent,
+            } => {
                 delegate::run_inline(commands, *max_concurrent).await?;
             }
-        }
+        },
 
         // ── mcp ─────────────────────────────────────────
         Commands::Mcp(sub) => match sub {
             McpCommands::Info { connect } => {
                 mcp::run_info(connect).await?;
             }
-            McpCommands::Call { tool, args, connect } => {
+            McpCommands::Call {
+                tool,
+                args,
+                connect,
+            } => {
                 mcp::run_call(tool, args.as_deref(), connect).await?;
             }
             McpCommands::Serve => {
                 mcp::run_serve(llm_client.clone()).await?;
             }
-        }
+        },
 
         // ── engine ──────────────────────────────────────
         Commands::Sop(sub) => match sub {
@@ -1503,72 +1683,166 @@ async fn main() -> Result<()> {
                     }
                 }
             }
-        }
+        },
         // ── git ─────────────────────────────────────────
         Commands::Git(sub) => match sub {
             GitCommands::Status { cwd } => git::run_status(cwd.clone()).await?,
-            GitCommands::Diff { pathspec, cached, cwd } => git::run_diff(pathspec.clone(), *cached, cwd.clone()).await?,
-            GitCommands::Add { pathspecs, cwd } => git::run_add(pathspecs.clone(), cwd.clone()).await?,
-            GitCommands::Commit { message, allow_empty, cwd } => git::run_commit(message.clone(), *allow_empty, cwd.clone()).await?,
+            GitCommands::Diff {
+                pathspec,
+                cached,
+                cwd,
+            } => git::run_diff(pathspec.clone(), *cached, cwd.clone()).await?,
+            GitCommands::Add { pathspecs, cwd } => {
+                git::run_add(pathspecs.clone(), cwd.clone()).await?
+            }
+            GitCommands::Commit {
+                message,
+                allow_empty,
+                cwd,
+            } => git::run_commit(message.clone(), *allow_empty, cwd.clone()).await?,
             GitCommands::Log { count, cwd } => git::run_log(*count, cwd.clone()).await?,
             GitCommands::Branch { cwd } => git::run_branch(cwd.clone()).await?,
-            GitCommands::Checkout { branch, create, cwd } => git::run_checkout(branch.clone(), *create, cwd.clone()).await?,
-            GitCommands::Push { remote, branch, force, cwd } => git::run_push(remote.clone(), branch.clone(), *force, cwd.clone()).await?,
-            GitCommands::Pull { remote, branch, cwd } => git::run_pull(remote.clone(), branch.clone(), cwd.clone()).await?,
+            GitCommands::Checkout {
+                branch,
+                create,
+                cwd,
+            } => git::run_checkout(branch.clone(), *create, cwd.clone()).await?,
+            GitCommands::Push {
+                remote,
+                branch,
+                force,
+                cwd,
+            } => git::run_push(remote.clone(), branch.clone(), *force, cwd.clone()).await?,
+            GitCommands::Pull {
+                remote,
+                branch,
+                cwd,
+            } => git::run_pull(remote.clone(), branch.clone(), cwd.clone()).await?,
             GitCommands::Summary { cwd } => git::run_summary(cwd.clone()).await?,
-        }
+        },
 
         // ── build ────────────────────────────────────────
         Commands::Build(sub) => match sub {
-            BuildCommands::Check { package, all, lang, cwd } => build::run_check(package.clone(), *all, cwd.clone(), lang.clone()).await?,
-            BuildCommands::Build { package, release, lang, cwd } => build::run_build(package.clone(), *release, cwd.clone(), lang.clone()).await?,
-            BuildCommands::Test { package, name, all, lang, cwd } => build::run_test(package.clone(), name.clone(), *all, cwd.clone(), lang.clone()).await?,
-            BuildCommands::Lint { package, lang, cwd } => build::run_lint(package.clone(), cwd.clone(), lang.clone()).await?,
-            BuildCommands::Fmt { check, lang, cwd } => build::run_fmt(*check, cwd.clone(), lang.clone()).await?,
-            BuildCommands::Doc { package, lang, cwd } => build::run_doc(package.clone(), cwd.clone(), lang.clone()).await?,
-        }
+            BuildCommands::Check {
+                package,
+                all,
+                lang,
+                cwd,
+            } => build::run_check(package.clone(), *all, cwd.clone(), lang.clone()).await?,
+            BuildCommands::Build {
+                package,
+                release,
+                lang,
+                cwd,
+            } => build::run_build(package.clone(), *release, cwd.clone(), lang.clone()).await?,
+            BuildCommands::Test {
+                package,
+                name,
+                all,
+                lang,
+                cwd,
+            } => {
+                build::run_test(
+                    package.clone(),
+                    name.clone(),
+                    *all,
+                    cwd.clone(),
+                    lang.clone(),
+                )
+                .await?
+            }
+            BuildCommands::Lint { package, lang, cwd } => {
+                build::run_lint(package.clone(), cwd.clone(), lang.clone()).await?
+            }
+            BuildCommands::Fmt { check, lang, cwd } => {
+                build::run_fmt(*check, cwd.clone(), lang.clone()).await?
+            }
+            BuildCommands::Doc { package, lang, cwd } => {
+                build::run_doc(package.clone(), cwd.clone(), lang.clone()).await?
+            }
+        },
 
         // ── run ────────────────────────────────────────────
         Commands::Run(sub) => match sub {
-            RunCommands::Run { args, lang, cwd } => run::run_run(args.clone(), lang.clone(), cwd.clone()).await?,
-        }
+            RunCommands::Run { args, lang, cwd } => {
+                run::run_run(args.clone(), lang.clone(), cwd.clone()).await?
+            }
+        },
 
         // ── init ───────────────────────────────────────────
         Commands::Init(sub) => match sub {
             InitCommands::List => init::run_list()?,
-            InitCommands::Generate { template, name, dir } => init::run_generate(template, name, dir)?,
-        }
+            InitCommands::Generate {
+                template,
+                name,
+                dir,
+            } => init::run_generate(template, name, dir)?,
+        },
 
         // ── precommit ──────────────────────────────────────
         Commands::Precommit(sub) => match sub {
-            PrecommitCommands::Install { dir, no_fmt, no_lint, allow_warnings, lang } => {
-                precommit::run_install(dir.clone(), *no_fmt, *no_lint, *allow_warnings, lang.clone())?
-            }
+            PrecommitCommands::Install {
+                dir,
+                no_fmt,
+                no_lint,
+                allow_warnings,
+                lang,
+            } => precommit::run_install(
+                dir.clone(),
+                *no_fmt,
+                *no_lint,
+                *allow_warnings,
+                lang.clone(),
+            )?,
             PrecommitCommands::Uninstall { dir } => precommit::run_uninstall(dir.clone())?,
             PrecommitCommands::Status { dir } => precommit::run_status(dir.clone())?,
-        }
+        },
 
         // ── diagnose ───────────────────────────────────────
         Commands::Diagnose(sub) => match sub {
-            DiagnoseCommands::Run { lang, package, all, no_lint, cwd } => {
+            DiagnoseCommands::Run {
+                lang,
+                package,
+                all,
+                no_lint,
+                cwd,
+            } => {
                 diagnose::run_diagnose(lang.clone(), package.clone(), *all, *no_lint, cwd.clone())?
             }
-        }
+        },
         // ── fix ─────────────────────────────────────────────
         Commands::Fix(sub) => match sub {
-            FixCommands::Run { lang, package, lint_fixes, all, cwd } => {
-                diagnose::run_fix(lang.clone(), package.clone(), *lint_fixes, *all, cwd.clone())?
-            }
-        }
+            FixCommands::Run {
+                lang,
+                package,
+                lint_fixes,
+                all,
+                cwd,
+            } => diagnose::run_fix(
+                lang.clone(),
+                package.clone(),
+                *lint_fixes,
+                *all,
+                cwd.clone(),
+            )?,
+        },
 
         // ── plugin ─────────────────────────────────────────────
         Commands::Plugin(sub) => {
             let mut client = get_bridge_client(&cli).await?;
             match sub {
-                PluginCommands::List => { plugin::run_list(&mut client).await?; }
-                PluginCommands::Load { path } => { plugin::run_load(&mut client, path).await?; }
-                PluginCommands::Watch { path } => { plugin::run_watch(path.as_deref()).await?; }
-                PluginCommands::Unload { name } => { plugin::run_unload(&mut client, name).await?; }
+                PluginCommands::List => {
+                    plugin::run_list(&mut client).await?;
+                }
+                PluginCommands::Load { path } => {
+                    plugin::run_load(&mut client, path).await?;
+                }
+                PluginCommands::Watch { path } => {
+                    plugin::run_watch(path.as_deref()).await?;
+                }
+                PluginCommands::Unload { name } => {
+                    plugin::run_unload(&mut client, name).await?;
+                }
             }
         }
         Commands::LearningInsights { strategy } => {
@@ -1592,8 +1866,12 @@ async fn main() -> Result<()> {
                 RemoteCommands::Agents => remote::run_list_agents(&mut client).await?,
                 RemoteCommands::Tools => remote::run_list_tools(&mut client).await?,
                 RemoteCommands::Skills => remote::run_list_skills(&mut client).await?,
-                RemoteCommands::Exec { sop_id } => remote::run_exec_sop(&mut client, sop_id).await?,
-                RemoteCommands::Decompose { goal } => remote::run_decompose_goal(&mut client, goal).await?,
+                RemoteCommands::Exec { sop_id } => {
+                    remote::run_exec_sop(&mut client, sop_id).await?
+                }
+                RemoteCommands::Decompose { goal } => {
+                    remote::run_decompose_goal(&mut client, goal).await?
+                }
             }
         }
         Commands::Daemon => {
@@ -1609,13 +1887,19 @@ async fn main() -> Result<()> {
                     .spawn()
                     .with_context(|| format!("Failed to start {}", binary.display()))?
             } else {
-                println!("Binary not found at {}, falling back to cargo run...", binary.display());
+                println!(
+                    "Binary not found at {}, falling back to cargo run...",
+                    binary.display()
+                );
                 std::process::Command::new("cargo")
                     .args(["run", "-p", "sisyphus-bridge", "--release"])
                     .spawn()
                     .context("Failed to start bridge daemon via cargo run")?
             };
-            println!("Bridge daemon started (PID: {}). Running in background.", child.id());
+            println!(
+                "Bridge daemon started (PID: {}). Running in background.",
+                child.id()
+            );
             println!("Use Ctrl+C to stop the daemon.");
             std::thread::spawn(move || {
                 let _ = child.wait_with_output();
@@ -1627,6 +1911,9 @@ async fn main() -> Result<()> {
 }
 
 async fn get_bridge_client(cli: &Cli) -> Result<bridge::BridgeClient> {
-    let addr = cli.bridge.clone().unwrap_or_else(|| "http://[::1]:50051".to_string());
+    let addr = cli
+        .bridge
+        .clone()
+        .unwrap_or_else(|| "http://[::1]:50051".to_string());
     bridge::BridgeClient::connect(&addr).await
 }

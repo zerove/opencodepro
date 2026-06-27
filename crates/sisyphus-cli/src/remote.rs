@@ -1,5 +1,5 @@
-use anyhow::Result;
 use crate::bridge::BridgeClient;
+use anyhow::Result;
 
 pub async fn run_benchmarks(client: &mut BridgeClient) -> Result<()> {
     let benchmarks = client.list_benchmarks().await?;
@@ -8,17 +8,26 @@ pub async fn run_benchmarks(client: &mut BridgeClient) -> Result<()> {
         return Ok(());
     }
 
-    println!("{:<20} {:>10} {:>10} {:>10}", "Benchmark", "Duration", "Timestamp", "Success");
+    println!(
+        "{:<20} {:>10} {:>10} {:>10}",
+        "Benchmark", "Duration", "Timestamp", "Success"
+    );
     println!("{}", "-".repeat(55));
     for b in benchmarks {
-        println!("{:<20} {:>9.2}s {:>10} {:>10}", b.name, b.duration_secs, b.timestamp, if b.success { "✅" } else { "❌" });
+        println!(
+            "{:<20} {:>9.2}s {:>10} {:>10}",
+            b.name,
+            b.duration_secs,
+            b.timestamp,
+            if b.success { "✅" } else { "❌" }
+        );
     }
     Ok(())
 }
 
 pub async fn run_status(client: &mut BridgeClient) -> Result<()> {
     println!("=== Sisyphus Bridge Status ===");
-    
+
     // Health
     let health = client.health_check().await?;
     println!("Health: {} (Version: {})", health.status, health.version);
@@ -29,10 +38,16 @@ pub async fn run_status(client: &mut BridgeClient) -> Result<()> {
     if breakers.is_empty() {
         println!("No breaker metrics available.");
     } else {
-        println!("{:<20} {:>10} {:>10} {:>10}", "Model", "State", "Failures", "Successes");
+        println!(
+            "{:<20} {:>10} {:>10} {:>10}",
+            "Model", "State", "Failures", "Successes"
+        );
         println!("{}", "-".repeat(55));
         for b in breakers {
-            println!("{:<20} {:>10} {:>10} {:>10}", b.model_name, b.state, b.failure_count, b.success_count);
+            println!(
+                "{:<20} {:>10} {:>10} {:>10}",
+                b.model_name, b.state, b.failure_count, b.success_count
+            );
         }
     }
 
@@ -40,7 +55,12 @@ pub async fn run_status(client: &mut BridgeClient) -> Result<()> {
     println!("\n--- Recent Benchmarks ---");
     let benchmarks = client.list_benchmarks().await?;
     for b in benchmarks.iter().take(5) {
-        println!("  {} — {:.2}s ({})", b.name, b.duration_secs, if b.success { "PASS" } else { "FAIL" });
+        println!(
+            "  {} — {:.2}s ({})",
+            b.name,
+            b.duration_secs,
+            if b.success { "PASS" } else { "FAIL" }
+        );
     }
 
     Ok(())
@@ -56,7 +76,10 @@ pub async fn run_list_agents(client: &mut BridgeClient) -> Result<()> {
     println!("{:<15} {:<20} Description", "ID", "Name");
     println!("{}", "-".repeat(60));
     for a in agents {
-        println!("{:<15} {:<20} {}", a.agent_id, a.display_name, a.description);
+        println!(
+            "{:<15} {:<20} {}",
+            a.agent_id, a.display_name, a.description
+        );
     }
     Ok(())
 }
@@ -109,24 +132,36 @@ pub async fn run_decompose_goal(client: &mut BridgeClient, goal: &str) -> Result
 
     println!("\nGenerated Task DAG:");
     for (i, t) in tasks.iter().enumerate() {
-        println!("{i}. [{}] Agent: {} | Tool: {} | Deps: {:?}", t.id, t.agent_id, t.tool_id, t.depends_on);
+        println!(
+            "{i}. [{}] Agent: {} | Tool: {} | Deps: {:?}",
+            t.id, t.agent_id, t.tool_id, t.depends_on
+        );
     }
     Ok(())
 }
 
-pub async fn run_learning_insights(client: &mut BridgeClient, strategy_filter: Option<&str>) -> Result<()> {
+pub async fn run_learning_insights(
+    client: &mut BridgeClient,
+    strategy_filter: Option<&str>,
+) -> Result<()> {
     let response = client.get_learning_insights(strategy_filter).await?;
-    
+
     println!("=== Meta-Learning Insights ===");
     println!("Total Samples: {}", response.total_samples);
-    println!("Overall Success Rate: {:.1}%", response.overall_success_rate * 100.0);
-    
+    println!(
+        "Overall Success Rate: {:.1}%",
+        response.overall_success_rate * 100.0
+    );
+
     if response.strategies.is_empty() {
         println!("\nNo strategy data available yet.");
         return Ok(());
     }
 
-    println!("\n{:<15} {:>10} {:>10} {:>15} {:>12}", "Strategy", "Uses", "Success", "Avg Duration", "Rate");
+    println!(
+        "\n{:<15} {:>10} {:>10} {:>15} {:>12}",
+        "Strategy", "Uses", "Success", "Avg Duration", "Rate"
+    );
     println!("{}", "-".repeat(65));
     for s in &response.strategies {
         println!(

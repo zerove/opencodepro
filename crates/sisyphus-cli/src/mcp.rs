@@ -171,7 +171,9 @@ fn tool_registry() -> &'static [ToolDef] {
 /// Start an MCP stdio server that exposes Sisyphus agent tools.
 /// Runs until stdin closes.
 pub async fn run_serve(client: Arc<dyn sisyphus_tools::metis::LlmClient>) -> Result<()> {
-    LLM_CLIENT.set(client).map_err(|_| anyhow::anyhow!("LLM client already initialized"))?;
+    LLM_CLIENT
+        .set(client)
+        .map_err(|_| anyhow::anyhow!("LLM client already initialized"))?;
 
     let stdin = tokio::io::stdin();
     let reader = BufReader::new(stdin);
@@ -249,9 +251,7 @@ fn handle_initialize(req: &sisyphus_tools::JsonRpcRequest) -> sisyphus_tools::Js
     let result = sisyphus_tools::InitializeResult {
         protocol_version: "2024-11-05".into(),
         capabilities: sisyphus_tools::ServerCapabilities {
-            tools: Some(sisyphus_tools::ToolsCapability {
-                list_changed: None,
-            }),
+            tools: Some(sisyphus_tools::ToolsCapability { list_changed: None }),
             resources: None,
         },
         server_info: Some(sisyphus_tools::ServerInfo {
@@ -310,7 +310,9 @@ async fn handle_tools_call(req: sisyphus_tools::JsonRpcRequest) -> sisyphus_tool
         }
     };
 
-    let args = params.arguments.unwrap_or(serde_json::Value::Object(Default::default()));
+    let args = params
+        .arguments
+        .unwrap_or(serde_json::Value::Object(Default::default()));
 
     let result = match params.name.as_str() {
         "metis_analyse" => execute_metis_analyse(args).await,
@@ -365,7 +367,9 @@ fn get_str<'a>(args: &'a serde_json::Value, key: &str) -> Result<&'a str, String
 }
 
 fn get_str_opt<'a>(args: &'a serde_json::Value, key: &str) -> Option<&'a str> {
-    args.get(key).and_then(|v| v.as_str()).filter(|s| !s.is_empty())
+    args.get(key)
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
 }
 
 fn get_usize(args: &serde_json::Value, key: &str, default: usize) -> usize {
@@ -384,7 +388,10 @@ fn output_json<T: serde::Serialize>(value: T) -> Result<String, String> {
 }
 
 async fn execute_metis_analyse(args: serde_json::Value) -> Result<String, String> {
-    let client = LLM_CLIENT.get().ok_or("LLM client not initialized")?.clone();
+    let client = LLM_CLIENT
+        .get()
+        .ok_or("LLM client not initialized")?
+        .clone();
     let request = get_str(&args, "request")?;
     let analysis = sisyphus_tools::metis::analyse(request, &*client)
         .await
@@ -465,11 +472,7 @@ async fn execute_librarian_synthesise(args: serde_json::Value) -> Result<String,
 
 // ── Error Helper ──────────────────────────────────────────────
 
-fn jsonrpc_error(
-    id: Option<u64>,
-    code: i64,
-    message: String,
-) -> sisyphus_tools::JsonRpcResponse {
+fn jsonrpc_error(id: Option<u64>, code: i64, message: String) -> sisyphus_tools::JsonRpcResponse {
     sisyphus_tools::JsonRpcResponse {
         jsonrpc: "2.0".into(),
         id,
@@ -545,7 +548,11 @@ pub async fn run_info(connect_args: &[String]) -> Result<()> {
             .as_ref()
             .and_then(|v| serde_json::to_string(v).ok())
             .unwrap_or_default();
-        println!("  {} — {}", tool.name, tool.description.as_deref().unwrap_or(""));
+        println!(
+            "  {} — {}",
+            tool.name,
+            tool.description.as_deref().unwrap_or("")
+        );
         if !schema.is_empty() {
             println!("    schema: {schema}");
         }

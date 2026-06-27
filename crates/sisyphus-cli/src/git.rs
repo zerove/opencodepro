@@ -1,5 +1,5 @@
-use std::path::PathBuf;
 use anyhow::Result;
+use std::path::PathBuf;
 
 /// Resolve `cwd` parameter, defaulting to current directory.
 fn resolve_dir(cwd: Option<PathBuf>) -> Option<PathBuf> {
@@ -14,7 +14,10 @@ pub async fn run_status(cwd: Option<PathBuf>) -> Result<()> {
 
     println!("On branch: {}", s.branch);
     if s.ahead > 0 || s.behind > 0 {
-        println!("  ahead {} · behind {} relative to upstream", s.ahead, s.behind);
+        println!(
+            "  ahead {} · behind {} relative to upstream",
+            s.ahead, s.behind
+        );
     }
 
     if !s.staged.is_empty() {
@@ -44,9 +47,15 @@ pub async fn run_status(cwd: Option<PathBuf>) -> Result<()> {
 
 fn status_char(c: char) -> &'static str {
     match c {
-        'M' => "M",  'A' => "A",  'D' => "D",
-        'R' => "R",  'C' => "C",  'U' => "U",
-        '?' => "?",  '!' => "!",  _   => "\u{b7}",
+        'M' => "M",
+        'A' => "A",
+        'D' => "D",
+        'R' => "R",
+        'C' => "C",
+        'U' => "U",
+        '?' => "?",
+        '!' => "!",
+        _ => "\u{b7}",
     }
 }
 
@@ -95,7 +104,13 @@ pub async fn run_log(count: usize, cwd: Option<PathBuf>) -> Result<()> {
         return Ok(());
     }
     for e in &log.entries {
-        println!("{}  {}  {}  {}", &e.hash[..7.min(e.hash.len())], e.author, &e.date[..10.min(e.date.len())], e.message);
+        println!(
+            "{}  {}  {}  {}",
+            &e.hash[..7.min(e.hash.len())],
+            e.author,
+            &e.date[..10.min(e.date.len())],
+            e.message
+        );
     }
     Ok(())
 }
@@ -123,7 +138,12 @@ pub async fn run_checkout(branch: String, create: bool, cwd: Option<PathBuf>) ->
 
 // ── push ───────────────────────────────────────────────────
 
-pub async fn run_push(remote: String, branch: Option<String>, force: bool, cwd: Option<PathBuf>) -> Result<()> {
+pub async fn run_push(
+    remote: String,
+    branch: Option<String>,
+    force: bool,
+    cwd: Option<PathBuf>,
+) -> Result<()> {
     let dir = resolve_dir(cwd);
     let br = branch.unwrap_or_else(|| {
         sisyphus_tools::git::current_branch(dir.as_deref()).unwrap_or_else(|_| "main".into())

@@ -102,10 +102,7 @@ pub async fn run_tasks(file: PathBuf, max_concurrent: usize) -> Result<()> {
     Ok(())
 }
 
-pub async fn run_inline(
-    commands: &[String],
-    max_concurrent: usize,
-) -> Result<()> {
+pub async fn run_inline(commands: &[String], max_concurrent: usize) -> Result<()> {
     let units: Vec<sisyphus_tools::WorkUnit> = commands
         .iter()
         .enumerate()
@@ -139,6 +136,13 @@ pub async fn run_inline(
         };
         println!("[{}] {} {} ({}ms)", r.id, tag, r.name, r.duration_ms);
     }
-    println!("\nDone: {}/{}", reports.iter().filter(|r| r.status == sisyphus_tools::WorkStatus::Completed).count(), reports.len());
+    println!(
+        "\nDone: {}/{}",
+        reports
+            .iter()
+            .filter(|r| r.status == sisyphus_tools::WorkStatus::Completed)
+            .count(),
+        reports.len()
+    );
     Ok(())
 }

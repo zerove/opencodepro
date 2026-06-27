@@ -1,5 +1,5 @@
-use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
+use std::path::{Path, PathBuf};
 
 /// 列出所有可用技能
 pub fn run_list() -> Result<()> {
@@ -70,7 +70,10 @@ pub fn run_show(name: &str) -> Result<()> {
             println!("{}", s.instructions);
         }
         None => {
-            anyhow::bail!("Skill '{}' not found. Use 'sisyphus skill list' to see available skills.", name);
+            anyhow::bail!(
+                "Skill '{}' not found. Use 'sisyphus skill list' to see available skills.",
+                name
+            );
         }
     }
 
@@ -83,7 +86,8 @@ pub fn run_install(path: &Path) -> Result<()> {
         anyhow::bail!("File not found: {}", path.display());
     }
 
-    let skill_dir = user_skill_dir().context("Cannot determine home directory for skill installation")?;
+    let skill_dir =
+        user_skill_dir().context("Cannot determine home directory for skill installation")?;
     std::fs::create_dir_all(&skill_dir)?;
 
     // 用文件 stem 作为技能名，复制过去
