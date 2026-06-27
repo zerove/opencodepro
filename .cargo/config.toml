@@ -1,3 +1,13 @@
 [target.x86_64-unknown-linux-gnu]
 linker = "/usr/sbin/gcc"
-rustflags = ["-C", "link-args=-fuse-ld=bfd"]
+rustflags = ["-C", "link-args=-fuse-ld=mold"]
+
+[alias]
+# ── sisyphus-core 快速测试 ────────────────────────────
+ct-core    = "test -p sisyphus-core"
+ct-quick   = "test -p sisyphus-core --lib"
+ct-core-it = "test -p sisyphus-core --test cognitive_loop_test --test composite_test --test executor_test --test experience_test --test evolution_test --test synthesis_test"
+ct-core-min = "test -p sisyphus-core --lib --no-default-features"
+
+# ── sisyphus-tools 快速测试 ────────────────────────────
+ct-tools   = "test -p sisyphus-tools"

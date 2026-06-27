@@ -5,6 +5,7 @@
 #                    Project override: `rustup override set nightly` already active.
 #                    Fallback for 1.96.0: `make check-bridge-160` uses -C lto=off.
 # sisyphus-sandbox — heavy wasmtime/cranelift deps; rarely needs recompiling for quick checks.
+# sisyphus-core   — wasmtime transitive dep; full test needs CARGO_BUILD_JOBS=1 (see make test-core).
 #
 # Usage:
 #   make check-all        # cargo alias → check --workspace --exclude bridge/sandbox (1.96.0-safe)
@@ -12,6 +13,8 @@
 #   make check-bridge-160 # check bridge only (1.96.0 fallback with -C lto=off)
 #   make build-bridge     # build bridge only
 #   make test-bridge      # test bridge only
+#   make test-core        # full sisyphus-core test suite
+#   make test-core-quick  # lib-only sisyphus-core tests (~2s)
 
 BRIDGE_DEPS = crates/sisyphus-bridge/src/main.rs crates/sisyphus-bridge/build.rs crates/sisyphus-bridge/proto/bridge.proto
 
@@ -47,6 +50,25 @@ test-bridge: $(BRIDGE_DEPS)
 
 check-bridge-160: $(BRIDGE_DEPS)
 	RUSTFLAGS="-C lto=off" cargo check -p sisyphus-bridge
+
+# — sisyphus-core (wasmtime transitive dep needs CARGO_BUILD_JOBS=1) —
+
+test-core:
+	CARGO_BUILD_JOBS=1 cargo test -p sisyphus-core
+
+test-core-quick:
+	cargo test -p sisyphus-core --lib
+
+test-core-min:
+	cargo test -p sisyphus-core --lib --no-default-features
+
+# — CI simulation —
+
+test-ci-core:
+	cargo fmt --all --check
+	cargo clippy -p sisyphus-core
+	cargo test -p sisyphus-core --lib
+	cargo test -p sisyphus-core
 
 # — convenience —
 
