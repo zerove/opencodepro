@@ -9,13 +9,15 @@ use sisyphus_types::{CompositeGraph, ExecutionContext, SOPGraph, SOPGraphConfig}
 use std::sync::Arc;
 use std::time::Instant;
 
-pub mod topological_evolver;
-pub mod llm_synthesizer;
 pub mod formal_verification;
+pub mod llm_synthesizer;
+pub mod topological_evolver;
 
+pub use formal_verification::{VerificationReport, VerificationRunner};
+pub use llm_synthesizer::{
+    FallbackGoalDecomposer, GoalDecomposer, LlmDrivenSynthesizer, LlmGoalDecomposer,
+};
 pub use topological_evolver::TopologicalSOPEvolver;
-pub use llm_synthesizer::{LlmDrivenSynthesizer, GoalDecomposer, LlmGoalDecomposer, FallbackGoalDecomposer};
-pub use formal_verification::{VerificationRunner, VerificationReport};
 
 // ---------------------------------------------------------------------------
 // Flow Synthesis

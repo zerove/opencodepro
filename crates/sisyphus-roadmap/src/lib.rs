@@ -4,9 +4,7 @@ pub mod strategic_reflection;
 
 use serde_json::Value;
 use sisyphus_mem::MfsStore;
-use sisyphus_types::{
-    Milestone, MilestoneStatus, Phase, Project, Roadmap, GoalRef, StateStore,
-};
+use sisyphus_types::{GoalRef, Milestone, MilestoneStatus, Phase, Project, Roadmap, StateStore};
 use std::sync::Arc;
 use thiserror::Error;
 
@@ -109,6 +107,8 @@ pub struct ExecutionOutcome {
     pub deviation_score: Option<f64>,
     pub error: Option<String>,
     pub timestamp: u64,
+    pub actual_cost: f64,
+    pub duration_secs: f64,
 }
 
 /// Severity of a detected problem in the roadmap.
@@ -188,7 +188,10 @@ fn outcome_index_key(project_id: &str) -> String {
 
 /// Build an individual outcome key.
 fn outcome_key(project_id: &str, milestone_id: &str, phase_id: &str, goal_id: &str) -> String {
-    format!("roadmap:outcome:{}:{}:{}:{}", project_id, milestone_id, phase_id, goal_id)
+    format!(
+        "roadmap:outcome:{}:{}:{}:{}",
+        project_id, milestone_id, phase_id, goal_id
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -428,9 +431,7 @@ impl RoadmapManager {
             .goals
             .iter_mut()
             .find(|g| g.goal_id == goal_id)
-            .ok_or_else(|| {
-                RoadmapError::GoalNotFound(goal_id.to_string(), phase_id.to_string())
-            })?;
+            .ok_or_else(|| RoadmapError::GoalNotFound(goal_id.to_string(), phase_id.to_string()))?;
         goal.status = status;
         self.update_project(&project).await
     }
@@ -448,10 +449,7 @@ impl RoadmapManager {
         if milestones.is_empty() {
             return Ok(0.0);
         }
-        let total: f64 = milestones
-            .iter()
-            .map(|m| m.calculate_progress())
-            .sum();
+        let total: f64 = milestones.iter().map(|m| m.calculate_progress()).sum();
         Ok(total / milestones.len() as f64)
     }
 
@@ -483,7 +481,11 @@ impl RoadmapManager {
 
             for ph in &ms.phases {
                 let ph_goals = ph.goals.len();
-                let ph_done = ph.goals.iter().filter(|g| g.status == MilestoneStatus::Completed).count();
+                let ph_done = ph
+                    .goals
+                    .iter()
+                    .filter(|g| g.status == MilestoneStatus::Completed)
+                    .count();
                 ms_goals += ph_goals;
                 ms_done += ph_done;
 
@@ -502,7 +504,11 @@ impl RoadmapManager {
                     name: ph.name.clone(),
                     goal_count: ph_goals,
                     completed_count: ph_done,
-                    progress: if ph_goals > 0 { ph_done as f64 / ph_goals as f64 } else { 0.0 },
+                    progress: if ph_goals > 0 {
+                        ph_done as f64 / ph_goals as f64
+                    } else {
+                        0.0
+                    },
                     goals: goals_detail,
                 });
             }
@@ -525,7 +531,11 @@ impl RoadmapManager {
         Ok(ProgressReport {
             project_id: project.id.clone(),
             project_name: project.name.clone(),
-            overall_progress: if total_goals > 0 { completed_goals as f64 / total_goals as f64 } else { 0.0 },
+            overall_progress: if total_goals > 0 {
+                completed_goals as f64 / total_goals as f64
+            } else {
+                0.0
+            },
             milestone_count: m_count,
             total_goals,
             completed_goals,
@@ -568,13 +578,20 @@ impl RoadmapManager {
             };
             lines.push(format!(
                 "  {} {} — {:.1}% ({}/{})",
-                status_icon, ms.name, ms.progress * 100.0, ms.completed_count, ms.goal_count,
+                status_icon,
+                ms.name,
+                ms.progress * 100.0,
+                ms.completed_count,
+                ms.goal_count,
             ));
 
             for ph in &ms.phases {
                 lines.push(format!(
                     "      Phase {}: {:.1}% ({}/{})",
-                    ph.name, ph.progress * 100.0, ph.completed_count, ph.goal_count,
+                    ph.name,
+                    ph.progress * 100.0,
+                    ph.completed_count,
+                    ph.goal_count,
                 ));
                 for g in &ph.goals {
                     let g_icon = match g.status {
@@ -620,19 +637,24 @@ impl RoadmapManager {
                 RoadmapError::MilestoneNotFound(milestone_id.to_string(), project_id.to_string())
             })?;
 
-        let all_goals: Vec<&GoalRef> = milestone
-            .phases
-            .iter()
-            .flat_map(|p| &p.goals)
-            .collect();
+        let all_goals: Vec<&GoalRef> = milestone.phases.iter().flat_map(|p| &p.goals).collect();
 
         if all_goals.is_empty() {
             milestone.status = MilestoneStatus::Pending;
-        } else if all_goals.iter().all(|g| g.status == MilestoneStatus::Completed) {
+        } else if all_goals
+            .iter()
+            .all(|g| g.status == MilestoneStatus::Completed)
+        {
             milestone.status = MilestoneStatus::Completed;
-        } else if all_goals.iter().any(|g| g.status == MilestoneStatus::Blocked) {
+        } else if all_goals
+            .iter()
+            .any(|g| g.status == MilestoneStatus::Blocked)
+        {
             milestone.status = MilestoneStatus::Blocked;
-        } else if all_goals.iter().any(|g| g.status == MilestoneStatus::InProgress) {
+        } else if all_goals
+            .iter()
+            .any(|g| g.status == MilestoneStatus::InProgress)
+        {
             milestone.status = MilestoneStatus::InProgress;
         } else {
             milestone.status = MilestoneStatus::Pending;
@@ -651,11 +673,20 @@ impl RoadmapManager {
 
             ms.status = if all_goals.is_empty() {
                 MilestoneStatus::Pending
-            } else if all_goals.iter().all(|g| g.status == MilestoneStatus::Completed) {
+            } else if all_goals
+                .iter()
+                .all(|g| g.status == MilestoneStatus::Completed)
+            {
                 MilestoneStatus::Completed
-            } else if all_goals.iter().any(|g| g.status == MilestoneStatus::Blocked) {
+            } else if all_goals
+                .iter()
+                .any(|g| g.status == MilestoneStatus::Blocked)
+            {
                 MilestoneStatus::Blocked
-            } else if all_goals.iter().any(|g| g.status == MilestoneStatus::InProgress) {
+            } else if all_goals
+                .iter()
+                .any(|g| g.status == MilestoneStatus::InProgress)
+            {
                 MilestoneStatus::InProgress
             } else {
                 MilestoneStatus::Pending
@@ -708,7 +739,10 @@ impl RoadmapManager {
     }
 
     /// Retrieve all recorded outcomes for a project.
-    pub async fn get_outcomes(&self, project_id: &str) -> Result<Vec<ExecutionOutcome>, RoadmapError> {
+    pub async fn get_outcomes(
+        &self,
+        project_id: &str,
+    ) -> Result<Vec<ExecutionOutcome>, RoadmapError> {
         let idx_key = outcome_index_key(project_id);
         let ids: Vec<String> = match self.store.get_state_json(&idx_key).await? {
             Some(Value::Array(arr)) => arr
@@ -767,10 +801,11 @@ impl RoadmapManager {
                 });
             }
 
-            let has_blocked_goal = ms
-                .phases
-                .iter()
-                .any(|ph| ph.goals.iter().any(|g| g.status == MilestoneStatus::Blocked));
+            let has_blocked_goal = ms.phases.iter().any(|ph| {
+                ph.goals
+                    .iter()
+                    .any(|g| g.status == MilestoneStatus::Blocked)
+            });
             if has_blocked_goal && ms.status != MilestoneStatus::Blocked {
                 problems.push(RoadmapProblem {
                     severity: ProblemSeverity::Warning,
@@ -791,7 +826,10 @@ impl RoadmapManager {
 
             // Check for stale goals (Pending for too long when others are Completed)
             for ph in &ms.phases {
-                let has_completed = ph.goals.iter().any(|g| g.status == MilestoneStatus::Completed);
+                let has_completed = ph
+                    .goals
+                    .iter()
+                    .any(|g| g.status == MilestoneStatus::Completed);
                 let pending: Vec<&GoalRef> = ph
                     .goals
                     .iter()
@@ -826,8 +864,12 @@ impl RoadmapManager {
                     });
                     if has_failure && g.status != MilestoneStatus::Blocked {
                         suggestions.push(AdjustmentSuggestion {
-                            problem: format!("Goal '{}' has recent execution failures", g.description),
-                            action: "Consider marking as Blocked and adding a remediation goal".into(),
+                            problem: format!(
+                                "Goal '{}' has recent execution failures",
+                                g.description
+                            ),
+                            action: "Consider marking as Blocked and adding a remediation goal"
+                                .into(),
                             target_goal_id: Some(g.goal_id.clone()),
                         });
                     }
@@ -900,9 +942,9 @@ impl RoadmapManager {
                             return false;
                         }
                         let depends_on_failed = ph.depends_on.iter().any(|d| {
-                            ph.goals.iter().any(|pg| {
-                                pg.goal_id == *d && failed_in_phase.contains(&pg.goal_id)
-                            })
+                            ph.goals
+                                .iter()
+                                .any(|pg| pg.goal_id == *d && failed_in_phase.contains(&pg.goal_id))
                         });
                         let any_failed_before = failed_positions.iter().any(|fp| *fp < *i);
                         depends_on_failed || any_failed_before
@@ -939,9 +981,17 @@ impl RoadmapManager {
 
             for phase in &milestone.phases {
                 let dependencies_met = phase.depends_on.iter().all(|dep_id| {
-                    project.roadmap.milestones.iter()
+                    project
+                        .roadmap
+                        .milestones
+                        .iter()
                         .flat_map(|m| &m.phases)
-                        .any(|p| p.id == *dep_id && p.goals.iter().all(|g| g.status == MilestoneStatus::Completed))
+                        .any(|p| {
+                            p.id == *dep_id
+                                && p.goals
+                                    .iter()
+                                    .all(|g| g.status == MilestoneStatus::Completed)
+                        })
                 });
 
                 if !dependencies_met {
@@ -970,11 +1020,17 @@ impl RoadmapManager {
     ) -> Result<String, RoadmapError> {
         let project = self.get_project_or_err(project_id).await?;
 
-        let total_goals: usize = project.roadmap.milestones.iter()
+        let total_goals: usize = project
+            .roadmap
+            .milestones
+            .iter()
             .flat_map(|m| &m.phases)
             .map(|p| p.goals.len())
             .sum();
-        let completed_goals: usize = project.roadmap.milestones.iter()
+        let completed_goals: usize = project
+            .roadmap
+            .milestones
+            .iter()
             .flat_map(|m| &m.phases)
             .flat_map(|p| &p.goals)
             .filter(|g| g.status == MilestoneStatus::Completed)
@@ -986,12 +1042,20 @@ impl RoadmapManager {
             project.description,
             completed_goals,
             total_goals,
-            if total_goals > 0 { completed_goals as f64 / total_goals as f64 * 100.0 } else { 0.0 },
+            if total_goals > 0 {
+                completed_goals as f64 / total_goals as f64 * 100.0
+            } else {
+                0.0
+            },
         );
 
         for milestone in &project.roadmap.milestones {
             let ms_progress = milestone.calculate_progress();
-            context.push_str(&format!("Milestone: {} [{:.0}%]\n", milestone.name, ms_progress * 100.0));
+            context.push_str(&format!(
+                "Milestone: {} [{:.0}%]\n",
+                milestone.name,
+                ms_progress * 100.0
+            ));
             for phase in &milestone.phases {
                 context.push_str(&format!("  Phase: {}\n", phase.name));
                 for goal in &phase.goals {
@@ -1004,7 +1068,10 @@ impl RoadmapManager {
                             _ => "    ",
                         }
                     };
-                    context.push_str(&format!("{}{} ({:?})\n", marker, goal.description, goal.status));
+                    context.push_str(&format!(
+                        "{}{} ({:?})\n",
+                        marker, goal.description, goal.status
+                    ));
                 }
             }
         }
@@ -1042,7 +1109,11 @@ impl RoadmapManager {
                 }
             }
 
-            let progress = if ms_total > 0 { ms_completed as f64 / ms_total as f64 } else { 1.0 };
+            let progress = if ms_total > 0 {
+                ms_completed as f64 / ms_total as f64
+            } else {
+                1.0
+            };
             let remaining = ms_total.saturating_sub(ms_completed);
 
             let risk = match milestone.status {
@@ -1061,19 +1132,33 @@ impl RoadmapManager {
             });
         }
 
-        let overall_pct = if total_goals > 0 { completed_goals as f64 / total_goals as f64 * 100.0 } else { 0.0 };
+        let overall_pct = if total_goals > 0 {
+            completed_goals as f64 / total_goals as f64 * 100.0
+        } else {
+            0.0
+        };
         let remaining_goals = total_goals.saturating_sub(completed_goals);
 
         // highest progress first
-        let mut sorted: Vec<&MilestonePrediction> = milestone_preds.iter()
+        let mut sorted: Vec<&MilestonePrediction> = milestone_preds
+            .iter()
             .filter(|m| m.risk_level != "done")
             .collect();
-        sorted.sort_by(|a, b| b.progress_pct.partial_cmp(&a.progress_pct).unwrap_or(std::cmp::Ordering::Equal));
+        sorted.sort_by(|a, b| {
+            b.progress_pct
+                .partial_cmp(&a.progress_pct)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         let completion_order: Vec<String> = sorted.iter().map(|m| m.name.clone()).collect();
 
-        let overall_risk = if risk_levels.contains(&"high") { "high"
-            } else if risk_levels.contains(&"medium") { "medium"
-            } else { "low" }.to_string();
+        let overall_risk = if risk_levels.contains(&"high") {
+            "high"
+        } else if risk_levels.contains(&"medium") {
+            "medium"
+        } else {
+            "low"
+        }
+        .to_string();
 
         Ok(ProgressPrediction {
             project_id: project.id,
@@ -1170,7 +1255,12 @@ mod tests {
         }
     }
 
-    fn make_milestone(id: &str, name: &str, phases: Vec<Phase>, status: MilestoneStatus) -> Milestone {
+    fn make_milestone(
+        id: &str,
+        name: &str,
+        phases: Vec<Phase>,
+        status: MilestoneStatus,
+    ) -> Milestone {
         Milestone {
             id: id.to_string(),
             name: name.to_string(),
@@ -1301,15 +1391,25 @@ mod tests {
         let ms = make_milestone("ms-1", "Release", vec![], MilestoneStatus::Pending);
         mgr.add_milestone("p1", ms).await.unwrap();
         assert_eq!(
-            mgr.get_project("p1").await.unwrap().unwrap()
-                .roadmap.milestones.len(),
+            mgr.get_project("p1")
+                .await
+                .unwrap()
+                .unwrap()
+                .roadmap
+                .milestones
+                .len(),
             1
         );
 
         mgr.remove_milestone("p1", "ms-1").await.unwrap();
         assert_eq!(
-            mgr.get_project("p1").await.unwrap().unwrap()
-                .roadmap.milestones.len(),
+            mgr.get_project("p1")
+                .await
+                .unwrap()
+                .unwrap()
+                .roadmap
+                .milestones
+                .len(),
             0
         );
     }
@@ -1348,10 +1448,7 @@ mod tests {
 
         // Verify goal added
         let project = mgr.get_project("p1").await.unwrap().unwrap();
-        assert_eq!(
-            project.roadmap.milestones[0].phases[0].goals.len(),
-            1
-        );
+        assert_eq!(project.roadmap.milestones[0].phases[0].goals.len(), 1);
         assert_eq!(
             project.roadmap.milestones[0].phases[0].goals[0].description,
             "Implement feature X"
@@ -1407,16 +1504,22 @@ mod tests {
         let mgr = setup_manager().await;
         mgr.create_project("p1", "Multi", "desc").await.unwrap();
 
-        let ph = make_phase("ph1", "Phase 1", vec![
-            make_goal("g1", "Done", MilestoneStatus::Completed),
-        ]);
+        let ph = make_phase(
+            "ph1",
+            "Phase 1",
+            vec![make_goal("g1", "Done", MilestoneStatus::Completed)],
+        );
         let ms1 = make_milestone("ms1", "M1", vec![ph], MilestoneStatus::Completed);
         mgr.add_milestone("p1", ms1).await.unwrap();
 
-        let ph2 = make_phase("ph2", "Phase 2", vec![
-            make_goal("g2", "Todo", MilestoneStatus::Pending),
-            make_goal("g3", "Also Todo", MilestoneStatus::Pending),
-        ]);
+        let ph2 = make_phase(
+            "ph2",
+            "Phase 2",
+            vec![
+                make_goal("g2", "Todo", MilestoneStatus::Pending),
+                make_goal("g3", "Also Todo", MilestoneStatus::Pending),
+            ],
+        );
         let ms2 = make_milestone("ms2", "M2", vec![ph2], MilestoneStatus::Pending);
         mgr.add_milestone("p1", ms2).await.unwrap();
 
@@ -1431,7 +1534,9 @@ mod tests {
     #[tokio::test]
     async fn test_synthesize_project_context() {
         let mgr = setup_manager().await;
-        mgr.create_project("ctx", "ContextTest", "desc").await.unwrap();
+        mgr.create_project("ctx", "ContextTest", "desc")
+            .await
+            .unwrap();
 
         let g1 = make_goal("g1", "Task A", MilestoneStatus::Completed);
         let g2 = make_goal("g2", "Task B", MilestoneStatus::InProgress);
@@ -1468,12 +1573,21 @@ mod tests {
         let ms = make_milestone("ms1", "M1", vec![ph], MilestoneStatus::Pending);
         mgr.add_milestone("p1", ms).await.unwrap();
 
-        mgr.update_goal_status_with_propagation("p1", "ms1", "ph1", "g1", MilestoneStatus::Completed)
-            .await
-            .unwrap();
+        mgr.update_goal_status_with_propagation(
+            "p1",
+            "ms1",
+            "ph1",
+            "g1",
+            MilestoneStatus::Completed,
+        )
+        .await
+        .unwrap();
 
         let project = mgr.get_project("p1").await.unwrap().unwrap();
-        assert_eq!(project.roadmap.milestones[0].status, MilestoneStatus::Completed);
+        assert_eq!(
+            project.roadmap.milestones[0].status,
+            MilestoneStatus::Completed
+        );
     }
 
     #[tokio::test]
@@ -1492,7 +1606,10 @@ mod tests {
             .unwrap();
 
         let project = mgr.get_project("p1").await.unwrap().unwrap();
-        assert_eq!(project.roadmap.milestones[0].status, MilestoneStatus::Blocked);
+        assert_eq!(
+            project.roadmap.milestones[0].status,
+            MilestoneStatus::Blocked
+        );
     }
 
     #[tokio::test]
@@ -1510,7 +1627,10 @@ mod tests {
         mgr.auto_propagate_all("p1").await.unwrap();
 
         let project = mgr.get_project("p1").await.unwrap().unwrap();
-        assert_eq!(project.roadmap.milestones[0].status, MilestoneStatus::Completed);
+        assert_eq!(
+            project.roadmap.milestones[0].status,
+            MilestoneStatus::Completed
+        );
     }
 
     // ── Phase 2 — Dynamic roadmap adjustment ───────────────────────────
@@ -1529,6 +1649,8 @@ mod tests {
             deviation_score: Some(0.1),
             error: None,
             timestamp: 1000,
+            actual_cost: 1.0,
+            duration_secs: 10.0,
         };
         mgr.record_outcome(&outcome).await.unwrap();
 
@@ -1552,6 +1674,8 @@ mod tests {
             deviation_score: None,
             error: Some("timeout".into()),
             timestamp: 1000,
+            actual_cost: 0.5,
+            duration_secs: 5.0,
         };
         mgr.record_outcome(&fail).await.unwrap();
 
@@ -1564,6 +1688,8 @@ mod tests {
             deviation_score: Some(0.05),
             error: None,
             timestamp: 2000,
+            actual_cost: 1.0,
+            duration_secs: 10.0,
         };
         mgr.record_outcome(&success).await.unwrap();
 
@@ -1601,7 +1727,10 @@ mod tests {
         let health = mgr.evaluate_health("p1").await.unwrap();
         assert!(!health.healthy);
         assert_eq!(health.blocked_milestones.len(), 1);
-        assert!(health.problems.iter().any(|p| matches!(p.severity, ProblemSeverity::Critical)));
+        assert!(health
+            .problems
+            .iter()
+            .any(|p| matches!(p.severity, ProblemSeverity::Critical)));
     }
 
     #[tokio::test]
@@ -1643,6 +1772,8 @@ mod tests {
             deviation_score: None,
             error: Some("crash".into()),
             timestamp: 1000,
+            actual_cost: 0.1,
+            duration_secs: 1.0,
         };
         mgr.record_outcome(&outcome).await.unwrap();
 

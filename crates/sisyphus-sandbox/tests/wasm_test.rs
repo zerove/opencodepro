@@ -4,7 +4,12 @@ use std::path::PathBuf;
 
 fn test_executor() -> WasmToolExecutor {
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let tools_path = manifest_dir.parent().unwrap().parent().unwrap().join("tools");
+    let tools_path = manifest_dir
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .join("tools");
     WasmToolExecutor::with_config(Some(tools_path), None).unwrap()
 }
 

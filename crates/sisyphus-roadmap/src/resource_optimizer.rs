@@ -96,19 +96,16 @@ impl ResourceOptimizer {
         } else {
             let total_cost: f64 = completed_outcomes
                 .iter()
-                .map(|o| if o.success { o.timestamp as f64 } else { 0.0 })
+                .map(|o| if o.success { o.actual_cost } else { 0.0 })
                 .sum();
-            let total_duration: f64 = completed_outcomes
-                .iter()
-                .map(|o| o.timestamp as f64)
-                .sum();
+            let total_duration: f64 = completed_outcomes.iter().map(|o| o.duration_secs).sum();
             let count = completed_outcomes.len() as f64;
             (total_cost / count, total_duration / count)
         };
 
         let remaining = total_goals.saturating_sub(completed_goals);
-            let confidence = (completed_outcomes.len() as f64 / (total_goals.max(1) as f64))
-                .clamp(0.1, 1.0);
+        let confidence =
+            (completed_outcomes.len() as f64 / (total_goals.max(1) as f64)).clamp(0.1, 1.0);
 
         CostProjection {
             total_goals,
@@ -128,10 +125,7 @@ impl ResourceOptimizer {
     /// - Have a high failure rate (retried frequently)
     /// - Take significantly longer than average
     /// - Block many other goals (high out-degree in dependency graph)
-    pub fn find_bottlenecks(
-        &self,
-        outcomes: &[ExecutionOutcome],
-    ) -> Vec<Bottleneck> {
+    pub fn find_bottlenecks(&self, outcomes: &[ExecutionOutcome]) -> Vec<Bottleneck> {
         if outcomes.is_empty() {
             return vec![];
         }
@@ -146,7 +140,7 @@ impl ResourceOptimizer {
         let successful_durations: Vec<f64> = outcomes
             .iter()
             .filter(|o| o.success)
-            .map(|o| o.timestamp as f64)
+            .map(|o| o.duration_secs)
             .collect();
         let avg_duration: f64 = if successful_durations.is_empty() {
             60.0
@@ -161,7 +155,7 @@ impl ResourceOptimizer {
             let success_durations: Vec<f64> = goal_outcomes
                 .iter()
                 .filter(|o| o.success)
-                .map(|o| o.timestamp as f64)
+                .map(|o| o.duration_secs)
                 .collect();
             let avg_goal_duration: f64 = if success_durations.is_empty() {
                 0.0
@@ -181,7 +175,10 @@ impl ResourceOptimizer {
             };
 
             let description = if failure_count >= 3 {
-                format!("Repeated failures ({}) — consider splitting or redesigning", failure_count)
+                format!(
+                    "Repeated failures ({}) — consider splitting or redesigning",
+                    failure_count
+                )
             } else if avg_goal_duration > avg_duration * 3.0 {
                 format!(
                     "Takes {:.1}x longer than average ({:.0}s vs {:.0}s avg)",
@@ -190,7 +187,10 @@ impl ResourceOptimizer {
                     avg_duration,
                 )
             } else {
-                format!("Moderate issues ({} failures, {:.0}s avg duration)", failure_count, avg_goal_duration)
+                format!(
+                    "Moderate issues ({} failures, {:.0}s avg duration)",
+                    failure_count, avg_goal_duration
+                )
             };
 
             bottlenecks.push(Bottleneck {
@@ -254,7 +254,7 @@ impl ResourceOptimizer {
             let goal_ids: Vec<String> = ms_outcomes.iter().map(|o| o.goal_id.clone()).collect();
 
             // Estimate savings using Amdahl's law approximation
-            let total_time: f64 = ms_outcomes.iter().map(|o| o.timestamp as f64).sum();
+            let total_time: f64 = ms_outcomes.iter().map(|o| o.duration_secs).sum();
             let parallel_time = total_time / ms_outcomes.len().min(4) as f64;
             let savings = (total_time - parallel_time).max(0.0);
 
@@ -284,17 +284,36 @@ impl ResourceOptimizer {
         goal_ids: &[String],
     ) -> Vec<GoalResourceEstimate> {
         // Build per-goal historical stats
-        let mut stats: HashMap<String, Vec<f64>> = HashMap::new();
+        let mut cost_stats: HashMap<String, Vec<f64>> = HashMap::new();
+        let mut duration_stats: HashMap<String, Vec<f64>> = HashMap::new();
         for o in outcomes.iter().filter(|o| o.success) {
-            stats
+            cost_stats
                 .entry(o.goal_id.clone())
                 .or_default()
-                .push(o.timestamp as f64);
+                .push(o.actual_cost);
+            duration_stats
+                .entry(o.goal_id.clone())
+                .or_default()
+                .push(o.duration_secs);
         }
 
         // Project-wide averages for goals without history
-        let all_durations: Vec<f64> = stats.values().flat_map(|v| v.iter()).copied().collect();
-        let global_avg: f64 = if all_durations.is_empty() {
+        let all_costs: Vec<f64> = cost_stats
+            .values()
+            .flat_map(|v| v.iter())
+            .copied()
+            .collect();
+        let all_durations: Vec<f64> = duration_stats
+            .values()
+            .flat_map(|v| v.iter())
+            .copied()
+            .collect();
+        let global_avg_cost = if all_costs.is_empty() {
+            10.0
+        } else {
+            all_costs.iter().sum::<f64>() / all_costs.len() as f64
+        };
+        let global_avg_dur = if all_durations.is_empty() {
             60.0
         } else {
             all_durations.iter().sum::<f64>() / all_durations.len() as f64
@@ -303,21 +322,22 @@ impl ResourceOptimizer {
         goal_ids
             .iter()
             .map(|gid| {
-                if let Some(durations) = stats.get(gid) {
-                    let avg = durations.iter().sum::<f64>() / durations.len() as f64;
+                if let (Some(costs), Some(durs)) = (cost_stats.get(gid), duration_stats.get(gid)) {
+                    let avg_cost = costs.iter().sum::<f64>() / costs.len() as f64;
+                    let avg_dur = durs.iter().sum::<f64>() / durs.len() as f64;
                     GoalResourceEstimate {
                         goal_id: gid.clone(),
-                        predicted_cost: avg,
-                        predicted_duration_secs: avg,
-                        confidence: (durations.len() as f64 / 5.0).min(1.0),
-                        historical_samples: durations.len(),
+                        predicted_cost: avg_cost,
+                        predicted_duration_secs: avg_dur,
+                        confidence: (costs.len() as f64 / 5.0).min(1.0),
+                        historical_samples: costs.len(),
                     }
                 } else {
                     GoalResourceEstimate {
                         goal_id: gid.clone(),
-                        predicted_cost: global_avg,
-                        predicted_duration_secs: global_avg,
-                        confidence: 0.3, // low confidence without history
+                        predicted_cost: global_avg_cost,
+                        predicted_duration_secs: global_avg_dur,
+                        confidence: 0.3,
                         historical_samples: 0,
                     }
                 }
@@ -345,6 +365,8 @@ mod tests {
             deviation_score: None,
             error: if success { None } else { Some("error".into()) },
             timestamp,
+            actual_cost: 1.0,
+            duration_secs: timestamp as f64,
         }
     }
 
@@ -419,7 +441,8 @@ mod tests {
             make_outcome("g1", "ms1", true, 60),
             make_outcome("g2", "ms1", true, 90),
         ];
-        let estimates = opt.estimate_goal_resources(&outcomes, &["g1".into(), "g2".into(), "g3".into()]);
+        let estimates =
+            opt.estimate_goal_resources(&outcomes, &["g1".into(), "g2".into(), "g3".into()]);
         assert_eq!(estimates.len(), 3);
 
         // g1 has 2 samples

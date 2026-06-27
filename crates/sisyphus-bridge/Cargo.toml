@@ -18,6 +18,7 @@ sisyphus-tools = { path = "../sisyphus-tools" }
 sisyphus-mem = { path = "../sisyphus-mem" }
 sisyphus-intel = { path = "../sisyphus-intel" }
 sisyphus-metrics = { path = "../sisyphus-metrics" }
+sisyphus-roadmap = { path = "../sisyphus-roadmap" }
 serde_json = "1.0"
 async-trait = "0.1"
 tracing = { workspace = true }

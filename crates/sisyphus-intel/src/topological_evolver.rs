@@ -1,8 +1,8 @@
+use crate::{ReflectionReport, SOPEvolver, SimulationResult};
 use petgraph::graph::NodeIndex;
 use sisyphus_types::{EvolutionOp, SOPGraph, WasmSOPNode};
-use crate::{SOPEvolver, ReflectionReport, SimulationResult};
-use std::sync::Arc;
 use std::collections::HashMap;
+use std::sync::Arc;
 
 pub struct TopologicalSOPEvolver;
 
@@ -48,7 +48,7 @@ impl TopologicalSOPEvolver {
                 EvolutionOp::AdjustFuel { node_name, delta } => {
                     let node_idx = self.find_node_by_name(&new_graph, node_name)?;
                     let node = new_graph.graph.node_weight(node_idx).expect("valid index");
-                    
+
                     if let Some(wasm_node) = node.as_any().downcast_ref::<WasmSOPNode>() {
                         let new_fuel = (wasm_node.fuel_limit as i64 + delta).max(0) as u64;
                         let evolved_node = Arc::new(WasmSOPNode {
@@ -62,10 +62,13 @@ impl TopologicalSOPEvolver {
                         return Err(format!("Node {} is not a WasmSOPNode", node_name));
                     }
                 }
-                EvolutionOp::AddRetry { node_name, max_retries } => {
+                EvolutionOp::AddRetry {
+                    node_name,
+                    max_retries,
+                } => {
                     let node_idx = self.find_node_by_name(&new_graph, node_name)?;
                     let node = new_graph.graph.node_weight(node_idx).expect("valid index");
-                    
+
                     let evolved_node = Arc::new(sisyphus_types::RetrySOPNode {
                         name: format!("{}_retry", node_name),
                         child: node.clone(),
@@ -73,9 +76,13 @@ impl TopologicalSOPEvolver {
                     });
                     new_graph.graph[node_idx] = evolved_node;
                 }
-                EvolutionOp::InsertNode { after_node, new_name, tool_id } => {
+                EvolutionOp::InsertNode {
+                    after_node,
+                    new_name,
+                    tool_id,
+                } => {
                     let after_idx = self.find_node_by_name(&new_graph, after_node)?;
-                    
+
                     // Create new node
                     // Note: We need a tool_executor. In a real scenario, this would be passed in or stored.
                     // For this implementation, we assume the tool_executor is provided to apply_ops.
@@ -86,7 +93,7 @@ impl TopologicalSOPEvolver {
                         executor: tool_executor.clone(),
                     });
                     let new_idx = new_graph.add_node(new_node);
-                    
+
                     // Rewire: after_node -> successors becomes after_node -> new_node -> successors
                     let successors: Vec<_> = new_graph.graph.neighbors(after_idx).collect();
                     for succ in successors {
@@ -96,7 +103,7 @@ impl TopologicalSOPEvolver {
                         new_graph.add_edge(after_idx, new_idx);
                         new_graph.add_edge(new_idx, succ);
                     }
-                    
+
                     // If after_node had no successors, just add the edge
                     if new_graph.graph.neighbors(after_idx).count() == 0 {
                         new_graph.add_edge(after_idx, new_idx);
@@ -104,28 +111,39 @@ impl TopologicalSOPEvolver {
                 }
                 EvolutionOp::RemoveNode { node_name } => {
                     let node_idx = self.find_node_by_name(&new_graph, node_name)?;
-                    
-                    let predecessors: Vec<_> = new_graph.graph.neighbors_directed(node_idx, petgraph::Direction::Incoming).collect();
+
+                    let predecessors: Vec<_> = new_graph
+                        .graph
+                        .neighbors_directed(node_idx, petgraph::Direction::Incoming)
+                        .collect();
                     let successors: Vec<_> = new_graph.graph.neighbors(node_idx).collect();
-                    
+
                     for pred in predecessors {
                         for succ in &successors {
                             new_graph.add_edge(pred, *succ);
                         }
                     }
-                    
+
                     new_graph.graph.remove_node(node_idx);
                 }
                 EvolutionOp::SwapNodes { node_a, node_b } => {
                     let idx_a = self.find_node_by_name(&new_graph, node_a)?;
                     let idx_b = self.find_node_by_name(&new_graph, node_b)?;
-                    
-                    if idx_a == idx_b { continue; }
+
+                    if idx_a == idx_b {
+                        continue;
+                    }
 
                     // Swap edges
-                    let preds_a: Vec<_> = new_graph.graph.neighbors_directed(idx_a, petgraph::Direction::Incoming).collect();
+                    let preds_a: Vec<_> = new_graph
+                        .graph
+                        .neighbors_directed(idx_a, petgraph::Direction::Incoming)
+                        .collect();
                     let succs_a: Vec<_> = new_graph.graph.neighbors(idx_a).collect();
-                    let preds_b: Vec<_> = new_graph.graph.neighbors_directed(idx_b, petgraph::Direction::Incoming).collect();
+                    let preds_b: Vec<_> = new_graph
+                        .graph
+                        .neighbors_directed(idx_b, petgraph::Direction::Incoming)
+                        .collect();
                     let succs_b: Vec<_> = new_graph.graph.neighbors(idx_b).collect();
 
                     // Identify edges between the two nodes before removing them
@@ -133,46 +151,58 @@ impl TopologicalSOPEvolver {
                     let b_to_a = new_graph.graph.contains_edge(idx_b, idx_a);
 
                     // Remove all edges connected to a and b
-                    for p in &preds_a { 
+                    for p in &preds_a {
                         if let Some(edge_idx) = new_graph.graph.find_edge(*p, idx_a) {
-                            new_graph.graph.remove_edge(edge_idx); 
+                            new_graph.graph.remove_edge(edge_idx);
                         }
                     }
-                    for s in &succs_a { 
+                    for s in &succs_a {
                         if let Some(edge_idx) = new_graph.graph.find_edge(idx_a, *s) {
-                            new_graph.graph.remove_edge(edge_idx); 
+                            new_graph.graph.remove_edge(edge_idx);
                         }
                     }
-                    for p in &preds_b { 
+                    for p in &preds_b {
                         if let Some(edge_idx) = new_graph.graph.find_edge(*p, idx_b) {
-                            new_graph.graph.remove_edge(edge_idx); 
+                            new_graph.graph.remove_edge(edge_idx);
                         }
                     }
-                    for s in &succs_b { 
+                    for s in &succs_b {
                         if let Some(edge_idx) = new_graph.graph.find_edge(idx_b, *s) {
-                            new_graph.graph.remove_edge(edge_idx); 
+                            new_graph.graph.remove_edge(edge_idx);
                         }
                     }
 
                     // Rewire: a's old preds -> b, b's old succs -> a
-                    for p in preds_a { 
-                        if p != idx_b { new_graph.add_edge(p, idx_b); }
+                    for p in preds_a {
+                        if p != idx_b {
+                            new_graph.add_edge(p, idx_b);
+                        }
                     }
-                    for s in succs_b { 
-                        if s != idx_a { new_graph.add_edge(idx_a, s); }
+                    for s in succs_b {
+                        if s != idx_a {
+                            new_graph.add_edge(idx_a, s);
+                        }
                     }
-                    
+
                     // Rewire: b's old preds -> a, a's old succs -> b
-                    for p in preds_b { 
-                        if p != idx_a { new_graph.add_edge(p, idx_a); }
+                    for p in preds_b {
+                        if p != idx_a {
+                            new_graph.add_edge(p, idx_a);
+                        }
                     }
-                    for s in succs_a { 
-                        if s != idx_b { new_graph.add_edge(idx_b, s); }
+                    for s in succs_a {
+                        if s != idx_b {
+                            new_graph.add_edge(idx_b, s);
+                        }
                     }
 
                     // Swap the edge between them
-                    if a_to_b { new_graph.add_edge(idx_b, idx_a); }
-                    if b_to_a { new_graph.add_edge(idx_a, idx_b); }
+                    if a_to_b {
+                        new_graph.add_edge(idx_b, idx_a);
+                    }
+                    if b_to_a {
+                        new_graph.add_edge(idx_a, idx_b);
+                    }
                 }
             }
         }
@@ -186,9 +216,17 @@ impl TopologicalSOPEvolver {
     }
 
     fn find_node_by_name(&self, graph: &SOPGraph, name: &str) -> Result<NodeIndex, String> {
-        graph.graph.node_indices().find(|&idx| {
-            graph.graph.node_weight(idx).map(|n| n.name() == name).unwrap_or(false)
-        }).ok_or_else(|| format!("Node {} not found in graph", name))
+        graph
+            .graph
+            .node_indices()
+            .find(|&idx| {
+                graph
+                    .graph
+                    .node_weight(idx)
+                    .map(|n| n.name() == name)
+                    .unwrap_or(false)
+            })
+            .ok_or_else(|| format!("Node {} not found in graph", name))
     }
 }
 
@@ -215,8 +253,8 @@ impl SOPEvolver for TopologicalSOPEvolver {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sisyphus_types::{WasmSOPNode, ToolExecutor};
     use async_trait::async_trait;
+    use sisyphus_types::{ToolExecutor, WasmSOPNode};
 
     struct MockExecutor;
     #[async_trait]
@@ -255,12 +293,12 @@ mod tests {
             tool_id: "t_mid".into(),
         }];
         let new_graph = evolver.apply_ops(&graph, &ops, exec).unwrap();
-        
+
         assert_eq!(new_graph.graph.node_count(), 3);
         let n1 = evolver.find_node_by_name(&new_graph, "node1").unwrap();
         let mid = evolver.find_node_by_name(&new_graph, "node_mid").unwrap();
         let n2 = evolver.find_node_by_name(&new_graph, "node2").unwrap();
-        
+
         assert!(new_graph.graph.contains_edge(n1, mid));
         assert!(new_graph.graph.contains_edge(mid, n2));
         assert!(!new_graph.graph.contains_edge(n1, n2));
@@ -274,7 +312,7 @@ mod tests {
             node_name: "node2".into(),
         }];
         let new_graph = evolver.apply_ops(&graph, &ops, exec).unwrap();
-        
+
         assert_eq!(new_graph.graph.node_count(), 1);
         assert!(evolver.find_node_by_name(&new_graph, "node1").is_ok());
         assert!(evolver.find_node_by_name(&new_graph, "node2").is_err());
@@ -289,10 +327,10 @@ mod tests {
             node_b: "node2".into(),
         }];
         let new_graph = evolver.apply_ops(&graph, &ops, exec).unwrap();
-        
+
         let n1 = evolver.find_node_by_name(&new_graph, "node1").unwrap();
         let n2 = evolver.find_node_by_name(&new_graph, "node2").unwrap();
-        
+
         assert!(new_graph.graph.contains_edge(n2, n1));
         assert!(!new_graph.graph.contains_edge(n1, n2));
     }

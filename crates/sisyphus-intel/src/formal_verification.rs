@@ -42,7 +42,10 @@ impl VerificationRunner {
         tracing::warn!(target = %target, cases = cases, "Proptest verification not implemented yet");
         Ok(VerificationReport {
             passed: false,
-            details: format!("Proptest verification with {} cases is not implemented yet", cases),
+            details: format!(
+                "Proptest verification with {} cases is not implemented yet",
+                cases
+            ),
             duration_secs: 0.0,
         })
     }

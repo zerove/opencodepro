@@ -1,26 +1,26 @@
-use async_trait::async_trait;
-use std::sync::Arc;
-use sisyphus_types::{ExecutionContext};
 use crate::{
-    FlowSynthesizer, SynthesisResult, SOPGraph, 
-    ActionType, classify_goal, tool_id_for_action, action_label
+    action_label, classify_goal, tool_id_for_action, ActionType, FlowSynthesizer, SOPGraph,
+    SynthesisResult,
 };
+use async_trait::async_trait;
+use sisyphus_types::ExecutionContext;
+use std::sync::Arc;
 
 #[async_trait]
 pub trait GoalDecomposer: Send + Sync {
     async fn decompose(&self, goal: &str) -> Result<Vec<ActionType>, String>;
 }
 
-pub struct LlmGoalDecomposer<F> 
-where 
-    F: Fn(String) -> Result<Vec<ActionType>, String> + Send + Sync + 'static 
+pub struct LlmGoalDecomposer<F>
+where
+    F: Fn(String) -> Result<Vec<ActionType>, String> + Send + Sync + 'static,
 {
     decompose_fn: F,
 }
 
-impl<F> LlmGoalDecomposer<F> 
-where 
-    F: Fn(String) -> Result<Vec<ActionType>, String> + Send + Sync + 'static 
+impl<F> LlmGoalDecomposer<F>
+where
+    F: Fn(String) -> Result<Vec<ActionType>, String> + Send + Sync + 'static,
 {
     pub fn new(decompose_fn: F) -> Self {
         Self { decompose_fn }
@@ -28,9 +28,9 @@ where
 }
 
 #[async_trait]
-impl<F> GoalDecomposer for LlmGoalDecomposer<F> 
-where 
-    F: Fn(String) -> Result<Vec<ActionType>, String> + Send + Sync + 'static 
+impl<F> GoalDecomposer for LlmGoalDecomposer<F>
+where
+    F: Fn(String) -> Result<Vec<ActionType>, String> + Send + Sync + 'static,
 {
     async fn decompose(&self, goal: &str) -> Result<Vec<ActionType>, String> {
         (self.decompose_fn)(goal.to_string())
@@ -66,8 +66,14 @@ pub struct LlmDrivenSynthesizer {
 }
 
 impl LlmDrivenSynthesizer {
-    pub fn new(decomposer: Arc<dyn GoalDecomposer>, tool_executor: Arc<dyn sisyphus_types::ToolExecutor>) -> Self {
-        Self { decomposer, tool_executor }
+    pub fn new(
+        decomposer: Arc<dyn GoalDecomposer>,
+        tool_executor: Arc<dyn sisyphus_types::ToolExecutor>,
+    ) -> Self {
+        Self {
+            decomposer,
+            tool_executor,
+        }
     }
 }
 
@@ -120,7 +126,7 @@ impl FlowSynthesizer for LlmDrivenSynthesizer {
         Ok(SynthesisResult {
             start_node: first_idx.expect("actions not empty"),
             graph,
-            plan_description: format!("LLM-synthesized pipeline: {}", actions.len())
+            plan_description: format!("LLM-synthesized pipeline: {}", actions.len()),
         })
     }
 }
@@ -128,8 +134,8 @@ impl FlowSynthesizer for LlmDrivenSynthesizer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sisyphus_types::ToolExecutor;
     use async_trait::async_trait;
+    use sisyphus_types::ToolExecutor;
 
     #[allow(dead_code)]
     struct MockExecutor;
@@ -142,14 +148,12 @@ mod tests {
 
     #[tokio::test]
     async fn test_fallback_decomposer() {
-        let llm_decomposer = Arc::new(LlmGoalDecomposer::new(|_| {
-            Err("LLM Error".into())
-        }));
+        let llm_decomposer = Arc::new(LlmGoalDecomposer::new(|_| Err("LLM Error".into())));
         let fallback = Arc::new(FallbackGoalDecomposer::new(llm_decomposer));
-        
+
         let goal = "fetch and process";
         let actions = fallback.decompose(goal).await.unwrap();
-        
+
         assert!(actions.contains(&ActionType::Fetch));
         assert!(actions.contains(&ActionType::Process));
     }
@@ -159,7 +163,7 @@ mod tests {
         let llm_decomposer = Arc::new(LlmGoalDecomposer::new(|_| {
             Ok(vec![ActionType::Fetch, ActionType::Sink])
         }));
-        
+
         let goal = "some goal";
         let actions = llm_decomposer.decompose(goal).await.unwrap();
         assert_eq!(actions, vec![ActionType::Fetch, ActionType::Sink]);

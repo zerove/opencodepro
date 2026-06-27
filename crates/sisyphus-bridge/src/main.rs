@@ -1,34 +1,34 @@
 use sisyphus_bridge::sisyphus_bridge_server::{SisyphusBridge, SisyphusBridgeServer};
 use sisyphus_bridge::{
-    AgentMetadata, DecomposeGoalRequest, DecomposeGoalResponse, ExecuteSopRequest,
-    ExecuteToolRequest, ExecuteToolResponse, HealthCheckRequest, HealthCheckResponse,
-    ListAgentsRequest, ListAgentsResponse, ListSkillsRequest, ListSkillsResponse,
-    ListToolsRequest, ListToolsResponse, ShowSkillRequest, ShowSkillResponse,
-    InstallSkillRequest, InstallSkillResponse,
-    RemoveSkillRequest, RemoveSkillResponse, SkillMetadata, ToolMetadata,
-    ListSoPsRequest, ListSoPsResponse, SopResponse,
-    TaskProto, ExecutionEvent,
-    ListBenchmarksRequest, ListBenchmarksResponse, BenchmarkEntry,
-    BreakerMetricsRequest, BreakerMetricsResponse, BreakerStatus,
+    AgentMetadata, BenchmarkEntry, BreakerMetricsRequest, BreakerMetricsResponse, BreakerStatus,
+    DecomposeGoalRequest, DecomposeGoalResponse, ExecuteSopRequest, ExecuteToolRequest,
+    ExecuteToolResponse, ExecutionEvent, HealthCheckRequest, HealthCheckResponse,
+    InstallSkillRequest, InstallSkillResponse, ListAgentsRequest, ListAgentsResponse,
+    ListBenchmarksRequest, ListBenchmarksResponse, ListSkillsRequest, ListSkillsResponse,
+    ListSoPsRequest, ListSoPsResponse, ListToolsRequest, ListToolsResponse, RemoveSkillRequest,
+    RemoveSkillResponse, ShowSkillRequest, ShowSkillResponse, SkillMetadata, SopResponse,
+    TaskProto, ToolMetadata,
 };
-use sisyphus_tools::LlmClient;
-use sisyphus_core::{SOPGraph, SisyphusKernel, WasmSOPNode, Consensus};
+use sisyphus_core::{Consensus, SOPGraph, SisyphusKernel, WasmSOPNode};
 use sisyphus_intel::{SisyphusIntel, StandardReflector};
 use sisyphus_mem::MfsStore;
-use std::num::NonZeroUsize;
 use sisyphus_metrics::{init_metrics, record_bridge_request, record_sop_execution};
-use sisyphus_sandbox::{WasmToolExecutor, PluginManager};
+use sisyphus_roadmap::milestone_generator::MilestoneGenerator;
+use sisyphus_roadmap::{ProgressReport, RoadmapManager};
+use sisyphus_sandbox::{PluginManager, WasmToolExecutor};
+use sisyphus_tools::LlmClient;
 use sisyphus_tools::{
-    AgentRegistry, BuiltinToolExecutor, ConfigStore, MCPToolExecutor, SkillLoader,
-    TeamGoal, TeamOrchestrator, ReflectionReport, RoadmapManager,
+    AgentRegistry, BuiltinToolExecutor, ConfigStore, MCPToolExecutor, SkillLoader, TeamGoal,
+    TeamOrchestrator,
 };
-use sisyphus_types::{Config, ExecutorRouter, ToolExecutor, MilestoneStatus, StateStore};
+use sisyphus_types::{Config, ExecutorRouter, MilestoneStatus, ToolExecutor};
+use std::num::NonZeroUsize;
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock, Weak};
 use std::time::Instant;
+use tokio::signal;
 use tokio::sync::mpsc;
 use tokio_stream::StreamExt;
-use tokio::signal;
 use tonic::{transport::Server, Request, Response, Status};
 use tracing::{info, info_span, warn};
 
@@ -49,12 +49,12 @@ impl Consensus for NoOpConsensus {
 
 struct StrategicExecutor {
     kernel: Arc<RwLock<Option<Weak<SisyphusKernel>>>>,
-    state_store: Arc<dyn StateStore>,
+    state_store: Arc<MfsStore>,
     llm_client: Arc<dyn sisyphus_tools::LlmClient>,
 }
 
 impl StrategicExecutor {
-    fn new(state_store: Arc<dyn StateStore>, llm_client: Arc<dyn sisyphus_tools::LlmClient>) -> Self {
+    fn new(state_store: Arc<MfsStore>, llm_client: Arc<dyn sisyphus_tools::LlmClient>) -> Self {
         Self {
             kernel: Arc::new(RwLock::new(None)),
             state_store,
@@ -77,9 +77,9 @@ impl ToolExecutor for StrategicExecutor {
 
         if tool_id == "next_goal" {
             let args_str = String::from_utf8_lossy(&args);
-            let v: serde_json::Value = serde_json::from_str(&args_str)
-                .map_err(|e| format!("Invalid JSON args: {e}"))?;
-            
+            let v: serde_json::Value =
+                serde_json::from_str(&args_str).map_err(|e| format!("Invalid JSON args: {e}"))?;
+
             let project_id = v["project_id"]
                 .as_str()
                 .ok_or_else(|| "Missing 'project_id' in arguments".to_string())?
@@ -87,9 +87,11 @@ impl ToolExecutor for StrategicExecutor {
 
             info!("Strategic loop triggered for project: {}", project_id);
 
-            let manager = RoadmapManager::new(self.state_store.clone(), project_id.clone());
+            let manager = RoadmapManager::new(self.state_store.clone());
 
-            let goal_ref = manager.get_next_goal().await
+            let goal_ref = manager
+                .get_next_goal(&project_id)
+                .await
                 .map_err(|e| format!("Failed to get next goal: {e}"))?;
 
             let goal = match goal_ref {
@@ -97,32 +99,60 @@ impl ToolExecutor for StrategicExecutor {
                 None => return Ok(b"No pending goals in the roadmap.".to_vec()),
             };
 
-            info!("Strategic Loop: Executing next goal [{}] - {}", goal.goal_id, goal.description);
+            info!(
+                "Strategic Loop: Executing next goal [{}] - {}",
+                goal.goal_id, goal.description
+            );
 
-            let roadmap_context = manager.get_goal_context(&goal.goal_id).await
+            let roadmap_context = manager
+                .get_goal_context(&project_id, &goal.goal_id)
+                .await
                 .unwrap_or_else(|_| "Failed to load roadmap context.".to_string());
             let enriched_goal = format!(
                 "{}\n\n--- Roadmap Context ---\n{}",
-                goal.description,
-                roadmap_context,
+                goal.description, roadmap_context,
             );
 
             let synth_id = format!("strategic_{}", goal.goal_id);
             match kernel.execute_goal(&enriched_goal, &synth_id, None).await {
                 Ok((result, report)) => {
-                    manager.update_goal_status(&goal.goal_id, MilestoneStatus::Completed).await
-                        .map_err(|e| format!("Goal executed but failed to update roadmap: {e}"))?;
+                    if let Ok(Some(project)) = manager.get_project(&project_id).await {
+                        let (ms_id, ph_id) = project
+                            .roadmap
+                            .milestones
+                            .iter()
+                            .flat_map(|ms| {
+                                ms.phases
+                                    .iter()
+                                    .map(move |ph| (ms.id.as_str(), ph.id.as_str(), &ph.goals))
+                            })
+                            .filter(|(_, _, goals)| goals.iter().any(|g| g.goal_id == goal.goal_id))
+                            .find_map(|(ms_id, ph_id, _)| {
+                                Some((ms_id.to_string(), ph_id.to_string()))
+                            })
+                            .unwrap_or_default();
+                        let _ = manager
+                            .update_goal_status(
+                                &project_id,
+                                &ms_id,
+                                &ph_id,
+                                &goal.goal_id,
+                                MilestoneStatus::Completed,
+                            )
+                            .await;
+                    }
 
-                    let reflection = manager.reflect().await
-                        .unwrap_or_else(|_| ReflectionReport {
+                    let reflection = manager
+                        .generate_progress_report(&project_id)
+                        .await
+                        .unwrap_or_else(|_| ProgressReport {
                             project_id: project_id.clone(),
                             project_name: String::new(),
-                            overall_progress_pct: 0.0,
+                            overall_progress: 0.0,
+                            milestone_count: 0,
+                            total_goals: 0,
+                            completed_goals: 0,
                             milestones: vec![],
-                            is_on_track: true,
-                            stalled_goals: vec![],
-                            completed_recently: vec![],
-                            recommendations: vec![],
                         });
 
                     let output = format!(
@@ -130,55 +160,61 @@ impl ToolExecutor for StrategicExecutor {
                         goal.goal_id,
                         result,
                         report,
-                        reflection.overall_progress_pct,
-                        if reflection.is_on_track { "yes" } else { "no" },
-                        if reflection.recommendations.is_empty() {
-                            "  None.".to_string()
-                        } else {
-                            reflection.recommendations.iter().map(|r| format!("  - {}", r)).collect::<Vec<_>>().join("\n")
-                        },
+                        reflection.overall_progress * 100.0,
+                        "yes",
+                        "  None.",
                     );
                     Ok(output.into_bytes())
                 }
-                Err(e) => {
-                    Err(format!("Strategic Goal [{}] execution failed: {e}", goal.goal_id))
-                }
+                Err(e) => Err(format!(
+                    "Strategic Goal [{}] execution failed: {e}",
+                    goal.goal_id
+                )),
             }
         } else if tool_id == "progress" {
             let args_str = String::from_utf8_lossy(&args);
-            let v: serde_json::Value = serde_json::from_str(&args_str)
-                .map_err(|e| format!("Invalid JSON args: {e}"))?;
-            
+            let v: serde_json::Value =
+                serde_json::from_str(&args_str).map_err(|e| format!("Invalid JSON args: {e}"))?;
+
             let project_id = v["project_id"]
                 .as_str()
                 .ok_or_else(|| "Missing 'project_id' in arguments".to_string())?
                 .to_string();
 
-            let manager = RoadmapManager::new(self.state_store.clone(), project_id);
-            let progress = manager.get_project_progress().await
+            let manager = RoadmapManager::new(self.state_store.clone());
+            let progress = manager
+                .calculate_progress(&project_id)
+                .await
                 .map_err(|e| format!("Failed to get progress: {e}"))?;
 
             Ok(format!("Project overall progress: {:.2}%", progress * 100.0).into_bytes())
         } else if tool_id == "show_roadmap" {
             let args_str = String::from_utf8_lossy(&args);
-            let v: serde_json::Value = serde_json::from_str(&args_str)
-                .map_err(|e| format!("Invalid JSON args: {e}"))?;
-            
+            let v: serde_json::Value =
+                serde_json::from_str(&args_str).map_err(|e| format!("Invalid JSON args: {e}"))?;
+
             let project_id = v["project_id"]
                 .as_str()
                 .ok_or_else(|| "Missing 'project_id' in arguments".to_string())?
                 .to_string();
 
-            let manager = RoadmapManager::new(self.state_store.clone(), project_id);
-            let project = manager.get_full_roadmap().await
-                .map_err(|e| format!("Failed to load roadmap: {e}"))?;
+            let manager = RoadmapManager::new(self.state_store.clone());
+            let project = manager
+                .get_project(&project_id)
+                .await
+                .map_err(|e| format!("Failed to load roadmap: {e}"))?
+                .ok_or_else(|| format!("Project {} not found", project_id))?;
 
             let mut output = format!("# Project: {}\n{}\n\n", project.name, project.description);
             for milestone in &project.roadmap.milestones {
                 let progress = milestone.calculate_progress();
-                output.push_str(&format!("## Milestone: {} [{:?}] ({:.1}%)\n", 
-                    milestone.name, milestone.status, progress * 100.0));
-                
+                output.push_str(&format!(
+                    "## Milestone: {} [{:?}] ({:.1}%)\n",
+                    milestone.name,
+                    milestone.status,
+                    progress * 100.0
+                ));
+
                 for phase in &milestone.phases {
                     output.push_str(&format!("### Phase: {}\n", phase.name));
                     for goal in &phase.goals {
@@ -195,13 +231,8 @@ impl ToolExecutor for StrategicExecutor {
             Ok(output.into_bytes())
         } else if tool_id == "replan" {
             let args_str = String::from_utf8_lossy(&args);
-            let v: serde_json::Value = serde_json::from_str(&args_str)
-                .map_err(|e| format!("Invalid JSON args: {e}"))?;
-            
-            let project_id = v["project_id"]
-                .as_str()
-                .ok_or_else(|| "Missing 'project_id' in arguments".to_string())?
-                .to_string();
+            let v: serde_json::Value =
+                serde_json::from_str(&args_str).map_err(|e| format!("Invalid JSON args: {e}"))?;
 
             let project_val = &v["project"];
             if project_val.is_null() {
@@ -211,16 +242,18 @@ impl ToolExecutor for StrategicExecutor {
             let project: sisyphus_types::Project = serde_json::from_value(project_val.clone())
                 .map_err(|e| format!("Invalid project data: {e}"))?;
 
-            let manager = RoadmapManager::new(self.state_store.clone(), project_id);
-            manager.save_project(&project).await
+            let manager = RoadmapManager::new(self.state_store.clone());
+            manager
+                .update_project(&project)
+                .await
                 .map_err(|e| format!("Failed to replan roadmap: {e}"))?;
 
             Ok(b"Roadmap successfully replanned.".to_vec())
         } else if tool_id == "auto_plan" {
             let args_str = String::from_utf8_lossy(&args);
-            let v: serde_json::Value = serde_json::from_str(&args_str)
-                .map_err(|e| format!("Invalid JSON args: {e}"))?;
-            
+            let v: serde_json::Value =
+                serde_json::from_str(&args_str).map_err(|e| format!("Invalid JSON args: {e}"))?;
+
             let project_id = v["project_id"]
                 .as_str()
                 .ok_or_else(|| "Missing 'project_id' in arguments".to_string())?
@@ -230,18 +263,20 @@ impl ToolExecutor for StrategicExecutor {
                 .ok_or_else(|| "Missing 'description' in arguments".to_string())?
                 .to_string();
 
-            let manager = RoadmapManager::new(self.state_store.clone(), project_id);
-            let project = manager.auto_plan(self.llm_client.as_ref(), &description).await
+            let manager = RoadmapManager::new(self.state_store.clone());
+            let gen = MilestoneGenerator::new(self.llm_client.clone());
+            let milestones = gen
+                .generate_milestones(&manager, &project_id, &description)
+                .await
                 .map_err(|e| format!("Auto-plan failed: {e}"))?;
-
-            let output = serde_json::to_string_pretty(&project)
+            let output = serde_json::to_string_pretty(&milestones)
                 .map_err(|e| format!("Failed to serialize result: {e}"))?;
             Ok(output.into_bytes())
         } else if tool_id == "goal_context" {
             let args_str = String::from_utf8_lossy(&args);
-            let v: serde_json::Value = serde_json::from_str(&args_str)
-                .map_err(|e| format!("Invalid JSON args: {e}"))?;
-            
+            let v: serde_json::Value =
+                serde_json::from_str(&args_str).map_err(|e| format!("Invalid JSON args: {e}"))?;
+
             let project_id = v["project_id"]
                 .as_str()
                 .ok_or_else(|| "Missing 'project_id' in arguments".to_string())?
@@ -251,23 +286,27 @@ impl ToolExecutor for StrategicExecutor {
                 .ok_or_else(|| "Missing 'goal_id' in arguments".to_string())?
                 .to_string();
 
-            let manager = RoadmapManager::new(self.state_store.clone(), project_id);
-            let context = manager.get_goal_context(&goal_id).await
+            let manager = RoadmapManager::new(self.state_store.clone());
+            let context = manager
+                .get_goal_context(&project_id, &goal_id)
+                .await
                 .map_err(|e| format!("Failed to get goal context: {e}"))?;
 
             Ok(context.into_bytes())
         } else if tool_id == "reflect" {
             let args_str = String::from_utf8_lossy(&args);
-            let v: serde_json::Value = serde_json::from_str(&args_str)
-                .map_err(|e| format!("Invalid JSON args: {e}"))?;
+            let v: serde_json::Value =
+                serde_json::from_str(&args_str).map_err(|e| format!("Invalid JSON args: {e}"))?;
 
             let project_id = v["project_id"]
                 .as_str()
                 .ok_or_else(|| "Missing 'project_id' in arguments".to_string())?
                 .to_string();
 
-            let manager = RoadmapManager::new(self.state_store.clone(), project_id);
-            let report = manager.reflect().await
+            let manager = RoadmapManager::new(self.state_store.clone());
+            let report = manager
+                .generate_progress_report(&project_id)
+                .await
                 .map_err(|e| format!("Reflection failed: {e}"))?;
 
             let output = serde_json::to_string_pretty(&report)
@@ -275,20 +314,83 @@ impl ToolExecutor for StrategicExecutor {
             Ok(output.into_bytes())
         } else if tool_id == "predict" {
             let args_str = String::from_utf8_lossy(&args);
-            let v: serde_json::Value = serde_json::from_str(&args_str)
-                .map_err(|e| format!("Invalid JSON args: {e}"))?;
+            let v: serde_json::Value =
+                serde_json::from_str(&args_str).map_err(|e| format!("Invalid JSON args: {e}"))?;
 
             let project_id = v["project_id"]
                 .as_str()
                 .ok_or_else(|| "Missing 'project_id' in arguments".to_string())?
                 .to_string();
 
-            let manager = RoadmapManager::new(self.state_store.clone(), project_id);
-            let prediction = manager.predict_completion().await
+            let manager = RoadmapManager::new(self.state_store.clone());
+            let prediction = manager
+                .predict_completion(&project_id)
+                .await
                 .map_err(|e| format!("Prediction failed: {e}"))?;
 
             let output = serde_json::to_string_pretty(&prediction)
                 .map_err(|e| format!("Failed to serialize prediction: {e}"))?;
+            Ok(output.into_bytes())
+        } else if tool_id == "project_costs" {
+            let args_str = String::from_utf8_lossy(&args);
+            let v: serde_json::Value =
+                serde_json::from_str(&args_str).map_err(|e| format!("Invalid JSON args: {e}"))?;
+
+            let project_id = v["project_id"]
+                .as_str()
+                .ok_or_else(|| "Missing 'project_id' in arguments".to_string())?
+                .to_string();
+
+            let manager = RoadmapManager::new(self.state_store.clone());
+            let project = manager
+                .get_project(&project_id)
+                .await
+                .map_err(|e| e.to_string())?
+                .ok_or_else(|| format!("Project {} not found", project_id))?;
+
+            let total_goals = project
+                .roadmap
+                .milestones
+                .iter()
+                .flat_map(|m| &m.phases)
+                .flat_map(|p| &p.goals)
+                .count();
+            let completed_goals = project
+                .roadmap
+                .milestones
+                .iter()
+                .flat_map(|m| &m.phases)
+                .flat_map(|p| &p.goals)
+                .filter(|g| g.status == MilestoneStatus::Completed)
+                .count();
+
+            let optimizer = sisyphus_roadmap::resource_optimizer::ResourceOptimizer::new();
+            let projection = optimizer.project_costs(
+                &manager.get_outcomes(&project_id).await.unwrap_or_default(),
+                total_goals,
+                completed_goals,
+            );
+
+            let output = serde_json::to_string_pretty(&projection)
+                .map_err(|e| format!("Failed to serialize projection: {e}"))?;
+            Ok(output.into_bytes())
+        } else if tool_id == "bottlenecks" {
+            let args_str = String::from_utf8_lossy(&args);
+            let v: serde_json::Value =
+                serde_json::from_str(&args_str).map_err(|e| format!("Invalid JSON args: {e}"))?;
+
+            let project_id = v["project_id"]
+                .as_str()
+                .ok_or_else(|| "Missing 'project_id' in arguments".to_string())?
+                .to_string();
+
+            let manager = RoadmapManager::new(self.state_store.clone());
+            let optimizer = sisyphus_roadmap::resource_optimizer::ResourceOptimizer::new();
+            let bottlenecks = optimizer
+                .find_bottlenecks(&manager.get_outcomes(&project_id).await.unwrap_or_default());
+
+            let output = serde_json::to_string_pretty(&bottlenecks)
+                .map_err(|e| format!("Failed to serialize bottlenecks: {e}"))?;
             Ok(output.into_bytes())
         } else {
             return Err(format!("Unknown strategic tool: {tool_id}"));
@@ -335,12 +437,11 @@ impl MySisyphusBridge {
         let config = shared_config.read().unwrap();
         let state_store = Arc::new(
             MfsStore::with_capacity(
-                    &config.cache.sqlite_path,
-                    NonZeroUsize::new(config.cache.l1_capacity)
-                        .expect("l1_capacity must be > 0"),
-                )
-                .await
-                .expect("Failed to init MFS Store"),
+                &config.cache.sqlite_path,
+                NonZeroUsize::new(config.cache.l1_capacity).expect("l1_capacity must be > 0"),
+            )
+            .await
+            .expect("Failed to init MFS Store"),
         );
 
         let sim_iterations = config.executor.max_concurrent_tasks.max(1) * 64;
@@ -372,7 +473,11 @@ impl MySisyphusBridge {
             .with_project_dir(std::path::Path::new("."));
         let skills = loader.load_all();
         for skill in skills {
-            let hooks = sisyphus_tools::hook::hooks_from_skill(&skill.name, &skill.triggers, &skill.instructions);
+            let hooks = sisyphus_tools::hook::hooks_from_skill(
+                &skill.name,
+                &skill.triggers,
+                &skill.instructions,
+            );
             registry.register_all(hooks);
         }
 
@@ -385,13 +490,15 @@ impl MySisyphusBridge {
                 let c: Arc<dyn LlmClient> = dyn_llm_client.clone();
                 c
             },
-            feedback_store: Arc::new(sisyphus_tools::feedback::FeedbackStore::new(".omo/feedback")),
+            feedback_store: Arc::new(sisyphus_tools::feedback::FeedbackStore::new(
+                ".omo/feedback",
+            )),
         });
 
         // Build router: WASM = default (backward compat), builtin = "builtin:" prefix
         let mut router = ExecutorRouter::new(wasm_executor.clone());
         router.register("builtin", builtin_executor);
-        
+
         let strategic_executor = Arc::new(StrategicExecutor::new(
             state_store.clone(),
             dyn_llm_client.clone(),
@@ -414,7 +521,10 @@ impl MySisyphusBridge {
                 Ok(mcp) => {
                     // Discover tools before moving into Arc for agent + tool registration
                     let tools = mcp.list_tools().await.unwrap_or_default();
-                    info!("Connected MCP server '{prefix}' via stdio: {command_line} ({} tools)", tools.len());
+                    info!(
+                        "Connected MCP server '{prefix}' via stdio: {command_line} ({} tools)",
+                        tools.len()
+                    );
                     mcp_servers.push((prefix.clone(), command_line.clone(), tools));
                     router.register(prefix, Arc::new(mcp));
                 }
@@ -427,7 +537,10 @@ impl MySisyphusBridge {
             match MCPToolExecutor::from_url(url).await {
                 Ok(mcp) => {
                     let tools = mcp.list_tools().await.unwrap_or_default();
-                    info!("Connected MCP server '{prefix}' via HTTP: {url} ({} tools)", tools.len());
+                    info!(
+                        "Connected MCP server '{prefix}' via HTTP: {url} ({} tools)",
+                        tools.len()
+                    );
                     mcp_servers.push((prefix.clone(), url.clone(), tools));
                     router.register(prefix, Arc::new(mcp));
                 }
@@ -482,13 +595,19 @@ impl MySisyphusBridge {
         // Register strategic tools from StrategicExecutor
         register_strategic_tools(&tool_registry);
 
-        info!("Tool registry initialized with {} tools", tool_registry.len());
+        info!(
+            "Tool registry initialized with {} tools",
+            tool_registry.len()
+        );
 
         // Register MCP server agents with their tool prefixes
         for (prefix, label, tools) in &mcp_servers {
             agent_registry.register_mcp_server(prefix, label, tools.len());
         }
-        info!("Agent registry initialized with {} agents", agent_registry.list().len());
+        info!(
+            "Agent registry initialized with {} agents",
+            agent_registry.list().len()
+        );
 
         let team_llm: Option<Arc<dyn LlmClient>> = None; // planner_llm is optional
         let team_orchestrator = TeamOrchestrator::new(
@@ -519,11 +638,18 @@ impl MySisyphusBridge {
         let start = Instant::now();
         let result = if let Some(goal) = sop_id.strip_prefix("goal:") {
             let synthesized_sop_id = format!("synth_{}", goal);
-            match self.kernel.execute_goal(goal, &synthesized_sop_id, event_tx).await {
+            match self
+                .kernel
+                .execute_goal(goal, &synthesized_sop_id, event_tx)
+                .await
+            {
                 Ok((result, report)) => {
                     let duration = start.elapsed();
                     record_sop_execution(&synthesized_sop_id, true, duration.as_secs_f64());
-                    Ok((format!("Result: {} | Cognition: {}", result, report), synthesized_sop_id))
+                    Ok((
+                        format!("Result: {} | Cognition: {}", result, report),
+                        synthesized_sop_id,
+                    ))
                 }
                 Err(e) => {
                     let duration = start.elapsed();
@@ -566,7 +692,10 @@ impl MySisyphusBridge {
                     if evolved_graph.is_some() {
                         info!("SOP evolved for sop_id={}", sop_id);
                     }
-                    Ok((format!("Result: {} | Cognition: {}", result, report), sop_id))
+                    Ok((
+                        format!("Result: {} | Cognition: {}", result, report),
+                        sop_id,
+                    ))
                 }
                 Err(e) => {
                     let duration = start.elapsed();
@@ -587,7 +716,7 @@ impl SisyphusBridge for MySisyphusBridge {
     ) -> Result<Response<SopResponse>, Status> {
         let req = request.into_inner();
         let sop_id = req.sop_id.clone();
-        
+
         // 自动实施：Leader-only 路由校验
         // 假设 sop_id 需要 leader 权限
         // if !self.kernel.consensus.is_leader().await {
@@ -628,19 +757,13 @@ impl SisyphusBridge for MySisyphusBridge {
                 .map(|(id, info)| {
                     // Enrich agent descriptions with actual tool names from the registry
                     let description = if !info.tool_prefixes.is_empty() {
-                        let tools = self
-                            .tool_registry
-                            .list_for_prefixes(&info.tool_prefixes);
+                        let tools = self.tool_registry.list_for_prefixes(&info.tool_prefixes);
                         if tools.is_empty() {
                             info.description
                         } else {
                             let tool_names: Vec<&str> =
                                 tools.iter().map(|(_, t)| t.name.as_str()).collect();
-                            format!(
-                                "{} — Tools: {}",
-                                info.description,
-                                tool_names.join(", ")
-                            )
+                            format!("{} — Tools: {}", info.description, tool_names.join(", "))
                         }
                     } else {
                         info.description
@@ -672,10 +795,7 @@ impl SisyphusBridge for MySisyphusBridge {
                         sisyphus_tools::ToolSource::Strategic => "strategic",
                         sisyphus_tools::ToolSource::Wasm => "wasm",
                     };
-                    let params_json = info
-                        .parameters
-                        .map(|p| p.to_string())
-                        .unwrap_or_default();
+                    let params_json = info.parameters.map(|p| p.to_string()).unwrap_or_default();
                     ToolMetadata {
                         tool_id,
                         name: info.name,
@@ -696,17 +816,25 @@ impl SisyphusBridge for MySisyphusBridge {
         let goal = TeamGoal {
             id: req.goal_id,
             objective: req.objective,
-            context: if req.context.is_empty() { None } else { Some(req.context) },
+            context: if req.context.is_empty() {
+                None
+            } else {
+                Some(req.context)
+            },
         };
         match self.team_orchestrator.decompose_goal(&goal).await {
             Ok(plan) => {
-                let tasks: Vec<TaskProto> = plan.tasks.into_iter().map(|t| TaskProto {
-                    id: t.id,
-                    agent_id: t.agent_id,
-                    tool_id: t.tool_id,
-                    args_json: t.args.to_string(),
-                    depends_on: t.depends_on,
-                }).collect();
+                let tasks: Vec<TaskProto> = plan
+                    .tasks
+                    .into_iter()
+                    .map(|t| TaskProto {
+                        id: t.id,
+                        agent_id: t.agent_id,
+                        tool_id: t.tool_id,
+                        args_json: t.args.to_string(),
+                        depends_on: t.depends_on,
+                    })
+                    .collect();
                 Ok(Response::new(DecomposeGoalResponse {
                     success: true,
                     error: String::new(),
@@ -726,31 +854,35 @@ impl SisyphusBridge for MySisyphusBridge {
         _request: Request<ListSkillsRequest>,
     ) -> Result<Response<ListSkillsResponse>, Status> {
         let skills = self.skill_loader.load_all();
-        let proto_skills: Vec<SkillMetadata> = skills.into_iter().map(|s| {
-            let tool_triggers: Vec<String> = s.triggers.iter()
-                .flat_map(|t| t.tools.clone())
-                .collect();
-            let preview = if s.instructions.len() > 200 {
-                format!("{}...", &s.instructions[..200])
-            } else {
-                s.instructions.clone()
-            };
-            SkillMetadata {
-                name: s.name,
-                description: s.description,
-                version: s.version,
-                author: s.author.unwrap_or_default(),
-                tags: s.tags,
-                tool_triggers,
-                instructions_preview: preview,
-                source: match s.source {
-                    sisyphus_tools::skill::SkillSource::BuiltIn => "builtin".into(),
-                    sisyphus_tools::skill::SkillSource::User => "user".into(),
-                    sisyphus_tools::skill::SkillSource::Project => "project".into(),
-                },
-            }
-        }).collect();
-        Ok(Response::new(ListSkillsResponse { skills: proto_skills }))
+        let proto_skills: Vec<SkillMetadata> = skills
+            .into_iter()
+            .map(|s| {
+                let tool_triggers: Vec<String> =
+                    s.triggers.iter().flat_map(|t| t.tools.clone()).collect();
+                let preview = if s.instructions.len() > 200 {
+                    format!("{}...", &s.instructions[..200])
+                } else {
+                    s.instructions.clone()
+                };
+                SkillMetadata {
+                    name: s.name,
+                    description: s.description,
+                    version: s.version,
+                    author: s.author.unwrap_or_default(),
+                    tags: s.tags,
+                    tool_triggers,
+                    instructions_preview: preview,
+                    source: match s.source {
+                        sisyphus_tools::skill::SkillSource::BuiltIn => "builtin".into(),
+                        sisyphus_tools::skill::SkillSource::User => "user".into(),
+                        sisyphus_tools::skill::SkillSource::Project => "project".into(),
+                    },
+                }
+            })
+            .collect();
+        Ok(Response::new(ListSkillsResponse {
+            skills: proto_skills,
+        }))
     }
 
     async fn show_skill(
@@ -760,7 +892,9 @@ impl SisyphusBridge for MySisyphusBridge {
         let req = request.into_inner();
         let skills = self.skill_loader.load_all();
         if let Some(skill) = skills.into_iter().find(|s| s.name == req.name) {
-            let tool_triggers: Vec<String> = skill.triggers.iter()
+            let tool_triggers: Vec<String> = skill
+                .triggers
+                .iter()
                 .flat_map(|t| t.tools.clone())
                 .collect();
             let preview = if skill.instructions.len() > 200 {
@@ -786,7 +920,10 @@ impl SisyphusBridge for MySisyphusBridge {
                 }),
             }))
         } else {
-            Ok(Response::new(ShowSkillResponse { found: false, skill: None }))
+            Ok(Response::new(ShowSkillResponse {
+                found: false,
+                skill: None,
+            }))
         }
     }
 
@@ -833,9 +970,7 @@ impl SisyphusBridge for MySisyphusBridge {
         &self,
         _request: Request<ListSoPsRequest>,
     ) -> Result<Response<ListSoPsResponse>, Status> {
-        Ok(Response::new(ListSoPsResponse {
-            sops: vec![],
-        }))
+        Ok(Response::new(ListSoPsResponse { sops: vec![] }))
     }
 
     type StreamExecutionStream = tonic::codegen::BoxStream<ExecutionEvent>;
@@ -854,38 +989,50 @@ impl SisyphusBridge for MySisyphusBridge {
         let default_fuel = self.default_fuel;
 
         tokio::spawn(async move {
-            let _result: Result<(String, String), String> = if let Some(goal) = sop_id.strip_prefix("goal:") {
-                let synthesized_sop_id = format!("synth_{}", goal);
-                kernel.execute_goal(goal, &synthesized_sop_id, Some(tx.clone())).await
-                    .map(|(r, report)| (format!("Result: {} | Cognition: {}", r, report), synthesized_sop_id))
-            } else {
-                let graph = match kernel.load_sop(&sop_id).await {
-                    Ok(g) => g,
-                    Err(_) => {
-                        let mut g = SOPGraph::new();
-                        let tool_id = sop_id.clone();
-                        let node = Arc::new(WasmSOPNode {
-                            name: format!("node_{}", tool_id),
-                            tool_id,
-                            executor: kernel.tool_executor.clone(),
-                            fuel_limit: default_fuel,
-                        });
-                        g.add_node(node);
-                        g
-                    }
+            let _result: Result<(String, String), String> =
+                if let Some(goal) = sop_id.strip_prefix("goal:") {
+                    let synthesized_sop_id = format!("synth_{}", goal);
+                    kernel
+                        .execute_goal(goal, &synthesized_sop_id, Some(tx.clone()))
+                        .await
+                        .map(|(r, report)| {
+                            (
+                                format!("Result: {} | Cognition: {}", r, report),
+                                synthesized_sop_id,
+                            )
+                        })
+                } else {
+                    let graph = match kernel.load_sop(&sop_id).await {
+                        Ok(g) => g,
+                        Err(_) => {
+                            let mut g = SOPGraph::new();
+                            let tool_id = sop_id.clone();
+                            let node = Arc::new(WasmSOPNode {
+                                name: format!("node_{}", tool_id),
+                                tool_id,
+                                executor: kernel.tool_executor.clone(),
+                                fuel_limit: default_fuel,
+                            });
+                            g.add_node(node);
+                            g
+                        }
+                    };
+                    let start_node = match graph.graph.node_indices().next() {
+                        Some(n) => n,
+                        None => return,
+                    };
+                    kernel
+                        .execute_with_cognition(&graph, start_node, &sop_id, None, Some(tx))
+                        .await
+                        .map(|(r, report, _)| {
+                            (format!("Result: {} | Cognition: {}", r, report), sop_id)
+                        })
                 };
-                let start_node = match graph.graph.node_indices().next() {
-                    Some(n) => n,
-                    None => return,
-                };
-                kernel.execute_with_cognition(&graph, start_node, &sop_id, None, Some(tx)).await
-                    .map(|(r, report, _)| (format!("Result: {} | Cognition: {}", r, report), sop_id))
-            };
             // Kernel sends events through tx; no extra completion event needed.
         });
 
-        let output_stream = tokio_stream::wrappers::UnboundedReceiverStream::new(rx)
-            .map(|event| -> Result<ExecutionEvent, Status> {
+        let output_stream = tokio_stream::wrappers::UnboundedReceiverStream::new(rx).map(
+            |event| -> Result<ExecutionEvent, Status> {
                 Ok(match event {
                     sisyphus_types::ExecutionEvent::NodeStarted { node_name } => ExecutionEvent {
                         event_type: 0,
@@ -894,29 +1041,36 @@ impl SisyphusBridge for MySisyphusBridge {
                         message: "".into(),
                         timestamp: 0,
                     },
-                    sisyphus_types::ExecutionEvent::NodeCompleted { node_name, output } => ExecutionEvent {
-                        event_type: 1,
-                        node_name,
-                        status: "COMPLETED".into(),
-                        message: output.to_string(),
-                        timestamp: 0,
-                    },
-                    sisyphus_types::ExecutionEvent::NodeFailed { node_name, error } => ExecutionEvent {
-                        event_type: 2,
-                        node_name,
-                        status: "FAILED".into(),
-                        message: error,
-                        timestamp: 0,
-                    },
-                    sisyphus_types::ExecutionEvent::ExecutionComplete { result } => ExecutionEvent {
-                        event_type: 3,
-                        node_name: "".into(),
-                        status: "COMPLETE".into(),
-                        message: result.to_string(),
-                        timestamp: 0,
-                    },
+                    sisyphus_types::ExecutionEvent::NodeCompleted { node_name, output } => {
+                        ExecutionEvent {
+                            event_type: 1,
+                            node_name,
+                            status: "COMPLETED".into(),
+                            message: output.to_string(),
+                            timestamp: 0,
+                        }
+                    }
+                    sisyphus_types::ExecutionEvent::NodeFailed { node_name, error } => {
+                        ExecutionEvent {
+                            event_type: 2,
+                            node_name,
+                            status: "FAILED".into(),
+                            message: error,
+                            timestamp: 0,
+                        }
+                    }
+                    sisyphus_types::ExecutionEvent::ExecutionComplete { result } => {
+                        ExecutionEvent {
+                            event_type: 3,
+                            node_name: "".into(),
+                            status: "COMPLETE".into(),
+                            message: result.to_string(),
+                            timestamp: 0,
+                        }
+                    }
                 })
-            });
+            },
+        );
 
         Ok(Response::new(Box::pin(output_stream)))
     }
@@ -928,13 +1082,21 @@ impl SisyphusBridge for MySisyphusBridge {
         let req = request.into_inner();
         let tool_id = req.tool_id.clone();
         let args_json = req.args_json;
-        let fuel = if req.fuel_limit > 0 { req.fuel_limit } else { self.default_fuel };
+        let fuel = if req.fuel_limit > 0 {
+            req.fuel_limit
+        } else {
+            self.default_fuel
+        };
 
         let span = info_span!("bridge.execute_tool", tool_id = %tool_id);
         let _enter = span.enter();
 
         let args_bytes = args_json.into_bytes();
-        let result = self.kernel.tool_executor.execute(&tool_id, args_bytes, fuel).await;
+        let result = self
+            .kernel
+            .tool_executor
+            .execute(&tool_id, args_bytes, fuel)
+            .await;
 
         match result {
             Ok(bytes) => {
@@ -959,9 +1121,11 @@ impl SisyphusBridge for MySisyphusBridge {
         &self,
         _request: Request<ListBenchmarksRequest>,
     ) -> Result<Response<ListBenchmarksResponse>, Status> {
-        let bm = self.kernel.benchmark.lock().map_err(|e| {
-            Status::internal(format!("Benchmark lock poisoned: {e}"))
-        })?;
+        let bm = self
+            .kernel
+            .benchmark
+            .lock()
+            .map_err(|e| Status::internal(format!("Benchmark lock poisoned: {e}")))?;
         let names = bm.list_benchmarks();
         let mut benchmarks = Vec::new();
         for name in names {
@@ -1020,10 +1184,16 @@ impl SisyphusBridge for MySisyphusBridge {
         request: Request<sisyphus_bridge::LearningInsightsRequest>,
     ) -> Result<Response<sisyphus_bridge::LearningInsightsResponse>, Status> {
         let filter = request.into_inner().strategy_filter;
-        let ml = self.kernel.meta_learner.lock().map_err(|e| Status::internal(e.to_string()))?;
+        let ml = self
+            .kernel
+            .meta_learner
+            .lock()
+            .map_err(|e| Status::internal(e.to_string()))?;
         let insight = ml.learn();
 
-        let strategies: Vec<sisyphus_bridge::StrategyInsight> = insight.strategies.iter()
+        let strategies: Vec<sisyphus_bridge::StrategyInsight> = insight
+            .strategies
+            .iter()
             .filter(|s| filter.is_empty() || s.strategy == filter)
             .map(|s| sisyphus_bridge::StrategyInsight {
                 strategy: s.strategy.clone(),
@@ -1047,15 +1217,20 @@ impl SisyphusBridge for MySisyphusBridge {
         _request: Request<sisyphus_bridge::ListPluginsRequest>,
     ) -> Result<Response<sisyphus_bridge::ListPluginsResponse>, Status> {
         let plugins = self.plugin_manager.list_plugins();
-        let descriptors: Vec<sisyphus_bridge::PluginDescriptor> = plugins.into_iter().map(|p| sisyphus_bridge::PluginDescriptor {
-            name: p.name,
-            version: p.version,
-            wasm_path: p.wasm_path.to_string_lossy().to_string(),
-            tool_id: p.tool_id,
-            fuel_limit: p.fuel_limit,
-            checksum: p.checksum.unwrap_or_default(),
-        }).collect();
-        Ok(Response::new(sisyphus_bridge::ListPluginsResponse { plugins: descriptors }))
+        let descriptors: Vec<sisyphus_bridge::PluginDescriptor> = plugins
+            .into_iter()
+            .map(|p| sisyphus_bridge::PluginDescriptor {
+                name: p.name,
+                version: p.version,
+                wasm_path: p.wasm_path.to_string_lossy().to_string(),
+                tool_id: p.tool_id,
+                fuel_limit: p.fuel_limit,
+                checksum: p.checksum.unwrap_or_default(),
+            })
+            .collect();
+        Ok(Response::new(sisyphus_bridge::ListPluginsResponse {
+            plugins: descriptors,
+        }))
     }
 
     async fn load_plugin(
@@ -1068,7 +1243,11 @@ impl SisyphusBridge for MySisyphusBridge {
             version: req.version,
             wasm_path: std::path::PathBuf::from(&req.wasm_path),
             tool_id: req.tool_id,
-            fuel_limit: if req.fuel_limit > 0 { req.fuel_limit } else { self.default_fuel },
+            fuel_limit: if req.fuel_limit > 0 {
+                req.fuel_limit
+            } else {
+                self.default_fuel
+            },
             checksum: None,
         };
         match self.plugin_manager.register_plugin(descriptor).await {
@@ -1109,34 +1288,134 @@ fn register_builtin_tools(reg: &Arc<sisyphus_tools::ToolRegistry>) {
     // Core builtin tools use "builtin:" prefix matching router dispatch
     let tools: Vec<(&str, &str, &str)> = vec![
         // Core builtin tools (router prefix: builtin:)
-        ("builtin:file_read", "file_read", "Read file content by path"),
-        ("builtin:file_write", "file_write", "Write content to a file"),
-        ("builtin:file_edit", "file_edit", "Replace first occurrence of old string with new string in a file"),
-        ("builtin:file_edit_all", "file_edit_all", "Replace all occurrences of old string with new string in a file"),
-        ("builtin:file_read_lines", "file_read_lines", "Read specific lines from a file with offset and limit"),
+        (
+            "builtin:file_read",
+            "file_read",
+            "Read file content by path",
+        ),
+        (
+            "builtin:file_write",
+            "file_write",
+            "Write content to a file",
+        ),
+        (
+            "builtin:file_edit",
+            "file_edit",
+            "Replace first occurrence of old string with new string in a file",
+        ),
+        (
+            "builtin:file_edit_all",
+            "file_edit_all",
+            "Replace all occurrences of old string with new string in a file",
+        ),
+        (
+            "builtin:file_read_lines",
+            "file_read_lines",
+            "Read specific lines from a file with offset and limit",
+        ),
         ("builtin:glob", "glob", "Find files matching a glob pattern"),
-        ("builtin:grep", "grep", "Search file contents with a regex pattern"),
-        ("builtin:bash_exec", "bash_exec", "Execute a bash command and return output"),
-        ("builtin:web_search", "web_search", "Search the web for a query"),
+        (
+            "builtin:grep",
+            "grep",
+            "Search file contents with a regex pattern",
+        ),
+        (
+            "builtin:bash_exec",
+            "bash_exec",
+            "Execute a bash command and return output",
+        ),
+        (
+            "builtin:web_search",
+            "web_search",
+            "Search the web for a query",
+        ),
         ("builtin:web_fetch", "web_fetch", "Fetch content from a URL"),
-        ("builtin:feedback/save", "feedback/save", "Save feedback for an agent response"),
-        ("builtin:feedback/get", "feedback/get", "Retrieve feedback history for an agent"),
-        ("builtin:feedback/query", "feedback/query", "Query feedback by criteria"),
+        (
+            "builtin:feedback/save",
+            "feedback/save",
+            "Save feedback for an agent response",
+        ),
+        (
+            "builtin:feedback/get",
+            "feedback/get",
+            "Retrieve feedback history for an agent",
+        ),
+        (
+            "builtin:feedback/query",
+            "feedback/query",
+            "Query feedback by criteria",
+        ),
         // Agent tools (bare IDs match agent_prefix like "librarian/")
-        ("librarian/research", "librarian/research", "Comprehensive web research with synthesis"),
-        ("librarian/fetch_docs", "librarian/fetch_docs", "Fetch documentation from a URL"),
-        ("librarian/examples", "librarian/examples", "Search code examples from GitHub"),
-        ("librarian/synthesise", "librarian/synthesise", "Synthesize research findings into concise report"),
-        ("metis/analyse", "metis/analyse", "Analyse requirements for ambiguity and hidden intentions"),
-        ("momus/review_plan", "momus/review_plan", "Review a plan for clarity and completeness"),
-        ("momus/review_code", "momus/review_code", "Review code changes for quality and standards"),
-        ("momus/review_code_batch", "momus/review_code_batch", "Review multiple files in batch"),
-        ("momus/review_arch", "momus/review_arch", "Review architecture design for soundness"),
-        ("scribe/generate_adr", "scribe/generate_adr", "Generate an Architecture Decision Record"),
-        ("scribe/update_docs", "scribe/update_docs", "Update documentation based on code changes"),
-        ("scribe/apply_update", "scribe/apply_update", "Apply a documentation edit"),
-        ("security/audit_code", "security/audit_code", "Audit code for security vulnerabilities"),
-        ("security/threat_model", "security/threat_model", "Model threats for an architecture"),
+        (
+            "librarian/research",
+            "librarian/research",
+            "Comprehensive web research with synthesis",
+        ),
+        (
+            "librarian/fetch_docs",
+            "librarian/fetch_docs",
+            "Fetch documentation from a URL",
+        ),
+        (
+            "librarian/examples",
+            "librarian/examples",
+            "Search code examples from GitHub",
+        ),
+        (
+            "librarian/synthesise",
+            "librarian/synthesise",
+            "Synthesize research findings into concise report",
+        ),
+        (
+            "metis/analyse",
+            "metis/analyse",
+            "Analyse requirements for ambiguity and hidden intentions",
+        ),
+        (
+            "momus/review_plan",
+            "momus/review_plan",
+            "Review a plan for clarity and completeness",
+        ),
+        (
+            "momus/review_code",
+            "momus/review_code",
+            "Review code changes for quality and standards",
+        ),
+        (
+            "momus/review_code_batch",
+            "momus/review_code_batch",
+            "Review multiple files in batch",
+        ),
+        (
+            "momus/review_arch",
+            "momus/review_arch",
+            "Review architecture design for soundness",
+        ),
+        (
+            "scribe/generate_adr",
+            "scribe/generate_adr",
+            "Generate an Architecture Decision Record",
+        ),
+        (
+            "scribe/update_docs",
+            "scribe/update_docs",
+            "Update documentation based on code changes",
+        ),
+        (
+            "scribe/apply_update",
+            "scribe/apply_update",
+            "Apply a documentation edit",
+        ),
+        (
+            "security/audit_code",
+            "security/audit_code",
+            "Audit code for security vulnerabilities",
+        ),
+        (
+            "security/threat_model",
+            "security/threat_model",
+            "Model threats for an architecture",
+        ),
     ];
     for (tool_id, name, desc) in tools {
         reg.register(
@@ -1157,14 +1436,56 @@ fn register_strategic_tools(reg: &Arc<sisyphus_tools::ToolRegistry>) {
     let source = ToolSource::Strategic;
     // Tool_id format: "strategic:<name>" matches router dispatch (prefix "strategic:")
     let tools: Vec<(&str, &str, &str)> = vec![
-        ("strategic:next_goal", "next_goal", "Execute the next pending goal in the roadmap"),
-        ("strategic:progress", "progress", "Query overall roadmap progress and status"),
-        ("strategic:show_roadmap", "show_roadmap", "Display the full roadmap with milestones and goals"),
-        ("strategic:replan", "replan", "Re-plan the roadmap based on execution results"),
-        ("strategic:auto_plan", "auto_plan", "Automatically generate a roadmap from project description"),
-        ("strategic:goal_context", "goal_context", "Get roadmap context for a specific goal"),
-        ("strategic:reflect", "reflect", "Run strategic reflection on roadmap progress"),
-        ("strategic:predict", "predict", "Predict completion timeline and identify risks"),
+        (
+            "strategic:next_goal",
+            "next_goal",
+            "Execute the next pending goal in the roadmap",
+        ),
+        (
+            "strategic:progress",
+            "progress",
+            "Query overall roadmap progress and status",
+        ),
+        (
+            "strategic:show_roadmap",
+            "show_roadmap",
+            "Display the full roadmap with milestones and goals",
+        ),
+        (
+            "strategic:replan",
+            "replan",
+            "Re-plan the roadmap based on execution results",
+        ),
+        (
+            "strategic:auto_plan",
+            "auto_plan",
+            "Automatically generate a roadmap from project description",
+        ),
+        (
+            "strategic:goal_context",
+            "goal_context",
+            "Get roadmap context for a specific goal",
+        ),
+        (
+            "strategic:reflect",
+            "reflect",
+            "Run strategic reflection on roadmap progress",
+        ),
+        (
+            "strategic:predict",
+            "predict",
+            "Predict completion timeline and identify risks",
+        ),
+        (
+            "strategic:project_costs",
+            "project_costs",
+            "Project remaining costs and duration for the project",
+        ),
+        (
+            "strategic:bottlenecks",
+            "bottlenecks",
+            "Identify bottlenecks in the execution pipeline",
+        ),
     ];
     for (tool_id, name, desc) in tools {
         reg.register(
@@ -1181,8 +1502,8 @@ fn register_strategic_tools(reg: &Arc<sisyphus_tools::ToolRegistry>) {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let config_path = std::env::var("SISYPHUS_CONFIG")
-        .unwrap_or_else(|_| "config.toml".to_string());
+    let config_path =
+        std::env::var("SISYPHUS_CONFIG").unwrap_or_else(|_| "config.toml".to_string());
 
     let (_store, shared_config) = match ConfigStore::load(&config_path) {
         Ok(s) => {
@@ -1220,8 +1541,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     let auth_interceptor = auth::AuthInterceptor::new(auth_token);
-    let server = Server::builder()
-        .add_service(SisyphusBridgeServer::with_interceptor(bridge, auth_interceptor));
+    let server = Server::builder().add_service(SisyphusBridgeServer::with_interceptor(
+        bridge,
+        auth_interceptor,
+    ));
 
     info!("Starting gRPC server on {addr}");
     server
@@ -1238,51 +1561,49 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 #[cfg(test)]
 mod tests {
-use super::sisyphus_bridge::{
-    sisyphus_bridge_server::SisyphusBridge,
-    DecomposeGoalRequest, DecomposeGoalResponse, ExecuteSopRequest, ExecuteToolRequest,
-    HealthCheckRequest, ListAgentsRequest, ListSoPsRequest, ListToolsRequest,
-    ListToolsResponse, ListPluginsRequest, ListPluginsResponse,
-    LoadPluginRequest, LoadPluginResponse, UnloadPluginRequest, UnloadPluginResponse,
-    LearningInsightsRequest, LearningInsightsResponse,
-    TaskProto,
-};
+    use super::sisyphus_bridge::{
+        sisyphus_bridge_server::SisyphusBridge, DecomposeGoalRequest, DecomposeGoalResponse,
+        ExecuteSopRequest, ExecuteToolRequest, HealthCheckRequest, LearningInsightsRequest,
+        LearningInsightsResponse, ListAgentsRequest, ListPluginsRequest, ListPluginsResponse,
+        ListSoPsRequest, ListToolsRequest, ListToolsResponse, LoadPluginRequest,
+        LoadPluginResponse, TaskProto, UnloadPluginRequest, UnloadPluginResponse,
+    };
+    use std::collections::HashMap;
     use tokio_stream::StreamExt;
     use tonic::Request;
-    use std::collections::HashMap;
 
     struct TestBridge(&'static str);
 
     #[tonic::async_trait]
     impl SisyphusBridge for TestBridge {
-    async fn list_plugins(
-        &self,
-        _request: Request<ListPluginsRequest>,
-    ) -> Result<Response<ListPluginsResponse>, Status> {
-        Ok(Response::new(ListPluginsResponse { plugins: vec![] }))
-    }
+        async fn list_plugins(
+            &self,
+            _request: Request<ListPluginsRequest>,
+        ) -> Result<Response<ListPluginsResponse>, Status> {
+            Ok(Response::new(ListPluginsResponse { plugins: vec![] }))
+        }
 
-    async fn load_plugin(
-        &self,
-        _request: Request<LoadPluginRequest>,
-    ) -> Result<Response<LoadPluginResponse>, Status> {
-        Ok(Response::new(LoadPluginResponse {
-            success: true,
-            error: String::new(),
-        }))
-    }
+        async fn load_plugin(
+            &self,
+            _request: Request<LoadPluginRequest>,
+        ) -> Result<Response<LoadPluginResponse>, Status> {
+            Ok(Response::new(LoadPluginResponse {
+                success: true,
+                error: String::new(),
+            }))
+        }
 
-    async fn unload_plugin(
-        &self,
-        _request: Request<UnloadPluginRequest>,
-    ) -> Result<Response<UnloadPluginResponse>, Status> {
-        Ok(Response::new(UnloadPluginResponse {
-            success: true,
-            error: String::new(),
-        }))
-    }
+        async fn unload_plugin(
+            &self,
+            _request: Request<UnloadPluginRequest>,
+        ) -> Result<Response<UnloadPluginResponse>, Status> {
+            Ok(Response::new(UnloadPluginResponse {
+                success: true,
+                error: String::new(),
+            }))
+        }
 
-    async fn execute_sop(
+        async fn execute_sop(
             &self,
             _request: Request<ExecuteSopRequest>,
         ) -> Result<tonic::Response<super::sisyphus_bridge::SopResponse>, tonic::Status> {
@@ -1295,32 +1616,38 @@ use super::sisyphus_bridge::{
         async fn health_check(
             &self,
             _request: Request<HealthCheckRequest>,
-        ) -> Result<tonic::Response<super::sisyphus_bridge::HealthCheckResponse>, tonic::Status> {
-            Ok(tonic::Response::new(super::sisyphus_bridge::HealthCheckResponse {
-                status: "SERVING".into(),
-                version: self.0.to_string(),
-            }))
+        ) -> Result<tonic::Response<super::sisyphus_bridge::HealthCheckResponse>, tonic::Status>
+        {
+            Ok(tonic::Response::new(
+                super::sisyphus_bridge::HealthCheckResponse {
+                    status: "SERVING".into(),
+                    version: self.0.to_string(),
+                },
+            ))
         }
 
         async fn list_agents(
             &self,
             _request: Request<ListAgentsRequest>,
-        ) -> Result<tonic::Response<super::sisyphus_bridge::ListAgentsResponse>, tonic::Status> {
-            Ok(tonic::Response::new(super::sisyphus_bridge::ListAgentsResponse {
-                agents: vec![],
-            }))
+        ) -> Result<tonic::Response<super::sisyphus_bridge::ListAgentsResponse>, tonic::Status>
+        {
+            Ok(tonic::Response::new(
+                super::sisyphus_bridge::ListAgentsResponse { agents: vec![] },
+            ))
         }
 
         async fn list_so_ps(
             &self,
             _request: Request<ListSoPsRequest>,
-        ) -> Result<tonic::Response<super::sisyphus_bridge::ListSoPsResponse>, tonic::Status> {
-            Ok(tonic::Response::new(super::sisyphus_bridge::ListSoPsResponse {
-                sops: vec![],
-            }))
+        ) -> Result<tonic::Response<super::sisyphus_bridge::ListSoPsResponse>, tonic::Status>
+        {
+            Ok(tonic::Response::new(
+                super::sisyphus_bridge::ListSoPsResponse { sops: vec![] },
+            ))
         }
 
-        type StreamExecutionStream = tonic::codegen::BoxStream<super::sisyphus_bridge::ExecutionEvent>;
+        type StreamExecutionStream =
+            tonic::codegen::BoxStream<super::sisyphus_bridge::ExecutionEvent>;
 
         async fn stream_execution(
             &self,
@@ -1336,20 +1663,22 @@ use super::sisyphus_bridge::{
                     timestamp: 0,
                 });
             });
-            let stream = tokio_stream::wrappers::UnboundedReceiverStream::new(rx)
-                .map(|e| Ok(e));
+            let stream = tokio_stream::wrappers::UnboundedReceiverStream::new(rx).map(|e| Ok(e));
             Ok(tonic::Response::new(Box::pin(stream)))
         }
 
         async fn execute_tool(
             &self,
             request: Request<ExecuteToolRequest>,
-        ) -> Result<tonic::Response<super::sisyphus_bridge::ExecuteToolResponse>, tonic::Status> {
+        ) -> Result<tonic::Response<super::sisyphus_bridge::ExecuteToolResponse>, tonic::Status>
+        {
             let req = request.into_inner();
-            Ok(tonic::Response::new(super::sisyphus_bridge::ExecuteToolResponse {
-                status: "SUCCESS".into(),
-                result_json: format!("{{\"echo\": \"{}\"}}", req.tool_id),
-            }))
+            Ok(tonic::Response::new(
+                super::sisyphus_bridge::ExecuteToolResponse {
+                    status: "SUCCESS".into(),
+                    result_json: format!("{{\"echo\": \"{}\"}}", req.tool_id),
+                },
+            ))
         }
 
         async fn decompose_goal(
@@ -1372,79 +1701,89 @@ use super::sisyphus_bridge::{
         async fn list_skills(
             &self,
             _request: Request<super::sisyphus_bridge::ListSkillsRequest>,
-        ) -> Result<tonic::Response<super::sisyphus_bridge::ListSkillsResponse>, tonic::Status> {
-            Ok(tonic::Response::new(super::sisyphus_bridge::ListSkillsResponse {
-                skills: vec![],
-            }))
+        ) -> Result<tonic::Response<super::sisyphus_bridge::ListSkillsResponse>, tonic::Status>
+        {
+            Ok(tonic::Response::new(
+                super::sisyphus_bridge::ListSkillsResponse { skills: vec![] },
+            ))
         }
 
         async fn show_skill(
             &self,
             _request: Request<super::sisyphus_bridge::ShowSkillRequest>,
-        ) -> Result<tonic::Response<super::sisyphus_bridge::ShowSkillResponse>, tonic::Status> {
-            Ok(tonic::Response::new(super::sisyphus_bridge::ShowSkillResponse {
-                found: false,
-                skill: None,
-            }))
+        ) -> Result<tonic::Response<super::sisyphus_bridge::ShowSkillResponse>, tonic::Status>
+        {
+            Ok(tonic::Response::new(
+                super::sisyphus_bridge::ShowSkillResponse {
+                    found: false,
+                    skill: None,
+                },
+            ))
         }
 
         async fn install_skill(
             &self,
             _request: Request<super::sisyphus_bridge::InstallSkillRequest>,
-        ) -> Result<tonic::Response<super::sisyphus_bridge::InstallSkillResponse>, tonic::Status> {
-            Ok(tonic::Response::new(super::sisyphus_bridge::InstallSkillResponse {
-                success: true,
-                error: String::new(),
-                name: "mock-skill".into(),
-            }))
+        ) -> Result<tonic::Response<super::sisyphus_bridge::InstallSkillResponse>, tonic::Status>
+        {
+            Ok(tonic::Response::new(
+                super::sisyphus_bridge::InstallSkillResponse {
+                    success: true,
+                    error: String::new(),
+                    name: "mock-skill".into(),
+                },
+            ))
         }
 
         async fn remove_skill(
             &self,
             _request: Request<super::sisyphus_bridge::RemoveSkillRequest>,
-        ) -> Result<tonic::Response<super::sisyphus_bridge::RemoveSkillResponse>, tonic::Status> {
-            Ok(tonic::Response::new(super::sisyphus_bridge::RemoveSkillResponse {
-                success: true,
-                error: String::new(),
-            }))
+        ) -> Result<tonic::Response<super::sisyphus_bridge::RemoveSkillResponse>, tonic::Status>
+        {
+            Ok(tonic::Response::new(
+                super::sisyphus_bridge::RemoveSkillResponse {
+                    success: true,
+                    error: String::new(),
+                },
+            ))
         }
 
         async fn list_tools(
             &self,
             _request: Request<ListToolsRequest>,
         ) -> Result<tonic::Response<ListToolsResponse>, tonic::Status> {
-            Ok(tonic::Response::new(ListToolsResponse {
-                tools: vec![],
+            Ok(tonic::Response::new(ListToolsResponse { tools: vec![] }))
+        }
+
+        async fn get_learning_insights(
+            &self,
+            _request: Request<LearningInsightsRequest>,
+        ) -> Result<Response<LearningInsightsResponse>, Status> {
+            Ok(Response::new(LearningInsightsResponse {
+                total_samples: 0,
+                overall_success_rate: 0.0,
+                strategies: vec![],
             }))
         }
 
-    async fn get_learning_insights(
-        &self,
-        _request: Request<LearningInsightsRequest>,
-    ) -> Result<Response<LearningInsightsResponse>, Status> {
-        Ok(Response::new(LearningInsightsResponse {
-            total_samples: 0,
-            overall_success_rate: 0.0,
-            strategies: vec![],
-        }))
-    }
-
-    async fn list_benchmarks(
+        async fn list_benchmarks(
             &self,
             _request: Request<super::sisyphus_bridge::ListBenchmarksRequest>,
-        ) -> Result<tonic::Response<super::sisyphus_bridge::ListBenchmarksResponse>, tonic::Status> {
-            Ok(tonic::Response::new(super::sisyphus_bridge::ListBenchmarksResponse {
-                benchmarks: vec![],
-            }))
+        ) -> Result<tonic::Response<super::sisyphus_bridge::ListBenchmarksResponse>, tonic::Status>
+        {
+            Ok(tonic::Response::new(
+                super::sisyphus_bridge::ListBenchmarksResponse { benchmarks: vec![] },
+            ))
         }
 
         async fn get_breaker_metrics(
             &self,
             _request: Request<super::sisyphus_bridge::BreakerMetricsRequest>,
-        ) -> Result<tonic::Response<super::sisyphus_bridge::BreakerMetricsResponse>, tonic::Status> {
-            Ok(tonic::Response::new(super::sisyphus_bridge::BreakerMetricsResponse {
-                breakers: vec![],
-            }))
+        ) -> Result<tonic::Response<super::sisyphus_bridge::BreakerMetricsResponse>, tonic::Status>
+        {
+            Ok(tonic::Response::new(
+                super::sisyphus_bridge::BreakerMetricsResponse { breakers: vec![] },
+            ))
         }
     }
 

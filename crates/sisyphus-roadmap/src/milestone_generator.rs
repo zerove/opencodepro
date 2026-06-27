@@ -115,12 +115,11 @@ Respond ONLY with valid JSON matching this structure:
             .await
             .map_err(|e| RoadmapError::Internal(format!("LLM milestone generation failed: {e}")))?;
 
-        let proposal: RoadmapProposal = serde_json::from_str(&response)
-            .map_err(|e| {
-                RoadmapError::Internal(format!(
-                    "Failed to parse milestone proposal JSON: {e}. Raw: {response}"
-                ))
-            })?;
+        let proposal: RoadmapProposal = serde_json::from_str(&response).map_err(|e| {
+            RoadmapError::Internal(format!(
+                "Failed to parse milestone proposal JSON: {e}. Raw: {response}"
+            ))
+        })?;
 
         // Convert proposal to Milestone objects and persist
         let mut milestones = Vec::with_capacity(proposal.milestones.len());
@@ -151,9 +150,7 @@ Respond ONLY with valid JSON matching this structure:
                 phases,
             };
 
-            manager
-                .add_milestone(project_id, milestone.clone())
-                .await?;
+            manager.add_milestone(project_id, milestone.clone()).await?;
             milestones.push(milestone);
         }
 
@@ -173,9 +170,10 @@ Respond ONLY with valid JSON matching this structure:
         change_request: &str,
     ) -> Result<Vec<RefinementSuggestion>, RoadmapError> {
         // Load current project state for context
-        let project = manager.get_project(project_id).await?.ok_or_else(|| {
-            RoadmapError::ProjectNotFound(project_id.to_string())
-        })?;
+        let project = manager
+            .get_project(project_id)
+            .await?
+            .ok_or_else(|| RoadmapError::ProjectNotFound(project_id.to_string()))?;
 
         let milestone = project
             .roadmap
@@ -201,7 +199,10 @@ Respond ONLY with valid JSON matching this structure:
         for ph in &milestone.phases {
             context.push_str(&format!("  Phase: {} ({})\n", ph.name, ph.id));
             for g in &ph.goals {
-                context.push_str(&format!("    Goal: {} [{}] {:?}\n", g.description, g.goal_id, g.status));
+                context.push_str(&format!(
+                    "    Goal: {} [{}] {:?}\n",
+                    g.description, g.goal_id, g.status
+                ));
             }
         }
 
@@ -245,8 +246,8 @@ Respond ONLY with valid JSON as an array of refinement suggestions:
             .await
             .map_err(|e| RoadmapError::Internal(format!("LLM refinement failed: {e}")))?;
 
-        let suggestions: Vec<RefinementSuggestion> = serde_json::from_str(&response)
-            .map_err(|e| {
+        let suggestions: Vec<RefinementSuggestion> =
+            serde_json::from_str(&response).map_err(|e| {
                 RoadmapError::Internal(format!(
                     "Failed to parse refinement JSON: {e}. Raw: {response}"
                 ))
@@ -263,9 +264,10 @@ Respond ONLY with valid JSON as an array of refinement suggestions:
         project_id: &str,
         project_description: &str,
     ) -> Result<Vec<Milestone>, RoadmapError> {
-        let project = manager.get_project(project_id).await?.ok_or_else(|| {
-            RoadmapError::ProjectNotFound(project_id.to_string())
-        })?;
+        let project = manager
+            .get_project(project_id)
+            .await?
+            .ok_or_else(|| RoadmapError::ProjectNotFound(project_id.to_string()))?;
 
         let existing_milestones: Vec<String> = project
             .roadmap
@@ -274,9 +276,8 @@ Respond ONLY with valid JSON as an array of refinement suggestions:
             .map(|m| format!("- {} ({}): {} phases", m.name, m.id, m.phases.len()))
             .collect();
 
-        let mut context = format!(
-            "Project description: {project_description}\n\nAlready defined milestones:\n"
-        );
+        let mut context =
+            format!("Project description: {project_description}\n\nAlready defined milestones:\n");
         if existing_milestones.is_empty() {
             context.push_str("  (none)\n");
         } else {
@@ -313,12 +314,11 @@ Respond ONLY with valid JSON matching the standard roadmap proposal format:
             .await
             .map_err(|e| RoadmapError::Internal(format!("LLM gap fill failed: {e}")))?;
 
-        let proposal: RoadmapProposal = serde_json::from_str(&response)
-            .map_err(|e| {
-                RoadmapError::Internal(format!(
-                    "Failed to parse gap-fill JSON: {e}. Raw: {response}"
-                ))
-            })?;
+        let proposal: RoadmapProposal = serde_json::from_str(&response).map_err(|e| {
+            RoadmapError::Internal(format!(
+                "Failed to parse gap-fill JSON: {e}. Raw: {response}"
+            ))
+        })?;
 
         let mut milestones = Vec::with_capacity(proposal.milestones.len());
         for mp in proposal.milestones {
@@ -348,9 +348,7 @@ Respond ONLY with valid JSON matching the standard roadmap proposal format:
                 phases,
             };
 
-            manager
-                .add_milestone(project_id, milestone.clone())
-                .await?;
+            manager.add_milestone(project_id, milestone.clone()).await?;
             milestones.push(milestone);
         }
 
@@ -382,7 +380,9 @@ mod tests {
     #[tokio::test]
     async fn test_generate_milestones_parses_llm_response() {
         let (mgr, _store) = setup_manager().await;
-        mgr.create_project("p1", "Test Project", "A test").await.unwrap();
+        mgr.create_project("p1", "Test Project", "A test")
+            .await
+            .unwrap();
 
         let llm = Arc::new(FixedResponseClient(
             r#"{
@@ -447,7 +447,9 @@ mod tests {
             .generate_milestones(&mgr, "p2", "test")
             .await
             .unwrap_err();
-        assert!(err.to_string().contains("Failed to parse milestone proposal"));
+        assert!(err
+            .to_string()
+            .contains("Failed to parse milestone proposal"));
     }
 
     #[tokio::test]
@@ -559,10 +561,7 @@ mod tests {
         ));
 
         let gen = MilestoneGenerator::new(llm);
-        let milestones = gen
-            .generate_milestones(&mgr, "p5", "test")
-            .await
-            .unwrap();
+        let milestones = gen.generate_milestones(&mgr, "p5", "test").await.unwrap();
         assert!(milestones.is_empty());
     }
 }

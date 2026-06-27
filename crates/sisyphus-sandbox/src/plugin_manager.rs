@@ -1,8 +1,8 @@
+use dashmap::DashMap;
+use sha2::{Digest, Sha256};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
-use dashmap::DashMap;
-use sha2::{Sha256, Digest};
 use tokio::time::interval;
 use tracing::{debug, info, warn};
 
@@ -36,7 +36,7 @@ impl PluginManager {
 
     pub async fn register_plugin(&self, descriptor: PluginDescriptor) -> Result<(), String> {
         debug!(plugin = %descriptor.name, "Registering plugin");
-        
+
         // Calculate initial checksum if not provided
         let mut desc = descriptor;
         if desc.checksum.is_none() {
@@ -62,9 +62,10 @@ impl PluginManager {
     }
 
     async fn calculate_checksum(&self, path: &PathBuf) -> Result<String, String> {
-        let bytes = tokio::fs::read(path).await
+        let bytes = tokio::fs::read(path)
+            .await
             .map_err(|e| format!("Failed to read plugin file {:?}: {}", path, e))?;
-        
+
         let mut hasher = Sha256::new();
         hasher.update(&bytes);
         let result = hasher.finalize();
@@ -77,9 +78,10 @@ impl PluginManager {
 
         loop {
             ticker.tick().await;
-            
+
             // We use a vec to avoid holding locks on the map while doing IO
-            let plugins_to_check: Vec<PluginDescriptor> = self.plugins.iter().map(|r| r.value().clone()).collect();
+            let plugins_to_check: Vec<PluginDescriptor> =
+                self.plugins.iter().map(|r| r.value().clone()).collect();
 
             for desc in plugins_to_check {
                 let path = desc.wasm_path.clone();
@@ -123,10 +125,10 @@ mod tests {
     async fn setup_test_env() -> (Arc<PluginManager>, tempfile::TempDir) {
         let tmp_dir = tempdir().unwrap();
         let tools_path = tmp_dir.path().to_path_buf();
-        
+
         let executor = WasmToolExecutor::with_config(Some(tools_path.clone()), None).unwrap();
         let manager = PluginManager::new(executor, tools_path);
-        
+
         (manager, tmp_dir)
     }
 
@@ -177,7 +179,7 @@ mod tests {
     async fn test_hot_reload_detection() {
         let (manager, tmp_dir) = setup_test_env().await;
         let wasm_path = tmp_dir.path().join("test.wasm");
-        
+
         let wasm_v1 = vec![0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00];
         fs::write(&wasm_path, &wasm_v1).unwrap();
 
@@ -191,9 +193,12 @@ mod tests {
         };
 
         manager.register_plugin(desc).await.unwrap();
-        
+
         let module = wasmtime::Module::new(&manager.executor.engine, &wasm_v1).unwrap();
-        manager.executor.module_cache.insert("reload_tool".to_string(), module);
+        manager
+            .executor
+            .module_cache
+            .insert("reload_tool".to_string(), module);
         assert!(manager.executor.module_cache.contains_key("reload_tool"));
 
         let wasm_v2 = vec![0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x01];
@@ -201,6 +206,9 @@ mod tests {
 
         tokio::time::sleep(Duration::from_secs(6)).await;
 
-        assert!(!manager.executor.module_cache.contains_key("reload_tool"), "Cache should have been invalidated after file change");
+        assert!(
+            !manager.executor.module_cache.contains_key("reload_tool"),
+            "Cache should have been invalidated after file change"
+        );
     }
 }

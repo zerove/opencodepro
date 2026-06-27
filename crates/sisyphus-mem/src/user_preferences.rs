@@ -1,7 +1,7 @@
+use crate::MfsStore;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use crate::MfsStore;
 use sisyphus_types::StateStore;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -33,8 +33,11 @@ impl UserPreferenceStore {
 
     pub async fn record_preference(&self, key: &str, value: Value, weight: f64) -> Result<()> {
         let full_key = self.make_key(key);
-        
-        let current_pref = self.store.get_state_json(&full_key).await
+
+        let current_pref = self
+            .store
+            .get_state_json(&full_key)
+            .await
             .map_err(|e| anyhow::anyhow!(e))?
             .and_then(|v| serde_json::from_value::<UserPreference>(v).ok());
 
@@ -49,12 +52,12 @@ impl UserPreferenceStore {
                     // or maintain a map of values. But the spec says "same key used more frequently with same value = higher weight"
                     // This implies we should probably store preferences as a map of value -> weight.
                     // However, the UserPreference struct provided in the spec has a single value.
-                    // Let's stick to the spec's struct but implement the logic: 
+                    // Let's stick to the spec's struct but implement the logic:
                     // if value is same, increase weight. If different, we'll replace if the new weight is significant
                     // or just replace and reset weight.
-                    // Actually, a better interpretation of "weighted voting" with a single value field 
+                    // Actually, a better interpretation of "weighted voting" with a single value field
                     // is that we only store the "winning" preference.
-                    
+
                     // Let's refine: if value is different, we reset weight to the new weight.
                     pref.value = value;
                     pref.weight = weight;
@@ -70,7 +73,9 @@ impl UserPreferenceStore {
             },
         };
 
-        self.store.set_state_json(&full_key, serde_json::to_value(&updated_pref)?).await
+        self.store
+            .set_state_json(&full_key, serde_json::to_value(&updated_pref)?)
+            .await
             .map_err(|e| anyhow::anyhow!(e))?;
 
         Ok(())
@@ -78,18 +83,24 @@ impl UserPreferenceStore {
 
     pub async fn get_preference(&self, key: &str) -> Result<Option<Value>> {
         let full_key = self.make_key(key);
-        let val = self.store.get_state_json(&full_key).await
+        let val = self
+            .store
+            .get_state_json(&full_key)
+            .await
             .map_err(|e| anyhow::anyhow!(e))?;
-        
+
         if let Some(v) = val {
             let pref: UserPreference = serde_json::from_value(v)?;
             return Ok(Some(pref.value));
         }
-        
+
         Ok(None)
     }
 
-    pub async fn infer_preferences_from_feedback(&self, feedback: Vec<sisyphus_types::Feedback>) -> Result<Vec<String>> {
+    pub async fn infer_preferences_from_feedback(
+        &self,
+        feedback: Vec<sisyphus_types::Feedback>,
+    ) -> Result<Vec<String>> {
         let mut inferred = Vec::new();
         for fb in feedback {
             // Use tags as preference hints
@@ -99,12 +110,12 @@ impl UserPreferenceStore {
                 }
             }
         }
-        
+
         Ok(inferred)
     }
 
     pub async fn clear_preferences(&self) -> Result<()> {
-        // MfsStore doesn't have a prefix-based delete. 
+        // MfsStore doesn't have a prefix-based delete.
         // In a real system, we'd maintain a list of preference keys.
         Ok(())
     }
@@ -113,8 +124,8 @@ impl UserPreferenceStore {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::json;
     use crate::MfsStore;
+    use serde_json::json;
     use std::sync::Arc;
 
     async fn setup_store() -> (UserPreferenceStore, Arc<MfsStore>) {
@@ -125,8 +136,11 @@ mod tests {
     #[tokio::test]
     async fn test_record_and_get_preference() {
         let (pref_store, _) = setup_store().await;
-        
-        pref_store.record_preference("theme", json!("dark"), 1.0).await.unwrap();
+
+        pref_store
+            .record_preference("theme", json!("dark"), 1.0)
+            .await
+            .unwrap();
         let val = pref_store.get_preference("theme").await.unwrap();
         assert_eq!(val, Some(json!("dark")));
     }
@@ -134,11 +148,17 @@ mod tests {
     #[tokio::test]
     async fn test_weighted_voting() {
         let (pref_store, _) = setup_store().await;
-        
+
         // Same value increases weight
-        pref_store.record_preference("font", json!("JetBrains Mono"), 1.0).await.unwrap();
-        pref_store.record_preference("font", json!("JetBrains Mono"), 1.0).await.unwrap();
-        
+        pref_store
+            .record_preference("font", json!("JetBrains Mono"), 1.0)
+            .await
+            .unwrap();
+        pref_store
+            .record_preference("font", json!("JetBrains Mono"), 1.0)
+            .await
+            .unwrap();
+
         // We can't easily check the weight from the public API (get_preference returns Value),
         // but we can verify it still returns the correct value.
         let val = pref_store.get_preference("font").await.unwrap();
@@ -148,10 +168,16 @@ mod tests {
     #[tokio::test]
     async fn test_preference_overwrite() {
         let (pref_store, _) = setup_store().await;
-        
-        pref_store.record_preference("lang", json!("en"), 1.0).await.unwrap();
-        pref_store.record_preference("lang", json!("fr"), 1.0).await.unwrap();
-        
+
+        pref_store
+            .record_preference("lang", json!("en"), 1.0)
+            .await
+            .unwrap();
+        pref_store
+            .record_preference("lang", json!("fr"), 1.0)
+            .await
+            .unwrap();
+
         let val = pref_store.get_preference("lang").await.unwrap();
         assert_eq!(val, Some(json!("fr")));
     }
@@ -159,7 +185,7 @@ mod tests {
     #[tokio::test]
     async fn test_infer_from_feedback() {
         let (pref_store, _) = setup_store().await;
-        
+
         let feedback = vec![
             sisyphus_types::Feedback {
                 agent_id: "a".into(),
@@ -178,9 +204,11 @@ mod tests {
                 tags: vec!["pref:concise".into()],
             },
         ];
-        
-        let inferred = pref_store.infer_preferences_from_feedback(feedback).await.unwrap();
+
+        let inferred = pref_store
+            .infer_preferences_from_feedback(feedback)
+            .await
+            .unwrap();
         assert_eq!(inferred, vec!["dark_mode", "concise"]);
     }
 }
-

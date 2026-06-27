@@ -179,22 +179,26 @@ Respond ONLY with valid JSON matching this structure:
             report.completed_goals,
             report.total_goals
         ));
-        ctx.push_str(&format!(
-            "Milestones: {} total\n",
-            report.milestone_count
-        ));
+        ctx.push_str(&format!("Milestones: {} total\n", report.milestone_count));
 
         // Per-milestone breakdown
         ctx.push_str("\n--- Milestones ---\n");
         for ms in &report.milestones {
             ctx.push_str(&format!(
                 "  {}: {:.1}% ({}/{}), status={:?}\n",
-                ms.name, ms.progress * 100.0, ms.completed_count, ms.goal_count, ms.status
+                ms.name,
+                ms.progress * 100.0,
+                ms.completed_count,
+                ms.goal_count,
+                ms.status
             ));
             for ph in &ms.phases {
                 ctx.push_str(&format!(
                     "    Phase {}: {:.1}% ({}/{})\n",
-                    ph.name, ph.progress * 100.0, ph.completed_count, ph.goal_count
+                    ph.name,
+                    ph.progress * 100.0,
+                    ph.completed_count,
+                    ph.goal_count
                 ));
             }
         }
@@ -206,10 +210,7 @@ Respond ONLY with valid JSON matching this structure:
             "Blocked milestones: {}\n",
             health.blocked_milestones.join(", ")
         ));
-        ctx.push_str(&format!(
-            "Recent failures: {}\n",
-            health.recent_failures
-        ));
+        ctx.push_str(&format!("Recent failures: {}\n", health.recent_failures));
         if !health.problems.is_empty() {
             ctx.push_str("Problems:\n");
             for p in &health.problems {
@@ -244,19 +245,38 @@ mod tests {
     use crate::RoadmapManager;
     use sisyphus_mem::MfsStore;
     use sisyphus_tools::metis::FixedResponseClient;
-    use sisyphus_types::{GoalRef, MilestoneStatus, Phase, Milestone};
+    use sisyphus_types::{GoalRef, Milestone, MilestoneStatus, Phase};
     use std::sync::Arc;
 
     fn make_goal(id: &str, desc: &str, status: MilestoneStatus) -> GoalRef {
-        GoalRef { goal_id: id.to_string(), description: desc.to_string(), status }
+        GoalRef {
+            goal_id: id.to_string(),
+            description: desc.to_string(),
+            status,
+        }
     }
 
     fn make_phase(id: &str, name: &str, goals: Vec<GoalRef>) -> Phase {
-        Phase { id: id.to_string(), name: name.to_string(), goals, depends_on: vec![] }
+        Phase {
+            id: id.to_string(),
+            name: name.to_string(),
+            goals,
+            depends_on: vec![],
+        }
     }
 
-    fn make_milestone(id: &str, name: &str, phases: Vec<Phase>, status: MilestoneStatus) -> Milestone {
-        Milestone { id: id.to_string(), name: name.to_string(), phases, status }
+    fn make_milestone(
+        id: &str,
+        name: &str,
+        phases: Vec<Phase>,
+        status: MilestoneStatus,
+    ) -> Milestone {
+        Milestone {
+            id: id.to_string(),
+            name: name.to_string(),
+            phases,
+            status,
+        }
     }
 
     async fn setup_manager() -> (RoadmapManager, Arc<MfsStore>) {
@@ -271,7 +291,9 @@ mod tests {
     #[tokio::test]
     async fn test_reflect_empty_project() {
         let (mgr, _store) = setup_manager().await;
-        mgr.create_project("empty", "Empty Project", "desc").await.unwrap();
+        mgr.create_project("empty", "Empty Project", "desc")
+            .await
+            .unwrap();
 
         let llm = Arc::new(FixedResponseClient(
             r#"{
@@ -303,7 +325,9 @@ mod tests {
     #[tokio::test]
     async fn test_reflect_with_milestones() {
         let (mgr, _store) = setup_manager().await;
-        mgr.create_project("p1", "Active Project", "desc").await.unwrap();
+        mgr.create_project("p1", "Active Project", "desc")
+            .await
+            .unwrap();
 
         let g1 = make_goal("g1", "Setup infra", MilestoneStatus::Completed);
         let g2 = make_goal("g2", "Build API", MilestoneStatus::InProgress);
@@ -335,7 +359,10 @@ mod tests {
 
         assert_eq!(reflection.project_name, "Active Project");
         assert_eq!(reflection.risk_factors.len(), 1);
-        assert_eq!(reflection.recommendations[0].target_milestone.as_deref(), Some("ms1"));
+        assert_eq!(
+            reflection.recommendations[0].target_milestone.as_deref(),
+            Some("ms1")
+        );
     }
 
     #[tokio::test]

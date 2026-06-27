@@ -68,10 +68,20 @@ impl PartialEq for NodeOutput {
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub enum ExecutionEvent {
-    NodeStarted { node_name: String },
-    NodeCompleted { node_name: String, output: NodeOutput },
-    NodeFailed { node_name: String, error: String },
-    ExecutionComplete { result: NodeOutput },
+    NodeStarted {
+        node_name: String,
+    },
+    NodeCompleted {
+        node_name: String,
+        output: NodeOutput,
+    },
+    NodeFailed {
+        node_name: String,
+        error: String,
+    },
+    ExecutionComplete {
+        result: NodeOutput,
+    },
 }
 
 // ---------------------------------------------------------------------------
@@ -115,7 +125,9 @@ impl Milestone {
         if total_goals == 0 {
             return 0.0;
         }
-        let completed_goals: usize = self.phases.iter()
+        let completed_goals: usize = self
+            .phases
+            .iter()
             .flat_map(|p| &p.goals)
             .filter(|g| g.status == MilestoneStatus::Completed)
             .count();
@@ -142,11 +154,12 @@ impl Project {
             id,
             name,
             description,
-            roadmap: Roadmap { milestones: Vec::new() },
+            roadmap: Roadmap {
+                milestones: Vec::new(),
+            },
         }
     }
 }
-
 
 /// A data mapping from a source graph node output to a target graph parameter.
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -372,7 +385,9 @@ impl SOPNode for WasmSOPNode {
             .executor
             .execute(&self.tool_id, args, self.fuel_limit)
             .await?;
-        Ok(NodeOutput(Value::String(String::from_utf8_lossy(&result).to_string())))
+        Ok(NodeOutput(Value::String(
+            String::from_utf8_lossy(&result).to_string(),
+        )))
     }
     fn name(&self) -> &str {
         &self.name
@@ -590,6 +605,15 @@ impl Default for AgentLlmOverride {
     }
 }
 
+#[derive(Clone, Debug, Default, serde::Deserialize, serde::Serialize, PartialEq)]
+pub enum BudgetMode {
+    /// Log a warning but allow the LLM call to proceed.
+    #[default]
+    Warning,
+    /// Block the LLM call and return an error if the budget is exceeded.
+    Strict,
+}
+
 /// Deserializable TOML configuration for all Sisyphus components.
 ///
 /// Use `Config::from_file(path)` or `Config::default()` and override
@@ -599,16 +623,20 @@ pub struct LlmConfig {
     pub api_key: String,
     pub endpoint: String,
     pub model: String,
+    /// Budget enforcement mode. Defaults to `Warning`.
+    #[serde(default)]
+    pub budget_mode: BudgetMode,
     /// Per-agent model overrides. Key = agent_id (e.g. "metis", "librarian").
     #[serde(default)]
     pub agents: std::collections::HashMap<String, AgentLlmOverride>,
 }
 
-fn default_llm_config() -> LlmConfig {
+pub fn default_llm_config() -> LlmConfig {
     LlmConfig {
         api_key: "".into(),
         endpoint: "http://localhost:8000/v1/chat/completions".into(),
         model: "gpt-4o".into(),
+        budget_mode: BudgetMode::default(),
         agents: std::collections::HashMap::new(),
     }
 }
@@ -786,7 +814,9 @@ pub struct MetricsConfig {
 }
 
 fn default_metrics() -> MetricsConfig {
-    MetricsConfig { prometheus_port: 9100 }
+    MetricsConfig {
+        prometheus_port: 9100,
+    }
 }
 
 impl Default for MetricsConfig {
@@ -1332,7 +1362,11 @@ mod tests {
         ];
         for (input, expected) in cases {
             let result = router.execute(input, vec![], 0).await.unwrap();
-            assert_eq!(String::from_utf8(result).unwrap(), expected, "failed for input '{input}'");
+            assert_eq!(
+                String::from_utf8(result).unwrap(),
+                expected,
+                "failed for input '{input}'"
+            );
         }
     }
 }
