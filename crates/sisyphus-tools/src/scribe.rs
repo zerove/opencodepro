@@ -43,7 +43,11 @@ pub async fn generate_adr(client: &dyn LlmClient, context: &str) -> Result<Strin
 }
 
 /// Suggests updates to existing documentation based on provided changes.
-pub async fn update_docs(client: &dyn LlmClient, doc_content: &str, changes: &str) -> Result<String, String> {
+pub async fn update_docs(
+    client: &dyn LlmClient,
+    doc_content: &str,
+    changes: &str,
+) -> Result<String, String> {
     let prompt = format!(
         "You are a Technical Scribe. Based on the following changes, suggest updates to the existing documentation. 
 Provide the output as a diff or a clear 'Search/Replace' block.
@@ -61,7 +65,7 @@ Requested Changes:
 Suggested Updates:",
         doc_content, changes
     );
-    
+
     client.chat(SCRIBE_SYSTEM_PROMPT, &prompt, false).await
 }
 
@@ -98,8 +102,14 @@ mod tests {
         assert!(result.is_ok());
         let response = result.unwrap();
         // DummyLlmClient echoes user input in the summary field (JSON-escaped)
-        assert!(response.contains(doc), "response should echo doc_content; got: {response}");
-        assert!(response.contains(changes), "response should echo changes; got: {response}");
+        assert!(
+            response.contains(doc),
+            "response should echo doc_content; got: {response}"
+        );
+        assert!(
+            response.contains(changes),
+            "response should echo changes; got: {response}"
+        );
     }
 
     #[tokio::test]
@@ -108,7 +118,10 @@ mod tests {
         let result = update_docs(&client, "", "Remove deprecated endpoint").await;
         assert!(result.is_ok());
         let response = result.unwrap();
-        assert!(response.contains("Remove deprecated endpoint"), "response should contain changes even with empty doc");
+        assert!(
+            response.contains("Remove deprecated endpoint"),
+            "response should contain changes even with empty doc"
+        );
     }
 
     #[tokio::test]
@@ -120,16 +133,34 @@ mod tests {
 
     #[test]
     fn test_scribe_system_prompt_has_required_sections() {
-        assert!(SCRIBE_SYSTEM_PROMPT.contains("## Context"), "must contain Context header");
-        assert!(SCRIBE_SYSTEM_PROMPT.contains("## Decision"), "must contain Decision header");
-        assert!(SCRIBE_SYSTEM_PROMPT.contains("## Consequences"), "must contain Consequences header");
-        assert!(SCRIBE_SYSTEM_PROMPT.contains("MADR"), "must mention MADR format");
+        assert!(
+            SCRIBE_SYSTEM_PROMPT.contains("## Context"),
+            "must contain Context header"
+        );
+        assert!(
+            SCRIBE_SYSTEM_PROMPT.contains("## Decision"),
+            "must contain Decision header"
+        );
+        assert!(
+            SCRIBE_SYSTEM_PROMPT.contains("## Consequences"),
+            "must contain Consequences header"
+        );
+        assert!(
+            SCRIBE_SYSTEM_PROMPT.contains("MADR"),
+            "must mention MADR format"
+        );
     }
 
     #[test]
     fn test_scribe_system_prompt_non_empty() {
-        assert!(!SCRIBE_SYSTEM_PROMPT.is_empty(), "system prompt should not be empty");
-        assert!(SCRIBE_SYSTEM_PROMPT.len() > 200, "system prompt should be substantial");
+        assert!(
+            !SCRIBE_SYSTEM_PROMPT.is_empty(),
+            "system prompt should not be empty"
+        );
+        assert!(
+            SCRIBE_SYSTEM_PROMPT.len() > 200,
+            "system prompt should be substantial"
+        );
     }
 
     #[tokio::test]
@@ -147,9 +178,14 @@ mod tests {
         assert!(result.is_ok(), "should handle special characters");
         let response = result.unwrap();
         // DummyLlmClient returns JSON with "summary" containing the context
-        assert!(response.contains("special"), "response should relate to context");
-        assert!(response.contains("$P@TH") || response.contains("analyse"),
-            "response should reference context; got: {response}");
+        assert!(
+            response.contains("special"),
+            "response should relate to context"
+        );
+        assert!(
+            response.contains("$P@TH") || response.contains("analyse"),
+            "response should reference context; got: {response}"
+        );
     }
 
     #[tokio::test]

@@ -1,7 +1,7 @@
+use crate::metis::LlmClient;
+use serde_json::{json, Value};
 use std::path::Path;
 use std::sync::Arc;
-use serde_json::{json, Value};
-use crate::metis::LlmClient;
 
 /// A `ToolExecutor` that dispatches tool calls to sisyphus-tools built-in functions.
 ///
@@ -51,49 +51,66 @@ impl sisyphus_types::ToolExecutor for BuiltinToolExecutor {
     ) -> Result<Vec<u8>, String> {
         let llm_client = self.llm_client.clone();
         let feedback_store = self.feedback_store.clone();
-        crate::hook::execute_with_hooks(
-            tool_id,
-            args,
-            &self.registry,
-            move |enriched_args| {
-                let client = llm_client.clone();
-                async move {
-                    match tool_id {
-                        "file_read" => cmd_file_read(enriched_args),
-                        "file_write" => cmd_file_write(enriched_args),
-                        "file_edit" => cmd_file_edit(enriched_args),
-                        "file_edit_all" => cmd_file_edit_all(enriched_args),
-                        "file_read_lines" => cmd_file_read_lines(enriched_args),
-                        "glob" => cmd_glob(enriched_args),
-                        "grep" => cmd_grep(enriched_args),
-                        "bash_exec" => cmd_bash_exec(enriched_args).await,
-                        "web_search" => cmd_web_search(enriched_args).await,
-                        "web_fetch" => cmd_web_fetch(enriched_args).await,
-                        "feedback/save" => cmd_feedback_save(feedback_store.clone(), enriched_args).await,
-                        "feedback/get" => cmd_feedback_get(feedback_store.clone(), enriched_args).await,
-                        "feedback/query" => cmd_feedback_query(feedback_store.clone(), enriched_args).await,
-                        // ── librarian ──────────────────────────────
-                        "librarian/research" => cmd_librarian_research(enriched_args).await,
-                        "librarian/fetch_docs" => cmd_librarian_fetch_docs(enriched_args).await,
-                        "librarian/examples" => cmd_librarian_examples(enriched_args).await,
-                        "librarian/synthesise" => cmd_librarian_synthesise(client.as_ref(), enriched_args).await,
-                        // ── metis ──────────────────────────────────
-                        "metis/analyse" => cmd_metis_analyse(client.as_ref(), enriched_args).await,
-                        // ── momus ──────────────────────────────────
-                        "momus/review_plan" => cmd_momus_review_plan(client.as_ref(), enriched_args).await,
-                        "momus/review_code" => cmd_momus_review_code(client.as_ref(), enriched_args).await,
-                        "momus/review_code_batch" => cmd_momus_review_code_batch(client.as_ref(), enriched_args).await,
-                        "momus/review_arch" => cmd_momus_review_arch(client.as_ref(), enriched_args).await,
-                        "scribe/generate_adr" => cmd_scribe_generate_adr(client.as_ref(), enriched_args).await,
-                        "scribe/update_docs" => cmd_scribe_update_docs(client.as_ref(), enriched_args).await,
-                        "scribe/apply_update" => cmd_scribe_apply_update(enriched_args),
-                        "security/audit_code" => cmd_security_audit_code(client.as_ref(), enriched_args).await,
-                        "security/threat_model" => cmd_security_threat_model(client.as_ref(), enriched_args).await,
-                        other => Err(format!("unknown builtin tool: {other}")),
+        crate::hook::execute_with_hooks(tool_id, args, &self.registry, move |enriched_args| {
+            let client = llm_client.clone();
+            async move {
+                match tool_id {
+                    "file_read" => cmd_file_read(enriched_args),
+                    "file_write" => cmd_file_write(enriched_args),
+                    "file_edit" => cmd_file_edit(enriched_args),
+                    "file_edit_all" => cmd_file_edit_all(enriched_args),
+                    "file_read_lines" => cmd_file_read_lines(enriched_args),
+                    "glob" => cmd_glob(enriched_args),
+                    "grep" => cmd_grep(enriched_args),
+                    "bash_exec" => cmd_bash_exec(enriched_args).await,
+                    "web_search" => cmd_web_search(enriched_args).await,
+                    "web_fetch" => cmd_web_fetch(enriched_args).await,
+                    "feedback/save" => {
+                        cmd_feedback_save(feedback_store.clone(), enriched_args).await
                     }
+                    "feedback/get" => cmd_feedback_get(feedback_store.clone(), enriched_args).await,
+                    "feedback/query" => {
+                        cmd_feedback_query(feedback_store.clone(), enriched_args).await
+                    }
+                    // ── librarian ──────────────────────────────
+                    "librarian/research" => cmd_librarian_research(enriched_args).await,
+                    "librarian/fetch_docs" => cmd_librarian_fetch_docs(enriched_args).await,
+                    "librarian/examples" => cmd_librarian_examples(enriched_args).await,
+                    "librarian/synthesise" => {
+                        cmd_librarian_synthesise(client.as_ref(), enriched_args).await
+                    }
+                    // ── metis ──────────────────────────────────
+                    "metis/analyse" => cmd_metis_analyse(client.as_ref(), enriched_args).await,
+                    // ── momus ──────────────────────────────────
+                    "momus/review_plan" => {
+                        cmd_momus_review_plan(client.as_ref(), enriched_args).await
+                    }
+                    "momus/review_code" => {
+                        cmd_momus_review_code(client.as_ref(), enriched_args).await
+                    }
+                    "momus/review_code_batch" => {
+                        cmd_momus_review_code_batch(client.as_ref(), enriched_args).await
+                    }
+                    "momus/review_arch" => {
+                        cmd_momus_review_arch(client.as_ref(), enriched_args).await
+                    }
+                    "scribe/generate_adr" => {
+                        cmd_scribe_generate_adr(client.as_ref(), enriched_args).await
+                    }
+                    "scribe/update_docs" => {
+                        cmd_scribe_update_docs(client.as_ref(), enriched_args).await
+                    }
+                    "scribe/apply_update" => cmd_scribe_apply_update(enriched_args),
+                    "security/audit_code" => {
+                        cmd_security_audit_code(client.as_ref(), enriched_args).await
+                    }
+                    "security/threat_model" => {
+                        cmd_security_threat_model(client.as_ref(), enriched_args).await
+                    }
+                    other => Err(format!("unknown builtin tool: {other}")),
                 }
-            },
-        )
+            }
+        })
         .await
     }
 }
@@ -132,9 +149,11 @@ fn flexible_str_arg_multi(v: &Value, keys: &[&str]) -> Result<String, String> {
         }
     }
     let keys_str: Vec<_> = keys.iter().map(|k| (*k).to_string()).collect();
-    Err(format!("missing or non-string arg in set: {}", keys_str.join(", ")))
+    Err(format!(
+        "missing or non-string arg in set: {}",
+        keys_str.join(", ")
+    ))
 }
-
 
 fn u64_arg(v: &Value, name: &str) -> Result<u64, String> {
     v.get(name)
@@ -194,7 +213,8 @@ fn cmd_file_read_lines(args: Vec<u8>) -> Result<Vec<u8>, String> {
     let path = path_arg(&v, "path")?;
     let offset = usize_arg(&v, "offset").unwrap_or(0);
     let limit = usize_arg(&v, "limit").unwrap_or(2000);
-    let content = crate::file::read_lines(Path::new(&path), offset, limit).map_err(|e| e.to_string())?;
+    let content =
+        crate::file::read_lines(Path::new(&path), offset, limit).map_err(|e| e.to_string())?;
     ok_json(json!({"content": content}))
 }
 
@@ -203,7 +223,10 @@ fn cmd_glob(args: Vec<u8>) -> Result<Vec<u8>, String> {
     let pattern = str_arg(&v, "pattern")?;
     let root = path_arg(&v, "root")?;
     let files = crate::file::glob(&pattern, Path::new(&root)).map_err(|e| e.to_string())?;
-    let paths: Vec<String> = files.iter().map(|p| p.to_string_lossy().into_owned()).collect();
+    let paths: Vec<String> = files
+        .iter()
+        .map(|p| p.to_string_lossy().into_owned())
+        .collect();
     ok_json(json!({"files": paths}))
 }
 
@@ -212,12 +235,18 @@ fn cmd_grep(args: Vec<u8>) -> Result<Vec<u8>, String> {
     let pattern = str_arg(&v, "pattern")?;
     let path = path_arg(&v, "path")?;
     let include = opt_str_arg(&v, "include");
-    let matches = crate::file::grep(&pattern, Path::new(&path), include.as_deref()).map_err(|e| e.to_string())?;
-    let list: Vec<Value> = matches.iter().map(|m| json!({
-        "file": m.file.to_string_lossy(),
-        "line": m.line,
-        "content": m.content,
-    })).collect();
+    let matches = crate::file::grep(&pattern, Path::new(&path), include.as_deref())
+        .map_err(|e| e.to_string())?;
+    let list: Vec<Value> = matches
+        .iter()
+        .map(|m| {
+            json!({
+                "file": m.file.to_string_lossy(),
+                "line": m.line,
+                "content": m.content,
+            })
+        })
+        .collect();
     ok_json(json!({"matches": list}))
 }
 
@@ -227,7 +256,9 @@ async fn cmd_bash_exec(args: Vec<u8>) -> Result<Vec<u8>, String> {
     let workdir = opt_str_arg(&v, "workdir");
     let timeout_ms = u64_arg(&v, "timeout_ms").unwrap_or(30000);
     let workdir_ref = workdir.as_ref().map(|s| Path::new(s.as_str()));
-    let output = crate::bash::execute(&command, workdir_ref, timeout_ms).await.map_err(|e| e.to_string())?;
+    let output = crate::bash::execute(&command, workdir_ref, timeout_ms)
+        .await
+        .map_err(|e| e.to_string())?;
     ok_json(json!({
         "stdout": output.stdout,
         "stderr": output.stderr,
@@ -240,19 +271,28 @@ async fn cmd_web_search(args: Vec<u8>) -> Result<Vec<u8>, String> {
     let v = parse_args(&args)?;
     let query = str_arg(&v, "query")?;
     let num = usize_arg(&v, "num").unwrap_or(5);
-    let results = crate::web::websearch(&query, num).await.map_err(|e| e.to_string())?;
-    let list: Vec<Value> = results.iter().map(|r| json!({
-        "title": r.title,
-        "url": r.url,
-        "snippet": r.snippet,
-    })).collect();
+    let results = crate::web::websearch(&query, num)
+        .await
+        .map_err(|e| e.to_string())?;
+    let list: Vec<Value> = results
+        .iter()
+        .map(|r| {
+            json!({
+                "title": r.title,
+                "url": r.url,
+                "snippet": r.snippet,
+            })
+        })
+        .collect();
     ok_json(json!({"results": list}))
 }
 
 async fn cmd_web_fetch(args: Vec<u8>) -> Result<Vec<u8>, String> {
     let v = parse_args(&args)?;
     let url = str_arg(&v, "url")?;
-    let result = crate::web::webfetch(&url).await.map_err(|e| e.to_string())?;
+    let result = crate::web::webfetch(&url)
+        .await
+        .map_err(|e| e.to_string())?;
     ok_json(json!({
         "content": result.content,
         "content_type": result.content_type,
@@ -269,14 +309,18 @@ async fn cmd_librarian_research(args: Vec<u8>) -> Result<Vec<u8>, String> {
         .parse()
         .map_err(|e: String| format!("invalid scope: {e}"))?;
     let num = usize_arg(&v, "num").unwrap_or(5);
-    let report = crate::research(&query, scope, num).await.map_err(|e| e.to_string())?;
+    let report = crate::research(&query, scope, num)
+        .await
+        .map_err(|e| e.to_string())?;
     ok_json(serde_json::to_value(&report).map_err(|e| format!("serialize: {e}"))?)
 }
 
 async fn cmd_librarian_fetch_docs(args: Vec<u8>) -> Result<Vec<u8>, String> {
     let v = parse_args(&args)?;
     let url = str_arg(&v, "url")?;
-    let page = crate::fetch_documentation(&url).await.map_err(|e| e.to_string())?;
+    let page = crate::fetch_documentation(&url)
+        .await
+        .map_err(|e| e.to_string())?;
     ok_json(serde_json::to_value(&page).map_err(|e| format!("serialize: {e}"))?)
 }
 
@@ -284,20 +328,27 @@ async fn cmd_librarian_examples(args: Vec<u8>) -> Result<Vec<u8>, String> {
     let v = parse_args(&args)?;
     let query = flexible_str_arg(&v, "query", "content")?;
     let language = str_arg(&v, "language").unwrap_or_else(|_| "rust".into());
-    let examples = crate::find_examples(&query, &language).await.map_err(|e| e.to_string())?;
+    let examples = crate::find_examples(&query, &language)
+        .await
+        .map_err(|e| e.to_string())?;
     ok_json(serde_json::to_value(&examples).map_err(|e| format!("serialize: {e}"))?)
 }
 
-async fn cmd_librarian_synthesise(client: &dyn LlmClient, args: Vec<u8>) -> Result<Vec<u8>, String> {
+async fn cmd_librarian_synthesise(
+    client: &dyn LlmClient,
+    args: Vec<u8>,
+) -> Result<Vec<u8>, String> {
     let v = parse_args(&args)?;
-    let findings_val = v.get("findings")
+    let findings_val = v
+        .get("findings")
         .ok_or_else(|| "missing 'findings' arg".to_string())?;
     let findings: Vec<crate::ResearchFinding> = serde_json::from_value(findings_val.clone())
         .map_err(|e| format!("invalid findings JSON: {e}"))?;
-    
-    let synthesis = crate::synthesise(&findings, client).await
+
+    let synthesis = crate::synthesise(&findings, client)
+        .await
         .map_err(|e| format!("synthesis failed: {e}"))?;
-    
+
     ok_json(json!({"synthesis": synthesis}))
 }
 
@@ -306,7 +357,9 @@ async fn cmd_librarian_synthesise(client: &dyn LlmClient, args: Vec<u8>) -> Resu
 async fn cmd_metis_analyse(client: &dyn LlmClient, args: Vec<u8>) -> Result<Vec<u8>, String> {
     let v = parse_args(&args)?;
     let request = flexible_str_arg(&v, "request", "content")?;
-    let analysis = crate::metis::analyse(&request, client).await.map_err(|e| e.to_string())?;
+    let analysis = crate::metis::analyse(&request, client)
+        .await
+        .map_err(|e| e.to_string())?;
     ok_json(serde_json::to_value(&analysis).map_err(|e| format!("serialize: {e}"))?)
 }
 
@@ -325,25 +378,37 @@ async fn cmd_momus_review_code(client: &dyn LlmClient, args: Vec<u8>) -> Result<
     let path_str = flexible_str_arg_multi(&v, &["path", "file", "content"])?;
     let content = flexible_str_arg_multi(&v, &["content", "artifact", "code", "path"])?;
     let path = std::path::Path::new(&path_str);
-    let review = crate::review_code(client, path, &content).await.map_err(|e| e.to_string())?;
+    let review = crate::review_code(client, path, &content)
+        .await
+        .map_err(|e| e.to_string())?;
     ok_json(serde_json::to_value(&review).map_err(|e| format!("serialize: {e}"))?)
 }
 
-async fn cmd_momus_review_code_batch(client: &dyn LlmClient, args: Vec<u8>) -> Result<Vec<u8>, String> {
+async fn cmd_momus_review_code_batch(
+    client: &dyn LlmClient,
+    args: Vec<u8>,
+) -> Result<Vec<u8>, String> {
     let v = parse_args(&args)?;
-    let files_val = v.get("files")
+    let files_val = v
+        .get("files")
         .ok_or_else(|| "missing 'files' arg".to_string())?;
     let files: Vec<serde_json::Value> = serde_json::from_value(files_val.clone())
         .map_err(|e| format!("invalid files JSON: {e}"))?;
     let mut pairs = Vec::new();
     for f in &files {
-        let path_str = f.get("path").and_then(|v| v.as_str())
+        let path_str = f
+            .get("path")
+            .and_then(|v| v.as_str())
             .ok_or_else(|| "each file entry must have a 'path' string".to_string())?;
-        let content = f.get("content").and_then(|v| v.as_str())
+        let content = f
+            .get("content")
+            .and_then(|v| v.as_str())
             .ok_or_else(|| "each file entry must have a 'content' string".to_string())?;
         pairs.push((std::path::Path::new(path_str), content));
     }
-    let reviews = crate::review_code_batch(client, &pairs).await.map_err(|e| e.to_string())?;
+    let reviews = crate::review_code_batch(client, &pairs)
+        .await
+        .map_err(|e| e.to_string())?;
     ok_json(serde_json::to_value(&reviews).map_err(|e| format!("serialize: {e}"))?)
 }
 
@@ -380,7 +445,9 @@ fn cmd_scribe_apply_update(args: Vec<u8>) -> Result<Vec<u8>, String> {
     let forbidden = ["Cargo.toml", "Cargo.lock", ".env", ".git/"];
     for f in forbidden {
         if path_str.contains(f) {
-            return Err(format!("writing to {f} is forbidden for scribe/apply_update"));
+            return Err(format!(
+                "writing to {f} is forbidden for scribe/apply_update"
+            ));
         }
     }
 
@@ -390,25 +457,27 @@ fn cmd_scribe_apply_update(args: Vec<u8>) -> Result<Vec<u8>, String> {
 
         while let Some(start_idx) = current_content.find("<<<< SEARCH") {
             let search_start = start_idx + "<<<< SEARCH".len();
-            let replace_idx = current_content[search_start..].find("==== REPLACE")
+            let replace_idx = current_content[search_start..]
+                .find("==== REPLACE")
                 .map(|i| i + search_start)
                 .ok_or_else(|| "missing ==== REPLACE marker".to_string())?;
-            
+
             let search_text = current_content[search_start..replace_idx]
                 .trim_start_matches('\n')
                 .trim_end_matches('\n');
-            
-            let end_idx = current_content[replace_idx..].find(">>>> END")
+
+            let end_idx = current_content[replace_idx..]
+                .find(">>>> END")
                 .map(|i| i + replace_idx)
                 .ok_or_else(|| "missing >>>> END marker".to_string())?;
-            
+
             let replace_start = replace_idx + "==== REPLACE".len();
             let replace_text = current_content[replace_start..end_idx]
                 .trim_start_matches('\n')
                 .trim_end_matches('\n');
 
             crate::file::edit(path, search_text, replace_text).map_err(|e| e.to_string())?;
-            
+
             applied_count += 1;
             current_content = &current_content[end_idx + ">>>> END".len()..];
         }
@@ -421,62 +490,89 @@ fn cmd_scribe_apply_update(args: Vec<u8>) -> Result<Vec<u8>, String> {
 
 async fn cmd_security_audit_code(client: &dyn LlmClient, args: Vec<u8>) -> Result<Vec<u8>, String> {
     let v = parse_args(&args)?;
-    let path_str = flexible_str_arg_multi(&v, &["path", "file"]).unwrap_or_else(|_| "snippet.rs".to_string());
+    let path_str =
+        flexible_str_arg_multi(&v, &["path", "file"]).unwrap_or_else(|_| "snippet.rs".to_string());
     let content = flexible_str_arg_multi(&v, &["content", "artifact", "code", "path"])?;
     let path = std::path::Path::new(&path_str);
-    let report = crate::security::audit_code(client, path, &content).await.map_err(|e| e.to_string())?;
+    let report = crate::security::audit_code(client, path, &content)
+        .await
+        .map_err(|e| e.to_string())?;
     ok_json(serde_json::to_value(&report).map_err(|e| format!("serialize: {e}"))?)
 }
 
-async fn cmd_security_threat_model(client: &dyn LlmClient, args: Vec<u8>) -> Result<Vec<u8>, String> {
+async fn cmd_security_threat_model(
+    client: &dyn LlmClient,
+    args: Vec<u8>,
+) -> Result<Vec<u8>, String> {
     let v = parse_args(&args)?;
     let arch_text = flexible_str_arg_multi(&v, &["arch_text", "artifact", "content"])?;
-    let report = crate::security::threat_model(client, &arch_text).await.map_err(|e| e.to_string())?;
+    let report = crate::security::threat_model(client, &arch_text)
+        .await
+        .map_err(|e| e.to_string())?;
     ok_json(serde_json::to_value(&report).map_err(|e| format!("serialize: {e}"))?)
 }
 
 // ── feedback commands ──────────────────────────────────────────
 
-async fn cmd_feedback_save(store: Arc<crate::feedback::FeedbackStore>, args: Vec<u8>) -> Result<Vec<u8>, String> {
+async fn cmd_feedback_save(
+    store: Arc<crate::feedback::FeedbackStore>,
+    args: Vec<u8>,
+) -> Result<Vec<u8>, String> {
     let v = parse_args(&args)?;
     let agent_id = str_arg(&v, "agent_id")?;
     let request = str_arg(&v, "request")?;
     let output = str_arg(&v, "output")?;
     let corrected = str_arg(&v, "corrected")?;
-    let tags = v.get("tags")
+    let tags = v
+        .get("tags")
         .and_then(|t| t.as_array())
-        .map(|t| t.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
+        .map(|t| {
+            t.iter()
+                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                .collect()
+        })
         .unwrap_or_default();
 
-    let feedback = crate::feedback::Feedback::new(
-        agent_id,
-        request,
-        output,
-        corrected,
-        tags,
-    );
+    let feedback = crate::feedback::Feedback::new(agent_id, request, output, corrected, tags);
 
-    store.save_feedback(feedback).await.map_err(|e| e.to_string())?;
+    store
+        .save_feedback(feedback)
+        .await
+        .map_err(|e| e.to_string())?;
     ok_json(json!({"status": "saved"}))
 }
 
-async fn cmd_feedback_get(store: Arc<crate::feedback::FeedbackStore>, args: Vec<u8>) -> Result<Vec<u8>, String> {
+async fn cmd_feedback_get(
+    store: Arc<crate::feedback::FeedbackStore>,
+    args: Vec<u8>,
+) -> Result<Vec<u8>, String> {
     let v = parse_args(&args)?;
     let agent_id = str_arg(&v, "agent_id")?;
     let limit = usize_arg(&v, "limit").unwrap_or(10);
 
-    let feedbacks = store.get_recent_feedback(&agent_id, limit).await.map_err(|e| e.to_string())?;
+    let feedbacks = store
+        .get_recent_feedback(&agent_id, limit)
+        .await
+        .map_err(|e| e.to_string())?;
     ok_json(serde_json::to_value(&feedbacks).map_err(|e| format!("serialize: {e}"))?)
 }
 
-async fn cmd_feedback_query(store: Arc<crate::feedback::FeedbackStore>, args: Vec<u8>) -> Result<Vec<u8>, String> {
+async fn cmd_feedback_query(
+    store: Arc<crate::feedback::FeedbackStore>,
+    args: Vec<u8>,
+) -> Result<Vec<u8>, String> {
     let v = parse_args(&args)?;
     let query = str_arg(&v, "query")?;
-    let tags = v.get("tags")
-        .and_then(|t| t.as_array())
-        .map(|t| t.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect());
+    let tags = v.get("tags").and_then(|t| t.as_array()).map(|t| {
+        t.iter()
+            .filter_map(|v| v.as_str().map(|s| s.to_string()))
+            .collect()
+    });
 
-    let feedbacks = store.query_feedback(&query, tags).await.map_err(|e| e.to_string())?;
+    let feedbacks = store
+        .query_feedback(&query, tags)
+        .await
+        .map_err(|e| e.to_string())?;
     ok_json(serde_json::to_value(&feedbacks).map_err(|e| format!("serialize: {e}"))?)
 }
 
@@ -484,14 +580,19 @@ async fn cmd_feedback_query(store: Arc<crate::feedback::FeedbackStore>, args: Ve
 mod tests {
 
     use super::*;
-    use sisyphus_types::ToolExecutor;
-    use serde_json::Value;
     use crate::metis::LlmClient;
+    use serde_json::Value;
+    use sisyphus_types::ToolExecutor;
 
     struct MockLlmClient;
     #[async_trait::async_trait]
     impl LlmClient for MockLlmClient {
-        async fn chat(&self, _system: &str, user: &str, _json_mode: bool) -> Result<String, String> {
+        async fn chat(
+            &self,
+            _system: &str,
+            user: &str,
+            _json_mode: bool,
+        ) -> Result<String, String> {
             Ok(format!(
                 r#"{{"ambiguities": [], "implicit_requirements": [], "summary": "Mock analysis for: {}", "actionable": true}}"#,
                 user
@@ -632,8 +733,12 @@ mod tests {
 
         let args = mkargs(json!({"pattern": "*.rs", "root": dir.path().to_string_lossy()}));
         let result = assert_ok(ex.execute("glob", args, 0).await);
-        let files: Vec<&str> = result["files"].as_array().unwrap()
-            .iter().map(|v| v.as_str().unwrap()).collect();
+        let files: Vec<&str> = result["files"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_str().unwrap())
+            .collect();
         assert_eq!(files.len(), 2);
         assert!(files.iter().any(|f| f.ends_with("a.rs")));
         assert!(files.iter().any(|f| f.ends_with("b.rs")));
@@ -716,7 +821,8 @@ mod tests {
             llm_client: Arc::new(MockLlmClient),
             feedback_store: Arc::new(crate::feedback::FeedbackStore::default_dir()),
         };
-        let plan_text = "- Step 1: Write failing test\n- Step 2: Implement minimum code\n- Step 3: Refactor";
+        let plan_text =
+            "- Step 1: Write failing test\n- Step 2: Implement minimum code\n- Step 3: Refactor";
         let args = mkargs(json!({"plan_text": plan_text, "plan_name": "TDD workflow"}));
         let result = assert_ok(ex.execute("momus/review_plan", args, 0).await);
         assert!(!result["summary"].as_str().unwrap_or("").is_empty());

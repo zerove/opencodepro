@@ -1,9 +1,9 @@
+use crate::{ToolError, ToolResult};
 use std::path::Path;
+use std::time::Instant;
+use tokio::io::{AsyncReadExt, BufReader};
 use tokio::process::Command;
 use tokio::time::{timeout, Duration};
-use tokio::io::{AsyncReadExt, BufReader};
-use crate::{ToolError, ToolResult};
-use std::time::Instant;
 
 const MAX_OUTPUT_BYTES: usize = 10 * 1024 * 1024; // 10MB limit
 
@@ -17,7 +17,11 @@ pub struct BashOutput {
     pub stderr_truncated: bool,
 }
 
-pub async fn execute(command: &str, workdir: Option<&Path>, timeout_ms: u64) -> ToolResult<BashOutput> {
+pub async fn execute(
+    command: &str,
+    workdir: Option<&Path>,
+    timeout_ms: u64,
+) -> ToolResult<BashOutput> {
     let start = Instant::now();
     let mut cmd = Command::new("sh");
     cmd.arg("-c")
@@ -30,7 +34,7 @@ pub async fn execute(command: &str, workdir: Option<&Path>, timeout_ms: u64) -> 
     }
 
     let mut child = cmd.spawn().map_err(ToolError::Io)?;
-    
+
     let stdout_pipe = child.stdout.take().expect("stdout pipe not captured");
     let stderr_pipe = child.stderr.take().expect("stderr pipe not captured");
 
@@ -55,10 +59,18 @@ pub async fn execute(command: &str, workdir: Option<&Path>, timeout_ms: u64) -> 
     };
 
     let result = timeout(Duration::from_millis(timeout_ms), async {
-        let ((stdout, stdout_truncated), (stderr, stderr_truncated)) = tokio::join!(stdout_fut, stderr_fut);
+        let ((stdout, stdout_truncated), (stderr, stderr_truncated)) =
+            tokio::join!(stdout_fut, stderr_fut);
         let exit_status = child.wait().await.map_err(ToolError::Io)?;
-        Ok::<_, ToolError>((stdout, stderr, stdout_truncated, stderr_truncated, exit_status))
-    }).await;
+        Ok::<_, ToolError>((
+            stdout,
+            stderr,
+            stdout_truncated,
+            stderr_truncated,
+            exit_status,
+        ))
+    })
+    .await;
 
     let total_duration = start.elapsed();
 
@@ -67,16 +79,20 @@ pub async fn execute(command: &str, workdir: Option<&Path>, timeout_ms: u64) -> 
             let exit_code = exit_status.code().unwrap_or(-1);
 
             if exit_code == 0 {
-                Ok(BashOutput { 
-                    stdout, 
-                    stderr, 
-                    exit_code, 
+                Ok(BashOutput {
+                    stdout,
+                    stderr,
+                    exit_code,
                     duration: total_duration,
                     stdout_truncated,
                     stderr_truncated,
                 })
             } else {
-                Err(ToolError::CommandFailed { code: exit_code, stdout, stderr })
+                Err(ToolError::CommandFailed {
+                    code: exit_code,
+                    stdout,
+                    stderr,
+                })
             }
         }
         Ok(Err(e)) => Err(e),
@@ -160,7 +176,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_execute_chained_commands() {
-        let result = execute("echo first && echo second", None, 5000).await.unwrap();
+        let result = execute("echo first && echo second", None, 5000)
+            .await
+            .unwrap();
         assert!(result.stdout.contains("first"));
         assert!(result.stdout.contains("second"));
     }
@@ -174,14 +192,18 @@ mod tests {
 
     #[tokio::test]
     async fn test_execute_unicode_output() {
-        let result = execute("echo 'Hello 世界 日本語'", None, 5000).await.unwrap();
+        let result = execute("echo 'Hello 世界 日本語'", None, 5000)
+            .await
+            .unwrap();
         assert!(result.stdout.contains("世界"));
         assert!(result.stdout.contains("日本語"));
     }
 
     #[tokio::test]
     async fn test_execute_pipeline() {
-        let result = execute("echo 'a b c d e' | wc -w", None, 5000).await.unwrap();
+        let result = execute("echo 'a b c d e' | wc -w", None, 5000)
+            .await
+            .unwrap();
         assert!(result.stdout.trim() == "5");
     }
 

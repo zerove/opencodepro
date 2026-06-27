@@ -1,4 +1,4 @@
-use crate::{ToolResult, webfetch, websearch};
+use crate::{webfetch, websearch, ToolResult};
 use serde::{Deserialize, Serialize};
 
 // ── Types ──────────────────────────────────────────────────
@@ -9,7 +9,7 @@ pub struct ResearchFinding {
     pub claim: String,
     pub source_url: String,
     pub source_title: String,
-    pub relevance: f64,         // 0.0 – 1.0
+    pub relevance: f64, // 0.0 – 1.0
     pub retrieved_at: String,
 }
 
@@ -20,7 +20,7 @@ pub struct ResearchReport {
     pub findings: Vec<ResearchFinding>,
     pub synthesis: String,
     pub sources_consulted: usize,
-    pub confidence: f64,        // 0.0 – 1.0
+    pub confidence: f64, // 0.0 – 1.0
 }
 
 /// Search scope for the librarian.
@@ -40,7 +40,9 @@ impl std::str::FromStr for ResearchScope {
             "docs" | "documentation" => Ok(Self::Documentation),
             "code" | "examples" => Ok(Self::CodeExamples),
             "all" => Ok(Self::All),
-            _ => Err(format!("unknown research scope: {s} (expected web|docs|code|all)")),
+            _ => Err(format!(
+                "unknown research scope: {s} (expected web|docs|code|all)"
+            )),
         }
     }
 }
@@ -50,7 +52,7 @@ impl std::str::FromStr for ResearchScope {
 pub struct DocPage {
     pub url: String,
     pub title: String,
-    pub content_preview: String,  // first ~500 chars
+    pub content_preview: String, // first ~500 chars
     pub content_length: usize,
 }
 
@@ -64,7 +66,7 @@ pub struct CodeExample {
 }
 
 // ── Research Functions ─────────────────────────────────────
- 
+
 const SYNTHESIS_SYSTEM_PROMPT: &str = r#"You are the Librarian, Sisyphus's knowledge synthesis expert.
 Your goal is to transform a collection of raw research findings into a high-density, professional research report.
 
@@ -96,7 +98,11 @@ Guidelines:
 /// Searches the web, fetches top results, and synthesises findings
 /// into a structured report. Returns a `ResearchReport` with
 /// attributed findings and a natural-language synthesis.
-pub async fn research(query: &str, scope: ResearchScope, max_results: usize) -> ToolResult<ResearchReport> {
+pub async fn research(
+    query: &str,
+    scope: ResearchScope,
+    max_results: usize,
+) -> ToolResult<ResearchReport> {
     let mut findings = Vec::new();
     let mut sources_consulted = 0;
 
@@ -125,7 +131,8 @@ pub async fn research(query: &str, scope: ResearchScope, max_results: usize) -> 
         0.0
     } else {
         // Confidence based on number of corroborating sources and average relevance
-        let avg_relevance: f64 = findings.iter().map(|f| f.relevance).sum::<f64>() / findings.len() as f64;
+        let avg_relevance: f64 =
+            findings.iter().map(|f| f.relevance).sum::<f64>() / findings.len() as f64;
         let coverage = (findings.len() as f64 / max_results as f64).min(1.0);
         avg_relevance * 0.6 + coverage * 0.4
     };
@@ -156,14 +163,22 @@ pub async fn fetch_documentation(url: &str) -> ToolResult<DocPage> {
     let preview = fetched.content.chars().take(500).collect::<String>();
 
     // Extract a title: prefer Markdown headers, then the first meaningful line
-    let title = fetched.content.lines()
+    let title = fetched
+        .content
+        .lines()
         .find(|l| l.trim().starts_with('#'))
         .and_then(|l| {
             let t = l.trim().trim_start_matches('#').trim();
-            if t.is_empty() { None } else { Some(t.to_string()) }
+            if t.is_empty() {
+                None
+            } else {
+                Some(t.to_string())
+            }
         })
         .or_else(|| {
-            fetched.content.lines()
+            fetched
+                .content
+                .lines()
                 .find(|l| {
                     let t = l.trim();
                     !t.is_empty() && t.len() > 5 && t.len() < 200
@@ -228,7 +243,12 @@ pub async fn find_examples(query: &str, language: &str) -> ToolResult<Vec<CodeEx
 
 // ── Internal helpers ─────────────────────────────────────
 
-async fn add_web_results(query: &str, max_results: usize, findings: &mut Vec<ResearchFinding>, sources: &mut usize) {
+async fn add_web_results(
+    query: &str,
+    max_results: usize,
+    findings: &mut Vec<ResearchFinding>,
+    sources: &mut usize,
+) {
     if let Ok(results) = websearch(query, max_results).await {
         *sources += results.len();
         for r in &results {
@@ -244,7 +264,12 @@ async fn add_web_results(query: &str, max_results: usize, findings: &mut Vec<Res
     }
 }
 
-async fn add_doc_results(query: &str, max_results: usize, findings: &mut Vec<ResearchFinding>, sources: &mut usize) {
+async fn add_doc_results(
+    query: &str,
+    max_results: usize,
+    findings: &mut Vec<ResearchFinding>,
+    sources: &mut usize,
+) {
     let doc_query = format!("{} documentation", query);
     if let Ok(results) = websearch(&doc_query, max_results.min(5)).await {
         *sources += results.len();
@@ -260,7 +285,12 @@ async fn add_doc_results(query: &str, max_results: usize, findings: &mut Vec<Res
     }
 }
 
-async fn add_code_results(query: &str, max_results: usize, findings: &mut Vec<ResearchFinding>, sources: &mut usize) {
+async fn add_code_results(
+    query: &str,
+    max_results: usize,
+    findings: &mut Vec<ResearchFinding>,
+    sources: &mut usize,
+) {
     let code_query = format!("{} example code", query);
     if let Ok(results) = websearch(&code_query, max_results.min(5)).await {
         *sources += results.len();
@@ -278,24 +308,42 @@ async fn add_code_results(query: &str, max_results: usize, findings: &mut Vec<Re
 
 /// Synthesise multiple findings into a professional research report.
 ///
-/// Uses an LLM to perform semantic analysis, removing redundancy and 
+/// Uses an LLM to perform semantic analysis, removing redundancy and
 /// structuring the output into conclusions, evidence, and recommendations.
-pub async fn synthesise(findings: &[ResearchFinding], client: &(impl crate::metis::LlmClient + ?Sized)) -> Result<String, String> {
+pub async fn synthesise(
+    findings: &[ResearchFinding],
+    client: &(impl crate::metis::LlmClient + ?Sized),
+) -> Result<String, String> {
     if findings.is_empty() {
         return Ok("No findings to synthesise.".to_string());
     }
 
     // Sort by relevance (highest first) so the most important findings come first
     let mut sorted: Vec<&ResearchFinding> = findings.iter().collect();
-    sorted.sort_by(|a, b| b.relevance.partial_cmp(&a.relevance).unwrap_or(std::cmp::Ordering::Equal));
+    sorted.sort_by(|a, b| {
+        b.relevance
+            .partial_cmp(&a.relevance)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
-    let mut user_prompt = format!("Synthesise the following {} research findings into a professional report:\n\n", findings.len());
+    let mut user_prompt = format!(
+        "Synthesise the following {} research findings into a professional report:\n\n",
+        findings.len()
+    );
     for (i, f) in sorted.iter().enumerate() {
-        user_prompt.push_str(&format!("{}. Claim: {}\n   Source: {} ({})\n   Relevance: {:.2}\n\n", 
-            i + 1, f.claim, f.source_title, f.source_url, f.relevance));
+        user_prompt.push_str(&format!(
+            "{}. Claim: {}\n   Source: {} ({})\n   Relevance: {:.2}\n\n",
+            i + 1,
+            f.claim,
+            f.source_title,
+            f.source_url,
+            f.relevance
+        ));
     }
 
-    client.chat(SYNTHESIS_SYSTEM_PROMPT, &user_prompt, false).await
+    client
+        .chat(SYNTHESIS_SYSTEM_PROMPT, &user_prompt, false)
+        .await
 }
 
 // ── Helpers ─────────────────────────────────────────────────
@@ -330,8 +378,14 @@ mod tests {
     #[test]
     fn test_research_scope_parse() {
         assert_eq!("web".parse::<ResearchScope>().unwrap(), ResearchScope::Web);
-        assert_eq!("docs".parse::<ResearchScope>().unwrap(), ResearchScope::Documentation);
-        assert_eq!("code".parse::<ResearchScope>().unwrap(), ResearchScope::CodeExamples);
+        assert_eq!(
+            "docs".parse::<ResearchScope>().unwrap(),
+            ResearchScope::Documentation
+        );
+        assert_eq!(
+            "code".parse::<ResearchScope>().unwrap(),
+            ResearchScope::CodeExamples
+        );
         assert_eq!("all".parse::<ResearchScope>().unwrap(), ResearchScope::All);
         assert!("unknown".parse::<ResearchScope>().is_err());
     }
@@ -368,13 +422,15 @@ mod tests {
 
     #[tokio::test]
     async fn test_synthesise_respects_max_points() {
-        let findings: Vec<ResearchFinding> = (0..10).map(|i| ResearchFinding {
-            claim: format!("finding {}", i),
-            source_url: format!("https://{}.com", i),
-            source_title: format!("Source {}", i),
-            relevance: 0.5,
-            retrieved_at: "now".into(),
-        }).collect();
+        let findings: Vec<ResearchFinding> = (0..10)
+            .map(|i| ResearchFinding {
+                claim: format!("finding {}", i),
+                source_url: format!("https://{}.com", i),
+                source_title: format!("Source {}", i),
+                relevance: 0.5,
+                retrieved_at: "now".into(),
+            })
+            .collect();
 
         let s = synthesise(&findings, &DUMMY).await.unwrap();
         let count = s.matches("relevance:").count();
@@ -388,7 +444,8 @@ mod tests {
         let result = tokio::time::timeout(
             std::time::Duration::from_secs(5),
             fetch_documentation("https://invalid.example.nonexistent"),
-        ).await;
+        )
+        .await;
         // Either timeout or error — both indicate graceful handling
         assert!(result.is_err() || result.is_ok());
     }
@@ -426,7 +483,10 @@ mod tests {
             },
         ];
         let mut seen = std::collections::HashSet::new();
-        let unique: Vec<_> = findings.into_iter().filter(|f| seen.insert(f.source_url.clone())).collect();
+        let unique: Vec<_> = findings
+            .into_iter()
+            .filter(|f| seen.insert(f.source_url.clone()))
+            .collect();
         assert_eq!(unique.len(), 1);
     }
 
@@ -461,16 +521,28 @@ mod tests {
     #[test]
     fn test_research_scope_parse_case_insensitive() {
         assert_eq!("WEB".parse::<ResearchScope>().unwrap(), ResearchScope::Web);
-        assert_eq!("Docs".parse::<ResearchScope>().unwrap(), ResearchScope::Documentation);
-        assert_eq!("CODE".parse::<ResearchScope>().unwrap(), ResearchScope::CodeExamples);
+        assert_eq!(
+            "Docs".parse::<ResearchScope>().unwrap(),
+            ResearchScope::Documentation
+        );
+        assert_eq!(
+            "CODE".parse::<ResearchScope>().unwrap(),
+            ResearchScope::CodeExamples
+        );
         assert_eq!("ALL".parse::<ResearchScope>().unwrap(), ResearchScope::All);
     }
 
     #[test]
     fn test_research_scope_parse_aliases() {
         assert_eq!("www".parse::<ResearchScope>().unwrap(), ResearchScope::Web);
-        assert_eq!("documentation".parse::<ResearchScope>().unwrap(), ResearchScope::Documentation);
-        assert_eq!("examples".parse::<ResearchScope>().unwrap(), ResearchScope::CodeExamples);
+        assert_eq!(
+            "documentation".parse::<ResearchScope>().unwrap(),
+            ResearchScope::Documentation
+        );
+        assert_eq!(
+            "examples".parse::<ResearchScope>().unwrap(),
+            ResearchScope::CodeExamples
+        );
     }
 
     #[test]
@@ -492,15 +564,13 @@ mod tests {
     fn test_serde_research_report() {
         let report = ResearchReport {
             query: "rust".into(),
-            findings: vec![
-                ResearchFinding {
-                    claim: "finding 1".into(),
-                    source_url: "https://a.com".into(),
-                    source_title: "A".into(),
-                    relevance: 0.8,
-                    retrieved_at: "now".into(),
-                },
-            ],
+            findings: vec![ResearchFinding {
+                claim: "finding 1".into(),
+                source_url: "https://a.com".into(),
+                source_title: "A".into(),
+                relevance: 0.8,
+                retrieved_at: "now".into(),
+            }],
             synthesis: "synthesised text".into(),
             sources_consulted: 3,
             confidence: 0.75,

@@ -1,6 +1,6 @@
+use crate::build::{self, BuildOutput, Diag, LanguageBackend, TestResults};
+use crate::{ToolError, ToolResult};
 use std::path::Path;
-use crate::build::{self, BuildOutput, Diag, TestResults, LanguageBackend};
-use crate::{ToolResult, ToolError};
 
 /// Python backend using `mypy` (check), `ruff` (lint/format), `pytest` (test).
 #[derive(Debug)]
@@ -13,40 +13,77 @@ impl PythonBackend {
     pub fn new() -> ToolResult<Self> {
         for cmd in &["python3", "python"] {
             if build::run_command(cmd, &["--version"], None).is_ok() {
-                return Ok(Self { python: cmd.to_string() });
+                return Ok(Self {
+                    python: cmd.to_string(),
+                });
             }
         }
-        Err(ToolError::Generic("No Python interpreter found (python3/python)".into()))
+        Err(ToolError::Generic(
+            "No Python interpreter found (python3/python)".into(),
+        ))
     }
 }
 
 impl LanguageBackend for PythonBackend {
-    fn name(&self) -> &str { "python" }
+    fn name(&self) -> &str {
+        "python"
+    }
 
     fn check(&self, _pkg: Option<&str>, _all: bool, cwd: Option<&Path>) -> ToolResult<BuildOutput> {
         // Try mypy first, then pyright
         if build::run_command("mypy", &["--version"], cwd).is_ok() {
             let (stdout, stderr, success) = build::run_command("mypy", &["."], cwd)?;
             let (errors, warnings) = parse_mypy_output(&stderr);
-            return Ok(BuildOutput { errors, warnings, raw_stdout: stdout, raw_stderr: stderr, success });
+            return Ok(BuildOutput {
+                errors,
+                warnings,
+                raw_stdout: stdout,
+                raw_stderr: stderr,
+                success,
+            });
         }
         // No type checker — pass
-        Ok(BuildOutput { errors: vec![], warnings: vec![], raw_stdout: String::new(), raw_stderr: String::new(), success: true })
+        Ok(BuildOutput {
+            errors: vec![],
+            warnings: vec![],
+            raw_stdout: String::new(),
+            raw_stderr: String::new(),
+            success: true,
+        })
     }
 
-    fn build(&self, _pkg: Option<&str>, _release: bool, cwd: Option<&Path>) -> ToolResult<BuildOutput> {
+    fn build(
+        &self,
+        _pkg: Option<&str>,
+        _release: bool,
+        cwd: Option<&Path>,
+    ) -> ToolResult<BuildOutput> {
         // Python doesn't have a compile step; install deps as build equivalent
-        let has_pyproject = cwd.map(|d| d.join("pyproject.toml").exists()).unwrap_or(false);
+        let has_pyproject = cwd
+            .map(|d| d.join("pyproject.toml").exists())
+            .unwrap_or(false);
         let (stdout, stderr, success) = if has_pyproject {
             // Try `pip install -e .` or just validate
             build::run_command(&self.python, &["-m", "pip", "install", "-e", "."], cwd)?
         } else {
             (String::new(), String::new(), true)
         };
-        Ok(BuildOutput { errors: vec![], warnings: vec![], raw_stdout: stdout, raw_stderr: stderr, success })
+        Ok(BuildOutput {
+            errors: vec![],
+            warnings: vec![],
+            raw_stdout: stdout,
+            raw_stderr: stderr,
+            success,
+        })
     }
 
-    fn test(&self, _pkg: Option<&str>, name: Option<&str>, _all: bool, cwd: Option<&Path>) -> ToolResult<TestResults> {
+    fn test(
+        &self,
+        _pkg: Option<&str>,
+        name: Option<&str>,
+        _all: bool,
+        cwd: Option<&Path>,
+    ) -> ToolResult<TestResults> {
         let mut args = vec!["-m", "pytest"];
         if let Some(n) = name {
             args.push("-k");
@@ -60,12 +97,29 @@ impl LanguageBackend for PythonBackend {
         if build::run_command("ruff", &["--version"], cwd).is_ok() {
             let (stdout, stderr, success) = build::run_command("ruff", &["check", "."], cwd)?;
             let (errors, warnings) = parse_ruff_output(&stderr, &stdout);
-            return Ok(BuildOutput { errors, warnings, raw_stdout: stdout, raw_stderr: stderr, success });
+            return Ok(BuildOutput {
+                errors,
+                warnings,
+                raw_stdout: stdout,
+                raw_stderr: stderr,
+                success,
+            });
         }
-        Ok(BuildOutput { errors: vec![], warnings: vec![], raw_stdout: String::new(), raw_stderr: String::new(), success: true })
+        Ok(BuildOutput {
+            errors: vec![],
+            warnings: vec![],
+            raw_stdout: String::new(),
+            raw_stderr: String::new(),
+            success: true,
+        })
     }
 
-    fn fix(&self, _pkg: Option<&str>, apply_lint_fixes: bool, cwd: Option<&Path>) -> ToolResult<BuildOutput> {
+    fn fix(
+        &self,
+        _pkg: Option<&str>,
+        apply_lint_fixes: bool,
+        cwd: Option<&Path>,
+    ) -> ToolResult<BuildOutput> {
         if apply_lint_fixes && build::run_command("ruff", &["--version"], cwd).is_ok() {
             build::run_command("ruff", &["check", "--fix", "."], cwd)?;
         }
@@ -73,12 +127,19 @@ impl LanguageBackend for PythonBackend {
         if build::run_command("ruff", &["--version"], cwd).is_ok() {
             build::run_command("ruff", &["format", "."], cwd)?;
         }
-        Ok(BuildOutput { errors: vec![], warnings: vec![], raw_stdout: String::new(), raw_stderr: String::new(), success: true })
+        Ok(BuildOutput {
+            errors: vec![],
+            warnings: vec![],
+            raw_stdout: String::new(),
+            raw_stderr: String::new(),
+            success: true,
+        })
     }
 
     fn fmt_check(&self, cwd: Option<&Path>) -> ToolResult<bool> {
         if build::run_command("ruff", &["--version"], cwd).is_ok() {
-            let (_stdout, _stderr, success) = build::run_command("ruff", &["format", "--check", "."], cwd)?;
+            let (_stdout, _stderr, success) =
+                build::run_command("ruff", &["format", "--check", "."], cwd)?;
             return Ok(success);
         }
         Ok(true)
@@ -95,7 +156,15 @@ impl LanguageBackend for PythonBackend {
         if build::run_command("pdoc", &["--version"], cwd).is_ok() {
             let (stdout, stderr, success) = build::run_command("pdoc", &["."], cwd)?;
             let combined = format!("{stdout}\n{stderr}");
-            if success { Ok(combined) } else { Err(ToolError::CommandFailed { code: 1, stdout, stderr }) }
+            if success {
+                Ok(combined)
+            } else {
+                Err(ToolError::CommandFailed {
+                    code: 1,
+                    stdout,
+                    stderr,
+                })
+            }
         } else {
             Ok("pdoc not installed — no docs generated".into())
         }
@@ -105,7 +174,15 @@ impl LanguageBackend for PythonBackend {
         let entry = detect_entry_point(cwd);
         let (stdout, stderr, success) = build::run_command(&self.python, &[&entry], cwd)?;
         let combined = format!("{stdout}{stderr}");
-        if success { Ok(combined) } else { Err(ToolError::CommandFailed { code: 1, stdout, stderr }) }
+        if success {
+            Ok(combined)
+        } else {
+            Err(ToolError::CommandFailed {
+                code: 1,
+                stdout,
+                stderr,
+            })
+        }
     }
 }
 
@@ -148,12 +225,26 @@ fn parse_mypy_output(stderr: &str) -> (Vec<Diag>, Vec<Diag>) {
             let file_part = &t[..pos];
             let msg = t[pos + 9..].to_string(); // after ": error: "
             let (file, line_no, col) = parse_colon_location(file_part);
-            errors.push(Diag { file, line: line_no, col, level: "error".into(), code: None, message: msg });
+            errors.push(Diag {
+                file,
+                line: line_no,
+                col,
+                level: "error".into(),
+                code: None,
+                message: msg,
+            });
         } else if let Some(pos) = t.find(": warning: ") {
             let file_part = &t[..pos];
             let msg = t[pos + 11..].to_string();
             let (file, line_no, col) = parse_colon_location(file_part);
-            warnings.push(Diag { file, line: line_no, col, level: "warning".into(), code: None, message: msg });
+            warnings.push(Diag {
+                file,
+                line: line_no,
+                col,
+                level: "warning".into(),
+                code: None,
+                message: msg,
+            });
         }
     }
 
@@ -172,14 +263,21 @@ fn parse_ruff_output(stderr: &str, _stdout: &str) -> (Vec<Diag>, Vec<Diag>) {
         let colons: Vec<usize> = t.match_indices(':').map(|(i, _)| i).collect();
         if colons.len() >= 3 {
             let file = Some(t[..colons[0]].to_string());
-            let line_no = t[colons[0]+1..colons[1]].trim().parse().ok();
-            let col = t[colons[1]+1..colons[2]].trim().parse().ok();
-            let rest = t[colons[2]+1..].trim();
+            let line_no = t[colons[0] + 1..colons[1]].trim().parse().ok();
+            let col = t[colons[1] + 1..colons[2]].trim().parse().ok();
+            let rest = t[colons[2] + 1..].trim();
             let code_end = rest.find(' ').unwrap_or(rest.len());
             let code = Some(rest[..code_end].to_string());
             let msg = rest[code_end..].trim().to_string();
             // ruff outputs are warnings by default
-            warnings.push(Diag { file, line: line_no, col, level: "warning".into(), code, message: msg });
+            warnings.push(Diag {
+                file,
+                line: line_no,
+                col,
+                level: "warning".into(),
+                code,
+                message: msg,
+            });
         }
     }
 
@@ -225,7 +323,16 @@ fn parse_pytest_results(stdout: &str, stderr: &str) -> TestResults {
         }
     }
 
-    TestResults { passed, failed, ignored: 0, measured: 0, filtered_out: 0, failures, raw_stdout: stdout.to_string(), raw_stderr: stderr.to_string() }
+    TestResults {
+        passed,
+        failed,
+        ignored: 0,
+        measured: 0,
+        filtered_out: 0,
+        failures,
+        raw_stdout: stdout.to_string(),
+        raw_stderr: stderr.to_string(),
+    }
 }
 
 fn parse_colon_location(s: &str) -> (Option<String>, Option<usize>, Option<usize>) {
@@ -240,8 +347,6 @@ fn parse_colon_location(s: &str) -> (Option<String>, Option<usize>, Option<usize
         (Some(s.to_string()), None, None)
     }
 }
-
-
 
 #[cfg(test)]
 mod tests {

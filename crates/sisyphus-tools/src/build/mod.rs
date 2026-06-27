@@ -1,17 +1,17 @@
+use crate::{ToolError, ToolResult};
+use std::collections::BTreeMap;
 use std::fmt::Debug;
 use std::path::Path;
 use std::process::Command;
-use crate::{ToolError, ToolResult};
-use std::collections::BTreeMap;
 
 // ── Re-export submodules ──────────────────────────────
 
-pub mod rust;
-pub mod node;
-pub mod python;
+pub mod frontend;
 pub mod golang;
 pub mod java;
-pub mod frontend;
+pub mod node;
+pub mod python;
+pub mod rust;
 
 // ── Structured return types ────────────────────────────────
 
@@ -39,7 +39,7 @@ pub struct Diag {
     pub file: Option<String>,
     pub line: Option<usize>,
     pub col: Option<usize>,
-    pub level: String,   // "error" or "warning"
+    pub level: String,        // "error" or "warning"
     pub code: Option<String>, // e.g. "E0425"
     pub message: String,
 }
@@ -68,16 +68,32 @@ pub trait LanguageBackend: Debug + Send + Sync {
     fn check(&self, pkg: Option<&str>, all: bool, cwd: Option<&Path>) -> ToolResult<BuildOutput>;
 
     /// Compile build (cargo build, tsc, go build, mvn compile ...)
-    fn build(&self, pkg: Option<&str>, release: bool, cwd: Option<&Path>) -> ToolResult<BuildOutput>;
+    fn build(
+        &self,
+        pkg: Option<&str>,
+        release: bool,
+        cwd: Option<&Path>,
+    ) -> ToolResult<BuildOutput>;
 
     /// Run tests (cargo test, pytest, vitest, go test ...)
-    fn test(&self, pkg: Option<&str>, name: Option<&str>, all: bool, cwd: Option<&Path>) -> ToolResult<TestResults>;
+    fn test(
+        &self,
+        pkg: Option<&str>,
+        name: Option<&str>,
+        all: bool,
+        cwd: Option<&Path>,
+    ) -> ToolResult<TestResults>;
 
     /// Lint / static analysis (clippy, eslint, ruff, staticcheck, checkstyle ...)
     fn lint(&self, pkg: Option<&str>, cwd: Option<&Path>) -> ToolResult<BuildOutput>;
 
     /// Auto-apply fixes (cargo fix, eslint --fix, ruff --fix, gofmt -w ...)
-    fn fix(&self, pkg: Option<&str>, apply_lint_fixes: bool, cwd: Option<&Path>) -> ToolResult<BuildOutput>;
+    fn fix(
+        &self,
+        pkg: Option<&str>,
+        apply_lint_fixes: bool,
+        cwd: Option<&Path>,
+    ) -> ToolResult<BuildOutput>;
 
     /// Check formatting (cargo fmt --check, prettier --check, ruff format --check ...)
     fn fmt_check(&self, cwd: Option<&Path>) -> ToolResult<bool>;
@@ -112,7 +128,10 @@ pub fn detect_backend(cwd: &Path) -> ToolResult<Box<dyn LanguageBackend>> {
     if cwd.join("package.json").exists() {
         return Ok(Box::new(node::NodeBackend::new()?));
     }
-    if cwd.join("pyproject.toml").exists() || cwd.join("setup.py").exists() || cwd.join("setup.cfg").exists() {
+    if cwd.join("pyproject.toml").exists()
+        || cwd.join("setup.py").exists()
+        || cwd.join("setup.cfg").exists()
+    {
         return Ok(Box::new(python::PythonBackend::new()?));
     }
     if cwd.join("go.mod").exists() {
@@ -131,7 +150,11 @@ pub fn detect_backend(cwd: &Path) -> ToolResult<Box<dyn LanguageBackend>> {
 // ── Generic command runner ────────────────────────────
 
 /// Run an arbitrary command, returning (stdout, stderr, success).
-pub fn run_command(cmd: &str, args: &[&str], cwd: Option<&Path>) -> ToolResult<(String, String, bool)> {
+pub fn run_command(
+    cmd: &str,
+    args: &[&str],
+    cwd: Option<&Path>,
+) -> ToolResult<(String, String, bool)> {
     let mut command = Command::new(cmd);
     command.args(args);
     if let Some(dir) = cwd {
@@ -214,7 +237,12 @@ pub fn build(pkg: Option<&str>, release: bool, cwd: Option<&Path>) -> ToolResult
 }
 
 /// Run `cargo test`.
-pub fn test(pkg: Option<&str>, name: Option<&str>, all: bool, cwd: Option<&Path>) -> ToolResult<TestResults> {
+pub fn test(
+    pkg: Option<&str>,
+    name: Option<&str>,
+    all: bool,
+    cwd: Option<&Path>,
+) -> ToolResult<TestResults> {
     let backend = rust::RustBackend;
     backend.test(pkg, name, all, cwd)
 }

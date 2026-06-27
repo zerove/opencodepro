@@ -28,10 +28,12 @@ impl StdioTransport {
             .spawn()
             .map_err(crate::ToolError::Io)?;
 
-        let stdout = child.stdout.take()
-            .ok_or_else(|| crate::ToolError::Io(std::io::Error::other("failed to capture stdout")))?;
-        let stdin = child.stdin.take()
-            .ok_or_else(|| crate::ToolError::Io(std::io::Error::other("failed to capture stdin")))?;
+        let stdout = child.stdout.take().ok_or_else(|| {
+            crate::ToolError::Io(std::io::Error::other("failed to capture stdout"))
+        })?;
+        let stdin = child.stdin.take().ok_or_else(|| {
+            crate::ToolError::Io(std::io::Error::other("failed to capture stdin"))
+        })?;
 
         Ok(Self {
             child,
@@ -45,26 +47,29 @@ impl StdioTransport {
 impl McpTransport for StdioTransport {
     async fn request(&mut self, message: &str) -> ToolResult<String> {
         // Write the message followed by a newline (MCP stdio uses newline-delimited JSON)
-        self.writer.write_all(message.as_bytes()).await
+        self.writer
+            .write_all(message.as_bytes())
+            .await
             .map_err(crate::ToolError::Io)?;
-        self.writer.write_all(b"\n").await
+        self.writer
+            .write_all(b"\n")
+            .await
             .map_err(crate::ToolError::Io)?;
-        self.writer.flush().await
-            .map_err(crate::ToolError::Io)?;
+        self.writer.flush().await.map_err(crate::ToolError::Io)?;
 
         // Read the response line
         let mut line = String::new();
-        self.reader.read_line(&mut line).await
+        self.reader
+            .read_line(&mut line)
+            .await
             .map_err(crate::ToolError::Io)?;
 
         Ok(line.trim_end().to_string())
     }
 
     async fn close(&mut self) -> ToolResult<()> {
-        self.child.kill().await
-            .map_err(crate::ToolError::Io)?;
-        self.child.wait().await
-            .map_err(crate::ToolError::Io)?;
+        self.child.kill().await.map_err(crate::ToolError::Io)?;
+        self.child.wait().await.map_err(crate::ToolError::Io)?;
         Ok(())
     }
 }
@@ -86,7 +91,8 @@ impl HttpTransport {
 #[async_trait]
 impl McpTransport for HttpTransport {
     async fn request(&mut self, message: &str) -> ToolResult<String> {
-        let resp = self.client
+        let resp = self
+            .client
             .post(&self.base_url)
             .header("Content-Type", "application/json")
             .body(message.to_string())
@@ -94,7 +100,9 @@ impl McpTransport for HttpTransport {
             .await
             .map_err(|e| crate::ToolError::WebError(e.to_string()))?;
 
-        let body = resp.text().await
+        let body = resp
+            .text()
+            .await
             .map_err(|e| crate::ToolError::WebError(e.to_string()))?;
 
         Ok(body)

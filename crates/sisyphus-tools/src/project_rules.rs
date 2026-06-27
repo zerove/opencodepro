@@ -1,5 +1,5 @@
-use std::path::Path;
 use crate::{AgentInfo, AgentRegistry};
+use std::path::Path;
 
 /// A parsed agent definition from AGENTS.md.
 #[derive(Debug, Clone)]
@@ -48,19 +48,25 @@ pub fn load_project_rules(root: &Path) -> ProjectRules {
         }
     }
 
-    ProjectRules { source: None, agents: vec![] }
+    ProjectRules {
+        source: None,
+        agents: vec![],
+    }
 }
 
 /// Register all project-defined agents from a ProjectRules into an AgentRegistry.
 pub fn register_project_agents(rules: &ProjectRules, registry: &AgentRegistry) -> usize {
     let mut count = 0;
     for def in &rules.agents {
-        registry.register(&def.agent_id, AgentInfo {
-            display_name: def.display_name.clone(),
-            description: def.description.clone(),
-            tool_prefixes: def.tool_prefixes.clone(),
-            max_concurrency: 4,
-        });
+        registry.register(
+            &def.agent_id,
+            AgentInfo {
+                display_name: def.display_name.clone(),
+                description: def.description.clone(),
+                tool_prefixes: def.tool_prefixes.clone(),
+                max_concurrency: 4,
+            },
+        );
         count += 1;
     }
     count
@@ -91,10 +97,10 @@ fn parse_agents_md(content: &str) -> Vec<ProjectAgentDef> {
         let trimmed = line.trim();
 
         // Detect agent headers: ## agent: <id> or ## Agent: <id>
-        if let Some(rest) = trimmed
-            .strip_prefix("## ")
-            .and_then(|s| s.strip_prefix("agent: ").or_else(|| s.strip_prefix("Agent: ")))
-        {
+        if let Some(rest) = trimmed.strip_prefix("## ").and_then(|s| {
+            s.strip_prefix("agent: ")
+                .or_else(|| s.strip_prefix("Agent: "))
+        }) {
             // Save previous
             if let Some(prev) = current.take() {
                 agents.push(prev);
@@ -123,7 +129,11 @@ fn parse_agents_md(content: &str) -> Vec<ProjectAgentDef> {
             }
 
             // First non-header, non-empty line after agent header → description
-            if agent.description.is_empty() && !trimmed.is_empty() && !trimmed.starts_with('#') && !trimmed.starts_with('-') {
+            if agent.description.is_empty()
+                && !trimmed.is_empty()
+                && !trimmed.starts_with('#')
+                && !trimmed.starts_with('-')
+            {
                 agent.description = trimmed.to_string();
                 continue;
             }
@@ -135,7 +145,9 @@ fn parse_agents_md(content: &str) -> Vec<ProjectAgentDef> {
                 }
             } else if in_tools {
                 if let Some(prefix) = trimmed.strip_prefix("- ") {
-                    agent.tool_prefixes.push(prefix.trim_end_matches('/').to_string() + "/");
+                    agent
+                        .tool_prefixes
+                        .push(prefix.trim_end_matches('/').to_string() + "/");
                 }
             }
         }
@@ -256,15 +268,13 @@ Just a description, no sections.
 
         let rules = ProjectRules {
             source: Some("/tmp/AGENTS.md".into()),
-            agents: vec![
-                ProjectAgentDef {
-                    agent_id: "my-agent".into(),
-                    display_name: "My Agent".into(),
-                    description: "Test agent".into(),
-                    instructions: vec![],
-                    tool_prefixes: vec!["test/".into()],
-                },
-            ],
+            agents: vec![ProjectAgentDef {
+                agent_id: "my-agent".into(),
+                display_name: "My Agent".into(),
+                description: "Test agent".into(),
+                instructions: vec![],
+                tool_prefixes: vec!["test/".into()],
+            }],
         };
 
         let count = register_project_agents(&rules, &registry);
@@ -294,14 +304,18 @@ Just a description, no sections.
     fn test_load_project_rules_with_file() {
         let dir = tempfile::TempDir::new().unwrap();
         let agents_md = dir.path().join("AGENTS.md");
-        std::fs::write(&agents_md, "\
+        std::fs::write(
+            &agents_md,
+            "\
 ## agent: local-dev
 Local development helper.
 
 ### Tools
 - bash/
 - file/
-").unwrap();
+",
+        )
+        .unwrap();
 
         let rules = load_project_rules(dir.path());
         assert!(rules.source.is_some());

@@ -1,13 +1,15 @@
-use std::path::Path;
-use crate::build::{self, BuildOutput, Diag, TestResults, TestFailure, LanguageBackend};
+use crate::build::{self, BuildOutput, Diag, LanguageBackend, TestFailure, TestResults};
 use crate::{ToolError, ToolResult};
+use std::path::Path;
 
 /// Rust build system backend using `cargo`.
 #[derive(Debug, Clone, Copy)]
 pub struct RustBackend;
 
 impl LanguageBackend for RustBackend {
-    fn name(&self) -> &str { "rust" }
+    fn name(&self) -> &str {
+        "rust"
+    }
 
     fn check(&self, pkg: Option<&str>, all: bool, cwd: Option<&Path>) -> ToolResult<BuildOutput> {
         let mut args = vec!["check"];
@@ -20,10 +22,21 @@ impl LanguageBackend for RustBackend {
         }
         let (stdout, stderr, success) = build::cargo_raw(&args, cwd)?;
         let (errors, warnings) = extract_diags(&stderr);
-        Ok(BuildOutput { errors, warnings, raw_stdout: stdout, raw_stderr: stderr, success })
+        Ok(BuildOutput {
+            errors,
+            warnings,
+            raw_stdout: stdout,
+            raw_stderr: stderr,
+            success,
+        })
     }
 
-    fn build(&self, pkg: Option<&str>, release: bool, cwd: Option<&Path>) -> ToolResult<BuildOutput> {
+    fn build(
+        &self,
+        pkg: Option<&str>,
+        release: bool,
+        cwd: Option<&Path>,
+    ) -> ToolResult<BuildOutput> {
         let mut args = vec!["build"];
         if release {
             args.push("--release");
@@ -34,10 +47,22 @@ impl LanguageBackend for RustBackend {
         }
         let (stdout, stderr, success) = build::cargo_raw(&args, cwd)?;
         let (errors, warnings) = extract_diags(&stderr);
-        Ok(BuildOutput { errors, warnings, raw_stdout: stdout, raw_stderr: stderr, success })
+        Ok(BuildOutput {
+            errors,
+            warnings,
+            raw_stdout: stdout,
+            raw_stderr: stderr,
+            success,
+        })
     }
 
-    fn test(&self, pkg: Option<&str>, name: Option<&str>, all: bool, cwd: Option<&Path>) -> ToolResult<TestResults> {
+    fn test(
+        &self,
+        pkg: Option<&str>,
+        name: Option<&str>,
+        all: bool,
+        cwd: Option<&Path>,
+    ) -> ToolResult<TestResults> {
         let mut args = vec!["test"];
         if let Some(n) = name {
             args.push("--");
@@ -62,10 +87,21 @@ impl LanguageBackend for RustBackend {
         }
         let (stdout, stderr, success) = build::cargo_raw(&args, cwd)?;
         let (errors, warnings) = extract_diags(&stderr);
-        Ok(BuildOutput { errors, warnings, raw_stdout: stdout, raw_stderr: stderr, success })
+        Ok(BuildOutput {
+            errors,
+            warnings,
+            raw_stdout: stdout,
+            raw_stderr: stderr,
+            success,
+        })
     }
 
-    fn fix(&self, pkg: Option<&str>, apply_lint_fixes: bool, cwd: Option<&Path>) -> ToolResult<BuildOutput> {
+    fn fix(
+        &self,
+        pkg: Option<&str>,
+        apply_lint_fixes: bool,
+        cwd: Option<&Path>,
+    ) -> ToolResult<BuildOutput> {
         let mut args = vec!["fix"];
         if apply_lint_fixes {
             args.push("--clippy");
@@ -76,7 +112,13 @@ impl LanguageBackend for RustBackend {
         }
         let (stdout, stderr, success) = build::cargo_raw(&args, cwd)?;
         let (errors, warnings) = extract_diags(&stderr);
-        Ok(BuildOutput { errors, warnings, raw_stdout: stdout, raw_stderr: stderr, success })
+        Ok(BuildOutput {
+            errors,
+            warnings,
+            raw_stdout: stdout,
+            raw_stderr: stderr,
+            success,
+        })
     }
 
     fn fmt_check(&self, cwd: Option<&Path>) -> ToolResult<bool> {
@@ -100,7 +142,11 @@ impl LanguageBackend for RustBackend {
         if success {
             Ok(combined)
         } else {
-            Err(ToolError::CommandFailed { code: 1, stdout, stderr })
+            Err(ToolError::CommandFailed {
+                code: 1,
+                stdout,
+                stderr,
+            })
         }
     }
 
@@ -113,7 +159,11 @@ impl LanguageBackend for RustBackend {
         if success {
             Ok(combined)
         } else {
-            Err(ToolError::CommandFailed { code: 1, stdout, stderr })
+            Err(ToolError::CommandFailed {
+                code: 1,
+                stdout,
+                stderr,
+            })
         }
     }
 }
@@ -126,29 +176,40 @@ pub fn extract_diags(stderr: &str) -> (Vec<Diag>, Vec<Diag>) {
     let mut lines = stderr.lines().peekable();
 
     while let Some(line) = lines.next() {
-        let (level, code, msg): (String, Option<String>, String) = if let Some(rest) = line.strip_prefix("error[") {
-            let code_end = rest.find(']').unwrap_or(0);
-            let code = rest[..code_end].to_string();
-            let msg = rest[code_end + 1..].trim().trim_start_matches(':').trim().to_string();
-            (String::from("error"), Some(code), msg)
-        } else if let Some(rest) = line.strip_prefix("error:") {
-            if rest.trim().starts_with("aborting due to")
-                || rest.trim().starts_with("could not compile")
-                || rest.trim().contains("For more information about this error")
-            {
+        let (level, code, msg): (String, Option<String>, String) =
+            if let Some(rest) = line.strip_prefix("error[") {
+                let code_end = rest.find(']').unwrap_or(0);
+                let code = rest[..code_end].to_string();
+                let msg = rest[code_end + 1..]
+                    .trim()
+                    .trim_start_matches(':')
+                    .trim()
+                    .to_string();
+                (String::from("error"), Some(code), msg)
+            } else if let Some(rest) = line.strip_prefix("error:") {
+                if rest.trim().starts_with("aborting due to")
+                    || rest.trim().starts_with("could not compile")
+                    || rest
+                        .trim()
+                        .contains("For more information about this error")
+                {
+                    continue;
+                }
+                (String::from("error"), None, rest.trim().to_string())
+            } else if let Some(rest) = line.strip_prefix("warning[") {
+                let code_end = rest.find(']').unwrap_or(0);
+                let code = rest[..code_end].to_string();
+                let msg = rest[code_end + 1..]
+                    .trim()
+                    .trim_start_matches(':')
+                    .trim()
+                    .to_string();
+                (String::from("warning"), Some(code), msg)
+            } else if let Some(rest) = line.strip_prefix("warning:") {
+                (String::from("warning"), None, rest.trim().to_string())
+            } else {
                 continue;
-            }
-            (String::from("error"), None, rest.trim().to_string())
-        } else if let Some(rest) = line.strip_prefix("warning[") {
-            let code_end = rest.find(']').unwrap_or(0);
-            let code = rest[..code_end].to_string();
-            let msg = rest[code_end + 1..].trim().trim_start_matches(':').trim().to_string();
-            (String::from("warning"), Some(code), msg)
-        } else if let Some(rest) = line.strip_prefix("warning:") {
-            (String::from("warning"), None, rest.trim().to_string())
-        } else {
-            continue;
-        };
+            };
 
         let (file, ln, col) = if let Some(loc_line) = lines.peek() {
             let loc = loc_line.trim();
@@ -168,8 +229,19 @@ pub fn extract_diags(stderr: &str) -> (Vec<Diag>, Vec<Diag>) {
         };
 
         let is_error = level == "error";
-        let diag = Diag { file, line: ln, col, level, code, message: msg };
-        if is_error { errors.push(diag); } else { warnings.push(diag); }
+        let diag = Diag {
+            file,
+            line: ln,
+            col,
+            level,
+            code,
+            message: msg,
+        };
+        if is_error {
+            errors.push(diag);
+        } else {
+            warnings.push(diag);
+        }
     }
 
     (errors, warnings)
@@ -190,9 +262,13 @@ pub fn parse_test_results(stdout: &str, stderr: &str) -> TestResults {
         let trimmed = line.trim();
         if trimmed.starts_with("test result: ") {
             let body = if let Some(b) = trimmed.strip_prefix("test result: ") {
-                if let Some(b) = b.strip_prefix("ok.") { b.trim() }
-                else if let Some(b) = b.strip_prefix("FAILED.") { b.trim() }
-                else { b }
+                if let Some(b) = b.strip_prefix("ok.") {
+                    b.trim()
+                } else if let Some(b) = b.strip_prefix("FAILED.") {
+                    b.trim()
+                } else {
+                    b
+                }
             } else {
                 continue;
             };
@@ -224,12 +300,23 @@ pub fn parse_test_results(stdout: &str, stderr: &str) -> TestResults {
             if trimmed.is_empty() || trimmed.starts_with("test result") {
                 in_failures = false;
             } else if !trimmed.starts_with("----") && !trimmed.starts_with("FAILED") {
-                failures.push(TestFailure { name: trimmed.to_string() });
+                failures.push(TestFailure {
+                    name: trimmed.to_string(),
+                });
             }
         }
     }
 
-    TestResults { passed, failed, ignored, measured, filtered_out, failures, raw_stdout: stdout.to_string(), raw_stderr: stderr.to_string() }
+    TestResults {
+        passed,
+        failed,
+        ignored,
+        measured,
+        filtered_out,
+        failures,
+        raw_stdout: stdout.to_string(),
+        raw_stderr: stderr.to_string(),
+    }
 }
 
 impl RustBackend {
@@ -283,7 +370,8 @@ mod tests {
 
     #[test]
     fn test_parse_test_results_with_ignored() {
-        let stdout = "test result: ok. 512 passed; 0 failed; 4 ignored; 0 measured; 0 filtered out\n";
+        let stdout =
+            "test result: ok. 512 passed; 0 failed; 4 ignored; 0 measured; 0 filtered out\n";
         let r = parse_test_results(stdout, "");
         assert_eq!(r.passed, 512);
         assert_eq!(r.failed, 0);
@@ -327,11 +415,14 @@ mod tests {
     fn test_check_on_valid_project() {
         let dir = TempDir::new().unwrap();
         let path = dir.path();
-        write_toml(path, r#"[package]
+        write_toml(
+            path,
+            r#"[package]
 name = "test-crate"
 version = "0.1.0"
 edition = "2021"
-"#);
+"#,
+        );
         write_src(path, "pub fn hello() -> &'static str { \"hello\" }\n");
         let backend = RustBackend;
         let result = backend.check(None, false, Some(path)).unwrap();
@@ -343,11 +434,14 @@ edition = "2021"
     fn test_check_on_invalid_project() {
         let dir = TempDir::new().unwrap();
         let path = dir.path();
-        write_toml(path, r#"[package]
+        write_toml(
+            path,
+            r#"[package]
 name = "bad-crate"
 version = "0.1.0"
 edition = "2021"
-"#);
+"#,
+        );
         write_src(path, "pub fn hello() -> &'static str { does_not_exist }\n");
         let backend = RustBackend;
         let result = backend.check(None, false, Some(path)).unwrap();
@@ -359,11 +453,14 @@ edition = "2021"
     fn test_fmt_check_formatted() {
         let dir = TempDir::new().unwrap();
         let path = dir.path();
-        write_toml(path, r#"[package]
+        write_toml(
+            path,
+            r#"[package]
 name = "fmt-crate"
 version = "0.1.0"
 edition = "2021"
-"#);
+"#,
+        );
         write_src(path, "pub fn foo() -> u8 {\n    42\n}\n");
         let backend = RustBackend;
         let ok = backend.fmt_check(Some(path)).unwrap();
@@ -374,11 +471,14 @@ edition = "2021"
     fn test_fmt_check_unformatted() {
         let dir = TempDir::new().unwrap();
         let path = dir.path();
-        write_toml(path, r#"[package]
+        write_toml(
+            path,
+            r#"[package]
 name = "bad-fmt-crate"
 version = "0.1.0"
 edition = "2021"
-"#);
+"#,
+        );
         write_src(path, "pub fn foo() -> u8 { 42 }\n");
         let backend = RustBackend;
         // First check it
@@ -393,11 +493,14 @@ edition = "2021"
     fn test_build_valid() {
         let dir = TempDir::new().unwrap();
         let path = dir.path();
-        write_toml(path, r#"[package]
+        write_toml(
+            path,
+            r#"[package]
 name = "build-crate"
 version = "0.1.0"
 edition = "2021"
-"#);
+"#,
+        );
         write_src(path, "pub fn works() -> i32 { 1 + 2 }\n");
         let backend = RustBackend;
         let result = backend.build(None, false, Some(path)).unwrap();
@@ -408,20 +511,27 @@ edition = "2021"
     fn test_test_simple() {
         let dir = TempDir::new().unwrap();
         let path = dir.path();
-        write_toml(path, r#"[package]
+        write_toml(
+            path,
+            r#"[package]
 name = "test-crate"
 version = "0.1.0"
 edition = "2021"
-"#);
+"#,
+        );
         let src = path.join("src");
         fs::create_dir_all(&src).unwrap();
-        fs::write(src.join("lib.rs"), r#"
+        fs::write(
+            src.join("lib.rs"),
+            r#"
 #[test]
 fn it_works() { assert_eq!(2 + 2, 4); }
 
 #[test]
 fn it_also_works() { assert!(true); }
-"#).unwrap();
+"#,
+        )
+        .unwrap();
         let backend = RustBackend;
         let results = backend.test(None, None, false, Some(path)).unwrap();
         assert_eq!(results.passed, 2);
@@ -432,20 +542,27 @@ fn it_also_works() { assert!(true); }
     fn test_test_with_failures() {
         let dir = TempDir::new().unwrap();
         let path = dir.path();
-        write_toml(path, r#"[package]
+        write_toml(
+            path,
+            r#"[package]
 name = "fail-crate"
 version = "0.1.0"
 edition = "2021"
-"#);
+"#,
+        );
         let src = path.join("src");
         fs::create_dir_all(&src).unwrap();
-        fs::write(src.join("lib.rs"), r#"
+        fs::write(
+            src.join("lib.rs"),
+            r#"
 #[test]
 fn passing() { assert!(true); }
 
 #[test]
 fn failing() { assert!(false, "intentional failure"); }
-"#).unwrap();
+"#,
+        )
+        .unwrap();
         let backend = RustBackend;
         let results = backend.test(None, None, false, Some(path)).unwrap();
         assert_eq!(results.passed, 1);

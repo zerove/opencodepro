@@ -1,13 +1,15 @@
-use std::path::Path;
-use crate::build::{self, BuildOutput, Diag, TestResults, LanguageBackend};
+use crate::build::{self, BuildOutput, Diag, LanguageBackend, TestResults};
 use crate::ToolResult;
+use std::path::Path;
 
 /// Frontend (HTML/CSS) backend using `stylelint` and `prettier`.
 #[derive(Debug)]
 pub struct FrontendBackend;
 
 impl LanguageBackend for FrontendBackend {
-    fn name(&self) -> &str { "frontend" }
+    fn name(&self) -> &str {
+        "frontend"
+    }
 
     fn check(&self, _pkg: Option<&str>, _all: bool, cwd: Option<&Path>) -> ToolResult<BuildOutput> {
         let mut all_errors = Vec::new();
@@ -15,33 +17,77 @@ impl LanguageBackend for FrontendBackend {
 
         // Run stylelint on CSS files if available
         if build::run_command("stylelint", &["--version"], cwd).is_ok() {
-            let (stdout, stderr, success) = build::run_command("stylelint", &["**/*.css", "--formatter", "json"], cwd)?;
+            let (stdout, stderr, success) =
+                build::run_command("stylelint", &["**/*.css", "--formatter", "json"], cwd)?;
             let (errors, warnings) = parse_stylelint_json(&stdout);
             all_errors.extend(errors);
             all_warnings.extend(warnings);
             // If stylelint failed and we have errors, propagate success
             let overall_success = success && all_errors.is_empty();
-            return Ok(BuildOutput { errors: all_errors, warnings: all_warnings, raw_stdout: stdout, raw_stderr: stderr, success: overall_success });
+            return Ok(BuildOutput {
+                errors: all_errors,
+                warnings: all_warnings,
+                raw_stdout: stdout,
+                raw_stderr: stderr,
+                success: overall_success,
+            });
         }
 
-        Ok(BuildOutput { errors: vec![], warnings: vec![], raw_stdout: String::new(), raw_stderr: String::new(), success: true })
+        Ok(BuildOutput {
+            errors: vec![],
+            warnings: vec![],
+            raw_stdout: String::new(),
+            raw_stderr: String::new(),
+            success: true,
+        })
     }
 
-    fn build(&self, _pkg: Option<&str>, _release: bool, _cwd: Option<&Path>) -> ToolResult<BuildOutput> {
+    fn build(
+        &self,
+        _pkg: Option<&str>,
+        _release: bool,
+        _cwd: Option<&Path>,
+    ) -> ToolResult<BuildOutput> {
         // HTML/CSS has no build step
-        Ok(BuildOutput { errors: vec![], warnings: vec![], raw_stdout: String::new(), raw_stderr: String::new(), success: true })
+        Ok(BuildOutput {
+            errors: vec![],
+            warnings: vec![],
+            raw_stdout: String::new(),
+            raw_stderr: String::new(),
+            success: true,
+        })
     }
 
-    fn test(&self, _pkg: Option<&str>, _name: Option<&str>, _all: bool, _cwd: Option<&Path>) -> ToolResult<TestResults> {
+    fn test(
+        &self,
+        _pkg: Option<&str>,
+        _name: Option<&str>,
+        _all: bool,
+        _cwd: Option<&Path>,
+    ) -> ToolResult<TestResults> {
         // HTML/CSS has no test step
-        Ok(TestResults { passed: 0, failed: 0, ignored: 0, measured: 0, filtered_out: 0, failures: vec![], raw_stdout: String::new(), raw_stderr: String::new() })
+        Ok(TestResults {
+            passed: 0,
+            failed: 0,
+            ignored: 0,
+            measured: 0,
+            filtered_out: 0,
+            failures: vec![],
+            raw_stdout: String::new(),
+            raw_stderr: String::new(),
+        })
     }
 
     fn lint(&self, _pkg: Option<&str>, cwd: Option<&Path>) -> ToolResult<BuildOutput> {
         self.check(_pkg, false, cwd)
     }
 
-    fn fix(&self, _pkg: Option<&str>, _apply_lint_fixes: bool, cwd: Option<&Path>) -> ToolResult<BuildOutput> {
+    fn fix(
+        &self,
+        _pkg: Option<&str>,
+        _apply_lint_fixes: bool,
+        cwd: Option<&Path>,
+    ) -> ToolResult<BuildOutput> {
         // Run prettier if available
         if build::run_command("prettier", &["--version"], cwd).is_ok() {
             build::run_command("prettier", &["--write", "**/*.{css,html}"], cwd)?;
@@ -50,12 +96,19 @@ impl LanguageBackend for FrontendBackend {
         if build::run_command("stylelint", &["--version"], cwd).is_ok() {
             build::run_command("stylelint", &["--fix", "**/*.css"], cwd)?;
         }
-        Ok(BuildOutput { errors: vec![], warnings: vec![], raw_stdout: String::new(), raw_stderr: String::new(), success: true })
+        Ok(BuildOutput {
+            errors: vec![],
+            warnings: vec![],
+            raw_stdout: String::new(),
+            raw_stderr: String::new(),
+            success: true,
+        })
     }
 
     fn fmt_check(&self, cwd: Option<&Path>) -> ToolResult<bool> {
         if build::run_command("prettier", &["--version"], cwd).is_ok() {
-            let (_stdout, _stderr, success) = build::run_command("prettier", &["--check", "**/*.{css,html}"], cwd)?;
+            let (_stdout, _stderr, success) =
+                build::run_command("prettier", &["--check", "**/*.{css,html}"], cwd)?;
             return Ok(success);
         }
         Ok(true)
@@ -101,8 +154,19 @@ fn parse_stylelint_json(stdout: &str) -> (Vec<Diag>, Vec<Diag>) {
                         text.to_string()
                     };
 
-                    let diag = Diag { file: file.clone(), line, col, level: severity.into(), code: rule, message };
-                    if severity == "error" { errors.push(diag); } else { warnings.push(diag); }
+                    let diag = Diag {
+                        file: file.clone(),
+                        line,
+                        col,
+                        level: severity.into(),
+                        code: rule,
+                        message,
+                    };
+                    if severity == "error" {
+                        errors.push(diag);
+                    } else {
+                        warnings.push(diag);
+                    }
                 }
             }
         }

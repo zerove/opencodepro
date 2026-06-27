@@ -1,7 +1,7 @@
+use crate::{glob, ToolError, ToolResult};
+use regex::Regex;
 use std::fs;
 use std::path::{Path, PathBuf};
-use crate::{ToolError, ToolResult, glob};
-use regex::Regex;
 
 /// A match found during exploration with surrounding context.
 #[derive(Debug, Clone)]
@@ -41,8 +41,11 @@ pub fn search_patterns(
         });
     }
 
-    let re_list: Vec<Regex> = patterns.iter()
-        .map(|p| Regex::new(p).map_err(|e| ToolError::GrepError(format!("invalid regex '{p}': {e}"))))
+    let re_list: Vec<Regex> = patterns
+        .iter()
+        .map(|p| {
+            Regex::new(p).map_err(|e| ToolError::GrepError(format!("invalid regex '{p}': {e}")))
+        })
         .collect::<Result<Vec<_>, _>>()?;
 
     let file_filter = include.map(|s| {
@@ -87,12 +90,16 @@ pub fn search_patterns(
             for (pi, re) in re_list.iter().enumerate() {
                 if re.is_match(line_content) {
                     let line_num = line_idx + 1;
-                    let before: Vec<String> = lines[
-                        line_idx.saturating_sub(context_lines)..line_idx
-                    ].iter().map(|s| s.to_string()).collect();
-                    let after: Vec<String> = lines[
-                        (line_idx + 1).min(lines.len())..(line_idx + 1 + context_lines).min(lines.len())
-                    ].iter().map(|s| s.to_string()).collect();
+                    let before: Vec<String> = lines
+                        [line_idx.saturating_sub(context_lines)..line_idx]
+                        .iter()
+                        .map(|s| s.to_string())
+                        .collect();
+                    let after: Vec<String> = lines[(line_idx + 1).min(lines.len())
+                        ..(line_idx + 1 + context_lines).min(lines.len())]
+                        .iter()
+                        .map(|s| s.to_string())
+                        .collect();
 
                     result.matches.push(ExploreMatch {
                         file: path.to_path_buf(),
@@ -173,7 +180,9 @@ mod tests {
         let src = dir.path().join("src");
         std::fs::create_dir_all(&src).unwrap();
 
-        std::fs::write(src.join("main.rs"), "\
+        std::fs::write(
+            src.join("main.rs"),
+            "\
 fn greet(name: &str) -> String {
     format!(\"Hello, {name}!\")
 }
@@ -190,21 +199,31 @@ mod tests {
         assert_eq!(greet(\"World\"), \"Hello, World!\");
     }
 }
-").unwrap();
+",
+        )
+        .unwrap();
 
-        std::fs::write(src.join("lib.rs"), "\
+        std::fs::write(
+            src.join("lib.rs"),
+            "\
 pub mod utils;
 
 pub fn run() {
     println!(\"running...\");
 }
-").unwrap();
+",
+        )
+        .unwrap();
 
-        std::fs::write(src.join("utils.rs"), "\
+        std::fs::write(
+            src.join("utils.rs"),
+            "\
 pub fn helper() -> u32 {
     42
 }
-").unwrap();
+",
+        )
+        .unwrap();
 
         std::fs::write(dir.path().join("README.md"), "# Sisyphus Project").unwrap();
 
@@ -215,7 +234,11 @@ pub fn helper() -> u32 {
     fn test_search_patterns_basic() {
         let dir = setup_test_dir();
         let result = search_patterns(&["fn "], dir.path(), Some(r"\.rs$"), 2).unwrap();
-        assert!(result.total_matches >= 4, "expected >=4 matches for 'fn ', got {}", result.total_matches);
+        assert!(
+            result.total_matches >= 4,
+            "expected >=4 matches for 'fn ', got {}",
+            result.total_matches
+        );
         assert!(result.files_scanned >= 2);
     }
 
@@ -223,7 +246,11 @@ pub fn helper() -> u32 {
     fn test_search_patterns_multiple() {
         let dir = setup_test_dir();
         let result = search_patterns(&["fn ", "assert"], dir.path(), Some(r"\.rs$"), 1).unwrap();
-        assert!(result.total_matches >= 5, "expected >=5 matches, got {}", result.total_matches);
+        assert!(
+            result.total_matches >= 5,
+            "expected >=5 matches, got {}",
+            result.total_matches
+        );
     }
 
     #[test]
@@ -315,22 +342,36 @@ pub fn helper() -> u32 {
 
     #[test]
     fn test_search_patterns_nonexistent_root() {
-        let result = search_patterns(&["fn"], Path::new("/tmp/__sisyphus_nonexistent_explore__"), None, 0);
-        assert!(result.is_err(), "ignore::WalkBuilder errors on non-existent root");
+        let result = search_patterns(
+            &["fn"],
+            Path::new("/tmp/__sisyphus_nonexistent_explore__"),
+            None,
+            0,
+        );
+        assert!(
+            result.is_err(),
+            "ignore::WalkBuilder errors on non-existent root"
+        );
     }
 
     #[test]
     fn test_search_patterns_case_sensitive() {
         let dir = setup_test_dir();
         let result = search_patterns(&["GREET"], dir.path(), Some(r"\.rs$"), 0).unwrap();
-        assert_eq!(result.total_matches, 0, "regex is case-sensitive by default");
+        assert_eq!(
+            result.total_matches, 0,
+            "regex is case-sensitive by default"
+        );
     }
 
     #[test]
     fn test_search_patterns_no_include_filter_no_match_dir() {
         let dir = setup_test_dir();
         let result = search_patterns(&["README"], dir.path(), None, 0).unwrap();
-        assert_eq!(result.total_matches, 0, "no .md files should be scanned without include");
+        assert_eq!(
+            result.total_matches, 0,
+            "no .md files should be scanned without include"
+        );
     }
 
     #[test]
@@ -377,7 +418,10 @@ pub fn helper() -> u32 {
         std::fs::write(&bin, [0u8, 159, 146, 150]).unwrap();
 
         let result = search_patterns(&[".*"], dir.path(), Some(r"\.bin$"), 0).unwrap();
-        assert_eq!(result.total_matches, 0, "binary files should be silently skipped");
+        assert_eq!(
+            result.total_matches, 0,
+            "binary files should be silently skipped"
+        );
     }
 
     #[test]

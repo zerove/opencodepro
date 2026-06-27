@@ -1,27 +1,52 @@
+use crate::build::{self, BuildOutput, Diag, LanguageBackend, TestResults};
+use crate::{ToolError, ToolResult};
 use std::path::Path;
-use crate::build::{self, BuildOutput, Diag, TestResults, LanguageBackend};
-use crate::{ToolResult, ToolError};
 
 /// Go backend using `go` toolchain.
 #[derive(Debug, Clone, Copy)]
 pub struct GoBackend;
 
 impl LanguageBackend for GoBackend {
-    fn name(&self) -> &str { "go" }
+    fn name(&self) -> &str {
+        "go"
+    }
 
     fn check(&self, _pkg: Option<&str>, _all: bool, cwd: Option<&Path>) -> ToolResult<BuildOutput> {
         let (stdout, stderr, success) = build::run_command("go", &["vet", "./..."], cwd)?;
         let (errors, warnings) = parse_go_vet_output(&stderr, &stdout);
-        Ok(BuildOutput { errors, warnings, raw_stdout: stdout, raw_stderr: stderr, success })
+        Ok(BuildOutput {
+            errors,
+            warnings,
+            raw_stdout: stdout,
+            raw_stderr: stderr,
+            success,
+        })
     }
 
-    fn build(&self, _pkg: Option<&str>, _release: bool, cwd: Option<&Path>) -> ToolResult<BuildOutput> {
+    fn build(
+        &self,
+        _pkg: Option<&str>,
+        _release: bool,
+        cwd: Option<&Path>,
+    ) -> ToolResult<BuildOutput> {
         let (stdout, stderr, success) = build::run_command("go", &["build", "./..."], cwd)?;
         let (errors, warnings) = parse_go_build_output(&stderr);
-        Ok(BuildOutput { errors, warnings, raw_stdout: stdout, raw_stderr: stderr, success })
+        Ok(BuildOutput {
+            errors,
+            warnings,
+            raw_stdout: stdout,
+            raw_stderr: stderr,
+            success,
+        })
     }
 
-    fn test(&self, _pkg: Option<&str>, name: Option<&str>, _all: bool, cwd: Option<&Path>) -> ToolResult<TestResults> {
+    fn test(
+        &self,
+        _pkg: Option<&str>,
+        name: Option<&str>,
+        _all: bool,
+        cwd: Option<&Path>,
+    ) -> ToolResult<TestResults> {
         let mut args = vec!["test", "./...", "-v"];
         if let Some(n) = name {
             args.push("-run");
@@ -36,22 +61,45 @@ impl LanguageBackend for GoBackend {
         if build::run_command("staticcheck", &["--version"], cwd).is_ok() {
             let (stdout, stderr, success) = build::run_command("staticcheck", &["./..."], cwd)?;
             let (errors, warnings) = parse_staticcheck_output(&stderr, &stdout);
-            return Ok(BuildOutput { errors, warnings, raw_stdout: stdout, raw_stderr: stderr, success });
+            return Ok(BuildOutput {
+                errors,
+                warnings,
+                raw_stdout: stdout,
+                raw_stderr: stderr,
+                success,
+            });
         }
         // Fallback: go vet as lint
         build::run_command("go", &["vet", "./..."], cwd).map(|(stdout, stderr, success)| {
             let (errors, warnings) = parse_go_vet_output(&stderr, &stdout);
-            BuildOutput { errors, warnings, raw_stdout: stdout, raw_stderr: stderr, success }
+            BuildOutput {
+                errors,
+                warnings,
+                raw_stdout: stdout,
+                raw_stderr: stderr,
+                success,
+            }
         })
     }
 
-    fn fix(&self, _pkg: Option<&str>, apply_lint_fixes: bool, cwd: Option<&Path>) -> ToolResult<BuildOutput> {
+    fn fix(
+        &self,
+        _pkg: Option<&str>,
+        apply_lint_fixes: bool,
+        cwd: Option<&Path>,
+    ) -> ToolResult<BuildOutput> {
         // gofmt -s -w simplifies code; go fix applies API migrations
         build::run_command("gofmt", &["-s", "-w", "."], cwd)?;
         if apply_lint_fixes {
             build::run_command("go", &["fix", "./..."], cwd)?;
         }
-        Ok(BuildOutput { errors: vec![], warnings: vec![], raw_stdout: String::new(), raw_stderr: String::new(), success: true })
+        Ok(BuildOutput {
+            errors: vec![],
+            warnings: vec![],
+            raw_stdout: String::new(),
+            raw_stderr: String::new(),
+            success: true,
+        })
     }
 
     fn fmt_check(&self, cwd: Option<&Path>) -> ToolResult<bool> {
@@ -69,13 +117,29 @@ impl LanguageBackend for GoBackend {
         // go doc shows package documentation
         let (stdout, stderr, success) = build::run_command("go", &["doc", "./..."], cwd)?;
         let combined = format!("{stdout}\n{stderr}");
-        if success { Ok(combined) } else { Err(ToolError::CommandFailed { code: 1, stdout, stderr }) }
+        if success {
+            Ok(combined)
+        } else {
+            Err(ToolError::CommandFailed {
+                code: 1,
+                stdout,
+                stderr,
+            })
+        }
     }
 
     fn run(&self, _args: &[&str], cwd: Option<&Path>) -> ToolResult<String> {
         let (stdout, stderr, success) = build::run_command("go", &["run", "."], cwd)?;
         let combined = format!("{stdout}{stderr}");
-        if success { Ok(combined) } else { Err(ToolError::CommandFailed { code: 1, stdout, stderr }) }
+        if success {
+            Ok(combined)
+        } else {
+            Err(ToolError::CommandFailed {
+                code: 1,
+                stdout,
+                stderr,
+            })
+        }
     }
 }
 
@@ -91,15 +155,29 @@ fn parse_go_vet_output(_stderr: &str, stdout: &str) -> (Vec<Diag>, Vec<Diag>) {
         // Format: ./src/file.go:10:5: some message
         if let Some(pos) = t.find(": ") {
             let loc = &t[..pos];
-            let msg = t[pos+2..].to_string();
+            let msg = t[pos + 2..].to_string();
             let parts: Vec<&str> = loc.rsplitn(3, ':').collect();
             if parts.len() >= 3 {
                 let col = parts[0].parse().ok();
                 let line_no = parts[1].parse().ok();
                 let file = Some(parts[2].to_string());
-                warnings.push(Diag { file, line: line_no, col, level: "warning".into(), code: None, message: msg });
+                warnings.push(Diag {
+                    file,
+                    line: line_no,
+                    col,
+                    level: "warning".into(),
+                    code: None,
+                    message: msg,
+                });
             } else {
-                warnings.push(Diag { file: Some(loc.to_string()), line: None, col: None, level: "warning".into(), code: None, message: msg });
+                warnings.push(Diag {
+                    file: Some(loc.to_string()),
+                    line: None,
+                    col: None,
+                    level: "warning".into(),
+                    code: None,
+                    message: msg,
+                });
             }
         }
     }
@@ -116,13 +194,20 @@ fn parse_go_build_output(stderr: &str) -> (Vec<Diag>, Vec<Diag>) {
         let t = line.trim();
         if let Some(pos) = t.find(": ") {
             let loc = &t[..pos];
-            let msg = t[pos+2..].to_string();
+            let msg = t[pos + 2..].to_string();
             let parts: Vec<&str> = loc.rsplitn(3, ':').collect();
             if parts.len() >= 3 {
                 let col = parts[0].parse().ok();
                 let line_no = parts[1].parse().ok();
                 let file = Some(parts[2].to_string());
-                errors.push(Diag { file, line: line_no, col, level: "error".into(), code: None, message: msg });
+                errors.push(Diag {
+                    file,
+                    line: line_no,
+                    col,
+                    level: "error".into(),
+                    code: None,
+                    message: msg,
+                });
             }
         }
     }
@@ -140,7 +225,7 @@ fn parse_staticcheck_output(_stderr: &str, stdout: &str) -> (Vec<Diag>, Vec<Diag
         let t = line.trim();
         if let Some(pos) = t.find(": ") {
             let loc = &t[..pos];
-            let msg = t[pos+2..].to_string();
+            let msg = t[pos + 2..].to_string();
             let parts: Vec<&str> = loc.rsplitn(3, ':').collect();
             if parts.len() >= 3 {
                 let col = parts[0].parse().ok();
@@ -149,12 +234,29 @@ fn parse_staticcheck_output(_stderr: &str, stdout: &str) -> (Vec<Diag>, Vec<Diag
 
                 // Determine severity from code prefix
                 let code = msg.split(' ').next().map(|s| s.to_string());
-                let is_error = code.as_deref().map(|c| c.starts_with("SA")).unwrap_or(false);
+                let is_error = code
+                    .as_deref()
+                    .map(|c| c.starts_with("SA"))
+                    .unwrap_or(false);
 
                 if is_error {
-                    errors.push(Diag { file, line: line_no, col, level: "error".into(), code, message: msg });
+                    errors.push(Diag {
+                        file,
+                        line: line_no,
+                        col,
+                        level: "error".into(),
+                        code,
+                        message: msg,
+                    });
                 } else {
-                    warnings.push(Diag { file, line: line_no, col, level: "warning".into(), code, message: msg });
+                    warnings.push(Diag {
+                        file,
+                        line: line_no,
+                        col,
+                        level: "warning".into(),
+                        code,
+                        message: msg,
+                    });
                 }
             }
         }
@@ -202,7 +304,16 @@ fn parse_go_test_results(stdout: &str, stderr: &str) -> TestResults {
         }
     }
 
-    TestResults { passed, failed, ignored: 0, measured: 0, filtered_out: 0, failures, raw_stdout: stdout.to_string(), raw_stderr: stderr.to_string() }
+    TestResults {
+        passed,
+        failed,
+        ignored: 0,
+        measured: 0,
+        filtered_out: 0,
+        failures,
+        raw_stdout: stdout.to_string(),
+        raw_stderr: stderr.to_string(),
+    }
 }
 
 #[cfg(test)]

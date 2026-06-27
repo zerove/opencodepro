@@ -45,8 +45,7 @@ impl ArchitectureAnalyzer {
     /// - `pub fn` / `pub struct` / `pub enum` / `pub trait` declarations
     /// - `use ...` import statements
     pub fn analyze_file(file_path: &str) -> ToolResult<ModuleReport> {
-        let content = std::fs::read_to_string(file_path)
-            .map_err(crate::ToolError::Io)?;
+        let content = std::fs::read_to_string(file_path).map_err(crate::ToolError::Io)?;
         let name = Path::new(file_path)
             .file_stem()
             .and_then(|s| s.to_str())
@@ -69,9 +68,16 @@ impl ArchitectureAnalyzer {
             }
 
             // Detect public types
-            for kw in &["pub struct ", "pub enum ", "pub trait ", "pub type ", "pub union "] {
+            for kw in &[
+                "pub struct ",
+                "pub enum ",
+                "pub trait ",
+                "pub type ",
+                "pub union ",
+            ] {
                 if let Some(rest) = trimmed.strip_prefix(kw) {
-                    let type_name = rest.split('<')
+                    let type_name = rest
+                        .split('<')
                         .next()
                         .unwrap_or("")
                         .split('{')
@@ -90,10 +96,7 @@ impl ArchitectureAnalyzer {
 
             // Detect imports from other crates/modules
             if let Some(path) = trimmed.strip_prefix("use ") {
-                let import_path = path
-                    .trim_end_matches(';')
-                    .trim()
-                    .to_string();
+                let import_path = path.trim_end_matches(';').trim().to_string();
                 if !import_path.is_empty() && !import_path.starts_with("crate::") {
                     let crate_name = import_path.split("::").next().unwrap_or("").to_string();
                     if !crate_name.is_empty() && !imports.contains(&crate_name) {
@@ -133,8 +136,7 @@ impl ArchitectureAnalyzer {
         let mut reports = Vec::new();
         let mut all_suggestions = Vec::new();
 
-        let entries = std::fs::read_dir(dir)
-            .map_err(crate::ToolError::Io)?;
+        let entries = std::fs::read_dir(dir).map_err(crate::ToolError::Io)?;
 
         for entry in entries {
             let entry = entry.map_err(crate::ToolError::Io)?;
@@ -166,7 +168,10 @@ impl ArchitectureAnalyzer {
                         });
                     }
                     // Empty modules with lots of imports
-                    if report.public_fns.is_empty() && report.public_types.is_empty() && report.imports.len() > 3 {
+                    if report.public_fns.is_empty()
+                        && report.public_types.is_empty()
+                        && report.imports.len() > 3
+                    {
                         all_suggestions.push(RefactoringSuggestion {
                             module: report.name.clone(),
                             issue: "Module has imports but no public API".into(),
@@ -183,7 +188,8 @@ impl ArchitectureAnalyzer {
         let coupling_analysis = if reports.is_empty() {
             "No Rust source files found".to_string()
         } else {
-            let avg_coupling: f64 = reports.iter().map(|r| r.coupling_score).sum::<f64>() / reports.len() as f64;
+            let avg_coupling: f64 =
+                reports.iter().map(|r| r.coupling_score).sum::<f64>() / reports.len() as f64;
             let high_coupling_count = reports.iter().filter(|r| r.coupling_score > 5.0).count();
             format!(
                 "Analyzed {} modules. Average coupling score: {:.2}. {} modules with high coupling (>{:.0}). {} suggestions generated.",
@@ -213,7 +219,10 @@ impl ArchitectureAnalyzer {
     pub fn generate_adr(doc: &ArchitectureDoc) -> String {
         let mut md = String::new();
         md.push_str(&format!("# Architecture Analysis: {}\n\n", doc.module_name));
-        md.push_str(&format!("_Generated at UNIX timestamp {}_\n\n", doc.generated_at));
+        md.push_str(&format!(
+            "_Generated at UNIX timestamp {}_\n\n",
+            doc.generated_at
+        ));
         md.push_str("## Summary\n\n");
         md.push_str(&doc.coupling_analysis);
         md.push_str("\n\n");

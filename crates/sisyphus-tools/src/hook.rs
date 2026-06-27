@@ -233,10 +233,12 @@ pub fn hooks_from_skill(
                     .hook_message
                     .clone()
                     .unwrap_or_else(|| format!("Blocked by skill '{}'", skill_name)),
-                "log" => t
-                    .hook_message
-                    .clone()
-                    .unwrap_or_else(|| format!("Hook '{}' fired", t.description.as_deref().unwrap_or(skill_name))),
+                "log" => t.hook_message.clone().unwrap_or_else(|| {
+                    format!(
+                        "Hook '{}' fired",
+                        t.description.as_deref().unwrap_or(skill_name)
+                    )
+                }),
                 _ => instructions.to_string(),
             };
 
@@ -244,7 +246,11 @@ pub fn hooks_from_skill(
             let tool_filter = t.tools.first().cloned();
 
             HookDef {
-                name: format!("{}/{}", skill_name, t.description.as_deref().unwrap_or("hook")),
+                name: format!(
+                    "{}/{}",
+                    skill_name,
+                    t.description.as_deref().unwrap_or("hook")
+                ),
                 phase,
                 tool_filter,
                 effect_type,
@@ -281,7 +287,9 @@ where
     let before = registry.run_before(tool_id);
 
     if !before.allowed {
-        let reason = before.deny_reason.unwrap_or_else(|| "Blocked by hook".into());
+        let reason = before
+            .deny_reason
+            .unwrap_or_else(|| "Blocked by hook".into());
         return Err(format!("Hook denied: {reason}"));
     }
 
@@ -323,7 +331,11 @@ where
                     map.insert(
                         "_hook_feedback".to_string(),
                         serde_json::Value::Array(
-                            after.injected_instructions.iter().map(|s| serde_json::Value::String(s.clone())).collect(),
+                            after
+                                .injected_instructions
+                                .iter()
+                                .map(|s| serde_json::Value::String(s.clone()))
+                                .collect(),
                         ),
                     );
                 }
@@ -552,10 +564,7 @@ mod tests {
         let hooks = hooks_from_skill("safe-bash", &triggers, "Only use trusted commands");
         assert_eq!(hooks.len(), 1);
         assert_eq!(hooks[0].effect_type, "inject");
-        assert_eq!(
-            hooks[0].effect_payload,
-            "Only use trusted commands"
-        );
+        assert_eq!(hooks[0].effect_payload, "Only use trusted commands");
     }
 
     #[test]
@@ -589,10 +598,14 @@ mod tests {
             source_skill: None,
         });
 
-        let result = execute_with_hooks("test_tool", b"{}".to_vec(), &reg, |args| async move {
-            Ok(args)
-        })
-        .await;
+        let result =
+            execute_with_hooks(
+                "test_tool",
+                b"{}".to_vec(),
+                &reg,
+                |args| async move { Ok(args) },
+            )
+            .await;
 
         assert!(result.is_ok());
     }
@@ -610,10 +623,14 @@ mod tests {
             source_skill: None,
         });
 
-        let result = execute_with_hooks("test_tool", b"{}".to_vec(), &reg, |args| async move {
-            Ok(args)
-        })
-        .await;
+        let result =
+            execute_with_hooks(
+                "test_tool",
+                b"{}".to_vec(),
+                &reg,
+                |args| async move { Ok(args) },
+            )
+            .await;
 
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("Not allowed"));

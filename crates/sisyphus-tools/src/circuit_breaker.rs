@@ -1,5 +1,5 @@
-use sisyphus_types::CircuitState;
 use serde::{Deserialize, Serialize};
+use sisyphus_types::CircuitState;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
@@ -141,10 +141,14 @@ impl CircuitBreaker {
     }
 
     pub fn check_state(&self, key: &str) -> Result<(), String> {
-        let mut breakers = self.breakers.write()
+        let mut breakers = self
+            .breakers
+            .write()
             .map_err(|e| format!("CircuitBreaker lock poisoned: {}", e))?;
 
-        let state = breakers.entry(key.to_string()).or_insert_with(BreakerState::new);
+        let state = breakers
+            .entry(key.to_string())
+            .or_insert_with(BreakerState::new);
 
         match state.state {
             CircuitState::Closed => Ok(()),

@@ -1,5 +1,5 @@
+use crate::ToolResult;
 use std::path::Path;
-use crate::{ToolResult};
 
 /// A single hunk in a unified diff.
 #[derive(Debug)]
@@ -37,7 +37,9 @@ pub fn apply_patch(path: &Path, patch_content: &str) -> ToolResult<Vec<String>> 
     let hunks = parse_diff(patch_content)?;
 
     if hunks.is_empty() {
-        return Err(crate::ToolError::Generic("empty patch — no hunks found".into()));
+        return Err(crate::ToolError::Generic(
+            "empty patch — no hunks found".into(),
+        ));
     }
 
     let content = crate::read(path)?;
@@ -188,8 +190,8 @@ fn apply_hunks(original: &str, hunks: &[Hunk]) -> ToolResult<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::TempDir;
     use std::fs;
+    use tempfile::TempDir;
 
     #[test]
     fn test_apply_simple_add() {
@@ -284,7 +286,8 @@ mod tests {
 -    old_fn();
 +    new_fn();
  }
-".to_string();
+"
+        .to_string();
         let result = apply_patch(&file_path, &patch).unwrap();
         assert_eq!(result.len(), 1);
 

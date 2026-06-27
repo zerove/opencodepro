@@ -14,9 +14,9 @@ pub mod feedback;
 pub mod file;
 pub mod git;
 pub mod hook;
-pub mod lsp;
-pub mod llm;
 pub mod librarian;
+pub mod llm;
+pub mod lsp;
 pub mod metis;
 pub mod momus;
 pub mod oracle;
@@ -78,7 +78,11 @@ pub enum ToolError {
     #[error("Todo error: {0}")]
     TodoError(String),
     #[error("Bash command failed (exit {code}): {stderr}")]
-    CommandFailed { code: i32, stdout: String, stderr: String },
+    CommandFailed {
+        code: i32,
+        stdout: String,
+        stderr: String,
+    },
 }
 
 pub type ToolResult<T> = Result<T, ToolError>;
@@ -101,31 +105,31 @@ pub type PermissionRules = Vec<(String, Permission)>;
 pub use agent_registry::*;
 pub use bash::*;
 pub use build::*;
-pub use team::*;
-pub use tool_registry::*;
 pub use config_store::*;
 pub use delegate::*;
 pub use executor::*;
 pub use executor_mcp::*;
-pub use mcp::*;
 pub use explore::*;
 pub use feedback::*;
 pub use file::*;
 pub use git::*;
 pub use hook::*;
 pub use librarian::*;
-pub use lsp::*;
 pub use llm::*;
+pub use lsp::*;
+pub use mcp::*;
 pub use metis::*;
 pub use momus::*;
 pub use oracle::*;
 pub use patch::*;
-pub use security::*;
 pub use permissions::*;
 pub use plan::*;
 pub use project_rules::*;
 pub use scribe::*;
+pub use security::*;
 pub use session::*;
 pub use skill::*;
+pub use team::*;
 pub use todo::*;
+pub use tool_registry::*;
 pub use web::*;

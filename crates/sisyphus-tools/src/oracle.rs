@@ -1,6 +1,6 @@
-use std::path::{Path, PathBuf};
-use regex::Regex;
 use crate::ToolResult;
+use regex::Regex;
+use std::path::{Path, PathBuf};
 
 /// Result of analyzing a file: extracted structure and metadata.
 #[derive(Debug, Clone)]
@@ -72,7 +72,8 @@ pub fn analyze_file(path: &Path) -> ToolResult<FileAnalysis> {
     let mut structs = vec![];
     let mut issues = vec![];
 
-    let fn_re = Regex::new(r"(pub\s+)?(async\s+)?fn\s+(\w+)\s*\(([^)]*)\)\s*(->\s*([^{;]+))?").unwrap();
+    let fn_re =
+        Regex::new(r"(pub\s+)?(async\s+)?fn\s+(\w+)\s*\(([^)]*)\)\s*(->\s*([^{;]+))?").unwrap();
     let import_re = Regex::new(r"^use\s+(.+);$").unwrap();
     let struct_re = Regex::new(r"(pub\s+)?struct\s+(\w+)").unwrap();
     let long_line_re = Regex::new(r"^.{120,}$").unwrap();
@@ -143,12 +144,7 @@ pub fn analyze_file(path: &Path) -> ToolResult<FileAnalysis> {
 /// Analyze all source files in a directory.
 pub fn analyze_directory(root: &Path, include: Option<&str>) -> ToolResult<ModuleSummary> {
     let file_filter = include.unwrap_or(r"\.(rs|py|js|ts|go|md|toml|json|yaml)$");
-    let result = crate::search_patterns(
-        &[".+"],
-        root,
-        Some(file_filter),
-        0,
-    )?;
+    let result = crate::search_patterns(&[".+"], root, Some(file_filter), 0)?;
 
     let mut files = vec![];
     let mut total_lines = 0;
@@ -206,7 +202,10 @@ mod tests {
     #[test]
     fn test_analyze_file_functions() {
         let dir = TempDir::new().unwrap();
-        let file = setup_file(&dir, "test.rs", "\
+        let file = setup_file(
+            &dir,
+            "test.rs",
+            "\
 fn private_fn(x: i32) -> i32 {
     x + 1
 }
@@ -218,7 +217,8 @@ pub async fn public_async_fn() -> String {
 pub struct MyStruct {
     field: u32,
 }
-");
+",
+        );
         let analysis = analyze_file(&file).unwrap();
         assert_eq!(analysis.functions.len(), 2);
         assert_eq!(analysis.functions[0].name, "private_fn");
@@ -236,12 +236,16 @@ pub struct MyStruct {
     #[test]
     fn test_analyze_file_imports() {
         let dir = TempDir::new().unwrap();
-        let file = setup_file(&dir, "lib.rs", "\
+        let file = setup_file(
+            &dir,
+            "lib.rs",
+            "\
 use std::collections::HashMap;
 use regex::Regex;
 
 pub fn run() {}
-");
+",
+        );
         let analysis = analyze_file(&file).unwrap();
         assert_eq!(analysis.imports.len(), 2);
         assert_eq!(analysis.imports[0], "std::collections::HashMap");
@@ -252,9 +256,15 @@ pub fn run() {}
     fn test_analyze_file_long_lines() {
         let dir = TempDir::new().unwrap();
         let long = "x".repeat(150);
-        let file = setup_file(&dir, "long.rs", &format!("fn main() {{\n    println!(\"{}\");\n}}", long));
+        let file = setup_file(
+            &dir,
+            "long.rs",
+            &format!("fn main() {{\n    println!(\"{}\");\n}}", long),
+        );
         let analysis = analyze_file(&file).unwrap();
-        let long_line_issues: Vec<_> = analysis.issues.iter()
+        let long_line_issues: Vec<_> = analysis
+            .issues
+            .iter()
             .filter(|i| i.message.contains("line too long"))
             .collect();
         assert_eq!(long_line_issues.len(), 1);
@@ -264,14 +274,20 @@ pub fn run() {}
     #[test]
     fn test_analyze_file_todo_marker() {
         let dir = TempDir::new().unwrap();
-        let file = setup_file(&dir, "todo.rs", "\
+        let file = setup_file(
+            &dir,
+            "todo.rs",
+            "\
 // TODO: implement this later
 fn foo() {}
 // FIXME: this is broken
 fn bar() {}
-");
+",
+        );
         let analysis = analyze_file(&file).unwrap();
-        let todo_issues: Vec<_> = analysis.issues.iter()
+        let todo_issues: Vec<_> = analysis
+            .issues
+            .iter()
             .filter(|i| i.message.contains("TODO/FIXME"))
             .collect();
         assert_eq!(todo_issues.len(), 2);
@@ -281,7 +297,11 @@ fn bar() {}
     fn test_analyze_directory() {
         let dir = TempDir::new().unwrap();
         setup_file(&dir, "src/main.rs", "fn main() { println!(\"hello\"); }");
-        setup_file(&dir, "src/lib.rs", "pub fn add(a: i32, b: i32) -> i32 { a + b }");
+        setup_file(
+            &dir,
+            "src/lib.rs",
+            "pub fn add(a: i32, b: i32) -> i32 { a + b }",
+        );
         setup_file(&dir, "README.md", "# Project");
         let summary = analyze_directory(dir.path(), Some(r"\.rs$")).unwrap();
         assert_eq!(summary.file_count, 2);
@@ -291,15 +311,20 @@ fn bar() {}
     #[test]
     fn test_code_review_single_file() {
         let dir = TempDir::new().unwrap();
-        let file = setup_file(&dir, "src/lib.rs", "\
+        let file = setup_file(
+            &dir,
+            "src/lib.rs",
+            "\
 // TODO: need to implement
 pub fn add(a: i32, b: i32) -> i32 {
     a + b
 }
-");
+",
+        );
         let paths = vec![file.as_path()];
         let issues = code_review(&paths).unwrap();
-        let todo_count = issues.iter()
+        let todo_count = issues
+            .iter()
             .filter(|i| i.message.contains("TODO/FIXME"))
             .count();
         assert_eq!(todo_count, 1);
@@ -308,10 +333,14 @@ pub fn add(a: i32, b: i32) -> i32 {
     #[test]
     fn test_code_review_directory() {
         let dir = TempDir::new().unwrap();
-        setup_file(&dir, "src/lib.rs", "\
+        setup_file(
+            &dir,
+            "src/lib.rs",
+            "\
 // FIXME: fix this later
 pub fn run() { loop {} }
-");
+",
+        );
         let src_path = dir.path().join("src");
         let paths = vec![src_path.as_path()];
         if let Ok(issues) = code_review(&paths) {
@@ -350,7 +379,11 @@ pub fn run() { loop {} }
     #[test]
     fn test_analyze_file_no_functions_or_imports() {
         let dir = TempDir::new().unwrap();
-        let file = setup_file(&dir, "plain.txt", "just some text\nwith no code\nstructures");
+        let file = setup_file(
+            &dir,
+            "plain.txt",
+            "just some text\nwith no code\nstructures",
+        );
         let analysis = analyze_file(&file).unwrap();
         assert_eq!(analysis.functions.len(), 0);
         assert_eq!(analysis.imports.len(), 0);
@@ -390,7 +423,11 @@ pub fn run() { loop {} }
     #[test]
     fn test_analyze_file_function_no_params() {
         let dir = TempDir::new().unwrap();
-        let file = setup_file(&dir, "simple.rs", "fn hello() -> &'static str {\n    \"world\"\n}");
+        let file = setup_file(
+            &dir,
+            "simple.rs",
+            "fn hello() -> &'static str {\n    \"world\"\n}",
+        );
         let analysis = analyze_file(&file).unwrap();
         assert_eq!(analysis.functions.len(), 1);
         assert_eq!(analysis.functions[0].name, "hello");
@@ -401,14 +438,22 @@ pub fn run() { loop {} }
     #[test]
     fn test_analyze_file_multi_line_import_not_matched() {
         let dir = TempDir::new().unwrap();
-        let file = setup_file(&dir, "multi.rs", "\
+        let file = setup_file(
+            &dir,
+            "multi.rs",
+            "\
 use std::collections::{
     HashMap,
     VecDeque,
 };
-");
+",
+        );
         let analysis = analyze_file(&file).unwrap();
-        assert_eq!(analysis.imports.len(), 0, "multi-line imports not matched by simple regex");
+        assert_eq!(
+            analysis.imports.len(),
+            0,
+            "multi-line imports not matched by simple regex"
+        );
     }
 
     #[test]

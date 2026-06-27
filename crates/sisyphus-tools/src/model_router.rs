@@ -1,6 +1,6 @@
 use crate::ToolResult;
-use sisyphus_types::ModelRouteStrategy;
 use serde::{Deserialize, Serialize};
+use sisyphus_types::ModelRouteStrategy;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -58,9 +58,10 @@ impl ModelRouter {
 
     /// Select the best model for a prompt given the strategy.
     pub fn select(&self, prompt: &str, strategy: &ModelRouteStrategy) -> ToolResult<ModelConfig> {
-        let models = self.models.read().map_err(|e| {
-            crate::ToolError::Generic(format!("ModelRouter lock poisoned: {}", e))
-        })?;
+        let models = self
+            .models
+            .read()
+            .map_err(|e| crate::ToolError::Generic(format!("ModelRouter lock poisoned: {}", e)))?;
 
         if models.is_empty() {
             return Err(crate::ToolError::Generic("No models registered".into()));
@@ -80,11 +81,9 @@ impl ModelRouter {
                         .partial_cmp(&b.cost_per_1k_tokens)
                         .unwrap_or(std::cmp::Ordering::Equal)
                 });
-                sorted
-                    .first()
-                    .cloned()
-                    .cloned()
-                    .ok_or_else(|| crate::ToolError::Generic("No model can handle this prompt complexity".into()))
+                sorted.first().cloned().cloned().ok_or_else(|| {
+                    crate::ToolError::Generic("No model can handle this prompt complexity".into())
+                })
             }
             ModelRouteStrategy::PerformanceOptimized => {
                 // Find most capable model (highest complexity ceiling)
@@ -183,8 +182,10 @@ impl ModelRouter {
 fn estimate_complexity(prompt: &str) -> u32 {
     let len = prompt.len() as u32;
     let has_code = prompt.contains("```") || prompt.contains("fn ") || prompt.contains("impl ");
-    let has_math = prompt.contains("complexity") || prompt.contains("algorithm")
-        || prompt.contains("O(") || prompt.contains("proof");
+    let has_math = prompt.contains("complexity")
+        || prompt.contains("algorithm")
+        || prompt.contains("O(")
+        || prompt.contains("proof");
     let has_multi_lang = prompt.lines().count() > 20;
 
     let mut score = if len > 0 { (len / 10).max(1) } else { 0 };
@@ -315,9 +316,8 @@ mod tests {
     fn test_estimate_complexity() {
         assert!(estimate_complexity("hi") > 0);
         assert!(
-            estimate_complexity(
-                "```\nfn hello() {}\n```\nThis has complexity O(n log n)"
-            ) > estimate_complexity("hi")
+            estimate_complexity("```\nfn hello() {}\n```\nThis has complexity O(n log n)")
+                > estimate_complexity("hi")
         );
     }
 }

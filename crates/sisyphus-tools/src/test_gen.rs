@@ -18,8 +18,7 @@ pub struct TestGenerator;
 impl TestGenerator {
     /// Generate a test for a specific function in a source file.
     pub fn generate_for_function(file_path: &str, fn_name: &str) -> ToolResult<GeneratedTest> {
-        let content = std::fs::read_to_string(file_path)
-            .map_err(crate::ToolError::Io)?;
+        let content = std::fs::read_to_string(file_path).map_err(crate::ToolError::Io)?;
 
         // Find the function signature
         let mut found = false;
@@ -39,7 +38,11 @@ impl TestGenerator {
                 if let Some(start) = trimmed.find('(') {
                     if let Some(end) = trimmed[start..].find(')') {
                         let params = trimmed[start + 1..start + end].trim();
-                        if params.is_empty() || params == "self" || params == "&self" || params == "&mut self" {
+                        if params.is_empty()
+                            || params == "self"
+                            || params == "&self"
+                            || params == "&mut self"
+                        {
                             param_count = 0;
                         } else {
                             param_count = params.split(',').count();
@@ -58,7 +61,13 @@ impl TestGenerator {
         }
 
         let test_code = Self::build_test_code(fn_name, is_pub, is_async, has_return, param_count);
-        let coverage_estimate = if param_count > 2 { 0.3 } else if param_count > 0 { 0.5 } else { 0.8 };
+        let coverage_estimate = if param_count > 2 {
+            0.3
+        } else if param_count > 0 {
+            0.5
+        } else {
+            0.8
+        };
 
         Ok(GeneratedTest {
             fn_name: fn_name.to_string(),
@@ -69,8 +78,7 @@ impl TestGenerator {
 
     /// Generate tests for all public functions in a source file.
     pub fn generate_for_module(file_path: &str) -> ToolResult<Vec<GeneratedTest>> {
-        let content = std::fs::read_to_string(file_path)
-            .map_err(crate::ToolError::Io)?;
+        let content = std::fs::read_to_string(file_path).map_err(crate::ToolError::Io)?;
 
         let mut tests = Vec::new();
         let mut current_fn: Option<String> = None;
@@ -108,7 +116,11 @@ impl TestGenerator {
                 if let Some(start) = trimmed.find('(') {
                     if let Some(end) = trimmed[start..].find(')') {
                         let params = trimmed[start + 1..start + end].trim();
-                        if params.is_empty() || params == "self" || params == "&self" || params == "&mut self" {
+                        if params.is_empty()
+                            || params == "self"
+                            || params == "&self"
+                            || params == "&mut self"
+                        {
                             current_param_count = 0;
                         } else {
                             current_param_count = params.split(',').count();
@@ -119,8 +131,20 @@ impl TestGenerator {
                 // Handle inline function bodies (e.g., `pub fn foo() -> i32 { 42 }`)
                 if trimmed.contains('{') && trimmed.contains('}') {
                     if current_is_pub {
-                        let test_code = Self::build_test_code(&name, true, current_is_async, current_has_return, current_param_count);
-                        let coverage_estimate = if current_param_count > 2 { 0.3 } else if current_param_count > 0 { 0.5 } else { 0.8 };
+                        let test_code = Self::build_test_code(
+                            &name,
+                            true,
+                            current_is_async,
+                            current_has_return,
+                            current_param_count,
+                        );
+                        let coverage_estimate = if current_param_count > 2 {
+                            0.3
+                        } else if current_param_count > 0 {
+                            0.5
+                        } else {
+                            0.8
+                        };
                         tests.push(GeneratedTest {
                             fn_name: name,
                             test_code,
@@ -130,15 +154,30 @@ impl TestGenerator {
                 } else {
                     current_fn = Some(name);
                 }
-            } else if trimmed.starts_with('#') || trimmed.starts_with("///") || trimmed.starts_with("//") {
+            } else if trimmed.starts_with('#')
+                || trimmed.starts_with("///")
+                || trimmed.starts_with("//")
+            {
                 // Skip attributes and comments
                 continue;
             } else if trimmed.starts_with('}') {
                 // End of function body
                 if let Some(name) = current_fn.take() {
                     if current_is_pub {
-                        let test_code = Self::build_test_code(&name, true, current_is_async, current_has_return, current_param_count);
-                        let coverage_estimate = if current_param_count > 2 { 0.3 } else if current_param_count > 0 { 0.5 } else { 0.8 };
+                        let test_code = Self::build_test_code(
+                            &name,
+                            true,
+                            current_is_async,
+                            current_has_return,
+                            current_param_count,
+                        );
+                        let coverage_estimate = if current_param_count > 2 {
+                            0.3
+                        } else if current_param_count > 0 {
+                            0.5
+                        } else {
+                            0.8
+                        };
                         tests.push(GeneratedTest {
                             fn_name: name,
                             test_code,
@@ -155,7 +194,8 @@ impl TestGenerator {
 
     /// Write generated tests to a file.
     pub fn write_tests(tests: &[GeneratedTest], output_file: &str) -> ToolResult<()> {
-        let mut content = String::from("// Auto-generated tests\n// Generated by TestGenerator\n\n");
+        let mut content =
+            String::from("// Auto-generated tests\n// Generated by TestGenerator\n\n");
 
         // Add imports if needed
         content.push_str("#[cfg(test)]\n");
@@ -169,8 +209,7 @@ impl TestGenerator {
 
         content.push_str("}\n");
 
-        std::fs::write(output_file, content)
-            .map_err(crate::ToolError::Io)?;
+        std::fs::write(output_file, content).map_err(crate::ToolError::Io)?;
 
         Ok(())
     }
@@ -273,7 +312,8 @@ mod tests {
 
     #[test]
     fn test_generate_for_function_async() {
-        let code = "pub async fn fetch(url: &str) -> Result<String, String> { Ok(\"data\".into()) }";
+        let code =
+            "pub async fn fetch(url: &str) -> Result<String, String> { Ok(\"data\".into()) }";
         let (_f, path) = create_temp_rs(code);
         let test = TestGenerator::generate_for_function(&path, "fetch").unwrap();
         assert!(test.test_code.contains("#[tokio::test]"));
@@ -311,7 +351,8 @@ fn hidden() {}
 
         let tests = vec![GeneratedTest {
             fn_name: "example".into(),
-            test_code: "    #[test]\n    fn test_example() {\n        assert!(true);\n    }\n".into(),
+            test_code: "    #[test]\n    fn test_example() {\n        assert!(true);\n    }\n"
+                .into(),
             coverage_estimate: 0.5,
         }];
 

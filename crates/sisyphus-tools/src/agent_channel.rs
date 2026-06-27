@@ -30,18 +30,20 @@ impl AgentChannel {
 
     /// Send a direct message to a specific agent's inbox.
     pub fn send(&self, msg: AgentMessage) -> ToolResult<()> {
-        let mut inboxes = self.inboxes.write().map_err(|e| {
-            crate::ToolError::Generic(format!("AgentChannel lock poisoned: {}", e))
-        })?;
+        let mut inboxes = self
+            .inboxes
+            .write()
+            .map_err(|e| crate::ToolError::Generic(format!("AgentChannel lock poisoned: {}", e)))?;
         inboxes.entry(msg.to.clone()).or_default().push(msg);
         Ok(())
     }
 
     /// Receive all pending messages for an agent (drains the inbox).
     pub fn receive(&self, agent_id: &str) -> ToolResult<Vec<AgentMessage>> {
-        let mut inboxes = self.inboxes.write().map_err(|e| {
-            crate::ToolError::Generic(format!("AgentChannel lock poisoned: {}", e))
-        })?;
+        let mut inboxes = self
+            .inboxes
+            .write()
+            .map_err(|e| crate::ToolError::Generic(format!("AgentChannel lock poisoned: {}", e)))?;
         Ok(inboxes.remove(agent_id).unwrap_or_default())
     }
 
@@ -107,7 +109,9 @@ impl AgentChannel {
     /// Subscribe an agent to a topic.
     pub fn subscribe(&self, agent_id: &str, topic: &str) -> ToolResult<()> {
         if let Ok(mut map) = self.topics.write() {
-            map.entry(topic.to_string()).or_default().push(agent_id.to_string());
+            map.entry(topic.to_string())
+                .or_default()
+                .push(agent_id.to_string());
         }
         Ok(())
     }

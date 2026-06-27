@@ -8,8 +8,8 @@
 //! - Results are synthesized into a [`TeamReport`].
 //! - [`TeamError`] covers all failure modes (LLM errors, invalid plans, agent validation).
 
-pub(crate) mod parse;
 pub mod error;
+pub(crate) mod parse;
 
 mod orchestrator;
 

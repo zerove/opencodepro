@@ -1,6 +1,6 @@
-use crate::ToolResult;
 use super::transport::McpTransport;
 use super::types::*;
+use crate::ToolResult;
 
 /// High-level MCP client.
 pub struct McpClient {
@@ -31,7 +31,11 @@ impl McpClient {
     }
 
     /// Send a raw JSON-RPC request and get the response.
-    async fn send_request(&mut self, method: &str, params: Option<serde_json::Value>) -> ToolResult<JsonRpcResponse> {
+    async fn send_request(
+        &mut self,
+        method: &str,
+        params: Option<serde_json::Value>,
+    ) -> ToolResult<JsonRpcResponse> {
         let req = JsonRpcRequest {
             jsonrpc: "2.0".to_string(),
             id: Some(self.next_id()),
@@ -48,7 +52,11 @@ impl McpClient {
 
     /// Send a notification (no response expected).
     #[allow(dead_code)]
-    async fn send_notification(&mut self, method: &str, params: Option<serde_json::Value>) -> ToolResult<()> {
+    async fn send_notification(
+        &mut self,
+        method: &str,
+        params: Option<serde_json::Value>,
+    ) -> ToolResult<()> {
         let notification = JsonRpcNotification {
             jsonrpc: "2.0".to_string(),
             method: method.to_string(),
@@ -61,11 +69,17 @@ impl McpClient {
     }
 
     /// Initialize the MCP session.
-    pub async fn initialize(&mut self, client_name: &str, client_version: &str) -> ToolResult<InitializeResult> {
+    pub async fn initialize(
+        &mut self,
+        client_name: &str,
+        client_version: &str,
+    ) -> ToolResult<InitializeResult> {
         let params = InitializeParams {
             protocol_version: Some("2025-03-26".to_string()),
             capabilities: Some(ClientCapabilities {
-                tools: Some(ToolsCapability { list_changed: Some(true) }),
+                tools: Some(ToolsCapability {
+                    list_changed: Some(true),
+                }),
                 resources: Some(ResourcesCapability {
                     subscribe: Some(false),
                     list_changed: Some(false),
@@ -77,22 +91,35 @@ impl McpClient {
             }),
         };
 
-        let resp = self.send_request("initialize", Some(serde_json::to_value(params)
-            .map_err(|e| crate::ToolError::TodoError(format!("serialize params: {e}")))?)).await?;
+        let resp = self
+            .send_request(
+                "initialize",
+                Some(
+                    serde_json::to_value(params).map_err(|e| {
+                        crate::ToolError::TodoError(format!("serialize params: {e}"))
+                    })?,
+                ),
+            )
+            .await?;
 
         if let Some(e) = resp.error {
-            return Err(crate::ToolError::TodoError(format!("initialize error ({}): {}", e.code, e.message)));
+            return Err(crate::ToolError::TodoError(format!(
+                "initialize error ({}): {}",
+                e.code, e.message
+            )));
         }
 
-        let result: InitializeResult = serde_json::from_value(resp.result
-            .ok_or_else(|| crate::ToolError::TodoError("initialize: missing result".to_string()))?)
-            .map_err(|e| crate::ToolError::TodoError(format!("deserialize result: {e}")))?;
+        let result: InitializeResult = serde_json::from_value(resp.result.ok_or_else(|| {
+            crate::ToolError::TodoError("initialize: missing result".to_string())
+        })?)
+        .map_err(|e| crate::ToolError::TodoError(format!("deserialize result: {e}")))?;
 
         self.server_info = result.server_info.clone();
         self.server_capabilities = result.capabilities.clone();
 
         // Send initialized notification
-        self.send_notification("notifications/initialized", None).await?;
+        self.send_notification("notifications/initialized", None)
+            .await?;
 
         Ok(result)
     }
@@ -102,10 +129,14 @@ impl McpClient {
         let resp = self.send_request("tools/list", None).await?;
 
         if let Some(e) = resp.error {
-            return Err(crate::ToolError::TodoError(format!("list_tools error ({}): {}", e.code, e.message)));
+            return Err(crate::ToolError::TodoError(format!(
+                "list_tools error ({}): {}",
+                e.code, e.message
+            )));
         }
 
-        let result = resp.result
+        let result = resp
+            .result
             .ok_or_else(|| crate::ToolError::TodoError("list_tools: missing result".to_string()))?;
 
         #[derive(serde::Deserialize)]
@@ -120,21 +151,38 @@ impl McpClient {
     }
 
     /// Call a tool on the MCP server.
-    pub async fn call_tool(&mut self, name: &str, arguments: Option<serde_json::Value>) -> ToolResult<CallToolResult> {
+    pub async fn call_tool(
+        &mut self,
+        name: &str,
+        arguments: Option<serde_json::Value>,
+    ) -> ToolResult<CallToolResult> {
         let params = CallToolParams {
             name: name.to_string(),
             arguments,
         };
 
-        let resp = self.send_request("tools/call", Some(serde_json::to_value(params)
-            .map_err(|e| crate::ToolError::TodoError(format!("serialize params: {e}")))?)).await?;
+        let resp = self
+            .send_request(
+                "tools/call",
+                Some(
+                    serde_json::to_value(params).map_err(|e| {
+                        crate::ToolError::TodoError(format!("serialize params: {e}"))
+                    })?,
+                ),
+            )
+            .await?;
 
         if let Some(e) = resp.error {
-            return Err(crate::ToolError::TodoError(format!("call_tool error ({}): {}", e.code, e.message)));
+            return Err(crate::ToolError::TodoError(format!(
+                "call_tool error ({}): {}",
+                e.code, e.message
+            )));
         }
 
-        let result: CallToolResult = serde_json::from_value(resp.result
-            .ok_or_else(|| crate::ToolError::TodoError("call_tool: missing result".to_string()))?)
+        let result: CallToolResult =
+            serde_json::from_value(resp.result.ok_or_else(|| {
+                crate::ToolError::TodoError("call_tool: missing result".to_string())
+            })?)
             .map_err(|e| crate::ToolError::TodoError(format!("deserialize result: {e}")))?;
 
         Ok(result)
@@ -166,7 +214,9 @@ mod tests {
 
     impl MockTransport {
         fn new(responses: Vec<String>) -> Self {
-            Self { responses: Arc::new(Mutex::new(responses)) }
+            Self {
+                responses: Arc::new(Mutex::new(responses)),
+            }
         }
     }
 
@@ -175,7 +225,9 @@ mod tests {
         async fn request(&mut self, _message: &str) -> ToolResult<String> {
             let mut list = self.responses.lock().unwrap();
             if list.is_empty() {
-                Err(crate::ToolError::TodoError("no more mock responses".to_string()))
+                Err(crate::ToolError::TodoError(
+                    "no more mock responses".to_string(),
+                ))
             } else {
                 Ok(list.remove(0))
             }
@@ -198,7 +250,8 @@ mod tests {
                 },
                 "server_info": { "name": "test-server", "version": "1.0.0" }
             }
-        }).to_string()
+        })
+        .to_string()
     }
 
     fn mock_tools_list_response() -> String {
@@ -222,7 +275,8 @@ mod tests {
                 "content": [{ "type": "text", "text": "hello back" }],
                 "is_error": false
             }
-        }).to_string()
+        })
+        .to_string()
     }
 
     fn mock_initialize_response_for_notification() -> String {
@@ -234,7 +288,8 @@ mod tests {
                 "capabilities": { "tools": null, "resources": null },
                 "server_info": { "name": "test", "version": "0.1" }
             }
-        }).to_string()
+        })
+        .to_string()
     }
 
     #[tokio::test]
@@ -251,7 +306,8 @@ mod tests {
         let transport = MockTransport::new(vec![json!({
             "jsonrpc": "2.0", "id": 1,
             "error": { "code": -32603, "message": "internal error" }
-        }).to_string()]);
+        })
+        .to_string()]);
         let mut client = McpClient::new(Box::new(transport));
         let result = client.initialize("test", "0.1").await;
         assert!(result.is_err());
@@ -295,7 +351,8 @@ mod tests {
             json!({
                 "jsonrpc": "2.0", "id": 3,
                 "error": { "code": -32001, "message": "execution failed" }
-            }).to_string(),
+            })
+            .to_string(),
         ]);
         let mut client = McpClient::new(Box::new(transport));
         client.initialize("test", "0.1").await.unwrap();
@@ -312,4 +369,3 @@ mod tests {
         assert_eq!(client.server_info().unwrap().name, "test-server");
     }
 }
-

@@ -188,10 +188,7 @@ impl AutoFixer {
     /// 2. Generate suggestions
     /// 3. Run verification command
     /// 4. Report results
-    pub async fn fix_and_verify(
-        error_output: &str,
-        source_file: &str,
-    ) -> FixResult {
+    pub async fn fix_and_verify(error_output: &str, source_file: &str) -> FixResult {
         let start = Instant::now();
 
         let suggestions = Self::analyze_and_suggest(error_output, source_file);

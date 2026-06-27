@@ -196,9 +196,8 @@ pub async fn websearch(query: &str, num_results: usize) -> ToolResult<Vec<Search
     static RE_SNIPPET: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
         Regex::new(r##"<a[^>]*class="result__snippet"[^>]*>(.*?)</a>"##).unwrap()
     });
-    static RE_TAG: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
-        Regex::new(r"<[^>]*>").unwrap()
-    });
+    static RE_TAG: std::sync::LazyLock<Regex> =
+        std::sync::LazyLock::new(|| Regex::new(r"<[^>]*>").unwrap());
 
     // Try DoH-based direct connection first, fallback to default client.
     let client = match build_direct_client("html.duckduckgo.com", 443).await {
@@ -305,19 +304,42 @@ fn html_to_text(html: &str) -> String {
                         result.push('\n');
                         last_was_newline = true;
                     }
-                    tag if matches!(tag,
-                        "p" | "/p" | "div" | "/div" | "tr" | "/tr" |
-                        "li" | "/li" | "h1" | "/h1" | "h2" | "/h2" |
-                        "h3" | "/h3" | "h4" | "/h4" | "h5" | "/h5" |
-                        "h6" | "/h6" | "blockquote" | "/blockquote" |
-                        "pre" | "/pre" | "hr"
-                    ) && !last_was_newline => {
+                    tag if matches!(
+                        tag,
+                        "p" | "/p"
+                            | "div"
+                            | "/div"
+                            | "tr"
+                            | "/tr"
+                            | "li"
+                            | "/li"
+                            | "h1"
+                            | "/h1"
+                            | "h2"
+                            | "/h2"
+                            | "h3"
+                            | "/h3"
+                            | "h4"
+                            | "/h4"
+                            | "h5"
+                            | "/h5"
+                            | "h6"
+                            | "/h6"
+                            | "blockquote"
+                            | "/blockquote"
+                            | "pre"
+                            | "/pre"
+                            | "hr"
+                    ) && !last_was_newline =>
+                    {
                         result.push('\n');
                         last_was_newline = true;
                     }
                     _ => {
-                        if tag_name.starts_with('/') && !last_was_newline
-                            && !result.is_empty() && !result.ends_with(' ')
+                        if tag_name.starts_with('/')
+                            && !last_was_newline
+                            && !result.is_empty()
+                            && !result.ends_with(' ')
                         {
                             result.push(' ');
                         }
@@ -336,7 +358,9 @@ fn html_to_text(html: &str) -> String {
         if c == '&' {
             // Skip HTML entity (e.g., &amp; &lt;) — consumers get clean text
             for c in chars.by_ref() {
-                if c == ';' { break; }
+                if c == ';' {
+                    break;
+                }
             }
             continue;
         }
@@ -358,7 +382,8 @@ fn html_to_text(html: &str) -> String {
         last_was_newline = false;
     }
 
-    result.lines()
+    result
+        .lines()
         .map(|l| l.trim())
         .filter(|l| !l.is_empty())
         .collect::<Vec<_>>()
@@ -462,17 +487,26 @@ mod tests {
 
     #[test]
     fn test_extract_host_https() {
-        assert_eq!(extract_host("https://example.com/path").unwrap(), "example.com");
+        assert_eq!(
+            extract_host("https://example.com/path").unwrap(),
+            "example.com"
+        );
     }
 
     #[test]
     fn test_extract_host_with_port() {
-        assert_eq!(extract_host("https://example.com:8080/path").unwrap(), "example.com");
+        assert_eq!(
+            extract_host("https://example.com:8080/path").unwrap(),
+            "example.com"
+        );
     }
 
     #[test]
     fn test_extract_host_http() {
-        assert_eq!(extract_host("http://sub.example.org/page").unwrap(), "sub.example.org");
+        assert_eq!(
+            extract_host("http://sub.example.org/page").unwrap(),
+            "sub.example.org"
+        );
     }
 
     #[test]
@@ -551,7 +585,10 @@ mod tests {
     async fn test_webfetch_basic() {
         match webfetch("https://example.com").await {
             Ok(result) => {
-                assert!(result.content.contains("Example"), "content should contain 'Example'");
+                assert!(
+                    result.content.contains("Example"),
+                    "content should contain 'Example'"
+                );
                 assert_eq!(result.content_type, "text/html");
             }
             Err(e) => {

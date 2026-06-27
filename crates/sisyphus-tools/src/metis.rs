@@ -1,4 +1,3 @@
-
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use thiserror::Error;
@@ -29,7 +28,8 @@ impl LlmClient for DummyLlmClient {
             "implicit_requirements": [],
             "summary": format!("Dummy analysis for: {}", user),
             "actionable": true,
-        }).to_string())
+        })
+        .to_string())
     }
 }
 
@@ -49,10 +49,10 @@ impl LlmClient for FixedResponseClient {
 /// Flags an ambiguity or missing information in a request.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Ambiguity {
-    pub aspect: String,           // e.g. "scope", "timeline", "technology"
+    pub aspect: String, // e.g. "scope", "timeline", "technology"
     pub description: String,
     pub severity: AmbiguitySeverity,
-    pub options: Vec<String>,     // possible interpretations
+    pub options: Vec<String>, // possible interpretations
     pub recommended: Option<String>,
 }
 
@@ -78,8 +78,8 @@ impl std::fmt::Display for AmbiguitySeverity {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ImplicitRequirement {
     pub description: String,
-    pub rationale: String,          // why we think this is needed
-    pub confidence: f64,            // 0.0 – 1.0
+    pub rationale: String, // why we think this is needed
+    pub confidence: f64,   // 0.0 – 1.0
 }
 
 /// Full result from Metis analysis.
@@ -90,7 +90,7 @@ pub struct MetisAnalysis {
     pub ambiguities: Vec<Ambiguity>,
     pub implicit_requirements: Vec<ImplicitRequirement>,
     pub summary: String,
-    pub actionable: bool,           // true if enough info to proceed
+    pub actionable: bool, // true if enough info to proceed
 }
 
 // ── Analysis Functions ─────────────────────────────────────
@@ -169,9 +169,17 @@ Scope: auth endpoints only, no frontend. Testing included.
         // Clean request should have few issues
         assert!(analysis.actionable);
         // With success criteria + scope defined, ambiguities should be low
-        let scope_issues = analysis.ambiguities.iter().filter(|a| a.aspect == "scope").count();
+        let scope_issues = analysis
+            .ambiguities
+            .iter()
+            .filter(|a| a.aspect == "scope")
+            .count();
         assert_eq!(scope_issues, 0, "scope should be clear");
-        let verify_issues = analysis.ambiguities.iter().filter(|a| a.aspect == "verifiability").count();
+        let verify_issues = analysis
+            .ambiguities
+            .iter()
+            .filter(|a| a.aspect == "verifiability")
+            .count();
         assert_eq!(verify_issues, 0, "success criteria provided");
     }
 
@@ -220,7 +228,13 @@ Scope: auth endpoints only, no frontend. Testing included.
         let request = "What is the weather today?";
         let analysis = analyse(request, &DUMMY).await.unwrap();
         // Pure info request shouldn't trigger implementation-related implicits
-        assert!(analysis.implicit_requirements.is_empty() || !analysis.implicit_requirements.iter().any(|i| i.description.contains("Error handling")));
+        assert!(
+            analysis.implicit_requirements.is_empty()
+                || !analysis
+                    .implicit_requirements
+                    .iter()
+                    .any(|i| i.description.contains("Error handling"))
+        );
     }
 
     #[tokio::test]
@@ -238,7 +252,8 @@ Scope: auth endpoints only, no frontend. Testing included.
 
     #[tokio::test]
     async fn test_analyse_with_performance_keywords() {
-        let request = "Build a high-volume data processing pipeline that scales to millions of requests.";
+        let request =
+            "Build a high-volume data processing pipeline that scales to millions of requests.";
         let analysis = analyse(request, &DUMMY).await.unwrap();
         assert_eq!(analysis.request, request);
         assert!(analysis.actionable);
@@ -264,8 +279,16 @@ Scope: auth endpoints only, no frontend. Testing included.
     async fn test_analyse_with_tech_specified() {
         let request = "Implement a Rust service with tokio.";
         let analysis = analyse(request, &DUMMY).await.unwrap();
-        let tech_ambiguity = analysis.ambiguities.iter().find(|a| a.aspect == "technology");
-        assert!(tech_ambiguity.is_none() || tech_ambiguity.map(|a| a.severity == AmbiguitySeverity::Minor).unwrap_or(true));
+        let tech_ambiguity = analysis
+            .ambiguities
+            .iter()
+            .find(|a| a.aspect == "technology");
+        assert!(
+            tech_ambiguity.is_none()
+                || tech_ambiguity
+                    .map(|a| a.severity == AmbiguitySeverity::Minor)
+                    .unwrap_or(true)
+        );
     }
 
     #[tokio::test]
@@ -280,6 +303,9 @@ Scope: CLI command only, no engine changes.
         let analysis = analyse(request, &DUMMY).await.unwrap();
         assert!(analysis.actionable);
         // All major ambiguity dimensions should be covered
-        assert!(analysis.ambiguities.iter().all(|a| a.severity != AmbiguitySeverity::Blocking));
+        assert!(analysis
+            .ambiguities
+            .iter()
+            .all(|a| a.severity != AmbiguitySeverity::Blocking));
     }
 }

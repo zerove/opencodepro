@@ -80,7 +80,9 @@ impl DependencyManager {
             ])
             .output()
             .await
-            .map_err(|e| crate::ToolError::Generic(format!("Failed to run cargo-outdated: {}", e)))?;
+            .map_err(|e| {
+                crate::ToolError::Generic(format!("Failed to run cargo-outdated: {}", e))
+            })?;
 
         let stdout = String::from_utf8_lossy(&output.stdout);
         Ok(Self::parse_outdated(&stdout))
@@ -91,8 +93,7 @@ impl DependencyManager {
     /// This is a best-effort text replacement. For complex version specs,
     /// manual review is recommended.
     pub fn update_dep(&self, name: &str, version: &str) -> ToolResult<String> {
-        let content = std::fs::read_to_string(&self.manifest_path)
-            .map_err(crate::ToolError::Io)?;
+        let content = std::fs::read_to_string(&self.manifest_path).map_err(crate::ToolError::Io)?;
 
         // Try to find the dependency in the TOML file
         // Pattern: name = "version" or name = { version = "...", ... }
@@ -107,7 +108,10 @@ impl DependencyManager {
                 let mut updated = updated;
                 updated.replace_range(val_start..val_start + end, version);
                 let new_path = self.save_updated(&updated)?;
-                return Ok(format!("Updated {}: {} -> {} in {}", name, old_ver, version, new_path));
+                return Ok(format!(
+                    "Updated {}: {} -> {} in {}",
+                    name, old_ver, version, new_path
+                ));
             }
         }
 
@@ -122,7 +126,10 @@ impl DependencyManager {
                     let mut updated = updated;
                     updated.replace_range(val_start..val_start + end, version);
                     let new_path = self.save_updated(&updated)?;
-                    return Ok(format!("Updated {}: {} -> {} in {}", name, old_ver, version, new_path));
+                    return Ok(format!(
+                        "Updated {}: {} -> {} in {}",
+                        name, old_ver, version, new_path
+                    ));
                 }
             }
         }
@@ -155,7 +162,9 @@ impl DependencyManager {
                 .filter(|l| {
                     let t = l.trim();
                     // Dependency lines look like: `name = "version"` or `name = { ... }`
-                    !t.is_empty() && !t.starts_with('#') && !t.starts_with('[')
+                    !t.is_empty()
+                        && !t.starts_with('#')
+                        && !t.starts_with('[')
                         && (t.contains(" = \"") || t.contains("= {"))
                         && !t.starts_with("name")
                         && !t.starts_with("version")
@@ -167,8 +176,7 @@ impl DependencyManager {
     }
 
     fn save_updated(&self, content: &str) -> ToolResult<String> {
-        std::fs::write(&self.manifest_path, content)
-            .map_err(crate::ToolError::Io)?;
+        std::fs::write(&self.manifest_path, content).map_err(crate::ToolError::Io)?;
         Ok(self.manifest_path.clone())
     }
 
@@ -181,9 +189,23 @@ impl DependencyManager {
                     .filter_map(|a| {
                         Some(Vulnerability {
                             package: a.get("package").and_then(|p| p.as_str())?.to_string(),
-                            severity: a.get("severity").and_then(|s| s.as_str()).unwrap_or("unknown").to_string(),
-                            advisory_url: a.get("advisory").and_then(|a| a.get("url")).and_then(|u| u.as_str()).unwrap_or("").to_string(),
-                            description: a.get("advisory").and_then(|a| a.get("description")).and_then(|d| d.as_str()).unwrap_or("").to_string(),
+                            severity: a
+                                .get("severity")
+                                .and_then(|s| s.as_str())
+                                .unwrap_or("unknown")
+                                .to_string(),
+                            advisory_url: a
+                                .get("advisory")
+                                .and_then(|a| a.get("url"))
+                                .and_then(|u| u.as_str())
+                                .unwrap_or("")
+                                .to_string(),
+                            description: a
+                                .get("advisory")
+                                .and_then(|a| a.get("description"))
+                                .and_then(|d| d.as_str())
+                                .unwrap_or("")
+                                .to_string(),
                         })
                     })
                     .collect();
@@ -216,8 +238,16 @@ impl DependencyManager {
                 .filter_map(|entry| {
                     Some(OutdatedDep {
                         name: entry.get("name").and_then(|n| n.as_str())?.to_string(),
-                        current_version: entry.get("project").and_then(|v| v.as_str()).unwrap_or("?").to_string(),
-                        latest_version: entry.get("latest").and_then(|v| v.as_str()).unwrap_or("?").to_string(),
+                        current_version: entry
+                            .get("project")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("?")
+                            .to_string(),
+                        latest_version: entry
+                            .get("latest")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("?")
+                            .to_string(),
                     })
                 })
                 .collect();

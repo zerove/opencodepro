@@ -1,6 +1,6 @@
-use serde::{Deserialize, Serialize};
 use crate::metis::LlmClient;
 use crate::ToolResult;
+use serde::{Deserialize, Serialize};
 
 // ── Types ──────────────────────────────────────────────────
 
@@ -25,7 +25,7 @@ impl std::fmt::Display for SecuritySeverity {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Vulnerability {
-    pub vuln_type: String,       // e.g. "Buffer Overflow", "SQL Injection"
+    pub vuln_type: String, // e.g. "Buffer Overflow", "SQL Injection"
     pub severity: SecuritySeverity,
     pub line: Option<usize>,
     pub message: String,
@@ -39,7 +39,7 @@ pub struct SecurityAuditReport {
     #[serde(default)]
     pub vulnerabilities: Vec<Vulnerability>,
     #[serde(default)]
-    pub passed: bool,            // true if no Critical or High vulnerabilities exist
+    pub passed: bool, // true if no Critical or High vulnerabilities exist
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -124,7 +124,11 @@ Guidelines:
 // ── Core Functions ──────────────────────────────────────────
 
 /// Audit source code for security vulnerabilities.
-pub async fn audit_code(client: &dyn LlmClient, path: &std::path::Path, content: &str) -> ToolResult<SecurityAuditReport> {
+pub async fn audit_code(
+    client: &dyn LlmClient,
+    path: &std::path::Path,
+    content: &str,
+) -> ToolResult<SecurityAuditReport> {
     let user_prompt = format!("File: {}\n\nContent:\n{}", path.to_string_lossy(), content);
     let response = client
         .chat(SECURITY_SYSTEM_PROMPT, &user_prompt, true)
@@ -138,7 +142,10 @@ pub async fn audit_code(client: &dyn LlmClient, path: &std::path::Path, content:
 }
 
 /// Analyze architecture description for potential attack vectors.
-pub async fn threat_model(client: &dyn LlmClient, arch_text: &str) -> ToolResult<ThreatModelReport> {
+pub async fn threat_model(
+    client: &dyn LlmClient,
+    arch_text: &str,
+) -> ToolResult<ThreatModelReport> {
     let response = client
         .chat(SECURITY_SYSTEM_PROMPT, arch_text, true)
         .await
@@ -280,7 +287,10 @@ mod tests {
         };
         let json = serde_json::to_string(&report).unwrap();
         let deserialized: SecurityAuditReport = serde_json::from_str(&json).unwrap();
-        assert_eq!(report.vulnerabilities.len(), deserialized.vulnerabilities.len());
+        assert_eq!(
+            report.vulnerabilities.len(),
+            deserialized.vulnerabilities.len()
+        );
         assert_eq!(report.summary, deserialized.summary);
         assert_eq!(report.passed, deserialized.passed);
     }
@@ -326,14 +336,12 @@ mod tests {
     fn test_threat_model_report() {
         let report = ThreatModelReport {
             summary: "Architecture has moderate risk".into(),
-            attack_vectors: vec![
-                AttackVector {
-                    vector: "Privilege Escalation".into(),
-                    description: "Weak RBAC".into(),
-                    impact: "Unauthorized access".into(),
-                    mitigation: "Implement ABAC".into(),
-                },
-            ],
+            attack_vectors: vec![AttackVector {
+                vector: "Privilege Escalation".into(),
+                description: "Weak RBAC".into(),
+                impact: "Unauthorized access".into(),
+                mitigation: "Implement ABAC".into(),
+            }],
             overall_risk: SecuritySeverity::High,
         };
         assert_eq!(report.attack_vectors.len(), 1);

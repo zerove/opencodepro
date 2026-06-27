@@ -78,7 +78,10 @@ mod tests {
         let checker = PermissionChecker::new(rules);
         let result = checker.require("write");
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), ToolError::PermissionDenied(_)));
+        assert!(matches!(
+            result.unwrap_err(),
+            ToolError::PermissionDenied(_)
+        ));
     }
 
     #[test]

@@ -1,5 +1,5 @@
-use std::path::{Path, PathBuf};
 use crate::ToolResult;
+use std::path::{Path, PathBuf};
 
 /// Configuration for the pre-commit hook checks.
 #[derive(Debug, Clone)]
@@ -253,9 +253,9 @@ pub fn is_sisyphus_hook(repo_path: &Path) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::TempDir;
     #[cfg(unix)]
     use std::os::unix::fs::PermissionsExt;
+    use tempfile::TempDir;
 
     fn init_git_repo(dir: &Path) {
         let hooks = dir.join(".git").join("hooks");
@@ -304,7 +304,10 @@ mod tests {
 
     #[test]
     fn test_generate_hook_node() {
-        let cfg = PrecommitConfig { backend: "node".into(), ..Default::default() };
+        let cfg = PrecommitConfig {
+            backend: "node".into(),
+            ..Default::default()
+        };
         let script = generate_hook_script(&cfg);
         assert!(script.contains("prettier"));
         assert!(script.contains("eslint"));
@@ -313,7 +316,10 @@ mod tests {
 
     #[test]
     fn test_generate_hook_python() {
-        let cfg = PrecommitConfig { backend: "python".into(), ..Default::default() };
+        let cfg = PrecommitConfig {
+            backend: "python".into(),
+            ..Default::default()
+        };
         let script = generate_hook_script(&cfg);
         assert!(script.contains("ruff format"));
         assert!(script.contains("ruff check"));
@@ -323,7 +329,10 @@ mod tests {
 
     #[test]
     fn test_generate_hook_go() {
-        let cfg = PrecommitConfig { backend: "go".into(), ..Default::default() };
+        let cfg = PrecommitConfig {
+            backend: "go".into(),
+            ..Default::default()
+        };
         let script = generate_hook_script(&cfg);
         assert!(script.contains("gofmt"));
         assert!(script.contains("go vet"));
@@ -332,7 +341,10 @@ mod tests {
 
     #[test]
     fn test_generate_hook_java() {
-        let cfg = PrecommitConfig { backend: "java".into(), ..Default::default() };
+        let cfg = PrecommitConfig {
+            backend: "java".into(),
+            ..Default::default()
+        };
         let script = generate_hook_script(&cfg);
         assert!(script.contains("google-java-format"));
         assert!(script.contains("mvn checkstyle"));
@@ -341,7 +353,10 @@ mod tests {
 
     #[test]
     fn test_generate_hook_frontend() {
-        let cfg = PrecommitConfig { backend: "fe".into(), ..Default::default() };
+        let cfg = PrecommitConfig {
+            backend: "fe".into(),
+            ..Default::default()
+        };
         let script = generate_hook_script(&cfg);
         assert!(script.contains("prettier"));
         assert!(script.contains("stylelint"));
@@ -374,7 +389,10 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let result = install_precommit(dir.path(), &PrecommitConfig::default());
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Not a git repository"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Not a git repository"));
     }
 
     #[test]
@@ -407,7 +425,10 @@ mod tests {
 
         let result = uninstall_precommit(dir.path());
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("No pre-commit hook found"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("No pre-commit hook found"));
     }
 
     #[test]

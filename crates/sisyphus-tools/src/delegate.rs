@@ -1,9 +1,9 @@
+use crate::ToolResult;
 use std::future::Future;
 use std::pin::Pin;
 use std::time::Instant;
 use tokio::sync::mpsc;
 use tokio::task::JoinSet;
-use crate::ToolResult;
 
 type BoxedFuture<T> = Pin<Box<dyn Future<Output = T> + Send>>;
 
@@ -76,17 +76,21 @@ impl WorkOrchestrator {
     }
 
     /// Run all work units and collect results. Uses a semaphore for concurrency control.
-    pub async fn run_all(
-        &self,
-        units: Vec<WorkUnit>,
-    ) -> ToolResult<Vec<WorkReport>> {
+    pub async fn run_all(&self, units: Vec<WorkUnit>) -> ToolResult<Vec<WorkReport>> {
         let count = units.len();
-        let semaphore_max = if self.max_concurrent == 0 { count } else { self.max_concurrent };
+        let semaphore_max = if self.max_concurrent == 0 {
+            count
+        } else {
+            self.max_concurrent
+        };
         let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(semaphore_max));
 
         let mut set = JoinSet::new();
         for unit in units {
-            let permit = semaphore.clone().acquire_owned().await
+            let permit = semaphore
+                .clone()
+                .acquire_owned()
+                .await
                 .map_err(|e| crate::ToolError::TodoError(format!("semaphore: {e}")))?;
             set.spawn(async move {
                 let _permit = permit;
@@ -136,24 +140,36 @@ impl WorkOrchestrator {
     pub async fn run_all_with_events(
         &self,
         units: Vec<WorkUnit>,
-    ) -> (mpsc::Receiver<DelegateEvent>, tokio::task::JoinHandle<Vec<WorkReport>>) {
+    ) -> (
+        mpsc::Receiver<DelegateEvent>,
+        tokio::task::JoinHandle<Vec<WorkReport>>,
+    ) {
         let (tx, rx) = mpsc::channel(units.len() + 1);
         let handle = {
             let tx = tx.clone();
             let count = units.len();
-            let semaphore_max = if self.max_concurrent == 0 { count } else { self.max_concurrent };
+            let semaphore_max = if self.max_concurrent == 0 {
+                count
+            } else {
+                self.max_concurrent
+            };
             let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(semaphore_max));
 
             tokio::spawn(async move {
                 let mut set = JoinSet::new();
                 for unit in units {
-                    let permit = semaphore.clone().acquire_owned().await
+                    let permit = semaphore
+                        .clone()
+                        .acquire_owned()
+                        .await
                         .unwrap_or_else(|_| panic!("semaphore closed"));
                     let tx = tx.clone();
-                    let _ = tx.send(DelegateEvent::Started {
-                        id: unit.id.clone(),
-                        name: unit.name.clone(),
-                    }).await;
+                    let _ = tx
+                        .send(DelegateEvent::Started {
+                            id: unit.id.clone(),
+                            name: unit.name.clone(),
+                        })
+                        .await;
 
                     set.spawn(async move {
                         let _permit = permit;
@@ -231,7 +247,9 @@ mod tests {
     }
 
     async fn fail_task(_msg: &'static str) -> ToolResult<serde_json::Value> {
-        Err(crate::ToolError::TodoError("intentional failure".to_string()))
+        Err(crate::ToolError::TodoError(
+            "intentional failure".to_string(),
+        ))
     }
 
     #[test]
@@ -251,12 +269,13 @@ mod tests {
 
     #[test]
     fn test_work_unit_debug() {
-        let unit = work_unit("id-1", "my task", || async {
-            Ok(json!({}))
-        });
+        let unit = work_unit("id-1", "my task", || async { Ok(json!({})) });
         let debug = format!("{:?}", unit);
         assert!(debug.contains("id-1"), "debug should contain id: {debug}");
-        assert!(debug.contains("my task"), "debug should contain name: {debug}");
+        assert!(
+            debug.contains("my task"),
+            "debug should contain name: {debug}"
+        );
     }
 
     #[test]
@@ -284,13 +303,22 @@ mod tests {
 
     #[test]
     fn test_delegate_event_variants() {
-        let e1 = DelegateEvent::Started { id: "a".into(), name: "A".into() };
+        let e1 = DelegateEvent::Started {
+            id: "a".into(),
+            name: "A".into(),
+        };
         let e2 = DelegateEvent::Completed(WorkReport {
-            id: "a".into(), name: "A".into(),
+            id: "a".into(),
+            name: "A".into(),
             status: WorkStatus::Completed,
-            result: None, error: None, duration_ms: 0,
+            result: None,
+            error: None,
+            duration_ms: 0,
         });
-        let e3 = DelegateEvent::Progress { id: "a".into(), message: "working".into() };
+        let e3 = DelegateEvent::Progress {
+            id: "a".into(),
+            message: "working".into(),
+        };
         // Verify all variants can be formatted (Debug)
         let _ = format!("{:?}", e1);
         let _ = format!("{:?}", e2);
@@ -329,7 +357,11 @@ mod tests {
         let elapsed = start.elapsed();
 
         // With 2 concurrent slots and 2 slow tasks, should take ~50ms not 100ms+
-        assert!(elapsed.as_millis() < 150, "took too long: {}ms, expected <150ms with concurrency=2", elapsed.as_millis());
+        assert!(
+            elapsed.as_millis() < 150,
+            "took too long: {}ms, expected <150ms with concurrency=2",
+            elapsed.as_millis()
+        );
         assert_eq!(reports.len(), 3);
     }
 
@@ -356,9 +388,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_work_unit_closure() {
-        let unit = work_unit("test", "closure", || async {
-            Ok(json!({ "value": 42 }))
-        });
+        let unit = work_unit("test", "closure", || async { Ok(json!({ "value": 42 })) });
         assert_eq!(unit.id, "test");
         assert_eq!(unit.name, "closure");
     }

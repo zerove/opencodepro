@@ -1,6 +1,6 @@
+use crate::{ToolError, ToolResult};
 use std::path::Path;
 use std::process::Command;
-use crate::{ToolError, ToolResult};
 
 // ── Structured return types ────────────────────────────────
 
@@ -147,7 +147,14 @@ pub fn status(cwd: Option<&Path>) -> ToolResult<GitStatus> {
         branch = current_branch(cwd)?;
     }
 
-    Ok(GitStatus { branch, ahead, behind, staged, unstaged, untracked })
+    Ok(GitStatus {
+        branch,
+        ahead,
+        behind,
+        staged,
+        unstaged,
+        untracked,
+    })
 }
 
 /// Run `git diff` and return the raw diff text.
@@ -191,11 +198,7 @@ pub fn log(count: usize, cwd: Option<&Path>) -> ToolResult<GitCommitLog> {
     require_git_repo(cwd)?;
     let n = count.to_string();
     // format: hash%%author%%date%%message
-    let out = git_args(&[
-        "log",
-        &format!("-{n}"),
-        "--format=%h%%%an%%%ai%%%s",
-    ], cwd)?;
+    let out = git_args(&["log", &format!("-{n}"), "--format=%h%%%an%%%ai%%%s"], cwd)?;
 
     let mut entries = Vec::new();
     for line in out.lines() {
@@ -220,7 +223,10 @@ pub fn branch(cwd: Option<&Path>) -> ToolResult<Vec<BranchInfo>> {
     for line in out.lines() {
         let current = line.starts_with('*');
         let name = if current { &line[2..] } else { line.trim() };
-        branches.push(BranchInfo { current, name: name.to_string() });
+        branches.push(BranchInfo {
+            current,
+            name: name.to_string(),
+        });
     }
     Ok(branches)
 }
@@ -272,10 +278,7 @@ pub fn summary(cwd: Option<&Path>) -> ToolResult<String> {
     let untracked_count = s.untracked.len();
     Ok(format!(
         "{} +{} ~{} ?{}",
-        s.branch,
-        staged_count,
-        unstaged_count,
-        untracked_count,
+        s.branch, staged_count, unstaged_count, untracked_count,
     ))
 }
 
@@ -284,8 +287,8 @@ pub fn summary(cwd: Option<&Path>) -> ToolResult<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
     use std::fs;
+    use std::path::PathBuf;
     use tempfile::TempDir;
 
     fn init_repo() -> (TempDir, PathBuf) {

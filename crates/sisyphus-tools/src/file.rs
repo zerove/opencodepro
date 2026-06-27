@@ -1,9 +1,9 @@
+use crate::{ToolError, ToolResult};
+use ignore::WalkBuilder;
+use regex::Regex;
 use std::fs;
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
-use crate::{ToolError, ToolResult};
-use regex::Regex;
-use ignore::WalkBuilder;
 use tempfile::NamedTempFile;
 
 #[derive(Debug)]
@@ -57,79 +57,95 @@ pub fn write(path: &Path, content: &str) -> ToolResult<()> {
     // Create a temp file in the same directory as the target to ensure they are on the same mount point
     let parent = path.parent().unwrap_or_else(|| Path::new("."));
     let mut temp_file = NamedTempFile::new_in(parent).map_err(ToolError::Io)?;
-    
-    temp_file.write_all(content.as_bytes()).map_err(ToolError::Io)?;
-    temp_file.persist(path).map_err(|e| ToolError::Io(e.error))?;
-    
+
+    temp_file
+        .write_all(content.as_bytes())
+        .map_err(ToolError::Io)?;
+    temp_file
+        .persist(path)
+        .map_err(|e| ToolError::Io(e.error))?;
+
     Ok(())
 }
 
 pub fn edit(path: &Path, old_string: &str, new_string: &str) -> ToolResult<()> {
     let parent = path.parent().unwrap_or_else(|| Path::new("."));
     let mut temp_file = NamedTempFile::new_in(parent).map_err(ToolError::Io)?;
-    
+
     let file = fs::File::open(path).map_err(ToolError::Io)?;
     let mut reader = BufReader::new(file);
     let mut replaced = false;
     let mut line_buffer = String::new();
-    
+
     loop {
         line_buffer.clear();
         let bytes_read = reader.read_line(&mut line_buffer).map_err(ToolError::Io)?;
         if bytes_read == 0 {
             break; // EOF
         }
-        
+
         if !replaced && line_buffer.contains(old_string) {
             if line_buffer.matches(old_string).count() > 1 {
                 return Err(ToolError::EditAmbiguous);
             }
             let new_line = line_buffer.replace(old_string, new_string);
-            temp_file.write_all(new_line.as_bytes()).map_err(ToolError::Io)?;
+            temp_file
+                .write_all(new_line.as_bytes())
+                .map_err(ToolError::Io)?;
             replaced = true;
         } else {
-            temp_file.write_all(line_buffer.as_bytes()).map_err(ToolError::Io)?;
+            temp_file
+                .write_all(line_buffer.as_bytes())
+                .map_err(ToolError::Io)?;
         }
     }
-    
+
     if !replaced {
         return Err(ToolError::EditNoMatch);
     }
-    
-    temp_file.persist(path).map_err(|e| ToolError::Io(e.error))?;
+
+    temp_file
+        .persist(path)
+        .map_err(|e| ToolError::Io(e.error))?;
     Ok(())
 }
 
 pub fn edit_all(path: &Path, old_string: &str, new_string: &str) -> ToolResult<usize> {
     let parent = path.parent().unwrap_or_else(|| Path::new("."));
     let mut temp_file = NamedTempFile::new_in(parent).map_err(ToolError::Io)?;
-    
+
     let file = fs::File::open(path).map_err(ToolError::Io)?;
     let mut reader = BufReader::new(file);
     let mut count = 0;
     let mut line_buffer = String::new();
-    
+
     loop {
         line_buffer.clear();
         let bytes_read = reader.read_line(&mut line_buffer).map_err(ToolError::Io)?;
         if bytes_read == 0 {
             break; // EOF
         }
-        
+
         if line_buffer.contains(old_string) {
             count += line_buffer.matches(old_string).count();
             let new_line = line_buffer.replace(old_string, new_string);
-            temp_file.write_all(new_line.as_bytes()).map_err(ToolError::Io)?;
+            temp_file
+                .write_all(new_line.as_bytes())
+                .map_err(ToolError::Io)?;
         } else {
-            temp_file.write_all(line_buffer.as_bytes()).map_err(ToolError::Io)?;
+            temp_file
+                .write_all(line_buffer.as_bytes())
+                .map_err(ToolError::Io)?;
         }
     }
-    
+
     if count == 0 {
         return Err(ToolError::EditNoMatch);
     }
-    
-    temp_file.persist(path).map_err(|e| ToolError::Io(e.error))?;
+
+    temp_file
+        .persist(path)
+        .map_err(|e| ToolError::Io(e.error))?;
     Ok(count)
 }
 
@@ -141,9 +157,7 @@ pub fn glob(pattern: &str, root: &Path) -> ToolResult<Vec<PathBuf>> {
     };
 
     let entries = ::glob::glob(&full_pattern).map_err(|e| ToolError::GlobPattern(e.to_string()))?;
-    let mut paths: Vec<PathBuf> = entries
-        .filter_map(|e| e.ok())
-        .collect();
+    let mut paths: Vec<PathBuf> = entries.filter_map(|e| e.ok()).collect();
 
     paths.sort_by(|a, b| {
         let a_time = fs::metadata(a).and_then(|m| m.modified()).ok();
@@ -194,7 +208,7 @@ fn grep_file(re: &Regex, path: &Path) -> ToolResult<Vec<GrepMatch>> {
 
     let reader = BufReader::new(file);
     let mut file_matches = Vec::new();
-    
+
     for (i, line) in reader.lines().enumerate() {
         let line = line?;
         if re.is_match(&line) {
@@ -299,7 +313,6 @@ mod tests {
         let results = grep("pattern", &path, None).unwrap();
         assert!(results.is_empty());
     }
-
 
     #[test]
     fn test_edit_ambiguous() {

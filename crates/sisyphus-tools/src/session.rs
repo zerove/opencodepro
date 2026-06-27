@@ -1,8 +1,8 @@
+use crate::{ToolError, ToolResult};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
-use serde::{Deserialize, Serialize};
-use crate::{ToolError, ToolResult};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Message {
@@ -30,7 +30,10 @@ struct SessionStore {
 
 impl SessionStore {
     fn empty() -> Self {
-        Self { sessions: HashMap::new(), next_seq: 1 }
+        Self {
+            sessions: HashMap::new(),
+            next_seq: 1,
+        }
     }
 
     fn load_or_empty(path: &Path) -> Self {
@@ -100,7 +103,8 @@ pub fn session_list(path: &Path) -> ToolResult<Vec<Session>> {
     let store = SessionStore::load_or_empty(path);
     let mut sessions: Vec<_> = store.sessions.into_values().collect();
     sessions.sort_by(|a, b| {
-        b.updated_at.cmp(&a.updated_at)
+        b.updated_at
+            .cmp(&a.updated_at)
             .then_with(|| b.id.cmp(&a.id))
     });
     Ok(sessions)
@@ -109,7 +113,10 @@ pub fn session_list(path: &Path) -> ToolResult<Vec<Session>> {
 /// Get a session by ID.
 pub fn session_get(path: &Path, id: &str) -> ToolResult<Session> {
     let store = SessionStore::load_or_empty(path);
-    store.sessions.get(id).cloned()
+    store
+        .sessions
+        .get(id)
+        .cloned()
         .ok_or_else(|| ToolError::TodoError(format!("session not found: {id}")))
 }
 
@@ -123,9 +130,16 @@ pub fn session_delete(path: &Path, id: &str) -> ToolResult<()> {
 }
 
 /// Append a message to a session.
-pub fn session_add_message(path: &Path, id: &str, role: &str, content: &str) -> ToolResult<Session> {
+pub fn session_add_message(
+    path: &Path,
+    id: &str,
+    role: &str,
+    content: &str,
+) -> ToolResult<Session> {
     let mut store = SessionStore::load_or_empty(path);
-    let session = store.sessions.get_mut(id)
+    let session = store
+        .sessions
+        .get_mut(id)
         .ok_or_else(|| ToolError::TodoError(format!("session not found: {id}")))?;
 
     let msg = Message {
@@ -145,7 +159,9 @@ pub fn session_add_message(path: &Path, id: &str, role: &str, content: &str) -> 
 /// All messages from the original are preserved in the new session.
 pub fn session_fork(path: &Path, id: &str, new_name: &str) -> ToolResult<Session> {
     let mut store = SessionStore::load_or_empty(path);
-    let original = store.sessions.get(id)
+    let original = store
+        .sessions
+        .get(id)
         .ok_or_else(|| ToolError::TodoError(format!("session not found: {id}")))?
         .clone();
 
@@ -172,7 +188,9 @@ pub fn session_fork(path: &Path, id: &str, new_name: &str) -> ToolResult<Session
 /// "resuming from this session" to the caller.
 pub fn session_continue(path: &Path, id: &str) -> ToolResult<Session> {
     let mut store = SessionStore::load_or_empty(path);
-    let session = store.sessions.get_mut(id)
+    let session = store
+        .sessions
+        .get_mut(id)
         .ok_or_else(|| ToolError::TodoError(format!("session not found: {id}")))?;
     session.updated_at = now_iso();
     let result = session.clone();
@@ -183,11 +201,15 @@ pub fn session_continue(path: &Path, id: &str) -> ToolResult<Session> {
 /// Undo the last message in a session — removes it and decrements message count.
 pub fn session_undo(path: &Path, id: &str) -> ToolResult<Session> {
     let mut store = SessionStore::load_or_empty(path);
-    let session = store.sessions.get_mut(id)
+    let session = store
+        .sessions
+        .get_mut(id)
         .ok_or_else(|| ToolError::TodoError(format!("session not found: {id}")))?;
 
     if session.messages.is_empty() {
-        return Err(ToolError::TodoError("nothing to undo — session is empty".into()));
+        return Err(ToolError::TodoError(
+            "nothing to undo — session is empty".into(),
+        ));
     }
 
     session.messages.pop();
@@ -201,7 +223,9 @@ pub fn session_undo(path: &Path, id: &str) -> ToolResult<Session> {
 /// Update a session's name.
 pub fn session_rename(path: &Path, id: &str, name: &str) -> ToolResult<Session> {
     let mut store = SessionStore::load_or_empty(path);
-    let session = store.sessions.get_mut(id)
+    let session = store
+        .sessions
+        .get_mut(id)
         .ok_or_else(|| ToolError::TodoError(format!("session not found: {id}")))?;
     session.name = name.to_string();
     session.updated_at = now_iso();
@@ -365,8 +389,16 @@ mod tests {
             updated_at: "2026-06-01T00:00:00.000Z".into(),
             message_count: 2,
             messages: vec![
-                Message { role: "user".into(), content: "hi".into(), created_at: "2026-01-01T00:00:00.000Z".into() },
-                Message { role: "assistant".into(), content: "hello".into(), created_at: "2026-01-01T00:00:00.000Z".into() },
+                Message {
+                    role: "user".into(),
+                    content: "hi".into(),
+                    created_at: "2026-01-01T00:00:00.000Z".into(),
+                },
+                Message {
+                    role: "assistant".into(),
+                    content: "hello".into(),
+                    created_at: "2026-01-01T00:00:00.000Z".into(),
+                },
             ],
             metadata,
         };
@@ -460,7 +492,10 @@ mod tests {
         assert_eq!(continued.id, s.id);
         assert_eq!(continued.message_count, 1);
         // updated_at should be newer
-        assert!(continued.updated_at >= updated_before, "expected update timestamp to advance");
+        assert!(
+            continued.updated_at >= updated_before,
+            "expected update timestamp to advance"
+        );
 
         let fetched = session_get(&path, &s.id).unwrap();
         assert_eq!(fetched.message_count, 1);

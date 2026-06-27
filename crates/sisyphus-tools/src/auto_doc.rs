@@ -9,8 +9,7 @@ pub struct AutoDocGenerator;
 impl AutoDocGenerator {
     /// Generate a doc comment for a specific function in a file.
     pub fn generate_for_function(file_path: &str, fn_name: &str) -> ToolResult<String> {
-        let content = std::fs::read_to_string(file_path)
-            .map_err(crate::ToolError::Io)?;
+        let content = std::fs::read_to_string(file_path).map_err(crate::ToolError::Io)?;
 
         let lines: Vec<&str> = content.lines().collect();
         let mut doc = String::new();
@@ -22,7 +21,9 @@ impl AutoDocGenerator {
 
             // Look for "pub fn fn_name" or "fn fn_name"
             if trimmed.contains(&format!("fn {}", fn_name))
-                && (trimmed.starts_with("pub") || trimmed.starts_with("async") || trimmed.starts_with("fn"))
+                && (trimmed.starts_with("pub")
+                    || trimmed.starts_with("async")
+                    || trimmed.starts_with("fn"))
             {
                 found = true;
 
@@ -91,8 +92,7 @@ impl AutoDocGenerator {
     /// Generate doc comments for all public items in a file.
     /// Returns (item_name, doc_string) pairs.
     pub fn generate_for_module(file_path: &str) -> ToolResult<Vec<(String, String)>> {
-        let content = std::fs::read_to_string(file_path)
-            .map_err(crate::ToolError::Io)?;
+        let content = std::fs::read_to_string(file_path).map_err(crate::ToolError::Io)?;
 
         let mut results = Vec::new();
 
@@ -104,10 +104,39 @@ impl AutoDocGenerator {
             let item_name = if let Some(rest) = trimmed.strip_prefix("pub fn ") {
                 Some(rest.split('(').next().unwrap_or("").trim().to_string())
             } else if let Some(rest) = trimmed.strip_prefix("pub struct ") {
-                Some(rest.split('<').next().unwrap_or("").split('{').next().unwrap_or("").trim().to_string())
+                Some(
+                    rest.split('<')
+                        .next()
+                        .unwrap_or("")
+                        .split('{')
+                        .next()
+                        .unwrap_or("")
+                        .trim()
+                        .to_string(),
+                )
             } else if let Some(rest) = trimmed.strip_prefix("pub enum ") {
-                Some(rest.split('<').next().unwrap_or("").split('{').next().unwrap_or("").trim().to_string())
-            } else { trimmed.strip_prefix("pub trait ").map(|rest| rest.split('<').next().unwrap_or("").split('{').next().unwrap_or("").trim().to_string()) };
+                Some(
+                    rest.split('<')
+                        .next()
+                        .unwrap_or("")
+                        .split('{')
+                        .next()
+                        .unwrap_or("")
+                        .trim()
+                        .to_string(),
+                )
+            } else {
+                trimmed.strip_prefix("pub trait ").map(|rest| {
+                    rest.split('<')
+                        .next()
+                        .unwrap_or("")
+                        .split('{')
+                        .next()
+                        .unwrap_or("")
+                        .trim()
+                        .to_string()
+                })
+            };
 
             if let Some(name) = item_name {
                 if !name.is_empty() {
@@ -126,7 +155,10 @@ impl AutoDocGenerator {
                         }
                         d
                     } else {
-                        format!("/// The [`{}`] type.\n///\n/// Auto-generated documentation stub.\n", name)
+                        format!(
+                            "/// The [`{}`] type.\n///\n/// Auto-generated documentation stub.\n",
+                            name
+                        )
                     };
                     results.push((name, doc));
                 }

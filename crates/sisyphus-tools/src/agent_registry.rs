@@ -91,7 +91,8 @@ impl AgentRegistry {
                 "metis",
                 AgentInfo {
                     display_name: "Metis".into(),
-                    description: "Requirement analysis, ambiguity detection, plan consulting".into(),
+                    description: "Requirement analysis, ambiguity detection, plan consulting"
+                        .into(),
                     tool_prefixes: vec!["metis/".into()],
                     max_concurrency: 2,
                 },
@@ -228,12 +229,15 @@ mod tests {
     #[test]
     fn test_unregister() {
         let reg = make_registry();
-        reg.register("test", AgentInfo {
-            display_name: "Test".into(),
-            description: "".into(),
-            tool_prefixes: vec![],
-            max_concurrency: 1,
-        });
+        reg.register(
+            "test",
+            AgentInfo {
+                display_name: "Test".into(),
+                description: "".into(),
+                tool_prefixes: vec![],
+                max_concurrency: 1,
+            },
+        );
         assert!(reg.has("test"));
         assert!(reg.unregister("test"));
         assert!(!reg.has("test"));
@@ -245,12 +249,30 @@ mod tests {
         let reg = make_registry();
         reg.register_builtin();
 
-        assert_eq!(reg.resolve_agent_for_tool("librarian/research"), Some("librarian".into()));
-        assert_eq!(reg.resolve_agent_for_tool("metis/analyse"), Some("metis".into()));
-        assert_eq!(reg.resolve_agent_for_tool("momus/review_code"), Some("momus".into()));
-        assert_eq!(reg.resolve_agent_for_tool("scribe/generate_adr"), Some("scribe".into()));
-        assert_eq!(reg.resolve_agent_for_tool("security/audit_code"), Some("security".into()));
-        assert_eq!(reg.resolve_agent_for_tool("delegate/run"), Some("delegate".into()));
+        assert_eq!(
+            reg.resolve_agent_for_tool("librarian/research"),
+            Some("librarian".into())
+        );
+        assert_eq!(
+            reg.resolve_agent_for_tool("metis/analyse"),
+            Some("metis".into())
+        );
+        assert_eq!(
+            reg.resolve_agent_for_tool("momus/review_code"),
+            Some("momus".into())
+        );
+        assert_eq!(
+            reg.resolve_agent_for_tool("scribe/generate_adr"),
+            Some("scribe".into())
+        );
+        assert_eq!(
+            reg.resolve_agent_for_tool("security/audit_code"),
+            Some("security".into())
+        );
+        assert_eq!(
+            reg.resolve_agent_for_tool("delegate/run"),
+            Some("delegate".into())
+        );
     }
 
     #[test]
@@ -265,18 +287,24 @@ mod tests {
     #[test]
     fn test_register_overwrite() {
         let reg = make_registry();
-        reg.register("metis", AgentInfo {
-            display_name: "Old".into(),
-            description: "".into(),
-            tool_prefixes: vec![],
-            max_concurrency: 1,
-        });
-        reg.register("metis", AgentInfo {
-            display_name: "New".into(),
-            description: "Updated".into(),
-            tool_prefixes: vec!["metis/".into()],
-            max_concurrency: 4,
-        });
+        reg.register(
+            "metis",
+            AgentInfo {
+                display_name: "Old".into(),
+                description: "".into(),
+                tool_prefixes: vec![],
+                max_concurrency: 1,
+            },
+        );
+        reg.register(
+            "metis",
+            AgentInfo {
+                display_name: "New".into(),
+                description: "Updated".into(),
+                tool_prefixes: vec!["metis/".into()],
+                max_concurrency: 4,
+            },
+        );
         let info = reg.get("metis").unwrap();
         assert_eq!(info.display_name, "New");
         assert_eq!(info.max_concurrency, 4);

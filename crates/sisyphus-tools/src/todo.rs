@@ -1,9 +1,9 @@
+use crate::{ToolError, ToolResult};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
-use serde::{Deserialize, Serialize};
-use crate::{ToolError, ToolResult};
 
 static NEXT_ID: AtomicU64 = AtomicU64::new(1);
 
@@ -86,7 +86,10 @@ struct TodoStore {
 
 impl TodoStore {
     fn empty() -> Self {
-        Self { items: HashMap::new(), next_seq: 1 }
+        Self {
+            items: HashMap::new(),
+            next_seq: 1,
+        }
     }
 
     fn load_or_empty(path: &Path) -> Self {
@@ -102,8 +105,7 @@ impl TodoStore {
 
     fn save(&self, path: &Path) -> ToolResult<()> {
         if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent)
-                .map_err(ToolError::Io)?;
+            fs::create_dir_all(parent).map_err(ToolError::Io)?;
         }
         let content = serde_json::to_string_pretty(self)
             .map_err(|e| ToolError::TodoError(format!("serialize failed: {e}")))?;
@@ -166,7 +168,9 @@ pub fn todo_update(
     priority: Option<TodoPriority>,
 ) -> ToolResult<TodoItem> {
     let mut store = TodoStore::load_or_empty(path);
-    let item = store.items.get_mut(id)
+    let item = store
+        .items
+        .get_mut(id)
         .ok_or_else(|| ToolError::TodoError(format!("todo not found: {id}")))?;
 
     if let Some(c) = content {
@@ -297,7 +301,10 @@ mod tests {
         assert_eq!(TodoStatus::Completed.to_string(), "completed");
         assert_eq!(TodoStatus::Cancelled.to_string(), "cancelled");
 
-        assert!(matches!("pending".parse::<TodoStatus>().unwrap(), TodoStatus::Pending));
+        assert!(matches!(
+            "pending".parse::<TodoStatus>().unwrap(),
+            TodoStatus::Pending
+        ));
         assert!("invalid".parse::<TodoStatus>().is_err());
     }
 
@@ -307,7 +314,10 @@ mod tests {
         assert_eq!(TodoPriority::Medium.to_string(), "medium");
         assert_eq!(TodoPriority::High.to_string(), "high");
 
-        assert!(matches!("high".parse::<TodoPriority>().unwrap(), TodoPriority::High));
+        assert!(matches!(
+            "high".parse::<TodoPriority>().unwrap(),
+            TodoPriority::High
+        ));
         assert!("urgent".parse::<TodoPriority>().is_err());
     }
 

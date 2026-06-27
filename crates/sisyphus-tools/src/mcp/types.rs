@@ -256,7 +256,9 @@ mod tests {
     #[test]
     fn test_call_tool_result_text() {
         let result = CallToolResult {
-            content: vec![ToolContent::Text { text: "hello".into() }],
+            content: vec![ToolContent::Text {
+                text: "hello".into(),
+            }],
             is_error: None,
         };
         let json = serde_json::to_string(&result).unwrap();
@@ -295,7 +297,9 @@ mod tests {
         let params = InitializeParams {
             protocol_version: Some("2025-03-26".into()),
             capabilities: Some(ClientCapabilities {
-                tools: Some(ToolsCapability { list_changed: Some(true) }),
+                tools: Some(ToolsCapability {
+                    list_changed: Some(true),
+                }),
                 resources: None,
             }),
             client_info: Some(ClientInfo {
@@ -363,9 +367,7 @@ pub enum ToolContent {
     #[serde(rename = "text")]
     Text { text: String },
     #[serde(rename = "resource")]
-    Resource {
-        resource: ResourceContent,
-    },
+    Resource { resource: ResourceContent },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

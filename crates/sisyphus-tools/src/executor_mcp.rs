@@ -1,7 +1,7 @@
-use std::collections::HashMap;
-use serde_json::{json, Value};
+use crate::mcp::{HttpTransport, McpClient, McpTransport, StdioTransport};
 use crate::ToolResult;
-use crate::mcp::{McpClient, McpTransport, StdioTransport, HttpTransport};
+use serde_json::{json, Value};
+use std::collections::HashMap;
 
 /// A `ToolExecutor` that calls external tools via the MCP protocol.
 ///
@@ -49,7 +49,8 @@ impl MCPToolExecutor {
     /// Register a mapping from tool_id to MCP tool name.
     /// This allows the executor to route `tool_id` values to differently-named MCP tools.
     pub fn map_tool(&mut self, tool_id: &str, mcp_tool_name: &str) {
-        self.tool_map.insert(tool_id.to_string(), mcp_tool_name.to_string());
+        self.tool_map
+            .insert(tool_id.to_string(), mcp_tool_name.to_string());
     }
 
     /// List tools available on the MCP server.
@@ -74,7 +75,8 @@ impl sisyphus_types::ToolExecutor for MCPToolExecutor {
         _fuel_limit: u64,
     ) -> Result<Vec<u8>, String> {
         // Resolve MCP tool name
-        let mcp_tool = self.tool_map
+        let mcp_tool = self
+            .tool_map
             .get(tool_id)
             .map(|s| s.as_str())
             .unwrap_or(tool_id);
@@ -90,7 +92,9 @@ impl sisyphus_types::ToolExecutor for MCPToolExecutor {
         };
 
         let mut client = self.client.lock().await;
-        let result = client.call_tool(mcp_tool, mcp_args).await
+        let result = client
+            .call_tool(mcp_tool, mcp_args)
+            .await
             .map_err(|e| format!("MCP tool '{mcp_tool}' failed: {e}"))?;
 
         // Serialize response
@@ -111,24 +115,27 @@ impl sisyphus_types::ToolExecutor for MCPToolExecutor {
             }
         } else {
             // Multiple content items — return as array
-            let items: Vec<Value> = result.content.iter().map(|c| match c {
-                crate::mcp::ToolContent::Text { text } => {
-                    json!({ "type": "text", "text": text })
-                }
-                crate::mcp::ToolContent::Resource { resource } => {
-                    json!({
-                        "type": "resource",
-                        "uri": resource.uri,
-                        "text": resource.text,
-                        "mime_type": resource.mime_type,
-                    })
-                }
-            }).collect();
+            let items: Vec<Value> = result
+                .content
+                .iter()
+                .map(|c| match c {
+                    crate::mcp::ToolContent::Text { text } => {
+                        json!({ "type": "text", "text": text })
+                    }
+                    crate::mcp::ToolContent::Resource { resource } => {
+                        json!({
+                            "type": "resource",
+                            "uri": resource.uri,
+                            "text": resource.text,
+                            "mime_type": resource.mime_type,
+                        })
+                    }
+                })
+                .collect();
             json!({ "content": items, "is_error": result.is_error.unwrap_or(false) })
         };
 
-        serde_json::to_vec(&output)
-            .map_err(|e| format!("serialize MCP result: {e}"))
+        serde_json::to_vec(&output).map_err(|e| format!("serialize MCP result: {e}"))
     }
 }
 
@@ -137,8 +144,8 @@ mod tests {
     use super::*;
     use crate::ToolResult;
     use async_trait::async_trait;
-    use sisyphus_types::ToolExecutor;
     use serde_json::json;
+    use sisyphus_types::ToolExecutor;
     use std::sync::{Arc, Mutex};
 
     /// A mock transport for testing MCPToolExecutor.
@@ -148,7 +155,9 @@ mod tests {
 
     impl MockMcpTransport {
         fn new(responses: Vec<String>) -> Self {
-            Self { responses: Arc::new(Mutex::new(responses)) }
+            Self {
+                responses: Arc::new(Mutex::new(responses)),
+            }
         }
     }
 
@@ -157,7 +166,9 @@ mod tests {
         async fn request(&mut self, _message: &str) -> ToolResult<String> {
             let mut list = self.responses.lock().unwrap();
             if list.is_empty() {
-                Err(crate::ToolError::TodoError("no more mock responses".to_string()))
+                Err(crate::ToolError::TodoError(
+                    "no more mock responses".to_string(),
+                ))
             } else {
                 Ok(list.remove(0))
             }
@@ -178,7 +189,8 @@ mod tests {
                     "capabilities": { "tools": { "list_changed": true }, "resources": null },
                     "server_info": { "name": "mock-mcp", "version": "1.0.0" }
                 }
-            }).to_string(),
+            })
+            .to_string(),
             // initialized notification response (empty)
             "{}".to_string(),
         ]
@@ -187,16 +199,21 @@ mod tests {
     #[tokio::test]
     async fn test_mcp_executor_basic_call() {
         let mut responses = mock_initialized_responses();
-        responses.push(json!({
-            "jsonrpc": "2.0", "id": 3,
-            "result": {
-                "content": [{ "type": "text", "text": "hello back" }],
-                "is_error": false
-            }
-        }).to_string());
+        responses.push(
+            json!({
+                "jsonrpc": "2.0", "id": 3,
+                "result": {
+                    "content": [{ "type": "text", "text": "hello back" }],
+                    "is_error": false
+                }
+            })
+            .to_string(),
+        );
 
         let transport = MockMcpTransport::new(responses);
-        let ex = MCPToolExecutor::from_transport(Box::new(transport)).await.unwrap();
+        let ex = MCPToolExecutor::from_transport(Box::new(transport))
+            .await
+            .unwrap();
         let args = serde_json::to_vec(&json!({"text": "hello"})).unwrap();
         let result = ex.execute("echo", args, 0).await.unwrap();
         let v: Value = serde_json::from_slice(&result).unwrap();
@@ -207,16 +224,21 @@ mod tests {
     #[tokio::test]
     async fn test_mcp_executor_empty_args() {
         let mut responses = mock_initialized_responses();
-        responses.push(json!({
-            "jsonrpc": "2.0", "id": 3,
-            "result": {
-                "content": [{ "type": "text", "text": "done" }],
-                "is_error": false
-            }
-        }).to_string());
+        responses.push(
+            json!({
+                "jsonrpc": "2.0", "id": 3,
+                "result": {
+                    "content": [{ "type": "text", "text": "done" }],
+                    "is_error": false
+                }
+            })
+            .to_string(),
+        );
 
         let transport = MockMcpTransport::new(responses);
-        let ex = MCPToolExecutor::from_transport(Box::new(transport)).await.unwrap();
+        let ex = MCPToolExecutor::from_transport(Box::new(transport))
+            .await
+            .unwrap();
         let result = ex.execute("ping", vec![], 0).await.unwrap();
         let v: Value = serde_json::from_slice(&result).unwrap();
         assert_eq!(v["content"], "done");
@@ -225,13 +247,18 @@ mod tests {
     #[tokio::test]
     async fn test_mcp_executor_error() {
         let mut responses = mock_initialized_responses();
-        responses.push(json!({
-            "jsonrpc": "2.0", "id": 3,
-            "error": { "code": -32001, "message": "execution failed" }
-        }).to_string());
+        responses.push(
+            json!({
+                "jsonrpc": "2.0", "id": 3,
+                "error": { "code": -32001, "message": "execution failed" }
+            })
+            .to_string(),
+        );
 
         let transport = MockMcpTransport::new(responses);
-        let ex = MCPToolExecutor::from_transport(Box::new(transport)).await.unwrap();
+        let ex = MCPToolExecutor::from_transport(Box::new(transport))
+            .await
+            .unwrap();
         let result = ex.execute("bad_tool", vec![], 0).await;
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("execution failed"));
@@ -240,16 +267,21 @@ mod tests {
     #[tokio::test]
     async fn test_mcp_executor_tool_map() {
         let mut responses = mock_initialized_responses();
-        responses.push(json!({
-            "jsonrpc": "2.0", "id": 3,
-            "result": {
-                "content": [{ "type": "text", "text": "mapped result" }],
-                "is_error": false
-            }
-        }).to_string());
+        responses.push(
+            json!({
+                "jsonrpc": "2.0", "id": 3,
+                "result": {
+                    "content": [{ "type": "text", "text": "mapped result" }],
+                    "is_error": false
+                }
+            })
+            .to_string(),
+        );
 
         let transport = MockMcpTransport::new(responses);
-        let mut ex = MCPToolExecutor::from_transport(Box::new(transport)).await.unwrap();
+        let mut ex = MCPToolExecutor::from_transport(Box::new(transport))
+            .await
+            .unwrap();
         ex.map_tool("my_alias", "real_tool_name");
 
         let result = ex.execute("my_alias", vec![], 0).await.unwrap();
@@ -270,7 +302,9 @@ mod tests {
         }).to_string());
 
         let transport = MockMcpTransport::new(responses);
-        let ex = MCPToolExecutor::from_transport(Box::new(transport)).await.unwrap();
+        let ex = MCPToolExecutor::from_transport(Box::new(transport))
+            .await
+            .unwrap();
         let tools = ex.list_tools().await.unwrap();
         assert_eq!(tools.len(), 1);
         assert_eq!(tools[0].name, "greet");
@@ -280,7 +314,9 @@ mod tests {
     async fn test_mcp_executor_invalid_json_args() {
         let ex = {
             let transport = MockMcpTransport::new(mock_initialized_responses());
-            MCPToolExecutor::from_transport(Box::new(transport)).await.unwrap()
+            MCPToolExecutor::from_transport(Box::new(transport))
+                .await
+                .unwrap()
         };
         let result = ex.execute("tool", b"not valid json".to_vec(), 0).await;
         assert!(result.is_err());
@@ -290,19 +326,24 @@ mod tests {
     #[tokio::test]
     async fn test_mcp_executor_multi_content() {
         let mut responses = mock_initialized_responses();
-        responses.push(json!({
-            "jsonrpc": "2.0", "id": 3,
-            "result": {
-                "content": [
-                    { "type": "text", "text": "part1" },
-                    { "type": "text", "text": "part2" }
-                ],
-                "is_error": false
-            }
-        }).to_string());
+        responses.push(
+            json!({
+                "jsonrpc": "2.0", "id": 3,
+                "result": {
+                    "content": [
+                        { "type": "text", "text": "part1" },
+                        { "type": "text", "text": "part2" }
+                    ],
+                    "is_error": false
+                }
+            })
+            .to_string(),
+        );
 
         let transport = MockMcpTransport::new(responses);
-        let ex = MCPToolExecutor::from_transport(Box::new(transport)).await.unwrap();
+        let ex = MCPToolExecutor::from_transport(Box::new(transport))
+            .await
+            .unwrap();
         let result = ex.execute("multi", vec![], 0).await.unwrap();
         let v: Value = serde_json::from_slice(&result).unwrap();
         assert!(v["content"].is_array());
@@ -312,13 +353,18 @@ mod tests {
     #[tokio::test]
     async fn test_mcp_executor_unmapped_tool_passes_through() {
         let mut responses = mock_initialized_responses();
-        responses.push(json!({
-            "jsonrpc": "2.0", "id": 3,
-            "result": { "content": [{ "type": "text", "text": "direct" }], "is_error": false }
-        }).to_string());
+        responses.push(
+            json!({
+                "jsonrpc": "2.0", "id": 3,
+                "result": { "content": [{ "type": "text", "text": "direct" }], "is_error": false }
+            })
+            .to_string(),
+        );
 
         let transport = MockMcpTransport::new(responses);
-        let ex = MCPToolExecutor::from_transport(Box::new(transport)).await.unwrap();
+        let ex = MCPToolExecutor::from_transport(Box::new(transport))
+            .await
+            .unwrap();
         let result = ex.execute("direct_tool", vec![], 0).await.unwrap();
         let v: Value = serde_json::from_slice(&result).unwrap();
         assert_eq!(v["content"], "direct");
@@ -335,7 +381,9 @@ mod tests {
         }
 
         let transport = MockMcpTransport::new(responses);
-        let ex = MCPToolExecutor::from_transport(Box::new(transport)).await.unwrap();
+        let ex = MCPToolExecutor::from_transport(Box::new(transport))
+            .await
+            .unwrap();
 
         for i in 0..3 {
             let result = ex.execute("seq", vec![], 0).await.unwrap();
@@ -348,7 +396,9 @@ mod tests {
     async fn test_mcp_executor_close_then_execute_fails() {
         let responses = mock_initialized_responses();
         let transport = MockMcpTransport::new(responses);
-        let ex = MCPToolExecutor::from_transport(Box::new(transport)).await.unwrap();
+        let ex = MCPToolExecutor::from_transport(Box::new(transport))
+            .await
+            .unwrap();
         ex.close().await.unwrap();
 
         let result = ex.execute("after_close", vec![], 0).await;
@@ -358,7 +408,9 @@ mod tests {
     #[tokio::test]
     async fn test_mcp_executor_transport_fails_on_request() {
         let transport = MockMcpTransport::new(mock_initialized_responses());
-        let ex = MCPToolExecutor::from_transport(Box::new(transport)).await.unwrap();
+        let ex = MCPToolExecutor::from_transport(Box::new(transport))
+            .await
+            .unwrap();
         let result = ex.execute("fail", vec![], 0).await;
         assert!(result.is_err());
     }
@@ -366,13 +418,18 @@ mod tests {
     #[tokio::test]
     async fn test_mcp_executor_tool_map_with_real_name() {
         let mut responses = mock_initialized_responses();
-        responses.push(json!({
-            "jsonrpc": "2.0", "id": 3,
-            "result": { "content": [{ "type": "text", "text": "via map" }], "is_error": false }
-        }).to_string());
+        responses.push(
+            json!({
+                "jsonrpc": "2.0", "id": 3,
+                "result": { "content": [{ "type": "text", "text": "via map" }], "is_error": false }
+            })
+            .to_string(),
+        );
 
         let transport = MockMcpTransport::new(responses);
-        let mut ex = MCPToolExecutor::from_transport(Box::new(transport)).await.unwrap();
+        let mut ex = MCPToolExecutor::from_transport(Box::new(transport))
+            .await
+            .unwrap();
 
         let tool_name = "some_very_long_mcp_tool_name";
         ex.map_tool("shortcut", tool_name);

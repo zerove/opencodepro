@@ -1,7 +1,7 @@
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
-use serde::{Deserialize, Serialize};
 
 /// 一个可加载的技能定义，对应一个 SKILL.md 文件。
 ///
@@ -184,9 +184,9 @@ impl SkillLoader {
             .iter()
             .filter(|s| {
                 s.triggers.is_empty()
-                    || s.triggers.iter().any(|t| {
-                        t.tools.is_empty() || t.tools.iter().any(|tt| tt == tool_name)
-                    })
+                    || s.triggers
+                        .iter()
+                        .any(|t| t.tools.is_empty() || t.tools.iter().any(|tt| tt == tool_name))
             })
             .collect()
     }
@@ -218,7 +218,10 @@ fn parse_skill_file(path: &Path, source: SkillSource) -> Option<Skill> {
     let content = fs::read_to_string(path).ok()?;
     let (meta, body) = parse_frontmatter(&content);
 
-    let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("unknown");
+    let stem = path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("unknown");
 
     Some(Skill {
         name: meta.name.unwrap_or_else(|| stem.to_string()),
@@ -322,7 +325,8 @@ pub fn install_skill(source: &Path) -> Result<String, String> {
     let dest = dest_dir.join(format!("{stem}.md"));
 
     // Parse to validate and extract the skill name
-    let content = std::fs::read_to_string(source).map_err(|e| format!("Cannot read source: {e}"))?;
+    let content =
+        std::fs::read_to_string(source).map_err(|e| format!("Cannot read source: {e}"))?;
     let (meta, _body) = parse_frontmatter(&content);
     let name = meta.name.unwrap_or_else(|| stem.to_string());
 
@@ -348,9 +352,7 @@ fn dirs_next() -> Option<PathBuf> {
     std::env::var("HOME")
         .ok()
         .map(PathBuf::from)
-        .or_else(|| {
-            std::env::var("USERPROFILE").ok().map(PathBuf::from)
-        })
+        .or_else(|| std::env::var("USERPROFILE").ok().map(PathBuf::from))
 }
 
 // ── Tests ─────────────────────────────────────────────────────
@@ -389,7 +391,10 @@ This is the instruction body.
         assert_eq!(meta.tags, vec!["rust", "testing"]);
         assert_eq!(meta.triggers.len(), 1);
         assert_eq!(meta.triggers[0].tools, vec!["metis_analyse"]);
-        assert_eq!(meta.triggers[0].description, Some("Activated during metis analysis".into()));
+        assert_eq!(
+            meta.triggers[0].description,
+            Some("Activated during metis analysis".into())
+        );
         assert!(body.contains("instruction body"));
     }
 
@@ -486,7 +491,10 @@ This is the instruction body.
         let content = "---\nname: [unclosed list\n---\nbody";
         let (meta, body) = parse_frontmatter(content);
         assert_eq!(meta.name, None);
-        assert!(body.contains("body"), "should fall back to treating entire content as body");
+        assert!(
+            body.contains("body"),
+            "should fall back to treating entire content as body"
+        );
     }
 
     #[test]
@@ -542,26 +550,24 @@ body
 
     #[test]
     fn test_find_by_tool_no_matching_tool() {
-        let skills = vec![
-            Skill {
-                name: "specific".into(),
-                description: "".into(),
-                version: "0.1.0".into(),
-                author: None,
-                tags: vec![],
-                triggers: vec![TriggerDef {
-                    pattern: None,
-                    tools: vec!["bash_exec".into()],
-                    description: None,
-                    hook_phase: None,
-                    hook_effect: None,
-                    hook_message: None,
-                }],
-                instructions: "".into(),
-                source: SkillSource::BuiltIn,
-                source_path: None,
-            },
-        ];
+        let skills = vec![Skill {
+            name: "specific".into(),
+            description: "".into(),
+            version: "0.1.0".into(),
+            author: None,
+            tags: vec![],
+            triggers: vec![TriggerDef {
+                pattern: None,
+                tools: vec!["bash_exec".into()],
+                description: None,
+                hook_phase: None,
+                hook_effect: None,
+                hook_message: None,
+            }],
+            instructions: "".into(),
+            source: SkillSource::BuiltIn,
+            source_path: None,
+        }];
         let loader = SkillLoader::new();
         let matched = loader.find_by_tool("metis_analyse", &skills);
         assert!(matched.is_empty(), "should not match different tool name");
@@ -584,10 +590,13 @@ body
 
     #[test]
     fn test_load_all_nonexistent_dir() {
-        let loader = SkillLoader::new()
-            .with_dir(PathBuf::from("/tmp/__sisyphus_nonexistent_skills__"));
+        let loader =
+            SkillLoader::new().with_dir(PathBuf::from("/tmp/__sisyphus_nonexistent_skills__"));
         let skills = loader.load_all();
-        assert!(skills.is_empty(), "non-existent dir should be silently skipped");
+        assert!(
+            skills.is_empty(),
+            "non-existent dir should be silently skipped"
+        );
     }
 
     #[test]

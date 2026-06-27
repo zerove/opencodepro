@@ -1,6 +1,6 @@
+use crate::build::{self, BuildOutput, Diag, LanguageBackend, TestResults};
+use crate::{ToolError, ToolResult};
 use std::path::Path;
-use crate::build::{self, BuildOutput, Diag, TestResults, LanguageBackend};
-use crate::{ToolResult, ToolError};
 
 /// Node.js / TypeScript frontend backend.
 ///
@@ -20,41 +20,84 @@ impl NodeBackend {
                 return Ok(Self { pm: pm.to_string() });
             }
         }
-        Err(ToolError::Generic("No package manager found (npm/yarn/pnpm)".into()))
+        Err(ToolError::Generic(
+            "No package manager found (npm/yarn/pnpm)".into(),
+        ))
     }
 }
 
 impl LanguageBackend for NodeBackend {
-    fn name(&self) -> &str { "node" }
+    fn name(&self) -> &str {
+        "node"
+    }
 
     fn check(&self, _pkg: Option<&str>, _all: bool, cwd: Option<&Path>) -> ToolResult<BuildOutput> {
         // TypeScript type-check: tsc --noEmit
         // If no tsconfig, try vue-tsc for Vue projects, or skip
-        let has_tsconfig = cwd.map(|d| d.join("tsconfig.json").exists()).unwrap_or(false);
-        let has_vue = cwd.map(|d| d.join("vue.config.js").exists() || has_vue_dep(cwd)).unwrap_or(false);
+        let has_tsconfig = cwd
+            .map(|d| d.join("tsconfig.json").exists())
+            .unwrap_or(false);
+        let has_vue = cwd
+            .map(|d| d.join("vue.config.js").exists() || has_vue_dep(cwd))
+            .unwrap_or(false);
 
         if has_vue && which("vue-tsc").is_some() {
             let (stdout, stderr, success) = build::run_command("vue-tsc", &["--noEmit"], cwd)?;
             let (errors, warnings) = parse_tsc_diags(&stderr);
-            return Ok(BuildOutput { errors, warnings, raw_stdout: stdout, raw_stderr: stderr, success });
+            return Ok(BuildOutput {
+                errors,
+                warnings,
+                raw_stdout: stdout,
+                raw_stderr: stderr,
+                success,
+            });
         }
 
         if has_tsconfig && which("tsc").is_some() {
             let (stdout, stderr, success) = build::run_command("tsc", &["--noEmit"], cwd)?;
             let (errors, warnings) = parse_tsc_diags(&stderr);
-            return Ok(BuildOutput { errors, warnings, raw_stdout: stdout, raw_stderr: stderr, success });
+            return Ok(BuildOutput {
+                errors,
+                warnings,
+                raw_stdout: stdout,
+                raw_stderr: stderr,
+                success,
+            });
         }
 
         // No type-checker available — pass (no errors)
-        Ok(BuildOutput { errors: vec![], warnings: vec![], raw_stdout: String::new(), raw_stderr: String::new(), success: true })
+        Ok(BuildOutput {
+            errors: vec![],
+            warnings: vec![],
+            raw_stdout: String::new(),
+            raw_stderr: String::new(),
+            success: true,
+        })
     }
 
-    fn build(&self, _pkg: Option<&str>, _release: bool, cwd: Option<&Path>) -> ToolResult<BuildOutput> {
+    fn build(
+        &self,
+        _pkg: Option<&str>,
+        _release: bool,
+        cwd: Option<&Path>,
+    ) -> ToolResult<BuildOutput> {
         let (stdout, stderr, success) = build::run_command(&self.pm, &["run", "build"], cwd)?;
-        Ok(BuildOutput { errors: vec![], warnings: vec![], raw_stdout: stdout, raw_stderr: stderr, success })
+        Ok(BuildOutput {
+            errors: vec![],
+            warnings: vec![],
+            raw_stdout: stdout,
+            raw_stderr: stderr,
+            success,
+        })
     }
 
-    fn test(&self, _pkg: Option<&str>, name: Option<&str>, _all: bool, cwd: Option<&Path>) -> ToolResult<TestResults> {
+    fn test(
+        &self,
+        _pkg: Option<&str>,
+        name: Option<&str>,
+        _all: bool,
+        cwd: Option<&Path>,
+    ) -> ToolResult<TestResults> {
         let mut args = vec!["run", "test"];
         if let Some(n) = name {
             args.push("--");
@@ -66,15 +109,33 @@ impl LanguageBackend for NodeBackend {
 
     fn lint(&self, _pkg: Option<&str>, cwd: Option<&Path>) -> ToolResult<BuildOutput> {
         if which("eslint").is_none() {
-            return Ok(BuildOutput { errors: vec![], warnings: vec![], raw_stdout: String::new(), raw_stderr: String::new(), success: true });
+            return Ok(BuildOutput {
+                errors: vec![],
+                warnings: vec![],
+                raw_stdout: String::new(),
+                raw_stderr: String::new(),
+                success: true,
+            });
         }
         // eslint outputs JSON by default when available, else use flat config
-        let (stdout, stderr, success) = build::run_command("eslint", &[".", "--format", "json"], cwd)?;
+        let (stdout, stderr, success) =
+            build::run_command("eslint", &[".", "--format", "json"], cwd)?;
         let (errors, warnings) = parse_eslint_json(&stdout);
-        Ok(BuildOutput { errors, warnings, raw_stdout: stdout, raw_stderr: stderr, success })
+        Ok(BuildOutput {
+            errors,
+            warnings,
+            raw_stdout: stdout,
+            raw_stderr: stderr,
+            success,
+        })
     }
 
-    fn fix(&self, _pkg: Option<&str>, apply_lint_fixes: bool, cwd: Option<&Path>) -> ToolResult<BuildOutput> {
+    fn fix(
+        &self,
+        _pkg: Option<&str>,
+        apply_lint_fixes: bool,
+        cwd: Option<&Path>,
+    ) -> ToolResult<BuildOutput> {
         if apply_lint_fixes && which("eslint").is_some() {
             build::run_command("eslint", &[".", "--fix"], cwd)?;
         }
@@ -82,12 +143,19 @@ impl LanguageBackend for NodeBackend {
         if which("prettier").is_some() {
             build::run_command("prettier", &["--write", "."], cwd)?;
         }
-        Ok(BuildOutput { errors: vec![], warnings: vec![], raw_stdout: String::new(), raw_stderr: String::new(), success: true })
+        Ok(BuildOutput {
+            errors: vec![],
+            warnings: vec![],
+            raw_stdout: String::new(),
+            raw_stderr: String::new(),
+            success: true,
+        })
     }
 
     fn fmt_check(&self, cwd: Option<&Path>) -> ToolResult<bool> {
         if which("prettier").is_some() {
-            let (_stdout, _stderr, success) = build::run_command("prettier", &["--check", "."], cwd)?;
+            let (_stdout, _stderr, success) =
+                build::run_command("prettier", &["--check", "."], cwd)?;
             return Ok(success);
         }
         Ok(true) // no formatter = assume formatted
@@ -104,7 +172,15 @@ impl LanguageBackend for NodeBackend {
         if which("typedoc").is_some() {
             let (stdout, stderr, success) = build::run_command("typedoc", &[], cwd)?;
             let combined = format!("{stdout}\n{stderr}");
-            if success { Ok(combined) } else { Err(ToolError::CommandFailed { code: 1, stdout, stderr }) }
+            if success {
+                Ok(combined)
+            } else {
+                Err(ToolError::CommandFailed {
+                    code: 1,
+                    stdout,
+                    stderr,
+                })
+            }
         } else {
             Ok("typedoc not installed — no docs generated".into())
         }
@@ -117,7 +193,15 @@ impl LanguageBackend for NodeBackend {
         cmd_args.extend_from_slice(extra);
         let (stdout, stderr, success) = build::run_command(&self.pm, &cmd_args, cwd)?;
         let combined = format!("{stdout}{stderr}");
-        if success { Ok(combined) } else { Err(ToolError::CommandFailed { code: 1, stdout, stderr }) }
+        if success {
+            Ok(combined)
+        } else {
+            Err(ToolError::CommandFailed {
+                code: 1,
+                stdout,
+                stderr,
+            })
+        }
     }
 }
 
@@ -126,7 +210,9 @@ impl LanguageBackend for NodeBackend {
 fn which(cmd: &str) -> Option<String> {
     let output = std::process::Command::new("which").arg(cmd).output().ok()?;
     if output.status.success() {
-        String::from_utf8(output.stdout).ok().map(|s| s.trim().to_string())
+        String::from_utf8(output.stdout)
+            .ok()
+            .map(|s| s.trim().to_string())
     } else {
         None
     }
@@ -159,13 +245,18 @@ fn parse_tsc_diags(stderr: &str) -> (Vec<Diag>, Vec<Diag>) {
         // Split on " - error " or ": error " or " - warning " or ": warning "
         let error_split = if let Some(pos) = line.find(" - error ") {
             Some((pos, " - error ", true))
-        } else { line.find(": error ").map(|pos| (pos, ": error ", true)) };
+        } else {
+            line.find(": error ").map(|pos| (pos, ": error ", true))
+        };
 
         let warn_split = if error_split.is_some() {
             None
         } else if let Some(pos) = line.find(" - warning ") {
             Some((pos, " - warning ", false))
-        } else { line.find(": warning ").map(|pos| (pos, ": warning ", false)) };
+        } else {
+            line.find(": warning ")
+                .map(|pos| (pos, ": warning ", false))
+        };
 
         if let Some((pos, sep, is_error)) = error_split.or(warn_split) {
             let file_part = &line[..pos];
@@ -178,8 +269,16 @@ fn parse_tsc_diags(stderr: &str) -> (Vec<Diag>, Vec<Diag>) {
             // Extract code (e.g., "TS2345" from "TS2345: message")
             let code = if let Some(end) = msg.find(':') {
                 let candidate = &msg[..end];
-                if candidate.starts_with("TS") || candidate.starts_with("error TS") || candidate.starts_with("warning TS") {
-                    Some(candidate.trim_start_matches("error ").trim_start_matches("warning ").to_string())
+                if candidate.starts_with("TS")
+                    || candidate.starts_with("error TS")
+                    || candidate.starts_with("warning TS")
+                {
+                    Some(
+                        candidate
+                            .trim_start_matches("error ")
+                            .trim_start_matches("warning ")
+                            .to_string(),
+                    )
                 } else {
                     None
                 }
@@ -188,8 +287,19 @@ fn parse_tsc_diags(stderr: &str) -> (Vec<Diag>, Vec<Diag>) {
             };
 
             let level = if is_error { "error" } else { "warning" };
-            let diag = Diag { file, line: line_no, col, level: level.into(), code, message: msg };
-            if is_error { errors.push(diag); } else { warnings.push(diag); }
+            let diag = Diag {
+                file,
+                line: line_no,
+                col,
+                level: level.into(),
+                code,
+                message: msg,
+            };
+            if is_error {
+                errors.push(diag);
+            } else {
+                warnings.push(diag);
+            }
         }
     }
 
@@ -199,20 +309,20 @@ fn parse_tsc_diags(stderr: &str) -> (Vec<Diag>, Vec<Diag>) {
 fn parse_tsc_location(s: &str) -> (Option<String>, Option<usize>, Option<usize>) {
     // Format: "src/file.ts:10:5" or "src/file.ts(10,5)"
     if let Some(end) = s.rfind(':') {
-        let col = s[end+1..].parse().ok();
+        let col = s[end + 1..].parse().ok();
         let rest = &s[..end];
         if let Some(mid) = rest.rfind(':') {
-            let line = rest[mid+1..].parse().ok();
+            let line = rest[mid + 1..].parse().ok();
             let file = Some(rest[..mid].to_string());
             return (file, line, col);
         }
     }
     // Try paren format: file(10,5)
     if let Some(end) = s.rfind('(') {
-        let inner = &s[end+1..];
+        let inner = &s[end + 1..];
         if let Some(comma) = inner.find(',') {
             let line = inner[..comma].trim().parse().ok();
-            let col = inner[comma+1..].trim().trim_end_matches(')').parse().ok();
+            let col = inner[comma + 1..].trim().trim_end_matches(')').parse().ok();
             return (Some(s[..end].to_string()), line, col);
         }
     }
@@ -236,8 +346,19 @@ fn parse_eslint_json(json_str: &str) -> (Vec<Diag>, Vec<Diag>) {
                     let rule_id = msg["ruleId"].as_str().map(|s| s.to_string());
                     let level = if severity == 2 { "error" } else { "warning" };
 
-                    let diag = Diag { file: file.clone(), line, col, level: level.into(), code: rule_id, message };
-                    if severity == 2 { errors.push(diag); } else { warnings.push(diag); }
+                    let diag = Diag {
+                        file: file.clone(),
+                        line,
+                        col,
+                        level: level.into(),
+                        code: rule_id,
+                        message,
+                    };
+                    if severity == 2 {
+                        errors.push(diag);
+                    } else {
+                        warnings.push(diag);
+                    }
                 }
             }
         }
@@ -268,16 +389,33 @@ fn parse_vitest_results(stdout: &str, stderr: &str) -> TestResults {
         } else if t.starts_with('✗') || t.starts_with("FAIL") || t.contains("failed") {
             failed += 1;
             // Extract test name: "✗ failing test (1ms)" -> "failing test"
-            let name = t.trim_start_matches('�').trim_start_matches('✗').trim()
-                .trim_start_matches("FAIL").trim()
-                .split('(').next().unwrap_or("").trim().to_string();
+            let name = t
+                .trim_start_matches('�')
+                .trim_start_matches('✗')
+                .trim()
+                .trim_start_matches("FAIL")
+                .trim()
+                .split('(')
+                .next()
+                .unwrap_or("")
+                .trim()
+                .to_string();
             if !name.is_empty() {
                 failures.push(crate::build::TestFailure { name });
             }
         }
     }
 
-    TestResults { passed, failed, ignored: 0, measured: 0, filtered_out: 0, failures, raw_stdout: stdout.to_string(), raw_stderr: stderr.to_string() }
+    TestResults {
+        passed,
+        failed,
+        ignored: 0,
+        measured: 0,
+        filtered_out: 0,
+        failures,
+        raw_stdout: stdout.to_string(),
+        raw_stderr: stderr.to_string(),
+    }
 }
 
 #[cfg(test)]

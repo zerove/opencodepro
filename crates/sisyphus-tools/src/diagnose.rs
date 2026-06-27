@@ -1,7 +1,7 @@
-use std::path::Path;
 use crate::build::{self, BuildOutput, Diag, LanguageBackend};
 use crate::ToolResult;
 use std::collections::BTreeMap;
+use std::path::Path;
 
 /// A combined diagnosis report from check + lint operations.
 #[derive(Debug, Clone)]
@@ -109,7 +109,12 @@ pub fn diagnose_auto(
 }
 
 /// Backward-compatible: runs diagnose with RustBackend (cargo check + clippy).
-pub fn diagnose(pkg: Option<&str>, all: bool, no_clippy: bool, cwd: Option<&Path>) -> ToolResult<DiagnoseReport> {
+pub fn diagnose(
+    pkg: Option<&str>,
+    all: bool,
+    no_clippy: bool,
+    cwd: Option<&Path>,
+) -> ToolResult<DiagnoseReport> {
     diagnose_with(&build::rust::RustBackend, pkg, all, no_clippy, cwd)
 }
 
@@ -160,11 +165,14 @@ mod tests {
     fn create_simple_project() -> (TempDir, std::path::PathBuf) {
         let dir = TempDir::new().unwrap();
         let path = dir.path().to_path_buf();
-        write_toml(&path, r#"[package]
+        write_toml(
+            &path,
+            r#"[package]
 name = "diag-test"
 version = "0.1.0"
 edition = "2021"
-"#);
+"#,
+        );
         let src = path.join("src");
         fs::create_dir_all(&src).unwrap();
         (dir, path)
@@ -183,7 +191,11 @@ edition = "2021"
     #[test]
     fn test_diagnose_with_errors() {
         let (_d, path) = create_simple_project();
-        fs::write(path.join("src/lib.rs"), "pub fn bad() -> u8 { nonexistent }\n").unwrap();
+        fs::write(
+            path.join("src/lib.rs"),
+            "pub fn bad() -> u8 { nonexistent }\n",
+        )
+        .unwrap();
         let report = diagnose(None, false, true, Some(&path)).unwrap();
         assert!(!report.check_output.success);
         assert!(report.total_errors > 0);
@@ -218,11 +230,7 @@ edition = "2021"
     #[test]
     fn test_fix_and_diagnose() {
         let (_d, path) = create_simple_project();
-        fs::write(
-            path.join("src/lib.rs"),
-            "pub fn test() { let x = 1; }\n",
-        )
-        .unwrap();
+        fs::write(path.join("src/lib.rs"), "pub fn test() { let x = 1; }\n").unwrap();
         let report = fix_and_diagnose(None, false, false, Some(&path)).unwrap();
         assert!(report.check_output.success);
     }
@@ -230,7 +238,11 @@ edition = "2021"
     #[test]
     fn test_diagnose_groups_by_file() {
         let (_d, path) = create_simple_project();
-        fs::write(path.join("src/lib.rs"), "pub fn bad() -> u8 { nonexistent }\n").unwrap();
+        fs::write(
+            path.join("src/lib.rs"),
+            "pub fn bad() -> u8 { nonexistent }\n",
+        )
+        .unwrap();
         let report = diagnose(None, false, true, Some(&path)).unwrap();
         assert!(!report.errors_by_file.is_empty());
         let (file, count) = &report.errors_by_file[0];
@@ -241,7 +253,11 @@ edition = "2021"
     #[test]
     fn test_diagnose_all_diagnostics_sorted() {
         let (_d, path) = create_simple_project();
-        fs::write(path.join("src/lib.rs"), "pub fn bad() -> u8 { nonexistent }\n").unwrap();
+        fs::write(
+            path.join("src/lib.rs"),
+            "pub fn bad() -> u8 { nonexistent }\n",
+        )
+        .unwrap();
         let report = diagnose(None, false, true, Some(&path)).unwrap();
         for pair in report.all_diagnostics.windows(2) {
             let a = &pair[0];
@@ -256,7 +272,8 @@ edition = "2021"
     fn test_diagnose_with_rustbackend() {
         let (_d, path) = create_simple_project();
         fs::write(path.join("src/lib.rs"), "pub fn ok() -> u8 { 42 }\n").unwrap();
-        let report = diagnose_with(&build::rust::RustBackend, None, false, true, Some(&path)).unwrap();
+        let report =
+            diagnose_with(&build::rust::RustBackend, None, false, true, Some(&path)).unwrap();
         assert!(report.check_output.success);
         assert_eq!(report.total_errors, 0);
     }

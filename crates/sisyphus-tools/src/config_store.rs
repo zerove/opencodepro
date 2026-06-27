@@ -142,7 +142,10 @@ convergence_threshold = 0.3
     async fn test_config_store_load_nonexistent_path() {
         let result = ConfigStore::load("/tmp/__nonexistent_sisyphus_config__/config.toml");
         match result {
-            Err(err) => assert!(err.contains("Failed to read"), "error should mention I/O failure"),
+            Err(err) => assert!(
+                err.contains("Failed to read"),
+                "error should mention I/O failure"
+            ),
             Ok(_) => panic!("expected Err for non-existent path"),
         }
     }
@@ -155,7 +158,10 @@ convergence_threshold = 0.3
 
         let result = ConfigStore::load(path.to_str().unwrap());
         match result {
-            Err(err) => assert!(err.contains("Failed to parse"), "error should mention parse failure"),
+            Err(err) => assert!(
+                err.contains("Failed to parse"),
+                "error should mention parse failure"
+            ),
             Ok(_) => panic!("expected Err for malformed TOML"),
         }
     }
@@ -185,7 +191,8 @@ convergence_threshold = 0.3
 [cognitive_loop]
 max_iterations = 5
 convergence_threshold = 0.3
-"#.to_string();
+"#
+        .to_string();
         fs::write(&config_path, &content).unwrap();
 
         let (store, config) = ConfigStore::load(config_path.to_str().unwrap()).unwrap();
@@ -225,7 +232,15 @@ convergence_threshold = 0.3
     async fn test_config_store_with_config_no_reload() {
         let config = Arc::new(RwLock::new(Config::default()));
         let store = ConfigStore::with_config(config.clone());
-        assert_eq!(store.config_ref().read().unwrap().cognitive_loop.max_iterations, 10);
+        assert_eq!(
+            store
+                .config_ref()
+                .read()
+                .unwrap()
+                .cognitive_loop
+                .max_iterations,
+            10
+        );
         assert!(!store.check_reload(), "with_config should not reload");
     }
 
@@ -319,7 +334,10 @@ convergence_threshold = 0.3
         // Corrupt and attempt reload
         write_invalid_toml(&config_path);
         tokio::time::sleep(Duration::from_millis(100)).await;
-        assert!(!store.check_reload(), "corrupt file should not trigger reload");
+        assert!(
+            !store.check_reload(),
+            "corrupt file should not trigger reload"
+        );
 
         // Still has old value
         assert_eq!(config.read().unwrap().cognitive_loop.max_iterations, 5);

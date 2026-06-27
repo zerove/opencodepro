@@ -1,6 +1,6 @@
 use crate::ToolResult;
-use sisyphus_types::MetaLearningSample;
 use serde::{Deserialize, Serialize};
+use sisyphus_types::MetaLearningSample;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
@@ -74,7 +74,10 @@ impl MetaLearner {
         for sample in &self.samples {
             // Match if sample context contains the query context keys
             let sample_str = sample.context.to_string();
-            if context_str.is_empty() || sample_str.contains(&context_str) || context_str.contains(&sample_str) {
+            if context_str.is_empty()
+                || sample_str.contains(&context_str)
+                || context_str.contains(&sample_str)
+            {
                 strategy_map
                     .entry(sample.strategy.clone())
                     .or_default()
@@ -140,11 +143,7 @@ impl MetaLearner {
 
     /// List all strategies that have been used.
     pub fn list_strategies(&self) -> Vec<String> {
-        let mut strategies: Vec<String> = self
-            .samples
-            .iter()
-            .map(|s| s.strategy.clone())
-            .collect();
+        let mut strategies: Vec<String> = self.samples.iter().map(|s| s.strategy.clone()).collect();
         strategies.sort();
         strategies.dedup();
         strategies
@@ -168,7 +167,10 @@ impl MetaLearner {
         // Group by strategy
         let mut strategy_map: HashMap<String, Vec<&MetaLearningSample>> = HashMap::new();
         for sample in &self.samples {
-            strategy_map.entry(sample.strategy.clone()).or_default().push(sample);
+            strategy_map
+                .entry(sample.strategy.clone())
+                .or_default()
+                .push(sample);
         }
 
         let mut strategies = Vec::new();
@@ -198,8 +200,10 @@ impl MetaLearner {
             let first_half = &self.samples[..mid];
             let second_half = &self.samples[mid..];
 
-            let first_rate = first_half.iter().filter(|s| s.success).count() as f64 / first_half.len() as f64;
-            let second_rate = second_half.iter().filter(|s| s.success).count() as f64 / second_half.len() as f64;
+            let first_rate =
+                first_half.iter().filter(|s| s.success).count() as f64 / first_half.len() as f64;
+            let second_rate =
+                second_half.iter().filter(|s| s.success).count() as f64 / second_half.len() as f64;
 
             if second_rate > first_rate + 0.05 {
                 "improving".into()
@@ -234,8 +238,7 @@ impl MetaLearner {
     }
 
     fn save_samples(&self) -> ToolResult<()> {
-        std::fs::create_dir_all(&self.storage_path)
-            .map_err(crate::ToolError::Io)?;
+        std::fs::create_dir_all(&self.storage_path).map_err(crate::ToolError::Io)?;
         let file_path = self.storage_path.join("samples.json");
         let content = serde_json::to_string_pretty(&self.samples)
             .map_err(|e| crate::ToolError::Generic(e.to_string()))?;
@@ -244,8 +247,7 @@ impl MetaLearner {
 
     /// Save the latest learning insight to disk.
     pub fn save_insight(&self, insight: &LearningInsight) -> ToolResult<()> {
-        std::fs::create_dir_all(&self.storage_path)
-            .map_err(crate::ToolError::Io)?;
+        std::fs::create_dir_all(&self.storage_path).map_err(crate::ToolError::Io)?;
         let file_path = self.storage_path.join("insight.json");
         let content = serde_json::to_string_pretty(insight)
             .map_err(|e| crate::ToolError::Generic(e.to_string()))?;
@@ -325,9 +327,12 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let mut ml = MetaLearner::new(dir.path().to_str().unwrap());
 
-        ml.record_outcome(sample("test_s", true, json!({}))).unwrap();
-        ml.record_outcome(sample("test_s", true, json!({}))).unwrap();
-        ml.record_outcome(sample("test_s", false, json!({}))).unwrap();
+        ml.record_outcome(sample("test_s", true, json!({})))
+            .unwrap();
+        ml.record_outcome(sample("test_s", true, json!({})))
+            .unwrap();
+        ml.record_outcome(sample("test_s", false, json!({})))
+            .unwrap();
 
         let stats = ml.strategy_stats("test_s");
         assert_eq!(stats.total_uses, 3);
@@ -388,13 +393,21 @@ mod tests {
         assert!((insight.overall_success_rate - 4.0 / 6.0).abs() < 0.001);
         assert_eq!(insight.strategies.len(), 2);
 
-        let fast = insight.strategies.iter().find(|s| s.strategy == "fast").unwrap();
+        let fast = insight
+            .strategies
+            .iter()
+            .find(|s| s.strategy == "fast")
+            .unwrap();
         assert_eq!(fast.total_uses, 3);
         assert_eq!(fast.successes, 3);
         assert_eq!(fast.failures, 0);
         assert!((fast.success_rate - 1.0).abs() < 0.001);
 
-        let slow = insight.strategies.iter().find(|s| s.strategy == "slow").unwrap();
+        let slow = insight
+            .strategies
+            .iter()
+            .find(|s| s.strategy == "slow")
+            .unwrap();
         assert_eq!(slow.total_uses, 3);
         assert_eq!(slow.successes, 1);
         assert_eq!(slow.failures, 2);
@@ -455,7 +468,8 @@ mod tests {
 
         {
             let mut ml = MetaLearner::new(&path);
-            ml.record_outcome(sample("persist", true, json!({}))).unwrap();
+            ml.record_outcome(sample("persist", true, json!({})))
+                .unwrap();
         }
 
         // Re-load from same directory

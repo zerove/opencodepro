@@ -1,6 +1,6 @@
+use crate::build::{self, BuildOutput, Diag, LanguageBackend, TestResults};
+use crate::{ToolError, ToolResult};
 use std::path::Path;
-use crate::build::{self, BuildOutput, Diag, TestResults, LanguageBackend};
-use crate::{ToolResult, ToolError};
 
 /// Java backend supporting Maven and Gradle.
 #[derive(Debug)]
@@ -15,13 +15,19 @@ impl JavaBackend {
     }
 
     pub fn new_gradle() -> Self {
-        Self { tool: "gradle".into() }
+        Self {
+            tool: "gradle".into(),
+        }
     }
 }
 
 impl LanguageBackend for JavaBackend {
     fn name(&self) -> &str {
-        if self.tool == "mvn" { "java-maven" } else { "java-gradle" }
+        if self.tool == "mvn" {
+            "java-maven"
+        } else {
+            "java-gradle"
+        }
     }
 
     fn check(&self, _pkg: Option<&str>, _all: bool, cwd: Option<&Path>) -> ToolResult<BuildOutput> {
@@ -32,10 +38,21 @@ impl LanguageBackend for JavaBackend {
         };
         let (stdout, stderr, success) = build::run_command(&self.tool, &args, cwd)?;
         let (errors, warnings) = parse_mvn_output(&stderr, &stdout);
-        Ok(BuildOutput { errors, warnings, raw_stdout: stdout, raw_stderr: stderr, success })
+        Ok(BuildOutput {
+            errors,
+            warnings,
+            raw_stdout: stdout,
+            raw_stderr: stderr,
+            success,
+        })
     }
 
-    fn build(&self, _pkg: Option<&str>, _release: bool, cwd: Option<&Path>) -> ToolResult<BuildOutput> {
+    fn build(
+        &self,
+        _pkg: Option<&str>,
+        _release: bool,
+        cwd: Option<&Path>,
+    ) -> ToolResult<BuildOutput> {
         let args = if self.tool == "mvn" {
             vec!["package"]
         } else {
@@ -43,10 +60,22 @@ impl LanguageBackend for JavaBackend {
         };
         let (stdout, stderr, success) = build::run_command(&self.tool, &args, cwd)?;
         let (errors, warnings) = parse_mvn_output(&stderr, &stdout);
-        Ok(BuildOutput { errors, warnings, raw_stdout: stdout, raw_stderr: stderr, success })
+        Ok(BuildOutput {
+            errors,
+            warnings,
+            raw_stdout: stdout,
+            raw_stderr: stderr,
+            success,
+        })
     }
 
-    fn test(&self, _pkg: Option<&str>, name: Option<&str>, _all: bool, cwd: Option<&Path>) -> ToolResult<TestResults> {
+    fn test(
+        &self,
+        _pkg: Option<&str>,
+        name: Option<&str>,
+        _all: bool,
+        cwd: Option<&Path>,
+    ) -> ToolResult<TestResults> {
         let args = if self.tool == "mvn" {
             let mut a = vec!["test"];
             if let Some(n) = name {
@@ -74,20 +103,42 @@ impl LanguageBackend for JavaBackend {
         };
         let (stdout, stderr, success) = build::run_command(&self.tool, &args, cwd)?;
         let (errors, warnings) = parse_checkstyle_output(&stderr, &stdout);
-        Ok(BuildOutput { errors, warnings, raw_stdout: stdout, raw_stderr: stderr, success })
+        Ok(BuildOutput {
+            errors,
+            warnings,
+            raw_stdout: stdout,
+            raw_stderr: stderr,
+            success,
+        })
     }
 
-    fn fix(&self, _pkg: Option<&str>, _apply_lint_fixes: bool, cwd: Option<&Path>) -> ToolResult<BuildOutput> {
+    fn fix(
+        &self,
+        _pkg: Option<&str>,
+        _apply_lint_fixes: bool,
+        cwd: Option<&Path>,
+    ) -> ToolResult<BuildOutput> {
         // Java auto-fix is limited; try google-java-format if available
         if build::run_command("google-java-format", &["--version"], cwd).is_ok() {
-            build::run_command("google-java-format", &["--replace", "--skip-regex", "."], cwd)?;
+            build::run_command(
+                "google-java-format",
+                &["--replace", "--skip-regex", "."],
+                cwd,
+            )?;
         }
-        Ok(BuildOutput { errors: vec![], warnings: vec![], raw_stdout: String::new(), raw_stderr: String::new(), success: true })
+        Ok(BuildOutput {
+            errors: vec![],
+            warnings: vec![],
+            raw_stdout: String::new(),
+            raw_stderr: String::new(),
+            success: true,
+        })
     }
 
     fn fmt_check(&self, cwd: Option<&Path>) -> ToolResult<bool> {
         if build::run_command("google-java-format", &["--version"], cwd).is_ok() {
-            let (_stdout, stderr, success) = build::run_command("google-java-format", &["--dry-run", "."], cwd)?;
+            let (_stdout, stderr, success) =
+                build::run_command("google-java-format", &["--dry-run", "."], cwd)?;
             // google-java-format exits non-zero if any file needs formatting
             return Ok(success && stderr.is_empty());
         }
@@ -96,7 +147,11 @@ impl LanguageBackend for JavaBackend {
 
     fn fmt_write(&self, cwd: Option<&Path>) -> ToolResult<()> {
         if build::run_command("google-java-format", &["--version"], cwd).is_ok() {
-            build::run_command("google-java-format", &["--replace", "--skip-regex", "."], cwd)?;
+            build::run_command(
+                "google-java-format",
+                &["--replace", "--skip-regex", "."],
+                cwd,
+            )?;
         }
         Ok(())
     }
@@ -109,7 +164,15 @@ impl LanguageBackend for JavaBackend {
         };
         let (stdout, stderr, success) = build::run_command(&self.tool, &args, cwd)?;
         let combined = format!("{stdout}\n{stderr}");
-        if success { Ok(combined) } else { Err(ToolError::CommandFailed { code: 1, stdout, stderr }) }
+        if success {
+            Ok(combined)
+        } else {
+            Err(ToolError::CommandFailed {
+                code: 1,
+                stdout,
+                stderr,
+            })
+        }
     }
 
     fn run(&self, _args: &[&str], cwd: Option<&Path>) -> ToolResult<String> {
@@ -120,7 +183,15 @@ impl LanguageBackend for JavaBackend {
         };
         let (stdout, stderr, success) = build::run_command(&self.tool, &args, cwd)?;
         let combined = format!("{stdout}{stderr}");
-        if success { Ok(combined) } else { Err(ToolError::CommandFailed { code: 1, stdout, stderr }) }
+        if success {
+            Ok(combined)
+        } else {
+            Err(ToolError::CommandFailed {
+                code: 1,
+                stdout,
+                stderr,
+            })
+        }
     }
 }
 
@@ -140,31 +211,50 @@ fn parse_mvn_output(stderr: &str, _stdout: &str) -> (Vec<Diag>, Vec<Diag>) {
             if let Some(bracket_start) = rest.rfind(":[") {
                 if let Some(bracket_end) = rest[bracket_start..].find(']') {
                     let abs_end = bracket_start + bracket_end;
-                    let between = &rest[bracket_start+2..abs_end]; // "line,col"
+                    let between = &rest[bracket_start + 2..abs_end]; // "line,col"
                     let file = rest[..bracket_start].trim().to_string();
-                    let msg = rest[abs_end+1..].trim().to_string();
+                    let msg = rest[abs_end + 1..].trim().to_string();
 
                     if !file.is_empty()
                         && !file.starts_with("Failed to")
                         && !file.starts_with("Unable to")
                         && !file.starts_with("Could not")
                     {
-                        let (line_no, col) = between.split_once(',').map(|(l, c)| {
-                            (l.trim().parse().ok(), c.trim().parse().ok())
-                        }).unwrap_or((None, None));
+                        let (line_no, col) = between
+                            .split_once(',')
+                            .map(|(l, c)| (l.trim().parse().ok(), c.trim().parse().ok()))
+                            .unwrap_or((None, None));
                         errors.push(Diag {
-                            file: Some(file), line: line_no, col,
-                            level: "error".into(), code: None, message: msg,
+                            file: Some(file),
+                            line: line_no,
+                            col,
+                            level: "error".into(),
+                            code: None,
+                            message: msg,
                         });
                         continue;
                     }
                 }
             }
             // No location: generic error
-            errors.push(Diag { file: None, line: None, col: None, level: "error".into(), code: None, message: rest.to_string() });
+            errors.push(Diag {
+                file: None,
+                line: None,
+                col: None,
+                level: "error".into(),
+                code: None,
+                message: rest.to_string(),
+            });
         } else if t.starts_with("[WARNING]") {
             let rest = t.trim_start_matches("[WARNING]").trim();
-            warnings.push(Diag { file: None, line: None, col: None, level: "warning".into(), code: None, message: rest.to_string() });
+            warnings.push(Diag {
+                file: None,
+                line: None,
+                col: None,
+                level: "warning".into(),
+                code: None,
+                message: rest.to_string(),
+            });
         }
     }
 
@@ -181,21 +271,35 @@ fn parse_checkstyle_output(_stderr: &str, stdout: &str) -> (Vec<Diag>, Vec<Diag>
         let t = line.trim();
         if let Some(pos) = t.find(": warning: ") {
             let file_part = &t[..pos];
-            let msg = t[pos+11..].to_string();
+            let msg = t[pos + 11..].to_string();
             let parts: Vec<&str> = file_part.rsplitn(3, ':').collect();
             if parts.len() >= 3 {
                 let col = parts[0].parse().ok();
                 let line_no = parts[1].parse().ok();
-                warnings.push(Diag { file: Some(parts[2].to_string()), line: line_no, col, level: "warning".into(), code: None, message: msg });
+                warnings.push(Diag {
+                    file: Some(parts[2].to_string()),
+                    line: line_no,
+                    col,
+                    level: "warning".into(),
+                    code: None,
+                    message: msg,
+                });
             }
         } else if let Some(pos) = t.find(": error: ") {
             let file_part = &t[..pos];
-            let msg = t[pos+9..].to_string();
+            let msg = t[pos + 9..].to_string();
             let parts: Vec<&str> = file_part.rsplitn(3, ':').collect();
             if parts.len() >= 3 {
                 let col = parts[0].parse().ok();
                 let line_no = parts[1].parse().ok();
-                errors.push(Diag { file: Some(parts[2].to_string()), line: line_no, col, level: "error".into(), code: None, message: msg });
+                errors.push(Diag {
+                    file: Some(parts[2].to_string()),
+                    line: line_no,
+                    col,
+                    level: "error".into(),
+                    code: None,
+                    message: msg,
+                });
             }
         }
     }
@@ -220,7 +324,9 @@ fn parse_mvn_test_results(stdout: &str, stderr: &str) -> TestResults {
             let rest = t.trim_start_matches("Failed tests:").trim();
             // Each test name is on the same line or next lines
             for name in rest.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()) {
-                failures.push(crate::build::TestFailure { name: name.to_string() });
+                failures.push(crate::build::TestFailure {
+                    name: name.to_string(),
+                });
             }
         }
     }
@@ -231,14 +337,25 @@ fn parse_mvn_test_results(stdout: &str, stderr: &str) -> TestResults {
         if t.starts_with("Tests run:") {
             for part in t.split(',') {
                 let p = part.trim();
-                if let Some(n) = p.strip_prefix("Tests run:").and_then(|s| s.trim().split(' ').next()).and_then(|s| s.parse().ok()) {
+                if let Some(n) = p
+                    .strip_prefix("Tests run:")
+                    .and_then(|s| s.trim().split(' ').next())
+                    .and_then(|s| s.parse().ok())
+                {
                     // Tests run includes both passed and failed; compute passed = total - failures - errors
                     let total: usize = n;
-                    let fail_count: usize = combined.lines()
+                    let fail_count: usize = combined
+                        .lines()
                         .filter_map(|l| {
                             let l = l.trim();
                             if l.starts_with("Failures:") || l.starts_with("Errors:") {
-                                l.split(',').next()?.split(':').nth(1)?.trim().parse::<usize>().ok()
+                                l.split(',')
+                                    .next()?
+                                    .split(':')
+                                    .nth(1)?
+                                    .trim()
+                                    .parse::<usize>()
+                                    .ok()
                             } else {
                                 None
                             }
@@ -247,14 +364,27 @@ fn parse_mvn_test_results(stdout: &str, stderr: &str) -> TestResults {
                     // Or just fall back to reasonable defaults
                     passed = total.saturating_sub(fail_count);
                 }
-                if let Some(n) = p.strip_prefix("Failures:").and_then(|s| s.trim().split(' ').next()).and_then(|s| s.parse::<usize>().ok()) {
+                if let Some(n) = p
+                    .strip_prefix("Failures:")
+                    .and_then(|s| s.trim().split(' ').next())
+                    .and_then(|s| s.parse::<usize>().ok())
+                {
                     failed += n;
                 }
             }
         }
     }
 
-    TestResults { passed, failed, ignored: 0, measured: 0, filtered_out: 0, failures, raw_stdout: stdout.to_string(), raw_stderr: stderr.to_string() }
+    TestResults {
+        passed,
+        failed,
+        ignored: 0,
+        measured: 0,
+        filtered_out: 0,
+        failures,
+        raw_stdout: stdout.to_string(),
+        raw_stderr: stderr.to_string(),
+    }
 }
 
 #[cfg(test)]
@@ -263,7 +393,8 @@ mod tests {
 
     #[test]
     fn test_parse_mvn_output_error() {
-        let stderr = "[ERROR] /home/src/main/java/App.java:[10,5] some error\n[WARNING] some warning\n";
+        let stderr =
+            "[ERROR] /home/src/main/java/App.java:[10,5] some error\n[WARNING] some warning\n";
         let (errors, warnings) = parse_mvn_output(stderr, "");
         assert_eq!(errors.len(), 1);
         assert!(errors[0].file.as_deref().unwrap_or("").contains("App.java"));

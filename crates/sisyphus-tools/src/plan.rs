@@ -1,7 +1,7 @@
+use crate::ToolResult;
+use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
-use serde::{Deserialize, Serialize};
-use crate::ToolResult;
 
 /// Status of a plan.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -89,8 +89,7 @@ pub fn plan_save(plan: &Plan, path: &Path) -> ToolResult<()> {
 
 /// Load a plan from a JSON file.
 pub fn plan_load(path: &Path) -> ToolResult<Plan> {
-    let content = fs::read_to_string(path)
-        .map_err(crate::ToolError::Io)?;
+    let content = fs::read_to_string(path).map_err(crate::ToolError::Io)?;
     let plan: Plan = serde_json::from_str(&content)
         .map_err(|e| crate::ToolError::TodoError(format!("deserialize: {e}")))?;
     Ok(plan)
@@ -224,7 +223,11 @@ mod tests {
     fn test_plan_review_clean() {
         let plan = sample_plan();
         let comments = plan_review(&plan);
-        assert!(comments.is_empty(), "expected no comments, got: {:?}", comments);
+        assert!(
+            comments.is_empty(),
+            "expected no comments, got: {:?}",
+            comments
+        );
     }
 
     #[test]
@@ -244,15 +247,13 @@ mod tests {
 
     #[test]
     fn test_plan_review_missing_dependency() {
-        let steps = vec![
-            PlanStep {
-                id: "step_1".to_string(),
-                description: "Do work".to_string(),
-                status: PlanStatus::Draft,
-                dependencies: vec!["step_999".to_string()],
-                estimated_effort: None,
-            },
-        ];
+        let steps = vec![PlanStep {
+            id: "step_1".to_string(),
+            description: "Do work".to_string(),
+            status: PlanStatus::Draft,
+            dependencies: vec!["step_999".to_string()],
+            estimated_effort: None,
+        }];
         let plan = plan_create("Bad Dep", "Missing dep test", steps);
         let comments = plan_review(&plan);
         assert!(comments.iter().any(|c| c.contains("step_999")));
@@ -298,7 +299,10 @@ mod tests {
         let reqs = "Just build the whole thing in one step";
         let plan = plan_from_requirements("Single", reqs);
         assert_eq!(plan.steps.len(), 1);
-        assert_eq!(plan.steps[0].description, "Just build the whole thing in one step");
+        assert_eq!(
+            plan.steps[0].description,
+            "Just build the whole thing in one step"
+        );
     }
 
     #[test]
@@ -322,7 +326,10 @@ mod tests {
         let nested = dir.path().join("sub").join("nested").join("plan.json");
         let plan = sample_plan();
         plan_save(&plan, &nested).unwrap();
-        assert!(nested.exists(), "plan_save should create parent directories");
+        assert!(
+            nested.exists(),
+            "plan_save should create parent directories"
+        );
     }
 
     #[test]
@@ -369,15 +376,13 @@ mod tests {
 
     #[test]
     fn test_plan_review_step_empty_description() {
-        let steps = vec![
-            PlanStep {
-                id: "step_1".to_string(),
-                description: "".to_string(),
-                status: PlanStatus::Draft,
-                dependencies: vec![],
-                estimated_effort: None,
-            },
-        ];
+        let steps = vec![PlanStep {
+            id: "step_1".to_string(),
+            description: "".to_string(),
+            status: PlanStatus::Draft,
+            dependencies: vec![],
+            estimated_effort: None,
+        }];
         let plan = plan_create("Bad Step", "Test", steps);
         let comments = plan_review(&plan);
         assert!(comments.iter().any(|c| c.contains("empty description")));
@@ -422,7 +427,10 @@ mod tests {
         assert_eq!(loaded.status, plan.status);
         assert_eq!(loaded.steps.len(), plan.steps.len());
         assert_eq!(loaded.steps[0].id, plan.steps[0].id);
-        assert_eq!(loaded.steps[0].estimated_effort, plan.steps[0].estimated_effort);
+        assert_eq!(
+            loaded.steps[0].estimated_effort,
+            plan.steps[0].estimated_effort
+        );
         assert_eq!(loaded.steps[1].dependencies, plan.steps[1].dependencies);
         assert_eq!(loaded.created_at, plan.created_at);
         assert_eq!(loaded.updated_at, plan.updated_at);

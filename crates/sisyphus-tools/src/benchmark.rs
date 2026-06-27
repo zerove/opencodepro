@@ -1,6 +1,6 @@
 use crate::ToolResult;
-use sisyphus_types::BenchmarkRun;
 use serde::{Deserialize, Serialize};
+use sisyphus_types::BenchmarkRun;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
@@ -154,13 +154,11 @@ impl ContinuousBenchmark {
     }
 
     fn save_trends(&self) -> ToolResult<()> {
-        std::fs::create_dir_all(&self.storage_path)
-            .map_err(crate::ToolError::Io)?;
+        std::fs::create_dir_all(&self.storage_path).map_err(crate::ToolError::Io)?;
         let file_path = self.storage_path.join("benchmarks.json");
         let content = serde_json::to_string_pretty(&self.trends)
             .map_err(|e| crate::ToolError::Generic(e.to_string()))?;
-        std::fs::write(&file_path, content)
-            .map_err(crate::ToolError::Io)
+        std::fs::write(&file_path, content).map_err(crate::ToolError::Io)
     }
 }
 
@@ -217,7 +215,12 @@ mod tests {
 
         for _ in 0..5 {
             let run = bm
-                .run_benchmark("trend_test", Box::new(|| std::thread::sleep(Duration::from_micros(1))), 1, 5)
+                .run_benchmark(
+                    "trend_test",
+                    Box::new(|| std::thread::sleep(Duration::from_micros(1))),
+                    1,
+                    5,
+                )
                 .unwrap();
             bm.record_result(run).unwrap();
         }
@@ -241,14 +244,24 @@ mod tests {
         // Add baseline runs (fast)
         for _ in 0..4 {
             let run = bm
-                .run_benchmark("regression_test", Box::new(|| std::thread::sleep(Duration::from_micros(1))), 1, 5)
+                .run_benchmark(
+                    "regression_test",
+                    Box::new(|| std::thread::sleep(Duration::from_micros(1))),
+                    1,
+                    5,
+                )
                 .unwrap();
             bm.record_result(run).unwrap();
         }
 
         // Add a slow run (regression)
         let slow_run = bm
-            .run_benchmark("regression_test", Box::new(|| std::thread::sleep(Duration::from_millis(10))), 1, 5)
+            .run_benchmark(
+                "regression_test",
+                Box::new(|| std::thread::sleep(Duration::from_millis(10))),
+                1,
+                5,
+            )
             .unwrap();
         bm.record_result(slow_run).unwrap();
 

@@ -1,5 +1,5 @@
-use std::path::Path;
 use crate::ToolResult;
+use std::path::Path;
 
 /// Supported project template types.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -200,7 +200,11 @@ mod tests {
 }
 "#;
     std::fs::write(
-        project_dir.join("crates").join("core").join("src").join("lib.rs"),
+        project_dir
+            .join("crates")
+            .join("core")
+            .join("src")
+            .join("lib.rs"),
         core_lib.as_bytes(),
     )?;
 
@@ -227,7 +231,11 @@ edition = "2021"
 "#
     );
     std::fs::write(
-        project_dir.join("crates").join("cli").join("src").join("main.rs"),
+        project_dir
+            .join("crates")
+            .join("cli")
+            .join("src")
+            .join("main.rs"),
         cli_main.as_bytes(),
     )?;
 
@@ -243,12 +251,30 @@ mod tests {
 
     #[test]
     fn test_template_type_from_str() {
-        assert_eq!(TemplateType::from_str_opt("rust-lib"), Some(TemplateType::RustLib));
-        assert_eq!(TemplateType::from_str_opt("lib"), Some(TemplateType::RustLib));
-        assert_eq!(TemplateType::from_str_opt("RUST-LIB"), Some(TemplateType::RustLib));
-        assert_eq!(TemplateType::from_str_opt("rust-bin"), Some(TemplateType::RustBin));
-        assert_eq!(TemplateType::from_str_opt("bin"), Some(TemplateType::RustBin));
-        assert_eq!(TemplateType::from_str_opt("workspace"), Some(TemplateType::RustWorkspace));
+        assert_eq!(
+            TemplateType::from_str_opt("rust-lib"),
+            Some(TemplateType::RustLib)
+        );
+        assert_eq!(
+            TemplateType::from_str_opt("lib"),
+            Some(TemplateType::RustLib)
+        );
+        assert_eq!(
+            TemplateType::from_str_opt("RUST-LIB"),
+            Some(TemplateType::RustLib)
+        );
+        assert_eq!(
+            TemplateType::from_str_opt("rust-bin"),
+            Some(TemplateType::RustBin)
+        );
+        assert_eq!(
+            TemplateType::from_str_opt("bin"),
+            Some(TemplateType::RustBin)
+        );
+        assert_eq!(
+            TemplateType::from_str_opt("workspace"),
+            Some(TemplateType::RustWorkspace)
+        );
         assert_eq!(TemplateType::from_str_opt("unknown"), None);
     }
 
@@ -315,17 +341,39 @@ mod tests {
         assert!(root_toml.contains(r#""crates/cli""#));
 
         // core crate
-        assert!(project.join("crates").join("core").join("Cargo.toml").exists());
-        assert!(project.join("crates").join("core").join("src").join("lib.rs").exists());
+        assert!(project
+            .join("crates")
+            .join("core")
+            .join("Cargo.toml")
+            .exists());
+        assert!(project
+            .join("crates")
+            .join("core")
+            .join("src")
+            .join("lib.rs")
+            .exists());
         let core_lib = std::fs::read_to_string(
-            project.join("crates").join("core").join("src").join("lib.rs"),
+            project
+                .join("crates")
+                .join("core")
+                .join("src")
+                .join("lib.rs"),
         )
         .unwrap();
         assert!(core_lib.contains("core_function"));
 
         // cli crate
-        assert!(project.join("crates").join("cli").join("Cargo.toml").exists());
-        assert!(project.join("crates").join("cli").join("src").join("main.rs").exists());
+        assert!(project
+            .join("crates")
+            .join("cli")
+            .join("Cargo.toml")
+            .exists());
+        assert!(project
+            .join("crates")
+            .join("cli")
+            .join("src")
+            .join("main.rs")
+            .exists());
         let cli_toml =
             std::fs::read_to_string(project.join("crates").join("cli").join("Cargo.toml")).unwrap();
         assert!(cli_toml.contains("my-ws-core"));
@@ -338,9 +386,6 @@ mod tests {
 
         let result = scaffold(TemplateType::RustLib, "existing", dir.path());
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("already exists"));
+        assert!(result.unwrap_err().to_string().contains("already exists"));
     }
 }

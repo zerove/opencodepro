@@ -1,11 +1,11 @@
 use super::error::TeamError;
 use super::parse::parse_decomposition_response;
-use super::{TeamEvent, TeamGoal, TeamPlan, TaskNode, TaskResult, TeamReport};
+use super::{TaskNode, TaskResult, TeamEvent, TeamGoal, TeamPlan, TeamReport};
 use crate::agent_registry::AgentRegistry;
 use crate::delegate::{WorkOrchestrator, WorkUnit};
 use crate::metis::LlmClient;
-use sisyphus_types::ToolExecutor;
 use serde_json::Value;
+use sisyphus_types::ToolExecutor;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Instant;
@@ -131,39 +131,47 @@ impl TeamOrchestrator {
                             message: "Dependency deadlock detected".into(),
                         });
                     }
-                                    for task_id in &remaining {
-                                        let task = plan.tasks.iter().find(|t| t.id == *task_id).expect("task id should exist in plan");
-                                        let result = TaskResult::failed(
-                                            task,
-                                            "Dependency deadlock: unsatisfied dependencies".into(),
-                                        );
-                                        if let Some(tx) = &event_tx {
-                                            let _ = tx.try_send(TeamEvent::TaskCompleted(result.clone()));
-                                        }
-                                        task_results.push(result.clone());
-                                        completed.insert(task_id.clone(), result);
-                                    }
-                                } else if active.values().all(|&c| c == 0) {
-                                    // Concurrency deadlock: tasks are ready but all agents at capacity
-                                    // and no tasks are running to free capacity
-                                    if let Some(tx) = &event_tx {
-                                        let _ = tx.try_send(TeamEvent::Error {
-                                            message: "Concurrency deadlock detected".into(),
-                                        });
-                                    }
-                                    for task_id in &remaining {
-                                        let task = plan.tasks.iter().find(|t| t.id == *task_id).expect("task id should exist in plan");
-                                        let result = TaskResult::failed(
-                                            task,
-                                            "Concurrency deadlock: all agents at capacity".into(),
-                                        );
-                                        if let Some(tx) = &event_tx {
-                                            let _ = tx.try_send(TeamEvent::TaskCompleted(result.clone()));
-                                        }
-                                        task_results.push(result.clone());
-                                        completed.insert(task_id.clone(), result);
-                                    }
-                                }
+                    for task_id in &remaining {
+                        let task = plan
+                            .tasks
+                            .iter()
+                            .find(|t| t.id == *task_id)
+                            .expect("task id should exist in plan");
+                        let result = TaskResult::failed(
+                            task,
+                            "Dependency deadlock: unsatisfied dependencies".into(),
+                        );
+                        if let Some(tx) = &event_tx {
+                            let _ = tx.try_send(TeamEvent::TaskCompleted(result.clone()));
+                        }
+                        task_results.push(result.clone());
+                        completed.insert(task_id.clone(), result);
+                    }
+                } else if active.values().all(|&c| c == 0) {
+                    // Concurrency deadlock: tasks are ready but all agents at capacity
+                    // and no tasks are running to free capacity
+                    if let Some(tx) = &event_tx {
+                        let _ = tx.try_send(TeamEvent::Error {
+                            message: "Concurrency deadlock detected".into(),
+                        });
+                    }
+                    for task_id in &remaining {
+                        let task = plan
+                            .tasks
+                            .iter()
+                            .find(|t| t.id == *task_id)
+                            .expect("task id should exist in plan");
+                        let result = TaskResult::failed(
+                            task,
+                            "Concurrency deadlock: all agents at capacity".into(),
+                        );
+                        if let Some(tx) = &event_tx {
+                            let _ = tx.try_send(TeamEvent::TaskCompleted(result.clone()));
+                        }
+                        task_results.push(result.clone());
+                        completed.insert(task_id.clone(), result);
+                    }
+                }
                 break;
             }
 
@@ -189,8 +197,7 @@ impl TeamOrchestrator {
                 .map(|task| {
                     let executor = self.executor.clone();
                     let tool_id = task.tool_id.clone();
-                    let args_bytes =
-                        serde_json::to_vec(&task.args).unwrap_or_default();
+                    let args_bytes = serde_json::to_vec(&task.args).unwrap_or_default();
                     let task_id = task.id.clone();
 
                     WorkUnit {
@@ -204,8 +211,8 @@ impl TeamOrchestrator {
                                 let result = ex.execute(&tid, args, 0).await;
                                 match result {
                                     Ok(bytes) => {
-                                        let value: Value = serde_json::from_slice(&bytes)
-                                            .unwrap_or(Value::Null);
+                                        let value: Value =
+                                            serde_json::from_slice(&bytes).unwrap_or(Value::Null);
                                         Ok(value)
                                     }
                                     Err(e) => Err(crate::ToolError::Generic(e)),
@@ -421,8 +428,7 @@ impl TeamOrchestrator {
             .await
             .map_err(TeamError::LlmFailed)?;
 
-        parse_decomposition_response(&response, &goal.id)
-            .map_err(TeamError::InvalidPlan)
+        parse_decomposition_response(&response, &goal.id).map_err(TeamError::InvalidPlan)
     }
 
     /// Decompose a goal and execute the resulting plan in one step.
@@ -488,12 +494,12 @@ mod tests {
     use super::*;
     use crate::agent_registry::AgentInfo;
     use crate::executor::BuiltinToolExecutor;
+    use crate::feedback::FeedbackStore;
     use crate::hook::HookRegistry;
     use crate::llm::DynamicLlmClient;
     use crate::metis::DummyLlmClient;
-    use crate::feedback::FeedbackStore;
-    use sisyphus_types::Config;
     use serde_json::json;
+    use sisyphus_types::Config;
     use std::sync::{Arc, RwLock};
 
     fn make_registry() -> Arc<AgentRegistry> {
@@ -540,14 +546,16 @@ mod tests {
             args: json!({"request": "test analysis"}),
             depends_on: vec![],
         }];
-        let report = orch.run(
-            TeamGoal {
-                id: "single".into(),
-                objective: "Test single task".into(),
-                context: None,
-            },
-            tasks,
-        ).await;
+        let report = orch
+            .run(
+                TeamGoal {
+                    id: "single".into(),
+                    objective: "Test single task".into(),
+                    context: None,
+                },
+                tasks,
+            )
+            .await;
 
         assert!(
             report.success,
@@ -577,14 +585,16 @@ mod tests {
                 depends_on: vec!["t1".into()],
             },
         ];
-        let report = orch.run(
-            TeamGoal {
-                id: "seq".into(),
-                objective: "Sequential tasks".into(),
-                context: None,
-            },
-            tasks,
-        ).await;
+        let report = orch
+            .run(
+                TeamGoal {
+                    id: "seq".into(),
+                    objective: "Sequential tasks".into(),
+                    context: None,
+                },
+                tasks,
+            )
+            .await;
 
         assert!(report.success);
         assert_eq!(report.task_results.len(), 2);
@@ -618,16 +628,21 @@ mod tests {
                 depends_on: vec![],
             },
         ];
-        let report = orch.run(
-            TeamGoal {
-                id: "par".into(),
-                objective: "Parallel tasks".into(),
-                context: None,
-            },
-            tasks,
-        ).await;
+        let report = orch
+            .run(
+                TeamGoal {
+                    id: "par".into(),
+                    objective: "Parallel tasks".into(),
+                    context: None,
+                },
+                tasks,
+            )
+            .await;
 
-        assert!(report.success, "three parallel metis tasks should all succeed");
+        assert!(
+            report.success,
+            "three parallel metis tasks should all succeed"
+        );
         assert_eq!(report.task_results.len(), 3);
     }
 
@@ -664,14 +679,16 @@ mod tests {
                 depends_on: vec!["t2".into(), "t3".into()],
             },
         ];
-        let report = orch.run(
-            TeamGoal {
-                id: "diamond".into(),
-                objective: "Diamond dependency".into(),
-                context: None,
-            },
-            tasks,
-        ).await;
+        let report = orch
+            .run(
+                TeamGoal {
+                    id: "diamond".into(),
+                    objective: "Diamond dependency".into(),
+                    context: None,
+                },
+                tasks,
+            )
+            .await;
 
         assert!(report.success);
         assert_eq!(report.task_results.len(), 4);
@@ -696,14 +713,16 @@ mod tests {
                 depends_on: vec!["t1".into()],
             },
         ];
-        let report = orch.run(
-            TeamGoal {
-                id: "deadlock".into(),
-                objective: "Test deadlock".into(),
-                context: None,
-            },
-            tasks,
-        ).await;
+        let report = orch
+            .run(
+                TeamGoal {
+                    id: "deadlock".into(),
+                    objective: "Test deadlock".into(),
+                    context: None,
+                },
+                tasks,
+            )
+            .await;
 
         assert!(!report.success, "deadlock should cause failure");
         assert_eq!(report.task_results.len(), 2);
@@ -720,14 +739,16 @@ mod tests {
             args: json!({"request": "a"}),
             depends_on: vec!["nonexistent".into()],
         }];
-        let report = orch.run(
-            TeamGoal {
-                id: "missing-dep".into(),
-                objective: "Test missing dep".into(),
-                context: None,
-            },
-            tasks,
-        ).await;
+        let report = orch
+            .run(
+                TeamGoal {
+                    id: "missing-dep".into(),
+                    objective: "Test missing dep".into(),
+                    context: None,
+                },
+                tasks,
+            )
+            .await;
 
         assert!(!report.success);
         let err = &report.task_results[0].error;
@@ -750,14 +771,16 @@ mod tests {
             args: json!({"request": "test"}),
             depends_on: vec![],
         }];
-        let report = orch.run(
-            TeamGoal {
-                id: "synth".into(),
-                objective: "Test synthesis".into(),
-                context: None,
-            },
-            tasks,
-        ).await;
+        let report = orch
+            .run(
+                TeamGoal {
+                    id: "synth".into(),
+                    objective: "Test synthesis".into(),
+                    context: None,
+                },
+                tasks,
+            )
+            .await;
 
         assert!(report.success);
         assert!(report.synthesis.is_some());
@@ -798,14 +821,16 @@ mod tests {
             args: json!({}),
             depends_on: vec![],
         }];
-        let report = orch.run(
-            TeamGoal {
-                id: "unknown-tool".into(),
-                objective: "Test unknown tool".into(),
-                context: None,
-            },
-            tasks,
-        ).await;
+        let report = orch
+            .run(
+                TeamGoal {
+                    id: "unknown-tool".into(),
+                    objective: "Test unknown tool".into(),
+                    context: None,
+                },
+                tasks,
+            )
+            .await;
 
         assert!(!report.success, "unknown tool should fail");
         assert!(!report.task_results.is_empty());
@@ -821,14 +846,16 @@ mod tests {
             args: json!({"request": "test"}),
             depends_on: vec![],
         }];
-        let report = orch.run(
-            TeamGoal {
-                id: "metrics".into(),
-                objective: "Test metrics".into(),
-                context: None,
-            },
-            tasks,
-        ).await;
+        let report = orch
+            .run(
+                TeamGoal {
+                    id: "metrics".into(),
+                    objective: "Test metrics".into(),
+                    context: None,
+                },
+                tasks,
+            )
+            .await;
 
         let success_count = report.task_results.iter().filter(|r| r.success).count();
         assert_eq!(success_count, 1, "one task should succeed");
@@ -844,19 +871,25 @@ mod tests {
             args: json!({}),
             depends_on: vec![],
         }];
-        let report = orch.run(
-            TeamGoal {
-                id: "bad-agent".into(),
-                objective: "Test unknown agent".into(),
-                context: None,
-            },
-            tasks,
-        ).await;
+        let report = orch
+            .run(
+                TeamGoal {
+                    id: "bad-agent".into(),
+                    objective: "Test unknown agent".into(),
+                    context: None,
+                },
+                tasks,
+            )
+            .await;
 
         let failed: Vec<&TaskResult> = report.task_results.iter().filter(|r| !r.success).collect();
         assert_eq!(failed.len(), 1, "task with unknown agent should fail");
         let err = failed[0].error.as_ref().unwrap();
-        assert!(err.contains("not registered"), "error should mention not registered; got: {}", err);
+        assert!(
+            err.contains("not registered"),
+            "error should mention not registered; got: {}",
+            err
+        );
     }
 
     #[tokio::test]
@@ -869,19 +902,25 @@ mod tests {
             args: json!({}),
             depends_on: vec![],
         }];
-        let report = orch.run(
-            TeamGoal {
-                id: "tool-mismatch".into(),
-                objective: "Test tool mismatch".into(),
-                context: None,
-            },
-            tasks,
-        ).await;
+        let report = orch
+            .run(
+                TeamGoal {
+                    id: "tool-mismatch".into(),
+                    objective: "Test tool mismatch".into(),
+                    context: None,
+                },
+                tasks,
+            )
+            .await;
 
         let failed: Vec<&TaskResult> = report.task_results.iter().filter(|r| !r.success).collect();
         assert_eq!(failed.len(), 1, "mismatched tool should fail");
         let err = failed[0].error.as_ref().unwrap();
-        assert!(err.contains("does not support"), "error should mention 'does not support'; got: {}", err);
+        assert!(
+            err.contains("does not support"),
+            "error should mention 'does not support'; got: {}",
+            err
+        );
     }
 
     #[tokio::test]
@@ -1041,18 +1080,24 @@ mod tests {
             },
         ];
 
-        let report = orch.run(
-            TeamGoal {
-                id: "concurrency".into(),
-                objective: "Test concurrency".into(),
-                context: None,
-            },
-            tasks,
-        ).await;
+        let report = orch
+            .run(
+                TeamGoal {
+                    id: "concurrency".into(),
+                    objective: "Test concurrency".into(),
+                    context: None,
+                },
+                tasks,
+            )
+            .await;
 
         // All should complete (even if they fail due to unknown tool)
         // The important thing is no deadlock — all 3 tasks are accounted for
-        assert_eq!(report.task_results.len(), 3, "all 3 tasks should be accounted for");
+        assert_eq!(
+            report.task_results.len(),
+            3,
+            "all 3 tasks should be accounted for"
+        );
     }
 
     #[tokio::test]
@@ -1170,7 +1215,10 @@ mod tests {
         }
 
         assert_eq!(errors, 1, "deadlock should emit Error event");
-        assert_eq!(failed_completions, 2, "both tasks should emit failed TaskCompleted");
+        assert_eq!(
+            failed_completions, 2,
+            "both tasks should emit failed TaskCompleted"
+        );
         assert!(got_complete, "should still emit Complete event");
     }
 }

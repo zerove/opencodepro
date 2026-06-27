@@ -28,9 +28,8 @@ pub(crate) fn parse_decomposition_response(
         tasks: Vec<RawTask>,
     }
 
-    let raw: RawPlan = serde_json::from_str(json_str).map_err(|e| {
-        format!("Failed to parse LLM decomposition response as JSON: {}", e)
-    })?;
+    let raw: RawPlan = serde_json::from_str(json_str)
+        .map_err(|e| format!("Failed to parse LLM decomposition response as JSON: {}", e))?;
 
     if raw.tasks.is_empty() {
         return Err("LLM returned empty task list".to_string());
@@ -83,9 +82,7 @@ pub(crate) fn detect_cycle(tasks: &[TaskNode]) -> Result<(), String> {
     for task in tasks {
         deps.entry(task.id.as_str()).or_default();
         for dep in &task.depends_on {
-            deps.entry(task.id.as_str())
-                .or_default()
-                .push(dep.as_str());
+            deps.entry(task.id.as_str()).or_default().push(dep.as_str());
         }
     }
 
@@ -266,8 +263,20 @@ mod tests {
     #[test]
     fn test_detect_cycle_no_cycle() {
         let tasks = vec![
-            TaskNode { id: "a".into(), agent_id: "x".into(), tool_id: "t".into(), args: json!({}), depends_on: vec![] },
-            TaskNode { id: "b".into(), agent_id: "x".into(), tool_id: "t".into(), args: json!({}), depends_on: vec!["a".into()] },
+            TaskNode {
+                id: "a".into(),
+                agent_id: "x".into(),
+                tool_id: "t".into(),
+                args: json!({}),
+                depends_on: vec![],
+            },
+            TaskNode {
+                id: "b".into(),
+                agent_id: "x".into(),
+                tool_id: "t".into(),
+                args: json!({}),
+                depends_on: vec!["a".into()],
+            },
         ];
         assert!(detect_cycle(&tasks).is_ok());
     }
@@ -275,8 +284,20 @@ mod tests {
     #[test]
     fn test_detect_cycle_simple() {
         let tasks = vec![
-            TaskNode { id: "a".into(), agent_id: "x".into(), tool_id: "t".into(), args: json!({}), depends_on: vec!["b".into()] },
-            TaskNode { id: "b".into(), agent_id: "x".into(), tool_id: "t".into(), args: json!({}), depends_on: vec!["a".into()] },
+            TaskNode {
+                id: "a".into(),
+                agent_id: "x".into(),
+                tool_id: "t".into(),
+                args: json!({}),
+                depends_on: vec!["b".into()],
+            },
+            TaskNode {
+                id: "b".into(),
+                agent_id: "x".into(),
+                tool_id: "t".into(),
+                args: json!({}),
+                depends_on: vec!["a".into()],
+            },
         ];
         assert!(detect_cycle(&tasks).is_err());
     }
