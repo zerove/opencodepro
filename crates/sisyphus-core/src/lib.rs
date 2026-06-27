@@ -5,21 +5,22 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Instant;
+use thiserror::Error;
 use tokio::sync::mpsc;
 use tokio::task::JoinSet;
-use thiserror::Error;
 
 use sisyphus_intel::SisyphusIntel;
 use sisyphus_mem::MfsStore;
 use sisyphus_metrics::record_cognitive_iteration;
 use sisyphus_roadmap::RoadmapManager;
 use sisyphus_tools::{
-    agent_channel::AgentChannel, ContinuousBenchmark, meta_learner::MetaLearner,
+    agent_channel::AgentChannel, llm::BudgetProvider, meta_learner::MetaLearner,
+    ContinuousBenchmark,
 };
 use sisyphus_types::AgentMessage;
 pub use sisyphus_types::{
-    CompositeGraph, DataMapping, ExecutionContext, ExecutionEvent, GraphDependency, NodeOutput, SOPGraph,
-    SOPGraphConfig, StateStore, ToolExecutor, WasmSOPNode,
+    CompositeGraph, DataMapping, ExecutionContext, ExecutionEvent, GraphDependency, NodeOutput,
+    SOPGraph, SOPGraphConfig, StateStore, ToolExecutor, WasmSOPNode,
 };
 
 #[async_trait::async_trait]
@@ -60,7 +61,113 @@ impl From<CoreError> for String {
     }
 }
 
+#[async_trait::async_trait]
+impl BudgetProvider for SisyphusKernel {
+    async fn check_budget(
+        &self,
+        project_id: &str,
+        _goal_id: &str,
+        estimated_cost: f64,
+    ) -> Result<(), String> {
+        let project = self
+            .roadmap_manager
+            .get_project(project_id)
+            .await
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| format!("Project {} not found", project_id))?;
+
+        let total_goals = project
+            .roadmap
+            .milestones
+            .iter()
+            .flat_map(|m| &m.phases)
+            .flat_map(|p| &p.goals)
+            .count();
+
+        let completed_goals = project
+            .roadmap
+            .milestones
+            .iter()
+            .flat_map(|m| &m.phases)
+            .flat_map(|p| &p.goals)
+            .filter(|g| g.status == sisyphus_types::MilestoneStatus::Completed)
+            .count();
+
+        let projection = self.resource_optimizer.project_costs(
+            &self
+                .roadmap_manager
+                .get_outcomes(project_id)
+                .await
+                .unwrap_or_default(),
+            total_goals,
+            completed_goals,
+        );
+
+        if estimated_cost > projection.avg_cost_per_goal * 3.0 && projection.confidence > 0.5 {
+            return Err(format!(
+                "Estimated cost {:.2} is significantly higher than project average {:.2}",
+                estimated_cost, projection.avg_cost_per_goal
+            ));
+        }
+        Ok(())
+    }
+
+    async fn record_actual_cost(
+        &self,
+        project_id: &str,
+        goal_id: &str,
+        actual_cost: f64,
+        duration_secs: f64,
+    ) -> Result<(), String> {
+        let project = self
+            .roadmap_manager
+            .get_project(project_id)
+            .await
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| format!("Project {} not found", project_id))?;
+
+        // Find milestone and phase for the goal
+        let mut location = None;
+        for ms in &project.roadmap.milestones {
+            for ph in &ms.phases {
+                if ph.goals.iter().any(|g| g.goal_id == goal_id) {
+                    location = Some((ms.id.clone(), ph.id.clone()));
+                    break;
+                }
+            }
+            if location.is_some() {
+                break;
+            }
+        }
+
+        let (milestone_id, phase_id) = location
+            .ok_or_else(|| format!("Goal {} not found in project {}", goal_id, project_id))?;
+
+        let outcome = sisyphus_roadmap::ExecutionOutcome {
+            goal_id: goal_id.to_string(),
+            project_id: project_id.to_string(),
+            milestone_id,
+            phase_id,
+            success: true, // Costs are recorded for the call itself
+            deviation_score: None,
+            error: None,
+            timestamp: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs(),
+            actual_cost,
+            duration_secs,
+        };
+
+        self.roadmap_manager
+            .record_outcome(&outcome)
+            .await
+            .map_err(|e| e.to_string())
+    }
+}
+
 pub struct Executor;
+// ... (rest of file)
 
 impl Default for Executor {
     fn default() -> Self {
@@ -114,7 +221,10 @@ impl Executor {
         for (&node, &degree) in in_degree.iter() {
             if degree == 0 {
                 let node_ref = Arc::clone(
-                    sop_graph.graph.node_weight(node).expect("node should exist in graph"),
+                    sop_graph
+                        .graph
+                        .node_weight(node)
+                        .expect("node should exist in graph"),
                 );
                 let ctx_ref = Arc::clone(&ctx);
                 let tx = event_tx.clone();
@@ -122,7 +232,7 @@ impl Executor {
                     let node_span = tracing::info_span!("executor.node", node = node_ref.name());
                     let _enter = node_span.enter();
                     let name = node_ref.name().to_string();
-                    
+
                     if let Some(ref tx) = tx {
                         if let Err(e) = tx.send(ExecutionEvent::NodeStarted { node_name: name.clone() }) {
                             tracing::warn!(node = %name, error = %e, "Failed to send NodeStarted event");
@@ -130,21 +240,21 @@ impl Executor {
                     }
 
                     let result = node_ref.execute(&ctx_ref).await;
-                    
+
                     if let Some(ref tx) = tx {
                         match &result {
                             Ok(out) => {
-                                if let Err(e) = tx.send(ExecutionEvent::NodeCompleted { 
-                                    node_name: name.clone(), 
-                                    output: out.clone() 
+                                if let Err(e) = tx.send(ExecutionEvent::NodeCompleted {
+                                    node_name: name.clone(),
+                                    output: out.clone()
                                 }) {
                                     tracing::warn!(node = %name, error = %e, "Failed to send NodeCompleted event");
                                 }
                             }
                             Err(e) => {
-                                if let Err(send_err) = tx.send(ExecutionEvent::NodeFailed { 
-                                    node_name: name.clone(), 
-                                    error: e.clone() 
+                                if let Err(send_err) = tx.send(ExecutionEvent::NodeFailed {
+                                    node_name: name.clone(),
+                                    error: e.clone()
                                 }) {
                                     tracing::warn!(node = %name, error = %send_err, "Failed to send NodeFailed event");
                                 }
@@ -158,18 +268,17 @@ impl Executor {
             }
         }
 
-                while let Some(res) = join_set.join_next().await {
-                    let (node, name, result) = res.map_err(|e| CoreError::Internal(e.to_string()))?;
-                    let output = match result {
-                        Ok(out) => out,
-                        Err(e) => {
-                            tracing::warn!(node = %name, error = %e, "Node execution failed");
-                            NodeOutput(Value::String(e))
-                        }
-                    };
-                    ctx.set_result(name.clone(), output);
-                    tracing::debug!(node = %name, "Node result stored");
-
+        while let Some(res) = join_set.join_next().await {
+            let (node, name, result) = res.map_err(|e| CoreError::Internal(e.to_string()))?;
+            let output = match result {
+                Ok(out) => out,
+                Err(e) => {
+                    tracing::warn!(node = %name, error = %e, "Node execution failed");
+                    NodeOutput(Value::String(e))
+                }
+            };
+            ctx.set_result(name.clone(), output);
+            tracing::debug!(node = %name, "Node result stored");
 
             for edge in sop_graph.graph.edges(node) {
                 let target = edge.target();
@@ -196,17 +305,17 @@ impl Executor {
                             if let Some(ref tx) = tx {
                                 match &result {
                                     Ok(out) => {
-                                        if let Err(e) = tx.send(ExecutionEvent::NodeCompleted { 
-                                            node_name: name.clone(), 
-                                            output: out.clone() 
+                                        if let Err(e) = tx.send(ExecutionEvent::NodeCompleted {
+                                            node_name: name.clone(),
+                                            output: out.clone()
                                         }) {
                                             tracing::warn!(node = %name, error = %e, "Failed to send NodeCompleted event");
                                         }
                                     }
                                     Err(e) => {
-                                        if let Err(send_err) = tx.send(ExecutionEvent::NodeFailed { 
-                                            node_name: name.clone(), 
-                                            error: e.clone() 
+                                        if let Err(send_err) = tx.send(ExecutionEvent::NodeFailed {
+                                            node_name: name.clone(),
+                                            error: e.clone()
                                         }) {
                                             tracing::warn!(node = %name, error = %send_err, "Failed to send NodeFailed event");
                                         }
@@ -236,7 +345,8 @@ impl Executor {
         sop_graph: &SOPGraph,
         start_node: NodeIndex,
     ) -> Result<Arc<ExecutionContext>, CoreError> {
-        self.execute_with_context(sop_graph, start_node, None, None).await
+        self.execute_with_context(sop_graph, start_node, None, None)
+            .await
     }
 }
 
@@ -318,8 +428,7 @@ impl DependencyResolver {
         }
 
         // Topological sort
-        let order = toposort(&dep_graph, None)
-            .map_err(|_| CoreError::DependencyCycleDetected)?;
+        let order = toposort(&dep_graph, None).map_err(|_| CoreError::DependencyCycleDetected)?;
 
         Ok(order
             .into_iter()
@@ -352,7 +461,8 @@ pub struct SisyphusKernel {
     /// Strategic planning manager for Project → Milestone → Phase → Goal hierarchy.
     pub roadmap_manager: Arc<RoadmapManager>,
     /// Phase 3 — Strategic reflection engine (LLM-augmented roadmap analysis).
-    pub strategic_reflector: Option<Arc<sisyphus_roadmap::strategic_reflection::StrategicReflector>>,
+    pub strategic_reflector:
+        Option<Arc<sisyphus_roadmap::strategic_reflection::StrategicReflector>>,
     /// Phase 3 — Autonomous milestone generator (LLM-driven roadmap creation).
     pub milestone_generator: Option<Arc<sisyphus_roadmap::milestone_generator::MilestoneGenerator>>,
     /// Phase 3 — Resource / cost projection engine (analytics-only).
@@ -374,7 +484,9 @@ impl SisyphusKernel {
             intel,
             synthesizer,
             channel: AgentChannel::new(),
-            benchmark: Arc::new(std::sync::Mutex::new(ContinuousBenchmark::new(".omo/benchmarks"))),
+            benchmark: Arc::new(std::sync::Mutex::new(ContinuousBenchmark::new(
+                ".omo/benchmarks",
+            ))),
             meta_learner: Arc::new(std::sync::Mutex::new(MetaLearner::new(".omo/meta"))),
             roadmap_manager: rm,
             strategic_reflector: None,
@@ -407,8 +519,8 @@ impl SisyphusKernel {
 
     pub async fn save_sop(&self, sop_id: &str, graph: &SOPGraph) -> Result<(), CoreError> {
         let config = sisyphus_types::SOPGraphConfig::from_graph(graph);
-        let value = serde_json::to_value(&config)
-            .map_err(|e| CoreError::Internal(e.to_string()))?;
+        let value =
+            serde_json::to_value(&config).map_err(|e| CoreError::Internal(e.to_string()))?;
         self.state_store
             .set_state_json(&format!("sop:{}", sop_id), value)
             .await
@@ -528,6 +640,7 @@ impl SisyphusKernel {
             Err(e) => (false, None, Some(e.clone())),
         };
 
+        let elapsed = start.elapsed();
         let outcome = sisyphus_roadmap::ExecutionOutcome {
             goal_id: goal_id.to_string(),
             project_id: project_id.to_string(),
@@ -536,29 +649,20 @@ impl SisyphusKernel {
             success,
             deviation_score: deviation,
             error,
-            timestamp: start.elapsed().as_secs(),
+            timestamp: elapsed.as_secs(),
+            actual_cost: 0.0, // actual cost tracking TBD at this layer
+            duration_secs: elapsed.as_secs_f64(),
         };
 
-        let _ = self
-            .roadmap_manager
-            .record_outcome(&outcome)
-            .await;
+        let _ = self.roadmap_manager.record_outcome(&outcome).await;
 
         // Evaluate health and optionally apply blocking on failure
         if !success {
-            let health = self
-                .roadmap_manager
-                .apply_blocking(project_id)
-                .await
-                .ok();
+            let health = self.roadmap_manager.apply_blocking(project_id).await.ok();
             return result.map(|(o, r)| (o, r, health));
         }
 
-        let health = self
-            .roadmap_manager
-            .evaluate_health(project_id)
-            .await
-            .ok();
+        let health = self.roadmap_manager.evaluate_health(project_id).await.ok();
         result.map(|(o, r)| (o, r, health))
     }
 
@@ -573,20 +677,23 @@ impl SisyphusKernel {
         let reflector = self.strategic_reflector.as_ref()?;
         match reflector.reflect(&self.roadmap_manager, project_id).await {
             Ok(reflection) => {
-                let _ = self.channel.publish("strategic_events", AgentMessage {
-                    from: "kernel".into(),
-                    to: "*".into(),
-                    kind: "StrategicReflectionCompleted".into(),
-                    payload: serde_json::json!({
-                        "project_id": reflection.project_id,
-                        "health_assessment": reflection.health_assessment,
-                        "trajectory": reflection.trajectory,
-                        "recommendations": reflection.recommendations.len(),
-                        "risk_factors": reflection.risk_factors.len(),
-                        "confidence": reflection.confidence,
-                    }),
-                    correlation_id: format!("{}-strategic-reflect", project_id),
-                });
+                let _ = self.channel.publish(
+                    "strategic_events",
+                    AgentMessage {
+                        from: "kernel".into(),
+                        to: "*".into(),
+                        kind: "StrategicReflectionCompleted".into(),
+                        payload: serde_json::json!({
+                            "project_id": reflection.project_id,
+                            "health_assessment": reflection.health_assessment,
+                            "trajectory": reflection.trajectory,
+                            "recommendations": reflection.recommendations.len(),
+                            "risk_factors": reflection.risk_factors.len(),
+                            "confidence": reflection.confidence,
+                        }),
+                        correlation_id: format!("{}-strategic-reflect", project_id),
+                    },
+                );
                 Some(reflection)
             }
             Err(e) => {
@@ -611,16 +718,19 @@ impl SisyphusKernel {
             .await
         {
             Ok(milestones) => {
-                let _ = self.channel.publish("strategic_events", AgentMessage {
-                    from: "kernel".into(),
-                    to: "*".into(),
-                    kind: "MilestonesGenerated".into(),
-                    payload: serde_json::json!({
-                        "project_id": project_id,
-                        "milestone_count": milestones.len(),
-                    }),
-                    correlation_id: format!("{}-milestones", project_id),
-                });
+                let _ = self.channel.publish(
+                    "strategic_events",
+                    AgentMessage {
+                        from: "kernel".into(),
+                        to: "*".into(),
+                        kind: "MilestonesGenerated".into(),
+                        payload: serde_json::json!({
+                            "project_id": project_id,
+                            "milestone_count": milestones.len(),
+                        }),
+                        correlation_id: format!("{}-milestones", project_id),
+                    },
+                );
                 Some(milestones)
             }
             Err(e) => {
@@ -642,7 +752,8 @@ impl SisyphusKernel {
             .get_outcomes(project_id)
             .await
             .unwrap_or_default();
-        self.resource_optimizer.project_costs(&outcomes, total_goals, completed_goals)
+        self.resource_optimizer
+            .project_costs(&outcomes, total_goals, completed_goals)
     }
 
     /// Execute a SOP graph with recursive cognitive feedback.
@@ -679,17 +790,20 @@ impl SisyphusKernel {
         let initial_ctx_for_iter = initial_ctx;
 
         // Publish cognitive loop start event via AgentChannel
-        let _ = self.channel.publish("cognitive_events", AgentMessage {
-            from: "kernel".into(),
-            to: "*".into(),
-            kind: "CognitiveLoopStarted".into(),
-            payload: serde_json::json!({
-                "sop_id": sop_id,
-                "graph_nodes": sop_graph.graph.node_count(),
-                "max_iterations": MAX_COGNITIVE_ITERATIONS,
-            }),
-            correlation_id: format!("{}-start", sop_id),
-        });
+        let _ = self.channel.publish(
+            "cognitive_events",
+            AgentMessage {
+                from: "kernel".into(),
+                to: "*".into(),
+                kind: "CognitiveLoopStarted".into(),
+                payload: serde_json::json!({
+                    "sop_id": sop_id,
+                    "graph_nodes": sop_graph.graph.node_count(),
+                    "max_iterations": MAX_COGNITIVE_ITERATIONS,
+                }),
+                correlation_id: format!("{}-start", sop_id),
+            },
+        );
 
         for iteration in 0..MAX_COGNITIVE_ITERATIONS {
             let iter_start = Instant::now();
@@ -697,16 +811,19 @@ impl SisyphusKernel {
             let _iter_enter = iter_span.enter();
 
             // Publish iteration start via AgentChannel
-            let _ = self.channel.publish("cognitive_events", AgentMessage {
-                from: "kernel".into(),
-                to: "*".into(),
-                kind: "IterationStarted".into(),
-                payload: serde_json::json!({
-                    "sop_id": sop_id,
-                    "iteration": iteration,
-                }),
-                correlation_id: format!("{}-iter-{}", sop_id, iteration),
-            });
+            let _ = self.channel.publish(
+                "cognitive_events",
+                AgentMessage {
+                    from: "kernel".into(),
+                    to: "*".into(),
+                    kind: "IterationStarted".into(),
+                    payload: serde_json::json!({
+                        "sop_id": sop_id,
+                        "iteration": iteration,
+                    }),
+                    correlation_id: format!("{}-iter-{}", sop_id, iteration),
+                },
+            );
 
             let ctx = ExecutionContext::with_capacity(current_ref.graph.node_count());
 
@@ -728,7 +845,7 @@ impl SisyphusKernel {
             let final_ctx = self
                 .executor
                 .execute_with_context(current_ref, current_start, exec_ctx, event_tx.clone())
-                                .await?;
+                .await?;
             let result = final_ctx
                 .get_result(
                     current_ref
@@ -923,24 +1040,29 @@ impl SisyphusKernel {
             .unwrap_or(false);
 
         // Publish cognitive loop completion via AgentChannel
-        let _ = self.channel.publish("cognitive_events", AgentMessage {
-            from: "kernel".into(),
-            to: "*".into(),
-            kind: "CognitiveLoopCompleted".into(),
-            payload: serde_json::json!({
-                "sop_id": sop_id,
-                "iterations": iterations.len(),
-                "converged": converged,
-                "final_deviation": iterations.last().map(|i| i.deviation_score).unwrap_or(0.0),
-            }),
-            correlation_id: format!("{}-complete", sop_id),
-        });
+        let _ = self.channel.publish(
+            "cognitive_events",
+            AgentMessage {
+                from: "kernel".into(),
+                to: "*".into(),
+                kind: "CognitiveLoopCompleted".into(),
+                payload: serde_json::json!({
+                    "sop_id": sop_id,
+                    "iterations": iterations.len(),
+                    "converged": converged,
+                    "final_deviation": iterations.last().map(|i| i.deviation_score).unwrap_or(0.0),
+                }),
+                correlation_id: format!("{}-complete", sop_id),
+            },
+        );
 
         // Check benchmark baseline for regression
         if let Ok(bm) = self.benchmark.lock() {
-            if let Some(comparison) = bm.compare_with_baseline(
-                &format!("cognitive_iter.{}.{}", sop_id, iterations.len().saturating_sub(1))
-            ) {
+            if let Some(comparison) = bm.compare_with_baseline(&format!(
+                "cognitive_iter.{}.{}",
+                sop_id,
+                iterations.len().saturating_sub(1)
+            )) {
                 if comparison.is_significant {
                     tracing::warn!(
                         sop_id = %sop_id,
@@ -956,23 +1078,26 @@ impl SisyphusKernel {
             let insight = ml.learn();
             let _ = ml.save_insight(&insight);
             // Publish insight summary via AgentChannel
-            let _ = self.channel.publish("cognitive_events", AgentMessage {
-                from: "kernel".into(),
-                to: "*".into(),
-                kind: "LearningInsight".into(),
-                payload: serde_json::json!({
-                    "sop_id": sop_id,
-                    "total_samples": insight.total_samples,
-                    "overall_success_rate": insight.overall_success_rate,
-                    "trend": insight.trend,
-                    "strategies": insight.strategies.iter().map(|s| serde_json::json!({
-                        "strategy": s.strategy,
-                        "success_rate": s.success_rate,
-                        "total_uses": s.total_uses,
-                    })).collect::<Vec<_>>(),
-                }),
-                correlation_id: format!("{}-insight", sop_id),
-            });
+            let _ = self.channel.publish(
+                "cognitive_events",
+                AgentMessage {
+                    from: "kernel".into(),
+                    to: "*".into(),
+                    kind: "LearningInsight".into(),
+                    payload: serde_json::json!({
+                        "sop_id": sop_id,
+                        "total_samples": insight.total_samples,
+                        "overall_success_rate": insight.overall_success_rate,
+                        "trend": insight.trend,
+                        "strategies": insight.strategies.iter().map(|s| serde_json::json!({
+                            "strategy": s.strategy,
+                            "success_rate": s.success_rate,
+                            "total_uses": s.total_uses,
+                        })).collect::<Vec<_>>(),
+                    }),
+                    correlation_id: format!("{}-insight", sop_id),
+                },
+            );
         }
 
         let iteration_details: Vec<String> = iterations
@@ -1045,7 +1170,8 @@ impl SisyphusKernel {
         }
 
         // Pre-build all SOPGraphs so they are not rebuilt per spawn
-        let mut graph_cache: HashMap<String, (SOPGraph, NodeIndex)> = HashMap::with_capacity(order_len);
+        let mut graph_cache: HashMap<String, (SOPGraph, NodeIndex)> =
+            HashMap::with_capacity(order_len);
         for sop_id in &order {
             let config = composite
                 .graphs
@@ -1089,11 +1215,13 @@ impl SisyphusKernel {
                         let tx = event_tx.clone();
                         let sid = sop_id.clone();
                         join_set.spawn(async move {
-                            let dep_ctx = build_dep_ctx_for(&sid, &composite_ref, &acc.lock().unwrap_or_else(|e| e.into_inner()));
+                            let dep_ctx = build_dep_ctx_for(
+                                &sid,
+                                &composite_ref,
+                                &acc.lock().unwrap_or_else(|e| e.into_inner()),
+                            );
                             let result = kernel
-                                .execute_with_cognition(
-                                    &graph, start_node, &sid, dep_ctx, tx,
-                                )
+                                .execute_with_cognition(&graph, start_node, &sid, dep_ctx, tx)
                                 .await;
                             (sid, result)
                         });
@@ -1137,12 +1265,9 @@ impl SisyphusKernel {
                     let composite_ref = Arc::clone(&composite);
                     let tx = event_tx.clone();
                     join_set.spawn(async move {
-                        let dep_ctx =
-                            build_dep_ctx_for(&sid, &composite_ref, &acc.lock().unwrap());
+                        let dep_ctx = build_dep_ctx_for(&sid, &composite_ref, &acc.lock().unwrap());
                         let result = kernel
-                            .execute_with_cognition(
-                                &graph, start_node, &sid, dep_ctx, tx,
-                            )
+                            .execute_with_cognition(&graph, start_node, &sid, dep_ctx, tx)
                             .await;
                         (sid, result)
                     });
@@ -1179,5 +1304,853 @@ fn build_dep_ctx_for(
         Some(Arc::new(ctx))
     } else {
         None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sisyphus_types::{
+        CompositeGraph, GraphDependency, NodeKind, NodeOutput, SOPGraphConfig, SOPNodeConfig,
+    };
+    use std::collections::HashMap;
+
+    #[test]
+    fn test_core_error_display() {
+        assert_eq!(
+            CoreError::CycleDetected.to_string(),
+            "SOPGraph contains cycles"
+        );
+        assert_eq!(
+            CoreError::DependencyCycleDetected.to_string(),
+            "Cross-graph dependency cycle detected"
+        );
+        assert_eq!(
+            CoreError::MissingSourceNode.to_string(),
+            "Missing source node"
+        );
+        assert_eq!(
+            CoreError::MissingTargetNode.to_string(),
+            "Missing target node"
+        );
+        assert_eq!(
+            CoreError::MfsSaveError("fail".into()).to_string(),
+            "MFS save error: fail"
+        );
+        assert_eq!(
+            CoreError::MfsLoadError("fail".into()).to_string(),
+            "MFS load error: fail"
+        );
+        assert_eq!(
+            CoreError::SopNotFound("sop1".into()).to_string(),
+            "SOP sop1 not found"
+        );
+        assert_eq!(
+            CoreError::NoResultProduced.to_string(),
+            "Execution failed to produce result"
+        );
+        assert_eq!(
+            CoreError::GraphNotFound("g1".into()).to_string(),
+            "Graph g1 not found in composite"
+        );
+        assert_eq!(
+            CoreError::GraphEmpty("g1".into()).to_string(),
+            "Graph g1 has no nodes"
+        );
+        assert_eq!(
+            CoreError::Internal("err".into()).to_string(),
+            "Internal error: err"
+        );
+    }
+
+    #[test]
+    fn test_core_error_from_string() {
+        let err = CoreError::CycleDetected;
+        let s: String = err.into();
+        assert_eq!(s, "SOPGraph contains cycles");
+    }
+
+    #[test]
+    fn test_dependency_resolver_resolve() {
+        // Happy path: A -> B
+        let mut graphs = HashMap::new();
+        graphs.insert(
+            "A".to_string(),
+            SOPGraphConfig {
+                nodes: vec![],
+                edges: vec![],
+            },
+        );
+        graphs.insert(
+            "B".to_string(),
+            SOPGraphConfig {
+                nodes: vec![],
+                edges: vec![],
+            },
+        );
+
+        let deps = vec![GraphDependency {
+            source_sop_id: "A".to_string(),
+            target_sop_id: "B".to_string(),
+            mappings: vec![],
+        }];
+
+        let composite = CompositeGraph {
+            graphs,
+            dependencies: deps,
+            execution_order: vec![],
+        };
+
+        let order = DependencyResolver::resolve(&composite).unwrap();
+        assert_eq!(order, vec!["A", "B"]);
+
+        // Happy path: No deps
+        let mut graphs_no_deps = HashMap::new();
+        graphs_no_deps.insert(
+            "A".to_string(),
+            SOPGraphConfig {
+                nodes: vec![],
+                edges: vec![],
+            },
+        );
+        graphs_no_deps.insert(
+            "B".to_string(),
+            SOPGraphConfig {
+                nodes: vec![],
+                edges: vec![],
+            },
+        );
+        let composite_no_deps = CompositeGraph {
+            graphs: graphs_no_deps,
+            dependencies: vec![],
+            execution_order: vec![],
+        };
+        let order_no_deps = DependencyResolver::resolve(&composite_no_deps).unwrap();
+        assert!(order_no_deps.contains(&"A".to_string()));
+        assert!(order_no_deps.contains(&"B".to_string()));
+        assert_eq!(order_no_deps.len(), 2);
+
+        // Cycle detection: A -> B -> A
+        let mut graphs_cycle = HashMap::new();
+        graphs_cycle.insert(
+            "A".to_string(),
+            SOPGraphConfig {
+                nodes: vec![],
+                edges: vec![],
+            },
+        );
+        graphs_cycle.insert(
+            "B".to_string(),
+            SOPGraphConfig {
+                nodes: vec![],
+                edges: vec![],
+            },
+        );
+        let deps_cycle = vec![
+            GraphDependency {
+                source_sop_id: "A".to_string(),
+                target_sop_id: "B".to_string(),
+                mappings: vec![],
+            },
+            GraphDependency {
+                source_sop_id: "B".to_string(),
+                target_sop_id: "A".to_string(),
+                mappings: vec![],
+            },
+        ];
+        let composite_cycle = CompositeGraph {
+            graphs: graphs_cycle,
+            dependencies: deps_cycle,
+            execution_order: vec![],
+        };
+        let res_cycle = DependencyResolver::resolve(&composite_cycle);
+        assert!(matches!(res_cycle, Err(CoreError::DependencyCycleDetected)));
+
+        // Missing source node
+        let mut graphs_missing = HashMap::new();
+        graphs_missing.insert(
+            "B".to_string(),
+            SOPGraphConfig {
+                nodes: vec![],
+                edges: vec![],
+            },
+        );
+        let deps_missing = vec![GraphDependency {
+            source_sop_id: "A".to_string(),
+            target_sop_id: "B".to_string(),
+            mappings: vec![],
+        }];
+        let composite_missing = CompositeGraph {
+            graphs: graphs_missing,
+            dependencies: deps_missing,
+            execution_order: vec![],
+        };
+        let order_missing = DependencyResolver::resolve(&composite_missing).unwrap();
+        assert_eq!(order_missing, vec!["B"]);
+
+        // Empty composite
+        let composite_empty = CompositeGraph {
+            graphs: HashMap::new(),
+            dependencies: vec![],
+            execution_order: vec![],
+        };
+        let order_empty = DependencyResolver::resolve(&composite_empty).unwrap();
+        assert!(order_empty.is_empty());
+    }
+
+    #[test]
+    fn test_build_dep_ctx_for() {
+        let mut graphs = HashMap::new();
+        graphs.insert(
+            "A".to_string(),
+            SOPGraphConfig {
+                nodes: vec![],
+                edges: vec![],
+            },
+        );
+        graphs.insert(
+            "B".to_string(),
+            SOPGraphConfig {
+                nodes: vec![],
+                edges: vec![],
+            },
+        );
+
+        let deps = vec![GraphDependency {
+            source_sop_id: "A".to_string(),
+            target_sop_id: "B".to_string(),
+            mappings: vec![DataMapping {
+                source_node: "node_a".to_string(),
+                target_placeholder: "placeholder_b".to_string(),
+            }],
+        }];
+
+        let composite = CompositeGraph {
+            graphs,
+            dependencies: deps,
+            execution_order: vec![],
+        };
+
+        let mut accumulated = HashMap::new();
+        accumulated.insert(
+            "node_a".to_string(),
+            NodeOutput(serde_json::Value::String("val_a".into())),
+        );
+
+        // Test with deps
+        let ctx = build_dep_ctx_for("B", &composite, &accumulated);
+        assert!(ctx.is_some());
+        let ctx = ctx.unwrap();
+        assert_eq!(
+            ctx.get_result("placeholder_b").unwrap().to_string(),
+            "\"val_a\""
+        );
+
+        // Test without deps (wrong target)
+        let ctx_none = build_dep_ctx_for("A", &composite, &accumulated);
+        assert!(ctx_none.is_none());
+
+        // Test with deps but missing source output
+        let accumulated_empty = HashMap::new();
+        let ctx_missing = build_dep_ctx_for("B", &composite, &accumulated_empty);
+        assert!(ctx_missing.is_none());
+    }
+
+    struct MockToolExecutor;
+    #[async_trait::async_trait]
+    impl ToolExecutor for MockToolExecutor {
+        async fn execute(
+            &self,
+            _tool_id: &str,
+            _args: Vec<u8>,
+            _fuel_limit: u64,
+        ) -> Result<Vec<u8>, String> {
+            Ok(b"mock".to_vec())
+        }
+    }
+
+    #[tokio::test]
+    async fn test_executor_execute_cycle() {
+        let executor = Executor::new();
+
+        // Create a config with a cycle: Node 0 -> Node 1 -> Node 0
+        let config = SOPGraphConfig {
+            nodes: vec![
+                SOPNodeConfig {
+                    name: "n0".into(),
+                    kind: NodeKind::Wasm {
+                        tool_id: "tool0".into(),
+                        fuel_limit: 100,
+                    },
+                },
+                SOPNodeConfig {
+                    name: "n1".into(),
+                    kind: NodeKind::Wasm {
+                        tool_id: "tool1".into(),
+                        fuel_limit: 100,
+                    },
+                },
+            ],
+            edges: vec![(0, 1), (1, 0)],
+        };
+
+        let graph = SOPGraph::from_config(&config, Arc::new(MockToolExecutor));
+        let res = executor
+            .execute(&graph, petgraph::graph::NodeIndex::new(0))
+            .await;
+
+        assert!(matches!(res, Err(CoreError::CycleDetected)));
+    }
+
+    #[test]
+    fn test_struct_creation() {
+        // CognitiveIteration
+        let iter = CognitiveIteration {
+            iteration: 1,
+            prediction: sisyphus_intel::SimulationResult {
+                path_id: "p1".into(),
+                success_probability: 0.8,
+                estimated_cost: 100u64,
+                predicted_outcome: "ok".into(),
+            },
+            deviation_score: 0.1,
+            suggestions: vec!["s1".into()],
+            evolved: true,
+        };
+        assert_eq!(iter.iteration, 1);
+        assert_eq!(iter.deviation_score, 0.1);
+
+        // CognitiveReport
+        let report = CognitiveReport {
+            iterations: 1,
+            converged: true,
+            final_deviation: 0.1,
+            history: vec![iter],
+        };
+        assert_eq!(report.iterations, 1);
+        assert!(report.converged);
+
+        // CompositeOutput
+        let mut results = HashMap::new();
+        results.insert(
+            "sop1".into(),
+            (
+                NodeOutput(serde_json::Value::String("out".into())),
+                "report".into(),
+            ),
+        );
+        let output = CompositeOutput {
+            results,
+            execution_order: vec!["sop1".into()],
+        };
+        assert_eq!(output.execution_order.len(), 1);
+        assert!(output.results.contains_key("sop1"));
+    }
+
+    #[tokio::test]
+    async fn test_executor_execute_with_context() {
+        let executor = Executor::new();
+
+        // Simple DAG: n0 -> n1
+        let config = SOPGraphConfig {
+            nodes: vec![
+                SOPNodeConfig {
+                    name: "n0".into(),
+                    kind: NodeKind::Wasm {
+                        tool_id: "tool0".into(),
+                        fuel_limit: 100,
+                    },
+                },
+                SOPNodeConfig {
+                    name: "n1".into(),
+                    kind: NodeKind::Wasm {
+                        tool_id: "tool1".into(),
+                        fuel_limit: 100,
+                    },
+                },
+            ],
+            edges: vec![(0, 1)],
+        };
+
+        let graph = SOPGraph::from_config(&config, Arc::new(MockToolExecutor));
+        let (tx, mut rx) = mpsc::unbounded_channel();
+
+        let res = executor
+            .execute_with_context(&graph, petgraph::graph::NodeIndex::new(0), None, Some(tx))
+            .await;
+
+        assert!(res.is_ok());
+        let ctx = res.unwrap();
+
+        // Verify results are stored
+        assert!(ctx.get_result("n0").is_some());
+        assert!(ctx.get_result("n1").is_some());
+
+        // Verify events were sent
+        let mut events = Vec::new();
+        while let Ok(event) = rx.try_recv() {
+            events.push(event);
+        }
+
+        // Expect NodeStarted and NodeCompleted for both nodes
+        assert!(events
+            .iter()
+            .any(|e| matches!(e, ExecutionEvent::NodeStarted { node_name } if node_name == "n0")));
+        assert!(events.iter().any(
+            |e| matches!(e, ExecutionEvent::NodeCompleted { node_name, .. } if node_name == "n0")
+        ));
+        assert!(events
+            .iter()
+            .any(|e| matches!(e, ExecutionEvent::NodeStarted { node_name } if node_name == "n1")));
+        assert!(events.iter().any(
+            |e| matches!(e, ExecutionEvent::NodeCompleted { node_name, .. } if node_name == "n1")
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_executor_diamond_dag() {
+        let executor = Executor::new();
+
+        // Diamond: n0 -> [n1, n2] -> n3
+        let config = SOPGraphConfig {
+            nodes: vec![
+                SOPNodeConfig {
+                    name: "n0".into(),
+                    kind: NodeKind::Wasm {
+                        tool_id: "t".into(),
+                        fuel_limit: 100,
+                    },
+                },
+                SOPNodeConfig {
+                    name: "n1".into(),
+                    kind: NodeKind::Wasm {
+                        tool_id: "t".into(),
+                        fuel_limit: 100,
+                    },
+                },
+                SOPNodeConfig {
+                    name: "n2".into(),
+                    kind: NodeKind::Wasm {
+                        tool_id: "t".into(),
+                        fuel_limit: 100,
+                    },
+                },
+                SOPNodeConfig {
+                    name: "n3".into(),
+                    kind: NodeKind::Wasm {
+                        tool_id: "t".into(),
+                        fuel_limit: 100,
+                    },
+                },
+            ],
+            edges: vec![(0, 1), (0, 2), (1, 3), (2, 3)],
+        };
+
+        let graph = SOPGraph::from_config(&config, Arc::new(MockToolExecutor));
+        let res = executor
+            .execute(&graph, petgraph::graph::NodeIndex::new(0))
+            .await;
+        assert!(res.is_ok());
+        let ctx = res.unwrap();
+        assert!(ctx.get_result("n0").is_some());
+        assert!(ctx.get_result("n1").is_some());
+        assert!(ctx.get_result("n2").is_some());
+        assert!(ctx.get_result("n3").is_some());
+    }
+
+    #[tokio::test]
+    async fn test_executor_node_failure_stored_as_value() {
+        let executor = Executor::new();
+
+        // Mock executor that fails on n0
+        struct FailOnFirst;
+        #[async_trait::async_trait]
+        impl ToolExecutor for FailOnFirst {
+            async fn execute(
+                &self,
+                tool_id: &str,
+                _args: Vec<u8>,
+                _fuel_limit: u64,
+            ) -> Result<Vec<u8>, String> {
+                if tool_id == "fail" {
+                    Err("intentional failure".into())
+                } else {
+                    Ok(b"ok".to_vec())
+                }
+            }
+        }
+
+        let config = SOPGraphConfig {
+            nodes: vec![
+                SOPNodeConfig {
+                    name: "n0".into(),
+                    kind: NodeKind::Wasm {
+                        tool_id: "fail".into(),
+                        fuel_limit: 100,
+                    },
+                },
+                SOPNodeConfig {
+                    name: "n1".into(),
+                    kind: NodeKind::Wasm {
+                        tool_id: "ok".into(),
+                        fuel_limit: 100,
+                    },
+                },
+            ],
+            edges: vec![(0, 1)],
+        };
+
+        let graph = SOPGraph::from_config(&config, Arc::new(FailOnFirst));
+        let (tx, _rx) = mpsc::unbounded_channel();
+
+        let res = executor
+            .execute_with_context(&graph, petgraph::graph::NodeIndex::new(0), None, Some(tx))
+            .await;
+
+        assert!(res.is_ok());
+        let ctx = res.unwrap();
+
+        // Failed node stores error as Value::String
+        let n0_out = ctx.get_result("n0").unwrap();
+        assert_eq!(
+            n0_out.0,
+            serde_json::Value::String("intentional failure".into())
+        );
+
+        // n1 still executes because the executor continues after failures
+        let n1_out = ctx.get_result("n1").unwrap();
+        assert_eq!(n1_out.0, serde_json::Value::String("ok".into()));
+    }
+
+    #[tokio::test]
+    async fn test_executor_empty_graph() {
+        let executor = Executor::new();
+        let config = SOPGraphConfig {
+            nodes: vec![],
+            edges: vec![],
+        };
+        let graph = SOPGraph::from_config(&config, Arc::new(MockToolExecutor));
+        let res = executor
+            .execute(&graph, petgraph::graph::NodeIndex::new(0))
+            .await;
+        assert!(res.is_ok());
+        let ctx = res.unwrap();
+        assert!(ctx.get_result("nonexistent").is_none());
+    }
+
+    #[test]
+    fn test_dependency_resolver_diamond() {
+        // A -> B, A -> C  (fan-out)
+        let mut graphs = HashMap::new();
+        graphs.insert(
+            "A".into(),
+            SOPGraphConfig {
+                nodes: vec![],
+                edges: vec![],
+            },
+        );
+        graphs.insert(
+            "B".into(),
+            SOPGraphConfig {
+                nodes: vec![],
+                edges: vec![],
+            },
+        );
+        graphs.insert(
+            "C".into(),
+            SOPGraphConfig {
+                nodes: vec![],
+                edges: vec![],
+            },
+        );
+
+        let deps = vec![
+            GraphDependency {
+                source_sop_id: "A".into(),
+                target_sop_id: "B".into(),
+                mappings: vec![],
+            },
+            GraphDependency {
+                source_sop_id: "A".into(),
+                target_sop_id: "C".into(),
+                mappings: vec![],
+            },
+        ];
+
+        let composite = CompositeGraph {
+            graphs,
+            dependencies: deps,
+            execution_order: vec![],
+        };
+        let order = DependencyResolver::resolve(&composite).unwrap();
+
+        assert_eq!(order[0], "A");
+        assert!(order.contains(&"B".into()));
+        assert!(order.contains(&"C".into()));
+        assert_eq!(order.len(), 3);
+    }
+
+    #[test]
+    fn test_dependency_resolver_chain() {
+        // A -> B -> C
+        let mut graphs = HashMap::new();
+        graphs.insert(
+            "A".into(),
+            SOPGraphConfig {
+                nodes: vec![],
+                edges: vec![],
+            },
+        );
+        graphs.insert(
+            "B".into(),
+            SOPGraphConfig {
+                nodes: vec![],
+                edges: vec![],
+            },
+        );
+        graphs.insert(
+            "C".into(),
+            SOPGraphConfig {
+                nodes: vec![],
+                edges: vec![],
+            },
+        );
+
+        let deps = vec![
+            GraphDependency {
+                source_sop_id: "A".into(),
+                target_sop_id: "B".into(),
+                mappings: vec![],
+            },
+            GraphDependency {
+                source_sop_id: "B".into(),
+                target_sop_id: "C".into(),
+                mappings: vec![],
+            },
+        ];
+
+        let composite = CompositeGraph {
+            graphs,
+            dependencies: deps,
+            execution_order: vec![],
+        };
+        let order = DependencyResolver::resolve(&composite).unwrap();
+        assert_eq!(order, vec!["A", "B", "C"]);
+    }
+
+    #[test]
+    fn test_build_dep_ctx_for_multiple_sources() {
+        // SOP C depends on both A and B with different mappings
+        let mut graphs = HashMap::new();
+        graphs.insert(
+            "A".into(),
+            SOPGraphConfig {
+                nodes: vec![],
+                edges: vec![],
+            },
+        );
+        graphs.insert(
+            "B".into(),
+            SOPGraphConfig {
+                nodes: vec![],
+                edges: vec![],
+            },
+        );
+        graphs.insert(
+            "C".into(),
+            SOPGraphConfig {
+                nodes: vec![],
+                edges: vec![],
+            },
+        );
+
+        let deps = vec![
+            GraphDependency {
+                source_sop_id: "A".into(),
+                target_sop_id: "C".into(),
+                mappings: vec![DataMapping {
+                    source_node: "a_node".into(),
+                    target_placeholder: "c_from_a".into(),
+                }],
+            },
+            GraphDependency {
+                source_sop_id: "B".into(),
+                target_sop_id: "C".into(),
+                mappings: vec![DataMapping {
+                    source_node: "b_node".into(),
+                    target_placeholder: "c_from_b".into(),
+                }],
+            },
+        ];
+
+        let composite = CompositeGraph {
+            graphs,
+            dependencies: deps,
+            execution_order: vec![],
+        };
+
+        let mut accumulated = HashMap::new();
+        accumulated.insert(
+            "a_node".into(),
+            NodeOutput(serde_json::Value::String("val_a".into())),
+        );
+        accumulated.insert(
+            "b_node".into(),
+            NodeOutput(serde_json::Value::String("val_b".into())),
+        );
+
+        let ctx = build_dep_ctx_for("C", &composite, &accumulated).unwrap();
+        assert_eq!(ctx.get_result("c_from_a").unwrap().to_string(), "\"val_a\"");
+        assert_eq!(ctx.get_result("c_from_b").unwrap().to_string(), "\"val_b\"");
+    }
+
+    #[test]
+    fn test_build_dep_ctx_for_single_source_multi_mapping() {
+        // A -> B with two DataMapping entries from different source nodes
+        let mut graphs = HashMap::new();
+        graphs.insert(
+            "A".into(),
+            SOPGraphConfig {
+                nodes: vec![],
+                edges: vec![],
+            },
+        );
+        graphs.insert(
+            "B".into(),
+            SOPGraphConfig {
+                nodes: vec![],
+                edges: vec![],
+            },
+        );
+
+        let deps = vec![GraphDependency {
+            source_sop_id: "A".into(),
+            target_sop_id: "B".into(),
+            mappings: vec![
+                DataMapping {
+                    source_node: "n1".into(),
+                    target_placeholder: "p1".into(),
+                },
+                DataMapping {
+                    source_node: "n2".into(),
+                    target_placeholder: "p2".into(),
+                },
+            ],
+        }];
+
+        let composite = CompositeGraph {
+            graphs,
+            dependencies: deps,
+            execution_order: vec![],
+        };
+
+        let mut accumulated = HashMap::new();
+        accumulated.insert(
+            "n1".into(),
+            NodeOutput(serde_json::Value::String("v1".into())),
+        );
+        accumulated.insert(
+            "n2".into(),
+            NodeOutput(serde_json::Value::String("v2".into())),
+        );
+
+        let ctx = build_dep_ctx_for("B", &composite, &accumulated).unwrap();
+        assert_eq!(ctx.get_result("p1").unwrap().to_string(), "\"v1\"");
+        assert_eq!(ctx.get_result("p2").unwrap().to_string(), "\"v2\"");
+    }
+
+    async fn build_test_kernel() -> SisyphusKernel {
+        let state_store = Arc::new(
+            sisyphus_mem::MfsStore::new("sqlite::memory:")
+                .await
+                .expect("in-memory MfsStore"),
+        );
+        let tool_executor: Arc<dyn ToolExecutor> = Arc::new(MockToolExecutor);
+
+        let intel = Arc::new(sisyphus_intel::SisyphusIntel::new(
+            Arc::new(sisyphus_intel::MonteCarloSimulator::new(1)),
+            Arc::new(sisyphus_intel::StandardReflector),
+            Arc::new(sisyphus_intel::TopologicalSOPEvolver::new()),
+        ));
+
+        let synthesizer: Arc<dyn sisyphus_intel::FlowSynthesizer> = Arc::new(
+            sisyphus_intel::GoalDrivenSynthesizer::new(tool_executor.clone()),
+        );
+
+        SisyphusKernel::new(state_store, tool_executor, intel, synthesizer)
+    }
+
+    #[tokio::test]
+    async fn test_kernel_save_load_roundtrip() {
+        let kernel = build_test_kernel().await;
+
+        let config = SOPGraphConfig {
+            nodes: vec![
+                SOPNodeConfig {
+                    name: "n0".into(),
+                    kind: NodeKind::Wasm {
+                        tool_id: "t0".into(),
+                        fuel_limit: 100,
+                    },
+                },
+                SOPNodeConfig {
+                    name: "n1".into(),
+                    kind: NodeKind::Wasm {
+                        tool_id: "t1".into(),
+                        fuel_limit: 200,
+                    },
+                },
+            ],
+            edges: vec![(0, 1)],
+        };
+        let graph = SOPGraph::from_config(&config, Arc::new(MockToolExecutor));
+
+        kernel.save_sop("test_roundtrip", &graph).await.unwrap();
+        let loaded = kernel.load_sop("test_roundtrip").await.unwrap();
+
+        assert_eq!(loaded.graph.node_count(), 2);
+        let names: Vec<String> = loaded
+            .graph
+            .node_weights()
+            .map(|n| n.name().to_string())
+            .collect();
+        assert!(names.contains(&"n0".to_string()));
+        assert!(names.contains(&"n1".to_string()));
+
+        let order =
+            petgraph::algo::toposort(&loaded.graph, None).expect("loaded graph must be acyclic");
+        assert_eq!(order.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_kernel_save_load_empty_graph() {
+        let kernel = build_test_kernel().await;
+
+        let config = SOPGraphConfig {
+            nodes: vec![],
+            edges: vec![],
+        };
+        let graph = SOPGraph::from_config(&config, Arc::new(MockToolExecutor));
+
+        kernel.save_sop("test_empty", &graph).await.unwrap();
+        let loaded = kernel.load_sop("test_empty").await.unwrap();
+
+        assert_eq!(loaded.graph.node_count(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_kernel_load_nonexistent() {
+        let kernel = build_test_kernel().await;
+
+        match kernel.load_sop("nonexistent_sop").await {
+            Err(e) => {
+                assert!(
+                    e.to_string().contains("nonexistent_sop"),
+                    "error should mention the sop_id: got {}",
+                    e
+                );
+            }
+            Ok(_) => panic!("expected SopNotFound error"),
+        }
     }
 }

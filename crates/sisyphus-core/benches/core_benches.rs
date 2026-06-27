@@ -42,7 +42,7 @@ fn bench_dag_execution(c: &mut Criterion) {
             b.to_async(&rt).iter(|| async {
                 let mut graph = SOPGraph::new();
                 let mut prev_node = None;
-                
+
                 for i in 0..nodes_count {
                     let node = graph.add_node(Arc::new(WasmSOPNode {
                         name: format!("node_{}", i),
@@ -57,12 +57,9 @@ fn bench_dag_execution(c: &mut Criterion) {
                 }
 
                 let start_node = graph.graph.node_indices().next().unwrap();
-                executor.execute_with_context(
-                    black_box(&graph),
-                    start_node,
-                    None,
-                    None
-                ).await
+                executor
+                    .execute_with_context(black_box(&graph), start_node, None, None)
+                    .await
             })
         });
     }
@@ -76,11 +73,19 @@ fn bench_dag_execution(c: &mut Criterion) {
 fn bench_wasm_execution(c: &mut Criterion) {
     let rt = tokio::runtime::Runtime::new().unwrap();
     let executor = Executor::new();
-    
+
     // Setup WasmToolExecutor pointing to workspace root tools/
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let tools_path = manifest_dir.parent().unwrap().parent().unwrap().join("tools");
-    let tool_executor = Arc::new(WasmToolExecutor::with_config(Some(tools_path), None).expect("Failed to create WasmToolExecutor"));
+    let tools_path = manifest_dir
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .join("tools");
+    let tool_executor = Arc::new(
+        WasmToolExecutor::with_config(Some(tools_path), None)
+            .expect("Failed to create WasmToolExecutor"),
+    );
 
     let mut graph = SOPGraph::new();
     let start_node = graph.add_node(Arc::new(WasmSOPNode {
@@ -96,12 +101,9 @@ fn bench_wasm_execution(c: &mut Criterion) {
 
     group.bench_function("single_node_hello", |b| {
         b.to_async(&rt).iter(|| async {
-            executor.execute_with_context(
-                black_box(&graph),
-                start_node,
-                None,
-                None
-            ).await
+            executor
+                .execute_with_context(black_box(&graph), start_node, None, None)
+                .await
         })
     });
 
@@ -113,7 +115,7 @@ fn bench_wasm_execution(c: &mut Criterion) {
 // ---------------------------------------------------------------------------
 fn bench_mfs_storage(c: &mut Criterion) {
     let rt = tokio::runtime::Runtime::new().unwrap();
-    
+
     let mut group = c.benchmark_group("mfs_storage");
     group.measurement_time(Duration::from_secs(5));
     group.sample_size(50);
@@ -132,7 +134,10 @@ fn bench_mfs_storage(c: &mut Criterion) {
         group.bench_function(format!("set_{}", name), |b| {
             b.to_async(&rt).iter(|| async {
                 let store = MfsStore::new("sqlite::memory:").await.unwrap();
-                store.set_state_json(black_box(&key), black_box(payload_val.clone())).await.unwrap();
+                store
+                    .set_state_json(black_box(&key), black_box(payload_val.clone()))
+                    .await
+                    .unwrap();
             })
         });
 
@@ -145,9 +150,8 @@ fn bench_mfs_storage(c: &mut Criterion) {
             });
             let store_arc = Arc::new(store);
 
-            b.to_async(&rt).iter(|| async {
-                store_arc.get_state_json(black_box(&key)).await.unwrap()
-            })
+            b.to_async(&rt)
+                .iter(|| async { store_arc.get_state_json(black_box(&key)).await.unwrap() })
         });
     }
 
