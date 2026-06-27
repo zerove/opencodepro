@@ -5,6 +5,7 @@
 .DS_Store
 server.log
 tmp/
-.omo/run-continuation/
+.omo/
+
 config.toml
 data/
