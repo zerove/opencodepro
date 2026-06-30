@@ -9,3 +9,6 @@ tmp/
 
 config.toml
 data/
+.sisyphus/sessions.json
+panic_risk.txt
+test_bash.rs
