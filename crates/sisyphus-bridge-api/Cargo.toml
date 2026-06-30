@@ -1,0 +1,14 @@
+[package]
+name = "sisyphus-bridge-api"
+version = "0.1.0"
+edition = "2021"
+description = "Shared gRPC types, client wrapper, and server trait for the Sisyphus Bridge protocol"
+
+[dependencies]
+tonic = "0.12"
+prost = "0.13"
+tokio = { version = "1", features = ["macros", "rt", "sync"] }
+anyhow = "1.0"
+
+[build-dependencies]
+tonic-build = "0.12"

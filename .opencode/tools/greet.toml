@@ -1,0 +1,10 @@
+name = "greet"
+description = "Greet someone warmly"
+handler = ".opencode/tools/greet.wasm"
+
+[schema]
+type = "object"
+properties.name = { type = "string", description = "Name of the person", minLength = 1 }
+properties.title = { type = "string", description = "Optional title (e.g., Dr., Captain)" }
+properties.excitement = { type = "integer", description = "Excitement level (1-10)", default = 3, minimum = 1, maximum = 10 }
+required = ["name"]

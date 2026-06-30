@@ -1,0 +1,61 @@
+name: Sisyphus PR Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  review:
+    name: Code review
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      checks: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          cache-all-crates: "true"
+
+      - name: Build sisyphus-cli
+        run: cargo build -p sisyphus-cli
+
+      - name: Generate PR diff context
+        id: diff
+        run: |
+          git fetch origin ${{ github.base_ref }}
+          git diff origin/${{ github.base_ref }}...HEAD > /tmp/pr.diff
+          echo "diff_lines=$(wc -l < /tmp/pr.diff)" >> $GITHUB_OUTPUT
+
+      - name: Run Sisyphus PR review
+        id: sisyphus_review
+        env:
+          SISYPHUS_CI: "1"
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cargo run -p sisyphus-cli -- pr review ${{ github.event.number }} 2>&1 | tee /tmp/review_output.txt
+
+      - name: Post review comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const outputPath = '/tmp/review_output.txt';
+            let reviewBody = 'No review output generated.';
+            if (fs.existsSync(outputPath)) {
+              reviewBody = fs.readFileSync(outputPath, 'utf8').substring(0, 60000);
+            }
+            await github.rest.issues.createComment({
+              ...context.repo,
+              issue_number: context.issue.number,
+              body: `## Sisyphus PR Review\n\n${reviewBody}`
+            });

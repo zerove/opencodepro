@@ -1,0 +1,9 @@
+name = "md_table_gen"
+description = "Convert JSON array of objects into a Markdown table"
+handler = ".opencode/tools/md_table_gen.wasm"
+
+[schema]
+type = "object"
+properties.data = { type = "array", description = "Array of objects to convert" }
+properties.columns = { type = "array", description = "Optional explicit list of columns to include" }
+required = ["data"]
