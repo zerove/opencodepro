@@ -1,4 +1,3 @@
-use std::env;
 use std::path::MAIN_SEPARATOR;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -33,20 +32,12 @@ mod unix {
     pub fn default_shell() -> String {
         "/bin/bash".to_string()
     }
-    #[allow(dead_code)]
-    pub fn path_env_separator() -> char {
-        ':'
-    }
 }
 
 #[cfg(windows)]
 mod windows {
     pub fn default_shell() -> String {
         "powershell.exe".to_string()
-    }
-    #[allow(dead_code)]
-    pub fn path_env_separator() -> char {
-        ';'
     }
 }
 
@@ -61,7 +52,6 @@ fn default_shell() -> String {
     }
 }
 
-#[allow(dead_code)]
 pub fn normalize_path(path: &str) -> String {
     if cfg!(windows) {
         path.replace("/", "\\")
@@ -70,8 +60,9 @@ pub fn normalize_path(path: &str) -> String {
     }
 }
 
-#[allow(dead_code)]
+#[cfg(test)]
 pub fn home_dir() -> Option<String> {
+    use std::env;
     if cfg!(windows) {
         env::var("USERPROFILE").ok()
     } else {

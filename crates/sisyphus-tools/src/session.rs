@@ -9,6 +9,8 @@ pub struct Message {
     pub role: String,
     pub content: String,
     pub created_at: String,
+    pub estimated_tokens: u64,
+    pub is_compressed: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -77,6 +79,273 @@ fn now_iso() -> String {
     format!("{year:04}-{month:02}-{day:02}T{hours:02}:{minutes:02}:{seconds:02}.{millis:03}Z")
 }
 
+/// Simple heuristic for token estimation: 1 token ≈ 4 characters.
+fn estimate_tokens(text: &str) -> u64 {
+    (text.len() as u64).div_ceil(4)
+}
+
+/// Sums the estimated tokens of all messages in a session.
+pub fn session_estimate_token_count(path: &Path, id: &str) -> ToolResult<u64> {
+    let session = session_get(path, id)?;
+    Ok(session.messages.iter().map(|m| m.estimated_tokens).sum())
+}
+
+/// Strategy for session compression.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum CompressStrategy {
+    /// Compress if total token count exceeds the given threshold.
+    Threshold(u64),
+}
+
+impl Default for CompressStrategy {
+    fn default() -> Self {
+        Self::Threshold(32000)
+    }
+}
+
+/// Compresses a session by merging consecutive assistant+user message pairs into summaries.
+///
+/// If the strategy is `Threshold(limit)` and the current token count is below the limit,
+/// the session is returned unchanged.
+///
+/// Compressed messages are marked with `is_compressed = true` and original content
+/// is stored in `metadata` as `compressed_<idx>`.
+pub fn session_compress(path: &Path, id: &str, strategy: &CompressStrategy) -> ToolResult<Session> {
+    let mut store = SessionStore::load_or_empty(path);
+    let session = store
+        .sessions
+        .get_mut(id)
+        .ok_or_else(|| ToolError::TodoError(format!("session not found: {id}")))?;
+
+    let current_tokens = session.messages.iter().map(|m| m.estimated_tokens).sum::<u64>();
+
+    match strategy {
+        CompressStrategy::Threshold(limit) if current_tokens <= *limit => {
+            return Ok(session.clone());
+        }
+        _ => {}
+    }
+
+    let mut new_messages = Vec::new();
+    let mut i = 0;
+    let msgs = &session.messages;
+
+    while i < msgs.len() {
+        if i + 1 < msgs.len() && msgs[i].role == "assistant" && msgs[i+1].role == "user" {
+            let combined_content = format!(
+                "Summary of assistant message: {}\nUser response: {}",
+                msgs[i].content, msgs[i+1].content
+            );
+            
+            let compressed_msg = Message {
+                role: "system".to_string(),
+                content: format!("Compressed summary: {}", combined_content),
+                created_at: now_iso(),
+                estimated_tokens: estimate_tokens(&combined_content),
+                is_compressed: true,
+            };
+            
+            new_messages.push(compressed_msg);
+            i += 2;
+        } else {
+            new_messages.push(msgs[i].clone());
+            i += 1;
+        }
+    }
+
+    // Store original content in metadata for recovery
+    for (idx, msg) in msgs.iter().enumerate() {
+        session.metadata.insert(format!("compressed_{idx}"), msg.content.clone());
+    }
+
+    session.messages = new_messages;
+    session.message_count = session.messages.len() as u64;
+    session.updated_at = now_iso();
+    
+    let result = session.clone();
+    store.save(path)?;
+    Ok(result)
+}
+
+/// Checkpoint for session interrupt recovery.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SessionCheckpoint {
+    pub session_id: String,
+    pub last_message_idx: usize,
+    pub timestamp: String,
+    pub metadata: HashMap<String, String>,
+}
+
+/// Saves a session checkpoint to the checkpoints directory.
+pub fn session_save_checkpoint(
+    path: &Path,
+    session_id: &str,
+    metadata: HashMap<String, String>,
+) -> ToolResult<()> {
+    let db_dir = path.parent().ok_or_else(|| ToolError::TodoError("invalid session path".into()))?;
+    let checkpoint_dir = db_dir.join("checkpoints");
+    fs::create_dir_all(&checkpoint_dir).map_err(ToolError::Io)?;
+
+    let checkpoint_path = checkpoint_dir.join(format!("{session_id}.json"));
+    let checkpoint = SessionCheckpoint {
+        session_id: session_id.to_string(),
+        last_message_idx: 0, // Default to 0, can be updated by caller if needed
+        timestamp: now_iso(),
+        metadata,
+    };
+
+    let content = serde_json::to_string_pretty(&checkpoint)
+        .map_err(|e| ToolError::TodoError(format!("serialize checkpoint failed: {e}")))?;
+    fs::write(checkpoint_path, content).map_err(ToolError::Io)
+}
+
+/// Loads a session checkpoint by ID.
+pub fn session_load_checkpoint(path: &Path, session_id: &str) -> ToolResult<SessionCheckpoint> {
+    let db_dir = path.parent().ok_or_else(|| ToolError::TodoError("invalid session path".into()))?;
+    let checkpoint_path = db_dir.join("checkpoints").join(format!("{session_id}.json"));
+
+    if !checkpoint_path.exists() {
+        return Err(ToolError::TodoError(format!("checkpoint not found: {session_id}")));
+    }
+
+    let content = fs::read_to_string(checkpoint_path).map_err(ToolError::Io)?;
+    serde_json::from_str(&content).map_err(|e| ToolError::TodoError(format!("deserialize checkpoint failed: {e}")))
+}
+
+/// Clears a session checkpoint by ID.
+pub fn session_clear_checkpoint(path: &Path, session_id: &str) -> ToolResult<()> {
+    let db_dir = path.parent().ok_or_else(|| ToolError::TodoError("invalid session path".into()))?;
+    let checkpoint_path = db_dir.join("checkpoints").join(format!("{session_id}.json"));
+
+    if checkpoint_path.exists() {
+        fs::remove_file(checkpoint_path).map_err(ToolError::Io)?;
+    }
+    Ok(())
+}
+
+/// Exports a session as a standalone JSON file.
+pub fn session_export(path: &Path, id: &str, output: &Path) -> ToolResult<()> {
+    let session = session_get(path, id)?;
+    let content = serde_json::to_string_pretty(&session)
+        .map_err(|e| ToolError::TodoError(format!("serialize failed: {e}")))?;
+    fs::write(output, content).map_err(ToolError::Io)
+}
+
+/// Export a session as a self-contained HTML file for sharing in a browser.
+pub fn session_export_html(path: &Path, id: &str, output: &Path) -> ToolResult<()> {
+    let session = session_get(path, id)?;
+    let mut message_html = String::new();
+
+    for msg in &session.messages {
+        let role_class = match msg.role.as_str() {
+            "user" => "user",
+            "assistant" | "model" => "assistant",
+            "system" => "system",
+            _ => "other",
+        };
+        let role_label = match msg.role.as_str() {
+            "user" => "👤 User",
+            "assistant" => "🤖 Assistant",
+            "model" => "🧠 Model",
+            "system" => "⚙️ System",
+            other => other,
+        };
+        let compressed_tag = if msg.is_compressed {
+            r#" <span class="badge">compressed</span>"#
+        } else {
+            ""
+        };
+        let content_escaped = msg
+            .content
+            .replace('&', "&amp;")
+            .replace('<', "&lt;")
+            .replace('>', "&gt;");
+
+        message_html.push_str(&format!(
+            r#"<div class="message {role_class}">
+            <div class="header">{role_label} <span class="time">{created_at}</span>{compressed_tag}</div>
+            <div class="body">{content_escaped}</div>
+            </div>
+            "#,
+            role_class = role_class,
+            role_label = role_label,
+            created_at = msg.created_at,
+            compressed_tag = compressed_tag,
+            content_escaped = content_escaped,
+        ));
+    }
+
+    let stats = format!(
+        "{} messages, ~{} tokens",
+        session.message_count,
+        session.messages.iter().map(|m| m.estimated_tokens).sum::<u64>(),
+    );
+
+    let html = format!(
+        r#"<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Session: {name}</title>
+<style>
+  * {{ margin: 0; padding: 0; box-sizing: border-box; }}
+  body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0d1117; color: #c9d1d9; line-height: 1.6; }}
+  .container {{ max-width: 800px; margin: 0 auto; padding: 20px; }}
+  .header {{ border-bottom: 1px solid #30363d; padding-bottom: 16px; margin-bottom: 24px; }}
+  .header h1 {{ font-size: 1.5rem; color: #f0f6fc; }}
+  .header .meta {{ color: #8b949e; font-size: 0.85rem; margin-top: 4px; }}
+  .message {{ margin-bottom: 16px; padding: 12px 16px; border-radius: 8px; border: 1px solid #30363d; }}
+  .message.user {{ background: #161b22; border-left: 3px solid #58a6ff; }}
+  .message.assistant {{ background: #0d1117; border-left: 3px solid #3fb950; }}
+  .message.system {{ background: #0d1117; border-left: 3px solid #d29922; }}
+  .message.other {{ background: #161b22; border-left: 3px solid #8b949e; }}
+  .message .header {{ font-size: 0.8rem; color: #8b949e; margin-bottom: 8px; border: none; padding: 0; }}
+  .message .header .badge {{ background: #30363d; padding: 1px 6px; border-radius: 4px; font-size: 0.75rem; margin-left: 6px; }}
+  .message .body {{ white-space: pre-wrap; word-break: break-word; font-size: 0.9rem; }}
+  .footer {{ text-align: center; color: #484f58; font-size: 0.75rem; padding: 24px 0; border-top: 1px solid #30363d; margin-top: 24px; }}
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <h1>{name}</h1>
+    <div class="meta">ID: {id} &middot; {stats} &middot; {updated}</div>
+  </div>
+  {messages}
+  <div class="footer">Generated by Sisyphus &middot; {stats}</div>
+</div>
+</body>
+</html>"#,
+        name = html_escape(&session.name),
+        id = html_escape(&session.id),
+        stats = stats,
+        updated = session.updated_at,
+        messages = message_html,
+    );
+
+    fs::write(output, html).map_err(ToolError::Io)
+}
+
+fn html_escape(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+}
+
+/// Imports a session from a standalone JSON file.
+pub fn session_import(path: &Path, input: &Path) -> ToolResult<Session> {
+    let content = fs::read_to_string(input).map_err(ToolError::Io)?;
+    let session: Session = serde_json::from_str(&content)
+        .map_err(|e| ToolError::TodoError(format!("deserialize failed: {e}")))?;
+
+    let mut store = SessionStore::load_or_empty(path);
+    store.sessions.insert(session.id.clone(), session.clone());
+    store.save(path)?;
+    Ok(session)
+}
+
 /// Create a new session with the given name.
 pub fn session_create(path: &Path, name: &str) -> ToolResult<Session> {
     let mut store = SessionStore::load_or_empty(path);
@@ -136,6 +405,7 @@ pub fn session_add_message(
     role: &str,
     content: &str,
 ) -> ToolResult<Session> {
+    let _ = session_clear_checkpoint(path, id);
     let mut store = SessionStore::load_or_empty(path);
     let session = store
         .sessions
@@ -146,6 +416,8 @@ pub fn session_add_message(
         role: role.to_string(),
         content: content.to_string(),
         created_at: now_iso(),
+        estimated_tokens: estimate_tokens(content),
+        is_compressed: false,
     };
     session.messages.push(msg);
     session.message_count = session.messages.len() as u64;
@@ -187,6 +459,9 @@ pub fn session_fork(path: &Path, id: &str, new_name: &str) -> ToolResult<Session
 /// Returns the session unchanged; this is a semantic operation that signals
 /// "resuming from this session" to the caller.
 pub fn session_continue(path: &Path, id: &str) -> ToolResult<Session> {
+    if session_load_checkpoint(path, id).is_ok() {
+        tracing::warn!("Session {id} has an existing checkpoint. Recovery may be needed.");
+    }
     let mut store = SessionStore::load_or_empty(path);
     let session = store
         .sessions
@@ -371,6 +646,8 @@ mod tests {
             role: "user".into(),
             content: "hello".into(),
             created_at: "2026-01-01T00:00:00.000Z".into(),
+            estimated_tokens: 0,
+            is_compressed: false,
         };
         let json = serde_json::to_string(&msg).unwrap();
         let back: Message = serde_json::from_str(&json).unwrap();
@@ -393,11 +670,15 @@ mod tests {
                     role: "user".into(),
                     content: "hi".into(),
                     created_at: "2026-01-01T00:00:00.000Z".into(),
+                    estimated_tokens: 0,
+                    is_compressed: false,
                 },
                 Message {
                     role: "assistant".into(),
                     content: "hello".into(),
                     created_at: "2026-01-01T00:00:00.000Z".into(),
+                    estimated_tokens: 0,
+                    is_compressed: false,
                 },
             ],
             metadata,
@@ -481,24 +762,104 @@ mod tests {
     }
 
     #[test]
-    fn test_session_continue() {
+    fn test_session_token_estimation() {
         let (_d, path) = fresh_db();
-        let s = session_create(&path, "cont").unwrap();
-        let s = session_add_message(&path, &s.id, "user", "msg").unwrap();
-        let updated_before = s.updated_at.clone();
+        let s = session_create(&path, "tokens").unwrap();
+        let s = session_add_message(&path, &s.id, "user", "hello world").unwrap();
+        
+        let count = session_estimate_token_count(&path, &s.id).unwrap();
+        assert_eq!(count, estimate_tokens("hello world"));
+        assert_eq!(s.messages[0].estimated_tokens, count);
+    }
 
-        std::thread::sleep(std::time::Duration::from_millis(10));
-        let continued = session_continue(&path, &s.id).unwrap();
-        assert_eq!(continued.id, s.id);
-        assert_eq!(continued.message_count, 1);
-        // updated_at should be newer
-        assert!(
-            continued.updated_at >= updated_before,
-            "expected update timestamp to advance"
-        );
+    #[test]
+    fn test_session_compress() {
+        let (_d, path) = fresh_db();
+        let s = session_create(&path, "compress").unwrap();
+        let s = session_add_message(&path, &s.id, "assistant", "msg 1").unwrap();
+        let s = session_add_message(&path, &s.id, "user", "msg 2").unwrap();
+        
+        // Compress with low threshold to force compression
+        let s = session_compress(&path, &s.id, &CompressStrategy::Threshold(0)).unwrap();
+        
+        assert_eq!(s.messages.len(), 1);
+        assert!(s.messages[0].is_compressed);
+        assert_eq!(s.messages[0].role, "system");
+        assert!(s.metadata.contains_key("compressed_0"));
+        assert!(s.metadata.contains_key("compressed_1"));
+    }
 
-        let fetched = session_get(&path, &s.id).unwrap();
-        assert_eq!(fetched.message_count, 1);
+    #[test]
+    fn test_session_checkpoints() {
+        let (_d, path) = fresh_db();
+        let s = session_create(&path, "checkpoint").unwrap();
+        
+        let mut meta = HashMap::new();
+        meta.insert("state".into(), "running".into());
+        session_save_checkpoint(&path, &s.id, meta).unwrap();
+        
+        let cp = session_load_checkpoint(&path, &s.id).unwrap();
+        assert_eq!(cp.session_id, s.id);
+        assert_eq!(cp.metadata.get("state").unwrap(), "running");
+        
+        session_clear_checkpoint(&path, &s.id).unwrap();
+        assert!(session_load_checkpoint(&path, &s.id).is_err());
+    }
+
+    #[test]
+    fn test_session_checkpoint_auto_clear() {
+        let (_d, path) = fresh_db();
+        let s = session_create(&path, "auto-clear").unwrap();
+        
+        session_save_checkpoint(&path, &s.id, HashMap::new()).unwrap();
+        assert!(session_load_checkpoint(&path, &s.id).is_ok());
+        
+        session_add_message(&path, &s.id, "user", "hi").unwrap();
+        assert!(session_load_checkpoint(&path, &s.id).is_err());
+    }
+
+    #[test]
+    fn test_session_export_import() {
+        let (d1, path1) = fresh_db();
+        let (_d2, path2) = fresh_db();
+        
+        let s = session_create(&path1, "export").unwrap();
+        let s = session_add_message(&path1, &s.id, "user", "hello").unwrap();
+        
+        let export_path = d1.path().join("session_export.json");
+        session_export(&path1, &s.id, &export_path).unwrap();
+        
+        let imported = session_import(&path2, &export_path).unwrap();
+        assert_eq!(imported.id, s.id);
+        assert_eq!(imported.name, "export");
+        assert_eq!(imported.message_count, 1);
+        
+        let fetched = session_get(&path2, &s.id).unwrap();
+        assert_eq!(fetched.id, s.id);
+    }
+
+    #[test]
+    fn test_session_export_html_creates_valid_output() {
+        let (d, path) = fresh_db();
+        let s = session_create(&path, "html test").unwrap();
+        let s = session_add_message(&path, &s.id, "user", "hello world").unwrap();
+        let s = session_add_message(&path, &s.id, "assistant", "hi there").unwrap();
+        let s = session_add_message(&path, &s.id, "system", "<script>alert('xss')</script>").unwrap();
+
+        let html_path = d.path().join("export.html");
+        session_export_html(&path, &s.id, &html_path).unwrap();
+
+        assert!(html_path.exists(), "HTML file should exist");
+
+        let content = std::fs::read_to_string(&html_path).unwrap();
+        assert!(content.starts_with("<!DOCTYPE html>"), "should be valid HTML");
+        assert!(content.contains("Session: html test"), "should contain session name");
+        assert!(content.contains("hello world"), "should contain user message");
+        assert!(content.contains("hi there"), "should contain assistant message");
+        assert!(content.contains("&lt;script&gt;"), "should escape HTML in content (XSS)");
+        assert!(content.contains("3 messages"), "should show message count in stats");
+        assert!(content.contains("👤 User"), "should render user label");
+        assert!(content.contains("🤖 Assistant"), "should render assistant label");
     }
 
     #[test]

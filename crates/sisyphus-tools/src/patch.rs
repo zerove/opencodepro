@@ -3,11 +3,13 @@ use std::path::Path;
 
 /// A single hunk in a unified diff.
 #[derive(Debug)]
-#[allow(dead_code)]
 struct Hunk {
     old_start: usize,
+    #[allow(dead_code)] // part of unified-diff format, reserved for future use
     old_count: usize,
+    #[allow(dead_code)] // part of unified-diff format, reserved for future use
     new_start: usize,
+    #[allow(dead_code)] // part of unified-diff format, reserved for future use
     new_count: usize,
     lines: Vec<HunkLine>,
 }

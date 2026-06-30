@@ -1,996 +1,28 @@
-use async_trait::async_trait;
-use petgraph::graph::{DiGraph, NodeIndex};
-use serde::{Deserialize, Serialize};
-use serde_json::Value;
-use std::collections::HashMap;
-use std::path::PathBuf;
-use std::sync::{Arc, RwLock};
-
-/// Strongly-typed wrapper around `serde_json::Value` for SOP node outputs.
-/// Provides type safety and prevents accidental mixing with raw JSON values.
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct NodeOutput(pub Value);
-
-impl NodeOutput {
-    pub fn into_inner(self) -> Value {
-        self.0
-    }
-}
-
-impl Default for NodeOutput {
-    fn default() -> Self {
-        NodeOutput(Value::Null)
-    }
-}
-
-impl From<Value> for NodeOutput {
-    fn from(v: Value) -> Self {
-        NodeOutput(v)
-    }
-}
-
-impl std::ops::Deref for NodeOutput {
-    type Target = Value;
-    fn deref(&self) -> &Value {
-        &self.0
-    }
-}
-
-impl std::ops::DerefMut for NodeOutput {
-    fn deref_mut(&mut self) -> &mut Value {
-        &mut self.0
-    }
-}
-
-impl std::fmt::Display for NodeOutput {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.0.fmt(f)
-    }
-}
-
-impl PartialEq<Value> for NodeOutput {
-    fn eq(&self, other: &Value) -> bool {
-        &self.0 == other
-    }
-}
-
-impl PartialEq<NodeOutput> for Value {
-    fn eq(&self, other: &NodeOutput) -> bool {
-        self == &other.0
-    }
-}
-
-impl PartialEq for NodeOutput {
-    fn eq(&self, other: &Self) -> bool {
-        self.0 == other.0
-    }
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub enum ExecutionEvent {
-    NodeStarted {
-        node_name: String,
-    },
-    NodeCompleted {
-        node_name: String,
-        output: NodeOutput,
-    },
-    NodeFailed {
-        node_name: String,
-        error: String,
-    },
-    ExecutionComplete {
-        result: NodeOutput,
-    },
-}
-
-// ---------------------------------------------------------------------------
-// Project Roadmap types
-// ---------------------------------------------------------------------------
-
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
-pub enum MilestoneStatus {
-    Pending,
-    InProgress,
-    Completed,
-    Blocked,
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct GoalRef {
-    pub goal_id: String,
-    pub description: String,
-    pub status: MilestoneStatus,
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct Phase {
-    pub id: String,
-    pub name: String,
-    pub goals: Vec<GoalRef>,
-    pub depends_on: Vec<String>,
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct Milestone {
-    pub id: String,
-    pub name: String,
-    pub phases: Vec<Phase>,
-    pub status: MilestoneStatus,
-}
-
-impl Milestone {
-    pub fn calculate_progress(&self) -> f64 {
-        let total_goals: usize = self.phases.iter().map(|p| p.goals.len()).sum();
-        if total_goals == 0 {
-            return 0.0;
-        }
-        let completed_goals: usize = self
-            .phases
-            .iter()
-            .flat_map(|p| &p.goals)
-            .filter(|g| g.status == MilestoneStatus::Completed)
-            .count();
-        completed_goals as f64 / total_goals as f64
-    }
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct Roadmap {
-    pub milestones: Vec<Milestone>,
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct Project {
-    pub id: String,
-    pub name: String,
-    pub description: String,
-    pub roadmap: Roadmap,
-}
-
-impl Project {
-    pub fn new(id: String, name: String, description: String) -> Self {
-        Self {
-            id,
-            name,
-            description,
-            roadmap: Roadmap {
-                milestones: Vec::new(),
-            },
-        }
-    }
-}
-
-/// A data mapping from a source graph node output to a target graph parameter.
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct DataMapping {
-    /// Node name in the source graph whose output is used.
-    pub source_node: String,
-    /// Target placeholder (e.g. "{{source.output}}") that will be interpolated
-    /// into the target graph's execution context.
-    pub target_placeholder: String,
-}
-
-/// Describes a dependency between two SOP graphs.
-/// Graph B (target_sop_id) depends on Graph A (source_sop_id).
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct GraphDependency {
-    pub source_sop_id: String,
-    pub target_sop_id: String,
-    /// How source node outputs map into the target graph's context.
-    pub mappings: Vec<DataMapping>,
-}
-
-/// A composite workflow: multiple SOP graphs with cross-graph dependencies.
-/// The kernel executes graphs in topological order, injecting dependency
-/// outputs into each graph's ExecutionContext before execution.
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct CompositeGraph {
-    pub graphs: HashMap<String, SOPGraphConfig>,
-    pub dependencies: Vec<GraphDependency>,
-    /// Ordered list of sop_ids to execute (resolved by DependencyResolver).
-    /// Empty means "resolve from dependencies".
-    pub execution_order: Vec<String>,
-}
-
-impl CompositeGraph {
-    pub fn new() -> Self {
-        Self {
-            graphs: HashMap::new(),
-            dependencies: Vec::new(),
-            execution_order: Vec::new(),
-        }
-    }
-
-    pub fn add_graph(&mut self, sop_id: &str, config: SOPGraphConfig) {
-        self.graphs.insert(sop_id.to_string(), config);
-    }
-
-    pub fn add_dependency(&mut self, dep: GraphDependency) {
-        self.dependencies.push(dep);
-    }
-}
-
-impl Default for CompositeGraph {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-#[async_trait]
-pub trait StateStore: Send + Sync {
-    async fn get_state_json(&self, key: &str) -> Result<Option<serde_json::Value>, String>;
-    async fn set_state_json(&self, key: &str, value: serde_json::Value) -> Result<(), String>;
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub enum NodeKind {
-    Wasm {
-        tool_id: String,
-        fuel_limit: u64,
-    },
-    Retry {
-        child: Box<NodeKind>,
-        max_retries: u32,
-    },
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct SOPNodeConfig {
-    pub name: String,
-    pub kind: NodeKind,
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct SOPGraphConfig {
-    pub nodes: Vec<SOPNodeConfig>,
-    pub edges: Vec<(usize, usize)>,
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct HistoryRecord {
-    pub timestamp: u64,
-    pub trace: String,
-    pub deviation_score: f64,
-    pub success: bool,
-    pub cost: u64,
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct ExecutionHistory {
-    pub sop_id: String,
-    pub records: Vec<HistoryRecord>,
-}
-
-impl SOPGraphConfig {
-    pub fn from_graph(graph: &SOPGraph) -> Self {
-        let mut nodes = Vec::new();
-        let mut node_indices = HashMap::new();
-
-        for idx in graph.graph.node_indices() {
-            let node = graph
-                .graph
-                .node_weight(idx)
-                .expect("node_indices yields valid indices");
-            nodes.push(SOPNodeConfig {
-                name: node.name().to_string(),
-                kind: node.to_kind(),
-            });
-            node_indices.insert(idx, nodes.len() - 1);
-        }
-
-        let mut edges = Vec::new();
-        for edge in graph.graph.edge_indices() {
-            let (source, target) = graph
-                .graph
-                .edge_endpoints(edge)
-                .expect("edge_indices yields valid endpoints");
-            if let (Some(&s), Some(&t)) = (node_indices.get(&source), node_indices.get(&target)) {
-                edges.push((s, t));
-            }
-        }
-
-        Self { nodes, edges }
-    }
-}
-
-#[derive(Debug)]
-pub struct ExecutionContext {
-    pub results: Arc<RwLock<HashMap<String, NodeOutput>>>,
-}
-
-impl Default for ExecutionContext {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl ExecutionContext {
-    pub fn new() -> Self {
-        Self {
-            results: Arc::new(RwLock::new(HashMap::new())),
-        }
-    }
-
-    /// Creates an ExecutionContext with a pre-allocated results HashMap.
-    /// Use when the approximate number of node outputs is known.
-    pub fn with_capacity(n: usize) -> Self {
-        Self {
-            results: Arc::new(RwLock::new(HashMap::with_capacity(n))),
-        }
-    }
-
-    pub fn set_result(&self, node_name: String, output: NodeOutput) {
-        match self.results.write() {
-            Ok(mut results) => {
-                results.insert(node_name, output);
-            }
-            Err(e) => {
-                tracing::warn!(error = %e, "ExecutionContext RwLock poisoned in set_result");
-            }
-        }
-    }
-
-    pub fn get_result(&self, node_name: &str) -> Option<NodeOutput> {
-        match self.results.read() {
-            Ok(results) => results.get(node_name).cloned(),
-            Err(e) => {
-                tracing::warn!(error = %e, "ExecutionContext RwLock poisoned in get_result");
-                None
-            }
-        }
-    }
-
-    pub fn interpolate(&self, template: &str) -> String {
-        let results = match self.results.read() {
-            Ok(r) => r,
-            Err(e) => {
-                tracing::warn!(error = %e, "ExecutionContext RwLock poisoned in interpolate");
-                return template.to_string();
-            }
-        };
-        let mut output = template.to_string();
-        for (name, node_output) in results.iter() {
-            let placeholder = format!("{{{{{}.output}}}}", name);
-            let val_str = match &node_output.0 {
-                Value::String(s) => s.clone(),
-                _ => node_output.0.to_string(),
-            };
-            output = output.replace(&placeholder, &val_str);
-        }
-        output
-    }
-}
-
-#[async_trait]
-pub trait SOPNode: Send + Sync {
-    async fn execute(&self, ctx: &ExecutionContext) -> Result<NodeOutput, String>;
-    fn name(&self) -> &str;
-    fn as_any(&self) -> &dyn std::any::Any;
-    fn to_kind(&self) -> NodeKind;
-}
-
-pub struct WasmSOPNode {
-    pub name: String,
-    pub tool_id: String,
-    pub fuel_limit: u64,
-    pub executor: Arc<dyn ToolExecutor>,
-}
-
-#[async_trait]
-impl SOPNode for WasmSOPNode {
-    async fn execute(&self, _ctx: &ExecutionContext) -> Result<NodeOutput, String> {
-        let args = Vec::new();
-        let result = self
-            .executor
-            .execute(&self.tool_id, args, self.fuel_limit)
-            .await?;
-        Ok(NodeOutput(Value::String(
-            String::from_utf8_lossy(&result).to_string(),
-        )))
-    }
-    fn name(&self) -> &str {
-        &self.name
-    }
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-    fn to_kind(&self) -> NodeKind {
-        NodeKind::Wasm {
-            tool_id: self.tool_id.clone(),
-            fuel_limit: self.fuel_limit,
-        }
-    }
-}
-
-pub struct RetrySOPNode {
-    pub name: String,
-    pub child: Arc<dyn SOPNode>,
-    pub max_retries: u32,
-}
-
-#[async_trait]
-impl SOPNode for RetrySOPNode {
-    async fn execute(&self, ctx: &ExecutionContext) -> Result<NodeOutput, String> {
-        let mut last_err = String::new();
-        for _i in 0..=self.max_retries {
-            match self.child.execute(ctx).await {
-                Ok(out) => return Ok(out),
-                Err(e) => {
-                    last_err = e;
-                }
-            }
-        }
-        Err(format!(
-            "RetrySOPNode failed after {} retries. Last error: {}",
-            self.max_retries, last_err
-        ))
-    }
-    fn name(&self) -> &str {
-        &self.name
-    }
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-    fn to_kind(&self) -> NodeKind {
-        NodeKind::Retry {
-            child: Box::new(self.child.to_kind()),
-            max_retries: self.max_retries,
-        }
-    }
-}
-
-#[async_trait]
-pub trait ToolExecutor: Send + Sync {
-    async fn execute(
-        &self,
-        tool_id: &str,
-        args: Vec<u8>,
-        fuel_limit: u64,
-    ) -> Result<Vec<u8>, String>;
-}
-
-/// Routes tool calls to registered sub-executors based on the tool_id prefix.
-///
-/// The tool_id is split on the first `:` separator. If the prefix matches a
-/// registered executor, it is stripped and the remainder is forwarded. If no
-/// prefix matches or there is no `:`, the `default` executor is used.
-///
-/// # Example
-///
-/// ```ignore
-/// let mut router = ExecutorRouter::new(builtin_executor);
-/// router.register("wasm", wasm_executor);
-/// router.register("mcp", mcp_executor);
-///
-/// // dispatches to builtin_executor.execute("file_read", ...)
-/// router.execute("file_read", args, 0).await;
-///
-/// // dispatches to mcp_executor.execute("echo", ...)
-/// router.execute("mcp:echo", args, 0).await;
-/// ```
-pub struct ExecutorRouter {
-    routers: HashMap<String, Arc<dyn ToolExecutor>>,
-    default: Arc<dyn ToolExecutor>,
-}
-
-impl ExecutorRouter {
-    /// Create a router with the given default executor.
-    ///
-    /// Tools with no matching prefix (or no `:` separator) are dispatched
-    /// to `default`.
-    pub fn new(default: Arc<dyn ToolExecutor>) -> Self {
-        Self {
-            routers: HashMap::new(),
-            default,
-        }
-    }
-
-    /// Register a sub-executor under a prefix.
-    ///
-    /// After registration, tool IDs of the form `"{prefix}:{name}"` will be
-    /// dispatched to this executor with `{name}` as the tool_id.
-    pub fn register(&mut self, prefix: &str, executor: Arc<dyn ToolExecutor>) {
-        self.routers.insert(prefix.to_string(), executor);
-    }
-}
-
-#[async_trait]
-impl ToolExecutor for ExecutorRouter {
-    async fn execute(
-        &self,
-        tool_id: &str,
-        args: Vec<u8>,
-        fuel_limit: u64,
-    ) -> Result<Vec<u8>, String> {
-        if let Some(pos) = tool_id.find(':') {
-            let prefix = &tool_id[..pos];
-            let remainder = &tool_id[pos + 1..];
-            if let Some(executor) = self.routers.get(prefix) {
-                return executor.execute(remainder, args, fuel_limit).await;
-            }
-        }
-        // No prefix match or no ':' — use default
-        self.default.execute(tool_id, args, fuel_limit).await
-    }
-}
-
-pub struct SOPGraph {
-    pub graph: DiGraph<Arc<dyn SOPNode>, ()>,
-}
-
-impl Default for SOPGraph {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl SOPGraph {
-    pub fn new() -> Self {
-        Self {
-            graph: DiGraph::new(),
-        }
-    }
-
-    pub fn from_config(config: &SOPGraphConfig, executor: Arc<dyn ToolExecutor>) -> Self {
-        let mut graph = SOPGraph::new();
-        let mut node_indices = Vec::new();
-
-        fn build_node(
-            kind: &NodeKind,
-            name: &str,
-            executor: Arc<dyn ToolExecutor>,
-        ) -> Arc<dyn SOPNode> {
-            match kind {
-                NodeKind::Wasm {
-                    tool_id,
-                    fuel_limit,
-                } => Arc::new(WasmSOPNode {
-                    name: name.to_string(),
-                    tool_id: tool_id.clone(),
-                    fuel_limit: *fuel_limit,
-                    executor,
-                }),
-                NodeKind::Retry { child, max_retries } => Arc::new(RetrySOPNode {
-                    name: name.to_string(),
-                    child: build_node(child, name, executor),
-                    max_retries: *max_retries,
-                }),
-            }
-        }
-
-        for node_cfg in &config.nodes {
-            let node = build_node(&node_cfg.kind, &node_cfg.name, executor.clone());
-            node_indices.push(graph.add_node(node));
-        }
-
-        for &(source, target) in &config.edges {
-            graph.add_edge(node_indices[source], node_indices[target]);
-        }
-
-        graph
-    }
-
-    pub fn add_node(&mut self, node: Arc<dyn SOPNode>) -> NodeIndex {
-        self.graph.add_node(node)
-    }
-
-    pub fn add_edge(&mut self, from: NodeIndex, to: NodeIndex) {
-        self.graph.add_edge(from, to, ());
-    }
-}
-
-// ── Configuration ────────────────────────────────────────────────────
-
-/// Per-agent model override.
-///
-/// Any field set here takes precedence over the base `LlmConfig`.
-/// Missing fields fall back to the base config values.
-#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
-pub struct AgentLlmOverride {
-    pub model: String,
-    #[serde(default)]
-    pub endpoint: Option<String>,
-    #[serde(default)]
-    pub api_key: Option<String>,
-}
-
-impl Default for AgentLlmOverride {
-    fn default() -> Self {
-        Self {
-            model: "gpt-4o".into(),
-            endpoint: None,
-            api_key: None,
-        }
-    }
-}
-
-#[derive(Clone, Debug, Default, serde::Deserialize, serde::Serialize, PartialEq)]
-pub enum BudgetMode {
-    /// Log a warning but allow the LLM call to proceed.
-    #[default]
-    Warning,
-    /// Block the LLM call and return an error if the budget is exceeded.
-    Strict,
-}
-
-/// Deserializable TOML configuration for all Sisyphus components.
-///
-/// Use `Config::from_file(path)` or `Config::default()` and override
-/// individual fields via environment variables.
-#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
-pub struct LlmConfig {
-    pub api_key: String,
-    pub endpoint: String,
-    pub model: String,
-    /// Budget enforcement mode. Defaults to `Warning`.
-    #[serde(default)]
-    pub budget_mode: BudgetMode,
-    /// Per-agent model overrides. Key = agent_id (e.g. "metis", "librarian").
-    #[serde(default)]
-    pub agents: std::collections::HashMap<String, AgentLlmOverride>,
-}
-
-pub fn default_llm_config() -> LlmConfig {
-    LlmConfig {
-        api_key: "".into(),
-        endpoint: "http://localhost:8000/v1/chat/completions".into(),
-        model: "gpt-4o".into(),
-        budget_mode: BudgetMode::default(),
-        agents: std::collections::HashMap::new(),
-    }
-}
-
-impl Default for LlmConfig {
-    fn default() -> Self {
-        default_llm_config()
-    }
-}
-
-#[derive(Clone, Debug, Default, serde::Deserialize, serde::Serialize)]
-pub struct Config {
-    /// LLM client parameters.
-    #[serde(default = "default_llm_config")]
-    pub llm: LlmConfig,
-
-    /// Cognitive loop parameters.
-
-    #[serde(default = "default_cognitive_loop")]
-    pub cognitive_loop: CognitiveLoopConfig,
-
-    /// DAG executor parameters.
-    #[serde(default = "default_executor")]
-    pub executor: ExecutorConfig,
-
-    /// Two-level cache (L1 DashMap + L2 SQLite) parameters.
-    #[serde(default = "default_cache")]
-    pub cache: CacheConfig,
-
-    /// Prometheus metrics exporter.
-    #[serde(default = "default_metrics")]
-    pub metrics: MetricsConfig,
-
-    /// WASM sandbox parameters.
-    #[serde(default = "default_sandbox")]
-    pub sandbox: SandboxConfig,
-
-    /// Optional MCP tool servers (stdio or HTTP).
-    #[serde(default)]
-    pub mcp: McpConfig,
-
-    /// Bearer token for gRPC bridge authentication. Empty = no auth.
-    #[serde(default)]
-    pub auth_token: String,
-}
-
-impl Config {
-    /// Load configuration from a TOML file path.
-    /// Returns `Err` if the file cannot be read or parsed.
-    pub fn from_file(path: &str) -> Result<Self, String> {
-        let content = std::fs::read_to_string(path)
-            .map_err(|e| format!("Failed to read config file '{}': {}", path, e))?;
-        toml::from_str(&content)
-            .map_err(|e| format!("Failed to parse config file '{}': {}", path, e))
-    }
-
-    /// Load configuration from environment variables, overriding file/default values.
-    /// Prefix: `SISYPHUS_` — e.g. `SISYPHUS_SANDBOX_DEFAULT_FUEL=500000`.
-    pub fn apply_env_overrides(&mut self) {
-        fn env_u64(key: &str) -> Option<u64> {
-            std::env::var(key).ok().and_then(|v| v.parse().ok())
-        }
-        fn env_usize(key: &str) -> Option<usize> {
-            std::env::var(key).ok().and_then(|v| v.parse().ok())
-        }
-        fn env_u32(key: &str) -> Option<u32> {
-            std::env::var(key).ok().and_then(|v| v.parse().ok())
-        }
-        fn env_f64(key: &str) -> Option<f64> {
-            std::env::var(key).ok().and_then(|v| v.parse().ok())
-        }
-        fn env_u16(key: &str) -> Option<u16> {
-            std::env::var(key).ok().and_then(|v| v.parse().ok())
-        }
-        fn env_string(key: &str) -> Option<String> {
-            std::env::var(key).ok()
-        }
-
-        if let Some(v) = env_u32("SISYPHUS_COGNITIVE_LOOP_MAX_ITERATIONS") {
-            self.cognitive_loop.max_iterations = v;
-        }
-        if let Some(v) = env_f64("SISYPHUS_COGNITIVE_LOOP_CONVERGENCE_THRESHOLD") {
-            self.cognitive_loop.convergence_threshold = v;
-        }
-        if let Some(v) = env_usize("SISYPHUS_EXECUTOR_MAX_CONCURRENT_TASKS") {
-            self.executor.max_concurrent_tasks = v;
-        }
-        if let Some(v) = env_u64("SISYPHUS_EXECUTOR_DEFAULT_FUEL") {
-            self.executor.default_fuel = v;
-        }
-        if let Some(v) = env_usize("SISYPHUS_CACHE_L1_CAPACITY") {
-            self.cache.l1_capacity = v;
-        }
-        if let Some(v) = env_string("SISYPHUS_CACHE_SQLITE_PATH") {
-            self.cache.sqlite_path = v;
-        }
-        if let Some(v) = env_u16("SISYPHUS_METRICS_PROMETHEUS_PORT") {
-            self.metrics.prometheus_port = v;
-        }
-        if let Some(v) = env_u32("SISYPHUS_SANDBOX_MAX_MEMORY_PAGES") {
-            self.sandbox.max_memory_pages = v;
-        }
-        if let Some(v) = env_u64("SISYPHUS_SANDBOX_DEFAULT_FUEL") {
-            self.sandbox.default_fuel = v;
-        }
-        if let Some(v) = env_string("SISYPHUS_SANDBOX_WASM_TOOLS_DIR") {
-            self.sandbox.wasm_tools_dir = v;
-        }
-        if let Some(v) = env_string("SISYPHUS_AUTH_TOKEN") {
-            self.auth_token = v;
-        }
-    }
-}
-
-#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
-pub struct CognitiveLoopConfig {
-    pub max_iterations: u32,
-    pub convergence_threshold: f64,
-}
-
-fn default_cognitive_loop() -> CognitiveLoopConfig {
-    CognitiveLoopConfig {
-        max_iterations: 10,
-        convergence_threshold: 0.15,
-    }
-}
-
-impl Default for CognitiveLoopConfig {
-    fn default() -> Self {
-        default_cognitive_loop()
-    }
-}
-
-#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
-pub struct ExecutorConfig {
-    pub max_concurrent_tasks: usize,
-    pub default_fuel: u64,
-}
-
-fn default_executor() -> ExecutorConfig {
-    ExecutorConfig {
-        max_concurrent_tasks: 16,
-        default_fuel: 1_000_000,
-    }
-}
-
-impl Default for ExecutorConfig {
-    fn default() -> Self {
-        default_executor()
-    }
-}
-
-#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
-pub struct CacheConfig {
-    pub l1_capacity: usize,
-    pub sqlite_path: String,
-}
-
-fn default_cache() -> CacheConfig {
-    CacheConfig {
-        l1_capacity: 10_000,
-        sqlite_path: "data/sisyphus.db".to_string(),
-    }
-}
-
-impl Default for CacheConfig {
-    fn default() -> Self {
-        default_cache()
-    }
-}
-
-#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
-pub struct MetricsConfig {
-    pub prometheus_port: u16,
-}
-
-fn default_metrics() -> MetricsConfig {
-    MetricsConfig {
-        prometheus_port: 9100,
-    }
-}
-
-impl Default for MetricsConfig {
-    fn default() -> Self {
-        default_metrics()
-    }
-}
-
-#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
-pub struct SandboxConfig {
-    pub max_memory_pages: u32,
-    pub default_fuel: u64,
-    pub wasm_tools_dir: String,
-}
-
-fn default_sandbox() -> SandboxConfig {
-    SandboxConfig {
-        max_memory_pages: 10,
-        default_fuel: 1_000_000,
-        wasm_tools_dir: "tools".to_string(),
-    }
-}
-
-impl Default for SandboxConfig {
-    fn default() -> Self {
-        default_sandbox()
-    }
-}
-
-/// Configuration for MCP (Model Context Protocol) tool servers.
-#[derive(Clone, Debug, Default, serde::Deserialize, serde::Serialize)]
-pub struct McpConfig {
-    /// Stdio-based MCP servers: prefix → "command arg1 arg2".
-    #[serde(default)]
-    pub stdio_servers: std::collections::HashMap<String, String>,
-    /// HTTP-based MCP servers: prefix → "http://host:port/path".
-    #[serde(default)]
-    pub http_servers: std::collections::HashMap<String, String>,
-}
-
-// ---------------------------------------------------------------------------
-// Gap-closing shared types (used across multiple crates)
-// ---------------------------------------------------------------------------
-
-/// Feedback from a user or another agent regarding a specific output.
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct Feedback {
-    pub agent_id: String,
-    pub original_request: String,
-    pub original_output: String,
-    pub corrected_output: String,
-    pub timestamp: i64,
-    pub tags: Vec<String>,
-}
-
-/// Descriptor for a runtime-loadable WASM plugin tool.
-#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
-pub struct PluginDescriptor {
-    pub name: String,
-    pub version: String,
-    pub wasm_path: PathBuf,
-    pub tool_id: String,
-    pub fuel_limit: u64,
-    /// SHA-256 hash of the .wasm binary, used for cache invalidation.
-    #[serde(default)]
-    pub checksum: Option<String>,
-}
-
-/// A single vector embedding record for cross-session similarity search.
-#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
-pub struct VectorRecord {
-    pub key: String,
-    pub embedding: Vec<f32>,
-    pub metadata: serde_json::Value,
-    pub timestamp: u64,
-}
-
-/// Structured message for inter-agent communication.
-#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
-pub struct AgentMessage {
-    pub from: String,
-    pub to: String,
-    /// Message kind: "request" / "response" / "publish" / "subscribe"
-    pub kind: String,
-    pub payload: serde_json::Value,
-    /// Correlation ID for pairing request/response pairs.
-    pub correlation_id: String,
-}
-
-/// Strategy for selecting which LLM model to route a request to.
-#[derive(Clone, Debug, serde::Deserialize, serde::Serialize, PartialEq)]
-pub enum ModelRouteStrategy {
-    /// Pick the cheapest model that meets the complexity threshold.
-    CostOptimized,
-    /// Always use the most capable model.
-    PerformanceOptimized,
-    /// Try models in order; fall back to the next on failure.
-    FallbackChain,
-}
-
-/// State of a circuit breaker protecting a resource.
-#[derive(Clone, Debug, serde::Deserialize, serde::Serialize, PartialEq)]
-pub enum CircuitState {
-    Closed,
-    Open,
-    HalfOpen,
-}
-
-/// A single benchmark measurement.
-#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
-pub struct BenchmarkRun {
-    pub name: String,
-    pub timestamp: u64,
-    pub duration_secs: f64,
-    pub success: bool,
-    pub metrics: serde_json::Value,
-}
-
-/// Configuration for platform-specific behaviour.
-#[derive(Clone, Debug, Default, serde::Deserialize, serde::Serialize)]
-pub struct PlatformConfig {
-    /// Whether the current OS is Windows (inferred at runtime or overridden).
-    pub is_windows: bool,
-    /// Path-style separator (inherited from std::path::MAIN_SEPARATOR).
-    pub path_sep: String,
-    /// SHELL environment variable value (e.g. "/bin/bash", "powershell.exe").
-    pub shell: String,
-}
-
-/// Topological evolution operation on a SOP graph.
-#[derive(Clone, Debug, serde::Deserialize, serde::Serialize, PartialEq)]
-pub enum EvolutionOp {
-    /// Increase fuel limit for a named node.
-    AdjustFuel { node_name: String, delta: i64 },
-    /// Wrap a node with a retry decorator.
-    AddRetry { node_name: String, max_retries: u32 },
-    /// Insert a new node between two existing nodes.
-    InsertNode {
-        after_node: String,
-        new_name: String,
-        tool_id: String,
-    },
-    /// Remove a node and re-wire edges around it.
-    RemoveNode { node_name: String },
-    /// Reorder two adjacent nodes.
-    SwapNodes { node_a: String, node_b: String },
-}
-
-/// Configuration for formal verification runners (kani, loom, proptest).
-#[derive(Clone, Debug, Default, serde::Deserialize, serde::Serialize)]
-pub struct FormalVerificationConfig {
-    pub enable_kani: bool,
-    pub enable_loom: bool,
-    pub enable_proptest: bool,
-    pub max_proptest_cases: u32,
-}
-
-/// A single data point for meta-learning (strategy → outcome).
-#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
-pub struct MetaLearningSample {
-    pub context: serde_json::Value,
-    pub strategy: String,
-    pub success: bool,
-    pub duration_secs: f64,
-    pub timestamp: u64,
-}
-
-// ---------------------------------------------------------------------------
+pub mod errors;
+pub mod roadmap;
+pub mod graph;
+pub mod execution;
+pub mod node;
+pub mod config;
+pub mod types;
+
+pub use errors::*;
+pub use roadmap::*;
+pub use graph::*;
+pub use execution::*;
+pub use node::*;
+pub use config::*;
+pub use types::*;
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use async_trait::async_trait;
+    use petgraph::graph::NodeIndex;
     use proptest::prelude::*;
     use serde_json::json;
+    use serde_json::Value;
+    use std::sync::Arc;
 
     struct MockToolExecutor;
     #[async_trait]
@@ -1000,7 +32,7 @@ mod tests {
             _tool_id: &str,
             _args: Vec<u8>,
             _fuel_limit: u64,
-        ) -> Result<Vec<u8>, String> {
+        ) -> Result<Vec<u8>, TypesError> {
             Ok(b"mock_output".to_vec())
         }
     }
@@ -1179,7 +211,7 @@ mod tests {
         assert_eq!(config.nodes.len(), 2);
         assert_eq!(config.edges.len(), 1);
 
-        let rebuilt_graph = SOPGraph::from_config(&config, executor);
+            let rebuilt_graph = SOPGraph::from_config(&config, executor).unwrap();
         assert_eq!(rebuilt_graph.graph.node_count(), 2);
         assert_eq!(rebuilt_graph.graph.edge_count(), 1);
     }
@@ -1192,7 +224,7 @@ mod tests {
             config in arb_sop_graph_config(),
         ) {
             let executor = Arc::new(MockToolExecutor);
-            let graph = SOPGraph::from_config(&config, executor.clone());
+            let graph = SOPGraph::from_config(&config, executor.clone()).unwrap();
             prop_assert_eq!(graph.graph.node_count(), config.nodes.len());
 
             let roundtrip = SOPGraphConfig::from_graph(&graph);
@@ -1202,7 +234,7 @@ mod tests {
                 prop_assert_eq!(roundtrip.edges.len(), 0);
             }
 
-            let rebuilt = SOPGraph::from_config(&roundtrip, executor.clone());
+            let rebuilt = SOPGraph::from_config(&roundtrip, executor.clone()).unwrap();
             prop_assert_eq!(rebuilt.graph.node_count(), roundtrip.nodes.len());
             prop_assert_eq!(rebuilt.graph.edge_count(), roundtrip.edges.len());
 
@@ -1275,6 +307,89 @@ mod tests {
         }
     }
 
+    // ── TypesError tests ───────────────────────────────────────────────
+    
+    #[test]
+    fn test_types_error_config_read_display() {
+        let source = std::io::Error::new(std::io::ErrorKind::NotFound, "file not found");
+        let err = TypesError::ConfigReadError {
+            path: "config.toml".into(),
+            source,
+        };
+        let msg = err.to_string();
+        assert!(msg.contains("config.toml"), "should contain path");
+        assert!(msg.contains("file not found"), "should contain source error");
+    }
+
+    #[test]
+    fn test_types_error_config_parse_display() {
+        let source = toml::from_str::<serde_json::Value>("invalid = [toml").unwrap_err();
+        let err = TypesError::ConfigParseError {
+            path: "config.toml".into(),
+            source,
+        };
+        let msg = err.to_string();
+        assert!(msg.contains("config.toml"), "should contain path");
+        assert!(!msg.is_empty(), "should contain source error");
+    }
+
+    #[test]
+    fn test_types_error_state_store_display() {
+        let err = TypesError::StateStoreError("db connection failed".into());
+        let msg = err.to_string();
+        assert!(msg.contains("State store error"), "should contain prefix");
+        assert!(msg.contains("db connection failed"), "should contain message");
+    }
+
+    #[test]
+    fn test_types_error_node_execution_display() {
+        let err = TypesError::NodeExecutionError("node timeout".into());
+        let msg = err.to_string();
+        assert!(msg.contains("Node execution error"), "should contain prefix");
+        assert!(msg.contains("node timeout"), "should contain message");
+    }
+
+    #[test]
+    fn test_types_error_tool_execution_display() {
+        let err = TypesError::ToolExecutionError {
+            tool_id: "test_tool".into(),
+            details: "something went wrong".into(),
+        };
+        let msg = err.to_string();
+        assert!(msg.contains("test_tool"), "should contain tool_id");
+        assert!(msg.contains("something went wrong"), "should contain details");
+    }
+
+    #[test]
+    fn test_types_error_string_conversion() {
+        let variants = vec![
+            TypesError::StateStoreError("err1".into()),
+            TypesError::NodeExecutionError("err2".into()),
+            TypesError::ToolExecutionError {
+                tool_id: "t1".into(),
+                details: "err3".into(),
+            },
+        ];
+        for err in variants {
+            let s: String = err.into();
+            assert!(!s.is_empty(), "conversion to string should not be empty");
+        }
+    }
+
+    #[test]
+    fn test_types_error_propagation() {
+        fn propagate() -> Result<(), TypesError> {
+            return Err(TypesError::StateStoreError("propagate".into()));
+        }
+        let result = propagate();
+        assert!(result.is_err(), "should return an error");
+        if let Err(TypesError::StateStoreError(msg)) = result {
+            assert_eq!(msg, "propagate");
+        } else {
+            panic!("Expected StateStoreError");
+        }
+    }
+
     // ── ExecutorRouter tests ─────────────────────────────────────────
 
     struct PrefixExecutor(&'static str);
@@ -1285,7 +400,7 @@ mod tests {
             tool_id: &str,
             _args: Vec<u8>,
             _fuel_limit: u64,
-        ) -> Result<Vec<u8>, String> {
+        ) -> Result<Vec<u8>, TypesError> {
             let response = format!("{}:{}", self.0, tool_id);
             Ok(response.into_bytes())
         }

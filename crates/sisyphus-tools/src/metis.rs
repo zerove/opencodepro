@@ -15,7 +15,9 @@ pub enum MetisError {
 #[async_trait::async_trait]
 pub trait LlmClient: Send + Sync {
     async fn chat(&self, system: &str, user: &str, json_mode: bool) -> Result<String, String>;
+    async fn generate(&self, prompt: &str) -> Result<String, String>;
 }
+
 
 /// A dummy LLM client for development and testing.
 pub struct DummyLlmClient;
@@ -31,6 +33,10 @@ impl LlmClient for DummyLlmClient {
         })
         .to_string())
     }
+
+    async fn generate(&self, prompt: &str) -> Result<String, String> {
+        Ok(format!("Dummy generation for: {}", prompt))
+    }
 }
 
 /// An LLM client that returns a fixed response string.
@@ -42,6 +48,10 @@ pub struct FixedResponseClient(pub String);
 #[async_trait::async_trait]
 impl LlmClient for FixedResponseClient {
     async fn chat(&self, _system: &str, _user: &str, _json_mode: bool) -> Result<String, String> {
+        Ok(self.0.clone())
+    }
+
+    async fn generate(&self, _prompt: &str) -> Result<String, String> {
         Ok(self.0.clone())
     }
 }

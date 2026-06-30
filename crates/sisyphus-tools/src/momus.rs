@@ -1012,6 +1012,7 @@ pub fn add(a: i32, b: i32) -> i32 {
 
     // --- Architecture Review ---
 
+    // TODO: Implement architecture review logic using this prompt
     #[allow(dead_code)]
     const ARCH_REVIEW_SYSTEM_PROMPT: &str = r#"You are Momus, a senior architect and quality gatekeeper.
 Your goal is to review architecture documentation for consistency, modularity, and extensibility.

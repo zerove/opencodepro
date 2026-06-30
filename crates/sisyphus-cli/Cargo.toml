@@ -25,12 +25,10 @@ serde_json = "1.0"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tonic = "0.12"
-prost = "0.13"
 tokio-stream = "0.1"
 glob = "0.3"
-
-[build-dependencies]
-tonic-build = "0.12"
+arboard = "3.4"
+sisyphus-bridge-api = { path = "../sisyphus-bridge-api" }
 
 [dev-dependencies]
 tempfile = "3"

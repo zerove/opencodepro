@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+toml = "0.8"
 thiserror = "1.0"
 tokio = { version = "1.0", features = ["process", "fs", "io-util", "time", "rt", "macros"] }
 glob = "0.3"
@@ -15,8 +16,13 @@ reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"
 async-trait = "0.1"
 serde_yaml = "0.9"
 sisyphus-types = { path = "../sisyphus-types" }
+sisyphus-bridge-api = { path = "../sisyphus-bridge-api" }
+tonic = "0.12"
 tracing = { workspace = true }
 tempfile = "3"
+base64 = "0.22"
+chrono = "0.4"
+urlencoding = "2.1"
 # lsp-types intentionally omitted — OOM on this system. We use minimal custom types instead.
 
 [dev-dependencies]

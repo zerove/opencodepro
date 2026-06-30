@@ -374,6 +374,10 @@ mod tests {
         struct FailLlm;
         #[async_trait::async_trait]
         impl LlmClient for FailLlm {
+            async fn generate(&self, prompt: &str) -> Result<String, String> {
+                self.chat("", prompt, false).await
+            }
+
             async fn chat(&self, _: &str, _: &str, _: bool) -> Result<String, String> {
                 Err("LLM down".to_string())
             }

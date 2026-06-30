@@ -17,7 +17,7 @@ use sisyphus_tools::{
     agent_channel::AgentChannel, llm::BudgetProvider, meta_learner::MetaLearner,
     ContinuousBenchmark,
 };
-use sisyphus_types::AgentMessage;
+use sisyphus_types::{AgentMessage, WorkMode};
 pub use sisyphus_types::{
     CompositeGraph, DataMapping, ExecutionContext, ExecutionEvent, GraphDependency, NodeOutput,
     SOPGraph, SOPGraphConfig, StateStore, ToolExecutor, WasmSOPNode,
@@ -61,6 +61,12 @@ impl From<CoreError> for String {
     }
 }
 
+impl From<sisyphus_types::TypesError> for CoreError {
+    fn from(err: sisyphus_types::TypesError) -> Self {
+        CoreError::Internal(err.to_string())
+    }
+}
+
 #[async_trait::async_trait]
 impl BudgetProvider for SisyphusKernel {
     async fn check_budget(
@@ -73,8 +79,8 @@ impl BudgetProvider for SisyphusKernel {
             .roadmap_manager
             .get_project(project_id)
             .await
-            .map_err(|e| e.to_string())?
-            .ok_or_else(|| format!("Project {} not found", project_id))?;
+            .map_err(|e| CoreError::Internal(e.to_string()))?
+            .ok_or_else(|| CoreError::Internal(format!("Project {} not found", project_id)))?;
 
         let total_goals = project
             .roadmap
@@ -104,10 +110,11 @@ impl BudgetProvider for SisyphusKernel {
         );
 
         if estimated_cost > projection.avg_cost_per_goal * 3.0 && projection.confidence > 0.5 {
-            return Err(format!(
+            return Err(CoreError::Internal(format!(
                 "Estimated cost {:.2} is significantly higher than project average {:.2}",
                 estimated_cost, projection.avg_cost_per_goal
-            ));
+            ))
+            .into());
         }
         Ok(())
     }
@@ -123,8 +130,8 @@ impl BudgetProvider for SisyphusKernel {
             .roadmap_manager
             .get_project(project_id)
             .await
-            .map_err(|e| e.to_string())?
-            .ok_or_else(|| format!("Project {} not found", project_id))?;
+            .map_err(|e| CoreError::Internal(e.to_string()))?
+            .ok_or_else(|| CoreError::Internal(format!("Project {} not found", project_id)))?;
 
         // Find milestone and phase for the goal
         let mut location = None;
@@ -141,14 +148,14 @@ impl BudgetProvider for SisyphusKernel {
         }
 
         let (milestone_id, phase_id) = location
-            .ok_or_else(|| format!("Goal {} not found in project {}", goal_id, project_id))?;
+            .ok_or_else(|| CoreError::Internal(format!("Goal {} not found in project {}", goal_id, project_id)))?;
 
         let outcome = sisyphus_roadmap::ExecutionOutcome {
             goal_id: goal_id.to_string(),
             project_id: project_id.to_string(),
             milestone_id,
             phase_id,
-            success: true, // Costs are recorded for the call itself
+            success: true,
             deviation_score: None,
             error: None,
             timestamp: std::time::SystemTime::now()
@@ -162,7 +169,8 @@ impl BudgetProvider for SisyphusKernel {
         self.roadmap_manager
             .record_outcome(&outcome)
             .await
-            .map_err(|e| e.to_string())
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
+        Ok(())
     }
 }
 
@@ -220,12 +228,13 @@ impl Executor {
 
         for (&node, &degree) in in_degree.iter() {
             if degree == 0 {
-                let node_ref = Arc::clone(
-                    sop_graph
-                        .graph
-                        .node_weight(node)
-                        .expect("node should exist in graph"),
-                );
+                let node_ref = match sop_graph.graph.node_weight(node) {
+                    Some(n) => Arc::clone(n),
+                    None => {
+                        tracing::error!(node_idx = ?node, "Node not found in graph during execution");
+                        continue;
+                    }
+                };
                 let ctx_ref = Arc::clone(&ctx);
                 let tx = event_tx.clone();
                 join_set.spawn(async move {
@@ -254,7 +263,7 @@ impl Executor {
                             Err(e) => {
                                 if let Err(send_err) = tx.send(ExecutionEvent::NodeFailed {
                                     node_name: name.clone(),
-                                    error: e.clone()
+                                    error: e.to_string()
                                 }) {
                                     tracing::warn!(node = %name, error = %send_err, "Failed to send NodeFailed event");
                                 }
@@ -274,10 +283,17 @@ impl Executor {
                 Ok(out) => out,
                 Err(e) => {
                     tracing::warn!(node = %name, error = %e, "Node execution failed");
-                    NodeOutput(Value::String(e))
+                    NodeOutput(Value::String(e.to_string()))
                 }
             };
-            ctx.set_result(name.clone(), output);
+            ctx.set_result(name.clone(), output.clone());
+            
+            // --- UltraWork Notepad Sync Bridge ---
+            if name.starts_with("Rigorous-") {
+                let section_id = name.replace("Rigorous-", "notepad.").to_lowercase();
+                ctx.write_notepad(section_id, output.to_string());
+                tracing::debug!(node = %name, section = %"notepad", "Auto-synced node output to Notepad");
+            }
             tracing::debug!(node = %name, "Node result stored");
 
             for edge in sop_graph.graph.edges(node) {
@@ -285,7 +301,10 @@ impl Executor {
                 if let Some(degree) = in_degree.get_mut(&target) {
                     *degree -= 1;
                     if *degree == 0 {
-                        let node_ref = Arc::clone(sop_graph.graph.node_weight(target).unwrap());
+                        let Some(node_ref) = sop_graph.graph.node_weight(target).map(Arc::clone) else {
+                            tracing::error!(node_idx = ?target, "Target node not found in graph after edge traversal");
+                            continue;
+                        };
                         let ctx_ref = Arc::clone(&ctx);
                         let tx = event_tx.clone();
                         join_set.spawn(async move {
@@ -315,7 +334,7 @@ impl Executor {
                                     Err(e) => {
                                         if let Err(send_err) = tx.send(ExecutionEvent::NodeFailed {
                                             node_name: name.clone(),
-                                            error: e.clone()
+                                            error: e.to_string()
                                         }) {
                                             tracing::warn!(node = %name, error = %send_err, "Failed to send NodeFailed event");
                                         }
@@ -446,11 +465,46 @@ pub struct CompositeOutput {
     pub execution_order: Vec<String>,
 }
 
+/// IntentGate analyzes the user's goal to determine the appropriate execution mode.
+pub struct IntentGate;
+
+impl IntentGate {
+    pub async fn analyze(goal: &str, llm: &Arc<dyn sisyphus_tools::LlmClient>) -> WorkMode {
+        let prompt = format!(
+            "You are the Intent Gate of Sisyphus, a high-rigor AI orchestration engine. 
+            Your task is to classify the user's goal into one of two execution modes: 'Standard' or 'UltraWork'.
+
+            ### Criteria for 'UltraWork' (High-Rigor Mode):
+            1. **Architectural Impact**: Any request involving refactoring, designing new modules, or changing core data structures.
+            2. **High Criticality**: Bugfixes for production crashes, security vulnerabilities, or data loss issues.
+            3. **Deep Investigation**: Requests to 'diagnose', 'trace', or 'find the root cause' of non-obvious behavior.
+            4. **Precision Requirements**: Tasks where a 1% error rate is unacceptable (e.g., financial logic, crypto, kernel-level code).
+            5. **Explicit Command**: User explicitly mentions 'UltraWork', 'rigorous', 'deep dive', or 'senior engineer mode'.
+
+            ### Criteria for 'Standard' (Balanced Mode):
+            1. **Information Retrieval**: Simple questions about how something works or where a file is.
+            2. **Trivial Changes**: Typo fixes, documentation updates, or simple variable renaming.
+            3. **General Exploration**: Broad queries that don't require a formal plan or verification.
+
+            Goal: \"{}\"
+
+            Return ONLY 'Standard' or 'UltraWork'.",
+            goal
+        );
+        
+        match llm.generate(&prompt).await {
+            Ok(res) if res.to_lowercase().contains("ultrawork") => WorkMode::UltraWork,
+            _ => WorkMode::Standard,
+        }
+    }
+}
+
 pub struct SisyphusKernel {
     pub executor: Executor,
     pub state_store: Arc<MfsStore>,
     pub tool_executor: Arc<dyn ToolExecutor>,
     pub intel: Arc<SisyphusIntel>,
+    pub llm_client: Arc<dyn sisyphus_tools::LlmClient>,
     pub synthesizer: Arc<dyn sisyphus_intel::FlowSynthesizer>,
     /// Inter-agent message bus for pub/sub communication during execution.
     pub channel: AgentChannel,
@@ -474,6 +528,7 @@ impl SisyphusKernel {
         state_store: Arc<MfsStore>,
         tool_executor: Arc<dyn ToolExecutor>,
         intel: Arc<SisyphusIntel>,
+        llm_client: Arc<dyn sisyphus_tools::LlmClient>,
         synthesizer: Arc<dyn sisyphus_intel::FlowSynthesizer>,
     ) -> Self {
         let rm = Arc::new(RoadmapManager::new(state_store.clone()));
@@ -482,6 +537,7 @@ impl SisyphusKernel {
             state_store,
             tool_executor,
             intel,
+            llm_client,
             synthesizer,
             channel: AgentChannel::new(),
             benchmark: Arc::new(std::sync::Mutex::new(ContinuousBenchmark::new(
@@ -524,7 +580,7 @@ impl SisyphusKernel {
         self.state_store
             .set_state_json(&format!("sop:{}", sop_id), value)
             .await
-            .map_err(CoreError::MfsSaveError)
+            .map_err(|e| CoreError::MfsSaveError(e.to_string()))
     }
 
     pub async fn load_sop(&self, sop_id: &str) -> Result<SOPGraph, CoreError> {
@@ -532,7 +588,7 @@ impl SisyphusKernel {
             .state_store
             .get_state_json(&format!("sop:{}", sop_id))
             .await
-            .map_err(CoreError::MfsLoadError)?;
+            .map_err(|e| CoreError::MfsLoadError(e.to_string()))?;
 
         match data_val {
             None => Err(CoreError::SopNotFound(sop_id.to_string())),
@@ -540,13 +596,13 @@ impl SisyphusKernel {
                 // legacy format: double-wrapped JSON string
                 let config: sisyphus_types::SOPGraphConfig =
                     serde_json::from_str(&s).map_err(|e| CoreError::Internal(e.to_string()))?;
-                Ok(SOPGraph::from_config(&config, self.tool_executor.clone()))
+                Ok(SOPGraph::from_config(&config, self.tool_executor.clone())?)
             }
             Some(v) => {
                 // new format: direct JSON value
                 let config: sisyphus_types::SOPGraphConfig =
                     serde_json::from_value(v).map_err(|e| CoreError::Internal(e.to_string()))?;
-                Ok(SOPGraph::from_config(&config, self.tool_executor.clone()))
+                Ok(SOPGraph::from_config(&config, self.tool_executor.clone())?)
             }
         }
     }
@@ -575,11 +631,16 @@ impl SisyphusKernel {
         event_tx: Option<mpsc::UnboundedSender<ExecutionEvent>>,
     ) -> Result<(NodeOutput, String), String> {
         let ctx = ExecutionContext::new();
-
-        let synthesis = self.synthesizer.synthesize(goal, &ctx).await?;
+        
+        // 1. Intent Gate: Determine WorkMode based on goal
+        let mode = IntentGate::analyze(goal, &self.llm_client).await;
+        
+        // 2. Synthesize SOP with a specific mode
+        let synthesis = self.synthesizer.synthesize(goal, &ctx, mode).await?;
         let graph = synthesis.graph;
         let start_node = synthesis.start_node;
         let plan_desc = synthesis.plan_description;
+
 
         let (res, report, _) = self
             .execute_with_cognition(&graph, start_node, sop_id, None, event_tx)
@@ -603,7 +664,7 @@ impl SisyphusKernel {
             .roadmap_manager
             .synthesize_project_context(project_id)
             .await
-            .map_err(|e| format!("Failed to synthesize project context: {}", e))?;
+            .map_err(|e| CoreError::Internal(format!("Failed to synthesize project context: {}", e)))?;
         let augmented_goal = format!("{}\n\n---\nCurrent project context:\n{}", goal, ctx_string);
         self.execute_goal(&augmented_goal, sop_id, event_tx).await
     }
@@ -767,7 +828,6 @@ impl SisyphusKernel {
     /// first iteration's execution context.
     ///
     /// Returns (result, report_string, opt_evolved_graph).
-    #[allow(unused_assignments)]
     pub async fn execute_with_cognition(
         &self,
         sop_graph: &SOPGraph,
@@ -779,7 +839,7 @@ impl SisyphusKernel {
         let span = tracing::info_span!("kernel.execute_with_cognition", sop_id = %sop_id, graph_nodes = sop_graph.graph.node_count());
         let _enter = span.enter();
 
-        let mut own_graph: Option<SOPGraph> = None;
+        let mut own_graph: Option<SOPGraph>;
         let mut current_ref: &SOPGraph = sop_graph;
         let mut current_start = start_node;
         let mut iterations: Vec<CognitiveIteration> = Vec::new();
@@ -846,26 +906,24 @@ impl SisyphusKernel {
                 .executor
                 .execute_with_context(current_ref, current_start, exec_ctx, event_tx.clone())
                 .await?;
+            let start_name = current_ref
+                .graph
+                .node_weight(current_start)
+                .map(|n| n.name().to_string())
+                .ok_or_else(|| CoreError::Internal(format!("start node {:?} not found in graph", current_start)))?;
             let result = final_ctx
-                .get_result(
-                    current_ref
-                        .graph
-                        .node_weight(current_start)
-                        .expect("start node should exist")
-                        .name(),
-                )
-                .ok_or("Execution failed to produce result")?;
+                .get_result(&start_name)
+                .ok_or(CoreError::NoResultProduced)?;
             final_result = result.clone();
 
             // 3. Build per-node trace records
             let mut trace_lines: Vec<String> = Vec::new();
             for node in current_ref.graph.node_indices() {
-                let name = current_ref
-                    .graph
-                    .node_weight(node)
-                    .unwrap()
-                    .name()
-                    .to_string();
+                let Some(nw) = current_ref.graph.node_weight(node) else {
+                    tracing::warn!(node_idx = ?node, "Skipping trace record for missing node");
+                    continue;
+                };
+                let name = nw.name().to_string();
                 let output = final_ctx
                     .get_result(&name)
                     .map(|v| v.to_string())
@@ -901,7 +959,7 @@ impl SisyphusKernel {
                 .state_store
                 .get_state_json(&history_key)
                 .await
-                .map_err(|e| format!("MFS history load error: {}", e))?
+                .map_err(|e| CoreError::Internal(format!("MFS history load error: {}", e)))?
                 .and_then(|val| serde_json::from_value(val).ok())
                 .unwrap_or_else(|| sisyphus_types::ExecutionHistory {
                     sop_id: sop_id.to_string(),
@@ -928,7 +986,7 @@ impl SisyphusKernel {
 
             if let Err(e) = self
                 .state_store
-                .set_state_json(&history_key, serde_json::to_value(&history).unwrap())
+                .set_state_json(&history_key, serde_json::to_value(&history).map_err(|e| CoreError::Internal(format!("Failed to serialize execution history: {e}")))?)
                 .await
             {
                 tracing::warn!(
@@ -1028,7 +1086,8 @@ impl SisyphusKernel {
             if let Some(eg) = evolved {
                 current_start = eg.graph.node_indices().next().unwrap_or(start_node);
                 own_graph = Some(eg);
-                current_ref = own_graph.as_ref().unwrap();
+                // SAFETY: own_graph was just set to Some(eg) on the line above
+                current_ref = own_graph.as_ref().ok_or_else(|| CoreError::Internal("own_graph should be Some after evolution".into()))?;
             } else {
                 break;
             }
@@ -1176,13 +1235,14 @@ impl SisyphusKernel {
             let config = composite
                 .graphs
                 .get(sop_id)
-                .ok_or_else(|| format!("Graph {} not found in composite", sop_id))?;
-            let graph = SOPGraph::from_config(config, self.tool_executor.clone());
+                .ok_or_else(|| CoreError::Internal(format!("Graph {} not found in composite", sop_id)))?;
+            let graph = SOPGraph::from_config(config, self.tool_executor.clone())
+                .map_err(|e| CoreError::Internal(e.to_string()))?;
             let start_node = graph
                 .graph
                 .node_indices()
                 .next()
-                .ok_or_else(|| format!("Graph {} has no nodes", sop_id))?;
+                .ok_or_else(|| CoreError::Internal(format!("Graph {} has no nodes", sop_id)))?;
             graph_cache.insert(sop_id.clone(), (graph, start_node));
         }
 
@@ -1193,6 +1253,7 @@ impl SisyphusKernel {
             state_store: self.state_store.clone(),
             tool_executor: self.tool_executor.clone(),
             intel: self.intel.clone(),
+            llm_client: self.llm_client.clone(),
             synthesizer: self.synthesizer.clone(),
             channel: AgentChannel::new(),
             benchmark: self.benchmark.clone(),
@@ -1232,7 +1293,7 @@ impl SisyphusKernel {
 
         // Process completed graphs and spawn newly-ready dependents
         while let Some(res) = join_set.join_next().await {
-            let (completed_id, outcome) = res.map_err(|e| e.to_string())?;
+            let (completed_id, outcome) = res.map_err(|e| CoreError::Internal(e.to_string()))?;
             let (node_output, report, _evolved) = outcome?;
 
             {
@@ -1243,7 +1304,7 @@ impl SisyphusKernel {
 
             // Decrement in-degree of dependents and spawn ready ones
             let ready: Vec<String> = {
-                let mut deg = in_degree.lock().unwrap();
+                let mut deg = in_degree.lock().unwrap_or_else(|e| e.into_inner());
                 let mut ready = Vec::new();
                 for dep in &composite.dependencies {
                     if dep.source_sop_id == completed_id {
@@ -1265,7 +1326,7 @@ impl SisyphusKernel {
                     let composite_ref = Arc::clone(&composite);
                     let tx = event_tx.clone();
                     join_set.spawn(async move {
-                        let dep_ctx = build_dep_ctx_for(&sid, &composite_ref, &acc.lock().unwrap());
+                        let dep_ctx = build_dep_ctx_for(&sid, &composite_ref, &acc.lock().unwrap_or_else(|e| e.into_inner()));
                         let result = kernel
                             .execute_with_cognition(&graph, start_node, &sid, dep_ctx, tx)
                             .await;
@@ -1564,7 +1625,7 @@ mod tests {
             _tool_id: &str,
             _args: Vec<u8>,
             _fuel_limit: u64,
-        ) -> Result<Vec<u8>, String> {
+        ) -> Result<Vec<u8>, sisyphus_types::TypesError> {
             Ok(b"mock".to_vec())
         }
     }
@@ -1594,7 +1655,7 @@ mod tests {
             edges: vec![(0, 1), (1, 0)],
         };
 
-        let graph = SOPGraph::from_config(&config, Arc::new(MockToolExecutor));
+        let graph = SOPGraph::from_config(&config, Arc::new(MockToolExecutor)).unwrap();
         let res = executor
             .execute(&graph, petgraph::graph::NodeIndex::new(0))
             .await;
@@ -1672,7 +1733,7 @@ mod tests {
             edges: vec![(0, 1)],
         };
 
-        let graph = SOPGraph::from_config(&config, Arc::new(MockToolExecutor));
+        let graph = SOPGraph::from_config(&config, Arc::new(MockToolExecutor)).unwrap();
         let (tx, mut rx) = mpsc::unbounded_channel();
 
         let res = executor
@@ -1746,7 +1807,7 @@ mod tests {
             edges: vec![(0, 1), (0, 2), (1, 3), (2, 3)],
         };
 
-        let graph = SOPGraph::from_config(&config, Arc::new(MockToolExecutor));
+        let graph = SOPGraph::from_config(&config, Arc::new(MockToolExecutor)).unwrap();
         let res = executor
             .execute(&graph, petgraph::graph::NodeIndex::new(0))
             .await;
@@ -1771,9 +1832,9 @@ mod tests {
                 tool_id: &str,
                 _args: Vec<u8>,
                 _fuel_limit: u64,
-            ) -> Result<Vec<u8>, String> {
+            ) -> Result<Vec<u8>, sisyphus_types::TypesError> {
                 if tool_id == "fail" {
-                    Err("intentional failure".into())
+                    Err(sisyphus_types::TypesError::ToolExecutionError { tool_id: tool_id.to_string(), details: "intentional failure".into() })
                 } else {
                     Ok(b"ok".to_vec())
                 }
@@ -1800,7 +1861,7 @@ mod tests {
             edges: vec![(0, 1)],
         };
 
-        let graph = SOPGraph::from_config(&config, Arc::new(FailOnFirst));
+        let graph = SOPGraph::from_config(&config, Arc::new(FailOnFirst)).unwrap();
         let (tx, _rx) = mpsc::unbounded_channel();
 
         let res = executor
@@ -1814,7 +1875,13 @@ mod tests {
         let n0_out = ctx.get_result("n0").unwrap();
         assert_eq!(
             n0_out.0,
-            serde_json::Value::String("intentional failure".into())
+            serde_json::Value::String(
+                sisyphus_types::TypesError::ToolExecutionError {
+                    tool_id: "fail".to_string(),
+                    details: "intentional failure".to_string(),
+                }
+                .to_string()
+            )
         );
 
         // n1 still executes because the executor continues after failures
@@ -1829,7 +1896,7 @@ mod tests {
             nodes: vec![],
             edges: vec![],
         };
-        let graph = SOPGraph::from_config(&config, Arc::new(MockToolExecutor));
+        let graph = SOPGraph::from_config(&config, Arc::new(MockToolExecutor)).unwrap();
         let res = executor
             .execute(&graph, petgraph::graph::NodeIndex::new(0))
             .await;
@@ -2077,7 +2144,7 @@ mod tests {
             sisyphus_intel::GoalDrivenSynthesizer::new(tool_executor.clone()),
         );
 
-        SisyphusKernel::new(state_store, tool_executor, intel, synthesizer)
+        SisyphusKernel::new(state_store, tool_executor, intel, Arc::new(sisyphus_tools::DummyLlmClient), synthesizer)
     }
 
     #[tokio::test]
@@ -2103,7 +2170,7 @@ mod tests {
             ],
             edges: vec![(0, 1)],
         };
-        let graph = SOPGraph::from_config(&config, Arc::new(MockToolExecutor));
+        let graph = SOPGraph::from_config(&config, Arc::new(MockToolExecutor)).unwrap();
 
         kernel.save_sop("test_roundtrip", &graph).await.unwrap();
         let loaded = kernel.load_sop("test_roundtrip").await.unwrap();
@@ -2130,7 +2197,7 @@ mod tests {
             nodes: vec![],
             edges: vec![],
         };
-        let graph = SOPGraph::from_config(&config, Arc::new(MockToolExecutor));
+        let graph = SOPGraph::from_config(&config, Arc::new(MockToolExecutor)).unwrap();
 
         kernel.save_sop("test_empty", &graph).await.unwrap();
         let loaded = kernel.load_sop("test_empty").await.unwrap();
@@ -2154,3 +2221,5 @@ mod tests {
         }
     }
 }
+
+

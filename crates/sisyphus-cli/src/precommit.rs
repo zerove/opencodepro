@@ -3,7 +3,10 @@ use std::path::PathBuf;
 
 /// Resolve the git repo root from the given directory (or cwd).
 fn resolve_repo(dir: Option<PathBuf>) -> Result<PathBuf> {
-    let base = dir.unwrap_or_else(|| std::env::current_dir().unwrap());
+    let base = match dir {
+        Some(p) => p,
+        None => std::env::current_dir().context("Failed to get current directory")?,
+    };
     let output = std::process::Command::new("git")
         .args(["rev-parse", "--show-toplevel"])
         .current_dir(&base)

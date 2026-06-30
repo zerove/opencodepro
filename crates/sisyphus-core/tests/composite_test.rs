@@ -20,7 +20,7 @@ impl ToolExecutor for CompositeMockExecutor {
         tool_id: &str,
         _args: Vec<u8>,
         _fuel_limit: u64,
-    ) -> Result<Vec<u8>, String> {
+    ) -> Result<Vec<u8>, sisyphus_types::TypesError> {
         self.call_count.fetch_add(1, Ordering::SeqCst);
         Ok(format!("executed:{}", tool_id).into_bytes())
     }
@@ -48,6 +48,7 @@ async fn make_kernel() -> (Arc<SisyphusKernel>, Arc<CompositeMockExecutor>) {
         state_store,
         tool_executor.clone(),
         intel,
+        Arc::new(sisyphus_tools::DummyLlmClient),
         synthesizer,
     ));
 

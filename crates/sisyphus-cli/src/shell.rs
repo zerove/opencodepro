@@ -20,16 +20,10 @@ pub async fn exec(
             anyhow::bail!("Permission denied: shell execution is blocked by config");
         }
         None => {
-            // Prompt the user on stdin/stdout before proceeding
-            eprint!("⚠  Allow shell execution? [Y/n] ");
-            use std::io::Write;
-            std::io::stderr().flush().ok();
-            let mut buf = String::new();
-            std::io::stdin().read_line(&mut buf).ok();
-            let answer = buf.trim().to_lowercase();
-            if !answer.is_empty() && answer != "y" && answer != "yes" {
-                anyhow::bail!("Shell execution denied by user");
-            }
+            // TUI mode: skip permission prompt — user already showed intent
+            // by typing the command and pressing Enter. The synchronous
+            // stdin read is incompatible with crossterm raw mode.
+            // CLI mode has its own permission check in Commands::Exec.
         }
     }
 

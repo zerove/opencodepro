@@ -14,6 +14,10 @@ struct MockLlmClient;
 
 #[async_trait]
 impl LlmClient for MockLlmClient {
+    async fn generate(&self, prompt: &str) -> Result<String, String> {
+        self.chat("", prompt, false).await
+    }
+
     async fn chat(&self, _system: &str, _user: &str, _stream: bool) -> Result<String, String> {
         // Return a valid JSON array of refinement suggestions for MilestoneGenerator
         // or a valid reflection JSON for StrategicReflector

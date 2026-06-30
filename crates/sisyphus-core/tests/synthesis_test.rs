@@ -17,7 +17,7 @@ impl ToolExecutor for MockExecutor {
         _tool_id: &str,
         _args: Vec<u8>,
         _fuel_limit: u64,
-    ) -> Result<Vec<u8>, String> {
+    ) -> Result<Vec<u8>, sisyphus_types::TypesError> {
         self.call_count.fetch_add(1, Ordering::SeqCst);
         Ok(b"Success".to_vec())
     }
@@ -41,7 +41,7 @@ async fn test_dynamic_synthesis_execution() {
         tool_executor.clone(),
     ));
 
-    let kernel = SisyphusKernel::new(state_store, tool_executor.clone(), intel, synthesizer);
+    let kernel = SisyphusKernel::new(state_store, tool_executor.clone(), intel, Arc::new(sisyphus_tools::DummyLlmClient), synthesizer);
 
     // Test a "fetch, process, store" goal which should synthesize a 3-node DAG
     let (result, report) = kernel

@@ -75,7 +75,7 @@ fn default_effect_type() -> String {
 /// Hooks are stored in registration order. Matching is done by:
 /// 1. Exact tool_id match
 /// 2. Hook with no tool_filter (matches all)
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct HookRegistry {
     hooks: Vec<HookDef>,
 }

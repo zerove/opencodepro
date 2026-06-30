@@ -7,8 +7,8 @@ description = "gRPC bridge server for Sisyphus cognitive engine"
 license = "MIT"
 
 [dependencies]
+sisyphus-bridge-api = { path = "../sisyphus-bridge-api" }
 tonic = "0.12"
-prost = "0.13"
 tokio = { version = "1", features = ["full"] }
 tokio-stream = "0.1"
 sisyphus-types = { path = "../sisyphus-types" }
@@ -24,5 +24,7 @@ async-trait = "0.1"
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 
-[build-dependencies]
-tonic-build = "0.12"
+# HTTP/REST API (axum 0.7 to match tonic's transitive dep)
+axum = "0.7"
+tower-http = { version = "0.5", features = ["cors", "trace"] }
+serde = { version = "1.0", features = ["derive"] }

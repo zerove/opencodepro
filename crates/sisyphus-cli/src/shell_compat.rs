@@ -1,8 +1,7 @@
-use anyhow::{anyhow, Result};
-use glob::glob;
-
-#[allow(dead_code)]
-pub fn expand_glob(pattern: &str) -> Result<Vec<String>> {
+#[cfg(test)]
+pub fn expand_glob(pattern: &str) -> anyhow::Result<Vec<String>> {
+    use anyhow::anyhow;
+    use glob::glob;
     let paths = glob(pattern).map_err(|e| anyhow!("Invalid glob pattern: {e}"))?;
 
     let mut results = Vec::new();
@@ -14,13 +13,6 @@ pub fn expand_glob(pattern: &str) -> Result<Vec<String>> {
     Ok(results)
 }
 
-#[allow(dead_code)]
-pub fn resolve_alias(_name: &str) -> Option<String> {
-    // In a real implementation, this would load aliases from a config file
-    // or shell profile (.bashrc, .zshrc, etc.)
-    // For now, we return None as no alias source is specified.
-    None
-}
 
 #[cfg(test)]
 mod tests {
@@ -50,8 +42,4 @@ mod tests {
         assert!(!matches.contains(&file3.to_string_lossy().to_string()));
     }
 
-    #[test]
-    fn test_resolve_alias() {
-        assert_eq!(resolve_alias("ll"), None);
-    }
 }

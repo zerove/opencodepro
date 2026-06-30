@@ -16,6 +16,10 @@ struct JsonLlmClient(String);
 
 #[async_trait]
 impl LlmClient for JsonLlmClient {
+    async fn generate(&self, prompt: &str) -> Result<String, String> {
+        self.chat("", prompt, false).await
+    }
+
     async fn chat(&self, _system: &str, _user: &str, _json_mode: bool) -> Result<String, String> {
         Ok(self.0.clone())
     }
@@ -30,12 +34,12 @@ impl ToolExecutor for MockToolExecutor {
         tool_id: &str,
         _args: Vec<u8>,
         _fuel_limit: u64,
-    ) -> Result<Vec<u8>, String> {
+    ) -> Result<Vec<u8>, sisyphus_types::TypesError> {
         // For the purpose of this E2E test, we accept any tool that starts with "custom/"
         if tool_id.starts_with("custom/") {
             Ok(json!({"result": "success"}).to_string().into_bytes())
         } else {
-            Err(format!("Unknown tool: {}", tool_id))
+            Err(sisyphus_types::TypesError::ToolExecutionError { tool_id: tool_id.to_string(), details: format!("Unknown tool: {}", tool_id) })
         }
     }
 }

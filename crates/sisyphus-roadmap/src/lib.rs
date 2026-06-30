@@ -38,6 +38,12 @@ impl From<serde_json::Error> for RoadmapError {
     }
 }
 
+impl From<sisyphus_types::TypesError> for RoadmapError {
+    fn from(e: sisyphus_types::TypesError) -> Self {
+        RoadmapError::Persistence(e.to_string())
+    }
+}
+
 impl From<String> for RoadmapError {
     fn from(e: String) -> Self {
         RoadmapError::Persistence(e)

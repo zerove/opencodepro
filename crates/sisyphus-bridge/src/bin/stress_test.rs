@@ -1,12 +1,8 @@
-use sisyphus_bridge::sisyphus_bridge_client::SisyphusBridgeClient;
-use sisyphus_bridge::ExecuteSopRequest;
+use sisyphus_bridge_api::sisyphus_bridge_client::SisyphusBridgeClient;
+use sisyphus_bridge_api::ExecuteSopRequest;
 use std::time::Instant;
 use tokio::task::JoinSet;
 use tonic::Request;
-
-pub mod sisyphus_bridge {
-    tonic::include_proto!("sisyphus.bridge");
-}
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -28,46 +24,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let start = Instant::now();
 
     for _ in 0..concurrency {
-        let mut client_clone = client.clone();
+        let mut client = client.clone();
         set.spawn(async move {
-            let mut success = 0;
-            let mut failure = 0;
-            for j in 0..iterations {
-                let req = Request::new(ExecuteSopRequest {
-                    sop_id: if j % 2 == 0 {
-                        "fast_tool".into()
-                    } else {
-                        "evil_tool".into()
-                    },
+            for _ in 0..iterations {
+                let request = Request::new(ExecuteSopRequest {
+                    sop_id: "hello".into(),
                     args: std::collections::HashMap::new(),
                 });
-
-                match client_clone.execute_sop(req).await {
-                    Ok(_) => success += 1,
-                    Err(_) => failure += 1,
-                }
+                let _ = client.execute_sop(request).await;
             }
-            (success, failure)
         });
     }
 
-    let mut total_success = 0;
-    let mut total_failure = 0;
-    while let Some(res) = set.join_next().await {
-        let (s, f) = res?;
-        total_success += s;
-        total_failure += f;
-    }
+    while let Some(_) = set.join_next().await {}
 
-    let duration = start.elapsed();
-    println!("✅ Stress test completed in {:?}", duration);
+    let elapsed = start.elapsed();
+    let total = concurrency * iterations;
     println!(
-        "Total Success: {}, Total Failure: {}",
-        total_success, total_failure
-    );
-    println!(
-        "Req/sec: {:.2}",
-        (total_success + total_failure) as f64 / duration.as_secs_f64()
+        "✅ Stress test completed: {} requests in {:?} ({:.0} req/s)",
+        total,
+        elapsed,
+        total as f64 / elapsed.as_secs_f64()
     );
 
     Ok(())

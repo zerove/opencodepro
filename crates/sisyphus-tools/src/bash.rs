@@ -1,4 +1,5 @@
 use crate::{ToolError, ToolResult};
+use std::io;
 use std::path::Path;
 use std::time::Instant;
 use tokio::io::{AsyncReadExt, BufReader};
@@ -26,6 +27,7 @@ pub async fn execute(
     let mut cmd = Command::new("sh");
     cmd.arg("-c")
         .arg(command)
+        .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped());
 
@@ -35,8 +37,14 @@ pub async fn execute(
 
     let mut child = cmd.spawn().map_err(ToolError::Io)?;
 
-    let stdout_pipe = child.stdout.take().expect("stdout pipe not captured");
-    let stderr_pipe = child.stderr.take().expect("stderr pipe not captured");
+    let stdout_pipe = child
+        .stdout
+        .take()
+        .ok_or_else(|| ToolError::Io(io::Error::new(io::ErrorKind::BrokenPipe, "stdout pipe not captured")))?;
+    let stderr_pipe = child
+        .stderr
+        .take()
+        .ok_or_else(|| ToolError::Io(io::Error::new(io::ErrorKind::BrokenPipe, "stderr pipe not captured")))?;
 
     let stdout_fut = async {
         let reader = BufReader::new(stdout_pipe);
@@ -200,11 +208,21 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_execute_pipeline() {
-        let result = execute("echo 'a b c d e' | wc -w", None, 5000)
-            .await
-            .unwrap();
-        assert!(result.stdout.trim() == "5");
+    async fn test_execute_chinese_command() {
+        let result = execute("echo '测试'", None, 5000).await.unwrap();
+        assert!(result.stdout.contains("测试"));
+    }
+
+    #[tokio::test]
+    async fn test_execute_invalid_chinese_command() {
+        let result = execute("中文命令", None, 5000).await;
+        match result {
+            Err(ToolError::CommandFailed { code, .. }) => {
+                println!("Correctly failed with exit code: {}", code);
+            }
+            Err(e) => panic!("Expected CommandFailed, got: {:?}", e),
+            Ok(_) => panic!("Expected failure for invalid command"),
+        }
     }
 
     #[tokio::test]

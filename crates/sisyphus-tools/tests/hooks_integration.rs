@@ -14,6 +14,10 @@ struct DummyLlmClient;
 
 #[async_trait::async_trait]
 impl LlmClient for DummyLlmClient {
+    async fn generate(&self, prompt: &str) -> Result<String, String> {
+        self.chat("", prompt, false).await
+    }
+
     async fn chat(&self, _system: &str, user: &str, _json_mode: bool) -> Result<String, String> {
         Ok(format!(
             r#"{{"ambiguities": [], "implicit_requirements": [], "summary": "Dummy response for: {}", "actionable": true}}"#,
@@ -26,11 +30,12 @@ async fn setup_executor(registry: HookRegistry) -> BuiltinToolExecutor {
     let dir = tempdir().unwrap();
     let feedback_store = Arc::new(FeedbackStore::new(dir.path()));
 
-    BuiltinToolExecutor {
-        registry,
-        llm_client: Arc::new(DummyLlmClient),
-        feedback_store,
-    }
+BuiltinToolExecutor {
+            registry,
+            llm_client: Arc::new(DummyLlmClient),
+            feedback_store: Arc::new(sisyphus_tools::feedback::FeedbackStore::default_dir()),
+            bridge_client: None,
+        }
 }
 
 #[tokio::test]
@@ -73,7 +78,7 @@ async fn test_hook_deny() {
     let result = executor.execute("file_read", args, 0).await;
     assert!(result.is_err(), "Tool should be blocked by hook");
     assert!(
-        result.unwrap_err().contains(deny_reason),
+        result.unwrap_err().to_string().contains(deny_reason),
         "Error message should contain the deny reason"
     );
 }
@@ -160,5 +165,5 @@ Instructions body
         result.is_err(),
         "Tool should be blocked by skill-defined hook"
     );
-    assert!(result.unwrap_err().contains("Blocked by skill integration"));
+    assert!(result.unwrap_err().to_string().contains("Blocked by skill integration"));
 }

@@ -73,7 +73,7 @@ impl sisyphus_types::ToolExecutor for MCPToolExecutor {
         tool_id: &str,
         args: Vec<u8>,
         _fuel_limit: u64,
-    ) -> Result<Vec<u8>, String> {
+    ) -> Result<Vec<u8>, sisyphus_types::TypesError> {
         // Resolve MCP tool name
         let mcp_tool = self
             .tool_map
@@ -87,7 +87,12 @@ impl sisyphus_types::ToolExecutor for MCPToolExecutor {
         } else {
             match serde_json::from_slice(&args) {
                 Ok(v) => Some(v),
-                Err(e) => return Err(format!("invalid JSON args for MCP tool '{mcp_tool}': {e}")),
+                Err(e) => {
+                    return Err(sisyphus_types::TypesError::ToolExecutionError {
+                        tool_id: mcp_tool.to_string(),
+                        details: format!("invalid JSON args for MCP tool '{mcp_tool}': {e}"),
+                    })
+                }
             }
         };
 
@@ -95,7 +100,10 @@ impl sisyphus_types::ToolExecutor for MCPToolExecutor {
         let result = client
             .call_tool(mcp_tool, mcp_args)
             .await
-            .map_err(|e| format!("MCP tool '{mcp_tool}' failed: {e}"))?;
+            .map_err(|e| sisyphus_types::TypesError::ToolExecutionError {
+                tool_id: mcp_tool.to_string(),
+                details: format!("MCP tool '{mcp_tool}' failed: {e}"),
+            })?;
 
         // Serialize response
         let output = if result.content.len() == 1 {
@@ -135,7 +143,11 @@ impl sisyphus_types::ToolExecutor for MCPToolExecutor {
             json!({ "content": items, "is_error": result.is_error.unwrap_or(false) })
         };
 
-        serde_json::to_vec(&output).map_err(|e| format!("serialize MCP result: {e}"))
+        serde_json::to_vec(&output)
+            .map_err(|e| sisyphus_types::TypesError::ToolExecutionError {
+                tool_id: mcp_tool.to_string(),
+                details: format!("serialize MCP result: {e}"),
+            })
     }
 }
 
@@ -261,7 +273,7 @@ mod tests {
             .unwrap();
         let result = ex.execute("bad_tool", vec![], 0).await;
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("execution failed"));
+        assert!(result.unwrap_err().to_string().contains("execution failed"));
     }
 
     #[tokio::test]
@@ -320,7 +332,7 @@ mod tests {
         };
         let result = ex.execute("tool", b"not valid json".to_vec(), 0).await;
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("invalid JSON"));
+        assert!(result.unwrap_err().to_string().contains("invalid JSON"));
     }
 
     #[tokio::test]

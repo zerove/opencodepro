@@ -215,7 +215,7 @@ impl TeamOrchestrator {
                                             serde_json::from_slice(&bytes).unwrap_or(Value::Null);
                                         Ok(value)
                                     }
-                                    Err(e) => Err(crate::ToolError::Generic(e)),
+                                    Err(e) => Err(crate::ToolError::Generic(e.to_string())),
                                 }
                             })
                         }),
@@ -444,7 +444,7 @@ impl TeamOrchestrator {
 
     /// Decompose a goal and execute it, streaming progress events.
     ///
-    /// Same as [`run_goal`] but sends progress events through the returned
+    /// Same as [`run_goal`](Self::run_goal) but sends progress events through the returned
     /// `mpsc::Receiver`.  The receiver yields [`TeamEvent`] variants:
     /// `PlanReady`, `TaskStarted`, `TaskCompleted`, `Synthesizing`,
     /// `Complete`, or `Error`.
@@ -517,6 +517,7 @@ mod tests {
             registry: HookRegistry::new(),
             llm_client: dummy,
             feedback_store: feedback,
+            bridge_client: None,
         })
     }
 
@@ -943,6 +944,10 @@ mod tests {
 
     #[async_trait::async_trait]
     impl LlmClient for JsonLlmClient {
+        async fn generate(&self, prompt: &str) -> Result<String, String> {
+            self.chat("", prompt, false).await
+        }
+
         async fn chat(
             &self,
             _system: &str,
@@ -957,6 +962,10 @@ mod tests {
 
     #[async_trait::async_trait]
     impl LlmClient for ErrLlmClient {
+        async fn generate(&self, prompt: &str) -> Result<String, String> {
+            self.chat("", prompt, false).await
+        }
+
         async fn chat(
             &self,
             _system: &str,

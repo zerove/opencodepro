@@ -29,9 +29,9 @@ impl MockNode {
 
 #[async_trait]
 impl SOPNode for MockNode {
-    async fn execute(&self, _ctx: &sisyphus_core::ExecutionContext) -> Result<NodeOutput, String> {
+    async fn execute(&self, _ctx: &sisyphus_core::ExecutionContext) -> Result<NodeOutput, sisyphus_types::TypesError> {
         if self.should_fail {
-            Err(format!("ResourceExhausted: {} failed", self.name))
+            Err(sisyphus_types::TypesError::NodeExecutionError(format!("ResourceExhausted: {} failed", self.name)))
         } else {
             Ok(NodeOutput(Value::String(format!("result_{}", self.name))))
         }

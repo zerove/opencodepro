@@ -10,7 +10,7 @@ async fn test_gemma4_availability() {
         "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions".to_string();
     let model = "gemma-4-31b-it".to_string();
 
-    let client = OpenAiLlmClient::new(api_key, endpoint, model);
+    let client = OpenAiLlmClient::new(api_key, endpoint, model).unwrap();
 
     println!("Testing availability for model: gemma-4-31b-it");
 

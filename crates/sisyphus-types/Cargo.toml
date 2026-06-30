@@ -12,7 +12,9 @@ petgraph = "0.6"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0"
 toml = "0.8"
+thiserror = "1.0"
 tracing = "0.1"
+im = { version = "15.1.0", features = ["serde"] }
 
 [dev-dependencies]
 proptest = "1"

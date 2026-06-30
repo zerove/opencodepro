@@ -1,3 +1,4 @@
+use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
@@ -15,8 +16,8 @@ struct Cli {
     #[arg(short = 'i', long = "interactive")]
     interactive: bool,
 
-    /// Bridge address (default: http://[::1]:50051)
-    #[arg(short = 'b', long = "bridge", env = "SISYPHUS_BRIDGE")]
+    /// Bridge address (default: `http://[::1]:50051`)
+    #[arg(short = 'b', long = "bridge", env = "SISYPHUS_BRIDGE_ADDRESS")]
     bridge: Option<String>,
 
     /// Data directory for todo/session storage
@@ -31,6 +32,7 @@ struct Cli {
 #[derive(Subcommand)]
 enum Commands {
     // ── file tools ──────────────────────────────────────
+    #[command(next_help_heading = "File Tools")]
     /// Read a file and print its contents
     Read { path: PathBuf },
     /// Read a range of lines from a file (offset/limit)
@@ -93,21 +95,20 @@ enum Commands {
         input: PathBuf,
     },
 
-    // ── task tracking ───────────────────────────────────
+    #[command(next_help_heading = "Task Tracking", subcommand, alias = "td")]
     /// Manage todos
-    #[command(subcommand)]
     Todo(TodoCommands),
 
     /// Manage sessions
-    #[command(subcommand)]
+    #[command(subcommand, alias = "ses")]
     Session(SessionCommands),
 
     /// Manage plans
     #[command(subcommand)]
     Plan(PlanCommands),
 
+    #[command(next_help_heading = "Agents", subcommand)]
     /// Code analysis tools
-    #[command(subcommand)]
     Oracle(OracleCommands),
 
     /// Code search tools
@@ -142,9 +143,8 @@ enum Commands {
     #[command(subcommand)]
     Delegate(DelegateCommands),
 
-    // ── MCP ─────────────────────────────────────────────
+    #[command(next_help_heading = "Engine", subcommand)]
     /// MCP server integration (connect, info, call)
-    #[command(subcommand)]
     Mcp(McpCommands),
 
     // ── engine ──────────────────────────────────────────
@@ -169,14 +169,12 @@ enum Commands {
     /// Start the bridge daemon
     Daemon,
 
-    // ── git ──────────────────────────────────────────────
+    #[command(next_help_heading = "Git", subcommand)]
     /// Git operations (status, diff, add, commit, log, branch, checkout, push, pull)
-    #[command(subcommand)]
     Git(GitCommands),
 
-    // ── build ─────────────────────────────────────────────
+    #[command(next_help_heading = "Dev Tools", subcommand)]
     /// Build tools (check, build, test, lint, fmt, doc)
-    #[command(subcommand)]
     Build(BuildCommands),
 
     // ── run ────────────────────────────────────────────────
@@ -190,18 +188,163 @@ enum Commands {
     Init(InitCommands),
 
     // ── precommit ─────────────────────────────────────────
-    /// Install/uninstall/check git pre-commit hooks (fmt + clippy)
+    /// Install/uninstall/check git pre-commit hooks (fmt + lint)
     #[command(subcommand)]
     Precommit(PrecommitCommands),
-
+    // ── pr ──────────────────────────────────────────────────
+    /// Manage GitHub Pull Requests
+    #[command(subcommand)]
+    Pr(PrCommands),
+    // ── wisdom ──────────────────────────────────────────────
+    /// Manage wisdom/notepads for cross-session knowledge
+    #[command(subcommand)]
+    Wisdom(WisdomCommands),
+    // ── hashline ────────────────────────────────────────────
+    /// Hashline editing safety system (LINE#ID pattern)
+    #[command(subcommand)]
+    Hashline(HashlineCommands),
     // ── diagnose ──────────────────────────────────────────
     /// Run cargo check (and optionally clippy), show unified report
+
+
     #[command(subcommand)]
     Diagnose(DiagnoseCommands),
 
     /// Auto-apply cargo fix, then re-diagnose
     #[command(subcommand)]
     Fix(FixCommands),
+
+    /// GitHub Actions integration (workflow templates, CI mode)
+    #[command(subcommand)]
+    Github(GithubCommands),
+
+    /// Manage LLM providers (list, add, remove, test)
+    #[command(subcommand)]
+    Provider(ProviderCommands),
+
+    /// Manage tool registration (MCP, custom tools)
+    #[command(subcommand)]
+    Tool(ToolCommands),
+}
+
+#[derive(Subcommand)]
+enum GithubCommands {
+    /// Generate a GitHub Actions workflow YAML template
+    Action {
+        /// Workflow kind: ci, pr-review, release
+        kind: String,
+        /// Output file path (default: .github/workflows/sisyphus-{kind}.yml)
+        #[arg(short = 'o', long = "output")]
+        output: Option<std::path::PathBuf>,
+        /// Rust toolchain (default: stable)
+        #[arg(long = "toolchain", default_value = "stable")]
+        toolchain: String,
+        /// Extra cargo flags
+        #[arg(long = "cargo-flags", default_value = "")]
+        cargo_flags: String,
+        /// Exclude packages (comma-separated)
+        #[arg(long = "exclude", default_value = "")]
+        exclude: String,
+        /// Include clippy in CI
+        #[arg(long = "clippy")]
+        clippy: bool,
+        /// Include cargo-deny audit
+        #[arg(long = "deny")]
+        deny: bool,
+    },
+    /// Show CI mode configuration from environment
+    CiConfig,
+}
+
+#[derive(Subcommand)]
+enum ProviderCommands {
+    /// List all registered providers from config
+    List,
+    /// Test a provider by name with a prompt
+    Test {
+        /// Provider name to test
+        name: String,
+        /// Optional prompt (default: "Say hello in one sentence")
+        #[arg(default_value = "Say hello in one sentence")]
+        prompt: String,
+    },
+    /// Show provider fallback chain order
+    Fallback,
+}
+
+#[derive(Subcommand)]
+enum ToolCommands {
+    /// Register an MCP server as a tool
+    RegisterMcp {
+        /// Tool prefix (e.g. "filesystem", "web")
+        prefix: String,
+        /// Command to launch the MCP server (e.g. "npx @modelcontextprotocol/server-filesystem /tmp")
+        #[arg(required = true, num_args = 1..)]
+        command: Vec<String>,
+    },
+    /// List all registered tools from config
+    List,
+}
+
+#[derive(Subcommand)]
+enum HashlineCommands {
+    /// Add LINE#ID comments to all non-empty lines in a file: `hashline annotate <file>`
+    Annotate { path: PathBuf },
+    /// Verify all LINE#IDs in a file are still valid: `hashline verify <file>`
+    Verify { path: PathBuf },
+    /// Edit a line using its LINE#ID: `hashline edit <file> <hashline> <new-content>`
+    Edit {
+        path: PathBuf,
+        hashline: String,
+        new_content: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum PrCommands {
+    /// List open pull requests
+    List,
+    /// Checkout a pull request branch: `pr checkout <number>`
+    Checkout {
+        /// PR number
+        number: u64,
+    },
+    /// Run an LLM review of a pull request: `pr review <number>`
+    Review {
+        /// PR number
+        number: u64,
+        /// Post the review as a PR comment via `gh pr comment`
+        #[arg(long)]
+        post: bool,
+        /// Output format: plain (default) or json
+        #[arg(long, default_value = "plain")]
+        format: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum WisdomCommands {
+    /// Record a piece of wisdom: `wisdom record <category> <content>`
+    Record {
+        /// Category (e.g. conventions, successes, failures, patterns, experience)
+        category: String,
+        /// Content to record
+        content: String,
+    },
+    /// List all available wisdom categories
+    List,
+    /// Show content of a specific category: `wisdom show <category>`
+    Show {
+        /// Category name
+        category: String,
+    },
+    /// Delete a wisdom category: `wisdom delete <category>`
+    Delete {
+        /// Category name
+        category: String,
+    },
+    /// Inject all wisdom into the system prompt
+    Inject,
 }
 
 #[derive(Subcommand)]
@@ -461,7 +604,7 @@ enum BuildCommands {
     },
     /// Run tests
     Test {
-        /// Run only the test whose name matches <filter>
+        /// Run only the test whose name matches `<filter>`
         #[arg(short = 'n', long = "name")]
         name: Option<String>,
         /// Package to test
@@ -557,7 +700,12 @@ enum TodoCommands {
         priority: Option<PriorityArg>,
     },
     /// Delete a todo by ID
-    Delete { id: String },
+    Delete {
+        id: String,
+        /// Skip confirmation prompt
+        #[arg(short = 'y', long = "yes")]
+        yes: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -569,7 +717,12 @@ enum SessionCommands {
     /// Get a session by ID
     Get { id: String },
     /// Delete a session by ID
-    Delete { id: String },
+    Delete {
+        id: String,
+        /// Skip confirmation prompt
+        #[arg(short = 'y', long = "yes")]
+        yes: bool,
+    },
     /// Add a message to a session
     AddMessage {
         id: String,
@@ -584,6 +737,22 @@ enum SessionCommands {
     Continue { id: String },
     /// Undo the last message in a session
     Undo { id: String },
+    /// Export a session to a file (json or html format)
+    Export {
+        id: String,
+        output: PathBuf,
+        /// Output format: json (default) or html
+        #[arg(long, default_value = "json")]
+        format: String,
+    },
+    /// Import a session from a JSON file
+    Import { input: PathBuf },
+    /// Compress a session based on token threshold
+    Compress {
+        id: String,
+        /// Optional token threshold (default: 32000)
+        threshold: Option<u64>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -820,7 +989,7 @@ enum McpCommands {
     Info {
         /// Server command/URL followed by optional args.
         /// URL (http://...) → HTTP transport.
-        /// Otherwise treated as <command> [args...] → stdio transport.
+        /// Otherwise treated as `<command>` `[args...]` → stdio transport.
         #[arg(required = true)]
         connect: Vec<String>,
     },
@@ -830,7 +999,7 @@ enum McpCommands {
         tool: String,
         /// JSON arguments (optional, e.g. '{"text":"hello"}')
         args: Option<String>,
-        /// Server connection: <url> or <command> [args...]
+        /// Server connection: `<url>` or `<command>` `[args...]`
         #[arg(required = true)]
         connect: Vec<String>,
     },
@@ -884,6 +1053,34 @@ impl From<PriorityArg> for sisyphus_tools::TodoPriority {
     }
 }
 
+// ── Table formatting helpers ────────────────────────────
+
+fn short_id(id: &str) -> String {
+    if id.len() <= 12 { id.to_string() } else { format!("{}…", &id[..12]) }
+}
+
+fn print_table(header: &[&str], rows: &[Vec<String>]) {
+    if rows.is_empty() { return; }
+    let mut widths: Vec<usize> = header.iter().map(|h| h.len()).collect();
+    for row in rows {
+        for (i, cell) in row.iter().enumerate() {
+            widths[i] = widths[i].max(cell.len());
+        }
+    }
+    let hdr: Vec<String> = header.iter().enumerate()
+        .map(|(i, h)| format!("{:width$}", h, width = widths[i]))
+        .collect();
+    println!("  {}", hdr.join("  "));
+    let sep: Vec<String> = widths.iter().map(|w| "─".repeat(*w)).collect();
+    println!("  {}", sep.join("──"));
+    for row in rows {
+        let line: Vec<String> = row.iter().enumerate()
+            .map(|(i, c)| format!("{:width$}", c, width = widths[i]))
+            .collect();
+        println!("  {}", line.join("  "));
+    }
+}
+
 // ── Main ─────────────────────────────────────────────────
 
 #[tokio::main]
@@ -925,7 +1122,7 @@ async fn main() -> Result<()> {
     let bridge_addr = cli
         .bridge
         .clone()
-        .unwrap_or_else(|| "http://[::1]:50051".to_string());
+        .unwrap_or_else(|| sisyphus_cfg.bridge_address.clone());
 
     // Interactive TUI mode
     if cli.interactive || cli.command.is_none() {
@@ -949,12 +1146,12 @@ async fn main() -> Result<()> {
         if is_default_endpoint {
             std::sync::Arc::new(sisyphus_tools::DummyLlmClient)
         } else {
-            let llm_config = std::sync::Arc::new(std::sync::RwLock::new(sisyphus_cfg));
+            let llm_config = std::sync::Arc::new(std::sync::RwLock::new(sisyphus_cfg.clone()));
             std::sync::Arc::new(sisyphus_tools::llm::DynamicLlmClient::new(llm_config))
         }
     };
 
-    match cli.command.as_ref().unwrap() {
+    match cli.command.as_ref().context("No command specified")? {
         // ── file tools ──────────────────────────────────
         Commands::Read { path } => {
             let content = sisyphus_tools::file::read(path)?;
@@ -1085,12 +1282,13 @@ async fn main() -> Result<()> {
                 if items.is_empty() {
                     println!("No todos found.");
                 } else {
-                    for item in &items {
-                        println!(
-                            "  [{}] {} — {} ({})",
-                            item.id, item.content, item.status, item.priority
-                        );
-                    }
+                    let rows: Vec<Vec<String>> = items.iter().map(|item| vec![
+                        short_id(&item.id),
+                        item.content.clone(),
+                        item.status.to_string(),
+                        item.priority.to_string(),
+                    ]).collect();
+                    print_table(&["ID", "Content", "Status", "Priority"], &rows);
                 }
             }
             TodoCommands::Update {
@@ -1106,9 +1304,22 @@ async fn main() -> Result<()> {
                 let item = sisyphus_tools::todo_update(&todo_db, id, content.as_deref(), s, p)?;
                 println!("Updated: {} — {}", item.id, item.status);
             }
-            TodoCommands::Delete { id } => {
+            TodoCommands::Delete { id, yes: true } => {
                 sisyphus_tools::todo_delete(&todo_db, id)?;
                 println!("Deleted: {id}");
+            }
+            TodoCommands::Delete { id, yes: false } => {
+                eprint!("Delete todo {id}? [y/N] ");
+                std::io::stdout().flush()?;
+                let mut answer = String::new();
+                std::io::stdin().read_line(&mut answer)?;
+                let answer = answer.trim().to_lowercase();
+                if answer == "y" || answer == "yes" {
+                    sisyphus_tools::todo_delete(&todo_db, id)?;
+                    println!("Deleted: {id}");
+                } else {
+                    println!("Cancelled.");
+                }
             }
         },
 
@@ -1123,9 +1334,12 @@ async fn main() -> Result<()> {
                 if sessions.is_empty() {
                     println!("No sessions.");
                 } else {
-                    for s in &sessions {
-                        println!("  {} — {} ({} msgs)", s.id, s.name, s.message_count);
-                    }
+                    let rows: Vec<Vec<String>> = sessions.iter().map(|s| vec![
+                        short_id(&s.id),
+                        s.name.clone(),
+                        format!("{} msgs", s.message_count),
+                    ]).collect();
+                    print_table(&["ID", "Name", "Messages"], &rows);
                 }
             }
             SessionCommands::Get { id } => {
@@ -1135,9 +1349,22 @@ async fn main() -> Result<()> {
                     println!("  [{}] {}", msg.role, msg.content);
                 }
             }
-            SessionCommands::Delete { id } => {
+            SessionCommands::Delete { id, yes: true } => {
                 sisyphus_tools::session_delete(&session_db, id)?;
                 println!("Deleted session: {id}");
+            }
+            SessionCommands::Delete { id, yes: false } => {
+                eprint!("Delete session {id}? [y/N] ");
+                std::io::stdout().flush()?;
+                let mut answer = String::new();
+                std::io::stdin().read_line(&mut answer)?;
+                let answer = answer.trim().to_lowercase();
+                if answer == "y" || answer == "yes" {
+                    sisyphus_tools::session_delete(&session_db, id)?;
+                    println!("Deleted session: {id}");
+                } else {
+                    println!("Cancelled.");
+                }
             }
             SessionCommands::AddMessage { id, role, content } => {
                 let session = sisyphus_tools::session_add_message(&session_db, id, role, content)?;
@@ -1168,6 +1395,29 @@ async fn main() -> Result<()> {
                 let session = sisyphus_tools::session_undo(&session_db, id)?;
                 println!(
                     "Undid last message — session {} now has {} messages",
+                    session.id, session.message_count
+                );
+            }
+            SessionCommands::Export { id, output, format } => {
+                match format.as_str() {
+                    "html" => sisyphus_tools::session_export_html(&session_db, id, output)?,
+                    "json" => sisyphus_tools::session_export(&session_db, id, output)?,
+                    other => anyhow::bail!("unsupported export format '{other}'; use 'json' or 'html'"),
+                }
+                println!("Exported session {} to {} ({})", id, output.display(), format);
+            }
+            SessionCommands::Import { input } => {
+                let session = sisyphus_tools::session_import(&session_db, input)?;
+                println!("Imported session {} ({})", session.id, session.name);
+            }
+            SessionCommands::Compress { id, threshold } => {
+                let strategy = match threshold {
+                    Some(t) => sisyphus_tools::CompressStrategy::Threshold(*t),
+                    None => sisyphus_tools::CompressStrategy::default(),
+                };
+                let session = sisyphus_tools::session_compress(&session_db, id, &strategy)?;
+                println!(
+                    "Compressed session {} — now has {} messages",
                     session.id, session.message_count
                 );
             }
@@ -1797,9 +2047,149 @@ async fn main() -> Result<()> {
             PrecommitCommands::Uninstall { dir } => precommit::run_uninstall(dir.clone())?,
             PrecommitCommands::Status { dir } => precommit::run_status(dir.clone())?,
         },
+        // ── pr ──────────────────────────────────────────────────
+        Commands::Pr(sub) => match sub {
+            PrCommands::List => {
+                let prs = sisyphus_tools::PrManager::list_prs()?;
+                if prs.is_empty() {
+                    println!("No open pull requests found.");
+                } else {
+                    println!("{:<6} {:<40} {:<15} {:<10}", "Num", "Title", "Author", "State");
+                    println!("{}", "-".repeat(71));
+                    for pr in prs {
+                        println!(
+                            "{:<6} {:<40} {:<15} {:<10}",
+                            pr.number,
+                            pr.title.chars().take(37).collect::<String>() + if pr.title.len() > 37 { "..." } else { "" },
+                            pr.author,
+                            pr.state
+                        );
+                    }
+                }
+            }
+            PrCommands::Checkout { number } => {
+                sisyphus_tools::PrManager::checkout_pr(*number)?;
+                println!("Checked out PR #{}", number);
+            }
+            PrCommands::Review { number, post, format } => {
+                // Detect CI mode from environment
+                let ci_cfg = sisyphus_tools::CiConfig::from_env();
+                let use_json = format == "json" || ci_cfg.output_format == "json";
 
+                if use_json {
+                    println!("{{\"status\":\"running\",\"pr_number\":{},\"message\":\"Running LLM review...\"}}", number);
+                } else {
+                    println!("Running LLM review for PR #{}...", number);
+                }
+
+                let review = sisyphus_tools::PrManager::review_pr(*number, llm_client.clone()).await?;
+
+                if use_json {
+                    // JSON output for CI consumption
+                    let escaped_review = review
+                        .replace('\\', "\\\\")
+                        .replace('"', "\\\"")
+                        .replace('\n', "\\n")
+                        .replace('\r', "\\r");
+                    println!("{{\"status\":\"complete\",\"pr_number\":{},\"review\":\"{}\"}}", number, escaped_review);
+                } else {
+                    println!("\n=== PR Review Result ===\n");
+                    println!("{}", review);
+                }
+
+                // Post as PR comment if requested or in CI mode
+                if *post || ci_cfg.ci_mode {
+                    match sisyphus_tools::post_pr_comment(*number, &review) {
+                        Ok(url) => {
+                            if use_json {
+                                println!("{{\"status\":\"comment_posted\",\"pr_number\":{},\"url\":\"{}\"}}", number, url);
+                            } else {
+                                println!("\nReview comment posted: {}", url);
+                            }
+                        }
+                        Err(e) => {
+                            eprintln!("Warning: Failed to post PR comment: {}", e);
+                            if ci_cfg.ci_mode {
+                                // In CI mode, failing to post is non-fatal
+                                eprintln!("(non-fatal in CI mode)");
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        // ── wisdom ──────────────────────────────────────────────
+        Commands::Wisdom(sub) => match sub {
+            WisdomCommands::Record { category, content } => {
+                sisyphus_tools::wisdom_record(category, content).await?;
+                println!("Recorded wisdom in category: {category}");
+            }
+            WisdomCommands::List => {
+                let categories = sisyphus_tools::wisdom_list().await?;
+                if categories.is_empty() {
+                    println!("No wisdom categories found.");
+                } else {
+                    println!("Available wisdom categories:");
+                    for cat in &categories {
+                        println!("  {cat}");
+                    }
+                }
+            }
+            WisdomCommands::Show { category } => {
+                let content = sisyphus_tools::wisdom_get(category).await?;
+                println!("--- Wisdom: {} ---\n{content}", category);
+            }
+            WisdomCommands::Delete { category } => {
+                sisyphus_tools::wisdom_delete(category).await?;
+                println!("Deleted wisdom category: {category}");
+            }
+            WisdomCommands::Inject => {
+                let context = sisyphus_tools::wisdom_inject().await?;
+                if context.is_empty() {
+                    println!("No wisdom to inject.");
+                } else {
+                    println!("{context}");
+                }
+            }
+        },
+        // ── hashline ────────────────────────────────────────
+        Commands::Hashline(sub) => match sub {
+            HashlineCommands::Annotate { path } => {
+                let count = sisyphus_tools::hashline::annotate_file(path)?;
+                println!("Annotated {} lines in {}", count, path.display());
+            }
+            HashlineCommands::Verify { path } => {
+                let content = std::fs::read_to_string(path)?;
+                let mut valid = 0;
+                let mut invalid = 0;
+                
+                for (i, line) in content.lines().enumerate() {
+                    if sisyphus_tools::hashline::parse_hashline(line).is_some() {
+                        if sisyphus_tools::hashline::verify_line(&content, line).unwrap_or(false) {
+                            valid += 1;
+                        } else {
+                            invalid += 1;
+                            eprintln!("Invalid hashline at line {}: {}", i + 1, line.trim());
+                        }
+                    }
+                }
+                println!("Verification complete: {} valid, {} invalid", valid, invalid);
+                if invalid > 0 {
+                    std::process::exit(1);
+                }
+            }
+            HashlineCommands::Edit {
+                path,
+                hashline,
+                new_content,
+            } => {
+                let old = sisyphus_tools::hashline::edit_with_hashline(path, hashline, new_content)?;
+                println!("Successfully edited line. Old content: '{}'", old);
+            }
+        },
         // ── diagnose ───────────────────────────────────────
         Commands::Diagnose(sub) => match sub {
+
             DiagnoseCommands::Run {
                 lang,
                 package,
@@ -1827,9 +2217,187 @@ async fn main() -> Result<()> {
             )?,
         },
 
+        // ── github ──────────────────────────────────────────
+        Commands::Github(sub) => match sub {
+            GithubCommands::Action {
+                kind,
+                output,
+                toolchain,
+                cargo_flags: _,
+                exclude,
+                clippy,
+                deny,
+            } => {
+                let wk = match kind.as_str() {
+                    "ci" => sisyphus_tools::WorkflowKind::Ci,
+                    "pr-review" => sisyphus_tools::WorkflowKind::PrReview,
+                    "release" => sisyphus_tools::WorkflowKind::Release,
+                    other => anyhow::bail!(
+                        "Unknown workflow kind: {other}. Use: ci, pr-review, release"
+                    ),
+                };
+                let opts = sisyphus_tools::GenerateOptions {
+                    rust_toolchain: toolchain.clone(),
+                    cargo_extra_flags: String::new(),
+                    exclude_packages: exclude.clone(),
+                    include_clippy: *clippy,
+                    include_deny: *deny,
+                };
+                let path = match output {
+                    Some(p) => {
+                        let content = sisyphus_tools::generate_workflow(wk, &opts);
+                        std::fs::write(p, content)?;
+                        println!("Workflow written to {}", p.display());
+                        p.clone()
+                    }
+                    None => sisyphus_tools::write_workflow(wk, &opts)?,
+                };
+                println!("Generated {} workflow at {}", wk.as_str(), path.display());
+            }
+            GithubCommands::CiConfig => {
+                let cfg = sisyphus_tools::CiConfig::from_env();
+                println!("CI mode: {}", cfg.ci_mode);
+                println!("Output format: {}", cfg.output_format);
+                match &cfg.github_token {
+                    Some(_) => println!("GitHub token: present"),
+                    None => println!("GitHub token: not set"),
+                }
+                match &cfg.pr_number {
+                    Some(n) => println!("PR number: {n}"),
+                    None => println!("PR number: not set"),
+                }
+            }
+        },
+        // ── provider ─────────────────────────────────────────
+        Commands::Provider(sub) => {
+            let config = &sisyphus_cfg;
+            match sub {
+                ProviderCommands::List => {
+                    let providers = &config.llm.providers;
+                    if providers.is_empty() {
+                        println!("No providers configured.");
+                        println!("  Using model '{}' at {}",
+                            config.llm.model,
+                            config.llm.endpoint,
+                        );
+                    } else {
+                        println!("Registered providers (fallback order):");
+                        for (i, p) in providers.iter().enumerate() {
+                            let key_status = if p.api_key.is_empty() || p.api_key.starts_with("env:") {
+                                "key: <env>"
+                            } else {
+                                "key: set"
+                            };
+                            println!("  {}. {} (kind: {}, model: {}, {})",
+                                i + 1, p.name, p.kind, p.model, key_status,
+                            );
+                        }
+                    }
+                }
+                ProviderCommands::Test { name, prompt } => {
+                    let providers = &config.llm.providers;
+                    let provider = providers.iter().find(|p| p.name == *name);
+                    match provider {
+                        Some(p) => {
+                            println!("Testing provider '{}' (kind: {}, model: {})...", p.name, p.kind, p.model);
+                            let api_key = p.resolve_api_key();
+                            if api_key.is_empty() {
+                                eprintln!("API key for '{}' is empty. Check env var or config.", p.name);
+                            } else {
+                                println!("API key resolved ({} chars), endpoint: {}",
+                                    api_key.len(),
+                                    p.base_url.as_deref().unwrap_or("(default)"),
+                                );
+                                println!("Prompt: {}", prompt);
+                                println!("Test call would go here (API call disabled in CLI test mode).");
+                            }
+                        }
+                        None => {
+                            eprintln!("Provider '{}' not found. Use `provider list` to see available providers.", name);
+                        }
+                    }
+                }
+                ProviderCommands::Fallback => {
+                    let providers = &config.llm.providers;
+                    println!("Fallback chain for provider routing:");
+                    println!("  1. Try registered providers in order ({} total)", providers.len());
+                    for (i, p) in providers.iter().enumerate() {
+                        println!("     {}. {} (kind: {}, model: {})",
+                            i + 1, p.name, p.kind, p.model);
+                    }
+                    println!("  2. Fallback to default endpoint: {} with model '{}'",
+                        config.llm.endpoint, config.llm.model);
+                    println!();
+                    println!("Error handling in fallback:");
+                    println!("  - Transient/RateLimited errors -> skip to next provider");
+                    println!("  - Permanent/Auth errors -> abort immediately");
+                    println!("  - All providers exhausted -> fallback to default endpoint");
+                }
+            }
+        }
+        // ── tool ──────────────────────────────────────────────
+        Commands::Tool(sub) => {
+            match sub {
+                ToolCommands::RegisterMcp { prefix, command } => {
+                    let command_str = command.join(" ");
+                    let config_path = cli.config.as_deref()
+                        .map(|p| p.to_path_buf())
+                        .unwrap_or_else(|| {
+                            ["opencode.json", "opencode.jsonc", ".opencode.json", "sisyphus.toml"]
+                                .iter()
+                                .find(|p| std::path::Path::new(p).exists())
+                                .map(std::path::PathBuf::from)
+                                .unwrap_or_else(|| std::path::PathBuf::from("sisyphus.toml"))
+                        });
+
+                    let mut cfg = if config_path.exists() {
+                        let path_str = config_path.to_string_lossy();
+                        match sisyphus_types::Config::from_file(&path_str) {
+                            Ok(c) => c,
+                            Err(e) => {
+                                eprintln!("Warning: failed to load config: {e}, using defaults");
+                                sisyphus_types::Config::default()
+                            }
+                        }
+                    } else {
+                        sisyphus_types::Config::default()
+                    };
+
+                    cfg.mcp.stdio_servers.insert(prefix.clone(), command_str.clone());
+
+                    let path_str = config_path.to_string_lossy().to_string();
+                    cfg.save_to_file(&path_str)?;
+
+                    println!("Registered MCP tool '{}' -> {}", prefix, command_str);
+                    println!("Config saved to: {}", config_path.display());
+                    println!("Restart the bridge for changes to take effect.");
+                }
+                ToolCommands::List => {
+                    let providers = &sisyphus_cfg.mcp.stdio_servers;
+                    let http_servers = &sisyphus_cfg.mcp.http_servers;
+                    println!("Registered MCP tools:");
+                    if providers.is_empty() && http_servers.is_empty() {
+                        println!("  (none)");
+                        println!("Use `tool register-mcp <prefix> <command>` to add one.");
+                    }
+                    if !providers.is_empty() {
+                        println!("\n  Stdio servers:");
+                        for (prefix, cmd) in providers {
+                            println!("    {prefix}: {cmd}");
+                        }
+                    }
+                    if !http_servers.is_empty() {
+                        println!("\n  HTTP servers:");
+                        for (prefix, url) in http_servers {
+                            println!("    {prefix}: {url}");
+                        }
+                    }
+                }
+            }
+        }
         // ── plugin ─────────────────────────────────────────────
         Commands::Plugin(sub) => {
-            let mut client = get_bridge_client(&cli).await?;
+            let mut client = get_bridge_client(&cli, &sisyphus_cfg).await?;
             match sub {
                 PluginCommands::List => {
                     plugin::run_list(&mut client).await?;
@@ -1846,7 +2414,7 @@ async fn main() -> Result<()> {
             }
         }
         Commands::LearningInsights { strategy } => {
-            let mut client = get_bridge_client(&cli).await?;
+            let mut client = get_bridge_client(&cli, &sisyphus_cfg).await?;
             remote::run_learning_insights(&mut client, strategy.as_deref()).await?;
         }
         Commands::Health => {
@@ -1910,10 +2478,10 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-async fn get_bridge_client(cli: &Cli) -> Result<bridge::BridgeClient> {
+async fn get_bridge_client(cli: &Cli, config: &sisyphus_types::Config) -> Result<bridge::BridgeClient> {
     let addr = cli
         .bridge
         .clone()
-        .unwrap_or_else(|| "http://[::1]:50051".to_string());
+        .unwrap_or_else(|| config.bridge_address.clone());
     bridge::BridgeClient::connect(&addr).await
 }

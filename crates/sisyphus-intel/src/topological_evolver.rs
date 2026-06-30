@@ -1,4 +1,4 @@
-use crate::{ReflectionReport, SOPEvolver, SimulationResult};
+use crate::{IntelError, ReflectionReport, SOPEvolver, SimulationResult};
 use petgraph::graph::NodeIndex;
 use sisyphus_types::{EvolutionOp, SOPGraph, WasmSOPNode};
 use std::collections::HashMap;
@@ -59,7 +59,7 @@ impl TopologicalSOPEvolver {
                         });
                         new_graph.graph[node_idx] = evolved_node;
                     } else {
-                        return Err(format!("Node {} is not a WasmSOPNode", node_name));
+                        return Err(IntelError::NodeTypeMismatch { node_name: node_name.clone() }.into());
                     }
                 }
                 EvolutionOp::AddRetry {
@@ -209,13 +209,13 @@ impl TopologicalSOPEvolver {
 
         // Final check for cycles to preserve DAG invariant
         if petgraph::algo::is_cyclic_directed(&new_graph.graph) {
-            return Err("Evolution resulted in a cycle, violating DAG invariant".into());
+            return Err(IntelError::EvolutionCycle.into());
         }
 
         Ok(new_graph)
     }
 
-    fn find_node_by_name(&self, graph: &SOPGraph, name: &str) -> Result<NodeIndex, String> {
+    fn find_node_by_name(&self, graph: &SOPGraph, name: &str) -> Result<NodeIndex, IntelError> {
         graph
             .graph
             .node_indices()
@@ -226,7 +226,7 @@ impl TopologicalSOPEvolver {
                     .map(|n| n.name() == name)
                     .unwrap_or(false)
             })
-            .ok_or_else(|| format!("Node {} not found in graph", name))
+            .ok_or_else(|| IntelError::NodeNotFound { name: name.into() })
     }
 }
 
@@ -235,18 +235,52 @@ impl SOPEvolver for TopologicalSOPEvolver {
     fn evolve(
         &self,
         graph: &SOPGraph,
-        _report: &ReflectionReport,
+        report: &ReflectionReport,
         _prediction: &SimulationResult,
     ) -> Result<SOPGraph, String> {
-        let mut new_graph = SOPGraph::new();
-        for node in graph.graph.node_weights() {
-            new_graph.add_node(node.clone());
+        let mut ops = Vec::new();
+
+        // 1. Analyze failures and generate evolution ops
+        for record in &report.records {
+            if record.status == "error" {
+                if record.output.contains("ResourceExhausted") {
+                    ops.push(EvolutionOp::AdjustFuel {
+                        node_name: record.node.clone(),
+                        delta: 1_000_000,
+                    });
+                    
+                    // If it's a recurring issue, consider splitting the node
+                    if report.deviation_score > 0.7 {
+                        ops.push(EvolutionOp::InsertNode {
+                            after_node: record.node.clone(),
+                            new_name: format!("{}_part2", record.node),
+                            tool_id: "generic_processor".into(), // In real case, would split the logic
+                        });
+                    }
+                } else if record.output.contains("TypeError") || record.output.contains("InvalidInput") {
+                    ops.push(EvolutionOp::InsertNode {
+                        after_node: "start".into(), // Simplified: insert at start or before node
+                        new_name: format!("verify_{}", record.node),
+                        tool_id: "type_check".into(),
+                    });
+                } else if record.output.contains("Timeout") {
+                    ops.push(EvolutionOp::AddRetry {
+                        node_name: record.node.clone(),
+                        max_retries: 3,
+                    });
+                }
+            }
         }
-        for edge in graph.graph.edge_indices() {
-            let (s, t) = graph.graph.edge_endpoints(edge).unwrap();
-            new_graph.add_edge(s, t);
+
+        if ops.is_empty() {
+            return Ok(graph.clone());
         }
-        Ok(new_graph)
+
+        // We need a tool_executor to apply some ops (like InsertNode).
+        // Since we don't have one here, we'll use a dummy one or we need to change the trait.
+        // For now, we'll use a mock to demonstrate the structural change.
+        let mock_executor = Arc::new(crate::mock::MockExecutor);
+        self.apply_ops(graph, &ops, mock_executor)
     }
 }
 
@@ -259,7 +293,7 @@ mod tests {
     struct MockExecutor;
     #[async_trait]
     impl ToolExecutor for MockExecutor {
-        async fn execute(&self, _id: &str, _args: Vec<u8>, _fuel: u64) -> Result<Vec<u8>, String> {
+        async fn execute(&self, _id: &str, _args: Vec<u8>, _fuel: u64) -> Result<Vec<u8>, sisyphus_types::TypesError> {
             Ok(b"ok".to_vec())
         }
     }

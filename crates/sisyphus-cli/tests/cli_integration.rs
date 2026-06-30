@@ -2,7 +2,7 @@ use std::process::{Command, Output};
 
 /// Helper: run the sisyphus-cli binary with args, returning stdout/stderr.
 fn run_cli(args: &[&str]) -> Output {
-    let bin = assert_cmd::cargo::cargo_bin("sisyphus-cli");
+    let bin = assert_cmd::cargo::cargo_bin("sisyphus");
     Command::new(bin)
         .args(args)
         .output()
@@ -127,7 +127,7 @@ fn test_version_output() {
 
 #[test]
 fn test_interactive_mode_flag() {
-    let bin = assert_cmd::cargo::cargo_bin("sisyphus-cli");
+    let bin = assert_cmd::cargo::cargo_bin("sisyphus");
     let mut child = Command::new(bin)
         .arg("--interactive")
         .stdin(std::process::Stdio::piped())
@@ -412,6 +412,7 @@ fn test_todo_add_list_update_delete() {
         "todo",
         "delete",
         id,
+        "-y",
     ]);
     assert!(stdout.contains("Deleted:"));
 }
@@ -486,6 +487,7 @@ fn test_session_create_list_get_delete() {
         "session",
         "delete",
         session_id,
+        "-y",
     ]);
     assert!(stdout.contains("Deleted session"));
 }

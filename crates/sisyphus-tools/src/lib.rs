@@ -1,6 +1,9 @@
 use thiserror::Error;
 
+pub mod hashline;
+pub use hashline::*;
 pub mod agent_registry;
+pub mod pr;
 pub mod bash;
 pub mod build;
 pub mod config_store;
@@ -23,6 +26,8 @@ pub mod oracle;
 pub mod patch;
 pub mod permissions;
 pub mod plan;
+pub mod provider;
+pub use provider::*;
 pub mod precommit;
 pub use precommit::*;
 pub mod project_rules;
@@ -35,6 +40,11 @@ pub mod skill;
 pub mod todo;
 pub mod web;
 
+pub mod github;
+pub use github::*;
+pub mod bridge;
+pub use bridge::*;
+pub mod wisdom;
 pub mod agent_channel;
 pub mod architecture;
 pub mod auto_doc;
@@ -52,6 +62,8 @@ pub use model_router::*;
 pub mod team;
 pub mod test_gen;
 pub mod tool_registry;
+pub mod custom_tool;
+
 
 #[derive(Error, Debug)]
 pub enum ToolError {
@@ -102,6 +114,8 @@ pub enum Permission {
 
 pub type PermissionRules = Vec<(String, Permission)>;
 
+pub use pr::*;
+pub use wisdom::*;
 pub use agent_registry::*;
 pub use bash::*;
 pub use build::*;

@@ -9,7 +9,10 @@ use thiserror::Error;
 use wasmtime::*;
 
 pub mod plugin_manager;
+pub mod custom_executor;
 pub use plugin_manager::PluginManager;
+pub use custom_executor::CustomToolExecutor;
+
 
 #[derive(Error, Debug)]
 pub enum SandboxError {
@@ -152,7 +155,9 @@ impl ToolExecutor for WasmToolExecutor {
         tool_id: &str,
         _args: Vec<u8>,
         fuel_limit: u64,
-    ) -> Result<Vec<u8>, String> {
+    ) -> Result<Vec<u8>, sisyphus_types::TypesError> {
+        use sisyphus_types::TypesError;
+
         let span =
             tracing::info_span!("sandbox.execute", tool_id = %tool_id, fuel_limit = fuel_limit);
         let _enter = span.enter();
@@ -161,30 +166,36 @@ impl ToolExecutor for WasmToolExecutor {
         let module = self
             .get_or_compile_module(tool_id)
             .await
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| TypesError::ToolExecutionError { tool_id: tool_id.to_string(), details: e.to_string() })?;
 
         let linker = Linker::new(&self.engine);
         let mut store = Store::new(&self.engine, ());
         store.set_fuel(fuel_limit).map_err(|e| {
-            SandboxError::FuelError {
+            TypesError::ToolExecutionError {
                 tool_id: tool_id.to_string(),
-                source: e,
+                details: SandboxError::FuelError {
+                    tool_id: tool_id.to_string(),
+                    source: e,
+                }
+                .to_string(),
             }
-            .to_string()
         })?;
 
         let instance = linker.instantiate(&mut store, &module).map_err(|e| {
-            SandboxError::InstantiationError {
+            TypesError::ToolExecutionError {
                 tool_id: tool_id.to_string(),
-                source: e,
+                details: SandboxError::InstantiationError {
+                    tool_id: tool_id.to_string(),
+                    source: e,
+                }
+                .to_string(),
             }
-            .to_string()
         })?;
 
         // 5. Look for the "execute" export with dynamic signature handling
         let execute_func = instance
             .get_func(&mut store, "execute")
-            .ok_or_else(|| SandboxError::MissingExecuteExport(tool_id.to_string()).to_string())?;
+            .ok_or_else(|| TypesError::ToolExecutionError { tool_id: tool_id.to_string(), details: SandboxError::MissingExecuteExport(tool_id.to_string()).to_string() })?;
 
         // Build argument list based on the function's expected parameter count
         let func_ty = execute_func.ty(&store);
@@ -200,7 +211,7 @@ impl ToolExecutor for WasmToolExecutor {
             .map_err(|e| {
                 // Translate traps (fuel exhaustion, stack overflow, memory violation)
                 // into the ResourceExhausted format the tests expect.
-                SandboxError::ExecutionError(e.to_string())
+                TypesError::ToolExecutionError { tool_id: tool_id.to_string(), details: SandboxError::ExecutionError(e.to_string()).to_string() }
             });
         let call_duration = call_start.elapsed();
 
@@ -240,7 +251,7 @@ impl ToolExecutor for WasmToolExecutor {
             }
             Err(e) => {
                 tracing::warn!(error = %e, fuel_consumed, "WASM execution failed");
-                return Err(e.to_string());
+                return Err(e);
             }
         };
 
@@ -337,10 +348,11 @@ mod tests {
         let result = executor.execute("infinite_loop", vec![], 100).await;
         assert!(result.is_err());
         let err = result.unwrap_err();
+        let err_str = err.to_string();
         assert!(
-            err.contains("ResourceExhausted"),
+            err_str.contains("ResourceExhausted"),
             "Expected ResourceExhausted, got: {}",
-            err
+            err_str
         );
     }
 
@@ -350,12 +362,13 @@ mod tests {
         let result = executor.execute("memory_hog", vec![], 1000).await;
         assert!(result.is_err());
         let err = result.unwrap_err();
+        let err_str = err.to_string();
         assert!(
-            err.contains("ResourceExhausted")
-                || err.contains("memory")
-                || err.contains("translation"),
+            err_str.contains("ResourceExhausted")
+                || err_str.contains("memory")
+                || err_str.contains("translation"),
             "Expected memory-related error, got: {}",
-            err
+            err_str
         );
     }
 

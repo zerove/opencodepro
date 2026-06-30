@@ -33,6 +33,7 @@ impl ConfigStore {
     pub fn load(path: &str) -> Result<(Self, Arc<RwLock<Config>>), String> {
         let mut config = Config::from_file(path)?;
         config.apply_env_overrides();
+        config.validate().map_err(|e| e.to_string())?;
         let arc = Arc::new(RwLock::new(config));
         Ok((
             Self {
@@ -67,6 +68,10 @@ impl ConfigStore {
         match Config::from_file(&self.path) {
             Ok(mut new_config) => {
                 new_config.apply_env_overrides();
+                if let Err(e) = new_config.validate() {
+                    tracing::warn!("Config validation failed during reload, keeping previous config: {e}");
+                    return false;
+                }
                 let mut cfg = self.config.write().unwrap_or_else(|e| e.into_inner());
                 // Serialize both to check if content actually changed
                 let old_json = serde_json::to_value(&*cfg).ok();

@@ -1,9 +1,5 @@
-use sisyphus_bridge::sisyphus_bridge_client::SisyphusBridgeClient;
-use sisyphus_bridge::ExecuteSopRequest;
-
-pub mod sisyphus_bridge {
-    tonic::include_proto!("sisyphus.bridge");
-}
+use sisyphus_bridge_api::sisyphus_bridge_client::SisyphusBridgeClient;
+use sisyphus_bridge_api::ExecuteSopRequest;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {

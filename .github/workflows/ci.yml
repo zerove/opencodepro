@@ -84,7 +84,7 @@ jobs:
             sisyphus-roadmap \
           ; do
             echo "=== Testing $crate (integration) ==="
-            cargo test -p "$crate" --test '*' 2>&1 || true
+            cargo test -p "$crate" --test '*' 2>&1
             echo ""
           done
         # sisyphus-sandbox excluded — wasmtime 45 OOM on low-memory runners

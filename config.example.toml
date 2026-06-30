@@ -7,6 +7,74 @@
 #   SISYPHUS_CONFIG=/path/to/config.toml cargo run -p sisyphus-bridge
 # 或直接放置 config.toml 在工作目录下自动加载。
 
+# ── LLM 客户端参数 ──────────────────────────────────────────
+[llm]
+# API key（建议通过 SISYPHUS_LLM_API_KEY 环境变量设置）
+# 环境变量: SISYPHUS_LLM_API_KEY
+# 类型: string | 默认: ""
+api_key = ""
+
+# LLM API 端点
+# 环境变量: SISYPHUS_LLM_ENDPOINT
+# 类型: string | 默认: "http://localhost:8000/v1/chat/completions"
+endpoint = "http://localhost:8000/v1/chat/completions"
+
+# 默认模型名称
+# 环境变量: SISYPHUS_LLM_MODEL
+# 类型: string | 默认: "gpt-4o"
+model = "gpt-4o"
+
+# 预算执行模式: "Warning"（仅警告）或 "Strict"（超出即拒绝）
+# 环境变量: SISYPHUS_LLM_BUDGET_MODE
+# 类型: string | 默认: "Warning"
+# budget_mode = "Warning"
+
+# 按 agent 的模型覆盖（可选）
+# key = agent_id（如 "metis", "librarian", "momus"）
+# [llm.agents]
+# "metis" = { model = "gpt-4o", endpoint = "http://localhost:8000/v1/chat/completions" }
+# "librarian" = { model = "gpt-4o-mini" }
+
+# 按类别（category）的模型路由（可选）
+# key = category 名称
+# [llm.categories]
+# "reasoning" = { model = "gpt-4o", strategy = "round-robin" }
+
+# 多 provider 配置（可选，用于 fallback）
+# [[llm.providers]]
+# name = "google-gemini"
+# kind = "google"
+# endpoint = "https://generativelanguage.googleapis.com/v1"
+# api_key = "env:GEMINI_API_KEY"
+# model = "gemini-2.0-flash"
+# priority = 10
+# enabled = true
+
+# [[llm.providers]]
+# name = "anthropic-claude"
+# kind = "anthropic"
+# endpoint = "https://api.anthropic.com/v1"
+# api_key = "env:ANTHROPIC_API_KEY"
+# model = "claude-sonnet-4-20250514"
+# priority = 20
+# enabled = true
+
+# ── 认证令牌 ──────────────────────────────────────────────────
+# 可选的 bearer token，用于保护 bridge HTTP 和 gRPC 接口
+# 环境变量: SISYPHUS_AUTH_TOKEN
+# 类型: string | 默认: ""（不启用认证）
+auth_token = ""
+
+# gRPC bridge 地址（格式: http://[host]:port）
+# 环境变量: SISYPHUS_BRIDGE_ADDRESS
+# 类型: string | 默认: "http://[::1]:50051"
+bridge_address = "http://[::1]:50051"
+
+# HTTP REST API 地址（格式: http://[host]:port）
+# 环境变量: SISYPHUS_HTTP_ADDRESS
+# 类型: string | 默认: "http://[::1]:8080"
+http_address = "http://[::1]:8080"
+
 # ── 认知循环参数 ──────────────────────────────────────────
 [cognitive_loop]
 # 最大认知迭代次数（预测→执行→反思→进化循环上限）
@@ -73,9 +141,13 @@ wasm_tools_dir = "tools"
 
   # 基于 stdio 的 MCP 服务器: prefix = "command --args ..."
   # 工具以 "prefix:tool_name" 调用
-  [mcp.stdio]
+  [mcp.stdio_servers]
   # "custom" = "my-mcp-server --port 9000"
 
+  # TS/Zod 自定义工具 (.opencode/tools/*.ts)
+  # 需要先 npm install: cd workers/ts-tools-mcp && npm install
+  "tools" = "npx tsx workers/ts-tools-mcp/src/index.ts"
+
   # 基于 HTTP 的 MCP 服务器: prefix = "http://..."
-  [mcp.http]
+  [mcp.http_servers]
   # "remote" = "http://localhost:3000/mcp"

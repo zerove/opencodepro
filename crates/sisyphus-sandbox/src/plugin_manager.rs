@@ -11,17 +11,14 @@ use sisyphus_types::PluginDescriptor;
 
 pub struct PluginManager {
     executor: WasmToolExecutor,
-    #[allow(dead_code)]
-    tools_path: PathBuf,
     plugins: Arc<DashMap<String, PluginDescriptor>>,
 }
 
 impl PluginManager {
-    pub fn new(executor: WasmToolExecutor, tools_path: PathBuf) -> Arc<Self> {
+    pub fn new(executor: WasmToolExecutor) -> Arc<Self> {
         let plugins = Arc::new(DashMap::new());
         let manager = Arc::new(Self {
             executor,
-            tools_path,
             plugins: plugins.clone(),
         });
 
@@ -127,7 +124,7 @@ mod tests {
         let tools_path = tmp_dir.path().to_path_buf();
 
         let executor = WasmToolExecutor::with_config(Some(tools_path.clone()), None).unwrap();
-        let manager = PluginManager::new(executor, tools_path);
+        let manager = PluginManager::new(executor);
 
         (manager, tmp_dir)
     }

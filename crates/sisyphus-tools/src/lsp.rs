@@ -143,12 +143,10 @@ async fn write_message(
 // ── LSP Client ─────────────────────────────────────────────
 
 pub struct LspClient {
-    #[allow(dead_code)]
     child: Option<Child>,
     reader: BufReader<tokio::process::ChildStdout>,
     writer: tokio::io::BufWriter<tokio::process::ChildStdin>,
     next_id: u64,
-    #[allow(dead_code)]
     capabilities: Value,
     stderr_buf: Arc<Mutex<String>>,
 }
@@ -426,29 +424,6 @@ impl LspClient {
             .collect())
     }
 
-    #[allow(dead_code)]
-    pub async fn get_completions(
-        &mut self,
-        file_path: &str,
-        line: u32,
-        col: u32,
-    ) -> LspResult<Vec<LspCompletionItem>> {
-        let uri = to_file_uri(file_path);
-        let params = serde_json::json!({
-            "textDocument": { "uri": uri },
-            "position": { "line": line, "character": col },
-            "context": { "triggerKind": 1 }
-        });
-        let result = self.send_request("textDocument/completion", params).await?;
-
-        if let Ok(items) = serde_json::from_value::<Vec<LspCompletionItem>>(result.clone()) {
-            return Ok(items);
-        }
-        let list: Value = result;
-        let items = list.get("items").cloned().unwrap_or(Value::Null);
-        serde_json::from_value(items)
-            .map_err(|e| LspError::Protocol(format!("deserialize completions: {e}")))
-    }
 }
 
 impl Drop for LspClient {

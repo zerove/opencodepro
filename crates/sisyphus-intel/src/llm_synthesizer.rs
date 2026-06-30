@@ -78,56 +78,98 @@ impl LlmDrivenSynthesizer {
 }
 
 #[async_trait]
-// ... (existing code) ...
 impl FlowSynthesizer for LlmDrivenSynthesizer {
     async fn synthesize(
         &self,
         goal: &str,
         _context: &ExecutionContext,
+        mode: sisyphus_types::WorkMode,
     ) -> Result<SynthesisResult, String> {
-        let actions = self.decomposer.decompose(goal).await?;
-        let mut graph = SOPGraph::new();
+        if mode == sisyphus_types::WorkMode::Standard {
+            // --- Standard Linear Pipeline ---
+            let actions = self.decomposer.decompose(goal).await?;
+            let mut graph = SOPGraph::new();
 
-        if actions.is_empty() {
-            let n = graph.add_node(Arc::new(sisyphus_types::WasmSOPNode {
-                name: "default".into(),
-                tool_id: "fast_tool".into(),
-                fuel_limit: 1_000_000,
-                executor: self.tool_executor.clone(),
-            }));
-            return Ok(SynthesisResult {
+            if actions.is_empty() {
+                let n = graph.add_node(Arc::new(sisyphus_types::WasmSOPNode {
+                    name: "default".into(),
+                    tool_id: "fast_tool".into(),
+                    fuel_limit: 1_000_000,
+                    executor: self.tool_executor.clone(),
+                }));
+                return Ok(SynthesisResult {
+                    graph,
+                    start_node: n,
+                    plan_description: "Default single-node task".into(),
+                });
+            }
+
+            let mut prev = None;
+            let mut first_idx = None;
+
+            for action in &actions {
+                let label = action_label(action);
+                let n = graph.add_node(Arc::new(sisyphus_types::WasmSOPNode {
+                    name: label.into(),
+                    tool_id: tool_id_for_action(action).into(),
+                    fuel_limit: 1_000_000,
+                    executor: self.tool_executor.clone(),
+                }));
+                if first_idx.is_none() { first_idx = Some(n); }
+                if let Some(p) = prev { graph.add_edge(p, n); }
+                prev = Some(n);
+            }
+
+            Ok(SynthesisResult {
+                start_node: first_idx.expect("actions not empty"),
                 graph,
-                start_node: n,
-                plan_description: "Default single-node task".into(),
-            });
-        }
+                plan_description: format!("Standard pipeline: {}", actions.len()),
+            })
+        } else {
+            // --- UltraWork Rigorous Cycle (Explore -> Plan -> Implement -> Verify) ---
+            let mut graph = SOPGraph::new();
+            
+            // 1. Explore Node
+            let explore = graph.add_node(Arc::new(sisyphus_types::WasmSOPNode {
+                name: "Rigorous-Explore".into(),
+                tool_id: "lsp_symbol_search".into(),
+                fuel_limit: 2_000_000,
+                executor: self.tool_executor.clone(),
+            }));
 
-        // Simple linear pipeline synthesis from decomposed actions
-        let mut prev = None;
-        let mut first_idx = None;
+            // 2. Plan Node
+            let plan = graph.add_node(Arc::new(sisyphus_types::WasmSOPNode {
+                name: "Rigorous-Plan".into(),
+                tool_id: "metis/analyse".into(),
+                fuel_limit: 2_000_000,
+                executor: self.tool_executor.clone(),
+            }));
+            graph.add_edge(explore, plan);
 
-        for action in &actions {
-            let label = action_label(action);
-            let n = graph.add_node(Arc::new(sisyphus_types::WasmSOPNode {
-                name: label.into(),
-                tool_id: tool_id_for_action(action).into(),
+            // 3. Implement Node
+            let implement = graph.add_node(Arc::new(sisyphus_types::WasmSOPNode {
+                name: "Rigorous-Implement".into(),
+                tool_id: "bash_exec".into(),
+                fuel_limit: 5_000_000,
+                executor: self.tool_executor.clone(),
+            }));
+            graph.add_edge(plan, implement);
+
+            // 4. Verify Node
+            let verify = graph.add_node(Arc::new(sisyphus_types::WasmSOPNode {
+                name: "Rigorous-Verify".into(),
+                tool_id: "type_check".into(),
                 fuel_limit: 1_000_000,
                 executor: self.tool_executor.clone(),
             }));
-            if first_idx.is_none() {
-                first_idx = Some(n);
-            }
-            if let Some(p) = prev {
-                graph.add_edge(p, n);
-            }
-            prev = Some(n);
-        }
+            graph.add_edge(implement, verify);
 
-        Ok(SynthesisResult {
-            start_node: first_idx.expect("actions not empty"),
-            graph,
-            plan_description: format!("LLM-synthesized pipeline: {}", actions.len()),
-        })
+            Ok(SynthesisResult {
+                start_node: explore,
+                graph,
+                plan_description: "UltraWork Rigorous Cycle: Explore -> Plan -> Implement -> Verify".into(),
+            })
+        }
     }
 }
 
@@ -137,14 +179,6 @@ mod tests {
     use async_trait::async_trait;
     use sisyphus_types::ToolExecutor;
 
-    #[allow(dead_code)]
-    struct MockExecutor;
-    #[async_trait]
-    impl ToolExecutor for MockExecutor {
-        async fn execute(&self, _id: &str, _args: Vec<u8>, _fuel: u64) -> Result<Vec<u8>, String> {
-            Ok(b"ok".to_vec())
-        }
-    }
 
     #[tokio::test]
     async fn test_fallback_decomposer() {

@@ -1,6 +1,7 @@
 use crate::circuit_breaker::CircuitBreaker;
 use crate::metis::LlmClient;
 use crate::model_router::{ModelConfig, ModelRouter};
+use crate::provider::{build_provider_registry, ChatMessage, ChatRole, ProviderRegistry};
 use async_trait::async_trait;
 use serde_json::{json, Value};
 use sisyphus_types::Config;
@@ -43,22 +44,26 @@ pub struct OpenAiLlmClient {
 }
 
 impl OpenAiLlmClient {
-    pub fn new(api_key: String, endpoint: String, model: String) -> Self {
+    pub fn new(api_key: String, endpoint: String, model: String) -> Result<Self, String> {
         let client = reqwest::Client::builder()
             .timeout(Duration::from_secs(60))
             .build()
-            .expect("Failed to build reqwest::Client");
-        Self {
+            .map_err(|e| format!("Failed to build reqwest::Client: {e}"))?;
+        Ok(Self {
             api_key,
             endpoint,
             model,
             client,
-        }
+        })
     }
 }
 
 #[async_trait]
 impl LlmClient for OpenAiLlmClient {
+    async fn generate(&self, prompt: &str) -> Result<String, String> {
+        self.chat("", prompt, false).await
+    }
+
     async fn chat(&self, system: &str, user: &str, json_mode: bool) -> Result<String, String> {
         let client = &self.client;
 
@@ -125,6 +130,8 @@ pub struct DynamicLlmClient {
     router: Arc<ModelRouter>,
     budget_provider: Option<Arc<dyn BudgetProvider>>,
     current_context: Arc<RwLock<Option<RequestContext>>>,
+    current_category: Arc<RwLock<Option<String>>>,
+    provider_registry: Option<ProviderRegistry>,
 }
 
 impl DynamicLlmClient {
@@ -133,6 +140,10 @@ impl DynamicLlmClient {
             .timeout(Duration::from_secs(60))
             .build()
             .expect("Failed to build reqwest::Client");
+        let provider_registry = config
+            .read()
+            .ok()
+            .map(|cfg| build_provider_registry(&cfg.llm.providers));
         Self {
             config,
             client,
@@ -140,7 +151,14 @@ impl DynamicLlmClient {
             router: Arc::new(ModelRouter::new(0.0)),
             budget_provider: None,
             current_context: Arc::new(RwLock::new(None)),
+            current_category: Arc::new(RwLock::new(None)),
+            provider_registry,
         }
+    }
+
+    pub fn with_provider_registry(mut self, registry: ProviderRegistry) -> Self {
+        self.provider_registry = Some(registry);
+        self
     }
 
     pub fn with_budget_provider(mut self, provider: Arc<dyn BudgetProvider>) -> Self {
@@ -165,6 +183,22 @@ impl DynamicLlmClient {
             .write()
             .unwrap_or_else(|e| e.into_inner());
         *ctx = None;
+    }
+
+    pub fn set_category(&self, category: &str) {
+        let mut cat = self
+            .current_category
+            .write()
+            .unwrap_or_else(|e| e.into_inner());
+        *cat = Some(category.to_string());
+    }
+
+    pub fn clear_category(&self) {
+        let mut cat = self
+            .current_category
+            .write()
+            .unwrap_or_else(|e| e.into_inner());
+        *cat = None;
     }
 
     pub fn with_breaker(mut self, breaker: Arc<CircuitBreaker>) -> Self {
@@ -221,13 +255,89 @@ impl DynamicLlmClient {
             (api_key, cfg.llm.endpoint.clone(), cfg.llm.model.clone())
         }
     }
+
+    /// Get LLM parameters for a specific category.
+    ///
+    /// If the category has an override in `Config.llm.categories`, its
+    /// endpoint / model / api_key take precedence. Fallback fields
+    /// come from the base config.
+    pub fn get_params_for_category(&self, category: &str) -> (String, String, String) {
+        let cfg = self.config.read().unwrap_or_else(|e| e.into_inner());
+
+        if let Some(override_) = cfg.llm.categories.get(category) {
+            let endpoint = override_
+                .endpoint
+                .as_deref()
+                .unwrap_or(&cfg.llm.endpoint)
+                .to_string();
+            let api_key = match &override_.api_key {
+                Some(k) => Self::resolve_api_key(k),
+                None => Self::resolve_api_key(&cfg.llm.api_key),
+            };
+            let model = override_.model.clone();
+            (api_key, endpoint, model)
+        } else {
+            let api_key = Self::resolve_api_key(&cfg.llm.api_key);
+            (api_key, cfg.llm.endpoint.clone(), cfg.llm.model.clone())
+        }
+    }
 }
 
 #[async_trait]
 impl LlmClient for DynamicLlmClient {
+    async fn generate(&self, prompt: &str) -> Result<String, String> {
+        self.chat("", prompt, false).await
+    }
+
     async fn chat(&self, system: &str, user: &str, json_mode: bool) -> Result<String, String> {
-        let (api_key, endpoint, model) = self.get_current_params();
         let start_time = std::time::Instant::now();
+
+        // ── Try provider registry fallback chain first ─────────────
+        if let Some(ref registry) = self.provider_registry {
+            if !registry.fallback_order().is_empty() {
+                let chat_messages = vec![ChatMessage {
+                    role: ChatRole::User,
+                    content: user.to_string(),
+                }];
+                match registry.chat_with_fallback(system, &chat_messages, json_mode).await {
+                    Ok(response) => {
+                        // Record cost via router
+                        let token_estimate = (response.content.len() / 4).max(1) as u64;
+                        self.router
+                            .record_usage(&response.model, 0.0, token_estimate);
+                        return Ok(response.content);
+                    }
+                    Err(e) => {
+                        // All providers failed — log warning and fall through to default endpoint
+                        eprintln!("[LLM] All providers failed, falling back to default endpoint: {e}");
+                    }
+                }
+            }
+        }
+
+        // ── Fallback: existing OpenAI-compatible HTTP call ─────────
+        let (api_key, endpoint, model) = {
+            let category = self.current_category.read().unwrap_or_else(|e| e.into_inner()).clone();
+            if let Some(cat_name) = category {
+                let cfg = self.config.read().unwrap_or_else(|e| e.into_inner());
+                if let Some(cat_cfg) = cfg.llm.categories.get(&cat_name) {
+                    if let Some(strategy) = &cat_cfg.strategy {
+                        if let Ok(selected) = self.router.select(user, strategy) {
+                            let (resolved_api, _, _) = self.get_params_for_category(&cat_name);
+                            (resolved_api, selected.endpoint, selected.name)
+                        } else {
+                            self.get_params_for_category(&cat_name)
+                        }
+                    } else {
+                        self.get_params_for_category(&cat_name)
+                    }
+                } else {
+                    self.get_params_for_category(&cat_name)
+                }
+            } else {
+                self.get_current_params()
+            }
+        };
 
         // 1. Budget Pre-check
         let context = self
@@ -236,7 +346,6 @@ impl LlmClient for DynamicLlmClient {
             .unwrap_or_else(|e| e.into_inner())
             .clone();
         if let (Some(provider), Some(ctx)) = (&self.budget_provider, context.clone()) {
-            // Rough estimate: 1k tokens for system/user prompts
             let estimated_cost = 0.01;
             if let Err(e) = provider
                 .check_budget(&ctx.project_id, &ctx.goal_id, estimated_cost)
@@ -254,7 +363,7 @@ impl LlmClient for DynamicLlmClient {
         // Auto-register the current model with the router for cost tracking
         self.router.register_model(ModelConfig {
             name: model.clone(),
-            cost_per_1k_tokens: 0.01, // sensible default; overridable via with_router()
+            cost_per_1k_tokens: 0.01,
             provider: "default".into(),
             max_tokens: 128_000,
             endpoint: endpoint.clone(),
@@ -330,7 +439,7 @@ impl LlmClient for DynamicLlmClient {
             Some(text) => {
                 self.breaker.on_success(&model);
                 let token_estimate = (text.len() / 4).max(1) as u64;
-                let actual_cost = (token_estimate as f64 / 1000.0) * 0.01; // simplified cost calc
+                let actual_cost = (token_estimate as f64 / 1000.0) * 0.01;
                 self.router.record_usage(&model, 0.0, token_estimate);
 
                 // 2. Actual Cost Recording
@@ -490,7 +599,7 @@ mod tests {
     #[test]
     fn test_openai_llm_client_new() {
         let client =
-            OpenAiLlmClient::new("key".into(), "http://localhost:8080".into(), "gpt-4".into());
+            OpenAiLlmClient::new("key".into(), "http://localhost:8080".into(), "gpt-4".into()).unwrap();
         assert_eq!(client.api_key, "key");
         assert_eq!(client.endpoint, "http://localhost:8080");
         assert_eq!(client.model, "gpt-4");
@@ -564,7 +673,7 @@ mod tests {
 
     #[test]
     fn test_openai_llm_client_empty_fields() {
-        let client = OpenAiLlmClient::new("".into(), "".into(), "".into());
+        let client = OpenAiLlmClient::new("".into(), "".into(), "".into()).unwrap();
         assert_eq!(client.api_key, "");
         assert_eq!(client.endpoint, "");
         assert_eq!(client.model, "");
@@ -706,7 +815,7 @@ mod tests {
         let long_ep =
             "https://very-long-endpoint-url.example.com/api/v1/chat/completions".to_string();
         let long_model = "very-long-model-name-v1.0.0-experimental".to_string();
-        let client = OpenAiLlmClient::new(long_key.clone(), long_ep.clone(), long_model.clone());
+        let client = OpenAiLlmClient::new(long_key.clone(), long_ep.clone(), long_model.clone()).unwrap();
         assert_eq!(client.api_key, long_key);
         assert_eq!(client.endpoint, long_ep);
         assert_eq!(client.model, long_model);

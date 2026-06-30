@@ -41,7 +41,7 @@ impl CliPermission {
     /// `None` if needs to ask.
     pub fn check(&self, tool_name: &str) -> Option<bool> {
         for (pattern, perm) in &self.rules {
-            if tool_name.contains(pattern) {
+            if tool_name == pattern {
                 return match perm {
                     sisyphus_tools::Permission::Allow => Some(true),
                     sisyphus_tools::Permission::Deny => Some(false),

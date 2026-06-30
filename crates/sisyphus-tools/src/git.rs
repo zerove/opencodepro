@@ -304,10 +304,6 @@ mod tests {
         fs::write(dir.join(name), content).unwrap();
     }
 
-    #[allow(dead_code)]
-    fn git(args: &[&str], dir: &Path) -> String {
-        git_args(args, Some(dir)).unwrap()
-    }
 
     #[test]
     fn test_init_and_status_empty() {

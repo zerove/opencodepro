@@ -514,10 +514,10 @@ async fn connect_http(url: &str) -> Result<sisyphus_tools::McpClient> {
 
 /// Resolve connection args → client.
 /// If first arg looks like `http://` or `https://`, uses HTTP transport.
-/// Otherwise treats args as `<command> [args...]` for stdio transport.
+/// Otherwise treats args as `<command>` `[args...]` for stdio transport.
 async fn resolve_client(args: &[String]) -> Result<sisyphus_tools::McpClient> {
     if args.is_empty() {
-        anyhow::bail!("Provide either <url> for HTTP or <command> [args...] for stdio");
+        anyhow::bail!("Provide either `<url>` for HTTP or `<command>` `[args...]` for stdio");
     }
     let first = &args[0];
     if first.starts_with("http://") || first.starts_with("https://") {

@@ -17,11 +17,11 @@ impl ToolExecutor for MockExecutor {
         _tool_id: &str,
         _args: Vec<u8>,
         fuel_limit: u64,
-    ) -> Result<Vec<u8>, String> {
+    ) -> Result<Vec<u8>, sisyphus_types::TypesError> {
         let count = self.call_count.fetch_add(1, Ordering::SeqCst);
         // First 2 calls fail to test experience accumulation
         if count < 2 && fuel_limit <= 1_000_000 {
-            return Err("ResourceExhausted: fuel limit too low".to_string());
+            return Err(sisyphus_types::TypesError::ToolExecutionError { tool_id: _tool_id.to_string(), details: "ResourceExhausted: fuel limit too low".to_string() });
         }
         Ok(b"Success".to_vec())
     }
@@ -45,7 +45,7 @@ async fn test_experience_prediction_convergence() {
     let synthesizer = Arc::new(sisyphus_intel::GoalDrivenSynthesizer::new(
         tool_executor.clone(),
     ));
-    let kernel = SisyphusKernel::new(state_store, tool_executor.clone(), intel, synthesizer);
+    let kernel = SisyphusKernel::new(state_store, tool_executor.clone(), intel, Arc::new(sisyphus_tools::DummyLlmClient), synthesizer);
 
     let sop_id = "exp_test_sop";
     let mut graph = SOPGraph::new();

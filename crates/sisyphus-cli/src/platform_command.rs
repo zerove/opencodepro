@@ -4,7 +4,6 @@ use std::time::Duration;
 use tokio::process::Command;
 use tokio::time::timeout;
 
-#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct ProcessOutput {
     pub status: i32,
@@ -12,7 +11,6 @@ pub struct ProcessOutput {
     pub stderr: String,
 }
 
-#[allow(dead_code)]
 pub struct CommandBuilder {
     program: String,
     args: Vec<String>,
@@ -20,7 +18,6 @@ pub struct CommandBuilder {
     timeout: Option<Duration>,
 }
 
-#[allow(dead_code)]
 impl CommandBuilder {
     pub fn new(cmd: &str) -> Self {
         Self {

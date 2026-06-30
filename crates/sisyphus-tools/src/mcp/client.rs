@@ -50,8 +50,8 @@ impl McpClient {
         Ok(resp)
     }
 
+
     /// Send a notification (no response expected).
-    #[allow(dead_code)]
     async fn send_notification(
         &mut self,
         method: &str,

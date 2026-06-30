@@ -9,9 +9,45 @@ use sisyphus_types::{CompositeGraph, ExecutionContext, SOPGraph, SOPGraphConfig}
 use std::sync::Arc;
 use std::time::Instant;
 
+// ---------------------------------------------------------------------------
+// IntelError — typed error for the intel crate
+// ---------------------------------------------------------------------------
+
+#[derive(Debug)]
+pub enum IntelError {
+    NodeTypeMismatch { node_name: String },
+    EvolutionCycle,
+    NodeNotFound { name: String },
+}
+
+impl std::fmt::Display for IntelError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            IntelError::NodeTypeMismatch { node_name } => {
+                write!(f, "Node {} is not a WasmSOPNode", node_name)
+            }
+            IntelError::EvolutionCycle => {
+                write!(f, "Evolution resulted in a cycle, violating DAG invariant")
+            }
+            IntelError::NodeNotFound { name } => {
+                write!(f, "Node '{}' not found in graph", name)
+            }
+        }
+    }
+}
+
+impl std::error::Error for IntelError {}
+
+impl From<IntelError> for String {
+    fn from(e: IntelError) -> Self {
+        e.to_string()
+    }
+}
+
 pub mod formal_verification;
 pub mod llm_synthesizer;
 pub mod topological_evolver;
+pub mod mock;
 
 pub use formal_verification::{VerificationReport, VerificationRunner};
 pub use llm_synthesizer::{
@@ -35,6 +71,7 @@ pub trait FlowSynthesizer: Send + Sync {
         &self,
         goal: &str,
         context: &ExecutionContext,
+        mode: sisyphus_types::WorkMode,
     ) -> Result<SynthesisResult, String>;
 }
 
@@ -158,6 +195,7 @@ impl FlowSynthesizer for GoalDrivenSynthesizer {
         &self,
         goal: &str,
         _context: &ExecutionContext,
+        _mode: sisyphus_types::WorkMode,
     ) -> Result<SynthesisResult, String> {
         let actions = classify_goal(goal);
         let is_parallel = goal.to_lowercase().contains("parallel");
@@ -248,7 +286,7 @@ impl FlowSynthesizer for GoalDrivenSynthesizer {
             }
 
             Ok(SynthesisResult {
-                start_node: first_idx.expect("actions.len() >= 2 so at least one node exists"),
+                start_node: first_idx.ok_or_else(|| "actions must have at least 2 entries".to_string())?,
                 graph,
                 plan_description: build_plan_description(&actions, false),
             })
@@ -271,7 +309,7 @@ pub async fn synthesize_composite(
     let mut composite = CompositeGraph::new();
     for (i, goal) in goals.iter().enumerate() {
         let sop_id = format!("goal_{}", i);
-        let result = synthesizer.synthesize(goal, ctx).await?;
+        let result = synthesizer.synthesize(goal, ctx, sisyphus_types::WorkMode::Standard).await?;
         let config = SOPGraphConfig::from_graph(&result.graph);
         composite.add_graph(&sop_id, config);
     }
@@ -399,6 +437,7 @@ pub struct ReflectionReport {
     pub deviation_score: f64,
     pub suggested_improvements: Vec<String>,
     pub evolved_sop_structure: Option<String>,
+    pub records: Vec<RecordedNode>,
 }
 
 #[async_trait]
@@ -474,7 +513,7 @@ impl SOPEvolver for StandardEvolver {
             let node = graph
                 .graph
                 .node_weight(node_idx)
-                .expect("node_indices yields valid indices");
+                 .ok_or_else(|| "invalid node index in graph".to_string())?;
             let name = node.name().to_string();
 
             let mut evolved_node: Arc<dyn sisyphus_types::SOPNode> = if let Some(wasm_node) =
@@ -514,7 +553,7 @@ impl SOPEvolver for StandardEvolver {
             let (source, target) = graph
                 .graph
                 .edge_endpoints(edge)
-                .expect("edge_indices yields valid endpoints");
+                 .ok_or_else(|| "invalid edge endpoint in graph".to_string())?;
             let new_source = node_map
                 .get(&source)
                 .ok_or("Source node not found in evolved graph")?;
@@ -669,7 +708,7 @@ impl Simulator for MonteCarloSimulator {
                     let name = graph
                         .graph
                         .node_weight(current)
-                        .expect("random walk picks valid indices within nodes")
+                        .ok_or_else(|| "random walk picks invalid index".to_string())?
                         .name()
                         .to_string();
                     path_parts.push(name);
@@ -685,12 +724,16 @@ impl Simulator for MonteCarloSimulator {
                 }
 
                 let score = prob / (cost as f64).max(1.0);
-                (path_parts.join(" -> "), score, cost)
+                Ok((path_parts.join(" -> "), score, cost))
             })
             .reduce(
-                || (String::new(), -1.0f64, 0u64),
-                |a, b| if a.1 > b.1 { a } else { b },
-            );
+                || Ok::<(String, f64, u64), String>((String::new(), -1.0f64, 0u64)),
+                |a, b| {
+                    let a = a?;
+                    let b = b?;
+                    Ok(if a.1 > b.1 { a } else { b })
+                },
+            )?;
 
         let blended_cost = if final_cost > 0 {
             final_cost
@@ -936,6 +979,7 @@ impl Reflector for StandardReflector {
             deviation_score: deviation,
             suggested_improvements: suggestions,
             evolved_sop_structure: None,
+            records: records,
         })
     }
 }

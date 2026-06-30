@@ -31,7 +31,7 @@ async fn test_fuel_exhaustion() {
     let result = executor.execute("infinite_loop", vec![], 100).await;
 
     assert!(result.is_err());
-    assert!(result.unwrap_err().contains("ResourceExhausted"));
+    assert!(result.unwrap_err().to_string().contains("ResourceExhausted"));
 }
 
 #[tokio::test]
@@ -42,9 +42,10 @@ async fn test_memory_exhaustion() {
     assert!(result.is_err());
     let err = result.unwrap_err();
     // memory_hog tries memory.grow 1000, blocked by max_memory_size(10*65536)
+    let err_str = err.to_string();
     assert!(
-        err.contains("ResourceExhausted") || err.contains("memory") || err.contains("translation"),
+        err_str.contains("ResourceExhausted") || err_str.contains("memory") || err_str.contains("translation"),
         "Expected memory-related error, got: {}",
-        err
+        err_str
     );
 }

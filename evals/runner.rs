@@ -13,7 +13,7 @@ use sisyphus_tools::metis::LlmClient;
 use sisyphus_tools::{
     feedback::FeedbackStore, hook::HookRegistry, BuiltinToolExecutor, DynamicLlmClient,
 };
-use sisyphus_types::{Config, ToolExecutor};
+use sisyphus_types::{BudgetMode, Config, ToolExecutor};
 
 // ── Schema Definitions ──────────────────────────────────────────
 
@@ -56,6 +56,10 @@ struct MockLlmClient;
 
 #[async_trait]
 impl LlmClient for MockLlmClient {
+    async fn generate(&self, prompt: &str) -> Result<String, String> {
+        self.chat("", prompt, false).await
+    }
+
     async fn chat(&self, _system: &str, user: &str, _json_mode: bool) -> Result<String, String> {
         let response = json!({
             "request": user,
@@ -95,7 +99,10 @@ impl EvalRunner {
                     api_key,
                     endpoint,
                     model,
+                    budget_mode: BudgetMode::default(),
                     agents: std::collections::HashMap::new(),
+                    categories: std::collections::HashMap::new(),
+                    providers: Vec::new(),
                 },
                 ..Default::default()
             };
@@ -107,6 +114,7 @@ impl EvalRunner {
                 registry: HookRegistry::new(),
                 llm_client,
                 feedback_store: Arc::new(FeedbackStore::default_dir()),
+                bridge_client: None,
             },
         }
     }
@@ -200,7 +208,7 @@ impl EvalRunner {
                     passed: false,
                     score: 0.0,
                     failed_criteria: vec!["EXECUTION_ERROR".to_string()],
-                    error: Some(e),
+                    error: Some(e.to_string()),
                 }
             }
         }
@@ -274,6 +282,7 @@ struct CaseResult {
     passed: bool,
     score: f64,
     failed_criteria: Vec<String>,
+    #[allow(dead_code)]
     error: Option<String>,
 }
 

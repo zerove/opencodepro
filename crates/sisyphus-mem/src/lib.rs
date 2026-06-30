@@ -160,7 +160,7 @@ impl MfsStore {
                         .await?;
                 }
                 WriteOp::Flush(_) | WriteOp::Clear => {
-                    unreachable!("Flush and Clear ops should not be in the write buffer");
+                    anyhow::bail!("Flush and Clear ops should not be in the write buffer");
                 }
             }
         }
@@ -237,7 +237,7 @@ impl MfsStore {
                 .await?;
         }
         {
-            let mut cache = self.l1.lock().unwrap();
+            let mut cache = self.l1.lock().map_err(|e| anyhow::anyhow!("MFS L1 lock poisoned: {e}"))?;
             for (key, value) in keys_values {
                 cache.put(key, value);
             }
@@ -248,24 +248,6 @@ impl MfsStore {
         Ok(())
     }
 
-    /// Internal method to load all state from L2 into L1.
-    #[allow(dead_code)]
-    async fn warm_up(&self) -> Result<()> {
-        let rows: Vec<(String, String)> = sqlx::query_as("SELECT key, value FROM state")
-            .fetch_all(&self.l2)
-            .await?;
-
-        let mut cache = self
-            .l1
-            .lock()
-            .map_err(|e| anyhow::anyhow!("MFS L1 lock poisoned: {e}"))?;
-        for (key, value) in rows {
-            if let Ok(json_val) = serde_json::from_str::<serde_json::Value>(&value) {
-                cache.put(key, json_val);
-            }
-        }
-        Ok(())
-    }
 
     /// Returns the current L1 capacity.
     pub fn capacity(&self) -> usize {
@@ -294,14 +276,14 @@ impl MfsStore {
 
 #[async_trait]
 impl sisyphus_types::StateStore for MfsStore {
-    async fn get_state_json(&self, key: &str) -> Result<Option<serde_json::Value>, String> {
+    async fn get_state_json(&self, key: &str) -> Result<Option<serde_json::Value>, sisyphus_types::TypesError> {
         let span = tracing::info_span!("mem.get", key = %key);
         let _enter = span.enter();
 
         let start = Instant::now();
         // 1. Try L1
         {
-            let mut cache = self.l1.lock().map_err(|e| e.to_string())?;
+            let mut cache = self.l1.lock().map_err(|e| sisyphus_types::TypesError::StateStoreError(e.to_string()))?;
             if let Some(val) = cache.get(key) {
                 let duration = start.elapsed();
                 tracing::debug!(
@@ -322,14 +304,14 @@ impl sisyphus_types::StateStore for MfsStore {
                 .bind(key)
                 .fetch_optional(&self.l2)
                 .await
-                .map_err(|e| e.to_string())?;
+                .map_err(|e| sisyphus_types::TypesError::StateStoreError(e.to_string()))?;
 
         if let Some((_, value_str)) = row {
             let json_val: serde_json::Value =
-                serde_json::from_str(&value_str).map_err(|e| e.to_string())?;
+                serde_json::from_str(&value_str).map_err(|e| sisyphus_types::TypesError::StateStoreError(e.to_string()))?;
             // Update L1
             {
-                let mut cache = self.l1.lock().map_err(|e| e.to_string())?;
+                let mut cache = self.l1.lock().map_err(|e| sisyphus_types::TypesError::StateStoreError(e.to_string()))?;
                 cache.put(key.to_string(), json_val.clone());
             }
             let duration = l2_start.elapsed();
@@ -354,7 +336,7 @@ impl sisyphus_types::StateStore for MfsStore {
         Ok(None)
     }
 
-    async fn set_state_json(&self, key: &str, value: serde_json::Value) -> Result<(), String> {
+    async fn set_state_json(&self, key: &str, value: serde_json::Value) -> Result<(), sisyphus_types::TypesError> {
         let span = tracing::info_span!("mem.set", key = %key);
         let _enter = span.enter();
 
@@ -362,7 +344,7 @@ impl sisyphus_types::StateStore for MfsStore {
 
         // Update L1 (immediate)
         {
-            let mut cache = self.l1.lock().map_err(|e| e.to_string())?;
+            let mut cache = self.l1.lock().map_err(|e| sisyphus_types::TypesError::StateStoreError(e.to_string()))?;
             cache.put(key.to_string(), value.clone());
         }
 
@@ -372,7 +354,7 @@ impl sisyphus_types::StateStore for MfsStore {
                 key: key.to_string(),
                 value,
             })
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| sisyphus_types::TypesError::StateStoreError(e.to_string()))?;
 
         let duration = start.elapsed();
         tracing::debug!(duration_ms = duration.as_millis(), "Set queued completed");
