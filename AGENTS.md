@@ -1,3 +1,90 @@
+# Sisyphus Project Knowledge Base
+
+**Generated:** 2026-07-01
+**Stack:** Rust workspace (12 crates), async (tokio), gRPC (tonic), TUI (ratatui)
+
+## OVERVIEW
+
+认知引擎的 Rust 实现。核心是 DAG-based 认知循环（predict → execute → reflect → evolve），通过 gRPC bridge 暴露服务，TUI 作为主要客户端。
+
+## STRUCTURE
+
+```
+opencodepro/
+├── crates/
+│   ├── sisyphus-core/       # ★ 核心认知引擎: DAG 执行, 认知循环, SOP 编排
+│   ├── sisyphus-cli/        # TUI 客户端 (ratatui + crossterm)
+│   ├── sisyphus-bridge/     # gRPC 桥接服务 (tonic + prost)
+│   ├── sisyphus-types/      # 共享类型, Config, traits
+│   ├── sisyphus-mem/        # 持久化/存储层
+│   ├── sisyphus-intel/      # 情报分析模块
+│   ├── sisyphus-metrics/    # 指标收集
+│   ├── sisyphus-sandbox/    # 沙箱执行 (wasmtime)
+│   ├── sisyphus-tools/      # 工具链
+│   ├── sisyphus-tests/      # 集成测试
+│   ├── sisyphus-roadmap/    # 路线图/规划
+│   └── sisyphus-bridge-api/ # Bridge API 定义
+├── book/                    # mdbook 文档
+├── docs/                    # 技术文档, ADR, 对比
+├── evals/                   # 评测
+├── .github/workflows/       # CI
+├── config.example.toml      # 配置模板
+├── deny.toml                # cargo-deny 配置
+└── Makefile                 # 构建辅助
+```
+
+## WHERE TO LOOK
+
+| Task | Location | Notes |
+|------|----------|-------|
+| 认知循环核心逻辑 | `crates/sisyphus-core/src/` | DAG 执行、cognitive loop |
+| TUI 界面 | `crates/sisyphus-cli/src/tui/` | ratatui 组件 |
+| gRPC 服务 | `crates/sisyphus-bridge/src/` | tonic services |
+| 共享配置/traits | `crates/sisyphus-types/src/` | Config, traits, errors |
+| 存储层 | `crates/sisyphus-mem/src/` | 持久化实现 |
+| 集成测试 | `crates/sisyphus-tests/` | 跨 crate 场景 |
+| 构建/CI | `Makefile`, `.github/workflows/` | 构建命令和 CI pipeline |
+| 文档 | `book/`, `docs/adr/` | mdbook 和架构决策记录 |
+
+## CONVENTIONS
+
+| 规则 | 说明 |
+|------|------|
+| 错误处理 | 使用 `thiserror` 定义 Error enum，不得使用 `String` 或 `unwrap()` |
+| 异步 | 所有异步函数使用 `tokio` + `async-trait` |
+| 类型安全 | 禁止 `as any` / `@ts-ignore` / `@ts-expect-error` 等类型逃逸 |
+| 测试 | 集成测试放 `tests/`，单元测试放 `src/` 下 `#[cfg(test)]`，benchmark 用 `criterion` |
+| Bridge | 地址默认 `Config.bridge_address`，CLI 的 `--bridge` 可覆盖 |
+| 配置变更 | 需要同步更新 `config.example.toml`、`apply_env_overrides()` 和 `book/src/configuration.md` |
+
+## ANTI-PATTERNS
+
+- 不要在非测试代码中使用 `unwrap()` / `expect()` — 必须用 `CoreError` / `TypesError` 传播
+- 不要修改 trait 签名而不审计所有实现者
+- Bridge 测试不要在 CI 中运行（OOM），需加 `#[ignore = "requires dedicated runner"]`
+- 不要在默认 `cargo check`/`cargo test` 中包含 bridge 和 sandbox（已从 workspace 排除）
+
+## COMMANDS
+
+```bash
+cargo check-all          # 检查全部（排除 bridge/sandbox）
+cargo build-all          # 构建全部
+cargo test-all           # 测试全部
+cargo check -p sisyphus-bridge   # 单独检查 bridge
+cargo test -p sisyphus-core --lib  # 快速测试 core
+make test-core           # 完整 core 测试（含 wasmtime）
+cargo build --release -p sisyphus-cli  # 构建 release TUI
+cargo bench -p sisyphus-core   # 认知循环 benchmark
+```
+
+## NOTES
+
+- 需要 nightly Rust（rust-override 已设），因 bridge 在 1.96.0 stable 有 ICE
+- Bridge 默认绑定 `[::1]:50051`，有 IPv6→IPv4 自动回退
+- 全局 CLAUDE.md 通过 `@RTK.md` 引用 RTK token 优化工具
+
+---
+
 # Sisyphus Project Agents
 
 This file defines project-specific cognitive agents for the Sisyphus execution engine.
