@@ -80,3 +80,12 @@ graph TD
 - **WASM-first tooling**: All external tool code runs in sandboxed WASM instances with fuel and memory limits.
 - **Metrics everywhere**: Every significant operation records Prometheus metrics for observability.
 - **Two-level cache**: L1 (in-memory `DashMap`) + L2 (SQLite via `sqlx`) for fast key-value storage.
+
+## Architecture Decision Records
+
+Significant architecture decisions are documented as ADRs in [`docs/adr/`](https://github.com/zeronhq/sisyphus-wasm/tree/main/docs/adr):
+
+| ADR | Title | Status |
+|-----|-------|--------|
+| [ADR-002](https://github.com/zeronhq/sisyphus-wasm/blob/main/docs/adr/002-phase-3b-agent-team-architecture.md) | Phase 3b Multi-Agent Team Architecture | Proposed |
+| [ADR-003](https://github.com/zeronhq/sisyphus-wasm/blob/main/docs/adr/003-modular-restructure.md) | Monolithic-to-Modular Restructure | Accepted |
