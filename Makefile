@@ -20,7 +20,7 @@ BRIDGE_DEPS = crates/sisyphus-bridge/src/main.rs crates/sisyphus-bridge/build.rs
 
 .PHONY: all check-all build-all test-all
 .PHONY: check-bridge build-bridge test-bridge check-bridge-160
-.PHONY: clean
+.PHONY: dev-tui run-tui clean
 
 all: check-all
 
@@ -69,6 +69,28 @@ test-ci-core:
 	cargo clippy -p sisyphus-core
 	cargo test -p sisyphus-core --lib
 	cargo test -p sisyphus-core
+
+# — dev workflow for TUI (fast edit → compile → test) —
+#
+#   Terminal 1: make dev-tui    # auto-builds on file change
+#   Terminal 2: make run-tui    # (re)launch after build finishes
+#
+#   Or in one terminal with tmux:
+#     tmux split-window -h 'make dev-tui'
+#     make run-tui
+
+SISYPHUS_CLI_SRC = crates/sisyphus-cli/src
+
+dev-tui: $(SISYPHUS_CLI_SRC)
+	@echo " Watching $(SISYPHUS_CLI_SRC)/ for changes — Ctrl+C to stop"
+	@while inotifywait -q -r -e modify,create,delete,move $(SISYPHUS_CLI_SRC)/; do \
+		echo "━━━ changed → cargo build -p sisyphus-cli"; \
+		cargo build -p sisyphus-cli 2>&1 | tail -5; \
+		echo ""; \
+	done
+
+run-tui:
+	cargo run -p sisyphus-cli
 
 # — convenience —
 

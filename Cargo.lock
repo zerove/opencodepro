@@ -3805,6 +3805,7 @@ dependencies = [
  "anyhow",
  "arboard",
  "assert_cmd",
+ "base64 0.22.1",
  "clap",
  "crossterm",
  "glob",
@@ -3812,7 +3813,6 @@ dependencies = [
  "serde",
  "serde_json",
  "sisyphus-bridge-api",
- "sisyphus-sandbox",
  "sisyphus-tools",
  "sisyphus-types",
  "tempfile",
@@ -3822,6 +3822,7 @@ dependencies = [
  "tonic",
  "tracing",
  "tracing-subscriber",
+ "unicode-width 0.1.14",
 ]
 
 [[package]]

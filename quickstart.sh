@@ -98,14 +98,16 @@ port_is_listening() {
     local port="$1"
     # Try ss first (fast, most Linux)
     if command -v ss &>/dev/null; then
-        ss -tln 2>/dev/null | grep -q ":${port}[[:space:]]" && return 0
+        ss -tln 2>/dev/null | grep -qE ":${port}\b" && return 0
     fi
-    # Fallback: nc (sometimes available)
-    if command -v nc &>/dev/null; then
-        nc -z -w1 ::1 "${port}" 2>/dev/null && return 0
-    fi
-    # Fallback: bash /dev/tcp
-    timeout 1 bash -c "echo > /dev/tcp/[::1]/${port}" 2>/dev/null && return 0
+    # Try both IPv6 (::1) and IPv4 (127.0.0.1) for maximum compatibility
+    local addrs=("::1" "127.0.0.1")
+    for addr in "${addrs[@]}"; do
+        if command -v nc &>/dev/null; then
+            nc -z -w1 "${addr}" "${port}" 2>/dev/null && return 0
+        fi
+        timeout 1 bash -c "echo > /dev/tcp/${addr}/${port}" 2>/dev/null && return 0
+    done
     return 1
 }
 
@@ -145,14 +147,6 @@ start_bridge() {
         waited=$((waited + 1))
     done
     echo -e "${YELLOW}⚠${NC} Bridge not confirmed ready (continuing anyway, PID: ${BRIDGE_PID})"
-}
-
-stop_bridge() {
-    if [ -n "${BRIDGE_PID}" ]; then
-        kill "${BRIDGE_PID}" 2>/dev/null || true
-        wait "${BRIDGE_PID}" 2>/dev/null || true
-        echo -e "${GREEN}✓${NC} Bridge daemon stopped"
-    fi
 }
 
 stop_bridge() {

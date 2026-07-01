@@ -37,10 +37,23 @@ jobs:
         run: cargo build --workspace --exclude sisyphus-sandbox --exclude sisyphus-bridge
 
   test:
-    name: Test
+    name: Test (${{ matrix.crate_group }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - crate_group: "core"
+            crates: "sisyphus-types sisyphus-core sisyphus-tests"
+            build_jobs: 1
+          - crate_group: "tools"
+            crates: "sisyphus-tools sisyphus-cli sisyphus-metrics"
+            build_jobs: 2
+          - crate_group: "support"
+            crates: "sisyphus-intel sisyphus-mem sisyphus-roadmap"
+            build_jobs: 2
     env:
-      CARGO_BUILD_JOBS: 1
+      CARGO_BUILD_JOBS: ${{ matrix.build_jobs }}
     steps:
       - uses: actions/checkout@v4
 
@@ -54,17 +67,7 @@ jobs:
 
       - name: cargo test (lib first, fast feedback)
         run: |
-          for crate in \
-            sisyphus-types \
-            sisyphus-metrics \
-            sisyphus-intel \
-            sisyphus-mem \
-            sisyphus-tests \
-            sisyphus-core \
-            sisyphus-tools \
-            sisyphus-cli \
-            sisyphus-roadmap \
-          ; do
+          for crate in ${{ matrix.crates }}; do
             echo "=== Testing $crate (lib) ==="
             cargo test -p "$crate" --lib 2>&1
             echo ""
@@ -72,17 +75,7 @@ jobs:
 
       - name: cargo test (integration/slow)
         run: |
-          for crate in \
-            sisyphus-types \
-            sisyphus-metrics \
-            sisyphus-intel \
-            sisyphus-mem \
-            sisyphus-tests \
-            sisyphus-core \
-            sisyphus-tools \
-            sisyphus-cli \
-            sisyphus-roadmap \
-          ; do
+          for crate in ${{ matrix.crates }}; do
             echo "=== Testing $crate (integration) ==="
             cargo test -p "$crate" --test '*' 2>&1
             echo ""
