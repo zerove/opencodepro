@@ -263,3 +263,216 @@ pub async fn synthesize_composite(
     }
     Ok(composite)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // -----------------------------------------------------------------------
+    // classify_goal
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_classify_fetch_verb() {
+        let actions = classify_goal("fetch data from api");
+        assert_eq!(actions, vec![ActionType::Fetch]);
+    }
+
+    #[test]
+    fn test_classify_process_verb() {
+        let actions = classify_goal("transform the input into JSON");
+        assert_eq!(actions, vec![ActionType::Process]);
+    }
+
+    #[test]
+    fn test_classify_sink_verb() {
+        let actions = classify_goal("save results to database");
+        assert_eq!(actions, vec![ActionType::Sink]);
+    }
+
+    #[test]
+    fn test_classify_search_verb() {
+        let actions = classify_goal("search for matching documents");
+        assert_eq!(actions, vec![ActionType::Search]);
+    }
+
+    #[test]
+    fn test_classify_validate_verb() {
+        let actions = classify_goal("validate the configuration file");
+        assert_eq!(actions, vec![ActionType::Validate]);
+    }
+
+    #[test]
+    fn test_classify_multi_action_pipeline() {
+        // "fetch" + "process" + "save" = Fetch + Process + Sink
+        let actions = classify_goal("fetch data, process it, then save");
+        assert_eq!(actions.len(), 3);
+        assert!(actions.contains(&ActionType::Fetch));
+        assert!(actions.contains(&ActionType::Process));
+        assert!(actions.contains(&ActionType::Sink));
+    }
+
+    #[test]
+    fn test_classify_no_known_verb_defaults_to_fetch() {
+        let actions = classify_goal("do something random");
+        assert_eq!(actions, vec![ActionType::Fetch]);
+    }
+
+    #[test]
+    fn test_classify_case_insensitive() {
+        let actions = classify_goal("FETCH AND PARSE");
+        assert_eq!(actions, vec![ActionType::Fetch, ActionType::Process]);
+    }
+
+    #[test]
+    fn test_classify_no_duplicate_actions() {
+        // Even if "fetch" appears twice, only one Fetch in result
+        let actions = classify_goal("fetch then fetch again");
+        assert_eq!(actions, vec![ActionType::Fetch]);
+    }
+
+    #[test]
+    fn test_classify_verb_prefix_no_false_positive() {
+        // "store" is in "history" → should not trigger Sink
+        let actions = classify_goal("read the history log");
+        // "read" maps to Fetch, "history" does NOT contain "store"
+        assert_eq!(actions, vec![ActionType::Fetch]);
+    }
+
+    // -----------------------------------------------------------------------
+    // action_label
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_action_label_mapping() {
+        assert_eq!(action_label(&ActionType::Fetch), "fetch");
+        assert_eq!(action_label(&ActionType::Process), "process");
+        assert_eq!(action_label(&ActionType::Sink), "sink");
+        assert_eq!(action_label(&ActionType::Search), "search");
+        assert_eq!(action_label(&ActionType::Validate), "validate");
+    }
+
+    // -----------------------------------------------------------------------
+    // tool_id_for_action
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_tool_id_all_actions_return_fast_tool() {
+        // Currently all actions map to "fast_tool"
+        assert_eq!(tool_id_for_action(&ActionType::Fetch), "fast_tool");
+        assert_eq!(tool_id_for_action(&ActionType::Process), "fast_tool");
+        assert_eq!(tool_id_for_action(&ActionType::Sink), "fast_tool");
+        assert_eq!(tool_id_for_action(&ActionType::Search), "fast_tool");
+        assert_eq!(tool_id_for_action(&ActionType::Validate), "fast_tool");
+    }
+
+    // -----------------------------------------------------------------------
+    // build_plan_description
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_plan_description_linear() {
+        let actions = vec![ActionType::Fetch, ActionType::Process, ActionType::Sink];
+        let desc = build_plan_description(&actions, false);
+        assert_eq!(desc, "Linear Pipeline: fetch -> process -> sink");
+    }
+
+    #[test]
+    fn test_plan_description_single_action() {
+        let actions = vec![ActionType::Search];
+        let desc = build_plan_description(&actions, false);
+        assert_eq!(desc, "Linear Pipeline: search");
+    }
+
+    #[test]
+    fn test_plan_description_parallel_fanout() {
+        let actions = vec![ActionType::Fetch, ActionType::Process];
+        let desc = build_plan_description(&actions, true);
+        assert_eq!(desc, "Fan-out: fetch → Merge → process");
+    }
+
+    #[test]
+    fn test_plan_description_parallel_ignored_when_single() {
+        // parallel=true but only 1 action → falls back to linear
+        let actions = vec![ActionType::Fetch];
+        let desc = build_plan_description(&actions, true);
+        assert_eq!(desc, "Linear Pipeline: fetch");
+    }
+
+    // -----------------------------------------------------------------------
+    // GoalDrivenSynthesizer::synthesize — graph structure
+    // -----------------------------------------------------------------------
+
+    fn dummy_executor() -> Arc<dyn sisyphus_types::ToolExecutor> {
+        Arc::new(DummyExecutor)
+    }
+
+    struct DummyExecutor;
+    #[async_trait::async_trait]
+    impl sisyphus_types::ToolExecutor for DummyExecutor {
+        async fn execute(
+            &self,
+            _tool_id: &str,
+            _args: Vec<u8>,
+            _fuel_limit: u64,
+        ) -> Result<Vec<u8>, sisyphus_types::TypesError> {
+            Ok(b"mock".to_vec())
+        }
+    }
+
+    fn test_synthesizer() -> GoalDrivenSynthesizer {
+        GoalDrivenSynthesizer::new(dummy_executor())
+    }
+
+    fn empty_ctx() -> ExecutionContext {
+        ExecutionContext::new()
+    }
+
+    #[tokio::test]
+    async fn test_synthesize_single_action() {
+        let syn = test_synthesizer();
+        let result = syn
+            .synthesize("fetch the data", &empty_ctx(), sisyphus_types::WorkMode::Standard)
+            .await
+            .unwrap();
+        assert_eq!(result.graph.graph.node_count(), 1);
+        assert!(result.plan_description.contains("Single-node"));
+    }
+
+    #[tokio::test]
+    async fn test_synthesize_linear_pipeline() {
+        let syn = test_synthesizer();
+        let result = syn
+            .synthesize("fetch and process the data", &empty_ctx(), sisyphus_types::WorkMode::Standard)
+            .await
+            .unwrap();
+        // Fetch → Process = 2 nodes, 1 edge
+        assert_eq!(result.graph.graph.node_count(), 2);
+        assert_eq!(result.graph.graph.edge_count(), 1);
+        assert!(result.plan_description.contains("Pipeline"));
+    }
+
+    #[tokio::test]
+    async fn test_synthesize_parallel_fanout() {
+        let syn = test_synthesizer();
+        let result = syn
+            .synthesize("fetch and process in parallel", &empty_ctx(), sisyphus_types::WorkMode::Standard)
+            .await
+            .unwrap();
+        // Fetch + Process → Merge = 3 nodes, 2 edges
+        assert_eq!(result.graph.graph.node_count(), 3);
+        assert_eq!(result.graph.graph.edge_count(), 2);
+        assert!(result.plan_description.contains("Fan-out"));
+    }
+
+    #[tokio::test]
+    async fn test_synthesize_empty_goal_defaults() {
+        let syn = test_synthesizer();
+        let result = syn
+            .synthesize("xyzzy", &empty_ctx(), sisyphus_types::WorkMode::Standard)
+            .await
+            .unwrap();
+        // Falls back to "default" single node
+        assert_eq!(result.graph.graph.node_count(), 1);
+    }
+}
