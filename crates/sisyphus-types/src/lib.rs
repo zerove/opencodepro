@@ -1,3 +1,4 @@
+#![allow(clippy::cast_precision_loss)]
 pub mod errors;
 pub mod roadmap;
 pub mod graph;

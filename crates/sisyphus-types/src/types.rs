@@ -88,18 +88,15 @@ pub struct PlatformConfig {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+#[derive(Default)]
 pub enum WorkMode {
     /// Standard mode: Balanced speed and accuracy.
+    #[default]
     Standard,
     /// UltraWork mode: Zero-compromise, evidence-bound, high-rigor mode.
     UltraWork,
 }
 
-impl Default for WorkMode {
-    fn default() -> Self {
-        Self::Standard
-    }
-}
 
 /// Topological evolution operation on a SOP graph.
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]

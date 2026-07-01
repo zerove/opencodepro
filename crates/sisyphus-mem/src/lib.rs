@@ -181,7 +181,7 @@ impl MfsStore {
     }
 
     /// Captures a point-in-time snapshot of the current state.
-    pub async fn take_snapshot(&self) -> Result<Snapshot> {
+    pub fn take_snapshot(&self) -> Result<Snapshot> {
         let span = tracing::info_span!("mem.snapshot.take");
         let _enter = span.enter();
 
@@ -424,7 +424,7 @@ mod tests {
 
         store.set_state_json("k", json!("v1")).await.unwrap();
 
-        let snap = store.take_snapshot().await.unwrap();
+        let snap = store.take_snapshot().unwrap();
 
         store.set_state_json("k", json!("v2")).await.unwrap();
         assert_eq!(
@@ -446,7 +446,7 @@ mod tests {
         store.set_state_json("k1", json!(1)).await.unwrap();
         store.set_state_json("k2", json!(2)).await.unwrap();
 
-        let snapshot = store.take_snapshot().await.unwrap();
+        let snapshot = store.take_snapshot().unwrap();
 
         store.set_state_json("k1", json!(10)).await.unwrap();
         store.set_state_json("k3", json!(3)).await.unwrap();

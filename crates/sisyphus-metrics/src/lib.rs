@@ -1,3 +1,4 @@
+#![allow(clippy::cast_precision_loss)]
 use metrics_exporter_prometheus::PrometheusBuilder;
 use std::net::SocketAddr;
 use thiserror::Error;

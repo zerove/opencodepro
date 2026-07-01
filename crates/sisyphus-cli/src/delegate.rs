@@ -45,7 +45,7 @@ pub async fn run_tasks(file: PathBuf, max_concurrent: usize) -> Result<()> {
         .collect();
 
     let orchestrator = sisyphus_tools::WorkOrchestrator::new(max_concurrent);
-    let (mut rx, handle) = orchestrator.run_all_with_events(units).await;
+    let (mut rx, handle) = orchestrator.run_all_with_events(units)?;
 
     use sisyphus_tools::DelegateEvent;
     let mut completed = 0usize;

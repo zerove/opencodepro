@@ -1,179 +1,18 @@
+#![allow(clippy::cast_precision_loss)]
 pub mod milestone_generator;
 pub mod resource_optimizer;
 pub mod strategic_reflection;
+
+pub mod error;
+pub use error::RoadmapError;
+
+pub mod types;
+pub use types::*;
 
 use serde_json::Value;
 use sisyphus_mem::MfsStore;
 use sisyphus_types::{GoalRef, Milestone, MilestoneStatus, Phase, Project, Roadmap, StateStore};
 use std::sync::Arc;
-use thiserror::Error;
-
-// ---------------------------------------------------------------------------
-// Errors
-// ---------------------------------------------------------------------------
-
-#[derive(Error, Debug)]
-pub enum RoadmapError {
-    #[error("Project '{0}' not found")]
-    ProjectNotFound(String),
-    #[error("Milestone '{0}' not found in project '{1}'")]
-    MilestoneNotFound(String, String),
-    #[error("Phase '{0}' not found in milestone '{1}'")]
-    PhaseNotFound(String, String),
-    #[error("Goal '{0}' not found in phase '{1}'")]
-    GoalNotFound(String, String),
-    #[error("Duplicate project id: '{0}' already exists")]
-    DuplicateProject(String),
-    #[error("Serialization error: {0}")]
-    Serialization(String),
-    #[error("Persistence error: {0}")]
-    Persistence(String),
-    #[error("Internal error: {0}")]
-    Internal(String),
-}
-
-impl From<serde_json::Error> for RoadmapError {
-    fn from(e: serde_json::Error) -> Self {
-        RoadmapError::Serialization(e.to_string())
-    }
-}
-
-impl From<sisyphus_types::TypesError> for RoadmapError {
-    fn from(e: sisyphus_types::TypesError) -> Self {
-        RoadmapError::Persistence(e.to_string())
-    }
-}
-
-impl From<String> for RoadmapError {
-    fn from(e: String) -> Self {
-        RoadmapError::Persistence(e)
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Phase 2 — Progress tracking types
-// ---------------------------------------------------------------------------
-
-/// Per-goal progress detail.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct GoalProgress {
-    pub goal_id: String,
-    pub description: String,
-    pub status: MilestoneStatus,
-}
-
-/// Per-phase progress breakdown.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct PhaseProgress {
-    pub phase_id: String,
-    pub name: String,
-    pub goal_count: usize,
-    pub completed_count: usize,
-    pub progress: f64,
-    pub goals: Vec<GoalProgress>,
-}
-
-/// Per-milestone progress breakdown.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct MilestoneProgress {
-    pub milestone_id: String,
-    pub name: String,
-    pub status: MilestoneStatus,
-    pub phase_count: usize,
-    pub goal_count: usize,
-    pub completed_count: usize,
-    pub progress: f64,
-    pub phases: Vec<PhaseProgress>,
-}
-
-/// Full progress report for a project.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct ProgressReport {
-    pub project_id: String,
-    pub project_name: String,
-    pub overall_progress: f64,
-    pub milestone_count: usize,
-    pub total_goals: usize,
-    pub completed_goals: usize,
-    pub milestones: Vec<MilestoneProgress>,
-}
-
-// ---------------------------------------------------------------------------
-// Phase 2 — Dynamic roadmap adjustment types
-// ---------------------------------------------------------------------------
-
-/// Outcome of a single goal execution.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct ExecutionOutcome {
-    pub goal_id: String,
-    pub project_id: String,
-    pub milestone_id: String,
-    pub phase_id: String,
-    pub success: bool,
-    pub deviation_score: Option<f64>,
-    pub error: Option<String>,
-    pub timestamp: u64,
-    pub actual_cost: f64,
-    pub duration_secs: f64,
-}
-
-/// Severity of a detected problem in the roadmap.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
-pub enum ProblemSeverity {
-    Warning,
-    Critical,
-}
-
-/// A detected problem within the roadmap.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct RoadmapProblem {
-    pub severity: ProblemSeverity,
-    pub message: String,
-    pub milestone_id: Option<String>,
-    pub phase_id: Option<String>,
-    pub goal_id: Option<String>,
-}
-
-/// Suggested adjustment to address a roadmap problem.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct AdjustmentSuggestion {
-    pub problem: String,
-    pub action: String,
-    pub target_goal_id: Option<String>,
-}
-
-/// Per-milestone completion prediction.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct MilestonePrediction {
-    pub name: String,
-    pub progress_pct: f64,
-    pub remaining_goals: usize,
-    pub risk_level: String,
-}
-
-/// Overall completion prediction for a project.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct ProgressPrediction {
-    pub project_id: String,
-    pub project_name: String,
-    pub overall_progress_pct: f64,
-    pub remaining_goals: usize,
-    pub milestone_predictions: Vec<MilestonePrediction>,
-    pub estimated_completion_order: Vec<String>,
-    pub risk_level: String,
-}
-
-/// Health evaluation result for a project's roadmap.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct RoadmapHealth {
-    pub project_id: String,
-    pub healthy: bool,
-    pub blocked_milestones: Vec<String>,
-    pub stale_goals: Vec<String>,
-    pub recent_failures: usize,
-    pub problems: Vec<RoadmapProblem>,
-    pub suggestions: Vec<AdjustmentSuggestion>,
-}
 
 // ---------------------------------------------------------------------------
 // Key conventions

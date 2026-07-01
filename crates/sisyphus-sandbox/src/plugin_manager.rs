@@ -44,7 +44,7 @@ impl PluginManager {
         Ok(())
     }
 
-    pub async fn unload_plugin(&self, name: &str) -> Result<(), String> {
+    pub fn unload_plugin(&self, name: &str) -> Result<(), String> {
         debug!(plugin = %name, "Unloading plugin");
         if let Some((_, desc)) = self.plugins.remove(name) {
             // Invalidate cache in executor
@@ -168,7 +168,7 @@ mod tests {
         manager.register_plugin(desc).await.unwrap();
         assert_eq!(manager.list_plugins().len(), 1);
 
-        manager.unload_plugin("test-plugin").await.unwrap();
+        manager.unload_plugin("test-plugin").unwrap();
         assert_eq!(manager.list_plugins().len(), 0);
     }
 

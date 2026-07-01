@@ -8,7 +8,7 @@ fn resolve_dir(cwd: Option<PathBuf>) -> Option<PathBuf> {
 
 // ── status ─────────────────────────────────────────────────
 
-pub async fn run_status(cwd: Option<PathBuf>) -> Result<()> {
+pub fn run_status(cwd: Option<PathBuf>) -> Result<()> {
     let dir = resolve_dir(cwd);
     let s = sisyphus_tools::git::status(dir.as_deref())?;
 
@@ -61,7 +61,7 @@ fn status_char(c: char) -> &'static str {
 
 // ── diff ───────────────────────────────────────────────────
 
-pub async fn run_diff(pathspec: Option<String>, cached: bool, cwd: Option<PathBuf>) -> Result<()> {
+pub fn run_diff(pathspec: Option<String>, cached: bool, cwd: Option<PathBuf>) -> Result<()> {
     let dir = resolve_dir(cwd);
     let d = sisyphus_tools::git::diff(pathspec.as_deref(), cached, dir.as_deref())?;
     if d.is_empty() {
@@ -74,7 +74,7 @@ pub async fn run_diff(pathspec: Option<String>, cached: bool, cwd: Option<PathBu
 
 // ── add ────────────────────────────────────────────────────
 
-pub async fn run_add(pathspecs: Vec<String>, cwd: Option<PathBuf>) -> Result<()> {
+pub fn run_add(pathspecs: Vec<String>, cwd: Option<PathBuf>) -> Result<()> {
     let dir = resolve_dir(cwd);
     let refs: Vec<&str> = pathspecs.iter().map(|s| s.as_str()).collect();
     if refs.is_empty() {
@@ -87,7 +87,7 @@ pub async fn run_add(pathspecs: Vec<String>, cwd: Option<PathBuf>) -> Result<()>
 
 // ── commit ─────────────────────────────────────────────────
 
-pub async fn run_commit(message: String, allow_empty: bool, cwd: Option<PathBuf>) -> Result<()> {
+pub fn run_commit(message: String, allow_empty: bool, cwd: Option<PathBuf>) -> Result<()> {
     let dir = resolve_dir(cwd);
     let out = sisyphus_tools::git::commit(&message, allow_empty, dir.as_deref())?;
     println!("{out}");
@@ -96,7 +96,7 @@ pub async fn run_commit(message: String, allow_empty: bool, cwd: Option<PathBuf>
 
 // ── log ────────────────────────────────────────────────────
 
-pub async fn run_log(count: usize, cwd: Option<PathBuf>) -> Result<()> {
+pub fn run_log(count: usize, cwd: Option<PathBuf>) -> Result<()> {
     let dir = resolve_dir(cwd);
     let log = sisyphus_tools::git::log(count, dir.as_deref())?;
     if log.entries.is_empty() {
@@ -117,7 +117,7 @@ pub async fn run_log(count: usize, cwd: Option<PathBuf>) -> Result<()> {
 
 // ── branch ─────────────────────────────────────────────────
 
-pub async fn run_branch(cwd: Option<PathBuf>) -> Result<()> {
+pub fn run_branch(cwd: Option<PathBuf>) -> Result<()> {
     let dir = resolve_dir(cwd);
     let branches = sisyphus_tools::git::branch(dir.as_deref())?;
     for b in &branches {
@@ -129,7 +129,7 @@ pub async fn run_branch(cwd: Option<PathBuf>) -> Result<()> {
 
 // ── checkout ───────────────────────────────────────────────
 
-pub async fn run_checkout(branch: String, create: bool, cwd: Option<PathBuf>) -> Result<()> {
+pub fn run_checkout(branch: String, create: bool, cwd: Option<PathBuf>) -> Result<()> {
     let dir = resolve_dir(cwd);
     let out = sisyphus_tools::git::checkout(&branch, create, dir.as_deref())?;
     println!("{out}");
@@ -138,7 +138,7 @@ pub async fn run_checkout(branch: String, create: bool, cwd: Option<PathBuf>) ->
 
 // ── push ───────────────────────────────────────────────────
 
-pub async fn run_push(
+pub fn run_push(
     remote: String,
     branch: Option<String>,
     force: bool,
@@ -155,7 +155,7 @@ pub async fn run_push(
 
 // ── pull ───────────────────────────────────────────────────
 
-pub async fn run_pull(remote: String, branch: Option<String>, cwd: Option<PathBuf>) -> Result<()> {
+pub fn run_pull(remote: String, branch: Option<String>, cwd: Option<PathBuf>) -> Result<()> {
     let dir = resolve_dir(cwd);
     let br = branch.unwrap_or_else(|| {
         sisyphus_tools::git::current_branch(dir.as_deref()).unwrap_or_else(|_| "main".into())
@@ -167,7 +167,7 @@ pub async fn run_pull(remote: String, branch: Option<String>, cwd: Option<PathBu
 
 // ── summary ────────────────────────────────────────────────
 
-pub async fn run_summary(cwd: Option<PathBuf>) -> Result<()> {
+pub fn run_summary(cwd: Option<PathBuf>) -> Result<()> {
     let dir = resolve_dir(cwd);
     let s = sisyphus_tools::git::summary(dir.as_deref())?;
     println!("{s}");

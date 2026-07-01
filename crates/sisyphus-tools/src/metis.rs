@@ -35,7 +35,7 @@ impl LlmClient for DummyLlmClient {
     }
 
     async fn generate(&self, prompt: &str) -> Result<String, String> {
-        Ok(format!("Dummy generation for: {}", prompt))
+        Ok(format!("Dummy generation for: {prompt}"))
     }
 }
 

@@ -62,7 +62,7 @@ fn print_diags(label: &str, diags: &[sisyphus_tools::build::Diag]) {
     }
 }
 
-pub async fn run_check(
+pub fn run_check(
     package: Option<String>,
     all: bool,
     cwd: Option<PathBuf>,
@@ -89,7 +89,7 @@ pub async fn run_check(
     Ok(())
 }
 
-pub async fn run_build(
+pub fn run_build(
     package: Option<String>,
     release: bool,
     cwd: Option<PathBuf>,
@@ -116,7 +116,7 @@ pub async fn run_build(
     Ok(())
 }
 
-pub async fn run_test(
+pub fn run_test(
     package: Option<String>,
     name: Option<String>,
     all: bool,
@@ -147,7 +147,7 @@ pub async fn run_test(
     Ok(())
 }
 
-pub async fn run_lint(
+pub fn run_lint(
     package: Option<String>,
     cwd: Option<PathBuf>,
     lang: Option<String>,
@@ -166,7 +166,7 @@ pub async fn run_lint(
     Ok(())
 }
 
-pub async fn run_fmt(check_mode: bool, cwd: Option<PathBuf>, lang: Option<String>) -> Result<()> {
+pub fn run_fmt(check_mode: bool, cwd: Option<PathBuf>, lang: Option<String>) -> Result<()> {
     let dir = cwd.as_deref().or_else(|| Some(std::path::Path::new(".")));
     let backend = resolve_backend(lang.as_deref(), dir)?;
     let dir_ref = cwd_or_current(cwd);
@@ -184,7 +184,7 @@ pub async fn run_fmt(check_mode: bool, cwd: Option<PathBuf>, lang: Option<String
     Ok(())
 }
 
-pub async fn run_doc(
+pub fn run_doc(
     package: Option<String>,
     cwd: Option<PathBuf>,
     lang: Option<String>,

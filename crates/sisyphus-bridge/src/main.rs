@@ -1315,7 +1315,7 @@ impl SisyphusBridge for MySisyphusBridge {
         request: Request<sisyphus_bridge_api::UnloadPluginRequest>,
     ) -> Result<Response<sisyphus_bridge_api::UnloadPluginResponse>, Status> {
         let name = request.into_inner().name;
-        match self.plugin_manager.unload_plugin(&name).await {
+        match self.plugin_manager.unload_plugin(&name) {
             Ok(()) => Ok(Response::new(sisyphus_bridge_api::UnloadPluginResponse {
                 success: true,
                 error: String::new(),
@@ -1702,9 +1702,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         auth_interceptor,
     ));
 
-    info!("Starting gRPC server on {grpc_addr}");
+    // Try IPv6 (::1) first; fall back to IPv4 (127.0.0.1) on systems without IPv6 loopback
+    let grpc_listener = match tokio::net::TcpListener::bind(grpc_addr).await {
+        Ok(l) => l,
+        Err(_) => {
+            let v4_addr: std::net::SocketAddr =
+                format!("127.0.0.1:{}", grpc_addr.port()).parse().expect("invalid IPv4 addr");
+            warn!("Failed to bind gRPC on {grpc_addr}, falling back to {v4_addr}");
+            tokio::net::TcpListener::bind(v4_addr).await?
+        }
+    };
+    let actual_grpc_addr = grpc_listener.local_addr().unwrap_or(grpc_addr);
+    let grpc_incoming = tokio_stream::wrappers::TcpListenerStream::new(grpc_listener);
+
+    info!("Starting gRPC server on {actual_grpc_addr}");
     grpc_server
-        .serve_with_shutdown(grpc_addr, async {
+        .serve_with_incoming_shutdown(grpc_incoming, async {
             signal::ctrl_c().await.ok();
             info!("Received SIGINT, starting gRPC graceful shutdown...");
             tokio::time::sleep(std::time::Duration::from_secs(5)).await;

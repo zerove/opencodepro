@@ -72,7 +72,7 @@ impl CommandBuilder {
         })
     }
 
-    pub async fn spawn(&self) -> Result<tokio::process::Child> {
+    pub fn spawn(&self) -> Result<tokio::process::Child> {
         let mut cmd = self.prepare_command();
 
         if let Some(ref cwd) = self.cwd {

@@ -97,7 +97,7 @@ impl UserPreferenceStore {
         Ok(None)
     }
 
-    pub async fn infer_preferences_from_feedback(
+    pub fn infer_preferences_from_feedback(
         &self,
         feedback: Vec<sisyphus_types::Feedback>,
     ) -> Result<Vec<String>> {
@@ -114,7 +114,7 @@ impl UserPreferenceStore {
         Ok(inferred)
     }
 
-    pub async fn clear_preferences(&self) -> Result<()> {
+    pub fn clear_preferences(&self) -> Result<()> {
         // MfsStore doesn't have a prefix-based delete.
         // In a real system, we'd maintain a list of preference keys.
         Ok(())
@@ -207,7 +207,6 @@ mod tests {
 
         let inferred = pref_store
             .infer_preferences_from_feedback(feedback)
-            .await
             .unwrap();
         assert_eq!(inferred, vec!["dark_mode", "concise"]);
     }

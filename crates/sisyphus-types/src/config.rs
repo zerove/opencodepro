@@ -388,14 +388,14 @@ impl Config {
             None => Err(TypesError::ConfigValidationError(format!(
                 "{field}: \"{addr}\" must start with http:// or https://"
             ))),
-            Some(rest) if rest.is_empty() => Err(TypesError::ConfigValidationError(format!(
+            Some("") => Err(TypesError::ConfigValidationError(format!(
                 "{field}: \"{addr}\" has no host after scheme prefix"
             ))),
             Some(rest) => {
                 // Validate the host:port part, ignore path/query if present
                 let host_port = rest.split('/').next().unwrap_or(rest);
                 if host_port.contains(':') {
-                    let port_str = host_port.split(':').last().unwrap_or("");
+                    let port_str = host_port.split(':').next_back().unwrap_or("");
                     port_str.parse::<u16>().map_err(|_| {
                         TypesError::ConfigValidationError(format!(
                             "{field}: \"{addr}\" has invalid port number \"{port_str}\""
