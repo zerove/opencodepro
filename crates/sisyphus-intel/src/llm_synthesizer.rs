@@ -1,9 +1,8 @@
 use crate::{
-    action_label, classify_goal, tool_id_for_action, ActionType, FlowSynthesizer, SOPGraph,
-    SynthesisResult,
+    action_label, classify_goal, tool_id_for_action, ActionType, FlowSynthesizer, SynthesisResult,
 };
 use async_trait::async_trait;
-use sisyphus_types::ExecutionContext;
+use sisyphus_types::{ExecutionContext, SOPGraph};
 use std::sync::Arc;
 
 #[async_trait]
@@ -176,9 +175,6 @@ impl FlowSynthesizer for LlmDrivenSynthesizer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use async_trait::async_trait;
-    use sisyphus_types::ToolExecutor;
-
 
     #[tokio::test]
     async fn test_fallback_decomposer() {

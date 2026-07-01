@@ -1,4 +1,6 @@
-use crate::{IntelError, ReflectionReport, SOPEvolver, SimulationResult};
+use crate::error::IntelError;
+use crate::reflect::{ReflectionReport, SOPEvolver};
+use crate::simulation::SimulationResult;
 use petgraph::graph::NodeIndex;
 use sisyphus_types::{EvolutionOp, SOPGraph, WasmSOPNode};
 use std::collections::HashMap;
