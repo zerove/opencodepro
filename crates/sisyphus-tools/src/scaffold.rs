@@ -99,7 +99,7 @@ edition = "2021"
     );
     std::fs::write(project_dir.join("Cargo.toml"), cargo_toml.as_bytes())?;
 
-    let lib_rs = r#"pub fn add(left: u64, right: u64) -> u64 {
+    let lib_rs = r"pub fn add(left: u64, right: u64) -> u64 {
     left + right
 }
 
@@ -113,7 +113,7 @@ mod tests {
         assert_eq!(result, 4);
     }
 }
-"#;
+";
     std::fs::write(src_dir.join("lib.rs"), lib_rs.as_bytes())?;
 
     Ok(())

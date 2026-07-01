@@ -7,7 +7,7 @@ use std::path::Path;
 pub struct GoBackend;
 
 impl LanguageBackend for GoBackend {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "go"
     }
 
@@ -233,11 +233,10 @@ fn parse_staticcheck_output(_stderr: &str, stdout: &str) -> (Vec<Diag>, Vec<Diag
                 let file = Some(parts[2].to_string());
 
                 // Determine severity from code prefix
-                let code = msg.split(' ').next().map(|s| s.to_string());
+                let code = msg.split(' ').next().map(std::string::ToString::to_string);
                 let is_error = code
                     .as_deref()
-                    .map(|c| c.starts_with("SA"))
-                    .unwrap_or(false);
+                    .is_some_and(|c| c.starts_with("SA"));
 
                 if is_error {
                     errors.push(Diag {

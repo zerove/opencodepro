@@ -58,7 +58,7 @@ impl ContinuousBenchmark {
         }
         let elapsed = run_start.elapsed();
 
-        let avg_duration = elapsed.as_secs_f64() / sample_iters as f64;
+        let avg_duration = elapsed.as_secs_f64() / f64::from(sample_iters);
 
         let run = BenchmarkRun {
             name: name.to_string(),

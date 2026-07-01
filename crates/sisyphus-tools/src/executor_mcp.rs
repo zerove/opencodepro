@@ -20,7 +20,7 @@ impl MCPToolExecutor {
     /// The command is spawned immediately, and the MCP `initialize` handshake
     /// is performed before returning.
     pub async fn from_stdio(command: &str, args: &[&str]) -> ToolResult<Self> {
-        let transport = StdioTransport::spawn(command, args).await?;
+        let transport = StdioTransport::spawn(command, args)?;
         Self::from_transport(Box::new(transport)).await
     }
 
@@ -78,8 +78,7 @@ impl sisyphus_types::ToolExecutor for MCPToolExecutor {
         let mcp_tool = self
             .tool_map
             .get(tool_id)
-            .map(|s| s.as_str())
-            .unwrap_or(tool_id);
+            .map_or(tool_id, std::string::String::as_str);
 
         // Parse optional args
         let mcp_args: Option<Value> = if args.is_empty() {

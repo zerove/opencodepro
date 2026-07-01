@@ -1,72 +1,13 @@
-use serde::{Deserialize, Serialize};
+//! Hook system: registry, matching, execution, and skill integration.
+//!
+//! ## Sub-modules
+//! - [`types`]: Shared types (HookPhase, HookDef, HookEffect, Before/AfterHookResult).
 
-// ── Hook Phase ──────────────────────────────────────────────
+pub mod types;
 
-/// When a hook fires relative to tool execution.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum HookPhase {
-    /// Fires before tool execution — can block or modify arguments.
-    #[serde(rename = "before")]
-    Before,
-    /// Fires after tool execution — can inspect or modify results.
-    #[serde(rename = "after")]
-    After,
-}
-
-impl HookPhase {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            HookPhase::Before => "before",
-            HookPhase::After => "after",
-        }
-    }
-}
-
-// ── Hook Effect ─────────────────────────────────────────────
-
-/// What a hook instructs the executor to do.
-#[derive(Debug, Clone)]
-pub enum HookEffect {
-    /// Allow execution to proceed (default).
-    Allow,
-    /// Block execution with a reason string.
-    Deny(String),
-    /// Inject extra instructions into the execution context.
-    InjectInstructions(String),
-    /// Log a message (observability-only, does not affect execution).
-    Log(String),
-}
-
-// ── Hook Definition ─────────────────────────────────────────
-
-/// A single hook definition, typically originating from a skill's frontmatter
-/// or registered programmatically.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct HookDef {
-    /// Unique name for this hook.
-    pub name: String,
-    /// When to fire.
-    pub phase: HookPhase,
-    /// Optional tool ID glob/prefix filter. Empty or `"*"` matches all tools.
-    #[serde(default)]
-    pub tool_filter: Option<String>,
-    /// Effect type: "deny", "inject", "log"
-    #[serde(default = "default_effect_type")]
-    pub effect_type: String,
-    /// Effect payload (deny reason, instructions to inject, log message)
-    #[serde(default)]
-    pub effect_payload: String,
-    /// Human-readable description.
-    #[serde(default)]
-    pub description: String,
-    /// Name of the skill that owns this hook (populated at registration time).
-    #[serde(skip)]
-    pub source_skill: Option<String>,
-}
-
-fn default_effect_type() -> String {
-    "allow".into()
-}
+pub use types::{
+    AfterHookResult, BeforeHookResult, HookDef, HookEffect, HookPhase,
+};
 
 // ── Hook Registry ───────────────────────────────────────────
 
@@ -182,34 +123,6 @@ impl HookRegistry {
     }
 }
 
-// ── Hook Results ────────────────────────────────────────────
-
-/// Result of running before-hooks.
-#[derive(Debug, Clone)]
-pub struct BeforeHookResult {
-    /// Whether execution is allowed to continue.
-    pub allowed: bool,
-    /// If denied, the reason.
-    pub deny_reason: Option<String>,
-    /// Instructions injected by matching hooks.
-    pub injected_instructions: Vec<String>,
-    /// Log messages from matching hooks.
-    pub logs: Vec<String>,
-    /// Names of hooks that matched.
-    pub matched_hooks: Vec<String>,
-}
-
-/// Result of running after-hooks.
-#[derive(Debug, Clone)]
-pub struct AfterHookResult {
-    /// Instructions injected by matching hooks.
-    pub injected_instructions: Vec<String>,
-    /// Log messages from matching hooks.
-    pub logs: Vec<String>,
-    /// Names of hooks that matched.
-    pub matched_hooks: Vec<String>,
-}
-
 // ── Skill Integration ───────────────────────────────────────
 
 /// Parse hook definitions from a skill's frontmatter triggers.
@@ -232,7 +145,7 @@ pub fn hooks_from_skill(
                 "deny" => t
                     .hook_message
                     .clone()
-                    .unwrap_or_else(|| format!("Blocked by skill '{}'", skill_name)),
+                    .unwrap_or_else(|| format!("Blocked by skill '{skill_name}'")),
                 "log" => t.hook_message.clone().unwrap_or_else(|| {
                     format!(
                         "Hook '{}' fired",
@@ -258,7 +171,7 @@ pub fn hooks_from_skill(
                 description: t
                     .description
                     .clone()
-                    .unwrap_or_else(|| format!("Hook from skill '{}'", skill_name)),
+                    .unwrap_or_else(|| format!("Hook from skill '{skill_name}'")),
                 source_skill: Some(skill_name.to_string()),
             }
         })
@@ -295,24 +208,22 @@ where
 
     // If hooks injected instructions, we pass them as a side-channel
     // by enriching the args JSON
-    let enriched_args = if !before.injected_instructions.is_empty() {
-        if let Ok(mut v) = serde_json::from_slice::<serde_json::Value>(&args) {
-            if let serde_json::Value::Object(ref mut map) = v {
-                map.insert(
-                    "_hook_instructions".to_string(),
-                    serde_json::Value::Array(
-                        before
-                            .injected_instructions
-                            .iter()
-                            .map(|s| serde_json::Value::String(s.clone()))
-                            .collect(),
-                    ),
-                );
-            }
-            serde_json::to_vec(&v).unwrap_or(args)
-        } else {
-            args
+    let enriched_args = if before.injected_instructions.is_empty() {
+        args
+    } else if let Ok(mut v) = serde_json::from_slice::<serde_json::Value>(&args) {
+        if let serde_json::Value::Object(ref mut map) = v {
+            map.insert(
+                "_hook_instructions".to_string(),
+                serde_json::Value::Array(
+                    before
+                        .injected_instructions
+                        .iter()
+                        .map(|s| serde_json::Value::String(s.clone()))
+                        .collect(),
+                ),
+            );
         }
+        serde_json::to_vec(&v).unwrap_or(args)
     } else {
         args
     };

@@ -90,7 +90,7 @@ impl PrManager {
         }
 
         // 3. Run review pipeline (Momus-style)
-        let system_prompt = r#"You are Momus, a senior engineer and quality gatekeeper.
+        let system_prompt = r"You are Momus, a senior engineer and quality gatekeeper.
 Your goal is to perform a deep semantic review of the provided GitHub PR diff.
 
 Analyze the diff and return a structured review.
@@ -104,9 +104,9 @@ Return your response as a clear, professional review with:
 - A summary of the changes.
 - A verdict (PASSED/FAILED).
 - A list of specific issues with severity (Blocker, Critical, Major, Minor, Nitpick) and suggestions for improvement.
-"#;
+";
 
-        let user_prompt = format!("PR #{} Diff:\n\n{}", number, diff);
+        let user_prompt = format!("PR #{number} Diff:\n\n{diff}");
         
         let review = llm_client
             .chat(system_prompt, &user_prompt, false)

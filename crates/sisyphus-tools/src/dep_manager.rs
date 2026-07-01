@@ -54,7 +54,7 @@ impl DependencyManager {
             ])
             .output()
             .await
-            .map_err(|e| crate::ToolError::Generic(format!("Failed to run cargo-deny: {}", e)))?;
+            .map_err(|e| crate::ToolError::Generic(format!("Failed to run cargo-deny: {e}")))?;
 
         let stdout = String::from_utf8_lossy(&output.stdout);
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -81,7 +81,7 @@ impl DependencyManager {
             .output()
             .await
             .map_err(|e| {
-                crate::ToolError::Generic(format!("Failed to run cargo-outdated: {}", e))
+                crate::ToolError::Generic(format!("Failed to run cargo-outdated: {e}"))
             })?;
 
         let stdout = String::from_utf8_lossy(&output.stdout);
@@ -100,7 +100,7 @@ impl DependencyManager {
         let updated = content.clone();
 
         // Pattern 1: name = "X.Y.Z"
-        let simple_pattern = format!("{} = \"", name);
+        let simple_pattern = format!("{name} = \"");
         if let Some(pos) = updated.find(&simple_pattern) {
             let val_start = pos + simple_pattern.len();
             if let Some(end) = updated[val_start..].find('\"') {
@@ -109,14 +109,13 @@ impl DependencyManager {
                 updated.replace_range(val_start..val_start + end, version);
                 let new_path = self.save_updated(&updated)?;
                 return Ok(format!(
-                    "Updated {}: {} -> {} in {}",
-                    name, old_ver, version, new_path
+                    "Updated {name}: {old_ver} -> {version} in {new_path}"
                 ));
             }
         }
 
         // Pattern 2: name = { version = "X.Y.Z", ... }
-        let brace_pattern = format!("{} = {{", name);
+        let brace_pattern = format!("{name} = {{");
         if let Some(pos) = updated.find(&brace_pattern) {
             let rest = &updated[pos..];
             if let Some(ver_pos) = rest.find("version = \"") {
@@ -127,8 +126,7 @@ impl DependencyManager {
                     updated.replace_range(val_start..val_start + end, version);
                     let new_path = self.save_updated(&updated)?;
                     return Ok(format!(
-                        "Updated {}: {} -> {} in {}",
-                        name, old_ver, version, new_path
+                        "Updated {name}: {old_ver} -> {version} in {new_path}"
                     ));
                 }
             }
@@ -221,7 +219,7 @@ impl DependencyManager {
                     vulnerabilities.push(Vulnerability {
                         package: "unknown".into(),
                         severity: "unknown".into(),
-                        advisory_url: "".into(),
+                        advisory_url: String::new(),
                         description: parts[1].trim().to_string(),
                     });
                 }

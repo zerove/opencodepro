@@ -43,9 +43,9 @@ pub fn generate_hashline(path: &Path, line_number: usize, content: &str) -> Stri
     let (start, end) = get_comment_syntax(path);
     
     if let Some(end_tag) = end {
-        format!(" {} LINE#{}:{} {}", start, line_number, hash, end_tag)
+        format!(" {start} LINE#{line_number}:{hash} {end_tag}")
     } else {
-        format!(" {} LINE#{}:{}", start, line_number, hash)
+        format!(" {start} LINE#{line_number}:{hash}")
     }
 }
 
@@ -115,7 +115,7 @@ pub fn annotate_file(file_path: &Path) -> ToolResult<usize> {
         }
         
         let hashline = generate_hashline(file_path, line_num, line);
-        annotated_lines.push(format!("{}{}", line, hashline));
+        annotated_lines.push(format!("{line}{hashline}"));
         count += 1;
     }
 
@@ -134,7 +134,7 @@ pub fn edit_with_hashline(file_path: &Path, target_hashline: &str, new_content: 
     let content = fs::read_to_string(file_path)?;
     let data = parse_hashline(target_hashline).ok_or_else(|| ToolError::Generic("Invalid hashline format".to_string()))?;
     
-    let lines: Vec<String> = content.lines().map(|s| s.to_string()).collect();
+    let lines: Vec<String> = content.lines().map(std::string::ToString::to_string).collect();
     if data.line_number == 0 || data.line_number > lines.len() {
         return Err(ToolError::Generic(format!("Line number {} out of bounds", data.line_number)));
     }
@@ -161,7 +161,7 @@ pub fn edit_with_hashline(file_path: &Path, target_hashline: &str, new_content: 
     };
     
     let mut new_lines = lines.clone();
-    new_lines[data.line_number - 1] = format!("{}{}", new_content, hashline_comment);
+    new_lines[data.line_number - 1] = format!("{new_content}{hashline_comment}");
     
     let final_content = new_lines.join("\n");
     let parent = file_path.parent().unwrap_or_else(|| Path::new("."));

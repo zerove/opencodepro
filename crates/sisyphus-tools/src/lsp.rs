@@ -1,144 +1,28 @@
-use serde::{Deserialize, Serialize};
+//! LSP client for talking to language servers.
+//!
+//! Spawns a language server process, manages its lifecycle, and provides
+//! request/response methods for diagnostics, goto-definition, references,
+//! hover, and document symbols.
+//!
+//! ## Sub-modules
+//! - [`types`]: Shared types (LspPosition, LspRange, LspDiagnostic, LspError, etc.).
+//! - [`protocol`]: Content-Length framed JSON-RPC message read/write.
+
+pub mod protocol;
+pub mod types;
+
+pub use types::{
+    extract_hover_text, severity_name, to_file_uri, LspCompletionItem, LspDiagnostic,
+    LspDocumentSymbol, LspError, LspHover, LspLocation, LspPosition, LspRange, LspResult,
+};
+
+use serde::Deserialize;
 use serde_json::Value;
 use std::process::Stdio;
 use std::sync::{Arc, Mutex};
-use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
-use tokio::process::{Child, Command};
-
-// ── Minimal LSP types (no lsp-types dependency) ────────────
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LspPosition {
-    pub line: u32,
-    pub character: u32,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LspRange {
-    pub start: LspPosition,
-    pub end: LspPosition,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LspDiagnostic {
-    pub range: LspRange,
-    #[serde(default)]
-    pub severity: Option<i64>,
-    #[serde(default)]
-    pub message: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LspLocation {
-    pub uri: String,
-    pub range: LspRange,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LspHover {
-    pub contents: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LspDocumentSymbol {
-    pub name: String,
-    pub kind: i64,
-    pub range: LspRange,
-    pub selection_range: LspRange,
-    #[serde(default)]
-    pub children: Option<Vec<LspDocumentSymbol>>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LspCompletionItem {
-    pub label: String,
-    #[serde(default)]
-    pub detail: Option<String>,
-}
-
-pub fn severity_name(s: i64) -> &'static str {
-    match s {
-        1 => "error",
-        2 => "warning",
-        3 => "info",
-        4 => "hint",
-        _ => "?",
-    }
-}
-
-// ── Error ──────────────────────────────────────────────────
-
-#[derive(Debug, thiserror::Error)]
-pub enum LspError {
-    #[error("LSP transport error: {0}")]
-    Transport(String),
-    #[error("LSP protocol error: {0}")]
-    Protocol(String),
-    #[error("LSP server error (code {code}): {message}")]
-    ServerError { code: i64, message: String },
-    #[error("IO error: {0}")]
-    Io(#[from] std::io::Error),
-    #[error("Serde error: {0}")]
-    Serde(#[from] serde_json::Error),
-    #[error("Language server exited unexpectedly")]
-    ServerDied,
-}
-
-type LspResult<T> = Result<T, LspError>;
-
-// ── Content-Length framing ─────────────────────────────────
-
-async fn read_message(reader: &mut BufReader<tokio::process::ChildStdout>) -> LspResult<String> {
-    let mut header = String::new();
-    loop {
-        header.clear();
-        let n = reader
-            .read_line(&mut header)
-            .await
-            .map_err(|e| LspError::Transport(e.to_string()))?;
-        if n == 0 {
-            return Err(LspError::ServerDied);
-        }
-        let trimmed = header.trim();
-        if trimmed.is_empty() {
-            break;
-        }
-        if let Some(len_str) = trimmed.strip_prefix("Content-Length: ") {
-            let len: usize = len_str
-                .trim()
-                .parse()
-                .map_err(|_| LspError::Protocol(format!("invalid Content-Length: {len_str}")))?;
-            let mut buf = vec![0u8; len];
-            reader
-                .read_exact(&mut buf)
-                .await
-                .map_err(|e| LspError::Transport(e.to_string()))?;
-            return String::from_utf8(buf)
-                .map_err(|e| LspError::Protocol(format!("invalid UTF-8 in body: {e}")));
-        }
-    }
-    Err(LspError::Protocol("no Content-Length header".into()))
-}
-
-async fn write_message(
-    writer: &mut tokio::io::BufWriter<tokio::process::ChildStdin>,
-    body: &str,
-) -> LspResult<()> {
-    let header = format!("Content-Length: {}\r\n\r\n", body.len());
-    writer
-        .write_all(header.as_bytes())
-        .await
-        .map_err(|e| LspError::Transport(e.to_string()))?;
-    writer
-        .write_all(body.as_bytes())
-        .await
-        .map_err(|e| LspError::Transport(e.to_string()))?;
-    writer
-        .flush()
-        .await
-        .map_err(|e| LspError::Transport(e.to_string()))?;
-    Ok(())
-}
+use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio::process::Child;
+use protocol::{read_message, write_message};
 
 // ── LSP Client ─────────────────────────────────────────────
 
@@ -153,7 +37,7 @@ pub struct LspClient {
 
 impl LspClient {
     pub async fn spawn(command: &str, args: &[&str], root_uri: &str) -> LspResult<Self> {
-        let mut child = Command::new(command)
+        let mut child = tokio::process::Command::new(command)
             .args(args)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -423,7 +307,6 @@ impl LspClient {
             })
             .collect())
     }
-
 }
 
 impl Drop for LspClient {
@@ -434,50 +317,12 @@ impl Drop for LspClient {
     }
 }
 
-// ── Helpers ────────────────────────────────────────────────
-
-fn extract_hover_text(contents: &Value) -> String {
-    match contents {
-        Value::String(s) => s.clone(),
-        Value::Object(map) => {
-            if let Some(val) = map.get("value").and_then(|v| v.as_str()) {
-                return val.to_string();
-            }
-            contents.to_string()
-        }
-        Value::Array(arr) => arr
-            .iter()
-            .map(extract_hover_text)
-            .collect::<Vec<_>>()
-            .join("\n"),
-        _ => contents.to_string(),
-    }
-}
-
-fn to_file_uri(path: &str) -> String {
-    let p = std::path::Path::new(path);
-    let abs = if p.is_absolute() {
-        p.to_path_buf()
-    } else {
-        let Ok(cwd) = std::env::current_dir() else {
-            return format!("file://{path}");
-        };
-        cwd.join(path)
-    };
-    // Use to_string_lossy for a clean path string (no double-slash from components join).
-    let canonical = abs.to_string_lossy().replace('\\', "/");
-    if canonical.starts_with('/') {
-        format!("file://{canonical}")
-    } else {
-        format!("file:///{canonical}")
-    }
-}
-
 // ── Tests ──────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::Value;
 
     #[test]
     fn test_to_file_uri_absolute() {

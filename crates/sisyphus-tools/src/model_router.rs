@@ -61,7 +61,7 @@ impl ModelRouter {
         let models = self
             .models
             .read()
-            .map_err(|e| crate::ToolError::Generic(format!("ModelRouter lock poisoned: {}", e)))?;
+            .map_err(|e| crate::ToolError::Generic(format!("ModelRouter lock poisoned: {e}")))?;
 
         if models.is_empty() {
             return Err(crate::ToolError::Generic("No models registered".into()));
@@ -81,7 +81,7 @@ impl ModelRouter {
                         .partial_cmp(&b.cost_per_1k_tokens)
                         .unwrap_or(std::cmp::Ordering::Equal)
                 });
-                sorted.first().cloned().cloned().ok_or_else(|| {
+                sorted.first().copied().cloned().ok_or_else(|| {
                     crate::ToolError::Generic("No model can handle this prompt complexity".into())
                 })
             }
@@ -103,22 +103,6 @@ impl ModelRouter {
         }
     }
 
-    /// Execute a prompt through the selected model and record usage.
-    ///
-    /// Note: This does NOT call an actual LLM. It returns a placeholder response.
-    /// Real LLM integration requires the DynamicLlmClient from the llm module.
-    pub fn execute(&self, prompt: &str, strategy: &ModelRouteStrategy) -> ToolResult<String> {
-        let model = self.select(prompt, strategy)?;
-        let token_estimate = (prompt.len() / 4).max(1) as u64;
-        let cost = (token_estimate as f64 / 1000.0) * model.cost_per_1k_tokens;
-
-        self.record_usage(&model.name, cost, token_estimate);
-
-        Ok(format!(
-            "[ModelRouter] Selected {} via {:?}. Estimated cost: ${:.6}",
-            model.name, strategy, cost
-        ))
-    }
 
     /// Record usage for a model call.
     pub fn record_usage(&self, model: &str, cost: f64, tokens: u64) {
@@ -270,18 +254,6 @@ mod tests {
         assert!(result.is_err());
     }
 
-    #[test]
-    fn test_execute_records_usage() {
-        let router = setup_router();
-        let result = router.execute("test prompt", &ModelRouteStrategy::CostOptimized);
-        assert!(result.is_ok());
-        assert!(result.unwrap().contains("gemma-3"));
-
-        let usage = router.get_usage("gemma-3").unwrap();
-        assert_eq!(usage.total_calls, 1);
-        assert!(usage.total_tokens > 0);
-        assert!(usage.total_cost > 0.0);
-    }
 
     #[test]
     fn test_budget_remaining() {

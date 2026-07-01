@@ -19,7 +19,7 @@ pub struct StdioTransport {
 }
 
 impl StdioTransport {
-    pub async fn spawn(command: &str, args: &[&str]) -> ToolResult<Self> {
+    pub fn spawn(command: &str, args: &[&str]) -> ToolResult<Self> {
         let mut child = Command::new(command)
             .args(args)
             .stdin(Stdio::piped())

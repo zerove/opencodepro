@@ -1,37 +1,16 @@
-use crate::ToolResult;
-use serde::{Deserialize, Serialize};
+//! Meta-learning: learns optimal strategies from historical execution data.
+//!
+//! ## Sub-modules
+//! - [`types`]: StrategyStats, LearningInsight, StrategyInsight.
+
+pub mod types;
+
+pub use types::{LearningInsight, StrategyInsight, StrategyStats};
+
+use crate::{ToolError, ToolResult};
 use sisyphus_types::MetaLearningSample;
 use std::collections::HashMap;
 use std::path::PathBuf;
-
-/// Statistics about a strategy's performance.
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct StrategyStats {
-    pub total_uses: u64,
-    pub successes: u64,
-    pub failures: u64,
-    pub avg_duration: f64,
-    pub success_rate: f64,
-}
-
-/// Insight derived from analyzing historical learning samples.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LearningInsight {
-    pub total_samples: u64,
-    pub overall_success_rate: f64,
-    pub strategies: Vec<StrategyInsight>,
-    pub trend: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct StrategyInsight {
-    pub strategy: String,
-    pub total_uses: u64,
-    pub successes: u64,
-    pub failures: u64,
-    pub avg_duration_secs: f64,
-    pub success_rate: f64,
-}
 
 /// Learns optimal strategies from historical execution data.
 pub struct MetaLearner {
@@ -238,20 +217,20 @@ impl MetaLearner {
     }
 
     fn save_samples(&self) -> ToolResult<()> {
-        std::fs::create_dir_all(&self.storage_path).map_err(crate::ToolError::Io)?;
+        std::fs::create_dir_all(&self.storage_path).map_err(ToolError::Io)?;
         let file_path = self.storage_path.join("samples.json");
-        let content = serde_json::to_string_pretty(&self.samples)
-            .map_err(|e| crate::ToolError::Generic(e.to_string()))?;
-        std::fs::write(&file_path, content).map_err(crate::ToolError::Io)
+        let content =
+            serde_json::to_string_pretty(&self.samples).map_err(|e| ToolError::Generic(e.to_string()))?;
+        std::fs::write(&file_path, content).map_err(ToolError::Io)
     }
 
     /// Save the latest learning insight to disk.
     pub fn save_insight(&self, insight: &LearningInsight) -> ToolResult<()> {
-        std::fs::create_dir_all(&self.storage_path).map_err(crate::ToolError::Io)?;
+        std::fs::create_dir_all(&self.storage_path).map_err(ToolError::Io)?;
         let file_path = self.storage_path.join("insight.json");
-        let content = serde_json::to_string_pretty(insight)
-            .map_err(|e| crate::ToolError::Generic(e.to_string()))?;
-        std::fs::write(&file_path, content).map_err(crate::ToolError::Io)
+        let content =
+            serde_json::to_string_pretty(insight).map_err(|e| ToolError::Generic(e.to_string()))?;
+        std::fs::write(&file_path, content).map_err(ToolError::Io)
     }
 
     /// Load the latest learning insight from disk.
@@ -298,12 +277,10 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let mut ml = MetaLearner::new(dir.path().to_str().unwrap());
 
-        // "fast" strategy: 3/3 successes
         for _ in 0..3 {
             ml.record_outcome(sample("fast", true, json!({"lang": "rust"})))
                 .unwrap();
         }
-        // "slow" strategy: 1/3 successes
         ml.record_outcome(sample("slow", true, json!({"lang": "rust"})))
             .unwrap();
         ml.record_outcome(sample("slow", false, json!({"lang": "rust"})))
@@ -327,12 +304,9 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let mut ml = MetaLearner::new(dir.path().to_str().unwrap());
 
-        ml.record_outcome(sample("test_s", true, json!({})))
-            .unwrap();
-        ml.record_outcome(sample("test_s", true, json!({})))
-            .unwrap();
-        ml.record_outcome(sample("test_s", false, json!({})))
-            .unwrap();
+        ml.record_outcome(sample("test_s", true, json!({}))).unwrap();
+        ml.record_outcome(sample("test_s", true, json!({}))).unwrap();
+        ml.record_outcome(sample("test_s", false, json!({}))).unwrap();
 
         let stats = ml.strategy_stats("test_s");
         assert_eq!(stats.total_uses, 3);
@@ -376,7 +350,6 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let mut ml = MetaLearner::new(dir.path().to_str().unwrap());
 
-        // 3 successes for "fast", 1 success + 2 failures for "slow"
         for _ in 0..3 {
             ml.record_outcome(sample("fast", true, json!({"lang": "rust"})))
                 .unwrap();
@@ -419,11 +392,9 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let mut ml = MetaLearner::new(dir.path().to_str().unwrap());
 
-        // First half: mostly failures
         for _ in 0..3 {
             ml.record_outcome(sample("s1", false, json!({}))).unwrap();
         }
-        // Second half: mostly successes
         for _ in 0..3 {
             ml.record_outcome(sample("s1", true, json!({}))).unwrap();
         }
@@ -472,7 +443,6 @@ mod tests {
                 .unwrap();
         }
 
-        // Re-load from same directory
         let ml = MetaLearner::new(&path);
         assert_eq!(ml.all_samples().len(), 1);
         assert_eq!(ml.all_samples()[0].strategy, "persist");

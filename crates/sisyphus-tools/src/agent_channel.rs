@@ -33,7 +33,7 @@ impl AgentChannel {
         let mut inboxes = self
             .inboxes
             .write()
-            .map_err(|e| crate::ToolError::Generic(format!("AgentChannel lock poisoned: {}", e)))?;
+            .map_err(|e| crate::ToolError::Generic(format!("AgentChannel lock poisoned: {e}")))?;
         inboxes.entry(msg.to.clone()).or_default().push(msg);
         Ok(())
     }
@@ -43,7 +43,7 @@ impl AgentChannel {
         let mut inboxes = self
             .inboxes
             .write()
-            .map_err(|e| crate::ToolError::Generic(format!("AgentChannel lock poisoned: {}", e)))?;
+            .map_err(|e| crate::ToolError::Generic(format!("AgentChannel lock poisoned: {e}")))?;
         Ok(inboxes.remove(agent_id).unwrap_or_default())
     }
 
@@ -57,7 +57,7 @@ impl AgentChannel {
     ) -> ToolResult<AgentMessage> {
         let notify_tx = {
             let mut notify = self.notify.write().map_err(|e| {
-                crate::ToolError::Generic(format!("AgentChannel lock poisoned: {}", e))
+                crate::ToolError::Generic(format!("AgentChannel lock poisoned: {e}"))
             })?;
             let (tx, _) = broadcast::channel(16);
             notify.insert(correlation_id.to_string(), tx.clone());
@@ -92,14 +92,14 @@ impl AgentChannel {
     pub fn publish(&self, topic: &str, msg: AgentMessage) -> ToolResult<()> {
         let subscribers = {
             let topics = self.topics.read().map_err(|e| {
-                crate::ToolError::Generic(format!("AgentChannel lock poisoned: {}", e))
+                crate::ToolError::Generic(format!("AgentChannel lock poisoned: {e}"))
             })?;
             topics.get(topic).cloned().unwrap_or_default()
         };
 
         for agent_id in subscribers {
             let mut inboxes = self.inboxes.write().map_err(|e| {
-                crate::ToolError::Generic(format!("AgentChannel lock poisoned: {}", e))
+                crate::ToolError::Generic(format!("AgentChannel lock poisoned: {e}"))
             })?;
             inboxes.entry(agent_id).or_default().push(msg.clone());
         }

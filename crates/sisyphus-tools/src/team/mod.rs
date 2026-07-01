@@ -11,7 +11,9 @@
 pub mod error;
 pub(crate) mod parse;
 
+mod decomposer;
 mod orchestrator;
+mod scheduler;
 
 pub use error::TeamError;
 pub use orchestrator::TeamOrchestrator;

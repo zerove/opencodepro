@@ -38,25 +38,25 @@ impl AgentRegistry {
 
     /// Register or update an agent.
     pub fn register(&self, id: &str, info: AgentInfo) {
-        let mut map = self.agents.write().unwrap_or_else(|e| e.into_inner());
+        let mut map = self.agents.write().unwrap_or_else(std::sync::PoisonError::into_inner);
         map.insert(id.to_string(), info);
     }
 
     /// Look up an agent by ID.
     pub fn get(&self, id: &str) -> Option<AgentInfo> {
-        let map = self.agents.read().unwrap_or_else(|e| e.into_inner());
+        let map = self.agents.read().unwrap_or_else(std::sync::PoisonError::into_inner);
         map.get(id).cloned()
     }
 
     /// Check if an agent is registered.
     pub fn has(&self, id: &str) -> bool {
-        let map = self.agents.read().unwrap_or_else(|e| e.into_inner());
+        let map = self.agents.read().unwrap_or_else(std::sync::PoisonError::into_inner);
         map.contains_key(id)
     }
 
     /// List all registered agent IDs and their info.
     pub fn list(&self) -> Vec<(String, AgentInfo)> {
-        let map = self.agents.read().unwrap_or_else(|e| e.into_inner());
+        let map = self.agents.read().unwrap_or_else(std::sync::PoisonError::into_inner);
         let mut items: Vec<_> = map.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
         items.sort_by(|a, b| a.0.cmp(&b.0));
         items
@@ -71,7 +71,7 @@ impl AgentRegistry {
 
     /// Unregister an agent.
     pub fn unregister(&self, id: &str) -> bool {
-        let mut map = self.agents.write().unwrap_or_else(|e| e.into_inner());
+        let mut map = self.agents.write().unwrap_or_else(std::sync::PoisonError::into_inner);
         map.remove(id).is_some()
     }
 
@@ -144,12 +144,11 @@ impl AgentRegistry {
     /// This makes all tools under the MCP server's prefix discoverable
     /// through the agent registry. The agent ID is `mcp_{prefix}`.
     pub fn register_mcp_server(&self, prefix: &str, server_label: &str, num_tools: usize) {
-        let agent_id = format!("mcp_{}", prefix);
+        let agent_id = format!("mcp_{prefix}");
         let info = AgentInfo {
-            display_name: format!("MCP:{}", server_label),
+            display_name: format!("MCP:{server_label}"),
             description: format!(
-                "MCP server '{}' with {} tool(s). Prefix: '{}:'",
-                server_label, num_tools, prefix
+                "MCP server '{server_label}' with {num_tools} tool(s). Prefix: '{prefix}:'"
             ),
             tool_prefixes: vec![format!("{}:", prefix)],
             max_concurrency: 4,
@@ -161,7 +160,7 @@ impl AgentRegistry {
     ///
     /// Returns `Some(agent_id)` if a matching agent is found.
     pub fn resolve_agent_for_tool(&self, tool_id: &str) -> Option<String> {
-        let map = self.agents.read().unwrap_or_else(|e| e.into_inner());
+        let map = self.agents.read().unwrap_or_else(std::sync::PoisonError::into_inner);
         for (agent_id, info) in map.iter() {
             for prefix in &info.tool_prefixes {
                 if tool_id.starts_with(prefix) {

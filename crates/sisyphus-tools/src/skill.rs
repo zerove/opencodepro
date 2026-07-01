@@ -1,103 +1,19 @@
-use serde::{Deserialize, Serialize};
+//! Skill loading, parsing, rendering, and management.
+//!
+//! Skills are user-defined instruction sets loaded from SKILL.md files
+//! with YAML frontmatter. They can inject context, block tools, or
+//! customize agent behaviour.
+//!
+//! ## Sub-modules
+//! - [`types`]: Shared types (Skill, SkillSource, TriggerDef, SkillMeta).
+
+pub mod types;
+
+pub use types::{Skill, SkillSource, TriggerDef};
+
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
-
-/// 一个可加载的技能定义，对应一个 SKILL.md 文件。
-///
-/// 技能系统让用户可以定义自定义指令集，在工具执行时注入上下文。
-/// 格式参考 opencode SKILL.md：YAML frontmatter + Markdown 正文。
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Skill {
-    /// 技能唯一名称（从文件名推导或 frontmatter 指定）
-    pub name: String,
-    /// 简短描述
-    pub description: String,
-    /// 版本号
-    #[serde(default = "default_version")]
-    pub version: String,
-    /// 作者
-    #[serde(default)]
-    pub author: Option<String>,
-    /// 标签
-    #[serde(default)]
-    pub tags: Vec<String>,
-    /// 触发条件列表
-    #[serde(default)]
-    pub triggers: Vec<TriggerDef>,
-    /// 完整指令正文（frontmatter 之后的内容）
-    #[serde(skip)]
-    pub instructions: String,
-    /// 来源分类
-    #[serde(skip)]
-    pub source: SkillSource,
-    /// 来源文件路径
-    #[serde(skip)]
-    pub source_path: Option<PathBuf>,
-}
-
-fn default_version() -> String {
-    "0.1.0".into()
-}
-
-/// 技能来源层级
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub enum SkillSource {
-    /// 内建技能（发行版自带）
-    #[default]
-    BuiltIn,
-    /// 用户全局技能 (~/.config/sisyphus/skills/)
-    User,
-    /// 项目本地技能 (.sisyphus/skills/)
-    Project,
-}
-
-impl SkillSource {
-    pub fn priority(&self) -> u8 {
-        match self {
-            SkillSource::Project => 30,
-            SkillSource::User => 20,
-            SkillSource::BuiltIn => 10,
-        }
-    }
-}
-
-/// 触发条件定义
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TriggerDef {
-    /// 触发的关键字/正则模式
-    pub pattern: Option<String>,
-    /// 关联的工具名称列表（空表示全部）
-    #[serde(default)]
-    pub tools: Vec<String>,
-    /// 触发描述
-    pub description: Option<String>,
-    /// 钩子阶段: "before" 或 "after"（如果设置，此触发器同时作为钩子）
-    #[serde(default)]
-    pub hook_phase: Option<String>,
-    /// 钩子效果: "deny", "inject", "log"（默认 "inject"）
-    #[serde(default)]
-    pub hook_effect: Option<String>,
-    /// 钩子消息/负载（deny 原因、log 消息等）
-    #[serde(default)]
-    pub hook_message: Option<String>,
-}
-
-// ── YAML Frontmatter ──────────────────────────────────────────
-
-/// SKILL.md 的 frontmatter 结构
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct SkillMeta {
-    name: Option<String>,
-    description: Option<String>,
-    #[serde(default = "default_version")]
-    version: String,
-    author: Option<String>,
-    #[serde(default)]
-    tags: Vec<String>,
-    #[serde(default)]
-    triggers: Vec<TriggerDef>,
-}
 
 // ── 目录扫描 ──────────────────────────────────────────────────
 
@@ -158,7 +74,7 @@ impl SkillLoader {
 
             for entry in entries.flatten() {
                 let path = entry.path();
-                if path.extension().map(|e| e == "md").unwrap_or(false) {
+                if path.extension().is_some_and(|e| e == "md") {
                     if let Some(skill) = parse_skill_file(&path, source) {
                         let key = skill.name.clone();
                         let should_insert = match map.get(&key) {
@@ -237,10 +153,10 @@ fn parse_skill_file(path: &Path, source: SkillSource) -> Option<Skill> {
 }
 
 /// 从 markdown 中提取 YAML frontmatter（`---` 分隔）
-fn parse_frontmatter(content: &str) -> (SkillMeta, String) {
+fn parse_frontmatter(content: &str) -> (types::SkillMeta, String) {
     let content = content.trim();
     if !content.starts_with("---") {
-        return (SkillMeta::default(), content.to_string());
+        return (types::SkillMeta::default(), content.to_string());
     }
 
     let end = content[3..].find("---").map(|pos| pos + 3);
@@ -249,25 +165,12 @@ fn parse_frontmatter(content: &str) -> (SkillMeta, String) {
             let yaml_str = &content[3..end_pos].trim();
             let body = content[end_pos + 3..].trim().to_string();
 
-            match serde_yaml::from_str::<SkillMeta>(yaml_str) {
+            match serde_yaml::from_str::<types::SkillMeta>(yaml_str) {
                 Ok(meta) => (meta, body),
-                Err(_) => (SkillMeta::default(), content.to_string()),
+                Err(_) => (types::SkillMeta::default(), content.to_string()),
             }
         }
-        None => (SkillMeta::default(), content.to_string()),
-    }
-}
-
-impl Default for SkillMeta {
-    fn default() -> Self {
-        SkillMeta {
-            name: None,
-            description: None,
-            version: "0.1.0".into(),
-            author: None,
-            tags: Vec::new(),
-            triggers: Vec::new(),
-        }
+        None => (types::SkillMeta::default(), content.to_string()),
     }
 }
 
@@ -307,7 +210,7 @@ impl std::fmt::Display for Skill {
 pub fn render_instructions(skill: &Skill, vars: &HashMap<String, String>) -> String {
     let mut result = skill.instructions.clone();
     for (key, val) in vars {
-        result = result.replace(&format!("{{{{{}}}}}", key), val);
+        result = result.replace(&format!("{{{{{key}}}}}"), val);
     }
     result
 }

@@ -1,80 +1,13 @@
+mod types;
+pub use types::*;
+
 use crate::ToolResult;
 use std::future::Future;
-use std::pin::Pin;
 use std::time::Instant;
 use tokio::sync::mpsc;
 use tokio::task::JoinSet;
 
-type BoxedFuture<T> = Pin<Box<dyn Future<Output = T> + Send>>;
-
-/// A unit of work that can be delegated to a worker.
-pub struct WorkUnit {
-    pub id: String,
-    pub name: String,
-    pub handler: Box<dyn FnOnce() -> BoxedFuture<ToolResult<serde_json::Value>> + Send>,
-}
-
-impl std::fmt::Debug for WorkUnit {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("WorkUnit")
-            .field("id", &self.id)
-            .field("name", &self.name)
-            .finish()
-    }
-}
-
-/// Status of a work unit.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum WorkStatus {
-    Pending,
-    Running,
-    Completed,
-    Failed,
-}
-
-impl std::fmt::Display for WorkStatus {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            WorkStatus::Pending => write!(f, "pending"),
-            WorkStatus::Running => write!(f, "running"),
-            WorkStatus::Completed => write!(f, "completed"),
-            WorkStatus::Failed => write!(f, "failed"),
-        }
-    }
-}
-
-/// Report from a completed work unit.
-#[derive(Debug, Clone)]
-pub struct WorkReport {
-    pub id: String,
-    pub name: String,
-    pub status: WorkStatus,
-    pub result: Option<serde_json::Value>,
-    pub error: Option<String>,
-    pub duration_ms: u128,
-}
-
-/// Progress notification emitted during execution.
-#[derive(Debug, Clone)]
-pub enum DelegateEvent {
-    Started { id: String, name: String },
-    Completed(WorkReport),
-    Progress { id: String, message: String },
-}
-
-/// Configure and run a batch of work units.
-pub struct WorkOrchestrator {
-    max_concurrent: usize,
-}
-
 impl WorkOrchestrator {
-    /// Create a new orchestrator with the given max concurrency.
-    /// `max_concurrent` is the maximum number of tasks running in parallel.
-    /// Use 0 for unlimited (defaults to number of tasks).
-    pub fn new(max_concurrent: usize) -> Self {
-        Self { max_concurrent }
-    }
-
     /// Run all work units and collect results. Uses a semaphore for concurrency control.
     pub async fn run_all(&self, units: Vec<WorkUnit>) -> ToolResult<Vec<WorkReport>> {
         let count = units.len();
@@ -137,13 +70,13 @@ impl WorkOrchestrator {
     }
 
     /// Run work units and receive events via a channel for progress tracking.
-    pub async fn run_all_with_events(
+    pub fn run_all_with_events(
         &self,
         units: Vec<WorkUnit>,
-    ) -> (
+    ) -> ToolResult<(
         mpsc::Receiver<DelegateEvent>,
         tokio::task::JoinHandle<Vec<WorkReport>>,
-    ) {
+    )> {
         let (tx, rx) = mpsc::channel(units.len() + 1);
         let handle = {
             let tx = tx.clone();
@@ -156,13 +89,25 @@ impl WorkOrchestrator {
             let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(semaphore_max));
 
             tokio::spawn(async move {
+                let mut reports = Vec::with_capacity(count);
                 let mut set = JoinSet::new();
                 for unit in units {
-                    let permit = semaphore
-                        .clone()
-                        .acquire_owned()
-                        .await
-                        .unwrap_or_else(|_| panic!("semaphore closed"));
+                    let permit = match semaphore.clone().acquire_owned().await {
+                        Ok(p) => p,
+                        Err(e) => {
+                            let report = WorkReport {
+                                id: unit.id,
+                                name: unit.name,
+                                status: WorkStatus::Failed,
+                                result: None,
+                                error: Some(format!("semaphore closed: {e}")),
+                                duration_ms: 0,
+                            };
+                            let _ = tx.send(DelegateEvent::Completed(report.clone())).await;
+                            reports.push(report);
+                            continue;
+                        }
+                    };
                     let tx = tx.clone();
                     let _ = tx
                         .send(DelegateEvent::Started {
@@ -198,7 +143,6 @@ impl WorkOrchestrator {
                     });
                 }
 
-                let mut reports = Vec::with_capacity(count);
                 while let Some(result) = set.join_next().await {
                     match result {
                         Ok(report) => reports.push(report),
@@ -220,7 +164,7 @@ impl WorkOrchestrator {
             })
         };
 
-        (rx, handle)
+        Ok((rx, handle))
     }
 }
 
@@ -400,7 +344,7 @@ mod tests {
             work_unit("x", "task X", || async { ok_task("X").await }),
             work_unit("y", "task Y", || async { ok_task("Y").await }),
         ];
-        let (mut rx, handle) = orchestrator.run_all_with_events(units).await;
+        let (mut rx, handle) = orchestrator.run_all_with_events(units).unwrap();
 
         let mut started = 0;
         let mut completed = 0;

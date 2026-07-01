@@ -25,7 +25,7 @@ impl PythonBackend {
 }
 
 impl LanguageBackend for PythonBackend {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "python"
     }
 
@@ -60,8 +60,7 @@ impl LanguageBackend for PythonBackend {
     ) -> ToolResult<BuildOutput> {
         // Python doesn't have a compile step; install deps as build equivalent
         let has_pyproject = cwd
-            .map(|d| d.join("pyproject.toml").exists())
-            .unwrap_or(false);
+            .is_some_and(|d| d.join("pyproject.toml").exists());
         let (stdout, stderr, success) = if has_pyproject {
             // Try `pip install -e .` or just validate
             build::run_command(&self.python, &["-m", "pip", "install", "-e", "."], cwd)?

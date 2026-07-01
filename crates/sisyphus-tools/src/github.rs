@@ -1,27 +1,13 @@
 //! GitHub Actions integration: workflow templates, CI mode detection, PR review automation.
-use crate::ToolResult;
-use serde::{Deserialize, Serialize};
+//!
+//! ## Sub-modules
+//! - [`types`]: WorkflowKind, GenerateOptions, CiConfig.
 
-/// Workflow kind for template generation.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum WorkflowKind {
-    /// CI workflow: build, lint, test
-    Ci,
-    /// PR review workflow: runs Momus + Oracle review pipeline
-    PrReview,
-    /// Release workflow: build release artifacts and publish
-    Release,
-}
+pub mod types;
 
-impl WorkflowKind {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            WorkflowKind::Ci => "ci",
-            WorkflowKind::PrReview => "pr-review",
-            WorkflowKind::Release => "release",
-        }
-    }
-}
+pub use types::{CiConfig, GenerateOptions, WorkflowKind};
+
+use crate::{ToolError, ToolResult};
 
 /// Detects if we are running in a CI environment.
 pub fn is_ci() -> bool {
@@ -47,21 +33,6 @@ pub fn generate_workflow(kind: WorkflowKind, opts: &GenerateOptions) -> String {
         WorkflowKind::PrReview => generate_pr_review_workflow(opts),
         WorkflowKind::Release => generate_release_workflow(opts),
     }
-}
-
-/// Options for workflow generation.
-#[derive(Debug, Clone, Default)]
-pub struct GenerateOptions {
-    /// Rust toolchain (default: stable)
-    pub rust_toolchain: String,
-    /// Extra flags passed to cargo commands
-    pub cargo_extra_flags: String,
-    /// Exclude packages from CI (comma-separated)
-    pub exclude_packages: String,
-    /// Whether to include clippy in CI
-    pub include_clippy: bool,
-    /// Whether to include cargo-deny audit
-    pub include_deny: bool,
 }
 
 fn generate_ci_workflow(opts: &GenerateOptions) -> String {
@@ -139,8 +110,7 @@ jobs:
           cache-all-crates: "true"
       - name: cargo test
         run: cargo test --workspace {exclude}
-"#,
-        steps = steps
+"#
     )
 }
 
@@ -257,17 +227,16 @@ pub fn post_pr_comment(pr_number: u64, review_text: &str) -> ToolResult<String> 
     let output = std::process::Command::new("gh")
         .args(["pr", "comment", &pr_number.to_string(), "--body", review_text])
         .output()
-        .map_err(|e| crate::ToolError::Generic(format!("Failed to run gh: {e}")))?;
+        .map_err(|e| ToolError::Generic(format!("Failed to run gh: {e}")))?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(crate::ToolError::Generic(format!(
+        return Err(ToolError::Generic(format!(
             "gh pr comment failed: {stderr}"
         )));
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    // gh returns the comment URL on success
     if stdout.is_empty() {
         Ok("Comment posted (no URL returned)".into())
     } else {
@@ -276,34 +245,30 @@ pub fn post_pr_comment(pr_number: u64, review_text: &str) -> ToolResult<String> 
 }
 
 /// Validate that a generated workflow YAML is syntactically correct.
-/// Returns Ok(()) if valid, or an error describing the first issue found.
 pub fn validate_workflow_yaml(yaml: &str) -> ToolResult<()> {
-    // Quick structural checks before attempting serde_yaml parse
     let lines: Vec<&str> = yaml.lines().collect();
     if lines.is_empty() {
-        return Err(crate::ToolError::Generic("Workflow YAML is empty".into()));
+        return Err(ToolError::Generic("Workflow YAML is empty".into()));
     }
 
-    // Must start with a top-level key (workflow name)
     if !lines.iter().any(|l| l.starts_with("name:")) {
-        return Err(crate::ToolError::Generic(
+        return Err(ToolError::Generic(
             "Workflow YAML missing required 'name' field".into(),
         ));
     }
     if !lines.iter().any(|l| l.starts_with("on:")) {
-        return Err(crate::ToolError::Generic(
+        return Err(ToolError::Generic(
             "Workflow YAML missing required 'on' trigger field".into(),
         ));
     }
     if !lines.iter().any(|l| l.starts_with("jobs:")) {
-        return Err(crate::ToolError::Generic(
+        return Err(ToolError::Generic(
             "Workflow YAML missing required 'jobs' field".into(),
         ));
     }
 
-    // Full YAML parse to catch syntax errors
     serde_yaml::from_str::<serde_yaml::Value>(yaml).map_err(|e| {
-        crate::ToolError::Generic(format!("Workflow YAML parse error: {e}"))
+        ToolError::Generic(format!("Workflow YAML parse error: {e}"))
     })?;
 
     Ok(())
@@ -322,38 +287,6 @@ pub fn write_workflow(kind: WorkflowKind, opts: &GenerateOptions) -> ToolResult<
     let content = generate_workflow(kind, opts);
     std::fs::write(&path, content)?;
     Ok(path)
-}
-
-// ── Config for CI mode ─────────────────────────────────────────────────────
-
-/// CI-mode configuration read from environment variables.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct CiConfig {
-    /// Set to "1" or "true" to enable non-interactive CI mode.
-    pub ci_mode: bool,
-    /// GitHub token for API calls
-    pub github_token: Option<String>,
-    /// PR number being reviewed (if applicable)
-    pub pr_number: Option<u64>,
-    /// Output format: "plain" (default) or "json"
-    pub output_format: String,
-}
-
-impl CiConfig {
-    /// Load CI config from the environment.
-    pub fn from_env() -> Self {
-        Self {
-            ci_mode: std::env::var("SISYPHUS_CI")
-                .map(|v| v == "1" || v.to_lowercase() == "true")
-                .unwrap_or(false),
-            github_token: std::env::var("GITHUB_TOKEN").ok(),
-            pr_number: std::env::var("PR_NUMBER")
-                .ok()
-                .and_then(|v| v.parse().ok()),
-            output_format: std::env::var("SISYPHUS_OUTPUT_FORMAT")
-                .unwrap_or_else(|_| "plain".into()),
-        }
-    }
 }
 
 #[cfg(test)]
@@ -399,14 +332,11 @@ mod tests {
 
     #[test]
     fn test_is_ci_detection() {
-        // In test environment, CI should be false
-        // We can't easily test the true case without env manipulation
         assert_eq!(is_ci(), std::env::var("CI").is_ok() || std::env::var("GITHUB_ACTIONS").is_ok());
     }
 
     #[test]
     fn test_ci_config_from_env() {
-        // Default config when no env vars set
         let cfg = CiConfig::from_env();
         assert!(!cfg.ci_mode);
         assert!(cfg.github_token.is_none() || cfg.github_token.is_some());
@@ -435,7 +365,7 @@ mod tests {
     fn test_validate_workflow_yaml_invalid() {
         assert!(validate_workflow_yaml("").is_err());
         assert!(validate_workflow_yaml("not: valid: yaml: {{broken}}").is_err());
-        assert!(validate_workflow_yaml("foo: bar").is_err()); // missing name/on/jobs
+        assert!(validate_workflow_yaml("foo: bar").is_err());
     }
 
     #[test]
@@ -454,9 +384,7 @@ mod tests {
 
     #[test]
     fn test_post_pr_comment_no_gh_cli() {
-        // Without `gh` CLI installed, this should fail gracefully
         let result = post_pr_comment(42, "test review");
-        // Either gh is installed (unlikely in test) or we get an error
         match result {
             Ok(url) => println!("gh CLI available, comment URL: {url}"),
             Err(e) => {

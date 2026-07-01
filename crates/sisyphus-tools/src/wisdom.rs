@@ -21,8 +21,8 @@ impl NotepadManager {
         Self::new(".omo/notepads")
     }
 
-    async fn get_file_path(&self, category: &str) -> PathBuf {
-        self.base_path.join(format!("{}.md", category))
+    fn get_file_path(&self, category: &str) -> PathBuf {
+        self.base_path.join(format!("{category}.md"))
     }
 
     /// Appends a new entry to the specified category notepad.
@@ -31,20 +31,20 @@ impl NotepadManager {
             fs::create_dir_all(&self.base_path).await?;
         }
 
-        let path = self.get_file_path(category).await;
+        let path = self.get_file_path(category);
         let timestamp = now_timestamp();
-        let entry = format!("\n## {}\n{}\n", timestamp, content);
+        let entry = format!("\n## {timestamp}\n{content}\n");
 
-        if !path.exists() {
-            let header = format!("# {}\n> Knowledge accumulation for {category}\n\n", category);
-            let mut file = fs::File::create(&path).await?;
-            file.write_all(header.as_bytes()).await?;
-            file.write_all(entry.as_bytes()).await?;
-        } else {
+        if path.exists() {
             let mut file = fs::OpenOptions::new()
                 .append(true)
                 .open(&path)
                 .await?;
+            file.write_all(entry.as_bytes()).await?;
+        } else {
+            let header = format!("# {category}\n> Knowledge accumulation for {category}\n\n");
+            let mut file = fs::File::create(&path).await?;
+            file.write_all(header.as_bytes()).await?;
             file.write_all(entry.as_bytes()).await?;
         }
 
@@ -75,7 +75,7 @@ impl NotepadManager {
 
     /// Retrieves the content of a specific category notepad.
     pub async fn get(&self, category: &str) -> ToolResult<String> {
-        let path = self.get_file_path(category).await;
+        let path = self.get_file_path(category);
         if !path.exists() {
             return Err(ToolError::NotFound(format!("notepad category not found: {category}")));
         }
@@ -84,7 +84,7 @@ impl NotepadManager {
 
     /// Deletes a specific category notepad.
     pub async fn delete(&self, category: &str) -> ToolResult<()> {
-        let path = self.get_file_path(category).await;
+        let path = self.get_file_path(category);
         if !path.exists() {
             return Err(ToolError::NotFound(format!("notepad category not found: {category}")));
         }
@@ -101,7 +101,7 @@ impl NotepadManager {
         let mut wisdom_block = String::from("<wisdom>\n");
         for category in categories {
             if let Ok(content) = self.get(&category).await {
-                wisdom_block.push_str(&format!("## {}\n{}\n\n", category, content));
+                wisdom_block.push_str(&format!("## {category}\n{content}\n\n"));
             }
         }
         wisdom_block.push_str("</wisdom>");

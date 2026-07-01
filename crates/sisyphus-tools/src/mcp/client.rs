@@ -1,5 +1,5 @@
 use super::transport::McpTransport;
-use super::types::*;
+use super::types::{ServerInfo, ServerCapabilities, JsonRpcResponse, JsonRpcRequest, JsonRpcNotification, InitializeResult, InitializeParams, ClientCapabilities, ToolsCapability, ResourcesCapability, ClientInfo, McpTool, CallToolResult, CallToolParams};
 use crate::ToolResult;
 
 /// High-level MCP client.

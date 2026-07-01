@@ -61,7 +61,7 @@ impl CustomToolLoader {
             .map_err(|e| format!("Failed to read file: {e}"))?;
         
         let def: CustomToolDefinition = toml::from_str(&content)
-            .map_err(|e| format!("TOML parse error in {:?}: {e}", path))?;
+            .map_err(|e| format!("TOML parse error in {path:?}: {e}"))?;
         
         // 验证 handler 文件是否存在
         if !def.handler.exists() {

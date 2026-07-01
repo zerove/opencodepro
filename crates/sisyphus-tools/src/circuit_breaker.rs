@@ -144,7 +144,7 @@ impl CircuitBreaker {
         let mut breakers = self
             .breakers
             .write()
-            .map_err(|e| format!("CircuitBreaker lock poisoned: {}", e))?;
+            .map_err(|e| format!("CircuitBreaker lock poisoned: {e}"))?;
 
         let state = breakers
             .entry(key.to_string())

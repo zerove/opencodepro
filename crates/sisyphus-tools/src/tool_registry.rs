@@ -59,7 +59,7 @@ impl ToolRegistry {
 
     /// List all registered tools and their metadata, sorted by tool_id.
     pub fn list(&self) -> Vec<(String, ToolInfo)> {
-        let map = self.tools.read().unwrap_or_else(|e| e.into_inner());
+        let map = self.tools.read().unwrap_or_else(std::sync::PoisonError::into_inner);
         let mut items: Vec<_> = map.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
         items.sort_by(|a, b| a.0.cmp(&b.0));
         items
@@ -70,7 +70,7 @@ impl ToolRegistry {
     /// For example, `list_by_prefix("tools:")` returns all tools from an
     /// MCP server registered with prefix `tools`.
     pub fn list_by_prefix(&self, prefix: &str) -> Vec<(String, ToolInfo)> {
-        let map = self.tools.read().unwrap_or_else(|e| e.into_inner());
+        let map = self.tools.read().unwrap_or_else(std::sync::PoisonError::into_inner);
         let mut items: Vec<_> = map
             .iter()
             .filter(|(k, _)| k.starts_with(prefix))
@@ -84,7 +84,7 @@ impl ToolRegistry {
     ///
     /// Returns all tools whose tool_id starts with any of the given prefixes.
     pub fn list_for_prefixes(&self, prefixes: &[String]) -> Vec<(String, ToolInfo)> {
-        let map = self.tools.read().unwrap_or_else(|e| e.into_inner());
+        let map = self.tools.read().unwrap_or_else(std::sync::PoisonError::into_inner);
         let mut items: Vec<_> = map
             .iter()
             .filter(|(k, _)| prefixes.iter().any(|p| k.starts_with(p)))
@@ -96,7 +96,7 @@ impl ToolRegistry {
 
     /// Number of registered tools.
     pub fn len(&self) -> usize {
-        self.tools.read().map(|m| m.len()).unwrap_or(0)
+        self.tools.read().map_or(0, |m| m.len())
     }
 
     /// Check if the registry has any tools.

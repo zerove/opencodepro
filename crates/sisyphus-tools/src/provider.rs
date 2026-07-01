@@ -3,55 +3,30 @@
 //! Defines a common [`LlmProvider`] trait that each provider (OpenAI-compatible,
 //! Google Gemini, Anthropic Claude, etc.) implements, plus a [`ProviderRegistry`]
 //! that manages active providers and supports automatic fallback chaining.
+//!
+//! ## Sub-modules
+//! - [`types`]: Shared types (ProviderResponse, ProviderError, ChatMessage, ChatRole).
+//! - [`openai`]: OpenAI-compatible provider (OpenAI, vLLM, Ollama, Groq, etc.).
+//! - [`gemini`]: Google Gemini provider.
+//! - [`anthropic`]: Anthropic Claude provider.
+//! - [`registry`]: Provider registry with fallback support.
+
+pub mod anthropic;
+pub mod gemini;
+pub mod openai;
+pub mod registry;
+pub mod types;
+
+pub use anthropic::AnthropicProvider;
+pub use gemini::GoogleGeminiProvider;
+pub use openai::OpenAiCompatibleProvider;
+pub use registry::{build_provider_registry, ProviderRegistry};
+pub use types::{ChatMessage, ChatRole, ProviderError, ProviderResponse, RetryConfig};
 
 use async_trait::async_trait;
-use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
-use sisyphus_types::{ProviderConfig, ProviderKind};
-use std::collections::HashMap;
-use std::sync::Arc;
-use std::time::Duration;
+use sisyphus_types::ProviderKind;
 
 // ── Provider trait ─────────────────────────────────────────────────────────
-
-/// Result of a chat completion call.
-#[derive(Debug, Clone)]
-pub struct ProviderResponse {
-    /// The generated text content.
-    pub content: String,
-    /// Model used (may differ from requested model if provider aliases).
-    pub model: String,
-    /// Input token count (if known).
-    pub input_tokens: Option<u64>,
-    /// Output token count (if known).
-    pub output_tokens: Option<u64>,
-}
-
-/// Error from a provider call.
-#[derive(Debug, Clone)]
-pub enum ProviderError {
-    /// Transient error — the caller should retry or fall back.
-    Transient(String),
-    /// Permanent error — do not retry with this provider.
-    Permanent(String),
-    /// Rate limited — wait before retrying.
-    RateLimited(String),
-    /// Authentication failure.
-    Auth(String),
-}
-
-impl std::fmt::Display for ProviderError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ProviderError::Transient(msg) => write!(f, "Transient: {msg}"),
-            ProviderError::Permanent(msg) => write!(f, "Permanent: {msg}"),
-            ProviderError::RateLimited(msg) => write!(f, "Rate limited: {msg}"),
-            ProviderError::Auth(msg) => write!(f, "Auth: {msg}"),
-        }
-    }
-}
-
-impl std::error::Error for ProviderError {}
 
 /// Abstract interface for an LLM provider.
 #[async_trait]
@@ -78,592 +53,36 @@ pub trait LlmProvider: Send + Sync {
     ) -> Result<ProviderResponse, ProviderError>;
 }
 
-/// A single chat message.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ChatMessage {
-    pub role: ChatRole,
-    pub content: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub enum ChatRole {
-    System,
-    User,
-    Assistant,
-}
-
-impl ChatRole {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            ChatRole::System => "system",
-            ChatRole::User => "user",
-            ChatRole::Assistant => "assistant",
-        }
-    }
-}
-
-// ── OpenAI-compatible provider ─────────────────────────────────────────────
-
-/// Provider that speaks the OpenAI chat completions protocol.
-///
-/// Compatible with: OpenAI, vLLM, Ollama, Groq, Together AI, Fireworks, etc.
-pub struct OpenAiCompatibleProvider {
-    config: ProviderConfig,
-    client: reqwest::Client,
-}
-
-impl OpenAiCompatibleProvider {
-    pub fn new(config: ProviderConfig) -> Result<Self, String> {
-        let client = reqwest::Client::builder()
-            .timeout(Duration::from_secs(120))
-            .build()
-            .map_err(|e| format!("Failed to build HTTP client: {e}"))?;
-        Ok(Self { config, client })
-    }
-}
-
-#[async_trait]
-impl LlmProvider for OpenAiCompatibleProvider {
-    fn kind(&self) -> ProviderKind {
-        self.config.kind
-    }
-
-    fn name(&self) -> &str {
-        &self.config.name
-    }
-
-    fn model(&self) -> &str {
-        &self.config.model
-    }
-
-    async fn chat(
-        &self,
-        system: &str,
-        messages: &[ChatMessage],
-        json_mode: bool,
-    ) -> Result<ProviderResponse, ProviderError> {
-        let api_key = self.config.resolve_api_key();
-
-        let mut formatted_messages: Vec<Value> = Vec::new();
-
-        if !system.is_empty() {
-            formatted_messages.push(json!({
-                "role": "system",
-                "content": system
-            }));
-        }
-
-        for msg in messages {
-            formatted_messages.push(json!({
-                "role": msg.role.as_str(),
-                "content": msg.content
-            }));
-        }
-
-        let mut body = json!({
-            "model": self.config.model,
-            "messages": formatted_messages,
-            "temperature": self.config.temperature.unwrap_or(0.1),
-        });
-
-        if let Some(maxt) = self.config.max_tokens {
-            body["max_tokens"] = json!(maxt);
-        }
-
-        if json_mode {
-            body["response_format"] = json!({ "type": "json_object" });
-        }
-
-        let res = self
-            .client
-            .post(&self.config.endpoint)
-            .header("Authorization", format!("Bearer {}", api_key))
-            .json(&body)
-            .send()
-            .await
-            .map_err(|e| ProviderError::Transient(format!("HTTP request failed: {e}")))?;
-
-        let status = res.status();
-        let response_json: Value = res
-            .json()
-            .await
-            .map_err(|e| ProviderError::Transient(format!("Failed to parse response: {e}")))?;
-
-        if !status.is_success() {
-            let error_msg = response_json["error"]["message"]
-                .as_str()
-                .unwrap_or("unknown error");
-            if status.as_u16() == 429 {
-                return Err(ProviderError::RateLimited(error_msg.to_string()));
-            }
-            if status.as_u16() == 401 || status.as_u16() == 403 {
-                return Err(ProviderError::Auth(error_msg.to_string()));
-            }
-            return Err(ProviderError::Transient(format!(
-                "API error ({}): {}",
-                status.as_u16(),
-                error_msg
-            )));
-        }
-
-        let content = response_json["choices"][0]["message"]["content"]
-            .as_str()
-            .map(|s| s.to_string())
-            .ok_or_else(|| ProviderError::Permanent("Response missing content".to_string()))?;
-
-        let model = response_json["model"]
-            .as_str()
-            .unwrap_or(&self.config.model)
-            .to_string();
-
-        let input_tokens = response_json["usage"]["prompt_tokens"].as_u64();
-        let output_tokens = response_json["usage"]["completion_tokens"].as_u64();
-
-        Ok(ProviderResponse {
-            content,
-            model,
-            input_tokens,
-            output_tokens,
-        })
-    }
-}
-
-// ── Google Gemini provider ─────────────────────────────────────────────────
-
-/// Provider that translates requests to Google Generative Language API format.
-///
-/// Uses the OpenAI-compatible endpoint at
-/// `https://generativelanguage.googleapis.com/v1beta/openai/chat/completions`
-/// which Gemini supports natively. Falls back to the native API if needed.
-pub struct GoogleGeminiProvider {
-    config: ProviderConfig,
-    client: reqwest::Client,
-}
-
-impl GoogleGeminiProvider {
-    pub fn new(config: ProviderConfig) -> Result<Self, String> {
-        let client = reqwest::Client::builder()
-            .timeout(Duration::from_secs(120))
-            .build()
-            .map_err(|e| format!("Failed to build HTTP client: {e}"))?;
-        Ok(Self { config, client })
-    }
-
-}
-
-#[async_trait]
-impl LlmProvider for GoogleGeminiProvider {
-    fn kind(&self) -> ProviderKind {
-        ProviderKind::Google
-    }
-
-    fn name(&self) -> &str {
-        &self.config.name
-    }
-
-    fn model(&self) -> &str {
-        &self.config.model
-    }
-
-    async fn chat(
-        &self,
-        system: &str,
-        messages: &[ChatMessage],
-        json_mode: bool,
-    ) -> Result<ProviderResponse, ProviderError> {
-        let api_key = self.config.resolve_api_key();
-
-        // Try OpenAI-compatible endpoint first (Gemini supports it natively)
-        let endpoint = self.config.endpoint.clone();
-        let mut formatted_messages: Vec<Value> = Vec::new();
-
-        if !system.is_empty() {
-            formatted_messages.push(json!({
-                "role": "system",
-                "content": system
-            }));
-        }
-
-        for msg in messages {
-            formatted_messages.push(json!({
-                "role": msg.role.as_str(),
-                "content": msg.content
-            }));
-        }
-
-        let mut body = json!({
-            "model": self.config.model,
-            "messages": formatted_messages,
-            "temperature": self.config.temperature.unwrap_or(0.1),
-        });
-
-        if let Some(maxt) = self.config.max_tokens {
-            body["max_tokens"] = json!(maxt);
-        }
-
-        if json_mode {
-            body["response_format"] = json!({ "type": "json_object" });
-        }
-
-        let res = self
-            .client
-            .post(&endpoint)
-            .header("x-goog-api-key", &api_key)
-            .json(&body)
-            .send()
-            .await
-            .map_err(|e| ProviderError::Transient(format!("HTTP request failed: {e}")))?;
-
-        let status = res.status();
-        let response_json: Value = res
-            .json()
-            .await
-            .map_err(|e| ProviderError::Transient(format!("Failed to parse response: {e}")))?;
-
-        if !status.is_success() {
-            let error_msg = response_json["error"]["message"]
-                .as_str()
-                .or_else(|| {
-                    response_json
-                        .get("error")
-                        .and_then(|e| e.as_str())
-                })
-                .unwrap_or("unknown error");
-            if status.as_u16() == 429 {
-                return Err(ProviderError::RateLimited(error_msg.to_string()));
-            }
-            return Err(ProviderError::Transient(format!(
-                "API error ({}): {}",
-                status.as_u16(),
-                error_msg
-            )));
-        }
-
-        // Parse both OpenAI-style and Gemini-native response formats
-        let content = response_json["choices"][0]["message"]["content"]
-            .as_str()
-            .or_else(|| {
-                response_json["candidates"][0]["content"]["parts"]
-                    .as_array()
-                    .and_then(|parts| parts.first())
-                    .and_then(|p| p["text"].as_str())
-            })
-            .map(|s| s.to_string())
-            .ok_or_else(|| {
-                ProviderError::Permanent("Response missing content field".to_string())
-            })?;
-
-        let model = response_json["model"]
-            .as_str()
-            .unwrap_or(&self.config.model)
-            .to_string();
-
-        let input_tokens = response_json["usage"]["prompt_tokens"].as_u64();
-        let output_tokens = response_json["usage"]["completion_tokens"].as_u64();
-
-        Ok(ProviderResponse {
-            content,
-            model,
-            input_tokens,
-            output_tokens,
-        })
-    }
-}
-
-// ── Anthropic Claude provider ──────────────────────────────────────────────
-
-/// Provider that translates requests to Anthropic Messages API format.
-pub struct AnthropicProvider {
-    config: ProviderConfig,
-    client: reqwest::Client,
-}
-
-impl AnthropicProvider {
-    pub fn new(config: ProviderConfig) -> Result<Self, String> {
-        let client = reqwest::Client::builder()
-            .timeout(Duration::from_secs(180))
-            .build()
-            .map_err(|e| format!("Failed to build HTTP client: {e}"))?;
-        Ok(Self { config, client })
-    }
-}
-
-#[async_trait]
-impl LlmProvider for AnthropicProvider {
-    fn kind(&self) -> ProviderKind {
-        ProviderKind::Anthropic
-    }
-
-    fn name(&self) -> &str {
-        &self.config.name
-    }
-
-    fn model(&self) -> &str {
-        &self.config.model
-    }
-
-    async fn chat(
-        &self,
-        system: &str,
-        messages: &[ChatMessage],
-        _json_mode: bool,
-    ) -> Result<ProviderResponse, ProviderError> {
-        let api_key = self.config.resolve_api_key();
-
-        // Anthropic uses a different message format
-        let mut anthropic_messages: Vec<Value> = Vec::new();
-        for msg in messages {
-            anthropic_messages.push(json!({
-                "role": if msg.role == ChatRole::Assistant { "assistant" } else { "user" },
-                "content": msg.content
-            }));
-        }
-
-        let mut body = json!({
-            "model": self.config.model,
-            "messages": anthropic_messages,
-            "max_tokens": self.config.max_tokens.unwrap_or(4096),
-            "temperature": self.config.temperature.unwrap_or(0.1),
-        });
-
-        // Anthropic puts system prompt at top level, not in messages array
-        if !system.is_empty() {
-            body["system"] = json!(system);
-        }
-
-        let res = self
-            .client
-            .post(&self.config.endpoint)
-            .header("x-api-key", &api_key)
-            .header("anthropic-version", "2023-06-01")
-            .json(&body)
-            .send()
-            .await
-            .map_err(|e| ProviderError::Transient(format!("HTTP request failed: {e}")))?;
-
-        let status = res.status();
-        let response_json: Value = res
-            .json()
-            .await
-            .map_err(|e| ProviderError::Transient(format!("Failed to parse response: {e}")))?;
-
-        if !status.is_success() {
-            let error_msg = response_json["error"]["message"]
-                .as_str()
-                .unwrap_or("unknown error");
-            if status.as_u16() == 429 {
-                return Err(ProviderError::RateLimited(error_msg.to_string()));
-            }
-            if status.as_u16() == 401 {
-                return Err(ProviderError::Auth(error_msg.to_string()));
-            }
-            return Err(ProviderError::Transient(format!(
-                "API error ({}): {}",
-                status.as_u16(),
-                error_msg
-            )));
-        }
-
-        // Anthropic response format: { content: [{ type: "text", text: "..." }] }
-        let content = response_json["content"]
-            .as_array()
-            .and_then(|arr| {
-                arr.iter()
-                    .find(|c| c["type"] == "text")
-                    .and_then(|c| c["text"].as_str())
-            })
-            .map(|s| s.to_string())
-            .ok_or_else(|| {
-                ProviderError::Permanent("Response missing text content".to_string())
-            })?;
-
-        let model = response_json["model"]
-            .as_str()
-            .unwrap_or(&self.config.model)
-            .to_string();
-
-        let input_tokens = response_json["usage"]["input_tokens"].as_u64();
-        let output_tokens = response_json["usage"]["output_tokens"].as_u64();
-
-        Ok(ProviderResponse {
-            content,
-            model,
-            input_tokens,
-            output_tokens,
-        })
-    }
-}
-
-// ── Provider Registry ──────────────────────────────────────────────────────
-
-/// Manages multiple LLM providers and supports fallback chains.
-pub struct ProviderRegistry {
-    /// All registered providers, keyed by name.
-    providers: HashMap<String, Arc<dyn LlmProvider>>,
-    /// Ordered list of provider names for fallback (by priority).
-    fallback_order: Vec<String>,
-}
-
-impl ProviderRegistry {
-    pub fn new() -> Self {
-        Self {
-            providers: HashMap::new(),
-            fallback_order: Vec::new(),
-        }
-    }
-
-    /// Register a provider. If a provider with the same name exists, it is replaced.
-    pub fn register(&mut self, provider: Arc<dyn LlmProvider>) {
-        let name = provider.name().to_string();
-        self.providers.insert(name.clone(), provider);
-
-        // Rebuild fallback order if not already present
-        if !self.fallback_order.contains(&name) {
-            self.fallback_order.push(name);
-        }
-    }
-
-    /// Get a provider by name.
-    pub fn get(&self, name: &str) -> Option<Arc<dyn LlmProvider>> {
-        self.providers.get(name).cloned()
-    }
-
-    /// Get all registered provider names.
-    pub fn list(&self) -> Vec<String> {
-        self.providers.keys().cloned().collect()
-    }
-
-    /// Remove a provider by name.
-    pub fn remove(&mut self, name: &str) -> bool {
-        self.fallback_order.retain(|n| n != name);
-        self.providers.remove(name).is_some()
-    }
-
-    /// Register a fallback chain: providers are tried in priority order.
-    ///
-    /// This replaces any existing fallback order.
-    pub fn set_fallback_order(&mut self, order: Vec<String>) {
-        self.fallback_order = order;
-    }
-
-    /// Get the current fallback order.
-    pub fn fallback_order(&self) -> &[String] {
-        &self.fallback_order
-    }
-
-    /// Call the first available provider with automatic fallback.
-    ///
-    /// On transient error or rate-limit, the next provider in the chain is tried.
-    /// Permanent errors and auth errors are returned immediately.
-    pub async fn chat_with_fallback(
-        &self,
-        system: &str,
-        messages: &[ChatMessage],
-        json_mode: bool,
-    ) -> Result<ProviderResponse, ProviderError> {
-        let mut last_error = None;
-
-        for name in &self.fallback_order {
-            if let Some(provider) = self.providers.get(name) {
-                match provider.chat(system, messages, json_mode).await {
-                    Ok(response) => return Ok(response),
-                    Err(ProviderError::Transient(e)) => {
-                        last_error = Some(ProviderError::Transient(format!(
-                            "{}: {e}",
-                            provider.name()
-                        )));
-                        continue; // try next
-                    }
-                    Err(ProviderError::RateLimited(e)) => {
-                        last_error = Some(ProviderError::RateLimited(format!(
-                            "{}: {e}",
-                            provider.name()
-                        )));
-                        continue; // try next
-                    }
-                    Err(e @ ProviderError::Permanent(_)) => return Err(e),
-                    Err(e @ ProviderError::Auth(_)) => return Err(e),
-                }
-            }
-        }
-
-        Err(last_error.unwrap_or_else(|| {
-            ProviderError::Permanent("No providers available in fallback chain".to_string())
-        }))
-    }
-
-    /// Call a specific provider by name.
-    pub async fn chat_with_provider(
-        &self,
-        name: &str,
-        system: &str,
-        messages: &[ChatMessage],
-        json_mode: bool,
-    ) -> Result<ProviderResponse, ProviderError> {
-        match self.providers.get(name) {
-            Some(provider) => provider.chat(system, messages, json_mode).await,
-            None => Err(ProviderError::Permanent(format!(
-                "Provider '{name}' not found"
-            ))),
-        }
-    }
-}
-
-impl Default for ProviderRegistry {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-// ── Helpers ────────────────────────────────────────────────────────────────
-
-/// Build the default provider registry from config.
-pub fn build_provider_registry(
-    providers_cfg: &[ProviderConfig],
-) -> ProviderRegistry {
-    let mut registry = ProviderRegistry::new();
-    let mut fallback_order: Vec<String> = Vec::new();
-
-    let mut sorted = providers_cfg.to_vec();
-    sorted.sort_by_key(|p| p.priority);
-
-    for cfg in sorted {
-        if !cfg.enabled {
-            continue;
-        }
-
-        let provider: Result<Arc<dyn LlmProvider>, String> = match cfg.kind {
-            ProviderKind::OpenAi | ProviderKind::Google => {
-                if cfg.kind == ProviderKind::Google {
-                    GoogleGeminiProvider::new(cfg.clone()).map(|p| Arc::new(p) as Arc<dyn LlmProvider>)
-                } else {
-                    OpenAiCompatibleProvider::new(cfg.clone())
-                        .map(|p| Arc::new(p) as Arc<dyn LlmProvider>)
-                }
-            }
-            ProviderKind::Anthropic => AnthropicProvider::new(cfg.clone())
-                .map(|p| Arc::new(p) as Arc<dyn LlmProvider>),
-        };
-
-        match provider {
-            Ok(p) => {
-                let name = p.name().to_string();
-                registry.register(p);
-                fallback_order.push(name);
-            }
-            Err(e) => {
-                eprintln!("[provider] Failed to build '{}': {e}", cfg.name);
-            }
-        }
-    }
-
-    registry.set_fallback_order(fallback_order);
-    registry
-}
+// ── Tests ─────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sisyphus_types::ProviderConfig;
+    use std::sync::Arc;
+
+    struct MockProvider {
+        name: String,
+        fail_until: usize,
+        current_attempt: std::sync::atomic::AtomicUsize,
+        error_to_return: ProviderError,
+        success_response: ProviderResponse,
+    }
+
+    #[async_trait]
+    impl LlmProvider for MockProvider {
+        fn kind(&self) -> ProviderKind { ProviderKind::OpenAi }
+        fn name(&self) -> &str { &self.name }
+        fn model(&self) -> &str { "mock-model" }
+        async fn chat(&self, _s: &str, _m: &[ChatMessage], _j: bool) -> Result<ProviderResponse, ProviderError> {
+            let attempt = self.current_attempt.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            if attempt < self.fail_until {
+                Err(self.error_to_return.clone())
+            } else {
+                Ok(self.success_response.clone())
+            }
+        }
+    }
 
     fn make_openai_config() -> ProviderConfig {
         ProviderConfig {
@@ -898,18 +317,117 @@ mod tests {
         assert_eq!(deserialized.content, "Hello");
     }
 
-    #[test]
-    fn test_provider_error_display() {
-        let err = ProviderError::Transient("timeout".into());
-        assert_eq!(err.to_string(), "Transient: timeout");
+    #[tokio::test]
+    async fn test_chat_with_fallback_retries_transient() {
+        let mut registry = ProviderRegistry::new();
+        let mock = Arc::new(MockProvider {
+            name: "mock-transient".into(),
+            fail_until: 2,
+            current_attempt: std::sync::atomic::AtomicUsize::new(0),
+            error_to_return: ProviderError::Transient("temporary failure".into()),
+            success_response: ProviderResponse {
+                content: "success".into(),
+                model: "mock-model".into(),
+                input_tokens: None,
+                output_tokens: None,
+            },
+        });
+        registry.register(mock.clone());
 
-        let err = ProviderError::Permanent("bad request".into());
-        assert_eq!(err.to_string(), "Permanent: bad request");
+        let res = registry.chat_with_fallback("sys", &[], false).await;
+        assert!(res.is_ok());
+        assert_eq!(res.unwrap().content, "success");
+        assert_eq!(mock.current_attempt.load(std::sync::atomic::Ordering::SeqCst), 3);
+    }
 
-        let err = ProviderError::RateLimited("too many".into());
-        assert_eq!(err.to_string(), "Rate limited: too many");
+    #[tokio::test]
+    async fn test_chat_with_fallback_retries_rate_limited() {
+        let mut registry = ProviderRegistry::new();
+        let mock = Arc::new(MockProvider {
+            name: "mock-rate".into(),
+            fail_until: 2,
+            current_attempt: std::sync::atomic::AtomicUsize::new(0),
+            error_to_return: ProviderError::RateLimited("too many requests".into()),
+            success_response: ProviderResponse {
+                content: "success".into(),
+                model: "mock-model".into(),
+                input_tokens: None,
+                output_tokens: None,
+            },
+        });
+        registry.register(mock.clone());
 
-        let err = ProviderError::Auth("invalid key".into());
-        assert_eq!(err.to_string(), "Auth: invalid key");
+        let res = registry.chat_with_fallback("sys", &[], false).await;
+        assert!(res.is_ok());
+        assert_eq!(res.unwrap().content, "success");
+        assert_eq!(mock.current_attempt.load(std::sync::atomic::Ordering::SeqCst), 3);
+    }
+
+    #[tokio::test]
+    async fn test_chat_with_fallback_no_retry_permanent() {
+        let mut registry = ProviderRegistry::new();
+        let mock = Arc::new(MockProvider {
+            name: "mock-perm".into(),
+            fail_until: 2,
+            current_attempt: std::sync::atomic::AtomicUsize::new(0),
+            error_to_return: ProviderError::Permanent("fatal error".into()),
+            success_response: ProviderResponse {
+                content: "success".into(),
+                model: "mock-model".into(),
+                input_tokens: None,
+                output_tokens: None,
+            },
+        });
+        registry.register(mock.clone());
+
+        let res = registry.chat_with_fallback("sys", &[], false).await;
+        assert!(res.is_err());
+        match res.unwrap_err() {
+            ProviderError::Permanent(e) => assert!(e.contains("fatal error")),
+            _ => panic!("Expected Permanent error"),
+        }
+        assert_eq!(mock.current_attempt.load(std::sync::atomic::Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn test_chat_with_fallback_exhausts_retries_and_falls_back() {
+        let mut registry = ProviderRegistry::new();
+
+        let mock1 = Arc::new(MockProvider {
+            name: "mock-fail".into(),
+            fail_until: 10,
+            current_attempt: std::sync::atomic::AtomicUsize::new(0),
+            error_to_return: ProviderError::Transient("fail".into()),
+            success_response: ProviderResponse {
+                content: "never".into(),
+                model: "mock-model".into(),
+                input_tokens: None,
+                output_tokens: None,
+            },
+        });
+
+        let mock2 = Arc::new(MockProvider {
+            name: "mock-success".into(),
+            fail_until: 0,
+            current_attempt: std::sync::atomic::AtomicUsize::new(0),
+            error_to_return: ProviderError::Transient("fail".into()),
+            success_response: ProviderResponse {
+                content: "success".into(),
+                model: "mock-model".into(),
+                input_tokens: None,
+                output_tokens: None,
+            },
+        });
+
+        registry.register(mock1.clone());
+        registry.register(mock2.clone());
+        registry.set_fallback_order(vec!["mock-fail".into(), "mock-success".into()]);
+
+        let res = registry.chat_with_fallback("sys", &[], false).await;
+        assert!(res.is_ok());
+        assert_eq!(res.unwrap().content, "success");
+
+        assert_eq!(mock1.current_attempt.load(std::sync::atomic::Ordering::SeqCst), 4);
+        assert_eq!(mock2.current_attempt.load(std::sync::atomic::Ordering::SeqCst), 1);
     }
 }

@@ -27,7 +27,7 @@ impl NodeBackend {
 }
 
 impl LanguageBackend for NodeBackend {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "node"
     }
 
@@ -35,11 +35,9 @@ impl LanguageBackend for NodeBackend {
         // TypeScript type-check: tsc --noEmit
         // If no tsconfig, try vue-tsc for Vue projects, or skip
         let has_tsconfig = cwd
-            .map(|d| d.join("tsconfig.json").exists())
-            .unwrap_or(false);
+            .is_some_and(|d| d.join("tsconfig.json").exists());
         let has_vue = cwd
-            .map(|d| d.join("vue.config.js").exists() || has_vue_dep(cwd))
-            .unwrap_or(false);
+            .is_some_and(|d| d.join("vue.config.js").exists() || has_vue_dep(cwd));
 
         if has_vue && which("vue-tsc").is_some() {
             let (stdout, stderr, success) = build::run_command("vue-tsc", &["--noEmit"], cwd)?;
@@ -336,14 +334,14 @@ fn parse_eslint_json(json_str: &str) -> (Vec<Diag>, Vec<Diag>) {
 
     if let Ok(results) = serde_json::from_str::<Vec<serde_json::Value>>(json_str) {
         for result in results {
-            let file = result["filePath"].as_str().map(|s| s.to_string());
+            let file = result["filePath"].as_str().map(std::string::ToString::to_string);
             if let Some(messages) = result["messages"].as_array() {
                 for msg in messages {
                     let line = msg["line"].as_u64().map(|n| n as usize);
                     let col = msg["column"].as_u64().map(|n| n as usize);
                     let severity = msg["severity"].as_u64().unwrap_or(1);
                     let message = msg["message"].as_str().unwrap_or("").to_string();
-                    let rule_id = msg["ruleId"].as_str().map(|s| s.to_string());
+                    let rule_id = msg["ruleId"].as_str().map(std::string::ToString::to_string);
                     let level = if severity == 2 { "error" } else { "warning" };
 
                     let diag = Diag {

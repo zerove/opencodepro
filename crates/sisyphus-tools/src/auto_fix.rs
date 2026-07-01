@@ -222,7 +222,7 @@ impl AutoFixer {
                     stderr
                 }
             }
-            Err(e) => format!("Failed to run cargo check: {}", e),
+            Err(e) => format!("Failed to run cargo check: {e}"),
         }
     }
 

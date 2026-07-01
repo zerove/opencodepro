@@ -29,7 +29,7 @@ impl TestGenerator {
 
         for line in content.lines() {
             let trimmed = line.trim();
-            if trimmed.contains(&format!("fn {}", fn_name)) {
+            if trimmed.contains(&format!("fn {fn_name}")) {
                 found = true;
                 is_pub = trimmed.starts_with("pub ") || trimmed.starts_with("pub(crate) ");
                 is_async = trimmed.contains("async ");
@@ -55,8 +55,7 @@ impl TestGenerator {
 
         if !found {
             return Err(crate::ToolError::Generic(format!(
-                "Function '{}' not found in {}",
-                fn_name, file_path
+                "Function '{fn_name}' not found in {file_path}"
             )));
         }
 
@@ -221,21 +220,20 @@ impl TestGenerator {
         has_return: bool,
         param_count: usize,
     ) -> String {
-        let test_name = format!("test_{}", fn_name);
+        let test_name = format!("test_{fn_name}");
         let mut code = String::new();
 
         if is_async {
             code.push_str("    #[tokio::test]\n");
-            code.push_str(&format!("    async fn {}() {{\n", test_name));
+            code.push_str(&format!("    async fn {test_name}() {{\n"));
         } else {
             code.push_str("    #[test]\n");
-            code.push_str(&format!("    fn {}() {{\n", test_name));
+            code.push_str(&format!("    fn {test_name}() {{\n"));
         }
 
         if !is_pub {
             code.push_str(&format!(
-                "        // Note: {} is not public, testing via module access\n",
-                fn_name
+                "        // Note: {fn_name} is not public, testing via module access\n"
             ));
         }
 
@@ -243,9 +241,9 @@ impl TestGenerator {
             code.push_str("        // TODO: Fill in actual parameters\n");
             code.push_str("        // let result = ");
             if is_async {
-                code.push_str(&format!("{}(/* params */).await;\n", fn_name));
+                code.push_str(&format!("{fn_name}(/* params */).await;\n"));
             } else {
-                code.push_str(&format!("{}(/* params */);\n", fn_name));
+                code.push_str(&format!("{fn_name}(/* params */);\n"));
             }
 
             if has_return {
@@ -253,9 +251,9 @@ impl TestGenerator {
             }
         } else {
             if is_async {
-                code.push_str(&format!("        let result = {}().await;\n", fn_name));
+                code.push_str(&format!("        let result = {fn_name}().await;\n"));
             } else {
-                code.push_str(&format!("        let result = {}();\n", fn_name));
+                code.push_str(&format!("        let result = {fn_name}();\n"));
             }
 
             if has_return {

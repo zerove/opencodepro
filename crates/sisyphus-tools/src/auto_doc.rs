@@ -20,7 +20,7 @@ impl AutoDocGenerator {
             let trimmed = lines[i].trim();
 
             // Look for "pub fn fn_name" or "fn fn_name"
-            if trimmed.contains(&format!("fn {}", fn_name))
+            if trimmed.contains(&format!("fn {fn_name}"))
                 && (trimmed.starts_with("pub")
                     || trimmed.starts_with("async")
                     || trimmed.starts_with("fn"))
@@ -59,17 +59,17 @@ impl AutoDocGenerator {
                 let params = Self::extract_params(&signature);
                 let return_type = Self::extract_return_type(&signature);
 
-                doc.push_str(&format!("/// Executes the [`{}`] operation.\n", fn_name));
+                doc.push_str(&format!("/// Executes the [`{fn_name}`] operation.\n"));
                 if !params.is_empty() {
                     doc.push_str("///\n");
                     doc.push_str("/// # Parameters\n");
                     for (name, ty) in &params {
-                        doc.push_str(&format!("/// - `{}`: {}\n", name, ty));
+                        doc.push_str(&format!("/// - `{name}`: {ty}\n"));
                     }
                 }
                 if let Some(rt) = &return_type {
                     doc.push_str("///\n");
-                    doc.push_str(&format!("/// # Returns\n/// {}\n", rt));
+                    doc.push_str(&format!("/// # Returns\n/// {rt}\n"));
                 }
                 doc.push_str("///\n");
                 doc.push_str("/// # Auto-generated documentation stub.\n");
@@ -81,8 +81,7 @@ impl AutoDocGenerator {
 
         if !found {
             return Err(crate::ToolError::Generic(format!(
-                "Function '{}' not found in {}",
-                fn_name, file_path
+                "Function '{fn_name}' not found in {file_path}"
             )));
         }
 
@@ -143,21 +142,20 @@ impl AutoDocGenerator {
                     let doc = if trimmed.starts_with("pub fn ") {
                         let params = Self::extract_params(line);
                         let return_type = Self::extract_return_type(line);
-                        let mut d = format!("/// The [`{}`] function.\n", name);
+                        let mut d = format!("/// The [`{name}`] function.\n");
                         if !params.is_empty() {
                             d.push_str("///\n/// # Parameters\n");
                             for (p, t) in &params {
-                                d.push_str(&format!("/// - `{}`: {}\n", p, t));
+                                d.push_str(&format!("/// - `{p}`: {t}\n"));
                             }
                         }
                         if let Some(rt) = &return_type {
-                            d.push_str(&format!("///\n/// # Returns\n/// {}\n", rt));
+                            d.push_str(&format!("///\n/// # Returns\n/// {rt}\n"));
                         }
                         d
                     } else {
                         format!(
-                            "/// The [`{}`] type.\n///\n/// Auto-generated documentation stub.\n",
-                            name
+                            "/// The [`{name}`] type.\n///\n/// Auto-generated documentation stub.\n"
                         )
                     };
                     results.push((name, doc));

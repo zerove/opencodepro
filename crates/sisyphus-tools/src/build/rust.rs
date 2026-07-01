@@ -7,7 +7,7 @@ use std::path::Path;
 pub struct RustBackend;
 
 impl LanguageBackend for RustBackend {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "rust"
     }
 
@@ -218,7 +218,7 @@ pub fn extract_diags(stderr: &str) -> (Vec<Diag>, Vec<Diag>) {
                 let mut parts = loc.rsplitn(3, ':');
                 let col_str = parts.next().and_then(|s| s.parse().ok());
                 let line_str = parts.next().and_then(|s| s.parse().ok());
-                let f = parts.next().map(|s| s.to_string());
+                let f = parts.next().map(std::string::ToString::to_string);
                 lines.next();
                 (f, line_str, col_str)
             } else {

@@ -1,137 +1,20 @@
+//! Web fetching and searching.
+//!
+//! Provides `webfetch` for URL content retrieval and `websearch` for
+//! DuckDuckGo HTML search, with DoH-based DNS bypass for WSL environments.
+//!
+//! ## Sub-modules
+//! - [`types`]: Shared types (SearchResult, FetchResult).
+//! - [`resolver`]: DNS-over-HTTPS resolution and URL parsing.
+
+pub mod resolver;
+pub mod types;
+
+pub use types::{FetchResult, SearchResult};
+
 use crate::{ToolError, ToolResult};
 use regex::Regex;
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-
-/// Known DoH (DNS-over-HTTPS) server IPs for bootstrapping.
-/// Hard-coded IPs bypass the hijacked system DNS on port 53.
-const DOH_SERVERS: &[(&str, Ipv4Addr)] = &[
-    ("dns.google", Ipv4Addr::new(8, 8, 8, 8)),
-    ("dns.google", Ipv4Addr::new(8, 8, 4, 4)),
-    ("cloudflare-dns.com", Ipv4Addr::new(1, 1, 1, 1)),
-    ("cloudflare-dns.com", Ipv4Addr::new(1, 0, 0, 1)),
-];
-
-#[derive(Debug, Clone)]
-pub struct SearchResult {
-    pub title: String,
-    pub url: String,
-    pub snippet: String,
-}
-
-#[derive(Debug, Clone)]
-pub struct FetchResult {
-    pub url: String,
-    pub content: String,
-    pub content_type: String,
-}
-
-// ── DNS-over-HTTPS helpers ──────────────────────────────────
-
-/// Resolve a domain name via Google/Cloudflare DoH JSON API on **port 443**,
-/// bypassing the hijacked system DNS (port 53) in WSL environments.
-async fn resolve_via_doh(domain: &str) -> ToolResult<IpAddr> {
-    let mut last_err = String::from("no DoH server reachable");
-
-    for &(doh_host, doh_ip) in DOH_SERVERS {
-        let url = format!("https://{doh_host}/resolve?name={domain}&type=A");
-        let addr = SocketAddr::new(IpAddr::V4(doh_ip), 443);
-
-        let client = match reqwest::Client::builder()
-            .user_agent("Sisyphus/0.1")
-            .timeout(std::time::Duration::from_secs(6))
-            .no_proxy()
-            .resolve(doh_host, addr)
-            .build()
-        {
-            Ok(c) => c,
-            Err(e) => {
-                last_err = e.to_string();
-                continue;
-            }
-        };
-
-        match client.get(&url).send().await {
-            Ok(resp) if resp.status().is_success() => {
-                let json = match resp.json::<serde_json::Value>().await {
-                    Ok(v) => v,
-                    Err(e) => {
-                        last_err = e.to_string();
-                        continue;
-                    }
-                };
-                if let Some(answer) = json["Answer"].as_array() {
-                    for entry in answer {
-                        if entry["type"].as_i64() == Some(1) {
-                            if let Some(ip_str) = entry["data"].as_str() {
-                                if let Ok(ip) = ip_str.parse::<IpAddr>() {
-                                    return Ok(ip);
-                                }
-                            }
-                        }
-                    }
-                }
-                last_err = "no A record in DoH response".into();
-            }
-            Ok(resp) => {
-                last_err = format!("DoH status {}", resp.status());
-            }
-            Err(e) => {
-                last_err = e.to_string();
-            }
-        }
-    }
-
-    Err(ToolError::WebError(format!(
-        "DNS resolution failed for {domain}: {last_err}"
-    )))
-}
-
-/// Build a reqwest client with DoH-based DNS resolution and direct connection
-/// (no system proxy), bypassing both DNS hijack and HTTP proxy dependency.
-async fn build_direct_client(host: &str, port: u16) -> ToolResult<reqwest::Client> {
-    let ip = resolve_via_doh(host).await?;
-    let addr = SocketAddr::new(ip, port);
-    reqwest::Client::builder()
-        .user_agent("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36")
-        .no_proxy()
-        .resolve(host, addr)
-        .timeout(std::time::Duration::from_secs(20))
-        .build()
-        .map_err(|e| ToolError::WebError(format!("failed to build direct client: {e}")))
-}
-
-fn extract_host(url: &str) -> ToolResult<&str> {
-    let without = url
-        .strip_prefix("https://")
-        .or_else(|| url.strip_prefix("http://"))
-        .ok_or_else(|| ToolError::WebError(format!("unsupported URL scheme: {url}")))?;
-    let host = without.split('/').next().unwrap_or(without);
-    let host = host.split(':').next().unwrap_or(host);
-    if host.is_empty() {
-        return Err(ToolError::WebError(format!("empty host in URL: {url}")));
-    }
-    Ok(host)
-}
-
-fn extract_port(url: &str) -> u16 {
-    if let Some(rest) = url
-        .strip_prefix("https://")
-        .or_else(|| url.strip_prefix("http://"))
-    {
-        if let Some(host_part) = rest.split('/').next() {
-            if let Some(port_str) = host_part.split(':').nth(1) {
-                if let Ok(port) = port_str.parse::<u16>() {
-                    return port;
-                }
-            }
-        }
-    }
-    if url.starts_with("https://") {
-        443
-    } else {
-        80
-    }
-}
+pub use resolver::{build_direct_client, extract_host, extract_port};
 
 // ── Public API ──────────────────────────────────────────────
 
@@ -191,10 +74,10 @@ pub async fn webfetch(url: &str) -> ToolResult<FetchResult> {
 /// Uses DoH-based direct connection first, then falls back to default client.
 pub async fn websearch(query: &str, num_results: usize) -> ToolResult<Vec<SearchResult>> {
     static RE_RESULT: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
-        Regex::new(r##"<a[^>]*class="result__a"[^>]*href="([^"]*)"[^>]*>(.*?)</a>"##).unwrap()
+        Regex::new(r#"<a[^>]*class="result__a"[^>]*href="([^"]*)"[^>]*>(.*?)</a>"#).unwrap()
     });
     static RE_SNIPPET: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
-        Regex::new(r##"<a[^>]*class="result__snippet"[^>]*>(.*?)</a>"##).unwrap()
+        Regex::new(r#"<a[^>]*class="result__snippet"[^>]*>(.*?)</a>"#).unwrap()
     });
     static RE_TAG: std::sync::LazyLock<Regex> =
         std::sync::LazyLock::new(|| Regex::new(r"<[^>]*>").unwrap());
@@ -225,15 +108,15 @@ pub async fn websearch(query: &str, num_results: usize) -> ToolResult<Vec<Search
     let titles: Vec<(&str, &str)> = RE_RESULT
         .captures_iter(&html)
         .map(|c| {
-            let url = c.get(1).map(|m| m.as_str()).unwrap_or("");
-            let title_html = c.get(2).map(|m| m.as_str()).unwrap_or("");
+            let url = c.get(1).map_or("", |m| m.as_str());
+            let title_html = c.get(2).map_or("", |m| m.as_str());
             (url, title_html)
         })
         .collect();
 
     let snippets: Vec<&str> = RE_SNIPPET
         .captures_iter(&html)
-        .map(|c| c.get(1).map(|m| m.as_str()).unwrap_or(""))
+        .map(|c| c.get(1).map_or("", |m| m.as_str()))
         .collect();
 
     let strip = |s: &str| -> String {
@@ -252,7 +135,7 @@ pub async fn websearch(query: &str, num_results: usize) -> ToolResult<Vec<Search
             break;
         }
         let resolved_url = if url.starts_with("//") {
-            format!("https:{}", url)
+            format!("https:{url}")
         } else {
             url.to_string()
         };
@@ -384,7 +267,7 @@ fn html_to_text(html: &str) -> String {
 
     result
         .lines()
-        .map(|l| l.trim())
+        .map(str::trim)
         .filter(|l| !l.is_empty())
         .collect::<Vec<_>>()
         .join("\n")

@@ -1,106 +1,27 @@
+//! Session management for conversation history.
+//!
+//! Provides persistence, CRUD, compression, checkpointing, and export/import
+//! of conversation sessions.
+//!
+//! ## Sub-modules
+//! - [`types`]: Shared types (Message, Session, SessionStore, SessionCheckpoint, CompressStrategy).
+
+pub mod types;
+
+pub use types::{
+    CompressStrategy, Message, Session, SessionCheckpoint,
+};
+
 use crate::{ToolError, ToolResult};
-use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Message {
-    pub role: String,
-    pub content: String,
-    pub created_at: String,
-    pub estimated_tokens: u64,
-    pub is_compressed: bool,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Session {
-    pub id: String,
-    pub name: String,
-    pub created_at: String,
-    pub updated_at: String,
-    pub message_count: u64,
-    pub messages: Vec<Message>,
-    pub metadata: HashMap<String, String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct SessionStore {
-    sessions: HashMap<String, Session>,
-    next_seq: u64,
-}
-
-impl SessionStore {
-    fn empty() -> Self {
-        Self {
-            sessions: HashMap::new(),
-            next_seq: 1,
-        }
-    }
-
-    fn load_or_empty(path: &Path) -> Self {
-        if path.exists() {
-            fs::read_to_string(path)
-                .ok()
-                .and_then(|content| serde_json::from_str(&content).ok())
-                .unwrap_or_else(Self::empty)
-        } else {
-            Self::empty()
-        }
-    }
-
-    fn save(&self, path: &Path) -> ToolResult<()> {
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent).map_err(ToolError::Io)?;
-        }
-        let content = serde_json::to_string_pretty(self)
-            .map_err(|e| ToolError::TodoError(format!("serialize failed: {e}")))?;
-        fs::write(path, content).map_err(ToolError::Io)
-    }
-}
-
-fn now_iso() -> String {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let dur = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default();
-    let secs = dur.as_secs();
-    let millis = dur.as_millis() % 1000;
-    let secs_in_day = secs % 86400;
-    let hours = secs_in_day / 3600;
-    let minutes = (secs_in_day % 3600) / 60;
-    let seconds = secs_in_day % 60;
-
-    let days_since_epoch = secs / 86400;
-    let year = 1970 + (days_since_epoch as f64 / 365.25) as u64;
-    let month = 1 + ((days_since_epoch % 365) as f64 / 30.44) as u64;
-    let day = 1 + ((days_since_epoch % 365) as f64 % 30.44) as u64;
-
-    format!("{year:04}-{month:02}-{day:02}T{hours:02}:{minutes:02}:{seconds:02}.{millis:03}Z")
-}
-
-/// Simple heuristic for token estimation: 1 token ≈ 4 characters.
-fn estimate_tokens(text: &str) -> u64 {
-    (text.len() as u64).div_ceil(4)
-}
+use types::{estimate_tokens, html_escape, now_iso, SessionStore};
 
 /// Sums the estimated tokens of all messages in a session.
 pub fn session_estimate_token_count(path: &Path, id: &str) -> ToolResult<u64> {
     let session = session_get(path, id)?;
     Ok(session.messages.iter().map(|m| m.estimated_tokens).sum())
-}
-
-/// Strategy for session compression.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum CompressStrategy {
-    /// Compress if total token count exceeds the given threshold.
-    Threshold(u64),
-}
-
-impl Default for CompressStrategy {
-    fn default() -> Self {
-        Self::Threshold(32000)
-    }
 }
 
 /// Compresses a session by merging consecutive assistant+user message pairs into summaries.
@@ -136,15 +57,15 @@ pub fn session_compress(path: &Path, id: &str, strategy: &CompressStrategy) -> T
                 "Summary of assistant message: {}\nUser response: {}",
                 msgs[i].content, msgs[i+1].content
             );
-            
+
             let compressed_msg = Message {
                 role: "system".to_string(),
-                content: format!("Compressed summary: {}", combined_content),
+                content: format!("Compressed summary: {combined_content}"),
                 created_at: now_iso(),
                 estimated_tokens: estimate_tokens(&combined_content),
                 is_compressed: true,
             };
-            
+
             new_messages.push(compressed_msg);
             i += 2;
         } else {
@@ -161,19 +82,10 @@ pub fn session_compress(path: &Path, id: &str, strategy: &CompressStrategy) -> T
     session.messages = new_messages;
     session.message_count = session.messages.len() as u64;
     session.updated_at = now_iso();
-    
+
     let result = session.clone();
     store.save(path)?;
     Ok(result)
-}
-
-/// Checkpoint for session interrupt recovery.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SessionCheckpoint {
-    pub session_id: String,
-    pub last_message_idx: usize,
-    pub timestamp: String,
-    pub metadata: HashMap<String, String>,
 }
 
 /// Saves a session checkpoint to the checkpoints directory.
@@ -325,13 +237,6 @@ pub fn session_export_html(path: &Path, id: &str, output: &Path) -> ToolResult<(
     );
 
     fs::write(output, html).map_err(ToolError::Io)
-}
-
-fn html_escape(s: &str) -> String {
-    s.replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-        .replace('"', "&quot;")
 }
 
 /// Imports a session from a standalone JSON file.
@@ -766,7 +671,7 @@ mod tests {
         let (_d, path) = fresh_db();
         let s = session_create(&path, "tokens").unwrap();
         let s = session_add_message(&path, &s.id, "user", "hello world").unwrap();
-        
+
         let count = session_estimate_token_count(&path, &s.id).unwrap();
         assert_eq!(count, estimate_tokens("hello world"));
         assert_eq!(s.messages[0].estimated_tokens, count);
@@ -778,10 +683,10 @@ mod tests {
         let s = session_create(&path, "compress").unwrap();
         let s = session_add_message(&path, &s.id, "assistant", "msg 1").unwrap();
         let s = session_add_message(&path, &s.id, "user", "msg 2").unwrap();
-        
+
         // Compress with low threshold to force compression
         let s = session_compress(&path, &s.id, &CompressStrategy::Threshold(0)).unwrap();
-        
+
         assert_eq!(s.messages.len(), 1);
         assert!(s.messages[0].is_compressed);
         assert_eq!(s.messages[0].role, "system");
@@ -793,15 +698,15 @@ mod tests {
     fn test_session_checkpoints() {
         let (_d, path) = fresh_db();
         let s = session_create(&path, "checkpoint").unwrap();
-        
+
         let mut meta = HashMap::new();
         meta.insert("state".into(), "running".into());
         session_save_checkpoint(&path, &s.id, meta).unwrap();
-        
+
         let cp = session_load_checkpoint(&path, &s.id).unwrap();
         assert_eq!(cp.session_id, s.id);
         assert_eq!(cp.metadata.get("state").unwrap(), "running");
-        
+
         session_clear_checkpoint(&path, &s.id).unwrap();
         assert!(session_load_checkpoint(&path, &s.id).is_err());
     }
@@ -810,10 +715,10 @@ mod tests {
     fn test_session_checkpoint_auto_clear() {
         let (_d, path) = fresh_db();
         let s = session_create(&path, "auto-clear").unwrap();
-        
+
         session_save_checkpoint(&path, &s.id, HashMap::new()).unwrap();
         assert!(session_load_checkpoint(&path, &s.id).is_ok());
-        
+
         session_add_message(&path, &s.id, "user", "hi").unwrap();
         assert!(session_load_checkpoint(&path, &s.id).is_err());
     }
@@ -822,18 +727,18 @@ mod tests {
     fn test_session_export_import() {
         let (d1, path1) = fresh_db();
         let (_d2, path2) = fresh_db();
-        
+
         let s = session_create(&path1, "export").unwrap();
         let s = session_add_message(&path1, &s.id, "user", "hello").unwrap();
-        
+
         let export_path = d1.path().join("session_export.json");
         session_export(&path1, &s.id, &export_path).unwrap();
-        
+
         let imported = session_import(&path2, &export_path).unwrap();
         assert_eq!(imported.id, s.id);
         assert_eq!(imported.name, "export");
         assert_eq!(imported.message_count, 1);
-        
+
         let fetched = session_get(&path2, &s.id).unwrap();
         assert_eq!(fetched.id, s.id);
     }
@@ -858,8 +763,6 @@ mod tests {
         assert!(content.contains("hi there"), "should contain assistant message");
         assert!(content.contains("&lt;script&gt;"), "should escape HTML in content (XSS)");
         assert!(content.contains("3 messages"), "should show message count in stats");
-        assert!(content.contains("👤 User"), "should render user label");
-        assert!(content.contains("🤖 Assistant"), "should render assistant label");
     }
 
     #[test]

@@ -1,29 +1,10 @@
+mod types;
+pub use types::*;
+
 use crate::{glob, ToolError, ToolResult};
 use regex::Regex;
 use std::fs;
 use std::path::{Path, PathBuf};
-
-/// A match found during exploration with surrounding context.
-#[derive(Debug, Clone)]
-pub struct ExploreMatch {
-    pub file: PathBuf,
-    pub line: usize,
-    pub content: String,
-    /// Lines before the match (context)
-    pub before: Vec<String>,
-    /// Lines after the match (context)
-    pub after: Vec<String>,
-    /// Which pattern matched (index into the pattern list)
-    pub pattern_index: usize,
-}
-
-/// Structured result from a codebase exploration.
-#[derive(Debug, Clone)]
-pub struct ExploreResult {
-    pub matches: Vec<ExploreMatch>,
-    pub files_scanned: usize,
-    pub total_matches: usize,
-}
 
 /// Search multiple patterns across files in a directory tree.
 /// Each pattern is a regex. Returns matches with surrounding context lines.
@@ -93,12 +74,12 @@ pub fn search_patterns(
                     let before: Vec<String> = lines
                         [line_idx.saturating_sub(context_lines)..line_idx]
                         .iter()
-                        .map(|s| s.to_string())
+                        .map(std::string::ToString::to_string)
                         .collect();
                     let after: Vec<String> = lines[(line_idx + 1).min(lines.len())
                         ..(line_idx + 1 + context_lines).min(lines.len())]
                         .iter()
-                        .map(|s| s.to_string())
+                        .map(std::string::ToString::to_string)
                         .collect();
 
                     result.matches.push(ExploreMatch {
@@ -134,14 +115,6 @@ pub fn gather_context(paths: &[&Path]) -> ToolResult<Vec<FileContext>> {
         });
     }
     Ok(results)
-}
-
-/// Context from a single file.
-#[derive(Debug, Clone)]
-pub struct FileContext {
-    pub path: PathBuf,
-    pub content: String,
-    pub line_count: usize,
 }
 
 /// Find files whose names match a glob pattern AND whose content matches

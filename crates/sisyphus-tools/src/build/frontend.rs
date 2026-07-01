@@ -7,7 +7,7 @@ use std::path::Path;
 pub struct FrontendBackend;
 
 impl LanguageBackend for FrontendBackend {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "frontend"
     }
 
@@ -139,14 +139,14 @@ fn parse_stylelint_json(stdout: &str) -> (Vec<Diag>, Vec<Diag>) {
 
     if let Ok(results) = serde_json::from_str::<Vec<serde_json::Value>>(stdout) {
         for result in results {
-            let file = result["source"].as_str().map(|s| s.to_string());
+            let file = result["source"].as_str().map(std::string::ToString::to_string);
             if let Some(warns) = result["warnings"].as_array() {
                 for w in warns {
                     let line = w["line"].as_u64().map(|n| n as usize);
                     let col = w["column"].as_u64().map(|n| n as usize);
                     let severity = w["severity"].as_str().unwrap_or("warning");
                     let text = w["text"].as_str().unwrap_or("");
-                    let rule = w["rule"].as_str().map(|s| s.to_string());
+                    let rule = w["rule"].as_str().map(std::string::ToString::to_string);
                     // stylelint text format: "message (rule)" — remove rule from text
                     let message = if let Some(rule_start) = text.rfind(" (") {
                         text[..rule_start].to_string()

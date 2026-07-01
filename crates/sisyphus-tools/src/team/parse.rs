@@ -29,7 +29,7 @@ pub(crate) fn parse_decomposition_response(
     }
 
     let raw: RawPlan = serde_json::from_str(json_str)
-        .map_err(|e| format!("Failed to parse LLM decomposition response as JSON: {}", e))?;
+        .map_err(|e| format!("Failed to parse LLM decomposition response as JSON: {e}"))?;
 
     if raw.tasks.is_empty() {
         return Err("LLM returned empty task list".to_string());
@@ -66,7 +66,7 @@ pub(crate) fn parse_decomposition_response(
     }
 
     if let Err(cycle) = detect_cycle(&tasks) {
-        return Err(format!("Circular dependency detected: {}", cycle));
+        return Err(format!("Circular dependency detected: {cycle}"));
     }
 
     Ok(TeamPlan {
@@ -105,7 +105,7 @@ pub(crate) fn detect_cycle(tasks: &[TaskNode]) -> Result<(), String> {
         if c == GRAY {
             let cycle_start = path.iter().position(|n| *n == node).unwrap();
             let cycle: Vec<&str> = path[cycle_start..].to_vec();
-            return Err(cycle.join(" → ").to_string());
+            return Err(cycle.join(" → ").clone());
         }
 
         color.insert(node, GRAY);

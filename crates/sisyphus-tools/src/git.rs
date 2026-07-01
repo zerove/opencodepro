@@ -1,45 +1,9 @@
+mod types;
+pub use types::*;
+
 use crate::{ToolError, ToolResult};
 use std::path::Path;
 use std::process::Command;
-
-// ── Structured return types ────────────────────────────────
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct GitStatus {
-    pub branch: String,
-    pub ahead: usize,
-    pub behind: usize,
-    pub staged: Vec<FileStatus>,
-    pub unstaged: Vec<FileStatus>,
-    pub untracked: Vec<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FileStatus {
-    pub path: String,
-    /// One‑character status code: M modified, A added, D deleted, R renamed, ? untracked, etc.
-    pub x: char, // index (staging area)
-    pub y: char, // working tree
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct GitCommitLog {
-    pub entries: Vec<CommitEntry>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CommitEntry {
-    pub hash: String,
-    pub author: String,
-    pub date: String,
-    pub message: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct BranchInfo {
-    pub current: bool,
-    pub name: String,
-}
 
 // ── Helpers ────────────────────────────────────────────────
 
@@ -81,7 +45,7 @@ pub fn current_branch(cwd: Option<&Path>) -> ToolResult<String> {
     if out.is_empty() || out == "HEAD" {
         // detached HEAD
         let hash = git_args(&["rev-parse", "--short", "HEAD"], cwd)?;
-        Ok(format!("detached {}", hash))
+        Ok(format!("detached {hash}"))
     } else {
         Ok(out)
     }
@@ -202,7 +166,7 @@ pub fn log(count: usize, cwd: Option<&Path>) -> ToolResult<GitCommitLog> {
 
     let mut entries = Vec::new();
     for line in out.lines() {
-        let parts: Vec<&str> = line.splitn(4, "%").collect();
+        let parts: Vec<&str> = line.splitn(4, '%').collect();
         if parts.len() >= 4 {
             entries.push(CommitEntry {
                 hash: parts[0].to_string(),

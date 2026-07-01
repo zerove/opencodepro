@@ -1,7 +1,7 @@
 use crate::metis::LlmClient;
 
 /// System prompt for the Scribe agent to ensure professional ADR and documentation output.
-pub const SCRIBE_SYSTEM_PROMPT: &str = r#"
+pub const SCRIBE_SYSTEM_PROMPT: &str = r"
 You are a professional Technical Scribe. Your goal is to transform technical discussions, meeting notes, or chat histories into high-quality, structured Architecture Decision Records (ADRs) and project documentation.
 
 When generating an ADR, you MUST strictly follow the MADR (Markdown Architecture Decision Record) format. 
@@ -35,7 +35,7 @@ We decided to use Y because...
 
 STRICT CONSTRAINT: Do NOT omit any of the '##' headers. Do NOT rename them.
 Ensure the tone is objective, concise, and professional. Focus on the 'why' more than the 'how'.
-"#;
+";
 
 /// Generates a structured ADR from the provided conversation context.
 pub async fn generate_adr(client: &dyn LlmClient, context: &str) -> Result<String, String> {
@@ -54,16 +54,15 @@ Provide the output as a diff or a clear 'Search/Replace' block.
 
 Existing Documentation:
 ---
-{}
+{doc_content}
 ---
 
 Requested Changes:
 ---
-{}
+{changes}
 ---
 
-Suggested Updates:",
-        doc_content, changes
+Suggested Updates:"
     );
 
     client.chat(SCRIBE_SYSTEM_PROMPT, &prompt, false).await

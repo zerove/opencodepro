@@ -222,8 +222,7 @@ fn parse_mvn_output(stderr: &str, _stdout: &str) -> (Vec<Diag>, Vec<Diag>) {
                     {
                         let (line_no, col) = between
                             .split_once(',')
-                            .map(|(l, c)| (l.trim().parse().ok(), c.trim().parse().ok()))
-                            .unwrap_or((None, None));
+                            .map_or((None, None), |(l, c)| (l.trim().parse().ok(), c.trim().parse().ok()));
                         errors.push(Diag {
                             file: Some(file),
                             line: line_no,
@@ -323,7 +322,7 @@ fn parse_mvn_test_results(stdout: &str, stderr: &str) -> TestResults {
         if t.starts_with("Failed tests:") {
             let rest = t.trim_start_matches("Failed tests:").trim();
             // Each test name is on the same line or next lines
-            for name in rest.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()) {
+            for name in rest.split(',').map(str::trim).filter(|s| !s.is_empty()) {
                 failures.push(crate::build::TestFailure {
                     name: name.to_string(),
                 });

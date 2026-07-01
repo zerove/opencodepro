@@ -157,7 +157,7 @@ pub fn glob(pattern: &str, root: &Path) -> ToolResult<Vec<PathBuf>> {
     };
 
     let entries = ::glob::glob(&full_pattern).map_err(|e| ToolError::GlobPattern(e.to_string()))?;
-    let mut paths: Vec<PathBuf> = entries.filter_map(|e| e.ok()).collect();
+    let mut paths: Vec<PathBuf> = entries.filter_map(std::result::Result::ok).collect();
 
     paths.sort_by(|a, b| {
         let a_time = fs::metadata(a).and_then(|m| m.modified()).ok();
