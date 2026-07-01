@@ -792,8 +792,9 @@ fn test_search_help() {
 
 #[test]
 fn test_health_no_bridge_graceful_error() {
-    let out = run_cli(&["health"]);
-    // No bridge daemon running in tests — expect graceful failure (not panic)
+    // Use a clearly unreachable address so the test is hermetic (not dependent on no bridge running)
+    let out = run_cli(&["--bridge", "127.0.0.1:1", "health"]);
+    // Port 1 is privileged → connect fails immediately → graceful failure (not panic)
     assert!(
         !out.status.success(),
         "health should fail without a running bridge"

@@ -13,7 +13,8 @@ pub enum BgOp {
     RoadmapFetched { projection: String, bottlenecks: String },
     RoadmapFailed(String),
     BridgeCmd { entries: Vec<super::LogEntry> },
-    SessionUpdated { session_id: String },
+    SessionUpdated { session_id: String, errors: Vec<super::LogEntry> },
+    DevResult { goal: String, report: String, success: bool },
 }
 
 // ── Background spawners ─────────────────────────────────
@@ -69,68 +70,6 @@ pub fn spawn_fetch_roadmap(bridge_address: String) -> tokio::sync::oneshot::Rece
     rx
 }
 
-/// Spawn a background task that executes a `:bridge` shell command.
-/// Returns log entries to be displayed when the operation completes.
-pub fn spawn_bridge_cmd(
-    bridge_address: String,
-    cmd: String,
-) -> tokio::sync::oneshot::Receiver<BgOp> {
-    let (tx, rx) = tokio::sync::oneshot::channel();
-    tokio::spawn(async move {
-        let parts: Vec<&str> = cmd.splitn(3, ' ').collect();
-        let sub = parts.get(1).copied().unwrap_or("status");
-        let entries = match BridgeClient::connect(&bridge_address).await {
-            Ok(mut client) => match sub {
-                "status" | "health" => match client.health_check().await {
-                    Ok(resp) => vec![super::LogEntry::Success(format!(
-                        "Bridge: {} (v{})",
-                        resp.status, resp.version
-                    ))],
-                    Err(e) => vec![super::LogEntry::Error(format!("Health check failed: {e}"))],
-                },
-                "sops" | "list" => match client.list_sops().await {
-                    Ok(sops) if sops.is_empty() => {
-                        vec![super::LogEntry::Info("No SOPs registered.".into())]
-                    }
-                    Ok(sops) => {
-                        let mut entries: Vec<super::LogEntry> =
-                            vec![super::LogEntry::Info(format!("Bridge SOPs ({}):", sops.len()))];
-                        for sop in &sops {
-                            entries.push(super::LogEntry::Success(format!(
-                                "  {} ({} nodes)",
-                                sop.sop_id, sop.node_count
-                            )));
-                        }
-                        entries
-                    }
-                    Err(e) => vec![super::LogEntry::Error(format!("List SOPs failed: {e}"))],
-                },
-                "run" => {
-                    let sop_id = parts.get(2).unwrap_or(&"");
-                    if sop_id.is_empty() {
-                        vec![super::LogEntry::Error("Usage: :bridge run <sop_id>".into())]
-                    } else {
-                        match client.execute_sop(sop_id).await {
-                            Ok(result) => vec![super::LogEntry::Success(result)],
-                            Err(e) => {
-                                vec![super::LogEntry::Error(format!("SOP execution failed: {e}"))]
-                            }
-                        }
-                    }
-                }
-                other => vec![super::LogEntry::Error(format!(
-                    "Unknown bridge command: {other} (try: status, sops, run)"
-                ))],
-            },
-            Err(e) => vec![super::LogEntry::Error(format!(
-                "Failed to connect to bridge at {bridge_address}: {e}"
-            ))],
-        };
-        let _ = tx.send(BgOp::BridgeCmd { entries });
-    });
-    rx
-}
-
 pub fn spawn_session_add_message(
     data_dir: PathBuf,
     session_id: String,
@@ -148,51 +87,86 @@ pub fn spawn_session_add_message(
             return;
         }
 
-        // If bridge is available, send the message to trigger AI response
+        // If bridge is available, send the message to trigger AI response.
+        // Bridge errors are logged but DON'T prevent SessionUpdated — the session
+        // must always be reloaded so the UI doesn't get stuck in "thinking" limbo.
+        let mut bridge_errors: Vec<super::LogEntry> = Vec::new();
         if let Some(ref addr) = bridge_address {
-            match BridgeClient::connect(addr).await {
-                Ok(mut client) => {
-                    match client
-                        .add_message(&session_id, &role, &content, &session_db.to_string_lossy())
-                        .await
-                    {
-                        Ok(resp) => {
-                            if !resp.success {
-                                let err_msg = if resp.error.is_empty() {
-                                    "LLM returned empty response".into()
-                                } else {
-                                    resp.error
-                                };
-                                let _ = tx.send(BgOp::BridgeCmd {
-                                    entries: vec![super::LogEntry::Error(format!(
-                                        "Bridge LLM error: {err_msg}"
-                                    ))],
-                                });
-                                return;
-                            }
-                        }
-                        Err(e) => {
-                            let _ = tx.send(BgOp::BridgeCmd {
-                                entries: vec![super::LogEntry::Error(format!(
-                                    "Bridge add_message failed: {e}"
-                                ))],
-                            });
-                            return;
-                        }
+            let bridge_op = async {
+                let mut client = BridgeClient::connect(addr)
+                    .await
+                    .map_err(|e| format!("{e}"))?;
+                client
+                    .add_message(&session_id, &role, &content, &session_db.to_string_lossy())
+                    .await
+                    .map_err(|e| format!("{e}"))
+            };
+            match tokio::time::timeout(std::time::Duration::from_secs(120), bridge_op).await {
+                Ok(Ok(resp)) => {
+                    if !resp.success {
+                        let err_msg = if resp.error.is_empty() {
+                            "LLM returned empty response".into()
+                        } else {
+                            resp.error
+                        };
+                        bridge_errors.push(super::LogEntry::Error(format!(
+                            "Bridge LLM error: {err_msg}",
+                        )));
                     }
                 }
-                Err(e) => {
-                    let _ = tx.send(BgOp::BridgeCmd {
-                        entries: vec![super::LogEntry::Warn(format!(
-                            "Bridge not available, message saved locally: {e}"
-                        ))],
-                    });
-                    return;
+                Ok(Err(e)) => {
+                    bridge_errors.push(super::LogEntry::Error(format!(
+                        "Bridge add_message failed: {e}",
+                    )));
+                }
+                Err(_) => {
+                    bridge_errors.push(super::LogEntry::Warn(
+                        "LLM response timed out (120s), check bridge logs".into(),
+                    ));
                 }
             }
         }
 
-        let _ = tx.send(BgOp::SessionUpdated { session_id });
+        // Always reload session detail from disk so the "thinking" indicator stops
+        // and the user's message is reflected in persisted state.
+        let _ = tx.send(BgOp::SessionUpdated {
+            session_id,
+            errors: bridge_errors,
+        });
+    });
+    rx
+}
+
+/// Spawn a background task that runs the developer agent and returns a formatted report.
+pub fn spawn_dev_agent(
+    config: sisyphus_types::Config,
+    goal: String,
+    context: String,
+    parallel: bool,
+    resume: bool,
+) -> tokio::sync::oneshot::Receiver<BgOp> {
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    tokio::spawn(async move {
+        let config = std::sync::Arc::new(std::sync::RwLock::new(config));
+        let llm: std::sync::Arc<dyn sisyphus_tools::metis::LlmClient> =
+            std::sync::Arc::new(sisyphus_tools::llm::DynamicLlmClient::new(config));
+        let developer = sisyphus_tools::developer::Developer::new(llm);
+        let goal_c = goal.clone();
+        match developer.develop(&goal, &context, parallel, resume).await {
+            Ok(report) => {
+                let formatted = sisyphus_tools::developer::format_report(&report);
+                let success = report.overall_status
+                    == sisyphus_tools::developer::DevOverallStatus::Success;
+                let _ = tx.send(BgOp::DevResult { goal: goal_c, report: formatted, success });
+            }
+            Err(e) => {
+                let _ = tx.send(BgOp::DevResult {
+                    goal: goal_c,
+                    report: format!("Development agent failed:\n{e}"),
+                    success: false,
+                });
+            }
+        }
     });
     rx
 }

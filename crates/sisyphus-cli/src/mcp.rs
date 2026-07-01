@@ -491,7 +491,6 @@ fn jsonrpc_error(id: Option<u64>, code: i64, message: String) -> sisyphus_tools:
 async fn connect_stdio(command: &str, args: &[String]) -> Result<sisyphus_tools::McpClient> {
     let args_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
     let transport = sisyphus_tools::StdioTransport::spawn(command, &args_refs)
-        .await
         .context("Failed to spawn MCP server process")?;
     let mut client = sisyphus_tools::McpClient::new(Box::new(transport));
     client

@@ -1,3 +1,4 @@
+#![allow(clippy::cast_precision_loss)]
 //! Sisyphus CLI — command-line interface for the Sisyphus cognitive engine.
 //!
 //! This library crate exposes all CLI modules for testing.

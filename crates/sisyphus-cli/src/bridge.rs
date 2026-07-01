@@ -21,11 +21,38 @@ pub struct BridgeClient {
 impl BridgeClient {
     /// Connect to a running Sisyphus bridge daemon.
     /// Reads SISYPHUS_AUTH_TOKEN env var for optional bearer token.
+    /// Tries IPv6 first; falls back to IPv4 if the address uses `[::1]` and IPv6 is unavailable.
+    /// Each attempt has a 3-second timeout to avoid hanging on unreachable IPv6 endpoints.
     pub async fn connect(addr: &str) -> Result<Self> {
-        let endpoint = Endpoint::new(addr.to_string()).context("Invalid bridge address")?;
+        let orig = addr.to_string();
+        if let Ok(Ok(client)) = tokio::time::timeout(
+            std::time::Duration::from_secs(3),
+            Self::connect_to(&orig),
+        )
+        .await { return Ok(client) }
+
+        if addr.contains("[::1]") {
+            let v4_addr = addr.replace("[::1]", "127.0.0.1");
+            if let Ok(Ok(client)) = tokio::time::timeout(
+                std::time::Duration::from_secs(3),
+                Self::connect_to(&v4_addr),
+            )
+            .await
+            {
+                return Ok(client);
+            }
+        }
+
+        Err(anyhow::anyhow!(
+            "Bridge at {addr} unreachable (tried IPv6 and IPv4)"
+        ))
+    }
+
+    async fn connect_to(target: &str) -> Result<Self> {
+        let endpoint = Endpoint::new(target.to_string()).context("Invalid bridge address")?;
         let inner = SisyphusBridgeClient::connect(endpoint)
             .await
-            .context(format!("Failed to connect to bridge at {addr}"))?;
+            .context(format!("Failed to connect to bridge at {target}"))?;
         let token = std::env::var("SISYPHUS_AUTH_TOKEN").ok();
         Ok(Self { inner, token })
     }
