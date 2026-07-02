@@ -1,0 +1,66 @@
+use std::io::{Read, Write};
+use std::path::PathBuf;
+
+use anyhow::Result;
+
+pub async fn handle_exec(
+    command: &str,
+    dir: &Option<PathBuf>,
+    cli_perms: &sisyphus_cli::permission::CliPermission,
+) -> Result<()> {
+    // Permission check
+    match cli_perms.check("exec") {
+        Some(true) => {}
+        Some(false) => {
+            anyhow::bail!("Permission denied: shell execution is blocked by config");
+        }
+        None => {
+            eprint!("⚠  Allow shell execution? [Y/n] ");
+            std::io::stderr().flush().ok();
+            let mut buf = String::new();
+            std::io::stdin().read_line(&mut buf).ok();
+            let answer = buf.trim().to_lowercase();
+            if !answer.is_empty() && answer != "y" && answer != "yes" {
+                anyhow::bail!("Shell execution denied by user");
+            }
+        }
+    }
+    let dir_ref = dir.as_deref();
+    let output = sisyphus_tools::bash::execute(command, dir_ref, 30000).await?;
+    if !output.stdout.is_empty() {
+        println!("{}", output.stdout);
+    }
+    if !output.stderr.is_empty() {
+        eprintln!("{}", output.stderr);
+    }
+    println!(
+        "Exit: {} ({}ms)",
+        output.exit_code,
+        output.duration.as_millis()
+    );
+    Ok(())
+}
+
+pub async fn handle_search(query: &str, num: usize) -> Result<()> {
+    let results = sisyphus_tools::web::websearch(query, num).await?;
+    for (i, r) in results.iter().enumerate() {
+        println!("[{i}] {} -- {}", r.title, r.url);
+        println!("    {}", &r.snippet[..r.snippet.len().min(120)]);
+    }
+    Ok(())
+}
+
+pub fn handle_apply_patch(file: &PathBuf, input: &PathBuf) -> Result<()> {
+    let patch_content = if input.to_string_lossy() == "-" {
+        let mut buf = String::new();
+        std::io::stdin().read_to_string(&mut buf)?;
+        buf
+    } else {
+        std::fs::read_to_string(input)?
+    };
+    let modified = sisyphus_tools::patch::apply_patch(file, &patch_content)?;
+    for f in &modified {
+        println!("Patched: {f}");
+    }
+    Ok(())
+}
