@@ -1131,7 +1131,9 @@ dependencies = [
  "reqwest 0.11.27",
  "serde",
  "serde_json",
- "sisyphus-tools",
+ "sisyphus-tools-core",
+ "sisyphus-tools-executor",
+ "sisyphus-tools-llm",
  "sisyphus-types",
  "tokio",
 ]
@@ -3777,7 +3779,13 @@ dependencies = [
  "sisyphus-metrics",
  "sisyphus-roadmap",
  "sisyphus-sandbox",
- "sisyphus-tools",
+ "sisyphus-tools-agent",
+ "sisyphus-tools-core",
+ "sisyphus-tools-executor",
+ "sisyphus-tools-llm",
+ "sisyphus-tools-mcp",
+ "sisyphus-tools-session",
+ "sisyphus-tools-system",
  "sisyphus-types",
  "tokio",
  "tokio-stream",
@@ -3813,7 +3821,16 @@ dependencies = [
  "serde",
  "serde_json",
  "sisyphus-bridge-api",
- "sisyphus-tools",
+ "sisyphus-tools-agent",
+ "sisyphus-tools-build",
+ "sisyphus-tools-core",
+ "sisyphus-tools-executor",
+ "sisyphus-tools-llm",
+ "sisyphus-tools-llm-tools",
+ "sisyphus-tools-mcp",
+ "sisyphus-tools-scm",
+ "sisyphus-tools-session",
+ "sisyphus-tools-system",
  "sisyphus-types",
  "tempfile",
  "tokio",
@@ -3838,7 +3855,10 @@ dependencies = [
  "sisyphus-metrics",
  "sisyphus-roadmap",
  "sisyphus-sandbox",
- "sisyphus-tools",
+ "sisyphus-tools-build",
+ "sisyphus-tools-llm",
+ "sisyphus-tools-llm-tools",
+ "sisyphus-tools-system",
  "sisyphus-types",
  "thiserror 1.0.69",
  "tokio",
@@ -3902,7 +3922,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sisyphus-mem",
- "sisyphus-tools",
+ "sisyphus-tools-llm",
  "sisyphus-types",
  "thiserror 1.0.69",
  "tokio",
@@ -3939,7 +3959,7 @@ dependencies = [
  "sisyphus-intel",
  "sisyphus-mem",
  "sisyphus-sandbox",
- "sisyphus-tools",
+ "sisyphus-tools-llm",
  "sisyphus-types",
  "tempfile",
  "tokio",
@@ -3948,10 +3968,161 @@ dependencies = [
 ]
 
 [[package]]
-name = "sisyphus-tools"
+name = "sisyphus-tools-agent"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "serde",
+ "serde_json",
+ "sisyphus-tools-core",
+ "sisyphus-tools-executor",
+ "sisyphus-tools-llm",
+ "sisyphus-tools-llm-tools",
+ "sisyphus-tools-system",
+ "sisyphus-types",
+ "tempfile",
+ "thiserror 1.0.69",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "sisyphus-tools-build"
+version = "0.1.0"
+dependencies = [
+ "ignore",
+ "regex",
+ "serde",
+ "serde_json",
+ "sisyphus-tools-core",
+ "sisyphus-types",
+ "tempfile",
+ "thiserror 1.0.69",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "sisyphus-tools-core"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "sisyphus-bridge-api",
+ "sisyphus-types",
+ "thiserror 1.0.69",
+ "tokio",
+ "tonic",
+ "tracing",
+]
+
+[[package]]
+name = "sisyphus-tools-executor"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "base64 0.22.1",
+ "chrono",
+ "serde",
+ "serde_json",
+ "sisyphus-bridge-api",
+ "sisyphus-tools-core",
+ "sisyphus-tools-llm",
+ "sisyphus-tools-llm-tools",
+ "sisyphus-tools-mcp",
+ "sisyphus-tools-system",
+ "sisyphus-types",
+ "tempfile",
+ "thiserror 1.0.69",
+ "tokio",
+ "tracing",
+ "urlencoding",
+]
+
+[[package]]
+name = "sisyphus-tools-llm"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "sisyphus-tools-core",
+ "sisyphus-types",
+ "thiserror 1.0.69",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "sisyphus-tools-llm-tools"
+version = "0.1.0"
+dependencies = [
+ "regex",
+ "serde",
+ "serde_json",
+ "sisyphus-tools-build",
+ "sisyphus-tools-core",
+ "sisyphus-tools-llm",
+ "sisyphus-tools-system",
+ "sisyphus-types",
+ "tempfile",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "sisyphus-tools-mcp"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "sisyphus-tools-core",
+ "sisyphus-types",
+ "thiserror 1.0.69",
+ "tokio",
+ "toml",
+ "tracing",
+ "urlencoding",
+]
+
+[[package]]
+name = "sisyphus-tools-scm"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "sisyphus-tools-core",
+ "tempfile",
+ "tracing",
+]
+
+[[package]]
+name = "sisyphus-tools-session"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "chrono",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "sisyphus-tools-core",
+ "sisyphus-types",
+ "tempfile",
+ "thiserror 1.0.69",
+ "tokio",
+ "toml",
+ "tracing",
+]
+
+[[package]]
+name = "sisyphus-tools-system"
+version = "0.1.0"
+dependencies = [
  "base64 0.22.1",
  "chrono",
  "glob",
@@ -3960,14 +4131,11 @@ dependencies = [
  "reqwest 0.12.28",
  "serde",
  "serde_json",
- "serde_yaml",
- "sisyphus-bridge-api",
+ "sisyphus-tools-core",
  "sisyphus-types",
  "tempfile",
- "thiserror 1.0.69",
  "tokio",
  "toml",
- "tonic",
  "tracing",
  "urlencoding",
 ]
