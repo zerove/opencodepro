@@ -2,12 +2,11 @@ use async_trait::async_trait;
 use serde_json::json;
 use std::sync::{Arc, RwLock};
 
-use sisyphus_tools::{
+use sisyphus_tools_agent::{
     agent_registry::{AgentInfo, AgentRegistry},
-    llm::DynamicLlmClient,
-    metis::LlmClient,
     team::{TaskNode, TeamGoal, TeamOrchestrator},
 };
+use sisyphus_tools_llm::{llm::DynamicLlmClient, LlmClient};
 use sisyphus_types::{AgentLlmOverride, Config, ToolExecutor};
 
 // ── Mocks ──────────────────────────────────────────────────────────────────
@@ -35,11 +34,13 @@ impl ToolExecutor for MockToolExecutor {
         _args: Vec<u8>,
         _fuel_limit: u64,
     ) -> Result<Vec<u8>, sisyphus_types::TypesError> {
-        // For the purpose of this E2E test, we accept any tool that starts with "custom/"
         if tool_id.starts_with("custom/") {
             Ok(json!({"result": "success"}).to_string().into_bytes())
         } else {
-            Err(sisyphus_types::TypesError::ToolExecutionError { tool_id: tool_id.to_string(), details: format!("Unknown tool: {}", tool_id) })
+            Err(sisyphus_types::TypesError::ToolExecutionError {
+                tool_id: tool_id.to_string(),
+                details: format!("Unknown tool: {}", tool_id),
+            })
         }
     }
 }
@@ -50,7 +51,6 @@ fn make_executor() -> Arc<dyn ToolExecutor> {
 
 #[tokio::test]
 async fn test_agent_model_routing_pipeline_e2e() {
-    // Clear env var to ensure config values are used
     std::env::remove_var("GOOGLE_GENERATIVE_AI_API_KEY");
 
     // 1. Setup Config with per-agent overrides
@@ -76,7 +76,6 @@ async fn test_agent_model_routing_pipeline_e2e() {
     // 3. Create AgentRegistry and register agents
     let registry = Arc::new(AgentRegistry::new(llm_client.clone()));
 
-    // Register custom agent with override
     registry.register(
         "analyst",
         AgentInfo {
@@ -87,7 +86,6 @@ async fn test_agent_model_routing_pipeline_e2e() {
         },
     );
 
-    // Register agent with NO override (should fallback)
     registry.register(
         "default-agent",
         AgentInfo {
@@ -117,7 +115,6 @@ async fn test_agent_model_routing_pipeline_e2e() {
     // 5. Create TeamOrchestrator
     let executor = make_executor();
 
-    // Mock decomposition response for the planner
     let decomposition_json = r#"{
         "tasks": [
             {

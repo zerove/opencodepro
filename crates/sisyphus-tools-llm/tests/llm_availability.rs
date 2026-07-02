@@ -1,4 +1,4 @@
-use sisyphus_tools::{metis::LlmClient, OpenAiLlmClient};
+use sisyphus_tools_llm::{llm::OpenAiLlmClient, LlmClient};
 use std::env;
 
 #[tokio::test]

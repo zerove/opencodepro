@@ -52,4 +52,32 @@ pub type PermissionRules = Vec<(String, Permission)>;
 
 pub mod hook;
 pub mod feedback;
+
 pub mod bridge;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_permission_variants() {
+        let allow = Permission::Allow;
+        let deny = Permission::Deny;
+        let ask = Permission::Ask;
+
+        assert_ne!(allow, deny);
+        assert_ne!(allow, ask);
+        assert_ne!(deny, ask);
+        
+        assert_eq!(format!("{:?}", allow), "Allow");
+        assert_eq!(format!("{:?}", deny), "Deny");
+        assert_eq!(format!("{:?}", ask), "Ask");
+    }
+
+    #[test]
+    fn test_tool_error_generic_display() {
+        let err = ToolError::Generic("test error".to_string());
+        assert_eq!(err.to_string(), "Generic error: test error");
+    }
+}
+

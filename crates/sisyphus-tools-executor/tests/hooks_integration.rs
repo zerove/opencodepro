@@ -1,11 +1,11 @@
 use serde_json::json;
-use sisyphus_tools::{
-    executor::BuiltinToolExecutor,
+use sisyphus_tools_core::{
     feedback::FeedbackStore,
-    hook::{HookDef, HookPhase, HookRegistry},
-    metis::LlmClient,
-    skill::SkillLoader,
+    hook::{hooks_from_skill, HookDef, HookPhase, HookRegistry},
 };
+use sisyphus_tools_executor::executor::BuiltinToolExecutor;
+use sisyphus_tools_llm::LlmClient;
+use sisyphus_tools_session::skill::SkillLoader;
 use sisyphus_types::ToolExecutor;
 use std::sync::Arc;
 use tempfile::tempdir;
@@ -28,14 +28,14 @@ impl LlmClient for DummyLlmClient {
 
 async fn setup_executor(registry: HookRegistry) -> BuiltinToolExecutor {
     let dir = tempdir().unwrap();
-    let feedback_store = Arc::new(FeedbackStore::new(dir.path()));
+    let _feedback_store = Arc::new(FeedbackStore::new(dir.path()));
 
-BuiltinToolExecutor {
-            registry,
-            llm_client: Arc::new(DummyLlmClient),
-            feedback_store: Arc::new(sisyphus_tools::feedback::FeedbackStore::default_dir()),
-            bridge_client: None,
-        }
+    BuiltinToolExecutor {
+        registry,
+        llm_client: Arc::new(DummyLlmClient),
+        feedback_store: Arc::new(sisyphus_tools_core::feedback::FeedbackStore::default_dir()),
+        bridge_client: None,
+    }
 }
 
 #[tokio::test]
@@ -97,24 +97,6 @@ async fn test_hook_inject() {
         source_skill: None,
     });
 
-    // We need a way to verify that the instructions were injected.
-    // Since BuiltinToolExecutor calls internal functions, we can't easily mock the internal function.
-    // However, we can use a tool that we know will return something, and check if the executor
-    // logic for injection worked.
-    // Actually, the best way to test this is to use a tool that we can control or check the args.
-    // But BuiltinToolExecutor's execute method doesn't return the enriched args.
-    // Let's use a tool that we can verify the output of, or just trust the unit tests in hook.rs
-    // and focus on the integration part.
-    // Wait, I can use a tool that I know exists and check if it works.
-    // To truly verify injection, I might need to check if the tool's behavior changes,
-    // but the built-in tools don't use _hook_instructions.
-
-    // Let's implement a test that verifies the hook registry's run_before returns the instructions.
-    // But the task asks for an integration test.
-    // I'll use a tool that doesn't exist to see if it's denied, or use a real one.
-
-    // Let's try to use a tool that we can verify.
-    // Actually, I'll just verify that the tool still executes.
     let executor = setup_executor(registry).await;
     let args = json!({"path": "Cargo.toml"}).to_string().into_bytes();
 
@@ -151,8 +133,7 @@ Instructions body
         .expect("Skill should be loaded");
 
     // Convert skill triggers to hooks
-    let hooks =
-        sisyphus_tools::hook::hooks_from_skill(&skill.name, &skill.triggers, &skill.instructions);
+    let hooks = hooks_from_skill(&skill.name, &skill.triggers, &skill.instructions);
 
     let mut registry = HookRegistry::new();
     registry.register_all(hooks);

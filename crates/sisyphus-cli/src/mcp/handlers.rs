@@ -39,7 +39,7 @@ fn handle_initialize(req: &crate::tools::JsonRpcRequest) -> crate::tools::JsonRp
             resources: None,
         },
         server_info: Some(crate::tools::ServerInfo {
-            name: "sisyphus-tools".into(),
+            name: "sisyphus-cli".into(),
             version: "0.1.0".into(),
         }),
     };

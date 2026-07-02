@@ -47,8 +47,8 @@ jobs:
             crates: "sisyphus-types sisyphus-core sisyphus-tests"
             build_jobs: 1
           - crate_group: "tools"
-            crates: "sisyphus-tools sisyphus-cli sisyphus-metrics"
-            build_jobs: 2
+            crates: "sisyphus-tools-core sisyphus-tools-llm sisyphus-tools-scm sisyphus-tools-build sisyphus-tools-system sisyphus-tools-mcp sisyphus-tools-llm-tools sisyphus-tools-session sisyphus-tools-executor sisyphus-tools-agent sisyphus-cli sisyphus-metrics"
+            build_jobs: 4
           - crate_group: "support"
             crates: "sisyphus-intel sisyphus-mem sisyphus-roadmap"
             build_jobs: 2

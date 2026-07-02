@@ -8,3 +8,26 @@ pub mod wisdom;
 pub mod dep_manager;
 pub mod agent_channel;
 pub mod explore;
+
+#[cfg(test)]
+mod tests {
+    use std::sync::{Arc, RwLock};
+    use sisyphus_types::Config;
+    use sisyphus_tools_core::PermissionRules;
+    use crate::config_store::ConfigStore;
+    use crate::permissions::PermissionChecker;
+
+    #[test]
+    fn test_config_store_basic() {
+        let config = Arc::new(RwLock::new(Config::default()));
+        let store = ConfigStore::with_config(config.clone());
+        assert!(Arc::ptr_eq(&store.config_ref(), &config));
+    }
+
+    #[test]
+    fn test_permission_checker_basic() {
+        let rules: PermissionRules = vec![];
+        let checker = PermissionChecker::new(rules);
+        assert!(checker.require("any_tool").is_ok());
+    }
+}

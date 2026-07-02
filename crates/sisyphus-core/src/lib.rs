@@ -10,7 +10,7 @@ use sisyphus_intel::SisyphusIntel;
 use sisyphus_mem::MfsStore;
 
 use sisyphus_roadmap::RoadmapManager;
-use sisyphus_tools_build::ContinuousBenchmark;
+use sisyphus_tools_build::benchmark::ContinuousBenchmark;
 use sisyphus_tools_llm_tools::meta_learner::MetaLearner;
 use sisyphus_tools_system::agent_channel::AgentChannel;
 use sisyphus_types::AgentMessage;

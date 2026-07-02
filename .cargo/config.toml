@@ -1,6 +1,7 @@
 [target.x86_64-unknown-linux-gnu]
 linker = "/usr/sbin/gcc"
-rustflags = ["-C", "link-args=-fuse-ld=mold"]
+# mold 链接器需要 >16GB 可用内存；内存受限环境请用系统默认链接器
+# rustflags = ["-C", "link-args=-fuse-ld=mold"]
 
 [alias]
 # ── sisyphus-core 测试 ──────────────────────────────────

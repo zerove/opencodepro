@@ -1,11 +1,15 @@
 # Build targets for crates excluded from workspace commands.
 #
+# Memory notes:
+#   Full `cargo check --workspace` OOMs on <16GB machines due to wasmtime/cranelift deps.
+#   Workaround: `CARGO_BUILD_JOBS=1` or check individual crates.
+#
 # sisyphus-bridge  — rustc 1.96.0 type-checking ICE (SIGTERM during `cargo check`).
-#                    RESOLVED in nightly 1.98.0+ (will ship with 1.97.0 stable on 2026-07-09).
-#                    Project override: `rustup override set nightly` already active.
-#                    Fallback for 1.96.0: `make check-bridge-160` uses -C lto=off.
-# sisyphus-sandbox — heavy wasmtime/cranelift deps; rarely needs recompiling for quick checks.
-# sisyphus-core   — wasmtime transitive dep; full test needs CARGO_BUILD_JOBS=1 (see make test-core).
+#                    RESOLVED in nightly 1.98.0+; ships with 1.97.0 stable on 2026-07-09.
+#                    While on 1.96.0: `make check-bridge-160` uses -C lto=off.
+# sisyphus-sandbox — heavy wasmtime/cranelift deps; rarely needs recompiling.
+# sisyphus-core   — wasmtime transitive dep; full test needs CARGO_BUILD_JOBS=1.
+# sisyphus-tools-* — 10 sub-crates, lightweight, fast to check individually.
 #
 # Usage:
 #   make check-all        # cargo alias → check --workspace --exclude bridge/sandbox (1.96.0-safe)
@@ -15,11 +19,20 @@
 #   make test-bridge      # test bridge only
 #   make test-core        # full sisyphus-core test suite
 #   make test-core-quick  # lib-only sisyphus-core tests (~2s)
+#   make test-tools       # test all 10 sisyphus-tools-* sub-crates (lib only, fast)
+#   make check-tools      # check all 10 tools sub-crates
 
 BRIDGE_DEPS = crates/sisyphus-bridge/src/main.rs crates/sisyphus-bridge/build.rs crates/sisyphus-bridge/proto/bridge.proto
 
+TOOLS_PACKAGES = \
+	sisyphus-tools-agent sisyphus-tools-build sisyphus-tools-core \
+	sisyphus-tools-executor sisyphus-tools-llm sisyphus-tools-llm-tools \
+	sisyphus-tools-mcp sisyphus-tools-scm sisyphus-tools-session \
+	sisyphus-tools-system
+
 .PHONY: all check-all build-all test-all
 .PHONY: check-bridge build-bridge test-bridge check-bridge-160
+.PHONY: test-tools check-tools
 .PHONY: dev-tui run-tui clean
 
 all: check-all
@@ -50,6 +63,20 @@ test-bridge: $(BRIDGE_DEPS)
 
 check-bridge-160: $(BRIDGE_DEPS)
 	RUSTFLAGS="-C lto=off" cargo check -p sisyphus-bridge
+
+# — sisyphus-tools-* sub-crates (10 independent, no heavy deps) —
+
+test-tools:
+	for pkg in $(TOOLS_PACKAGES); do \
+		echo "━━━ testing $$pkg (lib)"; \
+		cargo test -p "$$pkg" --lib; \
+	done
+
+check-tools:
+	for pkg in $(TOOLS_PACKAGES); do \
+		echo "━━━ checking $$pkg"; \
+		cargo check -p "$$pkg"; \
+	done
 
 # — sisyphus-core (wasmtime transitive dep needs CARGO_BUILD_JOBS=1) —
 

@@ -1,6 +1,19 @@
 # sisyphus-tools — Built-in Tools & Agents
 
-The crate that provides all built-in tool execution, agent functions, and utility operations. Both the CLI and the bridge use this crate to perform real work.
+The tool ecosystem is split into 10 sub-crates for faster compilation and cleaner dependency tracking. Both the CLI and the bridge depend on the sub-crates directly to perform real work.
+
+| Sub-crate | Description |
+|-----------|-------------|
+| `sisyphus-tools-core` | Foundation: error types, permissions, hooks, feedback, bridge types |
+| `sisyphus-tools-llm` | LLM abstraction: client traits, providers, model routing, metis analysis |
+| `sisyphus-tools-scm` | Source control: git, patch, hashline, github integration |
+| `sisyphus-tools-build` | Build system: lsp, benchmark, test generation, auto-fix |
+| `sisyphus-tools-system` | System tools: bash, file, web, permissions, explore, scaffold |
+| `sisyphus-tools-mcp` | MCP protocol: client, tool registry, custom tool definitions |
+| `sisyphus-tools-llm-tools` | LLM-powered agents: librarian, oracle, momus, scribe, security |
+| `sisyphus-tools-session` | Session management: session, skill, todo, plan, precommit |
+| `sisyphus-tools-executor` | Tool execution engine: BuiltinToolExecutor, MCP executor |
+| `sisyphus-tools-agent` | Agent orchestration: agent registry, team, delegate, developer |
 
 ## Architecture
 

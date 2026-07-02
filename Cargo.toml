@@ -51,8 +51,38 @@ anyhow = "1.0"
 [profile.dev]
 debug = 0
 opt-level = 0
-incremental = true
+codegen-units = 16
+incremental = false
+
+# Heavy wasmtime/cranelift deps: 高并行度分摊单线程内存压力
+[profile.dev.package.wasmtime]
+codegen-units = 64
+[profile.dev.package.cranelift-codegen]
+codegen-units = 256
+[profile.dev.package.cranelift-control]
+codegen-units = 64
+[profile.dev.package.regalloc2]
+codegen-units = 64
+[profile.dev.package.wasmtime-internal-cranelift]
+codegen-units = 64
+
+# Heavy net/HTTP deps: 增加并行度以分摊内存
+[profile.dev.package.reqwest]
+codegen-units = 64
+[profile.dev.package.hyper]
+codegen-units = 64
+[profile.dev.package.h2]
+codegen-units = 256
+[profile.dev.package.syn]
+codegen-units = 128
+[profile.dev.package.proc-macro2]
+codegen-units = 64
+[profile.dev.package.hyper-util]
+codegen-units = 64
+[profile.dev.package.rustls]
+codegen-units = 64
 
 [profile.release]
 panic = "abort"
 lto = "thin"
+codegen-units = 1

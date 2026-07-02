@@ -19,7 +19,7 @@
 | **接口** | `sisyphus-bridge` | gRPC 服务、Unary + Streaming 执行、Health Check | ✅ 生产 |
 | **可观测** | `sisyphus-metrics` | Prometheus 指标、JSON 结构化追踪 | ✅ 生产 |
 | **类型** | `sisyphus-types` | SOPGraph/SOPNode/Config/共享 Trait | ✅ 生产 |
-| **工具** | `sisyphus-tools` | 43 个工具模块（文件、Bash、LSP、Web、MCP、会话、Todo、权限、Git、安全等） | ✅ 生产 |
+| **工具** | `sisyphus-tools-*` (10 子 crates) | 43 个工具模块（文件、Bash、LSP、Web、MCP、会话、Todo、权限、Git、安全等） | ✅ 生产 |
 | **CLI** | `sisyphus-cli` | 基于 clap + ratatui 的 TUI/CLI，支持命令模式、交互模式、守护进程模式 | ✅ 生产 |
 | **战略** | `sisyphus-roadmap` | 路线图数据模型、RoadmapManager、里程碑追踪、战略反思、自主生成、资源优化 | ✅ 生产 |
 | **共享 API** | `sisyphus-bridge-api` | 统一 proto 编译，共享 gRPC Client/Server 类型 | ✅ 生产 |
@@ -50,16 +50,16 @@
 | 能力 | opencode | Sisyphus | 差距 |
 |---|---|---|---|
 | **CLI/TUI** | 终端 UI、模糊搜索、命令面板 | `sisyphus-cli` — ratatui TUI + clap CLI | ✅ 已实现 |
-| **文件操作** | read/edit/write/glob/grep/apply_patch | `sisyphus-tools/src/file.rs`、`patch.rs` | ✅ 已实现 |
-| **Bash 执行** | 原生 shell 支持 | `sisyphus-tools/src/bash.rs` — tokio::process 完整支持 | ✅ 已实现 |
-| **LSP 集成** | goto-definition, find-refs, hover | `sisyphus-tools/src/lsp.rs` + `sisyphus-cli/src/lsp.rs` | ✅ 已实现 |
-| **Web 搜索** | websearch + webfetch | `sisyphus-tools/src/web.rs` — websearch + webfetch | ✅ 已实现 |
-| **会话管理** | 多会话、--continue、--fork、undo/redo | `sisyphus-tools/src/session.rs` — 创建/继续/分叉/撤销 | ✅ 已实现 |
-| **任务追踪** | todowrite 工具 | `sisyphus-tools/src/todo.rs` — 完整的 Todo 系统 | ✅ 已实现 |
-| **权限系统** | granular allow/deny/ask per tool | `sisyphus-tools/src/permissions.rs` — 三级权限系统 | ✅ 已实现 |
-| **MCP 集成** | 本地/远程 MCP 服务器 | `sisyphus-tools/src/mcp/` + `executor_mcp.rs` | ✅ 已实现 |
-| **技能系统** | SKILL.md 动态加载 | `sisyphus-tools/src/skill.rs` — 完整 SKILL.md 加载器 | ✅ 已实现 |
-| **AGENTS.md** | 项目级规则 | `sisyphus-tools/src/project_rules.rs` — AGENTS.md 解析与注册 | ✅ 已实现 |
+| **文件操作** | read/edit/write/glob/grep/apply_patch | `sisyphus-tools-system/src/file.rs`、`patch.rs` | ✅ 已实现 |
+| **Bash 执行** | 原生 shell 支持 | `sisyphus-tools-system/src/bash.rs` — tokio::process 完整支持 | ✅ 已实现 |
+| **LSP 集成** | goto-definition, find-refs, hover | `sisyphus-tools-build/src/lsp.rs` + `sisyphus-cli/src/lsp.rs` | ✅ 已实现 |
+| **Web 搜索** | websearch + webfetch | `sisyphus-tools-system/src/web.rs` — websearch + webfetch | ✅ 已实现 |
+| **会话管理** | 多会话、--continue、--fork、undo/redo | `sisyphus-tools-session/src/session.rs` — 创建/继续/分叉/撤销 | ✅ 已实现 |
+| **任务追踪** | todowrite 工具 | `sisyphus-tools-session/src/todo.rs` — 完整的 Todo 系统 | ✅ 已实现 |
+| **权限系统** | granular allow/deny/ask per tool | `sisyphus-tools-system/src/permissions.rs` — 三级权限系统 | ✅ 已实现 |
+| **MCP 集成** | 本地/远程 MCP 服务器 | `sisyphus-tools-mcp/src/mcp/` + `sisyphus-tools-executor/src/executor_mcp.rs` | ✅ 已实现 |
+| **技能系统** | SKILL.md 动态加载 | `sisyphus-tools-session/src/skill.rs` — 完整 SKILL.md 加载器 | ✅ 已实现 |
+| **AGENTS.md** | 项目级规则 | `sisyphus-tools-agent/src/project_rules.rs` — AGENTS.md 解析与注册 | ✅ 已实现 |
 
 ### 2.2 OhMyOpenAgent 编排层
 
@@ -68,14 +68,14 @@
 | **多层代理** | Planning/Execution/Worker 三层 | `AgentRegistry` + `TeamOrchestrator` + `WorkOrchestrator` | ✅ 已实现 |
 | **规划管线** | Prometheus 采访→Momus 审核 | `metis.rs`(分析) + `plan.rs`(计划) + `momus.rs`(审核) | ✅ 已实现 |
 | **子代理委派** | Atlas 分发→多 Worker 并行 | `delegate.rs` (WorkOrchestrator) — 并发限制 + 事件流 | ✅ 已实现 |
-| **Oracle 咨询** | 架构/调试专用顾问 | `sisyphus-tools/src/oracle.rs` — 只读高 IQ 顾问 | ✅ 已实现 |
-| **Librarian 调研** | 外部文档/OSS 搜索 | `sisyphus-tools/src/librarian.rs` — 远程代码库/文档分析 | ✅ 已实现 |
-| **Momus 评审** | 计划/代码审核 | `sisyphus-tools/src/momus.rs` — 计划+架构+代码评审 | ✅ 已实现 |
-| **Explore 搜索** | 高速代码库 grep | `sisyphus-tools/src/explore.rs` — 代码库上下文物探 | ✅ 已实现 |
-| **Metis 分析** | 预规划缺口分析 | `sisyphus-tools/src/metis.rs` — 隐藏意图/歧义/风险点检测 | ✅ 已实现 |
+| **Oracle 咨询** | 架构/调试专用顾问 | `sisyphus-tools-llm-tools/src/oracle.rs` — 只读高 IQ 顾问 | ✅ 已实现 |
+| **Librarian 调研** | 外部文档/OSS 搜索 | `sisyphus-tools-llm-tools/src/librarian.rs` — 远程代码库/文档分析 | ✅ 已实现 |
+| **Momus 评审** | 计划/代码审核 | `sisyphus-tools-llm-tools/src/momus.rs` — 计划+架构+代码评审 | ✅ 已实现 |
+| **Explore 搜索** | 高速代码库 grep | `sisyphus-tools-system/src/explore.rs` — 代码库上下文物探 | ✅ 已实现 |
+| **Metis 分析** | 预规划缺口分析 | `sisyphus-tools-llm/src/metis.rs` — 隐藏意图/歧义/风险点检测 | ✅ 已实现 |
 | **代理-模型映射** | 自动分配最优模型 | `model_router.rs` + `llm.rs` — 成本/性能优化路由 | ✅ 已实现 |
 | **团队模式** | 共享邮箱+任务列表 | `team/` (orchestrator + parse + error) — DAG 团队执行 | ✅ 已实现 |
-| **钩子系统** | 54+ 生命周期钩子 | `sisyphus-tools/src/hook.rs` — 54+ 生命周期钩子 | ✅ 已实现 |
+| **钩子系统** | 54+ 生命周期钩子 | `sisyphus-tools-core/src/hook.rs` — 54+ 生命周期钩子 | ✅ 已实现 |
 
 ### 2.3 Sisyphus 独有优势
 
@@ -104,37 +104,37 @@
 | 功能 | 预估 | 实际耗时 | 实现位置 |
 |---|---|---|---|
 | **CLI/TUI** | 4-6 周 | — | `sisyphus-cli` (ratatui + clap) |
-| **文件系统操作** | 2-3 周 | — | `sisyphus-tools/src/file.rs` |
-| **Bash 执行** | 1 周 | — | `sisyphus-tools/src/bash.rs` |
-| **工具权限系统** | 2 周 | — | `sisyphus-tools/src/permissions.rs` |
-| **MCP 客户端** | 3-4 周 | — | `sisyphus-tools/src/mcp/` + `executor_mcp.rs` |
+| **文件系统操作** | 2-3 周 | — | `sisyphus-tools-system/src/file.rs` |
+| **Bash 执行** | 1 周 | — | `sisyphus-tools-system/src/bash.rs` |
+| **工具权限系统** | 2 周 | — | `sisyphus-tools-system/src/permissions.rs` |
+| **MCP 客户端** | 3-4 周 | — | `sisyphus-tools-mcp/src/mcp/` + `sisyphus-tools-executor/src/executor_mcp.rs` |
 
 ### P1 — 编排增强（全部完成）
 
 | 功能 | 预估 | 实现位置 |
 |---|---|---|
-| **子代理委派模型** | 4-6 周 | `sisyphus-tools/src/delegate.rs` |
-| **会话系统** | 3-4 周 | `sisyphus-tools/src/session.rs` |
-| **任务追踪 (Todo)** | 2 周 | `sisyphus-tools/src/todo.rs` |
-| **LSP 集成** | 3 周 | `sisyphus-tools/src/lsp.rs` |
-| **Web 搜索** | 1 周 | `sisyphus-tools/src/web.rs` |
+| **子代理委派模型** | 4-6 周 | `sisyphus-tools-agent/src/delegate.rs` |
+| **会话系统** | 3-4 周 | `sisyphus-tools-session/src/session.rs` |
+| **任务追踪 (Todo)** | 2 周 | `sisyphus-tools-session/src/todo.rs` |
+| **LSP 集成** | 3 周 | `sisyphus-tools-build/src/lsp.rs` |
+| **Web 搜索** | 1 周 | `sisyphus-tools-system/src/web.rs` |
 
 ### P2 — 智能层（全部完成）
 
 | 功能 | 预估 | 实现位置 |
 |---|---|---|
-| **Librarian 能力** | 2 周 | `sisyphus-tools/src/librarian.rs` |
-| **Oracle 咨询模式** | 2 周 | `sisyphus-tools/src/oracle.rs` |
-| **Momus 评审** | 3 周 | `sisyphus-tools/src/momus.rs` |
-| **技能系统** | 4 周 | `sisyphus-tools/src/skill.rs` |
-| **钩子系统** | 3 周 | `sisyphus-tools/src/hook.rs` |
+| **Librarian 能力** | 2 周 | `sisyphus-tools-llm-tools/src/librarian.rs` |
+| **Oracle 咨询模式** | 2 周 | `sisyphus-tools-llm-tools/src/oracle.rs` |
+| **Momus 评审** | 3 周 | `sisyphus-tools-llm-tools/src/momus.rs` |
+| **技能系统** | 4 周 | `sisyphus-tools-session/src/skill.rs` |
+| **钩子系统** | 3 周 | `sisyphus-tools-core/src/hook.rs` |
 
 ### P3 — 高级（全部完成）
 
 | 功能 | 预估 | 实现位置 |
 |---|---|---|
-| **团队模式** | 6-8 周 | `sisyphus-tools/src/team/` |
-| **代理-模型映射** | 2 周 | `sisyphus-tools/src/model_router.rs` |
+| **团队模式** | 6-8 周 | `sisyphus-tools-agent/src/team/` |
+| **代理-模型映射** | 2 周 | `sisyphus-tools-llm/src/model_router.rs` |
 | **Web/MCP 服务器** | 3-4 周 | `sisyphus-bridge` (gRPC) + MCP 客户端 |
 
 ---
@@ -148,15 +148,15 @@
 ```
 Phase 1a — 核心工具:               完成
   ├── CLI/TUI 框架 (clap + ratatui)    → sisyphus-cli
-  ├── 文件系统操作                       → sisyphus-tools/src/file.rs
-  ├── Bash 执行                         → sisyphus-tools/src/bash.rs
-  └── 工具权限系统                       → sisyphus-tools/src/permissions.rs
+  ├── 文件系统操作                       → sisyphus-tools-system/src/file.rs
+  ├── Bash 执行                         → sisyphus-tools-system/src/bash.rs
+  └── 工具权限系统                       → sisyphus-tools-system/src/permissions.rs
 
 Phase 1b — 外部集成:               完成
-  ├── MCP 客户端                        → sisyphus-tools/src/mcp/
-  ├── Web 搜索                          → sisyphus-tools/src/web.rs
-  ├── 会话管理                          → sisyphus-tools/src/session.rs
-  └── Todo 系统                         → sisyphus-tools/src/todo.rs
+  ├── MCP 客户端                        → sisyphus-tools-mcp/src/mcp/
+  ├── Web 搜索                          → sisyphus-tools-system/src/web.rs
+  ├── 会话管理                          → sisyphus-tools-session/src/session.rs
+  └── Todo 系统                         → sisyphus-tools-session/src/todo.rs
 ```
 
 ### Phase 2: 编排进化

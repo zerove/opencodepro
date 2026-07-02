@@ -12,7 +12,7 @@ use tokio::time::{interval, Duration};
 /// # Example
 ///
 /// ```ignore
-/// use sisyphus_tools::ConfigStore;
+/// use sisyphus_tools_system::config_store::ConfigStore;
 ///
 /// let (store, config) = ConfigStore::load("config.toml").await.unwrap();
 /// // Start background reload task

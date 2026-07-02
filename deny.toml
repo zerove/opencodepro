@@ -9,7 +9,17 @@ no-default-features = false
 feature-depth = 1
 
 [advisories]
-ignore = []
+ignore = [
+    # eval-runner (evals/) → reqwest 0.11 → rustls-pemfile 1.0.4 is archived.
+    # Not in production crate tree; will resolve when eval-runner updates reqwest.
+    "RUSTSEC-2025-0134",
+    # sisyphus-mem pins lru = "0.12"; the 0.16.3 fix is incompatible.
+    # Pre-existing, not introduced by refactoring.
+    "RUSTSEC-2026-0002",
+    # ratatui 0.28 → paste 1.0.15 (archived). Needs ratatui ≥0.29.
+    # Pre-existing, not introduced by refactoring.
+    "RUSTSEC-2024-0436",
+]
 
 [licenses]
 allow = [
@@ -23,6 +33,7 @@ allow = [
     "Zlib",
     "Unicode-3.0",
     "CDLA-Permissive-2.0",
+    "MPL-2.0",
 ]
 confidence-threshold = 0.8
 
