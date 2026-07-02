@@ -95,7 +95,8 @@ mod tests {
     #[test]
     fn test_params_from_config_fallback() {
         let _guard = ENV_LOCK.lock().unwrap();
-        std::env::remove_var("GOOGLE_GENERATIVE_AI_API_KEY");
+        // FIXME: Audit that the environment access only happens in single-threaded code.
+        unsafe { std::env::remove_var("GOOGLE_GENERATIVE_AI_API_KEY") };
 
         let config = make_config("cfg_key", "http://cfg:8080/v1/chat", "cfg-model");
         let client = DynamicLlmClient::new(config);
@@ -113,7 +114,8 @@ mod tests {
     #[test]
     fn test_params_from_env_override() {
         let _guard = ENV_LOCK.lock().unwrap();
-        std::env::set_var("GOOGLE_GENERATIVE_AI_API_KEY", "env_key_value");
+        // FIXME: Audit that the environment access only happens in single-threaded code.
+        unsafe { std::env::set_var("GOOGLE_GENERATIVE_AI_API_KEY", "env_key_value") };
 
         let config = make_config("cfg_key", "http://cfg:8080/v1/chat", "cfg-model");
         let client = DynamicLlmClient::new(config);
@@ -130,13 +132,15 @@ mod tests {
         );
         assert_eq!(model, "cfg-model", "model should still come from config");
 
-        std::env::remove_var("GOOGLE_GENERATIVE_AI_API_KEY");
+        // FIXME: Audit that the environment access only happens in single-threaded code.
+        unsafe { std::env::remove_var("GOOGLE_GENERATIVE_AI_API_KEY") };
     }
 
     #[test]
     fn test_params_with_empty_config_fallback() {
         let _guard = ENV_LOCK.lock().unwrap();
-        std::env::remove_var("GOOGLE_GENERATIVE_AI_API_KEY");
+        // FIXME: Audit that the environment access only happens in single-threaded code.
+        unsafe { std::env::remove_var("GOOGLE_GENERATIVE_AI_API_KEY") };
 
         let config = make_config("", "", "");
         let client = DynamicLlmClient::new(config);
@@ -163,7 +167,8 @@ mod tests {
     #[test]
     fn test_dynamic_llm_client_new() {
         let _guard = ENV_LOCK.lock().unwrap();
-        std::env::remove_var("GOOGLE_GENERATIVE_AI_API_KEY");
+        // FIXME: Audit that the environment access only happens in single-threaded code.
+        unsafe { std::env::remove_var("GOOGLE_GENERATIVE_AI_API_KEY") };
         let config = make_config("k", "e", "m");
         let client = DynamicLlmClient::new(config);
         let (api, ep, model) = client.get_current_params();
@@ -175,7 +180,8 @@ mod tests {
     #[test]
     fn test_dynamic_llm_client_reflects_config_change() {
         let _guard = ENV_LOCK.lock().unwrap();
-        std::env::remove_var("GOOGLE_GENERATIVE_AI_API_KEY");
+        // FIXME: Audit that the environment access only happens in single-threaded code.
+        unsafe { std::env::remove_var("GOOGLE_GENERATIVE_AI_API_KEY") };
         let shared = make_config("old_key", "http://old:8080", "old-model");
         let client = DynamicLlmClient::new(shared.clone());
 
@@ -205,7 +211,8 @@ mod tests {
     #[test]
     fn test_dynamic_llm_client_concurrent_reads() {
         let _guard = ENV_LOCK.lock().unwrap();
-        std::env::remove_var("GOOGLE_GENERATIVE_AI_API_KEY");
+        // FIXME: Audit that the environment access only happens in single-threaded code.
+        unsafe { std::env::remove_var("GOOGLE_GENERATIVE_AI_API_KEY") };
         let shared = make_config("key", "http://ep:8080", "m");
         let client = DynamicLlmClient::new(shared.clone());
 
@@ -237,7 +244,8 @@ mod tests {
     #[test]
     fn test_get_params_for_no_override_falls_back() {
         let _guard = ENV_LOCK.lock().unwrap();
-        std::env::remove_var("GOOGLE_GENERATIVE_AI_API_KEY");
+        // FIXME: Audit that the environment access only happens in single-threaded code.
+        unsafe { std::env::remove_var("GOOGLE_GENERATIVE_AI_API_KEY") };
         let config = make_config("base_key", "http://base:8080", "base-model");
         let client = DynamicLlmClient::new(config);
 
@@ -250,7 +258,8 @@ mod tests {
     #[test]
     fn test_get_params_for_override_model() {
         let _guard = ENV_LOCK.lock().unwrap();
-        std::env::remove_var("GOOGLE_GENERATIVE_AI_API_KEY");
+        // FIXME: Audit that the environment access only happens in single-threaded code.
+        unsafe { std::env::remove_var("GOOGLE_GENERATIVE_AI_API_KEY") };
         let shared = make_config("base_key", "http://base:8080", "base-model");
         {
             let mut cfg = shared.write().unwrap();
@@ -274,7 +283,8 @@ mod tests {
     #[test]
     fn test_get_params_for_full_override() {
         let _guard = ENV_LOCK.lock().unwrap();
-        std::env::remove_var("GOOGLE_GENERATIVE_AI_API_KEY");
+        // FIXME: Audit that the environment access only happens in single-threaded code.
+        unsafe { std::env::remove_var("GOOGLE_GENERATIVE_AI_API_KEY") };
         let shared = make_config("base_key", "http://base:8080", "base-model");
         {
             let mut cfg = shared.write().unwrap();
@@ -298,7 +308,8 @@ mod tests {
     #[test]
     fn test_get_params_for_env_override_still_wins() {
         let _guard = ENV_LOCK.lock().unwrap();
-        std::env::set_var("GOOGLE_GENERATIVE_AI_API_KEY", "env_overrides_all");
+        // FIXME: Audit that the environment access only happens in single-threaded code.
+        unsafe { std::env::set_var("GOOGLE_GENERATIVE_AI_API_KEY", "env_overrides_all") };
         let shared = make_config("base_key", "http://base:8080", "base-model");
         {
             let mut cfg = shared.write().unwrap();
@@ -318,7 +329,8 @@ mod tests {
         assert_eq!(ep, "https://generativelanguage.googleapis.com/v1beta");
         assert_eq!(api, "env_overrides_all", "env var should win over override");
 
-        std::env::remove_var("GOOGLE_GENERATIVE_AI_API_KEY");
+        // FIXME: Audit that the environment access only happens in single-threaded code.
+        unsafe { std::env::remove_var("GOOGLE_GENERATIVE_AI_API_KEY") };
     }
 
     /// Helper: create config with per-agent overrides pre-loaded.
@@ -343,7 +355,8 @@ mod tests {
     #[test]
     fn test_get_params_for_multiple_agents() {
         let _guard = ENV_LOCK.lock().unwrap();
-        std::env::remove_var("GOOGLE_GENERATIVE_AI_API_KEY");
+        // FIXME: Audit that the environment access only happens in single-threaded code.
+        unsafe { std::env::remove_var("GOOGLE_GENERATIVE_AI_API_KEY") };
         let shared = make_config_with_agents(&[
             ("librarian", "gemma-4-31b-it", "http://lib:8080", "lib_key"),
             ("metis", "o3-mini", "http://metis:8080", "metis_key"),

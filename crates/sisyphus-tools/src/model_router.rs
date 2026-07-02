@@ -139,12 +139,12 @@ impl ModelRouter {
         if self.monthly_budget <= 0.0 {
             return f64::INFINITY;
         }
-        if let Ok(usage) = self.usage.read() {
+        match self.usage.read() { Ok(usage) => {
             let total_monthly: f64 = usage.values().map(|u| u.monthly_cost).sum();
             (self.monthly_budget - total_monthly).max(0.0)
-        } else {
+        } _ => {
             0.0
-        }
+        }}
     }
 
     /// Get usage record for a model.

@@ -311,7 +311,8 @@ mod tests {
 
     #[test]
     fn test_get_llm_params_default() {
-        std::env::remove_var("GOOGLE_GENERATIVE_AI_API_KEY");
+        // FIXME: Audit that the environment access only happens in single-threaded code.
+        unsafe { std::env::remove_var("GOOGLE_GENERATIVE_AI_API_KEY") };
         let reg = make_registry();
         reg.register_builtin();
 

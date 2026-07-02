@@ -294,7 +294,8 @@ convergence_threshold = 0.3
         let config_path = dir.path().join("env_reload.toml");
         write_toml(&config_path, 5);
 
-        std::env::set_var("SISYPHUS_COGNITIVE_LOOP_MAX_ITERATIONS", "99");
+        // FIXME: Audit that the environment access only happens in single-threaded code.
+        unsafe { std::env::set_var("SISYPHUS_COGNITIVE_LOOP_MAX_ITERATIONS", "99") };
 
         let (_store, config) = ConfigStore::load(config_path.to_str().unwrap()).unwrap();
         assert_eq!(
@@ -303,7 +304,8 @@ convergence_threshold = 0.3
             "env override should be applied on load"
         );
 
-        std::env::remove_var("SISYPHUS_COGNITIVE_LOOP_MAX_ITERATIONS");
+        // FIXME: Audit that the environment access only happens in single-threaded code.
+        unsafe { std::env::remove_var("SISYPHUS_COGNITIVE_LOOP_MAX_ITERATIONS") };
     }
 
     #[tokio::test]
