@@ -24,15 +24,15 @@ pub async fn run_tasks(file: PathBuf, max_concurrent: usize) -> Result<()> {
         return Ok(());
     }
 
-    let units: Vec<sisyphus_tools::WorkUnit> = tasks
+    let units: Vec<crate::tools::WorkUnit> = tasks
         .into_iter()
         .map(|t| {
-            sisyphus_tools::work_unit(&t.id, &t.name, move || {
+            crate::tools::work_unit(&t.id, &t.name, move || {
                 let cmd = t.command.clone();
                 let dir = t.dir.clone();
                 async move {
                     let dir_ref = dir.as_deref().map(std::path::Path::new);
-                    let output = sisyphus_tools::bash::execute(&cmd, dir_ref, 60000).await?;
+                    let output = crate::tools::bash::execute(&cmd, dir_ref, 60000).await?;
                     Ok(serde_json::json!({
                         "stdout": output.stdout,
                         "stderr": output.stderr,
@@ -44,10 +44,10 @@ pub async fn run_tasks(file: PathBuf, max_concurrent: usize) -> Result<()> {
         })
         .collect();
 
-    let orchestrator = sisyphus_tools::WorkOrchestrator::new(max_concurrent);
+    let orchestrator = crate::tools::WorkOrchestrator::new(max_concurrent);
     let (mut rx, handle) = orchestrator.run_all_with_events(units)?;
 
-    use sisyphus_tools::DelegateEvent;
+    use crate::tools::DelegateEvent;
     let mut completed = 0usize;
     let total;
     let mut handle = pin!(handle);
@@ -66,7 +66,7 @@ pub async fn run_tasks(file: PathBuf, max_concurrent: usize) -> Result<()> {
                     }
                     Some(DelegateEvent::Completed(report)) => {
                         completed += 1;
-                        let status = if report.status == sisyphus_tools::WorkStatus::Completed {
+                        let status = if report.status == crate::tools::WorkStatus::Completed {
                             format!("OK ({}ms)", report.duration_ms)
                         } else {
                             format!("FAIL ({})", report.error.as_deref().unwrap_or("unknown"))
@@ -89,7 +89,7 @@ pub async fn run_tasks(file: PathBuf, max_concurrent: usize) -> Result<()> {
     while let Ok(event) = rx.try_recv() {
         if let DelegateEvent::Completed(report) = event {
             completed += 1;
-            let status = if report.status == sisyphus_tools::WorkStatus::Completed {
+            let status = if report.status == crate::tools::WorkStatus::Completed {
                 format!("OK ({}ms)", report.duration_ms)
             } else {
                 format!("FAIL ({})", report.error.as_deref().unwrap_or("unknown"))
@@ -103,17 +103,17 @@ pub async fn run_tasks(file: PathBuf, max_concurrent: usize) -> Result<()> {
 }
 
 pub async fn run_inline(commands: &[String], max_concurrent: usize) -> Result<()> {
-    let units: Vec<sisyphus_tools::WorkUnit> = commands
+    let units: Vec<crate::tools::WorkUnit> = commands
         .iter()
         .enumerate()
         .map(|(i, cmd)| {
             let id = format!("task-{i}");
             let cmd = cmd.clone();
             let cmd_display = cmd[..cmd.len().min(40)].to_string();
-            sisyphus_tools::work_unit(&id, &cmd_display, move || {
+            crate::tools::work_unit(&id, &cmd_display, move || {
                 let cmd = cmd.clone();
                 async move {
-                    let output = sisyphus_tools::bash::execute(&cmd, None, 60000).await?;
+                    let output = crate::tools::bash::execute(&cmd, None, 60000).await?;
                     Ok(serde_json::json!({
                         "stdout": output.stdout,
                         "stderr": output.stderr,
@@ -125,11 +125,11 @@ pub async fn run_inline(commands: &[String], max_concurrent: usize) -> Result<()
         })
         .collect();
 
-    let orchestrator = sisyphus_tools::WorkOrchestrator::new(max_concurrent);
+    let orchestrator = crate::tools::WorkOrchestrator::new(max_concurrent);
     let reports = orchestrator.run_all(units).await?;
 
     for r in &reports {
-        let tag = if r.status == sisyphus_tools::WorkStatus::Completed {
+        let tag = if r.status == crate::tools::WorkStatus::Completed {
             "OK"
         } else {
             "FAIL"
@@ -140,7 +140,7 @@ pub async fn run_inline(commands: &[String], max_concurrent: usize) -> Result<()
         "\nDone: {}/{}",
         reports
             .iter()
-            .filter(|r| r.status == sisyphus_tools::WorkStatus::Completed)
+            .filter(|r| r.status == crate::tools::WorkStatus::Completed)
             .count(),
         reports.len()
     );

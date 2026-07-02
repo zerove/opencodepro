@@ -11,7 +11,7 @@ use sisyphus_types::WorkMode;
 pub struct IntentGate;
 
 impl IntentGate {
-    pub async fn analyze(goal: &str, llm: &Arc<dyn sisyphus_tools::LlmClient>) -> WorkMode {
+    pub async fn analyze(goal: &str, llm: &Arc<dyn sisyphus_tools_llm::LlmClient>) -> WorkMode {
         let prompt = format!(
             "You are the Intent Gate of Sisyphus, a high-rigor AI orchestration engine. 
             Your task is to classify the user's goal into one of two execution modes: 'Standard' or 'UltraWork'.

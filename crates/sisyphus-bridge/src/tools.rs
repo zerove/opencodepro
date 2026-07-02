@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 /// Register all built-in tools and agent tools from BuiltinToolExecutor.
-pub(crate) fn register_builtin_tools(reg: &Arc<sisyphus_tools::ToolRegistry>) {
-    use sisyphus_tools::{ToolInfo, ToolSource};
+pub(crate) fn register_builtin_tools(reg: &Arc<sisyphus_tools_mcp::tool_registry::ToolRegistry>) {
+    use sisyphus_tools_mcp::tool_registry::{ToolInfo, ToolSource};
     let builtin = ToolSource::Builtin;
     // Agent tools use bare IDs (e.g. "librarian/research") matching agent_prefix "librarian/"
     // Core builtin tools use "builtin:" prefix matching router dispatch
@@ -151,8 +151,8 @@ pub(crate) fn register_builtin_tools(reg: &Arc<sisyphus_tools::ToolRegistry>) {
 }
 
 /// Register strategic planning tools from StrategicExecutor.
-pub(crate) fn register_strategic_tools(reg: &Arc<sisyphus_tools::ToolRegistry>) {
-    use sisyphus_tools::{ToolInfo, ToolSource};
+pub(crate) fn register_strategic_tools(reg: &Arc<sisyphus_tools_mcp::tool_registry::ToolRegistry>) {
+    use sisyphus_tools_mcp::tool_registry::{ToolInfo, ToolSource};
     let source = ToolSource::Strategic;
     // Tool_id format: "strategic:<name>" matches router dispatch (prefix "strategic:")
     let tools: Vec<(&str, &str, &str)> = vec![

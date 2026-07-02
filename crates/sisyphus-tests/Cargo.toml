@@ -17,4 +17,4 @@ petgraph = "0.6"
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 tempfile = "3.8"
-sisyphus-tools = { version = "0.1.0", path = "../sisyphus-tools" }
+sisyphus-tools-llm = { path = "../sisyphus-tools-llm" }

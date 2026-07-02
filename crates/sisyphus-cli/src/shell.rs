@@ -5,14 +5,14 @@ use anyhow::{Context, Result};
 
 use crate::permission::CliPermission;
 
-/// Wrapper around `sisyphus_tools::bash::execute` with permission checking
+/// Wrapper around `crate::tools::bash::execute` with permission checking
 /// and a `timeout_ms` default.
 pub async fn exec(
     command: &str,
     workdir: Option<&Path>,
     timeout_ms: u64,
     perms: &CliPermission,
-) -> Result<sisyphus_tools::BashOutput> {
+) -> Result<crate::tools::BashOutput> {
     // Permission check
     match perms.check("exec") {
         Some(true) => {} // allowed
@@ -27,7 +27,7 @@ pub async fn exec(
         }
     }
 
-    let output = sisyphus_tools::bash::execute(command, workdir, timeout_ms)
+    let output = crate::tools::bash::execute(command, workdir, timeout_ms)
         .await
         .context("Shell execution failed")?;
 

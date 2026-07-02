@@ -155,10 +155,10 @@ pub(crate) struct App {
     pub(crate) home_placeholder_idx: usize,
 
     // session
-    pub(crate) sessions: Vec<sisyphus_tools::Session>,
+    pub(crate) sessions: Vec<crate::tools::Session>,
     pub(crate) session_filter: String,
     pub(crate) session_sel: usize,
-    pub(crate) session_detail: Option<sisyphus_tools::Session>,
+    pub(crate) session_detail: Option<crate::tools::Session>,
     pub(crate) session_detail_scroll: usize,
     pub(crate) session_dirty: bool,
     pub(crate) session_input: String,
@@ -180,13 +180,13 @@ pub(crate) struct App {
     pub(crate) help_scroll: usize,
 
     // todo data (dialog state)
-    pub(crate) todo_items: Vec<sisyphus_tools::TodoItem>,
+    pub(crate) todo_items: Vec<crate::tools::TodoItem>,
     pub(crate) todo_sel: usize,
     pub(crate) todo_dirty: bool,
     pub(crate) todo_adding: String,
 
     // lsp data (dialog state)
-    pub(crate) lsp_diagnostics: Vec<sisyphus_tools::lsp::LspDiagnostic>,
+    pub(crate) lsp_diagnostics: Vec<crate::tools::lsp::LspDiagnostic>,
     pub(crate) lsp_status: String,
     pub(crate) lsp_language: String,
     pub(crate) lsp_server: String,
@@ -407,7 +407,7 @@ impl App {
 
         if let Some(id) = state.active_session_id {
             let db = self.data_dir.join("sessions.json");
-            if let Ok(session) = sisyphus_tools::session_get(&db, &id) {
+            if let Ok(session) = crate::tools::session_get(&db, &id) {
                 self.session_detail = Some(session);
             }
         }
@@ -620,7 +620,7 @@ impl App {
             return;
         }
         let db = self.data_dir.join("todos.json");
-        self.todo_items = sisyphus_tools::todo_list(&db, None).unwrap_or_default();
+        self.todo_items = crate::tools::todo_list(&db, None).unwrap_or_default();
         self.todo_sel = self.todo_sel.min(self.todo_items.len().saturating_sub(1));
         self.todo_dirty = false;
     }
@@ -633,12 +633,12 @@ impl App {
         let db = self.data_dir.join("todos.json");
         let item = &self.todo_items[self.todo_sel];
         let new_status = match item.status {
-            sisyphus_tools::TodoStatus::Pending => sisyphus_tools::TodoStatus::InProgress,
-            sisyphus_tools::TodoStatus::InProgress => sisyphus_tools::TodoStatus::Completed,
-            sisyphus_tools::TodoStatus::Completed => sisyphus_tools::TodoStatus::Pending,
-            sisyphus_tools::TodoStatus::Cancelled => sisyphus_tools::TodoStatus::Pending,
+            crate::tools::TodoStatus::Pending => crate::tools::TodoStatus::InProgress,
+            crate::tools::TodoStatus::InProgress => crate::tools::TodoStatus::Completed,
+            crate::tools::TodoStatus::Completed => crate::tools::TodoStatus::Pending,
+            crate::tools::TodoStatus::Cancelled => crate::tools::TodoStatus::Pending,
         };
-        if sisyphus_tools::todo_update(&db, &item.id, None, Some(new_status), None).is_ok() {
+        if crate::tools::todo_update(&db, &item.id, None, Some(new_status), None).is_ok() {
             self.todo_dirty = true;
         }
     }
@@ -651,7 +651,7 @@ impl App {
         let id = self.todo_items[self.todo_sel].id.clone();
         if self.confirm_delete.as_deref() == Some(&id) {
             let db = self.data_dir.join("todos.json");
-            if sisyphus_tools::todo_delete(&db, &id).is_ok() {
+            if crate::tools::todo_delete(&db, &id).is_ok() {
                 self.todo_dirty = true;
                 self.add_log(LogEntry::Info(format!("Deleted todo {id}")));
             }
@@ -668,7 +668,7 @@ impl App {
             return;
         }
         let db = self.data_dir.join("sessions.json");
-        match sisyphus_tools::session_list(&db) {
+        match crate::tools::session_list(&db) {
             Ok(sessions) => self.sessions = sessions,
             Err(e) => self.add_log(LogEntry::Error(format!("Failed to list sessions: {e}"))),
         }
@@ -700,7 +700,7 @@ impl App {
         let idx = filtered[self.session_sel.min(filtered.len().saturating_sub(1))];
         let db = self.data_dir.join("sessions.json");
         let id = &self.sessions[idx].id;
-        match sisyphus_tools::session_get(&db, id) {
+        match crate::tools::session_get(&db, id) {
             Ok(session) => self.session_detail = Some(session),
             Err(e) => self.add_log(LogEntry::Error(format!("Failed to load session {id}: {e}"))),
         }
@@ -717,7 +717,7 @@ impl App {
         let db = self.data_dir.join("sessions.json");
         let id = self.sessions[idx].id.clone();
         if self.confirm_delete.as_deref() == Some(&id) {
-            match sisyphus_tools::session_delete(&db, &id) {
+            match crate::tools::session_delete(&db, &id) {
                 Ok(_) => {
                     self.add_log(LogEntry::Info(format!("Deleted session {id}")));
                     self.session_dirty = true;

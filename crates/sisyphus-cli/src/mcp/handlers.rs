@@ -4,13 +4,13 @@ use super::{tool_registry, LLM_CLIENT};
 
 /// Dispatch a JSON-RPC request to the appropriate MCP method handler.
 pub(super) async fn handle_request(
-    req: sisyphus_tools::JsonRpcRequest,
-) -> sisyphus_tools::JsonRpcResponse {
+    req: crate::tools::JsonRpcRequest,
+) -> crate::tools::JsonRpcResponse {
     match req.method.as_str() {
         // ── Lifecycle ──
         "initialize" => handle_initialize(&req),
 
-        "notifications/initialized" | "notifications/cancelled" => sisyphus_tools::JsonRpcResponse {
+        "notifications/initialized" | "notifications/cancelled" => crate::tools::JsonRpcResponse {
             jsonrpc: "2.0".into(),
             id: None,
             result: None,
@@ -25,26 +25,26 @@ pub(super) async fn handle_request(
         // ── Unknown ──
         _ => jsonrpc_error(
             req.id,
-            sisyphus_tools::MCP_ERROR_METHOD_NOT_FOUND,
+            crate::tools::MCP_ERROR_METHOD_NOT_FOUND,
             format!("Method not found: {}", req.method),
         ),
     }
 }
 
-fn handle_initialize(req: &sisyphus_tools::JsonRpcRequest) -> sisyphus_tools::JsonRpcResponse {
-    let result = sisyphus_tools::InitializeResult {
+fn handle_initialize(req: &crate::tools::JsonRpcRequest) -> crate::tools::JsonRpcResponse {
+    let result = crate::tools::InitializeResult {
         protocol_version: "2024-11-05".into(),
-        capabilities: sisyphus_tools::ServerCapabilities {
-            tools: Some(sisyphus_tools::ToolsCapability { list_changed: None }),
+        capabilities: crate::tools::ServerCapabilities {
+            tools: Some(crate::tools::ToolsCapability { list_changed: None }),
             resources: None,
         },
-        server_info: Some(sisyphus_tools::ServerInfo {
+        server_info: Some(crate::tools::ServerInfo {
             name: "sisyphus-tools".into(),
             version: "0.1.0".into(),
         }),
     };
 
-    sisyphus_tools::JsonRpcResponse {
+    crate::tools::JsonRpcResponse {
         jsonrpc: "2.0".into(),
         id: req.id,
         result: Some(serde_json::to_value(result).unwrap_or_default()),
@@ -52,17 +52,17 @@ fn handle_initialize(req: &sisyphus_tools::JsonRpcRequest) -> sisyphus_tools::Js
     }
 }
 
-fn handle_tools_list(req: &sisyphus_tools::JsonRpcRequest) -> sisyphus_tools::JsonRpcResponse {
-    let tools: Vec<sisyphus_tools::McpTool> = tool_registry()
+fn handle_tools_list(req: &crate::tools::JsonRpcRequest) -> crate::tools::JsonRpcResponse {
+    let tools: Vec<crate::tools::McpTool> = tool_registry()
         .iter()
-        .map(|t| sisyphus_tools::McpTool {
+        .map(|t| crate::tools::McpTool {
             name: t.name.to_string(),
             description: Some(t.description.to_string()),
             input_schema: Some(t.input_schema.clone()),
         })
         .collect();
 
-    sisyphus_tools::JsonRpcResponse {
+    crate::tools::JsonRpcResponse {
         jsonrpc: "2.0".into(),
         id: req.id,
         result: Some(serde_json::json!({ "tools": tools })),
@@ -71,9 +71,9 @@ fn handle_tools_list(req: &sisyphus_tools::JsonRpcRequest) -> sisyphus_tools::Js
 }
 
 async fn handle_tools_call(
-    req: sisyphus_tools::JsonRpcRequest,
-) -> sisyphus_tools::JsonRpcResponse {
-    let params: sisyphus_tools::CallToolParams = match req
+    req: crate::tools::JsonRpcRequest,
+) -> crate::tools::JsonRpcResponse {
+    let params: crate::tools::CallToolParams = match req
         .params
         .as_ref()
         .map(|p| serde_json::from_value(p.clone()))
@@ -83,14 +83,14 @@ async fn handle_tools_call(
         Ok(None) => {
             return jsonrpc_error(
                 req.id,
-                sisyphus_tools::MCP_ERROR_INVALID_PARAMS,
+                crate::tools::MCP_ERROR_INVALID_PARAMS,
                 "Missing tool call parameters".into(),
             );
         }
         Err(e) => {
             return jsonrpc_error(
                 req.id,
-                sisyphus_tools::MCP_ERROR_INVALID_PARAMS,
+                crate::tools::MCP_ERROR_INVALID_PARAMS,
                 format!("Invalid tool call params: {e}"),
             );
         }
@@ -112,14 +112,14 @@ async fn handle_tools_call(
         _ => {
             return jsonrpc_error(
                 req.id,
-                sisyphus_tools::MCP_ERROR_TOOL_NOT_FOUND,
+                crate::tools::MCP_ERROR_TOOL_NOT_FOUND,
                 format!("Tool not found: {}", params.name),
             );
         }
     };
 
     match result {
-        Ok(output) => sisyphus_tools::JsonRpcResponse {
+        Ok(output) => crate::tools::JsonRpcResponse {
             jsonrpc: "2.0".into(),
             id: req.id,
             result: Some(serde_json::json!({
@@ -131,12 +131,12 @@ async fn handle_tools_call(
             })),
             error: None,
         },
-        Err(err_msg) => sisyphus_tools::JsonRpcResponse {
+        Err(err_msg) => crate::tools::JsonRpcResponse {
             jsonrpc: "2.0".into(),
             id: req.id,
             result: None,
-            error: Some(sisyphus_tools::JsonRpcError {
-                code: sisyphus_tools::MCP_ERROR_TOOL_EXECUTION,
+            error: Some(crate::tools::JsonRpcError {
+                code: crate::tools::MCP_ERROR_TOOL_EXECUTION,
                 message: err_msg,
                 data: None,
             }),
@@ -179,7 +179,7 @@ async fn execute_metis_analyse(args: serde_json::Value) -> Result<String, String
         .ok_or("LLM client not initialized")?
         .clone();
     let request = get_str(&args, "request")?;
-    let analysis = sisyphus_tools::metis::analyse(request, &*client)
+    let analysis = crate::tools::metis::analyse(request, &*client)
         .await
         .map_err(|e| format!("Analysis error: {e}"))?;
     output_json(&analysis)
@@ -189,7 +189,7 @@ async fn execute_momus_review_plan(args: serde_json::Value) -> Result<String, St
     let client = LLM_CLIENT.get().ok_or("LLM client not initialized")?;
     let plan_text = get_str(&args, "plan_text")?;
     let plan_name = get_str(&args, "plan_name")?;
-    let review = sisyphus_tools::review_plan(&**client, plan_text, plan_name).await;
+    let review = crate::tools::review_plan(&**client, plan_text, plan_name).await;
     output_json(&review)
 }
 
@@ -197,7 +197,7 @@ async fn execute_momus_review_code(args: serde_json::Value) -> Result<String, St
     let client = LLM_CLIENT.get().ok_or("LLM client not initialized")?;
     let path = get_str(&args, "path")?;
     let content = get_str(&args, "content")?;
-    let review = sisyphus_tools::review_code(&**client, Path::new(path), content)
+    let review = crate::tools::review_code(&**client, Path::new(path), content)
         .await
         .map_err(|e| format!("Code review error: {e}"))?;
     output_json(&review)
@@ -206,7 +206,7 @@ async fn execute_momus_review_code(args: serde_json::Value) -> Result<String, St
 async fn execute_momus_review_arch(args: serde_json::Value) -> Result<String, String> {
     let client = LLM_CLIENT.get().ok_or("LLM client not initialized")?;
     let arch_text = get_str(&args, "arch_text")?;
-    let review = sisyphus_tools::review_architecture(&**client, arch_text).await;
+    let review = crate::tools::review_architecture(&**client, arch_text).await;
     output_json(&review)
 }
 
@@ -216,13 +216,13 @@ async fn execute_librarian_research(args: serde_json::Value) -> Result<String, S
     let max_results = get_usize(&args, "max_results", 5).clamp(1, 20);
 
     let scope = match scope_str {
-        "docs" | "documentation" => sisyphus_tools::ResearchScope::Documentation,
-        "code" | "examples" => sisyphus_tools::ResearchScope::CodeExamples,
-        "all" => sisyphus_tools::ResearchScope::All,
-        _ => sisyphus_tools::ResearchScope::Web,
+        "docs" | "documentation" => crate::tools::ResearchScope::Documentation,
+        "code" | "examples" => crate::tools::ResearchScope::CodeExamples,
+        "all" => crate::tools::ResearchScope::All,
+        _ => crate::tools::ResearchScope::Web,
     };
 
-    let report = sisyphus_tools::research(query, scope, max_results)
+    let report = crate::tools::research(query, scope, max_results)
         .await
         .map_err(|e| format!("Research error: {e}"))?;
     output_json(&report)
@@ -230,7 +230,7 @@ async fn execute_librarian_research(args: serde_json::Value) -> Result<String, S
 
 async fn execute_librarian_fetch_docs(args: serde_json::Value) -> Result<String, String> {
     let url = get_str(&args, "url")?;
-    let page = sisyphus_tools::fetch_documentation(url)
+    let page = crate::tools::fetch_documentation(url)
         .await
         .map_err(|e| format!("Fetch error: {e}"))?;
     output_json(&page)
@@ -239,7 +239,7 @@ async fn execute_librarian_fetch_docs(args: serde_json::Value) -> Result<String,
 async fn execute_librarian_find_examples(args: serde_json::Value) -> Result<String, String> {
     let query = get_str(&args, "query")?;
     let language = get_str_opt(&args, "language").unwrap_or("rust");
-    let examples = sisyphus_tools::find_examples(query, language)
+    let examples = crate::tools::find_examples(query, language)
         .await
         .map_err(|e| format!("Find examples error: {e}"))?;
     output_json(&examples)
@@ -249,21 +249,21 @@ async fn execute_librarian_synthesise(args: serde_json::Value) -> Result<String,
     let client = LLM_CLIENT.get().ok_or("LLM client not initialized")?;
     let findings_json = get_str(&args, "findings_json")?;
 
-    let findings: Vec<sisyphus_tools::ResearchFinding> =
+    let findings: Vec<crate::tools::ResearchFinding> =
         serde_json::from_str(findings_json).map_err(|e| format!("Invalid findings JSON: {e}"))?;
 
-    let synthesis = sisyphus_tools::synthesise(&findings, &**client).await?;
+    let synthesis = crate::tools::synthesise(&findings, &**client).await?;
     output_text(synthesis)
 }
 
 // ── Error Helper ──────────────────────────────────────────────
 
-fn jsonrpc_error(id: Option<u64>, code: i64, message: String) -> sisyphus_tools::JsonRpcResponse {
-    sisyphus_tools::JsonRpcResponse {
+fn jsonrpc_error(id: Option<u64>, code: i64, message: String) -> crate::tools::JsonRpcResponse {
+    crate::tools::JsonRpcResponse {
         jsonrpc: "2.0".into(),
         id,
         result: None,
-        error: Some(sisyphus_tools::JsonRpcError {
+        error: Some(crate::tools::JsonRpcError {
             code,
             message,
             data: None,

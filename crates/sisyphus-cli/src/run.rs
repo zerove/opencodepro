@@ -4,36 +4,36 @@ use std::path::PathBuf;
 fn resolve_backend(
     lang: Option<&str>,
     cwd: Option<&std::path::Path>,
-) -> Result<Box<dyn sisyphus_tools::build::LanguageBackend>> {
+) -> Result<Box<dyn crate::tools::build::LanguageBackend>> {
     match lang {
         Some("rust") | None
             if cwd.map(|d| d.join("Cargo.toml").exists()).unwrap_or(false)
                 || lang == Some("rust") =>
         {
-            Ok(Box::new(sisyphus_tools::build::rust::RustBackend))
+            Ok(Box::new(crate::tools::build::rust::RustBackend))
         }
         Some("node") | Some("ts") | Some("js") => {
-            Ok(Box::new(sisyphus_tools::build::node::NodeBackend::new()?))
+            Ok(Box::new(crate::tools::build::node::NodeBackend::new()?))
         }
         Some("python") | Some("py") => Ok(Box::new(
-            sisyphus_tools::build::python::PythonBackend::new()?,
+            crate::tools::build::python::PythonBackend::new()?,
         )),
-        Some("go") | Some("golang") => Ok(Box::new(sisyphus_tools::build::golang::GoBackend)),
+        Some("go") | Some("golang") => Ok(Box::new(crate::tools::build::golang::GoBackend)),
         Some("java") | Some("maven") => Ok(Box::new(
-            sisyphus_tools::build::java::JavaBackend::new_maven(),
+            crate::tools::build::java::JavaBackend::new_maven(),
         )),
         Some("gradle") => Ok(Box::new(
-            sisyphus_tools::build::java::JavaBackend::new_gradle(),
+            crate::tools::build::java::JavaBackend::new_gradle(),
         )),
         Some("fe") | Some("frontend") | Some("css") | Some("html") => {
-            Ok(Box::new(sisyphus_tools::build::frontend::FrontendBackend))
+            Ok(Box::new(crate::tools::build::frontend::FrontendBackend))
         }
         Some(other) => {
             anyhow::bail!("Unknown language backend: {other}. Supported: rust, node/ts/js, python/py, go/golang, java/maven, gradle, fe/frontend/css/html")
         }
         None => {
             let dir = cwd.unwrap_or(std::path::Path::new("."));
-            Ok(sisyphus_tools::build::detect_backend(dir)?)
+            Ok(crate::tools::build::detect_backend(dir)?)
         }
     }
 }

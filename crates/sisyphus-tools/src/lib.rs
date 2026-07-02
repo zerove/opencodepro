@@ -1,134 +1,188 @@
 #![allow(clippy::cast_precision_loss)]
-use thiserror::Error;
 
-pub mod hashline;
+// Re-export foundation types from sisyphus-tools-core
+pub use sisyphus_tools_core::{ToolError, ToolResult, Permission, PermissionRules};
+
+pub mod hashline {
+    pub use sisyphus_tools_scm::hashline::*;
+}
 pub use hashline::*;
-pub mod agent_registry;
-pub mod pr;
-pub mod bash;
-pub mod build;
-pub mod config_store;
-pub mod delegate;
-pub mod diagnose;
+pub mod agent_registry {
+    pub use sisyphus_tools_agent::agent_registry::*;
+}
+pub mod pr {
+    pub use sisyphus_tools_llm_tools::pr::*;
+}
+pub mod bash {
+    pub use sisyphus_tools_system::bash::*;
+}
+pub mod build {
+    pub use sisyphus_tools_build::build::*;
+}
+pub mod config_store {
+    pub use sisyphus_tools_system::config_store::*;
+}
+pub mod delegate {
+    pub use sisyphus_tools_agent::delegate::*;
+}
+pub mod diagnose {
+    pub use sisyphus_tools_llm_tools::diagnose::*;
+}
 pub use diagnose::*;
-pub mod executor;
-pub mod executor_mcp;
-pub mod explore;
-pub mod feedback;
-pub mod file;
-pub mod git;
-pub mod hook;
-pub mod librarian;
-pub mod llm;
-pub mod lsp;
-pub mod metis;
-pub mod momus;
-pub mod oracle;
-pub mod patch;
-pub mod permissions;
-pub mod plan;
-pub mod provider;
-pub use provider::{
+pub mod executor {
+    pub use sisyphus_tools_executor::executor::*;
+}
+pub mod executor_mcp {
+    pub use sisyphus_tools_executor::executor_mcp::*;
+}
+pub mod explore {
+    pub use sisyphus_tools_system::explore::*;
+}
+pub mod feedback {
+    pub use sisyphus_tools_core::feedback::*;
+}
+pub mod file {
+    pub use sisyphus_tools_system::file::*;
+}
+pub mod git {
+    pub use sisyphus_tools_scm::git::*;
+}
+pub mod hook {
+    pub use sisyphus_tools_core::hook::*;
+}
+pub mod librarian {
+    pub use sisyphus_tools_llm_tools::librarian::*;
+}
+pub mod llm {
+    pub use sisyphus_tools_llm::llm::*;
+}
+pub mod lsp {
+    pub use sisyphus_tools_build::lsp::*;
+}
+pub mod metis {
+    pub use sisyphus_tools_llm::metis::*;
+}
+pub mod momus {
+    pub use sisyphus_tools_llm_tools::momus::*;
+}
+pub mod oracle {
+    pub use sisyphus_tools_llm_tools::oracle::*;
+}
+pub mod patch {
+    pub use sisyphus_tools_scm::patch::*;
+}
+pub mod permissions {
+    pub use sisyphus_tools_system::permissions::*;
+}
+pub mod plan {
+    pub use sisyphus_tools_session::plan::*;
+}
+pub mod provider {
+    pub use sisyphus_tools_llm::provider::*;
+}
+pub use sisyphus_tools_llm::provider::{
     AnthropicProvider, build_provider_registry, ChatMessage, ChatRole, GoogleGeminiProvider,
     LlmProvider, OpenAiCompatibleProvider, ProviderError, ProviderRegistry, ProviderResponse,
     RetryConfig,
 };
-pub mod precommit;
+pub mod precommit {
+    pub use sisyphus_tools_session::precommit::*;
+}
 pub use precommit::{
     PrecommitConfig, has_precommit, install_precommit, is_sisyphus_hook, read_precommit,
     uninstall_precommit,
 };
-pub mod project_rules;
-pub mod scaffold;
+pub mod project_rules {
+    pub use sisyphus_tools_agent::project_rules::*;
+}
+pub mod scaffold {
+    pub use sisyphus_tools_system::scaffold::*;
+}
 pub use scaffold::*;
-pub mod scribe;
-pub mod security;
-pub mod session;
-pub mod skill;
-pub mod todo;
-pub mod web;
+pub mod scribe {
+    pub use sisyphus_tools_llm_tools::scribe::*;
+}
+pub mod security {
+    pub use sisyphus_tools_llm_tools::security::*;
+}
+pub mod session {
+    pub use sisyphus_tools_session::session::*;
+}
+pub mod skill {
+    pub use sisyphus_tools_session::skill::*;
+}
+pub mod todo {
+    pub use sisyphus_tools_session::todo::*;
+}
+pub mod web {
+    pub use sisyphus_tools_system::web::*;
+}
 
-pub mod developer;
+pub mod developer {
+    pub use sisyphus_tools_agent::developer::*;
+}
 pub use developer::{
     DevAction, DevCheckpoint, DevOverallStatus, DevStep, DevelopmentPlan, DevelopmentReport,
     Developer, StepResult, StepStatus, VerificationMethod, format_report,
 };
-pub mod github;
-pub use github::{
+pub mod github {
+    pub use sisyphus_tools_scm::github::*;
+}
+pub use sisyphus_tools_scm::github::{
     CiConfig, GenerateOptions, WorkflowKind, ci_environment, generate_workflow, is_ci,
     post_pr_comment, validate_workflow_yaml, write_workflow,
 };
-pub mod bridge;
-pub use bridge::*;
-pub mod wisdom;
-pub mod agent_channel;
-pub mod architecture;
-pub mod auto_doc;
-pub mod auto_fix;
-pub mod benchmark;
+pub mod wisdom {
+    pub use sisyphus_tools_system::wisdom::*;
+}
+pub mod agent_channel {
+    pub use sisyphus_tools_system::agent_channel::*;
+}
+pub mod architecture {
+    pub use sisyphus_tools_build::architecture::*;
+}
+pub mod auto_doc {
+    pub use sisyphus_tools_build::auto_doc::*;
+}
+pub mod auto_fix {
+    pub use sisyphus_tools_build::auto_fix::*;
+}
+pub mod benchmark {
+    pub use sisyphus_tools_build::benchmark::*;
+}
 pub use benchmark::*;
-pub mod bug_fixer;
-pub mod circuit_breaker;
+pub mod bug_fixer {
+    pub use sisyphus_tools_build::bug_fixer::*;
+}
+pub mod circuit_breaker {
+    pub use sisyphus_tools_llm::circuit_breaker::*;
+}
 pub use circuit_breaker::*;
-pub mod dep_manager;
-pub mod mcp;
-pub mod meta_learner;
-pub mod model_router;
+pub mod dep_manager {
+    pub use sisyphus_tools_system::dep_manager::*;
+}
+pub mod mcp {
+    pub use sisyphus_tools_mcp::mcp::*;
+}
+pub mod meta_learner {
+    pub use sisyphus_tools_llm_tools::meta_learner::*;
+}
+pub mod model_router {
+    pub use sisyphus_tools_llm::model_router::*;
+}
 pub use model_router::*;
-pub mod team;
-pub mod test_gen;
-pub mod tool_registry;
-pub mod custom_tool;
-
-
-#[derive(Error, Debug)]
-pub enum ToolError {
-    #[error("IO error: {0}")]
-    Io(#[from] std::io::Error),
-    #[error("Generic error: {0}")]
-    Generic(String),
-    #[error("Path not found: {0}")]
-    NotFound(String),
-    #[error("Permission denied: {0}")]
-    PermissionDenied(String),
-    #[error("Edit failed: no match for old string")]
-    EditNoMatch,
-    #[error("Edit failed: multiple matches")]
-    EditAmbiguous,
-    #[error("Glob pattern error: {0}")]
-    GlobPattern(String),
-    #[error("Grep error: {0}")]
-    GrepError(String),
-    #[error("Operation timed out: {0}")]
-    Timeout(String),
-    #[error("Web error: {0}")]
-    WebError(String),
-    #[error("Todo error: {0}")]
-    TodoError(String),
-    #[error("Bash command failed (exit {code}): {stderr}")]
-    CommandFailed {
-        code: i32,
-        stdout: String,
-        stderr: String,
-    },
+pub mod team {
+    pub use sisyphus_tools_agent::team::*;
 }
-
-pub type ToolResult<T> = Result<T, ToolError>;
-
-impl From<String> for ToolError {
-    fn from(s: String) -> Self {
-        ToolError::Generic(s)
-    }
+pub mod test_gen {
+    pub use sisyphus_tools_build::test_gen::*;
 }
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Permission {
-    Allow,
-    Deny,
-    Ask,
+pub mod tool_registry {
+    pub use sisyphus_tools_mcp::tool_registry::*;
 }
-
-pub type PermissionRules = Vec<(String, Permission)>;
+pub mod custom_tool {
+    pub use sisyphus_tools_mcp::custom_tool::*;
+}
 
 pub use pr::*;
 pub use wisdom::*;

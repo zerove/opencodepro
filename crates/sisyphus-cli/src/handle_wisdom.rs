@@ -5,11 +5,11 @@ use crate::commands::WisdomCommands;
 pub(crate) async fn handle_wisdom(sub: &WisdomCommands) -> Result<()> {
     match sub {
         WisdomCommands::Record { category, content } => {
-            sisyphus_tools::wisdom_record(category, content).await?;
+            sisyphus_cli::tools::wisdom_record(category, content).await?;
             println!("Recorded wisdom in category: {category}");
         }
         WisdomCommands::List => {
-            let categories = sisyphus_tools::wisdom_list().await?;
+            let categories = sisyphus_cli::tools::wisdom_list().await?;
             if categories.is_empty() {
                 println!("No wisdom categories found.");
             } else {
@@ -20,15 +20,15 @@ pub(crate) async fn handle_wisdom(sub: &WisdomCommands) -> Result<()> {
             }
         }
         WisdomCommands::Show { category } => {
-            let content = sisyphus_tools::wisdom_get(category).await?;
+            let content = sisyphus_cli::tools::wisdom_get(category).await?;
             println!("--- Wisdom: {} ---\n{content}", category);
         }
         WisdomCommands::Delete { category } => {
-            sisyphus_tools::wisdom_delete(category).await?;
+            sisyphus_cli::tools::wisdom_delete(category).await?;
             println!("Deleted wisdom category: {category}");
         }
         WisdomCommands::Inject => {
-            let context = sisyphus_tools::wisdom_inject().await?;
+            let context = sisyphus_cli::tools::wisdom_inject().await?;
             if context.is_empty() {
                 println!("No wisdom to inject.");
             } else {

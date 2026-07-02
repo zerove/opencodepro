@@ -7,7 +7,7 @@ use sisyphus_intel::{
 };
 use sisyphus_mem::MfsStore;
 use sisyphus_sandbox::WasmToolExecutor;
-use sisyphus_tools::{BreakerConfig, CircuitBreaker};
+use sisyphus_tools_llm::circuit_breaker::{BreakerConfig, CircuitBreaker};
 use sisyphus_types::{CircuitState, StateStore};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -43,7 +43,7 @@ async fn setup_kernel(db_url: Option<&str>) -> SisyphusKernel {
 
     let synthesizer = Arc::new(GoalDrivenSynthesizer::new(tool_executor.clone()));
 
-    SisyphusKernel::new(state_store, tool_executor, intel, Arc::new(sisyphus_tools::DummyLlmClient), synthesizer)
+    SisyphusKernel::new(state_store, tool_executor, intel, Arc::new(sisyphus_tools_llm::metis::DummyLlmClient), synthesizer)
 }
 
 // ---------------------------------------------------------------------------

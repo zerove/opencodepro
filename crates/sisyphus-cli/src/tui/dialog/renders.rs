@@ -125,16 +125,16 @@ pub(super) fn render_todos_dialog(frame: &mut ratatui::Frame, area: Rect, app: &
 
     let items: Vec<ListItem> = app.todo_items.iter().map(|item| {
         let checkbox = match item.status {
-            sisyphus_tools::TodoStatus::Pending => "[ ]",
-            sisyphus_tools::TodoStatus::InProgress => "[~]",
-            sisyphus_tools::TodoStatus::Completed => "[✓]",
-            sisyphus_tools::TodoStatus::Cancelled => "[✗]",
+            crate::tools::TodoStatus::Pending => "[ ]",
+            crate::tools::TodoStatus::InProgress => "[~]",
+            crate::tools::TodoStatus::Completed => "[✓]",
+            crate::tools::TodoStatus::Cancelled => "[✗]",
         };
         let style = match item.status {
-            sisyphus_tools::TodoStatus::Completed => Style::default().fg(theme.success).add_modifier(Modifier::DIM),
-            sisyphus_tools::TodoStatus::Cancelled => Style::default().fg(theme.error).add_modifier(Modifier::DIM),
-            sisyphus_tools::TodoStatus::InProgress => Style::default().fg(theme.primary),
-            sisyphus_tools::TodoStatus::Pending => Style::default().fg(theme.fg),
+            crate::tools::TodoStatus::Completed => Style::default().fg(theme.success).add_modifier(Modifier::DIM),
+            crate::tools::TodoStatus::Cancelled => Style::default().fg(theme.error).add_modifier(Modifier::DIM),
+            crate::tools::TodoStatus::InProgress => Style::default().fg(theme.primary),
+            crate::tools::TodoStatus::Pending => Style::default().fg(theme.fg),
         };
         ListItem::new(Line::from(vec![
             Span::styled(format!("{} ", checkbox), style),
@@ -156,7 +156,7 @@ pub(super) fn render_todos_dialog(frame: &mut ratatui::Frame, area: Rect, app: &
 
 pub(super) fn render_lsp_dialog(frame: &mut ratatui::Frame, area: Rect, app: &App) {
     let theme = app.theme();
-    let filtered: Vec<&sisyphus_tools::lsp::LspDiagnostic> = if app.dialog_query.is_empty() {
+    let filtered: Vec<&crate::tools::lsp::LspDiagnostic> = if app.dialog_query.is_empty() {
         app.lsp_diagnostics.iter().collect()
     } else {
         let q = app.dialog_query.to_lowercase();
@@ -170,7 +170,7 @@ pub(super) fn render_lsp_dialog(frame: &mut ratatui::Frame, area: Rect, app: &Ap
         .border_style(Style::default().fg(theme.primary));
 
     let items: Vec<ListItem> = filtered.iter().map(|d| {
-        let sev = d.severity.map(sisyphus_tools::lsp::severity_name).unwrap_or("?");
+        let sev = d.severity.map(crate::tools::lsp::severity_name).unwrap_or("?");
         let style = match sev {
             "error" => Style::default().fg(theme.error),
             "warning" => Style::default().fg(theme.warning),

@@ -8,14 +8,14 @@ use crate::commands::*;
 pub fn handle_todo(sub: &TodoCommands, todo_db: &Path) -> Result<()> {
     match sub {
         TodoCommands::Add { content, priority } => {
-            let item = sisyphus_tools::todo_add(todo_db, content, priority.clone().into())?;
+            let item = sisyphus_cli::tools::todo_add(todo_db, content, priority.clone().into())?;
             println!("Created: {} ({})", item.id, item.status);
         }
         TodoCommands::List { status } => {
             let filter = status
                 .as_deref()
-                .and_then(|s| s.parse::<sisyphus_tools::TodoStatus>().ok());
-            let items = sisyphus_tools::todo_list(todo_db, filter)?;
+                .and_then(|s| s.parse::<sisyphus_cli::tools::TodoStatus>().ok());
+            let items = sisyphus_cli::tools::todo_list(todo_db, filter)?;
             if items.is_empty() {
                 println!("No todos found.");
             } else {
@@ -41,13 +41,13 @@ pub fn handle_todo(sub: &TodoCommands, todo_db: &Path) -> Result<()> {
         } => {
             let s = status
                 .as_deref()
-                .and_then(|s| s.parse::<sisyphus_tools::TodoStatus>().ok());
+                .and_then(|s| s.parse::<sisyphus_cli::tools::TodoStatus>().ok());
             let p = priority.clone().map(|p| p.into());
-            let item = sisyphus_tools::todo_update(todo_db, id, content.as_deref(), s, p)?;
+            let item = sisyphus_cli::tools::todo_update(todo_db, id, content.as_deref(), s, p)?;
             println!("Updated: {} — {}", item.id, item.status);
         }
         TodoCommands::Delete { id, yes: true } => {
-            sisyphus_tools::todo_delete(todo_db, id)?;
+            sisyphus_cli::tools::todo_delete(todo_db, id)?;
             println!("Deleted: {id}");
         }
         TodoCommands::Delete { id, yes: false } => {
@@ -57,7 +57,7 @@ pub fn handle_todo(sub: &TodoCommands, todo_db: &Path) -> Result<()> {
             std::io::stdin().read_line(&mut answer)?;
             let answer = answer.trim().to_lowercase();
             if answer == "y" || answer == "yes" {
-                sisyphus_tools::todo_delete(todo_db, id)?;
+                sisyphus_cli::tools::todo_delete(todo_db, id)?;
                 println!("Deleted: {id}");
             } else {
                 println!("Cancelled.");

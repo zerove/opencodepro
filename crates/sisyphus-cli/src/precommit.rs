@@ -30,7 +30,7 @@ pub fn run_install(
     lang: Option<String>,
 ) -> Result<()> {
     let backend = lang.unwrap_or_else(|| "rust".to_string());
-    let mut cfg = sisyphus_tools::PrecommitConfig {
+    let mut cfg = crate::tools::PrecommitConfig {
         backend,
         ..Default::default()
     };
@@ -45,7 +45,7 @@ pub fn run_install(
     }
 
     let repo = resolve_repo(dir)?;
-    sisyphus_tools::install_precommit(&repo, &cfg)?;
+    crate::tools::install_precommit(&repo, &cfg)?;
 
     println!(
         "✅ Pre-commit hook installed at {}/.git/hooks/pre-commit",
@@ -74,7 +74,7 @@ pub fn run_install(
 
 pub fn run_uninstall(dir: Option<PathBuf>) -> Result<()> {
     let repo = resolve_repo(dir)?;
-    sisyphus_tools::uninstall_precommit(&repo)?;
+    crate::tools::uninstall_precommit(&repo)?;
     println!(
         "✅ Pre-commit hook removed from {}/.git/hooks/pre-commit",
         repo.display()
@@ -88,7 +88,7 @@ pub fn run_status(dir: Option<PathBuf>) -> Result<()> {
     let hook_path = hooks_dir.join("pre-commit");
 
     if hook_path.exists() {
-        let is_sisyphus = sisyphus_tools::is_sisyphus_hook(&repo);
+        let is_sisyphus = crate::tools::is_sisyphus_hook(&repo);
         let source = if is_sisyphus {
             "Sisyphus"
         } else {
@@ -99,7 +99,7 @@ pub fn run_status(dir: Option<PathBuf>) -> Result<()> {
         println!("  Source: {source}");
 
         if is_sisyphus {
-            if let Some(content) = sisyphus_tools::read_precommit(&repo) {
+            if let Some(content) = crate::tools::read_precommit(&repo) {
                 println!("\n--- Content ---");
                 println!("{content}");
             }

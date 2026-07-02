@@ -15,8 +15,8 @@ use sisyphus_bridge_api::{
 };
 use sisyphus_core::{SOPGraph, WasmSOPNode};
 use sisyphus_metrics::record_bridge_request;
-use sisyphus_tools::LlmClient;
-use sisyphus_tools::TeamGoal;
+use sisyphus_tools_llm::LlmClient;
+use sisyphus_tools_agent::team::TeamGoal;
 use tokio::sync::mpsc;
 use tokio_stream::StreamExt;
 use tonic::{Request, Response, Status};
@@ -106,10 +106,10 @@ impl SisyphusBridge for MySisyphusBridge {
                 .into_iter()
                 .map(|(tool_id, info)| {
                     let source_str = match &info.source {
-                        sisyphus_tools::ToolSource::Builtin => "builtin",
-                        sisyphus_tools::ToolSource::Mcp { .. } => "mcp",
-                        sisyphus_tools::ToolSource::Strategic => "strategic",
-                        sisyphus_tools::ToolSource::Wasm => "wasm",
+                        sisyphus_tools_mcp::tool_registry::ToolSource::Builtin => "builtin",
+                        sisyphus_tools_mcp::tool_registry::ToolSource::Mcp { .. } => "mcp",
+                        sisyphus_tools_mcp::tool_registry::ToolSource::Strategic => "strategic",
+                        sisyphus_tools_mcp::tool_registry::ToolSource::Wasm => "wasm",
                     };
                     let params_json = info.parameters.map(|p| p.to_string()).unwrap_or_default();
                     ToolMetadata {
@@ -432,9 +432,9 @@ impl SisyphusBridge for MySisyphusBridge {
                     tool_triggers,
                     instructions_preview: preview,
                     source: match s.source {
-                        sisyphus_tools::skill::SkillSource::BuiltIn => "builtin".into(),
-                        sisyphus_tools::skill::SkillSource::User => "user".into(),
-                        sisyphus_tools::skill::SkillSource::Project => "project".into(),
+                        sisyphus_tools_session::skill::SkillSource::BuiltIn => "builtin".into(),
+                        sisyphus_tools_session::skill::SkillSource::User => "user".into(),
+                        sisyphus_tools_session::skill::SkillSource::Project => "project".into(),
                     },
                 }
             })
@@ -472,9 +472,9 @@ impl SisyphusBridge for MySisyphusBridge {
                     tool_triggers,
                     instructions_preview: preview,
                     source: match skill.source {
-                        sisyphus_tools::skill::SkillSource::BuiltIn => "builtin".into(),
-                        sisyphus_tools::skill::SkillSource::User => "user".into(),
-                        sisyphus_tools::skill::SkillSource::Project => "project".into(),
+                        sisyphus_tools_session::skill::SkillSource::BuiltIn => "builtin".into(),
+                        sisyphus_tools_session::skill::SkillSource::User => "user".into(),
+                        sisyphus_tools_session::skill::SkillSource::Project => "project".into(),
                     },
                 }),
             }))
@@ -492,7 +492,7 @@ impl SisyphusBridge for MySisyphusBridge {
     ) -> Result<Response<InstallSkillResponse>, Status> {
         let req = request.into_inner();
         let path = std::path::Path::new(&req.source_path);
-        match sisyphus_tools::skill::install_skill(path) {
+        match sisyphus_tools_session::skill::install_skill(path) {
             Ok(name) => Ok(Response::new(InstallSkillResponse {
                 success: true,
                 error: String::new(),
@@ -511,7 +511,7 @@ impl SisyphusBridge for MySisyphusBridge {
         request: Request<RemoveSkillRequest>,
     ) -> Result<Response<RemoveSkillResponse>, Status> {
         let req = request.into_inner();
-        match sisyphus_tools::skill::remove_skill(&req.name) {
+        match sisyphus_tools_session::skill::remove_skill(&req.name) {
             Ok(()) => Ok(Response::new(RemoveSkillResponse {
                 success: true,
                 error: String::new(),
@@ -601,7 +601,7 @@ impl SisyphusBridge for MySisyphusBridge {
         let req = request.into_inner();
         let db_path = std::path::PathBuf::from(&req.session_db_path);
 
-        let session = match sisyphus_tools::session_get(&db_path, &req.session_id) {
+        let session = match sisyphus_tools_session::session_get(&db_path, &req.session_id) {
             Ok(s) => s,
             Err(e) => {
                 return Ok(Response::new(AddMessageResponse {
@@ -641,7 +641,7 @@ impl SisyphusBridge for MySisyphusBridge {
 
         match self.llm_client.chat(system_prompt, &context, false).await {
             Ok(response) => {
-                if let Err(e) = sisyphus_tools::session_add_message(
+                if let Err(e) = sisyphus_tools_session::session_add_message(
                     &db_path,
                     &req.session_id,
                     "assistant",

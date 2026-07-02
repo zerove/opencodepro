@@ -3,19 +3,20 @@ use std::sync::{Arc, RwLock, Weak};
 use sisyphus_core::SisyphusKernel;
 use sisyphus_mem::MfsStore;
 use sisyphus_roadmap::{ProgressReport, RoadmapManager};
+use sisyphus_tools_llm::LlmClient;
 use sisyphus_types::{MilestoneStatus, ToolExecutor, TypesError};
 use tracing::info;
 
 pub(crate) struct StrategicExecutor {
     kernel: Arc<RwLock<Option<Weak<SisyphusKernel>>>>,
     state_store: Arc<MfsStore>,
-    llm_client: Arc<dyn sisyphus_tools::LlmClient>,
+    llm_client: Arc<dyn LlmClient>,
 }
 
 impl StrategicExecutor {
     pub(crate) fn new(
         state_store: Arc<MfsStore>,
-        llm_client: Arc<dyn sisyphus_tools::LlmClient>,
+        llm_client: Arc<dyn LlmClient>,
     ) -> Self {
         Self {
             kernel: Arc::new(RwLock::new(None)),
@@ -109,9 +110,8 @@ impl ToolExecutor for StrategicExecutor {
                                     .map(move |ph| (ms.id.as_str(), ph.id.as_str(), &ph.goals))
                             })
                             .filter(|(_, _, goals)| goals.iter().any(|g| g.goal_id == goal.goal_id))
-                            .find_map(|(ms_id, ph_id, _)| {
-                                Some((ms_id.to_string(), ph_id.to_string()))
-                            })
+                            .map(|(ms_id, ph_id, _)| (ms_id.to_string(), ph_id.to_string()))
+                            .next()
                             .unwrap_or_default();
                         let _ = manager
                             .update_goal_status(
@@ -214,9 +214,8 @@ impl ToolExecutor for StrategicExecutor {
                                     .map(move |ph| (ms.id.as_str(), ph.id.as_str(), &ph.goals))
                             })
                             .filter(|(_, _, goals)| goals.iter().any(|g| g.goal_id == goal.goal_id))
-                            .find_map(|(ms_id, ph_id, _)| {
-                                Some((ms_id.to_string(), ph_id.to_string()))
-                            })
+                            .map(|(ms_id, ph_id, _)| (ms_id.to_string(), ph_id.to_string()))
+                            .next()
                             .unwrap_or_default();
 
                         // Record outcome
@@ -260,38 +259,6 @@ impl ToolExecutor for StrategicExecutor {
                         details: format!("Goal execution failed: {e}"),
                     })
                 }
-            }
-        } else if tool_id == "progress" {
-            let args_str = String::from_utf8_lossy(&args);
-            let v: serde_json::Value = serde_json::from_str(&args_str).map_err(|e| {
-                TypesError::ToolExecutionError {
-                    tool_id: tool_id.to_string(),
-                    details: format!("Invalid JSON args: {e}"),
-                }
-            })?;
-
-            let project_id = v["project_id"].as_str().ok_or_else(|| {
-                TypesError::ToolExecutionError {
-                    tool_id: tool_id.to_string(),
-                    details: "Missing 'project_id' in arguments".to_string(),
-                }
-            })?.to_string();
-
-            let manager = sisyphus_roadmap::RoadmapManager::new(self.state_store.clone());
-            match manager.get_project(&project_id).await {
-                Ok(Some(proj)) => {
-                    let output = serde_json::to_string_pretty(&proj.roadmap)
-                        .map_err(|e| TypesError::ToolExecutionError {
-                            tool_id: tool_id.to_string(),
-                            details: format!("Failed to serialize roadmap: {e}"),
-                        })?;
-                    Ok(output.into_bytes())
-                }
-                Ok(None) => Ok(b"No project found.".to_vec()),
-                Err(e) => Err(TypesError::ToolExecutionError {
-                    tool_id: tool_id.to_string(),
-                    details: format!("Failed to get project: {e}"),
-                }),
             }
         } else if tool_id == "show_roadmap" {
             let args_str = String::from_utf8_lossy(&args);

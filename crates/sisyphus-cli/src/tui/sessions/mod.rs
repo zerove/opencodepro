@@ -40,7 +40,7 @@ pub fn handle_sessions_key(key: KeyEvent, app: &mut App) {
                                 .unwrap_or_default();
                             app.history.push(content.clone());
                             app.history_idx = None;
-                            session.messages.push(sisyphus_tools::Message {
+                            session.messages.push(crate::tools::Message {
                                 role: "user".into(),
                                 content: content.clone(),
                                 created_at: now,
@@ -330,7 +330,7 @@ pub fn handle_sessions_key(key: KeyEvent, app: &mut App) {
             app.session_dirty = true;
             // Immediately create with empty name → server-assigned ID
             let db = app.data_dir.join("sessions.json");
-            match sisyphus_tools::session_create(&db, "unnamed") {
+            match crate::tools::session_create(&db, "unnamed") {
                 Ok(s) => {
                     app.add_log(LogEntry::Success(format!(
                         "Created session {} ({})",

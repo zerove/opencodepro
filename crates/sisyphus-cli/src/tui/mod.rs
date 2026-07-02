@@ -36,7 +36,7 @@ pub fn run(data_dir: PathBuf, bridge_address: String) -> Result<()> {
 
     // Load session list (don't auto-create or select - start at Home)
     let db = app.data_dir.join("sessions.json");
-    app.sessions = sisyphus_tools::session_list(&db).unwrap_or_default();
+    app.sessions = crate::tools::session_list(&db).unwrap_or_default();
     app.session_dirty = false;
 
     app.load_boulder();
@@ -204,7 +204,7 @@ fn apply_bg_op(app: &mut App, op: BgOp) {
             let viewing_session = app.session_detail.as_ref().map(|d| d.id.clone());
             if viewing_session.as_deref() == Some(&session_id) {
                 let db = app.data_dir.join("sessions.json");
-                if let Ok(session) = sisyphus_tools::session_get(&db, &session_id) {
+                if let Ok(session) = crate::tools::session_get(&db, &session_id) {
                     app.session_detail = Some(session);
                 }
                 app.session_detail_scroll = usize::MAX;

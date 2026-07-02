@@ -53,7 +53,7 @@ pub fn handle_home_key(key: KeyEvent, app: &mut App) {
             } else {
                 cmd.clone()
             };
-            match sisyphus_tools::session_create(&db, &name) {
+            match crate::tools::session_create(&db, &name) {
                 Ok(s) => {
                     // Push message to in-memory session detail so UI shows it immediately.
                     // spawn_session_add_message handles the actual disk write + bridge.
@@ -62,7 +62,7 @@ pub fn handle_home_key(key: KeyEvent, app: &mut App) {
                         .map(|d| d.as_secs().to_string())
                         .unwrap_or_default();
                     let mut session = s.clone();
-                    session.messages.push(sisyphus_tools::Message {
+                    session.messages.push(crate::tools::Message {
                         role: "user".into(),
                         content: cmd.clone(),
                         created_at: now.clone(),

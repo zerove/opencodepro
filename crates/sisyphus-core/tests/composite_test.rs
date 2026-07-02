@@ -48,7 +48,7 @@ async fn make_kernel() -> (Arc<SisyphusKernel>, Arc<CompositeMockExecutor>) {
         state_store,
         tool_executor.clone(),
         intel,
-        Arc::new(sisyphus_tools::DummyLlmClient),
+        Arc::new(sisyphus_tools_llm::metis::DummyLlmClient),
         synthesizer,
     ));
 

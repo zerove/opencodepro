@@ -18,7 +18,7 @@ pub fn handle_explore(sub: &ExploreCommands) -> Result<()> {
                 .map(|p| p.as_path())
                 .unwrap_or_else(|| Path::new("."));
             let pattern_refs: Vec<&str> = patterns.iter().map(|s| s.as_str()).collect();
-            let results = sisyphus_tools::search_patterns(
+            let results = sisyphus_cli::tools::search_patterns(
                 &pattern_refs,
                 root,
                 include.as_deref(),
@@ -36,7 +36,7 @@ pub fn handle_explore(sub: &ExploreCommands) -> Result<()> {
             root,
             limit: _,
         } => {
-            let files = sisyphus_tools::find_files(pattern, root, None)?;
+            let files = sisyphus_cli::tools::find_files(pattern, root, None)?;
             for f in &files {
                 println!("{}", f.display());
             }

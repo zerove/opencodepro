@@ -117,7 +117,7 @@ pub(super) fn dispatch_slash_command(app: &mut App, cmd: &str) -> bool {
         }
         "/new" | "/n" => {
             let db = app.data_dir.join("sessions.json");
-            match sisyphus_tools::session_create(&db, "unnamed") {
+            match crate::tools::session_create(&db, "unnamed") {
                 Ok(s) => {
                     app.add_log(LogEntry::Success(format!(
                         "Created session {} ({})",

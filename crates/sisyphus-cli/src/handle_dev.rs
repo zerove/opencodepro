@@ -17,8 +17,8 @@ pub(crate) async fn handle_dev(
     println!();
 
     let config = Arc::new(std::sync::RwLock::new(sisyphus_cfg.clone()));
-    let llm = Arc::new(sisyphus_tools::llm::DynamicLlmClient::new(config));
-    let developer = sisyphus_tools::developer::Developer::new(llm);
+    let llm = Arc::new(sisyphus_cli::tools::llm::DynamicLlmClient::new(config));
+    let developer = sisyphus_cli::tools::developer::Developer::new(llm);
 
     match tokio::time::timeout(
         std::time::Duration::from_secs(300),
@@ -27,9 +27,9 @@ pub(crate) async fn handle_dev(
     .await
     {
         Ok(Ok(report)) => {
-            println!("{}", sisyphus_tools::developer::format_report(&report));
+            println!("{}", sisyphus_cli::tools::developer::format_report(&report));
             if report.overall_status
-                == sisyphus_tools::developer::DevOverallStatus::Success
+                == sisyphus_cli::tools::developer::DevOverallStatus::Success
             {
                 println!("✅ Development completed successfully.");
             } else {

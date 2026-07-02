@@ -6,11 +6,17 @@ use sisyphus_core::{Consensus, SisyphusKernel};
 use sisyphus_mem::MfsStore;
 
 use sisyphus_sandbox::{PluginManager, WasmToolExecutor};
-use sisyphus_tools::LlmClient;
-use sisyphus_tools::{
-    AgentRegistry, BuiltinToolExecutor, MCPToolExecutor, SkillLoader, TeamOrchestrator,
-    ToolRegistry,
-};
+use sisyphus_tools_agent::agent_registry::AgentRegistry;
+use sisyphus_tools_agent::team::TeamOrchestrator;
+use sisyphus_tools_core::feedback::FeedbackStore;
+use sisyphus_tools_core::hook::{HookRegistry, hooks_from_skill};
+use sisyphus_tools_executor::executor::BuiltinToolExecutor;
+use sisyphus_tools_executor::executor_mcp::MCPToolExecutor;
+use sisyphus_tools_llm::{DynamicLlmClient, LlmClient};
+use sisyphus_tools_mcp::custom_tool::CustomToolLoader;
+use sisyphus_tools_mcp::mcp::McpTool;
+use sisyphus_tools_mcp::tool_registry::{ToolInfo, ToolRegistry, ToolSource};
+use sisyphus_tools_session::skill::SkillLoader;
 use sisyphus_types::{Config, ExecutorRouter, ToolExecutor};
 use tracing::{info, warn};
 
@@ -27,7 +33,7 @@ pub struct MySisyphusBridge {
     tool_registry: Arc<ToolRegistry>,
     team_orchestrator: Arc<TeamOrchestrator>,
     skill_loader: Arc<SkillLoader>,
-    llm_client: Arc<sisyphus_tools::DynamicLlmClient>,
+    llm_client: Arc<DynamicLlmClient>,
     plugin_manager: Arc<PluginManager>,
 }
 
@@ -50,17 +56,29 @@ impl Clone for MySisyphusBridge {
 
 impl MySisyphusBridge {
     pub async fn new(shared_config: Arc<RwLock<Config>>) -> Result<Self, sisyphus_types::TypesError> {
-        let config = shared_config.read().map_err(|e| sisyphus_types::TypesError::ToolExecutionError { tool_id: "init".into(), details: format!("Config lock poisoned: {e}") })?;
+        let (cache_path, l1_cap, max_tasks, wasm_tools_dir, max_mem_pages, stdio_servers, http_servers, default_fuel) = {
+            let config = shared_config.read().map_err(|e| sisyphus_types::TypesError::ToolExecutionError { tool_id: "init".into(), details: format!("Config lock poisoned: {e}") })?;
+            (
+                config.cache.sqlite_path.clone(),
+                config.cache.l1_capacity,
+                config.executor.max_concurrent_tasks,
+                config.sandbox.wasm_tools_dir.clone(),
+                config.sandbox.max_memory_pages,
+                config.mcp.stdio_servers.clone(),
+                config.mcp.http_servers.clone(),
+                config.executor.default_fuel,
+            )
+        };
         let state_store = Arc::new(
             MfsStore::with_capacity(
-                &config.cache.sqlite_path,
-                NonZeroUsize::new(config.cache.l1_capacity).ok_or_else(|| sisyphus_types::TypesError::ToolExecutionError { tool_id: "init".into(), details: format!("l1_capacity must be > 0, got {}", config.cache.l1_capacity) })?,
+                &cache_path,
+                NonZeroUsize::new(l1_cap).ok_or_else(|| sisyphus_types::TypesError::ToolExecutionError { tool_id: "init".into(), details: format!("l1_capacity must be > 0, got {l1_cap}") })?,
             )
             .await
             .map_err(|e| sisyphus_types::TypesError::StateStoreError(format!("Failed to init MFS Store: {e}")))?,
         );
 
-        let sim_iterations = config.executor.max_concurrent_tasks.max(1) * 64;
+        let sim_iterations = max_tasks.max(1) * 64;
         let simulator = Arc::new(sisyphus_intel::MonteCarloSimulator::with_state_store(
             sim_iterations,
             state_store.clone(),
@@ -69,8 +87,8 @@ impl MySisyphusBridge {
         // Primary executor: WASM (backward-compatible default)
         let wasm_executor = Arc::new(
             WasmToolExecutor::with_config(
-                Some(PathBuf::from(&config.sandbox.wasm_tools_dir)),
-                Some(config.sandbox.max_memory_pages),
+                Some(PathBuf::from(&wasm_tools_dir)),
+                Some(max_mem_pages),
             )
             .map_err(|e| sisyphus_types::TypesError::ToolExecutionError { tool_id: "init".into(), details: format!("Failed to create WasmToolExecutor: {e}") })?,
         );
@@ -82,13 +100,13 @@ impl MySisyphusBridge {
         );
 
         // Secondary executor: built-in tools
-        let mut registry = sisyphus_tools::HookRegistry::new();
+        let mut registry = HookRegistry::new();
         let loader = SkillLoader::new()
             .with_user_dir()
             .with_project_dir(std::path::Path::new("."));
         let skills = loader.load_all();
         for skill in skills {
-            let hooks = sisyphus_tools::hook::hooks_from_skill(
+            let hooks = hooks_from_skill(
                 &skill.name,
                 &skill.triggers,
                 &skill.instructions,
@@ -97,7 +115,7 @@ impl MySisyphusBridge {
         }
 
         // Create shared DynamicLlmClient for all LLM-dependent components
-        let dyn_llm_client = Arc::new(sisyphus_tools::DynamicLlmClient::new(shared_config.clone()));
+        let dyn_llm_client = Arc::new(DynamicLlmClient::new(shared_config.clone()));
         let llm_client_for_bridge = dyn_llm_client.clone();
 
         let builtin_executor: Arc<dyn ToolExecutor> = Arc::new(BuiltinToolExecutor {
@@ -106,7 +124,7 @@ impl MySisyphusBridge {
                 let c: Arc<dyn LlmClient> = dyn_llm_client.clone();
                 c
             },
-            feedback_store: Arc::new(sisyphus_tools::feedback::FeedbackStore::new(
+            feedback_store: Arc::new(FeedbackStore::new(
                 ".omo/feedback",
             )),
             bridge_client: None,
@@ -126,7 +144,7 @@ impl MySisyphusBridge {
         let tool_registry = Arc::new(ToolRegistry::new());
 
         // Load custom tools (.opencode/tools/*.toml)
-        let custom_loader = sisyphus_tools::custom_tool::CustomToolLoader::new(".opencode/tools");
+        let custom_loader = CustomToolLoader::new(".opencode/tools");
         let custom_defs = custom_loader.load_and_register(&tool_registry).await.unwrap_or_default();
 
         // Create CustomToolExecutor for these tools
@@ -137,10 +155,10 @@ impl MySisyphusBridge {
         router.register("tools", custom_executor);
 
         // Collect MCP tool info for agent registration
-        let mut mcp_servers: Vec<(String, String, Vec<sisyphus_tools::McpTool>)> = Vec::new();
+        let mut mcp_servers: Vec<(String, String, Vec<McpTool>)> = Vec::new();
 
         // Optional MCP executors
-        for (prefix, command_line) in &config.mcp.stdio_servers {
+        for (prefix, command_line) in &stdio_servers {
             let parts: Vec<&str> = command_line.split_whitespace().collect();
             if parts.is_empty() {
                 warn!("Empty MCP stdio command for prefix '{prefix}', skipping");
@@ -163,7 +181,7 @@ impl MySisyphusBridge {
                 }
             }
         }
-        for (prefix, url) in &config.mcp.http_servers {
+        for (prefix, url) in &http_servers {
             match MCPToolExecutor::from_url(url).await {
                 Ok(mcp) => {
                     let tools = mcp.list_tools().await.unwrap_or_default();
@@ -209,11 +227,11 @@ impl MySisyphusBridge {
                 let tool_id = format!("{}:{}", prefix, tool.name);
                 tool_registry.register(
                     &tool_id,
-                    sisyphus_tools::ToolInfo {
+                    ToolInfo {
                         name: tool.name.clone(),
                         description: tool.description.clone().unwrap_or_default(),
                         parameters: tool.input_schema.clone(),
-                        source: sisyphus_tools::ToolSource::Mcp {
+                        source: ToolSource::Mcp {
                             server_prefix: prefix.clone(),
                         },
                     },
@@ -249,7 +267,7 @@ impl MySisyphusBridge {
         Ok(Self {
             kernel,
             state_store,
-            default_fuel: config.executor.default_fuel,
+            default_fuel,
             agent_registry,
             tool_registry,
             team_orchestrator: Arc::new(team_orchestrator),

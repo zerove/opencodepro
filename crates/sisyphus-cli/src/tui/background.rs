@@ -80,7 +80,7 @@ pub fn spawn_session_add_message(
     let (tx, rx) = tokio::sync::oneshot::channel();
     tokio::spawn(async move {
         let session_db = data_dir.join("sessions.json");
-        if let Err(e) = sisyphus_tools::session_add_message(&session_db, &session_id, &role, &content) {
+        if let Err(e) = crate::tools::session_add_message(&session_db, &session_id, &role, &content) {
             let _ = tx.send(BgOp::BridgeCmd {
                 entries: vec![super::LogEntry::Error(format!("Failed to add message: {e}"))],
             });
@@ -148,15 +148,15 @@ pub fn spawn_dev_agent(
     let (tx, rx) = tokio::sync::oneshot::channel();
     tokio::spawn(async move {
         let config = std::sync::Arc::new(std::sync::RwLock::new(config));
-        let llm: std::sync::Arc<dyn sisyphus_tools::metis::LlmClient> =
-            std::sync::Arc::new(sisyphus_tools::llm::DynamicLlmClient::new(config));
-        let developer = sisyphus_tools::developer::Developer::new(llm);
+        let llm: std::sync::Arc<dyn crate::tools::metis::LlmClient> =
+            std::sync::Arc::new(crate::tools::llm::DynamicLlmClient::new(config));
+        let developer = crate::tools::developer::Developer::new(llm);
         let goal_c = goal.clone();
         match developer.develop(&goal, &context, parallel, resume).await {
             Ok(report) => {
-                let formatted = sisyphus_tools::developer::format_report(&report);
+                let formatted = crate::tools::developer::format_report(&report);
                 let success = report.overall_status
-                    == sisyphus_tools::developer::DevOverallStatus::Success;
+                    == crate::tools::developer::DevOverallStatus::Success;
                 let _ = tx.send(BgOp::DevResult { goal: goal_c, report: formatted, success });
             }
             Err(e) => {

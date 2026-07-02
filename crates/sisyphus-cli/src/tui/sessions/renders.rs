@@ -104,7 +104,7 @@ pub fn render_sessions(frame: &mut ratatui::Frame, area: Rect, app: &App) {
 fn render_session_detail(
     frame: &mut ratatui::Frame,
     area: Rect,
-    session: &sisyphus_tools::Session,
+    session: &crate::tools::Session,
     scroll: usize,
     app: &App,
 ) {

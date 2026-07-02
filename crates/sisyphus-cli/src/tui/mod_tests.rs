@@ -100,7 +100,7 @@ fn test_render_status_session_list_help() {
 
 #[test]
 fn test_render_status_diag_counts() {
-    use sisyphus_tools::lsp::{LspDiagnostic, LspPosition, LspRange};
+    use sisyphus_tools_build::lsp::{LspDiagnostic, LspPosition, LspRange};
     let rng = LspRange {
         start: LspPosition { line: 0, character: 0 },
         end: LspPosition { line: 1, character: 1 },
@@ -147,7 +147,7 @@ fn test_refresh_todos_with_data() {
     let dir = tempfile::tempdir().unwrap();
     let db = dir.path().join("todos.json");
     // Seed a todo via the public API
-    sisyphus_tools::todo_add(&db, "write tests", sisyphus_tools::TodoPriority::High).unwrap();
+    crate::tools::todo_add(&db, "write tests", crate::tools::TodoPriority::High).unwrap();
 
     let mut app = App::new(dir.path().to_path_buf(), "addr".into());
     app.todo_dirty = true;
@@ -162,7 +162,7 @@ fn test_toggle_todo_status_cycles() {
     let dir = tempfile::tempdir().unwrap();
     let db = dir.path().join("todos.json");
     let _item =
-        sisyphus_tools::todo_add(&db, "cycle test", sisyphus_tools::TodoPriority::Medium)
+        crate::tools::todo_add(&db, "cycle test", crate::tools::TodoPriority::Medium)
             .unwrap();
 
     let mut app = App::new(dir.path().to_path_buf(), "addr".into());
@@ -171,7 +171,7 @@ fn test_toggle_todo_status_cycles() {
     assert_eq!(app.todo_items.len(), 1);
     assert!(matches!(
         app.todo_items[0].status,
-        sisyphus_tools::TodoStatus::Pending
+        crate::tools::TodoStatus::Pending
     ));
 
     // Pending → InProgress
@@ -179,7 +179,7 @@ fn test_toggle_todo_status_cycles() {
     app.refresh_todos();
     assert!(matches!(
         app.todo_items[0].status,
-        sisyphus_tools::TodoStatus::InProgress
+        crate::tools::TodoStatus::InProgress
     ));
 
     // InProgress → Completed
@@ -187,7 +187,7 @@ fn test_toggle_todo_status_cycles() {
     app.refresh_todos();
     assert!(matches!(
         app.todo_items[0].status,
-        sisyphus_tools::TodoStatus::Completed
+        crate::tools::TodoStatus::Completed
     ));
 
     // Completed → Pending
@@ -195,7 +195,7 @@ fn test_toggle_todo_status_cycles() {
     app.refresh_todos();
     assert!(matches!(
         app.todo_items[0].status,
-        sisyphus_tools::TodoStatus::Pending
+        crate::tools::TodoStatus::Pending
     ));
 }
 
@@ -204,7 +204,7 @@ fn test_delete_todo_removes_item() {
     let dir = tempfile::tempdir().unwrap();
     let db = dir.path().join("todos.json");
     let _item =
-        sisyphus_tools::todo_add(&db, "delete me", sisyphus_tools::TodoPriority::Low).unwrap();
+        crate::tools::todo_add(&db, "delete me", crate::tools::TodoPriority::Low).unwrap();
 
     let mut app = App::new(dir.path().to_path_buf(), "addr".into());
     app.todo_dirty = true;
@@ -243,7 +243,7 @@ fn test_refresh_sessions_empty() {
 fn test_refresh_sessions_with_data() {
     let dir = tempfile::tempdir().unwrap();
     let db = dir.path().join("sessions.json");
-    let _session = sisyphus_tools::session_create(&db, "test-session").unwrap();
+    let _session = crate::tools::session_create(&db, "test-session").unwrap();
 
     let mut app = App::new(dir.path().to_path_buf(), "addr".into());
     app.session_dirty = true;
@@ -256,7 +256,7 @@ fn test_refresh_sessions_with_data() {
 fn test_select_session_loads_detail() {
     let dir = tempfile::tempdir().unwrap();
     let db = dir.path().join("sessions.json");
-    let session = sisyphus_tools::session_create(&db, "detail-test").unwrap();
+    let session = crate::tools::session_create(&db, "detail-test").unwrap();
 
     let mut app = App::new(dir.path().to_path_buf(), "addr".into());
     app.session_dirty = true;

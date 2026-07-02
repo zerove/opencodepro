@@ -6,7 +6,7 @@ use crate::commands::MomusCommands;
 
 pub(crate) async fn handle_momus(
     sub: &MomusCommands,
-    llm_client: &Arc<dyn sisyphus_tools::metis::LlmClient>,
+    llm_client: &Arc<dyn sisyphus_cli::tools::metis::LlmClient>,
 ) -> Result<()> {
     match sub {
         MomusCommands::ReviewPlan { plan_file } => {
@@ -16,7 +16,7 @@ pub(crate) async fn handle_momus(
                 .map(|s| s.to_string_lossy().to_string())
                 .unwrap_or_else(|| "unnamed".to_string());
             let review =
-                sisyphus_tools::review_plan(llm_client.as_ref(), &content, &name).await;
+                sisyphus_cli::tools::review_plan(llm_client.as_ref(), &content, &name).await;
             println!("{}", review.summary);
             if !review.comments.is_empty() {
                 println!("\n--- Issues ---");
@@ -30,7 +30,7 @@ pub(crate) async fn handle_momus(
         }
         MomusCommands::ReviewCode { path } => {
             let content = std::fs::read_to_string(path)?;
-            let review = sisyphus_tools::review_code(llm_client.as_ref(), path, &content)
+            let review = sisyphus_cli::tools::review_code(llm_client.as_ref(), path, &content)
                 .await
                 .map_err(|e| anyhow::anyhow!("{}", e))?;
             println!("{}", review.summary);
@@ -56,7 +56,7 @@ pub(crate) async fn handle_momus(
             }
         }
         MomusCommands::ReviewArch { text } => {
-            let review = sisyphus_tools::review_architecture(llm_client.as_ref(), text).await;
+            let review = sisyphus_cli::tools::review_architecture(llm_client.as_ref(), text).await;
             println!("{}", review.summary);
             if !review.comments.is_empty() {
                 println!("\n--- Issues ---");
@@ -76,7 +76,7 @@ pub(crate) async fn handle_momus(
                 let file_path = entry.path();
                 if file_path.extension().map(|e| e == "rs").unwrap_or(false) {
                     if let Ok(content) = std::fs::read_to_string(&file_path) {
-                        if let Ok(review) = sisyphus_tools::review_code(
+                        if let Ok(review) = sisyphus_cli::tools::review_code(
                             llm_client.as_ref(),
                             &file_path,
                             &content,

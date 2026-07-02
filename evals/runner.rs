@@ -9,10 +9,11 @@ use std::fs;
 use std::path::Path;
 use std::sync::Arc;
 
-use sisyphus_tools::metis::LlmClient;
-use sisyphus_tools::{
-    feedback::FeedbackStore, hook::HookRegistry, BuiltinToolExecutor, DynamicLlmClient,
-};
+use sisyphus_tools_core::feedback::FeedbackStore;
+use sisyphus_tools_core::hook::HookRegistry;
+use sisyphus_tools_executor::executor::BuiltinToolExecutor;
+use sisyphus_tools_llm::metis::LlmClient;
+use sisyphus_tools_llm::DynamicLlmClient;
 use sisyphus_types::{BudgetMode, Config, ToolExecutor};
 
 // ── Schema Definitions ──────────────────────────────────────────
@@ -138,8 +139,6 @@ impl EvalRunner {
                     "librarian/synthesise"
                 } else if case.input.get("url").is_some() {
                     "librarian/fetch_docs"
-                } else if case.input.get("query").is_some() {
-                    "librarian/research"
                 } else {
                     "librarian/research"
                 }

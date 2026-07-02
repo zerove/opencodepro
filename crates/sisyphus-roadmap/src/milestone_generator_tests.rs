@@ -1,7 +1,7 @@
 use super::*;
 use crate::RoadmapManager;
 use sisyphus_mem::MfsStore;
-use sisyphus_tools::metis::FixedResponseClient;
+use sisyphus_tools_llm::metis::FixedResponseClient;
 use std::sync::Arc;
 
 async fn setup_manager() -> (RoadmapManager, Arc<MfsStore>) {

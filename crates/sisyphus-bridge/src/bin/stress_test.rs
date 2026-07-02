@@ -36,7 +36,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         });
     }
 
-    while let Some(_) = set.join_next().await {}
+    while set.join_next().await.is_some() {}
 
     let elapsed = start.elapsed();
     let total = concurrency * iterations;

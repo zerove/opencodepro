@@ -45,7 +45,7 @@ async fn test_experience_prediction_convergence() {
     let synthesizer = Arc::new(sisyphus_intel::GoalDrivenSynthesizer::new(
         tool_executor.clone(),
     ));
-    let kernel = SisyphusKernel::new(state_store, tool_executor.clone(), intel, Arc::new(sisyphus_tools::DummyLlmClient), synthesizer);
+    let kernel = SisyphusKernel::new(state_store, tool_executor.clone(), intel, Arc::new(sisyphus_tools_llm::metis::DummyLlmClient), synthesizer);
 
     let sop_id = "exp_test_sop";
     let mut graph = SOPGraph::new();

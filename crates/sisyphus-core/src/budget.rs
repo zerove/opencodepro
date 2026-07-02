@@ -5,7 +5,7 @@
 
 use async_trait::async_trait;
 
-use sisyphus_tools::llm::BudgetProvider;
+use sisyphus_tools_llm::llm::BudgetProvider;
 
 use crate::{CoreError, SisyphusKernel};
 

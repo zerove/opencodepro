@@ -26,7 +26,7 @@ pub async fn handle_exec(
         }
     }
     let dir_ref = dir.as_deref();
-    let output = sisyphus_tools::bash::execute(command, dir_ref, 30000).await?;
+    let output = sisyphus_cli::tools::bash::execute(command, dir_ref, 30000).await?;
     if !output.stdout.is_empty() {
         println!("{}", output.stdout);
     }
@@ -42,7 +42,7 @@ pub async fn handle_exec(
 }
 
 pub async fn handle_search(query: &str, num: usize) -> Result<()> {
-    let results = sisyphus_tools::web::websearch(query, num).await?;
+    let results = sisyphus_cli::tools::web::websearch(query, num).await?;
     for (i, r) in results.iter().enumerate() {
         println!("[{i}] {} -- {}", r.title, r.url);
         println!("    {}", &r.snippet[..r.snippet.len().min(120)]);
@@ -50,7 +50,9 @@ pub async fn handle_search(query: &str, num: usize) -> Result<()> {
     Ok(())
 }
 
-pub fn handle_apply_patch(file: &PathBuf, input: &PathBuf) -> Result<()> {
+use std::path::Path;
+
+pub fn handle_apply_patch(file: &Path, input: &Path) -> Result<()> {
     let patch_content = if input.to_string_lossy() == "-" {
         let mut buf = String::new();
         std::io::stdin().read_to_string(&mut buf)?;
@@ -58,7 +60,7 @@ pub fn handle_apply_patch(file: &PathBuf, input: &PathBuf) -> Result<()> {
     } else {
         std::fs::read_to_string(input)?
     };
-    let modified = sisyphus_tools::patch::apply_patch(file, &patch_content)?;
+    let modified = sisyphus_cli::tools::patch::apply_patch(file, &patch_content)?;
     for f in &modified {
         println!("Patched: {f}");
     }

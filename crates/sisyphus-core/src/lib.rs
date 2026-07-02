@@ -10,9 +10,9 @@ use sisyphus_intel::SisyphusIntel;
 use sisyphus_mem::MfsStore;
 
 use sisyphus_roadmap::RoadmapManager;
-use sisyphus_tools::{
-    agent_channel::AgentChannel, meta_learner::MetaLearner, ContinuousBenchmark,
-};
+use sisyphus_tools_build::ContinuousBenchmark;
+use sisyphus_tools_llm_tools::meta_learner::MetaLearner;
+use sisyphus_tools_system::agent_channel::AgentChannel;
 use sisyphus_types::AgentMessage;
 
 use crate::intent_gate::IntentGate;
@@ -82,7 +82,7 @@ pub struct SisyphusKernel {
     pub state_store: Arc<MfsStore>,
     pub tool_executor: Arc<dyn ToolExecutor>,
     pub intel: Arc<SisyphusIntel>,
-    pub llm_client: Arc<dyn sisyphus_tools::LlmClient>,
+    pub llm_client: Arc<dyn sisyphus_tools_llm::LlmClient>,
     pub synthesizer: Arc<dyn sisyphus_intel::FlowSynthesizer>,
     /// Inter-agent message bus for pub/sub communication during execution.
     pub channel: AgentChannel,
@@ -106,7 +106,7 @@ impl SisyphusKernel {
         state_store: Arc<MfsStore>,
         tool_executor: Arc<dyn ToolExecutor>,
         intel: Arc<SisyphusIntel>,
-        llm_client: Arc<dyn sisyphus_tools::LlmClient>,
+        llm_client: Arc<dyn sisyphus_tools_llm::LlmClient>,
         synthesizer: Arc<dyn sisyphus_intel::FlowSynthesizer>,
     ) -> Self {
         let rm = Arc::new(RoadmapManager::new(state_store.clone()));
@@ -132,7 +132,7 @@ impl SisyphusKernel {
     /// Attach a StrategicReflector for LLM-augmented roadmap analysis.
     pub fn with_strategic_reflector(
         mut self,
-        llm: Arc<dyn sisyphus_tools::metis::LlmClient>,
+        llm: Arc<dyn sisyphus_tools_llm::metis::LlmClient>,
     ) -> Self {
         self.strategic_reflector = Some(Arc::new(
             sisyphus_roadmap::strategic_reflection::StrategicReflector::new(llm),
@@ -143,7 +143,7 @@ impl SisyphusKernel {
     /// Attach a MilestoneGenerator for LLM-driven roadmap creation.
     pub fn with_milestone_generator(
         mut self,
-        llm: Arc<dyn sisyphus_tools::metis::LlmClient>,
+        llm: Arc<dyn sisyphus_tools_llm::metis::LlmClient>,
     ) -> Self {
         self.milestone_generator = Some(Arc::new(
             sisyphus_roadmap::milestone_generator::MilestoneGenerator::new(llm),

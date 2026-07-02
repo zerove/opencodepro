@@ -97,10 +97,10 @@ pub(crate) fn handle_event(event: Event, app: &mut App, _perms: &CliPermission) 
                 && key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL)
             {
                 let db = app.data_dir.join("sessions.json");
-                match sisyphus_tools::session_create(&db, "unnamed") {
+                match crate::tools::session_create(&db, "unnamed") {
                     Ok(s) => {
                         app.add_log(LogEntry::Success(format!("Created session {}", s.name)));
-                        match sisyphus_tools::session_get(&db, &s.id) {
+                        match crate::tools::session_get(&db, &s.id) {
                             Ok(session) => app.session_detail = Some(session),
                             Err(e) => app.add_log(LogEntry::Error(format!("Session created but load failed: {e}"))),
                         }
@@ -295,10 +295,10 @@ fn handle_palette_key(key: KeyEvent, app: &mut App) {
                 }
                 "new session" | ":new" | ":create" => {
                     let db = app.data_dir.join("sessions.json");
-                    match sisyphus_tools::session_create(&db, "unnamed") {
+                    match crate::tools::session_create(&db, "unnamed") {
                         Ok(s) => {
                             app.add_log(LogEntry::Success(format!("Created session {}", s.name)));
-                            match sisyphus_tools::session_get(&db, &s.id) {
+                            match crate::tools::session_get(&db, &s.id) {
                                 Ok(session) => app.session_detail = Some(session),
                                 Err(e) => app.add_log(LogEntry::Error(format!("Session created but load failed: {e}"))),
                             }
@@ -346,7 +346,7 @@ fn handle_palette_key(key: KeyEvent, app: &mut App) {
                     let db = app.data_dir.join("sessions.json");
                     app.session_input = cmd.to_string();
                     app.view = View::Session;
-                    if let Err(e) = sisyphus_tools::session_create(&db, "unnamed") {
+                    if let Err(e) = crate::tools::session_create(&db, "unnamed") {
                         app.add_log(LogEntry::Error(format!("Failed to create bridge session: {e}")));
                     }
                     app.boulder_dirty = true;

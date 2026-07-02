@@ -155,7 +155,7 @@ async fn execute_handler(
 }
 
 async fn list_sessions_handler(State(state): State<RestApiState>) -> impl IntoResponse {
-    match sisyphus_tools::session_list(&state.session_db) {
+    match sisyphus_tools_session::session_list(&state.session_db) {
         Ok(sessions) => {
             let summary: Vec<SessionSummary> = sessions
                 .into_iter()
@@ -180,7 +180,7 @@ async fn create_session_handler(
     State(state): State<RestApiState>,
     Json(req): Json<CreateSessionRequest>,
 ) -> impl IntoResponse {
-    match sisyphus_tools::session_create(&state.session_db, &req.name) {
+    match sisyphus_tools_session::session_create(&state.session_db, &req.name) {
         Ok(session) => {
             let detail = SessionDetail {
                 id: session.id,
@@ -219,7 +219,7 @@ async fn get_session_handler(
     State(state): State<RestApiState>,
     Path(id): Path<String>,
 ) -> impl IntoResponse {
-    match sisyphus_tools::session_get(&state.session_db, &id) {
+    match sisyphus_tools_session::session_get(&state.session_db, &id) {
         Ok(session) => {
             let detail = SessionDetail {
                 id: session.id,
@@ -259,7 +259,7 @@ async fn add_message_handler(
     Path(id): Path<String>,
     Json(req): Json<AddMessageRequest>,
 ) -> impl IntoResponse {
-    match sisyphus_tools::session_add_message(&state.session_db, &id, &req.role, &req.content) {
+    match sisyphus_tools_session::session_add_message(&state.session_db, &id, &req.role, &req.content) {
         Ok(session) => {
             let detail = SessionDetail {
                 id: session.id,
@@ -300,10 +300,10 @@ async fn list_tools_handler(State(state): State<RestApiState>) -> impl IntoRespo
         .into_iter()
         .map(|(tool_id, info)| {
             let source = match &info.source {
-                sisyphus_tools::ToolSource::Builtin => "builtin",
-                sisyphus_tools::ToolSource::Mcp { .. } => "mcp",
-                sisyphus_tools::ToolSource::Strategic => "strategic",
-                sisyphus_tools::ToolSource::Wasm => "wasm",
+                sisyphus_tools_mcp::tool_registry::ToolSource::Builtin => "builtin",
+                sisyphus_tools_mcp::tool_registry::ToolSource::Mcp { .. } => "mcp",
+                sisyphus_tools_mcp::tool_registry::ToolSource::Strategic => "strategic",
+                sisyphus_tools_mcp::tool_registry::ToolSource::Wasm => "wasm",
             };
             ToolEntry {
                 tool_id,
@@ -359,9 +359,9 @@ async fn list_skills_handler(State(state): State<RestApiState>) -> impl IntoResp
             author: s.author.unwrap_or_default(),
             tags: s.tags,
             source: match s.source {
-                sisyphus_tools::skill::SkillSource::BuiltIn => "builtin",
-                sisyphus_tools::skill::SkillSource::User => "user",
-                sisyphus_tools::skill::SkillSource::Project => "project",
+                sisyphus_tools_session::skill::SkillSource::BuiltIn => "builtin",
+                sisyphus_tools_session::skill::SkillSource::User => "user",
+                sisyphus_tools_session::skill::SkillSource::Project => "project",
             }
             .into(),
         })

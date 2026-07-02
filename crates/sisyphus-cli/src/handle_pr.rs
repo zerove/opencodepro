@@ -6,11 +6,11 @@ use crate::commands::PrCommands;
 
 pub(crate) async fn handle_pr(
     sub: &PrCommands,
-    llm_client: &Arc<dyn sisyphus_tools::metis::LlmClient>,
+    llm_client: &Arc<dyn sisyphus_cli::tools::metis::LlmClient>,
 ) -> Result<()> {
     match sub {
         PrCommands::List => {
-            let prs = sisyphus_tools::PrManager::list_prs()?;
+            let prs = sisyphus_cli::tools::PrManager::list_prs()?;
             if prs.is_empty() {
                 println!("No open pull requests found.");
             } else {
@@ -29,11 +29,11 @@ pub(crate) async fn handle_pr(
             }
         }
         PrCommands::Checkout { number } => {
-            sisyphus_tools::PrManager::checkout_pr(*number)?;
+            sisyphus_cli::tools::PrManager::checkout_pr(*number)?;
             println!("Checked out PR #{}", number);
         }
         PrCommands::Review { number, post, format } => {
-            let ci_cfg = sisyphus_tools::CiConfig::from_env();
+            let ci_cfg = sisyphus_cli::tools::CiConfig::from_env();
             let use_json = format == "json" || ci_cfg.output_format == "json";
 
             if use_json {
@@ -46,7 +46,7 @@ pub(crate) async fn handle_pr(
             }
 
             let review =
-                sisyphus_tools::PrManager::review_pr(*number, llm_client.clone()).await?;
+                sisyphus_cli::tools::PrManager::review_pr(*number, llm_client.clone()).await?;
 
             if use_json {
                 let escaped_review = review
@@ -64,7 +64,7 @@ pub(crate) async fn handle_pr(
             }
 
             if *post || ci_cfg.ci_mode {
-                match sisyphus_tools::post_pr_comment(*number, &review) {
+                match sisyphus_cli::tools::post_pr_comment(*number, &review) {
                     Ok(url) => {
                         if use_json {
                             println!(

@@ -367,7 +367,7 @@ async fn build_test_kernel() -> SisyphusKernel {
         sisyphus_intel::GoalDrivenSynthesizer::new(tool_executor.clone()),
     );
 
-    SisyphusKernel::new(state_store, tool_executor, intel, Arc::new(sisyphus_tools::DummyLlmClient), synthesizer)
+    SisyphusKernel::new(state_store, tool_executor, intel, Arc::new(sisyphus_tools_llm::DummyLlmClient), synthesizer)
 }
 
 #[tokio::test]

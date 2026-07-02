@@ -4,7 +4,7 @@ use std::path::PathBuf;
 /// Simple CLI permission store that loads rules from a config file.
 #[derive(Debug, Default)]
 pub struct CliPermission {
-    rules: Vec<(String, sisyphus_tools::Permission)>,
+    rules: Vec<(String, crate::tools::Permission)>,
 }
 
 impl CliPermission {
@@ -25,9 +25,9 @@ impl CliPermission {
                 serde_json::from_str(&content).context("Failed to parse permission config")?;
             for r in raw {
                 let perm = match r.permission.to_lowercase().as_str() {
-                    "allow" => sisyphus_tools::Permission::Allow,
-                    "deny" => sisyphus_tools::Permission::Deny,
-                    "ask" => sisyphus_tools::Permission::Ask,
+                    "allow" => crate::tools::Permission::Allow,
+                    "deny" => crate::tools::Permission::Deny,
+                    "ask" => crate::tools::Permission::Ask,
                     other => anyhow::bail!("Unknown permission value: {other}"),
                 };
                 this.rules.push((r.pattern, perm));
@@ -43,9 +43,9 @@ impl CliPermission {
         for (pattern, perm) in &self.rules {
             if tool_name == pattern {
                 return match perm {
-                    sisyphus_tools::Permission::Allow => Some(true),
-                    sisyphus_tools::Permission::Deny => Some(false),
-                    sisyphus_tools::Permission::Ask => None,
+                    crate::tools::Permission::Allow => Some(true),
+                    crate::tools::Permission::Deny => Some(false),
+                    crate::tools::Permission::Ask => None,
                 };
             }
         }

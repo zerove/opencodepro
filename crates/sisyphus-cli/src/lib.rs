@@ -22,4 +22,5 @@ pub mod run;
 pub mod shell;
 pub mod shell_compat;
 pub mod skill;
+pub mod tools;
 pub mod tui;

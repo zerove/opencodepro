@@ -10,7 +10,7 @@ fn resolve_dir(cwd: Option<PathBuf>) -> Option<PathBuf> {
 
 pub fn run_status(cwd: Option<PathBuf>) -> Result<()> {
     let dir = resolve_dir(cwd);
-    let s = sisyphus_tools::git::status(dir.as_deref())?;
+    let s = crate::tools::git::status(dir.as_deref())?;
 
     println!("On branch: {}", s.branch);
     if s.ahead > 0 || s.behind > 0 {
@@ -63,7 +63,7 @@ fn status_char(c: char) -> &'static str {
 
 pub fn run_diff(pathspec: Option<String>, cached: bool, cwd: Option<PathBuf>) -> Result<()> {
     let dir = resolve_dir(cwd);
-    let d = sisyphus_tools::git::diff(pathspec.as_deref(), cached, dir.as_deref())?;
+    let d = crate::tools::git::diff(pathspec.as_deref(), cached, dir.as_deref())?;
     if d.is_empty() {
         println!("No diff.");
     } else {
@@ -80,7 +80,7 @@ pub fn run_add(pathspecs: Vec<String>, cwd: Option<PathBuf>) -> Result<()> {
     if refs.is_empty() {
         anyhow::bail!("at least one path required (use '.' to stage everything)");
     }
-    sisyphus_tools::git::add(&refs, dir.as_deref())?;
+    crate::tools::git::add(&refs, dir.as_deref())?;
     println!("Staged {} path(s).", refs.len());
     Ok(())
 }
@@ -89,7 +89,7 @@ pub fn run_add(pathspecs: Vec<String>, cwd: Option<PathBuf>) -> Result<()> {
 
 pub fn run_commit(message: String, allow_empty: bool, cwd: Option<PathBuf>) -> Result<()> {
     let dir = resolve_dir(cwd);
-    let out = sisyphus_tools::git::commit(&message, allow_empty, dir.as_deref())?;
+    let out = crate::tools::git::commit(&message, allow_empty, dir.as_deref())?;
     println!("{out}");
     Ok(())
 }
@@ -98,7 +98,7 @@ pub fn run_commit(message: String, allow_empty: bool, cwd: Option<PathBuf>) -> R
 
 pub fn run_log(count: usize, cwd: Option<PathBuf>) -> Result<()> {
     let dir = resolve_dir(cwd);
-    let log = sisyphus_tools::git::log(count, dir.as_deref())?;
+    let log = crate::tools::git::log(count, dir.as_deref())?;
     if log.entries.is_empty() {
         println!("No commits.");
         return Ok(());
@@ -119,7 +119,7 @@ pub fn run_log(count: usize, cwd: Option<PathBuf>) -> Result<()> {
 
 pub fn run_branch(cwd: Option<PathBuf>) -> Result<()> {
     let dir = resolve_dir(cwd);
-    let branches = sisyphus_tools::git::branch(dir.as_deref())?;
+    let branches = crate::tools::git::branch(dir.as_deref())?;
     for b in &branches {
         let mark = if b.current { "* " } else { "  " };
         println!("{mark}{}", b.name);
@@ -131,7 +131,7 @@ pub fn run_branch(cwd: Option<PathBuf>) -> Result<()> {
 
 pub fn run_checkout(branch: String, create: bool, cwd: Option<PathBuf>) -> Result<()> {
     let dir = resolve_dir(cwd);
-    let out = sisyphus_tools::git::checkout(&branch, create, dir.as_deref())?;
+    let out = crate::tools::git::checkout(&branch, create, dir.as_deref())?;
     println!("{out}");
     Ok(())
 }
@@ -146,9 +146,9 @@ pub fn run_push(
 ) -> Result<()> {
     let dir = resolve_dir(cwd);
     let br = branch.unwrap_or_else(|| {
-        sisyphus_tools::git::current_branch(dir.as_deref()).unwrap_or_else(|_| "main".into())
+        crate::tools::git::current_branch(dir.as_deref()).unwrap_or_else(|_| "main".into())
     });
-    let out = sisyphus_tools::git::push(&remote, &br, force, dir.as_deref())?;
+    let out = crate::tools::git::push(&remote, &br, force, dir.as_deref())?;
     println!("{out}");
     Ok(())
 }
@@ -158,9 +158,9 @@ pub fn run_push(
 pub fn run_pull(remote: String, branch: Option<String>, cwd: Option<PathBuf>) -> Result<()> {
     let dir = resolve_dir(cwd);
     let br = branch.unwrap_or_else(|| {
-        sisyphus_tools::git::current_branch(dir.as_deref()).unwrap_or_else(|_| "main".into())
+        crate::tools::git::current_branch(dir.as_deref()).unwrap_or_else(|_| "main".into())
     });
-    let out = sisyphus_tools::git::pull(&remote, &br, dir.as_deref())?;
+    let out = crate::tools::git::pull(&remote, &br, dir.as_deref())?;
     println!("{out}");
     Ok(())
 }
@@ -169,7 +169,7 @@ pub fn run_pull(remote: String, branch: Option<String>, cwd: Option<PathBuf>) ->
 
 pub fn run_summary(cwd: Option<PathBuf>) -> Result<()> {
     let dir = resolve_dir(cwd);
-    let s = sisyphus_tools::git::summary(dir.as_deref())?;
+    let s = crate::tools::git::summary(dir.as_deref())?;
     println!("{s}");
     Ok(())
 }

@@ -5,7 +5,7 @@ use sisyphus_roadmap::{
     milestone_generator::MilestoneGenerator, resource_optimizer::ResourceOptimizer,
     strategic_reflection::StrategicReflector, ExecutionOutcome,
 };
-use sisyphus_tools::metis::LlmClient;
+use sisyphus_tools_llm::metis::LlmClient;
 use sisyphus_types::{GoalRef, Milestone, MilestoneStatus, Phase, Roadmap};
 
 // ── Mocks ──────────────────────────────────────────────────

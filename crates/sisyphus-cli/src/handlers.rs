@@ -83,7 +83,7 @@ pub async fn dispatch(
     todo_db: &Path,
     session_db: &Path,
     cli_perms: &sisyphus_cli::permission::CliPermission,
-    llm_client: Arc<dyn sisyphus_tools::metis::LlmClient>,
+    llm_client: Arc<dyn sisyphus_cli::tools::metis::LlmClient>,
     bridge_addr: &str,
 ) -> Result<()> {
     match cli.command.as_ref().context("No command specified")? {

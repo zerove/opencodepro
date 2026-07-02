@@ -243,12 +243,12 @@ pub enum PriorityArg {
     High,
 }
 
-impl From<PriorityArg> for sisyphus_tools::TodoPriority {
+impl From<PriorityArg> for sisyphus_cli::tools::TodoPriority {
     fn from(p: PriorityArg) -> Self {
         match p {
-            PriorityArg::Low => sisyphus_tools::TodoPriority::Low,
-            PriorityArg::Medium => sisyphus_tools::TodoPriority::Medium,
-            PriorityArg::High => sisyphus_tools::TodoPriority::High,
+            PriorityArg::Low => sisyphus_cli::tools::TodoPriority::Low,
+            PriorityArg::Medium => sisyphus_cli::tools::TodoPriority::Medium,
+            PriorityArg::High => sisyphus_cli::tools::TodoPriority::High,
         }
     }
 }

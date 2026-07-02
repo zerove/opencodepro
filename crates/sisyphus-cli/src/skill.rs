@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 /// 列出所有可用技能
 pub fn run_list() -> Result<()> {
-    let loader = sisyphus_tools::SkillLoader::new()
+    let loader = crate::tools::SkillLoader::new()
         .with_user_dir()
         .with_project_dir(Path::new("."));
 
@@ -27,9 +27,9 @@ pub fn run_list() -> Result<()> {
 
     for skill in &skills {
         let source_tag = match skill.source {
-            sisyphus_tools::SkillSource::BuiltIn => "📦",
-            sisyphus_tools::SkillSource::User => "👤",
-            sisyphus_tools::SkillSource::Project => "🏗",
+            crate::tools::SkillSource::BuiltIn => "📦",
+            crate::tools::SkillSource::User => "👤",
+            crate::tools::SkillSource::Project => "🏗",
         };
         println!("  {} {} v{}", source_tag, skill.name, skill.version);
         if !skill.description.is_empty() {
@@ -52,7 +52,7 @@ pub fn run_list() -> Result<()> {
 
 /// 显示某个技能的详细信息
 pub fn run_show(name: &str) -> Result<()> {
-    let loader = sisyphus_tools::SkillLoader::new()
+    let loader = crate::tools::SkillLoader::new()
         .with_user_dir()
         .with_project_dir(Path::new("."));
 

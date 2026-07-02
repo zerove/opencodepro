@@ -89,14 +89,14 @@ async fn main() -> Result<()> {
     let session_db = data_dir.join("sessions.json");
 
     // Create LLM client from config for agent commands
-    let llm_client: Arc<dyn sisyphus_tools::metis::LlmClient> = {
+    let llm_client: Arc<dyn sisyphus_cli::tools::metis::LlmClient> = {
         let endpoint = sisyphus_cfg.llm.endpoint.clone();
         let is_default_endpoint = endpoint == "http://localhost:8000/v1/chat/completions";
         if is_default_endpoint {
-            Arc::new(sisyphus_tools::DummyLlmClient)
+            Arc::new(sisyphus_cli::tools::DummyLlmClient)
         } else {
             let llm_config = Arc::new(std::sync::RwLock::new(sisyphus_cfg.clone()));
-            Arc::new(sisyphus_tools::llm::DynamicLlmClient::new(llm_config))
+            Arc::new(sisyphus_cli::tools::llm::DynamicLlmClient::new(llm_config))
         }
     };
 

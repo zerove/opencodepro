@@ -41,7 +41,7 @@ async fn test_dynamic_synthesis_execution() {
         tool_executor.clone(),
     ));
 
-    let kernel = SisyphusKernel::new(state_store, tool_executor.clone(), intel, Arc::new(sisyphus_tools::DummyLlmClient), synthesizer);
+    let kernel = SisyphusKernel::new(state_store, tool_executor.clone(), intel, Arc::new(sisyphus_tools_llm::metis::DummyLlmClient), synthesizer);
 
     // Test a "fetch, process, store" goal which should synthesize a 3-node DAG
     let (result, report) = kernel

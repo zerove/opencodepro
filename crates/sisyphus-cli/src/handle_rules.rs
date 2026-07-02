@@ -6,7 +6,7 @@ pub fn handle_rules(sub: &RulesCommands) -> Result<()> {
     match sub {
         RulesCommands::Show => {
             let root = std::env::current_dir()?;
-            let rules = sisyphus_tools::load_project_rules(&root);
+            let rules = sisyphus_cli::tools::load_project_rules(&root);
             match &rules.source {
                 Some(src) => println!("Project rules loaded from: {src}"),
                 None => println!(
@@ -28,7 +28,7 @@ pub fn handle_rules(sub: &RulesCommands) -> Result<()> {
         }
         RulesCommands::Reload => {
             let root = std::env::current_dir()?;
-            let rules = sisyphus_tools::load_project_rules(&root);
+            let rules = sisyphus_cli::tools::load_project_rules(&root);
             match &rules.source {
                 Some(src) => {
                     let count = rules.agents.len();

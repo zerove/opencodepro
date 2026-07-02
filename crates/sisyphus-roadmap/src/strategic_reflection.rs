@@ -10,7 +10,7 @@
 
 use crate::{ExecutionOutcome, RoadmapError, RoadmapManager};
 use serde::{Deserialize, Serialize};
-use sisyphus_tools::metis::LlmClient;
+use sisyphus_tools_llm::metis::LlmClient;
 use std::sync::Arc;
 
 // ---------------------------------------------------------------------------
@@ -244,7 +244,7 @@ mod tests {
     use super::*;
     use crate::RoadmapManager;
     use sisyphus_mem::MfsStore;
-    use sisyphus_tools::metis::FixedResponseClient;
+    use sisyphus_tools_llm::metis::FixedResponseClient;
     use sisyphus_types::{GoalRef, Milestone, MilestoneStatus, Phase};
     use std::sync::Arc;
 

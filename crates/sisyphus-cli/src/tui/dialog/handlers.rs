@@ -39,12 +39,12 @@ pub(super) fn handle_session_list_key(code: KeyCode, app: &mut App) {
         }
         KeyCode::Char('c') | KeyCode::Char('C') => {
             let db = app.data_dir.join("sessions.json");
-            match sisyphus_tools::session_create(&db, "unnamed") {
+            match crate::tools::session_create(&db, "unnamed") {
                 Ok(s) => {
                     app.add_log(LogEntry::Success(format!("Created session {} ({})", s.id, s.name)));
                     app.session_dirty = true;
                     // Navigate to the new session
-                    app.session_detail = sisyphus_tools::session_get(&db, &s.id).ok();
+                    app.session_detail = crate::tools::session_get(&db, &s.id).ok();
                     app.session_detail_scroll = usize::MAX;
                     app.view = View::Session;
                     app.dialog = None;
@@ -94,7 +94,7 @@ fn select_session(app: &mut App) {
     let idx = filtered[app.session_sel.min(filtered.len().saturating_sub(1))];
     let db = app.data_dir.join("sessions.json");
     let id = &app.sessions[idx].id;
-    app.session_detail = sisyphus_tools::session_get(&db, id).ok();
+    app.session_detail = crate::tools::session_get(&db, id).ok();
     app.session_detail_scroll = usize::MAX;
     app.view = View::Session;
 }
@@ -108,7 +108,7 @@ pub(super) fn handle_todos_key(code: KeyCode, app: &mut App) {
                 let task = app.todo_adding.trim().to_string();
                 if !task.is_empty() {
                     let db = app.data_dir.join("todos.json");
-                    match sisyphus_tools::todo_add(&db, &task, sisyphus_tools::TodoPriority::Medium) {
+                    match crate::tools::todo_add(&db, &task, crate::tools::TodoPriority::Medium) {
                         Ok(item) => {
                             app.add_toast(ToastKind::Success, format!("Added todo: {}", item.content));
                             app.add_log(LogEntry::Success(format!("Added todo: {}", item.content)));
@@ -153,12 +153,12 @@ fn toggle_todo(app: &mut App) {
     let db = app.data_dir.join("todos.json");
     let item = &app.todo_items[app.todo_sel];
     let new_status = match item.status {
-        sisyphus_tools::TodoStatus::Pending => sisyphus_tools::TodoStatus::InProgress,
-        sisyphus_tools::TodoStatus::InProgress => sisyphus_tools::TodoStatus::Completed,
-        sisyphus_tools::TodoStatus::Completed => sisyphus_tools::TodoStatus::Pending,
-        sisyphus_tools::TodoStatus::Cancelled => sisyphus_tools::TodoStatus::Pending,
+        crate::tools::TodoStatus::Pending => crate::tools::TodoStatus::InProgress,
+        crate::tools::TodoStatus::InProgress => crate::tools::TodoStatus::Completed,
+        crate::tools::TodoStatus::Completed => crate::tools::TodoStatus::Pending,
+        crate::tools::TodoStatus::Cancelled => crate::tools::TodoStatus::Pending,
     };
-    if sisyphus_tools::todo_update(&db, &item.id, None, Some(new_status.clone()), None).is_ok() {
+    if crate::tools::todo_update(&db, &item.id, None, Some(new_status.clone()), None).is_ok() {
         app.todo_dirty = true;
         app.add_toast(ToastKind::Success, format!("Todo: {:?}", new_status));
     }
@@ -170,7 +170,7 @@ fn delete_todo(app: &mut App) {
     }
     let id = app.todo_items[app.todo_sel].id.clone();
     let db = app.data_dir.join("todos.json");
-    if sisyphus_tools::todo_delete(&db, &id).is_ok() {
+    if crate::tools::todo_delete(&db, &id).is_ok() {
         app.todo_dirty = true;
         app.add_toast(ToastKind::Info, "Deleted todo");
         app.add_log(LogEntry::Info(format!("Deleted todo {id}")));
@@ -295,7 +295,7 @@ pub(super) fn handle_rename_key(code: KeyCode, app: &mut App) {
             let new_name = name.trim().to_string();
             if !new_name.is_empty() {
                 let db = app.data_dir.join("sessions.json");
-                match sisyphus_tools::session_rename(&db, &session_id, &new_name) {
+                match crate::tools::session_rename(&db, &session_id, &new_name) {
                     Ok(_) => {
                         app.add_toast(ToastKind::Success, format!("Renamed → {new_name}"));
                         app.add_log(LogEntry::Success(format!("Renamed session {session_id} → {new_name}")));

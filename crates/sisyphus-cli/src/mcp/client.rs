@@ -3,11 +3,11 @@ use anyhow::{Context, Result};
 // ── MCP Client ────────────────────────────────────────────────
 
 /// Helper: connect via stdio transport.
-async fn connect_stdio(command: &str, args: &[String]) -> Result<sisyphus_tools::McpClient> {
+async fn connect_stdio(command: &str, args: &[String]) -> Result<crate::tools::McpClient> {
     let args_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
-    let transport = sisyphus_tools::StdioTransport::spawn(command, &args_refs)
+    let transport = crate::tools::StdioTransport::spawn(command, &args_refs)
         .context("Failed to spawn MCP server process")?;
-    let mut client = sisyphus_tools::McpClient::new(Box::new(transport));
+    let mut client = crate::tools::McpClient::new(Box::new(transport));
     client
         .initialize("sisyphus-cli", "0.1.0")
         .await
@@ -16,9 +16,9 @@ async fn connect_stdio(command: &str, args: &[String]) -> Result<sisyphus_tools:
 }
 
 /// Helper: connect via HTTP transport.
-async fn connect_http(url: &str) -> Result<sisyphus_tools::McpClient> {
-    let transport = sisyphus_tools::HttpTransport::new(url);
-    let mut client = sisyphus_tools::McpClient::new(Box::new(transport));
+async fn connect_http(url: &str) -> Result<crate::tools::McpClient> {
+    let transport = crate::tools::HttpTransport::new(url);
+    let mut client = crate::tools::McpClient::new(Box::new(transport));
     client
         .initialize("sisyphus-cli", "0.1.0")
         .await
@@ -29,7 +29,7 @@ async fn connect_http(url: &str) -> Result<sisyphus_tools::McpClient> {
 /// Resolve connection args → client.
 /// If first arg looks like `http://` or `https://`, uses HTTP transport.
 /// Otherwise treats args as `<command>` `[args...]` for stdio transport.
-async fn resolve_client(args: &[String]) -> Result<sisyphus_tools::McpClient> {
+async fn resolve_client(args: &[String]) -> Result<crate::tools::McpClient> {
     if args.is_empty() {
         anyhow::bail!("Provide either `<url>` for HTTP or `<command>` `[args...]` for stdio");
     }
@@ -48,7 +48,7 @@ pub async fn run_info(connect_args: &[String]) -> Result<()> {
     let info = client
         .server_info()
         .cloned()
-        .unwrap_or(sisyphus_tools::ServerInfo {
+        .unwrap_or(crate::tools::ServerInfo {
             name: "unknown".into(),
             version: "unknown".into(),
         });

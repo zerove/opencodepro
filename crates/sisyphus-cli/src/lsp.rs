@@ -4,9 +4,9 @@ async fn spawn_client(
     server_cmd: &str,
     server_args: &[String],
     root_uri: &str,
-) -> Result<sisyphus_tools::lsp::LspClient> {
+) -> Result<crate::tools::lsp::LspClient> {
     let args_refs: Vec<&str> = server_args.iter().map(|s| s.as_str()).collect();
-    let client = sisyphus_tools::lsp::LspClient::spawn(server_cmd, &args_refs, root_uri)
+    let client = crate::tools::lsp::LspClient::spawn(server_cmd, &args_refs, root_uri)
         .await
         .context("Failed to spawn language server")?;
     Ok(client)
@@ -26,7 +26,7 @@ pub async fn run_diagnostics(
         for d in &diags {
             let sev = d
                 .severity
-                .map(sisyphus_tools::lsp::severity_name)
+                .map(crate::tools::lsp::severity_name)
                 .unwrap_or("?");
             let r = &d.range;
             println!(
@@ -45,7 +45,7 @@ pub async fn run_diagnostics_raw(
     server_cmd: &str,
     server_args: &[String],
     root_uri: &str,
-) -> Result<Vec<sisyphus_tools::lsp::LspDiagnostic>> {
+) -> Result<Vec<crate::tools::lsp::LspDiagnostic>> {
     let mut client = spawn_client(server_cmd, server_args, root_uri)
         .await
         .map_err(|e| anyhow::anyhow!("Failed to spawn LSP server: {e}"))?;

@@ -10,7 +10,9 @@ tokio = { version = "1.0", features = ["full"] }
 async-trait = "0.1"
 regex = "1.10"
 jsonschema = "0.17"
-sisyphus-tools = { path = "../crates/sisyphus-tools" }
+sisyphus-tools-core = { path = "../crates/sisyphus-tools-core" }
+sisyphus-tools-llm = { path = "../crates/sisyphus-tools-llm" }
+sisyphus-tools-executor = { path = "../crates/sisyphus-tools-executor" }
 sisyphus-types = { path = "../crates/sisyphus-types" }
 anyhow = "1.0"
 prettytable-rs = "0.10"

@@ -21,12 +21,16 @@ sisyphus-sandbox = { path = "../sisyphus-sandbox", optional = true }
 sisyphus-types = { path = "../sisyphus-types" }
 sisyphus-mem = { path = "../sisyphus-mem" }
 sisyphus-intel = { path = "../sisyphus-intel" }
-sisyphus-tools = { path = "../sisyphus-tools" }
+sisyphus-tools-llm = { path = "../sisyphus-tools-llm" }
+sisyphus-tools-llm-tools = { path = "../sisyphus-tools-llm-tools" }
+sisyphus-tools-system = { path = "../sisyphus-tools-system" }
+sisyphus-tools-build = { path = "../sisyphus-tools-build" }
 sisyphus-roadmap = { path = "../sisyphus-roadmap" }
 thiserror = { workspace = true }
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["async_tokio"] }
+sisyphus-tools-llm = { path = "../sisyphus-tools-llm" }
 
 [[bin]]
 name = "integration_stress"

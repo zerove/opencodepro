@@ -6,7 +6,7 @@ use crate::commands::*;
 
 pub async fn handle_mcp(
     sub: &McpCommands,
-    llm_client: Arc<dyn sisyphus_tools::metis::LlmClient>,
+    llm_client: Arc<dyn sisyphus_cli::tools::metis::LlmClient>,
 ) -> Result<()> {
     match sub {
         McpCommands::Info { connect } => {

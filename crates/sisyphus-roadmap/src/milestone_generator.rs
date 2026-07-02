@@ -8,7 +8,7 @@
 
 use crate::{RoadmapError, RoadmapManager};
 use serde::{Deserialize, Serialize};
-use sisyphus_tools::metis::LlmClient;
+use sisyphus_tools_llm::metis::LlmClient;
 use sisyphus_types::{GoalRef, Milestone, MilestoneStatus, Phase};
 use std::sync::Arc;
 

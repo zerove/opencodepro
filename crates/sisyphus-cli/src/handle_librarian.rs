@@ -6,14 +6,14 @@ use crate::commands::*;
 
 pub async fn handle_librarian(
     sub: &LibrarianCommands,
-    llm_client: Arc<dyn sisyphus_tools::metis::LlmClient>,
+    llm_client: Arc<dyn sisyphus_cli::tools::metis::LlmClient>,
 ) -> Result<()> {
     match sub {
         LibrarianCommands::Research { query, scope, num } => {
-            let scope_enum: sisyphus_tools::ResearchScope = scope
+            let scope_enum: sisyphus_cli::tools::ResearchScope = scope
                 .parse()
                 .map_err(|e: String| anyhow::anyhow!("{e}"))?;
-            let report = sisyphus_tools::research(query, scope_enum, *num).await?;
+            let report = sisyphus_cli::tools::research(query, scope_enum, *num).await?;
             println!("=== Research Report ===");
             println!("Query: {}", report.query);
             println!("Sources: {}", report.sources_consulted);
@@ -26,14 +26,14 @@ pub async fn handle_librarian(
             }
         }
         LibrarianCommands::FetchDocs { url } => {
-            let page = sisyphus_tools::fetch_documentation(url).await?;
+            let page = sisyphus_cli::tools::fetch_documentation(url).await?;
             println!("Title: {}", page.title);
             println!("Content length: {} bytes", page.content_length);
             println!("--- Preview ---");
             println!("{}", page.content_preview);
         }
         LibrarianCommands::Examples { query, language } => {
-            let examples = sisyphus_tools::find_examples(query, language).await?;
+            let examples = sisyphus_cli::tools::find_examples(query, language).await?;
             if examples.is_empty() {
                 println!("No examples found for '{}'.", query);
             } else {
@@ -55,9 +55,9 @@ pub async fn handle_librarian(
         }
         LibrarianCommands::Synthesise { report_file } => {
             let content = std::fs::read_to_string(report_file)?;
-            let findings: Vec<sisyphus_tools::ResearchFinding> =
+            let findings: Vec<sisyphus_cli::tools::ResearchFinding> =
                 serde_json::from_str(&content)?;
-            let synthesis = sisyphus_tools::synthesise(&findings, llm_client.as_ref())
+            let synthesis = sisyphus_cli::tools::synthesise(&findings, llm_client.as_ref())
                 .await
                 .map_err(|e| anyhow::anyhow!("{}", e))?;
             println!("{}", synthesis);

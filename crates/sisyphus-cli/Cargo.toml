@@ -13,7 +13,16 @@ path = "src/main.rs"
 
 [dependencies]
 sisyphus-types = { path = "../sisyphus-types" }
-sisyphus-tools = { path = "../sisyphus-tools" }
+sisyphus-tools-agent = { path = "../sisyphus-tools-agent" }
+sisyphus-tools-build = { path = "../sisyphus-tools-build" }
+sisyphus-tools-core = { path = "../sisyphus-tools-core" }
+sisyphus-tools-llm = { path = "../sisyphus-tools-llm" }
+sisyphus-tools-llm-tools = { path = "../sisyphus-tools-llm-tools" }
+sisyphus-tools-system = { path = "../sisyphus-tools-system" }
+sisyphus-tools-scm = { path = "../sisyphus-tools-scm" }
+sisyphus-tools-mcp = { path = "../sisyphus-tools-mcp" }
+sisyphus-tools-session = { path = "../sisyphus-tools-session" }
+sisyphus-tools-executor = { path = "../sisyphus-tools-executor" }
 clap = { version = "4.5", features = ["derive", "env"] }
 ratatui = "0.28"
 crossterm = { version = "0.28", features = ["event-stream"] }

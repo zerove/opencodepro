@@ -1,6 +1,6 @@
 use sisyphus_bridge_api::sisyphus_bridge_server::SisyphusBridgeServer;
 use sisyphus_metrics::init_metrics;
-use sisyphus_tools::ConfigStore;
+use sisyphus_tools_system::config_store::ConfigStore;
 use sisyphus_types::Config;
 use std::sync::{Arc, RwLock};
 use tokio::signal;

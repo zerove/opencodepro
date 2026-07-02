@@ -8,7 +8,7 @@ mod handlers;
 pub use client::{run_call, run_info};
 
 /// Global LLM client used by MCP tool handlers.
-static LLM_CLIENT: std::sync::OnceLock<Arc<dyn sisyphus_tools::metis::LlmClient>> =
+static LLM_CLIENT: std::sync::OnceLock<Arc<dyn crate::tools::metis::LlmClient>> =
     std::sync::OnceLock::new();
 
 // ── Tool Registry ─────────────────────────────────────────────
@@ -174,7 +174,7 @@ fn tool_registry() -> &'static [ToolDef] {
 
 /// Start an MCP stdio server that exposes Sisyphus agent tools.
 /// Runs until stdin closes.
-pub async fn run_serve(client: Arc<dyn sisyphus_tools::metis::LlmClient>) -> anyhow::Result<()> {
+pub async fn run_serve(client: Arc<dyn crate::tools::metis::LlmClient>) -> anyhow::Result<()> {
     LLM_CLIENT
         .set(client)
         .map_err(|_| anyhow::anyhow!("LLM client already initialized"))?;
@@ -189,15 +189,15 @@ pub async fn run_serve(client: Arc<dyn sisyphus_tools::metis::LlmClient>) -> any
             continue;
         }
 
-        let request: sisyphus_tools::JsonRpcRequest = match serde_json::from_str(&line) {
+        let request: crate::tools::JsonRpcRequest = match serde_json::from_str(&line) {
             Ok(r) => r,
             Err(e) => {
-                let resp = sisyphus_tools::JsonRpcResponse {
+                let resp = crate::tools::JsonRpcResponse {
                     jsonrpc: "2.0".into(),
                     id: None,
                     result: None,
-                    error: Some(sisyphus_tools::JsonRpcError {
-                        code: sisyphus_tools::MCP_ERROR_PARSE,
+                    error: Some(crate::tools::JsonRpcError {
+                        code: crate::tools::MCP_ERROR_PARSE,
                         message: format!("JSON parse error: {e}"),
                         data: None,
                     }),

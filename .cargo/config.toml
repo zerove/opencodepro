@@ -9,8 +9,8 @@ ct-quick   = "test -p sisyphus-core --lib"
 ct-core-it = "test -p sisyphus-core --test cognitive_loop_test --test composite_test --test executor_test --test experience_test --test evolution_test --test synthesis_test"
 ct-core-min = "test -p sisyphus-core --lib --no-default-features"
 
-# ── sisyphus-tools 测试 ─────────────────────────────────
-ct-tools   = "test -p sisyphus-tools"
+# ── sisyphus-tools 测试（子 crates） ────────────────────
+ct-tools   = "test -p sisyphus-tools-core -p sisyphus-tools-llm -p sisyphus-tools-scm -p sisyphus-tools-build -p sisyphus-tools-system -p sisyphus-tools-mcp -p sisyphus-tools-llm-tools -p sisyphus-tools-session -p sisyphus-tools-executor -p sisyphus-tools-agent"
 
 # ── 全 workspace 检查/测试（排除 bridge/sandbox） ────────
 check-all  = "check --workspace --exclude sisyphus-bridge --exclude sisyphus-sandbox"

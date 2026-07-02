@@ -61,7 +61,7 @@ pub fn handle_dialog_key(key: KeyEvent, app: &mut App) {
                 KeyCode::Char('y') | KeyCode::Char('Y') => {
                     if let Some(id) = app.confirm_delete.take() {
                         let db = app.data_dir.join("sessions.json");
-                        if sisyphus_tools::session_delete(&db, &id).is_ok() {
+                        if crate::tools::session_delete(&db, &id).is_ok() {
                             app.add_log(LogEntry::Success(format!("Deleted session {id}")));
                             app.session_dirty = true;
                         }

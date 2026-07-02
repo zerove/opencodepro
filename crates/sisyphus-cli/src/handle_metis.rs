@@ -6,7 +6,7 @@ use crate::commands::*;
 
 pub async fn handle_metis(
     sub: &MetisCommands,
-    llm_client: Arc<dyn sisyphus_tools::metis::LlmClient>,
+    llm_client: Arc<dyn sisyphus_cli::tools::metis::LlmClient>,
 ) -> Result<()> {
     match sub {
         MetisCommands::Analyse { request, file } => {
@@ -17,7 +17,7 @@ pub async fn handle_metis(
             if text.trim().is_empty() {
                 anyhow::bail!("No request text provided. Pass inline text or use --file.");
             }
-            let analysis = sisyphus_tools::metis::analyse(&text, llm_client.as_ref())
+            let analysis = sisyphus_cli::tools::metis::analyse(&text, llm_client.as_ref())
                 .await
                 .map_err(|e| anyhow::anyhow!("{}", e))?;
             println!("=== Metis Analysis ===");

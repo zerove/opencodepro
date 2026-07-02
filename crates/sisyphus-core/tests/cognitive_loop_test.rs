@@ -48,7 +48,7 @@ async fn test_recursive_cognitive_loop_converges() {
     let synthesizer = Arc::new(sisyphus_intel::GoalDrivenSynthesizer::new(
         tool_executor.clone(),
     ));
-    let kernel = SisyphusKernel::new(state_store, tool_executor.clone(), intel, Arc::new(sisyphus_tools::DummyLlmClient), synthesizer);
+    let kernel = SisyphusKernel::new(state_store, tool_executor.clone(), intel, Arc::new(sisyphus_tools_llm::metis::DummyLlmClient), synthesizer);
 
     let sop_id = "cognitive_loop_test";
     let mut graph = SOPGraph::new();
@@ -96,7 +96,7 @@ async fn test_execute_goal_with_recursive_cognition() {
     let synthesizer = Arc::new(sisyphus_intel::GoalDrivenSynthesizer::new(
         tool_executor.clone(),
     ));
-    let kernel = SisyphusKernel::new(state_store, tool_executor.clone(), intel, Arc::new(sisyphus_tools::DummyLlmClient), synthesizer);
+    let kernel = SisyphusKernel::new(state_store, tool_executor.clone(), intel, Arc::new(sisyphus_tools_llm::metis::DummyLlmClient), synthesizer);
 
     let sop_id = "goal_test";
 
@@ -136,7 +136,7 @@ async fn test_recursive_loop_max_iterations() {
     let synthesizer = Arc::new(sisyphus_intel::GoalDrivenSynthesizer::new(
         tool_executor.clone(),
     ));
-    let kernel = SisyphusKernel::new(state_store, tool_executor.clone(), intel, Arc::new(sisyphus_tools::DummyLlmClient), synthesizer);
+    let kernel = SisyphusKernel::new(state_store, tool_executor.clone(), intel, Arc::new(sisyphus_tools_llm::metis::DummyLlmClient), synthesizer);
 
     let sop_id = "max_iter_test";
     let mut graph = SOPGraph::new();
@@ -183,7 +183,7 @@ async fn test_parallel_goal_synthesis_and_execution() {
     let synthesizer = Arc::new(sisyphus_intel::GoalDrivenSynthesizer::new(
         tool_executor.clone(),
     ));
-    let kernel = SisyphusKernel::new(state_store, tool_executor.clone(), intel, Arc::new(sisyphus_tools::DummyLlmClient), synthesizer);
+    let kernel = SisyphusKernel::new(state_store, tool_executor.clone(), intel, Arc::new(sisyphus_tools_llm::metis::DummyLlmClient), synthesizer);
 
     let sop_id = "parallel_test";
 

@@ -199,3 +199,25 @@ impl SisyphusNotepad {
         });
     }
 }
+
+/// A trigger definition, corresponding to triggers in SKILL.md frontmatter.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TriggerDef {
+    /// Trigger keyword/regex pattern.
+    pub pattern: Option<String>,
+    /// Associated tool names (empty means all).
+    #[serde(default)]
+    pub tools: Vec<String>,
+    /// Trigger description.
+    pub description: Option<String>,
+    /// Hook phase: "before" or "after".
+    #[serde(default)]
+    pub hook_phase: Option<String>,
+    /// Hook effect: "deny", "inject", "log".
+    #[serde(default)]
+    pub hook_effect: Option<String>,
+    /// Hook message/payload.
+    #[serde(default)]
+    pub hook_message: Option<String>,
+}
+

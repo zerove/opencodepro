@@ -13,7 +13,7 @@ pub fn handle_plan(sub: &PlanCommands) -> Result<()> {
                 Some(p) => std::fs::read_to_string(p)?,
                 None => description.clone(),
             };
-            let plan = sisyphus_tools::plan_from_requirements(name, &reqs);
+            let plan = sisyphus_cli::tools::plan_from_requirements(name, &reqs);
             println!("Plan: {} ({} steps)", plan.name, plan.steps.len());
             println!("Status: {}", plan.status);
             for step in &plan.steps {
@@ -21,12 +21,12 @@ pub fn handle_plan(sub: &PlanCommands) -> Result<()> {
             }
         }
         PlanCommands::Save { plan_file, output } => {
-            let plan = sisyphus_tools::plan_load(plan_file)?;
-            sisyphus_tools::plan_save(&plan, output)?;
+            let plan = sisyphus_cli::tools::plan_load(plan_file)?;
+            sisyphus_cli::tools::plan_save(&plan, output)?;
             println!("Saved plan to {}", output.display());
         }
         PlanCommands::Show { plan_file } => {
-            let plan = sisyphus_tools::plan_load(plan_file)?;
+            let plan = sisyphus_cli::tools::plan_load(plan_file)?;
             println!("Plan: {} — {} ({})", plan.name, plan.status, plan.id);
             println!("{}", plan.description);
             for step in &plan.steps {
@@ -34,11 +34,11 @@ pub fn handle_plan(sub: &PlanCommands) -> Result<()> {
             }
         }
         PlanCommands::Review { plan_file } => {
-            let mut plan = sisyphus_tools::plan_load(plan_file)?;
-            let issues = sisyphus_tools::plan_review(&plan);
+            let mut plan = sisyphus_cli::tools::plan_load(plan_file)?;
+            let issues = sisyphus_cli::tools::plan_review(&plan);
             if issues.is_empty() {
                 println!("No issues found.");
-                sisyphus_tools::plan_approve(&mut plan);
+                sisyphus_cli::tools::plan_approve(&mut plan);
             } else {
                 for issue in &issues {
                     println!("  ⚠ {issue}");
@@ -46,9 +46,9 @@ pub fn handle_plan(sub: &PlanCommands) -> Result<()> {
             }
         }
         PlanCommands::Approve { plan_file } => {
-            let mut plan = sisyphus_tools::plan_load(plan_file)?;
-            sisyphus_tools::plan_approve(&mut plan);
-            sisyphus_tools::plan_save(&plan, plan_file)?;
+            let mut plan = sisyphus_cli::tools::plan_load(plan_file)?;
+            sisyphus_cli::tools::plan_approve(&mut plan);
+            sisyphus_cli::tools::plan_save(&plan, plan_file)?;
             println!("Approved plan: {}", plan.name);
         }
     }
