@@ -230,11 +230,11 @@ impl EvalRunner {
             }
             CheckType::Regex => {
                 if let Some(val) = &crit.expected_value {
-                    if let Ok(re) = Regex::new(val) {
+                    match Regex::new(val) { Ok(re) => {
                         re.is_match(output_str)
-                    } else {
+                    } _ => {
                         false
-                    }
+                    }}
                 } else {
                     false
                 }
