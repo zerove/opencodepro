@@ -8,7 +8,7 @@ description = "Shared gRPC types, client wrapper, and server trait for the Sisyp
 tonic = "0.12"
 prost = "0.13"
 tokio = { version = "1", features = ["macros", "rt", "sync"] }
-anyhow = "1.0"
+anyhow = { workspace = true }
 
 [build-dependencies]
 tonic-build = "0.12"

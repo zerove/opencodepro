@@ -7,14 +7,15 @@ description = "Core types and traits for Sisyphus cognitive engine"
 license = "MIT"
 
 [dependencies]
-async-trait = "0.1"
+async-trait = { workspace = true }
 petgraph = "0.6"
-serde = { version = "1.0.228", features = ["derive"] }
-serde_json = "1.0"
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
 toml = "0.8"
-thiserror = "1.0"
-tracing = "0.1"
+thiserror = { workspace = true }
+tracing = { workspace = true }
 im = { version = "15.1.0", features = ["serde"] }
+dashmap = "6.1"
 
 [dev-dependencies]
 proptest = "1"

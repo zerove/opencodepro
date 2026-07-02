@@ -10,9 +10,9 @@ license = "MIT"
 metrics = "0.21"
 metrics-exporter-prometheus = "0.13"
 tracing = { workspace = true }
-tracing-subscriber = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["json"] }
 sisyphus-types = { path = "../sisyphus-types" }
-thiserror = "1.0"
+thiserror = { workspace = true }
 
 [dev-dependencies]
 proptest = "1.0"

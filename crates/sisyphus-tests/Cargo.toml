@@ -11,10 +11,10 @@ sisyphus-mem = { path = "../sisyphus-mem" }
 sisyphus-sandbox = { path = "../sisyphus-sandbox" }
 sisyphus-types = { path = "../sisyphus-types" }
 tokio = { version = "1", features = ["full"] }
-serde_json = "1.0"
-async-trait = "0.1"
+serde_json = { workspace = true }
+async-trait = { workspace = true }
 petgraph = "0.6"
-tracing = "0.1"
-tracing-subscriber = "0.3"
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
 tempfile = "3.8"
 sisyphus-tools = { version = "0.1.0", path = "../sisyphus-tools" }

@@ -19,12 +19,12 @@ sisyphus-mem = { path = "../sisyphus-mem" }
 sisyphus-intel = { path = "../sisyphus-intel" }
 sisyphus-metrics = { path = "../sisyphus-metrics" }
 sisyphus-roadmap = { path = "../sisyphus-roadmap" }
-serde_json = "1.0"
-async-trait = "0.1"
+serde_json = { workspace = true }
+async-trait = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 
 # HTTP/REST API (axum 0.7 to match tonic's transitive dep)
 axum = "0.7"
 tower-http = { version = "0.5", features = ["cors", "trace"] }
-serde = { version = "1.0", features = ["derive"] }
+serde = { workspace = true, features = ["derive"] }
