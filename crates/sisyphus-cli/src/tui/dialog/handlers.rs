@@ -1,0 +1,424 @@
+use crossterm::event::{KeyCode, KeyEvent};
+
+use super::super::background::{spawn_dev_agent, spawn_execute_sop, spawn_fetch_roadmap, spawn_list_sops};
+use super::super::{App, DevFocus, LogEntry, ToastKind, View};
+use super::Dialog;
+
+// ── Session List Dialog ───────────────────────────────
+
+pub(super) fn handle_session_list_key(code: KeyCode, app: &mut App) {
+    match code {
+        KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('Q') => {
+            if !app.session_filter.is_empty() {
+                app.session_filter.clear();
+            }
+            app.dialog = None;
+        }
+        KeyCode::Up => app.session_sel = app.session_sel.saturating_sub(1),
+        KeyCode::Down => {
+            let visible = filtered_sessions(app).len();
+            app.session_sel = (app.session_sel + 1).min(visible.saturating_sub(1));
+        }
+        KeyCode::PageUp => app.session_sel = app.session_sel.saturating_sub(10),
+        KeyCode::PageDown => {
+            let visible = filtered_sessions(app).len();
+            app.session_sel = (app.session_sel + 10).min(visible.saturating_sub(1));
+        }
+        KeyCode::Home => app.session_sel = 0,
+        KeyCode::End => {
+            let visible = filtered_sessions(app).len();
+            app.session_sel = visible.saturating_sub(1);
+        }
+        KeyCode::Enter => {
+            select_session(app);
+            app.dialog = None;
+        }
+        KeyCode::Backspace => {
+            app.session_filter.pop();
+            app.session_sel = 0;
+        }
+        KeyCode::Char('c') | KeyCode::Char('C') => {
+            let db = app.data_dir.join("sessions.json");
+            match sisyphus_tools::session_create(&db, "unnamed") {
+                Ok(s) => {
+                    app.add_log(LogEntry::Success(format!("Created session {} ({})", s.id, s.name)));
+                    app.session_dirty = true;
+                    // Navigate to the new session
+                    app.session_detail = sisyphus_tools::session_get(&db, &s.id).ok();
+                    app.session_detail_scroll = usize::MAX;
+                    app.view = View::Session;
+                    app.dialog = None;
+                }
+                Err(e) => app.add_log(LogEntry::Error(format!("Create failed: {e}"))),
+            }
+        }
+        KeyCode::Char('d') | KeyCode::Delete => {
+            let filtered = filtered_sessions(app);
+            if let Some(&idx) = filtered.get(app.session_sel.min(filtered.len().saturating_sub(1))) {
+                if let Some(s) = app.sessions.get(idx) {
+                    app.confirm_delete = Some(s.id.clone());
+                    app.dialog = Some(Dialog::ConfirmDelete);
+                }
+            }
+        }
+        KeyCode::Char('r') | KeyCode::Char('R') => app.session_dirty = true,
+        KeyCode::Char(c) if c.is_alphanumeric() || c == ' ' || c == '-' || c == '_' => {
+            app.session_filter.push(c);
+            app.session_sel = 0;
+        }
+        _ => {}
+    }
+}
+
+fn filtered_sessions(app: &App) -> Vec<usize> {
+    if app.session_filter.is_empty() {
+        return (0..app.sessions.len()).collect();
+    }
+    let q = app.session_filter.to_lowercase();
+    app.sessions
+        .iter()
+        .enumerate()
+        .filter(|(_, s)| s.name.to_lowercase().contains(&q) || s.id.contains(&q))
+        .map(|(i, _)| i)
+        .collect()
+}
+
+fn select_session(app: &mut App) {
+    if app.sessions.is_empty() {
+        return;
+    }
+    let filtered = filtered_sessions(app);
+    if filtered.is_empty() {
+        return;
+    }
+    let idx = filtered[app.session_sel.min(filtered.len().saturating_sub(1))];
+    let db = app.data_dir.join("sessions.json");
+    let id = &app.sessions[idx].id;
+    app.session_detail = sisyphus_tools::session_get(&db, id).ok();
+    app.session_detail_scroll = usize::MAX;
+    app.view = View::Session;
+}
+
+// ── Todos Dialog ─────────────────────────────────────
+
+pub(super) fn handle_todos_key(code: KeyCode, app: &mut App) {
+    if !app.todo_adding.is_empty() {
+        match code {
+            KeyCode::Enter => {
+                let task = app.todo_adding.trim().to_string();
+                if !task.is_empty() {
+                    let db = app.data_dir.join("todos.json");
+                    match sisyphus_tools::todo_add(&db, &task, sisyphus_tools::TodoPriority::Medium) {
+                        Ok(item) => {
+                            app.add_toast(ToastKind::Success, format!("Added todo: {}", item.content));
+                            app.add_log(LogEntry::Success(format!("Added todo: {}", item.content)));
+                            app.todo_dirty = true;
+                        }
+                        Err(e) => app.add_log(LogEntry::Error(format!("Add todo failed: {e}"))),
+                    }
+                }
+                app.todo_adding.clear();
+            }
+            KeyCode::Esc => app.todo_adding.clear(),
+            KeyCode::Backspace => { app.todo_adding.pop(); }
+            KeyCode::Char(c) => { app.todo_adding.push(c); }
+            _ => {}
+        }
+        return;
+    }
+
+    match code {
+        KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('Q') => {
+            app.dialog = None;
+        }
+        KeyCode::Up => app.todo_sel = app.todo_sel.saturating_sub(1),
+        KeyCode::Down => {
+            app.todo_sel = (app.todo_sel + 1).min(app.todo_items.len().saturating_sub(1));
+        }
+        KeyCode::Char(' ') | KeyCode::Enter => toggle_todo(app),
+        KeyCode::Char('a') => app.todo_adding = String::new(),
+        KeyCode::Char('d') | KeyCode::Delete => delete_todo(app),
+        KeyCode::Char('r') | KeyCode::Char('R') => {
+            app.todo_dirty = true;
+            app.add_toast(ToastKind::Info, "Refreshed todos");
+        }
+        _ => {}
+    }
+}
+
+fn toggle_todo(app: &mut App) {
+    if app.todo_items.is_empty() {
+        return;
+    }
+    let db = app.data_dir.join("todos.json");
+    let item = &app.todo_items[app.todo_sel];
+    let new_status = match item.status {
+        sisyphus_tools::TodoStatus::Pending => sisyphus_tools::TodoStatus::InProgress,
+        sisyphus_tools::TodoStatus::InProgress => sisyphus_tools::TodoStatus::Completed,
+        sisyphus_tools::TodoStatus::Completed => sisyphus_tools::TodoStatus::Pending,
+        sisyphus_tools::TodoStatus::Cancelled => sisyphus_tools::TodoStatus::Pending,
+    };
+    if sisyphus_tools::todo_update(&db, &item.id, None, Some(new_status.clone()), None).is_ok() {
+        app.todo_dirty = true;
+        app.add_toast(ToastKind::Success, format!("Todo: {:?}", new_status));
+    }
+}
+
+fn delete_todo(app: &mut App) {
+    if app.todo_items.is_empty() {
+        return;
+    }
+    let id = app.todo_items[app.todo_sel].id.clone();
+    let db = app.data_dir.join("todos.json");
+    if sisyphus_tools::todo_delete(&db, &id).is_ok() {
+        app.todo_dirty = true;
+        app.add_toast(ToastKind::Info, "Deleted todo");
+        app.add_log(LogEntry::Info(format!("Deleted todo {id}")));
+    }
+}
+
+// ── LSP Dialog ───────────────────────────────────────
+
+pub(super) fn handle_lsp_key(code: KeyCode, app: &mut App) {
+    match code {
+        KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('Q') => {
+            app.dialog = None;
+        }
+        KeyCode::Up => app.lsp_scroll = app.lsp_scroll.saturating_sub(1),
+        KeyCode::Down => app.lsp_scroll = app.lsp_scroll.saturating_add(1),
+        KeyCode::PageUp => app.lsp_scroll = app.lsp_scroll.saturating_sub(10),
+        KeyCode::PageDown => app.lsp_scroll = app.lsp_scroll.saturating_add(10),
+        KeyCode::Char('1') => {
+            app.lsp_language = "rust".into();
+            app.lsp_server = "rust-analyzer".into();
+            app.add_toast(ToastKind::Info, "LSP: Rust (rust-analyzer)");
+        }
+        KeyCode::Char('2') => {
+            app.lsp_language = "typescript".into();
+            app.lsp_server = "typescript-language-server".into();
+            app.add_toast(ToastKind::Info, "LSP: TypeScript");
+        }
+        KeyCode::Char('3') => {
+            app.lsp_language = "python".into();
+            app.lsp_server = "pylsp".into();
+            app.add_toast(ToastKind::Info, "LSP: Python (pylsp)");
+        }
+        KeyCode::Enter => {
+            app.lsp_status = "running".into();
+            app.add_toast(ToastKind::Info, "LSP analysis started...");
+        }
+        KeyCode::Backspace => { app.dialog_query.pop(); }
+        KeyCode::Char(c) if !c.is_control() => { app.dialog_query.push(c); }
+        _ => {}
+    }
+}
+
+// ── SOP Dialog ────────────────────────────────────────
+
+pub(super) fn handle_sop_key(code: KeyCode, app: &mut App) {
+    match code {
+        KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('Q') => {
+            app.dialog = None;
+        }
+        KeyCode::Up => app.sop_sel = app.sop_sel.saturating_sub(1),
+        KeyCode::Down => {
+            let filtered = filtered_sops(app);
+            if !filtered.is_empty() {
+                app.sop_sel = (app.sop_sel + 1).min(filtered.len().saturating_sub(1));
+            }
+        }
+        KeyCode::Enter => {
+            let sop_id = filtered_sops(app).get(app.sop_sel).map(|s| s.sop_id.clone());
+            let Some(sop_id) = sop_id else { return };
+            app.sop_status = format!("executing {sop_id}...");
+            app.sop_result = None;
+            app.add_toast(ToastKind::Info, format!("Executing SOP: {sop_id}"));
+            if app.pending_op.is_none() {
+                app.pending_op = Some(spawn_execute_sop(app.bridge_address.clone(), sop_id));
+            }
+        }
+        KeyCode::Char('r') | KeyCode::Char('R') => {
+            app.sop_status = "connecting...".into();
+            app.sop_result = None;
+            app.add_toast(ToastKind::Info, "Refreshing SOP list...");
+            if app.pending_op.is_none() {
+                app.pending_op = Some(spawn_list_sops(app.bridge_address.clone()));
+            }
+        }
+        KeyCode::Backspace => { app.sop_query.pop(); }
+        KeyCode::Char(c) if !c.is_control() => { app.sop_query.push(c); }
+        _ => {}
+    }
+}
+
+fn filtered_sops(app: &App) -> Vec<&crate::bridge::SopInfo> {
+    if app.sop_query.is_empty() {
+        return app.sop_sops.iter().collect();
+    }
+    let q = app.sop_query.to_lowercase();
+    app.sop_sops.iter().filter(|s| s.sop_id.to_lowercase().contains(&q)).collect()
+}
+
+// ── Roadmap Dialog ────────────────────────────────────
+
+pub(super) fn handle_roadmap_key(code: KeyCode, app: &mut App) {
+    match code {
+        KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('Q') => {
+            app.dialog = None;
+        }
+        KeyCode::Up => app.roadmap_scroll = app.roadmap_scroll.saturating_sub(1),
+        KeyCode::Down => app.roadmap_scroll = app.roadmap_scroll.saturating_add(1),
+        KeyCode::PageUp => app.roadmap_scroll = app.roadmap_scroll.saturating_sub(10),
+        KeyCode::PageDown => app.roadmap_scroll = app.roadmap_scroll.saturating_add(10),
+        KeyCode::Home | KeyCode::Char('g') => app.roadmap_scroll = 0,
+        KeyCode::End | KeyCode::Char('G') => app.roadmap_scroll = usize::MAX,
+        KeyCode::Char('r') | KeyCode::Char('R') => {
+            app.roadmap_status = "connecting...".into();
+            if app.pending_op.is_none() {
+                app.pending_op = Some(spawn_fetch_roadmap(app.bridge_address.clone()));
+            }
+        }
+        _ => {}
+    }
+}
+
+// ── Rename Session Dialog ────────────────────────────
+
+pub(super) fn handle_rename_key(code: KeyCode, app: &mut App) {
+    let Some(Dialog::Rename { session_id, name }) = &app.dialog else { return };
+    let session_id = session_id.clone();
+    match code {
+        KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('Q') => {
+            app.dialog = None;
+        }
+        KeyCode::Enter => {
+            let new_name = name.trim().to_string();
+            if !new_name.is_empty() {
+                let db = app.data_dir.join("sessions.json");
+                match sisyphus_tools::session_rename(&db, &session_id, &new_name) {
+                    Ok(_) => {
+                        app.add_toast(ToastKind::Success, format!("Renamed → {new_name}"));
+                        app.add_log(LogEntry::Success(format!("Renamed session {session_id} → {new_name}")));
+                        app.session_dirty = true;
+                    }
+                    Err(e) => app.add_log(LogEntry::Error(format!("Rename failed: {e}")),
+                    )
+                }
+            }
+            app.dialog = None;
+        }
+        KeyCode::Backspace => {
+            if let Some(Dialog::Rename { name, .. }) = &mut app.dialog {
+                name.pop();
+            }
+        }
+        KeyCode::Char(c) => {
+            if let Some(Dialog::Rename { name, .. }) = &mut app.dialog {
+                name.push(c);
+            }
+        }
+        _ => {}
+    }
+}
+
+// ── Dev Dialog ────────────────────────────────────────
+
+pub(super) fn handle_dev_key(key: KeyEvent, app: &mut App) {
+    let code = key.code;
+    // If report is available, any key dismisses it (user can Esc to close)
+    if app.dev_report.is_some() {
+        match code {
+            KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('Q') => {
+                app.dialog = None;
+                app.dev_report = None;
+                app.dev_status = "idle".into();
+            }
+            _ => {}
+        }
+        return;
+    }
+
+    // If running, only Esc cancels (sets status to idle)
+    if app.dev_status == "running" {
+        if code == KeyCode::Esc {
+            app.dev_status = "idle".into();
+        }
+        return;
+    }
+
+    match code {
+        KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('Q') => {
+            app.dialog = None;
+            app.dev_goal.clear();
+            app.dev_context.clear();
+            app.dev_parallel = false;
+            app.dev_resume = false;
+            app.dev_report = None;
+            app.dev_status = "idle".into();
+            app.dev_focus = DevFocus::Goal;
+        }
+        KeyCode::Tab => {
+            app.dev_focus = match app.dev_focus {
+                DevFocus::Goal => DevFocus::Context,
+                DevFocus::Context => DevFocus::Parallel,
+                DevFocus::Parallel => DevFocus::Resume,
+                DevFocus::Resume => DevFocus::Run,
+                DevFocus::Run => DevFocus::Goal,
+            };
+        }
+        KeyCode::BackTab => {
+            app.dev_focus = match app.dev_focus {
+                DevFocus::Goal => DevFocus::Run,
+                DevFocus::Context => DevFocus::Goal,
+                DevFocus::Parallel => DevFocus::Context,
+                DevFocus::Resume => DevFocus::Parallel,
+                DevFocus::Run => DevFocus::Resume,
+            };
+        }
+        KeyCode::Enter => {
+            if app.dev_focus == DevFocus::Run {
+                let goal = app.dev_goal.trim().to_string();
+                if goal.is_empty() {
+                    app.add_log(LogEntry::Warn("Dev goal cannot be empty".into()));
+                    return;
+                }
+                app.dev_status = "running".into();
+                app.add_toast(ToastKind::Info, format!("Dev agent started: {goal}"));
+                let context = app.dev_context.clone();
+                let parallel = app.dev_parallel;
+                let resume = app.dev_resume;
+                if app.pending_op.is_none() {
+                    let mut config = sisyphus_types::Config::default();
+                    config.apply_env_overrides();
+                    app.pending_op = Some(spawn_dev_agent(
+                        config, goal, context, parallel, resume,
+                    ));
+                }
+            }
+        }
+        KeyCode::Backspace => {
+            match app.dev_focus {
+                DevFocus::Goal => { app.dev_goal.pop(); }
+                DevFocus::Context => { app.dev_context.pop(); }
+                _ => {}
+            }
+        }
+        KeyCode::Char(' ') => {
+            match app.dev_focus {
+                DevFocus::Parallel => app.dev_parallel = !app.dev_parallel,
+                DevFocus::Resume => app.dev_resume = !app.dev_resume,
+                DevFocus::Goal => app.dev_goal.push(' '),
+                DevFocus::Context => app.dev_context.push(' '),
+                DevFocus::Run => {} // space on Run is no-op
+            }
+        }
+        KeyCode::Char(c) => {
+            match app.dev_focus {
+                DevFocus::Goal => app.dev_goal.push(c),
+                DevFocus::Context => app.dev_context.push(c),
+                _ => {}
+            }
+        }
+        _ => {}
+    }
+}
