@@ -1,8 +1,8 @@
+use async_trait::async_trait;
+use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
-use async_trait::async_trait;
 
 use crate::errors::TypesError;
 
@@ -109,7 +109,7 @@ use crate::types::SisyphusNotepad;
 
 #[derive(Debug)]
 pub struct ExecutionContext {
-    pub results: Arc<RwLock<HashMap<String, NodeOutput>>>,
+    pub results: DashMap<String, NodeOutput>,
     pub notepad: Arc<RwLock<SisyphusNotepad>>,
 }
 
@@ -122,39 +122,26 @@ impl Default for ExecutionContext {
 impl ExecutionContext {
     pub fn new() -> Self {
         Self {
-            results: Arc::new(RwLock::new(HashMap::new())),
+            results: DashMap::new(),
             notepad: Arc::new(RwLock::new(SisyphusNotepad::default())),
         }
     }
 
-    /// Creates an ExecutionContext with a pre-allocated results HashMap.
+    /// Creates an ExecutionContext with a pre-allocated results map.
     /// Use when the approximate number of node outputs is known.
     pub fn with_capacity(n: usize) -> Self {
         Self {
-            results: Arc::new(RwLock::new(HashMap::with_capacity(n))),
+            results: DashMap::with_capacity(n),
             notepad: Arc::new(RwLock::new(SisyphusNotepad::default())),
         }
     }
 
     pub fn set_result(&self, node_name: String, output: NodeOutput) {
-        match self.results.write() {
-            Ok(mut results) => {
-                results.insert(node_name, output);
-            }
-            Err(e) => {
-                tracing::warn!(error = %e, "ExecutionContext RwLock poisoned in set_result");
-            }
-        }
+        self.results.insert(node_name, output);
     }
 
     pub fn get_result(&self, node_name: &str) -> Option<NodeOutput> {
-        match self.results.read() {
-            Ok(results) => results.get(node_name).cloned(),
-            Err(e) => {
-                tracing::warn!(error = %e, "ExecutionContext RwLock poisoned in get_result");
-                None
-            }
-        }
+        self.results.get(node_name).map(|r| r.clone())
     }
 
     pub fn write_notepad(&self, section: String, content: String) {
@@ -190,19 +177,12 @@ impl ExecutionContext {
     }
 
     pub fn interpolate(&self, template: &str) -> String {
-        let results = match self.results.read() {
-            Ok(r) => r,
-            Err(e) => {
-                tracing::warn!(error = %e, "ExecutionContext RwLock poisoned in interpolate");
-                return template.to_string();
-            }
-        };
         let mut output = template.to_string();
-        for (name, node_output) in results.iter() {
-            let placeholder = format!("{{{{{}.output}}}}", name);
-            let val_str = match &node_output.0 {
+        for item in self.results.iter() {
+            let placeholder = format!("{{{{{}.output}}}}", item.key());
+            let val_str = match &item.value().0 {
                 Value::String(s) => s.clone(),
-                _ => node_output.0.to_string(),
+                _ => item.value().0.to_string(),
             };
             output = output.replace(&placeholder, &val_str);
         }
