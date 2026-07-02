@@ -1,10 +1,11 @@
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use lru::LruCache;
+use parking_lot::Mutex;
 use sisyphus_metrics::record_mem_operation;
 use sqlx::{SqlitePool, sqlite::SqlitePoolOptions};
 use std::num::NonZeroUsize;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::mpsc;
 
@@ -165,10 +166,7 @@ impl MfsStore {
         let _enter = span.enter();
 
         let start = Instant::now();
-        let cache = self
-            .l1
-            .lock()
-            .map_err(|e| anyhow::anyhow!("MFS L1 lock poisoned: {e}"))?;
+        let cache = self.l1.lock();
         let mut data = std::collections::HashMap::new();
         for (key, value) in cache.iter() {
             data.insert(key.clone(), value.clone());
@@ -190,10 +188,7 @@ impl MfsStore {
 
         let start = Instant::now();
         // 1. Clear L1
-        self.l1
-            .lock()
-            .map_err(|e| anyhow::anyhow!("MFS L1 lock poisoned: {e}"))?
-            .clear();
+        self.l1.lock().clear();
 
         // 2. Clear L2 via buffer to maintain order
         self.write_tx
@@ -216,7 +211,7 @@ impl MfsStore {
                 .await?;
         }
         {
-            let mut cache = self.l1.lock().map_err(|e| anyhow::anyhow!("MFS L1 lock poisoned: {e}"))?;
+            let mut cache = self.l1.lock();
             for (key, value) in keys_values {
                 cache.put(key, value);
             }
@@ -229,16 +224,12 @@ impl MfsStore {
 
     /// Returns the current L1 capacity.
     pub fn capacity(&self) -> usize {
-        self.l1
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .cap()
-            .get()
+        self.l1.lock().cap().get()
     }
 
     /// Returns the current L1 size.
     pub fn len(&self) -> usize {
-        self.l1.lock().unwrap_or_else(|e| e.into_inner()).len()
+        self.l1.lock().len()
     }
 
     /// Returns `true` if L1 is empty.
@@ -261,7 +252,7 @@ impl sisyphus_types::StateStore for MfsStore {
         let start = Instant::now();
         // 1. Try L1
         {
-            let mut cache = self.l1.lock().map_err(|e| sisyphus_types::TypesError::StateStoreError(e.to_string()))?;
+            let mut cache = self.l1.lock();
             if let Some(val) = cache.get(key) {
                 let duration = start.elapsed();
                 tracing::debug!(
@@ -289,7 +280,7 @@ impl sisyphus_types::StateStore for MfsStore {
                 serde_json::from_str(&value_str).map_err(|e| sisyphus_types::TypesError::StateStoreError(e.to_string()))?;
             // Update L1
             {
-                let mut cache = self.l1.lock().map_err(|e| sisyphus_types::TypesError::StateStoreError(e.to_string()))?;
+                let mut cache = self.l1.lock();
                 cache.put(key.to_string(), json_val.clone());
             }
             let duration = l2_start.elapsed();
@@ -322,7 +313,7 @@ impl sisyphus_types::StateStore for MfsStore {
 
         // Update L1 (immediate)
         {
-            let mut cache = self.l1.lock().map_err(|e| sisyphus_types::TypesError::StateStoreError(e.to_string()))?;
+            let mut cache = self.l1.lock();
             cache.put(key.to_string(), value.clone());
         }
 
