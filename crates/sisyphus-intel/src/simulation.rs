@@ -89,6 +89,65 @@ impl MonteCarloSimulator {
             state_store: Some(store),
         }
     }
+
+    /// Calculate transition probabilities for a node based on its type and history.
+    async fn get_transition_probabilities(
+        &self,
+        graph: &SOPGraph,
+        node_idx: petgraph::graph::NodeIndex,
+        sop_id: &str,
+    ) -> std::collections::HashMap<petgraph::graph::NodeIndex, f64> {
+        let mut probs = std::collections::HashMap::new();
+        let node_weight = match graph.graph.node_weight(node_idx) {
+            Some(w) => w,
+            None => return probs,
+        };
+
+        if let Some(branch_node) = node_weight.as_any().downcast_ref::<sisyphus_types::BranchSOPNode>() {
+            let mut total_weight = 0.0;
+            let mut weights = std::collections::HashMap::new();
+
+            if let Some(ref store) = self.state_store {
+                if let Ok(Some(val)) = store.get_state_json(&format!("history:node:{}:{:?}", sop_id, node_idx)).await {
+                    if let Ok(dist) = serde_json::from_value::<std::collections::HashMap<String, f64>>(val) {
+                        for (output, prob) in dist {
+                            if let Some(&next_idx_usize) = branch_node.branches.get(&output) {
+                                let next_idx = petgraph::graph::NodeIndex::new(next_idx_usize);
+                                weights.insert(next_idx, prob);
+                                total_weight += prob;
+                            }
+                        }
+                        let default_prob = (1.0 - total_weight).max(0.0);
+                        weights.insert(petgraph::graph::NodeIndex::new(branch_node.default_next), default_prob);
+                        total_weight += default_prob;
+                    }
+                }
+            }
+
+            if weights.is_empty() {
+                let branch_count = branch_node.branches.len() + 1;
+                let uniform_prob = 1.0 / branch_count as f64;
+                for &next_idx_usize in branch_node.branches.values() {
+                    weights.insert(petgraph::graph::NodeIndex::new(next_idx_usize), uniform_prob);
+                }
+                weights.insert(petgraph::graph::NodeIndex::new(branch_node.default_next), uniform_prob);
+                total_weight = 1.0;
+            }
+
+            for (idx, weight) in weights {
+                probs.insert(idx, weight / total_weight.max(1e-6));
+            }
+        } else {
+            let neighbors: Vec<_> = graph.graph.neighbors(node_idx).collect();
+            if !neighbors.is_empty() {
+                let prob = 1.0 / neighbors.len() as f64;
+                for n in neighbors {
+                    probs.insert(n, prob);
+                }
+            }
+        }
+        probs
+    }
 }
 
 #[async_trait]
@@ -157,21 +216,21 @@ impl Simulator for MonteCarloSimulator {
             // 1. Selection
             loop {
                 let (next_idx, next_node_arc) = {
-                    let mut node = current_node_arc.lock().unwrap();
-                    let neighbors: Vec<_> = graph.graph.neighbors(current_idx).collect();
-                    if neighbors.is_empty() { break; }
+                    let probs = self.get_transition_probabilities(graph, current_idx, sop_id).await;
+                    if probs.is_empty() { break; }
 
-                    let best_neighbor = neighbors.into_iter()
-                        .max_by(|a, b| {
-                            // Avoid nested locks by fetching visit counts first
-                            let val_a = node.children.get(a)
+                    let mut node = current_node_arc.lock().unwrap();
+                    let best_neighbor = probs.iter()
+                        .max_by(|(a_idx, a_prob), (b_idx, b_prob)| {
+                            let val_a = node.children.get(a_idx)
                                 .map(|n| n.lock().unwrap().ucb1(node.visit_count))
-                                .unwrap_or(f64::INFINITY);
-                            let val_b = node.children.get(b)
+                                .unwrap_or(f64::INFINITY) * *a_prob;
+                            let val_b = node.children.get(b_idx)
                                 .map(|n| n.lock().unwrap().ucb1(node.visit_count))
-                                .unwrap_or(f64::INFINITY);
+                                .unwrap_or(f64::INFINITY) * *b_prob;
                             val_a.partial_cmp(&val_b).unwrap()
                         })
+                        .map(|(idx, _)| *idx)
                         .unwrap();
 
                     let next_node = node.children.entry(best_neighbor)
@@ -189,11 +248,21 @@ impl Simulator for MonteCarloSimulator {
             let mut sim_cost = 0u64;
             let mut sim_current = current_idx;
             
-            // Bound random walk to prevent infinite loops in cyclic graphs
             for _ in 0..num_nodes {
-                let neighbors: Vec<_> = graph.graph.neighbors(sim_current).collect();
-                if neighbors.is_empty() { break; }
-                sim_current = neighbors[rng.gen_range(0..neighbors.len())];
+                let probs = self.get_transition_probabilities(graph, sim_current, sop_id).await;
+                if probs.is_empty() { break; }
+                
+                // Weighted random sampling
+                let mut r = rng.gen::<f64>();
+                let mut next_node = None;
+                for (idx, prob) in &probs {
+                    if r < *prob {
+                        next_node = Some(*idx);
+                        break;
+                    }
+                    r -= prob;
+                }
+                sim_current = next_node.unwrap_or(sim_current);
                 sim_prob *= 0.9 * hist_success_rate + 0.1 * 0.9;
                 sim_cost += 10;
             }
@@ -288,5 +357,34 @@ mod tests {
         let result = sim.simulate(&graph, &ctx, "empty").await.unwrap();
         assert_eq!(result.success_probability, 0.0);
         assert_eq!(result.estimated_cost, 0);
+    }
+
+    #[tokio::test]
+    async fn test_monte_carlo_branching_graph() {
+        struct DummyExecutor;
+        #[async_trait::async_trait]
+        impl sisyphus_types::ToolExecutor for DummyExecutor {
+            async fn execute(&self, _: &str, _: Vec<u8>, _: u64) -> Result<Vec<u8>, sisyphus_types::TypesError> {
+                Ok(vec![])
+            }
+        }
+
+        let config_val = serde_json::json!({
+            "start_node": 0,
+            "nodes": [
+                { "name": "Start", "kind": { "Wasm": { "tool_id": "t1", "fuel_limit": 1000 } } },
+                { "name": "Branch", "kind": { "Branch": { "branches": { "ok": 2, "err": 3 }, "default_next": 3 } } },
+                { "name": "Success", "kind": { "Wasm": { "tool_id": "t2", "fuel_limit": 1000 } } },
+                { "name": "Failure", "kind": { "Wasm": { "tool_id": "t3", "fuel_limit": 1000 } } }
+            ],
+            "edges": [ [0, 1], [1, 2], [1, 3] ]
+        });
+        let config: sisyphus_types::SOPGraphConfig = serde_json::from_value(config_val).unwrap();
+        let graph = SOPGraph::from_config(&config, Arc::new(sisyphus_types::ExecutorRouter::new(Arc::new(DummyExecutor)))).unwrap();
+        
+        let sim = MonteCarloSimulator::new(100);
+        let ctx = ExecutionContext::new();
+        let result = sim.simulate(&graph, &ctx, "branch-test").await.unwrap();
+        assert!(result.success_probability >= 0.0 && result.success_probability <= 1.0);
     }
 }

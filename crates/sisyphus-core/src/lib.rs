@@ -447,6 +447,44 @@ impl SisyphusKernel {
         }
     }
 
+    /// Initialize MCP tool executors from the provided configuration.
+    pub async fn init_mcp_executors(&self, config: &sisyphus_types::config::McpConfig) -> Result<(), String> {
+        // 1. Handle stdio servers
+        for (prefix, cmd_str) in &config.stdio_servers {
+            let parts: Vec<&str> = cmd_str.split_whitespace().collect();
+            if parts.is_empty() {
+                tracing::warn!(prefix = %prefix, "Empty MCP stdio command, skipping");
+                continue;
+            }
+            let command = parts[0];
+            let args = &parts[1..];
+
+            match sisyphus_tools_executor::executor_mcp::MCPToolExecutor::from_stdio(command, args).await {
+                Ok(executor) => {
+                    self.register_tool_executor(prefix, Arc::new(executor))?;
+                    tracing::info!(prefix = %prefix, "Registered MCP stdio executor");
+                }
+                Err(e) => {
+                    tracing::error!(prefix = %prefix, error = %e, "Failed to initialize MCP stdio executor");
+                }
+            }
+        }
+
+        // 2. Handle HTTP servers
+        for (prefix, url) in &config.http_servers {
+            match sisyphus_tools_executor::executor_mcp::MCPToolExecutor::from_url(url).await {
+                Ok(executor) => {
+                    self.register_tool_executor(prefix, Arc::new(executor))?;
+                    tracing::info!(prefix = %prefix, "Registered MCP HTTP executor");
+                }
+                Err(e) => {
+                    tracing::error!(prefix = %prefix, error = %e, "Failed to initialize MCP HTTP executor");
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// Approve a strategic proposal and automatically apply its changes to the roadmap.
     pub async fn approve_and_apply_proposal(
         &self,
