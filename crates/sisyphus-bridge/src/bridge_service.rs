@@ -1,3 +1,4 @@
+//! REST API for Sisyphus Bridge (axum HTTP layer alongside gRPC).
 use std::num::NonZeroUsize;
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
@@ -20,9 +21,10 @@ use sisyphus_tools_session::skill::SkillLoader;
 use sisyphus_types::{Config, ExecutorRouter, ToolExecutor};
 use tracing::{info, warn};
 
-use crate::consensus::NoOpConsensus;
+use crate::consensus::{ClusterConsensus, NoOpConsensus};
 use crate::strategic_executor::StrategicExecutor;
 use crate::tools::{register_builtin_tools, register_strategic_tools};
+use sisyphus_intel::MetaLearningSynthesizer;
 
 pub struct MySisyphusBridge {
     kernel: Arc<SisyphusKernel>,
@@ -203,16 +205,30 @@ impl MySisyphusBridge {
         let evolver = Arc::new(sisyphus_intel::StandardEvolver::new());
         let intel = Arc::new(sisyphus_intel::SisyphusIntel::new(simulator, reflector, evolver));
 
-        let synthesizer = Arc::new(sisyphus_intel::GoalDrivenSynthesizer::new(
-            tool_executor.clone(),
+        let meta_learner = Arc::new(std::sync::Mutex::new(sisyphus_tools_llm_tools::meta_learner::MetaLearner::new(".omo/meta")));
+        let meta_synthesizer = Arc::new(MetaLearningSynthesizer::new(
+            Arc::new(sisyphus_intel::GoalDrivenSynthesizer::new(
+                tool_executor.clone(),
+            )),
+            meta_learner.clone(),
         ));
-
+        let synthesizer = Arc::new(sisyphus_intel::StrategicSopSynthesizer::new(
+            meta_synthesizer,
+            simulator.clone(),
+        ));
+        
+        let consensus = Arc::new(ClusterConsensus::new(
+            "node-1".to_string(), 
+            vec![], // In production, this would be loaded from config
+        ));
         let kernel = Arc::new(SisyphusKernel::new(
             state_store.clone(),
             tool_executor,
             intel,
             dyn_llm_client.clone(),
             synthesizer,
+            meta_learner,
+            consensus.clone(),
         ));
 
         strategic_executor.set_kernel(Arc::downgrade(&kernel));
@@ -273,7 +289,7 @@ impl MySisyphusBridge {
             team_orchestrator: Arc::new(team_orchestrator),
             skill_loader: Arc::new(loader),
             llm_client: llm_client_for_bridge,
-            consensus: Arc::new(NoOpConsensus),
+            consensus,
             plugin_manager,
         })
     }

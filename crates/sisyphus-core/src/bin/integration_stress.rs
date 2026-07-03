@@ -54,7 +54,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let start = Instant::now();
     for _ in 0..concurrency {
         let graph_ref = Arc::new(SOPGraph {
-            graph: graph.graph.clone(), // Simplified for test
+            graph: graph.graph.clone(),
+            start_node: root,
         });
         let exec_ref = Executor::new();
 
@@ -68,6 +69,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .execute(
                         &SOPGraph {
                             graph: graph_ref.graph.clone(),
+                            start_node: root,
                         },
                         root,
                     )

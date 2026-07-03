@@ -5,7 +5,7 @@
 
 use petgraph::graph::NodeIndex;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Instant, SystemTime};
 use tokio::sync::mpsc;
 
 use sisyphus_metrics::record_cognitive_iteration;
@@ -14,13 +14,6 @@ use sisyphus_types::AgentMessage;
 use sisyphus_types::StateStore;
 
 use crate::{CoreError, ExecutionContext, ExecutionEvent, NodeOutput, SisyphusKernel, SOPGraph};
-
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
-
-const MAX_COGNITIVE_ITERATIONS: usize = 3;
-const CONVERGENCE_THRESHOLD: f64 = 0.3;
 
 // ---------------------------------------------------------------------------
 // Types
@@ -62,18 +55,35 @@ impl SisyphusKernel {
     pub async fn execute_with_cognition(
         &self,
         sop_graph: &SOPGraph,
-        start_node: NodeIndex,
         sop_id: &str,
         initial_ctx: Option<Arc<ExecutionContext>>,
         event_tx: Option<mpsc::UnboundedSender<ExecutionEvent>>,
-    ) -> Result<(NodeOutput, String, Option<SOPGraph>), String> {
+    ) -> Result<(NodeOutput, String, Option<SOPGraph>), CoreError> {
         let span = tracing::info_span!("kernel.execute_with_cognition", sop_id = %sop_id, graph_nodes = sop_graph.graph.node_count());
         let _enter = span.enter();
 
+        let now = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap_or_default().as_secs();
+
+        // Initialize active execution status
+        self.active_executions.insert(sop_id.to_string(), crate::ExecutionStatus {
+            goal_id: sop_id.to_string(),
+            status: "Initializing".into(),
+            current_node: None,
+            thought_logs: vec!["Starting cognitive loop...".into()],
+            progress: 0.0,
+            last_updated: now,
+        });
+
+        self.broadcast_event(sop_id, ExecutionEvent::CognitiveStep {
+            step: "Initializing".into(),
+            message: "Starting cognitive loop...".into(),
+        });
+
+        let max_iterations = self.cognitive_loop_config.max_iterations as usize;
         let mut own_graph: Option<SOPGraph>;
         let mut current_ref: &SOPGraph = sop_graph;
-        let mut current_start = start_node;
-        let mut iterations: Vec<CognitiveIteration> = Vec::new();
+        let mut current_start = sop_graph.start_node;
+        let mut iterations: Vec<CognitiveIteration> = Vec::with_capacity(max_iterations);
         let mut final_result = NodeOutput::default();
         let mut final_evolved: Option<SOPGraph> = None;
         // initial_ctx is passed to the executor on the first iteration only;
@@ -90,13 +100,13 @@ impl SisyphusKernel {
                 payload: serde_json::json!({
                     "sop_id": sop_id,
                     "graph_nodes": sop_graph.graph.node_count(),
-                    "max_iterations": MAX_COGNITIVE_ITERATIONS,
+                    "max_iterations": self.cognitive_loop_config.max_iterations,
                 }),
                 correlation_id: format!("{}-start", sop_id),
             },
         );
 
-        for iteration in 0..MAX_COGNITIVE_ITERATIONS {
+        for iteration in 0..max_iterations {
             let iter_start = Instant::now();
             let iter_span = tracing::info_span!("cognitive_iteration", iteration, sop_id = %sop_id);
             let _iter_enter = iter_span.enter();
@@ -119,12 +129,24 @@ impl SisyphusKernel {
             let ctx = ExecutionContext::with_capacity(current_ref.graph.node_count());
 
             // 1. Predict
+            let iter_now = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap_or_default().as_secs();
+            if let Some(mut status) = self.active_executions.get_mut(sop_id) {
+                status.status = "Predicting".into();
+                status.thought_logs.push(format!("Iteration {}: Simulating potential paths...", iteration));
+                status.last_updated = iter_now;
+            }
+            self.broadcast_event(sop_id, ExecutionEvent::CognitiveStep {
+                step: "Predicting".into(),
+                message: format!("Iteration {}: Simulating potential paths...", iteration),
+            });
+
             let pred_start = Instant::now();
             let prediction = self
                 .intel
                 .simulator
                 .simulate(current_ref, &ctx, sop_id)
-                .await?;
+                .await
+                .map_err(|e| CoreError::Internal(e.to_string()))?;
             let pred_duration = pred_start.elapsed();
             tracing::debug!(path_id = %prediction.path_id, success_prob = prediction.success_probability, estimated_cost = prediction.estimated_cost, duration_ms = pred_duration.as_millis(), "Simulation completed");
 
@@ -133,10 +155,22 @@ impl SisyphusKernel {
             } else {
                 None
             };
+
+            if let Some(mut status) = self.active_executions.get_mut(sop_id) {
+                status.status = "Executing".into();
+                status.thought_logs.push(format!("Iteration {}: Executing SOP nodes...", iteration));
+                status.last_updated = iter_now;
+            }
+            self.broadcast_event(sop_id, ExecutionEvent::CognitiveStep {
+                step: "Executing".into(),
+                message: format!("Iteration {}: Executing SOP nodes...", iteration),
+            });
+
             let final_ctx = self
                 .executor
                 .execute_with_context(current_ref, current_start, exec_ctx, event_tx.clone())
-                .await?;
+                .await
+                .map_err(|e| CoreError::Internal(e.to_string()))?;
             let start_name = current_ref
                 .graph
                 .node_weight(current_start)
@@ -145,10 +179,21 @@ impl SisyphusKernel {
             let result = final_ctx
                 .get_result(&start_name)
                 .ok_or(CoreError::NoResultProduced)?;
+
+            if let Some(mut status) = self.active_executions.get_mut(sop_id) {
+                status.current_node = Some(start_name.clone());
+                status.progress = (iteration + 1) as f32 / max_iterations as f32 * 100.0;
+                status.last_updated = iter_now;
+            }
+            self.broadcast_event(sop_id, ExecutionEvent::NodeCompleted {
+                node_name: start_name.clone(),
+                output: result.clone(),
+            });
+
             final_result = result.clone();
 
             // 3. Build per-node trace records
-            let mut trace_lines: Vec<String> = Vec::new();
+            let mut trace_lines: Vec<String> = Vec::with_capacity(current_ref.graph.node_count());
             for node in current_ref.graph.node_indices() {
                 let Some(nw) = current_ref.graph.node_weight(node) else {
                     tracing::warn!(node_idx = ?node, "Skipping trace record for missing node");
@@ -174,8 +219,19 @@ impl SisyphusKernel {
             let trace = trace_lines.join("\n");
 
             // 4. Reflect
+            if let Some(mut status) = self.active_executions.get_mut(sop_id) {
+                status.status = "Reflecting".into();
+                status.thought_logs.push(format!("Iteration {}: Reflecting on execution trace...", iteration));
+                status.last_updated = iter_now;
+            }
+            self.broadcast_event(sop_id, ExecutionEvent::CognitiveStep {
+                step: "Reflecting".into(),
+                message: format!("Iteration {}: Reflecting on execution trace...", iteration),
+            });
+
             let reflect_start = Instant::now();
-            let reflection = self.intel.reflector.reflect(&trace, &prediction).await?;
+            let reflection = self.intel.reflector.reflect(&trace, &prediction).await
+                .map_err(|e| CoreError::Internal(e.to_string()))?;
             let reflect_duration = reflect_start.elapsed();
             tracing::debug!(
                 deviation = reflection.deviation_score,
@@ -228,6 +284,16 @@ impl SisyphusKernel {
             }
 
             // 5. Evolve
+            if let Some(mut status) = self.active_executions.get_mut(sop_id) {
+                status.status = "Evolving".into();
+                status.thought_logs.push(format!("Iteration {}: Evolving graph based on reflection...", iteration));
+                status.last_updated = iter_now;
+            }
+            self.broadcast_event(sop_id, ExecutionEvent::CognitiveStep {
+                step: "Evolving".into(),
+                message: format!("Iteration {}: Evolving graph based on reflection...", iteration),
+            });
+
             let evolve_start = Instant::now();
             let evolved = self
                 .intel
@@ -262,7 +328,7 @@ impl SisyphusKernel {
                 sop_id,
                 iteration,
                 reflection.deviation_score,
-                reflection.deviation_score < CONVERGENCE_THRESHOLD,
+                reflection.deviation_score < self.cognitive_loop_config.convergence_threshold,
                 iter_duration.as_secs_f64(),
             );
 
@@ -308,14 +374,14 @@ impl SisyphusKernel {
             }
 
             // Check convergence
-            if reflection.deviation_score < CONVERGENCE_THRESHOLD || !has_evolved {
+            if reflection.deviation_score < self.cognitive_loop_config.convergence_threshold || !has_evolved {
                 final_evolved = evolved;
                 break;
             }
 
             // Re-execute with evolved graph
             if let Some(eg) = evolved {
-                current_start = eg.graph.node_indices().next().unwrap_or(start_node);
+                current_start = eg.start_node;
                 own_graph = Some(eg);
                 // SAFETY: own_graph was just set to Some(eg) on the line above
                 current_ref = own_graph.as_ref().ok_or_else(|| CoreError::Internal("own_graph should be Some after evolution".into()))?;
@@ -326,7 +392,7 @@ impl SisyphusKernel {
 
         let converged = iterations
             .last()
-            .map(|i| i.deviation_score < CONVERGENCE_THRESHOLD)
+            .map(|i| i.deviation_score < self.cognitive_loop_config.convergence_threshold)
             .unwrap_or(false);
 
         // Publish cognitive loop completion via AgentChannel
@@ -413,6 +479,16 @@ impl SisyphusKernel {
             final_deviation = iterations.last().map(|i| i.deviation_score).unwrap_or(0.0),
             "Cognitive loop completed"
         );
+
+        if let Some(mut status) = self.active_executions.get_mut(sop_id) {
+            status.status = "Completed".into();
+            status.progress = 100.0;
+            status.thought_logs.push("Cognitive loop converged and completed.".into());
+            status.last_updated = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap_or_default().as_secs();
+        }
+        self.broadcast_event(sop_id, ExecutionEvent::CognitiveComplete {
+            report: report.clone(),
+        });
 
         Ok((final_result, report, final_evolved))
     }

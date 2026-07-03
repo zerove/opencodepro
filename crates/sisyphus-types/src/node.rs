@@ -1,6 +1,7 @@
 use async_trait::async_trait;
 use serde_json::Value;
 use std::sync::Arc;
+use dashmap::DashMap;
 
 use crate::errors::TypesError;
 use crate::execution::{ExecutionContext, NodeOutput};
@@ -84,6 +85,34 @@ impl SOPNode for RetrySOPNode {
     }
 }
 
+pub struct BranchSOPNode {
+    pub name: String,
+    /// A map of "condition_result" -> "next_node_index".
+    pub branches: std::collections::HashMap<String, usize>,
+    /// The default node index to follow if no condition matches.
+    pub default_next: usize,
+}
+
+#[async_trait]
+impl SOPNode for BranchSOPNode {
+    async fn execute(&self, ctx: &ExecutionContext) -> Result<NodeOutput, TypesError> {
+        let last_output = ctx.last_output().ok_or_else(|| {
+            TypesError::NodeExecutionError("BranchNode requires a previous output to decide".into())
+        })?;
+        let output_str = last_output.as_str().unwrap_or("");
+        let next_node = self.branches.get(output_str).unwrap_or(&self.default_next);
+        Ok(NodeOutput(Value::Number(serde_json::Number::from_f64(*next_node as f64).unwrap())))
+    }
+    fn name(&self) -> &str { &self.name }
+    fn as_any(&self) -> &dyn std::any::Any { self }
+    fn to_kind(&self) -> NodeKind {
+        NodeKind::Branch {
+            branches: self.branches.clone(),
+            default_next: self.default_next,
+        }
+    }
+}
+
 #[async_trait]
 pub trait ToolExecutor: Send + Sync {
     async fn execute(
@@ -114,7 +143,7 @@ pub trait ToolExecutor: Send + Sync {
 /// router.execute("mcp:echo", args, 0).await;
 /// ```
 pub struct ExecutorRouter {
-    routers: std::collections::HashMap<String, Arc<dyn ToolExecutor>>,
+    routers: DashMap<String, Arc<dyn ToolExecutor>>,
     default: Arc<dyn ToolExecutor>,
 }
 
@@ -125,7 +154,7 @@ impl ExecutorRouter {
     /// to `default`.
     pub fn new(default: Arc<dyn ToolExecutor>) -> Self {
         Self {
-            routers: std::collections::HashMap::new(),
+            routers: DashMap::new(),
             default,
         }
     }
@@ -134,7 +163,7 @@ impl ExecutorRouter {
     ///
     /// After registration, tool IDs of the form `"{prefix}:{name}"` will be
     /// dispatched to this executor with `{name}` as the tool_id.
-    pub fn register(&mut self, prefix: &str, executor: Arc<dyn ToolExecutor>) {
+    pub fn register(&self, prefix: &str, executor: Arc<dyn ToolExecutor>) {
         self.routers.insert(prefix.to_string(), executor);
     }
 }

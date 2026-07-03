@@ -3,13 +3,16 @@ use crate::MySisyphusBridge;
 use axum::{
     extract::{Path, State},
     http::StatusCode,
-    response::IntoResponse,
-    routing::{get, post},
+    response::{IntoResponse, Sse},
+    routing::{get, post, patch},
     Json, Router,
 };
+use futures_util::stream::{self, Stream};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::Arc;
+use tokio::sync::mpsc;
+use tokio_stream::wrappers::UnboundedReceiverStream;
 
 // ── Response / Request Types ───────────────────────────────────────────────
 
@@ -17,6 +20,81 @@ use std::sync::Arc;
 pub struct HealthResponse {
     pub status: String,
     pub version: String,
+}
+
+// --- Goal Execution Types ---
+
+#[derive(Serialize)]
+pub struct GoalStatusResponse {
+    pub status: String,
+    pub current_node: Option<String>,
+    pub progress: f32,
+    pub thought_logs: Vec<String>,
+    pub last_updated: u64,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct GoalExecuteRequest {
+    pub goal: String,
+    pub sop_id: String,
+    pub project_id: Option<String>,
+    pub event_tx: Option<bool>,
+}
+
+#[derive(Serialize)]
+pub struct GoalExecuteResponse {
+    pub output: sisyphus_types::NodeOutput,
+    pub report: String,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct CompositeExecuteRequest {
+    pub goals: Vec<String>,
+    pub event_tx: Option<bool>,
+}
+
+#[derive(Serialize)]
+pub struct CompositeExecuteResponse {
+    pub results: std::collections::HashMap<String, sisyphus_types::NodeOutput>,
+    pub execution_order: Vec<String>,
+}
+
+// --- Roadmap Management Types ---
+
+#[derive(Serialize, Deserialize)]
+pub struct CreateProjectRequest {
+    pub id: String,
+    pub name: String,
+    pub description: String,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct UpdateGoalStatusRequest {
+    pub project_id: String,
+    pub milestone_id: String,
+    pub phase_id: String,
+    pub status: sisyphus_types::MilestoneStatus,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct AddMilestoneRequest {
+    pub project_id: String,
+    pub milestone: sisyphus_types::Milestone,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct AddPhaseRequest {
+    pub project_id: String,
+    pub milestone_id: String,
+    pub phase: sisyphus_types::Phase,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct AddGoalRequest {
+    pub project_id: String,
+    pub milestone_id: String,
+    pub phase_id: String,
+    pub goal: sisyphus_types::GoalRef,
 }
 
 #[derive(Serialize)]
@@ -115,6 +193,199 @@ async fn health_handler(State(state): State<RestApiState>) -> impl IntoResponse 
         status: "SERVING".into(),
         version: env!("CARGO_PKG_VERSION").into(),
     })
+}
+
+// --- Goal Execution Handlers ---
+
+async fn execute_goal_handler(
+    State(state): State<RestApiState>,
+    Json(req): Json<GoalExecuteRequest>,
+) -> impl IntoResponse {
+    let kernel = state.bridge.kernel();
+    let event_tx = if req.event_tx.unwrap_or(false) {
+        Some(mpsc::unbounded_channel().0)
+    } else {
+        None
+    };
+
+    let result = if let Some(project_id) = req.project_id {
+        kernel.execute_goal_with_project_context(
+            &req.goal,
+            &req.sop_id,
+            &project_id,
+            event_tx,
+        ).await
+    } else {
+        kernel.execute_goal(&req.goal, &req.sop_id, event_tx).await
+    };
+
+    match result {
+        Ok((output, report)) => (
+            StatusCode::OK,
+            Json(serde_json::to_value(GoalExecuteResponse { output, report }).unwrap()),
+        ),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": e.to_string() })),
+        ),
+    }
+}
+
+async fn goal_status_handler(
+    State(state): State<RestApiState>,
+    Path(goal_id): Path<String>,
+) -> impl IntoResponse {
+    let kernel = state.bridge.kernel();
+    match kernel.active_executions.get(&goal_id) {
+        Some(status) => (
+            StatusCode::OK,
+            Json(serde_json::json!({
+                "status": status.status,
+                "current_node": status.current_node,
+                "progress": status.progress,
+                "thought_logs": status.thought_logs,
+                "last_updated": status.last_updated,
+            })),
+        ),
+        None => (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({ "error": format!("Goal execution {} not found or completed", goal_id) })),
+        ),
+    }
+}
+
+async fn goal_stream_handler(
+    State(state): State<RestApiState>,
+    Path(goal_id): Path<String>,
+) -> impl IntoResponse {
+    let kernel = state.bridge.kernel();
+    let (tx, rx) = mpsc::unbounded_channel();
+    
+    // Subscribe to the kernel's event system
+    kernel.event_subscribers.entry(goal_id.clone())
+        .or_insert_with(Vec::new)
+        .push(tx);
+
+    let stream = UnboundedReceiverStream::new(rx).map(|event| {
+        Sse::new(SseEvent::default()
+            .event("execution_event")
+            .data(serde_json::to_string(&event).unwrap()))
+    });
+
+    Sse::new(stream).keep_alive(axum::response::Sse::default().keep_alive_interval())
+}
+
+async fn execute_composite_handler(
+    State(state): State<RestApiState>,
+    Json(req): Json<CompositeExecuteRequest>,
+) -> impl IntoResponse {
+    let kernel = state.bridge.kernel();
+    let event_tx = if req.event_tx.unwrap_or(false) {
+        Some(mpsc::unbounded_channel().0)
+    } else {
+        None
+    };
+
+    let composite = sisyphus_types::CompositeGraph {
+        graphs: req.goals.into_iter().map(|g| (g.clone(), sisyphus_types::SOPGraphConfig::default())).collect(),
+        dependencies: vec![],
+        execution_order: vec![],
+    };
+
+    match kernel.execute_composite(&composite, event_tx).await {
+        Ok(output) => (
+            StatusCode::OK,
+            Json(serde_json::to_value(CompositeExecuteResponse {
+                results: output.results.into_iter().map(|(id, (out, _))| (id, out)).collect(),
+                execution_order: output.execution_order,
+            }).unwrap()),
+        ),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": e.to_string() })),
+        ),
+    }
+}
+
+// --- Roadmap Management Handlers ---
+
+async fn roadmap_project_handler(
+    State(state): State<RestApiState>,
+    method: axum::http::Method,
+    Path(id): Path<String>,
+    payload: Option<Json<CreateProjectRequest>>,
+) -> impl IntoResponse {
+    let rm = &state.bridge.kernel().roadmap_manager;
+    match method {
+        axum::http::Method::GET => {
+            match rm.get_project(&id).await {
+                Ok(Some(p)) => (StatusCode::OK, Json(p)).into_response(),
+                Ok(None) => StatusCode::NOT_FOUND.into_response(),
+                Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(e.to_string())).into_response(),
+            }
+        }
+        axum::http::Method::POST => {
+            let Some(Json(req)) = payload else {
+                return (StatusCode::BAD_REQUEST, "Missing payload").into_response();
+            };
+            match rm.create_project(&req.id, &req.name, &req.description).await {
+                Ok(p) => (StatusCode::CREATED, Json(p)).into_response(),
+                Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(e.to_string())).into_response(),
+            }
+        }
+        _ => StatusCode::METHOD_NOT_ALLOWED.into_response(),
+    }
+}
+
+async fn roadmap_milestone_handler(
+    State(state): State<RestApiState>,
+    Json(req): Json<AddMilestoneRequest>,
+) -> impl IntoResponse {
+    match state.bridge.kernel().roadmap_manager.add_milestone(&req.project_id, req.milestone).await {
+        Ok(_) => StatusCode::CREATED.into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(e.to_string())).into_response(),
+    }
+}
+
+async fn roadmap_phase_handler(
+    State(state): State<RestApiState>,
+    Json(req): Json<AddPhaseRequest>,
+) -> impl IntoResponse {
+    match state.bridge.kernel().roadmap_manager.add_phase(&req.project_id, &req.milestone_id, req.phase).await {
+        Ok(_) => StatusCode::CREATED.into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(e.to_string())).into_response(),
+    }
+}
+
+async fn roadmap_goal_handler(
+    State(state): State<RestApiState>,
+    Path(goal_id): Path<String>,
+    method: axum::http::Method,
+    payload: Option<Json<UpdateGoalStatusRequest>>,
+) -> impl IntoResponse {
+    let rm = &state.bridge.kernel().roadmap_manager;
+    match method {
+        axum::http::Method::PATCH => {
+            let Some(Json(req)) = payload else {
+                return (StatusCode::BAD_REQUEST, "Missing payload").into_response();
+            };
+            match rm.update_goal_status(&req.project_id, &req.milestone_id, &req.phase_id, &goal_id, req.status).await {
+                Ok(_) => StatusCode::OK.into_response(),
+                Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(e.to_string())).into_response(),
+            }
+        }
+        _ => StatusCode::METHOD_NOT_ALLOWED.into_response(),
+    }
+}
+
+async fn roadmap_health_handler(
+    State(state): State<RestApiState>,
+    Path(project_id): Path<String>,
+) -> impl IntoResponse {
+    match state.bridge.kernel().roadmap_manager.evaluate_health(&project_id).await {
+        Ok(health) => (StatusCode::OK, Json(health)).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(e.to_string())).into_response(),
+    }
 }
 
 async fn execute_handler(
@@ -382,6 +653,18 @@ impl RestApiState {
 pub(crate) fn build_router(state: RestApiState) -> Router {
     Router::new()
         .route("/health", get(health_handler))
+        .route("/api/execute/goal", post(execute_goal_handler))
+        .route("/api/execute/goal/{goal_id}/status", get(goal_status_handler))
+        .route("/api/execute/goal/{goal_id}/stream", get(goal_stream_handler))
+        .route("/api/execute/composite", post(execute_composite_handler))
+        .route(
+            "/api/roadmap/project/:id",
+            get(roadmap_project_handler).post(roadmap_project_handler),
+        )
+        .route("/api/roadmap/milestone", post(roadmap_milestone_handler))
+        .route("/api/roadmap/phase", post(roadmap_phase_handler))
+        .route("/api/roadmap/goal/:goal_id", patch(roadmap_goal_handler))
+        .route("/api/roadmap/health/:project_id", get(roadmap_health_handler))
         .route("/api/execute", post(execute_handler))
         .route(
             "/api/sessions",

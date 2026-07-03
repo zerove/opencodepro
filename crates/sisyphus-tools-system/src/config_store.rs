@@ -31,7 +31,7 @@ impl ConfigStore {
     /// The `ConfigStore` must be polled (via `start_watching()` or manual
     /// `check_reload()`) for hot-reload to work.
     pub fn load(path: &str) -> Result<(Self, Arc<RwLock<Config>>), String> {
-        let mut config = Config::from_file(path)?;
+        let mut config = Config::from_file(path).map_err(|e| e.to_string())?;
         config.apply_env_overrides();
         config.validate().map_err(|e| e.to_string())?;
         let arc = Arc::new(RwLock::new(config));

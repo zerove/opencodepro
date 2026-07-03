@@ -47,6 +47,58 @@ pub struct StrategicReflection {
     pub confidence: f64,
 }
 
+/// A structured action to modify the project roadmap.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum ProposalAction {
+    /// Insert a new milestone at a specific position.
+    InsertMilestone {
+        name: String,
+        description: String,
+        after_milestone_id: Option<String>,
+    },
+    /// Delete a goal that is no longer relevant.
+    DeleteGoal {
+        goal_id: String,
+        rationale: String,
+    },
+    /// Change the priority of a goal or milestone.
+    Reprioritize {
+        target_id: String,
+        new_priority: String,
+    },
+    /// A general strategic pivot (e.g., changing the project's overall direction).
+    PivotTrajectory {
+        new_trajectory: String,
+        rationale: String,
+    },
+}
+
+/// A formal proposal for a strategic pivot in the project roadmap.
+/// This is the primary vehicle for human-in-the-loop approval.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StrategicProposal {
+    pub proposal_id: String,
+    pub project_id: String,
+    pub timestamp: u64,
+    /// The current state of the roadmap that triggered this proposal.
+    pub trigger_reflection: StrategicReflection,
+    /// The structured action to be taken if approved.
+    pub action: ProposalAction,
+    /// The expected impact on project health/trajectory.
+    pub expected_impact: String,
+    /// Current status: "Pending" / "Approved" / "Rejected".
+    pub status: ProposalStatus,
+    /// Reference to the architect who approved/rejected this.
+    pub reviewer: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum ProposalStatus {
+    Pending,
+    Approved,
+    Rejected,
+}
+
 // ---------------------------------------------------------------------------
 // StrategicReflector
 // ---------------------------------------------------------------------------
@@ -155,6 +207,39 @@ Respond ONLY with valid JSON matching this structure:
             risk_factors,
             recommendations,
             confidence,
+        })
+    }
+
+    /// Transforms a strategic reflection into a formal proposal for a roadmap pivot.
+    pub fn propose_pivot(
+        &self,
+        reflection: &StrategicReflection,
+        project_id: &str,
+    ) -> Option<StrategicProposal> {
+        // Only propose a pivot if there are concrete recommendations and confidence is acceptable.
+        let best_rec = reflection.recommendations.first()?;
+        if reflection.confidence < 0.6 {
+            return None;
+        }
+
+        Some(StrategicProposal {
+            proposal_id: format!("prop-{}-{}", project_id, std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs()),
+            project_id: project_id.to_string(),
+            timestamp: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs(),
+            trigger_reflection: reflection.clone(),
+            action: ProposalAction::PivotTrajectory {
+                new_trajectory: best_rec.action.clone(),
+                rationale: best_rec.rationale.clone(),
+            },
+            expected_impact: best_rec.rationale.clone(),
+            status: ProposalStatus::Pending,
+            reviewer: None,
         })
     }
 

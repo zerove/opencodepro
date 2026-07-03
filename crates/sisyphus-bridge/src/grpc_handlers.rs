@@ -193,6 +193,7 @@ impl SisyphusBridge for MySisyphusBridge {
                     kernel
                         .execute_goal(goal, &synthesized_sop_id, Some(tx.clone()))
                         .await
+                        .map_err(|e| e.to_string())
                         .map(|(r, report)| {
                             (
                                 format!("Result: {} | Cognition: {}", r, report),
@@ -222,6 +223,7 @@ impl SisyphusBridge for MySisyphusBridge {
                     kernel
                         .execute_with_cognition(&graph, start_node, &sop_id, None, Some(tx))
                         .await
+                        .map_err(|e| e.to_string())
                         .map(|(r, report, _)| {
                             (format!("Result: {} | Cognition: {}", r, report), sop_id)
                         })

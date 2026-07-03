@@ -372,7 +372,7 @@ mod tests {
             },
         ];
         for err in variants {
-            let s: String = err.into();
+            let s = err.to_string();
             assert!(!s.is_empty(), "conversion to string should not be empty");
         }
     }

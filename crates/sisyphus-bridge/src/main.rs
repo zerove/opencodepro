@@ -38,7 +38,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let auth_token = {
         let config = shared_config.read().map_err(|e| Box::new(std::io::Error::other(format!("Config lock poisoned: {e}"))) as Box<dyn std::error::Error>)?;
-        init_metrics(config.metrics.prometheus_port)?;
+        let _ = init_metrics(config.metrics.prometheus_port);
         config.auth_token.clone()
     };
 

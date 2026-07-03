@@ -23,6 +23,7 @@ sisyphus-tools-agent = { path = "../sisyphus-tools-agent" }
 sisyphus-tools-executor = { path = "../sisyphus-tools-executor" }
 sisyphus-mem = { path = "../sisyphus-mem" }
 sisyphus-intel = { path = "../sisyphus-intel" }
+	sisyphus-tools-llm-tools = { path = "../sisyphus-tools-llm-tools" }
 sisyphus-metrics = { path = "../sisyphus-metrics" }
 sisyphus-roadmap = { path = "../sisyphus-roadmap" }
 serde_json = { workspace = true }

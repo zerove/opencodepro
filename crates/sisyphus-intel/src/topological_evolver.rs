@@ -25,7 +25,7 @@ impl TopologicalSOPEvolver {
         graph: &SOPGraph,
         ops: &[EvolutionOp],
         tool_executor: Arc<dyn sisyphus_types::ToolExecutor>,
-    ) -> Result<SOPGraph, String> {
+    ) -> Result<SOPGraph, IntelError> {
         let mut new_graph = SOPGraph::new();
         let mut node_map = HashMap::new();
 
@@ -61,7 +61,7 @@ impl TopologicalSOPEvolver {
                         });
                         new_graph.graph[node_idx] = evolved_node;
                     } else {
-                        return Err(IntelError::NodeTypeMismatch { node_name: node_name.clone() }.into());
+                        return Err(IntelError::NodeTypeMismatch { node_name: node_name.clone() });
                     }
                 }
                 EvolutionOp::AddRetry {
@@ -211,7 +211,7 @@ impl TopologicalSOPEvolver {
 
         // Final check for cycles to preserve DAG invariant
         if petgraph::algo::is_cyclic_directed(&new_graph.graph) {
-            return Err(IntelError::EvolutionCycle.into());
+            return Err(IntelError::EvolutionCycle);
         }
 
         Ok(new_graph)
@@ -283,6 +283,7 @@ impl SOPEvolver for TopologicalSOPEvolver {
         // For now, we'll use a mock to demonstrate the structural change.
         let mock_executor = Arc::new(crate::mock::MockExecutor);
         self.apply_ops(graph, &ops, mock_executor)
+            .map_err(|e| e.to_string())
     }
 }
 

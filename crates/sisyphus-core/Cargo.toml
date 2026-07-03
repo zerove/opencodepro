@@ -15,6 +15,7 @@ petgraph = "0.6"
 tokio = { version = "1", features = ["full"] }
 async-trait = { workspace = true }
 serde_json = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
 tracing = { workspace = true }
 sisyphus-metrics = { path = "../sisyphus-metrics" }
 sisyphus-sandbox = { path = "../sisyphus-sandbox", optional = true }
@@ -27,10 +28,12 @@ sisyphus-tools-system = { path = "../sisyphus-tools-system" }
 sisyphus-tools-build = { path = "../sisyphus-tools-build" }
 sisyphus-roadmap = { path = "../sisyphus-roadmap" }
 thiserror = { workspace = true }
+dashmap = { workspace = true }
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["async_tokio"] }
 sisyphus-tools-llm = { path = "../sisyphus-tools-llm" }
+tempfile = "3.10"
 
 [[bin]]
 name = "integration_stress"
@@ -41,4 +44,3 @@ required-features = ["sandbox"]
 name = "core_benches"
 harness = false
 required-features = ["sandbox"]
-

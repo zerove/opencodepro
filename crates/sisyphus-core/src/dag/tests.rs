@@ -1,4 +1,5 @@
 use super::*;
+use dashmap::DashMap;
 use sisyphus_types::{
     CompositeGraph, GraphDependency, DataMapping, NodeOutput, SOPGraphConfig,
 };
@@ -165,7 +166,7 @@ fn test_build_dep_ctx_for() {
         execution_order: vec![],
     };
 
-    let mut accumulated = HashMap::new();
+    let accumulated = DashMap::new();
     accumulated.insert(
         "node_a".to_string(),
         NodeOutput(serde_json::Value::String("val_a".into())),
@@ -185,7 +186,7 @@ fn test_build_dep_ctx_for() {
     assert!(ctx_none.is_none());
 
     // Test with deps but missing source output
-    let accumulated_empty = HashMap::new();
+    let accumulated_empty = DashMap::new();
     let ctx_missing = build_dep_ctx_for("B", &composite, &accumulated_empty);
     assert!(ctx_missing.is_none());
 }
@@ -341,7 +342,7 @@ fn test_build_dep_ctx_for_multiple_sources() {
         execution_order: vec![],
     };
 
-    let mut accumulated = HashMap::new();
+    let accumulated = DashMap::new();
     accumulated.insert(
         "a_node".into(),
         NodeOutput(serde_json::Value::String("val_a".into())),
@@ -396,7 +397,7 @@ fn test_build_dep_ctx_for_single_source_multi_mapping() {
         execution_order: vec![],
     };
 
-    let mut accumulated = HashMap::new();
+    let accumulated = DashMap::new();
     accumulated.insert(
         "n1".into(),
         NodeOutput(serde_json::Value::String("v1".into())),

@@ -151,11 +151,6 @@ impl RoadmapManager {
     }
 
     /// Update a goal's status and automatically recalculate milestone status.
-    ///
-    /// If all goals in a milestone are completed, the milestone is marked as
-    /// `Completed`. If any goal is `InProgress`, the milestone is marked as
-    /// `InProgress`. If any goal is `Blocked`, the milestone is marked as
-    /// `Blocked`. Otherwise it stays `Pending`.
     pub async fn update_goal_status_with_propagation(
         &self,
         project_id: &str,
@@ -167,11 +162,11 @@ impl RoadmapManager {
         self.update_goal_status(project_id, milestone_id, phase_id, goal_id, status)
             .await?;
 
-        let mut project = self.get_project_or_err(project_id).await?;
+        let project = self.get_project_or_err(project_id).await?;
         let milestone = project
             .roadmap
             .milestones
-            .iter_mut()
+            .iter()
             .find(|m| m.id == milestone_id)
             .ok_or_else(|| {
                 RoadmapError::MilestoneNotFound(milestone_id.to_string(), project_id.to_string())
@@ -179,39 +174,38 @@ impl RoadmapManager {
 
         let all_goals: Vec<&GoalRef> = milestone.phases.iter().flat_map(|p| &p.goals).collect();
 
-        if all_goals.is_empty() {
-            milestone.status = MilestoneStatus::Pending;
+        let new_status = if all_goals.is_empty() {
+            MilestoneStatus::Pending
         } else if all_goals
             .iter()
             .all(|g| g.status == MilestoneStatus::Completed)
         {
-            milestone.status = MilestoneStatus::Completed;
+            MilestoneStatus::Completed
         } else if all_goals
             .iter()
             .any(|g| g.status == MilestoneStatus::Blocked)
         {
-            milestone.status = MilestoneStatus::Blocked;
+            MilestoneStatus::Blocked
         } else if all_goals
             .iter()
             .any(|g| g.status == MilestoneStatus::InProgress)
         {
-            milestone.status = MilestoneStatus::InProgress;
+            MilestoneStatus::InProgress
         } else {
-            milestone.status = MilestoneStatus::Pending;
-        }
+            MilestoneStatus::Pending
+        };
 
-        self.update_project(&project).await
+        self.update_milestone_status(project_id, milestone_id, new_status).await
     }
 
     /// Auto-propagate: update all milestone statuses based on their goal completion.
-    /// Useful as a batch repair after manual edits.
     pub async fn auto_propagate_all(&self, project_id: &str) -> Result<(), RoadmapError> {
-        let mut project = self.get_project_or_err(project_id).await?;
+        let project = self.get_project_or_err(project_id).await?;
 
-        for ms in &mut project.roadmap.milestones {
+        for ms in &project.roadmap.milestones {
             let all_goals: Vec<&GoalRef> = ms.phases.iter().flat_map(|p| &p.goals).collect();
 
-            ms.status = if all_goals.is_empty() {
+            let new_status = if all_goals.is_empty() {
                 MilestoneStatus::Pending
             } else if all_goals
                 .iter()
@@ -231,8 +225,10 @@ impl RoadmapManager {
             } else {
                 MilestoneStatus::Pending
             };
+            
+            self.update_milestone_status(project_id, &ms.id, new_status).await?;
         }
 
-        self.update_project(&project).await
+        Ok(())
     }
 }

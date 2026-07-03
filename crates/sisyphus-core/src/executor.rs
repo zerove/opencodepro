@@ -142,8 +142,29 @@ impl Executor {
             }
             tracing::debug!(node = %name, "Node result stored");
 
+            // Handle branching logic: if the node is a BranchSOPNode, only follow the chosen path.
+            let chosen_target = if let Some(node_weight) = sop_graph.graph.node_weight(node) {
+                if let Some(branch_node) = node_weight.as_any().downcast_ref::<sisyphus_types::BranchSOPNode>() {
+                    output.as_f64().map(|idx| NodeIndex::new(idx as usize))
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+
             for edge in sop_graph.graph.edges(node) {
                 let target = edge.target();
+                
+                if let Some(chosen) = chosen_target {
+                    if target != chosen {
+                        if let Some(degree) = in_degree.get_mut(&target) {
+                            *degree -= 1;
+                        }
+                        continue;
+                    }
+                }
+
                 if let Some(degree) = in_degree.get_mut(&target) {
                     *degree -= 1;
                     if *degree == 0 {

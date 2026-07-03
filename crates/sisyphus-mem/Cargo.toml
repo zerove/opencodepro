@@ -9,6 +9,7 @@ license = "MIT"
 [dependencies]
 lru = "0.12"
 parking_lot = "0.12"
+rayon = "1.10"
 sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "sqlite"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }

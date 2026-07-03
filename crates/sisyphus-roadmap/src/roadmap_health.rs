@@ -219,10 +219,10 @@ impl RoadmapManager {
             return Ok(health);
         }
 
-        let mut project = self.get_project_or_err(project_id).await?;
+        let project = self.get_project_or_err(project_id).await?;
 
-        for ms in &mut project.roadmap.milestones {
-            for ph in &mut ms.phases {
+        for ms in &project.roadmap.milestones {
+            for ph in &ms.phases {
                 let failed_in_phase: Vec<String> = ph
                     .goals
                     .iter()
@@ -242,7 +242,7 @@ impl RoadmapManager {
                     .map(|(i, _)| i)
                     .collect();
 
-                let to_block: Vec<usize> = ph
+                let to_block: Vec<(String, String, String)> = ph
                     .goals
                     .iter()
                     .enumerate()
@@ -260,16 +260,17 @@ impl RoadmapManager {
                         let any_failed_before = failed_positions.iter().any(|fp| *fp < *i);
                         depends_on_failed || any_failed_before
                     })
-                    .map(|(i, _)| i)
+                    .map(|(_, g)| (ms.id.clone(), ph.id.clone(), g.goal_id.clone()))
                     .collect();
 
-                for i in to_block {
-                    ph.goals[i].status = MilestoneStatus::Blocked;
+                for (m_id, p_id, g_id) in to_block {
+                    self.update_goal_status(project_id, &m_id, &p_id, &g_id, MilestoneStatus::Blocked).await?;
                 }
             }
         }
 
-        self.update_project(&project).await?;
+        // Ensure milestone statuses are propagated after blocking goals
+        self.auto_propagate_all(project_id).await?;
 
         // Re-evaluate health after blocking
         self.evaluate_health(project_id).await

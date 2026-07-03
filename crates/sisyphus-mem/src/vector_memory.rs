@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
 use serde_json::Value;
+use rayon::prelude::*;
 use sisyphus_types::VectorRecord;
 use sqlx::{Row, SqlitePool};
 
@@ -121,31 +122,39 @@ impl VectorMemoryStore {
             .await
             .context("Failed to fetch vectors for similarity search")?;
 
-        let mut scored_vectors = Vec::new();
+        let mut scored_vectors: Vec<ScoredVector> = rows
+            .into_par_iter()
+            .filter_map(|row| {
+                let key: String = row.get("id");
+                let embedding_bytes: Vec<u8> = row.get("embedding");
+                let metadata_str: String = row.get("metadata");
+                let timestamp: u64 = row.get("timestamp");
 
-        for row in rows {
-            let key: String = row.get("id");
-            let embedding_bytes: Vec<u8> = row.get("embedding");
-            let metadata_str: String = row.get("metadata");
-            let timestamp: u64 = row.get("timestamp");
+                // 直接在字节流上计算相似度，避免分配 Vec<f32>
+                let score = self.cosine_similarity_bytes(query_embedding, &embedding_bytes);
 
-            // Convert bytes back to Vec<f32>
-            let embedding: Vec<f32> = embedding_bytes
-                .chunks_exact(4)
-                .map(|chunk| f32::from_le_bytes(chunk.try_into().unwrap()))
-                .collect();
+                let embedding: Vec<f32> = embedding_bytes
+                    .chunks_exact(4)
+                    .map(|chunk| f32::from_le_bytes(chunk.try_into().unwrap()))
+                    .collect();
 
-            let score = self.cosine_similarity(query_embedding, &embedding);
+                let metadata = match serde_json::from_str(&metadata_str) {
+                    Ok(m) => m,
+                    Err(_) => return None,
+                };
 
-            let record = VectorRecord {
-                key: key.clone(),
-                embedding,
-                metadata: serde_json::from_str(&metadata_str)?,
-                timestamp,
-            };
-
-            scored_vectors.push(ScoredVector { key, score, record });
-        }
+                Some(ScoredVector {
+                    key: key.clone(),
+                    score,
+                    record: VectorRecord {
+                        key,
+                        embedding,
+                        metadata,
+                        timestamp,
+                    },
+                })
+            })
+            .collect();
 
         // Sort by score descending
         scored_vectors.sort_by(|a, b| {
@@ -206,14 +215,25 @@ impl VectorMemoryStore {
         Ok(filtered_vectors)
     }
 
-    fn cosine_similarity(&self, a: &[f32], b: &[f32]) -> f32 {
-        if a.len() != b.len() || a.is_empty() {
+    fn cosine_similarity_bytes(&self, a: &[f32], b_bytes: &[u8]) -> f32 {
+        if b_bytes.len() != a.len() * 4 || a.is_empty() {
             return 0.0;
         }
 
-        let dot_product: f32 = a.iter().zip(b.iter()).map(|(x, y)| x * y).sum();
-        let norm_a: f32 = a.iter().map(|x| x * x).sum::<f32>().sqrt();
-        let norm_b: f32 = b.iter().map(|x| x * x).sum::<f32>().sqrt();
+        let mut dot_product = 0.0;
+        let mut norm_b_sq = 0.0;
+        let mut norm_a_sq = 0.0;
+
+        for (i, chunk) in b_bytes.chunks_exact(4).enumerate() {
+            let val_b = f32::from_le_bytes(chunk.try_into().unwrap());
+            let val_a = a[i];
+            dot_product += val_a * val_b;
+            norm_b_sq += val_b * val_b;
+            norm_a_sq += val_a * val_a;
+        }
+
+        let norm_a = norm_a_sq.sqrt();
+        let norm_b = norm_b_sq.sqrt();
 
         if norm_a == 0.0 || norm_b == 0.0 {
             return 0.0;

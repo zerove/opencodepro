@@ -1,6 +1,8 @@
 use async_trait::async_trait;
 use petgraph::graph::NodeIndex;
 use sisyphus_types::{CompositeGraph, ExecutionContext, SOPGraph, SOPGraphConfig};
+use sisyphus_tools_llm::metis::LlmClient;
+use std::collections::HashMap;
 use std::sync::Arc;
 
 // ---------------------------------------------------------------------------
@@ -242,9 +244,87 @@ impl FlowSynthesizer for GoalDrivenSynthesizer {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Composite (parallel) synthesis — multiple goals → CompositeGraph
-// ---------------------------------------------------------------------------
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+pub struct DynamicSopPlan {
+    pub nodes: Vec<DynamicNode>,
+    pub edges: Vec<DynamicEdge>,
+    pub start_node: String,
+}
+
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+pub struct DynamicNode {
+    pub id: String,
+    pub name: String,
+    pub tool_id: String,
+    pub args: serde_json::Value,
+}
+
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+pub struct DynamicEdge {
+    pub from: String,
+    pub to: String,
+}
+
+pub struct DynamicSopSynthesizer {
+    pub tool_executor: Arc<dyn sisyphus_types::ToolExecutor>,
+    pub llm_client: Arc<dyn LlmClient>,
+}
+
+impl DynamicSopSynthesizer {
+    pub fn new(tool_executor: Arc<dyn sisyphus_types::ToolExecutor>, llm_client: Arc<dyn LlmClient>) -> Self {
+        Self { tool_executor, llm_client }
+    }
+}
+
+#[async_trait]
+impl FlowSynthesizer for DynamicSopSynthesizer {
+    async fn synthesize(
+        &self,
+        goal: &str,
+        _context: &ExecutionContext,
+        _mode: sisyphus_types::WorkMode,
+    ) -> Result<SynthesisResult, String> {
+        let prompt = format!(
+            "Synthesize a Standard Operating Procedure (SOP) for the following goal: '{}'.\
+            Return a JSON object with 'nodes' (id, name, tool_id, args), 'edges' (from, to), and 'start_node'.\
+            Ensure it is a valid DAG.", 
+            goal
+        );
+
+        let response = self.llm_client.generate(&prompt).await
+            .map_err(|e| format!("LLM synthesis failed: {e}"))?;
+
+        let plan: DynamicSopPlan = serde_json::from_str(&response)
+            .map_err(|e| format!("Failed to parse SOP JSON: {e}. Response was: {response}"))?;
+
+        let mut graph = SOPGraph::new();
+        let mut id_map = HashMap::new();
+
+        for node in &plan.nodes {
+            let idx = graph.add_node(Arc::new(sisyphus_types::WasmSOPNode {
+                name: node.name.clone(),
+                tool_id: node.tool_id.clone(),
+                fuel_limit: 1_000_000,
+                executor: self.tool_executor.clone(),
+            }));
+            id_map.insert(node.id.clone(), idx);
+        }
+
+        for edge in &plan.edges {
+            let src = id_map.get(&edge.from).ok_or_else(|| format!("Source node {} not found", edge.from))?;
+            let tgt = id_map.get(&edge.to).ok_or_else(|| format!("Target node {} not found", edge.to))?;
+            graph.add_edge(*src, *tgt);
+        }
+
+        let start_node = id_map.get(&plan.start_node).ok_or_else(|| "Start node not found".to_string())?;
+
+        Ok(SynthesisResult {
+            graph,
+            start_node: *start_node,
+            plan_description: format!("Dynamic LLM-generated SOP with {} nodes", plan.nodes.len()),
+        })
+    }
+}
 
 /// Synthesize multiple goals into a single CompositeGraph.
 /// Each goal becomes an independent sub-graph with no cross-dependencies,
@@ -262,6 +342,113 @@ pub async fn synthesize_composite(
         composite.add_graph(&sop_id, config);
     }
     Ok(composite)
+}
+
+pub struct MetaLearningSynthesizer {
+    pub inner: Arc<dyn FlowSynthesizer>,
+    pub meta_learner: Arc<std::sync::Mutex<sisyphus_tools_llm_tools::meta_learner::MetaLearner>>,
+}
+
+impl MetaLearningSynthesizer {
+    pub fn new(inner: Arc<dyn FlowSynthesizer>, meta_learner: Arc<std::sync::Mutex<sisyphus_tools_llm_tools::meta_learner::MetaLearner>>) -> Self {
+        Self { inner, meta_learner }
+    }
+}
+
+#[async_trait]
+impl FlowSynthesizer for MetaLearningSynthesizer {
+    async fn synthesize(
+        &self,
+        goal: &str,
+        context: &ExecutionContext,
+        mode: sisyphus_types::WorkMode,
+    ) -> Result<SynthesisResult, String> {
+        let best_strategy = {
+            let ml = self.meta_learner.lock().unwrap();
+            ml.best_strategy(&serde_json::json!({ "goal": goal }))
+        };
+
+        let augmented_goal = if let Some(ref strategy) = best_strategy {
+            format!("Goal: {}\n(Hint: Based on historical success, the strategy '{}' is recommended for similar goals)", goal, strategy)
+        } else {
+            goal.to_string()
+        };
+
+        tracing::info!(goal = %goal, hint = ?best_strategy, "Synthesizing with meta-learning hint");
+
+        self.inner.synthesize(&augmented_goal, context, mode).await
+    }
+}
+
+pub struct StrategicSopSynthesizer {
+    pub inner: Arc<dyn FlowSynthesizer>,
+    pub simulator: Arc<dyn crate::Simulator>,
+}
+
+impl StrategicSopSynthesizer {
+    pub fn new(inner: Arc<dyn FlowSynthesizer>, simulator: Arc<dyn crate::Simulator>) -> Self {
+        Self { inner, simulator }
+    }
+}
+
+#[async_trait]
+impl FlowSynthesizer for StrategicSopSynthesizer {
+    async fn synthesize(
+        &self,
+        goal: &str,
+        context: &ExecutionContext,
+        mode: sisyphus_types::WorkMode,
+    ) -> Result<SynthesisResult, String> {
+        let directives = [
+            "", 
+            "\n(Strategic Directive: Prioritize efficiency and minimize node count to reduce cost)",
+            "\n(Strategic Directive: Prioritize robustness; include comprehensive validation and check nodes)",
+        ];
+
+        let mut candidates = Vec::new();
+        for directive in directives {
+            let augmented_goal = format!("{}{}", goal, directive);
+            if let Ok(res) = self.inner.synthesize(&augmented_goal, context, mode).await {
+                candidates.push(res);
+            }
+        }
+
+        if candidates.is_empty() {
+            return Err("Failed to synthesize any candidate SOPs".into());
+        }
+
+        let mut best_result = None;
+        let mut max_score = f64::NEG_INFINITY;
+
+        for res in candidates {
+            let sim = self.simulator.simulate(&res.graph, context, "strategic_eval").await?;
+            
+            // Scoring: Prob is primary, Cost is secondary penalty
+            // Prob (0.0-1.0) * 1000 - Cost (u64)
+            let score = (sim.success_probability * 1000.0) - (sim.estimated_cost as f64);
+            
+            tracing::info!(
+                goal = %goal,
+                prob = sim.success_probability,
+                cost = sim.estimated_cost,
+                score = score,
+                "Candidate evaluation completed"
+            );
+
+            if score > max_score {
+                max_score = score;
+                best_result = Some(res);
+            }
+        }
+
+        let mut final_res = best_result.ok_or_else(|| "No valid candidate selected".to_string())?;
+        final_res.plan_description = format!(
+            "Strategic selection (Score: {:.2}): {}", 
+            max_score, final_res.plan_description
+        );
+
+        Ok(final_res)
+    }
 }
 
 #[cfg(test)]

@@ -29,8 +29,4 @@ pub enum TypesError {
     ConfigValidationError(String),
 }
 
-impl From<TypesError> for String {
-    fn from(e: TypesError) -> Self {
-        e.to_string()
-    }
-}
+

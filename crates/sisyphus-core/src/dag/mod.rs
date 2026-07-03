@@ -1,6 +1,7 @@
 //! DAG execution engine — dependency resolution, composite scheduling, and
 //! cross-graph data flow.
 
+use dashmap::DashMap;
 use petgraph::algo::toposort;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -81,7 +82,7 @@ impl DependencyResolver {
 pub(crate) fn build_dep_ctx_for(
     sop_id: &str,
     composite: &CompositeGraph,
-    accumulated: &HashMap<String, NodeOutput>,
+    accumulated: &DashMap<String, NodeOutput>,
 ) -> Option<Arc<ExecutionContext>> {
     let ctx = ExecutionContext::new();
     let mut has_deps = false;

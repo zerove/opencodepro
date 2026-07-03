@@ -11,7 +11,8 @@ Foundation types and configuration for the Sisyphus workspace.
 ## CONVENTIONS
 - Config changes must be synchronized with `config.example.toml` and `book/src/configuration.md`.
 - Use `thiserror` for all new `TypesError` variants.
-- Maintain `From<TypesError> for String` for legacy compatibility.
+- All error-to-String conversions must use `.to_string()` (from `Display` trait) explicitly.
+  Never add `From<ErrorType> for String` impls.
 
 ## COMMANDS
 ```bash

@@ -16,30 +16,21 @@ pub struct ProviderResponse {
 }
 
 /// Error from a provider call.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, thiserror::Error)]
 pub enum ProviderError {
     /// Transient error — the caller should retry or fall back.
+    #[error("Transient: {0}")]
     Transient(String),
     /// Permanent error — do not retry with this provider.
+    #[error("Permanent: {0}")]
     Permanent(String),
     /// Rate limited — wait before retrying.
+    #[error("Rate limited: {0}")]
     RateLimited(String),
     /// Authentication failure.
+    #[error("Auth: {0}")]
     Auth(String),
 }
-
-impl std::fmt::Display for ProviderError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ProviderError::Transient(msg) => write!(f, "Transient: {msg}"),
-            ProviderError::Permanent(msg) => write!(f, "Permanent: {msg}"),
-            ProviderError::RateLimited(msg) => write!(f, "Rate limited: {msg}"),
-            ProviderError::Auth(msg) => write!(f, "Auth: {msg}"),
-        }
-    }
-}
-
-impl std::error::Error for ProviderError {}
 
 /// A single chat message.
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -9,6 +9,8 @@ license = "MIT"
 [dependencies]
 sisyphus-types = { path = "../sisyphus-types" }
 sisyphus-metrics = { path = "../sisyphus-metrics" }
+	sisyphus-tools-llm = { path = "../sisyphus-tools-llm" }
+sisyphus-tools-llm-tools = { path = "../sisyphus-tools-llm-tools" }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 async-trait = { workspace = true }

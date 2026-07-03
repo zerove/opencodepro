@@ -2,33 +2,18 @@
 // IntelError — typed error for the intel crate
 // ---------------------------------------------------------------------------
 
-#[derive(Debug)]
+use thiserror::Error;
+
+#[derive(Debug, Error)]
 pub enum IntelError {
+    #[error("Node {node_name} is not a WasmSOPNode")]
     NodeTypeMismatch { node_name: String },
+
+    #[error("Evolution resulted in a cycle, violating DAG invariant")]
     EvolutionCycle,
+
+    #[error("Node '{name}' not found in graph")]
     NodeNotFound { name: String },
 }
 
-impl std::fmt::Display for IntelError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            IntelError::NodeTypeMismatch { node_name } => {
-                write!(f, "Node {} is not a WasmSOPNode", node_name)
-            }
-            IntelError::EvolutionCycle => {
-                write!(f, "Evolution resulted in a cycle, violating DAG invariant")
-            }
-            IntelError::NodeNotFound { name } => {
-                write!(f, "Node '{}' not found in graph", name)
-            }
-        }
-    }
-}
 
-impl std::error::Error for IntelError {}
-
-impl From<IntelError> for String {
-    fn from(e: IntelError) -> Self {
-        e.to_string()
-    }
-}

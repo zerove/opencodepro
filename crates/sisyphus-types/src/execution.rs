@@ -88,6 +88,15 @@ pub enum ExecutionEvent {
     ExecutionComplete {
         result: NodeOutput,
     },
+    /// A status update from the cognitive loop (e.g., "Predicting", "Reflecting").
+    CognitiveStep {
+        step: String,
+        message: String,
+    },
+    /// The cognitive loop has converged and completed.
+    CognitiveComplete {
+        report: String,
+    },
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -111,6 +120,7 @@ use crate::types::SisyphusNotepad;
 pub struct ExecutionContext {
     pub results: DashMap<String, NodeOutput>,
     pub notepad: Arc<RwLock<SisyphusNotepad>>,
+    pub last_node_completed: RwLock<Option<String>>,
 }
 
 impl Default for ExecutionContext {
@@ -124,6 +134,7 @@ impl ExecutionContext {
         Self {
             results: DashMap::new(),
             notepad: Arc::new(RwLock::new(SisyphusNotepad::default())),
+            last_node_completed: RwLock::new(None),
         }
     }
 
@@ -133,15 +144,25 @@ impl ExecutionContext {
         Self {
             results: DashMap::with_capacity(n),
             notepad: Arc::new(RwLock::new(SisyphusNotepad::default())),
+            last_node_completed: RwLock::new(None),
         }
     }
 
     pub fn set_result(&self, node_name: String, output: NodeOutput) {
-        self.results.insert(node_name, output);
+        self.results.insert(node_name.clone(), output);
+        if let Ok(mut last) = self.last_node_completed.write() {
+            *last = Some(node_name);
+        }
     }
 
     pub fn get_result(&self, node_name: &str) -> Option<NodeOutput> {
         self.results.get(node_name).map(|r| r.clone())
+    }
+
+    /// Returns the output of the most recently completed node.
+    pub fn last_output(&self) -> Option<NodeOutput> {
+        let last_node = self.last_node_completed.read().ok()?.clone();
+        last_node.and_then(|name| self.get_result(&name))
     }
 
     pub fn write_notepad(&self, section: String, content: String) {

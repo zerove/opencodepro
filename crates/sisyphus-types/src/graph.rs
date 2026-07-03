@@ -9,32 +9,23 @@ use crate::TypesError;
 /// A data mapping from a source graph node output to a target graph parameter.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct DataMapping {
-    /// Node name in the source graph whose output is used.
     pub source_node: String,
-    /// Target placeholder (e.g. "{{source.output}}") that will be interpolated
-    /// into the target graph's execution context.
     pub target_placeholder: String,
 }
 
 /// Describes a dependency between two SOP graphs.
-/// Graph B (target_sop_id) depends on Graph A (source_sop_id).
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct GraphDependency {
     pub source_sop_id: String,
     pub target_sop_id: String,
-    /// How source node outputs map into the target graph's context.
     pub mappings: Vec<DataMapping>,
 }
 
 /// A composite workflow: multiple SOP graphs with cross-graph dependencies.
-/// The kernel executes graphs in topological order, injecting dependency
-/// outputs into each graph's ExecutionContext before execution.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct CompositeGraph {
     pub graphs: HashMap<String, SOPGraphConfig>,
     pub dependencies: Vec<GraphDependency>,
-    /// Ordered list of sop_ids to execute (resolved by DependencyResolver).
-    /// Empty means "resolve from dependencies".
     pub execution_order: Vec<String>,
 }
 
@@ -72,6 +63,10 @@ pub enum NodeKind {
         child: Box<NodeKind>,
         max_retries: u32,
     },
+    Branch {
+        branches: std::collections::HashMap<String, usize>,
+        default_next: usize,
+    },
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -80,7 +75,7 @@ pub struct SOPNodeConfig {
     pub kind: NodeKind,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
 pub struct SOPGraphConfig {
     pub nodes: Vec<SOPNodeConfig>,
     pub edges: Vec<(usize, usize)>,
@@ -121,6 +116,7 @@ impl SOPGraphConfig {
 #[derive(Clone)]
 pub struct SOPGraph {
     pub graph: DiGraph<Arc<dyn SOPNode>, ()>,
+    pub start_node: NodeIndex,
 }
 
 impl Default for SOPGraph {
@@ -133,11 +129,12 @@ impl SOPGraph {
     pub fn new() -> Self {
         Self {
             graph: DiGraph::new(),
+            start_node: NodeIndex::new(0), // Note: this is a placeholder; must be updated by adding nodes
         }
     }
 
     pub fn from_config(config: &SOPGraphConfig, executor: Arc<dyn crate::node::ToolExecutor>) -> Result<Self, TypesError> {
-        let mut graph = SOPGraph::new();
+        let mut graph = DiGraph::new();
         let mut node_indices = Vec::new();
 
         fn build_node(
@@ -160,6 +157,11 @@ impl SOPGraph {
                     child: build_node(child, name, executor),
                     max_retries: *max_retries,
                 }),
+                NodeKind::Branch { branches, default_next } => Arc::new(crate::node::BranchSOPNode {
+                    name: name.to_string(),
+                    branches: branches.clone(),
+                    default_next: *default_next,
+                }),
             }
         }
 
@@ -180,10 +182,15 @@ impl SOPGraph {
                     "edge target index {target} out of bounds (node count: {node_count})"
                 ))
             })?;
-            graph.add_edge(src, tgt);
+            graph.add_edge(src, tgt, ());
         }
 
-        Ok(graph)
+        Ok(SOPGraph {
+            graph,
+            start_node: node_indices.first().cloned().ok_or_else(|| {
+                TypesError::GraphError("Graph config must contain at least one node".into())
+            })?,
+        })
     }
 
     pub fn add_node(&mut self, node: Arc<dyn SOPNode>) -> NodeIndex {

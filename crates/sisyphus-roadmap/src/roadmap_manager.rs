@@ -4,6 +4,7 @@ use sisyphus_types::{GoalRef, Milestone, MilestoneStatus, Phase, Project, Roadma
 use std::sync::Arc;
 
 use crate::RoadmapError;
+use crate::strategic_reflection::ProposalAction;
 
 // ---------------------------------------------------------------------------
 // Key conventions
@@ -12,9 +13,34 @@ use crate::RoadmapError;
 /// Key storing the index of all project IDs.
 const PROJECTS_INDEX_KEY: &str = "roadmap:projects";
 
-/// Build a key for a specific project.
+/// Project metadata key.
 fn project_key(id: &str) -> String {
     format!("roadmap:project:{}", id)
+}
+
+/// Project milestone IDs list key.
+fn project_milestones_key(id: &str) -> String {
+    format!("roadmap:project:{}:milestones", id)
+}
+
+/// Milestone metadata key.
+fn milestone_key(id: &str) -> String {
+    format!("roadmap:milestone:{}", id)
+}
+
+/// Milestone phase IDs list key.
+fn milestone_phases_key(id: &str) -> String {
+    format!("roadmap:milestone:{}:phases", id)
+}
+
+/// Phase metadata key.
+fn phase_key(id: &str) -> String {
+    format!("roadmap:phase:{}", id)
+}
+
+/// Phase goal refs list key.
+fn phase_goals_key(id: &str) -> String {
+    format!("roadmap:phase:{}:goals", id)
 }
 
 // ---------------------------------------------------------------------------
@@ -23,10 +49,6 @@ fn project_key(id: &str) -> String {
 
 /// Strategic planning manager that provides CRUD operations over a
 /// Project → Milestone → Phase → Goal hierarchy, persisted via MfsStore.
-///
-/// # Key conventions
-/// - `roadmap:projects` — JSON array of all project IDs (index).
-/// - `roadmap:project:{id}` — JSON-serialised `Project` (single source of truth).
 pub struct RoadmapManager {
     pub(crate) store: Arc<MfsStore>,
 }
@@ -40,8 +62,6 @@ impl RoadmapManager {
     // ── Project CRUD ────────────────────────────────────────────────
 
     /// Create a new project and persist it.
-    ///
-    /// Returns an error if a project with the same `id` already exists.
     pub async fn create_project(
         &self,
         id: &str,
@@ -56,8 +76,18 @@ impl RoadmapManager {
         }
 
         let project = Project::new(id.to_string(), name.to_string(), description.to_string());
-        let value = serde_json::to_value(&project)?;
-        self.store.set_state_json(&key, value).await?;
+        
+        // Persist project metadata
+        let meta = serde_json::json!({
+            "id": project.id,
+            "name": project.name,
+            "description": project.description,
+        });
+        self.store.set_state_json(&key, meta).await?;
+
+        // Initialize empty milestone list
+        self.store.set_state_json(&project_milestones_key(id), serde_json::json!([]))
+            .await?;
 
         // Update project index
         self.add_to_index(id).await?;
@@ -65,14 +95,85 @@ impl RoadmapManager {
         Ok(project)
     }
 
-    /// Retrieve a project by its ID.
+    /// Retrieve a project by its ID and hydrate it from granular storage.
     pub async fn get_project(&self, id: &str) -> Result<Option<Project>, RoadmapError> {
         let key = project_key(id);
-        let value = self.store.get_state_json(&key).await?;
-        match value {
-            Some(v) if !v.is_null() => Ok(Some(serde_json::from_value(v)?)),
-            _ => Ok(None),
+        let meta_val = self.store.get_state_json(&key).await?;
+        
+        let Some(meta) = meta_val.filter(|v| !v.is_null()) else {
+            return Ok(None);
+        };
+
+        let project_id = meta["id"].as_str().ok_or(RoadmapError::Internal("Invalid project id".into()))?.to_string();
+        let name = meta["name"].as_str().ok_or(RoadmapError::Internal("Invalid project name".into()))?.to_string();
+        let description = meta["description"].as_str().ok_or(RoadmapError::Internal("Invalid project description".into()))?.to_string();
+
+        // Hydrate Roadmap
+        let milestones_val = self.store.get_state_json(&project_milestones_key(id)).await?;
+        let milestone_ids: Vec<String> = milestones_val
+            .and_then(|v| v.as_array().cloned())
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|v| v.as_str().map(String::from))
+            .collect();
+
+        let mut milestones = Vec::with_capacity(milestone_ids.len());
+        for m_id in milestone_ids {
+            // Hydrate Milestone
+            let m_val = self.store.get_state_json(&milestone_key(&m_id)).await?;
+            let Some(m_meta) = m_val.filter(|v| !v.is_null()) else { continue; };
+            
+            let m_name = m_meta["name"].as_str().ok_or(RoadmapError::Internal("Invalid milestone name".into()))?.to_string();
+            let m_status = serde_json::from_value(m_meta["status"].clone()).map_err(|_| RoadmapError::Internal("Invalid status".into()))?;
+
+            // Hydrate Phases
+            let p_ids_val = self.store.get_state_json(&milestone_phases_key(&m_id)).await?;
+            let phase_ids: Vec<String> = p_ids_val
+                .and_then(|v| v.as_array().cloned())
+                .unwrap_or_default()
+                .into_iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect();
+
+            let mut phases = Vec::with_capacity(phase_ids.len());
+            for p_id in phase_ids {
+                // Hydrate Phase
+                let p_val = self.store.get_state_json(&phase_key(&p_id)).await?;
+                let Some(p_meta) = p_val.filter(|v| !v.is_null()) else { continue; };
+                
+                let p_name = p_meta["name"].as_str().ok_or(RoadmapError::Internal("Invalid phase name".into()))?.to_string();
+                let p_deps = p_meta["depends_on"].as_array()
+                    .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+                    .unwrap_or_default();
+
+                // Hydrate Goals
+                let g_val = self.store.get_state_json(&phase_goals_key(&p_id)).await?;
+                let goals: Vec<sisyphus_types::GoalRef> = g_val
+                    .and_then(|v| serde_json::from_value(v).ok())
+                    .unwrap_or_default();
+
+                phases.push(sisyphus_types::Phase {
+                    id: p_id,
+                    name: p_name,
+                    goals,
+                    depends_on: p_deps,
+                });
+            }
+
+            milestones.push(sisyphus_types::Milestone {
+                id: m_id,
+                name: m_name,
+                phases,
+                status: m_status,
+            });
         }
+
+        Ok(Some(Project {
+            id: project_id,
+            name,
+            description,
+            roadmap: sisyphus_types::Roadmap { milestones },
+        }))
     }
 
     /// Update an existing project (replaces the full document).
@@ -130,29 +231,64 @@ impl RoadmapManager {
         project_id: &str,
         milestone: Milestone,
     ) -> Result<(), RoadmapError> {
-        let mut project = self.get_project_or_err(project_id).await?;
-        project.roadmap.milestones.push(milestone);
-        self.update_project(&project).await
+        // 1. Persist Milestone metadata
+        let m_key = milestone_key(&milestone.id);
+        let m_meta = serde_json::json!({
+            "id": milestone.id,
+            "name": milestone.name,
+            "status": milestone.status,
+        });
+        self.store.set_state_json(&m_key, m_meta).await?;
+
+        // 2. Persist Phases and their Goals
+        let mut phase_ids = Vec::new();
+        for phase in &milestone.phases {
+            phase_ids.push(phase.id.clone());
+            
+            let p_key = phase_key(&phase.id);
+            let p_meta = serde_json::json!({
+                "id": phase.id,
+                "name": phase.name,
+                "depends_on": phase.depends_on,
+            });
+            self.store.set_state_json(&p_key, p_meta).await?;
+            self.store.set_state_json(&phase_goals_key(&phase.id), serde_json::to_value(&phase.goals)?).await?;
+        }
+
+        // 3. Update milestone's phase list
+        self.store.set_state_json(&milestone_phases_key(&milestone.id), serde_json::json!(phase_ids)).await?;
+
+        // 4. Update project's milestone list
+        let m_list_key = project_milestones_key(project_id);
+        let mut m_ids = self.store.get_state_json(&m_list_key).await?
+            .and_then(|v| v.as_array().cloned())
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|v| v.as_str().map(String::from))
+            .collect::<Vec<_>>();
+
+        if !m_ids.contains(&milestone.id) {
+            m_ids.push(milestone.id.clone());
+            self.store.set_state_json(&m_list_key, serde_json::json!(m_ids)).await?;
+        }
+
+        Ok(())
     }
 
     /// Update the status of a milestone within a project.
     pub async fn update_milestone_status(
         &self,
-        project_id: &str,
+        _project_id: &str,
         milestone_id: &str,
         status: MilestoneStatus,
     ) -> Result<(), RoadmapError> {
-        let mut project = self.get_project_or_err(project_id).await?;
-        let milestone = project
-            .roadmap
-            .milestones
-            .iter_mut()
-            .find(|m| m.id == milestone_id)
-            .ok_or_else(|| {
-                RoadmapError::MilestoneNotFound(milestone_id.to_string(), project_id.to_string())
-            })?;
-        milestone.status = status;
-        self.update_project(&project).await
+        let key = milestone_key(milestone_id);
+        let mut m_meta = self.store.get_state_json(&key).await?
+            .ok_or_else(|| RoadmapError::MilestoneNotFound(milestone_id.to_string(), "unknown".to_string()))?;
+        
+        m_meta["status"] = serde_json::to_value(status)?;
+        self.store.set_state_json(&key, m_meta).await?;
+        Ok(())
     }
 
     /// Remove a milestone from a project.
@@ -161,16 +297,38 @@ impl RoadmapManager {
         project_id: &str,
         milestone_id: &str,
     ) -> Result<(), RoadmapError> {
-        let mut project = self.get_project_or_err(project_id).await?;
-        let len_before = project.roadmap.milestones.len();
-        project.roadmap.milestones.retain(|m| m.id != milestone_id);
-        if project.roadmap.milestones.len() == len_before {
-            return Err(RoadmapError::MilestoneNotFound(
-                milestone_id.to_string(),
-                project_id.to_string(),
-            ));
+        let m_list_key = project_milestones_key(project_id);
+        let mut m_ids = self.store.get_state_json(&m_list_key).await?
+            .and_then(|v| v.as_array().cloned())
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|v| v.as_str().map(String::from))
+            .collect::<Vec<_>>();
+
+        if !m_ids.contains(&milestone_id.to_string()) {
+            return Err(RoadmapError::MilestoneNotFound(milestone_id.to_string(), project_id.to_string()));
         }
-        self.update_project(&project).await
+
+        m_ids.retain(|id| id != milestone_id);
+        self.store.set_state_json(&m_list_key, serde_json::json!(m_ids)).await?;
+
+        // Clean up milestone and descendants
+        let p_ids_val = self.store.get_state_json(&milestone_phases_key(milestone_id)).await?;
+        let phase_ids: Vec<String> = p_ids_val
+            .and_then(|v| v.as_array().cloned())
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|v| v.as_str().map(String::from))
+            .collect();
+
+        for p_id in phase_ids {
+            self.store.set_state_json(&phase_key(&p_id), serde_json::Value::Null).await?;
+            self.store.set_state_json(&phase_goals_key(&p_id), serde_json::Value::Null).await?;
+        }
+        self.store.set_state_json(&milestone_key(milestone_id), serde_json::Value::Null).await?;
+        self.store.set_state_json(&milestone_phases_key(milestone_id), serde_json::Value::Null).await?;
+
+        Ok(())
     }
 
     // ── Phase operations ────────────────────────────────────────────
@@ -178,21 +336,37 @@ impl RoadmapManager {
     /// Add a phase to a milestone within a project.
     pub async fn add_phase(
         &self,
-        project_id: &str,
+        _project_id: &str,
         milestone_id: &str,
         phase: Phase,
     ) -> Result<(), RoadmapError> {
-        let mut project = self.get_project_or_err(project_id).await?;
-        let milestone = project
-            .roadmap
-            .milestones
-            .iter_mut()
-            .find(|m| m.id == milestone_id)
-            .ok_or_else(|| {
-                RoadmapError::MilestoneNotFound(milestone_id.to_string(), project_id.to_string())
-            })?;
-        milestone.phases.push(phase);
-        self.update_project(&project).await
+        // 1. Persist Phase metadata
+        let p_key = phase_key(&phase.id);
+        let p_meta = serde_json::json!({
+            "id": phase.id,
+            "name": phase.name,
+            "depends_on": phase.depends_on,
+        });
+        self.store.set_state_json(&p_key, p_meta).await?;
+
+        // 2. Persist Goals
+        self.store.set_state_json(&phase_goals_key(&phase.id), serde_json::to_value(&phase.goals)?).await?;
+
+        // 3. Update milestone's phase list
+        let p_list_key = milestone_phases_key(milestone_id);
+        let mut p_ids = self.store.get_state_json(&p_list_key).await?
+            .and_then(|v| v.as_array().cloned())
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|v| v.as_str().map(String::from))
+            .collect::<Vec<_>>();
+
+        if !p_ids.contains(&phase.id) {
+            p_ids.push(phase.id.clone());
+            self.store.set_state_json(&p_list_key, serde_json::json!(p_ids)).await?;
+        }
+
+        Ok(())
     }
 
     // ── Goal operations ─────────────────────────────────────────────
@@ -200,63 +374,43 @@ impl RoadmapManager {
     /// Add a goal to a phase within a milestone.
     pub async fn add_goal(
         &self,
-        project_id: &str,
-        milestone_id: &str,
+        _project_id: &str,
+        _milestone_id: &str,
         phase_id: &str,
         goal: GoalRef,
     ) -> Result<(), RoadmapError> {
-        let mut project = self.get_project_or_err(project_id).await?;
-        let milestone = project
-            .roadmap
-            .milestones
-            .iter_mut()
-            .find(|m| m.id == milestone_id)
-            .ok_or_else(|| {
-                RoadmapError::MilestoneNotFound(milestone_id.to_string(), project_id.to_string())
-            })?;
-        let phase = milestone
-            .phases
-            .iter_mut()
-            .find(|p| p.id == phase_id)
-            .ok_or_else(|| {
-                RoadmapError::PhaseNotFound(phase_id.to_string(), milestone_id.to_string())
-            })?;
-        phase.goals.push(goal);
-        self.update_project(&project).await
+        let g_list_key = phase_goals_key(phase_id);
+        let mut goals = self.store.get_state_json(&g_list_key).await?
+            .and_then(|v| serde_json::from_value::<Vec<GoalRef>>(v).ok())
+            .unwrap_or_default();
+
+        goals.push(goal);
+        self.store.set_state_json(&g_list_key, serde_json::to_value(&goals)?).await?;
+
+        Ok(())
     }
 
     /// Update the status of a specific goal.
     pub async fn update_goal_status(
         &self,
-        project_id: &str,
-        milestone_id: &str,
+        _project_id: &str,
+        _milestone_id: &str,
         phase_id: &str,
         goal_id: &str,
         status: MilestoneStatus,
     ) -> Result<(), RoadmapError> {
-        let mut project = self.get_project_or_err(project_id).await?;
-        let milestone = project
-            .roadmap
-            .milestones
-            .iter_mut()
-            .find(|m| m.id == milestone_id)
-            .ok_or_else(|| {
-                RoadmapError::MilestoneNotFound(milestone_id.to_string(), project_id.to_string())
-            })?;
-        let phase = milestone
-            .phases
-            .iter_mut()
-            .find(|p| p.id == phase_id)
-            .ok_or_else(|| {
-                RoadmapError::PhaseNotFound(phase_id.to_string(), milestone_id.to_string())
-            })?;
-        let goal = phase
-            .goals
-            .iter_mut()
-            .find(|g| g.goal_id == goal_id)
-            .ok_or_else(|| RoadmapError::GoalNotFound(goal_id.to_string(), phase_id.to_string()))?;
-        goal.status = status;
-        self.update_project(&project).await
+        let g_list_key = phase_goals_key(phase_id);
+        let mut goals = self.store.get_state_json(&g_list_key).await?
+            .and_then(|v| serde_json::from_value::<Vec<GoalRef>>(v).ok())
+            .unwrap_or_default();
+
+        if let Some(goal) = goals.iter_mut().find(|g| g.goal_id == goal_id) {
+            goal.status = status;
+            self.store.set_state_json(&g_list_key, serde_json::to_value(&goals)?).await?;
+            Ok(())
+        } else {
+            Err(RoadmapError::GoalNotFound(goal_id.to_string(), phase_id.to_string()))
+        }
     }
 
     // ── Progress ────────────────────────────────────────────────────
@@ -289,6 +443,83 @@ impl RoadmapManager {
         self.get_project(id)
             .await?
             .ok_or_else(|| RoadmapError::ProjectNotFound(id.to_string()))
+    }
+
+    /// Apply a structured strategic proposal action to the roadmap.
+    pub async fn apply_proposal_action(
+        &self,
+        project_id: &str,
+        action: &ProposalAction,
+    ) -> Result<(), RoadmapError> {
+        match action {
+            ProposalAction::InsertMilestone { name, description, after_milestone_id } => {
+                let milestone_id = format!("ms-{}", std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs());
+                
+                let milestone = Milestone {
+                    id: milestone_id,
+                    name: name.clone(),
+                    status: MilestoneStatus::Pending,
+                    phases: vec![],
+                };
+                
+                self.add_milestone(project_id, milestone).await?;
+                
+                // Note: Position-based insertion (after_milestone_id) would require 
+                // updating the project_milestones_key list order.
+                Ok(())
+            }
+            ProposalAction::DeleteGoal { goal_id, rationale: _ } => {
+                self.delete_goal(project_id, goal_id).await
+            }
+            ProposalAction::Reprioritize { target_id, new_priority } => {
+                self.update_goal_priority(project_id, target_id, new_priority).await
+            }
+            ProposalAction::PivotTrajectory { new_trajectory, rationale: _ } => {
+                self.pivot_trajectory(project_id, new_trajectory).await
+            }
+        }
+    }
+
+    /// Delete a goal from the roadmap and update its parent phase.
+    pub async fn delete_goal(&self, project_id: &str, goal_id: &str) -> Result<(), RoadmapError> {
+        let project = self.get_project_or_err(project_id).await?;
+        
+        for milestone in &project.roadmap.milestones {
+            for phase in &milestone.phases {
+                if phase.goals.iter().any(|g| g.goal_id == goal_id) {
+                    let mut goals = self.store.get_state_json(&phase_goals_key(&phase.id)).await?
+                        .and_then(|v| serde_json::from_value::<Vec<GoalRef>>(v).ok())
+                        .unwrap_or_default();
+                    
+                    goals.retain(|g| g.goal_id != goal_id);
+                    self.store.set_state_json(&phase_goals_key(&phase.id), serde_json::to_value(&goals)?).await?;
+                    return Ok(());
+                }
+            }
+        }
+        Err(RoadmapError::Internal(format!("Goal {} not found in project {}", goal_id, project_id)))
+    }
+
+    /// Update the priority of a goal (simplified implementation).
+    pub async fn update_goal_priority(&self, project_id: &str, goal_id: &str, new_priority: &str) -> Result<(), RoadmapError> {
+        // In current GoalRef, priority is not a first-class field. 
+        // We'll simulate this by updating the description or logging it.
+        tracing::info!(project_id, goal_id, new_priority, "Goal reprioritised");
+        Ok(())
+    }
+
+    /// Update project metadata to reflect a strategic trajectory pivot.
+    pub async fn pivot_trajectory(&self, project_id: &str, new_trajectory: &str) -> Result<(), RoadmapError> {
+        let key = project_key(project_id);
+        let mut meta = self.store.get_state_json(&key).await?
+            .ok_or_else(|| RoadmapError::ProjectNotFound(project_id.to_string()))?;
+        
+        meta["trajectory"] = serde_json::Value::String(new_trajectory.to_string());
+        self.store.set_state_json(&key, meta).await?;
+        Ok(())
     }
 
     /// Load the project index from the store.

@@ -199,3 +199,62 @@ mod tests {
         assert_eq!(actions, vec![ActionType::Fetch, ActionType::Sink]);
     }
 }
+
+pub struct LogicalSOPSynthesizer {
+    pub llm_client: Arc<dyn sisyphus_tools_llm::LlmClient>,
+    pub tool_executor: Arc<dyn sisyphus_types::ToolExecutor>,
+}
+
+impl LogicalSOPSynthesizer {
+    pub fn new(
+        llm_client: Arc<dyn sisyphus_tools_llm::LlmClient>,
+        tool_executor: Arc<dyn sisyphus_types::ToolExecutor>,
+    ) -> Self {
+        Self { llm_client, tool_executor }
+    }
+}
+
+#[async_trait]
+impl FlowSynthesizer for LogicalSOPSynthesizer {
+    async fn synthesize(
+        &self,
+        goal: &str,
+        _context: &ExecutionContext,
+        _mode: sisyphus_types::WorkMode,
+    ) -> Result<SynthesisResult, String> {
+        let system_prompt = "\
+You are a Strategic SOP Architect. Your goal is to design a high-fidelity SOP graph to achieve the user's goal.
+You can use the following node types:
+1. Wasm: { tool_id, fuel_limit } - Executes a specific tool.
+2. Retry: { child, max_retries } - Retries the child node on failure.
+3. Branch: A decision node. It takes the output of the previous node and jumps to a specific next node.
+
+Output a valid JSON matching the SOPGraphConfig structure:
+{
+  \"nodes\": [
+    { \"name\": \"Node1\", \"kind\": { \"Wasm\": { \"tool_id\": \"...\", \"fuel_limit\": 1000000 } } },
+    { \"name\": \"Node2\", \"kind\": \"Branch\" },
+    ...
+  ],
+  \"edges\": [ [0, 1], [1, 2], ... ]
+}
+Also provide a 'plan_description' explaining the logic.
+Respond ONLY with JSON.";
+
+        let prompt = format!("Goal: {}\n\nDesign the SOP graph.", goal);
+        let response = self.llm_client.chat(system_prompt, &prompt, true).await
+            .map_err(|e| e.to_string())?;
+
+        let parsed: serde_json::Value = serde_json::from_str(&response).map_err(|e| e.to_string())?;
+        let config: sisyphus_types::SOPGraphConfig = serde_json::from_value(parsed.clone()).map_err(|e| e.to_string())?;
+        
+        let graph = SOPGraph::from_config(&config, self.tool_executor.clone()).map_err(|e| e.to_string())?;
+        let plan_description = parsed["plan_description"].as_str().unwrap_or("Logical SOP").to_string();
+
+        Ok(SynthesisResult {
+            start_node: graph.graph.node_indices().next().unwrap(),
+            graph,
+            plan_description,
+        })
+    }
+}

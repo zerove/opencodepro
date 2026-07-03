@@ -38,8 +38,4 @@ impl From<String> for TeamError {
     }
 }
 
-impl From<TeamError> for String {
-    fn from(e: TeamError) -> String {
-        e.to_string()
-    }
-}
+

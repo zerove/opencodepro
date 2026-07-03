@@ -2,6 +2,7 @@
 pub mod milestone_generator;
 pub mod resource_optimizer;
 pub mod strategic_reflection;
+pub mod proposal_manager;
 
 pub mod error;
 pub use error::RoadmapError;

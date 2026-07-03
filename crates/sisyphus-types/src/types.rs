@@ -48,7 +48,7 @@ pub struct AgentMessage {
 }
 
 /// Strategy for selecting which LLM model to route a request to.
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq)]
 pub enum ModelRouteStrategy {
     /// Pick the cheapest model that meets the complexity threshold.
     CostOptimized,
@@ -59,7 +59,7 @@ pub enum ModelRouteStrategy {
 }
 
 /// State of a circuit breaker protecting a resource.
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq)]
 pub enum CircuitState {
     Closed,
     Open,
@@ -87,7 +87,7 @@ pub struct PlatformConfig {
     pub shell: String,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq)]
 #[derive(Default)]
 pub enum WorkMode {
     /// Standard mode: Balanced speed and accuracy.

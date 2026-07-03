@@ -209,16 +209,30 @@ impl ToolExecutor for CustomToolExecutor {
                 details: "WASM module missing 'memory' export".to_string(),
             })?;
 
-        // 简单实现：将参数写入内存起始位置（假设 handler 会正确处理）
-        // 在实际生产中应该使用 WASM 分配器，这里为了示例简化
-        memory.write(&mut store, 0, args_bytes).map_err(|e| TypesError::ToolExecutionError {
+        // 尝试调用 alloc 函数以获取安全的内存地址
+        let arg_ptr = if let Some(alloc_func) = instance.get_func(&mut store, "alloc") {
+            let mut alloc_results = vec![Val::I32(0)];
+            alloc_func.call(&mut store, &[Val::I32(args_bytes.len() as i32)], &mut alloc_results)
+                .map_err(|e| TypesError::ToolExecutionError {
+                    tool_id: tool_id.to_string(),
+                    details: format!("WASM alloc failed: {e}"),
+                })?;
+            alloc_results[0].unwrap_i32() as usize
+        } else {
+            return Err(TypesError::ToolExecutionError {
+                tool_id: tool_id.to_string(),
+                details: "WASM module missing required 'alloc' export. Tools must export 'alloc(size: i32) -> i32' to safely receive arguments.".to_string(),
+            });
+        };
+
+        memory.write(&mut store, arg_ptr, args_bytes).map_err(|e| TypesError::ToolExecutionError {
             tool_id: tool_id.to_string(),
-            details: format!("Failed to write args to WASM memory: {e}"),
+            details: format!("Failed to write args to WASM memory at {}: {e}", arg_ptr),
         })?;
 
         // 4. 执行与读取结果
         let mut results = vec![Val::I32(0)];
-        execute_func.call(&mut store, &[Val::I32(0)], &mut results).map_err(|e| {
+        execute_func.call(&mut store, &[Val::I32(arg_ptr as i32)], &mut results).map_err(|e| {
             TypesError::ToolExecutionError {
                 tool_id: tool_id.to_string(),
                 details: format!("WASM execution error: {e}"),

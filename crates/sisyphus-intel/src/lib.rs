@@ -22,12 +22,12 @@ pub(crate) use synthesis::{
     action_label, classify_goal, tool_id_for_action,
 };
 pub use synthesis::{
-    synthesize_composite, ActionType, FlowSynthesizer, GoalDrivenSynthesizer, SynthesisResult,
+    synthesize_composite, ActionType, FlowSynthesizer, GoalDrivenSynthesizer, MetaLearningSynthesizer, StrategicSopSynthesizer, SynthesisResult,
 };
 
 pub use formal_verification::{VerificationReport, VerificationRunner};
 pub use llm_synthesizer::{
-    FallbackGoalDecomposer, GoalDecomposer, LlmDrivenSynthesizer, LlmGoalDecomposer,
+    FallbackGoalDecomposer, GoalDecomposer, LlmDrivenSynthesizer, LlmGoalDecomposer, LogicalSOPSynthesizer,
 };
 pub use topological_evolver::TopologicalSOPEvolver;
 

@@ -1,7 +1,7 @@
 # Sisyphus Project Knowledge Base
 
 **Generated:** 2026-07-01
-**Stack:** Rust workspace (12 crates), async (tokio), gRPC (tonic), TUI (ratatui)
+**Stack:** Rust workspace (21 crates), async (tokio), gRPC (tonic), TUI (ratatui)
 
 ## OVERVIEW
 
@@ -12,18 +12,27 @@
 ```
 opencodepro/
 ├── crates/
-│   ├── sisyphus-core/       # ★ 核心认知引擎: DAG 执行, 认知循环, SOP 编排
-│   ├── sisyphus-cli/        # TUI 客户端 (ratatui + crossterm)
-│   ├── sisyphus-bridge/     # gRPC 桥接服务 (tonic + prost)
-│   ├── sisyphus-types/      # 共享类型, Config, traits
-│   ├── sisyphus-mem/        # 持久化/存储层
-│   ├── sisyphus-intel/      # 情报分析模块
-│   ├── sisyphus-metrics/    # 指标收集
-│   ├── sisyphus-sandbox/    # 沙箱执行 (wasmtime)
-│   ├── sisyphus-tools/      # 工具链
-│   ├── sisyphus-tests/      # 集成测试
-│   ├── sisyphus-roadmap/    # 路线图/规划
-│   └── sisyphus-bridge-api/ # Bridge API 定义
+│   ├── sisyphus-core/        # ★ 核心认知引擎: DAG 执行, 认知循环, SOP 编排
+│   ├── sisyphus-cli/         # TUI 客户端 (ratatui + crossterm)
+│   ├── sisyphus-bridge/      # gRPC 桥接服务 (tonic + prost)
+│   ├── sisyphus-types/       # 共享类型, Config, traits
+│   ├── sisyphus-mem/         # 持久化/存储层
+│   ├── sisyphus-intel/       # 情报分析模块
+│   ├── sisyphus-metrics/     # 指标收集
+│   ├── sisyphus-sandbox/     # 沙箱执行 (wasmtime)
+│   ├── sisyphus-tests/       # 集成测试
+│   ├── sisyphus-roadmap/     # 路线图/规划
+│   ├── sisyphus-bridge-api/  # Bridge API 定义
+│   ├── sisyphus-tools-core/  # 工具核心: 错误类型、反馈
+│   ├── sisyphus-tools-agent/ # 工具: Agent 注册与委托
+│   ├── sisyphus-tools-build/ # 工具: 构建、测试、LSP
+│   ├── sisyphus-tools-executor/   # 工具: 任务执行
+│   ├── sisyphus-tools-llm/        # 工具: LLM 客户端与 provider
+│   ├── sisyphus-tools-llm-tools/  # 工具: LLM 高阶工具 (oracle, momus)
+│   ├── sisyphus-tools-mcp/        # 工具: MCP 服务器集成
+│   ├── sisyphus-tools-scm/        # 工具: SCM (git) 操作
+│   ├── sisyphus-tools-session/    # 工具: 会话管理
+│   └── sisyphus-tools-system/     # 工具: 系统操作 (文件、bash、web)
 ├── book/                    # mdbook 文档
 ├── docs/                    # 技术文档, ADR, 对比
 ├── evals/                   # 评测
@@ -43,6 +52,16 @@ opencodepro/
 | 共享配置/traits | `crates/sisyphus-types/src/` | Config, traits, errors |
 | 存储层 | `crates/sisyphus-mem/src/` | 持久化实现 |
 | 集成测试 | `crates/sisyphus-tests/` | 跨 crate 场景 |
+| 工具: 核心/反馈 | `crates/sisyphus-tools-core/` | ToolError, FeedbackStore |
+| 工具: Agent | `crates/sisyphus-tools-agent/` | Agent 注册、委托 |
+| 工具: 构建/LSP | `crates/sisyphus-tools-build/` | 构建命令、测试运行、LSP |
+| 工具: 执行器 | `crates/sisyphus-tools-executor/` | 任务调度 |
+| 工具: LLM | `crates/sisyphus-tools-llm/` | LLM 客户端、provider |
+| 工具: LLM 高阶 | `crates/sisyphus-tools-llm-tools/` | Oracle, Momus |
+| 工具: MCP | `crates/sisyphus-tools-mcp/` | MCP 服务器 |
+| 工具: SCM | `crates/sisyphus-tools-scm/` | git 操作 |
+| 工具: 会话 | `crates/sisyphus-tools-session/` | 会话管理 |
+| 工具: 系统 | `crates/sisyphus-tools-system/` | 文件、bash、web |
 | 构建/CI | `Makefile`, `.github/workflows/` | 构建命令和 CI pipeline |
 | 文档 | `book/`, `docs/adr/` | mdbook 和架构决策记录 |
 

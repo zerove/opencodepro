@@ -4,6 +4,7 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use sisyphus_metrics::{record_evolution, record_reflection};
 use sisyphus_types::SOPGraph;
+use sisyphus_tools_llm::metis::LlmClient;
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -230,13 +231,126 @@ impl ErrorCategory {
     }
 }
 
-// Keep internal helpers for backward compat
-fn classify_error(output: &str) -> ErrorCategory {
-    ErrorCategory::classify(output)
+pub struct LlmReflector {
+    pub llm_client: Arc<dyn LlmClient>,
 }
 
-fn severity_weight(category: &ErrorCategory) -> f64 {
-    category.severity()
+impl LlmReflector {
+    pub fn new(llm_client: Arc<dyn LlmClient>) -> Self {
+        Self { llm_client }
+    }
+}
+
+#[async_trait]
+impl Reflector for LlmReflector {
+    async fn reflect(
+        &self,
+        trace: &str,
+        predicted: &SimulationResult,
+    ) -> Result<ReflectionReport, String> {
+        let span = tracing::info_span!("intel.reflect.llm", trace_lines = trace.lines().count());
+        let _enter = span.enter();
+
+        let start = Instant::now();
+        let prompt = format!(
+            "Analyze the following execution trace and compare it with the predicted outcome.\
+            Trace:\n{}\n\nPredicted Outcome: {}\n\n\
+            Please provide:\
+            1. A deviation score (0.0 to 1.0).\
+            2. A list of specific suggested improvements (e.g., 'Add retry to node X', 'Increase fuel for node Y').\
+            3. An analysis of the root cause of any failures.\
+            Return as JSON: {{ \"deviation\": f64, \"suggestions\": [string], \"analysis\": string }}",
+            trace, predicted.predicted_outcome
+        );
+
+        let response = self.llm_client.generate(&prompt).await
+            .map_err(|e| format!("LLM reflection failed: {e}"))?;
+
+        let parsed: serde_json::Value = serde_json::from_str(&response)
+            .map_err(|e| format!("Failed to parse LLM reflection JSON: {e}"))?;
+
+        let deviation = parsed["deviation"].as_f64().unwrap_or(0.5);
+        let suggestions: Vec<String> = parsed["suggestions"]
+            .as_array()
+            .map(|arr| arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
+            .unwrap_or_default();
+
+        let duration = start.elapsed();
+        tracing::info!(
+            deviation = deviation,
+            suggestions = suggestions.len(),
+            duration_ms = duration.as_millis(),
+            "LLM Reflection completed"
+        );
+
+        record_reflection("current_sop", deviation, duration.as_secs_f64());
+
+        Ok(ReflectionReport {
+            original_sop_id: "current_sop".into(),
+            deviation_score: deviation,
+            suggested_improvements: suggestions,
+            evolved_sop_structure: None,
+            records: StandardReflector::parse_trace(trace),
+        })
+    }
+}
+
+pub struct LlmEvolver {
+    pub llm_client: Arc<dyn LlmClient>,
+    pub topo_evolver: Arc<crate::topological_evolver::TopologicalSOPEvolver>,
+    pub tool_executor: Arc<dyn sisyphus_types::ToolExecutor>,
+}
+
+impl LlmEvolver {
+    pub fn new(
+        llm_client: Arc<dyn LlmClient>,
+        topo_evolver: Arc<crate::topological_evolver::TopologicalSOPEvolver>,
+        tool_executor: Arc<dyn sisyphus_types::ToolExecutor>,
+    ) -> Self {
+        Self {
+            llm_client,
+            topo_evolver,
+            tool_executor,
+        }
+    }
+}
+
+#[async_trait]
+impl SOPEvolver for LlmEvolver {
+    fn evolve(
+        &self,
+        graph: &SOPGraph,
+        report: &ReflectionReport,
+        _prediction: &SimulationResult,
+    ) -> Result<SOPGraph, String> {
+        let rt = tokio::runtime::Handle::current();
+        
+        let prompt = format!(
+            "Given the following SOP structure and suggested improvements, generate a list of EvolutionOps.\
+            SOP Nodes: {:?}\
+            Improvements: {:?}\
+            
+            Available Ops: \
+            - AdjustFuel {{ node_name, delta }}\
+            - AddRetry {{ node_name, max_retries }}\
+            - InsertNode {{ after_node, new_name, tool_id }}\
+            - RemoveNode {{ node_name }}\
+            - SwapNodes {{ node_a, node_b }}\
+            
+            Return a JSON array of ops.",
+            graph.graph.node_indices().map(|i| graph.graph.node_weight(i).map(|n| n.name().to_string())).collect::<Vec<_>>(),
+            report.suggested_improvements
+        );
+
+        let response = rt.block_on(async {
+            self.llm_client.generate(&prompt).await
+        }).map_err(|e| format!("LLM evolution failed: {e}"))?;
+
+        let ops: Vec<sisyphus_types::EvolutionOp> = serde_json::from_str(&response)
+            .map_err(|e| format!("Failed to parse evolution ops JSON: {e}. Response: {response}"))?;
+
+        self.topo_evolver.apply_ops(graph, &ops, self.tool_executor.clone()).map_err(|e| e.to_string())
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -274,11 +388,11 @@ impl StandardReflector {
 
             // Categorize errors and suggest targeted mitigations
             let mut categories: Vec<ErrorCategory> =
-                errors.iter().map(|e| classify_error(e)).collect();
+                errors.iter().map(|e| ErrorCategory::classify(e)).collect();
             categories.dedup();
 
             let avg_severity: f64 =
-                categories.iter().map(severity_weight).sum::<f64>() / categories.len() as f64;
+                categories.iter().map(|cat| cat.severity()).sum::<f64>() / categories.len() as f64;
             severity_sum = avg_severity;
 
             for cat in &categories {
@@ -398,6 +512,19 @@ impl Reflector for StandardReflector {
             evolved_sop_structure: None,
             records,
         })
+    }
+}
+
+/// Classifies execution errors into a numeric severity weight.
+fn severity_weight(e: &str) -> f64 {
+    if e.contains("ResourceExhausted") {
+        0.8
+    } else if e.contains("Timeout") {
+        0.5
+    } else if e.contains("Internal") {
+        0.3
+    } else {
+        0.2
     }
 }
 
