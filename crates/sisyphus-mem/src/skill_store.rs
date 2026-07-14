@@ -5,7 +5,7 @@ use sqlx::{SqlitePool, Row};
 use serde_json;
 use sisyphus_types::skill::{SkillBundle, SkillMetadata};
 use sisyphus_types::TypesError;
-use std::sync::Arc;
+
 
 #[derive(Clone)]
 pub struct SkillStore {

@@ -111,7 +111,7 @@ impl ToolExecutor for StrategicExecutor {
             );
 
             let synth_id = format!("strategic_{}", goal.goal_id);
-            match kernel.execute_goal(&enriched_goal, &synth_id, None, None).await {
+            match kernel.execute_goal(&enriched_goal, &synth_id, project_id.as_str(), None, None).await {
                 Ok((result, report)) => {
                     if let Ok(Some(project)) = manager.get_project(&project_id).await {
                         let (ms_id, ph_id) = project
@@ -215,7 +215,7 @@ impl ToolExecutor for StrategicExecutor {
             );
 
             let synth_id = format!("strategic_{}", goal.goal_id);
-            match kernel.execute_goal(&enriched_goal, &synth_id, None, None).await {
+            match kernel.execute_goal(&enriched_goal, &synth_id, project_id.as_str(), None, None).await {
                 Ok((result, report)) => {
                     if let Ok(Some(project)) = manager.get_project(&project_id).await {
                         let (ms_id, ph_id) = project

@@ -2,12 +2,14 @@
 use crate::MySisyphusBridge;
 use axum::{
     extract::{Path, State},
-    http::StatusCode,
+    http::{header, HeaderMap, StatusCode},
     body::Body,
     response::{IntoResponse, Response},
-    routing::{get, post, patch},
+    routing::{get, post, patch, delete},
     Json, Router,
 };
+use axum::extract::FromRequestParts;
+use async_trait::async_trait;
 use tower_http::services::ServeDir;
 use futures_util::stream::{self, Stream};
 use serde::{Deserialize, Serialize};
@@ -68,6 +70,7 @@ pub struct GoalExecuteResponse {
 #[derive(Serialize, Deserialize)]
 pub struct CompositeExecuteRequest {
     pub goals: Vec<String>,
+    pub project_id: Option<String>,
     pub event_tx: Option<bool>,
 }
 
@@ -90,10 +93,30 @@ pub struct InstallSkillRequest {
     pub skill_id: String,
 }
 
-// --- Workspace Management Types ---
 
-#[derive(Serialize, Deserialize)]
-pub struct CreateWorkspaceRequest {
+#[derive(Clone, Debug)]
+pub struct WorkspaceContext {
+    pub project_id: Option<String>,
+}
+
+#[async_trait]
+impl<S> FromRequestParts<S> for WorkspaceContext
+where
+    S: Send + Sync,
+{
+    type Rejection = StatusCode;
+
+    async fn from_request_parts(parts: &mut axum::http::request::Parts, _state: &S) -> Result<Self, Self::Rejection> {
+        let header_value = parts
+            .headers
+            .get("X-Sisyphus-Workspace-Id")
+            .and_then(|v| v.to_str().ok());
+
+        Ok(WorkspaceContext {
+            project_id: header_value.map(|s| s.to_string()),
+        })
+    }
+}
     pub name: String,
     pub project_id: String,
     pub root_dir: String,
@@ -362,6 +385,7 @@ async fn health_handler(State(state): State<RestApiState>) -> impl IntoResponse 
 
 async fn execute_goal_handler(
     State(state): State<RestApiState>,
+    workspace: WorkspaceContext,
     Json(req): Json<GoalExecuteRequest>,
 ) -> impl IntoResponse {
     let kernel = state.bridge.kernel();
@@ -371,16 +395,15 @@ async fn execute_goal_handler(
         None
     };
 
-    let result = if let Some(project_id) = req.project_id {
-        kernel.execute_goal_with_project_context(
-            &req.goal,
-            &req.sop_id,
-            &project_id,
-            event_tx,
-        ).await
-    } else {
-        kernel.execute_goal(&req.goal, &req.sop_id, event_tx, None).await
-    };
+    let project_id = workspace.project_id.or(req.project_id).unwrap_or_else(|| "default".to_string());
+
+    let result = kernel.execute_goal(
+        &req.goal,
+        &req.sop_id,
+        &project_id,
+        event_tx,
+        None,
+    ).await;
 
     match result {
         Ok((output, report)) => (
@@ -447,14 +470,17 @@ async fn goal_trace_handler(
 
 async fn goal_stream_handler(
     State(state): State<RestApiState>,
+    workspace: WorkspaceContext,
     Path(goal): Path<String>,
 ) -> impl IntoResponse {
+    let project_id = workspace.project_id.unwrap_or_else(|| "default".to_string());
     let (tx, rx) = mpsc::unbounded_channel();
     let bridge_clone = state.bridge.clone();
     let goal_clone = goal.clone();
+    let pid_clone = project_id.clone();
 
     tokio::spawn(async move {
-        if let Err(e) = bridge_clone.kernel().execute_goal_streaming(&goal_clone, "stream_task", None, Some(tx)).await {
+        if let Err(e) = bridge_clone.kernel().execute_goal_streaming(&goal_clone, "stream_task", pid_clone.as_str(), Some(tx)).await {
             tracing::error!(error = %e, "Goal streaming execution failed");
         }
     });
@@ -482,6 +508,7 @@ async fn goal_stream_handler(
 
 async fn execute_composite_handler(
     State(state): State<RestApiState>,
+    workspace: WorkspaceContext,
     Json(req): Json<CompositeExecuteRequest>,
 ) -> impl IntoResponse {
     let kernel = state.bridge.kernel();
@@ -491,13 +518,15 @@ async fn execute_composite_handler(
         None
     };
 
+    let project_id = workspace.project_id.or(req.project_id);
+
     let composite = sisyphus_types::CompositeGraph {
         graphs: req.goals.into_iter().map(|g| (g.clone(), sisyphus_types::SOPGraphConfig::default())).collect(),
         dependencies: vec![],
         execution_order: vec![],
     };
 
-    match kernel.execute_composite(&composite, event_tx).await {
+    match kernel.execute_composite(&composite, project_id.as_deref(), event_tx).await {
         Ok(output) => {
             let response = CompositeExecuteResponse {
                 results: output.results.into_iter().map(|(id, (out, _))| (id, out)).collect(),
@@ -517,9 +546,10 @@ async fn execute_composite_handler(
 
 async fn list_sops_handler(
     State(state): State<RestApiState>,
+    workspace: WorkspaceContext,
 ) -> impl IntoResponse {
     let kernel = state.bridge.kernel();
-    match kernel.execution_manager.list_sops().await {
+    match kernel.execution_manager.list_sops(workspace.project_id.as_deref()).await {
         Ok(sops) => (StatusCode::OK, Json(sops)).into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(e.to_string())).into_response(),
     }
@@ -527,33 +557,42 @@ async fn list_sops_handler(
 
 async fn get_sop_handler(
     State(state): State<RestApiState>,
+    workspace: WorkspaceContext,
     Path(id): Path<String>,
 ) -> impl IntoResponse {
     let kernel = state.bridge.kernel();
-    match kernel.execution_manager.load_sop(&id).await {
+    let project_id = match workspace.project_id {
+        Some(pid) => pid,
+        None => return (StatusCode::BAD_REQUEST, "Missing X-Sisyphus-Workspace-Id header").into_response(),
+    };
+    match kernel.execution_manager.load_sop(&id, &project_id).await {
         Ok(sop) => {
             let config = SOPGraphConfig::from_graph(&sop);
-            (StatusCode::OK, Json(SopDetailResponse { 
-                id, 
+            (StatusCode::OK, Json(SopDetailResponse {
+                id,
                 name: "Sisyphus SOP".into(), // Name is not currently in SOPGraph
-                version: Some("1.0.0".into()), 
-                config 
+                version: Some("1.0.0".into()),
+                config
             })).into_response()
         }
+        Err(e) => (StatusCode::NOT_FOUND, Json(e.to_string())).into_response(),
+    }
+}
         Err(e) => (StatusCode::NOT_FOUND, Json(e.to_string())).into_response(),
     }
 }
 
 async fn save_sop_handler(
     State(state): State<RestApiState>,
+    workspace: WorkspaceContext,
     Json(req): Json<SopSaveRequest>,
 ) -> impl IntoResponse {
-    let kernel = state.bridge.kernel();
-    // We need to convert SOPGraphConfig back to SOPGraph to use save_sop
-    // This is a bit tricky because SOPGraph::from_config needs executors.
-    // For a simple REST save, we can bypass the Graph object and call SopSqlStore directly.
+    let project_id = match workspace.project_id {
+        Some(pid) => pid,
+        None => return (StatusCode::BAD_REQUEST, "Missing X-Sisyphus-Workspace-Id header").into_response(),
+    };
     let sop_store = &state.bridge.kernel().execution_manager.sop_store;
-    match sop_store.save_sop(&req.id, &req.name, req.version, &req.config).await {
+    match sop_store.save_sop(&req.id, &project_id, &req.name, req.version, &req.config).await {
         Ok(_) => StatusCode::CREATED.into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(e.to_string())).into_response(),
     }
@@ -561,10 +600,15 @@ async fn save_sop_handler(
 
 async fn delete_sop_handler(
     State(state): State<RestApiState>,
+    workspace: WorkspaceContext,
     Path(id): Path<String>,
 ) -> impl IntoResponse {
+    let project_id = match workspace.project_id {
+        Some(pid) => pid,
+        None => return (StatusCode::BAD_REQUEST, "Missing X-Sisyphus-Workspace-Id header").into_response(),
+    };
     let sop_store = &state.bridge.kernel().execution_manager.sop_store;
-    match sop_store.delete_sop(&id).await {
+    match sop_store.delete_sop(&id, &project_id).await {
         Ok(_) => StatusCode::NO_CONTENT.into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(e.to_string())).into_response(),
     }

@@ -1,8 +1,8 @@
 use anyhow::{Context, Result};
-use sqlx::{SqlitePool, Row};
-use std::sync::Arc;
+use sqlx::SqlitePool;
+
 use sisyphus_types::{Project, Milestone, Phase, GoalRef, MilestoneStatus};
-use crate::store::MfsStore;
+
 
 /// Structured storage for the Sisyphus Roadmap.
 /// Handles relational mapping of Project -> Milestone -> Phase -> Goal.
@@ -26,27 +26,32 @@ impl RoadmapSqlStore {
             );
 
             CREATE TABLE IF NOT EXISTS milestones (
-                id TEXT PRIMARY KEY,
+                id TEXT,
                 project_id TEXT NOT NULL,
                 name TEXT NOT NULL,
                 status TEXT NOT NULL,
+                PRIMARY KEY (id, project_id),
                 FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE
             );
 
             CREATE TABLE IF NOT EXISTS phases (
-                id TEXT PRIMARY KEY,
+                id TEXT,
+                project_id TEXT NOT NULL,
                 milestone_id TEXT NOT NULL,
                 name TEXT NOT NULL,
                 depends_on TEXT,
-                FOREIGN KEY(milestone_id) REFERENCES milestones(id) ON DELETE CASCADE
+                PRIMARY KEY (id, project_id),
+                FOREIGN KEY(milestone_id, project_id) REFERENCES milestones(id, project_id) ON DELETE CASCADE
             );
 
             CREATE TABLE IF NOT EXISTS goals (
-                id TEXT PRIMARY KEY,
+                id TEXT,
+                project_id TEXT NOT NULL,
                 phase_id TEXT NOT NULL,
                 description TEXT,
                 status TEXT NOT NULL,
-                FOREIGN KEY(phase_id) REFERENCES phases(id) ON DELETE CASCADE
+                PRIMARY KEY (id, project_id),
+                FOREIGN KEY(phase_id, project_id) REFERENCES phases(id, project_id) ON DELETE CASCADE
             );
 
             CREATE TABLE IF NOT EXISTS execution_outcomes (
@@ -59,13 +64,13 @@ impl RoadmapSqlStore {
                 cost REAL NOT NULL,
                 duration REAL NOT NULL,
                 timestamp INTEGER NOT NULL,
-                FOREIGN KEY(goal_id) REFERENCES goals(id)
+                FOREIGN KEY(goal_id, project_id) REFERENCES goals(id, project_id) ON DELETE CASCADE
             );
 
             CREATE INDEX IF NOT EXISTS idx_outcomes_goal ON execution_outcomes(goal_id);
             CREATE INDEX IF NOT EXISTS idx_milestones_project ON milestones(project_id);
-            CREATE INDEX IF NOT EXISTS idx_phases_milestone ON phases(milestone_id);
-            CREATE INDEX IF NOT EXISTS idx_goals_phase ON goals(phase_id);
+            CREATE INDEX IF NOT EXISTS idx_phases_milestone ON phases(project_id, milestone_id);
+            CREATE INDEX IF NOT EXISTS idx_goals_phase ON goals(project_id, phase_id);
         "#;
 
         sqlx::query(schema).execute(&self.pool).await.context("Failed to initialize roadmap schema")?;
@@ -75,8 +80,7 @@ impl RoadmapSqlStore {
     // ── Project Operations ────────────────────────────────────────────────
 
     pub async fn insert_project(&self, project: &Project) -> Result<()> {
-        sqlx::query("INSERT INTO projects (id, name, description) VALUES (?, ?, ?) 
-                     ON CONFLICT(id) DO UPDATE SET name=excluded.name, description=excluded.description")
+        sqlx::query("INSERT INTO projects (id, name, description) VALUES (?, ?, ?)")
             .bind(&project.id)
             .bind(&project.name)
             .bind(&project.description)
@@ -126,8 +130,9 @@ impl RoadmapSqlStore {
                 _ => MilestoneStatus::Pending,
             };
 
-            let phases_rows = sqlx::query_as::<_, (String, String, Option<String>)>("SELECT id, name, depends_on FROM phases WHERE milestone_id = ?")
+            let phases_rows = sqlx::query_as::<_, (String, String, Option<String>)>("SELECT id, name, depends_on FROM phases WHERE milestone_id = ? AND project_id = ?")
                 .bind(&m_id)
+                .bind(id)
                 .fetch_all(&self.pool)
                 .await?;
 
@@ -137,16 +142,23 @@ impl RoadmapSqlStore {
                     .map(|s| s.split(',').filter(|x| !x.is_empty()).map(String::from).collect())
                     .unwrap_or_default();
 
-                let goals_rows = sqlx::query_as::<_, (String, String, String)>("SELECT id, description, status FROM goals WHERE phase_id = ?")
+                let goals_rows = sqlx::query_as::<_, (String, String, String)>("SELECT id, description, status FROM goals WHERE phase_id = ? AND project_id = ?")
                     .bind(&p_id)
+                    .bind(id)
                     .fetch_all(&self.pool)
                     .await?;
 
-                let goals = goals_rows.into_iter().map(|(g_id, g_desc, _g_status)| {
+                let goals = goals_rows.into_iter().map(|(g_id, g_desc, g_status_str)| {
+                    let g_status = match g_status_str.as_str() {
+                        "Completed" => MilestoneStatus::Completed,
+                        "Blocked" => MilestoneStatus::Blocked,
+                        "InProgress" => MilestoneStatus::InProgress,
+                        _ => MilestoneStatus::Pending,
+                    };
                     GoalRef {
                         goal_id: g_id,
                         description: g_desc,
-                        status: MilestoneStatus::Pending, // Status is not stored in GoalRef, it's in the goals table for the whole project
+                        status: g_status,
                     }
                 }).collect();
 
@@ -178,7 +190,7 @@ impl RoadmapSqlStore {
 
     pub async fn insert_milestone(&self, id: &str, project_id: &str, name: &str, status: &str) -> Result<()> {
         sqlx::query("INSERT INTO milestones (id, project_id, name, status) VALUES (?, ?, ?, ?) 
-                     ON CONFLICT(id) DO UPDATE SET name=excluded.name, status=excluded.status")
+                     ON CONFLICT(id, project_id) DO UPDATE SET name=excluded.name, status=excluded.status")
             .bind(id)
             .bind(project_id)
             .bind(name)
@@ -188,18 +200,20 @@ impl RoadmapSqlStore {
         Ok(())
     }
 
-    pub async fn update_milestone_status(&self, id: &str, status: &str) -> Result<()> {
-        sqlx::query("UPDATE milestones SET status = ? WHERE id = ?")
+    pub async fn update_milestone_status(&self, project_id: &str, id: &str, status: &str) -> Result<()> {
+        sqlx::query("UPDATE milestones SET status = ? WHERE id = ? AND project_id = ?")
             .bind(status)
             .bind(id)
+            .bind(project_id)
             .execute(&self.pool)
             .await?;
         Ok(())
     }
 
-    pub async fn delete_milestone(&self, id: &str) -> Result<()> {
-        sqlx::query("DELETE FROM milestones WHERE id = ?")
+    pub async fn delete_milestone(&self, project_id: &str, id: &str) -> Result<()> {
+        sqlx::query("DELETE FROM milestones WHERE id = ? AND project_id = ?")
             .bind(id)
+            .bind(project_id)
             .execute(&self.pool)
             .await?;
         Ok(())
@@ -207,10 +221,11 @@ impl RoadmapSqlStore {
 
     // ── Phase Operations ──────────────────────────────────────────────────
 
-    pub async fn insert_phase(&self, id: &str, milestone_id: &str, name: &str, depends_on: Option<String>) -> Result<()> {
-        sqlx::query("INSERT INTO phases (id, milestone_id, name, depends_on) VALUES (?, ?, ?, ?) 
-                     ON CONFLICT(id) DO UPDATE SET name=excluded.name, depends_on=excluded.depends_on")
+    pub async fn insert_phase(&self, project_id: &str, id: &str, milestone_id: &str, name: &str, depends_on: Option<String>) -> Result<()> {
+        sqlx::query("INSERT INTO phases (id, project_id, milestone_id, name, depends_on) VALUES (?, ?, ?, ?, ?) 
+                     ON CONFLICT(id, project_id) DO UPDATE SET name=excluded.name, depends_on=excluded.depends_on")
             .bind(id)
+            .bind(project_id)
             .bind(milestone_id)
             .bind(name)
             .bind(depends_on)
@@ -221,10 +236,11 @@ impl RoadmapSqlStore {
 
     // ── Goal Operations ───────────────────────────────────────────────────
 
-    pub async fn insert_goal(&self, id: &str, phase_id: &str, description: &str, status: &str) -> Result<()> {
-        sqlx::query("INSERT INTO goals (id, phase_id, description, status) VALUES (?, ?, ?, ?) 
-                     ON CONFLICT(id) DO UPDATE SET description=excluded.description, status=excluded.status")
+    pub async fn insert_goal(&self, project_id: &str, id: &str, phase_id: &str, description: &str, status: &str) -> Result<()> {
+        sqlx::query("INSERT INTO goals (id, project_id, phase_id, description, status) VALUES (?, ?, ?, ?, ?) 
+                     ON CONFLICT(id, project_id) DO UPDATE SET description=excluded.description, status=excluded.status")
             .bind(id)
+            .bind(project_id)
             .bind(phase_id)
             .bind(description)
             .bind(status)
@@ -233,26 +249,29 @@ impl RoadmapSqlStore {
         Ok(())
     }
 
-    pub async fn update_goal_status(&self, id: &str, status: &str) -> Result<()> {
-        sqlx::query("UPDATE goals SET status = ? WHERE id = ?")
+    pub async fn update_goal_status(&self, project_id: &str, id: &str, status: &str) -> Result<()> {
+        sqlx::query("UPDATE goals SET status = ? WHERE id = ? AND project_id = ?")
             .bind(status)
             .bind(id)
+            .bind(project_id)
             .execute(&self.pool)
             .await?;
         Ok(())
     }
 
-    pub async fn delete_goal(&self, id: &str) -> Result<()> {
-        sqlx::query("DELETE FROM goals WHERE id = ?")
+    pub async fn delete_goal(&self, project_id: &str, id: &str) -> Result<()> {
+        sqlx::query("DELETE FROM goals WHERE id = ? AND project_id = ?")
             .bind(id)
+            .bind(project_id)
             .execute(&self.pool)
             .await?;
         Ok(())
     }
 
-    pub async fn get_goal_description(&self, goal_id: &str) -> Result<Option<String>> {
-        let row = sqlx::query_as::<_, (Option<String>,)>("SELECT description FROM goals WHERE id = ?")
+    pub async fn get_goal_description(&self, project_id: &str, goal_id: &str) -> Result<Option<String>> {
+        let row = sqlx::query_as::<_, (Option<String>,)>("SELECT description FROM goals WHERE id = ? AND project_id = ?")
             .bind(goal_id)
+            .bind(project_id)
             .fetch_optional(&self.pool)
             .await?;
         Ok(row.and_then(|r| r.0))
@@ -282,8 +301,8 @@ impl RoadmapSqlStore {
                 COUNT(DISTINCT g.id) as total, 
                 COUNT(DISTINCT CASE WHEN g.status = 'Completed' THEN g.id END) as completed 
              FROM goals g 
-             JOIN phases p ON g.phase_id = p.id 
-             JOIN milestones m ON p.milestone_id = m.id 
+             JOIN phases p ON g.phase_id = p.id AND g.project_id = p.project_id
+             JOIN milestones m ON p.milestone_id = m.id AND p.project_id = m.project_id
              WHERE m.project_id = ?"
         )
         .bind(project_id)

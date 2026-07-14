@@ -371,12 +371,13 @@ mod tests {
                 .expect("Failed to create MfsStore"),
         );
         let sql_store = Arc::new(
-            sisyphus_mem::RoadmapSqlStore::new("sqlite::memory:")
+            sisyphus_mem::RoadmapSqlStore::new(store.pool().clone())
                 .await
                 .expect("Failed to create sql store"),
         );
         sql_store.init_schema().await.expect("Failed to init schema");
-        (RoadmapManager::new(store.clone(), sql_store), store)
+        let proposal_manager = Arc::new(crate::proposal_manager::ProposalManager::new(store.clone()));
+        (RoadmapManager::new(store.clone(), sql_store, proposal_manager), store)
     }
 
     #[tokio::test]
@@ -471,6 +472,14 @@ mod tests {
 
             async fn chat(&self, _: &str, _: &str, _: bool) -> Result<String, String> {
                 Err("LLM down".to_string())
+            }
+
+            fn get_params_for(&self, _agent_id: &str) -> (String, String, String) {
+                ("fail_key".into(), "http://fail:8080".into(), "fail-model".into())
+            }
+
+            fn breaker(&self) -> sisyphus_tools_llm::circuit_breaker::CircuitBreaker {
+                sisyphus_tools_llm::circuit_breaker::CircuitBreaker::default()
             }
         }
 

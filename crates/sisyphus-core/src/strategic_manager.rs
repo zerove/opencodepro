@@ -207,6 +207,7 @@ impl StrategicManager {
         sop_graph: Arc<SOPGraph>,
         sop_id: &str,
         goal_text: Option<&str>,
+        project_id: Option<&str>,
         initial_ctx: Option<Arc<ExecutionContext>>,
         event_tx: Option<mpsc::UnboundedSender<ExecutionEvent>>,
         broadcast_fn: impl Fn(&str, ExecutionEvent),
@@ -234,7 +235,7 @@ impl StrategicManager {
             let query = sisyphus_types::experience::ExperienceQuery {
                 query_text: goal.to_string(),
                 context_hash: format!("{:x}", md5::compute(goal)),
-                project_id: None,
+                project_id: project_id.map(|s| s.to_string()),
                 action_id: None,
                 visual_embedding,
                 limit: 5,
@@ -249,7 +250,7 @@ impl StrategicManager {
             if let Ok(exps) = self.experience_bank.query_similar(query).await {
                 if let Some(best_exp) = exps.into_iter().min_by(|a, b| a.deviation_score.partial_cmp(&b.deviation_score).unwrap_or(std::cmp::Ordering::Equal)) {
                     tracing::info!(goal = %goal, asset_id = %best_exp.action_id, "Multi-modal hot-start match found!");
-                    if let Ok(graph) = self.execution_manager.load_sop(&best_exp.action_id).await {
+                    if let Ok(graph) = self.execution_manager.load_sop(&best_exp.action_id, best_exp.project_id.as_deref().unwrap_or("default")).await {
                         current_ref = graph;
                         hot_start_active = true;
                     }
@@ -394,7 +395,7 @@ impl StrategicManager {
                         info_gain: 0.0,
                     }),
                 });
-                self.intelligence_manager.intel.simulator.simulate(Arc::clone(&current_ref), &ctx, sop_id, goal_text)
+                self.intelligence_manager.intel.simulator.simulate(Arc::clone(&current_ref), &ctx, project_id.unwrap_or("default"), sop_id, goal_text)
                     .await.map_err(|e| CoreError::Internal(e.to_string()))?
             };
 
@@ -644,6 +645,7 @@ impl StrategicManager {
                 let verification_prediction = self.intelligence_manager.intel.simulator.simulate(
                     Arc::clone(&eg), 
                     &ctx, 
+                    project_id.unwrap_or("default"),
                     sop_id, 
                     goal_text
                 ).await.ok();
@@ -762,7 +764,7 @@ impl StrategicManager {
                 
                 // Formally submit as a strategic proposal to the roadmap
                 let _ = self.roadmap_manager.submit_strategic_shift(
-                    sop_id, // Using sop_id as project_id for simplicity in this context, should be a real project_id in production
+                    project_id.unwrap_or("default"),
                     &cluster.common_failure_mode,
                     cluster.evidence_count,
                     &cluster.suggested_shift

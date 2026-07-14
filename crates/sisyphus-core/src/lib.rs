@@ -488,7 +488,7 @@ impl SisyphusKernel {
 
         let json = serde_json::to_value(plan).map_err(|e| CoreError::Internal(e.to_string()))?;
 
-        self.execution_manager.state_store.set_state_json(&format!("plan_cache:{}", plan_id), json).await
+        self.execution_manager.state_store.set_state_json("sys", &format!("plan_cache:{}", plan_id), json).await
 
             .map_err(|e| CoreError::Internal(e.to_string()))
 
@@ -498,7 +498,7 @@ impl SisyphusKernel {
 
     pub async fn get_cached_plan(&self, plan_id: &str) -> Result<Option<sisyphus_types::CognitivePlan>, CoreError> {
 
-        let val = self.execution_manager.state_store.get_state_json(&format!("plan_cache:{}", plan_id)).await
+        let val = self.execution_manager.state_store.get_state_json("sys", &format!("plan_cache:{}", plan_id)).await
 
             .map_err(|e| CoreError::Internal(e.to_string()))?;
 
@@ -526,6 +526,8 @@ impl SisyphusKernel {
 
         feedback: sisyphus_types::ExecutionFeedback,
 
+        project_id: &str,
+
     ) -> Result<sisyphus_types::EvolutionResponse, CoreError> {
 
         tracing::info!(
@@ -544,7 +546,7 @@ impl SisyphusKernel {
 
         let mut trace = String::new();
 
-        if let Ok(history) = self.execution_manager.state_store.get_state_json(&format!("history:{}", feedback.plan_id)).await {
+        if let Ok(history) = self.execution_manager.state_store.get_state_json(project_id, &format!("history:{}", feedback.plan_id)).await {
 
             if let Some(val) = history {
 
@@ -556,9 +558,9 @@ impl SisyphusKernel {
 
 
 
-        let sop = self.load_sop(&feedback.plan_id).await.map_err(|e| CoreError::Internal(e.to_string()))?;
+        let sop = self.load_sop(&feedback.plan_id, project_id).await.map_err(|e| CoreError::Internal(e.to_string()))?;
 
-        let prediction = self.intelligence_manager.predict_outcome(sop, &ExecutionContext::new(), &feedback.plan_id).await
+        let prediction = self.intelligence_manager.predict_outcome(sop, &ExecutionContext::new(), project_id, &feedback.plan_id).await
 
             .map_err(|e| CoreError::Internal(e))?;
 
@@ -606,6 +608,7 @@ impl SisyphusKernel {
 
                 &ctx, 
 
+                project_id,
                 sisyphus_types::WorkMode::Standard,
 
                 None
@@ -641,6 +644,8 @@ impl SisyphusKernel {
         &self,
 
         plan_id: &str,
+
+        project_id: &str,
 
         final_plan: sisyphus_types::CognitivePlan,
 
@@ -704,13 +709,13 @@ impl SisyphusKernel {
 
         let sop_id = format!("exp_{}", plan_id);
 
-        self.save_sop(&sop_id, &graph).await
+        self.save_sop(&sop_id, project_id, &graph).await
 
     }
 
 
 
-    pub async fn save_sop(&self, sop_id: &str, graph: &SOPGraph) -> Result<(), CoreError> {
+    pub async fn save_sop(&self, sop_id: &str, project_id: &str, graph: &SOPGraph) -> Result<(), CoreError> {
 
         let config = sisyphus_types::SOPGraphConfig::from_graph(graph);
 
@@ -730,15 +735,15 @@ impl SisyphusKernel {
 
 
 
-        self.execution_manager.save_sop(sop_id, graph).await
+        self.execution_manager.save_sop(sop_id, project_id, &graph).await
 
     }
 
 
 
-    pub async fn load_sop(&self, sop_id: &str) -> Result<Arc<SOPGraph>, CoreError> {
+    pub async fn load_sop(&self, sop_id: &str, project_id: &str) -> Result<Arc<SOPGraph>, CoreError> {
 
-        self.execution_manager.load_sop(sop_id).await
+        self.execution_manager.load_sop(sop_id, project_id).await
 
     }
 
@@ -754,34 +759,29 @@ impl SisyphusKernel {
 
 
 
-    pub async fn execute_goals(&self, goals: &[&str]) -> Result<CompositeOutput, CoreError> {
+    pub async fn execute_goals(&self, goals: &[&str], project_id: &str) -> Result<CompositeOutput, CoreError> {
 
         let ctx = ExecutionContext::new();
 
         let composite =
 
-            sisyphus_intel::synthesize_composite(goals, &*self.intelligence_manager.synthesizer, &ctx).await
+            sisyphus_intel::synthesize_composite(goals, &*self.intelligence_manager.synthesizer, &ctx, project_id).await
 
                 .map_err(|e| CoreError::Internal(e.to_string()))?;
 
-        self.execute_composite(&composite, None).await
+        self.execute_composite(&composite, None, project_id).await
 
     }
 
 
 
     pub async fn execute_goal(
-
         &self,
-
         goal: &str,
-
         sop_id: &str,
-
+        project_id: &str,
         event_tx: Option<mpsc::UnboundedSender<ExecutionEvent>>,
-
         context_json: Option<&str>,
-
     ) -> Result<(NodeOutput, String), CoreError> {
 
         let mut ctx = ExecutionContext::new();
@@ -845,7 +845,7 @@ impl SisyphusKernel {
 
             if let Some(exp) = best_exp {
 
-                if let Ok(graph) = self.load_sop(&exp.action_id).await {
+                if let Ok(graph) = self.load_sop(&exp.action_id, project_id).await {
 
                     insights = Some(format!(
 
@@ -868,17 +868,12 @@ impl SisyphusKernel {
         println!("DEBUG: [execute_goal] Synthesizing SOP...");
 
         let synthesis = self.intelligence_manager.synthesize_goal(
-
             goal, 
-
             &ctx, 
-
+            project_id,
             mode,
-
             insights.as_deref()
-
         ).await
-
             .map_err(|e| CoreError::Internal(e.to_string()))?;
 
         println!("DEBUG: [execute_goal] Synthesis complete. Plan: {}", synthesis.plan_description);
@@ -951,7 +946,7 @@ impl SisyphusKernel {
 
         let (res, report_obj, _) = self
 
-            .execute_with_cognition(graph, sop_id, None, event_tx, None)
+            .execute_with_cognition(graph, sop_id, Some(project_id), None, event_tx, None)
 
             .await
 
@@ -974,24 +969,19 @@ impl SisyphusKernel {
 
 
     pub async fn execute_goal_streaming(
-
         &self,
-
         goal: &str,
-
         sop_id: &str,
-
+        project_id: &str,
         event_tx: Option<mpsc::UnboundedSender<ExecutionEvent>>,
-
         stream_tx: Option<mpsc::UnboundedSender<sisyphus_types::CognitiveEvent>>,
-
     ) -> Result<(NodeOutput, String), CoreError> {
 
         let ctx = ExecutionContext::new();
 
         let mode = IntentGate::analyze(goal, &self.intelligence_manager.llm_client).await;
 
-        let synthesis = self.intelligence_manager.synthesize_goal(goal, &ctx, mode, None).await
+        let synthesis = self.intelligence_manager.synthesize_goal(goal, &ctx, project_id, mode, None).await
 
             .map_err(|e| CoreError::Internal(e.to_string()))?;
 
@@ -999,7 +989,7 @@ impl SisyphusKernel {
 
         let (res, report_obj, _) = self
 
-            .execute_with_cognition(synthesis.graph, sop_id, None, event_tx, stream_tx)
+            .execute_with_cognition(synthesis.graph, sop_id, Some(project_id), None, event_tx, stream_tx)
 
             .await
 
@@ -1043,7 +1033,7 @@ impl SisyphusKernel {
 
         let augmented_goal = format!("{}\n\n---\nCurrent project context:\n{}", goal, ctx_string);
 
-        self.execute_goal(&augmented_goal, sop_id, event_tx, None).await
+        self.execute_goal(&augmented_goal, sop_id, project_id, event_tx, None).await
 
     }
 
@@ -1249,7 +1239,7 @@ impl SisyphusKernel {
 
                     let prop_id = proposal.proposal_id.clone();
 
-                    if let Err(e) = self.proposal_manager.submit_proposal(proposal.clone()).await {
+                    if let Err(e) = self.proposal_manager.submit_proposal(&proposal.project_id, proposal.clone()).await {
 
                         tracing::warn!(project_id = %project_id, error = %e, "Failed to submit strategic proposal");
 
@@ -1381,13 +1371,14 @@ impl SisyphusKernel {
 
         &self,
 
+        project_id: &str,
         proposal_id: &str,
 
         reviewer: &str,
 
     ) -> Result<(), CoreError> {
 
-        let proposal = self.proposal_manager.get_proposal(proposal_id).await
+        let proposal = self.proposal_manager.get_proposal(project_id, proposal_id).await
 
             .map_err(|e| CoreError::Internal(e.to_string()))?
 
@@ -1395,7 +1386,7 @@ impl SisyphusKernel {
 
 
 
-        self.proposal_manager.approve_proposal(proposal_id, reviewer).await
+        self.proposal_manager.approve_proposal(project_id, proposal_id, reviewer).await
 
             .map_err(|e| CoreError::Internal(e.to_string()))?;
 
@@ -1800,13 +1791,10 @@ impl SisyphusKernel {
 
 
     pub async fn execute_composite(
-
         &self,
-
         composite: &CompositeGraph,
-
         event_tx: Option<mpsc::UnboundedSender<ExecutionEvent>>,
-
+        project_id: &str,
     ) -> Result<CompositeOutput, CoreError> {
 
         let order = if composite.execution_order.is_empty() {
@@ -1822,6 +1810,7 @@ impl SisyphusKernel {
 
 
         let order_len = order.len();
+        let project_id_owned = project_id.to_string();
 
         let mut results: HashMap<String, (NodeOutput, String)> = HashMap::with_capacity(order_len);
 
@@ -1951,13 +1940,14 @@ impl SisyphusKernel {
 
                     let sid = sop_id.clone();
 
+                    let pid = project_id_owned.clone();
                     join_set.spawn(async move {
 
                         let dep_ctx = build_dep_ctx_for(&sid, &composite_ref, &*acc);
 
                         let result = kernel
 
-                            .execute_with_cognition(graph, &sid, dep_ctx, tx, None)
+                            .execute_with_cognition(graph, &sid, Some(&pid), dep_ctx, tx, None)
 
                             .await;
 
@@ -2031,13 +2021,14 @@ impl SisyphusKernel {
 
                     let tx = event_tx.clone();
 
+                    let pid = project_id_owned.clone();
                     join_set.spawn(async move {
 
                         let dep_ctx = build_dep_ctx_for(&sid, &composite_ref, &*acc);
 
                         let result = kernel
 
-                            .execute_with_cognition(graph, &sid, dep_ctx, tx, None)
+                            .execute_with_cognition(graph, &sid, Some(&pid), dep_ctx, tx, None)
 
                             .await;
 

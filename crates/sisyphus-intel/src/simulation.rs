@@ -63,6 +63,7 @@ pub trait Simulator: Send + Sync {
         &self,
         graph: Arc<SOPGraph>,
         context: &ExecutionContext,
+        project_id: &str,
         sop_id: &str,
         goal_text: Option<&str>,
     ) -> Result<SimulationResult, String>;
@@ -260,6 +261,7 @@ impl MonteCarloSimulator {
         &self,
         graph: Arc<SOPGraph>,
         root: Arc<std::sync::Mutex<MctsNode>>,
+        project_id: &str,
         sop_id: Arc<String>,
         goal_text: Option<String>,
         num_nodes: usize,
@@ -273,7 +275,7 @@ impl MonteCarloSimulator {
         // 1. Selection
         loop {
             let (next_idx, next_node_arc) = {
-                let probs = self.get_transition_probabilities(&graph, current_idx, &sop_id, goal_text.as_deref()).await;
+                let probs = self.get_transition_probabilities(&graph, current_idx, project_id, &sop_id, goal_text.as_deref()).await;
                 if probs.is_empty() { break; }
 
                 let mut node = current_node_arc.lock().map_err(|_| "Lock poisoned".to_string())?;
@@ -312,7 +314,7 @@ impl MonteCarloSimulator {
         let mut sim_current = current_idx;
         
         for _ in 0..num_nodes {
-            let probs = self.get_transition_probabilities(&graph, sim_current, &sop_id, goal_text.as_deref()).await;
+            let probs = self.get_transition_probabilities(&graph, sim_current, project_id, &sop_id, goal_text.as_deref()).await;
             if probs.is_empty() { break; }
             
             let mut r = rng.gen::<f64>();
@@ -343,6 +345,7 @@ impl MonteCarloSimulator {
         &self,
         graph: &SOPGraph,
         node_idx: petgraph::graph::NodeIndex,
+        project_id: &str,
         sop_id: &str,
         goal_text: Option<&str>,
     ) -> std::collections::HashMap<petgraph::graph::NodeIndex, f64> {
@@ -357,7 +360,7 @@ impl MonteCarloSimulator {
             let mut weights = std::collections::HashMap::new();
 
             if let Some(ref store) = self.state_store {
-                if let Ok(Some(val)) = store.get_state_json(&format!("history:node:{}:{:?}", sop_id, node_idx)).await {
+                if let Ok(Some(val)) = store.get_state_json(project_id, &format!("history:node:{}:{:?}", sop_id, node_idx)).await {
                     if let Ok(dist) = serde_json::from_value::<std::collections::HashMap<String, f64>>(val) {
                         for (output, prob) in dist {
                             if let Some(&next_idx_usize) = branch_node.branches.get(&output) {
@@ -428,9 +431,11 @@ impl Simulator for MonteCarloSimulator {
         &self,
         graph: Arc<SOPGraph>,
         _context: &ExecutionContext,
+        project_id: &str,
         sop_id: &str,
         goal_text: Option<&str>,
     ) -> Result<SimulationResult, String> {
+        let project_id_owned = project_id.to_string();
         let span = tracing::info_span!("intel.simulate", sop_id = %sop_id, iterations = self.iterations, graph_nodes = graph.graph.node_count());
         let _enter = span.enter();
 
@@ -454,7 +459,7 @@ impl Simulator for MonteCarloSimulator {
         // --- Experience prior ---
         let (hist_success_rate, hist_avg_cost) = if let Some(ref store) = self.state_store {
             let history_key = format!("history:{}", sop_id);
-            match store.get_state_json(&history_key).await {
+            match store.get_state_json(project_id, &history_key).await {
                 Ok(Some(val)) => {
                     if let Ok(hist) = serde_json::from_value::<sisyphus_types::ExecutionHistory>(val) {
                         let total = hist.records.len() as f64;
@@ -491,6 +496,7 @@ impl Simulator for MonteCarloSimulator {
 
             let simulator_ref = self.clone(); 
 
+            let p_id = project_id_owned.clone();
             batch_handles.push(tokio::spawn(async move {
                 let mut local_rng = SmallRng::from_entropy();
                 let mut batch_results = Vec::new();
@@ -499,6 +505,7 @@ impl Simulator for MonteCarloSimulator {
                     if let Ok(res) = simulator_ref.simulate_one_path(
                         Arc::clone(&graph_clone),
                         Arc::clone(&root_clone),
+                        &p_id,
                         Arc::clone(&sop_id_clone),
                         goal_text_clone.clone(),
                         num_nodes,

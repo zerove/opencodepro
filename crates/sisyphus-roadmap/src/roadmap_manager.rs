@@ -1,8 +1,8 @@
 use serde_json::Value;
 use sisyphus_mem::{MfsStore, RoadmapSqlStore};
-use sisyphus_types::{GoalRef, Milestone, MilestoneStatus, Phase, Project, Roadmap, StateStore};
+use sisyphus_types::{GoalRef, Milestone, MilestoneStatus, Phase, Project, Roadmap};
 use std::sync::Arc;
-use anyhow::{Context, Result};
+use anyhow::Result;
 use crate::RoadmapError;
 use crate::strategic_reflection::ProposalAction;
 
@@ -38,7 +38,13 @@ impl RoadmapManager {
         let project = Project::new(id.to_string(), name.to_string(), description.to_string());
         
         self.sql_store.insert_project(&project).await
-            .map_err(|e| RoadmapError::Internal(e.to_string()))?;
+            .map_err(|e| {
+                if e.to_string().contains("UNIQUE constraint failed: projects.id") {
+                    RoadmapError::DuplicateProject(id.to_string())
+                } else {
+                    RoadmapError::Internal(e.to_string())
+                }
+            })?;
 
         Ok(project)
     }
@@ -93,11 +99,11 @@ impl RoadmapManager {
 
         for phase in &milestone.phases {
             let deps = phase.depends_on.join(",");
-            self.sql_store.insert_phase(&phase.id, &milestone.id, &phase.name, Some(deps)).await
+            self.sql_store.insert_phase(project_id, &phase.id, &milestone.id, &phase.name, Some(deps)).await
                 .map_err(|e| RoadmapError::Internal(e.to_string()))?;
             
             for goal in &phase.goals {
-                self.sql_store.insert_goal(&goal.goal_id, &phase.id, &goal.description, &goal.status.to_string()).await
+                self.sql_store.insert_goal(project_id, &goal.goal_id, &phase.id, &goal.description, &goal.status.to_string()).await
                     .map_err(|e| RoadmapError::Internal(e.to_string()))?;
             }
         }
@@ -107,11 +113,11 @@ impl RoadmapManager {
     /// Update the status of a milestone within a project.
     pub async fn update_milestone_status(
         &self,
-        _project_id: &str,
+        project_id: &str,
         milestone_id: &str,
         status: MilestoneStatus,
     ) -> Result<(), RoadmapError> {
-        self.sql_store.update_milestone_status(milestone_id, &status.to_string()).await
+        self.sql_store.update_milestone_status(project_id, milestone_id, &status.to_string()).await
             .map_err(|e| RoadmapError::Internal(e.to_string()))
     }
 
@@ -125,7 +131,7 @@ impl RoadmapManager {
              return Err(RoadmapError::ProjectNotFound(project_id.to_string()));
         }
         
-        self.sql_store.delete_milestone(milestone_id).await
+        self.sql_store.delete_milestone(project_id, milestone_id).await
             .map_err(|e| RoadmapError::Internal(e.to_string()))?;
         
         Ok(())
@@ -136,16 +142,16 @@ impl RoadmapManager {
     /// Add a phase to a milestone within a project.
     pub async fn add_phase(
         &self,
-        _project_id: &str,
+        project_id: &str,
         milestone_id: &str,
         phase: Phase,
     ) -> Result<(), RoadmapError> {
         let deps = phase.depends_on.join(",");
-        self.sql_store.insert_phase(&phase.id, milestone_id, &phase.name, Some(deps)).await
+        self.sql_store.insert_phase(project_id, &phase.id, milestone_id, &phase.name, Some(deps)).await
             .map_err(|e| RoadmapError::Internal(e.to_string()))?;
 
         for goal in &phase.goals {
-            self.sql_store.insert_goal(&goal.goal_id, &phase.id, &goal.description, &goal.status.to_string()).await
+            self.sql_store.insert_goal(project_id, &goal.goal_id, &phase.id, &goal.description, &goal.status.to_string()).await
                 .map_err(|e| RoadmapError::Internal(e.to_string()))?;
         }
         Ok(())
@@ -194,32 +200,32 @@ impl RoadmapManager {
             reviewer: None,
         };
 
-        self.proposal_manager.submit_proposal(proposal).await
+        self.proposal_manager.submit_proposal(project_id, proposal).await
     }
 
 
     /// Add a goal to a phase within a milestone.
     pub async fn add_goal(
         &self,
-        _project_id: &str,
+        project_id: &str,
         _milestone_id: &str,
-        phase_id: &str,
+        _phase_id: &str,
         goal: GoalRef,
     ) -> Result<(), RoadmapError> {
-        self.sql_store.insert_goal(&goal.goal_id, phase_id, &goal.description, &goal.status.to_string()).await
+        self.sql_store.insert_goal(project_id, &goal.goal_id, _phase_id, &goal.description, &goal.status.to_string()).await
             .map_err(|e| RoadmapError::Internal(e.to_string()))
     }
 
     /// Update the status of a specific goal.
     pub async fn update_goal_status(
         &self,
-        _project_id: &str,
+        project_id: &str,
         _milestone_id: &str,
-        phase_id: &str,
+        _phase_id: &str,
         goal_id: &str,
         status: MilestoneStatus,
     ) -> Result<(), RoadmapError> {
-        self.sql_store.update_goal_status(goal_id, &status.to_string()).await
+        self.sql_store.update_goal_status(project_id, goal_id, &status.to_string()).await
             .map_err(|e| RoadmapError::Internal(e.to_string()))
     }
 
@@ -262,7 +268,7 @@ impl RoadmapManager {
         action: &ProposalAction,
     ) -> Result<(), RoadmapError> {
         match action {
-            ProposalAction::InsertMilestone { name, description, after_milestone_id } => {
+            ProposalAction::InsertMilestone { name, description: _description, after_milestone_id: _after_milestone_id } => {
                 let milestone_id = format!("ms-{}", std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
                     .unwrap_or_default()
@@ -295,12 +301,12 @@ impl RoadmapManager {
 
     /// Delete a goal from the roadmap and update its parent phase.
     pub async fn delete_goal(&self, project_id: &str, goal_id: &str) -> Result<(), RoadmapError> {
-        self.sql_store.delete_goal(goal_id).await
+        self.sql_store.delete_goal(project_id, goal_id).await
             .map_err(|e| RoadmapError::Internal(e.to_string()))
     }
 
-    pub async fn get_goal_description(&self, goal_id: &str) -> Result<Option<String>, RoadmapError> {
-        self.sql_store.get_goal_description(goal_id).await
+    pub async fn get_goal_description(&self, project_id: &str, goal_id: &str) -> Result<Option<String>, RoadmapError> {
+        self.sql_store.get_goal_description(project_id, goal_id).await
             .map_err(|e| RoadmapError::Internal(e.to_string()))
     }
 
@@ -322,7 +328,7 @@ impl RoadmapManager {
 
     /// Migrates data from legacy MfsStore (JSON blobs) to structured RoadmapSqlStore.
     pub async fn migrate_to_sql(&self, sql_store: &RoadmapSqlStore) -> Result<usize> {
-        let project_ids = self.store.list_keys_with_prefix("roadmap:project:").await?
+        let project_ids = self.store.list_keys_with_prefix(None, "roadmap:project:").await?
             .into_iter()
             .filter(|k| !k.contains(":milestones") && !k.contains(":milestone:") && !k.contains(":phase:") && !k.contains(":goals"))
             .collect::<Vec<_>>();
@@ -336,9 +342,9 @@ impl RoadmapManager {
                     sql_store.insert_milestone(&milestone.id, &pid, &milestone.name, &milestone.status.to_string()).await?;
                     for phase in &milestone.phases {
                         let deps = phase.depends_on.join(",");
-                        sql_store.insert_phase(&phase.id, &milestone.id, &phase.name, Some(deps)).await?;
+                        sql_store.insert_phase(&pid, &phase.id, &milestone.id, &phase.name, Some(deps)).await?;
                         for goal in &phase.goals {
-                            sql_store.insert_goal(&goal.goal_id, &phase.id, &goal.description, &goal.status.to_string()).await?;
+                            sql_store.insert_goal(&pid, &goal.goal_id, &phase.id, &goal.description, &goal.status.to_string()).await?;
                         }
                     }
                 }

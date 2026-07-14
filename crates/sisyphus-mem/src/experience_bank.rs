@@ -2,7 +2,7 @@ use std::sync::Arc;
 use anyhow::Result;
 use crate::store::MfsStore;
 use sisyphus_types::experience::{ExperienceBank, ExperienceTuple, ExperienceQuery};
-use sisyphus_types::StateStore;
+
 use async_trait::async_trait;
 use sisyphus_tools_llm::EmbeddingClient;
 
@@ -21,6 +21,7 @@ impl VectorExperienceBank {
         Ok(Self { store, vector_store, embedding_client })
     }
 
+    #[allow(dead_code)]
     const INDEX_KEY: &'static str = "exp:index";
 }
 

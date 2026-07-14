@@ -19,17 +19,19 @@ impl SisyphusKernel {
         &self,
         sop_graph: Arc<SOPGraph>,
         sop_id: &str,
+        project_id: Option<&str>,
         initial_ctx: Option<Arc<ExecutionContext>>,
         event_tx: Option<mpsc::UnboundedSender<ExecutionEvent>>,
         stream_tx: Option<mpsc::UnboundedSender<sisyphus_types::CognitiveEvent>>,
     ) -> Result<(NodeOutput, crate::strategic_manager::CognitiveReport, Option<Arc<SOPGraph>>), CoreError> {
-        let goal_text = self.roadmap_manager.get_goal_description(sop_id).await
+        let goal_text = self.roadmap_manager.get_goal_description(project_id.unwrap_or("default"), sop_id).await
             .ok()
             .flatten();
-
+        
         self.strategic_manager.run_cognitive_loop(
             sop_graph,
             sop_id,
+            project_id,
             goal_text.as_deref(),
             initial_ctx,
             event_tx,

@@ -21,3 +21,7 @@ tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 tempfile = "3.8"
 sisyphus-tools-llm = { path = "../sisyphus-tools-llm" }
+sisyphus-roadmap = { path = "../sisyphus-roadmap" }
+sisyphus-tools-llm-tools = { path = "../sisyphus-tools-llm-tools" }
+sisyphus-tools-core = { path = "../sisyphus-tools-core" }
+parking_lot = "0.12"

@@ -57,32 +57,32 @@ impl ExecutionManager {
     }
 
     /// Persist a SOP graph to the state store.
-    pub async fn save_sop(&self, sop_id: &str, graph: &SOPGraph) -> Result<(), CoreError> {
+    pub async fn save_sop(&self, sop_id: &str, project_id: &str, graph: &SOPGraph) -> Result<(), CoreError> {
         let config = SOPGraphConfig::from_graph(graph);
         
         self.sop_store
-            .save_sop(sop_id, "Sisyphus SOP", Some("1.0.0".into()), &config)
+            .save_sop(sop_id, project_id, "Sisyphus SOP", Some("1.0.0".into()), &config)
             .await
             .map_err(|e| CoreError::MfsSaveError(e.to_string()))
     }
 
     /// Load a SOP graph from the state store.
     /// Returns a list of all registered SOP IDs.
-    pub async fn list_sops(&self) -> Result<Vec<String>, CoreError> {
+    pub async fn list_sops(&self, project_id: Option<&str>) -> Result<Vec<String>, CoreError> {
         self.sop_store
-            .list_sops()
+            .list_sops(project_id)
             .await
             .map_err(|e| CoreError::Internal(e.to_string()))
     }
 
     /// Load a SOP graph from the state store.
-    pub async fn load_sop(&self, sop_id: &str) -> Result<Arc<SOPGraph>, CoreError> {
+    pub async fn load_sop(&self, sop_id: &str, project_id: &str) -> Result<Arc<SOPGraph>, CoreError> {
         let config = self.sop_store
-            .load_sop(sop_id)
+            .load_sop(sop_id, project_id)
             .await
             .map_err(|e| CoreError::MfsLoadError(e.to_string()))?
-            .ok_or_else(|| CoreError::SopNotFound(sop_id.to_string()))?;
- 
+            .ok_or_else(|| CoreError::SopNotFound(format!("SOP {sop_id} not found in project {project_id}")))?;
+        
         Ok(SOPGraph::from_config(&config, self.tool_router.clone(), self.executor.test_executor.clone())?)
     }
 

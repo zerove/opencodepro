@@ -29,6 +29,14 @@ impl LlmClient for MockLlmClient {
             Ok(r#"{"project_id": "p1", "health_assessment": "Warning", "trajectory": "Slightly off", "recommendations": ["Optimize core"], "risk_factors": ["Latency"], "confidence": 0.8}"#.to_string())
         }
     }
+
+    fn get_params_for(&self, _agent_id: &str) -> (String, String, String) {
+        ("mock_key".into(), "http://mock:8080".into(), "mock-model".into())
+    }
+
+    fn breaker(&self) -> sisyphus_tools_llm::circuit_breaker::CircuitBreaker {
+        sisyphus_tools_llm::circuit_breaker::CircuitBreaker::default()
+    }
 }
 
 #[tokio::test]
@@ -119,12 +127,13 @@ async fn test_strategic_governance_loop_detection() {
             .unwrap(),
     );
     let sql_store = Arc::new(
-        sisyphus_mem::RoadmapSqlStore::new("sqlite::memory:")
+        sisyphus_mem::RoadmapSqlStore::new(store.pool().clone())
             .await
             .unwrap(),
     );
     sql_store.init_schema().await.unwrap();
-    let manager = sisyphus_roadmap::RoadmapManager::new(store, sql_store);
+    let proposal_manager = Arc::new(sisyphus_roadmap::proposal_manager::ProposalManager::new(store.clone()));
+    let manager = sisyphus_roadmap::RoadmapManager::new(store, sql_store, proposal_manager);
 
     manager
         .create_project("p1", "Project X", "Desc")

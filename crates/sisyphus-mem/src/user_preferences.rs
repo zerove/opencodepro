@@ -17,13 +17,15 @@ pub struct UserPreference {
 pub struct UserPreferenceStore {
     store: Arc<MfsStore>,
     prefix: &'static str,
+    project_id: String,
 }
 
 impl UserPreferenceStore {
-    pub fn new(store: Arc<MfsStore>) -> Self {
+    pub fn new(store: Arc<MfsStore>, project_id: String) -> Self {
         Self {
             store,
             prefix: "pref:",
+            project_id,
         }
     }
 
@@ -36,7 +38,7 @@ impl UserPreferenceStore {
 
         let current_pref = self
             .store
-            .get_state_json(&full_key)
+            .get_state_json(&self.project_id, &full_key)
             .await
             .map_err(|e| anyhow::anyhow!(e))?
             .and_then(|v| serde_json::from_value::<UserPreference>(v).ok());
@@ -74,7 +76,7 @@ impl UserPreferenceStore {
         };
 
         self.store
-            .set_state_json(&full_key, serde_json::to_value(&updated_pref)?)
+            .set_state_json(&self.project_id, &full_key, serde_json::to_value(&updated_pref)?)
             .await
             .map_err(|e| anyhow::anyhow!(e))?;
 
@@ -85,7 +87,7 @@ impl UserPreferenceStore {
         let full_key = self.make_key(key);
         let val = self
             .store
-            .get_state_json(&full_key)
+            .get_state_json(&self.project_id, &full_key)
             .await
             .map_err(|e| anyhow::anyhow!(e))?;
 
@@ -130,7 +132,7 @@ mod tests {
 
     async fn setup_store() -> (UserPreferenceStore, Arc<MfsStore>) {
         let store = Arc::new(MfsStore::new("sqlite::memory:").await.unwrap());
-        (UserPreferenceStore::new(store.clone()), store)
+        (UserPreferenceStore::new(store.clone(), "test_project".into()), store)
     }
 
     #[tokio::test]

@@ -9,13 +9,13 @@ use crate::errors::TypesError;
 
 #[async_trait]
 pub trait StateStore: Send + Sync {
-    async fn get_state_json(&self, key: &str) -> Result<Option<serde_json::Value>, TypesError>;
-    async fn set_state_json(&self, key: &str, value: serde_json::Value) -> Result<(), TypesError>;
+    async fn get_state_json(&self, project_id: &str, key: &str) -> Result<Option<serde_json::Value>, TypesError>;
+    async fn set_state_json(&self, project_id: &str, key: &str, value: serde_json::Value) -> Result<(), TypesError>;
 
-    async fn get(&self, key: &str) -> Result<Option<Vec<u8>>, TypesError>;
-    async fn set(&self, key: &str, value: &[u8]) -> Result<(), TypesError>;
+    async fn get(&self, project_id: &str, key: &str) -> Result<Option<Vec<u8>>, TypesError>;
+    async fn set(&self, project_id: &str, key: &str, value: &[u8]) -> Result<(), TypesError>;
 
-    async fn get_traces_for_sop(&self, sop_id: &str) -> Result<Vec<(String, String, String, i64, i64)>, TypesError>;
+    async fn get_traces_for_sop(&self, project_id: &str, sop_id: &str) -> Result<Vec<(String, String, String, i64, i64)>, TypesError>;
 }
 
 /// Strongly-typed wrapper around `serde_json::Value` for SOP node outputs.

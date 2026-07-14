@@ -410,7 +410,7 @@ async fn test_kernel_save_load_roundtrip() {
     };
     let graph = SOPGraph::from_config(&config, Arc::new(MockToolExecutor), Arc::new(MockTestExecutor)).unwrap();
 
-    kernel.save_sop("test_roundtrip", &graph).await.unwrap();
+    kernel.save_sop("test_roundtrip", "default", &graph).await.unwrap();
     let loaded = kernel.load_sop("test_roundtrip").await.unwrap();
 
     assert_eq!(loaded.graph.node_count(), 2);
@@ -437,7 +437,7 @@ async fn test_kernel_save_load_empty_graph() {
     };
     let graph = SOPGraph::from_config(&config, Arc::new(MockToolExecutor), Arc::new(MockTestExecutor)).unwrap();
 
-    kernel.save_sop("test_empty", &graph).await.unwrap();
+    kernel.save_sop("test_empty", "default", &graph).await.unwrap();
     let loaded = kernel.load_sop("test_empty").await.unwrap();
 
     assert_eq!(loaded.graph.node_count(), 0);

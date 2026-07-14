@@ -21,6 +21,7 @@ pub trait FlowSynthesizer: Send + Sync {
         &self,
         goal: &str,
         context: &ExecutionContext,
+        project_id: &str,
         mode: sisyphus_types::WorkMode,
         insights: Option<&str>,
     ) -> Result<SynthesisResult, String>;
@@ -146,6 +147,7 @@ impl FlowSynthesizer for GoalDrivenSynthesizer {
         &self,
         goal: &str,
         _context: &ExecutionContext,
+        _project_id: &str,
         _mode: sisyphus_types::WorkMode,
         _insights: Option<&str>,
     ) -> Result<SynthesisResult, String> {
@@ -284,6 +286,7 @@ impl FlowSynthesizer for DynamicSopSynthesizer {
         &self,
         goal: &str,
         _context: &ExecutionContext,
+        _project_id: &str,
         _mode: sisyphus_types::WorkMode,
         insights: Option<&str>,
     ) -> Result<SynthesisResult, String> {
@@ -341,11 +344,12 @@ pub async fn synthesize_composite(
     goals: &[&str],
     synthesizer: &dyn FlowSynthesizer,
     ctx: &ExecutionContext,
+    project_id: &str,
 ) -> Result<CompositeGraph, String> {
     let mut composite = CompositeGraph::new();
     for (i, goal) in goals.iter().enumerate() {
         let sop_id = format!("goal_{}", i);
-        let result = synthesizer.synthesize(goal, ctx, sisyphus_types::WorkMode::Standard, None).await?;
+        let result = synthesizer.synthesize(goal, ctx, project_id, sisyphus_types::WorkMode::Standard, None).await?;
         let config = SOPGraphConfig::from_graph(&result.graph);
         composite.add_graph(&sop_id, config);
     }
@@ -369,6 +373,7 @@ impl FlowSynthesizer for MetaLearningSynthesizer {
         &self,
         goal: &str,
         context: &ExecutionContext,
+        project_id: &str,
         mode: sisyphus_types::WorkMode,
         insights: Option<&str>,
     ) -> Result<SynthesisResult, String> {
@@ -385,7 +390,7 @@ impl FlowSynthesizer for MetaLearningSynthesizer {
 
         tracing::info!(goal = %goal, hint = ?best_strategy, "Synthesizing with meta-learning hint");
 
-        self.inner.synthesize(&augmented_goal, context, mode, insights).await
+        self.inner.synthesize(&augmented_goal, context, project_id, mode, insights).await
     }
 }
 
@@ -406,6 +411,7 @@ impl FlowSynthesizer for StrategicSopSynthesizer {
         &self,
         goal: &str,
         context: &ExecutionContext,
+        project_id: &str,
         mode: sisyphus_types::WorkMode,
         insights: Option<&str>,
     ) -> Result<SynthesisResult, String> {
@@ -418,7 +424,7 @@ impl FlowSynthesizer for StrategicSopSynthesizer {
         let mut candidates = Vec::new();
         for directive in directives {
             let augmented_goal = format!("{}{}", goal, directive);
-            if let Ok(res) = self.inner.synthesize(&augmented_goal, context, mode, insights).await {
+            if let Ok(res) = self.inner.synthesize(&augmented_goal, context, project_id, mode, insights).await {
                 candidates.push(res);
             }
         }
@@ -431,7 +437,7 @@ impl FlowSynthesizer for StrategicSopSynthesizer {
         let mut max_score = f64::NEG_INFINITY;
 
         for res in candidates {
-            let sim = self.simulator.simulate(res.graph.clone(), context, "strategic_eval", None).await?;
+            let sim = self.simulator.simulate(res.graph.clone(), context, project_id, "strategic_eval", None).await?;
             
             // Scoring: Prob is primary, Cost is secondary penalty
             // Prob (0.0-1.0) * 1000 - Cost (u64)

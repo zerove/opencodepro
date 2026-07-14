@@ -35,7 +35,7 @@ impl WorkspaceManager {
     /// Initialize the manager by loading workspaces from the state store.
     pub async fn init(&self) -> Result<(), TypesError> {
         // Load all workspaces
-        if let Some(data) = self.store.get("sys.workspaces").await? {
+        if let Some(data) = self.store.get("sys", "sys.workspaces").await? {
             let ws_list: Vec<Workspace> = serde_json::from_slice(&data)
                 .map_err(|e| TypesError::InternalError(format!("Failed to deserialize workspaces: {e}")))?;
             
@@ -46,7 +46,7 @@ impl WorkspaceManager {
         }
 
         // Load current active workspace
-        if let Some(id_bytes) = self.store.get("sys.current_workspace").await? {
+        if let Some(id_bytes) = self.store.get("sys", "sys.current_workspace").await? {
             let id = String::from_utf8_lossy(&id_bytes).to_string();
             let mut current = self.current_workspace.write().await;
             *current = Some(id);
@@ -89,7 +89,7 @@ impl WorkspaceManager {
         *current = Some(id.to_string());
         
         // Persist active ID
-        self.store.set("sys.current_workspace", id.as_bytes()).await?;
+        self.store.set("sys", "sys.current_workspace", id.as_bytes()).await?;
         
         Ok(())
     }
@@ -117,7 +117,7 @@ impl WorkspaceManager {
         let data = serde_json::to_vec(&ws_list)
             .map_err(|e| TypesError::InternalError(format!("Failed to serialize workspaces: {e}")))?;
         
-        self.store.set("sys.workspaces", &data).await?;
+        self.store.set("sys", "sys.workspaces", &data).await?;
         Ok(())
     }
 }

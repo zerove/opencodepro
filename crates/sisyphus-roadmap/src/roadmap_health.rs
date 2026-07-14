@@ -16,11 +16,11 @@ impl RoadmapManager {
             outcome.project_id, outcome.milestone_id, outcome.phase_id, outcome.goal_id
         );
         let value = serde_json::to_value(outcome)?;
-        self.store.set_state_json(&key, value).await?;
+        self.store.set_state_json(&outcome.project_id, &key, value).await?;
 
         // Update outcome index (deduplicated list of (project,ms,ph,goal) tuples)
         let idx_key = format!("roadmap:outcomes:{}", outcome.project_id);
-        let mut ids: Vec<String> = match self.store.get_state_json(&idx_key).await? {
+        let mut ids: Vec<String> = match self.store.get_state_json(&outcome.project_id, &idx_key).await? {
             Some(Value::Array(arr)) => arr
                 .iter()
                 .filter_map(|v| v.as_str().map(String::from))
@@ -38,7 +38,7 @@ impl RoadmapManager {
                 ids.drain(0..ids.len() - 100);
             }
             let arr: Value = ids.iter().map(|s| Value::String(s.clone())).collect();
-            self.store.set_state_json(&idx_key, arr).await?;
+            self.store.set_state_json(&outcome.project_id, &idx_key, arr).await?;
         }
 
         Ok(())
@@ -50,7 +50,7 @@ impl RoadmapManager {
         project_id: &str,
     ) -> Result<Vec<ExecutionOutcome>, RoadmapError> {
         let idx_key = format!("roadmap:outcomes:{}", project_id);
-        let ids: Vec<String> = match self.store.get_state_json(&idx_key).await? {
+        let ids: Vec<String> = match self.store.get_state_json(project_id, &idx_key).await? {
             Some(Value::Array(arr)) => arr
                 .iter()
                 .filter_map(|v| v.as_str().map(String::from))
@@ -66,7 +66,7 @@ impl RoadmapManager {
                     "roadmap:outcome:{}:{}:{}:{}",
                     project_id, parts[0], parts[1], parts[2]
                 );
-                if let Some(v) = self.store.get_state_json(&key).await? {
+                if let Some(v) = self.store.get_state_json(project_id, &key).await? {
                     if let Ok(o) = serde_json::from_value::<ExecutionOutcome>(v) {
                         outcomes.push(o);
                     }

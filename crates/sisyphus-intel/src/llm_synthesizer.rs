@@ -95,6 +95,7 @@ impl FlowSynthesizer for LlmDrivenSynthesizer {
         &self,
         goal: &str,
         _context: &ExecutionContext,
+        _project_id: &str,
         mode: sisyphus_types::WorkMode,
         _insights: Option<&str>,
     ) -> Result<SynthesisResult, String> {
@@ -268,8 +269,8 @@ Plan: <overall strategy>"#, tools, lessons);
         Ok((reasoning, json_str.to_string(), plan_desc))
     }
 
-    async fn critique(&self, goal: &str, config_json: &str, graph: &SOPGraph) -> Result<(bool, String), String> {
-        let sim_res = self.simulator.simulate(Arc::new(SOPGraph::new()), &ExecutionContext::new(), "critique_sim", None).await?;
+    async fn critique(&self, project_id: &str, goal: &str, config_json: &str, graph: &SOPGraph) -> Result<(bool, String), String> {
+        let sim_res = self.simulator.simulate(Arc::new(SOPGraph::new()), &ExecutionContext::new(), project_id, "critique_sim", None).await?;
         
         let system_prompt = r#"
 You are a Strategic Auditor. Review the proposed SOP for logic flaws, redundancy, or fragility.
@@ -390,6 +391,7 @@ impl FlowSynthesizer for LogicalSOPSynthesizer {
         &self,
         goal: &str,
         _context: &ExecutionContext,
+        _project_id: &str,
         _mode: sisyphus_types::WorkMode,
         _insights: Option<&str>,
     ) -> Result<SynthesisResult, String> {

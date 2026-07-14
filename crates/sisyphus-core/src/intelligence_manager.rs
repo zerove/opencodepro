@@ -32,11 +32,12 @@ impl IntelligenceManager {
         &self,
         goal: &str,
         ctx: &ExecutionContext,
+        project_id: &str,
         mode: sisyphus_types::WorkMode,
         insights: Option<&str>,
     ) -> Result<sisyphus_intel::synthesis::SynthesisResult, String> {
         self.synthesizer
-                    .synthesize(goal, ctx, mode, insights)
+                    .synthesize(goal, ctx, project_id, mode, insights)
             .await
             .map_err(|e| e.to_string())
     }
@@ -46,11 +47,12 @@ impl IntelligenceManager {
         &self,
         graph: Arc<SOPGraph>,
         ctx: &ExecutionContext,
+        project_id: &str,
         sop_id: &str,
     ) -> Result<SimulationResult, String> {
         self.intel
             .simulator
-            .simulate(graph, ctx, sop_id, None)
+            .simulate(graph, ctx, project_id, sop_id, None)
             .await
     }
 

@@ -332,14 +332,27 @@ impl MfsStore {
     }
 
     /// Lists all keys in the state store that start with the given prefix.
-    pub async fn list_keys_with_prefix(&self, prefix: &str) -> Result<Vec<String>> {
-        let prefix_query = format!("{}%", prefix);
+    /// If `project_id` is provided, it filters for keys belonging to that project.
+    /// If `project_id` is None, it searches across all projects.
+    pub async fn list_keys_with_prefix(&self, project_id: Option<&str>, prefix: &str) -> Result<Vec<String>> {
+        let prefix_query = match project_id {
+            Some(pid) => format!("{}:{}%", pid, prefix),
+            None => format!("%{}%", prefix),
+        };
         let rows: Vec<(String,)> = sqlx::query_as("SELECT key FROM state WHERE key LIKE ?")
             .bind(prefix_query)
             .fetch_all(&self.l2)
             .await?;
         
-        Ok(rows.into_iter().map(|(k,)| k).collect())
+        let results = rows.into_iter().map(|(k,)| {
+            if let Some(pid) = project_id {
+                k.strip_prefix(&format!("{}:", pid)).unwrap_or(&k).to_string()
+            } else {
+                k
+            }
+        }).collect();
+
+        Ok(results)
     }
 
     pub async fn record_experience(
@@ -453,15 +466,16 @@ impl MfsStore {
 
 #[async_trait]
 impl sisyphus_types::StateStore for MfsStore {
-    async fn get_state_json(&self, key: &str) -> std::result::Result<Option<serde_json::Value>, sisyphus_types::TypesError> {
-        let span = tracing::info_span!("mem.get", key = %key);
+    async fn get_state_json(&self, project_id: &str, key: &str) -> std::result::Result<Option<serde_json::Value>, sisyphus_types::TypesError> {
+        let span = tracing::info_span!("mem.get", project_id = %project_id, key = %key);
         let _enter = span.enter();
 
+        let full_key = format!("{}:{}", project_id, key);
         let start = Instant::now();
         // 1. Try L1
         {
             let mut cache = self.l1.lock();
-            if let Some(val) = cache.get(key) {
+            if let Some(val) = cache.get(&full_key) {
                 let duration = start.elapsed();
                 tracing::debug!(
                     layer = "L1",
@@ -478,7 +492,7 @@ impl sisyphus_types::StateStore for MfsStore {
         let l2_start = Instant::now();
         let row: Option<(String, String)> =
             sqlx::query_as("SELECT key, value FROM state WHERE key = ?")
-                .bind(key)
+                .bind(&full_key)
                 .fetch_optional(&self.l2)
                 .await
                 .map_err(|e| sisyphus_types::TypesError::StateStoreError(e.to_string()))?;
@@ -489,7 +503,7 @@ impl sisyphus_types::StateStore for MfsStore {
             // Update L1
             {
                 let mut cache = self.l1.lock();
-                cache.put(key.to_string(), json_val.clone());
+                cache.put(full_key.clone(), json_val.clone());
             }
             let duration = l2_start.elapsed();
             tracing::debug!(
@@ -513,22 +527,23 @@ impl sisyphus_types::StateStore for MfsStore {
         Ok(None)
     }
 
-    async fn set_state_json(&self, key: &str, value: serde_json::Value) -> std::result::Result<(), sisyphus_types::TypesError> {
-        let span = tracing::info_span!("mem.set", key = %key);
+    async fn set_state_json(&self, project_id: &str, key: &str, value: serde_json::Value) -> std::result::Result<(), sisyphus_types::TypesError> {
+        let span = tracing::info_span!("mem.set", project_id = %project_id, key = %key);
         let _enter = span.enter();
 
+        let full_key = format!("{}:{}", project_id, key);
         let start = Instant::now();
 
         // Update L1 (immediate)
         {
             let mut cache = self.l1.lock();
-            cache.put(key.to_string(), value.clone());
+            cache.put(full_key.clone(), value.clone());
         }
 
         // Queue for L2 persistence (async)
         self.write_tx
             .send(WriteOp::Set {
-                key: key.to_string(),
+                key: full_key,
                 value,
             })
             .map_err(|e| sisyphus_types::TypesError::StateStoreError(e.to_string()))?;
@@ -540,32 +555,61 @@ impl sisyphus_types::StateStore for MfsStore {
         Ok(())
     }
 
-    async fn get(&self, key: &str) -> std::result::Result<Option<Vec<u8>>, sisyphus_types::TypesError> {
-        let val = self.get_state_json(key).await?;
+    async fn get(&self, project_id: &str, key: &str) -> std::result::Result<Option<Vec<u8>>, sisyphus_types::TypesError> {
+        let val = self.get_state_json(project_id, key).await?;
         match val {
             Some(v) => Ok(Some(serde_json::to_vec(&v).map_err(|e| sisyphus_types::TypesError::InternalError(e.to_string()))?)),
             None => Ok(None),
         }
     }
 
-    async fn set(&self, key: &str, value: &[u8]) -> std::result::Result<(), sisyphus_types::TypesError> {
+    async fn set(&self, project_id: &str, key: &str, value: &[u8]) -> std::result::Result<(), sisyphus_types::TypesError> {
         let json_val: serde_json::Value = serde_json::from_slice(value)
             .map_err(|e| sisyphus_types::TypesError::InternalError(e.to_string()))?;
-        self.set_state_json(key, json_val).await
+        self.set_state_json(project_id, key, json_val).await
     }
 
-    async fn get_traces_for_sop(&self, sop_id: &str) -> std::result::Result<Vec<(String, String, String, i64, i64)>, sisyphus_types::TypesError> {
+    async fn get_traces_for_sop(&self, project_id: &str, sop_id: &str) -> std::result::Result<Vec<(String, String, String, i64, i64)>, sisyphus_types::TypesError> {
         let rows = sqlx::query_as::<_, (String, String, String, i64, i64)>(
             "SELECT node_id, status, output, fuel_consumed, duration_ms 
              FROM execution_traces 
-             WHERE sop_id = ? 
+             WHERE sop_id = ? AND project_id = ?
              ORDER BY timestamp ASC"
         )
         .bind(sop_id)
+        .bind(project_id)
         .fetch_all(&self.l2)
         .await
         .map_err(|e| sisyphus_types::TypesError::StateStoreError(e.to_string()))?;
     
         Ok(rows)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sisyphus_types::StateStore;
+
+    #[tokio::test]
+    async fn test_cross_project_isolation_vulnerability() {
+        // We use :memory: for fast tests.
+        let store = MfsStore::new("sqlite::memory:").await.expect("Failed to init store");
+
+        // Simulation: Project A sets a value
+        let project_a = "project_a";
+        let project_b = "project_b";
+        let key = "user_preference";
+        let val_a = serde_json::json!({"theme": "dark"});
+        store.set_state_json(project_a, key, val_a.clone()).await.expect("Set A failed");
+
+        // Simulation: Project B sets the SAME key
+        let val_b = serde_json::json!({"theme": "light"});
+        store.set_state_json(project_b, key, val_b.clone()).await.expect("Set B failed");
+
+        // Verify: Project A still reads its own value, NOT Project B's
+        let result = store.get_state_json(project_a, key).await.expect("Get failed");
+        
+        assert_eq!(result, Some(val_a), "Isolation failed: Project B overwrote Project A's state");
     }
 }

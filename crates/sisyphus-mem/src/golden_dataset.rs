@@ -40,7 +40,7 @@ impl GoldenDataset for InMemoryGoldenDataset {
         Ok(self.data.read().get(goal).cloned())
     }
 
-    async fn verify_no_regression(&self, goal: &str, candidate: &SOPGraphConfig, current_metric: f64) -> Result<bool, TypesError> {
+    async fn verify_no_regression(&self, goal: &str, _candidate: &SOPGraphConfig, current_metric: f64) -> Result<bool, TypesError> {
         if let Some(golden) = self.data.read().get(goal) {
             // Regression if the current metric is significantly lower than the golden metric
             // For now, we use a simple threshold: 10% degradation

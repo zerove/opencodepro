@@ -13,6 +13,7 @@ impl MySisyphusBridge {
     pub(crate) async fn run_execution(
         &self,
         sop_id: String,
+        project_id: &str,
         event_tx: Option<mpsc::UnboundedSender<sisyphus_types::ExecutionEvent>>,
     ) -> Result<(String, String), Status> {
         let start = Instant::now();
@@ -20,7 +21,7 @@ impl MySisyphusBridge {
             let synthesized_sop_id = format!("synth_{}", goal);
             match self
                 .kernel
-                .execute_goal(goal, &synthesized_sop_id, event_tx, None)
+                .execute_goal(goal, &synthesized_sop_id, project_id, event_tx, None)
                 .await
             {
                 Ok((result, report)) => {
@@ -38,7 +39,7 @@ impl MySisyphusBridge {
                 }
             }
         } else {
-            let graph = match self.kernel.load_sop(&sop_id).await {
+            let graph = match self.kernel.load_sop(&sop_id, project_id).await {
                 Ok(g) => g,
                 Err(_) => {
                     let mut g = SOPGraph::new();
@@ -63,7 +64,7 @@ impl MySisyphusBridge {
 
             match self
                 .kernel
-                .execute_with_cognition(graph, &sop_id, None, event_tx, None)
+                .execute_with_cognition(graph, &sop_id, Some(project_id), event_tx, None)
                 .await
             {
                 Ok((result, report, evolved_graph)) => {

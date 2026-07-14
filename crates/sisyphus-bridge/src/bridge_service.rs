@@ -298,6 +298,9 @@ impl MySisyphusBridge {
             Err(e) => warn!(error = %e, "SOP migration failed (might be already migrated"),
         }
 
+        let workspace_manager = Arc::new(sisyphus_tools_agent::workspace_manager::WorkspaceManager::new(state_store.clone()));
+        workspace_manager.init().await
+            .map_err(|e| sisyphus_types::TypesError::StateStoreError(format!("Failed to init WorkspaceManager: {e}")))?;
         let kernel = Arc::new(SisyphusKernel::new(
             state_store.clone(),
             sop_store.clone(),
@@ -310,7 +313,7 @@ impl MySisyphusBridge {
             meta_learner,
             consensus.clone(),
             sql_store.clone(),
-            embedding_client,
+            embedding_client, workspace_manager.clone(), workspace_manager.clone(),
         ));
 
         strategic_executor.set_kernel(Arc::downgrade(&kernel));
@@ -385,9 +388,6 @@ impl MySisyphusBridge {
         ));
         
         // ── Workspace Management Init ──────────────────────────────────────
-        let workspace_manager = Arc::new(sisyphus_tools_agent::workspace_manager::WorkspaceManager::new(state_store.clone()));
-        workspace_manager.init().await
-            .map_err(|e| sisyphus_types::TypesError::StateStoreError(format!("Failed to init WorkspaceManager: {e}")))?;
         
         let bridge = MySisyphusBridge {
             kernel,

@@ -122,7 +122,7 @@ async fn test_full_cognitive_lifecycle() {
         state_snapshot: None,
     };
 
-    let evolution = kernel.handle_feedback(feedback).await.expect("Feedback handling failed");
+    let evolution = kernel.handle_feedback("default", feedback).await.expect("Feedback handling failed");
     
     assert!(evolution.should_pivot, "Sisyphus should pivot after a failure");
     assert!(evolution.revised_plan.is_some(), "Revised plan should be provided");
