@@ -155,6 +155,7 @@ fn bench_reflection(c: &mut Criterion) {
 // Evolution benchmark
 // ---------------------------------------------------------------------------
 fn bench_evolution(c: &mut Criterion) {
+    let rt = tokio::runtime::Runtime::new().unwrap();
     let executor = Arc::new(BenchExecutor);
 
     // Build a 20-node graph
@@ -196,25 +197,29 @@ fn bench_evolution(c: &mut Criterion) {
 
     // StandardEvolver with default SimpleFuelPricer
     group.bench_function("evolve_simple_pricer", |b| {
-        b.iter(|| {
+        b.to_async(&rt).iter(|| async {
             let evolver = StandardEvolver::new();
             evolver.evolve(
                 black_box(&graph),
                 black_box(&report),
                 black_box(&prediction),
+                None,
             )
+            .await
         })
     });
 
     // StandardEvolver with AdaptiveFuelPricer
     group.bench_function("evolve_adaptive_pricer", |b| {
-        b.iter(|| {
+        b.to_async(&rt).iter(|| async {
             let evolver = StandardEvolver::with_fuel_pricer(Arc::new(AdaptiveFuelPricer::new()));
             evolver.evolve(
                 black_box(&graph),
                 black_box(&report),
                 black_box(&prediction),
+                None,
             )
+            .await
         })
     });
 
@@ -227,13 +232,15 @@ fn bench_evolution(c: &mut Criterion) {
     };
 
     group.bench_function("evolve_noop", |b| {
-        b.iter(|| {
+        b.to_async(&rt).iter(|| async {
             let evolver = StandardEvolver::new();
             evolver.evolve(
                 black_box(&graph),
                 black_box(&clean_report),
                 black_box(&prediction),
+                None,
             )
+            .await
         })
     });
 

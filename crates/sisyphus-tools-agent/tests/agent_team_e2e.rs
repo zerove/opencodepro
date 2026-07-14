@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use serde_json::json;
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex, RwLock};
 
 use sisyphus_tools_agent::{
     agent_registry::{AgentInfo, AgentRegistry},
@@ -10,6 +10,7 @@ use sisyphus_tools_llm::{llm::DynamicLlmClient, LlmClient};
 use sisyphus_types::{AgentLlmOverride, Config, ToolExecutor};
 
 // ── Mocks ──────────────────────────────────────────────────────────────────
+static ENV_LOCK: Mutex<()> = Mutex::new(());
 
 struct JsonLlmClient(String);
 
@@ -51,6 +52,7 @@ fn make_executor() -> Arc<dyn ToolExecutor> {
 
 #[tokio::test]
 async fn test_agent_model_routing_pipeline_e2e() {
+    let _guard = ENV_LOCK.lock().unwrap();
     std::env::remove_var("GOOGLE_GENERATIVE_AI_API_KEY");
 
     // 1. Setup Config with per-agent overrides

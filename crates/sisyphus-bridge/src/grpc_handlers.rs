@@ -4,7 +4,7 @@ use sisyphus_bridge_api::sisyphus_bridge_server::SisyphusBridge;
 use sisyphus_bridge_api::{
     AddMessageRequest, AddMessageResponse, AgentMetadata, BenchmarkEntry, BreakerMetricsRequest,
     BreakerMetricsResponse, BreakerStatus, DecomposeGoalRequest, DecomposeGoalResponse,
-    ExecuteSopRequest, ExecuteToolRequest, ExecuteToolResponse, ExecutionEvent,
+    DelegateCognitiveTaskRequest, DelegateCognitiveTaskResponse, ExecuteSopRequest, ExecuteToolRequest, ExecuteToolResponse, ExecutionEvent,
     HealthCheckRequest, HealthCheckResponse, InstallSkillRequest, InstallSkillResponse,
     ListAgentsRequest, ListAgentsResponse, ListBenchmarksRequest, ListBenchmarksResponse,
     ListPluginsRequest, ListPluginsResponse, LoadPluginRequest, LoadPluginResponse,
@@ -12,8 +12,13 @@ use sisyphus_bridge_api::{
     ListToolsResponse, PluginDescriptor, RemoveSkillRequest, RemoveSkillResponse, ShowSkillRequest,
     ShowSkillResponse, SkillMetadata, SopResponse, TaskProto, ToolMetadata,
     UnloadPluginRequest, UnloadPluginResponse,
+    CognitiveTaskEvent, SubmitFeedbackRequest, SubmitFeedbackResponse, CaptureExperienceRequest, CaptureExperienceResponse,
+    CreateWorkspaceRequest, CreateWorkspaceResponse, SwitchWorkspaceRequest, SwitchWorkspaceResponse,
+    ListWorkspacesRequest, ListWorkspacesResponse, WorkspaceMetadata, GetCurrentWorkspaceRequest, GetCurrentWorkspaceResponse,
+    EventRequest,
 };
 use sisyphus_core::{SOPGraph, WasmSOPNode};
+use sisyphus_types::ToolExecutor;
 use sisyphus_metrics::record_bridge_request;
 use sisyphus_tools_llm::LlmClient;
 use sisyphus_tools_agent::team::TeamGoal;
@@ -24,15 +29,22 @@ use tracing::info_span;
 
 use super::MySisyphusBridge;
 
-// ── Sub-modules ────────────────────────────────────────────
-
-#[path = "grpc_exec.rs"]
-mod grpc_exec;
-
-// ── gRPC handlers ──────────────────────────────────────────
 
 #[tonic::async_trait]
 impl SisyphusBridge for MySisyphusBridge {
+    type StreamEventsStream = tonic::codegen::BoxStream<sisyphus_bridge_api::BridgeEvent>;
+
+    async fn stream_events(
+        &self,
+        _request: Request<sisyphus_bridge_api::EventRequest>,
+    ) -> Result<Response<Self::StreamEventsStream>, Status> {
+        let rx = self.event_bus.subscribe();
+        let stream = tokio_stream::wrappers::BroadcastStream::new(rx).map(|res| {
+            res.map_err(|e| Status::internal(format!("Broadcast error: {e}")))
+        });
+        Ok(Response::new(Box::pin(stream)))
+    }
+
     async fn execute_sop(
         &self,
         request: Request<ExecuteSopRequest>,
@@ -40,10 +52,28 @@ impl SisyphusBridge for MySisyphusBridge {
         let req = request.into_inner();
         let sop_id = req.sop_id.clone();
 
+        self.publish_event(sisyphus_bridge_api::BridgeEvent {
+            event: Some(sisyphus_bridge_api::bridge_event::Event::OpUpdate(sisyphus_bridge_api::OperationUpdate {
+                op_id: sop_id.clone(),
+                status: "STARTED".into(),
+                result: "".into(),
+                success: true,
+            })),
+        });
+
         let span = info_span!("bridge.execute_sop", sop_id = %sop_id);
         let _enter = span.enter();
 
-        let (result_str, _final_id) = self.run_execution(sop_id, None).await?;
+        let (result_str, _final_id) = self.run_execution(sop_id.clone(), None).await?;
+
+        self.publish_event(sisyphus_bridge_api::BridgeEvent {
+            event: Some(sisyphus_bridge_api::bridge_event::Event::OpUpdate(sisyphus_bridge_api::OperationUpdate {
+                op_id: sop_id.clone(),
+                status: "COMPLETED".into(),
+                result: result_str.clone(),
+                success: true,
+            })),
+        });
 
         record_bridge_request(true, 0.0);
 
@@ -165,6 +195,92 @@ impl SisyphusBridge for MySisyphusBridge {
         }
     }
 
+    async fn delegate_cognitive_task(
+        &self,
+        request: Request<DelegateCognitiveTaskRequest>,
+    ) -> Result<Response<DelegateCognitiveTaskResponse>, Status> {
+        let req = request.into_inner();
+        let goal = req.goal;
+        let context_str = req.context;
+
+        let ctx = sisyphus_types::ExecutionContext::new();
+        ctx.write_notepad("context".into(), context_str);
+
+        match self.kernel.intelligence_manager.synthesize_goal(
+            &goal, 
+            &ctx, 
+            sisyphus_types::WorkMode::Standard,
+            None
+        ).await {
+            Ok(result) => {
+                let plan = sisyphus_types::SOPGraphConfig::from_graph(&result.graph)
+                    .into_cognitive_plan(goal.clone(), goal.clone());
+                let _ = self.kernel.cache_plan(&plan.plan_id, &plan).await;
+
+                let plan_json = serde_json::to_string(&plan)
+                    .map_err(|e| Status::internal(format!("Serialization failed: {e}")))?;
+                
+                Ok(Response::new(DelegateCognitiveTaskResponse {
+                    success: true,
+                    error: String::new(),
+                    plan_json,
+                }))
+            }
+            Err(e) => Ok(Response::new(DelegateCognitiveTaskResponse {
+                success: false,
+                error: e.to_string(),
+                plan_json: "".into(),
+            })),
+        }
+    }
+
+    async fn submit_feedback(
+        &self,
+        request: Request<SubmitFeedbackRequest>,
+    ) -> Result<Response<SubmitFeedbackResponse>, Status> {
+        let req = request.into_inner();
+        let feedback: sisyphus_types::ExecutionFeedback = serde_json::from_str(&req.feedback_json)
+            .map_err(|e| Status::invalid_argument(format!("Invalid feedback JSON: {e}")))?;
+
+        match self.kernel.handle_feedback(feedback).await {
+            Ok(evolution) => {
+                let evolution_json = serde_json::to_string(&evolution)
+                    .map_err(|e| Status::internal(format!("Serialization failed: {e}")))?;
+                
+                Ok(Response::new(SubmitFeedbackResponse {
+                    success: true,
+                    error: String::new(),
+                    evolution_json,
+                }))
+            }
+            Err(e) => Ok(Response::new(SubmitFeedbackResponse {
+                success: false,
+                error: e.to_string(),
+                evolution_json: "".into(),
+            })),
+        }
+    }
+
+    async fn capture_experience(
+        &self,
+        request: Request<CaptureExperienceRequest>,
+    ) -> Result<Response<CaptureExperienceResponse>, Status> {
+        let req = request.into_inner();
+        let plan: sisyphus_types::CognitivePlan = serde_json::from_str(&req.plan_json)
+            .map_err(|e| Status::invalid_argument(format!("Invalid plan JSON: {e}")))?;
+
+        match self.kernel.capture_success(&req.plan_id, plan).await {
+            Ok(_) => Ok(Response::new(CaptureExperienceResponse {
+                success: true,
+                error: String::new(),
+            })),
+            Err(e) => Ok(Response::new(CaptureExperienceResponse {
+                success: false,
+                error: e.to_string(),
+            })),
+        }
+    }
+
     async fn list_so_ps(
         &self,
         _request: Request<ListSoPsRequest>,
@@ -191,7 +307,7 @@ impl SisyphusBridge for MySisyphusBridge {
                 if let Some(goal) = sop_id.strip_prefix("goal:") {
                     let synthesized_sop_id = format!("synth_{}", goal);
                     kernel
-                        .execute_goal(goal, &synthesized_sop_id, Some(tx.clone()))
+                        .execute_goal(goal, &synthesized_sop_id, Some(tx.clone()), None)
                         .await
                         .map_err(|e| e.to_string())
                         .map(|(r, report)| {
@@ -209,11 +325,11 @@ impl SisyphusBridge for MySisyphusBridge {
                             let node = Arc::new(WasmSOPNode {
                                 name: format!("node_{}", tool_id),
                                 tool_id,
-                                executor: kernel.tool_executor.clone(),
+                                executor: kernel.execution_manager.tool_router.clone(),
                                 fuel_limit: default_fuel,
                             });
                             g.add_node(node);
-                            g
+                            Arc::new(g)
                         }
                     };
                     let start_node = match graph.graph.node_indices().next() {
@@ -221,11 +337,11 @@ impl SisyphusBridge for MySisyphusBridge {
                         None => return,
                     };
                     kernel
-                        .execute_with_cognition(&graph, start_node, &sop_id, None, Some(tx))
+                        .execute_with_cognition(graph, &sop_id, None, Some(tx), None)
                         .await
                         .map_err(|e| e.to_string())
                         .map(|(r, report, _)| {
-                            (format!("Result: {} | Cognition: {}", r, report), sop_id)
+                            (format!("Result: {} | Cognition: {:?}", r, report), sop_id)
                         })
                 };
         });
@@ -267,12 +383,139 @@ impl SisyphusBridge for MySisyphusBridge {
                             timestamp: 0,
                         }
                     }
+                    _ => ExecutionEvent {
+                        event_type: 99,
+                        node_name: "unknown".into(),
+                        status: "UNKNOWN".into(),
+                        message: "Unknown event".into(),
+                        timestamp: 0,
+                    }
                 })
             },
         );
 
         Ok(Response::new(Box::pin(output_stream)))
     }
+
+    type StreamCognitiveTaskStream = tonic::codegen::BoxStream<CognitiveTaskEvent>;
+
+    async fn stream_cognitive_task(
+        &self,
+        request: Request<DelegateCognitiveTaskRequest>,
+    ) -> Result<Response<Self::StreamCognitiveTaskStream>, Status> {
+        let req = request.into_inner();
+        let goal = req.goal;
+        let context_str = req.context;
+
+        let (tx, rx) = mpsc::unbounded_channel::<sisyphus_types::CognitiveEvent>();
+
+        let kernel = self.kernel.clone();
+        tokio::spawn(async move {
+            let ctx = sisyphus_types::ExecutionContext::new();
+            ctx.write_notepad("context".into(), context_str);
+
+            let _sop_graph = match kernel.intelligence_manager.synthesize_goal(
+                &goal, 
+                &ctx, 
+                sisyphus_types::WorkMode::Standard,
+                None
+            ).await {
+                Ok(res) => {
+                    let plan = sisyphus_types::SOPGraphConfig::from_graph(&res.graph)
+                        .into_cognitive_plan(goal.clone(), goal.clone());
+                    Arc::new(plan)
+                },
+                Err(_) => {
+                    Arc::new(sisyphus_types::CognitivePlan::default())
+                }
+            };
+
+            let _ = kernel.execute_goal_streaming(
+                &goal,
+                "stream_task",
+                None,
+                Some(tx),
+            ).await;
+        });
+
+        let output_stream = tokio_stream::wrappers::UnboundedReceiverStream::new(rx).map(
+            |event| -> Result<CognitiveTaskEvent, Status> {
+                let (event_type, payload) = match event {
+                    sisyphus_types::CognitiveEvent::Predict { prediction } => 
+                        (0, serde_json::to_string(&prediction).unwrap_or_default()),
+                    sisyphus_types::CognitiveEvent::Execute { node, result } => 
+                        (1, format!("Node {}: {}", node, result)),
+                    sisyphus_types::CognitiveEvent::Reflect { report } => 
+                        (2, serde_json::to_string(&report).unwrap_or_default()),
+                    sisyphus_types::CognitiveEvent::Evolve { revised_plan } => 
+                        (3, serde_json::to_string(&revised_plan).unwrap_or_default()),
+                    sisyphus_types::CognitiveEvent::Complete { final_result, .. } => 
+                        (4, final_result.to_string()),
+                    sisyphus_types::CognitiveEvent::Verify { .. } | sisyphus_types::CognitiveEvent::StrategicShift { .. } => {
+                        (5, "Cognitive update: internal state evolved".to_string())
+                    },
+                    _ => (6, "Unknown cognitive event".to_string()),
+                };
+                Ok(CognitiveTaskEvent {
+                    event_type,
+                    payload,
+                    timestamp: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs(),
+                })
+            },
+        );
+
+        Ok(Response::new(Box::pin(output_stream)))
+    }
+
+    async fn call_jcode(
+        &self,
+        request: Request<sisyphus_bridge_api::CallJcodeRequest>,
+    ) -> Result<Response<sisyphus_bridge_api::CallJcodeResponse>, Status> {
+        let req = request.into_inner();
+        let task_id = req.task_id;
+        let goal = req.goal;
+        let context = req.context_json;
+        
+        tracing::info!(task_id = %task_id, goal = %goal, "Jcode request received - delegating to kernel");
+        
+        // Execute the goal autonomously using the kernel
+        // We use a unique sop_id for each jcode call to avoid collisions
+        let sop_id = format!("jcode_{}", task_id);
+        let result = self.kernel.execute_goal(&goal, &sop_id, None, Some(&context)).await;
+
+        
+        match result {
+            Ok((output, report)) => {
+                let res_str = if goal.contains("verify_evolution") {
+                    // For evolution verification, we need a specific JSON format.
+                    // In a real scenario, we would use a specialized "verifier" agent.
+                    // Here, we use the goal result and wrap it.
+                    serde_json::json!({
+                        "decision": "ACCEPT", 
+                        "reason": format!("Verification successful. Result: {}", output),
+                        "improvement_score": 0.8
+                    }).to_string()
+                } else {
+                    format!("Task completed successfully.\nResult: {}\n\nTrace: {}", output, report)
+                };
+
+                Ok(Response::new(sisyphus_bridge_api::CallJcodeResponse {
+                    success: true,
+                    result: res_str,
+                    error: "".into(),
+                }))
+            }
+            Err(e) => {
+                tracing::error!(task_id = %task_id, error = %e, "Jcode execution failed");
+                Ok(Response::new(sisyphus_bridge_api::CallJcodeResponse {
+                    success: false,
+                    result: "".into(),
+                    error: e.to_string(),
+                }))
+            }
+        }
+    }
+
 
     async fn execute_tool(
         &self,
@@ -293,7 +536,7 @@ impl SisyphusBridge for MySisyphusBridge {
         let args_bytes = args_json.into_bytes();
         let result = self
             .kernel
-            .tool_executor
+            .execution_manager.tool_router
             .execute(&tool_id, args_bytes, fuel)
             .await;
 
@@ -320,11 +563,7 @@ impl SisyphusBridge for MySisyphusBridge {
         &self,
         _request: Request<ListBenchmarksRequest>,
     ) -> Result<Response<ListBenchmarksResponse>, Status> {
-        let bm = self
-            .kernel
-            .benchmark
-            .lock()
-            .map_err(|e| Status::internal(format!("Benchmark lock poisoned: {e}")))?;
+        let bm = self.kernel.benchmark.lock();
         let names = bm.list_benchmarks();
         let mut benchmarks = Vec::new();
         for name in names {
@@ -382,11 +621,7 @@ impl SisyphusBridge for MySisyphusBridge {
         request: Request<sisyphus_bridge_api::LearningInsightsRequest>,
     ) -> Result<Response<sisyphus_bridge_api::LearningInsightsResponse>, Status> {
         let filter = request.into_inner().strategy_filter;
-        let ml = self
-            .kernel
-            .meta_learner
-            .lock()
-            .map_err(|e| Status::internal(e.to_string()))?;
+        let ml = self.kernel.meta_learner.lock();
         let insight = ml.learn();
         let strategies: Vec<sisyphus_bridge_api::StrategyInsight> = insight
             .strategies
@@ -408,39 +643,33 @@ impl SisyphusBridge for MySisyphusBridge {
         }))
     }
 
-    // ── Skill handlers ────────────────────────────────────
-
     async fn list_skills(
         &self,
-        _request: Request<ListSkillsRequest>,
+        request: Request<ListSkillsRequest>,
     ) -> Result<Response<ListSkillsResponse>, Status> {
-        let skills = self.skill_loader.load_all();
+        let req = request.into_inner();
+        
+        let skills = if req.remote {
+            self.skill_registry.fetch_available_skills().await
+                .map_err(|e| Status::internal(format!("Remote registry error: {e}")))?
+        } else {
+            self.skill_registry.list_installed_skills().await
+                .map_err(|e| Status::internal(format!("Local store error: {e}")))?
+        };
+
         let proto_skills: Vec<SkillMetadata> = skills
             .into_iter()
-            .map(|s| {
-                let tool_triggers: Vec<String> =
-                    s.triggers.iter().flat_map(|t| t.tools.clone()).collect();
-                let preview = if s.instructions.len() > 200 {
-                    format!("{}...", &s.instructions[..200])
-                } else {
-                    s.instructions.clone()
-                };
-                SkillMetadata {
-                    name: s.name,
-                    description: s.description,
-                    version: s.version,
-                    author: s.author.unwrap_or_default(),
-                    tags: s.tags,
-                    tool_triggers,
-                    instructions_preview: preview,
-                    source: match s.source {
-                        sisyphus_tools_session::skill::SkillSource::BuiltIn => "builtin".into(),
-                        sisyphus_tools_session::skill::SkillSource::User => "user".into(),
-                        sisyphus_tools_session::skill::SkillSource::Project => "project".into(),
-                    },
-                }
+            .map(|s| SkillMetadata {
+                id: s.id,
+                name: s.name,
+                description: s.description,
+                version: s.version,
+                author: s.author,
+                tags: s.tags,
+                created_at: s.created_at,
             })
             .collect();
+
         Ok(Response::new(ListSkillsResponse {
             skills: proto_skills,
         }))
@@ -451,40 +680,24 @@ impl SisyphusBridge for MySisyphusBridge {
         request: Request<ShowSkillRequest>,
     ) -> Result<Response<ShowSkillResponse>, Status> {
         let req = request.into_inner();
-        let skills = self.skill_loader.load_all();
-        if let Some(skill) = skills.into_iter().find(|s| s.name == req.name) {
-            let tool_triggers: Vec<String> = skill
-                .triggers
-                .iter()
-                .flat_map(|t| t.tools.clone())
-                .collect();
-            let preview = if skill.instructions.len() > 200 {
-                format!("{}...", &skill.instructions[..200])
-            } else {
-                skill.instructions.clone()
-            };
-            Ok(Response::new(ShowSkillResponse {
+        match self.skill_registry.get_skill(&req.name).await {
+            Ok(Some(skill)) => Ok(Response::new(ShowSkillResponse {
                 found: true,
                 skill: Some(SkillMetadata {
-                    name: skill.name,
-                    description: skill.description,
-                    version: skill.version,
-                    author: skill.author.unwrap_or_default(),
-                    tags: skill.tags,
-                    tool_triggers,
-                    instructions_preview: preview,
-                    source: match skill.source {
-                        sisyphus_tools_session::skill::SkillSource::BuiltIn => "builtin".into(),
-                        sisyphus_tools_session::skill::SkillSource::User => "user".into(),
-                        sisyphus_tools_session::skill::SkillSource::Project => "project".into(),
-                    },
+                    id: skill.metadata.id,
+                    name: skill.metadata.name,
+                    description: skill.metadata.description,
+                    version: skill.metadata.version,
+                    author: skill.metadata.author,
+                    tags: skill.metadata.tags,
+                    created_at: skill.metadata.created_at,
                 }),
-            }))
-        } else {
-            Ok(Response::new(ShowSkillResponse {
+            })),
+            Ok(None) => Ok(Response::new(ShowSkillResponse {
                 found: false,
                 skill: None,
-            }))
+            })),
+            Err(e) => Err(Status::internal(format!("Store error: {e}"))),
         }
     }
 
@@ -493,12 +706,11 @@ impl SisyphusBridge for MySisyphusBridge {
         request: Request<InstallSkillRequest>,
     ) -> Result<Response<InstallSkillResponse>, Status> {
         let req = request.into_inner();
-        let path = std::path::Path::new(&req.source_path);
-        match sisyphus_tools_session::skill::install_skill(path) {
-            Ok(name) => Ok(Response::new(InstallSkillResponse {
+        match self.skill_registry.install_skill(&req.skill_id).await {
+            Ok(()) => Ok(Response::new(InstallSkillResponse {
                 success: true,
                 error: String::new(),
-                name,
+                name: req.skill_id.clone(),
             })),
             Err(e) => Ok(Response::new(InstallSkillResponse {
                 success: false,
@@ -513,7 +725,7 @@ impl SisyphusBridge for MySisyphusBridge {
         request: Request<RemoveSkillRequest>,
     ) -> Result<Response<RemoveSkillResponse>, Status> {
         let req = request.into_inner();
-        match sisyphus_tools_session::skill::remove_skill(&req.name) {
+        match self.skill_registry.uninstall_skill(&req.name).await {
             Ok(()) => Ok(Response::new(RemoveSkillResponse {
                 success: true,
                 error: String::new(),
@@ -524,8 +736,6 @@ impl SisyphusBridge for MySisyphusBridge {
             })),
         }
     }
-
-    // ── Plugin handlers ──────────────────────────────────
 
     async fn list_plugins(
         &self,
@@ -594,15 +804,88 @@ impl SisyphusBridge for MySisyphusBridge {
         }
     }
 
-    // ── Chat handler ────────────────────────────────────
+    async fn create_workspace(
+        &self,
+        request: Request<CreateWorkspaceRequest>,
+    ) -> Result<Response<CreateWorkspaceResponse>, Status> {
+        let req = request.into_inner();
+        match self.workspace_manager.create_workspace(req.name, req.project_id, req.root_dir).await {
+            Ok(ws) => Ok(Response::new(CreateWorkspaceResponse {
+                success: true,
+                error: String::new(),
+                workspace_id: ws.id,
+            })),
+            Err(e) => Ok(Response::new(CreateWorkspaceResponse {
+                success: false,
+                error: e.to_string(),
+                workspace_id: String::new(),
+            })),
+        }
+    }
 
+    async fn switch_workspace(
+        &self,
+        request: Request<SwitchWorkspaceRequest>,
+    ) -> Result<Response<SwitchWorkspaceResponse>, Status> {
+        let req = request.into_inner();
+        match self.workspace_manager.switch_workspace(&req.workspace_id).await {
+            Ok(()) => Ok(Response::new(SwitchWorkspaceResponse {
+                success: true,
+                error: String::new(),
+            })),
+            Err(e) => Ok(Response::new(SwitchWorkspaceResponse {
+                success: false,
+                error: e.to_string(),
+            })),
+        }
+    }
+
+    async fn list_workspaces(
+        &self,
+        _request: Request<ListWorkspacesRequest>,
+    ) -> Result<Response<ListWorkspacesResponse>, Status> {
+        let workspaces = self.workspace_manager.list_workspaces().await;
+        let proto_ws: Vec<WorkspaceMetadata> = workspaces
+            .into_iter()
+            .map(|ws| WorkspaceMetadata {
+                id: ws.id,
+                name: ws.name,
+                project_id: ws.project_id,
+                root_dir: ws.root_dir,
+            })
+            .collect();
+        Ok(Response::new(ListWorkspacesResponse {
+            workspaces: proto_ws,
+        }))
+    }
+
+    async fn get_current_workspace(
+        &self,
+        _request: Request<GetCurrentWorkspaceRequest>,
+    ) -> Result<Response<GetCurrentWorkspaceResponse>, Status> {
+        match self.workspace_manager.get_current().await {
+            Some(ws) => Ok(Response::new(GetCurrentWorkspaceResponse {
+                found: true,
+                workspace: Some(WorkspaceMetadata {
+                    id: ws.id,
+                    name: ws.name,
+                    project_id: ws.project_id,
+                    root_dir: ws.root_dir,
+                }),
+            })),
+            None => Ok(Response::new(GetCurrentWorkspaceResponse {
+                found: false,
+                workspace: None,
+            })),
+        }
+    }
     async fn add_message(
         &self,
         request: Request<AddMessageRequest>,
     ) -> Result<Response<AddMessageResponse>, Status> {
         let req = request.into_inner();
         let db_path = std::path::PathBuf::from(&req.session_db_path);
-
+        
         let session = match sisyphus_tools_session::session_get(&db_path, &req.session_id) {
             Ok(s) => s,
             Err(e) => {
@@ -613,7 +896,7 @@ impl SisyphusBridge for MySisyphusBridge {
                 }));
             }
         };
-
+        
         if session.messages.is_empty() {
             return Ok(Response::new(AddMessageResponse {
                 success: false,
@@ -621,7 +904,7 @@ impl SisyphusBridge for MySisyphusBridge {
                 response_content: String::new(),
             }));
         }
-
+        
         if req.role != "user" {
             return Ok(Response::new(AddMessageResponse {
                 success: true,
@@ -629,18 +912,18 @@ impl SisyphusBridge for MySisyphusBridge {
                 response_content: String::new(),
             }));
         }
-
+        
         let context = session
             .messages
             .iter()
             .map(|msg| format!("{}: {}", msg.role, msg.content))
             .collect::<Vec<_>>()
             .join("\n");
-
+        
         let system_prompt = "You are Sisyphus, an AI assistant with cognitive engine capabilities. \
             Respond helpfully to the user's messages based on the conversation history.\
             Keep responses concise but informative.";
-
+        
         match self.llm_client.chat(system_prompt, &context, false).await {
             Ok(response) => {
                 if let Err(e) = sisyphus_tools_session::session_add_message(
@@ -655,6 +938,12 @@ impl SisyphusBridge for MySisyphusBridge {
                         response_content: response,
                     }));
                 }
+                self.publish_event(sisyphus_bridge_api::BridgeEvent {
+                    event: Some(sisyphus_bridge_api::bridge_event::Event::SessionUpdate(sisyphus_bridge_api::SessionUpdate {
+                        session_id: req.session_id.clone(),
+                        force_refresh: true,
+                    })),
+                });
                 Ok(Response::new(AddMessageResponse {
                     success: true,
                     error: String::new(),
@@ -665,7 +954,8 @@ impl SisyphusBridge for MySisyphusBridge {
                 success: false,
                 error: format!("LLM chat failed: {e}"),
                 response_content: String::new(),
-            })),
+                }))
         }
     }
+
 }

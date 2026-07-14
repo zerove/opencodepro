@@ -20,7 +20,7 @@ impl ToolExecutor for MockToolExecutor {
         _tool_id: &str,
         _args: Vec<u8>,
         _fuel_limit: u64,
-    ) -> Result<Vec<u8>, String> {
+    ) -> Result<Vec<u8>, sisyphus_types::TypesError> {
         Ok(b"mock-output".to_vec())
     }
 }
@@ -56,9 +56,10 @@ fn bench_dag_execution(c: &mut Criterion) {
                     prev_node = Some(node);
                 }
 
-                let start_node = graph.graph.node_indices().next().unwrap();
+                let graph_arc = Arc::new(graph);
+                let start_node = graph_arc.graph.node_indices().next().unwrap();
                 executor
-                    .execute_with_context(black_box(&graph), start_node, None, None)
+                    .execute_with_context(black_box(graph_arc), start_node, None, None, tool_executor.clone(), None)
                     .await
             })
         });
@@ -94,6 +95,7 @@ fn bench_wasm_execution(c: &mut Criterion) {
         fuel_limit: 1_000_000,
         executor: tool_executor.clone(),
     }));
+    let graph_arc = Arc::new(graph);
 
     let mut group = c.benchmark_group("wasm_execution");
     group.measurement_time(Duration::from_secs(5));
@@ -102,7 +104,7 @@ fn bench_wasm_execution(c: &mut Criterion) {
     group.bench_function("single_node_hello", |b| {
         b.to_async(&rt).iter(|| async {
             executor
-                .execute_with_context(black_box(&graph), start_node, None, None)
+                .execute_with_context(black_box(graph_arc.clone()), start_node, None, None, tool_executor.clone(), None)
                 .await
         })
     });

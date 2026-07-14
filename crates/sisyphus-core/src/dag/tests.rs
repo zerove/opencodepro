@@ -169,7 +169,7 @@ fn test_build_dep_ctx_for() {
     let accumulated = DashMap::new();
     accumulated.insert(
         "node_a".to_string(),
-        NodeOutput(serde_json::Value::String("val_a".into())),
+        NodeOutput::from(serde_json::Value::String("val_a".into())),
     );
 
     // Test with deps
@@ -345,11 +345,11 @@ fn test_build_dep_ctx_for_multiple_sources() {
     let accumulated = DashMap::new();
     accumulated.insert(
         "a_node".into(),
-        NodeOutput(serde_json::Value::String("val_a".into())),
+        NodeOutput::from(serde_json::Value::String("val_a".into())),
     );
     accumulated.insert(
         "b_node".into(),
-        NodeOutput(serde_json::Value::String("val_b".into())),
+        NodeOutput::from(serde_json::Value::String("val_b".into())),
     );
 
     let ctx = build_dep_ctx_for("C", &composite, &accumulated).unwrap();
@@ -400,11 +400,11 @@ fn test_build_dep_ctx_for_single_source_multi_mapping() {
     let accumulated = DashMap::new();
     accumulated.insert(
         "n1".into(),
-        NodeOutput(serde_json::Value::String("v1".into())),
+        NodeOutput::from(serde_json::Value::String("v1".into())),
     );
     accumulated.insert(
         "n2".into(),
-        NodeOutput(serde_json::Value::String("v2".into())),
+        NodeOutput::from(serde_json::Value::String("v2".into())),
     );
 
     let ctx = build_dep_ctx_for("B", &composite, &accumulated).unwrap();

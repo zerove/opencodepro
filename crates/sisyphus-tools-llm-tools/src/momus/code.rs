@@ -150,6 +150,22 @@ pub async fn review_code(
     }
 
     for (i, line) in lines.iter().enumerate() {
+        let trimmed = line.trim();
+        if (trimmed.contains(".unwrap()") || trimmed.contains(".expect(")) && !trimmed.contains("cfg(test)") {
+            comments.push(ReviewComment {
+                severity: ReviewSeverity::Major,
+                category: "security".into(),
+                file: Some(path.to_string_lossy().to_string()),
+                line: Some(i + 1),
+                message: "Found .unwrap() or .expect() in potentially production code.".into(),
+                suggestion: Some(
+                    "Use proper error handling (Result/Option) and propagate errors using '?'.".into(),
+                ),
+            });
+        }
+    }
+  
+    for (i, line) in lines.iter().enumerate() {
         let indent = line.len() - line.trim_start().len();
         if indent > 80 {
             comments.push(ReviewComment {

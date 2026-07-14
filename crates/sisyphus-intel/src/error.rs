@@ -14,6 +14,9 @@ pub enum IntelError {
 
     #[error("Node '{name}' not found in graph")]
     NodeNotFound { name: String },
+
+    #[error("Internal intel error: {0}")]
+    Internal(String),
 }
 
 

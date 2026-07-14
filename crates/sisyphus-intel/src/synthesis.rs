@@ -10,7 +10,7 @@ use std::sync::Arc;
 // ---------------------------------------------------------------------------
 
 pub struct SynthesisResult {
-    pub graph: SOPGraph,
+    pub graph: Arc<SOPGraph>,
     pub start_node: NodeIndex,
     pub plan_description: String,
 }
@@ -22,6 +22,7 @@ pub trait FlowSynthesizer: Send + Sync {
         goal: &str,
         context: &ExecutionContext,
         mode: sisyphus_types::WorkMode,
+        insights: Option<&str>,
     ) -> Result<SynthesisResult, String>;
 }
 
@@ -146,6 +147,7 @@ impl FlowSynthesizer for GoalDrivenSynthesizer {
         goal: &str,
         _context: &ExecutionContext,
         _mode: sisyphus_types::WorkMode,
+        _insights: Option<&str>,
     ) -> Result<SynthesisResult, String> {
         let actions = classify_goal(goal);
         let is_parallel = goal.to_lowercase().contains("parallel");
@@ -159,7 +161,7 @@ impl FlowSynthesizer for GoalDrivenSynthesizer {
                 executor: self.tool_executor.clone(),
             }));
             return Ok(SynthesisResult {
-                graph,
+                graph: Arc::new(graph),
                 start_node: n,
                 plan_description: "Default single-node task".into(),
             });
@@ -175,7 +177,7 @@ impl FlowSynthesizer for GoalDrivenSynthesizer {
                 executor: self.tool_executor.clone(),
             }));
             return Ok(SynthesisResult {
-                graph,
+                graph: Arc::new(graph),
                 start_node: n,
                 plan_description: format!("Single-node task: {}", label),
             });
@@ -205,7 +207,7 @@ impl FlowSynthesizer for GoalDrivenSynthesizer {
             graph.add_edge(n2, merge);
 
             Ok(SynthesisResult {
-                graph,
+                graph: Arc::new(graph),
                 start_node: n1,
                 plan_description: format!(
                     "Fan-out: {} and {} → Merge",
@@ -237,7 +239,7 @@ impl FlowSynthesizer for GoalDrivenSynthesizer {
 
             Ok(SynthesisResult {
                 start_node: first_idx.ok_or_else(|| "actions must have at least 2 entries".to_string())?,
-                graph,
+                graph: Arc::new(graph),
                 plan_description: build_plan_description(&actions, false),
             })
         }
@@ -283,12 +285,18 @@ impl FlowSynthesizer for DynamicSopSynthesizer {
         goal: &str,
         _context: &ExecutionContext,
         _mode: sisyphus_types::WorkMode,
+        insights: Option<&str>,
     ) -> Result<SynthesisResult, String> {
+        let insight_text = match insights {
+            Some(i) => format!("\n\nHistorical insights for similar goals:\n{}", i),
+            None => "".to_string(),
+        };
+
         let prompt = format!(
             "Synthesize a Standard Operating Procedure (SOP) for the following goal: '{}'.\
-            Return a JSON object with 'nodes' (id, name, tool_id, args), 'edges' (from, to), and 'start_node'.\
+            {}Return a JSON object with 'nodes' (id, name, tool_id, args), 'edges' (from, to), and 'start_node'.\
             Ensure it is a valid DAG.", 
-            goal
+            goal, insight_text
         );
 
         let response = self.llm_client.generate(&prompt).await
@@ -319,7 +327,7 @@ impl FlowSynthesizer for DynamicSopSynthesizer {
         let start_node = id_map.get(&plan.start_node).ok_or_else(|| "Start node not found".to_string())?;
 
         Ok(SynthesisResult {
-            graph,
+            graph: Arc::new(graph),
             start_node: *start_node,
             plan_description: format!("Dynamic LLM-generated SOP with {} nodes", plan.nodes.len()),
         })
@@ -337,7 +345,7 @@ pub async fn synthesize_composite(
     let mut composite = CompositeGraph::new();
     for (i, goal) in goals.iter().enumerate() {
         let sop_id = format!("goal_{}", i);
-        let result = synthesizer.synthesize(goal, ctx, sisyphus_types::WorkMode::Standard).await?;
+        let result = synthesizer.synthesize(goal, ctx, sisyphus_types::WorkMode::Standard, None).await?;
         let config = SOPGraphConfig::from_graph(&result.graph);
         composite.add_graph(&sop_id, config);
     }
@@ -346,11 +354,11 @@ pub async fn synthesize_composite(
 
 pub struct MetaLearningSynthesizer {
     pub inner: Arc<dyn FlowSynthesizer>,
-    pub meta_learner: Arc<std::sync::Mutex<sisyphus_tools_llm_tools::meta_learner::MetaLearner>>,
+    pub meta_learner: Arc<parking_lot::Mutex<sisyphus_tools_llm_tools::meta_learner::MetaLearner>>,
 }
 
 impl MetaLearningSynthesizer {
-    pub fn new(inner: Arc<dyn FlowSynthesizer>, meta_learner: Arc<std::sync::Mutex<sisyphus_tools_llm_tools::meta_learner::MetaLearner>>) -> Self {
+    pub fn new(inner: Arc<dyn FlowSynthesizer>, meta_learner: Arc<parking_lot::Mutex<sisyphus_tools_llm_tools::meta_learner::MetaLearner>>) -> Self {
         Self { inner, meta_learner }
     }
 }
@@ -362,21 +370,22 @@ impl FlowSynthesizer for MetaLearningSynthesizer {
         goal: &str,
         context: &ExecutionContext,
         mode: sisyphus_types::WorkMode,
+        insights: Option<&str>,
     ) -> Result<SynthesisResult, String> {
         let best_strategy = {
-            let ml = self.meta_learner.lock().unwrap();
-            ml.best_strategy(&serde_json::json!({ "goal": goal }))
+            let ml = self.meta_learner.lock();
+            ml.best_strategy_params(&serde_json::json!({ "goal": goal }))
         };
 
         let augmented_goal = if let Some(ref strategy) = best_strategy {
-            format!("Goal: {}\n(Hint: Based on historical success, the strategy '{}' is recommended for similar goals)", goal, strategy)
+            format!("Goal: {}\n(Hint: Based on historical success, the strategy '{:?}' is recommended for similar goals)", goal, strategy)
         } else {
             goal.to_string()
         };
 
         tracing::info!(goal = %goal, hint = ?best_strategy, "Synthesizing with meta-learning hint");
 
-        self.inner.synthesize(&augmented_goal, context, mode).await
+        self.inner.synthesize(&augmented_goal, context, mode, insights).await
     }
 }
 
@@ -398,6 +407,7 @@ impl FlowSynthesizer for StrategicSopSynthesizer {
         goal: &str,
         context: &ExecutionContext,
         mode: sisyphus_types::WorkMode,
+        insights: Option<&str>,
     ) -> Result<SynthesisResult, String> {
         let directives = [
             "", 
@@ -408,7 +418,7 @@ impl FlowSynthesizer for StrategicSopSynthesizer {
         let mut candidates = Vec::new();
         for directive in directives {
             let augmented_goal = format!("{}{}", goal, directive);
-            if let Ok(res) = self.inner.synthesize(&augmented_goal, context, mode).await {
+            if let Ok(res) = self.inner.synthesize(&augmented_goal, context, mode, insights).await {
                 candidates.push(res);
             }
         }
@@ -421,7 +431,7 @@ impl FlowSynthesizer for StrategicSopSynthesizer {
         let mut max_score = f64::NEG_INFINITY;
 
         for res in candidates {
-            let sim = self.simulator.simulate(&res.graph, context, "strategic_eval").await?;
+            let sim = self.simulator.simulate(res.graph.clone(), context, "strategic_eval", None).await?;
             
             // Scoring: Prob is primary, Cost is secondary penalty
             // Prob (0.0-1.0) * 1000 - Cost (u64)
@@ -619,7 +629,7 @@ mod tests {
     async fn test_synthesize_single_action() {
         let syn = test_synthesizer();
         let result = syn
-            .synthesize("fetch the data", &empty_ctx(), sisyphus_types::WorkMode::Standard)
+            .synthesize("fetch the data", &empty_ctx(), sisyphus_types::WorkMode::Standard, None)
             .await
             .unwrap();
         assert_eq!(result.graph.graph.node_count(), 1);
@@ -630,7 +640,7 @@ mod tests {
     async fn test_synthesize_linear_pipeline() {
         let syn = test_synthesizer();
         let result = syn
-            .synthesize("fetch and process the data", &empty_ctx(), sisyphus_types::WorkMode::Standard)
+            .synthesize("fetch and process the data", &empty_ctx(), sisyphus_types::WorkMode::Standard, None)
             .await
             .unwrap();
         // Fetch → Process = 2 nodes, 1 edge
@@ -643,7 +653,7 @@ mod tests {
     async fn test_synthesize_parallel_fanout() {
         let syn = test_synthesizer();
         let result = syn
-            .synthesize("fetch and process in parallel", &empty_ctx(), sisyphus_types::WorkMode::Standard)
+            .synthesize("fetch and process in parallel", &empty_ctx(), sisyphus_types::WorkMode::Standard, None)
             .await
             .unwrap();
         // Fetch + Process → Merge = 3 nodes, 2 edges
@@ -656,7 +666,7 @@ mod tests {
     async fn test_synthesize_empty_goal_defaults() {
         let syn = test_synthesizer();
         let result = syn
-            .synthesize("xyzzy", &empty_ctx(), sisyphus_types::WorkMode::Standard)
+            .synthesize("xyzzy", &empty_ctx(), sisyphus_types::WorkMode::Standard, None)
             .await
             .unwrap();
         // Falls back to "default" single node

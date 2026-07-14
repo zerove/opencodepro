@@ -22,17 +22,20 @@ impl MfsStore {
     /// Creates a new MfsStore with a default L1 capacity of 10_000.
     /// `db_url` should be a sqlite connection string (e.g., "sqlite:state.db").
     pub async fn new(db_url: &str) -> Result<Self> {
-        Self::with_capacity(db_url, NonZeroUsize::new(10_000).unwrap()).await
+        let capacity = NonZeroUsize::new(10_000).ok_or_else(|| anyhow::anyhow!("Invalid default capacity"))?;
+        Self::with_pool(
+            SqlitePoolOptions::new()
+                .max_connections(5)
+                .connect(db_url)
+                .await
+                .context("Failed to connect to SQLite pool")?,
+            capacity,
+        ).await
     }
 
-    /// Creates a new MfsStore with a specific L1 capacity.
-    pub async fn with_capacity(db_url: &str, capacity: NonZeroUsize) -> Result<Self> {
-        let pool = SqlitePoolOptions::new()
-            .max_connections(5)
-            .connect(db_url)
-            .await
-            .context("Failed to connect to SQLite pool")?;
 
+    /// Creates a new MfsStore with a specific L1 capacity and an existing SQLite pool.
+    pub async fn with_pool(pool: SqlitePool, capacity: NonZeroUsize) -> Result<Self> {
         // Enable WAL mode for better concurrency
         sqlx::query("PRAGMA journal_mode=WAL;")
             .execute(&pool)
@@ -53,6 +56,44 @@ impl MfsStore {
         )
         .execute(&pool)
         .await?;
+
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS execution_traces (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                sop_id TEXT NOT NULL,
+                node_id TEXT NOT NULL,
+                status TEXT NOT NULL,
+                output TEXT,
+                fuel_consumed INTEGER,
+                duration_ms INTEGER,
+                timestamp INTEGER NOT NULL
+            )",
+        )
+        .execute(&pool)
+        .await?;
+
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS experiences (
+                id TEXT PRIMARY KEY,
+                context_text TEXT NOT NULL,
+                context_hash TEXT NOT NULL,
+                action_id TEXT,
+                project_id TEXT,
+                outcome_success BOOLEAN NOT NULL,
+                deviation_score REAL NOT NULL,
+                cost INTEGER NOT NULL,
+                timestamp INTEGER NOT NULL
+            )",
+        )
+        .execute(&pool)
+        .await?;
+
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_exp_project ON experiences(project_id);")
+            .execute(&pool)
+            .await?;
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_exp_action ON experiences(action_id);")
+            .execute(&pool)
+            .await?;
 
         // Setup async write buffer
         let (tx, rx) = mpsc::unbounded_channel::<WriteOp>();
@@ -222,6 +263,54 @@ impl MfsStore {
         Ok(())
     }
 
+    pub async fn record_trace_event(
+        &self,
+        sop_id: &str,
+        node_id: &str,
+        status: &str,
+        output: Option<String>,
+        fuel_consumed: i64,
+        duration_ms: i64,
+    ) -> Result<()> {
+        let timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0);
+
+        sqlx::query(
+            "INSERT INTO execution_traces (sop_id, node_id, status, output, fuel_consumed, duration_ms, timestamp) 
+             VALUES (?, ?, ?, ?, ?, ?, ?)"
+        )
+        .bind(sop_id)
+        .bind(node_id)
+        .bind(status)
+        .bind(output)
+        .bind(fuel_consumed)
+        .bind(duration_ms)
+        .bind(timestamp)
+        .execute(&self.l2)
+        .await
+        .context("Failed to record trace event")?;
+
+        Ok(())
+    }
+
+    pub async fn get_most_failed_nodes(&self, min_failures: i64) -> Result<Vec<(String, i64)>> {
+        let rows = sqlx::query_as::<_, (String, i64)>(
+            "SELECT node_id, COUNT(*) as failure_count 
+             FROM execution_traces 
+             WHERE status = 'error' 
+             GROUP BY node_id 
+             HAVING failure_count >= ?"
+        )
+        .bind(min_failures)
+        .fetch_all(&self.l2)
+        .await
+        .context("Failed to fetch failed nodes")?;
+
+        Ok(rows)
+    }
+
     /// Returns the current L1 capacity.
     pub fn capacity(&self) -> usize {
         self.l1.lock().cap().get()
@@ -240,6 +329,125 @@ impl MfsStore {
     /// Returns a clone of the underlying SQLite pool.
     pub fn pool(&self) -> SqlitePool {
         self.l2.clone()
+    }
+
+    /// Lists all keys in the state store that start with the given prefix.
+    pub async fn list_keys_with_prefix(&self, prefix: &str) -> Result<Vec<String>> {
+        let prefix_query = format!("{}%", prefix);
+        let rows: Vec<(String,)> = sqlx::query_as("SELECT key FROM state WHERE key LIKE ?")
+            .bind(prefix_query)
+            .fetch_all(&self.l2)
+            .await?;
+        
+        Ok(rows.into_iter().map(|(k,)| k).collect())
+    }
+
+    pub async fn record_experience(
+        &self,
+        exp: &sisyphus_types::experience::ExperienceTuple,
+    ) -> Result<()> {
+        sqlx::query(
+            "INSERT INTO experiences (id, context_text, context_hash, action_id, project_id, outcome_success, deviation_score, cost, timestamp) 
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        )
+        .bind(format!("exp:{}", exp.timestamp))
+        .bind(&exp.context_text)
+        .bind(&exp.context_hash)
+        .bind(&exp.action_id)
+        .bind(&exp.project_id)
+        .bind(exp.outcome_success)
+        .bind(exp.deviation_score)
+        .bind(exp.cost as i64)
+        .bind(exp.timestamp as i64)
+        .execute(&self.l2)
+        .await
+        .context("Failed to record experience")?;
+        Ok(())
+    }
+
+    pub async fn get_experience(&self, id: &str) -> Result<Option<sisyphus_types::experience::ExperienceTuple>> {
+        let row = sqlx::query_as::<_, (
+            String, String, Option<String>, Option<String>, bool, f64, i64, i64
+        )>("SELECT context_text, context_hash, action_id, project_id, outcome_success, deviation_score, cost, timestamp FROM experiences WHERE id = ?")
+        .bind(id)
+        .fetch_optional(&self.l2)
+        .await?;
+
+        if let Some((ctx_text, ctx_hash, action_id, proj_id, success, dev, cost, ts)) = row {
+            Ok(Some(sisyphus_types::experience::ExperienceTuple {
+                context_text: ctx_text,
+                context_hash: ctx_hash,
+                action_id: action_id.unwrap_or_else(|| "unknown".to_string()),
+                project_id: proj_id,
+                outcome_success: success,
+                deviation_score: dev,
+                cost: cost as u64,
+                timestamp: ts as u64,
+                embedding: None,
+                visual_embedding: None,
+                insight: None,
+            }))
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub async fn query_experiences(
+        &self,
+        ids: &[String],
+        project_id: Option<&str>,
+        success_only: bool,
+    ) -> Result<Vec<sisyphus_types::experience::ExperienceTuple>> {
+        if ids.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let mut query_str = String::from("SELECT context_text, context_hash, action_id, project_id, outcome_success, deviation_score, cost, timestamp FROM experiences WHERE id IN (");
+        let placeholders: Vec<String> = (0..ids.len()).map(|_| "?".to_string()).collect();
+        query_str.push_str(&placeholders.join(","));
+        query_str.push_str(")");
+
+        if project_id.is_some() {
+            query_str.push_str(" AND project_id = ?");
+        }
+        if success_only {
+            query_str.push_str(" AND outcome_success = 1");
+        }
+
+        let mut query = sqlx::query_as::<_, (
+            String, String, Option<String>, Option<String>, bool, f64, i64, i64
+        )>(&query_str);
+
+        for id in ids {
+            query = query.bind(id);
+        }
+
+        if let Some(pid) = project_id {
+            query = query.bind(pid);
+        }
+
+        let rows = query
+            .fetch_all(&self.l2)
+            .await
+            .context("Failed to fetch experiences from L2")?;
+
+        let experiences = rows.into_iter().map(|(ctx_text, ctx_hash, action_id, proj_id, success, dev, cost, ts)| {
+            sisyphus_types::experience::ExperienceTuple {
+                context_text: ctx_text,
+                context_hash: ctx_hash,
+                action_id: action_id.unwrap_or_else(|| "unknown".to_string()),
+                project_id: proj_id,
+                outcome_success: success,
+                deviation_score: dev,
+                cost: cost as u64,
+                timestamp: ts as u64,
+                embedding: None,
+                visual_embedding: None,
+                insight: None,
+            }
+        }).collect();
+
+        Ok(experiences)
     }
 }
 
@@ -330,5 +538,34 @@ impl sisyphus_types::StateStore for MfsStore {
         record_mem_operation("set", "L1", true, duration.as_secs_f64());
 
         Ok(())
+    }
+
+    async fn get(&self, key: &str) -> std::result::Result<Option<Vec<u8>>, sisyphus_types::TypesError> {
+        let val = self.get_state_json(key).await?;
+        match val {
+            Some(v) => Ok(Some(serde_json::to_vec(&v).map_err(|e| sisyphus_types::TypesError::InternalError(e.to_string()))?)),
+            None => Ok(None),
+        }
+    }
+
+    async fn set(&self, key: &str, value: &[u8]) -> std::result::Result<(), sisyphus_types::TypesError> {
+        let json_val: serde_json::Value = serde_json::from_slice(value)
+            .map_err(|e| sisyphus_types::TypesError::InternalError(e.to_string()))?;
+        self.set_state_json(key, json_val).await
+    }
+
+    async fn get_traces_for_sop(&self, sop_id: &str) -> std::result::Result<Vec<(String, String, String, i64, i64)>, sisyphus_types::TypesError> {
+        let rows = sqlx::query_as::<_, (String, String, String, i64, i64)>(
+            "SELECT node_id, status, output, fuel_consumed, duration_ms 
+             FROM execution_traces 
+             WHERE sop_id = ? 
+             ORDER BY timestamp ASC"
+        )
+        .bind(sop_id)
+        .fetch_all(&self.l2)
+        .await
+        .map_err(|e| sisyphus_types::TypesError::StateStoreError(e.to_string()))?;
+    
+        Ok(rows)
     }
 }

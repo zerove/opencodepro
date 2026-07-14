@@ -178,6 +178,22 @@ pub async fn review_plan(client: &dyn LlmClient, plan_text: &str, plan_name: &st
         });
     }
 
+    // Verification check
+    let verify_keywords = ["test", "verify", "validate", "check", "confirm", "assertion"];
+    let has_verification = verify_keywords
+        .iter()
+        .any(|k| plan_text.to_lowercase().contains(k));
+    if !has_verification && step_lines.len() > 0 {
+        comments.push(ReviewComment {
+            severity: ReviewSeverity::Major,
+            category: "verifiability".into(),
+            file: None,
+            line: None,
+            message: "Plan lacks explicit verification or testing steps. Every plan should end with a way to prove it was successful.".into(),
+            suggestion: Some("Add a final step to verify the outcome (e.g., 'Verify that X works by running Y test').".into()),
+        });
+    }
+
     // 2. Semantic review (LLM)
     let user_prompt = format!("Plan Name: {plan_name}\n\nPlan Content:\n{plan_text}");
     let llm_result = client

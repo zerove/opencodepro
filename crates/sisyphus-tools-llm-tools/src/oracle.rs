@@ -31,6 +31,7 @@ pub fn analyze_file(path: &Path) -> ToolResult<FileAnalysis> {
     let struct_re = Regex::new(r"(pub\s+)?struct\s+(\w+)").unwrap();
     let long_line_re = Regex::new(r"^.{120,}$").unwrap();
     let todo_re = Regex::new(r"(TODO|FIXME|HACK|XXX)").unwrap();
+    let complexity_re = Regex::new(r"\b(if|for|while|match|loop)\b").unwrap();
 
     for (i, line) in lines.iter().enumerate() {
         let line_num = i + 1;
@@ -41,6 +42,33 @@ pub fn analyze_file(path: &Path) -> ToolResult<FileAnalysis> {
             let is_async = caps.get(2).is_some_and(|m| m.as_str().contains("async"));
             let name = caps.get(3).map_or("", |m| m.as_str()).to_string();
             let sig = caps.get(0).map_or("", |m| m.as_str()).to_string();
+            
+            // Basic complexity analysis: count control flow keywords until the end of the function
+            let mut complexity = 0;
+            let mut brace_depth = 0;
+            let mut found_start = false;
+            for (j, l) in lines[i..].iter().enumerate() {
+                brace_depth += l.chars().filter(|&c| c == '{').count();
+                brace_depth -= l.chars().filter(|&c| c == '}').count();
+                if brace_depth > 0 || (j == 0 && l.contains('{')) {
+                    found_start = true;
+                    complexity += complexity_re.find_iter(l).count();
+                }
+                if found_start && brace_depth == 0 {
+                    break;
+                }
+            }
+
+            if complexity > 10 {
+                issues.push(CodeIssue {
+                    severity: IssueSeverity::Warning,
+                    file: path.to_path_buf(),
+                    line: line_num,
+                    message: format!("Function '{}' has high complexity ({} branches).", name, complexity),
+                    code: Some(sig.clone()),
+                });
+            }
+
             functions.push(FunctionInfo {
                 name,
                 line: line_num,

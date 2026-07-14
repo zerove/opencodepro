@@ -40,6 +40,14 @@ pub struct Config {
     #[serde(default)]
     pub mcp: McpConfig,
 
+    /// Remote skill registry parameters.
+    #[serde(default)]
+    pub registry: RegistryConfig,
+
+    /// Jcode integration parameters.
+    #[serde(default)]
+    pub jcode: JcodeConfig,
+
     /// Bearer token for gRPC bridge authentication. Empty = no auth.
     #[serde(default)]
     pub auth_token: String,
@@ -71,6 +79,8 @@ impl Default for Config {
             metrics: MetricsConfig::default(),
             sandbox: SandboxConfig::default(),
             mcp: McpConfig::default(),
+            registry: RegistryConfig::default(),
+            jcode: JcodeConfig::default(),
             auth_token: String::new(),
             bridge_address: default_bridge_address(),
             http_address: default_http_address(),
@@ -125,6 +135,12 @@ impl Config {
             std::env::var(key).ok()
         }
 
+        if let Some(v) = env_string("SISYPHUS_REGISTRY_URL") {
+            self.registry.registry_url = v;
+        }
+        if let Some(v) = env_string("SISYPHUS_JCODE_SOCKET_PATH") {
+            self.jcode.socket_path = v;
+        }
         if let Some(v) = env_u32("SISYPHUS_COGNITIVE_LOOP_MAX_ITERATIONS") {
             self.cognitive_loop.max_iterations = v;
         }
@@ -174,10 +190,12 @@ impl Config {
         self.validate_address(&self.bridge_address, "bridge_address")?;
         self.validate_address(&self.http_address, "http_address")?;
         self.cognitive_loop.validate()?;
+        self.jcode.validate()?;
         self.executor.validate()?;
         self.cache.validate()?;
         self.metrics.validate()?;
         self.sandbox.validate()?;
+        self.registry.validate()?;
         Ok(())
     }
 

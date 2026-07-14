@@ -26,6 +26,14 @@ impl ToolExecutor for CompositeMockExecutor {
     }
 }
 
+struct MockConsensus;
+#[async_trait]
+impl sisyphus_core::Consensus for MockConsensus {
+    async fn is_leader(&self) -> bool { true }
+    async fn get_leader(&self) -> String { "mock-leader".into() }
+    async fn propose(&self, _key: &str, _value: serde_json::Value) -> Result<(), String> { Ok(()) }
+}
+
 async fn make_kernel() -> (Arc<SisyphusKernel>, Arc<CompositeMockExecutor>) {
     let state_store = Arc::new(MfsStore::new("sqlite::memory:").await.unwrap());
     let tool_executor = Arc::new(CompositeMockExecutor {
@@ -50,6 +58,8 @@ async fn make_kernel() -> (Arc<SisyphusKernel>, Arc<CompositeMockExecutor>) {
         intel,
         Arc::new(sisyphus_tools_llm::metis::DummyLlmClient),
         synthesizer,
+        Arc::new(parking_lot::Mutex::new(sisyphus_tools_llm_tools::meta_learner::MetaLearner::new(".omo/test_meta"))),
+        Arc::new(MockConsensus),
     ));
 
     (kernel, tool_executor)
@@ -202,9 +212,9 @@ async fn test_execute_goals_multi_goal() {
     for sop_id in &output.execution_order {
         let (_result, report) = output.results.get(sop_id).unwrap();
         assert!(
-            report.contains("CognitiveLoop"),
+            report.iterations > 0,
             "Each sub-graph should execute through cognitive loop: {}",
-            report
+            sop_id
         );
     }
 }
@@ -226,7 +236,7 @@ async fn test_synthesize_composite_independent_graphs() {
 
     let goals = ["read config", "process data", "write output"];
     let goal_refs: Vec<&str> = goals.to_vec();
-    let composite = sisyphus_intel::synthesize_composite(&goal_refs, &*kernel.synthesizer, &ctx)
+    let composite = sisyphus_intel::synthesize_composite(&goal_refs, &kernel.intelligence_manager.synthesizer, &ctx)
         .await
         .unwrap();
 

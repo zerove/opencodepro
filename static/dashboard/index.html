@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sisyphus Cognitive Map</title>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/reactflow@11.10.1/dist/reactflow.standalone.prod.min.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reactflow@11.10.1/dist/style.css">
+    <style>
+        body, html, #root { margin: 0; padding: 0; height: 100%; width: 100%; overflow: hidden; font-family: sans-serif; }
+        .controls { position: absolute; top: 20px; left: 20px; z-index: 10; background: rgba(255,255,255,0.9); padding: 15px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); display: flex; gap: 10px; align-items: center; }
+        .status-bar { position: absolute; bottom: 20px; right: 20px; z-index: 10; background: rgba(0,0,0,0.7); color: white; padding: 8px 15px; border-radius: 20px; font-size: 12px; }
+        .node-running { border: 2px solid #3b82f6; background: #eff6ff; animation: pulse 2s infinite; }
+        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+        const { ReactFlow, Background, Controls, applyEdgeChanges, applyNodeChanges } = window.ReactFlow;
+
+        function CognitiveMap() {
+            const [nodes, setNodes] = useState([]);
+            const [edges, setEdges] = useState([]);
+            const [sopId, setSopId] = useState('');
+            const [status, setStatus] = useState('Idle');
+
+            const fetchMap = async () => {
+                if (!sopId) return;
+                setStatus('Fetching...');
+                try {
+                    const resp = await fetch(`/api/cognitive/map/${sopId}`);
+                    if (!resp.ok) throw new Error('SOP not found');
+                    const data = await resp.json();
+                    
+                    const flowNodes = data.nodes.map((n, i) => ({
+                        id: n.id,
+                        data: { label: n.label },
+                        position: { x: i * 200, y: 0 }, // Simple horizontal layout for now
+                        className: n.status === 'running' ? 'node-running' : '',
+                        style: { 
+                            backgroundColor: n.status === 'ok' ? '#dcfce7' : (n.status === 'error' ? '#fee2e2' : '#f3f4f6'),
+                            color: n.status === 'error' ? '#b91c1c' : '#1f2937'
+                        }
+                    }));
+
+                    const flowEdges = data.edges.map(e => ({
+                        id: `e${e.source}-${e.target}`,
+                        source: e.source,
+                        target: e.target,
+                        label: e.label || '',
+                    }));
+
+                    setNodes(flowNodes);
+                    setEdges(flowEdges);
+                    setStatus(`Iteration ${data.iteration} - Active: ${data.active_node || 'None'}`);
+                } catch (e) {
+                    setStatus('Error: ' + e.message);
+                }
+            };
+
+            useEffect(() => {
+                const interval = setInterval(fetchMap, 2000);
+                return () => clearInterval(interval);
+            }, [sopId]);
+
+            return (
+                <div style={{ height: '100vh', width: '100vw' }}>
+                    <div className="controls">
+                        <input 
+                            value={sopId} 
+                            onChange={e => setSopId(e.target.value)} 
+                            placeholder="SOP ID (e.g. goal_123)" 
+                            style={{ padding: '5px', borderRadius: '4px', border: '1px solid #ccc' }}
+                        />
+                        <button onClick={fetchMap} style={{ padding: '5px 10px', cursor: 'pointer' }}>Update</button>
+                    </div>
+                    <div className="status-bar">{status}</div>
+                    <ReactFlow 
+                        nodes={nodes} 
+                        edges={edges} 
+                        onNodesChange={(changes) => setNodes((nds) => applyNodeChanges(changes, nds))}
+                        onEdgesChange={(changes) => setEdges((eds) => applyEdgeChanges(changes, eds))}
+                        fitView
+                    >
+                        <Background />
+                        <Controls />
+                    </ReactFlow>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<CognitiveMap />);
+    </script>
+</body>
+</html>

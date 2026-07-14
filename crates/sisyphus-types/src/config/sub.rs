@@ -193,10 +193,67 @@ impl SandboxConfig {
     }
 }
 
-// ── McpConfig ──────────────────────────────────────────────
+// ── JcodeConfig ──────────────────────────────────────────────
 
-/// Configuration for MCP (Model Context Protocol) tool servers.
-#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct JcodeConfig {
+    pub socket_path: String,
+}
+
+impl Default for JcodeConfig {
+    fn default() -> Self {
+        Self {
+            socket_path: "/tmp/jcode-debug.sock".to_string(),
+        }
+    }
+}
+
+impl JcodeConfig {
+    pub fn validate(&self) -> Result<(), TypesError> {
+        if self.socket_path.is_empty() {
+            return Err(TypesError::ConfigValidationError(
+                "jcode.socket_path must not be empty".into(),
+            ));
+        }
+        Ok(())
+    }
+}
+
+// ── RegistryConfig ─────────────────────────────────────────────
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct RegistryConfig {
+    pub registry_url: String,
+    pub timeout_seconds: u64,
+}
+
+fn default_registry() -> RegistryConfig {
+    RegistryConfig {
+        registry_url: "https://registry.sisyphus.ai".to_string(),
+        timeout_seconds: 30,
+    }
+}
+
+impl Default for RegistryConfig {
+    fn default() -> Self {
+        default_registry()
+    }
+}
+
+impl RegistryConfig {
+    pub fn validate(&self) -> Result<(), TypesError> {
+        if self.registry_url.is_empty() {
+            return Err(TypesError::ConfigValidationError(
+                "registry.registry_url must not be empty".into(),
+            ));
+        }
+        Ok(())
+    }
+}
+
+// ── McpConfig ──────────────────────────────────────────────────
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct McpConfig {
     /// Stdio-based MCP servers: prefix → "command arg1 arg2".
     #[serde(default)]
@@ -204,4 +261,19 @@ pub struct McpConfig {
     /// HTTP-based MCP servers: prefix → "http://host:port/path".
     #[serde(default)]
     pub http_servers: HashMap<String, String>,
+}
+
+impl Default for McpConfig {
+    fn default() -> Self {
+        Self {
+            stdio_servers: HashMap::new(),
+            http_servers: HashMap::new(),
+        }
+    }
+}
+
+impl McpConfig {
+    pub fn validate(&self) -> Result<(), TypesError> {
+        Ok(())
+    }
 }

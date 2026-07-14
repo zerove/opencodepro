@@ -18,5 +18,5 @@ pub enum WriteOp {
 
 /// A point-in-time snapshot of the MFS state.
 pub struct Snapshot {
-    pub(crate) data: HashMap<String, Value>,
+    pub data: HashMap<String, Value>,
 }

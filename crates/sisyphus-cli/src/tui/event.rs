@@ -4,7 +4,7 @@ use crossterm::event::{
 };
 
 use super::app::{matching_palette_entries, App, DevFocus, LogEntry, View};
-use super::background::{spawn_fetch_roadmap, spawn_list_sops};
+use super::background::{spawn_fetch_roadmap, spawn_list_sops, spawn_fetch_available_skills};
 use super::dialog::{handle_dialog_key, Dialog};
 use super::helpers::paste_from_clipboard;
 use super::home::handle_home_key;
@@ -324,14 +324,28 @@ fn handle_palette_key(key: KeyEvent, app: &mut App) {
                     app.sop_status = "connecting...".into();
                     app.sop_result = None;
                     if app.pending_op.is_none() {
-                        app.pending_op = Some(spawn_list_sops(app.bridge_address.clone()));
+                        app.pending_op = Some(spawn_list_sops(app.bridge_client.clone(), app.bridge_address.clone()));
                     }
                 }
                 "roadmap" | ":roadmap" => {
                     app.dialog = Some(Dialog::Roadmap);
                     app.roadmap_status = "connecting...".into();
                     if app.pending_op.is_none() {
-                        app.pending_op = Some(spawn_fetch_roadmap(app.bridge_address.clone()));
+                        app.pending_op = Some(spawn_fetch_roadmap(app.bridge_client.clone(), app.bridge_address.clone()));
+                    }
+                }
+                "skills" | ":skills" => {
+                    app.dialog = Some(Dialog::SkillMarket);
+                    app.skill_market_status = "connecting...".into();
+                    if app.pending_op.is_none() {
+                        app.pending_op = Some(spawn_fetch_available_skills(app.bridge_address.clone()));
+                    }
+                }
+                "workspaces" | ":workspaces" => {
+                    app.dialog = Some(Dialog::WorkspaceList);
+                    app.workspace_status = "connecting...".into();
+                    if app.pending_op.is_none() {
+                        app.pending_op = Some(super::background::spawn_list_workspaces(app.bridge_address.clone()));
                     }
                 }
                 "clear" | ":clear" => {

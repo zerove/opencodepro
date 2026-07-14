@@ -10,6 +10,9 @@ sisyphus-intel = { path = "../sisyphus-intel" }
 sisyphus-mem = { path = "../sisyphus-mem" }
 sisyphus-sandbox = { path = "../sisyphus-sandbox" }
 sisyphus-types = { path = "../sisyphus-types" }
+sisyphus-knowledge = { path = "../sisyphus-knowledge" }
+sisyphus-tools-executor = { path = "../sisyphus-tools-executor" }
+sisyphus_visual = { path = "../sisyphus-visual" }
 tokio = { version = "1", features = ["full"] }
 serde_json = { workspace = true }
 async-trait = { workspace = true }

@@ -11,7 +11,35 @@ use crate::tui::dialog::Dialog;
 use super::helpers;
 use super::theme;
 
+// ── Skill Market DTO ────────────────────────────────
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct RemoteSkillEntry {
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    pub author: String,
+    pub version: String,
+}
+
+// ── Workspace DTO ────────────────────────────────────
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct WorkspaceEntry {
+    pub id: String,
+    pub name: String,
+    pub project_id: String,
+}
+
 // ── Log entries (used by background + shell) ─────────────
+
+#[derive(Debug, Clone)]
+pub(crate) struct TraceEvent {
+    pub node_id: String,
+    pub status: String,
+    pub output: Option<String>,
+    pub fuel: i64,
+    pub duration: i64,
+}
+
 
 #[derive(Debug, Clone)]
 pub(crate) enum LogEntry {
@@ -81,6 +109,7 @@ const COMMAND_PALETTE: &[CmdPalEntry] = &[
     CmdPalEntry { label: "Todos", desc: "Manage todo list", command: ":todos", shortcut: "" },
     CmdPalEntry { label: "LSP Diagnostics", desc: "View LSP diagnostics", command: ":lsp", shortcut: "" },
     CmdPalEntry { label: "SOP List", desc: "List & execute SOPs", command: ":sop", shortcut: "" },
+    CmdPalEntry { label: "Skill Market", desc: "Browse & install remote skills", command: ":skills", shortcut: "" },
     CmdPalEntry { label: "Roadmap", desc: "View project roadmap", command: ":roadmap", shortcut: "" },
     CmdPalEntry { label: "Bridge Status", desc: "Check bridge health", command: ":bridge status", shortcut: "" },
     CmdPalEntry { label: "Help", desc: "Show keybindings & help", command: ":help", shortcut: "F1" },
@@ -145,6 +174,7 @@ pub(crate) struct App {
     pub(crate) boulder_dirty: bool,
     pub(crate) boulder_save_tick: u32,
     pub(crate) bridge_address: String,
+    pub(crate) bridge_client: Option<crate::bridge::BridgeClient>,
 
     // routing
     pub(crate) view: View,
@@ -197,6 +227,8 @@ pub(crate) struct App {
     pub(crate) sop_sel: usize,
     pub(crate) sop_status: String,
     pub(crate) sop_result: Option<String>,
+    pub(crate) sop_trace: Vec<TraceEvent>,
+    pub(crate) sop_trace_scroll: usize,
     pub(crate) sop_query: String,
 
     // roadmap data (dialog state)
@@ -204,6 +236,17 @@ pub(crate) struct App {
     pub(crate) roadmap_bottlenecks: Option<String>,
     pub(crate) roadmap_status: String,
     pub(crate) roadmap_scroll: usize,
+    pub(crate) roadmap_sel: usize,
+    pub(crate) proposal_sel: usize,
+    pub(crate) skill_market_available: Vec<RemoteSkillEntry>,
+    pub(crate) skill_market_installed: Vec<RemoteSkillEntry>,
+    pub(crate) skill_market_sel: usize,
+    pub(crate) skill_market_status: String,
+    pub(crate) workspaces: Vec<WorkspaceEntry>,
+    pub(crate) workspace_sel: usize,
+    pub(crate) workspace_status: String,
+    pub(crate) pending_op: Option<tokio::sync::oneshot::Receiver<crate::tui::background::BgOp>>,
+
 
     // command palette
     pub(crate) palette_open: bool,
@@ -212,8 +255,8 @@ pub(crate) struct App {
 
     // auto-refresh
     pub(crate) last_refresh: Instant,
-
-    pub(crate) pending_op: Option<tokio::sync::oneshot::Receiver<BgOp>>,
+    pub(crate) event_rx: Option<tokio::sync::mpsc::Receiver<crate::tui::background::BgOp>>,
+    pub(crate) is_pending: bool,
     pub(crate) pending_spin: u8,
 
 
@@ -263,6 +306,8 @@ pub(crate) const RALPH_IDLE_THRESHOLD: u32 = 50;
 impl App {
     pub(crate) fn new(data_dir: PathBuf, bridge_address: String) -> Self {
         let boulder_path = data_dir.join(".omo").join("boulder.json");
+        // Attempt initial connection to the bridge
+        let bridge_client = futures::executor::block_on(crate::bridge::BridgeClient::connect(&bridge_address)).ok();
         Self {
             data_dir,
             boulder_path,
@@ -270,6 +315,7 @@ impl App {
             boulder_dirty: false,
             boulder_save_tick: 0,
             bridge_address,
+            bridge_client,
             view: View::Home,
             home_input: String::new(),
             home_cursor: 0,
@@ -311,16 +357,29 @@ impl App {
             sop_sel: 0,
             sop_status: "disconnected".into(),
             sop_result: None,
+            sop_trace: Vec::new(),
+            sop_trace_scroll: 0,
             sop_query: String::new(),
             roadmap_projection: None,
             roadmap_bottlenecks: None,
             roadmap_status: "disconnected".into(),
             roadmap_scroll: 0,
+            roadmap_sel: 0,
+            proposal_sel: 0,
+            skill_market_available: Vec::new(),
+            skill_market_installed: Vec::new(),
+            skill_market_sel: 0,
+            skill_market_status: "idle".into(),
+            workspaces: Vec::new(),
+            workspace_sel: 0,
+            workspace_status: "idle".into(),
+            pending_op: None,
             palette_open: false,
             palette_query: String::new(),
             palette_sel: 0,
             last_refresh: Instant::now(),
-            pending_op: None,
+            event_rx: None,
+            is_pending: false,
             pending_spin: 0,
             confirm_delete: None,
             create_buf: String::new(),
@@ -730,6 +789,160 @@ impl App {
             self.confirm_delete = Some(id);
             self.add_log(LogEntry::Warn("Press Delete again to confirm".into()));
         }
+    }
+
+    pub(crate) fn process_events(&mut self) {
+        let mut ops = Vec::new();
+        if let Some(rx) = self.event_rx.as_mut() {
+            while let Ok(op) = rx.try_recv() {
+                ops.push(op);
+            }
+        }
+        if let Some(mut rx) = self.pending_op.take() {
+            if let Ok(op) = rx.try_recv() {
+                ops.push(op);
+            } else {
+                self.pending_op = Some(rx);
+            }
+        }
+        for op in ops {
+            self.apply_bg_op(op);
+        }
+    }
+
+    fn apply_bg_op(&mut self, op: crate::tui::background::BgOp) {
+        match op {
+            crate::tui::background::BgOp::SopsListed { count, sops } => {
+                self.sop_sops = sops;
+                self.sop_sel = 0;
+                self.sop_status = format!("connected ({} SOPs)", count);
+            }
+            crate::tui::background::BgOp::SopsFailed(e) => {
+                self.sop_status = format!("failed: {e}");
+            }
+            crate::tui::background::BgOp::SopExecuted { sop_id, result } => {
+                self.sop_result = Some(result);
+                self.sop_status = format!("executed {sop_id}");
+            }
+            crate::tui::background::BgOp::SopExecuteFailed { sop_id, error } => {
+                self.sop_result = None;
+                self.sop_status = format!("execute {sop_id} failed: {error}");
+            }
+            crate::tui::background::BgOp::SopTraceFetched { sop_id, trace } => {
+                self.sop_trace = trace.into_iter().map(|e| crate::tui::app::TraceEvent {
+                    node_id: e.node_id,
+                    status: e.status,
+                    output: e.output,
+                    fuel: e.fuel_consumed,
+                    duration: e.duration_ms,
+                }).collect();
+                self.sop_trace_scroll = 0;
+                self.add_log(LogEntry::Info(format!("Fetched trace for {sop_id}")));
+            }
+            crate::tui::background::BgOp::SopTraceFailed(e) => {
+                self.add_log(LogEntry::Error(format!("Failed to fetch trace: {e}")));
+            }
+            crate::tui::background::BgOp::RoadmapFetched { projection, bottlenecks } => {
+                self.roadmap_projection = Some(projection);
+                self.roadmap_bottlenecks = Some(bottlenecks);
+                self.roadmap_status = "connected".into();
+            }
+            crate::tui::background::BgOp::RoadmapFailed(e) => {
+                self.roadmap_projection = None;
+                self.roadmap_bottlenecks = None;
+                self.roadmap_status = format!("failed: {e}");
+            }
+            crate::tui::background::BgOp::BridgeCmd { entries } => {
+                for entry in entries {
+                    self.add_log(entry);
+                }
+            }
+            crate::tui::background::BgOp::DevResult { goal, report, success } => {
+                if success {
+                    self.add_log(LogEntry::Success(format!("Dev agent completed: {goal}")));
+                } else {
+                    self.add_log(LogEntry::Warn(format!("Dev agent finished with issues: {goal}")));
+                }
+                self.dev_report = Some(report);
+                self.dev_status = "done".into();
+            }
+            crate::tui::background::BgOp::SessionUpdated { session_id, errors } => {
+                for entry in &errors {
+                    self.add_log(entry.clone());
+                }
+                if let Some(first_err) = errors.first() {
+                    self.notification = Some((first_err.entry_text().to_string(), std::time::Instant::now()));
+                }
+                self.refresh_sessions();
+                let viewing_session = self.session_detail.as_ref().map(|d| d.id.clone());
+                if viewing_session.as_deref() == Some(&session_id) {
+                    let db = self.data_dir.join("sessions.json");
+                    if let Ok(session) = crate::tools::session_get(&db, &session_id) {
+                        self.session_detail = Some(session);
+                    }
+                    self.session_detail_scroll = usize::MAX;
+                    // Generate contextual suggestions after agent response
+                    let last_role = self.session_detail.as_ref()
+                        .and_then(|d| d.messages.last())
+                        .map(|m| m.role.as_str());
+                        if last_role == Some("assistant") {
+                            self.session_suggestions = vec![
+                                "Type a follow-up message or press Esc to browse sessions".into(),
+                                "Use /agent off to disable AI responses".into(),
+                                "Use /suggest <topic> for targeted suggestions".into(),
+                            ];
+                        } else {
+                            self.session_suggestions = vec![
+                                "Press Enter to send your message".into(),
+                                "Type /help for available commands".into(),
+                                "Use @filename to reference a file".into(),
+                            ];
+                        }
+                    }
+            }
+            crate::tui::background::BgOp::TodoUpdated => {
+                self.todo_dirty = true;
+            }
+            crate::tui::background::BgOp::SkillsAvailable { skills } => {
+                self.skill_market_available = skills;
+                self.skill_market_status = "available skills loaded".into();
+            }
+            crate::tui::background::BgOp::SkillsInstalled { skills } => {
+                self.skill_market_installed = skills;
+                self.skill_market_status = "installed skills loaded".into();
+            }
+            crate::tui::background::BgOp::SkillOpResult { success, message } => {
+                if success {
+                    self.add_log(LogEntry::Success(message));
+                    self.skill_market_status = "operation successful".into();
+                } else {
+                    self.add_log(LogEntry::Error(message));
+                    self.skill_market_status = "operation failed".into();
+                }
+            }
+            crate::tui::background::BgOp::WorkspacesListed { workspaces } => {
+                self.workspaces = workspaces;
+                self.workspace_status = "loaded".into();
+            }
+            crate::tui::background::BgOp::WorkspaceSwitched { id } => {
+                self.workspace_status = format!("switched to {id}");
+                self.add_log(LogEntry::Info(format!("Workspace switched to {id}")));
+            }
+            crate::tui::background::BgOp::WorkspaceOpResult { success, message } => {
+                if success {
+                    self.add_log(LogEntry::Success(message));
+                    self.workspace_status = "operation successful".into();
+                } else {
+                    self.add_log(LogEntry::Error(message.clone()));
+                    self.workspace_status = format!("error: {message}");
+                }
+            }
+        }
+    }
+    pub(crate) fn fetch_sop_trace(&mut self, sop_id: String) {
+        let bridge_addr = self.bridge_address.clone();
+        let rx = crate::tui::background::spawn_fetch_sop_trace(bridge_addr, sop_id);
+        self.pending_op = Some(rx);
     }
 
 }

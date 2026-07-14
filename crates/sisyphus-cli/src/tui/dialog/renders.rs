@@ -2,13 +2,53 @@ use ratatui::{
     layout::{Constraint, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span, Text},
-    widgets::{Block, Borders, List, ListItem, Paragraph, Wrap},
+    widgets::{Block, Borders, List, ListItem, Paragraph, Wrap, Table, Row},
 };
 
 use super::super::widgets;
 use super::super::{App, DevFocus};
 
 // ── Help Dialog ────────────────────────────────────────
+
+pub(super) fn render_workspace_list_dialog(frame: &mut ratatui::Frame, area: Rect, app: &App) {
+    let theme = app.theme();
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(" Workspaces ")
+        .title_bottom(format!(" ↑↓ select | Enter switch | r: refresh | Esc: close "))
+        .border_style(Style::default().fg(theme.primary));
+
+    if app.workspaces.is_empty() {
+        let text = Text::from(Line::from(Span::styled(
+            "No workspaces configured. Press 'r' to refresh.",
+            Style::default().fg(theme.muted),
+        )));
+        frame.render_widget(Paragraph::new(text).block(block), area);
+        return;
+    }
+
+    let items: Vec<ListItem> = app.workspaces.iter().enumerate().map(|(i, ws)| {
+        let style = if i == app.workspace_sel {
+            Style::default().fg(theme.secondary).add_modifier(Modifier::REVERSED)
+        } else {
+            Style::default().fg(theme.fg)
+        };
+        ListItem::new(Line::from(vec![
+            Span::styled(format!(" {} ", ws.name), style.add_modifier(Modifier::BOLD)),
+            Span::styled(format!(" (ID: {}) ", ws.id), Style::default().fg(theme.muted)),
+            Span::styled(format!("\n  Project: {}", ws.project_id), style),
+        ]))
+    }).collect();
+
+    let list = List::new(items)
+        .block(block)
+        .highlight_style(Style::default().fg(theme.secondary).add_modifier(Modifier::REVERSED));
+    frame.render_stateful_widget(
+        list,
+        area,
+        &mut ratatui::widgets::ListState::default().with_selected(Some(app.workspace_sel)),
+    );
+}
 
 pub(super) fn render_help_dialog(frame: &mut ratatui::Frame, area: Rect, app: &App) {
     let theme = app.theme();
@@ -224,19 +264,53 @@ pub(super) fn render_roadmap_dialog(frame: &mut ratatui::Frame, area: Rect, app:
     let theme = app.theme();
     let block = Block::default()
         .borders(Borders::ALL)
-        .title(" Roadmap ")
+        .title(" Project Roadmap & Strategic Proposals ")
         .border_style(Style::default().fg(theme.primary));
 
-    let content = match &app.roadmap_projection {
-        Some(p) => Text::from(Line::from(Span::styled(p, Style::default().fg(theme.fg)))),
-        None => Text::from(Line::from(Span::styled(
-            "No roadmap data. Press r to refresh.",
-            Style::default().fg(theme.muted),
-        ))),
+    let layout = Layout::vertical([
+        Constraint::Percentage(60), // Roadmap Progress
+        Constraint::Length(1),      // Separator
+        Constraint::Percentage(40), // Strategic Proposals
+    ]).split(area);
+
+    // 1. Roadmap Progress Section
+    let roadmap_lines = if let Some(p) = &app.roadmap_projection {
+        let mut lines = vec![Line::from(Span::styled("── Current Progress ──", Style::default().fg(theme.primary).add_modifier(Modifier::BOLD)))];
+        lines.push(Line::from(Span::raw("")));
+        lines.push(Line::from(Span::styled(p, Style::default().fg(theme.fg))));
+        lines
+    } else {
+        vec![Line::from(Span::styled("No roadmap data available. Press 'r' to fetch.", Style::default().fg(theme.muted)))]
     };
 
-    let para = Paragraph::new(content).block(block).wrap(Wrap { trim: false });
-    frame.render_widget(para, area);
+    let roadmap_para = Paragraph::new(Text::from(roadmap_lines))
+        .block(Block::default().borders(Borders::NONE))
+        .wrap(Wrap { trim: false })
+        .scroll((app.roadmap_scroll as u16, 0));
+    frame.render_widget(roadmap_para, layout[0]);
+
+    // 2. Separator
+    frame.render_widget(Paragraph::new("────────────────────────────────────────────────────────────────────────────────").style(Style::default().fg(theme.muted)), layout[1]);
+
+    // 3. Strategic Proposals Section
+    let proposal_lines = if let Some(b) = &app.roadmap_bottlenecks {
+        let mut lines = vec![Line::from(Span::styled("── Pending Strategic Proposals ──", Style::default().fg(theme.warning).add_modifier(Modifier::BOLD)))];
+        lines.push(Line::from(Span::raw("")));
+        lines.push(Line::from(Span::styled(b, Style::default().fg(theme.fg))));
+        lines.push(Line::from(Span::raw("")));
+        lines.push(Line::from(Span::styled("  [ Enter ] Approve selected proposal", Style::default().fg(theme.info))));
+        lines
+    } else {
+        vec![Line::from(Span::styled("No pending strategic proposals.", Style::default().fg(theme.muted)))]
+    };
+
+    let prop_para = Paragraph::new(Text::from(proposal_lines))
+        .block(Block::default().borders(Borders::NONE))
+        .wrap(Wrap { trim: false });
+    frame.render_widget(prop_para, layout[2]);
+
+    // Render the main block around the layout
+    frame.render_widget(block, area);
 }
 
 // ── Confirm Dialog ─────────────────────────────────────
@@ -258,7 +332,80 @@ pub(super) fn render_confirm_dialog(frame: &mut ratatui::Frame, area: Rect, app:
     frame.render_widget(para, area);
 }
 
-// ── Rename Dialog ──────────────────────────────────────
+pub(super) fn render_skill_market_dialog(frame: &mut ratatui::Frame, area: Rect, app: &App) {
+    let theme = app.theme();
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(" Skill Market ")
+        .title_bottom(format!(" r: refresh available | i: refresh installed | Enter: install/uninstall | Esc: close "))
+        .border_style(Style::default().fg(theme.primary));
+
+    let layout = Layout::vertical([
+        Constraint::Length(1), // Status
+        Constraint::Percentage(50), // Available
+        Constraint::Length(1), // Separator
+        Constraint::Percentage(49), // Installed
+    ]).split(area);
+
+    // 1. Status
+    let status_text = Text::from(Line::from(Span::styled(
+        format!(" Status: {} ", app.skill_market_status),
+        Style::default().fg(theme.info),
+    )));
+    frame.render_widget(Paragraph::new(status_text).block(Block::default().borders(Borders::NONE)), layout[0]);
+
+    // 2. Available Skills
+    let available_items: Vec<ListItem> = app.skill_market_available.iter().enumerate().map(|(i, s)| {
+        let is_sel = i == app.skill_market_sel;
+        let style = if is_sel {
+            Style::default().fg(theme.secondary).add_modifier(Modifier::REVERSED)
+        } else {
+            Style::default().fg(theme.fg)
+        };
+        ListItem::new(Line::from(vec![
+            Span::styled(format!(" [+] {} ", s.name), style.add_modifier(Modifier::BOLD)),
+            Span::styled(format!(" v{} by {} ", s.version, s.author), Style::default().fg(theme.muted)),
+            Span::styled(format!("\n  {}", s.description), style),
+        ]))
+    }).collect();
+
+    let avail_block = Block::default().borders(Borders::NONE).title(" Available Skills ");
+    let avail_list = List::new(available_items).block(avail_block);
+    frame.render_stateful_widget(
+        avail_list,
+        layout[1],
+        &mut ratatui::widgets::ListState::default().with_selected(Some(app.skill_market_sel)),
+    );
+
+    // 3. Separator
+    frame.render_widget(Paragraph::new("────────────────────────────────────────────────────────────────────────────────").style(Style::default().fg(theme.muted)), layout[2]);
+
+    // 4. Installed Skills
+    let installed_offset = app.skill_market_available.len();
+    let installed_items: Vec<ListItem> = app.skill_market_installed.iter().enumerate().map(|(i, s)| {
+        let is_sel = (i + installed_offset) == app.skill_market_sel;
+        let style = if is_sel {
+            Style::default().fg(theme.secondary).add_modifier(Modifier::REVERSED)
+        } else {
+            Style::default().fg(theme.fg)
+        };
+        ListItem::new(Line::from(vec![
+            Span::styled(format!(" [-] {} ", s.name), style.add_modifier(Modifier::BOLD)),
+            Span::styled(format!(" v{} by {} ", s.version, s.author), Style::default().fg(theme.muted)),
+            Span::styled(format!("\n  {}", s.description), style),
+        ]))
+    }).collect();
+
+    let inst_block = Block::default().borders(Borders::NONE).title(" Installed Skills ");
+    let inst_list = List::new(installed_items).block(inst_block);
+    frame.render_stateful_widget(
+        inst_list,
+        layout[3],
+        &mut ratatui::widgets::ListState::default().with_selected(Some(app.skill_market_sel.saturating_sub(installed_offset))),
+    );
+
+    frame.render_widget(block, area);
+}
 
 pub(super) fn render_rename_dialog(frame: &mut ratatui::Frame, area: Rect, app: &App, name: &str) {
     let theme = app.theme();
@@ -407,3 +554,55 @@ pub(super) fn render_dev_dialog(frame: &mut ratatui::Frame, area: Rect, app: &Ap
 }
 
 
+
+pub(super) fn render_trace_dialog(frame: &mut ratatui::Frame, area: Rect, app: &App, sop_id: &str) {
+    let theme = app.theme();
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(format!(" Execution Trace - {} ", sop_id))
+        .title_bottom(format!(" ↑↓ scroll: {} | Esc to close ", app.sop_trace_scroll))
+        .border_style(Style::default().fg(theme.primary));
+
+    if app.sop_trace.is_empty() {
+        let para = Paragraph::new("No trace data available. Please run the SOP first.")
+            .block(block)
+            .style(Style::default().fg(theme.muted));
+        frame.render_widget(para, area);
+        return;
+    }
+
+    let rows: Vec<Row> = app.sop_trace.iter().map(|ev| {
+        let status_style = match ev.status.as_str() {
+            "ok" => Style::default().fg(theme.success),
+            "error" => Style::default().fg(theme.error),
+            _ => Style::default().fg(theme.fg),
+        };
+        Row::new(vec![
+            Span::styled(&ev.node_id, Style::default().fg(theme.fg)),
+            Span::styled(&ev.status, status_style),
+            Span::styled(format!("{}ms", ev.duration), Style::default().fg(theme.muted)),
+            Span::styled(ev.fuel.to_string(), Style::default().fg(theme.muted)),
+        ])
+    }).collect();
+
+    let table = Table::new(rows, [
+        Constraint::Percentage(30),
+        Constraint::Percentage(20),
+        Constraint::Percentage(25),
+        Constraint::Percentage(25),
+    ])
+        .header(Row::new(vec![
+            Span::styled("Node", Style::default().fg(theme.secondary).add_modifier(Modifier::BOLD)),
+            Span::styled("Status", Style::default().fg(theme.secondary).add_modifier(Modifier::BOLD)),
+            Span::styled("Duration", Style::default().fg(theme.secondary).add_modifier(Modifier::BOLD)),
+            Span::styled("Fuel", Style::default().fg(theme.secondary).add_modifier(Modifier::BOLD)),
+        ]))
+        .block(block)
+        .highlight_style(Style::default().add_modifier(Modifier::REVERSED));
+
+    frame.render_stateful_widget(
+        table,
+        area,
+        &mut ratatui::widgets::TableState::default().with_selected(Some(app.sop_trace_scroll)),
+    );
+}

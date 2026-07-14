@@ -10,7 +10,7 @@ license = "MIT"
 sisyphus-bridge-api = { path = "../sisyphus-bridge-api" }
 tonic = "0.12"
 tokio = { version = "1", features = ["full"] }
-tokio-stream = "0.1"
+tokio-stream = { version = "0.1", features = ["sync"] }
 sisyphus-types = { path = "../sisyphus-types" }
 sisyphus-core = { path = "../sisyphus-core" }
 sisyphus-sandbox = { path = "../sisyphus-sandbox" }
@@ -30,8 +30,10 @@ serde_json = { workspace = true }
 async-trait = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
+futures-util = "0.3"
 
 # HTTP/REST API (axum 0.7 to match tonic's transitive dep)
 axum = "0.7"
 tower-http = { version = "0.5", features = ["cors", "trace"] }
 serde = { workspace = true, features = ["derive"] }
+parking_lot = "0.12.5"

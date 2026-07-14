@@ -1,23 +1,38 @@
 #![allow(clippy::cast_precision_loss)]
+pub mod pattern_analyzer;
+pub mod complexity;
+pub mod gap_analyzer;
+pub mod tool_coder;
+pub mod wasm_compiler;
+pub mod tool_verifier;
 use std::sync::Arc;
 
 pub mod error;
 pub mod formal_verification;
 pub mod fuel;
 pub mod llm_synthesizer;
+pub mod evaluator;
+pub mod micro_reflector;
 pub mod mock;
 pub mod reflect;
 pub mod simulation;
 pub mod synthesis;
+pub mod supervisor;
 pub mod topological_evolver;
 
 pub use error::IntelError;
 pub use fuel::{AdaptiveFuelPricer, FuelPricer, SimpleFuelPricer};
 pub use reflect::{
-    ErrorCategory, RecordedNode, ReflectionReport, Reflector, SOPEvolver, StandardEvolver,
+    ErrorCategory, LlmEvolver, LlmReflector, HybridReflector, RecordedNode, ReflectionReport, Reflector, SOPEvolver, StandardEvolver,
     StandardReflector,
 };
 pub use simulation::{MonteCarloSimulator, Simulator, SimulationResult};
+pub use complexity::{ComplexityAnalyzer, CognitiveDepth};
+pub use gap_analyzer::{GapAnalyzer, ToolGap};
+pub use tool_coder::ToolCoder;
+pub use wasm_compiler::WasmCompiler;
+pub use tool_verifier::{ToolVerifier, VerificationReport};
+pub use supervisor::SisyphusSupervisor;
 pub(crate) use synthesis::{
     action_label, classify_goal, tool_id_for_action,
 };
@@ -25,7 +40,7 @@ pub use synthesis::{
     synthesize_composite, ActionType, FlowSynthesizer, GoalDrivenSynthesizer, MetaLearningSynthesizer, StrategicSopSynthesizer, SynthesisResult,
 };
 
-pub use formal_verification::{VerificationReport, VerificationRunner};
+pub use formal_verification::{VerificationReport as FormalVerificationReport, VerificationRunner};
 pub use llm_synthesizer::{
     FallbackGoalDecomposer, GoalDecomposer, LlmDrivenSynthesizer, LlmGoalDecomposer, LogicalSOPSynthesizer,
 };
@@ -37,6 +52,7 @@ pub use topological_evolver::TopologicalSOPEvolver;
 
 pub struct SisyphusIntel {
     pub simulator: Arc<dyn Simulator>,
+    pub logical_simulator: Arc<dyn simulation::LogicalSimulator>,
     pub reflector: Arc<dyn Reflector>,
     pub evolver: Arc<dyn SOPEvolver>,
 }
@@ -44,11 +60,13 @@ pub struct SisyphusIntel {
 impl SisyphusIntel {
     pub fn new(
         simulator: Arc<dyn Simulator>,
+        logical_simulator: Arc<dyn simulation::LogicalSimulator>,
         reflector: Arc<dyn Reflector>,
         evolver: Arc<dyn SOPEvolver>,
     ) -> Self {
         Self {
             simulator,
+            logical_simulator,
             reflector,
             evolver,
         }

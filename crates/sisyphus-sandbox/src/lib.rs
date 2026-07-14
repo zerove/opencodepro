@@ -54,6 +54,13 @@ pub struct WasmToolExecutor {
     pub(crate) module_cache: Arc<DashMap<String, Module>>,
 }
 
+impl sisyphus_types::CacheInvalidatable for WasmToolExecutor {
+    fn invalidate_cache(&self, tool_id: &str) {
+        tracing::debug!(tool_id = %tool_id, "Invalidating WASM module cache");
+        self.module_cache.remove(tool_id);
+    }
+}
+
 impl Default for WasmToolExecutor {
     fn default() -> Self {
         Self::new().expect("WasmToolExecutor::new() should succeed with default config")
@@ -157,6 +164,7 @@ impl ToolExecutor for WasmToolExecutor {
         fuel_limit: u64,
     ) -> Result<Vec<u8>, sisyphus_types::TypesError> {
         use sisyphus_types::TypesError;
+
 
         let span =
             tracing::info_span!("sandbox.execute", tool_id = %tool_id, fuel_limit = fuel_limit);
@@ -266,6 +274,9 @@ impl ToolExecutor for WasmToolExecutor {
         );
 
         Ok(result_bytes)
+    }
+    fn as_cache_invalidatable(&self) -> Option<&dyn sisyphus_types::CacheInvalidatable> {
+        Some(self)
     }
 }
 

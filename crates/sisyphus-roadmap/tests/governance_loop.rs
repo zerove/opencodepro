@@ -118,7 +118,13 @@ async fn test_strategic_governance_loop_detection() {
             .await
             .unwrap(),
     );
-    let manager = sisyphus_roadmap::RoadmapManager::new(store);
+    let sql_store = Arc::new(
+        sisyphus_mem::RoadmapSqlStore::new("sqlite::memory:")
+            .await
+            .unwrap(),
+    );
+    sql_store.init_schema().await.unwrap();
+    let manager = sisyphus_roadmap::RoadmapManager::new(store, sql_store);
 
     manager
         .create_project("p1", "Project X", "Desc")

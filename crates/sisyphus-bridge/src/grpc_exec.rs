@@ -20,14 +20,14 @@ impl MySisyphusBridge {
             let synthesized_sop_id = format!("synth_{}", goal);
             match self
                 .kernel
-                .execute_goal(goal, &synthesized_sop_id, event_tx)
+                .execute_goal(goal, &synthesized_sop_id, event_tx, None)
                 .await
             {
                 Ok((result, report)) => {
                     let duration = start.elapsed();
                     record_sop_execution(&synthesized_sop_id, true, duration.as_secs_f64());
                     Ok((
-                        format!("Result: {} | Cognition: {}", result, report),
+                        format!("Result: {} | Cognition: {:?}", result, report),
                         synthesized_sop_id,
                     ))
                 }
@@ -47,11 +47,11 @@ impl MySisyphusBridge {
                     let node = Arc::new(WasmSOPNode {
                         name: format!("node_{}", tool_id),
                         tool_id,
-                        executor: self.kernel.tool_executor.clone(),
+                        executor: self.kernel.execution_manager.tool_router.clone(),
                         fuel_limit: fuel,
                     });
                     g.add_node(node);
-                    g
+                    Arc::new(g)
                 }
             };
 
@@ -63,7 +63,7 @@ impl MySisyphusBridge {
 
             match self
                 .kernel
-                .execute_with_cognition(&graph, start_node, &sop_id, None, event_tx)
+                .execute_with_cognition(graph, &sop_id, None, event_tx, None)
                 .await
             {
                 Ok((result, report, evolved_graph)) => {
@@ -73,7 +73,7 @@ impl MySisyphusBridge {
                         info!("SOP evolved for sop_id={}", sop_id);
                     }
                     Ok((
-                        format!("Result: {} | Cognition: {}", result, report),
+                        format!("Result: {} | Cognition: {:?}", result, report),
                         sop_id,
                     ))
                 }

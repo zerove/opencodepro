@@ -109,7 +109,7 @@ pub async fn run_list_skills(client: &mut BridgeClient) -> Result<()> {
     println!("{:<20} {:<30} Source", "Name", "Description");
     println!("{}", "-".repeat(65));
     for s in skills {
-        println!("{:<20} {:<30} {}", s.name, s.description, s.source);
+        println!("{:<20} {:<30} {}", s.name, s.description, s.author);
     }
     Ok(())
 }

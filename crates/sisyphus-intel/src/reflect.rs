@@ -35,16 +35,19 @@ pub trait Reflector: Send + Sync {
         &self,
         trace: &str,
         predicted: &SimulationResult,
+        experiences: Option<&[sisyphus_types::experience::ExperienceTuple]>,
     ) -> Result<ReflectionReport, String>;
 }
 
+#[async_trait]
 pub trait SOPEvolver: Send + Sync {
-    fn evolve(
+    async fn evolve(
         &self,
-        graph: &SOPGraph,
+        graph: Arc<SOPGraph>,
         report: &ReflectionReport,
         prediction: &SimulationResult,
-    ) -> Result<SOPGraph, String>;
+        insights: Option<&str>,
+    ) -> Result<Arc<SOPGraph>, String>;
 }
 
 // ---------------------------------------------------------------------------
@@ -73,13 +76,15 @@ impl StandardEvolver {
     }
 }
 
+#[async_trait]
 impl SOPEvolver for StandardEvolver {
-    fn evolve(
+    async fn evolve(
         &self,
-        graph: &SOPGraph,
+        graph: Arc<SOPGraph>,
         report: &ReflectionReport,
         prediction: &SimulationResult,
-    ) -> Result<SOPGraph, String> {
+        _insights: Option<&str>,
+    ) -> Result<Arc<SOPGraph>, String> {
         let span = tracing::info_span!(
             "intel.evolve",
             graph_nodes = graph.graph.node_count(),
@@ -173,7 +178,7 @@ impl SOPEvolver for StandardEvolver {
             needs_fuel,
         );
 
-        Ok(new_graph)
+        Ok(Arc::new(new_graph))
     }
 }
 
@@ -247,20 +252,38 @@ impl Reflector for LlmReflector {
         &self,
         trace: &str,
         predicted: &SimulationResult,
+        experiences: Option<&[sisyphus_types::experience::ExperienceTuple]>,
     ) -> Result<ReflectionReport, String> {
         let span = tracing::info_span!("intel.reflect.llm", trace_lines = trace.lines().count());
         let _enter = span.enter();
 
         let start = Instant::now();
+        
+        let exp_context = if let Some(exps) = experiences {
+            let mut hints = Vec::new();
+            for exp in exps {
+                hints.push(format!(
+                    "Task: {}, Outcome: {}, Deviation: {:.4}{}", 
+                    exp.context_text, 
+                    if exp.outcome_success { "Success" } else { "Failure" }, 
+                    exp.deviation_score,
+                    exp.insight.as_ref().map(|i| format!(" | Insight: {}", i)).unwrap_or_default()
+                ));
+            }
+            format!("Historical Context (Similar Tasks):\n{}", hints.join("\n"))
+        } else {
+            "No historical context available".to_string()
+        };
+
         let prompt = format!(
             "Analyze the following execution trace and compare it with the predicted outcome.\
-            Trace:\n{}\n\nPredicted Outcome: {}\n\n\
+            \n\n{}\n\nTrace:\n{}\n\nPredicted Outcome: {}\n\n\
             Please provide:\
             1. A deviation score (0.0 to 1.0).\
             2. A list of specific suggested improvements (e.g., 'Add retry to node X', 'Increase fuel for node Y').\
             3. An analysis of the root cause of any failures.\
             Return as JSON: {{ \"deviation\": f64, \"suggestions\": [string], \"analysis\": string }}",
-            trace, predicted.predicted_outcome
+            exp_context, trace, predicted.predicted_outcome
         );
 
         let response = self.llm_client.generate(&prompt).await
@@ -295,11 +318,77 @@ impl Reflector for LlmReflector {
     }
 }
 
+pub struct HybridReflector {
+    pub standard: Arc<dyn Reflector>,
+    pub llm: Arc<dyn Reflector>,
+}
+
+impl HybridReflector {
+    pub fn new(standard: Arc<dyn Reflector>, llm: Arc<dyn Reflector>) -> Self {
+        Self { standard, llm }
+    }
+}
+
+#[async_trait]
+impl Reflector for HybridReflector {
+    async fn reflect(
+        &self,
+        trace: &str,
+        predicted: &SimulationResult,
+        experiences: Option<&[sisyphus_types::experience::ExperienceTuple]>,
+    ) -> Result<ReflectionReport, String> {
+        let span = tracing::info_span!("intel.reflect.hybrid", trace_lines = trace.lines().count());
+        let _enter = span.enter();
+
+        let start = Instant::now();
+        
+        // Run both reflectors in parallel
+        let (std_res, llm_res) = tokio::join!(
+            self.standard.reflect(trace, predicted, experiences),
+            self.llm.reflect(trace, predicted, experiences)
+        );
+
+        let std_report = std_res.map_err(|e| format!("Standard reflection failed: {e}"))?;
+        let llm_report = llm_res.map_err(|e| format!("LLM reflection failed: {e}"))?;
+
+        // Merge scores: weighted average (LLM is usually more nuanced, Standard is more objective)
+        let deviation = (std_report.deviation_score * 0.4) + (llm_report.deviation_score * 0.6);
+        
+        // Merge improvements: Deduplicate and combine
+        let mut all_improvements = std_report.suggested_improvements;
+        for imp in llm_report.suggested_improvements {
+            if !all_improvements.contains(&imp) {
+                all_improvements.push(imp);
+            }
+        }
+
+        let duration = start.elapsed();
+        tracing::info!(
+            deviation = deviation,
+            suggestions = all_improvements.len(),
+            duration_ms = duration.as_millis(),
+            "Hybrid Reflection completed"
+        );
+
+        record_reflection("current_sop", deviation, duration.as_secs_f64());
+
+        Ok(ReflectionReport {
+            original_sop_id: std_report.original_sop_id,
+            deviation_score: deviation,
+            suggested_improvements: all_improvements,
+            evolved_sop_structure: None,
+            records: std_report.records, // Use structured records from StandardReflector
+        })
+    }
+}
+
 pub struct LlmEvolver {
     pub llm_client: Arc<dyn LlmClient>,
     pub topo_evolver: Arc<crate::topological_evolver::TopologicalSOPEvolver>,
     pub tool_executor: Arc<dyn sisyphus_types::ToolExecutor>,
 }
+
+
 
 impl LlmEvolver {
     pub fn new(
@@ -317,18 +406,20 @@ impl LlmEvolver {
 
 #[async_trait]
 impl SOPEvolver for LlmEvolver {
-    fn evolve(
+    async fn evolve(
         &self,
-        graph: &SOPGraph,
+        graph: Arc<SOPGraph>,
         report: &ReflectionReport,
         _prediction: &SimulationResult,
-    ) -> Result<SOPGraph, String> {
+        insights: Option<&str>,
+    ) -> Result<Arc<SOPGraph>, String> {
         let rt = tokio::runtime::Handle::current();
         
         let prompt = format!(
             "Given the following SOP structure and suggested improvements, generate a list of EvolutionOps.\
             SOP Nodes: {:?}\
             Improvements: {:?}\
+            Insights: {:?}\
             
             Available Ops: \
             - AdjustFuel {{ node_name, delta }}\
@@ -339,17 +430,17 @@ impl SOPEvolver for LlmEvolver {
             
             Return a JSON array of ops.",
             graph.graph.node_indices().map(|i| graph.graph.node_weight(i).map(|n| n.name().to_string())).collect::<Vec<_>>(),
-            report.suggested_improvements
+            report.suggested_improvements,
+            insights.unwrap_or("None")
         );
 
-        let response = rt.block_on(async {
-            self.llm_client.generate(&prompt).await
-        }).map_err(|e| format!("LLM evolution failed: {e}"))?;
+        let response = self.llm_client.generate(&prompt).await
+            .map_err(|e| format!("LLM evolution failed: {e}"))?;
 
         let ops: Vec<sisyphus_types::EvolutionOp> = serde_json::from_str(&response)
             .map_err(|e| format!("Failed to parse evolution ops JSON: {e}. Response: {response}"))?;
 
-        self.topo_evolver.apply_ops(graph, &ops, self.tool_executor.clone()).map_err(|e| e.to_string())
+        self.topo_evolver.apply_ops(&graph, &ops, self.tool_executor.clone()).map(|g| Arc::new(g)).map_err(|e| e.to_string())
     }
 }
 
@@ -467,6 +558,7 @@ impl Reflector for StandardReflector {
         &self,
         trace: &str,
         _predicted: &SimulationResult,
+        _experiences: Option<&[sisyphus_types::experience::ExperienceTuple]>,
     ) -> Result<ReflectionReport, String> {
         let span = tracing::info_span!("intel.reflect", trace_lines = trace.lines().count());
         let _enter = span.enter();

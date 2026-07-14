@@ -16,6 +16,8 @@ pub enum MetisError {
 pub trait LlmClient: Send + Sync {
     async fn chat(&self, system: &str, user: &str, json_mode: bool) -> Result<String, String>;
     async fn generate(&self, prompt: &str) -> Result<String, String>;
+    fn get_params_for(&self, agent_id: &str) -> (String, String, String);
+    fn breaker(&self) -> crate::circuit_breaker::CircuitBreaker;
 }
 
 
@@ -35,7 +37,32 @@ impl LlmClient for DummyLlmClient {
     }
 
     async fn generate(&self, prompt: &str) -> Result<String, String> {
-        Ok(format!("Dummy generation for: {prompt}"))
+        if prompt.contains("critical_findings") || prompt.contains("Critique") {
+            Ok(json!({
+                "critical_findings": [],
+                "risk_score": 0.1,
+                "suggested_refinement": "No refinements needed",
+                "should_proceed": true
+            })
+            .to_string())
+        } else if prompt.contains("deviation") && prompt.contains("JSON") {
+            Ok(json!({
+                "deviation": 0.1,
+                "suggestions": ["SOP is performing well", "No changes needed"],
+                "analysis": "The execution closely matches the prediction."
+            })
+            .to_string())
+        } else {
+            Ok(format!("Dummy generation for: {prompt}"))
+        }
+    }
+
+    fn get_params_for(&self, _agent_id: &str) -> (String, String, String) {
+        ("dummy_key".into(), "http://dummy:8080".into(), "dummy-model".into())
+    }
+
+    fn breaker(&self) -> crate::circuit_breaker::CircuitBreaker {
+        crate::circuit_breaker::CircuitBreaker::default()
     }
 }
 
@@ -53,6 +80,14 @@ impl LlmClient for FixedResponseClient {
 
     async fn generate(&self, _prompt: &str) -> Result<String, String> {
         Ok(self.0.clone())
+    }
+
+    fn get_params_for(&self, _agent_id: &str) -> (String, String, String) {
+        ("fixed_key".into(), "http://fixed:8080".into(), "fixed-model".into())
+    }
+
+    fn breaker(&self) -> crate::circuit_breaker::CircuitBreaker {
+        crate::circuit_breaker::CircuitBreaker::default()
     }
 }
 

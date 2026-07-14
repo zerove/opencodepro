@@ -59,7 +59,9 @@ pub trait LlmProvider: Send + Sync {
 mod tests {
     use super::*;
     use sisyphus_types::ProviderConfig;
-    use std::sync::Arc;
+    use std::sync::{Arc, Mutex};
+
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     struct MockProvider {
         name: String,
@@ -141,6 +143,7 @@ mod tests {
 
     #[test]
     fn test_resolve_api_key_env_var_set() {
+        let _guard = ENV_LOCK.lock().unwrap();
         unsafe { std::env::set_var("MY_TEST_KEY_42", "resolved-value") };
         let cfg = ProviderConfig {
             api_key: "env:MY_TEST_KEY_42".into(),

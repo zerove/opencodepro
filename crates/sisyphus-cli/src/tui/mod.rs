@@ -3,8 +3,8 @@ use std::time::Duration;
 
 use anyhow::Result;
 
-mod app;
-mod background;
+pub(crate) mod app;
+pub(crate) mod background;
 mod dialog;
 mod event;
 mod helpers;
@@ -41,6 +41,13 @@ pub fn run(data_dir: PathBuf, bridge_address: String) -> Result<()> {
 
     app.load_boulder();
 
+    // Subscribe to bridge event stream to eliminate polling latency
+    if let Some(mut client) = app.bridge_client.clone() {
+        if let Ok(rx) = futures::executor::block_on(client.subscribe_events()) {
+            app.event_rx = Some(rx);
+        }
+    }
+
     let tick_rate = Duration::from_millis(100);
     let res = run_loop(&mut terminal, &mut app, &perms, tick_rate);
 
@@ -56,8 +63,8 @@ fn run_loop(
     tick_rate: Duration,
 ) -> Result<()> {
     loop {
-        // Poll for background bridge operation completion
-        poll_bg_op(app);
+        // Process all pending events from the bridge stream
+        app.process_events();
 
         app.boulder_save_tick += 1;
         if app.boulder_save_tick >= 100 {
@@ -69,16 +76,9 @@ fn run_loop(
 
         terminal.draw(|f| ui(f, app))?;
 
-        // Advance spinner frame when bg op is pending
-        if app.pending_op.is_some() {
+        // Advance spinner frame when operation is pending
+        if app.is_pending {
             app.pending_spin = app.pending_spin.wrapping_add(1);
-        }
-
-        // Auto-refresh sessions and todos periodically
-        if app.last_refresh.elapsed() >= app::AUTO_REFRESH_INTERVAL {
-            app.todo_dirty = true;
-            app.session_dirty = true;
-            app.last_refresh = std::time::Instant::now();
         }
 
         let mut event_received = false;
@@ -136,99 +136,6 @@ fn run_loop(
     }
     Ok(())
 }
-
-fn poll_bg_op(app: &mut App) {
-    let Some(rx) = &mut app.pending_op else { return };
-    match rx.try_recv() {
-        Ok(op) => {
-            apply_bg_op(app, op);
-            app.pending_op = None;
-        }
-        Err(tokio::sync::oneshot::error::TryRecvError::Empty) => {}
-        Err(_) => {
-            app.pending_op = None;
-        }
-    }
-}
-
-fn apply_bg_op(app: &mut App, op: BgOp) {
-    match op {
-        BgOp::SopsListed { count, sops } => {
-            app.sop_sops = sops;
-            app.sop_sel = 0;
-            app.sop_status = format!("connected ({} SOPs)", count);
-        }
-        BgOp::SopsFailed(e) => {
-            app.sop_status = format!("failed: {e}");
-        }
-        BgOp::SopExecuted { sop_id, result } => {
-            app.sop_result = Some(result);
-            app.sop_status = format!("executed {sop_id}");
-        }
-        BgOp::SopExecuteFailed { sop_id, error } => {
-            app.sop_result = None;
-            app.sop_status = format!("execute {sop_id} failed: {error}");
-        }
-        BgOp::RoadmapFetched { projection, bottlenecks } => {
-            app.roadmap_projection = Some(projection);
-            app.roadmap_bottlenecks = Some(bottlenecks);
-            app.roadmap_status = "connected".into();
-        }
-        BgOp::RoadmapFailed(e) => {
-            app.roadmap_projection = None;
-            app.roadmap_bottlenecks = None;
-            app.roadmap_status = format!("failed: {e}");
-        }
-        BgOp::BridgeCmd { entries } => {
-            for entry in entries {
-                app.add_log(entry);
-            }
-        }
-        BgOp::DevResult { goal, report, success } => {
-            if success {
-                app.add_log(LogEntry::Success(format!("Dev agent completed: {goal}")));
-            } else {
-                app.add_log(LogEntry::Warn(format!("Dev agent finished with issues: {goal}")));
-            }
-            app.dev_report = Some(report);
-            app.dev_status = "done".into();
-        }
-        BgOp::SessionUpdated { session_id, errors } => {
-            for entry in &errors {
-                app.add_log(entry.clone());
-            }
-            if let Some(first_err) = errors.first() {
-                app.notification = Some((first_err.entry_text().to_string(), std::time::Instant::now()));
-            }
-            app.refresh_sessions();
-            let viewing_session = app.session_detail.as_ref().map(|d| d.id.clone());
-            if viewing_session.as_deref() == Some(&session_id) {
-                let db = app.data_dir.join("sessions.json");
-                if let Ok(session) = crate::tools::session_get(&db, &session_id) {
-                    app.session_detail = Some(session);
-                }
-                app.session_detail_scroll = usize::MAX;
-                // Generate contextual suggestions after agent response
-                let last_role = app.session_detail.as_ref()
-                    .and_then(|d| d.messages.last())
-                    .map(|m| m.role.as_str());
-                    if last_role == Some("assistant") {
-                        app.session_suggestions = vec![
-                            "Type a follow-up message or press Esc to browse sessions".into(),
-                            "Use /agent off to disable AI responses".into(),
-                            "Use /suggest <topic> for targeted suggestions".into(),
-                        ];
-                    } else {
-                        app.session_suggestions = vec![
-                            "Press Enter to send your message".into(),
-                            "Type /help for available commands".into(),
-                            "Use @filename to reference a file".into(),
-                        ];
-                    }
-                }
-            }
-        }
-    }
 
 #[cfg(test)]
 #[path = "mod_tests.rs"]

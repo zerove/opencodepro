@@ -12,6 +12,9 @@ pub(crate) enum Dialog {
     Lsp,
     Sop,
     Roadmap,
+    SkillMarket,
+    WorkspaceList,
+    Trace { sop_id: String },
     Help,
     ConfirmDelete,
     Dev { goal: String },
@@ -51,11 +54,14 @@ pub fn handle_dialog_key(key: KeyEvent, app: &mut App) {
                 _ => {}
             }
         }
+        Dialog::WorkspaceList => handlers::handle_workspace_list_key(code, app),
         Dialog::SessionList => handlers::handle_session_list_key(code, app),
         Dialog::Todos => handlers::handle_todos_key(code, app),
         Dialog::Lsp => handlers::handle_lsp_key(code, app),
         Dialog::Sop => handlers::handle_sop_key(code, app),
         Dialog::Roadmap => handlers::handle_roadmap_key(code, app),
+        Dialog::SkillMarket => handlers::handle_skill_market_key(code, app),
+        Dialog::Trace { sop_id: _ } => handlers::handle_trace_key(code, app),
         Dialog::ConfirmDelete => {
             match code {
                 KeyCode::Char('y') | KeyCode::Char('Y') => {
@@ -87,11 +93,14 @@ pub fn render_dialog_overlay(frame: &mut ratatui::Frame, area: ratatui::layout::
 
     match dialog {
         Dialog::Help => renders::render_help_dialog(frame, area, app),
+        Dialog::WorkspaceList => renders::render_workspace_list_dialog(frame, area, app),
         Dialog::SessionList => renders::render_session_list_dialog(frame, area, app),
         Dialog::Todos => renders::render_todos_dialog(frame, area, app),
         Dialog::Lsp => renders::render_lsp_dialog(frame, area, app),
         Dialog::Sop => renders::render_sop_dialog(frame, area, app),
         Dialog::Roadmap => renders::render_roadmap_dialog(frame, area, app),
+        Dialog::SkillMarket => renders::render_skill_market_dialog(frame, area, app),
+        Dialog::Trace { sop_id } => renders::render_trace_dialog(frame, area, app, sop_id),
         Dialog::ConfirmDelete => renders::render_confirm_dialog(frame, area, app),
         Dialog::Dev { goal: _goal } => renders::render_dev_dialog(frame, area, app),
         Dialog::Rename { session_id: _, name } => renders::render_rename_dialog(frame, area, app, name),

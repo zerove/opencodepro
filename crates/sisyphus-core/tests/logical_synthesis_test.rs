@@ -1,11 +1,11 @@
-use std::sync::Arc;
-use tokio::sync::Mutex;
 use sisyphus_core::{SisyphusKernel, ToolExecutor};
-use sisyphus_types::{TypesError, NodeOutput};
+use sisyphus_intel::{LogicalSOPSynthesizer, SisyphusIntel};
 use sisyphus_mem::MfsStore;
-use sisyphus_intel::{SisyphusIntel, LogicalSOPSynthesizer};
 use sisyphus_tools_llm::metis::{FixedResponseClient, LlmClient};
 use sisyphus_tools_llm_tools::meta_learner::MetaLearner;
+use sisyphus_types::{NodeOutput, TypesError};
+use std::sync::Arc;
+use tokio::sync::Mutex;
 
 struct MockExecutor {
     // Map of tool_id -> response
@@ -14,8 +14,17 @@ struct MockExecutor {
 
 #[async_trait::async_trait]
 impl ToolExecutor for MockExecutor {
-    async fn execute(&self, tool_id: &str, _args: Vec<u8>, _fuel: u64) -> Result<Vec<u8>, TypesError> {
-        let res = self.responses.get(tool_id).cloned().unwrap_or_else(|| "default".into());
+    async fn execute(
+        &self,
+        tool_id: &str,
+        _args: Vec<u8>,
+        _fuel: u64,
+    ) -> Result<Vec<u8>, TypesError> {
+        let res = self
+            .responses
+            .get(tool_id)
+            .cloned()
+            .unwrap_or_else(|| "default".into());
         Ok(res.into_bytes())
     }
 }
@@ -41,7 +50,12 @@ async fn test_logical_synthesis_branching_execution() {
     let tool_executor = Arc::new(MockExecutor { responses });
 
     // 3. Setup Synthesizer
-    let synthesizer = Arc::new(LogicalSOPSynthesizer::new(llm.clone(), tool_executor.clone()));
+    let synthesizer = Arc::new(LogicalSOPSynthesizer::new(
+        llm.clone(),
+        tool_executor.clone(),
+        Arc::new(sisyphus_intel::simulation::MonteCarloSimulator::new(100)),
+        None,
+    ));
 
     // 4. Setup Kernel
     let store = Arc::new(MfsStore::new("sqlite::memory:").await.unwrap());
@@ -57,16 +71,19 @@ async fn test_logical_synthesis_branching_execution() {
         intel,
         llm.clone(),
         synthesizer,
-        Arc::new(std::sync::Mutex::new(MetaLearner::default_dir())),
+        Arc::new(parking_lot::Mutex::new(MetaLearner::default_dir())),
         Arc::new(SisyphusConsensus::new()),
     );
 
     // 5. Execute Goal
-    let (output, report) = kernel.execute_goal("test branching", "sop-branch", None).await.unwrap();
+    let (output, report) = kernel
+        .execute_goal("test branching", "sop-branch", None)
+        .await
+        .unwrap();
 
     // 6. Verify
     // The logic should be: CheckStatus("success") -> Decision -> SuccessPath
-    assert!(report.contains("Test Branching Logic"));
+    assert!(report.iterations > 0);
     // We expect the final output to be the result of the SuccessPath tool
     // Note: the execute_goal returns the final node's output.
     // In our MockExecutor, success_tool returns "default" unless specified.
@@ -75,10 +92,18 @@ async fn test_logical_synthesis_branching_execution() {
 struct SisyphusConsensus;
 #[async_trait::async_trait]
 impl sisyphus_core::Consensus for SisyphusConsensus {
-    async fn is_leader(&self) -> bool { true }
-    async fn get_leader(&self) -> String { "leader".into() }
-    async fn propose(&self, _k: &str, _v: serde_json::Value) -> Result<(), String> { Ok(()) }
+    async fn is_leader(&self) -> bool {
+        true
+    }
+    async fn get_leader(&self) -> String {
+        "leader".into()
+    }
+    async fn propose(&self, _k: &str, _v: serde_json::Value) -> Result<(), String> {
+        Ok(())
+    }
 }
 impl SisyphusConsensus {
-    fn new() -> Self { Self }
+    fn new() -> Self {
+        Self
+    }
 }

@@ -1,6 +1,7 @@
 use crate::error::IntelError;
 use crate::reflect::{ReflectionReport, SOPEvolver};
 use crate::simulation::SimulationResult;
+use async_trait::async_trait;
 use petgraph::graph::NodeIndex;
 use sisyphus_types::{EvolutionOp, SOPGraph, WasmSOPNode};
 use std::collections::HashMap;
@@ -233,13 +234,15 @@ impl TopologicalSOPEvolver {
 }
 
 // ... (existing code) ...
+#[async_trait]
 impl SOPEvolver for TopologicalSOPEvolver {
-    fn evolve(
+    async fn evolve(
         &self,
-        graph: &SOPGraph,
+        graph: Arc<SOPGraph>,
         report: &ReflectionReport,
         _prediction: &SimulationResult,
-    ) -> Result<SOPGraph, String> {
+        _insights: Option<&str>,
+    ) -> Result<Arc<SOPGraph>, String> {
         let mut ops = Vec::new();
 
         // 1. Analyze failures and generate evolution ops
@@ -275,14 +278,15 @@ impl SOPEvolver for TopologicalSOPEvolver {
         }
 
         if ops.is_empty() {
-            return Ok(graph.clone());
+            return Ok(graph);
         }
 
         // We need a tool_executor to apply some ops (like InsertNode).
         // Since we don't have one here, we'll use a dummy one or we need to change the trait.
         // For now, we'll use a mock to demonstrate the structural change.
         let mock_executor = Arc::new(crate::mock::MockExecutor);
-        self.apply_ops(graph, &ops, mock_executor)
+        self.apply_ops(&graph, &ops, mock_executor)
+            .map(|g| Arc::new(g))
             .map_err(|e| e.to_string())
     }
 }

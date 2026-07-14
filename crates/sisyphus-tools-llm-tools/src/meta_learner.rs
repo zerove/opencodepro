@@ -40,52 +40,105 @@ impl MetaLearner {
         self.save_samples()
     }
 
-    /// Find the best strategy for a given context.
-    ///
-    /// Uses a simple approach: look at samples with similar context keys,
-    /// and return the strategy with the highest success rate.
-    pub fn best_strategy(&self, context: &serde_json::Value) -> Option<String> {
-        let context_str = context.to_string();
+    /// Calculate similarity between two context values.
+    fn calculate_similarity(ctx1: &serde_json::Value, ctx2: &serde_json::Value) -> f64 {
+        if let (Some(obj1), Some(obj2)) = (ctx1.as_object(), ctx2.as_object()) {
+            let mut score = 0.0;
+            let mut total_weight = 0.0;
 
-        // Group samples by strategy
-        let mut strategy_map: HashMap<String, Vec<&MetaLearningSample>> = HashMap::new();
+            for (key, val1) in obj1 {
+                let weight = match key.as_str() {
+                    "goal" | "goal_type" => 2.0,
+                    "node_count" | "estimated_cost" => 1.0,
+                    _ => 0.5,
+                };
+                total_weight += weight;
+
+                if let Some(val2) = obj2.get(key) {
+                    if val1 == val2 {
+                        score += weight;
+                    } else if let (Some(n1), Some(n2)) = (val1.as_f64(), val2.as_f64()) {
+                        // Numeric bucketing for counts/costs
+                        let diff = (n1 - n2).abs();
+                        let range = n1.max(n2) * 0.2; // 20% tolerance
+                        if diff <= range {
+                            score += weight * 0.7;
+                        }
+                    } else if let (Some(s1), Some(s2)) = (val1.as_str(), val2.as_str()) {
+                        // Simple keyword overlap for strings
+                        let s1_set: std::collections::HashSet<_> = s1.split_whitespace().collect();
+                        let s2_set: std::collections::HashSet<_> = s2.split_whitespace().collect();
+                        let intersection = s1_set.intersection(&s2_set).count();
+                        let union = s1_set.union(&s2_set).count();
+                        if union > 0 {
+                            score += weight * (intersection as f64 / union as f64);
+                        }
+                    }
+                }
+            }
+            if total_weight == 0.0 { 0.0 } else { score / total_weight }
+        } else {
+            if ctx1 == ctx2 { 1.0 } else { 0.0 }
+        }
+    }
+
+    /// Find the best strategy and its parameters for a given context.
+    pub fn best_strategy_params(&self, context: &serde_json::Value) -> Option<(String, serde_json::Value)> {
+        // Group samples by strategy and calculate weighted success
+        let mut strategy_scores: HashMap<String, (f64, Vec<&MetaLearningSample>)> = HashMap::new();
 
         for sample in &self.samples {
-            // Match if sample context contains the query context keys
-            let sample_str = sample.context.to_string();
-            if context_str.is_empty()
-                || sample_str.contains(&context_str)
-                || context_str.contains(&sample_str)
-            {
-                strategy_map
-                    .entry(sample.strategy.clone())
-                    .or_default()
-                    .push(sample);
+            let similarity = Self::calculate_similarity(context, &sample.context);
+            if similarity <= 0.0 {
+                continue;
+            }
+
+            let entry = strategy_scores.entry(sample.strategy.clone()).or_insert((0.0, Vec::new()));
+            entry.1.push(sample);
+            
+            // Weighted success: similarity * (1 if success else 0)
+            if sample.success {
+                entry.0 += similarity;
             }
         }
 
-        // Find strategy with highest success rate (minimum 2 samples)
-        let mut best: Option<(String, f64)> = None;
-        for (strategy, samples) in &strategy_map {
-            if samples.len() < 2 {
+        // Find strategy with highest weighted success
+        let mut best: Option<(String, f64, serde_json::Value)> = None;
+        for (strategy, (weighted_success, samples)) in &strategy_scores {
+            if samples.is_empty() {
                 continue;
             }
-            let successes = samples.iter().filter(|s| s.success).count();
-            let rate = successes as f64 / samples.len() as f64;
-            if rate >= 0.5 {
+            
+            // Normalize success rate by total similarity of samples in this strategy
+            let total_sim: f64 = samples.iter()
+                .map(|s| Self::calculate_similarity(context, &s.context))
+                .sum();
+            let normalized_score = if total_sim > 0.0 { weighted_success / total_sim } else { 0.0 };
+
+            if normalized_score >= 0.5 {
                 match best {
-                    Some((_, best_rate)) if rate > best_rate => {
-                        best = Some((strategy.clone(), rate));
+                    Some((_, best_score, _)) if normalized_score > best_score => {
+                        let params = samples.iter()
+                            .filter(|s| s.success)
+                            .last()
+                            .map(|s| s.params.clone())
+                            .unwrap_or_else(|| serde_json::json!({}));
+                        best = Some((strategy.clone(), normalized_score, params));
                     }
                     None => {
-                        best = Some((strategy.clone(), rate));
+                        let params = samples.iter()
+                            .filter(|s| s.success)
+                            .last()
+                            .map(|s| s.params.clone())
+                            .unwrap_or_else(|| serde_json::json!({}));
+                        best = Some((strategy.clone(), normalized_score, params));
                     }
                     _ => {}
                 }
             }
         }
 
-        best.map(|(s, _)| s)
+        best.map(|(s, _, p)| (s, p))
     }
 
     /// Get statistics for a specific strategy.

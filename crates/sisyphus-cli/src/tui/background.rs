@@ -1,8 +1,18 @@
 use std::path::PathBuf;
 
+use crate::tui::app::{RemoteSkillEntry, WorkspaceEntry};
 use crate::bridge::{BridgeClient, SopInfo};
 
 // ── Background operation types ──────────────────────────
+
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct SopTraceEvent {
+    pub node_id: String,
+    pub status: String,
+    pub output: Option<String>,
+    pub fuel_consumed: i64,
+    pub duration_ms: i64,
+}
 
 #[derive(Debug)]
 pub enum BgOp {
@@ -10,20 +20,32 @@ pub enum BgOp {
     SopsFailed(String),
     SopExecuted { sop_id: String, result: String },
     SopExecuteFailed { sop_id: String, error: String },
+    SopTraceFetched { sop_id: String, trace: Vec<SopTraceEvent> },
+    SopTraceFailed(String),
     RoadmapFetched { projection: String, bottlenecks: String },
     RoadmapFailed(String),
     BridgeCmd { entries: Vec<super::LogEntry> },
     SessionUpdated { session_id: String, errors: Vec<super::LogEntry> },
+    TodoUpdated,
     DevResult { goal: String, report: String, success: bool },
+    SkillsAvailable { skills: Vec<RemoteSkillEntry> },
+    SkillsInstalled { skills: Vec<RemoteSkillEntry> },
+    SkillOpResult { success: bool, message: String },
+    WorkspacesListed { workspaces: Vec<WorkspaceEntry> },
+    WorkspaceSwitched { id: String },
+    WorkspaceOpResult { success: bool, message: String },
 }
 
 // ── Background spawners ─────────────────────────────────
 
-pub fn spawn_list_sops(bridge_address: String) -> tokio::sync::oneshot::Receiver<BgOp> {
+pub fn spawn_list_sops(client: Option<crate::bridge::BridgeClient>, bridge_address: String) -> tokio::sync::oneshot::Receiver<BgOp> {
     let (tx, rx) = tokio::sync::oneshot::channel();
     tokio::spawn(async move {
         let result = async {
-            let mut client = BridgeClient::connect(&bridge_address).await.map_err(|e| format!("connect: {e}"))?;
+            let mut client = match client {
+                Some(c) => c,
+                None => BridgeClient::connect(&bridge_address).await.map_err(|e| format!("connect: {e}"))?,
+            };
             let sops = client.list_sops().await.map_err(|e| format!("list: {e}"))?;
             let count = sops.len();
             Ok((count, sops))
@@ -37,11 +59,14 @@ pub fn spawn_list_sops(bridge_address: String) -> tokio::sync::oneshot::Receiver
 }
 
 /// Spawn a background task that executes an SOP on the bridge.
-pub fn spawn_execute_sop(bridge_address: String, sop_id: String) -> tokio::sync::oneshot::Receiver<BgOp> {
+pub fn spawn_execute_sop(client: Option<crate::bridge::BridgeClient>, bridge_address: String, sop_id: String) -> tokio::sync::oneshot::Receiver<BgOp> {
     let (tx, rx) = tokio::sync::oneshot::channel();
     tokio::spawn(async move {
         let result = async {
-            let mut client = BridgeClient::connect(&bridge_address).await.map_err(|e| format!("connect: {e}"))?;
+            let mut client = match client {
+                Some(c) => c,
+                None => BridgeClient::connect(&bridge_address).await.map_err(|e| format!("connect: {e}"))?,
+            };
             client.execute_sop(&sop_id).await.map_err(|e| format!("execute: {e}"))
         }.await;
         let _ = tx.send(match result {
@@ -53,11 +78,14 @@ pub fn spawn_execute_sop(bridge_address: String, sop_id: String) -> tokio::sync:
 }
 
 /// Spawn a background task that fetches roadmap data (projection + bottlenecks).
-pub fn spawn_fetch_roadmap(bridge_address: String) -> tokio::sync::oneshot::Receiver<BgOp> {
+pub fn spawn_fetch_roadmap(client: Option<crate::bridge::BridgeClient>, bridge_address: String) -> tokio::sync::oneshot::Receiver<BgOp> {
     let (tx, rx) = tokio::sync::oneshot::channel();
     tokio::spawn(async move {
         let result = async {
-            let mut client = BridgeClient::connect(&bridge_address).await.map_err(|e| format!("connect: {e}"))?;
+            let mut client = match client {
+                Some(c) => c,
+                None => BridgeClient::connect(&bridge_address).await.map_err(|e| format!("connect: {e}"))?,
+            };
             let projection = client.execute_tool("strategic:project_costs", "").await.map_err(|e| format!("projection: {e}"))?;
             let bottlenecks = client.execute_tool("strategic:bottlenecks", "").await.map_err(|e| format!("bottleneck: {e}"))?;
             Ok((projection.result_json, bottlenecks.result_json))
@@ -167,6 +195,184 @@ pub fn spawn_dev_agent(
                 });
             }
         }
+    });
+    rx
+}
+
+pub fn spawn_approve_proposal(client: Option<crate::bridge::BridgeClient>, bridge_address: String, proposal_id: String, reviewer: String) -> tokio::sync::oneshot::Receiver<BgOp> {
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    tokio::spawn(async move {
+        let result = async {
+            let mut client = match client {
+                Some(c) => c,
+                None => BridgeClient::connect(&bridge_address).await.map_err(|e| format!("connect: {e}"))?,
+            };
+            let args = serde_json::json!({
+                "proposal_id": proposal_id,
+                "reviewer": reviewer,
+            });
+            client.execute_tool("strategic:approve_proposal", &args.to_string()).await.map_err(|e| format!("approve: {e}"))
+        }.await;
+        let _ = tx.send(match result {
+            Ok(_) => BgOp::BridgeCmd {
+                entries: vec![super::LogEntry::Success(format!("Proposal approved"))],
+            },
+            Err(e) => BgOp::BridgeCmd {
+                entries: vec![super::LogEntry::Error(format!("Approve failed: {e}"))],
+            },
+        });
+    });
+    rx
+}
+
+pub fn spawn_fetch_sop_trace(bridge_address: String, sop_id: String) -> tokio::sync::oneshot::Receiver<BgOp> {
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    tokio::spawn(async move {
+        let url = format!("http://{}/api/execute/goal/{}/trace", bridge_address, sop_id);
+        let result = async {
+            let resp = reqwest::get(&url).await.map_err(|e| format!("HTTP request failed: {e}"))?;
+            if !resp.status().is_success() {
+                return Err(format!("Bridge returned error status: {}", resp.status()));
+            }
+            let data: serde_json::Value = resp.json().await.map_err(|e| format!("JSON parse failed: {e}"))?;
+            let events: Vec<SopTraceEvent> = serde_json::from_value(data["events"].clone()).map_err(|e| format!("Trace event parse failed: {e}"))?;
+            Ok(events)
+        }.await;
+        let _ = tx.send(match result {
+            Ok(trace) => BgOp::SopTraceFetched { sop_id, trace },
+            Err(e) => BgOp::SopTraceFailed(e),
+        });
+    });
+    rx
+}
+
+pub fn spawn_fetch_available_skills(bridge_address: String) -> tokio::sync::oneshot::Receiver<BgOp> {
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    tokio::spawn(async move {
+        let url = format!("http://{}/api/skills/available", bridge_address);
+        let result = async {
+            let resp = reqwest::get(&url).await.map_err(|e| format!("HTTP request failed: {e}"))?;
+            if !resp.status().is_success() {
+                return Err(format!("Bridge returned error status: {}", resp.status()));
+            }
+            let skills: Vec<RemoteSkillEntry> = resp.json().await.map_err(|e| format!("JSON parse failed: {e}"))?;
+            Ok(skills)
+        }.await;
+        let _ = tx.send(match result {
+            Ok(skills) => BgOp::SkillsAvailable { skills },
+            Err(e) => BgOp::BridgeCmd { entries: vec![super::LogEntry::Error(e)] },
+        });
+    });
+    rx
+}
+
+pub fn spawn_fetch_installed_skills(bridge_address: String) -> tokio::sync::oneshot::Receiver<BgOp> {
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    tokio::spawn(async move {
+        let url = format!("http://{}/api/skills/installed", bridge_address);
+        let result = async {
+            let resp = reqwest::get(&url).await.map_err(|e| format!("HTTP request failed: {e}"))?;
+            if !resp.status().is_success() {
+                return Err(format!("Bridge returned error status: {}", resp.status()));
+            }
+            let skills: Vec<RemoteSkillEntry> = resp.json().await.map_err(|e| format!("JSON parse failed: {e}"))?;
+            Ok(skills)
+        }.await;
+        let _ = tx.send(match result {
+            Ok(skills) => BgOp::SkillsInstalled { skills },
+            Err(e) => BgOp::BridgeCmd { entries: vec![super::LogEntry::Error(e)] },
+        });
+    });
+    rx
+}
+
+pub fn spawn_install_skill(bridge_address: String, skill_id: String) -> tokio::sync::oneshot::Receiver<BgOp> {
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    tokio::spawn(async move {
+        let url = format!("http://{}/api/skills/install", bridge_address);
+        let result = async {
+            let client = reqwest::Client::new();
+            let resp = client.post(&url)
+                .json(&serde_json::json!({ "skill_id": skill_id }))
+                .send()
+                .await
+                .map_err(|e| format!("HTTP request failed: {e}"))?;
+            if !resp.status().is_success() {
+                return Err(format!("Bridge returned error status: {}", resp.status()));
+            }
+            Ok(())
+        }.await;
+        let _ = tx.send(match result {
+            Ok(_) => BgOp::SkillOpResult { success: true, message: "Skill installed successfully".into() },
+            Err(e) => BgOp::SkillOpResult { success: false, message: e },
+        });
+    });
+    rx
+}
+
+pub fn spawn_uninstall_skill(bridge_address: String, skill_id: String) -> tokio::sync::oneshot::Receiver<BgOp> {
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    tokio::spawn(async move {
+        let url = format!("http://{}/api/skills/remote/{}", bridge_address, skill_id);
+        let result = async {
+            let client = reqwest::Client::new();
+            let resp = client.delete(&url)
+                .send()
+                .await
+                .map_err(|e| format!("HTTP request failed: {e}"))?;
+            if !resp.status().is_success() {
+                return Err(format!("Bridge returned error status: {}", resp.status()));
+            }
+            Ok(())
+        }.await;
+        let _ = tx.send(match result {
+            Ok(_) => BgOp::SkillOpResult { success: true, message: "Skill uninstalled successfully".into() },
+            Err(e) => BgOp::SkillOpResult { success: false, message: e },
+        });
+    });
+    rx
+}
+
+pub fn spawn_list_workspaces(bridge_address: String) -> tokio::sync::oneshot::Receiver<BgOp> {
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    tokio::spawn(async move {
+        let url = format!("http://{}/api/workspaces", bridge_address);
+        let result = async {
+            let resp = reqwest::get(&url).await.map_err(|e| format!("HTTP request failed: {e}"))?;
+            if !resp.status().is_success() {
+                return Err(format!("Bridge returned error status: {}", resp.status()));
+            }
+            let workspaces: Vec<WorkspaceEntry> = resp.json().await.map_err(|e| format!("JSON parse failed: {e}"))?;
+            Ok(workspaces)
+        }.await;
+        let _ = tx.send(match result {
+            Ok(workspaces) => BgOp::WorkspacesListed { workspaces },
+            Err(e) => BgOp::WorkspaceOpResult { success: false, message: e },
+        });
+    });
+    rx
+}
+
+pub fn spawn_switch_workspace(bridge_address: String, workspace_id: String) -> tokio::sync::oneshot::Receiver<BgOp> {
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    tokio::spawn(async move {
+        let url = format!("http://{}/api/workspaces/switch", bridge_address);
+        let result = async {
+            let client = reqwest::Client::new();
+            let resp = client.post(&url)
+                .json(&serde_json::json!({ "id": workspace_id }))
+                .send()
+                .await
+                .map_err(|e| format!("HTTP request failed: {e}"))?;
+            if !resp.status().is_success() {
+                return Err(format!("Bridge returned error status: {}", resp.status()));
+            }
+            Ok(())
+        }.await;
+        let _ = tx.send(match result {
+            Ok(_) => BgOp::WorkspaceSwitched { id: workspace_id },
+            Err(e) => BgOp::WorkspaceOpResult { success: false, message: e },
+        });
     });
     rx
 }

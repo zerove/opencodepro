@@ -1,6 +1,9 @@
 pub mod agent_registry;
+pub mod skill_registry;
+pub mod workspace_manager;
 pub mod delegate;
 pub mod developer;
+pub mod jcode_executor;
 pub mod project_rules;
 pub mod team;
 

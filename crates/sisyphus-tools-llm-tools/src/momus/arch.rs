@@ -94,6 +94,34 @@ pub async fn review_architecture(client: &dyn LlmClient, arch_text: &str) -> Mom
         });
     }
 
+    // God Component detection: count incoming dependencies
+    let mut deps_count = std::collections::HashMap::new();
+    for line in arch_text.lines() {
+        if let Some(pos) = line.find("->") {
+            let target = line[pos + 2..].trim();
+            if !target.is_empty() {
+                let name = target.split_whitespace().next().unwrap_or("").to_string();
+                if !name.is_empty() {
+                    *deps_count.entry(name).or_insert(0) += 1;
+                }
+            }
+        }
+    }
+    for (name, count) in deps_count {
+        if count > 5 {
+            comments.push(ReviewComment {
+                severity: ReviewSeverity::Major,
+                category: "decoupling".into(),
+                file: None,
+                line: None,
+                message: format!("Component '{}' appears to be a 'God Component' with {} incoming dependencies.", name, count),
+                suggestion: Some(
+                    "Consider splitting this component into smaller, more focused modules to reduce coupling.".into(),
+                ),
+            });
+        }
+    }
+
     // 2. Semantic review (LLM)
     let llm_result = client
         .chat(ARCH_REVIEW_SYSTEM_PROMPT, arch_text, true)

@@ -48,12 +48,12 @@ impl AgentChannel {
     }
 
     /// Send a request and wait for a response (blocking, with timeout).
-    pub fn request(
+    pub async fn request(
         &self,
         agent_id: &str,
         payload: Value,
         correlation_id: &str,
-        _timeout: Duration,
+        timeout: Duration,
     ) -> ToolResult<AgentMessage> {
         let notify_tx = {
             let mut notify = self.notify.write().map_err(|e| {
@@ -73,18 +73,15 @@ impl AgentChannel {
         };
         self.send(request)?;
 
-        // Non-blocking: just return a placeholder response
-        // Real implementation would await on broadcast receiver
         let mut rx = notify_tx.subscribe();
-        match rx.try_recv() {
-            Ok(msg) => Ok(msg),
-            Err(_) => Ok(AgentMessage {
-                from: agent_id.into(),
-                to: "self".into(),
-                kind: "response".into(),
-                payload: Value::Null,
-                correlation_id: correlation_id.to_string(),
-            }),
+        
+        tokio::select! {
+            res = rx.recv() => {
+                res.map_err(|e| sisyphus_tools_core::ToolError::Generic(format!("Broadcast error: {e}")))
+            }
+            _ = tokio::time::sleep(timeout) => {
+                Err(sisyphus_tools_core::ToolError::Generic("Request timed out".into()))
+            }
         }
     }
 

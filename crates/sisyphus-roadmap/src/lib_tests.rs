@@ -7,7 +7,13 @@ async fn setup_manager() -> RoadmapManager {
             .await
             .expect("Failed to create in-memory store"),
     );
-    RoadmapManager::new(store)
+    let sql_store = std::sync::Arc::new(
+        sisyphus_mem::RoadmapSqlStore::new("sqlite::memory:")
+            .await
+            .expect("Failed to create in-memory sql store"),
+    );
+    sql_store.init_schema().await.expect("Failed to init schema");
+    RoadmapManager::new(store, sql_store)
 }
 
 #[tokio::test]

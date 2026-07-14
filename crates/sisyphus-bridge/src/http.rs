@@ -3,16 +3,19 @@ use crate::MySisyphusBridge;
 use axum::{
     extract::{Path, State},
     http::StatusCode,
-    response::{IntoResponse, Sse},
+    body::Body,
+    response::{IntoResponse, Response},
     routing::{get, post, patch},
     Json, Router,
 };
+use tower_http::services::ServeDir;
 use futures_util::stream::{self, Stream};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::mpsc;
-use tokio_stream::wrappers::UnboundedReceiverStream;
+use tokio_stream::{wrappers::UnboundedReceiverStream, StreamExt};
+use sisyphus_types::{ToolExecutor, graph::SOPGraphConfig};
 
 // ── Response / Request Types ───────────────────────────────────────────────
 
@@ -23,6 +26,21 @@ pub struct HealthResponse {
 }
 
 // --- Goal Execution Types ---
+
+#[derive(Serialize)]
+pub struct TraceEventDetail {
+    pub node_id: String,
+    pub status: String,
+    pub output: Option<String>,
+    pub fuel_consumed: i64,
+    pub duration_ms: i64,
+}
+
+#[derive(Serialize)]
+pub struct GoalTraceResponse {
+    pub sop_id: String,
+    pub events: Vec<TraceEventDetail>,
+}
 
 #[derive(Serialize)]
 pub struct GoalStatusResponse {
@@ -59,7 +77,68 @@ pub struct CompositeExecuteResponse {
     pub execution_order: Vec<String>,
 }
 
-// --- Roadmap Management Types ---
+// --- Skill Registry Types ---
+
+#[derive(Serialize)]
+pub struct RemoteSkillEntry {
+    pub id: String,
+    pub metadata: sisyphus_types::skill::SkillMetadata,
+}
+
+#[derive(Deserialize)]
+pub struct InstallSkillRequest {
+    pub skill_id: String,
+}
+
+// --- Workspace Management Types ---
+
+#[derive(Serialize, Deserialize)]
+pub struct CreateWorkspaceRequest {
+    pub name: String,
+    pub project_id: String,
+    pub root_dir: String,
+}
+
+#[derive(Deserialize)]
+pub struct SwitchWorkspaceRequest {
+    pub id: String,
+}
+
+// --- SOP Management Types ---
+#[derive(Serialize, Deserialize)]
+pub struct SopSaveRequest {
+    pub id: String,
+    pub name: String,
+    pub version: Option<String>,
+    pub config: sisyphus_types::graph::SOPGraphConfig,
+}
+
+#[derive(Serialize)]
+pub struct SopDetailResponse {
+    pub id: String,
+    pub name: String,
+    pub version: Option<String>,
+    pub config: sisyphus_types::graph::SOPGraphConfig,
+}
+
+// --- Cognitive Map Types ---
+
+#[derive(Serialize)]
+pub struct CogMapResponse {
+    pub map: Option<sisyphus_types::CogMap>,
+    pub status: String,
+}
+#[derive(Serialize, Deserialize)]
+pub struct ExperienceQueryRequest {
+    pub query_text: String,
+    pub action_id: Option<String>,
+    pub limit: Option<usize>,
+}
+
+#[derive(Serialize)]
+pub struct ExperienceSimilarResponse {
+    pub experiences: Vec<sisyphus_types::experience::ExperienceTuple>,
+}
 
 #[derive(Serialize, Deserialize)]
 pub struct CreateProjectRequest {
@@ -180,12 +259,96 @@ pub struct SkillEntry {
 // ── Shared State ──────────────────────────────────────────────────────────
 
 #[derive(Clone)]
-pub(crate) struct RestApiState {
+pub struct RestApiState {
     pub bridge: Arc<MySisyphusBridge>,
     pub session_db: PathBuf,
 }
 
-// ── Handlers ──────────────────────────────────────────────────────────────
+async fn get_cognitive_map_handler(
+    State(state): State<RestApiState>,
+    Path(sop_id): Path<String>,
+) -> impl IntoResponse {
+    match state.bridge.kernel().execution_manager.cognitive_maps.get(&sop_id) {
+        Some(map) => (StatusCode::OK, Json(map.clone())).into_response(),
+        None => (StatusCode::NOT_FOUND, Json(serde_json::json!({ "error": "No active cognitive map for this SOP" }))).into_response(),
+    }
+}
+
+async fn list_available_skills_handler(
+    State(state): State<RestApiState>,
+) -> impl IntoResponse {
+    match state.bridge.skill_registry.fetch_available_skills().await {
+        Ok(skills) => (StatusCode::OK, Json(skills)).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(e.to_string())).into_response(),
+    }
+}
+
+async fn install_remote_skill_handler(
+    State(state): State<RestApiState>,
+    Json(req): Json<InstallSkillRequest>,
+) -> impl IntoResponse {
+    match state.bridge.skill_registry.install_skill(&req.skill_id).await {
+        Ok(_) => StatusCode::CREATED.into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(e.to_string())).into_response(),
+    }
+}
+
+async fn list_installed_skills_handler(
+    State(state): State<RestApiState>,
+) -> impl IntoResponse {
+    match state.bridge.skill_registry.list_installed_skills().await {
+        Ok(skills) => (StatusCode::OK, Json(skills)).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(e.to_string())).into_response(),
+    }
+}
+
+async fn uninstall_remote_skill_handler(
+    State(state): State<RestApiState>,
+    Path(id): Path<String>,
+) -> impl IntoResponse {
+    match state.bridge.skill_registry.uninstall_skill(&id).await {
+        Ok(_) => StatusCode::NO_CONTENT.into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(e.to_string())).into_response(),
+    }
+}
+
+// --- Workspace Management Handlers ---
+
+async fn list_workspaces_handler(
+    State(state): State<RestApiState>,
+) -> impl IntoResponse {
+    let workspaces = state.bridge.workspace_manager.list_workspaces().await;
+    (StatusCode::OK, Json(workspaces)).into_response()
+}
+
+async fn create_workspace_handler(
+    State(state): State<RestApiState>,
+    Json(req): Json<CreateWorkspaceRequest>,
+) -> impl IntoResponse {
+    match state.bridge.workspace_manager.create_workspace(req.name, req.project_id, req.root_dir).await {
+        Ok(ws) => (StatusCode::CREATED, Json(ws)).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(e.to_string())).into_response(),
+    }
+}
+
+async fn switch_workspace_handler(
+    State(state): State<RestApiState>,
+    Json(req): Json<SwitchWorkspaceRequest>,
+) -> impl IntoResponse {
+    match state.bridge.workspace_manager.switch_workspace(&req.id).await {
+        Ok(_) => StatusCode::OK.into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(e.to_string())).into_response(),
+    }
+}
+
+async fn get_current_workspace_handler(
+    State(state): State<RestApiState>,
+) -> impl IntoResponse {
+    match state.bridge.workspace_manager.get_current().await {
+        Some(ws) => (StatusCode::OK, Json(ws)).into_response(),
+        None => (StatusCode::NOT_FOUND, Json(serde_json::json!({ "error": "No active workspace" }))).into_response(),
+    }
+}
 
 async fn health_handler(State(state): State<RestApiState>) -> impl IntoResponse {
     let _ = state.bridge.kernel();
@@ -216,13 +379,16 @@ async fn execute_goal_handler(
             event_tx,
         ).await
     } else {
-        kernel.execute_goal(&req.goal, &req.sop_id, event_tx).await
+        kernel.execute_goal(&req.goal, &req.sop_id, event_tx, None).await
     };
 
     match result {
         Ok((output, report)) => (
             StatusCode::OK,
-            Json(serde_json::to_value(GoalExecuteResponse { output, report }).unwrap()),
+            match serde_json::to_value(GoalExecuteResponse { output, report }) {
+                Ok(val) => Json(val),
+                Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({ "error": "Failed to serialize response" }))),
+            },
         ),
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -236,7 +402,7 @@ async fn goal_status_handler(
     Path(goal_id): Path<String>,
 ) -> impl IntoResponse {
     let kernel = state.bridge.kernel();
-    match kernel.active_executions.get(&goal_id) {
+    match kernel.execution_manager.active_executions.get(&goal_id) {
         Some(status) => (
             StatusCode::OK,
             Json(serde_json::json!({
@@ -254,25 +420,64 @@ async fn goal_status_handler(
     }
 }
 
+async fn goal_trace_handler(
+    State(state): State<RestApiState>,
+    Path(sop_id): Path<String>,
+) -> impl IntoResponse {
+    let store = &state.bridge.state_store;
+    match store.get_traces_for_sop(&sop_id).await {
+        Ok(rows) => {
+            let events = rows.into_iter().map(|(node_id, status, output, fuel, duration)| {
+                TraceEventDetail {
+                    node_id,
+                    status,
+                    output: Some(output),
+                    fuel_consumed: fuel,
+                    duration_ms: duration,
+                }
+            }).collect();
+            (StatusCode::OK, Json(GoalTraceResponse { sop_id, events }))
+        }
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": e.to_string() })),
+        ),
+    }
+}
+
 async fn goal_stream_handler(
     State(state): State<RestApiState>,
-    Path(goal_id): Path<String>,
+    Path(goal): Path<String>,
 ) -> impl IntoResponse {
-    let kernel = state.bridge.kernel();
     let (tx, rx) = mpsc::unbounded_channel();
-    
-    // Subscribe to the kernel's event system
-    kernel.event_subscribers.entry(goal_id.clone())
-        .or_insert_with(Vec::new)
-        .push(tx);
+    let bridge_clone = state.bridge.clone();
+    let goal_clone = goal.clone();
 
-    let stream = UnboundedReceiverStream::new(rx).map(|event| {
-        Sse::new(SseEvent::default()
-            .event("execution_event")
-            .data(serde_json::to_string(&event).unwrap()))
+    tokio::spawn(async move {
+        if let Err(e) = bridge_clone.kernel().execute_goal_streaming(&goal_clone, "stream_task", None, Some(tx)).await {
+            tracing::error!(error = %e, "Goal streaming execution failed");
+        }
     });
 
-    Sse::new(stream).keep_alive(axum::response::Sse::default().keep_alive_interval())
+    let stream = stream::unfold(rx, |mut rx| async move {
+        match rx.recv().await {
+            Some(event) => {
+                let data = format!("data: {:?}\n\n", event);
+                Some((Ok::<_, std::io::Error>(data.into_bytes()), rx))
+            }
+            None => None,
+        }
+    });
+
+    match Response::builder()
+        .header("Content-Type", "text/event-stream")
+        .header("Cache-Control", "no-cache")
+        .header("Connection", "keep-alive")
+        .body(Body::from_stream(stream)) 
+    {
+        Ok(res) => res,
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, format!("Response build failed: {e}")).into_response(),
+    }
 }
 
 async fn execute_composite_handler(
@@ -293,13 +498,16 @@ async fn execute_composite_handler(
     };
 
     match kernel.execute_composite(&composite, event_tx).await {
-        Ok(output) => (
-            StatusCode::OK,
-            Json(serde_json::to_value(CompositeExecuteResponse {
+        Ok(output) => {
+            let response = CompositeExecuteResponse {
                 results: output.results.into_iter().map(|(id, (out, _))| (id, out)).collect(),
                 execution_order: output.execution_order,
-            }).unwrap()),
-        ),
+            };
+            match serde_json::to_value(response) {
+                Ok(val) => (StatusCode::OK, Json(val)),
+                Err(_) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({ "error": "Failed to serialize response" }))),
+            }
+        },
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(serde_json::json!({ "error": e.to_string() })),
@@ -307,7 +515,77 @@ async fn execute_composite_handler(
     }
 }
 
-// --- Roadmap Management Handlers ---
+async fn list_sops_handler(
+    State(state): State<RestApiState>,
+) -> impl IntoResponse {
+    let kernel = state.bridge.kernel();
+    match kernel.execution_manager.list_sops().await {
+        Ok(sops) => (StatusCode::OK, Json(sops)).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(e.to_string())).into_response(),
+    }
+}
+
+async fn get_sop_handler(
+    State(state): State<RestApiState>,
+    Path(id): Path<String>,
+) -> impl IntoResponse {
+    let kernel = state.bridge.kernel();
+    match kernel.execution_manager.load_sop(&id).await {
+        Ok(sop) => {
+            let config = SOPGraphConfig::from_graph(&sop);
+            (StatusCode::OK, Json(SopDetailResponse { 
+                id, 
+                name: "Sisyphus SOP".into(), // Name is not currently in SOPGraph
+                version: Some("1.0.0".into()), 
+                config 
+            })).into_response()
+        }
+        Err(e) => (StatusCode::NOT_FOUND, Json(e.to_string())).into_response(),
+    }
+}
+
+async fn save_sop_handler(
+    State(state): State<RestApiState>,
+    Json(req): Json<SopSaveRequest>,
+) -> impl IntoResponse {
+    let kernel = state.bridge.kernel();
+    // We need to convert SOPGraphConfig back to SOPGraph to use save_sop
+    // This is a bit tricky because SOPGraph::from_config needs executors.
+    // For a simple REST save, we can bypass the Graph object and call SopSqlStore directly.
+    let sop_store = &state.bridge.kernel().execution_manager.sop_store;
+    match sop_store.save_sop(&req.id, &req.name, req.version, &req.config).await {
+        Ok(_) => StatusCode::CREATED.into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(e.to_string())).into_response(),
+    }
+}
+
+async fn delete_sop_handler(
+    State(state): State<RestApiState>,
+    Path(id): Path<String>,
+) -> impl IntoResponse {
+    let sop_store = &state.bridge.kernel().execution_manager.sop_store;
+    match sop_store.delete_sop(&id).await {
+        Ok(_) => StatusCode::NO_CONTENT.into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(e.to_string())).into_response(),
+    }
+}
+
+async fn experience_similar_handler(
+    State(state): State<RestApiState>,
+    Json(req): Json<ExperienceQueryRequest>,
+) -> impl IntoResponse {
+    let kernel = state.bridge.kernel();
+    let query = sisyphus_types::experience::ExperienceQuery {
+        query_text: req.query_text,
+        context_hash: String::new(), // Context hash is usually internal to the loop
+        action_id: req.action_id,
+        limit: req.limit.unwrap_or(5),
+    };
+    match kernel.experience_bank.query_similar(query).await {
+        Ok(exps) => (StatusCode::OK, Json(ExperienceSimilarResponse { experiences: exps })).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(e.to_string())).into_response(),
+    }
+}
 
 async fn roadmap_project_handler(
     State(state): State<RestApiState>,
@@ -401,7 +679,7 @@ async fn execute_handler(
     match state
         .bridge
         .kernel()
-        .tool_executor
+        .execution_manager.tool_router
         .execute(&req.tool_id, args_bytes, fuel)
         .await
     {
@@ -504,6 +782,8 @@ async fn get_session_handler(
                     .map(|m| MessageDto {
                         role: m.role,
                         content: m.content,
+                        created_at: m.created_at,
+                        estimated_tokens: m.estimated_tokens,
                         created_at: m.created_at,
                         estimated_tokens: m.estimated_tokens,
                     })
@@ -650,11 +930,24 @@ impl RestApiState {
 }
 
 /// Build the axum Router with all REST API routes.
-pub(crate) fn build_router(state: RestApiState) -> Router {
+pub fn build_router(state: RestApiState) -> Router {
     Router::new()
         .route("/health", get(health_handler))
+        .nest_service("/dashboard", ServeDir::new("static/dashboard"))
+        .route("/api/skills/available", get(list_available_skills_handler))
+        .route("/api/skills/install", post(install_remote_skill_handler))
+        .route("/api/skills/installed", get(list_installed_skills_handler))
+        .route("/api/skills/remote/{id}", delete(uninstall_remote_skill_handler))
+        .route("/api/cognitive/map/{sop_id}", get(get_cognitive_map_handler))
+        .route("/api/workspaces", get(list_workspaces_handler).post(create_workspace_handler))
+        .route("/api/workspaces/switch", post(switch_workspace_handler))
+        .route("/api/workspaces/current", get(get_current_workspace_handler))
+        .route("/api/sops", get(list_sops_handler).post(save_sop_handler))
+        .route("/api/sops/{id}", get(get_sop_handler).delete(delete_sop_handler))
+        .route("/api/experience/similar", post(experience_similar_handler))
         .route("/api/execute/goal", post(execute_goal_handler))
         .route("/api/execute/goal/{goal_id}/status", get(goal_status_handler))
+        .route("/api/execute/goal/{goal_id}/trace", get(goal_trace_handler))
         .route("/api/execute/goal/{goal_id}/stream", get(goal_stream_handler))
         .route("/api/execute/composite", post(execute_composite_handler))
         .route(

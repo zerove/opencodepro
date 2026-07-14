@@ -1,16 +1,15 @@
-use std::sync::{Arc, Mutex};
-use tokio::sync::mpsc;
-use sisyphus_core::{SisyphusKernel, CoreError, SOPGraph};
+use sisyphus_core::Consensus;
+use sisyphus_core::{CoreError, SOPGraph, SisyphusKernel};
 use sisyphus_intel::{
-    SisyphusIntel, StandardReflector, StandardEvolver, 
-    MetaLearningSynthesizer, StrategicSopSynthesizer, GoalDrivenSynthesizer,
-    MonteCarloSimulator, Simulator, SimulationResult
+    GoalDrivenSynthesizer, MetaLearningSynthesizer, MonteCarloSimulator, SimulationResult,
+    Simulator, SisyphusIntel, StandardEvolver, StandardReflector, StrategicSopSynthesizer,
 };
-use sisyphus_types::{ToolExecutor, ExecutionContext, WorkMode};
 use sisyphus_mem::MfsStore;
 use sisyphus_tools_llm::metis::LlmClient;
 use sisyphus_tools_llm_tools::meta_learner::MetaLearner;
-use sisyphus_core::Consensus;
+use sisyphus_types::{ExecutionContext, ToolExecutor, WorkMode};
+use std::sync::{Arc, Mutex};
+use tokio::sync::mpsc;
 
 // --- Mocks ---
 
@@ -35,7 +34,12 @@ impl LlmClient for MockLlmClient {
 struct MockExecutor;
 #[async_trait::async_trait]
 impl ToolExecutor for MockExecutor {
-    async fn execute(&self, _id: &str, _args: Vec<u8>, _fuel: u64) -> Result<Vec<u8>, sisyphus_types::TypesError> {
+    async fn execute(
+        &self,
+        _id: &str,
+        _args: Vec<u8>,
+        _fuel: u64,
+    ) -> Result<Vec<u8>, sisyphus_types::TypesError> {
         Ok(b"success".to_vec())
     }
 }
@@ -43,9 +47,15 @@ impl ToolExecutor for MockExecutor {
 struct MockConsensus;
 #[async_trait::async_trait]
 impl Consensus for MockConsensus {
-    async fn is_leader(&self) -> bool { true }
-    async fn get_leader(&self) -> String { "node-1".into() }
-    async fn propose(&self, _k: &str, _v: serde_json::Value) -> Result<(), String> { Ok(()) }
+    async fn is_leader(&self) -> bool {
+        true
+    }
+    async fn get_leader(&self) -> String {
+        "node-1".into()
+    }
+    async fn propose(&self, _k: &str, _v: serde_json::Value) -> Result<(), String> {
+        Ok(())
+    }
 }
 
 #[tokio::test]
@@ -54,14 +64,21 @@ async fn test_meta_learning_closed_loop() {
     let tool_exec = Arc::new(MockExecutor);
     let llm = Arc::new(MockLlmClient);
     let simulator = Arc::new(MonteCarloSimulator::new(10));
-    let intel = Arc::new(SisyphusIntel::new(simulator.clone(), Arc::new(StandardReflector), Arc::new(StandardEvolver::new())));
-    
+    let intel = Arc::new(SisyphusIntel::new(
+        simulator.clone(),
+        Arc::new(StandardReflector),
+        Arc::new(StandardEvolver::new()),
+    ));
+
     let temp_dir = tempfile::tempdir().unwrap();
     let ml_path = temp_dir.path().join("ml_dir");
     let meta_learner = Arc::new(Mutex::new(MetaLearner::new(ml_path.to_str().unwrap())));
     let inner_syn = Arc::new(GoalDrivenSynthesizer::new(tool_exec.clone()));
-    let syn = Arc::new(MetaLearningSynthesizer::new(inner_syn, meta_learner.clone()));
-    
+    let syn = Arc::new(MetaLearningSynthesizer::new(
+        inner_syn,
+        meta_learner.clone(),
+    ));
+
     let kernel = SisyphusKernel::new(
         store,
         tool_exec,
@@ -71,14 +88,14 @@ async fn test_meta_learning_closed_loop() {
         meta_learner.clone(),
         Arc::new(MockConsensus),
     );
-    
+
     let goal = "Fetch AI news";
     let sop_id = "test_meta_goal";
-    
+
     // 1. First execution: Standard SOP
     let (res1, report1) = kernel.execute_goal(goal, sop_id, None).await.unwrap();
     assert!(report1.contains("Standard"));
-    
+
     // 2. Manually record a failure for this goal with a specific strategy
     {
         let mut ml = meta_learner.lock().unwrap();
@@ -88,7 +105,8 @@ async fn test_meta_learning_closed_loop() {
             success: true, // We want to steer it towards Robustness
             duration_secs: 1.0,
             timestamp: 0,
-        }).unwrap();
+        })
+        .unwrap();
         // Add a few more to meet the min_samples = 2 requirement in MetaLearner
         for _ in 0..2 {
             ml.record_outcome(sisyphus_types::MetaLearningSample {
@@ -97,10 +115,11 @@ async fn test_meta_learning_closed_loop() {
                 success: true,
                 duration_secs: 1.0,
                 timestamp: 0,
-            }).unwrap();
+            })
+            .unwrap();
         }
     }
-    
+
     // 3. Second execution: Should now use the "Robustness" hint
     let (res2, report2) = kernel.execute_goal(goal, sop_id, None).await.unwrap();
     // The MetaLearningSynthesizer will inject the hint, and MockLlmClient will return the robust SOP
@@ -113,15 +132,19 @@ async fn test_strategic_simulator_selection() {
     let tool_exec = Arc::new(MockExecutor);
     let llm = Arc::new(MockLlmClient);
     let simulator = Arc::new(MonteCarloSimulator::new(100));
-    let intel = Arc::new(SisyphusIntel::new(simulator.clone(), Arc::new(StandardReflector), Arc::new(StandardEvolver::new())));
-    
+    let intel = Arc::new(SisyphusIntel::new(
+        simulator.clone(),
+        Arc::new(StandardReflector),
+        Arc::new(StandardEvolver::new()),
+    ));
+
     let inner_syn = Arc::new(GoalDrivenSynthesizer::new(tool_exec.clone()));
     let strat_syn = Arc::new(StrategicSopSynthesizer::new(inner_syn, simulator.clone()));
-    
+
     let temp_dir = tempfile::tempdir().unwrap();
     let ml_path = temp_dir.path().join("ml_dir");
     let meta_learner = Arc::new(Mutex::new(MetaLearner::new(ml_path.to_str().unwrap())));
-    
+
     let kernel = SisyphusKernel::new(
         store,
         tool_exec,
@@ -131,10 +154,10 @@ async fn test_strategic_simulator_selection() {
         meta_learner,
         Arc::new(MockConsensus),
     );
-    
+
     let goal = "Fetch AI news";
     let sop_id = "test_strat_goal";
-    
+
     let (res, report) = kernel.execute_goal(goal, sop_id, None).await.unwrap();
     assert!(report.contains("Strategic selection"));
 }

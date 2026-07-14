@@ -52,6 +52,24 @@ pub enum BudgetMode {
 ///
 /// Use `Config::from_file(path)` or `Config::default()` and override
 /// individual fields via environment variables.
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+pub struct EmbeddingConfig {
+    #[serde(default = "default_embedding_model")]
+    pub model: String,
+    #[serde(default)]
+    pub endpoint: Option<String>,
+    #[serde(default = "default_embedding_provider")]
+    pub provider: String,
+}
+
+fn default_embedding_model() -> String {
+    "text-embedding-3-small".into()
+}
+
+fn default_embedding_provider() -> String {
+    "dummy".into()
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct LlmConfig {
     #[serde(default)]
@@ -60,6 +78,9 @@ pub struct LlmConfig {
     pub endpoint: String,
     #[serde(default)]
     pub model: String,
+    /// Embedding configuration.
+    #[serde(default)]
+    pub embedding: EmbeddingConfig,
     /// Budget enforcement mode. Defaults to `Warning`.
     #[serde(default)]
     pub budget_mode: BudgetMode,
@@ -79,6 +100,11 @@ pub fn default_llm_config() -> LlmConfig {
         api_key: "".into(),
         endpoint: "http://localhost:8000/v1/chat/completions".into(),
         model: "gpt-4o".into(),
+        embedding: EmbeddingConfig {
+            model: default_embedding_model(),
+            endpoint: None,
+            provider: default_embedding_provider(),
+        },
         budget_mode: BudgetMode::default(),
         agents: HashMap::new(),
         categories: HashMap::new(),

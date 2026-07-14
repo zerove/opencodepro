@@ -8,6 +8,8 @@ fn make_pred(estimated_cost: u64) -> SimulationResult {
         success_probability: 0.5,
         estimated_cost,
         predicted_outcome: "?".into(),
+        predicted_effort: 0,
+        predicted_stability: 1.0,
     }
 }
 
@@ -91,14 +93,14 @@ fn test_analyze_empty_outputs() {
 #[tokio::test]
 async fn test_reflect_structured() {
     let trace = r#"{"node":"x","status":"ok","output":"data"}"#;
-    let report = StandardReflector.reflect(trace, &make_pred(10)).await.unwrap();
+    let report = StandardReflector.reflect(trace, &make_pred(10), None).await.unwrap();
     assert_eq!(report.deviation_score, 0.0);
 }
 
 #[tokio::test]
 async fn test_reflect_fallback() {
     let trace = "ResourceExhausted";
-    let report = StandardReflector.reflect(trace, &make_pred(100)).await.unwrap();
+    let report = StandardReflector.reflect(trace, &make_pred(100), None).await.unwrap();
     assert_eq!(report.deviation_score, 0.8);
 }
 

@@ -91,10 +91,9 @@ pub fn status(cwd: Option<&Path>) -> ToolResult<GitStatus> {
             continue;
         }
         let (xy, path) = line.split_at(2.min(line.len()));
-        let xy = xy.trim().to_string();
-        let p = path.trim().to_string();
         let x = xy.chars().next().unwrap_or(' ');
         let y = xy.chars().nth(1).unwrap_or(' ');
+        let p = path.trim().to_string();
 
         let fs = FileStatus { path: p, x, y };
 

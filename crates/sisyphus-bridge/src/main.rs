@@ -8,14 +8,10 @@ use tokio_stream::wrappers::TcpListenerStream;
 use tonic::transport::Server;
 use tracing::{error, info, warn};
 
-mod auth;
-mod bridge_service;
-mod consensus;
-mod http;
-mod strategic_executor;
-mod tools;
-
-use bridge_service::MySisyphusBridge;
+use sisyphus_bridge::{
+    auth, bridge_service::MySisyphusBridge, consensus, http, 
+    jcode_caller, strategic_executor, tools,
+};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -49,7 +45,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     // Initialize bridge with shared config for dynamic updates
-    let bridge = Arc::new(MySisyphusBridge::new(shared_config.clone()).await?);
+    let bridge = Arc::new(MySisyphusBridge::new(shared_config.clone(), None).await?);
 
     // Spawn config hot-reload in background
     tokio::spawn(async move {
@@ -67,7 +63,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .strip_prefix("http://")
         .unwrap_or(&http_addr_str)
         .parse()
-        .unwrap_or_else(|_| "[::1]:8080".parse().expect("invalid default HTTP address"));
+        .unwrap_or(std::net::SocketAddr::from(([127, 0, 0, 1], 8080)));
     info!("Starting HTTP REST API server on {http_addr}");
 
     let _http_handle = tokio::spawn(async move {
@@ -102,7 +98,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Ok(l) => l,
         Err(_) => {
             let v4_addr: std::net::SocketAddr =
-                format!("127.0.0.1:{}", grpc_addr.port()).parse().expect("invalid IPv4 addr");
+                format!("127.0.0.1:{}", grpc_addr.port()).parse()
+                .map_err(|e| Box::new(std::io::Error::new(std::io::ErrorKind::InvalidInput, e)))?;
             warn!("Failed to bind gRPC on {grpc_addr}, falling back to {v4_addr}");
             tokio::net::TcpListener::bind(v4_addr).await?
         }

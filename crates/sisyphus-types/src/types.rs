@@ -1,3 +1,4 @@
+use crate::experience::ExperienceTuple;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::path::PathBuf;
@@ -35,7 +36,28 @@ pub struct VectorRecord {
     pub timestamp: u64,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum CognitiveEvent {
+    Predict { prediction: serde_json::Value },
+    Execute { node: String, result: crate::execution::NodeOutput },
+    Reflect { report: serde_json::Value },
+    Evolve { revised_plan: crate::graph::SOPGraphConfig },
+    Verify { score: f64, decision: bool, reason: String },
+    StrategicShift { analysis: serde_json::Value },
+    ToolGapDetected { gap: serde_json::Value },
+    HotStart { asset_id: String, confidence: f64 },
+    Complete { final_result: crate::execution::NodeOutput, converged: bool },
+    // Self-Programming Lifecycle
+    SimulationStarted { sop_id: String, iteration: usize },
+    SimulationFlawDetected { node_id: String, flaw: String, severity: String },
+    SimulationPassed { confidence: f64 },
+    ToolGenerationStarted { tool_id: String, capability: String },
+    ToolVerified { tool_id: String, score: f64 },
+    ToolDeployed { tool_id: String, asset_id: String },
+}
+
 /// Structured message for inter-agent communication.
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct AgentMessage {
     pub from: String,
@@ -131,6 +153,7 @@ pub struct FormalVerificationConfig {
 pub struct MetaLearningSample {
     pub context: Value,
     pub strategy: String,
+    pub params: Value,
     pub success: bool,
     pub duration_secs: f64,
     pub timestamp: u64,
@@ -184,6 +207,19 @@ impl SisyphusNotepad {
         self.sections.insert(id, content);
     }
 
+    /// Appends an insight to a specific section with a timestamp.
+    pub fn append_insight(&mut self, section_id: String, insight: String) {
+        let timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        let entry = format!("[{}] {}\n", timestamp, insight);
+        
+        let current_content = self.sections.get(&section_id).cloned().unwrap_or_default();
+        let new_content = format!("{}{}", current_content, entry);
+        self.sections.insert(section_id, new_content);
+    }
+
     pub fn read_section(&self, id: &str) -> Option<&String> {
         self.sections.get(id)
     }
@@ -197,6 +233,20 @@ impl SisyphusNotepad {
             snapshot: self.sections.clone(), // O(1) structural clone
             trigger_node: node_name,
         });
+    }
+
+    pub fn prune(&mut self, max_insights: usize) {
+        let mut to_update = Vec::new();
+        for (id, content) in self.sections.iter() {
+            let lines: Vec<&str> = content.lines().collect();
+            if lines.len() > max_insights {
+                let pruned_content = lines[lines.len() - max_insights..].join("\n");
+                to_update.push((id.clone(), pruned_content));
+            }
+        }
+        for (id, content) in to_update {
+            self.sections.insert(id, content);
+        }
     }
 }
 
@@ -221,3 +271,16 @@ pub struct TriggerDef {
     pub hook_message: Option<String>,
 }
 
+
+#[async_trait::async_trait]
+pub trait ExperienceRetriever: Send + Sync {
+    async fn retrieve_relevant(
+        &self,
+        query: &str,
+        limit: usize,
+    ) -> Result<Vec<ExperienceTuple>, String>;
+    async fn record_experience(
+        &self,
+        exp: ExperienceTuple,
+    ) -> Result<(), String>;
+}

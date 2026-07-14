@@ -6,6 +6,15 @@ use sisyphus_types::{StateStore, ToolExecutor};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
+struct MockConsensus;
+#[async_trait]
+impl sisyphus_core::Consensus for MockConsensus {
+    async fn is_leader(&self) -> bool { true }
+    async fn get_leader(&self) -> String { "mock-leader".into() }
+    async fn propose(&self, _key: &str, _value: serde_json::Value) -> Result<(), String> { Ok(()) }
+}
+
+
 struct MockExecutor {
     call_count: AtomicUsize,
 }
@@ -21,7 +30,10 @@ impl ToolExecutor for MockExecutor {
         let count = self.call_count.fetch_add(1, Ordering::SeqCst);
         // First 2 calls fail to test experience accumulation
         if count < 2 && fuel_limit <= 1_000_000 {
-            return Err(sisyphus_types::TypesError::ToolExecutionError { tool_id: _tool_id.to_string(), details: "ResourceExhausted: fuel limit too low".to_string() });
+            return Err(sisyphus_types::TypesError::ToolExecutionError {
+                tool_id: _tool_id.to_string(),
+                details: "ResourceExhausted: fuel limit too low".to_string(),
+            });
         }
         Ok(b"Success".to_vec())
     }
@@ -45,40 +57,48 @@ async fn test_experience_prediction_convergence() {
     let synthesizer = Arc::new(sisyphus_intel::GoalDrivenSynthesizer::new(
         tool_executor.clone(),
     ));
-    let kernel = SisyphusKernel::new(state_store, tool_executor.clone(), intel, Arc::new(sisyphus_tools_llm::metis::DummyLlmClient), synthesizer);
+    let kernel = SisyphusKernel::new(
+        state_store,
+        tool_executor.clone(),
+        intel,
+        Arc::new(sisyphus_tools_llm::metis::DummyLlmClient),
+        synthesizer,
+        Arc::new(parking_lot::Mutex::new(sisyphus_tools_llm_tools::meta_learner::MetaLearner::new(".omo/test_meta"))),
+        Arc::new(MockConsensus),
+    );
 
     let sop_id = "exp_test_sop";
-    let mut graph = SOPGraph::new();
+    let mut graph_inner = SOPGraph::new();
     let node = Arc::new(WasmSOPNode {
         name: "node_1".into(),
         tool_id: "tool_1".into(),
         fuel_limit: 1_000_000,
         executor: tool_executor.clone(),
     });
-    let start_node = graph.add_node(node);
+    graph_inner.add_node(node);
+    let graph = Arc::new(graph_inner);
 
     // Run 1: Recursive cognitive loop - iterates until convergence or max iterations
     // First iteration fails (count=0), evolves fuel, second iteration succeeds
     let (_res1, report1, _) = kernel
-        .execute_with_cognition(&graph, start_node, sop_id, None, None)
+        .execute_with_cognition(graph.clone(), sop_id, None, None, None)
         .await
         .unwrap();
-    // Should contain deviation info from the iterations
-    assert!(report1.contains("deviation="));
     // Should show iterations in the cognitive loop
-    assert!(report1.contains("iterations"));
-    // Should show convergence
-    assert!(report1.contains("converged="));
+    assert!(report1.iterations > 0);
+    // Should show convergence attempt
+    assert!(report1.final_deviation >= 0.0);
 
     // Run 2: Should now succeed on first iteration (call_count >= 2)
     let (_res2, report2, _) = kernel
-        .execute_with_cognition(&graph, start_node, sop_id, None, None)
+        .execute_with_cognition(graph.clone(), sop_id, None, None, None)
         .await
         .unwrap();
-    assert!(report2.contains("converged=true"));
+    assert!(report2.converged, "Should have converged in the second run");
 
     // Verify experience accumulated: multiple records from recursive iterations
     let history_val = kernel
+        .execution_manager
         .state_store
         .get_state_json(&format!("history:{}", sop_id))
         .await

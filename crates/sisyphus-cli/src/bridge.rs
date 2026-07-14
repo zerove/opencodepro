@@ -13,6 +13,7 @@ pub(crate) use sisyphus_bridge_api::{
     UnloadPluginResponse,
 };
 
+#[derive(Clone)]
 pub struct BridgeClient {
     inner: SisyphusBridgeClient<tonic::transport::Channel>,
     token: Option<String>,
@@ -175,7 +176,9 @@ impl BridgeClient {
 
     /// List installed skills.
     pub async fn list_skills(&mut self) -> Result<Vec<SkillMetadata>> {
-        let request = self.with_auth(tonic::Request::new(ListSkillsRequest {}))?;
+        let request = self.with_auth(tonic::Request::new(ListSkillsRequest {
+            remote: true,
+        }))?;
         let response = self
             .inner
             .list_skills(request)
@@ -283,6 +286,7 @@ impl BridgeClient {
     }
 
     /// Unload a plugin from the bridge.
+    /// Unload a plugin from the bridge.
     pub async fn unload_plugin(&mut self, name: &str) -> Result<UnloadPluginResponse> {
         let request = self.with_auth(tonic::Request::new(UnloadPluginRequest {
             name: name.to_string(),
@@ -293,5 +297,62 @@ impl BridgeClient {
             .await
             .context("UnloadPlugin RPC failed")?;
         Ok(response.into_inner())
+    }
+
+    /// Subscribe to a stream of events from the bridge.
+    pub async fn subscribe_events(&mut self) -> Result<tokio::sync::mpsc::Receiver<crate::tui::background::BgOp>> {
+        let request = self.with_auth(tonic::Request::new(sisyphus_bridge_api::EventRequest {}))?;
+        let mut stream = self
+            .inner
+            .stream_events(request)
+            .await
+            .context("StreamEvents RPC failed")?
+            .into_inner();
+
+        let (tx, rx) = tokio::sync::mpsc::channel(100);
+        tokio::spawn(async move {
+            while let Ok(Some(event)) = stream.message().await {
+                let bg_op = match event.event {
+                    Some(sisyphus_bridge_api::bridge_event::Event::SessionUpdate(s)) => {
+                        crate::tui::background::BgOp::SessionUpdated {
+                            session_id: s.session_id,
+                            errors: vec![],
+                        }
+                    }
+                    Some(sisyphus_bridge_api::bridge_event::Event::TodoUpdate(_)) => {
+                        crate::tui::background::BgOp::TodoUpdated
+                    }
+                    Some(sisyphus_bridge_api::bridge_event::Event::OpUpdate(o)) => {
+                        if o.success {
+                            crate::tui::background::BgOp::SopExecuted {
+                                sop_id: o.op_id,
+                                result: o.result,
+                            }
+                        } else {
+                            crate::tui::background::BgOp::SopExecuteFailed {
+                                sop_id: o.op_id,
+                                error: o.status,
+                            }
+                        }
+                    }
+                    Some(sisyphus_bridge_api::bridge_event::Event::LogUpdate(l)) => {
+                        let level = match l.level.as_str() {
+                            "ERROR" => crate::tui::app::LogEntry::Error(l.message),
+                            "WARN" => crate::tui::app::LogEntry::Warn(l.message),
+                            "SUCCESS" => crate::tui::app::LogEntry::Success(l.message),
+                            _ => crate::tui::app::LogEntry::Info(l.message),
+                        };
+                        crate::tui::background::BgOp::BridgeCmd {
+                            entries: vec![level],
+                        }
+                    }
+                    None => continue,
+                };
+                if tx.send(bg_op).await.is_err() {
+                    break;
+                }
+            }
+        });
+        Ok(rx)
     }
 }

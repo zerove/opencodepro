@@ -27,6 +27,8 @@ pub enum TypesError {
     GraphError(String),
     #[error("Config validation error: {0}")]
     ConfigValidationError(String),
+    #[error("Internal system error: {0}")]
+    InternalError(String),
 }
 
 

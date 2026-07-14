@@ -1,17 +1,17 @@
-use sisyphus_tools_llm::DynamicLlmClient;
+use sisyphus_tools_llm::metis::LlmClient;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
 /// Metadata about a registered agent.
 #[derive(Clone, Debug)]
 pub struct AgentInfo {
-    /// Human-readable name.
+    /// 可读名称。
     pub display_name: String,
-    /// What this agent does.
+    /// 该代理的功能描述。
     pub description: String,
-    /// Tool ID prefixes this agent handles (e.g. `"librarian/"`).
+    /// 该代理处理的工具 ID 前缀 (例如 `"librarian/"`)。
     pub tool_prefixes: Vec<String>,
-    /// Max parallel tasks for this agent.
+    /// 该代理的最大并行任务数。
     pub max_concurrency: usize,
 }
 
@@ -21,7 +21,7 @@ pub struct AgentInfo {
 /// using the per-agent model overrides from `Config.llm.agents`.
 pub struct AgentRegistry {
     agents: RwLock<HashMap<String, AgentInfo>>,
-    llm_client: Arc<DynamicLlmClient>,
+    llm_client: Arc<dyn LlmClient>,
 }
 
 impl AgentRegistry {
@@ -29,7 +29,7 @@ impl AgentRegistry {
     ///
     /// Does NOT register built-in agents automatically —
     /// call `register_builtin()` if desired.
-    pub fn new(llm_client: Arc<DynamicLlmClient>) -> Self {
+    pub fn new(llm_client: Arc<dyn LlmClient>) -> Self {
         Self {
             agents: RwLock::new(HashMap::new()),
             llm_client,
@@ -81,8 +81,8 @@ impl AgentRegistry {
             (
                 "librarian",
                 AgentInfo {
-                    display_name: "Librarian".into(),
-                    description: "Web research, documentation fetching, code example search".into(),
+                    display_name: "图书管理员".into(),
+                    description: "网页调研、文档获取、代码示例搜索".into(),
                     tool_prefixes: vec!["librarian/".into()],
                     max_concurrency: 4,
                 },
@@ -90,9 +90,8 @@ impl AgentRegistry {
             (
                 "metis",
                 AgentInfo {
-                    display_name: "Metis".into(),
-                    description: "Requirement analysis, ambiguity detection, plan consulting"
-                        .into(),
+                    display_name: "墨提斯".into(),
+                    description: "需求分析、歧义检测、计划咨询".into(),
                     tool_prefixes: vec!["metis/".into()],
                     max_concurrency: 2,
                 },
@@ -100,8 +99,8 @@ impl AgentRegistry {
             (
                 "momus",
                 AgentInfo {
-                    display_name: "Momus".into(),
-                    description: "Plan review, code review, architecture review".into(),
+                    display_name: "莫穆斯".into(),
+                    description: "计划审查、代码审查、架构审查".into(),
                     tool_prefixes: vec!["momus/".into()],
                     max_concurrency: 3,
                 },
@@ -109,8 +108,8 @@ impl AgentRegistry {
             (
                 "scribe",
                 AgentInfo {
-                    display_name: "Scribe".into(),
-                    description: "ADR generation, documentation updates".into(),
+                    display_name: "记录员".into(),
+                    description: "ADR 生成、文档更新".into(),
                     tool_prefixes: vec!["scribe/".into()],
                     max_concurrency: 2,
                 },
@@ -118,8 +117,8 @@ impl AgentRegistry {
             (
                 "security",
                 AgentInfo {
-                    display_name: "Security Auditor".into(),
-                    description: "Code audit, threat modeling".into(),
+                    display_name: "安全审计员".into(),
+                    description: "代码审计、威胁建模".into(),
                     tool_prefixes: vec!["security/".into()],
                     max_concurrency: 2,
                 },
@@ -127,12 +126,22 @@ impl AgentRegistry {
             (
                 "delegate",
                 AgentInfo {
-                    display_name: "Delegate".into(),
-                    description: "Parallel task decomposition and execution".into(),
+                    display_name: "委派代理".into(),
+                    description: "并行任务分解与执行".into(),
                     tool_prefixes: vec!["delegate/".into()],
                     max_concurrency: 8,
                 },
             ),
+            (
+                "jcode",
+                AgentInfo {
+                    display_name: "Jcode".into(),
+                    description: "具有完整代码库访问权限和自主开发能力的高阶认知代理".into(),
+                    tool_prefixes: vec!["jcode/".into()],
+                    max_concurrency: 1,
+                },
+            ),
+
         ];
         for (id, info) in builtin {
             self.register(id, info);
@@ -175,6 +184,9 @@ impl AgentRegistry {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
+
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
     use sisyphus_tools_llm::DynamicLlmClient;
     use sisyphus_types::Config;
     use std::sync::Arc;
@@ -311,7 +323,7 @@ mod tests {
 
     #[test]
     fn test_get_llm_params_default() {
-        // FIXME: Audit that the environment access only happens in single-threaded code.
+        let _guard = ENV_LOCK.lock().unwrap();
         unsafe { std::env::remove_var("GOOGLE_GENERATIVE_AI_API_KEY") };
         let reg = make_registry();
         reg.register_builtin();

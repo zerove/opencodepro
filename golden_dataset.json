@@ -1,0 +1,33 @@
+{
+  "Implement a high-performance cache and verify its correctness": {
+    "config": {
+      "nodes": [
+        {
+          "name": "Implement",
+          "kind": "wasm",
+          "config": {
+            "tool_id": "bash_exec",
+            "command": "echo 'Implementing...'"
+          }
+        },
+        {
+          "name": "Verify",
+          "kind": "test",
+          "config": {
+            "command": "ls",
+            "workdir": "."
+          }
+        }
+      ],
+      "edges": [
+        [
+          0,
+          1
+        ]
+      ],
+      "start_node": 0
+    },
+    "metric": 1.0,
+    "timestamp": 1783528908.6589692
+  }
+}

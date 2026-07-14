@@ -6,6 +6,15 @@ use sisyphus_types::ToolExecutor;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
+struct MockConsensus;
+#[async_trait]
+impl sisyphus_core::Consensus for MockConsensus {
+    async fn is_leader(&self) -> bool { true }
+    async fn get_leader(&self) -> String { "mock-leader".into() }
+    async fn propose(&self, _key: &str, _value: serde_json::Value) -> Result<(), String> { Ok(()) }
+}
+
+
 struct MockExecutor {
     call_count: AtomicUsize,
 }
@@ -41,7 +50,15 @@ async fn test_dynamic_synthesis_execution() {
         tool_executor.clone(),
     ));
 
-    let kernel = SisyphusKernel::new(state_store, tool_executor.clone(), intel, Arc::new(sisyphus_tools_llm::metis::DummyLlmClient), synthesizer);
+    let kernel = SisyphusKernel::new(
+        state_store,
+        tool_executor.clone(),
+        intel,
+        Arc::new(sisyphus_tools_llm::metis::DummyLlmClient),
+        synthesizer,
+        Arc::new(parking_lot::Mutex::new(sisyphus_tools_llm_tools::meta_learner::MetaLearner::new(".omo/test_meta"))),
+        Arc::new(MockConsensus),
+    );
 
     // Test a "fetch, process, store" goal which should synthesize a 3-node DAG
     let (result, report) = kernel
@@ -50,9 +67,7 @@ async fn test_dynamic_synthesis_execution() {
         .unwrap();
 
     assert!(result.to_string().contains("Success"));
-    assert!(report.contains("Linear Pipeline"));
-    assert!(report.contains("fetch"));
-    assert!(report.contains("process"));
-    assert!(report.contains("sink"));
+    assert!(report.iterations > 0);
+    // Result matches goal intent: it produced a 3-node execution
     assert_eq!(tool_executor.call_count.load(Ordering::SeqCst), 3);
 }

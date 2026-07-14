@@ -95,6 +95,8 @@ mod tests {
             success_probability: 0.5,
             estimated_cost,
             predicted_outcome: "?".into(),
+            predicted_effort: 0,
+            predicted_stability: 1.0,
         }
     }
 

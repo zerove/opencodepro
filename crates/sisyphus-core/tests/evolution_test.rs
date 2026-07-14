@@ -20,7 +20,10 @@ impl ToolExecutor for MockExecutor {
     ) -> Result<Vec<u8>, sisyphus_types::TypesError> {
         let count = self.call_count.fetch_add(1, Ordering::SeqCst);
         if count == 0 && fuel_limit <= 1_000_000 {
-            return Err(sisyphus_types::TypesError::ToolExecutionError { tool_id: _tool_id.to_string(), details: "ResourceExhausted: fuel limit too low".to_string() });
+            return Err(sisyphus_types::TypesError::ToolExecutionError {
+                tool_id: _tool_id.to_string(),
+                details: "ResourceExhausted: fuel limit too low".to_string(),
+            });
         }
         Ok(b"Success".to_vec())
     }
@@ -41,7 +44,13 @@ async fn test_sop_evolution_fuel_increase() {
     let synthesizer = Arc::new(sisyphus_intel::GoalDrivenSynthesizer::new(
         tool_executor.clone(),
     ));
-    let kernel = SisyphusKernel::new(state_store, tool_executor.clone(), intel, Arc::new(sisyphus_tools_llm::metis::DummyLlmClient), synthesizer);
+    let kernel = SisyphusKernel::new(
+        state_store,
+        tool_executor.clone(),
+        intel,
+        Arc::new(sisyphus_tools_llm::metis::DummyLlmClient),
+        synthesizer,
+    );
 
     let sop_id = "test_evolution_sop";
     let mut graph = SOPGraph::new();

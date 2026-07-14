@@ -29,11 +29,17 @@ impl MockNode {
 
 #[async_trait]
 impl SOPNode for MockNode {
-    async fn execute(&self, _ctx: &sisyphus_core::ExecutionContext) -> Result<NodeOutput, sisyphus_types::TypesError> {
+    async fn execute(
+        &self,
+        _ctx: &sisyphus_core::ExecutionContext,
+    ) -> Result<NodeOutput, sisyphus_types::TypesError> {
         if self.should_fail {
-            Err(sisyphus_types::TypesError::NodeExecutionError(format!("ResourceExhausted: {} failed", self.name)))
+            Err(sisyphus_types::TypesError::NodeExecutionError(format!(
+                "ResourceExhausted: {} failed",
+                self.name
+            )))
         } else {
-            Ok(NodeOutput(Value::String(format!("result_{}", self.name))))
+            Ok(NodeOutput::from(Value::String(format!("result_{}", self.name))))
         }
     }
     fn name(&self) -> &str {
@@ -61,7 +67,7 @@ async fn test_single_node() {
     let idx = graph.add_node(node);
     let executor = Executor::new();
 
-    let ctx = executor.execute(&graph, idx).await.unwrap();
+    let ctx = executor.execute(Arc::new(graph), idx, tool_executor.clone()).await.unwrap();
     let out = ctx.get_result("alpha").unwrap();
     assert_eq!(out, Value::String("result_alpha".into()));
 }
@@ -74,7 +80,7 @@ async fn test_linear_dag() {
     graph.add_edge(n1, n2);
 
     let executor = Executor::new();
-    let ctx = executor.execute(&graph, n1).await.unwrap();
+    let ctx = executor.execute(Arc::new(graph), n1, tool_executor.clone()).await.unwrap();
 
     assert_eq!(
         ctx.get_result("step1").unwrap(),
@@ -111,7 +117,7 @@ async fn test_parallel_execution() {
     graph.add_edge(n2, n3);
 
     let executor = Executor::new();
-    let ctx = executor.execute(&graph, n1).await.unwrap();
+    let ctx = executor.execute(Arc::new(graph), n1, tool_executor.clone()).await.unwrap();
 
     assert_eq!(
         ctx.get_result("task1").unwrap(),
@@ -133,7 +139,7 @@ async fn test_node_error_propagated() {
     let n1 = graph.add_node(Arc::new(MockNode::failing("crash")));
     let executor = Executor::new();
 
-    let ctx = executor.execute(&graph, n1).await.unwrap();
+    let ctx = executor.execute(Arc::new(graph), n1, tool_executor.clone()).await.unwrap();
     let out = ctx.get_result("crash").unwrap();
     // Error is stored as a Value::String containing the error message
     assert!(out.to_string().contains("ResourceExhausted"));

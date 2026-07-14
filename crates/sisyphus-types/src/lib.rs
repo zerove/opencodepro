@@ -1,11 +1,35 @@
 #![allow(clippy::cast_precision_loss)]
 pub mod errors;
+pub mod experience;
 pub mod roadmap;
+pub mod asset;
+pub mod tools;
+
 pub mod graph;
 pub mod execution;
 pub mod node;
 pub mod config;
 pub mod types;
+pub mod skill;
+
+use async_trait::async_trait;
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GoldenSop {
+    pub goal: String,
+    pub sop_config: SOPGraphConfig,
+    pub success_metric: f64,
+    pub timestamp: u64,
+}
+
+#[async_trait]
+pub trait GoldenDataset: Send + Sync {
+    async fn enroll(&self, goal: &str, config: SOPGraphConfig, metric: f64) -> Result<(), TypesError>;
+    async fn get_golden_sop(&self, goal: &str) -> Result<Option<GoldenSop>, TypesError>;
+    async fn verify_no_regression(&self, goal: &str, candidate: &SOPGraphConfig, current_metric: f64) -> Result<bool, TypesError>;
+}
+
 
 pub use errors::*;
 pub use roadmap::*;
@@ -14,6 +38,34 @@ pub use execution::*;
 pub use node::*;
 pub use config::*;
 pub use types::*;
+
+// ── Cognitive Map Types ────────────────────────────────────
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct CogNode {
+    pub id: String,
+    pub label: String,
+    pub status: String, // "pending", "running", "ok", "error"
+    pub deviation: f64,
+    pub position: (f32, f32), // For frontend rendering
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct CogEdge {
+    pub source: String,
+    pub target: String,
+    pub label: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct CogMap {
+    pub sop_id: String,
+    pub goal_text: String,
+    pub nodes: Vec<CogNode>,
+    pub edges: Vec<CogEdge>,
+    pub active_node: Option<String>,
+    pub iteration: usize,
+}
 
 #[cfg(test)]
 mod tests {
@@ -164,9 +216,9 @@ mod tests {
     fn test_set_get_result() {
         let ctx = ExecutionContext::new();
         let val = json!({"status": "ok"});
-        ctx.set_result("node1".to_string(), NodeOutput(val.clone()));
+        ctx.set_result("node1".to_string(), NodeOutput::from(val.clone()));
         let result = ctx.get_result("node1");
-        assert_eq!(result, Some(NodeOutput(val)));
+        assert_eq!(result, Some(NodeOutput::from(val)));
     }
 
     #[test]
@@ -178,8 +230,8 @@ mod tests {
     #[test]
     fn test_interpolate() {
         let ctx = ExecutionContext::new();
-        ctx.set_result("node1".to_string(), NodeOutput(json!("hello")));
-        ctx.set_result("node2".to_string(), NodeOutput(json!(123)));
+        ctx.set_result("node1".to_string(), NodeOutput::from(json!("hello")));
+        ctx.set_result("node2".to_string(), NodeOutput::from(json!(123)));
 
         let template = "Greeting: {{node1.output}}, ID: {{node2.output}}";
         let result = ctx.interpolate(template);
@@ -251,9 +303,9 @@ mod tests {
             value in arb_json_value(),
         ) {
             let ctx = ExecutionContext::new();
-            ctx.set_result(key.clone(), NodeOutput(value.clone()));
+            ctx.set_result(key.clone(), NodeOutput::from(value.clone()));
             let retrieved = ctx.get_result(&key);
-            prop_assert_eq!(retrieved, Some(NodeOutput(value)));
+            prop_assert_eq!(retrieved, Some(NodeOutput::from(value)));
         }
 
         #[test]
@@ -265,7 +317,7 @@ mod tests {
         ) {
             let ctx = ExecutionContext::new();
             let value = Value::String(value_str.clone());
-            ctx.set_result(key.clone(), NodeOutput(value));
+            ctx.set_result(key.clone(), NodeOutput::from(value));
 
             let template = [prefix.as_str(), "{{", key.as_str(), ".output}}", suffix.as_str()].concat();
             let result = ctx.interpolate(&template);
@@ -308,7 +360,7 @@ mod tests {
         }
     }
 
-    // ── TypesError tests ───────────────────────────────────────────────
+// ── TypesError tests ───────────────────────────────────────────────
     
     #[test]
     fn test_types_error_config_read_display() {

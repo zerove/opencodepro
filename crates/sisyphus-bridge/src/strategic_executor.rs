@@ -1,8 +1,9 @@
+use std::path::PathBuf;
 use std::sync::{Arc, RwLock, Weak};
 
 use sisyphus_core::SisyphusKernel;
 use sisyphus_mem::MfsStore;
-use sisyphus_roadmap::{ProgressReport, RoadmapManager};
+use sisyphus_roadmap::{ProgressReport, RoadmapManager, proposal_manager::ProposalManager};
 use sisyphus_tools_llm::LlmClient;
 use sisyphus_types::{MilestoneStatus, ToolExecutor, TypesError};
 use tracing::info;
@@ -11,18 +12,31 @@ pub(crate) struct StrategicExecutor {
     kernel: Arc<RwLock<Option<Weak<SisyphusKernel>>>>,
     state_store: Arc<MfsStore>,
     llm_client: Arc<dyn LlmClient>,
+    cache_path: PathBuf,
+    sql_store: Arc<sisyphus_mem::RoadmapSqlStore>,
+    proposal_manager: Arc<ProposalManager>,
 }
 
 impl StrategicExecutor {
-    pub(crate) fn new(
+    pub(crate) async fn new(
         state_store: Arc<MfsStore>,
         llm_client: Arc<dyn LlmClient>,
-    ) -> Self {
-        Self {
+        cache_path: PathBuf,
+        proposal_manager: Arc<ProposalManager>,
+    ) -> Result<Self, sisyphus_types::TypesError> {
+        let sql_store = sisyphus_mem::RoadmapSqlStore::new(state_store.pool().clone()).await
+            .map_err(|e| sisyphus_types::TypesError::StateStoreError(format!("Failed to init RoadmapSqlStore: {e}")))?;
+        sql_store.init_schema().await
+            .map_err(|e| sisyphus_types::TypesError::StateStoreError(format!("Failed to init Roadmap schema: {e}")))?;
+
+        Ok(Self {
             kernel: Arc::new(RwLock::new(None)),
             state_store,
             llm_client,
-        }
+            cache_path,
+            sql_store: Arc::new(sql_store),
+            proposal_manager,
+        })
     }
 
     pub(crate) fn set_kernel(&self, kernel: Weak<SisyphusKernel>) {
@@ -70,7 +84,7 @@ impl ToolExecutor for StrategicExecutor {
 
             info!("Strategic loop triggered for project: {}", project_id);
 
-            let manager = RoadmapManager::new(self.state_store.clone());
+            let manager = RoadmapManager::new(self.state_store.clone(), self.sql_store.clone(), self.proposal_manager.clone());
 
             let goal_ref = manager
                 .get_next_goal(&project_id)
@@ -97,7 +111,7 @@ impl ToolExecutor for StrategicExecutor {
             );
 
             let synth_id = format!("strategic_{}", goal.goal_id);
-            match kernel.execute_goal(&enriched_goal, &synth_id, None).await {
+            match kernel.execute_goal(&enriched_goal, &synth_id, None, None).await {
                 Ok((result, report)) => {
                     if let Ok(Some(project)) = manager.get_project(&project_id).await {
                         let (ms_id, ph_id) = project
@@ -171,7 +185,7 @@ impl ToolExecutor for StrategicExecutor {
 
             info!("Strategic loop triggered for project: {}", project_id);
 
-            let manager = sisyphus_roadmap::RoadmapManager::new(self.state_store.clone());
+            let manager = sisyphus_roadmap::RoadmapManager::new(self.state_store.clone(), self.sql_store.clone(), self.proposal_manager.clone());
 
             let goal_ref = manager
                 .get_next_goal(&project_id)
@@ -201,7 +215,7 @@ impl ToolExecutor for StrategicExecutor {
             );
 
             let synth_id = format!("strategic_{}", goal.goal_id);
-            match kernel.execute_goal(&enriched_goal, &synth_id, None).await {
+            match kernel.execute_goal(&enriched_goal, &synth_id, None, None).await {
                 Ok((result, report)) => {
                     if let Ok(Some(project)) = manager.get_project(&project_id).await {
                         let (ms_id, ph_id) = project
@@ -276,7 +290,7 @@ impl ToolExecutor for StrategicExecutor {
                 }
             })?.to_string();
 
-            let manager = sisyphus_roadmap::RoadmapManager::new(self.state_store.clone());
+            let manager = sisyphus_roadmap::RoadmapManager::new(self.state_store.clone(), self.sql_store.clone(), self.proposal_manager.clone());
             match manager.generate_progress_report(&project_id).await {
                 Ok(report) => {
                     let output = serde_json::to_string_pretty(&report)
@@ -307,7 +321,7 @@ impl ToolExecutor for StrategicExecutor {
                 }
             })?.to_string();
 
-            let manager = sisyphus_roadmap::RoadmapManager::new(self.state_store.clone());
+            let manager = sisyphus_roadmap::RoadmapManager::new(self.state_store.clone(), self.sql_store.clone(), self.proposal_manager.clone());
             let strategist = sisyphus_roadmap::strategic_reflection::StrategicReflector::new(
                 self.llm_client.clone(),
             );
@@ -342,7 +356,7 @@ impl ToolExecutor for StrategicExecutor {
             })?.to_string();
             let description = v["description"].as_str().unwrap_or("").to_string();
 
-            let manager = sisyphus_roadmap::RoadmapManager::new(self.state_store.clone());
+            let manager = sisyphus_roadmap::RoadmapManager::new(self.state_store.clone(), self.sql_store.clone(), self.proposal_manager.clone());
             let generator = sisyphus_roadmap::milestone_generator::MilestoneGenerator::new(
                 self.llm_client.clone(),
             );
@@ -385,7 +399,7 @@ impl ToolExecutor for StrategicExecutor {
                 }
             })?.to_string();
 
-            let manager = sisyphus_roadmap::RoadmapManager::new(self.state_store.clone());
+            let manager = sisyphus_roadmap::RoadmapManager::new(self.state_store.clone(), self.sql_store.clone(), self.proposal_manager.clone());
             let context = manager
                 .get_goal_context(&project_id, &goal_id)
                 .await
@@ -407,7 +421,7 @@ impl ToolExecutor for StrategicExecutor {
                 }
             })?.to_string();
 
-            let manager = sisyphus_roadmap::RoadmapManager::new(self.state_store.clone());
+            let manager = sisyphus_roadmap::RoadmapManager::new(self.state_store.clone(), self.sql_store.clone(), self.proposal_manager.clone());
 
             let strategist = sisyphus_roadmap::strategic_reflection::StrategicReflector::new(
                 self.llm_client.clone(),
@@ -442,7 +456,7 @@ impl ToolExecutor for StrategicExecutor {
                 }
             })?.to_string();
 
-            let manager = sisyphus_roadmap::RoadmapManager::new(self.state_store.clone());
+            let manager = sisyphus_roadmap::RoadmapManager::new(self.state_store.clone(), self.sql_store.clone(), self.proposal_manager.clone());
             let outcomes = manager.get_outcomes(&project_id).await.unwrap_or_default();
 
             let project = manager.get_project(&project_id).await.ok().flatten();
@@ -485,7 +499,7 @@ impl ToolExecutor for StrategicExecutor {
                 }
             })?.to_string();
 
-            let manager = sisyphus_roadmap::RoadmapManager::new(self.state_store.clone());
+            let manager = sisyphus_roadmap::RoadmapManager::new(self.state_store.clone(), self.sql_store.clone(), self.proposal_manager.clone());
             let outcomes = manager.get_outcomes(&project_id).await.unwrap_or_default();
 
             let project = manager.get_project(&project_id).await.ok().flatten();
@@ -528,7 +542,7 @@ impl ToolExecutor for StrategicExecutor {
                 }
             })?.to_string();
 
-            let manager = sisyphus_roadmap::RoadmapManager::new(self.state_store.clone());
+            let manager = sisyphus_roadmap::RoadmapManager::new(self.state_store.clone(), self.sql_store.clone(), self.proposal_manager.clone());
             let optimizer = sisyphus_roadmap::resource_optimizer::ResourceOptimizer::new();
             let bottlenecks = optimizer
                 .find_bottlenecks(&manager.get_outcomes(&project_id).await.unwrap_or_default());

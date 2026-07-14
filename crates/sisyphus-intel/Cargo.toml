@@ -9,10 +9,11 @@ license = "MIT"
 [dependencies]
 sisyphus-types = { path = "../sisyphus-types" }
 sisyphus-metrics = { path = "../sisyphus-metrics" }
-	sisyphus-tools-llm = { path = "../sisyphus-tools-llm" }
+sisyphus-tools-llm = { path = "../sisyphus-tools-llm" }
 sisyphus-tools-llm-tools = { path = "../sisyphus-tools-llm-tools" }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
+md5 = "0.7"
 async-trait = { workspace = true }
 rand = { version = "0.8", features = ["small_rng"] }
 rayon = "1.7"
@@ -20,6 +21,9 @@ tokio = { version = "1", features = ["full"] }
 petgraph = "0.6"
 thiserror = { workspace = true }
 tracing = { workspace = true }
+parking_lot = "0.12.5"
+tempfile = "3.8"
+uuid = { version = "1.4", features = ["v4"] }
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["async_tokio"] }

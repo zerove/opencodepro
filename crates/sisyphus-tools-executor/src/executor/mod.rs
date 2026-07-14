@@ -7,6 +7,7 @@ pub mod args;
 pub mod feedback_cmds;
 pub mod file_cmds;
 pub mod process_cmds;
+pub mod test_cmds;
 pub mod util_cmds;
 
 /// A `ToolExecutor` that dispatches tool calls to sisyphus-tools built-in functions.

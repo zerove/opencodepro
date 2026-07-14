@@ -26,7 +26,7 @@ use super::{BudgetProvider, RequestContext};
 pub struct DynamicLlmClient {
     config: Arc<RwLock<Config>>,
     client: reqwest::Client,
-    breaker: Arc<CircuitBreaker>,
+    breaker: CircuitBreaker,
     router: Arc<ModelRouter>,
     budget_provider: Option<Arc<dyn BudgetProvider>>,
     pub(super) current_context: Arc<RwLock<Option<RequestContext>>>,
@@ -47,7 +47,7 @@ impl DynamicLlmClient {
         Self {
             config,
             client,
-            breaker: Arc::new(CircuitBreaker::default()),
+            breaker: CircuitBreaker::default(),
             router: Arc::new(ModelRouter::new(0.0)),
             budget_provider: None,
             current_context: Arc::new(RwLock::new(None)),
@@ -101,7 +101,7 @@ impl DynamicLlmClient {
         *cat = None;
     }
 
-    pub fn with_breaker(mut self, breaker: Arc<CircuitBreaker>) -> Self {
+    pub fn with_breaker(mut self, breaker: CircuitBreaker) -> Self {
         self.breaker = breaker;
         self
     }
@@ -111,7 +111,7 @@ impl DynamicLlmClient {
         self
     }
 
-    pub fn breaker(&self) -> &Arc<CircuitBreaker> {
+    pub fn breaker(&self) -> &CircuitBreaker {
         &self.breaker
     }
 
@@ -135,27 +135,6 @@ impl DynamicLlmClient {
     /// If the agent has a model override in `Config.llm.agents`, its
     /// endpoint / model / api_key take precedence.  Fallback fields
     /// come from the base config.
-    pub fn get_params_for(&self, agent_id: &str) -> (String, String, String) {
-        let cfg = self.config.read().unwrap_or_else(std::sync::PoisonError::into_inner);
-
-        if let Some(override_) = cfg.llm.agents.get(agent_id) {
-            let endpoint = override_
-                .endpoint
-                .as_deref()
-                .unwrap_or(&cfg.llm.endpoint)
-                .to_string();
-            let api_key = match &override_.api_key {
-                Some(k) => Self::resolve_api_key(k),
-                None => Self::resolve_api_key(&cfg.llm.api_key),
-            };
-            let model = override_.model.clone();
-            (api_key, endpoint, model)
-        } else {
-            let api_key = Self::resolve_api_key(&cfg.llm.api_key);
-            (api_key, cfg.llm.endpoint.clone(), cfg.llm.model.clone())
-        }
-    }
-
     /// Get LLM parameters for a specific category.
     ///
     /// If the category has an override in `Config.llm.categories`, its
@@ -340,7 +319,6 @@ impl LlmClient for DynamicLlmClient {
             let actual_cost = (token_estimate as f64 / 1000.0) * 0.01;
             self.router.record_usage(&model, 0.0, token_estimate);
 
-            // 2. Actual Cost Recording
             if let (Some(provider), Some(ctx)) = (&self.budget_provider, context) {
                 let _ = provider
                     .record_actual_cost(
@@ -357,5 +335,30 @@ impl LlmClient for DynamicLlmClient {
             self.breaker.on_failure(&model);
             Err("LLM response missing content field".to_string())
         }
+    }
+
+    fn get_params_for(&self, agent_id: &str) -> (String, String, String) {
+        let cfg = self.config.read().unwrap_or_else(std::sync::PoisonError::into_inner);
+
+        if let Some(override_) = cfg.llm.agents.get(agent_id) {
+            let endpoint = override_
+                .endpoint
+                .as_deref()
+                .unwrap_or(&cfg.llm.endpoint)
+                .to_string();
+            let api_key = match &override_.api_key {
+                Some(k) => Self::resolve_api_key(k),
+                None => Self::resolve_api_key(&cfg.llm.api_key),
+            };
+            let model = override_.model.clone();
+            (api_key, endpoint, model)
+        } else {
+            let api_key = Self::resolve_api_key(&cfg.llm.api_key);
+            (api_key, cfg.llm.endpoint.clone(), cfg.llm.model.clone())
+        }
+    }
+
+    fn breaker(&self) -> crate::circuit_breaker::CircuitBreaker {
+        self.breaker.clone()
     }
 }

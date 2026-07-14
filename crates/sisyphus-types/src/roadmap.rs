@@ -8,6 +8,17 @@ pub enum MilestoneStatus {
     Blocked,
 }
 
+impl std::fmt::Display for MilestoneStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            MilestoneStatus::Pending => write!(f, "Pending"),
+            MilestoneStatus::InProgress => write!(f, "InProgress"),
+            MilestoneStatus::Completed => write!(f, "Completed"),
+            MilestoneStatus::Blocked => write!(f, "Blocked"),
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct GoalRef {
     pub goal_id: String,

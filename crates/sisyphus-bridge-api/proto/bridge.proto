@@ -22,11 +22,21 @@ service SisyphusBridge {
   // Team goal decomposition — LLM-based task DAG generation.
   rpc DecomposeGoal (DecomposeGoalRequest) returns (DecomposeGoalResponse);
 
+  // Cognitive delegation — high-order reasoning and structured plan generation for external agents.
+  rpc DelegateCognitiveTask (DelegateCognitiveTaskRequest) returns (DelegateCognitiveTaskResponse);
+  rpc StreamCognitiveTask (DelegateCognitiveTaskRequest) returns (stream CognitiveTaskEvent);
+  rpc SubmitFeedback (SubmitFeedbackRequest) returns (SubmitFeedbackResponse);
+  rpc CaptureExperience (CaptureExperienceRequest) returns (CaptureExperienceResponse);
+
+
+
   // Skill management — list, inspect, install, and remove skills.
   rpc ListSkills (ListSkillsRequest) returns (ListSkillsResponse);
   rpc ShowSkill (ShowSkillRequest) returns (ShowSkillResponse);
   rpc InstallSkill (InstallSkillRequest) returns (InstallSkillResponse);
   rpc RemoveSkill (RemoveSkillRequest) returns (RemoveSkillResponse);
+
+  // ... (rest of the services)
 
   // Benchmark monitoring — cognitive loop performance trends.
   rpc ListBenchmarks (ListBenchmarksRequest) returns (ListBenchmarksResponse);
@@ -39,11 +49,21 @@ service SisyphusBridge {
   
   // Session interaction — add messages and trigger agent responses.
   rpc AddMessage (AddMessageRequest) returns (AddMessageResponse);
+  
+  // Workspace management — lifecycle and switching of project environments.
+  rpc CreateWorkspace (CreateWorkspaceRequest) returns (CreateWorkspaceResponse);
+  rpc SwitchWorkspace (SwitchWorkspaceRequest) returns (SwitchWorkspaceResponse);
+  rpc ListWorkspaces (ListWorkspacesRequest) returns (ListWorkspacesResponse);
+  rpc GetCurrentWorkspace (GetCurrentWorkspaceRequest) returns (GetCurrentWorkspaceResponse);
 
   // Plugin management — list, load, and unload WASM plugins at runtime.
   rpc ListPlugins (ListPluginsRequest) returns (ListPluginsResponse);
   rpc LoadPlugin (LoadPluginRequest) returns (LoadPluginResponse);
   rpc UnloadPlugin (UnloadPluginRequest) returns (UnloadPluginResponse);
+
+  // TUI State synchronization — push updates for sessions, todos, and background operations.
+  rpc CallJcode (CallJcodeRequest) returns (CallJcodeResponse);
+  rpc StreamEvents (EventRequest) returns (stream BridgeEvent);
 }
 
 message ListAgentsRequest {}
@@ -84,6 +104,37 @@ message DecomposeGoalResponse {
   bool success = 1;
   string error = 2;
   repeated TaskProto tasks = 3;
+}
+
+message DelegateCognitiveTaskRequest {
+  string goal = 1;
+  string context = 2;
+}
+
+message DelegateCognitiveTaskResponse {
+  bool success = 1;
+  string error = 2;
+  string plan_json = 3; // Serialized CognitivePlan
+}
+
+message SubmitFeedbackRequest {
+  string feedback_json = 1; // Serialized ExecutionFeedback
+}
+
+message SubmitFeedbackResponse {
+  bool success = 1;
+  string error = 2;
+  string evolution_json = 3; // Serialized EvolutionResponse
+}
+
+message CaptureExperienceRequest {
+  string plan_id = 1;
+  string plan_json = 2; // The final successful CognitivePlan
+}
+
+message CaptureExperienceResponse {
+  bool success = 1;
+  string error = 2;
 }
 
 message TaskProto {
@@ -150,7 +201,9 @@ message ExecutionEvent {
 
 // ── Skill Management ──────────────────────────────────────
 
-message ListSkillsRequest {}
+message ListSkillsRequest {
+  bool remote = 1; // true to fetch from remote registry, false for local installed skills
+}
 
 message ListSkillsResponse {
   repeated SkillMetadata skills = 1;
@@ -166,7 +219,7 @@ message ShowSkillResponse {
 }
 
 message InstallSkillRequest {
-  string source_path = 1;   // filesystem path to the SKILL.md file
+  string skill_id = 1;   // ID of the skill in the remote registry
 }
 
 message InstallSkillResponse {
@@ -185,14 +238,13 @@ message RemoveSkillResponse {
 }
 
 message SkillMetadata {
-  string name = 1;
-  string description = 2;
-  string version = 3;
-  string author = 4;
-  repeated string tags = 5;
-  repeated string tool_triggers = 6;  // tool IDs this skill activates for
-  string instructions_preview = 7;    // first 200 chars of instructions
-  string source = 8;                  // "builtin", "user", "project"
+  string id = 1;
+  string name = 2;
+  string description = 3;
+  string version = 4;
+  string author = 5;
+  repeated string tags = 6;
+  uint64 created_at = 7;
 }
 
 // ── Benchmark Monitoring ──────────────────────────────────
@@ -290,7 +342,47 @@ message PluginDescriptor {
   string checksum = 6;       // SHA-256 hex; empty if not computed
 }
 
-// ── Session Chat ─────────────────────────────────────────────
+// ── Workspace Management ──────────────────────────────────────
+message CreateWorkspaceRequest {
+  string name = 1;
+  string project_id = 2;
+  string root_dir = 3;
+}
+
+message CreateWorkspaceResponse {
+  bool success = 1;
+  string error = 2;
+  string workspace_id = 3;
+}
+
+message SwitchWorkspaceRequest {
+  string workspace_id = 1;
+}
+
+message SwitchWorkspaceResponse {
+  bool success = 1;
+  string error = 2;
+}
+
+message ListWorkspacesRequest {}
+
+message ListWorkspacesResponse {
+  repeated WorkspaceMetadata workspaces = 1;
+}
+
+message GetCurrentWorkspaceRequest {}
+
+message GetCurrentWorkspaceResponse {
+  bool found = 1;
+  WorkspaceMetadata workspace = 2;
+}
+
+message WorkspaceMetadata {
+  string id = 1;
+  string name = 2;
+  string project_id = 3;
+  string root_dir = 4;
+}
 
 message AddMessageRequest {
   string session_id = 1;
@@ -303,4 +395,62 @@ message AddMessageResponse {
   bool success = 1;
   string error = 2;
   string response_content = 3;
+}
+
+message CognitiveTaskEvent {
+  enum EventType {
+    PREDICT = 0;
+    EXECUTE = 1;
+    REFLECT = 2;
+    EVOLVE = 3;
+    COMPLETE = 4;
+    VERIFY = 5;
+  }
+  EventType event_type = 1;
+  string payload = 2;
+  uint64 timestamp = 3;
+}
+
+message EventRequest {}
+
+message BridgeEvent {
+  oneof event {
+    SessionUpdate session_update = 1;
+    TodoUpdate todo_update = 2;
+    OperationUpdate op_update = 3;
+    LogUpdate log_update = 4;
+  }
+}
+
+message SessionUpdate {
+  string session_id = 1;
+  bool force_refresh = 2;
+}
+
+message TodoUpdate {
+  bool force_refresh = 1;
+}
+
+message OperationUpdate {
+  string op_id = 1;
+  string status = 2;
+  string result = 3;
+  bool success = 4;
+}
+
+message LogUpdate {
+  string message = 1;
+  string level = 2; // "INFO", "WARN", "ERROR", "SUCCESS"
+}
+
+message CallJcodeRequest {
+  string task_id = 1;
+  string goal = 2;
+  string context_json = 3;
+}
+
+message CallJcodeResponse {
+  bool success = 1;
+  string result = 2;
+  string error = 3;
 }

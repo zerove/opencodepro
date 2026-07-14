@@ -11,6 +11,7 @@ pub mod provider;
 
 pub use llm::{
     BudgetProvider, DynamicLlmClient, OpenAiLlmClient, RequestContext,
+    EmbeddingClient, DummyEmbeddingClient, OpenAiEmbeddingClient,
 };
 pub use metis::{
     Ambiguity, AmbiguitySeverity, DummyLlmClient, FixedResponseClient, ImplicitRequirement,

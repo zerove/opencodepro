@@ -54,6 +54,7 @@ impl BreakerState {
 ///
 /// Protects resources from cascading failures by monitoring call outcomes.
 /// States: Closed → Open (on failure_threshold) → HalfOpen (after timeout) → Closed (on success)
+#[derive(Debug, Clone)]
 pub struct CircuitBreaker {
     config: BreakerConfig,
     breakers: Arc<RwLock<HashMap<String, BreakerState>>>,

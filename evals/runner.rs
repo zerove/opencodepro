@@ -77,6 +77,14 @@ impl LlmClient for MockLlmClient {
         });
         Ok(serde_json::to_string(&response).unwrap())
     }
+
+    fn get_params_for(&self, _model: &str) -> (String, String, String) {
+        ("mock_api_key".into(), "mock_endpoint".into(), "mock_model".into())
+    }
+
+    fn breaker(&self) -> sisyphus_tools_llm::circuit_breaker::CircuitBreaker {
+        sisyphus_tools_llm::circuit_breaker::CircuitBreaker::default()
+    }
 }
 
 // ── Eval Runner ─────────────────────────────────────────────────
@@ -100,6 +108,7 @@ impl EvalRunner {
                     api_key,
                     endpoint,
                     model,
+                    embedding: sisyphus_types::EmbeddingConfig::default(),
                     budget_mode: BudgetMode::default(),
                     agents: std::collections::HashMap::new(),
                     categories: std::collections::HashMap::new(),
