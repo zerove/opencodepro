@@ -413,7 +413,7 @@ impl SOPEvolver for LlmEvolver {
         _prediction: &SimulationResult,
         insights: Option<&str>,
     ) -> Result<Arc<SOPGraph>, String> {
-        let rt = tokio::runtime::Handle::current();
+        let _rt = tokio::runtime::Handle::current();
         
         let prompt = format!(
             "Given the following SOP structure and suggested improvements, generate a list of EvolutionOps.\
@@ -604,19 +604,6 @@ impl Reflector for StandardReflector {
             evolved_sop_structure: None,
             records,
         })
-    }
-}
-
-/// Classifies execution errors into a numeric severity weight.
-fn severity_weight(e: &str) -> f64 {
-    if e.contains("ResourceExhausted") {
-        0.8
-    } else if e.contains("Timeout") {
-        0.5
-    } else if e.contains("Internal") {
-        0.3
-    } else {
-        0.2
     }
 }
 

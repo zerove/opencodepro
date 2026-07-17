@@ -2,9 +2,9 @@ use crate::{
     action_label, classify_goal, tool_id_for_action, ActionType, FlowSynthesizer, SynthesisResult,
 };
 use async_trait::async_trait;
-use sisyphus_types::{ExecutionContext, SOPGraph, StateStore};
+use sisyphus_types::{ExecutionContext, SOPGraph};
 use std::sync::Arc;
-use crate::simulation::{Simulator, SimulationResult as SimRes};
+use crate::simulation::Simulator;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -267,37 +267,6 @@ Plan: <overall strategy>"#, tools, lessons);
         let reasoning = response.split("JSON:").next().unwrap_or("").trim().to_string();
 
         Ok((reasoning, json_str.to_string(), plan_desc))
-    }
-
-    async fn critique(&self, project_id: &str, goal: &str, config_json: &str, graph: &SOPGraph) -> Result<(bool, String), String> {
-        let sim_res = self.simulator.simulate(Arc::new(SOPGraph::new()), &ExecutionContext::new(), project_id, "critique_sim", None).await?;
-        
-        let system_prompt = r#"
-You are a Strategic Auditor. Review the proposed SOP for logic flaws, redundancy, or fragility.
-You are provided with a Monte Carlo simulation result as evidence.
-
-Crucial Requirement: Every implementation step MUST be paired with a corresponding Test node. If you see any modification step without a subsequent verification step, you MUST reject the design.
-
-If the success_probability is low or the path is inefficient, you MUST reject it.
-
-Respond with:
-- "APPROVED" if the design is robust and follows the Implement-Verify pattern.
-- "REJECTED: <detailed reasons and suggested fixes>" if it is not.
-"#;
-
-        let prompt = format!(
-            "Goal: {}\nProposed JSON: {}\nSimulation Evidence: Path={}, Prob={:.2}, Cost={}\nAudit this design.",
-            goal, config_json, sim_res.path_id, sim_res.success_probability, sim_res.estimated_cost
-        );
-
-        let response = self.llm_client.chat(&system_prompt, &prompt, true).await
-            .map_err(|e| e.to_string())?;
-
-        if response.trim().to_uppercase().starts_with("APPROVED") {
-            Ok((true, response))
-        } else {
-            Ok((false, response))
-        }
     }
 
     async fn refine(&self, goal: &str, tools: &str, current_json: &str, feedback: &str, lessons: &str) -> Result<(String, String, String), String> {
@@ -659,7 +628,9 @@ mod adversarial_tests {
     }
 }
 
+#[cfg(test)]
 struct MockEvaluator;
+#[cfg(test)]
 #[async_trait::async_trait]
 impl sisyphus_types::SopEvaluator for MockEvaluator {
     async fn evaluate(&self, _goal: &str, _config: &sisyphus_types::SOPGraphConfig) -> Result<sisyphus_types::SopEvaluation, sisyphus_types::TypesError> {

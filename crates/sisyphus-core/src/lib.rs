@@ -1522,7 +1522,7 @@ impl SisyphusKernel {
 
             // 1. Proactive Health Check: Simulate remaining roadmap to detect potential risks before execution.
 
-            if let Some(ref reflector) = self.strategic_reflector {
+            if let Some(reflector) = self.strategic_reflector.as_ref() {
 
                 if let Some(reflection) = self.strategic_reflect(project_id).await {
 

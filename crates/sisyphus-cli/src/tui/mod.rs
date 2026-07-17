@@ -15,7 +15,6 @@ mod theme;
 mod widgets;
 
 pub(crate) use app::{App, DevFocus, LogEntry, Mode, ToastKind, View};
-pub(crate) use background::BgOp;
 pub(crate) use event::handle_event;
 pub(crate) use render::ui;
 use crate::permission::CliPermission;

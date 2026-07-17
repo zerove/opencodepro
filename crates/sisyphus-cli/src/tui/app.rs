@@ -5,7 +5,6 @@ use std::time::{Duration, Instant};
 use serde::{Deserialize, Serialize};
 
 use crate::bridge::SopInfo;
-use crate::tui::background::BgOp;
 use crate::tui::dialog::Dialog;
 
 use super::helpers;

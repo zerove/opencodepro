@@ -1,7 +1,4 @@
-use serde::{Deserialize, Serialize};
-use serde_json::json;
 use std::path::Path;
-use std::sync::Arc;
 use sisyphus_types::{TestExecutor as TestExecutorTrait, TestResult, TypesError};
 
 pub struct TestExecutor {

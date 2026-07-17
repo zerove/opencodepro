@@ -112,6 +112,10 @@ async fn test_project_isolation() {
 
     // 6. VALID ACCESS VERIFICATION
     let load_alpha = kernel.load_sop(sop_id_alpha, project_alpha).await;
+    match &load_alpha {
+        Ok(_) => println!("Successfully loaded own SOP!"),
+        Err(e) => println!("Failed to load own SOP: {:?}", e),
+    }
     assert!(load_alpha.is_ok(), "Should be able to load own SOP");
 
     println!("Project Isolation E2E verified successfully!");

@@ -32,14 +32,13 @@ impl ToolVerifier {
         wasm_path: &PathBuf,
     ) -> Result<VerificationReport, crate::IntelError> {
         let mut failures = Vec::new();
-        let mut unit_tests_passed = true;
+        let unit_tests_passed = true;
         let mut sandbox_stable = true;
         let mut semantic_match = true;
 
         // 1. Unit Testing via Success Criteria
         // In a real system, we would generate test cases from spec.success_criteria
         // and run them via WasmToolExecutor.
-        unit_tests_passed = true; 
 
         // 2. Sandbox Stability Check
         // We simulate a heavy load or check for panic/OOM
@@ -72,16 +71,6 @@ impl ToolVerifier {
             confidence_score,
             failures,
         })
-    }
-
-    async fn simulate_execution(
-        &self,
-        _wasm_path: &PathBuf,
-        _input: &serde_json::Value,
-    ) -> Result<serde_json::Value, crate::IntelError> {
-        // Integration point: Call the actual WasmToolExecutor to run the .wasm file
-        // For now, we simulate a successful execution
-        Ok(serde_json::json!({ "status": "simulated_success" }))
     }
 
     async fn check_sandbox_stability(

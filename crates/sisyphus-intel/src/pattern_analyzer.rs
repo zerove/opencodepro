@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
-use sisyphus_types::{SOPGraph, SOPNode};
+use sisyphus_types::SOPGraph;
 use petgraph::visit::EdgeRef;
 use petgraph::graph::NodeIndex;
 
@@ -122,7 +122,7 @@ impl PatternAnalyzer {
 
     /// Returns patterns that appear more than `min_frequency` times.
     pub fn get_frequent_patterns(&self, min_frequency: usize) -> Vec<SubgraphPattern> {
-        let mut frequent: Vec<_> = self.pattern_frequency
+        let frequent: Vec<_> = self.pattern_frequency
             .iter()
             .filter(|(_, &count)| count >= min_frequency)
             .map(|(pattern, _)| pattern.clone())

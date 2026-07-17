@@ -1,7 +1,7 @@
 use crossterm::event::{KeyCode, KeyEvent};
 
 use super::super::background::{
-    spawn_dev_agent, spawn_execute_sop, spawn_fetch_roadmap, spawn_list_sops,
+    spawn_dev_agent, spawn_execute_sop, spawn_list_sops,
     spawn_fetch_available_skills, spawn_fetch_installed_skills, spawn_install_skill, spawn_uninstall_skill,
     spawn_list_workspaces, spawn_switch_workspace,
 };

@@ -1,7 +1,6 @@
 use async_trait::async_trait;
 use rand::rngs::SmallRng;
 use rand::{Rng, SeedableRng};
-use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use sisyphus_metrics::record_simulation;
 use sisyphus_types::{ExecutionContext, SOPGraph};
@@ -103,7 +102,7 @@ impl LogicalSimulator for LlmLogicalSimulator {
     async fn simulate_logic(
         &self,
         graph: Arc<SOPGraph>,
-        context: &ExecutionContext,
+        _context: &ExecutionContext,
         sop_id: &str,
         goal_text: Option<&str>,
     ) -> Result<LogicalSimulationResult, String> {
@@ -280,7 +279,7 @@ impl MonteCarloSimulator {
 
                 let mut node = current_node_arc.lock().map_err(|_| "Lock poisoned".to_string())?;
                 let best_neighbor = probs.iter()
-                    .max_by(|(a_idx, a_prob), (b_idx, b_prob)| {
+                    .max_by(|(a_idx, _a_prob), (b_idx, _b_prob)| {
                         let val_a = node.children.get(a_idx)
                             .map(|n| n.lock().map_err(|_| "Lock poisoned".to_string()).map(|ln| ln.ucb1(node.visit_count)))
                             .unwrap_or(Ok(f64::INFINITY));
@@ -391,7 +390,7 @@ impl MonteCarloSimulator {
                                 let rate = successes / total_exp.max(1.0);
                                 
                                 for (_, weight) in weights.iter_mut() {
-                                    *weight *= (0.5 + rate);
+                                    *weight *= 0.5 + rate ;
                                 }
                             }
                         }
@@ -457,7 +456,7 @@ impl Simulator for MonteCarloSimulator {
         let sop_id_arc = Arc::new(sop_id.to_string());
 
         // --- Experience prior ---
-        let (hist_success_rate, hist_avg_cost) = if let Some(ref store) = self.state_store {
+        let (hist_success_rate, _hist_avg_cost) = if let Some(ref store) = self.state_store {
             let history_key = format!("history:{}", sop_id);
             match store.get_state_json(project_id, &history_key).await {
                 Ok(Some(val)) => {
@@ -540,7 +539,6 @@ impl Simulator for MonteCarloSimulator {
         let mut best_path = Vec::new();
         let mut curr_node_arc = Arc::clone(&root);
         let mut curr_idx = start_node_idx;
-        let mut total_prob = 1.0;
         let mut total_cost = 0u64;
 
         loop {
@@ -554,7 +552,6 @@ impl Simulator for MonteCarloSimulator {
                 best_path.push(graph.graph.node_weight(curr_idx).map(|n| n.name().to_string()).unwrap_or_default());
                 curr_idx = idx;
                 curr_node_arc = node;
-                total_prob *= 0.9 * hist_success_rate + 0.1 * 0.9;
                 let node_weight = graph.graph.node_weight(curr_idx);
                 total_cost += if let Some(weight) = node_weight {
                     if let Some(wasm) = weight.as_any().downcast_ref::<sisyphus_types::WasmSOPNode>() {

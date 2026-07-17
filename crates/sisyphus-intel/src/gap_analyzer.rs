@@ -1,7 +1,7 @@
 //! Gap analysis for autonomous tool generation.
 
 use std::sync::Arc;
-use sisyphus_types::{SOPGraph, experience::ExperienceBank, tools::ToolSpec};
+use sisyphus_types::{SOPGraph, tools::ToolSpec};
 use crate::reflect::ReflectionReport;
 use serde::{Serialize, Deserialize};
 
@@ -26,7 +26,7 @@ impl GapAnalyzer {
     pub async fn detect_gap(
         &self,
         report: &ReflectionReport,
-        sop_graph: &SOPGraph,
+        _sop_graph: &SOPGraph,
         goal_text: &str,
     ) -> Result<Option<ToolGap>, crate::IntelError> {
         let prompt = format!(

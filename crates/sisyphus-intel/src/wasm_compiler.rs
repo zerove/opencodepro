@@ -1,23 +1,18 @@
 //! WASM Compiler for autonomous tool generation.
 
-use std::process::Command;
 use std::path::{Path, PathBuf};
 use std::fs;
-use tempfile::tempdir;
 
 pub struct WasmCompiler {
-    cargo_path: PathBuf,
 }
 
 impl WasmCompiler {
     pub fn new() -> Self {
-        Self {
-            cargo_path: PathBuf::from("cargo"),
-        }
+        Self {}
     }
 
     /// Compiles Rust source code into a WASM binary.
-    pub async fn compile(&self, tool_name: &str, code: &str) -> Result<PathBuf, crate::IntelError> {
+    pub async fn compile(&self, tool_name: &str, _code: &str) -> Result<PathBuf, crate::IntelError> {
         // MOCK IMPLEMENTATION for testing: skip actual cargo build
         let persistent_dir = Path::new("target/sisyphus_tools");
         fs::create_dir_all(persistent_dir)
