@@ -117,10 +117,6 @@ where
         })
     }
 }
-    pub name: String,
-    pub project_id: String,
-    pub root_dir: String,
-}
 
 #[derive(Deserialize)]
 pub struct SwitchWorkspaceRequest {
@@ -578,9 +574,6 @@ async fn get_sop_handler(
         Err(e) => (StatusCode::NOT_FOUND, Json(e.to_string())).into_response(),
     }
 }
-        Err(e) => (StatusCode::NOT_FOUND, Json(e.to_string())).into_response(),
-    }
-}
 
 async fn save_sop_handler(
     State(state): State<RestApiState>,
@@ -826,8 +819,6 @@ async fn get_session_handler(
                     .map(|m| MessageDto {
                         role: m.role,
                         content: m.content,
-                        created_at: m.created_at,
-                        estimated_tokens: m.estimated_tokens,
                         created_at: m.created_at,
                         estimated_tokens: m.estimated_tokens,
                     })

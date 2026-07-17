@@ -84,6 +84,20 @@ codegen-units = 64
 [profile.dev.package.rustls]
 codegen-units = 64
 
+# Heavy gRPC/crypto deps (bridge): 分摊 tonic/prost/ring 编译内存
+[profile.dev.package.tonic]
+codegen-units = 64
+[profile.dev.package.tonic-build]
+codegen-units = 64
+[profile.dev.package.prost]
+codegen-units = 64
+[profile.dev.package.prost-build]
+codegen-units = 64
+[profile.dev.package.ring]
+codegen-units = 64
+[profile.dev.package.tokio-rustls]
+codegen-units = 64
+
 [profile.release]
 panic = "abort"
 lto = "thin"
