@@ -64,7 +64,7 @@ impl MySisyphusBridge {
 
             match self
                 .kernel
-                .execute_with_cognition(graph, &sop_id, Some(project_id), event_tx, None)
+                .execute_with_cognition(graph, &sop_id, Some(project_id), None, event_tx, None)
                 .await
             {
                 Ok((result, report, evolved_graph)) => {

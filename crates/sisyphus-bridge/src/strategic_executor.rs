@@ -59,12 +59,15 @@ impl ToolExecutor for StrategicExecutor {
         args: Vec<u8>,
         _fuel: u64,
     ) -> Result<Vec<u8>, TypesError> {
-        let kernel_weak = self.kernel.read().map_err(|e| {
-            TypesError::ToolExecutionError {
-                tool_id: tool_id.to_string(),
-                details: format!("Kernel RwLock poisoned: {e}"),
-            }
-        })?.clone();
+        let kernel_weak = {
+            let guard = self.kernel.read().map_err(|e| {
+                TypesError::ToolExecutionError {
+                    tool_id: tool_id.to_string(),
+                    details: format!("Kernel RwLock poisoned: {e}"),
+                }
+            })?;
+            guard.clone()
+        };
         let kernel = kernel_weak
             .and_then(|w| w.upgrade())
             .ok_or_else(|| TypesError::ToolExecutionError {

@@ -96,6 +96,9 @@ impl MySisyphusBridge {
         );
         let state_store = store.state.clone();
 
+        let vector_store = Arc::new(sisyphus_mem::VectorMemoryStore::new(store.pool()).await
+            .map_err(|e| sisyphus_types::TypesError::StateStoreError(format!("Failed to init VectorMemoryStore: {e}")))?);
+
         let sim_iterations = max_tasks.max(1) * 64;
         let embedding_client: Arc<dyn sisyphus_tools_llm::EmbeddingClient> = {
             if embedding_provider == "openai" {
@@ -109,7 +112,7 @@ impl MySisyphusBridge {
                 Arc::new(sisyphus_tools_llm::DummyEmbeddingClient)
             }
         };
-        let experience_bank = Arc::new(sisyphus_mem::experience_bank::VectorExperienceBank::new(state_store.clone(), embedding_client.clone()));
+        let experience_bank = Arc::new(sisyphus_mem::experience_bank::VectorExperienceBank::new(state_store.clone(), vector_store.clone(), embedding_client.clone()).await.map_err(|e| sisyphus_types::TypesError::StateStoreError(format!("Failed to init VectorExperienceBank: {e}")))?);
         let simulator = Arc::new(sisyphus_intel::MonteCarloSimulator::with_experience_bank(
             sim_iterations,
             experience_bank.clone(),
@@ -263,7 +266,8 @@ impl MySisyphusBridge {
             topo_evolver,
             tool_executor.clone(),
         ));
-        let intel = Arc::new(sisyphus_intel::SisyphusIntel::new(simulator.clone(), reflector, evolver));
+        let llm_logical_simulator = Arc::new(sisyphus_intel::simulation::LlmLogicalSimulator::new(dyn_llm_client.clone()));
+        let intel = Arc::new(sisyphus_intel::SisyphusIntel::new(simulator.clone(), llm_logical_simulator, reflector, evolver));
 
         let meta_learner = Arc::new(parking_lot::Mutex::new(sisyphus_tools_llm_tools::meta_learner::MetaLearner::new(".omo/meta")));
         let meta_synthesizer = Arc::new(MetaLearningSynthesizer::new(
@@ -284,10 +288,6 @@ impl MySisyphusBridge {
 
 
 
-        // ── Vector Memory Store Init ──────────────────────────────────────────
-        let vector_store = Arc::new(sisyphus_mem::VectorMemoryStore::new(store.pool()).await
-            .map_err(|e| sisyphus_types::TypesError::StateStoreError(format!("Failed to init VectorMemoryStore: {e}")))?);
-
         let embedding_client = Arc::new(sisyphus_tools_llm::DummyEmbeddingClient);
 
         // ── SOP Structured Store Init & Migration ──────────────────────────────
@@ -305,6 +305,7 @@ impl MySisyphusBridge {
             state_store.clone(),
             sop_store.clone(),
             vector_store.clone(),
+            experience_bank.clone(),
             tool_executor,
             intel,
             dyn_llm_client.clone(),
@@ -313,7 +314,7 @@ impl MySisyphusBridge {
             meta_learner,
             consensus.clone(),
             sql_store.clone(),
-            embedding_client, workspace_manager.clone(), workspace_manager.clone(),
+            embedding_client,
         ));
 
         strategic_executor.set_kernel(Arc::downgrade(&kernel));

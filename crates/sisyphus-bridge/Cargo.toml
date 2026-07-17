@@ -34,6 +34,6 @@ futures-util = "0.3"
 
 # HTTP/REST API (axum 0.7 to match tonic's transitive dep)
 axum = "0.7"
-tower-http = { version = "0.5", features = ["cors", "trace"] }
+tower-http = { version = "0.5", features = ["cors", "trace", "fs"] }
 serde = { workspace = true, features = ["derive"] }
 parking_lot = "0.12.5"

@@ -74,15 +74,20 @@ impl SwarmCoordinator {
         tracing::info!("Starting Swarm Audit Loop for goal: {}", goal);
         
         // 1. Identify participants
-        let agents = self.agents.read();
-        let architect = agents.iter().find(|a| a.role == AgentRole::Architect)
-            .ok_or_else(|| CoreError::Internal("No Architect agent spawned".into()))?;
-        let auditor = agents.iter().find(|a| a.role == AgentRole::Auditor)
-            .ok_or_else(|| CoreError::Internal("No Auditor agent spawned".into()))?;
+        let (architect_id, architect_prompt, auditor_id, auditor_prompt) = {
+            let agents = self.agents.read();
+            let architect = agents.iter().find(|a| a.role == AgentRole::Architect)
+                .ok_or_else(|| CoreError::Internal("No Architect agent spawned".into()))?;
+            let auditor = agents.iter().find(|a| a.role == AgentRole::Auditor)
+                .ok_or_else(|| CoreError::Internal("No Auditor agent spawned".into()))?;
+            (architect.id.clone(), architect.system_prompt.clone(), auditor.id.clone(), auditor.system_prompt.clone())
+        };
+        let architect = SwarmAgent { id: architect_id, role: AgentRole::Architect, system_prompt: architect_prompt };
+        let auditor = SwarmAgent { id: auditor_id, role: AgentRole::Auditor, system_prompt: auditor_prompt };
         
         // 2. architect proposes an initial change
         tracing::info!("Architect {} is proposing changes...", architect.id);
-        let mut proposal = self.real_agent_proposal(architect, goal, current_config).await?;
+        let mut proposal = self.real_agent_proposal(&architect, goal, current_config).await?;
         
         let mut iteration = 0;
         let max_iterations = 3;
@@ -93,7 +98,7 @@ impl SwarmCoordinator {
             
             // 3. auditor reviews the proposal
             tracing::info!("Auditor {} is reviewing proposal...", auditor.id);
-            let review = self.real_agent_review(auditor, &proposal).await?;
+            let review = self.real_agent_review(&auditor, &proposal).await?;
             
             if review.approved {
                 tracing::info!("Proposal approved by Auditor.");
@@ -107,7 +112,7 @@ impl SwarmCoordinator {
             
             // 4. architect refines based on review
             tracing::info!("Architect {} is refining proposal based on feedback...", architect.id);
-            proposal = self.real_agent_refine(architect, &proposal, &review).await?;
+            proposal = self.real_agent_refine(&architect, &proposal, &review).await?;
         }
         
         Ok(proposal)

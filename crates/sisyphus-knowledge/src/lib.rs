@@ -201,16 +201,17 @@ impl AssetManager {
         content: sisyphus_types::asset::AssetContent,
         _confidence: f32,
     ) -> Result<(), KnowledgeError> {
+        let (kind, description) = match &content {
+            sisyphus_types::asset::AssetContent::Tool(_) => (AssetKind::Tool, "Sedimented tool".into()),
+            sisyphus_types::asset::AssetContent::SOP(_) => (AssetKind::SOP, "Sedimented SOP".into()),
+            sisyphus_types::asset::AssetContent::Insight(i) => (AssetKind::Insight, i.observation.clone()),
+            sisyphus_types::asset::AssetContent::Constraint(c) => (AssetKind::Constraint, c.description.clone()),
+        };
         let asset = CognitiveAsset {
             id: id.to_string(),
-            kind: match &content {
-                sisyphus_types::asset::AssetContent::Tool(_) => AssetKind::Tool,
-                sisyphus_types::asset::AssetContent::SOP(_) => AssetKind::SOP,
-                sisyphus_types::asset::AssetContent::Insight(_) => AssetKind::Insight,
-                sisyphus_types::asset::AssetContent::Constraint(_) => AssetKind::Constraint,
-            },
+            kind,
             name,
-            description: "Sedimented asset".into(),
+            description,
             content,
             metadata: std::collections::HashMap::new(),
             version: 1,

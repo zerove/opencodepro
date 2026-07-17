@@ -123,6 +123,13 @@ pub struct SwitchWorkspaceRequest {
     pub id: String,
 }
 
+#[derive(Deserialize)]
+pub struct CreateWorkspaceRequest {
+    pub name: String,
+    pub project_id: String,
+    pub root_dir: String,
+}
+
 // --- SOP Management Types ---
 #[derive(Serialize, Deserialize)]
 pub struct SopSaveRequest {
@@ -441,10 +448,12 @@ async fn goal_status_handler(
 
 async fn goal_trace_handler(
     State(state): State<RestApiState>,
+    workspace: WorkspaceContext,
     Path(sop_id): Path<String>,
 ) -> impl IntoResponse {
+    let project_id = workspace.project_id.unwrap_or_else(|| "default".to_string());
     let store = &state.bridge.state_store;
-    match store.get_traces_for_sop(&sop_id).await {
+    match store.get_traces_for_sop(&project_id, &sop_id).await {
         Ok(rows) => {
             let events = rows.into_iter().map(|(node_id, status, output, fuel, duration)| {
                 TraceEventDetail {
@@ -455,12 +464,12 @@ async fn goal_trace_handler(
                     duration_ms: duration,
                 }
             }).collect();
-            (StatusCode::OK, Json(GoalTraceResponse { sop_id, events }))
+            (StatusCode::OK, Json(GoalTraceResponse { sop_id, events })).into_response()
         }
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(serde_json::json!({ "error": e.to_string() })),
-        ),
+        ).into_response(),
     }
 }
 
@@ -470,13 +479,13 @@ async fn goal_stream_handler(
     Path(goal): Path<String>,
 ) -> impl IntoResponse {
     let project_id = workspace.project_id.unwrap_or_else(|| "default".to_string());
-    let (tx, rx) = mpsc::unbounded_channel();
+    let (tx, rx) = mpsc::unbounded_channel::<sisyphus_types::ExecutionEvent>();
     let bridge_clone = state.bridge.clone();
     let goal_clone = goal.clone();
     let pid_clone = project_id.clone();
 
     tokio::spawn(async move {
-        if let Err(e) = bridge_clone.kernel().execute_goal_streaming(&goal_clone, "stream_task", pid_clone.as_str(), Some(tx)).await {
+        if let Err(e) = bridge_clone.kernel().execute_goal_streaming(&goal_clone, "stream_task", &pid_clone, Some(tx), None).await {
             tracing::error!(error = %e, "Goal streaming execution failed");
         }
     });
@@ -522,7 +531,7 @@ async fn execute_composite_handler(
         execution_order: vec![],
     };
 
-    match kernel.execute_composite(&composite, project_id.as_deref(), event_tx).await {
+    match kernel.execute_composite(&composite, event_tx, project_id.as_deref().unwrap_or("default")).await {
         Ok(output) => {
             let response = CompositeExecuteResponse {
                 results: output.results.into_iter().map(|(id, (out, _))| (id, out)).collect(),
@@ -614,8 +623,10 @@ async fn experience_similar_handler(
     let kernel = state.bridge.kernel();
     let query = sisyphus_types::experience::ExperienceQuery {
         query_text: req.query_text,
-        context_hash: String::new(), // Context hash is usually internal to the loop
+        context_hash: String::new(),
+        project_id: Some(String::new()),
         action_id: req.action_id,
+        visual_embedding: None,
         limit: req.limit.unwrap_or(5),
     };
     match kernel.experience_bank.query_similar(query).await {
