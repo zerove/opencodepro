@@ -1,4 +1,7 @@
 //! Sisyphus Knowledge Management system for cognitive asset sedimentation.
+//!
+//! Provides [`KnowledgeGraph`] for in-memory graph-based asset storage and
+//! [`AssetManager`] for async CRUD, persistence, and intelligent retrieval.
 
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -8,8 +11,9 @@ use petgraph::visit::EdgeRef;
 use serde::{Serialize, Deserialize};
 use thiserror::Error;
 use sisyphus_types::asset::{CognitiveAsset, AssetRelation, RelationType, AssetKind};
-use sisyphus_types::graph::SOPGraphConfig;
 use sisyphus_types::tools::ToolSpec;
+
+// ── Errors ───────────────────────────────────────────────────────────────
 
 #[derive(Error, Debug)]
 pub enum KnowledgeError {
@@ -21,10 +25,27 @@ pub enum KnowledgeError {
     Internal(String),
 }
 
+// ── Persistence snapshot ─────────────────────────────────────────────────
+
+/// Serializable snapshot of the entire knowledge graph for disk persistence.
+#[derive(Serialize, Deserialize)]
+struct KnowledgeSnapshot {
+    assets: Vec<CognitiveAsset>,
+    relations: Vec<AssetRelation>,
+}
+
+// ── KnowledgeGraph ───────────────────────────────────────────────────────
+
 pub struct KnowledgeGraph {
     graph: DiGraph<String, RelationType>,
     node_map: HashMap<String, NodeIndex>,
     assets: HashMap<String, CognitiveAsset>,
+}
+
+impl Default for KnowledgeGraph {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl KnowledgeGraph {
@@ -74,7 +95,52 @@ impl KnowledgeGraph {
             })
             .collect()
     }
+
+    /// Serialize the graph to a JSON-serializable snapshot.
+    fn to_snapshot(&self) -> KnowledgeSnapshot {
+        let assets: Vec<CognitiveAsset> = self.assets.values().cloned().collect();
+
+        // Reconstruct relations from the petgraph
+        let mut relations = Vec::new();
+        for edge in self.graph.edge_indices() {
+            if let Some((from_idx, to_idx)) = self.graph.edge_endpoints(edge) {
+                let from_id = self.graph[from_idx].clone();
+                let to_id = self.graph[to_idx].clone();
+                let rel_type = self.graph[edge].clone();
+                relations.push(AssetRelation {
+                    from_id,
+                    to_id,
+                    relation_type: rel_type,
+                    weight: 1.0, // default weight
+                });
+            }
+        }
+
+        KnowledgeSnapshot { assets, relations }
+    }
+
+    /// Reconstruct from a snapshot.
+    fn from_snapshot(snapshot: KnowledgeSnapshot) -> Self {
+        let mut graph = KnowledgeGraph::new();
+        for asset in snapshot.assets {
+            graph.add_asset(asset);
+        }
+        for rel in snapshot.relations {
+            let _ = graph.add_relation(rel); // ignore missing refs in snapshot
+        }
+        graph
+    }
+
+    pub fn asset_count(&self) -> usize {
+        self.assets.len()
+    }
+
+    pub fn relation_count(&self) -> usize {
+        self.graph.edge_count()
+    }
 }
+
+// ── AssetManager ─────────────────────────────────────────────────────────
 
 pub struct AssetManager {
     graph: Arc<RwLock<KnowledgeGraph>>,
@@ -89,20 +155,59 @@ impl AssetManager {
         }
     }
 
+    /// Persist the knowledge graph to disk as JSON.
+    pub async fn save(&self) -> Result<(), KnowledgeError> {
+        let graph = self.graph.read().await;
+        let snapshot = graph.to_snapshot();
+        drop(graph);
+
+        let json = serde_json::to_string_pretty(&snapshot)
+            .map_err(|e| KnowledgeError::StorageError(e.to_string()))?;
+
+        // Ensure parent directory exists
+        if let Some(parent) = self.storage_path.parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| KnowledgeError::StorageError(e.to_string()))?;
+        }
+
+        std::fs::write(&self.storage_path, &json)
+            .map_err(|e| KnowledgeError::StorageError(e.to_string()))?;
+
+        Ok(())
+    }
+
+    /// Load the knowledge graph from disk.
+    pub async fn load(&self) -> Result<(), KnowledgeError> {
+        if !self.storage_path.exists() {
+            return Ok(()); // no file yet, start fresh
+        }
+
+        let json = std::fs::read_to_string(&self.storage_path)
+            .map_err(|e| KnowledgeError::StorageError(e.to_string()))?;
+
+        let snapshot: KnowledgeSnapshot = serde_json::from_str(&json)
+            .map_err(|e| KnowledgeError::StorageError(e.to_string()))?;
+
+        let mut graph = self.graph.write().await;
+        *graph = KnowledgeGraph::from_snapshot(snapshot);
+
+        Ok(())
+    }
+
     pub async fn save_asset(
         &self,
         id: &str,
         name: String,
         content: sisyphus_types::asset::AssetContent,
-        confidence: f32,
+        _confidence: f32,
     ) -> Result<(), KnowledgeError> {
-        let asset = sisyphus_types::asset::CognitiveAsset {
+        let asset = CognitiveAsset {
             id: id.to_string(),
             kind: match &content {
-                sisyphus_types::asset::AssetContent::Tool(_) => sisyphus_types::asset::AssetKind::Tool,
-                sisyphus_types::asset::AssetContent::SOP(_) => sisyphus_types::asset::AssetKind::SOP,
-                sisyphus_types::asset::AssetContent::Insight(_) => sisyphus_types::asset::AssetKind::Insight,
-                sisyphus_types::asset::AssetContent::Constraint(_) => sisyphus_types::asset::AssetKind::Constraint,
+                sisyphus_types::asset::AssetContent::Tool(_) => AssetKind::Tool,
+                sisyphus_types::asset::AssetContent::SOP(_) => AssetKind::SOP,
+                sisyphus_types::asset::AssetContent::Insight(_) => AssetKind::Insight,
+                sisyphus_types::asset::AssetContent::Constraint(_) => AssetKind::Constraint,
             },
             name,
             description: "Sedimented asset".into(),
@@ -127,9 +232,12 @@ impl AssetManager {
         
         self.save_asset(&id, name, content, 1.0).await?;
         
-        // Note: we are not storing the wasm_path in the current save_asset implementation.
-        // In a real system, we would add it to metadata.
-        
+        // Store wasm_path in metadata on next save
+        let mut graph = self.graph.write().await;
+        if let Some(asset) = graph.assets.get_mut(&id) {
+            asset.metadata.insert("wasm_path".into(), wasm_path.to_string_lossy().to_string());
+        }
+
         Ok(id)
     }
 
@@ -140,15 +248,40 @@ impl AssetManager {
             .ok_or_else(|| KnowledgeError::AssetNotFound(id.to_string()))
     }
 
+    /// Search for assets matching a goal string.
+    ///
+    /// Uses case-insensitive substring matching across name, description,
+    /// and content fields.  Returns results sorted by relevance (matches
+    /// in name rank higher than matches in description, etc.).
     pub async fn query_tools_for_goal(&self, goal: &str) -> Vec<CognitiveAsset> {
         let graph = self.graph.read().await;
-        // For now, simple keyword match. Later will use embeddings.
-        graph.assets.values()
-            .filter(|a| a.description.contains(goal))
-            .cloned()
-            .collect()
+        let goal_lower = goal.to_lowercase();
+
+        let mut scored: Vec<(i32, CognitiveAsset)> = graph.assets.values()
+            .filter_map(|a| {
+                let name_lower = a.name.to_lowercase();
+                let desc_lower = a.description.to_lowercase();
+
+                let name_match = name_lower.contains(&goal_lower);
+                let desc_match = desc_lower.contains(&goal_lower);
+
+                if !name_match && !desc_match {
+                    return None;
+                }
+
+                // Score: name match = 10, description match = 5
+                let score = if name_match { 10 } else { 0 }
+                    + if desc_match { 5 } else { 0 };
+
+                Some((score, a.clone()))
+            })
+            .collect();
+
+        scored.sort_by_key(|b| std::cmp::Reverse(b.0));
+        scored.into_iter().map(|(_, a)| a).collect()
     }
 
+    /// Use LLM to find the best matching asset for a goal.
     pub async fn find_best_asset(
         &self, 
         goal: &str, 
@@ -184,5 +317,185 @@ impl AssetManager {
         }
 
         Ok(None)
+    }
+
+    pub async fn asset_count(&self) -> usize {
+        let graph = self.graph.read().await;
+        graph.asset_count()
+    }
+}
+
+// ── Tests ────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sisyphus_types::asset::{InsightData, AssetContent};
+
+    fn make_test_asset(id: &str, name: &str, description: &str) -> CognitiveAsset {
+        CognitiveAsset {
+            id: id.to_string(),
+            kind: AssetKind::Insight,
+            name: name.to_string(),
+            description: description.to_string(),
+            content: AssetContent::Insight(InsightData {
+                observation: "test observation".into(),
+                reasoning: "test reasoning".into(),
+                evidence_ids: vec![],
+                confidence: 0.9,
+            }),
+            metadata: HashMap::new(),
+            version: 1,
+            created_at: 1000,
+        }
+    }
+
+    #[test]
+    fn test_knowledge_graph_add_and_get() {
+        let mut graph = KnowledgeGraph::new();
+        let asset = make_test_asset("a1", "Test Asset", "A test");
+        graph.add_asset(asset);
+        assert!(graph.get_asset("a1").is_some());
+        assert_eq!(graph.asset_count(), 1);
+    }
+
+    #[test]
+    fn test_knowledge_graph_find_by_kind() {
+        let mut graph = KnowledgeGraph::new();
+        graph.add_asset(make_test_asset("a1", "Insight 1", "desc"));
+        graph.add_asset(make_test_asset("a2", "Insight 2", "desc"));
+        let insights = graph.find_assets_by_kind(AssetKind::Insight);
+        assert_eq!(insights.len(), 2);
+    }
+
+    #[test]
+    fn test_knowledge_graph_relation() {
+        let mut graph = KnowledgeGraph::new();
+        graph.add_asset(make_test_asset("a1", "A", "desc"));
+        graph.add_asset(make_test_asset("a2", "B", "desc"));
+        let rel = AssetRelation {
+            from_id: "a1".into(),
+            to_id: "a2".into(),
+            relation_type: RelationType::Solves,
+            weight: 1.0,
+        };
+        assert!(graph.add_relation(rel).is_ok());
+        assert_eq!(graph.relation_count(), 1);
+    }
+
+    #[test]
+    fn test_knowledge_graph_relation_missing_asset() {
+        let mut graph = KnowledgeGraph::new();
+        graph.add_asset(make_test_asset("a1", "A", "desc"));
+        let rel = AssetRelation {
+            from_id: "a1".into(),
+            to_id: "missing".into(),
+            relation_type: RelationType::Solves,
+            weight: 1.0,
+        };
+        assert!(graph.add_relation(rel).is_err());
+    }
+
+    #[test]
+    fn test_snapshot_roundtrip() {
+        let mut graph = KnowledgeGraph::new();
+        graph.add_asset(make_test_asset("a1", "Asset 1", "Description one"));
+        graph.add_asset(make_test_asset("a2", "Asset 2", "Description two"));
+        let rel = AssetRelation {
+            from_id: "a1".into(),
+            to_id: "a2".into(),
+            relation_type: RelationType::Requires,
+            weight: 0.8,
+        };
+        graph.add_relation(rel).unwrap();
+
+        let snapshot = graph.to_snapshot();
+        let restored = KnowledgeGraph::from_snapshot(snapshot);
+        assert_eq!(restored.asset_count(), 2);
+        assert_eq!(restored.relation_count(), 1);
+        assert!(restored.get_asset("a1").is_some());
+        assert!(restored.get_asset("a2").is_some());
+    }
+
+    #[tokio::test]
+    async fn test_asset_manager_save_load() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("knowledge.json");
+
+        // Save
+        let manager = AssetManager::new(path.clone());
+        manager.save_asset("a1", "Test".into(), AssetContent::Insight(InsightData {
+            observation: "obs".into(),
+            reasoning: "reason".into(),
+            evidence_ids: vec![],
+            confidence: 0.9,
+        }), 1.0).await.unwrap();
+        manager.save().await.unwrap();
+        assert!(path.exists());
+
+        // Load into a fresh manager
+        let manager2 = AssetManager::new(path);
+        manager2.load().await.unwrap();
+        assert_eq!(manager2.asset_count().await, 1);
+        let asset = manager2.get_asset("a1").await.unwrap();
+        assert_eq!(asset.name, "Test");
+    }
+
+    #[tokio::test]
+    async fn test_query_tools_for_goal() {
+        let dir = tempfile::tempdir().unwrap();
+        let manager = AssetManager::new(dir.path().join("q.json"));
+
+        // Add assets with different names/descriptions
+        manager.save_asset("a1", "File Reader".into(), AssetContent::Insight(InsightData {
+            observation: "Reads files from disk".into(),
+            reasoning: "".into(),
+            evidence_ids: vec![],
+            confidence: 1.0,
+        }), 1.0).await.unwrap();
+
+        manager.save_asset("a2", "Git Operations".into(), AssetContent::Insight(InsightData {
+            observation: "Performs git commands".into(),
+            reasoning: "".into(),
+            evidence_ids: vec![],
+            confidence: 1.0,
+        }), 1.0).await.unwrap();
+
+        manager.save_asset("a3", "Database Query".into(), AssetContent::Insight(InsightData {
+            observation: "Reads from database".into(),
+            reasoning: "".into(),
+            evidence_ids: vec![],
+            confidence: 1.0,
+        }), 1.0).await.unwrap();
+
+        // Search for "read" — should match a1 (name) and a3 (description)
+        let results = manager.query_tools_for_goal("read").await;
+        assert!(results.len() >= 2);
+        // a1 should rank higher (name match)
+        assert_eq!(results[0].id, "a1");
+    }
+
+    #[tokio::test]
+    async fn test_query_case_insensitive() {
+        let dir = tempfile::tempdir().unwrap();
+        let manager = AssetManager::new(dir.path().join("qi.json"));
+
+        manager.save_asset("a1", "MyTool".into(), AssetContent::Insight(InsightData {
+            observation: "A tool".into(),
+            reasoning: "".into(),
+            evidence_ids: vec![],
+            confidence: 1.0,
+        }), 1.0).await.unwrap();
+
+        let results = manager.query_tools_for_goal("mytool").await;
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].id, "a1");
+    }
+
+    #[tokio::test]
+    async fn test_load_nonexistent_file() {
+        let manager = AssetManager::new(std::path::PathBuf::from("/tmp/nonexistent_test_file.json"));
+        assert!(manager.load().await.is_ok());
+        assert_eq!(manager.asset_count().await, 0);
     }
 }

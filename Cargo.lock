@@ -4265,11 +4265,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "sisyphus-wasm-sdk"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "sisyphus_visual"
 version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
  "sisyphus-intel",
