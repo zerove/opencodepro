@@ -183,7 +183,7 @@ pub async fn review_plan(client: &dyn LlmClient, plan_text: &str, plan_name: &st
     let has_verification = verify_keywords
         .iter()
         .any(|k| plan_text.to_lowercase().contains(k));
-    if !has_verification && step_lines.len() > 0 {
+    if !has_verification && !step_lines.is_empty() {
         comments.push(ReviewComment {
             severity: ReviewSeverity::Major,
             category: "verifiability".into(),

@@ -286,7 +286,7 @@ impl SOPEvolver for TopologicalSOPEvolver {
         // For now, we'll use a mock to demonstrate the structural change.
         let mock_executor = Arc::new(crate::mock::MockExecutor);
         self.apply_ops(&graph, &ops, mock_executor)
-            .map(|g| Arc::new(g))
+            .map(Arc::new)
             .map_err(|e| e.to_string())
     }
 }

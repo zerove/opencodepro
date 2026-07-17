@@ -119,16 +119,14 @@ impl MetaLearner {
                 match best {
                     Some((_, best_score, _)) if normalized_score > best_score => {
                         let params = samples.iter()
-                            .filter(|s| s.success)
-                            .last()
+                            .rfind(|s| s.success)
                             .map(|s| s.params.clone())
                             .unwrap_or_else(|| serde_json::json!({}));
                         best = Some((strategy.clone(), normalized_score, params));
                     }
                     None => {
                         let params = samples.iter()
-                            .filter(|s| s.success)
-                            .last()
+                            .rfind(|s| s.success)
                             .map(|s| s.params.clone())
                             .unwrap_or_else(|| serde_json::json!({}));
                         best = Some((strategy.clone(), normalized_score, params));

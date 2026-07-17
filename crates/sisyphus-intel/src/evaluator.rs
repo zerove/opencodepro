@@ -19,7 +19,7 @@ impl HeuristicSopEvaluator {
         
         // Heuristic: Optimal SOP length is between 3 and 7 nodes.
         // Penalize very short (too simple/incomplete) or very long (too fragile) SOPs.
-        if node_count >= 3 && node_count <= 7 {
+        if (3..=7).contains(&node_count) {
             1.0
         } else if node_count < 3 {
             0.7

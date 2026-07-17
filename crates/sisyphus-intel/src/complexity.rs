@@ -22,10 +22,7 @@ impl CognitiveDepth {
     }
 
     pub fn should_simulate(&self) -> bool {
-        match self {
-            CognitiveDepth::Low => false,
-            _ => true,
-        }
+        !matches!(self, CognitiveDepth::Low)
     }
 }
 

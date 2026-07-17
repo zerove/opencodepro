@@ -339,7 +339,7 @@ Plan: <high-level strategy>"#, tools, lessons);
             if let sisyphus_types::NodeKind::SubGraph { config: sub_cfg } = &mut node.kind {
                 let sub_goal = node.name.clone();
                 let detailed_cfg = self.synthesize_subgraph(&sub_goal, tools).await?;
-                *sub_cfg = Box::new(detailed_cfg);
+                **sub_cfg = detailed_cfg;
             }
         }
 
@@ -436,7 +436,7 @@ impl FlowSynthesizer for LogicalSOPSynthesizer {
 
                 return Ok(SynthesisResult {
                     start_node: graph.graph.node_indices().next().ok_or_else(|| "Graph has no nodes".to_string())?,
-                    graph: graph,
+                    graph,
                     plan_description: current_plan,
                 });
             }
@@ -451,7 +451,7 @@ impl FlowSynthesizer for LogicalSOPSynthesizer {
             let graph = SOPGraph::from_config(&config, self.tool_executor.clone(), self.test_executor.clone()).map_err(|e| e.to_string())?;
             return Ok(SynthesisResult {
                 start_node: graph.graph.node_indices().next().ok_or_else(|| "Graph has no nodes".to_string())?,
-                graph: graph,
+                graph,
                 plan_description: current_plan,
             });
         }

@@ -253,7 +253,7 @@ impl RegistryConfig {
 
 // ── McpConfig ──────────────────────────────────────────────────
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct McpConfig {
     /// Stdio-based MCP servers: prefix → "command arg1 arg2".
     #[serde(default)]
@@ -261,15 +261,6 @@ pub struct McpConfig {
     /// HTTP-based MCP servers: prefix → "http://host:port/path".
     #[serde(default)]
     pub http_servers: HashMap<String, String>,
-}
-
-impl Default for McpConfig {
-    fn default() -> Self {
-        Self {
-            stdio_servers: HashMap::new(),
-            http_servers: HashMap::new(),
-        }
-    }
 }
 
 impl McpConfig {

@@ -19,6 +19,12 @@ pub struct TestGenerator {
     pub(crate) llm_client: Option<Arc<dyn LlmClient>>,
 }
 
+impl Default for TestGenerator {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl TestGenerator {
     pub fn new() -> Self {
         Self { llm_client: None }
@@ -40,7 +46,7 @@ impl TestGenerator {
             }
         }
 
-        let Some(start) = start_line else { return None };
+        let start = start_line?;
 
         let mut brace_depth = 0;
         let mut found_start = false;
@@ -96,7 +102,7 @@ Function to test:
         let content = std::fs::read_to_string(file_path).map_err(sisyphus_tools_core::ToolError::Io)?;
 
         // Try LLM generation if available
-        if let Some(_) = &self.llm_client {
+        if self.llm_client.is_some() {
             if let Some(body) = self.extract_function_body(&content, fn_name) {
                 if let Ok(test_code) = self.generate_meaningful_test(&body).await {
                     return Ok(GeneratedTest {

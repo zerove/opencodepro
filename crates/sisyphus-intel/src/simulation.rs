@@ -171,7 +171,7 @@ impl LogicalSimulator for LlmLogicalSimulator {
                         return Ok(LogicalSimulationResult {
                             is_valid: false,
                             flaws,
-                            predicted_path: predicted_path,
+                            predicted_path,
                             confidence,
                         });
                     }
@@ -256,6 +256,7 @@ impl MonteCarloSimulator {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn simulate_one_path(
         &self,
         graph: Arc<SOPGraph>,
@@ -389,7 +390,7 @@ impl MonteCarloSimulator {
                                 let successes = experiences.iter().filter(|e| e.outcome_success).count() as f64;
                                 let rate = successes / total_exp.max(1.0);
                                 
-                                for (_, weight) in weights.iter_mut() {
+                                for weight in weights.values_mut() {
                                     *weight *= 0.5 + rate ;
                                 }
                             }
@@ -477,7 +478,7 @@ impl Simulator for MonteCarloSimulator {
         
         // --- Parallel Batched Simulation ---
         let batch_size = 100;
-        let num_batches = (self.iterations + batch_size - 1) / batch_size;
+        let num_batches = self.iterations.div_ceil(batch_size);
         let mut batch_handles = Vec::new();
 
         for b in 0..num_batches {

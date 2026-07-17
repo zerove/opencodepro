@@ -104,7 +104,7 @@ impl CircuitBreaker {
         self.breakers
             .read()
             .ok()
-            .and_then(|b| b.get(key).map(|s| s.state.clone()))
+            .and_then(|b| b.get(key).map(|s| s.state))
             .unwrap_or(CircuitState::Closed)
     }
 
@@ -128,7 +128,7 @@ impl CircuitBreaker {
         if let Some(guard) = breakers {
             if let Some(state) = guard.get(key) {
                 return BreakerMetrics {
-                    state: state.state.clone(),
+                    state: state.state,
                     failure_count: state.failure_count,
                     success_count: state.success_count,
                 };

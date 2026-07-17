@@ -107,12 +107,14 @@ impl ExperienceBank for VectorExperienceBank {
             if let Some(exp) = self.store.get_experience(exp_key).await.map_err(|e| e.to_string())? {
                 
                 // Project-based filtering:
+                #[allow(clippy::collapsible_if)]
                 if let Some(ref pid) = query.project_id {
                     if exp.project_id.as_ref() != Some(pid) && exp.project_id.is_some() {
                         continue;
                     }
                 }
 
+                #[allow(clippy::collapsible_if)]
                 if let Some(ref action_id) = query.action_id {
                     if exp.action_id != *action_id {
                         continue;

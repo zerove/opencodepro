@@ -15,6 +15,12 @@ pub struct PatternAnalyzer {
     pub pattern_frequency: HashMap<SubgraphPattern, usize>,
 }
 
+impl Default for PatternAnalyzer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl PatternAnalyzer {
     pub fn new() -> Self {
         Self {

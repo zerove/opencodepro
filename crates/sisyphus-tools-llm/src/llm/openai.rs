@@ -127,7 +127,7 @@ impl crate::llm::EmbeddingClient for OpenAiEmbeddingClient {
         });
 
         let res = self.client
-            .post(&format!("{}/embeddings", self.endpoint.trim_end_matches('/')))
+            .post(format!("{}/embeddings", self.endpoint.trim_end_matches('/')))
             .header("Authorization", format!("Bearer {}", self.api_key))
             .json(&body)
             .send()

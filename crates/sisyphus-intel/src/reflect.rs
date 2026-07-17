@@ -417,18 +417,16 @@ impl SOPEvolver for LlmEvolver {
         
         let prompt = format!(
             "Given the following SOP structure and suggested improvements, generate a list of EvolutionOps.\
-            SOP Nodes: {:?}\
-            Improvements: {:?}\
-            Insights: {:?}\
-            
-            Available Ops: \
-            - AdjustFuel {{ node_name, delta }}\
-            - AddRetry {{ node_name, max_retries }}\
-            - InsertNode {{ after_node, new_name, tool_id }}\
-            - RemoveNode {{ node_name }}\
-            - SwapNodes {{ node_a, node_b }}\
-            
-            Return a JSON array of ops.",
+            \nSOP Nodes: {:?}\
+            \nImprovements: {:?}\
+            \nInsights: {:?}\
+            \n\nAvailable Ops: \
+            \n- AdjustFuel {{ node_name, delta }}\
+            \n- AddRetry {{ node_name, max_retries }}\
+            \n- InsertNode {{ after_node, new_name, tool_id }}\
+            \n- RemoveNode {{ node_name }}\
+            \n- SwapNodes {{ node_a, node_b }}\
+            \n\nReturn a JSON array of ops.",
             graph.graph.node_indices().map(|i| graph.graph.node_weight(i).map(|n| n.name().to_string())).collect::<Vec<_>>(),
             report.suggested_improvements,
             insights.unwrap_or("None")
@@ -440,7 +438,7 @@ impl SOPEvolver for LlmEvolver {
         let ops: Vec<sisyphus_types::EvolutionOp> = serde_json::from_str(&response)
             .map_err(|e| format!("Failed to parse evolution ops JSON: {e}. Response: {response}"))?;
 
-        self.topo_evolver.apply_ops(&graph, &ops, self.tool_executor.clone()).map(|g| Arc::new(g)).map_err(|e| e.to_string())
+        self.topo_evolver.apply_ops(&graph, &ops, self.tool_executor.clone()).map(Arc::new).map_err(|e| e.to_string())
     }
 }
 

@@ -418,7 +418,7 @@ impl MfsStore {
         let mut query_str = String::from("SELECT context_text, context_hash, action_id, project_id, outcome_success, deviation_score, cost, timestamp FROM experiences WHERE id IN (");
         let placeholders: Vec<String> = (0..ids.len()).map(|_| "?".to_string()).collect();
         query_str.push_str(&placeholders.join(","));
-        query_str.push_str(")");
+        query_str.push(')');
 
         if project_id.is_some() {
             query_str.push_str(" AND project_id = ?");

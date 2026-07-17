@@ -9,6 +9,12 @@ pub struct InMemoryGoldenDataset {
     data: Arc<RwLock<HashMap<String, GoldenSop>>>,
 }
 
+impl Default for InMemoryGoldenDataset {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl InMemoryGoldenDataset {
     pub fn new() -> Self {
         Self {

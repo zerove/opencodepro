@@ -6,6 +6,12 @@ use std::fs;
 pub struct WasmCompiler {
 }
 
+impl Default for WasmCompiler {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl WasmCompiler {
     pub fn new() -> Self {
         Self {}

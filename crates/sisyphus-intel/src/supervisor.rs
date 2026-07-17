@@ -10,7 +10,7 @@ use crate::simulation::SimulationResult;
 pub struct SisyphusSupervisor {
     reflector: Arc<dyn Reflector>,
     prediction: SimulationResult,
-    graph: Arc<SOPGraph>,
+    _graph: Arc<SOPGraph>,
     threshold: f64,
     experience_bank: Arc<dyn sisyphus_types::experience::ExperienceBank>,
     goal_text: String,
@@ -28,7 +28,7 @@ impl SisyphusSupervisor {
         Self {
             reflector,
             prediction,
-            graph,
+            _graph: graph,
             threshold,
             experience_bank,
             goal_text,
@@ -71,7 +71,7 @@ impl RuntimeSupervisor for SisyphusSupervisor {
             || output_str.contains("Exception")
             || output_str.contains("ResourceExhausted");
 
-        if !is_obvious_error && output_str.len() > 0 && self.prediction.success_probability >= 0.5 {
+        if !is_obvious_error && !output_str.is_empty() && self.prediction.success_probability >= 0.5 {
             tracing::info!(node = %node_name, "Fast-track: node output appears healthy, skipping LLM reflection");
             return Ok(SupervisorDecision::Continue { deviation: 0.05 });
         }
