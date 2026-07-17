@@ -19,3 +19,6 @@ uuid = { version = "1.0", features = ["v4"] }
 petgraph = "0.6"
 anyhow = "1.0"
 sisyphus-tools-llm = { version = "0.1.0", path = "../sisyphus-tools-llm" }
+
+[dev-dependencies]
+tempfile = "3"

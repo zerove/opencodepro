@@ -498,4 +498,114 @@ mod tests {
         assert!(manager.load().await.is_ok());
         assert_eq!(manager.asset_count().await, 0);
     }
+
+    #[test]
+    fn test_get_asset_nonexistent() {
+        let graph = KnowledgeGraph::new();
+        assert!(graph.get_asset("missing").is_none());
+    }
+
+    #[test]
+    fn test_find_assets_by_kind_empty() {
+        let graph = KnowledgeGraph::new();
+        assert!(graph.find_assets_by_kind(AssetKind::Insight).is_empty());
+    }
+
+    #[test]
+    fn test_find_assets_by_kind_wrong_kind() {
+        let mut graph = KnowledgeGraph::new();
+        graph.add_asset(make_test_asset("a1", "Insight only", "desc"));
+        let tools = graph.find_assets_by_kind(AssetKind::Tool);
+        assert!(tools.is_empty());
+    }
+
+    #[test]
+    fn test_get_related_assets_no_edges() {
+        let mut graph = KnowledgeGraph::new();
+        graph.add_asset(make_test_asset("a1", "A", "desc"));
+        let related = graph.get_related_assets("a1", RelationType::Solves);
+        assert!(related.is_empty());
+    }
+
+    #[test]
+    fn test_get_related_assets_wrong_relation_type() {
+        let mut graph = KnowledgeGraph::new();
+        graph.add_asset(make_test_asset("a1", "A", "desc"));
+        graph.add_asset(make_test_asset("a2", "B", "desc"));
+        graph.add_relation(AssetRelation {
+            from_id: "a1".into(),
+            to_id: "a2".into(),
+            relation_type: RelationType::Solves,
+            weight: 1.0,
+        }).unwrap();
+        let related = graph.get_related_assets("a1", RelationType::Requires);
+        assert!(related.is_empty());
+    }
+
+    #[test]
+    fn test_get_related_assets_nonexistent_id() {
+        let graph = KnowledgeGraph::new();
+        let related = graph.get_related_assets("ghost", RelationType::Solves);
+        assert!(related.is_empty());
+    }
+
+    #[test]
+    fn test_add_relation_both_missing() {
+        let mut graph = KnowledgeGraph::new();
+        let rel = AssetRelation {
+            from_id: "missing_from".into(),
+            to_id: "missing_to".into(),
+            relation_type: RelationType::Solves,
+            weight: 1.0,
+        };
+        let err = graph.add_relation(rel).unwrap_err();
+        match err {
+            KnowledgeError::AssetNotFound(id) => assert_eq!(id, "missing_from"),
+            _ => panic!("expected AssetNotFound"),
+        }
+    }
+
+    #[test]
+    fn test_snapshot_empty_roundtrip() {
+        let graph = KnowledgeGraph::new();
+        let snapshot = graph.to_snapshot();
+        let restored = KnowledgeGraph::from_snapshot(snapshot);
+        assert_eq!(restored.asset_count(), 0);
+        assert_eq!(restored.relation_count(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_query_no_match() {
+        let dir = tempfile::tempdir().unwrap();
+        let manager = AssetManager::new(dir.path().join("q.json"));
+        manager.save_asset("a1", "Git Ops".into(), AssetContent::Insight(InsightData {
+            observation: "does git".into(),
+            reasoning: "".into(),
+            evidence_ids: vec![],
+            confidence: 1.0,
+        }), 1.0).await.unwrap();
+        let results = manager.query_tools_for_goal("unrelated_xyz").await;
+        assert!(results.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_query_empty_manager() {
+        let dir = tempfile::tempdir().unwrap();
+        let manager = AssetManager::new(dir.path().join("empty.json"));
+        let results = manager.query_tools_for_goal("anything").await;
+        assert!(results.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_load_corrupted_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("bad.json");
+        std::fs::write(&path, "{not valid json!!!").unwrap();
+        let manager = AssetManager::new(path);
+        let err = manager.load().await.unwrap_err();
+        match err {
+            KnowledgeError::StorageError(_) => {}
+            _ => panic!("expected StorageError"),
+        }
+    }
 }

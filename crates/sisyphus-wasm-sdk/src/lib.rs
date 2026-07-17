@@ -8,7 +8,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 
 // ── Types ────────────────────────────────────────────────────────────────
 
@@ -56,7 +56,7 @@ pub trait SisyphusTool: Send + Sync {
 /// lifetime of the process (intentionally — WASM tools are loaded once and
 /// reused).
 struct ToolRegistryInner {
-    tools: HashMap<String, Box<dyn SisyphusTool>>,
+    tools: HashMap<String, Arc<dyn SisyphusTool>>,
 }
 
 static REGISTRY: OnceLock<Mutex<ToolRegistryInner>> = OnceLock::new();
@@ -76,25 +76,19 @@ fn registry() -> &'static Mutex<ToolRegistryInner> {
 pub fn register_tool<T: SisyphusTool + 'static>(tool: T) {
     let id = std::any::type_name::<T>().to_string();
     let mut reg = registry().lock().expect("tool registry poisoned");
-    reg.tools.insert(id, Box::new(tool));
+    reg.tools.insert(id, Arc::new(tool));
 }
 
 /// Register a tool with an explicit id.
 pub fn register_tool_as<T: SisyphusTool + 'static>(tool_id: &str, tool: T) {
     let mut reg = registry().lock().expect("tool registry poisoned");
-    reg.tools.insert(tool_id.to_string(), Box::new(tool));
+    reg.tools.insert(tool_id.to_string(), Arc::new(tool));
 }
 
 /// Retrieve a tool reference by id.
-pub fn get_tool(_tool_id: &str) -> Option<Box<dyn SisyphusTool>> {
+pub fn get_tool(tool_id: &str) -> Option<Arc<dyn SisyphusTool>> {
     let reg = registry().lock().expect("tool registry poisoned");
-    // We can't return a reference into the locked map, so return a trait object.
-    // For simplicity we return None when the tool is not found.
-    // A more advanced approach would use Arc<dyn SisyphusTool>.
-    drop(reg);
-    // NOTE: To return a usable reference we need Arc-based storage.
-    // This is addressed below with the Arc-based API.
-    None
+    reg.tools.get(tool_id).cloned()
 }
 
 /// List all registered tool ids.
@@ -204,6 +198,36 @@ mod tests {
             state_update: Some(serde_json::json!({"counter": 1})),
         };
         assert!(output.state_update.is_some());
+    }
+
+    #[test]
+    fn test_get_tool_returns_arc() {
+        {
+            let mut reg = registry().lock().unwrap();
+            reg.tools.clear();
+        }
+
+        register_tool_as("arc_test", EchoTool);
+        let tool = get_tool("arc_test");
+        assert!(tool.is_some(), "get_tool should find registered tool");
+        let tool = tool.unwrap();
+        let ctx = ToolContext {
+            tool_id: "arc_test".into(),
+            input: serde_json::json!({"hello": "world"}),
+            state: serde_json::json!({}),
+        };
+        let output = tool.execute(&ctx).unwrap();
+        assert_eq!(output.result, serde_json::json!({"hello": "world"}));
+    }
+
+    #[test]
+    fn test_get_tool_missing() {
+        {
+            let mut reg = registry().lock().unwrap();
+            reg.tools.clear();
+        }
+
+        assert!(get_tool("nonexistent").is_none());
     }
 
     #[test]

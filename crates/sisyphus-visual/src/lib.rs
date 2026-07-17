@@ -89,6 +89,14 @@ pub struct HttpVlmProvider {
     client: reqwest::Client,
 }
 
+impl std::fmt::Debug for HttpVlmProvider {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("HttpVlmProvider")
+            .field("config", &self.config)
+            .finish_non_exhaustive()
+    }
+}
+
 impl HttpVlmProvider {
     pub fn new(config: VlmProviderConfig) -> Self {
         let client = reqwest::Client::builder()
@@ -165,12 +173,58 @@ impl VisualPerceptionProvider for HttpVlmProvider {
 
     async fn get_embedding(
         &self,
-        _image_data: &[u8],
+        image_data: &[u8],
     ) -> Result<Vec<f32>, VisualError> {
-        // Embedding endpoint would be different; for now return error
-        Err(VisualError::ProviderError(
-            "Image embedding not yet implemented for HTTP provider".into()
-        ))
+        let base64_image = base64_encode(image_data);
+
+        let embeddings_endpoint = self.config.endpoint
+            .replace("/chat/completions", "/embeddings");
+
+        let request_body = serde_json::json!({
+            "model": self.config.model,
+            "input": format!("data:image/png;base64,{}", base64_image),
+        });
+
+        let response = self.client
+            .post(&embeddings_endpoint)
+            .header("Authorization", format!("Bearer {}", self.config.api_key))
+            .header("Content-Type", "application/json")
+            .json(&request_body)
+            .send()
+            .await
+            .map_err(|e| VisualError::HttpError(e.to_string()))?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            return Err(VisualError::ProviderError(
+                format!("Embedding HTTP {}: {}", status, body)
+            ));
+        }
+
+        let response_json: serde_json::Value = response
+            .json()
+            .await
+            .map_err(|e| VisualError::HttpError(e.to_string()))?;
+
+        let embedding = response_json["data"][0]["embedding"]
+            .as_array()
+            .ok_or_else(|| VisualError::ProviderError(
+                "No embedding array in response".into()
+            ))?;
+
+        let vector: Vec<f32> = embedding
+            .iter()
+            .filter_map(|v| v.as_f64().map(|f| f as f32))
+            .collect();
+
+        if vector.is_empty() {
+            return Err(VisualError::ProviderError(
+                "Empty embedding vector".into()
+            ));
+        }
+
+        Ok(vector)
     }
 }
 
