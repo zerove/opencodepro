@@ -89,8 +89,12 @@ impl BudgetProvider for SisyphusKernel {
             }
         }
 
-        let (milestone_id, phase_id) = location
-            .ok_or_else(|| CoreError::Internal(format!("Goal {} not found in project {}", goal_id, project_id)))?;
+        let (milestone_id, phase_id) = location.ok_or_else(|| {
+            CoreError::Internal(format!(
+                "Goal {} not found in project {}",
+                goal_id, project_id
+            ))
+        })?;
 
         let outcome = sisyphus_roadmap::ExecutionOutcome {
             goal_id: goal_id.to_string(),

@@ -45,9 +45,8 @@ impl Executor {
     }
 
     /// Public entry point for executing a SOP graph.
-
-    /// Public entry point for executing a SOP graph.
     /// Returns a BoxFuture to satisfy 'static Send requirements for concurrent dispatch.
+    #[allow(clippy::too_many_arguments)]
     pub fn execute_with_context(
         &self,
         sop_graph: Arc<SOPGraph>,
@@ -69,7 +68,17 @@ impl Executor {
             internalization_manager: Arc::clone(&self.internalization_manager),
         });
         Box::pin(async move {
-            executor.execute_impl(sop_graph, _start_node, initial_ctx, event_tx, tool_executor, supervisor, micro_reflector).await
+            executor
+                .execute_impl(
+                    sop_graph,
+                    _start_node,
+                    initial_ctx,
+                    event_tx,
+                    tool_executor,
+                    supervisor,
+                    micro_reflector,
+                )
+                .await
         })
     }
 
@@ -81,8 +90,10 @@ impl Executor {
         ctx: Arc<ExecutionContext>,
         micro_reflector: Option<Arc<dyn sisyphus_types::MicroReflector>>,
     ) {
-        let Some(ref reflector) = micro_reflector else { return };
-        
+        let Some(ref reflector) = micro_reflector else {
+            return;
+        };
+
         for edge in sop_graph.graph.edges(node) {
             let target = edge.target();
             if let Some(node_ref) = sop_graph.graph.node_weight(target) {
@@ -90,7 +101,7 @@ impl Executor {
                 let reflector_clone = Arc::clone(reflector);
                 let ctx_clone = Arc::clone(&ctx);
                 let cache_clone = Arc::clone(&self.prediction_cache);
-                
+
                 tokio::spawn(async move {
                     if let Ok(pred) = reflector_clone.predict(&name, &ctx_clone).await {
                         cache_clone.insert(name, pred);
@@ -101,6 +112,7 @@ impl Executor {
     }
 
     /// Internal implementation of the DAG execution logic.
+    #[allow(clippy::too_many_arguments)]
     async fn execute_impl(
         self: Arc<Self>,
         sop_graph: Arc<SOPGraph>,
@@ -118,16 +130,21 @@ impl Executor {
         let _enter = span.enter();
 
         let start = Instant::now();
-        
+
         // Optimization: Skip redundant cycle detection if already validated
-        if !sop_graph.is_validated.load(std::sync::atomic::Ordering::SeqCst) {
+        if !sop_graph
+            .is_validated
+            .load(std::sync::atomic::Ordering::SeqCst)
+        {
             if toposort(&sop_graph.graph, None).is_err() {
                 tracing::error!("SOPGraph contains cycles");
                 return Err(CoreError::CycleDetected);
             }
-            sop_graph.is_validated.store(true, std::sync::atomic::Ordering::SeqCst);
+            sop_graph
+                .is_validated
+                .store(true, std::sync::atomic::Ordering::SeqCst);
         }
-        
+
         let ctx = initial_ctx.unwrap_or_else(|| Arc::new(ExecutionContext::new()));
 
         let mut join_set = JoinSet::new();
@@ -162,7 +179,7 @@ impl Executor {
                 let sem = Arc::clone(&self.concurrency_limit);
                 let exec_self = Arc::clone(&self);
                 let micro_ref = micro_reflector.clone();
-                
+
                 join_set.spawn(async move {
                     let name = node_ref.name().to_string();
                     let node_span = tracing::info_span!("executor.node", node = %name);
@@ -171,13 +188,13 @@ impl Executor {
                     let start_time = Instant::now();
                     let result = async {
                         let _permit = sem.acquire().await.map_err(|e| sisyphus_types::TypesError::NodeExecutionError(format!("Semaphore acquire failed: {e}")))?;
-                        
-                        if let Some(ref tx) = tx.as_ref() {
+
+                        if let Some(tx) = tx.as_ref() {
                             if let Err(e) = tx.send(ExecutionEvent::NodeStarted { node_name: name.clone() }) {
                                 tracing::warn!(node = %name, error = %e, "Failed to send NodeStarted event");
                             }
                         }
-                        
+
                         exec_self.execute_node_cognitively(
                             node_ref.clone(),
                             ctx_ref.clone(),
@@ -236,16 +253,25 @@ impl Executor {
                 }
             };
             ctx.set_result(name.clone(), output.clone());
-            
-            self.trigger_speculative_predictions(node, Arc::clone(&sop_graph), Arc::clone(&ctx), micro_reflector.clone()).await;
-            
+
+            self.trigger_speculative_predictions(
+                node,
+                Arc::clone(&sop_graph),
+                Arc::clone(&ctx),
+                micro_reflector.clone(),
+            )
+            .await;
+
             if let Some(ref sup) = supervisor {
                 match sup.evaluate(&name, &output, Arc::clone(&ctx)).await {
                     Ok(SupervisorDecision::Continue { deviation }) => {
                         tracing::debug!(node = %name, deviation, "Supervisor approved execution to continue");
                         ctx.push_trace_point(sisyphus_types::TracePoint {
                             node_name: name.clone(),
-                            timestamp: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs(),
+                            timestamp: std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .unwrap_or_default()
+                                .as_secs(),
                             output_summary: output.to_string(),
                             deviation_score: deviation,
                         });
@@ -254,7 +280,10 @@ impl Executor {
                         tracing::warn!(node = %name, reason = %reason, "Strategic Pivot detected by supervisor! Aborting all nodes.");
                         ctx.push_trace_point(sisyphus_types::TracePoint {
                             node_name: name.clone(),
-                            timestamp: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs(),
+                            timestamp: std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .unwrap_or_default()
+                                .as_secs(),
                             output_summary: format!("PIVOT: {}", reason),
                             deviation_score: 1.0, // Maximum deviation
                         });
@@ -266,7 +295,7 @@ impl Executor {
                     }
                 }
             }
-            
+
             if name.starts_with("Rigorous-") {
                 let section_id = name.replace("Rigorous-", "notepad.").to_lowercase();
                 ctx.write_notepad(section_id, output.to_string());
@@ -275,7 +304,10 @@ impl Executor {
             tracing::debug!(node = %name, "Node result stored");
 
             let chosen_target = if let Some(node_weight) = sop_graph.graph.node_weight(node) {
-                if let Some(_branch_node) = node_weight.as_any().downcast_ref::<sisyphus_types::BranchSOPNode>() {
+                if let Some(_branch_node) = node_weight
+                    .as_any()
+                    .downcast_ref::<sisyphus_types::BranchSOPNode>()
+                {
                     output.as_f64().map(|idx| NodeIndex::new(idx as usize))
                 } else {
                     None
@@ -286,7 +318,7 @@ impl Executor {
 
             for edge in sop_graph.graph.edges(node) {
                 let target = edge.target();
-                
+
                 if let Some(chosen) = chosen_target {
                     if target != chosen {
                         if let Some(degree) = in_degree.get_mut(&target) {
@@ -299,7 +331,8 @@ impl Executor {
                 if let Some(degree) = in_degree.get_mut(&target) {
                     *degree -= 1;
                     if *degree == 0 {
-                        let Some(node_ref) = sop_graph.graph.node_weight(target).map(Arc::clone) else {
+                        let Some(node_ref) = sop_graph.graph.node_weight(target).map(Arc::clone)
+                        else {
                             tracing::error!(node_idx = ?target, "Target node not found in graph after edge traversal");
                             continue;
                         };
@@ -318,13 +351,13 @@ impl Executor {
                             let start_time = Instant::now();
                             let result = async {
                                 let _permit = sem.acquire().await.map_err(|e| sisyphus_types::TypesError::NodeExecutionError(format!("Semaphore acquire failed: {e}")))?;
-                                
-                                if let Some(ref tx) = tx.as_ref() {
+
+                                if let Some(tx) = tx.as_ref() {
                                     if let Err(e) = tx.send(ExecutionEvent::NodeStarted { node_name: name.clone() }) {
                                         tracing::warn!(node = %name, error = %e, "Failed to send NodeStarted event");
                                     }
                                 }
-                                
+
                                 exec_self.execute_node_cognitively(
                                     node_ref.clone(),
                                     ctx_ref.clone(),
@@ -401,86 +434,116 @@ impl Executor {
         } else {
             None
         };
-        let output = if let Some(subgraph_node) = node_ref.as_any().downcast_ref::<sisyphus_types::SubGraphSOPNode>() {
-            let config_key = serde_json::to_string(&subgraph_node.config)
-                .map_err(|e| sisyphus_types::TypesError::NodeExecutionError(format!("Config serialization failed: {e}")))?;
+        let output = if let Some(subgraph_node) = node_ref
+            .as_any()
+            .downcast_ref::<sisyphus_types::SubGraphSOPNode>()
+        {
+            let config_key = serde_json::to_string(&subgraph_node.config).map_err(|e| {
+                sisyphus_types::TypesError::NodeExecutionError(format!(
+                    "Config serialization failed: {e}"
+                ))
+            })?;
             let subgraph = if let Some(cached) = self.graph_cache.get(&config_key) {
                 cached.clone()
             } else {
-                let g = sisyphus_types::SOPGraph::from_config(&subgraph_node.config, tool_executor.clone(), self.test_executor.clone())
-                    .map_err(|e| sisyphus_types::TypesError::GraphError(e.to_string()))?;
+                let g = sisyphus_types::SOPGraph::from_config(
+                    &subgraph_node.config,
+                    tool_executor.clone(),
+                    self.test_executor.clone(),
+                )
+                .map_err(|e| sisyphus_types::TypesError::GraphError(e.to_string()))?;
                 self.graph_cache.insert(config_key, g.clone());
                 g
             };
-            let sub_ctx = self.execute_with_context(
-                subgraph,
-                petgraph::graph::NodeIndex::new(0),
-                Some(ctx.clone()),
-                event_tx.clone(),
-                tool_executor.clone(),
-                None,
-                micro_reflector.clone(),
-                self.visual_manager.clone(),
-            ).await.map_err(|e| sisyphus_types::TypesError::NodeExecutionError(e.to_string()))?;
+            let sub_ctx = self
+                .execute_with_context(
+                    subgraph,
+                    petgraph::graph::NodeIndex::new(0),
+                    Some(ctx.clone()),
+                    event_tx.clone(),
+                    tool_executor.clone(),
+                    None,
+                    micro_reflector.clone(),
+                    self.visual_manager.clone(),
+                )
+                .await
+                .map_err(|e| sisyphus_types::TypesError::NodeExecutionError(e.to_string()))?;
             sub_ctx.last_output().ok_or_else(|| {
-                sisyphus_types::TypesError::NodeExecutionError("Sub-graph completed without producing a final output".into())
+                sisyphus_types::TypesError::NodeExecutionError(
+                    "Sub-graph completed without producing a final output".into(),
+                )
             })
         } else {
             node_ref.execute(&ctx).await
         };
 
-            let mut final_output = output?;
+        let mut final_output = output?;
 
-            // --- Visual Perception Interception ---
-            if let Value::String(s) = final_output.0.clone() {
-                if s.starts_with("VISUAL_EXEC_REQUIRED:") {
-                    let node_name = &s["VISUAL_EXEC_REQUIRED:".len()..];
-                    if let Some(ref v_manager) = self.visual_manager {
-                        tracing::info!(node = %node_name, "Intercepted visual execution request");
-                        
-                        // Extract Image Data from Context
-                        let image_data = ctx.get_result("current_screenshot")
-                            .and_then(|o| o.0.as_str().map(|s| s.as_bytes().to_vec()))
-                            .unwrap_or_default();
-                            
-                        // Use VisualSOPNode's kind to drive VLM
-                        if let Some(visual_node) = node_ref.as_any().downcast_ref::<sisyphus_types::VisualSOPNode>() {
-                            let visual_result = v_manager.process_visual_node(&visual_node.kind, &image_data).await
-                                .map_err(|e| sisyphus_types::TypesError::NodeExecutionError(e.to_string()))?;
-                            final_output = NodeOutput::from(Value::String(visual_result));
-                        }
+        // --- Visual Perception Interception ---
+        if let Value::String(s) = final_output.0.clone() {
+            if let Some(node_name) = s.strip_prefix("VISUAL_EXEC_REQUIRED:") {
+                if let Some(ref v_manager) = self.visual_manager {
+                    tracing::info!(node = %node_name, "Intercepted visual execution request");
+
+                    // Extract Image Data from Context
+                    let image_data = ctx
+                        .get_result("current_screenshot")
+                        .and_then(|o| o.0.as_str().map(|s| s.as_bytes().to_vec()))
+                        .unwrap_or_default();
+
+                    // Use VisualSOPNode's kind to drive VLM
+                    if let Some(visual_node) = node_ref
+                        .as_any()
+                        .downcast_ref::<sisyphus_types::VisualSOPNode>()
+                    {
+                        let visual_result = v_manager
+                            .process_visual_node(&visual_node.kind, &image_data)
+                            .await
+                            .map_err(|e| {
+                                sisyphus_types::TypesError::NodeExecutionError(e.to_string())
+                            })?;
+                        final_output = NodeOutput::from(Value::String(visual_result));
                     }
-                } else if s.starts_with("HUMAN_INTERVENTION_REQUIRED:") {
-                    let node_name = &s["HUMAN_INTERVENTION_REQUIRED:".len()..];
-                    tracing::info!(node = %node_name, "Intercepted human intervention request");
-                    
-                    // Find the node config to get the prompt
-                    if let Some(interv_node) = node_ref.as_any().downcast_ref::<sisyphus_types::HumanInterventionSOPNode>() {
-                        let feedback = self.intervention_manager.request_feedback(
+                }
+            } else if let Some(node_name) = s.strip_prefix("HUMAN_INTERVENTION_REQUIRED:") {
+                tracing::info!(node = %node_name, "Intercepted human intervention request");
+
+                // Find the node config to get the prompt
+                if let Some(interv_node) = node_ref
+                    .as_any()
+                    .downcast_ref::<sisyphus_types::HumanInterventionSOPNode>()
+                {
+                    let feedback = self
+                        .intervention_manager
+                        .request_feedback(
                             node_name.to_string(),
                             interv_node.prompt.clone(),
                             format!("{:?}", ctx),
-                            std::time::Duration::from_secs(interv_node.timeout_secs)
-                        ).await.map_err(|e| sisyphus_types::TypesError::NodeExecutionError(e.to_string()))?;
-                        
-                        final_output = NodeOutput::from(Value::String(feedback.correction.clone()));
+                            std::time::Duration::from_secs(interv_node.timeout_secs),
+                        )
+                        .await
+                        .map_err(|e| {
+                            sisyphus_types::TypesError::NodeExecutionError(e.to_string())
+                        })?;
 
-                        // --- Trigger Cognitive Internalization ---
-                        let int_manager = Arc::clone(&self.internalization_manager);
-                        let int_req = crate::internalization_manager::InternalizationRequest {
-                            node_id: s["HUMAN_INTERVENTION_REQUIRED:".len()..].to_string(),
-                            prompt: interv_node.prompt.clone(),
-                            context: format!("{:?}", ctx),
-                            correction: feedback.correction,
-                        };
-                        tokio::spawn(async move {
-                            if let Err(e) = int_manager.internalize_feedback(int_req).await {
-                                tracing::error!(error = %e, "Cognitive internalization failed for node {}", s);
-                            }
-                        });
-                    }
+                    final_output = NodeOutput::from(Value::String(feedback.correction.clone()));
+
+                    // --- Trigger Cognitive Internalization ---
+                    let int_manager = Arc::clone(&self.internalization_manager);
+                    let int_req = crate::internalization_manager::InternalizationRequest {
+                        node_id: node_name.to_string(),
+                        prompt: interv_node.prompt.clone(),
+                        context: format!("{:?}", ctx),
+                        correction: feedback.correction,
+                    };
+                    tokio::spawn(async move {
+                        if let Err(e) = int_manager.internalize_feedback(int_req).await {
+                            tracing::error!(error = %e, "Cognitive internalization failed for node {}", s);
+                        }
+                    });
                 }
             }
+        }
 
         if let (Some(ref reflector), Some(pred)) = (&micro_reflector, prediction) {
             if node_ref.reflection_priority() == sisyphus_types::ReflectionPriority::None {
@@ -531,7 +594,10 @@ impl Executor {
                             reason: Some(reason.clone()),
                         });
                     }
-                    return Err(sisyphus_types::TypesError::NodeExecutionError(format!("PIVOT: {}", reason)));
+                    return Err(sisyphus_types::TypesError::NodeExecutionError(format!(
+                        "PIVOT: {}",
+                        reason
+                    )));
                 }
                 Err(e) => {
                     tracing::error!(node = %node_name, error = %e, "Micro-reflection failed");
@@ -547,6 +613,16 @@ impl Executor {
         start_node: NodeIndex,
         tool_executor: Arc<dyn sisyphus_types::ToolExecutor>,
     ) -> Result<Arc<ExecutionContext>, CoreError> {
-        self.execute_with_context(sop_graph, start_node, None, None, tool_executor, None, None, None).await
+        self.execute_with_context(
+            sop_graph,
+            start_node,
+            None,
+            None,
+            tool_executor,
+            None,
+            None,
+            None,
+        )
+        .await
     }
 }

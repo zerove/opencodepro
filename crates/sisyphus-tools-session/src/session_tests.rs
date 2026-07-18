@@ -342,12 +342,30 @@ fn test_session_export_html_creates_valid_output() {
     assert!(html_path.exists(), "HTML file should exist");
 
     let content = std::fs::read_to_string(&html_path).unwrap();
-    assert!(content.starts_with("<!DOCTYPE html>"), "should be valid HTML");
-    assert!(content.contains("Session: html test"), "should contain session name");
-    assert!(content.contains("hello world"), "should contain user message");
-    assert!(content.contains("hi there"), "should contain assistant message");
-    assert!(content.contains("&lt;script&gt;"), "should escape HTML in content (XSS)");
-    assert!(content.contains("3 messages"), "should show message count in stats");
+    assert!(
+        content.starts_with("<!DOCTYPE html>"),
+        "should be valid HTML"
+    );
+    assert!(
+        content.contains("Session: html test"),
+        "should contain session name"
+    );
+    assert!(
+        content.contains("hello world"),
+        "should contain user message"
+    );
+    assert!(
+        content.contains("hi there"),
+        "should contain assistant message"
+    );
+    assert!(
+        content.contains("&lt;script&gt;"),
+        "should escape HTML in content (XSS)"
+    );
+    assert!(
+        content.contains("3 messages"),
+        "should show message count in stats"
+    );
 }
 
 #[test]

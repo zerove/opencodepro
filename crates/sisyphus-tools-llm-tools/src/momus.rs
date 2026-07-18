@@ -73,7 +73,11 @@ mod tests {
 - Write integration tests for auth flow
 ";
         let review = review_plan(&DUMMY, text, "Auth Implementation").await;
-        assert!(review.passed, "clean plan should pass: {:?}", review.comments);
+        assert!(
+            review.passed,
+            "clean plan should pass: {:?}",
+            review.comments
+        );
     }
 
     #[tokio::test]

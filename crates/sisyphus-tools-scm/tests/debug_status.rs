@@ -6,9 +6,9 @@ use tempfile::tempdir;
 fn test_git_status_behavior() {
     let dir = tempdir().expect("failed to create temp dir");
     let root = dir.path();
-    
+
     git::init(root).expect("git init failed");
-    
+
     let git_args = |args: &[&str]| {
         std::process::Command::new("git")
             .args(args)
@@ -21,22 +21,22 @@ fn test_git_status_behavior() {
 
     let file_path = root.join("test.txt");
     fs::write(&file_path, "hello").expect("write failed");
-    
+
     // 1. Untracked
     let s1 = git::status(Some(root)).expect("status failed");
     assert!(!s1.untracked.is_empty());
-    
+
     // 2. Staged
     git::add(&["."], Some(root)).expect("add failed");
     let s2 = git::status(Some(root)).expect("status failed");
     assert!(!s2.staged.is_empty());
-    
+
     // 3. Committed
     git::commit("init", false, Some(root)).expect("commit failed");
     let s3 = git::status(Some(root)).expect("status failed");
     assert!(s3.staged.is_empty());
     assert!(s3.unstaged.is_empty());
-    
+
     // 4. Modified (Unstaged)
     fs::write(&file_path, "hello world").expect("write failed");
     let s4 = git::status(Some(root)).expect("status failed");

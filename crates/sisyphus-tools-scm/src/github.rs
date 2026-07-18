@@ -225,7 +225,13 @@ jobs:
 /// Returns the URL of the posted comment on success.
 pub fn post_pr_comment(pr_number: u64, review_text: &str) -> ToolResult<String> {
     let output = std::process::Command::new("gh")
-        .args(["pr", "comment", &pr_number.to_string(), "--body", review_text])
+        .args([
+            "pr",
+            "comment",
+            &pr_number.to_string(),
+            "--body",
+            review_text,
+        ])
         .output()
         .map_err(|e| ToolError::Generic(format!("Failed to run gh: {e}")))?;
 
@@ -267,16 +273,18 @@ pub fn validate_workflow_yaml(yaml: &str) -> ToolResult<()> {
         ));
     }
 
-    serde_yaml::from_str::<serde_yaml::Value>(yaml).map_err(|e| {
-        ToolError::Generic(format!("Workflow YAML parse error: {e}"))
-    })?;
+    serde_yaml::from_str::<serde_yaml::Value>(yaml)
+        .map_err(|e| ToolError::Generic(format!("Workflow YAML parse error: {e}")))?;
 
     Ok(())
 }
 
 /// Write a generated workflow to `.github/workflows/<name>.yml`.
 /// Creates the directory if it doesn't exist.
-pub fn write_workflow(kind: WorkflowKind, opts: &GenerateOptions) -> ToolResult<std::path::PathBuf> {
+pub fn write_workflow(
+    kind: WorkflowKind,
+    opts: &GenerateOptions,
+) -> ToolResult<std::path::PathBuf> {
     let workflow_dir = std::path::Path::new(".github/workflows");
     if !workflow_dir.exists() {
         std::fs::create_dir_all(workflow_dir)?;
@@ -332,7 +340,10 @@ mod tests {
 
     #[test]
     fn test_is_ci_detection() {
-        assert_eq!(is_ci(), std::env::var("CI").is_ok() || std::env::var("GITHUB_ACTIONS").is_ok());
+        assert_eq!(
+            is_ci(),
+            std::env::var("CI").is_ok() || std::env::var("GITHUB_ACTIONS").is_ok()
+        );
     }
 
     #[test]
@@ -389,7 +400,10 @@ mod tests {
             Ok(url) => println!("gh CLI available, comment URL: {url}"),
             Err(e) => {
                 let msg = e.to_string();
-                assert!(msg.contains("gh") || msg.contains("Failed to run"), "Expected error about gh CLI, got: {msg}");
+                assert!(
+                    msg.contains("gh") || msg.contains("Failed to run"),
+                    "Expected error about gh CLI, got: {msg}"
+                );
             }
         }
     }

@@ -33,8 +33,7 @@ fn test_parse_test_results_with_failures() {
 
 #[test]
 fn test_parse_test_results_with_ignored() {
-    let stdout =
-        "test result: ok. 512 passed; 0 failed; 4 ignored; 0 measured; 0 filtered out\n";
+    let stdout = "test result: ok. 512 passed; 0 failed; 4 ignored; 0 measured; 0 filtered out\n";
     let r = parse_test_results(stdout, "");
     assert_eq!(r.passed, 512);
     assert_eq!(r.failed, 0);

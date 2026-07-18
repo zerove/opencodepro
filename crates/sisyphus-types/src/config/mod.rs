@@ -91,8 +91,9 @@ impl Default for Config {
 impl Config {
     /// Save configuration to a TOML file.
     pub fn save_to_file(&self, path: &str) -> Result<(), TypesError> {
-        let content = toml::to_string_pretty(self)
-            .map_err(|e| TypesError::StateStoreError(format!("Config serialization failed: {e}")))?;
+        let content = toml::to_string_pretty(self).map_err(|e| {
+            TypesError::StateStoreError(format!("Config serialization failed: {e}"))
+        })?;
         if let Some(parent) = std::path::Path::new(path).parent() {
             std::fs::create_dir_all(parent).map_err(|source| TypesError::ConfigReadError {
                 path: path.into(),
@@ -107,10 +108,15 @@ impl Config {
 
     /// Load configuration from a TOML file.
     pub fn from_file(path: &str) -> Result<Self, TypesError> {
-        let content = std::fs::read_to_string(path)
-            .map_err(|source| TypesError::ConfigReadError { path: path.into(), source })?;
-        toml::from_str(&content)
-            .map_err(|source| TypesError::ConfigParseError { path: path.into(), source })
+        let content =
+            std::fs::read_to_string(path).map_err(|source| TypesError::ConfigReadError {
+                path: path.into(),
+                source,
+            })?;
+        toml::from_str(&content).map_err(|source| TypesError::ConfigParseError {
+            path: path.into(),
+            source,
+        })
     }
 
     /// Load configuration from environment variables, overriding file/default values.
@@ -200,7 +206,9 @@ impl Config {
     }
 
     fn validate_address(&self, addr: &str, field: &str) -> Result<(), TypesError> {
-        let stripped = addr.strip_prefix("http://").or_else(|| addr.strip_prefix("https://"));
+        let stripped = addr
+            .strip_prefix("http://")
+            .or_else(|| addr.strip_prefix("https://"));
         match stripped {
             None => Err(TypesError::ConfigValidationError(format!(
                 "{field}: \"{addr}\" must start with http:// or https://"

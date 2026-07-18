@@ -2,12 +2,12 @@
 //! Replaces the `sisyphus-tools` facade crate with direct sub-crate paths.
 
 // ── Foundation types from sisyphus-tools-core ───────────────────────
-pub use sisyphus_tools_core::{ToolError, ToolResult, Permission, PermissionRules};
 pub use sisyphus_tools_core::feedback::{Feedback, FeedbackStore};
 pub use sisyphus_tools_core::hook::{
-    AfterHookResult, BeforeHookResult, HookDef, HookEffect, HookPhase, HookRegistry,
-    execute_with_hooks, hooks_from_skill,
+    execute_with_hooks, hooks_from_skill, AfterHookResult, BeforeHookResult, HookDef, HookEffect,
+    HookPhase, HookRegistry,
 };
+pub use sisyphus_tools_core::{Permission, PermissionRules, ToolError, ToolResult};
 
 // ── SCM tools ───────────────────────────────────────────────────────
 pub mod hashline {
@@ -19,16 +19,16 @@ pub mod git {
     pub use sisyphus_tools_scm::git::*;
 }
 pub use git::{
-    BranchInfo, CommitEntry, FileStatus, GitCommitLog, GitStatus, add, branch, checkout, commit,
-    current_branch, diff, init, last_commit_diff, log, pull, push, status, summary,
+    add, branch, checkout, commit, current_branch, diff, init, last_commit_diff, log, pull, push,
+    status, summary, BranchInfo, CommitEntry, FileStatus, GitCommitLog, GitStatus,
 };
 
 pub mod github {
     pub use sisyphus_tools_scm::github::*;
 }
 pub use sisyphus_tools_scm::github::{
-    CiConfig, GenerateOptions, WorkflowKind, ci_environment, generate_workflow, is_ci,
-    post_pr_comment, validate_workflow_yaml, write_workflow,
+    ci_environment, generate_workflow, is_ci, post_pr_comment, validate_workflow_yaml,
+    write_workflow, CiConfig, GenerateOptions, WorkflowKind,
 };
 
 pub mod patch {
@@ -51,7 +51,7 @@ pub mod provider {
     pub use sisyphus_tools_llm::provider::*;
 }
 pub use sisyphus_tools_llm::provider::{
-    AnthropicProvider, build_provider_registry, ChatMessage, ChatRole, GoogleGeminiProvider,
+    build_provider_registry, AnthropicProvider, ChatMessage, ChatRole, GoogleGeminiProvider,
     LlmProvider, OpenAiCompatibleProvider, ProviderError, ProviderRegistry, ProviderResponse,
     RetryConfig,
 };
@@ -84,7 +84,7 @@ pub mod oracle {
     pub use sisyphus_tools_llm_tools::oracle::*;
 }
 pub use oracle::{
-    analyze_file, analyze_directory, code_review, CodeIssue, FileAnalysis, FunctionInfo,
+    analyze_directory, analyze_file, code_review, CodeIssue, FileAnalysis, FunctionInfo,
     IssueSeverity, ModuleSummary,
 };
 
@@ -106,8 +106,8 @@ pub mod momus {
     pub use sisyphus_tools_llm_tools::momus::*;
 }
 pub use momus::{
-    review_architecture, review_code, review_code_batch, review_plan, MomusReview,
-    ReviewComment, ReviewSeverity, ReviewType,
+    review_architecture, review_code, review_code_batch, review_plan, MomusReview, ReviewComment,
+    ReviewSeverity, ReviewType,
 };
 
 pub mod meta_learner {
@@ -157,16 +157,14 @@ pub use agent_registry::*;
 pub mod delegate {
     pub use sisyphus_tools_agent::delegate::*;
 }
-pub use delegate::{
-    DelegateEvent, WorkOrchestrator, WorkReport, WorkStatus, WorkUnit, work_unit,
-};
+pub use delegate::{work_unit, DelegateEvent, WorkOrchestrator, WorkReport, WorkStatus, WorkUnit};
 
 pub mod developer {
     pub use sisyphus_tools_agent::developer::*;
 }
 pub use developer::{
-    DevAction, DevCheckpoint, DevOverallStatus, DevStep, DevelopmentPlan, DevelopmentReport,
-    Developer, StepResult, StepStatus, VerificationMethod, format_report,
+    format_report, DevAction, DevCheckpoint, DevOverallStatus, DevStep, Developer, DevelopmentPlan,
+    DevelopmentReport, StepResult, StepStatus, VerificationMethod,
 };
 
 pub mod project_rules {
@@ -199,7 +197,7 @@ pub mod explore {
     pub use sisyphus_tools_system::explore::*;
 }
 pub use explore::{
-    ExploreMatch, ExploreResult, FileContext, find_files, gather_context, search_patterns,
+    find_files, gather_context, search_patterns, ExploreMatch, ExploreResult, FileContext,
 };
 
 pub mod web {
@@ -236,27 +234,27 @@ pub mod plan {
     pub use sisyphus_tools_session::plan::*;
 }
 pub use plan::{
-    Plan, PlanStatus, PlanStep, plan_approve, plan_cancel, plan_create, plan_from_requirements,
-    plan_load, plan_review, plan_save,
+    plan_approve, plan_cancel, plan_create, plan_from_requirements, plan_load, plan_review,
+    plan_save, Plan, PlanStatus, PlanStep,
 };
 
 pub mod precommit {
     pub use sisyphus_tools_session::precommit::*;
 }
 pub use precommit::{
-    PrecommitConfig, has_precommit, install_precommit, is_sisyphus_hook, read_precommit,
-    uninstall_precommit,
+    has_precommit, install_precommit, is_sisyphus_hook, read_precommit, uninstall_precommit,
+    PrecommitConfig,
 };
 
 pub mod session {
     pub use sisyphus_tools_session::session::*;
 }
 pub use session::{
-    CompressStrategy, Message, Session, SessionCheckpoint,
     session_add_message, session_clear_checkpoint, session_compress, session_continue,
     session_create, session_delete, session_estimate_token_count, session_export,
     session_export_html, session_fork, session_get, session_import, session_list,
     session_load_checkpoint, session_rename, session_save_checkpoint, session_undo,
+    CompressStrategy, Message, Session, SessionCheckpoint,
 };
 
 pub mod skill {
@@ -296,5 +294,3 @@ pub mod executor_mcp {
     pub use sisyphus_tools_executor::executor_mcp::*;
 }
 pub use executor_mcp::*;
-
-

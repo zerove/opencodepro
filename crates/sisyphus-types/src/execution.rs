@@ -1,21 +1,34 @@
-use std::collections::HashMap;
 use async_trait::async_trait;
 use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
 use crate::errors::TypesError;
 
 #[async_trait]
 pub trait StateStore: Send + Sync {
-    async fn get_state_json(&self, project_id: &str, key: &str) -> Result<Option<serde_json::Value>, TypesError>;
-    async fn set_state_json(&self, project_id: &str, key: &str, value: serde_json::Value) -> Result<(), TypesError>;
+    async fn get_state_json(
+        &self,
+        project_id: &str,
+        key: &str,
+    ) -> Result<Option<serde_json::Value>, TypesError>;
+    async fn set_state_json(
+        &self,
+        project_id: &str,
+        key: &str,
+        value: serde_json::Value,
+    ) -> Result<(), TypesError>;
 
     async fn get(&self, project_id: &str, key: &str) -> Result<Option<Vec<u8>>, TypesError>;
     async fn set(&self, project_id: &str, key: &str, value: &[u8]) -> Result<(), TypesError>;
 
-    async fn get_traces_for_sop(&self, project_id: &str, sop_id: &str) -> Result<Vec<(String, String, String, i64, i64)>, TypesError>;
+    async fn get_traces_for_sop(
+        &self,
+        project_id: &str,
+        sop_id: &str,
+    ) -> Result<Vec<(String, String, String, i64, i64)>, TypesError>;
 }
 
 /// Strongly-typed wrapper around `serde_json::Value` for SOP node outputs.
@@ -56,7 +69,9 @@ impl std::fmt::Display for NodeOutput {
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub enum SupervisorDecision {
-    Continue { deviation: f64 },
+    Continue {
+        deviation: f64,
+    },
     Pivot {
         reason: String,
         suggested_correction: Option<crate::graph::SOPGraphConfig>,
@@ -356,7 +371,12 @@ impl ExecutionContext {
         }
     }
 
-    pub fn export_trace(&self, sop_id: String, iteration: usize, final_decision: SupervisorDecision) -> ExecutionTrace {
+    pub fn export_trace(
+        &self,
+        sop_id: String,
+        iteration: usize,
+        final_decision: SupervisorDecision,
+    ) -> ExecutionTrace {
         let points = self.trace.read().map(|p| p.clone()).unwrap_or_default();
         ExecutionTrace {
             sop_id,

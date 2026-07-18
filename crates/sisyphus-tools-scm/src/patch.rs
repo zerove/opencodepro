@@ -44,11 +44,9 @@ pub fn apply_patch(path: &Path, patch_content: &str) -> ToolResult<Vec<String>> 
         ));
     }
 
-    let content = std::fs::read_to_string(path)
-        .map_err(sisyphus_tools_core::ToolError::Io)?;
+    let content = std::fs::read_to_string(path).map_err(sisyphus_tools_core::ToolError::Io)?;
     let result = apply_hunks(&content, &hunks)?;
-    std::fs::write(path, &result)
-        .map_err(sisyphus_tools_core::ToolError::Io)?;
+    std::fs::write(path, &result).map_err(sisyphus_tools_core::ToolError::Io)?;
     modified.push(path.to_string_lossy().to_string());
 
     Ok(modified)

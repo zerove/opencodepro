@@ -12,8 +12,12 @@ async fn setup_manager() -> RoadmapManager {
             .await
             .expect("Failed to create in-memory sql store"),
     );
-    sql_store.init_schema().await.expect("Failed to init schema");
-    let proposal_manager = std::sync::Arc::new(crate::proposal_manager::ProposalManager::new(store.clone()));
+    sql_store
+        .init_schema()
+        .await
+        .expect("Failed to init schema");
+    let proposal_manager =
+        std::sync::Arc::new(crate::proposal_manager::ProposalManager::new(store.clone()));
     RoadmapManager::new(store, sql_store, proposal_manager)
 }
 
@@ -55,10 +59,7 @@ async fn test_list_projects() {
 #[tokio::test]
 async fn test_duplicate_project_rejected() {
     let manager = setup_manager().await;
-    manager
-        .create_project("dup", "Original", "")
-        .await
-        .unwrap();
+    manager.create_project("dup", "Original", "").await.unwrap();
     let err = manager
         .create_project("dup", "Duplicate", "")
         .await
@@ -89,11 +90,13 @@ async fn test_add_and_update_milestone() {
         .await
         .unwrap();
 
-    let milestone = Milestone { id: "ms-1".into(), name: "First Milestone".into(), phases: Vec::new(), status: MilestoneStatus::Pending };
-    manager
-        .add_milestone("ms-test", milestone)
-        .await
-        .unwrap();
+    let milestone = Milestone {
+        id: "ms-1".into(),
+        name: "First Milestone".into(),
+        phases: Vec::new(),
+        status: MilestoneStatus::Pending,
+    };
+    manager.add_milestone("ms-test", milestone).await.unwrap();
 
     manager
         .update_milestone_status("ms-test", "ms-1", MilestoneStatus::InProgress)
@@ -118,7 +121,12 @@ async fn test_remove_milestone() {
     manager
         .add_milestone(
             "rm-ms",
-            Milestone { id: "ms-1".into(), name: "To Remove".into(), phases: Vec::new(), status: MilestoneStatus::Pending },
+            Milestone {
+                id: "ms-1".into(),
+                name: "To Remove".into(),
+                phases: Vec::new(),
+                status: MilestoneStatus::Pending,
+            },
         )
         .await
         .unwrap();
@@ -137,7 +145,12 @@ async fn test_add_and_update_goal() {
     manager
         .add_milestone(
             "goal-test",
-            Milestone { id: "ms-1".into(), name: "MS".into(), phases: Vec::new(), status: MilestoneStatus::Pending },
+            Milestone {
+                id: "ms-1".into(),
+                name: "MS".into(),
+                phases: Vec::new(),
+                status: MilestoneStatus::Pending,
+            },
         )
         .await
         .unwrap();
@@ -145,19 +158,34 @@ async fn test_add_and_update_goal() {
         .add_phase(
             "goal-test",
             "ms-1",
-            Phase { id: "ph-1".into(), name: "Phase 1".into(), goals: Vec::new(), depends_on: Vec::new() },
+            Phase {
+                id: "ph-1".into(),
+                name: "Phase 1".into(),
+                goals: Vec::new(),
+                depends_on: Vec::new(),
+            },
         )
         .await
         .unwrap();
 
-    let goal = GoalRef { goal_id: "g-1".into(), description: "First goal".into(), status: MilestoneStatus::Pending };
+    let goal = GoalRef {
+        goal_id: "g-1".into(),
+        description: "First goal".into(),
+        status: MilestoneStatus::Pending,
+    };
     manager
         .add_goal("goal-test", "ms-1", "ph-1", goal)
         .await
         .unwrap();
 
     manager
-        .update_goal_status("goal-test", "ms-1", "ph-1", "g-1", MilestoneStatus::Completed)
+        .update_goal_status(
+            "goal-test",
+            "ms-1",
+            "ph-1",
+            "g-1",
+            MilestoneStatus::Completed,
+        )
         .await
         .unwrap();
 
@@ -176,7 +204,12 @@ async fn test_calculate_progress() {
     manager
         .add_milestone(
             "progress",
-            Milestone { id: "ms-1".into(), name: "MS".into(), phases: Vec::new(), status: MilestoneStatus::Pending },
+            Milestone {
+                id: "ms-1".into(),
+                name: "MS".into(),
+                phases: Vec::new(),
+                status: MilestoneStatus::Pending,
+            },
         )
         .await
         .unwrap();
@@ -184,7 +217,12 @@ async fn test_calculate_progress() {
         .add_phase(
             "progress",
             "ms-1",
-            Phase { id: "ph-1".into(), name: "P1".into(), goals: Vec::new(), depends_on: Vec::new() },
+            Phase {
+                id: "ph-1".into(),
+                name: "P1".into(),
+                goals: Vec::new(),
+                depends_on: Vec::new(),
+            },
         )
         .await
         .unwrap();
@@ -193,7 +231,11 @@ async fn test_calculate_progress() {
             "progress",
             "ms-1",
             "ph-1",
-            GoalRef { goal_id: "g-1".into(), description: "Goal 1".into(), status: MilestoneStatus::Pending },
+            GoalRef {
+                goal_id: "g-1".into(),
+                description: "Goal 1".into(),
+                status: MilestoneStatus::Pending,
+            },
         )
         .await
         .unwrap();
@@ -202,7 +244,11 @@ async fn test_calculate_progress() {
             "progress",
             "ms-1",
             "ph-1",
-            GoalRef { goal_id: "g-2".into(), description: "Goal 2".into(), status: MilestoneStatus::Pending },
+            GoalRef {
+                goal_id: "g-2".into(),
+                description: "Goal 2".into(),
+                status: MilestoneStatus::Pending,
+            },
         )
         .await
         .unwrap();
@@ -211,7 +257,13 @@ async fn test_calculate_progress() {
     assert_eq!(pct, 0.0);
 
     manager
-        .update_goal_status("progress", "ms-1", "ph-1", "g-1", MilestoneStatus::Completed)
+        .update_goal_status(
+            "progress",
+            "ms-1",
+            "ph-1",
+            "g-1",
+            MilestoneStatus::Completed,
+        )
         .await
         .unwrap();
 
@@ -229,12 +281,26 @@ async fn test_progress_report() {
     manager
         .add_milestone(
             "report",
-            Milestone { id: "ms-1".into(), name: "MS1".into(), phases: Vec::new(), status: MilestoneStatus::Pending },
+            Milestone {
+                id: "ms-1".into(),
+                name: "MS1".into(),
+                phases: Vec::new(),
+                status: MilestoneStatus::Pending,
+            },
         )
         .await
         .unwrap();
     manager
-        .add_phase("report", "ms-1", Phase { id: "ph-1".into(), name: "P1".into(), goals: Vec::new(), depends_on: Vec::new() })
+        .add_phase(
+            "report",
+            "ms-1",
+            Phase {
+                id: "ph-1".into(),
+                name: "P1".into(),
+                goals: Vec::new(),
+                depends_on: Vec::new(),
+            },
+        )
         .await
         .unwrap();
     manager
@@ -242,7 +308,11 @@ async fn test_progress_report() {
             "report",
             "ms-1",
             "ph-1",
-            GoalRef { goal_id: "g-1".into(), description: "Goal 1".into(), status: MilestoneStatus::Pending },
+            GoalRef {
+                goal_id: "g-1".into(),
+                description: "Goal 1".into(),
+                status: MilestoneStatus::Pending,
+            },
         )
         .await
         .unwrap();
@@ -266,12 +336,26 @@ async fn test_project_context_synthesis() {
     manager
         .add_milestone(
             "ctx",
-            Milestone { id: "ms-1".into(), name: "MS1".into(), phases: Vec::new(), status: MilestoneStatus::Pending },
+            Milestone {
+                id: "ms-1".into(),
+                name: "MS1".into(),
+                phases: Vec::new(),
+                status: MilestoneStatus::Pending,
+            },
         )
         .await
         .unwrap();
     manager
-        .add_phase("ctx", "ms-1", Phase { id: "ph-1".into(), name: "P1".into(), goals: Vec::new(), depends_on: Vec::new() })
+        .add_phase(
+            "ctx",
+            "ms-1",
+            Phase {
+                id: "ph-1".into(),
+                name: "P1".into(),
+                goals: Vec::new(),
+                depends_on: Vec::new(),
+            },
+        )
         .await
         .unwrap();
     manager
@@ -279,7 +363,11 @@ async fn test_project_context_synthesis() {
             "ctx",
             "ms-1",
             "ph-1",
-            GoalRef { goal_id: "g-1".into(), description: "Goal 1".into(), status: MilestoneStatus::Pending },
+            GoalRef {
+                goal_id: "g-1".into(),
+                description: "Goal 1".into(),
+                status: MilestoneStatus::Pending,
+            },
         )
         .await
         .unwrap();
@@ -300,12 +388,26 @@ async fn test_goal_status_propagation() {
     manager
         .add_milestone(
             "prop",
-            Milestone { id: "ms-1".into(), name: "MS1".into(), phases: Vec::new(), status: MilestoneStatus::Pending },
+            Milestone {
+                id: "ms-1".into(),
+                name: "MS1".into(),
+                phases: Vec::new(),
+                status: MilestoneStatus::Pending,
+            },
         )
         .await
         .unwrap();
     manager
-        .add_phase("prop", "ms-1", Phase { id: "ph-1".into(), name: "P1".into(), goals: Vec::new(), depends_on: Vec::new() })
+        .add_phase(
+            "prop",
+            "ms-1",
+            Phase {
+                id: "ph-1".into(),
+                name: "P1".into(),
+                goals: Vec::new(),
+                depends_on: Vec::new(),
+            },
+        )
         .await
         .unwrap();
     manager
@@ -313,7 +415,11 @@ async fn test_goal_status_propagation() {
             "prop",
             "ms-1",
             "ph-1",
-            GoalRef { goal_id: "g-1".into(), description: "Goal 1".into(), status: MilestoneStatus::Pending },
+            GoalRef {
+                goal_id: "g-1".into(),
+                description: "Goal 1".into(),
+                status: MilestoneStatus::Pending,
+            },
         )
         .await
         .unwrap();
@@ -322,7 +428,11 @@ async fn test_goal_status_propagation() {
             "prop",
             "ms-1",
             "ph-1",
-            GoalRef { goal_id: "g-2".into(), description: "Goal 2".into(), status: MilestoneStatus::Pending },
+            GoalRef {
+                goal_id: "g-2".into(),
+                description: "Goal 2".into(),
+                status: MilestoneStatus::Pending,
+            },
         )
         .await
         .unwrap();
@@ -330,13 +440,21 @@ async fn test_goal_status_propagation() {
     // Complete all goals → milestone becomes Completed
     manager
         .update_goal_status_with_propagation(
-            "prop", "ms-1", "ph-1", "g-1", MilestoneStatus::Completed,
+            "prop",
+            "ms-1",
+            "ph-1",
+            "g-1",
+            MilestoneStatus::Completed,
         )
         .await
         .unwrap();
     manager
         .update_goal_status_with_propagation(
-            "prop", "ms-1", "ph-1", "g-2", MilestoneStatus::Completed,
+            "prop",
+            "ms-1",
+            "ph-1",
+            "g-2",
+            MilestoneStatus::Completed,
         )
         .await
         .unwrap();
@@ -358,12 +476,26 @@ async fn test_auto_propagate_all() {
     manager
         .add_milestone(
             "auto",
-            Milestone { id: "ms-1".into(), name: "MS1".into(), phases: Vec::new(), status: MilestoneStatus::Pending },
+            Milestone {
+                id: "ms-1".into(),
+                name: "MS1".into(),
+                phases: Vec::new(),
+                status: MilestoneStatus::Pending,
+            },
         )
         .await
         .unwrap();
     manager
-        .add_phase("auto", "ms-1", Phase { id: "ph-1".into(), name: "P1".into(), goals: Vec::new(), depends_on: Vec::new() })
+        .add_phase(
+            "auto",
+            "ms-1",
+            Phase {
+                id: "ph-1".into(),
+                name: "P1".into(),
+                goals: Vec::new(),
+                depends_on: Vec::new(),
+            },
+        )
         .await
         .unwrap();
     manager
@@ -371,7 +503,11 @@ async fn test_auto_propagate_all() {
             "auto",
             "ms-1",
             "ph-1",
-            GoalRef { goal_id: "g-1".into(), description: "Goal 1".into(), status: MilestoneStatus::Pending },
+            GoalRef {
+                goal_id: "g-1".into(),
+                description: "Goal 1".into(),
+                status: MilestoneStatus::Pending,
+            },
         )
         .await
         .unwrap();
@@ -380,7 +516,11 @@ async fn test_auto_propagate_all() {
             "auto",
             "ms-1",
             "ph-1",
-            GoalRef { goal_id: "g-2".into(), description: "Goal 2".into(), status: MilestoneStatus::Pending },
+            GoalRef {
+                goal_id: "g-2".into(),
+                description: "Goal 2".into(),
+                status: MilestoneStatus::Pending,
+            },
         )
         .await
         .unwrap();
@@ -411,7 +551,12 @@ async fn test_get_next_goal() {
     manager
         .add_milestone(
             "next-goal",
-            Milestone { id: "ms-1".into(), name: "MS1".into(), phases: Vec::new(), status: MilestoneStatus::Pending },
+            Milestone {
+                id: "ms-1".into(),
+                name: "MS1".into(),
+                phases: Vec::new(),
+                status: MilestoneStatus::Pending,
+            },
         )
         .await
         .unwrap();
@@ -419,7 +564,12 @@ async fn test_get_next_goal() {
         .add_phase(
             "next-goal",
             "ms-1",
-            Phase { id: "ph-1".into(), name: "P1".into(), goals: Vec::new(), depends_on: Vec::new() },
+            Phase {
+                id: "ph-1".into(),
+                name: "P1".into(),
+                goals: Vec::new(),
+                depends_on: Vec::new(),
+            },
         )
         .await
         .unwrap();
@@ -428,7 +578,11 @@ async fn test_get_next_goal() {
             "next-goal",
             "ms-1",
             "ph-1",
-            GoalRef { goal_id: "g-1".into(), description: "Goal 1".into(), status: MilestoneStatus::Pending },
+            GoalRef {
+                goal_id: "g-1".into(),
+                description: "Goal 1".into(),
+                status: MilestoneStatus::Pending,
+            },
         )
         .await
         .unwrap();
@@ -437,7 +591,11 @@ async fn test_get_next_goal() {
             "next-goal",
             "ms-1",
             "ph-1",
-            GoalRef { goal_id: "g-2".into(), description: "Goal 2".into(), status: MilestoneStatus::Pending },
+            GoalRef {
+                goal_id: "g-2".into(),
+                description: "Goal 2".into(),
+                status: MilestoneStatus::Pending,
+            },
         )
         .await
         .unwrap();
@@ -454,34 +612,50 @@ async fn test_get_next_goal() {
         .await
         .unwrap();
 
-    let next = manager
-        .get_next_goal("next-goal")
-        .await
-        .unwrap()
-        .unwrap();
+    let next = manager.get_next_goal("next-goal").await.unwrap().unwrap();
     assert_eq!(next.goal_id, "g-2");
 }
 
 #[tokio::test]
 async fn test_get_goal_context() {
     let manager = setup_manager().await;
-    manager
-        .create_project("gc", "Goal Ctx", "")
-        .await
-        .unwrap();
+    manager.create_project("gc", "Goal Ctx", "").await.unwrap();
     manager
         .add_milestone(
             "gc",
-            Milestone { id: "ms-1".into(), name: "MS1".into(), phases: Vec::new(), status: MilestoneStatus::Pending },
+            Milestone {
+                id: "ms-1".into(),
+                name: "MS1".into(),
+                phases: Vec::new(),
+                status: MilestoneStatus::Pending,
+            },
         )
         .await
         .unwrap();
     manager
-        .add_phase("gc", "ms-1", Phase { id: "ph-1".into(), name: "P1".into(), goals: Vec::new(), depends_on: Vec::new() })
+        .add_phase(
+            "gc",
+            "ms-1",
+            Phase {
+                id: "ph-1".into(),
+                name: "P1".into(),
+                goals: Vec::new(),
+                depends_on: Vec::new(),
+            },
+        )
         .await
         .unwrap();
     manager
-        .add_goal("gc", "ms-1", "ph-1", GoalRef { goal_id: "g-1".into(), description: "Goal 1".into(), status: MilestoneStatus::Pending })
+        .add_goal(
+            "gc",
+            "ms-1",
+            "ph-1",
+            GoalRef {
+                goal_id: "g-1".into(),
+                description: "Goal 1".into(),
+                status: MilestoneStatus::Pending,
+            },
+        )
         .await
         .unwrap();
 
@@ -492,23 +666,43 @@ async fn test_get_goal_context() {
 #[tokio::test]
 async fn test_predict_completion() {
     let manager = setup_manager().await;
-    manager
-        .create_project("pred", "Predict", "")
-        .await
-        .unwrap();
+    manager.create_project("pred", "Predict", "").await.unwrap();
     manager
         .add_milestone(
             "pred",
-            Milestone { id: "ms-1".into(), name: "MS1".into(), phases: Vec::new(), status: MilestoneStatus::Pending },
+            Milestone {
+                id: "ms-1".into(),
+                name: "MS1".into(),
+                phases: Vec::new(),
+                status: MilestoneStatus::Pending,
+            },
         )
         .await
         .unwrap();
     manager
-        .add_phase("pred", "ms-1", Phase { id: "ph-1".into(), name: "P1".into(), goals: Vec::new(), depends_on: Vec::new() })
+        .add_phase(
+            "pred",
+            "ms-1",
+            Phase {
+                id: "ph-1".into(),
+                name: "P1".into(),
+                goals: Vec::new(),
+                depends_on: Vec::new(),
+            },
+        )
         .await
         .unwrap();
     manager
-        .add_goal("pred", "ms-1", "ph-1", GoalRef { goal_id: "g-1".into(), description: "Goal 1".into(), status: MilestoneStatus::Pending })
+        .add_goal(
+            "pred",
+            "ms-1",
+            "ph-1",
+            GoalRef {
+                goal_id: "g-1".into(),
+                description: "Goal 1".into(),
+                status: MilestoneStatus::Pending,
+            },
+        )
         .await
         .unwrap();
 
@@ -520,23 +714,43 @@ async fn test_predict_completion() {
 #[tokio::test]
 async fn test_record_and_get_outcomes() {
     let manager = setup_manager().await;
-    manager
-        .create_project("out", "Outcomes", "")
-        .await
-        .unwrap();
+    manager.create_project("out", "Outcomes", "").await.unwrap();
     manager
         .add_milestone(
             "out",
-            Milestone { id: "ms-1".into(), name: "MS1".into(), phases: Vec::new(), status: MilestoneStatus::Pending },
+            Milestone {
+                id: "ms-1".into(),
+                name: "MS1".into(),
+                phases: Vec::new(),
+                status: MilestoneStatus::Pending,
+            },
         )
         .await
         .unwrap();
     manager
-        .add_phase("out", "ms-1", Phase { id: "ph-1".into(), name: "P1".into(), goals: Vec::new(), depends_on: Vec::new() })
+        .add_phase(
+            "out",
+            "ms-1",
+            Phase {
+                id: "ph-1".into(),
+                name: "P1".into(),
+                goals: Vec::new(),
+                depends_on: Vec::new(),
+            },
+        )
         .await
         .unwrap();
     manager
-        .add_goal("out", "ms-1", "ph-1", GoalRef { goal_id: "g-1".into(), description: "Goal 1".into(), status: MilestoneStatus::Pending })
+        .add_goal(
+            "out",
+            "ms-1",
+            "ph-1",
+            GoalRef {
+                goal_id: "g-1".into(),
+                description: "Goal 1".into(),
+                status: MilestoneStatus::Pending,
+            },
+        )
         .await
         .unwrap();
 
@@ -569,7 +783,12 @@ async fn test_evaluate_health() {
     manager
         .add_milestone(
             "health",
-            Milestone { id: "ms-1".into(), name: "MS1".into(), phases: Vec::new(), status: MilestoneStatus::Pending },
+            Milestone {
+                id: "ms-1".into(),
+                name: "MS1".into(),
+                phases: Vec::new(),
+                status: MilestoneStatus::Pending,
+            },
         )
         .await
         .unwrap();
@@ -577,7 +796,12 @@ async fn test_evaluate_health() {
         .add_phase(
             "health",
             "ms-1",
-            Phase { id: "ph-1".into(), name: "P1".into(), goals: Vec::new(), depends_on: Vec::new() },
+            Phase {
+                id: "ph-1".into(),
+                name: "P1".into(),
+                goals: Vec::new(),
+                depends_on: Vec::new(),
+            },
         )
         .await
         .unwrap();
@@ -586,7 +810,11 @@ async fn test_evaluate_health() {
             "health",
             "ms-1",
             "ph-1",
-            GoalRef { goal_id: "g-1".into(), description: "Goal 1".into(), status: MilestoneStatus::Pending },
+            GoalRef {
+                goal_id: "g-1".into(),
+                description: "Goal 1".into(),
+                status: MilestoneStatus::Pending,
+            },
         )
         .await
         .unwrap();
@@ -605,7 +833,12 @@ async fn test_apply_blocking() {
     manager
         .add_milestone(
             "block",
-            Milestone { id: "ms-1".into(), name: "MS1".into(), phases: Vec::new(), status: MilestoneStatus::Pending },
+            Milestone {
+                id: "ms-1".into(),
+                name: "MS1".into(),
+                phases: Vec::new(),
+                status: MilestoneStatus::Pending,
+            },
         )
         .await
         .unwrap();
@@ -613,7 +846,12 @@ async fn test_apply_blocking() {
         .add_phase(
             "block",
             "ms-1",
-            Phase { id: "ph-1".into(), name: "P1".into(), goals: Vec::new(), depends_on: Vec::new() },
+            Phase {
+                id: "ph-1".into(),
+                name: "P1".into(),
+                goals: Vec::new(),
+                depends_on: Vec::new(),
+            },
         )
         .await
         .unwrap();
@@ -622,7 +860,11 @@ async fn test_apply_blocking() {
             "block",
             "ms-1",
             "ph-1",
-            GoalRef { goal_id: "g-1".into(), description: "Goal 1".into(), status: MilestoneStatus::Pending },
+            GoalRef {
+                goal_id: "g-1".into(),
+                description: "Goal 1".into(),
+                status: MilestoneStatus::Pending,
+            },
         )
         .await
         .unwrap();
@@ -631,7 +873,11 @@ async fn test_apply_blocking() {
             "block",
             "ms-1",
             "ph-1",
-            GoalRef { goal_id: "g-2".into(), description: "Goal 2".into(), status: MilestoneStatus::Pending },
+            GoalRef {
+                goal_id: "g-2".into(),
+                description: "Goal 2".into(),
+                status: MilestoneStatus::Pending,
+            },
         )
         .await
         .unwrap();

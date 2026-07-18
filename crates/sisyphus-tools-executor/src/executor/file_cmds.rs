@@ -33,7 +33,8 @@ pub fn cmd_file_edit_all(args: Vec<u8>) -> Result<Vec<u8>, String> {
     let path = path_arg(&v, "path")?;
     let old = str_arg(&v, "old")?;
     let new = str_arg(&v, "new")?;
-    let count = sisyphus_tools_system::file::edit_all(Path::new(&path), &old, &new).map_err(|e| e.to_string())?;
+    let count = sisyphus_tools_system::file::edit_all(Path::new(&path), &old, &new)
+        .map_err(|e| e.to_string())?;
     ok_json(json!({"count": count}))
 }
 
@@ -42,8 +43,8 @@ pub fn cmd_file_read_lines(args: Vec<u8>) -> Result<Vec<u8>, String> {
     let path = path_arg(&v, "path")?;
     let offset = usize_arg(&v, "offset").unwrap_or(0);
     let limit = usize_arg(&v, "limit").unwrap_or(2000);
-    let content =
-        sisyphus_tools_system::file::read_lines(Path::new(&path), offset, limit).map_err(|e| e.to_string())?;
+    let content = sisyphus_tools_system::file::read_lines(Path::new(&path), offset, limit)
+        .map_err(|e| e.to_string())?;
     ok_json(json!({"content": content}))
 }
 
@@ -51,7 +52,8 @@ pub fn cmd_glob(args: Vec<u8>) -> Result<Vec<u8>, String> {
     let v = parse_args(&args)?;
     let pattern = str_arg(&v, "pattern")?;
     let root = path_arg(&v, "root")?;
-    let files = sisyphus_tools_system::file::glob(&pattern, Path::new(&root)).map_err(|e| e.to_string())?;
+    let files =
+        sisyphus_tools_system::file::glob(&pattern, Path::new(&root)).map_err(|e| e.to_string())?;
     let paths: Vec<String> = files
         .iter()
         .map(|p| p.to_string_lossy().into_owned())

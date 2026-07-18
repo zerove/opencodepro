@@ -135,9 +135,7 @@ pub async fn review_plan(client: &dyn LlmClient, plan_text: &str, plan_name: &st
                     "Step description too short ({} chars). A step should describe WHAT and WHY.",
                     desc.len()
                 ),
-                suggestion: Some(format!(
-                    "Expand '{desc}' to include the expected outcome."
-                )),
+                suggestion: Some(format!("Expand '{desc}' to include the expected outcome.")),
             });
         }
         if !desc.contains(' ') {
@@ -179,7 +177,14 @@ pub async fn review_plan(client: &dyn LlmClient, plan_text: &str, plan_name: &st
     }
 
     // Verification check
-    let verify_keywords = ["test", "verify", "validate", "check", "confirm", "assertion"];
+    let verify_keywords = [
+        "test",
+        "verify",
+        "validate",
+        "check",
+        "confirm",
+        "assertion",
+    ];
     let has_verification = verify_keywords
         .iter()
         .any(|k| plan_text.to_lowercase().contains(k));
@@ -296,4 +301,3 @@ pub async fn review_plan(client: &dyn LlmClient, plan_text: &str, plan_name: &st
         summary,
     }
 }
-

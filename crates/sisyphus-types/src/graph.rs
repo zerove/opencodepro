@@ -2,11 +2,11 @@ use petgraph::graph::{DiGraph, NodeIndex};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
-use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
 
-use crate::node::{SOPNode, WasmSOPNode, RetrySOPNode};
 use crate::execution::ExecutionContext;
+use crate::node::{RetrySOPNode, SOPNode, WasmSOPNode};
 use crate::TypesError;
 
 /// A data mapping from a source graph node output to a target graph parameter.
@@ -135,31 +135,60 @@ impl SOPGraphConfig {
         Self { nodes, edges }
     }
 
-    pub fn into_cognitive_plan(self, plan_id: String, goal: String) -> crate::execution::CognitivePlan {
-        let steps = self.nodes.into_iter().enumerate().map(|(i, cfg)| {
-            let action = match cfg.kind {
-                NodeKind::Wasm { tool_id, .. } => crate::execution::CognitiveAction::ToolCall { tool_id, args: serde_json::json!({}) },
-                NodeKind::Retry { .. } => crate::execution::CognitiveAction::ToolCall { tool_id: "retry_wrapper".into(), args: serde_json::json!({}) },
-                NodeKind::Branch { .. } => crate::execution::CognitiveAction::ToolCall { tool_id: "branch_logic".into(), args: serde_json::json!({}) },
-                NodeKind::SubGraph { .. } => crate::execution::CognitiveAction::ToolCall { tool_id: "subgraph_exec".into(), args: serde_json::json!({}) },
-                NodeKind::Test { .. } => crate::execution::CognitiveAction::ToolCall { tool_id: "test_exec".into(), args: serde_json::json!({}) },
-                _ => crate::execution::CognitiveAction::ToolCall { tool_id: "internal_handler".into(), args: serde_json::json!({}) },
-            };
-            crate::execution::CognitiveStep {
-                id: i.to_string(),
-                name: cfg.name,
-                action,
-                verification: None,
-                priority: 0,
-            }
-        }).collect();
+    pub fn into_cognitive_plan(
+        self,
+        plan_id: String,
+        goal: String,
+    ) -> crate::execution::CognitivePlan {
+        let steps = self
+            .nodes
+            .into_iter()
+            .enumerate()
+            .map(|(i, cfg)| {
+                let action = match cfg.kind {
+                    NodeKind::Wasm { tool_id, .. } => crate::execution::CognitiveAction::ToolCall {
+                        tool_id,
+                        args: serde_json::json!({}),
+                    },
+                    NodeKind::Retry { .. } => crate::execution::CognitiveAction::ToolCall {
+                        tool_id: "retry_wrapper".into(),
+                        args: serde_json::json!({}),
+                    },
+                    NodeKind::Branch { .. } => crate::execution::CognitiveAction::ToolCall {
+                        tool_id: "branch_logic".into(),
+                        args: serde_json::json!({}),
+                    },
+                    NodeKind::SubGraph { .. } => crate::execution::CognitiveAction::ToolCall {
+                        tool_id: "subgraph_exec".into(),
+                        args: serde_json::json!({}),
+                    },
+                    NodeKind::Test { .. } => crate::execution::CognitiveAction::ToolCall {
+                        tool_id: "test_exec".into(),
+                        args: serde_json::json!({}),
+                    },
+                    _ => crate::execution::CognitiveAction::ToolCall {
+                        tool_id: "internal_handler".into(),
+                        args: serde_json::json!({}),
+                    },
+                };
+                crate::execution::CognitiveStep {
+                    id: i.to_string(),
+                    name: cfg.name,
+                    action,
+                    verification: None,
+                    priority: 0,
+                }
+            })
+            .collect();
 
-        let edges = self.edges.into_iter().map(|(s, t)| {
-            crate::execution::PlanEdge {
+        let edges = self
+            .edges
+            .into_iter()
+            .map(|(s, t)| crate::execution::PlanEdge {
                 from: s.to_string(),
                 to: t.to_string(),
-            }
-        }).collect();
+            })
+            .collect();
 
         crate::execution::CognitivePlan {
             plan_id,
@@ -170,7 +199,6 @@ impl SOPGraphConfig {
         }
     }
 }
-
 
 pub struct SOPGraph {
     pub graph: DiGraph<Arc<dyn SOPNode>, ()>,
@@ -222,7 +250,10 @@ impl SOPGraph {
                     child: build_node(child, name, executor, test_executor),
                     max_retries: *max_retries,
                 }),
-                NodeKind::Branch { branches, default_next } => Arc::new(crate::node::BranchSOPNode {
+                NodeKind::Branch {
+                    branches,
+                    default_next,
+                } => Arc::new(crate::node::BranchSOPNode {
                     name: name.to_string(),
                     branches: branches.clone(),
                     default_next: *default_next,
@@ -237,14 +268,21 @@ impl SOPGraph {
                     workdir: workdir.clone(),
                     test_executor,
                 }),
-                NodeKind::VisualAnalysis { prompt, image_source } => Arc::new(crate::node::VisualSOPNode::new(
+                NodeKind::VisualAnalysis {
+                    prompt,
+                    image_source,
+                } => Arc::new(crate::node::VisualSOPNode::new(
                     name.to_string(),
                     NodeKind::VisualAnalysis {
                         prompt: prompt.clone(),
                         image_source: image_source.clone(),
                     },
                 )),
-                NodeKind::VisualAction { action_type, target_selector, params } => Arc::new(crate::node::VisualSOPNode::new(
+                NodeKind::VisualAction {
+                    action_type,
+                    target_selector,
+                    params,
+                } => Arc::new(crate::node::VisualSOPNode::new(
                     name.to_string(),
                     NodeKind::VisualAction {
                         action_type: action_type.clone(),
@@ -252,7 +290,10 @@ impl SOPGraph {
                         params: params.clone(),
                     },
                 )),
-                NodeKind::HumanIntervention { prompt, timeout_secs } => Arc::new(crate::node::HumanInterventionSOPNode {
+                NodeKind::HumanIntervention {
+                    prompt,
+                    timeout_secs,
+                } => Arc::new(crate::node::HumanInterventionSOPNode {
                     name: name.to_string(),
                     prompt: prompt.clone(),
                     timeout_secs: *timeout_secs,
@@ -261,7 +302,12 @@ impl SOPGraph {
         }
 
         for node_cfg in &config.nodes {
-            let node = build_node(&node_cfg.kind, &node_cfg.name, executor.clone(), test_executor.clone());
+            let node = build_node(
+                &node_cfg.kind,
+                &node_cfg.name,
+                executor.clone(),
+                test_executor.clone(),
+            );
             node_indices.push(graph.add_node(node));
         }
 
@@ -308,7 +354,11 @@ pub struct SopEvaluation {
 
 #[async_trait::async_trait]
 pub trait SopEvaluator: Send + Sync {
-    async fn evaluate(&self, goal: &str, config: &SOPGraphConfig) -> Result<SopEvaluation, TypesError>;
+    async fn evaluate(
+        &self,
+        goal: &str,
+        config: &SOPGraphConfig,
+    ) -> Result<SopEvaluation, TypesError>;
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -320,11 +370,7 @@ pub enum MicroReflectionDecision {
 
 #[async_trait::async_trait]
 pub trait MicroReflector: Send + Sync {
-    async fn predict(
-        &self,
-        node_name: &str,
-        ctx: &ExecutionContext,
-    ) -> Result<String, TypesError>;
+    async fn predict(&self, node_name: &str, ctx: &ExecutionContext) -> Result<String, TypesError>;
 
     async fn reflect(
         &self,

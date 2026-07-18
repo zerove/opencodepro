@@ -1,5 +1,5 @@
-use sisyphus_tools_core::ToolResult;
 use serde::{Deserialize, Serialize};
+use sisyphus_tools_core::ToolResult;
 use std::path::Path;
 
 /// Result of analyzing a single module's architecture.
@@ -45,7 +45,8 @@ impl ArchitectureAnalyzer {
     /// - `pub fn` / `pub struct` / `pub enum` / `pub trait` declarations
     /// - `use ...` import statements
     pub fn analyze_file(file_path: &str) -> ToolResult<ModuleReport> {
-        let content = std::fs::read_to_string(file_path).map_err(sisyphus_tools_core::ToolError::Io)?;
+        let content =
+            std::fs::read_to_string(file_path).map_err(sisyphus_tools_core::ToolError::Io)?;
         let name = Path::new(file_path)
             .file_stem()
             .and_then(|s| s.to_str())

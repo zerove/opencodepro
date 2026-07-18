@@ -1,6 +1,6 @@
-use sisyphus_tools_core::{ToolError, ToolResult};
 use ignore::WalkBuilder;
 use regex::Regex;
+use sisyphus_tools_core::{ToolError, ToolResult};
 use std::fs;
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
@@ -199,7 +199,7 @@ pub fn glob(pattern: &str, root: &Path) -> ToolResult<Vec<PathBuf>> {
 pub fn grep(pattern: &str, path: &Path, include: Option<&str>) -> ToolResult<Vec<GrepMatch>> {
     let re = Regex::new(pattern).map_err(|e| ToolError::GrepError(e.to_string()))?;
     let mut matches = Vec::new();
-    
+
     if path.is_dir() {
         let walker = WalkBuilder::new(path).build();
         for entry in walker {
@@ -217,7 +217,7 @@ pub fn grep(pattern: &str, path: &Path, include: Option<&str>) -> ToolResult<Vec
     } else {
         matches.extend(grep_file(&re, path)?);
     }
-    
+
     Ok(matches)
 }
 
@@ -234,14 +234,14 @@ pub fn search_patterns(
             total_matches: 0,
         });
     }
-    
+
     let re_list: Vec<Regex> = patterns
         .iter()
         .map(|p| {
             Regex::new(p).map_err(|e| ToolError::GrepError(format!("invalid regex '{p}': {e}")))
         })
         .collect::<Result<Vec<_>, _>>()?;
-    
+
     let file_filter = include.map(|s| {
         let re = Regex::new(s).ok();
         move |path: &Path| -> bool {
@@ -252,13 +252,13 @@ pub fn search_patterns(
             }
         }
     });
-    
+
     let mut result = ExploreResult {
         matches: vec![],
         files_scanned: 0,
         total_matches: 0,
     };
-    
+
     let walker = WalkBuilder::new(root).build();
     for entry in walker {
         let entry = entry.map_err(|e| ToolError::GrepError(e.to_string()))?;
@@ -272,13 +272,13 @@ pub fn search_patterns(
             }
         }
         result.files_scanned += 1;
-    
+
         let file_content = match fs::read_to_string(path) {
             Ok(c) => c,
             Err(_) => continue,
         };
         let lines: Vec<&str> = file_content.lines().collect();
-    
+
         for (line_idx, line_content) in lines.iter().enumerate() {
             for (pi, re) in re_list.iter().enumerate() {
                 if re.is_match(line_content) {
@@ -293,7 +293,7 @@ pub fn search_patterns(
                         .iter()
                         .map(std::string::ToString::to_string)
                         .collect();
-    
+
                     result.matches.push(ExploreMatch {
                         file: path.to_path_buf(),
                         line: line_num,
@@ -308,7 +308,7 @@ pub fn search_patterns(
             }
         }
     }
-    
+
     Ok(result)
 }
 

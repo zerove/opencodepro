@@ -1,8 +1,8 @@
 use sisyphus_tools_core::{ToolError, ToolResult};
 use std::collections::hash_map::DefaultHasher;
-use std::hash::{Hash, Hasher};
 use std::fs;
-use std::io::{Write};
+use std::hash::{Hash, Hasher};
+use std::io::Write;
 use std::path::Path;
 use tempfile::NamedTempFile;
 
@@ -23,10 +23,7 @@ pub fn hash_content(content: &str) -> String {
 
 /// Determines the comment syntax based on the file extension.
 fn get_comment_syntax(path: &Path) -> (&'static str, Option<&'static str>) {
-    let ext = path
-        .extension()
-        .and_then(|s| s.to_str())
-        .unwrap_or("");
+    let ext = path.extension().and_then(|s| s.to_str()).unwrap_or("");
 
     match ext {
         "rs" | "js" | "ts" | "go" => ("//", None),
@@ -41,7 +38,7 @@ fn get_comment_syntax(path: &Path) -> (&'static str, Option<&'static str>) {
 pub fn generate_hashline(path: &Path, line_number: usize, content: &str) -> String {
     let hash = hash_content(content);
     let (start, end) = get_comment_syntax(path);
-    
+
     if let Some(end_tag) = end {
         format!(" {start} LINE#{line_number}:{hash} {end_tag}")
     } else {
@@ -59,7 +56,7 @@ pub fn parse_hashline(line: &str) -> Option<HashlineData> {
         if parts.len() >= 2 {
             let line_num = parts[0].parse::<usize>().ok()?;
             let hash = parts[1].split_whitespace().next()?.to_string();
-            
+
             // We don't have the snippet here, so we'll leave it empty or fill it later
             return Some(HashlineData {
                 line_number: line_num,
@@ -74,15 +71,19 @@ pub fn parse_hashline(line: &str) -> Option<HashlineData> {
 /// Verifies the actual line at the given number against the stored hash.
 pub fn verify_line(base_content: &str, hashline: &str) -> Result<bool, String> {
     let data = parse_hashline(hashline).ok_or_else(|| "Invalid hashline format".to_string())?;
-    
+
     let lines: Vec<&str> = base_content.lines().collect();
     if data.line_number == 0 || data.line_number > lines.len() {
-        return Err(format!("Line number {} out of bounds (file has {} lines)", data.line_number, lines.len()));
+        return Err(format!(
+            "Line number {} out of bounds (file has {} lines)",
+            data.line_number,
+            lines.len()
+        ));
     }
-    
+
     let actual_line = lines[data.line_number - 1];
     let content_without_hashline = strip_hashline(actual_line);
-    
+
     let actual_hash = hash_content(content_without_hashline);
     Ok(actual_hash == data.content_hash)
 }
@@ -113,7 +114,7 @@ pub fn annotate_file(file_path: &Path) -> ToolResult<usize> {
             annotated_lines.push(line.to_string());
             continue;
         }
-        
+
         let hashline = generate_hashline(file_path, line_num, line);
         annotated_lines.push(format!("{line}{hashline}"));
         count += 1;
@@ -123,25 +124,40 @@ pub fn annotate_file(file_path: &Path) -> ToolResult<usize> {
     // Use atomic write pattern from file.rs
     let parent = file_path.parent().unwrap_or_else(|| Path::new("."));
     let mut temp_file = NamedTempFile::new_in(parent).map_err(ToolError::Io)?;
-    temp_file.write_all(new_content.as_bytes()).map_err(ToolError::Io)?;
-    temp_file.persist(file_path).map_err(|e| ToolError::Io(e.error))?;
+    temp_file
+        .write_all(new_content.as_bytes())
+        .map_err(ToolError::Io)?;
+    temp_file
+        .persist(file_path)
+        .map_err(|e| ToolError::Io(e.error))?;
 
     Ok(count)
 }
 
 /// Finds a line by LINE#ID, verifies hash, replaces content, returns old content on success.
-pub fn edit_with_hashline(file_path: &Path, target_hashline: &str, new_content: &str) -> ToolResult<String> {
+pub fn edit_with_hashline(
+    file_path: &Path,
+    target_hashline: &str,
+    new_content: &str,
+) -> ToolResult<String> {
     let content = fs::read_to_string(file_path)?;
-    let data = parse_hashline(target_hashline).ok_or_else(|| ToolError::Generic("Invalid hashline format".to_string()))?;
-    
-    let lines: Vec<String> = content.lines().map(std::string::ToString::to_string).collect();
+    let data = parse_hashline(target_hashline)
+        .ok_or_else(|| ToolError::Generic("Invalid hashline format".to_string()))?;
+
+    let lines: Vec<String> = content
+        .lines()
+        .map(std::string::ToString::to_string)
+        .collect();
     if data.line_number == 0 || data.line_number > lines.len() {
-        return Err(ToolError::Generic(format!("Line number {} out of bounds", data.line_number)));
+        return Err(ToolError::Generic(format!(
+            "Line number {} out of bounds",
+            data.line_number
+        )));
     }
-    
+
     let actual_line = &lines[data.line_number - 1];
     let content_without_hashline = strip_hashline(actual_line);
-    
+
     let actual_hash = hash_content(content_without_hashline);
     if actual_hash != data.content_hash {
         return Err(ToolError::Generic(format!(
@@ -149,26 +165,33 @@ pub fn edit_with_hashline(file_path: &Path, target_hashline: &str, new_content: 
             data.content_hash, actual_hash, content_without_hashline
         )));
     }
-    
+
     let old_content = content_without_hashline.to_string();
-    
+
     // Construct the new line with the SAME hashline (to keep it trackable)
     let (start, end) = get_comment_syntax(file_path);
     let hashline_comment = if let Some(end_tag) = end {
-        format!(" {} LINE#{}:{} {}", start, data.line_number, data.content_hash, end_tag)
+        format!(
+            " {} LINE#{}:{} {}",
+            start, data.line_number, data.content_hash, end_tag
+        )
     } else {
         format!(" {} LINE#{}:{}", start, data.line_number, data.content_hash)
     };
-    
+
     let mut new_lines = lines.clone();
     new_lines[data.line_number - 1] = format!("{new_content}{hashline_comment}");
-    
+
     let final_content = new_lines.join("\n");
     let parent = file_path.parent().unwrap_or_else(|| Path::new("."));
     let mut temp_file = NamedTempFile::new_in(parent).map_err(ToolError::Io)?;
-    temp_file.write_all(final_content.as_bytes()).map_err(ToolError::Io)?;
-    temp_file.persist(file_path).map_err(|e| ToolError::Io(e.error))?;
-    
+    temp_file
+        .write_all(final_content.as_bytes())
+        .map_err(ToolError::Io)?;
+    temp_file
+        .persist(file_path)
+        .map_err(|e| ToolError::Io(e.error))?;
+
     Ok(old_content)
 }
 
@@ -176,7 +199,6 @@ pub fn edit_with_hashline(file_path: &Path, target_hashline: &str, new_content: 
 mod tests {
     use super::*;
     use std::io::Write;
-
 
     #[test]
     fn test_hash_content() {
@@ -194,13 +216,13 @@ mod tests {
         let py_path = Path::new("test.py");
         let sql_path = Path::new("test.sql");
         let html_path = Path::new("test.html");
-        
+
         let content = "fn main() {}";
         let h_rs = generate_hashline(rs_path, 1, content);
         let h_py = generate_hashline(py_path, 1, content);
         let h_sql = generate_hashline(sql_path, 1, content);
         let h_html = generate_hashline(html_path, 1, content);
-        
+
         assert!(h_rs.contains("// LINE#1:"));
         assert!(h_py.contains("# LINE#1:"));
         assert!(h_sql.contains("-- LINE#1:"));
@@ -220,12 +242,12 @@ mod tests {
         let content = "line1\nline2\nline3";
         let hash = hash_content("line2");
         let hashline = format!("// LINE#2:{}", hash);
-        
+
         assert!(verify_line(content, &hashline).unwrap());
-        
+
         let wrong_hashline = format!("// LINE#2:wronghash");
         assert!(!verify_line(content, &wrong_hashline).unwrap());
-        
+
         let out_of_bounds = format!("// LINE#10:{}", hash);
         assert!(verify_line(content, &out_of_bounds).is_err());
     }
@@ -235,10 +257,10 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("test.rs");
         fs::write(&path, "line1\n\nline3").unwrap();
-        
+
         let count = annotate_file(&path).unwrap();
         assert_eq!(count, 2);
-        
+
         let content = fs::read_to_string(&path).unwrap();
         let lines: Vec<&str> = content.lines().collect();
         assert!(lines[0].contains("LINE#1:"));
@@ -252,7 +274,7 @@ mod tests {
         let path = dir.path().join("test.rs");
         let original_content = "line1\nline2\nline3";
         fs::write(&path, original_content).unwrap();
-        
+
         let hash = hash_content("line2");
         let _hashline = format!("// LINE#2:{}", hash);
 
@@ -260,14 +282,14 @@ mod tests {
         let actual_hash = hash_content("line2");
         let annotated = format!("line1\nline2 // LINE#2:{}\nline3", actual_hash);
         fs::write(&path, annotated).unwrap();
-        
+
         let target = format!("// LINE#2:{}", actual_hash);
         let old = edit_with_hashline(&path, &target, "new_line2").unwrap();
         assert_eq!(old, "line2");
-        
+
         let content = fs::read_to_string(&path).unwrap();
         assert!(content.contains("new_line2 // LINE#2:"));
-        
+
         // Test conflict
         let conflict_hashline = format!("// LINE#2:wronghash");
         let result = edit_with_hashline(&path, &conflict_hashline, "fail");

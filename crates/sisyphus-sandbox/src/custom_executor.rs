@@ -1,10 +1,10 @@
 use async_trait::async_trait;
 use dashmap::DashMap;
+use serde_json::Value;
 use sisyphus_types::{CustomToolDefinition, ToolExecutor, TypesError};
 use std::collections::HashMap;
 use std::sync::Arc;
 use wasmtime::*;
-use serde_json::Value;
 
 /// 轻量级 JSON Schema 校验器
 struct SchemaValidator;
@@ -103,7 +103,7 @@ impl CustomToolExecutor {
     pub fn new(tools: Vec<CustomToolDefinition>) -> Result<Self, SandboxError> {
         let mut config = Config::new();
         config.consume_fuel(true);
-        
+
         let engine = Engine::new(&config)?;
         let mut tool_map = HashMap::new();
         for def in tools {
@@ -122,15 +122,19 @@ impl CustomToolExecutor {
             return Ok(cached.clone());
         }
 
-        let def = self.tools.get(tool_id)
+        let def = self
+            .tools
+            .get(tool_id)
             .ok_or_else(|| SandboxError::MissingExecuteExport(tool_id.to_string()))?;
-        
-        let wasm_bytes = tokio::fs::read(&def.handler).await
-            .map_err(|e| SandboxError::IoError {
-                tool_id: tool_id.to_string(),
-                path: def.handler.clone(),
-                source: e,
-            })?;
+
+        let wasm_bytes =
+            tokio::fs::read(&def.handler)
+                .await
+                .map_err(|e| SandboxError::IoError {
+                    tool_id: tool_id.to_string(),
+                    path: def.handler.clone(),
+                    source: e,
+                })?;
 
         let engine = self.engine.clone();
         let module = tokio::task::spawn_blocking(move || Module::new(&engine, &wasm_bytes))
@@ -141,7 +145,8 @@ impl CustomToolExecutor {
                 source: e,
             })?;
 
-        self.module_cache.insert(tool_id.to_string(), module.clone());
+        self.module_cache
+            .insert(tool_id.to_string(), module.clone());
         Ok(module)
     }
 }
@@ -154,17 +159,20 @@ impl ToolExecutor for CustomToolExecutor {
         args: Vec<u8>,
         fuel_limit: u64,
     ) -> Result<Vec<u8>, TypesError> {
-        let def = self.tools.get(tool_id)
+        let def = self
+            .tools
+            .get(tool_id)
             .ok_or_else(|| TypesError::ToolExecutionError {
                 tool_id: tool_id.to_string(),
                 details: "Custom tool not found".to_string(),
             })?;
 
         // 1. JSON Schema 校验
-        let args_value: Value = serde_json::from_slice(&args).map_err(|e| TypesError::ToolExecutionError {
-            tool_id: tool_id.to_string(),
-            details: format!("Invalid JSON args: {e}"),
-        })?;
+        let args_value: Value =
+            serde_json::from_slice(&args).map_err(|e| TypesError::ToolExecutionError {
+                tool_id: tool_id.to_string(),
+                details: format!("Invalid JSON args: {e}"),
+            })?;
 
         if let Err(e) = SchemaValidator::validate(&def.schema, &args_value) {
             return Err(TypesError::ToolExecutionError {
@@ -174,45 +182,56 @@ impl ToolExecutor for CustomToolExecutor {
         }
 
         // 2. WASM 模块准备
-        let module = self.get_or_compile_module(tool_id).await
-            .map_err(|e| TypesError::ToolExecutionError {
+        let module = self.get_or_compile_module(tool_id).await.map_err(|e| {
+            TypesError::ToolExecutionError {
                 tool_id: tool_id.to_string(),
                 details: e.to_string(),
-            })?;
+            }
+        })?;
 
         let linker = Linker::new(&self.engine);
         let mut store = Store::new(&self.engine, ());
-        store.set_fuel(fuel_limit).map_err(|e| TypesError::ToolExecutionError {
-            tool_id: tool_id.to_string(),
-            details: format!("Fuel error: {e}"),
+        store
+            .set_fuel(fuel_limit)
+            .map_err(|e| TypesError::ToolExecutionError {
+                tool_id: tool_id.to_string(),
+                details: format!("Fuel error: {e}"),
+            })?;
+
+        let instance = linker.instantiate(&mut store, &module).map_err(|e| {
+            TypesError::ToolExecutionError {
+                tool_id: tool_id.to_string(),
+                details: format!("Instantiation error: {e}"),
+            }
         })?;
 
-        let instance = linker.instantiate(&mut store, &module).map_err(|e| TypesError::ToolExecutionError {
-            tool_id: tool_id.to_string(),
-            details: format!("Instantiation error: {e}"),
-        })?;
-
-        let execute_func = instance
-            .get_func(&mut store, "execute")
-            .ok_or_else(|| TypesError::ToolExecutionError {
+        let execute_func = instance.get_func(&mut store, "execute").ok_or_else(|| {
+            TypesError::ToolExecutionError {
                 tool_id: tool_id.to_string(),
                 details: "WASM module missing 'execute' export".to_string(),
-            })?;
+            }
+        })?;
 
         // 3. 写入参数到 WASM 内存
         let args_json = serde_json::to_string(&args_value).unwrap();
         let args_bytes = args_json.as_bytes();
-        
-        let memory = instance.get_memory(&mut store, "memory")
-            .ok_or_else(|| TypesError::ToolExecutionError {
+
+        let memory = instance.get_memory(&mut store, "memory").ok_or_else(|| {
+            TypesError::ToolExecutionError {
                 tool_id: tool_id.to_string(),
                 details: "WASM module missing 'memory' export".to_string(),
-            })?;
+            }
+        })?;
 
         // 尝试调用 alloc 函数以获取安全的内存地址
         let arg_ptr = if let Some(alloc_func) = instance.get_func(&mut store, "alloc") {
             let mut alloc_results = vec![Val::I32(0)];
-            alloc_func.call(&mut store, &[Val::I32(args_bytes.len() as i32)], &mut alloc_results)
+            alloc_func
+                .call(
+                    &mut store,
+                    &[Val::I32(args_bytes.len() as i32)],
+                    &mut alloc_results,
+                )
                 .map_err(|e| TypesError::ToolExecutionError {
                     tool_id: tool_id.to_string(),
                     details: format!("WASM alloc failed: {e}"),
@@ -225,19 +244,21 @@ impl ToolExecutor for CustomToolExecutor {
             });
         };
 
-        memory.write(&mut store, arg_ptr, args_bytes).map_err(|e| TypesError::ToolExecutionError {
-            tool_id: tool_id.to_string(),
-            details: format!("Failed to write args to WASM memory at {}: {e}", arg_ptr),
+        memory.write(&mut store, arg_ptr, args_bytes).map_err(|e| {
+            TypesError::ToolExecutionError {
+                tool_id: tool_id.to_string(),
+                details: format!("Failed to write args to WASM memory at {}: {e}", arg_ptr),
+            }
         })?;
 
         // 4. 执行与读取结果
         let mut results = vec![Val::I32(0)];
-        execute_func.call(&mut store, &[Val::I32(arg_ptr as i32)], &mut results).map_err(|e| {
-            TypesError::ToolExecutionError {
+        execute_func
+            .call(&mut store, &[Val::I32(arg_ptr as i32)], &mut results)
+            .map_err(|e| TypesError::ToolExecutionError {
                 tool_id: tool_id.to_string(),
                 details: format!("WASM execution error: {e}"),
-            }
-        })?;
+            })?;
 
         let result_ptr = results[0].unwrap_i32() as usize;
         let data = memory.data(&store);

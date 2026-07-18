@@ -8,72 +8,72 @@ use crate::Cli;
 
 // ── Handler modules ────────────────────────────────────────
 
-#[path = "handle_session.rs"]
-mod handle_session;
-#[path = "handle_momus.rs"]
-mod handle_momus;
-#[path = "handle_pr.rs"]
-mod handle_pr;
-#[path = "handle_provider.rs"]
-mod handle_provider;
-#[path = "handle_wisdom.rs"]
-mod handle_wisdom;
-#[path = "handle_hashline.rs"]
-mod handle_hashline;
-#[path = "handle_github.rs"]
-mod handle_github;
-#[path = "handle_tool.rs"]
-mod handle_tool;
-#[path = "handle_daemon.rs"]
-mod handle_daemon;
-#[path = "handle_dev.rs"]
-mod handle_dev;
-#[path = "handle_todo.rs"]
-mod handle_todo;
-#[path = "handle_plan.rs"]
-mod handle_plan;
-#[path = "handle_oracle.rs"]
-mod handle_oracle;
-#[path = "handle_explore.rs"]
-mod handle_explore;
-#[path = "handle_librarian.rs"]
-mod handle_librarian;
-#[path = "handle_metis.rs"]
-mod handle_metis;
-#[path = "handle_skill.rs"]
-mod handle_skill;
-#[path = "handle_rules.rs"]
-mod handle_rules;
-#[path = "handle_lsp.rs"]
-mod handle_lsp;
-#[path = "handle_delegate.rs"]
-mod handle_delegate;
-#[path = "handle_mcp.rs"]
-mod handle_mcp;
-#[path = "handle_sop.rs"]
-mod handle_sop;
-#[path = "handle_git.rs"]
-mod handle_git;
 #[path = "handle_build.rs"]
 mod handle_build;
-#[path = "handle_run.rs"]
-mod handle_run;
-#[path = "handle_init.rs"]
-mod handle_init;
-#[path = "handle_precommit.rs"]
-mod handle_precommit;
+#[path = "handle_daemon.rs"]
+mod handle_daemon;
+#[path = "handle_delegate.rs"]
+mod handle_delegate;
+#[path = "handle_dev.rs"]
+mod handle_dev;
 #[path = "handle_diagnose.rs"]
 mod handle_diagnose;
-#[path = "handle_fix.rs"]
-mod handle_fix;
-#[path = "handle_plugin.rs"]
-mod handle_plugin;
-#[path = "handle_remote.rs"]
-mod handle_remote;
-#[path = "handle_file.rs"]
-mod handle_file;
 #[path = "handle_exec.rs"]
 mod handle_exec;
+#[path = "handle_explore.rs"]
+mod handle_explore;
+#[path = "handle_file.rs"]
+mod handle_file;
+#[path = "handle_fix.rs"]
+mod handle_fix;
+#[path = "handle_git.rs"]
+mod handle_git;
+#[path = "handle_github.rs"]
+mod handle_github;
+#[path = "handle_hashline.rs"]
+mod handle_hashline;
+#[path = "handle_init.rs"]
+mod handle_init;
+#[path = "handle_librarian.rs"]
+mod handle_librarian;
+#[path = "handle_lsp.rs"]
+mod handle_lsp;
+#[path = "handle_mcp.rs"]
+mod handle_mcp;
+#[path = "handle_metis.rs"]
+mod handle_metis;
+#[path = "handle_momus.rs"]
+mod handle_momus;
+#[path = "handle_oracle.rs"]
+mod handle_oracle;
+#[path = "handle_plan.rs"]
+mod handle_plan;
+#[path = "handle_plugin.rs"]
+mod handle_plugin;
+#[path = "handle_pr.rs"]
+mod handle_pr;
+#[path = "handle_precommit.rs"]
+mod handle_precommit;
+#[path = "handle_provider.rs"]
+mod handle_provider;
+#[path = "handle_remote.rs"]
+mod handle_remote;
+#[path = "handle_rules.rs"]
+mod handle_rules;
+#[path = "handle_run.rs"]
+mod handle_run;
+#[path = "handle_session.rs"]
+mod handle_session;
+#[path = "handle_skill.rs"]
+mod handle_skill;
+#[path = "handle_sop.rs"]
+mod handle_sop;
+#[path = "handle_todo.rs"]
+mod handle_todo;
+#[path = "handle_tool.rs"]
+mod handle_tool;
+#[path = "handle_wisdom.rs"]
+mod handle_wisdom;
 
 // ── Public dispatch ──────────────────────────────────────────
 

@@ -32,8 +32,9 @@ pub async fn read_message(
                 .read_exact(&mut buf)
                 .await
                 .map_err(|e| super::types::LspError::Transport(e.to_string()))?;
-            return String::from_utf8(buf)
-                .map_err(|e| super::types::LspError::Protocol(format!("invalid UTF-8 in body: {e}")));
+            return String::from_utf8(buf).map_err(|e| {
+                super::types::LspError::Protocol(format!("invalid UTF-8 in body: {e}"))
+            });
         }
     }
     Err(super::types::LspError::Protocol(

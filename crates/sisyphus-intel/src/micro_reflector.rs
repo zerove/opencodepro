@@ -1,8 +1,8 @@
 use async_trait::async_trait;
-use std::collections::HashMap;
-use sisyphus_types::{ExecutionContext, MicroReflectionDecision, MicroReflector, TypesError};
 use serde_json::Value;
 use sisyphus_tools_llm::LlmClient;
+use sisyphus_types::{ExecutionContext, MicroReflectionDecision, MicroReflector, TypesError};
+use std::collections::HashMap;
 use std::sync::Arc;
 
 pub struct LlmMicroReflector {
@@ -17,11 +17,7 @@ impl LlmMicroReflector {
 
 #[async_trait]
 impl MicroReflector for LlmMicroReflector {
-    async fn predict(
-        &self,
-        node_name: &str,
-        ctx: &ExecutionContext,
-    ) -> Result<String, TypesError> {
+    async fn predict(&self, node_name: &str, ctx: &ExecutionContext) -> Result<String, TypesError> {
         let prompt = format!(
             "You are a Runtime Cognitive Monitor. Before executing a node in the SOP, predict its expected output based on the current context.\n\n\
             Node: {}\n\
@@ -30,7 +26,9 @@ impl MicroReflector for LlmMicroReflector {
             node_name, ctx.results
         );
 
-        self.llm.generate(&prompt).await
+        self.llm
+            .generate(&prompt)
+            .await
             .map_err(|e| TypesError::InternalError(e.to_string()))
     }
 
@@ -56,9 +54,11 @@ impl MicroReflector for LlmMicroReflector {
             node_name, prediction, actual, ctx.results
         );
 
-        let response = self.llm.generate(&prompt).await
+        let response = self
+            .llm
+            .generate(&prompt)
+            .await
             .map_err(|e| TypesError::InternalError(e.to_string()))?;
-
 
         let trimmed = response.trim();
         let upper = trimmed.to_uppercase();
@@ -67,11 +67,15 @@ impl MicroReflector for LlmMicroReflector {
             Ok(MicroReflectionDecision::Continue)
         } else if upper.starts_with("ADJUST") {
             let json_part = trimmed.strip_prefix("ADJUST:").unwrap_or(trimmed).trim();
-            let updates: HashMap<String, Value> = serde_json::from_str(json_part)
-                .unwrap_or_else(|_| HashMap::new());
+            let updates: HashMap<String, Value> =
+                serde_json::from_str(json_part).unwrap_or_else(|_| HashMap::new());
             Ok(MicroReflectionDecision::Adjust { updates })
         } else if upper.starts_with("PIVOT") {
-            let reason = trimmed.strip_prefix("PIVOT:").unwrap_or(trimmed).trim().to_string();
+            let reason = trimmed
+                .strip_prefix("PIVOT:")
+                .unwrap_or(trimmed)
+                .trim()
+                .to_string();
             Ok(MicroReflectionDecision::Pivot { reason })
         } else {
             Ok(MicroReflectionDecision::Continue)

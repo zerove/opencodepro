@@ -4,11 +4,11 @@ use tonic::transport::Endpoint;
 
 use sisyphus_bridge_api::sisyphus_bridge_client::SisyphusBridgeClient;
 pub(crate) use sisyphus_bridge_api::{
-    AgentMetadata, AddMessageRequest, AddMessageResponse, BenchmarkEntry, BreakerMetricsRequest,
+    AddMessageRequest, AddMessageResponse, AgentMetadata, BenchmarkEntry, BreakerMetricsRequest,
     BreakerStatus, DecomposeGoalRequest, ExecuteSopRequest, ExecuteToolRequest,
     ExecuteToolResponse, HealthCheckRequest, HealthCheckResponse, LearningInsightsRequest,
     LearningInsightsResponse, ListAgentsRequest, ListBenchmarksRequest, ListPluginsRequest,
-    ListSoPsRequest, ListSkillsRequest, ListToolsRequest, LoadPluginRequest, LoadPluginResponse,
+    ListSkillsRequest, ListSoPsRequest, ListToolsRequest, LoadPluginRequest, LoadPluginResponse,
     PluginDescriptor, SkillMetadata, SopInfo, TaskProto, ToolMetadata, UnloadPluginRequest,
     UnloadPluginResponse,
 };
@@ -26,11 +26,11 @@ impl BridgeClient {
     /// Each attempt has a 3-second timeout to avoid hanging on unreachable IPv6 endpoints.
     pub async fn connect(addr: &str) -> Result<Self> {
         let orig = addr.to_string();
-        if let Ok(Ok(client)) = tokio::time::timeout(
-            std::time::Duration::from_secs(3),
-            Self::connect_to(&orig),
-        )
-        .await { return Ok(client) }
+        if let Ok(Ok(client)) =
+            tokio::time::timeout(std::time::Duration::from_secs(3), Self::connect_to(&orig)).await
+        {
+            return Ok(client);
+        }
 
         if addr.contains("[::1]") {
             let v4_addr = addr.replace("[::1]", "127.0.0.1");
@@ -62,8 +62,10 @@ impl BridgeClient {
     fn with_auth<T>(&self, mut req: tonic::Request<T>) -> Result<tonic::Request<T>> {
         if let Some(ref token) = self.token {
             let bearer = format!("Bearer {}", token);
-            req.metadata_mut()
-                .insert("authorization", bearer.parse().context("Invalid auth token format")?);
+            req.metadata_mut().insert(
+                "authorization",
+                bearer.parse().context("Invalid auth token format")?,
+            );
         }
         Ok(req)
     }
@@ -176,9 +178,7 @@ impl BridgeClient {
 
     /// List installed skills.
     pub async fn list_skills(&mut self) -> Result<Vec<SkillMetadata>> {
-        let request = self.with_auth(tonic::Request::new(ListSkillsRequest {
-            remote: true,
-        }))?;
+        let request = self.with_auth(tonic::Request::new(ListSkillsRequest { remote: true }))?;
         let response = self
             .inner
             .list_skills(request)
@@ -186,7 +186,6 @@ impl BridgeClient {
             .context("ListSkills RPC failed")?;
         Ok(response.into_inner().skills)
     }
-
 
     /// Decompose a goal into tasks.
     pub async fn decompose_goal(
@@ -300,7 +299,9 @@ impl BridgeClient {
     }
 
     /// Subscribe to a stream of events from the bridge.
-    pub async fn subscribe_events(&mut self) -> Result<tokio::sync::mpsc::Receiver<crate::tui::background::BgOp>> {
+    pub async fn subscribe_events(
+        &mut self,
+    ) -> Result<tokio::sync::mpsc::Receiver<crate::tui::background::BgOp>> {
         let request = self.with_auth(tonic::Request::new(sisyphus_bridge_api::EventRequest {}))?;
         let mut stream = self
             .inner

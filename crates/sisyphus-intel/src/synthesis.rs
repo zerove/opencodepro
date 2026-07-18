@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use petgraph::graph::NodeIndex;
-use sisyphus_types::{CompositeGraph, ExecutionContext, SOPGraph, SOPGraphConfig};
 use sisyphus_tools_llm::metis::LlmClient;
+use sisyphus_types::{CompositeGraph, ExecutionContext, SOPGraph, SOPGraphConfig};
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -240,7 +240,8 @@ impl FlowSynthesizer for GoalDrivenSynthesizer {
             }
 
             Ok(SynthesisResult {
-                start_node: first_idx.ok_or_else(|| "actions must have at least 2 entries".to_string())?,
+                start_node: first_idx
+                    .ok_or_else(|| "actions must have at least 2 entries".to_string())?,
                 graph: Arc::new(graph),
                 plan_description: build_plan_description(&actions, false),
             })
@@ -275,8 +276,14 @@ pub struct DynamicSopSynthesizer {
 }
 
 impl DynamicSopSynthesizer {
-    pub fn new(tool_executor: Arc<dyn sisyphus_types::ToolExecutor>, llm_client: Arc<dyn LlmClient>) -> Self {
-        Self { tool_executor, llm_client }
+    pub fn new(
+        tool_executor: Arc<dyn sisyphus_types::ToolExecutor>,
+        llm_client: Arc<dyn LlmClient>,
+    ) -> Self {
+        Self {
+            tool_executor,
+            llm_client,
+        }
     }
 }
 
@@ -302,7 +309,10 @@ impl FlowSynthesizer for DynamicSopSynthesizer {
             goal, insight_text
         );
 
-        let response = self.llm_client.generate(&prompt).await
+        let response = self
+            .llm_client
+            .generate(&prompt)
+            .await
             .map_err(|e| format!("LLM synthesis failed: {e}"))?;
 
         let plan: DynamicSopPlan = serde_json::from_str(&response)
@@ -322,12 +332,18 @@ impl FlowSynthesizer for DynamicSopSynthesizer {
         }
 
         for edge in &plan.edges {
-            let src = id_map.get(&edge.from).ok_or_else(|| format!("Source node {} not found", edge.from))?;
-            let tgt = id_map.get(&edge.to).ok_or_else(|| format!("Target node {} not found", edge.to))?;
+            let src = id_map
+                .get(&edge.from)
+                .ok_or_else(|| format!("Source node {} not found", edge.from))?;
+            let tgt = id_map
+                .get(&edge.to)
+                .ok_or_else(|| format!("Target node {} not found", edge.to))?;
             graph.add_edge(*src, *tgt);
         }
 
-        let start_node = id_map.get(&plan.start_node).ok_or_else(|| "Start node not found".to_string())?;
+        let start_node = id_map
+            .get(&plan.start_node)
+            .ok_or_else(|| "Start node not found".to_string())?;
 
         Ok(SynthesisResult {
             graph: Arc::new(graph),
@@ -349,7 +365,15 @@ pub async fn synthesize_composite(
     let mut composite = CompositeGraph::new();
     for (i, goal) in goals.iter().enumerate() {
         let sop_id = format!("goal_{}", i);
-        let result = synthesizer.synthesize(goal, ctx, project_id, sisyphus_types::WorkMode::Standard, None).await?;
+        let result = synthesizer
+            .synthesize(
+                goal,
+                ctx,
+                project_id,
+                sisyphus_types::WorkMode::Standard,
+                None,
+            )
+            .await?;
         let config = SOPGraphConfig::from_graph(&result.graph);
         composite.add_graph(&sop_id, config);
     }
@@ -362,8 +386,14 @@ pub struct MetaLearningSynthesizer {
 }
 
 impl MetaLearningSynthesizer {
-    pub fn new(inner: Arc<dyn FlowSynthesizer>, meta_learner: Arc<parking_lot::Mutex<sisyphus_tools_llm_tools::meta_learner::MetaLearner>>) -> Self {
-        Self { inner, meta_learner }
+    pub fn new(
+        inner: Arc<dyn FlowSynthesizer>,
+        meta_learner: Arc<parking_lot::Mutex<sisyphus_tools_llm_tools::meta_learner::MetaLearner>>,
+    ) -> Self {
+        Self {
+            inner,
+            meta_learner,
+        }
     }
 }
 
@@ -390,7 +420,9 @@ impl FlowSynthesizer for MetaLearningSynthesizer {
 
         tracing::info!(goal = %goal, hint = ?best_strategy, "Synthesizing with meta-learning hint");
 
-        self.inner.synthesize(&augmented_goal, context, project_id, mode, insights).await
+        self.inner
+            .synthesize(&augmented_goal, context, project_id, mode, insights)
+            .await
     }
 }
 
@@ -424,7 +456,11 @@ impl FlowSynthesizer for StrategicSopSynthesizer {
         let mut candidates = Vec::new();
         for directive in directives {
             let augmented_goal = format!("{}{}", goal, directive);
-            if let Ok(res) = self.inner.synthesize(&augmented_goal, context, project_id, mode, insights).await {
+            if let Ok(res) = self
+                .inner
+                .synthesize(&augmented_goal, context, project_id, mode, insights)
+                .await
+            {
                 candidates.push(res);
             }
         }
@@ -437,12 +473,21 @@ impl FlowSynthesizer for StrategicSopSynthesizer {
         let mut max_score = f64::NEG_INFINITY;
 
         for res in candidates {
-            let sim = self.simulator.simulate(res.graph.clone(), context, project_id, "strategic_eval", None).await?;
-            
+            let sim = self
+                .simulator
+                .simulate(
+                    res.graph.clone(),
+                    context,
+                    project_id,
+                    "strategic_eval",
+                    None,
+                )
+                .await?;
+
             // Scoring: Prob is primary, Cost is secondary penalty
             // Prob (0.0-1.0) * 1000 - Cost (u64)
             let score = (sim.success_probability * 1000.0) - (sim.estimated_cost as f64);
-            
+
             tracing::info!(
                 goal = %goal,
                 prob = sim.success_probability,
@@ -459,7 +504,7 @@ impl FlowSynthesizer for StrategicSopSynthesizer {
 
         let mut final_res = best_result.ok_or_else(|| "No valid candidate selected".to_string())?;
         final_res.plan_description = format!(
-            "Strategic selection (Score: {:.2}): {}", 
+            "Strategic selection (Score: {:.2}): {}",
             max_score, final_res.plan_description
         );
 
@@ -635,7 +680,12 @@ mod tests {
     async fn test_synthesize_single_action() {
         let syn = test_synthesizer();
         let result = syn
-            .synthesize("fetch the data", &empty_ctx(), sisyphus_types::WorkMode::Standard, None)
+            .synthesize(
+                "fetch the data",
+                &empty_ctx(),
+                sisyphus_types::WorkMode::Standard,
+                None,
+            )
             .await
             .unwrap();
         assert_eq!(result.graph.graph.node_count(), 1);
@@ -646,7 +696,12 @@ mod tests {
     async fn test_synthesize_linear_pipeline() {
         let syn = test_synthesizer();
         let result = syn
-            .synthesize("fetch and process the data", &empty_ctx(), sisyphus_types::WorkMode::Standard, None)
+            .synthesize(
+                "fetch and process the data",
+                &empty_ctx(),
+                sisyphus_types::WorkMode::Standard,
+                None,
+            )
             .await
             .unwrap();
         // Fetch → Process = 2 nodes, 1 edge
@@ -659,7 +714,12 @@ mod tests {
     async fn test_synthesize_parallel_fanout() {
         let syn = test_synthesizer();
         let result = syn
-            .synthesize("fetch and process in parallel", &empty_ctx(), sisyphus_types::WorkMode::Standard, None)
+            .synthesize(
+                "fetch and process in parallel",
+                &empty_ctx(),
+                sisyphus_types::WorkMode::Standard,
+                None,
+            )
             .await
             .unwrap();
         // Fetch + Process → Merge = 3 nodes, 2 edges
@@ -672,7 +732,12 @@ mod tests {
     async fn test_synthesize_empty_goal_defaults() {
         let syn = test_synthesizer();
         let result = syn
-            .synthesize("xyzzy", &empty_ctx(), sisyphus_types::WorkMode::Standard, None)
+            .synthesize(
+                "xyzzy",
+                &empty_ctx(),
+                sisyphus_types::WorkMode::Standard,
+                None,
+            )
             .await
             .unwrap();
         // Falls back to "default" single node

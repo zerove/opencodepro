@@ -34,10 +34,8 @@ impl LanguageBackend for NodeBackend {
     fn check(&self, _pkg: Option<&str>, _all: bool, cwd: Option<&Path>) -> ToolResult<BuildOutput> {
         // TypeScript type-check: tsc --noEmit
         // If no tsconfig, try vue-tsc for Vue projects, or skip
-        let has_tsconfig = cwd
-            .is_some_and(|d| d.join("tsconfig.json").exists());
-        let has_vue = cwd
-            .is_some_and(|d| d.join("vue.config.js").exists() || has_vue_dep(cwd));
+        let has_tsconfig = cwd.is_some_and(|d| d.join("tsconfig.json").exists());
+        let has_vue = cwd.is_some_and(|d| d.join("vue.config.js").exists() || has_vue_dep(cwd));
 
         if has_vue && which("vue-tsc").is_some() {
             let (stdout, stderr, success) = build::run_command("vue-tsc", &["--noEmit"], cwd)?;
@@ -334,7 +332,9 @@ fn parse_eslint_json(json_str: &str) -> (Vec<Diag>, Vec<Diag>) {
 
     if let Ok(results) = serde_json::from_str::<Vec<serde_json::Value>>(json_str) {
         for result in results {
-            let file = result["filePath"].as_str().map(std::string::ToString::to_string);
+            let file = result["filePath"]
+                .as_str()
+                .map(std::string::ToString::to_string);
             if let Some(messages) = result["messages"].as_array() {
                 for msg in messages {
                     let line = msg["line"].as_u64().map(|n| n as usize);

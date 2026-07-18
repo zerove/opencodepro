@@ -3,15 +3,15 @@
 //! Provides [`KnowledgeGraph`] for in-memory graph-based asset storage and
 //! [`AssetManager`] for async CRUD, persistence, and intelligent retrieval.
 
-use std::sync::Arc;
-use tokio::sync::RwLock;
-use std::collections::HashMap;
 use petgraph::graph::{DiGraph, NodeIndex};
 use petgraph::visit::EdgeRef;
-use serde::{Serialize, Deserialize};
-use thiserror::Error;
-use sisyphus_types::asset::{CognitiveAsset, AssetRelation, RelationType, AssetKind};
+use serde::{Deserialize, Serialize};
+use sisyphus_types::asset::{AssetKind, AssetRelation, CognitiveAsset, RelationType};
 use sisyphus_types::tools::ToolSpec;
+use std::collections::HashMap;
+use std::sync::Arc;
+use thiserror::Error;
+use tokio::sync::RwLock;
 
 // ── Errors ───────────────────────────────────────────────────────────────
 
@@ -65,11 +65,15 @@ impl KnowledgeGraph {
     }
 
     pub fn add_relation(&mut self, rel: AssetRelation) -> Result<(), KnowledgeError> {
-        let from_idx = self.node_map.get(&rel.from_id)
+        let from_idx = self
+            .node_map
+            .get(&rel.from_id)
             .ok_or_else(|| KnowledgeError::AssetNotFound(rel.from_id.clone()))?;
-        let to_idx = self.node_map.get(&rel.to_id)
+        let to_idx = self
+            .node_map
+            .get(&rel.to_id)
             .ok_or_else(|| KnowledgeError::AssetNotFound(rel.to_id.clone()))?;
-        
+
         self.graph.add_edge(*from_idx, *to_idx, rel.relation_type);
         Ok(())
     }
@@ -79,15 +83,19 @@ impl KnowledgeGraph {
     }
 
     pub fn find_assets_by_kind(&self, kind: AssetKind) -> Vec<&CognitiveAsset> {
-        self.assets.values()
+        self.assets
+            .values()
             .filter(|a| std::mem::discriminant(&a.kind) == std::mem::discriminant(&kind))
             .collect()
     }
 
     pub fn get_related_assets(&self, id: &str, rel_type: RelationType) -> Vec<&CognitiveAsset> {
-        let Some(node_idx) = self.node_map.get(id) else { return vec![] };
-        
-        self.graph.edges(*node_idx)
+        let Some(node_idx) = self.node_map.get(id) else {
+            return vec![];
+        };
+
+        self.graph
+            .edges(*node_idx)
             .filter(|e| std::mem::discriminant(e.weight()) == std::mem::discriminant(&rel_type))
             .filter_map(|e| {
                 let target_id = &self.graph[e.target()];
@@ -185,8 +193,8 @@ impl AssetManager {
         let json = std::fs::read_to_string(&self.storage_path)
             .map_err(|e| KnowledgeError::StorageError(e.to_string()))?;
 
-        let snapshot: KnowledgeSnapshot = serde_json::from_str(&json)
-            .map_err(|e| KnowledgeError::StorageError(e.to_string()))?;
+        let snapshot: KnowledgeSnapshot =
+            serde_json::from_str(&json).map_err(|e| KnowledgeError::StorageError(e.to_string()))?;
 
         let mut graph = self.graph.write().await;
         *graph = KnowledgeGraph::from_snapshot(snapshot);
@@ -202,10 +210,18 @@ impl AssetManager {
         _confidence: f32,
     ) -> Result<(), KnowledgeError> {
         let (kind, description) = match &content {
-            sisyphus_types::asset::AssetContent::Tool(_) => (AssetKind::Tool, "Sedimented tool".into()),
-            sisyphus_types::asset::AssetContent::SOP(_) => (AssetKind::SOP, "Sedimented SOP".into()),
-            sisyphus_types::asset::AssetContent::Insight(i) => (AssetKind::Insight, i.observation.clone()),
-            sisyphus_types::asset::AssetContent::Constraint(c) => (AssetKind::Constraint, c.description.clone()),
+            sisyphus_types::asset::AssetContent::Tool(_) => {
+                (AssetKind::Tool, "Sedimented tool".into())
+            }
+            sisyphus_types::asset::AssetContent::SOP(_) => {
+                (AssetKind::SOP, "Sedimented SOP".into())
+            }
+            sisyphus_types::asset::AssetContent::Insight(i) => {
+                (AssetKind::Insight, i.observation.clone())
+            }
+            sisyphus_types::asset::AssetContent::Constraint(c) => {
+                (AssetKind::Constraint, c.description.clone())
+            }
         };
         let asset = CognitiveAsset {
             id: id.to_string(),
@@ -226,17 +242,23 @@ impl AssetManager {
         Ok(())
     }
 
-    pub async fn sediment_tool(&self, spec: ToolSpec, wasm_path: std::path::PathBuf) -> Result<String, KnowledgeError> {
+    pub async fn sediment_tool(
+        &self,
+        spec: ToolSpec,
+        wasm_path: std::path::PathBuf,
+    ) -> Result<String, KnowledgeError> {
         let id = format!("asset_tool_{}", uuid::Uuid::new_v4());
         let name = spec.tool_id.clone();
         let content = sisyphus_types::asset::AssetContent::Tool(spec);
-        
+
         self.save_asset(&id, name, content, 1.0).await?;
-        
+
         // Store wasm_path in metadata on next save
         let mut graph = self.graph.write().await;
         if let Some(asset) = graph.assets.get_mut(&id) {
-            asset.metadata.insert("wasm_path".into(), wasm_path.to_string_lossy().to_string());
+            asset
+                .metadata
+                .insert("wasm_path".into(), wasm_path.to_string_lossy().to_string());
         }
 
         Ok(id)
@@ -244,7 +266,8 @@ impl AssetManager {
 
     pub async fn get_asset(&self, id: &str) -> Result<CognitiveAsset, KnowledgeError> {
         let graph = self.graph.read().await;
-        graph.get_asset(id)
+        graph
+            .get_asset(id)
             .cloned()
             .ok_or_else(|| KnowledgeError::AssetNotFound(id.to_string()))
     }
@@ -258,7 +281,9 @@ impl AssetManager {
         let graph = self.graph.read().await;
         let goal_lower = goal.to_lowercase();
 
-        let mut scored: Vec<(i32, CognitiveAsset)> = graph.assets.values()
+        let mut scored: Vec<(i32, CognitiveAsset)> = graph
+            .assets
+            .values()
             .filter_map(|a| {
                 let name_lower = a.name.to_lowercase();
                 let desc_lower = a.description.to_lowercase();
@@ -271,8 +296,7 @@ impl AssetManager {
                 }
 
                 // Score: name match = 10, description match = 5
-                let score = if name_match { 10 } else { 0 }
-                    + if desc_match { 5 } else { 0 };
+                let score = if name_match { 10 } else { 0 } + if desc_match { 5 } else { 0 };
 
                 Some((score, a.clone()))
             })
@@ -284,13 +308,13 @@ impl AssetManager {
 
     /// Use LLM to find the best matching asset for a goal.
     pub async fn find_best_asset(
-        &self, 
-        goal: &str, 
-        llm_client: Arc<dyn sisyphus_tools_llm::LlmClient>
+        &self,
+        goal: &str,
+        llm_client: Arc<dyn sisyphus_tools_llm::LlmClient>,
     ) -> Result<Option<CognitiveAsset>, KnowledgeError> {
         let graph = self.graph.read().await;
         let candidates: Vec<&CognitiveAsset> = graph.assets.values().collect();
-        
+
         if candidates.is_empty() {
             return Ok(None);
         }
@@ -305,10 +329,13 @@ impl AssetManager {
             which of the following cognitive assets is the best match for a hot-start?\n\n\
             Candidates:\n{}\n\n\
             Return only the index of the best candidate, or 'NONE' if no asset is relevant.",
-            goal, candidate_descriptions.join("\n")
+            goal,
+            candidate_descriptions.join("\n")
         );
 
-        let response = llm_client.chat("You are a Knowledge Retrieval Agent.", &prompt, false).await
+        let response = llm_client
+            .chat("You are a Knowledge Retrieval Agent.", &prompt, false)
+            .await
             .map_err(|e| KnowledgeError::Internal(e.to_string()))?;
 
         if let Ok(idx) = response.trim().parse::<usize>() {
@@ -331,7 +358,7 @@ impl AssetManager {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sisyphus_types::asset::{InsightData, AssetContent};
+    use sisyphus_types::asset::{AssetContent, InsightData};
 
     fn make_test_asset(id: &str, name: &str, description: &str) -> CognitiveAsset {
         CognitiveAsset {
@@ -425,12 +452,20 @@ mod tests {
 
         // Save
         let manager = AssetManager::new(path.clone());
-        manager.save_asset("a1", "Test".into(), AssetContent::Insight(InsightData {
-            observation: "obs".into(),
-            reasoning: "reason".into(),
-            evidence_ids: vec![],
-            confidence: 0.9,
-        }), 1.0).await.unwrap();
+        manager
+            .save_asset(
+                "a1",
+                "Test".into(),
+                AssetContent::Insight(InsightData {
+                    observation: "obs".into(),
+                    reasoning: "reason".into(),
+                    evidence_ids: vec![],
+                    confidence: 0.9,
+                }),
+                1.0,
+            )
+            .await
+            .unwrap();
         manager.save().await.unwrap();
         assert!(path.exists());
 
@@ -448,26 +483,50 @@ mod tests {
         let manager = AssetManager::new(dir.path().join("q.json"));
 
         // Add assets with different names/descriptions
-        manager.save_asset("a1", "File Reader".into(), AssetContent::Insight(InsightData {
-            observation: "Reads files from disk".into(),
-            reasoning: "".into(),
-            evidence_ids: vec![],
-            confidence: 1.0,
-        }), 1.0).await.unwrap();
+        manager
+            .save_asset(
+                "a1",
+                "File Reader".into(),
+                AssetContent::Insight(InsightData {
+                    observation: "Reads files from disk".into(),
+                    reasoning: "".into(),
+                    evidence_ids: vec![],
+                    confidence: 1.0,
+                }),
+                1.0,
+            )
+            .await
+            .unwrap();
 
-        manager.save_asset("a2", "Git Operations".into(), AssetContent::Insight(InsightData {
-            observation: "Performs git commands".into(),
-            reasoning: "".into(),
-            evidence_ids: vec![],
-            confidence: 1.0,
-        }), 1.0).await.unwrap();
+        manager
+            .save_asset(
+                "a2",
+                "Git Operations".into(),
+                AssetContent::Insight(InsightData {
+                    observation: "Performs git commands".into(),
+                    reasoning: "".into(),
+                    evidence_ids: vec![],
+                    confidence: 1.0,
+                }),
+                1.0,
+            )
+            .await
+            .unwrap();
 
-        manager.save_asset("a3", "Database Query".into(), AssetContent::Insight(InsightData {
-            observation: "Reads from database".into(),
-            reasoning: "".into(),
-            evidence_ids: vec![],
-            confidence: 1.0,
-        }), 1.0).await.unwrap();
+        manager
+            .save_asset(
+                "a3",
+                "Database Query".into(),
+                AssetContent::Insight(InsightData {
+                    observation: "Reads from database".into(),
+                    reasoning: "".into(),
+                    evidence_ids: vec![],
+                    confidence: 1.0,
+                }),
+                1.0,
+            )
+            .await
+            .unwrap();
 
         // Search for "read" — should match a1 (name) and a3 (description)
         let results = manager.query_tools_for_goal("read").await;
@@ -481,12 +540,20 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let manager = AssetManager::new(dir.path().join("qi.json"));
 
-        manager.save_asset("a1", "MyTool".into(), AssetContent::Insight(InsightData {
-            observation: "A tool".into(),
-            reasoning: "".into(),
-            evidence_ids: vec![],
-            confidence: 1.0,
-        }), 1.0).await.unwrap();
+        manager
+            .save_asset(
+                "a1",
+                "MyTool".into(),
+                AssetContent::Insight(InsightData {
+                    observation: "A tool".into(),
+                    reasoning: "".into(),
+                    evidence_ids: vec![],
+                    confidence: 1.0,
+                }),
+                1.0,
+            )
+            .await
+            .unwrap();
 
         let results = manager.query_tools_for_goal("mytool").await;
         assert_eq!(results.len(), 1);
@@ -495,7 +562,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_load_nonexistent_file() {
-        let manager = AssetManager::new(std::path::PathBuf::from("/tmp/nonexistent_test_file.json"));
+        let manager =
+            AssetManager::new(std::path::PathBuf::from("/tmp/nonexistent_test_file.json"));
         assert!(manager.load().await.is_ok());
         assert_eq!(manager.asset_count().await, 0);
     }
@@ -533,12 +601,14 @@ mod tests {
         let mut graph = KnowledgeGraph::new();
         graph.add_asset(make_test_asset("a1", "A", "desc"));
         graph.add_asset(make_test_asset("a2", "B", "desc"));
-        graph.add_relation(AssetRelation {
-            from_id: "a1".into(),
-            to_id: "a2".into(),
-            relation_type: RelationType::Solves,
-            weight: 1.0,
-        }).unwrap();
+        graph
+            .add_relation(AssetRelation {
+                from_id: "a1".into(),
+                to_id: "a2".into(),
+                relation_type: RelationType::Solves,
+                weight: 1.0,
+            })
+            .unwrap();
         let related = graph.get_related_assets("a1", RelationType::Requires);
         assert!(related.is_empty());
     }
@@ -579,12 +649,20 @@ mod tests {
     async fn test_query_no_match() {
         let dir = tempfile::tempdir().unwrap();
         let manager = AssetManager::new(dir.path().join("q.json"));
-        manager.save_asset("a1", "Git Ops".into(), AssetContent::Insight(InsightData {
-            observation: "does git".into(),
-            reasoning: "".into(),
-            evidence_ids: vec![],
-            confidence: 1.0,
-        }), 1.0).await.unwrap();
+        manager
+            .save_asset(
+                "a1",
+                "Git Ops".into(),
+                AssetContent::Insight(InsightData {
+                    observation: "does git".into(),
+                    reasoning: "".into(),
+                    evidence_ids: vec![],
+                    confidence: 1.0,
+                }),
+                1.0,
+            )
+            .await
+            .unwrap();
         let results = manager.query_tools_for_goal("unrelated_xyz").await;
         assert!(results.is_empty());
     }

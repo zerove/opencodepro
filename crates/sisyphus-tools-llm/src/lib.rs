@@ -10,15 +10,15 @@ pub mod model_router;
 pub mod provider;
 
 pub use llm::{
-    BudgetProvider, DynamicLlmClient, OpenAiLlmClient, RequestContext,
-    EmbeddingClient, DummyEmbeddingClient, OpenAiEmbeddingClient,
+    BudgetProvider, DummyEmbeddingClient, DynamicLlmClient, EmbeddingClient, OpenAiEmbeddingClient,
+    OpenAiLlmClient, RequestContext,
 };
 pub use metis::{
     Ambiguity, AmbiguitySeverity, DummyLlmClient, FixedResponseClient, ImplicitRequirement,
     LlmClient, MetisAnalysis, MetisError,
 };
 pub use provider::{
-    AnthropicProvider, build_provider_registry, ChatMessage, ChatRole, GoogleGeminiProvider,
+    build_provider_registry, AnthropicProvider, ChatMessage, ChatRole, GoogleGeminiProvider,
     LlmProvider, OpenAiCompatibleProvider, ProviderError, ProviderRegistry, ProviderResponse,
     RetryConfig,
 };
@@ -46,4 +46,3 @@ mod tests {
         assert_eq!(config.name, "test-model");
     }
 }
-

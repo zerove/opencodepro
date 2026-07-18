@@ -1,16 +1,16 @@
 #![allow(clippy::cast_precision_loss)]
+pub mod asset;
 pub mod errors;
 pub mod experience;
 pub mod roadmap;
-pub mod asset;
 pub mod tools;
 
-pub mod graph;
-pub mod execution;
-pub mod node;
 pub mod config;
-pub mod types;
+pub mod execution;
+pub mod graph;
+pub mod node;
 pub mod skill;
+pub mod types;
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -25,18 +25,27 @@ pub struct GoldenSop {
 
 #[async_trait]
 pub trait GoldenDataset: Send + Sync {
-    async fn enroll(&self, goal: &str, config: SOPGraphConfig, metric: f64) -> Result<(), TypesError>;
+    async fn enroll(
+        &self,
+        goal: &str,
+        config: SOPGraphConfig,
+        metric: f64,
+    ) -> Result<(), TypesError>;
     async fn get_golden_sop(&self, goal: &str) -> Result<Option<GoldenSop>, TypesError>;
-    async fn verify_no_regression(&self, goal: &str, candidate: &SOPGraphConfig, current_metric: f64) -> Result<bool, TypesError>;
+    async fn verify_no_regression(
+        &self,
+        goal: &str,
+        candidate: &SOPGraphConfig,
+        current_metric: f64,
+    ) -> Result<bool, TypesError>;
 }
 
-
-pub use errors::*;
-pub use roadmap::*;
-pub use graph::*;
-pub use execution::*;
-pub use node::*;
 pub use config::*;
+pub use errors::*;
+pub use execution::*;
+pub use graph::*;
+pub use node::*;
+pub use roadmap::*;
 pub use types::*;
 
 // ── Cognitive Map Types ────────────────────────────────────
@@ -264,7 +273,7 @@ mod tests {
         assert_eq!(config.nodes.len(), 2);
         assert_eq!(config.edges.len(), 1);
 
-            let rebuilt_graph = SOPGraph::from_config(&config, executor).unwrap();
+        let rebuilt_graph = SOPGraph::from_config(&config, executor).unwrap();
         assert_eq!(rebuilt_graph.graph.node_count(), 2);
         assert_eq!(rebuilt_graph.graph.edge_count(), 1);
     }
@@ -360,8 +369,8 @@ mod tests {
         }
     }
 
-// ── TypesError tests ───────────────────────────────────────────────
-    
+    // ── TypesError tests ───────────────────────────────────────────────
+
     #[test]
     fn test_types_error_config_read_display() {
         let source = std::io::Error::new(std::io::ErrorKind::NotFound, "file not found");
@@ -371,7 +380,10 @@ mod tests {
         };
         let msg = err.to_string();
         assert!(msg.contains("config.toml"), "should contain path");
-        assert!(msg.contains("file not found"), "should contain source error");
+        assert!(
+            msg.contains("file not found"),
+            "should contain source error"
+        );
     }
 
     #[test]
@@ -391,14 +403,20 @@ mod tests {
         let err = TypesError::StateStoreError("db connection failed".into());
         let msg = err.to_string();
         assert!(msg.contains("State store error"), "should contain prefix");
-        assert!(msg.contains("db connection failed"), "should contain message");
+        assert!(
+            msg.contains("db connection failed"),
+            "should contain message"
+        );
     }
 
     #[test]
     fn test_types_error_node_execution_display() {
         let err = TypesError::NodeExecutionError("node timeout".into());
         let msg = err.to_string();
-        assert!(msg.contains("Node execution error"), "should contain prefix");
+        assert!(
+            msg.contains("Node execution error"),
+            "should contain prefix"
+        );
         assert!(msg.contains("node timeout"), "should contain message");
     }
 
@@ -410,7 +428,10 @@ mod tests {
         };
         let msg = err.to_string();
         assert!(msg.contains("test_tool"), "should contain tool_id");
-        assert!(msg.contains("something went wrong"), "should contain details");
+        assert!(
+            msg.contains("something went wrong"),
+            "should contain details"
+        );
     }
 
     #[test]

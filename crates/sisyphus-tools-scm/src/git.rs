@@ -267,7 +267,6 @@ mod tests {
         fs::write(dir.join(name), content).unwrap();
     }
 
-
     #[test]
     fn test_init_and_status_empty() {
         let (_d, path) = init_repo();

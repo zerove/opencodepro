@@ -1,48 +1,48 @@
 #![allow(clippy::cast_precision_loss)]
-pub mod pattern_analyzer;
 pub mod complexity;
 pub mod gap_analyzer;
+pub mod pattern_analyzer;
 pub mod tool_coder;
-pub mod wasm_compiler;
 pub mod tool_verifier;
+pub mod wasm_compiler;
 use std::sync::Arc;
 
 pub mod error;
+pub mod evaluator;
 pub mod formal_verification;
 pub mod fuel;
 pub mod llm_synthesizer;
-pub mod evaluator;
 pub mod micro_reflector;
 pub mod mock;
 pub mod reflect;
 pub mod simulation;
-pub mod synthesis;
 pub mod supervisor;
+pub mod synthesis;
 pub mod topological_evolver;
 
+pub use complexity::{CognitiveDepth, ComplexityAnalyzer};
 pub use error::IntelError;
 pub use fuel::{AdaptiveFuelPricer, FuelPricer, SimpleFuelPricer};
-pub use reflect::{
-    ErrorCategory, LlmEvolver, LlmReflector, HybridReflector, RecordedNode, ReflectionReport, Reflector, SOPEvolver, StandardEvolver,
-    StandardReflector,
-};
-pub use simulation::{MonteCarloSimulator, Simulator, SimulationResult};
-pub use complexity::{ComplexityAnalyzer, CognitiveDepth};
 pub use gap_analyzer::{GapAnalyzer, ToolGap};
-pub use tool_coder::ToolCoder;
-pub use wasm_compiler::WasmCompiler;
-pub use tool_verifier::{ToolVerifier, VerificationReport};
+pub use reflect::{
+    ErrorCategory, HybridReflector, LlmEvolver, LlmReflector, RecordedNode, ReflectionReport,
+    Reflector, SOPEvolver, StandardEvolver, StandardReflector,
+};
+pub use simulation::{MonteCarloSimulator, SimulationResult, Simulator};
 pub use supervisor::SisyphusSupervisor;
-pub(crate) use synthesis::{
-    action_label, classify_goal, tool_id_for_action,
-};
+pub(crate) use synthesis::{action_label, classify_goal, tool_id_for_action};
 pub use synthesis::{
-    synthesize_composite, ActionType, FlowSynthesizer, GoalDrivenSynthesizer, MetaLearningSynthesizer, StrategicSopSynthesizer, SynthesisResult,
+    synthesize_composite, ActionType, FlowSynthesizer, GoalDrivenSynthesizer,
+    MetaLearningSynthesizer, StrategicSopSynthesizer, SynthesisResult,
 };
+pub use tool_coder::ToolCoder;
+pub use tool_verifier::{ToolVerifier, VerificationReport};
+pub use wasm_compiler::WasmCompiler;
 
 pub use formal_verification::{VerificationReport as FormalVerificationReport, VerificationRunner};
 pub use llm_synthesizer::{
-    FallbackGoalDecomposer, GoalDecomposer, LlmDrivenSynthesizer, LlmGoalDecomposer, LogicalSOPSynthesizer,
+    FallbackGoalDecomposer, GoalDecomposer, LlmDrivenSynthesizer, LlmGoalDecomposer,
+    LogicalSOPSynthesizer,
 };
 pub use topological_evolver::TopologicalSOPEvolver;
 

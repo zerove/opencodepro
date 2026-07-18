@@ -16,11 +16,17 @@ impl RoadmapManager {
             outcome.project_id, outcome.milestone_id, outcome.phase_id, outcome.goal_id
         );
         let value = serde_json::to_value(outcome)?;
-        self.store.set_state_json(&outcome.project_id, &key, value).await?;
+        self.store
+            .set_state_json(&outcome.project_id, &key, value)
+            .await?;
 
         // Update outcome index (deduplicated list of (project,ms,ph,goal) tuples)
         let idx_key = format!("roadmap:outcomes:{}", outcome.project_id);
-        let mut ids: Vec<String> = match self.store.get_state_json(&outcome.project_id, &idx_key).await? {
+        let mut ids: Vec<String> = match self
+            .store
+            .get_state_json(&outcome.project_id, &idx_key)
+            .await?
+        {
             Some(Value::Array(arr)) => arr
                 .iter()
                 .filter_map(|v| v.as_str().map(String::from))
@@ -38,7 +44,9 @@ impl RoadmapManager {
                 ids.drain(0..ids.len() - 100);
             }
             let arr: Value = ids.iter().map(|s| Value::String(s.clone())).collect();
-            self.store.set_state_json(&outcome.project_id, &idx_key, arr).await?;
+            self.store
+                .set_state_json(&outcome.project_id, &idx_key, arr)
+                .await?;
         }
 
         Ok(())
@@ -82,10 +90,7 @@ impl RoadmapManager {
     /// - Goals with recent failures → flagged as problematic
     /// - Blocked milestones → listed
     /// - Goals that are Pending but have been superseded by failures → suggestions
-    pub async fn evaluate_health(
-        &self,
-        project_id: &str,
-    ) -> Result<RoadmapHealth, RoadmapError> {
+    pub async fn evaluate_health(&self, project_id: &str) -> Result<RoadmapHealth, RoadmapError> {
         let project = self.get_project_or_err(project_id).await?;
         let outcomes = self.get_outcomes(project_id).await?;
         let recent_failures = outcomes.iter().filter(|o| !o.success).count();
@@ -253,9 +258,9 @@ impl RoadmapManager {
                             return false;
                         }
                         let depends_on_failed = ph.depends_on.iter().any(|d| {
-                            ph.goals.iter().any(
-                                |pg| pg.goal_id == *d && failed_in_phase.contains(&pg.goal_id),
-                            )
+                            ph.goals
+                                .iter()
+                                .any(|pg| pg.goal_id == *d && failed_in_phase.contains(&pg.goal_id))
                         });
                         let any_failed_before = failed_positions.iter().any(|fp| *fp < *i);
                         depends_on_failed || any_failed_before
@@ -264,7 +269,14 @@ impl RoadmapManager {
                     .collect();
 
                 for (m_id, p_id, g_id) in to_block {
-                    self.update_goal_status(project_id, &m_id, &p_id, &g_id, MilestoneStatus::Blocked).await?;
+                    self.update_goal_status(
+                        project_id,
+                        &m_id,
+                        &p_id,
+                        &g_id,
+                        MilestoneStatus::Blocked,
+                    )
+                    .await?;
                 }
             }
         }
@@ -276,5 +288,3 @@ impl RoadmapManager {
         self.evaluate_health(project_id).await
     }
 }
-
-

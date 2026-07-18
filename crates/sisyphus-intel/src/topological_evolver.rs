@@ -62,7 +62,9 @@ impl TopologicalSOPEvolver {
                         });
                         new_graph.graph[node_idx] = evolved_node;
                     } else {
-                        return Err(IntelError::NodeTypeMismatch { node_name: node_name.clone() });
+                        return Err(IntelError::NodeTypeMismatch {
+                            node_name: node_name.clone(),
+                        });
                     }
                 }
                 EvolutionOp::AddRetry {
@@ -253,7 +255,7 @@ impl SOPEvolver for TopologicalSOPEvolver {
                         node_name: record.node.clone(),
                         delta: 1_000_000,
                     });
-                    
+
                     // If it's a recurring issue, consider splitting the node
                     if report.deviation_score > 0.7 {
                         ops.push(EvolutionOp::InsertNode {
@@ -262,7 +264,9 @@ impl SOPEvolver for TopologicalSOPEvolver {
                             tool_id: "generic_processor".into(), // In real case, would split the logic
                         });
                     }
-                } else if record.output.contains("TypeError") || record.output.contains("InvalidInput") {
+                } else if record.output.contains("TypeError")
+                    || record.output.contains("InvalidInput")
+                {
                     ops.push(EvolutionOp::InsertNode {
                         after_node: "start".into(), // Simplified: insert at start or before node
                         new_name: format!("verify_{}", record.node),
@@ -300,7 +304,12 @@ mod tests {
     struct MockExecutor;
     #[async_trait]
     impl ToolExecutor for MockExecutor {
-        async fn execute(&self, _id: &str, _args: Vec<u8>, _fuel: u64) -> Result<Vec<u8>, sisyphus_types::TypesError> {
+        async fn execute(
+            &self,
+            _id: &str,
+            _args: Vec<u8>,
+            _fuel: u64,
+        ) -> Result<Vec<u8>, sisyphus_types::TypesError> {
             Ok(b"ok".to_vec())
         }
     }

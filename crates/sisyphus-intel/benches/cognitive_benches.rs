@@ -199,13 +199,14 @@ fn bench_evolution(c: &mut Criterion) {
     group.bench_function("evolve_simple_pricer", |b| {
         b.to_async(&rt).iter(|| async {
             let evolver = StandardEvolver::new();
-            evolver.evolve(
-                black_box(&graph),
-                black_box(&report),
-                black_box(&prediction),
-                None,
-            )
-            .await
+            evolver
+                .evolve(
+                    black_box(&graph),
+                    black_box(&report),
+                    black_box(&prediction),
+                    None,
+                )
+                .await
         })
     });
 
@@ -213,13 +214,14 @@ fn bench_evolution(c: &mut Criterion) {
     group.bench_function("evolve_adaptive_pricer", |b| {
         b.to_async(&rt).iter(|| async {
             let evolver = StandardEvolver::with_fuel_pricer(Arc::new(AdaptiveFuelPricer::new()));
-            evolver.evolve(
-                black_box(&graph),
-                black_box(&report),
-                black_box(&prediction),
-                None,
-            )
-            .await
+            evolver
+                .evolve(
+                    black_box(&graph),
+                    black_box(&report),
+                    black_box(&prediction),
+                    None,
+                )
+                .await
         })
     });
 
@@ -234,13 +236,14 @@ fn bench_evolution(c: &mut Criterion) {
     group.bench_function("evolve_noop", |b| {
         b.to_async(&rt).iter(|| async {
             let evolver = StandardEvolver::new();
-            evolver.evolve(
-                black_box(&graph),
-                black_box(&clean_report),
-                black_box(&prediction),
-                None,
-            )
-            .await
+            evolver
+                .evolve(
+                    black_box(&graph),
+                    black_box(&clean_report),
+                    black_box(&prediction),
+                    None,
+                )
+                .await
         })
     });
 

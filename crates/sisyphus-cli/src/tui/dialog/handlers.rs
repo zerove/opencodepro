@@ -1,9 +1,9 @@
 use crossterm::event::{KeyCode, KeyEvent};
 
 use super::super::background::{
-    spawn_dev_agent, spawn_execute_sop, spawn_list_sops,
-    spawn_fetch_available_skills, spawn_fetch_installed_skills, spawn_install_skill, spawn_uninstall_skill,
-    spawn_list_workspaces, spawn_switch_workspace,
+    spawn_dev_agent, spawn_execute_sop, spawn_fetch_available_skills, spawn_fetch_installed_skills,
+    spawn_install_skill, spawn_list_sops, spawn_list_workspaces, spawn_switch_workspace,
+    spawn_uninstall_skill,
 };
 use super::super::{App, DevFocus, LogEntry, ToastKind, View};
 use super::Dialog;
@@ -23,7 +23,10 @@ pub(super) fn handle_workspace_list_key(code: KeyCode, app: &mut App) {
             if let Some(ws) = app.workspaces.get(app.workspace_sel) {
                 let name = ws.name.clone();
                 let id = ws.id.clone();
-                app.add_toast(ToastKind::Info, format!("Switching to workspace: {}...", name));
+                app.add_toast(
+                    ToastKind::Info,
+                    format!("Switching to workspace: {}...", name),
+                );
                 if app.pending_op.is_none() {
                     app.pending_op = Some(spawn_switch_workspace(app.bridge_address.clone(), id));
                 }
@@ -77,7 +80,10 @@ pub(super) fn handle_session_list_key(code: KeyCode, app: &mut App) {
             let db = app.data_dir.join("sessions.json");
             match crate::tools::session_create(&db, "unnamed") {
                 Ok(s) => {
-                    app.add_log(LogEntry::Success(format!("Created session {} ({})", s.id, s.name)));
+                    app.add_log(LogEntry::Success(format!(
+                        "Created session {} ({})",
+                        s.id, s.name
+                    )));
                     app.session_dirty = true;
                     // Navigate to the new session
                     app.session_detail = crate::tools::session_get(&db, &s.id).ok();
@@ -90,7 +96,8 @@ pub(super) fn handle_session_list_key(code: KeyCode, app: &mut App) {
         }
         KeyCode::Char('d') | KeyCode::Delete => {
             let filtered = filtered_sessions(app);
-            if let Some(&idx) = filtered.get(app.session_sel.min(filtered.len().saturating_sub(1))) {
+            if let Some(&idx) = filtered.get(app.session_sel.min(filtered.len().saturating_sub(1)))
+            {
                 if let Some(s) = app.sessions.get(idx) {
                     app.confirm_delete = Some(s.id.clone());
                     app.dialog = Some(Dialog::ConfirmDelete);
@@ -146,7 +153,10 @@ pub(super) fn handle_todos_key(code: KeyCode, app: &mut App) {
                     let db = app.data_dir.join("todos.json");
                     match crate::tools::todo_add(&db, &task, crate::tools::TodoPriority::Medium) {
                         Ok(item) => {
-                            app.add_toast(ToastKind::Success, format!("Added todo: {}", item.content));
+                            app.add_toast(
+                                ToastKind::Success,
+                                format!("Added todo: {}", item.content),
+                            );
                             app.add_log(LogEntry::Success(format!("Added todo: {}", item.content)));
                             app.todo_dirty = true;
                         }
@@ -156,8 +166,12 @@ pub(super) fn handle_todos_key(code: KeyCode, app: &mut App) {
                 app.todo_adding.clear();
             }
             KeyCode::Esc => app.todo_adding.clear(),
-            KeyCode::Backspace => { app.todo_adding.pop(); }
-            KeyCode::Char(c) => { app.todo_adding.push(c); }
+            KeyCode::Backspace => {
+                app.todo_adding.pop();
+            }
+            KeyCode::Char(c) => {
+                app.todo_adding.push(c);
+            }
             _ => {}
         }
         return;
@@ -243,8 +257,12 @@ pub(super) fn handle_lsp_key(code: KeyCode, app: &mut App) {
             app.lsp_status = "running".into();
             app.add_toast(ToastKind::Info, "LSP analysis started...");
         }
-        KeyCode::Backspace => { app.dialog_query.pop(); }
-        KeyCode::Char(c) if !c.is_control() => { app.dialog_query.push(c); }
+        KeyCode::Backspace => {
+            app.dialog_query.pop();
+        }
+        KeyCode::Char(c) if !c.is_control() => {
+            app.dialog_query.push(c);
+        }
         _ => {}
     }
 }
@@ -264,13 +282,19 @@ pub(super) fn handle_sop_key(code: KeyCode, app: &mut App) {
             }
         }
         KeyCode::Enter => {
-            let sop_id = filtered_sops(app).get(app.sop_sel).map(|s| s.sop_id.clone());
+            let sop_id = filtered_sops(app)
+                .get(app.sop_sel)
+                .map(|s| s.sop_id.clone());
             let Some(sop_id) = sop_id else { return };
             app.sop_status = format!("executing {sop_id}...");
             app.sop_result = None;
             app.add_toast(ToastKind::Info, format!("Executing SOP: {sop_id}"));
             if app.pending_op.is_none() {
-                app.pending_op = Some(spawn_execute_sop(app.bridge_client.clone(), app.bridge_address.clone(), sop_id));
+                app.pending_op = Some(spawn_execute_sop(
+                    app.bridge_client.clone(),
+                    app.bridge_address.clone(),
+                    sop_id,
+                ));
             }
         }
         KeyCode::Char('r') | KeyCode::Char('R') => {
@@ -278,18 +302,27 @@ pub(super) fn handle_sop_key(code: KeyCode, app: &mut App) {
             app.sop_result = None;
             app.add_toast(ToastKind::Info, "Refreshing SOP list...");
             if app.pending_op.is_none() {
-                app.pending_op = Some(spawn_list_sops(app.bridge_client.clone(), app.bridge_address.clone()));
+                app.pending_op = Some(spawn_list_sops(
+                    app.bridge_client.clone(),
+                    app.bridge_address.clone(),
+                ));
             }
         }
         KeyCode::Char('t') | KeyCode::Char('T') => {
-            let sop_id = filtered_sops(app).get(app.sop_sel).map(|s| s.sop_id.clone());
+            let sop_id = filtered_sops(app)
+                .get(app.sop_sel)
+                .map(|s| s.sop_id.clone());
             let Some(id) = sop_id else { return };
             app.add_toast(ToastKind::Info, format!("Fetching trace for {id}..."));
             app.fetch_sop_trace(id.clone());
             app.dialog = Some(crate::tui::dialog::Dialog::Trace { sop_id: id });
         }
-        KeyCode::Backspace => { app.sop_query.pop(); }
-        KeyCode::Char(c) if !c.is_control() => { app.sop_query.push(c); }
+        KeyCode::Backspace => {
+            app.sop_query.pop();
+        }
+        KeyCode::Char(c) if !c.is_control() => {
+            app.sop_query.push(c);
+        }
         _ => {}
     }
 }
@@ -299,7 +332,10 @@ fn filtered_sops(app: &App) -> Vec<&crate::bridge::SopInfo> {
         return app.sop_sops.iter().collect();
     }
     let q = app.sop_query.to_lowercase();
-    app.sop_sops.iter().filter(|s| s.sop_id.to_lowercase().contains(&q)).collect()
+    app.sop_sops
+        .iter()
+        .filter(|s| s.sop_id.to_lowercase().contains(&q))
+        .collect()
 }
 
 // ── Roadmap Dialog ────────────────────────────────────
@@ -319,7 +355,10 @@ pub(super) fn handle_roadmap_key(code: KeyCode, app: &mut App) {
             // Approve the selected proposal
             let proposal_id = app.roadmap_status.clone(); // This is a placeholder; in a real system, we'd use roadmap_sel
             if !proposal_id.is_empty() {
-                app.add_toast(ToastKind::Info, format!("Approving proposal {proposal_id}..."));
+                app.add_toast(
+                    ToastKind::Info,
+                    format!("Approving proposal {proposal_id}..."),
+                );
                 if app.pending_op.is_none() {
                     app.pending_op = Some(super::super::background::spawn_approve_proposal(
                         app.bridge_client.clone(),
@@ -333,7 +372,10 @@ pub(super) fn handle_roadmap_key(code: KeyCode, app: &mut App) {
         KeyCode::Char('r') | KeyCode::Char('R') => {
             app.roadmap_status = "connecting...".into();
             if app.pending_op.is_none() {
-                app.pending_op = Some(super::super::background::spawn_fetch_roadmap(app.bridge_client.clone(), app.bridge_address.clone()));
+                app.pending_op = Some(super::super::background::spawn_fetch_roadmap(
+                    app.bridge_client.clone(),
+                    app.bridge_address.clone(),
+                ));
             }
         }
         _ => {}
@@ -343,7 +385,9 @@ pub(super) fn handle_roadmap_key(code: KeyCode, app: &mut App) {
 // ── Rename Session Dialog ────────────────────────────
 
 pub(super) fn handle_rename_key(code: KeyCode, app: &mut App) {
-    let Some(Dialog::Rename { session_id, name }) = &app.dialog else { return };
+    let Some(Dialog::Rename { session_id, name }) = &app.dialog else {
+        return;
+    };
     let session_id = session_id.clone();
     match code {
         KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('Q') => {
@@ -356,11 +400,12 @@ pub(super) fn handle_rename_key(code: KeyCode, app: &mut App) {
                 match crate::tools::session_rename(&db, &session_id, &new_name) {
                     Ok(_) => {
                         app.add_toast(ToastKind::Success, format!("Renamed → {new_name}"));
-                        app.add_log(LogEntry::Success(format!("Renamed session {session_id} → {new_name}")));
+                        app.add_log(LogEntry::Success(format!(
+                            "Renamed session {session_id} → {new_name}"
+                        )));
                         app.session_dirty = true;
                     }
-                    Err(e) => app.add_log(LogEntry::Error(format!("Rename failed: {e}")),
-                    )
+                    Err(e) => app.add_log(LogEntry::Error(format!("Rename failed: {e}"))),
                 }
             }
             app.dialog = None;
@@ -389,25 +434,42 @@ pub(super) fn handle_skill_market_key(code: KeyCode, app: &mut App) {
             app.skill_market_sel = app.skill_market_sel.saturating_sub(1);
         }
         KeyCode::Down => {
-            let max = app.skill_market_available.len().max(app.skill_market_installed.len());
+            let max = app
+                .skill_market_available
+                .len()
+                .max(app.skill_market_installed.len());
             app.skill_market_sel = (app.skill_market_sel + 1).min(max.saturating_sub(1));
         }
         KeyCode::Enter => {
             // If we are on an available skill, install it.
             if app.skill_market_sel < app.skill_market_available.len() {
                 let skill = app.skill_market_available[app.skill_market_sel].clone();
-                app.add_toast(ToastKind::Info, format!("Installing skill: {}...", skill.name));
+                app.add_toast(
+                    ToastKind::Info,
+                    format!("Installing skill: {}...", skill.name),
+                );
                 if app.pending_op.is_none() {
-                    app.pending_op = Some(spawn_install_skill(app.bridge_address.clone(), skill.id.clone()));
+                    app.pending_op = Some(spawn_install_skill(
+                        app.bridge_address.clone(),
+                        skill.id.clone(),
+                    ));
                 }
             } else {
                 // If we are on an installed skill, uninstall it.
-                let installed_idx = app.skill_market_sel.saturating_sub(app.skill_market_available.len());
+                let installed_idx = app
+                    .skill_market_sel
+                    .saturating_sub(app.skill_market_available.len());
                 if installed_idx < app.skill_market_installed.len() {
                     let skill = app.skill_market_installed[installed_idx].clone();
-                    app.add_toast(ToastKind::Info, format!("Uninstalling skill: {}...", skill.name));
+                    app.add_toast(
+                        ToastKind::Info,
+                        format!("Uninstalling skill: {}...", skill.name),
+                    );
                     if app.pending_op.is_none() {
-                        app.pending_op = Some(spawn_uninstall_skill(app.bridge_address.clone(), skill.id.clone()));
+                        app.pending_op = Some(spawn_uninstall_skill(
+                            app.bridge_address.clone(),
+                            skill.id.clone(),
+                        ));
                     }
                 }
             }
@@ -495,19 +557,19 @@ pub(super) fn handle_dev_key(key: KeyEvent, app: &mut App) {
                 if app.pending_op.is_none() {
                     let mut config = sisyphus_types::Config::default();
                     config.apply_env_overrides();
-                    app.pending_op = Some(spawn_dev_agent(
-                        config, goal, context, parallel, resume,
-                    ));
+                    app.pending_op = Some(spawn_dev_agent(config, goal, context, parallel, resume));
                 }
             }
         }
-        KeyCode::Backspace => {
-            match app.dev_focus {
-                DevFocus::Goal => { app.dev_goal.pop(); }
-                DevFocus::Context => { app.dev_context.pop(); }
-                _ => {}
+        KeyCode::Backspace => match app.dev_focus {
+            DevFocus::Goal => {
+                app.dev_goal.pop();
             }
-        }
+            DevFocus::Context => {
+                app.dev_context.pop();
+            }
+            _ => {}
+        },
         KeyCode::Char(' ') => {
             match app.dev_focus {
                 DevFocus::Parallel => app.dev_parallel = !app.dev_parallel,
@@ -517,13 +579,11 @@ pub(super) fn handle_dev_key(key: KeyEvent, app: &mut App) {
                 DevFocus::Run => {} // space on Run is no-op
             }
         }
-        KeyCode::Char(c) => {
-            match app.dev_focus {
-                DevFocus::Goal => app.dev_goal.push(c),
-                DevFocus::Context => app.dev_context.push(c),
-                _ => {}
-            }
-        }
+        KeyCode::Char(c) => match app.dev_focus {
+            DevFocus::Goal => app.dev_goal.push(c),
+            DevFocus::Context => app.dev_context.push(c),
+            _ => {}
+        },
         _ => {}
     }
 }

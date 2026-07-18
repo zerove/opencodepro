@@ -1,7 +1,6 @@
-
-use std::sync::Arc;
+use sisyphus_types::ExperienceRetriever;
 use sisyphus_types::experience::{ExperienceBank, ExperienceQuery, ExperienceTuple};
-use sisyphus_types::{ExperienceRetriever};
+use std::sync::Arc;
 
 pub struct BankRetriever {
     pub bank: Arc<dyn ExperienceBank>,
@@ -31,10 +30,7 @@ impl ExperienceRetriever for BankRetriever {
         self.bank.query_similar(q).await
     }
 
-    async fn record_experience(
-        &self,
-        exp: ExperienceTuple,
-    ) -> Result<(), String> {
+    async fn record_experience(&self, exp: ExperienceTuple) -> Result<(), String> {
         self.bank.record(exp).await
     }
 }

@@ -1,11 +1,10 @@
 //! Persistence layer for installed Sisyphus skills.
 //! Handles the storage, retrieval, and lifecycle of SkillBundles in SQLite.
 
-use sqlx::{SqlitePool, Row};
 use serde_json;
-use sisyphus_types::skill::{SkillBundle, SkillMetadata};
 use sisyphus_types::TypesError;
-
+use sisyphus_types::skill::{SkillBundle, SkillMetadata};
+use sqlx::{Row, SqlitePool};
 
 #[derive(Clone)]
 pub struct SkillStore {
@@ -28,20 +27,21 @@ impl SkillStore {
                 bundle_json TEXT NOT NULL,
                 version TEXT NOT NULL,
                 installed_at INTEGER NOT NULL
-            )"
+            )",
         )
         .execute(&self.pool)
         .await
         .map_err(|e| TypesError::StateStoreError(format!("Failed to init skills schema: {e}")))?;
-        
+
         Ok(())
     }
 
     /// Install a new skill bundle into the store.
     pub async fn install(&self, bundle: SkillBundle) -> Result<(), TypesError> {
-        let bundle_json = serde_json::to_string(&bundle)
-            .map_err(|e| TypesError::InternalError(format!("Failed to serialize skill bundle: {e}")))?;
-        
+        let bundle_json = serde_json::to_string(&bundle).map_err(|e| {
+            TypesError::InternalError(format!("Failed to serialize skill bundle: {e}"))
+        })?;
+
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
@@ -53,7 +53,7 @@ impl SkillStore {
              ON CONFLICT(id) DO UPDATE SET
                 bundle_json = excluded.bundle_json,
                 version = excluded.version,
-                installed_at = excluded.installed_at"
+                installed_at = excluded.installed_at",
         )
         .bind(&bundle.metadata.id)
         .bind(bundle_json)
@@ -61,7 +61,12 @@ impl SkillStore {
         .bind(now)
         .execute(&self.pool)
         .await
-        .map_err(|e| TypesError::StateStoreError(format!("Failed to install skill {}: {e}", bundle.metadata.id)))?;
+        .map_err(|e| {
+            TypesError::StateStoreError(format!(
+                "Failed to install skill {}: {e}",
+                bundle.metadata.id
+            ))
+        })?;
 
         Ok(())
     }
@@ -76,8 +81,9 @@ impl SkillStore {
 
         if let Some(row) = row {
             let bundle_json: String = row.get(0);
-            let bundle: SkillBundle = serde_json::from_str(&bundle_json)
-                .map_err(|e| TypesError::InternalError(format!("Failed to deserialize skill bundle: {e}")))?;
+            let bundle: SkillBundle = serde_json::from_str(&bundle_json).map_err(|e| {
+                TypesError::InternalError(format!("Failed to deserialize skill bundle: {e}"))
+            })?;
             Ok(Some(bundle))
         } else {
             Ok(None)
@@ -107,8 +113,10 @@ impl SkillStore {
             .bind(id)
             .execute(&self.pool)
             .await
-            .map_err(|e| TypesError::StateStoreError(format!("Failed to uninstall skill {}: {e}", id)))?;
-        
+            .map_err(|e| {
+                TypesError::StateStoreError(format!("Failed to uninstall skill {}: {e}", id))
+            })?;
+
         Ok(())
     }
 }

@@ -1,7 +1,7 @@
 //! Task complexity analysis for dynamic cognitive depth adjustment.
 
+use sisyphus_types::{experience::ExperienceBank, SOPGraph};
 use std::sync::Arc;
-use sisyphus_types::{SOPGraph, experience::ExperienceBank};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum CognitiveDepth {

@@ -23,7 +23,10 @@ pub(crate) fn handle_hashline(sub: &HashlineCommands) -> Result<()> {
                     }
                 }
             }
-            println!("Verification complete: {} valid, {} invalid", valid, invalid);
+            println!(
+                "Verification complete: {} valid, {} invalid",
+                valid, invalid
+            );
             if invalid > 0 {
                 std::process::exit(1);
             }

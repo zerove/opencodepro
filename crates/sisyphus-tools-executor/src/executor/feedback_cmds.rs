@@ -23,7 +23,8 @@ pub async fn cmd_feedback_save(
         })
         .unwrap_or_default();
 
-    let feedback = sisyphus_tools_core::feedback::Feedback::new(agent_id, request, output, corrected, tags);
+    let feedback =
+        sisyphus_tools_core::feedback::Feedback::new(agent_id, request, output, corrected, tags);
 
     store
         .save_feedback(feedback)

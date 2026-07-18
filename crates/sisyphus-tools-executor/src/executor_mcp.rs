@@ -1,6 +1,6 @@
-use sisyphus_tools_mcp::mcp::{HttpTransport, McpClient, McpTransport, StdioTransport};
-use sisyphus_tools_core::ToolResult;
 use serde_json::{json, Value};
+use sisyphus_tools_core::ToolResult;
+use sisyphus_tools_mcp::mcp::{HttpTransport, McpClient, McpTransport, StdioTransport};
 use std::collections::HashMap;
 
 /// A `ToolExecutor` that calls external tools via the MCP protocol.
@@ -96,13 +96,12 @@ impl sisyphus_types::ToolExecutor for MCPToolExecutor {
         };
 
         let mut client = self.client.lock().await;
-        let result = client
-            .call_tool(mcp_tool, mcp_args)
-            .await
-            .map_err(|e| sisyphus_types::TypesError::ToolExecutionError {
+        let result = client.call_tool(mcp_tool, mcp_args).await.map_err(|e| {
+            sisyphus_types::TypesError::ToolExecutionError {
                 tool_id: mcp_tool.to_string(),
                 details: format!("MCP tool '{mcp_tool}' failed: {e}"),
-            })?;
+            }
+        })?;
 
         // Serialize response
         let output = if result.content.len() == 1 {
@@ -142,20 +141,19 @@ impl sisyphus_types::ToolExecutor for MCPToolExecutor {
             json!({ "content": items, "is_error": result.is_error.unwrap_or(false) })
         };
 
-        serde_json::to_vec(&output)
-            .map_err(|e| sisyphus_types::TypesError::ToolExecutionError {
-                tool_id: mcp_tool.to_string(),
-                details: format!("serialize MCP result: {e}"),
-            })
+        serde_json::to_vec(&output).map_err(|e| sisyphus_types::TypesError::ToolExecutionError {
+            tool_id: mcp_tool.to_string(),
+            details: format!("serialize MCP result: {e}"),
+        })
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-use sisyphus_tools_core::ToolResult;
     use async_trait::async_trait;
     use serde_json::json;
+    use sisyphus_tools_core::ToolResult;
     use sisyphus_types::ToolExecutor;
     use std::sync::{Arc, Mutex};
 

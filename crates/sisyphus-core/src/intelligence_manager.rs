@@ -1,9 +1,8 @@
-use std::sync::Arc;
-use sisyphus_intel::{SisyphusIntel, SimulationResult, ReflectionReport};
-use sisyphus_types::{SOPGraph, ExecutionContext};
-use sisyphus_tools_llm_tools::{oracle, momus};
+use sisyphus_intel::{ReflectionReport, SimulationResult, SisyphusIntel};
+use sisyphus_tools_llm_tools::{momus, oracle};
+use sisyphus_types::{ExecutionContext, SOPGraph};
 use std::path::Path;
-
+use std::sync::Arc;
 
 /// IntelligenceManager wraps the cognitive capabilities of the system,
 /// providing high-level APIs for prediction, reflection, and evolution.
@@ -36,7 +35,7 @@ impl IntelligenceManager {
         insights: Option<&str>,
     ) -> Result<sisyphus_intel::synthesis::SynthesisResult, String> {
         self.synthesizer
-                    .synthesize(goal, ctx, project_id, mode, insights)
+            .synthesize(goal, ctx, project_id, mode, insights)
             .await
             .map_err(|e| e.to_string())
     }
@@ -63,7 +62,8 @@ impl IntelligenceManager {
         ctx: &ExecutionContext,
     ) -> Result<ReflectionReport, String> {
         // 1. Base reflection from the core reflector
-        let mut report = self.intel
+        let mut report = self
+            .intel
             .reflector
             .reflect(trace, prediction, None)
             .await?;
@@ -77,9 +77,11 @@ impl IntelligenceManager {
                 if let Ok(analysis) = oracle::analyze_file(path) {
                     for issue in analysis.issues {
                         expert_suggestions.push(format!(
-                            "[{}] {} at {}:{}: {}", 
-                            issue.severity, issue.message, 
-                            path.display(), issue.line, 
+                            "[{}] {} at {}:{}: {}",
+                            issue.severity,
+                            issue.message,
+                            path.display(),
+                            issue.line,
                             issue.code.as_deref().unwrap_or("")
                         ));
                     }
@@ -92,29 +94,37 @@ impl IntelligenceManager {
             let node_name = entry.key();
             let output = entry.value();
             let content = output.to_string();
-            
+
             // Heuristic: if node name contains 'plan' or output is long and structured, use Momus Plan Review
             if node_name.contains("plan") || content.contains("## ") {
-                let review = momus::review_plan(self.llm_client.as_ref(), &content, node_name.as_str()).await;
+                let review =
+                    momus::review_plan(self.llm_client.as_ref(), &content, node_name.as_str())
+                        .await;
                 for comment in review.comments {
-                        expert_suggestions.push(format!(
-                            "[{}] (Plan Review) {}: {} - Suggestion: {}", 
-                            comment.severity, comment.category, comment.message, 
-                            comment.suggestion.as_deref().unwrap_or("N/A")
-                        ));
-                    }
+                    expert_suggestions.push(format!(
+                        "[{}] (Plan Review) {}: {} - Suggestion: {}",
+                        comment.severity,
+                        comment.category,
+                        comment.message,
+                        comment.suggestion.as_deref().unwrap_or("N/A")
+                    ));
+                }
             }
-            
+
             // If output looks like code (contains common Rust keywords), use Momus Code Review
             if content.contains("fn ") || content.contains("pub struct") {
                 // We need a path for review_code. We'll use a virtual path since it's in-memory.
                 let path_str = format!("/virtual/{}", node_name);
                 let virtual_path = Path::new(&path_str);
-                if let Ok(review) = momus::review_code(self.llm_client.as_ref(), virtual_path, &content).await {
+                if let Ok(review) =
+                    momus::review_code(self.llm_client.as_ref(), virtual_path, &content).await
+                {
                     for comment in review.comments {
                         expert_suggestions.push(format!(
-                            "[{}] (Code Review) {}: {} - Suggestion: {}", 
-                            comment.severity, comment.category, comment.message, 
+                            "[{}] (Code Review) {}: {} - Suggestion: {}",
+                            comment.severity,
+                            comment.category,
+                            comment.message,
                             comment.suggestion.as_deref().unwrap_or("N/A")
                         ));
                     }
@@ -148,11 +158,18 @@ impl IntelligenceManager {
             prediction, report
         );
 
-        let response = self.llm_client.generate(&prompt).await
+        let response = self
+            .llm_client
+            .generate(&prompt)
+            .await
             .map_err(|e| format!("LLM critique failed: {}", e))?;
-        
-        serde_json::from_str::<sisyphus_types::CritiqueResult>(&response)
-            .map_err(|e| format!("Failed to parse critique JSON: {}. Response was: {}", e, response))
+
+        serde_json::from_str::<sisyphus_types::CritiqueResult>(&response).map_err(|e| {
+            format!(
+                "Failed to parse critique JSON: {}. Response was: {}",
+                e, response
+            )
+        })
     }
     /// Evolve a graph based on a reflection report and prediction.
     pub async fn evolve_graph(

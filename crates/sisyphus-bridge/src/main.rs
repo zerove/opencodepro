@@ -8,9 +8,7 @@ use tokio_stream::wrappers::TcpListenerStream;
 use tonic::transport::Server;
 use tracing::{error, info, warn};
 
-use sisyphus_bridge::{
-    auth, bridge_service::MySisyphusBridge, http, 
-};
+use sisyphus_bridge::{auth, bridge_service::MySisyphusBridge, http};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -32,14 +30,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     let auth_token = {
-        let config = shared_config.read().map_err(|e| Box::new(std::io::Error::other(format!("Config lock poisoned: {e}"))) as Box<dyn std::error::Error>)?;
+        let config = shared_config.read().map_err(|e| {
+            Box::new(std::io::Error::other(format!("Config lock poisoned: {e}")))
+                as Box<dyn std::error::Error>
+        })?;
         let _ = init_metrics(config.metrics.prometheus_port);
         config.auth_token.clone()
     };
 
     let grpc_addr: std::net::SocketAddr = "[::1]:50051".parse()?;
     let http_addr_str = {
-        let config = shared_config.read().map_err(|e| Box::new(std::io::Error::other(format!("Config lock poisoned: {e}"))) as Box<dyn std::error::Error>)?;
+        let config = shared_config.read().map_err(|e| {
+            Box::new(std::io::Error::other(format!("Config lock poisoned: {e}")))
+                as Box<dyn std::error::Error>
+        })?;
         config.http_address.clone()
     };
 
@@ -96,9 +100,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let grpc_listener = match tokio::net::TcpListener::bind(grpc_addr).await {
         Ok(l) => l,
         Err(_) => {
-            let v4_addr: std::net::SocketAddr =
-                format!("127.0.0.1:{}", grpc_addr.port()).parse()
-                .map_err(|e| Box::new(std::io::Error::new(std::io::ErrorKind::InvalidInput, e)))?;
+            let v4_addr: std::net::SocketAddr = format!("127.0.0.1:{}", grpc_addr.port())
+                .parse()
+                .map_err(|e| {
+                Box::new(std::io::Error::new(std::io::ErrorKind::InvalidInput, e))
+            })?;
             warn!("Failed to bind gRPC on {grpc_addr}, falling back to {v4_addr}");
             tokio::net::TcpListener::bind(v4_addr).await?
         }
@@ -122,11 +128,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 mod tests {
     use sisyphus_bridge_api::{
         sisyphus_bridge_server::SisyphusBridge, AddMessageRequest, AddMessageResponse,
-        DecomposeGoalRequest, DecomposeGoalResponse,
-        ExecuteSopRequest, ExecuteToolRequest, HealthCheckRequest, LearningInsightsRequest,
-        LearningInsightsResponse, ListAgentsRequest, ListPluginsRequest, ListPluginsResponse,
-        ListSoPsRequest, ListToolsRequest, ListToolsResponse, LoadPluginRequest,
-        LoadPluginResponse, TaskProto, UnloadPluginRequest, UnloadPluginResponse,
+        DecomposeGoalRequest, DecomposeGoalResponse, ExecuteSopRequest, ExecuteToolRequest,
+        HealthCheckRequest, LearningInsightsRequest, LearningInsightsResponse, ListAgentsRequest,
+        ListPluginsRequest, ListPluginsResponse, ListSoPsRequest, ListToolsRequest,
+        ListToolsResponse, LoadPluginRequest, LoadPluginResponse, TaskProto, UnloadPluginRequest,
+        UnloadPluginResponse,
     };
     use std::collections::HashMap;
     use tokio_stream::StreamExt;
@@ -199,15 +205,13 @@ mod tests {
         async fn list_so_ps(
             &self,
             _request: Request<ListSoPsRequest>,
-        ) -> Result<tonic::Response<sisyphus_bridge_api::ListSoPsResponse>, tonic::Status>
-        {
+        ) -> Result<tonic::Response<sisyphus_bridge_api::ListSoPsResponse>, tonic::Status> {
             Ok(tonic::Response::new(
                 sisyphus_bridge_api::ListSoPsResponse { sops: vec![] },
             ))
         }
 
-        type StreamExecutionStream =
-            tonic::codegen::BoxStream<sisyphus_bridge_api::ExecutionEvent>;
+        type StreamExecutionStream = tonic::codegen::BoxStream<sisyphus_bridge_api::ExecutionEvent>;
 
         async fn stream_execution(
             &self,

@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
-use serde_json::Value;
 use rayon::prelude::*;
+use serde_json::Value;
 use sisyphus_types::VectorRecord;
 use sqlx::{Row, SqlitePool};
 

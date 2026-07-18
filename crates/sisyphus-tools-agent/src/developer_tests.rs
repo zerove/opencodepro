@@ -53,7 +53,10 @@ async fn test_execute_step_create_file() {
     let step = DevStep {
         id: 1,
         description: "Create file".to_string(),
-        action: DevAction::CreateFile { path: path_str.clone(), content: "hello dev".to_string() },
+        action: DevAction::CreateFile {
+            path: path_str.clone(),
+            content: "hello dev".to_string(),
+        },
         expected_outcome: "File exists".to_string(),
         verification: VerificationMethod::None,
         status: StepStatus::Pending,
@@ -105,7 +108,7 @@ async fn test_execute_step_edit_file() {
         action: DevAction::EditFile {
             path: path_str,
             old_string: "old content".to_string(),
-            new_string: "new content".to_string()
+            new_string: "new content".to_string(),
         },
         expected_outcome: "Content updated".to_string(),
         verification: VerificationMethod::None,
@@ -125,9 +128,13 @@ async fn test_verify_step_llm_review() {
     let step = DevStep {
         id: 1,
         description: "Test".to_string(),
-        action: DevAction::ReadFile { path: "any".to_string() },
+        action: DevAction::ReadFile {
+            path: "any".to_string(),
+        },
         expected_outcome: "Any".to_string(),
-        verification: VerificationMethod::LlmReview { criteria: "is it a string?".to_string() },
+        verification: VerificationMethod::LlmReview {
+            criteria: "is it a string?".to_string(),
+        },
         status: StepStatus::Pending,
     };
 
@@ -197,7 +204,10 @@ async fn test_run_step_with_fix_sequential() {
     let step = DevStep {
         id: 1,
         description: "Create file".to_string(),
-        action: DevAction::CreateFile { path: path_str.clone(), content: "hello".to_string() },
+        action: DevAction::CreateFile {
+            path: path_str.clone(),
+            content: "hello".to_string(),
+        },
         expected_outcome: "File exists".to_string(),
         verification: VerificationMethod::None,
         status: StepStatus::Pending,

@@ -5,9 +5,7 @@
 
 pub mod types;
 
-pub use types::{
-    AfterHookResult, BeforeHookResult, HookDef, HookEffect, HookPhase,
-};
+pub use types::{AfterHookResult, BeforeHookResult, HookDef, HookEffect, HookPhase};
 
 // ── Hook Registry ───────────────────────────────────────────
 

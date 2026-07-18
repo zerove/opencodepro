@@ -1,7 +1,7 @@
-use std::sync::Arc;
 use crate::{ExecutionContext, NodeOutput};
-use sisyphus_types::{RuntimeSupervisor, SupervisorDecision};
 use async_trait::async_trait;
+use sisyphus_types::{RuntimeSupervisor, SupervisorDecision};
+use std::sync::Arc;
 
 pub struct DefaultSupervisor;
 

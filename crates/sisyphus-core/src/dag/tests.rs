@@ -1,8 +1,6 @@
 use super::*;
 use dashmap::DashMap;
-use sisyphus_types::{
-    CompositeGraph, GraphDependency, DataMapping, NodeOutput, SOPGraphConfig,
-};
+use sisyphus_types::{CompositeGraph, DataMapping, GraphDependency, NodeOutput, SOPGraphConfig};
 use std::collections::HashMap;
 
 #[test]

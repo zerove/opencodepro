@@ -9,7 +9,8 @@ pub struct AutoDocGenerator;
 impl AutoDocGenerator {
     /// Generate a doc comment for a specific function in a file.
     pub fn generate_for_function(file_path: &str, fn_name: &str) -> ToolResult<String> {
-        let content = std::fs::read_to_string(file_path).map_err(sisyphus_tools_core::ToolError::Io)?;
+        let content =
+            std::fs::read_to_string(file_path).map_err(sisyphus_tools_core::ToolError::Io)?;
 
         let lines: Vec<&str> = content.lines().collect();
         let mut doc = String::new();
@@ -91,7 +92,8 @@ impl AutoDocGenerator {
     /// Generate doc comments for all public items in a file.
     /// Returns (item_name, doc_string) pairs.
     pub fn generate_for_module(file_path: &str) -> ToolResult<Vec<(String, String)>> {
-        let content = std::fs::read_to_string(file_path).map_err(sisyphus_tools_core::ToolError::Io)?;
+        let content =
+            std::fs::read_to_string(file_path).map_err(sisyphus_tools_core::ToolError::Io)?;
 
         let mut results = Vec::new();
 

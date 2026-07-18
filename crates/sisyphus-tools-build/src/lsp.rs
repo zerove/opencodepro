@@ -16,13 +16,13 @@ pub use types::{
     LspDocumentSymbol, LspError, LspHover, LspLocation, LspPosition, LspRange, LspResult,
 };
 
+use protocol::{read_message, write_message};
 use serde::Deserialize;
 use serde_json::Value;
 use std::process::Stdio;
 use std::sync::{Arc, Mutex};
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Child;
-use protocol::{read_message, write_message};
 
 // ── LSP Client ─────────────────────────────────────────────
 

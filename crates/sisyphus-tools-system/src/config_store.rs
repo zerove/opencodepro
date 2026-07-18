@@ -69,10 +69,15 @@ impl ConfigStore {
             Ok(mut new_config) => {
                 new_config.apply_env_overrides();
                 if let Err(e) = new_config.validate() {
-                    tracing::warn!("Config validation failed during reload, keeping previous config: {e}");
+                    tracing::warn!(
+                        "Config validation failed during reload, keeping previous config: {e}"
+                    );
                     return false;
                 }
-                let mut cfg = self.config.write().unwrap_or_else(std::sync::PoisonError::into_inner);
+                let mut cfg = self
+                    .config
+                    .write()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
                 // Serialize both to check if content actually changed
                 let old_json = serde_json::to_value(&*cfg).ok();
                 let new_json = serde_json::to_value(&new_config).ok();

@@ -1,9 +1,9 @@
 //! Gap analysis for autonomous tool generation.
 
-use std::sync::Arc;
-use sisyphus_types::{SOPGraph, tools::ToolSpec};
 use crate::reflect::ReflectionReport;
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
+use sisyphus_types::{tools::ToolSpec, SOPGraph};
+use std::sync::Arc;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ToolGap {
@@ -40,7 +40,10 @@ impl GapAnalyzer {
             report = report
         );
 
-        let response = self.llm_client.chat("You are a Sisyphus Gap Analyzer.", &prompt, true).await
+        let response = self
+            .llm_client
+            .chat("You are a Sisyphus Gap Analyzer.", &prompt, true)
+            .await
             .map_err(|e| crate::IntelError::Internal(e.to_string()))?;
 
         if response.contains("GAP_FOUND") {
@@ -49,11 +52,14 @@ impl GapAnalyzer {
             let json_end = response.rfind('}').map(|i| i + 1).unwrap_or(response.len());
             let spec_json = &response[json_start..json_end];
 
-            let spec: ToolSpec = serde_json::from_str(spec_json)
-                .map_err(|e| crate::IntelError::Internal(format!("Failed to parse ToolSpec: {e}")))?;
+            let spec: ToolSpec = serde_json::from_str(spec_json).map_err(|e| {
+                crate::IntelError::Internal(format!("Failed to parse ToolSpec: {e}"))
+            })?;
 
             // Find which node is failing
-            let failing_node = report.suggested_improvements.first()
+            let failing_node = report
+                .suggested_improvements
+                .first()
                 .cloned()
                 .unwrap_or_else(|| "unknown".to_string());
 

@@ -1,9 +1,9 @@
-use sisyphus_core::Consensus;
+use async_trait::async_trait;
 use serde_json::Value;
+use sisyphus_core::Consensus;
+use std::collections::HashSet;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use async_trait::async_trait;
-use std::collections::HashSet;
 
 /// 简单的集群共识实现
 pub struct ClusterConsensus {
@@ -18,7 +18,7 @@ impl ClusterConsensus {
         for peer in initial_peers {
             peers.insert(peer);
         }
-        
+
         // 简单的领导者选举：ID 字典序最小的为 Leader
         let mut all_nodes = peers.clone();
         all_nodes.insert(node_id.clone());

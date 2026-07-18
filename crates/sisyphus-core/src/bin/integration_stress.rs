@@ -16,15 +16,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Minimal mocks for Executor dependencies
     let llm_client = Arc::new(sisyphus_tools_llm::DummyLlmClient);
     let intervention_manager = Arc::new(sisyphus_core::InterventionManager::new());
-    
+
     // Mock AssetManager - we just need something that implements the interface
     // Since AssetManager is a struct, we might need a real one or a trait if it were one.
     // Let's use a real one with a temp path.
-    let knowledge_manager = Arc::new(sisyphus_knowledge::AssetManager::new(std::path::PathBuf::from("/tmp/sisyphus_stress")));
-    
+    let knowledge_manager = Arc::new(sisyphus_knowledge::AssetManager::new(
+        std::path::PathBuf::from("/tmp/sisyphus_stress"),
+    ));
+
     let internalization_manager = Arc::new(sisyphus_core::InternalizationManager::new(
         llm_client,
-        knowledge_manager
+        knowledge_manager,
     ));
 
     // 2. Setup a Parallel DAG
@@ -76,7 +78,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             Arc::new(sisyphus_tools_executor::executor::test_cmds::TestExecutor::new()),
             intervention_manager.clone(),
             internalization_manager.clone(),
-            None
+            None,
         );
         let tool_executor_clone = Arc::clone(&tool_executor);
 

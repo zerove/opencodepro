@@ -2,8 +2,8 @@
 //! performance, security, and maintainability.
 
 use super::types::{LlmReviewResponse, MomusReview, ReviewComment, ReviewSeverity, ReviewType};
-use sisyphus_tools_llm::metis::LlmClient;
 use sisyphus_tools_core::ToolResult;
+use sisyphus_tools_llm::metis::LlmClient;
 use std::path::Path;
 
 const CODE_REVIEW_SYSTEM_PROMPT: &str = r#"You are Momus, a senior engineer and quality gatekeeper.
@@ -151,7 +151,9 @@ pub async fn review_code(
 
     for (i, line) in lines.iter().enumerate() {
         let trimmed = line.trim();
-        if (trimmed.contains(".unwrap()") || trimmed.contains(".expect(")) && !trimmed.contains("cfg(test)") {
+        if (trimmed.contains(".unwrap()") || trimmed.contains(".expect("))
+            && !trimmed.contains("cfg(test)")
+        {
             comments.push(ReviewComment {
                 severity: ReviewSeverity::Major,
                 category: "security".into(),
@@ -159,12 +161,13 @@ pub async fn review_code(
                 line: Some(i + 1),
                 message: "Found .unwrap() or .expect() in potentially production code.".into(),
                 suggestion: Some(
-                    "Use proper error handling (Result/Option) and propagate errors using '?'.".into(),
+                    "Use proper error handling (Result/Option) and propagate errors using '?'."
+                        .into(),
                 ),
             });
         }
     }
-  
+
     for (i, line) in lines.iter().enumerate() {
         let indent = line.len() - line.trim_start().len();
         if indent > 80 {
@@ -268,4 +271,3 @@ pub async fn review_code_batch(
     }
     Ok(reviews)
 }
-

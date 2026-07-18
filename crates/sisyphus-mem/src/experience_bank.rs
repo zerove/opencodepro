@@ -1,7 +1,7 @@
-use std::sync::Arc;
-use anyhow::Result;
 use crate::store::MfsStore;
-use sisyphus_types::experience::{ExperienceBank, ExperienceTuple, ExperienceQuery};
+use anyhow::Result;
+use sisyphus_types::experience::{ExperienceBank, ExperienceQuery, ExperienceTuple};
+use std::sync::Arc;
 
 use async_trait::async_trait;
 use sisyphus_tools_llm::EmbeddingClient;
@@ -14,11 +14,15 @@ pub struct VectorExperienceBank {
 
 impl VectorExperienceBank {
     pub async fn new(
-        store: Arc<MfsStore>, 
+        store: Arc<MfsStore>,
         vector_store: Arc<crate::vector_memory::VectorMemoryStore>,
-        embedding_client: Arc<dyn EmbeddingClient>
+        embedding_client: Arc<dyn EmbeddingClient>,
     ) -> Result<Self> {
-        Ok(Self { store, vector_store, embedding_client })
+        Ok(Self {
+            store,
+            vector_store,
+            embedding_client,
+        })
     }
 
     #[allow(dead_code)]
@@ -34,7 +38,9 @@ impl ExperienceBank for VectorExperienceBank {
 
         // 2. Store the full experience object in MfsStore for easy retrieval
         let key = format!("exp:{}", exp.timestamp);
-        self.store.record_experience(&exp).await
+        self.store
+            .record_experience(&exp)
+            .await
             .map_err(|e| e.to_string())?;
 
         // 3. Store the text embedding in the optimized VectorMemoryStore
@@ -45,7 +51,9 @@ impl ExperienceBank for VectorExperienceBank {
             "project_id": exp.project_id,
             "modality": "text",
         });
-        self.vector_store.store_embedding(&key, text_embedding, metadata).await
+        self.vector_store
+            .store_embedding(&key, text_embedding, metadata)
+            .await
             .map_err(|e| e.to_string())?;
 
         // 4. If visual embedding is provided, store it in the vector store as well
@@ -58,7 +66,9 @@ impl ExperienceBank for VectorExperienceBank {
                 "project_id": exp.project_id,
                 "modality": "visual",
             });
-            self.vector_store.store_embedding(&vis_key, vis_emb.clone(), vis_metadata).await
+            self.vector_store
+                .store_embedding(&vis_key, vis_emb.clone(), vis_metadata)
+                .await
                 .map_err(|e| e.to_string())?;
         }
 
@@ -71,9 +81,12 @@ impl ExperienceBank for VectorExperienceBank {
         // 1. Text-based Retrieval
         let text_query_vec = self.embedding_client.embed(&query.query_text).await?;
         let text_top_k = query.limit * 5;
-        let text_results = self.vector_store.search_similar(&text_query_vec, text_top_k).await
+        let text_results = self
+            .vector_store
+            .search_similar(&text_query_vec, text_top_k)
+            .await
             .map_err(|e| e.to_string())?;
-        
+
         for sv in text_results {
             all_candidates.push(sv);
         }
@@ -81,9 +94,12 @@ impl ExperienceBank for VectorExperienceBank {
         // 2. Visual-based Retrieval
         if let Some(ref vis_query_vec) = query.visual_embedding {
             let vis_top_k = query.limit * 5;
-            let vis_results = self.vector_store.search_similar(vis_query_vec, vis_top_k).await
+            let vis_results = self
+                .vector_store
+                .search_similar(vis_query_vec, vis_top_k)
+                .await
                 .map_err(|e| e.to_string())?;
-            
+
             for sv in vis_results {
                 all_candidates.push(sv);
             }
@@ -94,18 +110,29 @@ impl ExperienceBank for VectorExperienceBank {
         let mut seen_keys = std::collections::HashSet::new();
 
         // Sort candidates by score (this is a simplification, in a real system we'd normalize scores)
-        all_candidates.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        all_candidates.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
 
         for sv in all_candidates {
             let metadata = sv.record.metadata;
-            let exp_key = metadata.get("exp_key").and_then(|v| v.as_str()).ok_or("Missing exp_key in metadata")?;
-            
+            let exp_key = metadata
+                .get("exp_key")
+                .and_then(|v| v.as_str())
+                .ok_or("Missing exp_key in metadata")?;
+
             if seen_keys.contains(exp_key) {
                 continue;
             }
 
-            if let Some(exp) = self.store.get_experience(exp_key).await.map_err(|e| e.to_string())? {
-                
+            if let Some(exp) = self
+                .store
+                .get_experience(exp_key)
+                .await
+                .map_err(|e| e.to_string())?
+            {
                 // Project-based filtering:
                 #[allow(clippy::collapsible_if)]
                 if let Some(ref pid) = query.project_id {
@@ -120,7 +147,7 @@ impl ExperienceBank for VectorExperienceBank {
                         continue;
                     }
                 }
-                
+
                 experiences.push(exp);
                 seen_keys.insert(exp_key.to_string());
             }

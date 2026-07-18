@@ -7,7 +7,7 @@
 use super::error::TeamError;
 use super::orchestrator::TeamOrchestrator;
 use super::parse::parse_decomposition_response;
-use super::{TeamGoal, TeamPlan, TaskResult};
+use super::{TaskResult, TeamGoal, TeamPlan};
 use sisyphus_tools_llm::metis::LlmClient;
 
 impl TeamOrchestrator {
@@ -48,7 +48,9 @@ impl TeamOrchestrator {
         );
 
         let system = "You are a Senior Technical Lead. Synthesize multi-agent results concisely.";
-        if let Ok(s) = llm.chat(system, &prompt, false).await { Some(s) } else {
+        if let Ok(s) = llm.chat(system, &prompt, false).await {
+            Some(s)
+        } else {
             let success_count = results.iter().filter(|r| r.success).count();
             Some(format!(
                 "Completed {} tasks ({} successful, {} failed)",

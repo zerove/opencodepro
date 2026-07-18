@@ -57,10 +57,7 @@ pub enum ProposalAction {
         after_milestone_id: Option<String>,
     },
     /// Delete a goal that is no longer relevant.
-    DeleteGoal {
-        goal_id: String,
-        rationale: String,
-    },
+    DeleteGoal { goal_id: String, rationale: String },
     /// Change the priority of a goal or milestone.
     Reprioritize {
         target_id: String,
@@ -223,10 +220,14 @@ Respond ONLY with valid JSON matching this structure:
         }
 
         Some(StrategicProposal {
-            proposal_id: format!("prop-{}-{}", project_id, std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_secs()),
+            proposal_id: format!(
+                "prop-{}-{}",
+                project_id,
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs()
+            ),
             project_id: project_id.to_string(),
             timestamp: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -375,9 +376,16 @@ mod tests {
                 .await
                 .expect("Failed to create sql store"),
         );
-        sql_store.init_schema().await.expect("Failed to init schema");
-        let proposal_manager = Arc::new(crate::proposal_manager::ProposalManager::new(store.clone()));
-        (RoadmapManager::new(store.clone(), sql_store, proposal_manager), store)
+        sql_store
+            .init_schema()
+            .await
+            .expect("Failed to init schema");
+        let proposal_manager =
+            Arc::new(crate::proposal_manager::ProposalManager::new(store.clone()));
+        (
+            RoadmapManager::new(store.clone(), sql_store, proposal_manager),
+            store,
+        )
     }
 
     #[tokio::test]
@@ -475,7 +483,11 @@ mod tests {
             }
 
             fn get_params_for(&self, _agent_id: &str) -> (String, String, String) {
-                ("fail_key".into(), "http://fail:8080".into(), "fail-model".into())
+                (
+                    "fail_key".into(),
+                    "http://fail:8080".into(),
+                    "fail-model".into(),
+                )
             }
 
             fn breaker(&self) -> sisyphus_tools_llm::circuit_breaker::CircuitBreaker {

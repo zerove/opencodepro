@@ -125,7 +125,9 @@ pub fn handle_home_key(key: KeyEvent, app: &mut App) {
             // Ctrl+V paste
             let pasted = paste_from_clipboard();
             if !pasted.is_empty() {
-                let byte_pos = app.home_input.char_indices()
+                let byte_pos = app
+                    .home_input
+                    .char_indices()
                     .nth(app.home_cursor)
                     .map(|(i, _)| i)
                     .unwrap_or(app.home_input.len());
@@ -134,7 +136,9 @@ pub fn handle_home_key(key: KeyEvent, app: &mut App) {
             }
         }
         KeyCode::Char(c) => {
-            let byte_pos = app.home_input.char_indices()
+            let byte_pos = app
+                .home_input
+                .char_indices()
                 .nth(app.home_cursor)
                 .map(|(i, _)| i)
                 .unwrap_or(app.home_input.len());
@@ -191,11 +195,9 @@ pub fn render_home(frame: &mut ratatui::Frame, area: Rect, app: &App) {
     ])
     .areas(area);
 
-    let [logo_area, input_area] = Layout::vertical([
-        Constraint::Length(logo_height + 1),
-        Constraint::Length(3),
-    ])
-    .areas(content);
+    let [logo_area, input_area] =
+        Layout::vertical([Constraint::Length(logo_height + 1), Constraint::Length(3)])
+            .areas(content);
 
     // Logo
     let logo_text: Vec<Line> = LOGO_LINES
@@ -203,13 +205,14 @@ pub fn render_home(frame: &mut ratatui::Frame, area: Rect, app: &App) {
         .map(|l| {
             Line::from(Span::styled(
                 *l,
-                Style::default().fg(theme.primary).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(theme.primary)
+                    .add_modifier(Modifier::BOLD),
             ))
         })
         .collect();
 
-    let logo_para = Paragraph::new(Text::from(logo_text))
-        .alignment(Alignment::Center);
+    let logo_para = Paragraph::new(Text::from(logo_text)).alignment(Alignment::Center);
     frame.render_widget(logo_para, logo_area);
 
     // Prompt input
@@ -235,7 +238,12 @@ pub fn render_home(frame: &mut ratatui::Frame, area: Rect, app: &App) {
         }));
 
     let input_para = Paragraph::new(Line::from(vec![
-        Span::styled("❯ ", Style::default().fg(theme.primary).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            "❯ ",
+            Style::default()
+                .fg(theme.primary)
+                .add_modifier(Modifier::BOLD),
+        ),
         Span::styled(display_text, input_style),
     ]))
     .block(input_block);

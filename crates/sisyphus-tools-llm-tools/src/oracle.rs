@@ -5,12 +5,10 @@
 
 pub mod types;
 
-pub use types::{
-    CodeIssue, FileAnalysis, FunctionInfo, IssueSeverity, ModuleSummary,
-};
+pub use types::{CodeIssue, FileAnalysis, FunctionInfo, IssueSeverity, ModuleSummary};
 
-use sisyphus_tools_core::ToolResult;
 use regex::Regex;
+use sisyphus_tools_core::ToolResult;
 use std::path::Path;
 
 /// Analyze a single file: extract functions, imports, structs, detect issues.
@@ -42,7 +40,7 @@ pub fn analyze_file(path: &Path) -> ToolResult<FileAnalysis> {
             let is_async = caps.get(2).is_some_and(|m| m.as_str().contains("async"));
             let name = caps.get(3).map_or("", |m| m.as_str()).to_string();
             let sig = caps.get(0).map_or("", |m| m.as_str()).to_string();
-            
+
             // Basic complexity analysis: count control flow keywords until the end of the function
             let mut complexity = 0;
             let mut brace_depth = 0;
@@ -64,7 +62,10 @@ pub fn analyze_file(path: &Path) -> ToolResult<FileAnalysis> {
                     severity: IssueSeverity::Warning,
                     file: path.to_path_buf(),
                     line: line_num,
-                    message: format!("Function '{}' has high complexity ({} branches).", name, complexity),
+                    message: format!(
+                        "Function '{}' has high complexity ({} branches).",
+                        name, complexity
+                    ),
                     code: Some(sig.clone()),
                 });
             }
@@ -444,5 +445,3 @@ use std::collections::{
         assert_eq!(IssueSeverity::Info.to_string(), "info");
     }
 }
-
-

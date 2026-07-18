@@ -20,7 +20,6 @@ pub trait LlmClient: Send + Sync {
     fn breaker(&self) -> crate::circuit_breaker::CircuitBreaker;
 }
 
-
 /// A dummy LLM client for development and testing.
 pub struct DummyLlmClient;
 
@@ -58,7 +57,11 @@ impl LlmClient for DummyLlmClient {
     }
 
     fn get_params_for(&self, _agent_id: &str) -> (String, String, String) {
-        ("dummy_key".into(), "http://dummy:8080".into(), "dummy-model".into())
+        (
+            "dummy_key".into(),
+            "http://dummy:8080".into(),
+            "dummy-model".into(),
+        )
     }
 
     fn breaker(&self) -> crate::circuit_breaker::CircuitBreaker {
@@ -83,7 +86,11 @@ impl LlmClient for FixedResponseClient {
     }
 
     fn get_params_for(&self, _agent_id: &str) -> (String, String, String) {
-        ("fixed_key".into(), "http://fixed:8080".into(), "fixed-model".into())
+        (
+            "fixed_key".into(),
+            "http://fixed:8080".into(),
+            "fixed-model".into(),
+        )
     }
 
     fn breaker(&self) -> crate::circuit_breaker::CircuitBreaker {

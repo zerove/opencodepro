@@ -5,9 +5,9 @@ use anyhow::{Context, Result};
 use sqlx::{SqlitePool, sqlite::SqlitePoolOptions};
 use std::sync::Arc;
 
-use crate::store::MfsStore;
-use crate::sop_store::SopSqlStore;
 use crate::roadmap_store::RoadmapSqlStore;
+use crate::sop_store::SopSqlStore;
+use crate::store::MfsStore;
 
 /// The primary entry point for all persistence in Sisyphus.
 /// Manages a shared SQLite pool across multiple specialized stores.
@@ -30,21 +30,24 @@ impl SisyphusStore {
             .context("Failed to connect to Sisyphus database pool")?;
 
         // 2. Initialize MfsStore (handles base state, traces, and experiences)
-        // Since MfsStore::new creates its own pool, we'll use a modified version 
-        // or just let it be if the performance hit is negligible. 
+        // Since MfsStore::new creates its own pool, we'll use a modified version
+        // or just let it be if the performance hit is negligible.
         // However, for industrial grade, we should share the pool.
         // Let's check if MfsStore can take a pool.
-        
+
         // Note: MfsStore::with_capacity currently creates its own pool.
         // To properly share, we would need to refactor MfsStore.
         // For now, we'll initialize them sequentially.
-        
+
         let state = Arc::new(MfsStore::new(db_url).await?);
         let sop = Arc::new(SopSqlStore::new(pool.clone()).await?);
         let roadmap = Arc::new(RoadmapSqlStore::new(pool.clone()).await?);
 
         // 3. Ensure all schemas are initialized
-        roadmap.init_schema().await.context("Failed to initialize roadmap schema")?;
+        roadmap
+            .init_schema()
+            .await
+            .context("Failed to initialize roadmap schema")?;
 
         Ok(Self {
             state,

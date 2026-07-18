@@ -1,4 +1,4 @@
-use sisyphus_tools_system::{file, bash, explore};
+use sisyphus_tools_system::{bash, explore, file};
 use std::path::Path;
 use tempfile::tempdir;
 
@@ -7,7 +7,7 @@ async fn test_system_integration_workflow() {
     // 1. Setup: Create a temporary workspace
     let dir = tempdir().expect("failed to create temp dir");
     let root = dir.path();
-    
+
     let file1_path = root.join("hello.txt");
     let file2_path = root.join("world.txt");
     let sub_dir = root.join("src");
@@ -16,7 +16,8 @@ async fn test_system_integration_workflow() {
     // 2. File Operations: Write files
     file::write(&file1_path, "Hello Sisyphus!\n").expect("failed to write file1");
     file::write(&file2_path, "Welcome to the cognitive engine.\n").expect("failed to write file2");
-    file::write(&file3_path, "fn main() {\n    println!(\"hello\");\n}\n").expect("failed to write file3");
+    file::write(&file3_path, "fn main() {\n    println!(\"hello\");\n}\n")
+        .expect("failed to write file3");
 
     // 3. Explore: Globbing
     let txt_files = file::glob("*.txt", root).expect("glob failed");

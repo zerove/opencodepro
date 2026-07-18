@@ -1,10 +1,10 @@
-use std::sync::Arc;
-use sisyphus_core::{SisyphusKernel, SOPGraph, CoreError};
-use sisyphus_types::{ToolExecutor, TypesError, WasmSOPNode, NodeOutput};
-use sisyphus_intel::{LlmEvolver, HybridReflector, StandardReflector, LlmReflector};
-use sisyphus_tools_llm::LlmClient;
 use async_trait::async_trait;
 use serde_json::Value;
+use sisyphus_core::{CoreError, SOPGraph, SisyphusKernel};
+use sisyphus_intel::{HybridReflector, LlmEvolver, LlmReflector, StandardReflector};
+use sisyphus_tools_llm::LlmClient;
+use sisyphus_types::{NodeOutput, ToolExecutor, TypesError, WasmSOPNode};
+use std::sync::Arc;
 
 struct MockLlmClient;
 #[async_trait]
@@ -23,13 +23,20 @@ impl LlmClient for MockLlmClient {
 struct MockJcodeExecutor;
 #[async_trait]
 impl ToolExecutor for MockJcodeExecutor {
-    async fn execute(&self, tool_id: &str, _args: Vec<u8>, _fuel: u64) -> Result<Vec<u8>, TypesError> {
+    async fn execute(
+        &self,
+        tool_id: &str,
+        _args: Vec<u8>,
+        _fuel: u64,
+    ) -> Result<Vec<u8>, TypesError> {
         if tool_id == "verify_evolution" {
             return Ok(serde_json::json!({
                 "decision": "ACCEPT",
                 "reason": "Verified",
                 "improvement_score": 0.9
-            }).to_string().into_bytes());
+            })
+            .to_string()
+            .into_bytes());
         }
         Err(TypesError::NodeExecutionError("Unknown tool".into()))
     }
@@ -50,20 +57,29 @@ async fn test_jcode_evolution_loop() {
 
     // 2. Setup Kernel Components
     let llm_client = Arc::new(MockLlmClient);
-    let tool_executor = Arc::new(sisyphus_types::ExecutorRouter::new(Arc::new(MockJcodeExecutor)));
-    
+    let tool_executor = Arc::new(sisyphus_types::ExecutorRouter::new(Arc::new(
+        MockJcodeExecutor,
+    )));
+
     // Manually register jcode prefix for the test
     // Note: In real code this is done in Bridge::new
-    // (We can't mutate the router after creation unless we use a different pattern, 
+    // (We can't mutate the router after creation unless we use a different pattern,
     // so we'll just use a custom ToolExecutor that handles both)
-    
+
     // For this test, we'll use a simple wrapper that mocks the behavior
     struct TestExecutor;
     #[async_trait]
     impl ToolExecutor for TestExecutor {
-        async fn execute(&self, tool_id: &str, args: Vec<u8>, fuel: u64) -> Result<Vec<u8>, TypesError> {
+        async fn execute(
+            &self,
+            tool_id: &str,
+            args: Vec<u8>,
+            fuel: u64,
+        ) -> Result<Vec<u8>, TypesError> {
             if tool_id == "verify_evolution" {
-                return Ok(serde_json::json!({"decision": "ACCEPT", "reason": "OK"}).to_string().into_bytes());
+                return Ok(serde_json::json!({"decision": "ACCEPT", "reason": "OK"})
+                    .to_string()
+                    .into_bytes());
             }
             if tool_id == "test_tool" && fuel < 50 {
                 return Err(TypesError::NodeExecutionError("ResourceExhausted".into()));
@@ -88,15 +104,30 @@ async fn test_jcode_evolution_loop() {
         records: vec![],
     };
 
-    let evolved_graph = evolver.evolve(graph.clone(), &report, &sisyphus_intel::simulation::SimulationResult::default(), None)
+    let evolved_graph = evolver
+        .evolve(
+            graph.clone(),
+            &report,
+            &sisyphus_intel::simulation::SimulationResult::default(),
+            None,
+        )
         .await
         .expect("Evolution should succeed");
 
     // 4. Verify the evolution
     let node_idx = evolved_graph.graph.node_indices().next().unwrap();
     let node = evolved_graph.graph.node_weight(node_idx).unwrap();
-    let wasm_node = node.as_any().downcast_ref::<WasmSOPNode>().expect("Should be WasmNode");
-    
-    assert!(wasm_node.fuel_limit >= 100, "Fuel should have been increased by evolver");
-    println!("Evolution verified: Fuel increased to {}", wasm_node.fuel_limit);
+    let wasm_node = node
+        .as_any()
+        .downcast_ref::<WasmSOPNode>()
+        .expect("Should be WasmNode");
+
+    assert!(
+        wasm_node.fuel_limit >= 100,
+        "Fuel should have been increased by evolver"
+    );
+    println!(
+        "Evolution verified: Fuel increased to {}",
+        wasm_node.fuel_limit
+    );
 }

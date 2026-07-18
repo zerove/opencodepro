@@ -13,7 +13,6 @@ pub fn expand_glob(pattern: &str) -> anyhow::Result<Vec<String>> {
     Ok(results)
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -41,5 +40,4 @@ mod tests {
         assert!(matches.contains(&file2.to_string_lossy().to_string()));
         assert!(!matches.contains(&file3.to_string_lossy().to_string()));
     }
-
 }

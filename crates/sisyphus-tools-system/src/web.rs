@@ -12,9 +12,9 @@ pub mod types;
 
 pub use types::{FetchResult, SearchResult};
 
-use sisyphus_tools_core::{ToolError, ToolResult};
 use regex::Regex;
 pub use resolver::{build_direct_client, extract_host, extract_port};
+use sisyphus_tools_core::{ToolError, ToolResult};
 
 // ── Public API ──────────────────────────────────────────────
 

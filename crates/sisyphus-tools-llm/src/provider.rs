@@ -73,11 +73,24 @@ mod tests {
 
     #[async_trait]
     impl LlmProvider for MockProvider {
-        fn kind(&self) -> ProviderKind { ProviderKind::OpenAi }
-        fn name(&self) -> &str { &self.name }
-        fn model(&self) -> &str { "mock-model" }
-        async fn chat(&self, _s: &str, _m: &[ChatMessage], _j: bool) -> Result<ProviderResponse, ProviderError> {
-            let attempt = self.current_attempt.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        fn kind(&self) -> ProviderKind {
+            ProviderKind::OpenAi
+        }
+        fn name(&self) -> &str {
+            &self.name
+        }
+        fn model(&self) -> &str {
+            "mock-model"
+        }
+        async fn chat(
+            &self,
+            _s: &str,
+            _m: &[ChatMessage],
+            _j: bool,
+        ) -> Result<ProviderResponse, ProviderError> {
+            let attempt = self
+                .current_attempt
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             if attempt < self.fail_until {
                 Err(self.error_to_return.clone())
             } else {
@@ -111,7 +124,10 @@ mod tests {
             ProviderKind::from_str("anthropic"),
             Ok(ProviderKind::Anthropic)
         );
-        assert_eq!(ProviderKind::from_str("claude"), Ok(ProviderKind::Anthropic));
+        assert_eq!(
+            ProviderKind::from_str("claude"),
+            Ok(ProviderKind::Anthropic)
+        );
         assert!(ProviderKind::from_str("unknown").is_err());
     }
 
@@ -186,16 +202,11 @@ mod tests {
     #[tokio::test]
     async fn test_provider_registry_fallback_order() {
         let mut registry = ProviderRegistry::new();
-        registry.set_fallback_order(vec![
-            "primary".into(),
-            "secondary".into(),
-        ]);
+        registry.set_fallback_order(vec!["primary".into(), "secondary".into()]);
         assert_eq!(registry.fallback_order().len(), 2);
 
         // If no providers match fallback, chat_with_fallback returns error
-        let result = registry
-            .chat_with_fallback("sys", &[], false)
-            .await;
+        let result = registry.chat_with_fallback("sys", &[], false).await;
         assert!(result.is_err());
     }
 
@@ -340,7 +351,11 @@ mod tests {
         let res = registry.chat_with_fallback("sys", &[], false).await;
         assert!(res.is_ok());
         assert_eq!(res.unwrap().content, "success");
-        assert_eq!(mock.current_attempt.load(std::sync::atomic::Ordering::SeqCst), 3);
+        assert_eq!(
+            mock.current_attempt
+                .load(std::sync::atomic::Ordering::SeqCst),
+            3
+        );
     }
 
     #[tokio::test]
@@ -363,7 +378,11 @@ mod tests {
         let res = registry.chat_with_fallback("sys", &[], false).await;
         assert!(res.is_ok());
         assert_eq!(res.unwrap().content, "success");
-        assert_eq!(mock.current_attempt.load(std::sync::atomic::Ordering::SeqCst), 3);
+        assert_eq!(
+            mock.current_attempt
+                .load(std::sync::atomic::Ordering::SeqCst),
+            3
+        );
     }
 
     #[tokio::test]
@@ -389,7 +408,11 @@ mod tests {
             ProviderError::Permanent(e) => assert!(e.contains("fatal error")),
             _ => panic!("Expected Permanent error"),
         }
-        assert_eq!(mock.current_attempt.load(std::sync::atomic::Ordering::SeqCst), 1);
+        assert_eq!(
+            mock.current_attempt
+                .load(std::sync::atomic::Ordering::SeqCst),
+            1
+        );
     }
 
     #[tokio::test]
@@ -430,7 +453,17 @@ mod tests {
         assert!(res.is_ok());
         assert_eq!(res.unwrap().content, "success");
 
-        assert_eq!(mock1.current_attempt.load(std::sync::atomic::Ordering::SeqCst), 4);
-        assert_eq!(mock2.current_attempt.load(std::sync::atomic::Ordering::SeqCst), 1);
+        assert_eq!(
+            mock1
+                .current_attempt
+                .load(std::sync::atomic::Ordering::SeqCst),
+            4
+        );
+        assert_eq!(
+            mock2
+                .current_attempt
+                .load(std::sync::atomic::Ordering::SeqCst),
+            1
+        );
     }
 }

@@ -1,8 +1,8 @@
 //! Autonomous tool coding agent for Sisyphus.
 
-use std::sync::Arc;
-use sisyphus_types::tools::ToolSpec;
 use sisyphus_tools_llm::LlmClient;
+use sisyphus_types::tools::ToolSpec;
+use std::sync::Arc;
 
 pub struct ToolCoder {
     llm_client: Arc<dyn LlmClient>,
@@ -14,7 +14,11 @@ impl ToolCoder {
     }
 
     /// Generates Rust source code for a tool based on its specification and optional feedback from previous failures.
-    pub async fn generate_code(&self, spec: &ToolSpec, feedback: Option<String>) -> Result<String, crate::IntelError> {
+    pub async fn generate_code(
+        &self,
+        spec: &ToolSpec,
+        feedback: Option<String>,
+    ) -> Result<String, crate::IntelError> {
         let mut prompt = format!(
             "You are a Senior Rust Engineer specializing in WebAssembly (WASM) for the Sisyphus cognitive engine.\n\n\
             TASK: Implement a tool based on the following specification.\n\n\
@@ -55,15 +59,21 @@ impl ToolCoder {
         if let Some(start) = text.find("```rust") {
             let start_idx = start + 7;
             if let Some(_end) = text[start_idx..].find("```") {
-                return Ok(text[start_idx..start_idx + text[start_idx..].find("```").unwrap()].trim().to_string());
+                return Ok(
+                    text[start_idx..start_idx + text[start_idx..].find("```").unwrap()]
+                        .trim()
+                        .to_string(),
+                );
             }
         }
-        
+
         // Fallback: if no markdown block, try to find the first { and last }
         if let (Some(start), Some(end)) = (text.find("fn main"), text.rfind("}")) {
             return Ok(text[start..end + 1].to_string());
         }
 
-        Err(crate::IntelError::Internal("Could not extract Rust code from LLM response".into()))
+        Err(crate::IntelError::Internal(
+            "Could not extract Rust code from LLM response".into(),
+        ))
     }
 }

@@ -1,5 +1,5 @@
-use sisyphus_tools_core::ToolResult;
 use serde::{Deserialize, Serialize};
+use sisyphus_tools_core::ToolResult;
 
 /// A security vulnerability found by dependency scanning.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -54,7 +54,9 @@ impl DependencyManager {
             ])
             .output()
             .await
-            .map_err(|e| sisyphus_tools_core::ToolError::Generic(format!("Failed to run cargo-deny: {e}")))?;
+            .map_err(|e| {
+                sisyphus_tools_core::ToolError::Generic(format!("Failed to run cargo-deny: {e}"))
+            })?;
 
         let stdout = String::from_utf8_lossy(&output.stdout);
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -81,7 +83,9 @@ impl DependencyManager {
             .output()
             .await
             .map_err(|e| {
-                sisyphus_tools_core::ToolError::Generic(format!("Failed to run cargo-outdated: {e}"))
+                sisyphus_tools_core::ToolError::Generic(format!(
+                    "Failed to run cargo-outdated: {e}"
+                ))
             })?;
 
         let stdout = String::from_utf8_lossy(&output.stdout);
@@ -93,7 +97,8 @@ impl DependencyManager {
     /// This is a best-effort text replacement. For complex version specs,
     /// manual review is recommended.
     pub fn update_dep(&self, name: &str, version: &str) -> ToolResult<String> {
-        let content = std::fs::read_to_string(&self.manifest_path).map_err(sisyphus_tools_core::ToolError::Io)?;
+        let content = std::fs::read_to_string(&self.manifest_path)
+            .map_err(sisyphus_tools_core::ToolError::Io)?;
 
         // Try to find the dependency in the TOML file
         // Pattern: name = "version" or name = { version = "...", ... }

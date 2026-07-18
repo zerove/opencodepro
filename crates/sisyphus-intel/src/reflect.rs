@@ -3,8 +3,8 @@ use crate::simulation::SimulationResult;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use sisyphus_metrics::{record_evolution, record_reflection};
-use sisyphus_types::SOPGraph;
 use sisyphus_tools_llm::metis::LlmClient;
+use sisyphus_types::SOPGraph;
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -111,7 +111,7 @@ impl SOPEvolver for StandardEvolver {
             let node = graph
                 .graph
                 .node_weight(node_idx)
-                 .ok_or_else(|| "invalid node index in graph".to_string())?;
+                .ok_or_else(|| "invalid node index in graph".to_string())?;
             let name = node.name().to_string();
 
             let mut evolved_node: Arc<dyn sisyphus_types::SOPNode> = if let Some(wasm_node) =
@@ -151,7 +151,7 @@ impl SOPEvolver for StandardEvolver {
             let (source, target) = graph
                 .graph
                 .edge_endpoints(edge)
-                 .ok_or_else(|| "invalid edge endpoint in graph".to_string())?;
+                .ok_or_else(|| "invalid edge endpoint in graph".to_string())?;
             let new_source = node_map
                 .get(&source)
                 .ok_or("Source node not found in evolved graph")?;
@@ -258,16 +258,23 @@ impl Reflector for LlmReflector {
         let _enter = span.enter();
 
         let start = Instant::now();
-        
+
         let exp_context = if let Some(exps) = experiences {
             let mut hints = Vec::new();
             for exp in exps {
                 hints.push(format!(
-                    "Task: {}, Outcome: {}, Deviation: {:.4}{}", 
-                    exp.context_text, 
-                    if exp.outcome_success { "Success" } else { "Failure" }, 
+                    "Task: {}, Outcome: {}, Deviation: {:.4}{}",
+                    exp.context_text,
+                    if exp.outcome_success {
+                        "Success"
+                    } else {
+                        "Failure"
+                    },
                     exp.deviation_score,
-                    exp.insight.as_ref().map(|i| format!(" | Insight: {}", i)).unwrap_or_default()
+                    exp.insight
+                        .as_ref()
+                        .map(|i| format!(" | Insight: {}", i))
+                        .unwrap_or_default()
                 ));
             }
             format!("Historical Context (Similar Tasks):\n{}", hints.join("\n"))
@@ -286,7 +293,10 @@ impl Reflector for LlmReflector {
             exp_context, trace, predicted.predicted_outcome
         );
 
-        let response = self.llm_client.generate(&prompt).await
+        let response = self
+            .llm_client
+            .generate(&prompt)
+            .await
             .map_err(|e| format!("LLM reflection failed: {e}"))?;
 
         let parsed: serde_json::Value = serde_json::from_str(&response)
@@ -295,7 +305,11 @@ impl Reflector for LlmReflector {
         let deviation = parsed["deviation"].as_f64().unwrap_or(0.5);
         let suggestions: Vec<String> = parsed["suggestions"]
             .as_array()
-            .map(|arr| arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                    .collect()
+            })
             .unwrap_or_default();
 
         let duration = start.elapsed();
@@ -341,7 +355,7 @@ impl Reflector for HybridReflector {
         let _enter = span.enter();
 
         let start = Instant::now();
-        
+
         // Run both reflectors in parallel
         let (std_res, llm_res) = tokio::join!(
             self.standard.reflect(trace, predicted, experiences),
@@ -353,7 +367,7 @@ impl Reflector for HybridReflector {
 
         // Merge scores: weighted average (LLM is usually more nuanced, Standard is more objective)
         let deviation = (std_report.deviation_score * 0.4) + (llm_report.deviation_score * 0.6);
-        
+
         // Merge improvements: Deduplicate and combine
         let mut all_improvements = std_report.suggested_improvements;
         for imp in llm_report.suggested_improvements {
@@ -388,8 +402,6 @@ pub struct LlmEvolver {
     pub tool_executor: Arc<dyn sisyphus_types::ToolExecutor>,
 }
 
-
-
 impl LlmEvolver {
     pub fn new(
         llm_client: Arc<dyn LlmClient>,
@@ -414,7 +426,7 @@ impl SOPEvolver for LlmEvolver {
         insights: Option<&str>,
     ) -> Result<Arc<SOPGraph>, String> {
         let _rt = tokio::runtime::Handle::current();
-        
+
         let prompt = format!(
             "Given the following SOP structure and suggested improvements, generate a list of EvolutionOps.\
             \nSOP Nodes: {:?}\
@@ -432,13 +444,21 @@ impl SOPEvolver for LlmEvolver {
             insights.unwrap_or("None")
         );
 
-        let response = self.llm_client.generate(&prompt).await
+        let response = self
+            .llm_client
+            .generate(&prompt)
+            .await
             .map_err(|e| format!("LLM evolution failed: {e}"))?;
 
-        let ops: Vec<sisyphus_types::EvolutionOp> = serde_json::from_str(&response)
-            .map_err(|e| format!("Failed to parse evolution ops JSON: {e}. Response: {response}"))?;
+        let ops: Vec<sisyphus_types::EvolutionOp> =
+            serde_json::from_str(&response).map_err(|e| {
+                format!("Failed to parse evolution ops JSON: {e}. Response: {response}")
+            })?;
 
-        self.topo_evolver.apply_ops(&graph, &ops, self.tool_executor.clone()).map(Arc::new).map_err(|e| e.to_string())
+        self.topo_evolver
+            .apply_ops(&graph, &ops, self.tool_executor.clone())
+            .map(Arc::new)
+            .map_err(|e| e.to_string())
     }
 }
 

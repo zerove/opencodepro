@@ -38,22 +38,63 @@ pub struct VectorRecord {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum CognitiveEvent {
-    Predict { prediction: serde_json::Value },
-    Execute { node: String, result: crate::execution::NodeOutput },
-    Reflect { report: serde_json::Value },
-    Evolve { revised_plan: crate::graph::SOPGraphConfig },
-    Verify { score: f64, decision: bool, reason: String },
-    StrategicShift { analysis: serde_json::Value },
-    ToolGapDetected { gap: serde_json::Value },
-    HotStart { asset_id: String, confidence: f64 },
-    Complete { final_result: crate::execution::NodeOutput, converged: bool },
+    Predict {
+        prediction: serde_json::Value,
+    },
+    Execute {
+        node: String,
+        result: crate::execution::NodeOutput,
+    },
+    Reflect {
+        report: serde_json::Value,
+    },
+    Evolve {
+        revised_plan: crate::graph::SOPGraphConfig,
+    },
+    Verify {
+        score: f64,
+        decision: bool,
+        reason: String,
+    },
+    StrategicShift {
+        analysis: serde_json::Value,
+    },
+    ToolGapDetected {
+        gap: serde_json::Value,
+    },
+    HotStart {
+        asset_id: String,
+        confidence: f64,
+    },
+    Complete {
+        final_result: crate::execution::NodeOutput,
+        converged: bool,
+    },
     // Self-Programming Lifecycle
-    SimulationStarted { sop_id: String, iteration: usize },
-    SimulationFlawDetected { node_id: String, flaw: String, severity: String },
-    SimulationPassed { confidence: f64 },
-    ToolGenerationStarted { tool_id: String, capability: String },
-    ToolVerified { tool_id: String, score: f64 },
-    ToolDeployed { tool_id: String, asset_id: String },
+    SimulationStarted {
+        sop_id: String,
+        iteration: usize,
+    },
+    SimulationFlawDetected {
+        node_id: String,
+        flaw: String,
+        severity: String,
+    },
+    SimulationPassed {
+        confidence: f64,
+    },
+    ToolGenerationStarted {
+        tool_id: String,
+        capability: String,
+    },
+    ToolVerified {
+        tool_id: String,
+        score: f64,
+    },
+    ToolDeployed {
+        tool_id: String,
+        asset_id: String,
+    },
 }
 
 /// Structured message for inter-agent communication.
@@ -109,8 +150,7 @@ pub struct PlatformConfig {
     pub shell: String,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq)]
-#[derive(Default)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Default)]
 pub enum WorkMode {
     /// Standard mode: Balanced speed and accuracy.
     #[default]
@@ -118,7 +158,6 @@ pub enum WorkMode {
     /// UltraWork mode: Zero-compromise, evidence-bound, high-rigor mode.
     UltraWork,
 }
-
 
 /// Topological evolution operation on a SOP graph.
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
@@ -214,7 +253,7 @@ impl SisyphusNotepad {
             .unwrap_or_default()
             .as_secs();
         let entry = format!("[{}] {}\n", timestamp, insight);
-        
+
         let current_content = self.sections.get(&section_id).cloned().unwrap_or_default();
         let new_content = format!("{}{}", current_content, entry);
         self.sections.insert(section_id, new_content);
@@ -271,7 +310,6 @@ pub struct TriggerDef {
     pub hook_message: Option<String>,
 }
 
-
 #[async_trait::async_trait]
 pub trait ExperienceRetriever: Send + Sync {
     async fn retrieve_relevant(
@@ -279,8 +317,5 @@ pub trait ExperienceRetriever: Send + Sync {
         query: &str,
         limit: usize,
     ) -> Result<Vec<ExperienceTuple>, String>;
-    async fn record_experience(
-        &self,
-        exp: ExperienceTuple,
-    ) -> Result<(), String>;
+    async fn record_experience(&self, exp: ExperienceTuple) -> Result<(), String>;
 }

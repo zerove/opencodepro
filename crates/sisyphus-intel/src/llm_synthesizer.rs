@@ -1,11 +1,11 @@
+use crate::simulation::Simulator;
 use crate::{
     action_label, classify_goal, tool_id_for_action, ActionType, FlowSynthesizer, SynthesisResult,
 };
 use async_trait::async_trait;
+use serde::{Deserialize, Serialize};
 use sisyphus_types::{ExecutionContext, SOPGraph};
 use std::sync::Arc;
-use crate::simulation::Simulator;
-use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StrategicLesson {
@@ -128,8 +128,12 @@ impl FlowSynthesizer for LlmDrivenSynthesizer {
                     fuel_limit: 1_000_000,
                     executor: self.tool_executor.clone(),
                 }));
-                if first_idx.is_none() { first_idx = Some(n); }
-                if let Some(p) = prev { graph.add_edge(p, n); }
+                if first_idx.is_none() {
+                    first_idx = Some(n);
+                }
+                if let Some(p) = prev {
+                    graph.add_edge(p, n);
+                }
                 prev = Some(n);
             }
 
@@ -171,7 +175,8 @@ impl FlowSynthesizer for LlmDrivenSynthesizer {
             Ok(SynthesisResult {
                 start_node: explore,
                 graph: Arc::new(graph),
-                plan_description: "UltraWork Rigorous Cycle: Explore -> Plan -> Implement -> Verify".into(),
+                plan_description:
+                    "UltraWork Rigorous Cycle: Explore -> Plan -> Implement -> Verify".into(),
             })
         }
     }
@@ -197,7 +202,15 @@ impl LogicalSOPSynthesizer {
         evaluator: Arc<dyn sisyphus_types::SopEvaluator>,
         golden_dataset: Arc<dyn sisyphus_types::GoldenDataset>,
     ) -> Self {
-        Self { llm_client, tool_executor, test_executor, simulator, retriever, evaluator, golden_dataset }
+        Self {
+            llm_client,
+            tool_executor,
+            test_executor,
+            simulator,
+            retriever,
+            evaluator,
+            golden_dataset,
+        }
     }
 
     async fn retrieve_lessons(&self, goal: &str) -> String {
@@ -206,11 +219,21 @@ impl LogicalSOPSynthesizer {
                 if lessons.is_empty() {
                     return "No relevant historical lessons found.".to_string();
                 }
-                lessons.iter()
-                    .map(|l| format!(
-                        "Goal: {}\nOutcome: {}\nFeedback: {}\nSOP: {}",
-                        l.context_text, if l.outcome_success { "SUCCESS" } else { "FAILURE" }, l.insight.as_ref().unwrap_or(&"No insight".to_string()), l.action_id
-                    ))
+                lessons
+                    .iter()
+                    .map(|l| {
+                        format!(
+                            "Goal: {}\nOutcome: {}\nFeedback: {}\nSOP: {}",
+                            l.context_text,
+                            if l.outcome_success {
+                                "SUCCESS"
+                            } else {
+                                "FAILURE"
+                            },
+                            l.insight.as_ref().unwrap_or(&"No insight".to_string()),
+                            l.action_id
+                        )
+                    })
                     .collect::<Vec<_>>()
                     .join("\n\n---\n\n")
             }
@@ -228,15 +251,24 @@ impl LogicalSOPSynthesizer {
             outcome_success: success,
             deviation_score: 0.0,
             cost: 0,
-            timestamp: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs(),
+            timestamp: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs(),
             embedding: None,
             insight: Some(feedback.to_string()),
         };
         let _ = self.retriever.record_experience(exp).await;
     }
 
-    async fn propose(&self, goal: &str, tools: &str, lessons: &str) -> Result<(String, String, String), String> {
-        let system_prompt = format!(r#"
+    async fn propose(
+        &self,
+        goal: &str,
+        tools: &str,
+        lessons: &str,
+    ) -> Result<(String, String, String), String> {
+        let system_prompt = format!(
+            r#"
 You are a Strategic SOP Architect. Design a high-fidelity SOP graph.
 Available Node Types:
 1. Wasm: {{ "tool_id": "...", "fuel_limit": 1000000 }}
@@ -255,22 +287,45 @@ Currently Available Tools:
 Output Format:
 Reasoning: <topology plan, explaining how verification is integrated>
 JSON: <SOPGraphConfig JSON>
-Plan: <overall strategy>"#, tools, lessons);
+Plan: <overall strategy>"#,
+            tools, lessons
+        );
 
-        let response = self.llm_client.chat(&system_prompt, &format!("Goal: {}", goal), true).await
+        let response = self
+            .llm_client
+            .chat(&system_prompt, &format!("Goal: {}", goal), true)
+            .await
             .map_err(|e| e.to_string())?;
 
         let json_start = response.find("JSON:").map(|i| i + 5).unwrap_or(0);
         let json_end = response.rfind("Plan:").unwrap_or(response.len());
         let json_str = &response[json_start..json_end].trim();
-        let plan_desc = response.split("Plan:").nth(1).unwrap_or("Logical SOP").trim().to_string();
-        let reasoning = response.split("JSON:").next().unwrap_or("").trim().to_string();
+        let plan_desc = response
+            .split("Plan:")
+            .nth(1)
+            .unwrap_or("Logical SOP")
+            .trim()
+            .to_string();
+        let reasoning = response
+            .split("JSON:")
+            .next()
+            .unwrap_or("")
+            .trim()
+            .to_string();
 
         Ok((reasoning, json_str.to_string(), plan_desc))
     }
 
-    async fn refine(&self, goal: &str, tools: &str, current_json: &str, feedback: &str, lessons: &str) -> Result<(String, String, String), String> {
-        let system_prompt = format!(r#"
+    async fn refine(
+        &self,
+        goal: &str,
+        tools: &str,
+        current_json: &str,
+        feedback: &str,
+        lessons: &str,
+    ) -> Result<(String, String, String), String> {
+        let system_prompt = format!(
+            r#"
 You are a Strategic Architect. Refine the SOP based on the Auditor's feedback.
 Fix the logical gaps and optimize the topology. Ensure the JSON is strictly valid.
 
@@ -280,35 +335,59 @@ Fix the logical gaps and optimize the topology. Ensure the JSON is strictly vali
 Respond in the same format:
 Reasoning: <how you fixed the issues>
 JSON: <updated SOPGraphConfig JSON>
-Plan: <updated strategy>"#, lessons);
+Plan: <updated strategy>"#,
+            lessons
+        );
 
         let prompt = format!(
             "Goal: {}\nAvailable Tools: {}\nCurrent JSON: {}\nAuditor Feedback: {}\nRefine this design.",
             goal, tools, current_json, feedback
         );
 
-        let response = self.llm_client.chat(&system_prompt, &prompt, true).await
+        let response = self
+            .llm_client
+            .chat(&system_prompt, &prompt, true)
+            .await
             .map_err(|e| e.to_string())?;
 
         let json_start = response.find("JSON:").map(|i| i + 5).unwrap_or(0);
         let json_end = response.rfind("Plan:").unwrap_or(response.len());
         let json_str = &response[json_start..json_end].trim();
-        let plan_desc = response.split("Plan:").nth(1).unwrap_or("Logical SOP").trim().to_string();
-        let reasoning = response.split("JSON:").next().unwrap_or("").trim().to_string();
+        let plan_desc = response
+            .split("Plan:")
+            .nth(1)
+            .unwrap_or("Logical SOP")
+            .trim()
+            .to_string();
+        let reasoning = response
+            .split("JSON:")
+            .next()
+            .unwrap_or("")
+            .trim()
+            .to_string();
 
         Ok((reasoning, json_str.to_string(), plan_desc))
     }
 
-    async fn synthesize_subgraph(&self, sub_goal: &str, tools: &str) -> Result<sisyphus_types::SOPGraphConfig, String> {
+    async fn synthesize_subgraph(
+        &self,
+        sub_goal: &str,
+        tools: &str,
+    ) -> Result<sisyphus_types::SOPGraphConfig, String> {
         let lessons = self.retrieve_lessons(sub_goal).await;
         let (_, json_str, _) = self.propose(sub_goal, tools, &lessons).await?;
         serde_json::from_str(&json_str).map_err(|e| format!("Invalid sub-graph JSON: {}", e))
     }
 
-    async fn synthesize_hierarchical(&self, goal: &str, tools: &str) -> Result<SynthesisResult, String> {
+    async fn synthesize_hierarchical(
+        &self,
+        goal: &str,
+        tools: &str,
+    ) -> Result<SynthesisResult, String> {
         let lessons = self.retrieve_lessons(goal).await;
-        
-        let system_prompt = format!(r#"
+
+        let system_prompt = format!(
+            r#"
 You are a Strategic Architect. The goal is complex and requires a hierarchical SOP.
 Design a high-level SOP where each node is a SubGraph. 
 Each SubGraph must have a 'goal' field describing what that sub-SOP should accomplish.
@@ -322,15 +401,25 @@ Strategic Memory:
 Output Format:
 Reasoning: <why this hierarchy>
 JSON: <SOPGraphConfig with NodeKind::SubGraph nodes, each containing a 'goal' in its config>
-Plan: <high-level strategy>"#, tools, lessons);
+Plan: <high-level strategy>"#,
+            tools, lessons
+        );
 
-        let response = self.llm_client.chat(&system_prompt, &format!("Complex Goal: {}", goal), true).await
+        let response = self
+            .llm_client
+            .chat(&system_prompt, &format!("Complex Goal: {}", goal), true)
+            .await
             .map_err(|e| e.to_string())?;
 
         let json_start = response.find("JSON:").map(|i| i + 5).unwrap_or(0);
         let json_end = response.rfind("Plan:").unwrap_or(response.len());
         let json_str = &response[json_start..json_end].trim();
-        let plan_desc = response.split("Plan:").nth(1).unwrap_or("Hierarchical SOP").trim().to_string();
+        let plan_desc = response
+            .split("Plan:")
+            .nth(1)
+            .unwrap_or("Hierarchical SOP")
+            .trim()
+            .to_string();
 
         let mut config: sisyphus_types::SOPGraphConfig = serde_json::from_str(json_str)
             .map_err(|e| format!("Invalid hierarchical JSON: {}", e))?;
@@ -343,11 +432,19 @@ Plan: <high-level strategy>"#, tools, lessons);
             }
         }
 
-        let graph = sisyphus_types::SOPGraph::from_config(&config, self.tool_executor.clone(), self.test_executor.clone())
-            .map_err(|e| e.to_string())?;
+        let graph = sisyphus_types::SOPGraph::from_config(
+            &config,
+            self.tool_executor.clone(),
+            self.test_executor.clone(),
+        )
+        .map_err(|e| e.to_string())?;
 
         Ok(SynthesisResult {
-            start_node: graph.graph.node_indices().next().ok_or_else(|| "Hierarchical graph has no nodes".to_string())?,
+            start_node: graph
+                .graph
+                .node_indices()
+                .next()
+                .ok_or_else(|| "Hierarchical graph has no nodes".to_string())?,
             graph,
             plan_description: plan_desc,
         })
@@ -365,13 +462,20 @@ impl FlowSynthesizer for LogicalSOPSynthesizer {
         _insights: Option<&str>,
     ) -> Result<SynthesisResult, String> {
         println!("DEBUG: Starting synthesis for goal: {}", goal);
-        let tools = self.tool_executor.list_tools().await
+        let tools = self
+            .tool_executor
+            .list_tools()
+            .await
             .map_err(|e| format!("Failed to discover tools: {}", e))?;
-        let tools_list = tools.iter().map(|t| format!("- {}: {}", t.id, t.description)).collect::<Vec<_>>().join("\n");
+        let tools_list = tools
+            .iter()
+            .map(|t| format!("- {}: {}", t.id, t.description))
+            .collect::<Vec<_>>()
+            .join("\n");
 
-        let is_complex = goal.len() > 150 
-            || goal.to_lowercase().contains("refactor") 
-            || goal.to_lowercase().contains("implement full") 
+        let is_complex = goal.len() > 150
+            || goal.to_lowercase().contains("refactor")
+            || goal.to_lowercase().contains("implement full")
             || goal.to_lowercase().contains("comprehensive");
 
         if is_complex {
@@ -393,8 +497,13 @@ impl FlowSynthesizer for LogicalSOPSynthesizer {
                 println!("DEBUG: First proposal successful");
                 res
             } else {
-                let res = self.refine(goal, &tools_list, &current_json, &last_critique, &lessons).await?;
-                println!("DEBUG: Refinement successful for attempt {}", current_attempt);
+                let res = self
+                    .refine(goal, &tools_list, &current_json, &last_critique, &lessons)
+                    .await?;
+                println!(
+                    "DEBUG: Refinement successful for attempt {}",
+                    current_attempt
+                );
                 res
             };
 
@@ -403,9 +512,18 @@ impl FlowSynthesizer for LogicalSOPSynthesizer {
 
             let config: sisyphus_types::SOPGraphConfig = serde_json::from_str(&current_json)
                 .map_err(|e| format!("Invalid JSON in attempt {}: {}", current_attempt, e))?;
-            
-            let graph = SOPGraph::from_config(&config, self.tool_executor.clone(), self.test_executor.clone())
-                .map_err(|e| format!("SOPGraph construction failed in attempt {}: {}", current_attempt, e))?;
+
+            let graph = SOPGraph::from_config(
+                &config,
+                self.tool_executor.clone(),
+                self.test_executor.clone(),
+            )
+            .map_err(|e| {
+                format!(
+                    "SOPGraph construction failed in attempt {}: {}",
+                    current_attempt, e
+                )
+            })?;
 
             let eval_res = match self.evaluator.evaluate(goal, &config).await {
                 Ok(res) => res,
@@ -414,15 +532,33 @@ impl FlowSynthesizer for LogicalSOPSynthesizer {
                     return Err(e.to_string());
                 }
             };
-            
-            println!("DEBUG: Evaluation result received. Score: {:.2}, Acceptable: {}", eval_res.score, eval_res.is_acceptable);
-            self.save_lesson(goal, &current_json, &eval_res.feedback, eval_res.is_acceptable).await;
+
+            println!(
+                "DEBUG: Evaluation result received. Score: {:.2}, Acceptable: {}",
+                eval_res.score, eval_res.is_acceptable
+            );
+            self.save_lesson(
+                goal,
+                &current_json,
+                &eval_res.feedback,
+                eval_res.is_acceptable,
+            )
+            .await;
 
             if eval_res.is_acceptable {
                 // Regression check against Golden Dataset
-                if let Err(e) = self.golden_dataset.verify_no_regression(goal, &config, eval_res.score as f64).await {
+                if let Err(e) = self
+                    .golden_dataset
+                    .verify_no_regression(goal, &config, eval_res.score as f64)
+                    .await
+                {
                     tracing::warn!(goal = %goal, error = %e, "Golden dataset verification error");
-                } else if !self.golden_dataset.verify_no_regression(goal, &config, eval_res.score as f64).await.unwrap_or(true) {
+                } else if !self
+                    .golden_dataset
+                    .verify_no_regression(goal, &config, eval_res.score as f64)
+                    .await
+                    .unwrap_or(true)
+                {
                     tracing::warn!(goal = %goal, "SOP rejected: regression detected relative to Golden Dataset");
                     last_critique = "SOP shows regression compared to Golden Dataset. Improve stability/performance.".into();
                     current_attempt += 1;
@@ -430,12 +566,19 @@ impl FlowSynthesizer for LogicalSOPSynthesizer {
                 }
 
                 tracing::info!(goal = %goal, attempts = current_attempt + 1, score = eval_res.score, "SOP approved by evaluator and passed regression check");
-                
+
                 // Enroll if this is the new gold standard
-                let _ = self.golden_dataset.enroll(goal, config.clone(), eval_res.score as f64).await;
+                let _ = self
+                    .golden_dataset
+                    .enroll(goal, config.clone(), eval_res.score as f64)
+                    .await;
 
                 return Ok(SynthesisResult {
-                    start_node: graph.graph.node_indices().next().ok_or_else(|| "Graph has no nodes".to_string())?,
+                    start_node: graph
+                        .graph
+                        .node_indices()
+                        .next()
+                        .ok_or_else(|| "Graph has no nodes".to_string())?,
                     graph,
                     plan_description: current_plan,
                 });
@@ -447,16 +590,29 @@ impl FlowSynthesizer for LogicalSOPSynthesizer {
         }
 
         if !current_json.is_empty() {
-            let config: sisyphus_types::SOPGraphConfig = serde_json::from_str(&current_json).map_err(|e| e.to_string())?;
-            let graph = SOPGraph::from_config(&config, self.tool_executor.clone(), self.test_executor.clone()).map_err(|e| e.to_string())?;
+            let config: sisyphus_types::SOPGraphConfig =
+                serde_json::from_str(&current_json).map_err(|e| e.to_string())?;
+            let graph = SOPGraph::from_config(
+                &config,
+                self.tool_executor.clone(),
+                self.test_executor.clone(),
+            )
+            .map_err(|e| e.to_string())?;
             return Ok(SynthesisResult {
-                start_node: graph.graph.node_indices().next().ok_or_else(|| "Graph has no nodes".to_string())?,
+                start_node: graph
+                    .graph
+                    .node_indices()
+                    .next()
+                    .ok_or_else(|| "Graph has no nodes".to_string())?,
                 graph,
                 plan_description: current_plan,
             });
         }
 
-        Err(format!("Failed to synthesize a valid SOP after {} attempts", max_attempts))
+        Err(format!(
+            "Failed to synthesize a valid SOP after {} attempts",
+            max_attempts
+        ))
     }
 }
 
@@ -488,9 +644,9 @@ mod tests {
 #[cfg(test)]
 mod adversarial_tests {
     use super::*;
+    use crate::simulation::MonteCarloSimulator;
     use sisyphus_types::{ExecutionContext, SOPGraphConfig};
     use std::sync::Arc;
-    use crate::simulation::MonteCarloSimulator;
 
     struct MockLlm {
         call_count: std::sync::atomic::AtomicUsize,
@@ -509,9 +665,11 @@ mod adversarial_tests {
     #[async_trait::async_trait]
     impl sisyphus_tools_llm::LlmClient for MockLlm {
         async fn chat(&self, _system: &str, prompt: &str, _stream: bool) -> Result<String, String> {
-            let _count = self.call_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            let _count = self
+                .call_count
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             let mut mode = self.mode.lock().unwrap();
-            
+
             if prompt.contains("Refine this design") {
                 *mode += 1;
                 Ok(format!(
@@ -541,11 +699,28 @@ mod adversarial_tests {
         let executor = Arc::new(sisyphus_types::ExecutorRouter::new(Arc::new(MockExecutor)));
         let sim = Arc::new(MonteCarloSimulator::new(10));
         let store = Arc::new(MockStateStore::new());
-        
-        let synthesizer = LogicalSOPSynthesizer::new(llm, executor, Arc::new(MockTestExecutor), sim, Arc::new(MockStateStore::new()), Arc::new(MockEvaluator));
-        let result = synthesizer.synthesize("test goal", &ExecutionContext::new(), sisyphus_types::WorkMode::UltraWork, None).await;
-        
-        assert!(result.is_ok(), "Adversarial loop should converge to a valid SOP");
+
+        let synthesizer = LogicalSOPSynthesizer::new(
+            llm,
+            executor,
+            Arc::new(MockTestExecutor),
+            sim,
+            Arc::new(MockStateStore::new()),
+            Arc::new(MockEvaluator),
+        );
+        let result = synthesizer
+            .synthesize(
+                "test goal",
+                &ExecutionContext::new(),
+                sisyphus_types::WorkMode::UltraWork,
+                None,
+            )
+            .await;
+
+        assert!(
+            result.is_ok(),
+            "Adversarial loop should converge to a valid SOP"
+        );
         let res = result.unwrap();
         assert!(!res.plan_description.is_empty());
     }
@@ -556,25 +731,54 @@ mod adversarial_tests {
         let executor = Arc::new(sisyphus_types::ExecutorRouter::new(Arc::new(MockExecutor)));
         let sim = Arc::new(MonteCarloSimulator::new(10));
         let store = Arc::new(MockStateStore::new());
-        
-        let synthesizer = LogicalSOPSynthesizer::new(llm, executor, Arc::new(MockTestExecutor), sim, Arc::new(MockStateStore::new()), Arc::new(MockEvaluator));
-        
+
+        let synthesizer = LogicalSOPSynthesizer::new(
+            llm,
+            executor,
+            Arc::new(MockTestExecutor),
+            sim,
+            Arc::new(MockStateStore::new()),
+            Arc::new(MockEvaluator),
+        );
+
         // 1. First attempt: Force a failure to save a lesson
-        let _ = synthesizer.synthesize("memory goal", &ExecutionContext::new(), sisyphus_types::WorkMode::UltraWork, None).await;
-        
+        let _ = synthesizer
+            .synthesize(
+                "memory goal",
+                &ExecutionContext::new(),
+                sisyphus_types::WorkMode::UltraWork,
+                None,
+            )
+            .await;
+
         // 2. Verify lesson was saved
         let lessons = synthesizer.retrieve_lessons("memory goal").await;
-        assert!(lessons.contains("SOP:"), "Should have saved a failed SOP as a lesson. Actual lessons: {}", lessons);
-        
+        assert!(
+            lessons.contains("SOP:"),
+            "Should have saved a failed SOP as a lesson. Actual lessons: {}",
+            lessons
+        );
+
         // 3. Second attempt: Verify it can still synthesize
-        let res = synthesizer.synthesize("memory goal", &ExecutionContext::new(), sisyphus_types::WorkMode::UltraWork, None).await;
+        let res = synthesizer
+            .synthesize(
+                "memory goal",
+                &ExecutionContext::new(),
+                sisyphus_types::WorkMode::UltraWork,
+                None,
+            )
+            .await;
         assert!(res.is_ok());
     }
 
     struct MockTestExecutor;
     #[async_trait::async_trait]
     impl sisyphus_types::TestExecutor for MockTestExecutor {
-        async fn run_test(&self, _command: &str, _workdir: Option<&str>) -> Result<sisyphus_types::TestResult, sisyphus_types::TypesError> {
+        async fn run_test(
+            &self,
+            _command: &str,
+            _workdir: Option<&str>,
+        ) -> Result<sisyphus_types::TestResult, sisyphus_types::TypesError> {
             Ok(sisyphus_types::TestResult {
                 success: true,
                 stdout: "Mock Success".into(),
@@ -589,10 +793,17 @@ mod adversarial_tests {
     struct MockExecutor;
     #[async_trait::async_trait]
     impl sisyphus_types::ToolExecutor for MockExecutor {
-        async fn execute(&self, _: &str, _: Vec<u8>, _: u64) -> Result<Vec<u8>, sisyphus_types::TypesError> {
+        async fn execute(
+            &self,
+            _: &str,
+            _: Vec<u8>,
+            _: u64,
+        ) -> Result<Vec<u8>, sisyphus_types::TypesError> {
             Ok(vec![])
         }
-        async fn list_tools(&self) -> Result<Vec<sisyphus_types::ToolMetadata>, sisyphus_types::TypesError> {
+        async fn list_tools(
+            &self,
+        ) -> Result<Vec<sisyphus_types::ToolMetadata>, sisyphus_types::TypesError> {
             Ok(vec![])
         }
     }
@@ -601,26 +812,44 @@ mod adversarial_tests {
         data: std::sync::Mutex<std::collections::HashMap<String, serde_json::Value>>,
     }
     impl MockStateStore {
-        fn new() -> Self { Self { data: std::sync::Mutex::new(std::collections::HashMap::new()) } }
+        fn new() -> Self {
+            Self {
+                data: std::sync::Mutex::new(std::collections::HashMap::new()),
+            }
+        }
     }
     #[async_trait::async_trait]
     impl sisyphus_types::ExperienceRetriever for MockStateStore {
-        async fn retrieve_relevant(&self, query: &str, _limit: usize) -> Result<Vec<sisyphus_types::experience::ExperienceTuple>, String> {
+        async fn retrieve_relevant(
+            &self,
+            query: &str,
+            _limit: usize,
+        ) -> Result<Vec<sisyphus_types::experience::ExperienceTuple>, String> {
             // Mock simple retrieval: return everything as a "match"
-            Ok(vec![]) 
+            Ok(vec![])
         }
-        async fn record_experience(&self, _exp: sisyphus_types::experience::ExperienceTuple) -> Result<(), String> {
+        async fn record_experience(
+            &self,
+            _exp: sisyphus_types::experience::ExperienceTuple,
+        ) -> Result<(), String> {
             Ok(())
         }
     }
     #[async_trait::async_trait]
     impl sisyphus_types::StateStore for MockStateStore {
-        async fn get_state_json(&self, key: &str) -> Result<Option<serde_json::Value>, sisyphus_types::TypesError> {
+        async fn get_state_json(
+            &self,
+            key: &str,
+        ) -> Result<Option<serde_json::Value>, sisyphus_types::TypesError> {
             let res = self.data.lock().unwrap().get(key).cloned();
             println!("DEBUG: MockStateStore GET key: {}, result: {:?}", key, res);
             Ok(res)
         }
-        async fn set_state_json(&self, key: &str, val: serde_json::Value) -> Result<(), sisyphus_types::TypesError> {
+        async fn set_state_json(
+            &self,
+            key: &str,
+            val: serde_json::Value,
+        ) -> Result<(), sisyphus_types::TypesError> {
             println!("DEBUG: MockStateStore SET key: {}", key);
             self.data.lock().unwrap().insert(key.to_string(), val);
             Ok(())
@@ -633,7 +862,11 @@ struct MockEvaluator;
 #[cfg(test)]
 #[async_trait::async_trait]
 impl sisyphus_types::SopEvaluator for MockEvaluator {
-    async fn evaluate(&self, _goal: &str, _config: &sisyphus_types::SOPGraphConfig) -> Result<sisyphus_types::SopEvaluation, sisyphus_types::TypesError> {
+    async fn evaluate(
+        &self,
+        _goal: &str,
+        _config: &sisyphus_types::SOPGraphConfig,
+    ) -> Result<sisyphus_types::SopEvaluation, sisyphus_types::TypesError> {
         Ok(sisyphus_types::SopEvaluation {
             score: 1.0,
             metrics: std::collections::HashMap::new(),

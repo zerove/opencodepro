@@ -1,5 +1,5 @@
-use sisyphus_tools_core::ToolResult;
 use serde::{Deserialize, Serialize};
+use sisyphus_tools_core::ToolResult;
 use sisyphus_types::BenchmarkRun;
 use std::collections::HashMap;
 use std::path::PathBuf;

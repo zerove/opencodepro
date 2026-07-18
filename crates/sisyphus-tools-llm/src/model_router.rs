@@ -1,5 +1,5 @@
-use sisyphus_tools_core::ToolResult;
 use serde::{Deserialize, Serialize};
+use sisyphus_tools_core::ToolResult;
 use sisyphus_types::ModelRouteStrategy;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
@@ -58,13 +58,14 @@ impl ModelRouter {
 
     /// Select the best model for a prompt given the strategy.
     pub fn select(&self, prompt: &str, strategy: &ModelRouteStrategy) -> ToolResult<ModelConfig> {
-        let models = self
-            .models
-            .read()
-            .map_err(|e| sisyphus_tools_core::ToolError::Generic(format!("ModelRouter lock poisoned: {e}")))?;
+        let models = self.models.read().map_err(|e| {
+            sisyphus_tools_core::ToolError::Generic(format!("ModelRouter lock poisoned: {e}"))
+        })?;
 
         if models.is_empty() {
-            return Err(sisyphus_tools_core::ToolError::Generic("No models registered".into()));
+            return Err(sisyphus_tools_core::ToolError::Generic(
+                "No models registered".into(),
+            ));
         }
 
         let estimated_complexity = estimate_complexity(prompt);
@@ -82,7 +83,9 @@ impl ModelRouter {
                         .unwrap_or(std::cmp::Ordering::Equal)
                 });
                 sorted.first().copied().cloned().ok_or_else(|| {
-                    sisyphus_tools_core::ToolError::Generic("No model can handle this prompt complexity".into())
+                    sisyphus_tools_core::ToolError::Generic(
+                        "No model can handle this prompt complexity".into(),
+                    )
                 })
             }
             ModelRouteStrategy::PerformanceOptimized => {
@@ -91,18 +94,18 @@ impl ModelRouter {
                     .iter()
                     .max_by_key(|m| m.complexity_ceiling)
                     .cloned()
-                    .ok_or_else(|| sisyphus_tools_core::ToolError::Generic("No models available".into()))
+                    .ok_or_else(|| {
+                        sisyphus_tools_core::ToolError::Generic("No models available".into())
+                    })
             }
             ModelRouteStrategy::FallbackChain => {
                 // Try models in order of registration
-                models
-                    .first()
-                    .cloned()
-                    .ok_or_else(|| sisyphus_tools_core::ToolError::Generic("No models available".into()))
+                models.first().cloned().ok_or_else(|| {
+                    sisyphus_tools_core::ToolError::Generic("No models available".into())
+                })
             }
         }
     }
-
 
     /// Record usage for a model call.
     pub fn record_usage(&self, model: &str, cost: f64, tokens: u64) {
@@ -139,12 +142,13 @@ impl ModelRouter {
         if self.monthly_budget <= 0.0 {
             return f64::INFINITY;
         }
-        match self.usage.read() { Ok(usage) => {
-            let total_monthly: f64 = usage.values().map(|u| u.monthly_cost).sum();
-            (self.monthly_budget - total_monthly).max(0.0)
-        } _ => {
-            0.0
-        }}
+        match self.usage.read() {
+            Ok(usage) => {
+                let total_monthly: f64 = usage.values().map(|u| u.monthly_cost).sum();
+                (self.monthly_budget - total_monthly).max(0.0)
+            }
+            _ => 0.0,
+        }
     }
 
     /// Get usage record for a model.
@@ -253,7 +257,6 @@ mod tests {
         let result = router.select("test", &ModelRouteStrategy::CostOptimized);
         assert!(result.is_err());
     }
-
 
     #[test]
     fn test_budget_remaining() {

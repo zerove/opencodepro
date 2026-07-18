@@ -1,20 +1,22 @@
 //! REST API for Sisyphus Bridge (axum HTTP layer alongside gRPC).
-use async_trait::async_trait;
 use crate::jcode_caller::DebugSocketToolCaller;
+use async_trait::async_trait;
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 
 use sisyphus_core::{Consensus, SisyphusKernel};
 use sisyphus_mem::SisyphusStore;
 
-use sisyphus_sandbox::{PluginManager, WasmToolExecutor};
 use sisyphus_mem::skill_store::SkillStore;
+use sisyphus_sandbox::{PluginManager, WasmToolExecutor};
 use sisyphus_tools_agent::agent_registry::AgentRegistry;
+use sisyphus_tools_agent::jcode_executor::JcodeToolCaller;
+use sisyphus_tools_agent::jcode_executor::JcodeToolExecutor;
 use sisyphus_tools_agent::skill_registry::{RemoteSkillRegistry, SkillRegistry};
-use sisyphus_tools_agent::workspace_manager::WorkspaceManager;
 use sisyphus_tools_agent::team::TeamOrchestrator;
+use sisyphus_tools_agent::workspace_manager::WorkspaceManager;
 use sisyphus_tools_core::feedback::FeedbackStore;
-use sisyphus_tools_core::hook::{HookRegistry, hooks_from_skill};
+use sisyphus_tools_core::hook::{hooks_from_skill, HookRegistry};
 use sisyphus_tools_executor::executor::BuiltinToolExecutor;
 use sisyphus_tools_executor::executor_mcp::MCPToolExecutor;
 use sisyphus_tools_llm::{DynamicLlmClient, LlmClient};
@@ -22,8 +24,6 @@ use sisyphus_tools_mcp::custom_tool::CustomToolLoader;
 use sisyphus_tools_mcp::mcp::McpTool;
 use sisyphus_tools_mcp::tool_registry::{ToolInfo, ToolRegistry, ToolSource};
 use sisyphus_tools_session::skill::SkillLoader;
-use sisyphus_tools_agent::jcode_executor::JcodeToolCaller;
-use sisyphus_tools_agent::jcode_executor::JcodeToolExecutor;
 use sisyphus_types::{Config, ExecutorRouter, ToolExecutor};
 use tracing::{info, warn};
 
@@ -71,9 +71,29 @@ impl Clone for MySisyphusBridge {
 }
 
 impl MySisyphusBridge {
-    pub async fn new(shared_config: Arc<RwLock<Config>>, llm_client_override: Option<Arc<dyn LlmClient>>) -> Result<Self, sisyphus_types::TypesError> {
-        let (cache_path, _l1_cap, max_tasks, wasm_tools_dir, max_mem_pages, stdio_servers, http_servers, default_fuel, embedding_provider, embedding_model, embedding_endpoint) = {
-            let config = shared_config.read().map_err(|e| sisyphus_types::TypesError::ToolExecutionError { tool_id: "init".into(), details: format!("Config lock poisoned: {e}") })?;
+    pub async fn new(
+        shared_config: Arc<RwLock<Config>>,
+        llm_client_override: Option<Arc<dyn LlmClient>>,
+    ) -> Result<Self, sisyphus_types::TypesError> {
+        let (
+            cache_path,
+            _l1_cap,
+            max_tasks,
+            wasm_tools_dir,
+            max_mem_pages,
+            stdio_servers,
+            http_servers,
+            default_fuel,
+            embedding_provider,
+            embedding_model,
+            embedding_endpoint,
+        ) = {
+            let config = shared_config.read().map_err(|e| {
+                sisyphus_types::TypesError::ToolExecutionError {
+                    tool_id: "init".into(),
+                    details: format!("Config lock poisoned: {e}"),
+                }
+            })?;
             (
                 config.cache.sqlite_path.clone(),
                 config.cache.l1_capacity,
@@ -88,34 +108,68 @@ impl MySisyphusBridge {
                 config.llm.embedding.endpoint.clone(),
             )
         };
-        let store = Arc::new(
-            SisyphusStore::new(&cache_path).await
-                .map_err(|e| sisyphus_types::TypesError::StateStoreError(format!("Failed to init SisyphusStore: {e}")))?,
-        );
+        let store = Arc::new(SisyphusStore::new(&cache_path).await.map_err(|e| {
+            sisyphus_types::TypesError::StateStoreError(format!(
+                "Failed to init SisyphusStore: {e}"
+            ))
+        })?);
         let state_store = store.state.clone();
 
-        let vector_store = Arc::new(sisyphus_mem::VectorMemoryStore::new(store.pool()).await
-            .map_err(|e| sisyphus_types::TypesError::StateStoreError(format!("Failed to init VectorMemoryStore: {e}")))?);
+        let vector_store = Arc::new(
+            sisyphus_mem::VectorMemoryStore::new(store.pool())
+                .await
+                .map_err(|e| {
+                    sisyphus_types::TypesError::StateStoreError(format!(
+                        "Failed to init VectorMemoryStore: {e}"
+                    ))
+                })?,
+        );
 
         let sim_iterations = max_tasks.max(1) * 64;
         let embedding_client: Arc<dyn sisyphus_tools_llm::EmbeddingClient> = {
             if embedding_provider == "openai" {
-                let config = shared_config.read().map_err(|e| sisyphus_types::TypesError::ToolExecutionError { tool_id: "init".into(), details: format!("Config lock poisoned: {e}") })?;
-                Arc::new(sisyphus_tools_llm::OpenAiEmbeddingClient::new(
-                    config.llm.api_key.clone(),
-                    embedding_endpoint.clone().unwrap_or_else(|| "https://api.openai.com/v1".into()),
-                    embedding_model,
-                ).map_err(|e| sisyphus_types::TypesError::ConfigReadError { path: "embedding_config".into(), source: std::io::Error::new(std::io::ErrorKind::Other, e) })?)
+                let config = shared_config.read().map_err(|e| {
+                    sisyphus_types::TypesError::ToolExecutionError {
+                        tool_id: "init".into(),
+                        details: format!("Config lock poisoned: {e}"),
+                    }
+                })?;
+                Arc::new(
+                    sisyphus_tools_llm::OpenAiEmbeddingClient::new(
+                        config.llm.api_key.clone(),
+                        embedding_endpoint
+                            .clone()
+                            .unwrap_or_else(|| "https://api.openai.com/v1".into()),
+                        embedding_model,
+                    )
+                    .map_err(|e| {
+                        sisyphus_types::TypesError::ConfigReadError {
+                            path: "embedding_config".into(),
+                            source: std::io::Error::new(std::io::ErrorKind::Other, e),
+                        }
+                    })?,
+                )
             } else {
                 Arc::new(sisyphus_tools_llm::DummyEmbeddingClient)
             }
         };
-        let experience_bank = Arc::new(sisyphus_mem::experience_bank::VectorExperienceBank::new(state_store.clone(), vector_store.clone(), embedding_client.clone()).await.map_err(|e| sisyphus_types::TypesError::StateStoreError(format!("Failed to init VectorExperienceBank: {e}")))?);
+        let experience_bank = Arc::new(
+            sisyphus_mem::experience_bank::VectorExperienceBank::new(
+                state_store.clone(),
+                vector_store.clone(),
+                embedding_client.clone(),
+            )
+            .await
+            .map_err(|e| {
+                sisyphus_types::TypesError::StateStoreError(format!(
+                    "Failed to init VectorExperienceBank: {e}"
+                ))
+            })?,
+        );
         let simulator = Arc::new(sisyphus_intel::MonteCarloSimulator::with_experience_bank(
             sim_iterations,
             experience_bank.clone(),
         ));
-
 
         // Primary executor: WASM (backward-compatible default)
         let wasm_executor = Arc::new(
@@ -123,14 +177,15 @@ impl MySisyphusBridge {
                 Some(PathBuf::from(&wasm_tools_dir)),
                 Some(max_mem_pages),
             )
-            .map_err(|e| sisyphus_types::TypesError::ToolExecutionError { tool_id: "init".into(), details: format!("Failed to create WasmToolExecutor: {e}") })?,
+            .map_err(|e| sisyphus_types::TypesError::ToolExecutionError {
+                tool_id: "init".into(),
+                details: format!("Failed to create WasmToolExecutor: {e}"),
+            })?,
         );
 
         // Initialize PluginManager with hot-reload support
         let wasm_executor_inner = wasm_executor.as_ref().clone();
-        let plugin_manager = PluginManager::new(
-            wasm_executor_inner,
-        );
+        let plugin_manager = PluginManager::new(wasm_executor_inner);
 
         // Secondary executor: built-in tools
         let mut registry = HookRegistry::new();
@@ -139,11 +194,7 @@ impl MySisyphusBridge {
             .with_project_dir(std::path::Path::new("."));
         let skills = loader.load_all();
         for skill in skills {
-            let hooks = hooks_from_skill(
-                &skill.name,
-                &skill.triggers,
-                &skill.instructions,
-            );
+            let hooks = hooks_from_skill(&skill.name, &skill.triggers, &skill.instructions);
             registry.register_all(hooks);
         }
 
@@ -160,9 +211,7 @@ impl MySisyphusBridge {
                 let c: Arc<dyn LlmClient> = dyn_llm_client.clone();
                 c
             },
-            feedback_store: Arc::new(FeedbackStore::new(
-                ".omo/feedback",
-            )),
+            feedback_store: Arc::new(FeedbackStore::new(".omo/feedback")),
             bridge_client: None,
         });
 
@@ -174,21 +223,25 @@ impl MySisyphusBridge {
         let jcode_executor = Arc::new(JcodeToolExecutor::new());
         router.register("jcode", jcode_executor.clone());
 
-
-
         // ── Roadmap Storage Init ──────────────────────────────────────────
         let sql_store = store.roadmap.clone();
-        let _proposal_manager = Arc::new(sisyphus_roadmap::proposal_manager::ProposalManager::new(state_store.clone()));
-
-        let proposal_manager = Arc::new(sisyphus_roadmap::proposal_manager::ProposalManager::new(state_store.clone()));
-
-        let strategic_executor = Arc::new(StrategicExecutor::new(
+        let _proposal_manager = Arc::new(sisyphus_roadmap::proposal_manager::ProposalManager::new(
             state_store.clone(),
-            dyn_llm_client.clone(),
-            cache_path.clone().into(),
-            proposal_manager.clone(),
-        ).await?);
+        ));
 
+        let proposal_manager = Arc::new(sisyphus_roadmap::proposal_manager::ProposalManager::new(
+            state_store.clone(),
+        ));
+
+        let strategic_executor = Arc::new(
+            StrategicExecutor::new(
+                state_store.clone(),
+                dyn_llm_client.clone(),
+                cache_path.clone().into(),
+                proposal_manager.clone(),
+            )
+            .await?,
+        );
 
         router.register("strategic", strategic_executor.clone());
 
@@ -197,13 +250,19 @@ impl MySisyphusBridge {
 
         // Load custom tools (.opencode/tools/*.toml)
         let custom_loader = CustomToolLoader::new(".opencode/tools");
-        let custom_defs = custom_loader.load_and_register(&tool_registry).await.unwrap_or_default();
+        let custom_defs = custom_loader
+            .load_and_register(&tool_registry)
+            .await
+            .unwrap_or_default();
 
         // Create CustomToolExecutor for these tools
         let custom_executor = Arc::new(
-            sisyphus_sandbox::CustomToolExecutor::new(custom_defs)
-                .map_err(|e| sisyphus_types::TypesError::ToolExecutionError { tool_id: "init".into(), details: format!("Failed to create CustomToolExecutor: {e}") })?
-
+            sisyphus_sandbox::CustomToolExecutor::new(custom_defs).map_err(|e| {
+                sisyphus_types::TypesError::ToolExecutionError {
+                    tool_id: "init".into(),
+                    details: format!("Failed to create CustomToolExecutor: {e}"),
+                }
+            })?,
         );
         router.register("tools", custom_executor);
 
@@ -264,10 +323,19 @@ impl MySisyphusBridge {
             topo_evolver,
             tool_executor.clone(),
         ));
-        let llm_logical_simulator = Arc::new(sisyphus_intel::simulation::LlmLogicalSimulator::new(dyn_llm_client.clone()));
-        let intel = Arc::new(sisyphus_intel::SisyphusIntel::new(simulator.clone(), llm_logical_simulator, reflector, evolver));
+        let llm_logical_simulator = Arc::new(sisyphus_intel::simulation::LlmLogicalSimulator::new(
+            dyn_llm_client.clone(),
+        ));
+        let intel = Arc::new(sisyphus_intel::SisyphusIntel::new(
+            simulator.clone(),
+            llm_logical_simulator,
+            reflector,
+            evolver,
+        ));
 
-        let meta_learner = Arc::new(parking_lot::Mutex::new(sisyphus_tools_llm_tools::meta_learner::MetaLearner::new(".omo/meta")));
+        let meta_learner = Arc::new(parking_lot::Mutex::new(
+            sisyphus_tools_llm_tools::meta_learner::MetaLearner::new(".omo/meta"),
+        ));
         let meta_synthesizer = Arc::new(MetaLearningSynthesizer::new(
             Arc::new(sisyphus_intel::GoalDrivenSynthesizer::new(
                 tool_executor.clone(),
@@ -278,27 +346,33 @@ impl MySisyphusBridge {
             meta_synthesizer,
             simulator.clone(),
         ));
-        
+
         let consensus = Arc::new(ClusterConsensus::new(
-            "node-1".to_string(), 
+            "node-1".to_string(),
             vec![], // In production, this would be loaded from config
         ));
-
-
 
         let embedding_client = Arc::new(sisyphus_tools_llm::DummyEmbeddingClient);
 
         // ── SOP Structured Store Init & Migration ──────────────────────────────
         let sop_store = store.sop.clone();
-        
+
         match sop_store.migrate_from_mfs(&state_store).await {
-            Ok(count) => info!(count, "Successfully migrated {} SOPs to structured storage", count),
+            Ok(count) => info!(
+                count,
+                "Successfully migrated {} SOPs to structured storage", count
+            ),
             Err(e) => warn!(error = %e, "SOP migration failed (might be already migrated"),
         }
 
-        let workspace_manager = Arc::new(sisyphus_tools_agent::workspace_manager::WorkspaceManager::new(state_store.clone()));
-        workspace_manager.init().await
-            .map_err(|e| sisyphus_types::TypesError::StateStoreError(format!("Failed to init WorkspaceManager: {e}")))?;
+        let workspace_manager = Arc::new(
+            sisyphus_tools_agent::workspace_manager::WorkspaceManager::new(state_store.clone()),
+        );
+        workspace_manager.init().await.map_err(|e| {
+            sisyphus_types::TypesError::StateStoreError(format!(
+                "Failed to init WorkspaceManager: {e}"
+            ))
+        })?;
         let kernel = Arc::new(SisyphusKernel::new(
             state_store.clone(),
             sop_store.clone(),
@@ -365,29 +439,42 @@ impl MySisyphusBridge {
         );
 
         // ── Roadmap Migration ──────────────────────────────────────────────
-        let roadmap_manager = sisyphus_roadmap::RoadmapManager::new(state_store.clone(), sql_store.clone(), proposal_manager.clone());
+        let roadmap_manager = sisyphus_roadmap::RoadmapManager::new(
+            state_store.clone(),
+            sql_store.clone(),
+            proposal_manager.clone(),
+        );
         match roadmap_manager.migrate_to_sql(&sql_store).await {
-            Ok(count) => info!(count, "Successfully migrated {} projects to structured storage", count),
+            Ok(count) => info!(
+                count,
+                "Successfully migrated {} projects to structured storage", count
+            ),
             Err(e) => warn!(error = %e, "Roadmap migration failed (might be already migrated)"),
         }
 
         // ── Skill Registry Init ──────────────────────────────────────────
-        let skill_store = Arc::new(SkillStore::new(store.pool()).await
-            .map_err(|e| sisyphus_types::TypesError::StateStoreError(format!("Failed to init SkillStore: {e}")))?);
-        
+        let skill_store = Arc::new(SkillStore::new(store.pool()).await.map_err(|e| {
+            sisyphus_types::TypesError::StateStoreError(format!("Failed to init SkillStore: {e}"))
+        })?);
+
         let registry_url = {
-            let config = shared_config.read().map_err(|e| sisyphus_types::TypesError::ToolExecutionError { tool_id: "init".into(), details: format!("Config lock poisoned: {e}") })?;
+            let config = shared_config.read().map_err(|e| {
+                sisyphus_types::TypesError::ToolExecutionError {
+                    tool_id: "init".into(),
+                    details: format!("Config lock poisoned: {e}"),
+                }
+            })?;
             config.registry.registry_url.clone()
         };
-        
+
         let skill_registry = Arc::new(RemoteSkillRegistry::new(
             registry_url,
             skill_store.clone(),
             router.clone(),
         ));
-        
+
         // ── Workspace Management Init ──────────────────────────────────────
-        
+
         let bridge = MySisyphusBridge {
             kernel,
             state_store,
@@ -403,7 +490,15 @@ impl MySisyphusBridge {
             event_bus: tokio::sync::broadcast::channel(1024).0,
             plugin_manager,
             jcode_caller: Arc::new(DebugSocketToolCaller::new(
-                shared_config.read().map_err(|_| sisyphus_types::TypesError::ToolExecutionError { tool_id: "init".into(), details: "Config lock poisoned".into() })?.jcode.socket_path.clone()
+                shared_config
+                    .read()
+                    .map_err(|_| sisyphus_types::TypesError::ToolExecutionError {
+                        tool_id: "init".into(),
+                        details: "Config lock poisoned".into(),
+                    })?
+                    .jcode
+                    .socket_path
+                    .clone(),
             )),
         };
 
@@ -412,7 +507,6 @@ impl MySisyphusBridge {
 
         Ok(bridge_arc.as_ref().clone())
     }
-
 }
 
 #[async_trait]
@@ -443,11 +537,13 @@ impl MySisyphusBridge {
 
     #[allow(dead_code)]
     pub(crate) async fn get_current_project_id(&self) -> Option<String> {
-        self.workspace_manager.get_current().await.map(|ws| ws.project_id)
+        self.workspace_manager
+            .get_current()
+            .await
+            .map(|ws| ws.project_id)
     }
 
     pub(crate) fn publish_event(&self, event: sisyphus_bridge_api::BridgeEvent) {
         let _ = self.event_bus.send(event);
     }
 }
-

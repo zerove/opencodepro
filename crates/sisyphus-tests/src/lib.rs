@@ -43,7 +43,13 @@ async fn setup_kernel(db_url: Option<&str>) -> SisyphusKernel {
 
     let synthesizer = Arc::new(GoalDrivenSynthesizer::new(tool_executor.clone()));
 
-    SisyphusKernel::new(state_store, tool_executor, intel, Arc::new(sisyphus_tools_llm::metis::DummyLlmClient), synthesizer)
+    SisyphusKernel::new(
+        state_store,
+        tool_executor,
+        intel,
+        Arc::new(sisyphus_tools_llm::metis::DummyLlmClient),
+        synthesizer,
+    )
 }
 
 // ---------------------------------------------------------------------------

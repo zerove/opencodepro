@@ -15,9 +15,15 @@ async fn setup_manager() -> (RoadmapManager, Arc<MfsStore>) {
             .await
             .expect("Failed to create sql store"),
     );
-    sql_store.init_schema().await.expect("Failed to init schema");
+    sql_store
+        .init_schema()
+        .await
+        .expect("Failed to init schema");
     let proposal_manager = Arc::new(crate::proposal_manager::ProposalManager::new(store.clone()));
-    (RoadmapManager::new(store.clone(), sql_store, proposal_manager), store)
+    (
+        RoadmapManager::new(store.clone(), sql_store, proposal_manager),
+        store,
+    )
 }
 
 #[tokio::test]

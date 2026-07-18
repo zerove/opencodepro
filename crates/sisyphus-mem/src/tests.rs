@@ -1,9 +1,9 @@
 #[cfg(test)]
 mod tests {
     use crate::store::MfsStore;
-    use sisyphus_types::StateStore;
     use serde::{Deserialize, Serialize};
     use serde_json::json;
+    use sisyphus_types::StateStore;
     use std::num::NonZeroUsize;
     use std::sync::Arc;
 
@@ -34,7 +34,11 @@ mod tests {
             .set_state_json(PROJECT_ID, key, serde_json::to_value(&state).unwrap())
             .await
             .unwrap();
-        let retrieved_val = store.get_state_json(PROJECT_ID, key).await.unwrap().unwrap();
+        let retrieved_val = store
+            .get_state_json(PROJECT_ID, key)
+            .await
+            .unwrap()
+            .unwrap();
         let retrieved: TestState = serde_json::from_value(retrieved_val).unwrap();
 
         assert_eq!(retrieved, state);
@@ -43,16 +47,29 @@ mod tests {
     #[tokio::test]
     async fn test_get_missing_key() {
         let (store, _) = setup_store().await;
-        let val = store.get_state_json(PROJECT_ID, "nonexistent").await.unwrap();
+        let val = store
+            .get_state_json(PROJECT_ID, "nonexistent")
+            .await
+            .unwrap();
         assert_eq!(val, None);
     }
 
     #[tokio::test]
     async fn test_overwrite_value() {
         let (store, _) = setup_store().await;
-        store.set_state_json(PROJECT_ID, "k", json!("first")).await.unwrap();
-        store.set_state_json(PROJECT_ID, "k", json!("second")).await.unwrap();
-        let val = store.get_state_json(PROJECT_ID, "k").await.unwrap().unwrap();
+        store
+            .set_state_json(PROJECT_ID, "k", json!("first"))
+            .await
+            .unwrap();
+        store
+            .set_state_json(PROJECT_ID, "k", json!("second"))
+            .await
+            .unwrap();
+        let val = store
+            .get_state_json(PROJECT_ID, "k")
+            .await
+            .unwrap()
+            .unwrap();
         assert_eq!(val, json!("second"));
     }
 
@@ -60,19 +77,33 @@ mod tests {
     async fn test_update_then_revert() {
         let (store, _) = setup_store().await;
 
-        store.set_state_json(PROJECT_ID, "k", json!("v1")).await.unwrap();
+        store
+            .set_state_json(PROJECT_ID, "k", json!("v1"))
+            .await
+            .unwrap();
 
         let snap = store.take_snapshot().unwrap();
 
-        store.set_state_json(PROJECT_ID, "k", json!("v2")).await.unwrap();
+        store
+            .set_state_json(PROJECT_ID, "k", json!("v2"))
+            .await
+            .unwrap();
         assert_eq!(
-            store.get_state_json(PROJECT_ID, "k").await.unwrap().unwrap(),
+            store
+                .get_state_json(PROJECT_ID, "k")
+                .await
+                .unwrap()
+                .unwrap(),
             json!("v2")
         );
 
         store.restore_snapshot(snap).await.unwrap();
         assert_eq!(
-            store.get_state_json(PROJECT_ID, "k").await.unwrap().unwrap(),
+            store
+                .get_state_json(PROJECT_ID, "k")
+                .await
+                .unwrap()
+                .unwrap(),
             json!("v1")
         );
     }
@@ -81,18 +112,38 @@ mod tests {
     async fn test_snapshot_restore() {
         let (store, _) = setup_store().await;
 
-        store.set_state_json(PROJECT_ID, "k1", json!(1)).await.unwrap();
-        store.set_state_json(PROJECT_ID, "k2", json!(2)).await.unwrap();
+        store
+            .set_state_json(PROJECT_ID, "k1", json!(1))
+            .await
+            .unwrap();
+        store
+            .set_state_json(PROJECT_ID, "k2", json!(2))
+            .await
+            .unwrap();
 
         let snapshot = store.take_snapshot().unwrap();
 
-        store.set_state_json(PROJECT_ID, "k1", json!(10)).await.unwrap();
-        store.set_state_json(PROJECT_ID, "k3", json!(3)).await.unwrap();
+        store
+            .set_state_json(PROJECT_ID, "k1", json!(10))
+            .await
+            .unwrap();
+        store
+            .set_state_json(PROJECT_ID, "k3", json!(3))
+            .await
+            .unwrap();
 
         store.restore_snapshot(snapshot).await.unwrap();
 
-        let v1 = store.get_state_json(PROJECT_ID, "k1").await.unwrap().unwrap();
-        let v2 = store.get_state_json(PROJECT_ID, "k2").await.unwrap().unwrap();
+        let v1 = store
+            .get_state_json(PROJECT_ID, "k1")
+            .await
+            .unwrap()
+            .unwrap();
+        let v2 = store
+            .get_state_json(PROJECT_ID, "k2")
+            .await
+            .unwrap()
+            .unwrap();
         let v3 = store.get_state_json(PROJECT_ID, "k3").await.unwrap();
 
         assert_eq!(v1, json!(1));

@@ -8,9 +8,7 @@
 
 pub mod types;
 
-pub use types::{
-    CompressStrategy, Message, Session, SessionCheckpoint,
-};
+pub use types::{CompressStrategy, Message, Session, SessionCheckpoint};
 
 use sisyphus_tools_core::{ToolError, ToolResult};
 use std::collections::HashMap;
@@ -38,7 +36,11 @@ pub fn session_compress(path: &Path, id: &str, strategy: &CompressStrategy) -> T
         .get_mut(id)
         .ok_or_else(|| ToolError::TodoError(format!("session not found: {id}")))?;
 
-    let current_tokens = session.messages.iter().map(|m| m.estimated_tokens).sum::<u64>();
+    let current_tokens = session
+        .messages
+        .iter()
+        .map(|m| m.estimated_tokens)
+        .sum::<u64>();
 
     match strategy {
         CompressStrategy::Threshold(limit) if current_tokens <= *limit => {
@@ -52,10 +54,11 @@ pub fn session_compress(path: &Path, id: &str, strategy: &CompressStrategy) -> T
     let msgs = &session.messages;
 
     while i < msgs.len() {
-        if i + 1 < msgs.len() && msgs[i].role == "assistant" && msgs[i+1].role == "user" {
+        if i + 1 < msgs.len() && msgs[i].role == "assistant" && msgs[i + 1].role == "user" {
             let combined_content = format!(
                 "Summary of assistant message: {}\nUser response: {}",
-                msgs[i].content, msgs[i+1].content
+                msgs[i].content,
+                msgs[i + 1].content
             );
 
             let compressed_msg = Message {
@@ -76,7 +79,9 @@ pub fn session_compress(path: &Path, id: &str, strategy: &CompressStrategy) -> T
 
     // Store original content in metadata for recovery
     for (idx, msg) in msgs.iter().enumerate() {
-        session.metadata.insert(format!("compressed_{idx}"), msg.content.clone());
+        session
+            .metadata
+            .insert(format!("compressed_{idx}"), msg.content.clone());
     }
 
     session.messages = new_messages;
@@ -94,7 +99,9 @@ pub fn session_save_checkpoint(
     session_id: &str,
     metadata: HashMap<String, String>,
 ) -> ToolResult<()> {
-    let db_dir = path.parent().ok_or_else(|| ToolError::TodoError("invalid session path".into()))?;
+    let db_dir = path
+        .parent()
+        .ok_or_else(|| ToolError::TodoError("invalid session path".into()))?;
     let checkpoint_dir = db_dir.join("checkpoints");
     fs::create_dir_all(&checkpoint_dir).map_err(ToolError::Io)?;
 
@@ -113,21 +120,32 @@ pub fn session_save_checkpoint(
 
 /// Loads a session checkpoint by ID.
 pub fn session_load_checkpoint(path: &Path, session_id: &str) -> ToolResult<SessionCheckpoint> {
-    let db_dir = path.parent().ok_or_else(|| ToolError::TodoError("invalid session path".into()))?;
-    let checkpoint_path = db_dir.join("checkpoints").join(format!("{session_id}.json"));
+    let db_dir = path
+        .parent()
+        .ok_or_else(|| ToolError::TodoError("invalid session path".into()))?;
+    let checkpoint_path = db_dir
+        .join("checkpoints")
+        .join(format!("{session_id}.json"));
 
     if !checkpoint_path.exists() {
-        return Err(ToolError::TodoError(format!("checkpoint not found: {session_id}")));
+        return Err(ToolError::TodoError(format!(
+            "checkpoint not found: {session_id}"
+        )));
     }
 
     let content = fs::read_to_string(checkpoint_path).map_err(ToolError::Io)?;
-    serde_json::from_str(&content).map_err(|e| ToolError::TodoError(format!("deserialize checkpoint failed: {e}")))
+    serde_json::from_str(&content)
+        .map_err(|e| ToolError::TodoError(format!("deserialize checkpoint failed: {e}")))
 }
 
 /// Clears a session checkpoint by ID.
 pub fn session_clear_checkpoint(path: &Path, session_id: &str) -> ToolResult<()> {
-    let db_dir = path.parent().ok_or_else(|| ToolError::TodoError("invalid session path".into()))?;
-    let checkpoint_path = db_dir.join("checkpoints").join(format!("{session_id}.json"));
+    let db_dir = path
+        .parent()
+        .ok_or_else(|| ToolError::TodoError("invalid session path".into()))?;
+    let checkpoint_path = db_dir
+        .join("checkpoints")
+        .join(format!("{session_id}.json"));
 
     if checkpoint_path.exists() {
         fs::remove_file(checkpoint_path).map_err(ToolError::Io)?;
@@ -190,7 +208,11 @@ pub fn session_export_html(path: &Path, id: &str, output: &Path) -> ToolResult<(
     let stats = format!(
         "{} messages, ~{} tokens",
         session.message_count,
-        session.messages.iter().map(|m| m.estimated_tokens).sum::<u64>(),
+        session
+            .messages
+            .iter()
+            .map(|m| m.estimated_tokens)
+            .sum::<u64>(),
     );
 
     let html = format!(

@@ -19,10 +19,7 @@ pub enum TypesError {
     #[error("Node execution error: {0}")]
     NodeExecutionError(String),
     #[error("Tool execution error for '{tool_id}': {details}")]
-    ToolExecutionError {
-        tool_id: String,
-        details: String,
-    },
+    ToolExecutionError { tool_id: String, details: String },
     #[error("Graph error: {0}")]
     GraphError(String),
     #[error("Config validation error: {0}")]
@@ -30,5 +27,3 @@ pub enum TypesError {
     #[error("Internal system error: {0}")]
     InternalError(String),
 }
-
-

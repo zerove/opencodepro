@@ -1,15 +1,13 @@
 //! SwarmCoordinator handles multi-agent collaboration for cognitive evolution.
 //! It implements the "Audit Loop" where specialized agents review and refine proposed changes.
 
-use std::sync::Arc;
-use parking_lot::RwLock;
-use sisyphus_types::SOPGraphConfig;
 use crate::{
-    strategic_manager::StrategicManager, 
-    CoreError,
-    intelligence_manager::IntelligenceManager
+    intelligence_manager::IntelligenceManager, strategic_manager::StrategicManager, CoreError,
 };
+use parking_lot::RwLock;
 use sisyphus_tools_system::agent_channel::AgentChannel;
+use sisyphus_types::SOPGraphConfig;
+use std::sync::Arc;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AgentRole {
@@ -70,87 +68,132 @@ impl SwarmCoordinator {
         current_config: &SOPGraphConfig,
     ) -> Result<SOPGraphConfig, CoreError> {
         tracing::info!("Starting Swarm Audit Loop for goal: {}", goal);
-        
+
         // 1. Identify participants
         let (architect_id, architect_prompt, auditor_id, auditor_prompt) = {
             let agents = self.agents.read();
-            let architect = agents.iter().find(|a| a.role == AgentRole::Architect)
+            let architect = agents
+                .iter()
+                .find(|a| a.role == AgentRole::Architect)
                 .ok_or_else(|| CoreError::Internal("No Architect agent spawned".into()))?;
-            let auditor = agents.iter().find(|a| a.role == AgentRole::Auditor)
+            let auditor = agents
+                .iter()
+                .find(|a| a.role == AgentRole::Auditor)
                 .ok_or_else(|| CoreError::Internal("No Auditor agent spawned".into()))?;
-            (architect.id.clone(), architect.system_prompt.clone(), auditor.id.clone(), auditor.system_prompt.clone())
+            (
+                architect.id.clone(),
+                architect.system_prompt.clone(),
+                auditor.id.clone(),
+                auditor.system_prompt.clone(),
+            )
         };
-        let architect = SwarmAgent { id: architect_id, role: AgentRole::Architect, system_prompt: architect_prompt };
-        let auditor = SwarmAgent { id: auditor_id, role: AgentRole::Auditor, system_prompt: auditor_prompt };
-        
+        let architect = SwarmAgent {
+            id: architect_id,
+            role: AgentRole::Architect,
+            system_prompt: architect_prompt,
+        };
+        let auditor = SwarmAgent {
+            id: auditor_id,
+            role: AgentRole::Auditor,
+            system_prompt: auditor_prompt,
+        };
+
         // 2. architect proposes an initial change
         tracing::info!("Architect {} is proposing changes...", architect.id);
-        let mut proposal = self.real_agent_proposal(&architect, goal, current_config).await?;
-        
+        let mut proposal = self
+            .real_agent_proposal(&architect, goal, current_config)
+            .await?;
+
         let mut iteration = 0;
         let max_iterations = 3;
-        
+
         loop {
             iteration += 1;
             tracing::info!("Audit Iteration {}/{}", iteration, max_iterations);
-            
+
             // 3. auditor reviews the proposal
             tracing::info!("Auditor {} is reviewing proposal...", auditor.id);
             let review = self.real_agent_review(&auditor, &proposal).await?;
-            
+
             if review.approved {
                 tracing::info!("Proposal approved by Auditor.");
                 break;
             }
-            
+
             if iteration >= max_iterations {
                 tracing::warn!("Max audit iterations reached. Forcing a decision.");
                 break;
             }
-            
+
             // 4. architect refines based on review
-            tracing::info!("Architect {} is refining proposal based on feedback...", architect.id);
-            proposal = self.real_agent_refine(&architect, &proposal, &review).await?;
+            tracing::info!(
+                "Architect {} is refining proposal based on feedback...",
+                architect.id
+            );
+            proposal = self
+                .real_agent_refine(&architect, &proposal, &review)
+                .await?;
         }
-        
+
         Ok(proposal)
     }
 
     // --- Simulation helpers (to be replaced by actual LLM calls via AgentChannel) ---
 
-    async fn call_agent(&self, agent: &SwarmAgent, user_message: &str) -> Result<String, CoreError> {
+    async fn call_agent(
+        &self,
+        agent: &SwarmAgent,
+        user_message: &str,
+    ) -> Result<String, CoreError> {
         tracing::debug!("Calling agent {}: {:?}", agent.id, agent.role);
-        
-        let response = self.intelligence_manager.llm_client
+
+        let response = self
+            .intelligence_manager
+            .llm_client
             .chat(&agent.system_prompt, user_message, true)
             .await
-            .map_err(|e| CoreError::Internal(format!("LLM call failed for agent {}: {}", agent.id, e)))?;
+            .map_err(|e| {
+                CoreError::Internal(format!("LLM call failed for agent {}: {}", agent.id, e))
+            })?;
 
         Ok(response)
     }
 
-    async fn real_agent_proposal(&self, agent: &SwarmAgent, goal: &str, config: &SOPGraphConfig) -> Result<SOPGraphConfig, CoreError> {
+    async fn real_agent_proposal(
+        &self,
+        agent: &SwarmAgent,
+        goal: &str,
+        config: &SOPGraphConfig,
+    ) -> Result<SOPGraphConfig, CoreError> {
         let config_json = serde_json::to_string(config)
             .map_err(|e| CoreError::Internal(format!("Serialization error: {}", e)))?;
-        
+
         let user_message = format!(
             "Goal: {}\nCurrent SOP Config (JSON):\n{}\n\nPlease propose an optimized SOPGraphConfig in JSON format. Return ONLY the JSON object.",
             goal, config_json
         );
 
         let response = self.call_agent(agent, &user_message).await?;
-        
+
         let json_text = extract_json(&response);
-        let new_config: SOPGraphConfig = serde_json::from_str(&json_text)
-            .map_err(|e| CoreError::Internal(format!("Failed to parse proposal JSON: {}. Response: {}", e, response)))?;
+        let new_config: SOPGraphConfig = serde_json::from_str(&json_text).map_err(|e| {
+            CoreError::Internal(format!(
+                "Failed to parse proposal JSON: {}. Response: {}",
+                e, response
+            ))
+        })?;
 
         Ok(new_config)
     }
 
-    async fn real_agent_review(&self, agent: &SwarmAgent, proposal: &SOPGraphConfig) -> Result<AuditReview, CoreError> {
+    async fn real_agent_review(
+        &self,
+        agent: &SwarmAgent,
+        proposal: &SOPGraphConfig,
+    ) -> Result<AuditReview, CoreError> {
         let proposal_json = serde_json::to_string(proposal)
             .map_err(|e| CoreError::Internal(format!("Serialization error: {}", e)))?;
-        
+
         let user_message = format!(
             "Proposed SOP Config (JSON):\n{}\n\nPlease review this proposal for efficiency, safety, and logical correctness. \
             Return a JSON object with fields 'approved' (boolean) and 'feedback' (string). Return ONLY the JSON object.",
@@ -159,17 +202,26 @@ impl SwarmCoordinator {
 
         let response = self.call_agent(agent, &user_message).await?;
         let json_text = extract_json(&response);
-        
-        let review: AuditReview = serde_json::from_str(&json_text)
-            .map_err(|e| CoreError::Internal(format!("Failed to parse review JSON: {}. Response: {}", e, response)))?;
+
+        let review: AuditReview = serde_json::from_str(&json_text).map_err(|e| {
+            CoreError::Internal(format!(
+                "Failed to parse review JSON: {}. Response: {}",
+                e, response
+            ))
+        })?;
 
         Ok(review)
     }
 
-    async fn real_agent_refine(&self, agent: &SwarmAgent, proposal: &SOPGraphConfig, review: &AuditReview) -> Result<SOPGraphConfig, CoreError> {
+    async fn real_agent_refine(
+        &self,
+        agent: &SwarmAgent,
+        proposal: &SOPGraphConfig,
+        review: &AuditReview,
+    ) -> Result<SOPGraphConfig, CoreError> {
         let proposal_json = serde_json::to_string(proposal)
             .map_err(|e| CoreError::Internal(format!("Serialization error: {}", e)))?;
-        
+
         let user_message = format!(
             "Current Proposal (JSON):\n{}\nFeedback from Auditor:\n{}\n\nPlease refine the SOPGraphConfig to address the feedback. \
             Return the updated SOPGraphConfig in JSON format. Return ONLY the JSON object.",
@@ -178,9 +230,13 @@ impl SwarmCoordinator {
 
         let response = self.call_agent(agent, &user_message).await?;
         let json_text = extract_json(&response);
-        
-        let refined_config: SOPGraphConfig = serde_json::from_str(&json_text)
-            .map_err(|e| CoreError::Internal(format!("Failed to parse refined JSON: {}. Response: {}", e, response)))?;
+
+        let refined_config: SOPGraphConfig = serde_json::from_str(&json_text).map_err(|e| {
+            CoreError::Internal(format!(
+                "Failed to parse refined JSON: {}. Response: {}",
+                e, response
+            ))
+        })?;
 
         Ok(refined_config)
     }
@@ -195,11 +251,15 @@ pub struct AuditReview {
 fn extract_json(text: &str) -> String {
     if let Some(start) = text.find("```json") {
         if let Some(_end) = text[start + 7..].find("```") {
-            return text[start + 7..start + 7 + text[start + 7..].find("```").unwrap()].trim().to_string();
+            return text[start + 7..start + 7 + text[start + 7..].find("```").unwrap()]
+                .trim()
+                .to_string();
         }
     } else if let Some(start) = text.find("```") {
         if let Some(_end) = text[start + 3..].find("```") {
-            return text[start + 3..start + 3 + text[start + 3..].find("```").unwrap()].trim().to_string();
+            return text[start + 3..start + 3 + text[start + 3..].find("```").unwrap()]
+                .trim()
+                .to_string();
         }
     }
     text.trim().to_string()

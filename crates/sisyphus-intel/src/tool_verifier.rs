@@ -1,10 +1,10 @@
 //! Autonomous verification for generated tools.
 
-use std::sync::Arc;
-use std::path::PathBuf;
-use sisyphus_types::tools::ToolSpec;
+use serde::{Deserialize, Serialize};
 use sisyphus_tools_llm::LlmClient;
-use serde::{Serialize, Deserialize};
+use sisyphus_types::tools::ToolSpec;
+use std::path::PathBuf;
+use std::sync::Arc;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VerificationReport {
@@ -52,7 +52,10 @@ impl ToolVerifier {
         let semantic_score = self.audit_semantics(spec, &failures).await?;
         if semantic_score < 0.8 {
             semantic_match = false;
-            failures.push(format!("Semantic audit score too low: {:.2}", semantic_score));
+            failures.push(format!(
+                "Semantic audit score too low: {:.2}",
+                semantic_score
+            ));
         }
 
         let confidence_score = if unit_tests_passed && sandbox_stable && semantic_match {
@@ -73,10 +76,7 @@ impl ToolVerifier {
         })
     }
 
-    async fn check_sandbox_stability(
-        &self,
-        _wasm_path: &PathBuf,
-    ) -> Result<(), crate::IntelError> {
+    async fn check_sandbox_stability(&self, _wasm_path: &PathBuf) -> Result<(), crate::IntelError> {
         // Integration point: Use wasmtime to check for resource limits
         Ok(())
     }
@@ -94,7 +94,10 @@ impl ToolVerifier {
             spec.required_capability, failures
         );
 
-        let response = self.llm_client.chat("You are a Tool Auditor.", &prompt, false).await
+        let response = self
+            .llm_client
+            .chat("You are a Tool Auditor.", &prompt, false)
+            .await
             .map_err(|e| crate::IntelError::Internal(e.to_string()))?;
 
         let score = response.trim().parse::<f32>().unwrap_or(0.0);

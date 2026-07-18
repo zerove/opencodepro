@@ -2,7 +2,10 @@ use anyhow::Result;
 
 use crate::commands::ProviderCommands;
 
-pub(crate) fn handle_provider(sub: &ProviderCommands, config: &sisyphus_types::Config) -> Result<()> {
+pub(crate) fn handle_provider(
+    sub: &ProviderCommands,
+    config: &sisyphus_types::Config,
+) -> Result<()> {
     match sub {
         ProviderCommands::List => {
             let providers = &config.llm.providers;
@@ -72,7 +75,13 @@ pub(crate) fn handle_provider(sub: &ProviderCommands, config: &sisyphus_types::C
                 providers.len()
             );
             for (i, p) in providers.iter().enumerate() {
-                println!("     {}. {} (kind: {}, model: {})", i + 1, p.name, p.kind, p.model);
+                println!(
+                    "     {}. {} (kind: {}, model: {})",
+                    i + 1,
+                    p.name,
+                    p.kind,
+                    p.model
+                );
             }
             println!(
                 "  2. Fallback to default endpoint: {} with model '{}'",

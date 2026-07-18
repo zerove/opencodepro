@@ -220,9 +220,10 @@ fn parse_mvn_output(stderr: &str, _stdout: &str) -> (Vec<Diag>, Vec<Diag>) {
                         && !file.starts_with("Unable to")
                         && !file.starts_with("Could not")
                     {
-                        let (line_no, col) = between
-                            .split_once(',')
-                            .map_or((None, None), |(l, c)| (l.trim().parse().ok(), c.trim().parse().ok()));
+                        let (line_no, col) =
+                            between.split_once(',').map_or((None, None), |(l, c)| {
+                                (l.trim().parse().ok(), c.trim().parse().ok())
+                            });
                         errors.push(Diag {
                             file: Some(file),
                             line: line_no,

@@ -1,12 +1,12 @@
 use super::*;
 use crate::agent_registry::AgentInfo;
-use sisyphus_tools_executor::executor::BuiltinToolExecutor;
 use crate::team::TaskResult;
+use serde_json::json;
 use sisyphus_tools_core::feedback::FeedbackStore;
 use sisyphus_tools_core::hook::HookRegistry;
-use sisyphus_tools_llm::DynamicLlmClient;
+use sisyphus_tools_executor::executor::BuiltinToolExecutor;
 use sisyphus_tools_llm::metis::DummyLlmClient;
-use serde_json::json;
+use sisyphus_tools_llm::DynamicLlmClient;
 use sisyphus_types::Config;
 use std::sync::{Arc, RwLock};
 
@@ -456,12 +456,7 @@ impl LlmClient for JsonLlmClient {
         self.chat("", prompt, false).await
     }
 
-    async fn chat(
-        &self,
-        _system: &str,
-        _user: &str,
-        _json_mode: bool,
-    ) -> Result<String, String> {
+    async fn chat(&self, _system: &str, _user: &str, _json_mode: bool) -> Result<String, String> {
         Ok(self.0.clone())
     }
 }
@@ -474,12 +469,7 @@ impl LlmClient for ErrLlmClient {
         self.chat("", prompt, false).await
     }
 
-    async fn chat(
-        &self,
-        _system: &str,
-        _user: &str,
-        _json_mode: bool,
-    ) -> Result<String, String> {
+    async fn chat(&self, _system: &str, _user: &str, _json_mode: bool) -> Result<String, String> {
         Err("LLM API error".to_string())
     }
 }

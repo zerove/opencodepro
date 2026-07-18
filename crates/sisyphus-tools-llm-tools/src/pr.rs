@@ -1,6 +1,6 @@
-use sisyphus_tools_llm::metis::LlmClient;
-use sisyphus_tools_core::ToolResult;
 use serde::{Deserialize, Serialize};
+use sisyphus_tools_core::ToolResult;
+use sisyphus_tools_llm::metis::LlmClient;
 use std::process::Command;
 use std::sync::Arc;
 
@@ -26,14 +26,20 @@ pub struct PrManager;
 impl PrManager {
     /// Lists open pull requests in the current repository.
     pub fn list_prs() -> ToolResult<Vec<PullRequest>> {
-        let output = Self::run_gh(&["pr", "list", "--json", "number,title,author,createdAt,headRefName,baseRefName,state,url"])?;
+        let output = Self::run_gh(&[
+            "pr",
+            "list",
+            "--json",
+            "number,title,author,createdAt,headRefName,baseRefName,state,url",
+        ])?;
         Self::parse_pr_list(&output)
     }
 
     /// Parses the JSON output from `gh pr list`.
     pub fn parse_pr_list(json: &str) -> ToolResult<Vec<PullRequest>> {
-        let raw_prs: Vec<serde_json::Value> = serde_json::from_str(json)
-            .map_err(|e| sisyphus_tools_core::ToolError::Generic(format!("Failed to parse PR list JSON: {e}")))?;
+        let raw_prs: Vec<serde_json::Value> = serde_json::from_str(json).map_err(|e| {
+            sisyphus_tools_core::ToolError::Generic(format!("Failed to parse PR list JSON: {e}"))
+        })?;
 
         let mut prs = Vec::new();
         for val in raw_prs {
@@ -61,13 +67,13 @@ impl PrManager {
     pub fn checkout_pr(number: u64) -> ToolResult<()> {
         let num_str = number.to_string();
         Self::run_gh(&["pr", "checkout", &num_str])?;
-        
+
         // Show recent log to confirm what was pulled
         let log = Command::new("git")
             .args(["log", "--oneline", "-5"])
             .output()
             .map_err(sisyphus_tools_core::ToolError::Io)?;
-        
+
         if !log.stdout.is_empty() {
             println!("Recent commits:\n{}", String::from_utf8_lossy(&log.stdout));
         }
@@ -78,15 +84,17 @@ impl PrManager {
     /// Reviews a pull request using an LLM.
     pub async fn review_pr(number: u64, llm_client: Arc<dyn LlmClient>) -> ToolResult<String> {
         let num_str = number.to_string();
-        
+
         // 1. Checkout the PR first to ensure we are on the right context
         Self::checkout_pr(number)?;
 
         // 2. Get the diff
         let diff = Self::run_gh(&["pr", "diff", &num_str])?;
-        
+
         if diff.trim().is_empty() {
-            return Err(sisyphus_tools_core::ToolError::Generic("PR diff is empty".into()));
+            return Err(sisyphus_tools_core::ToolError::Generic(
+                "PR diff is empty".into(),
+            ));
         }
 
         // 3. Run review pipeline (Momus-style)
@@ -107,29 +115,28 @@ Return your response as a clear, professional review with:
 ";
 
         let user_prompt = format!("PR #{number} Diff:\n\n{diff}");
-        
+
         let review = llm_client
             .chat(system_prompt, &user_prompt, false)
             .await
-            .map_err(|e| sisyphus_tools_core::ToolError::Generic(format!("LLM review failed: {e}")))?;
+            .map_err(|e| {
+                sisyphus_tools_core::ToolError::Generic(format!("LLM review failed: {e}"))
+            })?;
 
         Ok(review)
     }
 
     /// Helper to run `gh` commands with error handling for missing binary.
     fn run_gh(args: &[&str]) -> ToolResult<String> {
-        let output = Command::new("gh")
-            .args(args)
-            .output()
-            .map_err(|e| {
-                if e.kind() == std::io::ErrorKind::NotFound {
-                    sisyphus_tools_core::ToolError::Generic(
-                        "PR workflow requires GitHub CLI (gh). Install: https://cli.github.com/".into(),
-                    )
-                } else {
-                    sisyphus_tools_core::ToolError::Io(e)
-                }
-            })?;
+        let output = Command::new("gh").args(args).output().map_err(|e| {
+            if e.kind() == std::io::ErrorKind::NotFound {
+                sisyphus_tools_core::ToolError::Generic(
+                    "PR workflow requires GitHub CLI (gh). Install: https://cli.github.com/".into(),
+                )
+            } else {
+                sisyphus_tools_core::ToolError::Io(e)
+            }
+        })?;
 
         if output.status.success() {
             Ok(String::from_utf8_lossy(&output.stdout).into_owned())

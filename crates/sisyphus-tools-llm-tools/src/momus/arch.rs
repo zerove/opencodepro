@@ -196,4 +196,3 @@ pub async fn review_architecture(client: &dyn LlmClient, arch_text: &str) -> Mom
         summary,
     }
 }
-

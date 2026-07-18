@@ -76,7 +76,11 @@ impl UserPreferenceStore {
         };
 
         self.store
-            .set_state_json(&self.project_id, &full_key, serde_json::to_value(&updated_pref)?)
+            .set_state_json(
+                &self.project_id,
+                &full_key,
+                serde_json::to_value(&updated_pref)?,
+            )
             .await
             .map_err(|e| anyhow::anyhow!(e))?;
 
@@ -132,7 +136,10 @@ mod tests {
 
     async fn setup_store() -> (UserPreferenceStore, Arc<MfsStore>) {
         let store = Arc::new(MfsStore::new("sqlite::memory:").await.unwrap());
-        (UserPreferenceStore::new(store.clone(), "test_project".into()), store)
+        (
+            UserPreferenceStore::new(store.clone(), "test_project".into()),
+            store,
+        )
     }
 
     #[tokio::test]

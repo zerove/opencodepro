@@ -229,8 +229,7 @@ fn test_load_all_empty_dir() {
 
 #[test]
 fn test_load_all_nonexistent_dir() {
-    let loader =
-        SkillLoader::new().with_dir(PathBuf::from("/tmp/__sisyphus_nonexistent_skills__"));
+    let loader = SkillLoader::new().with_dir(PathBuf::from("/tmp/__sisyphus_nonexistent_skills__"));
     let skills = loader.load_all();
     assert!(
         skills.is_empty(),

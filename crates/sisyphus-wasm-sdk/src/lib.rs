@@ -139,7 +139,10 @@ mod tests {
 
         register_tool_as("echo", EchoTool);
         let tools = list_tools();
-        assert!(tools.contains(&"echo".to_string()), "echo should be registered");
+        assert!(
+            tools.contains(&"echo".to_string()),
+            "echo should be registered"
+        );
     }
 
     #[test]

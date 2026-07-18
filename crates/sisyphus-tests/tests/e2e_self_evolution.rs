@@ -1,29 +1,42 @@
-use std::sync::Arc;
-use tokio::sync::mpsc;
 use async_trait::async_trait;
-use sisyphus_core::{SelfProgrammingManager, CoreError};
-use sisyphus_intel::{ToolGap};
-use sisyphus_types::{CognitiveEvent, tools::ToolSpec, node::{ToolExecutor, TestExecutor}};
-use sisyphus_tools_llm::{LlmClient, circuit_breaker::CircuitBreaker};
 use sisyphus_core::execution_manager::ExecutionManager;
+use sisyphus_core::{CoreError, SelfProgrammingManager};
+use sisyphus_intel::ToolGap;
 use sisyphus_knowledge::AssetManager;
-use sisyphus_mem::{SisyphusStore, MfsStore};
+use sisyphus_mem::{MfsStore, SisyphusStore};
+use sisyphus_tools_llm::{circuit_breaker::CircuitBreaker, LlmClient};
 use sisyphus_types::errors::TypesError;
 use sisyphus_types::TestResult;
+use sisyphus_types::{
+    node::{TestExecutor, ToolExecutor},
+    tools::ToolSpec,
+    CognitiveEvent,
+};
+use std::sync::Arc;
+use tokio::sync::mpsc;
 
 /// A simple mock executor that implements both Tool and Test traits.
 struct MockExecutor;
 
 #[async_trait]
 impl ToolExecutor for MockExecutor {
-    async fn execute(&self, _tool_id: &str, _args: Vec<u8>, _fuel: u64) -> Result<Vec<u8>, TypesError> {
+    async fn execute(
+        &self,
+        _tool_id: &str,
+        _args: Vec<u8>,
+        _fuel: u64,
+    ) -> Result<Vec<u8>, TypesError> {
         Ok(b"mock success".to_vec())
     }
 }
 
 #[async_trait]
 impl TestExecutor for MockExecutor {
-    async fn run_test(&self, _command: &str, _workdir: Option<&str>) -> Result<TestResult, TypesError> {
+    async fn run_test(
+        &self,
+        _command: &str,
+        _workdir: Option<&str>,
+    ) -> Result<TestResult, TypesError> {
         Ok(TestResult {
             success: true,
             stdout: "Test passed".into(),
@@ -56,7 +69,11 @@ impl LlmClient for ProgrammableLlmClient {
     }
 
     fn get_params_for(&self, _agent_id: &str) -> (String, String, String) {
-        ("test_key".into(), "http://test:8080".into(), "test-model".into())
+        (
+            "test_key".into(),
+            "http://test:8080".into(),
+            "test-model".into(),
+        )
     }
 
     fn breaker(&self) -> CircuitBreaker {
@@ -68,7 +85,7 @@ impl LlmClient for ProgrammableLlmClient {
 async fn test_self_evolution_e2e() {
     // 1. Setup LLM with a specific Rust tool implementation for the gap
     let mut responses = std::collections::HashMap::new();
-    
+
     let rust_code = r#"
         use sisyphus_wasm_sdk::{SisyphusTool, ToolContext, ToolOutput};
         use serde_json::json;
@@ -89,13 +106,18 @@ async fn test_self_evolution_e2e() {
             sisyphus_wasm_sdk::register_tool(SymmetryAnalyzer);
         }
     "#;
-    
-    responses.insert("SymmetryAnalysis".to_string(), format!("```rust\n{}\n```", rust_code));
+
+    responses.insert(
+        "SymmetryAnalysis".to_string(),
+        format!("```rust\n{}\n```", rust_code),
+    );
     let llm_client = Arc::new(ProgrammableLlmClient { responses });
 
     // 2. Setup persistence
-    let store = SisyphusStore::new("sqlite::memory:").await.expect("Store init failed");
-    
+    let store = SisyphusStore::new("sqlite::memory:")
+        .await
+        .expect("Store init failed");
+
     // 3. Setup core components
     let execution_manager = Arc::new(ExecutionManager::new(
         store.state.clone(),
@@ -103,19 +125,21 @@ async fn test_self_evolution_e2e() {
         Arc::new(MockExecutor),
         Arc::new(MockExecutor),
         Arc::new(sisyphus_core::intervention_manager::InterventionManager::new()),
-        Arc::new(sisyphus_core::internalization_manager::InternalizationManager::new(
-            llm_client.clone(), 
-            Arc::new(AssetManager::new(std::path::PathBuf::from("test_assets")))
-        )),
+        Arc::new(
+            sisyphus_core::internalization_manager::InternalizationManager::new(
+                llm_client.clone(),
+                Arc::new(AssetManager::new(std::path::PathBuf::from("test_assets"))),
+            ),
+        ),
         Some(Arc::new(sisyphus_visual::VisualPerceptionManager::new(
-            Arc::new(sisyphus_visual::SisyphusVisualProvider::new(llm_client.clone())),
+            Arc::new(sisyphus_visual::SisyphusVisualProvider::new(
+                llm_client.clone(),
+            )),
             llm_client.clone(),
         ))),
     ));
 
-    let asset_manager = Arc::new(AssetManager::new(
-        std::path::PathBuf::from("test_assets"),
-    ));
+    let asset_manager = Arc::new(AssetManager::new(std::path::PathBuf::from("test_assets")));
 
     let sp_manager = SelfProgrammingManager::new(
         llm_client.clone(),
@@ -142,9 +166,7 @@ async fn test_self_evolution_e2e() {
     sp_manager.set_event_sender(tx);
 
     // 6. Execute the self-programming loop
-    let resolve_handle = tokio::spawn(async move {
-        sp_manager.resolve_gap(gap).await
-    });
+    let resolve_handle = tokio::spawn(async move { sp_manager.resolve_gap(gap).await });
 
     // 7. Assert the event sequence
     let mut events = Vec::new();
@@ -155,12 +177,30 @@ async fn test_self_evolution_e2e() {
         }
     }
 
-    let result = resolve_handle.await.expect("Join error").expect("Self-programming failed");
+    let result = resolve_handle
+        .await
+        .expect("Join error")
+        .expect("Self-programming failed");
 
     // Verify the events were emitted in order
-    assert!(events.iter().any(|e| matches!(e, CognitiveEvent::ToolGenerationStarted { .. })), "Should start generation");
-    assert!(events.iter().any(|e| matches!(e, CognitiveEvent::ToolVerified { .. })), "Should verify tool");
-    assert!(events.iter().any(|e| matches!(e, CognitiveEvent::ToolDeployed { .. })), "Should deploy tool");
+    assert!(
+        events
+            .iter()
+            .any(|e| matches!(e, CognitiveEvent::ToolGenerationStarted { .. })),
+        "Should start generation"
+    );
+    assert!(
+        events
+            .iter()
+            .any(|e| matches!(e, CognitiveEvent::ToolVerified { .. })),
+        "Should verify tool"
+    );
+    assert!(
+        events
+            .iter()
+            .any(|e| matches!(e, CognitiveEvent::ToolDeployed { .. })),
+        "Should deploy tool"
+    );
 
     println!("E2E Self-Evolution verified successfully!");
 }

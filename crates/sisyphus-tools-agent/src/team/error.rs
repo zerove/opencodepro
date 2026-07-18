@@ -37,5 +37,3 @@ impl From<String> for TeamError {
         TeamError::ExecutionError(s)
     }
 }
-
-

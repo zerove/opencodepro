@@ -1,8 +1,8 @@
 //! Cognitive Asset types for persistent knowledge and experience.
 
-use serde::{Serialize, Deserialize};
-use std::collections::HashMap;
 use crate::tools::ToolSpec;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum AssetKind {

@@ -64,7 +64,10 @@ pub enum LibrarianCommands {
 }
 
 #[derive(Subcommand)]
-#[allow(clippy::enum_variant_names, reason = "all Momus commands start with Review for naming consistency")]
+#[allow(
+    clippy::enum_variant_names,
+    reason = "all Momus commands start with Review for naming consistency"
+)]
 pub enum MomusCommands {
     /// Review a plan file for completeness and consistency
     ReviewPlan { plan_file: std::path::PathBuf },

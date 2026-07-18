@@ -1,6 +1,6 @@
+pub mod custom_tool;
 pub mod mcp;
 pub mod tool_registry;
-pub mod custom_tool;
 
 #[cfg(test)]
 mod tests {
@@ -25,4 +25,3 @@ mod tests {
         assert!(reg.is_empty());
     }
 }
-

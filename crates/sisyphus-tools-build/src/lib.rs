@@ -7,8 +7,8 @@ pub mod architecture;
 pub mod auto_doc;
 pub mod auto_fix;
 pub mod benchmark;
-pub mod build;
 pub mod bug_fixer;
+pub mod build;
 pub mod lsp;
 pub mod test_gen;
 
@@ -54,8 +54,14 @@ mod tests {
     fn test_lsp_diagnostic_basic() {
         let diag = LspDiagnostic {
             range: LspRange {
-                start: LspPosition { line: 0, character: 0 },
-                end: LspPosition { line: 0, character: 5 },
+                start: LspPosition {
+                    line: 0,
+                    character: 0,
+                },
+                end: LspPosition {
+                    line: 0,
+                    character: 5,
+                },
             },
             severity: Some(1),
             message: "lsp error".into(),

@@ -50,8 +50,8 @@ pub enum Permission {
 
 pub type PermissionRules = Vec<(String, Permission)>;
 
-pub mod hook;
 pub mod feedback;
+pub mod hook;
 
 pub mod bridge;
 
@@ -68,7 +68,7 @@ mod tests {
         assert_ne!(allow, deny);
         assert_ne!(allow, ask);
         assert_ne!(deny, ask);
-        
+
         assert_eq!(format!("{:?}", allow), "Allow");
         assert_eq!(format!("{:?}", deny), "Deny");
         assert_eq!(format!("{:?}", ask), "Ask");
@@ -80,4 +80,3 @@ mod tests {
         assert_eq!(err.to_string(), "Generic error: test error");
     }
 }
-

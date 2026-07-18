@@ -1,7 +1,7 @@
 use async_trait::async_trait;
-use std::collections::HashMap;
-use sisyphus_types::{SOPGraphConfig, SopEvaluation, SopEvaluator, TypesError};
 use sisyphus_tools_llm::LlmClient;
+use sisyphus_types::{SOPGraphConfig, SopEvaluation, SopEvaluator, TypesError};
+use std::collections::HashMap;
 use std::sync::Arc;
 
 pub struct HeuristicSopEvaluator {
@@ -15,8 +15,10 @@ impl HeuristicSopEvaluator {
 
     fn calculate_complexity_score(&self, config: &SOPGraphConfig) -> f32 {
         let node_count = config.nodes.len();
-        if node_count == 0 { return 0.0; }
-        
+        if node_count == 0 {
+            return 0.0;
+        }
+
         // Heuristic: Optimal SOP length is between 3 and 7 nodes.
         // Penalize very short (too simple/incomplete) or very long (too fragile) SOPs.
         if (3..=7).contains(&node_count) {
@@ -30,7 +32,9 @@ impl HeuristicSopEvaluator {
 
     fn calculate_robustness_score(&self, config: &SOPGraphConfig) -> f32 {
         let node_count = config.nodes.len();
-        if node_count == 0 { return 0.0; }
+        if node_count == 0 {
+            return 0.0;
+        }
 
         // Heuristic: SOPs with branch/retry logic or high density of edges are more robust.
         let mut robustness_bonus = 0.0;
@@ -38,7 +42,7 @@ impl HeuristicSopEvaluator {
             match &node.kind {
                 sisyphus_types::NodeKind::Retry { .. } => robustness_bonus += 0.2,
                 sisyphus_types::NodeKind::Branch { .. } => robustness_bonus += 0.1,
-                _ => {},
+                _ => {}
             }
         }
 
@@ -48,7 +52,11 @@ impl HeuristicSopEvaluator {
 
 #[async_trait]
 impl SopEvaluator for HeuristicSopEvaluator {
-    async fn evaluate(&self, goal: &str, config: &SOPGraphConfig) -> Result<SopEvaluation, TypesError> {
+    async fn evaluate(
+        &self,
+        goal: &str,
+        config: &SOPGraphConfig,
+    ) -> Result<SopEvaluation, TypesError> {
         // 1. Static Heuristics
         let complexity = self.calculate_complexity_score(config);
         let robustness = self.calculate_robustness_score(config);
@@ -62,7 +70,10 @@ impl SopEvaluator for HeuristicSopEvaluator {
             goal, config.nodes, config.edges
         );
 
-        let llm_response = self.llm.generate(&prompt).await
+        let llm_response = self
+            .llm
+            .generate(&prompt)
+            .await
             .map_err(|e| TypesError::InternalError(e.to_string()))?;
 
         let mut llm_score = 0.5;

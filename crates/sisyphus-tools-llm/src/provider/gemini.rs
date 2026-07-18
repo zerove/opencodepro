@@ -99,11 +99,7 @@ impl LlmProvider for GoogleGeminiProvider {
         if !status.is_success() {
             let error_msg = response_json["error"]["message"]
                 .as_str()
-                .or_else(|| {
-                    response_json
-                        .get("error")
-                        .and_then(|e| e.as_str())
-                })
+                .or_else(|| response_json.get("error").and_then(|e| e.as_str()))
                 .unwrap_or("unknown error");
             if status.as_u16() == 429 {
                 return Err(ProviderError::RateLimited(error_msg.to_string()));

@@ -331,11 +331,23 @@ mod tests {
         let store = FeedbackStore::new(&dir);
 
         store
-            .save_feedback(sample_feedback("agent_l", "alpha", "beta", "gamma", vec!["x"]))
+            .save_feedback(sample_feedback(
+                "agent_l",
+                "alpha",
+                "beta",
+                "gamma",
+                vec!["x"],
+            ))
             .await
             .unwrap();
         store
-            .save_feedback(sample_feedback("agent_l", "delta", "epsilon", "zeta", vec!["y"]))
+            .save_feedback(sample_feedback(
+                "agent_l",
+                "delta",
+                "epsilon",
+                "zeta",
+                vec!["y"],
+            ))
             .await
             .unwrap();
 
@@ -354,7 +366,13 @@ mod tests {
         let store = FeedbackStore::new(&dir);
 
         store
-            .save_feedback(sample_feedback("agent_m", "alpha", "beta", "gamma", vec!["rust"]))
+            .save_feedback(sample_feedback(
+                "agent_m",
+                "alpha",
+                "beta",
+                "gamma",
+                vec!["rust"],
+            ))
             .await
             .unwrap();
 

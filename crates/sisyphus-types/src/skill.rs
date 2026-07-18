@@ -1,9 +1,9 @@
 //! Skill system definitions for Sisyphus.
 //! Defines how cognitive skills (SOPs + Tools) are packaged and distributed.
 
+use crate::graph::SOPGraphConfig;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use crate::graph::SOPGraphConfig;
 
 /// Metadata for a Sisyphus skill.
 #[derive(Serialize, Deserialize, Clone, Debug)]

@@ -51,7 +51,9 @@ pub fn usize_arg(v: &Value, name: &str) -> Result<usize, String> {
 }
 
 pub fn opt_str_arg(v: &Value, name: &str) -> Option<String> {
-    v.get(name).and_then(|v| v.as_str()).map(std::string::ToString::to_string)
+    v.get(name)
+        .and_then(|v| v.as_str())
+        .map(std::string::ToString::to_string)
 }
 
 pub fn ok_json(val: Value) -> Result<Vec<u8>, String> {

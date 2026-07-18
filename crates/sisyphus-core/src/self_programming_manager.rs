@@ -1,10 +1,10 @@
 //! Orchestrator for the Sisyphus self-programming loop.
 
+use crate::ExecutionManager;
+use sisyphus_intel::{ToolCoder, ToolGap, WasmCompiler};
+use sisyphus_types::CognitiveEvent;
 use std::sync::Arc;
 use tokio::sync::mpsc;
-use sisyphus_intel::{ToolCoder, WasmCompiler, ToolGap};
-use sisyphus_types::CognitiveEvent;
-use crate::ExecutionManager;
 use tracing::{info, warn};
 
 pub struct SelfProgrammingManager {
@@ -53,49 +53,79 @@ impl SelfProgrammingManager {
             info!("Self-programming attempt {}/{}", attempt, max_retries);
 
             // 1. Generate Code
-            self.notify(CognitiveEvent::ToolGenerationStarted { 
-                tool_id: gap.suggested_tool_spec.tool_id.clone(), 
-                capability: gap.required_capability.clone() 
-            }).await;
+            self.notify(CognitiveEvent::ToolGenerationStarted {
+                tool_id: gap.suggested_tool_spec.tool_id.clone(),
+                capability: gap.required_capability.clone(),
+            })
+            .await;
 
-            let code = self.coder.generate_code(&gap.suggested_tool_spec, feedback.clone()).await
+            let code = self
+                .coder
+                .generate_code(&gap.suggested_tool_spec, feedback.clone())
+                .await
                 .map_err(|e| crate::CoreError::Internal(e.to_string()))?;
 
             // 2. Compile to WASM
-            let wasm_path = self.compiler.compile(&gap.suggested_tool_spec.tool_id, &code).await
+            let wasm_path = self
+                .compiler
+                .compile(&gap.suggested_tool_spec.tool_id, &code)
+                .await
                 .map_err(|e| crate::CoreError::Internal(e.to_string()))?;
 
             // 3. Verify Tool
-            let v_report = self.verifier.verify(&gap.suggested_tool_spec, &wasm_path).await
+            let v_report = self
+                .verifier
+                .verify(&gap.suggested_tool_spec, &wasm_path)
+                .await
                 .map_err(|e| crate::CoreError::Internal(e.to_string()))?;
 
             if v_report.confidence_score >= 0.7 {
-                self.notify(CognitiveEvent::ToolVerified { 
-                    tool_id: gap.suggested_tool_spec.tool_id.clone(), 
-                    score: v_report.confidence_score as f64 
-                }).await;
-                info!("Tool verified successfully (score: {:.2})", v_report.confidence_score);
+                self.notify(CognitiveEvent::ToolVerified {
+                    tool_id: gap.suggested_tool_spec.tool_id.clone(),
+                    score: v_report.confidence_score as f64,
+                })
+                .await;
+                info!(
+                    "Tool verified successfully (score: {:.2})",
+                    v_report.confidence_score
+                );
 
                 // 4. Deploy and Sediment
-                let asset_id = self.knowledge_manager.sediment_tool(
-                    gap.suggested_tool_spec.clone(),
-                    wasm_path
-                ).await.map_err(|e| crate::CoreError::Internal(e.to_string()))?;
-                
-                self.notify(CognitiveEvent::ToolDeployed { 
-                    tool_id: gap.suggested_tool_spec.tool_id.clone(), 
-                    asset_id: asset_id.clone() 
-                }).await;
-                self.execution_manager.notify_tool_deployed(&gap.suggested_tool_spec.tool_id);
+                let asset_id = self
+                    .knowledge_manager
+                    .sediment_tool(gap.suggested_tool_spec.clone(), wasm_path)
+                    .await
+                    .map_err(|e| crate::CoreError::Internal(e.to_string()))?;
 
-                info!("Successfully resolved tool gap {}. Tool {} is now available.", gap.gap_id, gap.suggested_tool_spec.tool_id);
+                self.notify(CognitiveEvent::ToolDeployed {
+                    tool_id: gap.suggested_tool_spec.tool_id.clone(),
+                    asset_id: asset_id.clone(),
+                })
+                .await;
+                self.execution_manager
+                    .notify_tool_deployed(&gap.suggested_tool_spec.tool_id);
+
+                info!(
+                    "Successfully resolved tool gap {}. Tool {} is now available.",
+                    gap.gap_id, gap.suggested_tool_spec.tool_id
+                );
                 return Ok(());
             }
 
-            warn!("Attempt {} failed (score: {:.2}). Failures: {:?}", attempt, v_report.confidence_score, v_report.failures);
-            feedback = Some(format!("Attempt {} failures:\n{}", attempt, v_report.failures.join("\n")));
+            warn!(
+                "Attempt {} failed (score: {:.2}). Failures: {:?}",
+                attempt, v_report.confidence_score, v_report.failures
+            );
+            feedback = Some(format!(
+                "Attempt {} failures:\n{}",
+                attempt,
+                v_report.failures.join("\n")
+            ));
         }
 
-        Err(crate::CoreError::Internal(format!("Failed to resolve gap after {} attempts", max_retries)))
+        Err(crate::CoreError::Internal(format!(
+            "Failed to resolve gap after {} attempts",
+            max_retries
+        )))
     }
 }

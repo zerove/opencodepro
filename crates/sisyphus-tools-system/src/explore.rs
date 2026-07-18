@@ -1,8 +1,8 @@
 mod types;
 pub use types::*;
 
-use sisyphus_tools_core::{ToolError, ToolResult};
 use regex::Regex;
+use sisyphus_tools_core::{ToolError, ToolResult};
 use std::fs;
 use std::path::{Path, PathBuf};
 

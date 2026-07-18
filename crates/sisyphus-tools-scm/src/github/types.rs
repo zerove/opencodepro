@@ -58,9 +58,7 @@ impl CiConfig {
             ci_mode: std::env::var("SISYPHUS_CI")
                 .is_ok_and(|v| v == "1" || v.to_lowercase() == "true"),
             github_token: std::env::var("GITHUB_TOKEN").ok(),
-            pr_number: std::env::var("PR_NUMBER")
-                .ok()
-                .and_then(|v| v.parse().ok()),
+            pr_number: std::env::var("PR_NUMBER").ok().and_then(|v| v.parse().ok()),
             output_format: std::env::var("SISYPHUS_OUTPUT_FORMAT")
                 .unwrap_or_else(|_| "plain".into()),
         }

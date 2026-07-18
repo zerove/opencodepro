@@ -1,5 +1,9 @@
 use super::transport::McpTransport;
-use super::types::{ServerInfo, ServerCapabilities, JsonRpcResponse, JsonRpcRequest, JsonRpcNotification, InitializeResult, InitializeParams, ClientCapabilities, ToolsCapability, ResourcesCapability, ClientInfo, McpTool, CallToolResult, CallToolParams};
+use super::types::{
+    CallToolParams, CallToolResult, ClientCapabilities, ClientInfo, InitializeParams,
+    InitializeResult, JsonRpcNotification, JsonRpcRequest, JsonRpcResponse, McpTool,
+    ResourcesCapability, ServerCapabilities, ServerInfo, ToolsCapability,
+};
 use sisyphus_tools_core::ToolResult;
 
 /// High-level MCP client.
@@ -42,14 +46,15 @@ impl McpClient {
             method: method.to_string(),
             params,
         };
-        let msg = serde_json::to_string(&req)
-            .map_err(|e| sisyphus_tools_core::ToolError::TodoError(format!("serialize request: {e}")))?;
+        let msg = serde_json::to_string(&req).map_err(|e| {
+            sisyphus_tools_core::ToolError::TodoError(format!("serialize request: {e}"))
+        })?;
         let resp_text = self.transport.request(&msg).await?;
-        let resp: JsonRpcResponse = serde_json::from_str(&resp_text)
-            .map_err(|e| sisyphus_tools_core::ToolError::TodoError(format!("deserialize response: {e}")))?;
+        let resp: JsonRpcResponse = serde_json::from_str(&resp_text).map_err(|e| {
+            sisyphus_tools_core::ToolError::TodoError(format!("deserialize response: {e}"))
+        })?;
         Ok(resp)
     }
-
 
     /// Send a notification (no response expected).
     async fn send_notification(
@@ -62,8 +67,9 @@ impl McpClient {
             method: method.to_string(),
             params,
         };
-        let msg = serde_json::to_string(&notification)
-            .map_err(|e| sisyphus_tools_core::ToolError::TodoError(format!("serialize notification: {e}")))?;
+        let msg = serde_json::to_string(&notification).map_err(|e| {
+            sisyphus_tools_core::ToolError::TodoError(format!("serialize notification: {e}"))
+        })?;
         self.transport.request(&msg).await?;
         Ok(())
     }
@@ -94,11 +100,9 @@ impl McpClient {
         let resp = self
             .send_request(
                 "initialize",
-                Some(
-                    serde_json::to_value(params).map_err(|e| {
-                        sisyphus_tools_core::ToolError::TodoError(format!("serialize params: {e}"))
-                    })?,
-                ),
+                Some(serde_json::to_value(params).map_err(|e| {
+                    sisyphus_tools_core::ToolError::TodoError(format!("serialize params: {e}"))
+                })?),
             )
             .await?;
 
@@ -112,7 +116,9 @@ impl McpClient {
         let result: InitializeResult = serde_json::from_value(resp.result.ok_or_else(|| {
             sisyphus_tools_core::ToolError::TodoError("initialize: missing result".to_string())
         })?)
-        .map_err(|e| sisyphus_tools_core::ToolError::TodoError(format!("deserialize result: {e}")))?;
+        .map_err(|e| {
+            sisyphus_tools_core::ToolError::TodoError(format!("deserialize result: {e}"))
+        })?;
 
         self.server_info = result.server_info.clone();
         self.server_capabilities = result.capabilities.clone();
@@ -135,17 +141,18 @@ impl McpClient {
             )));
         }
 
-        let result = resp
-            .result
-            .ok_or_else(|| sisyphus_tools_core::ToolError::TodoError("list_tools: missing result".to_string()))?;
+        let result = resp.result.ok_or_else(|| {
+            sisyphus_tools_core::ToolError::TodoError("list_tools: missing result".to_string())
+        })?;
 
         #[derive(serde::Deserialize)]
         struct ToolsListResult {
             tools: Vec<McpTool>,
         }
 
-        let parsed: ToolsListResult = serde_json::from_value(result)
-            .map_err(|e| sisyphus_tools_core::ToolError::TodoError(format!("deserialize tools: {e}")))?;
+        let parsed: ToolsListResult = serde_json::from_value(result).map_err(|e| {
+            sisyphus_tools_core::ToolError::TodoError(format!("deserialize tools: {e}"))
+        })?;
 
         Ok(parsed.tools)
     }
@@ -164,11 +171,9 @@ impl McpClient {
         let resp = self
             .send_request(
                 "tools/call",
-                Some(
-                    serde_json::to_value(params).map_err(|e| {
-                        sisyphus_tools_core::ToolError::TodoError(format!("serialize params: {e}"))
-                    })?,
-                ),
+                Some(serde_json::to_value(params).map_err(|e| {
+                    sisyphus_tools_core::ToolError::TodoError(format!("serialize params: {e}"))
+                })?),
             )
             .await?;
 
@@ -179,11 +184,12 @@ impl McpClient {
             )));
         }
 
-        let result: CallToolResult =
-            serde_json::from_value(resp.result.ok_or_else(|| {
-                sisyphus_tools_core::ToolError::TodoError("call_tool: missing result".to_string())
-            })?)
-            .map_err(|e| sisyphus_tools_core::ToolError::TodoError(format!("deserialize result: {e}")))?;
+        let result: CallToolResult = serde_json::from_value(resp.result.ok_or_else(|| {
+            sisyphus_tools_core::ToolError::TodoError("call_tool: missing result".to_string())
+        })?)
+        .map_err(|e| {
+            sisyphus_tools_core::ToolError::TodoError(format!("deserialize result: {e}"))
+        })?;
 
         Ok(result)
     }
@@ -202,9 +208,9 @@ impl McpClient {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sisyphus_tools_core::ToolResult;
     use async_trait::async_trait;
     use serde_json::json;
+    use sisyphus_tools_core::ToolResult;
     use std::sync::{Arc, Mutex};
 
     /// Mock transport that returns pre-defined responses.

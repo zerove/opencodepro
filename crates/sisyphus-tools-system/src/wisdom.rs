@@ -36,10 +36,7 @@ impl NotepadManager {
         let entry = format!("\n## {timestamp}\n{content}\n");
 
         if path.exists() {
-            let mut file = fs::OpenOptions::new()
-                .append(true)
-                .open(&path)
-                .await?;
+            let mut file = fs::OpenOptions::new().append(true).open(&path).await?;
             file.write_all(entry.as_bytes()).await?;
         } else {
             let header = format!("# {category}\n> Knowledge accumulation for {category}\n\n");
@@ -77,7 +74,9 @@ impl NotepadManager {
     pub async fn get(&self, category: &str) -> ToolResult<String> {
         let path = self.get_file_path(category);
         if !path.exists() {
-            return Err(ToolError::NotFound(format!("notepad category not found: {category}")));
+            return Err(ToolError::NotFound(format!(
+                "notepad category not found: {category}"
+            )));
         }
         fs::read_to_string(path).await.map_err(ToolError::Io)
     }
@@ -86,7 +85,9 @@ impl NotepadManager {
     pub async fn delete(&self, category: &str) -> ToolResult<()> {
         let path = self.get_file_path(category);
         if !path.exists() {
-            return Err(ToolError::NotFound(format!("notepad category not found: {category}")));
+            return Err(ToolError::NotFound(format!(
+                "notepad category not found: {category}"
+            )));
         }
         fs::remove_file(path).await.map_err(ToolError::Io)
     }
@@ -130,7 +131,9 @@ fn now_timestamp() -> String {
 // --- Public API ---
 
 pub async fn wisdom_record(category: &str, content: &str) -> ToolResult<()> {
-    NotepadManager::default_dir().record(category, content).await
+    NotepadManager::default_dir()
+        .record(category, content)
+        .await
 }
 
 pub async fn wisdom_list() -> ToolResult<Vec<String>> {
@@ -159,9 +162,15 @@ mod tests {
         let tmp = TempDir::new().expect("create temp dir");
         let manager = NotepadManager::new(tmp.path());
 
-        manager.record("conventions", "Use async/await").await.expect("record should succeed");
-        let content = manager.get("conventions").await.expect("get should succeed");
-        
+        manager
+            .record("conventions", "Use async/await")
+            .await
+            .expect("record should succeed");
+        let content = manager
+            .get("conventions")
+            .await
+            .expect("get should succeed");
+
         assert!(content.contains("# conventions"));
         assert!(content.contains("Use async/await"));
     }
@@ -171,9 +180,15 @@ mod tests {
         let tmp = TempDir::new().expect("create temp dir");
         let manager = NotepadManager::new(tmp.path());
 
-        manager.record("experience", "First entry").await.expect("record 1 should succeed");
-        manager.record("experience", "Second entry").await.expect("record 2 should succeed");
-        
+        manager
+            .record("experience", "First entry")
+            .await
+            .expect("record 1 should succeed");
+        manager
+            .record("experience", "Second entry")
+            .await
+            .expect("record 2 should succeed");
+
         let content = manager.get("experience").await.expect("get should succeed");
         assert!(content.contains("First entry"));
         assert!(content.contains("Second entry"));
@@ -184,9 +199,15 @@ mod tests {
         let tmp = TempDir::new().expect("create temp dir");
         let manager = NotepadManager::new(tmp.path());
 
-        manager.record("cat1", "content1").await.expect("record 1 should succeed");
-        manager.record("cat2", "content2").await.expect("record 2 should succeed");
-        
+        manager
+            .record("cat1", "content1")
+            .await
+            .expect("record 1 should succeed");
+        manager
+            .record("cat2", "content2")
+            .await
+            .expect("record 2 should succeed");
+
         let list = manager.list().await.expect("list should succeed");
         assert_eq!(list, vec!["cat1", "cat2"]);
     }
@@ -196,9 +217,12 @@ mod tests {
         let tmp = TempDir::new().expect("create temp dir");
         let manager = NotepadManager::new(tmp.path());
 
-        manager.record("temp", "content").await.expect("record should succeed");
+        manager
+            .record("temp", "content")
+            .await
+            .expect("record should succeed");
         manager.delete("temp").await.expect("delete should succeed");
-        
+
         let result = manager.get("temp").await;
         assert!(result.is_err());
     }
@@ -208,9 +232,15 @@ mod tests {
         let tmp = TempDir::new().expect("create temp dir");
         let manager = NotepadManager::new(tmp.path());
 
-        manager.record("conventions", "Rule 1").await.expect("record 1 should succeed");
-        manager.record("successes", "Win 1").await.expect("record 2 should succeed");
-        
+        manager
+            .record("conventions", "Rule 1")
+            .await
+            .expect("record 1 should succeed");
+        manager
+            .record("successes", "Win 1")
+            .await
+            .expect("record 2 should succeed");
+
         let injected = manager.inject().await.expect("inject should succeed");
         assert!(injected.starts_with("<wisdom>"));
         assert!(injected.ends_with("</wisdom>"));
@@ -224,7 +254,7 @@ mod tests {
     async fn test_inject_empty() {
         let tmp = TempDir::new().expect("create temp dir");
         let manager = NotepadManager::new(tmp.path());
-        
+
         let injected = manager.inject().await.expect("inject should succeed");
         assert_eq!(injected, "");
     }

@@ -102,7 +102,7 @@ impl ProviderRegistry {
                                     .duration_since(std::time::UNIX_EPOCH)
                                     .unwrap_or_default()
                                     .as_nanos();
-                                
+
                                 (nanos % (2 * jitter_range as u128)) as i64 - jitter_range
                             } else {
                                 0
@@ -178,8 +178,9 @@ pub fn build_provider_registry(providers_cfg: &[ProviderConfig]) -> ProviderRegi
                         .map(|p| Arc::new(p) as Arc<dyn LlmProvider>)
                 }
             }
-            ProviderKind::Anthropic => AnthropicProvider::new(cfg.clone())
-                .map(|p| Arc::new(p) as Arc<dyn LlmProvider>),
+            ProviderKind::Anthropic => {
+                AnthropicProvider::new(cfg.clone()).map(|p| Arc::new(p) as Arc<dyn LlmProvider>)
+            }
         };
 
         match provider {

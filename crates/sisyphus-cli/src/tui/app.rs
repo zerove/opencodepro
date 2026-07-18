@@ -40,7 +40,6 @@ pub(crate) struct TraceEvent {
     pub duration: i64,
 }
 
-
 #[derive(Debug, Clone)]
 pub enum LogEntry {
     Info(String),
@@ -76,7 +75,11 @@ pub(crate) struct Toast {
 
 impl Toast {
     fn new(kind: ToastKind, message: impl Into<String>) -> Self {
-        Self { kind, message: message.into(), created_at: Instant::now() }
+        Self {
+            kind,
+            message: message.into(),
+            created_at: Instant::now(),
+        }
     }
 
     pub(crate) fn style(&self, theme: &theme::Theme) -> (Color, Color) {
@@ -103,29 +106,114 @@ pub(crate) struct CmdPalEntry {
 }
 
 const COMMAND_PALETTE: &[CmdPalEntry] = &[
-    CmdPalEntry { label: "Session List", desc: "Switch or manage sessions", command: ":sessions", shortcut: "Ctrl+L" },
-    CmdPalEntry { label: "Model List", desc: "Switch AI model", command: ":model", shortcut: "Ctrl+M" },
-    CmdPalEntry { label: "Agent List", desc: "Switch agent", command: ":agent", shortcut: "Ctrl+A" },
-    CmdPalEntry { label: "Todos", desc: "Manage todo list", command: ":todos", shortcut: "" },
-    CmdPalEntry { label: "LSP Diagnostics", desc: "View LSP diagnostics", command: ":lsp", shortcut: "" },
-    CmdPalEntry { label: "SOP List", desc: "List & execute SOPs", command: ":sop", shortcut: "" },
-    CmdPalEntry { label: "Skill Market", desc: "Browse & install remote skills", command: ":skills", shortcut: "" },
-    CmdPalEntry { label: "Roadmap", desc: "View project roadmap", command: ":roadmap", shortcut: "" },
-    CmdPalEntry { label: "Bridge Status", desc: "Check bridge health", command: ":bridge status", shortcut: "" },
-    CmdPalEntry { label: "Help", desc: "Show keybindings & help", command: ":help", shortcut: "F1" },
-    CmdPalEntry { label: "Dev Agent", desc: "Run autonomous development agent", command: ":dev", shortcut: "" },
-    CmdPalEntry { label: "Clear Log", desc: "Clear the log", command: "clear", shortcut: "" },
-    CmdPalEntry { label: "Exit", desc: "Exit Sisyphus", command: "exit", shortcut: "Ctrl+Q" },
-    CmdPalEntry { label: "New Session", desc: "Create a new session", command: ":new", shortcut: "Ctrl+N" },
-    CmdPalEntry { label: "Go Home", desc: "Return to Home screen", command: ":home", shortcut: "Ctrl+H" },
-    CmdPalEntry { label: "Toggle Theme", desc: "Switch dark/light theme", command: ":theme", shortcut: "" },
+    CmdPalEntry {
+        label: "Session List",
+        desc: "Switch or manage sessions",
+        command: ":sessions",
+        shortcut: "Ctrl+L",
+    },
+    CmdPalEntry {
+        label: "Model List",
+        desc: "Switch AI model",
+        command: ":model",
+        shortcut: "Ctrl+M",
+    },
+    CmdPalEntry {
+        label: "Agent List",
+        desc: "Switch agent",
+        command: ":agent",
+        shortcut: "Ctrl+A",
+    },
+    CmdPalEntry {
+        label: "Todos",
+        desc: "Manage todo list",
+        command: ":todos",
+        shortcut: "",
+    },
+    CmdPalEntry {
+        label: "LSP Diagnostics",
+        desc: "View LSP diagnostics",
+        command: ":lsp",
+        shortcut: "",
+    },
+    CmdPalEntry {
+        label: "SOP List",
+        desc: "List & execute SOPs",
+        command: ":sop",
+        shortcut: "",
+    },
+    CmdPalEntry {
+        label: "Skill Market",
+        desc: "Browse & install remote skills",
+        command: ":skills",
+        shortcut: "",
+    },
+    CmdPalEntry {
+        label: "Roadmap",
+        desc: "View project roadmap",
+        command: ":roadmap",
+        shortcut: "",
+    },
+    CmdPalEntry {
+        label: "Bridge Status",
+        desc: "Check bridge health",
+        command: ":bridge status",
+        shortcut: "",
+    },
+    CmdPalEntry {
+        label: "Help",
+        desc: "Show keybindings & help",
+        command: ":help",
+        shortcut: "F1",
+    },
+    CmdPalEntry {
+        label: "Dev Agent",
+        desc: "Run autonomous development agent",
+        command: ":dev",
+        shortcut: "",
+    },
+    CmdPalEntry {
+        label: "Clear Log",
+        desc: "Clear the log",
+        command: "clear",
+        shortcut: "",
+    },
+    CmdPalEntry {
+        label: "Exit",
+        desc: "Exit Sisyphus",
+        command: "exit",
+        shortcut: "Ctrl+Q",
+    },
+    CmdPalEntry {
+        label: "New Session",
+        desc: "Create a new session",
+        command: ":new",
+        shortcut: "Ctrl+N",
+    },
+    CmdPalEntry {
+        label: "Go Home",
+        desc: "Return to Home screen",
+        command: ":home",
+        shortcut: "Ctrl+H",
+    },
+    CmdPalEntry {
+        label: "Toggle Theme",
+        desc: "Switch dark/light theme",
+        command: ":theme",
+        shortcut: "",
+    },
 ];
 
 pub(crate) fn matching_palette_entries(query: &str) -> Vec<&'static CmdPalEntry> {
     let q = query.to_lowercase();
     COMMAND_PALETTE
         .iter()
-        .filter(|e| q.is_empty() || e.label.to_lowercase().contains(&q) || e.desc.to_lowercase().contains(&q) || e.command.contains(&q))
+        .filter(|e| {
+            q.is_empty()
+                || e.label.to_lowercase().contains(&q)
+                || e.desc.to_lowercase().contains(&q)
+                || e.command.contains(&q)
+        })
         .collect()
 }
 
@@ -249,7 +337,6 @@ pub(crate) struct App {
     pub(crate) workspace_status: String,
     pub(crate) pending_op: Option<tokio::sync::oneshot::Receiver<crate::tui::background::BgOp>>,
 
-
     // command palette
     pub(crate) palette_open: bool,
     pub(crate) palette_query: String,
@@ -261,7 +348,6 @@ pub(crate) struct App {
     pub(crate) event_rx: Option<tokio::sync::mpsc::Receiver<crate::tui::background::BgOp>>,
     pub(crate) is_pending: bool,
     pub(crate) pending_spin: u8,
-
 
     // misc
     pub(crate) confirm_delete: Option<String>,
@@ -311,7 +397,8 @@ impl App {
     pub(crate) fn new(data_dir: PathBuf, bridge_address: String) -> Self {
         let boulder_path = data_dir.join(".omo").join("boulder.json");
         // Attempt initial connection to the bridge
-        let bridge_client = futures::executor::block_on(crate::bridge::BridgeClient::connect(&bridge_address)).ok();
+        let bridge_client =
+            futures::executor::block_on(crate::bridge::BridgeClient::connect(&bridge_address)).ok();
         Self {
             data_dir,
             boulder_path,
@@ -338,7 +425,10 @@ impl App {
                 "Type /dev to open dev dialog".into(),
                 "Try Ctrl+U/W/A/E for input editing".into(),
             ],
-            log: vec![LogEntry::Info("Sisyphus — Ctrl+K: Palette | /help: shortcuts | Type / in input for commands".into())],
+            log: vec![LogEntry::Info(
+                "Sisyphus — Ctrl+K: Palette | /help: shortcuts | Type / in input for commands"
+                    .into(),
+            )],
             scroll: 0,
             history: Vec::new(),
             history_idx: None,
@@ -438,7 +528,9 @@ impl App {
 
         if let Some(parent) = self.boulder_path.parent() {
             if let Err(e) = std::fs::create_dir_all(parent) {
-                self.add_log(LogEntry::Error(format!("Failed to create boulder dir: {e}")));
+                self.add_log(LogEntry::Error(format!(
+                    "Failed to create boulder dir: {e}"
+                )));
             }
         }
 
@@ -477,7 +569,6 @@ impl App {
 
         self.boulder_loaded = true;
     }
-
 
     pub(crate) fn theme(&self) -> theme::Theme {
         match self.theme_mode {
@@ -556,11 +647,16 @@ impl App {
             self.expanded_thoughts.insert(msg_idx);
         }
 
-        if self.session_detail_scroll != usize::MAX && line_diff != 0 && msg_start < self.session_detail_scroll + 100 {
+        if self.session_detail_scroll != usize::MAX
+            && line_diff != 0
+            && msg_start < self.session_detail_scroll + 100
+        {
             self.session_detail_scroll = if line_diff > 0 {
-                self.session_detail_scroll.saturating_add(line_diff as usize)
+                self.session_detail_scroll
+                    .saturating_add(line_diff as usize)
             } else {
-                self.session_detail_scroll.saturating_sub((-line_diff) as usize)
+                self.session_detail_scroll
+                    .saturating_sub((-line_diff) as usize)
             };
         }
     }
@@ -591,10 +687,7 @@ impl App {
         for (idx, msg) in session.messages.iter().enumerate() {
             let start = offset;
             offset += 1;
-            offset += helpers::count_message_lines(
-                &msg.content,
-                self.is_thought_expanded(idx),
-            );
+            offset += helpers::count_message_lines(&msg.content, self.is_thought_expanded(idx));
             offset += 1;
             if target_line >= start && target_line < offset {
                 return Some(idx);
@@ -621,7 +714,8 @@ impl App {
     }
 
     pub(crate) fn prune_expired_toasts(&mut self) {
-        self.toasts.retain(|t| t.created_at.elapsed() < TOAST_DURATION);
+        self.toasts
+            .retain(|t| t.created_at.elapsed() < TOAST_DURATION);
     }
 
     pub(crate) fn perform_search(&mut self) {
@@ -645,12 +739,16 @@ impl App {
         if self.search_results.is_empty() {
             return;
         }
-        let idx = self.search_results[self.search_idx.min(self.search_results.len().saturating_sub(1))];
+        let idx = self.search_results[self
+            .search_idx
+            .min(self.search_results.len().saturating_sub(1))];
         self.selected_msg = Some(idx);
         if let Some(ref detail) = self.session_detail {
             let mut line = 0usize;
             for (i, msg) in detail.messages.iter().enumerate() {
-                if i >= idx { break; }
+                if i >= idx {
+                    break;
+                }
                 line += 1; // header
                 line += msg.content.lines().count().max(1); // content
                 line += 1; // spacing
@@ -662,13 +760,17 @@ impl App {
     }
 
     pub(crate) fn next_search_match(&mut self) {
-        if self.search_results.is_empty() { return; }
+        if self.search_results.is_empty() {
+            return;
+        }
         self.search_idx = (self.search_idx + 1) % self.search_results.len();
         self.scroll_to_search_match();
     }
 
     pub(crate) fn prev_search_match(&mut self) {
-        if self.search_results.is_empty() { return; }
+        if self.search_results.is_empty() {
+            return;
+        }
         self.search_idx = if self.search_idx == 0 {
             self.search_results.len().saturating_sub(1)
         } else {
@@ -786,7 +888,9 @@ impl App {
                     self.session_dirty = true;
                     self.session_sel = self.session_sel.saturating_sub(1);
                 }
-                Err(e) => self.add_log(LogEntry::Error(format!("Failed to delete session {id}: {e}"))),
+                Err(e) => self.add_log(LogEntry::Error(format!(
+                    "Failed to delete session {id}: {e}"
+                ))),
             }
             self.confirm_delete = None;
         } else {
@@ -833,20 +937,26 @@ impl App {
                 self.sop_status = format!("execute {sop_id} failed: {error}");
             }
             crate::tui::background::BgOp::SopTraceFetched { sop_id, trace } => {
-                self.sop_trace = trace.into_iter().map(|e| crate::tui::app::TraceEvent {
-                    node_id: e.node_id,
-                    status: e.status,
-                    output: e.output,
-                    fuel: e.fuel_consumed,
-                    duration: e.duration_ms,
-                }).collect();
+                self.sop_trace = trace
+                    .into_iter()
+                    .map(|e| crate::tui::app::TraceEvent {
+                        node_id: e.node_id,
+                        status: e.status,
+                        output: e.output,
+                        fuel: e.fuel_consumed,
+                        duration: e.duration_ms,
+                    })
+                    .collect();
                 self.sop_trace_scroll = 0;
                 self.add_log(LogEntry::Info(format!("Fetched trace for {sop_id}")));
             }
             crate::tui::background::BgOp::SopTraceFailed(e) => {
                 self.add_log(LogEntry::Error(format!("Failed to fetch trace: {e}")));
             }
-            crate::tui::background::BgOp::RoadmapFetched { projection, bottlenecks } => {
+            crate::tui::background::BgOp::RoadmapFetched {
+                projection,
+                bottlenecks,
+            } => {
                 self.roadmap_projection = Some(projection);
                 self.roadmap_bottlenecks = Some(bottlenecks);
                 self.roadmap_status = "connected".into();
@@ -861,11 +971,17 @@ impl App {
                     self.add_log(entry);
                 }
             }
-            crate::tui::background::BgOp::DevResult { goal, report, success } => {
+            crate::tui::background::BgOp::DevResult {
+                goal,
+                report,
+                success,
+            } => {
                 if success {
                     self.add_log(LogEntry::Success(format!("Dev agent completed: {goal}")));
                 } else {
-                    self.add_log(LogEntry::Warn(format!("Dev agent finished with issues: {goal}")));
+                    self.add_log(LogEntry::Warn(format!(
+                        "Dev agent finished with issues: {goal}"
+                    )));
                 }
                 self.dev_report = Some(report);
                 self.dev_status = "done".into();
@@ -875,7 +991,10 @@ impl App {
                     self.add_log(entry.clone());
                 }
                 if let Some(first_err) = errors.first() {
-                    self.notification = Some((first_err.entry_text().to_string(), std::time::Instant::now()));
+                    self.notification = Some((
+                        first_err.entry_text().to_string(),
+                        std::time::Instant::now(),
+                    ));
                 }
                 self.refresh_sessions();
                 let viewing_session = self.session_detail.as_ref().map(|d| d.id.clone());
@@ -886,23 +1005,25 @@ impl App {
                     }
                     self.session_detail_scroll = usize::MAX;
                     // Generate contextual suggestions after agent response
-                    let last_role = self.session_detail.as_ref()
+                    let last_role = self
+                        .session_detail
+                        .as_ref()
                         .and_then(|d| d.messages.last())
                         .map(|m| m.role.as_str());
-                        if last_role == Some("assistant") {
-                            self.session_suggestions = vec![
-                                "Type a follow-up message or press Esc to browse sessions".into(),
-                                "Use /agent off to disable AI responses".into(),
-                                "Use /suggest <topic> for targeted suggestions".into(),
-                            ];
-                        } else {
-                            self.session_suggestions = vec![
-                                "Press Enter to send your message".into(),
-                                "Type /help for available commands".into(),
-                                "Use @filename to reference a file".into(),
-                            ];
-                        }
+                    if last_role == Some("assistant") {
+                        self.session_suggestions = vec![
+                            "Type a follow-up message or press Esc to browse sessions".into(),
+                            "Use /agent off to disable AI responses".into(),
+                            "Use /suggest <topic> for targeted suggestions".into(),
+                        ];
+                    } else {
+                        self.session_suggestions = vec![
+                            "Press Enter to send your message".into(),
+                            "Type /help for available commands".into(),
+                            "Use @filename to reference a file".into(),
+                        ];
                     }
+                }
             }
             crate::tui::background::BgOp::TodoUpdated => {
                 self.todo_dirty = true;
@@ -948,5 +1069,4 @@ impl App {
         let rx = crate::tui::background::spawn_fetch_sop_trace(bridge_addr, sop_id);
         self.pending_op = Some(rx);
     }
-
 }

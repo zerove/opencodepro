@@ -139,7 +139,9 @@ fn parse_stylelint_json(stdout: &str) -> (Vec<Diag>, Vec<Diag>) {
 
     if let Ok(results) = serde_json::from_str::<Vec<serde_json::Value>>(stdout) {
         for result in results {
-            let file = result["source"].as_str().map(std::string::ToString::to_string);
+            let file = result["source"]
+                .as_str()
+                .map(std::string::ToString::to_string);
             if let Some(warns) = result["warnings"].as_array() {
                 for w in warns {
                     let line = w["line"].as_u64().map(|n| n as usize);

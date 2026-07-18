@@ -1,5 +1,5 @@
-use std::path::PathBuf;
 use clap::{Subcommand, ValueEnum};
+use std::path::PathBuf;
 
 // ── Sub-enum group modules ──────────────────────────────
 
@@ -256,25 +256,35 @@ impl From<PriorityArg> for sisyphus_cli::tools::TodoPriority {
 // ── Table formatting helpers ────────────────────────────
 
 pub fn short_id(id: &str) -> String {
-    if id.len() <= 12 { id.to_string() } else { format!("{}…", &id[..12]) }
+    if id.len() <= 12 {
+        id.to_string()
+    } else {
+        format!("{}…", &id[..12])
+    }
 }
 
 pub fn print_table(header: &[&str], rows: &[Vec<String>]) {
-    if rows.is_empty() { return; }
+    if rows.is_empty() {
+        return;
+    }
     let mut widths: Vec<usize> = header.iter().map(|h| h.len()).collect();
     for row in rows {
         for (i, cell) in row.iter().enumerate() {
             widths[i] = widths[i].max(cell.len());
         }
     }
-    let hdr: Vec<String> = header.iter().enumerate()
+    let hdr: Vec<String> = header
+        .iter()
+        .enumerate()
         .map(|(i, h)| format!("{:width$}", h, width = widths[i]))
         .collect();
     println!("  {}", hdr.join("  "));
     let sep: Vec<String> = widths.iter().map(|w| "─".repeat(*w)).collect();
     println!("  {}", sep.join("──"));
     for row in rows {
-        let line: Vec<String> = row.iter().enumerate()
+        let line: Vec<String> = row
+            .iter()
+            .enumerate()
             .map(|(i, c)| format!("{:width$}", c, width = widths[i]))
             .collect();
         println!("  {}", line.join("  "));

@@ -1,6 +1,6 @@
-use sisyphus_tools_llm::metis::LlmClient;
-use sisyphus_tools_core::ToolResult;
 use serde::{Deserialize, Serialize};
+use sisyphus_tools_core::ToolResult;
+use sisyphus_tools_llm::metis::LlmClient;
 
 // ── Types ──────────────────────────────────────────────────
 

@@ -1,5 +1,5 @@
-use sisyphus_tools_core::ToolResult;
 use async_trait::async_trait;
+use sisyphus_tools_core::ToolResult;
 use std::process::Stdio;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, Command};
@@ -55,7 +55,10 @@ impl McpTransport for StdioTransport {
             .write_all(b"\n")
             .await
             .map_err(sisyphus_tools_core::ToolError::Io)?;
-        self.writer.flush().await.map_err(sisyphus_tools_core::ToolError::Io)?;
+        self.writer
+            .flush()
+            .await
+            .map_err(sisyphus_tools_core::ToolError::Io)?;
 
         // Read the response line
         let mut line = String::new();
@@ -68,8 +71,14 @@ impl McpTransport for StdioTransport {
     }
 
     async fn close(&mut self) -> ToolResult<()> {
-        self.child.kill().await.map_err(sisyphus_tools_core::ToolError::Io)?;
-        self.child.wait().await.map_err(sisyphus_tools_core::ToolError::Io)?;
+        self.child
+            .kill()
+            .await
+            .map_err(sisyphus_tools_core::ToolError::Io)?;
+        self.child
+            .wait()
+            .await
+            .map_err(sisyphus_tools_core::ToolError::Io)?;
         Ok(())
     }
 }

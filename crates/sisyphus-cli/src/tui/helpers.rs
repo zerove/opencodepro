@@ -1,8 +1,8 @@
-use std::fmt::Write;
 use ratatui::{
     style::{Color, Modifier, Style},
     text::{Line, Span},
 };
+use std::fmt::Write;
 
 // ── Clipboard helpers ───────────────────────────────────
 
@@ -119,7 +119,10 @@ pub fn parse_inline_style(line: &str) -> Vec<Span<'static>> {
             }
             if end < chars.len() {
                 let content: String = chars[i + 1..end].iter().collect();
-                    spans.push(Span::styled(content, Style::default().fg(Color::Rgb(0x56, 0xb6, 0xc2))));
+                spans.push(Span::styled(
+                    content,
+                    Style::default().fg(Color::Rgb(0x56, 0xb6, 0xc2)),
+                ));
                 i = end + 1;
                 continue;
             }
@@ -132,11 +135,7 @@ pub fn parse_inline_style(line: &str) -> Vec<Span<'static>> {
         }
         // regular char
         let mut end = i + 1;
-        while end < chars.len()
-            && chars[end] != '*'
-            && chars[end] != '`'
-            && chars[end] != '\n'
-        {
+        while end < chars.len() && chars[end] != '*' && chars[end] != '`' && chars[end] != '\n' {
             end += 1;
         }
         let content: String = chars[i..end].iter().collect();
@@ -165,7 +164,8 @@ pub fn split_thought_and_answer(content: &str) -> (Vec<String>, String) {
 
         if in_thought {
             // Search for closing tag anywhere in the line
-            let tag_end = trimmed.find("</thought>")
+            let tag_end = trimmed
+                .find("</thought>")
                 .or_else(|| trimmed.find("</thinking"))
                 .or_else(|| if trimmed == ">" { Some(0) } else { None })
                 .or_else(|| trimmed.find("</"));
@@ -185,7 +185,9 @@ pub fn split_thought_and_answer(content: &str) -> (Vec<String>, String) {
                 current.clear();
                 // Everything after `>` of the closing tag → answer content
                 let after_tag = trimmed[tag_start..].trim_start();
-                let after_gt = after_tag.bytes().position(|b| b == b'>')
+                let after_gt = after_tag
+                    .bytes()
+                    .position(|b| b == b'>')
                     .map(|p| after_tag[p + 1..].trim())
                     .unwrap_or("");
                 if !after_gt.is_empty() {
@@ -204,22 +206,21 @@ pub fn split_thought_and_answer(content: &str) -> (Vec<String>, String) {
         }
 
         // Not in thought — check for opening tag
-        if let Some(rest) = trimmed
-            .strip_prefix("<thought>")
-            .or_else(|| {
-                if trimmed.starts_with("<thinking") {
-                    trimmed.find('>').map(|e| trimmed[e + 1..].trim_start())
-                } else {
-                    None
-                }
-            }) {
+        if let Some(rest) = trimmed.strip_prefix("<thought>").or_else(|| {
+            if trimmed.starts_with("<thinking") {
+                trimmed.find('>').map(|e| trimmed[e + 1..].trim_start())
+            } else {
+                None
+            }
+        }) {
             in_thought = true;
             current.clear();
             if rest.is_empty() {
                 continue;
             }
             // Opening tag + content on same line (e.g. `<thought>inner</thought>ans`)
-            let close = rest.find("</thought>")
+            let close = rest
+                .find("</thought>")
                 .or_else(|| rest.find("</thinking"))
                 .or_else(|| if rest == ">" { Some(0) } else { None })
                 .or_else(|| rest.find("</"));
@@ -338,7 +339,7 @@ pub fn render_message_with_thought_section(
     }
 
     let total_lines: usize = thoughts.iter().map(|t| t.lines().count()).sum();
-    let clickable = Color::Rgb(0xcc, 0x99, 0x44);  // amber — indicates interactive
+    let clickable = Color::Rgb(0xcc, 0x99, 0x44); // amber — indicates interactive
     let thought_fg = Color::Rgb(0x9a, 0x9a, 0x9a);
     let clickable_style = Style::default().fg(clickable).add_modifier(Modifier::BOLD);
 
@@ -436,5 +437,3 @@ mod tests {
         assert_eq!(answer, "answer here");
     }
 }
-
-

@@ -1,7 +1,7 @@
-use sisyphus_tools_core::ToolResult;
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
+use sisyphus_tools_core::ToolResult;
 use sisyphus_tools_llm::metis::LlmClient;
+use std::sync::Arc;
 
 /// A generated test with metadata.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -31,7 +31,9 @@ impl TestGenerator {
     }
 
     pub fn with_llm(self, client: Arc<dyn LlmClient>) -> Self {
-        Self { llm_client: Some(client) }
+        Self {
+            llm_client: Some(client),
+        }
     }
 
     /// Extract the full body of a function from the source code.
@@ -86,20 +88,25 @@ Function to test:
         );
 
         let response = self.llm_client.as_ref().unwrap().generate(&prompt).await?;
-        
+
         let cleaned = response
             .trim()
             .trim_start_matches("```rust")
             .trim_start_matches("```")
             .trim_end_matches("```")
             .trim();
-            
+
         Ok(cleaned.to_string())
     }
 
     /// Generate a test for a specific function in a source file.
-    pub async fn generate_for_function(&self, file_path: &str, fn_name: &str) -> ToolResult<GeneratedTest> {
-        let content = std::fs::read_to_string(file_path).map_err(sisyphus_tools_core::ToolError::Io)?;
+    pub async fn generate_for_function(
+        &self,
+        file_path: &str,
+        fn_name: &str,
+    ) -> ToolResult<GeneratedTest> {
+        let content =
+            std::fs::read_to_string(file_path).map_err(sisyphus_tools_core::ToolError::Io)?;
 
         // Try LLM generation if available
         if self.llm_client.is_some() {
@@ -170,7 +177,8 @@ Function to test:
 
     /// Generate tests for all public functions in a source file.
     pub async fn generate_for_module(&self, file_path: &str) -> ToolResult<Vec<GeneratedTest>> {
-        let content = std::fs::read_to_string(file_path).map_err(sisyphus_tools_core::ToolError::Io)?;
+        let content =
+            std::fs::read_to_string(file_path).map_err(sisyphus_tools_core::ToolError::Io)?;
 
         let mut tests = Vec::new();
         let mut current_fn: Option<String> = None;
@@ -405,7 +413,10 @@ fn hidden() {}
         let code = "fn private_helper() -> i32 { 42 }";
         let (_f, path) = create_temp_rs(code);
         let gen = TestGenerator::new();
-        let test = gen.generate_for_function(&path, "private_helper").await.unwrap();
+        let test = gen
+            .generate_for_function(&path, "private_helper")
+            .await
+            .unwrap();
         assert!(test.test_code.contains("not public"));
     }
 }

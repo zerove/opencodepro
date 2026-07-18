@@ -76,14 +76,25 @@ impl MetaLearner {
                     }
                 }
             }
-            if total_weight == 0.0 { 0.0 } else { score / total_weight }
+            if total_weight == 0.0 {
+                0.0
+            } else {
+                score / total_weight
+            }
         } else {
-            if ctx1 == ctx2 { 1.0 } else { 0.0 }
+            if ctx1 == ctx2 {
+                1.0
+            } else {
+                0.0
+            }
         }
     }
 
     /// Find the best strategy and its parameters for a given context.
-    pub fn best_strategy_params(&self, context: &serde_json::Value) -> Option<(String, serde_json::Value)> {
+    pub fn best_strategy_params(
+        &self,
+        context: &serde_json::Value,
+    ) -> Option<(String, serde_json::Value)> {
         // Group samples by strategy and calculate weighted success
         let mut strategy_scores: HashMap<String, (f64, Vec<&MetaLearningSample>)> = HashMap::new();
 
@@ -93,9 +104,11 @@ impl MetaLearner {
                 continue;
             }
 
-            let entry = strategy_scores.entry(sample.strategy.clone()).or_insert((0.0, Vec::new()));
+            let entry = strategy_scores
+                .entry(sample.strategy.clone())
+                .or_insert((0.0, Vec::new()));
             entry.1.push(sample);
-            
+
             // Weighted success: similarity * (1 if success else 0)
             if sample.success {
                 entry.0 += similarity;
@@ -108,24 +121,31 @@ impl MetaLearner {
             if samples.is_empty() {
                 continue;
             }
-            
+
             // Normalize success rate by total similarity of samples in this strategy
-            let total_sim: f64 = samples.iter()
+            let total_sim: f64 = samples
+                .iter()
                 .map(|s| Self::calculate_similarity(context, &s.context))
                 .sum();
-            let normalized_score = if total_sim > 0.0 { weighted_success / total_sim } else { 0.0 };
+            let normalized_score = if total_sim > 0.0 {
+                weighted_success / total_sim
+            } else {
+                0.0
+            };
 
             if normalized_score >= 0.5 {
                 match best {
                     Some((_, best_score, _)) if normalized_score > best_score => {
-                        let params = samples.iter()
+                        let params = samples
+                            .iter()
                             .rfind(|s| s.success)
                             .map(|s| s.params.clone())
                             .unwrap_or_else(|| serde_json::json!({}));
                         best = Some((strategy.clone(), normalized_score, params));
                     }
                     None => {
-                        let params = samples.iter()
+                        let params = samples
+                            .iter()
                             .rfind(|s| s.success)
                             .map(|s| s.params.clone())
                             .unwrap_or_else(|| serde_json::json!({}));
@@ -270,8 +290,8 @@ impl MetaLearner {
     fn save_samples(&self) -> ToolResult<()> {
         std::fs::create_dir_all(&self.storage_path).map_err(ToolError::Io)?;
         let file_path = self.storage_path.join("samples.json");
-        let content =
-            serde_json::to_string_pretty(&self.samples).map_err(|e| ToolError::Generic(e.to_string()))?;
+        let content = serde_json::to_string_pretty(&self.samples)
+            .map_err(|e| ToolError::Generic(e.to_string()))?;
         std::fs::write(&file_path, content).map_err(ToolError::Io)
     }
 
@@ -355,9 +375,12 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let mut ml = MetaLearner::new(dir.path().to_str().unwrap());
 
-        ml.record_outcome(sample("test_s", true, json!({}))).unwrap();
-        ml.record_outcome(sample("test_s", true, json!({}))).unwrap();
-        ml.record_outcome(sample("test_s", false, json!({}))).unwrap();
+        ml.record_outcome(sample("test_s", true, json!({})))
+            .unwrap();
+        ml.record_outcome(sample("test_s", true, json!({})))
+            .unwrap();
+        ml.record_outcome(sample("test_s", false, json!({})))
+            .unwrap();
 
         let stats = ml.strategy_stats("test_s");
         assert_eq!(stats.total_uses, 3);

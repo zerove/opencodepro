@@ -1,8 +1,8 @@
 use async_trait::async_trait;
+use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::sync::Arc;
-use dashmap::DashMap;
 
 use crate::errors::TypesError;
 use crate::execution::{ExecutionContext, NodeOutput};
@@ -10,9 +10,9 @@ use crate::graph::NodeKind;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ReflectionPriority {
-    None,       // Skip reflection completely
-    Low,        // Use simple heuristic or skip if output seems okay
-    High,       // Always use LLM reflect
+    None, // Skip reflection completely
+    Low,  // Use simple heuristic or skip if output seems okay
+    High, // Always use LLM reflect
 }
 
 #[async_trait]
@@ -112,10 +112,16 @@ impl SOPNode for BranchSOPNode {
         })?;
         let output_str = last_output.as_str().unwrap_or("");
         let next_node = self.branches.get(output_str).unwrap_or(&self.default_next);
-        Ok(NodeOutput::from(Value::Number(serde_json::Number::from_f64(*next_node as f64).unwrap())))
+        Ok(NodeOutput::from(Value::Number(
+            serde_json::Number::from_f64(*next_node as f64).unwrap(),
+        )))
     }
-    fn name(&self) -> &str { &self.name }
-    fn as_any(&self) -> &dyn std::any::Any { self }
+    fn name(&self) -> &str {
+        &self.name
+    }
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
     fn to_kind(&self) -> NodeKind {
         NodeKind::Branch {
             branches: self.branches.clone(),
@@ -151,7 +157,11 @@ impl SOPNode for SubGraphSOPNode {
 
 #[async_trait]
 pub trait TestExecutor: Send + Sync {
-    async fn run_test(&self, command: &str, workdir: Option<&str>) -> Result<TestResult, TypesError>;
+    async fn run_test(
+        &self,
+        command: &str,
+        workdir: Option<&str>,
+    ) -> Result<TestResult, TypesError>;
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -174,21 +184,33 @@ pub struct TestSOPNode {
 #[async_trait]
 impl SOPNode for TestSOPNode {
     async fn execute(&self, _ctx: &ExecutionContext) -> Result<NodeOutput, TypesError> {
-        let result = self.test_executor.run_test(&self.test_command, self.workdir.as_deref()).await?;
-        
+        let result = self
+            .test_executor
+            .run_test(&self.test_command, self.workdir.as_deref())
+            .await?;
+
         let output_str = if result.success {
-            format!("Test Passed: {}\nStdout: {}", self.test_command, result.stdout)
+            format!(
+                "Test Passed: {}\nStdout: {}",
+                self.test_command, result.stdout
+            )
         } else {
-            format!("Test Failed: {}\nError: {}\nStderr: {}", 
-                self.test_command, 
-                result.error_summary.as_deref().unwrap_or("Unknown error"), 
-                result.stderr)
+            format!(
+                "Test Failed: {}\nError: {}\nStderr: {}",
+                self.test_command,
+                result.error_summary.as_deref().unwrap_or("Unknown error"),
+                result.stderr
+            )
         };
-        
+
         Ok(NodeOutput::from(Value::String(output_str)))
     }
-    fn name(&self) -> &str { &self.name }
-    fn as_any(&self) -> &dyn std::any::Any { self }
+    fn name(&self) -> &str {
+        &self.name
+    }
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
     fn to_kind(&self) -> NodeKind {
         NodeKind::Test {
             command: self.test_command.clone(),
@@ -348,11 +370,20 @@ impl SOPNode for VisualSOPNode {
     async fn execute(&self, _ctx: &ExecutionContext) -> Result<NodeOutput, TypesError> {
         // Visual nodes are handled by the ExecutionManager's visual perception bridge.
         // We return a special output that signals the executor to perform visual analysis.
-        Ok(NodeOutput::from(Value::String(format!("VISUAL_EXEC_REQUIRED:{}", self.name))))
+        Ok(NodeOutput::from(Value::String(format!(
+            "VISUAL_EXEC_REQUIRED:{}",
+            self.name
+        ))))
     }
-    fn name(&self) -> &str { &self.name }
-    fn as_any(&self) -> &dyn std::any::Any { self }
-    fn to_kind(&self) -> NodeKind { self.kind.clone() }
+    fn name(&self) -> &str {
+        &self.name
+    }
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+    fn to_kind(&self) -> NodeKind {
+        self.kind.clone()
+    }
 }
 
 pub struct HumanInterventionSOPNode {
@@ -366,10 +397,17 @@ impl SOPNode for HumanInterventionSOPNode {
     async fn execute(&self, _ctx: &ExecutionContext) -> Result<NodeOutput, TypesError> {
         // Intervention nodes are handled by the Executor's InteractionManager.
         // We return a special signal to pause execution.
-        Ok(NodeOutput::from(Value::String(format!("HUMAN_INTERVENTION_REQUIRED:{}", self.name))))
+        Ok(NodeOutput::from(Value::String(format!(
+            "HUMAN_INTERVENTION_REQUIRED:{}",
+            self.name
+        ))))
     }
-    fn name(&self) -> &str { &self.name }
-    fn as_any(&self) -> &dyn std::any::Any { self }
+    fn name(&self) -> &str {
+        &self.name
+    }
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
     fn to_kind(&self) -> NodeKind {
         NodeKind::HumanIntervention {
             prompt: self.prompt.clone(),

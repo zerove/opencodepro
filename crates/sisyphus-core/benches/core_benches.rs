@@ -59,7 +59,14 @@ fn bench_dag_execution(c: &mut Criterion) {
                 let graph_arc = Arc::new(graph);
                 let start_node = graph_arc.graph.node_indices().next().unwrap();
                 executor
-                    .execute_with_context(black_box(graph_arc), start_node, None, None, tool_executor.clone(), None)
+                    .execute_with_context(
+                        black_box(graph_arc),
+                        start_node,
+                        None,
+                        None,
+                        tool_executor.clone(),
+                        None,
+                    )
                     .await
             })
         });
@@ -104,7 +111,14 @@ fn bench_wasm_execution(c: &mut Criterion) {
     group.bench_function("single_node_hello", |b| {
         b.to_async(&rt).iter(|| async {
             executor
-                .execute_with_context(black_box(graph_arc.clone()), start_node, None, None, tool_executor.clone(), None)
+                .execute_with_context(
+                    black_box(graph_arc.clone()),
+                    start_node,
+                    None,
+                    None,
+                    tool_executor.clone(),
+                    None,
+                )
                 .await
         })
     });

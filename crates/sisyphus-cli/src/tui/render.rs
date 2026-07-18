@@ -32,7 +32,10 @@ pub(crate) fn ui(frame: &mut ratatui::Frame, app: &App) {
         crate::tui::dialog::render_dialog_overlay(frame, frame.area(), app);
     }
 
-    frame.render_widget(ratatui::widgets::Paragraph::new(render_status(app)), status_area);
+    frame.render_widget(
+        ratatui::widgets::Paragraph::new(render_status(app)),
+        status_area,
+    );
 
     // Render toast notifications as floating overlay (bottom-right)
     render_toasts(frame, app);
@@ -59,7 +62,10 @@ fn render_palette(frame: &mut ratatui::Frame, app: &App) {
     let block = Block::default()
         .borders(Borders::ALL)
         .title(" Command Palette ")
-        .title_bottom(format!(" {} matches | Type to filter... ", matching_palette_entries(&app.palette_query).len()))
+        .title_bottom(format!(
+            " {} matches | Type to filter... ",
+            matching_palette_entries(&app.palette_query).len()
+        ))
         .border_style(Style::default().fg(theme.primary));
 
     let items: Vec<ListItem> = matching_palette_entries(&app.palette_query)
@@ -71,7 +77,10 @@ fn render_palette(frame: &mut ratatui::Frame, app: &App) {
                 Style::default().fg(theme.secondary)
             };
             ListItem::new(Line::from(vec![
-                Span::styled(format!(" {:<16}", e.label), Style::default().fg(theme.fg).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    format!(" {:<16}", e.label),
+                    Style::default().fg(theme.fg).add_modifier(Modifier::BOLD),
+                ),
                 Span::styled(e.desc, Style::default().fg(theme.muted)),
                 Span::raw("  "),
                 Span::styled(e.shortcut, shortcut_style),
@@ -79,10 +88,16 @@ fn render_palette(frame: &mut ratatui::Frame, app: &App) {
         })
         .collect();
 
-    let sel = app.palette_sel.min(matching_palette_entries(&app.palette_query).len().saturating_sub(1));
-    let list = List::new(items)
-        .block(block)
-        .highlight_style(Style::default().fg(theme.secondary).add_modifier(Modifier::REVERSED));
+    let sel = app.palette_sel.min(
+        matching_palette_entries(&app.palette_query)
+            .len()
+            .saturating_sub(1),
+    );
+    let list = List::new(items).block(block).highlight_style(
+        Style::default()
+            .fg(theme.secondary)
+            .add_modifier(Modifier::REVERSED),
+    );
     frame.render_stateful_widget(
         list,
         pal_area,
@@ -135,10 +150,16 @@ pub(crate) fn render_status(app: &App) -> Line<'static> {
     };
 
     let help: String = match app.view {
-        View::Home => "Enter: start session | Ctrl+K: palette | Ctrl+L: sessions | type prompt".into(),
+        View::Home => {
+            "Enter: start session | Ctrl+K: palette | Ctrl+L: sessions | type prompt".into()
+        }
         View::Session => {
             if app.session_detail.is_some() {
-                let mode_label = if app.session_mode == Mode::Input { "INPUT" } else { "NORMAL" };
+                let mode_label = if app.session_mode == Mode::Input {
+                    "INPUT"
+                } else {
+                    "NORMAL"
+                };
                 let mode_extra = if app.session_mode == Mode::Input {
                     " | Ctrl+U clear | Ctrl+W del word | Ctrl+A/E home/end | /command"
                 } else {
@@ -189,13 +210,22 @@ pub(crate) fn render_status(app: &App) -> Line<'static> {
     if errs > 0 || warns > 0 || infos > 0 {
         spans.push(Span::raw("  "));
         if errs > 0 {
-            spans.push(Span::styled(format!("E{} ", errs), Style::default().fg(theme.error)));
+            spans.push(Span::styled(
+                format!("E{} ", errs),
+                Style::default().fg(theme.error),
+            ));
         }
         if warns > 0 {
-            spans.push(Span::styled(format!("W{} ", warns), Style::default().fg(theme.warning)));
+            spans.push(Span::styled(
+                format!("W{} ", warns),
+                Style::default().fg(theme.warning),
+            ));
         }
         if infos > 0 {
-            spans.push(Span::styled(format!("I{} ", infos), Style::default().fg(theme.info)));
+            spans.push(Span::styled(
+                format!("I{} ", infos),
+                Style::default().fg(theme.info),
+            ));
         }
     }
 
@@ -240,17 +270,14 @@ fn render_toasts(frame: &mut ratatui::Frame, app: &App) {
     let area = frame.area();
 
     let stacked_height = (app.toasts.len() * 3 + 2) as u16;
-    let [_, toast_vertical] = Layout::vertical([Constraint::Min(0), Constraint::Length(stacked_height)])
-        .areas(area);
-    let [_, toast_area] = Layout::horizontal([
-        Constraint::Percentage(40),
-        Constraint::Percentage(60),
-    ])
-    .areas(toast_vertical);
+    let [_, toast_vertical] =
+        Layout::vertical([Constraint::Min(0), Constraint::Length(stacked_height)]).areas(area);
+    let [_, toast_area] =
+        Layout::horizontal([Constraint::Percentage(40), Constraint::Percentage(60)])
+            .areas(toast_vertical);
 
     let inner = Layout::vertical(
-        std::iter::repeat_n(Constraint::Length(3), app.toasts.len())
-            .collect::<Vec<_>>(),
+        std::iter::repeat_n(Constraint::Length(3), app.toasts.len()).collect::<Vec<_>>(),
     )
     .split(toast_area);
 

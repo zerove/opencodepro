@@ -54,13 +54,8 @@ pub(crate) async fn handle_session(sub: &SessionCommands, session_db: &Path) -> 
                 println!("Cancelled.");
             }
         }
-        SessionCommands::AddMessage {
-            id,
-            role,
-            content,
-        } => {
-            let session =
-                sisyphus_cli::tools::session_add_message(session_db, id, role, content)?;
+        SessionCommands::AddMessage { id, role, content } => {
+            let session = sisyphus_cli::tools::session_add_message(session_db, id, role, content)?;
             println!(
                 "Message added to {} ({} msgs)",
                 session.id, session.message_count
@@ -91,17 +86,11 @@ pub(crate) async fn handle_session(sub: &SessionCommands, session_db: &Path) -> 
                 session.id, session.message_count
             );
         }
-        SessionCommands::Export {
-            id,
-            output,
-            format,
-        } => {
+        SessionCommands::Export { id, output, format } => {
             match format.as_str() {
                 "html" => sisyphus_cli::tools::session_export_html(session_db, id, output)?,
                 "json" => sisyphus_cli::tools::session_export(session_db, id, output)?,
-                other => anyhow::bail!(
-                    "unsupported export format '{other}'; use 'json' or 'html'"
-                ),
+                other => anyhow::bail!("unsupported export format '{other}'; use 'json' or 'html'"),
             }
             println!(
                 "Exported session {} to {} ({})",

@@ -176,7 +176,9 @@ impl TeamOrchestrator {
                                             serde_json::from_slice(&bytes).unwrap_or(Value::Null);
                                         Ok(value)
                                     }
-                                    Err(e) => Err(sisyphus_tools_core::ToolError::Generic(e.to_string())),
+                                    Err(e) => {
+                                        Err(sisyphus_tools_core::ToolError::Generic(e.to_string()))
+                                    }
                                 }
                             })
                         }),

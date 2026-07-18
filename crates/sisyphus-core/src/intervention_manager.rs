@@ -1,10 +1,10 @@
 //! Management of human-in-the-loop interventions for Sisyphus.
 
-use std::sync::Arc;
-use tokio::sync::{oneshot, RwLock};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use serde::{Serialize, Deserialize};
+use std::sync::Arc;
 use thiserror::Error;
+use tokio::sync::{oneshot, RwLock};
 
 #[derive(Error, Debug)]
 pub enum InterventionError {
@@ -35,6 +35,12 @@ pub struct InterventionManager {
     pending: Arc<RwLock<HashMap<String, oneshot::Sender<UserFeedback>>>>,
 }
 
+impl Default for InterventionManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl InterventionManager {
     pub fn new() -> Self {
         Self {
@@ -44,14 +50,14 @@ impl InterventionManager {
 
     /// Requests feedback for a specific node and waits for the user's response.
     pub async fn request_feedback(
-        &self, 
-        node_name: String, 
-        _prompt: String, 
+        &self,
+        node_name: String,
+        _prompt: String,
         _ctx_summary: String,
-        timeout: std::time::Duration
+        timeout: std::time::Duration,
     ) -> Result<UserFeedback, InterventionError> {
         let (tx, rx) = oneshot::channel();
-        
+
         {
             let mut pending = self.pending.write().await;
             pending.insert(node_name.clone(), tx);
@@ -72,13 +78,21 @@ impl InterventionManager {
     }
 
     /// Pushes user feedback into the system, resuming the paused execution.
-    pub async fn submit_feedback(&self, node_name: &str, feedback: UserFeedback) -> Result<(), InterventionError> {
+    pub async fn submit_feedback(
+        &self,
+        node_name: &str,
+        feedback: UserFeedback,
+    ) -> Result<(), InterventionError> {
         let mut pending = self.pending.write().await;
         if let Some(tx) = pending.remove(node_name) {
-            tx.send(feedback).map_err(|e| InterventionError::Internal(format!("{:?}", e)))?;
+            tx.send(feedback)
+                .map_err(|e| InterventionError::Internal(format!("{:?}", e)))?;
             Ok(())
         } else {
-            Err(InterventionError::Internal(format!("No pending intervention for node {}", node_name)))
+            Err(InterventionError::Internal(format!(
+                "No pending intervention for node {}",
+                node_name
+            )))
         }
     }
 }

@@ -79,7 +79,11 @@ impl LlmClient for MockLlmClient {
     }
 
     fn get_params_for(&self, _model: &str) -> (String, String, String) {
-        ("mock_api_key".into(), "mock_endpoint".into(), "mock_model".into())
+        (
+            "mock_api_key".into(),
+            "mock_endpoint".into(),
+            "mock_model".into(),
+        )
     }
 
     fn breaker(&self) -> sisyphus_tools_llm::circuit_breaker::CircuitBreaker {
@@ -238,11 +242,10 @@ impl EvalRunner {
             }
             CheckType::Regex => {
                 if let Some(val) = &crit.expected_value {
-                    match Regex::new(val) { Ok(re) => {
-                        re.is_match(output_str)
-                    } _ => {
-                        false
-                    }}
+                    match Regex::new(val) {
+                        Ok(re) => re.is_match(output_str),
+                        _ => false,
+                    }
                 } else {
                     false
                 }

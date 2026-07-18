@@ -146,5 +146,8 @@ Instructions body
         result.is_err(),
         "Tool should be blocked by skill-defined hook"
     );
-    assert!(result.unwrap_err().to_string().contains("Blocked by skill integration"));
+    assert!(result
+        .unwrap_err()
+        .to_string()
+        .contains("Blocked by skill integration"));
 }

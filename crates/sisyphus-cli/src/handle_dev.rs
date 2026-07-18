@@ -28,9 +28,7 @@ pub(crate) async fn handle_dev(
     {
         Ok(Ok(report)) => {
             println!("{}", sisyphus_cli::tools::developer::format_report(&report));
-            if report.overall_status
-                == sisyphus_cli::tools::developer::DevOverallStatus::Success
-            {
+            if report.overall_status == sisyphus_cli::tools::developer::DevOverallStatus::Success {
                 println!("✅ Development completed successfully.");
             } else {
                 println!("⚠️  Development completed with issues.");

@@ -1,6 +1,6 @@
 use async_trait::async_trait;
-use std::sync::{Arc, Mutex};
 use sisyphus_types::{ToolExecutor, TypesError};
+use std::sync::{Arc, Mutex};
 
 /// Trait for calling a tool on the Jcode platform.
 #[async_trait]
@@ -27,6 +27,12 @@ impl JcodeToolExecutor {
     }
 }
 
+impl Default for JcodeToolExecutor {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[async_trait]
 impl ToolExecutor for JcodeToolExecutor {
     async fn execute(
@@ -45,7 +51,9 @@ impl ToolExecutor for JcodeToolExecutor {
                 Ok(result) => Ok(result),
                 Err(e) => Err(TypesError::NodeExecutionError(e)),
             },
-            None => Err(TypesError::NodeExecutionError("Jcode caller not yet initialized".into())),
+            None => Err(TypesError::NodeExecutionError(
+                "Jcode caller not yet initialized".into(),
+            )),
         }
     }
 }

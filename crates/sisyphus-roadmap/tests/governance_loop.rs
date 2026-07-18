@@ -31,7 +31,11 @@ impl LlmClient for MockLlmClient {
     }
 
     fn get_params_for(&self, _agent_id: &str) -> (String, String, String) {
-        ("mock_key".into(), "http://mock:8080".into(), "mock-model".into())
+        (
+            "mock_key".into(),
+            "http://mock:8080".into(),
+            "mock-model".into(),
+        )
     }
 
     fn breaker(&self) -> sisyphus_tools_llm::circuit_breaker::CircuitBreaker {
@@ -132,7 +136,9 @@ async fn test_strategic_governance_loop_detection() {
             .unwrap(),
     );
     sql_store.init_schema().await.unwrap();
-    let proposal_manager = Arc::new(sisyphus_roadmap::proposal_manager::ProposalManager::new(store.clone()));
+    let proposal_manager = Arc::new(sisyphus_roadmap::proposal_manager::ProposalManager::new(
+        store.clone(),
+    ));
     let manager = sisyphus_roadmap::RoadmapManager::new(store, sql_store, proposal_manager);
 
     manager

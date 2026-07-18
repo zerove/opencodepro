@@ -20,11 +20,9 @@ impl WorkOrchestrator {
 
         let mut set = JoinSet::new();
         for unit in units {
-            let permit = semaphore
-                .clone()
-                .acquire_owned()
-                .await
-                .map_err(|e| sisyphus_tools_core::ToolError::TodoError(format!("semaphore: {e}")))?;
+            let permit = semaphore.clone().acquire_owned().await.map_err(|e| {
+                sisyphus_tools_core::ToolError::TodoError(format!("semaphore: {e}"))
+            })?;
             set.spawn(async move {
                 let _permit = permit;
                 let start = Instant::now();

@@ -19,8 +19,7 @@ pub fn scroll_pct(pos: usize, total: usize) -> String {
     if total <= 1 {
         String::new()
     } else {
-        let pct =
-            (pos as f64 / (total.saturating_sub(1) as f64) * 100.0).round() as u8;
+        let pct = (pos as f64 / (total.saturating_sub(1) as f64) * 100.0).round() as u8;
         format!(" {pos}/{total} ({pct}%) ")
     }
 }
@@ -59,5 +58,3 @@ pub fn render_list(
         &mut ratatui::widgets::ListState::default().with_selected(Some(sel)),
     );
 }
-
-

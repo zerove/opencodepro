@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use petgraph::visit::EdgeRef;
 use rand::rngs::SmallRng;
 use rand::{Rng, SeedableRng};
 use serde::{Deserialize, Serialize};
@@ -7,7 +8,6 @@ use sisyphus_types::{ExecutionContext, SOPGraph};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Instant;
-use petgraph::visit::EdgeRef;
 
 // ---------------------------------------------------------------------------
 // Simulation types
@@ -67,7 +67,10 @@ pub trait Simulator: Send + Sync {
         goal_text: Option<&str>,
     ) -> Result<SimulationResult, String>;
 
-    async fn set_experience_bank(&self, _bank: Arc<dyn sisyphus_types::experience::ExperienceBank>) -> Result<(), String> {
+    async fn set_experience_bank(
+        &self,
+        _bank: Arc<dyn sisyphus_types::experience::ExperienceBank>,
+    ) -> Result<(), String> {
         Err("Experience bank not supported by this simulator".into())
     }
 }
@@ -109,20 +112,25 @@ impl LogicalSimulator for LlmLogicalSimulator {
         let mut virtual_context: HashMap<String, String> = HashMap::new();
         let mut flaws = Vec::new();
         let mut predicted_path = Vec::new();
-        
+
         // Process nodes in topological order
         let node_indices: Vec<_> = graph.graph.node_indices().collect();
         // Note: In a real implementation, we should use a proper topological sort.
         // For now, we assume the indices are roughly ordered or use petgraph's topo_sort.
-        
+
         for idx in node_indices {
-            let node_weight = graph.graph.node_weight(idx)
+            let node_weight = graph
+                .graph
+                .node_weight(idx)
                 .ok_or_else(|| "Node weight missing".to_string())?;
             let node_name = node_weight.name().to_string();
-            
+
             // Collect inputs from predecessors
             let mut inputs = HashMap::new();
-            for edge in graph.graph.edges_directed(idx, petgraph::Direction::Incoming) {
+            for edge in graph
+                .graph
+                .edges_directed(idx, petgraph::Direction::Incoming)
+            {
                 let source_idx = edge.source();
                 if let Some(source_weight) = graph.graph.node_weight(source_idx) {
                     let source_name = source_weight.name();
@@ -148,12 +156,22 @@ impl LogicalSimulator for LlmLogicalSimulator {
                 true
             ).await
                 .map_err(|e| format!("LLM failure: {}", e))?;
-            
+
             if let Ok(val) = serde_json::from_str::<serde_json::Value>(&response) {
-                let output = val.get("output").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let output = val
+                    .get("output")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
                 let flaw_desc = val.get("flaw").and_then(|v| v.as_str());
-                let severity_str = val.get("severity").and_then(|v| v.as_str()).unwrap_or("Info");
-                let confidence = val.get("confidence").and_then(|v| v.as_f64()).unwrap_or(0.5);
+                let severity_str = val
+                    .get("severity")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("Info");
+                let confidence = val
+                    .get("confidence")
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(0.5);
 
                 if let Some(desc) = flaw_desc {
                     let severity = match severity_str {
@@ -166,7 +184,7 @@ impl LogicalSimulator for LlmLogicalSimulator {
                         description: desc.to_string(),
                         severity,
                     });
-                    
+
                     if severity == FlawSeverity::Critical {
                         return Ok(LogicalSimulationResult {
                             is_valid: false,
@@ -176,14 +194,16 @@ impl LogicalSimulator for LlmLogicalSimulator {
                         });
                     }
                 }
-                
+
                 virtual_context.insert(node_name.clone(), output);
                 predicted_path.push(node_name);
             }
         }
 
-        let is_valid = !flaws.iter().any(|f| matches!(f.severity, FlawSeverity::Critical));
-        
+        let is_valid = !flaws
+            .iter()
+            .any(|f| matches!(f.severity, FlawSeverity::Critical));
+
         Ok(LogicalSimulationResult {
             is_valid,
             flaws,
@@ -198,7 +218,8 @@ struct MctsNode {
     visit_count: f64,
     total_reward: f64,
     total_cost: f64,
-    children: std::collections::HashMap<petgraph::graph::NodeIndex, Arc<std::sync::Mutex<MctsNode>>>,
+    children:
+        std::collections::HashMap<petgraph::graph::NodeIndex, Arc<std::sync::Mutex<MctsNode>>>,
 }
 
 impl MctsNode {
@@ -248,7 +269,10 @@ impl MonteCarloSimulator {
         }
     }
 
-    pub fn with_experience_bank(iterations: usize, bank: Arc<dyn sisyphus_types::experience::ExperienceBank>) -> Self {
+    pub fn with_experience_bank(
+        iterations: usize,
+        bank: Arc<dyn sisyphus_types::experience::ExperienceBank>,
+    ) -> Self {
         Self {
             iterations,
             state_store: None,
@@ -267,7 +291,14 @@ impl MonteCarloSimulator {
         num_nodes: usize,
         hist_success_rate: f64,
         rng: &mut SmallRng,
-    ) -> Result<(Vec<(petgraph::graph::NodeIndex, Arc<std::sync::Mutex<MctsNode>>)>, f64, f64), String> {
+    ) -> Result<
+        (
+            Vec<(petgraph::graph::NodeIndex, Arc<std::sync::Mutex<MctsNode>>)>,
+            f64,
+            f64,
+        ),
+        String,
+    > {
         let mut path = Vec::new();
         let mut current_node_arc = Arc::clone(&root);
         let mut current_idx = graph.start_node;
@@ -275,21 +306,48 @@ impl MonteCarloSimulator {
         // 1. Selection
         loop {
             let (next_idx, next_node_arc) = {
-                let probs = self.get_transition_probabilities(&graph, current_idx, project_id, &sop_id, goal_text.as_deref()).await;
-                if probs.is_empty() { break; }
+                let probs = self
+                    .get_transition_probabilities(
+                        &graph,
+                        current_idx,
+                        project_id,
+                        &sop_id,
+                        goal_text.as_deref(),
+                    )
+                    .await;
+                if probs.is_empty() {
+                    break;
+                }
 
-                let mut node = current_node_arc.lock().map_err(|_| "Lock poisoned".to_string())?;
-                let best_neighbor = probs.iter()
+                let mut node = current_node_arc
+                    .lock()
+                    .map_err(|_| "Lock poisoned".to_string())?;
+                let best_neighbor = probs
+                    .iter()
                     .max_by(|(a_idx, _a_prob), (b_idx, _b_prob)| {
-                        let val_a = node.children.get(a_idx)
-                            .map(|n| n.lock().map_err(|_| "Lock poisoned".to_string()).map(|ln| ln.ucb1(node.visit_count)))
+                        let val_a = node
+                            .children
+                            .get(a_idx)
+                            .map(|n| {
+                                n.lock()
+                                    .map_err(|_| "Lock poisoned".to_string())
+                                    .map(|ln| ln.ucb1(node.visit_count))
+                            })
                             .unwrap_or(Ok(f64::INFINITY));
-                        let val_b = node.children.get(b_idx)
-                            .map(|n| n.lock().map_err(|_| "Lock poisoned".to_string()).map(|ln| ln.ucb1(node.visit_count)))
+                        let val_b = node
+                            .children
+                            .get(b_idx)
+                            .map(|n| {
+                                n.lock()
+                                    .map_err(|_| "Lock poisoned".to_string())
+                                    .map(|ln| ln.ucb1(node.visit_count))
+                            })
                             .unwrap_or(Ok(f64::INFINITY));
-                        
+
                         match (val_a, val_b) {
-                            (Ok(a), Ok(b)) => a.partial_cmp(&b).unwrap_or(std::cmp::Ordering::Equal),
+                            (Ok(a), Ok(b)) => {
+                                a.partial_cmp(&b).unwrap_or(std::cmp::Ordering::Equal)
+                            }
                             (Ok(_), Err(_)) => std::cmp::Ordering::Greater,
                             (Err(_), Ok(_)) => std::cmp::Ordering::Less,
                             (Err(_), Err(_)) => std::cmp::Ordering::Equal,
@@ -298,7 +356,9 @@ impl MonteCarloSimulator {
                     .map(|(idx, _)| *idx)
                     .ok_or_else(|| "No best neighbor found".to_string())?;
 
-                let next_node = node.children.entry(best_neighbor)
+                let next_node = node
+                    .children
+                    .entry(best_neighbor)
                     .or_insert_with(|| Arc::new(std::sync::Mutex::new(MctsNode::new())))
                     .clone();
                 (best_neighbor, next_node)
@@ -312,11 +372,21 @@ impl MonteCarloSimulator {
         let mut sim_prob = 1.0;
         let mut sim_cost = 0u64;
         let mut sim_current = current_idx;
-        
+
         for _ in 0..num_nodes {
-            let probs = self.get_transition_probabilities(&graph, sim_current, project_id, &sop_id, goal_text.as_deref()).await;
-            if probs.is_empty() { break; }
-            
+            let probs = self
+                .get_transition_probabilities(
+                    &graph,
+                    sim_current,
+                    project_id,
+                    &sop_id,
+                    goal_text.as_deref(),
+                )
+                .await;
+            if probs.is_empty() {
+                break;
+            }
+
             let mut r = rng.gen::<f64>();
             let mut next_node = None;
             for (idx, prob) in &probs {
@@ -327,12 +397,20 @@ impl MonteCarloSimulator {
                 r -= prob;
             }
             sim_current = next_node.unwrap_or(sim_current);
-            
-            let node_weight = graph.graph.node_weight(sim_current).ok_or("Node weight not found")?;
-            let cost = if let Some(wasm) = node_weight.as_any().downcast_ref::<sisyphus_types::WasmSOPNode>() {
+
+            let node_weight = graph
+                .graph
+                .node_weight(sim_current)
+                .ok_or("Node weight not found")?;
+            let cost = if let Some(wasm) = node_weight
+                .as_any()
+                .downcast_ref::<sisyphus_types::WasmSOPNode>()
+            {
                 wasm.fuel_limit
-            } else { 10 };
-            
+            } else {
+                10
+            };
+
             sim_cost += cost;
             sim_prob *= 0.9 * hist_success_rate + 0.1 * 0.9;
         }
@@ -355,13 +433,24 @@ impl MonteCarloSimulator {
             None => return probs,
         };
 
-        if let Some(branch_node) = node_weight.as_any().downcast_ref::<sisyphus_types::BranchSOPNode>() {
+        if let Some(branch_node) = node_weight
+            .as_any()
+            .downcast_ref::<sisyphus_types::BranchSOPNode>()
+        {
             let mut total_weight = 0.0;
             let mut weights = std::collections::HashMap::new();
 
             if let Some(ref store) = self.state_store {
-                if let Ok(Some(val)) = store.get_state_json(project_id, &format!("history:node:{}:{:?}", sop_id, node_idx)).await {
-                    if let Ok(dist) = serde_json::from_value::<std::collections::HashMap<String, f64>>(val) {
+                if let Ok(Some(val)) = store
+                    .get_state_json(
+                        project_id,
+                        &format!("history:node:{}:{:?}", sop_id, node_idx),
+                    )
+                    .await
+                {
+                    if let Ok(dist) =
+                        serde_json::from_value::<std::collections::HashMap<String, f64>>(val)
+                    {
                         for (output, prob) in dist {
                             if let Some(&next_idx_usize) = branch_node.branches.get(&output) {
                                 let next_idx = petgraph::graph::NodeIndex::new(next_idx_usize);
@@ -370,7 +459,10 @@ impl MonteCarloSimulator {
                             }
                         }
                         let default_prob = (1.0 - total_weight).max(0.0);
-                        weights.insert(petgraph::graph::NodeIndex::new(branch_node.default_next), default_prob);
+                        weights.insert(
+                            petgraph::graph::NodeIndex::new(branch_node.default_next),
+                            default_prob,
+                        );
                         total_weight += default_prob;
 
                         // Bias weights based on historical experience from the bank
@@ -387,11 +479,12 @@ impl MonteCarloSimulator {
                             };
                             if let Ok(experiences) = bank.query_similar(query).await {
                                 let total_exp = experiences.len() as f64;
-                                let successes = experiences.iter().filter(|e| e.outcome_success).count() as f64;
+                                let successes =
+                                    experiences.iter().filter(|e| e.outcome_success).count() as f64;
                                 let rate = successes / total_exp.max(1.0);
-                                
+
                                 for weight in weights.values_mut() {
-                                    *weight *= 0.5 + rate ;
+                                    *weight *= 0.5 + rate;
                                 }
                             }
                         }
@@ -403,9 +496,15 @@ impl MonteCarloSimulator {
                 let branch_count = branch_node.branches.len() + 1;
                 let uniform_prob = 1.0 / branch_count as f64;
                 for &next_idx_usize in branch_node.branches.values() {
-                    weights.insert(petgraph::graph::NodeIndex::new(next_idx_usize), uniform_prob);
+                    weights.insert(
+                        petgraph::graph::NodeIndex::new(next_idx_usize),
+                        uniform_prob,
+                    );
                 }
-                weights.insert(petgraph::graph::NodeIndex::new(branch_node.default_next), uniform_prob);
+                weights.insert(
+                    petgraph::graph::NodeIndex::new(branch_node.default_next),
+                    uniform_prob,
+                );
                 total_weight = 1.0;
             }
 
@@ -461,21 +560,30 @@ impl Simulator for MonteCarloSimulator {
             let history_key = format!("history:{}", sop_id);
             match store.get_state_json(project_id, &history_key).await {
                 Ok(Some(val)) => {
-                    if let Ok(hist) = serde_json::from_value::<sisyphus_types::ExecutionHistory>(val) {
+                    if let Ok(hist) =
+                        serde_json::from_value::<sisyphus_types::ExecutionHistory>(val)
+                    {
                         let total = hist.records.len() as f64;
                         let successes = hist.records.iter().filter(|r| r.success).count() as f64;
                         let avg_cost = if !hist.records.is_empty() {
-                            hist.records.iter().map(|r| r.cost).sum::<u64>() / hist.records.len() as u64
-                        } else { 0 };
+                            hist.records.iter().map(|r| r.cost).sum::<u64>()
+                                / hist.records.len() as u64
+                        } else {
+                            0
+                        };
                         (successes / total.max(1.0), avg_cost)
-                    } else { (0.5, 100u64) }
+                    } else {
+                        (0.5, 100u64)
+                    }
                 }
                 _ => (0.5, 100u64),
             }
-        } else { (0.5, 100u64) };
+        } else {
+            (0.5, 100u64)
+        };
 
         let root = Arc::new(std::sync::Mutex::new(MctsNode::new()));
-        
+
         // --- Parallel Batched Simulation ---
         let batch_size = 100;
         let num_batches = self.iterations.div_ceil(batch_size);
@@ -491,10 +599,16 @@ impl Simulator for MonteCarloSimulator {
             } else {
                 batch_size
             };
-            if iterations_in_batch == 0 && self.iterations > 0 { continue; }
-            let iterations_in_batch = if iterations_in_batch == 0 { batch_size } else { iterations_in_batch };
+            if iterations_in_batch == 0 && self.iterations > 0 {
+                continue;
+            }
+            let iterations_in_batch = if iterations_in_batch == 0 {
+                batch_size
+            } else {
+                iterations_in_batch
+            };
 
-            let simulator_ref = self.clone(); 
+            let simulator_ref = self.clone();
 
             let p_id = project_id_owned.clone();
             batch_handles.push(tokio::spawn(async move {
@@ -502,16 +616,19 @@ impl Simulator for MonteCarloSimulator {
                 let mut batch_results = Vec::new();
 
                 for _ in 0..iterations_in_batch {
-                    if let Ok(res) = simulator_ref.simulate_one_path(
-                        Arc::clone(&graph_clone),
-                        Arc::clone(&root_clone),
-                        &p_id,
-                        Arc::clone(&sop_id_clone),
-                        goal_text_clone.clone(),
-                        num_nodes,
-                        hist_success_rate,
-                        &mut local_rng,
-                    ).await {
+                    if let Ok(res) = simulator_ref
+                        .simulate_one_path(
+                            Arc::clone(&graph_clone),
+                            Arc::clone(&root_clone),
+                            &p_id,
+                            Arc::clone(&sop_id_clone),
+                            goal_text_clone.clone(),
+                            num_nodes,
+                            hist_success_rate,
+                            &mut local_rng,
+                        )
+                        .await
+                    {
                         batch_results.push(res);
                     }
                 }
@@ -545,22 +662,48 @@ impl Simulator for MonteCarloSimulator {
         loop {
             let next = {
                 let node = curr_node_arc.lock().unwrap_or_else(|e| e.into_inner());
-                node.children.iter()
-                    .max_by(|a, b| a.1.lock().unwrap_or_else(|e| e.into_inner()).visit_count.partial_cmp(&b.1.lock().unwrap_or_else(|e| e.into_inner()).visit_count).unwrap_or(std::cmp::Ordering::Equal))
+                node.children
+                    .iter()
+                    .max_by(|a, b| {
+                        a.1.lock()
+                            .unwrap_or_else(|e| e.into_inner())
+                            .visit_count
+                            .partial_cmp(&b.1.lock().unwrap_or_else(|e| e.into_inner()).visit_count)
+                            .unwrap_or(std::cmp::Ordering::Equal)
+                    })
                     .map(|(idx, node)| (*idx, Arc::clone(node)))
             };
             if let Some((idx, node)) = next {
-                best_path.push(graph.graph.node_weight(curr_idx).map(|n| n.name().to_string()).unwrap_or_default());
+                best_path.push(
+                    graph
+                        .graph
+                        .node_weight(curr_idx)
+                        .map(|n| n.name().to_string())
+                        .unwrap_or_default(),
+                );
                 curr_idx = idx;
                 curr_node_arc = node;
                 let node_weight = graph.graph.node_weight(curr_idx);
                 total_cost += if let Some(weight) = node_weight {
-                    if let Some(wasm) = weight.as_any().downcast_ref::<sisyphus_types::WasmSOPNode>() {
+                    if let Some(wasm) = weight
+                        .as_any()
+                        .downcast_ref::<sisyphus_types::WasmSOPNode>()
+                    {
                         wasm.fuel_limit
-                    } else { 10 }
-                } else { 10 };
+                    } else {
+                        10
+                    }
+                } else {
+                    10
+                };
             } else {
-                best_path.push(graph.graph.node_weight(curr_idx).map(|n| n.name().to_string()).unwrap_or_default());
+                best_path.push(
+                    graph
+                        .graph
+                        .node_weight(curr_idx)
+                        .map(|n| n.name().to_string())
+                        .unwrap_or_default(),
+                );
                 break;
             }
         }
@@ -570,9 +713,11 @@ impl Simulator for MonteCarloSimulator {
             let root_node = root.lock().unwrap_or_else(|e| e.into_inner());
             if root_node.visit_count > 0.0 {
                 root_node.total_reward / root_node.visit_count
-            } else { 0.0 }
+            } else {
+                0.0
+            }
         };
-        
+
         let duration = start.elapsed();
         tracing::info!(path_id = %best_path_str, success_probability = max_score, estimated_cost = total_cost, duration_ms = duration.as_millis(), "Parallel MCTS Simulation completed");
 
@@ -583,8 +728,11 @@ impl Simulator for MonteCarloSimulator {
             success_probability: max_score.max(0.0),
             estimated_cost: total_cost,
             predicted_stability: 1.0 - (max_score * 0.1), // Simple heuristic: higher success usually means higher stability
-            predicted_effort: total_cost / 100, // Simplified effort metric
-            predicted_outcome: format!("Parallel MCTS: {} iterations, batches={}", self.iterations, num_batches),
+            predicted_effort: total_cost / 100,           // Simplified effort metric
+            predicted_outcome: format!(
+                "Parallel MCTS: {} iterations, batches={}",
+                self.iterations, num_batches
+            ),
         })
     }
 }
@@ -609,13 +757,22 @@ mod tests {
         struct DummyExecutor;
         #[async_trait::async_trait]
         impl sisyphus_types::ToolExecutor for DummyExecutor {
-            async fn execute(&self, _: &str, _: Vec<u8>, _: u64) -> Result<Vec<u8>, sisyphus_types::TypesError> {
+            async fn execute(
+                &self,
+                _: &str,
+                _: Vec<u8>,
+                _: u64,
+            ) -> Result<Vec<u8>, sisyphus_types::TypesError> {
                 Ok(vec![])
             }
         }
         #[async_trait::async_trait]
         impl sisyphus_types::TestExecutor for DummyExecutor {
-            async fn run_test(&self, _: &str, _: Option<&str>) -> Result<sisyphus_types::TestResult, sisyphus_types::TypesError> {
+            async fn run_test(
+                &self,
+                _: &str,
+                _: Option<&str>,
+            ) -> Result<sisyphus_types::TestResult, sisyphus_types::TypesError> {
                 Ok(sisyphus_types::TestResult {
                     success: true,
                     stdout: "".to_string(),
@@ -639,11 +796,19 @@ mod tests {
         });
         let config: sisyphus_types::SOPGraphConfig = serde_json::from_value(config_val).unwrap();
         let dummy_exec = Arc::new(DummyExecutor);
-        let graph = SOPGraph::from_config(&config, Arc::new(sisyphus_types::ExecutorRouter::new(dummy_exec.clone())), dummy_exec).unwrap();
-        
+        let graph = SOPGraph::from_config(
+            &config,
+            Arc::new(sisyphus_types::ExecutorRouter::new(dummy_exec.clone())),
+            dummy_exec,
+        )
+        .unwrap();
+
         let sim = MonteCarloSimulator::new(100);
         let ctx = ExecutionContext::new();
-        let result = sim.simulate(graph.clone(), &ctx, "branch-test", None).await.unwrap();
+        let result = sim
+            .simulate(graph.clone(), &ctx, "branch-test", None)
+            .await
+            .unwrap();
         assert!(result.success_probability >= 0.0 && result.success_probability <= 1.0);
     }
 }

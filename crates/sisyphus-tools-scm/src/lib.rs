@@ -8,12 +8,12 @@ pub mod hashline;
 pub mod patch;
 
 pub use git::{
-    BranchInfo, CommitEntry, FileStatus, GitCommitLog, GitStatus, add, branch, checkout, commit,
-    current_branch, diff, init, last_commit_diff, log, pull, push, status, summary,
+    add, branch, checkout, commit, current_branch, diff, init, last_commit_diff, log, pull, push,
+    status, summary, BranchInfo, CommitEntry, FileStatus, GitCommitLog, GitStatus,
 };
 pub use github::{
-    CiConfig, GenerateOptions, WorkflowKind, ci_environment, generate_workflow, is_ci,
-    post_pr_comment, validate_workflow_yaml, write_workflow,
+    ci_environment, generate_workflow, is_ci, post_pr_comment, validate_workflow_yaml,
+    write_workflow, CiConfig, GenerateOptions, WorkflowKind,
 };
 pub use patch::apply_patch;
 
@@ -37,4 +37,3 @@ mod tests {
         assert_eq!(data.content_hash, "a1b2c3d4");
     }
 }
-

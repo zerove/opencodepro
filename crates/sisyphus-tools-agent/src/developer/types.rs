@@ -12,9 +12,16 @@ pub enum DevAction {
     /// Create a new file
     CreateFile { path: String, content: String },
     /// Edit an existing file (replace old_string with new_string)
-    EditFile { path: String, old_string: String, new_string: String },
+    EditFile {
+        path: String,
+        old_string: String,
+        new_string: String,
+    },
     /// Run a shell command in a directory
-    RunCommand { command: String, dir: Option<String> },
+    RunCommand {
+        command: String,
+        dir: Option<String>,
+    },
     /// Read a file for analysis
     ReadFile { path: String },
     /// Multiple granular edits described in natural language — LLM will decompose

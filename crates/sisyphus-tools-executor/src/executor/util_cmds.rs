@@ -10,12 +10,13 @@ pub async fn cmd_git_blame(args: Value) -> Result<Vec<u8>, sisyphus_types::Types
             details: "Missing required param: path (string)".to_string(),
         }
     })?;
-    let line = args.get("line").and_then(serde_json::Value::as_i64).ok_or_else(|| {
-        sisyphus_types::TypesError::ToolExecutionError {
+    let line = args
+        .get("line")
+        .and_then(serde_json::Value::as_i64)
+        .ok_or_else(|| sisyphus_types::TypesError::ToolExecutionError {
             tool_id: "git_blame".to_string(),
             details: "Missing required param: line (number)".to_string(),
-        }
-    })?;
+        })?;
 
     let cmd = format!("git blame -L {line},{line} --porcelain {path}");
     let output = tokio::process::Command::new("sh")
@@ -29,12 +30,14 @@ pub async fn cmd_git_blame(args: Value) -> Result<Vec<u8>, sisyphus_types::Types
         })?;
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    let first_line = stdout.lines().next().ok_or_else(|| {
-        sisyphus_types::TypesError::ToolExecutionError {
-            tool_id: "git_blame".to_string(),
-            details: "No output from git blame".to_string(),
-        }
-    })?;
+    let first_line =
+        stdout
+            .lines()
+            .next()
+            .ok_or_else(|| sisyphus_types::TypesError::ToolExecutionError {
+                tool_id: "git_blame".to_string(),
+                details: "No output from git blame".to_string(),
+            })?;
 
     let commit_hash = first_line.split(' ').next().unwrap_or("");
 
@@ -55,7 +58,8 @@ pub async fn cmd_git_blame(args: Value) -> Result<Vec<u8>, sisyphus_types::Types
         "commit": commit_hash,
         "message": commit_msg,
         "line": line
-    })).unwrap())
+    }))
+    .unwrap())
 }
 
 pub async fn cmd_type_check(args: Value) -> Result<Vec<u8>, sisyphus_types::TypesError> {
@@ -67,10 +71,13 @@ pub async fn cmd_type_check(args: Value) -> Result<Vec<u8>, sisyphus_types::Type
     }
     cmd.arg("--message-format=json");
 
-    let output = cmd.output().await.map_err(|e| sisyphus_types::TypesError::ToolExecutionError {
-        tool_id: "type_check".to_string(),
-        details: format!("Cargo check failed to start: {e}"),
-    })?;
+    let output =
+        cmd.output()
+            .await
+            .map_err(|e| sisyphus_types::TypesError::ToolExecutionError {
+                tool_id: "type_check".to_string(),
+                details: format!("Cargo check failed to start: {e}"),
+            })?;
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let mut errors = Vec::new();
@@ -89,7 +96,8 @@ pub async fn cmd_type_check(args: Value) -> Result<Vec<u8>, sisyphus_types::Type
         "success": output.status.success(),
         "errors": errors,
         "exit_code": output.status.code()
-    })).unwrap())
+    }))
+    .unwrap())
 }
 
 pub async fn cmd_lsp_symbol_search(
@@ -130,9 +138,11 @@ pub async fn cmd_dependency_graph(args: Value) -> Result<Vec<u8>, sisyphus_types
         }
     })?;
 
-    let content = tokio::fs::read_to_string(path).await.map_err(|e| sisyphus_types::TypesError::ToolExecutionError {
-        tool_id: "dependency_graph".to_string(),
-        details: format!("Failed to read file: {e}"),
+    let content = tokio::fs::read_to_string(path).await.map_err(|e| {
+        sisyphus_types::TypesError::ToolExecutionError {
+            tool_id: "dependency_graph".to_string(),
+            details: format!("Failed to read file: {e}"),
+        }
     })?;
 
     let mut edges = Vec::new();
@@ -150,36 +160,47 @@ pub async fn cmd_dependency_graph(args: Value) -> Result<Vec<u8>, sisyphus_types
     Ok(serde_json::to_vec(&json!({ "mermaid": mermaid })).unwrap())
 }
 
-pub async fn cmd_doc_sync_check(client: &std::sync::Arc<dyn sisyphus_tools_llm::metis::LlmClient>, args: Value) -> Result<Vec<u8>, sisyphus_types::TypesError> {
-    let code_path = args.get("code_path").and_then(|p| p.as_str()).ok_or_else(|| {
-        sisyphus_types::TypesError::ToolExecutionError {
+pub async fn cmd_doc_sync_check(
+    client: &std::sync::Arc<dyn sisyphus_tools_llm::metis::LlmClient>,
+    args: Value,
+) -> Result<Vec<u8>, sisyphus_types::TypesError> {
+    let code_path = args
+        .get("code_path")
+        .and_then(|p| p.as_str())
+        .ok_or_else(|| sisyphus_types::TypesError::ToolExecutionError {
             tool_id: "doc_sync_check".to_string(),
             details: "Missing required param: code_path (string)".to_string(),
-        }
-    })?;
-    let doc_path = args.get("doc_path").and_then(|p| p.as_str()).ok_or_else(|| {
-        sisyphus_types::TypesError::ToolExecutionError {
+        })?;
+    let doc_path = args
+        .get("doc_path")
+        .and_then(|p| p.as_str())
+        .ok_or_else(|| sisyphus_types::TypesError::ToolExecutionError {
             tool_id: "doc_sync_check".to_string(),
             details: "Missing required param: doc_path (string)".to_string(),
+        })?;
+
+    let code = tokio::fs::read_to_string(code_path).await.map_err(|e| {
+        sisyphus_types::TypesError::ToolExecutionError {
+            tool_id: "doc_sync_check".to_string(),
+            details: format!("Failed to read code: {e}"),
         }
     })?;
-
-    let code = tokio::fs::read_to_string(code_path).await.map_err(|e| sisyphus_types::TypesError::ToolExecutionError {
-        tool_id: "doc_sync_check".to_string(),
-        details: format!("Failed to read code: {e}"),
-    })?;
-    let doc = tokio::fs::read_to_string(doc_path).await.map_err(|e| sisyphus_types::TypesError::ToolExecutionError {
-        tool_id: "doc_sync_check".to_string(),
-        details: format!("Failed to read doc: {e}"),
+    let doc = tokio::fs::read_to_string(doc_path).await.map_err(|e| {
+        sisyphus_types::TypesError::ToolExecutionError {
+            tool_id: "doc_sync_check".to_string(),
+            details: format!("Failed to read doc: {e}"),
+        }
     })?;
 
     let prompt = format!(
         "Analyze the following code and its corresponding documentation for inconsistencies.\n\nCODE:\n{code}\n\nDOCS:\n{doc}\n\nReport any discrepancies in parameters, return types, or behavior. If consistent, return 'CONSISTENT'."
     );
 
-    let analysis = client.generate(&prompt).await.map_err(|e| sisyphus_types::TypesError::ToolExecutionError {
-        tool_id: "doc_sync_check".to_string(),
-        details: format!("LLM analysis failed: {e}"),
+    let analysis = client.generate(&prompt).await.map_err(|e| {
+        sisyphus_types::TypesError::ToolExecutionError {
+            tool_id: "doc_sync_check".to_string(),
+            details: format!("LLM analysis failed: {e}"),
+        }
     })?;
 
     Ok(serde_json::to_vec(&json!({ "analysis": analysis, "is_consistent": analysis.to_uppercase().contains("CONSISTENT") })).unwrap())
@@ -199,21 +220,27 @@ pub fn cmd_json_query(args: Value) -> Result<Vec<u8>, sisyphus_types::TypesError
         }
     })?;
 
-    let value: Value = serde_json::from_str(json_str).map_err(|e| sisyphus_types::TypesError::ToolExecutionError {
-        tool_id: "json_query".to_string(),
-        details: format!("Invalid JSON: {e}"),
+    let value: Value = serde_json::from_str(json_str).map_err(|e| {
+        sisyphus_types::TypesError::ToolExecutionError {
+            tool_id: "json_query".to_string(),
+            details: format!("Invalid JSON: {e}"),
+        }
     })?;
 
     let mut current = &value;
     for part in path.split('.') {
-        if part.is_empty() { continue; }
+        if part.is_empty() {
+            continue;
+        }
         if part.contains('[') && part.ends_with(']') {
             let open_bracket = part.find('[').unwrap();
             let key = &part[..open_bracket];
             let index_str = &part[open_bracket + 1..part.len() - 1];
-            let index = index_str.parse::<usize>().map_err(|e| sisyphus_types::TypesError::ToolExecutionError {
-                tool_id: "json_query".to_string(),
-                details: format!("Invalid array index: {e}"),
+            let index = index_str.parse::<usize>().map_err(|e| {
+                sisyphus_types::TypesError::ToolExecutionError {
+                    tool_id: "json_query".to_string(),
+                    details: format!("Invalid array index: {e}"),
+                }
             })?;
 
             current = current.get(key).and_then(|v| v.get(index)).ok_or_else(|| {
@@ -238,7 +265,10 @@ pub fn cmd_json_query(args: Value) -> Result<Vec<u8>, sisyphus_types::TypesError
 pub fn cmd_base64_convert(args: Value) -> Result<Vec<u8>, sisyphus_types::TypesError> {
     use base64::{engine::general_purpose, Engine as _};
 
-    let mode = args.get("mode").and_then(|m| m.as_str()).unwrap_or("encode");
+    let mode = args
+        .get("mode")
+        .and_then(|m| m.as_str())
+        .unwrap_or("encode");
     let input = args.get("input").and_then(|i| i.as_str()).ok_or_else(|| {
         sisyphus_types::TypesError::ToolExecutionError {
             tool_id: "base64_convert".to_string(),
@@ -247,7 +277,9 @@ pub fn cmd_base64_convert(args: Value) -> Result<Vec<u8>, sisyphus_types::TypesE
     })?;
 
     let result = if mode == "decode" {
-        general_purpose::STANDARD.decode(input).map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
+        general_purpose::STANDARD
+            .decode(input)
+            .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
             .map_err(|e| sisyphus_types::TypesError::ToolExecutionError {
                 tool_id: "base64_convert".to_string(),
                 details: format!("Base64 decode error: {e}"),
@@ -260,7 +292,7 @@ pub fn cmd_base64_convert(args: Value) -> Result<Vec<u8>, sisyphus_types::TypesE
 }
 
 pub fn cmd_time_convert(args: Value) -> Result<Vec<u8>, sisyphus_types::TypesError> {
-    use chrono::{DateTime, Utc, Local};
+    use chrono::{DateTime, Local, Utc};
 
     let time_str = args.get("time").and_then(|t| t.as_str()).ok_or_else(|| {
         sisyphus_types::TypesError::ToolExecutionError {
@@ -269,28 +301,38 @@ pub fn cmd_time_convert(args: Value) -> Result<Vec<u8>, sisyphus_types::TypesErr
         }
     })?;
 
-    let target_tz = args.get("timezone").and_then(|tz| tz.as_str()).unwrap_or("UTC");
+    let target_tz = args
+        .get("timezone")
+        .and_then(|tz| tz.as_str())
+        .unwrap_or("UTC");
 
     // Try to parse ISO 8601
-    let dt = DateTime::parse_from_rfc3339(time_str).map_err(|e| sisyphus_types::TypesError::ToolExecutionError {
-        tool_id: "time_convert".to_string(),
-        details: format!("Invalid ISO 8601 time: {e}"),
-    })?.with_timezone(&Utc);
+    let dt = DateTime::parse_from_rfc3339(time_str)
+        .map_err(|e| sisyphus_types::TypesError::ToolExecutionError {
+            tool_id: "time_convert".to_string(),
+            details: format!("Invalid ISO 8601 time: {e}"),
+        })?
+        .with_timezone(&Utc);
 
     let result = match target_tz {
         "UTC" => dt.to_rfc3339(),
         "Local" => dt.with_timezone(&Local).to_rfc3339(),
-        _ => return Err(sisyphus_types::TypesError::ToolExecutionError {
-            tool_id: "time_convert".to_string(),
-            details: format!("Unsupported timezone: {target_tz}"),
-        }),
+        _ => {
+            return Err(sisyphus_types::TypesError::ToolExecutionError {
+                tool_id: "time_convert".to_string(),
+                details: format!("Unsupported timezone: {target_tz}"),
+            })
+        }
     };
 
     Ok(serde_json::to_vec(&json!({ "converted_time": result })).unwrap())
 }
 
 pub fn cmd_url_convert(args: Value) -> Result<Vec<u8>, sisyphus_types::TypesError> {
-    let mode = args.get("mode").and_then(|m| m.as_str()).unwrap_or("encode");
+    let mode = args
+        .get("mode")
+        .and_then(|m| m.as_str())
+        .unwrap_or("encode");
     let input = args.get("input").and_then(|i| i.as_str()).ok_or_else(|| {
         sisyphus_types::TypesError::ToolExecutionError {
             tool_id: "url_convert".to_string(),
@@ -299,10 +341,12 @@ pub fn cmd_url_convert(args: Value) -> Result<Vec<u8>, sisyphus_types::TypesErro
     })?;
 
     let result = if mode == "decode" {
-        urlencoding::decode(input).map(std::borrow::Cow::into_owned).map_err(|e| sisyphus_types::TypesError::ToolExecutionError {
-            tool_id: "url_convert".to_string(),
-            details: format!("URL decode error: {e}"),
-        })?
+        urlencoding::decode(input)
+            .map(std::borrow::Cow::into_owned)
+            .map_err(|e| sisyphus_types::TypesError::ToolExecutionError {
+                tool_id: "url_convert".to_string(),
+                details: format!("URL decode error: {e}"),
+            })?
     } else {
         urlencoding::encode(input).into_owned()
     };
@@ -329,7 +373,10 @@ pub fn cmd_path_expand(args: Value) -> Result<Vec<u8>, sisyphus_types::TypesErro
 }
 
 pub async fn cmd_coverage_analyze(args: Value) -> Result<Vec<u8>, sisyphus_types::TypesError> {
-    let package = args.get("package").and_then(|p| p.as_str()).unwrap_or("all");
+    let package = args
+        .get("package")
+        .and_then(|p| p.as_str())
+        .unwrap_or("all");
 
     // 尝试运行 cargo llvm-cov (如果安装了)
     let mut cmd = tokio::process::Command::new("cargo");
@@ -338,10 +385,13 @@ pub async fn cmd_coverage_analyze(args: Value) -> Result<Vec<u8>, sisyphus_types
         cmd.arg("-p").arg(package);
     }
 
-    let output = cmd.output().await.map_err(|e| sisyphus_types::TypesError::ToolExecutionError {
-        tool_id: "coverage_analyze".to_string(),
-        details: format!("Failed to execute llvm-cov: {e}"),
-    })?;
+    let output =
+        cmd.output()
+            .await
+            .map_err(|e| sisyphus_types::TypesError::ToolExecutionError {
+                tool_id: "coverage_analyze".to_string(),
+                details: format!("Failed to execute llvm-cov: {e}"),
+            })?;
 
     let stdout = String::from_utf8_lossy(&output.stdout);
 
@@ -359,5 +409,6 @@ pub async fn cmd_coverage_analyze(args: Value) -> Result<Vec<u8>, sisyphus_types
     Ok(serde_json::to_vec(&json!({
         "status": "success",
         "coverage_data": stdout,
-    })).unwrap())
+    }))
+    .unwrap())
 }

@@ -1,9 +1,9 @@
-use std::sync::Arc;
-use async_trait::async_trait;
-use sisyphus_types::{RuntimeSupervisor, SupervisorDecision, ExecutionContext, NodeOutput};
-use sisyphus_types::SOPGraph;
 use crate::reflect::Reflector;
 use crate::simulation::SimulationResult;
+use async_trait::async_trait;
+use sisyphus_types::SOPGraph;
+use sisyphus_types::{ExecutionContext, NodeOutput, RuntimeSupervisor, SupervisorDecision};
+use std::sync::Arc;
 
 /// A concrete implementation of `RuntimeSupervisor` that uses the `Reflector`
 /// to detect runtime deviations from a predicted execution path.
@@ -39,16 +39,20 @@ impl SisyphusSupervisor {
     fn build_trace(&self, ctx: &ExecutionContext) -> String {
         let trace_points = ctx.trace.read().map(|t| t.clone()).unwrap_or_default();
         let mut lines = Vec::new();
-        
+
         for point in trace_points {
-            let status = if point.output_summary.contains("Error") || point.output_summary.contains("ResourceExhausted") {
+            let status = if point.output_summary.contains("Error")
+                || point.output_summary.contains("ResourceExhausted")
+            {
                 "error"
             } else {
                 "ok"
             };
-            
-            lines.push(format!(r#"{{"node": "{}", "status": "{}", "output": "{}"}}"#, 
-                point.node_name, status, point.output_summary));
+
+            lines.push(format!(
+                r#"{{"node": "{}", "status": "{}", "output": "{}"}}"#,
+                point.node_name, status, point.output_summary
+            ));
         }
         lines.join("\n")
     }
@@ -66,19 +70,20 @@ impl RuntimeSupervisor for SisyphusSupervisor {
 
         // 1. Fast Heuristic Reflection (Layer 1)
         let output_str = output.0.as_str().unwrap_or("");
-        let is_obvious_error = output_str.contains("Error") 
-            || output_str.contains("Failed") 
+        let is_obvious_error = output_str.contains("Error")
+            || output_str.contains("Failed")
             || output_str.contains("Exception")
             || output_str.contains("ResourceExhausted");
 
-        if !is_obvious_error && !output_str.is_empty() && self.prediction.success_probability >= 0.5 {
+        if !is_obvious_error && !output_str.is_empty() && self.prediction.success_probability >= 0.5
+        {
             tracing::info!(node = %node_name, "Fast-track: node output appears healthy, skipping LLM reflection");
             return Ok(SupervisorDecision::Continue { deviation: 0.05 });
         }
 
         // 2. Build a current trace of the execution
         let trace = self.build_trace(&ctx);
-        
+
         // Retrieve semantic experiences for the current goal and node
         let exp_query = sisyphus_types::experience::ExperienceQuery {
             query_text: self.goal_text.clone(),
@@ -91,7 +96,10 @@ impl RuntimeSupervisor for SisyphusSupervisor {
         let experiences = self.experience_bank.query_similar(exp_query).await.ok();
 
         // 2. Reflect on the current state vs the prediction
-        let reflection = self.reflector.reflect(&trace, &self.prediction, experiences.as_deref()).await
+        let reflection = self
+            .reflector
+            .reflect(&trace, &self.prediction, experiences.as_deref())
+            .await
             .map_err(|e| format!("Reflection error during runtime supervision: {}", e))?;
 
         tracing::info!(
@@ -112,7 +120,7 @@ impl RuntimeSupervisor for SisyphusSupervisor {
                 node = %node_name,
                 "Runtime deviation threshold exceeded! Triggering Strategic Pivot."
             );
-            
+
             return Ok(SupervisorDecision::Pivot {
                 reason: format!(
                     "Node {} produced output with deviation score {:.2} (effective threshold {:.2}, base {:.2})",
@@ -122,6 +130,8 @@ impl RuntimeSupervisor for SisyphusSupervisor {
             });
         }
 
-        Ok(SupervisorDecision::Continue { deviation: reflection.deviation_score })
+        Ok(SupervisorDecision::Continue {
+            deviation: reflection.deviation_score,
+        })
     }
 }

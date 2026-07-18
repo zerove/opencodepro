@@ -110,9 +110,7 @@ impl LlmProvider for AnthropicProvider {
                     .and_then(|c| c["text"].as_str())
             })
             .map(std::string::ToString::to_string)
-            .ok_or_else(|| {
-                ProviderError::Permanent("Response missing text content".to_string())
-            })?;
+            .ok_or_else(|| ProviderError::Permanent("Response missing text content".to_string()))?;
 
         let model = response_json["model"]
             .as_str()

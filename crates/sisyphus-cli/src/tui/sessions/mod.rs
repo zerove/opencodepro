@@ -80,8 +80,7 @@ pub fn handle_sessions_key(key: KeyEvent, app: &mut App) {
                 // === Arrow navigation ===
                 KeyCode::Left => app.session_cursor = app.session_cursor.saturating_sub(1),
                 KeyCode::Right => {
-                    app.session_cursor =
-                        (app.session_cursor + 1).min(app.session_input.len())
+                    app.session_cursor = (app.session_cursor + 1).min(app.session_input.len())
                 }
                 KeyCode::Home => app.session_cursor = 0,
                 KeyCode::End => app.session_cursor = app.session_input.len(),
@@ -121,7 +120,10 @@ pub fn handle_sessions_key(key: KeyEvent, app: &mut App) {
                     editing::update_slash_suggestions(app);
                 }
                 KeyCode::Char('w') if ctrl => {
-                    editing::cursor_delete_word_backward(&mut app.session_input, &mut app.session_cursor);
+                    editing::cursor_delete_word_backward(
+                        &mut app.session_input,
+                        &mut app.session_cursor,
+                    );
                     editing::update_slash_suggestions(app);
                 }
                 KeyCode::Char('k') if ctrl => {
@@ -179,9 +181,7 @@ pub fn handle_sessions_key(key: KeyEvent, app: &mut App) {
                                 "Toggled thought blocks for message {idx} ({state})"
                             )));
                         } else {
-                            app.add_log(LogEntry::Info(
-                                "No assistant messages to toggle".into(),
-                            ));
+                            app.add_log(LogEntry::Info("No assistant messages to toggle".into()));
                         }
                     }
                 }
@@ -367,9 +367,7 @@ pub fn handle_sessions_key(key: KeyEvent, app: &mut App) {
                 }
             }
         }
-        KeyCode::Char(c)
-            if c.is_alphanumeric() || c == ' ' || c == '-' || c == '_' =>
-        {
+        KeyCode::Char(c) if c.is_alphanumeric() || c == ' ' || c == '-' || c == '_' => {
             app.session_filter.push(c);
             app.session_sel = 0;
         }

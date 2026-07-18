@@ -9,11 +9,16 @@ use std::sync::Arc;
 struct MockConsensus;
 #[async_trait]
 impl sisyphus_core::Consensus for MockConsensus {
-    async fn is_leader(&self) -> bool { true }
-    async fn get_leader(&self) -> String { "mock-leader".into() }
-    async fn propose(&self, _key: &str, _value: serde_json::Value) -> Result<(), String> { Ok(()) }
+    async fn is_leader(&self) -> bool {
+        true
+    }
+    async fn get_leader(&self) -> String {
+        "mock-leader".into()
+    }
+    async fn propose(&self, _key: &str, _value: serde_json::Value) -> Result<(), String> {
+        Ok(())
+    }
 }
-
 
 struct MockExecutor {
     call_count: AtomicUsize,
@@ -63,7 +68,9 @@ async fn test_experience_prediction_convergence() {
         intel,
         Arc::new(sisyphus_tools_llm::metis::DummyLlmClient),
         synthesizer,
-        Arc::new(parking_lot::Mutex::new(sisyphus_tools_llm_tools::meta_learner::MetaLearner::new(".omo/test_meta"))),
+        Arc::new(parking_lot::Mutex::new(
+            sisyphus_tools_llm_tools::meta_learner::MetaLearner::new(".omo/test_meta"),
+        )),
         Arc::new(MockConsensus),
     );
 

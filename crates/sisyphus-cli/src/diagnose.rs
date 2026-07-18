@@ -16,13 +16,13 @@ fn resolve_backend(
         Some("node") | Some("ts") | Some("js") => {
             Ok(Box::new(crate::tools::build::node::NodeBackend::new()?))
         }
-        Some("python") | Some("py") => Ok(Box::new(
-            crate::tools::build::python::PythonBackend::new()?,
-        )),
+        Some("python") | Some("py") => {
+            Ok(Box::new(crate::tools::build::python::PythonBackend::new()?))
+        }
         Some("go") | Some("golang") => Ok(Box::new(crate::tools::build::golang::GoBackend)),
-        Some("java") | Some("maven") => Ok(Box::new(
-            crate::tools::build::java::JavaBackend::new_maven(),
-        )),
+        Some("java") | Some("maven") => {
+            Ok(Box::new(crate::tools::build::java::JavaBackend::new_maven()))
+        }
         Some("gradle") => Ok(Box::new(
             crate::tools::build::java::JavaBackend::new_gradle(),
         )),

@@ -14,7 +14,10 @@ pub(crate) async fn handle_pr(
             if prs.is_empty() {
                 println!("No open pull requests found.");
             } else {
-                println!("{:<6} {:<40} {:<15} {:<10}", "Num", "Title", "Author", "State");
+                println!(
+                    "{:<6} {:<40} {:<15} {:<10}",
+                    "Num", "Title", "Author", "State"
+                );
                 println!("{}", "-".repeat(71));
                 for pr in prs {
                     println!(
@@ -32,7 +35,11 @@ pub(crate) async fn handle_pr(
             sisyphus_cli::tools::PrManager::checkout_pr(*number)?;
             println!("Checked out PR #{}", number);
         }
-        PrCommands::Review { number, post, format } => {
+        PrCommands::Review {
+            number,
+            post,
+            format,
+        } => {
             let ci_cfg = sisyphus_cli::tools::CiConfig::from_env();
             let use_json = format == "json" || ci_cfg.output_format == "json";
 

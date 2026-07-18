@@ -18,5 +18,3 @@ pub enum IntelError {
     #[error("Internal intel error: {0}")]
     Internal(String),
 }
-
-

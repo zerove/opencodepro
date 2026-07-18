@@ -1,5 +1,5 @@
-use sisyphus_tools_core::ToolResult;
 use serde_json::Value;
+use sisyphus_tools_core::ToolResult;
 use sisyphus_types::AgentMessage;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
@@ -30,20 +30,18 @@ impl AgentChannel {
 
     /// Send a direct message to a specific agent's inbox.
     pub fn send(&self, msg: AgentMessage) -> ToolResult<()> {
-        let mut inboxes = self
-            .inboxes
-            .write()
-            .map_err(|e| sisyphus_tools_core::ToolError::Generic(format!("AgentChannel lock poisoned: {e}")))?;
+        let mut inboxes = self.inboxes.write().map_err(|e| {
+            sisyphus_tools_core::ToolError::Generic(format!("AgentChannel lock poisoned: {e}"))
+        })?;
         inboxes.entry(msg.to.clone()).or_default().push(msg);
         Ok(())
     }
 
     /// Receive all pending messages for an agent (drains the inbox).
     pub fn receive(&self, agent_id: &str) -> ToolResult<Vec<AgentMessage>> {
-        let mut inboxes = self
-            .inboxes
-            .write()
-            .map_err(|e| sisyphus_tools_core::ToolError::Generic(format!("AgentChannel lock poisoned: {e}")))?;
+        let mut inboxes = self.inboxes.write().map_err(|e| {
+            sisyphus_tools_core::ToolError::Generic(format!("AgentChannel lock poisoned: {e}"))
+        })?;
         Ok(inboxes.remove(agent_id).unwrap_or_default())
     }
 
@@ -74,7 +72,7 @@ impl AgentChannel {
         self.send(request)?;
 
         let mut rx = notify_tx.subscribe();
-        
+
         tokio::select! {
             res = rx.recv() => {
                 res.map_err(|e| sisyphus_tools_core::ToolError::Generic(format!("Broadcast error: {e}")))

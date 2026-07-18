@@ -37,14 +37,18 @@ pub async fn execute(
 
     let mut child = cmd.spawn().map_err(ToolError::Io)?;
 
-    let stdout_pipe = child
-        .stdout
-        .take()
-        .ok_or_else(|| ToolError::Io(io::Error::new(io::ErrorKind::BrokenPipe, "stdout pipe not captured")))?;
-    let stderr_pipe = child
-        .stderr
-        .take()
-        .ok_or_else(|| ToolError::Io(io::Error::new(io::ErrorKind::BrokenPipe, "stderr pipe not captured")))?;
+    let stdout_pipe = child.stdout.take().ok_or_else(|| {
+        ToolError::Io(io::Error::new(
+            io::ErrorKind::BrokenPipe,
+            "stdout pipe not captured",
+        ))
+    })?;
+    let stderr_pipe = child.stderr.take().ok_or_else(|| {
+        ToolError::Io(io::Error::new(
+            io::ErrorKind::BrokenPipe,
+            "stderr pipe not captured",
+        ))
+    })?;
 
     let stdout_fut = async {
         let reader = BufReader::new(stdout_pipe);

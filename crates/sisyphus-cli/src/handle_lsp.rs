@@ -24,7 +24,13 @@ pub async fn handle_lsp(sub: &LspCommands) -> Result<()> {
             root_uri,
         } => {
             sisyphus_cli::lsp::run_goto_def(
-                file, *line, *col, language_id, server, server_args, root_uri,
+                file,
+                *line,
+                *col,
+                language_id,
+                server,
+                server_args,
+                root_uri,
             )
             .await?;
         }
@@ -38,7 +44,13 @@ pub async fn handle_lsp(sub: &LspCommands) -> Result<()> {
             root_uri,
         } => {
             sisyphus_cli::lsp::run_find_refs(
-                file, *line, *col, language_id, server, server_args, root_uri,
+                file,
+                *line,
+                *col,
+                language_id,
+                server,
+                server_args,
+                root_uri,
             )
             .await?;
         }
@@ -52,7 +64,13 @@ pub async fn handle_lsp(sub: &LspCommands) -> Result<()> {
             root_uri,
         } => {
             sisyphus_cli::lsp::run_hover(
-                file, *line, *col, language_id, server, server_args, root_uri,
+                file,
+                *line,
+                *col,
+                language_id,
+                server,
+                server_args,
+                root_uri,
             )
             .await?;
         }

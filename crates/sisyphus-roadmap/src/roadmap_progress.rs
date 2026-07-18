@@ -195,7 +195,8 @@ impl RoadmapManager {
             MilestoneStatus::Pending
         };
 
-        self.update_milestone_status(project_id, milestone_id, new_status).await
+        self.update_milestone_status(project_id, milestone_id, new_status)
+            .await
     }
 
     /// Auto-propagate: update all milestone statuses based on their goal completion.
@@ -225,8 +226,9 @@ impl RoadmapManager {
             } else {
                 MilestoneStatus::Pending
             };
-            
-            self.update_milestone_status(project_id, &ms.id, new_status).await?;
+
+            self.update_milestone_status(project_id, &ms.id, new_status)
+                .await?;
         }
 
         Ok(())

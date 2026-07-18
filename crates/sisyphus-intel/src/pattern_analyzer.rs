@@ -1,8 +1,8 @@
+use petgraph::graph::NodeIndex;
+use petgraph::visit::EdgeRef;
+use sisyphus_types::SOPGraph;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
-use sisyphus_types::SOPGraph;
-use petgraph::visit::EdgeRef;
-use petgraph::graph::NodeIndex;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct SubgraphPattern {
@@ -90,7 +90,11 @@ impl PatternAnalyzer {
         visited.pop();
     }
 
-    fn canonicalize_subgraph(&self, graph: &SOPGraph, nodes: &[NodeIndex]) -> Option<SubgraphPattern> {
+    fn canonicalize_subgraph(
+        &self,
+        graph: &SOPGraph,
+        nodes: &[NodeIndex],
+    ) -> Option<SubgraphPattern> {
         let mut pattern_nodes = Vec::new();
         let mut node_to_idx = HashMap::new();
 
@@ -128,12 +132,13 @@ impl PatternAnalyzer {
 
     /// Returns patterns that appear more than `min_frequency` times.
     pub fn get_frequent_patterns(&self, min_frequency: usize) -> Vec<SubgraphPattern> {
-        let frequent: Vec<_> = self.pattern_frequency
+        let frequent: Vec<_> = self
+            .pattern_frequency
             .iter()
             .filter(|(_, &count)| count >= min_frequency)
             .map(|(pattern, _)| pattern.clone())
             .collect();
-        
+
         // Sort by frequency descending (would need to store frequency in result)
         frequent
     }
@@ -172,10 +177,13 @@ impl SemanticPatternAnalyzer {
             visual_embedding: None,
             limit: 50,
         };
-        
+
         let experiences = bank.query_similar(query).await?;
-        let failures: Vec<_> = experiences.into_iter().filter(|e| !e.outcome_success).collect();
-        
+        let failures: Vec<_> = experiences
+            .into_iter()
+            .filter(|e| !e.outcome_success)
+            .collect();
+
         if failures.len() < self.min_cluster_size {
             return Ok(None);
         }
@@ -185,12 +193,16 @@ impl SemanticPatternAnalyzer {
         for fail in &failures {
             if let Some(ref insight) = fail.insight {
                 let theme = insight.split('.').next().unwrap_or("Unknown").to_string();
-                theme_counts.entry(theme).or_default().push(fail.context_text.clone());
+                theme_counts
+                    .entry(theme)
+                    .or_default()
+                    .push(fail.context_text.clone());
             }
         }
 
         // 3. Find the most dominant failure mode
-        let dominant_theme = theme_counts.iter()
+        let dominant_theme = theme_counts
+            .iter()
             .max_by_key(|(_, goals)| goals.len())
             .map(|(theme, goals)| (theme.clone(), goals.len(), goals.clone()));
 

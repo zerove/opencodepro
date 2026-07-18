@@ -11,9 +11,7 @@ use std::time::Duration;
 use crate::circuit_breaker::CircuitBreaker;
 use crate::metis::LlmClient;
 use crate::model_router::{ModelConfig, ModelRouter};
-use crate::provider::{
-    build_provider_registry, ChatMessage, ChatRole, ProviderRegistry,
-};
+use crate::provider::{build_provider_registry, ChatMessage, ChatRole, ProviderRegistry};
 
 use super::{BudgetProvider, RequestContext};
 
@@ -125,7 +123,10 @@ impl DynamicLlmClient {
 
     /// Get base (default) LLM parameters.
     pub(super) fn get_current_params(&self) -> (String, String, String) {
-        let cfg = self.config.read().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let cfg = self
+            .config
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let api_key = Self::resolve_api_key(&cfg.llm.api_key);
         (api_key, cfg.llm.endpoint.clone(), cfg.llm.model.clone())
     }
@@ -141,7 +142,10 @@ impl DynamicLlmClient {
     /// endpoint / model / api_key take precedence. Fallback fields
     /// come from the base config.
     pub fn get_params_for_category(&self, category: &str) -> (String, String, String) {
-        let cfg = self.config.read().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let cfg = self
+            .config
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
 
         if let Some(override_) = cfg.llm.categories.get(category) {
             let endpoint = override_
@@ -178,7 +182,10 @@ impl LlmClient for DynamicLlmClient {
                     role: ChatRole::User,
                     content: user.to_string(),
                 }];
-                match registry.chat_with_fallback(system, &chat_messages, json_mode).await {
+                match registry
+                    .chat_with_fallback(system, &chat_messages, json_mode)
+                    .await
+                {
                     Ok(response) => {
                         // Record cost via router
                         let token_estimate = (response.content.len() / 4).max(1) as u64;
@@ -196,9 +203,16 @@ impl LlmClient for DynamicLlmClient {
 
         // ── Fallback: existing OpenAI-compatible HTTP call ─────────
         let (api_key, endpoint, model) = {
-            let category = self.current_category.read().unwrap_or_else(std::sync::PoisonError::into_inner).clone();
+            let category = self
+                .current_category
+                .read()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .clone();
             if let Some(cat_name) = category {
-                let cfg = self.config.read().unwrap_or_else(std::sync::PoisonError::into_inner);
+                let cfg = self
+                    .config
+                    .read()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
                 if let Some(cat_cfg) = cfg.llm.categories.get(&cat_name) {
                     if let Some(strategy) = &cat_cfg.strategy {
                         if let Ok(selected) = self.router.select(user, strategy) {
@@ -230,7 +244,10 @@ impl LlmClient for DynamicLlmClient {
                 .check_budget(&ctx.project_id, &ctx.goal_id, estimated_cost)
                 .await
             {
-                let cfg = self.config.read().unwrap_or_else(std::sync::PoisonError::into_inner);
+                let cfg = self
+                    .config
+                    .read()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
                 if cfg.llm.budget_mode == sisyphus_types::BudgetMode::Strict {
                     return Err(format!("Budget exceeded (Strict Mode): {e}"));
                 }
@@ -321,12 +338,7 @@ impl LlmClient for DynamicLlmClient {
 
             if let (Some(provider), Some(ctx)) = (&self.budget_provider, context) {
                 let _ = provider
-                    .record_actual_cost(
-                        &ctx.project_id,
-                        &ctx.goal_id,
-                        actual_cost,
-                        duration_secs,
-                    )
+                    .record_actual_cost(&ctx.project_id, &ctx.goal_id, actual_cost, duration_secs)
                     .await;
             }
 
@@ -338,7 +350,10 @@ impl LlmClient for DynamicLlmClient {
     }
 
     fn get_params_for(&self, agent_id: &str) -> (String, String, String) {
-        let cfg = self.config.read().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let cfg = self
+            .config
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
 
         if let Some(override_) = cfg.llm.agents.get(agent_id) {
             let endpoint = override_

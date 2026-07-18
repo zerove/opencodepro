@@ -70,9 +70,7 @@ fn handle_tools_list(req: &crate::tools::JsonRpcRequest) -> crate::tools::JsonRp
     }
 }
 
-async fn handle_tools_call(
-    req: crate::tools::JsonRpcRequest,
-) -> crate::tools::JsonRpcResponse {
+async fn handle_tools_call(req: crate::tools::JsonRpcRequest) -> crate::tools::JsonRpcResponse {
     let params: crate::tools::CallToolParams = match req
         .params
         .as_ref()

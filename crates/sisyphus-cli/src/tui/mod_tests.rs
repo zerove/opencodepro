@@ -102,14 +102,32 @@ fn test_render_status_session_list_help() {
 fn test_render_status_diag_counts() {
     use sisyphus_tools_build::lsp::{LspDiagnostic, LspPosition, LspRange};
     let rng = LspRange {
-        start: LspPosition { line: 0, character: 0 },
-        end: LspPosition { line: 1, character: 1 },
+        start: LspPosition {
+            line: 0,
+            character: 0,
+        },
+        end: LspPosition {
+            line: 1,
+            character: 1,
+        },
     };
     let mut app = App::new(PathBuf::from("/tmp"), "addr".into());
     app.lsp_diagnostics = vec![
-        LspDiagnostic { range: rng.clone(), severity: Some(1), message: "err".into() },
-        LspDiagnostic { range: rng.clone(), severity: Some(2), message: "warn".into() },
-        LspDiagnostic { range: rng, severity: Some(3), message: "info".into() },
+        LspDiagnostic {
+            range: rng.clone(),
+            severity: Some(1),
+            message: "err".into(),
+        },
+        LspDiagnostic {
+            range: rng.clone(),
+            severity: Some(2),
+            message: "warn".into(),
+        },
+        LspDiagnostic {
+            range: rng,
+            severity: Some(3),
+            message: "info".into(),
+        },
     ];
     let rendered = render::render_status(&app).to_string();
     assert!(rendered.contains("E1"));
@@ -162,8 +180,7 @@ fn test_toggle_todo_status_cycles() {
     let dir = tempfile::tempdir().unwrap();
     let db = dir.path().join("todos.json");
     let _item =
-        crate::tools::todo_add(&db, "cycle test", crate::tools::TodoPriority::Medium)
-            .unwrap();
+        crate::tools::todo_add(&db, "cycle test", crate::tools::TodoPriority::Medium).unwrap();
 
     let mut app = App::new(dir.path().to_path_buf(), "addr".into());
     app.todo_dirty = true;
@@ -203,8 +220,7 @@ fn test_toggle_todo_status_cycles() {
 fn test_delete_todo_removes_item() {
     let dir = tempfile::tempdir().unwrap();
     let db = dir.path().join("todos.json");
-    let _item =
-        crate::tools::todo_add(&db, "delete me", crate::tools::TodoPriority::Low).unwrap();
+    let _item = crate::tools::todo_add(&db, "delete me", crate::tools::TodoPriority::Low).unwrap();
 
     let mut app = App::new(dir.path().to_path_buf(), "addr".into());
     app.todo_dirty = true;

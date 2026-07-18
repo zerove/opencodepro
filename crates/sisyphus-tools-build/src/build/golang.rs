@@ -234,9 +234,7 @@ fn parse_staticcheck_output(_stderr: &str, stdout: &str) -> (Vec<Diag>, Vec<Diag
 
                 // Determine severity from code prefix
                 let code = msg.split(' ').next().map(std::string::ToString::to_string);
-                let is_error = code
-                    .as_deref()
-                    .is_some_and(|c| c.starts_with("SA"));
+                let is_error = code.as_deref().is_some_and(|c| c.starts_with("SA"));
 
                 if is_error {
                     errors.push(Diag {

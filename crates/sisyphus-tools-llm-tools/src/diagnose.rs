@@ -286,4 +286,3 @@ edition = "2021"
         assert!(report.check_output.success);
     }
 }
-

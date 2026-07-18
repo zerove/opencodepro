@@ -1,22 +1,22 @@
 //! REST API for Sisyphus Bridge (axum HTTP layer alongside gRPC).
 use crate::MySisyphusBridge;
+use async_trait::async_trait;
+use axum::extract::FromRequestParts;
 use axum::{
+    body::Body,
     extract::{Path, State},
     http::StatusCode,
-    body::Body,
     response::{IntoResponse, Response},
-    routing::{get, post, patch, delete},
+    routing::{delete, get, patch, post},
     Json, Router,
 };
-use axum::extract::FromRequestParts;
-use async_trait::async_trait;
-use tower_http::services::ServeDir;
 use futures_util::stream::{self};
 use serde::{Deserialize, Serialize};
+use sisyphus_types::{graph::SOPGraphConfig, ToolExecutor};
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::mpsc;
-use sisyphus_types::{ToolExecutor, graph::SOPGraphConfig};
+use tower_http::services::ServeDir;
 
 // ── Response / Request Types ───────────────────────────────────────────────
 
@@ -92,7 +92,6 @@ pub struct InstallSkillRequest {
     pub skill_id: String,
 }
 
-
 #[derive(Clone, Debug)]
 pub struct WorkspaceContext {
     pub project_id: Option<String>,
@@ -105,7 +104,10 @@ where
 {
     type Rejection = StatusCode;
 
-    async fn from_request_parts(parts: &mut axum::http::request::Parts, _state: &S) -> Result<Self, Self::Rejection> {
+    async fn from_request_parts(
+        parts: &mut axum::http::request::Parts,
+        _state: &S,
+    ) -> Result<Self, Self::Rejection> {
         let header_value = parts
             .headers
             .get("X-Sisyphus-Workspace-Id")
@@ -293,15 +295,23 @@ async fn get_cognitive_map_handler(
     State(state): State<RestApiState>,
     Path(sop_id): Path<String>,
 ) -> impl IntoResponse {
-    match state.bridge.kernel().execution_manager.cognitive_maps.get(&sop_id) {
+    match state
+        .bridge
+        .kernel()
+        .execution_manager
+        .cognitive_maps
+        .get(&sop_id)
+    {
         Some(map) => (StatusCode::OK, Json(map.clone())).into_response(),
-        None => (StatusCode::NOT_FOUND, Json(serde_json::json!({ "error": "No active cognitive map for this SOP" }))).into_response(),
+        None => (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({ "error": "No active cognitive map for this SOP" })),
+        )
+            .into_response(),
     }
 }
 
-async fn list_available_skills_handler(
-    State(state): State<RestApiState>,
-) -> impl IntoResponse {
+async fn list_available_skills_handler(State(state): State<RestApiState>) -> impl IntoResponse {
     match state.bridge.skill_registry.fetch_available_skills().await {
         Ok(skills) => (StatusCode::OK, Json(skills)).into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(e.to_string())).into_response(),
@@ -312,15 +322,18 @@ async fn install_remote_skill_handler(
     State(state): State<RestApiState>,
     Json(req): Json<InstallSkillRequest>,
 ) -> impl IntoResponse {
-    match state.bridge.skill_registry.install_skill(&req.skill_id).await {
+    match state
+        .bridge
+        .skill_registry
+        .install_skill(&req.skill_id)
+        .await
+    {
         Ok(_) => StatusCode::CREATED.into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(e.to_string())).into_response(),
     }
 }
 
-async fn list_installed_skills_handler(
-    State(state): State<RestApiState>,
-) -> impl IntoResponse {
+async fn list_installed_skills_handler(State(state): State<RestApiState>) -> impl IntoResponse {
     match state.bridge.skill_registry.list_installed_skills().await {
         Ok(skills) => (StatusCode::OK, Json(skills)).into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(e.to_string())).into_response(),
@@ -339,9 +352,7 @@ async fn uninstall_remote_skill_handler(
 
 // --- Workspace Management Handlers ---
 
-async fn list_workspaces_handler(
-    State(state): State<RestApiState>,
-) -> impl IntoResponse {
+async fn list_workspaces_handler(State(state): State<RestApiState>) -> impl IntoResponse {
     let workspaces = state.bridge.workspace_manager.list_workspaces().await;
     (StatusCode::OK, Json(workspaces)).into_response()
 }
@@ -350,7 +361,12 @@ async fn create_workspace_handler(
     State(state): State<RestApiState>,
     Json(req): Json<CreateWorkspaceRequest>,
 ) -> impl IntoResponse {
-    match state.bridge.workspace_manager.create_workspace(req.name, req.project_id, req.root_dir).await {
+    match state
+        .bridge
+        .workspace_manager
+        .create_workspace(req.name, req.project_id, req.root_dir)
+        .await
+    {
         Ok(ws) => (StatusCode::CREATED, Json(ws)).into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(e.to_string())).into_response(),
     }
@@ -360,18 +376,25 @@ async fn switch_workspace_handler(
     State(state): State<RestApiState>,
     Json(req): Json<SwitchWorkspaceRequest>,
 ) -> impl IntoResponse {
-    match state.bridge.workspace_manager.switch_workspace(&req.id).await {
+    match state
+        .bridge
+        .workspace_manager
+        .switch_workspace(&req.id)
+        .await
+    {
         Ok(_) => StatusCode::OK.into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(e.to_string())).into_response(),
     }
 }
 
-async fn get_current_workspace_handler(
-    State(state): State<RestApiState>,
-) -> impl IntoResponse {
+async fn get_current_workspace_handler(State(state): State<RestApiState>) -> impl IntoResponse {
     match state.bridge.workspace_manager.get_current().await {
         Some(ws) => (StatusCode::OK, Json(ws)).into_response(),
-        None => (StatusCode::NOT_FOUND, Json(serde_json::json!({ "error": "No active workspace" }))).into_response(),
+        None => (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({ "error": "No active workspace" })),
+        )
+            .into_response(),
     }
 }
 
@@ -397,22 +420,26 @@ async fn execute_goal_handler(
         None
     };
 
-    let project_id = workspace.project_id.or(req.project_id).unwrap_or_else(|| "default".to_string());
+    let project_id = workspace
+        .project_id
+        .or(req.project_id)
+        .unwrap_or_else(|| "default".to_string());
 
-    let result = kernel.execute_goal(
-        &req.goal,
-        &req.sop_id,
-        &project_id,
-        event_tx,
-        None,
-    ).await;
+    let result = kernel
+        .execute_goal(&req.goal, &req.sop_id, &project_id, event_tx, None)
+        .await;
 
     match result {
         Ok((output, report)) => (
             StatusCode::OK,
             match serde_json::to_value(GoalExecuteResponse { output, report }) {
                 Ok(val) => Json(val),
-                Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({ "error": "Failed to serialize response" }))),
+                Err(_) => {
+                    return (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(serde_json::json!({ "error": "Failed to serialize response" })),
+                    )
+                }
             },
         ),
         Err(e) => (
@@ -440,7 +467,9 @@ async fn goal_status_handler(
         ),
         None => (
             StatusCode::NOT_FOUND,
-            Json(serde_json::json!({ "error": format!("Goal execution {} not found or completed", goal_id) })),
+            Json(
+                serde_json::json!({ "error": format!("Goal execution {} not found or completed", goal_id) }),
+            ),
         ),
     }
 }
@@ -450,25 +479,31 @@ async fn goal_trace_handler(
     workspace: WorkspaceContext,
     Path(sop_id): Path<String>,
 ) -> impl IntoResponse {
-    let project_id = workspace.project_id.unwrap_or_else(|| "default".to_string());
+    let project_id = workspace
+        .project_id
+        .unwrap_or_else(|| "default".to_string());
     let store = &state.bridge.state_store;
     match store.get_traces_for_sop(&project_id, &sop_id).await {
         Ok(rows) => {
-            let events = rows.into_iter().map(|(node_id, status, output, fuel, duration)| {
-                TraceEventDetail {
-                    node_id,
-                    status,
-                    output: Some(output),
-                    fuel_consumed: fuel,
-                    duration_ms: duration,
-                }
-            }).collect();
+            let events = rows
+                .into_iter()
+                .map(
+                    |(node_id, status, output, fuel, duration)| TraceEventDetail {
+                        node_id,
+                        status,
+                        output: Some(output),
+                        fuel_consumed: fuel,
+                        duration_ms: duration,
+                    },
+                )
+                .collect();
             (StatusCode::OK, Json(GoalTraceResponse { sop_id, events })).into_response()
         }
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(serde_json::json!({ "error": e.to_string() })),
-        ).into_response(),
+        )
+            .into_response(),
     }
 }
 
@@ -477,14 +512,20 @@ async fn goal_stream_handler(
     workspace: WorkspaceContext,
     Path(goal): Path<String>,
 ) -> impl IntoResponse {
-    let project_id = workspace.project_id.unwrap_or_else(|| "default".to_string());
+    let project_id = workspace
+        .project_id
+        .unwrap_or_else(|| "default".to_string());
     let (tx, rx) = mpsc::unbounded_channel::<sisyphus_types::ExecutionEvent>();
     let bridge_clone = state.bridge.clone();
     let goal_clone = goal.clone();
     let pid_clone = project_id.clone();
 
     tokio::spawn(async move {
-        if let Err(e) = bridge_clone.kernel().execute_goal_streaming(&goal_clone, "stream_task", &pid_clone, Some(tx), None).await {
+        if let Err(e) = bridge_clone
+            .kernel()
+            .execute_goal_streaming(&goal_clone, "stream_task", &pid_clone, Some(tx), None)
+            .await
+        {
             tracing::error!(error = %e, "Goal streaming execution failed");
         }
     });
@@ -503,10 +544,14 @@ async fn goal_stream_handler(
         .header("Content-Type", "text/event-stream")
         .header("Cache-Control", "no-cache")
         .header("Connection", "keep-alive")
-        .body(Body::from_stream(stream)) 
+        .body(Body::from_stream(stream))
     {
         Ok(res) => res,
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, format!("Response build failed: {e}")).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Response build failed: {e}"),
+        )
+            .into_response(),
     }
 }
 
@@ -525,22 +570,40 @@ async fn execute_composite_handler(
     let project_id = workspace.project_id.or(req.project_id);
 
     let composite = sisyphus_types::CompositeGraph {
-        graphs: req.goals.into_iter().map(|g| (g.clone(), sisyphus_types::SOPGraphConfig::default())).collect(),
+        graphs: req
+            .goals
+            .into_iter()
+            .map(|g| (g.clone(), sisyphus_types::SOPGraphConfig::default()))
+            .collect(),
         dependencies: vec![],
         execution_order: vec![],
     };
 
-    match kernel.execute_composite(&composite, event_tx, project_id.as_deref().unwrap_or("default")).await {
+    match kernel
+        .execute_composite(
+            &composite,
+            event_tx,
+            project_id.as_deref().unwrap_or("default"),
+        )
+        .await
+    {
         Ok(output) => {
             let response = CompositeExecuteResponse {
-                results: output.results.into_iter().map(|(id, (out, _))| (id, out)).collect(),
+                results: output
+                    .results
+                    .into_iter()
+                    .map(|(id, (out, _))| (id, out))
+                    .collect(),
                 execution_order: output.execution_order,
             };
             match serde_json::to_value(response) {
                 Ok(val) => (StatusCode::OK, Json(val)),
-                Err(_) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({ "error": "Failed to serialize response" }))),
+                Err(_) => (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(serde_json::json!({ "error": "Failed to serialize response" })),
+                ),
             }
-        },
+        }
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(serde_json::json!({ "error": e.to_string() })),
@@ -553,7 +616,11 @@ async fn list_sops_handler(
     workspace: WorkspaceContext,
 ) -> impl IntoResponse {
     let kernel = state.bridge.kernel();
-    match kernel.execution_manager.list_sops(workspace.project_id.as_deref()).await {
+    match kernel
+        .execution_manager
+        .list_sops(workspace.project_id.as_deref())
+        .await
+    {
         Ok(sops) => (StatusCode::OK, Json(sops)).into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(e.to_string())).into_response(),
     }
@@ -567,17 +634,27 @@ async fn get_sop_handler(
     let kernel = state.bridge.kernel();
     let project_id = match workspace.project_id {
         Some(pid) => pid,
-        None => return (StatusCode::BAD_REQUEST, "Missing X-Sisyphus-Workspace-Id header").into_response(),
+        None => {
+            return (
+                StatusCode::BAD_REQUEST,
+                "Missing X-Sisyphus-Workspace-Id header",
+            )
+                .into_response()
+        }
     };
     match kernel.execution_manager.load_sop(&id, &project_id).await {
         Ok(sop) => {
             let config = SOPGraphConfig::from_graph(&sop);
-            (StatusCode::OK, Json(SopDetailResponse {
-                id,
-                name: "Sisyphus SOP".into(), // Name is not currently in SOPGraph
-                version: Some("1.0.0".into()),
-                config
-            })).into_response()
+            (
+                StatusCode::OK,
+                Json(SopDetailResponse {
+                    id,
+                    name: "Sisyphus SOP".into(), // Name is not currently in SOPGraph
+                    version: Some("1.0.0".into()),
+                    config,
+                }),
+            )
+                .into_response()
         }
         Err(e) => (StatusCode::NOT_FOUND, Json(e.to_string())).into_response(),
     }
@@ -590,10 +667,19 @@ async fn save_sop_handler(
 ) -> impl IntoResponse {
     let project_id = match workspace.project_id {
         Some(pid) => pid,
-        None => return (StatusCode::BAD_REQUEST, "Missing X-Sisyphus-Workspace-Id header").into_response(),
+        None => {
+            return (
+                StatusCode::BAD_REQUEST,
+                "Missing X-Sisyphus-Workspace-Id header",
+            )
+                .into_response()
+        }
     };
     let sop_store = &state.bridge.kernel().execution_manager.sop_store;
-    match sop_store.save_sop(&req.id, &project_id, &req.name, req.version, &req.config).await {
+    match sop_store
+        .save_sop(&req.id, &project_id, &req.name, req.version, &req.config)
+        .await
+    {
         Ok(_) => StatusCode::CREATED.into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(e.to_string())).into_response(),
     }
@@ -606,7 +692,13 @@ async fn delete_sop_handler(
 ) -> impl IntoResponse {
     let project_id = match workspace.project_id {
         Some(pid) => pid,
-        None => return (StatusCode::BAD_REQUEST, "Missing X-Sisyphus-Workspace-Id header").into_response(),
+        None => {
+            return (
+                StatusCode::BAD_REQUEST,
+                "Missing X-Sisyphus-Workspace-Id header",
+            )
+                .into_response()
+        }
     };
     let sop_store = &state.bridge.kernel().execution_manager.sop_store;
     match sop_store.delete_sop(&id, &project_id).await {
@@ -629,7 +721,11 @@ async fn experience_similar_handler(
         limit: req.limit.unwrap_or(5),
     };
     match kernel.experience_bank.query_similar(query).await {
-        Ok(exps) => (StatusCode::OK, Json(ExperienceSimilarResponse { experiences: exps })).into_response(),
+        Ok(exps) => (
+            StatusCode::OK,
+            Json(ExperienceSimilarResponse { experiences: exps }),
+        )
+            .into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(e.to_string())).into_response(),
     }
 }
@@ -642,18 +738,19 @@ async fn roadmap_project_handler(
 ) -> impl IntoResponse {
     let rm = &state.bridge.kernel().roadmap_manager;
     match method {
-        axum::http::Method::GET => {
-            match rm.get_project(&id).await {
-                Ok(Some(p)) => (StatusCode::OK, Json(p)).into_response(),
-                Ok(None) => StatusCode::NOT_FOUND.into_response(),
-                Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(e.to_string())).into_response(),
-            }
-        }
+        axum::http::Method::GET => match rm.get_project(&id).await {
+            Ok(Some(p)) => (StatusCode::OK, Json(p)).into_response(),
+            Ok(None) => StatusCode::NOT_FOUND.into_response(),
+            Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(e.to_string())).into_response(),
+        },
         axum::http::Method::POST => {
             let Some(Json(req)) = payload else {
                 return (StatusCode::BAD_REQUEST, "Missing payload").into_response();
             };
-            match rm.create_project(&req.id, &req.name, &req.description).await {
+            match rm
+                .create_project(&req.id, &req.name, &req.description)
+                .await
+            {
                 Ok(p) => (StatusCode::CREATED, Json(p)).into_response(),
                 Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(e.to_string())).into_response(),
             }
@@ -666,7 +763,13 @@ async fn roadmap_milestone_handler(
     State(state): State<RestApiState>,
     Json(req): Json<AddMilestoneRequest>,
 ) -> impl IntoResponse {
-    match state.bridge.kernel().roadmap_manager.add_milestone(&req.project_id, req.milestone).await {
+    match state
+        .bridge
+        .kernel()
+        .roadmap_manager
+        .add_milestone(&req.project_id, req.milestone)
+        .await
+    {
         Ok(_) => StatusCode::CREATED.into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(e.to_string())).into_response(),
     }
@@ -676,7 +779,13 @@ async fn roadmap_phase_handler(
     State(state): State<RestApiState>,
     Json(req): Json<AddPhaseRequest>,
 ) -> impl IntoResponse {
-    match state.bridge.kernel().roadmap_manager.add_phase(&req.project_id, &req.milestone_id, req.phase).await {
+    match state
+        .bridge
+        .kernel()
+        .roadmap_manager
+        .add_phase(&req.project_id, &req.milestone_id, req.phase)
+        .await
+    {
         Ok(_) => StatusCode::CREATED.into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(e.to_string())).into_response(),
     }
@@ -694,7 +803,16 @@ async fn roadmap_goal_handler(
             let Some(Json(req)) = payload else {
                 return (StatusCode::BAD_REQUEST, "Missing payload").into_response();
             };
-            match rm.update_goal_status(&req.project_id, &req.milestone_id, &req.phase_id, &goal_id, req.status).await {
+            match rm
+                .update_goal_status(
+                    &req.project_id,
+                    &req.milestone_id,
+                    &req.phase_id,
+                    &goal_id,
+                    req.status,
+                )
+                .await
+            {
                 Ok(_) => StatusCode::OK.into_response(),
                 Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(e.to_string())).into_response(),
             }
@@ -707,7 +825,13 @@ async fn roadmap_health_handler(
     State(state): State<RestApiState>,
     Path(project_id): Path<String>,
 ) -> impl IntoResponse {
-    match state.bridge.kernel().roadmap_manager.evaluate_health(&project_id).await {
+    match state
+        .bridge
+        .kernel()
+        .roadmap_manager
+        .evaluate_health(&project_id)
+        .await
+    {
         Ok(health) => (StatusCode::OK, Json(health)).into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(e.to_string())).into_response(),
     }
@@ -726,7 +850,8 @@ async fn execute_handler(
     match state
         .bridge
         .kernel()
-        .execution_manager.tool_router
+        .execution_manager
+        .tool_router
         .execute(&req.tool_id, args_bytes, fuel)
         .await
     {
@@ -855,7 +980,12 @@ async fn add_message_handler(
     Path(id): Path<String>,
     Json(req): Json<AddMessageRequest>,
 ) -> impl IntoResponse {
-    match sisyphus_tools_session::session_add_message(&state.session_db, &id, &req.role, &req.content) {
+    match sisyphus_tools_session::session_add_message(
+        &state.session_db,
+        &id,
+        &req.role,
+        &req.content,
+    ) {
         Ok(session) => {
             let detail = SessionDetail {
                 id: session.id,
@@ -922,8 +1052,7 @@ async fn list_agents_handler(State(state): State<RestApiState>) -> impl IntoResp
                     .bridge
                     .tool_registry()
                     .list_for_prefixes(&info.tool_prefixes);
-                let tool_names: Vec<&str> =
-                    tools.iter().map(|(_, t)| t.name.as_str()).collect();
+                let tool_names: Vec<&str> = tools.iter().map(|(_, t)| t.name.as_str()).collect();
                 if tool_names.is_empty() {
                     info.description
                 } else {
@@ -982,18 +1111,39 @@ pub fn build_router(state: RestApiState) -> Router {
         .route("/api/skills/available", get(list_available_skills_handler))
         .route("/api/skills/install", post(install_remote_skill_handler))
         .route("/api/skills/installed", get(list_installed_skills_handler))
-        .route("/api/skills/remote/{id}", delete(uninstall_remote_skill_handler))
-        .route("/api/cognitive/map/{sop_id}", get(get_cognitive_map_handler))
-        .route("/api/workspaces", get(list_workspaces_handler).post(create_workspace_handler))
+        .route(
+            "/api/skills/remote/{id}",
+            delete(uninstall_remote_skill_handler),
+        )
+        .route(
+            "/api/cognitive/map/{sop_id}",
+            get(get_cognitive_map_handler),
+        )
+        .route(
+            "/api/workspaces",
+            get(list_workspaces_handler).post(create_workspace_handler),
+        )
         .route("/api/workspaces/switch", post(switch_workspace_handler))
-        .route("/api/workspaces/current", get(get_current_workspace_handler))
+        .route(
+            "/api/workspaces/current",
+            get(get_current_workspace_handler),
+        )
         .route("/api/sops", get(list_sops_handler).post(save_sop_handler))
-        .route("/api/sops/{id}", get(get_sop_handler).delete(delete_sop_handler))
+        .route(
+            "/api/sops/{id}",
+            get(get_sop_handler).delete(delete_sop_handler),
+        )
         .route("/api/experience/similar", post(experience_similar_handler))
         .route("/api/execute/goal", post(execute_goal_handler))
-        .route("/api/execute/goal/{goal_id}/status", get(goal_status_handler))
+        .route(
+            "/api/execute/goal/{goal_id}/status",
+            get(goal_status_handler),
+        )
         .route("/api/execute/goal/{goal_id}/trace", get(goal_trace_handler))
-        .route("/api/execute/goal/{goal_id}/stream", get(goal_stream_handler))
+        .route(
+            "/api/execute/goal/{goal_id}/stream",
+            get(goal_stream_handler),
+        )
         .route("/api/execute/composite", post(execute_composite_handler))
         .route(
             "/api/roadmap/project/:id",
@@ -1002,7 +1152,10 @@ pub fn build_router(state: RestApiState) -> Router {
         .route("/api/roadmap/milestone", post(roadmap_milestone_handler))
         .route("/api/roadmap/phase", post(roadmap_phase_handler))
         .route("/api/roadmap/goal/:goal_id", patch(roadmap_goal_handler))
-        .route("/api/roadmap/health/:project_id", get(roadmap_health_handler))
+        .route(
+            "/api/roadmap/health/:project_id",
+            get(roadmap_health_handler),
+        )
         .route("/api/execute", post(execute_handler))
         .route(
             "/api/sessions",

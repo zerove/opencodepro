@@ -245,14 +245,13 @@ async fn test_execute_with_hooks_allowed() {
         source_skill: None,
     });
 
-    let result =
-        execute_with_hooks(
-            "test_tool",
-            b"{}".to_vec(),
-            &reg,
-            |args| async move { Ok(args) },
-        )
-        .await;
+    let result = execute_with_hooks(
+        "test_tool",
+        b"{}".to_vec(),
+        &reg,
+        |args| async move { Ok(args) },
+    )
+    .await;
 
     assert!(result.is_ok());
 }
@@ -270,14 +269,13 @@ async fn test_execute_with_hooks_denied() {
         source_skill: None,
     });
 
-    let result =
-        execute_with_hooks(
-            "test_tool",
-            b"{}".to_vec(),
-            &reg,
-            |args| async move { Ok(args) },
-        )
-        .await;
+    let result = execute_with_hooks(
+        "test_tool",
+        b"{}".to_vec(),
+        &reg,
+        |args| async move { Ok(args) },
+    )
+    .await;
 
     assert!(result.is_err());
     assert!(result.unwrap_err().contains("Not allowed"));

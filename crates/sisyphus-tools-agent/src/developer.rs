@@ -8,7 +8,7 @@
 pub mod types;
 
 pub use types::{
-    DevAction, DevOverallStatus, DevStep, DevCheckpoint, DevelopmentPlan, DevelopmentReport,
+    DevAction, DevCheckpoint, DevOverallStatus, DevStep, DevelopmentPlan, DevelopmentReport,
     StepResult, StepStatus, VerificationMethod,
 };
 
@@ -83,14 +83,17 @@ Return ONLY the JSON object."#;
 
         let context_with_wisdom = if self.enable_wisdom {
             match sisyphus_tools_system::wisdom::wisdom_inject().await {
-                Ok(w) if !w.is_empty() => format!("{project_context}\n\nWisdom from past sessions:\n{w}"),
+                Ok(w) if !w.is_empty() => {
+                    format!("{project_context}\n\nWisdom from past sessions:\n{w}")
+                }
                 _ => project_context.to_string(),
             }
         } else {
             project_context.to_string()
         };
 
-        let user_prompt = format!("Goal: {goal}\n\nProject Context: {context_with_wisdom}\n\nPlan this goal.");
+        let user_prompt =
+            format!("Goal: {goal}\n\nProject Context: {context_with_wisdom}\n\nPlan this goal.");
 
         // First attempt
         let response = self.llm.chat(system_prompt, &user_prompt, true).await?;
@@ -101,7 +104,10 @@ Return ONLY the JSON object."#;
                 let corrective_prompt = format!(
                     "Your previous response was not valid JSON for DevelopmentPlan. Error: {e}. Please try again and ensure the JSON structure is exactly as requested."
                 );
-                let response = self.llm.chat(system_prompt, &corrective_prompt, true).await?;
+                let response = self
+                    .llm
+                    .chat(system_prompt, &corrective_prompt, true)
+                    .await?;
                 match serde_json::from_str::<DevelopmentPlan>(&response) {
                     Ok(plan) => Ok(plan),
                     Err(e2) => Err(format!("Failed to parse DevelopmentPlan after retry: {e2}")),
@@ -117,11 +123,13 @@ Return ONLY the JSON object."#;
                     .map(|()| format!("Created file: {path}"))
                     .map_err(|e| e.to_string())?
             }
-            DevAction::EditFile { path, old_string, new_string } => {
-                sisyphus_tools_system::file::edit(Path::new(path), old_string, new_string)
-                    .map(|()| format!("Edited file: {path}"))
-                    .map_err(|e| e.to_string())?
-            }
+            DevAction::EditFile {
+                path,
+                old_string,
+                new_string,
+            } => sisyphus_tools_system::file::edit(Path::new(path), old_string, new_string)
+                .map(|()| format!("Edited file: {path}"))
+                .map_err(|e| e.to_string())?,
             DevAction::RunCommand { command, dir } => {
                 let mut cmd = Command::new("sh");
                 cmd.arg("-c").arg(command);
@@ -134,26 +142,35 @@ Return ONLY the JSON object."#;
                 } else {
                     return Ok(StepResult {
                         step_id: step.id,
-                        status: StepStatus::Failed(String::from_utf8_lossy(&output.stderr).to_string()),
+                        status: StepStatus::Failed(
+                            String::from_utf8_lossy(&output.stderr).to_string(),
+                        ),
                         output: String::from_utf8_lossy(&output.stdout).to_string(),
                         verification_output: None,
                     });
                 }
             }
             DevAction::ReadFile { path } => {
-                sisyphus_tools_system::file::read(Path::new(path))
-                    .map_err(|e| e.to_string())?
+                sisyphus_tools_system::file::read(Path::new(path)).map_err(|e| e.to_string())?
             }
             DevAction::ComplexChange { description } => {
                 let system_prompt = "You are a code editor. Decompose a complex change request into a JSON array of granular edits. Each edit must be { \"path\": \"...\", \"old_string\": \"...\", \"new_string\": \"...\" }. Return ONLY the JSON array.";
                 let response = self.llm.chat(system_prompt, description, true).await?;
-                let edits: Vec<EditRequest> = serde_json::from_str(&response).map_err(|e| e.to_string())?;
-                
+                let edits: Vec<EditRequest> =
+                    serde_json::from_str(&response).map_err(|e| e.to_string())?;
+
                 let mut summary = Vec::new();
                 for edit in edits {
-                    match sisyphus_tools_system::file::edit(Path::new(&edit.path), &edit.old_string, &edit.new_string) {
+                    match sisyphus_tools_system::file::edit(
+                        Path::new(&edit.path),
+                        &edit.old_string,
+                        &edit.new_string,
+                    ) {
                         Ok(()) => summary.push(format!("Applied edit to {}", edit.path)),
-                        Err(e) => summary.push(format!("Warning: failed to apply edit to {}: {}", edit.path, e)),
+                        Err(e) => summary.push(format!(
+                            "Warning: failed to apply edit to {}: {}",
+                            edit.path, e
+                        )),
                     }
                 }
                 summary.join("\n")
@@ -171,11 +188,19 @@ Return ONLY the JSON object."#;
     pub async fn verify_step(&self, step: &DevStep, result: &StepResult) -> Result<bool, String> {
         match &step.verification {
             VerificationMethod::CargoCheck => {
-                let output = Command::new("sh").arg("-c").arg("cargo check 2>&1").output().map_err(|e| e.to_string())?;
+                let output = Command::new("sh")
+                    .arg("-c")
+                    .arg("cargo check 2>&1")
+                    .output()
+                    .map_err(|e| e.to_string())?;
                 Ok(output.status.success())
             }
             VerificationMethod::CargoTest => {
-                let output = Command::new("sh").arg("-c").arg("cargo test 2>&1").output().map_err(|e| e.to_string())?;
+                let output = Command::new("sh")
+                    .arg("-c")
+                    .arg("cargo test 2>&1")
+                    .output()
+                    .map_err(|e| e.to_string())?;
                 Ok(output.status.success())
             }
             VerificationMethod::LspDiagnostics { path: _ } => {
@@ -183,12 +208,19 @@ Return ONLY the JSON object."#;
                 Ok(true)
             }
             VerificationMethod::Command { command } => {
-                let output = Command::new("sh").arg("-c").arg(command).output().map_err(|e| e.to_string())?;
+                let output = Command::new("sh")
+                    .arg("-c")
+                    .arg(command)
+                    .output()
+                    .map_err(|e| e.to_string())?;
                 Ok(output.status.success())
             }
             VerificationMethod::LlmReview { criteria } => {
                 let system_prompt = "You are a QA engineer. Review the provided output against the criteria. Answer ONLY 'yes' or 'no'.";
-                let user_prompt = format!("Criteria: {}\n\nOutput: {}\n\nDoes this satisfy the criteria?", criteria, result.output);
+                let user_prompt = format!(
+                    "Criteria: {}\n\nOutput: {}\n\nDoes this satisfy the criteria?",
+                    criteria, result.output
+                );
                 let response = self.llm.chat(system_prompt, &user_prompt, false).await?;
                 Ok(response.to_lowercase().starts_with("yes"))
             }
@@ -227,7 +259,9 @@ Return ONLY the JSON object."#;
                 let fix_step = DevStep {
                     id: step.id * 100,
                     description: format!("Fix for step {}", step.id),
-                    action: DevAction::ComplexChange { description: fix_description },
+                    action: DevAction::ComplexChange {
+                        description: fix_description,
+                    },
                     expected_outcome: "Verification passes".to_string(),
                     verification: step.verification.clone(),
                     status: StepStatus::Pending,
@@ -245,14 +279,18 @@ Return ONLY the JSON object."#;
                     match self.verify_step(step, &fix_result).await {
                         Ok(true) => {
                             result.status = StepStatus::Success;
-                            result.output = format!("Fixed and verified. Fix output: {}", fix_result.output);
+                            result.output =
+                                format!("Fixed and verified. Fix output: {}", fix_result.output);
                         }
                         _ => {
-                            result.status = StepStatus::Failed("Verification failed even after fix attempt".to_string());
+                            result.status = StepStatus::Failed(
+                                "Verification failed even after fix attempt".to_string(),
+                            );
                         }
                     }
                 } else {
-                    result.status = StepStatus::Failed(format!("Fix attempt failed: {}", fix_result.output));
+                    result.status =
+                        StepStatus::Failed(format!("Fix attempt failed: {}", fix_result.output));
                 }
             }
             Err(e) => {
@@ -319,7 +357,11 @@ Return ONLY the JSON object."#;
     ) -> Result<DevelopmentReport, String> {
         // --- Wisdom: inject past knowledge at start ---
         if self.enable_wisdom {
-            let _ = sisyphus_tools_system::wisdom::wisdom_record("dev-goals", &format!("Goal: {goal}\nContext: {project_context}")).await;
+            let _ = sisyphus_tools_system::wisdom::wisdom_record(
+                "dev-goals",
+                &format!("Goal: {goal}\nContext: {project_context}"),
+            )
+            .await;
         }
 
         // --- Resume: load checkpoint and skip completed steps ---
@@ -328,10 +370,18 @@ Return ONLY the JSON object."#;
                 let plan = self.plan(goal, project_context).await?;
                 (plan, cp.step_results, cp.artifacts)
             } else {
-                (self.plan(goal, project_context).await?, Vec::new(), Vec::new())
+                (
+                    self.plan(goal, project_context).await?,
+                    Vec::new(),
+                    Vec::new(),
+                )
             }
         } else {
-            (self.plan(goal, project_context).await?, Vec::new(), Vec::new())
+            (
+                self.plan(goal, project_context).await?,
+                Vec::new(),
+                Vec::new(),
+            )
         };
 
         // Filter out already-completed steps
@@ -360,8 +410,7 @@ Return ONLY the JSON object."#;
                 let llm = llm.clone();
                 let checkpoint_dir = checkpoint_dir.clone();
                 join_set.spawn(async move {
-                    let dev = Developer::new(llm)
-                        .with_checkpoint_path(checkpoint_dir);
+                    let dev = Developer::new(llm).with_checkpoint_path(checkpoint_dir);
                     let result = dev.run_step_with_fix(&step).await;
                     (step, result)
                 });
@@ -370,7 +419,13 @@ Return ONLY the JSON object."#;
                     if let Some(Ok((step, result))) = join_set.join_next().await {
                         track_artifact(&step, &mut artifacts);
                         step_results.push(result);
-                        self.save_checkpoint(goal, project_context, &step_results.iter().map(|r| r.step_id).collect::<Vec<_>>(), &step_results, &artifacts);
+                        self.save_checkpoint(
+                            goal,
+                            project_context,
+                            &step_results.iter().map(|r| r.step_id).collect::<Vec<_>>(),
+                            &step_results,
+                            &artifacts,
+                        );
                     }
                 }
             }
@@ -379,7 +434,13 @@ Return ONLY the JSON object."#;
                 if let Ok((step, result)) = res {
                     track_artifact(&step, &mut artifacts);
                     step_results.push(result);
-                    self.save_checkpoint(goal, project_context, &step_results.iter().map(|r| r.step_id).collect::<Vec<_>>(), &step_results, &artifacts);
+                    self.save_checkpoint(
+                        goal,
+                        project_context,
+                        &step_results.iter().map(|r| r.step_id).collect::<Vec<_>>(),
+                        &step_results,
+                        &artifacts,
+                    );
                 }
             }
         } else {
@@ -388,7 +449,13 @@ Return ONLY the JSON object."#;
                 let result = self.run_step_with_fix(step).await;
                 track_artifact(step, &mut artifacts);
                 step_results.push(result);
-                self.save_checkpoint(goal, project_context, &step_results.iter().map(|r| r.step_id).collect::<Vec<_>>(), &step_results, &artifacts);
+                self.save_checkpoint(
+                    goal,
+                    project_context,
+                    &step_results.iter().map(|r| r.step_id).collect::<Vec<_>>(),
+                    &step_results,
+                    &artifacts,
+                );
             }
         }
 
@@ -403,9 +470,12 @@ Return ONLY the JSON object."#;
             };
             let _ = sisyphus_tools_system::wisdom::wisdom_record(
                 "dev-outcomes",
-                &format!("Goal: {goal}\nStatus: {status_str}\nSteps: {} total",
-                    report.steps.len()),
-            ).await;
+                &format!(
+                    "Goal: {goal}\nStatus: {status_str}\nSteps: {} total",
+                    report.steps.len()
+                ),
+            )
+            .await;
         }
 
         // Clear checkpoint on success
@@ -427,8 +497,15 @@ fn track_artifact(step: &DevStep, artifacts: &mut Vec<String>) {
     }
 }
 
-fn build_report(goal: &str, step_results: Vec<StepResult>, artifacts: Vec<String>) -> DevelopmentReport {
-    let completed = step_results.iter().filter(|r| r.status == StepStatus::Success).count();
+fn build_report(
+    goal: &str,
+    step_results: Vec<StepResult>,
+    artifacts: Vec<String>,
+) -> DevelopmentReport {
+    let completed = step_results
+        .iter()
+        .filter(|r| r.status == StepStatus::Success)
+        .count();
     let total = step_results.len();
 
     let overall_status = if completed == total {
@@ -450,39 +527,47 @@ fn build_report(goal: &str, step_results: Vec<StepResult>, artifacts: Vec<String
 pub fn format_report(report: &DevelopmentReport) -> String {
     let mut output = format!("Development Report for Goal: {}\n", report.goal);
     output.push_str("--------------------------------------------------\n");
-    
+
     match &report.overall_status {
         DevOverallStatus::Success => output.push_str("Overall Status: SUCCESS\n"),
         DevOverallStatus::PartialFailure { completed, total } => {
-            output.push_str(&format!("Overall Status: PARTIAL FAILURE ({completed} / {total} steps completed)\n"));
+            output.push_str(&format!(
+                "Overall Status: PARTIAL FAILURE ({completed} / {total} steps completed)\n"
+            ));
         }
         DevOverallStatus::Failed(e) => output.push_str(&format!("Overall Status: FAILED ({e})\n")),
     }
-    
+
     output.push_str("--------------------------------------------------\n");
     for step in &report.steps {
-        output.push_str(&format!("Step {}: Status: {:?}\n", step.step_id, step.status));
+        output.push_str(&format!(
+            "Step {}: Status: {:?}\n",
+            step.step_id, step.status
+        ));
         output.push_str(&format!("Output: {}\n", step.output));
         if let Some(v_out) = &step.verification_output {
             output.push_str(&format!("Verification: {v_out}\n"));
         }
         output.push_str("--------------------------------------------------\n");
     }
-    
+
     if !report.artifacts.is_empty() {
         output.push_str("\nArtifacts:\n");
         for art in &report.artifacts {
             output.push_str(&format!("- {art}\n"));
         }
     }
-    
+
     output
 }
 
 // --- Internal helper for checkpoint path (not public) ---
 impl Developer {
     fn with_checkpoint_path(self, dir: Option<PathBuf>) -> Self {
-        Self { checkpoint_dir: dir, ..self }
+        Self {
+            checkpoint_dir: dir,
+            ..self
+        }
     }
 }
 

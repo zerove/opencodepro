@@ -18,11 +18,16 @@ pub(crate) fn handle_tool(
                 .as_deref()
                 .map(|p| p.to_path_buf())
                 .unwrap_or_else(|| {
-                    ["opencode.json", "opencode.jsonc", ".opencode.json", "sisyphus.toml"]
-                        .iter()
-                        .find(|p| Path::new(p).exists())
-                        .map(PathBuf::from)
-                        .unwrap_or_else(|| PathBuf::from("sisyphus.toml"))
+                    [
+                        "opencode.json",
+                        "opencode.jsonc",
+                        ".opencode.json",
+                        "sisyphus.toml",
+                    ]
+                    .iter()
+                    .find(|p| Path::new(p).exists())
+                    .map(PathBuf::from)
+                    .unwrap_or_else(|| PathBuf::from("sisyphus.toml"))
                 });
 
             let mut cfg = if config_path.exists() {

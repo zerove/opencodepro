@@ -17,4 +17,3 @@ mod tests {
         assert_type::<executor_mcp::MCPToolExecutor>();
     }
 }
-

@@ -2,10 +2,9 @@
 //! Handles the relational mapping of SOPs, their nodes, and their topology.
 
 use anyhow::{Context, Result};
-use sqlx::SqlitePool;
-use sisyphus_types::graph::{SOPGraphConfig, SOPNodeConfig, NodeKind};
 use sisyphus_types::StateStore;
-
+use sisyphus_types::graph::{NodeKind, SOPGraphConfig, SOPNodeConfig};
+use sqlx::SqlitePool;
 
 #[derive(Clone)]
 pub struct SopSqlStore {
@@ -54,7 +53,6 @@ impl SopSqlStore {
             CREATE INDEX IF NOT EXISTS idx_edges_sop ON sop_edges(sop_id, project_id);
         "#;
 
-
         sqlx::query(schema)
             .execute(&self.pool)
             .await
@@ -63,8 +61,19 @@ impl SopSqlStore {
     }
 
     /// Saves a full SOP configuration to the database.
-    pub async fn save_sop(&self, sop_id: &str, project_id: &str, name: &str, version: Option<String>, config: &SOPGraphConfig) -> Result<()> {
-        let mut tx = self.pool.begin().await.context("Failed to begin transaction")?;
+    pub async fn save_sop(
+        &self,
+        sop_id: &str,
+        project_id: &str,
+        name: &str,
+        version: Option<String>,
+        config: &SOPGraphConfig,
+    ) -> Result<()> {
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .context("Failed to begin transaction")?;
 
         // 1. Insert/Update SOP metadata
         let now = std::time::SystemTime::now()
@@ -137,14 +146,16 @@ impl SopSqlStore {
             .await?;
         }
 
-        tx.commit().await.context("Failed to commit SOP transaction")?;
+        tx.commit()
+            .await
+            .context("Failed to commit SOP transaction")?;
         Ok(())
     }
 
     /// Loads a full SOP configuration from the database.
     pub async fn load_sop(&self, sop_id: &str, project_id: &str) -> Result<Option<SOPGraphConfig>> {
         let sop_row = sqlx::query_as::<_, (String, String, Option<String>, i64)>(
-            "SELECT id, name, version, created_at FROM sops WHERE id = ? AND project_id = ?"
+            "SELECT id, name, version, created_at FROM sops WHERE id = ? AND project_id = ?",
         )
         .bind(sop_id)
         .bind(project_id)
@@ -164,11 +175,14 @@ impl SopSqlStore {
         .fetch_all(&self.pool)
         .await?;
 
-        let nodes = node_rows.into_iter().map(|(_idx, name, _kind_type, config_json)| {
-            let kind: NodeKind = serde_json::from_str(&config_json)
-                .expect("Database contained invalid NodeKind JSON");
-            SOPNodeConfig { name, kind }
-        }).collect();
+        let nodes = node_rows
+            .into_iter()
+            .map(|(_idx, name, _kind_type, config_json)| {
+                let kind: NodeKind = serde_json::from_str(&config_json)
+                    .expect("Database contained invalid NodeKind JSON");
+                SOPNodeConfig { name, kind }
+            })
+            .collect();
 
         // 2. Load edges
         let edge_rows = sqlx::query_as::<_, (i64, i64)>(
@@ -179,7 +193,10 @@ impl SopSqlStore {
         .fetch_all(&self.pool)
         .await?;
 
-        let edges = edge_rows.into_iter().map(|(src, tgt)| (src as usize, tgt as usize)).collect();
+        let edges = edge_rows
+            .into_iter()
+            .map(|(src, tgt)| (src as usize, tgt as usize))
+            .collect();
 
         Ok(Some(SOPGraphConfig { nodes, edges }))
     }
@@ -195,17 +212,17 @@ impl SopSqlStore {
 
     pub async fn list_sops(&self, project_id: Option<&str>) -> Result<Vec<String>> {
         let rows = match project_id {
-            Some(pid) => sqlx::query_as::<_, (String,)>(
-                "SELECT id FROM sops WHERE project_id = ?"
-            )
-            .bind(pid)
-            .fetch_all(&self.pool)
-            .await?,
-            None => sqlx::query_as::<_, (String,)>(
-                "SELECT id FROM sops"
-            )
-            .fetch_all(&self.pool)
-            .await?,
+            Some(pid) => {
+                sqlx::query_as::<_, (String,)>("SELECT id FROM sops WHERE project_id = ?")
+                    .bind(pid)
+                    .fetch_all(&self.pool)
+                    .await?
+            }
+            None => {
+                sqlx::query_as::<_, (String,)>("SELECT id FROM sops")
+                    .fetch_all(&self.pool)
+                    .await?
+            }
         };
 
         Ok(rows.into_iter().map(|(id,)| id).collect())
@@ -233,13 +250,8 @@ impl SopSqlStore {
             if let Some(val) = mfs.get_state_json("default", &key).await? {
                 let sop_id = key.strip_prefix("sop:").unwrap_or(&key);
                 if let Ok(config) = serde_json::from_value::<SOPGraphConfig>(val) {
-                    self.save_sop(
-                        sop_id,
-                        "default",
-                        sop_id,
-                        Some("1.0.0".into()),
-                        &config,
-                    ).await?;
+                    self.save_sop(sop_id, "default", sop_id, Some("1.0.0".into()), &config)
+                        .await?;
                     count += 1;
                 }
             }

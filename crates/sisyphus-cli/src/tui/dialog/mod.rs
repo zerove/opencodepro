@@ -62,33 +62,33 @@ pub fn handle_dialog_key(key: KeyEvent, app: &mut App) {
         Dialog::Roadmap => handlers::handle_roadmap_key(code, app),
         Dialog::SkillMarket => handlers::handle_skill_market_key(code, app),
         Dialog::Trace { sop_id: _ } => handlers::handle_trace_key(code, app),
-        Dialog::ConfirmDelete => {
-            match code {
-                KeyCode::Char('y') | KeyCode::Char('Y') => {
-                    if let Some(id) = app.confirm_delete.take() {
-                        let db = app.data_dir.join("sessions.json");
-                        if crate::tools::session_delete(&db, &id).is_ok() {
-                            app.add_log(LogEntry::Success(format!("Deleted session {id}")));
-                            app.session_dirty = true;
-                        }
+        Dialog::ConfirmDelete => match code {
+            KeyCode::Char('y') | KeyCode::Char('Y') => {
+                if let Some(id) = app.confirm_delete.take() {
+                    let db = app.data_dir.join("sessions.json");
+                    if crate::tools::session_delete(&db, &id).is_ok() {
+                        app.add_log(LogEntry::Success(format!("Deleted session {id}")));
+                        app.session_dirty = true;
                     }
-                    app.dialog = None;
                 }
-                KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => {
-                    app.confirm_delete = None;
-                    app.dialog = None;
-                }
-                _ => {}
+                app.dialog = None;
             }
-        }
+            KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => {
+                app.confirm_delete = None;
+                app.dialog = None;
+            }
+            _ => {}
+        },
         Dialog::Dev { goal: _ } => handlers::handle_dev_key(key, app),
-        Dialog::Rename { session_id: _, name: _ } => handlers::handle_rename_key(code, app),
+        Dialog::Rename {
+            session_id: _,
+            name: _,
+        } => handlers::handle_rename_key(code, app),
     }
 }
 
 /// Render the dialog overlay.
 pub fn render_dialog_overlay(frame: &mut ratatui::Frame, area: ratatui::layout::Rect, app: &App) {
-
     let Some(ref dialog) = app.dialog else { return };
 
     match dialog {
@@ -103,6 +103,9 @@ pub fn render_dialog_overlay(frame: &mut ratatui::Frame, area: ratatui::layout::
         Dialog::Trace { sop_id } => renders::render_trace_dialog(frame, area, app, sop_id),
         Dialog::ConfirmDelete => renders::render_confirm_dialog(frame, area, app),
         Dialog::Dev { goal: _goal } => renders::render_dev_dialog(frame, area, app),
-        Dialog::Rename { session_id: _, name } => renders::render_rename_dialog(frame, area, app, name),
+        Dialog::Rename {
+            session_id: _,
+            name,
+        } => renders::render_rename_dialog(frame, area, app, name),
     }
 }

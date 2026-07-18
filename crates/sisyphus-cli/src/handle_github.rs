@@ -17,9 +17,9 @@ pub(crate) fn handle_github(sub: &GithubCommands) -> Result<()> {
                 "ci" => sisyphus_cli::tools::WorkflowKind::Ci,
                 "pr-review" => sisyphus_cli::tools::WorkflowKind::PrReview,
                 "release" => sisyphus_cli::tools::WorkflowKind::Release,
-                other => anyhow::bail!(
-                    "Unknown workflow kind: {other}. Use: ci, pr-review, release"
-                ),
+                other => {
+                    anyhow::bail!("Unknown workflow kind: {other}. Use: ci, pr-review, release")
+                }
             };
             let opts = sisyphus_cli::tools::GenerateOptions {
                 rust_toolchain: toolchain.clone(),

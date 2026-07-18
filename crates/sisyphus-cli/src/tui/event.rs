@@ -1,10 +1,8 @@
 use anyhow::Result;
-use crossterm::event::{
-    Event, KeyCode, KeyEvent, KeyEventKind, MouseButton, MouseEventKind,
-};
+use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, MouseButton, MouseEventKind};
 
 use super::app::{matching_palette_entries, App, DevFocus, LogEntry, View};
-use super::background::{spawn_fetch_roadmap, spawn_list_sops, spawn_fetch_available_skills};
+use super::background::{spawn_fetch_available_skills, spawn_fetch_roadmap, spawn_list_sops};
 use super::dialog::{handle_dialog_key, Dialog};
 use super::helpers::paste_from_clipboard;
 use super::home::handle_home_key;
@@ -20,7 +18,9 @@ pub(crate) fn handle_event(event: Event, app: &mut App, _perms: &CliPermission) 
 
             // Global: Ctrl+C / Ctrl+Q → quick exit (double-tap to confirm)
             if (key.code == KeyCode::Char('c') || key.code == KeyCode::Char('q'))
-                && key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL)
+                && key
+                    .modifiers
+                    .contains(crossterm::event::KeyModifiers::CONTROL)
             {
                 if app.exit_requested {
                     return Ok(true);
@@ -34,7 +34,9 @@ pub(crate) fn handle_event(event: Event, app: &mut App, _perms: &CliPermission) 
 
             // Global: Ctrl+K → toggle command palette (opencode-style)
             if key.code == KeyCode::Char('k')
-                && key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL)
+                && key
+                    .modifiers
+                    .contains(crossterm::event::KeyModifiers::CONTROL)
             {
                 app.palette_open = !app.palette_open;
                 if app.palette_open {
@@ -46,7 +48,9 @@ pub(crate) fn handle_event(event: Event, app: &mut App, _perms: &CliPermission) 
 
             // Global: Ctrl+L → session list dialog
             if key.code == KeyCode::Char('l')
-                && key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL)
+                && key
+                    .modifiers
+                    .contains(crossterm::event::KeyModifiers::CONTROL)
             {
                 app.dialog = Some(Dialog::SessionList);
                 app.dialog_sel = 0;
@@ -57,7 +61,9 @@ pub(crate) fn handle_event(event: Event, app: &mut App, _perms: &CliPermission) 
 
             // Global: Ctrl+M → model info (placeholder for model list)
             if key.code == KeyCode::Char('m')
-                && key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL)
+                && key
+                    .modifiers
+                    .contains(crossterm::event::KeyModifiers::CONTROL)
             {
                 let name = if app.model_name.is_empty() {
                     "default"
@@ -70,9 +76,13 @@ pub(crate) fn handle_event(event: Event, app: &mut App, _perms: &CliPermission) 
 
             // Global: Ctrl+A → agent info (placeholder for agent list)
             if key.code == KeyCode::Char('a')
-                && key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL)
+                && key
+                    .modifiers
+                    .contains(crossterm::event::KeyModifiers::CONTROL)
             {
-                app.add_log(LogEntry::Info("Agent routing managed by bridge. See Config for profiles.".into()));
+                app.add_log(LogEntry::Info(
+                    "Agent routing managed by bridge. See Config for profiles.".into(),
+                ));
                 return Ok(false);
             }
 
@@ -84,7 +94,9 @@ pub(crate) fn handle_event(event: Event, app: &mut App, _perms: &CliPermission) 
 
             // Global: Ctrl+H → go home
             if key.code == KeyCode::Char('h')
-                && key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL)
+                && key
+                    .modifiers
+                    .contains(crossterm::event::KeyModifiers::CONTROL)
             {
                 app.view = View::Home;
                 app.dialog = None;
@@ -94,7 +106,9 @@ pub(crate) fn handle_event(event: Event, app: &mut App, _perms: &CliPermission) 
 
             // Global: Ctrl+N → new session
             if key.code == KeyCode::Char('n')
-                && key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL)
+                && key
+                    .modifiers
+                    .contains(crossterm::event::KeyModifiers::CONTROL)
             {
                 let db = app.data_dir.join("sessions.json");
                 match crate::tools::session_create(&db, "unnamed") {
@@ -102,7 +116,9 @@ pub(crate) fn handle_event(event: Event, app: &mut App, _perms: &CliPermission) 
                         app.add_log(LogEntry::Success(format!("Created session {}", s.name)));
                         match crate::tools::session_get(&db, &s.id) {
                             Ok(session) => app.session_detail = Some(session),
-                            Err(e) => app.add_log(LogEntry::Error(format!("Session created but load failed: {e}"))),
+                            Err(e) => app.add_log(LogEntry::Error(format!(
+                                "Session created but load failed: {e}"
+                            ))),
                         }
                         app.session_detail_scroll = usize::MAX;
                         app.view = View::Session;
@@ -115,13 +131,17 @@ pub(crate) fn handle_event(event: Event, app: &mut App, _perms: &CliPermission) 
 
             // Global: Ctrl+V → paste
             if key.code == KeyCode::Char('v')
-                && key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL)
+                && key
+                    .modifiers
+                    .contains(crossterm::event::KeyModifiers::CONTROL)
             {
                 let pasted = paste_from_clipboard();
                 if !pasted.is_empty() {
                     match app.view {
                         View::Home => {
-                            let byte_pos = app.home_input.char_indices()
+                            let byte_pos = app
+                                .home_input
+                                .char_indices()
                                 .nth(app.home_cursor)
                                 .map(|(i, _)| i)
                                 .unwrap_or(app.home_input.len());
@@ -139,7 +159,9 @@ pub(crate) fn handle_event(event: Event, app: &mut App, _perms: &CliPermission) 
 
             // Leader key: Ctrl+X → leader mode
             if key.code == KeyCode::Char('x')
-                && key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL)
+                && key
+                    .modifiers
+                    .contains(crossterm::event::KeyModifiers::CONTROL)
                 && !app.leader_mode
             {
                 app.leader_mode = true;
@@ -192,58 +214,55 @@ pub(crate) fn handle_event(event: Event, app: &mut App, _perms: &CliPermission) 
                 return Ok(true);
             }
         }
-        Event::Mouse(m) => {
-            match m.kind {
-                MouseEventKind::Down(MouseButton::Left) => {
-                    if app.view == View::Session && app.session_detail.is_some() {
-                        if let Some(msg_idx) = app.find_message_at_row(m.row) {
-                            app.selected_msg = Some(msg_idx);
-                            app.toggle_message_thoughts(msg_idx);
-                        }
+        Event::Mouse(m) => match m.kind {
+            MouseEventKind::Down(MouseButton::Left) => {
+                if app.view == View::Session && app.session_detail.is_some() {
+                    if let Some(msg_idx) = app.find_message_at_row(m.row) {
+                        app.selected_msg = Some(msg_idx);
+                        app.toggle_message_thoughts(msg_idx);
                     }
                 }
-                MouseEventKind::ScrollDown => {
-                    if app.dialog.is_some() {
-                        if matches!(app.dialog, Some(Dialog::Help)) {
-                            app.help_scroll = app.help_scroll.saturating_add(3);
-                        } else {
-                            app.dialog_sel = app.dialog_sel.saturating_add(1);
-                        }
-                    } else if app.view == View::Session {
-                        if app.session_detail.is_some() {
-                            app.adjust_session_scroll(3);
-                            app.boulder_dirty = true;
-                        } else {
-                            let visible = app.filtered_sessions().len();
-                            app.session_sel = (app.session_sel + 1).min(visible.saturating_sub(1));
-                        }
-                    }
-                }
-                MouseEventKind::ScrollUp => {
-                    if app.dialog.is_some() {
-                        if matches!(app.dialog, Some(Dialog::Help)) {
-                            app.help_scroll = app.help_scroll.saturating_sub(3);
-                        } else {
-                            app.dialog_sel = app.dialog_sel.saturating_sub(1);
-                        }
-                    } else if app.view == View::Session {
-                        if app.session_detail.is_some() {
-                            app.adjust_session_scroll(-3);
-                            app.boulder_dirty = true;
-                        } else {
-                            app.session_sel = app.session_sel.saturating_sub(1);
-                        }
-                    }
-                }
-                _ => {}
             }
-        }
+            MouseEventKind::ScrollDown => {
+                if app.dialog.is_some() {
+                    if matches!(app.dialog, Some(Dialog::Help)) {
+                        app.help_scroll = app.help_scroll.saturating_add(3);
+                    } else {
+                        app.dialog_sel = app.dialog_sel.saturating_add(1);
+                    }
+                } else if app.view == View::Session {
+                    if app.session_detail.is_some() {
+                        app.adjust_session_scroll(3);
+                        app.boulder_dirty = true;
+                    } else {
+                        let visible = app.filtered_sessions().len();
+                        app.session_sel = (app.session_sel + 1).min(visible.saturating_sub(1));
+                    }
+                }
+            }
+            MouseEventKind::ScrollUp => {
+                if app.dialog.is_some() {
+                    if matches!(app.dialog, Some(Dialog::Help)) {
+                        app.help_scroll = app.help_scroll.saturating_sub(3);
+                    } else {
+                        app.dialog_sel = app.dialog_sel.saturating_sub(1);
+                    }
+                } else if app.view == View::Session {
+                    if app.session_detail.is_some() {
+                        app.adjust_session_scroll(-3);
+                        app.boulder_dirty = true;
+                    } else {
+                        app.session_sel = app.session_sel.saturating_sub(1);
+                    }
+                }
+            }
+            _ => {}
+        },
         Event::Resize(_, _) => {} // ratatui handles redraw automatically
         _ => {}
     }
     Ok(false)
 }
-
 
 fn handle_palette_key(key: KeyEvent, app: &mut App) {
     let code = key.code;
@@ -300,7 +319,9 @@ fn handle_palette_key(key: KeyEvent, app: &mut App) {
                             app.add_log(LogEntry::Success(format!("Created session {}", s.name)));
                             match crate::tools::session_get(&db, &s.id) {
                                 Ok(session) => app.session_detail = Some(session),
-                                Err(e) => app.add_log(LogEntry::Error(format!("Session created but load failed: {e}"))),
+                                Err(e) => app.add_log(LogEntry::Error(format!(
+                                    "Session created but load failed: {e}"
+                                ))),
                             }
                             app.session_detail_scroll = usize::MAX;
                             app.view = View::Session;
@@ -324,28 +345,37 @@ fn handle_palette_key(key: KeyEvent, app: &mut App) {
                     app.sop_status = "connecting...".into();
                     app.sop_result = None;
                     if app.pending_op.is_none() {
-                        app.pending_op = Some(spawn_list_sops(app.bridge_client.clone(), app.bridge_address.clone()));
+                        app.pending_op = Some(spawn_list_sops(
+                            app.bridge_client.clone(),
+                            app.bridge_address.clone(),
+                        ));
                     }
                 }
                 "roadmap" | ":roadmap" => {
                     app.dialog = Some(Dialog::Roadmap);
                     app.roadmap_status = "connecting...".into();
                     if app.pending_op.is_none() {
-                        app.pending_op = Some(spawn_fetch_roadmap(app.bridge_client.clone(), app.bridge_address.clone()));
+                        app.pending_op = Some(spawn_fetch_roadmap(
+                            app.bridge_client.clone(),
+                            app.bridge_address.clone(),
+                        ));
                     }
                 }
                 "skills" | ":skills" => {
                     app.dialog = Some(Dialog::SkillMarket);
                     app.skill_market_status = "connecting...".into();
                     if app.pending_op.is_none() {
-                        app.pending_op = Some(spawn_fetch_available_skills(app.bridge_address.clone()));
+                        app.pending_op =
+                            Some(spawn_fetch_available_skills(app.bridge_address.clone()));
                     }
                 }
                 "workspaces" | ":workspaces" => {
                     app.dialog = Some(Dialog::WorkspaceList);
                     app.workspace_status = "connecting...".into();
                     if app.pending_op.is_none() {
-                        app.pending_op = Some(super::background::spawn_list_workspaces(app.bridge_address.clone()));
+                        app.pending_op = Some(super::background::spawn_list_workspaces(
+                            app.bridge_address.clone(),
+                        ));
                     }
                 }
                 "clear" | ":clear" => {
@@ -354,14 +384,18 @@ fn handle_palette_key(key: KeyEvent, app: &mut App) {
                 }
                 "exit" | ":exit" | "quit" | ":quit" => {
                     app.exit_requested = true;
-                    app.add_log(LogEntry::Warn("Type `exit` again to confirm, or `clear` to dismiss.".into()));
+                    app.add_log(LogEntry::Warn(
+                        "Type `exit` again to confirm, or `clear` to dismiss.".into(),
+                    ));
                 }
                 cmd if cmd.starts_with(":bridge") => {
                     let db = app.data_dir.join("sessions.json");
                     app.session_input = cmd.to_string();
                     app.view = View::Session;
                     if let Err(e) = crate::tools::session_create(&db, "unnamed") {
-                        app.add_log(LogEntry::Error(format!("Failed to create bridge session: {e}")));
+                        app.add_log(LogEntry::Error(format!(
+                            "Failed to create bridge session: {e}"
+                        )));
                     }
                     app.boulder_dirty = true;
                 }
@@ -377,11 +411,17 @@ fn handle_palette_key(key: KeyEvent, app: &mut App) {
                         &app.model_name
                     };
                     app.add_log(LogEntry::Info(format!("Current model: {name}")));
-                    app.add_log(LogEntry::Info("Use Config or bridge to switch models.".into()));
+                    app.add_log(LogEntry::Info(
+                        "Use Config or bridge to switch models.".into(),
+                    ));
                 }
                 "agent" | ":agent" => {
-                    app.add_log(LogEntry::Info("Agent routing is managed by the bridge.".into()));
-                    app.add_log(LogEntry::Info("Use Config to configure agent profiles.".into()));
+                    app.add_log(LogEntry::Info(
+                        "Agent routing is managed by the bridge.".into(),
+                    ));
+                    app.add_log(LogEntry::Info(
+                        "Use Config to configure agent profiles.".into(),
+                    ));
                 }
                 "theme" | ":theme" => {
                     app.toggle_theme();
@@ -401,7 +441,9 @@ fn handle_palette_key(key: KeyEvent, app: &mut App) {
                     app.dev_report = None;
                     app.dev_status = "idle".into();
                     app.dev_focus = DevFocus::Goal;
-                    app.dialog = Some(Dialog::Dev { goal: String::new() });
+                    app.dialog = Some(Dialog::Dev {
+                        goal: String::new(),
+                    });
                 }
                 _ => {}
             }

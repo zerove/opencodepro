@@ -8,11 +8,10 @@ use std::time::Instant;
 use thiserror::Error;
 use wasmtime::*;
 
-pub mod plugin_manager;
 pub mod custom_executor;
-pub use plugin_manager::PluginManager;
+pub mod plugin_manager;
 pub use custom_executor::CustomToolExecutor;
-
+pub use plugin_manager::PluginManager;
 
 #[derive(Error, Debug)]
 pub enum SandboxError {
@@ -165,29 +164,30 @@ impl ToolExecutor for WasmToolExecutor {
     ) -> Result<Vec<u8>, sisyphus_types::TypesError> {
         use sisyphus_types::TypesError;
 
-
         let span =
             tracing::info_span!("sandbox.execute", tool_id = %tool_id, fuel_limit = fuel_limit);
         let _enter = span.enter();
 
         let exec_start = Instant::now();
-        let module = self
-            .get_or_compile_module(tool_id)
-            .await
-            .map_err(|e| TypesError::ToolExecutionError { tool_id: tool_id.to_string(), details: e.to_string() })?;
+        let module = self.get_or_compile_module(tool_id).await.map_err(|e| {
+            TypesError::ToolExecutionError {
+                tool_id: tool_id.to_string(),
+                details: e.to_string(),
+            }
+        })?;
 
         let linker = Linker::new(&self.engine);
         let mut store = Store::new(&self.engine, ());
-        store.set_fuel(fuel_limit).map_err(|e| {
-            TypesError::ToolExecutionError {
+        store
+            .set_fuel(fuel_limit)
+            .map_err(|e| TypesError::ToolExecutionError {
                 tool_id: tool_id.to_string(),
                 details: SandboxError::FuelError {
                     tool_id: tool_id.to_string(),
                     source: e,
                 }
                 .to_string(),
-            }
-        })?;
+            })?;
 
         let instance = linker.instantiate(&mut store, &module).map_err(|e| {
             TypesError::ToolExecutionError {
@@ -201,9 +201,12 @@ impl ToolExecutor for WasmToolExecutor {
         })?;
 
         // 5. Look for the "execute" export with dynamic signature handling
-        let execute_func = instance
-            .get_func(&mut store, "execute")
-            .ok_or_else(|| TypesError::ToolExecutionError { tool_id: tool_id.to_string(), details: SandboxError::MissingExecuteExport(tool_id.to_string()).to_string() })?;
+        let execute_func = instance.get_func(&mut store, "execute").ok_or_else(|| {
+            TypesError::ToolExecutionError {
+                tool_id: tool_id.to_string(),
+                details: SandboxError::MissingExecuteExport(tool_id.to_string()).to_string(),
+            }
+        })?;
 
         // Build argument list based on the function's expected parameter count
         let func_ty = execute_func.ty(&store);
@@ -219,7 +222,10 @@ impl ToolExecutor for WasmToolExecutor {
             .map_err(|e| {
                 // Translate traps (fuel exhaustion, stack overflow, memory violation)
                 // into the ResourceExhausted format the tests expect.
-                TypesError::ToolExecutionError { tool_id: tool_id.to_string(), details: SandboxError::ExecutionError(e.to_string()).to_string() }
+                TypesError::ToolExecutionError {
+                    tool_id: tool_id.to_string(),
+                    details: SandboxError::ExecutionError(e.to_string()).to_string(),
+                }
             });
         let call_duration = call_start.elapsed();
 

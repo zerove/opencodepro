@@ -1,22 +1,22 @@
-pub mod system_executor;
+pub mod agent_channel;
 pub mod bash;
 pub mod config_store;
+pub mod dep_manager;
+pub mod explore;
 pub mod file;
 pub mod permissions;
 pub mod scaffold;
+pub mod system_executor;
 pub mod web;
 pub mod wisdom;
-pub mod dep_manager;
-pub mod agent_channel;
-pub mod explore;
 
 #[cfg(test)]
 mod tests {
-    use std::sync::{Arc, RwLock};
-    use sisyphus_types::Config;
-    use sisyphus_tools_core::PermissionRules;
     use crate::config_store::ConfigStore;
     use crate::permissions::PermissionChecker;
+    use sisyphus_tools_core::PermissionRules;
+    use sisyphus_types::Config;
+    use std::sync::{Arc, RwLock};
 
     #[test]
     fn test_config_store_basic() {

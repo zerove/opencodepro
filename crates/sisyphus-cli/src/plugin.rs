@@ -67,7 +67,9 @@ pub async fn run_watch(path: Option<&Path>) -> Result<()> {
         sleep(Duration::from_secs(2)).await;
         if let Ok(metadata) = std::fs::metadata(&tools_dir) {
             if let Ok(mtime) = metadata.modified() {
-                let current_mtime = mtime.duration_since(std::time::UNIX_EPOCH).context("Invalid modification time")?;
+                let current_mtime = mtime
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .context("Invalid modification time")?;
                 if current_mtime > last_mtime {
                     println!("Detected changes in {}.", tools_dir.display());
                     last_mtime = current_mtime;

@@ -4,11 +4,11 @@
 //! embedding, with concrete implementations for HTTP-based VLM APIs
 //! and a mock provider for testing.
 
-use std::sync::Arc;
 use async_trait::async_trait;
-use serde::{Serialize, Deserialize};
-use sisyphus_types::graph::NodeKind;
+use serde::{Deserialize, Serialize};
 use sisyphus_tools_llm::LlmClient;
+use sisyphus_types::graph::NodeKind;
+use std::sync::Arc;
 use thiserror::Error;
 
 // ── Errors ───────────────────────────────────────────────────────────────
@@ -70,15 +70,12 @@ impl Default for VlmProviderConfig {
 #[async_trait]
 pub trait VisualPerceptionProvider: Send + Sync {
     async fn analyze_image(
-        &self, 
-        image_data: &[u8], 
-        prompt: &str
-    ) -> Result<VisualAnalysisResult, VisualError>;
-
-    async fn get_embedding(
         &self,
         image_data: &[u8],
-    ) -> Result<Vec<f32>, VisualError>;
+        prompt: &str,
+    ) -> Result<VisualAnalysisResult, VisualError>;
+
+    async fn get_embedding(&self, image_data: &[u8]) -> Result<Vec<f32>, VisualError>;
 }
 
 // ── HTTP VLM Provider ───────────────────────────────────────────────────
@@ -110,9 +107,9 @@ impl HttpVlmProvider {
 #[async_trait]
 impl VisualPerceptionProvider for HttpVlmProvider {
     async fn analyze_image(
-        &self, 
-        image_data: &[u8], 
-        prompt: &str
+        &self,
+        image_data: &[u8],
+        prompt: &str,
     ) -> Result<VisualAnalysisResult, VisualError> {
         let base64_image = base64_encode(image_data);
 
@@ -137,7 +134,8 @@ impl VisualPerceptionProvider for HttpVlmProvider {
             "max_tokens": 1000
         });
 
-        let response = self.client
+        let response = self
+            .client
             .post(&self.config.endpoint)
             .header("Authorization", format!("Bearer {}", self.config.api_key))
             .header("Content-Type", "application/json")
@@ -149,9 +147,10 @@ impl VisualPerceptionProvider for HttpVlmProvider {
         if !response.status().is_success() {
             let status = response.status();
             let body = response.text().await.unwrap_or_default();
-            return Err(VisualError::ProviderError(
-                format!("HTTP {}: {}", status, body)
-            ));
+            return Err(VisualError::ProviderError(format!(
+                "HTTP {}: {}",
+                status, body
+            )));
         }
 
         let response_json: serde_json::Value = response
@@ -171,13 +170,12 @@ impl VisualPerceptionProvider for HttpVlmProvider {
         })
     }
 
-    async fn get_embedding(
-        &self,
-        image_data: &[u8],
-    ) -> Result<Vec<f32>, VisualError> {
+    async fn get_embedding(&self, image_data: &[u8]) -> Result<Vec<f32>, VisualError> {
         let base64_image = base64_encode(image_data);
 
-        let embeddings_endpoint = self.config.endpoint
+        let embeddings_endpoint = self
+            .config
+            .endpoint
             .replace("/chat/completions", "/embeddings");
 
         let request_body = serde_json::json!({
@@ -185,7 +183,8 @@ impl VisualPerceptionProvider for HttpVlmProvider {
             "input": format!("data:image/png;base64,{}", base64_image),
         });
 
-        let response = self.client
+        let response = self
+            .client
             .post(&embeddings_endpoint)
             .header("Authorization", format!("Bearer {}", self.config.api_key))
             .header("Content-Type", "application/json")
@@ -197,9 +196,10 @@ impl VisualPerceptionProvider for HttpVlmProvider {
         if !response.status().is_success() {
             let status = response.status();
             let body = response.text().await.unwrap_or_default();
-            return Err(VisualError::ProviderError(
-                format!("Embedding HTTP {}: {}", status, body)
-            ));
+            return Err(VisualError::ProviderError(format!(
+                "Embedding HTTP {}: {}",
+                status, body
+            )));
         }
 
         let response_json: serde_json::Value = response
@@ -209,9 +209,7 @@ impl VisualPerceptionProvider for HttpVlmProvider {
 
         let embedding = response_json["data"][0]["embedding"]
             .as_array()
-            .ok_or_else(|| VisualError::ProviderError(
-                "No embedding array in response".into()
-            ))?;
+            .ok_or_else(|| VisualError::ProviderError("No embedding array in response".into()))?;
 
         let vector: Vec<f32> = embedding
             .iter()
@@ -219,9 +217,7 @@ impl VisualPerceptionProvider for HttpVlmProvider {
             .collect();
 
         if vector.is_empty() {
-            return Err(VisualError::ProviderError(
-                "Empty embedding vector".into()
-            ));
+            return Err(VisualError::ProviderError("Empty embedding vector".into()));
         }
 
         Ok(vector)
@@ -236,18 +232,24 @@ pub struct SisyphusVisualProvider {
 
 impl SisyphusVisualProvider {
     pub fn new(llm_client: Arc<dyn LlmClient>) -> Self {
-        Self { _llm_client: llm_client }
+        Self {
+            _llm_client: llm_client,
+        }
     }
 }
 
 #[async_trait]
 impl VisualPerceptionProvider for SisyphusVisualProvider {
     async fn analyze_image(
-        &self, 
-        image_data: &[u8], 
-        prompt: &str
+        &self,
+        image_data: &[u8],
+        prompt: &str,
     ) -> Result<VisualAnalysisResult, VisualError> {
-        tracing::info!("VLM analyzing image ({} bytes) with prompt: {}", image_data.len(), prompt);
+        tracing::info!(
+            "VLM analyzing image ({} bytes) with prompt: {}",
+            image_data.len(),
+            prompt
+        );
         Ok(VisualAnalysisResult {
             description: format!("Simulated analysis for prompt: {}", prompt),
             detected_elements: vec![],
@@ -255,10 +257,7 @@ impl VisualPerceptionProvider for SisyphusVisualProvider {
         })
     }
 
-    async fn get_embedding(
-        &self,
-        _image_data: &[u8],
-    ) -> Result<Vec<f32>, VisualError> {
+    async fn get_embedding(&self, _image_data: &[u8]) -> Result<Vec<f32>, VisualError> {
         Ok(vec![0.1; 512])
     }
 }
@@ -271,8 +270,14 @@ pub struct VisualPerceptionManager {
 }
 
 impl VisualPerceptionManager {
-    pub fn new(provider: Arc<dyn VisualPerceptionProvider>, llm_client: Arc<dyn LlmClient>) -> Self {
-        Self { provider, _llm_client: llm_client }
+    pub fn new(
+        provider: Arc<dyn VisualPerceptionProvider>,
+        llm_client: Arc<dyn LlmClient>,
+    ) -> Self {
+        Self {
+            provider,
+            _llm_client: llm_client,
+        }
     }
 
     /// Processes a visual request based on the NodeKind.
@@ -284,17 +289,25 @@ impl VisualPerceptionManager {
         match kind {
             NodeKind::VisualAnalysis { prompt, .. } => {
                 let result = self.provider.analyze_image(image_data, prompt).await?;
-                Ok(serde_json::to_string(&result).map_err(|e| VisualError::ProcessingError(e.to_string()))?)
+                Ok(serde_json::to_string(&result)
+                    .map_err(|e| VisualError::ProcessingError(e.to_string()))?)
             }
-            NodeKind::VisualAction { action_type, target_selector, params } => {
+            NodeKind::VisualAction {
+                action_type,
+                target_selector,
+                params,
+            } => {
                 let prompt = format!(
                     "Locate the element matching selector '{}' for action '{}' with params {}. Return coordinates.",
                     target_selector, action_type, params
                 );
                 let result = self.provider.analyze_image(image_data, &prompt).await?;
-                Ok(serde_json::to_string(&result).map_err(|e| VisualError::ProcessingError(e.to_string()))?)
+                Ok(serde_json::to_string(&result)
+                    .map_err(|e| VisualError::ProcessingError(e.to_string()))?)
             }
-            _ => Err(VisualError::InvalidRequest("Node is not a visual node".into())),
+            _ => Err(VisualError::InvalidRequest(
+                "Node is not a visual node".into(),
+            )),
         }
     }
 
@@ -367,7 +380,10 @@ mod tests {
     async fn test_mock_provider_analyze() {
         let llm = Arc::new(DummyLlmClient);
         let provider = Arc::new(SisyphusVisualProvider::new(llm));
-        let result = provider.analyze_image(b"test image", "describe this").await.unwrap();
+        let result = provider
+            .analyze_image(b"test image", "describe this")
+            .await
+            .unwrap();
         assert!(result.description.contains("Simulated"));
         assert_eq!(result.confidence, 0.9);
     }

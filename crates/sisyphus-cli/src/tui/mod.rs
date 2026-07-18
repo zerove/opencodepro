@@ -14,10 +14,10 @@ mod sessions;
 mod theme;
 mod widgets;
 
+use crate::permission::CliPermission;
 pub(crate) use app::{App, DevFocus, LogEntry, Mode, ToastKind, View};
 pub(crate) use event::handle_event;
 pub(crate) use render::ui;
-use crate::permission::CliPermission;
 
 // ── Public entry ────────────────────────────────────────
 
@@ -127,10 +127,9 @@ fn run_loop(
                 crossterm::event::KeyModifiers::empty(),
             ));
             // Only auto-continue if we're in a session
-            if app.view == View::Session
-                && handle_event(fake_event, app, perms)? {
-                    break;
-                }
+            if app.view == View::Session && handle_event(fake_event, app, perms)? {
+                break;
+            }
         }
     }
     Ok(())

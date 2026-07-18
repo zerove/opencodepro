@@ -2,10 +2,10 @@
 //! Handles the lifecycle and switching of independent project environments.
 
 use serde::{Deserialize, Serialize};
+use sisyphus_types::{StateStore, TypesError};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use sisyphus_types::{StateStore, TypesError};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Workspace {
@@ -36,9 +36,10 @@ impl WorkspaceManager {
     pub async fn init(&self) -> Result<(), TypesError> {
         // Load all workspaces
         if let Some(data) = self.store.get("sys", "sys.workspaces").await? {
-            let ws_list: Vec<Workspace> = serde_json::from_slice(&data)
-                .map_err(|e| TypesError::InternalError(format!("Failed to deserialize workspaces: {e}")))?;
-            
+            let ws_list: Vec<Workspace> = serde_json::from_slice(&data).map_err(|e| {
+                TypesError::InternalError(format!("Failed to deserialize workspaces: {e}"))
+            })?;
+
             let mut ws_map = self.workspaces.write().await;
             for ws in ws_list {
                 ws_map.insert(ws.id.clone(), ws);
@@ -56,7 +57,12 @@ impl WorkspaceManager {
     }
 
     /// Create a new workspace and persist it.
-    pub async fn create_workspace(&self, name: String, project_id: String, root_dir: String) -> Result<Workspace, TypesError> {
+    pub async fn create_workspace(
+        &self,
+        name: String,
+        project_id: String,
+        root_dir: String,
+    ) -> Result<Workspace, TypesError> {
         let id = uuid::Uuid::new_v4().to_string();
         let ws = Workspace {
             id: id.clone(),
@@ -74,7 +80,7 @@ impl WorkspaceManager {
 
         // Persist to store
         self.persist_workspaces().await?;
-        
+
         Ok(ws)
     }
 
@@ -82,15 +88,19 @@ impl WorkspaceManager {
     pub async fn switch_workspace(&self, id: &str) -> Result<(), TypesError> {
         let ws_map = self.workspaces.read().await;
         if !ws_map.contains_key(id) {
-            return Err(TypesError::InternalError(format!("Workspace {id} not found")));
+            return Err(TypesError::InternalError(format!(
+                "Workspace {id} not found"
+            )));
         }
 
         let mut current = self.current_workspace.write().await;
         *current = Some(id.to_string());
-        
+
         // Persist active ID
-        self.store.set("sys", "sys.current_workspace", id.as_bytes()).await?;
-        
+        self.store
+            .set("sys", "sys.current_workspace", id.as_bytes())
+            .await?;
+
         Ok(())
     }
 
@@ -114,9 +124,10 @@ impl WorkspaceManager {
     async fn persist_workspaces(&self) -> Result<(), TypesError> {
         let ws_map = self.workspaces.read().await;
         let ws_list: Vec<Workspace> = ws_map.values().cloned().collect();
-        let data = serde_json::to_vec(&ws_list)
-            .map_err(|e| TypesError::InternalError(format!("Failed to serialize workspaces: {e}")))?;
-        
+        let data = serde_json::to_vec(&ws_list).map_err(|e| {
+            TypesError::InternalError(format!("Failed to serialize workspaces: {e}"))
+        })?;
+
         self.store.set("sys", "sys.workspaces", &data).await?;
         Ok(())
     }

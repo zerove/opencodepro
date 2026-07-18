@@ -37,22 +37,22 @@ impl LlmClient for OpenAiLlmClient {
 
     async fn chat(&self, system: &str, user: &str, json_mode: bool) -> Result<String, String> {
         let client = &self.client;
-        
+
         let messages = vec![
             json!({ "role": "system", "content": system }),
             json!({ "role": "user", "content": user }),
         ];
-        
+
         let mut body = json!({
             "model": self.model,
             "messages": messages,
             "temperature": 0.1,
         });
-        
+
         if json_mode {
             body["response_format"] = json!({ "type": "json_object" });
         }
-        
+
         let res = client
             .post(&self.endpoint)
             .header("Authorization", format!("Bearer {}", self.api_key))
@@ -60,13 +60,13 @@ impl LlmClient for OpenAiLlmClient {
             .send()
             .await
             .map_err(|e| format!("HTTP request failed: {e}"))?;
-        
+
         let status = res.status();
         let response_json: Value = res
             .json()
             .await
             .map_err(|e| format!("Failed to parse response JSON: {e}"))?;
-        
+
         if !status.is_success() {
             let error_obj = if response_json.is_array() {
                 &response_json[0]["error"]
@@ -80,7 +80,7 @@ impl LlmClient for OpenAiLlmClient {
                 error_msg
             ));
         }
-        
+
         response_json["choices"][0]["message"]["content"]
             .as_str()
             .map(std::string::ToString::to_string)
@@ -88,7 +88,11 @@ impl LlmClient for OpenAiLlmClient {
     }
 
     fn get_params_for(&self, _agent_id: &str) -> (String, String, String) {
-        (self.api_key.clone(), self.endpoint.clone(), self.model.clone())
+        (
+            self.api_key.clone(),
+            self.endpoint.clone(),
+            self.model.clone(),
+        )
     }
 
     fn breaker(&self) -> crate::circuit_breaker::CircuitBreaker {
@@ -126,8 +130,12 @@ impl crate::llm::EmbeddingClient for OpenAiEmbeddingClient {
             "model": self.model,
         });
 
-        let res = self.client
-            .post(format!("{}/embeddings", self.endpoint.trim_end_matches('/')))
+        let res = self
+            .client
+            .post(format!(
+                "{}/embeddings",
+                self.endpoint.trim_end_matches('/')
+            ))
             .header("Authorization", format!("Bearer {}", self.api_key))
             .json(&body)
             .send()
@@ -141,8 +149,14 @@ impl crate::llm::EmbeddingClient for OpenAiEmbeddingClient {
             .map_err(|e| format!("Failed to parse response JSON: {e}"))?;
 
         if !status.is_success() {
-            let error_msg = response_json["error"]["message"].as_str().unwrap_or("unknown error");
-            return Err(format!("Embedding API error ({}): {}", status.as_u16(), error_msg));
+            let error_msg = response_json["error"]["message"]
+                .as_str()
+                .unwrap_or("unknown error");
+            return Err(format!(
+                "Embedding API error ({}): {}",
+                status.as_u16(),
+                error_msg
+            ));
         }
 
         let embedding = response_json["data"][0]["embedding"]
@@ -155,4 +169,3 @@ impl crate::llm::EmbeddingClient for OpenAiEmbeddingClient {
         Ok(embedding)
     }
 }
-

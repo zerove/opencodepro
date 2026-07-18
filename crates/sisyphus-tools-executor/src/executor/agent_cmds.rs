@@ -1,6 +1,8 @@
-use crate::executor::args::{flexible_str_arg, flexible_str_arg_multi, ok_json, parse_args, path_arg, str_arg};
-use sisyphus_tools_llm::metis::LlmClient;
+use crate::executor::args::{
+    flexible_str_arg, flexible_str_arg_multi, ok_json, parse_args, path_arg, str_arg,
+};
 use serde_json::json;
+use sisyphus_tools_llm::metis::LlmClient;
 use std::path::Path;
 
 // ── librarian commands ──────────────────────────────────────
@@ -46,8 +48,9 @@ pub async fn cmd_librarian_synthesise(
     let findings_val = v
         .get("findings")
         .ok_or_else(|| "missing 'findings' arg".to_string())?;
-    let findings: Vec<sisyphus_tools_llm_tools::librarian::ResearchFinding> = serde_json::from_value(findings_val.clone())
-        .map_err(|e| format!("invalid findings JSON: {e}"))?;
+    let findings: Vec<sisyphus_tools_llm_tools::librarian::ResearchFinding> =
+        serde_json::from_value(findings_val.clone())
+            .map_err(|e| format!("invalid findings JSON: {e}"))?;
 
     let synthesis = sisyphus_tools_llm_tools::librarian::synthesise(&findings, client)
         .await
@@ -69,7 +72,10 @@ pub async fn cmd_metis_analyse(client: &dyn LlmClient, args: Vec<u8>) -> Result<
 
 // ── momus commands ──────────────────────────────────────────
 
-pub async fn cmd_momus_review_plan(client: &dyn LlmClient, args: Vec<u8>) -> Result<Vec<u8>, String> {
+pub async fn cmd_momus_review_plan(
+    client: &dyn LlmClient,
+    args: Vec<u8>,
+) -> Result<Vec<u8>, String> {
     let v = parse_args(&args)?;
     let plan_text = flexible_str_arg_multi(&v, &["plan_text", "artifact", "content"])?;
     let plan_name = str_arg(&v, "plan_name").unwrap_or_else(|_| "unnamed".into());
@@ -77,7 +83,10 @@ pub async fn cmd_momus_review_plan(client: &dyn LlmClient, args: Vec<u8>) -> Res
     ok_json(serde_json::to_value(&review).map_err(|e| format!("serialize: {e}"))?)
 }
 
-pub async fn cmd_momus_review_code(client: &dyn LlmClient, args: Vec<u8>) -> Result<Vec<u8>, String> {
+pub async fn cmd_momus_review_code(
+    client: &dyn LlmClient,
+    args: Vec<u8>,
+) -> Result<Vec<u8>, String> {
     let v = parse_args(&args)?;
     let path_str = flexible_str_arg_multi(&v, &["path", "file", "content"])?;
     let content = flexible_str_arg_multi(&v, &["content", "artifact", "code", "path"])?;
@@ -116,7 +125,10 @@ pub async fn cmd_momus_review_code_batch(
     ok_json(serde_json::to_value(&reviews).map_err(|e| format!("serialize: {e}"))?)
 }
 
-pub async fn cmd_momus_review_arch(client: &dyn LlmClient, args: Vec<u8>) -> Result<Vec<u8>, String> {
+pub async fn cmd_momus_review_arch(
+    client: &dyn LlmClient,
+    args: Vec<u8>,
+) -> Result<Vec<u8>, String> {
     let v = parse_args(&args)?;
     let arch_text = flexible_str_arg_multi(&v, &["arch_text", "artifact", "content"])?;
     let review = sisyphus_tools_llm_tools::momus::review_architecture(client, &arch_text).await;
@@ -125,18 +137,25 @@ pub async fn cmd_momus_review_arch(client: &dyn LlmClient, args: Vec<u8>) -> Res
 
 // ── scribe commands ──────────────────────────────────────────
 
-pub async fn cmd_scribe_generate_adr(client: &dyn LlmClient, args: Vec<u8>) -> Result<Vec<u8>, String> {
+pub async fn cmd_scribe_generate_adr(
+    client: &dyn LlmClient,
+    args: Vec<u8>,
+) -> Result<Vec<u8>, String> {
     let v = parse_args(&args)?;
     let context = flexible_str_arg(&v, "context", "content")?;
     let adr = sisyphus_tools_llm_tools::scribe::generate_adr(client, &context).await?;
     ok_json(json!({"adr": adr}))
 }
 
-pub async fn cmd_scribe_update_docs(client: &dyn LlmClient, args: Vec<u8>) -> Result<Vec<u8>, String> {
+pub async fn cmd_scribe_update_docs(
+    client: &dyn LlmClient,
+    args: Vec<u8>,
+) -> Result<Vec<u8>, String> {
     let v = parse_args(&args)?;
     let doc_content = flexible_str_arg(&v, "doc_content", "content")?;
     let changes = str_arg(&v, "changes")?;
-    let suggestion = sisyphus_tools_llm_tools::scribe::update_docs(client, &doc_content, &changes).await?;
+    let suggestion =
+        sisyphus_tools_llm_tools::scribe::update_docs(client, &doc_content, &changes).await?;
     ok_json(json!({"suggestion": suggestion}))
 }
 
@@ -180,7 +199,8 @@ pub fn cmd_scribe_apply_update(args: Vec<u8>) -> Result<Vec<u8>, String> {
                 .trim_start_matches('\n')
                 .trim_end_matches('\n');
 
-            sisyphus_tools_system::file::edit(path, search_text, replace_text).map_err(|e| e.to_string())?;
+            sisyphus_tools_system::file::edit(path, search_text, replace_text)
+                .map_err(|e| e.to_string())?;
 
             applied_count += 1;
             current_content = &current_content[end_idx + ">>>> END".len()..];
@@ -194,7 +214,10 @@ pub fn cmd_scribe_apply_update(args: Vec<u8>) -> Result<Vec<u8>, String> {
 
 // ── security commands ───────────────────────────────────────
 
-pub async fn cmd_security_audit_code(client: &dyn LlmClient, args: Vec<u8>) -> Result<Vec<u8>, String> {
+pub async fn cmd_security_audit_code(
+    client: &dyn LlmClient,
+    args: Vec<u8>,
+) -> Result<Vec<u8>, String> {
     let v = parse_args(&args)?;
     let path_str =
         flexible_str_arg_multi(&v, &["path", "file"]).unwrap_or_else(|_| "snippet.rs".to_string());

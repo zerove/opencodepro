@@ -10,9 +10,8 @@ pub async fn handle_librarian(
 ) -> Result<()> {
     match sub {
         LibrarianCommands::Research { query, scope, num } => {
-            let scope_enum: sisyphus_cli::tools::ResearchScope = scope
-                .parse()
-                .map_err(|e: String| anyhow::anyhow!("{e}"))?;
+            let scope_enum: sisyphus_cli::tools::ResearchScope =
+                scope.parse().map_err(|e: String| anyhow::anyhow!("{e}"))?;
             let report = sisyphus_cli::tools::research(query, scope_enum, *num).await?;
             println!("=== Research Report ===");
             println!("Query: {}", report.query);
@@ -42,11 +41,7 @@ pub async fn handle_librarian(
                     println!("[{i}] {} (from {})", ex.description, ex.source);
                     println!("    language: {}", ex.language);
                     if ex.code.len() > 200 {
-                        println!(
-                            "    code ({} chars): {}...",
-                            ex.code.len(),
-                            &ex.code[..200]
-                        );
+                        println!("    code ({} chars): {}...", ex.code.len(), &ex.code[..200]);
                     } else {
                         println!("    code: {}", ex.code);
                     }

@@ -61,7 +61,10 @@ pub fn render_sessions(frame: &mut ratatui::Frame, area: Rect, app: &App) {
     let block = Block::default()
         .borders(Borders::ALL)
         .title(format!(" Sessions ({visible_count}) "))
-        .title_bottom(super::super::helpers::scroll_pct(app.session_sel, visible_count))
+        .title_bottom(super::super::helpers::scroll_pct(
+            app.session_sel,
+            visible_count,
+        ))
         .border_style(Style::default().fg(theme.border));
 
     let items: Vec<ListItem> = filtered_indices
@@ -91,9 +94,11 @@ pub fn render_sessions(frame: &mut ratatui::Frame, area: Rect, app: &App) {
         .collect();
 
     let adj_sel = app.session_sel.min(visible_count.saturating_sub(1));
-    let list = List::new(items)
-        .block(block)
-        .highlight_style(Style::default().fg(theme.secondary).add_modifier(Modifier::REVERSED));
+    let list = List::new(items).block(block).highlight_style(
+        Style::default()
+            .fg(theme.secondary)
+            .add_modifier(Modifier::REVERSED),
+    );
     frame.render_stateful_widget(
         list,
         chunks[1],
@@ -110,9 +115,8 @@ fn render_session_detail(
 ) {
     let suggestion_count = app.session_suggestions.len() as u16;
     let theme = app.theme();
-    let show_suggestions = !session.messages.is_empty()
-        && app.pending_op.is_none()
-        && suggestion_count > 0;
+    let show_suggestions =
+        !session.messages.is_empty() && app.pending_op.is_none() && suggestion_count > 0;
     let suggestion_height = if show_suggestions {
         suggestion_count
     } else {
@@ -153,7 +157,9 @@ fn render_session_detail(
         };
         let role_style = match msg.role.as_str() {
             "user" => Style::default().fg(theme.info).add_modifier(Modifier::BOLD),
-            "assistant" => Style::default().fg(theme.success).add_modifier(Modifier::BOLD),
+            "assistant" => Style::default()
+                .fg(theme.success)
+                .add_modifier(Modifier::BOLD),
             _ => Style::default().fg(theme.muted),
         };
         let ts_style = Style::default().fg(theme.muted);
@@ -189,10 +195,7 @@ fn render_session_detail(
                 format!("[{spinner}] "),
                 Style::default().fg(theme.emphasized),
             ),
-            Span::styled(
-                "Sisyphus 思考中...",
-                Style::default().fg(theme.emphasized),
-            ),
+            Span::styled("Sisyphus 思考中...", Style::default().fg(theme.emphasized)),
         ]));
     }
 
@@ -306,8 +309,8 @@ fn render_session_detail(
                 ))
             })
             .collect();
-        let suggestion_widget =
-            Paragraph::new(Text::from(suggestion_lines)).style(Style::default().bg(theme.bg_darker));
+        let suggestion_widget = Paragraph::new(Text::from(suggestion_lines))
+            .style(Style::default().bg(theme.bg_darker));
         frame.render_widget(suggestion_widget, suggestion_area);
     }
 

@@ -3,7 +3,7 @@ use std::sync::{Arc, RwLock, Weak};
 
 use sisyphus_core::SisyphusKernel;
 use sisyphus_mem::MfsStore;
-use sisyphus_roadmap::{ProgressReport, RoadmapManager, proposal_manager::ProposalManager};
+use sisyphus_roadmap::{proposal_manager::ProposalManager, ProgressReport, RoadmapManager};
 use sisyphus_tools_llm::LlmClient;
 use sisyphus_types::{MilestoneStatus, ToolExecutor, TypesError};
 use tracing::info;
@@ -25,10 +25,18 @@ impl StrategicExecutor {
         cache_path: PathBuf,
         proposal_manager: Arc<ProposalManager>,
     ) -> Result<Self, sisyphus_types::TypesError> {
-        let sql_store = sisyphus_mem::RoadmapSqlStore::new(state_store.pool().clone()).await
-            .map_err(|e| sisyphus_types::TypesError::StateStoreError(format!("Failed to init RoadmapSqlStore: {e}")))?;
-        sql_store.init_schema().await
-            .map_err(|e| sisyphus_types::TypesError::StateStoreError(format!("Failed to init Roadmap schema: {e}")))?;
+        let sql_store = sisyphus_mem::RoadmapSqlStore::new(state_store.pool().clone())
+            .await
+            .map_err(|e| {
+                sisyphus_types::TypesError::StateStoreError(format!(
+                    "Failed to init RoadmapSqlStore: {e}"
+                ))
+            })?;
+        sql_store.init_schema().await.map_err(|e| {
+            sisyphus_types::TypesError::StateStoreError(format!(
+                "Failed to init Roadmap schema: {e}"
+            ))
+        })?;
 
         Ok(Self {
             kernel: Arc::new(RwLock::new(None)),
@@ -61,39 +69,53 @@ impl ToolExecutor for StrategicExecutor {
         _fuel: u64,
     ) -> Result<Vec<u8>, TypesError> {
         let kernel_weak = {
-            let guard = self.kernel.read().map_err(|e| {
-                TypesError::ToolExecutionError {
+            let guard = self
+                .kernel
+                .read()
+                .map_err(|e| TypesError::ToolExecutionError {
                     tool_id: tool_id.to_string(),
                     details: format!("Kernel RwLock poisoned: {e}"),
-                }
-            })?;
+                })?;
             guard.clone()
         };
-        let kernel = kernel_weak
-            .and_then(|w| w.upgrade())
-            .ok_or_else(|| TypesError::ToolExecutionError {
+        let kernel = kernel_weak.and_then(|w| w.upgrade()).ok_or_else(|| {
+            TypesError::ToolExecutionError {
                 tool_id: tool_id.to_string(),
                 details: "SisyphusKernel is not initialized or has been dropped".to_string(),
-            })?;
+            }
+        })?;
 
         if tool_id == "next_goal" {
             let args_str = String::from_utf8_lossy(&args);
-            let v: serde_json::Value =
-                serde_json::from_str(&args_str).map_err(|e| sisyphus_types::TypesError::ToolExecutionError { tool_id: tool_id.to_string(), details: format!("Invalid JSON args: {e}") })?;
+            let v: serde_json::Value = serde_json::from_str(&args_str).map_err(|e| {
+                sisyphus_types::TypesError::ToolExecutionError {
+                    tool_id: tool_id.to_string(),
+                    details: format!("Invalid JSON args: {e}"),
+                }
+            })?;
 
             let project_id = v["project_id"]
                 .as_str()
-                .ok_or_else(|| sisyphus_types::TypesError::ToolExecutionError { tool_id: tool_id.to_string(), details: "Missing 'project_id' in arguments".to_string() })?
+                .ok_or_else(|| sisyphus_types::TypesError::ToolExecutionError {
+                    tool_id: tool_id.to_string(),
+                    details: "Missing 'project_id' in arguments".to_string(),
+                })?
                 .to_string();
 
             info!("Strategic loop triggered for project: {}", project_id);
 
-            let manager = RoadmapManager::new(self.state_store.clone(), self.sql_store.clone(), self.proposal_manager.clone());
+            let manager = RoadmapManager::new(
+                self.state_store.clone(),
+                self.sql_store.clone(),
+                self.proposal_manager.clone(),
+            );
 
-            let goal_ref = manager
-                .get_next_goal(&project_id)
-                .await
-                .map_err(|e| sisyphus_types::TypesError::ToolExecutionError { tool_id: tool_id.to_string(), details: format!("Failed to get next goal: {e}") })?;
+            let goal_ref = manager.get_next_goal(&project_id).await.map_err(|e| {
+                sisyphus_types::TypesError::ToolExecutionError {
+                    tool_id: tool_id.to_string(),
+                    details: format!("Failed to get next goal: {e}"),
+                }
+            })?;
 
             let goal = match goal_ref {
                 Some(g) => g,
@@ -115,7 +137,10 @@ impl ToolExecutor for StrategicExecutor {
             );
 
             let synth_id = format!("strategic_{}", goal.goal_id);
-            match kernel.execute_goal(&enriched_goal, &synth_id, project_id.as_str(), None, None).await {
+            match kernel
+                .execute_goal(&enriched_goal, &synth_id, project_id.as_str(), None, None)
+                .await
+            {
                 Ok((result, report)) => {
                     if let Ok(Some(project)) = manager.get_project(&project_id).await {
                         let (ms_id, ph_id) = project
@@ -173,31 +198,34 @@ impl ToolExecutor for StrategicExecutor {
             }
         } else if tool_id == "progress" {
             let args_str = String::from_utf8_lossy(&args);
-            let v: serde_json::Value = serde_json::from_str(&args_str).map_err(|e| {
-                TypesError::ToolExecutionError {
+            let v: serde_json::Value =
+                serde_json::from_str(&args_str).map_err(|e| TypesError::ToolExecutionError {
                     tool_id: tool_id.to_string(),
                     details: format!("Invalid JSON args: {e}"),
-                }
-            })?;
+                })?;
 
-            let project_id = v["project_id"].as_str().ok_or_else(|| {
-                TypesError::ToolExecutionError {
+            let project_id = v["project_id"]
+                .as_str()
+                .ok_or_else(|| TypesError::ToolExecutionError {
                     tool_id: tool_id.to_string(),
                     details: "Missing 'project_id' in arguments".to_string(),
-                }
-            })?.to_string();
+                })?
+                .to_string();
 
             info!("Strategic loop triggered for project: {}", project_id);
 
-            let manager = sisyphus_roadmap::RoadmapManager::new(self.state_store.clone(), self.sql_store.clone(), self.proposal_manager.clone());
+            let manager = sisyphus_roadmap::RoadmapManager::new(
+                self.state_store.clone(),
+                self.sql_store.clone(),
+                self.proposal_manager.clone(),
+            );
 
-            let goal_ref = manager
-                .get_next_goal(&project_id)
-                .await
-                .map_err(|e| TypesError::ToolExecutionError {
+            let goal_ref = manager.get_next_goal(&project_id).await.map_err(|e| {
+                TypesError::ToolExecutionError {
                     tool_id: tool_id.to_string(),
                     details: format!("Failed to get next goal: {e}"),
-                })?;
+                }
+            })?;
 
             let goal = match goal_ref {
                 Some(g) => g,
@@ -219,7 +247,10 @@ impl ToolExecutor for StrategicExecutor {
             );
 
             let synth_id = format!("strategic_{}", goal.goal_id);
-            match kernel.execute_goal(&enriched_goal, &synth_id, project_id.as_str(), None, None).await {
+            match kernel
+                .execute_goal(&enriched_goal, &synth_id, project_id.as_str(), None, None)
+                .await
+            {
                 Ok((result, report)) => {
                     if let Ok(Some(project)) = manager.get_project(&project_id).await {
                         let (ms_id, ph_id) = project
@@ -253,13 +284,15 @@ impl ToolExecutor for StrategicExecutor {
                             duration_secs: 0.0,
                         };
                         let _ = manager.record_outcome(&outcome).await;
-                        let _ = manager.update_goal_status(
-                            &project_id,
-                            &ms_id,
-                            &ph_id,
-                            &goal.goal_id,
-                            sisyphus_types::MilestoneStatus::Completed,
-                        ).await;
+                        let _ = manager
+                            .update_goal_status(
+                                &project_id,
+                                &ms_id,
+                                &ph_id,
+                                &goal.goal_id,
+                                sisyphus_types::MilestoneStatus::Completed,
+                            )
+                            .await;
                     }
                     let duration = 0.0;
                     sisyphus_metrics::record_sop_execution(&synth_id, true, duration);
@@ -280,28 +313,33 @@ impl ToolExecutor for StrategicExecutor {
             }
         } else if tool_id == "show_roadmap" {
             let args_str = String::from_utf8_lossy(&args);
-            let v: serde_json::Value = serde_json::from_str(&args_str).map_err(|e| {
-                TypesError::ToolExecutionError {
+            let v: serde_json::Value =
+                serde_json::from_str(&args_str).map_err(|e| TypesError::ToolExecutionError {
                     tool_id: tool_id.to_string(),
                     details: format!("Invalid JSON args: {e}"),
-                }
-            })?;
+                })?;
 
-            let project_id = v["project_id"].as_str().ok_or_else(|| {
-                TypesError::ToolExecutionError {
+            let project_id = v["project_id"]
+                .as_str()
+                .ok_or_else(|| TypesError::ToolExecutionError {
                     tool_id: tool_id.to_string(),
                     details: "Missing 'project_id' in arguments".to_string(),
-                }
-            })?.to_string();
+                })?
+                .to_string();
 
-            let manager = sisyphus_roadmap::RoadmapManager::new(self.state_store.clone(), self.sql_store.clone(), self.proposal_manager.clone());
+            let manager = sisyphus_roadmap::RoadmapManager::new(
+                self.state_store.clone(),
+                self.sql_store.clone(),
+                self.proposal_manager.clone(),
+            );
             match manager.generate_progress_report(&project_id).await {
                 Ok(report) => {
-                    let output = serde_json::to_string_pretty(&report)
-                        .map_err(|e| TypesError::ToolExecutionError {
+                    let output = serde_json::to_string_pretty(&report).map_err(|e| {
+                        TypesError::ToolExecutionError {
                             tool_id: tool_id.to_string(),
                             details: format!("Failed to serialize report: {e}"),
-                        })?;
+                        }
+                    })?;
                     Ok(output.into_bytes())
                 }
                 Err(e) => Err(TypesError::ToolExecutionError {
@@ -311,31 +349,36 @@ impl ToolExecutor for StrategicExecutor {
             }
         } else if tool_id == "replan" {
             let args_str = String::from_utf8_lossy(&args);
-            let v: serde_json::Value = serde_json::from_str(&args_str).map_err(|e| {
-                TypesError::ToolExecutionError {
+            let v: serde_json::Value =
+                serde_json::from_str(&args_str).map_err(|e| TypesError::ToolExecutionError {
                     tool_id: tool_id.to_string(),
                     details: format!("Invalid JSON args: {e}"),
-                }
-            })?;
+                })?;
 
-            let project_id = v["project_id"].as_str().ok_or_else(|| {
-                TypesError::ToolExecutionError {
+            let project_id = v["project_id"]
+                .as_str()
+                .ok_or_else(|| TypesError::ToolExecutionError {
                     tool_id: tool_id.to_string(),
                     details: "Missing 'project_id' in arguments".to_string(),
-                }
-            })?.to_string();
+                })?
+                .to_string();
 
-            let manager = sisyphus_roadmap::RoadmapManager::new(self.state_store.clone(), self.sql_store.clone(), self.proposal_manager.clone());
+            let manager = sisyphus_roadmap::RoadmapManager::new(
+                self.state_store.clone(),
+                self.sql_store.clone(),
+                self.proposal_manager.clone(),
+            );
             let strategist = sisyphus_roadmap::strategic_reflection::StrategicReflector::new(
                 self.llm_client.clone(),
             );
             match strategist.reflect(&manager, &project_id).await {
                 Ok(reflection) => {
-                    let output = serde_json::to_string_pretty(&reflection)
-                        .map_err(|e| TypesError::ToolExecutionError {
+                    let output = serde_json::to_string_pretty(&reflection).map_err(|e| {
+                        TypesError::ToolExecutionError {
                             tool_id: tool_id.to_string(),
                             details: format!("Failed to serialize: {e}"),
-                        })?;
+                        }
+                    })?;
                     Ok(output.into_bytes())
                 }
                 Err(e) => Err(TypesError::ToolExecutionError {
@@ -345,22 +388,26 @@ impl ToolExecutor for StrategicExecutor {
             }
         } else if tool_id == "auto_plan" {
             let args_str = String::from_utf8_lossy(&args);
-            let v: serde_json::Value = serde_json::from_str(&args_str).map_err(|e| {
-                TypesError::ToolExecutionError {
+            let v: serde_json::Value =
+                serde_json::from_str(&args_str).map_err(|e| TypesError::ToolExecutionError {
                     tool_id: tool_id.to_string(),
                     details: format!("Invalid JSON args: {e}"),
-                }
-            })?;
+                })?;
 
-            let project_id = v["project_id"].as_str().ok_or_else(|| {
-                TypesError::ToolExecutionError {
+            let project_id = v["project_id"]
+                .as_str()
+                .ok_or_else(|| TypesError::ToolExecutionError {
                     tool_id: tool_id.to_string(),
                     details: "Missing 'project_id' in arguments".to_string(),
-                }
-            })?.to_string();
+                })?
+                .to_string();
             let description = v["description"].as_str().unwrap_or("").to_string();
 
-            let manager = sisyphus_roadmap::RoadmapManager::new(self.state_store.clone(), self.sql_store.clone(), self.proposal_manager.clone());
+            let manager = sisyphus_roadmap::RoadmapManager::new(
+                self.state_store.clone(),
+                self.sql_store.clone(),
+                self.proposal_manager.clone(),
+            );
             let generator = sisyphus_roadmap::milestone_generator::MilestoneGenerator::new(
                 self.llm_client.clone(),
             );
@@ -369,11 +416,12 @@ impl ToolExecutor for StrategicExecutor {
                 .await
             {
                 Ok(milestones) => {
-                    let output = serde_json::to_string_pretty(&milestones)
-                        .map_err(|e| TypesError::ToolExecutionError {
+                    let output = serde_json::to_string_pretty(&milestones).map_err(|e| {
+                        TypesError::ToolExecutionError {
                             tool_id: tool_id.to_string(),
                             details: format!("Failed to serialize: {e}"),
-                        })?;
+                        }
+                    })?;
                     Ok(output.into_bytes())
                 }
                 Err(e) => Err(TypesError::ToolExecutionError {
@@ -383,27 +431,32 @@ impl ToolExecutor for StrategicExecutor {
             }
         } else if tool_id == "goal_context" {
             let args_str = String::from_utf8_lossy(&args);
-            let v: serde_json::Value = serde_json::from_str(&args_str).map_err(|e| {
-                TypesError::ToolExecutionError {
+            let v: serde_json::Value =
+                serde_json::from_str(&args_str).map_err(|e| TypesError::ToolExecutionError {
                     tool_id: tool_id.to_string(),
                     details: format!("Invalid JSON args: {e}"),
-                }
-            })?;
+                })?;
 
-            let project_id = v["project_id"].as_str().ok_or_else(|| {
-                TypesError::ToolExecutionError {
+            let project_id = v["project_id"]
+                .as_str()
+                .ok_or_else(|| TypesError::ToolExecutionError {
                     tool_id: tool_id.to_string(),
                     details: "Missing 'project_id' in arguments".to_string(),
-                }
-            })?.to_string();
-            let goal_id = v["goal_id"].as_str().ok_or_else(|| {
-                TypesError::ToolExecutionError {
+                })?
+                .to_string();
+            let goal_id = v["goal_id"]
+                .as_str()
+                .ok_or_else(|| TypesError::ToolExecutionError {
                     tool_id: tool_id.to_string(),
                     details: "Missing 'goal_id' in arguments".to_string(),
-                }
-            })?.to_string();
+                })?
+                .to_string();
 
-            let manager = sisyphus_roadmap::RoadmapManager::new(self.state_store.clone(), self.sql_store.clone(), self.proposal_manager.clone());
+            let manager = sisyphus_roadmap::RoadmapManager::new(
+                self.state_store.clone(),
+                self.sql_store.clone(),
+                self.proposal_manager.clone(),
+            );
             let context = manager
                 .get_goal_context(&project_id, &goal_id)
                 .await
@@ -411,32 +464,37 @@ impl ToolExecutor for StrategicExecutor {
             Ok(context.into_bytes())
         } else if tool_id == "reflect" {
             let args_str = String::from_utf8_lossy(&args);
-            let v: serde_json::Value = serde_json::from_str(&args_str).map_err(|e| {
-                TypesError::ToolExecutionError {
+            let v: serde_json::Value =
+                serde_json::from_str(&args_str).map_err(|e| TypesError::ToolExecutionError {
                     tool_id: tool_id.to_string(),
                     details: format!("Invalid JSON args: {e}"),
-                }
-            })?;
+                })?;
 
-            let project_id = v["project_id"].as_str().ok_or_else(|| {
-                TypesError::ToolExecutionError {
+            let project_id = v["project_id"]
+                .as_str()
+                .ok_or_else(|| TypesError::ToolExecutionError {
                     tool_id: tool_id.to_string(),
                     details: "Missing 'project_id' in arguments".to_string(),
-                }
-            })?.to_string();
+                })?
+                .to_string();
 
-            let manager = sisyphus_roadmap::RoadmapManager::new(self.state_store.clone(), self.sql_store.clone(), self.proposal_manager.clone());
+            let manager = sisyphus_roadmap::RoadmapManager::new(
+                self.state_store.clone(),
+                self.sql_store.clone(),
+                self.proposal_manager.clone(),
+            );
 
             let strategist = sisyphus_roadmap::strategic_reflection::StrategicReflector::new(
                 self.llm_client.clone(),
             );
             match strategist.reflect(&manager, &project_id).await {
                 Ok(reflection) => {
-                    let output = serde_json::to_string_pretty(&reflection)
-                        .map_err(|e| TypesError::ToolExecutionError {
+                    let output = serde_json::to_string_pretty(&reflection).map_err(|e| {
+                        TypesError::ToolExecutionError {
                             tool_id: tool_id.to_string(),
                             details: format!("Failed to serialize reflection: {e}"),
-                        })?;
+                        }
+                    })?;
                     Ok(output.into_bytes())
                 }
                 Err(e) => Err(TypesError::ToolExecutionError {
@@ -446,21 +504,25 @@ impl ToolExecutor for StrategicExecutor {
             }
         } else if tool_id == "predict" {
             let args_str = String::from_utf8_lossy(&args);
-            let v: serde_json::Value = serde_json::from_str(&args_str).map_err(|e| {
-                TypesError::ToolExecutionError {
+            let v: serde_json::Value =
+                serde_json::from_str(&args_str).map_err(|e| TypesError::ToolExecutionError {
                     tool_id: tool_id.to_string(),
                     details: format!("Invalid JSON args: {e}"),
-                }
-            })?;
+                })?;
 
-            let project_id = v["project_id"].as_str().ok_or_else(|| {
-                TypesError::ToolExecutionError {
+            let project_id = v["project_id"]
+                .as_str()
+                .ok_or_else(|| TypesError::ToolExecutionError {
                     tool_id: tool_id.to_string(),
                     details: "Missing 'project_id' in arguments".to_string(),
-                }
-            })?.to_string();
+                })?
+                .to_string();
 
-            let manager = sisyphus_roadmap::RoadmapManager::new(self.state_store.clone(), self.sql_store.clone(), self.proposal_manager.clone());
+            let manager = sisyphus_roadmap::RoadmapManager::new(
+                self.state_store.clone(),
+                self.sql_store.clone(),
+                self.proposal_manager.clone(),
+            );
             let outcomes = manager.get_outcomes(&project_id).await.unwrap_or_default();
 
             let project = manager.get_project(&project_id).await.ok().flatten();
@@ -473,37 +535,39 @@ impl ToolExecutor for StrategicExecutor {
                         .count()
                 })
                 .unwrap_or(0);
-            let completed_goals = outcomes
-                .iter()
-                .filter(|o| o.success)
-                .count();
+            let completed_goals = outcomes.iter().filter(|o| o.success).count();
 
             let optimizer = sisyphus_roadmap::resource_optimizer::ResourceOptimizer::new();
             let projection = optimizer.project_costs(&outcomes, total_goals, completed_goals);
 
-            let output = serde_json::to_string_pretty(&projection)
-                .map_err(|e| TypesError::ToolExecutionError {
+            let output = serde_json::to_string_pretty(&projection).map_err(|e| {
+                TypesError::ToolExecutionError {
                     tool_id: tool_id.to_string(),
                     details: format!("Failed to serialize projection: {e}"),
-                })?;
+                }
+            })?;
             Ok(output.into_bytes())
         } else if tool_id == "project_costs" {
             let args_str = String::from_utf8_lossy(&args);
-            let v: serde_json::Value = serde_json::from_str(&args_str).map_err(|e| {
-                TypesError::ToolExecutionError {
+            let v: serde_json::Value =
+                serde_json::from_str(&args_str).map_err(|e| TypesError::ToolExecutionError {
                     tool_id: tool_id.to_string(),
                     details: format!("Invalid JSON args: {e}"),
-                }
-            })?;
+                })?;
 
-            let project_id = v["project_id"].as_str().ok_or_else(|| {
-                TypesError::ToolExecutionError {
+            let project_id = v["project_id"]
+                .as_str()
+                .ok_or_else(|| TypesError::ToolExecutionError {
                     tool_id: tool_id.to_string(),
                     details: "Missing 'project_id' in arguments".to_string(),
-                }
-            })?.to_string();
+                })?
+                .to_string();
 
-            let manager = sisyphus_roadmap::RoadmapManager::new(self.state_store.clone(), self.sql_store.clone(), self.proposal_manager.clone());
+            let manager = sisyphus_roadmap::RoadmapManager::new(
+                self.state_store.clone(),
+                self.sql_store.clone(),
+                self.proposal_manager.clone(),
+            );
             let outcomes = manager.get_outcomes(&project_id).await.unwrap_or_default();
 
             let project = manager.get_project(&project_id).await.ok().flatten();
@@ -516,46 +580,49 @@ impl ToolExecutor for StrategicExecutor {
                         .count()
                 })
                 .unwrap_or(0);
-            let completed_goals = outcomes
-                .iter()
-                .filter(|o| o.success)
-                .count();
+            let completed_goals = outcomes.iter().filter(|o| o.success).count();
 
             let optimizer = sisyphus_roadmap::resource_optimizer::ResourceOptimizer::new();
             let projection = optimizer.project_costs(&outcomes, total_goals, completed_goals);
 
-            let output = serde_json::to_string_pretty(&projection)
-                .map_err(|e| TypesError::ToolExecutionError {
+            let output = serde_json::to_string_pretty(&projection).map_err(|e| {
+                TypesError::ToolExecutionError {
                     tool_id: tool_id.to_string(),
                     details: format!("Failed to serialize projection: {e}"),
-                })?;
+                }
+            })?;
             Ok(output.into_bytes())
         } else if tool_id == "bottlenecks" {
             let args_str = String::from_utf8_lossy(&args);
-            let v: serde_json::Value = serde_json::from_str(&args_str).map_err(|e| {
-                TypesError::ToolExecutionError {
+            let v: serde_json::Value =
+                serde_json::from_str(&args_str).map_err(|e| TypesError::ToolExecutionError {
                     tool_id: tool_id.to_string(),
                     details: format!("Invalid JSON args: {e}"),
-                }
-            })?;
+                })?;
 
-            let project_id = v["project_id"].as_str().ok_or_else(|| {
-                TypesError::ToolExecutionError {
+            let project_id = v["project_id"]
+                .as_str()
+                .ok_or_else(|| TypesError::ToolExecutionError {
                     tool_id: tool_id.to_string(),
                     details: "Missing 'project_id' in arguments".to_string(),
-                }
-            })?.to_string();
+                })?
+                .to_string();
 
-            let manager = sisyphus_roadmap::RoadmapManager::new(self.state_store.clone(), self.sql_store.clone(), self.proposal_manager.clone());
+            let manager = sisyphus_roadmap::RoadmapManager::new(
+                self.state_store.clone(),
+                self.sql_store.clone(),
+                self.proposal_manager.clone(),
+            );
             let optimizer = sisyphus_roadmap::resource_optimizer::ResourceOptimizer::new();
             let bottlenecks = optimizer
                 .find_bottlenecks(&manager.get_outcomes(&project_id).await.unwrap_or_default());
 
-            let output = serde_json::to_string_pretty(&bottlenecks)
-                .map_err(|e| TypesError::ToolExecutionError {
+            let output = serde_json::to_string_pretty(&bottlenecks).map_err(|e| {
+                TypesError::ToolExecutionError {
                     tool_id: tool_id.to_string(),
                     details: format!("Failed to serialize bottlenecks: {e}"),
-                })?;
+                }
+            })?;
             Ok(output.into_bytes())
         } else {
             return Err(TypesError::ToolExecutionError {

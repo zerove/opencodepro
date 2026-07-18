@@ -26,25 +26,27 @@ impl EmbeddingClient for DummyEmbeddingClient {
         // Return a stable pseudo-random vector based on the text hash
         use std::collections::hash_map::DefaultHasher;
         use std::hash::{Hash, Hasher};
-        
+
         let mut hasher = DefaultHasher::new();
         text.hash(&mut hasher);
         let seed = hasher.finish();
-        
-        let vector = (0..128).map(|i| ((seed as f64 + i as f64).sin()) as f32).collect();
+
+        let vector = (0..128)
+            .map(|i| ((seed as f64 + i as f64).sin()) as f32)
+            .collect();
         Ok(vector)
     }
 }
 
 pub use budget::{BudgetProvider, RequestContext};
 pub use dynamic::DynamicLlmClient;
-pub use openai::{OpenAiLlmClient, OpenAiEmbeddingClient};
+pub use openai::{OpenAiEmbeddingClient, OpenAiLlmClient};
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use async_trait::async_trait;
     use crate::metis::LlmClient;
+    use async_trait::async_trait;
     use sisyphus_types::Config;
     use std::sync::{Arc, Mutex, RwLock};
 
@@ -118,7 +120,7 @@ mod tests {
     #[test]
     fn test_params_from_config_fallback() {
         let _guard = ENV_LOCK.lock().unwrap();
-        
+
         unsafe { std::env::remove_var("GOOGLE_GENERATIVE_AI_API_KEY") };
 
         let config = make_config("cfg_key", "http://cfg:8080/v1/chat", "cfg-model");
@@ -137,7 +139,7 @@ mod tests {
     #[test]
     fn test_params_from_env_override() {
         let _guard = ENV_LOCK.lock().unwrap();
-        
+
         unsafe { std::env::set_var("GOOGLE_GENERATIVE_AI_API_KEY", "env_key_value") };
 
         let config = make_config("cfg_key", "http://cfg:8080/v1/chat", "cfg-model");
@@ -155,14 +157,13 @@ mod tests {
         );
         assert_eq!(model, "cfg-model", "model should still come from config");
 
-        
         unsafe { std::env::remove_var("GOOGLE_GENERATIVE_AI_API_KEY") };
     }
 
     #[test]
     fn test_params_with_empty_config_fallback() {
         let _guard = ENV_LOCK.lock().unwrap();
-        
+
         unsafe { std::env::remove_var("GOOGLE_GENERATIVE_AI_API_KEY") };
 
         let config = make_config("", "", "");
@@ -181,7 +182,8 @@ mod tests {
     #[test]
     fn test_openai_llm_client_new() {
         let client =
-            OpenAiLlmClient::new("key".into(), "http://localhost:8080".into(), "gpt-4".into()).unwrap();
+            OpenAiLlmClient::new("key".into(), "http://localhost:8080".into(), "gpt-4".into())
+                .unwrap();
         assert_eq!(client.api_key, "key");
         assert_eq!(client.endpoint, "http://localhost:8080");
         assert_eq!(client.model, "gpt-4");
@@ -190,7 +192,7 @@ mod tests {
     #[test]
     fn test_dynamic_llm_client_new() {
         let _guard = ENV_LOCK.lock().unwrap();
-        
+
         unsafe { std::env::remove_var("GOOGLE_GENERATIVE_AI_API_KEY") };
         let config = make_config("k", "e", "m");
         let client = DynamicLlmClient::new(config);
@@ -203,7 +205,7 @@ mod tests {
     #[test]
     fn test_dynamic_llm_client_reflects_config_change() {
         let _guard = ENV_LOCK.lock().unwrap();
-        
+
         unsafe { std::env::remove_var("GOOGLE_GENERATIVE_AI_API_KEY") };
         let shared = make_config("old_key", "http://old:8080", "old-model");
         let client = DynamicLlmClient::new(shared.clone());
@@ -234,7 +236,7 @@ mod tests {
     #[test]
     fn test_dynamic_llm_client_concurrent_reads() {
         let _guard = ENV_LOCK.lock().unwrap();
-        
+
         unsafe { std::env::remove_var("GOOGLE_GENERATIVE_AI_API_KEY") };
         let shared = make_config("key", "http://ep:8080", "m");
         let client = DynamicLlmClient::new(shared.clone());
@@ -267,7 +269,7 @@ mod tests {
     #[test]
     fn test_get_params_for_no_override_falls_back() {
         let _guard = ENV_LOCK.lock().unwrap();
-        
+
         unsafe { std::env::remove_var("GOOGLE_GENERATIVE_AI_API_KEY") };
         let config = make_config("base_key", "http://base:8080", "base-model");
         let client = DynamicLlmClient::new(config);
@@ -281,7 +283,7 @@ mod tests {
     #[test]
     fn test_get_params_for_override_model() {
         let _guard = ENV_LOCK.lock().unwrap();
-        
+
         unsafe { std::env::remove_var("GOOGLE_GENERATIVE_AI_API_KEY") };
         let shared = make_config("base_key", "http://base:8080", "base-model");
         {
@@ -306,7 +308,7 @@ mod tests {
     #[test]
     fn test_get_params_for_full_override() {
         let _guard = ENV_LOCK.lock().unwrap();
-        
+
         unsafe { std::env::remove_var("GOOGLE_GENERATIVE_AI_API_KEY") };
         let shared = make_config("base_key", "http://base:8080", "base-model");
         {
@@ -331,7 +333,7 @@ mod tests {
     #[test]
     fn test_get_params_for_env_override_still_wins() {
         let _guard = ENV_LOCK.lock().unwrap();
-        
+
         unsafe { std::env::set_var("GOOGLE_GENERATIVE_AI_API_KEY", "env_overrides_all") };
         let shared = make_config("base_key", "http://base:8080", "base-model");
         {
@@ -352,7 +354,6 @@ mod tests {
         assert_eq!(ep, "https://generativelanguage.googleapis.com/v1beta");
         assert_eq!(api, "env_overrides_all", "env var should win over override");
 
-        
         unsafe { std::env::remove_var("GOOGLE_GENERATIVE_AI_API_KEY") };
     }
 
@@ -378,7 +379,7 @@ mod tests {
     #[test]
     fn test_get_params_for_multiple_agents() {
         let _guard = ENV_LOCK.lock().unwrap();
-        
+
         unsafe { std::env::remove_var("GOOGLE_GENERATIVE_AI_API_KEY") };
         let shared = make_config_with_agents(&[
             ("librarian", "gemma-4-31b-it", "http://lib:8080", "lib_key"),
@@ -406,7 +407,8 @@ mod tests {
         let long_ep =
             "https://very-long-endpoint-url.example.com/api/v1/chat/completions".to_string();
         let long_model = "very-long-model-name-v1.0.0-experimental".to_string();
-        let client = OpenAiLlmClient::new(long_key.clone(), long_ep.clone(), long_model.clone()).unwrap();
+        let client =
+            OpenAiLlmClient::new(long_key.clone(), long_ep.clone(), long_model.clone()).unwrap();
         assert_eq!(client.api_key, long_key);
         assert_eq!(client.endpoint, long_ep);
         assert_eq!(client.model, long_model);

@@ -23,8 +23,9 @@ impl BridgeClient {
     }
 
     pub async fn execute_tool(&self, tool_id: &str, args: Value) -> Result<Value, String> {
-        let args_json = serde_json::to_string(&args).map_err(|e| format!("Args serialization failed: {e}"))?;
-        
+        let args_json =
+            serde_json::to_string(&args).map_err(|e| format!("Args serialization failed: {e}"))?;
+
         let request = Request::new(ExecuteToolRequest {
             tool_id: tool_id.to_string(),
             args_json,
@@ -32,12 +33,15 @@ impl BridgeClient {
         });
 
         let mut client = self.client.write().await;
-        let response = client.execute_tool(request).await
+        let response = client
+            .execute_tool(request)
+            .await
             .map_err(|e| format!("Bridge call failed: {e}"))?;
 
         let inner = response.into_inner();
         if inner.status == "SUCCESS" {
-            serde_json::from_str(&inner.result_json).map_err(|e| format!("Result deserialization failed: {e}"))
+            serde_json::from_str(&inner.result_json)
+                .map_err(|e| format!("Result deserialization failed: {e}"))
         } else {
             Err(inner.status)
         }

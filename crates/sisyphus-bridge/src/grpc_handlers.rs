@@ -3,30 +3,30 @@ use std::sync::Arc;
 use sisyphus_bridge_api::sisyphus_bridge_server::SisyphusBridge;
 use sisyphus_bridge_api::{
     AddMessageRequest, AddMessageResponse, AgentMetadata, BenchmarkEntry, BreakerMetricsRequest,
-    BreakerMetricsResponse, BreakerStatus, DecomposeGoalRequest, DecomposeGoalResponse,
-    DelegateCognitiveTaskRequest, DelegateCognitiveTaskResponse, ExecuteSopRequest, ExecuteToolRequest, ExecuteToolResponse, ExecutionEvent,
-    HealthCheckRequest, HealthCheckResponse, InstallSkillRequest, InstallSkillResponse,
-    ListAgentsRequest, ListAgentsResponse, ListBenchmarksRequest, ListBenchmarksResponse,
-    ListPluginsRequest, ListPluginsResponse, LoadPluginRequest, LoadPluginResponse,
-    ListSoPsRequest, ListSoPsResponse, ListSkillsRequest, ListSkillsResponse, ListToolsRequest,
-    ListToolsResponse, PluginDescriptor, RemoveSkillRequest, RemoveSkillResponse, ShowSkillRequest,
-    ShowSkillResponse, SkillMetadata, SopResponse, TaskProto, ToolMetadata,
-    UnloadPluginRequest, UnloadPluginResponse,
-    CognitiveTaskEvent, SubmitFeedbackRequest, SubmitFeedbackResponse, CaptureExperienceRequest, CaptureExperienceResponse,
-    CreateWorkspaceRequest, CreateWorkspaceResponse, SwitchWorkspaceRequest, SwitchWorkspaceResponse,
-    ListWorkspacesRequest, ListWorkspacesResponse, WorkspaceMetadata, GetCurrentWorkspaceRequest, GetCurrentWorkspaceResponse,
+    BreakerMetricsResponse, BreakerStatus, CaptureExperienceRequest, CaptureExperienceResponse,
+    CognitiveTaskEvent, CreateWorkspaceRequest, CreateWorkspaceResponse, DecomposeGoalRequest,
+    DecomposeGoalResponse, DelegateCognitiveTaskRequest, DelegateCognitiveTaskResponse,
+    ExecuteSopRequest, ExecuteToolRequest, ExecuteToolResponse, ExecutionEvent,
+    GetCurrentWorkspaceRequest, GetCurrentWorkspaceResponse, HealthCheckRequest,
+    HealthCheckResponse, InstallSkillRequest, InstallSkillResponse, ListAgentsRequest,
+    ListAgentsResponse, ListBenchmarksRequest, ListBenchmarksResponse, ListPluginsRequest,
+    ListPluginsResponse, ListSkillsRequest, ListSkillsResponse, ListSoPsRequest, ListSoPsResponse,
+    ListToolsRequest, ListToolsResponse, ListWorkspacesRequest, ListWorkspacesResponse,
+    LoadPluginRequest, LoadPluginResponse, PluginDescriptor, RemoveSkillRequest,
+    RemoveSkillResponse, ShowSkillRequest, ShowSkillResponse, SkillMetadata, SopResponse,
+    SubmitFeedbackRequest, SubmitFeedbackResponse, SwitchWorkspaceRequest, SwitchWorkspaceResponse,
+    TaskProto, ToolMetadata, UnloadPluginRequest, UnloadPluginResponse, WorkspaceMetadata,
 };
 use sisyphus_core::{SOPGraph, WasmSOPNode};
-use sisyphus_types::ToolExecutor;
 use sisyphus_metrics::record_bridge_request;
 use sisyphus_tools_agent::team::TeamGoal;
+use sisyphus_types::ToolExecutor;
 use tokio::sync::mpsc;
 use tokio_stream::StreamExt;
 use tonic::{Request, Response, Status};
 use tracing::info_span;
 
 use super::MySisyphusBridge;
-
 
 #[tonic::async_trait]
 impl SisyphusBridge for MySisyphusBridge {
@@ -37,9 +37,8 @@ impl SisyphusBridge for MySisyphusBridge {
         _request: Request<sisyphus_bridge_api::EventRequest>,
     ) -> Result<Response<Self::StreamEventsStream>, Status> {
         let rx = self.event_bus.subscribe();
-        let stream = tokio_stream::wrappers::BroadcastStream::new(rx).map(|res| {
-            res.map_err(|e| Status::internal(format!("Broadcast error: {e}")))
-        });
+        let stream = tokio_stream::wrappers::BroadcastStream::new(rx)
+            .map(|res| res.map_err(|e| Status::internal(format!("Broadcast error: {e}"))));
         Ok(Response::new(Box::pin(stream)))
     }
 
@@ -47,7 +46,8 @@ impl SisyphusBridge for MySisyphusBridge {
         &self,
         request: Request<ExecuteSopRequest>,
     ) -> Result<Response<SopResponse>, Status> {
-        let project_id = request.metadata()
+        let project_id = request
+            .metadata()
             .get("x-sisyphus-workspace-id")
             .and_then(|v| v.to_str().ok())
             .unwrap_or("default")
@@ -56,26 +56,32 @@ impl SisyphusBridge for MySisyphusBridge {
         let sop_id = req.sop_id.clone();
 
         self.publish_event(sisyphus_bridge_api::BridgeEvent {
-            event: Some(sisyphus_bridge_api::bridge_event::Event::OpUpdate(sisyphus_bridge_api::OperationUpdate {
-                op_id: sop_id.clone(),
-                status: "STARTED".into(),
-                result: "".into(),
-                success: true,
-            })),
+            event: Some(sisyphus_bridge_api::bridge_event::Event::OpUpdate(
+                sisyphus_bridge_api::OperationUpdate {
+                    op_id: sop_id.clone(),
+                    status: "STARTED".into(),
+                    result: "".into(),
+                    success: true,
+                },
+            )),
         });
 
         let span = info_span!("bridge.execute_sop", sop_id = %sop_id);
         let _enter = span.enter();
 
-        let (result_str, _final_id) = self.run_execution(sop_id.clone(), &project_id, None).await?;
+        let (result_str, _final_id) = self
+            .run_execution(sop_id.clone(), &project_id, None)
+            .await?;
 
         self.publish_event(sisyphus_bridge_api::BridgeEvent {
-            event: Some(sisyphus_bridge_api::bridge_event::Event::OpUpdate(sisyphus_bridge_api::OperationUpdate {
-                op_id: sop_id.clone(),
-                status: "COMPLETED".into(),
-                result: result_str.clone(),
-                success: true,
-            })),
+            event: Some(sisyphus_bridge_api::bridge_event::Event::OpUpdate(
+                sisyphus_bridge_api::OperationUpdate {
+                    op_id: sop_id.clone(),
+                    status: "COMPLETED".into(),
+                    result: result_str.clone(),
+                    success: true,
+                },
+            )),
         });
 
         record_bridge_request(true, 0.0);
@@ -202,7 +208,8 @@ impl SisyphusBridge for MySisyphusBridge {
         &self,
         request: Request<DelegateCognitiveTaskRequest>,
     ) -> Result<Response<DelegateCognitiveTaskResponse>, Status> {
-        let project_id = request.metadata()
+        let project_id = request
+            .metadata()
             .get("x-sisyphus-workspace-id")
             .and_then(|v| v.to_str().ok())
             .unwrap_or("default")
@@ -214,13 +221,18 @@ impl SisyphusBridge for MySisyphusBridge {
         let ctx = sisyphus_types::ExecutionContext::new();
         ctx.write_notepad("context".into(), context_str);
 
-        match self.kernel.intelligence_manager.synthesize_goal(
-            &goal, 
-            &ctx, 
-            &project_id,
-            sisyphus_types::WorkMode::Standard,
-            None
-        ).await {
+        match self
+            .kernel
+            .intelligence_manager
+            .synthesize_goal(
+                &goal,
+                &ctx,
+                &project_id,
+                sisyphus_types::WorkMode::Standard,
+                None,
+            )
+            .await
+        {
             Ok(result) => {
                 let plan = sisyphus_types::SOPGraphConfig::from_graph(&result.graph)
                     .into_cognitive_plan(goal.clone(), goal.clone());
@@ -228,7 +240,7 @@ impl SisyphusBridge for MySisyphusBridge {
 
                 let plan_json = serde_json::to_string(&plan)
                     .map_err(|e| Status::internal(format!("Serialization failed: {e}")))?;
-                
+
                 Ok(Response::new(DelegateCognitiveTaskResponse {
                     success: true,
                     error: String::new(),
@@ -247,7 +259,8 @@ impl SisyphusBridge for MySisyphusBridge {
         &self,
         request: Request<SubmitFeedbackRequest>,
     ) -> Result<Response<SubmitFeedbackResponse>, Status> {
-        let project_id = request.metadata()
+        let project_id = request
+            .metadata()
             .get("x-sisyphus-workspace-id")
             .and_then(|v| v.to_str().ok())
             .unwrap_or("default")
@@ -260,7 +273,7 @@ impl SisyphusBridge for MySisyphusBridge {
             Ok(evolution) => {
                 let evolution_json = serde_json::to_string(&evolution)
                     .map_err(|e| Status::internal(format!("Serialization failed: {e}")))?;
-                
+
                 Ok(Response::new(SubmitFeedbackResponse {
                     success: true,
                     error: String::new(),
@@ -279,7 +292,8 @@ impl SisyphusBridge for MySisyphusBridge {
         &self,
         request: Request<CaptureExperienceRequest>,
     ) -> Result<Response<CaptureExperienceResponse>, Status> {
-        let project_id = request.metadata()
+        let project_id = request
+            .metadata()
             .get("x-sisyphus-workspace-id")
             .and_then(|v| v.to_str().ok())
             .unwrap_or("default")
@@ -287,8 +301,12 @@ impl SisyphusBridge for MySisyphusBridge {
         let req = request.into_inner();
         let plan: sisyphus_types::CognitivePlan = serde_json::from_str(&req.plan_json)
             .map_err(|e| Status::invalid_argument(format!("Invalid plan JSON: {e}")))?;
-        
-        match self.kernel.capture_success(&req.plan_id, &project_id, plan).await {
+
+        match self
+            .kernel
+            .capture_success(&req.plan_id, &project_id, plan)
+            .await
+        {
             Ok(_) => Ok(Response::new(CaptureExperienceResponse {
                 success: true,
                 error: String::new(),
@@ -313,7 +331,8 @@ impl SisyphusBridge for MySisyphusBridge {
         &self,
         request: Request<ExecuteSopRequest>,
     ) -> Result<Response<Self::StreamExecutionStream>, Status> {
-        let project_id = request.metadata()
+        let project_id = request
+            .metadata()
             .get("x-sisyphus-workspace-id")
             .and_then(|v| v.to_str().ok())
             .unwrap_or("default")
@@ -328,47 +347,54 @@ impl SisyphusBridge for MySisyphusBridge {
 
         tokio::spawn(async move {
             let project_id = project_id.clone();
-            let _result: Result<(String, String), String> =
-                if let Some(goal) = sop_id.strip_prefix("goal:") {
-                    let synthesized_sop_id = format!("synth_{}", goal);
-                    kernel
-                        .execute_goal(goal, &synthesized_sop_id, &project_id, Some(tx.clone()), None)
-                        .await
-                        .map_err(|e| e.to_string())
-                        .map(|(r, report)| {
-                            (
-                                format!("Result: {} | Cognition: {}", r, report),
-                                synthesized_sop_id,
-                            )
-                        })
-                } else {
-                    let graph = match kernel.load_sop(&sop_id, &project_id).await {
-                        Ok(g) => g,
-                        Err(_) => {
-                            let mut g = SOPGraph::new();
-                            let tool_id = sop_id.clone();
-                            let node = Arc::new(WasmSOPNode {
-                                name: format!("node_{}", tool_id),
-                                tool_id,
-                                executor: kernel.execution_manager.tool_router.clone(),
-                                fuel_limit: default_fuel,
-                            });
-                            g.add_node(node);
-                            Arc::new(g)
-                        }
-                    };
-                    let _start_node = match graph.graph.node_indices().next() {
-                        Some(n) => n,
-                        None => return,
-                    };
-                    kernel
-                        .execute_with_cognition(graph, &sop_id, Some(&project_id), None, Some(tx), None)
-                        .await
-                        .map_err(|e| e.to_string())
-                        .map(|(r, report, _)| {
-                            (format!("Result: {} | Cognition: {:?}", r, report), sop_id)
-                        })
+            let _result: Result<(String, String), String> = if let Some(goal) =
+                sop_id.strip_prefix("goal:")
+            {
+                let synthesized_sop_id = format!("synth_{}", goal);
+                kernel
+                    .execute_goal(
+                        goal,
+                        &synthesized_sop_id,
+                        &project_id,
+                        Some(tx.clone()),
+                        None,
+                    )
+                    .await
+                    .map_err(|e| e.to_string())
+                    .map(|(r, report)| {
+                        (
+                            format!("Result: {} | Cognition: {}", r, report),
+                            synthesized_sop_id,
+                        )
+                    })
+            } else {
+                let graph = match kernel.load_sop(&sop_id, &project_id).await {
+                    Ok(g) => g,
+                    Err(_) => {
+                        let mut g = SOPGraph::new();
+                        let tool_id = sop_id.clone();
+                        let node = Arc::new(WasmSOPNode {
+                            name: format!("node_{}", tool_id),
+                            tool_id,
+                            executor: kernel.execution_manager.tool_router.clone(),
+                            fuel_limit: default_fuel,
+                        });
+                        g.add_node(node);
+                        Arc::new(g)
+                    }
                 };
+                let _start_node = match graph.graph.node_indices().next() {
+                    Some(n) => n,
+                    None => return,
+                };
+                kernel
+                    .execute_with_cognition(graph, &sop_id, Some(&project_id), None, Some(tx), None)
+                    .await
+                    .map_err(|e| e.to_string())
+                    .map(|(r, report, _)| {
+                        (format!("Result: {} | Cognition: {:?}", r, report), sop_id)
+                    })
+            };
         });
 
         let output_stream = tokio_stream::wrappers::UnboundedReceiverStream::new(rx).map(
@@ -381,24 +407,24 @@ impl SisyphusBridge for MySisyphusBridge {
                         message: "".into(),
                         timestamp: 0,
                     },
-                    sisyphus_types::ExecutionEvent::NodeCompleted { node_name, output, .. } => {
-                        ExecutionEvent {
-                            event_type: 1,
-                            node_name,
-                            status: "COMPLETED".into(),
-                            message: output.to_string(),
-                            timestamp: 0,
-                        }
-                    }
-                    sisyphus_types::ExecutionEvent::NodeFailed { node_name, error, .. } => {
-                        ExecutionEvent {
-                            event_type: 2,
-                            node_name,
-                            status: "FAILED".into(),
-                            message: error,
-                            timestamp: 0,
-                        }
-                    }
+                    sisyphus_types::ExecutionEvent::NodeCompleted {
+                        node_name, output, ..
+                    } => ExecutionEvent {
+                        event_type: 1,
+                        node_name,
+                        status: "COMPLETED".into(),
+                        message: output.to_string(),
+                        timestamp: 0,
+                    },
+                    sisyphus_types::ExecutionEvent::NodeFailed {
+                        node_name, error, ..
+                    } => ExecutionEvent {
+                        event_type: 2,
+                        node_name,
+                        status: "FAILED".into(),
+                        message: error,
+                        timestamp: 0,
+                    },
                     sisyphus_types::ExecutionEvent::ExecutionComplete { result } => {
                         ExecutionEvent {
                             event_type: 3,
@@ -414,7 +440,7 @@ impl SisyphusBridge for MySisyphusBridge {
                         status: "UNKNOWN".into(),
                         message: "Unknown event".into(),
                         timestamp: 0,
-                    }
+                    },
                 })
             },
         );
@@ -428,7 +454,8 @@ impl SisyphusBridge for MySisyphusBridge {
         &self,
         request: Request<DelegateCognitiveTaskRequest>,
     ) -> Result<Response<Self::StreamCognitiveTaskStream>, Status> {
-        let project_id = request.metadata()
+        let project_id = request
+            .metadata()
             .get("x-sisyphus-workspace-id")
             .and_then(|v| v.to_str().ok())
             .unwrap_or("default")
@@ -445,54 +472,61 @@ impl SisyphusBridge for MySisyphusBridge {
             let ctx = sisyphus_types::ExecutionContext::new();
             ctx.write_notepad("context".into(), context_str);
 
-            let _sop_graph = match kernel.intelligence_manager.synthesize_goal(
-                &goal, 
-                &ctx, 
-                &project_id,
-                sisyphus_types::WorkMode::Standard,
-                None
-            ).await {
+            let _sop_graph = match kernel
+                .intelligence_manager
+                .synthesize_goal(
+                    &goal,
+                    &ctx,
+                    &project_id,
+                    sisyphus_types::WorkMode::Standard,
+                    None,
+                )
+                .await
+            {
                 Ok(res) => {
                     let plan = sisyphus_types::SOPGraphConfig::from_graph(&res.graph)
                         .into_cognitive_plan(goal.clone(), goal.clone());
                     Arc::new(plan)
-                },
-                Err(_) => {
-                    Arc::new(sisyphus_types::CognitivePlan::default())
                 }
+                Err(_) => Arc::new(sisyphus_types::CognitivePlan::default()),
             };
 
-            let _ = kernel.execute_goal_streaming(
-                &goal,
-                "stream_task",
-                &project_id,
-                None,
-                Some(tx),
-            ).await;
+            let _ = kernel
+                .execute_goal_streaming(&goal, "stream_task", &project_id, None, Some(tx))
+                .await;
         });
 
         let output_stream = tokio_stream::wrappers::UnboundedReceiverStream::new(rx).map(
             |event| -> Result<CognitiveTaskEvent, Status> {
                 let (event_type, payload) = match event {
-                    sisyphus_types::CognitiveEvent::Predict { prediction } => 
-                        (0, serde_json::to_string(&prediction).unwrap_or_default()),
-                    sisyphus_types::CognitiveEvent::Execute { node, result } => 
-                        (1, format!("Node {}: {}", node, result)),
-                    sisyphus_types::CognitiveEvent::Reflect { report } => 
-                        (2, serde_json::to_string(&report).unwrap_or_default()),
-                    sisyphus_types::CognitiveEvent::Evolve { revised_plan } => 
-                        (3, serde_json::to_string(&revised_plan).unwrap_or_default()),
-                    sisyphus_types::CognitiveEvent::Complete { final_result, .. } => 
-                        (4, final_result.to_string()),
-                    sisyphus_types::CognitiveEvent::Verify { .. } | sisyphus_types::CognitiveEvent::StrategicShift { .. } => {
+                    sisyphus_types::CognitiveEvent::Predict { prediction } => {
+                        (0, serde_json::to_string(&prediction).unwrap_or_default())
+                    }
+                    sisyphus_types::CognitiveEvent::Execute { node, result } => {
+                        (1, format!("Node {}: {}", node, result))
+                    }
+                    sisyphus_types::CognitiveEvent::Reflect { report } => {
+                        (2, serde_json::to_string(&report).unwrap_or_default())
+                    }
+                    sisyphus_types::CognitiveEvent::Evolve { revised_plan } => {
+                        (3, serde_json::to_string(&revised_plan).unwrap_or_default())
+                    }
+                    sisyphus_types::CognitiveEvent::Complete { final_result, .. } => {
+                        (4, final_result.to_string())
+                    }
+                    sisyphus_types::CognitiveEvent::Verify { .. }
+                    | sisyphus_types::CognitiveEvent::StrategicShift { .. } => {
                         (5, "Cognitive update: internal state evolved".to_string())
-                    },
+                    }
                     _ => (6, "Unknown cognitive event".to_string()),
                 };
                 Ok(CognitiveTaskEvent {
                     event_type,
                     payload,
-                    timestamp: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs(),
+                    timestamp: std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs(),
                 })
             },
         );
@@ -504,7 +538,8 @@ impl SisyphusBridge for MySisyphusBridge {
         &self,
         request: Request<sisyphus_bridge_api::CallJcodeRequest>,
     ) -> Result<Response<sisyphus_bridge_api::CallJcodeResponse>, Status> {
-        let project_id = request.metadata()
+        let project_id = request
+            .metadata()
             .get("x-sisyphus-workspace-id")
             .and_then(|v| v.to_str().ok())
             .unwrap_or("default")
@@ -513,15 +548,17 @@ impl SisyphusBridge for MySisyphusBridge {
         let task_id = req.task_id;
         let goal = req.goal;
         let context = req.context_json;
-        
+
         tracing::info!(task_id = %task_id, goal = %goal, "Jcode request received - delegating to kernel");
-        
+
         // Execute the goal autonomously using the kernel
         // We use a unique sop_id for each jcode call to avoid collisions
         let sop_id = format!("jcode_{}", task_id);
-        let result = self.kernel.execute_goal(&goal, &sop_id, &project_id, None, Some(&context)).await;
+        let result = self
+            .kernel
+            .execute_goal(&goal, &sop_id, &project_id, None, Some(&context))
+            .await;
 
-        
         match result {
             Ok((output, report)) => {
                 let res_str = if goal.contains("verify_evolution") {
@@ -529,12 +566,16 @@ impl SisyphusBridge for MySisyphusBridge {
                     // In a real scenario, we would use a specialized "verifier" agent.
                     // Here, we use the goal result and wrap it.
                     serde_json::json!({
-                        "decision": "ACCEPT", 
+                        "decision": "ACCEPT",
                         "reason": format!("Verification successful. Result: {}", output),
                         "improvement_score": 0.8
-                    }).to_string()
+                    })
+                    .to_string()
                 } else {
-                    format!("Task completed successfully.\nResult: {}\n\nTrace: {}", output, report)
+                    format!(
+                        "Task completed successfully.\nResult: {}\n\nTrace: {}",
+                        output, report
+                    )
                 };
 
                 Ok(Response::new(sisyphus_bridge_api::CallJcodeResponse {
@@ -553,7 +594,6 @@ impl SisyphusBridge for MySisyphusBridge {
             }
         }
     }
-
 
     async fn execute_tool(
         &self,
@@ -574,7 +614,8 @@ impl SisyphusBridge for MySisyphusBridge {
         let args_bytes = args_json.into_bytes();
         let result = self
             .kernel
-            .execution_manager.tool_router
+            .execution_manager
+            .tool_router
             .execute(&tool_id, args_bytes, fuel)
             .await;
 
@@ -674,11 +715,13 @@ impl SisyphusBridge for MySisyphusBridge {
                 success_rate: s.success_rate,
             })
             .collect();
-        Ok(Response::new(sisyphus_bridge_api::LearningInsightsResponse {
-            total_samples: insight.total_samples,
-            overall_success_rate: insight.overall_success_rate,
-            strategies,
-        }))
+        Ok(Response::new(
+            sisyphus_bridge_api::LearningInsightsResponse {
+                total_samples: insight.total_samples,
+                overall_success_rate: insight.overall_success_rate,
+                strategies,
+            },
+        ))
     }
 
     async fn list_skills(
@@ -686,12 +729,16 @@ impl SisyphusBridge for MySisyphusBridge {
         request: Request<ListSkillsRequest>,
     ) -> Result<Response<ListSkillsResponse>, Status> {
         let req = request.into_inner();
-        
+
         let skills = if req.remote {
-            self.skill_registry.fetch_available_skills().await
+            self.skill_registry
+                .fetch_available_skills()
+                .await
                 .map_err(|e| Status::internal(format!("Remote registry error: {e}")))?
         } else {
-            self.skill_registry.list_installed_skills().await
+            self.skill_registry
+                .list_installed_skills()
+                .await
                 .map_err(|e| Status::internal(format!("Local store error: {e}")))?
         };
 
@@ -847,7 +894,11 @@ impl SisyphusBridge for MySisyphusBridge {
         request: Request<CreateWorkspaceRequest>,
     ) -> Result<Response<CreateWorkspaceResponse>, Status> {
         let req = request.into_inner();
-        match self.workspace_manager.create_workspace(req.name, req.project_id, req.root_dir).await {
+        match self
+            .workspace_manager
+            .create_workspace(req.name, req.project_id, req.root_dir)
+            .await
+        {
             Ok(ws) => Ok(Response::new(CreateWorkspaceResponse {
                 success: true,
                 error: String::new(),
@@ -866,7 +917,11 @@ impl SisyphusBridge for MySisyphusBridge {
         request: Request<SwitchWorkspaceRequest>,
     ) -> Result<Response<SwitchWorkspaceResponse>, Status> {
         let req = request.into_inner();
-        match self.workspace_manager.switch_workspace(&req.workspace_id).await {
+        match self
+            .workspace_manager
+            .switch_workspace(&req.workspace_id)
+            .await
+        {
             Ok(()) => Ok(Response::new(SwitchWorkspaceResponse {
                 success: true,
                 error: String::new(),
@@ -923,7 +978,7 @@ impl SisyphusBridge for MySisyphusBridge {
     ) -> Result<Response<AddMessageResponse>, Status> {
         let req = request.into_inner();
         let db_path = std::path::PathBuf::from(&req.session_db_path);
-        
+
         let session = match sisyphus_tools_session::session_get(&db_path, &req.session_id) {
             Ok(s) => s,
             Err(e) => {
@@ -934,7 +989,7 @@ impl SisyphusBridge for MySisyphusBridge {
                 }));
             }
         };
-        
+
         if session.messages.is_empty() {
             return Ok(Response::new(AddMessageResponse {
                 success: false,
@@ -942,7 +997,7 @@ impl SisyphusBridge for MySisyphusBridge {
                 response_content: String::new(),
             }));
         }
-        
+
         if req.role != "user" {
             return Ok(Response::new(AddMessageResponse {
                 success: true,
@@ -950,18 +1005,19 @@ impl SisyphusBridge for MySisyphusBridge {
                 response_content: String::new(),
             }));
         }
-        
+
         let context = session
             .messages
             .iter()
             .map(|msg| format!("{}: {}", msg.role, msg.content))
             .collect::<Vec<_>>()
             .join("\n");
-        
-        let system_prompt = "You are Sisyphus, an AI assistant with cognitive engine capabilities. \
+
+        let system_prompt =
+            "You are Sisyphus, an AI assistant with cognitive engine capabilities. \
             Respond helpfully to the user's messages based on the conversation history.\
             Keep responses concise but informative.";
-        
+
         match self.llm_client.chat(system_prompt, &context, false).await {
             Ok(response) => {
                 if let Err(e) = sisyphus_tools_session::session_add_message(
@@ -977,10 +1033,12 @@ impl SisyphusBridge for MySisyphusBridge {
                     }));
                 }
                 self.publish_event(sisyphus_bridge_api::BridgeEvent {
-                    event: Some(sisyphus_bridge_api::bridge_event::Event::SessionUpdate(sisyphus_bridge_api::SessionUpdate {
-                        session_id: req.session_id.clone(),
-                        force_refresh: true,
-                    })),
+                    event: Some(sisyphus_bridge_api::bridge_event::Event::SessionUpdate(
+                        sisyphus_bridge_api::SessionUpdate {
+                            session_id: req.session_id.clone(),
+                            force_refresh: true,
+                        },
+                    )),
                 });
                 Ok(Response::new(AddMessageResponse {
                     success: true,
@@ -992,8 +1050,7 @@ impl SisyphusBridge for MySisyphusBridge {
                 success: false,
                 error: format!("LLM chat failed: {e}"),
                 response_content: String::new(),
-                }))
+            })),
         }
     }
-
 }

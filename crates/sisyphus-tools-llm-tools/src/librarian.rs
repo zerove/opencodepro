@@ -8,10 +8,10 @@
 
 pub mod types;
 
-pub use types::{CodeExample, DocPage, ResearchFinding, ResearchReport, ResearchScope, now_iso};
+pub use types::{now_iso, CodeExample, DocPage, ResearchFinding, ResearchReport, ResearchScope};
 
-use sisyphus_tools_system::web::{webfetch, websearch};
 use sisyphus_tools_core::ToolResult;
+use sisyphus_tools_system::web::{webfetch, websearch};
 
 // ── Research Functions ─────────────────────────────────────
 
@@ -295,4 +295,3 @@ pub async fn synthesise(
 }
 
 // ── Tests ───────────────────────────────────────────────────
-
