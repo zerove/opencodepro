@@ -3,12 +3,10 @@
 
 use std::sync::Arc;
 use parking_lot::RwLock;
-use serde_json::Value;
-use sisyphus_types::{AgentMessage, SOPGraphConfig};
+use sisyphus_types::SOPGraphConfig;
 use crate::{
     strategic_manager::StrategicManager, 
-    CoreError, 
-    execution_manager::ExecutionManager,
+    CoreError,
     intelligence_manager::IntelligenceManager
 };
 use sisyphus_tools_system::agent_channel::AgentChannel;
@@ -196,11 +194,11 @@ pub struct AuditReview {
 
 fn extract_json(text: &str) -> String {
     if let Some(start) = text.find("```json") {
-        if let Some(end) = text[start + 7..].find("```") {
+        if let Some(_end) = text[start + 7..].find("```") {
             return text[start + 7..start + 7 + text[start + 7..].find("```").unwrap()].trim().to_string();
         }
     } else if let Some(start) = text.find("```") {
-        if let Some(end) = text[start + 3..].find("```") {
+        if let Some(_end) = text[start + 3..].find("```") {
             return text[start + 3..start + 3 + text[start + 3..].find("```").unwrap()].trim().to_string();
         }
     }

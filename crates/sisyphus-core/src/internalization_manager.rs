@@ -1,6 +1,5 @@
 use std::sync::Arc;
-use crate::strategic_manager::StrategicManager;
-use tracing::{info, error};
+use tracing::info;
 
 #[derive(Debug, Clone)]
 pub struct InternalizationRequest {

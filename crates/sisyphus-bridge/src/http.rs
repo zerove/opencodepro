@@ -2,7 +2,7 @@
 use crate::MySisyphusBridge;
 use axum::{
     extract::{Path, State},
-    http::{header, HeaderMap, StatusCode},
+    http::StatusCode,
     body::Body,
     response::{IntoResponse, Response},
     routing::{get, post, patch, delete},
@@ -11,12 +11,11 @@ use axum::{
 use axum::extract::FromRequestParts;
 use async_trait::async_trait;
 use tower_http::services::ServeDir;
-use futures_util::stream::{self, Stream};
+use futures_util::stream::{self};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::mpsc;
-use tokio_stream::{wrappers::UnboundedReceiverStream, StreamExt};
 use sisyphus_types::{ToolExecutor, graph::SOPGraphConfig};
 
 // ── Response / Request Types ───────────────────────────────────────────────

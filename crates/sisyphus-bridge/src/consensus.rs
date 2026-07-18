@@ -42,7 +42,7 @@ impl Consensus for ClusterConsensus {
         self.leader_id.read().await.clone()
     }
 
-    async fn propose(&self, key: &str, value: Value) -> Result<(), String> {
+    async fn propose(&self, key: &str, _value: Value) -> Result<(), String> {
         if !self.is_leader().await {
             return Err("Only the leader can propose state changes".into());
         }
@@ -61,6 +61,7 @@ impl Consensus for ClusterConsensus {
 }
 
 /// No-op consensus implementation: always assumes this node is the leader.
+#[allow(dead_code)]
 pub(crate) struct NoOpConsensus;
 
 #[async_trait]

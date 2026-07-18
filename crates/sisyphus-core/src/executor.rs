@@ -158,7 +158,7 @@ impl Executor {
                 let ctx_ref = Arc::clone(&ctx);
                 let tx = event_tx.clone();
                 let tool_exec = Arc::clone(&tool_executor);
-                let sup = supervisor.clone();
+                let _sup = supervisor.clone();
                 let sem = Arc::clone(&self.concurrency_limit);
                 let exec_self = Arc::clone(&self);
                 let micro_ref = micro_reflector.clone();
@@ -275,7 +275,7 @@ impl Executor {
             tracing::debug!(node = %name, "Node result stored");
 
             let chosen_target = if let Some(node_weight) = sop_graph.graph.node_weight(node) {
-                if let Some(branch_node) = node_weight.as_any().downcast_ref::<sisyphus_types::BranchSOPNode>() {
+                if let Some(_branch_node) = node_weight.as_any().downcast_ref::<sisyphus_types::BranchSOPNode>() {
                     output.as_f64().map(|idx| NodeIndex::new(idx as usize))
                 } else {
                     None
@@ -306,7 +306,7 @@ impl Executor {
                         let ctx_ref = Arc::clone(&ctx);
                         let tx = event_tx.clone();
                         let tool_exec = Arc::clone(&tool_executor);
-                        let sup = supervisor.clone();
+                        let _sup = supervisor.clone();
                         let sem = Arc::clone(&self.concurrency_limit);
                         let exec_self = Arc::clone(&self);
                         let micro_ref = micro_reflector.clone();

@@ -4,7 +4,6 @@ use petgraph::graph::NodeIndex;
 
 use serde::{Deserialize, Serialize};
 
-use serde_json::Value;
 
 use std::collections::HashMap;
 
@@ -298,7 +297,7 @@ impl SisyphusKernel {
     pub fn new(
         state_store: Arc<MfsStore>,
         sop_store: Arc<SopSqlStore>,
-        vector_store: Arc<sisyphus_mem::VectorMemoryStore>,
+        _vector_store: Arc<sisyphus_mem::VectorMemoryStore>,
         experience_bank: Arc<dyn sisyphus_types::experience::ExperienceBank>,
         tool_executor: Arc<dyn ToolExecutor>,
         intel: Arc<SisyphusIntel>,
@@ -308,7 +307,7 @@ impl SisyphusKernel {
         meta_learner: Arc<parking_lot::Mutex<MetaLearner>>,
         consensus: Arc<dyn Consensus>,
         sql_store: Arc<sisyphus_mem::RoadmapSqlStore>,
-        embedding_client: Arc<dyn sisyphus_tools_llm::EmbeddingClient>,
+        _embedding_client: Arc<dyn sisyphus_tools_llm::EmbeddingClient>,
     ) -> Self {
         let pm = Arc::new(sisyphus_roadmap::proposal_manager::ProposalManager::new(state_store.clone()));
         let rm = Arc::new(RoadmapManager::new(state_store.clone(), sql_store, pm.clone()));
@@ -410,7 +409,7 @@ impl SisyphusKernel {
 
     /// Override the cognitive loop configuration (max_iterations, convergence_threshold).
 
-    pub fn with_cognitive_loop_config(mut self, config: sisyphus_types::config::CognitiveLoopConfig) -> Self {
+    pub fn with_cognitive_loop_config(self, config: sisyphus_types::config::CognitiveLoopConfig) -> Self {
 
         *self.strategic_manager.config.write() = config;
 
@@ -784,7 +783,7 @@ impl SisyphusKernel {
         context_json: Option<&str>,
     ) -> Result<(NodeOutput, String), CoreError> {
 
-        let mut ctx = ExecutionContext::new();
+        let ctx = ExecutionContext::new();
 
         if let Some(ctx_str) = context_json {
 
@@ -1522,7 +1521,7 @@ impl SisyphusKernel {
 
             // 1. Proactive Health Check: Simulate remaining roadmap to detect potential risks before execution.
 
-            if let Some(reflector) = self.strategic_reflector.as_ref() {
+            if let Some(_reflector) = self.strategic_reflector.as_ref() {
 
                 if let Some(reflection) = self.strategic_reflect(project_id).await {
 
@@ -1928,7 +1927,7 @@ impl SisyphusKernel {
 
             if in_degree.get(sop_id).map(|d| *d).unwrap_or(0) == 0 {
 
-                if let Some((graph, start_node)) = graph_cache.remove(sop_id) {
+                if let Some((graph, _start_node)) = graph_cache.remove(sop_id) {
 
                     let kernel = Arc::clone(&self_arc);
 
@@ -2011,7 +2010,7 @@ impl SisyphusKernel {
 
             for sid in ready {
 
-                if let Some((graph, start_node)) = graph_cache.remove(&sid) {
+                if let Some((graph, _start_node)) = graph_cache.remove(&sid) {
 
                     let kernel = Arc::clone(&self_arc);
 

@@ -4,7 +4,6 @@
 //! formatted terminal output to allow observability into the AI's "thinking" process.
 
 use sisyphus_types::{ExecutionEvent, CognitiveMetrics};
-use std::fmt::Write;
 
 pub struct CognitiveDashboard;
 

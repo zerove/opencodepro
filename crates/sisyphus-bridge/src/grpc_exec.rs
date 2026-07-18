@@ -56,7 +56,7 @@ impl MySisyphusBridge {
                 }
             };
 
-            let start_node = graph
+            let _start_node = graph
                 .graph
                 .node_indices()
                 .next()

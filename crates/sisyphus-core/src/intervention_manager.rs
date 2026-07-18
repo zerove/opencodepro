@@ -46,8 +46,8 @@ impl InterventionManager {
     pub async fn request_feedback(
         &self, 
         node_name: String, 
-        prompt: String, 
-        ctx_summary: String,
+        _prompt: String, 
+        _ctx_summary: String,
         timeout: std::time::Duration
     ) -> Result<UserFeedback, InterventionError> {
         let (tx, rx) = oneshot::channel();

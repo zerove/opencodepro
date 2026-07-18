@@ -15,12 +15,10 @@ use sisyphus_bridge_api::{
     CognitiveTaskEvent, SubmitFeedbackRequest, SubmitFeedbackResponse, CaptureExperienceRequest, CaptureExperienceResponse,
     CreateWorkspaceRequest, CreateWorkspaceResponse, SwitchWorkspaceRequest, SwitchWorkspaceResponse,
     ListWorkspacesRequest, ListWorkspacesResponse, WorkspaceMetadata, GetCurrentWorkspaceRequest, GetCurrentWorkspaceResponse,
-    EventRequest,
 };
 use sisyphus_core::{SOPGraph, WasmSOPNode};
 use sisyphus_types::ToolExecutor;
 use sisyphus_metrics::record_bridge_request;
-use sisyphus_tools_llm::LlmClient;
 use sisyphus_tools_agent::team::TeamGoal;
 use tokio::sync::mpsc;
 use tokio_stream::StreamExt;
@@ -359,7 +357,7 @@ impl SisyphusBridge for MySisyphusBridge {
                             Arc::new(g)
                         }
                     };
-                    let start_node = match graph.graph.node_indices().next() {
+                    let _start_node = match graph.graph.node_indices().next() {
                         Some(n) => n,
                         None => return,
                     };

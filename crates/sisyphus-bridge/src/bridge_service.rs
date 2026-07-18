@@ -1,12 +1,11 @@
 //! REST API for Sisyphus Bridge (axum HTTP layer alongside gRPC).
 use async_trait::async_trait;
 use crate::jcode_caller::DebugSocketToolCaller;
-use std::num::NonZeroUsize;
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 
 use sisyphus_core::{Consensus, SisyphusKernel};
-use sisyphus_mem::{MfsStore, SopSqlStore, SisyphusStore};
+use sisyphus_mem::SisyphusStore;
 
 use sisyphus_sandbox::{PluginManager, WasmToolExecutor};
 use sisyphus_mem::skill_store::SkillStore;
@@ -23,13 +22,12 @@ use sisyphus_tools_mcp::custom_tool::CustomToolLoader;
 use sisyphus_tools_mcp::mcp::McpTool;
 use sisyphus_tools_mcp::tool_registry::{ToolInfo, ToolRegistry, ToolSource};
 use sisyphus_tools_session::skill::SkillLoader;
-use sisyphus_bridge_api::sisyphus_bridge_client::SisyphusBridgeClient;
 use sisyphus_tools_agent::jcode_executor::JcodeToolCaller;
 use sisyphus_tools_agent::jcode_executor::JcodeToolExecutor;
 use sisyphus_types::{Config, ExecutorRouter, ToolExecutor};
 use tracing::{info, warn};
 
-use crate::consensus::{ClusterConsensus, NoOpConsensus};
+use crate::consensus::ClusterConsensus;
 use crate::strategic_executor::StrategicExecutor;
 use crate::tools::{register_builtin_tools, register_strategic_tools};
 use sisyphus_intel::MetaLearningSynthesizer;
@@ -74,7 +72,7 @@ impl Clone for MySisyphusBridge {
 
 impl MySisyphusBridge {
     pub async fn new(shared_config: Arc<RwLock<Config>>, llm_client_override: Option<Arc<dyn LlmClient>>) -> Result<Self, sisyphus_types::TypesError> {
-        let (cache_path, l1_cap, max_tasks, wasm_tools_dir, max_mem_pages, stdio_servers, http_servers, default_fuel, embedding_provider, embedding_model, embedding_endpoint) = {
+        let (cache_path, _l1_cap, max_tasks, wasm_tools_dir, max_mem_pages, stdio_servers, http_servers, default_fuel, embedding_provider, embedding_model, embedding_endpoint) = {
             let config = shared_config.read().map_err(|e| sisyphus_types::TypesError::ToolExecutionError { tool_id: "init".into(), details: format!("Config lock poisoned: {e}") })?;
             (
                 config.cache.sqlite_path.clone(),
@@ -180,7 +178,7 @@ impl MySisyphusBridge {
 
         // ── Roadmap Storage Init ──────────────────────────────────────────
         let sql_store = store.roadmap.clone();
-        let proposal_manager = Arc::new(sisyphus_roadmap::proposal_manager::ProposalManager::new(state_store.clone()));
+        let _proposal_manager = Arc::new(sisyphus_roadmap::proposal_manager::ProposalManager::new(state_store.clone()));
 
         let proposal_manager = Arc::new(sisyphus_roadmap::proposal_manager::ProposalManager::new(state_store.clone()));
 
@@ -443,6 +441,7 @@ impl MySisyphusBridge {
         self.default_fuel
     }
 
+    #[allow(dead_code)]
     pub(crate) async fn get_current_project_id(&self) -> Option<String> {
         self.workspace_manager.get_current().await.map(|ws| ws.project_id)
     }

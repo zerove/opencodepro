@@ -1,6 +1,6 @@
 use std::sync::Arc;
-use crate::{ExecutionContext, NodeOutput, CoreError};
-use sisyphus_types::{SOPGraph, RuntimeSupervisor, SupervisorDecision};
+use crate::{ExecutionContext, NodeOutput};
+use sisyphus_types::{RuntimeSupervisor, SupervisorDecision};
 use async_trait::async_trait;
 
 pub struct DefaultSupervisor;

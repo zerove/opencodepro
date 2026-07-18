@@ -5,7 +5,7 @@ use tokio::sync::mpsc;
 use sisyphus_intel::{ToolCoder, WasmCompiler, ToolGap};
 use sisyphus_types::CognitiveEvent;
 use crate::ExecutionManager;
-use tracing::{info, warn, error};
+use tracing::{info, warn};
 
 pub struct SelfProgrammingManager {
     pub coder: ToolCoder,

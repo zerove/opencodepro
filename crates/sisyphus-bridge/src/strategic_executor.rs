@@ -12,6 +12,7 @@ pub(crate) struct StrategicExecutor {
     kernel: Arc<RwLock<Option<Weak<SisyphusKernel>>>>,
     state_store: Arc<MfsStore>,
     llm_client: Arc<dyn LlmClient>,
+    #[allow(dead_code)]
     cache_path: PathBuf,
     sql_store: Arc<sisyphus_mem::RoadmapSqlStore>,
     proposal_manager: Arc<ProposalManager>,

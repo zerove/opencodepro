@@ -6,10 +6,9 @@ use std::sync::Arc;
 use std::time::{Instant, SystemTime};
 use tokio::sync::mpsc;
 use serde_json::Value;
-use tracing::{info, warn, error};
+use tracing::error;
 
-use sisyphus_metrics::record_cognitive_iteration;
-use sisyphus_types::{AgentMessage, ExecutionTrace, StateStore, BenchmarkRun, MetaLearningSample, CognitiveMetrics, CognitiveEvent};
+use sisyphus_types::{ExecutionTrace, CognitiveMetrics, CognitiveEvent};
 use sisyphus_intel::{SisyphusSupervisor, SimulationResult};
 use sisyphus_types::SOPGraph;
 
@@ -123,28 +122,6 @@ impl StrategicManager {
         }
     }
 
-    fn apply_strategy(strategy_name: &str, params: &serde_json::Value, config: &mut sisyphus_types::config::CognitiveLoopConfig) {
-        match strategy_name {
-            "conservative" => {
-                config.max_iterations = 15;
-                config.convergence_threshold = 0.01;
-            }
-            "aggressive" => {
-                config.max_iterations = 5;
-                config.convergence_threshold = 0.1;
-            }
-            "balanced" | _ => {
-                config.max_iterations = 10;
-                config.convergence_threshold = 0.05;
-            }
-        }
-        if let Some(max_iter) = params.get("max_iterations").and_then(|v| v.as_u64()) {
-            config.max_iterations = max_iter as u32;
-        }
-        if let Some(threshold) = params.get("threshold").and_then(|v| v.as_f64()) {
-            config.convergence_threshold = threshold;
-        }
-    }
 
     fn build_cog_map(
         sop_id: &str,
@@ -214,7 +191,7 @@ impl StrategicManager {
         stream_tx: Option<mpsc::UnboundedSender<CognitiveEvent>>,
         micro_reflector: Option<Arc<dyn sisyphus_types::MicroReflector>>,
     ) -> Result<(NodeOutput, CognitiveReport, Option<Arc<SOPGraph>>), CoreError> {
-        let start_time = std::time::Instant::now();
+        let _start_time = std::time::Instant::now();
         
         // --- HOT START PHASE ---
         let mut current_ref = Arc::clone(&sop_graph);
@@ -241,7 +218,7 @@ impl StrategicManager {
                 limit: 5,
             };
 
-            if let Ok(Some(asset)) = self.sp_manager.knowledge_manager.find_best_asset(goal, self.intelligence_manager.llm_client.clone()).await {
+            if let Ok(Some(_asset)) = self.sp_manager.knowledge_manager.find_best_asset(goal, self.intelligence_manager.llm_client.clone()).await {
                 // We also consider the multi-modal experience bank for a more nuanced Hot-Start.
                 // (Actually, find_best_asset is a higher-level abstraction, we'll use experience_bank directly for multi-modal)
             }
@@ -272,7 +249,7 @@ impl StrategicManager {
         }
         // -----------------------
         
-        let (current_strategy, current_params) = {
+        let (_current_strategy, _current_params) = {
             let context = serde_json::json!({
                 "sop_id": sop_id,
                 "node_count": current_ref.graph.node_count(),
@@ -291,7 +268,7 @@ impl StrategicManager {
                 goal_text.unwrap_or(sop_id)
             ).await;
             
-            let (mut d_max, mut d_thresh) = depth.to_config();
+            let (mut d_max, d_thresh) = depth.to_config();
             
             // If hot-start is active, we can significantly reduce iterations
             if hot_start_active {
@@ -345,7 +322,7 @@ impl StrategicManager {
         let mut current_ref: Arc<SOPGraph> = Arc::clone(&sop_graph);
         let mut current_start = sop_graph.start_node;
         let mut iterations: Vec<CognitiveIteration> = Vec::with_capacity(max_iterations);
-        let mut traces: Vec<ExecutionTrace> = Vec::with_capacity(max_iterations);
+        let _traces: Vec<ExecutionTrace> = Vec::with_capacity(max_iterations);
         let mut final_result = NodeOutput::default();
         let mut final_evolved: Option<Arc<SOPGraph>> = None;
         let initial_ctx_for_iter = initial_ctx;
@@ -689,7 +666,7 @@ impl StrategicManager {
             }
 
             let has_evolved = final_evolved_graph.is_some();
-            let iter_duration = iter_start.elapsed();
+            let _iter_duration = iter_start.elapsed();
             iterations.push(CognitiveIteration {
                 iteration,
                 prediction: prediction.clone(),

@@ -1,7 +1,6 @@
 use std::sync::Arc;
 use sisyphus_intel::{SisyphusIntel, SimulationResult, ReflectionReport};
-use sisyphus_types::{SOPGraph, ExecutionContext, NodeOutput};
-use async_trait::async_trait;
+use sisyphus_types::{SOPGraph, ExecutionContext};
 use sisyphus_tools_llm_tools::{oracle, momus};
 use std::path::Path;
 

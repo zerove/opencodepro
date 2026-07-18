@@ -3,6 +3,7 @@
 use axum::response::IntoResponse;
 use axum::Json;
 
+#[allow(dead_code)]
 pub(crate) async fn openapi_json() -> impl IntoResponse {
     Json(serde_json::json!({
         "openapi": "3.1.0",
@@ -206,6 +207,7 @@ pub(crate) async fn openapi_json() -> impl IntoResponse {
     }))
 }
 
+#[allow(dead_code)]
 pub(crate) async fn swagger_ui_handler() -> impl IntoResponse {
     let html = r#"<!DOCTYPE html>
 <html>
