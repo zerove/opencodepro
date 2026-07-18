@@ -1,9 +1,9 @@
 use async_trait::async_trait;
-use parking_lot::RwLock;
 use sisyphus_types::{GoldenDataset, GoldenSop, SOPGraphConfig, TypesError};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
+use tokio::sync::RwLock;
 
 pub struct InMemoryGoldenDataset {
     data: Arc<RwLock<HashMap<String, GoldenSop>>>,
@@ -43,12 +43,12 @@ impl GoldenDataset for InMemoryGoldenDataset {
             timestamp,
         };
 
-        self.data.write().insert(goal.to_string(), golden);
+        self.data.write().await.insert(goal.to_string(), golden);
         Ok(())
     }
 
     async fn get_golden_sop(&self, goal: &str) -> Result<Option<GoldenSop>, TypesError> {
-        Ok(self.data.read().get(goal).cloned())
+        Ok(self.data.read().await.get(goal).cloned())
     }
 
     async fn verify_no_regression(
@@ -57,7 +57,7 @@ impl GoldenDataset for InMemoryGoldenDataset {
         _candidate: &SOPGraphConfig,
         current_metric: f64,
     ) -> Result<bool, TypesError> {
-        if let Some(golden) = self.data.read().get(goal) {
+        if let Some(golden) = self.data.read().await.get(goal) {
             // Regression if the current metric is significantly lower than the golden metric
             // For now, we use a simple threshold: 10% degradation
             if current_metric < golden.success_metric * 0.9 {
