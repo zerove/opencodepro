@@ -1,14 +1,11 @@
+mod common;
+
 use async_trait::async_trait;
 use sisyphus_core::{
     CompositeGraph, CompositeOutput, DataMapping, GraphDependency, SOPGraph, SOPGraphConfig,
     SisyphusKernel, WasmSOPNode,
 };
-use sisyphus_intel::{
-    simulation::{LogicalSimulationResult, LogicalSimulator},
-    MonteCarloSimulator, ReflectionReport, SimulationResult, SisyphusIntel,
-};
-use sisyphus_mem::MfsStore;
-use sisyphus_types::{experience::ExperienceTuple, ExecutionContext, ToolExecutor, WorkMode};
+use sisyphus_types::{ExecutionContext, ToolExecutor};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
@@ -29,134 +26,29 @@ impl ToolExecutor for CompositeMockExecutor {
     }
 }
 
-struct MockReflector;
-#[async_trait]
-impl sisyphus_intel::reflect::Reflector for MockReflector {
-    async fn reflect(
-        &self,
-        _trace: &str,
-        _predicted: &SimulationResult,
-        _experiences: Option<&[ExperienceTuple]>,
-    ) -> Result<ReflectionReport, String> {
-        Ok(ReflectionReport {
-            original_sop_id: "mock".into(),
-            deviation_score: 0.0,
-            suggested_improvements: vec![],
-            evolved_sop_structure: None,
-            records: vec![],
-        })
-    }
-}
-
-struct MockEvolver;
-#[async_trait]
-impl sisyphus_intel::reflect::SOPEvolver for MockEvolver {
-    async fn evolve(
-        &self,
-        graph: Arc<SOPGraph>,
-        _report: &ReflectionReport,
-        _prediction: &SimulationResult,
-        _insights: Option<&str>,
-    ) -> Result<Arc<SOPGraph>, String> {
-        Ok(graph)
-    }
-}
-
-struct MockExperienceBank;
-#[async_trait]
-impl sisyphus_types::experience::ExperienceBank for MockExperienceBank {
-    async fn record(&self, _exp: ExperienceTuple) -> Result<(), String> {
-        Ok(())
-    }
-    async fn query_similar(
-        &self,
-        _query: sisyphus_types::experience::ExperienceQuery,
-    ) -> Result<Vec<ExperienceTuple>, String> {
-        Ok(vec![])
-    }
-}
-
-struct MockLogicalSimulator;
-#[async_trait]
-impl LogicalSimulator for MockLogicalSimulator {
-    async fn simulate_logic(
-        &self,
-        _graph: Arc<SOPGraph>,
-        _context: &ExecutionContext,
-        _sop_id: &str,
-        _goal_text: Option<&str>,
-    ) -> Result<LogicalSimulationResult, String> {
-        Ok(LogicalSimulationResult {
-            is_valid: true,
-            flaws: vec![],
-            predicted_path: vec!["mock".to_string()],
-            confidence: 1.0,
-        })
-    }
-}
-
-struct MockSynthesizer;
-#[async_trait]
-impl sisyphus_intel::FlowSynthesizer for MockSynthesizer {
-    async fn synthesize(
-        &self,
-        _goal: &str,
-        _context: &ExecutionContext,
-        _project_id: &str,
-        _mode: WorkMode,
-        _insights: Option<&str>,
-    ) -> Result<sisyphus_intel::SynthesisResult, String> {
-        let mut graph = SOPGraph::new();
-        let start_node = graph.add_node(Arc::new(sisyphus_types::WasmSOPNode {
-            name: "mock_node".into(),
-            tool_id: "mock_tool".into(),
-            fuel_limit: 1000,
-            executor: Arc::new(sisyphus_intel::mock::MockExecutor),
-        }));
-        Ok(sisyphus_intel::SynthesisResult {
-            graph: Arc::new(graph),
-            start_node,
-            plan_description: "mock".into(),
-        })
-    }
-}
-
-struct MockConsensus;
-#[async_trait]
-impl sisyphus_core::Consensus for MockConsensus {
-    async fn is_leader(&self) -> bool {
-        true
-    }
-    async fn get_leader(&self) -> String {
-        "mock-leader".into()
-    }
-    async fn propose(&self, _key: &str, _value: serde_json::Value) -> Result<(), String> {
-        Ok(())
-    }
-}
-
 async fn make_kernel() -> (Arc<SisyphusKernel>, Arc<CompositeMockExecutor>) {
-    let state_store = Arc::new(MfsStore::new("sqlite::memory:").await.unwrap());
+    let state_store = Arc::new(
+        sisyphus_mem::MfsStore::new("sqlite::memory:")
+            .await
+            .unwrap(),
+    );
     let tool_executor = Arc::new(CompositeMockExecutor {
         call_count: AtomicUsize::new(0),
     });
 
-    let simulator = Arc::new(MonteCarloSimulator::with_state_store(
+    let simulator = Arc::new(sisyphus_intel::MonteCarloSimulator::with_state_store(
         100,
         state_store.clone(),
     ));
-    let logical_simulator = Arc::new(MockLogicalSimulator);
-    let reflector = Arc::new(MockReflector);
-    let evolver = Arc::new(MockEvolver);
-    let intel = Arc::new(SisyphusIntel::new(
+    let intel = Arc::new(sisyphus_intel::SisyphusIntel::new(
         simulator,
-        logical_simulator,
-        reflector,
-        evolver,
+        Arc::new(common::MockLogicalSimulator),
+        Arc::new(common::MockReflector),
+        Arc::new(common::MockEvolver),
     ));
 
-    let synthesizer = Arc::new(MockSynthesizer);
-    let experience_bank = Arc::new(MockExperienceBank);
+    let synthesizer = Arc::new(common::MockSynthesizer);
+    let experience_bank = Arc::new(common::MockExperienceBank);
 
     let llm_client = Arc::new(sisyphus_tools_llm::metis::DummyLlmClient);
     let fast_llm_client = Arc::new(sisyphus_tools_llm::metis::DummyLlmClient);
@@ -187,7 +79,7 @@ async fn make_kernel() -> (Arc<SisyphusKernel>, Arc<CompositeMockExecutor>) {
         Arc::new(parking_lot::Mutex::new(
             sisyphus_tools_llm_tools::meta_learner::MetaLearner::new(".omo/test_meta"),
         )),
-        Arc::new(MockConsensus),
+        Arc::new(common::MockConsensus),
         roadmap_store,
         Arc::new(sisyphus_tools_llm::DummyEmbeddingClient),
     ));
