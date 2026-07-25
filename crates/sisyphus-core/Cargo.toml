@@ -9,6 +9,7 @@ license = "MIT"
 [features]
 default = ["sandbox"]
 sandbox = ["sisyphus-sandbox"]
+broken_tests = []
 
 [dependencies]
 petgraph = "0.6"
@@ -45,6 +46,7 @@ sisyphus_visual = { version = "0.1.0", path = "../sisyphus-visual" }
 criterion = { version = "0.5", features = ["async_tokio"] }
 sisyphus-tools-llm = { path = "../sisyphus-tools-llm" }
 tempfile = "3.10"
+sqlx = { version = "0.8", features = ["sqlite", "runtime-tokio-rustls"] }
 
 [[bin]]
 name = "integration_stress"

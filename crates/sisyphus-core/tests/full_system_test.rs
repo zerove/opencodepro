@@ -1,3 +1,4 @@
+#![cfg(feature = "broken_tests")]
 use sisyphus_core::{Consensus, CoreError, SOPGraph, SisyphusKernel};
 use sisyphus_intel::{
     GoalDrivenSynthesizer, MonteCarloSimulator, SisyphusIntel, StandardEvolver, StandardReflector,

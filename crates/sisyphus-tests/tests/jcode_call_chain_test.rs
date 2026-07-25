@@ -7,6 +7,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixListener;
 
 #[tokio::test]
+#[ignore = "Requires running Jcode UDS server"]
 async fn test_jcode_uds_call_chain() {
     // 1. Setup temporary directory for socket
     let dir = tempdir().expect("Failed to create temp dir");

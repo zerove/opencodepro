@@ -6,14 +6,14 @@ use tempfile::tempdir;
 #[tokio::test]
 async fn test_developer_new() {
     let llm = Arc::new(DummyLlmClient);
-    let dev = Developer::new(llm);
+    let _dev = Developer::new(llm);
     // Just check it constructs
 }
 
 #[tokio::test]
 async fn test_developer_with_wisdom() {
     let llm = Arc::new(DummyLlmClient);
-    let dev = Developer::new(llm).with_wisdom();
+    let _dev = Developer::new(llm).with_wisdom();
     // Should not crash; wisdom inject just returns empty if no notepads exist
 }
 
@@ -183,7 +183,7 @@ async fn test_checkpoint_save_and_load() {
         verification_output: None,
     };
 
-    dev.save_checkpoint("test", "ctx", &[1], &[step_result.clone()], &[]);
+    dev.save_checkpoint("test", "ctx", &[1], std::slice::from_ref(&step_result), &[]);
 
     let loaded = dev.load_checkpoint().unwrap();
     assert_eq!(loaded.goal, "test");

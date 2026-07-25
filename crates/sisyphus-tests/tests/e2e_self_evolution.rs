@@ -1,9 +1,9 @@
 use async_trait::async_trait;
 use sisyphus_core::execution_manager::ExecutionManager;
-use sisyphus_core::{CoreError, SelfProgrammingManager};
+use sisyphus_core::SelfProgrammingManager;
 use sisyphus_intel::ToolGap;
 use sisyphus_knowledge::AssetManager;
-use sisyphus_mem::{MfsStore, SisyphusStore};
+use sisyphus_mem::SisyphusStore;
 use sisyphus_tools_llm::{circuit_breaker::CircuitBreaker, LlmClient};
 use sisyphus_types::errors::TypesError;
 use sisyphus_types::TestResult;
@@ -177,7 +177,7 @@ async fn test_self_evolution_e2e() {
         }
     }
 
-    let result = resolve_handle
+    resolve_handle
         .await
         .expect("Join error")
         .expect("Self-programming failed");

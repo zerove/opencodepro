@@ -8,9 +8,9 @@ pub mod scribe;
 pub mod security;
 
 #[cfg(test)]
-mod tests {
+mod unit_tests {
     #[test]
     fn test_llm_tools_placeholder() {
-        assert!(true);
+        // Placeholder test for the crate
     }
 }

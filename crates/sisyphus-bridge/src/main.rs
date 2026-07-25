@@ -128,11 +128,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 mod tests {
     use sisyphus_bridge_api::{
         sisyphus_bridge_server::SisyphusBridge, AddMessageRequest, AddMessageResponse,
-        DecomposeGoalRequest, DecomposeGoalResponse, ExecuteSopRequest, ExecuteToolRequest,
-        HealthCheckRequest, LearningInsightsRequest, LearningInsightsResponse, ListAgentsRequest,
-        ListPluginsRequest, ListPluginsResponse, ListSoPsRequest, ListToolsRequest,
-        ListToolsResponse, LoadPluginRequest, LoadPluginResponse, TaskProto, UnloadPluginRequest,
-        UnloadPluginResponse,
+        CallJcodeRequest, CallJcodeResponse, CaptureExperienceRequest, CaptureExperienceResponse,
+        DecomposeGoalRequest, DecomposeGoalResponse, DelegateCognitiveTaskRequest, EventRequest,
+        ExecuteSopRequest, ExecuteToolRequest, GetCurrentWorkspaceRequest,
+        GetCurrentWorkspaceResponse, HealthCheckRequest, LearningInsightsRequest,
+        LearningInsightsResponse, ListAgentsRequest, ListPluginsRequest, ListPluginsResponse,
+        ListSoPsRequest, ListToolsRequest, ListToolsResponse, ListWorkspacesRequest,
+        ListWorkspacesResponse, LoadPluginRequest, LoadPluginResponse, SubmitFeedbackRequest,
+        SubmitFeedbackResponse, TaskProto, UnloadPluginRequest, UnloadPluginResponse,
     };
     use std::collections::HashMap;
     use tokio_stream::StreamExt;
@@ -227,7 +230,7 @@ mod tests {
                     timestamp: 0,
                 });
             });
-            let stream = tokio_stream::wrappers::UnboundedReceiverStream::new(rx).map(|e| Ok(e));
+            let stream = tokio_stream::wrappers::UnboundedReceiverStream::new(rx).map(Ok);
             Ok(tonic::Response::new(Box::pin(stream)))
         }
 
@@ -359,6 +362,141 @@ mod tests {
                 error: String::new(),
                 response_content: "mock response".into(),
             }))
+        }
+
+        // 以下是缺失的 trait 方法实现
+        async fn delegate_cognitive_task(
+            &self,
+            _request: Request<DelegateCognitiveTaskRequest>,
+        ) -> Result<
+            tonic::Response<sisyphus_bridge_api::DelegateCognitiveTaskResponse>,
+            tonic::Status,
+        > {
+            Ok(tonic::Response::new(
+                sisyphus_bridge_api::DelegateCognitiveTaskResponse {
+                    success: true,
+                    error: String::new(),
+                    plan_json: "{}".into(),
+                },
+            ))
+        }
+
+        type StreamCognitiveTaskStream =
+            tonic::codegen::BoxStream<sisyphus_bridge_api::CognitiveTaskEvent>;
+
+        async fn stream_cognitive_task(
+            &self,
+            _request: Request<DelegateCognitiveTaskRequest>,
+        ) -> Result<tonic::Response<Self::StreamCognitiveTaskStream>, tonic::Status> {
+            let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+            tokio::spawn(async move {
+                let _ = tx.send(Ok(sisyphus_bridge_api::CognitiveTaskEvent {
+                    event_type: 4,
+                    payload: "done".into(),
+                    timestamp: 0,
+                }));
+            });
+            let stream = tokio_stream::wrappers::UnboundedReceiverStream::new(rx);
+            Ok(tonic::Response::new(Box::pin(stream)))
+        }
+
+        async fn submit_feedback(
+            &self,
+            _request: Request<SubmitFeedbackRequest>,
+        ) -> Result<tonic::Response<SubmitFeedbackResponse>, tonic::Status> {
+            Ok(tonic::Response::new(SubmitFeedbackResponse {
+                success: true,
+                error: String::new(),
+                evolution_json: "{}".into(),
+            }))
+        }
+
+        async fn capture_experience(
+            &self,
+            _request: Request<CaptureExperienceRequest>,
+        ) -> Result<tonic::Response<CaptureExperienceResponse>, tonic::Status> {
+            Ok(tonic::Response::new(CaptureExperienceResponse {
+                success: true,
+                error: String::new(),
+            }))
+        }
+
+        async fn create_workspace(
+            &self,
+            _request: Request<sisyphus_bridge_api::CreateWorkspaceRequest>,
+        ) -> Result<tonic::Response<sisyphus_bridge_api::CreateWorkspaceResponse>, tonic::Status>
+        {
+            Ok(tonic::Response::new(
+                sisyphus_bridge_api::CreateWorkspaceResponse {
+                    success: true,
+                    error: String::new(),
+                    workspace_id: "mock-workspace".into(),
+                },
+            ))
+        }
+
+        async fn switch_workspace(
+            &self,
+            _request: Request<sisyphus_bridge_api::SwitchWorkspaceRequest>,
+        ) -> Result<tonic::Response<sisyphus_bridge_api::SwitchWorkspaceResponse>, tonic::Status>
+        {
+            Ok(tonic::Response::new(
+                sisyphus_bridge_api::SwitchWorkspaceResponse {
+                    success: true,
+                    error: String::new(),
+                },
+            ))
+        }
+
+        async fn list_workspaces(
+            &self,
+            _request: Request<ListWorkspacesRequest>,
+        ) -> Result<tonic::Response<ListWorkspacesResponse>, tonic::Status> {
+            Ok(tonic::Response::new(ListWorkspacesResponse {
+                workspaces: vec![],
+            }))
+        }
+
+        async fn get_current_workspace(
+            &self,
+            _request: Request<GetCurrentWorkspaceRequest>,
+        ) -> Result<tonic::Response<GetCurrentWorkspaceResponse>, tonic::Status> {
+            Ok(tonic::Response::new(GetCurrentWorkspaceResponse {
+                found: false,
+                workspace: None,
+            }))
+        }
+
+        async fn call_jcode(
+            &self,
+            _request: Request<CallJcodeRequest>,
+        ) -> Result<tonic::Response<CallJcodeResponse>, tonic::Status> {
+            Ok(tonic::Response::new(CallJcodeResponse {
+                success: true,
+                result: "mock".into(),
+                error: String::new(),
+            }))
+        }
+
+        type StreamEventsStream = tonic::codegen::BoxStream<sisyphus_bridge_api::BridgeEvent>;
+
+        async fn stream_events(
+            &self,
+            _request: Request<EventRequest>,
+        ) -> Result<tonic::Response<Self::StreamEventsStream>, tonic::Status> {
+            let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+            tokio::spawn(async move {
+                let _ = tx.send(Ok(sisyphus_bridge_api::BridgeEvent {
+                    event: Some(sisyphus_bridge_api::bridge_event::Event::LogUpdate(
+                        sisyphus_bridge_api::LogUpdate {
+                            message: "mock".into(),
+                            level: "INFO".into(),
+                        },
+                    )),
+                }));
+            });
+            let stream = tokio_stream::wrappers::UnboundedReceiverStream::new(rx);
+            Ok(tonic::Response::new(Box::pin(stream)))
         }
     }
 

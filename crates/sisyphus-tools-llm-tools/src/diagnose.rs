@@ -159,7 +159,13 @@ mod tests {
     use tempfile::TempDir;
 
     fn write_toml(dir: &Path, content: &str) {
-        fs::write(dir.join("Cargo.toml"), content).unwrap();
+        // Ensure standalone project by appending [workspace] to avoid parent workspace interference
+        let toml = if content.contains("[workspace]") {
+            content.to_string()
+        } else {
+            format!("{content}\n[workspace]\n")
+        };
+        fs::write(dir.join("Cargo.toml"), toml).unwrap();
     }
 
     fn create_simple_project() -> (TempDir, std::path::PathBuf) {

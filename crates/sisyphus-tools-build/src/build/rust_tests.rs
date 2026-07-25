@@ -3,7 +3,14 @@ use std::fs;
 use tempfile::TempDir;
 
 fn write_toml(dir: &Path, content: &str) {
-    fs::write(dir.join("Cargo.toml"), content).unwrap();
+    // Ensure standalone project: append empty [workspace] so parent workspace
+    // (e.g. .jcode/Cargo.toml) doesn't interfere with cargo commands.
+    let toml = if content.contains("[workspace]") {
+        content.to_string()
+    } else {
+        format!("{content}\n[workspace]\n")
+    };
+    fs::write(dir.join("Cargo.toml"), toml).unwrap();
 }
 
 fn write_src(dir: &Path, content: &str) {

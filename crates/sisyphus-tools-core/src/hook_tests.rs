@@ -1,5 +1,5 @@
 use super::*;
-use crate::skill::TriggerDef;
+use sisyphus_types::TriggerDef;
 
 #[test]
 fn test_empty_registry() {

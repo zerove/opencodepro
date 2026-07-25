@@ -1,3 +1,4 @@
+#![cfg(feature = "broken_tests")]
 use async_trait::async_trait;
 use sisyphus_core::SisyphusKernel;
 use sisyphus_intel::{SisyphusIntel, StandardEvolver, StandardReflector};

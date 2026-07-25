@@ -237,6 +237,7 @@ impl sisyphus_types::ToolExecutor for BuiltinToolExecutor {
 mod tests {
     use super::*;
     use serde_json::{json, Value};
+    use sisyphus_tools_llm::circuit_breaker::CircuitBreaker;
     use sisyphus_tools_llm::metis::LlmClient;
     use sisyphus_types::ToolExecutor;
 
@@ -257,6 +258,18 @@ mod tests {
                 r#"{{"ambiguities": [], "implicit_requirements": [], "summary": "Mock analysis for: {}", "actionable": true}}"#,
                 user
             ))
+        }
+
+        fn get_params_for(&self, _agent_id: &str) -> (String, String, String) {
+            (
+                "default".to_string(),
+                "default".to_string(),
+                "default".to_string(),
+            )
+        }
+
+        fn breaker(&self) -> CircuitBreaker {
+            CircuitBreaker::default()
         }
     }
 

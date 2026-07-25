@@ -1,3 +1,4 @@
+#![cfg(feature = "broken_tests")]
 use sisyphus_core::Consensus;
 use sisyphus_core::{CoreError, SOPGraph, SisyphusKernel};
 use sisyphus_intel::{

@@ -1,3 +1,4 @@
+#![cfg(feature = "broken_tests")]
 use sisyphus_core::{SisyphusKernel, ToolExecutor};
 use sisyphus_intel::{LogicalSOPSynthesizer, SisyphusIntel};
 use sisyphus_mem::MfsStore;

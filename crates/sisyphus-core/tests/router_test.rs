@@ -23,7 +23,7 @@ async fn test_dynamic_tool_routing() {
     let router_arc = Arc::new(router);
 
     // 2. Register SystemExecutor under 'sys' prefix
-    let sys_exec = Arc::new(SystemExecutor::default());
+    let sys_exec = Arc::new(SystemExecutor);
     router_arc.register("sys", sys_exec);
 
     // 3. Test default routing (no prefix)

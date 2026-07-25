@@ -1,8 +1,7 @@
 use async_trait::async_trait;
-use sisyphus_intel::{
-    reflect::{RecordedNode, ReflectionReport},
-    LlmEvolver, SOPEvolver, TopologicalSOPEvolver,
-};
+use sisyphus_intel::simulation::SimulationResult;
+use sisyphus_intel::{reflect::ReflectionReport, LlmEvolver, SOPEvolver, TopologicalSOPEvolver};
+use sisyphus_tools_llm::circuit_breaker::{BreakerConfig, CircuitBreaker};
 use sisyphus_tools_llm::metis::LlmClient;
 use sisyphus_types::{EvolutionOp, SOPGraph, ToolExecutor, TypesError, WasmSOPNode};
 use std::sync::Arc;
@@ -28,6 +27,23 @@ impl LlmClient for MockLlmClient {
 
     async fn chat(&self, _system: &str, _user: &str, _stream: bool) -> Result<String, String> {
         Ok(self.response.clone())
+    }
+
+    fn get_params_for(&self, _agent_id: &str) -> (String, String, String) {
+        (
+            "test-model".into(),
+            "test-api-key".into(),
+            "test-endpoint".into(),
+        )
+    }
+
+    fn breaker(&self) -> CircuitBreaker {
+        CircuitBreaker::new(BreakerConfig {
+            failure_threshold: 5,
+            success_threshold: 3,
+            timeout_secs: 30,
+            half_open_max_calls: 1,
+        })
     }
 }
 
@@ -180,10 +196,10 @@ fn test_topological_swap_nodes() {
 
 #[test]
 fn test_topological_cycle_detection() {
-    let (graph, exec) = setup_basic_graph();
-    let evolver = TopologicalSOPEvolver::new();
+    let (_graph, _exec) = setup_basic_graph();
+    let _evolver = TopologicalSOPEvolver::new();
     // Create a cycle: node2 -> node1 (already have node1 -> node2)
-    let ops = vec![EvolutionOp::SwapNodes {
+    let _ops = [EvolutionOp::SwapNodes {
         node_a: "node1".into(),
         node_b: "node2".into(),
     }];
@@ -276,7 +292,7 @@ fn test_topological_cycle_detection() {
     graph.add_edge(n2, n1); // Cycle!
 
     let evolver = TopologicalSOPEvolver::new();
-    let res = evolver.apply_ops(&graph, &vec![], exec);
+    let res = evolver.apply_ops(&graph, &[], exec);
     assert!(res.is_err(), "Should detect cycle in already cyclic graph");
 }
 
@@ -296,11 +312,13 @@ async fn test_llm_evolver_integration() {
         evolved_sop_structure: None,
         records: vec![],
     };
-    let prediction = sisyphus_intel::simulation::SimulationResult {
+    let prediction = SimulationResult {
         predicted_outcome: "ok".into(),
         path_id: "test".into(),
         success_probability: 1.0,
         estimated_cost: 100,
+        predicted_effort: 100,
+        predicted_stability: 0.9,
     };
 
     let new_graph = evolver

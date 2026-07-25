@@ -5,7 +5,7 @@ use sisyphus_bridge_api::{ExecuteSopRequest, HealthCheckRequest};
 use sisyphus_tools_llm::metis::DummyLlmClient;
 use sisyphus_types::Config;
 use std::sync::{Arc, RwLock};
-use tonic::transport::{Channel, Server};
+use tonic::transport::Server;
 
 #[tokio::test]
 async fn test_bridge_health_check() {
@@ -78,7 +78,7 @@ async fn test_bridge_execute_sop() {
     graph.add_node(node);
     bridge
         .kernel()
-        .save_sop(&sop_id, &graph)
+        .save_sop(&sop_id, "test-project", &graph)
         .await
         .expect("Failed to save mock SOP");
 

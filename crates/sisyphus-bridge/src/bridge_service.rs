@@ -145,7 +145,7 @@ impl MySisyphusBridge {
                     .map_err(|e| {
                         sisyphus_types::TypesError::ConfigReadError {
                             path: "embedding_config".into(),
-                            source: std::io::Error::new(std::io::ErrorKind::Other, e),
+                            source: std::io::Error::other(e),
                         }
                     })?,
                 )

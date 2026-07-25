@@ -198,7 +198,6 @@ pub fn edit_with_hashline(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Write;
 
     #[test]
     fn test_hash_content() {
@@ -245,7 +244,7 @@ mod tests {
 
         assert!(verify_line(content, &hashline).unwrap());
 
-        let wrong_hashline = format!("// LINE#2:wronghash");
+        let wrong_hashline = "// LINE#2:wronghash".to_string();
         assert!(!verify_line(content, &wrong_hashline).unwrap());
 
         let out_of_bounds = format!("// LINE#10:{}", hash);
@@ -291,7 +290,7 @@ mod tests {
         assert!(content.contains("new_line2 // LINE#2:"));
 
         // Test conflict
-        let conflict_hashline = format!("// LINE#2:wronghash");
+        let conflict_hashline = "// LINE#2:wronghash".to_string();
         let result = edit_with_hashline(&path, &conflict_hashline, "fail");
         assert!(result.is_err());
     }

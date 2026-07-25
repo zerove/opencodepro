@@ -226,7 +226,6 @@ mod tests {
     use super::*;
     #[cfg(unix)]
     use std::os::unix::fs::PermissionsExt;
-    use std::path::PathBuf;
     use tempfile::TempDir;
 
     fn init_git_repo(dir: &Path) {

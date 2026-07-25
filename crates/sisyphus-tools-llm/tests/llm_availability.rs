@@ -2,6 +2,7 @@ use sisyphus_tools_llm::{llm::OpenAiLlmClient, LlmClient};
 use std::env;
 
 #[tokio::test]
+#[ignore = "requires valid GOOGLE_GENERATIVE_AI_API_KEY and network access"]
 async fn test_gemma4_availability() {
     let api_key = env::var("GOOGLE_GENERATIVE_AI_API_KEY")
         .expect("GOOGLE_GENERATIVE_AI_API_KEY environment variable must be set");

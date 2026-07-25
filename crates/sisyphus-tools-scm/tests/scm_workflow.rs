@@ -1,6 +1,6 @@
 use sisyphus_tools_scm::{git, patch};
 use std::fs;
-use std::path::Path;
+
 use tempfile::tempdir;
 
 #[test]

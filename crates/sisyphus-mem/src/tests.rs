@@ -1,10 +1,9 @@
 #[cfg(test)]
-mod tests {
+mod unit_tests {
     use crate::store::MfsStore;
     use serde::{Deserialize, Serialize};
     use serde_json::json;
     use sisyphus_types::StateStore;
-    use std::num::NonZeroUsize;
     use std::sync::Arc;
 
     #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]

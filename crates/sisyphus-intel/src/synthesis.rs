@@ -683,6 +683,7 @@ mod tests {
             .synthesize(
                 "fetch the data",
                 &empty_ctx(),
+                "test",
                 sisyphus_types::WorkMode::Standard,
                 None,
             )
@@ -699,6 +700,7 @@ mod tests {
             .synthesize(
                 "fetch and process the data",
                 &empty_ctx(),
+                "test",
                 sisyphus_types::WorkMode::Standard,
                 None,
             )
@@ -717,6 +719,7 @@ mod tests {
             .synthesize(
                 "fetch and process in parallel",
                 &empty_ctx(),
+                "test",
                 sisyphus_types::WorkMode::Standard,
                 None,
             )
@@ -735,6 +738,7 @@ mod tests {
             .synthesize(
                 "xyzzy",
                 &empty_ctx(),
+                "test",
                 sisyphus_types::WorkMode::Standard,
                 None,
             )

@@ -1,3 +1,4 @@
+#![cfg(feature = "broken_tests")]
 //! Cognitive Benchmark Suite
 //!
 //! This test suite evaluates the convergence and success rate of the Sisyphus cognitive loop

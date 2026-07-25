@@ -381,11 +381,13 @@ mod tests {
 
     #[test]
     fn test_validate_workflow_yaml_with_options() {
-        let mut opts = GenerateOptions::default();
-        opts.include_clippy = true;
-        opts.include_deny = true;
-        opts.rust_toolchain = "nightly-2024-01-01".into();
-        opts.exclude_packages = "sisyphus-bridge,sisyphus-sandbox".into();
+        let opts = GenerateOptions {
+            include_clippy: true,
+            include_deny: true,
+            rust_toolchain: "nightly-2024-01-01".into(),
+            exclude_packages: "sisyphus-bridge,sisyphus-sandbox".into(),
+            ..GenerateOptions::default()
+        };
 
         let yaml = generate_workflow(WorkflowKind::Ci, &opts);
         assert!(validate_workflow_yaml(&yaml).is_ok());

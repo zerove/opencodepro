@@ -34,10 +34,7 @@ mod tests {
     #[test]
     fn test_compress_strategy_default() {
         let strategy = CompressStrategy::default();
-        if let CompressStrategy::Threshold(limit) = strategy {
-            assert_eq!(limit, 32000);
-        } else {
-            panic!("Expected Threshold strategy");
-        }
+        let CompressStrategy::Threshold(limit) = strategy;
+        assert_eq!(limit, 32000);
     }
 }

@@ -1,5 +1,4 @@
-use sisyphus_tools_system::{bash, explore, file};
-use std::path::Path;
+use sisyphus_tools_system::{bash, file};
 use tempfile::tempdir;
 
 #[tokio::test]

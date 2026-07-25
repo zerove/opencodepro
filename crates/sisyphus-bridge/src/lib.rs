@@ -4,6 +4,7 @@ pub mod consensus;
 pub mod grpc_exec;
 pub mod grpc_handlers;
 pub mod http;
+#[allow(clippy::duplicate_mod)]
 pub mod http_openapi;
 pub mod jcode_caller;
 pub mod strategic_executor;

@@ -1,4 +1,5 @@
 use super::*;
+use tokio;
 
 // ── LogEntry ──────────────────────────────────────────
 
@@ -16,8 +17,8 @@ fn test_log_entry_entry_text() {
 
 // ── App::new ──────────────────────────────────────────
 
-#[test]
-fn test_app_new_initial_state() {
+#[tokio::test]
+async fn test_app_new_initial_state() {
     let app = App::new(PathBuf::from("/tmp/test"), "localhost:50051".into());
     assert_eq!(app.view, View::Home);
     assert_eq!(app.session_mode, app::Mode::Select);
@@ -47,8 +48,8 @@ fn test_app_new_initial_state() {
     assert!(!app.ralph_continue_pending);
 }
 
-#[test]
-fn test_app_new_data_dir() {
+#[tokio::test]
+async fn test_app_new_data_dir() {
     let app = App::new(PathBuf::from("/my/data"), "127.0.0.1:9999".into());
     assert_eq!(app.data_dir, PathBuf::from("/my/data"));
     assert_eq!(app.bridge_address, "127.0.0.1:9999");
@@ -56,8 +57,8 @@ fn test_app_new_data_dir() {
 
 // ── App::add_log ──────────────────────────────────────
 
-#[test]
-fn test_add_log_appends_and_adjusts_scroll() {
+#[tokio::test]
+async fn test_add_log_appends_and_adjusts_scroll() {
     let mut app = App::new(PathBuf::from("/tmp"), "addr".into());
     let initial_scroll = app.scroll;
 
@@ -73,8 +74,8 @@ fn test_add_log_appends_and_adjusts_scroll() {
 
 // ── render_status ─────────────────────────────────────
 
-#[test]
-fn test_render_status_shows_opencode_format() {
+#[tokio::test]
+async fn test_render_status_shows_opencode_format() {
     let app = App::new(PathBuf::from("/tmp"), "addr".into());
     let rendered = render::render_status(&app).to_string();
     assert!(rendered.contains("SESSION") || rendered.contains("HOME"));
@@ -82,24 +83,24 @@ fn test_render_status_shows_opencode_format() {
     assert!(rendered.contains("unknown"));
 }
 
-#[test]
-fn test_render_status_home_help() {
+#[tokio::test]
+async fn test_render_status_home_help() {
     let mut app = App::new(PathBuf::from("/tmp"), "addr".into());
     app.view = View::Home;
     let rendered = render::render_status(&app).to_string();
     assert!(rendered.contains("Enter: start session"));
 }
 
-#[test]
-fn test_render_status_session_list_help() {
+#[tokio::test]
+async fn test_render_status_session_list_help() {
     let mut app = App::new(PathBuf::from("/tmp"), "addr".into());
     app.view = View::Session;
     let rendered = render::render_status(&app).to_string();
     assert!(rendered.contains("Enter open"));
 }
 
-#[test]
-fn test_render_status_diag_counts() {
+#[tokio::test]
+async fn test_render_status_diag_counts() {
     use sisyphus_tools_build::lsp::{LspDiagnostic, LspPosition, LspRange};
     let rng = LspRange {
         start: LspPosition {
@@ -135,22 +136,22 @@ fn test_render_status_diag_counts() {
     assert!(rendered.contains("I1"));
 }
 
-#[test]
-fn test_context_pct_no_session() {
+#[tokio::test]
+async fn test_context_pct_no_session() {
     let app = App::new(PathBuf::from("/tmp"), "addr".into());
     assert_eq!(render::context_pct(&app), 0);
 }
 
-#[test]
-fn test_diag_counts_empty() {
+#[tokio::test]
+async fn test_diag_counts_empty() {
     let app = App::new(PathBuf::from("/tmp"), "addr".into());
     assert_eq!(render::diag_counts(&app), (0, 0, 0));
 }
 
 // ── App todos with tempfile ──────────────────────────
 
-#[test]
-fn test_refresh_todos_empty() {
+#[tokio::test]
+async fn test_refresh_todos_empty() {
     let dir = tempfile::tempdir().unwrap();
     let mut app = App::new(dir.path().to_path_buf(), "addr".into());
     // todo_dirty starts as true, so refresh reads the file
@@ -160,8 +161,8 @@ fn test_refresh_todos_empty() {
     assert!(!app.todo_dirty);
 }
 
-#[test]
-fn test_refresh_todos_with_data() {
+#[tokio::test]
+async fn test_refresh_todos_with_data() {
     let dir = tempfile::tempdir().unwrap();
     let db = dir.path().join("todos.json");
     // Seed a todo via the public API
@@ -175,8 +176,8 @@ fn test_refresh_todos_with_data() {
     assert_eq!(app.todo_sel, 0);
 }
 
-#[test]
-fn test_toggle_todo_status_cycles() {
+#[tokio::test]
+async fn test_toggle_todo_status_cycles() {
     let dir = tempfile::tempdir().unwrap();
     let db = dir.path().join("todos.json");
     let _item =
@@ -216,8 +217,8 @@ fn test_toggle_todo_status_cycles() {
     ));
 }
 
-#[test]
-fn test_delete_todo_removes_item() {
+#[tokio::test]
+async fn test_delete_todo_removes_item() {
     let dir = tempfile::tempdir().unwrap();
     let db = dir.path().join("todos.json");
     let _item = crate::tools::todo_add(&db, "delete me", crate::tools::TodoPriority::Low).unwrap();
@@ -236,8 +237,8 @@ fn test_delete_todo_removes_item() {
     assert!(app.todo_items.is_empty());
 }
 
-#[test]
-fn test_toggle_todo_empty_no_panic() {
+#[tokio::test]
+async fn test_toggle_todo_empty_no_panic() {
     let mut app = App::new(PathBuf::from("/tmp/nonexistent"), "addr".into());
     app.toggle_todo_status(); // should not panic when empty
     app.delete_todo(); // should not panic when empty
@@ -245,8 +246,8 @@ fn test_toggle_todo_empty_no_panic() {
 
 // ── App sessions with tempfile ───────────────────────
 
-#[test]
-fn test_refresh_sessions_empty() {
+#[tokio::test]
+async fn test_refresh_sessions_empty() {
     let dir = tempfile::tempdir().unwrap();
     let mut app = App::new(dir.path().to_path_buf(), "addr".into());
     assert!(app.session_dirty);
@@ -255,8 +256,8 @@ fn test_refresh_sessions_empty() {
     assert!(!app.session_dirty);
 }
 
-#[test]
-fn test_refresh_sessions_with_data() {
+#[tokio::test]
+async fn test_refresh_sessions_with_data() {
     let dir = tempfile::tempdir().unwrap();
     let db = dir.path().join("sessions.json");
     let _session = crate::tools::session_create(&db, "test-session").unwrap();
@@ -268,8 +269,8 @@ fn test_refresh_sessions_with_data() {
     assert_eq!(app.sessions[0].name, "test-session");
 }
 
-#[test]
-fn test_select_session_loads_detail() {
+#[tokio::test]
+async fn test_select_session_loads_detail() {
     let dir = tempfile::tempdir().unwrap();
     let db = dir.path().join("sessions.json");
     let session = crate::tools::session_create(&db, "detail-test").unwrap();
@@ -287,8 +288,8 @@ fn test_select_session_loads_detail() {
     assert_eq!(detail.id, session.id);
 }
 
-#[test]
-fn test_select_session_empty_noop() {
+#[tokio::test]
+async fn test_select_session_empty_noop() {
     let mut app = App::new(PathBuf::from("/tmp/nonexistent"), "addr".into());
     app.select_session(); // should not panic when empty
     assert!(app.session_detail.is_none());

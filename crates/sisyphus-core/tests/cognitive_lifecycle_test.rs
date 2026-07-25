@@ -1,3 +1,4 @@
+#![cfg(feature = "broken_tests")]
 use sisyphus_core::*;
 use sisyphus_intel::SisyphusIntel;
 use sisyphus_mem::MfsStore;

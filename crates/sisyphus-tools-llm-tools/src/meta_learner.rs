@@ -322,6 +322,7 @@ mod tests {
         MetaLearningSample {
             context: ctx,
             strategy: strategy.into(),
+            params: json!({}),
             success,
             duration_secs: 1.0,
             timestamp: 0,
@@ -359,15 +360,15 @@ mod tests {
         ml.record_outcome(sample("slow", false, json!({"lang": "rust"})))
             .unwrap();
 
-        let best = ml.best_strategy(&json!({"lang": "rust"}));
-        assert_eq!(best, Some("fast".to_string()));
+        let best = ml.best_strategy_params(&json!({"lang": "rust"}));
+        assert_eq!(best, Some(("fast".to_string(), json!({}))));
     }
 
     #[test]
     fn test_best_strategy_insufficient_data() {
         let dir = tempfile::tempdir().unwrap();
         let ml = MetaLearner::new(dir.path().to_str().unwrap());
-        assert!(ml.best_strategy(&json!({})).is_none());
+        assert!(ml.best_strategy_params(&json!({})).is_none());
     }
 
     #[test]

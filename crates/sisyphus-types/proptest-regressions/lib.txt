@@ -5,3 +5,4 @@
 # It is recommended to check this file in to source control so that
 # everyone who runs the test benefits from these saved cases.
 cc 6e2e8f95140edf42a1f6f16dd9132a2387317fe82ac23cd9e7342d4a5ce67dd9 # shrinks to graph_ids = ["_", "_"]
+cc ffc376a73178afdae469b459d084187fcef53b1488f8179df349044793117edb # shrinks to config = SOPGraphConfig { nodes: [], edges: [] }

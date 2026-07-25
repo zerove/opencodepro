@@ -1,3 +1,5 @@
+#![allow(clippy::result_large_err)]
+
 use std::sync::Arc;
 
 use sisyphus_bridge_api::sisyphus_bridge_server::SisyphusBridge;

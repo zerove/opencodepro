@@ -1,9 +1,0 @@
-name = "case_convert"
-description = "Convert string between camelCase, snake_case, and kebab-case"
-handler = ".opencode/tools/case_convert.wasm"
-
-[schema]
-type = "object"
-properties.text = { type = "string", description = "The text to convert" }
-properties.to_case = { type = "string", description = "Target case: 'camel', 'snake', or 'kebab'" }
-required = ["text", "to_case"]

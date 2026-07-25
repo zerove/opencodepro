@@ -3,9 +3,12 @@ use sisyphus_core::{
     CompositeGraph, CompositeOutput, DataMapping, GraphDependency, SOPGraph, SOPGraphConfig,
     SisyphusKernel, WasmSOPNode,
 };
-use sisyphus_intel::{MonteCarloSimulator, SisyphusIntel, StandardEvolver, StandardReflector};
+use sisyphus_intel::{
+    simulation::{LogicalSimulationResult, LogicalSimulator},
+    MonteCarloSimulator, ReflectionReport, SimulationResult, SisyphusIntel,
+};
 use sisyphus_mem::MfsStore;
-use sisyphus_types::ToolExecutor;
+use sisyphus_types::{experience::ExperienceTuple, ExecutionContext, ToolExecutor, WorkMode};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
@@ -23,6 +26,98 @@ impl ToolExecutor for CompositeMockExecutor {
     ) -> Result<Vec<u8>, sisyphus_types::TypesError> {
         self.call_count.fetch_add(1, Ordering::SeqCst);
         Ok(format!("executed:{}", tool_id).into_bytes())
+    }
+}
+
+struct MockReflector;
+#[async_trait]
+impl sisyphus_intel::reflect::Reflector for MockReflector {
+    async fn reflect(
+        &self,
+        _trace: &str,
+        _predicted: &SimulationResult,
+        _experiences: Option<&[ExperienceTuple]>,
+    ) -> Result<ReflectionReport, String> {
+        Ok(ReflectionReport {
+            original_sop_id: "mock".into(),
+            deviation_score: 0.0,
+            suggested_improvements: vec![],
+            evolved_sop_structure: None,
+            records: vec![],
+        })
+    }
+}
+
+struct MockEvolver;
+#[async_trait]
+impl sisyphus_intel::reflect::SOPEvolver for MockEvolver {
+    async fn evolve(
+        &self,
+        graph: Arc<SOPGraph>,
+        _report: &ReflectionReport,
+        _prediction: &SimulationResult,
+        _insights: Option<&str>,
+    ) -> Result<Arc<SOPGraph>, String> {
+        Ok(graph)
+    }
+}
+
+struct MockExperienceBank;
+#[async_trait]
+impl sisyphus_types::experience::ExperienceBank for MockExperienceBank {
+    async fn record(&self, _exp: ExperienceTuple) -> Result<(), String> {
+        Ok(())
+    }
+    async fn query_similar(
+        &self,
+        _query: sisyphus_types::experience::ExperienceQuery,
+    ) -> Result<Vec<ExperienceTuple>, String> {
+        Ok(vec![])
+    }
+}
+
+struct MockLogicalSimulator;
+#[async_trait]
+impl LogicalSimulator for MockLogicalSimulator {
+    async fn simulate_logic(
+        &self,
+        _graph: Arc<SOPGraph>,
+        _context: &ExecutionContext,
+        _sop_id: &str,
+        _goal_text: Option<&str>,
+    ) -> Result<LogicalSimulationResult, String> {
+        Ok(LogicalSimulationResult {
+            is_valid: true,
+            flaws: vec![],
+            predicted_path: vec!["mock".to_string()],
+            confidence: 1.0,
+        })
+    }
+}
+
+struct MockSynthesizer;
+#[async_trait]
+impl sisyphus_intel::FlowSynthesizer for MockSynthesizer {
+    async fn synthesize(
+        &self,
+        _goal: &str,
+        _context: &ExecutionContext,
+        _project_id: &str,
+        _mode: WorkMode,
+        _insights: Option<&str>,
+    ) -> Result<sisyphus_intel::SynthesisResult, String> {
+        let mut graph = SOPGraph::new();
+        let start_node = graph.add_node(Arc::new(sisyphus_types::WasmSOPNode {
+            name: "mock_node".into(),
+            tool_id: "mock_tool".into(),
+            fuel_limit: 1000,
+            executor: Arc::new(sisyphus_intel::mock::MockExecutor),
+        }));
+        Ok(sisyphus_intel::SynthesisResult {
+            graph: Arc::new(graph),
+            start_node,
+            plan_description: "mock".into(),
+        })
     }
 }
 
@@ -50,24 +145,51 @@ async fn make_kernel() -> (Arc<SisyphusKernel>, Arc<CompositeMockExecutor>) {
         100,
         state_store.clone(),
     ));
-    let reflector = Arc::new(StandardReflector);
-    let evolver = Arc::new(StandardEvolver::new());
-    let intel = Arc::new(SisyphusIntel::new(simulator, reflector, evolver));
-
-    let synthesizer = Arc::new(sisyphus_intel::GoalDrivenSynthesizer::new(
-        tool_executor.clone(),
+    let logical_simulator = Arc::new(MockLogicalSimulator);
+    let reflector = Arc::new(MockReflector);
+    let evolver = Arc::new(MockEvolver);
+    let intel = Arc::new(SisyphusIntel::new(
+        simulator,
+        logical_simulator,
+        reflector,
+        evolver,
     ));
+
+    let synthesizer = Arc::new(MockSynthesizer);
+    let experience_bank = Arc::new(MockExperienceBank);
+
+    let llm_client = Arc::new(sisyphus_tools_llm::metis::DummyLlmClient);
+    let fast_llm_client = Arc::new(sisyphus_tools_llm::metis::DummyLlmClient);
+
+    let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
+    let sop_store = Arc::new(sisyphus_mem::SopSqlStore::new(pool.clone()).await.unwrap());
+    let vector_store = Arc::new(
+        sisyphus_mem::VectorMemoryStore::new(pool.clone())
+            .await
+            .unwrap(),
+    );
+    let roadmap_store = Arc::new(
+        sisyphus_mem::RoadmapSqlStore::new(pool.clone())
+            .await
+            .unwrap(),
+    );
 
     let kernel = Arc::new(SisyphusKernel::new(
         state_store,
+        sop_store,
+        vector_store,
+        experience_bank,
         tool_executor.clone(),
         intel,
-        Arc::new(sisyphus_tools_llm::metis::DummyLlmClient),
+        llm_client,
+        fast_llm_client,
         synthesizer,
         Arc::new(parking_lot::Mutex::new(
             sisyphus_tools_llm_tools::meta_learner::MetaLearner::new(".omo/test_meta"),
         )),
         Arc::new(MockConsensus),
+        roadmap_store,
+        Arc::new(sisyphus_tools_llm::DummyEmbeddingClient),
     ));
 
     (kernel, tool_executor)
@@ -149,7 +271,10 @@ async fn test_execute_composite_linear() {
         mappings: vec![],
     });
 
-    let output: CompositeOutput = kernel.execute_composite(&composite, None).await.unwrap();
+    let output: CompositeOutput = kernel
+        .execute_composite(&composite, None, "test-project")
+        .await
+        .unwrap();
 
     assert_eq!(output.execution_order.len(), 2);
     assert_eq!(output.execution_order[0], "step1");
@@ -169,7 +294,10 @@ async fn test_execute_composite_single_graph() {
     let mut composite = CompositeGraph::new();
     composite.add_graph("solo", make_single_node_config("only", "tool_only"));
 
-    let output = kernel.execute_composite(&composite, None).await.unwrap();
+    let output = kernel
+        .execute_composite(&composite, None, "test-project")
+        .await
+        .unwrap();
 
     assert_eq!(output.execution_order.len(), 1);
     assert!(output.results.contains_key("solo"));
@@ -185,7 +313,10 @@ async fn test_execute_composite_with_predefined_order() {
     // Override order: alpha first despite being added second
     composite.execution_order = vec!["alpha".into(), "beta".into()];
 
-    let output = kernel.execute_composite(&composite, None).await.unwrap();
+    let output = kernel
+        .execute_composite(&composite, None, "test-project")
+        .await
+        .unwrap();
 
     assert_eq!(output.execution_order.len(), 2);
     assert_eq!(output.execution_order[0], "alpha");
@@ -198,7 +329,9 @@ async fn test_execute_composite_missing_graph() {
     let mut composite = CompositeGraph::new();
     composite.execution_order = vec!["nonexistent".into()];
 
-    let result = kernel.execute_composite(&composite, None).await;
+    let result = kernel
+        .execute_composite(&composite, None, "test-project")
+        .await;
     assert!(result.is_err());
 }
 
@@ -207,7 +340,10 @@ async fn test_execute_goals_multi_goal() {
     let (kernel, _executor) = make_kernel().await;
 
     let output = kernel
-        .execute_goals(&["fetch data", "process data", "store results"])
+        .execute_goals(
+            &["fetch data", "process data", "store results"],
+            "test-project",
+        )
         .await
         .unwrap();
 
@@ -216,11 +352,11 @@ async fn test_execute_goals_multi_goal() {
         3,
         "Three goals should produce three sub-graphs"
     );
-    // Each result should have a CognitiveLoop report
+    // Each result should have a CognitiveLoop report (as a string)
     for sop_id in &output.execution_order {
         let (_result, report) = output.results.get(sop_id).unwrap();
         assert!(
-            report.iterations > 0,
+            !report.is_empty(),
             "Each sub-graph should execute through cognitive loop: {}",
             sop_id
         );
@@ -231,7 +367,10 @@ async fn test_execute_goals_multi_goal() {
 async fn test_execute_goals_single_goal() {
     let (kernel, _executor) = make_kernel().await;
 
-    let output = kernel.execute_goals(&["fetch only"]).await.unwrap();
+    let output = kernel
+        .execute_goals(&["fetch only"], "test-project")
+        .await
+        .unwrap();
 
     assert_eq!(output.execution_order.len(), 1);
     assert!(output.results.contains_key("goal_0"));
@@ -246,8 +385,9 @@ async fn test_synthesize_composite_independent_graphs() {
     let goal_refs: Vec<&str> = goals.to_vec();
     let composite = sisyphus_intel::synthesize_composite(
         &goal_refs,
-        &kernel.intelligence_manager.synthesizer,
+        &*kernel.intelligence_manager.synthesizer,
         &ctx,
+        "test-project",
     )
     .await
     .unwrap();

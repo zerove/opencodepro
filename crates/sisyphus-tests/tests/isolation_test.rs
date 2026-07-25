@@ -1,11 +1,9 @@
-use async_trait::async_trait;
 use parking_lot::Mutex;
 use sisyphus_core::Consensus;
 use sisyphus_core::SisyphusKernel;
 use sisyphus_intel::StrategicSopSynthesizer;
 use sisyphus_intel::{simulation::LlmLogicalSimulator, MonteCarloSimulator, SisyphusIntel};
 use sisyphus_mem::SisyphusStore;
-use sisyphus_tools_core::ToolError;
 use sisyphus_tools_llm::{DummyEmbeddingClient, DummyLlmClient};
 use sisyphus_types::{SOPGraph, ToolExecutor, TypesError};
 use std::sync::Arc;
@@ -99,7 +97,26 @@ async fn test_project_isolation() {
         .expect("Exp bank init failed"),
     );
 
-    // 3. Instantiate Kernel (Strict 13 Arguments)
+    // 3. Create graphs before kernel consumes tool_executor
+    let mut graph_alpha_inner = SOPGraph::new();
+    graph_alpha_inner.add_node(Arc::new(sisyphus_types::WasmSOPNode {
+        name: "alpha_node".into(),
+        tool_id: "t1".into(),
+        fuel_limit: 100,
+        executor: tool_executor.clone(),
+    }));
+    let graph_alpha = Arc::new(graph_alpha_inner);
+
+    let mut graph_beta_inner = SOPGraph::new();
+    graph_beta_inner.add_node(Arc::new(sisyphus_types::WasmSOPNode {
+        name: "beta_node".into(),
+        tool_id: "t2".into(),
+        fuel_limit: 100,
+        executor: tool_executor.clone(),
+    }));
+    let graph_beta = Arc::new(graph_beta_inner);
+
+    // 4. Instantiate Kernel (Strict 13 Arguments)
     let kernel = SisyphusKernel::new(
         state_store,             // 1. state_store
         sop_store,               // 2. sop_store
@@ -121,9 +138,7 @@ async fn test_project_isolation() {
     let sop_id_alpha = "sop_alpha_1";
     let sop_id_beta = "sop_beta_1";
 
-    // 4. Save unique SOPs for each project
-    let graph_alpha = Arc::new(SOPGraph::new());
-    let graph_beta = Arc::new(SOPGraph::new());
+    // 5. Save unique SOPs for each project
 
     kernel
         .save_sop(sop_id_alpha, project_alpha, &graph_alpha)

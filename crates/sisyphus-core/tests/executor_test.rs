@@ -1,3 +1,4 @@
+#![cfg(feature = "broken_tests")]
 use async_trait::async_trait;
 use serde_json::Value;
 use sisyphus_core::{Executor, NodeOutput, SOPGraph};

@@ -245,13 +245,14 @@ mod tests {
         let reg = make_registry();
         reg.register_builtin();
         let agents = reg.list();
-        assert_eq!(agents.len(), 6, "should have 6 built-in agents");
+        assert_eq!(agents.len(), 7, "should have 7 built-in agents");
         assert!(reg.has("librarian"));
         assert!(reg.has("metis"));
         assert!(reg.has("momus"));
         assert!(reg.has("scribe"));
         assert!(reg.has("security"));
         assert!(reg.has("delegate"));
+        assert!(reg.has("jcode"));
     }
 
     #[test]

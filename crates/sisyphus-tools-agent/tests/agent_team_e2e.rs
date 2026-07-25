@@ -23,6 +23,18 @@ impl LlmClient for JsonLlmClient {
     async fn chat(&self, _system: &str, _user: &str, _json_mode: bool) -> Result<String, String> {
         Ok(self.0.clone())
     }
+
+    fn get_params_for(&self, _agent_id: &str) -> (String, String, String) {
+        (
+            "test_key".into(),
+            "http://test:8080".into(),
+            "test-model".into(),
+        )
+    }
+
+    fn breaker(&self) -> sisyphus_tools_llm::circuit_breaker::CircuitBreaker {
+        sisyphus_tools_llm::circuit_breaker::CircuitBreaker::default()
+    }
 }
 
 struct MockToolExecutor;
@@ -52,8 +64,11 @@ fn make_executor() -> Arc<dyn ToolExecutor> {
 
 #[tokio::test]
 async fn test_agent_model_routing_pipeline_e2e() {
-    let _guard = ENV_LOCK.lock().unwrap();
-    std::env::remove_var("GOOGLE_GENERATIVE_AI_API_KEY");
+    // Scope the env lock so it's dropped before the first await
+    {
+        let _guard = ENV_LOCK.lock().unwrap();
+        std::env::remove_var("GOOGLE_GENERATIVE_AI_API_KEY");
+    }
 
     // 1. Setup Config with per-agent overrides
     let mut config = Config::default();

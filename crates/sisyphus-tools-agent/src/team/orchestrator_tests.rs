@@ -5,6 +5,7 @@ use serde_json::json;
 use sisyphus_tools_core::feedback::FeedbackStore;
 use sisyphus_tools_core::hook::HookRegistry;
 use sisyphus_tools_executor::executor::BuiltinToolExecutor;
+use sisyphus_tools_llm::circuit_breaker::CircuitBreaker;
 use sisyphus_tools_llm::metis::DummyLlmClient;
 use sisyphus_tools_llm::DynamicLlmClient;
 use sisyphus_types::Config;
@@ -459,6 +460,18 @@ impl LlmClient for JsonLlmClient {
     async fn chat(&self, _system: &str, _user: &str, _json_mode: bool) -> Result<String, String> {
         Ok(self.0.clone())
     }
+
+    fn get_params_for(&self, _agent_id: &str) -> (String, String, String) {
+        (
+            "default".to_string(),
+            "default".to_string(),
+            "default".to_string(),
+        )
+    }
+
+    fn breaker(&self) -> CircuitBreaker {
+        CircuitBreaker::default()
+    }
 }
 
 struct ErrLlmClient;
@@ -471,6 +484,18 @@ impl LlmClient for ErrLlmClient {
 
     async fn chat(&self, _system: &str, _user: &str, _json_mode: bool) -> Result<String, String> {
         Err("LLM API error".to_string())
+    }
+
+    fn get_params_for(&self, _agent_id: &str) -> (String, String, String) {
+        (
+            "default".to_string(),
+            "default".to_string(),
+            "default".to_string(),
+        )
+    }
+
+    fn breaker(&self) -> CircuitBreaker {
+        CircuitBreaker::default()
     }
 }
 

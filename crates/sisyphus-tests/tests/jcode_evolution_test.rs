@@ -1,9 +1,8 @@
 use async_trait::async_trait;
-use serde_json::Value;
-use sisyphus_core::{CoreError, SOPGraph, SisyphusKernel};
-use sisyphus_intel::{HybridReflector, LlmEvolver, LlmReflector, StandardReflector};
+use sisyphus_core::SOPGraph;
+use sisyphus_intel::{simulation::SimulationResult, LlmEvolver, SOPEvolver};
 use sisyphus_tools_llm::LlmClient;
-use sisyphus_types::{NodeOutput, ToolExecutor, TypesError, WasmSOPNode};
+use sisyphus_types::{ToolExecutor, TypesError, WasmSOPNode};
 use std::sync::Arc;
 
 struct MockLlmClient;
@@ -17,6 +16,18 @@ impl LlmClient for MockLlmClient {
     }
     async fn chat(&self, _sys: &str, _ctx: &str, _stream: bool) -> Result<String, String> {
         Ok("Mock chat".into())
+    }
+
+    fn get_params_for(&self, _agent_id: &str) -> (String, String, String) {
+        (
+            "test_key".into(),
+            "http://test:8080".into(),
+            "test-model".into(),
+        )
+    }
+
+    fn breaker(&self) -> sisyphus_tools_llm::circuit_breaker::CircuitBreaker {
+        sisyphus_tools_llm::circuit_breaker::CircuitBreaker::default()
     }
 }
 
@@ -57,7 +68,7 @@ async fn test_jcode_evolution_loop() {
 
     // 2. Setup Kernel Components
     let llm_client = Arc::new(MockLlmClient);
-    let tool_executor = Arc::new(sisyphus_types::ExecutorRouter::new(Arc::new(
+    let _tool_executor = Arc::new(sisyphus_types::ExecutorRouter::new(Arc::new(
         MockJcodeExecutor,
     )));
 
@@ -73,7 +84,7 @@ async fn test_jcode_evolution_loop() {
         async fn execute(
             &self,
             tool_id: &str,
-            args: Vec<u8>,
+            _args: Vec<u8>,
             fuel: u64,
         ) -> Result<Vec<u8>, TypesError> {
             if tool_id == "verify_evolution" {
@@ -108,7 +119,14 @@ async fn test_jcode_evolution_loop() {
         .evolve(
             graph.clone(),
             &report,
-            &sisyphus_intel::simulation::SimulationResult::default(),
+            &SimulationResult {
+                path_id: "test".into(),
+                success_probability: 0.8,
+                estimated_cost: 100,
+                predicted_stability: 0.8,
+                predicted_effort: 10,
+                predicted_outcome: "test".into(),
+            },
             None,
         )
         .await

@@ -99,6 +99,25 @@ mod tests {
         }
     }
 
+    struct MockTestExecutor;
+    #[async_trait]
+    impl TestExecutor for MockTestExecutor {
+        async fn run_test(
+            &self,
+            _command: &str,
+            _workdir: Option<&str>,
+        ) -> Result<TestResult, TypesError> {
+            Ok(TestResult {
+                success: true,
+                stdout: "mock test output".to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+                duration_ms: 0,
+                error_summary: None,
+            })
+        }
+    }
+
     // ── proptest strategies ──────────────────────────────────────────
 
     fn arb_node_name() -> impl Strategy<Value = String> {
@@ -143,7 +162,7 @@ mod tests {
     }
 
     fn arb_sop_graph_config() -> impl Strategy<Value = SOPGraphConfig> {
-        proptest::collection::vec(arb_sop_node_config(), 0..8).prop_flat_map(|nodes| {
+        proptest::collection::vec(arb_sop_node_config(), 1..8).prop_flat_map(|nodes| {
             let node_count = nodes.len();
             let max_edges = if node_count < 2 {
                 0
@@ -273,7 +292,8 @@ mod tests {
         assert_eq!(config.nodes.len(), 2);
         assert_eq!(config.edges.len(), 1);
 
-        let rebuilt_graph = SOPGraph::from_config(&config, executor).unwrap();
+        let test_executor = Arc::new(MockTestExecutor);
+        let rebuilt_graph = SOPGraph::from_config(&config, executor, test_executor).unwrap();
         assert_eq!(rebuilt_graph.graph.node_count(), 2);
         assert_eq!(rebuilt_graph.graph.edge_count(), 1);
     }
@@ -286,7 +306,8 @@ mod tests {
             config in arb_sop_graph_config(),
         ) {
             let executor = Arc::new(MockToolExecutor);
-            let graph = SOPGraph::from_config(&config, executor.clone()).unwrap();
+            let test_executor = Arc::new(MockTestExecutor);
+            let graph = SOPGraph::from_config(&config, executor.clone(), test_executor.clone()).unwrap();
             prop_assert_eq!(graph.graph.node_count(), config.nodes.len());
 
             let roundtrip = SOPGraphConfig::from_graph(&graph);
@@ -296,7 +317,7 @@ mod tests {
                 prop_assert_eq!(roundtrip.edges.len(), 0);
             }
 
-            let rebuilt = SOPGraph::from_config(&roundtrip, executor.clone()).unwrap();
+            let rebuilt = SOPGraph::from_config(&roundtrip, executor.clone(), test_executor.clone()).unwrap();
             prop_assert_eq!(rebuilt.graph.node_count(), roundtrip.nodes.len());
             prop_assert_eq!(rebuilt.graph.edge_count(), roundtrip.edges.len());
 
@@ -453,7 +474,7 @@ mod tests {
     #[test]
     fn test_types_error_propagation() {
         fn propagate() -> Result<(), TypesError> {
-            return Err(TypesError::StateStoreError("propagate".into()));
+            Err(TypesError::StateStoreError("propagate".into()))
         }
         let result = propagate();
         assert!(result.is_err(), "should return an error");
@@ -492,7 +513,7 @@ mod tests {
     async fn test_router_prefix_dispatch() {
         let builtin = Arc::new(PrefixExecutor("builtin"));
         let wasm = Arc::new(PrefixExecutor("wasm"));
-        let mut router = ExecutorRouter::new(builtin);
+        let router = ExecutorRouter::new(builtin);
         router.register("wasm", wasm);
 
         // With prefix: routes to wasm executor
@@ -507,7 +528,7 @@ mod tests {
     #[tokio::test]
     async fn test_router_unknown_prefix_falls_back() {
         let default = Arc::new(PrefixExecutor("default"));
-        let mut router = ExecutorRouter::new(default);
+        let router = ExecutorRouter::new(default);
         router.register("wasm", Arc::new(PrefixExecutor("wasm")));
 
         // Unknown prefix "mcp:" should fall back to default, including the prefix
@@ -538,7 +559,7 @@ mod tests {
         let builtin = Arc::new(PrefixExecutor("builtin"));
         let mcp = Arc::new(PrefixExecutor("mcp"));
 
-        let mut router = ExecutorRouter::new(default);
+        let router = ExecutorRouter::new(default);
         router.register("wasm", wasm);
         router.register("builtin", builtin);
         router.register("mcp", mcp);

@@ -747,7 +747,10 @@ mod tests {
         let graph = Arc::new(SOPGraph::new());
         let sim = MonteCarloSimulator::new(10);
         let ctx = ExecutionContext::new();
-        let result = sim.simulate(graph, &ctx, "empty", None).await.unwrap();
+        let result = sim
+            .simulate(graph, &ctx, "test-project", "empty", None)
+            .await
+            .unwrap();
         assert_eq!(result.success_probability, 0.0);
         assert_eq!(result.estimated_cost, 0);
     }
@@ -806,7 +809,7 @@ mod tests {
         let sim = MonteCarloSimulator::new(100);
         let ctx = ExecutionContext::new();
         let result = sim
-            .simulate(graph.clone(), &ctx, "branch-test", None)
+            .simulate(graph.clone(), &ctx, "test-project", "branch-test", None)
             .await
             .unwrap();
         assert!(result.success_probability >= 0.0 && result.success_probability <= 1.0);

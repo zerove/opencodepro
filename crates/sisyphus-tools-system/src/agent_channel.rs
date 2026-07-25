@@ -7,6 +7,7 @@ use std::time::Duration;
 use tokio::sync::broadcast;
 
 /// In-memory inter-agent message broker supporting direct and pub/sub patterns.
+#[derive(Clone)]
 pub struct AgentChannel {
     inboxes: Arc<RwLock<HashMap<String, Vec<AgentMessage>>>>,
     topics: Arc<RwLock<HashMap<String, Vec<String>>>>, // topic -> subscribers
@@ -30,6 +31,12 @@ impl AgentChannel {
 
     /// Send a direct message to a specific agent's inbox.
     pub fn send(&self, msg: AgentMessage) -> ToolResult<()> {
+        // Notify any pending request waiting for this correlation_id
+        if let Ok(notify) = self.notify.read() {
+            if let Some(tx) = notify.get(&msg.correlation_id) {
+                let _ = tx.send(msg.clone());
+            }
+        }
         let mut inboxes = self.inboxes.write().map_err(|e| {
             sisyphus_tools_core::ToolError::Generic(format!("AgentChannel lock poisoned: {e}"))
         })?;
@@ -167,20 +174,43 @@ mod tests {
         assert_eq!(b_inbox.len(), 1, "agent_b should receive published msg");
     }
 
-    #[test]
-    fn test_request_response() {
+    #[tokio::test]
+    async fn test_request_response() {
         let ch = AgentChannel::new();
-        let result = ch.request(
-            "target",
-            json!({"query": "hello"}),
-            "corr-1",
-            Duration::from_secs(1),
-        );
+        let ch_clone = ch.clone();
+
+        // Spawn a responder that listens for requests and sends a response
+        let handle = tokio::spawn(async move {
+            let inbox = ch_clone.receive("target").unwrap();
+            assert_eq!(inbox.len(), 1);
+            assert_eq!(inbox[0].correlation_id, "corr-1");
+
+            // Send response back
+            let response = AgentMessage {
+                from: "target".into(),
+                to: "self".into(),
+                kind: "response".into(),
+                payload: json!({"answer": "world"}),
+                correlation_id: "corr-1".into(),
+            };
+            ch_clone.send(response).unwrap();
+        });
+
+        let result = ch
+            .request(
+                "target",
+                json!({"query": "hello"}),
+                "corr-1",
+                Duration::from_secs(1),
+            )
+            .await;
+
         assert!(result.is_ok());
-        // Target should have the request in its inbox
-        let inbox = ch.receive("target").unwrap();
-        assert_eq!(inbox.len(), 1);
-        assert_eq!(inbox[0].correlation_id, "corr-1");
+        let response = result.unwrap();
+        assert_eq!(response.correlation_id, "corr-1");
+        assert_eq!(response.kind, "response");
+
+        handle.await.unwrap();
     }
 
     #[test]

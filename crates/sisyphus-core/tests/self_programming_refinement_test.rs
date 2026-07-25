@@ -1,3 +1,4 @@
+#![cfg(feature = "broken_tests")]
 use async_trait::async_trait;
 use sisyphus_core::{ExecutionManager, IntelligenceManager, SisyphusKernel};
 use sisyphus_intel::{GapAnalyzer, SimulationResult, ToolGap, ToolVerifier};

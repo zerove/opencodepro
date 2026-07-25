@@ -24,6 +24,18 @@ impl LlmClient for DummyLlmClient {
             user
         ))
     }
+
+    fn get_params_for(&self, _agent_id: &str) -> (String, String, String) {
+        (
+            "dummy-key".into(),
+            "http://dummy:8080".into(),
+            "dummy-model".into(),
+        )
+    }
+
+    fn breaker(&self) -> sisyphus_tools_llm::circuit_breaker::CircuitBreaker {
+        sisyphus_tools_llm::circuit_breaker::CircuitBreaker::default()
+    }
 }
 
 async fn setup_executor(registry: HookRegistry) -> BuiltinToolExecutor {
