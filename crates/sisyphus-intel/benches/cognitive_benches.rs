@@ -38,7 +38,13 @@ fn bench_synthesis(c: &mut Criterion) {
         b.to_async(&rt).iter(|| async {
             let ctx = ExecutionContext::new();
             synthesizer
-                .synthesize(black_box("fetch data"), black_box(&ctx), black_box("bench"), black_box(sisyphus_types::WorkMode::Standard), None)
+                .synthesize(
+                    black_box("fetch data"),
+                    black_box(&ctx),
+                    black_box("bench"),
+                    black_box(sisyphus_types::WorkMode::Standard),
+                    None,
+                )
                 .await
         })
     });
@@ -47,7 +53,13 @@ fn bench_synthesis(c: &mut Criterion) {
         b.to_async(&rt).iter(|| async {
             let ctx = ExecutionContext::new();
             synthesizer
-                .synthesize(black_box("fetch process store"), black_box(&ctx), black_box("bench"), black_box(sisyphus_types::WorkMode::Standard), None)
+                .synthesize(
+                    black_box("fetch process store"),
+                    black_box(&ctx),
+                    black_box("bench"),
+                    black_box(sisyphus_types::WorkMode::Standard),
+                    None,
+                )
                 .await
         })
     });
@@ -56,7 +68,13 @@ fn bench_synthesis(c: &mut Criterion) {
         b.to_async(&rt).iter(|| async {
             let ctx = ExecutionContext::new();
             synthesizer
-                .synthesize(black_box("fetch and process parallel"), black_box(&ctx), black_box("bench"), black_box(sisyphus_types::WorkMode::Standard), None)
+                .synthesize(
+                    black_box("fetch and process parallel"),
+                    black_box(&ctx),
+                    black_box("bench"),
+                    black_box(sisyphus_types::WorkMode::Standard),
+                    None,
+                )
                 .await
         })
     });
@@ -97,8 +115,14 @@ fn bench_simulation(c: &mut Criterion) {
     group.bench_function("mc_1000_iter", |b| {
         b.to_async(&rt).iter(|| async {
             let ctx = ExecutionContext::new();
-            sim.simulate(black_box(&graph), black_box(&ctx), black_box("bench"), black_box("bench_sop"), None)
-                .await
+            sim.simulate(
+                black_box(&graph),
+                black_box(&ctx),
+                black_box("bench"),
+                black_box("bench_sop"),
+                None,
+            )
+            .await
         })
     });
 
