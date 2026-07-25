@@ -98,7 +98,7 @@ impl FlowSynthesizer for LlmDrivenSynthesizer {
         _project_id: &str,
         mode: sisyphus_types::WorkMode,
         _insights: Option<&str>,
-    ) -> Result<SynthesisResult, String> {
+    ) -> Result<SynthesisResult, sisyphus_types::IntelError> {
         if mode == sisyphus_types::WorkMode::Standard {
             let actions = self.decomposer.decompose(goal).await?;
             let mut graph = SOPGraph::new();
@@ -383,7 +383,7 @@ Plan: <updated strategy>"#,
         &self,
         goal: &str,
         tools: &str,
-    ) -> Result<SynthesisResult, String> {
+    ) -> Result<SynthesisResult, sisyphus_types::IntelError> {
         let lessons = self.retrieve_lessons(goal).await;
 
         let system_prompt = format!(
@@ -460,7 +460,7 @@ impl FlowSynthesizer for LogicalSOPSynthesizer {
         _project_id: &str,
         _mode: sisyphus_types::WorkMode,
         _insights: Option<&str>,
-    ) -> Result<SynthesisResult, String> {
+    ) -> Result<SynthesisResult, sisyphus_types::IntelError> {
         println!("DEBUG: Starting synthesis for goal: {}", goal);
         let tools = self
             .tool_executor
@@ -529,7 +529,7 @@ impl FlowSynthesizer for LogicalSOPSynthesizer {
                 Ok(res) => res,
                 Err(e) => {
                     println!("DEBUG: Evaluation failed: {}", e);
-                    return Err(e.to_string());
+                    return Err(e.to_string().into());
                 }
             };
 
@@ -609,10 +609,10 @@ impl FlowSynthesizer for LogicalSOPSynthesizer {
             });
         }
 
-        Err(format!(
+        Err(sisyphus_types::IntelError::Internal(format!(
             "Failed to synthesize a valid SOP after {} attempts",
             max_attempts
-        ))
+        )))
     }
 }
 
@@ -839,7 +839,8 @@ mod adversarial_tests {
             &self,
             query: &str,
             _limit: usize,
-        ) -> Result<Vec<sisyphus_types::experience::ExperienceTuple>, String> {
+        ) -> Result<Vec<sisyphus_types::experience::ExperienceTuple>, sisyphus_types::TypesError>
+        {
             // Mock simple retrieval: return experiences that match the query
             let experiences = self.experiences.lock().unwrap();
             let filtered: Vec<_> = experiences
@@ -852,7 +853,7 @@ mod adversarial_tests {
         async fn record_experience(
             &self,
             exp: sisyphus_types::experience::ExperienceTuple,
-        ) -> Result<(), String> {
+        ) -> Result<(), sisyphus_types::TypesError> {
             self.experiences.lock().unwrap().push(exp);
             Ok(())
         }

@@ -1,6 +1,7 @@
 use async_trait::async_trait;
 use serde_json::Value;
 use sisyphus_core::Consensus;
+use sisyphus_types::TypesError;
 use std::collections::HashSet;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -42,9 +43,11 @@ impl Consensus for ClusterConsensus {
         self.leader_id.read().await.clone()
     }
 
-    async fn propose(&self, key: &str, _value: Value) -> Result<(), String> {
+    async fn propose(&self, key: &str, _value: Value) -> Result<(), TypesError> {
         if !self.is_leader().await {
-            return Err("Only the leader can propose state changes".into());
+            return Err(TypesError::ConsensusError(
+                "Only the leader can propose state changes".into(),
+            ));
         }
 
         let peers = self.peers.read().await;
@@ -72,7 +75,7 @@ impl Consensus for NoOpConsensus {
     async fn get_leader(&self) -> String {
         "self".into()
     }
-    async fn propose(&self, _key: &str, _value: Value) -> Result<(), String> {
+    async fn propose(&self, _key: &str, _value: Value) -> Result<(), TypesError> {
         Ok(())
     }
 }

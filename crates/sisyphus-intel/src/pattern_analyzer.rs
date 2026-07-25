@@ -179,7 +179,7 @@ impl SemanticPatternAnalyzer {
             limit: 50,
         };
 
-        let experiences = bank.query_similar(query).await?;
+        let experiences = bank.query_similar(query).await.map_err(|e| e.to_string())?;
         let failures: Vec<_> = experiences
             .into_iter()
             .filter(|e| !e.outcome_success)

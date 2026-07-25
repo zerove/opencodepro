@@ -36,7 +36,7 @@ pub trait Reflector: Send + Sync {
         trace: &str,
         predicted: &SimulationResult,
         experiences: Option<&[sisyphus_types::experience::ExperienceTuple]>,
-    ) -> Result<ReflectionReport, String>;
+    ) -> Result<ReflectionReport, sisyphus_types::IntelError>;
 }
 
 #[async_trait]
@@ -47,7 +47,7 @@ pub trait SOPEvolver: Send + Sync {
         report: &ReflectionReport,
         prediction: &SimulationResult,
         insights: Option<&str>,
-    ) -> Result<Arc<SOPGraph>, String>;
+    ) -> Result<Arc<SOPGraph>, sisyphus_types::IntelError>;
 }
 
 // ---------------------------------------------------------------------------
@@ -84,7 +84,7 @@ impl SOPEvolver for StandardEvolver {
         report: &ReflectionReport,
         prediction: &SimulationResult,
         _insights: Option<&str>,
-    ) -> Result<Arc<SOPGraph>, String> {
+    ) -> Result<Arc<SOPGraph>, sisyphus_types::IntelError> {
         let span = tracing::info_span!(
             "intel.evolve",
             graph_nodes = graph.graph.node_count(),
@@ -253,7 +253,7 @@ impl Reflector for LlmReflector {
         trace: &str,
         predicted: &SimulationResult,
         experiences: Option<&[sisyphus_types::experience::ExperienceTuple]>,
-    ) -> Result<ReflectionReport, String> {
+    ) -> Result<ReflectionReport, sisyphus_types::IntelError> {
         let span = tracing::info_span!("intel.reflect.llm", trace_lines = trace.lines().count());
         let _enter = span.enter();
 
@@ -350,7 +350,7 @@ impl Reflector for HybridReflector {
         trace: &str,
         predicted: &SimulationResult,
         experiences: Option<&[sisyphus_types::experience::ExperienceTuple]>,
-    ) -> Result<ReflectionReport, String> {
+    ) -> Result<ReflectionReport, sisyphus_types::IntelError> {
         let span = tracing::info_span!("intel.reflect.hybrid", trace_lines = trace.lines().count());
         let _enter = span.enter();
 
@@ -424,7 +424,7 @@ impl SOPEvolver for LlmEvolver {
         report: &ReflectionReport,
         _prediction: &SimulationResult,
         insights: Option<&str>,
-    ) -> Result<Arc<SOPGraph>, String> {
+    ) -> Result<Arc<SOPGraph>, sisyphus_types::IntelError> {
         let _rt = tokio::runtime::Handle::current();
 
         let prompt = format!(
@@ -458,7 +458,6 @@ impl SOPEvolver for LlmEvolver {
         self.topo_evolver
             .apply_ops(&graph, &ops, self.tool_executor.clone())
             .map(Arc::new)
-            .map_err(|e| e.to_string())
     }
 }
 
@@ -577,7 +576,7 @@ impl Reflector for StandardReflector {
         trace: &str,
         _predicted: &SimulationResult,
         _experiences: Option<&[sisyphus_types::experience::ExperienceTuple]>,
-    ) -> Result<ReflectionReport, String> {
+    ) -> Result<ReflectionReport, sisyphus_types::IntelError> {
         let span = tracing::info_span!("intel.reflect", trace_lines = trace.lines().count());
         let _enter = span.enter();
 

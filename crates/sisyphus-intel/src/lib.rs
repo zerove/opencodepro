@@ -7,7 +7,7 @@ pub mod tool_verifier;
 pub mod wasm_compiler;
 use std::sync::Arc;
 
-pub mod error;
+pub use sisyphus_types::errors::IntelError;
 pub mod evaluator;
 pub mod formal_verification;
 pub mod fuel;
@@ -21,7 +21,6 @@ pub mod synthesis;
 pub mod topological_evolver;
 
 pub use complexity::{CognitiveDepth, ComplexityAnalyzer};
-pub use error::IntelError;
 pub use fuel::{AdaptiveFuelPricer, FuelPricer, SimpleFuelPricer};
 pub use gap_analyzer::{GapAnalyzer, ToolGap};
 pub use reflect::{

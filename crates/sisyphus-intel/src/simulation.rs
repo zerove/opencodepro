@@ -43,7 +43,7 @@ pub trait LogicalSimulator: Send + Sync {
         context: &ExecutionContext,
         sop_id: &str,
         goal_text: Option<&str>,
-    ) -> Result<LogicalSimulationResult, String>;
+    ) -> Result<LogicalSimulationResult, sisyphus_types::IntelError>;
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -65,7 +65,7 @@ pub trait Simulator: Send + Sync {
         project_id: &str,
         sop_id: &str,
         goal_text: Option<&str>,
-    ) -> Result<SimulationResult, String>;
+    ) -> Result<SimulationResult, sisyphus_types::IntelError>;
 
     async fn set_experience_bank(
         &self,
@@ -108,7 +108,7 @@ impl LogicalSimulator for LlmLogicalSimulator {
         _context: &ExecutionContext,
         sop_id: &str,
         goal_text: Option<&str>,
-    ) -> Result<LogicalSimulationResult, String> {
+    ) -> Result<LogicalSimulationResult, sisyphus_types::IntelError> {
         let mut virtual_context: HashMap<String, String> = HashMap::new();
         let mut flaws = Vec::new();
         let mut predicted_path = Vec::new();
@@ -533,7 +533,7 @@ impl Simulator for MonteCarloSimulator {
         project_id: &str,
         sop_id: &str,
         goal_text: Option<&str>,
-    ) -> Result<SimulationResult, String> {
+    ) -> Result<SimulationResult, sisyphus_types::IntelError> {
         let project_id_owned = project_id.to_string();
         let span = tracing::info_span!("intel.simulate", sop_id = %sop_id, iterations = self.iterations, graph_nodes = graph.graph.node_count());
         let _enter = span.enter();

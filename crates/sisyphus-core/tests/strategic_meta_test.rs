@@ -74,7 +74,11 @@ impl Consensus for MockConsensus {
     async fn get_leader(&self) -> String {
         "node-1".into()
     }
-    async fn propose(&self, _k: &str, _v: serde_json::Value) -> Result<(), String> {
+    async fn propose(
+        &self,
+        _k: &str,
+        _v: serde_json::Value,
+    ) -> Result<(), sisyphus_types::TypesError> {
         Ok(())
     }
 }

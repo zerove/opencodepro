@@ -79,7 +79,11 @@ pub trait Consensus: Send + Sync {
 
     async fn get_leader(&self) -> String;
 
-    async fn propose(&self, key: &str, value: serde_json::Value) -> Result<(), String>;
+    async fn propose(
+        &self,
+        key: &str,
+        value: serde_json::Value,
+    ) -> Result<(), sisyphus_types::TypesError>;
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]

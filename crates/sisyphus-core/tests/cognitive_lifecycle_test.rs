@@ -54,7 +54,7 @@ impl sisyphus_intel::FlowSynthesizer for MockSynthesizer {
         _project_id: &str,
         _mode: WorkMode,
         _insights: Option<&str>,
-    ) -> Result<sisyphus_intel::synthesis::SynthesisResult, String> {
+    ) -> Result<sisyphus_intel::synthesis::SynthesisResult, sisyphus_types::IntelError> {
         let graph = SOPGraph::new();
 
         Ok(sisyphus_intel::synthesis::SynthesisResult {

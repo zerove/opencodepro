@@ -1,5 +1,6 @@
 use crate::store::MfsStore;
 use anyhow::Result;
+use sisyphus_types::TypesError;
 use sisyphus_types::experience::{ExperienceBank, ExperienceQuery, ExperienceTuple};
 use std::sync::Arc;
 
@@ -31,9 +32,13 @@ impl VectorExperienceBank {
 
 #[async_trait]
 impl ExperienceBank for VectorExperienceBank {
-    async fn record(&self, mut exp: ExperienceTuple) -> Result<(), String> {
+    async fn record(&self, mut exp: ExperienceTuple) -> Result<(), TypesError> {
         // 1. Generate text embedding for the context
-        let text_embedding = self.embedding_client.embed(&exp.context_text).await?;
+        let text_embedding = self
+            .embedding_client
+            .embed(&exp.context_text)
+            .await
+            .map_err(|e| TypesError::ExperienceError(format!("embedding failed: {e}")))?;
         exp.embedding = Some(text_embedding.clone());
 
         // 2. Store the full experience object in MfsStore for easy retrieval
@@ -41,7 +46,7 @@ impl ExperienceBank for VectorExperienceBank {
         self.store
             .record_experience(&exp)
             .await
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| TypesError::ExperienceError(format!("store record failed: {e}")))?;
 
         // 3. Store the text embedding in the optimized VectorMemoryStore
         let metadata = serde_json::json!({
@@ -54,7 +59,7 @@ impl ExperienceBank for VectorExperienceBank {
         self.vector_store
             .store_embedding(&key, text_embedding, metadata)
             .await
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| TypesError::ExperienceError(format!("vector store failed: {e}")))?;
 
         // 4. If visual embedding is provided, store it in the vector store as well
         if let Some(ref vis_emb) = exp.visual_embedding {
@@ -69,23 +74,32 @@ impl ExperienceBank for VectorExperienceBank {
             self.vector_store
                 .store_embedding(&vis_key, vis_emb.clone(), vis_metadata)
                 .await
-                .map_err(|e| e.to_string())?;
+                .map_err(|e| {
+                    TypesError::ExperienceError(format!("visual vector store failed: {e}"))
+                })?;
         }
 
         Ok(())
     }
 
-    async fn query_similar(&self, query: ExperienceQuery) -> Result<Vec<ExperienceTuple>, String> {
+    async fn query_similar(
+        &self,
+        query: ExperienceQuery,
+    ) -> Result<Vec<ExperienceTuple>, TypesError> {
         let mut all_candidates = Vec::new();
 
         // 1. Text-based Retrieval
-        let text_query_vec = self.embedding_client.embed(&query.query_text).await?;
+        let text_query_vec = self
+            .embedding_client
+            .embed(&query.query_text)
+            .await
+            .map_err(|e| TypesError::ExperienceError(format!("query embedding failed: {e}")))?;
         let text_top_k = query.limit * 5;
         let text_results = self
             .vector_store
             .search_similar(&text_query_vec, text_top_k)
             .await
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| TypesError::ExperienceError(format!("text search failed: {e}")))?;
 
         for sv in text_results {
             all_candidates.push(sv);
@@ -98,7 +112,7 @@ impl ExperienceBank for VectorExperienceBank {
                 .vector_store
                 .search_similar(vis_query_vec, vis_top_k)
                 .await
-                .map_err(|e| e.to_string())?;
+                .map_err(|e| TypesError::ExperienceError(format!("visual search failed: {e}")))?;
 
             for sv in vis_results {
                 all_candidates.push(sv);
@@ -121,17 +135,16 @@ impl ExperienceBank for VectorExperienceBank {
             let exp_key = metadata
                 .get("exp_key")
                 .and_then(|v| v.as_str())
-                .ok_or("Missing exp_key in metadata")?;
+                .ok_or_else(|| TypesError::ExperienceError("missing exp_key in metadata".into()))?;
 
             if seen_keys.contains(exp_key) {
                 continue;
             }
 
-            if let Some(exp) = self
-                .store
-                .get_experience(exp_key)
-                .await
-                .map_err(|e| e.to_string())?
+            if let Some(exp) =
+                self.store.get_experience(exp_key).await.map_err(|e| {
+                    TypesError::ExperienceError(format!("get experience failed: {e}"))
+                })?
             {
                 // Project-based filtering:
                 #[allow(clippy::collapsible_if)]

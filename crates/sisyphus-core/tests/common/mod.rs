@@ -29,7 +29,11 @@ impl Consensus for MockConsensus {
     async fn get_leader(&self) -> String {
         "mock-leader".into()
     }
-    async fn propose(&self, _key: &str, _value: serde_json::Value) -> Result<(), String> {
+    async fn propose(
+        &self,
+        _key: &str,
+        _value: serde_json::Value,
+    ) -> Result<(), sisyphus_types::TypesError> {
         Ok(())
     }
 }
@@ -74,7 +78,7 @@ impl LogicalSimulator for MockLogicalSimulator {
         _context: &ExecutionContext,
         _sop_id: &str,
         _goal_text: Option<&str>,
-    ) -> Result<LogicalSimulationResult, String> {
+    ) -> Result<LogicalSimulationResult, sisyphus_types::IntelError> {
         Ok(LogicalSimulationResult {
             is_valid: true,
             flaws: vec![],
@@ -97,7 +101,7 @@ impl sisyphus_intel::reflect::Reflector for MockReflector {
         _trace: &str,
         _predicted: &SimulationResult,
         _experiences: Option<&[ExperienceTuple]>,
-    ) -> Result<ReflectionReport, String> {
+    ) -> Result<ReflectionReport, sisyphus_types::IntelError> {
         Ok(ReflectionReport {
             original_sop_id: "mock".into(),
             deviation_score: 0.0,
@@ -122,7 +126,7 @@ impl sisyphus_intel::reflect::SOPEvolver for MockEvolver {
         _report: &ReflectionReport,
         _prediction: &SimulationResult,
         _insights: Option<&str>,
-    ) -> Result<Arc<SOPGraph>, String> {
+    ) -> Result<Arc<SOPGraph>, sisyphus_types::IntelError> {
         Ok(graph)
     }
 }
@@ -135,13 +139,13 @@ pub struct MockExperienceBank;
 
 #[async_trait]
 impl sisyphus_types::experience::ExperienceBank for MockExperienceBank {
-    async fn record(&self, _exp: ExperienceTuple) -> Result<(), String> {
+    async fn record(&self, _exp: ExperienceTuple) -> Result<(), sisyphus_types::TypesError> {
         Ok(())
     }
     async fn query_similar(
         &self,
         _query: sisyphus_types::experience::ExperienceQuery,
-    ) -> Result<Vec<ExperienceTuple>, String> {
+    ) -> Result<Vec<ExperienceTuple>, sisyphus_types::TypesError> {
         Ok(vec![])
     }
 }
@@ -161,7 +165,7 @@ impl sisyphus_intel::FlowSynthesizer for MockSynthesizer {
         _project_id: &str,
         _mode: WorkMode,
         _insights: Option<&str>,
-    ) -> Result<sisyphus_intel::SynthesisResult, String> {
+    ) -> Result<sisyphus_intel::SynthesisResult, sisyphus_types::IntelError> {
         let mut graph = SOPGraph::new();
         let start_node = graph.add_node(Arc::new(WasmSOPNode {
             name: "mock_node".into(),

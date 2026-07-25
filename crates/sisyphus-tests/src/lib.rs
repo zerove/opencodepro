@@ -29,10 +29,13 @@ struct DummyExperienceBank;
 
 #[async_trait]
 impl ExperienceBank for DummyExperienceBank {
-    async fn record(&self, _exp: ExperienceTuple) -> Result<(), String> {
+    async fn record(&self, _exp: ExperienceTuple) -> Result<(), TypesError> {
         Ok(())
     }
-    async fn query_similar(&self, _query: ExperienceQuery) -> Result<Vec<ExperienceTuple>, String> {
+    async fn query_similar(
+        &self,
+        _query: ExperienceQuery,
+    ) -> Result<Vec<ExperienceTuple>, TypesError> {
         Ok(vec![])
     }
 }
@@ -56,7 +59,11 @@ impl Consensus for DummyConsensus {
     async fn get_leader(&self) -> String {
         "node-1".into()
     }
-    async fn propose(&self, _k: &str, _v: serde_json::Value) -> Result<(), String> {
+    async fn propose(
+        &self,
+        _k: &str,
+        _v: serde_json::Value,
+    ) -> Result<(), sisyphus_types::TypesError> {
         Ok(())
     }
 }

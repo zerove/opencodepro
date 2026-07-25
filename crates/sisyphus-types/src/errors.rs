@@ -26,4 +26,76 @@ pub enum TypesError {
     ConfigValidationError(String),
     #[error("Internal system error: {0}")]
     InternalError(String),
+
+    // ── 结构化错误变体 (新增) ──────────────────────────────
+    /// 内置工具命令执行失败 (file, bash, web, agent 等)
+    #[error("executor command '{command}' failed: {message}")]
+    ExecutorCommandError { command: String, message: String },
+
+    /// Intel 层错误 (合成、模拟、反思、演化)
+    #[error("intel error: {0}")]
+    IntelError(#[from] IntelError),
+
+    /// ExperienceBank 操作失败
+    #[error("experience bank error: {0}")]
+    ExperienceError(String),
+
+    /// Consensus 协议错误
+    #[error("consensus error: {0}")]
+    ConsensusError(String),
+}
+
+impl From<String> for TypesError {
+    fn from(msg: String) -> Self {
+        Self::InternalError(msg)
+    }
+}
+
+// ── Intel 错误类型 ─────────────────────────────────────────
+
+/// Intel crate 的结构化错误类型，用于 FlowSynthesizer / Simulator / Reflector / SOPEvolver traits。
+#[derive(Debug, Error)]
+pub enum IntelError {
+    #[error("synthesis failed for goal '{goal}': {reason}")]
+    SynthesisFailed { goal: String, reason: String },
+
+    #[error("simulation failed for sop '{sop_id}': {reason}")]
+    SimulationFailed { sop_id: String, reason: String },
+
+    #[error("reflection failed: {0}")]
+    ReflectionFailed(String),
+
+    #[error("evolution failed: {0}")]
+    EvolutionFailed(String),
+
+    #[error("LLM call failed: {0}")]
+    LlmError(String),
+
+    #[error("serialization error: {0}")]
+    SerializationError(String),
+
+    // ── DAG / graph variants (consolidated from sisyphus-intel/error.rs) ──
+    #[error("Node {node_name} is not a WasmSOPNode")]
+    NodeTypeMismatch { node_name: String },
+
+    #[error("Evolution resulted in a cycle, violating DAG invariant")]
+    EvolutionCycle,
+
+    #[error("Node '{name}' not found in graph")]
+    NodeNotFound { name: String },
+
+    #[error("internal error: {0}")]
+    Internal(String),
+}
+
+impl From<String> for IntelError {
+    fn from(msg: String) -> Self {
+        Self::Internal(msg)
+    }
+}
+
+impl From<&str> for IntelError {
+    fn from(msg: &str) -> Self {
+        Self::Internal(msg.to_string())
+    }
 }

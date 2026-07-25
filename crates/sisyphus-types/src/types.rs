@@ -316,6 +316,9 @@ pub trait ExperienceRetriever: Send + Sync {
         &self,
         query: &str,
         limit: usize,
-    ) -> Result<Vec<ExperienceTuple>, String>;
-    async fn record_experience(&self, exp: ExperienceTuple) -> Result<(), String>;
+    ) -> Result<Vec<ExperienceTuple>, crate::errors::TypesError>;
+    async fn record_experience(
+        &self,
+        exp: ExperienceTuple,
+    ) -> Result<(), crate::errors::TypesError>;
 }

@@ -1,6 +1,8 @@
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
+use crate::errors::TypesError;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExperienceTuple {
     pub context_text: String,
@@ -28,6 +30,9 @@ pub struct ExperienceQuery {
 
 #[async_trait]
 pub trait ExperienceBank: Send + Sync {
-    async fn record(&self, exp: ExperienceTuple) -> Result<(), String>;
-    async fn query_similar(&self, query: ExperienceQuery) -> Result<Vec<ExperienceTuple>, String>;
+    async fn record(&self, exp: ExperienceTuple) -> Result<(), TypesError>;
+    async fn query_similar(
+        &self,
+        query: ExperienceQuery,
+    ) -> Result<Vec<ExperienceTuple>, TypesError>;
 }

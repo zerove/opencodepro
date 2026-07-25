@@ -18,7 +18,7 @@ impl ExperienceRetriever for BankRetriever {
         &self,
         query: &str,
         limit: usize,
-    ) -> Result<Vec<ExperienceTuple>, String> {
+    ) -> Result<Vec<ExperienceTuple>, sisyphus_types::TypesError> {
         let q = ExperienceQuery {
             query_text: query.to_string(),
             context_hash: format!("{:x}", md5::compute(query)),
@@ -30,7 +30,10 @@ impl ExperienceRetriever for BankRetriever {
         self.bank.query_similar(q).await
     }
 
-    async fn record_experience(&self, exp: ExperienceTuple) -> Result<(), String> {
+    async fn record_experience(
+        &self,
+        exp: ExperienceTuple,
+    ) -> Result<(), sisyphus_types::TypesError> {
         self.bank.record(exp).await
     }
 }

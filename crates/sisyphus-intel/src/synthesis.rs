@@ -24,7 +24,7 @@ pub trait FlowSynthesizer: Send + Sync {
         project_id: &str,
         mode: sisyphus_types::WorkMode,
         insights: Option<&str>,
-    ) -> Result<SynthesisResult, String>;
+    ) -> Result<SynthesisResult, sisyphus_types::IntelError>;
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -150,7 +150,7 @@ impl FlowSynthesizer for GoalDrivenSynthesizer {
         _project_id: &str,
         _mode: sisyphus_types::WorkMode,
         _insights: Option<&str>,
-    ) -> Result<SynthesisResult, String> {
+    ) -> Result<SynthesisResult, sisyphus_types::IntelError> {
         let actions = classify_goal(goal);
         let is_parallel = goal.to_lowercase().contains("parallel");
         let mut graph = SOPGraph::new();
@@ -296,7 +296,7 @@ impl FlowSynthesizer for DynamicSopSynthesizer {
         _project_id: &str,
         _mode: sisyphus_types::WorkMode,
         insights: Option<&str>,
-    ) -> Result<SynthesisResult, String> {
+    ) -> Result<SynthesisResult, sisyphus_types::IntelError> {
         let insight_text = match insights {
             Some(i) => format!("\n\nHistorical insights for similar goals:\n{}", i),
             None => "".to_string(),
@@ -361,7 +361,7 @@ pub async fn synthesize_composite(
     synthesizer: &dyn FlowSynthesizer,
     ctx: &ExecutionContext,
     project_id: &str,
-) -> Result<CompositeGraph, String> {
+) -> Result<CompositeGraph, sisyphus_types::IntelError> {
     let mut composite = CompositeGraph::new();
     for (i, goal) in goals.iter().enumerate() {
         let sop_id = format!("goal_{}", i);
@@ -406,7 +406,7 @@ impl FlowSynthesizer for MetaLearningSynthesizer {
         project_id: &str,
         mode: sisyphus_types::WorkMode,
         insights: Option<&str>,
-    ) -> Result<SynthesisResult, String> {
+    ) -> Result<SynthesisResult, sisyphus_types::IntelError> {
         let best_strategy = {
             let ml = self.meta_learner.lock();
             ml.best_strategy_params(&serde_json::json!({ "goal": goal }))
@@ -446,7 +446,7 @@ impl FlowSynthesizer for StrategicSopSynthesizer {
         project_id: &str,
         mode: sisyphus_types::WorkMode,
         insights: Option<&str>,
-    ) -> Result<SynthesisResult, String> {
+    ) -> Result<SynthesisResult, sisyphus_types::IntelError> {
         let directives = [
             "", 
             "\n(Strategic Directive: Prioritize efficiency and minimize node count to reduce cost)",

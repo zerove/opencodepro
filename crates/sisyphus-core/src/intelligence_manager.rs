@@ -52,6 +52,7 @@ impl IntelligenceManager {
             .simulator
             .simulate(graph, ctx, project_id, sop_id, None)
             .await
+            .map_err(|e| e.to_string())
     }
 
     /// Reflect on an execution trace to calculate deviation and suggest improvements.
@@ -66,7 +67,8 @@ impl IntelligenceManager {
             .intel
             .reflector
             .reflect(trace, prediction, None)
-            .await?;
+            .await
+            .map_err(|e| e.to_string())?;
 
         // 2. Deep Semantic Reflection using Professional Tools
         let mut expert_suggestions = Vec::new();
@@ -183,5 +185,6 @@ impl IntelligenceManager {
             .evolver
             .evolve(graph, report, prediction, insights)
             .await
+            .map_err(|e| e.to_string())
     }
 }
