@@ -143,7 +143,9 @@ pub async fn cmd_scribe_generate_adr(
 ) -> Result<Vec<u8>, String> {
     let v = parse_args(&args)?;
     let context = flexible_str_arg(&v, "context", "content")?;
-    let adr = sisyphus_tools_llm_tools::scribe::generate_adr(client, &context).await?;
+    let adr = sisyphus_tools_llm_tools::scribe::generate_adr(client, &context)
+        .await
+        .map_err(|e| e.to_string())?;
     ok_json(json!({"adr": adr}))
 }
 
@@ -154,8 +156,9 @@ pub async fn cmd_scribe_update_docs(
     let v = parse_args(&args)?;
     let doc_content = flexible_str_arg(&v, "doc_content", "content")?;
     let changes = str_arg(&v, "changes")?;
-    let suggestion =
-        sisyphus_tools_llm_tools::scribe::update_docs(client, &doc_content, &changes).await?;
+    let suggestion = sisyphus_tools_llm_tools::scribe::update_docs(client, &doc_content, &changes)
+        .await
+        .map_err(|e| e.to_string())?;
     ok_json(json!({"suggestion": suggestion}))
 }
 

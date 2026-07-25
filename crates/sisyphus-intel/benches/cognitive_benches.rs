@@ -17,7 +17,7 @@ impl ToolExecutor for BenchExecutor {
         _tool_id: &str,
         _args: Vec<u8>,
         _fuel_limit: u64,
-    ) -> Result<Vec<u8>, String> {
+    ) -> Result<Vec<u8>, sisyphus_types::TypesError> {
         Ok(b"bench-output".to_vec())
     }
 }
@@ -38,7 +38,7 @@ fn bench_synthesis(c: &mut Criterion) {
         b.to_async(&rt).iter(|| async {
             let ctx = ExecutionContext::new();
             synthesizer
-                .synthesize(black_box("fetch data"), black_box(&ctx))
+                .synthesize(black_box("fetch data"), black_box(&ctx), black_box("bench"), black_box(sisyphus_types::WorkMode::Standard), None)
                 .await
         })
     });
@@ -47,7 +47,7 @@ fn bench_synthesis(c: &mut Criterion) {
         b.to_async(&rt).iter(|| async {
             let ctx = ExecutionContext::new();
             synthesizer
-                .synthesize(black_box("fetch process store"), black_box(&ctx))
+                .synthesize(black_box("fetch process store"), black_box(&ctx), black_box("bench"), black_box(sisyphus_types::WorkMode::Standard), None)
                 .await
         })
     });
@@ -56,7 +56,7 @@ fn bench_synthesis(c: &mut Criterion) {
         b.to_async(&rt).iter(|| async {
             let ctx = ExecutionContext::new();
             synthesizer
-                .synthesize(black_box("fetch and process parallel"), black_box(&ctx))
+                .synthesize(black_box("fetch and process parallel"), black_box(&ctx), black_box("bench"), black_box(sisyphus_types::WorkMode::Standard), None)
                 .await
         })
     });
@@ -97,7 +97,7 @@ fn bench_simulation(c: &mut Criterion) {
     group.bench_function("mc_1000_iter", |b| {
         b.to_async(&rt).iter(|| async {
             let ctx = ExecutionContext::new();
-            sim.simulate(black_box(&graph), black_box(&ctx), black_box("bench_sop"))
+            sim.simulate(black_box(&graph), black_box(&ctx), black_box("bench"), black_box("bench_sop"), None)
                 .await
         })
     });
@@ -133,6 +133,8 @@ fn bench_reflection(c: &mut Criterion) {
         path_id: "bench".into(),
         success_probability: 0.7,
         estimated_cost: 500,
+        predicted_stability: 0.8,
+        predicted_effort: 100,
         predicted_outcome: "mixed".into(),
     };
 
@@ -143,7 +145,7 @@ fn bench_reflection(c: &mut Criterion) {
     group.bench_function("reflect_100_nodes", |b| {
         b.to_async(&rt).iter(|| async {
             reflector
-                .reflect(black_box(&trace), black_box(&prediction))
+                .reflect(black_box(&trace), black_box(&prediction), None)
                 .await
         })
     });
@@ -182,12 +184,15 @@ fn bench_evolution(c: &mut Criterion) {
             "Add retry logic to unstable nodes".into(),
         ],
         evolved_sop_structure: None,
+        records: vec![],
     };
 
     let prediction = SimulationResult {
         path_id: "bench".into(),
         success_probability: 0.5,
         estimated_cost: 2_000_000,
+        predicted_stability: 0.4,
+        predicted_effort: 500,
         predicted_outcome: "needs_fuel".into(),
     };
 

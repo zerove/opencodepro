@@ -16,11 +16,16 @@ struct JsonLlmClient(String);
 
 #[async_trait]
 impl LlmClient for JsonLlmClient {
-    async fn generate(&self, prompt: &str) -> Result<String, String> {
+    async fn generate(&self, prompt: &str) -> Result<String, sisyphus_types::TypesError> {
         self.chat("", prompt, false).await
     }
 
-    async fn chat(&self, _system: &str, _user: &str, _json_mode: bool) -> Result<String, String> {
+    async fn chat(
+        &self,
+        _system: &str,
+        _user: &str,
+        _json_mode: bool,
+    ) -> Result<String, sisyphus_types::TypesError> {
         Ok(self.0.clone())
     }
 

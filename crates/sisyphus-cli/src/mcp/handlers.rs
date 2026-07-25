@@ -250,7 +250,9 @@ async fn execute_librarian_synthesise(args: serde_json::Value) -> Result<String,
     let findings: Vec<crate::tools::ResearchFinding> =
         serde_json::from_str(findings_json).map_err(|e| format!("Invalid findings JSON: {e}"))?;
 
-    let synthesis = crate::tools::synthesise(&findings, &**client).await?;
+    let synthesis = crate::tools::synthesise(&findings, &**client)
+        .await
+        .map_err(|e| e.to_string())?;
     output_text(synthesis)
 }
 

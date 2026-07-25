@@ -8,13 +8,18 @@ use std::sync::Arc;
 struct MockLlmClient;
 #[async_trait]
 impl LlmClient for MockLlmClient {
-    async fn generate(&self, prompt: &str) -> Result<String, String> {
+    async fn generate(&self, prompt: &str) -> Result<String, sisyphus_types::TypesError> {
         if prompt.contains("EvolutionOps") {
             return Ok(r#"[{"AdjustFuel": {"node_name": "fuel_node", "delta": 100}}]"#.to_string());
         }
         Ok(r#"{"deviation": 0.8, "suggestions": ["Increase fuel for fuel_node"], "analysis": "Low fuel"}"#.to_string())
     }
-    async fn chat(&self, _sys: &str, _ctx: &str, _stream: bool) -> Result<String, String> {
+    async fn chat(
+        &self,
+        _sys: &str,
+        _ctx: &str,
+        _stream: bool,
+    ) -> Result<String, sisyphus_types::TypesError> {
         Ok("Mock chat".into())
     }
 

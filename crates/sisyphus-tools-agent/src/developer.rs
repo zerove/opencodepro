@@ -96,7 +96,11 @@ Return ONLY the JSON object."#;
             format!("Goal: {goal}\n\nProject Context: {context_with_wisdom}\n\nPlan this goal.");
 
         // First attempt
-        let response = self.llm.chat(system_prompt, &user_prompt, true).await?;
+        let response = self
+            .llm
+            .chat(system_prompt, &user_prompt, true)
+            .await
+            .map_err(|e| e.to_string())?;
         match serde_json::from_str::<DevelopmentPlan>(&response) {
             Ok(plan) => Ok(plan),
             Err(e) => {
@@ -107,7 +111,8 @@ Return ONLY the JSON object."#;
                 let response = self
                     .llm
                     .chat(system_prompt, &corrective_prompt, true)
-                    .await?;
+                    .await
+                    .map_err(|e| e.to_string())?;
                 match serde_json::from_str::<DevelopmentPlan>(&response) {
                     Ok(plan) => Ok(plan),
                     Err(e2) => Err(format!("Failed to parse DevelopmentPlan after retry: {e2}")),
@@ -155,7 +160,11 @@ Return ONLY the JSON object."#;
             }
             DevAction::ComplexChange { description } => {
                 let system_prompt = "You are a code editor. Decompose a complex change request into a JSON array of granular edits. Each edit must be { \"path\": \"...\", \"old_string\": \"...\", \"new_string\": \"...\" }. Return ONLY the JSON array.";
-                let response = self.llm.chat(system_prompt, description, true).await?;
+                let response = self
+                    .llm
+                    .chat(system_prompt, description, true)
+                    .await
+                    .map_err(|e| e.to_string())?;
                 let edits: Vec<EditRequest> =
                     serde_json::from_str(&response).map_err(|e| e.to_string())?;
 
@@ -221,7 +230,11 @@ Return ONLY the JSON object."#;
                     "Criteria: {}\n\nOutput: {}\n\nDoes this satisfy the criteria?",
                     criteria, result.output
                 );
-                let response = self.llm.chat(system_prompt, &user_prompt, false).await?;
+                let response = self
+                    .llm
+                    .chat(system_prompt, &user_prompt, false)
+                    .await
+                    .map_err(|e| e.to_string())?;
                 Ok(response.to_lowercase().starts_with("yes"))
             }
             VerificationMethod::None => Ok(true),

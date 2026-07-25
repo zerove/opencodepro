@@ -12,10 +12,21 @@ pub enum MetisError {
     ParseError(#[from] serde_json::Error),
 }
 
+impl From<sisyphus_types::TypesError> for MetisError {
+    fn from(e: sisyphus_types::TypesError) -> Self {
+        MetisError::LlmError(e.to_string())
+    }
+}
+
 #[async_trait::async_trait]
 pub trait LlmClient: Send + Sync {
-    async fn chat(&self, system: &str, user: &str, json_mode: bool) -> Result<String, String>;
-    async fn generate(&self, prompt: &str) -> Result<String, String>;
+    async fn chat(
+        &self,
+        system: &str,
+        user: &str,
+        json_mode: bool,
+    ) -> Result<String, sisyphus_types::TypesError>;
+    async fn generate(&self, prompt: &str) -> Result<String, sisyphus_types::TypesError>;
     fn get_params_for(&self, agent_id: &str) -> (String, String, String);
     fn breaker(&self) -> crate::circuit_breaker::CircuitBreaker;
 }
@@ -25,7 +36,12 @@ pub struct DummyLlmClient;
 
 #[async_trait::async_trait]
 impl LlmClient for DummyLlmClient {
-    async fn chat(&self, _system: &str, user: &str, _json_mode: bool) -> Result<String, String> {
+    async fn chat(
+        &self,
+        _system: &str,
+        user: &str,
+        _json_mode: bool,
+    ) -> Result<String, sisyphus_types::TypesError> {
         Ok(json!({
             "ambiguities": [],
             "implicit_requirements": [],
@@ -35,7 +51,7 @@ impl LlmClient for DummyLlmClient {
         .to_string())
     }
 
-    async fn generate(&self, prompt: &str) -> Result<String, String> {
+    async fn generate(&self, prompt: &str) -> Result<String, sisyphus_types::TypesError> {
         if prompt.contains("critical_findings") || prompt.contains("Critique") {
             Ok(json!({
                 "critical_findings": [],
@@ -77,11 +93,16 @@ pub struct FixedResponseClient(pub String);
 
 #[async_trait::async_trait]
 impl LlmClient for FixedResponseClient {
-    async fn chat(&self, _system: &str, _user: &str, _json_mode: bool) -> Result<String, String> {
+    async fn chat(
+        &self,
+        _system: &str,
+        _user: &str,
+        _json_mode: bool,
+    ) -> Result<String, sisyphus_types::TypesError> {
         Ok(self.0.clone())
     }
 
-    async fn generate(&self, _prompt: &str) -> Result<String, String> {
+    async fn generate(&self, _prompt: &str) -> Result<String, sisyphus_types::TypesError> {
         Ok(self.0.clone())
     }
 
@@ -190,10 +211,7 @@ Guidelines:
 
 /// Analyse a natural-language request for ambiguities and implicit requirements.
 pub async fn analyse(request: &str, client: &dyn LlmClient) -> Result<MetisAnalysis, MetisError> {
-    let response = client
-        .chat(METIS_SYSTEM_PROMPT, request, true)
-        .await
-        .map_err(MetisError::LlmError)?;
+    let response = client.chat(METIS_SYSTEM_PROMPT, request, true).await?;
 
     let analysis: MetisAnalysis = serde_json::from_str(&response)?;
 

@@ -38,7 +38,10 @@ Ensure the tone is objective, concise, and professional. Focus on the 'why' more
 ";
 
 /// Generates a structured ADR from the provided conversation context.
-pub async fn generate_adr(client: &dyn LlmClient, context: &str) -> Result<String, String> {
+pub async fn generate_adr(
+    client: &dyn LlmClient,
+    context: &str,
+) -> Result<String, sisyphus_types::TypesError> {
     client.chat(SCRIBE_SYSTEM_PROMPT, context, false).await
 }
 
@@ -47,7 +50,7 @@ pub async fn update_docs(
     client: &dyn LlmClient,
     doc_content: &str,
     changes: &str,
-) -> Result<String, String> {
+) -> Result<String, sisyphus_types::TypesError> {
     let prompt = format!(
         "You are a Technical Scribe. Based on the following changes, suggest updates to the existing documentation. 
 Provide the output as a diff or a clear 'Search/Replace' block.

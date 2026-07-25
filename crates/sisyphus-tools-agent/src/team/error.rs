@@ -37,3 +37,9 @@ impl From<String> for TeamError {
         TeamError::ExecutionError(s)
     }
 }
+
+impl From<sisyphus_types::TypesError> for TeamError {
+    fn from(e: sisyphus_types::TypesError) -> Self {
+        TeamError::LlmFailed(e.to_string())
+    }
+}

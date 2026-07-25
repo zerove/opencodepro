@@ -46,10 +46,15 @@ pub struct MockLlmClient;
 
 #[async_trait]
 impl LlmClient for MockLlmClient {
-    async fn generate(&self, _prompt: &str) -> Result<String, String> {
+    async fn generate(&self, _prompt: &str) -> Result<String, sisyphus_types::TypesError> {
         Ok("Mock response".into())
     }
-    async fn chat(&self, _sys: &str, _ctx: &str, _stream: bool) -> Result<String, String> {
+    async fn chat(
+        &self,
+        _sys: &str,
+        _ctx: &str,
+        _stream: bool,
+    ) -> Result<String, sisyphus_types::TypesError> {
         Ok("Mock chat".into())
     }
     fn get_params_for(&self, _agent_id: &str) -> (String, String, String) {

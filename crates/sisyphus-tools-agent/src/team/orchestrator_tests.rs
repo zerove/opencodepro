@@ -453,11 +453,16 @@ struct JsonLlmClient(String);
 
 #[async_trait::async_trait]
 impl LlmClient for JsonLlmClient {
-    async fn generate(&self, prompt: &str) -> Result<String, String> {
+    async fn generate(&self, prompt: &str) -> Result<String, sisyphus_types::TypesError> {
         self.chat("", prompt, false).await
     }
 
-    async fn chat(&self, _system: &str, _user: &str, _json_mode: bool) -> Result<String, String> {
+    async fn chat(
+        &self,
+        _system: &str,
+        _user: &str,
+        _json_mode: bool,
+    ) -> Result<String, sisyphus_types::TypesError> {
         Ok(self.0.clone())
     }
 
@@ -478,12 +483,19 @@ struct ErrLlmClient;
 
 #[async_trait::async_trait]
 impl LlmClient for ErrLlmClient {
-    async fn generate(&self, prompt: &str) -> Result<String, String> {
+    async fn generate(&self, prompt: &str) -> Result<String, sisyphus_types::TypesError> {
         self.chat("", prompt, false).await
     }
 
-    async fn chat(&self, _system: &str, _user: &str, _json_mode: bool) -> Result<String, String> {
-        Err("LLM API error".to_string())
+    async fn chat(
+        &self,
+        _system: &str,
+        _user: &str,
+        _json_mode: bool,
+    ) -> Result<String, sisyphus_types::TypesError> {
+        Err(sisyphus_types::TypesError::LlmError(
+            "LLM API error".to_string(),
+        ))
     }
 
     fn get_params_for(&self, _agent_id: &str) -> (String, String, String) {

@@ -87,7 +87,13 @@ Function to test:
 {code}"#
         );
 
-        let response = self.llm_client.as_ref().unwrap().generate(&prompt).await?;
+        let response = self
+            .llm_client
+            .as_ref()
+            .unwrap()
+            .generate(&prompt)
+            .await
+            .map_err(|e| e.to_string())?;
 
         let cleaned = response
             .trim()

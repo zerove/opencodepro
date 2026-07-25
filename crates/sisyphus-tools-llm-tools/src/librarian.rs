@@ -261,7 +261,7 @@ async fn add_code_results(
 pub async fn synthesise(
     findings: &[ResearchFinding],
     client: &(impl sisyphus_tools_llm::metis::LlmClient + ?Sized),
-) -> Result<String, String> {
+) -> Result<String, sisyphus_types::TypesError> {
     if findings.is_empty() {
         return Ok("No findings to synthesise.".to_string());
     }

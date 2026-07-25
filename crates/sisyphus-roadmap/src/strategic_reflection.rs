@@ -474,12 +474,17 @@ mod tests {
         struct FailLlm;
         #[async_trait::async_trait]
         impl LlmClient for FailLlm {
-            async fn generate(&self, prompt: &str) -> Result<String, String> {
+            async fn generate(&self, prompt: &str) -> Result<String, sisyphus_types::TypesError> {
                 self.chat("", prompt, false).await
             }
 
-            async fn chat(&self, _: &str, _: &str, _: bool) -> Result<String, String> {
-                Err("LLM down".to_string())
+            async fn chat(
+                &self,
+                _: &str,
+                _: &str,
+                _: bool,
+            ) -> Result<String, sisyphus_types::TypesError> {
+                Err(sisyphus_types::TypesError::LlmError("LLM down".to_string()))
             }
 
             fn get_params_for(&self, _agent_id: &str) -> (String, String, String) {

@@ -43,6 +43,10 @@ pub enum TypesError {
     /// Consensus 协议错误
     #[error("consensus error: {0}")]
     ConsensusError(String),
+
+    /// LLM 客户端调用错误
+    #[error("LLM error: {0}")]
+    LlmError(String),
 }
 
 impl From<String> for TypesError {

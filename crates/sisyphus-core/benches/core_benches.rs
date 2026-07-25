@@ -8,6 +8,24 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
+fn make_executor() -> Executor {
+    let llm_client = Arc::new(sisyphus_tools_llm::DummyLlmClient);
+    let intervention_manager = Arc::new(sisyphus_core::InterventionManager::new());
+    let knowledge_manager = Arc::new(sisyphus_knowledge::AssetManager::new(
+        std::path::PathBuf::from("/tmp/sisyphus_bench"),
+    ));
+    let internalization_manager = Arc::new(sisyphus_core::InternalizationManager::new(
+        llm_client,
+        knowledge_manager,
+    ));
+    Executor::new(
+        Arc::new(sisyphus_tools_executor::executor::test_cmds::TestExecutor::new()),
+        intervention_manager,
+        internalization_manager,
+        None,
+    )
+}
+
 // ---------------------------------------------------------------------------
 // Mock executor for DAG benchmarks
 // ---------------------------------------------------------------------------
@@ -30,7 +48,7 @@ impl ToolExecutor for MockToolExecutor {
 // ---------------------------------------------------------------------------
 fn bench_dag_execution(c: &mut Criterion) {
     let rt = tokio::runtime::Runtime::new().unwrap();
-    let executor = Executor::new();
+    let executor = make_executor();
     let tool_executor = Arc::new(MockToolExecutor);
 
     let mut group = c.benchmark_group("dag_execution");
@@ -66,6 +84,8 @@ fn bench_dag_execution(c: &mut Criterion) {
                         None,
                         tool_executor.clone(),
                         None,
+                        None,
+                        None,
                     )
                     .await
             })
@@ -80,7 +100,7 @@ fn bench_dag_execution(c: &mut Criterion) {
 // ---------------------------------------------------------------------------
 fn bench_wasm_execution(c: &mut Criterion) {
     let rt = tokio::runtime::Runtime::new().unwrap();
-    let executor = Executor::new();
+    let executor = make_executor();
 
     // Setup WasmToolExecutor pointing to workspace root tools/
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -117,6 +137,8 @@ fn bench_wasm_execution(c: &mut Criterion) {
                     None,
                     None,
                     tool_executor.clone(),
+                    None,
+                    None,
                     None,
                 )
                 .await

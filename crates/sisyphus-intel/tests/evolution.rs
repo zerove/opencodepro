@@ -21,11 +21,11 @@ struct MockLlmClient {
 
 #[async_trait]
 impl LlmClient for MockLlmClient {
-    async fn generate(&self, _prompt: &str) -> Result<String, String> {
+    async fn generate(&self, _prompt: &str) -> Result<String, TypesError> {
         Ok(self.response.clone())
     }
 
-    async fn chat(&self, _system: &str, _user: &str, _stream: bool) -> Result<String, String> {
+    async fn chat(&self, _system: &str, _user: &str, _stream: bool) -> Result<String, TypesError> {
         Ok(self.response.clone())
     }
 

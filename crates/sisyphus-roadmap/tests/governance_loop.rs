@@ -14,11 +14,16 @@ struct MockLlmClient;
 
 #[async_trait]
 impl LlmClient for MockLlmClient {
-    async fn generate(&self, prompt: &str) -> Result<String, String> {
+    async fn generate(&self, prompt: &str) -> Result<String, sisyphus_types::TypesError> {
         self.chat("", prompt, false).await
     }
 
-    async fn chat(&self, _system: &str, _user: &str, _stream: bool) -> Result<String, String> {
+    async fn chat(
+        &self,
+        _system: &str,
+        _user: &str,
+        _stream: bool,
+    ) -> Result<String, sisyphus_types::TypesError> {
         // Return a valid JSON array of refinement suggestions for MilestoneGenerator
         // or a valid reflection JSON for StrategicReflector
         // propose_refinements includes "Change request:" in the context

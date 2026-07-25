@@ -120,7 +120,7 @@ impl TeamOrchestrator {
         let response = llm
             .chat(&system_prompt, &user_prompt, true)
             .await
-            .map_err(TeamError::LlmFailed)?;
+            .map_err(|e| TeamError::LlmFailed(e.to_string()))?;
 
         parse_decomposition_response(&response, &goal.id).map_err(TeamError::InvalidPlan)
     }

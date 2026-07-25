@@ -168,11 +168,16 @@ impl DynamicLlmClient {
 
 #[async_trait]
 impl LlmClient for DynamicLlmClient {
-    async fn generate(&self, prompt: &str) -> Result<String, String> {
+    async fn generate(&self, prompt: &str) -> Result<String, sisyphus_types::TypesError> {
         self.chat("", prompt, false).await
     }
 
-    async fn chat(&self, system: &str, user: &str, json_mode: bool) -> Result<String, String> {
+    async fn chat(
+        &self,
+        system: &str,
+        user: &str,
+        json_mode: bool,
+    ) -> Result<String, sisyphus_types::TypesError> {
         let start_time = std::time::Instant::now();
 
         // ── Try provider registry fallback chain first ─────────────
@@ -249,7 +254,9 @@ impl LlmClient for DynamicLlmClient {
                     .read()
                     .unwrap_or_else(std::sync::PoisonError::into_inner);
                 if cfg.llm.budget_mode == sisyphus_types::BudgetMode::Strict {
-                    return Err(format!("Budget exceeded (Strict Mode): {e}"));
+                    return Err(sisyphus_types::TypesError::InternalError(format!(
+                        "Budget exceeded (Strict Mode): {e}"
+                    )));
                 }
                 tracing::warn!(target: "llm", "Budget warning for {}: {}", ctx.goal_id, e);
             }
@@ -266,9 +273,11 @@ impl LlmClient for DynamicLlmClient {
         });
 
         // Check circuit breaker before making the call
-        self.breaker
-            .check_state(&model)
-            .map_err(|e| format!("LLM call blocked by circuit breaker ({model}): {e}"))?;
+        self.breaker.check_state(&model).map_err(|e| {
+            sisyphus_types::TypesError::InternalError(format!(
+                "LLM call blocked by circuit breaker ({model}): {e}"
+            ))
+        })?;
 
         let messages = vec![
             json!({ "role": "system", "content": system }),
@@ -296,7 +305,9 @@ impl LlmClient for DynamicLlmClient {
             Ok(r) => r,
             Err(e) => {
                 self.breaker.on_failure(&model);
-                return Err(format!("HTTP request failed: {e}"));
+                return Err(sisyphus_types::TypesError::InternalError(format!(
+                    "HTTP request failed: {e}"
+                )));
             }
         };
 
@@ -305,7 +316,9 @@ impl LlmClient for DynamicLlmClient {
             Ok(j) => j,
             Err(e) => {
                 self.breaker.on_failure(&model);
-                return Err(format!("Failed to parse response JSON: {e}"));
+                return Err(sisyphus_types::TypesError::InternalError(format!(
+                    "Failed to parse response JSON: {e}"
+                )));
             }
         };
 
@@ -317,11 +330,11 @@ impl LlmClient for DynamicLlmClient {
                 &response_json["error"]
             };
             let error_msg = error_obj["message"].as_str().unwrap_or("unknown error");
-            return Err(format!(
+            return Err(sisyphus_types::TypesError::InternalError(format!(
                 "LLM API error ({}): {}",
                 status.as_u16(),
                 error_msg
-            ));
+            )));
         }
 
         let content = response_json["choices"][0]["message"]["content"]
@@ -345,7 +358,9 @@ impl LlmClient for DynamicLlmClient {
             Ok(text)
         } else {
             self.breaker.on_failure(&model);
-            Err("LLM response missing content field".to_string())
+            Err(sisyphus_types::TypesError::InternalError(
+                "LLM response missing content field".into(),
+            ))
         }
     }
 

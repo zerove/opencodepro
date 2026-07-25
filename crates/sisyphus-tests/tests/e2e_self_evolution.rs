@@ -55,7 +55,12 @@ struct ProgrammableLlmClient {
 
 #[async_trait]
 impl LlmClient for ProgrammableLlmClient {
-    async fn chat(&self, _sys: &str, prompt: &str, _stream: bool) -> Result<String, String> {
+    async fn chat(
+        &self,
+        _sys: &str,
+        prompt: &str,
+        _stream: bool,
+    ) -> Result<String, sisyphus_types::TypesError> {
         for (key, val) in &self.responses {
             if prompt.contains(key) {
                 return Ok(val.clone());
@@ -64,7 +69,7 @@ impl LlmClient for ProgrammableLlmClient {
         Ok("I don't know how to do that.".into())
     }
 
-    async fn generate(&self, _prompt: &str) -> Result<String, String> {
+    async fn generate(&self, _prompt: &str) -> Result<String, sisyphus_types::TypesError> {
         Ok("Generic generation".into())
     }
 

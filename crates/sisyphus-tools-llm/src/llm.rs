@@ -15,14 +15,14 @@ pub mod openai;
 
 #[async_trait::async_trait]
 pub trait EmbeddingClient: Send + Sync {
-    async fn embed(&self, text: &str) -> Result<Vec<f32>, String>;
+    async fn embed(&self, text: &str) -> Result<Vec<f32>, sisyphus_types::TypesError>;
 }
 
 pub struct DummyEmbeddingClient;
 
 #[async_trait::async_trait]
 impl EmbeddingClient for DummyEmbeddingClient {
-    async fn embed(&self, text: &str) -> Result<Vec<f32>, String> {
+    async fn embed(&self, text: &str) -> Result<Vec<f32>, sisyphus_types::TypesError> {
         // Return a stable pseudo-random vector based on the text hash
         use std::collections::hash_map::DefaultHasher;
         use std::hash::{Hash, Hasher};
@@ -444,6 +444,7 @@ mod tests {
         assert!(result.is_err());
         assert!(result
             .unwrap_err()
+            .to_string()
             .contains("Budget exceeded (Strict Mode)"));
     }
 
@@ -469,7 +470,7 @@ mod tests {
         let result = client.chat("sys", "user", false).await;
         // Should not fail due to budget, but will fail because we aren't mocking the HTTP request
         if let Err(e) = result {
-            assert!(!e.contains("Budget exceeded (Strict Mode)"));
+            assert!(!e.to_string().contains("Budget exceeded (Strict Mode)"));
         }
     }
 }

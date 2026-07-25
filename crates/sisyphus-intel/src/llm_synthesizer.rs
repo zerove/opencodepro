@@ -662,7 +662,12 @@ mod adversarial_tests {
 
     #[async_trait::async_trait]
     impl sisyphus_tools_llm::LlmClient for MockLlm {
-        async fn chat(&self, _system: &str, prompt: &str, _stream: bool) -> Result<String, String> {
+        async fn chat(
+            &self,
+            _system: &str,
+            prompt: &str,
+            _stream: bool,
+        ) -> Result<String, sisyphus_types::TypesError> {
             let _count = self
                 .call_count
                 .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
@@ -682,7 +687,7 @@ mod adversarial_tests {
             }
         }
 
-        async fn generate(&self, _prompt: &str) -> Result<String, String> {
+        async fn generate(&self, _prompt: &str) -> Result<String, sisyphus_types::TypesError> {
             Ok("Mock generate".into())
         }
 
