@@ -11,7 +11,7 @@ pub trait BudgetProvider: Send + Sync {
         project_id: &str,
         goal_id: &str,
         estimated_cost: f64,
-    ) -> Result<(), String>;
+    ) -> Result<(), sisyphus_types::TypesError>;
     /// Record the actual cost and duration of an LLM call for a specific goal.
     async fn record_actual_cost(
         &self,
@@ -19,7 +19,7 @@ pub trait BudgetProvider: Send + Sync {
         goal_id: &str,
         actual_cost: f64,
         duration_secs: f64,
-    ) -> Result<(), String>;
+    ) -> Result<(), sisyphus_types::TypesError>;
 }
 
 /// Context used to attribute LLM costs to specific roadmap goals.

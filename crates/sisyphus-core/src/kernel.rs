@@ -182,7 +182,7 @@ impl SisyphusKernel {
         prefix: &str,
 
         executor: Arc<dyn ToolExecutor>,
-    ) -> Result<(), String> {
+    ) -> Result<(), CoreError> {
         self.execution_manager
             .tool_router
             .register(prefix, executor);
@@ -263,7 +263,7 @@ impl SisyphusKernel {
             .intelligence_manager
             .predict_outcome(sop, &ExecutionContext::new(), project_id, &feedback.plan_id)
             .await
-            .map_err(CoreError::Internal)?;
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
 
         let reflection = self
             .intelligence_manager
@@ -303,7 +303,7 @@ impl SisyphusKernel {
                     None,
                 )
                 .await
-                .map_err(CoreError::Internal)?;
+                .map_err(|e| CoreError::Internal(e.to_string()))?;
 
             let config = sisyphus_types::SOPGraphConfig::from_graph(&synthesis.graph);
 
@@ -887,7 +887,7 @@ impl SisyphusKernel {
     pub async fn init_mcp_executors(
         &self,
         config: &sisyphus_types::config::McpConfig,
-    ) -> Result<(), String> {
+    ) -> Result<(), CoreError> {
         for (prefix, cmd_str) in &config.stdio_servers {
             let parts: Vec<&str> = cmd_str.split_whitespace().collect();
 

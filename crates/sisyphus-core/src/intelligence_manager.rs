@@ -33,11 +33,10 @@ impl IntelligenceManager {
         project_id: &str,
         mode: sisyphus_types::WorkMode,
         insights: Option<&str>,
-    ) -> Result<sisyphus_intel::synthesis::SynthesisResult, String> {
+    ) -> Result<sisyphus_intel::synthesis::SynthesisResult, sisyphus_types::IntelError> {
         self.synthesizer
             .synthesize(goal, ctx, project_id, mode, insights)
             .await
-            .map_err(|e| e.to_string())
     }
 
     /// Predict the outcome of a graph execution using the simulator.
@@ -47,12 +46,11 @@ impl IntelligenceManager {
         ctx: &ExecutionContext,
         project_id: &str,
         sop_id: &str,
-    ) -> Result<SimulationResult, String> {
+    ) -> Result<SimulationResult, sisyphus_types::IntelError> {
         self.intel
             .simulator
             .simulate(graph, ctx, project_id, sop_id, None)
             .await
-            .map_err(|e| e.to_string())
     }
 
     /// Reflect on an execution trace to calculate deviation and suggest improvements.
@@ -61,14 +59,13 @@ impl IntelligenceManager {
         trace: &str,
         prediction: &SimulationResult,
         ctx: &ExecutionContext,
-    ) -> Result<ReflectionReport, String> {
+    ) -> Result<ReflectionReport, sisyphus_types::IntelError> {
         // 1. Base reflection from the core reflector
         let mut report = self
             .intel
             .reflector
             .reflect(trace, prediction, None)
-            .await
-            .map_err(|e| e.to_string())?;
+            .await?;
 
         // 2. Deep Semantic Reflection using Professional Tools
         let mut expert_suggestions = Vec::new();
@@ -145,7 +142,7 @@ impl IntelligenceManager {
         &self,
         report: &ReflectionReport,
         prediction: &SimulationResult,
-    ) -> Result<sisyphus_types::CritiqueResult, String> {
+    ) -> Result<sisyphus_types::CritiqueResult, sisyphus_types::IntelError> {
         let prompt = format!(
             "You are a rigorous AI Architecture Critic. Analyze the following reflection report and simulation prediction.\n\n\
             Simulation Prediction:\n{:?}\n\n\
@@ -160,19 +157,18 @@ impl IntelligenceManager {
             prediction, report
         );
 
-        let response = self
-            .llm_client
-            .generate(&prompt)
-            .await
-            .map_err(|e| format!("LLM critique failed: {}", e))?;
+        let response = self.llm_client.generate(&prompt).await.map_err(|e| {
+            sisyphus_types::IntelError::LlmError(format!("LLM critique failed: {}", e))
+        })?;
 
         serde_json::from_str::<sisyphus_types::CritiqueResult>(&response).map_err(|e| {
-            format!(
+            sisyphus_types::IntelError::Internal(format!(
                 "Failed to parse critique JSON: {}. Response was: {}",
                 e, response
-            )
+            ))
         })
     }
+
     /// Evolve a graph based on a reflection report and prediction.
     pub async fn evolve_graph(
         &self,
@@ -180,11 +176,10 @@ impl IntelligenceManager {
         report: &ReflectionReport,
         prediction: &SimulationResult,
         insights: Option<&str>,
-    ) -> Result<Arc<SOPGraph>, String> {
+    ) -> Result<Arc<SOPGraph>, sisyphus_types::IntelError> {
         self.intel
             .evolver
             .evolve(graph, report, prediction, insights)
             .await
-            .map_err(|e| e.to_string())
     }
 }

@@ -57,9 +57,16 @@ mod tests {
 
     #[async_trait]
     impl BudgetProvider for MockBudgetProvider {
-        async fn check_budget(&self, _p: &str, _g: &str, _c: f64) -> Result<(), String> {
+        async fn check_budget(
+            &self,
+            _p: &str,
+            _g: &str,
+            _c: f64,
+        ) -> Result<(), sisyphus_types::TypesError> {
             if self.should_fail_budget {
-                Err("Budget exceeded".into())
+                Err(sisyphus_types::TypesError::InternalError(
+                    "Budget exceeded".into(),
+                ))
             } else {
                 Ok(())
             }
@@ -70,7 +77,7 @@ mod tests {
             _g: &str,
             cost: f64,
             dur: f64,
-        ) -> Result<(), String> {
+        ) -> Result<(), sisyphus_types::TypesError> {
             self.recorded_costs
                 .lock()
                 .unwrap()

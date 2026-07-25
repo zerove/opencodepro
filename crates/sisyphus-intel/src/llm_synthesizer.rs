@@ -461,7 +461,7 @@ impl FlowSynthesizer for LogicalSOPSynthesizer {
         _mode: sisyphus_types::WorkMode,
         _insights: Option<&str>,
     ) -> Result<SynthesisResult, sisyphus_types::IntelError> {
-        println!("DEBUG: Starting synthesis for goal: {}", goal);
+        tracing::debug!(goal = %goal, "Starting synthesis");
         let tools = self
             .tool_executor
             .list_tools()
@@ -494,16 +494,13 @@ impl FlowSynthesizer for LogicalSOPSynthesizer {
 
             let (_, json_str, plan_desc) = if current_attempt == 0 {
                 let res = self.propose(goal, &tools_list, &lessons).await?;
-                println!("DEBUG: First proposal successful");
+                tracing::debug!("First proposal successful");
                 res
             } else {
                 let res = self
                     .refine(goal, &tools_list, &current_json, &last_critique, &lessons)
                     .await?;
-                println!(
-                    "DEBUG: Refinement successful for attempt {}",
-                    current_attempt
-                );
+                tracing::debug!(attempt = current_attempt, "Refinement successful");
                 res
             };
 
@@ -528,14 +525,15 @@ impl FlowSynthesizer for LogicalSOPSynthesizer {
             let eval_res = match self.evaluator.evaluate(goal, &config).await {
                 Ok(res) => res,
                 Err(e) => {
-                    println!("DEBUG: Evaluation failed: {}", e);
+                    tracing::debug!(error = %e, "Evaluation failed");
                     return Err(e.to_string().into());
                 }
             };
 
-            println!(
-                "DEBUG: Evaluation result received. Score: {:.2}, Acceptable: {}",
-                eval_res.score, eval_res.is_acceptable
+            tracing::debug!(
+                score = eval_res.score,
+                acceptable = eval_res.is_acceptable,
+                "Evaluation result received"
             );
             self.save_lesson(
                 goal,

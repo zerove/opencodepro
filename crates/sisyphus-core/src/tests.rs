@@ -478,7 +478,7 @@ async fn test_strategic_manager_evolution_verification() {
     }
     #[async_trait::async_trait]
     impl sisyphus_intel::Simulator for MockSimulator {
-        async fn simulate(&self, _g: Arc<SOPGraph>, _ctx: &ExecutionContext, _id: &str, _goal: Option<&str>) -> Result<sisyphus_intel::SimulationResult, String> {
+        async fn simulate(&self, _g: Arc<SOPGraph>, _ctx: &ExecutionContext, _id: &str, _sop_id: &str, _goal: Option<&str>) -> Result<sisyphus_intel::SimulationResult, sisyphus_types::IntelError> {
             let p = self.probs.lock().pop_front().unwrap_or(0.5);
             Ok(sisyphus_intel::SimulationResult {
                 path_id: "p1".into(),
@@ -492,8 +492,8 @@ async fn test_strategic_manager_evolution_verification() {
 
     struct MockEvolver;
     #[async_trait::async_trait]
-    impl sisyphus_intel::Evolver for MockEvolver {
-        async fn evolve(&self, g: Arc<SOPGraph>, _ref: &sisyphus_intel::reflect::ReflectionReport, _pred: &sisyphus_intel::SimulationResult, _ins: Option<&str>) -> Result<Arc<SOPGraph>, String> {
+    impl sisyphus_intel::SOPEvolver for MockEvolver {
+        async fn evolve(&self, g: Arc<SOPGraph>, _ref: &sisyphus_intel::reflect::ReflectionReport, _pred: &sisyphus_intel::SimulationResult, _ins: Option<&str>) -> Result<Arc<SOPGraph>, sisyphus_types::IntelError> {
             Ok(Arc::clone(g))
         }
     }
@@ -501,7 +501,7 @@ async fn test_strategic_manager_evolution_verification() {
     struct MockReflector;
     #[async_trait::async_trait]
     impl sisyphus_intel::Reflector for MockReflector {
-        async fn reflect(&self, _trace: &str, _pred: &sisyphus_intel::SimulationResult) -> Result<sisyphus_intel::reflect::ReflectionReport, String> {
+        async fn reflect(&self, _trace: &str, _pred: &sisyphus_intel::SimulationResult, _experiences: Option<&[sisyphus_types::experience::ExperienceTuple]>) -> Result<sisyphus_intel::reflect::ReflectionReport, sisyphus_types::IntelError> {
             Ok(sisyphus_intel::reflect::ReflectionReport {
                 deviation_score: 0.5, // Force evolution
                 suggested_improvements: vec!["improve".into()],

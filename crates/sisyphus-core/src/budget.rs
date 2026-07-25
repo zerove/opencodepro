@@ -7,7 +7,7 @@ use async_trait::async_trait;
 
 use sisyphus_tools_llm::llm::BudgetProvider;
 
-use crate::{CoreError, SisyphusKernel};
+use crate::SisyphusKernel;
 
 #[async_trait]
 impl BudgetProvider for SisyphusKernel {
@@ -16,13 +16,18 @@ impl BudgetProvider for SisyphusKernel {
         project_id: &str,
         _goal_id: &str,
         estimated_cost: f64,
-    ) -> Result<(), String> {
+    ) -> Result<(), sisyphus_types::TypesError> {
         let project = self
             .roadmap_manager
             .get_project(project_id)
             .await
-            .map_err(|e| CoreError::Internal(e.to_string()))?
-            .ok_or_else(|| CoreError::Internal(format!("Project {} not found", project_id)))?;
+            .map_err(|e| sisyphus_types::TypesError::InternalError(e.to_string()))?
+            .ok_or_else(|| {
+                sisyphus_types::TypesError::InternalError(format!(
+                    "Project {} not found",
+                    project_id
+                ))
+            })?;
 
         let total_goals = project
             .roadmap
@@ -52,11 +57,10 @@ impl BudgetProvider for SisyphusKernel {
         );
 
         if estimated_cost > projection.avg_cost_per_goal * 3.0 && projection.confidence > 0.5 {
-            return Err(CoreError::Internal(format!(
+            return Err(sisyphus_types::TypesError::InternalError(format!(
                 "Estimated cost {:.2} is significantly higher than project average {:.2}",
                 estimated_cost, projection.avg_cost_per_goal
-            ))
-            .into());
+            )));
         }
         Ok(())
     }
@@ -67,13 +71,18 @@ impl BudgetProvider for SisyphusKernel {
         goal_id: &str,
         actual_cost: f64,
         duration_secs: f64,
-    ) -> Result<(), String> {
+    ) -> Result<(), sisyphus_types::TypesError> {
         let project = self
             .roadmap_manager
             .get_project(project_id)
             .await
-            .map_err(|e| CoreError::Internal(e.to_string()))?
-            .ok_or_else(|| CoreError::Internal(format!("Project {} not found", project_id)))?;
+            .map_err(|e| sisyphus_types::TypesError::InternalError(e.to_string()))?
+            .ok_or_else(|| {
+                sisyphus_types::TypesError::InternalError(format!(
+                    "Project {} not found",
+                    project_id
+                ))
+            })?;
 
         // Find milestone and phase for the goal
         let mut location = None;
@@ -90,7 +99,7 @@ impl BudgetProvider for SisyphusKernel {
         }
 
         let (milestone_id, phase_id) = location.ok_or_else(|| {
-            CoreError::Internal(format!(
+            sisyphus_types::TypesError::InternalError(format!(
                 "Goal {} not found in project {}",
                 goal_id, project_id
             ))
@@ -115,7 +124,7 @@ impl BudgetProvider for SisyphusKernel {
         self.roadmap_manager
             .record_outcome(&outcome)
             .await
-            .map_err(|e| CoreError::Internal(e.to_string()))?;
+            .map_err(|e| sisyphus_types::TypesError::InternalError(e.to_string()))?;
         Ok(())
     }
 }

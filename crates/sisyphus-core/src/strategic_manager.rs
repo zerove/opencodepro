@@ -657,7 +657,7 @@ impl StrategicManager {
                 .intelligence_manager
                 .critique_reflection(&reflection, &prediction)
                 .await
-                .map_err(CoreError::Internal)?;
+                .map_err(|e| CoreError::Internal(e.to_string()))?;
             reflection
                 .suggested_improvements
                 .push(format!("[CRITIQUE] {}", critique.suggested_refinement));
