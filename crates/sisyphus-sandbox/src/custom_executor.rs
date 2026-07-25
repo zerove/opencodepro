@@ -43,10 +43,11 @@ impl SchemaValidator {
         }
 
         if let Some(properties) = props {
-            let args_obj = args.as_object().unwrap();
-            for (name, val) in args_obj {
-                if let Some(prop_schema) = properties.get(name) {
-                    Self::validate(prop_schema, val)?;
+            if let Some(args_obj) = args.as_object() {
+                for (name, val) in args_obj {
+                    if let Some(prop_schema) = properties.get(name) {
+                        Self::validate(prop_schema, val)?;
+                    }
                 }
             }
         }

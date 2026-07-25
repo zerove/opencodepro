@@ -103,7 +103,7 @@ pub(crate) fn detect_cycle(tasks: &[TaskNode]) -> Result<(), String> {
             return Ok(());
         }
         if c == GRAY {
-            let cycle_start = path.iter().position(|n| *n == node).unwrap();
+            let cycle_start = path.iter().position(|n| *n == node).unwrap_or(0);
             let cycle: Vec<&str> = path[cycle_start..].to_vec();
             return Err(cycle.join(" → ").clone());
         }

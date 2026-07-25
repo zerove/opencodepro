@@ -112,9 +112,9 @@ impl SOPNode for BranchSOPNode {
         })?;
         let output_str = last_output.as_str().unwrap_or("");
         let next_node = self.branches.get(output_str).unwrap_or(&self.default_next);
-        Ok(NodeOutput::from(Value::Number(
-            serde_json::Number::from_f64(*next_node as f64).unwrap(),
-        )))
+        Ok(NodeOutput::from(Value::Number(serde_json::Number::from(
+            *next_node,
+        ))))
     }
     fn name(&self) -> &str {
         &self.name

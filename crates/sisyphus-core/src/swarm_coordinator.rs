@@ -249,18 +249,20 @@ pub struct AuditReview {
 }
 
 fn extract_json(text: &str) -> String {
+    // Try ```json ... ``` first
     if let Some(start) = text.find("```json") {
-        if let Some(_end) = text[start + 7..].find("```") {
-            return text[start + 7..start + 7 + text[start + 7..].find("```").unwrap()]
-                .trim()
-                .to_string();
-        }
-    } else if let Some(start) = text.find("```") {
-        if let Some(_end) = text[start + 3..].find("```") {
-            return text[start + 3..start + 3 + text[start + 3..].find("```").unwrap()]
-                .trim()
-                .to_string();
+        let rest = &text[start + 7..];
+        if let Some(end) = rest.find("```") {
+            return rest[..end].trim().to_string();
         }
     }
+    // Then try ``` ... ```
+    if let Some(start) = text.find("```") {
+        let rest = &text[start + 3..];
+        if let Some(end) = rest.find("```") {
+            return rest[..end].trim().to_string();
+        }
+    }
+    // Fallback: return the whole text trimmed
     text.trim().to_string()
 }

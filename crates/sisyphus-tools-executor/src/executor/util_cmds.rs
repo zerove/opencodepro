@@ -233,7 +233,12 @@ pub fn cmd_json_query(args: Value) -> Result<Vec<u8>, sisyphus_types::TypesError
             continue;
         }
         if part.contains('[') && part.ends_with(']') {
-            let open_bracket = part.find('[').unwrap();
+            let open_bracket =
+                part.find('[')
+                    .ok_or_else(|| sisyphus_types::TypesError::ToolExecutionError {
+                        tool_id: "json_query".to_string(),
+                        details: "Expected '[' in path segment".to_string(),
+                    })?;
             let key = &part[..open_bracket];
             let index_str = &part[open_bracket + 1..part.len() - 1];
             let index = index_str.parse::<usize>().map_err(|e| {

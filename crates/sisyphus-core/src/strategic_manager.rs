@@ -170,12 +170,13 @@ impl StrategicManager {
 
         let mut edges = Vec::new();
         for edge_idx in graph.graph.edge_indices() {
-            let (source, target) = graph.graph.edge_endpoints(edge_idx).unwrap();
-            edges.push(sisyphus_types::CogEdge {
-                source: source.index().to_string(),
-                target: target.index().to_string(),
-                label: None,
-            });
+            if let Some((source, target)) = graph.graph.edge_endpoints(edge_idx) {
+                edges.push(sisyphus_types::CogEdge {
+                    source: source.index().to_string(),
+                    target: target.index().to_string(),
+                    label: None,
+                });
+            }
         }
 
         sisyphus_types::CogMap {

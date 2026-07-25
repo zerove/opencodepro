@@ -57,13 +57,9 @@ impl ToolCoder {
 
     fn extract_code(&self, text: &str) -> Result<String, crate::IntelError> {
         if let Some(start) = text.find("```rust") {
-            let start_idx = start + 7;
-            if let Some(_end) = text[start_idx..].find("```") {
-                return Ok(
-                    text[start_idx..start_idx + text[start_idx..].find("```").unwrap()]
-                        .trim()
-                        .to_string(),
-                );
+            let rest = &text[start + 7..];
+            if let Some(end) = rest.find("```") {
+                return Ok(rest[..end].trim().to_string());
             }
         }
 

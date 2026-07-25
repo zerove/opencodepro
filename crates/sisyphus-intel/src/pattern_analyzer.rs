@@ -115,8 +115,9 @@ impl PatternAnalyzer {
             for edge in graph.graph.edges(u) {
                 let v = edge.target();
                 if let Some(&v_idx) = node_to_idx.get(&v) {
-                    let u_idx = *node_to_idx.get(&u).unwrap();
-                    pattern_edges.push((u_idx, v_idx));
+                    if let Some(&u_idx) = node_to_idx.get(&u) {
+                        pattern_edges.push((u_idx, v_idx));
+                    }
                 }
             }
         }
