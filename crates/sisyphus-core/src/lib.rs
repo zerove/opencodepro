@@ -150,11 +150,8 @@ impl From<sisyphus_types::TypesError> for CoreError {
     }
 }
 
-impl From<String> for CoreError {
-    fn from(err: String) -> Self {
-        CoreError::Internal(err)
-    }
-}
+// NOTE: `From<String> for CoreError` was intentionally removed.
+// Use `CoreError::Internal(msg)` explicitly to make error conversion visible.
 
 pub struct SisyphusKernel {
     pub intelligence_manager: Arc<IntelligenceManager>,
