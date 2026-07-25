@@ -173,7 +173,11 @@ fn bench_mfs_storage(c: &mut Criterion) {
             b.to_async(&rt).iter(|| async {
                 let store = MfsStore::new("sqlite::memory:").await.unwrap();
                 store
-                    .set_state_json(black_box(&key), black_box(payload_val.clone()))
+                    .set_state_json(
+                        black_box("bench_project"),
+                        black_box(&key),
+                        black_box(payload_val.clone()),
+                    )
                     .await
                     .unwrap();
             })
@@ -183,13 +187,19 @@ fn bench_mfs_storage(c: &mut Criterion) {
             // Pre-populate store for get benchmark
             let store = rt.block_on(async {
                 let s = MfsStore::new("sqlite::memory:").await.unwrap();
-                s.set_state_json(&key, payload_val.clone()).await.unwrap();
+                s.set_state_json("bench_project", &key, payload_val.clone())
+                    .await
+                    .unwrap();
                 s
             });
             let store_arc = Arc::new(store);
 
-            b.to_async(&rt)
-                .iter(|| async { store_arc.get_state_json(black_box(&key)).await.unwrap() })
+            b.to_async(&rt).iter(|| async {
+                store_arc
+                    .get_state_json(black_box("bench_project"), black_box(&key))
+                    .await
+                    .unwrap()
+            })
         });
     }
 

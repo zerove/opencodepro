@@ -106,6 +106,7 @@ fn bench_simulation(c: &mut Criterion) {
         graph.add_edge(nodes[i], nodes[i + 1]);
     }
 
+    let graph_arc = Arc::new(graph);
     let sim = MonteCarloSimulator::new(1000);
 
     let mut group = c.benchmark_group("simulation");
@@ -116,7 +117,7 @@ fn bench_simulation(c: &mut Criterion) {
         b.to_async(&rt).iter(|| async {
             let ctx = ExecutionContext::new();
             sim.simulate(
-                black_box(&graph),
+                black_box(graph_arc.clone()),
                 black_box(&ctx),
                 black_box("bench"),
                 black_box("bench_sop"),
@@ -196,9 +197,7 @@ fn bench_evolution(c: &mut Criterion) {
             }))
         })
         .collect();
-    for i in 0..19 {
-        graph.add_edge(nodes[i], nodes[i + 1]);
-    }
+    let graph_arc = Arc::new(graph);
 
     let report = ReflectionReport {
         original_sop_id: "bench_sop".into(),
@@ -230,7 +229,7 @@ fn bench_evolution(c: &mut Criterion) {
             let evolver = StandardEvolver::new();
             evolver
                 .evolve(
-                    black_box(&graph),
+                    black_box(graph_arc.clone()),
                     black_box(&report),
                     black_box(&prediction),
                     None,
@@ -245,7 +244,7 @@ fn bench_evolution(c: &mut Criterion) {
             let evolver = StandardEvolver::with_fuel_pricer(Arc::new(AdaptiveFuelPricer::new()));
             evolver
                 .evolve(
-                    black_box(&graph),
+                    black_box(graph_arc.clone()),
                     black_box(&report),
                     black_box(&prediction),
                     None,
@@ -260,6 +259,7 @@ fn bench_evolution(c: &mut Criterion) {
         deviation_score: 0.1,
         suggested_improvements: vec!["SOP is performing within expected parameters".into()],
         evolved_sop_structure: None,
+        records: vec![],
     };
 
     group.bench_function("evolve_noop", |b| {
@@ -267,7 +267,7 @@ fn bench_evolution(c: &mut Criterion) {
             let evolver = StandardEvolver::new();
             evolver
                 .evolve(
-                    black_box(&graph),
+                    black_box(graph_arc.clone()),
                     black_box(&clean_report),
                     black_box(&prediction),
                     None,
