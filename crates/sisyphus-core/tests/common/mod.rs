@@ -5,15 +5,13 @@
 
 use async_trait::async_trait;
 use sisyphus_core::{Consensus, SOPGraph, SisyphusKernel, WasmSOPNode};
+use sisyphus_intel::simulation::LogicalSimulationResult;
 use sisyphus_intel::simulation::LogicalSimulator;
-use sisyphus_intel::{
-    LogicalSimulationResult, MonteCarloSimulator, ReflectionReport, SimulationResult,
-    SisyphusIntel,
-};
+use sisyphus_intel::{MonteCarloSimulator, ReflectionReport, SimulationResult, SisyphusIntel};
 use sisyphus_mem::MfsStore;
 use sisyphus_tools_llm::circuit_breaker::CircuitBreaker;
 use sisyphus_tools_llm::LlmClient;
-use sisyphus_types::{ExecutionContext, ToolExecutor, WorkMode, experience::ExperienceTuple};
+use sisyphus_types::{experience::ExperienceTuple, ExecutionContext, ToolExecutor, WorkMode};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
@@ -51,7 +49,11 @@ impl LlmClient for MockLlmClient {
         Ok("Mock chat".into())
     }
     fn get_params_for(&self, _agent_id: &str) -> (String, String, String) {
-        ("test_key".into(), "http://test:8080".into(), "test-model".into())
+        (
+            "test_key".into(),
+            "http://test:8080".into(),
+            "test-model".into(),
+        )
     }
     fn breaker(&self) -> CircuitBreaker {
         CircuitBreaker::default()
@@ -209,7 +211,10 @@ pub async fn make_test_kernel() -> (Arc<SisyphusKernel>, Arc<MockExecutor>) {
     let state_store = Arc::new(MfsStore::new("sqlite::memory:").await.unwrap());
     let executor = Arc::new(MockExecutor::new());
 
-    let simulator = Arc::new(MonteCarloSimulator::with_state_store(100, state_store.clone()));
+    let simulator = Arc::new(MonteCarloSimulator::with_state_store(
+        100,
+        state_store.clone(),
+    ));
     let intel = Arc::new(SisyphusIntel::new(
         simulator,
         Arc::new(MockLogicalSimulator),
@@ -217,14 +222,16 @@ pub async fn make_test_kernel() -> (Arc<SisyphusKernel>, Arc<MockExecutor>) {
         Arc::new(MockEvolver),
     ));
 
-    let pool = sqlx::SqlitePool::connect("sqlite::memory:")
-        .await
-        .unwrap();
+    let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
 
     let kernel = Arc::new(SisyphusKernel::new(
         state_store,
         Arc::new(sisyphus_mem::SopSqlStore::new(pool.clone()).await.unwrap()),
-        Arc::new(sisyphus_mem::VectorMemoryStore::new(pool.clone()).await.unwrap()),
+        Arc::new(
+            sisyphus_mem::VectorMemoryStore::new(pool.clone())
+                .await
+                .unwrap(),
+        ),
         Arc::new(MockExperienceBank),
         executor.clone() as Arc<dyn ToolExecutor>,
         intel,

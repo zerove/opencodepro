@@ -61,6 +61,39 @@ impl SOPNode for MockNode {
 }
 
 // ---------------------------------------------------------------------------
+// Mock ToolExecutor
+// ---------------------------------------------------------------------------
+struct MockToolExecutor;
+
+#[async_trait]
+impl sisyphus_types::ToolExecutor for MockToolExecutor {
+    async fn execute(
+        &self,
+        _tool_id: &str,
+        _args: Vec<u8>,
+        _fuel_limit: u64,
+    ) -> Result<Vec<u8>, sisyphus_types::TypesError> {
+        Ok(b"mock".to_vec())
+    }
+}
+
+fn make_executor() -> Executor {
+    Executor::new(
+        Arc::new(sisyphus_tools_executor::executor::test_cmds::TestExecutor::new()),
+        Arc::new(sisyphus_core::intervention_manager::InterventionManager::new()),
+        Arc::new(
+            sisyphus_core::internalization_manager::InternalizationManager::new(
+                Arc::new(sisyphus_tools_llm::metis::DummyLlmClient),
+                Arc::new(sisyphus_knowledge::AssetManager::new(
+                    ".sisyphus/knowledge".into(),
+                )),
+            ),
+        ),
+        None,
+    )
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -69,10 +102,10 @@ async fn test_single_node() {
     let mut graph = SOPGraph::new();
     let node = Arc::new(MockNode::new("alpha"));
     let idx = graph.add_node(node);
-    let executor = Executor::new();
+    let executor = make_executor();
 
     let ctx = executor
-        .execute(Arc::new(graph), idx, tool_executor.clone())
+        .execute(Arc::new(graph), idx, Arc::new(MockToolExecutor))
         .await
         .unwrap();
     let out = ctx.get_result("alpha").unwrap();
@@ -86,9 +119,9 @@ async fn test_linear_dag() {
     let n2 = graph.add_node(Arc::new(MockNode::new("step2")));
     graph.add_edge(n1, n2);
 
-    let executor = Executor::new();
+    let executor = make_executor();
     let ctx = executor
-        .execute(Arc::new(graph), n1, tool_executor.clone())
+        .execute(Arc::new(graph), n1, Arc::new(MockToolExecutor))
         .await
         .unwrap();
 
@@ -110,8 +143,10 @@ async fn test_cycle_detection() {
     graph.add_edge(n1, n2);
     graph.add_edge(n2, n1); // cycle
 
-    let executor = Executor::new();
-    let result = executor.execute(&graph, n1).await;
+    let executor = make_executor();
+    let result = executor
+        .execute(Arc::new(graph), n1, Arc::new(MockToolExecutor))
+        .await;
     assert!(result.is_err());
     assert!(result.unwrap_err().to_string().contains("cycle"));
 }
@@ -126,9 +161,9 @@ async fn test_parallel_execution() {
     graph.add_edge(n1, n3);
     graph.add_edge(n2, n3);
 
-    let executor = Executor::new();
+    let executor = make_executor();
     let ctx = executor
-        .execute(Arc::new(graph), n1, tool_executor.clone())
+        .execute(Arc::new(graph), n1, Arc::new(MockToolExecutor))
         .await
         .unwrap();
 
@@ -150,10 +185,10 @@ async fn test_parallel_execution() {
 async fn test_node_error_propagated() {
     let mut graph = SOPGraph::new();
     let n1 = graph.add_node(Arc::new(MockNode::failing("crash")));
-    let executor = Executor::new();
+    let executor = make_executor();
 
     let ctx = executor
-        .execute(Arc::new(graph), n1, tool_executor.clone())
+        .execute(Arc::new(graph), n1, Arc::new(MockToolExecutor))
         .await
         .unwrap();
     let out = ctx.get_result("crash").unwrap();

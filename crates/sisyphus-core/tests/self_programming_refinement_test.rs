@@ -1,6 +1,6 @@
 #![cfg(feature = "broken_tests")]
 use async_trait::async_trait;
-use sisyphus_core::{ExecutionManager, IntelligenceManager, SisyphusKernel};
+use sisyphus_core::{ExecutionManager, IntelligenceManager};
 use sisyphus_intel::{GapAnalyzer, SimulationResult, ToolGap, ToolVerifier};
 use sisyphus_tools_llm::LlmClient;
 use sisyphus_types::tools::ToolSpec;
@@ -25,8 +25,18 @@ impl LlmClient for FailingLlmClient {
             Ok("```rust\nuse sisyphus_wasm_sdk::prelude::*;\nfn main() { register_tool!(\"test\", || Ok(\"ok\".to_string())); }\n```".to_string())
         }
     }
-    async fn generate(&self, _prompt: &str, _stream: bool) -> Result<String, String> {
+    async fn generate(&self, _prompt: &str) -> Result<String, String> {
         Ok("".into())
+    }
+    fn get_params_for(&self, _agent_id: &str) -> (String, String, String) {
+        (
+            "test_key".into(),
+            "http://test:8080".into(),
+            "test-model".into(),
+        )
+    }
+    fn breaker(&self) -> sisyphus_tools_llm::circuit_breaker::CircuitBreaker {
+        sisyphus_tools_llm::circuit_breaker::CircuitBreaker::default()
     }
 }
 
@@ -36,27 +46,33 @@ async fn test_self_programming_refinement_loop() {
     let llm = Arc::new(FailingLlmClient {
         attempt: std::sync::Mutex::new(0),
     });
-    let state_store = Arc::new(sisyphus_mem::MfsStore::new(".sisyphus/test_mfs"));
-    let sop_store = Arc::new(sisyphus_mem::SopSqlStore::new_in_memory().await.unwrap());
+    let state_store = Arc::new(
+        sisyphus_mem::MfsStore::new("sqlite::memory:")
+            .await
+            .unwrap(),
+    );
+    let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
+    let sop_store = Arc::new(sisyphus_mem::SopSqlStore::new(pool.clone()).await.unwrap());
 
     // 2. Setup SelfProgrammingManager
-    // 简化初始化，使用最小依赖
     let exec_manager = Arc::new(ExecutionManager::new(
         state_store,
         sop_store,
         Arc::new(sisyphus_sandbox::WasmToolExecutor::new().unwrap()),
         Arc::new(sisyphus_tools_executor::executor::test_cmds::TestExecutor::new()),
-        Arc::new(crate::intervention_manager::InterventionManager::new()),
-        Arc::new(crate::internalization_manager::InternalizationManager::new(
-            llm.clone(),
-            Arc::new(sisyphus_knowledge::AssetManager::new(
-                ".sisyphus/knowledge".into(),
-            )),
-        )),
+        Arc::new(sisyphus_core::intervention_manager::InterventionManager::new()),
+        Arc::new(
+            sisyphus_core::internalization_manager::InternalizationManager::new(
+                llm.clone(),
+                Arc::new(sisyphus_knowledge::AssetManager::new(
+                    ".sisyphus/knowledge".into(),
+                )),
+            ),
+        ),
         None,
     ));
 
-    let sp_manager = crate::self_programming_manager::SelfProgrammingManager::new(
+    let sp_manager = sisyphus_core::self_programming_manager::SelfProgrammingManager::new(
         llm.clone(),
         exec_manager,
         Arc::new(sisyphus_knowledge::AssetManager::new(
@@ -68,6 +84,7 @@ async fn test_self_programming_refinement_loop() {
     let gap = ToolGap {
         gap_id: "test_gap".into(),
         required_capability: "test".into(),
+        failing_node: "test_node".into(),
         suggested_tool_spec: ToolSpec {
             tool_id: "fixed_tool".into(),
             required_capability: "test".into(),

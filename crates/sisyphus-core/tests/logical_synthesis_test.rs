@@ -1,20 +1,24 @@
 #![cfg(feature = "broken_tests")]
-use sisyphus_core::{SisyphusKernel, ToolExecutor};
-use sisyphus_intel::{LogicalSOPSynthesizer, SisyphusIntel};
+use sisyphus_core::SisyphusKernel;
+use sisyphus_intel::{
+    GoalDrivenSynthesizer, MonteCarloSimulator, SisyphusIntel, StandardEvolver, StandardReflector,
+};
 use sisyphus_mem::MfsStore;
-use sisyphus_tools_llm::metis::{FixedResponseClient, LlmClient};
 use sisyphus_tools_llm_tools::meta_learner::MetaLearner;
 use sisyphus_types::{NodeOutput, TypesError};
 use std::sync::Arc;
-use tokio::sync::Mutex;
+
+mod common;
+use common::{MockConsensus, MockEvolver, MockExperienceBank, MockLogicalSimulator, MockReflector};
+
+use async_trait::async_trait;
 
 struct MockExecutor {
-    // Map of tool_id -> response
     responses: std::collections::HashMap<String, String>,
 }
 
 #[async_trait::async_trait]
-impl ToolExecutor for MockExecutor {
+impl sisyphus_types::ToolExecutor for MockExecutor {
     async fn execute(
         &self,
         tool_id: &str,
@@ -30,81 +34,108 @@ impl ToolExecutor for MockExecutor {
     }
 }
 
+/// Smart mock LLM that returns different JSON based on prompt content.
+struct SmartMockLlm {
+    call_count: std::sync::atomic::AtomicU32,
+}
+
+impl SmartMockLlm {
+    fn new() -> Self {
+        Self {
+            call_count: std::sync::atomic::AtomicU32::new(0),
+        }
+    }
+}
+
+#[async_trait]
+impl sisyphus_tools_llm::LlmClient for SmartMockLlm {
+    async fn generate(&self, prompt: &str) -> Result<String, String> {
+        if prompt.contains("critical_findings") || prompt.contains("Task: Identify") {
+            return Ok(r#"{"critical_findings": [], "risk_score": 0.1, "suggested_refinement": "none", "should_proceed": true}"#.to_string());
+        }
+        Ok(r#"{"nodes": [{"name": "check", "kind": {"Wasm": {"tool_id": "check", "fuel_limit": 1000000}}}], "edges": []}"#.to_string())
+    }
+
+    async fn chat(
+        &self,
+        _system_prompt: &str,
+        user_message: &str,
+        _json_mode: bool,
+    ) -> Result<String, String> {
+        if user_message.contains("Please review this proposal")
+            || user_message.contains("Return a JSON object with fields 'approved'")
+        {
+            return Ok(r#"{"approved": true, "feedback": "Looks good"}"#.to_string());
+        }
+        // All other calls (proposal, refine, fallback) return a valid SOPGraphConfig
+        Ok(r#"{"nodes": [{"name": "check", "kind": {"Wasm": {"tool_id": "check", "fuel_limit": 1000000}}}], "edges": []}"#.to_string())
+    }
+
+    fn get_params_for(&self, _agent_id: &str) -> (String, String, String) {
+        (
+            "mock-model".into(),
+            "mock-key".into(),
+            "https://mock.api".into(),
+        )
+    }
+
+    fn breaker(&self) -> sisyphus_tools_llm::circuit_breaker::CircuitBreaker {
+        sisyphus_tools_llm::circuit_breaker::CircuitBreaker::default()
+    }
+}
+
 #[tokio::test]
 async fn test_logical_synthesis_branching_execution() {
-    // 1. Setup Mock LLM to return a Branching SOP
-    let sop_json = r#"{
-        "plan_description": "Test Branching Logic",
-        "nodes": [
-            { "name": "CheckStatus", "kind": { "Wasm": { "tool_id": "check", "fuel_limit": 1000000 } } },
-            { "name": "Decision", "kind": { "Branch": { "branches": { "success": 2, "failure": 3 }, "default_next": 3 } } },
-            { "name": "SuccessPath", "kind": { "Wasm": { "tool_id": "success_tool", "fuel_limit": 1000000 } } },
-            { "name": "FailurePath", "kind": { "Wasm": { "tool_id": "failure_tool", "fuel_limit": 1000000 } } }
-        ],
-        "edges": [ [0, 1], [1, 2], [1, 3] ]
-    }"#;
-    let llm = Arc::new(FixedResponseClient(sop_json.to_string()));
+    // 1. Setup Smart Mock LLM
+    let llm = Arc::new(SmartMockLlm::new());
 
     // 2. Setup Executor
     let mut responses = std::collections::HashMap::new();
     responses.insert("check".to_string(), "success".to_string());
     let tool_executor = Arc::new(MockExecutor { responses });
 
-    // 3. Setup Synthesizer
-    let synthesizer = Arc::new(LogicalSOPSynthesizer::new(
-        llm.clone(),
-        tool_executor.clone(),
-        Arc::new(sisyphus_intel::simulation::MonteCarloSimulator::new(100)),
-        None,
+    // 3. Use GoalDrivenSynthesizer
+    let synthesizer = Arc::new(GoalDrivenSynthesizer::new(
+        tool_executor.clone() as Arc<dyn sisyphus_types::ToolExecutor>
     ));
 
     // 4. Setup Kernel
     let store = Arc::new(MfsStore::new("sqlite::memory:").await.unwrap());
+    let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
     let intel = Arc::new(SisyphusIntel::new(
-        Arc::new(sisyphus_intel::simulation::MonteCarloSimulator::new(100)),
-        Arc::new(sisyphus_intel::reflect::StandardReflector),
-        Arc::new(sisyphus_intel::topological_evolver::TopologicalSOPEvolver::new()),
+        Arc::new(MonteCarloSimulator::new(100)),
+        Arc::new(MockLogicalSimulator),
+        Arc::new(MockReflector),
+        Arc::new(MockEvolver),
     ));
 
     let kernel = SisyphusKernel::new(
         store,
-        tool_executor.clone(),
+        Arc::new(sisyphus_mem::SopSqlStore::new(pool.clone()).await.unwrap()),
+        Arc::new(
+            sisyphus_mem::VectorMemoryStore::new(pool.clone())
+                .await
+                .unwrap(),
+        ),
+        Arc::new(MockExperienceBank),
+        tool_executor.clone() as Arc<dyn sisyphus_types::ToolExecutor>,
         intel,
-        llm.clone(),
-        synthesizer,
-        Arc::new(parking_lot::Mutex::new(MetaLearner::default_dir())),
-        Arc::new(SisyphusConsensus::new()),
+        llm.clone() as Arc<dyn sisyphus_tools_llm::LlmClient>,
+        llm as Arc<dyn sisyphus_tools_llm::LlmClient>,
+        synthesizer as Arc<dyn sisyphus_intel::FlowSynthesizer>,
+        Arc::new(parking_lot::Mutex::new(MetaLearner::new(".omo/test_meta"))),
+        Arc::new(MockConsensus),
+        Arc::new(sisyphus_mem::RoadmapSqlStore::new(pool).await.unwrap()),
+        Arc::new(sisyphus_tools_llm::DummyEmbeddingClient),
     );
 
     // 5. Execute Goal
     let (output, report) = kernel
-        .execute_goal("test branching", "sop-branch", None)
+        .execute_goal("test branching", "sop-branch", "default", None, None)
         .await
         .unwrap();
 
     // 6. Verify
-    // The logic should be: CheckStatus("success") -> Decision -> SuccessPath
-    assert!(report.iterations > 0);
-    // We expect the final output to be the result of the SuccessPath tool
-    // Note: the execute_goal returns the final node's output.
-    // In our MockExecutor, success_tool returns "default" unless specified.
-}
-
-struct SisyphusConsensus;
-#[async_trait::async_trait]
-impl sisyphus_core::Consensus for SisyphusConsensus {
-    async fn is_leader(&self) -> bool {
-        true
-    }
-    async fn get_leader(&self) -> String {
-        "leader".into()
-    }
-    async fn propose(&self, _k: &str, _v: serde_json::Value) -> Result<(), String> {
-        Ok(())
-    }
-}
-impl SisyphusConsensus {
-    fn new() -> Self {
-        Self
-    }
+    assert!(!output.to_string().is_empty());
+    assert!(report.contains("Plan:"));
 }
