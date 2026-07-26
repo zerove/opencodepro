@@ -342,6 +342,10 @@ pub(crate) struct App {
     pub(crate) palette_query: String,
     pub(crate) palette_sel: usize,
 
+    // slash command completion
+    pub(crate) slash_completion_open: bool,
+    pub(crate) slash_completion_sel: usize,
+
     // auto-refresh
     #[allow(dead_code)]
     pub(crate) last_refresh: Instant,
@@ -471,6 +475,8 @@ impl App {
             palette_open: false,
             palette_query: String::new(),
             palette_sel: 0,
+            slash_completion_open: false,
+            slash_completion_sel: 0,
             last_refresh: Instant::now(),
             event_rx: None,
             is_pending: false,

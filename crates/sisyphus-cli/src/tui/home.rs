@@ -8,6 +8,7 @@ use ratatui::{
 
 use super::background::spawn_session_add_message;
 use super::dialog::Dialog;
+use super::enhancements::{expand_file_references, filter_slash_commands};
 use super::helpers::paste_from_clipboard;
 use super::{App, LogEntry, View};
 use unicode_width::UnicodeWidthStr;
@@ -31,6 +32,48 @@ const PLACEHOLDERS: &[&str] = &[
 
 pub fn handle_home_key(key: KeyEvent, app: &mut App) {
     let code = key.code;
+
+    // If slash completion is open, handle completion navigation
+    if app.slash_completion_open {
+        match code {
+            KeyCode::Esc => {
+                app.slash_completion_open = false;
+                app.slash_completion_sel = 0;
+                return;
+            }
+            KeyCode::Up => {
+                app.slash_completion_sel = app.slash_completion_sel.saturating_sub(1);
+                return;
+            }
+            KeyCode::Down => {
+                let completions = filter_slash_commands(&app.home_input);
+                if !completions.is_empty() {
+                    app.slash_completion_sel =
+                        (app.slash_completion_sel + 1).min(completions.len() - 1);
+                }
+                return;
+            }
+            KeyCode::Tab | KeyCode::Enter => {
+                let completions = filter_slash_commands(&app.home_input);
+                if let Some((cmd, _, _)) = completions.get(app.slash_completion_sel) {
+                    app.home_input = cmd.name.to_string();
+                    app.home_cursor = app.home_input.chars().count();
+                }
+                app.slash_completion_open = false;
+                app.slash_completion_sel = 0;
+                if code == KeyCode::Tab {
+                    return;
+                }
+                // Fall through to Enter handling
+            }
+            _ => {
+                // Close completion on any other key, then handle normally
+                app.slash_completion_open = false;
+                app.slash_completion_sel = 0;
+            }
+        }
+    }
+
     match code {
         KeyCode::Enter => {
             let cmd = app.home_input.trim().to_string();
@@ -39,7 +82,6 @@ pub fn handle_home_key(key: KeyEvent, app: &mut App) {
             }
             // If it starts with /, route as command
             if cmd.starts_with('/') || cmd.starts_with(':') {
-                // Hangle as shell command - add to log and process
                 app.add_log(LogEntry::Info(format!("> {cmd}")));
                 execute_home_command(&cmd, app);
                 app.home_input.clear();
@@ -47,6 +89,8 @@ pub fn handle_home_key(key: KeyEvent, app: &mut App) {
                 return;
             }
             // Otherwise: create a new session with this as the first message
+            // Expand @file references before sending
+            let expanded = expand_file_references(&cmd, &app.data_dir);
             let db = app.data_dir.join("sessions.json");
             let name = if cmd.chars().count() > 40 {
                 format!("{}...", cmd.chars().take(40).collect::<String>())
@@ -55,8 +99,6 @@ pub fn handle_home_key(key: KeyEvent, app: &mut App) {
             };
             match crate::tools::session_create(&db, &name) {
                 Ok(s) => {
-                    // Push message to in-memory session detail so UI shows it immediately.
-                    // spawn_session_add_message handles the actual disk write + bridge.
                     let now = std::time::SystemTime::now()
                         .duration_since(std::time::UNIX_EPOCH)
                         .map(|d| d.as_secs().to_string())
@@ -64,19 +106,18 @@ pub fn handle_home_key(key: KeyEvent, app: &mut App) {
                     let mut session = s.clone();
                     session.messages.push(crate::tools::Message {
                         role: "user".into(),
-                        content: cmd.clone(),
+                        content: expanded.clone(),
                         created_at: now.clone(),
-                        estimated_tokens: (cmd.len() as u64).div_ceil(4),
+                        estimated_tokens: (expanded.len() as u64).div_ceil(4),
                         is_compressed: false,
                     });
                     session.message_count = 1;
                     app.session_detail = Some(session);
-                    // Trigger AI response via bridge
                     app.pending_op = Some(spawn_session_add_message(
                         app.data_dir.clone(),
                         s.id.clone(),
                         "user".to_string(),
-                        cmd,
+                        expanded,
                         Some(app.bridge_address.clone()),
                     ));
                     app.session_detail_scroll = usize::MAX;
@@ -144,6 +185,11 @@ pub fn handle_home_key(key: KeyEvent, app: &mut App) {
                 .unwrap_or(app.home_input.len());
             app.home_input.insert(byte_pos, c);
             app.home_cursor += 1;
+            // Show slash completion popup when user types / at start
+            if c == '/' && app.home_input.chars().count() == 1 {
+                app.slash_completion_open = true;
+                app.slash_completion_sel = 0;
+            }
         }
         _ => {}
     }
@@ -239,7 +285,7 @@ pub fn render_home(frame: &mut ratatui::Frame, area: Rect, app: &App) {
 
     let input_para = Paragraph::new(Line::from(vec![
         Span::styled(
-            "❯ ",
+            "\u{276f} ",
             Style::default()
                 .fg(theme.primary)
                 .add_modifier(Modifier::BOLD),
@@ -250,13 +296,62 @@ pub fn render_home(frame: &mut ratatui::Frame, area: Rect, app: &App) {
 
     frame.render_widget(input_para, input_area);
 
-    // Cursor — use display width to handle CJK double-width characters
+    // Cursor
     if app.home_input.is_empty() {
-        // Show cursor at start in placeholder
         frame.set_cursor_position((input_area.x + 3, input_area.y + 1));
     } else {
         let text_before: String = app.home_input.chars().take(app.home_cursor).collect();
         let display_col = text_before.width() as u16;
         frame.set_cursor_position((input_area.x + 3 + display_col, input_area.y + 1));
+    }
+
+    // Slash command completion popup
+    if app.slash_completion_open && !app.home_input.is_empty() {
+        let completions = super::enhancements::filter_slash_commands(&app.home_input);
+        if !completions.is_empty() {
+            let popup_width = 50u16;
+            let popup_height = (completions.len() as u16 + 2).min(12);
+            let popup_x = input_area.x;
+            let popup_y = input_area.y.saturating_sub(popup_height);
+
+            let popup_area = Rect {
+                x: popup_x,
+                y: popup_y,
+                width: popup_width.min(area.width - popup_x),
+                height: popup_height,
+            };
+
+            use ratatui::widgets::{Clear, List, ListItem};
+            frame.render_widget(Clear, popup_area);
+
+            let items: Vec<ListItem> = completions
+                .iter()
+                .enumerate()
+                .map(|(i, (cmd, _, _))| {
+                    let style = if i == app.slash_completion_sel {
+                        Style::default()
+                            .fg(theme.primary)
+                            .add_modifier(Modifier::BOLD)
+                    } else {
+                        Style::default().fg(theme.fg)
+                    };
+                    ListItem::new(Line::from(vec![
+                        Span::styled(format!("  {:<15}", cmd.name), style),
+                        Span::styled(
+                            cmd.description,
+                            Style::default().fg(theme.muted),
+                        ),
+                    ]))
+                })
+                .collect();
+
+            let list = List::new(items).block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_style(Style::default().fg(theme.primary))
+                    .title(" Commands "),
+            );
+            frame.render_widget(list, popup_area);
+        }
     }
 }
