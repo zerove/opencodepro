@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sisyphus — Cognitive Engine</title>
+    <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: system-ui, sans-serif; background: #0d1117; color: #c9d1d9; min-height: 100vh; }
+        .container { max-width: 960px; margin: 0 auto; padding: 40px 20px; }
+        h1 { font-size: 2.5rem; margin-bottom: 8px; color: #58a6ff; }
+        .subtitle { color: #8b949e; margin-bottom: 40px; }
+        .card { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 24px; margin-bottom: 16px; }
+        .card h2 { color: #58a6ff; margin-bottom: 12px; font-size: 1.2rem; }
+        .stat { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #21262d; }
+        .stat:last-child { border-bottom: none; }
+        .label { color: #8b949e; }
+        .value { color: #f0f6fc; font-weight: 600; }
+        .status-ok { color: #3fb950; }
+        .status-err { color: #f85149; }
+        button { background: #238636; color: #fff; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 14px; }
+        button:hover { background: #2ea043; }
+        input { background: #0d1117; border: 1px solid #30363d; color: #c9d1d9; padding: 8px 12px; border-radius: 6px; font-size: 14px; width: 300px; }
+        .search-results { margin-top: 16px; }
+        .result-item { background: #0d1117; border: 1px solid #21262d; border-radius: 6px; padding: 12px; margin-bottom: 8px; }
+        .result-score { color: #3fb950; font-size: 0.85rem; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>⚡ Sisyphus</h1>
+        <p class="subtitle">Cognitive Execution Engine — v{{ version }}</p>
+
+        <div class="card">
+            <h2>Status</h2>
+            <div id="status-content" hx-get="/api/health" hx-trigger="load, every 10s" hx-swap="innerHTML">
+                Loading...
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>Sessions</h2>
+            <div id="sessions-content" hx-get="/api/sessions" hx-trigger="load, every 5s" hx-swap="innerHTML">
+                Loading...
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>Memory Search</h2>
+            <form hx-post="/api/search" hx-target="#search-results" hx-swap="innerHTML" hx-include="#search-input">
+                <input id="search-input" name="query" placeholder="Search your memory..." required>
+                <button type="submit">Search</button>
+            </form>
+            <div id="search-results" class="search-results"></div>
+        </div>
+    </div>
+</body>
+</html>

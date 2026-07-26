@@ -1,0 +1,59 @@
+{
+  "name": "sisyphus",
+  "displayName": "Sisyphus Cognitive Engine",
+  "description": "AI-powered cognitive execution engine integration for VS Code",
+  "version": "0.1.0",
+  "publisher": "sisyphus",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": ["AI", "Other"],
+  "activationEvents": ["onCommand:sisyphus.status"],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "sisyphus.status",
+        "title": "Sisyphus: Show Status"
+      },
+      {
+        "command": "sisyphus.newSession",
+        "title": "Sisyphus: New Session"
+      },
+      {
+        "command": "sisyphus.searchMemory",
+        "title": "Sisyphus: Search Memory"
+      },
+      {
+        "command": "sisyphus.executeSop",
+        "title": "Sisyphus: Execute SOP"
+      }
+    ],
+    "configuration": {
+      "title": "Sisyphus",
+      "properties": {
+        "sisyphus.baseUrl": {
+          "type": "string",
+          "default": "http://localhost:8080",
+          "description": "Base URL of the Sisyphus REST API"
+        },
+        "sisyphus.authToken": {
+          "type": "string",
+          "default": "",
+          "description": "Bearer token for Sisyphus API authentication"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "lint": "eslint src --ext ts"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.90.0",
+    "@types/node": "^20.0.0",
+    "typescript": "^5.5.0"
+  }
+}
