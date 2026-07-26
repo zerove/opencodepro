@@ -20,6 +20,7 @@ pub struct Executor {
     pub concurrency_limit: Arc<tokio::sync::Semaphore>,
     pub graph_cache: Arc<dashmap::DashMap<String, Arc<SOPGraph>>>,
     pub prediction_cache: Arc<dashmap::DashMap<String, String>>,
+    pub output_cache: Arc<crate::performance::OutputCache>,
     pub test_executor: Arc<dyn sisyphus_types::TestExecutor>,
     pub visual_manager: Option<Arc<sisyphus_visual::VisualPerceptionManager>>,
     pub intervention_manager: Arc<crate::intervention_manager::InterventionManager>,
@@ -37,6 +38,7 @@ impl Executor {
             concurrency_limit: Arc::new(tokio::sync::Semaphore::new(16)), // Default limit: 16 concurrent nodes
             graph_cache: Arc::new(dashmap::DashMap::new()),
             prediction_cache: Arc::new(dashmap::DashMap::new()),
+            output_cache: Arc::new(crate::performance::OutputCache::new(1000)),
             test_executor,
             visual_manager,
             intervention_manager,
@@ -62,6 +64,7 @@ impl Executor {
             concurrency_limit: Arc::clone(&self.concurrency_limit),
             graph_cache: Arc::clone(&self.graph_cache),
             prediction_cache: Arc::clone(&self.prediction_cache),
+            output_cache: Arc::clone(&self.output_cache),
             test_executor: Arc::clone(&self.test_executor),
             visual_manager: visual_manager.clone(),
             intervention_manager: Arc::clone(&self.intervention_manager),

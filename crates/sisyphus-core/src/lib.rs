@@ -73,6 +73,9 @@ pub mod intent_gate;
 
 pub mod budget;
 
+pub mod performance;
+pub use performance::*;
+
 #[async_trait::async_trait]
 
 pub trait Consensus: Send + Sync {
