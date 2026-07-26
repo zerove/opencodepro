@@ -76,6 +76,9 @@ pub mod budget;
 pub mod performance;
 pub use performance::*;
 
+pub mod dag_renderer;
+pub use dag_renderer::*;
+
 #[async_trait::async_trait]
 
 pub trait Consensus: Send + Sync {
