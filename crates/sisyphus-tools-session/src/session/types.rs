@@ -26,6 +26,12 @@ pub struct Session {
     pub message_count: u64,
     pub messages: Vec<Message>,
     pub metadata: HashMap<String, String>,
+    /// Parent session ID for hierarchical (sub-agent) sessions.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent_session_id: Option<String>,
+    /// Child session IDs spawned from this session.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub child_session_ids: Vec<String>,
 }
 
 /// On-disk persistence for sessions.

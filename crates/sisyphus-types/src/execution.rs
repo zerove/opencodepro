@@ -32,24 +32,47 @@ pub trait StateStore: Send + Sync {
 }
 
 /// Strongly-typed wrapper around `serde_json::Value` for SOP node outputs.
-/// Provides type safety and prevents accidental mixing with raw JSON values.
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct NodeOutput(pub Value);
+/// Uses `Arc<Value>` internally to enable cheap cloning for concurrent access.
+#[derive(Clone, Debug)]
+pub struct NodeOutput(pub Arc<Value>);
+
+impl Serialize for NodeOutput {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.0.serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for NodeOutput {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        Ok(NodeOutput(Arc::new(Value::deserialize(deserializer)?)))
+    }
+}
 
 impl NodeOutput {
     pub fn into_inner(self) -> Value {
-        self.0
+        Arc::unwrap_or_clone(self.0)
+    }
+
+    /// Get a reference to the inner value.
+    pub fn as_value(&self) -> &Value {
+        &self.0
     }
 }
 
 impl Default for NodeOutput {
     fn default() -> Self {
-        NodeOutput(Value::Null)
+        NodeOutput(Arc::new(Value::Null))
     }
 }
 
 impl From<Value> for NodeOutput {
     fn from(v: Value) -> Self {
+        NodeOutput(Arc::new(v))
+    }
+}
+
+impl From<Arc<Value>> for NodeOutput {
+    fn from(v: Arc<Value>) -> Self {
         NodeOutput(v)
     }
 }
@@ -90,13 +113,13 @@ pub trait RuntimeSupervisor: Send + Sync {
 
 impl PartialEq<Value> for NodeOutput {
     fn eq(&self, other: &Value) -> bool {
-        self.0 == *other
+        *self.0 == *other
     }
 }
 
 impl PartialEq<NodeOutput> for Value {
     fn eq(&self, other: &NodeOutput) -> bool {
-        self == &other.0
+        *self == *other.0
     }
 }
 
@@ -390,9 +413,9 @@ impl ExecutionContext {
         let mut output = template.to_string();
         for item in self.results.iter() {
             let placeholder = format!("{{{{{}.output}}}}", item.key());
-            let val_str = match &item.value().0 {
+            let val_str = match item.value().0.as_ref() {
                 Value::String(s) => s.clone(),
-                _ => item.value().0.to_string(),
+                other => other.to_string(),
             };
             output = output.replace(&placeholder, &val_str);
         }

@@ -480,7 +480,7 @@ impl Executor {
         let mut final_output = output?;
 
         // --- Visual Perception Interception ---
-        if let Value::String(s) = final_output.0.clone() {
+        if let Value::String(s) = final_output.0.as_ref().clone() {
             if let Some(node_name) = s.strip_prefix("VISUAL_EXEC_REQUIRED:") {
                 if let Some(ref v_manager) = self.visual_manager {
                     tracing::info!(node = %node_name, "Intercepted visual execution request");

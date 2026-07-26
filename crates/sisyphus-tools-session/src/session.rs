@@ -287,6 +287,8 @@ pub fn session_create(path: &Path, name: &str) -> ToolResult<Session> {
         message_count: 0,
         messages: Vec::new(),
         metadata: HashMap::new(),
+        parent_session_id: None,
+        child_session_ids: Vec::new(),
     };
     let id = session.id.clone();
     store.sessions.insert(id.clone(), session.clone());
@@ -375,6 +377,8 @@ pub fn session_fork(path: &Path, id: &str, new_name: &str) -> ToolResult<Session
         message_count: original.messages.len() as u64,
         messages: original.messages,
         metadata: original.metadata,
+        parent_session_id: Some(id.to_string()),
+        child_session_ids: Vec::new(),
     };
     let result = forked.clone();
     store.sessions.insert(forked.id.clone(), forked);

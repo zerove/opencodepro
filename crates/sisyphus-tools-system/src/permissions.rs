@@ -11,15 +11,41 @@ pub fn check_permission(rules: &PermissionRules, tool_name: &str) -> Permission 
 
 pub struct PermissionChecker {
     rules: PermissionRules,
+    /// Allowed external directories. If non-empty, file tools outside these dirs are denied.
+    pub external_directories: Vec<std::path::PathBuf>,
 }
 
 impl PermissionChecker {
     pub fn new(rules: PermissionRules) -> Self {
-        Self { rules }
+        Self { rules, external_directories: Vec::new() }
+    }
+
+    pub fn with_external_directories(mut self, dirs: Vec<std::path::PathBuf>) -> Self {
+        self.external_directories = dirs;
+        self
     }
 
     pub fn check(&self, tool_name: &str) -> Permission {
         check_permission(&self.rules, tool_name)
+    }
+
+    /// Check if a file path is within allowed external directories.
+    /// Returns Ok(()) if allowed, Err with description if denied.
+    pub fn check_path_allowed(&self, path: &std::path::Path) -> Result<(), ToolError> {
+        if self.external_directories.is_empty() {
+            return Ok(()); // No restrictions configured
+        }
+        let canonical = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+        for allowed in &self.external_directories {
+            let allowed_canonical = allowed.canonicalize().unwrap_or_else(|_| allowed.clone());
+            if canonical.starts_with(&allowed_canonical) {
+                return Ok(());
+            }
+        }
+        Err(ToolError::PermissionDenied(format!(
+            "Path '{}' is outside allowed external directories",
+            path.display()
+        )))
     }
 
     pub fn require(&self, tool_name: &str) -> ToolResult<()> {

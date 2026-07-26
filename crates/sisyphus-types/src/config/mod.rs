@@ -205,6 +205,15 @@ impl Config {
         Ok(())
     }
 
+    /// Resolve `{env:VAR}` and `{env:VAR|default}` placeholders in all string config values.
+    pub fn resolve_env_placeholders(&mut self) {
+        let mut content = toml::to_string_pretty(self).unwrap_or_default();
+        content = resolve_env_placeholders_str(&content);
+        if let Ok(resolved) = toml::from_str::<Config>(&content) {
+            *self = resolved;
+        }
+    }
+
     fn validate_address(&self, addr: &str, field: &str) -> Result<(), TypesError> {
         let stripped = addr
             .strip_prefix("http://")
@@ -234,3 +243,65 @@ impl Config {
 
 // Re-export LlmConfig's default function so Config's serde(default) attribute can find it.
 // (It's defined in llm.rs, brought into scope via pub use llm::*.)
+
+/// Resolve `{env:VAR}` and `{env:VAR|default}` placeholders in a string.
+///
+/// Patterns:
+/// - `{env:VAR}` replaced with env var value, or empty string if unset
+/// - `{env:VAR|default}` replaced with env var value, or `default` if unset
+pub fn resolve_env_placeholders_str(input: &str) -> String {
+    let mut result = input.to_string();
+    while let Some(start) = result.find("{env:") {
+        if let Some(end_rel) = result[start..].find('}') {
+            let end = start + end_rel;
+            let inner = &result[start + 5..end];
+            let replacement = if let Some((var, default)) = inner.split_once('|') {
+                std::env::var(var).unwrap_or_else(|_| default.to_string())
+            } else {
+                std::env::var(inner).unwrap_or_default()
+            };
+            result.replace_range(start..=end, &replacement);
+        } else {
+            break;
+        }
+    }
+    result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_resolve_env_placeholders_str() {
+        std::env::set_var("SISYPHUS_TEST_VAR", "hello_world");
+        let input = "prefix_{env:SISYPHUS_TEST_VAR}_suffix";
+        let result = resolve_env_placeholders_str(input);
+        assert_eq!(result, "prefix_hello_world_suffix");
+    }
+
+    #[test]
+    fn test_resolve_env_placeholders_with_default() {
+        std::env::set_var("SISYPHUS_UNLIKELY_VAR_XYZ", "set_value");
+        let result = resolve_env_placeholders_str("{env:SISYPHUS_UNLIKELY_VAR_XYZ|fallback}");
+        assert_eq!(result, "set_value");
+    }
+
+    #[test]
+    fn test_resolve_env_placeholders_missing_uses_default() {
+        let result = resolve_env_placeholders_str("{env:SISYPHUS_DEFINITELY_MISSING_VAR_999|my_default}");
+        assert_eq!(result, "my_default");
+    }
+
+    #[test]
+    fn test_resolve_env_placeholders_missing_no_default() {
+        let result = resolve_env_placeholders_str("{env:SISYPHUS_DEFINITELY_MISSING_VAR_999}");
+        assert_eq!(result, "");
+    }
+
+    #[test]
+    fn test_resolve_env_placeholders_no_pattern() {
+        let result = resolve_env_placeholders_str("no placeholders here");
+        assert_eq!(result, "no placeholders here");
+    }
+}

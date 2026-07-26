@@ -170,6 +170,8 @@ fn test_session_serde_session_roundtrip() {
             },
         ],
         metadata,
+        parent_session_id: None,
+        child_session_ids: Vec::new(),
     };
     let json = serde_json::to_string_pretty(&session).unwrap();
     let back: Session = serde_json::from_str(&json).unwrap();
