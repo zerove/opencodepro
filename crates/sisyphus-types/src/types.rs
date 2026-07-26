@@ -95,6 +95,12 @@ pub enum CognitiveEvent {
         tool_id: String,
         asset_id: String,
     },
+    /// Intermediate cognitive step (planning, deep reflection, etc.)
+    CognitiveStep {
+        step: String,
+        message: String,
+        metrics: Option<crate::execution::CognitiveMetrics>,
+    },
 }
 
 /// Structured message for inter-agent communication.

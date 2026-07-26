@@ -17,6 +17,7 @@ use crate::{
     ExecutionStatus, Executor, IntelligenceManager, NodeOutput,
 };
 use sisyphus_types::config::CognitiveLoopConfig;
+use sisyphus_intel::{ProbabilisticPlanner, PlannerConfig, FailurePatternEvolver, FailurePatternLibrary, DeepReflector};
 
 /// A single iteration in a cognitive execution cycle.
 #[derive(Clone, Debug)]
@@ -87,6 +88,12 @@ pub struct StrategicManager {
     pub intervention_manager: Arc<crate::intervention_manager::InterventionManager>,
     pub internalization_manager: Arc<crate::internalization_manager::InternalizationManager>,
     pub visual_manager: Option<Arc<sisyphus_visual::VisualPerceptionManager>>,
+    /// Probabilistic path planner using Monte Carlo simulation results
+    pub probabilistic_planner: ProbabilisticPlanner,
+    /// Failure pattern library for targeted SOP evolution
+    pub failure_pattern_library: Arc<parking_lot::RwLock<FailurePatternLibrary>>,
+    /// Deep reflector for multi-dimensional deviation analysis
+    pub deep_reflector: Arc<parking_lot::RwLock<DeepReflector>>,
 }
 
 impl StrategicManager {
@@ -126,6 +133,9 @@ impl StrategicManager {
             intervention_manager,
             internalization_manager,
             visual_manager,
+            probabilistic_planner: ProbabilisticPlanner::new(PlannerConfig::default()),
+            failure_pattern_library: Arc::new(parking_lot::RwLock::new(FailurePatternLibrary::new())),
+            deep_reflector: Arc::new(parking_lot::RwLock::new(DeepReflector::new())),
         }
     }
 
@@ -476,6 +486,38 @@ impl StrategicManager {
                 }
             }
 
+            // ── Probabilistic Path Ranking ──────────────────────────────────
+            // Use the probabilistic planner to rank paths and select the optimal one
+            let ranked_path = self.probabilistic_planner.select_optimal_path(&[prediction.clone()]);
+            if let Some(ref rp) = ranked_path {
+                tracing::info!(
+                    sop_id,
+                    path_id = %rp.path_id,
+                    composite_score = rp.composite_score,
+                    risk = ?rp.risk_level,
+                    "Probabilistic planner: optimal path selected"
+                );
+                if let Some(ref tx) = stream_tx {
+                    let _ = tx.send(CognitiveEvent::CognitiveStep {
+                        step: "Planning".into(),
+                        message: format!(
+                            "Optimal path: {} (score: {:.3}, risk: {:?})",
+                            rp.path_id, rp.composite_score, rp.risk_level
+                        ),
+                        metrics: Some(CognitiveMetrics {
+                            iteration,
+                            deviation: 0.0,
+                            confidence: rp.success_probability,
+                            progress: (iteration as f32 / max_iterations as f32) * 100.0,
+                            token_cost: 0,
+                            stability: rp.confidence,
+                            info_gain: 0.0,
+                        }),
+                    });
+                }
+            }
+            // ──────────────────────────────────────────────────────────────────
+
             // Push Predict Event
             if let Some(ref tx) = stream_tx {
                 let _ = tx.send(CognitiveEvent::Predict {
@@ -645,6 +687,68 @@ impl StrategicManager {
                     .map_err(|e| CoreError::Internal(e.to_string()))?
             };
 
+            // ── Deep Reflection Analysis ──────────────────────────────────────
+            // Use the deep reflector for multi-dimensional deviation analysis
+            {
+                let mut deep_reflector = self.deep_reflector.write();
+                let deep_report = deep_reflector.analyze(&reflection, &prediction);
+
+                tracing::info!(
+                    sop_id,
+                    overall_score = deep_report.overall_score,
+                    corrections = deep_report.corrections.len(),
+                    patterns = deep_report.patterns.len(),
+                    "Deep reflection: {} dimensions analyzed, {} corrections suggested",
+                    deep_report.dimensions.len(),
+                    deep_report.corrections.len()
+                );
+
+                // Apply high-priority corrections as additional suggestions
+                for correction in &deep_report.corrections {
+                    if correction.priority <= sisyphus_intel::deep_reflector::CorrectionPriority::High {
+                        reflection.suggested_improvements.push(format!(
+                            "[DEEP {}] {}: {}",
+                            format!("{:?}", correction.priority).to_uppercase(),
+                            correction.target_node,
+                            correction.description
+                        ));
+                    }
+                }
+
+                // Record failure patterns from the reflection
+                if let Some(ref reason) = pivot_reason {
+                    let mut lib = self.failure_pattern_library.write();
+                    lib.record_failure(
+                        &reflection.records.first().map(|r| r.node.as_str()).unwrap_or("unknown"),
+                        sisyphus_intel::failure_pattern_evolver::FailureCategory::LogicError,
+                        reason,
+                    );
+                }
+
+                // Push Deep Reflect Event
+                if let Some(ref tx) = stream_tx {
+                    let _ = tx.send(CognitiveEvent::CognitiveStep {
+                        step: "DeepReflect".into(),
+                        message: format!(
+                            "Score: {:.3} | {} corrections, {} patterns detected",
+                            deep_report.overall_score,
+                            deep_report.corrections.len(),
+                            deep_report.patterns.len()
+                        ),
+                        metrics: Some(CognitiveMetrics {
+                            iteration,
+                            deviation: deep_report.overall_score,
+                            confidence: 1.0 - deep_report.overall_score,
+                            progress: (iteration as f32 / max_iterations as f32) * 100.0,
+                            token_cost: 0,
+                            stability: prediction.predicted_stability,
+                            info_gain: 0.0,
+                        }),
+                    });
+                }
+            }
+            // ──────────────────────────────────────────────────────────────────
+
             // Push Reflect Event
             if let Some(ref tx) = stream_tx {
                 let _ = tx.send(CognitiveEvent::Reflect {
@@ -751,6 +855,48 @@ impl StrategicManager {
                     });
                 }
             }
+
+            // ── Failure Pattern Evolution ──────────────────────────────────────
+            // Use the failure pattern evolver to generate targeted evolution operations
+            // based on accumulated failure patterns from the failure pattern library
+            {
+                let evolver = FailurePatternEvolver::new(self.failure_pattern_library.clone());
+
+                // Generate evolution operations from failure patterns using the reflection
+                let failure_ops = evolver.generate_evolution_ops(&reflection);
+                if !failure_ops.is_empty() {
+                    tracing::info!(
+                        sop_id,
+                        ops = failure_ops.len(),
+                        "Failure pattern evolver generated {} evolution operations",
+                        failure_ops.len()
+                    );
+
+                    // Append failure-informed hints to evolution insights
+                    let failure_hints: Vec<String> = failure_ops
+                        .iter()
+                        .map(|op| {
+                            format!(
+                                "Failure-Driven Evolution: {:?}",
+                                op
+                            )
+                        })
+                        .collect();
+
+                    evolution_insights = Some(match evolution_insights {
+                        Some(existing) => format!(
+                            "{}\nFailure-Driven Evolution:\n{}",
+                            existing,
+                            failure_hints.join("\n")
+                        ),
+                        None => format!(
+                            "Failure-Driven Evolution:\n{}",
+                            failure_hints.join("\n")
+                        ),
+                    });
+                }
+            }
+            // ──────────────────────────────────────────────────────────────────
 
             let evolved_graph = self
                 .intelligence_manager
