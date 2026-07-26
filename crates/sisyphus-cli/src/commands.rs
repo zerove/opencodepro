@@ -146,6 +146,9 @@ pub enum Commands {
     /// Plugin management (list, load, watch, unload)
     #[command(subcommand)]
     Plugin(PluginCommands),
+    /// Workspace management (create, switch, list, current, delete)
+    #[command(subcommand)]
+    Workspace(WorkspaceCommands),
     /// Check bridge health
     Health,
     /// Show bridge status (breakers, benchmarks)

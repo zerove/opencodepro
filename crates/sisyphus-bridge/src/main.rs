@@ -129,13 +129,14 @@ mod tests {
     use sisyphus_bridge_api::{
         sisyphus_bridge_server::SisyphusBridge, AddMessageRequest, AddMessageResponse,
         CallJcodeRequest, CallJcodeResponse, CaptureExperienceRequest, CaptureExperienceResponse,
-        DecomposeGoalRequest, DecomposeGoalResponse, DelegateCognitiveTaskRequest, EventRequest,
-        ExecuteSopRequest, ExecuteToolRequest, GetCurrentWorkspaceRequest,
-        GetCurrentWorkspaceResponse, HealthCheckRequest, LearningInsightsRequest,
-        LearningInsightsResponse, ListAgentsRequest, ListPluginsRequest, ListPluginsResponse,
-        ListSoPsRequest, ListToolsRequest, ListToolsResponse, ListWorkspacesRequest,
-        ListWorkspacesResponse, LoadPluginRequest, LoadPluginResponse, SubmitFeedbackRequest,
-        SubmitFeedbackResponse, TaskProto, UnloadPluginRequest, UnloadPluginResponse,
+        DecomposeGoalRequest, DecomposeGoalResponse, DelegateCognitiveTaskRequest,
+        DeleteWorkspaceRequest, DeleteWorkspaceResponse, EventRequest, ExecuteSopRequest,
+        ExecuteToolRequest, GetCurrentWorkspaceRequest, GetCurrentWorkspaceResponse,
+        HealthCheckRequest, LearningInsightsRequest, LearningInsightsResponse, ListAgentsRequest,
+        ListPluginsRequest, ListPluginsResponse, ListSoPsRequest, ListToolsRequest,
+        ListToolsResponse, ListWorkspacesRequest, ListWorkspacesResponse, LoadPluginRequest,
+        LoadPluginResponse, SubmitFeedbackRequest, SubmitFeedbackResponse, TaskProto,
+        UnloadPluginRequest, UnloadPluginResponse,
     };
     use std::collections::HashMap;
     use tokio_stream::StreamExt;
@@ -464,6 +465,16 @@ mod tests {
             Ok(tonic::Response::new(GetCurrentWorkspaceResponse {
                 found: false,
                 workspace: None,
+            }))
+        }
+
+        async fn delete_workspace(
+            &self,
+            _request: Request<DeleteWorkspaceRequest>,
+        ) -> Result<tonic::Response<DeleteWorkspaceResponse>, tonic::Status> {
+            Ok(tonic::Response::new(DeleteWorkspaceResponse {
+                success: true,
+                error: String::new(),
             }))
         }
 

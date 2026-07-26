@@ -1,0 +1,15 @@
+[package]
+name = "sisyphus-sdk"
+version = "0.1.0"
+edition = "2024"
+authors = ["Sisyphus Team"]
+description = "Rust SDK for Sisyphus cognitive engine"
+license = "MIT"
+
+[dependencies]
+reqwest = { version = "0.12", features = ["json"] }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+thiserror = "1.0"
+tokio = { version = "1.0", features = ["full"] }
+url = "2.5"

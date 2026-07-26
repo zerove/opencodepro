@@ -130,6 +130,32 @@ sisyphus sop list
 sisyphus health
 ```
 
+## Workspace Management
+
+Workspaces provide isolated project environments with independent state (SOPs, sessions, todos).
+
+```bash
+# Create a new workspace
+sisyphus workspace create "My Project" --project-id proj_alpha --root-dir /path/to/project
+
+# List all workspaces
+sisyphus workspace list
+
+# Switch to a workspace
+sisyphus workspace switch <workspace-id>
+
+# Show current workspace
+sisyphus workspace current
+
+# Delete a workspace (with confirmation prompt)
+sisyphus workspace delete <workspace-id>
+
+# Delete a workspace (skip confirmation)
+sisyphus workspace delete <workspace-id> -y
+```
+
+All data persisted within a workspace (SOPs, sessions, todos, experiences) is isolated by `project_id`. Switching workspaces changes the active project context so subsequent commands operate in that project's storage namespace.
+
 ## Interactive TUI
 
 Launch the interactive terminal UI:

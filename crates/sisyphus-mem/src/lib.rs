@@ -3,20 +3,23 @@ pub use manager::SisyphusStore;
 pub mod golden_dataset;
 pub mod retrieval;
 pub mod sop_store;
-pub mod store;
 pub use sop_store::SopSqlStore;
+pub mod sql_store;
+pub use sql_store::{SqlStore, SqlStoreConfig, SqliteSynchronous};
+pub mod faiss_store;
+pub use faiss_store::{ScoredVector as VectorScoredVector, VectorStore};
+pub mod store;
+pub use store::MfsStore;
 pub mod experience_bank;
 pub mod roadmap_store;
+pub use roadmap_store::RoadmapSqlStore;
+pub mod skill_market;
 pub mod skill_store;
+pub use skill_market::{SkillMarket, SkillMarketConfig};
+pub mod workspace_manager;
+pub use workspace_manager::{WorkspaceConfig, WorkspaceManager};
 pub mod types;
+pub use types::{Snapshot, WriteOp};
 pub mod user_preferences;
 pub mod vector_memory;
-
-#[cfg(test)]
-mod tests;
-
-pub use roadmap_store::RoadmapSqlStore;
-pub use store::MfsStore;
-pub use types::{Snapshot, WriteOp};
-pub use user_preferences::UserPreferenceStore;
 pub use vector_memory::{ScoredVector, UserMemoryStore, VectorMemoryStore};

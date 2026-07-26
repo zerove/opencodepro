@@ -4,13 +4,10 @@
 //! `SisyphusKernel` without duplicating boilerplate across test files.
 
 use async_trait::async_trait;
-use sisyphus_core::{Consensus, SOPGraph, SisyphusKernel, WasmSOPNode};
+use sisyphus_core::{Consensus, SOPGraph, WasmSOPNode};
 use sisyphus_intel::simulation::LogicalSimulationResult;
 use sisyphus_intel::simulation::LogicalSimulator;
-use sisyphus_intel::{MonteCarloSimulator, ReflectionReport, SimulationResult, SisyphusIntel};
-use sisyphus_mem::MfsStore;
-use sisyphus_tools_llm::circuit_breaker::CircuitBreaker;
-use sisyphus_tools_llm::LlmClient;
+use sisyphus_intel::{ReflectionReport, SimulationResult};
 use sisyphus_types::{experience::ExperienceTuple, ExecutionContext, ToolExecutor, WorkMode};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
@@ -35,37 +32,6 @@ impl Consensus for MockConsensus {
         _value: serde_json::Value,
     ) -> Result<(), sisyphus_types::TypesError> {
         Ok(())
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Mock LlmClient (trivial)
-// ---------------------------------------------------------------------------
-
-pub struct MockLlmClient;
-
-#[async_trait]
-impl LlmClient for MockLlmClient {
-    async fn generate(&self, _prompt: &str) -> Result<String, sisyphus_types::TypesError> {
-        Ok("Mock response".into())
-    }
-    async fn chat(
-        &self,
-        _sys: &str,
-        _ctx: &str,
-        _stream: bool,
-    ) -> Result<String, sisyphus_types::TypesError> {
-        Ok("Mock chat".into())
-    }
-    fn get_params_for(&self, _agent_id: &str) -> (String, String, String) {
-        (
-            "test_key".into(),
-            "http://test:8080".into(),
-            "test-model".into(),
-        )
-    }
-    fn breaker(&self) -> CircuitBreaker {
-        CircuitBreaker::default()
     }
 }
 
@@ -186,10 +152,6 @@ impl sisyphus_intel::FlowSynthesizer for MockSynthesizer {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Mock ToolExecutor (counting)
-// ---------------------------------------------------------------------------
-
 pub struct MockExecutor {
     pub call_count: AtomicUsize,
 }
@@ -213,47 +175,4 @@ impl ToolExecutor for MockExecutor {
         self.call_count.fetch_add(1, Ordering::SeqCst);
         Ok(format!("executed:{}", tool_id).into_bytes())
     }
-}
-
-/// Create a test SisyphusKernel with all-mock dependencies.
-pub async fn make_test_kernel() -> (Arc<SisyphusKernel>, Arc<MockExecutor>) {
-    let state_store = Arc::new(MfsStore::new("sqlite::memory:").await.unwrap());
-    let executor = Arc::new(MockExecutor::new());
-
-    let simulator = Arc::new(MonteCarloSimulator::with_state_store(
-        100,
-        state_store.clone(),
-    ));
-    let intel = Arc::new(SisyphusIntel::new(
-        simulator,
-        Arc::new(MockLogicalSimulator),
-        Arc::new(MockReflector),
-        Arc::new(MockEvolver),
-    ));
-
-    let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
-
-    let kernel = Arc::new(SisyphusKernel::new(
-        state_store,
-        Arc::new(sisyphus_mem::SopSqlStore::new(pool.clone()).await.unwrap()),
-        Arc::new(
-            sisyphus_mem::VectorMemoryStore::new(pool.clone())
-                .await
-                .unwrap(),
-        ),
-        Arc::new(MockExperienceBank),
-        executor.clone() as Arc<dyn ToolExecutor>,
-        intel,
-        Arc::new(MockLlmClient) as Arc<dyn LlmClient>,
-        Arc::new(MockLlmClient) as Arc<dyn LlmClient>,
-        Arc::new(MockSynthesizer) as Arc<dyn sisyphus_intel::FlowSynthesizer>,
-        Arc::new(parking_lot::Mutex::new(
-            sisyphus_tools_llm_tools::meta_learner::MetaLearner::new(".omo/test_meta"),
-        )),
-        Arc::new(MockConsensus),
-        Arc::new(sisyphus_mem::RoadmapSqlStore::new(pool).await.unwrap()),
-        Arc::new(sisyphus_tools_llm::DummyEmbeddingClient),
-    ));
-
-    (kernel, executor)
 }

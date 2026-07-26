@@ -8,12 +8,15 @@ pub mod wasm_compiler;
 use std::sync::Arc;
 
 pub use sisyphus_types::errors::IntelError;
+pub mod deep_reflector;
 pub mod evaluator;
+pub mod failure_pattern_evolver;
 pub mod formal_verification;
 pub mod fuel;
 pub mod llm_synthesizer;
 pub mod micro_reflector;
 pub mod mock;
+pub mod probabilistic_planner;
 pub mod reflect;
 pub mod simulation;
 pub mod supervisor;
@@ -38,11 +41,16 @@ pub use tool_coder::ToolCoder;
 pub use tool_verifier::{ToolVerifier, VerificationReport};
 pub use wasm_compiler::WasmCompiler;
 
+pub use deep_reflector::{CognitiveCorrection, DeepDeviationReport, DeepReflector};
+pub use failure_pattern_evolver::{
+    FailureCategory, FailurePatternEvolver, FailurePatternLibrary, MutationSuggestion,
+};
 pub use formal_verification::{VerificationReport as FormalVerificationReport, VerificationRunner};
 pub use llm_synthesizer::{
     FallbackGoalDecomposer, GoalDecomposer, LlmDrivenSynthesizer, LlmGoalDecomposer,
     LogicalSOPSynthesizer,
 };
+pub use probabilistic_planner::{PathSummary, PlannerConfig, ProbabilisticPlanner, RankedPath};
 pub use topological_evolver::TopologicalSOPEvolver;
 
 // ---------------------------------------------------------------------------

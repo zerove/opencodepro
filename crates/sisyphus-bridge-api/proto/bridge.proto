@@ -55,6 +55,7 @@ service SisyphusBridge {
   rpc SwitchWorkspace (SwitchWorkspaceRequest) returns (SwitchWorkspaceResponse);
   rpc ListWorkspaces (ListWorkspacesRequest) returns (ListWorkspacesResponse);
   rpc GetCurrentWorkspace (GetCurrentWorkspaceRequest) returns (GetCurrentWorkspaceResponse);
+  rpc DeleteWorkspace (DeleteWorkspaceRequest) returns (DeleteWorkspaceResponse);
 
   // Plugin management — list, load, and unload WASM plugins at runtime.
   rpc ListPlugins (ListPluginsRequest) returns (ListPluginsResponse);
@@ -375,6 +376,15 @@ message GetCurrentWorkspaceRequest {}
 message GetCurrentWorkspaceResponse {
   bool found = 1;
   WorkspaceMetadata workspace = 2;
+}
+
+message DeleteWorkspaceRequest {
+  string workspace_id = 1;
+}
+
+message DeleteWorkspaceResponse {
+  bool success = 1;
+  string error = 2;
 }
 
 message WorkspaceMetadata {

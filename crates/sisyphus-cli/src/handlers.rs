@@ -75,6 +75,9 @@ mod handle_tool;
 #[path = "handle_wisdom.rs"]
 mod handle_wisdom;
 
+#[path = "handle_workspace.rs"]
+mod handle_workspace;
+
 // ── Public dispatch ──────────────────────────────────────────
 
 pub async fn dispatch(
@@ -211,6 +214,8 @@ pub async fn dispatch(
 
         // ── daemon ─────────────────────────────────────────
         Commands::Daemon => handle_daemon::handle_daemon()?,
+        // ── workspace ───────────────────────────────────────
+        Commands::Workspace(sub) => handle_workspace::handle_workspace(sub, bridge_addr).await?,
 
         // ── dev ────────────────────────────────────────────
         Commands::Dev {

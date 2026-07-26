@@ -248,6 +248,20 @@ pub enum DelegateCommands {
         #[arg(short = 'c', long = "concurrent", default_value = "4")]
         max_concurrent: usize,
     },
+    /// Run a team of agents to accomplish a complex goal
+    Team {
+        /// High-level goal for the team
+        goal: String,
+        /// Optional context/background for the goal
+        #[arg(short = 'x', long = "context")]
+        context: Option<String>,
+        /// Comma-separated list of agent IDs to include (default: all built-in)
+        #[arg(short = 'a', long = "agents")]
+        agents: Option<String>,
+        /// Maximum number of parallel agents (default: 4)
+        #[arg(short = 'c', long = "concurrent", default_value = "4")]
+        max_concurrent: usize,
+    },
 }
 
 #[derive(Subcommand)]
@@ -256,4 +270,34 @@ pub enum SopCommands {
     Run { sop_id: String },
     /// List available SOPs
     List,
+}
+
+#[derive(Subcommand)]
+pub enum WorkspaceCommands {
+    /// Create a new workspace
+    Create {
+        /// Workspace name
+        name: String,
+        /// Project ID
+        project_id: String,
+        /// Root directory
+        root_dir: String,
+    },
+    /// Switch to a workspace
+    Switch {
+        /// Workspace ID
+        workspace_id: String,
+    },
+    /// List all workspaces
+    List,
+    /// Show current workspace
+    Current,
+    /// Delete a workspace by ID
+    Delete {
+        /// Workspace ID
+        workspace_id: String,
+        /// Skip confirmation prompt
+        #[arg(short = 'y', long = "yes")]
+        yes: bool,
+    },
 }

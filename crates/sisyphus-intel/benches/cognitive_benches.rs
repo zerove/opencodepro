@@ -187,7 +187,7 @@ fn bench_evolution(c: &mut Criterion) {
 
     // Build a 20-node graph
     let mut graph = SOPGraph::new();
-    let nodes: Vec<_> = (0..20)
+    let _nodes: Vec<_> = (0..20)
         .map(|i| {
             graph.add_node(Arc::new(WasmSOPNode {
                 name: format!("task_{}", i),

@@ -601,9 +601,16 @@ impl sisyphus_types::StateStore for MfsStore {
     ) -> std::result::Result<Option<Vec<u8>>, sisyphus_types::TypesError> {
         let val = self.get_state_json(project_id, key).await?;
         match val {
-            Some(v) => Ok(Some(serde_json::to_vec(&v).map_err(|e| {
-                sisyphus_types::TypesError::InternalError(e.to_string())
-            })?)),
+            Some(v) => {
+                // Return raw bytes for strings, JSON-encoded for other types
+                if let Some(s) = v.as_str() {
+                    Ok(Some(s.as_bytes().to_vec()))
+                } else {
+                    Ok(Some(serde_json::to_vec(&v).map_err(|e| {
+                        sisyphus_types::TypesError::InternalError(e.to_string())
+                    })?))
+                }
+            }
             None => Ok(None),
         }
     }

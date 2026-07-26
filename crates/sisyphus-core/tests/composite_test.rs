@@ -5,7 +5,7 @@ use sisyphus_core::{
     CompositeGraph, CompositeOutput, DataMapping, GraphDependency, SOPGraph, SOPGraphConfig,
     SisyphusKernel, WasmSOPNode,
 };
-use sisyphus_types::{ExecutionContext, ToolExecutor};
+use sisyphus_types::ToolExecutor;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 

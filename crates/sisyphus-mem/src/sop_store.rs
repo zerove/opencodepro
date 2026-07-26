@@ -101,7 +101,7 @@ impl SopSqlStore {
             .await?;
 
         for (idx, node_cfg) in config.nodes.iter().enumerate() {
-            let node_id = format!("{}:{}", sop_id, idx);
+            let node_id = format!("{}:{}:{}", sop_id, project_id, idx);
             let kind_type = match &node_cfg.kind {
                 NodeKind::Wasm { .. } => "Wasm",
                 NodeKind::Retry { .. } => "Retry",

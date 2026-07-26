@@ -8,16 +8,17 @@ use sisyphus_bridge_api::{
     BreakerMetricsResponse, BreakerStatus, CaptureExperienceRequest, CaptureExperienceResponse,
     CognitiveTaskEvent, CreateWorkspaceRequest, CreateWorkspaceResponse, DecomposeGoalRequest,
     DecomposeGoalResponse, DelegateCognitiveTaskRequest, DelegateCognitiveTaskResponse,
-    ExecuteSopRequest, ExecuteToolRequest, ExecuteToolResponse, ExecutionEvent,
-    GetCurrentWorkspaceRequest, GetCurrentWorkspaceResponse, HealthCheckRequest,
-    HealthCheckResponse, InstallSkillRequest, InstallSkillResponse, ListAgentsRequest,
-    ListAgentsResponse, ListBenchmarksRequest, ListBenchmarksResponse, ListPluginsRequest,
-    ListPluginsResponse, ListSkillsRequest, ListSkillsResponse, ListSoPsRequest, ListSoPsResponse,
-    ListToolsRequest, ListToolsResponse, ListWorkspacesRequest, ListWorkspacesResponse,
-    LoadPluginRequest, LoadPluginResponse, PluginDescriptor, RemoveSkillRequest,
-    RemoveSkillResponse, ShowSkillRequest, ShowSkillResponse, SkillMetadata, SopResponse,
-    SubmitFeedbackRequest, SubmitFeedbackResponse, SwitchWorkspaceRequest, SwitchWorkspaceResponse,
-    TaskProto, ToolMetadata, UnloadPluginRequest, UnloadPluginResponse, WorkspaceMetadata,
+    DeleteWorkspaceRequest, DeleteWorkspaceResponse, ExecuteSopRequest, ExecuteToolRequest,
+    ExecuteToolResponse, ExecutionEvent, GetCurrentWorkspaceRequest, GetCurrentWorkspaceResponse,
+    HealthCheckRequest, HealthCheckResponse, InstallSkillRequest, InstallSkillResponse,
+    ListAgentsRequest, ListAgentsResponse, ListBenchmarksRequest, ListBenchmarksResponse,
+    ListPluginsRequest, ListPluginsResponse, ListSkillsRequest, ListSkillsResponse,
+    ListSoPsRequest, ListSoPsResponse, ListToolsRequest, ListToolsResponse, ListWorkspacesRequest,
+    ListWorkspacesResponse, LoadPluginRequest, LoadPluginResponse, PluginDescriptor,
+    RemoveSkillRequest, RemoveSkillResponse, ShowSkillRequest, ShowSkillResponse, SkillMetadata,
+    SopResponse, SubmitFeedbackRequest, SubmitFeedbackResponse, SwitchWorkspaceRequest,
+    SwitchWorkspaceResponse, TaskProto, ToolMetadata, UnloadPluginRequest, UnloadPluginResponse,
+    WorkspaceMetadata,
 };
 use sisyphus_core::{SOPGraph, WasmSOPNode};
 use sisyphus_metrics::record_bridge_request;
@@ -974,6 +975,28 @@ impl SisyphusBridge for MySisyphusBridge {
             })),
         }
     }
+
+    async fn delete_workspace(
+        &self,
+        request: Request<DeleteWorkspaceRequest>,
+    ) -> Result<Response<DeleteWorkspaceResponse>, Status> {
+        let req = request.into_inner();
+        match self
+            .workspace_manager
+            .delete_workspace(&req.workspace_id)
+            .await
+        {
+            Ok(()) => Ok(Response::new(DeleteWorkspaceResponse {
+                success: true,
+                error: String::new(),
+            })),
+            Err(e) => Ok(Response::new(DeleteWorkspaceResponse {
+                success: false,
+                error: e.to_string(),
+            })),
+        }
+    }
+
     async fn add_message(
         &self,
         request: Request<AddMessageRequest>,

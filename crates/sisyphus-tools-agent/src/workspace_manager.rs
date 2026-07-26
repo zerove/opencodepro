@@ -46,9 +46,11 @@ impl WorkspaceManager {
             }
         }
 
-        // Load current active workspace
+        // Load current active workspace (stored as JSON string)
         if let Some(id_bytes) = self.store.get("sys", "sys.current_workspace").await? {
-            let id = String::from_utf8_lossy(&id_bytes).to_string();
+            let id_str = String::from_utf8_lossy(&id_bytes).to_string();
+            // Parse JSON string to get the actual ID
+            let id = serde_json::from_str::<String>(&id_str).unwrap_or(id_str);
             let mut current = self.current_workspace.write().await;
             *current = Some(id);
         }
@@ -96,9 +98,12 @@ impl WorkspaceManager {
         let mut current = self.current_workspace.write().await;
         *current = Some(id.to_string());
 
-        // Persist active ID
+        // Persist active ID as JSON string
+        let id_json = serde_json::to_string(id).map_err(|e| {
+            TypesError::InternalError(format!("Failed to serialize workspace ID: {e}"))
+        })?;
         self.store
-            .set("sys", "sys.current_workspace", id.as_bytes())
+            .set("sys", "sys.current_workspace", id_json.as_bytes())
             .await?;
 
         Ok(())
@@ -119,6 +124,29 @@ impl WorkspaceManager {
     pub async fn list_workspaces(&self) -> Vec<Workspace> {
         let ws_map = self.workspaces.read().await;
         ws_map.values().cloned().collect()
+    }
+
+    /// Delete a workspace by ID. If it is the current workspace, also clears the current selection.
+    pub async fn delete_workspace(&self, id: &str) -> Result<(), TypesError> {
+        {
+            let mut ws_map = self.workspaces.write().await;
+            ws_map
+                .remove(id)
+                .ok_or_else(|| TypesError::InternalError(format!("Workspace {id} not found")))?;
+        }
+
+        // If the deleted workspace was the current one, clear it
+        {
+            let mut current = self.current_workspace.write().await;
+            if current.as_deref() == Some(id) {
+                *current = None;
+                self.store
+                    .set("sys", "sys.current_workspace", b"\"\"")
+                    .await?;
+            }
+        }
+
+        self.persist_workspaces().await
     }
 
     async fn persist_workspaces(&self) -> Result<(), TypesError> {

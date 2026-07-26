@@ -16,6 +16,20 @@ pub async fn handle_delegate(sub: &DelegateCommands) -> Result<()> {
         } => {
             sisyphus_cli::delegate::run_inline(commands, *max_concurrent).await?;
         }
+        DelegateCommands::Team {
+            goal,
+            context,
+            agents,
+            max_concurrent,
+        } => {
+            sisyphus_cli::delegate::run_team(
+                goal.clone(),
+                context.clone(),
+                agents.clone(),
+                *max_concurrent,
+            )
+            .await?;
+        }
     }
     Ok(())
 }

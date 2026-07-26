@@ -1,0 +1,22 @@
+[package]
+name = "sisyphus-tauri"
+version = "0.1.0"
+edition = "2024"
+authors = ["Sisyphus Team"]
+description = "Tauri desktop application for Sisyphus cognitive engine"
+license = "MIT"
+
+[dependencies]
+tauri = { version = "2", features = ["shell-open"] }
+tauri-plugin-shell = "2"
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+sisyphus-sdk = { path = "../sisyphus-sdk" }
+tokio = { version = "1.0", features = ["full"] }
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[features]
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]

@@ -61,6 +61,7 @@ pub mod swarm_coordinator;
 pub use swarm_coordinator::*;
 
 pub mod cognitive_dashboard;
+pub mod enhanced_dashboard;
 
 pub use execution_manager::*;
 

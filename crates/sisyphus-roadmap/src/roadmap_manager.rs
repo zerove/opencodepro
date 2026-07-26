@@ -1,7 +1,7 @@
 use crate::strategic_reflection::ProposalAction;
 use crate::RoadmapError;
 use anyhow::Result;
-use sisyphus_mem::{MfsStore, RoadmapSqlStore};
+use sisyphus_mem::{roadmap_store::RoadmapSqlStore, MfsStore};
 use sisyphus_types::{GoalRef, Milestone, MilestoneStatus, Phase, Project, Roadmap};
 use std::sync::Arc;
 
