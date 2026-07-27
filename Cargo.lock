@@ -4425,6 +4425,7 @@ dependencies = [
  "petgraph 0.6.5",
  "serde_json",
  "sisyphus-bridge",
+ "sisyphus-cli",
  "sisyphus-core",
  "sisyphus-intel",
  "sisyphus-knowledge",

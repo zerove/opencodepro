@@ -6,7 +6,7 @@ use anyhow::Result;
 pub(crate) mod app;
 pub(crate) mod background;
 mod dialog;
-mod enhancements;
+pub mod enhancements;
 mod event;
 mod helpers;
 mod home;
