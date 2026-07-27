@@ -3,6 +3,7 @@ pub mod precommit;
 pub mod session;
 pub mod skill;
 pub mod todo;
+pub mod collaboration;
 
 pub use session::{
     session_add_message, session_clear_checkpoint, session_compress, session_continue,
@@ -10,6 +11,12 @@ pub use session::{
     session_export_html, session_fork, session_get, session_import, session_list,
     session_load_checkpoint, session_rename, session_save_checkpoint, session_undo,
     CompressStrategy, Message, Session, SessionCheckpoint,
+};
+
+pub use collaboration::{
+    AccessLevel, CollaborationEvent, CollaborationEventType, CollaborationLog, DiffOp,
+    SessionBranch, SessionBranches, SessionDiff, SessionVersion, SharedSession,
+    SharedSessionRegistry, VersionHistory, merge_branches,
 };
 
 #[cfg(test)]

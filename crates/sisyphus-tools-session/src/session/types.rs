@@ -7,7 +7,7 @@ use std::fs;
 use std::path::Path;
 
 /// A single message in a session.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Message {
     pub role: String,
     pub content: String,
@@ -94,7 +94,7 @@ impl Default for CompressStrategy {
 
 // ── Private helpers ───────────────────────────────────────────────────────
 
-pub(super) fn now_iso() -> String {
+pub fn now_iso() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
     let dur = SystemTime::now()
         .duration_since(UNIX_EPOCH)
