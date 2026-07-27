@@ -4,6 +4,8 @@ use std::net::SocketAddr;
 use thiserror::Error;
 use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
+pub mod observability;
+
 /// Initialize metrics and tracing for the Sisyphus system.
 ///
 /// `prometheus_port` controls the scrape endpoint listen port (default: 9100).
