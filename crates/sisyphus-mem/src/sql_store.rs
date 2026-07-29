@@ -149,8 +149,168 @@ impl SqlStore {
     }
 
     /// Initialize database schema
-    async fn init_schema(pool: &AnyPool, _config: &SqlStoreConfig) -> Result<()> {
-        let schema = r#"
+    async fn init_schema(pool: &AnyPool, config: &SqlStoreConfig) -> Result<()> {
+        let is_postgres = config.database_url.starts_with("postgres://")
+            || config.database_url.starts_with("postgresql://");
+
+        if is_postgres {
+            // PostgreSQL schema (uses vector type for pgvector)
+            let schema = r#"
+            CREATE TABLE IF NOT EXISTS state (
+                project_id TEXT NOT NULL,
+                key TEXT NOT NULL,
+                value TEXT NOT NULL,
+                updated_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW())::BIGINT),
+                PRIMARY KEY (project_id, key)
+            );
+            CREATE INDEX IF NOT EXISTS idx_state_project_prefix ON state(project_id, key);
+
+            CREATE TABLE IF NOT EXISTS execution_traces (
+                id BIGSERIAL PRIMARY KEY,
+                project_id TEXT NOT NULL,
+                sop_id TEXT NOT NULL,
+                node_id TEXT NOT NULL,
+                status TEXT NOT NULL,
+                output TEXT,
+                fuel_consumed BIGINT,
+                duration_ms BIGINT,
+                timestamp BIGINT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_traces_sop ON execution_traces(project_id, sop_id);
+
+            CREATE TABLE IF NOT EXISTS experiences (
+                id TEXT PRIMARY KEY,
+                project_id TEXT NOT NULL,
+                context_text TEXT NOT NULL,
+                context_hash TEXT NOT NULL,
+                action_id TEXT,
+                outcome_success BOOLEAN NOT NULL,
+                deviation_score DOUBLE PRECISION NOT NULL,
+                cost BIGINT NOT NULL,
+                timestamp BIGINT NOT NULL,
+                insight TEXT
+            );
+            CREATE INDEX IF NOT EXISTS idx_exp_project ON experiences(project_id);
+
+            CREATE TABLE IF NOT EXISTS sops (
+                id TEXT NOT NULL,
+                project_id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                version TEXT,
+                config_json TEXT NOT NULL,
+                created_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW())::BIGINT),
+                updated_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW())::BIGINT),
+                PRIMARY KEY (id, project_id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_sops_project ON sops(project_id);
+
+            CREATE TABLE IF NOT EXISTS sop_nodes (
+                node_id TEXT PRIMARY KEY,
+                sop_id TEXT NOT NULL,
+                project_id TEXT NOT NULL,
+                node_index INTEGER NOT NULL,
+                name TEXT NOT NULL,
+                kind_type TEXT NOT NULL,
+                config_json TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS sop_edges (
+                sop_id TEXT NOT NULL,
+                project_id TEXT NOT NULL,
+                source_idx INTEGER NOT NULL,
+                target_idx INTEGER NOT NULL,
+                PRIMARY KEY (sop_id, project_id, source_idx, target_idx)
+            );
+
+            CREATE TABLE IF NOT EXISTS projects (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                description TEXT,
+                context TEXT,
+                created_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW())::BIGINT),
+                updated_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW())::BIGINT)
+            );
+            CREATE TABLE IF NOT EXISTS milestones (
+                id TEXT PRIMARY KEY,
+                project_id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                description TEXT,
+                status TEXT NOT NULL DEFAULT 'pending',
+                order_index INTEGER NOT NULL,
+                created_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW())::BIGINT),
+                completed_at BIGINT
+            );
+            CREATE TABLE IF NOT EXISTS phases (
+                id TEXT PRIMARY KEY,
+                milestone_id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                description TEXT,
+                status TEXT NOT NULL DEFAULT 'pending',
+                order_index INTEGER NOT NULL,
+                created_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW())::BIGINT),
+                completed_at BIGINT
+            );
+            CREATE TABLE IF NOT EXISTS goals (
+                id TEXT PRIMARY KEY,
+                phase_id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                description TEXT,
+                sop_id TEXT,
+                project_id TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'pending',
+                priority INTEGER NOT NULL DEFAULT 0,
+                order_index INTEGER NOT NULL,
+                created_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW())::BIGINT),
+                started_at BIGINT,
+                completed_at BIGINT
+            );
+            CREATE INDEX IF NOT EXISTS idx_goals_phase ON goals(phase_id);
+            CREATE INDEX IF NOT EXISTS idx_goals_status ON goals(status);
+
+            CREATE TABLE IF NOT EXISTS skills (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                description TEXT,
+                version TEXT NOT NULL,
+                author TEXT,
+                source_url TEXT,
+                config_json TEXT NOT NULL,
+                tags TEXT,
+                installed_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW())::BIGINT),
+                is_remote BOOLEAN NOT NULL DEFAULT FALSE
+            );
+
+            CREATE TABLE IF NOT EXISTS user_preferences (
+                project_id TEXT NOT NULL,
+                key TEXT NOT NULL,
+                value TEXT NOT NULL,
+                updated_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW())::BIGINT),
+                PRIMARY KEY (project_id, key)
+            );
+
+            -- Vector embeddings with pgvector
+            CREATE TABLE IF NOT EXISTS vectors (
+                id TEXT PRIMARY KEY,
+                project_id TEXT,
+                collection TEXT NOT NULL,
+                embedding vector({dim}),
+                metadata TEXT NOT NULL,
+                created_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW())::BIGINT)
+            );
+            "#
+            .replace("{dim}", &config.vector_dimension.to_string());
+
+            sqlx::query(&schema).execute(pool).await?;
+
+            // Create ANN index if vectors are enabled
+            if config.enable_vectors {
+                let idx_sql =
+                    "CREATE INDEX IF NOT EXISTS idx_vectors_embedding ON vectors USING hnsw (embedding vector_cosine_ops)"
+                        .to_string();
+                sqlx::query(&idx_sql).execute(pool).await?;
+            }
+            Ok(())
+        } else {
+            let schema = r#"
         -- Core state table (project-scoped KV)
         CREATE TABLE IF NOT EXISTS state (
             project_id TEXT NOT NULL,
@@ -339,8 +499,9 @@ impl SqlStore {
         CREATE INDEX IF NOT EXISTS idx_vectors_collection ON vectors(collection);
         "#;
 
-        sqlx::query(schema).execute(pool).await?;
-        Ok(())
+            sqlx::query(schema).execute(pool).await?;
+            Ok(())
+        }
     }
 
     /// Async flush worker for batched writes
@@ -460,6 +621,9 @@ impl SqlStore {
     }
 
     /// Store a vector embedding
+    ///
+    /// - **PostgreSQL/pgvector**: stores as text `[0.1,0.2,...]` (pgvector native text format)
+    /// - **SQLite**: stores as raw f32 little-endian bytes for compactness
     pub async fn store_embedding(
         &self,
         project_id: Option<&str>,
@@ -472,26 +636,58 @@ impl SqlStore {
             return Ok(());
         }
 
-        let embedding_bytes: Vec<u8> = embedding.iter().flat_map(|f| f.to_le_bytes()).collect();
-        let metadata_str = serde_json::to_string(metadata)?;
+        let is_pgvector = self.config.database_url.starts_with("postgres://")
+            || self.config.database_url.starts_with("postgresql://");
+
         let pid = project_id.unwrap_or("default");
+        let metadata_str = serde_json::to_string(metadata)?;
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)?
             .as_secs() as i64;
 
-        sqlx::query(
-            r#"INSERT INTO vectors (id, project_id, collection, embedding, metadata, created_at)
-               VALUES (?, ?, ?, ?, ?, ?)
-               ON CONFLICT(id) DO UPDATE SET embedding = excluded.embedding, metadata = excluded.metadata"#
-        )
-        .bind(id)
-        .bind(pid)
-        .bind(collection)
-        .bind(embedding_bytes)
-        .bind(metadata_str)
-        .bind(now)
-        .execute(&self.pool)
-        .await?;
+        if is_pgvector {
+            // pgvector text format: '[0.1,0.2,...]' — directly castable to ::vector
+            let vector_text = format!(
+                "[{}]",
+                embedding
+                    .iter()
+                    .map(|v| v.to_string())
+                    .collect::<Vec<_>>()
+                    .join(",")
+            );
+
+            // Use PostgreSQL-specific query with vector type
+            sqlx::query(
+                r#"INSERT INTO vectors (id, project_id, collection, embedding, metadata, created_at)
+                   VALUES ($1, $2, $3, $4::vector, $5, $6)
+                   ON CONFLICT(id) DO UPDATE SET embedding = excluded.embedding, metadata = excluded.metadata"#,
+            )
+            .bind(id)
+            .bind(pid)
+            .bind(collection)
+            .bind(&vector_text)
+            .bind(&metadata_str)
+            .bind(now)
+            .execute(&self.pool)
+            .await?;
+        } else {
+            // SQLite: compact raw f32 bytes
+            let embedding_bytes: Vec<u8> = embedding.iter().flat_map(|f| f.to_le_bytes()).collect();
+
+            sqlx::query(
+                r#"INSERT INTO vectors (id, project_id, collection, embedding, metadata, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(id) DO UPDATE SET embedding = excluded.embedding, metadata = excluded.metadata"#,
+            )
+            .bind(id)
+            .bind(pid)
+            .bind(collection)
+            .bind(embedding_bytes)
+            .bind(&metadata_str)
+            .bind(now)
+            .execute(&self.pool)
+            .await?;
+        }
 
         Ok(())
     }
