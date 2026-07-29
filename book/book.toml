@@ -1,7 +1,6 @@
 [book]
 authors = ["Sisyphus Team"]
 language = "en"
-multilingual = false
 src = "src"
 title = "Sisyphus Documentation"
 

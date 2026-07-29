@@ -1,9 +1,9 @@
 <!DOCTYPE HTML>
-<html lang="en" class="light sidebar-visible" dir="ltr">
+<html lang="en" class="dark sidebar-visible" dir="ltr">
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Contributing - Sisyphus — Cognitive Computation Engine</title>
+        <title>SDK Reference - Sisyphus Documentation</title>
 
 
         <!-- Custom HTML head -->
@@ -33,12 +33,12 @@
         <!-- Provide site root and default themes to javascript -->
         <script>
             const path_to_root = "";
-            const default_light_theme = "light";
+            const default_light_theme = "dark";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-b60e822c.js";
+            window.path_to_searchindex_js = "searchindex-db31fd4d.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-5a113c67.js"></script>
+        <script src="toc-8abccaca.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -76,7 +76,7 @@
             try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
             if (theme === null || theme === undefined) { theme = default_theme; }
             const html = document.documentElement;
-            html.classList.remove('light')
+            html.classList.remove('dark')
             html.classList.add(theme);
             html.classList.add("js");
         </script>
@@ -137,17 +137,11 @@
                         </button>
                     </div>
 
-                    <h1 class="menu-title">Sisyphus — Cognitive Computation Engine</h1>
+                    <h1 class="menu-title">Sisyphus Documentation</h1>
 
                     <div class="right-buttons">
                         <a href="print.html" title="Print this book" aria-label="Print this book">
                             <span class=fa-svg id="print-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M128 0C92.7 0 64 28.7 64 64v96h64V64H354.7L384 93.3V160h64V93.3c0-17-6.7-33.3-18.7-45.3L400 18.7C388 6.7 371.7 0 354.7 0H128zM384 352v32 64H128V384 368 352H384zm64 32h32c17.7 0 32-14.3 32-32V256c0-35.3-28.7-64-64-64H64c-35.3 0-64 28.7-64 64v96c0 17.7 14.3 32 32 32H64v64c0 35.3 28.7 64 64 64H384c35.3 0 64-28.7 64-64V384zm-16-88c-13.3 0-24-10.7-24-24s10.7-24 24-24s24 10.7 24 24s-10.7 24-24 24z"/></svg></span>
-                        </a>
-                        <a href="https://github.com/zeronhq/sisyphus-wasm" title="Git repository" aria-label="Git repository">
-                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z"/></svg></span>
-                        </a>
-                        <a href="https://github.com/zeronhq/sisyphus-wasm/edit/main/book/src/src/contributing.md" title="Suggest an edit" aria-label="Suggest an edit" rel="edit">
-                            <span class=fa-svg id="git-edit-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M421.7 220.3l-11.3 11.3-22.6 22.6-205 205c-6.6 6.6-14.8 11.5-23.8 14.1L30.8 511c-8.4 2.5-17.5 .2-23.7-6.1S-1.5 489.7 1 481.2L38.7 353.1c2.6-9 7.5-17.2 14.1-23.8l205-205 22.6-22.6 11.3-11.3 33.9 33.9 62.1 62.1 33.9 33.9zM96 353.9l-9.3 9.3c-.9 .9-1.6 2.1-2 3.4l-25.3 86 86-25.3c1.3-.4 2.5-1.1 3.4-2l9.3-9.3H112c-8.8 0-16-7.2-16-16V353.9zM453.3 19.3l39.4 39.4c25 25 25 65.5 0 90.5l-14.5 14.5-22.6 22.6-11.3 11.3-33.9-33.9-62.1-62.1L314.3 67.7l11.3-11.3 22.6-22.6 14.5-14.5c25-25 65.5-25 90.5 0z"/></svg></span>
                         </a>
 
                     </div>
@@ -180,51 +174,116 @@
 
                 <div id="mdbook-content" class="content">
                     <main>
-                        <h1 id="contributing"><a class="header" href="#contributing">Contributing</a></h1>
-<h2 id="development-setup"><a class="header" href="#development-setup">Development Setup</a></h2>
-<ol>
-<li><strong>Prerequisites</strong>: Rust 1.96+, Cargo</li>
-<li><strong>Clone</strong>: <code>git clone https://github.com/zeronhq/sisyphus-wasm</code></li>
-<li><strong>Build</strong>: <code>cargo build --workspace</code></li>
-<li><strong>Test</strong>: <code>cargo test --workspace</code></li>
-</ol>
-<h2 id="code-quality"><a class="header" href="#code-quality">Code Quality</a></h2>
-<p>The CI pipeline enforces:</p>
-<ul>
-<li><strong>Formatting</strong>: <code>cargo fmt --all --check</code></li>
-<li><strong>Linting</strong>: <code>cargo clippy --workspace --all-targets</code> (zero warnings required)</li>
-<li><strong>Tests</strong>: <code>cargo test --workspace</code> (all must pass)</li>
-<li><strong>Supply chain</strong>: <code>cargo deny check</code> (licenses, bans, advisories)</li>
-</ul>
-<h2 id="project-structure"><a class="header" href="#project-structure">Project Structure</a></h2>
-<pre><code>crates/
-  sisyphus-types/    — Core data structures (no deps)
-  sisyphus-metrics/  — Prometheus observability
-  sisyphus-sandbox/  — WASM sandbox runtime
-  sisyphus-intel/    — Cognition &amp; simulation
-  sisyphus-mem/      — Multi-level cache
-  sisyphus-core/     — Kernel &amp; orchestration
-  sisyphus-bridge/   — Entry point &amp; API
-book/                — mdBook documentation
+                        <h1 id="sdk-reference"><a class="header" href="#sdk-reference">SDK Reference</a></h1>
+<p>Sisyphus provides official SDKs for TypeScript, Python, and Go.</p>
+<h2 id="typescript-sdk"><a class="header" href="#typescript-sdk">TypeScript SDK</a></h2>
+<pre><code class="language-bash">npm install @sisyphus/sdk
 </code></pre>
-<h2 id="guidelines"><a class="header" href="#guidelines">Guidelines</a></h2>
-<ul>
-<li><strong>No <code>unwrap()</code> in production code</strong> — use <code>expect("descriptive message")</code> or propagate with <code>?</code>.</li>
-<li><strong>No <code>as any</code> or <code>@ts-ignore</code> equivalents</strong> — maintain type safety.</li>
-<li><strong>Test coverage</strong> — add tests for new functionality, especially edge cases.</li>
-<li><strong>Metrics</strong> — instrument significant operations via <code>sisyphus_metrics</code>.</li>
-</ul>
-<h2 id="wasm-tool-development"><a class="header" href="#wasm-tool-development">WASM Tool Development</a></h2>
-<p>Tool WASM binaries go in <code>wasm_tools/</code> at the workspace root. Each binary should export a <code>run</code> function that accepts and returns byte arrays.</p>
+<pre><code class="language-typescript">import { SisyphusClient } from '@sisyphus/sdk';
+
+const client = new SisyphusClient({ baseUrl: 'http://localhost:8080' });
+
+// Health check
+const health = await client.health();
+console.log(health.status); // "ok"
+
+// Sessions
+const sessions = await client.listSessions();
+const session = await client.createSession('my-session');
+
+// Search
+const results = await client.searchMemory('my query', 10);
+
+// Execute SOP
+const result = await client.executeSop('sop-id');
+console.log(result.status); // "success"
+</code></pre>
+<h2 id="python-sdk"><a class="header" href="#python-sdk">Python SDK</a></h2>
+<pre><code class="language-bash">pip install sisyphus-sdk
+</code></pre>
+<pre><code class="language-python">from sisyphus_sdk import SisyphusClient
+
+client = SisyphusClient(base_url="http://localhost:8080")
+
+# Health check
+health = client.health()
+print(health.status)  # "ok"
+
+# Sessions
+sessions = client.list_sessions()
+session = client.create_session("my-session")
+
+# Search
+results = client.search("my query", top_k=10)
+
+# Execute SOP
+result = client.execute_sop("sop-id")
+print(result.status)  # "success"
+</code></pre>
+<h2 id="go-sdk"><a class="header" href="#go-sdk">Go SDK</a></h2>
+<pre><code class="language-bash">go get github.com/sisyphus/sdk-go
+</code></pre>
+<pre><code class="language-go">package main
+
+import (
+    "fmt"
+    sisyphus "github.com/sisyphus/sdk-go"
+)
+
+func main() {
+    client := sisyphus.NewClient("http://localhost:8080", "")
+
+    // Health check
+    health, _ := client.Health()
+    fmt.Println(health.Status) // "ok"
+
+    // Sessions
+    sessions, _ := client.ListSessions()
+    session, _ := client.CreateSession("my-session")
+
+    // Search
+    results, _ := client.SearchMemory("my query", 10)
+
+    // Execute SOP
+    result, _ := client.ExecuteSOP("sop-id", nil)
+    fmt.Println(result.Status) // "success"
+}
+</code></pre>
+<h2 id="api-reference"><a class="header" href="#api-reference">API Reference</a></h2>
+<p>All SDKs expose the same core methods:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Method</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>health()</code></td><td>Check bridge status</td></tr>
+<tr><td><code>list_sessions()</code></td><td>List all sessions</td></tr>
+<tr><td><code>create_session(name)</code></td><td>Create a new session</td></tr>
+<tr><td><code>get_session(id)</code></td><td>Get session details</td></tr>
+<tr><td><code>add_message(session_id, role, content)</code></td><td>Add message to session</td></tr>
+<tr><td><code>search(query, top_k)</code></td><td>Vector search</td></tr>
+<tr><td><code>execute_sop(sop_id, context)</code></td><td>Execute a SOP</td></tr>
+<tr><td><code>list_sops()</code></td><td>List available SOPs</td></tr>
+<tr><td><code>get_dag(sop_id)</code></td><td>Get DAG graph</td></tr>
+<tr><td><code>list_skills()</code></td><td>List available skills</td></tr>
+<tr><td><code>install_skill(skill_id)</code></td><td>Install a skill</td></tr>
+<tr><td><code>validate_auth(api_key)</code></td><td>Validate API key</td></tr>
+</tbody>
+</table>
+</div>
 
                     </main>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
-                            <a rel="prev" href="configuration.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                            <a rel="prev" href="dag-visualization.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                             </a>
 
+                            <a rel="next prefetch" href="sdk-typescript.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                            </a>
 
                         <div style="clear: both"></div>
                     </nav>
@@ -232,10 +291,13 @@ book/                — mdBook documentation
             </div>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
-                    <a rel="prev" href="configuration.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                    <a rel="prev" href="dag-visualization.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                     </a>
 
+                    <a rel="next prefetch" href="sdk-typescript.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                    </a>
             </nav>
 
         </div>

@@ -1,9 +1,9 @@
 <!DOCTYPE HTML>
-<html lang="en" class="light sidebar-visible" dir="ltr">
+<html lang="en" class="dark sidebar-visible" dir="ltr">
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>sisyphus-tools — Built-in Tools &amp; Agents - Sisyphus — Cognitive Computation Engine</title>
+        <title>TypeScript - Sisyphus Documentation</title>
 
 
         <!-- Custom HTML head -->
@@ -12,33 +12,33 @@
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <meta name="theme-color" content="#ffffff">
 
-        <link rel="icon" href="../favicon-de23e50b.svg">
-        <link rel="shortcut icon" href="../favicon-8114d1fc.png">
-        <link rel="stylesheet" href="../css/variables-8adf115d.css">
-        <link rel="stylesheet" href="../css/general-0392ca55.css">
-        <link rel="stylesheet" href="../css/chrome-fc474251.css">
-        <link rel="stylesheet" href="../css/print-9e4910d8.css" media="print">
+        <link rel="icon" href="favicon-de23e50b.svg">
+        <link rel="shortcut icon" href="favicon-8114d1fc.png">
+        <link rel="stylesheet" href="css/variables-8adf115d.css">
+        <link rel="stylesheet" href="css/general-0392ca55.css">
+        <link rel="stylesheet" href="css/chrome-fc474251.css">
+        <link rel="stylesheet" href="css/print-9e4910d8.css" media="print">
 
         <!-- Fonts -->
-        <link rel="stylesheet" href="../fonts/fonts-9644e21d.css">
+        <link rel="stylesheet" href="fonts/fonts-9644e21d.css">
 
         <!-- Highlight.js Stylesheets -->
-        <link rel="stylesheet" id="mdbook-highlight-css" href="../highlight-493f70e1.css">
-        <link rel="stylesheet" id="mdbook-tomorrow-night-css" href="../tomorrow-night-4c0ae647.css">
-        <link rel="stylesheet" id="mdbook-ayu-highlight-css" href="../ayu-highlight-3fdfc3ac.css">
+        <link rel="stylesheet" id="mdbook-highlight-css" href="highlight-493f70e1.css">
+        <link rel="stylesheet" id="mdbook-tomorrow-night-css" href="tomorrow-night-4c0ae647.css">
+        <link rel="stylesheet" id="mdbook-ayu-highlight-css" href="ayu-highlight-3fdfc3ac.css">
 
         <!-- Custom theme stylesheets -->
 
 
         <!-- Provide site root and default themes to javascript -->
         <script>
-            const path_to_root = "../";
-            const default_light_theme = "light";
+            const path_to_root = "";
+            const default_light_theme = "dark";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-b60e822c.js";
+            window.path_to_searchindex_js = "searchindex-db31fd4d.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-5a113c67.js"></script>
+        <script src="toc-8abccaca.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -76,7 +76,7 @@
             try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
             if (theme === null || theme === undefined) { theme = default_theme; }
             const html = document.documentElement;
-            html.classList.remove('light')
+            html.classList.remove('dark')
             html.classList.add(theme);
             html.classList.add("js");
         </script>
@@ -105,7 +105,7 @@
             <!-- populated by js -->
             <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
             <noscript>
-                <iframe class="sidebar-iframe-outer" src="../toc.html"></iframe>
+                <iframe class="sidebar-iframe-outer" src="toc.html"></iframe>
             </noscript>
             <div id="mdbook-sidebar-resize-handle" class="sidebar-resize-handle">
                 <div class="sidebar-resize-indicator"></div>
@@ -137,17 +137,11 @@
                         </button>
                     </div>
 
-                    <h1 class="menu-title">Sisyphus — Cognitive Computation Engine</h1>
+                    <h1 class="menu-title">Sisyphus Documentation</h1>
 
                     <div class="right-buttons">
-                        <a href="../print.html" title="Print this book" aria-label="Print this book">
+                        <a href="print.html" title="Print this book" aria-label="Print this book">
                             <span class=fa-svg id="print-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M128 0C92.7 0 64 28.7 64 64v96h64V64H354.7L384 93.3V160h64V93.3c0-17-6.7-33.3-18.7-45.3L400 18.7C388 6.7 371.7 0 354.7 0H128zM384 352v32 64H128V384 368 352H384zm64 32h32c17.7 0 32-14.3 32-32V256c0-35.3-28.7-64-64-64H64c-35.3 0-64 28.7-64 64v96c0 17.7 14.3 32 32 32H64v64c0 35.3 28.7 64 64 64H384c35.3 0 64-28.7 64-64V384zm-16-88c-13.3 0-24-10.7-24-24s10.7-24 24-24s24 10.7 24 24s-10.7 24-24 24z"/></svg></span>
-                        </a>
-                        <a href="https://github.com/zeronhq/sisyphus-wasm" title="Git repository" aria-label="Git repository">
-                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z"/></svg></span>
-                        </a>
-                        <a href="https://github.com/zeronhq/sisyphus-wasm/edit/main/book/src/src/crates/tools.md" title="Suggest an edit" aria-label="Suggest an edit" rel="edit">
-                            <span class=fa-svg id="git-edit-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M421.7 220.3l-11.3 11.3-22.6 22.6-205 205c-6.6 6.6-14.8 11.5-23.8 14.1L30.8 511c-8.4 2.5-17.5 .2-23.7-6.1S-1.5 489.7 1 481.2L38.7 353.1c2.6-9 7.5-17.2 14.1-23.8l205-205 22.6-22.6 11.3-11.3 33.9 33.9 62.1 62.1 33.9 33.9zM96 353.9l-9.3 9.3c-.9 .9-1.6 2.1-2 3.4l-25.3 86 86-25.3c1.3-.4 2.5-1.1 3.4-2l9.3-9.3H112c-8.8 0-16-7.2-16-16V353.9zM453.3 19.3l39.4 39.4c25 25 25 65.5 0 90.5l-14.5 14.5-22.6 22.6-11.3 11.3-33.9-33.9-62.1-62.1L314.3 67.7l11.3-11.3 22.6-22.6 14.5-14.5c25-25 65.5-25 90.5 0z"/></svg></span>
                         </a>
 
                     </div>
@@ -180,142 +174,17 @@
 
                 <div id="mdbook-content" class="content">
                     <main>
-                        <h1 id="sisyphus-tools--built-in-tools--agents"><a class="header" href="#sisyphus-tools--built-in-tools--agents">sisyphus-tools — Built-in Tools &amp; Agents</a></h1>
-<p>The crate that provides all built-in tool execution, agent functions, and utility operations. Both the CLI and the bridge use this crate to perform real work.</p>
-<h2 id="architecture"><a class="header" href="#architecture">Architecture</a></h2>
-<pre><code>Tool Executor (BuiltinToolExecutor)
-  ├── File tools   (read, write, edit, glob, grep)
-  ├── Shell tools  (bash_exec)
-  ├── Web tools    (web_search, web_fetch)
-  ├── Agent tools  →  Librarian (research, fetch_docs, examples, synthesise)
-  │                  ├── Metis   (analyse)
-  │                  └── Momus   (review_plan, review_code, review_arch)
-  └── MCP tools    →  External MCP servers via stdio or HTTP
-</code></pre>
-<h2 id="builtintoolexecutor"><a class="header" href="#builtintoolexecutor">BuiltinToolExecutor</a></h2>
-<p>A <code>ToolExecutor</code> that dispatches tool calls by string <code>tool_id</code> with JSON-encoded arguments:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>// All tools follow the same interface
-async fn execute(&amp;self, tool_id: &amp;str, args: Vec&lt;u8&gt;, fuel_limit: u64) -&gt; Result&lt;Vec&lt;u8&gt;, String&gt;
-<span class="boring">}</span></code></pre>
-<h3 id="file-tools"><a class="header" href="#file-tools">File tools</a></h3>
-<div class="table-wrapper">
-<table>
-<thead>
-<tr><th>Tool ID</th><th>Args</th><th>Result</th></tr>
-</thead>
-<tbody>
-<tr><td><code>file_read</code></td><td><code>{"path": "..."}</code></td><td><code>{"content": "..."}</code></td></tr>
-<tr><td><code>file_write</code></td><td><code>{"path": "...", "content": "..."}</code></td><td><code>{"bytes_written": N}</code></td></tr>
-<tr><td><code>file_edit</code></td><td><code>{"path": "...", "old": "...", "new": "..."}</code></td><td><code>{"replaced": true}</code></td></tr>
-<tr><td><code>file_edit_all</code></td><td><code>{"path": "...", "old": "...", "new": "..."}</code></td><td><code>{"count": N}</code></td></tr>
-<tr><td><code>file_read_lines</code></td><td><code>{"path": "...", "offset": N, "limit": N}</code></td><td><code>{"content": "..."}</code></td></tr>
-<tr><td><code>glob</code></td><td><code>{"pattern": "...", "root": "..."}</code></td><td><code>{"files": ["..."]}</code></td></tr>
-<tr><td><code>grep</code></td><td><code>{"pattern": "...", "path": "...", "include": "..."}</code></td><td><code>{"matches": [...]}</code></td></tr>
-</tbody>
-</table>
-</div>
-<h3 id="shell-tools"><a class="header" href="#shell-tools">Shell tools</a></h3>
-<div class="table-wrapper">
-<table>
-<thead>
-<tr><th>Tool ID</th><th>Args</th><th>Result</th></tr>
-</thead>
-<tbody>
-<tr><td><code>bash_exec</code></td><td><code>{"command": "...", "workdir": "...", "timeout_ms": N}</code></td><td><code>{"stdout": "...", "stderr": "...", "exit_code": N}</code></td></tr>
-</tbody>
-</table>
-</div>
-<h3 id="web-tools"><a class="header" href="#web-tools">Web tools</a></h3>
-<div class="table-wrapper">
-<table>
-<thead>
-<tr><th>Tool ID</th><th>Args</th><th>Result</th></tr>
-</thead>
-<tbody>
-<tr><td><code>web_search</code></td><td><code>{"query": "...", "num": N}</code></td><td><code>{"results": [...]}</code></td></tr>
-<tr><td><code>web_fetch</code></td><td><code>{"url": "..."}</code></td><td><code>{"content": "...", "content_type": "..."}</code></td></tr>
-</tbody>
-</table>
-</div>
-<h3 id="agent-tools"><a class="header" href="#agent-tools">Agent tools</a></h3>
-<div class="table-wrapper">
-<table>
-<thead>
-<tr><th>Tool ID</th><th>Args</th><th>Result</th></tr>
-</thead>
-<tbody>
-<tr><td><code>librarian/research</code></td><td><code>{"query": "...", "scope": "web|docs|code|all", "num": N}</code></td><td><code>ResearchReport</code> JSON</td></tr>
-<tr><td><code>librarian/fetch_docs</code></td><td><code>{"url": "..."}</code></td><td><code>DocPage</code> JSON</td></tr>
-<tr><td><code>librarian/examples</code></td><td><code>{"query": "...", "language": "..."}</code></td><td><code>[CodeExample]</code> JSON</td></tr>
-<tr><td><code>librarian/synthesise</code></td><td><code>{"findings": [...], "max_points": N}</code></td><td><code>{"synthesis": "..."}</code></td></tr>
-<tr><td><code>metis/analyse</code></td><td><code>{"request": "..."}</code></td><td><code>MetisAnalysis</code> JSON</td></tr>
-<tr><td><code>momus/review_plan</code></td><td><code>{"plan_text": "...", "plan_name": "..."}</code></td><td><code>MomusReview</code> JSON</td></tr>
-<tr><td><code>momus/review_code</code></td><td><code>{"path": "...", "content": "..."}</code></td><td><code>MomusReview</code> JSON</td></tr>
-<tr><td><code>momus/review_code_batch</code></td><td><code>{"files": [{"path": "...", "content": "..."}]}</code></td><td><code>[MomusReview]</code> JSON</td></tr>
-<tr><td><code>momus/review_arch</code></td><td><code>{"arch_text": "..."}</code></td><td><code>MomusReview</code> JSON</td></tr>
-</tbody>
-</table>
-</div>
-<h2 id="agent-modules"><a class="header" href="#agent-modules">Agent Modules</a></h2>
-<h3 id="librarian--external-research-agent"><a class="header" href="#librarian--external-research-agent">Librarian — External Research Agent</a></h3>
-<p>Performs multi-source research by searching the web, fetching documentation, and finding code examples. Returns structured reports with attributed findings.</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>// Research a topic across web, docs, or code
-pub async fn research(query: &amp;str, scope: ResearchScope, max_results: usize) -&gt; ToolResult&lt;ResearchReport&gt;;
-
-// Fetch and parse documentation from a URL
-pub async fn fetch_documentation(url: &amp;str) -&gt; ToolResult&lt;DocPage&gt;;
-
-// Find code examples for a library or API
-pub async fn find_examples(query: &amp;str, language: &amp;str) -&gt; ToolResult&lt;Vec&lt;CodeExample&gt;&gt;;
-
-// Synthesise a list of findings into a coherent summary
-pub fn synthesise(findings: &amp;[ResearchFinding], max_points: usize) -&gt; String;
-<span class="boring">}</span></code></pre>
-<h3 id="metis--pre-planning-analysis-agent"><a class="header" href="#metis--pre-planning-analysis-agent">Metis — Pre-Planning Analysis Agent</a></h3>
-<p>Analyses natural language requests to uncover ambiguities and implicit requirements before implementation begins.</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>pub fn analyse(request: &amp;str) -&gt; MetisAnalysis;
-<span class="boring">}</span></code></pre>
-<p><code>MetisAnalysis</code> contains a <code>summary</code>, a list of <code>ambiguities</code> (each with severity, aspect, options, and recommendation), and a list of <code>implicit_requirements</code> (with confidence score and rationale).</p>
-<h3 id="momus--review-agent"><a class="header" href="#momus--review-agent">Momus — Review Agent</a></h3>
-<p>Reviews plans, code, and architecture for completeness, consistency, and adherence to best practices.</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>pub fn review_plan(plan_text: &amp;str, plan_name: &amp;str) -&gt; MomusReview;
-pub fn review_code(path: &amp;Path, content: &amp;str) -&gt; ToolResult&lt;MomusReview&gt;;
-pub fn review_code_batch(files: &amp;[(&amp;Path, &amp;str)]) -&gt; ToolResult&lt;Vec&lt;MomusReview&gt;&gt;;
-pub fn review_architecture(arch_text: &amp;str) -&gt; MomusReview;
-<span class="boring">}</span></code></pre>
-<h2 id="configstore"><a class="header" href="#configstore">ConfigStore</a></h2>
-<p>Loads and watches a TOML configuration file for changes. Returns a shared <code>Arc&lt;RwLock&lt;Config&gt;&gt;</code> that can be hot-reloaded at runtime.</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>// Load from file and start polling for changes
-pub fn load(path: &amp;str) -&gt; Result&lt;(Self, Arc&lt;RwLock&lt;Config&gt;&gt;), String&gt;;
-
-// Create store from existing config (no file watching)
-pub fn with_config(config: Arc&lt;RwLock&lt;Config&gt;&gt;) -&gt; Self;
-
-// Background loop that checks for file changes
-pub async fn start_watching(&amp;self);
-<span class="boring">}</span></code></pre>
-<h2 id="mcptoolexecutor"><a class="header" href="#mcptoolexecutor">MCPToolExecutor</a></h2>
-<p>Connects to external MCP (Model Context Protocol) servers via stdio or HTTP. Each MCP server is registered under a prefix in the <code>ExecutorRouter</code>.</p>
+                        <h1 id="typescript"><a class="header" href="#typescript">TypeScript</a></h1>
 
                     </main>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
-                            <a rel="prev" href="../crates/sandbox.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                            <a rel="prev" href="sdk-reference.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                             </a>
 
-                            <a rel="next prefetch" href="../crates/metrics.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next prefetch" href="sdk-python.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                             </a>
 
@@ -325,11 +194,11 @@ pub async fn start_watching(&amp;self);
             </div>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
-                    <a rel="prev" href="../crates/sandbox.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                    <a rel="prev" href="sdk-reference.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                     </a>
 
-                    <a rel="next prefetch" href="../crates/metrics.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next prefetch" href="sdk-python.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                     </a>
             </nav>
@@ -349,13 +218,13 @@ pub async fn start_watching(&amp;self);
         </script>
 
 
-        <script src="../elasticlunr-ef4e11c1.min.js"></script>
-        <script src="../mark-09e88c2c.min.js"></script>
-        <script src="../searcher-09f2665d.js"></script>
+        <script src="elasticlunr-ef4e11c1.min.js"></script>
+        <script src="mark-09e88c2c.min.js"></script>
+        <script src="searcher-09f2665d.js"></script>
 
-        <script src="../clipboard-1626706a.min.js"></script>
-        <script src="../highlight-abc7f01d.js"></script>
-        <script src="../book-c22b7243.js"></script>
+        <script src="clipboard-1626706a.min.js"></script>
+        <script src="highlight-abc7f01d.js"></script>
+        <script src="book-c22b7243.js"></script>
 
         <!-- Custom JS scripts -->
 
