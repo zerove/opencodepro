@@ -88,6 +88,45 @@ max_iterations = 10
 # 类型: f64 | 默认: 0.15
 convergence_threshold = 0.15
 
+# ── 自适应深度控制器参数 (认知循环 v2) ────────────────────
+[cognitive_loop.adaptive_depth]
+# 初始迭代预算倍数
+# 环境变量: SISYPHUS_COGNITIVE_LOOP_ADAPTIVE_DEPTH_INITIAL_BUDGET
+# 类型: f64 | 默认: 2.0
+# initial_budget = 2.0
+
+# 每次迭代衰减因子
+# 环境变量: SISYPHUS_COGNITIVE_LOOP_ADAPTIVE_DEPTH_DECAY
+# 类型: f64 | 默认: 0.3
+# decay = 0.3
+
+# 继续迭代所需的最小改进
+# 环境变量: SISYPHUS_COGNITIVE_LOOP_ADAPTIVE_DEPTH_MIN_IMPROVEMENT
+# 类型: f64 | 默认: 0.15
+# min_improvement = 0.15
+
+# 基于置信度的收敛阈值
+# 环境变量: SISYPHUS_COGNITIVE_LOOP_ADAPTIVE_DEPTH_CONVERGENCE_THRESHOLD
+# 类型: f64 | 默认: 0.05
+# convergence_threshold = 0.05
+
+# ── 混沌工程参数 ──────────────────────────────────────────
+[chaos]
+# 启动时是否启用混沌工程
+# 环境变量: SISYPHUS_CHAOS_ENABLED
+# 类型: bool | 默认: false
+# enabled = false
+
+# 默认故障注入概率
+# 环境变量: SISYPHUS_CHAOS_DEFAULT_FAULT_PROBABILITY
+# 类型: f64 | 默认: 0.1
+# default_fault_probability = 0.1
+
+# 实验自动停止时间（秒）
+# 环境变量: SISYPHUS_CHAOS_DEFAULT_DURATION_SECONDS
+# 类型: u64 | 默认: 300
+# default_duration_seconds = 300
+
 # ── DAG 执行器参数 ────────────────────────────────────────
 [executor]
 # 最大并行任务数（JoinSet 并发上限）

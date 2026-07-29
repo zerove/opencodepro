@@ -509,6 +509,79 @@ mod tests {
             let stream = tokio_stream::wrappers::UnboundedReceiverStream::new(rx);
             Ok(tonic::Response::new(Box::pin(stream)))
         }
+
+        // ── Chaos Engineering (mock stubs) ──────────────────────────
+
+        async fn start_chaos(
+            &self,
+            _request: Request<sisyphus_bridge_api::ChaosStartRequest>,
+        ) -> Result<tonic::Response<sisyphus_bridge_api::ChaosStartResponse>, tonic::Status>
+        {
+            Ok(tonic::Response::new(
+                sisyphus_bridge_api::ChaosStartResponse {
+                    success: true,
+                    experiment_id: "mock-experiment".into(),
+                    error: String::new(),
+                },
+            ))
+        }
+
+        async fn stop_chaos(
+            &self,
+            _request: Request<sisyphus_bridge_api::ChaosStopRequest>,
+        ) -> Result<tonic::Response<sisyphus_bridge_api::ChaosStopResponse>, tonic::Status>
+        {
+            Ok(tonic::Response::new(
+                sisyphus_bridge_api::ChaosStopResponse {
+                    success: true,
+                    result: Some(sisyphus_bridge_api::ChaosExperimentResult {
+                        name: "mock".into(),
+                        operations_attempted: 0,
+                        operations_succeeded: 0,
+                        operations_failed: 0,
+                        faults_injected: 0,
+                        success_rate: 1.0,
+                    }),
+                    error: String::new(),
+                },
+            ))
+        }
+
+        async fn get_chaos_status(
+            &self,
+            _request: Request<sisyphus_bridge_api::ChaosStatusRequest>,
+        ) -> Result<tonic::Response<sisyphus_bridge_api::ChaosStatusResponse>, tonic::Status>
+        {
+            Ok(tonic::Response::new(
+                sisyphus_bridge_api::ChaosStatusResponse {
+                    running: false,
+                    result: None,
+                },
+            ))
+        }
+
+        type StreamAnomalyReportStream =
+            tonic::codegen::BoxStream<sisyphus_bridge_api::AnomalyReport>;
+
+        async fn stream_anomaly_report(
+            &self,
+            _request: Request<sisyphus_bridge_api::AnomalyRequest>,
+        ) -> Result<tonic::Response<Self::StreamAnomalyReportStream>, tonic::Status> {
+            let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+            tokio::spawn(async move {
+                let _ = tx.send(Ok(sisyphus_bridge_api::AnomalyReport {
+                    node_name: "mock_node".into(),
+                    severity: "Low".into(),
+                    metric: "fuel".into(),
+                    observed: 0.0,
+                    expected: 0.0,
+                    description: "no anomalies".into(),
+                    timestamp: 0,
+                }));
+            });
+            let stream = tokio_stream::wrappers::UnboundedReceiverStream::new(rx);
+            Ok(tonic::Response::new(Box::pin(stream)))
+        }
     }
 
     #[tokio::test]

@@ -324,16 +324,10 @@ impl BridgeClient {
                         crate::tui::background::BgOp::TodoUpdated
                     }
                     Some(sisyphus_bridge_api::bridge_event::Event::OpUpdate(o)) => {
-                        if o.success {
-                            crate::tui::background::BgOp::SopExecuted {
-                                sop_id: o.op_id,
-                                result: o.result,
-                            }
-                        } else {
-                            crate::tui::background::BgOp::SopExecuteFailed {
-                                sop_id: o.op_id,
-                                error: o.status,
-                            }
+                        crate::tui::background::BgOp::OpUpdate {
+                            op_id: o.op_id,
+                            status: o.status,
+                            result: o.result,
                         }
                     }
                     Some(sisyphus_bridge_api::bridge_event::Event::LogUpdate(l)) => {

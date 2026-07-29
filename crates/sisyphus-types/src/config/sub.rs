@@ -9,12 +9,16 @@ use crate::errors::TypesError;
 pub struct CognitiveLoopConfig {
     pub max_iterations: u32,
     pub convergence_threshold: f64,
+    /// Adaptive depth controller parameters (cognitive loop v2).
+    #[serde(default)]
+    pub adaptive_depth: AdaptiveDepthConfig,
 }
 
 fn default_cognitive_loop() -> CognitiveLoopConfig {
     CognitiveLoopConfig {
         max_iterations: 10,
         convergence_threshold: 0.15,
+        adaptive_depth: AdaptiveDepthConfig::default(),
     }
 }
 
@@ -39,6 +43,81 @@ impl CognitiveLoopConfig {
         if !(0.0..=1.0).contains(&self.convergence_threshold) {
             return Err(TypesError::ConfigValidationError(
                 "cognitive_loop.convergence_threshold must be between 0.0 and 1.0".into(),
+            ));
+        }
+        self.adaptive_depth.validate()?;
+        Ok(())
+    }
+}
+
+// ── AdaptiveDepthConfig ────────────────────────────────────
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct AdaptiveDepthConfig {
+    /// Initial budget multiplier for cognitive iterations.
+    pub initial_budget: f64,
+    /// Decay factor applied per iteration.
+    pub decay: f64,
+    /// Minimum improvement required to continue iterating.
+    pub min_improvement: f64,
+    /// Convergence threshold for confidence-based stopping.
+    pub convergence_threshold: f64,
+}
+
+impl Default for AdaptiveDepthConfig {
+    fn default() -> Self {
+        Self {
+            initial_budget: 2.0,
+            decay: 0.3,
+            min_improvement: 0.15,
+            convergence_threshold: 0.05,
+        }
+    }
+}
+
+impl AdaptiveDepthConfig {
+    pub fn validate(&self) -> Result<(), TypesError> {
+        if self.initial_budget < 1.0 {
+            return Err(TypesError::ConfigValidationError(
+                "cognitive_loop.adaptive_depth.initial_budget must be ≥ 1.0".into(),
+            ));
+        }
+        if !(0.0..=1.0).contains(&self.decay) {
+            return Err(TypesError::ConfigValidationError(
+                "cognitive_loop.adaptive_depth.decay must be between 0.0 and 1.0".into(),
+            ));
+        }
+        Ok(())
+    }
+}
+
+// ── ChaosConfig ─────────────────────────────────────────────
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct ChaosConfig {
+    /// Whether chaos engineering is enabled on startup.
+    pub enabled: bool,
+    /// Default fault probability used when starting experiments.
+    pub default_fault_probability: f64,
+    /// Auto-stop duration in seconds for experiments.
+    pub default_duration_seconds: u64,
+}
+
+impl Default for ChaosConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            default_fault_probability: 0.1,
+            default_duration_seconds: 300,
+        }
+    }
+}
+
+impl ChaosConfig {
+    pub fn validate(&self) -> Result<(), TypesError> {
+        if !(0.0..=1.0).contains(&self.default_fault_probability) {
+            return Err(TypesError::ConfigValidationError(
+                "chaos.default_fault_probability must be between 0.0 and 1.0".into(),
             ));
         }
         Ok(())

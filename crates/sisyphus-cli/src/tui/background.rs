@@ -72,6 +72,12 @@ pub enum BgOp {
         success: bool,
         message: String,
     },
+    /// Generic operation status update from the bridge (e.g. anomaly_detector, chaos_engine).
+    OpUpdate {
+        op_id: String,
+        status: String,
+        result: String,
+    },
 }
 
 // ── Background spawners ─────────────────────────────────

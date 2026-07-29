@@ -47,6 +47,7 @@ pub struct MySisyphusBridge {
     pub(crate) llm_client: Arc<dyn LlmClient>,
     pub(crate) plugin_manager: Arc<PluginManager>,
     pub(crate) jcode_caller: Arc<dyn JcodeToolCaller>,
+    pub(crate) chaos_runner: Arc<sisyphus_core::ChaosRunner>,
 }
 
 impl Clone for MySisyphusBridge {
@@ -66,6 +67,7 @@ impl Clone for MySisyphusBridge {
             llm_client: self.llm_client.clone(),
             plugin_manager: self.plugin_manager.clone(),
             jcode_caller: self.jcode_caller.clone(),
+            chaos_runner: self.chaos_runner.clone(),
         }
     }
 }
@@ -500,6 +502,7 @@ impl MySisyphusBridge {
                     .socket_path
                     .clone(),
             )),
+            chaos_runner: Arc::new(sisyphus_core::ChaosRunner::new()),
         };
 
         let bridge_arc = Arc::new(bridge);

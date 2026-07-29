@@ -225,10 +225,10 @@ fn bench_v2_adaptive_depth_controller(c: &mut Criterion) {
             |b, &n| {
                 b.iter(|| {
                     let mut controller = AdaptiveDepthController::new(
-                        black_box(2.0),  // initial budget
-                        black_box(0.3),  // decay
-                        black_box(0.15), // min improvement
-                        black_box(0.05), // convergence threshold
+                        black_box(0.95), // target_confidence
+                        black_box(0.01), // min_improvement
+                        black_box(20),   // max_iterations
+                        black_box(3),    // min_iterations
                     );
                     for i in 0..n {
                         // Simulate increasing confidence (1.0 plateau) with noise
@@ -245,7 +245,7 @@ fn bench_v2_adaptive_depth_controller(c: &mut Criterion) {
     // Plateau detection benchmark
     group.bench_function("plateau_early_stop", |b| {
         b.iter(|| {
-            let mut controller = AdaptiveDepthController::new(black_box(3.0), 0.3, 0.15, 0.05);
+            let mut controller = AdaptiveDepthController::new(black_box(0.95), 0.01, 20, 5);
             // 10 iterations of flat 0.92 confidence → simulated plateau
             for _ in 0..10 {
                 let _ = controller.observe_iteration(black_box(0.92));
@@ -302,21 +302,13 @@ fn bench_v2_parallel_branch_predictor(c: &mut Criterion) {
     group.measurement_time(Duration::from_secs(5));
     group.sample_size(50);
 
-    let predictor = ParallelBranchPredictor::new(4); // up to 4 parallel branches
-
-    // Branch count benchmark
-    for n_branches in [2usize, 4, 8, 16] {
-        let confidences: Vec<f64> = (0..n_branches)
-            .map(|i| 0.5 + (i as f64 * 0.1).min(0.4))
-            .collect();
-        group.bench_with_input(
-            BenchmarkId::new("score_branches", n_branches),
-            &confidences,
-            |b, confs| {
-                b.iter(|| black_box(predictor.predict_parallelism(black_box(confs))));
-            },
-        );
-    }
+    // Construction benchmarks (predict_parallelism was removed in API migration)
+    group.bench_function("new_4_4", |b| {
+        b.iter(|| black_box(ParallelBranchPredictor::new(4, 4)));
+    });
+    group.bench_function("default", |b| {
+        b.iter(|| black_box(ParallelBranchPredictor::default()));
+    });
 
     group.finish();
 }

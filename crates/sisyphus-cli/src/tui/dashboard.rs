@@ -79,11 +79,10 @@ pub(crate) fn render_dashboard(frame: &mut ratatui::Frame, area: Rect, app: &App
 /// Returns (block, gauge_percent) for each of the 5 status cards.
 fn render_status_cards(app: &App) -> Vec<(Block<'static>, u16)> {
     let theme = app.theme();
-    // Determine gauge values from app state (defaults if not configured)
-    let cog_active = false; // placeholder: cognitive loop running?
-    let anomaly_count = 0usize; // placeholder: bridge anomaly reports queued
-    let chaos_running = false; // placeholder
-    let quality_score = 85u16; // placeholder
+    let cog_active = app.dashboard_cog_active;
+    let anomaly_count = app.dashboard_anomaly_count;
+    let chaos_running = app.dashboard_chaos_running;
+    let quality_score = 85u16; // placeholder until quality monitor is wired
     let sp_pending = 0usize; // placeholder
 
     let states: [(u16, &str); 5] = [
@@ -138,26 +137,37 @@ fn render_status_cards(app: &App) -> Vec<(Block<'static>, u16)> {
         .collect()
 }
 
-fn render_anomaly_table(frame: &mut ratatui::Frame, area: Rect, _app: &App) {
-    let theme = _app.theme();
-    // Placeholder rows; future: read from bridge anomaly buffer
-    let rows = vec![
-        Row::new(vec![
-            Cell::from(Span::styled("—", Style::default().fg(theme.muted))),
-            Cell::from(Span::styled("—", Style::default().fg(theme.muted))),
-            Cell::from(Span::styled("—", Style::default().fg(theme.muted))),
-        ]),
-        Row::new(vec![
-            Cell::from(Span::styled("fuel_spike", Style::default().fg(theme.fg))),
-            Cell::from(Span::styled("node_compile", Style::default().fg(theme.fg))),
-            Cell::from(Span::styled("medium", Style::default().fg(theme.warning))),
-        ]),
-        Row::new(vec![
-            Cell::from(Span::styled("fail_rate", Style::default().fg(theme.fg))),
-            Cell::from(Span::styled("node_test", Style::default().fg(theme.fg))),
-            Cell::from(Span::styled("low", Style::default().fg(theme.success))),
-        ]),
-    ];
+fn render_anomaly_table(frame: &mut ratatui::Frame, area: Rect, app: &App) {
+    let theme = app.theme();
+    let rows: Vec<Row> = if app.dashboard_anomaly_count > 0 {
+        vec![Row::new(vec![
+            Cell::from(Span::styled("detected", Style::default().fg(theme.fg))),
+            Cell::from(Span::styled(
+                format!("{} anomalies", app.dashboard_anomaly_count),
+                Style::default().fg(theme.warning),
+            )),
+            Cell::from(Span::styled("active", Style::default().fg(theme.warning))),
+        ])]
+    } else {
+        // Placeholder demo rows when no bridge data is available
+        vec![
+            Row::new(vec![
+                Cell::from(Span::styled("—", Style::default().fg(theme.muted))),
+                Cell::from(Span::styled("—", Style::default().fg(theme.muted))),
+                Cell::from(Span::styled("—", Style::default().fg(theme.muted))),
+            ]),
+            Row::new(vec![
+                Cell::from(Span::styled("fuel_spike", Style::default().fg(theme.fg))),
+                Cell::from(Span::styled("node_compile", Style::default().fg(theme.fg))),
+                Cell::from(Span::styled("medium", Style::default().fg(theme.warning))),
+            ]),
+            Row::new(vec![
+                Cell::from(Span::styled("fail_rate", Style::default().fg(theme.fg))),
+                Cell::from(Span::styled("node_test", Style::default().fg(theme.fg))),
+                Cell::from(Span::styled("low", Style::default().fg(theme.success))),
+            ]),
+        ]
+    };
 
     let table = Table::new(
         rows,
@@ -171,13 +181,21 @@ fn render_anomaly_table(frame: &mut ratatui::Frame, area: Rect, _app: &App) {
     frame.render_widget(table, area);
 }
 
-fn render_chaos_table(frame: &mut ratatui::Frame, area: Rect, _app: &App) {
-    let theme = _app.theme();
-    let rows = vec![Row::new(vec![
-        Cell::from(Span::styled("none", Style::default().fg(theme.muted))),
-        Cell::from(Span::styled("—", Style::default().fg(theme.muted))),
-        Cell::from(Span::styled("—", Style::default().fg(theme.muted))),
-    ])];
+fn render_chaos_table(frame: &mut ratatui::Frame, area: Rect, app: &App) {
+    let theme = app.theme();
+    let rows: Vec<Row> = if app.dashboard_chaos_running {
+        vec![Row::new(vec![
+            Cell::from(Span::styled("active", Style::default().fg(theme.warning))),
+            Cell::from(Span::styled("running", Style::default().fg(theme.success))),
+            Cell::from(Span::styled("—", Style::default().fg(theme.muted))),
+        ])]
+    } else {
+        vec![Row::new(vec![
+            Cell::from(Span::styled("none", Style::default().fg(theme.muted))),
+            Cell::from(Span::styled("—", Style::default().fg(theme.muted))),
+            Cell::from(Span::styled("—", Style::default().fg(theme.muted))),
+        ])]
+    };
 
     let table = Table::new(
         rows,

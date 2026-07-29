@@ -117,6 +117,11 @@ impl ChaosRunner {
         );
     }
 
+    /// Returns `true` if a chaos experiment is currently active.
+    pub fn is_running(&self) -> bool {
+        self.enabled.load(Ordering::SeqCst)
+    }
+
     /// Stop the current experiment and return results.
     pub fn stop_experiment(&self) -> Option<ChaosExperimentResult> {
         self.enabled.store(false, Ordering::SeqCst);

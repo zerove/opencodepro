@@ -391,6 +391,11 @@ pub(crate) struct App {
     pub(crate) dev_report: Option<String>,
     pub(crate) dev_status: String,
     pub(crate) dev_focus: DevFocus,
+
+    // dashboard state
+    pub(crate) dashboard_anomaly_count: usize,
+    pub(crate) dashboard_chaos_running: bool,
+    pub(crate) dashboard_cog_active: bool,
 }
 
 const MAX_LOG_ENTRIES: usize = 1000;
@@ -509,6 +514,10 @@ impl App {
             dev_report: None,
             dev_status: "idle".into(),
             dev_focus: DevFocus::Goal,
+
+            dashboard_anomaly_count: 0,
+            dashboard_chaos_running: false,
+            dashboard_cog_active: false,
         }
     }
 
@@ -1067,6 +1076,31 @@ impl App {
                 } else {
                     self.add_log(LogEntry::Error(message.clone()));
                     self.workspace_status = format!("error: {message}");
+                }
+            }
+            crate::tui::background::BgOp::OpUpdate {
+                op_id,
+                status,
+                result,
+            } => {
+                if op_id == "anomaly_detector" {
+                    // Parse count from result like "5 anomalies"
+                    let count = result
+                        .split_whitespace()
+                        .next()
+                        .and_then(|s| s.parse::<usize>().ok())
+                        .unwrap_or(0);
+                    self.dashboard_anomaly_count = count;
+                    // Status "NORMAL" or "ANOMALY" — either means the cog loop is active
+                    self.dashboard_cog_active = true;
+                    self.add_log(LogEntry::Info(format!(
+                        "Anomaly detector: {status} ({count} anomalies)"
+                    )));
+                } else if op_id.starts_with("chaos") {
+                    self.dashboard_chaos_running = status == "RUNNING" || status == "STARTED";
+                } else {
+                    // Generic operation update: log it
+                    self.add_log(LogEntry::Info(format!("OpUpdate [{op_id}]: {status}")));
                 }
             }
         }

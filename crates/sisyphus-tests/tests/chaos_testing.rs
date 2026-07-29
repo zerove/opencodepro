@@ -7,11 +7,9 @@
 
 use sisyphus_core::chaos_testing::{dag_test as dag, ChaosExperiment, ChaosRunner, FaultType};
 use sisyphus_core::AnomalyDetector;
-use sisyphus_core::CognitiveAnomalyReport;
-use sisyphus_core::NodeAnomaly;
+use sisyphus_core::StateStore;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::time::sleep;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -224,18 +222,12 @@ async fn test_dag_diamond_structure() {
 async fn test_anomaly_detector_system_wide() {
     let detector = AnomalyDetector::default();
 
-    // Simulate a normal execution cycle
-    for i in 0..10 {
-        let anomalies = detector.observe(
-            &format!("node_{}", i),
-            100 + i as u64 * 10, // gradually increasing fuel
-            50 + (i % 3) * 5,    // normal duration variation
-            true,
-        );
-        // No anomalies in this pattern
+    // Establish baseline for a specific node before the spike
+    for _ in 0..5 {
+        let _anomalies = detector.observe("node_spike", 100, 50, true);
     }
 
-    // Now inject an extreme outlier
+    // Now inject an extreme outlier on the same node
     let anomalies = detector.observe("node_spike", 10_000, 5000, false);
     assert!(!anomalies.is_empty(), "Outlier should trigger anomalies");
 
@@ -262,7 +254,7 @@ async fn test_anomaly_detector_progressive_degradation() {
         detector.observe("degrading_node", fuel, 50, success);
     }
 
-    let report = detector.generate_report();
+    let _report = detector.generate_report();
     // After enough failures, the system should flag it
     // (the error_rate check runs on each observation, not in the report)
     // But the report summary check should see the elevated error rate

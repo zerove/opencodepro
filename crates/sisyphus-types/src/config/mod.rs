@@ -48,6 +48,10 @@ pub struct Config {
     #[serde(default)]
     pub jcode: JcodeConfig,
 
+    /// Chaos engineering parameters.
+    #[serde(default)]
+    pub chaos: ChaosConfig,
+
     /// Bearer token for gRPC bridge authentication. Empty = no auth.
     #[serde(default)]
     pub auth_token: String,
@@ -81,6 +85,7 @@ impl Default for Config {
             mcp: McpConfig::default(),
             registry: RegistryConfig::default(),
             jcode: JcodeConfig::default(),
+            chaos: ChaosConfig::default(),
             auth_token: String::new(),
             bridge_address: default_bridge_address(),
             http_address: default_http_address(),
@@ -201,6 +206,27 @@ impl Config {
         if let Some(v) = env_string("SISYPHUS_HTTP_ADDRESS") {
             self.http_address = v;
         }
+        if let Some(v) = env_bool("SISYPHUS_CHAOS_ENABLED") {
+            self.chaos.enabled = v;
+        }
+        if let Some(v) = env_f64("SISYPHUS_CHAOS_DEFAULT_FAULT_PROBABILITY") {
+            self.chaos.default_fault_probability = v;
+        }
+        if let Some(v) = env_u64("SISYPHUS_CHAOS_DEFAULT_DURATION_SECONDS") {
+            self.chaos.default_duration_seconds = v;
+        }
+        if let Some(v) = env_f64("SISYPHUS_COGNITIVE_LOOP_ADAPTIVE_DEPTH_INITIAL_BUDGET") {
+            self.cognitive_loop.adaptive_depth.initial_budget = v;
+        }
+        if let Some(v) = env_f64("SISYPHUS_COGNITIVE_LOOP_ADAPTIVE_DEPTH_DECAY") {
+            self.cognitive_loop.adaptive_depth.decay = v;
+        }
+        if let Some(v) = env_f64("SISYPHUS_COGNITIVE_LOOP_ADAPTIVE_DEPTH_MIN_IMPROVEMENT") {
+            self.cognitive_loop.adaptive_depth.min_improvement = v;
+        }
+        if let Some(v) = env_f64("SISYPHUS_COGNITIVE_LOOP_ADAPTIVE_DEPTH_CONVERGENCE_THRESHOLD") {
+            self.cognitive_loop.adaptive_depth.convergence_threshold = v;
+        }
     }
 
     /// Validate all config fields, returning an error on first invalid value.
@@ -217,6 +243,7 @@ impl Config {
         self.metrics.validate()?;
         self.sandbox.validate()?;
         self.registry.validate()?;
+        self.chaos.validate()?;
         Ok(())
     }
 

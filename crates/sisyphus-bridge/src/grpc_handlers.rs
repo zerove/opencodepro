@@ -1081,21 +1081,53 @@ impl SisyphusBridge for MySisyphusBridge {
         }
     }
 
-    // ── Chaos Engineering Stubs ────────────────────────────
+    // ── Chaos Engineering — backed by real ChaosRunner ──────
 
     async fn start_chaos(
         &self,
-        _request: Request<sisyphus_bridge_api::ChaosStartRequest>,
+        request: Request<sisyphus_bridge_api::ChaosStartRequest>,
     ) -> Result<Response<sisyphus_bridge_api::ChaosStartResponse>, Status> {
+        let req = request.into_inner();
+        let fault_types: Vec<sisyphus_core::FaultType> = req
+            .fault_types
+            .iter()
+            .map(|ft| match ft.as_str() {
+                "llm_timeout" => sisyphus_core::FaultType::LlmTimeout,
+                "llm_garbage" => sisyphus_core::FaultType::LlmGarbage,
+                "tool_crash" => sisyphus_core::FaultType::ToolCrash,
+                "tool_hang" => sisyphus_core::FaultType::ToolHang,
+                "storage_write" => sisyphus_core::FaultType::StorageWriteFailure,
+                "storage_read" => sisyphus_core::FaultType::StorageReadFailure,
+                "network_partition" => sisyphus_core::FaultType::NetworkPartition,
+                _ => sisyphus_core::FaultType::ToolCrash,
+            })
+            .collect();
+
+        let experiment = sisyphus_core::ChaosExperiment {
+            name: req.name,
+            fault_types,
+            fault_probability: req.fault_probability,
+            duration: std::time::Duration::from_secs(req.duration_seconds),
+            target_operations: if req.target_operations.is_empty() {
+                None
+            } else {
+                Some(req.target_operations)
+            },
+        };
+
+        self.chaos_runner.start_experiment(experiment);
+        let experiment_id = format!(
+            "chaos_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos()
+        );
+
+        tracing::info!(experiment_id, "Chaos experiment started");
         Ok(Response::new(sisyphus_bridge_api::ChaosStartResponse {
             success: true,
-            experiment_id: format!(
-                "chaos_{}",
-                std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_nanos()
-            ),
+            experiment_id,
             error: String::new(),
         }))
     }
@@ -1104,16 +1136,34 @@ impl SisyphusBridge for MySisyphusBridge {
         &self,
         _request: Request<sisyphus_bridge_api::ChaosStopRequest>,
     ) -> Result<Response<sisyphus_bridge_api::ChaosStopResponse>, Status> {
+        let result = self.chaos_runner.stop_experiment();
+        let proto_result = result.map(|r| {
+            let rate = r.success_rate();
+            sisyphus_bridge_api::ChaosExperimentResult {
+                name: r.name,
+                operations_attempted: r.operations_attempted,
+                operations_succeeded: r.operations_succeeded,
+                operations_failed: r.operations_failed,
+                faults_injected: r.faults_injected,
+                success_rate: rate,
+            }
+        });
+
+        tracing::info!(
+            attempted = proto_result
+                .as_ref()
+                .map(|r| r.operations_attempted)
+                .unwrap_or(0),
+            faults = proto_result
+                .as_ref()
+                .map(|r| r.faults_injected)
+                .unwrap_or(0),
+            "Chaos experiment stopped"
+        );
+
         Ok(Response::new(sisyphus_bridge_api::ChaosStopResponse {
             success: true,
-            result: Some(sisyphus_bridge_api::ChaosExperimentResult {
-                name: "stopped".into(),
-                operations_attempted: 0,
-                operations_succeeded: 0,
-                operations_failed: 0,
-                faults_injected: 0,
-                success_rate: 0.0,
-            }),
+            result: proto_result,
             error: String::new(),
         }))
     }
@@ -1122,9 +1172,14 @@ impl SisyphusBridge for MySisyphusBridge {
         &self,
         _request: Request<sisyphus_bridge_api::ChaosStatusRequest>,
     ) -> Result<Response<sisyphus_bridge_api::ChaosStatusResponse>, Status> {
+        // Check via the experiment lock: if an experiment is active it's running.
+        // We can't easily introspect the AtomicBool from here, so we try the lock.
+        let running = self.chaos_runner.is_running();
+        let result = None; // status response doesn't include full result
+
         Ok(Response::new(sisyphus_bridge_api::ChaosStatusResponse {
-            running: false,
-            result: None,
+            running,
+            result,
         }))
     }
 
@@ -1132,22 +1187,67 @@ impl SisyphusBridge for MySisyphusBridge {
 
     async fn stream_anomaly_report(
         &self,
-        _request: Request<sisyphus_bridge_api::AnomalyRequest>,
+        request: Request<sisyphus_bridge_api::AnomalyRequest>,
     ) -> Result<Response<Self::StreamAnomalyReportStream>, Status> {
         use tokio_stream::StreamExt;
-        let (tx, rx) = mpsc::unbounded_channel();
-        let _ = tx.send(sisyphus_bridge_api::AnomalyReport {
-            node_name: "system".into(),
-            severity: "info".into(),
-            metric: "startup".into(),
-            observed: 0.0,
-            expected: 0.0,
-            description: "Anomaly detection stream active (no anomalies yet)".into(),
-            timestamp: std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_secs(),
+        let _req = request.into_inner();
+        let (tx, rx) = mpsc::unbounded_channel::<sisyphus_bridge_api::AnomalyReport>();
+
+        // Access the AnomalyDetector from the kernel's strategic manager
+        let detector = self.kernel.strategic_manager.anomaly_detector.clone();
+        let event_bus = self.event_bus.clone();
+
+        // Spawn a background task that periodically polls the detector
+        tokio::spawn(async move {
+            loop {
+                // Generate current anomaly report
+                let report = detector.generate_report();
+                for anomaly in &report.anomalies {
+                    let severity_str = match anomaly.severity {
+                        sisyphus_core::AnomalySeverity::Low => "low",
+                        sisyphus_core::AnomalySeverity::Medium => "medium",
+                        sisyphus_core::AnomalySeverity::High => "high",
+                        sisyphus_core::AnomalySeverity::Critical => "critical",
+                    };
+                    let proto_anomaly = sisyphus_bridge_api::AnomalyReport {
+                        node_name: anomaly.node_name.clone(),
+                        severity: severity_str.into(),
+                        metric: anomaly.metric.clone(),
+                        observed: anomaly.observed,
+                        expected: anomaly.expected,
+                        description: anomaly.description.clone(),
+                        timestamp: std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_secs(),
+                    };
+                    if tx.send(proto_anomaly).is_err() {
+                        return; // client disconnected
+                    }
+                }
+
+                // Also bridge-publish a compact status event
+                let _ = event_bus.send(sisyphus_bridge_api::BridgeEvent {
+                    event: Some(sisyphus_bridge_api::bridge_event::Event::OpUpdate(
+                        sisyphus_bridge_api::OperationUpdate {
+                            op_id: "anomaly_detector".into(),
+                            status: if report.should_extra_reflect {
+                                "ANOMALY"
+                            } else {
+                                "NORMAL"
+                            }
+                            .into(),
+                            result: format!("{} anomalies", report.anomalies.len()),
+                            success: !report.should_extra_reflect,
+                        },
+                    )),
+                });
+
+                // Poll interval
+                tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+            }
         });
+
         let stream = tokio_stream::wrappers::UnboundedReceiverStream::new(rx).map(Ok);
         Ok(Response::new(Box::pin(stream)))
     }
