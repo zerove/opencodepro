@@ -62,7 +62,8 @@ impl ExecutionManager {
         project_id: &str,
         graph: &SOPGraph,
     ) -> Result<(), CoreError> {
-        let config = SOPGraphConfig::from_graph(graph);
+        let config =
+            SOPGraphConfig::from_graph(graph).map_err(|e| CoreError::Internal(e.to_string()))?;
 
         self.sop_store
             .save_sop(

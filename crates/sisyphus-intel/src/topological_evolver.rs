@@ -32,14 +32,20 @@ impl TopologicalSOPEvolver {
 
         // First, copy all existing nodes to the new graph
         for node_idx in graph.graph.node_indices() {
-            let node = graph.graph.node_weight(node_idx).expect("valid index");
+            let node = graph
+                .graph
+                .node_weight(node_idx)
+                .ok_or_else(|| IntelError::Internal("valid index".to_string()))?;
             let new_idx = new_graph.add_node(node.clone());
             node_map.insert(node_idx, new_idx);
         }
 
         // Copy all existing edges
         for edge in graph.graph.edge_indices() {
-            let (source, target) = graph.graph.edge_endpoints(edge).expect("valid edge");
+            let (source, target) = graph
+                .graph
+                .edge_endpoints(edge)
+                .ok_or_else(|| IntelError::Internal("valid edge".to_string()))?;
             let new_source = node_map[&source];
             let new_target = node_map[&target];
             new_graph.add_edge(new_source, new_target);
@@ -50,7 +56,10 @@ impl TopologicalSOPEvolver {
             match op {
                 EvolutionOp::AdjustFuel { node_name, delta } => {
                     let node_idx = self.find_node_by_name(&new_graph, node_name)?;
-                    let node = new_graph.graph.node_weight(node_idx).expect("valid index");
+                    let node = new_graph
+                        .graph
+                        .node_weight(node_idx)
+                        .ok_or_else(|| IntelError::Internal("valid index".to_string()))?;
 
                     if let Some(wasm_node) = node.as_any().downcast_ref::<WasmSOPNode>() {
                         let new_fuel = (wasm_node.fuel_limit as i64 + delta).max(0) as u64;
@@ -72,7 +81,10 @@ impl TopologicalSOPEvolver {
                     max_retries,
                 } => {
                     let node_idx = self.find_node_by_name(&new_graph, node_name)?;
-                    let node = new_graph.graph.node_weight(node_idx).expect("valid index");
+                    let node = new_graph
+                        .graph
+                        .node_weight(node_idx)
+                        .ok_or_else(|| IntelError::Internal("valid index".to_string()))?;
 
                     let evolved_node = Arc::new(sisyphus_types::RetrySOPNode {
                         name: format!("{}_retry", node_name),

@@ -288,7 +288,7 @@ mod tests {
         let idx2 = graph.add_node(node2);
         graph.add_edge(idx1, idx2);
 
-        let config = SOPGraphConfig::from_graph(&graph);
+        let config = SOPGraphConfig::from_graph(&graph).unwrap();
         assert_eq!(config.nodes.len(), 2);
         assert_eq!(config.edges.len(), 1);
 
@@ -310,7 +310,7 @@ mod tests {
             let graph = SOPGraph::from_config(&config, executor.clone(), test_executor.clone()).unwrap();
             prop_assert_eq!(graph.graph.node_count(), config.nodes.len());
 
-            let roundtrip = SOPGraphConfig::from_graph(&graph);
+            let roundtrip = SOPGraphConfig::from_graph(&graph).unwrap();
             prop_assert_eq!(roundtrip.nodes.len(), config.nodes.len());
             prop_assert!(roundtrip.edges.len() <= config.edges.len());
             if config.edges.is_empty() {

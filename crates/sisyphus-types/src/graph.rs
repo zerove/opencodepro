@@ -105,15 +105,14 @@ pub struct SOPGraphConfig {
 }
 
 impl SOPGraphConfig {
-    pub fn from_graph(graph: &SOPGraph) -> Self {
+    pub fn from_graph(graph: &SOPGraph) -> Result<Self, TypesError> {
         let mut nodes = Vec::new();
         let mut node_indices = HashMap::new();
 
         for idx in graph.graph.node_indices() {
-            let node = graph
-                .graph
-                .node_weight(idx)
-                .expect("node_indices yields valid indices");
+            let node = graph.graph.node_weight(idx).ok_or_else(|| {
+                TypesError::InternalError("node_indices yields valid indices".into())
+            })?;
             nodes.push(SOPNodeConfig {
                 name: node.name().to_string(),
                 kind: node.to_kind(),
@@ -123,16 +122,15 @@ impl SOPGraphConfig {
 
         let mut edges = Vec::new();
         for edge in graph.graph.edge_indices() {
-            let (source, target) = graph
-                .graph
-                .edge_endpoints(edge)
-                .expect("edge_indices yields valid endpoints");
+            let (source, target) = graph.graph.edge_endpoints(edge).ok_or_else(|| {
+                TypesError::InternalError("edge_indices yields valid endpoints".into())
+            })?;
             if let (Some(&s), Some(&t)) = (node_indices.get(&source), node_indices.get(&target)) {
                 edges.push((s, t));
             }
         }
 
-        Self { nodes, edges }
+        Ok(Self { nodes, edges })
     }
 
     pub fn into_cognitive_plan(

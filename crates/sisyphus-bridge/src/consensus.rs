@@ -64,7 +64,7 @@ impl Consensus for ClusterConsensus {
 }
 
 /// No-op consensus implementation: always assumes this node is the leader.
-#[allow(dead_code)]
+#[expect(dead_code)]
 pub(crate) struct NoOpConsensus;
 
 #[async_trait]

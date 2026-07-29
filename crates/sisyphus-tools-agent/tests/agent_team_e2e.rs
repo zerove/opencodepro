@@ -193,7 +193,8 @@ async fn test_agent_model_routing_pipeline_e2e() {
             },
             tasks_with_unknown,
         )
-        .await;
+        .await
+        .expect("run should return Ok even for unknown agent");
 
     assert!(!report_unknown.success, "Should fail for unknown agent");
     let failed_task = report_unknown

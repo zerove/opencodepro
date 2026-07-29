@@ -644,7 +644,7 @@ async fn get_sop_handler(
     };
     match kernel.execution_manager.load_sop(&id, &project_id).await {
         Ok(sop) => {
-            let config = SOPGraphConfig::from_graph(&sop);
+            let config = SOPGraphConfig::from_graph(&sop).unwrap_or_default();
             (
                 StatusCode::OK,
                 Json(SopDetailResponse {

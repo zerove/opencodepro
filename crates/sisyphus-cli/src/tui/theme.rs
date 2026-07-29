@@ -14,7 +14,7 @@ pub enum ThemeMode {
 /// Semantic color set for the TUI.
 /// Some fields reserved for future rendering features (scrollbar, status line, etc.).
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
+#[expect(dead_code)]
 pub struct Theme {
     pub mode: ThemeMode,
     // Surface colors

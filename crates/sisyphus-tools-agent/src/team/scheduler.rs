@@ -5,7 +5,7 @@
 //! deadlock detection, and optional event streaming.
 
 use super::orchestrator::TeamOrchestrator;
-use super::{TaskNode, TaskResult, TeamEvent, TeamPlan, TeamReport};
+use super::{TaskNode, TaskResult, TeamError, TeamEvent, TeamPlan, TeamReport};
 use crate::delegate::{WorkOrchestrator, WorkUnit};
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
@@ -22,7 +22,7 @@ impl TeamOrchestrator {
         &self,
         plan: TeamPlan,
         event_tx: Option<mpsc::Sender<TeamEvent>>,
-    ) -> TeamReport {
+    ) -> Result<TeamReport, TeamError> {
         let start = Instant::now();
         let mut task_results: Vec<TaskResult> = Vec::new();
         let mut completed: HashMap<String, TaskResult> = HashMap::new();
@@ -93,11 +93,13 @@ impl TeamOrchestrator {
                         });
                     }
                     for task_id in &remaining {
-                        let task = plan
-                            .tasks
-                            .iter()
-                            .find(|t| t.id == *task_id)
-                            .expect("task id should exist in plan");
+                        let task =
+                            plan.tasks
+                                .iter()
+                                .find(|t| t.id == *task_id)
+                                .ok_or_else(|| {
+                                    TeamError::Internal("task id should exist in plan".to_string())
+                                })?;
                         let result = TaskResult::failed(
                             task,
                             "Dependency deadlock: unsatisfied dependencies".into(),
@@ -117,11 +119,13 @@ impl TeamOrchestrator {
                         });
                     }
                     for task_id in &remaining {
-                        let task = plan
-                            .tasks
-                            .iter()
-                            .find(|t| t.id == *task_id)
-                            .expect("task id should exist in plan");
+                        let task =
+                            plan.tasks
+                                .iter()
+                                .find(|t| t.id == *task_id)
+                                .ok_or_else(|| {
+                                    TeamError::Internal("task id should exist in plan".to_string())
+                                })?;
                         let result = TaskResult::failed(
                             task,
                             "Concurrency deadlock: all agents at capacity".into(),
@@ -258,7 +262,7 @@ impl TeamOrchestrator {
             let _ = tx.try_send(TeamEvent::Complete(report.clone()));
         }
 
-        report
+        Ok(report)
     }
 
     /// Validate that an agent supports the given tool ID.

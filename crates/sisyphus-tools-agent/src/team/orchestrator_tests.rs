@@ -41,7 +41,7 @@ async fn test_execute_empty_plan() {
         goal_id: "empty".into(),
         tasks: vec![],
     };
-    let report = orch.execute_plan(plan).await;
+    let report = orch.execute_plan(plan).await.unwrap();
     assert!(report.success);
     assert!(report.task_results.is_empty());
 }
@@ -65,7 +65,8 @@ async fn test_execute_single_task() {
             },
             tasks,
         )
-        .await;
+        .await
+        .unwrap();
 
     assert!(
         report.success,
@@ -104,7 +105,8 @@ async fn test_execute_sequential_tasks() {
             },
             tasks,
         )
-        .await;
+        .await
+        .unwrap();
 
     assert!(report.success);
     assert_eq!(report.task_results.len(), 2);
@@ -147,7 +149,8 @@ async fn test_execute_parallel_tasks() {
             },
             tasks,
         )
-        .await;
+        .await
+        .unwrap();
 
     assert!(
         report.success,
@@ -198,7 +201,8 @@ async fn test_execute_diamond_dependency() {
             },
             tasks,
         )
-        .await;
+        .await
+        .unwrap();
 
     assert!(report.success);
     assert_eq!(report.task_results.len(), 4);
@@ -232,7 +236,8 @@ async fn test_deadlock_detection() {
             },
             tasks,
         )
-        .await;
+        .await
+        .unwrap();
 
     assert!(!report.success, "deadlock should cause failure");
     assert_eq!(report.task_results.len(), 2);
@@ -258,7 +263,8 @@ async fn test_missing_dependency_deadlock() {
             },
             tasks,
         )
-        .await;
+        .await
+        .unwrap();
 
     assert!(!report.success);
     let err = &report.task_results[0].error;
@@ -290,7 +296,8 @@ async fn test_synthesis_with_llm() {
             },
             tasks,
         )
-        .await;
+        .await
+        .unwrap();
 
     assert!(report.success);
     assert!(report.synthesis.is_some());
@@ -340,7 +347,8 @@ async fn test_execute_unknown_tool_graceful() {
             },
             tasks,
         )
-        .await;
+        .await
+        .unwrap();
 
     assert!(!report.success, "unknown tool should fail");
     assert!(!report.task_results.is_empty());
@@ -365,7 +373,8 @@ async fn test_report_metrics() {
             },
             tasks,
         )
-        .await;
+        .await
+        .unwrap();
 
     let success_count = report.task_results.iter().filter(|r| r.success).count();
     assert_eq!(success_count, 1, "one task should succeed");
@@ -390,7 +399,8 @@ async fn test_unknown_agent_fails() {
             },
             tasks,
         )
-        .await;
+        .await
+        .unwrap();
 
     let failed: Vec<&TaskResult> = report.task_results.iter().filter(|r| !r.success).collect();
     assert_eq!(failed.len(), 1, "task with unknown agent should fail");
@@ -421,7 +431,8 @@ async fn test_tool_not_matching_agent_fails() {
             },
             tasks,
         )
-        .await;
+        .await
+        .unwrap();
 
     let failed: Vec<&TaskResult> = report.task_results.iter().filter(|r| !r.success).collect();
     assert_eq!(failed.len(), 1, "mismatched tool should fail");
@@ -633,7 +644,8 @@ async fn test_concurrency_limit_respected() {
             },
             tasks,
         )
-        .await;
+        .await
+        .unwrap();
 
     // All should complete (even if they fail due to unknown tool)
     assert_eq!(
@@ -668,7 +680,7 @@ async fn test_event_streaming() {
     let (tx, mut rx) = mpsc::channel(64);
 
     // Execute with event channel
-    let report = orch.execute_plan_internal(plan, Some(tx)).await;
+    let report = orch.execute_plan_internal(plan, Some(tx)).await.unwrap();
     assert!(report.success, "all tasks should succeed");
 
     // Collect all events (with timeout)
@@ -729,7 +741,7 @@ async fn test_event_streaming_deadlock() {
     };
     let (tx, mut rx) = mpsc::channel(64);
 
-    let _report = orch.execute_plan_internal(plan, Some(tx)).await;
+    let _report = orch.execute_plan_internal(plan, Some(tx)).await.unwrap();
 
     // Should see Error event + 2 TaskCompleted (failed)
     let mut errors = 0u32;

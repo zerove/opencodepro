@@ -5,11 +5,11 @@ use std::path::Path;
 #[derive(Debug)]
 struct Hunk {
     old_start: usize,
-    #[allow(dead_code)] // part of unified-diff format, reserved for future use
+    #[expect(dead_code)] // part of unified-diff format, reserved for future use
     old_count: usize,
-    #[allow(dead_code)] // part of unified-diff format, reserved for future use
+    #[expect(dead_code)] // part of unified-diff format, reserved for future use
     new_start: usize,
-    #[allow(dead_code)] // part of unified-diff format, reserved for future use
+    #[expect(dead_code)] // part of unified-diff format, reserved for future use
     new_count: usize,
     lines: Vec<HunkLine>,
 }

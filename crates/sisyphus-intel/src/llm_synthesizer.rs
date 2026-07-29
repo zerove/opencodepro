@@ -138,7 +138,9 @@ impl FlowSynthesizer for LlmDrivenSynthesizer {
             }
 
             Ok(SynthesisResult {
-                start_node: first_idx.expect("actions not empty"),
+                start_node: first_idx.ok_or_else(|| {
+                    sisyphus_types::IntelError::Internal("actions not empty".to_string())
+                })?,
                 graph: Arc::new(graph),
                 plan_description: format!("Standard pipeline: {}", actions.len()),
             })

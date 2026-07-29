@@ -238,6 +238,7 @@ impl SisyphusBridge for MySisyphusBridge {
         {
             Ok(result) => {
                 let plan = sisyphus_types::SOPGraphConfig::from_graph(&result.graph)
+                    .map_err(|e| Status::internal(format!("Graph error: {e}")))?
                     .into_cognitive_plan(goal.clone(), goal.clone());
                 let _ = self.kernel.cache_plan(&plan.plan_id, &plan).await;
 
@@ -488,7 +489,8 @@ impl SisyphusBridge for MySisyphusBridge {
             {
                 Ok(res) => {
                     let plan = sisyphus_types::SOPGraphConfig::from_graph(&res.graph)
-                        .into_cognitive_plan(goal.clone(), goal.clone());
+                        .map(|c| c.into_cognitive_plan(goal.clone(), goal.clone()))
+                        .unwrap_or_default();
                     Arc::new(plan)
                 }
                 Err(_) => Arc::new(sisyphus_types::CognitivePlan::default()),

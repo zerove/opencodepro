@@ -305,7 +305,8 @@ impl SisyphusKernel {
                 .await
                 .map_err(|e| CoreError::Internal(e.to_string()))?;
 
-            let config = sisyphus_types::SOPGraphConfig::from_graph(&synthesis.graph);
+            let config = sisyphus_types::SOPGraphConfig::from_graph(&synthesis.graph)
+                .map_err(|e| CoreError::Internal(e.to_string()))?;
 
             revised_plan =
                 Some(config.into_cognitive_plan(feedback.plan_id.clone(), augmented_goal.clone()));
@@ -380,7 +381,8 @@ impl SisyphusKernel {
         project_id: &str,
         graph: &SOPGraph,
     ) -> Result<(), CoreError> {
-        let config = sisyphus_types::SOPGraphConfig::from_graph(graph);
+        let config = sisyphus_types::SOPGraphConfig::from_graph(graph)
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
 
         let value =
             serde_json::to_value(&config).map_err(|e| CoreError::Internal(e.to_string()))?;
@@ -520,7 +522,8 @@ impl SisyphusKernel {
         println!(
             "DEBUG: [execute_goal] Entering refinement loop (Swarm Audit + Logical Simulation)..."
         );
-        let mut current_config = sisyphus_types::SOPGraphConfig::from_graph(&synthesis.graph);
+        let mut current_config = sisyphus_types::SOPGraphConfig::from_graph(&synthesis.graph)
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
         let mut simulation_attempts = 0;
         let max_simulation_attempts = 3;
 

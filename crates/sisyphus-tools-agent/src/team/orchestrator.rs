@@ -43,7 +43,7 @@ impl TeamOrchestrator {
     /// Tasks are validated against the agent registry before execution.
     /// Concurrency is limited per-agent based on `AgentInfo.max_concurrency`.
     /// Tasks with no pending dependencies run in parallel.
-    pub async fn execute_plan(&self, plan: TeamPlan) -> TeamReport {
+    pub async fn execute_plan(&self, plan: TeamPlan) -> Result<TeamReport, TeamError> {
         self.execute_plan_internal(plan, None).await
     }
 
@@ -55,7 +55,7 @@ impl TeamOrchestrator {
     /// 3. Results are synthesized into a `TeamReport`
     pub async fn run_goal(&self, goal: TeamGoal) -> Result<TeamReport, TeamError> {
         let plan = self.decompose_goal(&goal).await?;
-        Ok(self.execute_plan(plan).await)
+        self.execute_plan(plan).await
     }
 
     /// Decompose a goal and execute it, streaming progress events.
@@ -82,7 +82,18 @@ impl TeamOrchestrator {
 
         tokio::spawn(async move {
             let report = self.execute_plan_internal(plan, Some(tx.clone())).await;
-            let _ = tx.send(TeamEvent::Complete(report)).await;
+            match report {
+                Ok(report) => {
+                    let _ = tx.send(TeamEvent::Complete(report)).await;
+                }
+                Err(e) => {
+                    let _ = tx
+                        .send(TeamEvent::Error {
+                            message: e.to_string(),
+                        })
+                        .await;
+                }
+            }
         });
 
         Ok(rx)
@@ -99,7 +110,7 @@ impl TeamOrchestrator {
     }
 
     /// Run a team goal with a pre-defined set of tasks (ephemeral convenience wrapper).
-    pub async fn run(&self, goal: TeamGoal, tasks: Vec<TaskNode>) -> TeamReport {
+    pub async fn run(&self, goal: TeamGoal, tasks: Vec<TaskNode>) -> Result<TeamReport, TeamError> {
         let plan = Self::create_sequential_plan(&goal.id, tasks);
         self.execute_plan(plan).await
     }

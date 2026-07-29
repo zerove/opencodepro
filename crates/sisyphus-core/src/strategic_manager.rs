@@ -151,13 +151,13 @@ impl StrategicManager {
         ctx: &ExecutionContext,
         iteration: usize,
         active_node: Option<String>,
-    ) -> sisyphus_types::CogMap {
+    ) -> Result<sisyphus_types::CogMap, CoreError> {
         let mut nodes = Vec::new();
         for node_idx in graph.graph.node_indices() {
             let nw = graph
                 .graph
                 .node_weight(node_idx)
-                .expect("Node weight missing");
+                .ok_or_else(|| CoreError::Internal("Node weight missing".to_string()))?;
             let name = nw.name();
 
             let status = if let Some(out) = ctx.get_result(name) {
@@ -194,14 +194,14 @@ impl StrategicManager {
             }
         }
 
-        sisyphus_types::CogMap {
+        Ok(sisyphus_types::CogMap {
             sop_id: sop_id.to_string(),
             goal_text: goal_text.to_string(),
             nodes,
             edges,
             active_node,
             iteration,
-        }
+        })
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -983,7 +983,7 @@ impl StrategicManager {
                 let _ = tx.send(CognitiveEvent::Evolve {
                     revised_plan: final_evolved_graph
                         .as_ref()
-                        .map(|g| sisyphus_types::SOPGraphConfig::from_graph(g))
+                        .and_then(|g| sisyphus_types::SOPGraphConfig::from_graph(g).ok())
                         .unwrap_or_default(),
                 });
             }
@@ -1030,7 +1030,10 @@ impl StrategicManager {
             if let Some(eg) = final_evolved_graph {
                 current_start = eg.start_node;
                 own_graph = Some(eg);
-                current_ref = Arc::clone(own_graph.as_ref().expect("own_graph was just set"));
+                current_ref =
+                    Arc::clone(own_graph.as_ref().ok_or_else(|| {
+                        CoreError::Internal("own_graph was just set".to_string())
+                    })?);
             } else {
                 break;
             }
@@ -1043,7 +1046,7 @@ impl StrategicManager {
                 &final_ctx,
                 iteration,
                 None, // Active node would be the one currently being executed
-            );
+            )?;
             self.execution_manager
                 .cognitive_maps
                 .insert(sop_id.to_string(), cog_map);

@@ -177,12 +177,14 @@ impl SopSqlStore {
 
         let nodes = node_rows
             .into_iter()
-            .map(|(_idx, name, _kind_type, config_json)| {
-                let kind: NodeKind = serde_json::from_str(&config_json)
-                    .expect("Database contained invalid NodeKind JSON");
-                SOPNodeConfig { name, kind }
-            })
-            .collect();
+            .map(
+                |(_idx, name, _kind_type, config_json)| -> Result<SOPNodeConfig> {
+                    let kind: NodeKind = serde_json::from_str(&config_json)
+                        .context("Database contained invalid NodeKind JSON")?;
+                    Ok(SOPNodeConfig { name, kind })
+                },
+            )
+            .collect::<Result<Vec<_>>>()?;
 
         // 2. Load edges
         let edge_rows = sqlx::query_as::<_, (i64, i64)>(

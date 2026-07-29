@@ -30,6 +30,10 @@ pub enum TeamError {
     /// Concurrency limit exceeded.
     #[error("Concurrency limit: {0}")]
     ConcurrencyLimit(String),
+
+    /// Internal invariant violated (should never happen).
+    #[error("Internal error: {0}")]
+    Internal(String),
 }
 
 impl From<String> for TeamError {

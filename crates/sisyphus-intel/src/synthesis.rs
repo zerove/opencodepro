@@ -374,7 +374,8 @@ pub async fn synthesize_composite(
                 None,
             )
             .await?;
-        let config = SOPGraphConfig::from_graph(&result.graph);
+        let config = SOPGraphConfig::from_graph(&result.graph)
+            .map_err(|e| sisyphus_types::IntelError::Internal(e.to_string()))?;
         composite.add_graph(&sop_id, config);
     }
     Ok(composite)

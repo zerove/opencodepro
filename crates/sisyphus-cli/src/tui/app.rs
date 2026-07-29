@@ -34,7 +34,7 @@ pub struct WorkspaceEntry {
 pub(crate) struct TraceEvent {
     pub node_id: String,
     pub status: String,
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     pub output: Option<String>,
     pub fuel: i64,
     pub duration: i64,
@@ -324,9 +324,9 @@ pub(crate) struct App {
     pub(crate) roadmap_bottlenecks: Option<String>,
     pub(crate) roadmap_status: String,
     pub(crate) roadmap_scroll: usize,
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     pub(crate) roadmap_sel: usize,
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     pub(crate) proposal_sel: usize,
     pub(crate) skill_market_available: Vec<RemoteSkillEntry>,
     pub(crate) skill_market_installed: Vec<RemoteSkillEntry>,
@@ -347,7 +347,7 @@ pub(crate) struct App {
     pub(crate) slash_completion_sel: usize,
 
     // auto-refresh
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     pub(crate) last_refresh: Instant,
     pub(crate) event_rx: Option<tokio::sync::mpsc::Receiver<crate::tui::background::BgOp>>,
     pub(crate) is_pending: bool,
@@ -393,7 +393,7 @@ pub(crate) struct App {
 }
 
 const MAX_LOG_ENTRIES: usize = 1000;
-#[allow(dead_code)]
+#[expect(dead_code)]
 pub(crate) const AUTO_REFRESH_INTERVAL: Duration = Duration::from_secs(5);
 pub(crate) const RALPH_IDLE_THRESHOLD: u32 = 50;
 

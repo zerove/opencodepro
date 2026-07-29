@@ -26,7 +26,7 @@ impl VectorExperienceBank {
         })
     }
 
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     const INDEX_KEY: &'static str = "exp:index";
 }
 

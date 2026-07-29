@@ -97,7 +97,7 @@ fn make_single_node_config(name: &str, tool_id: &str) -> SOPGraphConfig {
             call_count: AtomicUsize::new(0),
         }),
     }));
-    SOPGraphConfig::from_graph(&graph)
+    SOPGraphConfig::from_graph(&graph).unwrap()
 }
 
 #[tokio::test]

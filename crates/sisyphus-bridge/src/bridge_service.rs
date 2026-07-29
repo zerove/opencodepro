@@ -535,7 +535,7 @@ impl MySisyphusBridge {
         self.default_fuel
     }
 
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     pub(crate) async fn get_current_project_id(&self) -> Option<String> {
         self.workspace_manager
             .get_current()
