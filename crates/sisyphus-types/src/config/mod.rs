@@ -289,7 +289,8 @@ mod tests {
 
     #[test]
     fn test_resolve_env_placeholders_missing_uses_default() {
-        let result = resolve_env_placeholders_str("{env:SISYPHUS_DEFINITELY_MISSING_VAR_999|my_default}");
+        let result =
+            resolve_env_placeholders_str("{env:SISYPHUS_DEFINITELY_MISSING_VAR_999|my_default}");
         assert_eq!(result, "my_default");
     }
 

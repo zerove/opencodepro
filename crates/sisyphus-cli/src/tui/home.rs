@@ -337,10 +337,7 @@ pub fn render_home(frame: &mut ratatui::Frame, area: Rect, app: &App) {
                     };
                     ListItem::new(Line::from(vec![
                         Span::styled(format!("  {:<15}", cmd.name), style),
-                        Span::styled(
-                            cmd.description,
-                            Style::default().fg(theme.muted),
-                        ),
+                        Span::styled(cmd.description, Style::default().fg(theme.muted)),
                     ]))
                 })
                 .collect();

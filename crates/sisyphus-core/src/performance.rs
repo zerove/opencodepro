@@ -28,8 +28,7 @@ impl PipelineMetrics {
         self.total_batches += 1;
         self.total_nodes_executed += batch_size;
         self.total_execution_time_ms += duration_ms;
-        self.avg_batch_size =
-            self.total_nodes_executed as f64 / self.total_batches as f64;
+        self.avg_batch_size = self.total_nodes_executed as f64 / self.total_batches as f64;
         self.peak_concurrency = self.peak_concurrency.max(batch_size);
     }
 }
@@ -79,18 +78,25 @@ impl OutputCache {
             // Simple counter-based eviction: remove the entry whose key is closest
             // to the current insert counter. This avoids DashMap::iter() which can
             // deadlock when called from inside insert().
-            let evict_target = self.insert_count.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            let evict_target = self
+                .insert_count
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             // Try random-ish eviction: pick a hash near the counter
             let _ = self.cache.remove(&(evict_target ^ hash));
             // If that specific key didn't exist, we still proceed — the len check
             // is advisory and we avoid deadlock at the cost of slightly exceeding capacity.
         }
-        self.insert_count.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.insert_count
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         self.cache.insert(hash, output);
     }
 
     pub fn len(&self) -> usize {
         self.cache.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.cache.is_empty()
     }
 
     pub fn clear(&self) {
@@ -143,21 +149,15 @@ pub fn create_execution_batches(
         return vec![];
     }
 
-    let batch_size = calculate_optimal_batch_size(
-        metrics,
-        ready_nodes.len(),
-        concurrency_limit,
-    );
+    let batch_size = calculate_optimal_batch_size(metrics, ready_nodes.len(), concurrency_limit);
 
     let mut batches = Vec::new();
-    let mut batch_id = 0;
 
-    for chunk in ready_nodes.chunks(batch_size) {
+    for (batch_id, chunk) in ready_nodes.chunks(batch_size).enumerate() {
         batches.push(ExecutionBatch {
             nodes: chunk.to_vec(),
-            batch_id,
+            batch_id: batch_id as u64,
         });
-        batch_id += 1;
     }
 
     batches
@@ -203,10 +203,7 @@ impl ContextCompressor {
                     .take(10)
                     .map(|(k, v)| (k.clone(), v.clone()))
                     .collect();
-                return (
-                    serde_json::Value::Object(kept),
-                    true,
-                );
+                return (serde_json::Value::Object(kept), true);
             }
         }
 
@@ -274,7 +271,7 @@ impl Profiler {
     /// Get slowest nodes.
     pub fn slowest_nodes(&self, n: usize) -> Vec<&ExecutionProfile> {
         let mut sorted: Vec<&ExecutionProfile> = self.profiles.iter().collect();
-        sorted.sort_by(|a, b| b.duration_ms.cmp(&a.duration_ms));
+        sorted.sort_by_key(|b| std::cmp::Reverse(b.duration_ms));
         sorted.into_iter().take(n).collect()
     }
 }
@@ -286,7 +283,8 @@ mod tests {
     #[test]
     fn test_output_cache_dedup() {
         let cache = OutputCache::new(100);
-        let hash = OutputCache::content_hash("node1", &HashMap::from([("key".into(), "value".into())]));
+        let hash =
+            OutputCache::content_hash("node1", &HashMap::from([("key".into(), "value".into())]));
 
         let output = NodeOutput::from(serde_json::Value::String("result".into()));
         cache.insert(hash, output.clone());

@@ -51,10 +51,7 @@ impl VersionHistory {
     }
 
     /// Create a new version from the current session state.
-    pub fn snapshot(
-        session: &Session,
-        commit_message: Option<String>,
-    ) -> SessionVersion {
+    pub fn snapshot(session: &Session, commit_message: Option<String>) -> SessionVersion {
         let seq = now_iso(); // Use timestamp as version identifier
         SessionVersion {
             version: seq.clone(),
@@ -68,7 +65,8 @@ impl VersionHistory {
 
     /// Load version history from disk.
     pub fn load(path: &Path, session_id: &str) -> ToolResult<Self> {
-        let history_path = path.parent()
+        let history_path = path
+            .parent()
             .ok_or_else(|| ToolError::TodoError("invalid path".into()))?
             .join("versions")
             .join(format!("{session_id}.json"));
@@ -84,7 +82,8 @@ impl VersionHistory {
 
     /// Save version history to disk.
     pub fn save(&self, path: &Path) -> ToolResult<()> {
-        let versions_dir = path.parent()
+        let versions_dir = path
+            .parent()
             .ok_or_else(|| ToolError::TodoError("invalid path".into()))?
             .join("versions");
         fs::create_dir_all(&versions_dir).map_err(ToolError::Io)?;
@@ -114,6 +113,11 @@ impl VersionHistory {
     pub fn len(&self) -> usize {
         self.versions.len()
     }
+
+    /// Check if version history is empty.
+    pub fn is_empty(&self) -> bool {
+        self.versions.is_empty()
+    }
 }
 
 // ─── Diff / Merge ─────────────────────────────────────────────────────
@@ -122,15 +126,9 @@ impl VersionHistory {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum DiffOp {
     /// Insert at index.
-    Insert {
-        index: usize,
-        message: Message,
-    },
+    Insert { index: usize, message: Message },
     /// Delete at index.
-    Delete {
-        index: usize,
-        message: Message,
-    },
+    Delete { index: usize, message: Message },
     /// Modify message at index.
     Modify {
         index: usize,
@@ -179,18 +177,18 @@ impl SessionDiff {
         }
 
         // Extra messages in old = deletions
-        for i in common_len..old_messages.len() {
+        for (i, msg) in old_messages.iter().enumerate().skip(common_len) {
             operations.push(DiffOp::Delete {
                 index: i,
-                message: old_messages[i].clone(),
+                message: msg.clone(),
             });
         }
 
         // Extra messages in new = insertions
-        for i in common_len..new_messages.len() {
+        for (i, msg) in new_messages.iter().enumerate().skip(common_len) {
             operations.push(DiffOp::Insert {
                 index: i,
-                message: new_messages[i].clone(),
+                message: msg.clone(),
             });
         }
 
@@ -258,7 +256,10 @@ impl SessionDiff {
 
         // Apply modifications
         for op in &modifies {
-            if let DiffOp::Modify { index, new_message, .. } = op {
+            if let DiffOp::Modify {
+                index, new_message, ..
+            } = op
+            {
                 if *index < messages.len() {
                     messages[*index] = new_message.clone();
                 } else {
@@ -355,10 +356,19 @@ impl SharedSessionRegistry {
             session_shares: HashMap::new(),
         }
     }
+}
 
+impl Default for SharedSessionRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl SharedSessionRegistry {
     /// Load the registry from disk.
     pub fn load(path: &Path) -> ToolResult<Self> {
-        let registry_path = path.parent()
+        let registry_path = path
+            .parent()
             .ok_or_else(|| ToolError::TodoError("invalid path".into()))?
             .join("shared_sessions.json");
 
@@ -373,7 +383,8 @@ impl SharedSessionRegistry {
 
     /// Save the registry to disk.
     pub fn save(&self, path: &Path) -> ToolResult<()> {
-        let registry_path = path.parent()
+        let registry_path = path
+            .parent()
             .ok_or_else(|| ToolError::TodoError("invalid path".into()))?
             .join("shared_sessions.json");
         let content = serde_json::to_string_pretty(self)
@@ -437,20 +448,12 @@ impl SharedSessionRegistry {
     pub fn list_for_session(&self, session_id: &str) -> Vec<&SharedSession> {
         self.session_shares
             .get(session_id)
-            .map(|ids| {
-                ids.iter()
-                    .filter_map(|id| self.shares.get(id))
-                    .collect()
-            })
+            .map(|ids| ids.iter().filter_map(|id| self.shares.get(id)).collect())
             .unwrap_or_default()
     }
 
     /// Check if a share token is valid for a given user.
-    pub fn check_access(
-        &self,
-        share_id: &str,
-        user_id: &str,
-    ) -> Option<AccessLevel> {
+    pub fn check_access(&self, share_id: &str, user_id: &str) -> Option<AccessLevel> {
         let share = self.shares.get(share_id)?;
 
         // Check expiry
@@ -518,7 +521,8 @@ impl SessionBranches {
 
     /// Load branches from disk.
     pub fn load(path: &Path, session_id: &str) -> ToolResult<Self> {
-        let branches_path = path.parent()
+        let branches_path = path
+            .parent()
             .ok_or_else(|| ToolError::TodoError("invalid path".into()))?
             .join("branches")
             .join(format!("{session_id}.json"));
@@ -534,7 +538,8 @@ impl SessionBranches {
 
     /// Save branches to disk.
     pub fn save(&self, path: &Path) -> ToolResult<()> {
-        let branches_dir = path.parent()
+        let branches_dir = path
+            .parent()
             .ok_or_else(|| ToolError::TodoError("invalid path".into()))?
             .join("branches");
         fs::create_dir_all(&branches_dir).map_err(ToolError::Io)?;
@@ -573,9 +578,7 @@ impl SessionBranches {
     /// Switch to a different branch.
     pub fn switch(&mut self, name: &str) -> ToolResult<()> {
         if !self.branches.contains_key(name) {
-            return Err(ToolError::TodoError(format!(
-                "branch '{name}' not found"
-            )));
+            return Err(ToolError::TodoError(format!("branch '{name}' not found")));
         }
         self.active_branch = name.to_string();
         Ok(())
@@ -657,13 +660,22 @@ pub enum CollaborationEventType {
     /// Session was branched.
     Branched { branch_name: String },
     /// Branch was merged.
-    Merged { from_branch: String, into_branch: String },
+    Merged {
+        from_branch: String,
+        into_branch: String,
+    },
     /// Session was shared.
-    Shared { share_id: String, access_level: AccessLevel },
+    Shared {
+        share_id: String,
+        access_level: AccessLevel,
+    },
     /// Share was revoked.
     Revoked { share_id: String },
     /// New version was created.
-    VersionCreated { version: String, commit_message: Option<String> },
+    VersionCreated {
+        version: String,
+        commit_message: Option<String>,
+    },
     /// Version was restored.
     VersionRestored { version: String },
     /// Message was added.
@@ -673,11 +685,7 @@ pub enum CollaborationEventType {
 }
 
 impl CollaborationEvent {
-    pub fn new(
-        session_id: &str,
-        actor: &str,
-        event_type: CollaborationEventType,
-    ) -> Self {
+    pub fn new(session_id: &str, actor: &str, event_type: CollaborationEventType) -> Self {
         use std::collections::hash_map::DefaultHasher;
         use std::hash::{Hash, Hasher};
 
@@ -715,7 +723,8 @@ impl CollaborationLog {
 
     /// Load from disk.
     pub fn load(path: &Path, session_id: &str) -> ToolResult<Self> {
-        let log_path = path.parent()
+        let log_path = path
+            .parent()
             .ok_or_else(|| ToolError::TodoError("invalid path".into()))?
             .join("collab")
             .join(format!("{session_id}.json"));
@@ -731,7 +740,8 @@ impl CollaborationLog {
 
     /// Save to disk.
     pub fn save(&self, path: &Path) -> ToolResult<()> {
-        let collab_dir = path.parent()
+        let collab_dir = path
+            .parent()
             .ok_or_else(|| ToolError::TodoError("invalid path".into()))?
             .join("collab");
         fs::create_dir_all(&collab_dir).map_err(ToolError::Io)?;
@@ -794,14 +804,9 @@ mod tests {
 
     #[test]
     fn test_version_history_snapshot() {
-        let session = create_test_session("ses_1", vec![
-            test_message("Hello"),
-            test_message("World"),
-        ]);
-        let version = VersionHistory::snapshot(
-            &session,
-            Some("Initial state".to_string()),
-        );
+        let session =
+            create_test_session("ses_1", vec![test_message("Hello"), test_message("World")]);
+        let version = VersionHistory::snapshot(&session, Some("Initial state".to_string()));
         assert_eq!(version.session_id, "ses_1");
         assert_eq!(version.messages.len(), 2);
         assert_eq!(version.commit_message, Some("Initial state".to_string()));
@@ -826,13 +831,7 @@ mod tests {
     #[test]
     fn test_diff_empty() {
         let msgs = vec![test_message("msg1")];
-        let diff = SessionDiff::compute(
-            "ses_1",
-            &msgs,
-            &msgs,
-            &HashMap::new(),
-            &HashMap::new(),
-        );
+        let diff = SessionDiff::compute("ses_1", &msgs, &msgs, &HashMap::new(), &HashMap::new());
         assert!(diff.is_empty());
     }
 
@@ -873,7 +872,9 @@ mod tests {
         assert!(!diff.is_empty());
         assert_eq!(diff.operations.len(), 1);
         match &diff.operations[0] {
-            DiffOp::Modify { index, new_message, .. } => {
+            DiffOp::Modify {
+                index, new_message, ..
+            } => {
                 assert_eq!(*index, 0);
                 assert_eq!(new_message.content, "hi there");
             }
@@ -993,7 +994,9 @@ mod tests {
     #[test]
     fn test_session_branches_create() {
         let mut branches = SessionBranches::new("ses_1");
-        branches.create_branch("experiment", Some("testing".to_string()), "v1").unwrap();
+        branches
+            .create_branch("experiment", Some("testing".to_string()), "v1")
+            .unwrap();
         assert!(branches.branches.contains_key("experiment"));
     }
 
@@ -1022,9 +1025,13 @@ mod tests {
     #[test]
     fn test_collaboration_log() {
         let mut log = CollaborationLog::new("ses_1");
-        let evt = CollaborationEvent::new("ses_1", "user1", CollaborationEventType::Branched {
-            branch_name: "experiment".to_string(),
-        });
+        let evt = CollaborationEvent::new(
+            "ses_1",
+            "user1",
+            CollaborationEventType::Branched {
+                branch_name: "experiment".to_string(),
+            },
+        );
         log.push(evt);
         assert_eq!(log.events.len(), 1);
     }

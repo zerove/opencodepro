@@ -16,8 +16,11 @@ use crate::{
     execution_manager::ExecutionManager, CoreError, ExecutionContext, ExecutionEvent,
     ExecutionStatus, Executor, IntelligenceManager, NodeOutput,
 };
+use sisyphus_intel::{
+    DeepReflector, FailurePatternEvolver, FailurePatternLibrary, PlannerConfig,
+    ProbabilisticPlanner,
+};
 use sisyphus_types::config::CognitiveLoopConfig;
-use sisyphus_intel::{ProbabilisticPlanner, PlannerConfig, FailurePatternEvolver, FailurePatternLibrary, DeepReflector};
 
 /// A single iteration in a cognitive execution cycle.
 #[derive(Clone, Debug)]
@@ -134,7 +137,9 @@ impl StrategicManager {
             internalization_manager,
             visual_manager,
             probabilistic_planner: ProbabilisticPlanner::new(PlannerConfig::default()),
-            failure_pattern_library: Arc::new(parking_lot::RwLock::new(FailurePatternLibrary::new())),
+            failure_pattern_library: Arc::new(parking_lot::RwLock::new(
+                FailurePatternLibrary::new(),
+            )),
             deep_reflector: Arc::new(parking_lot::RwLock::new(DeepReflector::new())),
         }
     }
@@ -488,7 +493,9 @@ impl StrategicManager {
 
             // ── Probabilistic Path Ranking ──────────────────────────────────
             // Use the probabilistic planner to rank paths and select the optimal one
-            let ranked_path = self.probabilistic_planner.select_optimal_path(&[prediction.clone()]);
+            let ranked_path = self
+                .probabilistic_planner
+                .select_optimal_path(std::slice::from_ref(&prediction));
             if let Some(ref rp) = ranked_path {
                 tracing::info!(
                     sop_id,
@@ -705,7 +712,9 @@ impl StrategicManager {
 
                 // Apply high-priority corrections as additional suggestions
                 for correction in &deep_report.corrections {
-                    if correction.priority <= sisyphus_intel::deep_reflector::CorrectionPriority::High {
+                    if correction.priority
+                        <= sisyphus_intel::deep_reflector::CorrectionPriority::High
+                    {
                         reflection.suggested_improvements.push(format!(
                             "[DEEP {}] {}: {}",
                             format!("{:?}", correction.priority).to_uppercase(),
@@ -719,7 +728,11 @@ impl StrategicManager {
                 if let Some(ref reason) = pivot_reason {
                     let mut lib = self.failure_pattern_library.write();
                     lib.record_failure(
-                        &reflection.records.first().map(|r| r.node.as_str()).unwrap_or("unknown"),
+                        reflection
+                            .records
+                            .first()
+                            .map(|r| r.node.as_str())
+                            .unwrap_or("unknown"),
                         sisyphus_intel::failure_pattern_evolver::FailureCategory::LogicError,
                         reason,
                     );
@@ -875,12 +888,7 @@ impl StrategicManager {
                     // Append failure-informed hints to evolution insights
                     let failure_hints: Vec<String> = failure_ops
                         .iter()
-                        .map(|op| {
-                            format!(
-                                "Failure-Driven Evolution: {:?}",
-                                op
-                            )
-                        })
+                        .map(|op| format!("Failure-Driven Evolution: {:?}", op))
                         .collect();
 
                     evolution_insights = Some(match evolution_insights {
@@ -889,10 +897,7 @@ impl StrategicManager {
                             existing,
                             failure_hints.join("\n")
                         ),
-                        None => format!(
-                            "Failure-Driven Evolution:\n{}",
-                            failure_hints.join("\n")
-                        ),
+                        None => format!("Failure-Driven Evolution:\n{}", failure_hints.join("\n")),
                     });
                 }
             }

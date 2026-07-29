@@ -3,17 +3,19 @@
 
 use anyhow::{Context, Result};
 use async_trait::async_trait;
-use dashmap::DashMap;
+use lru::LruCache;
+use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sisyphus_types::{StateStore, TypesError};
 use sqlx::{Pool, Row, Sqlite, sqlite::SqlitePoolOptions};
+use std::num::NonZeroUsize;
 use std::sync::Arc;
-use std::time::Instant;
 use tokio::sync::mpsc;
 
 /// Write operations for async buffering
 #[derive(Debug)]
+#[expect(dead_code)]
 enum WriteOp {
     Set { key: String, value: Value },
     Delete { key: String },
@@ -24,13 +26,12 @@ enum WriteOp {
 #[derive(Clone)]
 struct CacheEntry {
     value: Value,
-    last_access: Instant,
 }
 
 /// Structured SQL Store with L1 cache + SQLite/PostgreSQL backend
 pub struct SqlStore {
-    /// L1 in-memory cache (LRU-like with DashMap)
-    l1: Arc<DashMap<String, CacheEntry>>,
+    /// L1 in-memory cache (LRU)
+    l1: Arc<Mutex<LruCache<String, CacheEntry>>>,
     /// Database pool (SQLite or PostgreSQL)
     pool: Pool<Sqlite>,
     /// Async write buffer channel
@@ -128,7 +129,10 @@ impl SqlStore {
         });
 
         Ok(Self {
-            l1: Arc::new(DashMap::new()),
+            l1: Arc::new(Mutex::new(LruCache::new(
+                NonZeroUsize::new(config.l1_capacity.max(1))
+                    .ok_or_else(|| anyhow::anyhow!("Invalid capacity"))?,
+            ))),
             pool,
             write_tx: tx,
             config,
@@ -345,18 +349,18 @@ impl SqlStore {
                     match op {
                         WriteOp::Set { key, value } => {
                             buffer.push(WriteOp::Set { key, value });
-                            if buffer.len() >= 100 {
-                                if let Err(e) = Self::flush_batch(&pool, &mut buffer).await {
-                                    tracing::error!(error = %e, "L2 batch flush failed");
-                                }
+                            if buffer.len() >= 100
+                                && let Err(e) = Self::flush_batch(&pool, &mut buffer).await
+                            {
+                                tracing::error!(error = %e, "L2 batch flush failed");
                             }
                         }
                         WriteOp::Delete { key } => {
                             buffer.push(WriteOp::Delete { key });
-                            if buffer.len() >= 100 {
-                                if let Err(e) = Self::flush_batch(&pool, &mut buffer).await {
-                                    tracing::error!(error = %e, "L2 batch flush failed");
-                                }
+                            if buffer.len() >= 100
+                                && let Err(e) = Self::flush_batch(&pool, &mut buffer).await
+                            {
+                                tracing::error!(error = %e, "L2 batch flush failed");
                             }
                         }
                         WriteOp::Flush(tx) => {
@@ -366,10 +370,10 @@ impl SqlStore {
                     }
                 }
                 _ = interval.tick() => {
-                    if !buffer.is_empty() {
-                        if let Err(e) = Self::flush_batch(&pool, &mut buffer).await {
-                            tracing::error!(error = %e, "L2 periodic flush failed");
-                        }
+                    if !buffer.is_empty()
+                        && let Err(e) = Self::flush_batch(&pool, &mut buffer).await
+                    {
+                        tracing::error!(error = %e, "L2 periodic flush failed");
                     }
                 }
             }
@@ -537,14 +541,321 @@ impl SqlStore {
     /// Get L1 cache stats
     pub fn cache_stats(&self) -> CacheStats {
         CacheStats {
-            size: self.l1.len(),
+            size: self.l1.lock().len(),
             capacity: self.config.l1_capacity,
         }
     }
 
     /// Clear L1 cache
     pub fn clear_cache(&self) {
-        self.l1.clear();
+        self.l1.lock().clear();
+    }
+
+    /// Returns the current L1 capacity.
+    pub fn capacity(&self) -> usize {
+        self.config.l1_capacity
+    }
+
+    /// Returns the current L1 size.
+    pub fn len(&self) -> usize {
+        self.l1.lock().len()
+    }
+
+    /// Returns `true` if L1 is empty.
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    /// Captures a point-in-time snapshot of the current state.
+    pub async fn take_snapshot(&self) -> Result<crate::types::Snapshot> {
+        let span = tracing::info_span!("sql_store.snapshot.take");
+        let _enter = span.enter();
+
+        let start = std::time::Instant::now();
+        let rows = sqlx::query("SELECT key, value FROM state")
+            .fetch_all(&self.pool)
+            .await
+            .context("Failed to fetch state for snapshot")?;
+
+        let mut data = std::collections::HashMap::new();
+        for row in &rows {
+            let key: String = row.get("key");
+            let value_str: String = row.get("value");
+            if let Ok(value) = serde_json::from_str(&value_str) {
+                data.insert(key, value);
+            }
+        }
+
+        let duration = start.elapsed();
+        tracing::info!(
+            keys = data.len(),
+            duration_ms = duration.as_millis(),
+            "SqlStore snapshot taken"
+        );
+        Ok(crate::types::Snapshot { data })
+    }
+
+    /// Restores the state from a given snapshot.
+    pub async fn restore_snapshot(&self, snapshot: crate::types::Snapshot) -> Result<()> {
+        let span = tracing::info_span!("sql_store.snapshot.restore", keys = snapshot.data.len());
+        let _enter = span.enter();
+
+        let start = std::time::Instant::now();
+        // 1. Clear L1
+        self.l1.lock().clear();
+
+        // 2. Clear L2
+        sqlx::query("DELETE FROM state")
+            .execute(&self.pool)
+            .await
+            .context("Failed to clear state table")?;
+
+        // 3. Restore from snapshot
+        let keys_values: Vec<(String, serde_json::Value)> = snapshot
+            .data
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
+
+        let mut tx = self.pool.begin().await?;
+        for (key, value) in &keys_values {
+            let value_str = serde_json::to_string(&value)?;
+            sqlx::query("INSERT INTO state (project_id, key, value) VALUES ('default', ?, ?)")
+                .bind(key)
+                .bind(&value_str)
+                .execute(&mut *tx)
+                .await?;
+        }
+        tx.commit().await?;
+
+        // Update L1
+        {
+            let mut cache = self.l1.lock();
+            for (key, value) in keys_values {
+                cache.put(key, CacheEntry { value });
+            }
+        }
+
+        let duration = start.elapsed();
+        tracing::info!(
+            duration_ms = duration.as_millis(),
+            "SqlStore snapshot restored"
+        );
+        Ok(())
+    }
+
+    /// Lists all keys in the state store that start with the given prefix.
+    pub async fn list_keys_with_prefix(
+        &self,
+        project_id: Option<&str>,
+        prefix: &str,
+    ) -> Result<Vec<String>> {
+        let prefix_query = match project_id {
+            Some(pid) => format!("{}:{}%", pid, prefix),
+            None => format!("%{}%", prefix),
+        };
+        let rows: Vec<(String,)> = sqlx::query_as("SELECT key FROM state WHERE key LIKE ?")
+            .bind(prefix_query)
+            .fetch_all(&self.pool)
+            .await?;
+
+        let results = rows
+            .into_iter()
+            .map(|(k,)| {
+                if let Some(pid) = project_id {
+                    k.strip_prefix(&format!("{}:", pid))
+                        .unwrap_or(&k)
+                        .to_string()
+                } else {
+                    k
+                }
+            })
+            .collect();
+
+        Ok(results)
+    }
+
+    /// Record an execution trace event.
+    pub async fn record_trace_event(
+        &self,
+        sop_id: &str,
+        node_id: &str,
+        status: &str,
+        output: Option<String>,
+        fuel_consumed: i64,
+        duration_ms: i64,
+    ) -> Result<()> {
+        let timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0);
+
+        sqlx::query(
+            "INSERT INTO execution_traces (project_id, sop_id, node_id, status, output, fuel_consumed, duration_ms, timestamp) 
+             VALUES ('default', ?, ?, ?, ?, ?, ?, ?)",
+        )
+        .bind(sop_id)
+        .bind(node_id)
+        .bind(status)
+        .bind(output)
+        .bind(fuel_consumed)
+        .bind(duration_ms)
+        .bind(timestamp)
+        .execute(&self.pool)
+        .await
+        .context("Failed to record trace event")?;
+
+        Ok(())
+    }
+
+    /// Get the most frequently failing nodes.
+    pub async fn get_most_failed_nodes(&self, min_failures: i64) -> Result<Vec<(String, i64)>> {
+        let rows = sqlx::query_as::<_, (String, i64)>(
+            "SELECT node_id, COUNT(*) as failure_count 
+             FROM execution_traces 
+             WHERE status = 'error' 
+             GROUP BY node_id 
+             HAVING failure_count >= ?",
+        )
+        .bind(min_failures)
+        .fetch_all(&self.pool)
+        .await
+        .context("Failed to fetch failed nodes")?;
+
+        Ok(rows)
+    }
+
+    /// Record an experience tuple.
+    pub async fn record_experience(
+        &self,
+        exp: &sisyphus_types::experience::ExperienceTuple,
+    ) -> Result<()> {
+        sqlx::query(
+            "INSERT INTO experiences (id, project_id, context_text, context_hash, action_id, outcome_success, deviation_score, cost, timestamp) 
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        )
+        .bind(format!("exp:{}", exp.timestamp))
+        .bind(exp.project_id.as_deref().unwrap_or("default"))
+        .bind(&exp.context_text)
+        .bind(&exp.context_hash)
+        .bind(&exp.action_id)
+        .bind(exp.outcome_success)
+        .bind(exp.deviation_score)
+        .bind(exp.cost as i64)
+        .bind(exp.timestamp as i64)
+        .execute(&self.pool)
+        .await
+        .context("Failed to record experience")?;
+        Ok(())
+    }
+
+    /// Get an experience by id.
+    pub async fn get_experience(
+        &self,
+        id: &str,
+    ) -> Result<Option<sisyphus_types::experience::ExperienceTuple>> {
+        let row = sqlx::query_as::<_, (
+            String, String, Option<String>, Option<String>, bool, f64, i64, i64
+        )>(
+            "SELECT context_text, context_hash, action_id, project_id, outcome_success, deviation_score, cost, timestamp FROM experiences WHERE id = ?"
+        )
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        if let Some((ctx_text, ctx_hash, action_id, proj_id, success, dev, cost, ts)) = row {
+            Ok(Some(sisyphus_types::experience::ExperienceTuple {
+                context_text: ctx_text,
+                context_hash: ctx_hash,
+                action_id: action_id.unwrap_or_else(|| "unknown".to_string()),
+                project_id: proj_id,
+                outcome_success: success,
+                deviation_score: dev,
+                cost: cost as u64,
+                timestamp: ts as u64,
+                embedding: None,
+                visual_embedding: None,
+                insight: None,
+            }))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Query experiences by ids.
+    pub async fn query_experiences(
+        &self,
+        ids: &[String],
+        project_id: Option<&str>,
+        success_only: bool,
+    ) -> Result<Vec<sisyphus_types::experience::ExperienceTuple>> {
+        if ids.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let mut query_str = String::from(
+            "SELECT context_text, context_hash, action_id, project_id, outcome_success, deviation_score, cost, timestamp FROM experiences WHERE id IN (",
+        );
+        let placeholders: Vec<String> = (0..ids.len()).map(|_| "?".to_string()).collect();
+        query_str.push_str(&placeholders.join(","));
+        query_str.push(')');
+
+        if project_id.is_some() {
+            query_str.push_str(" AND project_id = ?");
+        }
+        if success_only {
+            query_str.push_str(" AND outcome_success = 1");
+        }
+
+        let mut query = sqlx::query_as::<
+            _,
+            (
+                String,
+                String,
+                Option<String>,
+                Option<String>,
+                bool,
+                f64,
+                i64,
+                i64,
+            ),
+        >(&query_str);
+
+        for id in ids {
+            query = query.bind(id);
+        }
+
+        if let Some(pid) = project_id {
+            query = query.bind(pid);
+        }
+
+        let rows = query
+            .fetch_all(&self.pool)
+            .await
+            .context("Failed to fetch experiences")?;
+
+        let experiences = rows
+            .into_iter()
+            .map(
+                |(ctx_text, ctx_hash, action_id, proj_id, success, dev, cost, ts)| {
+                    sisyphus_types::experience::ExperienceTuple {
+                        context_text: ctx_text,
+                        context_hash: ctx_hash,
+                        action_id: action_id.unwrap_or_else(|| "unknown".to_string()),
+                        project_id: proj_id,
+                        outcome_success: success,
+                        deviation_score: dev,
+                        cost: cost as u64,
+                        timestamp: ts as u64,
+                        embedding: None,
+                        visual_embedding: None,
+                        insight: None,
+                    }
+                },
+            )
+            .collect();
+
+        Ok(experiences)
     }
 }
 
@@ -581,8 +892,11 @@ impl StateStore for SqlStore {
     ) -> Result<Option<Value>, TypesError> {
         // Check L1 cache first
         let cache_key = format!("{project_id}:{key}");
-        if let Some(entry) = self.l1.get(&cache_key) {
-            return Ok(Some(entry.value.clone()));
+        {
+            let mut cache = self.l1.lock();
+            if let Some(entry) = cache.get(&cache_key) {
+                return Ok(Some(entry.value.clone()));
+            }
         }
 
         // Check L2 (database)
@@ -599,11 +913,10 @@ impl StateStore for SqlStore {
                 .map_err(|e| TypesError::StateStoreError(e.to_string()))?;
 
             // Update L1 cache
-            self.l1.insert(
+            self.l1.lock().put(
                 cache_key,
                 CacheEntry {
                     value: value.clone(),
-                    last_access: Instant::now(),
                 },
             );
 
@@ -621,11 +934,10 @@ impl StateStore for SqlStore {
     ) -> Result<(), TypesError> {
         // Update L1 cache
         let cache_key = format!("{project_id}:{key}");
-        self.l1.insert(
+        self.l1.lock().put(
             cache_key,
             CacheEntry {
                 value: value.clone(),
-                last_access: Instant::now(),
             },
         );
 
@@ -643,10 +955,13 @@ impl StateStore for SqlStore {
 
     async fn get(&self, project_id: &str, key: &str) -> Result<Option<Vec<u8>>, TypesError> {
         let cache_key = format!("{project_id}:{key}");
-        if let Some(entry) = self.l1.get(&cache_key) {
-            let bytes = serde_json::to_vec(&entry.value)
-                .map_err(|e| TypesError::StateStoreError(e.to_string()))?;
-            return Ok(Some(bytes));
+        {
+            let mut cache = self.l1.lock();
+            if let Some(entry) = cache.get(&cache_key) {
+                let bytes = serde_json::to_vec(&entry.value)
+                    .map_err(|e| TypesError::StateStoreError(e.to_string()))?;
+                return Ok(Some(bytes));
+            }
         }
 
         let row = sqlx::query("SELECT value FROM state WHERE project_id = ? AND key = ?")
@@ -663,13 +978,7 @@ impl StateStore for SqlStore {
             let bytes = serde_json::to_vec(&value)
                 .map_err(|e| TypesError::StateStoreError(e.to_string()))?;
 
-            self.l1.insert(
-                cache_key,
-                CacheEntry {
-                    value,
-                    last_access: Instant::now(),
-                },
-            );
+            self.l1.lock().put(cache_key, CacheEntry { value });
 
             Ok(Some(bytes))
         } else {
@@ -682,11 +991,10 @@ impl StateStore for SqlStore {
             .map_err(|e| TypesError::StateStoreError(e.to_string()))?;
 
         let cache_key = format!("{project_id}:{key}");
-        self.l1.insert(
+        self.l1.lock().put(
             cache_key.clone(),
             CacheEntry {
                 value: json_value.clone(),
-                last_access: Instant::now(),
             },
         );
 

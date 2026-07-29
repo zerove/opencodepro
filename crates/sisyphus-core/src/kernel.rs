@@ -1299,7 +1299,7 @@ impl SisyphusKernel {
             consensus: Arc::clone(&self.consensus),
             intervention_manager: Arc::clone(&self.intervention_manager),
 
-            channel: Arc::new(AgentChannel::new()),
+            channel: Arc::clone(&self.channel),
 
             benchmark: Arc::clone(&self.benchmark),
 

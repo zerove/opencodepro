@@ -41,9 +41,12 @@ pub use tool_coder::ToolCoder;
 pub use tool_verifier::{ToolVerifier, VerificationReport};
 pub use wasm_compiler::WasmCompiler;
 
-pub use deep_reflector::{CognitiveCorrection, CorrectionPriority, DeepDeviationReport, DeepReflector};
+pub use deep_reflector::{
+    CognitiveCorrection, CorrectionPriority, DeepDeviationReport, DeepReflector,
+};
 pub use failure_pattern_evolver::{
-    FailureCategory, FailurePattern, FailurePatternEvolver, FailurePatternLibrary, MutationSuggestion,
+    FailureCategory, FailurePattern, FailurePatternEvolver, FailurePatternLibrary,
+    MutationSuggestion,
 };
 pub use formal_verification::{VerificationReport as FormalVerificationReport, VerificationRunner};
 pub use llm_synthesizer::{

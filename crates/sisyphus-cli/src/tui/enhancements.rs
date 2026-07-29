@@ -170,7 +170,7 @@ pub fn filter_slash_commands(query: &str) -> Vec<(&'static SlashCommand, i64, Ve
         })
         .collect();
 
-    results.sort_by(|a, b| b.1.cmp(&a.1));
+    results.sort_by_key(|b| std::cmp::Reverse(b.1));
     results
 }
 
@@ -262,10 +262,7 @@ pub fn expand_file_references(input: &str, workspace_root: &Path) -> String {
     for file_ref in refs.iter().rev() {
         match resolve_file_reference(file_ref, workspace_root, 200) {
             Ok(content) => {
-                let replacement = format!(
-                    "[File: {}]\n```\n{}\n```",
-                    file_ref.path, content
-                );
+                let replacement = format!("[File: {}]\n```\n{}\n```", file_ref.path, content);
                 result.replace_range(file_ref.start..file_ref.end, &replacement);
             }
             Err(e) => {
@@ -331,9 +328,6 @@ mod tests {
     #[test]
     fn test_expand_file_references_no_refs() {
         let input = "no files here";
-        assert_eq!(
-            expand_file_references(input, Path::new(".")),
-            input
-        );
+        assert_eq!(expand_file_references(input, Path::new(".")), input);
     }
 }

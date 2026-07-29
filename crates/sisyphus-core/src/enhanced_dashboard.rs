@@ -64,22 +64,12 @@ pub struct EnhancedDashboard {
     node_history: HashMap<String, Vec<NodeExecution>>,
 }
 
+#[derive(Default)]
 struct IterationTracker {
     iteration: usize,
     nodes_completed: usize,
     nodes_failed: usize,
     fuel_used: u64,
-}
-
-impl Default for IterationTracker {
-    fn default() -> Self {
-        Self {
-            iteration: 0,
-            nodes_completed: 0,
-            nodes_failed: 0,
-            fuel_used: 0,
-        }
-    }
 }
 
 /// Record of a node execution
@@ -142,10 +132,7 @@ impl EnhancedDashboard {
                 self.render_enhanced_step(step, message, metrics);
             }
             ExecutionEvent::ExecutionComplete { result } => {
-                println!(
-                    "\n{}",
-                    format!("🎯 FINAL RESULT: {}", truncate(&result.to_string(), 100))
-                );
+                println!("\n🎯 FINAL RESULT: {}", truncate(&result.to_string(), 100));
                 self.render_session_summary();
             }
             ExecutionEvent::CognitiveComplete { report } => {
@@ -258,7 +245,7 @@ impl EnhancedDashboard {
         if !self.node_history.is_empty() {
             println!("\n  Node Execution Counts:");
             let mut sorted: Vec<_> = self.node_history.iter().collect();
-            sorted.sort_by(|a, b| b.1.len().cmp(&a.1.len()));
+            sorted.sort_by_key(|b| std::cmp::Reverse(b.1.len()));
             for (name, executions) in sorted.iter().take(10) {
                 let success = executions.iter().filter(|e| e.status == "success").count();
                 let total = executions.len();

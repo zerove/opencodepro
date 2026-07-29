@@ -59,7 +59,9 @@ pub struct MetricsCollector {
 
 impl MetricsCollector {
     fn uptime_secs(&self) -> u64 {
-        self.uptime_start.map(|t| t.elapsed().as_secs()).unwrap_or(0)
+        self.uptime_start
+            .map(|t| t.elapsed().as_secs())
+            .unwrap_or(0)
     }
 }
 
@@ -208,9 +210,7 @@ fn page_shell(title: &str, nav_active: &str, body: &str) -> String {
         .iter()
         .map(|(key, href, label)| {
             let active_class = if *key == nav_active { " active" } else { "" };
-            format!(
-                "<a href='{href}' class='nav-item{active_class}'>{label}</a>"
-            )
+            format!("<a href='{href}' class='nav-item{active_class}'>{label}</a>")
         })
         .collect();
 
@@ -408,7 +408,11 @@ async fn session_detail_htmx(
     );
 
     for msg in &detail.messages {
-        let role_class = if msg.role == "user" { "user-msg" } else { "ai-msg" };
+        let role_class = if msg.role == "user" {
+            "user-msg"
+        } else {
+            "ai-msg"
+        };
         html.push_str(&format!(
             r#"<div class='message {}'><div class='msg-role'>{}</div><div class='msg-content'>{}</div><div class='msg-meta'>{} tokens</div></div>"#,
             role_class, msg.role, msg.content, msg.estimated_tokens
@@ -433,7 +437,10 @@ async fn dag_htmx(
     State(state): State<Arc<AppState>>,
     Query(params): Query<HashMap<String, String>>,
 ) -> Response {
-    let sop_id = params.get("sop_id").map(|s| s.as_str()).unwrap_or("default");
+    let sop_id = params
+        .get("sop_id")
+        .map(|s| s.as_str())
+        .unwrap_or("default");
     let graph = fetch_dag_graph(&state, sop_id).await;
     let svg = render_dag_svg(&graph);
     Html(svg).into_response()
@@ -500,7 +507,10 @@ async fn exec_result_htmx(
                 cls, r.sop_id, r.status, r.iterations, r.deviation
             )).into_response()
         }
-        Err(e) => Html(format!("<div class='exec-result status-err'>Error: {e}</div>")).into_response(),
+        Err(e) => Html(format!(
+            "<div class='exec-result status-err'>Error: {e}</div>"
+        ))
+        .into_response(),
     }
 }
 
@@ -512,7 +522,9 @@ async fn add_message_htmx(
     let _ = add_message(&state, &session_id, &req.role, &req.content).await;
 
     let event = serde_json::json!({"event_type": "message_added", "session_id": session_id});
-    let _ = state.event_tx.send(serde_json::to_string(&event).unwrap_or_default());
+    let _ = state
+        .event_tx
+        .send(serde_json::to_string(&event).unwrap_or_default());
 
     session_detail_htmx(State(state), Path(session_id)).await
 }
@@ -521,7 +533,11 @@ async fn skill_install_htmx(
     State(_state): State<Arc<AppState>>,
     Json(req): Json<SkillInstallRequest>,
 ) -> Response {
-    Html(format!("<span class='installed'>Installed: {}</span>", req.skill_id)).into_response()
+    Html(format!(
+        "<span class='installed'>Installed: {}</span>",
+        req.skill_id
+    ))
+    .into_response()
 }
 
 // ── SSE Handler ────────────────────────────────
@@ -541,10 +557,7 @@ async fn sse_handler(
 
 // ── WebSocket Handler ──────────────────────────
 
-async fn ws_handler(
-    ws: WebSocketUpgrade,
-    State(state): State<Arc<AppState>>,
-) -> Response {
+async fn ws_handler(ws: WebSocketUpgrade, State(state): State<Arc<AppState>>) -> Response {
     ws.on_upgrade(move |socket| handle_ws(socket, (*state).clone()))
 }
 
@@ -558,9 +571,8 @@ async fn handle_ws(socket: WebSocket, state: AppState) {
             }
         }
     });
-    let mut recv_task = tokio::spawn(async move {
-        while let Some(Ok(_)) = receiver.next().await {}
-    });
+    let mut recv_task =
+        tokio::spawn(async move { while let Some(Ok(_)) = receiver.next().await {} });
     tokio::select! {
         _ = &mut send_task => recv_task.abort(),
         _ = &mut recv_task => send_task.abort(),
@@ -575,7 +587,11 @@ async fn metrics_endpoint(State(state): State<Arc<AppState>>) -> Response {
         "# HELP sisyphus_requests_total Total HTTP requests\n# TYPE sisyphus_requests_total counter\nsisyphus_requests_total {}\n# HELP sisyphus_sessions_created Total sessions created\n# TYPE sisyphus_sessions_created counter\nsisyphus_sessions_created {}\n# HELP sisyphus_sop_executions Total SOP executions\n# TYPE sisyphus_sop_executions counter\nsisyphus_sop_executions {}\n# HELP sisyphus_search_queries Total search queries\n# TYPE sisyphus_search_queries counter\nsisyphus_search_queries {}\n# HELP sisyphus_uptime_seconds Server uptime\n# TYPE sisyphus_uptime_seconds gauge\nsisyphus_uptime_seconds {}\n",
         m.requests_total, m.sessions_created, m.sop_executions, m.search_queries, m.uptime_secs()
     );
-    ([("Content-Type", "text/plain; version=0.0.4; charset=utf-8")], body).into_response()
+    (
+        [("Content-Type", "text/plain; version=0.0.4; charset=utf-8")],
+        body,
+    )
+        .into_response()
 }
 
 // ── Auth API ──────────────────────────────────
@@ -586,126 +602,266 @@ async fn auth_validate(
 ) -> Result<Json<AuthResponse>, StatusCode> {
     let keys = state.api_keys.read().await;
     let valid = keys.is_empty() || keys.contains(&req.api_key);
-    Ok(Json(AuthResponse { valid, message: if valid { "authorized" } else { "unauthorized" }.into() }))
+    Ok(Json(AuthResponse {
+        valid,
+        message: if valid { "authorized" } else { "unauthorized" }.into(),
+    }))
 }
 
 // ── REST API Handlers ─────────────────────────
 
-async fn api_health(State(state): State<Arc<AppState>>) -> Result<Json<HealthResponse>, StatusCode> {
+async fn api_health(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<HealthResponse>, StatusCode> {
     Ok(Json(fetch_health(&state).await))
 }
 
-async fn api_sessions(State(state): State<Arc<AppState>>) -> Result<Json<Vec<Session>>, StatusCode> {
+async fn api_sessions(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<Vec<Session>>, StatusCode> {
     Ok(Json(fetch_sessions(&state).await))
 }
 
-async fn api_session_detail(State(state): State<Arc<AppState>>, Path(id): Path<String>) -> Result<Json<SessionDetail>, StatusCode> {
+async fn api_session_detail(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> Result<Json<SessionDetail>, StatusCode> {
     Ok(Json(fetch_session_detail(&state, &id).await))
 }
 
-async fn api_create_session(State(state): State<Arc<AppState>>, Json(req): Json<SessionCreateRequest>) -> Result<Json<Session>, StatusCode> {
+async fn api_create_session(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<SessionCreateRequest>,
+) -> Result<Json<Session>, StatusCode> {
     let session = create_session(&state, &req.name).await;
     state.metrics.write().await.sessions_created += 1;
     Ok(Json(session))
 }
 
-async fn api_add_message(State(state): State<Arc<AppState>>, Path(sid): Path<String>, Json(req): Json<MessageAddRequest>) -> Result<Json<ChatMessage>, StatusCode> {
-    add_message(&state, &sid, &req.role, &req.content).await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR).map(Json)
+async fn api_add_message(
+    State(state): State<Arc<AppState>>,
+    Path(sid): Path<String>,
+    Json(req): Json<MessageAddRequest>,
+) -> Result<Json<ChatMessage>, StatusCode> {
+    add_message(&state, &sid, &req.role, &req.content)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
+        .map(Json)
 }
 
-async fn api_search(State(state): State<Arc<AppState>>, Json(req): Json<SearchRequest>) -> Result<Json<Vec<SearchResult>>, StatusCode> {
+async fn api_search(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<SearchRequest>,
+) -> Result<Json<Vec<SearchResult>>, StatusCode> {
     state.metrics.write().await.search_queries += 1;
-    Ok(Json(search_memory(&state, &req.query, req.top_k.unwrap_or(10)).await))
+    Ok(Json(
+        search_memory(&state, &req.query, req.top_k.unwrap_or(10)).await,
+    ))
 }
 
-async fn api_execute_sop(State(state): State<Arc<AppState>>, Json(req): Json<ExecuteRequest>) -> Result<Json<ExecuteResult>, StatusCode> {
+async fn api_execute_sop(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<ExecuteRequest>,
+) -> Result<Json<ExecuteResult>, StatusCode> {
     state.metrics.write().await.sop_executions += 1;
-    execute_sop(&state, &req.sop_id, req.context.as_ref()).await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR).map(Json)
+    execute_sop(&state, &req.sop_id, req.context.as_ref())
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
+        .map(Json)
 }
 
-async fn api_sop_list(State(state): State<Arc<AppState>>) -> Result<Json<Vec<SopInfo>>, StatusCode> {
+async fn api_sop_list(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<Vec<SopInfo>>, StatusCode> {
     Ok(Json(fetch_sop_list(&state).await))
 }
 
-async fn api_dag(State(state): State<Arc<AppState>>, Path(id): Path<String>) -> Result<Json<DagGraph>, StatusCode> {
+async fn api_dag(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> Result<Json<DagGraph>, StatusCode> {
     Ok(Json(fetch_dag_graph(&state, &id).await))
 }
 
-async fn api_skill_list(State(state): State<Arc<AppState>>) -> Result<Json<Vec<SkillEntry>>, StatusCode> {
+async fn api_skill_list(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<Vec<SkillEntry>>, StatusCode> {
     Ok(Json(fetch_skill_list(&state).await))
 }
 
-async fn api_skill_install(State(_state): State<Arc<AppState>>, Json(req): Json<SkillInstallRequest>) -> Result<Json<serde_json::Value>, StatusCode> {
-    Ok(Json(serde_json::json!({"status": "installed", "skill_id": req.skill_id})))
+async fn api_skill_install(
+    State(_state): State<Arc<AppState>>,
+    Json(req): Json<SkillInstallRequest>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    Ok(Json(
+        serde_json::json!({"status": "installed", "skill_id": req.skill_id}),
+    ))
 }
 
 // ── Bridge Client Helpers ─────────────────────
 
 async fn fetch_health(state: &AppState) -> HealthResponse {
-    match state.client.get(format!("{}/health", state.bridge_url)).send().await {
-        Ok(r) => r.json::<HealthResponse>().await.unwrap_or(HealthResponse { status: "unreachable".into(), version: "unknown".into(), uptime_secs: 0 }),
-        Err(_) => HealthResponse { status: "unreachable".into(), version: "unknown".into(), uptime_secs: 0 },
+    match state
+        .client
+        .get(format!("{}/health", state.bridge_url))
+        .send()
+        .await
+    {
+        Ok(r) => r.json::<HealthResponse>().await.unwrap_or(HealthResponse {
+            status: "unreachable".into(),
+            version: "unknown".into(),
+            uptime_secs: 0,
+        }),
+        Err(_) => HealthResponse {
+            status: "unreachable".into(),
+            version: "unknown".into(),
+            uptime_secs: 0,
+        },
     }
 }
 
 async fn fetch_sessions(state: &AppState) -> Vec<Session> {
-    match state.client.get(format!("{}/api/v1/sessions", state.bridge_url)).send().await {
+    match state
+        .client
+        .get(format!("{}/api/v1/sessions", state.bridge_url))
+        .send()
+        .await
+    {
         Ok(r) => r.json::<Vec<Session>>().await.unwrap_or_default(),
         Err(_) => vec![],
     }
 }
 
 async fn fetch_session_detail(state: &AppState, id: &str) -> SessionDetail {
-    match state.client.get(format!("{}/api/v1/sessions/{id}", state.bridge_url)).send().await {
-        Ok(r) => r.json::<SessionDetail>().await.unwrap_or(SessionDetail { id: id.into(), name: "unknown".into(), messages: vec![], metadata: HashMap::new() }),
-        Err(_) => SessionDetail { id: id.into(), name: "unknown".into(), messages: vec![], metadata: HashMap::new() },
+    match state
+        .client
+        .get(format!("{}/api/v1/sessions/{id}", state.bridge_url))
+        .send()
+        .await
+    {
+        Ok(r) => r.json::<SessionDetail>().await.unwrap_or(SessionDetail {
+            id: id.into(),
+            name: "unknown".into(),
+            messages: vec![],
+            metadata: HashMap::new(),
+        }),
+        Err(_) => SessionDetail {
+            id: id.into(),
+            name: "unknown".into(),
+            messages: vec![],
+            metadata: HashMap::new(),
+        },
     }
 }
 
 async fn create_session(state: &AppState, name: &str) -> Session {
-    match state.client.post(format!("{}/api/v1/sessions", state.bridge_url)).json(&serde_json::json!({"name": name})).send().await {
-        Ok(r) => r.json::<Session>().await.unwrap_or(Session { id: "unknown".into(), name: name.into(), message_count: 0, created_at: None, parent_session_id: None }),
-        Err(_) => Session { id: "unknown".into(), name: name.into(), message_count: 0, created_at: None, parent_session_id: None },
+    match state
+        .client
+        .post(format!("{}/api/v1/sessions", state.bridge_url))
+        .json(&serde_json::json!({"name": name}))
+        .send()
+        .await
+    {
+        Ok(r) => r.json::<Session>().await.unwrap_or(Session {
+            id: "unknown".into(),
+            name: name.into(),
+            message_count: 0,
+            created_at: None,
+            parent_session_id: None,
+        }),
+        Err(_) => Session {
+            id: "unknown".into(),
+            name: name.into(),
+            message_count: 0,
+            created_at: None,
+            parent_session_id: None,
+        },
     }
 }
 
-async fn add_message(state: &AppState, sid: &str, role: &str, content: &str) -> Result<ChatMessage, reqwest::Error> {
-    state.client.post(format!("{}/api/v1/sessions/{sid}/messages", state.bridge_url))
+async fn add_message(
+    state: &AppState,
+    sid: &str,
+    role: &str,
+    content: &str,
+) -> Result<ChatMessage, reqwest::Error> {
+    state
+        .client
+        .post(format!(
+            "{}/api/v1/sessions/{sid}/messages",
+            state.bridge_url
+        ))
         .json(&serde_json::json!({"role": role, "content": content}))
-        .send().await?.json::<ChatMessage>().await
+        .send()
+        .await?
+        .json::<ChatMessage>()
+        .await
 }
 
 async fn search_memory(state: &AppState, query: &str, top_k: usize) -> Vec<SearchResult> {
-    match state.client.post(format!("{}/api/v1/vector/search", state.bridge_url))
+    match state
+        .client
+        .post(format!("{}/api/v1/vector/search", state.bridge_url))
         .json(&serde_json::json!({"query": query, "top_k": top_k}))
-        .send().await {
+        .send()
+        .await
+    {
         Ok(r) => r.json::<Vec<SearchResult>>().await.unwrap_or_default(),
         Err(_) => vec![],
     }
 }
 
-async fn execute_sop(state: &AppState, sop_id: &str, context: Option<&serde_json::Value>) -> Result<ExecuteResult, reqwest::Error> {
+async fn execute_sop(
+    state: &AppState,
+    sop_id: &str,
+    context: Option<&serde_json::Value>,
+) -> Result<ExecuteResult, reqwest::Error> {
     state.client.post(format!("{}/api/v1/execute", state.bridge_url))
         .json(&serde_json::json!({"sop_id": sop_id, "context": context.unwrap_or(&serde_json::json!({}))}))
         .send().await?.json::<ExecuteResult>().await
 }
 
 async fn fetch_sop_list(state: &AppState) -> Vec<SopInfo> {
-    match state.client.get(format!("{}/api/v1/sops", state.bridge_url)).send().await {
+    match state
+        .client
+        .get(format!("{}/api/v1/sops", state.bridge_url))
+        .send()
+        .await
+    {
         Ok(r) => r.json::<Vec<SopInfo>>().await.unwrap_or_default(),
         Err(_) => vec![],
     }
 }
 
 async fn fetch_dag_graph(state: &AppState, sop_id: &str) -> DagGraph {
-    match state.client.get(format!("{}/api/v1/sops/{sop_id}/dag", state.bridge_url)).send().await {
-        Ok(r) => r.json::<DagGraph>().await.unwrap_or(DagGraph { nodes: vec![], edges: vec![], width: 0.0, height: 0.0 }),
-        Err(_) => DagGraph { nodes: vec![], edges: vec![], width: 0.0, height: 0.0 },
+    match state
+        .client
+        .get(format!("{}/api/v1/sops/{sop_id}/dag", state.bridge_url))
+        .send()
+        .await
+    {
+        Ok(r) => r.json::<DagGraph>().await.unwrap_or(DagGraph {
+            nodes: vec![],
+            edges: vec![],
+            width: 0.0,
+            height: 0.0,
+        }),
+        Err(_) => DagGraph {
+            nodes: vec![],
+            edges: vec![],
+            width: 0.0,
+            height: 0.0,
+        },
     }
 }
 
 async fn fetch_skill_list(state: &AppState) -> Vec<SkillEntry> {
-    match state.client.get(format!("{}/api/v1/skills", state.bridge_url)).send().await {
+    match state
+        .client
+        .get(format!("{}/api/v1/skills", state.bridge_url))
+        .send()
+        .await
+    {
         Ok(r) => r.json::<Vec<SkillEntry>>().await.unwrap_or_default(),
         Err(_) => vec![],
     }
@@ -719,17 +875,26 @@ fn render_dag_svg(graph: &DagGraph) -> String {
     }
     let w = graph.width + 40.0;
     let h = graph.height + 40.0;
-    let mut svg = format!("<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 {w} {h}' class='dag-svg'>");
+    let mut svg =
+        format!("<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 {w} {h}' class='dag-svg'>");
     svg.push_str("<defs><marker id='arrow' markerWidth='10' markerHeight='7' refX='10' refY='3.5' orient='auto'><polygon points='0 0,10 3.5,0 7' fill='#30363d'/></marker></defs>");
 
     for edge in &graph.edges {
-        if let (Some(f), Some(t)) = (graph.nodes.iter().find(|n| n.id == edge.from), graph.nodes.iter().find(|n| n.id == edge.to)) {
+        if let (Some(f), Some(t)) = (
+            graph.nodes.iter().find(|n| n.id == edge.from),
+            graph.nodes.iter().find(|n| n.id == edge.to),
+        ) {
             svg.push_str(&format!("<line x1='{}' y1='{}' x2='{}' y2='{}' stroke='#30363d' stroke-width='2' marker-end='url(#arrow)'/>", f.x + 60.0, f.y + 20.0, t.x + 60.0, t.y + 20.0));
         }
     }
 
     for node in &graph.nodes {
-        let color = match node.status.as_str() { "completed" => "#3fb950", "running" => "#d29922", "failed" => "#f85149", _ => "#484f58" };
+        let color = match node.status.as_str() {
+            "completed" => "#3fb950",
+            "running" => "#d29922",
+            "failed" => "#f85149",
+            _ => "#484f58",
+        };
         svg.push_str(&format!("<rect x='{}' y='{}' width='120' height='40' rx='6' fill='#161b22' stroke='{color}' stroke-width='2'/>", node.x, node.y));
         svg.push_str(&format!("<text x='{}' y='{}' text-anchor='middle' fill='#c9d1d9' font-size='12' font-family='system-ui'>{}</text>", node.x + 60.0, node.y + 25.0, node.label));
     }
@@ -747,7 +912,10 @@ pub fn app(bridge_url: String) -> Router {
         client: reqwest::Client::new(),
         event_tx,
         api_keys: Arc::new(RwLock::new(vec![])),
-        metrics: Arc::new(RwLock::new(MetricsCollector { uptime_start: Some(Instant::now()), ..Default::default() })),
+        metrics: Arc::new(RwLock::new(MetricsCollector {
+            uptime_start: Some(Instant::now()),
+            ..Default::default()
+        })),
     });
 
     Router::new()

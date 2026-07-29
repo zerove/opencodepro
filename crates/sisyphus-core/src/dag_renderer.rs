@@ -64,7 +64,7 @@ impl DagRenderer {
         nodes: &[(String, NodeStatus)],
         edges: &[(String, String)],
     ) -> DagVisualization {
-        let node_map: HashMap<&str, &NodeStatus> = nodes
+        let _node_map: HashMap<&str, &NodeStatus> = nodes
             .iter()
             .map(|(id, status)| (id.as_str(), status))
             .collect();
@@ -258,9 +258,7 @@ impl DagRenderer {
             };
 
             // Top border
-            let border: String = std::iter::repeat(status_char)
-                .take(self.node_width)
-                .collect();
+            let border: String = std::iter::repeat_n(status_char, self.node_width).collect();
             if node.row < canvas.len() && node.col + self.node_width <= canvas[node.row].len() {
                 for (i, c) in border.chars().enumerate() {
                     canvas[node.row][node.col + i] = c;

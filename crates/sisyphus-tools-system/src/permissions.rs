@@ -17,7 +17,10 @@ pub struct PermissionChecker {
 
 impl PermissionChecker {
     pub fn new(rules: PermissionRules) -> Self {
-        Self { rules, external_directories: Vec::new() }
+        Self {
+            rules,
+            external_directories: Vec::new(),
+        }
     }
 
     pub fn with_external_directories(mut self, dirs: Vec<std::path::PathBuf>) -> Self {

@@ -121,7 +121,7 @@ impl FailurePatternLibrary {
     /// Get all patterns sorted by occurrence count
     pub fn get_hotspots(&self) -> Vec<&FailurePattern> {
         let mut patterns: Vec<_> = self.patterns.iter().collect();
-        patterns.sort_by(|a, b| b.occurrence_count.cmp(&a.occurrence_count));
+        patterns.sort_by_key(|b| std::cmp::Reverse(b.occurrence_count));
         patterns
     }
 }
@@ -135,6 +135,7 @@ impl Default for FailurePatternLibrary {
 /// Advanced evolver that uses failure patterns to generate targeted mutations
 pub struct FailurePatternEvolver {
     pattern_library: Arc<parking_lot::RwLock<FailurePatternLibrary>>,
+    #[expect(dead_code)]
     base_evolver: TopologicalSOPEvolver,
 }
 

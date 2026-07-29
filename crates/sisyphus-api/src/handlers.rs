@@ -210,15 +210,15 @@ pub async fn list_state(
 
     let items: Vec<StateResponse> = rows
         .into_iter()
-        .filter_map(|row| {
+        .map(|row| {
             let value_str: String = row.get("value");
             let value: Value = serde_json::from_str(&value_str).unwrap_or(Value::Null);
-            Some(StateResponse {
+            StateResponse {
                 key: row.get("key"),
                 value,
                 created_at: row.get("created_at"),
                 updated_at: row.get("updated_at"),
-            })
+            }
         })
         .collect();
 

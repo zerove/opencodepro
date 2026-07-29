@@ -1,9 +1,9 @@
+pub mod collaboration;
 pub mod plan;
 pub mod precommit;
 pub mod session;
 pub mod skill;
 pub mod todo;
-pub mod collaboration;
 
 pub use session::{
     session_add_message, session_clear_checkpoint, session_compress, session_continue,
@@ -14,9 +14,9 @@ pub use session::{
 };
 
 pub use collaboration::{
-    AccessLevel, CollaborationEvent, CollaborationEventType, CollaborationLog, DiffOp,
-    SessionBranch, SessionBranches, SessionDiff, SessionVersion, SharedSession,
-    SharedSessionRegistry, VersionHistory, merge_branches,
+    merge_branches, AccessLevel, CollaborationEvent, CollaborationEventType, CollaborationLog,
+    DiffOp, SessionBranch, SessionBranches, SessionDiff, SessionVersion, SharedSession,
+    SharedSessionRegistry, VersionHistory,
 };
 
 #[cfg(test)]

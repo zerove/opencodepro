@@ -3,7 +3,6 @@
 
 use serde::{Deserialize, Serialize};
 use sisyphus_types::skill::{SkillBundle, SkillMetadata};
-use std::collections::HashMap;
 
 /// Remote skill registry entry
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -137,18 +136,87 @@ impl SkillMarket {
         let mut updates = Vec::new();
 
         for meta in installed {
-            if let Ok(Some(remote)) = self.get_skill(&meta.id).await {
-                if remote.metadata.version != meta.version {
-                    updates.push(SkillUpdateInfo {
-                        current_version: meta.version.clone(),
-                        available_version: remote.metadata.version.clone(),
-                        entry: remote,
-                    });
-                }
+            if let Ok(Some(remote)) = self.get_skill(&meta.id).await
+                && remote.metadata.version != meta.version
+            {
+                updates.push(SkillUpdateInfo {
+                    current_version: meta.version.clone(),
+                    available_version: remote.metadata.version.clone(),
+                    entry: remote,
+                });
             }
         }
 
         Ok(updates)
+    }
+
+    /// Publish a skill bundle to a registry
+    pub async fn publish(
+        &self,
+        registry_url: &str,
+        bundle: &SkillBundle,
+    ) -> Result<SkillRegistryEntry, SkillMarketError> {
+        let url = format!("{}/api/v1/skills", registry_url);
+
+        let response = self
+            .http_client
+            .post(&url)
+            .json(bundle)
+            .send()
+            .await
+            .map_err(|e| SkillMarketError::RegistryError(e.to_string()))?;
+
+        if !response.status().is_success() {
+            return Err(SkillMarketError::RegistryError(format!(
+                "Publish failed with status: {}",
+                response.status()
+            )));
+        }
+
+        response
+            .json::<SkillRegistryEntry>()
+            .await
+            .map_err(|e| SkillMarketError::RegistryError(e.to_string()))
+    }
+
+    /// Download a skill and install it into a SkillStore.
+    pub async fn download_and_install(
+        &self,
+        entry: &SkillRegistryEntry,
+        skill_store: &crate::skill_store::SkillStore,
+    ) -> Result<(), SkillMarketError> {
+        let bundle = self.download(entry).await?;
+        skill_store
+            .install(bundle)
+            .await
+            .map_err(|e| SkillMarketError::DownloadFailed(e.to_string()))?;
+        Ok(())
+    }
+
+    /// Search for a skill and install the top result.
+    pub async fn search_and_install(
+        &self,
+        query: &str,
+        skill_store: &crate::skill_store::SkillStore,
+    ) -> Result<(), SkillMarketError> {
+        let results = self.search(query).await?;
+        if results.is_empty() {
+            return Err(SkillMarketError::NotFound(format!(
+                "No skills found for query: {}",
+                query
+            )));
+        }
+
+        let best = results
+            .into_iter()
+            .max_by(|a, b| {
+                a.rating
+                    .partial_cmp(&b.rating)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
+            .ok_or_else(|| SkillMarketError::NotFound(format!("No skills found for: {}", query)))?;
+
+        self.download_and_install(&best, skill_store).await
     }
 }
 

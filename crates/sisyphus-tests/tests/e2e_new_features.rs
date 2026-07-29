@@ -1,15 +1,15 @@
 use std::collections::HashMap;
 use std::path::Path;
 
+use sisyphus_cli::tui::enhancements::{
+    expand_file_references, filter_slash_commands, fuzzy_match, parse_file_references,
+};
+use sisyphus_core::dag_renderer::{DagRenderer, NodeStatus};
 use sisyphus_core::performance::{
     calculate_optimal_batch_size, create_execution_batches, ContextCompressor, ExecutionProfile,
     OutputCache, PipelineMetrics, Profiler,
 };
-use sisyphus_core::dag_renderer::{DagRenderer, NodeStatus};
 use sisyphus_core::NodeOutput;
-use sisyphus_cli::tui::enhancements::{
-    expand_file_references, filter_slash_commands, fuzzy_match, parse_file_references,
-};
 
 // ─── Performance: OutputCache deduplication ───────────────────────────
 
@@ -38,16 +38,24 @@ fn test_output_cache_miss() {
 
 #[test]
 fn test_output_cache_deterministic_hash() {
-    let hash1 = OutputCache::content_hash("node1", &HashMap::from([("a".into(), "1".into()), ("b".into(), "2".into())]));
-    let hash2 = OutputCache::content_hash("node1", &HashMap::from([("b".into(), "2".into()), ("a".into(), "1".into())]));
+    let hash1 = OutputCache::content_hash(
+        "node1",
+        &HashMap::from([("a".into(), "1".into()), ("b".into(), "2".into())]),
+    );
+    let hash2 = OutputCache::content_hash(
+        "node1",
+        &HashMap::from([("b".into(), "2".into()), ("a".into(), "1".into())]),
+    );
     // Order shouldn't matter
     assert_eq!(hash1, hash2);
 }
 
 #[test]
 fn test_output_cache_different_inputs_different_hash() {
-    let hash1 = OutputCache::content_hash("node1", &HashMap::from([("key".into(), "value1".into())]));
-    let hash2 = OutputCache::content_hash("node1", &HashMap::from([("key".into(), "value2".into())]));
+    let hash1 =
+        OutputCache::content_hash("node1", &HashMap::from([("key".into(), "value1".into())]));
+    let hash2 =
+        OutputCache::content_hash("node1", &HashMap::from([("key".into(), "value2".into())]));
     assert_ne!(hash1, hash2);
 }
 
@@ -57,13 +65,19 @@ fn test_output_cache_eviction() {
 
     // Insert 5 entries with different content to trigger eviction
     for i in 0..5 {
-        let hash = OutputCache::content_hash(&format!("node{i}"), &HashMap::from([("key".into(), format!("value{i}"))]));
+        let hash = OutputCache::content_hash(
+            &format!("node{i}"),
+            &HashMap::from([("key".into(), format!("value{i}"))]),
+        );
         let output = NodeOutput::from(serde_json::Value::Number(i.into()));
         cache.insert(hash, output);
     }
 
     // Cache should have evicted some entries (at most max_entries + a small allowance)
-    assert!(cache.len() <= 6, "Cache should not significantly exceed max_entries");
+    assert!(
+        cache.len() <= 6,
+        "Cache should not significantly exceed max_entries"
+    );
     assert!(cache.len() >= 1, "Cache should still have entries");
 }
 
@@ -422,7 +436,10 @@ fn test_cache_profiler_integration() {
     let mut profiler = Profiler::new(100);
 
     // First execution: cache miss
-    let hash = OutputCache::content_hash("test_node", &HashMap::from([("input".into(), "data".into())]));
+    let hash = OutputCache::content_hash(
+        "test_node",
+        &HashMap::from([("input".into(), "data".into())]),
+    );
     let output = NodeOutput::from(serde_json::Value::String("result".into()));
     cache.insert(hash, output.clone());
 
@@ -462,7 +479,12 @@ fn test_batch_profiler_integration() {
     // Simulate 5 batch executions
     for batch in 0..5 {
         let nodes: Vec<(NodeIndex, String)> = (0..4)
-            .map(|i| (NodeIndex::new(batch * 4 + i), format!("node_{}_{}", batch, i)))
+            .map(|i| {
+                (
+                    NodeIndex::new(batch * 4 + i),
+                    format!("node_{}_{}", batch, i),
+                )
+            })
             .collect();
 
         let batch_size = nodes.len();

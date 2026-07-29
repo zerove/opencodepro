@@ -370,7 +370,7 @@ impl DeepReflector {
             }
         }
 
-        corrections.sort_by(|a, b| a.priority.cmp(&b.priority));
+        corrections.sort_by_key(|a| a.priority);
         corrections
     }
 

@@ -212,7 +212,7 @@ impl WorkspaceManager {
             .await?;
 
         // Update cache
-        if let Some(mut ws) = self.workspaces.write().await.get_mut(workspace_id) {
+        if let Some(ws) = self.workspaces.write().await.get_mut(workspace_id) {
             ws.active_project_id = Some(project_id.to_string());
         }
 
@@ -227,6 +227,115 @@ impl WorkspaceManager {
             .await?;
 
         self.workspaces.write().await.remove(id);
+
+        Ok(())
+    }
+
+    /// Transfer a project from one workspace to another.
+    pub async fn transfer_project(
+        &self,
+        project_id: &str,
+        from_workspace: &str,
+        to_workspace: &str,
+    ) -> Result<()> {
+        // Verify both workspaces exist
+        if self.get_workspace(from_workspace).await.is_none() {
+            anyhow::bail!("Source workspace not found: {}", from_workspace);
+        }
+        if self.get_workspace(to_workspace).await.is_none() {
+            anyhow::bail!("Target workspace not found: {}", to_workspace);
+        }
+
+        // Update project's workspace assignment
+        sqlx::query(
+            "UPDATE workspace_projects SET workspace_id = ? WHERE workspace_id = ? AND project_id = ?"
+        )
+        .bind(to_workspace)
+        .bind(from_workspace)
+        .bind(project_id)
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
+
+    /// Export knowledge (milestones, goals, outcomes) from a workspace's project.
+    pub async fn export_knowledge(
+        &self,
+        project_id: &str,
+        workspace_id: &str,
+    ) -> Result<serde_json::Value> {
+        // Verify workspace exists
+        if self.get_workspace(workspace_id).await.is_none() {
+            anyhow::bail!("Workspace not found: {}", workspace_id);
+        }
+
+        // Collect knowledge from workspace_projects and workspace settings
+        let settings = sqlx::query("SELECT settings FROM workspaces WHERE id = ?")
+            .bind(workspace_id)
+            .fetch_optional(&self.pool)
+            .await?
+            .and_then(|row| {
+                let settings_str: String = row.get("settings");
+                serde_json::from_str(&settings_str).ok()
+            })
+            .unwrap_or(serde_json::Value::Null);
+
+        let projects = sqlx::query_as::<_, (String, String)>(
+            "SELECT project_id, description FROM workspace_projects WHERE workspace_id = ? AND project_id = ?"
+        )
+        .bind(workspace_id)
+        .bind(project_id)
+        .fetch_all(&self.pool)
+        .await?;
+
+        let mut project_data = Vec::new();
+        for (pid, desc) in projects {
+            project_data.push(serde_json::json!({
+                "project_id": pid,
+                "description": desc,
+            }));
+        }
+
+        Ok(serde_json::json!({
+            "workspace_id": workspace_id,
+            "settings": settings,
+            "projects": project_data,
+            "exported_at": chrono::Utc::now().to_rfc3339(),
+        }))
+    }
+
+    /// Import knowledge into a workspace.
+    pub async fn import_knowledge(
+        &self,
+        workspace_id: &str,
+        knowledge: &serde_json::Value,
+    ) -> Result<()> {
+        if self.get_workspace(workspace_id).await.is_none() {
+            anyhow::bail!("Workspace not found: {}", workspace_id);
+        }
+
+        // Import projects from knowledge bundle
+        if let Some(projects) = knowledge.get("projects").and_then(|v| v.as_array()) {
+            for project in projects {
+                if let (Some(pid), Some(desc)) = (
+                    project.get("project_id").and_then(|v| v.as_str()),
+                    project.get("description").and_then(|v| v.as_str()),
+                ) {
+                    sqlx::query(
+                        r#"INSERT INTO workspace_projects (workspace_id, project_id, name, description)
+                           VALUES (?, ?, ?, ?)
+                           ON CONFLICT(workspace_id, project_id) DO UPDATE SET description = excluded.description"#
+                    )
+                    .bind(workspace_id)
+                    .bind(pid)
+                    .bind(pid)
+                    .bind(desc)
+                    .execute(&self.pool)
+                    .await?;
+                }
+            }
+        }
 
         Ok(())
     }
