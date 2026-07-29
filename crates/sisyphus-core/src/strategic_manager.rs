@@ -12,6 +12,7 @@ use sisyphus_intel::{SimulationResult, SisyphusSupervisor};
 use sisyphus_types::SOPGraph;
 use sisyphus_types::{CognitiveEvent, CognitiveMetrics, ExecutionTrace};
 
+use crate::cognitive_loop_v2::{AdaptiveDepthController, AnomalyDetector};
 use crate::{
     execution_manager::ExecutionManager, CoreError, ExecutionContext, ExecutionEvent,
     ExecutionStatus, Executor, IntelligenceManager, NodeOutput,
@@ -97,6 +98,10 @@ pub struct StrategicManager {
     pub failure_pattern_library: Arc<parking_lot::RwLock<FailurePatternLibrary>>,
     /// Deep reflector for multi-dimensional deviation analysis
     pub deep_reflector: Arc<parking_lot::RwLock<DeepReflector>>,
+    /// Cognitive loop v2: runtime anomaly detection
+    pub anomaly_detector: Arc<AnomalyDetector>,
+    /// Cognitive loop v2: adaptive depth control
+    pub depth_controller: AdaptiveDepthController,
 }
 
 impl StrategicManager {
@@ -142,6 +147,8 @@ impl StrategicManager {
                 FailurePatternLibrary::new(),
             )),
             deep_reflector: Arc::new(parking_lot::RwLock::new(DeepReflector::new())),
+            anomaly_detector: Arc::new(AnomalyDetector::default()),
+            depth_controller: AdaptiveDepthController::default(),
         }
     }
 
@@ -303,7 +310,7 @@ impl StrategicManager {
         };
 
         let (max_iterations, convergence_threshold) = {
-            // --- Dynamic Depth Adjustment ---
+            // --- Dynamic Depth Adjustment (v2) ---
             let depth = sisyphus_intel::ComplexityAnalyzer::analyze(
                 self.experience_bank.clone(),
                 &current_ref,
@@ -318,16 +325,28 @@ impl StrategicManager {
                 d_max = (d_max / 2).max(2);
             }
 
+            // v2: Also get AdaptiveDepthController budget
+            let v2_budget = self
+                .depth_controller
+                .initial_budget(
+                    self.experience_bank.clone(),
+                    &current_ref,
+                    goal_text.unwrap_or(sop_id),
+                )
+                .await;
+            let final_max = d_max.min(v2_budget as u32);
+
             let mut config_lock = self.config.write();
             tracing::info!(
-                "Updating loop parameters: max_iterations {} -> {}, threshold -> {}",
+                "Updating loop parameters: max_iterations {} -> {} (v2: {}), threshold -> {}",
                 config_lock.max_iterations,
-                d_max,
+                final_max,
+                v2_budget,
                 d_thresh
             );
 
             // Override strategy with dynamic depth
-            config_lock.max_iterations = d_max;
+            config_lock.max_iterations = final_max;
             config_lock.convergence_threshold = d_thresh;
 
             (
@@ -568,9 +587,40 @@ impl StrategicManager {
             let store_clone = self.execution_manager.state_store.clone();
             let sop_id_clone = sop_id.to_string();
             let user_event_tx = event_tx.clone();
+            let anomaly_det = self.anomaly_detector.clone();
 
             tokio::spawn(async move {
                 while let Some(event) = trace_rx.recv().await {
+                    // 0. Feed to AnomalyDetector for v2 runtime monitoring
+                    match &event {
+                        ExecutionEvent::NodeCompleted {
+                            node_name,
+                            fuel_consumed,
+                            duration_ms,
+                            ..
+                        } => {
+                            anomaly_det.observe(
+                                node_name,
+                                *fuel_consumed as u64,
+                                *duration_ms as u64,
+                                true,
+                            );
+                        }
+                        ExecutionEvent::NodeFailed {
+                            node_name,
+                            fuel_consumed,
+                            duration_ms,
+                            ..
+                        } => {
+                            anomaly_det.observe(
+                                node_name,
+                                *fuel_consumed as u64,
+                                *duration_ms as u64,
+                                false,
+                            );
+                        }
+                        _ => {}
+                    }
                     // 1. Record to structured storage
                     match &event {
                         ExecutionEvent::NodeCompleted {
@@ -991,6 +1041,7 @@ impl StrategicManager {
 
             let has_evolved = final_evolved_graph.is_some();
             let _iter_duration = iter_start.elapsed();
+            let confidence = 1.0 - reflection.deviation_score.min(1.0);
             iterations.push(CognitiveIteration {
                 iteration,
                 prediction: prediction.clone(),
@@ -999,7 +1050,41 @@ impl StrategicManager {
                 evolved: has_evolved,
             });
 
-            if reflection.deviation_score < convergence_threshold || !has_evolved {
+            // v2: Feed confidence into AdaptiveDepthController
+            let should_continue = self.depth_controller.observe_iteration(confidence);
+
+            // v2: Check anomaly report for extra reflection triggers
+            let anomaly_report = self.anomaly_detector.generate_report();
+            if anomaly_report.should_extra_reflect {
+                tracing::warn!(
+                    anomalies = anomaly_report.anomalies.len(),
+                    severity = ?anomaly_report.overall_severity,
+                    "V2 AnomalyDetector triggered extra reflection"
+                );
+                if let Some(ref tx) = stream_tx {
+                    let _ = tx.send(CognitiveEvent::CognitiveStep {
+                        step: "AnomalyDetected".into(),
+                        message: format!(
+                            "{} anomalies (severity: {:?})",
+                            anomaly_report.anomalies.len(),
+                            anomaly_report.overall_severity,
+                        ),
+                        metrics: Some(CognitiveMetrics {
+                            iteration,
+                            deviation: reflection.deviation_score,
+                            confidence,
+                            progress: (iteration as f32 / max_iterations as f32) * 100.0,
+                            token_cost: 0,
+                            stability: prediction.predicted_stability,
+                            info_gain: 0.0,
+                        }),
+                    });
+                }
+            }
+
+            if (reflection.deviation_score < convergence_threshold || !has_evolved)
+                && !anomaly_report.should_extra_reflect
+            {
                 if !has_evolved && reflection.deviation_score >= convergence_threshold {
                     // --- Tool Gap Detection ---
                     if let Ok(Some(gap)) = self
@@ -1024,6 +1109,17 @@ impl StrategicManager {
                         });
                     }
                 }
+                final_evolved = final_evolved_graph;
+                break;
+            }
+
+            // v2: Also break if depth controller says stop
+            if !should_continue && reflection.deviation_score < convergence_threshold * 1.5 {
+                tracing::info!(
+                    iteration,
+                    confidence,
+                    "AdaptiveDepthController: stopping early (convergence plateau)"
+                );
                 final_evolved = final_evolved_graph;
                 break;
             }

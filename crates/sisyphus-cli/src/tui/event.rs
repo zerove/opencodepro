@@ -104,6 +104,18 @@ pub(crate) fn handle_event(event: Event, app: &mut App, _perms: &CliPermission) 
                 return Ok(false);
             }
 
+            // Global: Ctrl+D → toggle dashboard
+            if key.code == KeyCode::Char('d')
+                && key
+                    .modifiers
+                    .contains(crossterm::event::KeyModifiers::CONTROL)
+            {
+                app.view = View::Dashboard;
+                app.dialog = None;
+                app.boulder_dirty = true;
+                return Ok(false);
+            }
+
             // Global: Ctrl+N → new session
             if key.code == KeyCode::Char('n')
                 && key
@@ -148,6 +160,7 @@ pub(crate) fn handle_event(event: Event, app: &mut App, _perms: &CliPermission) 
                             app.home_input.insert_str(byte_pos, &pasted);
                             app.home_cursor += pasted.chars().count();
                         }
+                        View::Dashboard => {}
                         View::Session if app.session_detail.is_some() => {
                             app.session_input.push_str(&pasted);
                         }
@@ -208,6 +221,7 @@ pub(crate) fn handle_event(event: Event, app: &mut App, _perms: &CliPermission) 
             match app.view {
                 View::Home => handle_home_key(key, app),
                 View::Session => handle_sessions_key(key, app),
+                View::Dashboard => crate::tui::dashboard::handle_dashboard_key(key, app),
             }
 
             if app.exit_immediately {

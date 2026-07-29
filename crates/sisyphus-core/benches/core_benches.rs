@@ -1,6 +1,8 @@
 use async_trait::async_trait;
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use sisyphus_core::{Executor, StateStore};
+use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
+use sisyphus_core::{
+    AdaptiveDepthController, AnomalyDetector, Executor, ParallelBranchPredictor, StateStore,
+};
 use sisyphus_mem::MfsStore;
 use sisyphus_sandbox::WasmToolExecutor;
 use sisyphus_types::{SOPGraph, ToolExecutor, WasmSOPNode};
@@ -206,9 +208,124 @@ fn bench_mfs_storage(c: &mut Criterion) {
     group.finish();
 }
 
+// ---------------------------------------------------------------------------
+// Cognitive Loop V2 Benchmarks
+// ---------------------------------------------------------------------------
+
+fn bench_v2_adaptive_depth_controller(c: &mut Criterion) {
+    let mut group = c.benchmark_group("v2_adaptive_depth");
+    group.measurement_time(Duration::from_secs(5));
+    group.sample_size(50);
+
+    // Simulate convergence under different noise profiles
+    for n_iter in [5u64, 10, 20] {
+        group.bench_with_input(
+            BenchmarkId::new("convergence_ramp", n_iter),
+            &n_iter,
+            |b, &n| {
+                b.iter(|| {
+                    let mut controller = AdaptiveDepthController::new(
+                        black_box(2.0),  // initial budget
+                        black_box(0.3),  // decay
+                        black_box(0.15), // min improvement
+                        black_box(0.05), // convergence threshold
+                    );
+                    for i in 0..n {
+                        // Simulate increasing confidence (1.0 plateau) with noise
+                        let confidence =
+                            (i as f64 / n as f64).min(1.0) + (i as f64 * 0.01).sin() * 0.05;
+                        let _ = controller.observe_iteration(black_box(confidence));
+                    }
+                    controller
+                })
+            },
+        );
+    }
+
+    // Plateau detection benchmark
+    group.bench_function("plateau_early_stop", |b| {
+        b.iter(|| {
+            let mut controller = AdaptiveDepthController::new(black_box(3.0), 0.3, 0.15, 0.05);
+            // 10 iterations of flat 0.92 confidence → simulated plateau
+            for _ in 0..10 {
+                let _ = controller.observe_iteration(black_box(0.92));
+            }
+            controller
+        })
+    });
+
+    group.finish();
+}
+
+fn bench_v2_anomaly_detector(c: &mut Criterion) {
+    let mut group = c.benchmark_group("v2_anomaly_detector");
+    group.measurement_time(Duration::from_secs(5));
+    group.sample_size(50);
+
+    for n_obs in [100u64, 1_000, 10_000] {
+        group.bench_with_input(BenchmarkId::new("observe_bulk", n_obs), &n_obs, |b, &n| {
+            b.iter(|| {
+                let detector = AnomalyDetector::default();
+                for i in 0..n {
+                    let node = format!("node_{}", i % 10);
+                    let fuel = 100 + (i * 7) % 50; // moderate variance
+                    let dur = 50 + (i * 3) % 20;
+                    let success = i % 20 != 0; // 5% fail rate
+                    detector.observe(
+                        black_box(&node),
+                        black_box(fuel),
+                        black_box(dur),
+                        black_box(success),
+                    );
+                }
+                drop(detector);
+            })
+        });
+    }
+
+    group.bench_function("report_generation", |b| {
+        b.iter(|| {
+            let detector = AnomalyDetector::default();
+            for i in 0..1000 {
+                let node = format!("node_{}", i % 10);
+                detector.observe(&node, 100 + (i * 7) % 50, 50 + (i * 3) % 20, true);
+            }
+            black_box(detector.generate_report())
+        })
+    });
+
+    group.finish();
+}
+
+fn bench_v2_parallel_branch_predictor(c: &mut Criterion) {
+    let mut group = c.benchmark_group("v2_branch_predictor");
+    group.measurement_time(Duration::from_secs(5));
+    group.sample_size(50);
+
+    let predictor = ParallelBranchPredictor::new(4); // up to 4 parallel branches
+
+    // Branch count benchmark
+    for n_branches in [2usize, 4, 8, 16] {
+        let confidences: Vec<f64> = (0..n_branches)
+            .map(|i| 0.5 + (i as f64 * 0.1).min(0.4))
+            .collect();
+        group.bench_with_input(
+            BenchmarkId::new("score_branches", n_branches),
+            &confidences,
+            |b, confs| {
+                b.iter(|| black_box(predictor.predict_parallelism(black_box(confs))));
+            },
+        );
+    }
+
+    group.finish();
+}
+
 criterion_group!(
     name = core_benches;
     config = Criterion::default().warm_up_time(Duration::from_secs(2));
-    targets = bench_dag_execution, bench_wasm_execution, bench_mfs_storage
+    targets = bench_dag_execution, bench_wasm_execution, bench_mfs_storage,
+              bench_v2_adaptive_depth_controller, bench_v2_anomaly_detector,
+              bench_v2_parallel_branch_predictor
 );
 criterion_main!(core_benches);

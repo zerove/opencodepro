@@ -1080,4 +1080,75 @@ impl SisyphusBridge for MySisyphusBridge {
             })),
         }
     }
+
+    // ── Chaos Engineering Stubs ────────────────────────────
+
+    async fn start_chaos(
+        &self,
+        _request: Request<sisyphus_bridge_api::ChaosStartRequest>,
+    ) -> Result<Response<sisyphus_bridge_api::ChaosStartResponse>, Status> {
+        Ok(Response::new(sisyphus_bridge_api::ChaosStartResponse {
+            success: true,
+            experiment_id: format!(
+                "chaos_{}",
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_nanos()
+            ),
+            error: String::new(),
+        }))
+    }
+
+    async fn stop_chaos(
+        &self,
+        _request: Request<sisyphus_bridge_api::ChaosStopRequest>,
+    ) -> Result<Response<sisyphus_bridge_api::ChaosStopResponse>, Status> {
+        Ok(Response::new(sisyphus_bridge_api::ChaosStopResponse {
+            success: true,
+            result: Some(sisyphus_bridge_api::ChaosExperimentResult {
+                name: "stopped".into(),
+                operations_attempted: 0,
+                operations_succeeded: 0,
+                operations_failed: 0,
+                faults_injected: 0,
+                success_rate: 0.0,
+            }),
+            error: String::new(),
+        }))
+    }
+
+    async fn get_chaos_status(
+        &self,
+        _request: Request<sisyphus_bridge_api::ChaosStatusRequest>,
+    ) -> Result<Response<sisyphus_bridge_api::ChaosStatusResponse>, Status> {
+        Ok(Response::new(sisyphus_bridge_api::ChaosStatusResponse {
+            running: false,
+            result: None,
+        }))
+    }
+
+    type StreamAnomalyReportStream = tonic::codegen::BoxStream<sisyphus_bridge_api::AnomalyReport>;
+
+    async fn stream_anomaly_report(
+        &self,
+        _request: Request<sisyphus_bridge_api::AnomalyRequest>,
+    ) -> Result<Response<Self::StreamAnomalyReportStream>, Status> {
+        use tokio_stream::StreamExt;
+        let (tx, rx) = mpsc::unbounded_channel();
+        let _ = tx.send(sisyphus_bridge_api::AnomalyReport {
+            node_name: "system".into(),
+            severity: "info".into(),
+            metric: "startup".into(),
+            observed: 0.0,
+            expected: 0.0,
+            description: "Anomaly detection stream active (no anomalies yet)".into(),
+            timestamp: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs(),
+        });
+        let stream = tokio_stream::wrappers::UnboundedReceiverStream::new(rx).map(Ok);
+        Ok(Response::new(Box::pin(stream)))
+    }
 }

@@ -65,6 +65,14 @@ service SisyphusBridge {
   // TUI State synchronization — push updates for sessions, todos, and background operations.
   rpc CallJcode (CallJcodeRequest) returns (CallJcodeResponse);
   rpc StreamEvents (EventRequest) returns (stream BridgeEvent);
+
+  // Chaos Engineering — fault injection experiments.
+  rpc StartChaos (ChaosStartRequest) returns (ChaosStartResponse);
+  rpc StopChaos (ChaosStopRequest) returns (ChaosStopResponse);
+  rpc GetChaosStatus (ChaosStatusRequest) returns (ChaosStatusResponse);
+
+  // Anomaly Detection — runtime cognitive loop health.
+  rpc StreamAnomalyReport (AnomalyRequest) returns (stream AnomalyReport);
 }
 
 message ListAgentsRequest {}
@@ -463,4 +471,62 @@ message CallJcodeResponse {
   bool success = 1;
   string result = 2;
   string error = 3;
+}
+
+// ── Chaos Engineering ──────────────────────────────────────
+message ChaosStartRequest {
+  string name = 1;
+  repeated string fault_types = 2;
+  double fault_probability = 3;
+  uint64 duration_seconds = 4;
+  repeated string target_operations = 5;
+}
+
+message ChaosStartResponse {
+  bool success = 1;
+  string experiment_id = 2;
+  string error = 3;
+}
+
+message ChaosStopRequest {
+  string experiment_id = 1;
+}
+
+message ChaosStopResponse {
+  bool success = 1;
+  ChaosExperimentResult result = 2;
+  string error = 3;
+}
+
+message ChaosStatusRequest {
+  string experiment_id = 1;
+}
+
+message ChaosStatusResponse {
+  bool running = 1;
+  ChaosExperimentResult result = 2;
+}
+
+message ChaosExperimentResult {
+  string name = 1;
+  uint64 operations_attempted = 2;
+  uint64 operations_succeeded = 3;
+  uint64 operations_failed = 4;
+  uint64 faults_injected = 5;
+  double success_rate = 6;
+}
+
+// ── Anomaly Detection ──────────────────────────────────────
+message AnomalyRequest {
+  string sop_id = 1;
+}
+
+message AnomalyReport {
+  string node_name = 1;
+  string severity = 2;
+  string metric = 3;
+  double observed = 4;
+  double expected = 5;
+  string description = 6;
+  uint64 timestamp = 7;
 }

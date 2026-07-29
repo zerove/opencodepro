@@ -5,6 +5,7 @@ use anyhow::Result;
 
 pub(crate) mod app;
 pub(crate) mod background;
+pub(crate) mod dashboard;
 mod dialog;
 pub mod enhancements;
 mod event;

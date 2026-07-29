@@ -23,6 +23,7 @@ pub(crate) fn ui(frame: &mut ratatui::Frame, app: &App) {
     match app.view {
         View::Home => crate::tui::home::render_home(frame, content_area, app),
         View::Session => crate::tui::sessions::render_sessions(frame, content_area, app),
+        View::Dashboard => crate::tui::dashboard::render_dashboard(frame, content_area, app),
     }
 
     // If a dialog is active, render it as overlay
@@ -147,12 +148,14 @@ pub(crate) fn render_status(app: &App) -> Line<'static> {
     let view_label = match app.view {
         View::Home => " HOME ",
         View::Session => " SESSION ",
+        View::Dashboard => " DASHBOARD ",
     };
 
     let help: String = match app.view {
         View::Home => {
             "Enter: start session | Ctrl+K: palette | Ctrl+L: sessions | type prompt".into()
         }
+        View::Dashboard => "Ctrl+H home | Ctrl+D toggle dashboard".into(),
         View::Session => {
             if app.session_detail.is_some() {
                 let mode_label = if app.session_mode == Mode::Input {

@@ -223,6 +223,7 @@ pub(crate) fn matching_palette_entries(query: &str) -> Vec<&'static CmdPalEntry>
 pub(crate) enum View {
     Home,
     Session,
+    Dashboard,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
