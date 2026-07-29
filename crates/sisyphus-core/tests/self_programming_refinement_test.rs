@@ -78,6 +78,7 @@ async fn test_self_programming_refinement_loop() {
         Arc::new(sisyphus_knowledge::AssetManager::new(
             ".sisyphus/knowledge".into(),
         )),
+        None,
     );
 
     // 3. Define a gap
@@ -91,6 +92,8 @@ async fn test_self_programming_refinement_loop() {
             expected_input: serde_json::json!({}),
             expected_output: serde_json::json!({}),
             success_criteria: "returns ok".into(),
+            test_command: None,
+            workdir: None,
         },
     };
 

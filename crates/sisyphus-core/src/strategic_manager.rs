@@ -131,6 +131,7 @@ impl StrategicManager {
                     intelligence_manager.llm_client.clone(),
                     execution_manager.clone(),
                     knowledge_manager.clone(),
+                    None,
                 ),
             ),
             intervention_manager,

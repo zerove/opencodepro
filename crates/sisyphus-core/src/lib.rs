@@ -45,6 +45,9 @@ pub use supervisor::*;
 
 pub mod cognitive_loop;
 
+pub mod cognitive_loop_v2;
+pub use cognitive_loop_v2::*;
+
 pub use strategic_manager::{CognitiveIteration, CognitiveReport};
 
 pub mod execution_manager;
@@ -73,8 +76,10 @@ pub mod intent_gate;
 
 pub mod budget;
 
+pub mod chaos_testing;
+pub use chaos_testing::*;
+
 pub mod performance;
-pub use performance::*;
 
 pub mod dag_renderer;
 pub use dag_renderer::*;

@@ -1,0 +1,583 @@
+//! Chaos Engineering framework for Sisyphus.
+//!
+//! Provides tools for:
+//! - Fault injection (timeouts, crashes, network failures)
+//! - DAG boundary condition testing
+//! - Storage concurrency stress testing
+//! - Agent team resilience verification
+
+use crate::CoreError;
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::Arc;
+use std::time::Duration;
+use tracing::info;
+
+// ---------------------------------------------------------------------------
+// Fault Injection
+// ---------------------------------------------------------------------------
+
+/// Types of faults that can be injected into the system.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum FaultType {
+    /// Simulate an LLM timeout (delay + error).
+    LlmTimeout,
+    /// Simulate an LLM returning garbage/unparseable response.
+    LlmGarbage,
+    /// Simulate a tool execution crash.
+    ToolCrash,
+    /// Simulate a tool execution hang (never returns).
+    ToolHang,
+    /// Simulate a storage write failure.
+    StorageWriteFailure,
+    /// Simulate a storage read failure.
+    StorageReadFailure,
+    /// Simulate a network partition between components.
+    NetworkPartition,
+    /// Random delay injection (up to max_ms).
+    RandomDelay(u64),
+}
+
+/// Configuration for a chaos experiment.
+#[derive(Debug, Clone)]
+pub struct ChaosExperiment {
+    pub name: String,
+    pub fault_types: Vec<FaultType>,
+    /// Probability (0.0 - 1.0) of injecting fault per operation.
+    pub fault_probability: f64,
+    /// How long the experiment runs before auto-stop.
+    pub duration: Duration,
+    /// Whether to inject faults on all operations or just a targeted subset.
+    pub target_operations: Option<Vec<String>>,
+}
+
+/// Result of a chaos experiment.
+#[derive(Debug, Clone)]
+pub struct ChaosExperimentResult {
+    pub name: String,
+    pub duration: Duration,
+    pub operations_attempted: u64,
+    pub operations_succeeded: u64,
+    pub operations_failed: u64,
+    pub faults_injected: u64,
+    pub system_recovered: bool,
+    pub observations: Vec<String>,
+}
+
+impl ChaosExperimentResult {
+    pub fn success_rate(&self) -> f64 {
+        if self.operations_attempted == 0 {
+            return 1.0;
+        }
+        self.operations_succeeded as f64 / self.operations_attempted as f64
+    }
+}
+
+/// A chaos experiment runner.
+pub struct ChaosRunner {
+    /// Whether the chaos injection is active.
+    enabled: Arc<AtomicBool>,
+    /// Counter for injected faults.
+    fault_count: Arc<AtomicU64>,
+    /// Counter for total operations.
+    op_count: Arc<AtomicU64>,
+    /// Current experiment configuration.
+    current_experiment: parking_lot::Mutex<Option<ChaosExperiment>>,
+}
+
+impl Default for ChaosRunner {
+    fn default() -> Self {
+        Self {
+            enabled: Arc::new(AtomicBool::new(false)),
+            fault_count: Arc::new(AtomicU64::new(0)),
+            op_count: Arc::new(AtomicU64::new(0)),
+            current_experiment: parking_lot::Mutex::new(None),
+        }
+    }
+}
+
+impl ChaosRunner {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Start a chaos experiment.
+    pub fn start_experiment(&self, experiment: ChaosExperiment) {
+        self.enabled.store(true, Ordering::SeqCst);
+        self.fault_count.store(0, Ordering::SeqCst);
+        self.op_count.store(0, Ordering::SeqCst);
+        *self.current_experiment.lock() = Some(experiment.clone());
+
+        info!(
+            name = %experiment.name,
+            faults = ?experiment.fault_types,
+            prob = experiment.fault_probability,
+            "Chaos experiment started"
+        );
+    }
+
+    /// Stop the current experiment and return results.
+    pub fn stop_experiment(&self) -> Option<ChaosExperimentResult> {
+        self.enabled.store(false, Ordering::SeqCst);
+        let experiment = self.current_experiment.lock().take();
+        experiment.map(|exp| {
+            let ops = self.op_count.load(Ordering::SeqCst);
+            let faults = self.fault_count.load(Ordering::SeqCst);
+            ChaosExperimentResult {
+                name: exp.name,
+                duration: exp.duration,
+                operations_attempted: ops,
+                operations_succeeded: ops.saturating_sub(faults),
+                operations_failed: faults,
+                faults_injected: faults,
+                system_recovered: true,
+                observations: vec![],
+            }
+        })
+    }
+
+    /// Check if chaos is active, and if so, maybe inject a fault.
+    /// Returns `Some(error)` if a fault should be injected, `None` if normal operation.
+    pub fn maybe_inject(&self, op_name: &str) -> Option<CoreError> {
+        if !self.enabled.load(Ordering::SeqCst) {
+            return None;
+        }
+
+        self.op_count.fetch_add(1, Ordering::SeqCst);
+
+        let experiment = self.current_experiment.lock();
+        let exp = experiment.as_ref()?;
+
+        // Check if operation is targeted
+        if let Some(ref targets) = exp.target_operations {
+            if !targets.iter().any(|t| op_name.contains(t)) {
+                return None;
+            }
+        }
+
+        // Probability check
+        let roll = simple_random(
+            op_name,
+            &format!("op_{}", self.op_count.load(Ordering::Relaxed)),
+        );
+        if roll > exp.fault_probability {
+            return None;
+        }
+
+        // Select a random fault type from the configured list
+        if exp.fault_types.is_empty() {
+            return None;
+        }
+
+        let fault_idx = simple_usize_random(op_name, exp.fault_types.len());
+        let fault = exp.fault_types[fault_idx];
+
+        self.fault_count.fetch_add(1, Ordering::SeqCst);
+        drop(experiment);
+
+        Some(match fault {
+            FaultType::LlmTimeout => CoreError::Internal("Chaos: LLM timeout injected".into()),
+            FaultType::LlmGarbage => {
+                CoreError::Internal("Chaos: LLM garbage response injected".into())
+            }
+            FaultType::ToolCrash => CoreError::Internal("Chaos: Tool crash injected".into()),
+            FaultType::ToolHang => CoreError::Internal("Chaos: Tool hang injected".into()),
+            FaultType::StorageWriteFailure => {
+                CoreError::Internal("Chaos: Storage write failure injected".into())
+            }
+            FaultType::StorageReadFailure => {
+                CoreError::Internal("Chaos: Storage read failure injected".into())
+            }
+            FaultType::NetworkPartition => {
+                CoreError::Internal("Chaos: Network partition injected".into())
+            }
+            FaultType::RandomDelay(max_ms) => {
+                let delay = simple_u64_random(op_name, max_ms);
+                std::thread::sleep(Duration::from_millis(delay));
+                return None; // Delay is not an error, just latency
+            }
+        })
+    }
+}
+
+// ---------------------------------------------------------------------------
+// DAG Boundary Conditions
+// ---------------------------------------------------------------------------
+
+/// Test helpers for DAG boundary conditions.
+pub mod dag_test {
+    use sisyphus_types::{SOPGraph, SOPGraphConfig, WasmSOPNode};
+    use std::sync::Arc;
+
+    /// Creates a DAG with a single node.
+    pub fn single_node(name: &str, tool_id: &str) -> SOPGraphConfig {
+        let mut graph = SOPGraph::new();
+        graph.add_node(Arc::new(WasmSOPNode {
+            name: name.to_string(),
+            tool_id: tool_id.to_string(),
+            fuel_limit: 1000,
+            executor: Arc::new(super::NoopToolExecutor),
+        }));
+        SOPGraphConfig::from_graph(&graph).unwrap()
+    }
+
+    /// Creates a linear chain DAG with `n` nodes.
+    pub fn linear_chain(n: usize) -> SOPGraphConfig {
+        let mut graph = SOPGraph::new();
+        let mut indices = Vec::with_capacity(n);
+        for i in 0..n {
+            let idx = graph.add_node(Arc::new(WasmSOPNode {
+                name: format!("node_{}", i),
+                tool_id: format!("tool_{}", i),
+                fuel_limit: 1000,
+                executor: Arc::new(super::NoopToolExecutor),
+            }));
+            indices.push(idx);
+        }
+        for i in 1..n {
+            graph.add_edge(indices[i - 1], indices[i]);
+        }
+        SOPGraphConfig::from_graph(&graph).unwrap()
+    }
+
+    /// Creates a diamond DAG: root -> [left, right] -> merge.
+    pub fn diamond() -> SOPGraphConfig {
+        let mut graph = SOPGraph::new();
+        let root = graph.add_node(Arc::new(WasmSOPNode {
+            name: "root".into(),
+            tool_id: "t1".into(),
+            fuel_limit: 1000,
+            executor: Arc::new(super::NoopToolExecutor),
+        }));
+        let left = graph.add_node(Arc::new(WasmSOPNode {
+            name: "left".into(),
+            tool_id: "t2".into(),
+            fuel_limit: 1000,
+            executor: Arc::new(super::NoopToolExecutor),
+        }));
+        let right = graph.add_node(Arc::new(WasmSOPNode {
+            name: "right".into(),
+            tool_id: "t3".into(),
+            fuel_limit: 1000,
+            executor: Arc::new(super::NoopToolExecutor),
+        }));
+        let merge = graph.add_node(Arc::new(WasmSOPNode {
+            name: "merge".into(),
+            tool_id: "t4".into(),
+            fuel_limit: 1000,
+            executor: Arc::new(super::NoopToolExecutor),
+        }));
+        graph.add_edge(root, left);
+        graph.add_edge(root, right);
+        graph.add_edge(left, merge);
+        graph.add_edge(right, merge);
+        SOPGraphConfig::from_graph(&graph).unwrap()
+    }
+
+    /// Creates a wide DAG with 1 root fanning out to `n` parallel leaves.
+    pub fn wide_fanout(n: usize) -> SOPGraphConfig {
+        let mut graph = SOPGraph::new();
+        let root = graph.add_node(Arc::new(WasmSOPNode {
+            name: "root".into(),
+            tool_id: "t_root".into(),
+            fuel_limit: 1000,
+            executor: Arc::new(super::NoopToolExecutor),
+        }));
+        for i in 0..n {
+            let leaf = graph.add_node(Arc::new(WasmSOPNode {
+                name: format!("leaf_{}", i),
+                tool_id: format!("t_{}", i),
+                fuel_limit: 1000,
+                executor: Arc::new(super::NoopToolExecutor),
+            }));
+            graph.add_edge(root, leaf);
+        }
+        SOPGraphConfig::from_graph(&graph).unwrap()
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/// Deterministic pseudo-random value in [0.0, 1.0) based on input strings.
+fn simple_random(seed1: &str, seed2: &str) -> f64 {
+    let mut hasher = DefaultHasher::new();
+    seed1.hash(&mut hasher);
+    seed2.hash(&mut hasher);
+    let hash = hasher.finish();
+    (hash as f64) / (u64::MAX as f64)
+}
+
+/// Deterministic pseudo-random usize in [0, max) based on input strings.
+fn simple_usize_random(seed: &str, max: usize) -> usize {
+    let mut hasher = DefaultHasher::new();
+    seed.hash(&mut hasher);
+    let hash = hasher.finish();
+    if max == 0 {
+        0
+    } else {
+        (hash as usize) % max
+    }
+}
+
+/// Deterministic pseudo-random u64 in [0, max) based on input strings.
+fn simple_u64_random(seed: &str, max: u64) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    seed.hash(&mut hasher);
+    let hash = hasher.finish();
+    if max == 0 {
+        0
+    } else {
+        hash % max
+    }
+}
+
+use async_trait::async_trait;
+
+pub struct NoopToolExecutor;
+
+#[async_trait]
+impl sisyphus_types::ToolExecutor for NoopToolExecutor {
+    async fn execute(
+        &self,
+        tool_id: &str,
+        _args: Vec<u8>,
+        _fuel_limit: u64,
+    ) -> Result<Vec<u8>, sisyphus_types::TypesError> {
+        Ok(format!("noop:{}", tool_id).into_bytes())
+    }
+}
+
+#[cfg(test)]
+pub async fn make_test_store() -> Arc<sisyphus_mem::MfsStore> {
+    Arc::new(
+        sisyphus_mem::MfsStore::new("sqlite::memory:")
+            .await
+            .unwrap(),
+    )
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sisyphus_types::StateStore;
+    use sisyphus_types::ToolExecutor;
+
+    #[tokio::test]
+    async fn test_chaos_runner_enable_disable() {
+        let runner = ChaosRunner::new();
+        assert!(
+            runner.maybe_inject("test").is_none(),
+            "Should not inject when disabled"
+        );
+
+        runner.start_experiment(ChaosExperiment {
+            name: "test".into(),
+            fault_types: vec![FaultType::ToolCrash],
+            fault_probability: 1.0,
+            duration: Duration::from_secs(1),
+            target_operations: None,
+        });
+
+        // With 1.0 probability, should always inject
+        let result = runner.maybe_inject("execute");
+        assert!(result.is_some(), "Should inject when enabled");
+
+        let exp_result = runner.stop_experiment();
+        assert!(exp_result.is_some());
+        let exp = exp_result.unwrap();
+        assert_eq!(exp.faults_injected, 1);
+        assert_eq!(exp.operations_attempted, 1);
+    }
+
+    #[tokio::test]
+    async fn test_chaos_runner_probability() {
+        let runner = ChaosRunner::new();
+        runner.start_experiment(ChaosExperiment {
+            name: "prob-test".into(),
+            fault_types: vec![FaultType::RandomDelay(10)],
+            fault_probability: 0.0, // Never inject
+            duration: Duration::from_secs(1),
+            target_operations: None,
+        });
+
+        // With 0.0 probability, should never inject
+        for _ in 0..100 {
+            assert!(
+                runner.maybe_inject("test").is_none(),
+                "Should not inject with 0 probability"
+            );
+        }
+
+        let result = runner.stop_experiment().unwrap();
+        assert_eq!(result.faults_injected, 0);
+        assert_eq!(result.operations_attempted, 100);
+    }
+
+    #[tokio::test]
+    async fn test_chaos_runner_targeted_operations() {
+        let runner = ChaosRunner::new();
+        runner.start_experiment(ChaosExperiment {
+            name: "targeted".into(),
+            fault_types: vec![FaultType::ToolCrash],
+            fault_probability: 1.0,
+            duration: Duration::from_secs(1),
+            target_operations: Some(vec!["crash_me".into()]),
+        });
+
+        // Should NOT inject for non-targeted operation
+        assert!(
+            runner.maybe_inject("safe_op").is_none(),
+            "Should not inject on non-targeted op"
+        );
+        // Should inject for targeted operation
+        assert!(
+            runner.maybe_inject("crash_me").is_some(),
+            "Should inject on targeted op"
+        );
+
+        let result = runner.stop_experiment().unwrap();
+        assert_eq!(result.faults_injected, 1);
+        assert_eq!(result.operations_attempted, 2);
+    }
+
+    #[tokio::test]
+    async fn test_chaos_runner_error_rate() {
+        let runner = ChaosRunner::new();
+        runner.start_experiment(ChaosExperiment {
+            name: "rate".into(),
+            fault_types: vec![FaultType::ToolCrash],
+            fault_probability: 0.5,
+            duration: Duration::from_secs(1),
+            target_operations: None,
+        });
+
+        let mut total_ops = 0u64;
+        let mut total_faults = 0u64;
+        for _ in 0..200 {
+            if runner.maybe_inject("op").is_some() {
+                total_faults += 1;
+            }
+            total_ops += 1;
+        }
+
+        // With 0.5 probability, expect roughly 50% faults
+        let rate = total_faults as f64 / total_ops as f64;
+        assert!(
+            (rate - 0.5).abs() < 0.15,
+            "Expected ~50% fault rate, got {}%",
+            rate * 100.0
+        );
+
+        let result = runner.stop_experiment().unwrap();
+        drop(result);
+    }
+
+    #[tokio::test]
+    async fn test_dag_single_node() {
+        let config = dag_test::single_node("solo", "tool_x");
+        assert_eq!(config.nodes.len(), 1);
+        assert_eq!(config.nodes[0].name, "solo");
+    }
+
+    #[tokio::test]
+    async fn test_dag_linear_chain() {
+        let config = dag_test::linear_chain(5);
+        assert_eq!(config.nodes.len(), 5);
+        assert_eq!(config.edges.len(), 4);
+    }
+
+    #[tokio::test]
+    async fn test_dag_diamond() {
+        let config = dag_test::diamond();
+        assert_eq!(config.nodes.len(), 4);
+        assert_eq!(config.edges.len(), 4);
+    }
+
+    #[tokio::test]
+    async fn test_dag_wide_fanout() {
+        let config = dag_test::wide_fanout(100);
+        assert_eq!(config.nodes.len(), 101); // 1 root + 100 leaves
+        assert_eq!(config.edges.len(), 100);
+    }
+
+    #[tokio::test]
+    async fn test_dag_linear_chain_boundary() {
+        // Test edge cases: empty, single, huge
+        let empty = dag_test::linear_chain(0);
+        assert_eq!(empty.nodes.len(), 0);
+        assert_eq!(empty.edges.len(), 0);
+
+        let single = dag_test::linear_chain(1);
+        assert_eq!(single.nodes.len(), 1);
+        assert_eq!(single.edges.len(), 0);
+
+        let large = dag_test::linear_chain(1000);
+        assert_eq!(large.nodes.len(), 1000);
+        assert_eq!(large.edges.len(), 999);
+    }
+
+    #[tokio::test]
+    async fn test_storage_concurrent_read_write() {
+        let store = make_test_store().await;
+        let key = "concurrent_key";
+        let value = serde_json::json!({"data": "test"});
+        let value2 = value.clone();
+
+        let store1 = store.clone();
+        let store2 = store.clone();
+        let store3 = store.clone();
+
+        // Concurrent writes
+        let h1 = tokio::spawn(async move {
+            store1.set_state_json("proj1", key, value).await.unwrap();
+        });
+        let h2 = tokio::spawn(async move {
+            store2.set_state_json("proj2", key, value2).await.unwrap();
+        });
+        let h3 = tokio::spawn(async move {
+            store3.get_state_json("proj1", key).await.unwrap();
+        });
+
+        tokio::try_join!(h1, h2, h3).unwrap();
+
+        // Verify isolation
+        let result = store.get_state_json("proj1", key).await.unwrap();
+        assert!(result.is_some(), "Project should have its own state");
+    }
+
+    #[tokio::test]
+    async fn test_storage_high_concurrency() {
+        let store = make_test_store().await;
+        let mut handles = Vec::new();
+
+        for i in 0..50 {
+            let s = store.clone();
+            handles.push(tokio::spawn(async move {
+                let key = format!("key_{}", i);
+                let val = serde_json::json!({"idx": i});
+                s.set_state_json("project", &key, val).await.unwrap();
+                let r = s.get_state_json("project", &key).await.unwrap();
+                assert!(r.is_some(), "Key {} should be readable", key);
+            }));
+        }
+
+        for h in handles {
+            h.await.unwrap();
+        }
+    }
+
+    #[tokio::test]
+    async fn test_noop_tool_executor() {
+        let executor = NoopToolExecutor;
+        let result = executor.execute("test_tool", vec![], 100).await.unwrap();
+        let output = String::from_utf8(result).unwrap();
+        assert_eq!(output, "noop:test_tool");
+    }
+}

@@ -95,6 +95,18 @@ pub enum CognitiveEvent {
         tool_id: String,
         asset_id: String,
     },
+    ToolRegistered {
+        tool_id: String,
+        skill_id: String,
+        score: f64,
+    },
+    QualityEvaluation {
+        tool_id: String,
+        unit_tests_passed: bool,
+        integration_tests_passed: bool,
+        regression_score: f64,
+        quality_score: f64,
+    },
     /// Intermediate cognitive step (planning, deep reflection, etc.)
     CognitiveStep {
         step: String,

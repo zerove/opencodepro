@@ -150,6 +150,7 @@ async fn test_self_evolution_e2e() {
         llm_client.clone(),
         execution_manager.clone(),
         asset_manager.clone(),
+        None,
     );
 
     // 4. Define a tool gap
@@ -163,6 +164,8 @@ async fn test_self_evolution_e2e() {
             expected_input: "Symmetry Analysis of object X".into(),
             expected_output: "Symmetry score and analysis".into(),
             success_criteria: "Score between 0 and 1".into(),
+            test_command: None,
+            workdir: None,
         },
     };
 
