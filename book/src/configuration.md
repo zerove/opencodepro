@@ -17,7 +17,9 @@ default_fuel = 1_000_000
 
 [cache]
 l1_capacity = 10_000
-sqlite_path = "data/sisyphus.db"
+database_url = "sqlite:data/sisyphus.db"
+enable_vectors = false
+vector_dimension = 1536
 
 [metrics]
 prometheus_port = 9100
@@ -27,6 +29,24 @@ max_memory_pages = 10
 default_fuel = 1_000_000
 wasm_tools_dir = "tools"
 ```
+
+## Database Backends
+
+The `database_url` in `[cache]` supports two backends:
+
+| URL Prefix | Backend | Vector Support |
+|------------|---------|----------------|
+| `sqlite:`   | SQLite (default) | Full scan + memory cosine similarity |
+| `postgres://` | PostgreSQL | pgvector ANN (`<->` operator) |
+
+### PostgreSQL / pgvector
+
+For semantic similarity search with ANN indexes:
+
+1. Install the `vector` extension on your Postgres server
+2. Set `database_url = "postgres://user:pass@host/sisyphus"`
+3. Set `enable_vectors = true` and `vector_dimension = 1536` (or your embedding model's dimension)
+4. SqlStore automatically runs `CREATE EXTENSION IF NOT EXISTS vector` on connect
 
 ## Override Order
 
@@ -46,7 +66,9 @@ All environment variables use the prefix `SISYPHUS_`:
 | `SISYPHUS_EXECUTOR_MAX_CONCURRENT_TASKS` | `executor.max_concurrent_tasks` | usize | `16` |
 | `SISYPHUS_EXECUTOR_DEFAULT_FUEL` | `executor.default_fuel` | u64 | `1_000_000` |
 | `SISYPHUS_CACHE_L1_CAPACITY` | `cache.l1_capacity` | usize | `10_000` |
-| `SISYPHUS_CACHE_SQLITE_PATH` | `cache.sqlite_path` | string | `data/sisyphus.db` |
+| `SISYPHUS_CACHE_DATABASE_URL` | `cache.database_url` | string | `sqlite:data/sisyphus.db` |
+| `SISYPHUS_CACHE_ENABLE_VECTORS` | `cache.enable_vectors` | bool | `false` |
+| `SISYPHUS_CACHE_VECTOR_DIMENSION` | `cache.vector_dimension` | usize | `1536` |
 | `SISYPHUS_METRICS_PROMETHEUS_PORT` | `metrics.prometheus_port` | u16 | `9100` |
 | `SISYPHUS_SANDBOX_MAX_MEMORY_PAGES` | `sandbox.max_memory_pages` | u32 | `10` |
 | `SISYPHUS_SANDBOX_DEFAULT_FUEL` | `sandbox.default_fuel` | u64 | `1_000_000` |

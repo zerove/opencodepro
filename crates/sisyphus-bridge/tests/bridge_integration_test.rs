@@ -11,7 +11,7 @@ use tonic::transport::Server;
 async fn test_bridge_health_check() {
     // 1. Setup Minimal Config
     let mut config = Config::default();
-    config.cache.sqlite_path = "sqlite::memory:".to_string();
+    config.cache.database_url = "sqlite::memory:".to_string();
     config.sandbox.wasm_tools_dir = "tests/wasm_tools".to_string(); // Dummy path
     let shared_config = Arc::new(RwLock::new(config));
 
@@ -57,7 +57,7 @@ async fn test_bridge_health_check() {
 async fn test_bridge_execute_sop() {
     // 1. Setup Minimal Config
     let mut config = Config::default();
-    config.cache.sqlite_path = "sqlite::memory:".to_string();
+    config.cache.database_url = "sqlite::memory:".to_string();
     config.sandbox.wasm_tools_dir = "tests/wasm_tools".to_string();
     let shared_config = Arc::new(RwLock::new(config));
 

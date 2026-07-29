@@ -63,7 +63,7 @@ async fn main() -> Result<()> {
     };
 
     let data_dir = cli.data_dir.clone().unwrap_or_else(|| {
-        let sqlite = PathBuf::from(&sisyphus_cfg.cache.sqlite_path);
+        let sqlite = PathBuf::from(&sisyphus_cfg.cache.database_url);
         sqlite
             .parent()
             .unwrap_or(Path::new(".sisyphus"))

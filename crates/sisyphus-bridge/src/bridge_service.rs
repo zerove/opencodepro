@@ -95,7 +95,7 @@ impl MySisyphusBridge {
                 }
             })?;
             (
-                config.cache.sqlite_path.clone(),
+                config.cache.database_url.clone(),
                 config.cache.l1_capacity,
                 config.executor.max_concurrent_tasks,
                 config.sandbox.wasm_tools_dir.clone(),

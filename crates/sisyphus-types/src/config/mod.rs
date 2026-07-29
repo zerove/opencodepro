@@ -140,6 +140,15 @@ impl Config {
         fn env_string(key: &str) -> Option<String> {
             std::env::var(key).ok()
         }
+        fn env_bool(key: &str) -> Option<bool> {
+            std::env::var(key)
+                .ok()
+                .and_then(|v| match v.to_lowercase().as_str() {
+                    "true" | "1" | "yes" | "on" => Some(true),
+                    "false" | "0" | "no" | "off" => Some(false),
+                    _ => None,
+                })
+        }
 
         if let Some(v) = env_string("SISYPHUS_REGISTRY_URL") {
             self.registry.registry_url = v;
@@ -162,8 +171,14 @@ impl Config {
         if let Some(v) = env_usize("SISYPHUS_CACHE_L1_CAPACITY") {
             self.cache.l1_capacity = v;
         }
-        if let Some(v) = env_string("SISYPHUS_CACHE_SQLITE_PATH") {
-            self.cache.sqlite_path = v;
+        if let Some(v) = env_string("SISYPHUS_CACHE_DATABASE_URL") {
+            self.cache.database_url = v;
+        }
+        if let Some(v) = env_bool("SISYPHUS_CACHE_ENABLE_VECTORS") {
+            self.cache.enable_vectors = v;
+        }
+        if let Some(v) = env_usize("SISYPHUS_CACHE_VECTOR_DIMENSION") {
+            self.cache.vector_dimension = v;
         }
         if let Some(v) = env_u16("SISYPHUS_METRICS_PROMETHEUS_PORT") {
             self.metrics.prometheus_port = v;

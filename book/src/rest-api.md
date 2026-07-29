@@ -1,26 +1,68 @@
 # REST API Reference
 
-All endpoints are served by the webui or bridge service.
+All endpoints are served by the Sisyphus Bridge HTTP server (listening on `[::1]:8080` by default).
+
+The OpenAPI specification is available at [`/openapi.json`](/openapi.json) or via the Swagger UI at [`/swagger-ui`](/swagger-ui).
 
 ## Authentication
 
-Include `X-API-Key` header or `Authorization: Bearer <token>`.
+Include `Authorization: Bearer <token>` header. The token is configured in `config.auth_token`.
 
 ## Health
 
 ### `GET /health`
 
 ```json
-{ "status": "ok", "version": "0.1.0", "uptime_secs": 3600 }
+{ "status": "SERVING", "version": "0.1.0" }
+```
+
+## Tool Execution
+
+### `POST /api/execute`
+
+Execute a tool by tool ID.
+
+```json
+{ "tool_id": "file_read", "args_json": "{\"path\": \"/tmp/test.txt\"}", "fuel_limit": 1000000 }
+```
+
+## Goal Execution
+
+### `POST /api/execute/goal`
+
+Execute a cognitive goal via an SOP.
+
+```json
+{ "goal": "Analyze code", "sop_id": "code-review", "project_id": "my-project" }
+```
+
+### `GET /api/execute/goal/{goal_id}/status`
+
+Get the current execution status.
+
+### `GET /api/execute/goal/{goal_id}/trace`
+
+Get the full execution trace with per-node events.
+
+### `GET /api/execute/goal/{goal_id}/stream`
+
+Server-Sent Events stream of execution progress.
+
+### `POST /api/execute/composite`
+
+Execute multiple goals as a composite DAG.
+
+```json
+{ "goals": ["analyze", "test", "deploy"], "project_id": "my-project" }
 ```
 
 ## Sessions
 
-### `GET /api/v1/sessions`
+### `GET /api/sessions`
 
 List all sessions.
 
-### `POST /api/v1/sessions`
+### `POST /api/sessions`
 
 Create a new session.
 
@@ -28,11 +70,11 @@ Create a new session.
 { "name": "my-session" }
 ```
 
-### `GET /api/v1/sessions/{id}`
+### `GET /api/sessions/{id}`
 
-Get session detail with messages.
+Get session details with messages.
 
-### `POST /api/v1/sessions/{id}/messages`
+### `POST /api/sessions/{id}/messages`
 
 Add a message to a session.
 
@@ -40,101 +82,140 @@ Add a message to a session.
 { "role": "user", "content": "Hello" }
 ```
 
-## Search
+## Tools & Agents
 
-### `POST /api/v1/vector/search`
+### `GET /api/tools`
 
-```json
-{ "query": "search text", "top_k": 10 }
-```
+List registered tools.
 
-Response:
-```json
-[{ "id": "doc-1", "score": 0.95, "content": "..." }]
-```
+### `GET /api/agents`
 
-## Execution
-
-### `POST /api/v1/execute`
-
-```json
-{ "sop_id": "sop-id", "context": {} }
-```
-
-Response:
-```json
-{ "sop_id": "sop-id", "status": "success", "iterations": 3, "deviation": 0.02 }
-```
-
-## SOPs
-
-### `GET /api/v1/sops`
-
-List available SOPs.
-
-### `GET /api/v1/sops/{id}/dag`
-
-Get DAG graph for a SOP.
-
-```json
-{
-  "nodes": [{ "id": "n1", "label": "Start", "status": "completed", "x": 0, "y": 0 }],
-  "edges": [{ "from": "n1", "to": "n2" }],
-  "width": 400,
-  "height": 300
-}
-```
+List registered agents.
 
 ## Skills
 
-### `GET /api/v1/skills`
+### `GET /api/skills`
 
-List available skills.
+List installed skill entries.
 
-### `POST /api/v1/skills/install`
+### `GET /api/skills/available`
 
-Install a skill.
+List available remote skills.
 
-```json
-{ "skill_id": "skill-name" }
-```
+### `POST /api/skills/install`
 
-## Auth
-
-### `POST /api/auth/validate`
-
-Validate an API key.
+Install a remote skill.
 
 ```json
-{ "api_key": "key-to-validate" }
+{ "skill_id": "code-reviewer" }
 ```
 
-Response:
+### `GET /api/skills/installed`
+
+List installed remote skills.
+
+### `DELETE /api/skills/remote/{id}`
+
+Uninstall a remote skill.
+
+## Workspaces
+
+### `GET /api/workspaces`
+
+List all workspaces.
+
+### `POST /api/workspaces`
+
+Create a workspace.
+
 ```json
-{ "valid": true, "message": "authorized" }
+{ "name": "dev", "project_id": "my-project", "root_dir": "/home/user/project" }
 ```
 
-## Real-time
+### `POST /api/workspaces/switch`
 
-### `GET /events` (SSE)
+Switch the active workspace.
 
-Server-Sent Events stream.
-
-### `GET /ws` (WebSocket)
-
-Bidirectional WebSocket connection.
-
-## Metrics
-
-### `GET /metrics`
-
-Prometheus-compatible metrics endpoint.
-
+```json
+{ "id": "ws-1" }
 ```
-# HELP sisyphus_requests_total Total HTTP requests
-sisyphus_requests_total 1234
-# HELP sisyphus_sessions_created Total sessions created
-sisyphus_sessions_created 56
-# HELP sisyphus_uptime_seconds Server uptime
-sisyphus_uptime_seconds 3600
+
+### `GET /api/workspaces/current`
+
+Get the currently active workspace.
+
+## SOP Management
+
+### `GET /api/sops`
+
+List SOPs for the current workspace. Pass `X-Sisyphus-Workspace-Id` header.
+
+### `POST /api/sops`
+
+Save or create an SOP.
+
+```json
+{ "id": "review-sop", "name": "Code Review", "config": { "nodes": [...], "edges": [...] } }
 ```
+
+### `GET /api/sops/{id}`
+
+Get SOP details with DAG config.
+
+### `DELETE /api/sops/{id}`
+
+Delete an SOP.
+
+## Cognitive Map
+
+### `GET /api/cognitive/map/{sop_id}`
+
+Get the cognitive map for a running SOP.
+
+## Experience Engine
+
+### `POST /api/experience/similar`
+
+Query similar experiences by semantic similarity.
+
+```json
+{ "query_text": "error during build", "action_id": "compile", "limit": 5 }
+```
+
+## Roadmap
+
+### `GET /api/roadmap/project/{id}`
+
+Get project roadmap details.
+
+### `POST /api/roadmap/project/{id}`
+
+Create a new project.
+
+```json
+{ "id": "my-project", "name": "My Project", "description": "..." }
+```
+
+### `POST /api/roadmap/milestone`
+
+Add a milestone to a project.
+
+```json
+{ "project_id": "my-project", "milestone": { "id": "m1", "title": "Alpha", "status": "pending" } }
+```
+
+### `POST /api/roadmap/phase`
+
+Add a phase to a milestone.
+
+```json
+{ "project_id": "my-project", "milestone_id": "m1", "phase": { "id": "p1", "title": "Design" } }
+```
+
+### `PATCH /api/roadmap/goal/{goal_id}`
+
+Update goal status.
+
+### `GET /api/roadmap/health/{project_id}`
+
+Evaluate project health score.

@@ -87,13 +87,22 @@ impl ExecutorConfig {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct CacheConfig {
     pub l1_capacity: usize,
-    pub sqlite_path: String,
+    /// Database connection URL.
+    /// SQLite: `sqlite:data/sisyphus.db`
+    /// PostgreSQL: `postgres://user:pass@host/db`
+    pub database_url: String,
+    /// Enable vector similarity search via pgvector (Postgres) or full-scan (SQLite).
+    pub enable_vectors: bool,
+    /// Embedding dimension (defaults to 1536 for OpenAI text-embedding-3-small).
+    pub vector_dimension: usize,
 }
 
 fn default_cache() -> CacheConfig {
     CacheConfig {
         l1_capacity: 10_000,
-        sqlite_path: "data/sisyphus.db".to_string(),
+        database_url: "sqlite:data/sisyphus.db".to_string(),
+        enable_vectors: false,
+        vector_dimension: 1536,
     }
 }
 
@@ -110,9 +119,14 @@ impl CacheConfig {
                 "cache.l1_capacity must be > 0".into(),
             ));
         }
-        if self.sqlite_path.is_empty() {
+        if self.database_url.is_empty() {
             return Err(TypesError::ConfigValidationError(
-                "cache.sqlite_path must not be empty".into(),
+                "cache.database_url must not be empty".into(),
+            ));
+        }
+        if self.enable_vectors && self.vector_dimension == 0 {
+            return Err(TypesError::ConfigValidationError(
+                "cache.vector_dimension must be > 0 when enable_vectors is true".into(),
             ));
         }
         Ok(())

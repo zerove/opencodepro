@@ -8,7 +8,7 @@ use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sisyphus_types::{StateStore, TypesError};
-use sqlx::{Pool, Row, Sqlite, sqlite::SqlitePoolOptions};
+use sqlx::{AnyPool, Row};
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 use tokio::sync::mpsc;
@@ -32,8 +32,8 @@ struct CacheEntry {
 pub struct SqlStore {
     /// L1 in-memory cache (LRU)
     l1: Arc<Mutex<LruCache<String, CacheEntry>>>,
-    /// Database pool (SQLite or PostgreSQL)
-    pool: Pool<Sqlite>,
+    /// Database pool (SQLite or PostgreSQL via AnyPool)
+    pool: AnyPool,
     /// Async write buffer channel
     write_tx: mpsc::UnboundedSender<WriteOp>,
     /// Configuration
@@ -91,30 +91,39 @@ impl SqlStore {
 
     /// Creates a new SqlStore with custom configuration
     pub async fn with_config(config: SqlStoreConfig) -> Result<Self> {
-        // Connect to database
-        let pool = SqlitePoolOptions::new()
-            .max_connections(10)
-            .connect(&config.database_url)
+        let url = &config.database_url;
+        let is_sqlite = url.starts_with("sqlite:");
+        let is_postgres = url.starts_with("postgres://") || url.starts_with("postgresql://");
+
+        // Connect to database using AnyPool for SQLite/Postgres compatibility
+        let pool: AnyPool = AnyPool::connect(url)
             .await
             .context("Failed to connect to database")?;
 
-        // Configure SQLite pragmas
-        if config.wal_mode {
-            sqlx::query("PRAGMA journal_mode=WAL;")
+        // Backend-specific setup
+        if is_sqlite {
+            if config.wal_mode {
+                sqlx::query("PRAGMA journal_mode=WAL;")
+                    .execute(&pool)
+                    .await?;
+            }
+            sqlx::query(&format!(
+                "PRAGMA synchronous={};",
+                match config.synchronous {
+                    SqliteSynchronous::Off => "OFF",
+                    SqliteSynchronous::Normal => "NORMAL",
+                    SqliteSynchronous::Full => "FULL",
+                    SqliteSynchronous::Extra => "EXTRA",
+                }
+            ))
+            .execute(&pool)
+            .await?;
+        } else if is_postgres && config.enable_vectors {
+            // Enable pgvector extension
+            sqlx::query("CREATE EXTENSION IF NOT EXISTS vector")
                 .execute(&pool)
                 .await?;
         }
-        sqlx::query(&format!(
-            "PRAGMA synchronous={};",
-            match config.synchronous {
-                SqliteSynchronous::Off => "OFF",
-                SqliteSynchronous::Normal => "NORMAL",
-                SqliteSynchronous::Full => "FULL",
-                SqliteSynchronous::Extra => "EXTRA",
-            }
-        ))
-        .execute(&pool)
-        .await?;
 
         // Initialize schema
         Self::init_schema(&pool, &config).await?;
@@ -140,7 +149,7 @@ impl SqlStore {
     }
 
     /// Initialize database schema
-    async fn init_schema(pool: &Pool<Sqlite>, _config: &SqlStoreConfig) -> Result<()> {
+    async fn init_schema(pool: &AnyPool, _config: &SqlStoreConfig) -> Result<()> {
         let schema = r#"
         -- Core state table (project-scoped KV)
         CREATE TABLE IF NOT EXISTS state (
@@ -336,7 +345,7 @@ impl SqlStore {
 
     /// Async flush worker for batched writes
     async fn flush_worker(
-        pool: Pool<Sqlite>,
+        pool: AnyPool,
         mut rx: mpsc::UnboundedReceiver<WriteOp>,
         _config: SqlStoreConfig,
     ) {
@@ -380,7 +389,7 @@ impl SqlStore {
         }
     }
 
-    async fn flush_batch(pool: &Pool<Sqlite>, buffer: &mut Vec<WriteOp>) -> Result<()> {
+    async fn flush_batch(pool: &AnyPool, buffer: &mut Vec<WriteOp>) -> Result<()> {
         if buffer.is_empty() {
             return Ok(());
         }
@@ -446,7 +455,7 @@ impl SqlStore {
     }
 
     /// Get the underlying database pool for custom queries
-    pub fn pool(&self) -> &Pool<Sqlite> {
+    pub fn pool(&self) -> &AnyPool {
         &self.pool
     }
 
@@ -487,8 +496,90 @@ impl SqlStore {
         Ok(())
     }
 
-    /// Search similar vectors using cosine similarity (SQLite fallback - full scan)
+    /// Search similar vectors using cosine similarity
+    ///
+    /// - **PostgreSQL/pgvector**: uses the `<->` (cosine distance) operator with ANN index
+    /// - **SQLite fallback**: full table scan with in-memory cosine similarity
     pub async fn search_similar(
+        &self,
+        project_id: Option<&str>,
+        collection: &str,
+        query_embedding: &[f32],
+        top_k: usize,
+    ) -> Result<Vec<(String, f32, Value)>> {
+        if !self.config.enable_vectors {
+            return Ok(Vec::new());
+        }
+
+        // Detect backend and dispatch
+        let url = &self.config.database_url;
+        if url.starts_with("postgres://") || url.starts_with("postgresql://") {
+            self.search_similar_pgvector(project_id, collection, query_embedding, top_k)
+                .await
+        } else {
+            self.search_similar_sqlite(project_id, collection, query_embedding, top_k)
+                .await
+        }
+    }
+
+    /// pgvector-accelerated ANN search using the `<->` operator.
+    ///
+    /// Requires the `vector` extension to be installed on the Postgres server.
+    /// The caller should ensure `CREATE EXTENSION IF NOT EXISTS vector` has been run
+    /// (SqlStore::with_config does this automatically when `enable_vectors` is true).
+    async fn search_similar_pgvector(
+        &self,
+        project_id: Option<&str>,
+        collection: &str,
+        query_embedding: &[f32],
+        top_k: usize,
+    ) -> Result<Vec<(String, f32, Value)>> {
+        let pid = project_id.unwrap_or("default");
+
+        // Build pgvector literal
+        let vector_literal = format!(
+            "[{}]",
+            query_embedding
+                .iter()
+                .map(|v| v.to_string())
+                .collect::<Vec<_>>()
+                .join(",")
+        );
+
+        // Use cosine distance (<->) with pgvector
+        // The query casts the embedding BLOB to vector type and computes distance
+        let rows = sqlx::query_as::<_, (String, f64, String)>(
+            r#"SELECT id,
+                      (embedding::vector <-> $1::vector) AS distance,
+                      metadata
+               FROM vectors
+               WHERE project_id = $2 AND collection = $3
+                 AND embedding IS NOT NULL
+               ORDER BY distance
+               LIMIT $4"#,
+        )
+        .bind(&vector_literal)
+        .bind(pid)
+        .bind(collection)
+        .bind(top_k as i64)
+        .fetch_all(&self.pool)
+        .await
+        .context("pgvector ANN search failed")?;
+
+        let results: Vec<(String, f32, Value)> = rows
+            .into_iter()
+            .map(|(id, distance, metadata_str)| {
+                let similarity = (1.0 - distance) as f32;
+                let metadata: Value = serde_json::from_str(&metadata_str).unwrap_or(Value::Null);
+                (id, similarity, metadata)
+            })
+            .collect();
+
+        Ok(results)
+    }
+
+    /// SQLite fallback: full table scan with in-memory cosine similarity.
+    async fn search_similar_sqlite(
         &self,
         project_id: Option<&str>,
         collection: &str,

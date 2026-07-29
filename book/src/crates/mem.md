@@ -1,58 +1,82 @@
 # sisyphus-mem — Memory & Caching
 
-Two-level key-value store for SOP execution history, intermediate results, and configuration state.
+Three-tier storage for SOP execution history, intermediate results, configuration state, and vector embeddings.
 
 ## Architecture
 
 ```
-┌──────────┐   write-through    ┌──────────┐
-│   L1     │ ◄──────────────── │   L2     │
-│ DashMap  │    (L2 → L1)      │  SQLite  │
-│ (memory) │ ────────────────► │  (disk)  │
-└──────────┘    read-through    └──────────┘
-                 (L1 → L2)
+┌──────────┐   write-back     ┌──────────┐   optional   ┌────────────┐
+│   L1     │ ◄─────────────── │   L2     │ ◄─────────── │  pgvector  │
+│  LRU     │    (buffered)    │  SQLite  │   (ANN index) │ (Postgres) │
+│ (memory) │ ───────────────► │  (disk)  │ ────────────► │  (exter.)  │
+└──────────┘   read-through   └──────────┘   vector        └────────────┘
+                (L1 → L2)                   similarity
 ```
 
-- **L1**: In-memory `DashMap<String, serde_json::Value>` — sub-millisecond reads
-- **L2**: SQLite via `sqlx` — persistent storage, WAL mode for concurrency
+- **L1**: In-memory `LruCache<String, Value>` with configurable capacity (default 10,000)
+- **L2**: SQLite via `sqlx` with WAL mode and async write-back buffer
+- **Vector**: Optional PostgreSQL / pgvector for ANN similarity search
 
-## Key Type: `MfsStore`
+## Key Type: `SqlStore`
 
 ```rust
-pub struct MfsStore {
-    l1: Arc<DashMap<String, serde_json::Value>>,
-    l2: SqlitePool,
+pub struct SqlStore {
+    l1: Arc<Mutex<LruCache<String, CacheEntry>>>,
+    pool: AnyPool,  // SQLite or PostgreSQL
+    write_tx: mpsc::UnboundedSender<WriteOp>,
+    config: SqlStoreConfig,
 }
 ```
 
 ### Construction
 
 ```rust
-// In-memory (for testing)
-let store = MfsStore::new("sqlite::memory:").await?;
+// SQLite in-memory (for testing)
+let store = SqlStore::new("sqlite::memory:").await?;
 
-// Persistent
-let store = MfsStore::new("sqlite:data/state.db").await?;
+// SQLite persistent
+let store = SqlStore::new("sqlite:data/sisyphus.db").await?;
+
+// PostgreSQL with pgvector
+let config = SqlStoreConfig {
+    database_url: "postgres://user:pass@localhost/sisyphus".into(),
+    enable_vectors: true,
+    vector_dimension: 1536,
+    ..Default::default()
+};
+let store = SqlStore::with_config(config).await?;
 ```
-
-WAL mode and `synchronous=NORMAL` are enabled automatically for performance.
 
 ### Read/Write Strategy
 
 | Operation | Path | Atomicity |
 |-----------|------|-----------|
-| `set(key, value)` | Write to L2 SQLite → update L1 DashMap | L2 write is a single SQL `INSERT OR REPLACE` |
-| `get(key)` | Check L1 → miss? → query L2 → populate L1 | L1 get is lock-free DashMap read |
-| `snapshot()` | Dump all entries into `Snapshot` struct | Captures L2 snapshot via `SELECT *` |
-| `restore(snapshot)` | Clear and reload from snapshot | Truncates table, bulk insert |
+| `set(key, value)` | L1 cache → batch write buffer → L2 | Buffered, flushed every 100ms or 100 ops |
+| `get(key)` | Check L1 → miss? query L2 → populate L1 | Lock-free LRU read |
+| `flush()` | Force all buffered writes to L2 | Barrier with oneshot |
+| `snapshot()` / `restore()` | L1 + L2 round-trip | Full table dump / clear + reload |
 
-### Example
+### Vector Search
 
 ```rust
-use sisyphus_mem::MfsStore;
-
-let store = MfsStore::new("sqlite::memory:").await?;
-store.set_state_json("my_key", serde_json::json!({"hello": "world"})).await?;
-let val = store.get_state_json("my_key").await?;
-assert_eq!(val, Some(serde_json::json!({"hello": "world"})));
+// SQLite backend: full table scan + in-memory cosine similarity
+// PostgreSQL backend: pgvector <-> (cosine distance) operator with ANN index
+let results = store.search_similar(
+    Some("my-project"),
+    "experiences",
+    &[0.1, 0.2, ..., 0.9],
+    5,  // top-k
+).await?;
 ```
+
+## Additional Stores
+
+| Type | Description |
+|------|-------------|
+| `SopSqlStore` | SOP definition CRUD (DAG nodes + edges) |
+| `RoadmapSqlStore` | Project milestones, phases, and goals |
+| `SkillMarket` | Remote skill marketplace (publish / install / uninstall) |
+| `WorkspaceManager` | Workspace lifecycle (create / switch / transfer / export) |
+| `VectorMemoryStore` | High-level vector memory with user-scoped collections |
+| `UserMemoryStore` | Long-term user preference memory |
+| `MfsStore` | Legacy flat KV store (migration to SqlStore recommended) |

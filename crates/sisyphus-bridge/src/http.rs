@@ -1173,5 +1173,4 @@ pub fn build_router(state: RestApiState) -> Router {
 
 // ── OpenAPI helpers ───────────────────────────────────────────────────────
 
-#[path = "http_openapi.rs"]
-mod http_openapi;
+use super::http_openapi;

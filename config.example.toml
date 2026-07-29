@@ -100,17 +100,31 @@ max_concurrent_tasks = 16
 # 类型: u64 | 默认: 1000000
 default_fuel = 1_000_000
 
-# ── 两级缓存参数（L1 DashMap + L2 SQLite）────────────────
+# ── 两级缓存参数（L1 LRU + L2 SQLite/PostgreSQL）───────
 [cache]
 # L1 内存缓存容量（条目数）
 # 环境变量: SISYPHUS_CACHE_L1_CAPACITY
 # 类型: usize | 默认: 10000
 l1_capacity = 10_000
 
-# SQLite 持久化存储路径
-# 环境变量: SISYPHUS_CACHE_SQLITE_PATH
-# 类型: string | 默认: "data/sisyphus.db"
-sqlite_path = "data/sisyphus.db"
+# 数据库连接 URL（支持 sqlite: 或 postgres://）
+# SQLite:  sqlite:data/sisyphus.db
+# PostgreSQL + pgvector:  postgres://user:pass@host/sisyphus
+# 环境变量: SISYPHUS_CACHE_DATABASE_URL
+# 类型: string | 默认: "sqlite:data/sisyphus.db"
+database_url = "sqlite:data/sisyphus.db"
+
+# 启用向量语义搜索（PostgreSQL 需安装 pgvector 扩展）
+# SQLite 模式：全表扫描 + 内存余弦相似度
+# PostgreSQL 模式：pgvector ANN（<-> 算子），自动创建 extension
+# 环境变量: SISYPHUS_CACHE_ENABLE_VECTORS
+# 类型: bool | 默认: false
+enable_vectors = false
+
+# 向量嵌入维度（仅 enable_vectors=true 时有效）
+# 环境变量: SISYPHUS_CACHE_VECTOR_DIMENSION
+# 类型: usize | 默认: 1536
+vector_dimension = 1536
 
 # ── Prometheus 指标导出 ───────────────────────────────────
 [metrics]
