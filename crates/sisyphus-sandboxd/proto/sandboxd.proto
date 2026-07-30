@@ -1,0 +1,51 @@
+// Sandboxd gRPC protocol (v2).
+//
+// Replaces JSON-over-stdio with a typed gRPC interface for tool execution
+// in the WASM sandbox.  Maintained alongside the stdio protocol; pick the
+// mode with `--mode grpc|stdio`.
+//
+// Run `cargo build -p sisyphus-sandboxd` to regenerate the Rust bindings.
+
+syntax = "proto3";
+
+package sisyphus.sandboxd;
+
+// SandboxdService exposes WASM sandbox execution over gRPC.
+service SandboxdService {
+  // Execute a WASM tool and return its output.
+  rpc ExecuteTool (ExecuteToolRequest) returns (ExecuteToolResponse);
+
+  // Health-check — the bridge uses this to verify the daemon is alive.
+  rpc Ping (PingRequest) returns (PingResponse);
+
+  // Graceful shutdown — the bridge sends this before exiting.
+  rpc Shutdown (ShutdownRequest) returns (ShutdownResponse);
+}
+
+// ── ExecuteTool ────────────────────────────────────────────────────────────
+
+message ExecuteToolRequest {
+  string tool_id = 1;          // e.g. "hello", "sha256"
+  bytes args = 2;              // opaque input bytes passed to the WASM module
+  uint64 fuel_limit = 3;       // max execution units (0 = use default)
+}
+
+message ExecuteToolResponse {
+  bytes data = 1;              // base64-free, raw bytes from the WASM module
+  uint64 fuel_consumed = 2;    // actual fuel consumed by the execution
+  string error = 3;            // empty on success; non-empty on failure
+}
+
+// ── Ping ───────────────────────────────────────────────────────────────────
+
+message PingRequest {}
+
+message PingResponse {
+  bool pong = 1;
+}
+
+// ── Shutdown ───────────────────────────────────────────────────────────────
+
+message ShutdownRequest {}
+
+message ShutdownResponse {}

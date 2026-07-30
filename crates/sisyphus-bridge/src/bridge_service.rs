@@ -3,7 +3,9 @@ use crate::jcode_caller::DebugSocketToolCaller;
 use async_trait::async_trait;
 #[cfg(feature = "sandbox")]
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, RwLock};
+use std::time::Duration;
 
 use sisyphus_core::{Consensus, SisyphusKernel};
 use sisyphus_mem::SisyphusStore;
@@ -53,6 +55,10 @@ pub struct MySisyphusBridge {
     pub(crate) plugin_manager: Arc<dyn PluginManagerTrait>,
     pub(crate) jcode_caller: Arc<dyn JcodeToolCaller>,
     pub(crate) chaos_runner: Arc<sisyphus_core::ChaosRunner>,
+    /// Whether chaos fault injection is enabled at startup (from ChaosConfig).
+    pub(crate) chaos_enabled: bool,
+    /// Default fault probability for bridge-level chaos injection.
+    pub(crate) chaos_fault_probability: f64,
 }
 
 impl Clone for MySisyphusBridge {
@@ -73,6 +79,8 @@ impl Clone for MySisyphusBridge {
             plugin_manager: self.plugin_manager.clone(),
             jcode_caller: self.jcode_caller.clone(),
             chaos_runner: self.chaos_runner.clone(),
+            chaos_enabled: self.chaos_enabled,
+            chaos_fault_probability: self.chaos_fault_probability,
         }
     }
 }
@@ -571,6 +579,17 @@ impl MySisyphusBridge {
 
         // ── Workspace Management Init ──────────────────────────────────────
 
+        // ── Chaos Config ─────────────────────────────────────────────────
+        let (chaos_enabled, chaos_fault_probability) = {
+            let config = shared_config.read().map_err(|e| {
+                sisyphus_types::TypesError::ToolExecutionError {
+                    tool_id: "init".into(),
+                    details: format!("Config lock poisoned: {e}"),
+                }
+            })?;
+            (config.chaos.enabled, config.chaos.default_fault_probability)
+        };
+
         let bridge = MySisyphusBridge {
             kernel,
             state_store,
@@ -597,6 +616,8 @@ impl MySisyphusBridge {
                     .clone(),
             )),
             chaos_runner: Arc::new(sisyphus_core::ChaosRunner::new()),
+            chaos_enabled,
+            chaos_fault_probability,
         };
 
         let bridge_arc = Arc::new(bridge);
@@ -642,6 +663,49 @@ impl MySisyphusBridge {
 
     pub(crate) fn publish_event(&self, event: sisyphus_bridge_api::BridgeEvent) {
         let _ = self.event_bus.send(event);
+    }
+
+    // ── Chaos Engineering: bridge-level fault injection ───────────────────
+
+    /// Simple pseudo-random f64 in [0.0, 1.0) using a static atomic counter.
+    fn chaos_rand_f64() -> f64 {
+        use std::hash::{Hash, Hasher};
+        static COUNTER: AtomicU64 = AtomicU64::new(0);
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        COUNTER.fetch_add(1, Ordering::Relaxed).hash(&mut hasher);
+        (hasher.finish() as f64) / (u64::MAX as f64)
+    }
+
+    /// If chaos is enabled, randomly inject a delay or error with the
+    /// configured probability.  Returns `Some(ExecuteToolResponse)` when a
+    /// fault is injected, or `None` to continue normal execution.
+    pub(crate) async fn maybe_inject_chaos_fault(
+        &self,
+    ) -> Option<sisyphus_bridge_api::ExecuteToolResponse> {
+        if !self.chaos_enabled {
+            return None;
+        }
+
+        // Probability gate
+        if Self::chaos_rand_f64() >= self.chaos_fault_probability {
+            return None;
+        }
+
+        // 50/50 split between delay injection and error injection
+        if Self::chaos_rand_f64() < 0.5 {
+            // Inject an asynchronous delay in range [50, 500] ms
+            let delay_ms = 50 + (Self::chaos_rand_f64() * 450.0) as u64;
+            tracing::info!(delay_ms, "Chaos: injecting delay");
+            tokio::time::sleep(Duration::from_millis(delay_ms)).await;
+            None // delay is transparent — allow execution to proceed
+        } else {
+            // Inject an artificial fault (return error without executing)
+            tracing::info!("Chaos: injecting fault");
+            Some(sisyphus_bridge_api::ExecuteToolResponse {
+                status: "CHAOS_ERROR: injected fault".into(),
+                result_json: String::new(),
+            })
+        }
     }
 }
 

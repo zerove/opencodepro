@@ -613,6 +613,13 @@ impl SisyphusBridge for MySisyphusBridge {
             self.default_fuel
         };
 
+        // ── Chaos Engineering: inject faults before execution ──────────
+        if self.chaos_enabled {
+            if let Some(fault_response) = self.maybe_inject_chaos_fault().await {
+                return Ok(Response::new(fault_response));
+            }
+        }
+
         let span = info_span!("bridge.execute_tool", tool_id = %tool_id);
         let _enter = span.enter();
 

@@ -1,9 +1,9 @@
 use crossterm::event::{KeyCode, KeyEvent};
 
 use super::super::background::{
-    spawn_dev_agent, spawn_execute_sop, spawn_fetch_available_skills, spawn_fetch_installed_skills,
-    spawn_install_skill, spawn_list_sops, spawn_list_workspaces, spawn_switch_workspace,
-    spawn_uninstall_skill,
+    spawn_delete_workspace, spawn_dev_agent, spawn_execute_sop, spawn_fetch_available_skills,
+    spawn_fetch_installed_skills, spawn_install_skill, spawn_list_sops, spawn_list_workspaces,
+    spawn_switch_workspace, spawn_uninstall_skill,
 };
 use super::super::{App, DevFocus, LogEntry, ToastKind, View};
 use super::Dialog;
@@ -37,6 +37,19 @@ pub(super) fn handle_workspace_list_key(code: KeyCode, app: &mut App) {
             app.workspace_status = "refreshing...".into();
             if app.pending_op.is_none() {
                 app.pending_op = Some(spawn_list_workspaces(app.bridge_address.clone()));
+            }
+        }
+        KeyCode::Char('d') | KeyCode::Delete => {
+            if let Some(ws) = app.workspaces.get(app.workspace_sel) {
+                let name = ws.name.clone();
+                let id = ws.id.clone();
+                app.add_toast(
+                    ToastKind::Info,
+                    format!("Deleting workspace: {}...", name),
+                );
+                if app.pending_op.is_none() {
+                    app.pending_op = Some(spawn_delete_workspace(app.bridge_address.clone(), id));
+                }
             }
         }
         _ => {}
@@ -592,12 +605,39 @@ pub(crate) fn handle_trace_key(code: KeyCode, app: &mut App) {
     match code {
         KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('Q') => {
             app.dialog = None;
+            app.sop_trace_detail = None;
         }
         KeyCode::Up => {
             app.sop_trace_scroll = app.sop_trace_scroll.saturating_sub(1);
+            app.sop_trace_detail = None;
         }
         KeyCode::Down => {
             app.sop_trace_scroll = app.sop_trace_scroll.saturating_add(1);
+            app.sop_trace_detail = None;
+        }
+        KeyCode::PageUp => {
+            app.sop_trace_scroll = app.sop_trace_scroll.saturating_sub(10);
+            app.sop_trace_detail = None;
+        }
+        KeyCode::PageDown => {
+            app.sop_trace_scroll = app.sop_trace_scroll.saturating_add(10);
+            app.sop_trace_detail = None;
+        }
+        KeyCode::Home | KeyCode::Char('g') => {
+            app.sop_trace_scroll = 0;
+            app.sop_trace_detail = None;
+        }
+        KeyCode::End | KeyCode::Char('G') => {
+            app.sop_trace_scroll = usize::MAX;
+            app.sop_trace_detail = None;
+        }
+        KeyCode::Enter => {
+            // Show output for the selected trace row
+            if app.sop_trace_detail.is_some() {
+                app.sop_trace_detail = None;
+            } else if let Some(ev) = app.sop_trace.get(app.sop_trace_scroll) {
+                app.sop_trace_detail = ev.output.clone();
+            }
         }
         _ => {}
     }

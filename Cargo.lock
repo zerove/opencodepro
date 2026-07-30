@@ -4529,12 +4529,15 @@ dependencies = [
 name = "sisyphus-sandboxd"
 version = "0.1.0"
 dependencies = [
+ "prost",
  "serde",
  "serde_json",
  "sisyphus-sandbox",
  "sisyphus-types",
  "tempfile",
  "tokio",
+ "tonic",
+ "tonic-build",
  "tracing",
  "tracing-subscriber",
 ]

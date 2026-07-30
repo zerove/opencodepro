@@ -243,6 +243,14 @@ pub fn handle_sessions_key(key: KeyEvent, app: &mut App) {
                         }
                     }
                 }
+                KeyCode::Char('E') => {
+                    app.stream_show = !app.stream_show;
+                    app.add_log(LogEntry::Info(if app.stream_show {
+                        "Streaming events: shown".into()
+                    } else {
+                        "Streaming events: hidden".into()
+                    }));
+                }
                 // ── Search (Ctrl+F) ──
                 KeyCode::Char('f') if ctrl => {
                     if app.search_active {

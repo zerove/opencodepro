@@ -122,15 +122,28 @@ fn render_session_detail(
     } else {
         0
     };
+
+    // Streaming event panel: show when there are events and a session is active
+    let show_stream = !app.stream_events.is_empty() && app.stream_show;
+    let stream_height: u16 = if show_stream {
+        let max_height = 8u16;
+        let count = app.stream_events.len().min(max_height as usize) as u16;
+        count + 2 // border + header
+    } else {
+        0
+    };
+
     let chunks = Layout::vertical([
         Constraint::Min(0),
+        Constraint::Length(stream_height),
         Constraint::Length(3),
         Constraint::Length(suggestion_height),
     ])
     .split(area);
     let history_area = chunks[0];
-    let input_area = chunks[1];
-    let suggestion_area = chunks[2];
+    let stream_area = chunks[1];
+    let input_area = chunks[2];
+    let suggestion_area = chunks[3];
 
     let time_str = if session.created_at.len() >= 16 {
         &session.created_at[11..16]
@@ -351,5 +364,33 @@ fn render_session_detail(
         ]))
         .style(Style::default().bg(theme.bg_darker));
         frame.render_widget(search_bar, search_area);
+    }
+
+    // ── Streaming event panel ──
+    if show_stream && stream_area.height > 2 {
+        let stream_block = Block::default()
+            .borders(Borders::ALL)
+            .title(" ⚡ Bridge Events ")
+            .border_style(Style::default().fg(theme.warning));
+        let start = app
+            .stream_events
+            .len()
+            .saturating_sub((stream_area.height - 2) as usize);
+        let stream_lines: Vec<Line> = app
+            .stream_events
+            .iter()
+            .skip(start)
+            .map(|ev| {
+                Line::from(vec![
+                    Span::styled(
+                        format!(" [{}] ", ev.source),
+                        Style::default().fg(theme.secondary),
+                    ),
+                    Span::styled(&ev.message, Style::default().fg(theme.fg)),
+                ])
+            })
+            .collect();
+        let stream_widget = Paragraph::new(Text::from(stream_lines)).block(stream_block);
+        frame.render_widget(stream_widget, stream_area);
     }
 }

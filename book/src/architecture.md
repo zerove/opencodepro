@@ -133,3 +133,6 @@ Significant architecture decisions are documented as ADRs in [`docs/adr/`](https
 |-----|-------|--------|
 | [ADR-002](https://github.com/zeronhq/sisyphus-wasm/blob/main/docs/adr/002-phase-3b-agent-team-architecture.md) | Phase 3b Multi-Agent Team Architecture | Proposed |
 | [ADR-003](https://github.com/zeronhq/sisyphus-wasm/blob/main/docs/adr/003-modular-restructure.md) | Monolithic-to-Modular Restructure | Accepted |
+| [ADR-004](https://github.com/zeronhq/sisyphus-wasm/blob/main/docs/adr/004-workspace-isolation.md) | Multi-tenant Workspace Isolation | Accepted |
+| [ADR-005](https://github.com/zeronhq/sisyphus-wasm/blob/main/docs/adr/005-sandboxd-daemon-architecture.md) | Sandboxd Daemon Architecture | Accepted |
+| [ADR-006](https://github.com/zeronhq/sisyphus-wasm/blob/main/docs/adr/006-configuration-system.md) | Configuration System | Accepted |

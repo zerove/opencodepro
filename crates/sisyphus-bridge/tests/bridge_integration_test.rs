@@ -708,3 +708,124 @@ async fn test_negative_execute_tool_timeout_zero_ms() {
     );
     server.abort();
 }
+
+// ── Chaos Engineering tests ─────────────────────────────────────────────
+
+/// Helper: create bridge with chaos enabled at the given fault probability.
+async fn setup_bridge_chaos(fault_probability: f64) -> (
+    SisyphusBridgeClient<tonic::transport::Channel>,
+    tokio::task::JoinHandle<()>,
+) {
+    let mut config = Config::default();
+    config.cache.database_url = "sqlite::memory:".to_string();
+    config.sandbox.wasm_tools_dir = "tests/wasm_tools".to_string();
+    config.chaos.enabled = true;
+    config.chaos.default_fault_probability = fault_probability;
+    let shared_config = Arc::new(RwLock::new(config));
+
+    let bridge = MySisyphusBridge::new(shared_config, Some(Arc::new(DummyLlmClient)))
+        .await
+        .expect("Failed to create bridge with chaos enabled");
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("Failed to bind listener");
+    let addr = listener.local_addr().expect("Failed to get local addr");
+    let server_addr = format!("http://{}", addr);
+
+    let bridge_clone = bridge.clone();
+    let server_handle = tokio::spawn(async move {
+        Server::builder()
+            .add_service(SisyphusBridgeServer::new(bridge_clone))
+            .serve_with_incoming(tokio_stream::wrappers::TcpListenerStream::new(listener))
+            .await
+            .expect("Server failed");
+    });
+
+    let client = SisyphusBridgeClient::connect(server_addr)
+        .await
+        .expect("Failed to connect client");
+
+    (client, server_handle)
+}
+
+#[tokio::test]
+async fn test_chaos_enabled_does_not_crash() {
+    // Verify that enabling chaos (100% fault probability) does not crash
+    // the bridge — every call either succeeds or returns a chaos error.
+    let (mut client, server) = setup_bridge_chaos(1.0).await;
+
+    for i in 0..20usize {
+        let response = client
+            .execute_tool(ExecuteToolRequest {
+                tool_id: "builtin:bash_exec".into(),
+                args_json: r#"{"command": "echo ok", "timeout_ms": 1000}"#.into(),
+                fuel_limit: 0,
+            })
+            .await
+            .expect("ExecuteTool with chaos enabled should not panic/gRPC-error");
+        let inner = response.into_inner();
+        // Status is either SUCCESS (no fault this call) or CHAOS_ERROR (fault injected)
+        assert!(
+            inner.status == "SUCCESS" || inner.status.starts_with("CHAOS_ERROR"),
+            "Iteration {i}: unexpected status: {}",
+            inner.status
+        );
+    }
+    server.abort();
+}
+
+#[tokio::test]
+async fn test_chaos_faults_occur_with_high_probability() {
+    // With 90% fault probability, expect most calls to receive CHAOS_ERROR.
+    let (mut client, server) = setup_bridge_chaos(0.9).await;
+
+    let mut chaos_count = 0u64;
+    let total = 50usize;
+    for _ in 0..total {
+        let response = client
+            .execute_tool(ExecuteToolRequest {
+                tool_id: "builtin:bash_exec".into(),
+                args_json: r#"{"command": "echo ok", "timeout_ms": 1000}"#.into(),
+                fuel_limit: 0,
+            })
+            .await
+            .expect("ExecuteTool should not panic");
+        let inner = response.into_inner();
+        if inner.status.starts_with("CHAOS_ERROR") {
+            chaos_count += 1;
+        }
+    }
+    let rate = chaos_count as f64 / total as f64;
+    assert!(
+        rate > 0.5,
+        "Expected >50% fault rate with 90% probability, got {}%",
+        rate * 100.0
+    );
+    server.abort();
+}
+
+#[tokio::test]
+async fn test_chaos_disabled_no_faults() {
+    // With chaos disabled (the default), all execute_tool calls must
+    // succeed normally without any CHAOS_ERROR.
+    let (mut client, server) = setup_bridge().await;
+
+    for i in 0..10usize {
+        let response = client
+            .execute_tool(ExecuteToolRequest {
+                tool_id: "builtin:bash_exec".into(),
+                args_json: r#"{"command": "echo ok", "timeout_ms": 1000}"#.into(),
+                fuel_limit: 0,
+            })
+            .await
+            .expect("ExecuteTool should not panic");
+        let inner = response.into_inner();
+        assert_eq!(
+            inner.status, "SUCCESS",
+            "Iteration {i}: expected SUCCESS when chaos disabled, got: {}",
+            inner.status
+        );
+    }
+    server.abort();
+}

@@ -307,7 +307,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-      - run: cd ide/typescript-sdk && npm install && npm run build
+      - run: cd ide/typescript-sdk && npm install
+      - run: cd ide/typescript-sdk && npm run build
+      - run: cd ide/typescript-sdk && npm test
 
   sdk-python:
     name: Python SDK
@@ -317,7 +319,18 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - run: cd ide/python-sdk && python -m py_compile sisyphus_sdk/__init__.py
+      - run: cd ide/python-sdk && pip install pytest
+      - run: cd ide/python-sdk && python -m pytest tests/
+
+  sdk-go:
+    name: Go SDK
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+      - run: cd ide/go-sdk && go test ./...
 
   webui-check:
     name: WebUI Check
@@ -333,7 +346,7 @@ jobs:
   release:
     name: Release
     runs-on: ubuntu-latest
-    needs: [build, build-sandboxd, build-macos, build-windows, sdk-typescript, sdk-python]
+    needs: [build, build-sandboxd, build-macos, build-windows, sdk-typescript, sdk-python, sdk-go]
     if: github.ref == 'refs/heads/main'
     permissions:
       contents: write

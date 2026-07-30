@@ -15,7 +15,7 @@ pub(super) fn render_workspace_list_dialog(frame: &mut ratatui::Frame, area: Rec
     let block = Block::default()
         .borders(Borders::ALL)
         .title(" Workspaces ")
-        .title_bottom(" ↑↓ select | Enter switch | r: refresh | Esc: close ".to_string())
+        .title_bottom(" ↑↓ select | Enter switch | d/Del: delete | r: refresh | Esc: close ".to_string())
         .border_style(Style::default().fg(theme.primary));
 
     if app.workspaces.is_empty() {
@@ -847,8 +847,17 @@ pub(super) fn render_trace_dialog(frame: &mut ratatui::Frame, area: Rect, app: &
         .borders(Borders::ALL)
         .title(format!(" Execution Trace - {} ", sop_id))
         .title_bottom(format!(
-            " ↑↓ scroll: {} | Esc to close ",
-            app.sop_trace_scroll
+            "{}{}{}",
+            if app.sop_trace_detail.is_some() {
+                "Enter: hide output | "
+            } else {
+                "Enter: show output | "
+            },
+            format!(
+                "↑↓/PgUp/PgDn scroll: {} | g/G top/bottom | Esc close ",
+                widgets::scroll_pct(app.sop_trace_scroll, app.sop_trace.len()),
+            ),
+            "",
         ))
         .border_style(Style::default().fg(theme.primary));
 
@@ -859,6 +868,18 @@ pub(super) fn render_trace_dialog(frame: &mut ratatui::Frame, area: Rect, app: &
         frame.render_widget(para, area);
         return;
     }
+
+    // Layout: table on top, optional output detail below
+    let (table_area, detail_area) = if app.sop_trace_detail.is_some() {
+        let chunks = Layout::vertical([
+            Constraint::Percentage(60),
+            Constraint::Percentage(40),
+        ])
+        .split(area);
+        (chunks[0], Some(chunks[1]))
+    } else {
+        (area, None)
+    };
 
     let rows: Vec<Row> = app
         .sop_trace
@@ -916,12 +937,37 @@ pub(super) fn render_trace_dialog(frame: &mut ratatui::Frame, area: Rect, app: &
                 .add_modifier(Modifier::BOLD),
         ),
     ]))
-    .block(block)
+    .block(Block::default().borders(Borders::NONE))
     .highlight_style(Style::default().add_modifier(Modifier::REVERSED));
 
     frame.render_stateful_widget(
         table,
-        area,
+        table_area,
         &mut ratatui::widgets::TableState::default().with_selected(Some(app.sop_trace_scroll)),
     );
+
+    // Output detail panel
+    if let Some(ref output) = app.sop_trace_detail {
+        let detail_block = Block::default()
+            .borders(Borders::ALL)
+            .title(" Node Output ")
+            .border_style(Style::default().fg(theme.secondary));
+        let detail_lines: Vec<Line> = if output.is_empty() {
+            vec![Line::from(Span::styled(
+                "(no output)",
+                Style::default().fg(theme.muted),
+            ))]
+        } else {
+            output
+                .lines()
+                .map(|l| Line::from(Span::styled(l.to_string(), Style::default().fg(theme.fg))))
+                .collect()
+        };
+        let detail_para = Paragraph::new(Text::from(detail_lines))
+            .block(detail_block)
+            .wrap(Wrap { trim: false });
+        frame.render_widget(detail_para, detail_area.unwrap_or(area));
+    }
+
+    frame.render_widget(block, area);
 }

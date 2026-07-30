@@ -72,6 +72,10 @@ pub enum BgOp {
         success: bool,
         message: String,
     },
+    /// Result of deleting a workspace.
+    WorkspaceDeleted {
+        id: String,
+    },
     /// Generic operation status update from the bridge (e.g. anomaly_detector, chaos_engine).
     OpUpdate {
         op_id: String,
@@ -533,6 +537,40 @@ pub fn spawn_switch_workspace(
         .await;
         let _ = tx.send(match result {
             Ok(_) => BgOp::WorkspaceSwitched { id: workspace_id },
+            Err(e) => BgOp::WorkspaceOpResult {
+                success: false,
+                message: e,
+            },
+        });
+    });
+    rx
+}
+
+pub fn spawn_delete_workspace(
+    bridge_address: String,
+    workspace_id: String,
+) -> tokio::sync::oneshot::Receiver<BgOp> {
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    tokio::spawn(async move {
+        let url = format!(
+            "http://{}/api/workspaces/{}",
+            bridge_address, workspace_id
+        );
+        let result = async {
+            let client = reqwest::Client::new();
+            let resp = client
+                .delete(&url)
+                .send()
+                .await
+                .map_err(|e| format!("HTTP request failed: {e}"))?;
+            if !resp.status().is_success() {
+                return Err(format!("Bridge returned error status: {}", resp.status()));
+            }
+            Ok(())
+        }
+        .await;
+        let _ = tx.send(match result {
+            Ok(_) => BgOp::WorkspaceDeleted { id: workspace_id },
             Err(e) => BgOp::WorkspaceOpResult {
                 success: false,
                 message: e,

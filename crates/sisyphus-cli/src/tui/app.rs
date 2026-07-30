@@ -34,10 +34,16 @@ pub struct WorkspaceEntry {
 pub(crate) struct TraceEvent {
     pub node_id: String,
     pub status: String,
-    #[expect(dead_code)]
     pub output: Option<String>,
     pub fuel: i64,
     pub duration: i64,
+}
+
+/// A streaming execution event from the bridge, displayed in the session view.
+#[derive(Debug, Clone)]
+pub(crate) struct StreamEvent {
+    pub source: String,
+    pub message: String,
 }
 
 #[derive(Debug, Clone)]
@@ -318,6 +324,7 @@ pub(crate) struct App {
     pub(crate) sop_result: Option<String>,
     pub(crate) sop_trace: Vec<TraceEvent>,
     pub(crate) sop_trace_scroll: usize,
+    pub(crate) sop_trace_detail: Option<String>,
     pub(crate) sop_query: String,
 
     // roadmap data (dialog state)
@@ -396,6 +403,11 @@ pub(crate) struct App {
     pub(crate) dashboard_anomaly_count: usize,
     pub(crate) dashboard_chaos_running: bool,
     pub(crate) dashboard_cog_active: bool,
+
+    // streaming event buffer
+    pub(crate) stream_events: Vec<StreamEvent>,
+    pub(crate) stream_show: bool,
+    pub(crate) stream_scroll: usize,
 }
 
 const MAX_LOG_ENTRIES: usize = 1000;
@@ -463,6 +475,7 @@ impl App {
             sop_result: None,
             sop_trace: Vec::new(),
             sop_trace_scroll: 0,
+            sop_trace_detail: None,
             sop_query: String::new(),
             roadmap_projection: None,
             roadmap_bottlenecks: None,
@@ -518,6 +531,10 @@ impl App {
             dashboard_anomaly_count: 0,
             dashboard_chaos_running: false,
             dashboard_cog_active: false,
+
+            stream_events: Vec::new(),
+            stream_show: false,
+            stream_scroll: 0,
         }
     }
 
@@ -984,7 +1001,12 @@ impl App {
             }
             crate::tui::background::BgOp::BridgeCmd { entries } => {
                 for entry in entries {
-                    self.add_log(entry);
+                    self.add_log(entry.clone());
+                    // Capture as streaming event
+                    self.stream_events.push(crate::tui::app::StreamEvent {
+                        source: "bridge".into(),
+                        message: entry.entry_text().to_string(),
+                    });
                 }
             }
             crate::tui::background::BgOp::DevResult {
@@ -1078,11 +1100,37 @@ impl App {
                     self.workspace_status = format!("error: {message}");
                 }
             }
+            crate::tui::background::BgOp::WorkspaceDeleted { id } => {
+                self.workspace_status = format!("deleted {id}");
+                self.add_log(LogEntry::Info(format!("Workspace deleted: {id}")));
+                // Remove from local list
+                self.workspaces.retain(|w| w.id != id);
+                self.workspace_sel = self.workspace_sel.min(self.workspaces.len().saturating_sub(1));
+            }
             crate::tui::background::BgOp::OpUpdate {
                 op_id,
                 status,
                 result,
             } => {
+                // Capture as streaming event
+                let msg = if result.is_empty() {
+                    format!("[{}] {}", op_id, status)
+                } else {
+                    format!("[{}] {}: {}", op_id, status, result)
+                };
+                self.stream_events.push(crate::tui::app::StreamEvent {
+                    source: op_id.clone(),
+                    message: msg.clone(),
+                });
+                // Keep buffer bounded
+                if self.stream_events.len() > 500 {
+                    let excess = self.stream_events.len() - 500;
+                    self.stream_events.drain(..excess);
+                }
+                self.stream_show = true;
+                if self.stream_scroll == 0 || self.stream_scroll == usize::MAX {
+                    self.stream_scroll = usize::MAX; // auto-scroll
+                }
                 if op_id == "anomaly_detector" {
                     // Parse count from result like "5 anomalies"
                     let count = result
