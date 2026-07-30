@@ -197,6 +197,12 @@ impl Config {
         if let Some(v) = env_string("SISYPHUS_SANDBOX_WASM_TOOLS_DIR") {
             self.sandbox.wasm_tools_dir = v;
         }
+        if let Some(v) = env_bool("SISYPHUS_SANDBOX_USE_SANDBOXD") {
+            self.sandbox.use_sandboxd = v;
+        }
+        if let Some(v) = env_string("SISYPHUS_SANDBOX_SANDBOXD_PATH") {
+            self.sandbox.sandboxd_path = Some(v);
+        }
         if let Some(v) = env_string("SISYPHUS_AUTH_TOKEN") {
             self.auth_token = v;
         }

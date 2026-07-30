@@ -4533,6 +4533,7 @@ dependencies = [
  "serde_json",
  "sisyphus-sandbox",
  "sisyphus-types",
+ "tempfile",
  "tokio",
  "tracing",
  "tracing-subscriber",

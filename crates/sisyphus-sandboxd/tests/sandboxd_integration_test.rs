@@ -10,20 +10,27 @@
 //! from `--workspace` commands. Run with `cargo test -p sisyphus-sandboxd`.
 
 use std::io::{BufRead, Write};
+use std::path::Path;
 use std::process::{Child, Command, Stdio};
 use std::time::Duration;
 
-/// Spawn a sandboxd instance with an empty tools directory.
-fn spawn_sandboxd() -> (Child, Box<dyn BufRead + Send>, Box<dyn Write + Send>) {
+/// Spawn a sandboxd instance with a temporary tools directory.
+/// If `copy_wasm` is provided, copies those (filename, bytes) pairs
+/// into the tools directory so sandboxd can find them.
+fn spawn_sandboxd() -> (
+    Child,
+    Box<dyn BufRead + Send>,
+    Box<dyn Write + Send>,
+    tempfile::TempDir,
+) {
     let bin_path = env!("CARGO_BIN_EXE_sisyphus-sandboxd");
 
-    // Create an empty temp directory for tools so the executor initializes.
-    let tmpdir = std::env::temp_dir().join(format!("sandboxd_test_{}", std::process::id()));
-    let _ = std::fs::create_dir_all(&tmpdir);
+    // Create a temp directory for tools — kept alive by TempDir until dropped.
+    let tmpdir = tempfile::tempdir().expect("Failed to create temp dir");
 
     let mut child = Command::new(bin_path)
         .arg("--tools-dir")
-        .arg(&tmpdir)
+        .arg(tmpdir.path())
         .arg("--max-memory-pages")
         .arg("10")
         .stdin(Stdio::piped())
@@ -37,10 +44,7 @@ fn spawn_sandboxd() -> (Child, Box<dyn BufRead + Send>, Box<dyn Write + Send>) {
         child.stdout.take().expect("stdout not available"),
     ));
 
-    // Clean up temp dir when process exits.
-    let _ = std::fs::remove_dir_all(&tmpdir);
-
-    (child, stdout, stdin)
+    (child, stdout, stdin, tmpdir)
 }
 
 /// Send a JSON request line to sandboxd and read the response line.
@@ -72,7 +76,7 @@ fn json_request(id: u64, method: &str, params: &str) -> String {
 
 #[test]
 fn test_ping_pong() {
-    let (mut child, mut stdout, mut stdin) = spawn_sandboxd();
+    let (mut child, mut stdout, mut stdin, _tmpdir) = spawn_sandboxd();
 
     let request = json_request(1, "ping", "");
     let response = send_request(&mut stdout, &mut stdin, &request);
@@ -91,7 +95,7 @@ fn test_ping_pong() {
 
 #[test]
 fn test_unknown_method() {
-    let (mut child, mut stdout, mut stdin) = spawn_sandboxd();
+    let (mut child, mut stdout, mut stdin, _tmpdir) = spawn_sandboxd();
 
     let request = json_request(42, "nonexistent_method", "");
     let response = send_request(&mut stdout, &mut stdin, &request);
@@ -107,7 +111,7 @@ fn test_unknown_method() {
 
 #[test]
 fn test_execute_missing_tool() {
-    let (mut child, mut stdout, mut stdin) = spawn_sandboxd();
+    let (mut child, mut stdout, mut stdin, _tmpdir) = spawn_sandboxd();
 
     let request = json_request(
         7,
@@ -131,7 +135,7 @@ fn test_execute_missing_tool() {
 
 #[test]
 fn test_shutdown_notification() {
-    let (mut child, mut stdout, mut stdin) = spawn_sandboxd();
+    let (mut child, mut stdout, mut stdin, _tmpdir) = spawn_sandboxd();
 
     // Send a ping to verify the daemon is alive first
     let ping_req = json_request(1, "ping", "");
@@ -170,7 +174,7 @@ fn test_shutdown_notification() {
 
 #[test]
 fn test_concurrent_requests() {
-    let (mut child, mut stdout, mut stdin) = spawn_sandboxd();
+    let (mut child, mut stdout, mut stdin, _tmpdir) = spawn_sandboxd();
 
     // Send two pings without waiting for the first response
     let req1 = json_request(1, "ping", "");
@@ -204,4 +208,76 @@ fn test_concurrent_requests() {
 
     let _ = child.kill();
     let _ = child.wait();
+}
+
+#[test]
+fn test_execute_hello_wasm() {
+    // Copy hello.wasm from the workspace tools directory to our temp dir
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let src_wasm = manifest_dir
+        .parent()
+        .and_then(|p| p.parent())
+        .map(|p| p.join("tools").join("hello.wasm"))
+        .expect("Failed to resolve hello.wasm path");
+
+    let (mut child, mut stdout, mut stdin, tmpdir) = spawn_sandboxd();
+
+    // Copy hello.wasm into the temp tools directory
+    let dest_wasm = tmpdir.path().join("hello.wasm");
+    std::fs::copy(&src_wasm, &dest_wasm).expect("Failed to copy hello.wasm to temp dir");
+
+    // Execute hello tool — it returns a base64-encoded pointer to "Hello from WASM!"
+    let request = json_request(
+        1,
+        "execute",
+        r#"{"tool_id":"hello","args":[],"fuel_limit":1000}"#,
+    );
+    let response = send_request(&mut stdout, &mut stdin, &request);
+
+    let parsed: serde_json::Value = serde_json::from_str(&response).expect("Invalid JSON response");
+
+    assert_eq!(parsed["id"], 1);
+    assert!(
+        parsed["result"]["data"].as_str().is_some(),
+        "Expected base64 data in result, got: {response}"
+    );
+
+    // Decode the base64 response
+    let b64 = parsed["result"]["data"].as_str().unwrap();
+    let decoded = base64_simple_decode(b64);
+    let output = String::from_utf8(decoded).expect("Output is not valid UTF-8");
+    assert_eq!(output.trim(), "Hello from WASM!");
+
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+/// Minimal base64 decode (inverse of sandboxd's base64_encode).
+fn base64_simple_decode(input: &str) -> Vec<u8> {
+    const CHARS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut rev = [0u8; 256];
+    for (i, &c) in CHARS.iter().enumerate() {
+        rev[c as usize] = i as u8;
+    }
+
+    let input = input.trim_end_matches('=');
+    let mut out = Vec::with_capacity(input.len() / 4 * 3);
+    for chunk in input.as_bytes().chunks(4) {
+        let mut buf = [0u8; 4];
+        for (i, &b) in chunk.iter().enumerate() {
+            buf[i] = rev[b as usize];
+        }
+        let triple = ((buf[0] as u32) << 18)
+            | ((buf[1] as u32) << 12)
+            | ((buf[2] as u32) << 6)
+            | (buf[3] as u32);
+        out.push((triple >> 16) as u8);
+        if chunk.len() > 2 {
+            out.push((triple >> 8) as u8);
+        }
+        if chunk.len() > 3 {
+            out.push(triple as u8);
+        }
+    }
+    out
 }
