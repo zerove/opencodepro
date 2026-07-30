@@ -207,13 +207,13 @@ jobs:
       # Start bridge in background, wait for it to be ready, run stress_test
       - name: E2E smoke test
         run: |
-          # Start bridge in background
-          cargo run -p sisyphus-bridge &
+          # Use pre-built binary directly (avoid cargo run overhead)
+          ./target/debug/sisyphus-bridge &
           BRIDGE_PID=$!
           # Give it time to start
           sleep 3
-          # Run stress test against it
-          cargo run -p sisyphus-bridge --bin stress_test -- --quick 2>&1
+          # Run stress test using pre-built binary
+          ./target/debug/stress_test --quick 2>&1
           STRESS_EXIT=$?
           # Report bridge logs
           echo "=== Bridge exit ==="

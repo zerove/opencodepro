@@ -17,17 +17,26 @@ use tonic::Request;
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = std::env::args().collect();
 
-    let addr = args
-        .get(1)
-        .cloned()
-        .unwrap_or_else(|| "http://[::1]:50051".to_string());
+    // Find the first positional arg that is not a flag (--quick/-q).
+    // This allows `cargo run --bin stress_test -- --quick` to work correctly:
+    // --quick triggers quick mode, while address falls back to default.
     let is_quick = args.iter().any(|a| a == "--quick" || a == "-q");
+    let pos_args: Vec<&String> = args
+        .iter()
+        .skip(1) // skip binary name
+        .filter(|a| !a.starts_with('-'))
+        .collect();
+
+    let addr = pos_args
+        .first()
+        .map(|s| (*s).clone())
+        .unwrap_or_else(|| "http://[::1]:50051".to_string());
 
     let (concurrency, iterations) = if is_quick {
         (1, 1)
     } else {
-        let c: usize = args.get(2).and_then(|s| s.parse().ok()).unwrap_or(50);
-        let i: usize = args.get(3).and_then(|s| s.parse().ok()).unwrap_or(100);
+        let c: usize = pos_args.get(1).and_then(|s| s.parse().ok()).unwrap_or(50);
+        let i: usize = pos_args.get(2).and_then(|s| s.parse().ok()).unwrap_or(100);
         (c, i)
     };
 
