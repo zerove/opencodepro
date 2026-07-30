@@ -94,6 +94,8 @@ impl MySisyphusBridge {
             embedding_provider,
             embedding_model,
             embedding_endpoint,
+            _use_sandboxd,
+            _sandboxd_path,
         ) = {
             let config = shared_config.read().map_err(|e| {
                 sisyphus_types::TypesError::ToolExecutionError {
@@ -113,12 +115,19 @@ impl MySisyphusBridge {
                 config.llm.embedding.provider.clone(),
                 config.llm.embedding.model.clone(),
                 config.llm.embedding.endpoint.clone(),
+                config.sandbox.use_sandboxd,
+                config.sandbox.sandboxd_path.clone(),
             )
         };
 
         // Destructure sandbox-specific vars (underscore-prefixed to suppress unused warnings when sandbox is disabled)
         #[cfg(feature = "sandbox")]
-        let (wasm_tools_dir, max_mem_pages) = (_wasm_tools_dir, _max_mem_pages);
+        let (wasm_tools_dir, max_mem_pages, use_sandboxd, sandboxd_path) = (
+            _wasm_tools_dir,
+            _max_mem_pages,
+            _use_sandboxd,
+            _sandboxd_path,
+        );
 
         let store = Arc::new(SisyphusStore::new(&cache_path).await.map_err(|e| {
             sisyphus_types::TypesError::StateStoreError(format!(
@@ -185,6 +194,7 @@ impl MySisyphusBridge {
 
         // ── Primary executor ──────────────────────────────────
         // WASM executor (requires wasmtime); falls back to noop when sandbox is disabled.
+        // When use_sandboxd is true, spawns sandboxd as a subprocess instead of embedding wasmtime.
         // PluginManager is initialized alongside the wasm executor.
         #[allow(unused_mut)]
         let (wasm_executor, plugin_manager): (
@@ -193,20 +203,60 @@ impl MySisyphusBridge {
         ) = {
             #[cfg(feature = "sandbox")]
             {
-                let exec = WasmToolExecutor::with_config(
-                    Some(PathBuf::from(&wasm_tools_dir)),
-                    Some(max_mem_pages),
-                )
-                .map_err(|e| sisyphus_types::TypesError::ToolExecutionError {
-                    tool_id: "init".into(),
-                    details: format!("Failed to create WasmToolExecutor: {e}"),
-                })?;
-                let inner = exec.clone();
-                let pm = PluginManager::new(inner);
-                (
-                    Arc::new(exec) as Arc<dyn ToolExecutor>,
-                    pm as Arc<dyn PluginManagerTrait>,
-                )
+                use crate::sandboxd_client::SandboxdClient;
+                use sisyphus_types::types::PluginDescriptor;
+
+                // Minimal empty PluginManager for sandboxd mode (plugin lifecycle
+                // is managed by the daemon process, not the bridge).
+                struct SandboxdPluginManager;
+                #[async_trait]
+                impl PluginManagerTrait for SandboxdPluginManager {
+                    async fn register_plugin(&self, _d: PluginDescriptor) -> Result<(), String> {
+                        Err("Plugins handled by sandboxd process, not bridge".into())
+                    }
+                    fn unload_plugin(&self, _n: &str) -> Result<(), String> {
+                        Err("Plugins handled by sandboxd process, not bridge".into())
+                    }
+                    fn list_plugins(&self) -> Vec<PluginDescriptor> {
+                        Vec::new()
+                    }
+                }
+
+                let (exec, pm): (Arc<dyn ToolExecutor>, Arc<dyn PluginManagerTrait>) =
+                    if use_sandboxd {
+                        let sandboxd_bin =
+                            sandboxd_path.unwrap_or_else(|| "sisyphus-sandboxd".into());
+                        info!(
+                            "Using sandboxd at {sandboxd_bin} (wasm_tools_dir={wasm_tools_dir}, max_mem_pages={max_mem_pages})",
+                        );
+                        let client =
+                            SandboxdClient::spawn(&sandboxd_bin, &wasm_tools_dir, max_mem_pages)
+                                .await
+                                .map_err(|e| sisyphus_types::TypesError::ToolExecutionError {
+                                    tool_id: "sandboxd".into(),
+                                    details: format!("Failed to spawn sandboxd: {e}"),
+                                })?;
+                        let noop_pm: Arc<dyn PluginManagerTrait> = Arc::new(SandboxdPluginManager);
+                        (Arc::new(client) as Arc<dyn ToolExecutor>, noop_pm)
+                    } else {
+                        let exec = WasmToolExecutor::with_config(
+                            Some(PathBuf::from(&wasm_tools_dir)),
+                            Some(max_mem_pages),
+                        )
+                        .map_err(|e| {
+                            sisyphus_types::TypesError::ToolExecutionError {
+                                tool_id: "init".into(),
+                                details: format!("Failed to create WasmToolExecutor: {e}"),
+                            }
+                        })?;
+                        let inner = exec.clone();
+                        let pm = PluginManager::new(inner);
+                        (
+                            Arc::new(exec) as Arc<dyn ToolExecutor>,
+                            pm as Arc<dyn PluginManagerTrait>,
+                        )
+                    };
+                (exec, pm)
             }
             #[cfg(not(feature = "sandbox"))]
             {

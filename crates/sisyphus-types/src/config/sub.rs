@@ -249,6 +249,13 @@ pub struct SandboxConfig {
     pub max_memory_pages: u32,
     pub default_fuel: u64,
     pub wasm_tools_dir: String,
+    /// If true, bridge spawns `sisyphus-sandboxd` as a child process
+    /// instead of embedding wasmtime directly.
+    #[serde(default)]
+    pub use_sandboxd: bool,
+    /// Path to the `sisyphus-sandboxd` binary (default: search PATH).
+    #[serde(default)]
+    pub sandboxd_path: Option<String>,
 }
 
 fn default_sandbox() -> SandboxConfig {
@@ -256,6 +263,8 @@ fn default_sandbox() -> SandboxConfig {
         max_memory_pages: 10,
         default_fuel: 1_000_000,
         wasm_tools_dir: "tools".to_string(),
+        use_sandboxd: false,
+        sandboxd_path: None,
     }
 }
 

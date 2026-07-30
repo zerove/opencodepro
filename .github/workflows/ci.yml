@@ -11,7 +11,7 @@ env:
   RUSTFLAGS: "-C debuginfo=0"
 
 # ── Rust workspace ──────────────────────────────────────────────────────
-# Heavy crates (wasmtime transitive): sisyphus-sandbox, sisyphus-tests
+# Heavy crates (wasmtime transitive): sisyphus-sandbox, sisyphus-sandboxd, sisyphus-tests
 # Semi-heavy: sisyphus-bridge (default features enable sandbox)
 #
 # Per-crate isolation strategy to avoid CI OOM on 7GB runners:
@@ -48,6 +48,7 @@ jobs:
           cargo clippy \
             --workspace \
             --exclude sisyphus-sandbox \
+            --exclude sisyphus-sandboxd \
             --exclude sisyphus-tests \
             --exclude sisyphus-bridge \
             -- -D warnings
@@ -77,6 +78,18 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo clippy -p sisyphus-tests -- -D warnings
 
+  lint-sandboxd:
+    name: Lint Sandboxd
+    runs-on: ubuntu-latest
+    needs: fmt
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo clippy -p sisyphus-sandboxd -- -D warnings
+
   # ── Bridge (no sandbox) — trait abstraction layer, no wasmtime ─────
   bridge-check:
     name: Bridge (no sandbox)
@@ -105,6 +118,7 @@ jobs:
           cargo test --lib \
             --workspace \
             --exclude sisyphus-sandbox \
+            --exclude sisyphus-sandboxd \
             --exclude sisyphus-tests \
             --exclude sisyphus-bridge
 
@@ -155,6 +169,20 @@ jobs:
         with:
           name: sisyphus-cli-linux
           path: target/release/sisyphus-cli
+
+  build-sandboxd:
+    name: Build Sandboxd
+    runs-on: ubuntu-latest
+    needs: [lint-sandboxd]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --release -p sisyphus-sandboxd
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sisyphus-sandboxd-linux
+          path: target/release/sisyphus-sandboxd
 
   build-macos:
     name: Build (macOS)

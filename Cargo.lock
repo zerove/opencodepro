@@ -4526,6 +4526,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "sisyphus-sandboxd"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "sisyphus-sandbox",
+ "sisyphus-types",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "sisyphus-sdk"
 version = "0.1.0"
 dependencies = [

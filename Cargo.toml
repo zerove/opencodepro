@@ -25,6 +25,7 @@ members = [
     "crates/sisyphus-sdk",
     "evals", "crates/sisyphus-knowledge", "crates/sisyphus-visual",
     "crates/sisyphus-wasm-sdk",
+    "crates/sisyphus-sandboxd",
     "webui",
 ]
 # Exclude heavy crates (wasmtime) from default `cargo check`/`cargo test`

@@ -37,12 +37,12 @@ TOOLS_PACKAGES = \
 	sisyphus-tools-mcp sisyphus-tools-scm sisyphus-tools-session \
 	sisyphus-tools-system
 
-HEAVY_PACKAGES = sisyphus-sandbox sisyphus-tests
+HEAVY_PACKAGES = sisyphus-sandbox sisyphus-sandboxd sisyphus-tests
 
 .PHONY: all check-all build-all test-all
 .PHONY: check-bridge build-bridge test-bridge check-bridge-160
 .PHONY: check-bridge-nosandbox test-bridge-nosandbox
-.PHONY: test-tools check-tools test-sandbox check-sandbox test-tests check-tests
+.PHONY: check-sandbox build-sandboxd test-sandbox check-sandboxd test-tests check-tests
 .PHONY: test-ci
 .PHONY: dev-tui run-tui clean
 
@@ -144,6 +144,14 @@ check-sandbox:
 test-sandbox:
 	cargo test -p sisyphus-sandbox --lib
 
+# — sisyphus-sandboxd (wasmtime via sandbox, heavy, isolated daemon) —
+
+check-sandboxd:
+	cargo check -p sisyphus-sandboxd
+
+build-sandboxd:
+	cargo build --release -p sisyphus-sandboxd
+
 # — sisyphus-tests (wasmtime via sandbox, heavy, isolated) —
 
 check-tests:
@@ -155,21 +163,23 @@ test-tests:
 # — CI simulation (mirrors .github/workflows/ci.yml) —
 
 test-ci:
-	@echo "━━━ 1/8 Format ━━━"
+	@echo "━━━ 1/9 Format ━━━"
 	cargo fmt --all --check
-	@echo "━━━ 2/8 Lint Light ━━━"
-	cargo clippy --workspace --exclude sisyphus-bridge --exclude sisyphus-sandbox --exclude sisyphus-tests -- -D warnings
-	@echo "━━━ 3/8 Lint Sandbox ━━━"
+	@echo "━━━ 2/9 Lint Light ━━━"
+	cargo clippy --workspace --exclude sisyphus-bridge --exclude sisyphus-sandbox --exclude sisyphus-sandboxd --exclude sisyphus-tests -- -D warnings
+	@echo "━━━ 3/9 Lint Sandbox ━━━"
 	cargo clippy -p sisyphus-sandbox -- -D warnings
-	@echo "━━━ 4/8 Lint Tests ━━━"
+	@echo "━━━ 4/9 Lint Sandboxd ━━━"
+	cargo clippy -p sisyphus-sandboxd -- -D warnings
+	@echo "━━━ 5/9 Lint Tests ━━━"
 	cargo clippy -p sisyphus-tests -- -D warnings
-	@echo "━━━ 5/8 Test Light ━━━"
-	cargo test --lib --workspace --exclude sisyphus-bridge --exclude sisyphus-sandbox --exclude sisyphus-tests
-	@echo "━━━ 6/8 Test Core ━━━"
+	@echo "━━━ 6/9 Test Light ━━━"
+	cargo test --lib --workspace --exclude sisyphus-bridge --exclude sisyphus-sandbox --exclude sisyphus-sandboxd --exclude sisyphus-tests
+	@echo "━━━ 7/9 Test Core ━━━"
 	cargo test -p sisyphus-core --lib
-	@echo "━━━ 7/8 Test Sandbox ━━━"
+	@echo "━━━ 8/9 Test Sandbox ━━━"
 	cargo test -p sisyphus-sandbox --lib
-	@echo "━━━ 8/8 Test Integration ━━━"
+	@echo "━━━ 9/9 Test Integration ━━━"
 	cargo test -p sisyphus-tests --lib
 	@echo "━━━ CI simulation complete ━━━"
 
