@@ -13,16 +13,19 @@ ct-core-min = "test -p sisyphus-core --lib --no-default-features"
 # ── sisyphus-tools 测试（子 crates） ────────────────────
 ct-tools   = "test -p sisyphus-tools-core -p sisyphus-tools-llm -p sisyphus-tools-scm -p sisyphus-tools-build -p sisyphus-tools-system -p sisyphus-tools-mcp -p sisyphus-tools-llm-tools -p sisyphus-tools-session -p sisyphus-tools-executor -p sisyphus-tools-agent"
 
-# ── 全 workspace 检查/测试（排除 bridge/sandbox） ────────
-check-all  = "check --workspace --exclude sisyphus-bridge --exclude sisyphus-sandbox"
-build-all  = "build --workspace --exclude sisyphus-bridge --exclude sisyphus-sandbox"
-test-all   = "test --workspace --exclude sisyphus-bridge --exclude sisyphus-sandbox"
+# ── 全 workspace 检查/测试（排除 3 个 wasmtime 依赖 crate）
+#     sisyphus-bridge、sisyphus-sandbox、sisyphus-tests 需单独编译
+check-all  = "check --workspace --exclude sisyphus-bridge --exclude sisyphus-sandbox --exclude sisyphus-tests"
+build-all  = "build --workspace --exclude sisyphus-bridge --exclude sisyphus-sandbox --exclude sisyphus-tests"
+test-all   = "test --workspace --exclude sisyphus-bridge --exclude sisyphus-sandbox --exclude sisyphus-tests"
 
 # ── 单独 crates ──────────────────────────────────────────
 ch-cli     = "check -p sisyphus-cli"
 ch-bridge  = "check -p sisyphus-bridge"
 ch-core    = "check -p sisyphus-core"
 ch-types   = "check -p sisyphus-types"
+ch-sandbox = "check -p sisyphus-sandbox"
+ch-tests   = "check -p sisyphus-tests"
 
 # ── Release ──────────────────────────────────────────────
 rel-cli    = "build --release -p sisyphus-cli"

@@ -2,7 +2,12 @@
 #
 # Memory notes:
 #   Full `cargo check --workspace` OOMs on <16GB machines due to wasmtime/cranelift deps.
-#   Workaround: `CARGO_BUILD_JOBS=1` or check individual crates.
+#   Three crates pull in wasmtime: sisyphus-sandbox (direct), sisyphus-tests (direct),
+#   and sisyphus-bridge (default features enable optional sandbox).
+#
+# Strategy: never use `cargo check --workspace` in CI. Instead:
+#   - Lightweight batch: `--workspace --exclude <3 heavy crates>`
+#   - Heavy crates get per-crate jobs (isolated, no OOM)
 #
 # sisyphus-bridge  — rustc 1.96.0 type-checking ICE (SIGTERM during `cargo check`).
 #                    RESOLVED in nightly 1.98.0+; ships with 1.97.0 stable on 2026-07-09.
@@ -12,8 +17,10 @@
 # sisyphus-tools-* — 10 sub-crates, lightweight, fast to check individually.
 #
 # Usage:
-#   make check-all        # cargo alias → check --workspace --exclude bridge/sandbox (1.96.0-safe)
-#   make check-bridge     # check bridge only (requires nightly+, no workaround flags)
+#   make check-all         # lightweight batch (alias: --exclude bridge/sandbox/tests)
+#   make check-sandbox     # sandbox alone (wasmtime, isolated)
+#   make check-tests       # integration tests alone (wasmtime, isolated)
+#   make check-bridge      # bridge alone
 #   make check-bridge-160 # check bridge only (1.96.0 fallback with -C lto=off)
 #   make build-bridge     # build bridge only
 #   make test-bridge      # test bridge only
@@ -30,9 +37,13 @@ TOOLS_PACKAGES = \
 	sisyphus-tools-mcp sisyphus-tools-scm sisyphus-tools-session \
 	sisyphus-tools-system
 
+HEAVY_PACKAGES = sisyphus-sandbox sisyphus-tests
+
 .PHONY: all check-all build-all test-all
 .PHONY: check-bridge build-bridge test-bridge check-bridge-160
-.PHONY: test-tools check-tools
+.PHONY: check-bridge-nosandbox test-bridge-nosandbox
+.PHONY: test-tools check-tools test-sandbox check-sandbox test-tests check-tests
+.PHONY: test-ci
 .PHONY: dev-tui run-tui clean
 
 all: check-all
@@ -124,6 +135,43 @@ dev-tui: $(SISYPHUS_CLI_SRC)
 
 run-tui:
 	cargo run -p sisyphus-cli
+
+# — sisyphus-sandbox (wasmtime, heavy, isolated) —
+
+check-sandbox:
+	cargo check -p sisyphus-sandbox
+
+test-sandbox:
+	cargo test -p sisyphus-sandbox --lib
+
+# — sisyphus-tests (wasmtime via sandbox, heavy, isolated) —
+
+check-tests:
+	cargo check -p sisyphus-tests
+
+test-tests:
+	cargo test -p sisyphus-tests --lib
+
+# — CI simulation (mirrors .github/workflows/ci.yml) —
+
+test-ci:
+	@echo "━━━ 1/8 Format ━━━"
+	cargo fmt --all --check
+	@echo "━━━ 2/8 Lint Light ━━━"
+	cargo clippy --workspace --exclude sisyphus-bridge --exclude sisyphus-sandbox --exclude sisyphus-tests -- -D warnings
+	@echo "━━━ 3/8 Lint Sandbox ━━━"
+	cargo clippy -p sisyphus-sandbox -- -D warnings
+	@echo "━━━ 4/8 Lint Tests ━━━"
+	cargo clippy -p sisyphus-tests -- -D warnings
+	@echo "━━━ 5/8 Test Light ━━━"
+	cargo test --lib --workspace --exclude sisyphus-bridge --exclude sisyphus-sandbox --exclude sisyphus-tests
+	@echo "━━━ 6/8 Test Core ━━━"
+	cargo test -p sisyphus-core --lib
+	@echo "━━━ 7/8 Test Sandbox ━━━"
+	cargo test -p sisyphus-sandbox --lib
+	@echo "━━━ 8/8 Test Integration ━━━"
+	cargo test -p sisyphus-tests --lib
+	@echo "━━━ CI simulation complete ━━━"
 
 # — convenience —
 

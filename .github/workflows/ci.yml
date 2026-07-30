@@ -10,34 +10,142 @@ env:
   CARGO_TERM_COLOR: always
   RUSTFLAGS: "-C debuginfo=0"
 
+# ── Rust workspace ──────────────────────────────────────────────────────
+# Heavy crates (wasmtime transitive): sisyphus-sandbox, sisyphus-tests
+# Semi-heavy: sisyphus-bridge (default features enable sandbox)
+#
+# Per-crate isolation strategy to avoid CI OOM on 7GB runners:
+#   cargo --workspace --exclude <heavy>  →  lightweight batch
+#   cargo -p <heavy>                     →  per-crate jobs
+#
+# Reference: https://github.com/rust-lang/cargo/issues/13434
+
 jobs:
-  check:
-    name: Check
+  # ── Format check (fastest feedback) ────────────────────────────────
+  fmt:
+    name: Format
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@nightly
         with:
-          components: rustfmt, clippy
+          components: rustfmt
       - uses: Swatinem/rust-cache@v2
       - run: cargo fmt --check
-      - run: cargo clippy --workspace -- -D warnings
 
-  test:
-    name: Test
+  # ── Lint: lightweight crates (no wasmtime in dep tree) ─────────────
+  lint-light:
+    name: Lint (light crates)
     runs-on: ubuntu-latest
-    needs: check
+    needs: fmt
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: |
+          cargo clippy \
+            --workspace \
+            --exclude sisyphus-sandbox \
+            --exclude sisyphus-tests \
+            --exclude sisyphus-bridge \
+            -- -D warnings
+
+  # ── Lint: heavy crates (isolated to avoid OOM) ─────────────────────
+  lint-sandbox:
+    name: Lint Sandbox
+    runs-on: ubuntu-latest
+    needs: fmt
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo clippy -p sisyphus-sandbox -- -D warnings
+
+  lint-tests:
+    name: Lint Integration Tests
+    runs-on: ubuntu-latest
+    needs: fmt
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo clippy -p sisyphus-tests -- -D warnings
+
+  # ── Bridge (no sandbox) — trait abstraction layer, no wasmtime ─────
+  bridge-check:
+    name: Bridge (no sandbox)
+    runs-on: ubuntu-latest
+    needs: lint-light
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo check -p sisyphus-bridge --no-default-features
+      - run: cargo clippy -p sisyphus-bridge --no-default-features -- -D warnings
+      - run: cargo test -p sisyphus-bridge --no-default-features --lib
+
+  # ── Unit tests: lightweight crates ─────────────────────────────────
+  test-light:
+    name: Test (light crates)
+    runs-on: ubuntu-latest
+    needs: [lint-light, lint-sandbox, lint-tests]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@nightly
       - uses: Swatinem/rust-cache@v2
-      - run: cargo test --workspace --lib
+      - run: |
+          cargo test --lib \
+            --workspace \
+            --exclude sisyphus-sandbox \
+            --exclude sisyphus-tests \
+            --exclude sisyphus-bridge
+
+  # ── Unit tests: core (many tests, own job for speed) ────────────────
+  test-core:
+    name: Test Core
+    runs-on: ubuntu-latest
+    needs: [lint-light, lint-sandbox, lint-tests]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: Swatinem/rust-cache@v2
       - run: cargo test -p sisyphus-core --lib
 
+  # ── Unit tests: sandbox (wasmtime, isolated) ────────────────────────
+  test-sandbox:
+    name: Test Sandbox
+    runs-on: ubuntu-latest
+    needs: [lint-light, lint-sandbox, lint-tests]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test -p sisyphus-sandbox --lib
+
+  # ── Integration tests (wasmtime, isolated) ──────────────────────────
+  test-integration:
+    name: Test Integration
+    runs-on: ubuntu-latest
+    needs: [lint-light, lint-sandbox, lint-tests]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test -p sisyphus-tests --lib
+
+  # ── CLI release builds ──────────────────────────────────────────────
   build:
     name: Build
     runs-on: ubuntu-latest
-    needs: test
+    needs: [test-light, test-core, test-sandbox, test-integration, bridge-check]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@nightly
@@ -51,7 +159,7 @@ jobs:
   build-macos:
     name: Build (macOS)
     runs-on: macos-latest
-    needs: test
+    needs: [test-light, test-core, test-sandbox, test-integration]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@nightly
@@ -67,7 +175,7 @@ jobs:
   build-windows:
     name: Build (Windows)
     runs-on: windows-latest
-    needs: test
+    needs: [test-light, test-core, test-sandbox, test-integration]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@nightly
@@ -78,6 +186,7 @@ jobs:
           name: sisyphus-cli-windows
           path: target/release/sisyphus-cli.exe
 
+  # ── SDK builds ──────────────────────────────────────────────────────
   sdk-typescript:
     name: TypeScript SDK
     runs-on: ubuntu-latest
@@ -101,27 +210,14 @@ jobs:
   webui-check:
     name: WebUI Check
     runs-on: ubuntu-latest
-    needs: check
+    needs: lint-light
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@nightly
       - uses: Swatinem/rust-cache@v2
       - run: cargo check -p sisyphus-webui
 
-  bridge-check:
-    name: Bridge (no sandbox)
-    runs-on: ubuntu-latest
-    needs: check
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@nightly
-        with:
-          components: clippy
-      - uses: Swatinem/rust-cache@v2
-      - run: cargo check -p sisyphus-bridge --no-default-features
-      - run: cargo clippy -p sisyphus-bridge --no-default-features -- -D warnings
-      - run: cargo test -p sisyphus-bridge --no-default-features --lib
-
+  # ── Release ─────────────────────────────────────────────────────────
   release:
     name: Release
     runs-on: ubuntu-latest
