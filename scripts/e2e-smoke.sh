@@ -7,6 +7,10 @@ if [ ! -f target/debug/sisyphus-bridge ]; then
     echo "ERROR: sisyphus-bridge binary not found. Run 'cargo build -p sisyphus-bridge' first."
     exit 1
 fi
+if [ ! -f target/debug/stress_test ]; then
+    echo "ERROR: stress_test binary not found. Run 'cargo build -p sisyphus-bridge --bin stress_test' first."
+    exit 1
+fi
 
 echo "━━━ Starting bridge in background ━━━"
 ./target/debug/sisyphus-bridge &
@@ -20,10 +24,11 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# Wait for bridge to be ready (up to 10 seconds)
+# Wait for bridge to be ready by polling with stress_test as health check
+# gRPC doesn't support plain curl, so we use the stress_test binary itself.
 echo "━━━ Waiting for bridge to start ━━━"
 for i in $(seq 1 10); do
-    if curl -s --max-time 1 "http://[::1]:50051/" >/dev/null 2>&1; then
+    if ./target/debug/stress_test --quick 2>/dev/null; then
         echo "Bridge ready on attempt $i"
         break
     fi

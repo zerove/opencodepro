@@ -661,3 +661,50 @@ async fn test_negative_fuel_limit_exceeded() {
     );
     server.abort();
 }
+
+#[tokio::test]
+async fn test_negative_execute_tool_with_timeout() {
+    // Test that a builtin tool with an extremely short timeout_ms
+    // is handled gracefully (no panic, no hang).
+    let (mut client, server) = setup_bridge().await;
+    let response = client
+        .execute_tool(ExecuteToolRequest {
+            tool_id: "builtin:bash_exec".into(),
+            // 1ms timeout should be too short for any real command
+            args_json: r#"{"command": "sleep 10", "timeout_ms": 1}"#.into(),
+            fuel_limit: 0,
+        })
+        .await
+        .expect("ExecuteTool with short timeout should not panic or hang");
+    let inner = response.into_inner();
+    // The tool should either timeout (non-SUCCESS) or somehow complete
+    // Either way, the bridge should respond without panicking.
+    eprintln!(
+        "Timeout test result: status={} result={}",
+        inner.status, inner.result_json
+    );
+    server.abort();
+}
+
+#[tokio::test]
+async fn test_negative_execute_tool_timeout_zero_ms() {
+    // Test with explicit 0ms timeout to verify edge case handling
+    let (mut client, server) = setup_bridge().await;
+    let response = client
+        .execute_tool(ExecuteToolRequest {
+            tool_id: "builtin:bash_exec".into(),
+            args_json: r#"{"command": "echo hi", "timeout_ms": 0}"#.into(),
+            fuel_limit: 0,
+        })
+        .await
+        .expect("ExecuteTool with 0ms timeout should not panic");
+    let inner = response.into_inner();
+    // 0ms timeout may be treated as "no timeout" or "immediate timeout".
+    // Either way, the bridge should respond without panic.
+    // We primarily test that the request completes, not the specific outcome.
+    eprintln!(
+        "0ms timeout test result: status={} result={}",
+        inner.status, inner.result_json
+    );
+    server.abort();
+}

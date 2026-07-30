@@ -222,6 +222,13 @@ jobs:
           exit $STRESS_EXIT
 
   # ── Core benchmarks (requires sandbox feature for WasmToolExecutor) ──
+  # Baseline tracking strategy:
+  #   - CI runs with reduced params (warm-up=1, measurement=2, sample=10) for speed.
+  #   - For precise historical comparison, use `critcmp` locally:
+  #     $ cargo bench -p sisyphus-core --features sandbox -- --save-baseline <name>
+  #     $ cargo bench -p sisyphus-core --features sandbox -- --load-baseline <prev> --baseline <new>
+  #   - A future iteration could upload criterion JSON artifacts to S3/GH Artifacts
+  #     and compare via a scheduled workflow.
   bench-core:
     name: Bench Core
     runs-on: ubuntu-latest
