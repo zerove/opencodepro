@@ -43,6 +43,7 @@ HEAVY_PACKAGES = sisyphus-sandbox sisyphus-sandboxd sisyphus-tests
 .PHONY: check-bridge build-bridge test-bridge check-bridge-160
 .PHONY: check-bridge-nosandbox test-bridge-nosandbox
 .PHONY: check-sandbox build-sandboxd test-sandbox check-sandboxd test-tests check-tests
+.PHONY: test-bridge-full test-cli-handlers
 .PHONY: test-ci
 .PHONY: dev-tui run-tui clean
 
@@ -75,6 +76,16 @@ check-bridge-nosandbox: $(BRIDGE_DEPS)
 
 test-bridge-nosandbox: $(BRIDGE_DEPS)
 	cargo test -p sisyphus-bridge --no-default-features --lib
+
+test-bridge-full: $(BRIDGE_DEPS)
+	cargo clippy -p sisyphus-bridge -- -D warnings
+	cargo test -p sisyphus-bridge --test bridge_integration_test
+
+test-cli-handlers:
+	cargo test -p sisyphus-cli --lib
+
+check-stress-test:
+	cargo check -p sisyphus-bridge --bin stress_test
 
 # — bridge crate, 1.96.0 fallback (RUSTFLAGS bypasses rustc 1.96.0 ICE) —
 
@@ -181,7 +192,12 @@ test-ci:
 	cargo test -p sisyphus-sandbox --lib
 	@echo "━━━ 9/10 Test Sandboxd ━━━"
 	cargo test -p sisyphus-sandboxd
-	@echo "━━━ 10/10 Test Integration ━━━"
+	@echo "━━━ 10/10 Bridge Full Test ━━━"
+	cargo clippy -p sisyphus-bridge -- -D warnings
+	cargo test -p sisyphus-bridge --test bridge_integration_test
+	@echo "━━━ 11/12 Test CLI Handlers ━━━"
+	cargo test -p sisyphus-cli --lib
+	@echo "━━━ 12/12 Test Integration ━━━"
 	cargo test -p sisyphus-tests --lib
 	@echo "━━━ CI simulation complete ━━━"
 

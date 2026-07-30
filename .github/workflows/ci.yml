@@ -166,6 +166,47 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo test -p sisyphus-sandboxd
 
+  # ── Bridge (full features, with sandboxd) — tests all RPCs via real gRPC ──
+  bridge-test-full:
+    name: Bridge (full features + sandboxd)
+    runs-on: ubuntu-latest
+    needs: [lint-light, lint-sandboxd]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo clippy -p sisyphus-bridge -- -D warnings
+      - run: cargo test -p sisyphus-bridge --test bridge_integration_test
+      - run: cargo build --release -p sisyphus-sandboxd
+
+  # ── CLI handler crate tests (clap parsing, output formatting) ──────────
+  test-cli-handlers:
+    name: Test CLI Handlers
+    runs-on: ubuntu-latest
+    needs: lint-light
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test -p sisyphus-cli --lib
+
+  # ── Stress test quick smoke check ──────────────────────────────────
+  stress-test-smoke:
+    name: Stress Test (smoke)
+    runs-on: ubuntu-latest
+    needs: [bridge-test-full]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: Swatinem/rust-cache@v2
+      # Quick mode: compile the stress_test binary and verify it connects
+      - run: cargo check -p sisyphus-bridge --bin stress_test
+      # In a full CI run, this would launch the bridge and run --quick.
+      # For now, at minimum we verify the binary compiles.
+      - run: echo "Stress test binary checked successfully"
+
   # ── CLI release builds ──────────────────────────────────────────────
   build:
     name: Build

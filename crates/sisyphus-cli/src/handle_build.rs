@@ -41,3 +41,58 @@ pub fn handle_build(sub: &BuildCommands) -> Result<()> {
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::commands::BuildCommands;
+    use clap::Parser;
+
+    #[test]
+    fn test_build_commands_parse_test() {
+        let cmd = BuildCommands::try_parse_from(["test", "-p", "sisyphus-core"]);
+        assert!(cmd.is_ok());
+        match cmd.unwrap() {
+            BuildCommands::Test { package, all, .. } => {
+                assert_eq!(package, Some("sisyphus-core".to_string()));
+                assert!(!all);
+            }
+            _ => panic!("Expected Test variant"),
+        }
+    }
+
+    #[test]
+    fn test_build_commands_parse_check_all() {
+        let cmd = BuildCommands::try_parse_from(["check", "--all"]);
+        assert!(cmd.is_ok());
+        match cmd.unwrap() {
+            BuildCommands::Check { all, .. } => {
+                assert!(all);
+            }
+            _ => panic!("Expected Check variant"),
+        }
+    }
+
+    #[test]
+    fn test_build_commands_parse_fmt_check() {
+        let cmd = BuildCommands::try_parse_from(["fmt", "--check"]);
+        assert!(cmd.is_ok());
+        match cmd.unwrap() {
+            BuildCommands::Fmt { check, .. } => {
+                assert!(check);
+            }
+            _ => panic!("Expected Fmt variant"),
+        }
+    }
+
+    #[test]
+    fn test_build_commands_parse_lint() {
+        let cmd = BuildCommands::try_parse_from(["lint", "-p", "sisyphus-core"]);
+        assert!(cmd.is_ok());
+        match cmd.unwrap() {
+            BuildCommands::Lint { package, .. } => {
+                assert_eq!(package, Some("sisyphus-core".to_string()));
+            }
+            _ => panic!("Expected Lint variant"),
+        }
+    }
+}
