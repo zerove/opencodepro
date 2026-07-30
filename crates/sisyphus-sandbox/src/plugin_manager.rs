@@ -7,7 +7,9 @@ use tokio::time::interval;
 use tracing::{debug, info, warn};
 
 use crate::WasmToolExecutor;
+use async_trait::async_trait;
 use sisyphus_types::PluginDescriptor;
+use sisyphus_types::PluginManagerTrait;
 
 pub struct PluginManager {
     executor: WasmToolExecutor,
@@ -57,7 +59,24 @@ impl PluginManager {
     pub fn list_plugins(&self) -> Vec<PluginDescriptor> {
         self.plugins.iter().map(|r| r.value().clone()).collect()
     }
+}
 
+#[async_trait]
+impl PluginManagerTrait for PluginManager {
+    async fn register_plugin(&self, descriptor: PluginDescriptor) -> Result<(), String> {
+        self.register_plugin(descriptor).await
+    }
+
+    fn unload_plugin(&self, name: &str) -> Result<(), String> {
+        self.unload_plugin(name)
+    }
+
+    fn list_plugins(&self) -> Vec<PluginDescriptor> {
+        self.list_plugins()
+    }
+}
+
+impl PluginManager {
     async fn calculate_checksum(&self, path: &PathBuf) -> Result<String, String> {
         let bytes = tokio::fs::read(path)
             .await

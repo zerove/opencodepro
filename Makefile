@@ -59,6 +59,12 @@ build-bridge: $(BRIDGE_DEPS)
 test-bridge: $(BRIDGE_DEPS)
 	cargo test -p sisyphus-bridge
 
+check-bridge-nosandbox: $(BRIDGE_DEPS)
+	cargo check -p sisyphus-bridge --no-default-features
+
+test-bridge-nosandbox: $(BRIDGE_DEPS)
+	cargo test -p sisyphus-bridge --no-default-features --lib
+
 # — bridge crate, 1.96.0 fallback (RUSTFLAGS bypasses rustc 1.96.0 ICE) —
 
 check-bridge-160: $(BRIDGE_DEPS)

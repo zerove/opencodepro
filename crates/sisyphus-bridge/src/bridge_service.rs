@@ -1,6 +1,7 @@
 //! REST API for Sisyphus Bridge (axum HTTP layer alongside gRPC).
 use crate::jcode_caller::DebugSocketToolCaller;
 use async_trait::async_trait;
+#[cfg(feature = "sandbox")]
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 
@@ -8,6 +9,8 @@ use sisyphus_core::{Consensus, SisyphusKernel};
 use sisyphus_mem::SisyphusStore;
 
 use sisyphus_mem::skill_store::SkillStore;
+
+#[cfg(feature = "sandbox")]
 use sisyphus_sandbox::{PluginManager, WasmToolExecutor};
 use sisyphus_tools_agent::agent_registry::AgentRegistry;
 use sisyphus_tools_agent::jcode_executor::JcodeToolCaller;
@@ -24,7 +27,9 @@ use sisyphus_tools_mcp::custom_tool::CustomToolLoader;
 use sisyphus_tools_mcp::mcp::McpTool;
 use sisyphus_tools_mcp::tool_registry::{ToolInfo, ToolRegistry, ToolSource};
 use sisyphus_tools_session::skill::SkillLoader;
-use sisyphus_types::{Config, ExecutorRouter, ToolExecutor};
+#[cfg(not(feature = "sandbox"))]
+use sisyphus_types::{CacheInvalidatable, PluginDescriptor, ToolMetadata, TypesError};
+use sisyphus_types::{Config, ExecutorRouter, PluginManagerTrait, ToolExecutor};
 use tracing::{info, warn};
 
 use crate::consensus::ClusterConsensus;
@@ -45,7 +50,7 @@ pub struct MySisyphusBridge {
     pub(crate) workspace_manager: Arc<WorkspaceManager>,
     pub(crate) skill_loader: Arc<SkillLoader>,
     pub(crate) llm_client: Arc<dyn LlmClient>,
-    pub(crate) plugin_manager: Arc<PluginManager>,
+    pub(crate) plugin_manager: Arc<dyn PluginManagerTrait>,
     pub(crate) jcode_caller: Arc<dyn JcodeToolCaller>,
     pub(crate) chaos_runner: Arc<sisyphus_core::ChaosRunner>,
 }
@@ -81,8 +86,8 @@ impl MySisyphusBridge {
             cache_path,
             _l1_cap,
             max_tasks,
-            wasm_tools_dir,
-            max_mem_pages,
+            _wasm_tools_dir,
+            _max_mem_pages,
             stdio_servers,
             http_servers,
             default_fuel,
@@ -110,6 +115,11 @@ impl MySisyphusBridge {
                 config.llm.embedding.endpoint.clone(),
             )
         };
+
+        // Destructure sandbox-specific vars (underscore-prefixed to suppress unused warnings when sandbox is disabled)
+        #[cfg(feature = "sandbox")]
+        let (wasm_tools_dir, max_mem_pages) = (_wasm_tools_dir, _max_mem_pages);
+
         let store = Arc::new(SisyphusStore::new(&cache_path).await.map_err(|e| {
             sisyphus_types::TypesError::StateStoreError(format!(
                 "Failed to init SisyphusStore: {e}"
@@ -173,21 +183,39 @@ impl MySisyphusBridge {
             experience_bank.clone(),
         ));
 
-        // Primary executor: WASM (backward-compatible default)
-        let wasm_executor = Arc::new(
-            WasmToolExecutor::with_config(
-                Some(PathBuf::from(&wasm_tools_dir)),
-                Some(max_mem_pages),
-            )
-            .map_err(|e| sisyphus_types::TypesError::ToolExecutionError {
-                tool_id: "init".into(),
-                details: format!("Failed to create WasmToolExecutor: {e}"),
-            })?,
-        );
-
-        // Initialize PluginManager with hot-reload support
-        let wasm_executor_inner = wasm_executor.as_ref().clone();
-        let plugin_manager = PluginManager::new(wasm_executor_inner);
+        // ── Primary executor ──────────────────────────────────
+        // WASM executor (requires wasmtime); falls back to noop when sandbox is disabled.
+        // PluginManager is initialized alongside the wasm executor.
+        #[allow(unused_mut)]
+        let (wasm_executor, plugin_manager): (
+            Arc<dyn ToolExecutor>,
+            Arc<dyn PluginManagerTrait>,
+        ) = {
+            #[cfg(feature = "sandbox")]
+            {
+                let exec = WasmToolExecutor::with_config(
+                    Some(PathBuf::from(&wasm_tools_dir)),
+                    Some(max_mem_pages),
+                )
+                .map_err(|e| sisyphus_types::TypesError::ToolExecutionError {
+                    tool_id: "init".into(),
+                    details: format!("Failed to create WasmToolExecutor: {e}"),
+                })?;
+                let inner = exec.clone();
+                let pm = PluginManager::new(inner);
+                (
+                    Arc::new(exec) as Arc<dyn ToolExecutor>,
+                    pm as Arc<dyn PluginManagerTrait>,
+                )
+            }
+            #[cfg(not(feature = "sandbox"))]
+            {
+                warn!("Sandbox disabled: WASM execution & plugin management unavailable");
+                let noop_exec: Arc<dyn ToolExecutor> = Arc::new(NoopToolExecutor);
+                let noop_pm: Arc<dyn PluginManagerTrait> = Arc::new(NoopPluginManager);
+                (noop_exec, noop_pm)
+            }
+        };
 
         // Secondary executor: built-in tools
         let mut registry = HookRegistry::new();
@@ -257,16 +285,32 @@ impl MySisyphusBridge {
             .await
             .unwrap_or_default();
 
-        // Create CustomToolExecutor for these tools
-        let custom_executor = Arc::new(
-            sisyphus_sandbox::CustomToolExecutor::new(custom_defs).map_err(|e| {
-                sisyphus_types::TypesError::ToolExecutionError {
-                    tool_id: "init".into(),
-                    details: format!("Failed to create CustomToolExecutor: {e}"),
+        // Create CustomToolExecutor for these tools (requires sandbox)
+        #[allow(unused_variables)]
+        let custom_executor: Option<Arc<dyn ToolExecutor>> = {
+            #[cfg(feature = "sandbox")]
+            {
+                let exec = Arc::new(
+                    sisyphus_sandbox::CustomToolExecutor::new(custom_defs).map_err(|e| {
+                        sisyphus_types::TypesError::ToolExecutionError {
+                            tool_id: "init".into(),
+                            details: format!("Failed to create CustomToolExecutor: {e}"),
+                        }
+                    })?,
+                );
+                Some(exec as Arc<dyn ToolExecutor>)
+            }
+            #[cfg(not(feature = "sandbox"))]
+            {
+                if !custom_defs.is_empty() {
+                    warn!("Sandbox disabled: custom tools from .opencode/tools are not available");
                 }
-            })?,
-        );
-        router.register("tools", custom_executor);
+                None
+            }
+        };
+        if let Some(exec) = custom_executor {
+            router.register("tools", exec);
+        }
 
         // Collect MCP tool info for agent registration
         let mut mcp_servers: Vec<(String, String, Vec<McpTool>)> = Vec::new();
@@ -548,5 +592,57 @@ impl MySisyphusBridge {
 
     pub(crate) fn publish_event(&self, event: sisyphus_bridge_api::BridgeEvent) {
         let _ = self.event_bus.send(event);
+    }
+}
+
+// ── Noop fallbacks (used when sandbox feature is disabled) ────────────────
+
+/// Fallback executor that returns an error for every execution.
+/// Used when the `sandbox` feature is disabled to avoid linking wasmtime.
+#[cfg(not(feature = "sandbox"))]
+struct NoopToolExecutor;
+
+#[cfg(not(feature = "sandbox"))]
+#[async_trait]
+impl ToolExecutor for NoopToolExecutor {
+    async fn execute(
+        &self,
+        tool_id: &str,
+        _args: Vec<u8>,
+        _fuel_limit: u64,
+    ) -> Result<Vec<u8>, TypesError> {
+        Err(TypesError::ToolExecutionError {
+            tool_id: tool_id.to_string(),
+            details: format!("Sandbox disabled: cannot execute tool '{tool_id}'"),
+        })
+    }
+
+    async fn list_tools(&self) -> Result<Vec<ToolMetadata>, TypesError> {
+        Ok(Vec::new())
+    }
+
+    fn as_cache_invalidatable(&self) -> Option<&dyn CacheInvalidatable> {
+        None
+    }
+}
+
+/// Fallback plugin manager that returns empty results for all operations.
+/// Used when the `sandbox` feature is disabled.
+#[cfg(not(feature = "sandbox"))]
+struct NoopPluginManager;
+
+#[cfg(not(feature = "sandbox"))]
+#[async_trait]
+impl PluginManagerTrait for NoopPluginManager {
+    async fn register_plugin(&self, _descriptor: PluginDescriptor) -> Result<(), String> {
+        Err("Sandbox disabled: cannot register plugins".to_string())
+    }
+
+    fn unload_plugin(&self, _name: &str) -> Result<(), String> {
+        Err("Sandbox disabled: cannot unload plugins".to_string())
+    }
+
+    fn list_plugins(&self) -> Vec<PluginDescriptor> {
+        Vec::new()
     }
 }

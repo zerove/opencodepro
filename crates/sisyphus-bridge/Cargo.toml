@@ -13,7 +13,7 @@ tokio = { version = "1", features = ["full"] }
 tokio-stream = { version = "0.1", features = ["sync"] }
 sisyphus-types = { path = "../sisyphus-types" }
 sisyphus-core = { path = "../sisyphus-core" }
-sisyphus-sandbox = { path = "../sisyphus-sandbox" }
+sisyphus-sandbox = { path = "../sisyphus-sandbox", optional = true }
 sisyphus-tools-core = { path = "../sisyphus-tools-core" }
 sisyphus-tools-llm = { path = "../sisyphus-tools-llm" }
 sisyphus-tools-system = { path = "../sisyphus-tools-system" }
@@ -37,3 +37,7 @@ axum = "0.7"
 tower-http = { version = "0.5", features = ["cors", "trace", "fs"] }
 serde = { workspace = true, features = ["derive"] }
 parking_lot = "0.12.5"
+
+[features]
+default = ["sandbox"]
+sandbox = ["sisyphus-sandbox"]

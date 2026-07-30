@@ -108,6 +108,20 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo check -p sisyphus-webui
 
+  bridge-check:
+    name: Bridge (no sandbox)
+    runs-on: ubuntu-latest
+    needs: check
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo check -p sisyphus-bridge --no-default-features
+      - run: cargo clippy -p sisyphus-bridge --no-default-features -- -D warnings
+      - run: cargo test -p sisyphus-bridge --no-default-features --lib
+
   release:
     name: Release
     runs-on: ubuntu-latest

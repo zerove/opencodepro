@@ -6,6 +6,20 @@ use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
 use crate::errors::TypesError;
+use crate::types::PluginDescriptor;
+
+/// Trait for WASM plugin lifecycle management.
+/// Bridges the gap between `sisyphus-sandbox` (wasmtime) and consumers
+/// so that crates depending only on this trait do not need wasmtime at compile time.
+#[async_trait]
+pub trait PluginManagerTrait: Send + Sync {
+    /// Register a new plugin from its descriptor.
+    async fn register_plugin(&self, descriptor: PluginDescriptor) -> Result<(), String>;
+    /// Unload (remove) a previously registered plugin by name.
+    fn unload_plugin(&self, name: &str) -> Result<(), String>;
+    /// List all currently registered plugins.
+    fn list_plugins(&self) -> Vec<PluginDescriptor>;
+}
 
 #[async_trait]
 pub trait StateStore: Send + Sync {
