@@ -189,6 +189,18 @@ default_fuel = 1_000_000
 # 类型: string | 默认: "tools"
 wasm_tools_dir = "tools"
 
+# 使用独立进程 sandboxd 替代嵌入式 wasmtime（解决 OOM）
+# 当为 true 时，bridge 启动 sisyphus-sandboxd 子进程执行 WASM
+# 环境变量: SISYPHUS_SANDBOX_USE_SANDBOXD
+# 类型: bool | 默认: false
+# use_sandboxd = false
+
+# sisyphus-sandboxd 二进制路径（默认在 PATH 中搜索）
+# 仅 use_sandboxd = true 时有效
+# 环境变量: SISYPHUS_SANDBOX_SANDBOXD_PATH
+# 类型: string | 默认: "sisyphus-sandboxd"（PATH 搜索）
+# sandboxd_path = "sisyphus-sandboxd"
+
 # ── MCP 外部工具服务器 ─────────────────────────────────────
 [mcp]
 

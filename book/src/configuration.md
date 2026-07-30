@@ -34,7 +34,21 @@ prometheus_port = 9100
 max_memory_pages = 10
 default_fuel = 1_000_000
 wasm_tools_dir = "tools"
+use_sandboxd = false
+# sandboxd_path = "sisyphus-sandboxd"
 ```
+
+### `[sandbox]` 字段
+
+| 字段 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `max_memory_pages` | `u32` | `10` | WASM 线性内存上限（以 64KB 页为单位） |
+| `default_fuel` | `u64` | `1_000_000` | 沙箱默认 fuel 上限（WASM 指令数） |
+| `wasm_tools_dir` | `string` | `"tools"` | WASM 工具二进制文件目录 |
+| `use_sandboxd` | `bool` | `false` | 使用独立进程 sandboxd 替代嵌入式 wasmtime。为 `true` 时 bridge 启动 `sisyphus-sandboxd` 子进程执行 WASM，避免 wasmtime 编译内存压力 |
+| `sandboxd_path` | `string` | `None`（搜索 PATH） | `sisyphus-sandboxd` 二进制路径，仅 `use_sandboxd = true` 时有效 |
+
+> **何时启用 sandboxd：** 如果 CI 或开发机上 `cargo check`/`cargo build` 因 wasmtime 的 LLVM codegen 内存峰值 >7GB 而 OOM，设置 `use_sandboxd = true` 并在 CI 中预先构建 `sisyphus-sandboxd` 二进制。bridge 将启动子进程处理 WASM 调用，自身不再链接 wasmtime。
 
 ## Database Backends
 

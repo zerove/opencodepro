@@ -163,23 +163,25 @@ test-tests:
 # — CI simulation (mirrors .github/workflows/ci.yml) —
 
 test-ci:
-	@echo "━━━ 1/9 Format ━━━"
+	@echo "━━━ 1/10 Format ━━━"
 	cargo fmt --all --check
-	@echo "━━━ 2/9 Lint Light ━━━"
+	@echo "━━━ 2/10 Lint Light ━━━"
 	cargo clippy --workspace --exclude sisyphus-bridge --exclude sisyphus-sandbox --exclude sisyphus-sandboxd --exclude sisyphus-tests -- -D warnings
-	@echo "━━━ 3/9 Lint Sandbox ━━━"
+	@echo "━━━ 3/10 Lint Sandbox ━━━"
 	cargo clippy -p sisyphus-sandbox -- -D warnings
-	@echo "━━━ 4/9 Lint Sandboxd ━━━"
+	@echo "━━━ 4/10 Lint Sandboxd ━━━"
 	cargo clippy -p sisyphus-sandboxd -- -D warnings
-	@echo "━━━ 5/9 Lint Tests ━━━"
+	@echo "━━━ 5/10 Lint Tests ━━━"
 	cargo clippy -p sisyphus-tests -- -D warnings
-	@echo "━━━ 6/9 Test Light ━━━"
+	@echo "━━━ 6/10 Test Light ━━━"
 	cargo test --lib --workspace --exclude sisyphus-bridge --exclude sisyphus-sandbox --exclude sisyphus-sandboxd --exclude sisyphus-tests
-	@echo "━━━ 7/9 Test Core ━━━"
+	@echo "━━━ 7/10 Test Core ━━━"
 	cargo test -p sisyphus-core --lib
-	@echo "━━━ 8/9 Test Sandbox ━━━"
+	@echo "━━━ 8/10 Test Sandbox ━━━"
 	cargo test -p sisyphus-sandbox --lib
-	@echo "━━━ 9/9 Test Integration ━━━"
+	@echo "━━━ 9/10 Test Sandboxd ━━━"
+	cargo test -p sisyphus-sandboxd
+	@echo "━━━ 10/10 Test Integration ━━━"
 	cargo test -p sisyphus-tests --lib
 	@echo "━━━ CI simulation complete ━━━"
 

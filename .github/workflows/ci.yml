@@ -155,6 +155,17 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo test -p sisyphus-tests --lib
 
+  # ── Sandboxd daemon integration tests (IPC protocol) ───────────────────
+  test-sandboxd:
+    name: Test Sandboxd
+    runs-on: ubuntu-latest
+    needs: [lint-sandboxd]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test -p sisyphus-sandboxd
+
   # ── CLI release builds ──────────────────────────────────────────────
   build:
     name: Build
@@ -249,7 +260,7 @@ jobs:
   release:
     name: Release
     runs-on: ubuntu-latest
-    needs: [build, build-macos, build-windows, sdk-typescript, sdk-python]
+    needs: [build, build-sandboxd, build-macos, build-windows, sdk-typescript, sdk-python]
     if: github.ref == 'refs/heads/main'
     permissions:
       contents: write
@@ -261,6 +272,7 @@ jobs:
         with:
           files: |
             sisyphus-cli-linux/sisyphus-cli
+            sisyphus-sandboxd-linux/sisyphus-sandboxd
             sisyphus-cli-macos-arm64/sisyphus-cli
             sisyphus-cli-windows/sisyphus-cli.exe
           generate_release_notes: true
