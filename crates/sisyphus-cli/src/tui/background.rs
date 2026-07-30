@@ -552,10 +552,7 @@ pub fn spawn_delete_workspace(
 ) -> tokio::sync::oneshot::Receiver<BgOp> {
     let (tx, rx) = tokio::sync::oneshot::channel();
     tokio::spawn(async move {
-        let url = format!(
-            "http://{}/api/workspaces/{}",
-            bridge_address, workspace_id
-        );
+        let url = format!("http://{}/api/workspaces/{}", bridge_address, workspace_id);
         let result = async {
             let client = reqwest::Client::new();
             let resp = client

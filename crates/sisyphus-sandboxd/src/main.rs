@@ -36,9 +36,9 @@
 
 use sisyphus_sandbox::WasmToolExecutor;
 use sisyphus_types::ToolExecutor;
+use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::net::SocketAddr;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::sync::Notify;
 use tracing::{error, info, warn};
@@ -118,7 +118,9 @@ impl std::str::FromStr for Mode {
         match s {
             "stdio" => Ok(Mode::Stdio),
             "grpc" => Ok(Mode::Grpc),
-            other => Err(format!("Unknown mode '{other}'; expected 'stdio' or 'grpc'")),
+            other => Err(format!(
+                "Unknown mode '{other}'; expected 'stdio' or 'grpc'"
+            )),
         }
     }
 }
@@ -140,9 +142,9 @@ impl Args {
                 }
                 "--listen-addr" => {
                     let val = args.next().ok_or("--listen-addr requires a value")?;
-                    listen_addr = val.parse().map_err(|e| {
-                        format!("Invalid --listen-addr '{val}': {e}")
-                    })?;
+                    listen_addr = val
+                        .parse()
+                        .map_err(|e| format!("Invalid --listen-addr '{val}': {e}"))?;
                 }
                 "--tools-dir" => {
                     tools_dir = PathBuf::from(args.next().ok_or("--tools-dir requires a value")?);
@@ -308,12 +310,10 @@ async fn run_grpc(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let shutdown = Arc::new(Notify::new());
 
-    let service = pb::sandboxd_service_server::SandboxdServiceServer::new(
-        SandboxdServiceImpl {
-            executor,
-            shutdown: shutdown.clone(),
-        },
-    );
+    let service = pb::sandboxd_service_server::SandboxdServiceServer::new(SandboxdServiceImpl {
+        executor,
+        shutdown: shutdown.clone(),
+    });
 
     info!(listen_addr = %addr, "Starting gRPC server");
 

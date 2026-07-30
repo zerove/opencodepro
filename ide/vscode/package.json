@@ -15,7 +15,9 @@
       { "command": "sisyphus.newSession", "title": "Sisyphus: New Session" },
       { "command": "sisyphus.searchMemory", "title": "Sisyphus: Search Memory" },
       { "command": "sisyphus.executeSop", "title": "Sisyphus: Execute SOP" },
-      { "command": "sisyphus.showDag", "title": "Sisyphus: Show DAG" }
+      { "command": "sisyphus.showDag", "title": "Sisyphus: Show DAG" },
+      { "command": "sisyphus.refreshSessions", "title": "Sisyphus: Refresh Session List" },
+      { "command": "sisyphus.deleteSession", "title": "Sisyphus: Delete Session" }
     ],
     "viewsContainers": {
       "activitybar": [
@@ -25,14 +27,17 @@
     "views": {
       "sisyphus": [
         { "type": "webview", "id": "sisyphus.dagView", "name": "DAG Viewer" },
-        { "type": "webview", "id": "sisyphus.agentView", "name": "Agent" }
+        { "type": "webview", "id": "sisyphus.agentView", "name": "Agent" },
+        { "type": "treeView", "id": "sisyphus.sessionView", "name": "Sessions", "when": "config.sisyphus.baseUrl" }
       ]
     },
     "configuration": {
       "title": "Sisyphus",
       "properties": {
         "sisyphus.baseUrl": { "type": "string", "default": "http://localhost:8080", "description": "Sisyphus REST API base URL" },
-        "sisyphus.authToken": { "type": "string", "default": "", "description": "Bearer token for authentication" }
+        "sisyphus.authToken": { "type": "string", "default": "", "description": "Bearer token for authentication" },
+        "sisyphus.refreshInterval": { "type": "number", "default": 15, "minimum": 5, "description": "Status refresh interval in seconds" },
+        "sisyphus.autoRefreshSessions": { "type": "boolean", "default": true, "description": "Auto-refresh session list" }
       }
     }
   },

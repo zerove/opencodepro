@@ -16,6 +16,7 @@ use axum::{
         Path, Query, State, WebSocketUpgrade,
     },
     http::StatusCode,
+    middleware as axum_mw,
     response::{
         sse::{Event, KeepAlive, Sse},
         Html, IntoResponse, Response,
@@ -28,6 +29,7 @@ use futures::SinkExt;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::convert::Infallible;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::{broadcast, RwLock};
@@ -43,6 +45,15 @@ pub struct AppState {
     pub event_tx: broadcast::Sender<String>,
     pub api_keys: Arc<RwLock<Vec<String>>>,
     pub metrics: Arc<RwLock<MetricsCollector>>,
+    /// Optional auth token from WEBUI_API_KEY env var. If set, all requests
+    /// (except events/ws/metrics) must include `Authorization: Bearer <token>`.
+    pub auth_token: Option<String>,
+    /// Chaos engineering: whether fault injection is currently enabled.
+    pub chaos_enabled: Arc<AtomicBool>,
+    /// Chaos engineering: fault probability between 0.0 and 1.0.
+    pub chaos_fault_probability: Arc<RwLock<f64>>,
+    /// Chaos engineering: total number of injected faults since start.
+    pub chaos_fault_count: Arc<RwLock<u64>>,
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
@@ -204,6 +215,7 @@ fn page_shell(title: &str, nav_active: &str, body: &str) -> String {
         ("dag", "/dag", "DAG"),
         ("sop", "/sop", "SOPs"),
         ("skills", "/skills", "Skills"),
+        ("chaos", "/chaos", "Chaos"),
     ];
 
     let nav_html: String = nav_items
@@ -292,6 +304,12 @@ fn dashboard_body() -> &'static str {
   <h2>Status</h2>
   <div hx-get="/htmx/dashboard" hx-trigger="load, every 10s" hx-swap="innerHTML">Loading...</div>
 </div>
+<div class="card">
+  <h2>Live Events</h2>
+  <div id="dashboard-events" hx-ext="sse" sse-connect="/htmx/dashboard-events" sse-swap="message" hx-swap="beforeend" style="max-height:240px;overflow-y:auto;background:#0d1117;border:1px solid #21262d;border-radius:6px;padding:8px;font-family:monospace;font-size:0.8rem;">
+    <span class="muted">Waiting for bridge events...</span>
+  </div>
+</div>
 "#
 }
 
@@ -351,6 +369,32 @@ async fn skills_page() -> Html<String> {
 </div>
 "#;
     Html(page_shell("Skills", "skills", body))
+}
+
+// ── Chaos Engineering Page ─────────────────────
+
+async fn chaos_page() -> Html<String> {
+    let body = r##"
+<h1>Chaos Engineering</h1>
+<div class="card">
+  <h2>Chaos Status</h2>
+  <div id="chaos-status" hx-get="/htmx/chaos/status" hx-trigger="load, every 3s" hx-swap="innerHTML">Loading...</div>
+</div>
+<div class="card">
+  <h2>Controls</h2>
+  <div style="display:flex;flex-direction:column;gap:16px;">
+    <div>
+      <button id="chaos-toggle-btn" class="btn-exec" hx-post="/htmx/chaos/toggle" hx-target="#chaos-status" hx-swap="innerHTML">Toggle Chaos</button>
+      <span class="muted" style="margin-left:8px;">Start / stop fault injection</span>
+    </div>
+    <div>
+      <label>Fault Probability: <strong id="chaos-prob-display">10%</strong></label>
+      <input type="range" min="0" max="100" value="10" id="chaos-slider" style="width:300px;display:block;margin-top:4px;" hx-post="/htmx/chaos/probability" hx-trigger="change" hx-target="#chaos-status" hx-swap="innerHTML" name="probability">
+    </div>
+  </div>
+</div>
+"##;
+    Html(page_shell("Chaos", "chaos", body))
 }
 
 // ── HTMX Partial Handlers ─────────────────────
@@ -540,6 +584,74 @@ async fn skill_install_htmx(
     .into_response()
 }
 
+// ── Chaos HTMX Handlers ────────────────────
+
+/// Returns chaos status as an HTML fragment showing enabled/disabled state,
+/// current fault probability, and total fault count.
+async fn chaos_status_htmx(State(state): State<Arc<AppState>>) -> Response {
+    let enabled = state.chaos_enabled.load(Ordering::Relaxed);
+    let prob = *state.chaos_fault_probability.read().await;
+    let count = *state.chaos_fault_count.read().await;
+
+    let status_label = if enabled { "Running" } else { "Stopped" };
+    let status_class = if enabled { "status-ok" } else { "muted" };
+
+    let html = format!(
+        r#"<div class="stat"><span class="label">Status</span><span class="value {}">{}</span></div>
+<div class="stat"><span class="label">Fault Probability</span><span class="value">{:.0}%</span></div>
+<div class="stat"><span class="label">Faults Injected</span><span class="value status-{}">{}</span></div>"#,
+        status_class,
+        status_label,
+        prob * 100.0,
+        if count > 0 { "err" } else { "ok" },
+        count
+    );
+    Html(html).into_response()
+}
+
+/// Toggle chaos on/off. When enabled, increments the fault count to simulate
+/// active fault injection visible on the dashboard.
+async fn chaos_toggle_htmx(State(state): State<Arc<AppState>>) -> Response {
+    let was_enabled = state.chaos_enabled.fetch_xor(true, Ordering::Relaxed);
+    let now_enabled = !was_enabled;
+
+    // Simulate fault injection on toggle for visual feedback
+    if now_enabled {
+        let mut count = state.chaos_fault_count.write().await;
+        *count += 1;
+    }
+
+    // Broadcast chaos toggle event
+    let event = serde_json::json!({
+        "event_type": "chaos_toggle",
+        "enabled": now_enabled,
+        "timestamp_secs": std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0)
+    });
+    let _ = state
+        .event_tx
+        .send(serde_json::to_string(&event).unwrap_or_default());
+
+    chaos_status_htmx(State(state)).await
+}
+
+/// Set the chaos fault probability from a slider value (0-100 integer).
+async fn chaos_probability_htmx(
+    State(state): State<Arc<AppState>>,
+    Query(params): Query<HashMap<String, String>>,
+) -> Response {
+    let raw: f64 = params
+        .get("probability")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(10.0);
+    let pct = raw.clamp(0.0, 100.0);
+    *state.chaos_fault_probability.write().await = pct / 100.0;
+
+    chaos_status_htmx(State(state)).await
+}
+
 // ── SSE Handler ────────────────────────────────
 
 async fn sse_handler(
@@ -549,6 +661,33 @@ async fn sse_handler(
     let stream = futures::stream::unfold(rx, |mut rx| async {
         match rx.recv().await {
             Ok(data) => Some((Ok(Event::default().data(data)), rx)),
+            Err(_) => None,
+        }
+    });
+    Sse::new(stream).keep_alive(KeepAlive::default())
+}
+
+/// SSE endpoint for the dashboard. Subscribes to the same event bus as
+/// `/events` but wraps each event as an HTML fragment so htmx-ext-sse
+/// can inject it directly into the dashboard "Live Events" panel.
+async fn dashboard_events_sse(
+    State(state): State<Arc<AppState>>,
+) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
+    let rx = state.event_tx.subscribe();
+    let stream = futures::stream::unfold(rx, |mut rx| async {
+        match rx.recv().await {
+            Ok(data) => {
+                // Escape HTML special chars to avoid XSS in the dashboard
+                let escaped = data
+                    .replace('&', "&amp;")
+                    .replace('<', "&lt;")
+                    .replace('>', "&gt;");
+                let html = format!(
+                    r#"<div style="padding:6px;margin-bottom:4px;background:#0d1117;border:1px solid #21262d;border-radius:4px;font-size:0.8rem;font-family:monospace;word-break:break-all;">{}</div>"#,
+                    escaped
+                );
+                Some((Ok(Event::default().data(html)), rx))
+            }
             Err(_) => None,
         }
     });
@@ -874,7 +1013,7 @@ fn render_dag_svg(graph: &DagGraph) -> String {
         return "<p class='muted'>No DAG to display.</p>".into();
     }
     let w = graph.width + 40.0;
-    let h = graph.height + 40.0;
+    let h = graph.height + 100.0; // extra space for legend
     let mut svg =
         format!("<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 {w} {h}' class='dag-svg'>");
     svg.push_str("<defs><marker id='arrow' markerWidth='10' markerHeight='7' refX='10' refY='3.5' orient='auto'><polygon points='0 0,10 3.5,0 7' fill='#30363d'/></marker></defs>");
@@ -899,13 +1038,64 @@ fn render_dag_svg(graph: &DagGraph) -> String {
         svg.push_str(&format!("<text x='{}' y='{}' text-anchor='middle' fill='#c9d1d9' font-size='12' font-family='system-ui'>{}</text>", node.x + 60.0, node.y + 25.0, node.label));
     }
 
+    // ── Color-coded legend ───────────────────────
+    let legend_y = graph.height + 20.0;
+    let legend_items = [
+        ("#3fb950", "Completed"),
+        ("#d29922", "Running"),
+        ("#f85149", "Failed"),
+        ("#484f58", "Pending"),
+    ];
+    let mut legend_x = 20.0;
+    for (color, label) in &legend_items {
+        svg.push_str(&format!(
+            "<rect x='{legend_x}' y='{legend_y}' width='14' height='14' rx='3' fill='#161b22' stroke='{color}' stroke-width='2'/>"
+        ));
+        svg.push_str(&format!(
+            "<text x='{}' y='{}' fill='#8b949e' font-size='11' font-family='system-ui'>{label}</text>",
+            legend_x + 20.0,
+            legend_y + 12.0,
+        ));
+        legend_x += 90.0;
+    }
+
     svg.push_str("</svg>");
     svg
 }
 
 // ── Router ────────────────────────────────────
 
+/// Auth middleware that checks `Authorization: Bearer <token>` against the
+/// `WEBUI_API_KEY` env var. Passes through when no token is configured.
+/// Reads the env var directly so it works without needing State extraction.
+async fn auth_middleware(
+    request: axum::http::Request<axum::body::Body>,
+    next: axum::middleware::Next,
+) -> Result<axum::http::Response<axum::body::Body>, (StatusCode, &'static str)> {
+    let auth_token: Option<String> = std::env::var("WEBUI_API_KEY")
+        .ok()
+        .filter(|s| !s.is_empty());
+    if let Some(ref token) = auth_token {
+        let header = request
+            .headers()
+            .get("Authorization")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("");
+        let expected = format!("Bearer {}", token);
+        if header != expected {
+            return Err((StatusCode::UNAUTHORIZED, "Missing or invalid API key"));
+        }
+    }
+    Ok(next.run(request).await)
+}
+
 pub fn app(bridge_url: String) -> Router {
+    // Read optional auth token from environment. When set, all non-public
+    // routes require `Authorization: Bearer <WEBUI_API_KEY>`.
+    let auth_token: Option<String> = std::env::var("WEBUI_API_KEY")
+        .ok()
+        .filter(|s| !s.is_empty());
+
     let (event_tx, _) = broadcast::channel(256);
     let state = Arc::new(AppState {
         bridge_url,
@@ -916,14 +1106,28 @@ pub fn app(bridge_url: String) -> Router {
             uptime_start: Some(Instant::now()),
             ..Default::default()
         })),
+        auth_token,
+        chaos_enabled: Arc::new(AtomicBool::new(false)),
+        chaos_fault_probability: Arc::new(RwLock::new(0.1)),
+        chaos_fault_count: Arc::new(RwLock::new(0)),
     });
 
-    Router::new()
+    // Public routes accessible without authentication
+    let public_routes = Router::new()
+        .route("/events", get(sse_handler))
+        .route("/htmx/dashboard-events", get(dashboard_events_sse))
+        .route("/ws", get(ws_handler))
+        .route("/metrics", get(metrics_endpoint))
+        .nest_service("/static", ServeDir::new("static"));
+
+    // Protected routes requiring auth (when WEBUI_API_KEY is set)
+    let protected_routes = Router::new()
         .route("/", get(index))
         .route("/sessions", get(sessions_page))
         .route("/dag", get(dag_page))
         .route("/sop", get(sop_page))
         .route("/skills", get(skills_page))
+        .route("/chaos", get(chaos_page))
         .route("/htmx/dashboard", get(dashboard_htmx))
         .route("/htmx/sessions", get(sessions_htmx))
         .route("/htmx/session/{id}/detail", get(session_detail_htmx))
@@ -933,6 +1137,9 @@ pub fn app(bridge_url: String) -> Router {
         .route("/htmx/exec", post(exec_result_htmx))
         .route("/htmx/session/{id}/messages", post(add_message_htmx))
         .route("/htmx/skills/install", post(skill_install_htmx))
+        .route("/htmx/chaos/status", get(chaos_status_htmx))
+        .route("/htmx/chaos/toggle", post(chaos_toggle_htmx))
+        .route("/htmx/chaos/probability", post(chaos_probability_htmx))
         .route("/api/health", get(api_health))
         .route("/api/sessions", get(api_sessions).post(api_create_session))
         .route("/api/sessions/{id}", get(api_session_detail))
@@ -944,10 +1151,11 @@ pub fn app(bridge_url: String) -> Router {
         .route("/api/skills", get(api_skill_list))
         .route("/api/skills/install", post(api_skill_install))
         .route("/api/auth/validate", post(auth_validate))
-        .route("/events", get(sse_handler))
-        .route("/ws", get(ws_handler))
-        .route("/metrics", get(metrics_endpoint))
-        .nest_service("/static", ServeDir::new("static"))
+        .layer(axum_mw::from_fn(auth_middleware));
+
+    Router::new()
+        .merge(public_routes)
+        .merge(protected_routes)
         .layer(CorsLayer::permissive())
         .with_state(state)
 }

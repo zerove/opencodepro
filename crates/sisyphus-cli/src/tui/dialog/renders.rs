@@ -15,7 +15,9 @@ pub(super) fn render_workspace_list_dialog(frame: &mut ratatui::Frame, area: Rec
     let block = Block::default()
         .borders(Borders::ALL)
         .title(" Workspaces ")
-        .title_bottom(" ↑↓ select | Enter switch | d/Del: delete | r: refresh | Esc: close ".to_string())
+        .title_bottom(
+            " ↑↓ select | Enter switch | d/Del: delete | r: refresh | Esc: close ".to_string(),
+        )
         .border_style(Style::default().fg(theme.primary));
 
     if app.workspaces.is_empty() {
@@ -853,7 +855,7 @@ pub(super) fn render_trace_dialog(frame: &mut ratatui::Frame, area: Rect, app: &
             } else {
                 "Enter: show output | "
             },
-            format!(
+            format_args!(
                 "↑↓/PgUp/PgDn scroll: {} | g/G top/bottom | Esc close ",
                 widgets::scroll_pct(app.sop_trace_scroll, app.sop_trace.len()),
             ),
@@ -871,11 +873,8 @@ pub(super) fn render_trace_dialog(frame: &mut ratatui::Frame, area: Rect, app: &
 
     // Layout: table on top, optional output detail below
     let (table_area, detail_area) = if app.sop_trace_detail.is_some() {
-        let chunks = Layout::vertical([
-            Constraint::Percentage(60),
-            Constraint::Percentage(40),
-        ])
-        .split(area);
+        let chunks =
+            Layout::vertical([Constraint::Percentage(60), Constraint::Percentage(40)]).split(area);
         (chunks[0], Some(chunks[1]))
     } else {
         (area, None)

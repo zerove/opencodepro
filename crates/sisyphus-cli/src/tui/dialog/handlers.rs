@@ -43,10 +43,7 @@ pub(super) fn handle_workspace_list_key(code: KeyCode, app: &mut App) {
             if let Some(ws) = app.workspaces.get(app.workspace_sel) {
                 let name = ws.name.clone();
                 let id = ws.id.clone();
-                app.add_toast(
-                    ToastKind::Info,
-                    format!("Deleting workspace: {}...", name),
-                );
+                app.add_toast(ToastKind::Info, format!("Deleting workspace: {}...", name));
                 if app.pending_op.is_none() {
                     app.pending_op = Some(spawn_delete_workspace(app.bridge_address.clone(), id));
                 }

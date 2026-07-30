@@ -1105,7 +1105,9 @@ impl App {
                 self.add_log(LogEntry::Info(format!("Workspace deleted: {id}")));
                 // Remove from local list
                 self.workspaces.retain(|w| w.id != id);
-                self.workspace_sel = self.workspace_sel.min(self.workspaces.len().saturating_sub(1));
+                self.workspace_sel = self
+                    .workspace_sel
+                    .min(self.workspaces.len().saturating_sub(1));
             }
             crate::tui::background::BgOp::OpUpdate {
                 op_id,

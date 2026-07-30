@@ -1,13 +1,15 @@
 //! REST API for Sisyphus Bridge (axum HTTP layer alongside gRPC).
 use crate::jcode_caller::DebugSocketToolCaller;
 use async_trait::async_trait;
+use std::collections::HashMap;
 #[cfg(feature = "sandbox")]
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
 use sisyphus_core::{Consensus, SisyphusKernel};
+use sisyphus_intel::ToolGap;
 use sisyphus_mem::SisyphusStore;
 
 use sisyphus_mem::skill_store::SkillStore;
@@ -29,9 +31,12 @@ use sisyphus_tools_mcp::custom_tool::CustomToolLoader;
 use sisyphus_tools_mcp::mcp::McpTool;
 use sisyphus_tools_mcp::tool_registry::{ToolInfo, ToolRegistry, ToolSource};
 use sisyphus_tools_session::skill::SkillLoader;
+use sisyphus_types::tools::ToolSpec;
 #[cfg(not(feature = "sandbox"))]
 use sisyphus_types::{CacheInvalidatable, PluginDescriptor, ToolMetadata, TypesError};
-use sisyphus_types::{Config, ExecutorRouter, PluginManagerTrait, ToolExecutor};
+use sisyphus_types::{
+    Config, ExecutorRouter, MetaLearningSample, PluginManagerTrait, ToolExecutor,
+};
 use tracing::{info, warn};
 
 use crate::consensus::ClusterConsensus;
@@ -59,6 +64,12 @@ pub struct MySisyphusBridge {
     pub(crate) chaos_enabled: bool,
     /// Default fault probability for bridge-level chaos injection.
     pub(crate) chaos_fault_probability: f64,
+    /// Total count of CHAOS_ERROR faults injected (direction 4: auto-fix pipeline).
+    pub(crate) chaos_fault_counter: Arc<AtomicU64>,
+    /// Per-fault-type counter: maps fault type string → occurrence count.
+    pub(crate) chaos_fault_type_counters: Arc<parking_lot::Mutex<HashMap<String, u64>>>,
+    /// Set to true when auto-fix is triggered (for testing).
+    pub(crate) chaos_auto_fix_triggered: Arc<AtomicBool>,
 }
 
 impl Clone for MySisyphusBridge {
@@ -81,6 +92,9 @@ impl Clone for MySisyphusBridge {
             chaos_runner: self.chaos_runner.clone(),
             chaos_enabled: self.chaos_enabled,
             chaos_fault_probability: self.chaos_fault_probability,
+            chaos_fault_counter: self.chaos_fault_counter.clone(),
+            chaos_fault_type_counters: self.chaos_fault_type_counters.clone(),
+            chaos_auto_fix_triggered: self.chaos_auto_fix_triggered.clone(),
         }
     }
 }
@@ -618,6 +632,9 @@ impl MySisyphusBridge {
             chaos_runner: Arc::new(sisyphus_core::ChaosRunner::new()),
             chaos_enabled,
             chaos_fault_probability,
+            chaos_fault_counter: Arc::new(AtomicU64::new(0)),
+            chaos_fault_type_counters: Arc::new(parking_lot::Mutex::new(HashMap::new())),
+            chaos_auto_fix_triggered: Arc::new(AtomicBool::new(false)),
         };
 
         let bridge_arc = Arc::new(bridge);
@@ -667,6 +684,16 @@ impl MySisyphusBridge {
 
     // ── Chaos Engineering: bridge-level fault injection ───────────────────
 
+    /// Returns the total number of CHAOS_ERROR faults injected.
+    pub fn chaos_fault_count(&self) -> u64 {
+        self.chaos_fault_counter.load(Ordering::Relaxed)
+    }
+
+    /// Returns true if the auto-fix background task has been spawned.
+    pub fn chaos_auto_fix_was_triggered(&self) -> bool {
+        self.chaos_auto_fix_triggered.load(Ordering::Relaxed)
+    }
+
     /// Simple pseudo-random f64 in [0.0, 1.0) using a static atomic counter.
     fn chaos_rand_f64() -> f64 {
         use std::hash::{Hash, Hasher};
@@ -679,6 +706,14 @@ impl MySisyphusBridge {
     /// If chaos is enabled, randomly inject a delay or error with the
     /// configured probability.  Returns `Some(ExecuteToolResponse)` when a
     /// fault is injected, or `None` to continue normal execution.
+    ///
+    /// ## Direction 4: Chaos → Auto-repair pipeline
+    ///
+    /// Every injected fault is counted.  When the total exceeds 3 the bridge
+    /// automatically spawns a background self-programming repair cycle:
+    /// 1. Records the fault as a `MetaLearningSample` in the kernel's meta-learner.
+    /// 2. Calls `SelfProgrammingManager::resolve_gap(gap)` with a synthetic
+    ///    `ToolGap` that describes the chaos-robustness improvement needed.
     pub(crate) async fn maybe_inject_chaos_fault(
         &self,
     ) -> Option<sisyphus_bridge_api::ExecuteToolResponse> {
@@ -701,8 +736,85 @@ impl MySisyphusBridge {
         } else {
             // Inject an artificial fault (return error without executing)
             tracing::info!("Chaos: injecting fault");
+            let fault_type = "CHAOS_ERROR".to_string();
+
+            // ── Increment fault counters ─────────────────────────────────
+            self.chaos_fault_counter.fetch_add(1, Ordering::Relaxed);
+            let total = self.chaos_fault_counter.load(Ordering::Relaxed);
+            {
+                let mut counters = self.chaos_fault_type_counters.lock();
+                *counters.entry(fault_type.clone()).or_insert(0) += 1;
+            }
+
+            // ── Auto-fix: spawn background repair when faults exceed 3 ──
+            if total > 3 {
+                self.chaos_auto_fix_triggered.store(true, Ordering::Relaxed);
+                let kernel = self.kernel.clone();
+                let enabled = self.chaos_enabled;
+                let ft_for_spawn = fault_type.clone();
+                tokio::spawn(async move {
+                    // 1. Record fault sample to MetaLearner
+                    let sample = MetaLearningSample {
+                        context: serde_json::json!({
+                            "fault_type": ft_for_spawn.clone(),
+                            "source": "bridge_maybe_inject_chaos_fault",
+                        }),
+                        strategy: "chaos_auto_fix".into(),
+                        params: serde_json::json!({}),
+                        success: false,
+                        duration_secs: 0.0,
+                        timestamp: std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_secs(),
+                    };
+                    {
+                        let mut ml = kernel.meta_learner.lock();
+                        let _ = ml.record_outcome(sample);
+                    }
+
+                    // 2. If chaos is still enabled, try to resolve the gap
+                    //    via the self-programming manager.
+                    if enabled {
+                        let spec = ToolSpec {
+                            tool_id: "chaos_auto_repair".into(),
+                            required_capability: format!(
+                                "Handle recurring chaos faults ({}) by implementing \
+                                 retry logic, circuit breaker hardening, and error recovery",
+                                ft_for_spawn
+                            ),
+                            expected_input: serde_json::json!({"error": ft_for_spawn}),
+                            expected_output: serde_json::json!({"status": "recovered"}),
+                            success_criteria: format!(
+                                "System handles {} faults without crashing",
+                                ft_for_spawn
+                            ),
+                            test_command: None,
+                            workdir: None,
+                        };
+                        let gap = ToolGap {
+                            gap_id: format!(
+                                "chaos_fix_{}",
+                                std::time::SystemTime::now()
+                                    .duration_since(std::time::UNIX_EPOCH)
+                                    .unwrap_or_default()
+                                    .as_secs()
+                            ),
+                            required_capability: spec.required_capability.clone(),
+                            failing_node: "bridge_execute_tool".into(),
+                            suggested_tool_spec: spec,
+                        };
+                        let result = kernel.strategic_manager.sp_manager.resolve_gap(gap).await;
+                        match result {
+                            Ok(()) => tracing::info!("Chaos auto-fix resolved successfully"),
+                            Err(e) => tracing::warn!("Chaos auto-fix failed: {e}"),
+                        }
+                    }
+                });
+            }
+
             Some(sisyphus_bridge_api::ExecuteToolResponse {
-                status: "CHAOS_ERROR: injected fault".into(),
+                status: format!("{}: injected fault", fault_type),
                 result_json: String::new(),
             })
         }

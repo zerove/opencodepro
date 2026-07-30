@@ -45,6 +45,7 @@ HEAVY_PACKAGES = sisyphus-sandbox sisyphus-sandboxd sisyphus-tests
 .PHONY: check-sandbox build-sandboxd test-sandbox check-sandboxd test-tests check-tests
 .PHONY: test-bridge-full test-cli-handlers
 .PHONY: test-ci
+.PHONY: perf-analyze
 .PHONY: dev-tui run-tui clean
 
 all: check-all
@@ -91,6 +92,47 @@ check-stress-test:
 
 bench-core:
 	cargo bench -p sisyphus-core --features sandbox -- --warm-up-time 1 --measurement-time 2 --sample-size 10
+
+# — performance analysis (run benchmarks + critcmp comparison) —
+#
+#   Runs core benchmarks with --save-baseline current, then compares
+#   against the previously saved main-baseline using critcmp.
+#   If no baseline exists, saves current results as the baseline.
+#
+#   Prerequisites:
+#     cargo install critcmp --locked   (first time)
+#
+#   Usage:
+#     make perf-analyze                # compare with existing baseline
+#     make perf-analyze BASELINE=myref # compare against a custom baseline name
+
+perf-analyze:
+	@echo "━━━ Running benchmarks (save as current) ━━━"
+	cargo bench -p sisyphus-core --features sandbox -- --save-baseline current --warm-up-time 1 --measurement-time 2 --sample-size 10
+	@BASELINE_NAME="${BASELINE:-main-baseline}"; \
+	if ls target/criterion/*/"$$BASELINE_NAME"/ 2>/dev/null >/dev/null; then \
+		echo "━━━ Comparing current vs $$BASELINE_NAME ━━━"; \
+		if command -v critcmp >/dev/null 2>&1; then \
+			critcmp current "$$BASELINE_NAME" 2>&1; \
+			echo ""; \
+			echo "━━━ Regression check (>5% = warning) ━━━"; \
+			critcmp current "$$BASELINE_NAME" --json 2>/dev/null | python3 -c " \
+import json,sys; data=json.load(sys.stdin); \
+regs=[(n,i) for n,i in data.items() if isinstance(i,dict) and isinstance(i.get('change'),(int,float)) and i['change']>5.0]; \
+[print(f'WARNING: {n}: {p[\"change\"]:.1f}% slower') for n,p in regs] if regs else print('No regressions >5%'); \
+"; \
+		else \
+			echo "critcmp not installed. Install with: cargo install critcmp --locked"; \
+		fi; \
+	else \
+		echo "━━━ No $$BASELINE_NAME found. Saving current as $$BASELINE_NAME ━━━"; \
+		for dir in target/criterion/*/; do \
+			if [ -d "$${dir}current" ]; then \
+				cp -r "$${dir}current" "$${dir}$$BASELINE_NAME"; \
+			fi; \
+		done; \
+		echo "Benchmark baseline saved as '$$BASELINE_NAME'"; \
+	fi
 
 # — E2E smoke test (bridge daemon + stress_test) —
 

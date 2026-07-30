@@ -6,7 +6,7 @@ use serde_json::Value;
 use std::sync::Arc;
 use std::time::{Instant, SystemTime};
 use tokio::sync::mpsc;
-use tracing::error;
+use tracing::{error, instrument, Instrument};
 
 use sisyphus_intel::{SimulationResult, SisyphusSupervisor};
 use sisyphus_types::SOPGraph;
@@ -213,6 +213,7 @@ impl StrategicManager {
     }
 
     #[allow(clippy::too_many_arguments)]
+    #[instrument(skip_all, fields(sop_id = %sop_id, graph_nodes = sop_graph.graph.node_count()))]
     pub async fn run_cognitive_loop(
         &self,
         sop_graph: Arc<SOPGraph>,
@@ -419,6 +420,7 @@ impl StrategicManager {
                 .as_secs();
 
             // 1. Predict
+            tracing::info!(iteration, "phase=predict");
             let depth = sisyphus_intel::ComplexityAnalyzer::analyze(
                 self.experience_bank.clone(),
                 &current_ref,
@@ -471,6 +473,7 @@ impl StrategicManager {
                         sop_id,
                         goal_text,
                     )
+                    .instrument(tracing::info_span!("simulate", iteration))
                     .await
                     .map_err(|e| CoreError::Internal(e.to_string()))?
             };
@@ -666,6 +669,8 @@ impl StrategicManager {
                 }
             });
 
+            // 2. Execute
+            tracing::info!(iteration, "phase=execute");
             let final_ctx = match executor
                 .execute_with_context(
                     Arc::clone(&current_ref),
@@ -684,6 +689,7 @@ impl StrategicManager {
                     micro_reflector.clone(),
                     self.visual_manager.clone(),
                 )
+                .instrument(tracing::info_span!("execute_with_context", iteration))
                 .await
             {
                 Ok(ctx) => ctx,
@@ -718,6 +724,7 @@ impl StrategicManager {
             final_result = result.clone();
 
             // 3. Reflect
+            tracing::info!(iteration, "phase=reflect");
             let mut trace = String::with_capacity(current_ref.graph.node_count() * 64);
             for node in current_ref.graph.node_indices() {
                 if let Some(nw) = current_ref.graph.node_weight(node) {
@@ -741,6 +748,7 @@ impl StrategicManager {
             } else {
                 self.intelligence_manager
                     .reflect_on_trace(&trace, &prediction, &final_ctx)
+                    .instrument(tracing::info_span!("reflect_on_trace", iteration))
                     .await
                     .map_err(|e| CoreError::Internal(e.to_string()))?
             };
@@ -866,6 +874,7 @@ impl StrategicManager {
             let _ = self.experience_bank.record(exp_to_record).await;
 
             // 5. Evolve
+            tracing::info!(iteration, "phase=evolve");
             let mut evolution_insights = ctx
                 .notepad
                 .read()

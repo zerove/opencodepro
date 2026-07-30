@@ -40,3 +40,51 @@ cargo bench -p sisyphus-core
 ```
 
 Benchmark results are stored in `target/criterion/`.
+
+## Performance Tuning
+
+### Cache Tuning
+
+The `OutputCache` eviction policy and capacity can be tuned for different workloads.
+
+| Parameter        | Default | Description                          | Recommendation                     |
+|------------------|---------|--------------------------------------|------------------------------------|
+| Cache capacity   | 1000    | Max entries before eviction          | Increase for repetitive workloads  |
+| Context threshold| 4096    | Bytes before compression triggers    | Decrease for memory-constrained    |
+| Batch base size  | 4       | Initial pipeline batch size          | Increase for high-throughput       |
+
+**Trade-offs**: A larger cache reduces re-execution at the cost of memory. Monitor the cache hit rate via the execution profiler. If hit rate is below 60%, consider increasing the capacity. If above 95%, reducing it can free memory without impact.
+
+### Sandboxd Mode Selection
+
+The sandbox daemon (`sandboxd`) can run in two modes:
+
+| Mode       | Latency | Isolation | Use case                     |
+|------------|---------|-----------|------------------------------|
+| **Embedded** | ~50µs  | Process   | Development, trusted workloads |
+| **Daemon**   | ~500µs | Container | Production, untrusted code     |
+
+- **Embedded mode** instantiates a Wasm runtime in-process. Lowest latency but no container-level isolation. Suitable for development and CI.
+- **Daemon mode** communicates with a separate `sandboxd` process via gRPC. Higher latency per invocation but provides container-level sandboxing.
+
+Switch modes by configuring the tool executor in `Config.tool_executor`. The daemon mode is the default for production deployments.
+
+### Concurrent Task Tuning
+
+The cognitive loop supports configurable concurrency for parallel branch evaluation.
+
+```toml
+# config.toml
+[cognitive_loop]
+max_concurrent_tasks = 4      # Parallel branches in ParallelBranchPredictor
+max_iterations = 30           # Upper bound on cognitive iterations
+convergence_threshold = 0.15  # Stop when deviation drops below this
+```
+
+Tuning guidelines:
+
+- **max_concurrent_tasks**: Set to the number of CPU cores for CPU-bound workloads. For I/O-bound (LLM calls), higher values (8-16) can improve throughput.
+- **max_iterations**: Lower values reduce worst-case latency. Higher values improve convergence quality.
+- **convergence_threshold**: Tighter (lower) thresholds improve output quality at the cost of more iterations.
+
+Monitor cognitive loop performance using the tracing spans (`predict`, `execute`, `reflect`, `evolve`) via `RUST_LOG=sisyphus_core=info`.

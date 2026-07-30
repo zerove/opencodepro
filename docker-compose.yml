@@ -1,28 +1,64 @@
+# ── Sisyphus Docker Compose ───────────────────────────────────────────
+# Usage:
+#   docker compose up -d                     # Start bridge only
+#   docker compose --profile db up -d        # Start bridge + PostgreSQL
+#   docker compose down                      # Stop everything
+#
+# Bridge gRPC endpoint:  [::1]:50051
+# Bridge HTTP endpoint:  localhost:8080
+# PostgreSQL endpoint:   localhost:5432 (when db profile is enabled)
+
 services:
+  # ── Sisyphus Bridge ─────────────────────────────────────────────────
   bridge:
     build:
       context: .
       dockerfile: Dockerfile
+    image: ghcr.io/${GITHUB_REPOSITORY_OWNER:-opencodepro}/sisyphus-bridge:${TAG:-latest}
     ports:
       - "50051:50051"
-      - "9100:9100"
+      - "8080:8080"
     environment:
       - SISYPHUS_CONFIG=/app/config.toml
-    networks:
-      - sisyphus-net
-    restart: unless-stopped
-
-  prometheus:
-    image: prom/prometheus
+      - RUST_LOG=${RUST_LOG:-info}
     volumes:
-      - ./prometheus.yml:/etc/prometheus/prometheus.yml
-    ports:
-      - "9090:9090"
+      - sisyphus-data:/app/data
     networks:
       - sisyphus-net
-    depends_on:
-      - bridge
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 50051 || exit 1"]
+      interval: 30s
+      timeout: 3s
+      start_period: 10s
+      retries: 3
+
+  # ── PostgreSQL (optional) ──────────────────────────────────────────
+  # Enable with: docker compose --profile db up -d
+  postgres:
+    profiles:
+      - db
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: sisyphus
+      POSTGRES_PASSWORD: sisyphus
+      POSTGRES_DB: sisyphus
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - sisyphus-net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sisyphus"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  sisyphus-data:
+  postgres-data:
 
 networks:
   sisyphus-net:

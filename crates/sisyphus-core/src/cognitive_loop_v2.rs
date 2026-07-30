@@ -17,7 +17,7 @@ use sisyphus_types::ExecutionContext;
 use sisyphus_types::SOPGraph;
 use std::collections::HashMap;
 use std::sync::Arc;
-use tracing::{info, warn};
+use tracing::{info, instrument, warn};
 
 // ---------------------------------------------------------------------------
 // ParallelBranchPredictor
@@ -104,6 +104,7 @@ impl ParallelBranchPredictor {
     /// `variant_graphs` should contain different SOP graphs (e.g., evolved variants, original).
     /// Returns the best branch evaluation and all evaluations for analysis.
     #[allow(clippy::too_many_arguments)]
+    #[instrument(skip_all, fields(num_variants = variant_graphs.len()))]
     pub async fn evaluate_branches(
         &self,
         variant_graphs: Vec<Arc<SOPGraph>>,
@@ -301,6 +302,7 @@ impl AnomalyDetector {
 
     /// Record a node execution observation and check for anomalies.
     /// Returns anomalies detected (if any) for this observation.
+    #[instrument(skip(self), fields(node_name, fuel_consumed, duration_ms, success))]
     pub fn observe(
         &self,
         node_name: &str,
@@ -518,6 +520,7 @@ impl AdaptiveDepthController {
 
     /// Record confidence after an iteration and decide whether to continue.
     /// Returns `true` if the loop should continue, `false` to stop.
+    #[instrument(skip(self))]
     pub fn observe_iteration(&self, confidence: f64) -> bool {
         let mut hist = self.confidence_history.lock();
         hist.push(confidence);

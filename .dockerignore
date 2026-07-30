@@ -1,7 +1,47 @@
+# ── Sisyphus .dockerignore ────────────────────────────────────────────
+# Exclude local build artifacts and non-essential files from Docker context.
+
+# Rust build artifacts
 target/
-book/
+**/target/
+
+# IDE and editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Node.js (for webui)
+node_modules/
+**/node_modules/
+
+# Python (for SDK)
+**/__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# OS metadata
+.DS_Store
+Thumbs.db
+
+# Git
 .git/
-*.md
-*.toml
-!config.example.toml
-**/*.rs.bk
+
+# Docker files (not needed inside the build context for Rust compilation)
+docker-compose.yml
+.dockerignore
+
+# Documentation (not needed for build)
+book/
+docs/
+
+# Evaluation data
+evals/
+
+# Environment and local config
+.env
+.env.local
+*.toml.bak
