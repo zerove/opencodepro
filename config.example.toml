@@ -29,6 +29,23 @@ model = "gpt-4o"
 # 类型: string | 默认: "Warning"
 # budget_mode = "Warning"
 
+# 嵌入向量配置（用于语义搜索 / 记忆检索）
+[llm.embedding]
+# 嵌入模型名称
+# 环境变量: SISYPHUS_LLM_EMBEDDING_MODEL
+# 类型: string | 默认: "text-embedding-3-small"
+# model = "text-embedding-3-small"
+
+# 嵌入 API 端点（可选，默认使用 llm.endpoint）
+# 环境变量: SISYPHUS_LLM_EMBEDDING_ENDPOINT
+# 类型: string | 默认: None
+# endpoint = "http://localhost:8000/v1/embeddings"
+
+# 嵌入 provider（"dummy", "openai" 等）
+# 环境变量: SISYPHUS_LLM_EMBEDDING_PROVIDER
+# 类型: string | 默认: "dummy"
+# provider = "dummy"
+
 # 按 agent 的模型覆盖（可选）
 # key = agent_id（如 "metis", "librarian", "momus"）
 # [llm.agents]
@@ -216,3 +233,22 @@ wasm_tools_dir = "tools"
   # 基于 HTTP 的 MCP 服务器: prefix = "http://..."
   [mcp.http_servers]
   # "remote" = "http://localhost:3000/mcp"
+
+# ── 远程技能注册表 ──────────────────────────────────────────
+[registry]
+# 远程技能注册表 URL
+# 环境变量: SISYPHUS_REGISTRY_URL
+# 类型: string | 默认: "https://registry.sisyphus.ai"
+registry_url = "https://registry.sisyphus.ai"
+
+# 请求超时秒数
+# 环境变量: SISYPHUS_REGISTRY_TIMEOUT_SECONDS
+# 类型: u64 | 默认: 30
+# timeout_seconds = 30
+
+# ── Jcode 调试集成 ──────────────────────────────────────────
+[jcode]
+# Jcode 调试 socket 路径（用于 bridge → jcode IPC）
+# 环境变量: SISYPHUS_JCODE_SOCKET_PATH
+# 类型: string | 默认: "/tmp/jcode-debug.sock"
+socket_path = "/tmp/jcode-debug.sock"

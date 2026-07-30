@@ -192,20 +192,45 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo test -p sisyphus-cli --lib
 
-  # ── Stress test quick smoke check ──────────────────────────────────
-  stress-test-smoke:
-    name: Stress Test (smoke)
+  # ── E2E smoke test: start bridge → run stress_test --quick → verify ──
+  e2e-smoke:
+    name: E2E Smoke (bridge + stress)
     runs-on: ubuntu-latest
     needs: [bridge-test-full]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@nightly
       - uses: Swatinem/rust-cache@v2
-      # Quick mode: compile the stress_test binary and verify it connects
-      - run: cargo check -p sisyphus-bridge --bin stress_test
-      # In a full CI run, this would launch the bridge and run --quick.
-      # For now, at minimum we verify the binary compiles.
-      - run: echo "Stress test binary checked successfully"
+      # Build both bridge and stress_test binary
+      - run: cargo build -p sisyphus-bridge
+      - run: cargo build -p sisyphus-bridge --bin stress_test
+      # Start bridge in background, wait for it to be ready, run stress_test
+      - name: E2E smoke test
+        run: |
+          # Start bridge in background
+          cargo run -p sisyphus-bridge &
+          BRIDGE_PID=$!
+          # Give it time to start
+          sleep 3
+          # Run stress test against it
+          cargo run -p sisyphus-bridge --bin stress_test -- --quick 2>&1
+          STRESS_EXIT=$?
+          # Report bridge logs
+          echo "=== Bridge exit ==="
+          kill $BRIDGE_PID 2>/dev/null || true
+          wait $BRIDGE_PID 2>/dev/null || true
+          exit $STRESS_EXIT
+
+  # ── Core benchmarks (requires sandbox feature for WasmToolExecutor) ──
+  bench-core:
+    name: Bench Core
+    runs-on: ubuntu-latest
+    needs: [lint-light]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo bench -p sisyphus-core --features sandbox -- --warm-up-time 1 --measurement-time 2 --sample-size 10
 
   # ── CLI release builds ──────────────────────────────────────────────
   build:

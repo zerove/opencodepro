@@ -158,8 +158,35 @@ impl Config {
         if let Some(v) = env_string("SISYPHUS_REGISTRY_URL") {
             self.registry.registry_url = v;
         }
+        if let Some(v) = env_u64("SISYPHUS_REGISTRY_TIMEOUT_SECONDS") {
+            self.registry.timeout_seconds = v;
+        }
         if let Some(v) = env_string("SISYPHUS_JCODE_SOCKET_PATH") {
             self.jcode.socket_path = v;
+        }
+        if let Some(v) = env_string("SISYPHUS_LLM_API_KEY") {
+            self.llm.api_key = v;
+        }
+        if let Some(v) = env_string("SISYPHUS_LLM_ENDPOINT") {
+            self.llm.endpoint = v;
+        }
+        if let Some(v) = env_string("SISYPHUS_LLM_MODEL") {
+            self.llm.model = v;
+        }
+        if let Some(v) = env_string("SISYPHUS_LLM_BUDGET_MODE") {
+            self.llm.budget_mode = match v.to_lowercase().as_str() {
+                "strict" => BudgetMode::Strict,
+                _ => BudgetMode::Warning,
+            };
+        }
+        if let Some(v) = env_string("SISYPHUS_LLM_EMBEDDING_MODEL") {
+            self.llm.embedding.model = v;
+        }
+        if let Some(v) = env_string("SISYPHUS_LLM_EMBEDDING_ENDPOINT") {
+            self.llm.embedding.endpoint = Some(v);
+        }
+        if let Some(v) = env_string("SISYPHUS_LLM_EMBEDDING_PROVIDER") {
+            self.llm.embedding.provider = v;
         }
         if let Some(v) = env_u32("SISYPHUS_COGNITIVE_LOOP_MAX_ITERATIONS") {
             self.cognitive_loop.max_iterations = v;

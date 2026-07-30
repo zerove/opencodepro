@@ -437,3 +437,227 @@ async fn test_stream_execution_returns_event() {
     assert!(!event.status.is_empty());
     server.abort();
 }
+
+// ── Negative Tests ─────────────────────────────────────────────────────────
+
+#[tokio::test]
+async fn test_negative_concurrent_requests() {
+    // Fire 20 concurrent SOP executions to verify the bridge handles
+    // concurrent load without panicking or deadlocking.
+    let (client, server) = setup_bridge().await;
+    let mut handles = Vec::with_capacity(20);
+    for i in 0..20usize {
+        let mut cl = client.clone();
+        handles.push(tokio::spawn(async move {
+            let resp = cl
+                .execute_sop(ExecuteSopRequest {
+                    sop_id: format!("concurrent_{i}"),
+                    args: HashMap::new(),
+                })
+                .await;
+            (i, resp)
+        }));
+    }
+
+    let mut ok_count = 0usize;
+    for handle in handles {
+        let (i, result) = handle.await.expect("Task panicked");
+        match result {
+            Ok(resp) => {
+                let inner = resp.into_inner();
+                assert_eq!(
+                    inner.status, "SUCCESS",
+                    "concurrent request {i} failed: {}",
+                    inner.result
+                );
+                ok_count += 1;
+            }
+            Err(e) => {
+                panic!("concurrent request {i} returned gRPC error: {e}");
+            }
+        }
+    }
+    assert_eq!(ok_count, 20, "Not all concurrent requests succeeded");
+    server.abort();
+}
+
+#[tokio::test]
+async fn test_negative_execute_tool_empty_args() {
+    let (mut client, server) = setup_bridge().await;
+    let response = client
+        .execute_tool(ExecuteToolRequest {
+            tool_id: "builtin:file_read".into(),
+            args_json: "".into(),
+            fuel_limit: 0,
+        })
+        .await
+        .expect("ExecuteTool with empty args should not panic");
+    let inner = response.into_inner();
+    // Empty JSON is invalid, so it should fail — but the bridge should handle
+    // it gracefully (no panic, no crash).
+    assert_ne!(
+        inner.status, "SUCCESS",
+        "Expected file_read with empty args to fail"
+    );
+    server.abort();
+}
+
+#[tokio::test]
+async fn test_negative_execute_tool_malformed_json() {
+    let (mut client, server) = setup_bridge().await;
+    let response = client
+        .execute_tool(ExecuteToolRequest {
+            tool_id: "builtin:bash_exec".into(),
+            args_json: "this is not valid json".into(),
+            fuel_limit: 0,
+        })
+        .await
+        .expect("ExecuteTool with malformed JSON should not panic");
+    let inner = response.into_inner();
+    // Malformed JSON should be rejected gracefully
+    assert_ne!(
+        inner.status, "SUCCESS",
+        "Expected bash_exec with malformed JSON to fail"
+    );
+    server.abort();
+}
+
+#[tokio::test]
+async fn test_negative_execute_sop_empty_id() {
+    let (mut client, server) = setup_bridge().await;
+    let response = client
+        .execute_sop(ExecuteSopRequest {
+            sop_id: "".into(),
+            args: HashMap::new(),
+        })
+        .await
+        .expect("ExecuteSOP with empty ID should not panic");
+    let inner = response.into_inner();
+    // Bridge creates an empty SOP for any ID; empty ID should still work
+    // but we verify no crash happens and we get a response
+    assert!(!inner.status.is_empty(), "Expected non-empty status");
+    server.abort();
+}
+
+#[tokio::test]
+async fn test_negative_add_message_empty_content() {
+    let (mut client, server) = setup_bridge().await;
+    let response = client
+        .add_message(AddMessageRequest {
+            session_id: "test_session".into(),
+            role: "user".into(),
+            content: "".into(),
+            session_db_path: ":memory:".into(),
+        })
+        .await
+        .expect("AddMessage with empty content should not panic");
+    let inner = response.into_inner();
+    assert!(inner.success || !inner.error.is_empty());
+    server.abort();
+}
+
+#[tokio::test]
+async fn test_negative_decompose_goal_empty_objective() {
+    let (mut client, server) = setup_bridge().await;
+    let response = client
+        .decompose_goal(DecomposeGoalRequest {
+            goal_id: "test".into(),
+            objective: "".into(),
+            context: "".into(),
+        })
+        .await
+        .expect("DecomposeGoal with empty objective should not panic");
+    let inner = response.into_inner();
+    // Should handle gracefully — either success or error
+    assert!(inner.success || !inner.error.is_empty());
+    server.abort();
+}
+
+#[tokio::test]
+async fn test_negative_large_sop_args() {
+    // Verify that sending a large args payload doesn't crash the bridge
+    let (mut client, server) = setup_bridge().await;
+    let large_value = "x".repeat(100_000);
+    let mut large_args = HashMap::new();
+    large_args.insert("large_key".to_string(), large_value);
+
+    let response = client
+        .execute_sop(ExecuteSopRequest {
+            sop_id: "large_args".into(),
+            args: large_args,
+        })
+        .await
+        .expect("ExecuteSOP with large args should not panic");
+    let inner = response.into_inner();
+    // The bridge should handle large payloads without OOM
+    assert!(!inner.status.is_empty());
+    server.abort();
+}
+
+#[tokio::test]
+async fn test_negative_repeated_execute_tool_builtin() {
+    // Execute the same builtin tool 100 times to check for resource leaks
+    let (mut client, server) = setup_bridge().await;
+    for i in 0..100usize {
+        let response = client
+            .execute_tool(ExecuteToolRequest {
+                tool_id: "builtin:bash_exec".into(),
+                args_json: r#"{"command": "echo ok", "timeout_ms": 1000}"#.into(),
+                fuel_limit: 0,
+            })
+            .await
+            .expect("Repeated ExecuteTool should not fail");
+        let inner = response.into_inner();
+        if i == 0 {
+            assert_eq!(inner.status, "SUCCESS", "First bash_exec should succeed");
+        }
+        // Subsequent calls should also work — we verify no resource leak
+        assert!(
+            inner.status == "SUCCESS",
+            "Iteration {i}: unexpected status: {}",
+            inner.status
+        );
+    }
+    server.abort();
+}
+
+#[tokio::test]
+async fn test_negative_load_plugin_empty_fields() {
+    let (mut client, server) = setup_bridge().await;
+    let response = client
+        .load_plugin(LoadPluginRequest {
+            name: "".into(),
+            version: "".into(),
+            wasm_path: "".into(),
+            tool_id: "".into(),
+            fuel_limit: 0,
+        })
+        .await
+        .expect("LoadPlugin with empty fields should not panic");
+    let inner = response.into_inner();
+    // LoadPlugin with all empty fields must fail gracefully
+    assert!(!inner.success, "Expected load with empty fields to fail");
+    server.abort();
+}
+
+#[tokio::test]
+async fn test_negative_fuel_limit_exceeded() {
+    // Test with an extremely large fuel_limit value to ensure no overflow
+    let (mut client, server) = setup_bridge().await;
+    let response = client
+        .execute_tool(ExecuteToolRequest {
+            tool_id: "builtin:bash_exec".into(),
+            args_json: r#"{"command": "echo hello"}"#.into(),
+            fuel_limit: u64::MAX,
+        })
+        .await
+        .expect("ExecuteTool with MAX fuel should not panic/overflow");
+    let inner = response.into_inner();
+    // Should either succeed or fail gracefully — no panic
+    assert!(
+        inner.status == "SUCCESS",
+        "Unexpected status: {}",
+        inner.status
+    );
+    server.abort();
+}

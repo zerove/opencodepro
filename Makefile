@@ -87,6 +87,19 @@ test-cli-handlers:
 check-stress-test:
 	cargo check -p sisyphus-bridge --bin stress_test
 
+# — core benchmarks (isolated, sandbox feature required) —
+
+bench-core:
+	cargo bench -p sisyphus-core --features sandbox -- --warm-up-time 1 --measurement-time 2 --sample-size 10
+
+# — E2E smoke test (bridge daemon + stress_test) —
+
+e2e-smoke:
+	@echo "━━━ Starting bridge in background ━━━"
+	cargo build -p sisyphus-bridge
+	cargo build -p sisyphus-bridge --bin stress_test
+	@./scripts/e2e-smoke.sh
+
 # — bridge crate, 1.96.0 fallback (RUSTFLAGS bypasses rustc 1.96.0 ICE) —
 
 check-bridge-160: $(BRIDGE_DEPS)
@@ -174,31 +187,35 @@ test-tests:
 # — CI simulation (mirrors .github/workflows/ci.yml) —
 
 test-ci:
-	@echo "━━━ 1/10 Format ━━━"
+	@echo "━━━ 1/14 Format ━━━"
 	cargo fmt --all --check
-	@echo "━━━ 2/10 Lint Light ━━━"
+	@echo "━━━ 2/14 Lint Light ━━━"
 	cargo clippy --workspace --exclude sisyphus-bridge --exclude sisyphus-sandbox --exclude sisyphus-sandboxd --exclude sisyphus-tests -- -D warnings
-	@echo "━━━ 3/10 Lint Sandbox ━━━"
+	@echo "━━━ 3/14 Lint Sandbox ━━━"
 	cargo clippy -p sisyphus-sandbox -- -D warnings
-	@echo "━━━ 4/10 Lint Sandboxd ━━━"
+	@echo "━━━ 4/14 Lint Sandboxd ━━━"
 	cargo clippy -p sisyphus-sandboxd -- -D warnings
-	@echo "━━━ 5/10 Lint Tests ━━━"
+	@echo "━━━ 5/14 Lint Tests ━━━"
 	cargo clippy -p sisyphus-tests -- -D warnings
-	@echo "━━━ 6/10 Test Light ━━━"
+	@echo "━━━ 6/14 Test Light ━━━"
 	cargo test --lib --workspace --exclude sisyphus-bridge --exclude sisyphus-sandbox --exclude sisyphus-sandboxd --exclude sisyphus-tests
-	@echo "━━━ 7/10 Test Core ━━━"
+	@echo "━━━ 7/14 Test Core ━━━"
 	cargo test -p sisyphus-core --lib
-	@echo "━━━ 8/10 Test Sandbox ━━━"
+	@echo "━━━ 8/14 Test Sandbox ━━━"
 	cargo test -p sisyphus-sandbox --lib
-	@echo "━━━ 9/10 Test Sandboxd ━━━"
+	@echo "━━━ 9/14 Test Sandboxd ━━━"
 	cargo test -p sisyphus-sandboxd
-	@echo "━━━ 10/10 Bridge Full Test ━━━"
+	@echo "━━━ 10/14 Bridge Full Test ━━━"
 	cargo clippy -p sisyphus-bridge -- -D warnings
 	cargo test -p sisyphus-bridge --test bridge_integration_test
-	@echo "━━━ 11/12 Test CLI Handlers ━━━"
+	@echo "━━━ 11/14 Test CLI Handlers ━━━"
 	cargo test -p sisyphus-cli --lib
-	@echo "━━━ 12/12 Test Integration ━━━"
+	@echo "━━━ 12/14 Test Integration ━━━"
 	cargo test -p sisyphus-tests --lib
+	@echo "━━━ 13/14 Bench Core ━━━"
+	cargo bench -p sisyphus-core --features sandbox -- --warm-up-time 1 --measurement-time 2 --sample-size 10
+	@echo "━━━ 14/14 CLI Build ━━━"
+	cargo build --release -p sisyphus-cli
 	@echo "━━━ CI simulation complete ━━━"
 
 # — convenience —
