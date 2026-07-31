@@ -24,3 +24,13 @@ out/
 # Python
 __pycache__/
 *.pyc
+
+# 一次性迁移脚本 / 临时文件 / 备份
+fix_*.py
+replace_*.py
+record_*.py
+*_new.rs
+*.bak
+*.orig
+*.rej
+symbiosis_*.log
