@@ -44,55 +44,51 @@ pub fn handle_build(sub: &BuildCommands) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use crate::commands::BuildCommands;
-    use clap::Parser;
+    use super::super::test_helpers::parse_commands;
+    use crate::commands::{BuildCommands, Commands};
 
     #[test]
     fn test_build_commands_parse_test() {
-        let cmd = BuildCommands::try_parse_from(["test", "-p", "sisyphus-core"]);
-        assert!(cmd.is_ok());
-        match cmd.unwrap() {
-            BuildCommands::Test { package, all, .. } => {
+        let cmd = parse_commands(&["build", "test", "-p", "sisyphus-core"]);
+        match cmd {
+            Commands::Build(BuildCommands::Test { package, all, .. }) => {
                 assert_eq!(package, Some("sisyphus-core".to_string()));
                 assert!(!all);
             }
-            _ => panic!("Expected Test variant"),
+            _ => panic!("Expected Build/Test variant"),
         }
     }
 
     #[test]
     fn test_build_commands_parse_check_all() {
-        let cmd = BuildCommands::try_parse_from(["check", "--all"]);
-        assert!(cmd.is_ok());
-        match cmd.unwrap() {
-            BuildCommands::Check { all, .. } => {
+        let cmd = parse_commands(&["build", "check", "--all"]);
+        match cmd {
+            Commands::Build(BuildCommands::Check { all, .. }) => {
                 assert!(all);
             }
-            _ => panic!("Expected Check variant"),
+            _ => panic!("Expected Build/Check variant"),
         }
     }
 
     #[test]
     fn test_build_commands_parse_fmt_check() {
-        let cmd = BuildCommands::try_parse_from(["fmt", "--check"]);
-        assert!(cmd.is_ok());
-        match cmd.unwrap() {
-            BuildCommands::Fmt { check, .. } => {
+        let cmd = parse_commands(&["build", "fmt", "--check"]);
+        match cmd {
+            Commands::Build(BuildCommands::Fmt { check, .. }) => {
                 assert!(check);
             }
-            _ => panic!("Expected Fmt variant"),
+            _ => panic!("Expected Build/Fmt variant"),
         }
     }
 
     #[test]
     fn test_build_commands_parse_lint() {
-        let cmd = BuildCommands::try_parse_from(["lint", "-p", "sisyphus-core"]);
-        assert!(cmd.is_ok());
-        match cmd.unwrap() {
-            BuildCommands::Lint { package, .. } => {
+        let cmd = parse_commands(&["build", "lint", "-p", "sisyphus-core"]);
+        match cmd {
+            Commands::Build(BuildCommands::Lint { package, .. }) => {
                 assert_eq!(package, Some("sisyphus-core".to_string()));
             }
-            _ => panic!("Expected Lint variant"),
+            _ => panic!("Expected Build/Lint variant"),
         }
     }
 }

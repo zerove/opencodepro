@@ -13,3 +13,13 @@ data/
 panic_risk.txt
 test_bash.rs
 sisyphus
+
+# Node.js / TypeScript
+node_modules/
+dist/
+out/
+*.lock
+
+# Python
+__pycache__/
+*.pyc

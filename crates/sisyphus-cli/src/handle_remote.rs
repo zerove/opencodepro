@@ -41,48 +41,47 @@ pub async fn handle_remote(sub: &RemoteCommands, bridge_addr: &str) -> Result<()
 
 #[cfg(test)]
 mod tests {
-    use crate::commands::RemoteCommands;
-    use clap::Parser;
+    use super::super::test_helpers::parse_commands;
+    use crate::commands::{Commands, RemoteCommands};
 
     #[test]
     fn test_remote_commands_parse_agents() {
-        let cmd = RemoteCommands::try_parse_from(["agents"]);
-        assert!(cmd.is_ok());
+        let cmd = parse_commands(&["remote", "agents"]);
+        assert!(matches!(cmd, Commands::Remote(RemoteCommands::Agents)));
     }
 
     #[test]
     fn test_remote_commands_parse_tools() {
-        let cmd = RemoteCommands::try_parse_from(["tools"]);
-        assert!(cmd.is_ok());
+        let cmd = parse_commands(&["remote", "tools"]);
+        assert!(matches!(cmd, Commands::Remote(RemoteCommands::Tools)));
     }
 
     #[test]
     fn test_remote_commands_parse_exec() {
-        let cmd = RemoteCommands::try_parse_from(["exec", "test-sop"]);
-        assert!(cmd.is_ok());
-        match cmd.unwrap() {
-            RemoteCommands::Exec { sop_id } => {
+        let cmd = parse_commands(&["remote", "exec", "test-sop"]);
+        match cmd {
+            Commands::Remote(RemoteCommands::Exec { sop_id }) => {
                 assert_eq!(sop_id, "test-sop");
             }
-            _ => panic!("Expected Exec variant"),
+            _ => panic!("Expected Remote/Exec variant"),
         }
     }
 
     #[test]
     fn test_remote_commands_parse_decompose() {
-        let cmd = RemoteCommands::try_parse_from(["decompose", "build a website"]);
-        assert!(cmd.is_ok());
-        match cmd.unwrap() {
-            RemoteCommands::Decompose { goal } => {
+        let cmd = parse_commands(&["remote", "decompose", "build a website"]);
+        match cmd {
+            Commands::Remote(RemoteCommands::Decompose { goal }) => {
                 assert_eq!(goal, "build a website");
             }
-            _ => panic!("Expected Decompose variant"),
+            _ => panic!("Expected Remote/Decompose variant"),
         }
     }
 
     #[test]
     fn test_remote_parse_invalid() {
-        let cmd = RemoteCommands::try_parse_from(["nonexistent"]);
-        assert!(cmd.is_err());
+        use crate::Cli;
+        use clap::Parser;
+        assert!(Cli::try_parse_from(["sisyphus", "remote", "nonexistent"]).is_err());
     }
 }

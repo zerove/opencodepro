@@ -23,36 +23,36 @@ pub fn handle_diagnose(sub: &DiagnoseCommands) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use crate::commands::DiagnoseCommands;
-    use clap::Parser;
+    use super::super::test_helpers::parse_commands;
+    use crate::commands::{Commands, DiagnoseCommands};
 
     #[test]
     fn test_diagnose_commands_parse() {
-        let cmd = DiagnoseCommands::try_parse_from(["run", "--package", "sisyphus-core"]);
-        assert!(cmd.is_ok());
-        match cmd.unwrap() {
-            DiagnoseCommands::Run {
+        let cmd = parse_commands(&["diagnose", "run", "--package", "sisyphus-core"]);
+        match cmd {
+            Commands::Diagnose(DiagnoseCommands::Run {
                 package,
                 all,
                 no_lint,
                 ..
-            } => {
+            }) => {
                 assert_eq!(package, Some("sisyphus-core".to_string()));
                 assert!(!all);
                 assert!(!no_lint);
             }
+            _ => panic!("Expected Diagnose/Run variant"),
         }
     }
 
     #[test]
     fn test_diagnose_commands_parse_all_no_lint() {
-        let cmd = DiagnoseCommands::try_parse_from(["run", "--all", "--no-lint"]);
-        assert!(cmd.is_ok());
-        match cmd.unwrap() {
-            DiagnoseCommands::Run { all, no_lint, .. } => {
+        let cmd = parse_commands(&["diagnose", "run", "--all", "--no-lint"]);
+        match cmd {
+            Commands::Diagnose(DiagnoseCommands::Run { all, no_lint, .. }) => {
                 assert!(all);
                 assert!(no_lint);
             }
+            _ => panic!("Expected Diagnose/Run variant"),
         }
     }
 }

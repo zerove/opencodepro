@@ -78,6 +78,10 @@ mod handle_wisdom;
 #[path = "handle_workspace.rs"]
 mod handle_workspace;
 
+#[cfg(test)]
+#[path = "test_helpers.rs"]
+mod test_helpers;
+
 // ── Public dispatch ──────────────────────────────────────────
 
 pub async fn dispatch(
