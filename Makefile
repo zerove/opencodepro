@@ -240,9 +240,9 @@ test-ci:
 	@echo "━━━ 5/14 Lint Tests ━━━"
 	cargo clippy -p sisyphus-tests -- -D warnings
 	@echo "━━━ 6/14 Test Light ━━━"
-	cargo test --lib --workspace --exclude sisyphus-bridge --exclude sisyphus-sandbox --exclude sisyphus-sandboxd --exclude sisyphus-tests
+	cargo test --workspace --exclude sisyphus-bridge --exclude sisyphus-sandbox --exclude sisyphus-sandboxd --exclude sisyphus-tests
 	@echo "━━━ 7/14 Test Core ━━━"
-	cargo test -p sisyphus-core --lib
+	cargo test -p sisyphus-core
 	@echo "━━━ 8/14 Test Sandbox ━━━"
 	cargo test -p sisyphus-sandbox --lib
 	@echo "━━━ 9/14 Test Sandboxd ━━━"
@@ -251,7 +251,7 @@ test-ci:
 	cargo clippy -p sisyphus-bridge -- -D warnings
 	cargo test -p sisyphus-bridge --test bridge_integration_test
 	@echo "━━━ 11/14 Test CLI Handlers ━━━"
-	cargo test -p sisyphus-cli --lib
+	cargo test -p sisyphus-cli
 	@echo "━━━ 12/14 Test Integration ━━━"
 	cargo test -p sisyphus-tests --lib
 	@echo "━━━ 13/14 Bench Core ━━━"

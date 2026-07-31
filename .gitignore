@@ -9,6 +9,7 @@ tmp/
 
 config.toml
 data/
+sqlite:data/
 .sisyphus/sessions.json
 panic_risk.txt
 test_bash.rs

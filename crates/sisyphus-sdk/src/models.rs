@@ -52,3 +52,47 @@ pub struct VectorSearchResult {
 pub struct VectorSearchResponse {
     pub results: Vec<VectorSearchResult>,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_health_response_roundtrip() {
+        let h = HealthResponse {
+            status: "ok".into(),
+            version: "0.1.0".into(),
+        };
+        let json = serde_json::to_string(&h).unwrap();
+        let back: HealthResponse = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.status, "ok");
+    }
+
+    #[test]
+    fn test_state_response_roundtrip() {
+        let s = StateResponse {
+            key: "k".into(),
+            value: serde_json::json!({"x": 1}),
+            created_at: 1,
+            updated_at: 2,
+        };
+        let json = serde_json::to_string(&s).unwrap();
+        let back: StateResponse = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.key, "k");
+    }
+
+    #[test]
+    fn test_vector_search_response_roundtrip() {
+        let v = VectorSearchResponse {
+            results: vec![VectorSearchResult {
+                key: "k".into(),
+                score: 0.99,
+                metadata: None,
+            }],
+        };
+        let json = serde_json::to_string(&v).unwrap();
+        let back: VectorSearchResponse = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.results.len(), 1);
+        assert_eq!(back.results[0].score, 0.99);
+    }
+}
