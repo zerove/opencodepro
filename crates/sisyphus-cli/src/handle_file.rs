@@ -58,8 +58,6 @@ pub fn handle_grep(pattern: &str, path: &Path, include: Option<&str>) -> Result<
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[test]
     fn test_handle_write_output_format() {
         let path = std::path::Path::new("/tmp/out.txt");
