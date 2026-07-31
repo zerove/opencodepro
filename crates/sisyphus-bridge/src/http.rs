@@ -1146,14 +1146,14 @@ pub fn build_router(state: RestApiState) -> Router {
         )
         .route("/api/execute/composite", post(execute_composite_handler))
         .route(
-            "/api/roadmap/project/:id",
+            "/api/roadmap/project/{id}",
             get(roadmap_project_handler).post(roadmap_project_handler),
         )
         .route("/api/roadmap/milestone", post(roadmap_milestone_handler))
         .route("/api/roadmap/phase", post(roadmap_phase_handler))
-        .route("/api/roadmap/goal/:goal_id", patch(roadmap_goal_handler))
+        .route("/api/roadmap/goal/{goal_id}", patch(roadmap_goal_handler))
         .route(
-            "/api/roadmap/health/:project_id",
+            "/api/roadmap/health/{project_id}",
             get(roadmap_health_handler),
         )
         .route("/api/execute", post(execute_handler))

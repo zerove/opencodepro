@@ -1,36 +1,39 @@
 # Sisyphus Project Dashboard
 
-> **Auto-generated at:** <!-- GENERATED -->
-> **Commits:** 125+
+> **Auto-generated at:** 2026-07-31
+> **Commits:** 130+
 > **Workspace:** 21 crates + webui
+> **Tests:** 1261 passing, 0 failing, 0 ignored
 
 ## Crate Health
 
 | Crate | Status | Tests | Key Metrics |
 |-------|--------|-------|-------------|
-| **sisyphus-core** | ✅ Production | 200+ | Cognitive loop v1+v2, DAG executor |
+| **sisyphus-core** | ✅ Production | 87 | Cognitive loop v1+v2, DAG executor |
 | **sisyphus-bridge** | ✅ Production | 37 integration | gRPC (17 RPCs) + REST (34 endpoints) |
-| **sisyphus-cli** | ✅ Production | 37 unit | clap CLI + ratatui TUI |
-| **sisyphus-types** | ✅ Production | 29 unit | Config, traits, shared types |
+| **sisyphus-cli** | ✅ Production | 52 | clap CLI + ratatui TUI (lib + bin) |
+| **sisyphus-types** | ✅ Production | 29 | Config, traits, shared types |
 | **sisyphus-webui** | ✅ Production | - | axum + HTMX + SSE dashboard |
 | **sisyphus-sandbox** | ✅ Production | - | wasmtime + fuel + memory limits |
 | **sisyphus-sandboxd** | ✅ Production | 6 | stdio + gRPC dual-mode daemon |
 | **sisyphus-mem** | ✅ Production | - | L1 (DashMap) + L2 (SQLite) + Vector |
-| **sisyphus-intel** | ✅ Production | - | Simulation, synthesis, planners |
+| **sisyphus-intel** | ✅ Production | 121 | Simulation, synthesis, planners |
+| **sisyphus-api** | ✅ Production | 6 | REST API models (roundtrip) |
+| **sisyphus-sdk** | ✅ Production | 10 | Rust SDK client + models |
 | **sisyphus-tools-*** (10) | ✅ Production | - | 40+ tool modules |
 | **sisyphus-tests** | ✅ Production | - | E2E cross-project integration |
 
-## CI Pipeline (14 Steps)
+## CI Pipeline (Full Coverage)
 
 ```mermaid
 graph LR
     FMT[fmt] --> LINT[clippy]
-    LINT --> TEST[unit tests]
-    TEST --> BRIDGE[bridge 37]
+    LINT --> TEST[full cargo test: lib+bin+doctests]
+    TEST --> BRIDGE[bridge 37 integration]
     BRIDGE --> E2E[e2e smoke]
     E2E --> BENCH[benchmarks]
     BENCH --> BUILD[release build]
-    BUILD --> SDK[sdk tests]
+    BUILD --> SDK[sdk TS/Py/Go tests]
     SDK --> DOCKER[docker]
     DOCKER --> RELEASE[GitHub Release]
 ```
@@ -41,10 +44,11 @@ graph LR
 |------|--------|--------|
 | `cargo fmt --check` | ✅ | Passes cleanly |
 | `cargo clippy -D warnings` | ✅ | All crates clean |
-| `cargo test` | ✅ | 37 bridge + 37 CLI + 29 types |
-| SDK TS | ✅ | 14 tests pass |
+| `cargo test --workspace` | ✅ | **1261 tests pass** (lib + bin + doctests) |
+| SDK TypeScript | ✅ | 14 tests pass |
 | SDK Python | ✅ | 21 tests pass |
 | SDK Go | ✅ | 13 tests pass |
+| Rust API+SDK | ✅ | 16 tests pass (api 6 + sdk 10) |
 
 ## Infrastructure
 
@@ -52,8 +56,9 @@ graph LR
 |-----------|--------|--------|
 | **Docker** | ✅ | Multi-stage build, docker-compose |
 | **Nightly CI** | ✅ | GHCR + multi-platform |
-| **Release CI** | ✅ | Auto-changelog, all platforms |
+| **Release CI** | ✅ | upload-artifact + gh-release files |
 | **IDE Plugins** | ✅ | VSCode 640 lines + Zed 395 lines |
+| **REST API** | ✅ | 34 endpoints, OpenAPI 3.1 spec, `{id}` syntax |
 
 ## Cognitive Loop Maturity
 
@@ -83,8 +88,8 @@ make check-all
 cargo run -p sisyphus-bridge    # gRPC + REST
 cargo run -p sisyphus-cli -i    # TUI
 
-# Test
-cargo test -p sisyphus-bridge --test bridge_integration_test  # 37 tests
+# Test (full workspace, ~3 min)
+cargo test --workspace
 ```
 
 ## Next Development Areas
