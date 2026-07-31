@@ -241,7 +241,6 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "SQLite file-based connection fails in sandboxed CI"]
     async fn test_mfs_persistence() {
         let temp_file = tempfile::NamedTempFile::new().expect("Failed to create temp file");
         let db_path = format!("sqlite:{}", temp_file.path().to_str().unwrap());
@@ -259,6 +258,8 @@ mod tests {
                 )
                 .await
                 .expect("Set failed");
+            // Flush async write buffer before dropping the store.
+            store.flush().await.expect("Flush failed");
         }
 
         // Instance 2: Read data

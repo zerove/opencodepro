@@ -5,6 +5,7 @@ use parking_lot::Mutex;
 use sisyphus_metrics::record_mem_operation;
 use sqlx::{SqlitePool, sqlite::SqlitePoolOptions};
 use std::num::NonZeroUsize;
+use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::mpsc;
@@ -21,18 +22,46 @@ pub struct MfsStore {
 impl MfsStore {
     /// Creates a new MfsStore with a default L1 capacity of 10_000.
     /// `db_url` should be a sqlite connection string (e.g., "sqlite:state.db").
+    ///
+    /// For file-backed databases, the file is created if it does not exist
+    /// (including parent directories for relative paths).
     pub async fn new(db_url: &str) -> Result<Self> {
         let capacity =
             NonZeroUsize::new(10_000).ok_or_else(|| anyhow::anyhow!("Invalid default capacity"))?;
-        Self::with_pool(
+
+        let pool = if db_url == "sqlite::memory:" || db_url == "sqlite::memory" {
+            // In-memory database: no file to create.
             SqlitePoolOptions::new()
                 .max_connections(5)
                 .connect(db_url)
                 .await
-                .context("Failed to connect to SQLite pool")?,
-            capacity,
-        )
-        .await
+                .context("Failed to connect to in-memory SQLite pool")?
+        } else {
+            // File-backed database: create the file and parent directories
+            // if they do not exist yet.
+            let path = db_url.strip_prefix("sqlite:").unwrap_or(db_url);
+            if path != ":memory:"
+                && let Some(parent) = std::path::Path::new(path).parent()
+                && !parent.as_os_str().is_empty()
+            {
+                std::fs::create_dir_all(parent).map_err(|e| {
+                    anyhow::anyhow!("Failed to create db parent dir '{}': {e}", parent.display())
+                })?;
+            }
+
+            let opts = sqlx::sqlite::SqliteConnectOptions::from_str(db_url)
+                .map_err(|e| anyhow::anyhow!("Invalid SQLite URL '{db_url}': {e}"))?
+                .create_if_missing(true)
+                .foreign_keys(true);
+
+            SqlitePoolOptions::new()
+                .max_connections(5)
+                .connect_with(opts)
+                .await
+                .context("Failed to connect to SQLite pool")?
+        };
+
+        Self::with_pool(pool, capacity).await
     }
 
     /// Creates a new MfsStore with a specific L1 capacity and an existing SQLite pool.

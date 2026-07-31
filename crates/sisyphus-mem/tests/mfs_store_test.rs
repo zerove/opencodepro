@@ -36,7 +36,6 @@ async fn test_basic_get_set() {
 }
 
 #[tokio::test]
-#[ignore = "SQLite file-based connection fails in sandboxed CI (pre-existing)"]
 async fn test_persistence() {
     let db_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../target")
