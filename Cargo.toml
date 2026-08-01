@@ -53,6 +53,7 @@ thiserror = "1.0"
 async-trait = "0.1"
 anyhow = "1.0"
 dashmap = "6.1"
+clap = { version = "4", features = ["derive"] }
 
 [profile.dev]
 debug = 0

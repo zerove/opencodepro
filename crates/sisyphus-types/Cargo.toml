@@ -16,8 +16,11 @@ thiserror = { workspace = true }
 tracing = { workspace = true }
 im = { version = "15.1.0", features = ["serde"] }
 dashmap = "6.1"
+notify = "6.0"
+tokio = { version = "1.0", features = ["rt", "macros", "sync", "fs", "time"] }
 
 [dev-dependencies]
 proptest = "1"
-tokio = { version = "1.0", features = ["rt", "macros"] }
+tokio = { version = "1.0", features = ["rt", "macros", "time"] }
+tempfile = "3"
 

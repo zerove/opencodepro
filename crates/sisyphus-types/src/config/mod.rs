@@ -7,6 +7,8 @@ pub use provider::*;
 pub use sub::*;
 
 use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
+use tokio::sync::watch;
 
 use crate::errors::TypesError;
 
@@ -343,9 +345,168 @@ pub fn resolve_env_placeholders_str(input: &str) -> String {
     result
 }
 
+/// A handle for watching a configuration file and receiving reload notifications.
+///
+/// Created by `Config::watch()` or `Config::watch_path()`.
+/// Drop the handle to stop watching.
+pub struct ConfigWatcher {
+    _task: tokio::task::JoinHandle<()>,
+    rx: watch::Receiver<Config>,
+}
+
+impl ConfigWatcher {
+    /// Subscribe to configuration changes.
+    pub fn subscribe(&self) -> watch::Receiver<Config> {
+        self.rx.clone()
+    }
+
+    /// Get the current configuration (last known value).
+    pub fn current(&self) -> Config {
+        self.rx.borrow().clone()
+    }
+}
+
+impl Config {
+    /// Start watching a configuration file for changes and auto-reload.
+    ///
+    /// Returns a `ConfigWatcher` that broadcasts updates on changes.
+    /// The watcher runs in the background until dropped.
+    ///
+    /// # Arguments
+    /// * `path` - Path to the TOML config file to watch.
+    ///
+    /// # Example
+    /// ```no_run
+    /// # use sisyphus_types::Config;
+    /// # #[tokio::main(flavor = "current_thread")]
+    /// # async fn main() -> Result<(), sisyphus_types::TypesError> {
+    /// let mut watcher = Config::watch("config.toml").await?;
+    /// let mut rx = watcher.subscribe();
+    /// while rx.changed().await.is_ok() {
+    ///     println!("Config reloaded: {:?}", *rx.borrow());
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn watch(path: impl Into<PathBuf>) -> Result<ConfigWatcher, TypesError> {
+        let path = path.into();
+        let (tx, rx) = watch::channel(Config::default());
+
+        // Load initial config
+        let mut config = Config::from_file(path.to_str().unwrap_or(""))?;
+        config.apply_env_overrides();
+        config.resolve_env_placeholders();
+        config.validate()?;
+        tx.send_replace(config.clone());
+
+        let path_clone = path.clone();
+        let task = tokio::spawn(async move {
+            use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher};
+            use std::time::Duration;
+
+            let (tx_event, mut rx_event) = tokio::sync::mpsc::channel(32);
+
+            let mut watcher = match RecommendedWatcher::new(
+                move |res| {
+                    if let Ok(event) = res {
+                        let _ = tx_event.try_send(event);
+                    }
+                },
+                notify::Config::default().with_poll_interval(Duration::from_millis(100)),
+            ) {
+                Ok(w) => w,
+                Err(e) => {
+                    tracing::error!(error = %e, "Failed to create file watcher");
+                    return;
+                }
+            };
+
+            if let Err(e) = watcher.watch(&path_clone, RecursiveMode::NonRecursive) {
+                tracing::error!(error = %e, path = %path_clone.display(), "Failed to watch config file");
+                return;
+            }
+
+            while let Some(event) = rx_event.recv().await {
+                // Only react to file modifications
+                if matches!(event.kind, EventKind::Modify(_) | EventKind::Create(_)) {
+                    tracing::info!(path = %path_clone.display(), "Config file changed, reloading");
+                    match Config::from_file(path_clone.to_str().unwrap_or("")) {
+                        Ok(mut new_config) => {
+                            new_config.apply_env_overrides();
+                            new_config.resolve_env_placeholders();
+                            if new_config.validate().is_ok() {
+                                let _ = tx.send_replace(new_config);
+                            } else {
+                                tracing::error!(
+                                    "Config validation failed after reload, keeping old config"
+                                );
+                            }
+                        }
+                        Err(e) => {
+                            tracing::error!(error = %e, "Failed to reload config");
+                        }
+                    }
+                }
+            }
+        });
+
+        Ok(ConfigWatcher { _task: task, rx })
+    }
+
+    /// Start watching the config file at the given path.
+    /// Alias for `Config::watch()`.
+    pub async fn watch_path(path: impl Into<PathBuf>) -> Result<ConfigWatcher, TypesError> {
+        Self::watch(path).await
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
+    use tempfile::tempdir;
+
+    #[tokio::test]
+    async fn test_config_watch_and_reload() {
+        let dir = tempdir().unwrap();
+        let config_path = dir.path().join("config.toml");
+
+        // Write initial config
+        let initial_config = r#"
+cognitive_loop = { max_iterations = 5, convergence_threshold = 0.1 }
+sandbox = { max_memory_pages = 10, default_fuel = 1000000, wasm_tools_dir = "tools" }
+"#;
+        fs::write(&config_path, initial_config).unwrap();
+
+        // Start watching
+        let watcher = Config::watch(&config_path).await.unwrap();
+        let mut rx = watcher.subscribe();
+
+        // Get initial config (should be immediately available via watch channel)
+        let config = rx.borrow().clone();
+        assert_eq!(config.cognitive_loop.max_iterations, 5);
+
+        // Modify config file - ensure watcher is running first
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        let updated_config = r#"
+cognitive_loop = { max_iterations = 10, convergence_threshold = 0.1 }
+sandbox = { max_memory_pages = 10, default_fuel = 1000000, wasm_tools_dir = "tools" }
+"#;
+        fs::write(&config_path, updated_config).unwrap();
+
+        // Give the file system and watcher time to detect the change
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+
+        // Wait for reload - use timeout to avoid hanging
+        let changed = tokio::time::timeout(std::time::Duration::from_secs(5), rx.changed()).await;
+        assert!(changed.is_ok(), "Timeout waiting for config reload");
+        let _ = changed.unwrap();
+
+        let config = rx.borrow().clone();
+        assert_eq!(config.cognitive_loop.max_iterations, 10);
+
+        drop(watcher);
+    }
 
     #[test]
     fn test_resolve_env_placeholders_str() {
