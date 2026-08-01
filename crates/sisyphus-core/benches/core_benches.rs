@@ -171,31 +171,43 @@ fn bench_mfs_storage(c: &mut Criterion) {
         let payload_val = serde_json::Value::String(payload_str);
         let key = format!("bench_key_{}", name);
 
+        // Reuse a single store for set benchmarks to avoid creating many in-memory DBs
+        let store = rt.block_on(async { MfsStore::new("sqlite::memory:").await.unwrap() });
+        let store_arc = Arc::new(store);
+
         group.bench_function(format!("set_{}", name), |b| {
-            b.to_async(&rt).iter(|| async {
-                let store = MfsStore::new("sqlite::memory:").await.unwrap();
-                store
-                    .set_state_json(
-                        black_box("bench_project"),
-                        black_box(&key),
-                        black_box(payload_val.clone()),
-                    )
-                    .await
-                    .unwrap();
+            let mut counter = 0u64;
+            b.to_async(&rt).iter(|| {
+                let store = store_arc.clone();
+                let key = key.clone();
+                let payload = payload_val.clone();
+                let idx = counter;
+                counter += 1;
+                async move {
+                    let iter_key = format!("{}_{}", key, idx);
+                    store
+                        .set_state_json(
+                            black_box("bench_project"),
+                            black_box(&iter_key),
+                            black_box(payload),
+                        )
+                        .await
+                        .unwrap();
+                }
             })
         });
 
-        group.bench_function(format!("get_{}", name), |b| {
-            // Pre-populate store for get benchmark
-            let store = rt.block_on(async {
-                let s = MfsStore::new("sqlite::memory:").await.unwrap();
-                s.set_state_json("bench_project", &key, payload_val.clone())
-                    .await
-                    .unwrap();
-                s
-            });
-            let store_arc = Arc::new(store);
+        // Pre-populate store for get benchmark
+        let store = rt.block_on(async {
+            let s = MfsStore::new("sqlite::memory:").await.unwrap();
+            s.set_state_json("bench_project", &key, payload_val.clone())
+                .await
+                .unwrap();
+            s
+        });
+        let store_arc = Arc::new(store);
 
+        group.bench_function(format!("get_{}", name), |b| {
             b.to_async(&rt).iter(|| async {
                 store_arc
                     .get_state_json(black_box("bench_project"), black_box(&key))

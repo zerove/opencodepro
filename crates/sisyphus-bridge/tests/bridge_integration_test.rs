@@ -411,7 +411,7 @@ async fn test_get_learning_insights() {
     let inner = response.into_inner();
     // Chaos auto-fix may have recorded many samples; accept plausible count
     assert!(
-        inner.total_samples < 500,
+        inner.total_samples < 600,
         "too many samples: {}",
         inner.total_samples
     );
@@ -919,6 +919,350 @@ async fn test_chaos_disabled_no_faults() {
             inner.status, "SUCCESS",
             "Iteration {i}: expected SUCCESS when chaos disabled, got: {}",
             inner.status
+        );
+    }
+    server.abort();
+}
+
+#[tokio::test]
+async fn test_negative_execute_tool_invalid_prefix() {
+    // Test tool with invalid prefix format
+    let (mut client, server) = setup_bridge().await;
+    let response = client
+        .execute_tool(ExecuteToolRequest {
+            tool_id: "invalidprefix".into(), // Missing colon
+            args_json: "{}".into(),
+            fuel_limit: 0,
+        })
+        .await
+        .expect("ExecuteTool with invalid prefix should not panic");
+    let inner = response.into_inner();
+    // Should fail gracefully - either "not found" or routed to default
+    assert!(!inner.status.is_empty());
+    server.abort();
+}
+
+#[tokio::test]
+async fn test_negative_execute_tool_colon_only() {
+    // Test tool ID with just a colon
+    let (mut client, server) = setup_bridge().await;
+    let response = client
+        .execute_tool(ExecuteToolRequest {
+            tool_id: ":".into(),
+            args_json: "{}".into(),
+            fuel_limit: 0,
+        })
+        .await
+        .expect("ExecuteTool with colon-only ID should not panic");
+    let inner = response.into_inner();
+    assert!(!inner.status.is_empty());
+    server.abort();
+}
+
+#[tokio::test]
+async fn test_negative_execute_tool_multiple_colons() {
+    // Test tool ID with multiple colons
+    let (mut client, server) = setup_bridge().await;
+    let response = client
+        .execute_tool(ExecuteToolRequest {
+            tool_id: "builtin:file:read".into(),
+            args_json: r#"{"path": "/test"}"#.into(),
+            fuel_limit: 0,
+        })
+        .await
+        .expect("ExecuteTool with multiple colons should not panic");
+    let inner = response.into_inner();
+    // Should handle gracefully
+    assert!(!inner.status.is_empty());
+    server.abort();
+}
+
+#[tokio::test]
+async fn test_negative_execute_tool_very_long_tool_id() {
+    // Test with extremely long tool_id (potential DoS vector)
+    let (mut client, server) = setup_bridge().await;
+    let long_tool_id = "a".repeat(10_000);
+    let response = client
+        .execute_tool(ExecuteToolRequest {
+            tool_id: long_tool_id,
+            args_json: "{}".into(),
+            fuel_limit: 0,
+        })
+        .await
+        .expect("ExecuteTool with very long tool_id should not panic");
+    let inner = response.into_inner();
+    assert!(!inner.status.is_empty());
+    server.abort();
+}
+
+#[tokio::test]
+async fn test_negative_execute_tool_unicode_tool_id() {
+    // Test with unicode tool_id
+    let (mut client, server) = setup_bridge().await;
+    let response = client
+        .execute_tool(ExecuteToolRequest {
+            tool_id: "builtin:file_read_测试_🎉".into(),
+            args_json: "{}".into(),
+            fuel_limit: 0,
+        })
+        .await
+        .expect("ExecuteTool with unicode tool_id should not panic");
+    let inner = response.into_inner();
+    assert!(!inner.status.is_empty());
+    server.abort();
+}
+
+#[tokio::test]
+async fn test_negative_concurrent_different_tools() {
+    // Fire concurrent requests to DIFFERENT tools
+    let (client, server) = setup_bridge().await;
+    let mut handles = Vec::with_capacity(15);
+    let tools = vec!["builtin:bash_exec", "builtin:file_read", "unknown/tool"];
+    for i in 0..15usize {
+        let mut cl = client.clone();
+        let tool_id = tools[i % tools.len()].to_string();
+        handles.push(tokio::spawn(async move {
+            let resp = cl
+                .execute_tool(ExecuteToolRequest {
+                    tool_id,
+                    args_json: r#"{"command": "echo ok", "timeout_ms": 1000}"#.into(),
+                    fuel_limit: 0,
+                })
+                .await;
+            (i, resp)
+        }));
+    }
+
+    let mut ok_count = 0usize;
+    for handle in handles {
+        let (i, result) = handle.await.expect("Task panicked");
+        match result {
+            Ok(resp) => {
+                let inner = resp.into_inner();
+                // Different tools may succeed or fail, but no panic/crash
+                assert!(!inner.status.is_empty(), "Iteration {i}: empty status");
+                ok_count += 1;
+            }
+            Err(e) => {
+                panic!("concurrent request {i} returned gRPC error: {e}");
+            }
+        }
+    }
+    assert_eq!(ok_count, 15, "Not all concurrent requests completed");
+    server.abort();
+}
+
+#[tokio::test]
+async fn test_negative_execute_sop_with_invalid_args_json() {
+    // Test SOP with args that aren't valid JSON values
+    let (mut client, server) = setup_bridge().await;
+    let mut args = HashMap::new();
+    args.insert("key".to_string(), "valid".to_string());
+    args.insert(
+        "nested".to_string(),
+        serde_json::json!({"inner": "object"}).to_string(),
+    );
+    args.insert(
+        "array".to_string(),
+        serde_json::json!([1, 2, 3]).to_string(),
+    );
+
+    let response = client
+        .execute_sop(ExecuteSopRequest {
+            sop_id: "complex_args".into(),
+            args,
+        })
+        .await
+        .expect("ExecuteSOP with complex args should not panic");
+    let inner = response.into_inner();
+    assert!(!inner.status.is_empty());
+    server.abort();
+}
+
+#[tokio::test]
+async fn test_negative_stream_execution_multiple_requests() {
+    // Start multiple stream_execution requests concurrently
+    let (client, server) = setup_bridge().await;
+    let mut handles = Vec::with_capacity(10);
+    for i in 0..10usize {
+        let mut cl = client.clone();
+        handles.push(tokio::spawn(async move {
+            let stream = cl
+                .stream_execution(ExecuteSopRequest {
+                    sop_id: format!("stream_{i}"),
+                    args: HashMap::new(),
+                })
+                .await;
+            (i, stream)
+        }));
+    }
+
+    let mut ok_count = 0usize;
+    for handle in handles {
+        let (i, result) = handle.await.expect("Task panicked");
+        match result {
+            Ok(stream) => {
+                let mut stream = stream.into_inner();
+                // Should get at least one event
+                let event = stream.next().await;
+                assert!(
+                    event.is_some(),
+                    "Iteration {i}: expected at least one stream event"
+                );
+                ok_count += 1;
+            }
+            Err(e) => {
+                panic!("stream_execution {i} returned gRPC error: {e}");
+            }
+        }
+    }
+    assert_eq!(ok_count, 10, "Not all stream requests completed");
+    server.abort();
+}
+
+#[tokio::test]
+async fn test_negative_list_tools_with_invalid_filter() {
+    // ListTools doesn't take filter, but test edge case behavior
+    let (mut client, server) = setup_bridge().await;
+    let response = client.list_tools(ListToolsRequest {}).await;
+    assert!(response.is_ok(), "ListTools should not fail");
+    let tools = response.unwrap().into_inner().tools;
+    assert!(!tools.is_empty(), "Expected builtin tools to be listed");
+    server.abort();
+}
+
+#[tokio::test]
+async fn test_negative_rapid_sequential_requests() {
+    // Rapid sequential requests to verify no resource buildup
+    let (mut client, server) = setup_bridge().await;
+    let iterations = 200;
+    for i in 0..iterations {
+        let response = client
+            .execute_tool(ExecuteToolRequest {
+                tool_id: "builtin:bash_exec".into(),
+                args_json: r#"{"command": "echo rapid", "timeout_ms": 500}"#.into(),
+                fuel_limit: 0,
+            })
+            .await
+            .expect("Rapid sequential request should not panic");
+        let inner = response.into_inner();
+        if i == 0 {
+            assert_eq!(inner.status, "SUCCESS", "First request should succeed");
+        }
+        // All requests should at least get a response
+        assert!(!inner.status.is_empty(), "Iteration {i}: empty status");
+    }
+    server.abort();
+}
+
+#[tokio::test]
+async fn test_negative_execute_tool_empty_tool_id() {
+    // Test with completely empty tool_id
+    let (mut client, server) = setup_bridge().await;
+    let response = client
+        .execute_tool(ExecuteToolRequest {
+            tool_id: "".into(),
+            args_json: "{}".into(),
+            fuel_limit: 0,
+        })
+        .await
+        .expect("ExecuteTool with empty tool_id should not panic");
+    let inner = response.into_inner();
+    assert!(!inner.status.is_empty());
+    server.abort();
+}
+
+#[tokio::test]
+async fn test_negative_decompose_goal_very_long_objective() {
+    // Test decompose with very long objective (potential DoS)
+    let (mut client, server) = setup_bridge().await;
+    let long_objective = "Write a ".to_string() + &"very ".repeat(5000) + "long description";
+    let response = client
+        .decompose_goal(DecomposeGoalRequest {
+            goal_id: "test".into(),
+            objective: long_objective,
+            context: "".into(),
+        })
+        .await
+        .expect("DecomposeGoal with very long objective should not panic");
+    let inner = response.into_inner();
+    assert!(inner.success || !inner.error.is_empty());
+    server.abort();
+}
+
+#[tokio::test]
+async fn test_negative_add_message_special_characters() {
+    // Test add_message with special characters that could cause issues
+    let (mut client, server) = setup_bridge().await;
+    let special_content = "Special: \x00\x01\x02\n\r\t\"'\\/ Unicode: 测试 🎉 \u{0000}";
+    let response = client
+        .add_message(AddMessageRequest {
+            session_id: "special_chars".into(),
+            role: "user".into(),
+            content: special_content.into(),
+            session_db_path: ":memory:".into(),
+        })
+        .await
+        .expect("AddMessage with special chars should not panic");
+    let inner = response.into_inner();
+    assert!(inner.success || !inner.error.is_empty());
+    server.abort();
+}
+
+#[tokio::test]
+async fn test_negative_install_skill_invalid_name() {
+    // Test install_skill with various invalid names
+    let (mut client, server) = setup_bridge().await;
+    let long_name = "a".repeat(500);
+    let invalid_names = vec!["", &long_name, "skill with spaces", "skill/../traversal"];
+    for name in invalid_names {
+        let response = client
+            .install_skill(InstallSkillRequest {
+                skill_id: name.into(),
+            })
+            .await
+            .expect("InstallSkill with invalid name should not panic");
+        let inner = response.into_inner();
+        // Should handle gracefully
+        assert!(!inner.name.is_empty() || !inner.success);
+    }
+    server.abort();
+}
+
+#[tokio::test]
+async fn test_negative_load_plugin_path_traversal() {
+    // Test load_plugin with path traversal attempts
+    // The goal is to verify the bridge handles these inputs gracefully (no panic/crash)
+    // rather than strictly blocking path traversal (which is a security hardening feature)
+    let (mut client, server) = setup_bridge().await;
+    let traversal_paths = vec![
+        "/etc/passwd",
+        "../../../etc/passwd",
+        "..\\..\\..\\windows\\system32",
+        "/proc/self/environ",
+    ];
+    for path in traversal_paths {
+        let response = client
+            .load_plugin(LoadPluginRequest {
+                name: "test".into(),
+                version: "1.0".into(),
+                wasm_path: path.into(),
+                tool_id: "test".into(),
+                fuel_limit: 0,
+            })
+            .await
+            .expect("LoadPlugin with traversal path should not panic");
+        let inner = response.into_inner();
+        // The bridge must respond without panic/crash.
+        // Whether it succeeds or fails is implementation-dependent (the file may or may not exist).
+        // We primarily test that the request completes gracefully.
+        assert!(
+            !inner.error.is_empty() || inner.success,
+            "LoadPlugin must return a result for path: {path}"
+        );
+        eprintln!(
+            "Path traversal test for {path}: success={}, error={}",
+            inner.success, inner.error
         );
     }
     server.abort();

@@ -260,8 +260,9 @@ jobs:
           restore-keys: bench-baseline-main-
 
       # Run benchmarks, saving results as 'current' baseline
+      # Filter out mfs_storage/large_100kb to avoid memory issues in CI (regex filter)
       - name: Run benchmarks
-        run: cargo bench -p sisyphus-core --features sandbox -- --save-baseline current --warm-up-time 1 --measurement-time 2 --sample-size 10
+        run: cargo bench -p sisyphus-core --features sandbox --bench core_benches -- --save-baseline current --warm-up-time 1 --measurement-time 2 --sample-size 10 "dag_execution|wasm_execution|mfs_storage/(set_small|get_small|set_medium_10kb|get_medium_10kb)|v2_adaptive_depth|v2_anomaly_detector|v2_branch_predictor"
 
       # Compare with cached baseline using critcmp (warn-only, never fails)
       - name: Install critcmp and compare with baseline
@@ -301,10 +302,11 @@ jobs:
           PYEOF
 
       # On main branch, persist current run as 'main-baseline' for future comparisons
+      # Benchmarks are in nested dirs: target/criterion/<group>/<name>/current
       - name: Save baseline (main only)
         if: github.ref_name == 'main'
         run: |
-          for dir in target/criterion/*/; do
+          for dir in target/criterion/*/*/; do
             if [ -d "${dir}current" ]; then
               cp -r "${dir}current" "${dir}main-baseline"
             fi
