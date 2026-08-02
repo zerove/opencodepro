@@ -1159,3 +1159,255 @@ pub fn app(bridge_url: String) -> Router {
         .layer(CorsLayer::permissive())
         .with_state(state)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::body::Body;
+    use axum::http::{header, Request};
+    use tower::ServiceExt;
+
+    fn test_state() -> Arc<AppState> {
+        let (event_tx, _) = broadcast::channel(64);
+        Arc::new(AppState {
+            bridge_url: "http://localhost:8080".into(),
+            client: reqwest::Client::new(),
+            event_tx,
+            api_keys: Arc::new(RwLock::new(vec![])),
+            metrics: Arc::new(RwLock::new(MetricsCollector::default())),
+            auth_token: None,
+            chaos_enabled: Arc::new(AtomicBool::new(false)),
+            chaos_fault_probability: Arc::new(RwLock::new(0.1)),
+            chaos_fault_count: Arc::new(RwLock::new(0)),
+        })
+    }
+
+    // ── DAG SVG Renderer ────────────────────────────────
+
+    #[test]
+    fn test_render_dag_svg_empty_graph() {
+        let graph = DagGraph {
+            nodes: vec![],
+            edges: vec![],
+            width: 0.0,
+            height: 0.0,
+        };
+        let svg = render_dag_svg(&graph);
+        assert!(svg.contains("No DAG to display"));
+    }
+
+    #[test]
+    fn test_render_dag_svg_nodes_and_edges() {
+        let graph = DagGraph {
+            nodes: vec![
+                DagNode {
+                    id: "a".into(),
+                    label: "Fetch".into(),
+                    status: "completed".into(),
+                    x: 0.0,
+                    y: 0.0,
+                },
+                DagNode {
+                    id: "b".into(),
+                    label: "Analyze".into(),
+                    status: "running".into(),
+                    x: 200.0,
+                    y: 0.0,
+                },
+                DagNode {
+                    id: "c".into(),
+                    label: "Report".into(),
+                    status: "pending".into(),
+                    x: 400.0,
+                    y: 0.0,
+                },
+            ],
+            edges: vec![
+                DagEdge {
+                    from: "a".into(),
+                    to: "b".into(),
+                },
+                DagEdge {
+                    from: "b".into(),
+                    to: "c".into(),
+                },
+            ],
+            width: 500.0,
+            height: 100.0,
+        };
+        let svg = render_dag_svg(&graph);
+        // SVG container with legend space
+        assert!(svg.starts_with("<svg"));
+        assert!(svg.ends_with("</svg>"));
+        // Nodes present with status colors
+        assert!(svg.contains("Fetch"));
+        assert!(svg.contains("Analyze"));
+        assert!(svg.contains("Report"));
+        assert!(svg.contains("#3fb950")); // completed
+        assert!(svg.contains("#d29922")); // running
+        assert!(svg.contains("#484f58")); // pending
+                                          // Edges rendered as lines
+        assert_eq!(svg.matches("<line").count(), 2);
+        // Legend
+        assert!(svg.contains("Completed"));
+        assert!(svg.contains("Failed"));
+    }
+
+    #[test]
+    fn test_render_dag_svg_failed_status() {
+        let graph = DagGraph {
+            nodes: vec![DagNode {
+                id: "x".into(),
+                label: "Broken".into(),
+                status: "failed".into(),
+                x: 0.0,
+                y: 0.0,
+            }],
+            edges: vec![],
+            width: 100.0,
+            height: 50.0,
+        };
+        let svg = render_dag_svg(&graph);
+        assert!(svg.contains("#f85149"));
+    }
+
+    // ── Chaos State Helpers ─────────────────────────────
+
+    #[tokio::test]
+    async fn test_chaos_status_htmx_initial_stopped() {
+        let state = test_state();
+        let resp = chaos_status_htmx(State(state.clone())).await;
+        let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let html = String::from_utf8(bytes.to_vec()).unwrap();
+        assert!(html.contains("Stopped"));
+        assert!(html.contains("10%"));
+        assert!(html.contains("0"));
+    }
+
+    #[tokio::test]
+    async fn test_chaos_toggle_htmx_enables_and_increments() {
+        let state = test_state();
+        let resp = chaos_toggle_htmx(State(state.clone())).await;
+        let _ = resp.into_response();
+        assert!(state.chaos_enabled.load(Ordering::Relaxed));
+        assert_eq!(*state.chaos_fault_count.read().await, 1);
+    }
+
+    #[tokio::test]
+    async fn test_chaos_probability_htmx_sets_value() {
+        let state = test_state();
+        let mut params = HashMap::new();
+        params.insert("probability".to_string(), "42".to_string());
+        let resp = chaos_probability_htmx(State(state.clone()), Query(params)).await;
+        let _ = resp.into_response();
+        assert!((*state.chaos_fault_probability.read().await - 0.42).abs() < 1e-9);
+    }
+
+    // ── Router ─────────────────────────────────────────
+
+    /// Serializes tests that mutate the process-global WEBUI_API_KEY env var.
+    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    #[tokio::test]
+    async fn test_router_index_serves_dashboard() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        std::env::remove_var("WEBUI_API_KEY");
+        let router = app("http://localhost:8080".into());
+        let resp = router
+            .oneshot(Request::builder().uri("/").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn test_router_metrics_endpoint() {
+        let router = app("http://localhost:8080".into());
+        let resp = router
+            .oneshot(
+                Request::builder()
+                    .uri("/metrics")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let body = String::from_utf8(bytes.to_vec()).unwrap();
+        assert!(body.contains("sisyphus_requests_total"));
+        assert!(body.contains("sisyphus_uptime_seconds"));
+    }
+
+    #[tokio::test]
+    async fn test_router_auth_required_when_token_set() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        // Set env var for the auth middleware to read
+        std::env::set_var("WEBUI_API_KEY", "test-secret-key");
+        let router = app("http://localhost:8080".into());
+
+        // Without auth header → 401
+        let resp = router
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/api/sessions")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+
+        // With wrong token → 401
+        let resp = router
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/api/sessions")
+                    .header(header::AUTHORIZATION, "Bearer wrong-token")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+
+        // With correct token → 200 (public health endpoint is exempt? no, protected)
+        let resp = router
+            .oneshot(
+                Request::builder()
+                    .uri("/api/sessions")
+                    .header(header::AUTHORIZATION, "Bearer test-secret-key")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        std::env::remove_var("WEBUI_API_KEY");
+    }
+
+    #[tokio::test]
+    async fn test_router_events_public_no_auth() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        // No WEBUI_API_KEY set → public routes work without auth.
+        std::env::remove_var("WEBUI_API_KEY");
+        let router = app("http://localhost:8080".into());
+        let resp = router
+            .oneshot(
+                Request::builder()
+                    .uri("/metrics")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+    }
+}

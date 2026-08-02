@@ -50,6 +50,30 @@ use_sandboxd = false
 
 > **何时启用 sandboxd：** 如果 CI 或开发机上 `cargo check`/`cargo build` 因 wasmtime 的 LLVM codegen 内存峰值 >7GB 而 OOM，设置 `use_sandboxd = true` 并在 CI 中预先构建 `sisyphus-sandboxd` 二进制。bridge 将启动子进程处理 WASM 调用，自身不再链接 wasmtime。
 
+## OpenTelemetry Distributed Tracing
+
+OpenTelemetry tracing can be enabled via the `[metrics.opentelemetry]` section:
+
+```toml
+[metrics]
+prometheus_port = 9100
+
+[metrics.opentelemetry]
+enabled = false
+endpoint = "http://localhost:4317"
+service_name = "sisyphus-bridge"
+sample_rate = 1.0
+```
+
+### `[metrics.opentelemetry]` Fields
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `enabled` | `bool` | `false` | Enable OpenTelemetry OTLP export |
+| `endpoint` | `string` | `"http://localhost:4317"` | OTLP exporter endpoint |
+| `service_name` | `string` | `"sisyphus-bridge"` | Service name for trace identification |
+| `sample_rate` | `f64` | `1.0` | Sampling rate (0.0 - 1.0) |
+
 ## Database Backends
 
 The `database_url` in `[cache]` supports two backends:
@@ -115,3 +139,7 @@ All environment variables use the prefix `SISYPHUS_`:
 | `SISYPHUS_CHAOS_ENABLED` | `chaos.enabled` | bool | `false` |
 | `SISYPHUS_CHAOS_DEFAULT_FAULT_PROBABILITY` | `chaos.default_fault_probability` | f64 | `0.1` |
 | `SISYPHUS_CHAOS_DEFAULT_DURATION_SECONDS` | `chaos.default_duration_seconds` | u64 | `300` |
+| `SISYPHUS_METRICS_OTEL_ENABLED` | `metrics.opentelemetry.enabled` | bool | `false` |
+| `SISYPHUS_METRICS_OTEL_ENDPOINT` | `metrics.opentelemetry.endpoint` | string | `"http://localhost:4317"` |
+| `SISYPHUS_METRICS_OTEL_SERVICE_NAME` | `metrics.opentelemetry.service_name` | string | `"sisyphus-bridge"` |
+| `SISYPHUS_METRICS_OTEL_SAMPLE_RATE` | `metrics.opentelemetry.sample_rate` | f64 | `1.0` |

@@ -21,3 +21,6 @@ futures = "0.3"
 [lib]
 name = "sisyphus_webui_lib"
 crate-type = ["lib"]
+
+[dev-dependencies]
+tower = { version = "0.5", features = ["util"] }

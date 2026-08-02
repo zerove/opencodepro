@@ -866,8 +866,10 @@ async fn test_chaos_auto_triggers_fix() {
     // to reliably accumulate >3 CHAOS_ERRORs.
     let (bridge, mut client, server) = setup_bridge_chaos_with_bridge(1.0).await;
 
-    let mut chaos_count = 0u64;
-    for i in 0..30usize {
+    for _i in 0..30usize {
+        // Fire enough ExecuteTool calls to reliably accumulate >3
+        // CHAOS_ERROR faults on the bridge (authoritative counter asserted
+        // below); per-response status is intentionally not checked here.
         let response = client
             .execute_tool(ExecuteToolRequest {
                 tool_id: "builtin:bash_exec".into(),
@@ -876,10 +878,7 @@ async fn test_chaos_auto_triggers_fix() {
             })
             .await
             .expect("ExecuteTool should not panic even under chaos");
-        let inner = response.into_inner();
-        if inner.status.starts_with("CHAOS_ERROR") {
-            chaos_count += 1;
-        }
+        let _ = response.into_inner();
     }
 
     // Allow background tokio tasks (the auto-fix spawn) to start processing.
@@ -1017,7 +1016,7 @@ async fn test_negative_concurrent_different_tools() {
     // Fire concurrent requests to DIFFERENT tools
     let (client, server) = setup_bridge().await;
     let mut handles = Vec::with_capacity(15);
-    let tools = vec!["builtin:bash_exec", "builtin:file_read", "unknown/tool"];
+    let tools = ["builtin:bash_exec", "builtin:file_read", "unknown/tool"];
     for i in 0..15usize {
         let mut cl = client.clone();
         let tool_id = tools[i % tools.len()].to_string();

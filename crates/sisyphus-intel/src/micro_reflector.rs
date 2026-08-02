@@ -4,6 +4,12 @@ use sisyphus_tools_llm::LlmClient;
 use sisyphus_types::{ExecutionContext, MicroReflectionDecision, MicroReflector, TypesError};
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Duration;
+
+/// Maximum time to wait for a single micro-reflection LLM call. Kept short so
+/// that an unreachable LLM degrades to a permissive CONTINUE instead of
+/// stalling node execution for the full HTTP client timeout (up to 60s).
+const MICRO_REFLECT_TIMEOUT: Duration = Duration::from_secs(2);
 
 pub struct LlmMicroReflector {
     llm: Arc<dyn LlmClient>,
@@ -26,10 +32,15 @@ impl MicroReflector for LlmMicroReflector {
             node_name, ctx.results
         );
 
-        self.llm
-            .generate(&prompt)
-            .await
-            .map_err(|e| TypesError::InternalError(e.to_string()))
+        match tokio::time::timeout(MICRO_REFLECT_TIMEOUT, self.llm.generate(&prompt)).await {
+            Ok(Ok(pred)) => Ok(pred),
+            Ok(Err(e)) => Err(TypesError::InternalError(format!(
+                "LLM micro-reflection predict failed: {e}"
+            ))),
+            Err(_) => Err(TypesError::InternalError(
+                "LLM micro-reflection predict timed out".into(),
+            )),
+        }
     }
 
     async fn reflect(
@@ -54,11 +65,23 @@ impl MicroReflector for LlmMicroReflector {
             node_name, prediction, actual, ctx.results
         );
 
-        let response = self
-            .llm
-            .generate(&prompt)
+        let response = match tokio::time::timeout(MICRO_REFLECT_TIMEOUT, self.llm.generate(&prompt))
             .await
-            .map_err(|e| TypesError::InternalError(e.to_string()))?;
+        {
+            Ok(Ok(resp)) => resp,
+            Ok(Err(e)) => {
+                tracing::warn!(node = %node_name, "LLM micro-reflection failed, degrading to CONTINUE: {e}");
+                return Ok(MicroReflectionDecision::Continue);
+            }
+            Err(_) => {
+                tracing::warn!(
+                    node = %node_name,
+                    timeout_ms = MICRO_REFLECT_TIMEOUT.as_millis(),
+                    "LLM micro-reflection timed out, degrading to CONTINUE"
+                );
+                return Ok(MicroReflectionDecision::Continue);
+            }
+        };
 
         let trimmed = response.trim();
         let upper = trimmed.to_uppercase();

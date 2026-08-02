@@ -7,7 +7,14 @@ use sisyphus_metrics::record_simulation;
 use sisyphus_types::{ExecutionContext, SOPGraph};
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
+
+/// Maximum time to wait for a single LLM audit call in [`LlmLogicalSimulator`].
+///
+/// Kept short so that an unreachable LLM degrades the logical audit to a
+/// heuristic pass instead of blocking the cognitive loop for the full HTTP
+/// client timeout (up to 60s per call).
+const LLM_AUDIT_TIMEOUT: Duration = Duration::from_secs(2);
 
 // ---------------------------------------------------------------------------
 // Simulation types
@@ -112,6 +119,10 @@ impl LogicalSimulator for LlmLogicalSimulator {
         let mut virtual_context: HashMap<String, String> = HashMap::new();
         let mut flaws = Vec::new();
         let mut predicted_path = Vec::new();
+        // Once the LLM fails (timeout / error) we stop calling it and fall back
+        // to heuristic predictions for the remaining nodes, so an unreachable
+        // LLM can never stall the cognitive loop.
+        let mut llm_available = true;
 
         // Process nodes in topological order
         let node_indices: Vec<_> = graph.graph.node_indices().collect();
@@ -150,12 +161,53 @@ impl LogicalSimulator for LlmLogicalSimulator {
                 inputs
             );
 
-            let response = self.llm_client.chat(
-                "You are a logical auditor for a cognitive engine. Analyze the provided SOP node and predict its output while checking for logical flaws.",
-                &prompt,
-                true
-            ).await
-                .map_err(|e| format!("LLM failure: {}", e))?;
+            let response = if llm_available {
+                match tokio::time::timeout(
+                    LLM_AUDIT_TIMEOUT,
+                    self.llm_client.chat(
+                        "You are a logical auditor for a cognitive engine. Analyze the provided SOP node and predict its output while checking for logical flaws.",
+                        &prompt,
+                        true,
+                    ),
+                )
+                .await
+                {
+                    Ok(Ok(resp)) => Some(resp),
+                    Ok(Err(e)) => {
+                        tracing::warn!(node = %node_name, "LLM logical audit failed, degrading to heuristic: {e}");
+                        llm_available = false;
+                        None
+                    }
+                    Err(_) => {
+                        tracing::warn!(
+                            node = %node_name,
+                            timeout_ms = LLM_AUDIT_TIMEOUT.as_millis(),
+                            "LLM logical audit timed out, degrading to heuristic"
+                        );
+                        llm_available = false;
+                        None
+                    }
+                }
+            } else {
+                None
+            };
+
+            // Heuristic fallback when the LLM is unavailable: assume the node
+            // succeeds and record an informational flaw so the degradation is
+            // observable in the simulation result.
+            let response = match response {
+                Some(resp) => resp,
+                None => {
+                    flaws.push(LogicalFlaw {
+                        node_name: node_name.clone(),
+                        description: "LLM audit unavailable; heuristic prediction used".into(),
+                        severity: FlawSeverity::Info,
+                    });
+                    virtual_context.insert(node_name.clone(), "ok".to_string());
+                    predicted_path.push(node_name.clone());
+                    continue;
+                }
+            };
 
             if let Ok(val) = serde_json::from_str::<serde_json::Value>(&response) {
                 let output = val

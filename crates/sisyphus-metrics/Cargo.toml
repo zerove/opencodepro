@@ -11,11 +11,11 @@ metrics = "0.21"
 metrics-exporter-prometheus = "0.13"
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["json", "env-filter"] }
-tracing-opentelemetry = { version = "0.30", optional = true }
-opentelemetry = { version = "0.28", optional = true }
-opentelemetry-otlp = { version = "0.28", optional = true }
-opentelemetry_sdk = { version = "0.28", features = ["rt-tokio"], optional = true }
-opentelemetry-semantic-conventions = { version = "0.28", optional = true }
+tracing-opentelemetry = { workspace = true, optional = true }
+opentelemetry = { workspace = true, optional = true }
+opentelemetry-otlp = { workspace = true, optional = true }
+opentelemetry_sdk = { workspace = true, optional = true }
+opentelemetry-semantic-conventions = { workspace = true, optional = true }
 sisyphus-types = { path = "../sisyphus-types" }
 thiserror = { workspace = true }
 

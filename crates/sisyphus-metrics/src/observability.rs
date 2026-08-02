@@ -82,9 +82,10 @@ pub fn init_tracing(config: TraceConfig) -> Result<(), ObservabilityError> {
 /// Requires the `otel` feature.
 #[cfg(feature = "otel")]
 pub fn init_tracing_with_otlp(config: TraceConfig) -> Result<(), ObservabilityError> {
+    use opentelemetry::trace::TracerProvider as _;
     use opentelemetry::KeyValue;
     use opentelemetry_otlp::WithExportConfig;
-    use opentelemetry_sdk::{runtime, trace as sdk_trace, Resource};
+    use opentelemetry_sdk::{trace as sdk_trace, Resource};
     use opentelemetry_semantic_conventions::resource::SERVICE_NAME;
     use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
@@ -102,14 +103,16 @@ pub fn init_tracing_with_otlp(config: TraceConfig) -> Result<(), ObservabilityEr
         .build()
         .map_err(|e| ObservabilityError::OtlpError(e.to_string()))?;
 
-    let tracer = sdk_trace::TracerProvider::builder()
-        .with_batch_exporter(otlp_exporter, runtime::Tokio)
-        .with_resource(Resource::new(vec![KeyValue::new(
-            SERVICE_NAME,
-            config.service_name.clone(),
-        )]))
-        .build()
-        .tracer(config.service_name);
+    let provider = sdk_trace::SdkTracerProvider::builder()
+        .with_batch_exporter(otlp_exporter)
+        .with_resource(
+            Resource::builder()
+                .with_attributes([KeyValue::new(SERVICE_NAME, config.service_name.clone())])
+                .build(),
+        )
+        .build();
+
+    let tracer = provider.tracer(config.service_name);
 
     let otel_layer = tracing_opentelemetry::layer().with_tracer(tracer);
 

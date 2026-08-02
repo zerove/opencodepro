@@ -217,11 +217,15 @@ impl CacheConfig {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct MetricsConfig {
     pub prometheus_port: u16,
+    /// OpenTelemetry 分布式追踪配置
+    #[serde(default)]
+    pub opentelemetry: OtelConfig,
 }
 
 fn default_metrics() -> MetricsConfig {
     MetricsConfig {
         prometheus_port: 9100,
+        opentelemetry: OtelConfig::default(),
     }
 }
 
@@ -236,6 +240,47 @@ impl MetricsConfig {
         if self.prometheus_port == 0 {
             return Err(TypesError::ConfigValidationError(
                 "metrics.prometheus_port must be > 0".into(),
+            ));
+        }
+        self.opentelemetry.validate()
+    }
+}
+
+// ── OpenTelemetry Config ──────────────────────────────────
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct OtelConfig {
+    /// 是否启用 OpenTelemetry 导出
+    pub enabled: bool,
+    /// OTLP 导出端点
+    pub endpoint: String,
+    /// 服务名称
+    pub service_name: String,
+    /// 采样率 (0.0 ~ 1.0)
+    pub sample_rate: f64,
+}
+
+impl Default for OtelConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            endpoint: "http://localhost:4317".to_string(),
+            service_name: "sisyphus-bridge".to_string(),
+            sample_rate: 1.0,
+        }
+    }
+}
+
+impl OtelConfig {
+    pub fn validate(&self) -> Result<(), TypesError> {
+        if !(0.0..=1.0).contains(&self.sample_rate) {
+            return Err(TypesError::ConfigValidationError(
+                "metrics.opentelemetry.sample_rate must be between 0.0 and 1.0".into(),
+            ));
+        }
+        if self.enabled && self.endpoint.is_empty() {
+            return Err(TypesError::ConfigValidationError(
+                "metrics.opentelemetry.endpoint must not be empty when enabled".into(),
             ));
         }
         Ok(())

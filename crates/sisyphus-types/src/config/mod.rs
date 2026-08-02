@@ -262,6 +262,19 @@ impl Config {
         if let Some(v) = env_f64("SISYPHUS_COGNITIVE_LOOP_ADAPTIVE_DEPTH_CONVERGENCE_THRESHOLD") {
             self.cognitive_loop.adaptive_depth.convergence_threshold = v;
         }
+        // OpenTelemetry
+        if let Some(v) = env_bool("SISYPHUS_METRICS_OTEL_ENABLED") {
+            self.metrics.opentelemetry.enabled = v;
+        }
+        if let Some(v) = env_string("SISYPHUS_METRICS_OTEL_ENDPOINT") {
+            self.metrics.opentelemetry.endpoint = v;
+        }
+        if let Some(v) = env_string("SISYPHUS_METRICS_OTEL_SERVICE_NAME") {
+            self.metrics.opentelemetry.service_name = v;
+        }
+        if let Some(v) = env_f64("SISYPHUS_METRICS_OTEL_SAMPLE_RATE") {
+            self.metrics.opentelemetry.sample_rate = v;
+        }
     }
 
     /// Validate all config fields, returning an error on first invalid value.

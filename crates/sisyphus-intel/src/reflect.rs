@@ -6,7 +6,13 @@ use sisyphus_metrics::{record_evolution, record_reflection};
 use sisyphus_tools_llm::metis::LlmClient;
 use sisyphus_types::SOPGraph;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
+
+/// Maximum time to wait for a single LLM call in [`LlmReflector`] and
+/// [`LlmEvolver`]. Kept short so that an unreachable LLM degrades reflection /
+/// evolution instead of stalling the cognitive loop for the full HTTP client
+/// timeout (up to 60s per call).
+const LLM_AUDIT_TIMEOUT: Duration = Duration::from_secs(2);
 
 // ---------------------------------------------------------------------------
 // Reflection types
@@ -293,11 +299,37 @@ impl Reflector for LlmReflector {
             exp_context, trace, predicted.predicted_outcome
         );
 
-        let response = self
-            .llm_client
-            .generate(&prompt)
-            .await
-            .map_err(|e| format!("LLM reflection failed: {e}"))?;
+        let response = match tokio::time::timeout(
+            LLM_AUDIT_TIMEOUT,
+            self.llm_client.generate(&prompt),
+        )
+        .await
+        {
+            Ok(Ok(resp)) => resp,
+            Ok(Err(e)) => {
+                tracing::warn!("LLM reflection failed, degrading to standard report: {e}");
+                return Ok(ReflectionReport {
+                    original_sop_id: "current_sop".into(),
+                    deviation_score: 0.5,
+                    suggested_improvements: Vec::new(),
+                    evolved_sop_structure: None,
+                    records: StandardReflector::parse_trace(trace),
+                });
+            }
+            Err(_) => {
+                tracing::warn!(
+                    timeout_ms = LLM_AUDIT_TIMEOUT.as_millis(),
+                    "LLM reflection timed out, degrading to standard report"
+                );
+                return Ok(ReflectionReport {
+                    original_sop_id: "current_sop".into(),
+                    deviation_score: 0.5,
+                    suggested_improvements: Vec::new(),
+                    evolved_sop_structure: None,
+                    records: StandardReflector::parse_trace(trace),
+                });
+            }
+        };
 
         let parsed: serde_json::Value = serde_json::from_str(&response)
             .map_err(|e| format!("Failed to parse LLM reflection JSON: {e}"))?;
@@ -444,11 +476,30 @@ impl SOPEvolver for LlmEvolver {
             insights.unwrap_or("None")
         );
 
-        let response = self
-            .llm_client
-            .generate(&prompt)
-            .await
-            .map_err(|e| format!("LLM evolution failed: {e}"))?;
+        let response = match tokio::time::timeout(
+            LLM_AUDIT_TIMEOUT,
+            self.llm_client.generate(&prompt),
+        )
+        .await
+        {
+            Ok(Ok(resp)) => resp,
+            Ok(Err(e)) => {
+                tracing::warn!("LLM evolution failed: {e}");
+                return Err(sisyphus_types::IntelError::LlmError(format!(
+                    "LLM evolution failed: {e}"
+                )));
+            }
+            Err(_) => {
+                tracing::warn!(
+                    timeout_ms = LLM_AUDIT_TIMEOUT.as_millis(),
+                    "LLM evolution timed out"
+                );
+                return Err(sisyphus_types::IntelError::LlmError(format!(
+                    "LLM evolution timed out after {} ms",
+                    LLM_AUDIT_TIMEOUT.as_millis()
+                )));
+            }
+        };
 
         let ops: Vec<sisyphus_types::EvolutionOp> =
             serde_json::from_str(&response).map_err(|e| {

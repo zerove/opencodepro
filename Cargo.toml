@@ -54,6 +54,11 @@ async-trait = "0.1"
 anyhow = "1.0"
 dashmap = "6.1"
 clap = { version = "4", features = ["derive"] }
+opentelemetry = { version = "0.32", features = ["trace", "tracing"] }
+opentelemetry-otlp = { version = "0.32", features = ["grpc-tonic"] }
+opentelemetry_sdk = { version = "0.32", features = ["rt-tokio"] }
+opentelemetry-semantic-conventions = "0.32"
+tracing-opentelemetry = "0.33"
 
 [profile.dev]
 debug = 0

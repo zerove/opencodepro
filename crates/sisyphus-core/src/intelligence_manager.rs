@@ -3,6 +3,7 @@ use sisyphus_tools_llm_tools::{momus, oracle};
 use sisyphus_types::{ExecutionContext, SOPGraph};
 use std::path::Path;
 use std::sync::Arc;
+use std::time::Duration;
 
 /// IntelligenceManager wraps the cognitive capabilities of the system,
 /// providing high-level APIs for prediction, reflection, and evolution.
@@ -157,9 +158,32 @@ impl IntelligenceManager {
             prediction, report
         );
 
-        let response = self.llm_client.generate(&prompt).await.map_err(|e| {
-            sisyphus_types::IntelError::LlmError(format!("LLM critique failed: {}", e))
-        })?;
+        // Bound the critique call so an unreachable LLM cannot stall the
+        // cognitive loop; on failure we fall back to a permissive default.
+        let response =
+            match tokio::time::timeout(Duration::from_secs(2), self.llm_client.generate(&prompt))
+                .await
+            {
+                Ok(Ok(resp)) => resp,
+                Ok(Err(e)) => {
+                    tracing::warn!("LLM critique failed, using permissive default: {e}");
+                    return Ok(sisyphus_types::CritiqueResult {
+                        critical_findings: Vec::new(),
+                        risk_score: 0.0,
+                        suggested_refinement: "No critique available (LLM unreachable)".into(),
+                        should_proceed: true,
+                    });
+                }
+                Err(_) => {
+                    tracing::warn!("LLM critique timed out, using permissive default");
+                    return Ok(sisyphus_types::CritiqueResult {
+                        critical_findings: Vec::new(),
+                        risk_score: 0.0,
+                        suggested_refinement: "No critique available (LLM timed out)".into(),
+                        should_proceed: true,
+                    });
+                }
+            };
 
         serde_json::from_str::<sisyphus_types::CritiqueResult>(&response).map_err(|e| {
             sisyphus_types::IntelError::Internal(format!(

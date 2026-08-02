@@ -232,6 +232,56 @@ jobs:
           wait $BRIDGE_PID 2>/dev/null || true
           exit $STRESS_EXIT
 
+  # ── Chaos Engineering CI ────────────────────────────────────────────────
+  chaos-test:
+    name: Chaos Engineering Test
+    runs-on: ubuntu-latest
+    needs: [bridge-test-full]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: Swatinem/rust-cache@v2
+      - name: Build bridge with sandboxd
+        run: |
+          cargo build -p sisyphus-bridge --bin sisyphus-bridge --bin stress_test
+      - name: Run chaos experiment
+        timeout-minutes: 10
+        run: |
+          set -euo pipefail
+
+          # Start bridge in background (LLM endpoint points at a dead port so
+          # LLM-dependent phases of the cognitive loop fail fast instead of
+          # hanging for the full HTTP timeout)
+          SISYPHUS_LLM_ENDPOINT=http://127.0.0.1:9 \
+          SISYPHUS_LLM_API_KEY=test \
+          SISYPHUS_CHAOS_ENABLED=true \
+          SISYPHUS_CHAOS_DEFAULT_FAULT_PROBABILITY=0.5 \
+            ./target/debug/sisyphus-bridge > bridge-chaos.log 2>&1 &
+          BRIDGE_PID=$!
+          sleep 5
+
+          # 1) Cognitive-loop smoke test (ExecuteSop) - must complete fast even
+          #    without a reachable LLM thanks to the timeout/degradation paths.
+          ./target/debug/stress_test --quick http://[::1]:50051 2>&1
+
+          # 2) Chaos injection target: ExecuteTool requests exercise
+          #    maybe_inject_chaos_fault before every tool call.
+          ./target/debug/stress_test --tool http://[::1]:50051 2 5 2>&1
+
+          # 3) Verify chaos faults were actually injected (not just that the
+          #    bridge survived the load).
+          INJECTIONS=$(grep -c "Chaos: injecting" bridge-chaos.log || true)
+          echo "=== Chaos injections observed: $INJECTIONS ==="
+          if [ "$INJECTIONS" -eq 0 ]; then
+            echo "ERROR: no chaos faults were injected - chaos pipeline is not wired into ExecuteTool"
+            exit 1
+          fi
+
+          # Report chaos experiment outcome
+          echo "=== Chaos experiment completed (exit=0) ==="
+          kill $BRIDGE_PID 2>/dev/null || true
+          wait $BRIDGE_PID 2>/dev/null || true
+
   # ── Core benchmarks (requires sandbox feature for WasmToolExecutor) ──
   # Baseline tracking strategy:
   #   - Benchmarks run with --save-baseline current on every CI invocation.
@@ -421,12 +471,14 @@ jobs:
       - uses: dtolnay/rust-toolchain@nightly
       - uses: Swatinem/rust-cache@v2
       - run: cargo check -p sisyphus-webui
+      - run: cargo clippy -p sisyphus-webui -- -D warnings
+      - run: cargo test -p sisyphus-webui
 
   # ── Release ─────────────────────────────────────────────────────────
   release:
     name: Release
     runs-on: ubuntu-latest
-    needs: [build, build-sandboxd, build-macos, build-windows, sdk-typescript, sdk-python, sdk-go]
+    needs: [build, build-sandboxd, build-macos, build-windows, sdk-typescript, sdk-python, sdk-go, chaos-test, webui-check]
     if: github.ref == 'refs/heads/main'
     permissions:
       contents: write

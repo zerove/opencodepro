@@ -4,6 +4,12 @@ use crate::reflect::ReflectionReport;
 use serde::{Deserialize, Serialize};
 use sisyphus_types::{tools::ToolSpec, SOPGraph};
 use std::sync::Arc;
+use std::time::Duration;
+
+/// Maximum time to wait for the gap-analysis LLM call. Kept short so that an
+/// unreachable LLM degrades gap detection to a no-gap result instead of
+/// stalling the cognitive loop for the full HTTP client timeout (up to 60s).
+const GAP_ANALYSIS_TIMEOUT: Duration = Duration::from_secs(2);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ToolGap {
@@ -40,11 +46,26 @@ impl GapAnalyzer {
             report = report
         );
 
-        let response = self
-            .llm_client
-            .chat("You are a Sisyphus Gap Analyzer.", &prompt, true)
-            .await
-            .map_err(|e| crate::IntelError::Internal(e.to_string()))?;
+        let response = match tokio::time::timeout(
+            GAP_ANALYSIS_TIMEOUT,
+            self.llm_client
+                .chat("You are a Sisyphus Gap Analyzer.", &prompt, true),
+        )
+        .await
+        {
+            Ok(Ok(resp)) => resp,
+            Ok(Err(e)) => {
+                tracing::warn!("LLM gap analysis failed, assuming no gap: {e}");
+                return Ok(None);
+            }
+            Err(_) => {
+                tracing::warn!(
+                    timeout_ms = GAP_ANALYSIS_TIMEOUT.as_millis(),
+                    "LLM gap analysis timed out, assuming no gap"
+                );
+                return Ok(None);
+            }
+        };
 
         if response.contains("GAP_FOUND") {
             // Extract JSON from response

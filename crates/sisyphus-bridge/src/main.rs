@@ -8,6 +8,16 @@ use tokio_stream::wrappers::TcpListenerStream;
 use tonic::transport::Server;
 use tracing::{error, info, warn};
 
+// OpenTelemetry
+use opentelemetry::global;
+use opentelemetry::KeyValue;
+use opentelemetry_otlp::WithExportConfig;
+use opentelemetry_sdk::trace::SdkTracerProvider;
+use opentelemetry_sdk::Resource;
+use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::util::SubscriberInitExt;
+use tracing_subscriber::{EnvFilter, Registry};
+
 use sisyphus_bridge::{auth, bridge_service::MySisyphusBridge, http};
 
 #[tokio::main]
@@ -22,12 +32,64 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         Err(e) => {
             warn!(path = %config_path, error = %e, "Config file not found, using defaults");
-            let cfg = Arc::new(RwLock::new(Config::default()));
+            let mut cfg = Config::default();
+            // Merge environment overrides (SISYPHUS_*) so CI/dev setups that
+            // run without a config file still honor env vars such as the
+            // chaos-injection switches.
+            cfg.apply_env_overrides();
+            let cfg = Arc::new(RwLock::new(cfg));
             // Create a no-op store that never reloads
             let store = ConfigStore::with_config(cfg.clone());
             (store, cfg)
         }
     };
+
+    // ── OpenTelemetry initialization ─────────────────────────────────────
+    let otel_endpoint = shared_config
+        .read()
+        .map(|c| c.metrics.opentelemetry.endpoint.clone())
+        .unwrap_or_else(|_| "http://localhost:4317".to_string());
+    let service_name = shared_config
+        .read()
+        .map(|c| c.metrics.opentelemetry.service_name.clone())
+        .unwrap_or_else(|_| "sisyphus-bridge".to_string());
+    let otel_enabled = shared_config
+        .read()
+        .map(|c| c.metrics.opentelemetry.enabled)
+        .unwrap_or(false);
+
+    if otel_enabled {
+        let exporter = opentelemetry_otlp::SpanExporter::builder()
+            .with_tonic()
+            .with_endpoint(otel_endpoint.clone())
+            .build()?;
+        let resource = Resource::builder()
+            .with_attributes([
+                KeyValue::new("service.name", service_name.clone()),
+                KeyValue::new("service.version", env!("CARGO_PKG_VERSION")),
+            ])
+            .build();
+        let provider = SdkTracerProvider::builder()
+            .with_batch_exporter(exporter)
+            .with_resource(resource)
+            .build();
+        global::set_tracer_provider(provider);
+
+        info!("OpenTelemetry initialized: endpoint={}", otel_endpoint);
+    } else {
+        info!("OpenTelemetry disabled (enable via config metrics.opentelemetry.enabled=true)");
+    }
+
+    // Initialize tracing (with OpenTelemetry layer when enabled)
+    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
+    let fmt_layer = tracing_subscriber::fmt::layer();
+    let registry = Registry::default().with(filter).with(fmt_layer);
+    if otel_enabled {
+        let otel_layer = tracing_opentelemetry::layer();
+        registry.with(otel_layer).try_init()?;
+    } else {
+        registry.try_init()?;
+    }
 
     let auth_token = {
         let config = shared_config.read().map_err(|e| {
