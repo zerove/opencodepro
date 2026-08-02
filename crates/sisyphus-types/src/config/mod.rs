@@ -181,6 +181,15 @@ impl Config {
                 _ => BudgetMode::Warning,
             };
         }
+        if let Some(v) = env_u64("SISYPHUS_LLM_FAST_FAIL_COOLING_SECS") {
+            self.llm.fast_fail_cooling_secs = v;
+        }
+        if let Some(v) = env_u64("SISYPHUS_LLM_REQUEST_TIMEOUT_SECS") {
+            self.llm.request_timeout_secs = v;
+        }
+        if let Some(v) = env_u64("SISYPHUS_LLM_CONNECT_TIMEOUT_SECS") {
+            self.llm.connect_timeout_secs = v;
+        }
         if let Some(v) = env_string("SISYPHUS_LLM_EMBEDDING_MODEL") {
             self.llm.embedding.model = v;
         }

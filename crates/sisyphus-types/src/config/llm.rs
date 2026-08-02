@@ -93,6 +93,29 @@ pub struct LlmConfig {
     /// Optional multi-provider configuration for fallback support.
     #[serde(default)]
     pub providers: Vec<ProviderConfig>,
+    /// Fast-fail cooling after connection failure (seconds).
+    /// During this window, all calls to the failed model are rejected
+    /// immediately without network attempts.
+    #[serde(default = "default_fast_fail_cooling_secs")]
+    pub fast_fail_cooling_secs: u64,
+    /// Request timeout for LLM calls (seconds).
+    #[serde(default = "default_request_timeout_secs")]
+    pub request_timeout_secs: u64,
+    /// Connection timeout for LLM calls (seconds).
+    #[serde(default = "default_connect_timeout_secs")]
+    pub connect_timeout_secs: u64,
+}
+
+fn default_fast_fail_cooling_secs() -> u64 {
+    30
+}
+
+fn default_request_timeout_secs() -> u64 {
+    5
+}
+
+fn default_connect_timeout_secs() -> u64 {
+    2
 }
 
 pub fn default_llm_config() -> LlmConfig {
@@ -109,6 +132,9 @@ pub fn default_llm_config() -> LlmConfig {
         agents: HashMap::new(),
         categories: HashMap::new(),
         providers: Vec::new(),
+        fast_fail_cooling_secs: default_fast_fail_cooling_secs(),
+        request_timeout_secs: default_request_timeout_secs(),
+        connect_timeout_secs: default_connect_timeout_secs(),
     }
 }
 

@@ -3,8 +3,10 @@
 //! Supports per-agent model overrides, circuit breaker, model router, and budget tracking.
 
 use async_trait::async_trait;
+use parking_lot::RwLock as ParkingRwLock;
 use serde_json::{json, Value};
 use sisyphus_types::Config;
+use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
@@ -30,17 +32,17 @@ pub struct DynamicLlmClient {
     pub(super) current_context: Arc<RwLock<Option<RequestContext>>>,
     current_category: Arc<RwLock<Option<String>>>,
     provider_registry: Option<ProviderRegistry>,
-    /// Fast-fail cooling window: after a connection-level failure (timeout /
-    /// refused) all calls are rejected immediately until this instant, so an
-    /// unreachable endpoint degrades quickly instead of stalling every caller.
-    fast_fail_until: std::sync::Mutex<Option<std::time::Instant>>,
+    /// Per-model fast-fail cooling: after a connection-level failure for a
+    /// specific model, calls to that model are rejected immediately until the
+    /// window expires. An unreachable model degrades quickly while others
+    /// remain usable.
+    fast_fail_until: Arc<ParkingRwLock<HashMap<String, std::time::Instant>>>,
 }
 
 impl DynamicLlmClient {
     pub fn new(config: Arc<RwLock<Config>>) -> Self {
-        // Keep connect + request timeouts short: an unreachable endpoint must
-        // fail fast (callers bound the LLM phases of the cognitive loop, and
-        // the fast-fail cooling below prevents repeated stalls).
+        // Timeouts will be resolved per-call from config, but we need a base
+        // client for the provider registry fallback. Use defaults as fallback.
         let client = reqwest::Client::builder()
             .connect_timeout(Duration::from_secs(2))
             .timeout(Duration::from_secs(5))
@@ -59,35 +61,58 @@ impl DynamicLlmClient {
             current_context: Arc::new(RwLock::new(None)),
             current_category: Arc::new(RwLock::new(None)),
             provider_registry,
-            fast_fail_until: std::sync::Mutex::new(None),
+            fast_fail_until: Arc::new(ParkingRwLock::new(HashMap::new())),
         }
     }
 
-    /// Record a connection-level failure and open the fast-fail cooling
-    /// window so subsequent calls are rejected without touching the network.
-    fn trip_fast_fail(&self) {
-        *self
-            .fast_fail_until
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner) =
-            Some(std::time::Instant::now() + Duration::from_secs(30));
+    /// Record a connection-level failure for a specific model and open the
+    /// fast-fail cooling window so subsequent calls to that model are rejected
+    /// without touching the network.
+    fn trip_fast_fail(&self, model: &str) {
+        let cooling_secs = {
+            let cfg = self
+                .config
+                .read()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            cfg.llm.fast_fail_cooling_secs
+        };
+        self.fast_fail_until.write().insert(
+            model.to_string(),
+            std::time::Instant::now() + Duration::from_secs(cooling_secs),
+        );
     }
 
-    /// Clear the cooling window after a successful call (LLM recovered).
-    fn clear_fast_fail(&self) {
-        *self
-            .fast_fail_until
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
+    /// Clear the cooling window for a specific model after a successful call.
+    fn clear_fast_fail(&self, model: &str) {
+        self.fast_fail_until.write().remove(model);
     }
 
-    /// True when the fast-fail cooling window is active.
-    fn fast_fail_active(&self) -> bool {
-        let until = *self
-            .fast_fail_until
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+    /// True when the fast-fail cooling window for a model is active.
+    fn fast_fail_active(&self, model: &str) -> bool {
+        let cooling_secs = {
+            let cfg = self
+                .config
+                .read()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            cfg.llm.fast_fail_cooling_secs
+        };
+        if cooling_secs == 0 {
+            return false;
+        }
+        let until = self.fast_fail_until.read().get(model).copied();
         matches!(until, Some(t) if t > std::time::Instant::now())
+    }
+
+    /// Get the current request/connect timeouts from config.
+    fn timeouts(&self) -> (Duration, Duration) {
+        let cfg = self
+            .config
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        (
+            Duration::from_secs(cfg.llm.connect_timeout_secs),
+            Duration::from_secs(cfg.llm.request_timeout_secs),
+        )
     }
 
     pub fn with_provider_registry(mut self, registry: ProviderRegistry) -> Self {
@@ -216,44 +241,7 @@ impl LlmClient for DynamicLlmClient {
     ) -> Result<String, sisyphus_types::TypesError> {
         let start_time = std::time::Instant::now();
 
-        // ── Fast-fail cooling ────────────────────────────────────────
-        // If a recent connection-level failure was recorded, reject the call
-        // immediately (no network attempt) so an unreachable LLM degrades the
-        // cognitive loop in ~ms instead of stalling every caller.
-        if self.fast_fail_active() {
-            return Err(sisyphus_types::TypesError::InternalError(
-                "LLM unavailable (fast-fail cooling, previous call failed)".into(),
-            ));
-        }
-
-        // ── Try provider registry fallback chain first ─────────────
-        if let Some(ref registry) = self.provider_registry {
-            if !registry.fallback_order().is_empty() {
-                let chat_messages = vec![ChatMessage {
-                    role: ChatRole::User,
-                    content: user.to_string(),
-                }];
-                match registry
-                    .chat_with_fallback(system, &chat_messages, json_mode)
-                    .await
-                {
-                    Ok(response) => {
-                        // Record cost via router
-                        let token_estimate = (response.content.len() / 4).max(1) as u64;
-                        self.router
-                            .record_usage(&response.model, 0.0, token_estimate);
-                        self.clear_fast_fail();
-                        return Ok(response.content);
-                    }
-                    Err(e) => {
-                        // All providers failed — log warning and fall through to default endpoint
-                        tracing::warn!(target: "llm", "All providers failed, falling back to default endpoint: {e}");
-                    }
-                }
-            }
-        }
-
-        // ── Fallback: existing OpenAI-compatible HTTP call ─────────
+        // We'll need the model name for per-model fast-fail. Resolve early.
         let (api_key, endpoint, model) = {
             let category = self
                 .current_category
@@ -283,6 +271,43 @@ impl LlmClient for DynamicLlmClient {
                 self.get_current_params()
             }
         };
+
+        // ── Per-model fast-fail cooling ───────────────────────────────
+        // If a recent connection-level failure was recorded for this model,
+        // reject the call immediately (no network attempt) so an unreachable
+        // model degrades the cognitive loop in ~ms instead of stalling.
+        if self.fast_fail_active(&model) {
+            return Err(sisyphus_types::TypesError::InternalError(format!(
+                "Model {model} unavailable (fast-fail cooling, previous call failed)"
+            )));
+        }
+
+        // ── Try provider registry fallback chain first ─────────────
+        if let Some(ref registry) = self.provider_registry {
+            if !registry.fallback_order().is_empty() {
+                let chat_messages = vec![ChatMessage {
+                    role: ChatRole::User,
+                    content: user.to_string(),
+                }];
+                match registry
+                    .chat_with_fallback(system, &chat_messages, json_mode)
+                    .await
+                {
+                    Ok(response) => {
+                        // Record cost via router
+                        let token_estimate = (response.content.len() / 4).max(1) as u64;
+                        self.router
+                            .record_usage(&response.model, 0.0, token_estimate);
+                        self.clear_fast_fail(&model);
+                        return Ok(response.content);
+                    }
+                    Err(e) => {
+                        // All providers failed — log warning and fall through to default endpoint
+                        tracing::warn!(target: "llm", "All providers failed, falling back to default endpoint: {e}");
+                    }
+                }
+            }
+        }
 
         // 1. Budget Pre-check
         let context = self
@@ -341,8 +366,10 @@ impl LlmClient for DynamicLlmClient {
             body["response_format"] = json!({ "type": "json_object" });
         }
 
+        let request_timeout = self.timeouts().1;
+
         let res = match tokio::time::timeout(
-            Duration::from_secs(5),
+            request_timeout,
             self.client
                 .post(&endpoint)
                 .header("Authorization", format!("Bearer {api_key}"))
@@ -354,14 +381,14 @@ impl LlmClient for DynamicLlmClient {
             Ok(Ok(r)) => r,
             Ok(Err(e)) => {
                 self.breaker.on_failure(&model);
-                self.trip_fast_fail();
+                self.trip_fast_fail(&model);
                 return Err(sisyphus_types::TypesError::InternalError(format!(
                     "HTTP request failed: {e}"
                 )));
             }
             Err(_) => {
                 self.breaker.on_failure(&model);
-                self.trip_fast_fail();
+                self.trip_fast_fail(&model);
                 return Err(sisyphus_types::TypesError::InternalError(format!(
                     "HTTP request timed out for {model}"
                 )));
@@ -402,7 +429,7 @@ impl LlmClient for DynamicLlmClient {
 
         if let Some(text) = content {
             self.breaker.on_success(&model);
-            self.clear_fast_fail();
+            self.clear_fast_fail(&model);
             let token_estimate = (text.len() / 4).max(1) as u64;
             let actual_cost = (token_estimate as f64 / 1000.0) * 0.01;
             self.router.record_usage(&model, 0.0, token_estimate);
@@ -465,29 +492,46 @@ mod tests {
     #[test]
     fn fast_fail_cooling_blocks_after_trip() {
         let c = client();
-        assert!(!c.fast_fail_active(), "cooling should start inactive");
-        c.trip_fast_fail();
-        assert!(c.fast_fail_active(), "cooling should activate after trip");
-        c.clear_fast_fail();
-        assert!(!c.fast_fail_active(), "cooling should clear on success");
+        assert!(
+            !c.fast_fail_active("test-model"),
+            "cooling should start inactive"
+        );
+        c.trip_fast_fail("test-model");
+        assert!(
+            c.fast_fail_active("test-model"),
+            "cooling should activate after trip"
+        );
+        c.clear_fast_fail("test-model");
+        assert!(
+            !c.fast_fail_active("test-model"),
+            "cooling should clear on success"
+        );
+        // Other models unaffected
+        assert!(
+            !c.fast_fail_active("other-model"),
+            "other model should not be cooled"
+        );
     }
 
     #[test]
     fn fast_fail_cooling_expires() {
         let c = client();
-        c.trip_fast_fail();
+        c.trip_fast_fail("test-model");
         // Manually rewind the expiry so we don't sleep 30s in the test.
-        *c.fast_fail_until
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner) =
-            Some(std::time::Instant::now() - Duration::from_secs(1));
-        assert!(!c.fast_fail_active(), "cooling should expire after window");
+        c.fast_fail_until.write().insert(
+            "test-model".to_string(),
+            std::time::Instant::now() - Duration::from_secs(1),
+        );
+        assert!(
+            !c.fast_fail_active("test-model"),
+            "cooling should expire after window"
+        );
     }
 
     #[tokio::test]
     async fn chat_rejected_during_cooling_without_network() {
         let c = client();
-        c.trip_fast_fail();
+        c.trip_fast_fail("gpt-4o");
         let err = c.chat("sys", "user", false).await.unwrap_err();
         assert!(
             err.to_string().contains("fast-fail cooling"),

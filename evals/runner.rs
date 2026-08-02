@@ -122,6 +122,9 @@ impl EvalRunner {
                     agents: std::collections::HashMap::new(),
                     categories: std::collections::HashMap::new(),
                     providers: Vec::new(),
+                    fast_fail_cooling_secs: 30,
+                    request_timeout_secs: 5,
+                    connect_timeout_secs: 2,
                 },
                 ..Default::default()
             };
