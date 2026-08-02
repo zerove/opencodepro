@@ -30,12 +30,20 @@ pub struct DynamicLlmClient {
     pub(super) current_context: Arc<RwLock<Option<RequestContext>>>,
     current_category: Arc<RwLock<Option<String>>>,
     provider_registry: Option<ProviderRegistry>,
+    /// Fast-fail cooling window: after a connection-level failure (timeout /
+    /// refused) all calls are rejected immediately until this instant, so an
+    /// unreachable endpoint degrades quickly instead of stalling every caller.
+    fast_fail_until: std::sync::Mutex<Option<std::time::Instant>>,
 }
 
 impl DynamicLlmClient {
     pub fn new(config: Arc<RwLock<Config>>) -> Self {
+        // Keep connect + request timeouts short: an unreachable endpoint must
+        // fail fast (callers bound the LLM phases of the cognitive loop, and
+        // the fast-fail cooling below prevents repeated stalls).
         let client = reqwest::Client::builder()
-            .timeout(Duration::from_mins(1))
+            .connect_timeout(Duration::from_secs(2))
+            .timeout(Duration::from_secs(5))
             .build()
             .expect("Failed to build reqwest::Client");
         let provider_registry = config
@@ -51,7 +59,35 @@ impl DynamicLlmClient {
             current_context: Arc::new(RwLock::new(None)),
             current_category: Arc::new(RwLock::new(None)),
             provider_registry,
+            fast_fail_until: std::sync::Mutex::new(None),
         }
+    }
+
+    /// Record a connection-level failure and open the fast-fail cooling
+    /// window so subsequent calls are rejected without touching the network.
+    fn trip_fast_fail(&self) {
+        *self
+            .fast_fail_until
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) =
+            Some(std::time::Instant::now() + Duration::from_secs(30));
+    }
+
+    /// Clear the cooling window after a successful call (LLM recovered).
+    fn clear_fast_fail(&self) {
+        *self
+            .fast_fail_until
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
+    }
+
+    /// True when the fast-fail cooling window is active.
+    fn fast_fail_active(&self) -> bool {
+        let until = *self
+            .fast_fail_until
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        matches!(until, Some(t) if t > std::time::Instant::now())
     }
 
     pub fn with_provider_registry(mut self, registry: ProviderRegistry) -> Self {
@@ -180,6 +216,16 @@ impl LlmClient for DynamicLlmClient {
     ) -> Result<String, sisyphus_types::TypesError> {
         let start_time = std::time::Instant::now();
 
+        // ── Fast-fail cooling ────────────────────────────────────────
+        // If a recent connection-level failure was recorded, reject the call
+        // immediately (no network attempt) so an unreachable LLM degrades the
+        // cognitive loop in ~ms instead of stalling every caller.
+        if self.fast_fail_active() {
+            return Err(sisyphus_types::TypesError::InternalError(
+                "LLM unavailable (fast-fail cooling, previous call failed)".into(),
+            ));
+        }
+
         // ── Try provider registry fallback chain first ─────────────
         if let Some(ref registry) = self.provider_registry {
             if !registry.fallback_order().is_empty() {
@@ -196,6 +242,7 @@ impl LlmClient for DynamicLlmClient {
                         let token_estimate = (response.content.len() / 4).max(1) as u64;
                         self.router
                             .record_usage(&response.model, 0.0, token_estimate);
+                        self.clear_fast_fail();
                         return Ok(response.content);
                     }
                     Err(e) => {
@@ -294,19 +341,29 @@ impl LlmClient for DynamicLlmClient {
             body["response_format"] = json!({ "type": "json_object" });
         }
 
-        let res = match self
-            .client
-            .post(&endpoint)
-            .header("Authorization", format!("Bearer {api_key}"))
-            .json(&body)
-            .send()
-            .await
+        let res = match tokio::time::timeout(
+            Duration::from_secs(5),
+            self.client
+                .post(&endpoint)
+                .header("Authorization", format!("Bearer {api_key}"))
+                .json(&body)
+                .send(),
+        )
+        .await
         {
-            Ok(r) => r,
-            Err(e) => {
+            Ok(Ok(r)) => r,
+            Ok(Err(e)) => {
                 self.breaker.on_failure(&model);
+                self.trip_fast_fail();
                 return Err(sisyphus_types::TypesError::InternalError(format!(
                     "HTTP request failed: {e}"
+                )));
+            }
+            Err(_) => {
+                self.breaker.on_failure(&model);
+                self.trip_fast_fail();
+                return Err(sisyphus_types::TypesError::InternalError(format!(
+                    "HTTP request timed out for {model}"
                 )));
             }
         };
@@ -345,6 +402,7 @@ impl LlmClient for DynamicLlmClient {
 
         if let Some(text) = content {
             self.breaker.on_success(&model);
+            self.clear_fast_fail();
             let token_estimate = (text.len() / 4).max(1) as u64;
             let actual_cost = (token_estimate as f64 / 1000.0) * 0.01;
             self.router.record_usage(&model, 0.0, token_estimate);
@@ -390,5 +448,50 @@ impl LlmClient for DynamicLlmClient {
 
     fn breaker(&self) -> crate::circuit_breaker::CircuitBreaker {
         self.breaker.clone()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Arc;
+    use std::time::Duration;
+
+    fn client() -> DynamicLlmClient {
+        let config = Arc::new(RwLock::new(Config::default()));
+        DynamicLlmClient::new(config)
+    }
+
+    #[test]
+    fn fast_fail_cooling_blocks_after_trip() {
+        let c = client();
+        assert!(!c.fast_fail_active(), "cooling should start inactive");
+        c.trip_fast_fail();
+        assert!(c.fast_fail_active(), "cooling should activate after trip");
+        c.clear_fast_fail();
+        assert!(!c.fast_fail_active(), "cooling should clear on success");
+    }
+
+    #[test]
+    fn fast_fail_cooling_expires() {
+        let c = client();
+        c.trip_fast_fail();
+        // Manually rewind the expiry so we don't sleep 30s in the test.
+        *c.fast_fail_until
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) =
+            Some(std::time::Instant::now() - Duration::from_secs(1));
+        assert!(!c.fast_fail_active(), "cooling should expire after window");
+    }
+
+    #[tokio::test]
+    async fn chat_rejected_during_cooling_without_network() {
+        let c = client();
+        c.trip_fast_fail();
+        let err = c.chat("sys", "user", false).await.unwrap_err();
+        assert!(
+            err.to_string().contains("fast-fail cooling"),
+            "expected fast-fail error, got: {err}"
+        );
     }
 }
