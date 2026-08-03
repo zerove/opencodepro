@@ -225,7 +225,7 @@ pub struct SisyphusKernel {
 ///     .llm_client(my_llm)
 ///     .tool_executor(my_exec)
 ///     // ... other fields ...
-///     .build();
+///     .build()?; // 缺少必需字段时返回 CoreError::Internal
 /// ```
 pub struct KernelBuilder {
     state_store: Option<Arc<MfsStore>>,
@@ -295,36 +295,75 @@ impl KernelBuilder {
 
     /// Consume the builder and produce a `SisyphusKernel`.
     ///
-    /// # Panics
-    /// Panics if any required field was not set (missing setter call).
+    /// # Errors
+    /// Returns `CoreError::Internal` if any required field was not set
+    /// (missing setter call), instead of panicking.
     #[allow(clippy::too_many_arguments)]
-    pub fn build(self) -> SisyphusKernel {
-        let required = |name: &str| -> ! {
-            panic!(
-                "KernelBuilder: '{}' was not set. Call .{}() before .build().",
-                name, name
-            )
+    pub fn build(self) -> Result<SisyphusKernel, CoreError> {
+        let required = |name: &str| -> Result<SisyphusKernel, CoreError> {
+            Err(CoreError::Internal(format!(
+                "KernelBuilder: '{name}' was not set. Call .{name}() before .build()."
+            )))
         };
-        SisyphusKernel::new(
-            self.state_store.unwrap_or_else(|| required("state_store")),
-            self.sop_store.unwrap_or_else(|| required("sop_store")),
-            self.vector_store
-                .unwrap_or_else(|| required("vector_store")),
-            self.experience_bank
-                .unwrap_or_else(|| required("experience_bank")),
-            self.tool_executor
-                .unwrap_or_else(|| required("tool_executor")),
-            self.intel.unwrap_or_else(|| required("intel")),
-            self.llm_client.unwrap_or_else(|| required("llm_client")),
-            self.fast_llm_client
-                .unwrap_or_else(|| required("fast_llm_client")),
-            self.synthesizer.unwrap_or_else(|| required("synthesizer")),
+        let state_store = match self.state_store {
+            Some(v) => v,
+            None => return required("state_store"),
+        };
+        let sop_store = match self.sop_store {
+            Some(v) => v,
+            None => return required("sop_store"),
+        };
+        let vector_store = match self.vector_store {
+            Some(v) => v,
+            None => return required("vector_store"),
+        };
+        let experience_bank = match self.experience_bank {
+            Some(v) => v,
+            None => return required("experience_bank"),
+        };
+        let tool_executor = match self.tool_executor {
+            Some(v) => v,
+            None => return required("tool_executor"),
+        };
+        let intel = match self.intel {
+            Some(v) => v,
+            None => return required("intel"),
+        };
+        let llm_client = match self.llm_client {
+            Some(v) => v,
+            None => return required("llm_client"),
+        };
+        let fast_llm_client = match self.fast_llm_client {
+            Some(v) => v,
+            None => return required("fast_llm_client"),
+        };
+        let synthesizer = match self.synthesizer {
+            Some(v) => v,
+            None => return required("synthesizer"),
+        };
+        let sql_store = match self.sql_store {
+            Some(v) => v,
+            None => return required("sql_store"),
+        };
+        let embedding_client = match self.embedding_client {
+            Some(v) => v,
+            None => return required("embedding_client"),
+        };
+        Ok(SisyphusKernel::new(
+            state_store,
+            sop_store,
+            vector_store,
+            experience_bank,
+            tool_executor,
+            intel,
+            llm_client,
+            fast_llm_client,
+            synthesizer,
             self.meta_learner,
             self.consensus,
-            self.sql_store.unwrap_or_else(|| required("sql_store")),
-            self.embedding_client
-                .unwrap_or_else(|| required("embedding_client")),
-        )
+            sql_store,
+            embedding_client,
+        ))
     }
 }
 
