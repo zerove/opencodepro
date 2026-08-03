@@ -441,8 +441,9 @@ impl StrategicManager {
             let mut visual_embedding = None;
             if let Some(ref v_manager) = self.visual_manager {
                 // In a real system, we would capture the current screenshot from the executor/OS.
-                // For now, we simulate a visual state.
-                let dummy_image = vec![0u8; 1024];
+                // For now, we simulate a deterministic visual state derived
+                // from the goal so different goals map to different states.
+                let dummy_image = sisyphus_visual::simulated_visual_state(goal);
                 if let Ok(emb) = v_manager.get_embedding(&dummy_image).await {
                     visual_embedding = Some(emb);
                 }

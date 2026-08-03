@@ -377,8 +377,9 @@ impl SisyphusKernel {
         if success {
             if let Some(ref v_manager) = self.strategic_manager.visual_manager {
                 // In a real system, we would capture the current screenshot.
-                // For now, we simulate the visual state.
-                let dummy_image = vec![0u8; 1024];
+                // For now, we simulate a deterministic visual state derived
+                // from the goal so different goals map to different states.
+                let dummy_image = sisyphus_visual::simulated_visual_state(goal);
                 if let Ok(vis_emb) = v_manager.get_embedding(&dummy_image).await {
                     experience.visual_embedding = Some(vis_emb);
                 }

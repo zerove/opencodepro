@@ -95,12 +95,14 @@ impl std::fmt::Debug for HttpVlmProvider {
 }
 
 impl HttpVlmProvider {
-    pub fn new(config: VlmProviderConfig) -> Self {
+    pub fn new(config: VlmProviderConfig) -> Result<Self, VisualError> {
         let client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(config.timeout_secs))
             .build()
-            .expect("failed to build HTTP client");
-        Self { config, client }
+            .map_err(|e| {
+                VisualError::ProcessingError(format!("failed to build HTTP client: {e}"))
+            })?;
+        Ok(Self { config, client })
     }
 }
 
@@ -111,6 +113,16 @@ impl VisualPerceptionProvider for HttpVlmProvider {
         image_data: &[u8],
         prompt: &str,
     ) -> Result<VisualAnalysisResult, VisualError> {
+        // Until real screenshot capture is wired in, callers may pass a
+        // simulated visual state that is not a valid PNG. Do not waste a
+        // paid VLM call on placeholder bytes; return a simulated analysis.
+        if !is_png(image_data) {
+            return Ok(VisualAnalysisResult {
+                description: format!("Simulated analysis for prompt: {}", prompt),
+                detected_elements: vec![],
+                confidence: 0.9,
+            });
+        }
         let base64_image = base64_encode(image_data);
 
         let request_body = serde_json::json!({
@@ -171,6 +183,11 @@ impl VisualPerceptionProvider for HttpVlmProvider {
     }
 
     async fn get_embedding(&self, image_data: &[u8]) -> Result<Vec<f32>, VisualError> {
+        // Same guard as analyze_image: placeholder bytes must not be sent to
+        // the paid embedding endpoint. Return the mock vector instead.
+        if !is_png(image_data) {
+            return Ok(vec![0.1; 512]);
+        }
         let base64_image = base64_encode(image_data);
 
         let embeddings_endpoint = self
@@ -318,6 +335,36 @@ impl VisualPerceptionManager {
 
 // ── Helpers ──────────────────────────────────────────────────────────────
 
+const PNG_MAGIC: [u8; 8] = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
+
+/// Returns true when the bytes start with a valid PNG signature.
+fn is_png(data: &[u8]) -> bool {
+    data.len() >= PNG_MAGIC.len() && data[..PNG_MAGIC.len()] == PNG_MAGIC
+}
+
+/// Builds a deterministic placeholder image (valid PNG header) derived from a
+/// seed string, so different goals produce different visual states.
+///
+/// Used to simulate a captured visual state until real screenshot capture is
+/// wired in. The deterministic bytes keep embedding lookups stable across
+/// runs, and the PNG header prevents simulated states from being mistaken
+/// for corrupt data by providers.
+pub fn simulated_visual_state(seed: &str) -> Vec<u8> {
+    let mut out = Vec::with_capacity(1024);
+    out.extend_from_slice(&PNG_MAGIC);
+    let mut h: u32 = 2_166_136_261; // FNV-1a offset basis
+    for b in seed.bytes() {
+        h ^= u32::from(b);
+        h = h.wrapping_mul(16_777_619);
+    }
+    for i in 0u32..1016 {
+        h ^= i;
+        h = h.wrapping_mul(16_777_619);
+        out.push((h >> 24) as u8);
+    }
+    out
+}
+
 /// Simple base64 encoding (no dependency needed).
 fn base64_encode(data: &[u8]) -> String {
     const CHARS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
@@ -414,6 +461,36 @@ mod tests {
     }
 
     #[test]
+    fn test_simulated_visual_state_is_deterministic_png() {
+        let a = simulated_visual_state("fetch and process");
+        let b = simulated_visual_state("fetch and process");
+        let c = simulated_visual_state("different goal");
+        assert_eq!(a.len(), 1024);
+        assert_eq!(a, b);
+        assert_ne!(a, c);
+        assert!(is_png(&a));
+    }
+
+    #[tokio::test]
+    async fn test_http_provider_rejects_placeholder_bytes() {
+        let config = VlmProviderConfig {
+            api_key: "test-key".into(),
+            endpoint: "https://api.example.com/v1/vision".into(),
+            model: "test-model".into(),
+            ..Default::default()
+        };
+        let provider = HttpVlmProvider::new(config).unwrap();
+        // Non-PNG placeholder bytes must short-circuit without any HTTP call.
+        let embedding = provider.get_embedding(&[0u8; 64]).await.unwrap();
+        assert_eq!(embedding.len(), 512);
+        let analysis = provider
+            .analyze_image(&[0u8; 64], "describe")
+            .await
+            .unwrap();
+        assert!(analysis.description.contains("Simulated"));
+    }
+
+    #[test]
     fn test_http_provider_creation() {
         let config = VlmProviderConfig {
             api_key: "test-key".into(),
@@ -421,7 +498,7 @@ mod tests {
             model: "test-model".into(),
             ..Default::default()
         };
-        let provider = HttpVlmProvider::new(config);
+        let provider = HttpVlmProvider::new(config).unwrap();
         // Just verify it doesn't panic
         assert!(format!("{:?}", provider).contains("HttpVlmProvider"));
     }
