@@ -115,6 +115,46 @@ pub struct ProgressPrediction {
     pub risk_level: String,
 }
 
+/// Per-milestone time-based prediction with confidence interval.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct MilestoneTimePrediction {
+    pub milestone_id: String,
+    pub name: String,
+    /// Estimated remaining seconds (mean).
+    pub estimated_remaining_secs: f64,
+    /// Lower bound of 95% confidence interval (seconds).
+    pub ci_lower_secs: f64,
+    /// Upper bound of 95% confidence interval (seconds).
+    pub ci_upper_secs: f64,
+    /// Current progress percentage.
+    pub progress_pct: f64,
+    /// Remaining goals count.
+    pub remaining_goals: usize,
+    /// Risk level: "low", "medium", "high", "done".
+    pub risk_level: String,
+    /// Historical velocity (goals per second).
+    pub velocity_goals_per_sec: f64,
+}
+
+/// Project-level time-based completion prediction with confidence intervals.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct CompletionTimePrediction {
+    pub project_id: String,
+    pub project_name: String,
+    pub overall_progress_pct: f64,
+    pub remaining_goals: usize,
+    pub estimated_total_remaining_secs: f64,
+    pub ci_lower_total_secs: f64,
+    pub ci_upper_total_secs: f64,
+    pub milestone_predictions: Vec<MilestoneTimePrediction>,
+    pub estimated_completion_order: Vec<String>,
+    pub risk_level: String,
+    /// Overall velocity (goals per second).
+    pub overall_velocity_goals_per_sec: f64,
+    /// Whether prediction is based on sufficient historical data.
+    pub has_sufficient_data: bool,
+}
+
 /// Health evaluation result for a project's roadmap.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct RoadmapHealth {
@@ -125,4 +165,63 @@ pub struct RoadmapHealth {
     pub recent_failures: usize,
     pub problems: Vec<RoadmapProblem>,
     pub suggestions: Vec<AdjustmentSuggestion>,
+}
+
+/// Delay alert for a milestone at risk of significant delay.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct DelayAlert {
+    pub project_id: String,
+    pub milestone_id: String,
+    pub milestone_name: String,
+    pub estimated_remaining_secs: f64,
+    pub ci_upper_secs: f64,
+    pub threshold_multiplier: f64,
+    pub severity: String, // "warning" or "critical"
+    pub message: String,
+}
+
+// ---------------------------------------------------------------------------
+// Phase 3 — Resource Optimisation Types
+// ---------------------------------------------------------------------------
+
+/// A cost projection for the remaining work in a project.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct CostProjection {
+    pub total_goals: usize,
+    pub completed_goals: usize,
+    pub remaining_goals: usize,
+    pub avg_cost_per_goal: f64,
+    pub avg_duration_per_goal_secs: f64,
+    pub projected_remaining_cost: f64,
+    pub projected_remaining_duration_secs: f64,
+    pub confidence: f64,
+}
+
+/// A detected bottleneck in the execution pipeline.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct Bottleneck {
+    pub goal_id: String,
+    pub description: String,
+    pub failure_count: usize,
+    pub avg_duration_secs: f64,
+    pub blocking_count: usize,
+    pub severity: String, // "low", "medium", "high"
+}
+
+/// An opportunity to execute goals in parallel.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ParallelizationOpportunity {
+    pub goal_ids: Vec<String>,
+    pub rationale: String,
+    pub estimated_time_savings_secs: f64,
+}
+
+/// Per-goal resource estimate.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct GoalResourceEstimate {
+    pub goal_id: String,
+    pub predicted_cost: f64,
+    pub predicted_duration_secs: f64,
+    pub confidence: f64,
+    pub historical_samples: usize,
 }

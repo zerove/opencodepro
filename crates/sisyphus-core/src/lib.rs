@@ -331,3 +331,6 @@ impl KernelBuilder {
 mod kernel;
 #[allow(unused_imports)]
 pub use kernel::*;
+
+#[cfg(test)]
+mod tests;

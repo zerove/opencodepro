@@ -1,10 +1,162 @@
 //! Remaining lib-level tests (non-DAG).
 
 use super::*;
-use sisyphus_types::{
-    NodeKind, NodeOutput, SOPGraphConfig, SOPNodeConfig,
-};
+use sisyphus_types::{NodeKind, NodeOutput, SOPGraphConfig, SOPNodeConfig};
 use std::collections::HashMap;
+use tokio::sync::mpsc;
+
+// ---------------------------------------------------------------------------
+// Shared mocks
+// ---------------------------------------------------------------------------
+
+struct MockToolExecutor;
+#[async_trait::async_trait]
+impl ToolExecutor for MockToolExecutor {
+    async fn execute(
+        &self,
+        _tool_id: &str,
+        _args: Vec<u8>,
+        _fuel_limit: u64,
+    ) -> Result<Vec<u8>, sisyphus_types::TypesError> {
+        Ok(b"mock".to_vec())
+    }
+}
+
+struct MockTestExecutor;
+#[async_trait::async_trait]
+impl sisyphus_types::TestExecutor for MockTestExecutor {
+    async fn run_test(
+        &self,
+        _command: &str,
+        _workdir: Option<&str>,
+    ) -> Result<sisyphus_types::TestResult, sisyphus_types::TypesError> {
+        Ok(sisyphus_types::TestResult {
+            success: true,
+            stdout: "Mock Success".into(),
+            stderr: "".into(),
+            exit_code: 0,
+            duration_ms: 10,
+            error_summary: None,
+        })
+    }
+}
+
+struct MockConsensus;
+#[async_trait::async_trait]
+impl Consensus for MockConsensus {
+    async fn is_leader(&self) -> bool {
+        true
+    }
+    async fn get_leader(&self) -> String {
+        "mock-leader".into()
+    }
+    async fn propose(
+        &self,
+        _key: &str,
+        _value: serde_json::Value,
+    ) -> Result<(), sisyphus_types::TypesError> {
+        Ok(())
+    }
+}
+
+struct MockLogicalSimulator;
+#[async_trait::async_trait]
+impl sisyphus_intel::simulation::LogicalSimulator for MockLogicalSimulator {
+    async fn simulate_logic(
+        &self,
+        _graph: Arc<SOPGraph>,
+        _context: &ExecutionContext,
+        _sop_id: &str,
+        _goal_text: Option<&str>,
+    ) -> Result<sisyphus_intel::simulation::LogicalSimulationResult, sisyphus_types::IntelError>
+    {
+        Ok(sisyphus_intel::simulation::LogicalSimulationResult {
+            is_valid: true,
+            flaws: vec![],
+            predicted_path: vec!["mock".to_string()],
+            confidence: 1.0,
+        })
+    }
+}
+
+struct MockReflector;
+#[async_trait::async_trait]
+impl sisyphus_intel::reflect::Reflector for MockReflector {
+    async fn reflect(
+        &self,
+        _trace: &str,
+        _predicted: &sisyphus_intel::SimulationResult,
+        _experiences: Option<&[sisyphus_types::experience::ExperienceTuple]>,
+    ) -> Result<sisyphus_intel::reflect::ReflectionReport, sisyphus_types::IntelError> {
+        Ok(sisyphus_intel::reflect::ReflectionReport {
+            original_sop_id: "mock".into(),
+            deviation_score: 0.0,
+            suggested_improvements: vec![],
+            evolved_sop_structure: None,
+            records: vec![],
+        })
+    }
+}
+
+struct MockEvolver;
+#[async_trait::async_trait]
+impl sisyphus_intel::reflect::SOPEvolver for MockEvolver {
+    async fn evolve(
+        &self,
+        graph: Arc<SOPGraph>,
+        _report: &sisyphus_intel::reflect::ReflectionReport,
+        _prediction: &sisyphus_intel::SimulationResult,
+        _insights: Option<&str>,
+    ) -> Result<Arc<SOPGraph>, sisyphus_types::IntelError> {
+        Ok(graph)
+    }
+}
+
+struct MockExperienceBank;
+#[async_trait::async_trait]
+impl sisyphus_types::experience::ExperienceBank for MockExperienceBank {
+    async fn record(
+        &self,
+        _exp: sisyphus_types::experience::ExperienceTuple,
+    ) -> Result<(), sisyphus_types::TypesError> {
+        Ok(())
+    }
+    async fn query_similar(
+        &self,
+        _query: sisyphus_types::experience::ExperienceQuery,
+    ) -> Result<Vec<sisyphus_types::experience::ExperienceTuple>, sisyphus_types::TypesError> {
+        Ok(vec![])
+    }
+}
+
+/// Build a test `Executor` with mock dependencies.
+fn build_executor() -> Executor {
+    let llm: Arc<dyn sisyphus_tools_llm::LlmClient> = Arc::new(sisyphus_tools_llm::DummyLlmClient);
+    let knowledge = Arc::new(sisyphus_knowledge::AssetManager::new(
+        std::path::PathBuf::from(".omo/test_knowledge"),
+    ));
+    Executor::new(
+        Arc::new(MockTestExecutor),
+        Arc::new(crate::intervention_manager::InterventionManager::new()),
+        Arc::new(crate::internalization_manager::InternalizationManager::new(
+            llm, knowledge,
+        )),
+        None,
+    )
+}
+
+fn make_sop_graph(config: &SOPGraphConfig) -> Arc<SOPGraph> {
+    SOPGraph::from_config(
+        config,
+        Arc::new(MockToolExecutor),
+        Arc::new(MockTestExecutor),
+    )
+    .expect("graph from config")
+}
+
+// ---------------------------------------------------------------------------
+// CoreError display tests
+// ---------------------------------------------------------------------------
 
 #[test]
 fn test_core_error_display() {
@@ -61,37 +213,13 @@ fn test_core_error_from_string() {
     assert_eq!(s, "SOPGraph contains cycles");
 }
 
-struct MockToolExecutor;
-#[async_trait::async_trait]
-impl ToolExecutor for MockToolExecutor {
-    async fn execute(
-        &self,
-        _tool_id: &str,
-        _args: Vec<u8>,
-        _fuel_limit: u64,
-    ) -> Result<Vec<u8>, sisyphus_types::TypesError> {
-        Ok(b"mock".to_vec())
-    }
-}
-
-struct MockTestExecutor;
-#[async_trait::async_trait]
-impl sisyphus_types::TestExecutor for MockTestExecutor {
-    async fn run_test(&self, _command: &str, _workdir: Option<&str>) -> Result<sisyphus_types::TestResult, sisyphus_types::TypesError> {
-        Ok(sisyphus_types::TestResult {
-            success: true,
-            stdout: "Mock Success".into(),
-            stderr: "".into(),
-            exit_code: 0,
-            duration_ms: 10,
-            error_summary: None,
-        })
-    }
-}
+// ---------------------------------------------------------------------------
+// Executor tests
+// ---------------------------------------------------------------------------
 
 #[tokio::test]
 async fn test_executor_execute_cycle() {
-    let executor = Executor::new();
+    let executor = build_executor();
 
     // Create a config with a cycle: Node 0 -> Node 1 -> Node 0
     let config = SOPGraphConfig {
@@ -114,9 +242,13 @@ async fn test_executor_execute_cycle() {
         edges: vec![(0, 1), (1, 0)],
     };
 
-    let graph = SOPGraph::from_config(&config, Arc::new(MockToolExecutor), Arc::new(MockTestExecutor)).unwrap();
+    let graph = make_sop_graph(&config);
     let res = executor
-        .execute(&graph, petgraph::graph::NodeIndex::new(0))
+        .execute(
+            graph,
+            petgraph::graph::NodeIndex::new(0),
+            Arc::new(MockToolExecutor),
+        )
         .await;
 
     assert!(matches!(res, Err(CoreError::CycleDetected)));
@@ -131,6 +263,8 @@ fn test_struct_creation() {
             path_id: "p1".into(),
             success_probability: 0.8,
             estimated_cost: 100u64,
+            predicted_stability: 1.0,
+            predicted_effort: 50,
             predicted_outcome: "ok".into(),
         },
         deviation_score: 0.1,
@@ -146,6 +280,7 @@ fn test_struct_creation() {
         converged: true,
         final_deviation: 0.1,
         history: vec![iter],
+        traces: vec![],
     };
     assert_eq!(report.iterations, 1);
     assert!(report.converged);
@@ -169,7 +304,7 @@ fn test_struct_creation() {
 
 #[tokio::test]
 async fn test_executor_execute_with_context() {
-    let executor = Executor::new();
+    let executor = build_executor();
 
     // Simple DAG: n0 -> n1
     let config = SOPGraphConfig {
@@ -192,11 +327,20 @@ async fn test_executor_execute_with_context() {
         edges: vec![(0, 1)],
     };
 
-    let graph = SOPGraph::from_config(&config, Arc::new(MockToolExecutor), Arc::new(MockTestExecutor)).unwrap();
+    let graph = make_sop_graph(&config);
     let (tx, mut rx) = mpsc::unbounded_channel();
 
     let res = executor
-        .execute_with_context(&graph, petgraph::graph::NodeIndex::new(0), None, Some(tx))
+        .execute_with_context(
+            graph,
+            petgraph::graph::NodeIndex::new(0),
+            None,
+            Some(tx),
+            Arc::new(MockToolExecutor),
+            None,
+            None,
+            None,
+        )
         .await;
 
     assert!(res.is_ok());
@@ -229,7 +373,7 @@ async fn test_executor_execute_with_context() {
 
 #[tokio::test]
 async fn test_executor_diamond_dag() {
-    let executor = Executor::new();
+    let executor = build_executor();
 
     // Diamond: n0 -> [n1, n2] -> n3
     let config = SOPGraphConfig {
@@ -266,9 +410,13 @@ async fn test_executor_diamond_dag() {
         edges: vec![(0, 1), (0, 2), (1, 3), (2, 3)],
     };
 
-    let graph = SOPGraph::from_config(&config, Arc::new(MockToolExecutor), Arc::new(MockTestExecutor)).unwrap();
+    let graph = make_sop_graph(&config);
     let res = executor
-        .execute(&graph, petgraph::graph::NodeIndex::new(0))
+        .execute(
+            graph,
+            petgraph::graph::NodeIndex::new(0),
+            Arc::new(MockToolExecutor),
+        )
         .await;
     assert!(res.is_ok());
     let ctx = res.unwrap();
@@ -280,7 +428,7 @@ async fn test_executor_diamond_dag() {
 
 #[tokio::test]
 async fn test_executor_node_failure_stored_as_value() {
-    let executor = Executor::new();
+    let executor = build_executor();
 
     // Mock executor that fails on n0
     struct FailOnFirst;
@@ -293,7 +441,10 @@ async fn test_executor_node_failure_stored_as_value() {
             _fuel_limit: u64,
         ) -> Result<Vec<u8>, sisyphus_types::TypesError> {
             if tool_id == "fail" {
-                Err(sisyphus_types::TypesError::ToolExecutionError { tool_id: tool_id.to_string(), details: "intentional failure".into() })
+                Err(sisyphus_types::TypesError::ToolExecutionError {
+                    tool_id: tool_id.to_string(),
+                    details: "intentional failure".into(),
+                })
             } else {
                 Ok(b"ok".to_vec())
             }
@@ -320,11 +471,21 @@ async fn test_executor_node_failure_stored_as_value() {
         edges: vec![(0, 1)],
     };
 
-    let graph = SOPGraph::from_config(&config, Arc::new(FailOnFirst), Arc::new(MockTestExecutor)).unwrap();
+    let graph = SOPGraph::from_config(&config, Arc::new(FailOnFirst), Arc::new(MockTestExecutor))
+        .expect("graph from config");
     let (tx, _rx) = mpsc::unbounded_channel();
 
     let res = executor
-        .execute_with_context(&graph, petgraph::graph::NodeIndex::new(0), None, Some(tx))
+        .execute_with_context(
+            graph,
+            petgraph::graph::NodeIndex::new(0),
+            None,
+            Some(tx),
+            Arc::new(FailOnFirst),
+            None,
+            None,
+            None,
+        )
         .await;
 
     assert!(res.is_ok());
@@ -334,35 +495,39 @@ async fn test_executor_node_failure_stored_as_value() {
     let n0_out = ctx.get_result("n0").unwrap();
     assert_eq!(
         n0_out.0,
-        serde_json::Value::String(
+        Arc::new(serde_json::Value::String(
             sisyphus_types::TypesError::ToolExecutionError {
                 tool_id: "fail".to_string(),
                 details: "intentional failure".to_string(),
             }
             .to_string()
-        )
+        ))
     );
 
     // n1 still executes because the executor continues after failures
     let n1_out = ctx.get_result("n1").unwrap();
-    assert_eq!(n1_out.0, serde_json::Value::String("ok".into()));
+    assert_eq!(n1_out.0, Arc::new(serde_json::Value::String("ok".into())));
 }
 
 #[tokio::test]
 async fn test_executor_empty_graph() {
-    let executor = Executor::new();
-    let config = SOPGraphConfig {
-        nodes: vec![],
-        edges: vec![],
-    };
-    let graph = SOPGraph::from_config(&config, Arc::new(MockToolExecutor), Arc::new(MockTestExecutor)).unwrap();
+    let executor = build_executor();
+    let graph: Arc<SOPGraph> = Arc::new(SOPGraph::new());
     let res = executor
-        .execute(&graph, petgraph::graph::NodeIndex::new(0))
+        .execute(
+            graph,
+            petgraph::graph::NodeIndex::new(0),
+            Arc::new(MockToolExecutor),
+        )
         .await;
     assert!(res.is_ok());
     let ctx = res.unwrap();
     assert!(ctx.get_result("nonexistent").is_none());
 }
+
+// ---------------------------------------------------------------------------
+// Kernel save/load tests
+// ---------------------------------------------------------------------------
 
 async fn build_test_kernel() -> SisyphusKernel {
     let state_store = Arc::new(
@@ -370,19 +535,53 @@ async fn build_test_kernel() -> SisyphusKernel {
             .await
             .expect("in-memory MfsStore"),
     );
+    let pool = sqlx::SqlitePool::connect("sqlite::memory:")
+        .await
+        .expect("sqlite pool");
     let tool_executor: Arc<dyn ToolExecutor> = Arc::new(MockToolExecutor);
 
     let intel = Arc::new(sisyphus_intel::SisyphusIntel::new(
         Arc::new(sisyphus_intel::MonteCarloSimulator::new(1)),
+        Arc::new(MockLogicalSimulator),
         Arc::new(sisyphus_intel::StandardReflector),
-        Arc::new(sisyphus_intel::TopologicalSOPEvolver::new()),
+        Arc::new(sisyphus_intel::StandardEvolver::new()),
     ));
 
     let synthesizer: Arc<dyn sisyphus_intel::FlowSynthesizer> = Arc::new(
         sisyphus_intel::GoalDrivenSynthesizer::new(tool_executor.clone()),
     );
 
-    SisyphusKernel::new(state_store, tool_executor, intel, Arc::new(sisyphus_tools_llm::DummyLlmClient), synthesizer)
+    let llm: Arc<dyn sisyphus_tools_llm::LlmClient> = Arc::new(sisyphus_tools_llm::DummyLlmClient);
+
+    SisyphusKernel::new(
+        state_store,
+        Arc::new(
+            sisyphus_mem::SopSqlStore::new(pool.clone())
+                .await
+                .expect("sop store"),
+        ),
+        Arc::new(
+            sisyphus_mem::VectorMemoryStore::new(pool.clone())
+                .await
+                .expect("vector store"),
+        ),
+        Arc::new(MockExperienceBank),
+        tool_executor,
+        intel,
+        llm.clone(),
+        llm,
+        synthesizer,
+        Arc::new(parking_lot::Mutex::new(
+            sisyphus_tools_llm_tools::meta_learner::MetaLearner::new(".omo/test_meta"),
+        )),
+        Arc::new(MockConsensus),
+        Arc::new(
+            sisyphus_mem::RoadmapSqlStore::new(pool)
+                .await
+                .expect("roadmap store"),
+        ),
+        Arc::new(sisyphus_tools_llm::DummyEmbeddingClient),
+    )
 }
 
 #[tokio::test]
@@ -408,10 +607,13 @@ async fn test_kernel_save_load_roundtrip() {
         ],
         edges: vec![(0, 1)],
     };
-    let graph = SOPGraph::from_config(&config, Arc::new(MockToolExecutor), Arc::new(MockTestExecutor)).unwrap();
+    let graph = make_sop_graph(&config);
 
-    kernel.save_sop("test_roundtrip", "default", &graph).await.unwrap();
-    let loaded = kernel.load_sop("test_roundtrip").await.unwrap();
+    kernel
+        .save_sop("test_roundtrip", "default", &graph)
+        .await
+        .unwrap();
+    let loaded = kernel.load_sop("test_roundtrip", "default").await.unwrap();
 
     assert_eq!(loaded.graph.node_count(), 2);
     let names: Vec<String> = loaded
@@ -428,26 +630,29 @@ async fn test_kernel_save_load_roundtrip() {
 }
 
 #[tokio::test]
-async fn test_kernel_save_load_empty_graph() {
+async fn test_kernel_empty_graph_load_rejected() {
     let kernel = build_test_kernel().await;
 
-    let config = SOPGraphConfig {
-        nodes: vec![],
-        edges: vec![],
-    };
-    let graph = SOPGraph::from_config(&config, Arc::new(MockToolExecutor), Arc::new(MockTestExecutor)).unwrap();
+    let graph: Arc<SOPGraph> = Arc::new(SOPGraph::new());
 
-    kernel.save_sop("test_empty", "default", &graph).await.unwrap();
-    let loaded = kernel.load_sop("test_empty").await.unwrap();
+    // Serialization of an empty graph succeeds
+    kernel
+        .save_sop("test_empty", "default", &graph)
+        .await
+        .unwrap();
 
-    assert_eq!(loaded.graph.node_count(), 0);
+    // But loading it back fails because from_graph requires at least one node
+    assert!(
+        kernel.load_sop("test_empty", "default").await.is_err(),
+        "empty graph load should be rejected"
+    );
 }
 
 #[tokio::test]
 async fn test_kernel_load_nonexistent() {
     let kernel = build_test_kernel().await;
 
-    match kernel.load_sop("nonexistent_sop").await {
+    match kernel.load_sop("nonexistent_sop", "default").await {
         Err(e) => {
             assert!(
                 e.to_string().contains("nonexistent_sop"),
@@ -459,55 +664,45 @@ async fn test_kernel_load_nonexistent() {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Simulate phase verification: strategic manager evolution acceptance
+// ---------------------------------------------------------------------------
+
 #[tokio::test]
 async fn test_strategic_manager_evolution_verification() {
     use crate::strategic_manager::*;
-    use sisyphus_types::{SOPGraphConfig, SOPNodeConfig, NodeKind};
-    use std::sync::Arc;
-    use parking_lot::Mutex;
     use sisyphus_types::config::CognitiveLoopConfig;
+    use sisyphus_types::{NodeKind, SOPGraphConfig, SOPNodeConfig};
     use std::collections::VecDeque;
 
     struct MockSimulator {
-        probs: Mutex<VecDeque<f64>>,
+        probs: parking_lot::Mutex<VecDeque<f64>>,
     }
     impl MockSimulator {
         fn new(p: Vec<f64>) -> Self {
-            Self { probs: Mutex::new(VecDeque::from(p)) }
+            Self {
+                probs: parking_lot::Mutex::new(VecDeque::from(p)),
+            }
         }
     }
     #[async_trait::async_trait]
     impl sisyphus_intel::Simulator for MockSimulator {
-        async fn simulate(&self, _g: Arc<SOPGraph>, _ctx: &ExecutionContext, _id: &str, _sop_id: &str, _goal: Option<&str>) -> Result<sisyphus_intel::SimulationResult, sisyphus_types::IntelError> {
+        async fn simulate(
+            &self,
+            _g: Arc<SOPGraph>,
+            _ctx: &ExecutionContext,
+            _id: &str,
+            _sop_id: &str,
+            _goal: Option<&str>,
+        ) -> Result<sisyphus_intel::SimulationResult, sisyphus_types::IntelError> {
             let p = self.probs.lock().pop_front().unwrap_or(0.5);
             Ok(sisyphus_intel::SimulationResult {
                 path_id: "p1".into(),
                 success_probability: p,
                 estimated_cost: 100,
-                predicted_outcome: "ok".into(),
                 predicted_stability: 1.0,
-            })
-        }
-    }
-
-    struct MockEvolver;
-    #[async_trait::async_trait]
-    impl sisyphus_intel::SOPEvolver for MockEvolver {
-        async fn evolve(&self, g: Arc<SOPGraph>, _ref: &sisyphus_intel::reflect::ReflectionReport, _pred: &sisyphus_intel::SimulationResult, _ins: Option<&str>) -> Result<Arc<SOPGraph>, sisyphus_types::IntelError> {
-            Ok(Arc::clone(g))
-        }
-    }
-
-    struct MockReflector;
-    #[async_trait::async_trait]
-    impl sisyphus_intel::Reflector for MockReflector {
-        async fn reflect(&self, _trace: &str, _pred: &sisyphus_intel::SimulationResult, _experiences: Option<&[sisyphus_types::experience::ExperienceTuple]>) -> Result<sisyphus_intel::reflect::ReflectionReport, sisyphus_types::IntelError> {
-            Ok(sisyphus_intel::reflect::ReflectionReport {
-                deviation_score: 0.5, // Force evolution
-                suggested_improvements: vec!["improve".into()],
-                original_sop_id: "test".into(),
-                evolved_sop_structure: None,
-                records: vec![],
+                predicted_effort: 50,
+                predicted_outcome: "ok".into(),
             })
         }
     }
@@ -516,27 +711,89 @@ async fn test_strategic_manager_evolution_verification() {
         let simulator = Arc::new(MockSimulator::new(probs));
         let intel = Arc::new(sisyphus_intel::SisyphusIntel::new(
             simulator,
+            Arc::new(MockLogicalSimulator),
             Arc::new(MockReflector),
             Arc::new(MockEvolver),
         ));
-        
-        let intelligence_manager = Arc::new(IntelligenceManager::new(intel));
-        let execution_manager = Arc::new(ExecutionManager::new(Arc::new(sisyphus_tools_executor::ExecutorRouter::new())));
-        
+
+        let llm: Arc<dyn sisyphus_tools_llm::LlmClient> =
+            Arc::new(sisyphus_tools_llm::DummyLlmClient);
+        let synthesizer: Arc<dyn sisyphus_intel::FlowSynthesizer> = Arc::new(
+            sisyphus_intel::GoalDrivenSynthesizer::new(Arc::new(MockToolExecutor)),
+        );
+
+        let intelligence_manager =
+            Arc::new(IntelligenceManager::new(intel, synthesizer, llm.clone()));
+
+        let state_store = Arc::new(
+            sisyphus_mem::MfsStore::new("sqlite::memory:")
+                .await
+                .expect("in-memory MfsStore"),
+        );
+        let pool = sqlx::SqlitePool::connect("sqlite::memory:")
+            .await
+            .expect("sqlite pool");
+        let sop_store = Arc::new(
+            sisyphus_mem::SopSqlStore::new(pool.clone())
+                .await
+                .expect("sop store"),
+        );
+        let knowledge = Arc::new(sisyphus_knowledge::AssetManager::new(
+            std::path::PathBuf::from(".omo/test_knowledge"),
+        ));
+        let intervention = Arc::new(crate::intervention_manager::InterventionManager::new());
+        let internalization =
+            Arc::new(crate::internalization_manager::InternalizationManager::new(
+                llm.clone(),
+                knowledge.clone(),
+            ));
+        let execution_manager = Arc::new(ExecutionManager::new(
+            state_store.clone(),
+            sop_store,
+            Arc::new(MockToolExecutor),
+            Arc::new(MockTestExecutor),
+            intervention.clone(),
+            internalization.clone(),
+            None,
+        ));
+
         let config = CognitiveLoopConfig {
             max_iterations: 1,
             convergence_threshold: 0.01,
+            adaptive_depth: sisyphus_types::config::AdaptiveDepthConfig::default(),
         };
-        
+
+        let benchmark = Arc::new(parking_lot::Mutex::new(
+            sisyphus_tools_build::benchmark::ContinuousBenchmark::new(".omo/test_bench"),
+        ));
+        let meta_learner = Arc::new(parking_lot::Mutex::new(
+            sisyphus_tools_llm_tools::meta_learner::MetaLearner::new(".omo/test_meta"),
+        ));
+        let roadmap = Arc::new(sisyphus_roadmap::RoadmapManager::new(
+            state_store.clone(),
+            Arc::new(
+                sisyphus_mem::RoadmapSqlStore::new(pool)
+                    .await
+                    .expect("roadmap store"),
+            ),
+            Arc::new(sisyphus_roadmap::proposal_manager::ProposalManager::new(
+                state_store.clone(),
+            )),
+        ));
+
         StrategicManager::new(
             intelligence_manager,
             execution_manager,
             config,
             Arc::new(crate::AgentChannel::new()),
-            Arc::new(Mutex::new(crate::ContinuousBenchmark::default())),
-            Arc::new(Mutex::new(crate::MetaLearner::default())),
-            Arc::new(sisyphus_types::experience::InMemoryExperienceBank::new()),
-            Arc::new(sisyphus_roadmap::RoadmapManager::default()),
+            benchmark,
+            meta_learner,
+            Arc::new(MockExperienceBank),
+            knowledge,
+            roadmap,
+            intervention,
+            internalization,
+            None,
         )
     }
 
@@ -544,32 +801,75 @@ async fn test_strategic_manager_evolution_verification() {
     {
         let manager = setup_manager(vec![0.5, 0.8]).await;
         let config_sop = SOPGraphConfig {
-            nodes: vec![SOPNodeConfig { name: "n0".into(), kind: NodeKind::Wasm { tool_id: "t".into(), fuel_limit: 100 } }],
+            nodes: vec![SOPNodeConfig {
+                name: "n0".into(),
+                kind: NodeKind::Wasm {
+                    tool_id: "t".into(),
+                    fuel_limit: 100,
+                },
+            }],
             edges: vec![],
         };
-        let sop_graph = Arc::new(SOPGraph::from_config(&config_sop, Arc::new(MockToolExecutor), Arc::new(MockTestExecutor)).unwrap());
-        
-        let (res, report, evolved) = manager.run_cognitive_loop(
-            sop_graph, "test_acc", None, None, |_id, _e| {}, None
-        ).await.unwrap();
-        
-        assert!(evolved.is_some(), "Evolution should be accepted when probability increases");
+        let sop_graph = make_sop_graph(&config_sop);
+
+        let (res, report, evolved) = manager
+            .run_cognitive_loop(
+                sop_graph,
+                "test_acc",
+                None,
+                None,
+                None,
+                None,
+                |_id, _e| {},
+                None,
+                None,
+            )
+            .await
+            .unwrap();
+
+        assert!(
+            evolved.is_some(),
+            "Evolution should be accepted when probability increases"
+        );
         assert!(report.iterations >= 1);
+        assert!(!res.to_string().is_empty());
     }
 
     // Case 2: Evolution Rejected (0.5 -> 0.3)
     {
         let manager = setup_manager(vec![0.5, 0.3]).await;
         let config_sop = SOPGraphConfig {
-            nodes: vec![SOPNodeConfig { name: "n0".into(), kind: NodeKind::Wasm { tool_id: "t".into(), fuel_limit: 100 } }],
+            nodes: vec![SOPNodeConfig {
+                name: "n0".into(),
+                kind: NodeKind::Wasm {
+                    tool_id: "t".into(),
+                    fuel_limit: 100,
+                },
+            }],
             edges: vec![],
         };
-        let sop_graph = Arc::new(SOPGraph::from_config(&config_sop, Arc::new(MockToolExecutor), Arc::new(MockTestExecutor)).unwrap());
-        
-        let (res, report, evolved) = manager.run_cognitive_loop(
-            sop_graph, "test_rej", None, None, |_id, _e| {}, None
-        ).await.unwrap();
-        
-        assert!(evolved.is_none(), "Evolution should be rejected when probability decreases");
+        let sop_graph = make_sop_graph(&config_sop);
+
+        let (res, report, evolved) = manager
+            .run_cognitive_loop(
+                sop_graph,
+                "test_rej",
+                None,
+                None,
+                None,
+                None,
+                |_id, _e| {},
+                None,
+                None,
+            )
+            .await
+            .unwrap();
+
+        assert!(
+            evolved.is_none(),
+            "Evolution should be rejected when probability decreases"
+        );
+        assert!(report.iterations >= 1);
+        assert!(!res.to_string().is_empty());
     }
 }

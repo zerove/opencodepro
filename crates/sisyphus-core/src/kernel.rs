@@ -1170,7 +1170,7 @@ impl SisyphusKernel {
         total_goals: usize,
 
         completed_goals: usize,
-    ) -> sisyphus_roadmap::resource_optimizer::CostProjection {
+    ) -> sisyphus_roadmap::types::CostProjection {
         let outcomes = self
             .roadmap_manager
             .get_outcomes(project_id)

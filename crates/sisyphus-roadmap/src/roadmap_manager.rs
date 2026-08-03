@@ -1,9 +1,18 @@
-use crate::strategic_reflection::ProposalAction;
-use crate::RoadmapError;
+use crate::milestone_generator::MilestoneGenerator;
+use crate::resource_optimizer::ResourceOptimizer;
+use crate::strategic_reflection::{ProposalAction, StrategicReflection, StrategicReflector};
+use crate::{
+    Bottleneck, CostProjection, GoalResourceEstimate, ParallelizationOpportunity, RoadmapError,
+    RoadmapHealth,
+};
 use anyhow::Result;
 use sisyphus_mem::{roadmap_store::RoadmapSqlStore, MfsStore};
+use sisyphus_tools_llm::metis::LlmClient;
 use sisyphus_types::{GoalRef, Milestone, MilestoneStatus, Phase, Project, Roadmap};
 use std::sync::Arc;
+use std::time::Duration;
+use tokio::time::interval;
+use tracing::{error, info, warn};
 
 // ---------------------------------------------------------------------------
 // RoadmapManager
@@ -31,6 +40,11 @@ impl RoadmapManager {
             sql_store,
             proposal_manager,
         }
+    }
+
+    /// Get a reference to the proposal manager.
+    pub fn proposal_manager(&self) -> &Arc<crate::proposal_manager::ProposalManager> {
+        &self.proposal_manager
     }
 
     // ── Project CRUD ────────────────────────────────────────────────
@@ -488,5 +502,327 @@ impl RoadmapManager {
             }
         }
         Ok(migrated_count)
+    }
+}
+
+// ── Governance Loop (Automated Strategic Reflection) ────────────────
+
+/// Configuration for the automated governance loop.
+#[derive(Clone)]
+pub struct GovernanceLoopConfig {
+    /// Interval between governance loop runs.
+    pub interval: Duration,
+    /// Minimum confidence threshold for auto-proposing pivots.
+    pub min_confidence: f64,
+    /// Whether to auto-submit proposals (vs just logging).
+    pub auto_submit: bool,
+    /// LLM client for strategic reflection.
+    pub llm: Arc<dyn LlmClient>,
+}
+
+impl std::fmt::Debug for GovernanceLoopConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("GovernanceLoopConfig")
+            .field("interval", &self.interval)
+            .field("min_confidence", &self.min_confidence)
+            .field("auto_submit", &self.auto_submit)
+            .field("llm", &"<dyn LlmClient>")
+            .finish()
+    }
+}
+
+/// Default configuration requires an LLM client to be provided.
+impl Default for GovernanceLoopConfig {
+    fn default() -> Self {
+        Self {
+            interval: Duration::from_secs(3600), // 1 hour default
+            min_confidence: 0.6,
+            auto_submit: false, // Require human approval by default
+            llm: Arc::new(sisyphus_tools_llm::metis::DummyLlmClient),
+        }
+    }
+}
+
+/// Result of a single project's governance iteration.
+#[derive(Debug)]
+pub struct SingleProjectGovernanceResult {
+    pub health: RoadmapHealth,
+    pub reflection: StrategicReflection,
+    pub proposal_submitted: bool,
+    pub proposal_id: Option<String>,
+    pub refinements: Vec<crate::milestone_generator::RefinementSuggestion>,
+}
+
+/// Result of governance iteration for one project (including potential errors).
+#[derive(Debug)]
+pub struct GovernanceResult {
+    pub project_id: String,
+    pub result: Result<SingleProjectGovernanceResult, RoadmapError>,
+}
+
+/// Handle to control a running governance loop.
+#[derive(Debug)]
+pub struct GovernanceLoopHandle {
+    stop_tx: Option<tokio::sync::oneshot::Sender<()>>,
+    task_handle: Option<tokio::task::JoinHandle<()>>,
+}
+
+impl GovernanceLoopHandle {
+    /// Stop the governance loop.
+    pub async fn stop(&mut self) {
+        if let Some(tx) = self.stop_tx.take() {
+            let _ = tx.send(());
+        }
+        if let Some(handle) = self.task_handle.take() {
+            let _ = handle.await;
+        }
+    }
+}
+
+impl RoadmapManager {
+    /// Run a single governance loop iteration for all projects.
+    ///
+    /// For each project:
+    /// 1. Evaluate health
+    /// 2. Run strategic reflection
+    /// 3. If confidence >= threshold and there are recommendations, propose pivot
+    /// 4. Log results
+    pub async fn run_governance_iteration(
+        &self,
+        config: &GovernanceLoopConfig,
+    ) -> Result<Vec<GovernanceResult>, RoadmapError> {
+        let project_ids = self.list_project_ids().await?;
+        let mut results = Vec::with_capacity(project_ids.len());
+
+        let reflector = StrategicReflector::new(config.llm.clone());
+        let generator = MilestoneGenerator::new(config.llm.clone());
+
+        for project_id in project_ids {
+            let result = self
+                .run_single_project_governance(&project_id, &reflector, &generator, config)
+                .await;
+            results.push(GovernanceResult {
+                project_id: project_id.clone(),
+                result,
+            });
+        }
+
+        Ok(results)
+    }
+
+    /// Run governance loop for a single project.
+    async fn run_single_project_governance(
+        &self,
+        project_id: &str,
+        reflector: &StrategicReflector,
+        generator: &MilestoneGenerator,
+        config: &GovernanceLoopConfig,
+    ) -> Result<SingleProjectGovernanceResult, RoadmapError> {
+        info!(project_id, "Starting governance iteration");
+
+        // 1. Evaluate health
+        let health = self.evaluate_health(project_id).await?;
+
+        // 2. Run strategic reflection
+        let reflection = match reflector.reflect(self, project_id).await {
+            Ok(r) => r,
+            Err(e) => {
+                warn!(project_id, error = %e, "Strategic reflection failed");
+                return Err(e);
+            }
+        };
+
+        info!(
+            project_id,
+            healthy = health.healthy,
+            trajectory = %reflection.trajectory,
+            confidence = reflection.confidence,
+            "Strategic reflection completed"
+        );
+
+        // 3. Check if we should propose a pivot
+        let mut proposal_submitted = false;
+        let mut proposal_id = None;
+        let mut refinements = Vec::new();
+
+        if reflection.confidence >= config.min_confidence && !reflection.recommendations.is_empty()
+        {
+            // Try to create a proposal from the top recommendation
+            if let Some(proposal) = reflector.propose_pivot(&reflection, project_id) {
+                if config.auto_submit {
+                    self.proposal_manager
+                        .submit_proposal(project_id, proposal.clone())
+                        .await?;
+                    proposal_submitted = true;
+                    proposal_id = Some(proposal.proposal_id.clone());
+                    info!(project_id, proposal_id = %proposal.proposal_id, "Governance proposal auto-submitted");
+                } else {
+                    info!(project_id, proposal_id = %proposal.proposal_id, "Governance proposal generated (pending manual approval)");
+                    proposal_id = Some(proposal.proposal_id);
+                }
+            }
+        }
+
+        // 4. If health shows issues, also try to get milestone refinements
+        if !health.healthy {
+            for ms in &health.blocked_milestones {
+                if let Ok(suggestions) = generator
+                    .propose_refinements(
+                        self,
+                        project_id,
+                        ms,
+                        "Milestone is blocked, needs restructuring",
+                    )
+                    .await
+                {
+                    if !suggestions.is_empty() {
+                        refinements.extend(suggestions);
+                    }
+                }
+            }
+            for suggestion in &health.suggestions {
+                if let Some(goal_id) = &suggestion.target_goal_id {
+                    // Find the milestone for this goal
+                    if let Ok(Some(project)) = self.get_project(project_id).await {
+                        for ms in &project.roadmap.milestones {
+                            for ph in &ms.phases {
+                                if ph.goals.iter().any(|g| &g.goal_id == goal_id) {
+                                    if let Ok(suggestions) = generator
+                                        .propose_refinements(
+                                            self,
+                                            project_id,
+                                            &ms.id,
+                                            &suggestion.problem,
+                                        )
+                                        .await
+                                    {
+                                        refinements.extend(suggestions);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 5. Apply automatic blocking if there are recent failures
+        if health.recent_failures > 0 {
+            let _updated_health = self.apply_blocking(project_id).await?;
+        }
+
+        Ok(SingleProjectGovernanceResult {
+            health,
+            reflection,
+            proposal_submitted,
+            proposal_id,
+            refinements,
+        })
+    }
+
+    /// Start the automated governance loop as a background task.
+    ///
+    /// This spawns a Tokio task that runs the governance loop at the configured interval.
+    /// Returns a handle that can be used to stop the loop.
+    pub async fn start_governance_loop(
+        self: Arc<Self>,
+        config: GovernanceLoopConfig,
+    ) -> GovernanceLoopHandle {
+        let (tx, mut rx) = tokio::sync::oneshot::channel::<()>();
+        let manager = self.clone();
+
+        let handle = tokio::spawn(async move {
+            let mut interval = interval(config.interval);
+            interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+
+            loop {
+                tokio::select! {
+                    _ = interval.tick() => {
+                        info!("Running scheduled governance loop");
+                        match manager.run_governance_iteration(&config).await {
+                            Ok(results) => {
+                                for result in results {
+                                    match &result.result {
+                                        Ok(gov_result) => {
+                                            info!(
+                                                project_id = %result.project_id,
+                                                healthy = gov_result.health.healthy,
+                                                proposal_submitted = gov_result.proposal_submitted,
+                                                refinements = gov_result.refinements.len(),
+                                                "Governance iteration completed"
+                                            );
+                                        }
+                                        Err(e) => {
+                                            error!(
+                                                project_id = %result.project_id,
+                                                error = %e,
+                                                "Governance iteration failed"
+                                            );
+                                        }
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                error!(error = %e, "Governance loop iteration failed globally");
+                            }
+                        }
+                    }
+                    _ = &mut rx => {
+                        info!("Governance loop stopped by signal");
+                        break;
+                    }
+                }
+            }
+        });
+
+        GovernanceLoopHandle {
+            stop_tx: Some(tx),
+            task_handle: Some(handle),
+        }
+    }
+
+    // ── Resource Optimisation ────────────────────────────────────────
+
+    /// Project remaining costs and duration based on historical execution outcomes.
+    pub async fn project_costs(
+        &self,
+        project_id: &str,
+        total_goals: usize,
+        completed_goals: usize,
+    ) -> Result<CostProjection, RoadmapError> {
+        let outcomes = self.get_outcomes(project_id).await?;
+        let optimizer = ResourceOptimizer::new();
+        Ok(optimizer.project_costs(&outcomes, total_goals, completed_goals))
+    }
+
+    /// Identify bottlenecks in the execution pipeline for a project.
+    pub async fn find_bottlenecks(
+        &self,
+        project_id: &str,
+    ) -> Result<Vec<Bottleneck>, RoadmapError> {
+        let outcomes = self.get_outcomes(project_id).await?;
+        let optimizer = ResourceOptimizer::new();
+        Ok(optimizer.find_bottlenecks(&outcomes))
+    }
+
+    /// Suggest goals that could be executed in parallel.
+    pub async fn suggest_parallel_execution(
+        &self,
+        project_id: &str,
+    ) -> Result<Vec<ParallelizationOpportunity>, RoadmapError> {
+        let outcomes = self.get_outcomes(project_id).await?;
+        let optimizer = ResourceOptimizer::new();
+        Ok(optimizer.suggest_parallel_execution(&outcomes))
+    }
+
+    /// Generate per-goal resource estimates for a list of goal IDs.
+    pub async fn estimate_goal_resources(
+        &self,
+        project_id: &str,
+        goal_ids: &[String],
+    ) -> Result<Vec<GoalResourceEstimate>, RoadmapError> {
+        let outcomes = self.get_outcomes(project_id).await?;
+        let optimizer = ResourceOptimizer::new();
+        Ok(optimizer.estimate_goal_resources(&outcomes, goal_ids))
     }
 }

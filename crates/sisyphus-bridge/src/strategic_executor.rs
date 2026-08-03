@@ -5,7 +5,7 @@ use sisyphus_core::SisyphusKernel;
 use sisyphus_mem::MfsStore;
 use sisyphus_roadmap::{proposal_manager::ProposalManager, ProgressReport, RoadmapManager};
 use sisyphus_tools_llm::LlmClient;
-use sisyphus_types::{MilestoneStatus, ToolExecutor, TypesError};
+use sisyphus_types::{ToolExecutor, TypesError};
 use tracing::info;
 
 pub(crate) struct StrategicExecutor {
@@ -137,36 +137,39 @@ impl ToolExecutor for StrategicExecutor {
             );
 
             let synth_id = format!("strategic_{}", goal.goal_id);
+
+            // Extract milestone and phase IDs
+            let (ms_id, ph_id) = if let Ok(Some(project)) = manager.get_project(&project_id).await {
+                project
+                    .roadmap
+                    .milestones
+                    .iter()
+                    .flat_map(|ms| {
+                        ms.phases
+                            .iter()
+                            .map(move |ph| (ms.id.as_str(), ph.id.as_str(), &ph.goals))
+                    })
+                    .filter(|(_, _, goals)| goals.iter().any(|g| g.goal_id == goal.goal_id))
+                    .map(|(ms_id, ph_id, _)| (ms_id.to_string(), ph_id.to_string()))
+                    .next()
+                    .unwrap_or_default()
+            } else {
+                (String::new(), String::new())
+            };
+
             match kernel
-                .execute_goal(&enriched_goal, &synth_id, project_id.as_str(), None, None)
+                .execute_and_record(
+                    &enriched_goal,
+                    &synth_id,
+                    project_id.as_str(),
+                    &ms_id,
+                    &ph_id,
+                    &goal.goal_id,
+                    None,
+                )
                 .await
             {
-                Ok((result, report)) => {
-                    if let Ok(Some(project)) = manager.get_project(&project_id).await {
-                        let (ms_id, ph_id) = project
-                            .roadmap
-                            .milestones
-                            .iter()
-                            .flat_map(|ms| {
-                                ms.phases
-                                    .iter()
-                                    .map(move |ph| (ms.id.as_str(), ph.id.as_str(), &ph.goals))
-                            })
-                            .filter(|(_, _, goals)| goals.iter().any(|g| g.goal_id == goal.goal_id))
-                            .map(|(ms_id, ph_id, _)| (ms_id.to_string(), ph_id.to_string()))
-                            .next()
-                            .unwrap_or_default();
-                        let _ = manager
-                            .update_goal_status(
-                                &project_id,
-                                &ms_id,
-                                &ph_id,
-                                &goal.goal_id,
-                                MilestoneStatus::Completed,
-                            )
-                            .await;
-                    }
-
+                Ok((result, report, _health)) => {
                     let reflection = manager
                         .generate_progress_report(&project_id)
                         .await
@@ -247,53 +250,39 @@ impl ToolExecutor for StrategicExecutor {
             );
 
             let synth_id = format!("strategic_{}", goal.goal_id);
+
+            // Extract milestone and phase IDs
+            let (ms_id, ph_id) = if let Ok(Some(project)) = manager.get_project(&project_id).await {
+                project
+                    .roadmap
+                    .milestones
+                    .iter()
+                    .flat_map(|ms| {
+                        ms.phases
+                            .iter()
+                            .map(move |ph| (ms.id.as_str(), ph.id.as_str(), &ph.goals))
+                    })
+                    .filter(|(_, _, goals)| goals.iter().any(|g| g.goal_id == goal.goal_id))
+                    .map(|(ms_id, ph_id, _)| (ms_id.to_string(), ph_id.to_string()))
+                    .next()
+                    .unwrap_or_default()
+            } else {
+                (String::new(), String::new())
+            };
+
             match kernel
-                .execute_goal(&enriched_goal, &synth_id, project_id.as_str(), None, None)
+                .execute_and_record(
+                    &enriched_goal,
+                    &synth_id,
+                    project_id.as_str(),
+                    &ms_id,
+                    &ph_id,
+                    &goal.goal_id,
+                    None,
+                )
                 .await
             {
-                Ok((result, report)) => {
-                    if let Ok(Some(project)) = manager.get_project(&project_id).await {
-                        let (ms_id, ph_id) = project
-                            .roadmap
-                            .milestones
-                            .iter()
-                            .flat_map(|ms| {
-                                ms.phases
-                                    .iter()
-                                    .map(move |ph| (ms.id.as_str(), ph.id.as_str(), &ph.goals))
-                            })
-                            .filter(|(_, _, goals)| goals.iter().any(|g| g.goal_id == goal.goal_id))
-                            .map(|(ms_id, ph_id, _)| (ms_id.to_string(), ph_id.to_string()))
-                            .next()
-                            .unwrap_or_default();
-
-                        // Record outcome
-                        let outcome = sisyphus_roadmap::ExecutionOutcome {
-                            goal_id: goal.goal_id.clone(),
-                            project_id: project_id.clone(),
-                            milestone_id: ms_id.clone(),
-                            phase_id: ph_id.clone(),
-                            success: true,
-                            deviation_score: None,
-                            error: None,
-                            timestamp: std::time::SystemTime::now()
-                                .duration_since(std::time::UNIX_EPOCH)
-                                .unwrap_or_default()
-                                .as_secs(),
-                            actual_cost: 0.0,
-                            duration_secs: 0.0,
-                        };
-                        let _ = manager.record_outcome(&outcome).await;
-                        let _ = manager
-                            .update_goal_status(
-                                &project_id,
-                                &ms_id,
-                                &ph_id,
-                                &goal.goal_id,
-                                sisyphus_types::MilestoneStatus::Completed,
-                            )
-                            .await;
-                    }
+                Ok((result, report, _health)) => {
                     let duration = 0.0;
                     sisyphus_metrics::record_sop_execution(&synth_id, true, duration);
                     let output = serde_json::json!({

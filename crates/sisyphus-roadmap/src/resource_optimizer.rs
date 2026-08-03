@@ -6,55 +6,10 @@
 // on recorded execution outcomes without requiring LLM calls.
 // ---------------------------------------------------------------------------
 
-use crate::ExecutionOutcome;
-use serde::{Deserialize, Serialize};
+use crate::{
+    Bottleneck, CostProjection, ExecutionOutcome, GoalResourceEstimate, ParallelizationOpportunity,
+};
 use std::collections::HashMap;
-
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
-
-/// A cost projection for the remaining work in a project.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CostProjection {
-    pub total_goals: usize,
-    pub completed_goals: usize,
-    pub remaining_goals: usize,
-    pub avg_cost_per_goal: f64,
-    pub avg_duration_per_goal_secs: f64,
-    pub projected_remaining_cost: f64,
-    pub projected_remaining_duration_secs: f64,
-    pub confidence: f64,
-}
-
-/// A detected bottleneck in the execution pipeline.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Bottleneck {
-    pub goal_id: String,
-    pub description: String,
-    pub failure_count: usize,
-    pub avg_duration_secs: f64,
-    pub blocking_count: usize,
-    pub severity: String, // "low", "medium", "high"
-}
-
-/// An opportunity to execute goals in parallel.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ParallelizationOpportunity {
-    pub goal_ids: Vec<String>,
-    pub rationale: String,
-    pub estimated_time_savings_secs: f64,
-}
-
-/// Per-goal resource estimate.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GoalResourceEstimate {
-    pub goal_id: String,
-    pub predicted_cost: f64,
-    pub predicted_duration_secs: f64,
-    pub confidence: f64,
-    pub historical_samples: usize,
-}
 
 // ---------------------------------------------------------------------------
 // ResourceOptimizer
