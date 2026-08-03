@@ -2,6 +2,7 @@
 pub mod auth;
 pub mod bridge_service;
 pub mod consensus;
+pub mod grpc;
 pub mod grpc_exec;
 pub mod grpc_handlers;
 pub mod http;
