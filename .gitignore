@@ -3,7 +3,7 @@
 *.swo
 *~
 .DS_Store
-server.log
+*.log
 tmp/
 .omo/
 

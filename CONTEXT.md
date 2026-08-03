@@ -6,7 +6,7 @@ Sisyphus 是一个**认知计算引擎 (Cognitive Computation Engine)**，实现
 
 ## 🎯 当前状态
 
-- **Workspace**: 21 Rust crates + webui（`sisyphus-tools` 拆分为 10 个子 crate）
+- **Workspace**: 29 个成员（`crates/` 下 28 个 crate + `webui` + `evals`，`sisyphus-tools` 拆分为 10 个子 crate）
 - **测试基线**: **1272 个测试全绿**（lib + bin + doctests + 集成），0 失败 0 忽略（除需真实 LLM/网络的 4 个）
 - **核心能力**:
   - 认知循环 v1+v2（自适应深度控制、并行分支预测、运行时异常检测）

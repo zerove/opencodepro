@@ -1,17 +1,20 @@
 # Architecture Overview
 
-Sisyphus is organized as a **Rust workspace** with seven interdependent crates, each responsible for a distinct concern:
+Sisyphus is organized as a **Rust workspace** with 29 members (28 crates under `crates/` plus `webui` and `evals`), each responsible for a distinct concern:
 
 ```
 ┌─────────────────────────────────────────────────┐
-│                   sisyphus-bridge                 │
-│           HTTP/gRPC API · Entry Points            │
+│        sisyphus-bridge / sisyphus-api            │
+│      HTTP/gRPC/REST API · Entry Points           │
 ├─────────────────────────────────────────────────┤
 │                   sisyphus-core                   │
 │        Kernel · Orchestration · Cognitive Loop    │
 ├────────┬────────┬────────┬────────┬──────────────┤
 │  types  │  intel  │   mem   │ sandbox │  metrics   │
-│   datatypes │cognition│storage  │WASM run │ observability│
+│ datatypes│cognition│storage  │WASM run │ observability│
+├────────┼────────┼────────┼────────┼──────────────┤
+│ roadmap │knowledge│visual  │ tools-* │  cli / webui│
+│ planning│  assets │perception│ 10 crates │  clients    │
 └────────┴────────┴────────┴────────┴──────────────┘
 ```
 
@@ -20,18 +23,30 @@ Sisyphus is organized as a **Rust workspace** with seven interdependent crates, 
 ```mermaid
 graph TD
     bridge --> core
+    api --> bridge
+    api --> mem
     core --> types
     core --> intel
     core --> mem
     core --> sandbox
     core --> metrics
+    core --> roadmap
+    core --> knowledge
+    core --> tools
     intel --> types
     intel --> metrics
     mem --> types
     mem --> metrics
     sandbox --> types
     sandbox --> metrics
+    sandboxd --> sandbox
     metrics --> types
+    tools --> types
+    cli --> types
+    cli --> tools
+    webui --> bridge
+    webui --> types
+    sdk --> api
 ```
 
 ## Data Flow (Cognitive Cycle)

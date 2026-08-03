@@ -1,7 +1,7 @@
 # Sisyphus 项目知识库
 
-**生成时间:** 2026-07-01
-**技术栈:** Rust 工作区 (21 crates), async (tokio), gRPC (tonic), TUI (ratatui)
+**生成时间:** 2026-08-03
+**技术栈:** Rust 工作区 (29 成员), async (tokio), gRPC (tonic), TUI (ratatui)
 
 ## 概述
 
@@ -21,8 +21,6 @@ opencodepro/
 │   ├── sisyphus-metrics/     # 指标收集
 │   ├── sisyphus-sandbox/     # 沙箱执行 (wasmtime)
 │   ├── sisyphus-tests/       # 集成测试
-│   ├── sisyphus-roadmap/     # 路线图/规划
-│   ├── sisyphus-bridge-api/  # Bridge API 定义
 │   ├── sisyphus-tools-core/  # 工具核心: 错误类型、反馈
 │   ├── sisyphus-tools-agent/ # 工具: Agent 注册与委托
 │   ├── sisyphus-tools-build/ # 工具: 构建、测试、LSP
@@ -32,10 +30,20 @@ opencodepro/
 │   ├── sisyphus-tools-mcp/        # 工具: MCP 服务器集成
 │   ├── sisyphus-tools-scm/        # 工具: SCM (git) 操作
 │   ├── sisyphus-tools-session/    # 工具: 会话管理
-│   └── sisyphus-tools-system/     # 工具: 系统操作 (文件、bash、web)
+│   ├── sisyphus-tools-system/     # 工具: 系统操作 (文件、bash、web)
+│   ├── sisyphus-roadmap/     # 路线图/规划 (Project→Milestone→Phase→Goal)
+│   ├── sisyphus-api/         # REST API (axum + OpenAPI 3.1)
+│   ├── sisyphus-sdk/         # Rust SDK 客户端
+│   ├── sisyphus-knowledge/   # 知识图谱与认知资产管理
+│   ├── sisyphus-visual/      # 视觉感知与嵌入
+│   ├── sisyphus-wasm-sdk/    # WASM 工具 SDK (guest crate)
+│   ├── sisyphus-sandboxd/    # WASM 沙箱守护进程 (进程隔离)
+│   ├── sisyphus-tauri/       # Tauri 桌面应用 (已归档)
+│   └── sisyphus-bridge-api/  # Bridge API 定义
+├── webui/                   # Web 仪表盘 (axum + HTMX + SSE)
+├── evals/                   # 评测 (metis/momus/librarian/scribe/security)
 ├── book/                    # mdbook 文档
 ├── docs/                    # 技术文档, ADR, 对比
-├── evals/                   # 评测
 ├── .github/workflows/       # CI
 ├── config.example.toml      # 配置模板
 ├── deny.toml                # cargo-deny 配置
@@ -46,9 +54,15 @@ opencodepro/
 
 | 任务 | 位置 | 备注 |
 |------|----------|-------|
-| 认知循环核心逻辑 | `crates/sisyphus-core/src/` | DAG 执行、cognitive loop |
+| 认知循环核心逻辑 | `crates/sisyphus-core/src/` | DAG 执行、cognitive loop v1/v2 |
 | TUI 界面 | `crates/sisyphus-cli/src/tui/` | ratatui 组件 |
 | gRPC 服务 | `crates/sisyphus-bridge/src/` | tonic services |
+| REST API | `crates/sisyphus-bridge/src/http.rs` + `crates/sisyphus-api/` | axum + OpenAPI 3.1 |
+| Web 仪表盘 | `webui/` | axum + HTMX + SSE |
+| Rust SDK | `crates/sisyphus-sdk/` | REST 客户端 |
+| 知识管理 | `crates/sisyphus-knowledge/` | KnowledgeGraph, AssetManager |
+| 战略规划 | `crates/sisyphus-roadmap/` | RoadmapManager, 里程碑生成 |
+| 沙箱守护进程 | `crates/sisyphus-sandboxd/` | gRPC 通信、进程隔离 |
 | 共享配置/traits | `crates/sisyphus-types/src/` | Config, traits, errors |
 | 存储层 | `crates/sisyphus-mem/src/` | 持久化实现 |
 | 集成测试 | `crates/sisyphus-tests/` | 跨 crate 场景 |
@@ -57,7 +71,7 @@ opencodepro/
 | 工具: 构建/LSP | `crates/sisyphus-tools-build/` | 构建命令、测试运行、LSP |
 | 工具: 执行器 | `crates/sisyphus-tools-executor/` | 任务调度 |
 | 工具: LLM | `crates/sisyphus-tools-llm/` | LLM 客户端、provider |
-| 工具: LLM 高阶 | `crates/sisyphus-tools-llm-tools/` | Oracle, Momus |
+| 工具: LLM 高阶 | `crates/sisyphus-tools-llm-tools/` | Oracle, Momus, Metis, Librarian |
 | 工具: MCP | `crates/sisyphus-tools-mcp/` | MCP 服务器 |
 | 工具: SCM | `crates/sisyphus-tools-scm/` | git 操作 |
 | 工具: 会话 | `crates/sisyphus-tools-session/` | 会话管理 |

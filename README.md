@@ -6,23 +6,32 @@ A DAG-based cognitive execution engine with predict-execute-reflect-evolve loops
 
 ```
 sisyphus/
-├── crates/           # 21 Rust crates
+├── crates/           # 28 Rust crates
 │   ├── sisyphus-core/        # DAG execution, cognitive loop, SOP orchestration
 │   ├── sisyphus-cli/         # TUI client (ratatui + crossterm)
-│   ├── sisyphus-bridge/      # gRPC bridge service (tonic)
+│   ├── sisyphus-bridge/      # gRPC + REST bridge service (tonic + axum)
 │   ├── sisyphus-types/       # Shared types, Config, traits
-│   ├── sisyphus-mem/         # Persistence/storage
-│   ├── sisyphus-intel/       # Intelligence analysis
+│   ├── sisyphus-mem/         # Persistence/storage (SQLite/Postgres + vector)
+│   ├── sisyphus-intel/       # Intelligence analysis (simulation, reflection, evolution)
 │   ├── sisyphus-tools-*/     # Tool crates (agent, build, executor, llm, mcp, scm, session, system)
+│   ├── sisyphus-roadmap/     # Strategic planning (Project → Milestone → Phase → Goal)
+│   ├── sisyphus-api/         # REST API handlers (axum + OpenAPI 3.1)
+│   ├── sisyphus-sdk/         # Rust SDK client
+│   ├── sisyphus-knowledge/   # Knowledge graph & cognitive asset storage
+│   ├── sisyphus-visual/      # Visual perception & embedding
+│   ├── sisyphus-wasm-sdk/    # WASM tool SDK (guest crate)
+│   ├── sisyphus-sandboxd/    # WASM sandbox daemon (process isolation)
+│   ├── sisyphus-tests/       # Integration tests
 │   └── ...
 ├── webui/            # Web dashboard (axum + HTMX + SSE)
+├── evals/            # Agent capability evaluations
 ├── ide/              # IDE extensions
 │   ├── typescript-sdk/       # TypeScript client SDK
 │   ├── python-sdk/           # Python client SDK
 │   ├── go-sdk/               # Go client SDK
 │   ├── vscode/               # VS Code extension
 │   └── zed/                  # Zed extension
-├── desktop/tauri/    # Tauri desktop app
+├── desktop/tauri/    # Tauri desktop app (archived)
 └── book/             # Documentation (mdbook)
 ```
 
