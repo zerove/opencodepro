@@ -54,7 +54,10 @@ pub struct MySisyphusBridge {
     pub(crate) tool_registry: Arc<ToolRegistry>,
     pub(crate) team_orchestrator: Arc<TeamOrchestrator>,
     pub(crate) skill_registry: Arc<dyn SkillRegistry>,
+    pub(crate) skill_store: Arc<sisyphus_mem::skill_store::SkillStore>,
+    pub(crate) skill_market: Arc<sisyphus_mem::skill_market::SkillMarket>,
     pub(crate) workspace_manager: Arc<WorkspaceManager>,
+    pub(crate) experience_bank: Arc<sisyphus_mem::experience_bank::VectorExperienceBank>,
     pub(crate) skill_loader: Arc<SkillLoader>,
     pub(crate) llm_client: Arc<dyn LlmClient>,
     pub(crate) plugin_manager: Arc<dyn PluginManagerTrait>,
@@ -84,7 +87,10 @@ impl Clone for MySisyphusBridge {
             tool_registry: self.tool_registry.clone(),
             team_orchestrator: self.team_orchestrator.clone(),
             skill_registry: self.skill_registry.clone(),
+            skill_store: self.skill_store.clone(),
+            skill_market: self.skill_market.clone(),
             workspace_manager: self.workspace_manager.clone(),
+            experience_bank: self.experience_bank.clone(),
             skill_loader: self.skill_loader.clone(),
             llm_client: self.llm_client.clone(),
             plugin_manager: self.plugin_manager.clone(),
@@ -586,9 +592,17 @@ impl MySisyphusBridge {
         };
 
         let skill_registry = Arc::new(RemoteSkillRegistry::new(
-            registry_url,
+            registry_url.clone(),
             skill_store.clone(),
             router.clone(),
+        ));
+
+        // Skill market: multi-registry search / publish client.
+        let skill_market = Arc::new(sisyphus_mem::skill_market::SkillMarket::new(
+            sisyphus_mem::skill_market::SkillMarketConfig {
+                registries: vec![registry_url],
+                ..sisyphus_mem::skill_market::SkillMarketConfig::default()
+            },
         ));
 
         // ── Workspace Management Init ──────────────────────────────────────
@@ -612,7 +626,10 @@ impl MySisyphusBridge {
             tool_registry,
             team_orchestrator: Arc::new(team_orchestrator),
             skill_registry,
+            skill_store,
+            skill_market,
             workspace_manager,
+            experience_bank,
             skill_loader: Arc::new(loader),
             llm_client: llm_client_for_bridge,
             consensus,

@@ -417,6 +417,67 @@ impl MfsStore {
         Ok(())
     }
 
+    /// Update the project ownership of an experience.
+    /// Passing `None` makes the experience globally shared (visible to all projects).
+    pub async fn update_experience_project(
+        &self,
+        id: &str,
+        project_id: Option<&str>,
+    ) -> Result<bool> {
+        let result = sqlx::query("UPDATE experiences SET project_id = ? WHERE id = ?")
+            .bind(project_id)
+            .bind(id)
+            .execute(&self.l2)
+            .await
+            .context("Failed to update experience project")?;
+        Ok(result.rows_affected() > 0)
+    }
+
+    /// List experiences that are globally shared (no project ownership).
+    pub async fn list_shared_experiences(
+        &self,
+    ) -> Result<Vec<sisyphus_types::experience::ExperienceTuple>> {
+        let rows = sqlx::query_as::<
+            _,
+            (
+                String,
+                String,
+                Option<String>,
+                Option<String>,
+                bool,
+                f64,
+                i64,
+                i64,
+            ),
+        >(
+            "SELECT context_text, context_hash, action_id, project_id, outcome_success, deviation_score, cost, timestamp FROM experiences WHERE project_id IS NULL ORDER BY timestamp DESC",
+        )
+        .fetch_all(&self.l2)
+        .await
+        .context("Failed to list shared experiences")?;
+
+        Ok(rows
+            .into_iter()
+            .map(
+                |(ctx_text, ctx_hash, action_id, proj_id, success, dev, cost, ts)| {
+                    sisyphus_types::experience::ExperienceTuple {
+                        context_text: ctx_text,
+                        context_hash: ctx_hash,
+                        action_id: action_id.unwrap_or_else(|| "unknown".to_string()),
+                        project_id: proj_id,
+                        outcome_success: success,
+                        deviation_score: dev,
+                        cost: cost as u64,
+                        timestamp: ts as u64,
+                        embedding: None,
+                        visual_embedding: None,
+                        insight: None,
+                    }
+                },
+            )
+            .collect())
+    }
+
     pub async fn get_experience(
         &self,
         id: &str,

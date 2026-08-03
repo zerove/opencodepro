@@ -45,19 +45,27 @@
     - 实现模拟执行引擎。
     - 能够拦截并修正 $\ge 20\%$ 的逻辑错误 SOP。
 
-### 2.2 分布式技能市场 (Skill Ecosystem)
+### 2.2 分布式技能市场 (Skill Ecosystem) ✅
 - **任务**: 实现技能的远程分发与安装机制。
 - **目的**: 允许用户/社区分享经过验证的 $\text{SOP-Template}$ 和专用工具集。
 - **验收标准**: 
-    - 实现 `SkillRegistry` 的远程同步协议。
-    *   支持通过 `Sisyphus` 客户端一键安装远程技能包。
+    - ✅ 实现 `SkillRegistry` 的远程同步协议。
+        - 客户端：`RemoteSkillRegistry`（拉取/安装/卸载/依赖预检）与 `SkillMarket`（多注册表搜索/下载/校验/发布）。
+        - 服务器端（对等协议）：`GET/POST /peer/v1/skills`、`GET /peer/v1/skills/{id}`，本机实例可作为注册表被其他实例发现与拉取。
+    - ✅ 支持通过 `Sisyphus` 客户端一键安装远程技能包。
+        - `POST /api/skills/install`（一键安装）、`POST /api/skills/publish`（发布本地技能到远程注册表）、`GET /api/skills/search`（跨注册表搜索）、`GET /api/skills/available`。
 
-### 2.3 多工作区协同 (Multi-Workspace)
+### 2.3 多工作区协同 (Multi-Workspace) ✅
 - **任务**: 支持同时管理多个独立的项目路线图。
 - **目的**: 提升多任务并行管理能力，并实现跨项目的知识迁移。
 - **验收标准**: 
-    - 实现 `WorkspaceManager` 管理多个 `Project` 实例。
-    - 实现跨项目经验共享机制。
+    - ✅ 实现 `WorkspaceManager` 管理多个 `Project` 实例。
+        - 工作区生命周期：创建/切换/当前/列表/删除，持久化于状态存储（`sys.workspaces`）。
+        - REST：`GET/POST /api/workspaces`、`POST /api/workspaces/switch`、`GET /api/workspaces/current`、`DELETE /api/workspaces/{id}`。
+    - ✅ 实现跨项目经验共享机制。
+        - `VectorExperienceBank::share_experience` / `unshare_experience` / `list_shared`：共享经验（`project_id = NULL`）对所有项目可见，向量索引元数据同步更新。
+        - REST：`POST /api/experience/share`、`POST /api/experience/unshare`、`GET /api/experience/shared`。
+        - 验证：`crates/sisyphus-tests/tests/cross_project_sharing.rs`（隔离 → 共享 → 取消共享全流程）。
 
 ---
 

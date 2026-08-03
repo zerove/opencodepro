@@ -49,3 +49,6 @@ tracing-opentelemetry = { workspace = true }
 [features]
 default = ["sandbox"]
 sandbox = ["sisyphus-sandbox"]
+
+[dev-dependencies]
+tower = { version = "0.4", features = ["util"] }

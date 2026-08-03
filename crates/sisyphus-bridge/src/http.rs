@@ -327,11 +327,63 @@ pub struct CaptureExperienceResponse {
     pub error: String,
 }
 
+// --- Experience Sharing Types (multi-workspace knowledge transfer) ---
+#[derive(Deserialize)]
+pub struct ShareExperienceRequest {
+    /// Storage key of the experience, e.g. "exp:1700000000".
+    pub exp_key: String,
+    /// Target project for unshare; ignored when sharing.
+    pub project_id: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct ShareExperienceResponse {
+    pub success: bool,
+    pub error: String,
+}
+
+#[derive(Serialize)]
+pub struct SharedExperiencesResponse {
+    pub experiences: Vec<sisyphus_types::experience::ExperienceTuple>,
+}
+
 // --- Skill Detail Types ---
 #[derive(Serialize)]
 pub struct SkillDetailResponse {
     pub found: bool,
     pub skill: Option<sisyphus_types::skill::SkillMetadata>,
+}
+
+// --- Skill Market / Peer Registry Types ---
+#[derive(Deserialize)]
+pub struct PublishSkillRequest {
+    /// Remote registry base URL, e.g. "https://registry.sisyphus.ai".
+    pub registry_url: String,
+    /// ID of the locally installed skill to publish.
+    pub skill_id: String,
+}
+
+#[derive(Serialize)]
+pub struct PublishSkillResponse {
+    pub success: bool,
+    pub entry: Option<sisyphus_mem::skill_market::SkillRegistryEntry>,
+    pub error: String,
+}
+
+#[derive(Serialize)]
+pub struct SkillSearchResponse {
+    pub results: Vec<sisyphus_mem::skill_market::SkillRegistryEntry>,
+}
+
+/// Response for the peer protocol used by other Sisyphus instances.
+#[derive(Serialize)]
+pub struct PeerSkillListResponse {
+    pub skills: Vec<sisyphus_types::skill::SkillMetadata>,
+}
+
+#[derive(Deserialize)]
+pub struct SearchSkillsRequest {
+    pub q: String,
 }
 
 // --- Benchmark Types ---
@@ -1652,6 +1704,114 @@ async fn show_skill_handler(
     }
 }
 
+// ── Skill Market & Peer Registry Handlers ───────────────────────────────
+
+async fn search_skills_handler(
+    State(state): State<RestApiState>,
+    req: axum::extract::Query<SearchSkillsRequest>,
+) -> impl IntoResponse {
+    match state.bridge.skill_market.search(&req.q).await {
+        Ok(results) => (StatusCode::OK, Json(SkillSearchResponse { results })).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(e.to_string())).into_response(),
+    }
+}
+
+async fn publish_skill_handler(
+    State(state): State<RestApiState>,
+    Json(req): Json<PublishSkillRequest>,
+) -> impl IntoResponse {
+    // Export the locally installed skill bundle.
+    let bundle = match state.bridge.skill_store.get(&req.skill_id).await {
+        Ok(Some(bundle)) => bundle,
+        Ok(None) => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(PublishSkillResponse {
+                    success: false,
+                    entry: None,
+                    error: format!("Skill {} not installed locally", req.skill_id),
+                }),
+            )
+                .into_response()
+        }
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(PublishSkillResponse {
+                    success: false,
+                    entry: None,
+                    error: e.to_string(),
+                }),
+            )
+                .into_response()
+        }
+    };
+
+    // Publish to the remote registry (peer protocol: POST {registry}/api/v1/skills).
+    match state
+        .bridge
+        .skill_market
+        .publish(&req.registry_url, &bundle)
+        .await
+    {
+        Ok(entry) => (
+            StatusCode::OK,
+            Json(PublishSkillResponse {
+                success: true,
+                entry: Some(entry),
+                error: String::new(),
+            }),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(PublishSkillResponse {
+                success: false,
+                entry: None,
+                error: e.to_string(),
+            }),
+        )
+            .into_response(),
+    }
+}
+
+// ── Peer Registry Protocol (this instance acts as a distributed registry) ──
+
+/// List skills this instance can serve to peers.
+async fn peer_list_skills_handler(State(state): State<RestApiState>) -> impl IntoResponse {
+    match state.bridge.skill_store.list().await {
+        Ok(skills) => (StatusCode::OK, Json(PeerSkillListResponse { skills })).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(e.to_string())).into_response(),
+    }
+}
+
+/// Serve a full skill bundle to a peer for installation.
+async fn peer_get_skill_handler(
+    State(state): State<RestApiState>,
+    Path(id): Path<String>,
+) -> impl IntoResponse {
+    match state.bridge.skill_store.get(&id).await {
+        Ok(Some(bundle)) => (StatusCode::OK, Json(bundle)).into_response(),
+        Ok(None) => (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({ "error": "Skill not found" })),
+        )
+            .into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(e.to_string())).into_response(),
+    }
+}
+
+/// Receive a skill bundle published by a peer and install it locally.
+async fn peer_publish_skill_handler(
+    State(state): State<RestApiState>,
+    Json(bundle): Json<sisyphus_types::skill::SkillBundle>,
+) -> impl IntoResponse {
+    match state.bridge.skill_store.install(bundle).await {
+        Ok(_) => StatusCode::CREATED.into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(e.to_string())).into_response(),
+    }
+}
+
 async fn execute_tool_handler(
     State(state): State<RestApiState>,
     Json(req): Json<ExecuteToolRequest>,
@@ -1849,6 +2009,89 @@ async fn capture_experience_handler(
             }),
         )
             .into_response(),
+    }
+}
+
+async fn share_experience_handler(
+    State(state): State<RestApiState>,
+    Json(req): Json<ShareExperienceRequest>,
+) -> impl IntoResponse {
+    match state
+        .bridge
+        .experience_bank
+        .share_experience(&req.exp_key)
+        .await
+    {
+        Ok(_) => (
+            StatusCode::OK,
+            Json(ShareExperienceResponse {
+                success: true,
+                error: String::new(),
+            }),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ShareExperienceResponse {
+                success: false,
+                error: e.to_string(),
+            }),
+        )
+            .into_response(),
+    }
+}
+
+async fn unshare_experience_handler(
+    State(state): State<RestApiState>,
+    Json(req): Json<ShareExperienceRequest>,
+) -> impl IntoResponse {
+    let project_id = match req.project_id {
+        Some(pid) if !pid.is_empty() => pid,
+        _ => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(ShareExperienceResponse {
+                    success: false,
+                    error: "project_id is required to unshare".into(),
+                }),
+            )
+                .into_response()
+        }
+    };
+
+    match state
+        .bridge
+        .experience_bank
+        .unshare_experience(&req.exp_key, &project_id)
+        .await
+    {
+        Ok(_) => (
+            StatusCode::OK,
+            Json(ShareExperienceResponse {
+                success: true,
+                error: String::new(),
+            }),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ShareExperienceResponse {
+                success: false,
+                error: e.to_string(),
+            }),
+        )
+            .into_response(),
+    }
+}
+
+async fn list_shared_experiences_handler(State(state): State<RestApiState>) -> impl IntoResponse {
+    match state.bridge.experience_bank.list_shared().await {
+        Ok(experiences) => (
+            StatusCode::OK,
+            Json(SharedExperiencesResponse { experiences }),
+        )
+            .into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(e.to_string())).into_response(),
     }
 }
 
@@ -2219,14 +2462,18 @@ pub fn build_router(state: RestApiState) -> Router {
         .route("/api/skills/available", get(list_available_skills_handler))
         .route("/api/skills/install", post(install_remote_skill_handler))
         .route("/api/skills/installed", get(list_installed_skills_handler))
+        .route("/api/skills/search", get(search_skills_handler))
+        .route("/api/skills/publish", post(publish_skill_handler))
         .route(
-            "/api/skills/remote/{id}",
+            "/api/skills/remote/:id",
             delete(uninstall_remote_skill_handler),
         )
         .route(
-            "/api/cognitive/map/{sop_id}",
-            get(get_cognitive_map_handler),
+            "/peer/v1/skills",
+            get(peer_list_skills_handler).post(peer_publish_skill_handler),
         )
+        .route("/peer/v1/skills/:id", get(peer_get_skill_handler))
+        .route("/api/cognitive/map/:sop_id", get(get_cognitive_map_handler))
         .route(
             "/api/workspaces",
             get(list_workspaces_handler).post(create_workspace_handler),
@@ -2238,30 +2485,30 @@ pub fn build_router(state: RestApiState) -> Router {
         )
         .route("/api/sops", get(list_sops_handler).post(save_sop_handler))
         .route(
-            "/api/sops/{id}",
+            "/api/sops/:id",
             get(get_sop_handler).delete(delete_sop_handler),
         )
         .route("/api/experience/similar", post(experience_similar_handler))
         .route("/api/execute/goal", post(execute_goal_handler))
         .route(
-            "/api/execute/goal/{goal_id}/status",
+            "/api/execute/goal/:goal_id/status",
             get(goal_status_handler),
         )
-        .route("/api/execute/goal/{goal_id}/trace", get(goal_trace_handler))
+        .route("/api/execute/goal/:goal_id/trace", get(goal_trace_handler))
         .route(
-            "/api/execute/goal/{goal_id}/stream",
+            "/api/execute/goal/:goal_id/stream",
             get(goal_stream_handler),
         )
         .route("/api/execute/composite", post(execute_composite_handler))
         .route(
-            "/api/roadmap/project/{id}",
+            "/api/roadmap/project/:id",
             get(roadmap_project_handler).post(roadmap_project_handler),
         )
         .route("/api/roadmap/milestone", post(roadmap_milestone_handler))
         .route("/api/roadmap/phase", post(roadmap_phase_handler))
-        .route("/api/roadmap/goal/{goal_id}", patch(roadmap_goal_handler))
+        .route("/api/roadmap/goal/:goal_id", patch(roadmap_goal_handler))
         .route(
-            "/api/roadmap/health/{project_id}",
+            "/api/roadmap/health/:project_id",
             get(roadmap_health_handler),
         )
         .route("/api/roadmap/predict", post(predict_completion_handler))
@@ -2280,11 +2527,11 @@ pub fn build_router(state: RestApiState) -> Router {
             post(estimate_goal_resources_handler),
         )
         .route(
-            "/api/roadmap/proposals/{project_id}",
+            "/api/roadmap/proposals/:project_id",
             get(list_proposals_handler),
         )
         .route(
-            "/api/roadmap/proposals/{project_id}/{proposal_id}",
+            "/api/roadmap/proposals/:project_id/:proposal_id",
             get(get_proposal_handler),
         )
         .route(
@@ -2300,12 +2547,12 @@ pub fn build_router(state: RestApiState) -> Router {
             "/api/sessions",
             get(list_sessions_handler).post(create_session_handler),
         )
-        .route("/api/sessions/{id}", get(get_session_handler))
-        .route("/api/sessions/{id}/messages", post(add_message_handler))
+        .route("/api/sessions/:id", get(get_session_handler))
+        .route("/api/sessions/:id/messages", post(add_message_handler))
         .route("/api/tools", get(list_tools_handler))
         .route("/api/agents", get(list_agents_handler))
         .route("/api/skills", get(list_skills_handler))
-        .route("/api/skills/{id}", get(show_skill_handler))
+        .route("/api/skills/:id", get(show_skill_handler))
         .route("/api/tools/execute", post(execute_tool_handler))
         .route(
             "/api/cognitive/delegate",
@@ -2313,6 +2560,12 @@ pub fn build_router(state: RestApiState) -> Router {
         )
         .route("/api/feedback", post(submit_feedback_handler))
         .route("/api/experience/capture", post(capture_experience_handler))
+        .route("/api/experience/share", post(share_experience_handler))
+        .route("/api/experience/unshare", post(unshare_experience_handler))
+        .route(
+            "/api/experience/shared",
+            get(list_shared_experiences_handler),
+        )
         .route("/api/benchmarks", get(list_benchmarks_handler))
         .route("/api/breakers", get(get_breaker_metrics_handler))
         .route("/api/insights", get(get_learning_insights_handler))
@@ -2324,7 +2577,7 @@ pub fn build_router(state: RestApiState) -> Router {
         .route("/api/chaos/stop", post(chaos_stop_handler))
         .route("/api/chaos/status", get(chaos_status_handler))
         .route("/api/anomaly", get(anomaly_report_handler))
-        .route("/api/workspaces/{id}", delete(delete_workspace_handler))
+        .route("/api/workspaces/:id", delete(delete_workspace_handler))
         .route("/openapi.json", get(http_openapi::openapi_json))
         .route("/swagger-ui/*rest", get(http_openapi::swagger_ui_handler))
         .with_state(state)

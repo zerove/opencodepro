@@ -252,6 +252,6 @@ mod tests {
     fn test_market_config_default() {
         let config = SkillMarketConfig::default();
         assert_eq!(config.registries.len(), 1);
-        assert!(config.auto_update == false);
+        assert!(!config.auto_update);
     }
 }

@@ -28,6 +28,73 @@ impl VectorExperienceBank {
 
     #[expect(dead_code)]
     const INDEX_KEY: &'static str = "exp:index";
+
+    /// Make an experience globally shared: remove its project ownership so that
+    /// it becomes visible to queries from any project (multi-workspace knowledge
+    /// transfer). The vector index metadata is updated in lockstep.
+    pub async fn share_experience(&self, exp_key: &str) -> Result<(), TypesError> {
+        self.set_project_ownership(exp_key, None).await
+    }
+
+    /// Restore project ownership for a previously shared experience.
+    pub async fn unshare_experience(
+        &self,
+        exp_key: &str,
+        project_id: &str,
+    ) -> Result<(), TypesError> {
+        self.set_project_ownership(exp_key, Some(project_id)).await
+    }
+
+    /// List all globally shared experiences.
+    pub async fn list_shared(
+        &self,
+    ) -> Result<Vec<sisyphus_types::experience::ExperienceTuple>, TypesError> {
+        self.store
+            .list_shared_experiences()
+            .await
+            .map_err(|e| TypesError::ExperienceError(format!("list shared failed: {e}")))
+    }
+
+    async fn set_project_ownership(
+        &self,
+        exp_key: &str,
+        project_id: Option<&str>,
+    ) -> Result<(), TypesError> {
+        // 1. Update the canonical record in MfsStore.
+        let updated = self
+            .store
+            .update_experience_project(exp_key, project_id)
+            .await
+            .map_err(|e| TypesError::ExperienceError(format!("update project failed: {e}")))?;
+        if !updated {
+            return Err(TypesError::ExperienceError(format!(
+                "experience {exp_key} not found"
+            )));
+        }
+
+        // 2. Keep the vector index metadata in sync (upsert with new project_id).
+        let vectors = self
+            .vector_store
+            .search_by_metadata(serde_json::json!({ "exp_key": exp_key }), 16)
+            .await
+            .map_err(|e| TypesError::ExperienceError(format!("vector lookup failed: {e}")))?;
+
+        for sv in vectors {
+            let mut meta = sv.record.metadata.clone();
+            match project_id {
+                Some(pid) => meta["project_id"] = serde_json::json!(pid),
+                None => meta["project_id"] = serde_json::Value::Null,
+            }
+            self.vector_store
+                .store_embedding(&sv.record.key, sv.record.embedding, meta)
+                .await
+                .map_err(|e| {
+                    TypesError::ExperienceError(format!("vector metadata sync failed: {e}"))
+                })?;
+        }
+
+        Ok(())
+    }
 }
 
 #[async_trait]

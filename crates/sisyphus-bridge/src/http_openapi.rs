@@ -201,6 +201,57 @@ pub(crate) async fn openapi_json() -> impl IntoResponse {
                     }
                 }
             },
+            "/api/skills/search": {
+                "get": {
+                    "summary": "Search skill market across configured registries",
+                    "operationId": "searchSkills",
+                    "parameters": [{"name": "q", "in": "query", "required": true, "schema": {"type": "string"}}],
+                    "responses": {
+                        "200": {"description": "Search results", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/SkillSearchResponse"}}}}
+                    }
+                }
+            },
+            "/api/skills/publish": {
+                "post": {
+                    "summary": "Publish a locally installed skill to a remote registry",
+                    "operationId": "publishSkill",
+                    "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/PublishSkillRequest"}}}},
+                    "responses": {
+                        "200": {"description": "Skill published", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/PublishSkillResponse"}}}},
+                        "404": {"description": "Skill not installed locally"},
+                        "500": {"description": "Publish failed"}
+                    }
+                }
+            },
+            "/peer/v1/skills": {
+                "get": {
+                    "summary": "Peer protocol: list skills this instance can serve",
+                    "operationId": "peerListSkills",
+                    "responses": {
+                        "200": {"description": "Peer skill list", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/PeerSkillListResponse"}}}}
+                    }
+                },
+                "post": {
+                    "summary": "Peer protocol: receive a published skill bundle",
+                    "operationId": "peerPublishSkill",
+                    "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/SkillBundle"}}}},
+                    "responses": {
+                        "201": {"description": "Skill installed"},
+                        "500": {"description": "Install failed"}
+                    }
+                }
+            },
+            "/peer/v1/skills/{id}": {
+                "get": {
+                    "summary": "Peer protocol: fetch a skill bundle",
+                    "operationId": "peerGetSkill",
+                    "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string"}}],
+                    "responses": {
+                        "200": {"description": "Skill bundle", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/SkillBundle"}}}},
+                        "404": {"description": "Skill not found"}
+                    }
+                }
+            },
 
             // ── Cognitive Map ────────────────────────────────────────────
             "/api/cognitive/map/{sop_id}": {
@@ -315,6 +366,36 @@ pub(crate) async fn openapi_json() -> impl IntoResponse {
                     "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ExperienceQueryRequest"}}}},
                     "responses": {
                         "200": {"description": "Similar experiences", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ExperienceSimilarResponse"}}}}
+                    }
+                }
+            },
+            "/api/experience/share": {
+                "post": {
+                    "summary": "Share an experience across projects (multi-workspace knowledge transfer)",
+                    "operationId": "shareExperience",
+                    "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ShareExperienceRequest"}}}},
+                    "responses": {
+                        "200": {"description": "Experience shared", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ShareExperienceResponse"}}}}
+                    }
+                }
+            },
+            "/api/experience/unshare": {
+                "post": {
+                    "summary": "Restore project ownership of a shared experience",
+                    "operationId": "unshareExperience",
+                    "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ShareExperienceRequest"}}}},
+                    "responses": {
+                        "200": {"description": "Experience ownership restored", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ShareExperienceResponse"}}}},
+                        "400": {"description": "Missing project_id"}
+                    }
+                }
+            },
+            "/api/experience/shared": {
+                "get": {
+                    "summary": "List all globally shared experiences",
+                    "operationId": "listSharedExperiences",
+                    "responses": {
+                        "200": {"description": "Shared experiences", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/SharedExperiencesResponse"}}}}
                     }
                 }
             },
@@ -665,6 +746,74 @@ pub(crate) async fn openapi_json() -> impl IntoResponse {
                         "experiences": {
                             "type": "array",
                             "items": {"type": "object"}
+                        }
+                    }
+                },
+                "ShareExperienceRequest": {
+                    "type": "object",
+                    "required": ["exp_key"],
+                    "properties": {
+                        "exp_key": {"type": "string"},
+                        "project_id": {"type": "string"}
+                    }
+                },
+                "ShareExperienceResponse": {
+                    "type": "object",
+                    "properties": {
+                        "success": {"type": "boolean"},
+                        "error": {"type": "string"}
+                    }
+                },
+                "SharedExperiencesResponse": {
+                    "type": "object",
+                    "properties": {
+                        "experiences": {
+                            "type": "array",
+                            "items": {"type": "object"}
+                        }
+                    }
+                },
+                "SkillSearchResponse": {
+                    "type": "object",
+                    "properties": {
+                        "results": {
+                            "type": "array",
+                            "items": {"type": "object"}
+                        }
+                    }
+                },
+                "PublishSkillRequest": {
+                    "type": "object",
+                    "required": ["registry_url", "skill_id"],
+                    "properties": {
+                        "registry_url": {"type": "string"},
+                        "skill_id": {"type": "string"}
+                    }
+                },
+                "PublishSkillResponse": {
+                    "type": "object",
+                    "properties": {
+                        "success": {"type": "boolean"},
+                        "entry": {"type": "object"},
+                        "error": {"type": "string"}
+                    }
+                },
+                "PeerSkillListResponse": {
+                    "type": "object",
+                    "properties": {
+                        "skills": {
+                            "type": "array",
+                            "items": {"type": "object"}
+                        }
+                    }
+                },
+                "SkillBundle": {
+                    "type": "object",
+                    "properties": {
+                        "metadata": {"type": "object"},
+                        "required_tools": {
+                            "type": "array",
+                            "items": {"type": "string"}
                         }
                     }
                 },

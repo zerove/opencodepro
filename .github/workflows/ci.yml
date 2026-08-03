@@ -179,6 +179,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo clippy -p sisyphus-bridge -- -D warnings
       - run: cargo test -p sisyphus-bridge --test bridge_integration_test
+      - run: cargo test -p sisyphus-bridge --test skill_market_rest_test
       - run: cargo build --release -p sisyphus-sandboxd
 
   # ── CLI handler crate tests (clap parsing, output formatting) ──────────
