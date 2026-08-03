@@ -1,0 +1,239 @@
+//! Kernel construction: builders, executors, and MCP wiring.
+//!
+//! Part of the `SisyphusKernel` implementation extracted from `kernel.rs` for
+//! readability. Re-exported via `pub use kernel::*`.
+
+use std::sync::Arc;
+
+use crate::*;
+
+impl SisyphusKernel {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        state_store: Arc<MfsStore>,
+        sop_store: Arc<SopSqlStore>,
+        _vector_store: Arc<sisyphus_mem::VectorMemoryStore>,
+        experience_bank: Arc<dyn sisyphus_types::experience::ExperienceBank>,
+        tool_executor: Arc<dyn ToolExecutor>,
+        intel: Arc<SisyphusIntel>,
+        llm_client: Arc<dyn sisyphus_tools_llm::LlmClient>,
+        fast_llm_client: Arc<dyn sisyphus_tools_llm::LlmClient>,
+        synthesizer: Arc<dyn sisyphus_intel::FlowSynthesizer>,
+        meta_learner: Arc<parking_lot::Mutex<MetaLearner>>,
+        consensus: Arc<dyn Consensus>,
+        sql_store: Arc<sisyphus_mem::RoadmapSqlStore>,
+        _embedding_client: Arc<dyn sisyphus_tools_llm::EmbeddingClient>,
+    ) -> Self {
+        let pm = Arc::new(sisyphus_roadmap::proposal_manager::ProposalManager::new(
+            state_store.clone(),
+        ));
+        let rm = Arc::new(RoadmapManager::new(
+            state_store.clone(),
+            sql_store,
+            pm.clone(),
+        ));
+
+        let test_executor =
+            Arc::new(sisyphus_tools_executor::executor::test_cmds::TestExecutor::new());
+
+        let intelligence_manager = Arc::new(IntelligenceManager::new(
+            Arc::new(SisyphusIntel::new(
+                intel.simulator.clone(),
+                Arc::new(sisyphus_intel::simulation::LlmLogicalSimulator::new(
+                    llm_client.clone(),
+                )),
+                intel.reflector.clone(),
+                intel.evolver.clone(),
+            )),
+            synthesizer,
+            llm_client.clone(),
+        ));
+
+        let knowledge_manager = Arc::new(sisyphus_knowledge::AssetManager::new(
+            std::path::PathBuf::from(".sisyphus/knowledge"),
+        ));
+
+        let intervention_manager =
+            Arc::new(crate::intervention_manager::InterventionManager::new());
+        let internalization_manager =
+            Arc::new(crate::internalization_manager::InternalizationManager::new(
+                intelligence_manager.llm_client.clone(),
+                knowledge_manager.clone(),
+            ));
+        let visual_manager = Arc::new(sisyphus_visual::VisualPerceptionManager::new(
+            Arc::new(sisyphus_visual::SisyphusVisualProvider::new(
+                intelligence_manager.llm_client.clone(),
+            )),
+            intelligence_manager.llm_client.clone(),
+        ));
+
+        let execution_manager = Arc::new(ExecutionManager::new(
+            state_store,
+            sop_store,
+            tool_executor,
+            test_executor.clone(),
+            intervention_manager.clone(),
+            internalization_manager.clone(),
+            Some(visual_manager.clone()),
+        ));
+
+        let channel = Arc::new(AgentChannel::new());
+        let benchmark = Arc::new(parking_lot::Mutex::new(ContinuousBenchmark::new(
+            ".omo/benchmarks",
+        )));
+
+        let strategic_manager = Arc::new(strategic_manager::StrategicManager::new(
+            intelligence_manager.clone(),
+            execution_manager.clone(),
+            sisyphus_types::config::CognitiveLoopConfig::default(),
+            channel.clone(),
+            benchmark.clone(),
+            meta_learner.clone(),
+            experience_bank.clone(),
+            knowledge_manager.clone(),
+            rm.clone(),
+            intervention_manager.clone(),
+            internalization_manager.clone(),
+            Some(visual_manager.clone()),
+        ));
+
+        let swarm_coordinator = Arc::new(SwarmCoordinator::new(
+            strategic_manager.clone(),
+            intelligence_manager.clone(),
+            channel.clone(),
+        ));
+
+        let logical_simulator = Arc::new(sisyphus_intel::simulation::LlmLogicalSimulator::new(
+            llm_client.clone(),
+        ));
+
+        // Spawn default swarm agents for the Audit Loop
+        swarm_coordinator.spawn_agent(AgentRole::Architect, "architect-0".into());
+        swarm_coordinator.spawn_agent(AgentRole::Auditor, "auditor-0".into());
+
+        let micro_reflector = Arc::new(sisyphus_intel::micro_reflector::LlmMicroReflector::new(
+            fast_llm_client,
+        ));
+
+        Self {
+            execution_manager,
+            intelligence_manager,
+            strategic_manager,
+            swarm_coordinator,
+            logical_simulator,
+            consensus,
+            intervention_manager,
+            channel,
+            benchmark,
+            meta_learner,
+            roadmap_manager: rm,
+            proposal_manager: pm,
+            experience_bank,
+            micro_reflector: Some(micro_reflector),
+            test_executor,
+            strategic_reflector: None,
+            milestone_generator: None,
+            resource_optimizer: sisyphus_roadmap::resource_optimizer::ResourceOptimizer::new(),
+        }
+    }
+
+    /// Override the cognitive loop configuration (max_iterations, convergence_threshold).
+    pub fn with_cognitive_loop_config(
+        self,
+        config: sisyphus_types::config::CognitiveLoopConfig,
+    ) -> Self {
+        *self.strategic_manager.config.write() = config;
+
+        self
+    }
+
+    /// Attach a StrategicReflector for LLM-augmented roadmap analysis.
+    pub fn with_strategic_reflector(
+        mut self,
+
+        llm: Arc<dyn sisyphus_tools_llm::metis::LlmClient>,
+    ) -> Self {
+        self.strategic_reflector = Some(Arc::new(
+            sisyphus_roadmap::strategic_reflection::StrategicReflector::new(llm),
+        ));
+
+        self
+    }
+
+    /// Attach a MilestoneGenerator for LLM-driven roadmap creation.
+    pub fn with_milestone_generator(
+        mut self,
+
+        llm: Arc<dyn sisyphus_tools_llm::metis::LlmClient>,
+    ) -> Self {
+        self.milestone_generator = Some(Arc::new(
+            sisyphus_roadmap::milestone_generator::MilestoneGenerator::new(llm),
+        ));
+
+        self
+    }
+
+    /// Register a specialized tool executor under a given prefix (e.g., "fs" for file system).
+    pub fn register_tool_executor(
+        &self,
+
+        prefix: &str,
+
+        executor: Arc<dyn ToolExecutor>,
+    ) -> Result<(), CoreError> {
+        self.execution_manager
+            .tool_router
+            .register(prefix, executor);
+
+        Ok(())
+    }
+
+    pub async fn init_mcp_executors(
+        &self,
+        config: &sisyphus_types::config::McpConfig,
+    ) -> Result<(), CoreError> {
+        for (prefix, cmd_str) in &config.stdio_servers {
+            let parts: Vec<&str> = cmd_str.split_whitespace().collect();
+
+            if parts.is_empty() {
+                tracing::warn!(prefix = %prefix, "Empty MCP stdio command, skipping");
+
+                continue;
+            }
+
+            let command = parts[0];
+
+            let args = &parts[1..];
+
+            match sisyphus_tools_executor::executor_mcp::MCPToolExecutor::from_stdio(command, args)
+                .await
+            {
+                Ok(executor) => {
+                    self.register_tool_executor(prefix, Arc::new(executor))?;
+
+                    tracing::info!(prefix = %prefix, "Registered MCP stdio executor");
+                }
+
+                Err(e) => {
+                    tracing::error!(prefix = %prefix, error = %e, "Failed to initialize MCP stdio executor");
+                }
+            }
+        }
+
+        for (prefix, url) in &config.http_servers {
+            match sisyphus_tools_executor::executor_mcp::MCPToolExecutor::from_url(url).await {
+                Ok(executor) => {
+                    self.register_tool_executor(prefix, Arc::new(executor))?;
+
+                    tracing::info!(prefix = %prefix, "Registered MCP HTTP executor");
+                }
+
+                Err(e) => {
+                    tracing::error!(prefix = %prefix, error = %e, "Failed to initialize MCP HTTP executor");
+                }
+            }
+        }
+
+        Ok(())
+    }
+}
