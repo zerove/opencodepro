@@ -43,11 +43,12 @@ impl DynamicLlmClient {
     pub fn new(config: Arc<RwLock<Config>>) -> Self {
         // Timeouts will be resolved per-call from config, but we need a base
         // client for the provider registry fallback. Use defaults as fallback.
+        // 自定义构建器失败时降级为默认 Client::new()（无失败路径，避免 panic）。
         let client = reqwest::Client::builder()
             .connect_timeout(Duration::from_secs(2))
             .timeout(Duration::from_secs(5))
             .build()
-            .expect("Failed to build reqwest::Client");
+            .unwrap_or_else(|_| reqwest::Client::new());
         let provider_registry = config
             .read()
             .ok()

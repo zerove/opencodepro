@@ -282,6 +282,8 @@ pub struct ExecuteToolResponse {
 pub struct DelegateCognitiveTaskRequest {
     pub goal: String,
     pub context: String,
+    /// Optional project ID (default: "default"). Can be overridden by `x-project-id` header.
+    pub project_id: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -295,6 +297,8 @@ pub struct DelegateCognitiveTaskResponse {
 #[derive(Deserialize)]
 pub struct SubmitFeedbackRequest {
     pub feedback_json: String,
+    /// Optional project ID (default: "default"). Can be overridden by `x-project-id` header.
+    pub project_id: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -309,6 +313,8 @@ pub struct SubmitFeedbackResponse {
 pub struct CaptureExperienceRequest {
     pub plan_id: String,
     pub plan_json: String,
+    /// Optional project ID (default: "default"). Can be overridden by `x-project-id` header.
+    pub project_id: Option<String>,
 }
 
 #[derive(Serialize)]

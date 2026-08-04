@@ -3,6 +3,14 @@ use serde_json::{json, Value};
 
 // ── utility command implementations ──────────────────────────
 
+/// 将 JSON 值序列化为字节，错误传播为 `TypesError`。
+fn to_vec(value: &Value) -> Result<Vec<u8>, sisyphus_types::TypesError> {
+    serde_json::to_vec(value).map_err(|e| sisyphus_types::TypesError::ToolExecutionError {
+        tool_id: "json_serialize".to_string(),
+        details: format!("Failed to serialize JSON response: {e}"),
+    })
+}
+
 pub async fn cmd_git_blame(args: Value) -> Result<Vec<u8>, sisyphus_types::TypesError> {
     let path = args.get("path").and_then(|p| p.as_str()).ok_or_else(|| {
         sisyphus_types::TypesError::ToolExecutionError {
@@ -54,12 +62,11 @@ pub async fn cmd_git_blame(args: Value) -> Result<Vec<u8>, sisyphus_types::Types
 
     let commit_msg = String::from_utf8_lossy(&show_output.stdout).to_string();
 
-    Ok(serde_json::to_vec(&json!({
+    to_vec(&json!({
         "commit": commit_hash,
         "message": commit_msg,
         "line": line
     }))
-    .unwrap())
 }
 
 pub async fn cmd_type_check(args: Value) -> Result<Vec<u8>, sisyphus_types::TypesError> {
@@ -92,12 +99,11 @@ pub async fn cmd_type_check(args: Value) -> Result<Vec<u8>, sisyphus_types::Type
         }
     }
 
-    Ok(serde_json::to_vec(&json!({
+    to_vec(&json!({
         "success": output.status.success(),
         "errors": errors,
         "exit_code": output.status.code()
     }))
-    .unwrap())
 }
 
 pub async fn cmd_lsp_symbol_search(
@@ -114,7 +120,7 @@ pub async fn cmd_lsp_symbol_search(
     // 1. Attempt real bridge call if available
     if let Some(bridge) = &executor.bridge_client {
         match bridge.execute_tool("lsp_symbol_search", args.clone()).await {
-            Ok(res) => return Ok(serde_json::to_vec(&res).unwrap()),
+            Ok(res) => return to_vec(&res),
             Err(e) => {
                 tracing::warn!(error = %e, "LSP bridge call failed, falling back to simulation");
             }
@@ -127,7 +133,7 @@ pub async fn cmd_lsp_symbol_search(
         json!({ "name": format!("{}_impl", query), "location": "crates/sisyphus-tools/src/executor/mod.rs:45", "kind": "Struct" }),
     ];
 
-    Ok(serde_json::to_vec(&json!({ "symbols": results })).unwrap())
+    to_vec(&json!({ "symbols": results }))
 }
 
 pub async fn cmd_dependency_graph(args: Value) -> Result<Vec<u8>, sisyphus_types::TypesError> {
@@ -157,7 +163,7 @@ pub async fn cmd_dependency_graph(args: Value) -> Result<Vec<u8>, sisyphus_types
     }
 
     let mermaid = format!("graph TD\n  {}", edges.join("\n  "));
-    Ok(serde_json::to_vec(&json!({ "mermaid": mermaid })).unwrap())
+    to_vec(&json!({ "mermaid": mermaid }))
 }
 
 pub async fn cmd_doc_sync_check(
@@ -203,7 +209,9 @@ pub async fn cmd_doc_sync_check(
         }
     })?;
 
-    Ok(serde_json::to_vec(&json!({ "analysis": analysis, "is_consistent": analysis.to_uppercase().contains("CONSISTENT") })).unwrap())
+    to_vec(
+        &json!({ "analysis": analysis, "is_consistent": analysis.to_uppercase().contains("CONSISTENT") }),
+    )
 }
 
 pub fn cmd_json_query(args: Value) -> Result<Vec<u8>, sisyphus_types::TypesError> {
@@ -264,7 +272,7 @@ pub fn cmd_json_query(args: Value) -> Result<Vec<u8>, sisyphus_types::TypesError
         }
     }
 
-    Ok(serde_json::to_vec(current).unwrap())
+    to_vec(current)
 }
 
 pub fn cmd_base64_convert(args: Value) -> Result<Vec<u8>, sisyphus_types::TypesError> {
@@ -293,7 +301,7 @@ pub fn cmd_base64_convert(args: Value) -> Result<Vec<u8>, sisyphus_types::TypesE
         general_purpose::STANDARD.encode(input)
     };
 
-    Ok(serde_json::to_vec(&json!({ "result": result })).unwrap())
+    to_vec(&json!({ "result": result }))
 }
 
 pub fn cmd_time_convert(args: Value) -> Result<Vec<u8>, sisyphus_types::TypesError> {
@@ -330,7 +338,7 @@ pub fn cmd_time_convert(args: Value) -> Result<Vec<u8>, sisyphus_types::TypesErr
         }
     };
 
-    Ok(serde_json::to_vec(&json!({ "converted_time": result })).unwrap())
+    to_vec(&json!({ "converted_time": result }))
 }
 
 pub fn cmd_url_convert(args: Value) -> Result<Vec<u8>, sisyphus_types::TypesError> {
@@ -356,7 +364,7 @@ pub fn cmd_url_convert(args: Value) -> Result<Vec<u8>, sisyphus_types::TypesErro
         urlencoding::encode(input).into_owned()
     };
 
-    Ok(serde_json::to_vec(&json!({ "result": result })).unwrap())
+    to_vec(&json!({ "result": result }))
 }
 
 pub fn cmd_path_expand(args: Value) -> Result<Vec<u8>, sisyphus_types::TypesError> {
@@ -374,7 +382,7 @@ pub fn cmd_path_expand(args: Value) -> Result<Vec<u8>, sisyphus_types::TypesErro
         path_str.to_string()
     };
 
-    Ok(serde_json::to_vec(&json!({ "expanded_path": expanded })).unwrap())
+    to_vec(&json!({ "expanded_path": expanded }))
 }
 
 pub async fn cmd_coverage_analyze(args: Value) -> Result<Vec<u8>, sisyphus_types::TypesError> {
@@ -402,18 +410,17 @@ pub async fn cmd_coverage_analyze(args: Value) -> Result<Vec<u8>, sisyphus_types
 
     // 如果 llvm-cov 不可用，返回一个引导信息，提示用户安装
     if output.status.code() != Some(0) {
-        return Ok(serde_json::to_vec(&json!({
+        return to_vec(&json!({
             "status": "error",
             "message": "llvm-cov not found or failed. Please install 'cargo-llvm-cov' to use this tool.",
             "hint": "cargo install cargo-llvm-cov"
-        })).unwrap());
+        }));
     }
 
     // 解析 JSON 覆盖率数据并提取未覆盖的行
     // 这里简化处理，直接返回原始 JSON 供 LLM 分析
-    Ok(serde_json::to_vec(&json!({
+    to_vec(&json!({
         "status": "success",
         "coverage_data": stdout,
     }))
-    .unwrap())
 }

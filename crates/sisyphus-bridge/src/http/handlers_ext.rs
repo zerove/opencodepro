@@ -3,12 +3,34 @@
 use super::types::*;
 use axum::{
     extract::{Path, State},
-    http::StatusCode,
+    http::{header, HeaderMap, StatusCode},
     response::IntoResponse,
     Json,
 };
+use sisyphus_types::types::BenchmarkRun;
 use sisyphus_types::ToolExecutor;
 use uuid::Uuid;
+
+/// 从请求头或请求体提取 project_id，默认 "default"。
+fn extract_project_id<'a>(headers: &'a HeaderMap, body_project_id: Option<&'a str>) -> &'a str {
+    headers
+        .get("x-project-id")
+        .and_then(|v| v.to_str().ok())
+        .filter(|s| !s.is_empty())
+        .or(body_project_id)
+        .unwrap_or("default")
+}
+
+/// 将 BenchmarkRun 转换为 BenchmarkEntry。
+fn benchmark_run_to_entry(run: &BenchmarkRun) -> BenchmarkEntry {
+    BenchmarkEntry {
+        name: run.name.clone(),
+        duration_secs: run.duration_secs,
+        timestamp: run.timestamp,
+        success: run.success,
+        metrics_json: serde_json::to_string(&run.metrics).unwrap_or_default(),
+    }
+}
 
 // ── Missing gRPC Service Handlers ────────────────────────────────────────────
 
@@ -185,9 +207,10 @@ pub(super) async fn execute_tool_handler(
 
 pub(super) async fn delegate_cognitive_task_handler(
     State(state): State<RestApiState>,
+    headers: HeaderMap,
     Json(req): Json<DelegateCognitiveTaskRequest>,
 ) -> impl IntoResponse {
-    let project_id = "default"; // TODO: extract from header
+    let project_id = extract_project_id(&headers, req.project_id.as_deref());
     let ctx = sisyphus_types::ExecutionContext::new();
     ctx.write_notepad("context".into(), req.context);
     match state
@@ -204,9 +227,10 @@ pub(super) async fn delegate_cognitive_task_handler(
         .await
     {
         Ok(result) => {
-            let plan = sisyphus_types::SOPGraphConfig::from_graph(&result.graph)
-                .map_err(|e| {
-                    (
+            let graph_config = match sisyphus_types::SOPGraphConfig::from_graph(&result.graph) {
+                Ok(c) => c,
+                Err(e) => {
+                    return (
                         StatusCode::INTERNAL_SERVER_ERROR,
                         Json(DelegateCognitiveTaskResponse {
                             success: false,
@@ -214,14 +238,15 @@ pub(super) async fn delegate_cognitive_task_handler(
                             plan_json: "".into(),
                         }),
                     )
-                        .into_response()
-                })
-                .unwrap()
-                .into_cognitive_plan(req.goal.clone(), req.goal.clone());
+                        .into_response();
+                }
+            };
+            let plan = graph_config.into_cognitive_plan(req.goal.clone(), req.goal.clone());
             let _ = state.bridge.kernel().cache_plan(&plan.plan_id, &plan).await;
-            let plan_json = serde_json::to_string(&plan)
-                .map_err(|e| {
-                    (
+            let plan_json = match serde_json::to_string(&plan) {
+                Ok(s) => s,
+                Err(e) => {
+                    return (
                         StatusCode::INTERNAL_SERVER_ERROR,
                         Json(DelegateCognitiveTaskResponse {
                             success: false,
@@ -229,9 +254,9 @@ pub(super) async fn delegate_cognitive_task_handler(
                             plan_json: "".into(),
                         }),
                     )
-                        .into_response()
-                })
-                .unwrap();
+                        .into_response();
+                }
+            };
             (
                 StatusCode::OK,
                 Json(DelegateCognitiveTaskResponse {
@@ -256,9 +281,10 @@ pub(super) async fn delegate_cognitive_task_handler(
 
 pub(super) async fn submit_feedback_handler(
     State(state): State<RestApiState>,
+    headers: HeaderMap,
     Json(req): Json<SubmitFeedbackRequest>,
 ) -> impl IntoResponse {
-    let project_id = "default"; // TODO: extract from header
+    let project_id = extract_project_id(&headers, req.project_id.as_deref());
     let feedback: sisyphus_types::ExecutionFeedback = match serde_json::from_str(&req.feedback_json)
     {
         Ok(f) => f,
@@ -306,9 +332,10 @@ pub(super) async fn submit_feedback_handler(
 
 pub(super) async fn capture_experience_handler(
     State(state): State<RestApiState>,
+    headers: HeaderMap,
     Json(req): Json<CaptureExperienceRequest>,
 ) -> impl IntoResponse {
-    let project_id = "default"; // TODO: extract from header
+    let project_id = extract_project_id(&headers, req.project_id.as_deref());
     let plan: sisyphus_types::CognitivePlan = match serde_json::from_str(&req.plan_json) {
         Ok(p) => p,
         Err(e) => {
@@ -433,22 +460,29 @@ pub(super) async fn list_shared_experiences_handler(
 }
 
 pub(super) async fn list_benchmarks_handler(
-    State(_state): State<RestApiState>,
+    State(state): State<RestApiState>,
     _req: axum::extract::Query<ListBenchmarksRequest>,
 ) -> impl IntoResponse {
-    // TODO: Implement benchmark listing from sisyphus-metrics
-    (
-        StatusCode::OK,
-        Json(ListBenchmarksResponse { benchmarks: vec![] }),
-    )
-        .into_response()
+    let benchmark = state.bridge.kernel().benchmark.lock();
+    let names = benchmark.list_benchmarks();
+    let mut benchmarks = Vec::new();
+    for name in names {
+        let trend = benchmark.get_trend(&name, 100); // 获取最近 100 次运行
+        let entries: Vec<BenchmarkEntry> = trend.iter().map(benchmark_run_to_entry).collect();
+        benchmarks.extend(entries);
+    }
+    (StatusCode::OK, Json(ListBenchmarksResponse { benchmarks })).into_response()
 }
 
 pub(super) async fn get_breaker_metrics_handler(
-    State(_state): State<RestApiState>,
-    _req: axum::extract::Query<BreakerMetricsRequest>,
+    State(state): State<RestApiState>,
+    req: axum::extract::Query<BreakerMetricsRequest>,
 ) -> impl IntoResponse {
-    // TODO: Implement circuit breaker metrics from sisyphus-tools-llm
+    // Note: Circuit breaker metrics are tracked per-model in the LLM client.
+    // The bridge stores LLM client as a trait object; exposing breaker internals
+    // would require downcasting or a dedicated metrics API on LlmClient trait.
+    // For now, return empty list; extend LlmClient trait if needed.
+    let _ = req; // suppress unused warning
     (
         StatusCode::OK,
         Json(BreakerMetricsResponse { breakers: vec![] }),
@@ -751,10 +785,13 @@ pub(super) async fn chaos_status_handler(
 }
 
 pub(super) async fn anomaly_report_handler(
-    State(_state): State<RestApiState>,
-    _req: axum::extract::Query<AnomalyRequest>,
+    State(state): State<RestApiState>,
+    req: axum::extract::Query<AnomalyRequest>,
 ) -> impl IntoResponse {
-    // TODO: Implement anomaly detection from sisyphus-intel
+    // Note: Anomaly detection is available via sisyphus_intel::AnomalyDetector.
+    // The kernel's intelligence_manager has access to it, but requires downcasting.
+    // For now, return empty list; extend IntelligenceManager trait if needed.
+    let _ = req; // suppress unused warning
     (StatusCode::OK, Json(Vec::<AnomalyReport>::new())).into_response()
 }
 

@@ -21,6 +21,7 @@ sisyphus-tools-mcp = { path = "../sisyphus-tools-mcp" }
 sisyphus-tools-session = { path = "../sisyphus-tools-session" }
 sisyphus-tools-agent = { path = "../sisyphus-tools-agent" }
 sisyphus-tools-executor = { path = "../sisyphus-tools-executor" }
+sisyphus-tools-build = { path = "../sisyphus-tools-build" }
 sisyphus-mem = { path = "../sisyphus-mem" }
 sisyphus-intel = { path = "../sisyphus-intel" }
 sisyphus-tools-llm-tools = { path = "../sisyphus-tools-llm-tools" }

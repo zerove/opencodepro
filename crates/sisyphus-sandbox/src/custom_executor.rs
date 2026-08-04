@@ -214,7 +214,11 @@ impl ToolExecutor for CustomToolExecutor {
         })?;
 
         // 3. 写入参数到 WASM 内存
-        let args_json = serde_json::to_string(&args_value).unwrap();
+        let args_json =
+            serde_json::to_string(&args_value).map_err(|e| TypesError::ToolExecutionError {
+                tool_id: tool_id.to_string(),
+                details: format!("Failed to serialize WASM args: {e}"),
+            })?;
         let args_bytes = args_json.as_bytes();
 
         let memory = instance.get_memory(&mut store, "memory").ok_or_else(|| {

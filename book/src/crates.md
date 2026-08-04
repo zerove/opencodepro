@@ -1,6 +1,6 @@
 # Crate Reference
 
-Sisyphus is structured as a Rust workspace with 29 members: 28 crates under `crates/` (the former `sisyphus-tools` monolith was split into 10 sub-crates) plus `webui` and `evals`.
+Sisyphus is structured as a Rust workspace with 37 members: 35 crates under `crates/` (including the 10 `sisyphus-tools-*` sub-crates) plus `webui` and `evals`.
 
 ## 基础层 (Foundation)
 

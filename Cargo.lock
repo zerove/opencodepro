@@ -4434,6 +4434,7 @@ dependencies = [
  "sisyphus-roadmap",
  "sisyphus-sandbox",
  "sisyphus-tools-agent",
+ "sisyphus-tools-build",
  "sisyphus-tools-core",
  "sisyphus-tools-executor",
  "sisyphus-tools-llm",
@@ -4892,6 +4893,7 @@ dependencies = [
  "async-trait",
  "base64 0.22.1",
  "chrono",
+ "dashmap",
  "glob",
  "ignore",
  "regex",
@@ -4933,6 +4935,7 @@ dependencies = [
  "async-trait",
  "serde",
  "serde_json",
+ "tracing",
 ]
 
 [[package]]

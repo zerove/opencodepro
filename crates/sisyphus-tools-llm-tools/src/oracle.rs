@@ -23,13 +23,22 @@ pub fn analyze_file(path: &Path) -> ToolResult<FileAnalysis> {
     let mut structs = vec![];
     let mut issues = vec![];
 
-    let fn_re =
-        Regex::new(r"(pub\s+)?(async\s+)?fn\s+(\w+)\s*\(([^)]*)\)\s*(->\s*([^{;]+))?").unwrap();
-    let import_re = Regex::new(r"^use\s+(.+);$").unwrap();
-    let struct_re = Regex::new(r"(pub\s+)?struct\s+(\w+)").unwrap();
-    let long_line_re = Regex::new(r"^.{120,}$").unwrap();
-    let todo_re = Regex::new(r"(TODO|FIXME|HACK|XXX)").unwrap();
-    let complexity_re = Regex::new(r"\b(if|for|while|match|loop)\b").unwrap();
+    let fn_re = Regex::new(r"(pub\s+)?(async\s+)?fn\s+(\w+)\s*\(([^)]*)\)\s*(->\s*([^{;]+))?")
+        .map_err(|e| sisyphus_tools_core::ToolError::Generic(format!("fn regex failed: {e}")))?;
+    let import_re = Regex::new(r"^use\s+(.+);$").map_err(|e| {
+        sisyphus_tools_core::ToolError::Generic(format!("import regex failed: {e}"))
+    })?;
+    let struct_re = Regex::new(r"(pub\s+)?struct\s+(\w+)").map_err(|e| {
+        sisyphus_tools_core::ToolError::Generic(format!("struct regex failed: {e}"))
+    })?;
+    let long_line_re = Regex::new(r"^.{120,}$").map_err(|e| {
+        sisyphus_tools_core::ToolError::Generic(format!("long_line regex failed: {e}"))
+    })?;
+    let todo_re = Regex::new(r"(TODO|FIXME|HACK|XXX)")
+        .map_err(|e| sisyphus_tools_core::ToolError::Generic(format!("todo regex failed: {e}")))?;
+    let complexity_re = Regex::new(r"\b(if|for|while|match|loop)\b").map_err(|e| {
+        sisyphus_tools_core::ToolError::Generic(format!("complexity regex failed: {e}"))
+    })?;
 
     for (i, line) in lines.iter().enumerate() {
         let line_num = i + 1;

@@ -22,8 +22,12 @@ impl JcodeToolExecutor {
     }
 
     pub fn set_caller(&self, caller: Arc<dyn JcodeToolCaller>) {
-        let mut lock = self.caller.lock().unwrap();
-        *lock = Some(caller);
+        // 锁中毒时静默跳过：调用者设置失败不应导致 panic
+        if let Ok(mut lock) = self.caller.lock() {
+            *lock = Some(caller);
+        } else {
+            tracing::error!("Jcode caller mutex poisoned, ignoring set_caller");
+        }
     }
 }
 
@@ -41,9 +45,13 @@ impl ToolExecutor for JcodeToolExecutor {
         args: Vec<u8>,
         _fuel_limit: u64,
     ) -> Result<Vec<u8>, TypesError> {
-        let caller = {
-            let lock = self.caller.lock().unwrap();
-            lock.as_ref().cloned()
+        let caller = match self.caller.lock() {
+            Ok(lock) => lock.as_ref().cloned(),
+            Err(_) => {
+                return Err(TypesError::NodeExecutionError(
+                    "Jcode caller mutex poisoned".into(),
+                ))
+            }
         };
 
         match caller {

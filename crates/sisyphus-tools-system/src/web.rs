@@ -16,6 +16,13 @@ use regex::Regex;
 pub use resolver::{build_direct_client, extract_host, extract_port};
 use sisyphus_tools_core::{ToolError, ToolResult};
 
+/// 编译 DuckDuckGo 正则，错误传播为 `ToolError`。
+/// 正则为编译期字面量，失败极不可能；不缓存避免生命周期问题。
+fn ddg_re(pattern: &str) -> ToolResult<Regex> {
+    Regex::new(pattern)
+        .map_err(|e| ToolError::WebError(format!("regex '{pattern}' compile failed: {e}")))
+}
+
 // ── Public API ──────────────────────────────────────────────
 
 /// Fetch a URL and return its content as text.
@@ -73,14 +80,9 @@ pub async fn webfetch(url: &str) -> ToolResult<FetchResult> {
 /// No API key required. Returns up to `num_results` results.
 /// Uses DoH-based direct connection first, then falls back to default client.
 pub async fn websearch(query: &str, num_results: usize) -> ToolResult<Vec<SearchResult>> {
-    static RE_RESULT: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
-        Regex::new(r#"<a[^>]*class="result__a"[^>]*href="([^"]*)"[^>]*>(.*?)</a>"#).unwrap()
-    });
-    static RE_SNIPPET: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
-        Regex::new(r#"<a[^>]*class="result__snippet"[^>]*>(.*?)</a>"#).unwrap()
-    });
-    static RE_TAG: std::sync::LazyLock<Regex> =
-        std::sync::LazyLock::new(|| Regex::new(r"<[^>]*>").unwrap());
+    let re_result = ddg_re(r#"<a[^>]*class="result__a"[^>]*href="([^"]*)"[^>]*>(.*?)</a>"#)?;
+    let re_snippet = ddg_re(r#"<a[^>]*class="result__snippet"[^>]*>(.*?)</a>"#)?;
+    let re_tag = ddg_re(r"<[^>]*>")?;
 
     // Try DoH-based direct connection first, fallback to default client.
     let client = match build_direct_client("html.duckduckgo.com", 443).await {
@@ -105,7 +107,7 @@ pub async fn websearch(query: &str, num_results: usize) -> ToolResult<Vec<Search
         .await
         .map_err(|e| ToolError::WebError(format!("read response failed: {e}")))?;
 
-    let titles: Vec<(&str, &str)> = RE_RESULT
+    let titles: Vec<(&str, &str)> = re_result
         .captures_iter(&html)
         .map(|c| {
             let url = c.get(1).map_or("", |m| m.as_str());
@@ -114,13 +116,13 @@ pub async fn websearch(query: &str, num_results: usize) -> ToolResult<Vec<Search
         })
         .collect();
 
-    let snippets: Vec<&str> = RE_SNIPPET
+    let snippets: Vec<&str> = re_snippet
         .captures_iter(&html)
         .map(|c| c.get(1).map_or("", |m| m.as_str()))
         .collect();
 
     let strip = |s: &str| -> String {
-        let s = RE_TAG.replace_all(s, "");
+        let s = re_tag.replace_all(s, "");
         let s = s.replace("&amp;", "&");
         let s = s.replace("&lt;", "<");
         let s = s.replace("&gt;", ">");

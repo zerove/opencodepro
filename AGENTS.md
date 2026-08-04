@@ -1,7 +1,7 @@
 # Sisyphus 项目知识库
 
-**生成时间:** 2026-08-03
-**技术栈:** Rust 工作区 (29 成员), async (tokio), gRPC (tonic), TUI (ratatui)
+**生成时间:** 2026-08-04
+**技术栈:** Rust 工作区 (37 成员), async (tokio), gRPC (tonic), TUI (ratatui)
 
 ## 概述
 

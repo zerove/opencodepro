@@ -75,38 +75,53 @@ fn registry() -> &'static Mutex<ToolRegistryInner> {
 /// If a tool with the same id already exists it is silently replaced.
 pub fn register_tool<T: SisyphusTool + 'static>(tool: T) {
     let id = std::any::type_name::<T>().to_string();
-    let mut reg = registry().lock().expect("tool registry poisoned");
+    let Some(mut reg) = registry().lock().ok() else {
+        tracing::error!("tool registry poisoned, register_tool ignored");
+        return;
+    };
     reg.tools.insert(id, Arc::new(tool));
 }
 
 /// Register a tool with an explicit id.
 pub fn register_tool_as<T: SisyphusTool + 'static>(tool_id: &str, tool: T) {
-    let mut reg = registry().lock().expect("tool registry poisoned");
+    let Some(mut reg) = registry().lock().ok() else {
+        tracing::error!("tool registry poisoned, register_tool_as ignored");
+        return;
+    };
     reg.tools.insert(tool_id.to_string(), Arc::new(tool));
 }
 
 /// Retrieve a tool reference by id.
 pub fn get_tool(tool_id: &str) -> Option<Arc<dyn SisyphusTool>> {
-    let reg = registry().lock().expect("tool registry poisoned");
+    let reg = registry().lock().ok()?;
     reg.tools.get(tool_id).cloned()
 }
 
 /// List all registered tool ids.
 pub fn list_tools() -> Vec<String> {
-    let reg = registry().lock().expect("tool registry poisoned");
-    reg.tools.keys().cloned().collect()
+    registry()
+        .lock()
+        .ok()
+        .map(|reg| reg.tools.keys().cloned().collect())
+        .unwrap_or_default()
 }
 
 /// Number of registered tools.
 pub fn tool_count() -> usize {
-    let reg = registry().lock().expect("tool registry poisoned");
-    reg.tools.len()
+    registry()
+        .lock()
+        .ok()
+        .map(|reg| reg.tools.len())
+        .unwrap_or_default()
 }
 
 /// Remove a tool from the registry by id. Returns `true` if it existed.
 pub fn remove_tool(tool_id: &str) -> bool {
-    let mut reg = registry().lock().expect("tool registry poisoned");
-    reg.tools.remove(tool_id).is_some()
+    registry()
+        .lock()
+        .ok()
+        .map(|mut reg| reg.tools.remove(tool_id).is_some())
+        .unwrap_or(false)
 }
 
 // ── Tests ────────────────────────────────────────────────────────────────

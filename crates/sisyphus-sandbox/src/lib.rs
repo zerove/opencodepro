@@ -60,12 +60,6 @@ impl sisyphus_types::CacheInvalidatable for WasmToolExecutor {
     }
 }
 
-impl Default for WasmToolExecutor {
-    fn default() -> Self {
-        Self::new().expect("WasmToolExecutor::new() should succeed with default config")
-    }
-}
-
 impl WasmToolExecutor {
     pub fn new() -> Result<Self, SandboxError> {
         Self::with_config(None, None)
