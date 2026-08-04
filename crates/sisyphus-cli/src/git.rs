@@ -1,12 +1,12 @@
 use anyhow::Result;
 use std::path::PathBuf;
 
-/// Resolve `cwd` parameter, defaulting to current directory.
+/// 解析 `cwd` 参数，默认使用当前目录。
 fn resolve_dir(cwd: Option<PathBuf>) -> Option<PathBuf> {
     Some(cwd.unwrap_or_else(|| std::env::current_dir().unwrap_or_default()))
 }
 
-// ── status ─────────────────────────────────────────────────
+// ── 状态 ─────────────────────────────────────────────────
 
 pub fn run_status(cwd: Option<PathBuf>) -> Result<()> {
     let dir = resolve_dir(cwd);
@@ -59,7 +59,7 @@ fn status_char(c: char) -> &'static str {
     }
 }
 
-// ── diff ───────────────────────────────────────────────────
+// ── 差异 ───────────────────────────────────────────────────
 
 pub fn run_diff(pathspec: Option<String>, cached: bool, cwd: Option<PathBuf>) -> Result<()> {
     let dir = resolve_dir(cwd);
@@ -72,7 +72,7 @@ pub fn run_diff(pathspec: Option<String>, cached: bool, cwd: Option<PathBuf>) ->
     Ok(())
 }
 
-// ── add ────────────────────────────────────────────────────
+// ── 添加 ────────────────────────────────────────────────────
 
 pub fn run_add(pathspecs: Vec<String>, cwd: Option<PathBuf>) -> Result<()> {
     let dir = resolve_dir(cwd);
@@ -85,7 +85,7 @@ pub fn run_add(pathspecs: Vec<String>, cwd: Option<PathBuf>) -> Result<()> {
     Ok(())
 }
 
-// ── commit ─────────────────────────────────────────────────
+// ── 提交 ─────────────────────────────────────────────────
 
 pub fn run_commit(message: String, allow_empty: bool, cwd: Option<PathBuf>) -> Result<()> {
     let dir = resolve_dir(cwd);
@@ -94,7 +94,7 @@ pub fn run_commit(message: String, allow_empty: bool, cwd: Option<PathBuf>) -> R
     Ok(())
 }
 
-// ── log ────────────────────────────────────────────────────
+// ── 日志 ────────────────────────────────────────────────────
 
 pub fn run_log(count: usize, cwd: Option<PathBuf>) -> Result<()> {
     let dir = resolve_dir(cwd);
@@ -115,7 +115,7 @@ pub fn run_log(count: usize, cwd: Option<PathBuf>) -> Result<()> {
     Ok(())
 }
 
-// ── branch ─────────────────────────────────────────────────
+// ── 分支 ─────────────────────────────────────────────────
 
 pub fn run_branch(cwd: Option<PathBuf>) -> Result<()> {
     let dir = resolve_dir(cwd);
@@ -127,7 +127,7 @@ pub fn run_branch(cwd: Option<PathBuf>) -> Result<()> {
     Ok(())
 }
 
-// ── checkout ───────────────────────────────────────────────
+// ── 检出 ───────────────────────────────────────────────
 
 pub fn run_checkout(branch: String, create: bool, cwd: Option<PathBuf>) -> Result<()> {
     let dir = resolve_dir(cwd);
@@ -136,7 +136,7 @@ pub fn run_checkout(branch: String, create: bool, cwd: Option<PathBuf>) -> Resul
     Ok(())
 }
 
-// ── push ───────────────────────────────────────────────────
+// ── 推送 ───────────────────────────────────────────────────
 
 pub fn run_push(
     remote: String,
@@ -153,7 +153,7 @@ pub fn run_push(
     Ok(())
 }
 
-// ── pull ───────────────────────────────────────────────────
+// ── 拉取 ───────────────────────────────────────────────────
 
 pub fn run_pull(remote: String, branch: Option<String>, cwd: Option<PathBuf>) -> Result<()> {
     let dir = resolve_dir(cwd);
@@ -165,7 +165,7 @@ pub fn run_pull(remote: String, branch: Option<String>, cwd: Option<PathBuf>) ->
     Ok(())
 }
 
-// ── summary ────────────────────────────────────────────────
+// ── 摘要 ────────────────────────────────────────────────
 
 pub fn run_summary(cwd: Option<PathBuf>) -> Result<()> {
     let dir = resolve_dir(cwd);

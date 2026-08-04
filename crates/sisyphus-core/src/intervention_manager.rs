@@ -1,4 +1,4 @@
-//! Management of human-in-the-loop interventions for Sisyphus.
+//! Sisyphus 的人在回路（human-in-the-loop）干预管理。
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -48,7 +48,7 @@ impl InterventionManager {
         }
     }
 
-    /// Requests feedback for a specific node and waits for the user's response.
+    /// 请求某个节点的反馈并等待用户响应。
     pub async fn request_feedback(
         &self,
         node_name: String,
@@ -70,14 +70,14 @@ impl InterventionManager {
             _ = tokio::time::sleep(timeout) => Err(InterventionError::Timeout),
         };
 
-        // Cleanup
+        // 清理
         let mut pending = self.pending.write().await;
         pending.remove(&node_name);
 
         result
     }
 
-    /// Pushes user feedback into the system, resuming the paused execution.
+    /// 将用户反馈推入系统，恢复暂停的执行。
     pub async fn submit_feedback(
         &self,
         node_name: &str,

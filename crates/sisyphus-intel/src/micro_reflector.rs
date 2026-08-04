@@ -6,9 +6,9 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
-/// Maximum time to wait for a single micro-reflection LLM call. Kept short so
-/// that an unreachable LLM degrades to a permissive CONTINUE instead of
-/// stalling node execution for the full HTTP client timeout (up to 60s).
+/// 单次微反思 LLM 调用的最长等待时间。保持较短，
+/// 使不可达的 LLM 降级为宽松的 CONTINUE，而不是
+/// 让节点执行卡满整个 HTTP 客户端超时（最多 60 秒）。
 const MICRO_REFLECT_TIMEOUT: Duration = Duration::from_secs(2);
 
 pub struct LlmMicroReflector {

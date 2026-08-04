@@ -1,7 +1,7 @@
 use clap::{Subcommand, ValueEnum};
 use std::path::PathBuf;
 
-// ── Sub-enum group modules ──────────────────────────────
+// ── 子枚举分组模块 ──────────────────────────────
 
 #[path = "cmd_agent.rs"]
 mod cmd_agent;
@@ -19,225 +19,225 @@ pub use cmd_devtool::*;
 mod cmd_bridge;
 pub use cmd_bridge::*;
 
-// ── Main Commands enum ──────────────────────────────────
+// ── 主命令枚举 ──────────────────────────────────
 
 #[derive(Subcommand)]
 pub enum Commands {
-    // ── file tools ──────────────────────────────────────
+    // ── 文件工具 ──────────────────────────────────────
     #[command(next_help_heading = "File Tools")]
-    /// Read a file and print its contents
+    ///读取文件并打印其内容
     Read { path: PathBuf },
-    /// Read a range of lines from a file (offset/limit)
+    ///读取文件中的某段行（offset/limit）
     ReadLines {
         path: PathBuf,
-        /// 0-based line offset to start from
+        ///起始行偏移（从 0 开始）
         #[arg(short = 'o', long = "offset", default_value = "0")]
         offset: usize,
-        /// Number of lines to read
+        ///要读取的行数
         #[arg(short = 'l', long = "limit", default_value = "50")]
         limit: usize,
     },
-    /// Write content to a file (atomic create + rename)
+    ///将内容写入文件（原子创建 + 重命名）
     Write { path: PathBuf, content: String },
-    /// Edit a file: replace FIRST occurrence of OLD_STRING with NEW_STRING
+    ///编辑文件：将 OLD_STRING 的首次出现替换为 NEW_STRING
     Edit {
         path: PathBuf,
         old_string: String,
         new_string: String,
-        /// Replace ALL occurrences instead of just the first
+        ///替换所有出现，而不仅是第一次
         #[arg(short = 'a', long = "all")]
         all: bool,
     },
-    /// Find files matching a glob pattern
+    ///查找匹配 glob 模式的文件
     Glob {
         pattern: String,
-        /// Root directory to search from (default: .)
+        ///搜索起始根目录（默认：.）
         #[arg(default_value = ".")]
         root: PathBuf,
-        /// Max results (default: 100)
+        ///最大结果数（默认：100）
         #[arg(short = 'l', default_value = "100")]
         limit: usize,
     },
-    /// Regex search across files (grep)
+    ///跨文件正则搜索（grep）
     Grep {
         pattern: String,
-        /// File or directory to search
+        ///要搜索的文件或目录
         path: PathBuf,
         #[arg(short = 'i')]
         include: Option<String>,
     },
-    /// Execute a shell command
+    ///执行 shell 命令
     Exec {
         command: String,
         #[arg(short = 'd', long = "dir")]
         dir: Option<PathBuf>,
     },
-    /// Search the web using DuckDuckGo
+    ///使用 DuckDuckGo 搜索网络
     Search {
         query: String,
         #[arg(short = 'n', default_value = "5")]
         num: usize,
     },
-    /// Apply a unified-diff patch to a file
+    ///对文件应用 unified-diff 补丁
     ApplyPatch {
-        /// File to patch
+        ///要修补的文件
         file: PathBuf,
-        /// Path to a patch file (use - for stdin)
+        ///补丁文件路径（使用 - 表示 stdin）
         #[arg(short = 'i', default_value = "-")]
         input: PathBuf,
     },
 
     #[command(next_help_heading = "Task Tracking", subcommand, alias = "td")]
-    /// Manage todos
+    ///管理待办事项
     Todo(TodoCommands),
 
-    /// Manage sessions
+    ///管理会话
     #[command(subcommand, alias = "ses")]
     Session(SessionCommands),
 
-    /// Manage plans
+    ///管理计划
     #[command(subcommand)]
     Plan(PlanCommands),
 
     #[command(next_help_heading = "Agents", subcommand)]
-    /// Code analysis tools
+    ///代码分析工具
     Oracle(OracleCommands),
 
-    /// Code search tools
+    ///代码搜索工具
     #[command(subcommand)]
     Explore(ExploreCommands),
 
-    /// External research agent (web search, docs, code examples)
+    ///外部研究代理（网络搜索、文档、代码示例）
     #[command(subcommand)]
     Librarian(LibrarianCommands),
 
-    /// Plan/code/architecture review agent
+    ///计划/代码/架构审查代理
     #[command(subcommand)]
     Momus(MomusCommands),
 
-    /// Pre-planning analysis agent (ambiguity detection, implicit requirements)
+    ///规划前分析代理（歧义检测、隐含需求）
     #[command(subcommand)]
     Metis(MetisCommands),
 
-    /// Skill management (list/show/install skills)
+    ///技能管理（列出/查看/安装技能）
     #[command(subcommand)]
     Skill(SkillCommands),
 
-    /// Project rules (AGENTS.md loading and inspection)
+    ///项目规则（AGENTS.md 加载与检查）
     #[command(subcommand)]
     Rules(RulesCommands),
 
-    /// Language server protocol tools
+    ///语言服务器协议工具
     #[command(subcommand)]
     Lsp(LspCommands),
 
-    /// Task orchestration (parallel execution)
+    ///任务编排（并行执行）
     #[command(subcommand)]
     Delegate(DelegateCommands),
 
     #[command(next_help_heading = "Engine", subcommand)]
-    /// MCP server integration (connect, info, call)
+    ///MCP 服务器集成（连接、信息、调用）
     Mcp(McpCommands),
 
-    // ── engine ──────────────────────────────────────────
-    /// Interact with the Sisyphus cognitive engine via gRPC bridge
+    // ── 引擎 ──────────────────────────────────────────
+    ///通过 gRPC 桥接与 Sisyphus 认知引擎交互
     #[command(subcommand)]
     Sop(SopCommands),
-    /// Plugin management (list, load, watch, unload)
+    ///插件管理（列出、加载、监视、卸载）
     #[command(subcommand)]
     Plugin(PluginCommands),
-    /// Workspace management (create, switch, list, current, delete)
+    ///工作区管理（创建、切换、列出、当前、删除）
     #[command(subcommand)]
     Workspace(WorkspaceCommands),
-    /// Check bridge health
+    ///检查桥接健康状态
     Health,
-    /// Show bridge status (breakers, benchmarks)
+    ///显示桥接状态（熔断器、基准）
     Status,
-    /// Show meta-learning insights from the bridge
+    ///显示来自桥接的元学习洞察
     LearningInsights {
-        /// Optional: filter by strategy name
+        ///可选：按策略名过滤
         strategy: Option<String>,
     },
-    /// Interact with remote bridge resources
+    ///与远程桥接资源交互
     #[command(subcommand)]
     Remote(RemoteCommands),
-    /// Start the bridge daemon
+    ///启动桥接守护进程
     Daemon,
 
     #[command(next_help_heading = "Git", subcommand)]
-    /// Git operations (status, diff, add, commit, log, branch, checkout, push, pull)
+    ///Git 操作（status、diff、add、commit、log、branch、checkout、push、pull）
     Git(GitCommands),
 
     #[command(next_help_heading = "Dev Tools", subcommand)]
-    /// Build tools (check, build, test, lint, fmt, doc)
+    ///构建工具（check、build、test、lint、fmt、doc）
     Build(BuildCommands),
 
-    // ── run ────────────────────────────────────────────────
-    /// Run the project (cargo run, npm start, etc.)
+    // ── 运行 ────────────────────────────────────────────────
+    ///运行项目（cargo run、npm start 等）
     #[command(subcommand)]
     Run(RunCommands),
 
-    // ── init ──────────────────────────────────────────────
-    /// Project scaffolding: generate project from templates
+    // ── 初始化 ──────────────────────────────────────────────
+    ///项目脚手架：从模板生成项目
     #[command(subcommand)]
     Init(InitCommands),
 
-    // ── precommit ─────────────────────────────────────────
-    /// Install/uninstall/check git pre-commit hooks (fmt + lint)
+    // ── 预提交 ─────────────────────────────────────────
+    ///安装/卸载/检查 git pre-commit 钩子（fmt + lint）
     #[command(subcommand)]
     Precommit(PrecommitCommands),
     // ── pr ──────────────────────────────────────────────────
-    /// Manage GitHub Pull Requests
+    /// 管理 GitHub 拉取请求
     #[command(subcommand)]
     Pr(PrCommands),
-    // ── wisdom ──────────────────────────────────────────────
-    /// Manage wisdom/notepads for cross-session knowledge
+    // ── 智慧笔记 ──────────────────────────────────────────────
+    ///管理跨会话知识（智慧/记事本）
     #[command(subcommand)]
     Wisdom(WisdomCommands),
-    // ── hashline ────────────────────────────────────────────
-    /// Hashline editing safety system (LINE#ID pattern)
+    // ── 行哈希编辑 ────────────────────────────────────────────
+    ///行哈希编辑安全系统（LINE#ID 模式）
     #[command(subcommand)]
     Hashline(HashlineCommands),
-    // ── diagnose ──────────────────────────────────────────
-    /// Run cargo check (and optionally clippy), show unified report
+    // ── 诊断 ──────────────────────────────────────────
+    ///运行 cargo check（可选 clippy），显示统一报告
 
     #[command(subcommand)]
     Diagnose(DiagnoseCommands),
 
-    /// Auto-apply cargo fix, then re-diagnose
+    ///自动应用 cargo fix，然后重新诊断
     #[command(subcommand)]
     Fix(FixCommands),
 
-    /// GitHub Actions integration (workflow templates, CI mode)
+    ///GitHub Actions 集成（工作流模板、CI 模式）
     #[command(subcommand)]
     Github(GithubCommands),
 
-    /// Manage LLM providers (list, add, remove, test)
+    ///管理 LLM 提供商（列出、添加、移除、测试）
     #[command(subcommand)]
     Provider(ProviderCommands),
 
-    /// Manage tool registration (MCP, custom tools)
+    ///管理工具注册（MCP、自定义工具）
     #[command(subcommand)]
     Tool(ToolCommands),
 
-    // ── dev ─────────────────────────────────────────────────
-    /// Autonomous development agent: plan → implement → verify
+    // ── 开发 ─────────────────────────────────────────────────
+    ///自主开发代理：计划 → 实现 → 验证
     Dev {
-        /// Development goal (what to build/change)
+        ///开发目标（要构建/更改的内容）
         goal: String,
-        /// Optional project context (current state, constraints)
+        ///可选项目上下文（当前状态、约束）
         #[arg(short = 'c', long = "context")]
         context: Option<String>,
-        /// Execute steps in parallel (max 4 concurrent)
+        ///并行执行步骤（最多 4 个并发）
         #[arg(short = 'p', long = "parallel")]
         parallel: bool,
-        /// Resume from last checkpoint, skipping completed steps
+        ///从最后检查点恢复，跳过已完成步骤
         #[arg(short = 'r', long = "resume")]
         resume: bool,
     },
 }
 
-// ── Shared types ────────────────────────────────────────
+// ── 共享类型 ────────────────────────────────────────
 
 #[derive(ValueEnum, Clone, Debug)]
 pub enum PriorityArg {
@@ -256,7 +256,7 @@ impl From<PriorityArg> for sisyphus_cli::tools::TodoPriority {
     }
 }
 
-// ── Table formatting helpers ────────────────────────────
+// ── 表格格式化辅助 ────────────────────────────
 
 pub fn short_id(id: &str) -> String {
     if id.len() <= 12 {

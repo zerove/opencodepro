@@ -8,17 +8,17 @@ use sisyphus_types::SOPGraph;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-/// Maximum time to wait for a single LLM call in [`LlmReflector`] and
-/// [`LlmEvolver`]. Kept short so that an unreachable LLM degrades reflection /
-/// evolution instead of stalling the cognitive loop for the full HTTP client
-/// timeout (up to 60s per call).
+/// LlmReflector 与 LlmEvolver 中单次 LLM 调用的最长等待时间。
+/// 保持较短，使不可达的 LLM 将反思/演进降级，
+/// 而不是让认知循环卡满整个 HTTP 客户端
+/// 超时（每次调用最多 60 秒）。
 const LLM_AUDIT_TIMEOUT: Duration = Duration::from_secs(2);
 
 // ---------------------------------------------------------------------------
-// Reflection types
+// 反思类型
 // ---------------------------------------------------------------------------
 
-/// A single node execution record extracted from a trace.
+/// 从轨迹中提取的单节点执行记录。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RecordedNode {
     pub node: String,
@@ -57,7 +57,7 @@ pub trait SOPEvolver: Send + Sync {
 }
 
 // ---------------------------------------------------------------------------
-// StandardEvolver — retry wrapping + fuel evolution
+// StandardEvolver — 重试包装 + 燃料演进
 // ---------------------------------------------------------------------------
 
 pub struct StandardEvolver {
@@ -125,7 +125,7 @@ impl SOPEvolver for StandardEvolver {
             {
                 let mut fuel = wasm_node.fuel_limit;
                 if needs_fuel {
-                    // Use adaptive fuel pricing
+                    // 使用自适应燃料定价
                     fuel = self.fuel_pricer.price_fuel(&name, fuel, prediction);
                     tracing::debug!(node = %name, new_fuel = fuel, "Fuel adjusted");
                 }
@@ -189,10 +189,10 @@ impl SOPEvolver for StandardEvolver {
 }
 
 // ---------------------------------------------------------------------------
-// Error classification for targeted reflection and evolution.
+// 用于针对性反思与演进的错误分类。
 // ---------------------------------------------------------------------------
 
-/// Error classification for targeted reflection and evolution.
+/// 用于针对性反思与演进的错误分类。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ErrorCategory {
     ResourceExhausted,
@@ -203,7 +203,7 @@ pub enum ErrorCategory {
 }
 
 impl ErrorCategory {
-    /// Classify an error message string into an ErrorCategory.
+    /// 将错误消息字符串分类为 ErrorCategory。
     pub fn classify(output: &str) -> Self {
         if output.contains("ResourceExhausted")
             || output.contains("fuel")
@@ -230,7 +230,7 @@ impl ErrorCategory {
         }
     }
 
-    /// Severity weight for deviation calculation.
+    /// 偏差计算的严重度权重。
     pub fn severity(&self) -> f64 {
         match self {
             ErrorCategory::Crash => 1.0,
@@ -388,7 +388,7 @@ impl Reflector for HybridReflector {
 
         let start = Instant::now();
 
-        // Run both reflectors in parallel
+        // 并行运行两个反思器
         let (std_res, llm_res) = tokio::join!(
             self.standard.reflect(trace, predicted, experiences),
             self.llm.reflect(trace, predicted, experiences)
@@ -397,10 +397,10 @@ impl Reflector for HybridReflector {
         let std_report = std_res.map_err(|e| format!("Standard reflection failed: {e}"))?;
         let llm_report = llm_res.map_err(|e| format!("LLM reflection failed: {e}"))?;
 
-        // Merge scores: weighted average (LLM is usually more nuanced, Standard is more objective)
+        // 合并分数：加权平均（LLM 通常更细致，Standard 更客观）
         let deviation = (std_report.deviation_score * 0.4) + (llm_report.deviation_score * 0.6);
 
-        // Merge improvements: Deduplicate and combine
+        // 合并改进：去重并合并
         let mut all_improvements = std_report.suggested_improvements;
         for imp in llm_report.suggested_improvements {
             if !all_improvements.contains(&imp) {
@@ -513,7 +513,7 @@ impl SOPEvolver for LlmEvolver {
 }
 
 // ---------------------------------------------------------------------------
-// StandardReflector — error-categorizing trace analysis
+// StandardReflector — 错误分类的轨迹分析
 // ---------------------------------------------------------------------------
 
 pub struct StandardReflector;
@@ -545,7 +545,7 @@ impl StandardReflector {
                 .map(|r| r.output.as_str())
                 .collect();
 
-            // Categorize errors and suggest targeted mitigations
+            // 分类错误并建议针对性缓解
             let mut categories: Vec<ErrorCategory> =
                 errors.iter().map(|e| ErrorCategory::classify(e)).collect();
             categories.dedup();
@@ -609,7 +609,7 @@ impl StandardReflector {
                 .push("Most nodes returned empty output — check tool implementations".into());
         }
 
-        // Deviation blends failure rate with categorized severity
+        // 偏差结合失败率与分类严重度
         let deviation = failure_rate * 0.6 + severity_sum * 0.3;
 
         if deviation < 0.3 {
@@ -634,7 +634,7 @@ impl Reflector for StandardReflector {
         let start = Instant::now();
         let records = Self::parse_trace(trace);
         let (deviation, suggestions) = if records.is_empty() {
-            // Fallback: basic string analysis when no structured records found
+            // 兜底：无结构化记录时进行基础字符串分析
             let deviation = if trace.contains("ResourceExhausted") || trace.contains("Error") {
                 0.8
             } else {

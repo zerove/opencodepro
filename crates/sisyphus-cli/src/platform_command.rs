@@ -85,14 +85,14 @@ impl CommandBuilder {
 
     fn prepare_command(&self) -> Command {
         if cfg!(windows) {
-            // On Windows, we use powershell to execute the command
+            // 在 Windows 上使用 powershell 执行命令
             let mut full_cmd = self.program.clone();
             for arg in &self.args {
                 full_cmd.push(' ');
                 full_cmd.push_str(arg);
             }
 
-            // Normalize paths in the command string
+            // 规范化命令字符串中的路径
             full_cmd = normalize_path(&full_cmd);
 
             let mut cmd = Command::new("powershell.exe");
@@ -100,7 +100,7 @@ impl CommandBuilder {
             cmd.arg(full_cmd);
             cmd
         } else {
-            // On Unix, we use the program directly
+            // 在 Unix 上直接使用程序
             let mut cmd = Command::new(&self.program);
             cmd.args(&self.args);
             cmd

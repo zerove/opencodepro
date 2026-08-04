@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 // ---------------------------------------------------------------------------
-// Flow Synthesis
+// 流程合成
 // ---------------------------------------------------------------------------
 
 pub struct SynthesisResult {
@@ -36,18 +36,18 @@ pub enum ActionType {
     Validate,
 }
 
-/// Goal-driven SOP synthesis engine.
+/// 目标驱动的 SOP 合成引擎。
 ///
-/// Parses a natural-language goal into a DAG of typed actions:
-///   - Fetch/Read/Get → fetch node
-///   - Process/Transform/Convert → process node
-///   - Store/Save/Write → sink node
-///   - Search/Find/Query → search node
-///   - Validate/Check/Verify → validate node
+/// 将自然语言目标解析为类型化动作的 DAG：
+///   - Fetch/Read/Get → 获取节点
+///   - Process/Transform/Convert → 处理节点
+///   - Store/Save/Write → 汇点节点
+///   - Search/Find/Query → 搜索节点
+///   - Validate/Check/Verify → 验证节点
 ///
-/// Multiple actions are chained as a linear pipeline in detection order.
-/// When "parallel" appears in the goal, the first two actions fan out
-/// and converge into a single merge node.
+/// 多个动作按检测顺序链接为线性流水线。
+/// 当目标出现 "parallel" 时，前两个动作扇出并汇聚到
+/// 单个合并节点。
 pub(crate) fn classify_goal(goal: &str) -> Vec<ActionType> {
     let goal_lower = goal.to_lowercase();
     let mut actions = Vec::new();
@@ -186,7 +186,7 @@ impl FlowSynthesizer for GoalDrivenSynthesizer {
         }
 
         if is_parallel && actions.len() >= 2 {
-            // Fan-out: multiple independent nodes, converge into merge node
+            // 扇出：多个独立节点汇聚到合并节点
             let n1 = graph.add_node(Arc::new(sisyphus_types::WasmSOPNode {
                 name: action_label(&actions[0]).into(),
                 tool_id: tool_id_for_action(&actions[0]).into(),
@@ -218,7 +218,7 @@ impl FlowSynthesizer for GoalDrivenSynthesizer {
                 ),
             })
         } else {
-            // Linear pipeline
+            // 线性流水线
             let mut prev = None;
             let mut first_idx = None;
 
@@ -353,9 +353,9 @@ impl FlowSynthesizer for DynamicSopSynthesizer {
     }
 }
 
-/// Synthesize multiple goals into a single CompositeGraph.
-/// Each goal becomes an independent sub-graph with no cross-dependencies,
-/// so they can be executed in parallel by CompositeExecutor.
+/// 将多个目标合成单个 CompositeGraph。
+/// 每个目标成为无跨依赖的独立子图，
+/// 因此可由 CompositeExecutor 并行执行。
 pub async fn synthesize_composite(
     goals: &[&str],
     synthesizer: &dyn FlowSynthesizer,
@@ -485,8 +485,8 @@ impl FlowSynthesizer for StrategicSopSynthesizer {
                 )
                 .await?;
 
-            // Scoring: Prob is primary, Cost is secondary penalty
-            // Prob (0.0-1.0) * 1000 - Cost (u64)
+            // 计分：概率为主，成本为次要惩罚
+            // 概率（0.0-1.0）* 1000 - 成本（u64）
             let score = (sim.success_probability * 1000.0) - (sim.estimated_cost as f64);
 
             tracing::info!(
@@ -518,7 +518,7 @@ mod tests {
     use super::*;
 
     // -----------------------------------------------------------------------
-    // classify_goal
+    // classify_goal（目标分类）
     // -----------------------------------------------------------------------
 
     #[test]
@@ -553,7 +553,7 @@ mod tests {
 
     #[test]
     fn test_classify_multi_action_pipeline() {
-        // "fetch" + "process" + "save" = Fetch + Process + Sink
+        // "fetch" + "process" + "save" = 获取 + 处理 + 汇点
         let actions = classify_goal("fetch data, process it, then save");
         assert_eq!(actions.len(), 3);
         assert!(actions.contains(&ActionType::Fetch));
@@ -575,21 +575,21 @@ mod tests {
 
     #[test]
     fn test_classify_no_duplicate_actions() {
-        // Even if "fetch" appears twice, only one Fetch in result
+        // 即使 "fetch" 出现两次，结果中也只有一个 Fetch
         let actions = classify_goal("fetch then fetch again");
         assert_eq!(actions, vec![ActionType::Fetch]);
     }
 
     #[test]
     fn test_classify_verb_prefix_no_false_positive() {
-        // "store" is in "history" → should not trigger Sink
+        // "store" 在 "history" 中 → 不应触发汇点
         let actions = classify_goal("read the history log");
-        // "read" maps to Fetch, "history" does NOT contain "store"
+        // "read" 映射到获取，"history" 不含 "store"
         assert_eq!(actions, vec![ActionType::Fetch]);
     }
 
     // -----------------------------------------------------------------------
-    // action_label
+    // action_label（动作标签）
     // -----------------------------------------------------------------------
 
     #[test]
@@ -602,12 +602,12 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------
-    // tool_id_for_action
+    // tool_id_for_action（动作工具 ID）
     // -----------------------------------------------------------------------
 
     #[test]
     fn test_tool_id_all_actions_return_fast_tool() {
-        // Currently all actions map to "fast_tool"
+        // 目前所有动作映射到 "fast_tool"
         assert_eq!(tool_id_for_action(&ActionType::Fetch), "fast_tool");
         assert_eq!(tool_id_for_action(&ActionType::Process), "fast_tool");
         assert_eq!(tool_id_for_action(&ActionType::Sink), "fast_tool");
@@ -616,7 +616,7 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------
-    // build_plan_description
+    // build_plan_description（构建计划描述）
     // -----------------------------------------------------------------------
 
     #[test]
@@ -642,14 +642,14 @@ mod tests {
 
     #[test]
     fn test_plan_description_parallel_ignored_when_single() {
-        // parallel=true but only 1 action → falls back to linear
+        // parallel=true 但只有 1 个动作 → 回退到线性
         let actions = vec![ActionType::Fetch];
         let desc = build_plan_description(&actions, true);
         assert_eq!(desc, "Linear Pipeline: fetch");
     }
 
     // -----------------------------------------------------------------------
-    // GoalDrivenSynthesizer::synthesize — graph structure
+    // GoalDrivenSynthesizer::synthesize — 图谱结构
     // -----------------------------------------------------------------------
 
     fn dummy_executor() -> Arc<dyn sisyphus_types::ToolExecutor> {
@@ -707,7 +707,7 @@ mod tests {
             )
             .await
             .unwrap();
-        // Fetch → Process = 2 nodes, 1 edge
+        // Fetch → Process = 2 个节点，1 条边
         assert_eq!(result.graph.graph.node_count(), 2);
         assert_eq!(result.graph.graph.edge_count(), 1);
         assert!(result.plan_description.contains("Pipeline"));
@@ -726,7 +726,7 @@ mod tests {
             )
             .await
             .unwrap();
-        // Fetch + Process → Merge = 3 nodes, 2 edges
+        // Fetch + Process → Merge = 3 个节点，2 条边
         assert_eq!(result.graph.graph.node_count(), 3);
         assert_eq!(result.graph.graph.edge_count(), 2);
         assert!(result.plan_description.contains("Fan-out"));
@@ -745,7 +745,7 @@ mod tests {
             )
             .await
             .unwrap();
-        // Falls back to "default" single node
+        // 回退到 "default" 单节点
         assert_eq!(result.graph.graph.node_count(), 1);
     }
 }

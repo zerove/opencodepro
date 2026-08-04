@@ -10,7 +10,7 @@ use crate::tui::dialog::Dialog;
 use super::helpers;
 use super::theme;
 
-// ── Skill Market DTO ────────────────────────────────
+// ── 技能市场 DTO ────────────────────────────────
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RemoteSkillEntry {
     pub id: String,
@@ -20,7 +20,7 @@ pub struct RemoteSkillEntry {
     pub version: String,
 }
 
-// ── Workspace DTO ────────────────────────────────────
+// ── 工作区 DTO ────────────────────────────────────
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkspaceEntry {
     pub id: String,
@@ -28,7 +28,7 @@ pub struct WorkspaceEntry {
     pub project_id: String,
 }
 
-// ── Log entries (used by background + shell) ─────────────
+// ── 日志条目（供后台与 shell 使用） ─────────────
 
 #[derive(Debug, Clone)]
 pub(crate) struct TraceEvent {
@@ -39,7 +39,7 @@ pub(crate) struct TraceEvent {
     pub duration: i64,
 }
 
-/// A streaming execution event from the bridge, displayed in the session view.
+/// 来自桥接的流式执行事件，显示在会话视图中。
 #[derive(Debug, Clone)]
 pub(crate) struct StreamEvent {
     pub source: String,
@@ -64,7 +64,7 @@ impl LogEntry {
     }
 }
 
-// ── Toast notifications ────────────────────────────────
+// ── Toast 通知 ────────────────────────────────
 
 #[derive(Debug, Clone)]
 pub(crate) enum ToastKind {
@@ -101,7 +101,7 @@ use ratatui::style::Color;
 const MAX_TOASTS: usize = 5;
 const TOAST_DURATION: Duration = Duration::from_secs(4);
 
-// ── Command Palette ─────────────────────────────────────
+// ── 命令面板 ─────────────────────────────────────
 
 #[derive(Clone)]
 pub(crate) struct CmdPalEntry {
@@ -223,7 +223,7 @@ pub(crate) fn matching_palette_entries(query: &str) -> Vec<&'static CmdPalEntry>
         .collect()
 }
 
-// ── Views (routes) ───────────────────────────────────────
+// ── 视图（路由） ───────────────────────────────────────
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) enum View {
@@ -259,10 +259,10 @@ pub(crate) enum DevFocus {
     Run,
 }
 
-// ── App state ────────────────────────────────────────────
+// ── 应用状态 ────────────────────────────────────────────
 
 pub(crate) struct App {
-    // sync
+    // 同步
     pub(crate) data_dir: PathBuf,
     pub(crate) boulder_path: PathBuf,
     pub(crate) boulder_loaded: bool,
@@ -271,15 +271,15 @@ pub(crate) struct App {
     pub(crate) bridge_address: String,
     pub(crate) bridge_client: Option<crate::bridge::BridgeClient>,
 
-    // routing
+    // 路由
     pub(crate) view: View,
 
-    // home
+    // 主页
     pub(crate) home_input: String,
     pub(crate) home_cursor: usize,
     pub(crate) home_placeholder_idx: usize,
 
-    // session
+    // 会话
     pub(crate) sessions: Vec<crate::tools::Session>,
     pub(crate) session_filter: String,
     pub(crate) session_sel: usize,
@@ -291,7 +291,7 @@ pub(crate) struct App {
     pub(crate) session_mode: Mode,
     pub(crate) session_suggestions: Vec<String>,
 
-    // shared log / command history
+    // 共享日志 / 命令历史
     pub(crate) log: Vec<LogEntry>,
     pub(crate) scroll: usize,
     pub(crate) notification: Option<(String, Instant)>,
@@ -304,20 +304,20 @@ pub(crate) struct App {
     pub(crate) dialog_query: String,
     pub(crate) help_scroll: usize,
 
-    // todo data (dialog state)
+    // 待办数据（对话框状态）
     pub(crate) todo_items: Vec<crate::tools::TodoItem>,
     pub(crate) todo_sel: usize,
     pub(crate) todo_dirty: bool,
     pub(crate) todo_adding: String,
 
-    // lsp data (dialog state)
+    // LSP 数据（对话框状态）
     pub(crate) lsp_diagnostics: Vec<crate::tools::lsp::LspDiagnostic>,
     pub(crate) lsp_status: String,
     pub(crate) lsp_language: String,
     pub(crate) lsp_server: String,
     pub(crate) lsp_scroll: usize,
 
-    // sop data (dialog state)
+    // SOP 数据（对话框状态）
     pub(crate) sop_sops: Vec<SopInfo>,
     pub(crate) sop_sel: usize,
     pub(crate) sop_status: String,
@@ -327,7 +327,7 @@ pub(crate) struct App {
     pub(crate) sop_trace_detail: Option<String>,
     pub(crate) sop_query: String,
 
-    // roadmap data (dialog state)
+    // 路线图数据（对话框状态）
     pub(crate) roadmap_projection: Option<String>,
     pub(crate) roadmap_bottlenecks: Option<String>,
     pub(crate) roadmap_status: String,
@@ -345,42 +345,42 @@ pub(crate) struct App {
     pub(crate) workspace_status: String,
     pub(crate) pending_op: Option<tokio::sync::oneshot::Receiver<crate::tui::background::BgOp>>,
 
-    // command palette
+    // 命令面板
     pub(crate) palette_open: bool,
     pub(crate) palette_query: String,
     pub(crate) palette_sel: usize,
 
-    // slash command completion
+    // 斜杠命令补全
     pub(crate) slash_completion_open: bool,
     pub(crate) slash_completion_sel: usize,
 
-    // auto-refresh
+    // 自动刷新
     #[expect(dead_code)]
     pub(crate) last_refresh: Instant,
     pub(crate) event_rx: Option<tokio::sync::mpsc::Receiver<crate::tui::background::BgOp>>,
     pub(crate) is_pending: bool,
     pub(crate) pending_spin: u8,
 
-    // misc
+    // 其他
     pub(crate) confirm_delete: Option<String>,
     pub(crate) expanded_thoughts: HashSet<usize>,
-    /// Y-level of the history area in the session detail (stored for click-to-message mapping).
+    /// 会话详情中历史区域的 Y 坐标（保存用于点击定位消息）。
     pub(crate) last_detail_area: std::cell::Cell<ratatui::layout::Rect>,
-    /// Effective scroll offset at last render (stored for click-to-message mapping).
+    /// 上次渲染时的有效滚动偏移（保存用于点击定位消息）。
     pub(crate) last_effective_scroll: std::cell::Cell<usize>,
-    /// Max scroll value at last render (stored for scroll boundary clamping).
+    /// 上次渲染时的最大滚动值（保存用于滚动边界钳制）。
     pub(crate) last_detail_max_scroll: std::cell::Cell<usize>,
     pub(crate) create_buf: String,
-    /// Which message is currently selected/highlighted for clipboard operations.
+    /// 当前为剪贴板操作选中/高亮的消息。
     pub(crate) selected_msg: Option<usize>,
 
-    // session message search
+    // 会话消息搜索
     pub(crate) search_active: bool,
     pub(crate) search_query: String,
     pub(crate) search_results: Vec<usize>,
     pub(crate) search_idx: usize,
 
-    /// Toast notification overlay
+    /// Toast 通知覆盖层
     pub(crate) toasts: Vec<Toast>,
 
     pub(crate) theme_mode: theme::ThemeMode,
@@ -390,7 +390,7 @@ pub(crate) struct App {
     pub(crate) ralph_idle_cycles: u32,
     pub(crate) ralph_continue_pending: bool,
 
-    // dev agent dialog
+    // 开发代理对话框
     pub(crate) dev_goal: String,
     pub(crate) dev_context: String,
     pub(crate) dev_parallel: bool,
@@ -399,12 +399,12 @@ pub(crate) struct App {
     pub(crate) dev_status: String,
     pub(crate) dev_focus: DevFocus,
 
-    // dashboard state
+    // 仪表盘状态
     pub(crate) dashboard_anomaly_count: usize,
     pub(crate) dashboard_chaos_running: bool,
     pub(crate) dashboard_cog_active: bool,
 
-    // streaming event buffer
+    // 流式事件缓冲区
     pub(crate) stream_events: Vec<StreamEvent>,
     pub(crate) stream_show: bool,
     pub(crate) stream_scroll: usize,
@@ -418,7 +418,7 @@ pub(crate) const RALPH_IDLE_THRESHOLD: u32 = 50;
 impl App {
     pub(crate) fn new(data_dir: PathBuf, bridge_address: String) -> Self {
         let boulder_path = data_dir.join(".omo").join("boulder.json");
-        // Attempt initial connection to the bridge
+        // 尝试初始连接到桥接
         let bridge_client =
             futures::executor::block_on(crate::bridge::BridgeClient::connect(&bridge_address)).ok();
         Self {
@@ -618,7 +618,7 @@ impl App {
         self.boulder_dirty = true;
     }
 
-    // ── thought block helpers ────────────────────────────
+    // ── 思考块辅助 ────────────────────────────
 
     pub(crate) fn is_thought_expanded(&self, msg_idx: usize) -> bool {
         self.expanded_thoughts.contains(&msg_idx)
@@ -812,7 +812,7 @@ impl App {
         self.scroll_to_search_match();
     }
 
-    // ── todos ────────────────────────────────────
+    // ── 待办 ────────────────────────────────────
     pub(crate) fn refresh_todos(&mut self) {
         if !self.todo_dirty {
             return;
@@ -860,7 +860,7 @@ impl App {
         }
     }
 
-    // ── sessions ─────────────────────────────────
+    // ── 会话 ─────────────────────────────────
     pub(crate) fn refresh_sessions(&mut self) {
         if !self.session_dirty {
             return;
@@ -1002,7 +1002,7 @@ impl App {
             crate::tui::background::BgOp::BridgeCmd { entries } => {
                 for entry in entries {
                     self.add_log(entry.clone());
-                    // Capture as streaming event
+                    // 作为流式事件捕获
                     self.stream_events.push(crate::tui::app::StreamEvent {
                         source: "bridge".into(),
                         message: entry.entry_text().to_string(),
@@ -1042,7 +1042,7 @@ impl App {
                         self.session_detail = Some(session);
                     }
                     self.session_detail_scroll = usize::MAX;
-                    // Generate contextual suggestions after agent response
+                    // 代理响应后生成上下文建议
                     let last_role = self
                         .session_detail
                         .as_ref()
@@ -1103,7 +1103,7 @@ impl App {
             crate::tui::background::BgOp::WorkspaceDeleted { id } => {
                 self.workspace_status = format!("deleted {id}");
                 self.add_log(LogEntry::Info(format!("Workspace deleted: {id}")));
-                // Remove from local list
+                // 从本地列表移除
                 self.workspaces.retain(|w| w.id != id);
                 self.workspace_sel = self
                     .workspace_sel
@@ -1114,7 +1114,7 @@ impl App {
                 status,
                 result,
             } => {
-                // Capture as streaming event
+                // 作为流式事件捕获
                 let msg = if result.is_empty() {
                     format!("[{}] {}", op_id, status)
                 } else {
@@ -1124,7 +1124,7 @@ impl App {
                     source: op_id.clone(),
                     message: msg.clone(),
                 });
-                // Keep buffer bounded
+                // 保持缓冲区有界
                 if self.stream_events.len() > 500 {
                     let excess = self.stream_events.len() - 500;
                     self.stream_events.drain(..excess);
@@ -1134,14 +1134,14 @@ impl App {
                     self.stream_scroll = usize::MAX; // auto-scroll
                 }
                 if op_id == "anomaly_detector" {
-                    // Parse count from result like "5 anomalies"
+                    // 从类似 "5 anomalies" 的结果中解析数量
                     let count = result
                         .split_whitespace()
                         .next()
                         .and_then(|s| s.parse::<usize>().ok())
                         .unwrap_or(0);
                     self.dashboard_anomaly_count = count;
-                    // Status "NORMAL" or "ANOMALY" — either means the cog loop is active
+                    // 状态 "NORMAL" 或 "ANOMALY" — 均表示认知循环处于激活
                     self.dashboard_cog_active = true;
                     self.add_log(LogEntry::Info(format!(
                         "Anomaly detector: {status} ({count} anomalies)"
@@ -1149,7 +1149,7 @@ impl App {
                 } else if op_id.starts_with("chaos") {
                     self.dashboard_chaos_running = status == "RUNNING" || status == "STARTED";
                 } else {
-                    // Generic operation update: log it
+                    // 通用操作更新：记录日志
                     self.add_log(LogEntry::Info(format!("OpUpdate [{op_id}]: {status}")));
                 }
             }

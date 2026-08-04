@@ -1,4 +1,4 @@
-//! DAG executor — topology‑aware node dispatch with event streaming.
+//! DAG 执行器 — 拓扑感知的节点调度与事件流。
 
 use futures::future::BoxFuture;
 use petgraph::algo::toposort;
@@ -14,8 +14,8 @@ use tokio::task::JoinSet;
 use crate::{CoreError, ExecutionContext, ExecutionEvent, NodeOutput, SOPGraph};
 use sisyphus_types::{RuntimeSupervisor, SupervisorDecision};
 
-/// A DAG-based executor that runs SOP graphs with parallel node dispatch
-/// and optional event streaming.
+/// 基于 DAG 的执行器，以并行节点调度运行 SOP 图谱，
+/// 并支持可选的事件流。
 pub struct Executor {
     pub concurrency_limit: Arc<tokio::sync::Semaphore>,
     pub graph_cache: Arc<dashmap::DashMap<String, Arc<SOPGraph>>>,
@@ -46,8 +46,8 @@ impl Executor {
         }
     }
 
-    /// Public entry point for executing a SOP graph.
-    /// Returns a BoxFuture to satisfy 'static Send requirements for concurrent dispatch.
+    /// 执行 SOP 图谱的公开入口。
+    /// 返回 BoxFuture 以满足并发调度的 'static Send 要求。
     #[allow(clippy::too_many_arguments)]
     pub fn execute_with_context(
         &self,
@@ -85,7 +85,7 @@ impl Executor {
         })
     }
 
-    /// Trigger LLM predictions for successor nodes in the background.
+    /// 在后台为后继节点触发 LLM 预测。
     async fn trigger_speculative_predictions(
         &self,
         node: NodeIndex,
@@ -114,7 +114,7 @@ impl Executor {
         }
     }
 
-    /// Internal implementation of the DAG execution logic.
+    /// DAG 执行逻辑的内部实现。
     #[allow(clippy::too_many_arguments)]
     async fn execute_impl(
         self: Arc<Self>,
@@ -134,7 +134,7 @@ impl Executor {
 
         let start = Instant::now();
 
-        // Optimization: Skip redundant cycle detection if already validated
+        // 优化：若已验证则跳过冗余的环检测
         if !sop_graph
             .is_validated
             .load(std::sync::atomic::Ordering::SeqCst)
@@ -482,19 +482,19 @@ impl Executor {
 
         let mut final_output = output?;
 
-        // --- Visual Perception Interception ---
+        // --- 视觉感知拦截 ---
         if let Value::String(s) = final_output.0.as_ref().clone() {
             if let Some(node_name) = s.strip_prefix("VISUAL_EXEC_REQUIRED:") {
                 if let Some(ref v_manager) = self.visual_manager {
                     tracing::info!(node = %node_name, "Intercepted visual execution request");
 
-                    // Extract Image Data from Context
+                    // 从上下文中提取图像数据
                     let image_data = ctx
                         .get_result("current_screenshot")
                         .and_then(|o| o.0.as_str().map(|s| s.as_bytes().to_vec()))
                         .unwrap_or_default();
 
-                    // Use VisualSOPNode's kind to drive VLM
+                    // 使用 VisualSOPNode 的 kind 驱动 VLM
                     if let Some(visual_node) = node_ref
                         .as_any()
                         .downcast_ref::<sisyphus_types::VisualSOPNode>()
@@ -511,7 +511,7 @@ impl Executor {
             } else if let Some(node_name) = s.strip_prefix("HUMAN_INTERVENTION_REQUIRED:") {
                 tracing::info!(node = %node_name, "Intercepted human intervention request");
 
-                // Find the node config to get the prompt
+                // 查找节点配置以获取提示词
                 if let Some(interv_node) = node_ref
                     .as_any()
                     .downcast_ref::<sisyphus_types::HumanInterventionSOPNode>()
@@ -531,7 +531,7 @@ impl Executor {
 
                     final_output = NodeOutput::from(Value::String(feedback.correction.clone()));
 
-                    // --- Trigger Cognitive Internalization ---
+                    // --- 触发认知内化 ---
                     let int_manager = Arc::clone(&self.internalization_manager);
                     let int_req = crate::internalization_manager::InternalizationRequest {
                         node_id: node_name.to_string(),

@@ -7,11 +7,11 @@ mod handlers;
 
 pub use client::{run_call, run_info};
 
-/// Global LLM client used by MCP tool handlers.
+/// MCP 工具处理器使用的全局 LLM 客户端。
 static LLM_CLIENT: std::sync::OnceLock<Arc<dyn crate::tools::metis::LlmClient>> =
     std::sync::OnceLock::new();
 
-// ── Tool Registry ─────────────────────────────────────────────
+// ── 工具注册表 ─────────────────────────────────────────────
 
 struct ToolDef {
     name: &'static str,
@@ -170,10 +170,10 @@ fn tool_registry() -> &'static [ToolDef] {
     })
 }
 
-// ── MCP Server ───────────────────────────────────────────────
+// ── MCP 服务器 ───────────────────────────────────────────────
 
-/// Start an MCP stdio server that exposes Sisyphus agent tools.
-/// Runs until stdin closes.
+/// 启动暴露 Sisyphus 代理工具的 MCP stdio 服务器。
+/// 运行直到 stdin 关闭。
 pub async fn run_serve(client: Arc<dyn crate::tools::metis::LlmClient>) -> anyhow::Result<()> {
     LLM_CLIENT
         .set(client)

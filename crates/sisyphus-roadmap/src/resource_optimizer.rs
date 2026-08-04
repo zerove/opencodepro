@@ -1,9 +1,9 @@
 // ---------------------------------------------------------------------------
-// Phase 3 — Resource / Cost Global Optimisation
+// 阶段 3 — 资源/成本全局优化
 //
-// Analyses execution history to project remaining costs, identify
-// bottlenecks, and suggest parallelisation opportunities.  Operates
-// on recorded execution outcomes without requiring LLM calls.
+// 分析执行历史以预测剩余成本、识别瓶颈，
+// 并建议并行化机会。仅基于已记录的执行结果，
+// 无需调用 LLM。
 // ---------------------------------------------------------------------------
 
 use crate::{
@@ -12,13 +12,13 @@ use crate::{
 use std::collections::HashMap;
 
 // ---------------------------------------------------------------------------
-// ResourceOptimizer
+// ResourceOptimizer（资源优化器）
 // ---------------------------------------------------------------------------
 
-/// Analytical engine for resource and cost optimisation.
+/// 资源与成本优化的分析引擎。
 ///
-/// Uses historical execution data to project costs, identify bottlenecks,
-/// and suggest optimisations — all without LLM calls.
+/// 使用历史执行数据预测成本、识别瓶颈，
+/// 并建议优化 — 全程无需 LLM 调用。
 pub struct ResourceOptimizer;
 
 impl Default for ResourceOptimizer {
@@ -32,10 +32,10 @@ impl ResourceOptimizer {
         Self
     }
 
-    /// Project remaining costs for the project based on historical outcomes.
+    /// 基于历史结果预测项目剩余成本。
     ///
-    /// Uses average cost and duration from completed goals to estimate
-    /// what remains. Confidence increases with more historical data.
+    /// 使用已完成目标的平均成本与耗时来估算
+    /// 剩余部分。历史数据越多，置信度越高。
     pub fn project_costs(
         &self,
         outcomes: &[ExecutionOutcome],
@@ -46,7 +46,7 @@ impl ResourceOptimizer {
             outcomes.iter().filter(|o| o.success).collect();
 
         let (avg_cost, avg_duration) = if completed_outcomes.is_empty() {
-            // No historical data — use sensible defaults
+            // 无历史数据 — 使用合理默认值
             (10.0, 60.0)
         } else {
             let total_cost: f64 = completed_outcomes
@@ -74,24 +74,24 @@ impl ResourceOptimizer {
         }
     }
 
-    /// Identify bottlenecks in the execution pipeline.
+    /// 识别执行流水线中的瓶颈。
     ///
-    /// Bottlenecks are goals that:
-    /// - Have a high failure rate (retried frequently)
-    /// - Take significantly longer than average
-    /// - Block many other goals (high out-degree in dependency graph)
+    /// 瓶颈指具备以下特征的目标：
+    /// - 失败率高（频繁重试）
+    /// - 耗时显著高于平均
+    /// - 阻塞大量其他目标（依赖图中出度高）
     pub fn find_bottlenecks(&self, outcomes: &[ExecutionOutcome]) -> Vec<Bottleneck> {
         if outcomes.is_empty() {
             return vec![];
         }
 
-        // Group outcomes by goal_id
+        // 按 goal_id 分组结果
         let mut by_goal: HashMap<String, Vec<&ExecutionOutcome>> = HashMap::new();
         for o in outcomes {
             by_goal.entry(o.goal_id.clone()).or_default().push(o);
         }
 
-        // Calculate average duration of successful outcomes for baseline
+        // 计算成功结果的平均耗时作为基线
         let successful_durations: Vec<f64> = outcomes
             .iter()
             .filter(|o| o.success)
@@ -118,7 +118,7 @@ impl ResourceOptimizer {
                 success_durations.iter().sum::<f64>() / success_durations.len() as f64
             };
 
-            // Determine severity
+            // 确定严重程度
             let severity = if failure_count >= 3 {
                 "high"
             } else if failure_count >= 2 || avg_goal_duration > avg_duration * 3.0 {
@@ -158,7 +158,7 @@ impl ResourceOptimizer {
             });
         }
 
-        // Sort by severity (high first) then by failure count
+        // 先按严重程度（高在前）再按失败次数排序
         bottlenecks.sort_by(|a, b| {
             let severity_order = |s: &str| match s {
                 "high" => 0,
@@ -176,10 +176,10 @@ impl ResourceOptimizer {
         bottlenecks
     }
 
-    /// Suggest goals that could be executed in parallel.
+    /// 建议可并行执行的目标。
     ///
-    /// Uses simple heuristics: goals that have no mutual dependencies,
-    /// similar durations, and no shared failure patterns can be parallelised.
+    /// 使用简单启发式：无相互依赖、耗时相近、
+    /// 且无共同失败模式的目标可以并行。
     pub fn suggest_parallel_execution(
         &self,
         outcomes: &[ExecutionOutcome],
@@ -188,7 +188,7 @@ impl ResourceOptimizer {
             return vec![];
         }
 
-        // Group successful outcomes by milestone for parallelization candidates
+        // 按里程碑对成功结果分组，作为并行化候选
         let mut by_milestone: HashMap<String, Vec<&ExecutionOutcome>> = HashMap::new();
         for o in outcomes.iter().filter(|o| o.success) {
             by_milestone
@@ -204,11 +204,11 @@ impl ResourceOptimizer {
                 continue;
             }
 
-            // If we have multiple goals in the same milestone that were
-            // executed successfully, they can likely be parallelised
+            // 若同一里程碑内有多个成功执行的目标，
+            // 它们很可能可以并行化
             let goal_ids: Vec<String> = ms_outcomes.iter().map(|o| o.goal_id.clone()).collect();
 
-            // Estimate savings using Amdahl's law approximation
+            // 使用阿姆达尔定律近似估算节省量
             let total_time: f64 = ms_outcomes.iter().map(|o| o.duration_secs).sum();
             let parallel_time = total_time / ms_outcomes.len().min(4) as f64;
             let savings = (total_time - parallel_time).max(0.0);
@@ -229,16 +229,16 @@ impl ResourceOptimizer {
         opportunities
     }
 
-    /// Generate per-goal resource estimates based on historical data.
+    /// 基于历史数据生成每个目标的资源估算。
     ///
-    /// For goals with historical outcomes, uses the average of past runs.
-    /// For goals without history, estimates using project-wide averages.
+    /// 有历史结果的目标使用过去运行的平均值。
+    /// 无历史的目标使用项目级平均值估算。
     pub fn estimate_goal_resources(
         &self,
         outcomes: &[ExecutionOutcome],
         goal_ids: &[String],
     ) -> Vec<GoalResourceEstimate> {
-        // Build per-goal historical stats
+        // 构建每个目标的历史统计
         let mut cost_stats: HashMap<String, Vec<f64>> = HashMap::new();
         let mut duration_stats: HashMap<String, Vec<f64>> = HashMap::new();
         for o in outcomes.iter().filter(|o| o.success) {
@@ -252,7 +252,7 @@ impl ResourceOptimizer {
                 .push(o.duration_secs);
         }
 
-        // Project-wide averages for goals without history
+        // 无历史目标使用项目级平均值
         let all_costs: Vec<f64> = cost_stats
             .values()
             .flat_map(|v| v.iter())
@@ -369,7 +369,7 @@ mod tests {
         ];
         let bottlenecks = opt.find_bottlenecks(&outcomes);
         assert!(!bottlenecks.is_empty());
-        // g1 has 3 failures -> "high" severity, should be first
+        // g1 有 3 次失败 → "high" 严重度，应排第一
         assert_eq!(bottlenecks[0].goal_id, "g1");
         assert_eq!(bottlenecks[0].severity, "high");
     }
@@ -384,7 +384,7 @@ mod tests {
             make_outcome("g4", "ms2", true, 45),
         ];
         let suggestions = opt.suggest_parallel_execution(&outcomes);
-        // ms1 has 3 goals -> parallelization opportunity
+        // ms1 有 3 个目标 → 并行化机会
         assert!(suggestions.iter().any(|s| s.goal_ids.len() >= 2));
     }
 
@@ -400,12 +400,12 @@ mod tests {
             opt.estimate_goal_resources(&outcomes, &["g1".into(), "g2".into(), "g3".into()]);
         assert_eq!(estimates.len(), 3);
 
-        // g1 has 2 samples
+        // g1 有 2 个样本
         let g1 = estimates.iter().find(|e| e.goal_id == "g1").unwrap();
         assert!((g1.predicted_duration_secs - 45.0).abs() < 0.01);
         assert_eq!(g1.historical_samples, 2);
 
-        // g3 has no samples -> uses global average
+        // g3 无样本 → 使用全局平均值
         let g3 = estimates.iter().find(|e| e.goal_id == "g3").unwrap();
         assert_eq!(g3.historical_samples, 0);
         assert!(g3.confidence < 0.5);

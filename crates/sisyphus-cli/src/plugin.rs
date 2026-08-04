@@ -43,7 +43,7 @@ pub async fn run_load(client: &mut BridgeClient, path: &Path) -> Result<()> {
 }
 
 pub async fn run_watch(path: Option<&Path>) -> Result<()> {
-    // Keep local file watcher as before - watches local filesystem
+    // 保留原有的本地文件监视器 — 监视本地文件系统
     use std::path::PathBuf;
     use std::time::Duration;
     use tokio::time::sleep;

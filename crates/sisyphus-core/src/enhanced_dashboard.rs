@@ -1,17 +1,17 @@
-//! Enhanced Cognitive Dashboard — rich TUI-style real-time monitoring.
+//! 增强型认知仪表盘 — 富 TUI 风格实时监控。
 //!
-//! Extends the basic CognitiveDashboard with:
-// ! - Session-level metrics aggregation
-// ! - Resource usage tracking
-// ! - Pattern visualization
-// ! - ASCII art progress indicators
+//! 在基础 CognitiveDashboard 之上扩展：
+// ! - 会话级指标聚合
+// ! - 资源使用跟踪
+// ! - 模式可视化
+// ! - ASCII 艺术进度指示
 
 use serde::{Deserialize, Serialize};
 use sisyphus_types::{CognitiveMetrics, ExecutionEvent};
 use std::collections::HashMap;
 use std::time::Instant;
 
-/// Session-level metrics
+/// 会话级指标
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionMetrics {
     pub total_iterations: usize,
@@ -25,7 +25,7 @@ pub struct SessionMetrics {
     pub iteration_history: Vec<IterationSnapshot>,
 }
 
-/// Snapshot of a single iteration
+/// 单次迭代的快照
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IterationSnapshot {
     pub iteration: usize,
@@ -52,15 +52,15 @@ impl Default for SessionMetrics {
     }
 }
 
-/// Enhanced cognitive dashboard with session tracking
+/// 带会话跟踪的增强型认知仪表盘
 pub struct EnhancedDashboard {
-    /// Session start time
+    /// 会话开始时间
     start_time: Instant,
-    /// Current iteration metrics
+    /// 当前迭代指标
     current_iteration: IterationTracker,
-    /// Overall session metrics
+    /// 会话总体指标
     session: SessionMetrics,
-    /// Node execution history
+    /// 节点执行历史
     node_history: HashMap<String, Vec<NodeExecution>>,
 }
 
@@ -72,7 +72,7 @@ struct IterationTracker {
     fuel_used: u64,
 }
 
-/// Record of a node execution
+/// 一次节点执行的记录
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NodeExecution {
     pub node_name: String,
@@ -92,7 +92,7 @@ impl EnhancedDashboard {
         }
     }
 
-    /// Process an execution event and update metrics
+    /// 处理执行事件并更新指标
     pub fn process_event(&mut self, event: &ExecutionEvent) {
         match event {
             ExecutionEvent::NodeStarted { node_name } => {
@@ -166,7 +166,7 @@ impl EnhancedDashboard {
         }
     }
 
-    /// Process a cognitive step event with enhanced visualization
+    /// 以增强可视化处理认知步骤事件
     fn render_enhanced_step(
         &mut self,
         step: &str,
@@ -241,7 +241,7 @@ impl EnhancedDashboard {
         }
         println!("  ⛽ Fuel used:   {}", self.current_iteration.fuel_used);
 
-        // Show node execution distribution
+        // 显示节点执行分布
         if !self.node_history.is_empty() {
             println!("\n  Node Execution Counts:");
             let mut sorted: Vec<_> = self.node_history.iter().collect();
@@ -255,7 +255,7 @@ impl EnhancedDashboard {
         println!("{}", "─".repeat(60));
     }
 
-    /// Get current session metrics
+    /// 获取当前会话指标
     pub fn session_metrics(&self) -> &SessionMetrics {
         &self.session
     }

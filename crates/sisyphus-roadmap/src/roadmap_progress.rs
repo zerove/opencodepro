@@ -5,7 +5,7 @@ use sisyphus_types::GoalRef;
 use sisyphus_types::MilestoneStatus;
 
 impl RoadmapManager {
-    /// Generate a detailed progress report with per-milestone and per-phase breakdown.
+    /// 生成含逐里程碑与逐阶段明细的详细进度报告。
     pub async fn generate_progress_report(
         &self,
         project_id: &str,
@@ -87,10 +87,10 @@ impl RoadmapManager {
         })
     }
 
-    /// Format the project's current progress as a human-readable context string.
+    /// 将项目当前进度格式化为人类可读的上下文字符串。
     ///
-    /// This is designed to be injected into an `ExecutionContext` so that
-    /// agents executing goals are aware of the broader project state.
+    /// 设计用于注入 `ExecutionContext`，使执行目标的
+    /// 代理了解更广泛的项目状态。
     pub async fn synthesize_project_context(
         &self,
         project_id: &str,
@@ -150,7 +150,7 @@ impl RoadmapManager {
         Ok(lines.join("\n"))
     }
 
-    /// Update a goal's status and automatically recalculate milestone status.
+    /// 更新目标状态并自动重算里程碑状态。
     pub async fn update_goal_status_with_propagation(
         &self,
         project_id: &str,
@@ -199,7 +199,7 @@ impl RoadmapManager {
             .await
     }
 
-    /// Auto-propagate: update all milestone statuses based on their goal completion.
+    /// 自动传播：根据目标完成情况更新所有里程碑状态。
     pub async fn auto_propagate_all(&self, project_id: &str) -> Result<(), RoadmapError> {
         let project = self.get_project_or_err(project_id).await?;
 

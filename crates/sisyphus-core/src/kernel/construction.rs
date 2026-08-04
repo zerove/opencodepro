@@ -1,7 +1,7 @@
-//! Kernel construction: builders, executors, and MCP wiring.
+//! 内核构建：构建器、执行器与 MCP 接线。
 //!
-//! Part of the `SisyphusKernel` implementation extracted from `kernel.rs` for
-//! readability. Re-exported via `pub use kernel::*`.
+//! `SisyphusKernel` 实现的一部分，为可读性从 `kernel.rs` 拆出。
+//! 通过 `pub use kernel::*` 重新导出。
 
 use std::sync::Arc;
 
@@ -107,7 +107,7 @@ impl SisyphusKernel {
             llm_client.clone(),
         ));
 
-        // Spawn default swarm agents for the Audit Loop
+        // 为审计循环（Audit Loop）启动默认 swarm 代理
         swarm_coordinator.spawn_agent(AgentRole::Architect, "architect-0".into());
         swarm_coordinator.spawn_agent(AgentRole::Auditor, "auditor-0".into());
 
@@ -137,7 +137,7 @@ impl SisyphusKernel {
         }
     }
 
-    /// Override the cognitive loop configuration (max_iterations, convergence_threshold).
+    /// 覆盖认知循环配置（max_iterations、convergence_threshold）。
     pub fn with_cognitive_loop_config(
         self,
         config: sisyphus_types::config::CognitiveLoopConfig,
@@ -147,7 +147,7 @@ impl SisyphusKernel {
         self
     }
 
-    /// Attach a StrategicReflector for LLM-augmented roadmap analysis.
+    /// 附加 StrategicReflector 用于 LLM 增强的路线图分析。
     pub fn with_strategic_reflector(
         mut self,
 
@@ -160,7 +160,7 @@ impl SisyphusKernel {
         self
     }
 
-    /// Attach a MilestoneGenerator for LLM-driven roadmap creation.
+    /// 附加 MilestoneGenerator 用于 LLM 驱动的路线图创建。
     pub fn with_milestone_generator(
         mut self,
 
@@ -173,7 +173,7 @@ impl SisyphusKernel {
         self
     }
 
-    /// Register a specialized tool executor under a given prefix (e.g., "fs" for file system).
+    /// 在给定前缀下注册专用工具执行器（例如 "fs" 表示文件系统）。
     pub fn register_tool_executor(
         &self,
 

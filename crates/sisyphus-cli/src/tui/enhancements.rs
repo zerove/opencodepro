@@ -1,8 +1,8 @@
-//! TUI enhancements: slash command completion, @file references, fuzzy input search.
+//! TUI 增强：斜杠命令补全、@file 引用、模糊输入搜索。
 
 use std::path::Path;
 
-/// A slash command definition for the completion popup.
+/// 补全弹窗的斜杠命令定义。
 #[derive(Debug, Clone)]
 pub struct SlashCommand {
     pub name: &'static str,
@@ -10,7 +10,7 @@ pub struct SlashCommand {
     pub category: &'static str,
 }
 
-/// All available slash commands.
+/// 所有可用的斜杠命令。
 pub const SLASH_COMMANDS: &[SlashCommand] = &[
     SlashCommand {
         name: "/help",
@@ -99,9 +99,9 @@ pub const SLASH_COMMANDS: &[SlashCommand] = &[
     },
 ];
 
-/// Fuzzy match score for a query against a target string.
-/// Returns (score, matched_indices) where higher score is better.
-/// Returns None if the query doesn't match.
+/// 查询对目标字符串的模糊匹配得分。
+/// 返回 (score, matched_indices)，得分越高越好。
+/// 查询不匹配时返回 None。
 pub fn fuzzy_match(query: &str, target: &str) -> Option<(i64, Vec<usize>)> {
     if query.is_empty() {
         return Some((0, vec![]));
@@ -119,17 +119,17 @@ pub fn fuzzy_match(query: &str, target: &str) -> Option<(i64, Vec<usize>)> {
         if query_idx < query_lower.len() && tc == query_lower[query_idx] {
             matched_indices.push(i);
 
-            // Bonus for matching at start of word
+            // 词首匹配加分
             if i == 0 || target_lower[i - 1] == ' ' || target_lower[i - 1] == '/' {
                 score += 10;
             }
-            // Bonus for consecutive matches
+            // 连续匹配加分
             if let Some(last) = last_match_idx {
                 if i == last + 1 {
                     score += 5;
                 }
             }
-            // Bonus for exact case match
+            // 大小写完全匹配加分
             if target.chars().nth(i) == Some(query_lower[query_idx]) {
                 score += 1;
             }
@@ -140,8 +140,8 @@ pub fn fuzzy_match(query: &str, target: &str) -> Option<(i64, Vec<usize>)> {
     }
 
     if query_idx == query_lower.len() {
-        // All query chars matched
-        // Penalty for longer targets (prefer shorter/more specific matches)
+        // 所有查询字符都匹配
+        // 较长目标扣分（偏好更短/更具体的匹配）
         score -= (target.len() as i64) / 10;
         Some((score, matched_indices))
     } else {
@@ -149,7 +149,7 @@ pub fn fuzzy_match(query: &str, target: &str) -> Option<(i64, Vec<usize>)> {
     }
 }
 
-/// Filter and rank slash commands by fuzzy matching against the query.
+/// 通过模糊匹配过滤并排序斜杠命令。
 pub fn filter_slash_commands(query: &str) -> Vec<(&'static SlashCommand, i64, Vec<usize>)> {
     let q = query.strip_prefix('/').unwrap_or(query);
 
@@ -158,7 +158,7 @@ pub fn filter_slash_commands(query: &str) -> Vec<(&'static SlashCommand, i64, Ve
         .filter_map(|cmd| {
             let name_no_slash = cmd.name.strip_prefix('/').unwrap_or(cmd.name);
             if let Some((score, indices)) = fuzzy_match(q, name_no_slash) {
-                // Adjust indices to account for the leading '/' in the command name
+                // 调整索引以计入命令名开头的 '/'
                 let adjusted: Vec<usize> = indices.into_iter().map(|i| i + 1).collect();
                 Some((cmd, score + 5, adjusted)) // +5 for name match
             } else if let Some((score, indices)) = fuzzy_match(q, cmd.description) {
@@ -173,7 +173,7 @@ pub fn filter_slash_commands(query: &str) -> Vec<(&'static SlashCommand, i64, Ve
     results
 }
 
-/// Represents a parsed @file reference in user input.
+/// 用户输入中已解析的 @file 引用。
 #[derive(Debug, Clone)]
 pub struct FileReference {
     pub start: usize,
@@ -181,8 +181,8 @@ pub struct FileReference {
     pub path: String,
 }
 
-/// Parse @file references from user input.
-/// Looks for patterns like `@path/to/file.rs` or `@file.txt`.
+/// 从用户输入解析 @file 引用。
+/// 查找类似 `@path/to/file.rs` 或 `@file.txt` 的模式。
 pub fn parse_file_references(input: &str) -> Vec<FileReference> {
     let mut refs = Vec::new();
     let chars: Vec<char> = input.chars().collect();
@@ -215,7 +215,7 @@ pub fn parse_file_references(input: &str) -> Vec<FileReference> {
     refs
 }
 
-/// Resolve a file reference to its content, truncated to max_lines.
+/// 将文件引用解析为其内容，截断到 max_lines。
 pub fn resolve_file_reference(
     file_ref: &FileReference,
     workspace_root: &Path,
@@ -248,7 +248,7 @@ pub fn resolve_file_reference(
     Ok(result)
 }
 
-/// Expand all @file references in input text, replacing them with file contents.
+/// 展开输入文本中的所有 @file 引用，替换为文件内容。
 pub fn expand_file_references(input: &str, workspace_root: &Path) -> String {
     let refs = parse_file_references(input);
     if refs.is_empty() {
@@ -257,7 +257,7 @@ pub fn expand_file_references(input: &str, workspace_root: &Path) -> String {
 
     let mut result = input.to_string();
 
-    // Process in reverse order to maintain correct indices
+    // 逆序处理以保持索引正确
     for file_ref in refs.iter().rev() {
         match resolve_file_reference(file_ref, workspace_root, 200) {
             Ok(content) => {

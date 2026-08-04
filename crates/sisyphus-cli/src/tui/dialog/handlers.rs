@@ -8,7 +8,7 @@ use super::super::background::{
 use super::super::{App, DevFocus, LogEntry, ToastKind, View};
 use super::Dialog;
 
-// ── Workspace List Dialog ─────────────────────────────────
+// ── 工作区列表对话框 ─────────────────────────────────
 
 pub(super) fn handle_workspace_list_key(code: KeyCode, app: &mut App) {
     match code {
@@ -53,7 +53,7 @@ pub(super) fn handle_workspace_list_key(code: KeyCode, app: &mut App) {
     }
 }
 
-// ── Session List Dialog ───────────────────────────────
+// ── 会话列表对话框 ───────────────────────────────
 
 pub(super) fn handle_session_list_key(code: KeyCode, app: &mut App) {
     match code {
@@ -95,7 +95,7 @@ pub(super) fn handle_session_list_key(code: KeyCode, app: &mut App) {
                         s.id, s.name
                     )));
                     app.session_dirty = true;
-                    // Navigate to the new session
+                    // 导航到新会话
                     app.session_detail = crate::tools::session_get(&db, &s.id).ok();
                     app.session_detail_scroll = usize::MAX;
                     app.view = View::Session;
@@ -152,7 +152,7 @@ fn select_session(app: &mut App) {
     app.view = View::Session;
 }
 
-// ── Todos Dialog ─────────────────────────────────────
+// ── 待办对话框 ─────────────────────────────────────
 
 pub(super) fn handle_todos_key(code: KeyCode, app: &mut App) {
     if !app.todo_adding.is_empty() {
@@ -237,7 +237,7 @@ fn delete_todo(app: &mut App) {
     }
 }
 
-// ── LSP Dialog ───────────────────────────────────────
+// ── LSP 对话框 ───────────────────────────────────────
 
 pub(super) fn handle_lsp_key(code: KeyCode, app: &mut App) {
     match code {
@@ -277,7 +277,7 @@ pub(super) fn handle_lsp_key(code: KeyCode, app: &mut App) {
     }
 }
 
-// ── SOP Dialog ────────────────────────────────────────
+// ── SOP 对话框 ────────────────────────────────────────
 
 pub(super) fn handle_sop_key(code: KeyCode, app: &mut App) {
     match code {
@@ -348,7 +348,7 @@ fn filtered_sops(app: &App) -> Vec<&crate::bridge::SopInfo> {
         .collect()
 }
 
-// ── Roadmap Dialog ────────────────────────────────────
+// ── 路线图对话框 ────────────────────────────────────
 
 pub(super) fn handle_roadmap_key(code: KeyCode, app: &mut App) {
     match code {
@@ -362,7 +362,7 @@ pub(super) fn handle_roadmap_key(code: KeyCode, app: &mut App) {
         KeyCode::Home | KeyCode::Char('g') => app.roadmap_scroll = 0,
         KeyCode::End | KeyCode::Char('G') => app.roadmap_scroll = usize::MAX,
         KeyCode::Enter => {
-            // Approve the selected proposal
+            // 批准选中的提案
             let proposal_id = app.roadmap_status.clone(); // This is a placeholder; in a real system, we'd use roadmap_sel
             if !proposal_id.is_empty() {
                 app.add_toast(
@@ -392,7 +392,7 @@ pub(super) fn handle_roadmap_key(code: KeyCode, app: &mut App) {
     }
 }
 
-// ── Rename Session Dialog ────────────────────────────
+// ── 重命名会话对话框 ────────────────────────────
 
 pub(super) fn handle_rename_key(code: KeyCode, app: &mut App) {
     let Some(Dialog::Rename { session_id, name }) = &app.dialog else {
@@ -434,7 +434,7 @@ pub(super) fn handle_rename_key(code: KeyCode, app: &mut App) {
     }
 }
 
-// ── Skill Market Dialog ──────────────────────────────────
+// ── 技能市场对话框 ──────────────────────────────────
 pub(super) fn handle_skill_market_key(code: KeyCode, app: &mut App) {
     match code {
         KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('Q') => {
@@ -451,7 +451,7 @@ pub(super) fn handle_skill_market_key(code: KeyCode, app: &mut App) {
             app.skill_market_sel = (app.skill_market_sel + 1).min(max.saturating_sub(1));
         }
         KeyCode::Enter => {
-            // If we are on an available skill, install it.
+            // 若光标在可用技能上，安装它。
             if app.skill_market_sel < app.skill_market_available.len() {
                 let skill = app.skill_market_available[app.skill_market_sel].clone();
                 app.add_toast(
@@ -465,7 +465,7 @@ pub(super) fn handle_skill_market_key(code: KeyCode, app: &mut App) {
                     ));
                 }
             } else {
-                // If we are on an installed skill, uninstall it.
+                // 若光标在已安装技能上，卸载它。
                 let installed_idx = app
                     .skill_market_sel
                     .saturating_sub(app.skill_market_available.len());
@@ -502,7 +502,7 @@ pub(super) fn handle_skill_market_key(code: KeyCode, app: &mut App) {
 
 pub(super) fn handle_dev_key(key: KeyEvent, app: &mut App) {
     let code = key.code;
-    // If report is available, any key dismisses it (user can Esc to close)
+    // 若报告可用，任意键关闭它（用户可按 Esc 关闭）
     if app.dev_report.is_some() {
         match code {
             KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('Q') => {
@@ -515,7 +515,7 @@ pub(super) fn handle_dev_key(key: KeyEvent, app: &mut App) {
         return;
     }
 
-    // If running, only Esc cancels (sets status to idle)
+    // 运行中时，仅 Esc 取消（将状态设为空闲）
     if app.dev_status == "running" {
         if code == KeyCode::Esc {
             app.dev_status = "idle".into();
@@ -629,7 +629,7 @@ pub(crate) fn handle_trace_key(code: KeyCode, app: &mut App) {
             app.sop_trace_detail = None;
         }
         KeyCode::Enter => {
-            // Show output for the selected trace row
+            // 显示选中轨迹行的输出
             if app.sop_trace_detail.is_some() {
                 app.sop_trace_detail = None;
             } else if let Some(ev) = app.sop_trace.get(app.sop_trace_scroll) {

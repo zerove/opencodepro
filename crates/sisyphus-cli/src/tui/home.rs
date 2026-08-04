@@ -33,7 +33,7 @@ const PLACEHOLDERS: &[&str] = &[
 pub fn handle_home_key(key: KeyEvent, app: &mut App) {
     let code = key.code;
 
-    // If slash completion is open, handle completion navigation
+    // 若斜杠补全打开，处理补全导航
     if app.slash_completion_open {
         match code {
             KeyCode::Esc => {
@@ -64,10 +64,10 @@ pub fn handle_home_key(key: KeyEvent, app: &mut App) {
                 if code == KeyCode::Tab {
                     return;
                 }
-                // Fall through to Enter handling
+                // 继续执行到 Enter 处理
             }
             _ => {
-                // Close completion on any other key, then handle normally
+                // 其他按键关闭补全，然后正常处理
                 app.slash_completion_open = false;
                 app.slash_completion_sel = 0;
             }
@@ -80,7 +80,7 @@ pub fn handle_home_key(key: KeyEvent, app: &mut App) {
             if cmd.is_empty() {
                 return;
             }
-            // If it starts with /, route as command
+            // 以 / 开头则作为命令路由
             if cmd.starts_with('/') || cmd.starts_with(':') {
                 app.add_log(LogEntry::Info(format!("> {cmd}")));
                 execute_home_command(&cmd, app);
@@ -88,8 +88,8 @@ pub fn handle_home_key(key: KeyEvent, app: &mut App) {
                 app.home_cursor = 0;
                 return;
             }
-            // Otherwise: create a new session with this as the first message
-            // Expand @file references before sending
+            // 否则：创建新会话，将其作为首条消息
+            // 发送前展开 @file 引用
             let expanded = expand_file_references(&cmd, &app.data_dir);
             let db = app.data_dir.join("sessions.json");
             let name = if cmd.chars().count() > 40 {
@@ -163,7 +163,7 @@ pub fn handle_home_key(key: KeyEvent, app: &mut App) {
         KeyCode::Home => app.home_cursor = 0,
         KeyCode::End => app.home_cursor = app.home_input.chars().count(),
         KeyCode::Char('\x16') => {
-            // Ctrl+V paste
+            // Ctrl+V 粘贴
             let pasted = paste_from_clipboard();
             if !pasted.is_empty() {
                 let byte_pos = app
@@ -185,7 +185,7 @@ pub fn handle_home_key(key: KeyEvent, app: &mut App) {
                 .unwrap_or(app.home_input.len());
             app.home_input.insert(byte_pos, c);
             app.home_cursor += 1;
-            // Show slash completion popup when user types / at start
+            // 用户在开头输入 / 时显示斜杠补全弹窗
             if c == '/' && app.home_input.chars().count() == 1 {
                 app.slash_completion_open = true;
                 app.slash_completion_sel = 0;
@@ -228,7 +228,7 @@ fn execute_home_command(cmd: &str, app: &mut App) {
 pub fn render_home(frame: &mut ratatui::Frame, area: Rect, app: &App) {
     let theme = app.theme();
 
-    // Center the content vertically
+    // 垂直居中内容
     let total_height = area.height;
     let logo_height = LOGO_LINES.len() as u16;
     let content_height = logo_height + 2 + 3; // logo + gap + input
@@ -261,7 +261,7 @@ pub fn render_home(frame: &mut ratatui::Frame, area: Rect, app: &App) {
     let logo_para = Paragraph::new(Text::from(logo_text)).alignment(Alignment::Center);
     frame.render_widget(logo_para, logo_area);
 
-    // Prompt input
+    // 提示词输入
     let placeholder_idx = app.home_placeholder_idx % PLACEHOLDERS.len();
     let display_text = if app.home_input.is_empty() {
         PLACEHOLDERS[placeholder_idx]
@@ -296,7 +296,7 @@ pub fn render_home(frame: &mut ratatui::Frame, area: Rect, app: &App) {
 
     frame.render_widget(input_para, input_area);
 
-    // Cursor
+    // 光标
     if app.home_input.is_empty() {
         frame.set_cursor_position((input_area.x + 3, input_area.y + 1));
     } else {
@@ -305,7 +305,7 @@ pub fn render_home(frame: &mut ratatui::Frame, area: Rect, app: &App) {
         frame.set_cursor_position((input_area.x + 3 + display_col, input_area.y + 1));
     }
 
-    // Slash command completion popup
+    // 斜杠命令补全弹窗
     if app.slash_completion_open && !app.home_input.is_empty() {
         let completions = super::enhancements::filter_slash_commands(&app.home_input);
         if !completions.is_empty() {

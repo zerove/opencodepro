@@ -4,21 +4,21 @@ use clap::Subcommand;
 
 #[derive(Subcommand)]
 pub enum OracleCommands {
-    /// Analyze a source file (functions, imports, line count)
+    ///分析源文件（函数、导入、行数）
     AnalyzeFile { path: PathBuf },
-    /// Analyze a directory (module summary)
+    ///分析目录（模块摘要）
     AnalyzeDir {
         path: PathBuf,
         #[arg(short = 't')]
         include: Option<String>,
     },
-    /// Review code for potential issues
+    ///审查代码中的潜在问题
     CodeReview { paths: Vec<PathBuf> },
 }
 
 #[derive(Subcommand)]
 pub enum ExploreCommands {
-    /// Search file contents with regex patterns
+    ///使用正则模式搜索文件内容
     Search {
         patterns: Vec<String>,
         #[arg(short = 'p')]
@@ -30,7 +30,7 @@ pub enum ExploreCommands {
         #[arg(short = 'i')]
         include: Option<String>,
     },
-    /// Find files by glob pattern
+    ///按 glob 模式查找文件
     FindFiles {
         pattern: String,
         root: PathBuf,
@@ -41,25 +41,25 @@ pub enum ExploreCommands {
 
 #[derive(Subcommand)]
 pub enum LibrarianCommands {
-    /// Search the web and synthesise findings
+    ///搜索网络并综合发现
     Research {
         query: String,
-        /// Research scope: web, docs, code, all
+        ///研究范围：web、docs、code、all
         #[arg(short = 's', long = "scope", default_value = "all")]
         scope: String,
-        /// Max results
+        ///最大结果数
         #[arg(short = 'n', default_value = "5")]
         num: usize,
     },
-    /// Fetch and display documentation from a URL
+    ///从 URL 获取并显示文档
     FetchDocs { url: String },
-    /// Search for code examples for a library/API
+    ///搜索库/API 的代码示例
     Examples {
         query: String,
         #[arg(short = 'l', default_value = "rust")]
         language: String,
     },
-    /// Synthesise findings from a JSON research report
+    ///从 JSON 研究报告综合发现
     Synthesise { report_file: std::path::PathBuf },
 }
 
@@ -69,23 +69,23 @@ pub enum LibrarianCommands {
     reason = "all Momus commands start with Review for naming consistency"
 )]
 pub enum MomusCommands {
-    /// Review a plan file for completeness and consistency
+    ///审查计划文件的完整性与一致性
     ReviewPlan { plan_file: std::path::PathBuf },
-    /// Review a source code file for common issues
+    ///审查源代码文件中的常见问题
     ReviewCode { path: std::path::PathBuf },
-    /// Review architecture documentation
+    ///审查架构文档
     ReviewArch { text: String },
-    /// Review all Rust files in a directory
+    ///审查目录中的所有 Rust 文件
     ReviewDir { path: std::path::PathBuf },
 }
 
 #[derive(Subcommand)]
 pub enum MetisCommands {
-    /// Analyse a request for ambiguities and implicit requirements
+    ///分析请求中的歧义与隐含需求
     Analyse {
-        /// Request text (inline)
+        ///请求文本（内联）
         request: Vec<String>,
-        /// Read request from a file
+        ///从文件读取请求
         #[arg(short = 'f', long = "file")]
         file: Option<std::path::PathBuf>,
     },
@@ -93,20 +93,20 @@ pub enum MetisCommands {
 
 #[derive(Subcommand)]
 pub enum SkillCommands {
-    /// List all available skills (from all sources)
+    ///列出所有可用技能（来自所有来源）
     List,
-    /// Show detailed info for a specific skill
+    ///显示特定技能的详细信息
     Show { name: String },
-    /// Install a skill from a .md file into the user directory
+    ///将 .md 文件中的技能安装到用户目录
     Install { path: PathBuf },
-    /// Remove an installed skill
+    ///移除已安装的技能
     Remove { name: String },
 }
 
 #[derive(Subcommand)]
 pub enum RulesCommands {
-    /// Show loaded project rules (from AGENTS.md)
+    ///显示已加载的项目规则（来自 AGENTS.md）
     Show,
-    /// Reload project rules from AGENTS.md
+    ///从 AGENTS.md 重新加载项目规则
     Reload,
 }

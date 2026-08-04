@@ -1,18 +1,18 @@
 use crate::SimulationResult;
 
 // ---------------------------------------------------------------------------
-// Fuel pricing — adaptive per-node fuel limits
+// 燃料定价 — 自适应的逐节点燃料上限
 // ---------------------------------------------------------------------------
 
-/// Trait for computing optimal fuel limits per node based on predictions/history.
-/// Allows granular fuel pricing instead of blanket doubling.
+/// 基于预测/历史计算每节点最优燃料上限的 trait。
+/// 允许细粒度燃料定价，而非一刀切加倍。
 pub trait FuelPricer: Send + Sync {
-    /// Given a node name, its current fuel limit, and the simulation prediction,
-    /// return the recommended fuel limit for the next evolution.
+    /// 给定节点名、当前燃料上限与仿真预测，
+    /// 返回下一轮演进推荐的燃料上限。
     fn price_fuel(&self, node_name: &str, current_fuel: u64, prediction: &SimulationResult) -> u64;
 }
 
-/// Simple fuel pricer that doubles fuel when ResourceExhausted detected (legacy behavior).
+/// 检测到资源耗尽时加倍燃料的简单定价器（旧版行为）。
 pub struct SimpleFuelPricer;
 
 impl FuelPricer for SimpleFuelPricer {
@@ -26,12 +26,12 @@ impl FuelPricer for SimpleFuelPricer {
     }
 }
 
-/// Adaptive fuel pricer using MonteCarlo estimated_cost.
+/// 使用蒙特卡洛 estimated_cost 的自适应燃料定价器。
 ///
-/// Strategy:
-/// - If prediction.estimated_cost > current_fuel: set fuel = estimated_cost * 1.5 (headroom)
-/// - If prediction.estimated_cost <= current_fuel * 0.5: reduce fuel by 20% (avoid over-provision)
-/// - Otherwise keep current fuel
+/// 策略：
+/// - 若 prediction.estimated_cost > current_fuel：设 fuel = estimated_cost * 1.5（留余量）
+/// - 若 prediction.estimated_cost <= current_fuel * 0.5：燃料减少 20%（避免过度供给）
+/// - 否则维持当前燃料
 pub struct AdaptiveFuelPricer {
     pub headroom_factor: f64,
     pub shrink_factor: f64,
@@ -72,10 +72,10 @@ impl FuelPricer for AdaptiveFuelPricer {
         let estimated = prediction.estimated_cost;
 
         let new_fuel = if estimated > current_fuel {
-            // Need more fuel: add headroom
+            // 需要更多燃料：增加余量
             ((estimated as f64) * self.headroom_factor) as u64
         } else if estimated < current_fuel / 2 {
-            // Over-provisioned: shrink
+            // 过度供给：缩减
             ((current_fuel as f64) * self.shrink_factor) as u64
         } else {
             current_fuel
@@ -129,9 +129,9 @@ mod tests {
         let pred_low = make_pred(100);
         let pred_high = make_pred(10_000_000);
 
-        // Below min should clamp to min
+        // 低于下限应钳制到下限
         assert_eq!(pricer.price_fuel("node1", 100_000, &pred_low), 500_000);
-        // Above max should clamp to max
+        // 高于上限应钳制到上限
         assert_eq!(pricer.price_fuel("node1", 1_000_000, &pred_high), 5_000_000);
     }
 }

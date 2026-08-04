@@ -1,4 +1,4 @@
-//! Remaining lib-level tests (non-DAG).
+//! 其余 lib 级测试（非 DAG）。
 
 use super::*;
 use sisyphus_types::{NodeKind, NodeOutput, SOPGraphConfig, SOPNodeConfig};
@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use tokio::sync::mpsc;
 
 // ---------------------------------------------------------------------------
-// Shared mocks
+// 共享 mock
 // ---------------------------------------------------------------------------
 
 struct MockToolExecutor;
@@ -129,7 +129,7 @@ impl sisyphus_types::experience::ExperienceBank for MockExperienceBank {
     }
 }
 
-/// Build a test `Executor` with mock dependencies.
+/// 使用 mock 依赖构建测试用 `Executor`。
 fn build_executor() -> Executor {
     let llm: Arc<dyn sisyphus_tools_llm::LlmClient> = Arc::new(sisyphus_tools_llm::DummyLlmClient);
     let knowledge = Arc::new(sisyphus_knowledge::AssetManager::new(
@@ -155,7 +155,7 @@ fn make_sop_graph(config: &SOPGraphConfig) -> Arc<SOPGraph> {
 }
 
 // ---------------------------------------------------------------------------
-// CoreError display tests
+// CoreError 显示测试
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -207,21 +207,20 @@ fn test_core_error_display() {
 }
 
 #[test]
-fn test_core_error_from_string() {
+fn test_core_error_to_string() {
     let err = CoreError::CycleDetected;
-    let s: String = err.into();
-    assert_eq!(s, "SOPGraph contains cycles");
+    assert_eq!(err.to_string(), "SOPGraph contains cycles");
 }
 
 // ---------------------------------------------------------------------------
-// Executor tests
+// Executor 测试
 // ---------------------------------------------------------------------------
 
 #[tokio::test]
 async fn test_executor_execute_cycle() {
     let executor = build_executor();
 
-    // Create a config with a cycle: Node 0 -> Node 1 -> Node 0
+    // 创建含环的配置：Node 0 -> Node 1 -> Node 0
     let config = SOPGraphConfig {
         nodes: vec![
             SOPNodeConfig {
@@ -256,7 +255,7 @@ async fn test_executor_execute_cycle() {
 
 #[test]
 fn test_struct_creation() {
-    // CognitiveIteration
+    // CognitiveIteration（认知迭代）
     let iter = CognitiveIteration {
         iteration: 1,
         prediction: sisyphus_intel::SimulationResult {
@@ -274,7 +273,7 @@ fn test_struct_creation() {
     assert_eq!(iter.iteration, 1);
     assert_eq!(iter.deviation_score, 0.1);
 
-    // CognitiveReport
+    // CognitiveReport（认知报告）
     let report = CognitiveReport {
         iterations: 1,
         converged: true,
@@ -285,7 +284,7 @@ fn test_struct_creation() {
     assert_eq!(report.iterations, 1);
     assert!(report.converged);
 
-    // CompositeOutput
+    // CompositeOutput（复合输出）
     let mut results = HashMap::new();
     results.insert(
         "sop1".into(),
@@ -306,7 +305,7 @@ fn test_struct_creation() {
 async fn test_executor_execute_with_context() {
     let executor = build_executor();
 
-    // Simple DAG: n0 -> n1
+    // 简单 DAG：n0 -> n1
     let config = SOPGraphConfig {
         nodes: vec![
             SOPNodeConfig {
@@ -346,17 +345,17 @@ async fn test_executor_execute_with_context() {
     assert!(res.is_ok());
     let ctx = res.unwrap();
 
-    // Verify results are stored
+    // 验证结果已存储
     assert!(ctx.get_result("n0").is_some());
     assert!(ctx.get_result("n1").is_some());
 
-    // Verify events were sent
+    // 验证事件已发送
     let mut events = Vec::new();
     while let Ok(event) = rx.try_recv() {
         events.push(event);
     }
 
-    // Expect NodeStarted and NodeCompleted for both nodes
+    // 预期两个节点都产生 NodeStarted 与 NodeCompleted
     assert!(events
         .iter()
         .any(|e| matches!(e, ExecutionEvent::NodeStarted { node_name } if node_name == "n0")));
@@ -375,7 +374,7 @@ async fn test_executor_execute_with_context() {
 async fn test_executor_diamond_dag() {
     let executor = build_executor();
 
-    // Diamond: n0 -> [n1, n2] -> n3
+    // 菱形：n0 -> [n1, n2] -> n3
     let config = SOPGraphConfig {
         nodes: vec![
             SOPNodeConfig {
@@ -430,7 +429,7 @@ async fn test_executor_diamond_dag() {
 async fn test_executor_node_failure_stored_as_value() {
     let executor = build_executor();
 
-    // Mock executor that fails on n0
+    // 在 n0 上失败的 mock 执行器
     struct FailOnFirst;
     #[async_trait::async_trait]
     impl ToolExecutor for FailOnFirst {
@@ -491,7 +490,7 @@ async fn test_executor_node_failure_stored_as_value() {
     assert!(res.is_ok());
     let ctx = res.unwrap();
 
-    // Failed node stores error as Value::String
+    // 失败节点将错误存储为 Value::String
     let n0_out = ctx.get_result("n0").unwrap();
     assert_eq!(
         n0_out.0,
@@ -504,7 +503,7 @@ async fn test_executor_node_failure_stored_as_value() {
         ))
     );
 
-    // n1 still executes because the executor continues after failures
+    // n1 仍会执行，因为执行器在失败后继续
     let n1_out = ctx.get_result("n1").unwrap();
     assert_eq!(n1_out.0, Arc::new(serde_json::Value::String("ok".into())));
 }
@@ -526,7 +525,7 @@ async fn test_executor_empty_graph() {
 }
 
 // ---------------------------------------------------------------------------
-// Kernel save/load tests
+// 内核保存/加载测试
 // ---------------------------------------------------------------------------
 
 async fn build_test_kernel() -> SisyphusKernel {
@@ -635,13 +634,13 @@ async fn test_kernel_empty_graph_load_rejected() {
 
     let graph: Arc<SOPGraph> = Arc::new(SOPGraph::new());
 
-    // Serialization of an empty graph succeeds
+    // 空图谱的序列化成功
     kernel
         .save_sop("test_empty", "default", &graph)
         .await
         .unwrap();
 
-    // But loading it back fails because from_graph requires at least one node
+    // 但重新加载失败，因为 from_graph 要求至少一个节点
     assert!(
         kernel.load_sop("test_empty", "default").await.is_err(),
         "empty graph load should be rejected"
@@ -665,7 +664,7 @@ async fn test_kernel_load_nonexistent() {
 }
 
 // ---------------------------------------------------------------------------
-// Simulate phase verification: strategic manager evolution acceptance
+// 模拟阶段验证：战略管理器接受演进
 // ---------------------------------------------------------------------------
 
 #[tokio::test]
@@ -797,7 +796,7 @@ async fn test_strategic_manager_evolution_verification() {
         )
     }
 
-    // Case 1: Evolution Accepted (0.5 -> 0.8)
+    // 场景 1：演进被接受（0.5 -> 0.8）
     {
         let manager = setup_manager(vec![0.5, 0.8]).await;
         let config_sop = SOPGraphConfig {
@@ -835,7 +834,7 @@ async fn test_strategic_manager_evolution_verification() {
         assert!(!res.to_string().is_empty());
     }
 
-    // Case 2: Evolution Rejected (0.5 -> 0.3)
+    // 场景 2：演进被拒绝（0.5 -> 0.3）
     {
         let manager = setup_manager(vec![0.5, 0.3]).await;
         let config_sop = SOPGraphConfig {

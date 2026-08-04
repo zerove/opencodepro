@@ -1,7 +1,7 @@
-//! BudgetProvider implementation for SisyphusKernel.
+//! SisyphusKernel 的 BudgetProvider 实现。
 //!
-//! Validates execution costs against project budgets and records
-//! actual costs via the RoadmapManager.
+//! 对照项目预算校验执行成本，并通过 RoadmapManager
+//! 记录实际成本。
 
 use async_trait::async_trait;
 
@@ -84,7 +84,7 @@ impl BudgetProvider for SisyphusKernel {
                 ))
             })?;
 
-        // Find milestone and phase for the goal
+        // 查找目标对应的里程碑与阶段
         let mut location = None;
         for ms in &project.roadmap.milestones {
             for ph in &ms.phases {

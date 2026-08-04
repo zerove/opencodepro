@@ -1,14 +1,14 @@
-//! Cognitive Dashboard — provides real-time visualization of the Sisyphus cognitive loop.
+//! 认知仪表盘 — 实时可视化 Sisyphus 认知循环。
 //!
-//! This module transforms structured `ExecutionEvent` data into human-readable,
-//! formatted terminal output to allow observability into the AI's "thinking" process.
+//! 本模块将结构化的 ExecutionEvent 数据转换为人类可读的、
+//! 格式化的终端输出，使 AI 的"思考"过程可观测。
 
 use sisyphus_types::{CognitiveMetrics, ExecutionEvent};
 
 pub struct CognitiveDashboard;
 
 impl CognitiveDashboard {
-    /// Renders an execution event to the terminal with rich formatting.
+    /// 以富格式将执行事件渲染到终端。
     pub fn render(event: &ExecutionEvent) {
         match event {
             ExecutionEvent::CognitiveStep {

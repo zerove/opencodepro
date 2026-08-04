@@ -1,23 +1,23 @@
-// ── OpenCode-inspired theme ───────────────────────────────
-// Reference: opencode's internal/tui/theme/opencode.go
-// Uses muted, clean colors with minimal visual noise.
+// ── OpenCode 风格主题 ───────────────────────────────
+// 参考：opencode 的 internal/tui/theme/opencode.go
+// 使用柔和、干净的配色，视觉噪音最小化。
 
 use ratatui::style::Color;
 
-/// Theme mode: Dark or Light.
+/// 主题模式：深色或浅色。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum ThemeMode {
     Dark,
     Light,
 }
 
-/// Semantic color set for the TUI.
-/// Some fields reserved for future rendering features (scrollbar, status line, etc.).
+/// TUI 的语义色集合。
+/// 部分字段预留给未来的渲染特性（滚动条、状态行等）。
 #[derive(Debug, Clone)]
 #[expect(dead_code)]
 pub struct Theme {
     pub mode: ThemeMode,
-    // Surface colors
+    // 表面色
     pub bg: Color,
     pub bg_secondary: Color,
     pub bg_darker: Color,
@@ -25,7 +25,7 @@ pub struct Theme {
     pub muted: Color,
     pub selection: Color,
     pub border: Color,
-    // Semantic colors
+    // 语义色
     pub primary: Color,   // Brand accent
     pub secondary: Color, // Secondary accent
     pub accent: Color,    // Tertiary accent
@@ -34,7 +34,7 @@ pub struct Theme {
     pub success: Color,
     pub info: Color,
     pub emphasized: Color,
-    // Derived helpers
+    // 派生辅助
     pub status_bg: Color,
     pub status_fg: Color,
     pub scrollbar: Color,

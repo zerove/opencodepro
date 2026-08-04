@@ -19,20 +19,20 @@ const STATUS_LABELS: &[&str] = &[
 ];
 
 pub(crate) fn handle_dashboard_key(_key: crossterm::event::KeyEvent, _app: &mut App) {
-    // Dashboard is read-only for now; future: T/F to filter anomaly types
+    // 仪表盘目前只读；未来：T/F 过滤异常类型
 }
 
 pub(crate) fn render_dashboard(frame: &mut ratatui::Frame, area: Rect, app: &App) {
     let theme = app.theme();
 
-    // Split into top cards and bottom detail
+    // 分为顶部卡片与底部详情
     let [top_area, bottom_area] = Layout::vertical([
         Constraint::Length(8), // status cards + gauges
         Constraint::Min(6),    // anomaly / chaos detail table
     ])
     .areas(area);
 
-    // ── Top: 5 status cards in a row ──────────────────────
+    // ── 顶部：一行 5 张状态卡 ──────────────────────
     let card_widths = [
         Constraint::Length(22),
         Constraint::Length(24),
@@ -61,7 +61,7 @@ pub(crate) fn render_dashboard(frame: &mut ratatui::Frame, area: Rect, app: &App
         }
     }
 
-    // ── Bottom: recent anomalies / chaos experiments / status table ──
+    // ── 底部：最近异常 / 混沌实验 / 状态表 ──
     let bottom_block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(theme.primary))
@@ -76,7 +76,7 @@ pub(crate) fn render_dashboard(frame: &mut ratatui::Frame, area: Rect, app: &App
     render_chaos_table(frame, right_table, app);
 }
 
-/// Returns (block, gauge_percent) for each of the 5 status cards.
+/// 返回 5 张状态卡各自的 (block, gauge_percent)。
 fn render_status_cards(app: &App) -> Vec<(Block<'static>, u16)> {
     let theme = app.theme();
     let cog_active = app.dashboard_cog_active;
@@ -149,7 +149,7 @@ fn render_anomaly_table(frame: &mut ratatui::Frame, area: Rect, app: &App) {
             Cell::from(Span::styled("active", Style::default().fg(theme.warning))),
         ])]
     } else {
-        // Placeholder demo rows when no bridge data is available
+        // 无桥接数据时使用占位演示行
         vec![
             Row::new(vec![
                 Cell::from(Span::styled("—", Style::default().fg(theme.muted))),

@@ -1,11 +1,11 @@
-//! Orchestrator for the Sisyphus self-programming loop.
+//! Sisyphus 自编程循环的编排器。
 //!
-//! ## Capabilities
-//! - **Tool gap resolution**: Generate → compile → verify → deploy → regress → register
-//! - **Auto regression testing**: Run unit + integration tests on newly deployed tools
-//! - **Quality evaluation**: Multi-axis quality scoring (test pass, stability, precision)
-//! - **Automated skill registration**: Package deployed tools as SkillBundles and register
-//!   with the SkillStore so the system can discover them
+//! ## 能力
+//! - **工具缺口解决**：生成 → 编译 → 验证 → 部署 → 回归 → 注册
+//! - **自动回归测试**：对新部署的工具运行单元 + 集成测试
+//! - **质量评估**：多轴质量评分（测试通过率、稳定性、精确度）
+//! - **自动化技能注册**：将已部署工具打包为 SkillBundle 并注册到
+//!   SkillStore，使系统能够发现它们
 
 use crate::ExecutionManager;
 use sisyphus_intel::{ToolCoder, ToolGap, WasmCompiler};
@@ -18,7 +18,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::mpsc;
 use tracing::{info, warn};
 
-/// A single quality score axis.
+/// 单个质量评分轴。
 #[derive(Debug, Clone)]
 pub struct QualityAxis {
     pub name: String,
@@ -26,7 +26,7 @@ pub struct QualityAxis {
     pub weight: f64,
 }
 
-/// Result of a quality evaluation.
+/// 质量评估的结果。
 #[derive(Debug, Clone)]
 pub struct QualityReport {
     pub tool_id: String,
@@ -37,7 +37,7 @@ pub struct QualityReport {
     pub recommendations: Vec<String>,
 }
 
-/// Result of regression test execution.
+/// 回归测试执行的结果。
 #[derive(Debug, Clone)]
 pub struct RegressionTestResult {
     pub tool_id: String,
@@ -98,11 +98,11 @@ impl SelfProgrammingManager {
     }
 
     // ---------------------------------------------------------------
-    // Core gap resolution pipeline (enhanced)
+    // 核心缺口解决流水线（增强版）
     // ---------------------------------------------------------------
 
-    /// Executes the full self-programming loop for a detected gap, including
-    /// post-deployment regression testing and automated skill registration.
+    /// 为检测到的缺口执行完整的自编程循环，包括
+    /// 部署后的回归测试与自动化技能注册。
     pub async fn resolve_gap(&self, gap: ToolGap) -> Result<(), crate::CoreError> {
         info!(gap_id = %gap.gap_id, "Starting self-programming loop to resolve tool gap");
 
@@ -112,28 +112,28 @@ impl SelfProgrammingManager {
         for attempt in 1..=max_retries {
             info!("Self-programming attempt {}/{}", attempt, max_retries);
 
-            // 1. Notify start
+            // 1. 通知开始
             self.notify(CognitiveEvent::ToolGenerationStarted {
                 tool_id: gap.suggested_tool_spec.tool_id.clone(),
                 capability: gap.required_capability.clone(),
             })
             .await;
 
-            // 2. Generate code
+            // 2. 生成代码
             let code = self
                 .coder
                 .generate_code(&gap.suggested_tool_spec, feedback.clone())
                 .await
                 .map_err(|e| crate::CoreError::Internal(e.to_string()))?;
 
-            // 3. Compile to WASM
+            // 3. 编译为 WASM
             let wasm_path = self
                 .compiler
                 .compile(&gap.suggested_tool_spec.tool_id, &code)
                 .await
                 .map_err(|e| crate::CoreError::Internal(e.to_string()))?;
 
-            // 4. Verify tool
+            // 4. 验证工具
             let v_report = self
                 .verifier
                 .verify(&gap.suggested_tool_spec, &wasm_path)
@@ -151,7 +151,7 @@ impl SelfProgrammingManager {
                     v_report.confidence_score
                 );
 
-                // 5. Deploy and Sediment
+                // 5. 部署并沉淀（Sediment）
                 let asset_id = self
                     .knowledge_manager
                     .sediment_tool(gap.suggested_tool_spec.clone(), wasm_path)
@@ -171,12 +171,12 @@ impl SelfProgrammingManager {
                     asset_id
                 );
 
-                // 6. Run regression tests on the deployed tool
+                // 6. 对已部署工具运行回归测试
                 let regress_result = self
                     .run_regression_tests(&gap.suggested_tool_spec, &asset_id)
                     .await;
 
-                // 7. Evaluate quality
+                // 7. 评估质量
                 let quality = self
                     .evaluate_quality(&gap.suggested_tool_spec, &regress_result)
                     .await;
@@ -191,7 +191,7 @@ impl SelfProgrammingManager {
                 .await;
 
                 if quality.overall_score >= 0.6 {
-                    // 8. Auto-register as a skill if quality is acceptable
+                    // 8. 质量合格时自动注册为技能
                     self.register_skill(&gap, &quality).await;
                 } else {
                     warn!(
@@ -226,11 +226,11 @@ impl SelfProgrammingManager {
     }
 
     // ---------------------------------------------------------------
-    // Regression Testing
+    // 回归测试
     // ---------------------------------------------------------------
 
-    /// Run automated regression tests (unit + integration) against a deployed tool.
-    /// Uses the test executor from ExecutionManager to run tool-specific test commands.
+    /// 对已部署工具运行自动化回归测试（单元 + 集成）。
+    /// 使用 ExecutionManager 的测试执行器运行工具专属的测试命令。
     pub async fn run_regression_tests(
         &self,
         spec: &ToolSpec,
@@ -243,8 +243,8 @@ impl SelfProgrammingManager {
         let mut total = 0u64;
         let mut passed = 0u64;
 
-        // --- Unit tests ---
-        // Try running unit tests if a test command is specified in the spec
+        // --- 单元测试 ---
+        // 若 spec 中指定了测试命令，则尝试运行单元测试
         if let Some(ref test_cmd) = spec.test_command {
             total += 1;
             let test_result = self
@@ -272,7 +272,7 @@ impl SelfProgrammingManager {
                 }
             }
         } else {
-            // No explicit test command; try to run common test patterns
+            // 没有显式测试命令；尝试运行常见的测试模式
             let default_cmd = format!("cargo test --test {}_test", tool_id);
             total += 1;
             let result = self
@@ -287,7 +287,7 @@ impl SelfProgrammingManager {
                     passed += 1;
                 }
                 Ok(r) => {
-                    // Test crate may not exist; treat this as soft failure
+                    // 测试 crate 可能不存在；将其视为软失败
                     info!(
                         "No dedicated unit test found for {}: {}",
                         tool_id,
@@ -301,7 +301,7 @@ impl SelfProgrammingManager {
             }
         }
 
-        // --- Integration tests ---
+        // --- 集成测试 ---
         let integration_cmd = format!("cargo test -p sisyphus-tests --test {}_test", tool_id);
         total += 1;
         match self
@@ -341,11 +341,11 @@ impl SelfProgrammingManager {
     }
 
     // ---------------------------------------------------------------
-    // Quality Evaluation
+    // 质量评估
     // ---------------------------------------------------------------
 
-    /// Evaluate tool quality across multiple axes.
-    /// Returns a structured report with an overall score (0.0 - 1.0).
+    /// 从多个轴评估工具质量。
+    /// 返回结构化报告，含总分（0.0 - 1.0）。
     pub async fn evaluate_quality(
         &self,
         spec: &ToolSpec,
@@ -354,7 +354,7 @@ impl SelfProgrammingManager {
         let mut axes = Vec::new();
         let mut recommendations = Vec::new();
 
-        // Axis 1: Test pass rate
+        // 轴 1：测试通过率
         let test_score = regression.success_rate();
         axes.push(QualityAxis {
             name: "test_coverage".into(),
@@ -362,7 +362,7 @@ impl SelfProgrammingManager {
             weight: 0.35,
         });
 
-        // Axis 2: Specification completeness
+        // 轴 2：规范完整度
         let spec_score = if !spec.required_capability.is_empty() {
             let criteria_present = !spec.success_criteria.is_empty();
             if criteria_present {
@@ -379,7 +379,7 @@ impl SelfProgrammingManager {
             weight: 0.25,
         });
 
-        // Axis 3: Stability from verification
+        // 轴 3：验证得到的稳定性
         let stability_score = if regression.failed == 0 {
             0.95
         } else if regression.success_rate() > 0.8 {
@@ -393,7 +393,7 @@ impl SelfProgrammingManager {
             weight: 0.25,
         });
 
-        // Axis 4: Execution efficiency (fuel/performance proxy)
+        // 轴 4：执行效率（燃料/性能代理）
         let efficiency_score = if let Some(ref test_cmd) = spec.test_command {
             if test_cmd.len() < 100 {
                 0.9
@@ -409,10 +409,10 @@ impl SelfProgrammingManager {
             weight: 0.15,
         });
 
-        // Compute weighted overall score
+        // 计算加权总分
         let overall_score: f64 = axes.iter().map(|a| a.score * a.weight).sum();
 
-        // Generate recommendations
+        // 生成建议
         if regression.failed > 0 {
             recommendations.push("Fix failing tests before deployment to production".to_string());
         }
@@ -438,11 +438,11 @@ impl SelfProgrammingManager {
     }
 
     // ---------------------------------------------------------------
-    // Skill Registration
+    // 技能注册
     // ---------------------------------------------------------------
 
-    /// Automatically register the deployed tool as a Sisyphus skill.
-    /// Creates a SkillBundle and installs it via SkillStore.
+    /// 自动将已部署工具注册为 Sisyphus 技能。
+    /// 创建 SkillBundle 并通过 SkillStore 安装。
     pub async fn register_skill(&self, gap: &ToolGap, quality: &QualityReport) {
         info!(
             tool_id = %gap.suggested_tool_spec.tool_id,
@@ -456,7 +456,7 @@ impl SelfProgrammingManager {
             .unwrap_or_default()
             .as_secs();
 
-        // Build skill metadata
+        // 构建技能元数据
         let metadata = SkillMetadata {
             id: format!("skill:{}:{}", tool_id.replace('/', "_"), now),
             name: tool_id
@@ -474,7 +474,7 @@ impl SelfProgrammingManager {
             created_at: now,
         };
 
-        // Create a minimal SOPGraphConfig for the tool
+        // 为工具创建最小化的 SOPGraphConfig
         let mut main_sop = sisyphus_types::SOPGraphConfig {
             nodes: vec![],
             edges: vec![],
@@ -489,7 +489,7 @@ impl SelfProgrammingManager {
 
         let bundle = SkillBundle::new(metadata, main_sop);
 
-        // Register via SkillStore
+        // 通过 SkillStore 注册
         if let Some(ref store) = self.skill_store {
             match store.install(bundle.clone()).await {
                 Ok(()) => {
@@ -515,7 +515,7 @@ impl SelfProgrammingManager {
 }
 
 // ---------------------------------------------------------------
-// Tests
+// 测试
 // ---------------------------------------------------------------
 
 #[cfg(test)]
@@ -549,8 +549,8 @@ mod tests {
             failures: vec![],
         };
 
-        // We need an async runtime for evaluate_quality since it's async
-        // But in test we can use a simpler direct approach
+        // evaluate_quality 是异步的，需要异步运行时
+        // 但在测试中可以使用更简单的直接方式
         let score = regression.success_rate();
         assert_eq!(score, 1.0);
     }
@@ -602,8 +602,8 @@ mod tests {
 
     #[test]
     fn test_quality_axes_weight_sums_to_one() {
-        // Verify that the weights in evaluate_quality sum to approximately 1.0
-        // This test focuses on the logic rather than needing async
+        // 验证 evaluate_quality 中的权重之和约为 1.0
+        // 此测试聚焦于逻辑本身，无需异步
         let spec = make_test_spec("sum_check");
         let regression = RegressionTestResult {
             tool_id: "sum_check".into(),
@@ -616,8 +616,8 @@ mod tests {
             failures: vec![],
         };
 
-        // We can verify that the weights are correctly distributed by checking
-        // that the overall score is a weighted average
+        // 可以通过检查总分是加权平均值来验证权重分布正确
+        // 总分是各轴分数的加权平均。
         let test_score = regression.success_rate(); // 1.0
         let spec_score = if !spec.required_capability.is_empty() {
             if !spec.success_criteria.is_empty() {
@@ -650,7 +650,7 @@ mod tests {
 
     #[test]
     fn test_quality_axes_low_spec() {
-        // Low spec completeness should penalize overall score
+        // 规范完整度低应拉低总分
         let spec_no_criteria = ToolSpec {
             tool_id: "minimal".into(),
             required_capability: "".into(),
@@ -705,7 +705,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_skill_bundle_creation() {
-        // Test that we can create a valid SkillBundle with the right metadata
+        // 测试能够创建带正确元数据的有效 SkillBundle
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()

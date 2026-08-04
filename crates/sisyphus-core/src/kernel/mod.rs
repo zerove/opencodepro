@@ -1,8 +1,8 @@
-//! Core kernel implementation — the main `SisyphusKernel` methods.
+//! 核心内核实现 — `SisyphusKernel` 的主要方法。
 //!
-//! Extracted from `lib.rs` for readability. Re-exported via `pub use kernel::*`.
-//! The impl is split across domain submodules; `pub use` re-exports here keep
-//! the original module path stable for downstream crates.
+//! 为可读性从 `lib.rs` 中拆出。通过 `pub use kernel::*` 重新导出。
+//! impl 拆分到各领域子模块；此处的 `pub use` 重新导出保持
+//! 下游 crate 使用的原始模块路径稳定不变。
 
 mod cache;
 mod construction;

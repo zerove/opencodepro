@@ -4,8 +4,8 @@ use sisyphus_mem::MfsStore;
 use sisyphus_types::StateStore;
 use std::sync::Arc;
 
-/// Manages the lifecycle of strategic proposals.
-/// Handles persistence via MfsStore and status transitions.
+/// 管理战略提案的生命周期。
+/// 通过 MfsStore 处理持久化与状态转换。
 pub struct ProposalManager {
     store: Arc<MfsStore>,
 }
@@ -15,7 +15,7 @@ impl ProposalManager {
         Self { store }
     }
 
-    /// Submit a new proposal for human review.
+    /// 提交新提案供人工审查。
     pub async fn submit_proposal(
         &self,
         project_id: &str,
@@ -33,7 +33,7 @@ impl ProposalManager {
         Ok(())
     }
 
-    /// Retrieve a specific proposal by ID.
+    /// 按 ID 检索特定提案。
     pub async fn get_proposal(
         &self,
         project_id: &str,
@@ -54,7 +54,7 @@ impl ProposalManager {
         }
     }
 
-    /// Approve a proposal and mark it as approved by the reviewer.
+    /// 批准提案，标记为审查人已批准。
     pub async fn approve_proposal(
         &self,
         project_id: &str,
@@ -72,7 +72,7 @@ impl ProposalManager {
         self.submit_proposal(project_id, proposal).await
     }
 
-    /// Reject a proposal.
+    /// 拒绝提案。
     pub async fn reject_proposal(
         &self,
         project_id: &str,
@@ -90,17 +90,17 @@ impl ProposalManager {
         self.submit_proposal(project_id, proposal).await
     }
 
-    /// List all proposals for a specific project.
+    /// 列出特定项目的全部提案。
     pub async fn list_proposals(
         &self,
         _project_id: &str,
     ) -> Result<Vec<StrategicProposal>, RoadmapError> {
-        // Since MfsStore doesn't support complex queries, we use a simplified
-        // approach: we assume proposals are listed via a project-specific index
-        // if we had one. For now, we implement a basic filter (this is a prototype).
+        // 由于 MfsStore 不支持复杂查询，我们采用简化的
+        // 方式：假定提案通过项目专属索引列出
+        // （若有）。目前实现基础过滤（这是原型）。
 
-        // In a real production system, we would maintain a 'project:proposals' list.
-        // For this implementation, we'll return an empty list or implement basic scanning.
+        // 在生产系统中，我们会维护 'project:proposals' 列表。
+        // 当前实现返回空列表或执行基础扫描。
         Ok(vec![])
     }
 }

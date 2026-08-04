@@ -5,25 +5,25 @@ use anyhow::{Context, Result};
 
 use crate::permission::CliPermission;
 
-/// Wrapper around `crate::tools::bash::execute` with permission checking
-/// and a `timeout_ms` default.
+/// `crate::tools::bash::execute` 的包装，带权限检查
+/// 与 `timeout_ms` 默认值。
 pub async fn exec(
     command: &str,
     workdir: Option<&Path>,
     timeout_ms: u64,
     perms: &CliPermission,
 ) -> Result<crate::tools::BashOutput> {
-    // Permission check
+    // 权限检查
     match perms.check("exec") {
         Some(true) => {} // allowed
         Some(false) => {
             anyhow::bail!("Permission denied: shell execution is blocked by config");
         }
         None => {
-            // TUI mode: skip permission prompt — user already showed intent
-            // by typing the command and pressing Enter. The synchronous
-            // stdin read is incompatible with crossterm raw mode.
-            // CLI mode has its own permission check in Commands::Exec.
+            // TUI 模式：跳过权限提示 — 用户输入命令并回车
+            // 已表明意图。同步的 stdin 读取与 crossterm 原始模式
+            // 不兼容。
+            // CLI 模式在 Commands::Exec 中有自己的权限检查。
         }
     }
 
@@ -47,7 +47,7 @@ pub async fn exec(
     Ok(output)
 }
 
-/// Format a `Duration` to a human-readable string (e.g., "1.23s").
+/// 将 `Duration` 格式化为人类可读字符串（例如 "1.23s"）。
 pub fn format_duration(d: Duration) -> String {
     let secs = d.as_secs_f64();
     if secs < 1.0 {

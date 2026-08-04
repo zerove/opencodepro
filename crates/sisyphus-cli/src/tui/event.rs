@@ -9,14 +9,14 @@ use super::home::handle_home_key;
 use super::sessions::handle_sessions_key;
 use crate::permission::CliPermission;
 
-// ── Event handler ───────────────────────────────────────
+// ── 事件处理器 ───────────────────────────────────────
 
 pub(crate) fn handle_event(event: Event, app: &mut App, _perms: &CliPermission) -> Result<bool> {
     match event {
         Event::Key(key) if key.kind == KeyEventKind::Press => {
             app.notification = None; // Clear notification on any key press
 
-            // Global: Ctrl+C / Ctrl+Q → quick exit (double-tap to confirm)
+            // 全局：Ctrl+C / Ctrl+Q → 快速退出（双击确认）
             if (key.code == KeyCode::Char('c') || key.code == KeyCode::Char('q'))
                 && key
                     .modifiers
@@ -32,7 +32,7 @@ pub(crate) fn handle_event(event: Event, app: &mut App, _perms: &CliPermission) 
                 return Ok(false);
             }
 
-            // Global: Ctrl+K → toggle command palette (opencode-style)
+            // 全局：Ctrl+K → 切换命令面板（opencode 风格）
             if key.code == KeyCode::Char('k')
                 && key
                     .modifiers
@@ -46,7 +46,7 @@ pub(crate) fn handle_event(event: Event, app: &mut App, _perms: &CliPermission) 
                 return Ok(false);
             }
 
-            // Global: Ctrl+L → session list dialog
+            // 全局：Ctrl+L → 会话列表对话框
             if key.code == KeyCode::Char('l')
                 && key
                     .modifiers
@@ -59,7 +59,7 @@ pub(crate) fn handle_event(event: Event, app: &mut App, _perms: &CliPermission) 
                 return Ok(false);
             }
 
-            // Global: Ctrl+M → model info (placeholder for model list)
+            // 全局：Ctrl+M → 模型信息（模型列表占位）
             if key.code == KeyCode::Char('m')
                 && key
                     .modifiers
@@ -74,7 +74,7 @@ pub(crate) fn handle_event(event: Event, app: &mut App, _perms: &CliPermission) 
                 return Ok(false);
             }
 
-            // Global: Ctrl+A → agent info (placeholder for agent list)
+            // 全局：Ctrl+A → 代理信息（代理列表占位）
             if key.code == KeyCode::Char('a')
                 && key
                     .modifiers
@@ -86,13 +86,13 @@ pub(crate) fn handle_event(event: Event, app: &mut App, _perms: &CliPermission) 
                 return Ok(false);
             }
 
-            // Global: F1 → help dialog
+            // 全局：F1 → 帮助对话框
             if key.code == KeyCode::F(1) {
                 app.dialog = Some(Dialog::Help);
                 return Ok(false);
             }
 
-            // Global: Ctrl+H → go home
+            // 全局：Ctrl+H → 返回主页
             if key.code == KeyCode::Char('h')
                 && key
                     .modifiers
@@ -104,7 +104,7 @@ pub(crate) fn handle_event(event: Event, app: &mut App, _perms: &CliPermission) 
                 return Ok(false);
             }
 
-            // Global: Ctrl+D → toggle dashboard
+            // 全局：Ctrl+D → 切换仪表盘
             if key.code == KeyCode::Char('d')
                 && key
                     .modifiers
@@ -116,7 +116,7 @@ pub(crate) fn handle_event(event: Event, app: &mut App, _perms: &CliPermission) 
                 return Ok(false);
             }
 
-            // Global: Ctrl+N → new session
+            // 全局：Ctrl+N → 新建会话
             if key.code == KeyCode::Char('n')
                 && key
                     .modifiers
@@ -141,7 +141,7 @@ pub(crate) fn handle_event(event: Event, app: &mut App, _perms: &CliPermission) 
                 return Ok(false);
             }
 
-            // Global: Ctrl+V → paste
+            // 全局：Ctrl+V → 粘贴
             if key.code == KeyCode::Char('v')
                 && key
                     .modifiers
@@ -170,7 +170,7 @@ pub(crate) fn handle_event(event: Event, app: &mut App, _perms: &CliPermission) 
                 return Ok(false);
             }
 
-            // Leader key: Ctrl+X → leader mode
+            // 引导键：Ctrl+X → leader 模式
             if key.code == KeyCode::Char('x')
                 && key
                     .modifiers
@@ -205,19 +205,19 @@ pub(crate) fn handle_event(event: Event, app: &mut App, _perms: &CliPermission) 
                 }
             }
 
-            // Dialog takes priority over view routing
+            // 对话框优先于视图路由
             if app.dialog.is_some() {
                 handle_dialog_key(key, app);
                 return Ok(false);
             }
 
-            // When palette is open, route all keys to palette handler
+            // 面板打开时，所有按键路由到面板处理器
             if app.palette_open {
                 handle_palette_key(key, app);
                 return Ok(false);
             }
 
-            // Route by current view
+            // 按当前视图路由
             match app.view {
                 View::Home => handle_home_key(key, app),
                 View::Session => handle_sessions_key(key, app),

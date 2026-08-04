@@ -8,7 +8,7 @@ pub async fn handle_exec(
     dir: &Option<PathBuf>,
     cli_perms: &sisyphus_cli::permission::CliPermission,
 ) -> Result<()> {
-    // Permission check
+    // 权限检查
     match cli_perms.check("exec") {
         Some(true) => {}
         Some(false) => {

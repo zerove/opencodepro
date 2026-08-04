@@ -4,17 +4,17 @@ use ratatui::{
 };
 use std::fmt::Write;
 
-// ── Clipboard helpers ───────────────────────────────────
+// ── 剪贴板辅助 ───────────────────────────────────
 
-/// Copy text to system clipboard.
-/// First tries `arboard` (X11/Wayland), then falls back to OSC 52 terminal escape.
-/// Returns Ok with a user-facing success message, or Err with a failure message.
+/// 复制文本到系统剪贴板。
+/// 先尝试 `arboard`（X11/Wayland），失败则回退到 OSC 52 终端转义。
+/// 成功时返回带用户提示信息的 Ok，失败时返回错误消息的 Err。
 pub fn copy_to_clipboard(text: &str) -> Result<String, String> {
     if text.is_empty() {
         return Err("Nothing to copy".into());
     }
 
-    // Try desktop clipboard (X11/Wayland)
+    // 尝试桌面剪贴板（X11/Wayland）
     if let Ok(mut cb) = arboard::Clipboard::new() {
         if cb.set_text(text).is_ok() {
             let len = text.len();
@@ -22,10 +22,10 @@ pub fn copy_to_clipboard(text: &str) -> Result<String, String> {
         }
     }
 
-    // Fallback: OSC 52 escape sequence (works in tmux, ssh, most modern terminals)
+    // 回退：OSC 52 转义序列（适用于 tmux、ssh 及大多数现代终端）
     if let Some(seq) = build_osc52(text) {
         print!("{seq}");
-        // Flush stdout so the sequence is sent immediately
+        // 刷新 stdout 使序列立即发送
         use std::io::Write as _;
         let _ = std::io::stdout().flush();
         let len = text.len();
@@ -35,7 +35,7 @@ pub fn copy_to_clipboard(text: &str) -> Result<String, String> {
     Err("Clipboard unavailable — terminal may not support OSC 52".into())
 }
 
-/// Read text from system clipboard. Returns empty string on failure.
+/// 从系统剪贴板读取文本。失败时返回空字符串。
 pub fn paste_from_clipboard() -> String {
     match arboard::Clipboard::new() {
         Ok(mut cb) => cb.get_text().unwrap_or_default(),
@@ -43,13 +43,13 @@ pub fn paste_from_clipboard() -> String {
     }
 }
 
-/// Build an OSC 52 escape sequence for the given text.
-/// Encodes text as base64. Returns Some(seq) or None if encoding fails.
+/// 为给定文本构建 OSC 52 转义序列。
+/// 将文本编码为 base64。成功返回 Some(seq)，编码失败返回 None。
 fn build_osc52(text: &str) -> Option<String> {
     use base64::Engine as _;
     let encoded = base64::engine::general_purpose::STANDARD.encode(text.as_bytes());
     let mut seq = String::new();
-    // tmux needs \ePtmux;\e...\e\\ wrapper when inside tmux
+    // 在 tmux 内部时需要 \ePtmux;\e...\e\\ 包装
     if std::env::var("TMUX").is_ok() {
         write!(seq, "\x1bPtmux;\x1b\x1b]52;;{encoded}\x07\x1b\\").ok()?;
     } else {
@@ -58,7 +58,7 @@ fn build_osc52(text: &str) -> Option<String> {
     Some(seq)
 }
 
-// ── Scroll indicator ────────────────────────────────────
+// ── 滚动指示器 ────────────────────────────────────
 
 pub fn scroll_pct(pos: usize, total: usize) -> String {
     if total <= 1 {
@@ -69,17 +69,17 @@ pub fn scroll_pct(pos: usize, total: usize) -> String {
     }
 }
 
-// ── Message content rendering (shared by sessions + todos) ──
+// ── 消息内容渲染（会话与待办共用） ──
 
-/// Parse inline style markers in a line of text, returning styled spans.
-/// Supports: `**bold**`, `*italic*`, `` `code` ``.
+/// 解析一行文本中的内联样式标记，返回带样式的片段。
+/// 支持：`**bold**`、`*italic*`、`` `code` ``。
 pub fn parse_inline_style(line: &str) -> Vec<Span<'static>> {
     use ratatui::style::Modifier;
     let mut spans = Vec::new();
     let chars: Vec<char> = line.chars().collect();
     let mut i = 0;
     while i < chars.len() {
-        // bold (**)
+        // 粗体（**）
         if i + 1 < chars.len() && chars[i] == '*' && chars[i + 1] == '*' {
             let mut end = i + 2;
             while end + 1 < chars.len() && !(chars[end] == '*' && chars[end + 1] == '*') {
@@ -95,7 +95,7 @@ pub fn parse_inline_style(line: &str) -> Vec<Span<'static>> {
                 continue;
             }
         }
-        // italic (*)
+        // 斜体（*）
         if chars[i] == '*' {
             let mut end = i + 1;
             while end < chars.len() && chars[end] != '*' {
@@ -111,7 +111,7 @@ pub fn parse_inline_style(line: &str) -> Vec<Span<'static>> {
                 continue;
             }
         }
-        // code (`)
+        // 代码（`）
         if chars[i] == '`' {
             let mut end = i + 1;
             while end < chars.len() && chars[end] != '`' {
@@ -127,13 +127,13 @@ pub fn parse_inline_style(line: &str) -> Vec<Span<'static>> {
                 continue;
             }
         }
-        // line break handling
+        // 换行处理
         if chars[i] == '\n' {
             spans.push(Span::raw("\n"));
             i += 1;
             continue;
         }
-        // regular char
+        // 普通字符
         let mut end = i + 1;
         while end < chars.len() && chars[end] != '*' && chars[end] != '`' && chars[end] != '\n' {
             end += 1;
@@ -145,14 +145,14 @@ pub fn parse_inline_style(line: &str) -> Vec<Span<'static>> {
     spans
 }
 
-/// Count how many logical lines `render_message_content` would produce for the given content.
-/// Used for click-to-message mapping — must stay in sync with `render_message_content`.
+/// 计算 `render_message_content` 对给定内容会生成多少逻辑行。
+/// 用于点击定位消息 — 必须与 `render_message_content` 保持同步。
 pub fn count_content_lines(content: &str, _expanded: bool) -> usize {
     content.lines().count()
 }
 
-/// Split content into (thought_blocks, real_answer).
-/// Both are raw text; tag lines are discarded.
+/// 将内容拆分为 (thought_blocks, real_answer)。
+/// 两者都是原始文本；标签行被丢弃。
 pub fn split_thought_and_answer(content: &str) -> (Vec<String>, String) {
     let mut thoughts = Vec::new();
     let mut answer = String::new();
@@ -163,14 +163,14 @@ pub fn split_thought_and_answer(content: &str) -> (Vec<String>, String) {
         let trimmed = l.trim();
 
         if in_thought {
-            // Search for closing tag anywhere in the line
+            // 在行内任意位置查找闭合标签
             let tag_end = trimmed
                 .find("</thought>")
                 .or_else(|| trimmed.find("</thinking"))
                 .or_else(|| if trimmed == ">" { Some(0) } else { None })
                 .or_else(|| trimmed.find("</"));
             if let Some(tag_start) = tag_end {
-                // Everything before the tag on this line → thought content
+                // 该行标签之前的所有内容 → 思考内容
                 let before = &l[..tag_start + (l.len() - trimmed.len()).min(tag_start)];
                 if !before.trim().is_empty() {
                     if !current.is_empty() {
@@ -183,7 +183,7 @@ pub fn split_thought_and_answer(content: &str) -> (Vec<String>, String) {
                 }
                 in_thought = false;
                 current.clear();
-                // Everything after `>` of the closing tag → answer content
+                // 闭合标签 `>` 之后的所有内容 → 回答内容
                 let after_tag = trimmed[tag_start..].trim_start();
                 let after_gt = after_tag
                     .bytes()
@@ -205,7 +205,7 @@ pub fn split_thought_and_answer(content: &str) -> (Vec<String>, String) {
             continue;
         }
 
-        // Not in thought — check for opening tag
+        // 不在思考中 — 检查开始标签
         if let Some(rest) = trimmed.strip_prefix("<thought>").or_else(|| {
             if trimmed.starts_with("<thinking") {
                 trimmed.find('>').map(|e| trimmed[e + 1..].trim_start())
@@ -218,7 +218,7 @@ pub fn split_thought_and_answer(content: &str) -> (Vec<String>, String) {
             if rest.is_empty() {
                 continue;
             }
-            // Opening tag + content on same line (e.g. `<thought>inner</thought>ans`)
+            // 开始标签与内容在同一行（例如 `<thought>inner</thought>ans`）
             let close = rest
                 .find("</thought>")
                 .or_else(|| rest.find("</thinking"))
@@ -245,7 +245,7 @@ pub fn split_thought_and_answer(content: &str) -> (Vec<String>, String) {
                     }
                 }
             } else {
-                // No closing tag — everything after `<thought>` is thought content
+                // 无闭合标签 — `<thought>` 之后的所有内容都是思考内容
                 current.push_str(rest);
             }
             continue;
@@ -260,8 +260,8 @@ pub fn split_thought_and_answer(content: &str) -> (Vec<String>, String) {
     (thoughts, answer)
 }
 
-/// Count lines for the new thought-section rendering, including the collapsible header.
-/// Mirrors `render_message_with_thought_section`.
+/// 为新思考区渲染计算行数，含可折叠标题。
+/// 与 `render_message_with_thought_section` 保持一致。
 pub fn count_message_lines(content: &str, thought_expanded: bool) -> usize {
     let (thoughts, answer) = split_thought_and_answer(content);
 
@@ -271,7 +271,7 @@ pub fn count_message_lines(content: &str, thought_expanded: bool) -> usize {
 
     let mut count = 0usize;
 
-    // ── thought section ──
+    // ── 思考区 ──
     count += 1; // header
     if thought_expanded {
         for t in &thoughts {
@@ -282,17 +282,17 @@ pub fn count_message_lines(content: &str, thought_expanded: bool) -> usize {
         }
     }
 
-    // ── answer section ──
+    // ── 回答区 ──
     count += count_content_lines(&answer, false);
 
     count
 }
 
-/// Render message content (non-thought lines only).
-/// Parses inline markers (**bold**, *italic*, `code`) and diff +/- coloring.
+/// 渲染消息内容（仅非思考行）。
+/// 解析内联标记（**bold**、*italic*、`code`）与 diff +/- 着色。
 pub fn render_message_content(lines: &mut Vec<Line<'static>>, content: &str, _expanded: bool) {
     for l in content.lines() {
-        // Diff coloring: lines starting with +/- get green/red
+        // diff 着色：以 +/- 开头的行显示绿色/红色
         if l.starts_with("+ ") || l == "+" {
             lines.push(Line::from(Span::styled(
                 l.to_string(),
@@ -323,9 +323,9 @@ fn indent_spans(prefix: &str, spans: &[Span<'static>]) -> Vec<Span<'static>> {
     out
 }
 
-/// Render a message with thought blocks in a separate collapsible section.
-/// Thought blocks get a clickable/tappable header line; the real answer always shows.
-/// For messages without thought blocks, falls back to standard rendering.
+/// 在独立可折叠区域中渲染带思考块的消息。
+/// 思考块有可点击的标题行；真实回答始终显示。
+/// 无思考块的消息回退到标准渲染。
 pub fn render_message_with_thought_section(
     lines: &mut Vec<Line<'static>>,
     content: &str,
@@ -343,7 +343,7 @@ pub fn render_message_with_thought_section(
     let thought_fg = Color::Rgb(0x9a, 0x9a, 0x9a);
     let clickable_style = Style::default().fg(clickable).add_modifier(Modifier::BOLD);
 
-    // ── Thought header (clickable) ─────────────────────────────────
+    // ── 思考区标题（可点击） ─────────────────────────────────
     let header = if thought_expanded {
         "▼ 思考过程 [收起] ".to_string()
     } else if total_lines > 0 {
@@ -356,7 +356,7 @@ pub fn render_message_with_thought_section(
         Span::styled("← click", Style::default().fg(thought_fg)),
     ]));
 
-    // ── Thought content (expanded only) ────────────────────────────
+    // ── 思考区内容（仅展开时） ────────────────────────────
     if thought_expanded {
         for thought in &thoughts {
             for l in thought.lines() {
@@ -382,7 +382,7 @@ pub fn render_message_with_thought_section(
             }
         }
 
-        // ── Separator line before answer ───────────────────────────
+        // ── 回答前的分隔线 ───────────────────────────
         if !answer.trim().is_empty() {
             lines.push(Line::from(Span::styled(
                 "─── 回答 ───",
@@ -391,7 +391,7 @@ pub fn render_message_with_thought_section(
         }
     }
 
-    // ── Answer section ── (always visible)
+    // ── 回答区 ──（始终可见）
     render_message_content(lines, &answer, false);
 }
 

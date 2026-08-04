@@ -38,7 +38,7 @@ pub async fn run_diagnostics(
     Ok(())
 }
 
-/// Run LSP diagnostics and return the raw results (used by TUI).
+/// 运行 LSP 诊断并返回原始结果（供 TUI 使用）。
 pub async fn run_diagnostics_raw(
     file: &std::path::Path,
     language_id: &str,

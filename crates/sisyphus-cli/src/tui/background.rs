@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use crate::bridge::{BridgeClient, SopInfo};
 use crate::tui::app::{RemoteSkillEntry, WorkspaceEntry};
 
-// ── Background operation types ──────────────────────────
+// ── 后台操作类型 ──────────────────────────
 
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct SopTraceEvent {
@@ -72,11 +72,11 @@ pub enum BgOp {
         success: bool,
         message: String,
     },
-    /// Result of deleting a workspace.
+    /// 删除工作区的结果。
     WorkspaceDeleted {
         id: String,
     },
-    /// Generic operation status update from the bridge (e.g. anomaly_detector, chaos_engine).
+    /// 来自桥接的通用操作状态更新（例如 anomaly_detector、chaos_engine）。
     OpUpdate {
         op_id: String,
         status: String,
@@ -84,7 +84,7 @@ pub enum BgOp {
     },
 }
 
-// ── Background spawners ─────────────────────────────────
+// ── 后台生成器 ─────────────────────────────────
 
 pub fn spawn_list_sops(
     client: Option<crate::bridge::BridgeClient>,
@@ -112,7 +112,7 @@ pub fn spawn_list_sops(
     rx
 }
 
-/// Spawn a background task that executes an SOP on the bridge.
+/// 启动在桥接上执行 SOP 的后台任务。
 pub fn spawn_execute_sop(
     client: Option<crate::bridge::BridgeClient>,
     bridge_address: String,
@@ -141,7 +141,7 @@ pub fn spawn_execute_sop(
     rx
 }
 
-/// Spawn a background task that fetches roadmap data (projection + bottlenecks).
+/// 启动获取路线图数据（预测 + 瓶颈）的后台任务。
 pub fn spawn_fetch_roadmap(
     client: Option<crate::bridge::BridgeClient>,
     bridge_address: String,
@@ -197,9 +197,9 @@ pub fn spawn_session_add_message(
             return;
         }
 
-        // If bridge is available, send the message to trigger AI response.
-        // Bridge errors are logged but DON'T prevent SessionUpdated — the session
-        // must always be reloaded so the UI doesn't get stuck in "thinking" limbo.
+        // 若桥接可用，发送消息以触发 AI 响应。
+        // 桥接错误仅记录日志，不会阻止 SessionUpdated — 会话
+        // 必须始终重新加载，使 UI 不会卡在"思考"状态。
         let mut bridge_errors: Vec<super::LogEntry> = Vec::new();
         if let Some(ref addr) = bridge_address {
             let bridge_op = async {
@@ -237,8 +237,8 @@ pub fn spawn_session_add_message(
             }
         }
 
-        // Always reload session detail from disk so the "thinking" indicator stops
-        // and the user's message is reflected in persisted state.
+        // 始终从磁盘重新加载会话详情，使"思考"指示停止
+        // 且用户消息反映在持久化状态中。
         let _ = tx.send(BgOp::SessionUpdated {
             session_id,
             errors: bridge_errors,
@@ -247,7 +247,7 @@ pub fn spawn_session_add_message(
     rx
 }
 
-/// Spawn a background task that runs the developer agent and returns a formatted report.
+/// 启动运行开发代理并返回格式化报告的后台任务。
 pub fn spawn_dev_agent(
     config: sisyphus_types::Config,
     goal: String,

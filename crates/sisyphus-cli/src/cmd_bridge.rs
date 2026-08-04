@@ -6,18 +6,18 @@ use crate::PriorityArg;
 
 #[derive(Subcommand)]
 pub enum TodoCommands {
-    /// Add a new todo item
+    /// 添加新的待办事项
     Add {
         content: String,
         #[arg(short = 'p', default_value = "medium")]
         priority: PriorityArg,
     },
-    /// List todos, optionally filtered by status
+    /// 列出待办事项，可按状态过滤
     List {
         #[arg(short = 's')]
         status: Option<String>,
     },
-    /// Update a todo
+    /// 更新待办事项
     Update {
         id: String,
         #[arg(short = 'c')]
@@ -27,10 +27,10 @@ pub enum TodoCommands {
         #[arg(short = 'p')]
         priority: Option<PriorityArg>,
     },
-    /// Delete a todo by ID
+    /// 按 ID 删除待办事项
     Delete {
         id: String,
-        /// Skip confirmation prompt
+        ///跳过确认提示
         #[arg(short = 'y', long = "yes")]
         yes: bool,
     },
@@ -38,168 +38,168 @@ pub enum TodoCommands {
 
 #[derive(Subcommand)]
 pub enum SessionCommands {
-    /// Create a new session
+    /// 创建新会话
     Create { name: String },
-    /// List all sessions
+    /// 列出所有会话
     List,
-    /// Get a session by ID
+    /// 按 ID 获取会话
     Get { id: String },
-    /// Delete a session by ID
+    /// 按 ID 删除会话
     Delete {
         id: String,
-        /// Skip confirmation prompt
+        ///跳过确认提示
         #[arg(short = 'y', long = "yes")]
         yes: bool,
     },
-    /// Add a message to a session
+    /// 向会话添加消息
     AddMessage {
         id: String,
         role: String,
         content: String,
     },
-    /// Rename a session
+    /// 重命名会话
     Rename { id: String, name: String },
-    /// Fork a session — create a new copy with all messages
+    /// 分叉会话 — 创建包含全部消息的新副本
     Fork { id: String, name: String },
-    /// Continue a session — touch updated_at for ordering
+    /// 继续会话 — 更新 updated_at 以调整排序
     Continue { id: String },
-    /// Undo the last message in a session
+    /// 撤销会话中的最后一条消息
     Undo { id: String },
-    /// Export a session to a file (json or html format)
+    /// 将会话导出到文件（json 或 html 格式）
     Export {
         id: String,
         output: PathBuf,
-        /// Output format: json (default) or html
+        ///输出格式：json（默认）或 html
         #[arg(long, default_value = "json")]
         format: String,
     },
-    /// Import a session from a JSON file
+    /// 从 JSON 文件导入会话
     Import { input: PathBuf },
-    /// Compress a session based on token threshold
+    /// 基于 token 阈值压缩会话
     Compress {
         id: String,
-        /// Optional token threshold (default: 32000)
+        ///可选 token 阈值（默认：32000）
         threshold: Option<u64>,
     },
 }
 
 #[derive(Subcommand)]
 pub enum PlanCommands {
-    /// Create a plan from requirements text
+    /// 从需求文本创建计划
     Create {
         name: String,
         #[arg(short = 'd', default_value = "")]
         description: String,
-        /// Requirements file (lines starting with "- " become steps)
+        ///需求文件（以 "- " 开头的行将成为步骤）
         #[arg(short = 'f')]
         file: Option<PathBuf>,
     },
-    /// Save a plan to a JSON file
+    /// 将计划保存到 JSON 文件
     Save { plan_file: PathBuf, output: PathBuf },
-    /// Load and display a plan
+    /// 加载并显示计划
     Show { plan_file: PathBuf },
-    /// Review a plan for issues
+    /// 审查计划中的问题
     Review { plan_file: PathBuf },
-    /// Approve a plan
+    /// 批准计划
     Approve { plan_file: PathBuf },
 }
 
 #[derive(Subcommand)]
 pub enum LspCommands {
-    /// Get diagnostics for a file
+    /// 获取文件的诊断信息
     Diagnostics {
-        /// File path to analyze
+        /// 要分析的文件路径
         file: PathBuf,
-        /// Language ID (e.g. "rust", "typescript", "python")
+        ///语言 ID（例如 "rust"、"typescript"、"python"）
         #[arg(short = 'l', long = "language", default_value = "rust")]
         language_id: String,
-        /// Language server command (e.g. "rust-analyzer")
+        ///语言服务器命令（例如 "rust-analyzer"）
         #[arg(short = 's', long = "server", default_value = "rust-analyzer")]
         server: String,
-        /// Extra server args
+        ///额外的服务器参数
         #[arg(last = true)]
         server_args: Vec<String>,
-        /// Root URI for the workspace
+        ///工作区根 URI
         #[arg(short = 'r', long = "root", default_value = "file:///")]
         root_uri: String,
     },
-    /// Go to definition of a symbol
+    /// 跳转到符号的定义
     GotoDef {
-        /// File path
+        ///文件路径
         file: PathBuf,
-        /// Line number (0-based)
+        ///行号（从 0 开始）
         line: u32,
-        /// Col number (0-based)
+        ///列号（从 0 开始）
         col: u32,
-        /// Language ID
+        ///语言 ID
         #[arg(short = 'l', long = "language", default_value = "rust")]
         language_id: String,
-        /// Language server command
+        ///语言服务器命令
         #[arg(short = 's', long = "server", default_value = "rust-analyzer")]
         server: String,
-        /// Extra server args
+        ///额外的服务器参数
         #[arg(last = true)]
         server_args: Vec<String>,
-        /// Root URI
+        ///工作区根 URI
         #[arg(short = 'r', long = "root", default_value = "file:///")]
         root_uri: String,
     },
-    /// Find references to a symbol
+    /// 查找符号的引用
     FindRefs {
-        /// File path
+        ///文件路径
         file: PathBuf,
-        /// Line number (0-based)
+        ///行号（从 0 开始）
         line: u32,
-        /// Col number (0-based)
+        ///列号（从 0 开始）
         col: u32,
-        /// Language ID
+        ///语言 ID
         #[arg(short = 'l', long = "language", default_value = "rust")]
         language_id: String,
-        /// Language server command
+        ///语言服务器命令
         #[arg(short = 's', long = "server", default_value = "rust-analyzer")]
         server: String,
-        /// Extra server args
+        ///额外的服务器参数
         #[arg(last = true)]
         server_args: Vec<String>,
-        /// Root URI
+        ///工作区根 URI
         #[arg(short = 'r', long = "root", default_value = "file:///")]
         root_uri: String,
     },
-    /// Get hover information at a position
+    /// 获取某位置的悬停信息
     Hover {
-        /// File path
+        ///文件路径
         file: PathBuf,
-        /// Line number (0-based)
+        ///行号（从 0 开始）
         line: u32,
-        /// Col number (0-based)
+        ///列号（从 0 开始）
         col: u32,
-        /// Language ID
+        ///语言 ID
         #[arg(short = 'l', long = "language", default_value = "rust")]
         language_id: String,
-        /// Language server command
+        ///语言服务器命令
         #[arg(short = 's', long = "server", default_value = "rust-analyzer")]
         server: String,
-        /// Extra server args
+        ///额外的服务器参数
         #[arg(last = true)]
         server_args: Vec<String>,
-        /// Root URI
+        ///工作区根 URI
         #[arg(short = 'r', long = "root", default_value = "file:///")]
         root_uri: String,
     },
-    /// List document symbols
+    /// 列出文档符号
     Symbols {
-        /// File path
+        ///文件路径
         file: PathBuf,
-        /// Language ID
+        ///语言 ID
         #[arg(short = 'l', long = "language", default_value = "rust")]
         language_id: String,
-        /// Language server command
+        ///语言服务器命令
         #[arg(short = 's', long = "server", default_value = "rust-analyzer")]
         server: String,
-        /// Extra server args
+        ///额外的服务器参数
         #[arg(last = true)]
         server_args: Vec<String>,
-        /// Root URI
+        ///工作区根 URI
         #[arg(short = 'r', long = "root", default_value = "file:///")]
         root_uri: String,
     },
@@ -207,58 +207,58 @@ pub enum LspCommands {
 
 #[derive(Subcommand)]
 pub enum McpCommands {
-    /// Connect to an MCP server and show info + available tools
+    /// 连接 MCP 服务器并显示信息 + 可用工具
     Info {
-        /// Server command/URL followed by optional args.
-        /// URL (http://...) → HTTP transport.
-        /// Otherwise treated as `<command>` `[args...]` → stdio transport.
+        ///服务器命令/URL，后跟可选参数。
+        ///URL（http://...）→ HTTP 传输。
+        ///否则视为 `<command>` `[args...]` → stdio 传输。
         #[arg(required = true)]
         connect: Vec<String>,
     },
-    /// Call a tool on an MCP server
+    /// 调用 MCP 服务器上的工具
     Call {
-        /// Name of the tool to call
+        ///要调用的工具名
         tool: String,
-        /// JSON arguments (optional, e.g. '{"text":"hello"}')
+        ///JSON 参数（可选，例如 '{"text":"hello"}'）
         args: Option<String>,
-        /// Server connection: `<url>` or `<command>` `[args...]`
+        ///服务器连接：`<url>` 或 `<command>` `[args...]`
         #[arg(required = true)]
         connect: Vec<String>,
     },
-    /// Start an MCP server that exposes Sisyphus agent tools via stdio
+    /// 启动通过 stdio 暴露 Sisyphus 代理工具的 MCP 服务器
     Serve,
 }
 
 #[derive(Subcommand)]
 pub enum DelegateCommands {
-    /// Run tasks from a JSON file
+    /// 从 JSON 文件运行任务
     Run {
-        /// JSON file with task definitions [{id, name, command, dir?}]
+        ///包含任务定义的 JSON 文件 [{id, name, command, dir?}]
         file: PathBuf,
-        /// Max concurrent tasks (0 = unlimited)
+        ///最大并发任务数（0 = 不限）
         #[arg(short = 'c', long = "concurrent", default_value = "4")]
         max_concurrent: usize,
     },
-    /// Run commands directly (inline mode)
+    /// 直接运行命令（内联模式）
     Inline {
-        /// Commands to run in parallel
+        /// 要并行运行的命令
         #[arg(required = true)]
         commands: Vec<String>,
-        /// Max concurrent tasks (0 = unlimited)
+        ///最大并发任务数（0 = 不限）
         #[arg(short = 'c', long = "concurrent", default_value = "4")]
         max_concurrent: usize,
     },
-    /// Run a team of agents to accomplish a complex goal
+    /// 运行代理团队完成复杂目标
     Team {
-        /// High-level goal for the team
+        ///团队的高层目标
         goal: String,
-        /// Optional context/background for the goal
+        ///目标的可选上下文/背景
         #[arg(short = 'x', long = "context")]
         context: Option<String>,
-        /// Comma-separated list of agent IDs to include (default: all built-in)
+        ///要包含的代理 ID 逗号分隔列表（默认：全部内置）
         #[arg(short = 'a', long = "agents")]
         agents: Option<String>,
-        /// Maximum number of parallel agents (default: 4)
+        ///最大并行代理数（默认：4）
         #[arg(short = 'c', long = "concurrent", default_value = "4")]
         max_concurrent: usize,
     },
@@ -266,37 +266,37 @@ pub enum DelegateCommands {
 
 #[derive(Subcommand)]
 pub enum SopCommands {
-    /// Execute an SOP by ID
+    /// 按 ID 执行 SOP
     Run { sop_id: String },
-    /// List available SOPs
+    /// 列出可用 SOP
     List,
 }
 
 #[derive(Subcommand)]
 pub enum WorkspaceCommands {
-    /// Create a new workspace
+    /// 创建新工作区
     Create {
-        /// Workspace name
+        /// 工作区名
         name: String,
-        /// Project ID
+        /// 项目 ID
         project_id: String,
-        /// Root directory
+        /// 根目录
         root_dir: String,
     },
-    /// Switch to a workspace
+    /// 切换到工作区
     Switch {
-        /// Workspace ID
+        /// 工作区 ID
         workspace_id: String,
     },
-    /// List all workspaces
+    /// 列出所有工作区
     List,
-    /// Show current workspace
+    /// 显示当前工作区
     Current,
-    /// Delete a workspace by ID
+    /// 按 ID 删除工作区
     Delete {
-        /// Workspace ID
+        /// 工作区 ID
         workspace_id: String,
-        /// Skip confirmation prompt
+        ///跳过确认提示
         #[arg(short = 'y', long = "yes")]
         yes: bool,
     },

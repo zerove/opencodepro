@@ -9,17 +9,17 @@ use tokio::task::JoinSet;
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("🚀 Starting In-Process Integration Stress Test");
 
-    // 1. Initialize Core Components
+    // 1. 初始化核心组件
     let tool_executor =
         Arc::new(WasmToolExecutor::new().expect("Failed to create WasmToolExecutor"));
 
-    // Minimal mocks for Executor dependencies
+    // Executor 依赖的最小化 mock
     let llm_client = Arc::new(sisyphus_tools_llm::DummyLlmClient);
     let intervention_manager = Arc::new(sisyphus_core::InterventionManager::new());
 
-    // Mock AssetManager - we just need something that implements the interface
-    // Since AssetManager is a struct, we might need a real one or a trait if it were one.
-    // Let's use a real one with a temp path.
+    // Mock AssetManager — 只需一个实现该接口的对象
+    // AssetManager 是结构体，可能需要真实实例或 trait 抽象。
+    // 使用带临时路径的真实实例。
     let knowledge_manager = Arc::new(sisyphus_knowledge::AssetManager::new(
         std::path::PathBuf::from("/tmp/sisyphus_stress"),
     ));
@@ -29,7 +29,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         knowledge_manager,
     ));
 
-    // 2. Setup a Parallel DAG
+    // 2. 搭建并行 DAG
     // root -> [node_1, node_2, ..., node_10] -> sink
     let mut graph = SOPGraph::new();
     let root = graph.add_node(Arc::new(WasmSOPNode {
@@ -62,7 +62,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         graph.add_edge(leaf, sink);
     }
 
-    // 3. Stress Test: Concurrent Execution of the same DAG
+    // 3. 压力测试：同一 DAG 的并发执行
     let concurrency = 50;
     let iterations = 20;
     let mut set = JoinSet::new();
@@ -86,8 +86,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let mut success = 0;
             let mut failure = 0;
             for _ in 0..iterations {
-                // In a real scenario, we'd clone the graph structure
-                // Here we just verify the executor can handle the concurrency
+                // 真实场景中会克隆图谱结构
+                // 这里仅验证执行器能处理并发
                 match exec_ref
                     .execute(graph_ref.clone(), root, tool_executor_clone.clone())
                     .await

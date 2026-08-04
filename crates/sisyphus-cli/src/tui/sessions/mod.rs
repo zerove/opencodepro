@@ -62,13 +62,13 @@ pub fn handle_sessions_key(key: KeyEvent, app: &mut App) {
                     }
                     app.session_mode = Mode::Select;
                 }
-                // === Cancel / Exit input ===
+                // === 取消 / 退出输入 ===
                 KeyCode::Esc => {
                     app.session_mode = Mode::Select;
                     app.session_input.clear();
                     app.session_cursor = 0;
                 }
-                // === Basic editing ===
+                // === 基础编辑 ===
                 KeyCode::Backspace => {
                     editing::cursor_backspace(&mut app.session_input, &mut app.session_cursor);
                     editing::update_slash_suggestions(app);
@@ -77,14 +77,14 @@ pub fn handle_sessions_key(key: KeyEvent, app: &mut App) {
                     editing::cursor_delete(&mut app.session_input, app.session_cursor);
                     editing::update_slash_suggestions(app);
                 }
-                // === Arrow navigation ===
+                // === 方向键导航 ===
                 KeyCode::Left => app.session_cursor = app.session_cursor.saturating_sub(1),
                 KeyCode::Right => {
                     app.session_cursor = (app.session_cursor + 1).min(app.session_input.len())
                 }
                 KeyCode::Home => app.session_cursor = 0,
                 KeyCode::End => app.session_cursor = app.session_input.len(),
-                // === History cycling (↑/↓) ===
+                // === 历史循环（↑/↓） ===
                 KeyCode::Up => {
                     if !app.history.is_empty() {
                         let idx = match app.history_idx {
@@ -111,7 +111,7 @@ pub fn handle_sessions_key(key: KeyEvent, app: &mut App) {
                         editing::update_slash_suggestions(app);
                     }
                 }
-                // === Ctrl+ combos ===
+                // === Ctrl+ 组合键 ===
                 KeyCode::Char('a') if ctrl => app.session_cursor = 0,
                 KeyCode::Char('e') if ctrl => app.session_cursor = app.session_input.len(),
                 KeyCode::Char('u') if ctrl => {
@@ -130,7 +130,7 @@ pub fn handle_sessions_key(key: KeyEvent, app: &mut App) {
                     editing::cursor_delete_to_end(&mut app.session_input, app.session_cursor);
                     editing::update_slash_suggestions(app);
                 }
-                // === Regular char input ===
+                // === 普通字符输入 ===
                 KeyCode::Char(c) => {
                     editing::cursor_insert(&mut app.session_input, &mut app.session_cursor, c);
                     editing::update_slash_suggestions(app);
@@ -192,7 +192,7 @@ pub fn handle_sessions_key(key: KeyEvent, app: &mut App) {
                     app.session_detail_scroll = usize::MAX;
                 }
                 KeyCode::Char('y') | KeyCode::Char('Y') => {
-                    // Copy selected message; fall back to last assistant if no selection
+                    // 复制选中的消息；无选中时回退到最后一条助手消息
                     if let Some(ref detail) = app.session_detail {
                         let content = app
                             .selected_msg
@@ -220,7 +220,7 @@ pub fn handle_sessions_key(key: KeyEvent, app: &mut App) {
                     }
                 }
                 KeyCode::Char('C') => {
-                    // Copy entire session detail text to clipboard
+                    // 将会话详情全文复制到剪贴板
                     if let Some(ref detail) = app.session_detail {
                         let mut all_text = String::new();
                         for msg in &detail.messages {
@@ -251,7 +251,7 @@ pub fn handle_sessions_key(key: KeyEvent, app: &mut App) {
                         "Streaming events: hidden".into()
                     }));
                 }
-                // ── Search (Ctrl+F) ──
+                // ── 搜索（Ctrl+F） ──
                 KeyCode::Char('f') if ctrl => {
                     if app.search_active {
                         app.search_active = false;
@@ -261,7 +261,7 @@ pub fn handle_sessions_key(key: KeyEvent, app: &mut App) {
                         app.search_active = true;
                     }
                 }
-                // ── Search active: char input, navigate, exit ──
+                // ── 搜索激活：字符输入、导航、退出 ──
                 _ if app.search_active => {
                     app.search_active = false; // will re-set below if still wanted
                     match key.code {
@@ -292,7 +292,7 @@ pub fn handle_sessions_key(key: KeyEvent, app: &mut App) {
                             app.next_search_match();
                         }
                         _ => {
-                            // deactivate search on any other key
+                            // 其他按键取消搜索
                             app.search_query.clear();
                             app.search_results.clear();
                         }
@@ -336,7 +336,7 @@ pub fn handle_sessions_key(key: KeyEvent, app: &mut App) {
         KeyCode::Char('c') => {
             app.create_buf.clear();
             app.session_dirty = true;
-            // Immediately create with empty name → server-assigned ID
+            // 用空名称立即创建 → 服务器分配 ID
             let db = app.data_dir.join("sessions.json");
             match crate::tools::session_create(&db, "unnamed") {
                 Ok(s) => {

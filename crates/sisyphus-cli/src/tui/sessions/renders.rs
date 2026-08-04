@@ -24,16 +24,16 @@ pub fn render_sessions(frame: &mut ratatui::Frame, area: Rect, app: &App) {
         return;
     }
 
-    // Detail view
+    // 详情视图
     if let Some(ref detail) = app.session_detail {
         render_session_detail(frame, area, detail, app.session_detail_scroll, app);
         return;
     }
 
-    // Layout: filter bar on top, session list below
+    // 布局：顶部过滤栏，下方会话列表
     let chunks = Layout::vertical([Constraint::Length(3), Constraint::Min(0)]).split(area);
 
-    // Filter bar
+    // 过滤栏
     let filter_style = if app.session_filter.is_empty() {
         Style::default().fg(theme.muted)
     } else {
@@ -55,7 +55,7 @@ pub fn render_sessions(frame: &mut ratatui::Frame, area: Rect, app: &App) {
     .block(filter_block);
     frame.render_widget(filter_widget, chunks[0]);
 
-    // Session list (filtered)
+    // 会话列表（已过滤）
     let filtered_indices = app.filtered_sessions();
     let visible_count = filtered_indices.len();
     let block = Block::default()
@@ -79,7 +79,7 @@ pub fn render_sessions(frame: &mut ratatui::Frame, area: Rect, app: &App) {
                     Style::default().fg(theme.muted),
                 ),
             ];
-            // Show matching reason when filtered
+            // 过滤时显示匹配原因
             if !app.session_filter.is_empty() {
                 let q = app.session_filter.to_lowercase();
                 if s.name.to_lowercase().contains(&q) {
@@ -123,7 +123,7 @@ fn render_session_detail(
         0
     };
 
-    // Streaming event panel: show when there are events and a session is active
+    // 流式事件面板：有事件且会话激活时显示
     let show_stream = !app.stream_events.is_empty() && app.stream_show;
     let stream_height: u16 = if show_stream {
         let max_height = 8u16;
@@ -193,12 +193,12 @@ fn render_session_detail(
             Span::styled(format!("[{}] ", role_label), role_style),
             Span::styled(ts, ts_style),
         ]));
-        // Render thought block (collapsible) + real answer (always visible)
+        // 渲染思考块（可折叠）+ 真实回答（始终可见）
         render_message_with_thought_section(&mut lines, &msg.content, app.is_thought_expanded(idx));
         lines.push(Line::from(Span::raw("")));
     }
 
-    // Thinking indicator when waiting for agent response
+    // 等待代理响应时的思考指示
     if app.pending_op.is_some() && !session.messages.is_empty() {
         let spinner_frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
         let frame_idx = (app.pending_spin as usize / 3) % spinner_frames.len();
@@ -214,8 +214,8 @@ fn render_session_detail(
 
     let visible_height = history_area.height.saturating_sub(2);
 
-    // Estimate display rows accounting for word-wrapping.
-    // Without this, max_scroll undercounts when wrapping creates more display rows than logical lines.
+    // 估算考虑自动换行的显示行数。
+    // 不这样做时，换行产生多于逻辑行的显示行数会使 max_scroll 低估。
     let text_area_width = history_area.width.saturating_sub(2) as usize;
     let estimated_display_rows: u16 = if text_area_width == 0 {
         lines.len() as u16
@@ -247,7 +247,7 @@ fn render_session_detail(
         .scroll((effective_scroll as u16, 0));
     frame.render_widget(paragraph, history_area);
 
-    // Store layout info for click-to-message mapping and scroll clamping
+    // 保存布局信息用于点击定位消息与滚动钳制
     app.last_detail_area.set(history_area);
     app.last_effective_scroll.set(effective_scroll);
     app.last_detail_max_scroll.set(max_scroll as usize);
@@ -327,7 +327,7 @@ fn render_session_detail(
         frame.render_widget(suggestion_widget, suggestion_area);
     }
 
-    // ── Search overlay ──
+    // ── 搜索覆盖层 ──
     if app.search_active {
         let search_area = Rect {
             x: history_area.x + 1,
@@ -366,7 +366,7 @@ fn render_session_detail(
         frame.render_widget(search_bar, search_area);
     }
 
-    // ── Streaming event panel ──
+    // ── 流式事件面板 ──
     if show_stream && stream_area.height > 2 {
         let stream_block = Block::default()
             .borders(Borders::ALL)

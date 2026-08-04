@@ -1,10 +1,10 @@
-# Configuration
+# 配置
 
-Sisyphus is configured via TOML files deserialized into the `sisyphus_types::Config` struct.
+Sisyphus 通过 TOML 文件配置，反序列化为 `sisyphus_types::Config` 结构体。
 
-An example configuration file is provided at `config.example.toml` in the project root.
+项目根目录提供了示例配置文件 `config.example.toml`。
 
-## Default Configuration
+## 默认配置
 
 ```toml
 [cognitive_loop]
@@ -50,9 +50,9 @@ use_sandboxd = false
 
 > **何时启用 sandboxd：** 如果 CI 或开发机上 `cargo check`/`cargo build` 因 wasmtime 的 LLVM codegen 内存峰值 >7GB 而 OOM，设置 `use_sandboxd = true` 并在 CI 中预先构建 `sisyphus-sandboxd` 二进制。bridge 将启动子进程处理 WASM 调用，自身不再链接 wasmtime。
 
-## OpenTelemetry Distributed Tracing
+## OpenTelemetry 分布式追踪
 
-OpenTelemetry tracing can be enabled via the `[metrics.opentelemetry]` section:
+可通过 `[metrics.opentelemetry]` 启用 OpenTelemetry 追踪：
 
 ```toml
 [metrics]
@@ -65,46 +65,46 @@ service_name = "sisyphus-bridge"
 sample_rate = 1.0
 ```
 
-### `[metrics.opentelemetry]` Fields
+### `[metrics.opentelemetry]` 字段
 
-| Field | Type | Default | Description |
+| 字段 | 类型 | 默认值 | 说明 |
 |-------|------|---------|-------------|
-| `enabled` | `bool` | `false` | Enable OpenTelemetry OTLP export |
-| `endpoint` | `string` | `"http://localhost:4317"` | OTLP exporter endpoint |
-| `service_name` | `string` | `"sisyphus-bridge"` | Service name for trace identification |
-| `sample_rate` | `f64` | `1.0` | Sampling rate (0.0 - 1.0) |
+| `enabled` | `bool` | `false` | 启用 OpenTelemetry OTLP 导出 |
+| `endpoint` | `string` | `"http://localhost:4317"` | OTLP 导出端点 |
+| `service_name` | `string` | `"sisyphus-bridge"` | 服务名称用于追踪标识 |
+| `sample_rate` | `f64` | `1.0` | 采样率 (0.0 - 1.0) |
 
-## Database Backends
+## 数据库后端
 
-The `database_url` in `[cache]` supports two backends:
+`[cache]` 中的 `database_url` 支持两种后端：
 
-| URL Prefix | Backend | Vector Support |
+| URL 前缀 | 后端 | 向量支持 |
 |------------|---------|----------------|
-| `sqlite:`   | SQLite (default) | Full scan + memory cosine similarity |
-| `postgres://` | PostgreSQL | pgvector ANN (`<->` operator) |
+| `sqlite:`   | SQLite (默认) | 全扫描 + 内存余弦相似度 |
+| `postgres://` | PostgreSQL | pgvector ANN (`<->` 操作符) |
 
 ### PostgreSQL / pgvector
 
-For semantic similarity search with ANN indexes:
+用于带 ANN 索引的语义相似度搜索：
 
-1. Install the `vector` extension on your Postgres server
-2. Set `database_url = "postgres://user:pass@host/sisyphus"`
-3. Set `enable_vectors = true` and `vector_dimension = 1536` (or your embedding model's dimension)
-4. SqlStore automatically runs `CREATE EXTENSION IF NOT EXISTS vector` on connect
+1. 在 Postgres 服务器安装 `vector` 扩展
+2. 设置 `database_url = "postgres://user:pass@host/sisyphus"`
+3. 设置 `enable_vectors = true` 和 `vector_dimension = 1536`（或你的嵌入模型维度）
+4. SqlStore 连接时自动运行 `CREATE EXTENSION IF NOT EXISTS vector`
 
-## Override Order
+## 覆盖优先级
 
-1. **Default values** (hardcoded in each sub-config's `Default` impl)
-2. **Config file** (path set via `SISYPHUS_CONFIG` env var or `Config::from_file()`)
-3. **Environment variables** (prefixed with `SISYPHUS_`, highest priority)
+1. **默认值**（各子配置 `Default` 实现中硬编码）
+2. **配置文件**（通过 `SISYPHUS_CONFIG` 环境变量或 `Config::from_file()` 指定路径）
+3. **环境变量**（`SISYPHUS_` 前缀，最高优先级）
 
-## Environment Variables
+## 环境变量
 
-All environment variables use the prefix `SISYPHUS_`:
+所有环境变量使用前缀 `SISYPHUS_`：
 
-| Variable | Overrides | Type | Default |
+| 变量 | 覆盖字段 | 类型 | 默认值 |
 |----------|-----------|------|---------|
-| `SISYPHUS_CONFIG` | Config file path | string | `config.toml` |
+| `SISYPHUS_CONFIG` | 配置文件路径 | string | `config.toml` |
 | `SISYPHUS_COGNITIVE_LOOP_MAX_ITERATIONS` | `cognitive_loop.max_iterations` | u32 | `10` |
 | `SISYPHUS_COGNITIVE_LOOP_CONVERGENCE_THRESHOLD` | `cognitive_loop.convergence_threshold` | f64 | `0.15` |
 | `SISYPHUS_COGNITIVE_LOOP_ADAPTIVE_DEPTH_INITIAL_BUDGET` | `cognitive_loop.adaptive_depth.initial_budget` | f64 | `2.0` |

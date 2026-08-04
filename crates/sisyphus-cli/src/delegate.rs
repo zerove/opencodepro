@@ -52,7 +52,7 @@ pub async fn run_tasks(file: PathBuf, max_concurrent: usize) -> Result<()> {
     let total;
     let mut handle = pin!(handle);
 
-    // Drain events concurrently with handle to prevent channel deadlock
+    // 与句柄并发排空事件，防止通道死锁
     loop {
         select! {
             result = &mut handle => {
@@ -85,7 +85,7 @@ pub async fn run_tasks(file: PathBuf, max_concurrent: usize) -> Result<()> {
         }
     }
 
-    // Drain any remaining events (channel may have closed before select! picked them)
+    // 排空剩余事件（select! 选中前通道可能已关闭）
     while let Ok(event) = rx.try_recv() {
         if let DelegateEvent::Completed(report) = event {
             completed += 1;
@@ -147,7 +147,7 @@ pub async fn run_inline(commands: &[String], max_concurrent: usize) -> Result<()
     Ok(())
 }
 
-/// Run a team of agents to accomplish a complex goal
+/// 运行代理团队完成复杂目标
 pub async fn run_team(
     goal: String,
     context: Option<String>,
@@ -170,22 +170,22 @@ pub async fn run_team(
         println!("📝 上下文: {ctx}");
     }
 
-    // Build registry with selected agents
+    // 用选中的代理构建注册表
     let config = Arc::new(RwLock::new(Config::default()));
     let llm_client = Arc::new(DynamicLlmClient::new(config));
     let registry = Arc::new(AgentRegistry::new(llm_client.clone()));
 
-    // Register built-in agents
+    // 注册内置代理
     registry.register_builtin();
 
-    // Filter agents if specified
+    // 若指定则过滤代理
     if let Some(agent_list) = agents {
         let selected: HashSet<String> = agent_list
             .split(',')
             .map(|s| s.trim().to_string())
             .collect();
 
-        // Keep only selected agents
+        // 仅保留选中的代理
         let all_agents = registry.list();
         for (id, _) in all_agents {
             if !selected.contains(&id) {
@@ -194,7 +194,7 @@ pub async fn run_team(
         }
     }
 
-    // Build executor
+    // 构建执行器
     let dummy_llm: Arc<dyn LlmClient> = Arc::new(DummyLlmClient);
     let feedback = Arc::new(crate::tools::FeedbackStore::default_dir());
     let executor = Arc::new(BuiltinToolExecutor {
@@ -204,10 +204,10 @@ pub async fn run_team(
         bridge_client: None,
     });
 
-    // Create orchestrator with planner LLM
+    // 用规划 LLM 创建编排器
     let orchestrator = TeamOrchestrator::new(registry, executor, Some(llm_client));
 
-    // Run the team goal
+    // 运行团队目标
     let team_goal = TeamGoal {
         id: Uuid::new_v4().to_string(),
         objective: goal,
@@ -220,7 +220,7 @@ pub async fn run_team(
         .await
         .map_err(|e| anyhow::anyhow!("Team execution failed: {}", e))?;
 
-    // Print results
+    // 打印结果
     println!("\n=== 团队执行报告 ===");
     println!("目标 ID: {}", report.goal_id);
     println!(

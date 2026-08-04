@@ -1,3 +1,7 @@
+//! Sisyphus Core — 认知引擎核心模块。
+//!
+//! 提供 DAG 执行、认知循环 (v1/v2)、SOP 编排与内核实现。
+
 use dashmap::DashMap;
 
 use petgraph::graph::NodeIndex;
@@ -154,20 +158,14 @@ pub enum CoreError {
     Internal(String),
 }
 
-impl From<CoreError> for String {
-    fn from(err: CoreError) -> Self {
-        err.to_string()
-    }
-}
-
 impl From<sisyphus_types::TypesError> for CoreError {
     fn from(err: sisyphus_types::TypesError) -> Self {
         CoreError::Internal(err.to_string())
     }
 }
 
-// NOTE: `From<String> for CoreError` was intentionally removed.
-// Use `CoreError::Internal(msg)` explicitly to make error conversion visible.
+// 注意：`From<String> for CoreError` 已被有意移除。
+// 请显式使用 `CoreError::Internal(msg)`，让错误转换过程可见。
 
 pub struct SisyphusKernel {
     pub intelligence_manager: Arc<IntelligenceManager>,
@@ -180,19 +178,19 @@ pub struct SisyphusKernel {
     pub consensus: Arc<dyn Consensus>,
     pub intervention_manager: Arc<crate::intervention_manager::InterventionManager>,
 
-    /// Inter-agent message bus for pub/sub communication during execution.
+    /// 代理间消息总线，用于执行过程中的发布/订阅通信。
     pub channel: Arc<AgentChannel>,
 
-    /// Performance benchmark tracker that records cognitive iteration timings.
+    /// 性能基准跟踪器，记录认知迭代的时序数据。
     pub benchmark: Arc<parking_lot::Mutex<ContinuousBenchmark>>,
 
-    /// Meta-learner that records execution outcomes for strategy optimization.
+    /// 元学习器，记录执行结果以优化策略。
     pub meta_learner: Arc<parking_lot::Mutex<MetaLearner>>,
 
-    /// Strategic planning manager for Project → Milestone → Phase → Goal hierarchy.
+    /// 战略规划管理器，维护 项目 → 里程碑 → 阶段 → 目标 的层级结构。
     pub roadmap_manager: Arc<RoadmapManager>,
 
-    /// Proposal manager for handling human-in-the-loop strategic pivots.
+    /// 提案管理器，处理人在回路（human-in-the-loop）的战略转向。
     pub proposal_manager: Arc<sisyphus_roadmap::proposal_manager::ProposalManager>,
 
     pub experience_bank: Arc<dyn sisyphus_types::experience::ExperienceBank>,
@@ -201,24 +199,24 @@ pub struct SisyphusKernel {
 
     pub test_executor: Arc<dyn sisyphus_types::TestExecutor>,
 
-    /// Phase 3 — Strategic reflection engine (LLM-augmented roadmap analysis).
+    /// 阶段 3 — 战略反思引擎（LLM 增强的路线图分析）。
     pub strategic_reflector:
         Option<Arc<sisyphus_roadmap::strategic_reflection::StrategicReflector>>,
 
-    /// Phase 3 — Autonomous milestone generator (LLM-driven roadmap creation).
+    /// 阶段 3 — 自主里程碑生成器（LLM 驱动的路线图创建）。
     pub milestone_generator: Option<Arc<sisyphus_roadmap::milestone_generator::MilestoneGenerator>>,
 
-    /// Phase 3 — Resource / cost projection engine (analytics-only).
+    /// 阶段 3 — 资源/成本预测引擎（仅分析）。
     pub resource_optimizer: sisyphus_roadmap::resource_optimizer::ResourceOptimizer,
 }
 
-/// Builder for `SisyphusKernel` with named setters instead of 13 positional args.
+/// `SisyphusKernel` 的构建器，用命名 setter 替代 13 个位置参数。
 ///
-/// All fields are required and must be set before calling `build()`.
-/// This is a convenience API — the underlying `SisyphusKernel::new()` still
-/// requires all 13 dependencies.
+/// 所有字段都是必填的，调用 `build()` 之前必须完成设置。
+/// 这是一个便捷 API——底层的 `SisyphusKernel::new()` 仍然
+/// 需要全部 13 个依赖。
 ///
-/// # Example
+/// # 示例
 /// ```ignore
 /// let kernel = KernelBuilder::new(meta_learner, consensus)
 ///     .state_store(my_store)
@@ -253,7 +251,7 @@ macro_rules! builder_setter {
 }
 
 impl KernelBuilder {
-    /// Create a new builder with the two always-required dependencies.
+    /// 用两个始终必需的依赖创建新的构建器。
     pub fn new(
         meta_learner: Arc<parking_lot::Mutex<MetaLearner>>,
         consensus: Arc<dyn Consensus>,
@@ -293,11 +291,11 @@ impl KernelBuilder {
         Arc<dyn sisyphus_tools_llm::EmbeddingClient>
     );
 
-    /// Consume the builder and produce a `SisyphusKernel`.
+    /// 消费构建器并生成 `SisyphusKernel`。
     ///
-    /// # Errors
-    /// Returns `CoreError::Internal` if any required field was not set
-    /// (missing setter call), instead of panicking.
+    /// # 错误
+    /// 当任何必填字段未被设置（缺少 setter 调用）时，
+    /// 返回 `CoreError::Internal`，而不是 panic。
     #[allow(clippy::too_many_arguments)]
     pub fn build(self) -> Result<SisyphusKernel, CoreError> {
         let required = |name: &str| -> Result<SisyphusKernel, CoreError> {

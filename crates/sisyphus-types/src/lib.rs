@@ -1,3 +1,8 @@
+//! Sisyphus Types — 共享类型、配置与核心 trait 定义。
+//!
+//! 定义 Config、ExecutionContext、SOPGraph、ToolExecutor 等核心类型，
+//! 以及错误类型与跨 crate 通用 trait。
+
 #![allow(clippy::cast_precision_loss)]
 pub mod asset;
 pub mod errors;

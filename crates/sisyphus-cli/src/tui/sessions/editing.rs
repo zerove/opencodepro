@@ -1,7 +1,7 @@
 use super::super::dialog::Dialog;
 use super::super::{App, DevFocus, LogEntry, View};
 
-// === Cursor-aware input editing helpers ===
+// === 光标感知的输入编辑辅助 ===
 
 fn cursor_char_to_byte(s: &str, char_idx: usize) -> usize {
     s.chars().take(char_idx).map(|c| c.len_utf8()).sum()
@@ -50,7 +50,7 @@ pub(super) fn cursor_delete_to_end(s: &mut String, cursor: usize) {
     s.truncate(byte_start);
 }
 
-// === Slash command dispatch ===
+// === 斜杠命令分发 ===
 
 pub(super) fn update_slash_suggestions(app: &mut App) {
     let input = app.session_input.trim();

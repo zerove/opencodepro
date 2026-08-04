@@ -1,7 +1,7 @@
-//! Kernel plan caching: short-lived execution plan memoization.
+//! 内核计划缓存：短期执行计划的记忆化。
 //!
-//! Part of the `SisyphusKernel` implementation extracted from `kernel.rs` for
-//! readability. Re-exported via `pub use kernel::*`.
+//! `SisyphusKernel` 实现的一部分，为可读性从 `kernel.rs` 拆出。
+//! 通过 `pub use kernel::*` 重新导出。
 
 use crate::*;
 

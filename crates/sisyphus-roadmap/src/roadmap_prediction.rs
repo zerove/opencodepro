@@ -5,11 +5,11 @@ use sisyphus_types::MilestoneStatus;
 use std::collections::HashMap;
 
 impl RoadmapManager {
-    /// Find the next pending goal, respecting phase-level dependencies.
+    /// 查找下一个待处理目标，尊重阶段级依赖。
     ///
-    /// Scans milestones in order, skipping completed ones. Within each
-    /// milestone, phases whose dependencies are not met are skipped.
-    /// Returns the first pending goal found, or `None` if all are done.
+    /// 按顺序扫描里程碑，跳过已完成的。在每个里程碑内，
+    /// 依赖未满足的阶段会被跳过。
+    /// 返回找到的第一个待处理目标，全部完成时返回 `None`。
     pub async fn get_next_goal(
         &self,
         project_id: &str,
@@ -50,11 +50,11 @@ impl RoadmapManager {
         Ok(None)
     }
 
-    /// Retrieve formatted context about where a specific goal fits in the project.
+    /// 检索特定目标在项目中所处位置的格式化上下文。
     ///
-    /// Returns a human-readable string describing project progress,
-    /// milestone/phase placement, and surrounding goals, with the
-    /// target goal highlighted by a `>>>` marker.
+    /// 返回描述项目进度、里程碑/阶段位置及周围目标的人类可读
+    /// 字符串，其中目标用 `>>>` 标记突出显示。
+    /// 目标用 `>>>` 标记突出显示。
     pub async fn get_goal_context(
         &self,
         project_id: &str,
@@ -120,11 +120,11 @@ impl RoadmapManager {
         Ok(context)
     }
 
-    /// Predict milestone completion based on current progress.
+    /// 基于当前进度预测里程碑完成情况。
     ///
-    /// Uses goal completion ratios and milestone status to estimate
-    /// risk and ordering. Returns a `ProgressPrediction` with per-milestone
-    /// breakdown and an estimated completion order.
+    /// 使用目标完成比例与里程碑状态估算风险
+    /// 与顺序。返回带逐里程碑明细与预计完成顺序的
+    /// `ProgressPrediction`。
     pub async fn predict_completion(
         &self,
         project_id: &str,
@@ -181,7 +181,7 @@ impl RoadmapManager {
         };
         let remaining_goals = total_goals.saturating_sub(completed_goals);
 
-        // highest progress first
+        // 进度最高者优先
         let mut sorted: Vec<&MilestonePrediction> = milestone_preds
             .iter()
             .filter(|m| m.risk_level != "done")
@@ -213,11 +213,11 @@ impl RoadmapManager {
         })
     }
 
-    /// Predict completion time with 95% confidence intervals based on historical velocity.
+    /// 基于历史速度预测完成时间，含 95% 置信区间。
     ///
-    /// Uses ExecutionOutcome history to calculate velocity (goals/second) per milestone
-    /// and projects remaining work. Returns a CompletionTimePrediction with
-    /// per-milestone and project-level confidence intervals.
+    /// 使用 ExecutionOutcome 历史计算每个里程碑的速度（目标/秒），
+    /// 并预测剩余工作。返回带逐里程碑与项目级置信区间的
+    /// CompletionTimePrediction。
     pub async fn predict_completion_time(
         &self,
         project_id: &str,
@@ -225,8 +225,8 @@ impl RoadmapManager {
         let project = self.get_project_or_err(project_id).await?;
         let outcomes = self.get_outcomes(project_id).await?;
 
-        // Build velocity map from historical outcomes
-        // Key: milestone_id -> (total_duration_secs, completed_goals_count)
+        // 从历史结果构建速度映射
+        // 键：milestone_id -> (total_duration_secs, completed_goals_count)
         let mut velocity_map: HashMap<String, (f64, usize)> = HashMap::new();
         for outcome in &outcomes {
             if outcome.success && outcome.duration_secs > 0.0 {
@@ -238,7 +238,7 @@ impl RoadmapManager {
             }
         }
 
-        // Calculate per-milestone velocity (goals per second)
+        // 计算每个里程碑的速度（目标/秒）
         let mut milestone_velocities: HashMap<String, f64> = HashMap::new();
         for (ms_id, (total_secs, count)) in &velocity_map {
             if *count > 0 {
@@ -246,7 +246,7 @@ impl RoadmapManager {
             }
         }
 
-        // Overall velocity across all milestones
+        // 所有里程碑的总体速度
         let total_secs: f64 = velocity_map.values().map(|(s, _)| *s).sum();
         let total_count: usize = velocity_map.values().map(|(_, c)| *c).sum();
         let overall_velocity = if total_secs > 0.0 && total_count > 0 {
@@ -290,17 +290,17 @@ impl RoadmapManager {
             };
             risk_levels.push(risk);
 
-            // Get velocity for this milestone
+            // 获取该里程碑的速度
             let velocity = milestone_velocities
                 .get(&milestone.id)
                 .copied()
                 .unwrap_or(overall_velocity);
 
-            // Estimate remaining time
+            // 估算剩余时间
             let (estimated_remaining, ci_lower, ci_upper) = if velocity > 0.0 && remaining > 0 {
                 let mean = remaining as f64 / velocity;
-                // 95% CI using simple approximation: mean ± 1.96 * (mean / sqrt(n))
-                // where n is the number of historical samples for this milestone
+                // 95% 置信区间使用简单近似：mean ± 1.96 * (mean / sqrt(n))
+                // 其中 n 是该里程碑的历史样本数
                 let historical_count = velocity_map
                     .get(&milestone.id)
                     .map(|(_, c)| *c)
@@ -313,7 +313,7 @@ impl RoadmapManager {
                 let margin = 1.96 * std_err;
                 (mean, (mean - margin).max(0.0), mean + margin)
             } else {
-                // No velocity data - use fallback estimation based on overall velocity
+                // 无速度数据 — 使用基于总体速度的回退估算
                 if overall_velocity > 0.0 && remaining > 0 {
                     let mean = remaining as f64 / overall_velocity;
                     let margin = mean * 0.5; // high uncertainty
@@ -343,7 +343,7 @@ impl RoadmapManager {
         };
         let remaining_goals = total_goals.saturating_sub(completed_goals);
 
-        // highest progress first
+        // 进度最高者优先
         let mut sorted: Vec<&MilestoneTimePrediction> = milestone_time_preds
             .iter()
             .filter(|m| m.risk_level != "done")
@@ -355,7 +355,7 @@ impl RoadmapManager {
         });
         let completion_order: Vec<String> = sorted.iter().map(|m| m.name.clone()).collect();
 
-        // Sum up total remaining time and CI
+        // 汇总剩余总时间与置信区间
         let estimated_total: f64 = milestone_time_preds
             .iter()
             .map(|m| m.estimated_remaining_secs)
@@ -390,10 +390,10 @@ impl RoadmapManager {
         })
     }
 
-    /// Check for delay alerts based on predicted vs expected completion.
+    /// 基于预测与预期完成时间检查延迟告警。
     ///
-    /// Returns a list of DelayAlert for milestones where predicted completion
-    /// exceeds a threshold (default: 2x the estimated time based on current velocity).
+    /// 对预测完成时间超过阈值（默认：按当前速度估算时间的 2 倍）
+    /// 的里程碑返回 DelayAlert 列表。
     pub async fn check_delay_alerts(
         &self,
         project_id: &str,
@@ -408,7 +408,7 @@ impl RoadmapManager {
                 continue;
             }
 
-            // Alert if upper CI bound exceeds threshold * mean
+            // 上置信区间界超过 阈值 * 均值 时告警
             if ms_pred.ci_upper_secs > ms_pred.estimated_remaining_secs * threshold {
                 alerts.push(DelayAlert {
                     project_id: project_id.to_string(),

@@ -13,7 +13,7 @@ impl RuntimeSupervisor for DefaultSupervisor {
         _output: &NodeOutput,
         _ctx: Arc<ExecutionContext>,
     ) -> Result<SupervisorDecision, String> {
-        // Default implementation: always continue
+        // 默认实现：始终继续
         Ok(SupervisorDecision::Continue { deviation: 0.0 })
     }
 }

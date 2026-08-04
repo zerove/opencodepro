@@ -1,7 +1,7 @@
 use anyhow::Result;
 use std::path::PathBuf;
 
-/// Resolve language backend from `--lang` option string.
+/// 从 `--lang` 选项字符串解析语言后端。
 fn resolve_backend(
     lang: Option<&str>,
     cwd: Option<&std::path::Path>,
@@ -33,7 +33,7 @@ fn resolve_backend(
             anyhow::bail!("Unknown language backend: {other}. Supported: rust, node/ts/js, python/py, go/golang, java/maven, gradle, fe/frontend/css/html")
         }
         None => {
-            // Auto-detect
+            // 自动检测
             let dir = cwd.unwrap_or(std::path::Path::new("."));
             Ok(crate::tools::build::detect_backend(dir)?)
         }

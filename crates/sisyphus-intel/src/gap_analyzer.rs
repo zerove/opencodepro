@@ -1,4 +1,4 @@
-//! Gap analysis for autonomous tool generation.
+//! 自主工具生成的缺口分析。
 
 use crate::reflect::ReflectionReport;
 use serde::{Deserialize, Serialize};
@@ -6,9 +6,9 @@ use sisyphus_types::{tools::ToolSpec, SOPGraph};
 use std::sync::Arc;
 use std::time::Duration;
 
-/// Maximum time to wait for the gap-analysis LLM call. Kept short so that an
-/// unreachable LLM degrades gap detection to a no-gap result instead of
-/// stalling the cognitive loop for the full HTTP client timeout (up to 60s).
+/// 等待缺口分析 LLM 调用的最长时间。保持较短，使不可达的 LLM
+/// 将缺口检测降级为"无缺口"结果，而不是
+/// 让认知循环卡满整个 HTTP 客户端超时（最多 60 秒）。
 const GAP_ANALYSIS_TIMEOUT: Duration = Duration::from_secs(2);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -28,7 +28,7 @@ impl GapAnalyzer {
         Self { llm_client }
     }
 
-    /// Analyzes the reflection report to see if a new tool is required.
+    /// 分析反思报告，判断是否需要新工具。
     pub async fn detect_gap(
         &self,
         report: &ReflectionReport,
@@ -68,7 +68,7 @@ impl GapAnalyzer {
         };
 
         if response.contains("GAP_FOUND") {
-            // Extract JSON from response
+            // 从响应中提取 JSON
             let json_start = response.find('{').unwrap_or(0);
             let json_end = response.rfind('}').map(|i| i + 1).unwrap_or(response.len());
             let spec_json = &response[json_start..json_end];
@@ -77,7 +77,7 @@ impl GapAnalyzer {
                 crate::IntelError::Internal(format!("Failed to parse ToolSpec: {e}"))
             })?;
 
-            // Find which node is failing
+            // 找出哪个节点在失败
             let failing_node = report
                 .suggested_improvements
                 .first()

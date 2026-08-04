@@ -1,7 +1,7 @@
-//! Kernel execution: goal-driven SOP execution and recording.
+//! 内核执行：目标驱动的 SOP 执行与记录。
 //!
-//! Part of the `SisyphusKernel` implementation extracted from `kernel.rs` for
-//! readability. Re-exported via `pub use kernel::*`.
+//! `SisyphusKernel` 实现的一部分，为可读性从 `kernel.rs` 拆出。
+//! 通过 `pub use kernel::*` 重新导出。
 
 use std::sync::Arc;
 
@@ -55,11 +55,11 @@ impl SisyphusKernel {
 
         println!("DEBUG: [execute_goal] Searching for successful experiences...");
 
-        // BEGIN_EXP_RETRIEVAL
+        // 开始：经验检索（BEGIN_EXP_RETRIEVAL）
 
         let mut insights: Option<String> = None;
 
-        // END_EXP_RETRIEVAL
+        // 结束：经验检索（END_EXP_RETRIEVAL）
 
         let context_hash = format!("{:x}", md5::compute(goal));
 
@@ -117,7 +117,7 @@ impl SisyphusKernel {
             synthesis.plan_description
         );
 
-        // --- Swarm Audit & Logical Simulation Loop ---
+        // --- Swarm 审计与逻辑仿真循环 ---
         println!(
             "DEBUG: [execute_goal] Entering refinement loop (Swarm Audit + Logical Simulation)..."
         );
@@ -127,14 +127,14 @@ impl SisyphusKernel {
         let max_simulation_attempts = 3;
 
         loop {
-            // 1. Swarm Audit for high-level refinement
+            // 1. Swarm 审计用于高层优化
             let evolved_config = self
                 .swarm_coordinator
                 .coordinate_evolution(goal, &current_config)
                 .await
                 .map_err(|e| CoreError::Internal(format!("Swarm audit failed: {}", e)))?;
 
-            // 2. Logical Simulation for deep flaw detection
+            // 2. 逻辑仿真用于深层缺陷检测
             let sim_graph = sisyphus_types::SOPGraph::from_config(
                 &evolved_config,
                 self.execution_manager.tool_router.clone(),
@@ -178,9 +178,9 @@ impl SisyphusKernel {
 
             println!("DEBUG: [execute_//T_goal] Simulation detected {} critical flaws. Triggering re-evolution...", critical_flaws.len());
 
-            // Inject flaw descriptions into the next evolution cycle via a temporary goal augmentation
-            // In a real system, we'd pass this directly to the coordinator.
-            // For now, we'll wrap the current config and let the swarm try to fix it.
+            // 通过临时目标增强，将缺陷描述注入下一轮演进循环
+            // 在真实系统中，我们会直接将其传给协调器。
+            // 目前，我们包装当前配置并让 swarm 尝试修复。
             current_config = evolved_config;
         }
 
@@ -191,7 +191,7 @@ impl SisyphusKernel {
         )
         .map_err(|e| CoreError::Internal(format!("Final graph build failed: {}", e)))?;
         println!("DEBUG: [execute_goal] Refinement loop complete. SOP ready for execution.");
-        // --- End Swarm Audit Loop ---
+        // --- Swarm 审计循环结束 ---
 
         let plan_desc = synthesis.plan_description;
 
@@ -355,7 +355,7 @@ impl SisyphusKernel {
 
         let _ = self.roadmap_manager.record_outcome(&outcome).await;
 
-        // Record structured experience for Monte Carlo biasing
+        // 记录结构化经验用于蒙特卡洛偏置
         let mut experience = sisyphus_types::experience::ExperienceTuple {
             context_text: goal.to_string(),
             context_hash: format!("{:x}", md5::compute(goal)),
@@ -373,12 +373,12 @@ impl SisyphusKernel {
             insight: None,
         };
 
-        // Capture visual experience if successful
+        // 成功后捕获视觉经验
         if success {
             if let Some(ref v_manager) = self.strategic_manager.visual_manager {
-                // In a real system, we would capture the current screenshot.
-                // For now, we simulate a deterministic visual state derived
-                // from the goal so different goals map to different states.
+                // 在真实系统中，我们会捕获当前截图。
+                // 目前我们用基于目标派生的确定性视觉状态来模拟，
+                // 使不同目标映射到不同的状态。
                 let dummy_image = sisyphus_visual::simulated_visual_state(goal);
                 if let Ok(vis_emb) = v_manager.get_embedding(&dummy_image).await {
                     experience.visual_embedding = Some(vis_emb);
@@ -396,7 +396,7 @@ impl SisyphusKernel {
 
         let health = self.roadmap_manager.evaluate_health(project_id).await.ok();
 
-        // Automatically trigger strategic reflection to analyze roadmap trajectory and propose pivots.
+        // 自动触发战略反思，分析路线图轨迹并提出转向建议。
 
         self.strategic_reflect(project_id).await;
 

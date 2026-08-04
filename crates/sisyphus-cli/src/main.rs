@@ -1,3 +1,7 @@
+//! Sisyphus CLI — 认知引擎命令行界面。
+//!
+//! 提供 40+ 子命令、TUI 交互模式、桥接配置与会话管理。
+
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -9,29 +13,29 @@ mod handlers;
 use commands::*;
 
 #[derive(Parser)]
-#[command(name = "sisyphus", version, about = "Sisyphus Cognitive Engine CLI")]
+#[command(name = "sisyphus", version, about = "Sisyphus 认知引擎 CLI")]
 struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,
 
-    /// Enable interactive TUI mode
+    /// 启用交互式 TUI 模式
     #[arg(short = 'i', long = "interactive")]
     interactive: bool,
 
-    /// Bridge address (default: `http://[::1]:50051`)
+    /// 桥接地址（默认：`http://[::1]:50051`）
     #[arg(short = 'b', long = "bridge", env = "SISYPHUS_BRIDGE_ADDRESS")]
     bridge: Option<String>,
 
-    /// Data directory for todo/session storage
+    /// 待办/会话存储的数据目录
     #[arg(long = "data-dir", env = "SISYPHUS_DATA_DIR")]
     data_dir: Option<PathBuf>,
 
-    /// Path to Sisyphus TOML config file
+    /// Sisyphus TOML 配置文件路径
     #[arg(long = "config", env = "SISYPHUS_CONFIG")]
     config: Option<PathBuf>,
 }
 
-// ── Main ─────────────────────────────────────────────────
+// ── 主流程 ─────────────────────────────────────────────────
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -46,7 +50,7 @@ async fn main() -> Result<()> {
 
     let cli = Cli::parse();
 
-    // Resolve config: try file, then env, then defaults
+    // 解析配置：先文件，再环境变量，最后默认值
     let sisyphus_cfg = if let Some(ref config_path) = cli.config {
         match sisyphus_types::Config::from_file(&config_path.to_string_lossy()) {
             Ok(cfg) => cfg,
@@ -74,13 +78,13 @@ async fn main() -> Result<()> {
         .clone()
         .unwrap_or_else(|| sisyphus_cfg.bridge_address.clone());
 
-    // Interactive TUI mode
+    // 交互式 TUI 模式
     if cli.interactive || cli.command.is_none() {
         sisyphus_cli::tui::run(data_dir, bridge_addr)?;
         return Ok(());
     }
 
-    // Ensure data directory exists
+    // 确保数据目录存在
     std::fs::create_dir_all(&data_dir)?;
 
     let cli_perms = sisyphus_cli::permission::CliPermission::load(None).unwrap_or_default();
@@ -88,7 +92,7 @@ async fn main() -> Result<()> {
     let todo_db = data_dir.join("todos.json");
     let session_db = data_dir.join("sessions.json");
 
-    // Create LLM client from config for agent commands
+    // 为代理命令从配置创建 LLM 客户端
     let llm_client: Arc<dyn sisyphus_cli::tools::metis::LlmClient> = {
         let endpoint = sisyphus_cfg.llm.endpoint.clone();
         let is_default_endpoint = endpoint == "http://localhost:8000/v1/chat/completions";

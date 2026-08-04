@@ -1,3 +1,8 @@
+//! Sisyphus Bridge — gRPC 与 REST API 桥接服务。
+//!
+//! 提供 17 个 gRPC RPC 与 34 个 REST 端点（OpenAPI 3.1），
+//! 支持认知执行、技能管理、工作区隔离、混沌工程等能力。
+
 #![recursion_limit = "256"]
 pub mod auth;
 pub mod bridge_service;

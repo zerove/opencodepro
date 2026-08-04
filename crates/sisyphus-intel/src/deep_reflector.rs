@@ -1,12 +1,12 @@
-//! Deep Reflector — multi-dimensional deviation analysis and cognitive corrections.
-//! Provides deeper insight into execution deviations than the standard reflector.
+//! 深度反思器 — 多维偏差分析与认知修正。
+//! 相比标准反思器，提供对执行偏差更深入的洞察。
 
 use crate::reflect::{RecordedNode, ReflectionReport};
 use crate::simulation::SimulationResult;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-/// Dimension of analysis for deviation scoring
+/// 偏差评分的分析维度
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum AnalysisDimension {
     OutputQuality,
@@ -16,7 +16,7 @@ pub enum AnalysisDimension {
     ToolReliability,
 }
 
-/// Deviation score for a single dimension
+/// 单维度的偏差分数
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DimensionScore {
     pub dimension: AnalysisDimension,
@@ -25,22 +25,22 @@ pub struct DimensionScore {
     pub explanation: String,
 }
 
-/// Multi-dimensional deviation analysis result
+/// 多维偏差分析结果
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DeepDeviationReport {
-    /// Overall weighted deviation score (0.0 = perfect)
+    /// 总体加权偏差分数（0.0 = 完美）
     pub overall_score: f64,
-    /// Per-dimension scores
+    /// 各维度分数
     pub dimensions: Vec<DimensionScore>,
-    /// Node-level breakdown
+    /// 节点级明细
     pub node_reports: Vec<NodeDeviationReport>,
-    /// Cognitive corrections suggested
+    /// 建议的认知修正
     pub corrections: Vec<CognitiveCorrection>,
-    /// Pattern detected across iterations
+    /// 跨迭代检测到的模式
     pub patterns: Vec<DeviationPattern>,
 }
 
-/// Node-level deviation report
+/// 节点级偏差报告
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NodeDeviationReport {
     pub node_name: String,
@@ -50,7 +50,7 @@ pub struct NodeDeviationReport {
     pub suggestions: Vec<String>,
 }
 
-/// A suggested cognitive correction
+/// 建议的认知修正
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CognitiveCorrection {
     pub target_node: String,
@@ -60,7 +60,7 @@ pub struct CognitiveCorrection {
     pub priority: CorrectionPriority,
 }
 
-/// Type of cognitive correction
+/// 认知修正的类型
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub enum CorrectionType {
     IncreaseFuel,
@@ -73,7 +73,7 @@ pub enum CorrectionType {
     SplitNode,
 }
 
-/// Priority of correction
+/// 修正的优先级
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 pub enum CorrectionPriority {
     Critical,
@@ -82,7 +82,7 @@ pub enum CorrectionPriority {
     Low,
 }
 
-/// A detected deviation pattern
+/// 检测到的偏差模式
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DeviationPattern {
     pub pattern_type: String,
@@ -92,11 +92,11 @@ pub struct DeviationPattern {
     pub recommended_action: String,
 }
 
-/// Deep reflector that performs multi-dimensional deviation analysis
+/// 执行多维偏差分析的深度反思器
 pub struct DeepReflector {
-    /// Weight configuration for each analysis dimension
+    /// 每个分析维度的权重配置
     dimension_weights: HashMap<AnalysisDimension, f64>,
-    /// History of deviations for pattern detection
+    /// 用于模式检测的偏差历史
     deviation_history: Vec<DeepDeviationReport>,
 }
 
@@ -122,7 +122,7 @@ impl DeepReflector {
         }
     }
 
-    /// Perform deep deviation analysis on a reflection report
+    /// 对反思报告执行深度偏差分析
     pub fn analyze(
         &mut self,
         report: &ReflectionReport,
@@ -168,7 +168,7 @@ impl DeepReflector {
     fn score_node(&self, record: &RecordedNode) -> (f64, AnalysisDimension, String) {
         match record.status.as_str() {
             "success" => {
-                // Check output quality
+                // 检查输出质量
                 let quality_score = self.score_output_quality(&record.output);
                 if quality_score > 0.3 {
                     (
@@ -224,7 +224,7 @@ impl DeepReflector {
         if output.is_empty() {
             return 0.7;
         }
-        // Heuristic: check for error indicators in output
+        // 启发式：检查输出中的错误指示
         let lower = output.to_lowercase();
         if lower.contains("error") || lower.contains("fail") {
             0.6
@@ -242,7 +242,7 @@ impl DeepReflector {
     ) -> Vec<DimensionScore> {
         let mut scores = Vec::new();
 
-        // Output quality
+        // 输出质量
         let output_failures = report
             .records
             .iter()
@@ -259,7 +259,7 @@ impl DeepReflector {
             explanation: format!("{}/{} nodes failed", output_failures, report.records.len()),
         });
 
-        // Resource efficiency
+        // 资源效率
         let resource_score = (1.0 - prediction.predicted_stability).clamp(0.0, 1.0);
         scores.push(DimensionScore {
             dimension: AnalysisDimension::ResourceEfficiency,
@@ -271,7 +271,7 @@ impl DeepReflector {
             explanation: format!("Predicted stability: {:.2}", prediction.predicted_stability),
         });
 
-        // Temporal accuracy
+        // 时间准确性
         let temporal_score = if prediction.predicted_effort > 0 {
             (prediction.estimated_cost as f64 / prediction.predicted_effort as f64 - 1.0)
                 .abs()
@@ -289,7 +289,7 @@ impl DeepReflector {
             explanation: format!("Cost/effort ratio: {:.2}", temporal_score),
         });
 
-        // Logic correctness
+        // 逻辑正确性
         let logic_score = report.deviation_score.clamp(0.0, 1.0);
         scores.push(DimensionScore {
             dimension: AnalysisDimension::LogicCorrectness,
@@ -301,7 +301,7 @@ impl DeepReflector {
             explanation: format!("Deviation score: {:.4}", report.deviation_score),
         });
 
-        // Tool reliability
+        // 工具可靠性
         let tool_failures = report
             .records
             .iter()
@@ -414,7 +414,7 @@ impl DeepReflector {
             return patterns;
         }
 
-        // Detect recurring node failures
+        // 检测重复出现的节点失败
         let mut node_failures: HashMap<String, usize> = HashMap::new();
         for report in &self.deviation_history {
             for node in &report.node_reports {
@@ -439,7 +439,7 @@ impl DeepReflector {
             }
         }
 
-        // Detect increasing deviation trend
+        // 检测上升的偏差趋势
         if self.deviation_history.len() >= 3 {
             let recent: Vec<f64> = self
                 .deviation_history
@@ -517,12 +517,12 @@ mod tests {
     #[test]
     fn test_pattern_detection() {
         let mut reflector = DeepReflector::new();
-        // Run multiple analyses to trigger pattern detection
+        // 运行多次分析以触发模式检测
         for _ in 0..3 {
             reflector.analyze(&test_report(), &test_prediction());
         }
         let report = reflector.analyze(&test_report(), &test_prediction());
-        // Should detect recurring failure pattern for step2
+        // 应检测到 step2 的重复失败模式
         assert!(report
             .patterns
             .iter()

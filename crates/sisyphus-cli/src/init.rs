@@ -23,7 +23,7 @@ pub fn run_generate(template_name: &str, name: &str, dir: &std::path::Path) -> R
         std::env::current_dir()?.join(dir)
     };
 
-    // Ensure the destination directory exists
+    // 确保目标目录存在
     std::fs::create_dir_all(&dest)?;
 
     crate::tools::scaffold(template, name, &dest)?;

@@ -1,4 +1,4 @@
-//! Roadmap error types.
+//! 路线图错误类型。
 
 use thiserror::Error;
 

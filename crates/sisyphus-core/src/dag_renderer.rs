@@ -1,10 +1,10 @@
-//! Visual DAG rendering for TUI display.
+//! 用于 TUI 展示的视觉化 DAG 渲染。
 //!
-//! Renders SOP graph execution state as ASCII art diagrams.
+//! 将 SOP 图谱执行状态渲染为 ASCII 艺术图。
 
 use std::collections::HashMap;
 
-/// Node execution status for visual rendering.
+/// 用于视觉渲染的节点执行状态。
 #[derive(Debug, Clone, PartialEq)]
 pub enum NodeStatus {
     Pending,
@@ -14,7 +14,7 @@ pub enum NodeStatus {
     Skipped,
 }
 
-/// A rendered node in the DAG visualization.
+/// DAG 可视化中的一个已渲染节点。
 #[derive(Debug, Clone)]
 pub struct RenderedNode {
     pub id: String,
@@ -24,14 +24,14 @@ pub struct RenderedNode {
     pub col: usize,
 }
 
-/// A rendered edge in the DAG visualization.
+/// DAG 可视化中的一条已渲染边。
 #[derive(Debug, Clone)]
 pub struct RenderedEdge {
     pub from: String,
     pub to: String,
 }
 
-/// Complete DAG visualization.
+/// 完整的 DAG 可视化。
 #[derive(Debug, Clone)]
 pub struct DagVisualization {
     pub nodes: Vec<RenderedNode>,
@@ -40,7 +40,7 @@ pub struct DagVisualization {
     pub height: usize,
 }
 
-/// ASCII art DAG renderer.
+/// ASCII 艺术 DAG 渲染器。
 pub struct DagRenderer {
     node_width: usize,
     node_height: usize,
@@ -58,7 +58,7 @@ impl DagRenderer {
         }
     }
 
-    /// Render a DAG from adjacency list and node statuses.
+    /// 从邻接表与节点状态渲染 DAG。
     pub fn render(
         &self,
         nodes: &[(String, NodeStatus)],
@@ -69,7 +69,7 @@ impl DagRenderer {
             .map(|(id, status)| (id.as_str(), status))
             .collect();
 
-        // Topological layout
+        // 拓扑布局
         let layout = self.compute_layout(nodes, edges);
 
         let mut rendered_nodes = Vec::new();
@@ -113,7 +113,7 @@ impl DagRenderer {
         }
     }
 
-    /// Compute row/col positions for each node using topological ordering.
+    /// 使用拓扑排序计算每个节点的行列位置。
     fn compute_layout(
         &self,
         nodes: &[(String, NodeStatus)],
@@ -133,7 +133,7 @@ impl DagRenderer {
             *in_degree.entry(to.clone()).or_insert(0) += 1;
         }
 
-        // Topological sort with level assignment
+        // 拓扑排序并分配层级
         let mut queue: Vec<String> = in_degree
             .iter()
             .filter(|(_, &d)| d == 0)
@@ -144,7 +144,7 @@ impl DagRenderer {
         let mut col_counters: HashMap<usize, usize> = HashMap::new();
 
         while !queue.is_empty() {
-            // Sort for deterministic output
+            // 排序以保证输出确定性
             queue.sort();
             let current = queue.remove(0);
             let level = levels.get(&current).copied().unwrap_or(0);
@@ -171,7 +171,7 @@ impl DagRenderer {
             }
         }
 
-        // Convert level/position to row/col
+        // 将层级/位置转换为行列
         let mut result = HashMap::new();
         for (id, (level, position)) in layout {
             let row = level * (self.node_height + self.v_gap);
@@ -190,7 +190,7 @@ impl DagRenderer {
         }
     }
 
-    /// Render to ASCII string.
+    /// 渲染为 ASCII 字符串。
     pub fn render_to_string(
         &self,
         nodes: &[(String, NodeStatus)],
@@ -203,7 +203,7 @@ impl DagRenderer {
 
         let mut canvas: Vec<Vec<char>> = vec![vec![' '; viz.width + 1]; viz.height + 1];
 
-        // Draw edges first (simple vertical/horizontal lines)
+        // 先绘制边（简单的垂直/水平线）
         for edge in &viz.edges {
             if let (Some(from_node), Some(to_node)) = (
                 viz.nodes.iter().find(|n| n.id == edge.from),
@@ -214,7 +214,7 @@ impl DagRenderer {
                 let to_center_x = to_node.col + self.node_width / 2;
                 let to_top_y = to_node.row;
 
-                // Draw vertical line from bottom of source
+                // 从源节点底部绘制垂直线
                 let mid_y = (from_bottom_y + to_top_y) / 2;
                 for y in from_bottom_y..=mid_y {
                     if y < canvas.len() && from_center_x < canvas[y].len() {
@@ -222,7 +222,7 @@ impl DagRenderer {
                     }
                 }
 
-                // Draw horizontal line
+                // 绘制水平线
                 let (start_x, end_x) = if from_center_x <= to_center_x {
                     (from_center_x, to_center_x)
                 } else {
@@ -238,7 +238,7 @@ impl DagRenderer {
                     }
                 }
 
-                // Draw vertical line to top of target
+                // 绘制到目标节点顶部的垂直线
                 for y in mid_y..=to_top_y {
                     if y < canvas.len() && to_center_x < canvas[y].len() {
                         canvas[y][to_center_x] = '|';
@@ -247,7 +247,7 @@ impl DagRenderer {
             }
         }
 
-        // Draw nodes
+        // 绘制节点
         for node in &viz.nodes {
             let (status_char, status_symbol) = match node.status {
                 NodeStatus::Pending => ('-', "P"),
@@ -257,7 +257,7 @@ impl DagRenderer {
                 NodeStatus::Skipped => ('.', "o"),
             };
 
-            // Top border
+            // 顶部边框
             let border: String = std::iter::repeat_n(status_char, self.node_width).collect();
             if node.row < canvas.len() && node.col + self.node_width <= canvas[node.row].len() {
                 for (i, c) in border.chars().enumerate() {
@@ -265,7 +265,7 @@ impl DagRenderer {
                 }
             }
 
-            // Content
+            // 内容
             let content_row = node.row + 1;
             if content_row < canvas.len() {
                 let padding = self.node_width.saturating_sub(node.label.len() + 4);
@@ -286,7 +286,7 @@ impl DagRenderer {
                 }
             }
 
-            // Bottom border
+            // 底部边框
             let bottom_row = node.row + 2;
             if bottom_row < canvas.len() && node.col + self.node_width <= canvas[bottom_row].len() {
                 for (i, c) in border.chars().enumerate() {
@@ -295,7 +295,7 @@ impl DagRenderer {
             }
         }
 
-        // Convert canvas to string
+        // 将画布转换为字符串
         canvas
             .iter()
             .map(|row| row.iter().collect::<String>().trim_end().to_string())

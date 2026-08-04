@@ -35,7 +35,7 @@ impl MySisyphusBridge {
                 Err(e) => {
                     let duration = start.elapsed();
                     record_sop_execution(&synthesized_sop_id, false, duration.as_secs_f64());
-                    Err(Status::internal(e))
+                    Err(Status::internal(e.to_string()))
                 }
             }
         } else {
@@ -81,7 +81,7 @@ impl MySisyphusBridge {
                 Err(e) => {
                     let duration = start.elapsed();
                     record_sop_execution(&sop_id, false, duration.as_secs_f64());
-                    Err(Status::internal(e))
+                    Err(Status::internal(e.to_string()))
                 }
             }
         };

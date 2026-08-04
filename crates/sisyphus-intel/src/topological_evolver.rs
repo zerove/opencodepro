@@ -20,7 +20,7 @@ impl TopologicalSOPEvolver {
         Self
     }
 
-    /// Applies a batch of evolution operations to the graph.
+    /// 将一批演进操作应用到图谱。
     pub fn apply_ops(
         &self,
         graph: &SOPGraph,
@@ -30,7 +30,7 @@ impl TopologicalSOPEvolver {
         let mut new_graph = SOPGraph::new();
         let mut node_map = HashMap::new();
 
-        // First, copy all existing nodes to the new graph
+        // 首先将所有现有节点复制到新图谱
         for node_idx in graph.graph.node_indices() {
             let node = graph
                 .graph
@@ -40,7 +40,7 @@ impl TopologicalSOPEvolver {
             node_map.insert(node_idx, new_idx);
         }
 
-        // Copy all existing edges
+        // 复制所有现有边
         for edge in graph.graph.edge_indices() {
             let (source, target) = graph
                 .graph
@@ -51,7 +51,7 @@ impl TopologicalSOPEvolver {
             new_graph.add_edge(new_source, new_target);
         }
 
-        // Apply operations
+        // 应用操作
         for op in ops {
             match op {
                 EvolutionOp::AdjustFuel { node_name, delta } => {
@@ -100,9 +100,9 @@ impl TopologicalSOPEvolver {
                 } => {
                     let after_idx = self.find_node_by_name(&new_graph, after_node)?;
 
-                    // Create new node
-                    // Note: We need a tool_executor. In a real scenario, this would be passed in or stored.
-                    // For this implementation, we assume the tool_executor is provided to apply_ops.
+                    // 创建新节点
+                    // 注意：需要 tool_executor。真实场景中它会传入或存储。
+                    // 本实现假定 apply_ops 已提供 tool_executor。
                     let new_node = Arc::new(WasmSOPNode {
                         name: new_name.clone(),
                         tool_id: tool_id.clone(),
@@ -111,7 +111,7 @@ impl TopologicalSOPEvolver {
                     });
                     let new_idx = new_graph.add_node(new_node);
 
-                    // Rewire: after_node -> successors becomes after_node -> new_node -> successors
+                    // 重接线：after_node -> successors 变为 after_node -> new_node -> successors
                     let successors: Vec<_> = new_graph.graph.neighbors(after_idx).collect();
                     for succ in successors {
                         if let Some(edge_idx) = new_graph.graph.find_edge(after_idx, succ) {
@@ -121,7 +121,7 @@ impl TopologicalSOPEvolver {
                         new_graph.add_edge(new_idx, succ);
                     }
 
-                    // If after_node had no successors, just add the edge
+                    // 若 after_node 无后继，仅添加边
                     if new_graph.graph.neighbors(after_idx).count() == 0 {
                         new_graph.add_edge(after_idx, new_idx);
                     }
@@ -151,7 +151,7 @@ impl TopologicalSOPEvolver {
                         continue;
                     }
 
-                    // Swap edges
+                    // 交换边
                     let preds_a: Vec<_> = new_graph
                         .graph
                         .neighbors_directed(idx_a, petgraph::Direction::Incoming)
@@ -163,11 +163,11 @@ impl TopologicalSOPEvolver {
                         .collect();
                     let succs_b: Vec<_> = new_graph.graph.neighbors(idx_b).collect();
 
-                    // Identify edges between the two nodes before removing them
+                    // 移除前识别两个节点之间的边
                     let a_to_b = new_graph.graph.contains_edge(idx_a, idx_b);
                     let b_to_a = new_graph.graph.contains_edge(idx_b, idx_a);
 
-                    // Remove all edges connected to a and b
+                    // 移除连到 a 和 b 的所有边
                     for p in &preds_a {
                         if let Some(edge_idx) = new_graph.graph.find_edge(*p, idx_a) {
                             new_graph.graph.remove_edge(edge_idx);
@@ -189,7 +189,7 @@ impl TopologicalSOPEvolver {
                         }
                     }
 
-                    // Rewire: a's old preds -> b, b's old succs -> a
+                    // 重接线：a 的旧前驱 -> b，b 的旧后继 -> a
                     for p in preds_a {
                         if p != idx_b {
                             new_graph.add_edge(p, idx_b);
@@ -201,7 +201,7 @@ impl TopologicalSOPEvolver {
                         }
                     }
 
-                    // Rewire: b's old preds -> a, a's old succs -> b
+                    // 重接线：b 的旧前驱 -> a，a 的旧后继 -> b
                     for p in preds_b {
                         if p != idx_a {
                             new_graph.add_edge(p, idx_a);
@@ -213,7 +213,7 @@ impl TopologicalSOPEvolver {
                         }
                     }
 
-                    // Swap the edge between them
+                    // 交换二者之间的边
                     if a_to_b {
                         new_graph.add_edge(idx_b, idx_a);
                     }
@@ -224,7 +224,7 @@ impl TopologicalSOPEvolver {
             }
         }
 
-        // Final check for cycles to preserve DAG invariant
+        // 最终环检查以保持 DAG 不变量
         if petgraph::algo::is_cyclic_directed(&new_graph.graph) {
             return Err(IntelError::EvolutionCycle);
         }
@@ -247,7 +247,7 @@ impl TopologicalSOPEvolver {
     }
 }
 
-// ... (existing code) ...
+// ...（现有代码）...
 #[async_trait]
 impl SOPEvolver for TopologicalSOPEvolver {
     async fn evolve(
@@ -259,7 +259,7 @@ impl SOPEvolver for TopologicalSOPEvolver {
     ) -> Result<Arc<SOPGraph>, sisyphus_types::IntelError> {
         let mut ops = Vec::new();
 
-        // 1. Analyze failures and generate evolution ops
+        // 1. 分析失败并生成演进操作
         for record in &report.records {
             if record.status == "error" {
                 if record.output.contains("ResourceExhausted") {
@@ -268,7 +268,7 @@ impl SOPEvolver for TopologicalSOPEvolver {
                         delta: 1_000_000,
                     });
 
-                    // If it's a recurring issue, consider splitting the node
+                    // 若为反复出现的问题，考虑拆分该节点
                     if report.deviation_score > 0.7 {
                         ops.push(EvolutionOp::InsertNode {
                             after_node: record.node.clone(),
@@ -297,9 +297,9 @@ impl SOPEvolver for TopologicalSOPEvolver {
             return Ok(graph);
         }
 
-        // We need a tool_executor to apply some ops (like InsertNode).
-        // Since we don't have one here, we'll use a dummy one or we need to change the trait.
-        // For now, we'll use a mock to demonstrate the structural change.
+        // 应用部分操作（如 InsertNode）需要 tool_executor。
+        // 此处没有，我们将使用虚拟实例或修改 trait。
+        // 目前使用 mock 演示结构变化。
         let mock_executor = Arc::new(crate::mock::MockExecutor);
         self.apply_ops(&graph, &ops, mock_executor).map(Arc::new)
     }

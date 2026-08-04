@@ -21,10 +21,10 @@ pub(crate) use app::{App, DevFocus, LogEntry, Mode, ToastKind, View};
 pub(crate) use event::handle_event;
 pub(crate) use render::ui;
 
-// ── Public entry ────────────────────────────────────────
+// ── 公开入口 ────────────────────────────────────────
 
 pub fn run(data_dir: PathBuf, bridge_address: String) -> Result<()> {
-    // Ensure data directory exists (same as CLI mode in main.rs:1134)
+    // 确保数据目录存在（与 main.rs:1134 的 CLI 模式一致）
     std::fs::create_dir_all(&data_dir)?;
 
     let mut terminal = ratatui::init();
@@ -35,14 +35,14 @@ pub fn run(data_dir: PathBuf, bridge_address: String) -> Result<()> {
     let perms = CliPermission::load(None).unwrap_or_default();
     let mut app = App::new(data_dir, bridge_address);
 
-    // Load session list (don't auto-create or select - start at Home)
+    // 加载会话列表（不自动创建或选择 — 从主页开始）
     let db = app.data_dir.join("sessions.json");
     app.sessions = crate::tools::session_list(&db).unwrap_or_default();
     app.session_dirty = false;
 
     app.load_boulder();
 
-    // Subscribe to bridge event stream to eliminate polling latency
+    // 订阅桥接事件流以消除轮询延迟
     if let Some(mut client) = app.bridge_client.clone() {
         if let Ok(rx) = futures::executor::block_on(client.subscribe_events()) {
             app.event_rx = Some(rx);
@@ -64,7 +64,7 @@ fn run_loop(
     tick_rate: Duration,
 ) -> Result<()> {
     loop {
-        // Process all pending events from the bridge stream
+        // 处理桥接流中所有待处理事件
         app.process_events();
 
         app.boulder_save_tick += 1;
@@ -77,7 +77,7 @@ fn run_loop(
 
         terminal.draw(|f| ui(f, app))?;
 
-        // Advance spinner frame when operation is pending
+        // 有操作挂起时推进 spinner 帧
         if app.is_pending {
             app.pending_spin = app.pending_spin.wrapping_add(1);
         }
@@ -128,7 +128,7 @@ fn run_loop(
                 crossterm::event::KeyCode::Enter,
                 crossterm::event::KeyModifiers::empty(),
             ));
-            // Only auto-continue if we're in a session
+            // 仅在会话中时自动继续
             if app.view == View::Session && handle_event(fake_event, app, perms)? {
                 break;
             }

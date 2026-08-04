@@ -5,8 +5,8 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
-/// IntelligenceManager wraps the cognitive capabilities of the system,
-/// providing high-level APIs for prediction, reflection, and evolution.
+/// IntelligenceManager 封装系统的认知能力，
+/// 为预测、反思与演进提供高层 API。
 pub struct IntelligenceManager {
     pub intel: Arc<SisyphusIntel>,
     pub synthesizer: Arc<dyn sisyphus_intel::FlowSynthesizer>,
@@ -26,7 +26,7 @@ impl IntelligenceManager {
         }
     }
 
-    /// Synthesize a new SOP graph from a natural language goal.
+    /// 从自然语言目标综合生成新的 SOP 图谱。
     pub async fn synthesize_goal(
         &self,
         goal: &str,
@@ -40,7 +40,7 @@ impl IntelligenceManager {
             .await
     }
 
-    /// Predict the outcome of a graph execution using the simulator.
+    /// 使用仿真器预测图谱执行的结果。
     pub async fn predict_outcome(
         &self,
         graph: Arc<SOPGraph>,
@@ -54,24 +54,24 @@ impl IntelligenceManager {
             .await
     }
 
-    /// Reflect on an execution trace to calculate deviation and suggest improvements.
+    /// 反思执行轨迹，计算偏差并提出改进建议。
     pub async fn reflect_on_trace(
         &self,
         trace: &str,
         prediction: &SimulationResult,
         ctx: &ExecutionContext,
     ) -> Result<ReflectionReport, sisyphus_types::IntelError> {
-        // 1. Base reflection from the core reflector
+        // 1. 核心反思器的基础反思
         let mut report = self
             .intel
             .reflector
             .reflect(trace, prediction, None)
             .await?;
 
-        // 2. Deep Semantic Reflection using Professional Tools
+        // 2. 使用专业工具的深度语义反思
         let mut expert_suggestions = Vec::new();
 
-        // a. Oracle Analysis: Check all modified files for complexity and security issues
+        // a. Oracle 分析：检查所有被修改文件的复杂度与安全问题
         if let Ok(files) = ctx.modified_files.read() {
             for path in files.iter() {
                 if let Ok(analysis) = oracle::analyze_file(path) {
@@ -89,13 +89,13 @@ impl IntelligenceManager {
             }
         }
 
-        // b. Momus Review: Review plan-like or code-like outputs in results
+        // b. Momus 评审：审查结果中类计划或类代码的输出
         for entry in ctx.results.iter() {
             let node_name = entry.key();
             let output = entry.value();
             let content = output.to_string();
 
-            // Heuristic: if node name contains 'plan' or output is long and structured, use Momus Plan Review
+            // 启发式规则：若节点名包含 'plan' 或输出较长且结构化，使用 Momus 计划评审
             if node_name.contains("plan") || content.contains("## ") {
                 let review =
                     momus::review_plan(self.llm_client.as_ref(), &content, node_name.as_str())
@@ -111,9 +111,9 @@ impl IntelligenceManager {
                 }
             }
 
-            // If output looks like code (contains common Rust keywords), use Momus Code Review
+            // 若输出看起来像代码（含常见 Rust 关键字），使用 Momus 代码评审
             if content.contains("fn ") || content.contains("pub struct") {
-                // We need a path for review_code. We'll use a virtual path since it's in-memory.
+                // review_code 需要路径。因数据在内存中，这里使用虚拟路径。
                 let path_str = format!("/virtual/{}", node_name);
                 let virtual_path = Path::new(&path_str);
                 if let Ok(review) =
@@ -132,13 +132,13 @@ impl IntelligenceManager {
             }
         }
 
-        // Merge expert findings into the report
+        // 将专家发现合并到报告中
         report.suggested_improvements.extend(expert_suggestions);
 
         Ok(report)
     }
 
-    /// Critically analyze a reflection report to identify risks or blind spots.
+    /// 批判性地分析反思报告，识别风险或盲点。
     pub async fn critique_reflection(
         &self,
         report: &ReflectionReport,
@@ -158,8 +158,8 @@ impl IntelligenceManager {
             prediction, report
         );
 
-        // Bound the critique call so an unreachable LLM cannot stall the
-        // cognitive loop; on failure we fall back to a permissive default.
+        // 为批判调用设置边界，使不可达的 LLM 无法拖慢
+        // 认知循环；失败时回退到宽松的默认值。
         let response =
             match tokio::time::timeout(Duration::from_secs(2), self.llm_client.generate(&prompt))
                 .await
@@ -193,7 +193,7 @@ impl IntelligenceManager {
         })
     }
 
-    /// Evolve a graph based on a reflection report and prediction.
+    /// 基于反思报告与预测演进图谱。
     pub async fn evolve_graph(
         &self,
         graph: Arc<SOPGraph>,

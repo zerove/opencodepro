@@ -19,8 +19,8 @@ impl HeuristicSopEvaluator {
             return 0.0;
         }
 
-        // Heuristic: Optimal SOP length is between 3 and 7 nodes.
-        // Penalize very short (too simple/incomplete) or very long (too fragile) SOPs.
+        // 启发式：最优 SOP 长度为 3 到 7 个节点。
+        // 惩罚过短（过于简单/不完整）或过长（过于脆弱）的 SOP。
         if (3..=7).contains(&node_count) {
             1.0
         } else if node_count < 3 {
@@ -36,7 +36,7 @@ impl HeuristicSopEvaluator {
             return 0.0;
         }
 
-        // Heuristic: SOPs with branch/retry logic or high density of edges are more robust.
+        // 启发式：带分支/重试逻辑或高边密度的 SOP 更稳健。
         let mut robustness_bonus = 0.0;
         for node in &config.nodes {
             match &node.kind {
@@ -57,11 +57,11 @@ impl SopEvaluator for HeuristicSopEvaluator {
         goal: &str,
         config: &SOPGraphConfig,
     ) -> Result<SopEvaluation, TypesError> {
-        // 1. Static Heuristics
+        // 1. 静态启发式
         let complexity = self.calculate_complexity_score(config);
         let robustness = self.calculate_robustness_score(config);
 
-        // 2. LLM Semantic Review
+        // 2. LLM 语义审查
         let prompt = format!(
             "Review the following SOP designed for the goal: '{}'\n\nSOP Nodes:\n{:?}\nSOP Edges:\n{:?}\n\n\
             Please evaluate if this SOP logically achieves the goal. \
@@ -88,8 +88,8 @@ impl SopEvaluator for HeuristicSopEvaluator {
 
         let feedback = llm_response.clone();
 
-        // Final Weighted Score
-        // LLM logic review is the primary driver (60%), heuristics provide a baseline (40%)
+        // 最终加权分数
+        // LLM 逻辑审查是主要驱动（60%），启发式提供基线（40%）
         let final_score = (llm_score * 0.6) + ((complexity + robustness) / 2.0 * 0.4);
 
         let mut metrics = HashMap::new();

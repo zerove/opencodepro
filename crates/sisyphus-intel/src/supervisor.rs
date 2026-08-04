@@ -5,8 +5,8 @@ use sisyphus_types::SOPGraph;
 use sisyphus_types::{ExecutionContext, NodeOutput, RuntimeSupervisor, SupervisorDecision};
 use std::sync::Arc;
 
-/// A concrete implementation of `RuntimeSupervisor` that uses the `Reflector`
-/// to detect runtime deviations from a predicted execution path.
+/// `RuntimeSupervisor` 的具体实现，使用 `Reflector`
+/// 检测与预测执行路径的运行时偏差。
 pub struct SisyphusSupervisor {
     reflector: Arc<dyn Reflector>,
     prediction: SimulationResult,
@@ -35,7 +35,7 @@ impl SisyphusSupervisor {
         }
     }
 
-    /// Helper to construct a trace from the current execution context.
+    /// 从当前执行上下文构造轨迹的辅助函数。
     fn build_trace(&self, ctx: &ExecutionContext) -> String {
         let trace_points = ctx.trace.read().map(|t| t.clone()).unwrap_or_default();
         let mut lines = Vec::new();
@@ -68,7 +68,7 @@ impl RuntimeSupervisor for SisyphusSupervisor {
     ) -> Result<SupervisorDecision, String> {
         tracing::debug!(node = %node_name, "Runtime supervisor evaluating node output");
 
-        // 1. Fast Heuristic Reflection (Layer 1)
+        // 1. 快速启发式反思（第 1 层）
         let output_str = output.0.as_str().unwrap_or("");
         let is_obvious_error = output_str.contains("Error")
             || output_str.contains("Failed")
@@ -81,10 +81,10 @@ impl RuntimeSupervisor for SisyphusSupervisor {
             return Ok(SupervisorDecision::Continue { deviation: 0.05 });
         }
 
-        // 2. Build a current trace of the execution
+        // 2. 构建执行过程中的当前轨迹
         let trace = self.build_trace(&ctx);
 
-        // Retrieve semantic experiences for the current goal and node
+        // 检索当前目标与节点的语义经验
         let exp_query = sisyphus_types::experience::ExperienceQuery {
             query_text: self.goal_text.clone(),
             context_hash: format!("{:x}", md5::compute(&self.goal_text)),
@@ -95,7 +95,7 @@ impl RuntimeSupervisor for SisyphusSupervisor {
         };
         let experiences = self.experience_bank.query_similar(exp_query).await.ok();
 
-        // 2. Reflect on the current state vs the prediction
+        // 2. 对比当前状态与预测进行反思
         let reflection = self
             .reflector
             .reflect(&trace, &self.prediction, experiences.as_deref())
@@ -108,9 +108,9 @@ impl RuntimeSupervisor for SisyphusSupervisor {
             "Runtime deviation check"
         );
 
-        // 3. Decide whether to pivot
-        // Adjust threshold based on simulation success probability:
-        // Lower success probability (higher risk) makes the supervisor more sensitive to deviations.
+        // 3. 决定是否转向
+        // 基于仿真成功概率调整阈值：
+        // 较低的成功概率（较高风险）使监督者对偏差更敏感。
         let effective_threshold = self.threshold * self.prediction.success_probability.max(0.1);
 
         if reflection.deviation_score > effective_threshold {

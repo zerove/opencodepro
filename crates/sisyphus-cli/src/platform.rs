@@ -100,8 +100,8 @@ mod tests {
     #[test]
     fn test_home_dir() {
         let home = home_dir();
-        // We can't easily assert the value, but it should be Some in most environments
-        // unless running in a very restricted CI.
+        // 该值不易断言，但在大多数环境中应为 Some，
+        // 除非在受限严格的 CI 中运行。
         if let Some(h) = home {
             assert!(!h.is_empty());
         }

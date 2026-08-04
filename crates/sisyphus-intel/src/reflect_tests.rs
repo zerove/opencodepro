@@ -21,7 +21,7 @@ fn make_record(node: &str, status: &str, output: &str) -> RecordedNode {
     }
 }
 
-// StandardReflector::parse_trace
+// 测试 StandardReflector::parse_trace
 #[test]
 fn test_parse_valid_json_lines() {
     let trace = r#"{"node":"a","status":"ok","output":"done"}
@@ -44,7 +44,7 @@ fn test_parse_empty() {
     assert!(StandardReflector::parse_trace("").is_empty());
 }
 
-// StandardReflector::analyze
+// 测试 StandardReflector::analyze
 #[test]
 fn test_analyze_empty() {
     let (dev, s) = StandardReflector::analyze(&[]);
@@ -89,7 +89,7 @@ fn test_analyze_empty_outputs() {
     assert!(s.iter().any(|x| x.contains("empty output")));
 }
 
-// StandardReflector::reflect (async)
+// 测试 StandardReflector::reflect（异步）
 #[tokio::test]
 async fn test_reflect_structured() {
     let trace = r#"{"node":"x","status":"ok","output":"data"}"#;
@@ -110,7 +110,7 @@ async fn test_reflect_fallback() {
     assert_eq!(report.deviation_score, 0.8);
 }
 
-// ErrorCategory::classify
+// 测试 ErrorCategory::classify
 #[test]
 fn test_error_category_classify() {
     assert_eq!(
@@ -173,7 +173,7 @@ fn test_error_category_severity() {
     assert_eq!(ErrorCategory::Unknown.severity(), 0.7);
 }
 
-// StandardEvolver
+// 测试 StandardEvolver
 #[test]
 fn test_standard_evolver_with_adaptive_pricer() {
     let evolver = StandardEvolver::with_fuel_pricer(Arc::new(AdaptiveFuelPricer::new()));

@@ -1,8 +1,8 @@
-//! Cognitive loop execution: the predict -> execute -> reflect -> evolve cycle.
+//! 认知循环执行：预测（predict）→ 执行（execute）→ 反思（reflect）→ 演进（evolve）的循环。
 //!
-//! [`run_cognitive_loop`](StrategicManager::run_cognitive_loop) orchestrates the
-//! loop; each phase is factored into its own helper so the orchestration stays
-//! readable and each phase can be evolved independently.
+//! [`run_cognitive_loop`](StrategicManager::run_cognitive_loop) 编排整个循环；
+//! 每个阶段被拆分为独立的辅助函数，使编排逻辑保持清晰，
+//! 且每个阶段都可以独立演进。
 
 use std::sync::Arc;
 use std::time::{Instant, SystemTime};
@@ -40,7 +40,7 @@ impl StrategicManager {
     ) -> Result<(NodeOutput, CognitiveReport, Option<Arc<SOPGraph>>), CoreError> {
         let _start_time = std::time::Instant::now();
 
-        // --- HOT START PHASE ---
+        // --- 热启动阶段（HOT START） ---
         let (mut current_ref, hot_start_active) = self
             .hot_start_phase(&sop_graph, goal_text, project_id, &stream_tx)
             .await;
@@ -56,7 +56,7 @@ impl StrategicManager {
         };
 
         let (max_iterations, convergence_threshold) = {
-            // --- Dynamic Depth Adjustment (v2) ---
+            // --- 动态深度调整（v2） ---
             let depth = sisyphus_intel::ComplexityAnalyzer::analyze(
                 self.experience_bank.clone(),
                 &current_ref,
@@ -66,12 +66,12 @@ impl StrategicManager {
 
             let (mut d_max, d_thresh) = depth.to_config();
 
-            // If hot-start is active, we can significantly reduce iterations
+            // 如果热启动生效，可以大幅减少迭代次数
             if hot_start_active {
                 d_max = (d_max / 2).max(2);
             }
 
-            // v2: Also get AdaptiveDepthController budget
+            // v2：同时获取 AdaptiveDepthController 的预算
             let v2_budget = self
                 .depth_controller
                 .initial_budget(
@@ -91,7 +91,7 @@ impl StrategicManager {
                 d_thresh
             );
 
-            // Override strategy with dynamic depth
+            // 用动态深度覆盖策略参数
             config_lock.max_iterations = final_max;
             config_lock.convergence_threshold = d_thresh;
 
@@ -162,7 +162,7 @@ impl StrategicManager {
                 .unwrap_or_default()
                 .as_secs();
 
-            // 1. Predict
+            // 1. 预测（Predict）
             let (prediction, mut pivot_reason) = self
                 .predict_phase(
                     &current_ref,
@@ -184,7 +184,7 @@ impl StrategicManager {
                 None
             };
 
-            // 2. Execute
+            // 2. 执行（Execute）
             let (final_ctx, result) = self
                 .execute_phase(
                     &executor,
@@ -207,7 +207,7 @@ impl StrategicManager {
 
             final_result = result.clone();
 
-            // 3. Reflect
+            // 3. 反思（Reflect）
             let reflection = self
                 .reflect_phase(
                     &current_ref,
@@ -223,7 +223,7 @@ impl StrategicManager {
                 )
                 .await?;
 
-            // 4. Evolve
+            // 4. 演进（Evolve）
             let evolved_graph = self
                 .evolve_phase(
                     &ctx,
@@ -235,7 +235,7 @@ impl StrategicManager {
                 )
                 .await;
 
-            // 4.5 Verify the evolution before accepting it
+            // 4.5 在采纳演进结果之前先做验证
             let final_evolved_graph = if let Some(eg) = evolved_graph {
                 self.verify_evolution(
                     eg,
@@ -263,10 +263,10 @@ impl StrategicManager {
                 evolved: has_evolved,
             });
 
-            // v2: Feed confidence into AdaptiveDepthController
+            // v2：将置信度反馈给 AdaptiveDepthController
             let should_continue = self.depth_controller.observe_iteration(confidence);
 
-            // v2: Check anomaly report for extra reflection triggers
+            // v2：检查异常报告是否触发额外反思
             let anomaly_report = self.anomaly_detector.generate_report();
             if anomaly_report.should_extra_reflect {
                 tracing::warn!(
@@ -299,7 +299,7 @@ impl StrategicManager {
                 && !anomaly_report.should_extra_reflect
             {
                 if !has_evolved && reflection.deviation_score >= convergence_threshold {
-                    // --- Tool Gap Detection ---
+                    // --- 工具缺口检测 ---
                     if let Ok(Some(gap)) = self
                         .gap_analyzer
                         .detect_gap(&reflection, &current_ref, goal_text.unwrap_or(sop_id))
@@ -313,7 +313,7 @@ impl StrategicManager {
                             });
                         }
 
-                        // --- Trigger Self-Programming Loop ---
+                        // --- 触发自编程循环 ---
                         let sp_manager = Arc::clone(&self.sp_manager);
                         tokio::spawn(async move {
                             if let Err(e) = sp_manager.resolve_gap(gap).await {
@@ -326,7 +326,7 @@ impl StrategicManager {
                 break;
             }
 
-            // v2: Also break if depth controller says stop
+            // v2：深度控制器建议停止时也跳出循环
             if !should_continue && reflection.deviation_score < convergence_threshold * 1.5 {
                 tracing::info!(
                     iteration,
@@ -348,7 +348,7 @@ impl StrategicManager {
                 break;
             }
 
-            // Update Cognitive Map for visualization
+            // 更新认知图谱（Cognitive Map）用于可视化
             let cog_map = Self::build_cog_map(
                 sop_id,
                 goal_text.unwrap_or(sop_id),
@@ -361,7 +361,7 @@ impl StrategicManager {
                 .cognitive_maps
                 .insert(sop_id.to_string(), cog_map);
 
-            // Strategic Shift Analysis: Check for semantic failure clusters
+            // 战略转移分析：检查语义失败簇
             if let Ok(Some(cluster)) = self
                 .pattern_analyzer
                 .analyze_failure_clusters(
@@ -381,7 +381,7 @@ impl StrategicManager {
                     });
                 }
 
-                // Formally submit as a strategic proposal to the roadmap
+                // 作为战略提案正式提交给路线图
                 let _ = self
                     .roadmap_manager
                     .submit_strategic_shift(
@@ -405,7 +405,7 @@ impl StrategicManager {
             .map(|i| i.deviation_score < convergence_threshold)
             .unwrap_or(false);
 
-        // Push Complete Event
+        // 推送完成事件
         if let Some(ref tx) = stream_tx {
             let _ = tx.send(CognitiveEvent::Complete {
                 final_result: final_result.clone(),
@@ -424,8 +424,8 @@ impl StrategicManager {
         Ok((final_result, report_obj, final_evolved))
     }
 
-    /// HOT START PHASE: retrieve a relevant prior graph from the multi-modal
-    /// experience bank and use it as the starting point for the loop.
+    /// 热启动阶段：从多模态经验库中检索相关历史图谱，
+    /// 作为认知循环的起始点。
     async fn hot_start_phase(
         &self,
         sop_graph: &Arc<SOPGraph>,
@@ -437,12 +437,12 @@ impl StrategicManager {
         let mut hot_start_active = false;
 
         if let Some(goal) = goal_text {
-            // 1. Visual Embedding Retrieval
+            // 1. 视觉嵌入检索
             let mut visual_embedding = None;
             if let Some(ref v_manager) = self.visual_manager {
-                // In a real system, we would capture the current screenshot from the executor/OS.
-                // For now, we simulate a deterministic visual state derived
-                // from the goal so different goals map to different states.
+                // 在真实系统中，我们会从执行器/操作系统捕获当前截图。
+                // 目前我们用基于目标派生的确定性视觉状态来模拟，
+                // 使不同目标映射到不同的状态。
                 let dummy_image = sisyphus_visual::simulated_visual_state(goal);
                 if let Ok(emb) = v_manager.get_embedding(&dummy_image).await {
                     visual_embedding = Some(emb);
@@ -464,11 +464,11 @@ impl StrategicManager {
                 .find_best_asset(goal, self.intelligence_manager.llm_client.clone())
                 .await
             {
-                // We also consider the multi-modal experience bank for a more nuanced Hot-Start.
-                // (Actually, find_best_asset is a higher-level abstraction, we'll use experience_bank directly for multi-modal)
+                // 我们也考虑多模态经验库，以获得更细致的热启动。
+                // （实际上 find_best_asset 是更高层的抽象，多模态检索直接使用 experience_bank）
             }
 
-            // Direct multi-modal experience retrieval
+            // 直接进行多模态经验检索
             if let Ok(exps) = self.experience_bank.query_similar(query).await {
                 if let Some(best_exp) = exps.into_iter().min_by(|a, b| {
                     a.deviation_score
@@ -497,7 +497,7 @@ impl StrategicManager {
                 });
             }
 
-            // Bind cognitive event stream to self-programming manager for observability
+            // 将认知事件流绑定到自编程管理器以便观测
             if let Some(ref tx) = stream_tx {
                 self.sp_manager.set_event_sender(tx.clone());
             }
@@ -508,8 +508,8 @@ impl StrategicManager {
         (current_ref, hot_start_active)
     }
 
-    /// Phase 1 (Predict): simulate potential execution paths, audit logical
-    /// consistency, rank paths with the probabilistic planner, and emit events.
+    /// 阶段 1（预测）：模拟潜在执行路径，审计逻辑
+    /// 一致性，用概率规划器对路径排序，并发送事件。
     #[allow(clippy::too_many_arguments)]
     async fn predict_phase(
         &self,
@@ -526,7 +526,7 @@ impl StrategicManager {
     ) -> Result<(SimulationResult, Option<String>), CoreError> {
         let mut pivot_reason: Option<String> = None;
 
-        // 1. Predict
+        // 1. 预测（Predict）
         tracing::info!(iteration, "phase=predict");
         let depth = sisyphus_intel::ComplexityAnalyzer::analyze(
             self.experience_bank.clone(),
@@ -585,7 +585,7 @@ impl StrategicManager {
                 .map_err(|e| CoreError::Internal(e.to_string()))?
         };
 
-        // 1.5 Logical Simulation (White-box)
+        // 1.5 逻辑仿真（白盒）
         if let Some(mut status) = self.execution_manager.active_executions.get_mut(sop_id) {
             status.status = "Simulating Logic".into();
             status.thought_logs.push(format!(
@@ -621,8 +621,8 @@ impl StrategicManager {
             }
         }
 
-        // ── Probabilistic Path Ranking ──────────────────────────────────
-        // Use the probabilistic planner to rank paths and select the optimal one
+        // ── 概率路径排序 ──────────────────────────────────
+        // 使用概率规划器对路径排序并选择最优路径
         let ranked_path = self
             .probabilistic_planner
             .select_optimal_path(std::slice::from_ref(&prediction));
@@ -655,7 +655,7 @@ impl StrategicManager {
         }
         // ──────────────────────────────────────────────────────────────────
 
-        // Push Predict Event
+        // 推送预测事件
         if let Some(ref tx) = stream_tx {
             let _ = tx.send(CognitiveEvent::Predict {
                 prediction: serde_json::to_value(&prediction).unwrap_or_default(),
@@ -665,8 +665,8 @@ impl StrategicManager {
         Ok((prediction, pivot_reason))
     }
 
-    /// Phase 2 (Execute): run the SOP nodes, record execution traces in the
-    /// background, and produce the iteration result.
+    /// 阶段 2（执行）：运行 SOP 节点，在后台记录执行轨迹，
+    /// 并产出本轮迭代结果。
     #[allow(clippy::too_many_arguments)]
     async fn execute_phase(
         &self,
@@ -710,7 +710,7 @@ impl StrategicManager {
             },
         );
 
-        // ── Trace Recording Setup ──────────────────────────────────────
+        // ── 轨迹记录设置 ──────────────────────────────────────
         let (trace_tx, trace_rx) = mpsc::unbounded_channel::<ExecutionEvent>();
         spawn_trace_recorder(
             trace_rx,
@@ -720,7 +720,7 @@ impl StrategicManager {
             self.anomaly_detector.clone(),
         );
 
-        // 2. Execute
+        // 2. 执行（Execute）
         tracing::info!(iteration, "phase=execute");
         let final_ctx = match executor
             .execute_with_context(
@@ -764,7 +764,7 @@ impl StrategicManager {
                 .ok_or(CoreError::NoResultProduced)?
         };
 
-        // Push Execute Event
+        // 推送执行事件
         if let Some(ref tx) = stream_tx {
             let _ = tx.send(CognitiveEvent::Execute {
                 node: current_start.index().to_string(),
@@ -775,8 +775,8 @@ impl StrategicManager {
         Ok((final_ctx, result))
     }
 
-    /// Phase 3 (Reflect): build the execution trace, run reflection plus deep
-    /// reflection, critique the result, and record insights to the bank.
+    /// 阶段 3（反思）：构建执行轨迹，运行反思与深度
+    /// 反思，批判结果，并将洞察记录到经验库。
     #[allow(clippy::too_many_arguments)]
     async fn reflect_phase(
         &self,
@@ -791,7 +791,7 @@ impl StrategicManager {
         goal_text: Option<&str>,
         stream_tx: &Option<mpsc::UnboundedSender<CognitiveEvent>>,
     ) -> Result<ReflectionReport, CoreError> {
-        // 3. Reflect
+        // 3. 反思（Reflect）
         tracing::info!(iteration, "phase=reflect");
         let mut trace = String::with_capacity(current_ref.graph.node_count() * 64);
         for node in current_ref.graph.node_indices() {
@@ -821,8 +821,8 @@ impl StrategicManager {
                 .map_err(|e| CoreError::Internal(e.to_string()))?
         };
 
-        // ── Deep Reflection Analysis ──────────────────────────────────────
-        // Use the deep reflector for multi-dimensional deviation analysis
+        // ── 深度反思分析 ──────────────────────────────────────
+        // 使用深度反思器进行多维偏差分析
         {
             let mut deep_reflector = self.deep_reflector.write();
             let deep_report = deep_reflector.analyze(&reflection, prediction);
@@ -837,7 +837,7 @@ impl StrategicManager {
                 deep_report.corrections.len()
             );
 
-            // Apply high-priority corrections as additional suggestions
+            // 将高优先级修正作为额外建议应用
             for correction in &deep_report.corrections {
                 if correction.priority <= sisyphus_intel::deep_reflector::CorrectionPriority::High {
                     reflection.suggested_improvements.push(format!(
@@ -849,7 +849,7 @@ impl StrategicManager {
                 }
             }
 
-            // Record failure patterns from the reflection
+            // 从反思结果中记录失败模式
             if let Some(reason) = pivot_reason.as_ref() {
                 let mut lib = self.failure_pattern_library.write();
                 lib.record_failure(
@@ -863,7 +863,7 @@ impl StrategicManager {
                 );
             }
 
-            // Push Deep Reflect Event
+            // 推送深度反思事件
             if let Some(ref tx) = stream_tx {
                 let _ = tx.send(CognitiveEvent::CognitiveStep {
                     step: "DeepReflect".into(),
@@ -887,14 +887,14 @@ impl StrategicManager {
         }
         // ──────────────────────────────────────────────────────────────────
 
-        // Push Reflect Event
+        // 推送反思事件
         if let Some(ref tx) = stream_tx {
             let _ = tx.send(CognitiveEvent::Reflect {
                 report: serde_json::to_value(&reflection).unwrap_or_default(),
             });
         }
 
-        // Critique
+        // 批判（Critique）
         let critique = self
             .intelligence_manager
             .critique_reflection(&reflection, prediction)
@@ -904,7 +904,7 @@ impl StrategicManager {
             .suggested_improvements
             .push(format!("[CRITIQUE] {}", critique.suggested_refinement));
 
-        // Distill semantic insights from reflection and record to bank
+        // 从反思中提炼语义洞察并记录到经验库
         let insight = if !reflection.suggested_improvements.is_empty() {
             Some(format!(
                 "Deviation {:.4}. Key lessons: {}",
@@ -942,8 +942,8 @@ impl StrategicManager {
         Ok(reflection)
     }
 
-    /// Phase 4 (Evolve): gather evolution insights from the notepad, the
-    /// experience bank, and failure patterns, then evolve the SOP graph.
+    /// 阶段 4（演进）：从记事本、经验库和失败模式中
+    /// 收集演进洞察，然后演进 SOP 图谱。
     async fn evolve_phase(
         &self,
         ctx: &ExecutionContext,
@@ -953,7 +953,7 @@ impl StrategicManager {
         sop_id: &str,
         goal_text: Option<&str>,
     ) -> Option<Arc<SOPGraph>> {
-        // 5. Evolve
+        // 5. 演进（Evolve）
         tracing::info!(sop_id, "phase=evolve");
         let mut evolution_insights = ctx
             .notepad
@@ -962,7 +962,7 @@ impl StrategicManager {
             .read_section("cognitive.insights")
             .cloned();
 
-        // Enhance evolution insights using the experience bank
+        // 用经验库增强演进洞察
         let exp_query = sisyphus_types::experience::ExperienceQuery {
             query_text: goal_text.unwrap_or(sop_id).to_string(),
             context_hash: format!("{:x}", md5::compute(goal_text.unwrap_or(sop_id))),
@@ -1008,14 +1008,14 @@ impl StrategicManager {
             }
         }
 
-        // ── Failure Pattern Evolution ──────────────────────────────────────
-        // Use the failure pattern evolver to generate targeted evolution operations
-        // based on accumulated failure patterns from the failure pattern library
+        // ── 失败模式演进 ──────────────────────────────────────
+        // 使用失败模式演进器生成针对性的演进操作，
+        // 其依据是失败模式库中积累的失败模式。
         {
             let evolver =
                 sisyphus_intel::FailurePatternEvolver::new(self.failure_pattern_library.clone());
 
-            // Generate evolution operations from failure patterns using the reflection
+            // 根据反思结果从失败模式生成演进操作
             let failure_ops = evolver.generate_evolution_ops(reflection);
             if !failure_ops.is_empty() {
                 tracing::info!(
@@ -1025,7 +1025,7 @@ impl StrategicManager {
                     failure_ops.len()
                 );
 
-                // Append failure-informed hints to evolution insights
+                // 将失败信息提示附加到演进洞察中
                 let failure_hints: Vec<String> = failure_ops
                     .iter()
                     .map(|op| format!("Failure-Driven Evolution: {:?}", op))
@@ -1056,8 +1056,8 @@ impl StrategicManager {
             .ok()
     }
 
-    /// Phase 4.5 (Verify): check whether the evolved graph actually improves
-    /// the success probability or stability before accepting it.
+    /// 阶段 4.5（验证）：检查演进后的图谱是否真正提升了
+    /// 成功概率或稳定性，再决定是否采纳。
     #[allow(clippy::too_many_arguments)]
     async fn verify_evolution(
         &self,
@@ -1070,8 +1070,8 @@ impl StrategicManager {
         iteration: usize,
         stream_tx: &Option<mpsc::UnboundedSender<CognitiveEvent>>,
     ) -> Option<Arc<SOPGraph>> {
-        // --- VERIFICATION STEP ---
-        // Verify if the evolved graph is actually an improvement over the current one.
+        // --- 验证步骤 ---
+        // 验证演进后的图谱是否确实优于当前图谱。
         let mut final_evolved_graph = None;
 
         let verification_prediction = self
@@ -1089,14 +1089,14 @@ impl StrategicManager {
             .ok();
 
         if let Some(v_pred) = verification_prediction {
-            // Only accept evolution if the success probability increases or stability improves significantly.
+            // 仅当成功概率提升或稳定性显著改善时才接受演进结果。
             if v_pred.success_probability > prediction.success_probability
                 || (v_pred.success_probability >= prediction.success_probability
                     && v_pred.predicted_stability > prediction.predicted_stability)
             {
                 final_evolved_graph = Some(evolved_graph);
 
-                // Log verification success
+                // 记录验证成功
                 if let Some(mut status) = self.execution_manager.active_executions.get_mut(sop_id) {
                     status.thought_logs.push(format!(
                         "Iteration {}: Evolution verified. Prob: {:.2} -> {:.2}",
@@ -1104,7 +1104,7 @@ impl StrategicManager {
                     ));
                 }
             } else {
-                // Log verification rejection
+                // 记录验证被拒
                 if let Some(mut status) = self.execution_manager.active_executions.get_mut(sop_id) {
                     status.thought_logs.push(format!(
                         "Iteration {}: Evolution rejected. New Prob ({:.2}) <= Old Prob ({:.2})",
@@ -1113,7 +1113,7 @@ impl StrategicManager {
                 }
             }
         } else {
-            // Simulation failed, treat as rejected to be safe
+            // 仿真失败，为安全起见视为拒绝
             if let Some(mut status) = self.execution_manager.active_executions.get_mut(sop_id) {
                 status.thought_logs.push(format!(
                     "Iteration {}: Evolution verification failed (simulation error).",
@@ -1122,7 +1122,7 @@ impl StrategicManager {
             }
         }
 
-        // Push Evolve Event
+        // 推送演进事件
         if let Some(ref tx) = stream_tx {
             let _ = tx.send(CognitiveEvent::Evolve {
                 revised_plan: final_evolved_graph
@@ -1136,8 +1136,8 @@ impl StrategicManager {
     }
 }
 
-/// Spawns a background task that records execution trace events to structured
-/// storage, feeds the anomaly detector, and forwards events to the user stream.
+/// 启动后台任务，将执行轨迹事件记录到结构化
+/// 存储，同时喂给异常检测器，并转发到用户事件流。
 fn spawn_trace_recorder(
     mut trace_rx: mpsc::UnboundedReceiver<ExecutionEvent>,
     store_clone: Arc<MfsStore>,
@@ -1147,7 +1147,7 @@ fn spawn_trace_recorder(
 ) {
     tokio::spawn(async move {
         while let Some(event) = trace_rx.recv().await {
-            // 0. Feed to AnomalyDetector for v2 runtime monitoring
+            // 0. 喂给 AnomalyDetector 用于 v2 运行时监控
             match &event {
                 ExecutionEvent::NodeCompleted {
                     node_name,
@@ -1177,7 +1177,7 @@ fn spawn_trace_recorder(
                 }
                 _ => {}
             }
-            // 1. Record to structured storage
+            // 1. 记录到结构化存储
             match &event {
                 ExecutionEvent::NodeCompleted {
                     node_name,
@@ -1215,7 +1215,7 @@ fn spawn_trace_recorder(
                 }
                 _ => {}
             }
-            // 2. Forward to original event stream
+            // 2. 转发到原始事件流
             if let Some(ref tx) = user_event_tx {
                 let _ = tx.send(event);
             }
@@ -1223,7 +1223,7 @@ fn spawn_trace_recorder(
     });
 }
 
-/// Current unix timestamp in seconds.
+/// 当前 Unix 时间戳（秒）。
 fn iter_now() -> u64 {
     SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)

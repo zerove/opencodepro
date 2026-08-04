@@ -1,12 +1,12 @@
-//! Probabilistic Planner — Monte Carlo path ranking and optimal selection.
-//! Uses simulation results to rank execution paths and select the best one
-//! considering success probability, cost, and risk tradeoffs.
+//! 概率规划器 — 蒙特卡洛路径排序与最优选择。
+//! 使用仿真结果对执行路径排序，并综合考虑成功概率、
+//! 成本与风险权衡选出最优路径。
 
 use crate::simulation::SimulationResult;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-/// Risk level for a path
+/// 路径的风险级别
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum RiskLevel {
     Low,
@@ -15,7 +15,7 @@ pub enum RiskLevel {
     Critical,
 }
 
-/// A ranked execution path with computed metrics
+/// 带已计算指标的排序执行路径
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RankedPath {
     pub path_id: String,
@@ -27,18 +27,18 @@ pub struct RankedPath {
     pub confidence: f64,
 }
 
-/// Configuration for the probabilistic planner
+/// 概率规划器的配置
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PlannerConfig {
-    /// Weight for success probability in composite score (0.0-1.0)
+    /// 综合得分中成功概率的权重（0.0-1.0）
     pub probability_weight: f64,
-    /// Weight for cost in composite score (0.0-1.0)
+    /// 综合得分中成本的权重（0.0-1.0）
     pub cost_weight: f64,
-    /// Weight for stability in composite score (0.0-1.0)
+    /// 综合得分中稳定性的权重（0.0-1.0）
     pub stability_weight: f64,
-    /// Maximum acceptable cost (normalize against this)
+    /// 可接受的最大成本（以此归一化）
     pub max_cost: u64,
-    /// Risk thresholds
+    /// 风险阈值
     pub risk_thresholds: RiskThresholds,
 }
 
@@ -54,7 +54,7 @@ impl Default for PlannerConfig {
     }
 }
 
-/// Risk thresholds for classification
+/// 用于分类的风险阈值
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RiskThresholds {
     pub low: f64,
@@ -72,7 +72,7 @@ impl Default for RiskThresholds {
     }
 }
 
-/// Experience record for biasing probabilities
+/// 用于偏置概率的历史经验记录
 #[derive(Debug, Clone)]
 pub struct ExperienceRecord {
     pub path_id: String,
@@ -80,10 +80,10 @@ pub struct ExperienceRecord {
     pub actual_cost: u64,
 }
 
-/// Probabilistic planner using Monte Carlo simulation results
+/// 使用蒙特卡洛仿真结果的概率规划器
 pub struct ProbabilisticPlanner {
     config: PlannerConfig,
-    /// Historical experience for probability adjustment
+    /// 用于概率调整的历史经验
     experience: Vec<ExperienceRecord>,
 }
 
@@ -102,7 +102,7 @@ impl ProbabilisticPlanner {
         Self { config, experience }
     }
 
-    /// Rank multiple paths by composite score (higher = better)
+    /// 按综合得分对多条路径排序（越高越好）
     pub fn rank_paths(&self, results: &[SimulationResult]) -> Vec<RankedPath> {
         let mut ranked: Vec<RankedPath> = results
             .iter()
@@ -118,13 +118,13 @@ impl ProbabilisticPlanner {
         ranked
     }
 
-    /// Select the optimal path considering cost/success tradeoffs
+    /// 综合考虑成本/成功权衡选择最优路径
     pub fn select_optimal_path(&self, results: &[SimulationResult]) -> Option<RankedPath> {
         if results.is_empty() {
             return None;
         }
         let ranked = self.rank_paths(results);
-        // Filter out paths with critical risk unless all are critical
+        // 过滤掉严重风险路径，除非全部都是严重风险
         let safe_paths: Vec<_> = ranked
             .iter()
             .filter(|p| p.risk_level != RiskLevel::Critical)
@@ -132,25 +132,25 @@ impl ProbabilisticPlanner {
             .collect();
 
         if safe_paths.is_empty() {
-            // All paths are critical risk, return the best of all
+            // 全部路径都是严重风险时，返回其中最优者
             ranked.into_iter().next()
         } else {
             safe_paths.into_iter().next()
         }
     }
 
-    /// Compute risk score for a single path (0.0 = low risk, 1.0 = high risk)
+    /// 计算单条路径的风险分数（0.0 = 低风险，1.0 = 高风险）
     pub fn compute_risk_score(&self, result: &SimulationResult) -> f64 {
-        // Risk = inverse of success probability, weighted by cost
+        // 风险 = 成功概率的倒数，按成本加权
         let prob_risk = 1.0 - result.success_probability;
         let cost_factor = (result.estimated_cost as f64 / self.config.max_cost as f64).min(1.0);
         let stability_risk = 1.0 - result.predicted_stability;
 
-        // Weighted combination
+        // 加权组合
         (prob_risk * 0.5 + cost_factor * 0.3 + stability_risk * 0.2).clamp(0.0, 1.0)
     }
 
-    /// Classify risk level from risk score
+    /// 从风险分数分类风险等级
     pub fn classify_risk(&self, risk_score: f64) -> RiskLevel {
         let t = &self.config.risk_thresholds;
         if risk_score <= (1.0 - t.low) {
@@ -164,7 +164,7 @@ impl ProbabilisticPlanner {
         }
     }
 
-    /// Adjust success probability based on historical experience
+    /// 基于历史经验调整成功概率
     pub fn adjust_probability_with_experience(&self, path_id: &str, base_probability: f64) -> f64 {
         let relevant: Vec<&ExperienceRecord> = self
             .experience
@@ -180,11 +180,11 @@ impl ProbabilisticPlanner {
         let total = relevant.len() as f64;
         let historical_rate = success_count / total;
 
-        // Bayesian blend: 60% simulation + 40% historical
+        // 贝叶斯混合：60% 仿真 + 40% 历史
         base_probability * 0.6 + historical_rate * 0.4
     }
 
-    /// Compute summary statistics for a set of paths
+    /// 计算一组路径的汇总统计
     pub fn summarize(&self, results: &[SimulationResult]) -> PathSummary {
         if results.is_empty() {
             return PathSummary::default();
@@ -219,7 +219,7 @@ impl ProbabilisticPlanner {
         let risk_score = self.compute_risk_score(result);
         let risk_level = self.classify_risk(risk_score);
 
-        // Composite score: higher is better
+        // 综合得分：越高越好
         let cost_norm = (result.estimated_cost as f64 / self.config.max_cost as f64).min(1.0);
         let composite = adj_prob * self.config.probability_weight
             + (1.0 - cost_norm) * self.config.cost_weight
@@ -237,7 +237,7 @@ impl ProbabilisticPlanner {
     }
 }
 
-/// Summary of path analysis
+/// 路径分析汇总
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct PathSummary {
     pub total_paths: usize,
@@ -287,7 +287,7 @@ mod tests {
         let results = test_results();
         let ranked = planner.rank_paths(&results);
         assert_eq!(ranked.len(), 3);
-        // Safe path should rank first due to high probability
+        // 安全路径应因高概率排第一
         assert_eq!(ranked[0].path_id, "safe");
     }
 
@@ -302,7 +302,7 @@ mod tests {
     #[test]
     fn test_risk_classification() {
         let planner = ProbabilisticPlanner::new(PlannerConfig::default());
-        // classify_risk: score <= 0.2=Low, <=0.4=Medium, <=0.6=High, else Critical
+        // classify_risk：得分 <= 0.2=低，<=0.4=中，<=0.6=高，其余为严重
         assert_eq!(planner.classify_risk(0.1), RiskLevel::Low);
         assert_eq!(planner.classify_risk(0.3), RiskLevel::Medium);
         assert_eq!(planner.classify_risk(0.5), RiskLevel::High);
@@ -333,8 +333,8 @@ mod tests {
             experiences,
         );
         let adjusted = planner.adjust_probability_with_experience("fast", 0.7);
-        // Historical success rate = 2/3 = 0.667
-        // Blended: 0.7 * 0.6 + 0.667 * 0.4 = 0.42 + 0.267 = 0.687
+        // 历史成功率 = 2/3 = 0.667
+        // 混合：0.7 * 0.6 + 0.667 * 0.4 = 0.42 + 0.267 = 0.687
         assert!((adjusted - 0.687).abs() < 0.01);
     }
 }

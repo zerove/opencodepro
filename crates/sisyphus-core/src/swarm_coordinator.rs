@@ -1,5 +1,5 @@
-//! SwarmCoordinator handles multi-agent collaboration for cognitive evolution.
-//! It implements the "Audit Loop" where specialized agents review and refine proposed changes.
+//! SwarmCoordinator 处理认知演进的 multi-agent 协作。
+//! 实现"审计循环"：专业代理审查并完善提出的变更。
 
 use crate::{
     intelligence_manager::IntelligenceManager, strategic_manager::StrategicManager, CoreError,
@@ -61,7 +61,7 @@ impl SwarmCoordinator {
         self.agents.write().push(agent);
     }
 
-    /// Implements the "Audit Loop": Architect proposes -> Auditor reviews -> Architect refines.
+    /// 实现"审计循环"：架构师提议 → 审计员审查 → 架构师完善。
     pub async fn coordinate_evolution(
         &self,
         goal: &str,
@@ -69,7 +69,7 @@ impl SwarmCoordinator {
     ) -> Result<SOPGraphConfig, CoreError> {
         tracing::info!("Starting Swarm Audit Loop for goal: {}", goal);
 
-        // 1. Identify participants
+        // 1. 识别参与者
         let (architect_id, architect_prompt, auditor_id, auditor_prompt) = {
             let agents = self.agents.read();
             let architect = agents
@@ -98,7 +98,7 @@ impl SwarmCoordinator {
             system_prompt: auditor_prompt,
         };
 
-        // 2. architect proposes an initial change
+        // 2. 架构师提出初始变更
         tracing::info!("Architect {} is proposing changes...", architect.id);
         let mut proposal = self
             .real_agent_proposal(&architect, goal, current_config)
@@ -111,7 +111,7 @@ impl SwarmCoordinator {
             iteration += 1;
             tracing::info!("Audit Iteration {}/{}", iteration, max_iterations);
 
-            // 3. auditor reviews the proposal
+            // 3. 审计员审查提案
             tracing::info!("Auditor {} is reviewing proposal...", auditor.id);
             let review = self.real_agent_review(&auditor, &proposal).await?;
 
@@ -125,7 +125,7 @@ impl SwarmCoordinator {
                 break;
             }
 
-            // 4. architect refines based on review
+            // 4. 架构师根据审查意见完善
             tracing::info!(
                 "Architect {} is refining proposal based on feedback...",
                 architect.id
@@ -138,7 +138,7 @@ impl SwarmCoordinator {
         Ok(proposal)
     }
 
-    // --- Simulation helpers (to be replaced by actual LLM calls via AgentChannel) ---
+    // --- 仿真辅助（后续将通过 AgentChannel 替换为真实 LLM 调用） ---
 
     async fn call_agent(
         &self,
@@ -249,20 +249,20 @@ pub struct AuditReview {
 }
 
 fn extract_json(text: &str) -> String {
-    // Try ```json ... ``` first
+    // 先尝试 ```json ... ```
     if let Some(start) = text.find("```json") {
         let rest = &text[start + 7..];
         if let Some(end) = rest.find("```") {
             return rest[..end].trim().to_string();
         }
     }
-    // Then try ``` ... ```
+    // 再尝试 ``` ... ```
     if let Some(start) = text.find("```") {
         let rest = &text[start + 3..];
         if let Some(end) = rest.find("```") {
             return rest[..end].trim().to_string();
         }
     }
-    // Fallback: return the whole text trimmed
+    // 兜底：返回去除首尾空白后的全文
     text.trim().to_string()
 }

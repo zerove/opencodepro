@@ -1,10 +1,10 @@
-//! Chaos Engineering framework for Sisyphus.
+//! Sisyphus 的混沌工程框架。
 //!
-//! Provides tools for:
-//! - Fault injection (timeouts, crashes, network failures)
-//! - DAG boundary condition testing
-//! - Storage concurrency stress testing
-//! - Agent team resilience verification
+//! 提供的工具：
+//! - 故障注入（超时、崩溃、网络故障）
+//! - DAG 边界条件测试
+//! - 存储并发压力测试
+//! - 代理团队韧性验证
 
 use crate::CoreError;
 use std::collections::hash_map::DefaultHasher;
@@ -15,44 +15,44 @@ use std::time::Duration;
 use tracing::info;
 
 // ---------------------------------------------------------------------------
-// Fault Injection
+// 故障注入
 // ---------------------------------------------------------------------------
 
-/// Types of faults that can be injected into the system.
+/// 可注入系统的故障类型。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum FaultType {
-    /// Simulate an LLM timeout (delay + error).
+    /// 模拟 LLM 超时（延迟 + 错误）。
     LlmTimeout,
-    /// Simulate an LLM returning garbage/unparseable response.
+    /// 模拟 LLM 返回垃圾/无法解析的响应。
     LlmGarbage,
-    /// Simulate a tool execution crash.
+    /// 模拟工具执行崩溃。
     ToolCrash,
-    /// Simulate a tool execution hang (never returns).
+    /// 模拟工具执行挂起（永不返回）。
     ToolHang,
-    /// Simulate a storage write failure.
+    /// 模拟存储写入失败。
     StorageWriteFailure,
-    /// Simulate a storage read failure.
+    /// 模拟存储读取失败。
     StorageReadFailure,
-    /// Simulate a network partition between components.
+    /// 模拟组件之间的网络分区。
     NetworkPartition,
-    /// Random delay injection (up to max_ms).
+    /// 随机延迟注入（最多 max_ms）。
     RandomDelay(u64),
 }
 
-/// Configuration for a chaos experiment.
+/// 混沌实验的配置。
 #[derive(Debug, Clone)]
 pub struct ChaosExperiment {
     pub name: String,
     pub fault_types: Vec<FaultType>,
-    /// Probability (0.0 - 1.0) of injecting fault per operation.
+    /// 每次操作注入故障的概率（0.0 - 1.0）。
     pub fault_probability: f64,
-    /// How long the experiment runs before auto-stop.
+    /// 实验自动停止前的运行时长。
     pub duration: Duration,
-    /// Whether to inject faults on all operations or just a targeted subset.
+    /// 是否对所有操作注入故障，还是仅针对目标子集。
     pub target_operations: Option<Vec<String>>,
 }
 
-/// Result of a chaos experiment.
+/// 混沌实验的结果。
 #[derive(Debug, Clone)]
 pub struct ChaosExperimentResult {
     pub name: String,
@@ -74,15 +74,15 @@ impl ChaosExperimentResult {
     }
 }
 
-/// A chaos experiment runner.
+/// 混沌实验运行器。
 pub struct ChaosRunner {
-    /// Whether the chaos injection is active.
+    /// 混沌注入是否处于激活状态。
     enabled: Arc<AtomicBool>,
-    /// Counter for injected faults.
+    /// 已注入故障的计数器。
     fault_count: Arc<AtomicU64>,
-    /// Counter for total operations.
+    /// 总操作数计数器。
     op_count: Arc<AtomicU64>,
-    /// Current experiment configuration.
+    /// 当前实验配置。
     current_experiment: parking_lot::Mutex<Option<ChaosExperiment>>,
 }
 
@@ -102,7 +102,7 @@ impl ChaosRunner {
         Self::default()
     }
 
-    /// Start a chaos experiment.
+    /// 启动混沌实验。
     pub fn start_experiment(&self, experiment: ChaosExperiment) {
         self.enabled.store(true, Ordering::SeqCst);
         self.fault_count.store(0, Ordering::SeqCst);
@@ -117,12 +117,12 @@ impl ChaosRunner {
         );
     }
 
-    /// Returns `true` if a chaos experiment is currently active.
+    /// 当前有混沌实验在运行时返回 `true`。
     pub fn is_running(&self) -> bool {
         self.enabled.load(Ordering::SeqCst)
     }
 
-    /// Stop the current experiment and return results.
+    /// 停止当前实验并返回结果。
     pub fn stop_experiment(&self) -> Option<ChaosExperimentResult> {
         self.enabled.store(false, Ordering::SeqCst);
         let experiment = self.current_experiment.lock().take();
@@ -142,8 +142,8 @@ impl ChaosRunner {
         })
     }
 
-    /// Check if chaos is active, and if so, maybe inject a fault.
-    /// Returns `Some(error)` if a fault should be injected, `None` if normal operation.
+    /// 检查混沌是否激活，若激活则可能注入故障。
+    /// 需要注入故障时返回 `Some(error)`，正常操作时返回 `None`。
     pub fn maybe_inject(&self, op_name: &str) -> Option<CoreError> {
         if !self.enabled.load(Ordering::SeqCst) {
             return None;
@@ -154,14 +154,14 @@ impl ChaosRunner {
         let experiment = self.current_experiment.lock();
         let exp = experiment.as_ref()?;
 
-        // Check if operation is targeted
+        // 检查操作是否为目标操作
         if let Some(ref targets) = exp.target_operations {
             if !targets.iter().any(|t| op_name.contains(t)) {
                 return None;
             }
         }
 
-        // Probability check
+        // 概率检查
         let roll = simple_random(
             op_name,
             &format!("op_{}", self.op_count.load(Ordering::Relaxed)),
@@ -170,7 +170,7 @@ impl ChaosRunner {
             return None;
         }
 
-        // Select a random fault type from the configured list
+        // 从配置列表中随机选择故障类型
         if exp.fault_types.is_empty() {
             return None;
         }
@@ -207,15 +207,15 @@ impl ChaosRunner {
 }
 
 // ---------------------------------------------------------------------------
-// DAG Boundary Conditions
+// DAG 边界条件
 // ---------------------------------------------------------------------------
 
-/// Test helpers for DAG boundary conditions.
+/// DAG 边界条件的测试辅助工具。
 pub mod dag_test {
     use sisyphus_types::{SOPGraph, SOPGraphConfig, WasmSOPNode};
     use std::sync::Arc;
 
-    /// Creates a DAG with a single node.
+    /// 创建只有一个节点的 DAG。
     pub fn single_node(name: &str, tool_id: &str) -> SOPGraphConfig {
         let mut graph = SOPGraph::new();
         graph.add_node(Arc::new(WasmSOPNode {
@@ -227,7 +227,7 @@ pub mod dag_test {
         SOPGraphConfig::from_graph(&graph).unwrap()
     }
 
-    /// Creates a linear chain DAG with `n` nodes.
+    /// 创建包含 `n` 个节点的线性链 DAG。
     pub fn linear_chain(n: usize) -> SOPGraphConfig {
         let mut graph = SOPGraph::new();
         let mut indices = Vec::with_capacity(n);
@@ -246,7 +246,7 @@ pub mod dag_test {
         SOPGraphConfig::from_graph(&graph).unwrap()
     }
 
-    /// Creates a diamond DAG: root -> [left, right] -> merge.
+    /// 创建菱形 DAG：root -> [left, right] -> merge。
     pub fn diamond() -> SOPGraphConfig {
         let mut graph = SOPGraph::new();
         let root = graph.add_node(Arc::new(WasmSOPNode {
@@ -280,7 +280,7 @@ pub mod dag_test {
         SOPGraphConfig::from_graph(&graph).unwrap()
     }
 
-    /// Creates a wide DAG with 1 root fanning out to `n` parallel leaves.
+    /// 创建宽 DAG：1 个根节点扇出到 `n` 个并行叶节点。
     pub fn wide_fanout(n: usize) -> SOPGraphConfig {
         let mut graph = SOPGraph::new();
         let root = graph.add_node(Arc::new(WasmSOPNode {
@@ -303,10 +303,10 @@ pub mod dag_test {
 }
 
 // ---------------------------------------------------------------------------
-// Helpers
+// 辅助函数
 // ---------------------------------------------------------------------------
 
-/// Deterministic pseudo-random value in [0.0, 1.0) based on input strings.
+/// 基于输入字符串的确定性伪随机值，范围 [0.0, 1.0)。
 fn simple_random(seed1: &str, seed2: &str) -> f64 {
     let mut hasher = DefaultHasher::new();
     seed1.hash(&mut hasher);
@@ -315,7 +315,7 @@ fn simple_random(seed1: &str, seed2: &str) -> f64 {
     (hash as f64) / (u64::MAX as f64)
 }
 
-/// Deterministic pseudo-random usize in [0, max) based on input strings.
+/// 基于输入字符串的确定性伪随机 usize，范围 [0, max)。
 fn simple_usize_random(seed: &str, max: usize) -> usize {
     let mut hasher = DefaultHasher::new();
     seed.hash(&mut hasher);
@@ -327,7 +327,7 @@ fn simple_usize_random(seed: &str, max: usize) -> usize {
     }
 }
 
-/// Deterministic pseudo-random u64 in [0, max) based on input strings.
+/// 基于输入字符串的确定性伪随机 u64，范围 [0, max)。
 fn simple_u64_random(seed: &str, max: u64) -> u64 {
     let mut hasher = DefaultHasher::new();
     seed.hash(&mut hasher);
@@ -365,7 +365,7 @@ pub async fn make_test_store() -> Arc<sisyphus_mem::MfsStore> {
 }
 
 // ---------------------------------------------------------------------------
-// Tests
+// 测试
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
@@ -390,7 +390,7 @@ mod tests {
             target_operations: None,
         });
 
-        // With 1.0 probability, should always inject
+        // 概率为 1.0 时，应始终注入
         let result = runner.maybe_inject("execute");
         assert!(result.is_some(), "Should inject when enabled");
 
@@ -412,7 +412,7 @@ mod tests {
             target_operations: None,
         });
 
-        // With 0.0 probability, should never inject
+        // 概率为 0.0 时，不应注入
         for _ in 0..100 {
             assert!(
                 runner.maybe_inject("test").is_none(),
@@ -436,12 +436,12 @@ mod tests {
             target_operations: Some(vec!["crash_me".into()]),
         });
 
-        // Should NOT inject for non-targeted operation
+        // 非目标操作不应注入
         assert!(
             runner.maybe_inject("safe_op").is_none(),
             "Should not inject on non-targeted op"
         );
-        // Should inject for targeted operation
+        // 目标操作应注入
         assert!(
             runner.maybe_inject("crash_me").is_some(),
             "Should inject on targeted op"
@@ -472,7 +472,7 @@ mod tests {
             total_ops += 1;
         }
 
-        // With 0.5 probability, expect roughly 50% faults
+        // 概率为 0.5 时，预期约 50% 的故障率
         let rate = total_faults as f64 / total_ops as f64;
         assert!(
             (rate - 0.5).abs() < 0.15,
@@ -514,7 +514,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_dag_linear_chain_boundary() {
-        // Test edge cases: empty, single, huge
+        // 测试边界情况：空、单个、巨大
         let empty = dag_test::linear_chain(0);
         assert_eq!(empty.nodes.len(), 0);
         assert_eq!(empty.edges.len(), 0);
@@ -539,7 +539,7 @@ mod tests {
         let store2 = store.clone();
         let store3 = store.clone();
 
-        // Concurrent writes
+        // 并发写入
         let h1 = tokio::spawn(async move {
             store1.set_state_json("proj1", key, value).await.unwrap();
         });
@@ -552,7 +552,7 @@ mod tests {
 
         tokio::try_join!(h1, h2, h3).unwrap();
 
-        // Verify isolation
+        // 验证隔离性
         let result = store.get_state_json("proj1", key).await.unwrap();
         assert!(result.is_some(), "Project should have its own state");
     }

@@ -1,8 +1,8 @@
-//! StrategicManager handles the high-level cognitive loop (predict -> execute -> reflect -> evolve).
-//! It coordinates between the IntelligenceManager and ExecutionManager to achieve convergence.
+//! StrategicManager 处理高层认知循环（预测 → 执行 → 反思 → 演进）。
+//! 协调 IntelligenceManager 与 ExecutionManager 以达成收敛。
 //!
-//! The cognitive loop body lives in the [`cognitive_loop`] submodule; this module
-//! holds the manager state, construction, and supporting types.
+//! 认知循环主体位于 [`cognitive_loop`] 子模块；本模块
+//! 持有管理器状态、构建逻辑与支撑类型。
 
 mod cognitive_loop;
 
@@ -20,7 +20,7 @@ use crate::{
     execution_manager::ExecutionManager, CoreError, ExecutionContext, IntelligenceManager,
 };
 
-/// A single iteration in a cognitive execution cycle.
+/// 认知执行循环中的单次迭代。
 #[derive(Clone, Debug)]
 pub struct CognitiveIteration {
     pub iteration: usize,
@@ -30,7 +30,7 @@ pub struct CognitiveIteration {
     pub evolved: bool,
 }
 
-/// Full report from a recursive cognitive execution.
+/// 递归认知执行的完整报告。
 #[derive(Debug, Clone)]
 pub struct CognitiveReport {
     pub iterations: usize,
@@ -89,15 +89,15 @@ pub struct StrategicManager {
     pub intervention_manager: Arc<crate::intervention_manager::InterventionManager>,
     pub internalization_manager: Arc<crate::internalization_manager::InternalizationManager>,
     pub visual_manager: Option<Arc<sisyphus_visual::VisualPerceptionManager>>,
-    /// Probabilistic path planner using Monte Carlo simulation results
+    /// 使用蒙特卡洛仿真结果的概率路径规划器
     pub probabilistic_planner: ProbabilisticPlanner,
-    /// Failure pattern library for targeted SOP evolution
+    /// 用于针对性 SOP 演进的失败模式库
     pub failure_pattern_library: Arc<parking_lot::RwLock<FailurePatternLibrary>>,
-    /// Deep reflector for multi-dimensional deviation analysis
+    /// 用于多维偏差分析的深度反思器
     pub deep_reflector: Arc<parking_lot::RwLock<DeepReflector>>,
-    /// Cognitive loop v2: runtime anomaly detection
+    /// 认知循环 v2：运行时异常检测
     pub anomaly_detector: Arc<AnomalyDetector>,
-    /// Cognitive loop v2: adaptive depth control
+    /// 认知循环 v2：自适应深度控制
     pub depth_controller: AdaptiveDepthController,
 }
 

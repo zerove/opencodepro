@@ -1,4 +1,4 @@
-//! Autonomous verification for generated tools.
+//! 生成工具的自主验证。
 
 use serde::{Deserialize, Serialize};
 use sisyphus_tools_llm::LlmClient;
@@ -25,7 +25,7 @@ impl ToolVerifier {
         Self { llm_client }
     }
 
-    /// Verifies a compiled WASM tool against its specification.
+    /// 对照规范验证已编译的 WASM 工具。
     pub async fn verify(
         &self,
         spec: &ToolSpec,
@@ -36,19 +36,19 @@ impl ToolVerifier {
         let mut sandbox_stable = true;
         let mut semantic_match = true;
 
-        // 1. Unit Testing via Success Criteria
-        // In a real system, we would generate test cases from spec.success_criteria
-        // and run them via WasmToolExecutor.
+        // 1. 基于成功标准的单元测试
+        // 真实系统中，我们会从 spec.success_criteria 生成测试用例
+        // 并通过 WasmToolExecutor 运行。
 
-        // 2. Sandbox Stability Check
-        // We simulate a heavy load or check for panic/OOM
+        // 2. 沙箱稳定性检查
+        // 模拟重负载或检查 panic/OOM
         if let Err(e) = self.check_sandbox_stability(wasm_path).await {
             sandbox_stable = false;
             failures.push(format!("Sandbox stability check failed: {e}"));
         }
 
-        // 3. Semantic Validation via LLM
-        // Ask the LLM if the observed behavior matches the specification's intent
+        // 3. 通过 LLM 的语义验证
+        // 询问 LLM 观测行为是否与规范意图一致
         let semantic_score = self.audit_semantics(spec, &failures).await?;
         if semantic_score < 0.8 {
             semantic_match = false;
@@ -77,7 +77,7 @@ impl ToolVerifier {
     }
 
     async fn check_sandbox_stability(&self, _wasm_path: &PathBuf) -> Result<(), crate::IntelError> {
-        // Integration point: Use wasmtime to check for resource limits
+        // 集成点：使用 wasmtime 检查资源限制
         Ok(())
     }
 

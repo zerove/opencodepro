@@ -1,8 +1,8 @@
 #![allow(clippy::cast_precision_loss)]
-//! Sisyphus CLI — command-line interface for the Sisyphus cognitive engine.
+//! Sisyphus CLI — Sisyphus 认知引擎的命令行界面。
 //!
-//! This library crate exposes all CLI modules for testing.
-//! The `main.rs` binary is a thin entry point that delegates here.
+//! 该库 crate 暴露全部 CLI 模块以便测试。
+//! `main.rs` 二进制是委托到这里的薄入口。
 
 pub mod bridge;
 pub mod build;

@@ -8,7 +8,7 @@ use ratatui::{
 use super::super::widgets;
 use super::super::{App, DevFocus};
 
-// ── Help Dialog ────────────────────────────────────────
+// ── 帮助对话框 ────────────────────────────────────────
 
 pub(super) fn render_workspace_list_dialog(frame: &mut ratatui::Frame, area: Rect, app: &App) {
     let theme = app.theme();
@@ -278,7 +278,7 @@ pub(super) fn render_help_dialog(frame: &mut ratatui::Frame, area: Rect, app: &A
     frame.render_widget(para, area);
 }
 
-// ── Session List Dialog ───────────────────────────────
+// ── 会话列表对话框 ───────────────────────────────
 
 pub(super) fn render_session_list_dialog(frame: &mut ratatui::Frame, area: Rect, app: &App) {
     let theme = app.theme();
@@ -305,7 +305,7 @@ pub(super) fn render_session_list_dialog(frame: &mut ratatui::Frame, area: Rect,
     );
 }
 
-// ── Todos Dialog ─────────────────────────────────────
+// ── 待办对话框 ─────────────────────────────────────
 
 pub(super) fn render_todos_dialog(frame: &mut ratatui::Frame, area: Rect, app: &App) {
     let theme = app.theme();
@@ -362,7 +362,7 @@ pub(super) fn render_todos_dialog(frame: &mut ratatui::Frame, area: Rect, app: &
     );
 }
 
-// ── LSP Dialog ───────────────────────────────────────
+// ── LSP 对话框 ───────────────────────────────────────
 
 pub(super) fn render_lsp_dialog(frame: &mut ratatui::Frame, area: Rect, app: &App) {
     let theme = app.theme();
@@ -417,7 +417,7 @@ pub(super) fn render_lsp_dialog(frame: &mut ratatui::Frame, area: Rect, app: &Ap
     );
 }
 
-// ── SOP Dialog ────────────────────────────────────────
+// ── SOP 对话框 ────────────────────────────────────────
 
 pub(super) fn render_sop_dialog(frame: &mut ratatui::Frame, area: Rect, app: &App) {
     let theme = app.theme();
@@ -453,7 +453,7 @@ pub(super) fn render_sop_dialog(frame: &mut ratatui::Frame, area: Rect, app: &Ap
     widgets::render_list(frame, area, items, app.sop_sel, " SOP List ".into(), &theme);
 }
 
-// ── Roadmap Dialog ────────────────────────────────────
+// ── 路线图对话框 ────────────────────────────────────
 
 pub(super) fn render_roadmap_dialog(frame: &mut ratatui::Frame, area: Rect, app: &App) {
     let theme = app.theme();
@@ -469,7 +469,7 @@ pub(super) fn render_roadmap_dialog(frame: &mut ratatui::Frame, area: Rect, app:
     ])
     .split(area);
 
-    // 1. Roadmap Progress Section
+    // 1. 路线图进度区
     let roadmap_lines = if let Some(p) = &app.roadmap_projection {
         let mut lines = vec![Line::from(Span::styled(
             "── Current Progress ──",
@@ -493,7 +493,7 @@ pub(super) fn render_roadmap_dialog(frame: &mut ratatui::Frame, area: Rect, app:
         .scroll((app.roadmap_scroll as u16, 0));
     frame.render_widget(roadmap_para, layout[0]);
 
-    // 2. Separator
+    // 2. 分隔线
     frame.render_widget(
         Paragraph::new(
             "────────────────────────────────────────────────────────────────────────────────",
@@ -502,7 +502,7 @@ pub(super) fn render_roadmap_dialog(frame: &mut ratatui::Frame, area: Rect, app:
         layout[1],
     );
 
-    // 3. Strategic Proposals Section
+    // 3. 战略提案区
     let proposal_lines = if let Some(b) = &app.roadmap_bottlenecks {
         let mut lines = vec![Line::from(Span::styled(
             "── Pending Strategic Proposals ──",
@@ -530,11 +530,11 @@ pub(super) fn render_roadmap_dialog(frame: &mut ratatui::Frame, area: Rect, app:
         .wrap(Wrap { trim: false });
     frame.render_widget(prop_para, layout[2]);
 
-    // Render the main block around the layout
+    // 在布局外围渲染主块
     frame.render_widget(block, area);
 }
 
-// ── Confirm Dialog ─────────────────────────────────────
+// ── 确认对话框 ─────────────────────────────────────
 
 pub(super) fn render_confirm_dialog(frame: &mut ratatui::Frame, area: Rect, app: &App) {
     let theme = app.theme();
@@ -578,7 +578,7 @@ pub(super) fn render_skill_market_dialog(frame: &mut ratatui::Frame, area: Rect,
     ])
     .split(area);
 
-    // 1. Status
+    // 1. 状态
     let status_text = Text::from(Line::from(Span::styled(
         format!(" Status: {} ", app.skill_market_status),
         Style::default().fg(theme.info),
@@ -588,7 +588,7 @@ pub(super) fn render_skill_market_dialog(frame: &mut ratatui::Frame, area: Rect,
         layout[0],
     );
 
-    // 2. Available Skills
+    // 2. 可用技能
     let available_items: Vec<ListItem> = app
         .skill_market_available
         .iter()
@@ -626,7 +626,7 @@ pub(super) fn render_skill_market_dialog(frame: &mut ratatui::Frame, area: Rect,
         &mut ratatui::widgets::ListState::default().with_selected(Some(app.skill_market_sel)),
     );
 
-    // 3. Separator
+    // 3. 分隔线
     frame.render_widget(
         Paragraph::new(
             "────────────────────────────────────────────────────────────────────────────────",
@@ -635,7 +635,7 @@ pub(super) fn render_skill_market_dialog(frame: &mut ratatui::Frame, area: Rect,
         layout[2],
     );
 
-    // 4. Installed Skills
+    // 4. 已安装技能
     let installed_offset = app.skill_market_available.len();
     let installed_items: Vec<ListItem> = app
         .skill_market_installed
@@ -716,7 +716,7 @@ pub(super) fn render_rename_dialog(frame: &mut ratatui::Frame, area: Rect, app: 
     frame.render_widget(hint, layout[1]);
 }
 
-// ── Dev Dialog ────────────────────────────────────────
+// ── 开发对话框 ────────────────────────────────────────
 
 pub(super) fn render_dev_dialog(frame: &mut ratatui::Frame, area: Rect, app: &App) {
     let theme = app.theme();
@@ -735,7 +735,7 @@ pub(super) fn render_dev_dialog(frame: &mut ratatui::Frame, area: Rect, app: &Ap
         }
     };
 
-    // Show report if available
+    // 报告可用时显示
     if let Some(report) = &app.dev_report {
         let lines: Vec<Line> = report
             .lines()
@@ -758,7 +758,7 @@ pub(super) fn render_dev_dialog(frame: &mut ratatui::Frame, area: Rect, app: &Ap
         return;
     }
 
-    // Show running state
+    // 显示运行状态
     if app.dev_status == "running" {
         let text = Text::from(vec![
             Line::from(Span::styled(
@@ -780,10 +780,10 @@ pub(super) fn render_dev_dialog(frame: &mut ratatui::Frame, area: Rect, app: &Ap
         return;
     }
 
-    // Show input form
+    // 显示输入表单
     let mut lines = Vec::new();
 
-    // Goal
+    // 目标
     let goal_label = Span::styled("Goal:", focus_style(app.dev_focus == DevFocus::Goal));
     let goal_val = if app.dev_goal.is_empty() {
         Span::styled(" <type your dev goal>", Style::default().fg(theme.muted))
@@ -793,7 +793,7 @@ pub(super) fn render_dev_dialog(frame: &mut ratatui::Frame, area: Rect, app: &Ap
     lines.push(Line::from(vec![goal_label, goal_val]));
     lines.push(Line::from(""));
 
-    // Context
+    // 上下文
     let ctx_label = Span::styled("Context:", focus_style(app.dev_focus == DevFocus::Context));
     let ctx_val = if app.dev_context.is_empty() {
         Span::styled(
@@ -806,7 +806,7 @@ pub(super) fn render_dev_dialog(frame: &mut ratatui::Frame, area: Rect, app: &Ap
     lines.push(Line::from(vec![ctx_label, ctx_val]));
     lines.push(Line::from(""));
 
-    // Parallel
+    // 并行
     let par_checked = if app.dev_parallel { "[x]" } else { "[ ]" };
     let par_label = Span::styled(
         format!("Parallel: {par_checked}  (run steps concurrently, max 4)"),
@@ -815,7 +815,7 @@ pub(super) fn render_dev_dialog(frame: &mut ratatui::Frame, area: Rect, app: &Ap
     lines.push(Line::from(par_label));
     lines.push(Line::from(""));
 
-    // Resume
+    // 恢复
     let res_checked = if app.dev_resume { "[x]" } else { "[ ]" };
     let res_label = Span::styled(
         format!("Resume: {res_checked}  (skip completed steps from checkpoint)"),
@@ -824,7 +824,7 @@ pub(super) fn render_dev_dialog(frame: &mut ratatui::Frame, area: Rect, app: &Ap
     lines.push(Line::from(res_label));
     lines.push(Line::from(""));
 
-    // Run button
+    // 运行按钮
     let run_style = if app.dev_focus == DevFocus::Run {
         Style::default()
             .fg(theme.secondary)
@@ -871,7 +871,7 @@ pub(super) fn render_trace_dialog(frame: &mut ratatui::Frame, area: Rect, app: &
         return;
     }
 
-    // Layout: table on top, optional output detail below
+    // 布局：上方表格，下方可选输出详情
     let (table_area, detail_area) = if app.sop_trace_detail.is_some() {
         let chunks =
             Layout::vertical([Constraint::Percentage(60), Constraint::Percentage(40)]).split(area);
@@ -945,7 +945,7 @@ pub(super) fn render_trace_dialog(frame: &mut ratatui::Frame, area: Rect, app: &
         &mut ratatui::widgets::TableState::default().with_selected(Some(app.sop_trace_scroll)),
     );
 
-    // Output detail panel
+    // 输出详情面板
     if let Some(ref output) = app.sop_trace_detail {
         let detail_block = Block::default()
             .borders(Borders::ALL)

@@ -1,4 +1,4 @@
-//! Task complexity analysis for dynamic cognitive depth adjustment.
+//! 任务复杂度分析，用于动态认知深度调整。
 
 use sisyphus_types::{experience::ExperienceBank, SOPGraph};
 use std::sync::Arc;
@@ -29,13 +29,13 @@ impl CognitiveDepth {
 pub struct ComplexityAnalyzer;
 
 impl ComplexityAnalyzer {
-    /// Analyzes the complexity of a goal and its current SOP representation.
+    /// 分析目标及其当前 SOP 表示的复杂度。
     pub async fn analyze(
         experience_bank: Arc<dyn ExperienceBank>,
         sop_graph: &SOPGraph,
         goal_text: &str,
     ) -> CognitiveDepth {
-        // 1. Structural Complexity (0.0 to 1.0)
+        // 1. 结构复杂度（0.0 到 1.0）
         let node_count = sop_graph.graph.node_count();
         let structural_score = if node_count <= 3 {
             0.1
@@ -47,8 +47,8 @@ impl ComplexityAnalyzer {
             1.0
         };
 
-        // 2. Semantic Rarity (0.0 to 1.0)
-        // If we have many successful experiences for this goal, it's a "Low" complexity task.
+        // 2. 语义稀有度（0.0 到 1.0）
+        // 若该目标有大量成功经验，则为"低"复杂度任务。
         let mut rarity_score = 0.5;
         let query = sisyphus_types::experience::ExperienceQuery {
             query_text: goal_text.to_string(),
@@ -70,7 +70,7 @@ impl ComplexityAnalyzer {
             }
         }
 
-        // Final combined score
+        // 最终综合得分
         let final_score = (structural_score * 0.4) + (rarity_score * 0.6);
 
         if final_score < 0.3 {

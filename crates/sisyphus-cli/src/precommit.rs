@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use std::path::PathBuf;
 
-/// Resolve the git repo root from the given directory (or cwd).
+/// 从给定目录（或 cwd）解析 git 仓库根目录。
 fn resolve_repo(dir: Option<PathBuf>) -> Result<PathBuf> {
     let base = match dir {
         Some(p) => p,

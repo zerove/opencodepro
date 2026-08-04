@@ -1,4 +1,4 @@
-//! Goal decomposition strategies: LLM-driven with keyword fallback.
+//! 目标分解策略：LLM 驱动，带关键词回退。
 
 use crate::{classify_goal, ActionType};
 use async_trait::async_trait;

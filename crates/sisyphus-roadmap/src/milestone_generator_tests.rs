@@ -80,7 +80,7 @@ async fn test_generate_milestones_parses_llm_response() {
     assert_eq!(milestones[0].phases[0].goals.len(), 2);
     assert_eq!(milestones[1].phases[0].goals[0].goal_id, "m2_p1_g1");
 
-    // Verify persisted
+    // 验证已持久化
     let project = mgr.get_project("p1").await.unwrap().unwrap();
     assert_eq!(project.roadmap.milestones.len(), 2);
 }
@@ -106,7 +106,7 @@ async fn test_propose_refinements_returns_suggestions() {
     let (mgr, _store) = setup_manager().await;
     mgr.create_project("p3", "Refine", "desc").await.unwrap();
 
-    // Add a milestone with goals
+    // 添加带目标的里程碑
     use sisyphus_types::{GoalRef, MilestoneStatus};
     let goal = GoalRef {
         goal_id: "g1".into(),
@@ -155,7 +155,7 @@ async fn test_fill_roadmap_gaps() {
     let (mgr, _store) = setup_manager().await;
     mgr.create_project("p4", "Gap Fill", "desc").await.unwrap();
 
-    // Add one existing milestone
+    // 添加一个已有里程碑
     let ms = Milestone {
         id: "m1".into(),
         name: "Foundation".into(),
@@ -195,7 +195,7 @@ async fn test_fill_roadmap_gaps() {
     assert_eq!(new_ms.len(), 1);
     assert_eq!(new_ms[0].name, "Testing & QA");
 
-    // Verify both milestones exist
+    // 验证两个里程碑都存在
     let project = mgr.get_project("p4").await.unwrap().unwrap();
     assert_eq!(project.roadmap.milestones.len(), 2);
 }

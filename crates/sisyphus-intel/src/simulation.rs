@@ -9,15 +9,15 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-/// Maximum time to wait for a single LLM audit call in [`LlmLogicalSimulator`].
+/// LlmLogicalSimulator 中单次 LLM 审计调用的最长等待时间。
 ///
-/// Kept short so that an unreachable LLM degrades the logical audit to a
-/// heuristic pass instead of blocking the cognitive loop for the full HTTP
-/// client timeout (up to 60s per call).
+/// 保持较短，使不可达的 LLM 将逻辑审计降级为
+/// 启发式通过，而不是阻碍认知循环直到完整的 HTTP
+/// 客户端超时（每次调用最多 60 秒）。
 const LLM_AUDIT_TIMEOUT: Duration = Duration::from_secs(2);
 
 // ---------------------------------------------------------------------------
-// Simulation types
+// 仿真类型
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -83,14 +83,14 @@ pub trait Simulator: Send + Sync {
 }
 
 // ---------------------------------------------------------------------------
-// MonteCarloSimulator — Experience-weighted random-walk simulation
+// MonteCarloSimulator — 经验加权随机游走仿真
 // ---------------------------------------------------------------------------
 //
-// Combines Monte Carlo sampling with historical experience:
-// - When state_store is available, queries past execution records to bias
-//   edge transition probabilities and cost estimates.
-// - Without history, falls back to a uniform random walk.
-// - Uses Rayon for parallel iterations.
+// 结合蒙特卡洛采样与历史经验：
+// - state_store 可用时，查询过去执行记录以偏置
+//   边转移概率与成本估算。
+// - 无历史时，回退到均匀随机游走。
+// - 使用 Rayon 并行迭代。
 
 #[derive(Clone)]
 pub struct LlmLogicalSimulator {
@@ -119,15 +119,15 @@ impl LogicalSimulator for LlmLogicalSimulator {
         let mut virtual_context: HashMap<String, String> = HashMap::new();
         let mut flaws = Vec::new();
         let mut predicted_path = Vec::new();
-        // Once the LLM fails (timeout / error) we stop calling it and fall back
-        // to heuristic predictions for the remaining nodes, so an unreachable
-        // LLM can never stall the cognitive loop.
+        // LLM 一旦失败（超时/错误），我们停止调用并回退到
+        // 对剩余节点的启发式预测，使不可达的 LLM
+        // 永远不会拖慢认知循环。
         let mut llm_available = true;
 
-        // Process nodes in topological order
+        // 按拓扑顺序处理节点
         let node_indices: Vec<_> = graph.graph.node_indices().collect();
-        // Note: In a real implementation, we should use a proper topological sort.
-        // For now, we assume the indices are roughly ordered or use petgraph's topo_sort.
+        // 注意：真实实现中应使用正确的拓扑排序。
+        // 目前假定索引大致有序，或使用 petgraph 的 topo_sort。
 
         for idx in node_indices {
             let node_weight = graph
@@ -136,7 +136,7 @@ impl LogicalSimulator for LlmLogicalSimulator {
                 .ok_or_else(|| "Node weight missing".to_string())?;
             let node_name = node_weight.name().to_string();
 
-            // Collect inputs from predecessors
+            // 从前驱节点收集输入
             let mut inputs = HashMap::new();
             for edge in graph
                 .graph
@@ -151,7 +151,7 @@ impl LogicalSimulator for LlmLogicalSimulator {
                 }
             }
 
-            // Prompt LLM to predict output and check for flaws
+            // 提示 LLM 预测输出并检查缺陷
             let prompt = format!(
                 "Goal: {}\nSOP ID: {}\nNode: {}\nInputs: {:?}\n\nPredict the output of this node and check for any logical flaws (e.g. missing required input, type mismatch). \
                 Respond in JSON format: {{\"output\": \"...\", \"flaw\": \"...\", \"severity\": \"Critical|Warning|Info\", \"confidence\": 0.0-1.0}}",
@@ -192,9 +192,9 @@ impl LogicalSimulator for LlmLogicalSimulator {
                 None
             };
 
-            // Heuristic fallback when the LLM is unavailable: assume the node
-            // succeeds and record an informational flaw so the degradation is
-            // observable in the simulation result.
+            // LLM 不可用时的启发式回退：假定节点成功，
+            // 并记录一个信息性缺陷，使降级可在
+            // 仿真结果中观测到。
             let response = match response {
                 Some(resp) => resp,
                 None => {
@@ -290,7 +290,7 @@ impl MctsNode {
         }
         let success_rate = self.total_reward / self.visit_count;
         let avg_cost = self.total_cost / self.visit_count;
-        // Favor paths with higher success rate and lower average cost
+        // 偏好成功率更高、平均成本更低的路径
         let exploitation = success_rate / (avg_cost.max(1.0) / 1000.0).max(0.1);
         let exploration = (2.0 * parent_visit_count.ln()).sqrt() / self.visit_count.sqrt();
         exploitation + 1.41 * exploration
@@ -355,7 +355,7 @@ impl MonteCarloSimulator {
         let mut current_node_arc = Arc::clone(&root);
         let mut current_idx = graph.start_node;
 
-        // 1. Selection
+        // 1. 选择
         loop {
             let (next_idx, next_node_arc) = {
                 let probs = self
@@ -420,7 +420,7 @@ impl MonteCarloSimulator {
             current_node_arc = next_node_arc;
         }
 
-        // 2. Simulation (Random Walk)
+        // 2. 仿真（随机游走）
         let mut sim_prob = 1.0;
         let mut sim_cost = 0u64;
         let mut sim_current = current_idx;
@@ -470,7 +470,7 @@ impl MonteCarloSimulator {
         Ok((path, reward, sim_cost as f64))
     }
 
-    /// Calculate transition probabilities for a node based on its type and history.
+    /// 基于节点类型与历史计算转移概率。
     async fn get_transition_probabilities(
         &self,
         graph: &SOPGraph,
@@ -517,7 +517,7 @@ impl MonteCarloSimulator {
                         );
                         total_weight += default_prob;
 
-                        // Bias weights based on historical experience from the bank
+                        // 基于经验库中的历史经验偏置权重
                         if let Some(ref bank) = self.experience_bank {
                             let query_text = goal_text.unwrap_or(sop_id);
                             let context_hash = format!("{:x}", md5::compute(query_text));
@@ -607,7 +607,7 @@ impl Simulator for MonteCarloSimulator {
         let graph_arc = Arc::clone(&graph);
         let sop_id_arc = Arc::new(sop_id.to_string());
 
-        // --- Experience prior ---
+        // --- 经验先验 ---
         let (hist_success_rate, _hist_avg_cost) = if let Some(ref store) = self.state_store {
             let history_key = format!("history:{}", sop_id);
             match store.get_state_json(project_id, &history_key).await {
@@ -636,7 +636,7 @@ impl Simulator for MonteCarloSimulator {
 
         let root = Arc::new(std::sync::Mutex::new(MctsNode::new()));
 
-        // --- Parallel Batched Simulation ---
+        // --- 并行批量仿真 ---
         let batch_size = 100;
         let num_batches = self.iterations.div_ceil(batch_size);
         let mut batch_handles = Vec::new();
@@ -705,7 +705,7 @@ impl Simulator for MonteCarloSimulator {
             }
         }
 
-        // Extract best path (Greedy)
+        // 提取最优路径（贪心）
         let mut best_path = Vec::new();
         let mut curr_node_arc = Arc::clone(&root);
         let mut curr_idx = start_node_idx;

@@ -1,11 +1,11 @@
 // ---------------------------------------------------------------------------
-// Phase 3 — Strategic Reflection Loop
+// 阶段 3 — 战略反思循环
 //
-// A higher-order reflection layer that runs ON TOP of the tactical cognitive
-// loop. Instead of analyzing a single SOP execution trace, it examines the
-// **entire roadmap trajectory** — milestone progression, execution outcome
-// patterns, health trends — and produces LLM-augmented strategic insights
-// with actionable recommendations.
+// 运行在战术认知循环之上的高阶反思层。
+// 它不分析单次 SOP 执行轨迹，而是审视
+// **完整路线图轨迹** — 里程碑进展、执行结果
+// 模式、健康趋势 — 并产出 LLM 增强的战略洞察
+// 与可执行建议。
 // ---------------------------------------------------------------------------
 
 use crate::{ExecutionOutcome, RoadmapError, RoadmapManager};
@@ -14,78 +14,78 @@ use sisyphus_tools_llm::metis::LlmClient;
 use std::sync::Arc;
 
 // ---------------------------------------------------------------------------
-// Types
+// 类型
 // ---------------------------------------------------------------------------
 
-/// A single strategic recommendation produced by the reflection engine.
+/// 反思引擎产出的单条战略建议。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StrategicRecommendation {
-    /// Brief action statement (e.g. "Reprioritise milestone 'Data Ingestion'").
+    /// 简短行动说明（例如 "Reprioritise milestone 'Data Ingestion'"）。
     pub action: String,
-    /// Why this action is needed, backed by evidence.
+    /// 需要此行动的原因，附证据支撑。
     pub rationale: String,
-    /// Priority level: "high" / "medium" / "low".
+    /// 优先级："high" / "medium" / "low"。
     pub priority: String,
-    /// Optional target milestone ID this recommendation applies to.
+    /// 此建议适用的可选目标里程碑 ID。
     pub target_milestone: Option<String>,
 }
 
-/// Full strategic reflection report for a project.
+/// 项目的完整战略反思报告。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StrategicReflection {
     pub project_id: String,
     pub project_name: String,
-    /// Overall health assessment written by the LLM (free text).
+    /// LLM 撰写的总体健康评估（自由文本）。
     pub health_assessment: String,
-    /// Trajectory analysis — whether the project is accelerating, stagnating, etc.
+    /// 轨迹分析 — 项目处于加速、停滞等状态。
     pub trajectory: String,
-    /// Identified risk factors.
+    /// 已识别的风险因素。
     pub risk_factors: Vec<String>,
-    /// Concrete recommendations, sorted by priority.
+    /// 具体建议，按优先级排序。
     pub recommendations: Vec<StrategicRecommendation>,
-    /// Confidence in the analysis [0.0, 1.0].
+    /// 分析的置信度 [0.0, 1.0]。
     pub confidence: f64,
 }
 
-/// A structured action to modify the project roadmap.
+/// 修改项目路线图的结构化动作。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ProposalAction {
-    /// Insert a new milestone at a specific position.
+    /// 在特定位置插入新里程碑。
     InsertMilestone {
         name: String,
         description: String,
         after_milestone_id: Option<String>,
     },
-    /// Delete a goal that is no longer relevant.
+    /// 删除不再相关的目标。
     DeleteGoal { goal_id: String, rationale: String },
-    /// Change the priority of a goal or milestone.
+    /// 更改目标或里程碑的优先级。
     Reprioritize {
         target_id: String,
         new_priority: String,
     },
-    /// A general strategic pivot (e.g., changing the project's overall direction).
+    /// 一般性战略转向（例如改变项目总体方向）。
     PivotTrajectory {
         new_trajectory: String,
         rationale: String,
     },
 }
 
-/// A formal proposal for a strategic pivot in the project roadmap.
-/// This is the primary vehicle for human-in-the-loop approval.
+/// 项目路线图战略转向的正式提案。
+/// 这是人在回路审批的主要载体。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StrategicProposal {
     pub proposal_id: String,
     pub project_id: String,
     pub timestamp: u64,
-    /// The current state of the roadmap that triggered this proposal.
+    /// 触发此提案时的路线图当前状态。
     pub trigger_reflection: StrategicReflection,
-    /// The structured action to be taken if approved.
+    /// 批准后要执行的结构化动作。
     pub action: ProposalAction,
-    /// The expected impact on project health/trajectory.
+    /// 对项目健康度/轨迹的预期影响。
     pub expected_impact: String,
-    /// Current status: "Pending" / "Approved" / "Rejected".
+    /// 当前状态："Pending" / "Approved" / "Rejected"。
     pub status: ProposalStatus,
-    /// Reference to the architect who approved/rejected this.
+    /// 批准/拒绝此提案的架构师引用。
     pub reviewer: Option<String>,
 }
 
@@ -97,39 +97,39 @@ pub enum ProposalStatus {
 }
 
 // ---------------------------------------------------------------------------
-// StrategicReflector
+// StrategicReflector（战略反思器）
 // ---------------------------------------------------------------------------
 
-/// Engine that consumes roadmap data + execution history and produces
-/// LLM-augmented strategic reflections.
+/// 消费路线图数据 + 执行历史并产出
+/// LLM 增强战略反思的引擎。
 pub struct StrategicReflector {
     llm: Arc<dyn LlmClient>,
 }
 
 impl StrategicReflector {
-    /// Create a new reflector backed by the given LLM client.
+    /// 创建由给定 LLM 客户端支撑的反思器。
     pub fn new(llm: Arc<dyn LlmClient>) -> Self {
         Self { llm }
     }
 
-    /// Run a strategic reflection for the given project.
+    /// 为指定项目运行战略反思。
     ///
-    /// Gathers the progress report, health evaluation, and recent execution
-    /// outcomes, then feeds them to the LLM for deep analysis.
+    /// 收集进度报告、健康评估与近期执行结果，
+    /// 然后提供给 LLM 进行深度分析。
     pub async fn reflect(
         &self,
         manager: &RoadmapManager,
         project_id: &str,
     ) -> Result<StrategicReflection, RoadmapError> {
-        // 1. Gather structured data from the roadmap manager
+        // 1. 从路线图管理器收集结构化数据
         let report = manager.generate_progress_report(project_id).await?;
         let health = manager.evaluate_health(project_id).await?;
         let outcomes = manager.get_outcomes(project_id).await?;
 
-        // 2. Build a compact context string for the LLM
+        // 2. 为 LLM 构建紧凑的上下文字符串
         let context = self.build_context(&report, &health, &outcomes);
 
-        // 3. Call the LLM
+        // 3. 调用 LLM
         let system = "\
 You are a senior engineering director analysing a project roadmap. \
 Given the project's progress breakdown, health evaluation, and recent execution outcomes, \
@@ -159,7 +159,7 @@ Respond ONLY with valid JSON matching this structure:
             .await
             .map_err(|e| RoadmapError::Internal(format!("LLM reflection failed: {e}")))?;
 
-        // 4. Parse the LLM response
+        // 4. 解析 LLM 响应
         let parsed: serde_json::Value = serde_json::from_str(&response)
             .map_err(|e| RoadmapError::Internal(format!("Failed to parse reflection JSON: {e}")))?;
 
@@ -207,13 +207,13 @@ Respond ONLY with valid JSON matching this structure:
         })
     }
 
-    /// Transforms a strategic reflection into a formal proposal for a roadmap pivot.
+    /// 将战略反思转化为路线图转向的正式提案。
     pub fn propose_pivot(
         &self,
         reflection: &StrategicReflection,
         project_id: &str,
     ) -> Option<StrategicProposal> {
-        // Only propose a pivot if there are concrete recommendations and confidence is acceptable.
+        // 仅在存在具体建议且置信度可接受时提出转向。
         let best_rec = reflection.recommendations.first()?;
         if reflection.confidence < 0.6 {
             return None;
@@ -244,9 +244,9 @@ Respond ONLY with valid JSON matching this structure:
         })
     }
 
-    // ── Internal helpers ────────────────────────────────────────────
+    // ── 内部辅助 ────────────────────────────────────────────
 
-    /// Build a compact context string from roadmap data.
+    /// 从路线图数据构建紧凑的上下文字符串。
     fn build_context(
         &self,
         report: &crate::ProgressReport,
@@ -267,7 +267,7 @@ Respond ONLY with valid JSON matching this structure:
         ));
         ctx.push_str(&format!("Milestones: {} total\n", report.milestone_count));
 
-        // Per-milestone breakdown
+        // 逐里程碑明细
         ctx.push_str("\n--- Milestones ---\n");
         for ms in &report.milestones {
             ctx.push_str(&format!(
@@ -289,7 +289,7 @@ Respond ONLY with valid JSON matching this structure:
             }
         }
 
-        // Health summary
+        // 健康度摘要
         ctx.push_str("\n--- Health ---\n");
         ctx.push_str(&format!("Healthy: {}\n", health.healthy));
         ctx.push_str(&format!(
@@ -304,7 +304,7 @@ Respond ONLY with valid JSON matching this structure:
             }
         }
 
-        // Execution outcomes summary
+        // 执行结果摘要
         ctx.push_str("\n--- Recent Outcomes ---\n");
         let recent: Vec<&ExecutionOutcome> = outcomes.iter().rev().take(20).collect();
         for o in &recent {
@@ -322,7 +322,7 @@ Respond ONLY with valid JSON matching this structure:
 }
 
 // ---------------------------------------------------------------------------
-// Tests
+// 测试
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
@@ -470,7 +470,7 @@ mod tests {
         let (mgr, _store) = setup_manager().await;
         mgr.create_project("fail", "Fail", "desc").await.unwrap();
 
-        // An LLM that always fails
+        // 始终失败的 LLM
         struct FailLlm;
         #[async_trait::async_trait]
         impl LlmClient for FailLlm {

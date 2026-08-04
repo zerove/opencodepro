@@ -8,8 +8,8 @@ use sisyphus_types::{
 use std::sync::Arc;
 use tokio::sync::mpsc;
 
-/// ExecutionManager handles the low-level orchestration of SOP graph execution,
-/// including tool routing, state persistence, and real-time status tracking.
+/// ExecutionManager 负责 SOP 图谱执行的底层编排，
+/// 包括工具路由、状态持久化与实时状态跟踪。
 pub struct ExecutionManager {
     pub executor: Executor,
     pub state_store: Arc<MfsStore>,
@@ -46,7 +46,7 @@ impl ExecutionManager {
         }
     }
 
-    /// Notifies the manager that a new tool has been deployed, allowing for cache invalidation.
+    /// 通知管理器有新工具部署，以便使缓存失效。
     pub fn notify_tool_deployed(&self, tool_id: &str) {
         tracing::info!(tool_id = %tool_id, "Tool deployed; signaling executor cache invalidation");
 
@@ -55,7 +55,7 @@ impl ExecutionManager {
         }
     }
 
-    /// Persist a SOP graph to the state store.
+    /// 将 SOP 图谱持久化到状态存储。
     pub async fn save_sop(
         &self,
         sop_id: &str,
@@ -77,8 +77,8 @@ impl ExecutionManager {
             .map_err(|e| CoreError::MfsSaveError(e.to_string()))
     }
 
-    /// Load a SOP graph from the state store.
-    /// Returns a list of all registered SOP IDs.
+    /// 从状态存储加载 SOP 图谱。
+    /// 返回所有已注册 SOP 的 ID 列表。
     pub async fn list_sops(&self, project_id: Option<&str>) -> Result<Vec<String>, CoreError> {
         self.sop_store
             .list_sops(project_id)
@@ -86,7 +86,7 @@ impl ExecutionManager {
             .map_err(|e| CoreError::Internal(e.to_string()))
     }
 
-    /// Load a SOP graph from the state store.
+    /// 从状态存储加载 SOP 图谱。
     pub async fn load_sop(
         &self,
         sop_id: &str,
@@ -108,7 +108,7 @@ impl ExecutionManager {
         )?)
     }
 
-    /// Broadcast an execution event to all subscribers of a specific SOP.
+    /// 将执行事件广播给某个 SOP 的所有订阅者。
     pub fn broadcast_event(&self, sop_id: &str, event: ExecutionEvent) {
         if let Some(subscribers) = self.event_subscribers.get(sop_id) {
             let mut subs = subscribers.clone();
@@ -117,7 +117,7 @@ impl ExecutionManager {
         }
     }
 
-    /// Low-level primitive to execute a graph within a given context.
+    /// 在给定上下文中执行图谱的底层原语。
     pub async fn execute(
         &self,
         sop_graph: Arc<SOPGraph>,

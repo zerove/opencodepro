@@ -1,7 +1,7 @@
-// ── Shared TUI Widget Helpers ─────────────────────────────
+// ── 共享 TUI 组件辅助 ─────────────────────────────
 //
-// Consolidates common rendering patterns to reduce duplication
-// across dialog, session, and render modules.
+// 整合常见渲染模式以减少重复，
+// 覆盖对话框、会话与渲染模块。
 
 use ratatui::{
     layout::Rect,
@@ -11,10 +11,10 @@ use ratatui::{
 
 use crate::tui::theme::Theme;
 
-// ── Scroll indicator ───────────────────────────────────
+// ── 滚动指示器 ───────────────────────────────────
 
-/// Format scroll position as "pos/total (pct%)".
-/// Returns empty string when total <= 1 (no scrolling needed).
+/// 将滚动位置格式化为 "pos/total (pct%)"。
+/// 当 total <= 1（无需滚动）时返回空字符串。
 pub fn scroll_pct(pos: usize, total: usize) -> String {
     if total <= 1 {
         String::new()
@@ -24,12 +24,12 @@ pub fn scroll_pct(pos: usize, total: usize) -> String {
     }
 }
 
-// ── Generic list renderer ──────────────────────────────
+// ── 通用列表渲染器 ──────────────────────────────
 
-/// Render a selectable list inside a bordered block.
+/// 在带边框的块中渲染可选中列表。
 ///
-/// `items` are the rendered `ListItem`s, `selected` is the current
-/// selection index (clamped to `items.len()`).
+/// `items` 是已渲染的 `ListItem`，`selected` 是当前
+/// 选中索引（钳制到 `items.len()`）。
 pub fn render_list(
     frame: &mut ratatui::Frame,
     area: Rect,

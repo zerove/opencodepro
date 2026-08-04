@@ -82,7 +82,7 @@ mod tests {
                 assert_eq!(goal, "fix bugs");
                 assert_eq!(context, Some("project X".to_string()));
                 assert_eq!(agents, Some("3".to_string()));
-                // --concurrent defaults to 4 when not specified
+                // 未指定时 --concurrent 默认为 4
                 assert_eq!(max_concurrent, 4);
             }
             _ => panic!("Expected Delegate/Team variant"),

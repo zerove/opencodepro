@@ -2,12 +2,12 @@ use std::path::Path;
 
 use super::{tool_registry, LLM_CLIENT};
 
-/// Dispatch a JSON-RPC request to the appropriate MCP method handler.
+/// 将 JSON-RPC 请求分派给相应的 MCP 方法处理器。
 pub(super) async fn handle_request(
     req: crate::tools::JsonRpcRequest,
 ) -> crate::tools::JsonRpcResponse {
     match req.method.as_str() {
-        // ── Lifecycle ──
+        // ── 生命周期 ──
         "initialize" => handle_initialize(&req),
 
         "notifications/initialized" | "notifications/cancelled" => crate::tools::JsonRpcResponse {
@@ -17,12 +17,12 @@ pub(super) async fn handle_request(
             error: None,
         },
 
-        // ── Tools ──
+        // ── 工具 ──
         "tools/list" => handle_tools_list(&req),
 
         "tools/call" => handle_tools_call(req).await,
 
-        // ── Unknown ──
+        // ── 未知 ──
         _ => jsonrpc_error(
             req.id,
             crate::tools::MCP_ERROR_METHOD_NOT_FOUND,
@@ -142,7 +142,7 @@ async fn handle_tools_call(req: crate::tools::JsonRpcRequest) -> crate::tools::J
     }
 }
 
-// ── Tool Execution ────────────────────────────────────────────
+// ── 工具执行 ────────────────────────────────────────────
 
 fn get_str<'a>(args: &'a serde_json::Value, key: &str) -> Result<&'a str, String> {
     args.get(key)
@@ -256,7 +256,7 @@ async fn execute_librarian_synthesise(args: serde_json::Value) -> Result<String,
     output_text(synthesis)
 }
 
-// ── Error Helper ──────────────────────────────────────────────
+// ── 错误辅助 ──────────────────────────────────────────────
 
 fn jsonrpc_error(id: Option<u64>, code: i64, message: String) -> crate::tools::JsonRpcResponse {
     crate::tools::JsonRpcResponse {

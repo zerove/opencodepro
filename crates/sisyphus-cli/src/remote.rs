@@ -28,11 +28,11 @@ pub async fn run_benchmarks(client: &mut BridgeClient) -> Result<()> {
 pub async fn run_status(client: &mut BridgeClient) -> Result<()> {
     println!("=== Sisyphus Bridge Status ===");
 
-    // Health
+    // 健康
     let health = client.health_check().await?;
     println!("Health: {} (Version: {})", health.status, health.version);
 
-    // Breakers
+    // 熔断器
     println!("\n--- Circuit Breakers ---");
     let breakers = client.get_breaker_metrics(None).await?;
     if breakers.is_empty() {
@@ -51,7 +51,7 @@ pub async fn run_status(client: &mut BridgeClient) -> Result<()> {
         }
     }
 
-    // Recent Benchmarks
+    // 最近基准
     println!("\n--- Recent Benchmarks ---");
     let benchmarks = client.list_benchmarks().await?;
     for b in benchmarks.iter().take(5) {
@@ -123,7 +123,7 @@ pub async fn run_exec_sop(client: &mut BridgeClient, sop_id: &str) -> Result<()>
 
 pub async fn run_decompose_goal(client: &mut BridgeClient, goal: &str) -> Result<()> {
     println!("Decomposing goal: {goal}...");
-    // Using a dummy goal_id and empty context for the CLI command
+    // 为 CLI 命令使用虚拟 goal_id 与空上下文
     let tasks = client.decompose_goal("cli-goal", goal, "").await?;
     if tasks.is_empty() {
         println!("No tasks generated.");

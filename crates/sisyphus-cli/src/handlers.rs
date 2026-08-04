@@ -6,7 +6,7 @@ use anyhow::{Context, Result};
 use crate::commands::*;
 use crate::Cli;
 
-// ── Handler modules ────────────────────────────────────────
+// ── 处理器模块 ────────────────────────────────────────
 
 #[path = "handle_build.rs"]
 mod handle_build;
@@ -82,7 +82,7 @@ mod handle_workspace;
 #[path = "test_helpers.rs"]
 mod test_helpers;
 
-// ── Public dispatch ──────────────────────────────────────────
+// ── 公开分发 ──────────────────────────────────────────
 
 pub async fn dispatch(
     cli: &Cli,
@@ -94,7 +94,7 @@ pub async fn dispatch(
     bridge_addr: &str,
 ) -> Result<()> {
     match cli.command.as_ref().context("No command specified")? {
-        // ── file tools ──────────────────────────────────
+        // ── 文件工具 ──────────────────────────────────
         Commands::Read { path } => handle_file::handle_read(path)?,
         Commands::ReadLines {
             path,
@@ -124,13 +124,13 @@ pub async fn dispatch(
         Commands::Search { query, num } => handle_exec::handle_search(query, *num).await?,
         Commands::ApplyPatch { file, input } => handle_exec::handle_apply_patch(file, input)?,
 
-        // ── todo ────────────────────────────────────────
+        // ── 待办 ────────────────────────────────────────
         Commands::Todo(sub) => handle_todo::handle_todo(sub, todo_db)?,
 
-        // ── session ─────────────────────────────────────
+        // ── 会话 ─────────────────────────────────────
         Commands::Session(sub) => handle_session::handle_session(sub, session_db).await?,
 
-        // ── plan ────────────────────────────────────────
+        // ── 计划 ────────────────────────────────────────
         Commands::Plan(sub) => handle_plan::handle_plan(sub)?,
 
         // ── oracle ──────────────────────────────────────
@@ -150,64 +150,64 @@ pub async fn dispatch(
         // ── metis ────────────────────────────────────────
         Commands::Metis(sub) => handle_metis::handle_metis(sub, llm_client.clone()).await?,
 
-        // ── skill ───────────────────────────────────────
+        // ── 技能 ───────────────────────────────────────
         Commands::Skill(sub) => handle_skill::handle_skill(sub)?,
 
-        // ── rules ────────────────────────────────────────
+        // ── 规则 ────────────────────────────────────────
         Commands::Rules(sub) => handle_rules::handle_rules(sub)?,
 
-        // ── lsp ─────────────────────────────────────────
+        // ── LSP ─────────────────────────────────────────
         Commands::Lsp(sub) => handle_lsp::handle_lsp(sub).await?,
 
-        // ── delegate ────────────────────────────────────
+        // ── 委托 ────────────────────────────────────
         Commands::Delegate(sub) => handle_delegate::handle_delegate(sub).await?,
 
-        // ── mcp ─────────────────────────────────────────
+        // ── MCP ─────────────────────────────────────────
         Commands::Mcp(sub) => handle_mcp::handle_mcp(sub, llm_client.clone()).await?,
 
-        // ── engine ──────────────────────────────────────
+        // ── 引擎 ──────────────────────────────────────
         Commands::Sop(sub) => handle_sop::handle_sop(sub, bridge_addr).await?,
 
-        // ── git ─────────────────────────────────────────
+        // ── Git ─────────────────────────────────────────
         Commands::Git(sub) => handle_git::handle_git(sub)?,
 
-        // ── build ────────────────────────────────────────
+        // ── 构建 ────────────────────────────────────────
         Commands::Build(sub) => handle_build::handle_build(sub)?,
 
-        // ── run ────────────────────────────────────────────
+        // ── 运行 ────────────────────────────────────────────
         Commands::Run(sub) => handle_run::handle_run(sub)?,
 
-        // ── init ───────────────────────────────────────────
+        // ── 初始化 ───────────────────────────────────────────
         Commands::Init(sub) => handle_init::handle_init(sub)?,
 
-        // ── precommit ──────────────────────────────────────
+        // ── 预提交 ──────────────────────────────────────
         Commands::Precommit(sub) => handle_precommit::handle_precommit(sub)?,
 
         // ── pr ─────────────────────────────────────────────
         Commands::Pr(sub) => handle_pr::handle_pr(sub, &llm_client).await?,
 
-        // ── wisdom ─────────────────────────────────────────
+        // ── 智慧笔记 ─────────────────────────────────────────
         Commands::Wisdom(sub) => handle_wisdom::handle_wisdom(sub).await?,
 
-        // ── hashline ───────────────────────────────────────
+        // ── 行哈希编辑 ───────────────────────────────────────
         Commands::Hashline(sub) => handle_hashline::handle_hashline(sub)?,
 
-        // ── diagnose ──────────────────────────────────────
+        // ── 诊断 ──────────────────────────────────────
         Commands::Diagnose(sub) => handle_diagnose::handle_diagnose(sub)?,
 
-        // ── fix ────────────────────────────────────────────
+        // ── 修复 ────────────────────────────────────────────
         Commands::Fix(sub) => handle_fix::handle_fix(sub)?,
 
-        // ── github ─────────────────────────────────────────
+        // ── GitHub ─────────────────────────────────────────
         Commands::Github(sub) => handle_github::handle_github(sub)?,
 
-        // ── provider ───────────────────────────────────────
+        // ── 提供商 ───────────────────────────────────────
         Commands::Provider(sub) => handle_provider::handle_provider(sub, sisyphus_cfg)?,
 
-        // ── tool ───────────────────────────────────────────
+        // ── 工具 ───────────────────────────────────────────
         Commands::Tool(sub) => handle_tool::handle_tool(sub, cli, sisyphus_cfg)?,
 
-        // ── plugin / remote / health / status ──────────────
+        // ── 插件 / 远程 / 健康 / 状态 ──────────────
         Commands::Plugin(sub) => handle_plugin::handle_plugin(sub, bridge_addr).await?,
         Commands::LearningInsights { strategy } => {
             handle_remote::handle_learning_insights(bridge_addr, strategy).await?
@@ -216,12 +216,12 @@ pub async fn dispatch(
         Commands::Status => handle_remote::handle_status(bridge_addr).await?,
         Commands::Remote(sub) => handle_remote::handle_remote(sub, bridge_addr).await?,
 
-        // ── daemon ─────────────────────────────────────────
+        // ── 守护进程 ─────────────────────────────────────────
         Commands::Daemon => handle_daemon::handle_daemon()?,
-        // ── workspace ───────────────────────────────────────
+        // ── 工作区 ───────────────────────────────────────
         Commands::Workspace(sub) => handle_workspace::handle_workspace(sub, bridge_addr).await?,
 
-        // ── dev ────────────────────────────────────────────
+        // ── 开发 ────────────────────────────────────────────
         Commands::Dev {
             goal,
             context,

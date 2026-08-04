@@ -28,17 +28,17 @@ impl InternalizationManager {
     pub async fn internalize_feedback(&self, req: InternalizationRequest) -> Result<(), String> {
         info!(node_id = %req.node_id, "Starting cognitive internalization for human feedback");
 
-        // 1. Distill the raw correction into a generalizable insight
+        // 1. 将原始修正提炼为可泛化的洞察
         let insight = self.distill_insight(&req).await?;
 
         info!(node_id = %req.node_id, insight = %insight, "Distilled cognitive insight from feedback");
 
-        // 2. Persist the insight into the knowledge graph as a high-confidence asset
-        // In a real system, we'd create a structured 'Insight' asset.
-        // For now, we'll store it as a metadata tag or a specific asset type in the knowledge manager.
+        // 2. 将洞察作为高置信度资产持久化到知识图谱
+        // 在真实系统中，我们会创建结构化的 'Insight' 资产。
+        // 目前，我们将其作为元数据标签或特定资产类型存储在知识管理器中。
         let asset_id = format!("insight_{}_{}", req.node_id, uuid::Uuid::new_v4());
 
-        // We wrap the insight into a dedicated Insight asset.
+        // 我们将洞察封装为专用的 Insight 资产。
         let content =
             sisyphus_types::asset::AssetContent::Insight(sisyphus_types::asset::InsightData {
                 observation: insight.clone(),

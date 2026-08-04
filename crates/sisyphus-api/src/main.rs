@@ -1,5 +1,7 @@
-//! REST API server for Sisyphus cognitive engine.
-//! Provides HTTP endpoints for state management, vector search, and memory operations.
+//! Sisyphus API — 认知引擎 REST API 服务器。
+//!
+//! 基于 axum + utoipa 提供 OpenAPI 3.1 规范与 Swagger UI，
+//! 支持状态管理、向量检索、记忆操作等 HTTP 端点。
 
 use axum::{
     Router,

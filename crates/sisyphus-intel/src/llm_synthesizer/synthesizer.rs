@@ -1,5 +1,5 @@
-//! The LLM-driven pipeline synthesizer: decomposes a goal into actions and
-//! builds a linear SOP graph (or a rigorous cycle in UltraWork mode).
+//! LLM 驱动的流水线合成器：将目标分解为动作，
+//! 并构建线性 SOP 图谱（UltraWork 模式下为严格循环）。
 
 use crate::{action_label, tool_id_for_action, FlowSynthesizer, GoalDecomposer, SynthesisResult};
 use async_trait::async_trait;

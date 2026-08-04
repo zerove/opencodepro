@@ -1,11 +1,11 @@
-//! LLM-driven and logical SOP synthesizers.
+//! LLM 驱动与逻辑 SOP 合成器。
 //!
-//! Provides [`GoalDecomposer`] implementations for action decomposition and the
-//! [`FlowSynthesizer`] implementations that turn goals into SOP graphs. The
-//! module is split into domain files:
-//! - [`decomposers`]: goal decomposition strategies
-//! - [`synthesizer`]: the LLM-driven pipeline synthesizer
-//! - [`logical`]: the adversarial, evaluator-driven logical synthesizer
+//! 提供 [`GoalDecomposer`] 实现用于动作分解，以及将目标
+//! 转化为 SOP 图谱的 [`FlowSynthesizer`] 实现。模块按域拆分：
+//! 模块按域拆分为文件：
+//! - [`decomposers`]：目标分解策略
+//! - [`synthesizer`]：LLM 驱动的流水线合成器
+//! - logical：对抗式、评估器驱动的逻辑合成器
 
 mod decomposers;
 mod logical;

@@ -1,7 +1,7 @@
-//! Local re-export module for sisyphus-tools sub-crates.
-//! Replaces the `sisyphus-tools` facade crate with direct sub-crate paths.
+//! sisyphus-tools 子 crate 的本地重导出模块。
+//! 用直接的子 crate 路径替代 `sisyphus-tools` 门面 crate。
 
-// ── Foundation types from sisyphus-tools-core ───────────────────────
+// ── 来自 sisyphus-tools-core 的基础类型 ───────────────────────
 pub use sisyphus_tools_core::feedback::{Feedback, FeedbackStore};
 pub use sisyphus_tools_core::hook::{
     execute_with_hooks, hooks_from_skill, AfterHookResult, BeforeHookResult, HookDef, HookEffect,
@@ -9,7 +9,7 @@ pub use sisyphus_tools_core::hook::{
 };
 pub use sisyphus_tools_core::{Permission, PermissionRules, ToolError, ToolResult};
 
-// ── SCM tools ───────────────────────────────────────────────────────
+// ── SCM 工具 ───────────────────────────────────────────────────────
 pub mod hashline {
     pub use sisyphus_tools_scm::hashline::*;
 }
@@ -36,7 +36,7 @@ pub mod patch {
 }
 pub use patch::*;
 
-// ── LLM abstraction ─────────────────────────────────────────────────
+// ── LLM 抽象 ─────────────────────────────────────────────────
 pub mod llm {
     pub use sisyphus_tools_llm::llm::*;
 }
@@ -66,7 +66,7 @@ pub mod circuit_breaker {
 }
 pub use circuit_breaker::*;
 
-// ── LLM tools (librarian, diagnose, oracle, momus, etc.) ────────────
+// ── LLM 工具（librarian、diagnose、oracle、momus 等） ────────────
 pub mod librarian {
     pub use sisyphus_tools_llm_tools::librarian::*;
 }
@@ -114,7 +114,7 @@ pub mod meta_learner {
     pub use sisyphus_tools_llm_tools::meta_learner::*;
 }
 
-// ── Build tools ─────────────────────────────────────────────────────
+// ── 构建工具 ─────────────────────────────────────────────────────
 pub mod build {
     pub use sisyphus_tools_build::build::*;
 }
@@ -148,7 +148,7 @@ pub mod test_gen {
     pub use sisyphus_tools_build::test_gen::*;
 }
 
-// ── Agent tools ─────────────────────────────────────────────────────
+// ── 代理工具 ─────────────────────────────────────────────────────
 pub mod agent_registry {
     pub use sisyphus_tools_agent::agent_registry::*;
 }
@@ -177,7 +177,7 @@ pub mod team {
 }
 pub use team::*;
 
-// ── System tools ────────────────────────────────────────────────────
+// ── 系统工具 ────────────────────────────────────────────────────
 pub mod bash {
     pub use sisyphus_tools_system::bash::*;
 }
@@ -229,7 +229,7 @@ pub mod dep_manager {
     pub use sisyphus_tools_system::dep_manager::*;
 }
 
-// ── Session tools ───────────────────────────────────────────────────
+// ── 会话工具 ───────────────────────────────────────────────────
 pub mod plan {
     pub use sisyphus_tools_session::plan::*;
 }
@@ -269,7 +269,7 @@ pub mod todo {
 }
 pub use todo::*;
 
-// ── MCP tools ───────────────────────────────────────────────────────
+// ── MCP 工具 ───────────────────────────────────────────────────────
 pub mod mcp_tools {
     pub use sisyphus_tools_mcp::mcp::*;
 }
@@ -284,7 +284,7 @@ pub mod custom_tool {
     pub use sisyphus_tools_mcp::custom_tool::*;
 }
 
-// ── Executor tools ──────────────────────────────────────────────────
+// ── 执行器工具 ──────────────────────────────────────────────────
 pub mod executor {
     pub use sisyphus_tools_executor::executor::*;
 }

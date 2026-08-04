@@ -1,6 +1,6 @@
-//! The adversarial logical SOP synthesizer: proposes a graph, evaluates it,
-//! refines under critique, and verifies against a golden dataset until the
-//! evaluator accepts the result.
+//! 对抗式逻辑 SOP 合成器：提出图谱、评估它，
+//! 在批判下细化，并对照黄金数据集验证，直到
+//! 评估器接受结果。
 
 use crate::simulation::Simulator;
 use crate::{FlowSynthesizer, SynthesisResult};
@@ -370,7 +370,7 @@ impl FlowSynthesizer for LogicalSOPSynthesizer {
             .await;
 
             if eval_res.is_acceptable {
-                // Regression check against Golden Dataset
+                // 对照黄金数据集的回归检查
                 if let Err(e) = self
                     .golden_dataset
                     .verify_no_regression(goal, &config, eval_res.score as f64)
@@ -391,7 +391,7 @@ impl FlowSynthesizer for LogicalSOPSynthesizer {
 
                 tracing::info!(goal = %goal, attempts = current_attempt + 1, score = eval_res.score, "SOP approved by evaluator and passed regression check");
 
-                // Enroll if this is the new gold standard
+                // 若为新的黄金标准则收录
                 let _ = self
                     .golden_dataset
                     .enroll(goal, config.clone(), eval_res.score as f64)

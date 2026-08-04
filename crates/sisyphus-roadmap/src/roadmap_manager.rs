@@ -15,13 +15,13 @@ use tokio::time::interval;
 use tracing::{error, info, warn};
 
 // ---------------------------------------------------------------------------
-// RoadmapManager
+// RoadmapManager（路线图管理器）
 // ---------------------------------------------------------------------------
-// RoadmapManager
+// RoadmapManager（路线图管理器）
 // ---------------------------------------------------------------------------
 
-/// Strategic planning manager that provides CRUD operations over a
-/// Project → Milestone → Phase → Goal hierarchy, persisted via MfsStore.
+/// 战略规划管理器，提供对 项目 → 里程碑 → 阶段 → 目标
+/// 层级结构的 CRUD 操作，通过 MfsStore 持久化。
 pub struct RoadmapManager {
     pub(crate) store: Arc<MfsStore>,
     pub(crate) sql_store: Arc<RoadmapSqlStore>,
@@ -29,7 +29,7 @@ pub struct RoadmapManager {
 }
 
 impl RoadmapManager {
-    /// Create a new `RoadmapManager` backed by the given `MfsStore` and `RoadmapSqlStore`.
+    /// 创建由给定 `MfsStore` 与 `RoadmapSqlStore` 支撑的 `RoadmapManager`。
     pub fn new(
         store: Arc<MfsStore>,
         sql_store: Arc<RoadmapSqlStore>,
@@ -42,14 +42,14 @@ impl RoadmapManager {
         }
     }
 
-    /// Get a reference to the proposal manager.
+    /// 获取提案管理器的引用。
     pub fn proposal_manager(&self) -> &Arc<crate::proposal_manager::ProposalManager> {
         &self.proposal_manager
     }
 
-    // ── Project CRUD ────────────────────────────────────────────────
+    // ── 项目 CRUD ────────────────────────────────────────────────
 
-    /// Create a new project and persist it.
+    /// 创建新项目并持久化。
     pub async fn create_project(
         &self,
         id: &str,
@@ -71,7 +71,7 @@ impl RoadmapManager {
         Ok(project)
     }
 
-    /// Retrieve a project by its ID and hydrate it from granular storage.
+    /// 按 ID 检索项目并从细粒度存储中水合（hydrate）。
     pub async fn get_project(&self, id: &str) -> Result<Option<Project>, RoadmapError> {
         self.sql_store
             .get_project(id)
@@ -79,7 +79,7 @@ impl RoadmapManager {
             .map_err(|e| RoadmapError::Internal(e.to_string()))
     }
 
-    /// Update an existing project (replaces the full document).
+    /// 更新已有项目（替换完整文档）。
     pub async fn update_project(&self, project: &Project) -> Result<(), RoadmapError> {
         self.sql_store
             .insert_project(project)
@@ -87,7 +87,7 @@ impl RoadmapManager {
             .map_err(|e| RoadmapError::Internal(e.to_string()))
     }
 
-    /// Delete a project by its ID.
+    /// 按 ID 删除项目。
     pub async fn delete_project(&self, id: &str) -> Result<(), RoadmapError> {
         self.sql_store
             .delete_project(id)
@@ -96,7 +96,7 @@ impl RoadmapManager {
         Ok(())
     }
 
-    /// List all project IDs.
+    /// 列出全部项目 ID。
     pub async fn list_project_ids(&self) -> Result<Vec<String>, RoadmapError> {
         self.sql_store
             .list_projects()
@@ -104,7 +104,7 @@ impl RoadmapManager {
             .map_err(|e| RoadmapError::Internal(e.to_string()))
     }
 
-    /// List all full projects.
+    /// 列出全部完整项目。
     pub async fn list_projects(&self) -> Result<Vec<Project>, RoadmapError> {
         let ids = self.list_project_ids().await?;
         let mut projects = Vec::with_capacity(ids.len());
@@ -116,9 +116,9 @@ impl RoadmapManager {
         Ok(projects)
     }
 
-    // ── Milestone operations ────────────────────────────────────────
+    // ── 里程碑操作 ────────────────────────────────────────
 
-    /// Add a milestone to a project.
+    /// 向项目添加里程碑。
     pub async fn add_milestone(
         &self,
         project_id: &str,
@@ -163,7 +163,7 @@ impl RoadmapManager {
         Ok(())
     }
 
-    /// Update the status of a milestone within a project.
+    /// 更新项目内里程碑的状态。
     pub async fn update_milestone_status(
         &self,
         project_id: &str,
@@ -176,7 +176,7 @@ impl RoadmapManager {
             .map_err(|e| RoadmapError::Internal(e.to_string()))
     }
 
-    /// Remove a milestone from a project.
+    /// 从项目移除里程碑。
     pub async fn remove_milestone(
         &self,
         project_id: &str,
@@ -200,9 +200,9 @@ impl RoadmapManager {
         Ok(())
     }
 
-    // ── Phase operations ────────────────────────────────────────────
+    // ── 阶段操作 ────────────────────────────────────────────
 
-    /// Add a phase to a milestone within a project.
+    /// 向项目内里程碑添加阶段。
     pub async fn add_phase(
         &self,
         project_id: &str,
@@ -230,7 +230,7 @@ impl RoadmapManager {
         Ok(())
     }
 
-    /// Submits a strategic shift proposal based on cluster failure analysis.
+    /// 基于失败簇分析提交战略转移提案。
     pub async fn submit_strategic_shift(
         &self,
         project_id: &str,
@@ -288,7 +288,7 @@ impl RoadmapManager {
             .await
     }
 
-    /// Add a goal to a phase within a milestone.
+    /// 向里程碑内的阶段添加目标。
     pub async fn add_goal(
         &self,
         project_id: &str,
@@ -308,7 +308,7 @@ impl RoadmapManager {
             .map_err(|e| RoadmapError::Internal(e.to_string()))
     }
 
-    /// Update the status of a specific goal.
+    /// 更新特定目标的状态。
     pub async fn update_goal_status(
         &self,
         project_id: &str,
@@ -323,13 +323,13 @@ impl RoadmapManager {
             .map_err(|e| RoadmapError::Internal(e.to_string()))
     }
 
-    // ── Progress ────────────────────────────────────────────────────
+    // ── 进度 ────────────────────────────────────────────────────
 
-    /// Calculate overall progress for a project as a ratio [0.0, 1.0].
+    /// 计算项目总体进度，返回比率 [0.0, 1.0]。
     ///
-    /// Progress is computed from all milestones weighted equally:
-    /// each milestone's progress contribution is the fraction of completed
-    /// goals within that milestone.
+    /// 进度由所有里程碑等权计算：
+    /// 每个里程碑的进度贡献是该里程碑内
+    /// 已完成目标所占比例。
     pub async fn calculate_progress(&self, project_id: &str) -> Result<f64, RoadmapError> {
         let project = self.get_project_or_err(project_id).await?;
         let milestones = &project.roadmap.milestones;
@@ -340,22 +340,22 @@ impl RoadmapManager {
         Ok(total / milestones.len() as f64)
     }
 
-    /// Get the roadmap (all milestones) for a project.
+    /// 获取项目的路线图（全部里程碑）。
     pub async fn get_roadmap(&self, project_id: &str) -> Result<Option<Roadmap>, RoadmapError> {
         let project = self.get_project_or_err(project_id).await?;
         Ok(Some(project.roadmap))
     }
 
-    // ── Internal helpers ────────────────────────────────────────────
+    // ── 内部辅助 ────────────────────────────────────────────
 
-    /// Get a project or return `ProjectNotFound` error.
+    /// 获取项目，不存在时返回 `ProjectNotFound` 错误。
     pub async fn get_project_or_err(&self, id: &str) -> Result<Project, RoadmapError> {
         self.get_project(id)
             .await?
             .ok_or_else(|| RoadmapError::ProjectNotFound(id.to_string()))
     }
 
-    /// Apply a structured strategic proposal action to the roadmap.
+    /// 将结构化战略提案动作应用到路线图。
     pub async fn apply_proposal_action(
         &self,
         project_id: &str,
@@ -384,8 +384,8 @@ impl RoadmapManager {
 
                 self.add_milestone(project_id, milestone).await?;
 
-                // Note: Position-based insertion (after_milestone_id) would require
-                // updating the project_milestones_key list order.
+                // 注意：基于位置的插入（after_milestone_id）需要
+                // 更新 project_milestones_key 列表顺序。
                 Ok(())
             }
             ProposalAction::DeleteGoal {
@@ -406,7 +406,7 @@ impl RoadmapManager {
         }
     }
 
-    /// Delete a goal from the roadmap and update its parent phase.
+    /// 从路线图删除目标并更新其父阶段。
     pub async fn delete_goal(&self, project_id: &str, goal_id: &str) -> Result<(), RoadmapError> {
         self.sql_store
             .delete_goal(project_id, goal_id)
@@ -425,20 +425,20 @@ impl RoadmapManager {
             .map_err(|e| RoadmapError::Internal(e.to_string()))
     }
 
-    /// Update the priority of a goal (simplified implementation).
+    /// 更新目标优先级（简化实现）。
     pub async fn update_goal_priority(
         &self,
         project_id: &str,
         goal_id: &str,
         new_priority: &str,
     ) -> Result<(), RoadmapError> {
-        // In current GoalRef, priority is not a first-class field.
-        // We'll simulate this by updating the description or logging it.
+        // 在当前 GoalRef 中，优先级不是一等字段。
+        // 我们通过更新描述或记录日志来模拟。
         tracing::info!(project_id, goal_id, new_priority, "Goal reprioritised");
         Ok(())
     }
 
-    /// Update project metadata to reflect a strategic trajectory pivot.
+    /// 更新项目元数据以反映战略轨迹转向。
     pub async fn pivot_trajectory(
         &self,
         project_id: &str,
@@ -450,8 +450,8 @@ impl RoadmapManager {
             .map_err(|e| RoadmapError::Internal(e.to_string()))
     }
 
-    /// Load the project index from the store.
-    /// Migrates data from legacy MfsStore (JSON blobs) to structured RoadmapSqlStore.
+    /// 从存储加载项目索引。
+    /// 将数据从旧版 MfsStore（JSON 块）迁移到结构化 RoadmapSqlStore。
     pub async fn migrate_to_sql(&self, sql_store: &RoadmapSqlStore) -> Result<usize> {
         let project_ids = self
             .store
@@ -505,18 +505,18 @@ impl RoadmapManager {
     }
 }
 
-// ── Governance Loop (Automated Strategic Reflection) ────────────────
+// ── 治理循环（自动化战略反思） ────────────────
 
-/// Configuration for the automated governance loop.
+/// 自动化治理循环的配置。
 #[derive(Clone)]
 pub struct GovernanceLoopConfig {
-    /// Interval between governance loop runs.
+    /// 治理循环运行间隔。
     pub interval: Duration,
-    /// Minimum confidence threshold for auto-proposing pivots.
+    /// 自动提出转向的最低置信度阈值。
     pub min_confidence: f64,
-    /// Whether to auto-submit proposals (vs just logging).
+    /// 是否自动提交提案（而非仅记录日志）。
     pub auto_submit: bool,
-    /// LLM client for strategic reflection.
+    /// 用于战略反思的 LLM 客户端。
     pub llm: Arc<dyn LlmClient>,
 }
 
@@ -531,7 +531,7 @@ impl std::fmt::Debug for GovernanceLoopConfig {
     }
 }
 
-/// Default configuration requires an LLM client to be provided.
+/// 默认配置要求提供 LLM 客户端。
 impl Default for GovernanceLoopConfig {
     fn default() -> Self {
         Self {
@@ -543,7 +543,7 @@ impl Default for GovernanceLoopConfig {
     }
 }
 
-/// Result of a single project's governance iteration.
+/// 单个项目治理迭代的结果。
 #[derive(Debug)]
 pub struct SingleProjectGovernanceResult {
     pub health: RoadmapHealth,
@@ -553,14 +553,14 @@ pub struct SingleProjectGovernanceResult {
     pub refinements: Vec<crate::milestone_generator::RefinementSuggestion>,
 }
 
-/// Result of governance iteration for one project (including potential errors).
+/// 单项目治理迭代的结果（含潜在错误）。
 #[derive(Debug)]
 pub struct GovernanceResult {
     pub project_id: String,
     pub result: Result<SingleProjectGovernanceResult, RoadmapError>,
 }
 
-/// Handle to control a running governance loop.
+/// 控制运行中治理循环的句柄。
 #[derive(Debug)]
 pub struct GovernanceLoopHandle {
     stop_tx: Option<tokio::sync::oneshot::Sender<()>>,
@@ -568,7 +568,7 @@ pub struct GovernanceLoopHandle {
 }
 
 impl GovernanceLoopHandle {
-    /// Stop the governance loop.
+    /// 停止治理循环。
     pub async fn stop(&mut self) {
         if let Some(tx) = self.stop_tx.take() {
             let _ = tx.send(());
@@ -580,13 +580,13 @@ impl GovernanceLoopHandle {
 }
 
 impl RoadmapManager {
-    /// Run a single governance loop iteration for all projects.
+    /// 对所有项目运行一次治理循环迭代。
     ///
-    /// For each project:
-    /// 1. Evaluate health
-    /// 2. Run strategic reflection
-    /// 3. If confidence >= threshold and there are recommendations, propose pivot
-    /// 4. Log results
+    /// 对每个项目：
+    /// 1. 评估健康度
+    /// 2. 运行战略反思
+    /// 3. 若置信度 >= 阈值且有建议，提出转向
+    /// 4. 记录结果日志
     pub async fn run_governance_iteration(
         &self,
         config: &GovernanceLoopConfig,
@@ -610,7 +610,7 @@ impl RoadmapManager {
         Ok(results)
     }
 
-    /// Run governance loop for a single project.
+    /// 为单个项目运行治理循环。
     async fn run_single_project_governance(
         &self,
         project_id: &str,
@@ -620,10 +620,10 @@ impl RoadmapManager {
     ) -> Result<SingleProjectGovernanceResult, RoadmapError> {
         info!(project_id, "Starting governance iteration");
 
-        // 1. Evaluate health
+        // 1. 评估健康度
         let health = self.evaluate_health(project_id).await?;
 
-        // 2. Run strategic reflection
+        // 2. 运行战略反思
         let reflection = match reflector.reflect(self, project_id).await {
             Ok(r) => r,
             Err(e) => {
@@ -640,14 +640,14 @@ impl RoadmapManager {
             "Strategic reflection completed"
         );
 
-        // 3. Check if we should propose a pivot
+        // 3. 检查是否应提出转向
         let mut proposal_submitted = false;
         let mut proposal_id = None;
         let mut refinements = Vec::new();
 
         if reflection.confidence >= config.min_confidence && !reflection.recommendations.is_empty()
         {
-            // Try to create a proposal from the top recommendation
+            // 尝试从最高优先级建议创建提案
             if let Some(proposal) = reflector.propose_pivot(&reflection, project_id) {
                 if config.auto_submit {
                     self.proposal_manager
@@ -663,7 +663,7 @@ impl RoadmapManager {
             }
         }
 
-        // 4. If health shows issues, also try to get milestone refinements
+        // 4. 若健康度显示问题，同时尝试获取里程碑优化
         if !health.healthy {
             for ms in &health.blocked_milestones {
                 if let Ok(suggestions) = generator
@@ -682,7 +682,7 @@ impl RoadmapManager {
             }
             for suggestion in &health.suggestions {
                 if let Some(goal_id) = &suggestion.target_goal_id {
-                    // Find the milestone for this goal
+                    // 查找该目标所属的里程碑
                     if let Ok(Some(project)) = self.get_project(project_id).await {
                         for ms in &project.roadmap.milestones {
                             for ph in &ms.phases {
@@ -706,7 +706,7 @@ impl RoadmapManager {
             }
         }
 
-        // 5. Apply automatic blocking if there are recent failures
+        // 5. 若近期有失败则应用自动阻塞
         if health.recent_failures > 0 {
             let _updated_health = self.apply_blocking(project_id).await?;
         }
@@ -720,10 +720,10 @@ impl RoadmapManager {
         })
     }
 
-    /// Start the automated governance loop as a background task.
+    /// 以后台任务启动自动化治理循环。
     ///
-    /// This spawns a Tokio task that runs the governance loop at the configured interval.
-    /// Returns a handle that can be used to stop the loop.
+    /// 生成一个按配置间隔运行治理循环的 Tokio 任务。
+    /// 返回可用于停止循环的句柄。
     pub async fn start_governance_loop(
         self: Arc<Self>,
         config: GovernanceLoopConfig,
@@ -781,9 +781,9 @@ impl RoadmapManager {
         }
     }
 
-    // ── Resource Optimisation ────────────────────────────────────────
+    // ── 资源优化 ────────────────────────────────────────
 
-    /// Project remaining costs and duration based on historical execution outcomes.
+    /// 基于历史执行结果预测剩余成本与耗时。
     pub async fn project_costs(
         &self,
         project_id: &str,
@@ -795,7 +795,7 @@ impl RoadmapManager {
         Ok(optimizer.project_costs(&outcomes, total_goals, completed_goals))
     }
 
-    /// Identify bottlenecks in the execution pipeline for a project.
+    /// 识别项目执行流水线中的瓶颈。
     pub async fn find_bottlenecks(
         &self,
         project_id: &str,
@@ -805,7 +805,7 @@ impl RoadmapManager {
         Ok(optimizer.find_bottlenecks(&outcomes))
     }
 
-    /// Suggest goals that could be executed in parallel.
+    /// 建议可并行执行的目标。
     pub async fn suggest_parallel_execution(
         &self,
         project_id: &str,
@@ -815,7 +815,7 @@ impl RoadmapManager {
         Ok(optimizer.suggest_parallel_execution(&outcomes))
     }
 
-    /// Generate per-goal resource estimates for a list of goal IDs.
+    /// 为一组目标 ID 生成逐目标资源估算。
     pub async fn estimate_goal_resources(
         &self,
         project_id: &str,

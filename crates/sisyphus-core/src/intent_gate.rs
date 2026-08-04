@@ -1,13 +1,13 @@
-//! Intent Gate — classifies user goals into execution modes.
+//! 意图门（Intent Gate）— 将用户目标分类为执行模式。
 //!
-//! Analyzes a goal string to determine whether it should run in
-//! `Standard` or `UltraWork` mode.
+//! 分析目标字符串，决定其应在 Standard 还是
+//! UltraWork 模式下运行。
 
 use std::sync::Arc;
 
 use sisyphus_types::WorkMode;
 
-/// IntentGate analyzes the user's goal to determine the appropriate execution mode.
+/// IntentGate 分析用户目标以确定合适的执行模式。
 pub struct IntentGate;
 
 impl IntentGate {

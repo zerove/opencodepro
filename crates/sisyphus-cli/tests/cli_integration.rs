@@ -106,7 +106,7 @@ fn test_exec_failure() {
 #[test]
 fn test_help_output() {
     let stdout = run_cli_success(&["--help"]);
-    assert!(stdout.contains("Sisyphus Cognitive Engine CLI"));
+    assert!(stdout.contains("Sisyphus 认知引擎 CLI"));
     assert!(stdout.contains("read"));
     assert!(stdout.contains("write"));
     assert!(stdout.contains("exec"));
@@ -784,7 +784,7 @@ fn test_search_no_network_graceful_error() {
 #[test]
 fn test_search_help() {
     let stdout = run_cli_success(&["search", "--help"]);
-    assert!(stdout.contains("Search the web"));
+    assert!(stdout.contains("使用 DuckDuckGo 搜索网络"));
     assert!(stdout.contains("QUERY"));
 }
 
@@ -814,5 +814,5 @@ fn test_health_help() {
     // `health` is a unit variant, so `--help` returns the top-level help
     let stdout = run_cli_success(&["--help"]);
     assert!(stdout.contains("health"));
-    assert!(stdout.contains("Check bridge health"));
+    assert!(stdout.contains("检查桥接健康状态"));
 }

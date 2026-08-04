@@ -1,7 +1,7 @@
-//! Cognitive execution — iterative predict → execute → reflect → evolve loop.
+//! 认知执行 — 迭代的 预测 → 执行 → 反思 → 演进 循环。
 //!
-//! This module now primarily serves as the bridge between the SisyphusKernel
-//! and the StrategicManager.
+//! 本模块现在主要作为 SisyphusKernel 与
+//! StrategicManager 之间的桥梁。
 
 use std::sync::Arc;
 use tokio::sync::mpsc;
@@ -9,12 +9,12 @@ use tokio::sync::mpsc;
 use crate::{CoreError, ExecutionContext, ExecutionEvent, NodeOutput, SOPGraph, SisyphusKernel};
 
 // ---------------------------------------------------------------------------
-// SisyphusKernel — cognitive loop delegation
+// SisyphusKernel — 认知循环委托
 // ---------------------------------------------------------------------------
 
 impl SisyphusKernel {
-    /// Execute a SOP graph with recursive cognitive feedback.
-    /// Delegated to StrategicManager.
+    /// 以递归认知反馈执行 SOP 图谱。
+    /// 委托给 StrategicManager 执行。
     pub async fn execute_with_cognition(
         &self,
         sop_graph: Arc<SOPGraph>,

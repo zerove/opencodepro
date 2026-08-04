@@ -5,7 +5,7 @@ use ratatui::widgets::{Block, Borders, List, ListItem, Paragraph};
 
 use super::app::{matching_palette_entries, App, Mode, View};
 
-// ── UI: Routing by View ─────────────────────────────────
+// ── UI：按视图路由 ─────────────────────────────────
 
 pub(crate) fn ui(frame: &mut ratatui::Frame, app: &App) {
     if app.palette_open {
@@ -19,14 +19,14 @@ pub(crate) fn ui(frame: &mut ratatui::Frame, app: &App) {
     ])
     .areas(frame.area());
 
-    // Route content by current view
+    // 按当前视图路由内容
     match app.view {
         View::Home => crate::tui::home::render_home(frame, content_area, app),
         View::Session => crate::tui::sessions::render_sessions(frame, content_area, app),
         View::Dashboard => crate::tui::dashboard::render_dashboard(frame, content_area, app),
     }
 
-    // If a dialog is active, render it as overlay
+    // 若对话框激活，将其渲染为覆盖层
     if app.dialog.is_some() {
         let overlay = ratatui::widgets::Clear;
         frame.render_widget(overlay, frame.area());
@@ -38,7 +38,7 @@ pub(crate) fn ui(frame: &mut ratatui::Frame, app: &App) {
         status_area,
     );
 
-    // Render toast notifications as floating overlay (bottom-right)
+    // 将 Toast 通知渲染为浮动覆盖层（右下角）
     render_toasts(frame, app);
 }
 
@@ -106,7 +106,7 @@ fn render_palette(frame: &mut ratatui::Frame, app: &App) {
     );
 }
 
-/// Count diagnostics by severity (LSP: 1=error, 2=warning, 3=info, 4=hint).
+/// 按严重级别统计诊断（LSP：1=错误，2=警告，3=信息，4=提示）。
 pub(crate) fn diag_counts(app: &App) -> (usize, usize, usize) {
     let (mut errs, mut warns, mut infos) = (0, 0, 0);
     for d in &app.lsp_diagnostics {
@@ -120,7 +120,7 @@ pub(crate) fn diag_counts(app: &App) -> (usize, usize, usize) {
     (errs, warns, infos)
 }
 
-/// Estimate context usage percentage from the active session's messages.
+/// 从活动会话的消息估算上下文使用百分比。
 pub(crate) fn context_pct(app: &App) -> u8 {
     const MAX_TOKENS: u64 = 128_000;
     let total: u64 = app
@@ -209,7 +209,7 @@ pub(crate) fn render_status(app: &App) -> Line<'static> {
     spans.push(Span::raw("  "));
     spans.push(Span::styled(format!("Context: {ctx}%"), ctx_style));
 
-    // Diagnostics
+    // 诊断
     if errs > 0 || warns > 0 || infos > 0 {
         spans.push(Span::raw("  "));
         if errs > 0 {

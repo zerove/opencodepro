@@ -1,12 +1,12 @@
-//! Cognitive Loop v2 — adaptive depth, parallel branch evaluation, and runtime anomaly detection.
+//! 认知循环 v2 — 自适应深度、并行分支评估与运行时异常检测。
 //!
-//! ## Enhancements over v1
-//! - **ParallelBranchPredictor**: Runs multiple simulation/execution branches concurrently,
-//!   selects the best result based on success probability, cost, and stability.
-//! - **AnomalyDetector**: Monitors per-node execution metrics (fuel, duration, error rate)
-//!   and triggers inline reflection when anomalies are detected.
-//! - **AdaptiveDepthController**: Uses confidence + convergence velocity to decide whether
-//!   to continue iterating, rather than a fixed max_iterations ceiling.
+//! ## 相对 v1 的增强
+//! - **ParallelBranchPredictor**：并发运行多个仿真/执行分支，
+//!   根据成功概率、成本与稳定性选出最优结果。
+//! - **AnomalyDetector**：监控每个节点的执行指标（燃料、耗时、错误率），
+//!   检测到异常时触发内联反思。
+//! - **AdaptiveDepthController**：基于置信度与收敛速度决定是否
+//!   继续迭代，而不是使用固定的 max_iterations 上限。
 
 use crate::CoreError;
 use parking_lot::Mutex;
@@ -20,10 +20,10 @@ use std::sync::Arc;
 use tracing::{info, instrument, warn};
 
 // ---------------------------------------------------------------------------
-// ParallelBranchPredictor
+// ParallelBranchPredictor（并行分支预测器）
 // ---------------------------------------------------------------------------
 
-/// A single evaluated branch with its score.
+/// 单个已评估分支及其得分。
 #[derive(Debug, Clone)]
 pub struct BranchEvaluation {
     pub branch_id: String,
@@ -34,8 +34,8 @@ pub struct BranchEvaluation {
 }
 
 impl BranchEvaluation {
-    /// Composite score: higher is better.
-    /// Balances success probability, cost efficiency, and logical validity.
+    /// 综合得分：越高越好。
+    /// 综合平衡成功概率、成本效率与逻辑有效性。
     pub fn composite_score(&self) -> f64 {
         let success_weight = 0.5;
         let cost_weight = 0.3;
@@ -75,11 +75,11 @@ impl BranchEvaluation {
     }
 }
 
-/// Runs multiple simulations concurrently and selects the best path.
+/// 并发运行多个仿真并选择最佳路径。
 pub struct ParallelBranchPredictor {
-    /// Maximum number of parallel branches to evaluate.
+    /// 可并行评估的最大分支数。
     pub max_branches: usize,
-    /// Concurrency limit for branch simulation.
+    /// 分支仿真的并发上限。
     pub concurrency: usize,
 }
 
@@ -100,9 +100,9 @@ impl ParallelBranchPredictor {
         }
     }
 
-    /// Run parallel simulations for multiple variants of the same graph.
-    /// `variant_graphs` should contain different SOP graphs (e.g., evolved variants, original).
-    /// Returns the best branch evaluation and all evaluations for analysis.
+    /// 对同一图谱的多个变体运行并行仿真。
+    /// `variant_graphs` 应包含不同的 SOP 图谱（例如演进变体、原始图谱）。
+    /// 返回最佳分支评估以及全部评估结果供分析。
     #[allow(clippy::too_many_arguments)]
     #[instrument(skip_all, fields(num_variants = variant_graphs.len()))]
     pub async fn evaluate_branches(
@@ -122,7 +122,7 @@ impl ParallelBranchPredictor {
             ));
         }
 
-        // Cap branches
+        // 限制分支数量
         let graphs: Vec<_> = variant_graphs.into_iter().take(self.max_branches).collect();
 
         let num_branches = graphs.len();
@@ -138,7 +138,7 @@ impl ParallelBranchPredictor {
             let log_sim_clone = logical_simulator.clone();
 
             handles.push(tokio::spawn(async move {
-                // Simulate
+                // 仿真
                 let sim_result = sim_clone
                     .simulate(
                         Arc::clone(&graph),
@@ -149,7 +149,7 @@ impl ParallelBranchPredictor {
                     )
                     .await;
 
-                // Logical simulation
+                // 逻辑仿真
                 let log_result = log_sim_clone
                     .simulate_logic(Arc::clone(&graph), &ctx_ref, &sop_id, goal_text.as_deref())
                     .await;
@@ -169,7 +169,7 @@ impl ParallelBranchPredictor {
             }));
         }
 
-        // Collect results
+        // 收集结果
         let mut evaluations = Vec::with_capacity(num_branches);
         for handle in handles {
             match handle.await {
@@ -183,7 +183,7 @@ impl ParallelBranchPredictor {
             return Err(CoreError::Internal("All branch evaluations failed".into()));
         }
 
-        // Compute confidence for each branch using experience bank
+        // 使用经验库计算每个分支的置信度
         for eval in &mut evaluations {
             let query = sisyphus_types::experience::ExperienceQuery {
                 query_text: format!("{} {} cost={}", sop_id, eval.branch_id, eval.cost),
@@ -207,7 +207,7 @@ impl ParallelBranchPredictor {
             eval.confidence = confidence;
         }
 
-        // Pick best by composite score
+        // 按综合得分选出最优
         let best = evaluations
             .iter()
             .max_by(|a, b| {
@@ -231,7 +231,7 @@ impl ParallelBranchPredictor {
 }
 
 // ---------------------------------------------------------------------------
-// AnomalyDetector
+// AnomalyDetector（异常检测器）
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -259,19 +259,19 @@ pub struct AnomalyReport {
     pub overall_severity: AnomalySeverity,
 }
 
-/// Tracks per-node metrics and detects execution anomalies at runtime.
-/// Designed to be integrated into the execute step of the cognitive loop.
+/// 跟踪每个节点的指标并在运行时检测执行异常。
+/// 设计用于集成到认知循环的执行步骤中。
 #[allow(clippy::type_complexity)]
 pub struct AnomalyDetector {
-    /// Historical per-node metrics: node_name -> (avg_fuel, avg_duration_ms, error_count)
+    /// 每节点历史指标：node_name -> (avg_fuel, avg_duration_ms, error_count)
     history: Arc<Mutex<HashMap<String, (f64, f64, u64)>>>,
-    /// Threshold multipliers above which an anomaly is flagged.
+    /// 超过该阈值倍数时标记为异常。
     pub fuel_threshold: f64,
     pub duration_threshold: f64,
     pub error_rate_threshold: f64,
-    /// Window size for moving average.
+    /// 移动平均的窗口大小。
     pub history_window: usize,
-    /// Counter of total executions tracked.
+    /// 已跟踪的总执行次数计数。
     total_executions: Arc<Mutex<u64>>,
 }
 
@@ -300,8 +300,8 @@ impl AnomalyDetector {
         }
     }
 
-    /// Record a node execution observation and check for anomalies.
-    /// Returns anomalies detected (if any) for this observation.
+    /// 记录一次节点执行观测并检查异常。
+    /// 返回本次观测检测到的异常（如果有）。
     #[instrument(skip(self), fields(node_name, fuel_consumed, duration_ms, success))]
     pub fn observe(
         &self,
@@ -317,7 +317,7 @@ impl AnomalyDetector {
             .entry(node_name.to_string())
             .or_insert((0.0, 0.0, 0));
 
-        // Exponentially weighted moving average update
+        // 指数加权移动平均更新
         let alpha = 0.3;
         if *avg_fuel == 0.0 {
             *avg_fuel = fuel_consumed as f64;
@@ -330,7 +330,7 @@ impl AnomalyDetector {
             *err_count += 1;
         }
 
-        // Anomaly detection
+        // 异常检测
         if fuel_consumed as f64 > *avg_fuel * self.fuel_threshold && *avg_fuel > 0.0 {
             anomalies.push(NodeAnomaly {
                 node_name: node_name.to_string(),
@@ -404,14 +404,14 @@ impl AnomalyDetector {
         }
     }
 
-    /// Generate a full anomaly report for the current state.
+    /// 为当前状态生成完整的异常报告。
     pub fn generate_report(&self) -> AnomalyReport {
         let history = self.history.lock();
         let mut all_anomalies = Vec::new();
         let mut max_sev = AnomalySeverity::Low;
 
-        // We don't re-scan here since anomalies are detected inline.
-        // This method returns a summary of current tracking state.
+        // 这里不做重新扫描，因为异常已内联检测。
+        // 此方法返回当前跟踪状态的摘要。
         let node_count = history.len();
         let total_error_count: u64 = history.values().map(|(_, _, err)| *err).sum();
 
@@ -444,7 +444,7 @@ impl AnomalyDetector {
         }
     }
 
-    /// Reset tracking for a fresh execution cycle.
+    /// 为新一轮执行周期重置跟踪状态。
     pub fn reset(&self) {
         let mut history = self.history.lock();
         history.clear();
@@ -454,23 +454,23 @@ impl AnomalyDetector {
 }
 
 // ---------------------------------------------------------------------------
-// AdaptiveDepthController
+// AdaptiveDepthController（自适应深度控制器）
 // ---------------------------------------------------------------------------
 
-/// Controls cognitive loop depth based on convergence velocity and confidence.
-/// Instead of fixed max_iterations, uses a target confidence and minimum improvement.
+/// 基于收敛速度与置信度控制认知循环深度。
+/// 不使用固定 max_iterations，而是采用目标置信度与最小改进量。
 pub struct AdaptiveDepthController {
-    /// Target confidence level (0.0 - 1.0) to aim for before stopping.
+    /// 停止前要达到的目标置信度（0.0 - 1.0）。
     pub target_confidence: f64,
-    /// Minimum improvement required between iterations to continue.
+    /// 继续迭代所需的相邻轮次最小改进量。
     pub min_improvement: f64,
-    /// Hard upper bound on iterations regardless of progress.
+    /// 无论进展如何的迭代次数硬上限。
     pub max_iterations: usize,
-    /// Minimum iterations before early stopping is allowed.
+    /// 允许提前停止前的最小迭代次数。
     pub min_iterations: usize,
-    /// Convergence window: number of iterations to look back for velocity.
+    /// 收敛窗口：计算速度时回看的迭代次数。
     pub convergence_window: usize,
-    /// Per-iteration confidence history.
+    /// 每轮迭代的置信度历史。
     confidence_history: Arc<Mutex<Vec<f64>>>,
 }
 
@@ -504,7 +504,7 @@ impl AdaptiveDepthController {
         }
     }
 
-    /// Analyze task complexity to determine initial iteration budget.
+    /// 分析任务复杂度以确定初始迭代预算。
     pub async fn initial_budget(
         &self,
         experience_bank: Arc<dyn ExperienceBank>,
@@ -518,20 +518,20 @@ impl AdaptiveDepthController {
             .max(self.min_iterations)
     }
 
-    /// Record confidence after an iteration and decide whether to continue.
-    /// Returns `true` if the loop should continue, `false` to stop.
+    /// 在每轮迭代后记录置信度并决定是否继续。
+    /// 循环应继续时返回 `true`，停止时返回 `false`。
     #[instrument(skip(self))]
     pub fn observe_iteration(&self, confidence: f64) -> bool {
         let mut hist = self.confidence_history.lock();
         hist.push(confidence);
         let len = hist.len();
 
-        // Always run at least min_iterations
+        // 至少运行 min_iterations 次
         if len < self.min_iterations {
             return true;
         }
 
-        // Hard cap
+        // 硬上限
         if len >= self.max_iterations {
             info!(
                 "AdaptiveDepthController: reached max iterations ({})",
@@ -540,7 +540,7 @@ impl AdaptiveDepthController {
             return false;
         }
 
-        // Target reached?
+        // 达到目标？
         if confidence >= self.target_confidence {
             info!(
                 "AdaptiveDepthController: target confidence ({:.3}) reached",
@@ -549,7 +549,7 @@ impl AdaptiveDepthController {
             return false;
         }
 
-        // Check convergence velocity over the last N iterations
+        // 检查最近 N 轮的收敛速度
         if len >= self.convergence_window {
             let window = &hist[len - self.convergence_window..];
             let first = window.first().copied().unwrap_or(0.0);
@@ -568,20 +568,20 @@ impl AdaptiveDepthController {
         true
     }
 
-    /// Reset for a new cognitive loop.
+    /// 为新的认知循环重置状态。
     pub fn reset(&self) {
         let mut hist = self.confidence_history.lock();
         hist.clear();
     }
 
-    /// Get current confidence history.
+    /// 获取当前置信度历史。
     pub fn confidence_history(&self) -> Vec<f64> {
         self.confidence_history.lock().clone()
     }
 }
 
 // ---------------------------------------------------------------------------
-// Tests
+// 测试
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
@@ -620,15 +620,15 @@ mod tests {
     #[test]
     fn test_adaptive_depth_controller_convergence_stalled() {
         let ctrl = AdaptiveDepthController::new(0.99, 0.1, 30, 5);
-        // Simulate flat confidence
+        // 模拟平稳置信度
         for i in 0..6 {
             let should = ctrl.observe_iteration(0.65 + (i as f64) * 0.001);
             if i < 4 {
                 assert!(should, "iter {} should continue (min)", i);
             }
-            // iter 5+ should see stalled convergence
+            // 第 5 轮之后应观察到收敛停滞
         }
-        // After 6 iterations with <0.1 improvement, should stop
+        // 连续 6 轮改进小于 0.1 后应停止
         assert!(!ctrl.observe_iteration(0.661));
     }
 
@@ -696,7 +696,7 @@ mod tests {
             cost: 500,
         };
 
-        // Clean should score higher despite slightly lower success prob
+        // 干净的分支尽管成功概率略低，综合得分应更高
         assert!(
             eval_clean.composite_score() > eval_with_flaw.composite_score(),
             "Clean branch should outscore flawed branch despite logical flaws"
@@ -722,11 +722,11 @@ mod tests {
     #[tokio::test]
     async fn test_anomaly_detector_fuel_spike() {
         let detector = AnomalyDetector::new(1.5, 3.0, 0.3);
-        // Establish baseline
+        // 建立基线
         for _ in 0..3 {
             detector.observe("node_a", 100, 50, true);
         }
-        // Spike
+        // 尖峰
         let anomalies = detector.observe("node_a", 500, 50, true);
         assert!(!anomalies.is_empty(), "Fuel spike should be detected");
         assert!(anomalies.iter().any(|a| a.metric == "fuel"));
@@ -735,11 +735,11 @@ mod tests {
     #[tokio::test]
     async fn test_anomaly_detector_duration_spike() {
         let detector = AnomalyDetector::new(2.0, 2.0, 0.3);
-        // Establish baseline
+        // 建立基线
         for _ in 0..3 {
             detector.observe("node_b", 100, 50, true);
         }
-        // Duration spike
+        // 耗时尖峰
         let anomalies = detector.observe("node_b", 100, 300, true);
         assert!(!anomalies.is_empty(), "Duration spike should be detected");
         assert!(anomalies.iter().any(|a| a.metric == "duration"));

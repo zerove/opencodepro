@@ -1,19 +1,19 @@
-//! Test helpers for parsing CLI commands.
+//! 解析 CLI 命令的测试辅助。
 //!
-//! Subcommand enums derive `clap::Subcommand`, which does not provide
-//! `try_parse_from` (that is `clap::Parser`-only). These helpers parse a
-//! full command line through the top-level `Cli` (which derives `Parser`).
+//! 子命令枚举派生 `clap::Subcommand`，它不提供
+//! `try_parse_from`（仅 `clap::Parser` 有）。这些辅助通过顶层
+//! `Cli`（派生 `Parser`）解析完整命令行。
 
 use crate::commands::Commands;
 use crate::Cli;
 use clap::Parser;
 
-/// Parse a command chain from raw args (excluding the binary name).
+/// 从原始参数解析命令链（不含二进制名）。
 ///
-/// Example: `parse_commands(&["build", "test", "-p", "sisyphus-core"])`
+/// 示例：`parse_commands(&["build", "test", "-p", "sisyphus-core"])`
 ///
-/// # Panics
-/// Panics if the args fail to parse or if no command is provided.
+/// # 恐慌（Panics）
+/// 参数解析失败或未提供命令时恐慌。
 pub fn parse_commands(args: &[&str]) -> Commands {
     let full: Vec<&str> = std::iter::once("sisyphus")
         .chain(args.iter().copied())

@@ -20,10 +20,10 @@ pub struct BridgeClient {
 }
 
 impl BridgeClient {
-    /// Connect to a running Sisyphus bridge daemon.
-    /// Reads SISYPHUS_AUTH_TOKEN env var for optional bearer token.
-    /// Tries IPv6 first; falls back to IPv4 if the address uses `[::1]` and IPv6 is unavailable.
-    /// Each attempt has a 3-second timeout to avoid hanging on unreachable IPv6 endpoints.
+    /// 连接到正在运行的 Sisyphus 桥接守护进程。
+    /// 读取 SISYPHUS_AUTH_TOKEN 环境变量作为可选 bearer token。
+    /// 优先尝试 IPv6；当地址使用 `[::1]` 且 IPv6 不可用时回退到 IPv4。
+    /// 每次尝试有 3 秒超时，避免在不可达的 IPv6 端点上挂起。
     pub async fn connect(addr: &str) -> Result<Self> {
         let orig = addr.to_string();
         if let Ok(Ok(client)) =
@@ -58,7 +58,7 @@ impl BridgeClient {
         Ok(Self { inner, token })
     }
 
-    /// Inject auth token into a gRPC request if configured.
+    /// 若已配置，将认证 token 注入 gRPC 请求。
     fn with_auth<T>(&self, mut req: tonic::Request<T>) -> Result<tonic::Request<T>> {
         if let Some(ref token) = self.token {
             let bearer = format!("Bearer {}", token);
@@ -70,7 +70,7 @@ impl BridgeClient {
         Ok(req)
     }
 
-    /// Execute an SOP (Standard Operating Procedure) by ID.
+    /// 按 ID 执行 SOP（标准操作程序）。
     pub async fn execute_sop(&mut self, sop_id: &str) -> Result<String> {
         let request = self.with_auth(tonic::Request::new(ExecuteSopRequest {
             sop_id: sop_id.to_string(),
@@ -84,7 +84,7 @@ impl BridgeClient {
         Ok(response.into_inner().result)
     }
 
-    /// Check if the bridge is healthy.
+    /// 检查桥接是否健康。
     pub async fn health_check(&mut self) -> Result<HealthCheckResponse> {
         let request = self.with_auth(tonic::Request::new(HealthCheckRequest {}))?;
         let response = self
@@ -95,7 +95,7 @@ impl BridgeClient {
         Ok(response.into_inner())
     }
 
-    /// List available SOPs.
+    /// 列出可用的 SOP。
     pub async fn list_sops(&mut self) -> Result<Vec<SopInfo>> {
         let request = self.with_auth(tonic::Request::new(ListSoPsRequest {}))?;
         let response = self
@@ -106,7 +106,7 @@ impl BridgeClient {
         Ok(response.into_inner().sops)
     }
 
-    /// Execute a built-in or agent tool via the bridge's ExecutorRouter.
+    /// 通过桥接的 ExecutorRouter 执行内置或代理工具。
     pub async fn execute_tool(
         &mut self,
         tool_id: &str,
@@ -125,7 +125,7 @@ impl BridgeClient {
         Ok(response.into_inner())
     }
 
-    /// List benchmark runs from the bridge.
+    /// 列出桥接的基准运行记录。
     pub async fn list_benchmarks(&mut self) -> Result<Vec<BenchmarkEntry>> {
         let request = self.with_auth(tonic::Request::new(ListBenchmarksRequest {
             name_filter: String::new(),
@@ -138,7 +138,7 @@ impl BridgeClient {
         Ok(response.into_inner().benchmarks)
     }
 
-    /// Get circuit breaker metrics from the bridge.
+    /// 获取桥接的熔断器指标。
     pub async fn get_breaker_metrics(
         &mut self,
         model_name: Option<&str>,
@@ -154,7 +154,7 @@ impl BridgeClient {
         Ok(response.into_inner().breakers)
     }
 
-    /// List available agents.
+    /// 列出可用代理。
     pub async fn list_agents(&mut self) -> Result<Vec<AgentMetadata>> {
         let request = self.with_auth(tonic::Request::new(ListAgentsRequest {}))?;
         let response = self
@@ -165,7 +165,7 @@ impl BridgeClient {
         Ok(response.into_inner().agents)
     }
 
-    /// List available tools.
+    /// 列出可用工具。
     pub async fn list_tools(&mut self) -> Result<Vec<ToolMetadata>> {
         let request = self.with_auth(tonic::Request::new(ListToolsRequest {}))?;
         let response = self
@@ -176,7 +176,7 @@ impl BridgeClient {
         Ok(response.into_inner().tools)
     }
 
-    /// List installed skills.
+    /// 列出已安装技能。
     pub async fn list_skills(&mut self) -> Result<Vec<SkillMetadata>> {
         let request = self.with_auth(tonic::Request::new(ListSkillsRequest { remote: true }))?;
         let response = self
@@ -187,7 +187,7 @@ impl BridgeClient {
         Ok(response.into_inner().skills)
     }
 
-    /// Decompose a goal into tasks.
+    /// 将目标分解为任务。
     pub async fn decompose_goal(
         &mut self,
         goal_id: &str,
@@ -211,7 +211,7 @@ impl BridgeClient {
         Ok(inner.tasks)
     }
 
-    /// Get meta-learning insights from the bridge.
+    /// 获取桥接的元学习洞察。
     pub async fn get_learning_insights(
         &mut self,
         strategy_filter: Option<&str>,
@@ -227,7 +227,7 @@ impl BridgeClient {
         Ok(response.into_inner())
     }
 
-    /// List plugins registered on the bridge.
+    /// 列出桥接上注册的插件。
     pub async fn list_plugins(&mut self) -> Result<Vec<PluginDescriptor>> {
         let request = self.with_auth(tonic::Request::new(ListPluginsRequest {}))?;
         let response = self
@@ -238,7 +238,7 @@ impl BridgeClient {
         Ok(response.into_inner().plugins)
     }
 
-    /// Load a plugin onto the bridge.
+    /// 将插件加载到桥接。
     pub async fn load_plugin(
         &mut self,
         name: &str,
@@ -262,7 +262,7 @@ impl BridgeClient {
         Ok(response.into_inner())
     }
 
-    /// Add a message to a session and get an AI response.
+    /// 向会话添加消息并获取 AI 响应。
     pub async fn add_message(
         &mut self,
         session_id: &str,
@@ -284,8 +284,8 @@ impl BridgeClient {
         Ok(response.into_inner())
     }
 
-    /// Unload a plugin from the bridge.
-    /// Unload a plugin from the bridge.
+    /// 从桥接卸载插件。
+    /// 从桥接卸载插件。
     pub async fn unload_plugin(&mut self, name: &str) -> Result<UnloadPluginResponse> {
         let request = self.with_auth(tonic::Request::new(UnloadPluginRequest {
             name: name.to_string(),
@@ -298,7 +298,7 @@ impl BridgeClient {
         Ok(response.into_inner())
     }
 
-    /// Subscribe to a stream of events from the bridge.
+    /// 订阅来自桥接的事件流。
     pub async fn subscribe_events(
         &mut self,
     ) -> Result<tokio::sync::mpsc::Receiver<crate::tui::background::BgOp>> {

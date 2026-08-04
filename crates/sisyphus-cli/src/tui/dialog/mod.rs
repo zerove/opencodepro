@@ -21,7 +21,7 @@ pub(crate) enum Dialog {
     Rename { session_id: String, name: String },
 }
 
-/// Handle key events when a dialog is open.
+/// 对话框打开时处理按键事件。
 pub fn handle_dialog_key(key: KeyEvent, app: &mut App) {
     let code = key.code;
     let Some(ref dialog) = app.dialog else { return };
@@ -87,7 +87,7 @@ pub fn handle_dialog_key(key: KeyEvent, app: &mut App) {
     }
 }
 
-/// Render the dialog overlay.
+/// 渲染对话框覆盖层。
 pub fn render_dialog_overlay(frame: &mut ratatui::Frame, area: ratatui::layout::Rect, app: &App) {
     let Some(ref dialog) = app.dialog else { return };
 

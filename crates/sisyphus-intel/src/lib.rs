@@ -57,7 +57,7 @@ pub use probabilistic_planner::{PathSummary, PlannerConfig, ProbabilisticPlanner
 pub use topological_evolver::TopologicalSOPEvolver;
 
 // ---------------------------------------------------------------------------
-// Intel orchestrator
+// 情报编排器
 // ---------------------------------------------------------------------------
 
 pub struct SisyphusIntel {

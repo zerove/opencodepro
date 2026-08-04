@@ -1,5 +1,5 @@
-//! Failure Pattern Evolver — advanced SOP evolution based on failure pattern library.
-//! Analyzes historical failures and applies targeted mutations to prevent recurrence.
+//! 失败模式演进器 — 基于失败模式库的高级 SOP 演进。
+//! 分析历史失败并应用针对性变异以防止复发。
 
 use crate::reflect::ReflectionReport;
 use crate::topological_evolver::TopologicalSOPEvolver;
@@ -9,26 +9,26 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::SystemTime;
 
-/// Category of failure pattern
+/// 失败模式的类别
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum FailureCategory {
-    /// Node exceeded fuel budget
+    /// 节点超出燃料预算
     FuelExhaustion,
-    /// Node produced wrong output type
+    /// 节点产生错误输出类型
     OutputMismatch,
-    /// Dependency was not satisfied
+    /// 依赖未满足
     DependencyMissing,
-    /// Node timed out
+    /// 节点超时
     Timeout,
-    /// External tool returned error
+    /// 外部工具返回错误
     ToolError,
-    /// Logic error in node processing
+    /// 节点处理中的逻辑错误
     LogicError,
-    /// Resource unavailable
+    /// 资源不可用
     ResourceUnavailable,
 }
 
-/// A recorded failure pattern with associated evolution strategy
+/// 带关联演进策略的已记录失败模式
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FailurePattern {
     pub id: String,
@@ -41,7 +41,7 @@ pub struct FailurePattern {
     pub success_rate_after_fix: f64,
 }
 
-/// Failure pattern library for tracking and learning from past failures
+/// 跟踪并从过去失败中学习的失败模式库
 pub struct FailurePatternLibrary {
     patterns: Vec<FailurePattern>,
     node_failure_counts: HashMap<String, HashMap<FailureCategory, usize>>,
@@ -55,14 +55,14 @@ impl FailurePatternLibrary {
         }
     }
 
-    /// Record a new failure observation
+    /// 记录新的失败观测
     pub fn record_failure(
         &mut self,
         node_name: &str,
         category: FailureCategory,
         description: &str,
     ) {
-        // Update count
+        // 更新计数
         self.node_failure_counts
             .entry(node_name.to_string())
             .or_default()
@@ -70,7 +70,7 @@ impl FailurePatternLibrary {
             .and_modify(|c| *c += 1)
             .or_insert(1);
 
-        // Check if pattern already exists
+        // 检查模式是否已存在
         let existing = self
             .patterns
             .iter_mut()
@@ -100,7 +100,7 @@ impl FailurePatternLibrary {
         }
     }
 
-    /// Get patterns for a specific node
+    /// 获取特定节点的模式
     pub fn get_node_patterns(&self, node_name: &str) -> Vec<&FailurePattern> {
         self.patterns
             .iter()
@@ -108,7 +108,7 @@ impl FailurePatternLibrary {
             .collect()
     }
 
-    /// Get the most common failure category for a node
+    /// 获取节点最常见的失败类别
     pub fn most_common_failure(&self, node_name: &str) -> Option<FailureCategory> {
         self.node_failure_counts.get(node_name).and_then(|counts| {
             counts
@@ -118,7 +118,7 @@ impl FailurePatternLibrary {
         })
     }
 
-    /// Get all patterns sorted by occurrence count
+    /// 获取按出现次数排序的所有模式
     pub fn get_hotspots(&self) -> Vec<&FailurePattern> {
         let mut patterns: Vec<_> = self.patterns.iter().collect();
         patterns.sort_by_key(|b| std::cmp::Reverse(b.occurrence_count));
@@ -132,7 +132,7 @@ impl Default for FailurePatternLibrary {
     }
 }
 
-/// Advanced evolver that uses failure patterns to generate targeted mutations
+/// 使用失败模式生成针对性变异的高级演进器
 pub struct FailurePatternEvolver {
     pattern_library: Arc<parking_lot::RwLock<FailurePatternLibrary>>,
     #[expect(dead_code)]
@@ -147,7 +147,7 @@ impl FailurePatternEvolver {
         }
     }
 
-    /// Analyze a reflection report and suggest targeted mutations
+    /// 分析反思报告并建议针对性变异
     pub fn analyze_and_suggest(&self, report: &ReflectionReport) -> Vec<MutationSuggestion> {
         let mut suggestions = Vec::new();
         let library = self.pattern_library.read();
@@ -156,7 +156,7 @@ impl FailurePatternEvolver {
             if record.status == "failed" || record.status == "error" {
                 let category = Self::classify_failure(&record.output);
 
-                // Check if we've seen this pattern before
+                // 检查此前是否见过该模式
                 if let Some(existing_pattern) = library
                     .get_node_patterns(&record.node)
                     .iter()
@@ -178,7 +178,7 @@ impl FailurePatternEvolver {
                         });
                     }
                 } else {
-                    // First time seeing this pattern - still suggest basic mitigation
+                    // 首次见到该模式 — 仍建议基础缓解措施
                     suggestions.push(MutationSuggestion {
                         node_name: record.node.clone(),
                         category,
@@ -200,7 +200,7 @@ impl FailurePatternEvolver {
         suggestions
     }
 
-    /// Generate evolution operations based on failure patterns
+    /// 基于失败模式生成演进操作
     pub fn generate_evolution_ops(&self, report: &ReflectionReport) -> Vec<EvolutionOp> {
         let suggestions = self.analyze_and_suggest(report);
         let mut ops = Vec::new();
@@ -273,7 +273,7 @@ impl FailurePatternEvolver {
     }
 }
 
-/// A mutation suggestion with confidence score
+/// 带置信度分数的变异建议
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MutationSuggestion {
     pub node_name: String,

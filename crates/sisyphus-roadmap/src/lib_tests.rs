@@ -437,7 +437,7 @@ async fn test_goal_status_propagation() {
         .await
         .unwrap();
 
-    // Complete all goals → milestone becomes Completed
+    // 完成所有目标 → 里程碑变为已完成
     manager
         .update_goal_status_with_propagation(
             "prop",
@@ -600,7 +600,7 @@ async fn test_get_next_goal() {
         .await
         .unwrap();
 
-    // Complete g-1, g-2 should be next
+    // 完成 g-1，g-2 应是下一个
     manager
         .update_goal_status(
             "next-goal",
@@ -882,7 +882,7 @@ async fn test_apply_blocking() {
         .await
         .unwrap();
 
-    // Record a failure for g-1, then apply_blocking should mark g-2 as Blocked
+    // 为 g-1 记录失败，然后 apply_blocking 应将 g-2 标记为已阻塞
     let outcome = ExecutionOutcome {
         project_id: "block".into(),
         milestone_id: "ms-1".into(),

@@ -1,4 +1,4 @@
-//! Autonomous tool coding agent for Sisyphus.
+//! Sisyphus 的自主工具编码代理。
 
 use sisyphus_tools_llm::LlmClient;
 use sisyphus_types::tools::ToolSpec;
@@ -13,7 +13,7 @@ impl ToolCoder {
         Self { llm_client }
     }
 
-    /// Generates Rust source code for a tool based on its specification and optional feedback from previous failures.
+    /// 基于工具规范与以往失败的可选反馈，生成工具的 Rust 源代码。
     pub async fn generate_code(
         &self,
         spec: &ToolSpec,
@@ -50,7 +50,7 @@ impl ToolCoder {
         let response = self.llm_client.chat("You are a Senior Rust Engineer specializing in WebAssembly (WASM) for the Sisyphus cognitive engine.", &prompt, false).await
             .map_err(|e| crate::IntelError::Internal(e.to_string()))?;
 
-        // Extract code from markdown block
+        // 从 markdown 块提取代码
         let code = self.extract_code(&response)?;
         Ok(code)
     }
@@ -63,7 +63,7 @@ impl ToolCoder {
             }
         }
 
-        // Fallback: if no markdown block, try to find the first { and last }
+        // 兜底：若无 markdown 块，尝试找到第一个 { 与最后一个 }
         if let (Some(start), Some(end)) = (text.find("fn main"), text.rfind("}")) {
             return Ok(text[start..end + 1].to_string());
         }

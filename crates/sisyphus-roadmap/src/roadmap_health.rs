@@ -6,10 +6,10 @@ use crate::RoadmapManager;
 use sisyphus_types::{GoalRef, MilestoneStatus, StateStore};
 
 impl RoadmapManager {
-    /// Record a goal execution outcome into persistent storage.
+    /// 将目标执行结果记录到持久化存储。
     ///
-    /// Outcomes are keyed by `(project, milestone, phase, goal)` so each
-    /// goal retains only its **most recent** outcome.
+    /// 结果以 `(project, milestone, phase, goal)` 为键，使每个
+    /// 目标只保留**最近一次**结果。
     pub async fn record_outcome(&self, outcome: &ExecutionOutcome) -> Result<(), RoadmapError> {
         let key = format!(
             "roadmap:outcome:{}:{}:{}:{}",
@@ -20,7 +20,7 @@ impl RoadmapManager {
             .set_state_json(&outcome.project_id, &key, value)
             .await?;
 
-        // Update outcome index (deduplicated list of (project,ms,ph,goal) tuples)
+        // 更新结果索引（(project,ms,ph,goal) 元组的去重列表）
         let idx_key = format!("roadmap:outcomes:{}", outcome.project_id);
         let mut ids: Vec<String> = match self
             .store
@@ -39,7 +39,7 @@ impl RoadmapManager {
         );
         if !ids.contains(&entry) {
             ids.push(entry);
-            // Keep only the 100 most recent entries (FIFO)
+            // 仅保留最近 100 条记录（FIFO）
             if ids.len() > 100 {
                 ids.drain(0..ids.len() - 100);
             }
@@ -52,7 +52,7 @@ impl RoadmapManager {
         Ok(())
     }
 
-    /// Retrieve all recorded outcomes for a project.
+    /// 检索项目的全部已记录结果。
     pub async fn get_outcomes(
         &self,
         project_id: &str,
@@ -84,12 +84,12 @@ impl RoadmapManager {
         Ok(outcomes)
     }
 
-    /// Evaluate roadmap health based on recent execution outcomes and goal states.
+    /// 基于近期执行结果与目标状态评估路线图健康度。
     ///
-    /// Returns a `RoadmapHealth` with detected problems and suggested adjustments:
-    /// - Goals with recent failures → flagged as problematic
-    /// - Blocked milestones → listed
-    /// - Goals that are Pending but have been superseded by failures → suggestions
+    /// 返回带检测问题与建议调整的 `RoadmapHealth`：
+    /// - 近期有失败的目标 → 标记为有问题
+    /// - 已阻塞的里程碑 → 列出
+    /// - 待处理但已被失败取代的目标 → 给出建议
     pub async fn evaluate_health(&self, project_id: &str) -> Result<RoadmapHealth, RoadmapError> {
         let project = self.get_project_or_err(project_id).await?;
         let outcomes = self.get_outcomes(project_id).await?;
@@ -100,7 +100,7 @@ impl RoadmapManager {
         let mut blocked_milestones: Vec<String> = Vec::new();
         let mut stale_goals: Vec<String> = Vec::new();
 
-        // Check for milestones that are blocked
+        // 检查被阻塞的里程碑
         for ms in &project.roadmap.milestones {
             if ms.status == MilestoneStatus::Blocked {
                 blocked_milestones.push(ms.id.clone());
@@ -141,7 +141,7 @@ impl RoadmapManager {
                 });
             }
 
-            // Check for stale goals (Pending for too long when others are Completed)
+            // 检查陈旧目标（其他已完成时仍长期待处理）
             for ph in &ms.phases {
                 let has_completed = ph
                     .goals
@@ -170,7 +170,7 @@ impl RoadmapManager {
                     });
                 }
 
-                // Check for failed goals
+                // 检查失败的目标
                 for g in &ph.goals {
                     let has_failure = outcomes.iter().any(|o| {
                         o.goal_id == g.goal_id
@@ -205,14 +205,14 @@ impl RoadmapManager {
         })
     }
 
-    /// Apply automatic blocking: mark goals as Blocked if a preceding goal
-    /// in the same phase has recent failures.
+    /// 应用自动阻塞：若同一阶段的前置目标近期失败，
+    /// 将目标标记为已阻塞。
     ///
-    /// Uses `depends_on` field in `Phase` to determine ordering.
+    /// 使用 `Phase` 中的 `depends_on` 字段确定顺序。
     pub async fn apply_blocking(&self, project_id: &str) -> Result<RoadmapHealth, RoadmapError> {
         let health = self.evaluate_health(project_id).await?;
 
-        // Get failed goal IDs from recent outcomes
+        // 从近期结果获取失败目标 ID
         let outcomes = self.get_outcomes(project_id).await?;
         let failed_goals: Vec<String> = outcomes
             .iter()
@@ -281,10 +281,10 @@ impl RoadmapManager {
             }
         }
 
-        // Ensure milestone statuses are propagated after blocking goals
+        // 阻塞目标后确保里程碑状态传播
         self.auto_propagate_all(project_id).await?;
 
-        // Re-evaluate health after blocking
+        // 阻塞后重新评估健康度
         self.evaluate_health(project_id).await
     }
 }

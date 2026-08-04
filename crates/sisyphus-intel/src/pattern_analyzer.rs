@@ -11,7 +11,7 @@ pub struct SubgraphPattern {
 }
 
 pub struct PatternAnalyzer {
-    // Maps a pattern to its frequency across different graphs
+    // 将模式映射到其在不同图谱中的出现频率
     pub pattern_frequency: HashMap<SubgraphPattern, usize>,
 }
 
@@ -28,7 +28,7 @@ impl PatternAnalyzer {
         }
     }
 
-    /// Analyzes a set of successful graphs to find recurring patterns.
+    /// 分析一组成功图谱以发现重复模式。
     pub fn analyze_graphs(&mut self, graphs: &[Arc<SOPGraph>]) {
         for graph in graphs {
             let patterns = self.extract_patterns(graph);
@@ -38,13 +38,13 @@ impl PatternAnalyzer {
         }
     }
 
-    /// Extracts all subgraphs of size 2 to 4.
+    /// 提取大小为 2 到 4 的所有子图。
     fn extract_patterns(&self, graph: &SOPGraph) -> HashSet<SubgraphPattern> {
         let mut patterns = HashSet::new();
         let nodes = &graph.graph;
 
         for start_node in nodes.node_indices() {
-            // Explore subgraphs starting from this node using simple BFS/DFS
+            // 使用简单 BFS/DFS 从该节点开始探索子图
             self.explore_subgraphs(graph, start_node, 4, &mut patterns);
         }
 
@@ -100,7 +100,7 @@ impl PatternAnalyzer {
 
         for (i, &node_idx) in nodes.iter().enumerate() {
             let node = graph.graph[node_idx].as_ref();
-            // We care about the tool_id for the pattern, name is secondary but kept for clarity
+            // 我们关注模式中的 tool_id，名称次要但为清晰起见保留
             let tool_id = match node.to_kind() {
                 sisyphus_types::NodeKind::Wasm { ref tool_id, .. } => tool_id.clone(),
                 _ => "unknown".to_string(),
@@ -122,7 +122,7 @@ impl PatternAnalyzer {
             }
         }
 
-        // Sort edges to make the pattern canonical
+        // 对边排序使模式规范化
         pattern_edges.sort();
 
         Some(SubgraphPattern {
@@ -131,7 +131,7 @@ impl PatternAnalyzer {
         })
     }
 
-    /// Returns patterns that appear more than `min_frequency` times.
+    /// 返回出现超过 `min_frequency` 次的模式。
     pub fn get_frequent_patterns(&self, min_frequency: usize) -> Vec<SubgraphPattern> {
         let frequent: Vec<_> = self
             .pattern_frequency
@@ -140,7 +140,7 @@ impl PatternAnalyzer {
             .map(|(pattern, _)| pattern.clone())
             .collect();
 
-        // Sort by frequency descending (would need to store frequency in result)
+        // 按频率降序排序（需在结果中存储频率）
         frequent
     }
 }
@@ -162,14 +162,14 @@ impl SemanticPatternAnalyzer {
         Self { min_cluster_size }
     }
 
-    /// Analyzes the experience bank for clusters of failures with similar semantic goals
-    /// and common root causes (extracted from insights).
+    /// 分析经验库中具有相似语义目标的失败簇，
+    /// 以及共同根因（从洞察中提取）。
     pub async fn analyze_failure_clusters(
         &self,
         bank: &dyn sisyphus_types::experience::ExperienceBank,
         current_goal: &str,
     ) -> Result<Option<ClusterAnalysis>, String> {
-        // 1. Retrieve a broad set of experiences related to the current goal
+        // 1. 检索与当前目标相关的大量经验
         let query = sisyphus_types::experience::ExperienceQuery {
             query_text: current_goal.to_string(),
             context_hash: "".to_string(), // Broad search
@@ -189,7 +189,7 @@ impl SemanticPatternAnalyzer {
             return Ok(None);
         }
 
-        // 2. Group failures by common insight themes (simple keyword matching or LLM)
+        // 2. 按共同洞察主题对失败分组（简单关键词匹配或 LLM）
         let mut theme_counts: HashMap<String, Vec<String>> = HashMap::new();
         for fail in &failures {
             if let Some(ref insight) = fail.insight {
@@ -201,7 +201,7 @@ impl SemanticPatternAnalyzer {
             }
         }
 
-        // 3. Find the most dominant failure mode
+        // 3. 找到最主要的失败模式
         let dominant_theme = theme_counts
             .iter()
             .max_by_key(|(_, goals)| goals.len())

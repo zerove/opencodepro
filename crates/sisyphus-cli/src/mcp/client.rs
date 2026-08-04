@@ -1,8 +1,8 @@
 use anyhow::{Context, Result};
 
-// ── MCP Client ────────────────────────────────────────────────
+// ── MCP 客户端 ────────────────────────────────────────────────
 
-/// Helper: connect via stdio transport.
+/// 辅助：通过 stdio 传输连接。
 async fn connect_stdio(command: &str, args: &[String]) -> Result<crate::tools::McpClient> {
     let args_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
     let transport = crate::tools::StdioTransport::spawn(command, &args_refs)
@@ -15,7 +15,7 @@ async fn connect_stdio(command: &str, args: &[String]) -> Result<crate::tools::M
     Ok(client)
 }
 
-/// Helper: connect via HTTP transport.
+/// 辅助：通过 HTTP 传输连接。
 async fn connect_http(url: &str) -> Result<crate::tools::McpClient> {
     let transport = crate::tools::HttpTransport::new(url);
     let mut client = crate::tools::McpClient::new(Box::new(transport));
@@ -26,9 +26,9 @@ async fn connect_http(url: &str) -> Result<crate::tools::McpClient> {
     Ok(client)
 }
 
-/// Resolve connection args → client.
-/// If first arg looks like `http://` or `https://`, uses HTTP transport.
-/// Otherwise treats args as `<command>` `[args...]` for stdio transport.
+/// 解析连接参数 → 客户端。
+/// 若第一个参数形如 `http://` 或 `https://`，使用 HTTP 传输。
+/// 否则将参数视为 `<command>` `[args...]`，用于 stdio 传输。
 async fn resolve_client(args: &[String]) -> Result<crate::tools::McpClient> {
     if args.is_empty() {
         anyhow::bail!("Provide either `<url>` for HTTP or `<command>` `[args...]` for stdio");
@@ -41,7 +41,7 @@ async fn resolve_client(args: &[String]) -> Result<crate::tools::McpClient> {
     }
 }
 
-/// `sisyphus mcp info <url-or-command...>` — show server info + tools.
+/// `sisyphus mcp info <url-or-command...>` — 显示服务器信息 + 工具。
 pub async fn run_info(connect_args: &[String]) -> Result<()> {
     let mut client = resolve_client(connect_args).await?;
 
@@ -74,7 +74,7 @@ pub async fn run_info(connect_args: &[String]) -> Result<()> {
     Ok(())
 }
 
-/// `sisyphus mcp call <tool-name> [args-json] -- <url-or-command...>` — call a tool.
+/// `sisyphus mcp call <tool-name> [args-json] -- <url-or-command...>` — 调用工具。
 pub async fn run_call(
     tool_name: &str,
     args_json: Option<&str>,

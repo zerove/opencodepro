@@ -1,7 +1,7 @@
-//! Kernel project workflows: roadmap execution and milestone generation.
+//! 内核项目工作流：路线图执行与里程碑生成。
 //!
-//! Part of the `SisyphusKernel` implementation extracted from `kernel.rs` for
-//! readability. Re-exported via `pub use kernel::*`.
+//! `SisyphusKernel` 实现的一部分，为可读性从 `kernel.rs` 拆出。
+//! 通过 `pub use kernel::*` 重新导出。
 
 use tokio::sync::mpsc;
 
@@ -138,7 +138,7 @@ impl SisyphusKernel {
         }
     }
 
-    /// Autonomously execute the project roadmap by picking the next available goal.
+    /// 通过选取下一个可用目标来自主执行项目路线图。
     pub async fn run_project_roadmap(
         &self,
 
@@ -149,7 +149,7 @@ impl SisyphusKernel {
         tracing::info!(project_id, "Starting autonomous roadmap execution");
 
         loop {
-            // 1. Proactive Health Check: Simulate remaining roadmap to detect potential risks before execution.
+            // 1. 主动健康检查：在执行前仿真剩余路线图，检测潜在风险。
 
             if let Some(_reflector) = self.strategic_reflector.as_ref() {
                 if let Some(reflection) = self.strategic_reflect(project_id).await {
@@ -164,12 +164,12 @@ impl SisyphusKernel {
 
                         );
 
-                        // We don't break the loop, but the generated proposals will be available for approval.
+                        // 我们不中断循环，但生成的提案会进入待审批状态。
                     }
                 }
             }
 
-            // 2. Find the next pending goal
+            // 2. 查找下一个待处理目标
 
             let next_goal_ref = self
                 .roadmap_manager
@@ -190,7 +190,7 @@ impl SisyphusKernel {
                 }
             };
 
-            // 2. Resolve context (Milestone, Phase) for the goal
+            // 2. 解析目标上下文（里程碑、阶段）
 
             let project = self
                 .roadmap_manager
@@ -229,7 +229,7 @@ impl SisyphusKernel {
                 }
             };
 
-            // 3. Execute the goal
+            // 3. 执行目标
 
             tracing::info!(project_id, goal_id = %goal_ref.goal_id, "Executing next goal from roadmap");
 
@@ -265,8 +265,8 @@ impl SisyphusKernel {
         Ok(())
     }
 
-    /// Initialize a new project from a high-level vision, automatically generating
-    /// a structured roadmap of milestones, phases, and goals.
+    /// 从高层愿景初始化新项目，自动生成
+    /// 包含里程碑、阶段与目标的结构化路线图。
     pub async fn project_costs(
         &self,
 
@@ -286,8 +286,8 @@ impl SisyphusKernel {
             .project_costs(&outcomes, total_goals, completed_goals)
     }
 
-    /// Initialize a new project from a high-level vision, automatically generating
-    /// a structured roadmap of milestones, phases, and goals.
+    /// 从高层愿景初始化新项目，自动生成
+    /// 包含里程碑、阶段与目标的结构化路线图。
     pub async fn initialize_project_from_vision(
         &self,
 
@@ -297,7 +297,7 @@ impl SisyphusKernel {
     ) -> Result<sisyphus_types::Project, CoreError> {
         tracing::info!(project_id, vision = %vision, "Initializing project from vision");
 
-        // 1. Create the project metadata
+        // 1. 创建项目元数据
 
         let project_name = project_id.replace('_', " ").to_uppercase(); // Simple fallback name
 
@@ -307,7 +307,7 @@ impl SisyphusKernel {
             .await
             .map_err(|e| CoreError::Internal(format!("Failed to create project: {}", e)))?;
 
-        // 2. Generate the roadmap milestones
+        // 2. 生成路线图里程碑
 
         if let Some(ref generator) = self.milestone_generator {
             tracing::info!(project_id, "Generating autonomous roadmap milestones...");

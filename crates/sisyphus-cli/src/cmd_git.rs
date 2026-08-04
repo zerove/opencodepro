@@ -4,97 +4,97 @@ use clap::Subcommand;
 
 #[derive(Subcommand)]
 pub enum GitCommands {
-    /// Show working tree status
+    /// 显示工作树状态
     Status {
-        /// Working directory (default: current dir)
+        ///工作目录（默认：当前目录）
         #[arg(short = 'C')]
         cwd: Option<PathBuf>,
     },
-    /// Show diff of working tree or staged changes
+    /// 显示工作树或已暂存变更的差异
     Diff {
-        /// Optional pathspec to filter
+        ///可选 pathspec 过滤条件
         pathspec: Option<String>,
-        /// Show staged (cached) diff
+        ///显示已暂存（缓存）的差异
         #[arg(short = 'c', long = "cached")]
         cached: bool,
-        /// Working directory (default: current dir)
+        ///工作目录（默认：当前目录）
         #[arg(short = 'C')]
         cwd: Option<PathBuf>,
     },
-    /// Stage files
+    /// 暂存文件
     Add {
-        /// Paths to stage (use "." for all)
+        ///要暂存的路径（使用 "." 表示全部）
         pathspecs: Vec<String>,
-        /// Working directory (default: current dir)
+        ///工作目录（默认：当前目录）
         #[arg(short = 'C')]
         cwd: Option<PathBuf>,
     },
-    /// Create a commit
+    /// 创建提交
     Commit {
-        /// Commit message
+        ///提交信息
         #[arg(short = 'm', long = "message")]
         message: String,
-        /// Allow empty commit
+        ///允许空提交
         #[arg(long = "allow-empty")]
         allow_empty: bool,
-        /// Working directory (default: current dir)
+        ///工作目录（默认：当前目录）
         #[arg(short = 'C')]
         cwd: Option<PathBuf>,
     },
-    /// Show commit log
+    /// 显示提交日志
     Log {
-        /// Number of commits to show
+        ///要显示的提交数量
         #[arg(short = 'n', default_value = "10")]
         count: usize,
-        /// Working directory (default: current dir)
+        ///工作目录（默认：当前目录）
         #[arg(short = 'C')]
         cwd: Option<PathBuf>,
     },
-    /// List branches
+    /// 列出分支
     Branch {
-        /// Working directory (default: current dir)
+        ///工作目录（默认：当前目录）
         #[arg(short = 'C')]
         cwd: Option<PathBuf>,
     },
-    /// Switch to a branch (or create-and-switch with -b)
+    /// 切换到分支（或使用 -b 创建并切换）
     Checkout {
-        /// Branch name
+        ///分支名
         branch: String,
-        /// Create the branch and switch to it
+        ///创建分支并切换过去
         #[arg(short = 'b')]
         create: bool,
-        /// Working directory (default: current dir)
+        ///工作目录（默认：当前目录）
         #[arg(short = 'C')]
         cwd: Option<PathBuf>,
     },
-    /// Push to remote
+    /// 推送到远程
     Push {
-        /// Remote name (default: origin)
+        ///远程名（默认：origin）
         #[arg(default_value = "origin")]
         remote: String,
-        /// Branch to push (default: current branch)
+        ///要推送的分支（默认：当前分支）
         branch: Option<String>,
-        /// Force push
+        ///强制推送
         #[arg(short = 'f', long = "force")]
         force: bool,
-        /// Working directory (default: current dir)
+        ///工作目录（默认：当前目录）
         #[arg(short = 'C')]
         cwd: Option<PathBuf>,
     },
-    /// Pull from remote
+    /// 从远程拉取
     Pull {
-        /// Remote name (default: origin)
+        ///远程名（默认：origin）
         #[arg(default_value = "origin")]
         remote: String,
-        /// Branch to pull (default: current branch)
+        ///要拉取的分支（默认：当前分支）
         branch: Option<String>,
-        /// Working directory (default: current dir)
+        ///工作目录（默认：当前目录）
         #[arg(short = 'C')]
         cwd: Option<PathBuf>,
     },
-    /// Show a one-line summary (branch + counts)
+    /// 显示单行摘要（分支 + 计数）
     Summary {
-        /// Working directory (default: current dir)
+        ///工作目录（默认：当前目录）
         #[arg(short = 'C')]
         cwd: Option<PathBuf>,
     },
@@ -102,87 +102,87 @@ pub enum GitCommands {
 
 #[derive(Subcommand)]
 pub enum BuildCommands {
-    /// Check code for errors
+    /// 检查代码错误
     Check {
-        /// Package to check
+        ///要检查的包
         #[arg(short = 'p', long = "package")]
         package: Option<String>,
-        /// Check all workspace members
+        ///检查全部工作区成员
         #[arg(long = "all")]
         all: bool,
-        /// Language backend (rust/node/python/go/java/gradle/fe). Auto-detected if omitted.
+        ///语言后端（rust/node/python/go/java/gradle/fe）。省略时自动检测。
         #[arg(long = "lang")]
         lang: Option<String>,
-        /// Working directory (default: current dir)
+        ///工作目录（默认：当前目录）
         #[arg(short = 'C')]
         cwd: Option<PathBuf>,
     },
-    /// Build the project
+    /// 构建项目
     Build {
-        /// Package to build
+        ///要构建的包
         #[arg(short = 'p', long = "package")]
         package: Option<String>,
-        /// Build in release mode
+        ///以 release 模式构建
         #[arg(short = 'r', long = "release")]
         release: bool,
-        /// Language backend (rust/node/python/go/java/gradle/fe). Auto-detected if omitted.
+        ///语言后端（rust/node/python/go/java/gradle/fe）。省略时自动检测。
         #[arg(long = "lang")]
         lang: Option<String>,
-        /// Working directory (default: current dir)
+        ///工作目录（默认：当前目录）
         #[arg(short = 'C')]
         cwd: Option<PathBuf>,
     },
-    /// Run tests
+    /// 运行测试
     Test {
-        /// Run only the test whose name matches `<filter>`
+        ///仅运行名称匹配 `<filter>` 的测试
         #[arg(short = 'n', long = "name")]
         name: Option<String>,
-        /// Package to test
+        ///要测试的包
         #[arg(short = 'p', long = "package")]
         package: Option<String>,
-        /// Test all workspace members
+        ///测试全部工作区成员
         #[arg(long = "all")]
         all: bool,
-        /// Language backend (rust/node/python/go/java/gradle/fe). Auto-detected if omitted.
+        ///语言后端（rust/node/python/go/java/gradle/fe）。省略时自动检测。
         #[arg(long = "lang")]
         lang: Option<String>,
-        /// Working directory (default: current dir)
+        ///工作目录（默认：当前目录）
         #[arg(short = 'C')]
         cwd: Option<PathBuf>,
     },
-    /// Lint code
+    /// 检查代码
     Lint {
-        /// Package to lint
+        ///要检查的包
         #[arg(short = 'p', long = "package")]
         package: Option<String>,
-        /// Language backend (rust/node/python/go/java/gradle/fe). Auto-detected if omitted.
+        ///语言后端（rust/node/python/go/java/gradle/fe）。省略时自动检测。
         #[arg(long = "lang")]
         lang: Option<String>,
-        /// Working directory (default: current dir)
+        ///工作目录（默认：当前目录）
         #[arg(short = 'C')]
         cwd: Option<PathBuf>,
     },
-    /// Format code
+    /// 格式化代码
     Fmt {
-        /// Check formatting without modifying files
+        ///检查格式但不修改文件
         #[arg(long = "check")]
         check: bool,
-        /// Language backend (rust/node/python/go/java/gradle/fe). Auto-detected if omitted.
+        ///语言后端（rust/node/python/go/java/gradle/fe）。省略时自动检测。
         #[arg(long = "lang")]
         lang: Option<String>,
-        /// Working directory (default: current dir)
+        ///工作目录（默认：当前目录）
         #[arg(short = 'C')]
         cwd: Option<PathBuf>,
     },
-    /// Generate documentation
+    /// 生成文档
     Doc {
-        /// Package to document
+        ///要生成文档的包
         #[arg(short = 'p', long = "package")]
         package: Option<String>,
-        /// Language backend (rust/node/python/go/java/gradle/fe). Auto-detected if omitted.
+        ///语言后端（rust/node/python/go/java/gradle/fe）。省略时自动检测。
         #[arg(long = "lang")]
         lang: Option<String>,
-        /// Working directory (default: current dir)
+        ///工作目录（默认：当前目录）
         #[arg(short = 'C')]
         cwd: Option<PathBuf>,
     },
@@ -190,15 +190,15 @@ pub enum BuildCommands {
 
 #[derive(Subcommand)]
 pub enum RunCommands {
-    /// Run the project (cargo run, npm start, go run ., etc.)
+    /// 运行项目（cargo run、npm start、go run . 等）
     Run {
-        /// Extra arguments for the run command (passed after --)
+        ///运行命令的额外参数（在 -- 之后传递）
         #[arg(last = true)]
         args: Vec<String>,
-        /// Language backend (rust/node/python/go/java/gradle/fe). Auto-detected if omitted.
+        ///语言后端（rust/node/python/go/java/gradle/fe）。省略时自动检测。
         #[arg(long = "lang")]
         lang: Option<String>,
-        /// Working directory (default: current dir)
+        ///工作目录（默认：当前目录）
         #[arg(short = 'C')]
         cwd: Option<PathBuf>,
     },

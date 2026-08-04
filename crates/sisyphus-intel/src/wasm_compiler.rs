@@ -1,4 +1,4 @@
-//! WASM Compiler for autonomous tool generation.
+//! 用于自主工具生成的 WASM 编译器。
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -16,13 +16,13 @@ impl WasmCompiler {
         Self {}
     }
 
-    /// Compiles Rust source code into a WASM binary.
+    /// 将 Rust 源代码编译为 WASM 二进制。
     pub async fn compile(
         &self,
         tool_name: &str,
         _code: &str,
     ) -> Result<PathBuf, crate::IntelError> {
-        // MOCK IMPLEMENTATION for testing: skip actual cargo build
+        // 用于测试的 MOCK 实现：跳过实际 cargo build
         let persistent_dir = Path::new("target/sisyphus_tools");
         fs::create_dir_all(persistent_dir).map_err(|e| {
             crate::IntelError::Internal(format!("Failed to create persistent tools dir: {e}"))

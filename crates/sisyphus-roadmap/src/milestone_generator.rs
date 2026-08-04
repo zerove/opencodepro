@@ -1,9 +1,9 @@
 // ---------------------------------------------------------------------------
-// Phase 3 — Autonomous Milestone Generation
+// 阶段 3 — 自主里程碑生成
 //
-// Uses LLM to propose optimal milestone / phase / goal breakdowns from a
-// project description, and can refine existing roadmaps based on execution
-// outcomes and strategic reflection recommendations.
+// 使用 LLM 根据项目描述提出最优的里程碑 / 阶段 / 目标
+// 拆解方案，并能基于执行结果与战略反思建议
+// 优化现有路线图。
 // ---------------------------------------------------------------------------
 
 use crate::{RoadmapError, RoadmapManager};
@@ -13,10 +13,10 @@ use sisyphus_types::{GoalRef, Milestone, MilestoneStatus, Phase};
 use std::sync::Arc;
 
 // ---------------------------------------------------------------------------
-// Types
+// 类型
 // ---------------------------------------------------------------------------
 
-/// A proposed milestone from the LLM generator.
+/// LLM 生成器提出的里程碑。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MilestoneProposal {
     pub id: String,
@@ -24,7 +24,7 @@ pub struct MilestoneProposal {
     pub phases: Vec<PhaseProposal>,
 }
 
-/// A proposed phase within a milestone proposal.
+/// 里程碑提案中的阶段。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PhaseProposal {
     pub id: String,
@@ -32,21 +32,21 @@ pub struct PhaseProposal {
     pub goals: Vec<GoalProposal>,
 }
 
-/// A proposed goal within a phase proposal.
+/// 阶段提案中的目标。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GoalProposal {
     pub id: String,
     pub description: String,
 }
 
-/// Full roadmap proposal for a project.
+/// 项目的完整路线图提案。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RoadmapProposal {
     pub project_name: String,
     pub milestones: Vec<MilestoneProposal>,
 }
 
-/// A refinement suggestion for a single element in the roadmap.
+/// 对路线图中单个元素的优化建议。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RefinementSuggestion {
     pub milestone_id: Option<String>,
@@ -56,10 +56,10 @@ pub struct RefinementSuggestion {
 }
 
 // ---------------------------------------------------------------------------
-// MilestoneGenerator
+// MilestoneGenerator（里程碑生成器）
 // ---------------------------------------------------------------------------
 
-/// Engine that uses LLM to generate and refine project roadmaps.
+/// 使用 LLM 生成与优化项目路线图的引擎。
 pub struct MilestoneGenerator {
     llm: Arc<dyn LlmClient>,
 }
@@ -69,10 +69,10 @@ impl MilestoneGenerator {
         Self { llm }
     }
 
-    /// Generate a full set of milestones from a natural-language project
-    /// description, and persist them into the given project.
+    /// 从自然语言项目描述生成整套里程碑，
+    /// 并持久化到指定项目。
     ///
-    /// Returns the list of created milestones.
+    /// 返回创建的里程碑列表。
     pub async fn generate_milestones(
         &self,
         manager: &RoadmapManager,
@@ -121,7 +121,7 @@ Respond ONLY with valid JSON matching this structure:
             ))
         })?;
 
-        // Convert proposal to Milestone objects and persist
+        // 将提案转换为 Milestone 对象并持久化
         let mut milestones = Vec::with_capacity(proposal.milestones.len());
         for mp in proposal.milestones {
             let mut phases = Vec::with_capacity(mp.phases.len());
@@ -157,11 +157,11 @@ Respond ONLY with valid JSON matching this structure:
         Ok(milestones)
     }
 
-    /// Refine an existing milestone's phase/goal breakdown based on
-    /// execution outcomes and a change request.
+    /// 基于执行结果与变更请求，优化现有里程碑的
+    /// 阶段/目标拆解。
     ///
-    /// Returns a list of refinement suggestions rather than mutating directly,
-    /// so the caller can review and apply them.
+    /// 返回优化建议列表而非直接修改，
+    /// 供调用方审查后应用。
     pub async fn propose_refinements(
         &self,
         manager: &RoadmapManager,
@@ -169,7 +169,7 @@ Respond ONLY with valid JSON matching this structure:
         milestone_id: &str,
         change_request: &str,
     ) -> Result<Vec<RefinementSuggestion>, RoadmapError> {
-        // Load current project state for context
+        // 加载当前项目状态作为上下文
         let project = manager
             .get_project(project_id)
             .await?
@@ -184,14 +184,14 @@ Respond ONLY with valid JSON matching this structure:
                 RoadmapError::MilestoneNotFound(milestone_id.to_string(), project_id.to_string())
             })?;
 
-        // Get recent outcomes for this milestone
+        // 获取该里程碑的近期执行结果
         let outcomes = manager.get_outcomes(project_id).await?;
         let relevant_outcomes: Vec<_> = outcomes
             .iter()
             .filter(|o| o.milestone_id == milestone_id)
             .collect();
 
-        // Build context
+        // 构建上下文
         let mut context = format!(
             "## Current Milestone: {} ({})\n\nPhases and Goals:\n",
             milestone.name, milestone.id
@@ -256,8 +256,8 @@ Respond ONLY with valid JSON as an array of refinement suggestions:
         Ok(suggestions)
     }
 
-    /// Automatically fill gaps in a project's roadmap by analysing what
-    /// milestones are missing based on the project description.
+    /// 通过分析项目描述中缺失的里程碑，自动填补
+    /// 项目路线图中的空白。
     pub async fn fill_roadmap_gaps(
         &self,
         manager: &RoadmapManager,

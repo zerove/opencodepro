@@ -133,7 +133,7 @@ pub fn run_remove(name: &str) -> Result<()> {
     Ok(())
 }
 
-// ── Helpers ───────────────────────────────────────────────────
+// ── 辅助 ───────────────────────────────────────────────────
 
 fn home_dir() -> Option<PathBuf> {
     std::env::var("HOME")

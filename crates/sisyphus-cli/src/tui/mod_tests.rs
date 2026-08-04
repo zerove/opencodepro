@@ -148,13 +148,13 @@ async fn test_diag_counts_empty() {
     assert_eq!(render::diag_counts(&app), (0, 0, 0));
 }
 
-// ── App todos with tempfile ──────────────────────────
+// ── 带临时文件的 App 待办 ──────────────────────────
 
 #[tokio::test]
 async fn test_refresh_todos_empty() {
     let dir = tempfile::tempdir().unwrap();
     let mut app = App::new(dir.path().to_path_buf(), "addr".into());
-    // todo_dirty starts as true, so refresh reads the file
+    // todo_dirty 初始为 true，因此 refresh 会读取文件
     assert!(app.todo_dirty);
     app.refresh_todos();
     assert!(app.todo_items.is_empty());
@@ -165,7 +165,7 @@ async fn test_refresh_todos_empty() {
 async fn test_refresh_todos_with_data() {
     let dir = tempfile::tempdir().unwrap();
     let db = dir.path().join("todos.json");
-    // Seed a todo via the public API
+    // 通过公共 API 播种待办
     crate::tools::todo_add(&db, "write tests", crate::tools::TodoPriority::High).unwrap();
 
     let mut app = App::new(dir.path().to_path_buf(), "addr".into());
@@ -192,7 +192,7 @@ async fn test_toggle_todo_status_cycles() {
         crate::tools::TodoStatus::Pending
     ));
 
-    // Pending → InProgress
+    // 待处理 → 进行中
     app.toggle_todo_status();
     app.refresh_todos();
     assert!(matches!(
@@ -200,7 +200,7 @@ async fn test_toggle_todo_status_cycles() {
         crate::tools::TodoStatus::InProgress
     ));
 
-    // InProgress → Completed
+    // 进行中 → 已完成
     app.toggle_todo_status();
     app.refresh_todos();
     assert!(matches!(
@@ -208,7 +208,7 @@ async fn test_toggle_todo_status_cycles() {
         crate::tools::TodoStatus::Completed
     ));
 
-    // Completed → Pending
+    // 已完成 → 待处理
     app.toggle_todo_status();
     app.refresh_todos();
     assert!(matches!(
@@ -228,7 +228,7 @@ async fn test_delete_todo_removes_item() {
     app.refresh_todos();
     assert_eq!(app.todo_items.len(), 1);
 
-    // First call sets confirmation, second actually deletes
+    // 第一次调用设置确认，第二次真正删除
     app.delete_todo();
     assert!(app.confirm_delete.is_some());
     app.delete_todo();
@@ -244,7 +244,7 @@ async fn test_toggle_todo_empty_no_panic() {
     app.delete_todo(); // should not panic when empty
 }
 
-// ── App sessions with tempfile ───────────────────────
+// ── 带临时文件的 App 会话 ───────────────────────
 
 #[tokio::test]
 async fn test_refresh_sessions_empty() {

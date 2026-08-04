@@ -5,7 +5,7 @@ use std::collections::HashMap;
 
 #[test]
 fn test_dependency_resolver_resolve() {
-    // Happy path: A -> B
+    // 正常路径：A -> B
     let mut graphs = HashMap::new();
     graphs.insert(
         "A".to_string(),
@@ -37,7 +37,7 @@ fn test_dependency_resolver_resolve() {
     let order = DependencyResolver::resolve(&composite).unwrap();
     assert_eq!(order, vec!["A", "B"]);
 
-    // Happy path: No deps
+    // 正常路径：无依赖
     let mut graphs_no_deps = HashMap::new();
     graphs_no_deps.insert(
         "A".to_string(),
@@ -63,7 +63,7 @@ fn test_dependency_resolver_resolve() {
     assert!(order_no_deps.contains(&"B".to_string()));
     assert_eq!(order_no_deps.len(), 2);
 
-    // Cycle detection: A -> B -> A
+    // 环检测：A -> B -> A
     let mut graphs_cycle = HashMap::new();
     graphs_cycle.insert(
         "A".to_string(),
@@ -99,7 +99,7 @@ fn test_dependency_resolver_resolve() {
     let res_cycle = DependencyResolver::resolve(&composite_cycle);
     assert!(matches!(res_cycle, Err(CoreError::DependencyCycleDetected)));
 
-    // Missing source node
+    // 缺失源节点
     let mut graphs_missing = HashMap::new();
     graphs_missing.insert(
         "B".to_string(),
@@ -121,7 +121,7 @@ fn test_dependency_resolver_resolve() {
     let order_missing = DependencyResolver::resolve(&composite_missing).unwrap();
     assert_eq!(order_missing, vec!["B"]);
 
-    // Empty composite
+    // 空复合图
     let composite_empty = CompositeGraph {
         graphs: HashMap::new(),
         dependencies: vec![],
@@ -170,7 +170,7 @@ fn test_build_dep_ctx_for() {
         NodeOutput::from(serde_json::Value::String("val_a".into())),
     );
 
-    // Test with deps
+    // 带依赖的测试
     let ctx = build_dep_ctx_for("B", &composite, &accumulated);
     assert!(ctx.is_some());
     let ctx = ctx.unwrap();
@@ -179,11 +179,11 @@ fn test_build_dep_ctx_for() {
         "\"val_a\""
     );
 
-    // Test without deps (wrong target)
+    // 无依赖测试（错误目标）
     let ctx_none = build_dep_ctx_for("A", &composite, &accumulated);
     assert!(ctx_none.is_none());
 
-    // Test with deps but missing source output
+    // 带依赖但缺少源输出的测试
     let accumulated_empty = DashMap::new();
     let ctx_missing = build_dep_ctx_for("B", &composite, &accumulated_empty);
     assert!(ctx_missing.is_none());
@@ -191,7 +191,7 @@ fn test_build_dep_ctx_for() {
 
 #[test]
 fn test_dependency_resolver_diamond() {
-    // A -> B, A -> C  (fan-out)
+    // A -> B, A -> C（扇出）
     let mut graphs = HashMap::new();
     graphs.insert(
         "A".into(),
@@ -291,7 +291,7 @@ fn test_dependency_resolver_chain() {
 
 #[test]
 fn test_build_dep_ctx_for_multiple_sources() {
-    // SOP C depends on both A and B with different mappings
+    // SOP C 依赖 A 与 B，且映射不同
     let mut graphs = HashMap::new();
     graphs.insert(
         "A".into(),
@@ -357,7 +357,7 @@ fn test_build_dep_ctx_for_multiple_sources() {
 
 #[test]
 fn test_build_dep_ctx_for_single_source_multi_mapping() {
-    // A -> B with two DataMapping entries from different source nodes
+    // A -> B 且来自不同源节点的两条 DataMapping 条目
     let mut graphs = HashMap::new();
     graphs.insert(
         "A".into(),

@@ -1,14 +1,14 @@
 use anyhow::{Context, Result};
 use std::path::PathBuf;
 
-/// Simple CLI permission store that loads rules from a config file.
+/// 从配置文件加载规则的简单 CLI 权限存储。
 #[derive(Debug, Default)]
 pub struct CliPermission {
     rules: Vec<(String, crate::tools::Permission)>,
 }
 
 impl CliPermission {
-    /// Load permission rules from a JSON config file.
+    /// 从 JSON 配置文件加载权限规则。
     pub fn load(path: Option<PathBuf>) -> Result<Self> {
         let config_path = path.unwrap_or_else(|| {
             let mut p = PathBuf::from(".");
@@ -37,8 +37,8 @@ impl CliPermission {
         Ok(this)
     }
 
-    /// Check if a tool is allowed. Returns `Some(true)` if allowed, `Some(false)` if denied,
-    /// `None` if needs to ask.
+    /// 检查工具是否被允许。允许时返回 `Some(true)`，拒绝时返回 `Some(false)`，
+    /// 需要询问时返回 `None`。
     pub fn check(&self, tool_name: &str) -> Option<bool> {
         for (pattern, perm) in &self.rules {
             if tool_name == pattern {
@@ -49,7 +49,7 @@ impl CliPermission {
                 };
             }
         }
-        // Default: allow
+        // 默认：允许
         Some(true)
     }
 }

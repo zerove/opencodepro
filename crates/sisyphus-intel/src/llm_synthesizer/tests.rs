@@ -1,5 +1,5 @@
-//! Unit tests for the synthesizers, including adversarial convergence tests
-//! with mock LLM, executor, state store, golden dataset, and evaluator.
+//! 合成器的单元测试，包括对抗式收敛测试，
+//! 使用 mock LLM、执行器、状态存储、黄金数据集与评估器。
 
 use super::*;
 use crate::{ActionType, FlowSynthesizer};
@@ -146,7 +146,7 @@ mod adversarial_tests {
             Arc::new(MockGoldenDataset),
         );
 
-        // 1. First attempt: Force a failure to save a lesson
+        // 1. 第一次尝试：强制失败以保存教训
         let _ = synthesizer
             .synthesize(
                 "memory goal",
@@ -157,7 +157,7 @@ mod adversarial_tests {
             )
             .await;
 
-        // 2. Verify lesson was saved
+        // 2. 验证教训已保存
         let lessons = synthesizer.retrieve_lessons("memory goal").await;
         assert!(
             lessons.contains("SOP:"),
@@ -165,7 +165,7 @@ mod adversarial_tests {
             lessons
         );
 
-        // 3. Second attempt: Verify it can still synthesize
+        // 3. 第二次尝试：验证仍可合成
         let res = synthesizer
             .synthesize(
                 "memory goal",
@@ -235,7 +235,7 @@ mod adversarial_tests {
             _limit: usize,
         ) -> Result<Vec<sisyphus_types::experience::ExperienceTuple>, sisyphus_types::TypesError>
         {
-            // Mock simple retrieval: return experiences that match the query
+            // Mock 简单检索：返回与查询匹配的经验
             let experiences = self.experiences.lock().unwrap();
             let filtered: Vec<_> = experiences
                 .iter()
@@ -355,7 +355,7 @@ impl sisyphus_types::SopEvaluator for MockEvaluator {
             .call_count
             .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         if count == 0 {
-            // First call: reject to force lesson saving
+            // 第一次调用：拒绝以强制保存教训
             Ok(sisyphus_types::SopEvaluation {
                 score: 0.0,
                 metrics: std::collections::HashMap::new(),
@@ -363,7 +363,7 @@ impl sisyphus_types::SopEvaluator for MockEvaluator {
                 is_acceptable: false,
             })
         } else {
-            // Subsequent calls: accept
+            // 后续调用：接受
             Ok(sisyphus_types::SopEvaluation {
                 score: 1.0,
                 metrics: std::collections::HashMap::new(),
