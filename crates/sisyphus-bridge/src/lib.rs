@@ -5,6 +5,8 @@
 
 #![recursion_limit = "256"]
 pub mod auth;
+pub mod auth_jwt;
+pub mod auth_middleware;
 pub mod bridge_service;
 pub mod consensus;
 pub mod grpc;

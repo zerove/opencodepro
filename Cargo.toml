@@ -59,6 +59,8 @@ opentelemetry-otlp = { version = "0.32", features = ["grpc-tonic"] }
 opentelemetry_sdk = { version = "0.32", features = ["rt-tokio"] }
 opentelemetry-semantic-conventions = "0.32"
 tracing-opentelemetry = "0.33"
+chrono = "0.4"
+jsonwebtoken = "9"
 
 [profile.dev]
 debug = 0

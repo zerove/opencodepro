@@ -47,6 +47,11 @@ opentelemetry_sdk = { workspace = true }
 opentelemetry-semantic-conventions = { workspace = true }
 tracing-opentelemetry = { workspace = true }
 
+# JWT Authentication
+jsonwebtoken = { workspace = true }
+chrono = { workspace = true }
+thiserror = { workspace = true }
+
 [features]
 default = ["sandbox"]
 sandbox = ["sisyphus-sandbox"]
