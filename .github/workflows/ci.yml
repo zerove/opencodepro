@@ -105,6 +105,18 @@ jobs:
       - run: cargo clippy -p sisyphus-bridge --no-default-features -- -D warnings
       - run: cargo test -p sisyphus-bridge --no-default-features --lib
 
+  # ── Bridge integration tests (no sandbox, --no-default-features) ─────
+  bridge-integration-test:
+    name: Bridge Integration Tests (no sandbox)
+    runs-on: ubuntu-latest
+    needs: lint-light
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test -p sisyphus-bridge --no-default-features --test bridge_integration_test
+
   # ── Tests: lightweight crates (full: lib + bin + doctests) ─────────
   test-light:
     name: Test (light crates)
@@ -170,7 +182,7 @@ jobs:
   bridge-test-full:
     name: Bridge (full features + sandboxd)
     runs-on: ubuntu-latest
-    needs: [lint-light, lint-sandboxd]
+    needs: [lint-light, lint-sandboxd, bridge-integration-test]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@nightly
