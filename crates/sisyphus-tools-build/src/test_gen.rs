@@ -87,10 +87,11 @@ Function to test:
 {code}"#
         );
 
-        let response = self
-            .llm_client
-            .as_ref()
-            .unwrap()
+        let Some(llm_client) = self.llm_client.as_ref() else {
+            return Err("LLM client not available".to_string());
+        };
+
+        let response = llm_client
             .generate(&prompt)
             .await
             .map_err(|e| e.to_string())?;

@@ -2,11 +2,15 @@
 //!
 //! Provides access token / refresh token flow with RBAC support.
 
-use jsonwebtoken::{decode, encode, Algorithm, DecodingKey, EncodingKey, Header, TokenData, Validation};
 use chrono::{DateTime, Duration, Utc};
+use jsonwebtoken::{
+    decode, encode, Algorithm, DecodingKey, EncodingKey, Header, TokenData, Validation,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use uuid::Uuid;
+
+use sisyphus_types::config::JwtConfig;
 
 /// JWT claims structure
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -36,30 +40,6 @@ pub struct TokenPair {
     pub token_type: String,
 }
 
-/// JWT configuration
-#[derive(Clone)]
-pub struct JwtConfig {
-    /// Secret key for signing
-    pub secret: String,
-    /// Access token TTL (seconds)
-    pub access_ttl_secs: i64,
-    /// Refresh token TTL (seconds)
-    pub refresh_ttl_secs: i64,
-    /// Issuer
-    pub issuer: String,
-}
-
-impl Default for JwtConfig {
-    fn default() -> Self {
-        Self {
-            secret: "dev-secret-change-in-production".to_string(),
-            access_ttl_secs: 900,     // 15 minutes
-            refresh_ttl_secs: 604800, // 7 days
-            issuer: "sisyphus-bridge".to_string(),
-        }
-    }
-}
-
 /// JWT service for token management
 pub struct JwtService {
     config: JwtConfig,
@@ -70,6 +50,7 @@ pub struct JwtService {
 }
 
 #[derive(Clone, Debug)]
+#[allow(dead_code)] // Fields are written for future audit/inspection use
 struct RefreshTokenEntry {
     user_id: String,
     roles: Vec<String>,
@@ -80,15 +61,18 @@ struct RefreshTokenEntry {
 
 impl JwtService {
     /// Create new JWT service
-    pub fn new(config: JwtConfig) -> Self {
+    pub fn new(config: JwtConfig) -> Result<Self, jsonwebtoken::errors::Error> {
+        if config.secret.is_empty() {
+            return Err(jsonwebtoken::errors::ErrorKind::InvalidKeyFormat.into());
+        }
         let encoding_key = EncodingKey::from_secret(config.secret.as_bytes());
         let decoding_key = DecodingKey::from_secret(config.secret.as_bytes());
-        Self {
+        Ok(Self {
             config,
             encoding_key,
             decoding_key,
             refresh_store: parking_lot::RwLock::new(HashMap::new()),
-        }
+        })
     }
 
     /// Create access token
@@ -172,7 +156,10 @@ impl JwtService {
     }
 
     /// Validate and decode access token
-    pub fn validate_access_token(&self, token: &str) -> Result<TokenData<Claims>, jsonwebtoken::errors::Error> {
+    pub fn validate_access_token(
+        &self,
+        token: &str,
+    ) -> Result<TokenData<Claims>, jsonwebtoken::errors::Error> {
         let mut validation = Validation::new(Algorithm::HS256);
         validation.validate_exp = true;
         validation.validate_nbf = true;
@@ -189,7 +176,10 @@ impl JwtService {
     }
 
     /// Validate and decode refresh token
-    pub fn validate_refresh_token(&self, token: &str) -> Result<TokenData<Claims>, jsonwebtoken::errors::Error> {
+    pub fn validate_refresh_token(
+        &self,
+        token: &str,
+    ) -> Result<TokenData<Claims>, jsonwebtoken::errors::Error> {
         let mut validation = Validation::new(Algorithm::HS256);
         validation.validate_exp = true;
         validation.validate_nbf = true;
@@ -217,54 +207,74 @@ impl JwtService {
     }
 
     /// Refresh access token using refresh token
-    pub fn refresh_access_token(&self, refresh_token: &str) -> Result<TokenPair, jsonwebtoken::errors::Error> {
+    pub fn refresh_access_token(
+        &self,
+        refresh_token: &str,
+    ) -> Result<TokenPair, jsonwebtoken::errors::Error> {
         let token_data = self.validate_refresh_token(refresh_token)?;
         let claims = token_data.claims;
 
         // Revoke old refresh token
-        self.refresh_store.write().get_mut(&claims.jti).map(|e| e.revoked = true);
+        if let Some(entry) = self.refresh_store.write().get_mut(&claims.jti) {
+            entry.revoked = true;
+        }
 
         // Create new token pair
         self.create_token_pair(&claims.sub, claims.roles, claims.project_ids)
     }
 
     /// Revoke refresh token (logout)
-    pub fn revoke_refresh_token(&self, refresh_token: &str) -> Result<(), jsonwebtoken::errors::Error> {
+    pub fn revoke_refresh_token(
+        &self,
+        refresh_token: &str,
+    ) -> Result<(), jsonwebtoken::errors::Error> {
         let token_data = self.validate_refresh_token(refresh_token)?;
-        self.refresh_store.write().get_mut(&token_data.claims.jti).map(|e| e.revoked = true);
+        if let Some(entry) = self.refresh_store.write().get_mut(&token_data.claims.jti) {
+            entry.revoked = true;
+        }
         Ok(())
     }
 
     /// Check if user has required role
     pub fn has_role(&self, claims: &Claims, required_role: &str) -> bool {
-        claims.roles.contains(&required_role.to_string()) || claims.roles.contains(&"admin".to_string())
+        claims.roles.contains(&required_role.to_string())
+            || claims.roles.contains(&"admin".to_string())
     }
 
     /// Check if user has access to project
     pub fn has_project_access(&self, claims: &Claims, project_id: &str) -> bool {
-        claims.project_ids.contains(&project_id.to_string()) || claims.project_ids.contains(&"*".to_string())
+        claims.project_ids.contains(&project_id.to_string())
+            || claims.project_ids.contains(&"*".to_string())
     }
 }
 
 /// Extract Bearer token from Authorization header
 pub fn extract_bearer_token(auth_header: &str) -> Option<String> {
-    if auth_header.starts_with("Bearer ") {
-        Some(auth_header[7..].to_string())
-    } else {
-        None
-    }
+    auth_header.strip_prefix("Bearer ").map(|s| s.to_string())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sisyphus_types::config::JwtConfig;
+
+    fn test_jwt_config() -> JwtConfig {
+        JwtConfig {
+            secret: "test-secret-key-for-testing-only".to_string(),
+            access_ttl_secs: 900,
+            refresh_ttl_secs: 604800,
+            issuer: "sisyphus-bridge".to_string(),
+        }
+    }
 
     #[test]
     fn test_token_pair_creation() {
-        let config = JwtConfig::default();
-        let service = JwtService::new(config);
+        let config = test_jwt_config();
+        let service = JwtService::new(config).unwrap();
 
-        let pair = service.create_token_pair("user1", vec!["user".to_string()], vec!["proj1".to_string()]).unwrap();
+        let pair = service
+            .create_token_pair("user1", vec!["user".to_string()], vec!["proj1".to_string()])
+            .unwrap();
 
         assert!(!pair.access_token.is_empty());
         assert!(!pair.refresh_token.is_empty());
@@ -274,10 +284,12 @@ mod tests {
 
     #[test]
     fn test_access_token_validation() {
-        let config = JwtConfig::default();
-        let service = JwtService::new(config);
+        let config = test_jwt_config();
+        let service = JwtService::new(config).unwrap();
 
-        let pair = service.create_token_pair("user1", vec!["admin".to_string()], vec!["*".to_string()]).unwrap();
+        let pair = service
+            .create_token_pair("user1", vec!["admin".to_string()], vec!["*".to_string()])
+            .unwrap();
 
         let claims = service.validate_access_token(&pair.access_token).unwrap();
         assert_eq!(claims.claims.sub, "user1");
@@ -287,10 +299,12 @@ mod tests {
 
     #[test]
     fn test_refresh_token_flow() {
-        let config = JwtConfig::default();
-        let service = JwtService::new(config);
+        let config = test_jwt_config();
+        let service = JwtService::new(config).unwrap();
 
-        let pair = service.create_token_pair("user1", vec!["user".to_string()], vec!["proj1".to_string()]).unwrap();
+        let pair = service
+            .create_token_pair("user1", vec!["user".to_string()], vec!["proj1".to_string()])
+            .unwrap();
 
         // Wait a bit to ensure different timestamps
         std::thread::sleep(std::time::Duration::from_millis(10));
@@ -305,8 +319,8 @@ mod tests {
 
     #[test]
     fn test_role_check() {
-        let config = JwtConfig::default();
-        let service = JwtService::new(config);
+        let config = test_jwt_config();
+        let service = JwtService::new(config).unwrap();
 
         let claims = Claims {
             sub: "user1".to_string(),
@@ -322,14 +336,17 @@ mod tests {
         assert!(service.has_role(&claims, "developer"));
         assert!(!service.has_role(&claims, "admin"));
         // admin role grants all
-        let admin_claims = Claims { roles: vec!["admin".to_string()], ..claims.clone() };
+        let admin_claims = Claims {
+            roles: vec!["admin".to_string()],
+            ..claims.clone()
+        };
         assert!(service.has_role(&admin_claims, "any_role"));
     }
 
     #[test]
     fn test_project_access_check() {
-        let config = JwtConfig::default();
-        let service = JwtService::new(config);
+        let config = test_jwt_config();
+        let service = JwtService::new(config).unwrap();
 
         let claims = Claims {
             sub: "user1".to_string(),
@@ -346,7 +363,22 @@ mod tests {
         assert!(!service.has_project_access(&claims, "proj3"));
 
         // wildcard access
-        let admin_claims = Claims { project_ids: vec!["*".to_string()], ..claims };
+        let admin_claims = Claims {
+            project_ids: vec!["*".to_string()],
+            ..claims
+        };
         assert!(service.has_project_access(&admin_claims, "any_project"));
+    }
+
+    #[test]
+    fn test_new_with_empty_secret_fails() {
+        let config = JwtConfig {
+            secret: String::new(),
+            access_ttl_secs: 900,
+            refresh_ttl_secs: 604800,
+            issuer: "sisyphus-bridge".to_string(),
+        };
+        let result = JwtService::new(config);
+        assert!(result.is_err());
     }
 }

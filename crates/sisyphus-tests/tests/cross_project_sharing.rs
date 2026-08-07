@@ -15,7 +15,7 @@ use std::sync::Arc;
 
 /// Build a real VectorExperienceBank over an in-memory database.
 async fn setup_experience_bank() -> Arc<VectorExperienceBank> {
-    let store = SisyphusStore::new("sqlite::memory:")
+    let store = SisyphusStore::new("sqlite::memory:", &sisyphus_types::Config::default())
         .await
         .expect("Failed to init SisyphusStore");
     let state_store = store.state.clone();

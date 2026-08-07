@@ -530,7 +530,7 @@ async fn test_executor_empty_graph() {
 
 async fn build_test_kernel() -> SisyphusKernel {
     let state_store = Arc::new(
-        sisyphus_mem::MfsStore::new("sqlite::memory:")
+        sisyphus_mem::MfsStore::new("sqlite::memory:", &sisyphus_types::CacheConfig::default())
             .await
             .expect("in-memory MfsStore"),
     );
@@ -725,7 +725,7 @@ async fn test_strategic_manager_evolution_verification() {
             Arc::new(IntelligenceManager::new(intel, synthesizer, llm.clone()));
 
         let state_store = Arc::new(
-            sisyphus_mem::MfsStore::new("sqlite::memory:")
+            sisyphus_mem::MfsStore::new("sqlite::memory:", &sisyphus_types::CacheConfig::default())
                 .await
                 .expect("in-memory MfsStore"),
         );

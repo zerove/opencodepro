@@ -70,7 +70,7 @@ impl sisyphus_types::experience::ExperienceBank for MockExperienceBank {
 async fn setup_test_kernel() -> SisyphusKernel {
     let url = "sqlite::memory:";
 
-    let store = SisyphusStore::new(url)
+    let store = SisyphusStore::new(url, &sisyphus_types::Config::default())
         .await
         .expect("Failed to init SisyphusStore");
     let state_store = store.state.clone();
@@ -128,7 +128,7 @@ async fn setup_test_kernel() -> SisyphusKernel {
 #[tokio::test]
 async fn test_mfsstore_cross_project_key_prefixing() {
     // Test that MfsStore properly prefixes keys by project_id
-    let store = MfsStore::new("sqlite::memory:")
+    let store = MfsStore::new("sqlite::memory:", &sisyphus_types::CacheConfig::default())
         .await
         .expect("Failed to init MfsStore");
 
@@ -178,7 +178,7 @@ async fn test_mfsstore_cross_project_key_prefixing() {
 #[tokio::test]
 async fn test_mfsstore_cross_project_multiple_keys() {
     // Test isolation with multiple keys per project
-    let store = MfsStore::new("sqlite::memory:")
+    let store = MfsStore::new("sqlite::memory:", &sisyphus_types::CacheConfig::default())
         .await
         .expect("Failed to init MfsStore");
 
@@ -491,7 +491,7 @@ async fn test_roadmap_sql_store_cross_project_isolation() {
 #[tokio::test]
 async fn test_workspace_manager_isolation() {
     // Test WorkspaceManager properly isolates workspaces
-    let store = MfsStore::new("sqlite::memory:")
+    let store = MfsStore::new("sqlite::memory:", &sisyphus_types::CacheConfig::default())
         .await
         .expect("Failed to init MfsStore");
     let state_store: Arc<dyn StateStore> = Arc::new(store);
@@ -617,7 +617,7 @@ async fn test_full_kernel_cross_project_isolation() {
 #[tokio::test]
 async fn test_session_todo_state_isolation() {
     // Test that sessions and todos are isolated per project via MfsStore key prefixing
-    let store = MfsStore::new("sqlite::memory:")
+    let store = MfsStore::new("sqlite::memory:", &sisyphus_types::CacheConfig::default())
         .await
         .expect("Failed to init MfsStore");
 
@@ -689,7 +689,7 @@ async fn test_session_todo_state_isolation() {
 async fn test_experience_bank_cross_project_isolation() {
     // Test that experience bank stores/retrieves per project
     let store = Arc::new(
-        MfsStore::new("sqlite::memory:")
+        MfsStore::new("sqlite::memory:", &sisyphus_types::CacheConfig::default())
             .await
             .expect("Failed to init MfsStore"),
     );
@@ -795,7 +795,7 @@ async fn test_experience_bank_cross_project_isolation() {
 #[tokio::test]
 async fn test_state_persistence_across_workspace_switch() {
     // Test that state persists correctly when switching workspaces
-    let store = MfsStore::new("sqlite::memory:")
+    let store = MfsStore::new("sqlite::memory:", &sisyphus_types::CacheConfig::default())
         .await
         .expect("Failed to init MfsStore");
     let state_store: Arc<dyn StateStore> = Arc::new(store);

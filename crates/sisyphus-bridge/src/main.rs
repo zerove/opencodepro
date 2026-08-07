@@ -119,7 +119,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // ── Start HTTP REST API server ──────────────────────────────────────
     let data_dir = std::path::PathBuf::from("data");
-    let rest_state = crate::http::RestApiState::new(bridge.clone(), data_dir);
+
+    // Get JWT config from shared config
+    let jwt_config = {
+        let config = shared_config.read().map_err(|e| {
+            Box::new(std::io::Error::other(format!("Config lock poisoned: {e}")))
+                as Box<dyn std::error::Error>
+        })?;
+        config.jwt.clone()
+    };
+
+    let rest_state = if !jwt_config.secret.is_empty() {
+        crate::http::RestApiState::new_with_jwt(bridge.clone(), data_dir, jwt_config)
+    } else {
+        crate::http::RestApiState::new(bridge.clone(), data_dir)
+    };
+
     let http_app = crate::http::build_router(rest_state)
         .layer(tower_http::cors::CorsLayer::permissive())
         .layer(tower_http::trace::TraceLayer::new_for_http());
@@ -128,7 +143,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .strip_prefix("http://")
         .unwrap_or(&http_addr_str)
         .parse()
-        .unwrap_or(std::net::SocketAddr::from(([127, 0, 0, 1], 8080)));
+        .map_err(|e| {
+            Box::new(std::io::Error::new(std::io::ErrorKind::InvalidInput, e))
+                as Box<dyn std::error::Error>
+        })?;
     info!("Starting HTTP REST API server on {http_addr}");
 
     let _http_handle = tokio::spawn(async move {

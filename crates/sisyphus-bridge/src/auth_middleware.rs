@@ -10,18 +10,10 @@ use axum::{
     middleware::Next,
     response::{IntoResponse, Response},
     Extension,
-    Json,
 };
 use std::sync::Arc;
 
-use thiserror::Error;
-use serde::{Deserialize, Serialize};
-use serde_json::json;
-use uuid::Uuid;
-use chrono::Utc;
-
-use crate::auth_jwt::{extract_bearer_token, JwtService, Claims};
-use crate::http::RestApiState;
+use crate::auth_jwt::Claims;
 
 /// Authentication error types
 #[derive(Debug, thiserror::Error)]
@@ -43,11 +35,22 @@ pub enum AuthError {
 impl IntoResponse for AuthError {
     fn into_response(self) -> Response {
         let (status, message) = match self {
-            AuthError::MissingHeader => (StatusCode::UNAUTHORIZED, "Missing Authorization header".to_string()),
-            AuthError::InvalidFormat => (StatusCode::UNAUTHORIZED, "Invalid Authorization header format".to_string()),
-            AuthError::InvalidToken(msg) => (StatusCode::UNAUTHORIZED, format!("Invalid token: {}", msg)),
+            AuthError::MissingHeader => (
+                StatusCode::UNAUTHORIZED,
+                "Missing Authorization header".to_string(),
+            ),
+            AuthError::InvalidFormat => (
+                StatusCode::UNAUTHORIZED,
+                "Invalid Authorization header format".to_string(),
+            ),
+            AuthError::InvalidToken(msg) => {
+                (StatusCode::UNAUTHORIZED, format!("Invalid token: {}", msg))
+            }
             AuthError::Expired => (StatusCode::UNAUTHORIZED, "Token expired".to_string()),
-            AuthError::InsufficientPermissions => (StatusCode::FORBIDDEN, "Insufficient permissions".to_string()),
+            AuthError::InsufficientPermissions => (
+                StatusCode::FORBIDDEN,
+                "Insufficient permissions".to_string(),
+            ),
             AuthError::Revoked => (StatusCode::UNAUTHORIZED, "Token revoked".to_string()),
         };
 
@@ -78,7 +81,9 @@ where
         let jwt_service = parts
             .extensions
             .get::<Arc<crate::auth_jwt::JwtService>>()
-            .ok_or(AuthError::InvalidToken("JWT service not configured".to_string()))?;
+            .ok_or(AuthError::InvalidToken(
+                "JWT service not configured".to_string(),
+            ))?;
 
         // Extract Authorization header
         let auth_header = parts
@@ -87,11 +92,12 @@ where
             .and_then(|v| v.to_str().ok())
             .ok_or(AuthError::MissingHeader)?;
 
-        let token = crate::auth_jwt::extract_bearer_token(auth_header)
-            .ok_or(AuthError::InvalidFormat)?;
+        let token =
+            crate::auth_jwt::extract_bearer_token(auth_header).ok_or(AuthError::InvalidFormat)?;
 
         // Validate access token
-        let token_data = jwt_service.validate_access_token(&token)
+        let token_data = jwt_service
+            .validate_access_token(&token)
             .map_err(|e| AuthError::InvalidToken(e.to_string()))?;
 
         Ok(AuthenticatedUser {
@@ -115,7 +121,9 @@ where
         let jwt_service = parts
             .extensions
             .get::<Arc<crate::auth_jwt::JwtService>>()
-            .ok_or(AuthError::InvalidToken("JWT service not configured".to_string()))?;
+            .ok_or(AuthError::InvalidToken(
+                "JWT service not configured".to_string(),
+            ))?;
 
         let auth_header = parts
             .headers
@@ -140,7 +148,9 @@ where
 }
 
 /// Require specific role for access
-pub fn require_role(required_role: &'static str) -> impl Fn(AuthenticatedUser) -> Result<AuthenticatedUser, AuthError> + Clone {
+pub fn require_role(
+    required_role: &'static str,
+) -> impl Fn(AuthenticatedUser) -> Result<AuthenticatedUser, AuthError> + Clone {
     move |user: AuthenticatedUser| {
         if has_role(&user.claims, required_role) {
             Ok(user)
@@ -151,7 +161,9 @@ pub fn require_role(required_role: &'static str) -> impl Fn(AuthenticatedUser) -
 }
 
 /// Require access to specific project
-pub fn require_project_access(project_id: String) -> impl Fn(AuthenticatedUser) -> Result<AuthenticatedUser, AuthError> + Clone {
+pub fn require_project_access(
+    project_id: String,
+) -> impl Fn(AuthenticatedUser) -> Result<AuthenticatedUser, AuthError> + Clone {
     move |user: AuthenticatedUser| {
         if has_project_access(&user.claims, &project_id) {
             Ok(user)
@@ -166,12 +178,13 @@ fn has_role(claims: &Claims, required_role: &str) -> bool {
 }
 
 fn has_project_access(claims: &Claims, project_id: &str) -> bool {
-    claims.project_ids.contains(&project_id.to_string()) || claims.project_ids.contains(&"*".to_string())
+    claims.project_ids.contains(&project_id.to_string())
+        || claims.project_ids.contains(&"*".to_string())
 }
 
 /// Authentication middleware for protected routes
 pub async fn auth_middleware(
-    Extension(jwt_service): Extension<Arc<crate::auth_jwt::JwtService>>,
+    Extension(_jwt_service): Extension<Arc<crate::auth_jwt::JwtService>>,
     mut request: Request<Body>,
     next: Next,
 ) -> Result<Response, AuthError> {
@@ -181,15 +194,18 @@ pub async fn auth_middleware(
         .and_then(|v| v.to_str().ok())
         .ok_or(AuthError::MissingHeader)?;
 
-    let token = crate::auth_jwt::extract_bearer_token(auth_header)
-        .ok_or(AuthError::InvalidFormat)?;
+    let token =
+        crate::auth_jwt::extract_bearer_token(auth_header).ok_or(AuthError::InvalidFormat)?;
 
     let jwt_service = request
         .extensions()
         .get::<Arc<crate::auth_jwt::JwtService>>()
-        .ok_or(AuthError::InvalidToken("JWT service not configured".to_string()))?;
+        .ok_or(AuthError::InvalidToken(
+            "JWT service not configured".to_string(),
+        ))?;
 
-    let token_data = jwt_service.validate_access_token(&token)
+    let token_data = jwt_service
+        .validate_access_token(&token)
         .map_err(|e| AuthError::InvalidToken(e.to_string()))?;
 
     // Insert claims into request extensions for downstream handlers
@@ -245,10 +261,7 @@ pub async fn audit_log_middleware(
     let request_id = uuid::Uuid::new_v4();
 
     // Extract user ID from claims if present
-    let user_id = request
-        .extensions()
-        .get::<Claims>()
-        .map(|c| c.sub.clone());
+    let user_id = request.extensions().get::<Claims>().map(|c| c.sub.clone());
 
     // Extract IP and User-Agent
     let ip_address = request

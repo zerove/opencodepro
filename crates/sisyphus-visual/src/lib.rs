@@ -4,6 +4,8 @@
 //! embedding, with concrete implementations for HTTP-based VLM APIs
 //! and a mock provider for testing.
 
+pub use crate::helpers::{base64_encode, is_png, simulated_visual_state, PNG_MAGIC};
+
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use sisyphus_tools_llm::LlmClient;
@@ -335,59 +337,62 @@ impl VisualPerceptionManager {
 
 // ── Helpers ──────────────────────────────────────────────────────────────
 
-const PNG_MAGIC: [u8; 8] = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
+pub mod helpers {
+    /// PNG file signature bytes.
+    pub const PNG_MAGIC: [u8; 8] = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
 
-/// Returns true when the bytes start with a valid PNG signature.
-fn is_png(data: &[u8]) -> bool {
-    data.len() >= PNG_MAGIC.len() && data[..PNG_MAGIC.len()] == PNG_MAGIC
-}
-
-/// Builds a deterministic placeholder image (valid PNG header) derived from a
-/// seed string, so different goals produce different visual states.
-///
-/// Used to simulate a captured visual state until real screenshot capture is
-/// wired in. The deterministic bytes keep embedding lookups stable across
-/// runs, and the PNG header prevents simulated states from being mistaken
-/// for corrupt data by providers.
-pub fn simulated_visual_state(seed: &str) -> Vec<u8> {
-    let mut out = Vec::with_capacity(1024);
-    out.extend_from_slice(&PNG_MAGIC);
-    let mut h: u32 = 2_166_136_261; // FNV-1a offset basis
-    for b in seed.bytes() {
-        h ^= u32::from(b);
-        h = h.wrapping_mul(16_777_619);
+    /// Returns true when the bytes start with a valid PNG signature.
+    pub fn is_png(data: &[u8]) -> bool {
+        data.len() >= PNG_MAGIC.len() && data[..PNG_MAGIC.len()] == PNG_MAGIC
     }
-    for i in 0u32..1016 {
-        h ^= i;
-        h = h.wrapping_mul(16_777_619);
-        out.push((h >> 24) as u8);
-    }
-    out
-}
 
-/// Simple base64 encoding (no dependency needed).
-fn base64_encode(data: &[u8]) -> String {
-    const CHARS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut result = String::with_capacity(data.len().div_ceil(3) * 4);
-    for chunk in data.chunks(3) {
-        let b0 = chunk[0] as u32;
-        let b1 = if chunk.len() > 1 { chunk[1] as u32 } else { 0 };
-        let b2 = if chunk.len() > 2 { chunk[2] as u32 } else { 0 };
-        let triple = (b0 << 16) | (b1 << 8) | b2;
-        result.push(CHARS[((triple >> 18) & 0x3F) as usize] as char);
-        result.push(CHARS[((triple >> 12) & 0x3F) as usize] as char);
-        if chunk.len() > 1 {
-            result.push(CHARS[((triple >> 6) & 0x3F) as usize] as char);
-        } else {
-            result.push('=');
+    /// Builds a deterministic placeholder image (valid PNG header) derived from a
+    /// seed string, so different goals produce different visual states.
+    ///
+    /// Used to simulate a captured visual state until real screenshot capture is
+    /// wired in. The deterministic bytes keep embedding lookups stable across
+    /// runs, and the PNG header prevents simulated states from being mistaken
+    /// for corrupt data by providers.
+    pub fn simulated_visual_state(seed: &str) -> Vec<u8> {
+        let mut out = Vec::with_capacity(1024);
+        out.extend_from_slice(&PNG_MAGIC);
+        let mut h: u32 = 2_166_136_261; // FNV-1a offset basis
+        for b in seed.bytes() {
+            h ^= u32::from(b);
+            h = h.wrapping_mul(16_777_619);
         }
-        if chunk.len() > 2 {
-            result.push(CHARS[(triple & 0x3F) as usize] as char);
-        } else {
-            result.push('=');
+        for i in 0u32..1016 {
+            h ^= i;
+            h = h.wrapping_mul(16_777_619);
+            out.push((h >> 24) as u8);
         }
+        out
     }
-    result
+
+    /// Simple base64 encoding (no dependency needed).
+    pub fn base64_encode(data: &[u8]) -> String {
+        const CHARS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+        let mut result = String::with_capacity(data.len().div_ceil(3) * 4);
+        for chunk in data.chunks(3) {
+            let b0 = chunk[0] as u32;
+            let b1 = if chunk.len() > 1 { chunk[1] as u32 } else { 0 };
+            let b2 = if chunk.len() > 2 { chunk[2] as u32 } else { 0 };
+            let triple = (b0 << 16) | (b1 << 8) | b2;
+            result.push(CHARS[((triple >> 18) & 0x3F) as usize] as char);
+            result.push(CHARS[((triple >> 12) & 0x3F) as usize] as char);
+            if chunk.len() > 1 {
+                result.push(CHARS[((triple >> 6) & 0x3F) as usize] as char);
+            } else {
+                result.push('=');
+            }
+            if chunk.len() > 2 {
+                result.push(CHARS[(triple & 0x3F) as usize] as char);
+            } else {
+                result.push('=');
+            }
+        }
+        result
+    }
 }
 
 // ── Tests ────────────────────────────────────────────────────────────────

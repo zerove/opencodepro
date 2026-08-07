@@ -17,3 +17,12 @@ sisyphus-types = { path = "../sisyphus-types" }
 sisyphus-mem = { path = "../sisyphus-mem" }
 sisyphus-tools-llm = { path = "../sisyphus-tools-llm" }
 anyhow.workspace = true
+
+[dev-dependencies]
+sisyphus-mem = { path = "../sisyphus-mem" }
+sisyphus-tools-llm = { path = "../sisyphus-tools-llm" }
+sisyphus-types = { path = "../sisyphus-types" }
+async-trait = "0.1"
+tempfile = "3"
+serde_json = "1.0"
+tokio = { version = "1", features = ["full"] }

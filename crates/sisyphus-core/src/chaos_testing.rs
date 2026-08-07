@@ -212,11 +212,12 @@ impl ChaosRunner {
 
 /// DAG 边界条件的测试辅助工具。
 pub mod dag_test {
+    use crate::CoreError;
     use sisyphus_types::{SOPGraph, SOPGraphConfig, WasmSOPNode};
     use std::sync::Arc;
 
     /// 创建只有一个节点的 DAG。
-    pub fn single_node(name: &str, tool_id: &str) -> SOPGraphConfig {
+    pub fn single_node(name: &str, tool_id: &str) -> Result<SOPGraphConfig, CoreError> {
         let mut graph = SOPGraph::new();
         graph.add_node(Arc::new(WasmSOPNode {
             name: name.to_string(),
@@ -224,11 +225,11 @@ pub mod dag_test {
             fuel_limit: 1000,
             executor: Arc::new(super::NoopToolExecutor),
         }));
-        SOPGraphConfig::from_graph(&graph).unwrap()
+        Ok(SOPGraphConfig::from_graph(&graph)?)
     }
 
     /// 创建包含 `n` 个节点的线性链 DAG。
-    pub fn linear_chain(n: usize) -> SOPGraphConfig {
+    pub fn linear_chain(n: usize) -> Result<SOPGraphConfig, CoreError> {
         let mut graph = SOPGraph::new();
         let mut indices = Vec::with_capacity(n);
         for i in 0..n {
@@ -243,11 +244,11 @@ pub mod dag_test {
         for i in 1..n {
             graph.add_edge(indices[i - 1], indices[i]);
         }
-        SOPGraphConfig::from_graph(&graph).unwrap()
+        Ok(SOPGraphConfig::from_graph(&graph)?)
     }
 
     /// 创建菱形 DAG：root -> [left, right] -> merge。
-    pub fn diamond() -> SOPGraphConfig {
+    pub fn diamond() -> Result<SOPGraphConfig, CoreError> {
         let mut graph = SOPGraph::new();
         let root = graph.add_node(Arc::new(WasmSOPNode {
             name: "root".into(),
@@ -277,11 +278,11 @@ pub mod dag_test {
         graph.add_edge(root, right);
         graph.add_edge(left, merge);
         graph.add_edge(right, merge);
-        SOPGraphConfig::from_graph(&graph).unwrap()
+        Ok(SOPGraphConfig::from_graph(&graph)?)
     }
 
     /// 创建宽 DAG：1 个根节点扇出到 `n` 个并行叶节点。
-    pub fn wide_fanout(n: usize) -> SOPGraphConfig {
+    pub fn wide_fanout(n: usize) -> Result<SOPGraphConfig, CoreError> {
         let mut graph = SOPGraph::new();
         let root = graph.add_node(Arc::new(WasmSOPNode {
             name: "root".into(),
@@ -298,7 +299,7 @@ pub mod dag_test {
             }));
             graph.add_edge(root, leaf);
         }
-        SOPGraphConfig::from_graph(&graph).unwrap()
+        Ok(SOPGraphConfig::from_graph(&graph)?)
     }
 }
 
@@ -358,7 +359,7 @@ impl sisyphus_types::ToolExecutor for NoopToolExecutor {
 #[cfg(test)]
 pub async fn make_test_store() -> Arc<sisyphus_mem::MfsStore> {
     Arc::new(
-        sisyphus_mem::MfsStore::new("sqlite::memory:")
+        sisyphus_mem::MfsStore::new("sqlite::memory:", &sisyphus_types::CacheConfig::default())
             .await
             .unwrap(),
     )
@@ -486,28 +487,28 @@ mod tests {
 
     #[tokio::test]
     async fn test_dag_single_node() {
-        let config = dag_test::single_node("solo", "tool_x");
+        let config = dag_test::single_node("solo", "tool_x").unwrap();
         assert_eq!(config.nodes.len(), 1);
         assert_eq!(config.nodes[0].name, "solo");
     }
 
     #[tokio::test]
     async fn test_dag_linear_chain() {
-        let config = dag_test::linear_chain(5);
+        let config = dag_test::linear_chain(5).unwrap();
         assert_eq!(config.nodes.len(), 5);
         assert_eq!(config.edges.len(), 4);
     }
 
     #[tokio::test]
     async fn test_dag_diamond() {
-        let config = dag_test::diamond();
+        let config = dag_test::diamond().unwrap();
         assert_eq!(config.nodes.len(), 4);
         assert_eq!(config.edges.len(), 4);
     }
 
     #[tokio::test]
     async fn test_dag_wide_fanout() {
-        let config = dag_test::wide_fanout(100);
+        let config = dag_test::wide_fanout(100).unwrap();
         assert_eq!(config.nodes.len(), 101); // 1 root + 100 leaves
         assert_eq!(config.edges.len(), 100);
     }
@@ -515,15 +516,15 @@ mod tests {
     #[tokio::test]
     async fn test_dag_linear_chain_boundary() {
         // 测试边界情况：空、单个、巨大
-        let empty = dag_test::linear_chain(0);
+        let empty = dag_test::linear_chain(0).unwrap();
         assert_eq!(empty.nodes.len(), 0);
         assert_eq!(empty.edges.len(), 0);
 
-        let single = dag_test::linear_chain(1);
+        let single = dag_test::linear_chain(1).unwrap();
         assert_eq!(single.nodes.len(), 1);
         assert_eq!(single.edges.len(), 0);
 
-        let large = dag_test::linear_chain(1000);
+        let large = dag_test::linear_chain(1000).unwrap();
         assert_eq!(large.nodes.len(), 1000);
         assert_eq!(large.edges.len(), 999);
     }

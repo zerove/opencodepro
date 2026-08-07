@@ -21,6 +21,9 @@ use sisyphus_types::{CognitiveEvent, CognitiveMetrics, ExecutionTrace};
 use crate::cognitive_loop_v2::AnomalyDetector;
 use crate::{CoreError, ExecutionContext, ExecutionEvent, ExecutionStatus, Executor, NodeOutput};
 
+// OpenTelemetry span helpers
+use sisyphus_metrics::observability::{cognitive_loop_span, evolution_span, reflection_span};
+
 use super::{CognitiveIteration, CognitiveReport, StrategicManager};
 
 impl StrategicManager {
@@ -143,7 +146,6 @@ impl StrategicManager {
             self.internalization_manager.clone(),
             self.visual_manager.clone(),
         );
-        let mut own_graph: Option<Arc<SOPGraph>>;
         let mut current_start = sop_graph.start_node;
         let mut iterations: Vec<CognitiveIteration> = Vec::with_capacity(max_iterations);
         let _traces: Vec<ExecutionTrace> = Vec::with_capacity(max_iterations);
@@ -163,6 +165,7 @@ impl StrategicManager {
                 .as_secs();
 
             // 1. 预测（Predict）
+            let predict_span = cognitive_loop_span(sop_id, iteration);
             let (prediction, mut pivot_reason) = self
                 .predict_phase(
                     &current_ref,
@@ -176,6 +179,7 @@ impl StrategicManager {
                     &broadcast_fn,
                     &stream_tx,
                 )
+                .instrument(predict_span)
                 .await?;
 
             let exec_ctx = if iteration == 0 {
@@ -185,6 +189,7 @@ impl StrategicManager {
             };
 
             // 2. 执行（Execute）
+            let exec_span = tracing::info_span!("execute_phase", sop_id = %sop_id, iteration);
             let (final_ctx, result) = self
                 .execute_phase(
                     &executor,
@@ -203,11 +208,13 @@ impl StrategicManager {
                     &stream_tx,
                     &mut pivot_reason,
                 )
+                .instrument(exec_span)
                 .await?;
 
             final_result = result.clone();
 
             // 3. 反思（Reflect）
+            let reflect_span = reflection_span(sop_id, iteration);
             let reflection = self
                 .reflect_phase(
                     &current_ref,
@@ -221,9 +228,11 @@ impl StrategicManager {
                     goal_text,
                     &stream_tx,
                 )
+                .instrument(reflect_span)
                 .await?;
 
             // 4. 演进（Evolve）
+            let evolve_span = evolution_span(sop_id, iteration);
             let evolved_graph = self
                 .evolve_phase(
                     &ctx,
@@ -233,6 +242,7 @@ impl StrategicManager {
                     sop_id,
                     goal_text,
                 )
+                .instrument(evolve_span)
                 .await;
 
             // 4.5 在采纳演进结果之前先做验证
@@ -339,11 +349,7 @@ impl StrategicManager {
 
             if let Some(eg) = final_evolved_graph {
                 current_start = eg.start_node;
-                own_graph = Some(eg);
-                current_ref =
-                    Arc::clone(own_graph.as_ref().ok_or_else(|| {
-                        CoreError::Internal("own_graph was just set".to_string())
-                    })?);
+                current_ref = eg;
             } else {
                 break;
             }

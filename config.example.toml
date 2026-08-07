@@ -182,6 +182,14 @@ enable_vectors = false
 # 类型: usize | 默认: 1536
 vector_dimension = 1536
 
+# L2 批量写入阈值 — 缓冲积累到此条数后原子提交到数据库
+# 类型: usize | 默认: 100
+batch_size = 100
+
+# L2 强制刷新间隔（毫秒）— 即使未达批次阈值也会定期落盘
+# 类型: u64 | 默认: 100
+flush_interval_ms = 100
+
 # ── Prometheus 指标导出 ───────────────────────────────────
 [metrics]
 # Prometheus HTTP 导出端口（监听 0.0.0.0）

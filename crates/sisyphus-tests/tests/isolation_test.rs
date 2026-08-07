@@ -46,7 +46,7 @@ impl ToolExecutor for MockToolExecutor {
 #[tokio::test]
 async fn test_project_isolation() {
     // 1. Setup Stores
-    let store = SisyphusStore::new("sqlite::memory:")
+    let store = SisyphusStore::new("sqlite::memory:", &sisyphus_types::Config::default())
         .await
         .expect("Store init failed");
     let state_store = store.state.clone();

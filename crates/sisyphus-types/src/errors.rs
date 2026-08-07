@@ -47,6 +47,39 @@ pub enum TypesError {
     /// LLM 客户端调用错误
     #[error("LLM error: {0}")]
     LlmError(String),
+
+    /// --- 扩充后的结构化领域错误 ---
+    #[error("Node execution failed: {0}")]
+    ExecutionError(#[from] NodeExecutionError),
+
+    #[error("Cognitive loop error: {0}")]
+    CognitiveError(#[from] CognitiveError),
+
+    #[error("Data inconsistency: {0}")]
+    DataInconsistency(String),
+
+    #[error("Simulation/Predict error: {0}")]
+    SimulationError(String),
+}
+
+#[derive(Debug, Error)]
+pub enum NodeExecutionError {
+    #[error("Tool '{tool_id}' failure: {details}")]
+    ToolFailure { tool_id: String, details: String },
+    #[error("Sandbox runtime error: {0}")]
+    SandboxError(String),
+    #[error("Intervention timeout")]
+    InterventionTimeout,
+}
+
+#[derive(Debug, Error)]
+pub enum CognitiveError {
+    #[error("Iteration limit exceeded")]
+    MaxIterationsReached,
+    #[error("Strategy pivot triggered: {0}")]
+    StrategicPivot(String),
+    #[error("Cognitive mapping failed: {0}")]
+    MappingError(String),
 }
 
 impl From<String> for TypesError {

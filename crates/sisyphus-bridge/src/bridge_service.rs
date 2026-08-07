@@ -110,9 +110,15 @@ impl MySisyphusBridge {
         shared_config: Arc<RwLock<Config>>,
         llm_client_override: Option<Arc<dyn LlmClient>>,
     ) -> Result<Self, sisyphus_types::TypesError> {
+        let config_snapshot = shared_config
+            .read()
+            .map_err(|e| sisyphus_types::TypesError::ToolExecutionError {
+                tool_id: "init".into(),
+                details: format!("Config lock poisoned: {e}"),
+            })?
+            .clone();
         let (
-            cache_path,
-            _l1_cap,
+            cache_config,
             max_tasks,
             _wasm_tools_dir,
             _max_mem_pages,
@@ -124,29 +130,20 @@ impl MySisyphusBridge {
             embedding_endpoint,
             _use_sandboxd,
             _sandboxd_path,
-        ) = {
-            let config = shared_config.read().map_err(|e| {
-                sisyphus_types::TypesError::ToolExecutionError {
-                    tool_id: "init".into(),
-                    details: format!("Config lock poisoned: {e}"),
-                }
-            })?;
-            (
-                config.cache.database_url.clone(),
-                config.cache.l1_capacity,
-                config.executor.max_concurrent_tasks,
-                config.sandbox.wasm_tools_dir.clone(),
-                config.sandbox.max_memory_pages,
-                config.mcp.stdio_servers.clone(),
-                config.mcp.http_servers.clone(),
-                config.executor.default_fuel,
-                config.llm.embedding.provider.clone(),
-                config.llm.embedding.model.clone(),
-                config.llm.embedding.endpoint.clone(),
-                config.sandbox.use_sandboxd,
-                config.sandbox.sandboxd_path.clone(),
-            )
-        };
+        ) = (
+            config_snapshot.cache.clone(),
+            config_snapshot.executor.max_concurrent_tasks,
+            config_snapshot.sandbox.wasm_tools_dir.clone(),
+            config_snapshot.sandbox.max_memory_pages,
+            config_snapshot.mcp.stdio_servers.clone(),
+            config_snapshot.mcp.http_servers.clone(),
+            config_snapshot.executor.default_fuel,
+            config_snapshot.llm.embedding.provider.clone(),
+            config_snapshot.llm.embedding.model.clone(),
+            config_snapshot.llm.embedding.endpoint.clone(),
+            config_snapshot.sandbox.use_sandboxd,
+            config_snapshot.sandbox.sandboxd_path.clone(),
+        );
 
         // Destructure sandbox-specific vars (underscore-prefixed to suppress unused warnings when sandbox is disabled)
         #[cfg(feature = "sandbox")]
@@ -157,11 +154,15 @@ impl MySisyphusBridge {
             _sandboxd_path,
         );
 
-        let store = Arc::new(SisyphusStore::new(&cache_path).await.map_err(|e| {
-            sisyphus_types::TypesError::StateStoreError(format!(
-                "Failed to init SisyphusStore: {e}"
-            ))
-        })?);
+        let store = Arc::new(
+            SisyphusStore::new(&cache_config.database_url, &config_snapshot)
+                .await
+                .map_err(|e| {
+                    sisyphus_types::TypesError::StateStoreError(format!(
+                        "Failed to init SisyphusStore: {e}"
+                    ))
+                })?,
+        );
         let state_store = store.state.clone();
 
         let vector_store = Arc::new(
@@ -345,7 +346,7 @@ impl MySisyphusBridge {
             StrategicExecutor::new(
                 state_store.clone(),
                 dyn_llm_client.clone(),
-                cache_path.clone().into(),
+                cache_config.database_url.clone().into(),
                 proposal_manager.clone(),
             )
             .await?,
@@ -425,7 +426,7 @@ impl MySisyphusBridge {
                         "Connected MCP server '{prefix}' via HTTP: {url} ({} tools)",
                         tools.len()
                     );
-                    mcp_servers.push((prefix.clone(), url.clone(), tools));
+                    mcp_servers.push((prefix.clone(), url.to_string(), tools));
                     router.register(prefix, Arc::new(mcp));
                 }
                 Err(e) => {

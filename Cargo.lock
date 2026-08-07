@@ -4453,6 +4453,7 @@ dependencies = [
 name = "sisyphus-bridge"
 version = "0.1.0"
 dependencies = [
+ "async-stream",
  "async-trait",
  "axum 0.7.9",
  "chrono",
@@ -4590,6 +4591,7 @@ dependencies = [
  "md5 0.7.0",
  "parking_lot",
  "petgraph 0.6.5",
+ "proptest",
  "rand 0.8.6",
  "rayon",
  "serde",
@@ -4678,6 +4680,7 @@ dependencies = [
  "sisyphus-mem",
  "sisyphus-tools-llm",
  "sisyphus-types",
+ "tempfile",
  "thiserror 1.0.69",
  "tokio",
  "tracing",

@@ -174,6 +174,10 @@ pub struct CacheConfig {
     pub enable_vectors: bool,
     /// Embedding dimension (defaults to 1536 for OpenAI text-embedding-3-small).
     pub vector_dimension: usize,
+    /// Batch size for L2 flushes.
+    pub batch_size: usize,
+    /// Maximum delay before forced L2 flush.
+    pub flush_interval_ms: u64,
 }
 
 fn default_cache() -> CacheConfig {
@@ -182,6 +186,8 @@ fn default_cache() -> CacheConfig {
         database_url: "sqlite:data/sisyphus.db".to_string(),
         enable_vectors: false,
         vector_dimension: 1536,
+        batch_size: 100,
+        flush_interval_ms: 100,
     }
 }
 

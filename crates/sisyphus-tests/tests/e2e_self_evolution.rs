@@ -119,7 +119,7 @@ async fn test_self_evolution_e2e() {
     let llm_client = Arc::new(ProgrammableLlmClient { responses });
 
     // 2. Setup persistence
-    let store = SisyphusStore::new("sqlite::memory:")
+    let store = SisyphusStore::new("sqlite::memory:", &sisyphus_types::Config::default())
         .await
         .expect("Store init failed");
 

@@ -135,7 +135,8 @@ mod tests {
     use std::sync::Arc;
 
     async fn setup_store() -> (UserPreferenceStore, Arc<MfsStore>) {
-        let store = Arc::new(MfsStore::new("sqlite::memory:").await.unwrap());
+        let config = sisyphus_types::CacheConfig::default();
+        let store = Arc::new(MfsStore::new("sqlite::memory:", &config).await.unwrap());
         (
             UserPreferenceStore::new(store.clone(), "test_project".into()),
             store,

@@ -21,7 +21,7 @@ pub struct SisyphusStore {
 
 impl SisyphusStore {
     /// Initializes a new SisyphusStore at the given database URL.
-    pub async fn new(db_url: &str) -> Result<Self> {
+    pub async fn new(db_url: &str, config: &sisyphus_types::Config) -> Result<Self> {
         // 1. Initialize the shared pool
         let pool = SqlitePoolOptions::new()
             .max_connections(10)
@@ -30,16 +30,7 @@ impl SisyphusStore {
             .context("Failed to connect to Sisyphus database pool")?;
 
         // 2. Initialize MfsStore (handles base state, traces, and experiences)
-        // Since MfsStore::new creates its own pool, we'll use a modified version
-        // or just let it be if the performance hit is negligible.
-        // However, for industrial grade, we should share the pool.
-        // Let's check if MfsStore can take a pool.
-
-        // Note: MfsStore::with_capacity currently creates its own pool.
-        // To properly share, we would need to refactor MfsStore.
-        // For now, we'll initialize them sequentially.
-
-        let state = Arc::new(MfsStore::new(db_url).await?);
+        let state = Arc::new(MfsStore::new(db_url, &config.cache).await?);
         let sop = Arc::new(SopSqlStore::new(pool.clone()).await?);
         let roadmap = Arc::new(RoadmapSqlStore::new(pool.clone()).await?);
 

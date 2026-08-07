@@ -306,7 +306,7 @@ async fn test_chaos_runner_in_dag_context() {
     use sisyphus_core::chaos_testing::dag_test;
 
     // --- Scenario 1: Diamond DAG with 100 % fault probability ---------------
-    let config = dag_test::diamond();
+    let config = dag_test::diamond().expect("diamond DAG");
     assert_eq!(config.nodes.len(), 4, "Diamond DAG has 4 nodes");
 
     let runner = ChaosRunner::new();
@@ -331,7 +331,7 @@ async fn test_chaos_runner_in_dag_context() {
     assert_eq!(result.faults_injected, 4);
 
     // --- Scenario 2: Linear chain with mixed faults and partial probability --
-    let chain = dag_test::linear_chain(6);
+    let chain = dag_test::linear_chain(6).expect("linear chain");
     let runner2 = ChaosRunner::new();
     runner2.start_experiment(ChaosExperiment {
         name: "dag_linear_mixed".into(),
@@ -363,7 +363,7 @@ async fn test_chaos_runner_in_dag_context() {
     let _ = runner2.stop_experiment();
 
     // --- Scenario 3: Empty DAG edge case ------------------------------------
-    let _empty = dag_test::linear_chain(0);
+    let _empty = dag_test::linear_chain(0).expect("empty chain");
     let runner3 = ChaosRunner::new();
     runner3.start_experiment(ChaosExperiment {
         name: "dag_empty".into(),
@@ -384,7 +384,7 @@ async fn test_chaos_runner_in_dag_context_targeted() {
     use sisyphus_core::chaos_testing::dag_test;
 
     // Only target specific DAG nodes.
-    let config = dag_test::wide_fanout(10); // 1 root + 10 leaves
+    let config = dag_test::wide_fanout(10).expect("fanout DAG"); // 1 root + 10 leaves
     let runner = ChaosRunner::new();
     runner.start_experiment(ChaosExperiment {
         name: "dag_targeted".into(),

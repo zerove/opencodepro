@@ -25,20 +25,17 @@ impl MfsStore {
     ///
     /// For file-backed databases, the file is created if it does not exist
     /// (including parent directories for relative paths).
-    pub async fn new(db_url: &str) -> Result<Self> {
-        let capacity =
-            NonZeroUsize::new(10_000).ok_or_else(|| anyhow::anyhow!("Invalid default capacity"))?;
+    pub async fn new(db_url: &str, config: &sisyphus_types::CacheConfig) -> Result<Self> {
+        let capacity = NonZeroUsize::new(config.l1_capacity)
+            .ok_or_else(|| anyhow::anyhow!("Invalid L1 capacity"))?;
 
         let pool = if db_url == "sqlite::memory:" || db_url == "sqlite::memory" {
-            // In-memory database: no file to create.
             SqlitePoolOptions::new()
                 .max_connections(5)
                 .connect(db_url)
                 .await
                 .context("Failed to connect to in-memory SQLite pool")?
         } else {
-            // File-backed database: create the file and parent directories
-            // if they do not exist yet.
             let path = db_url.strip_prefix("sqlite:").unwrap_or(db_url);
             if path != ":memory:"
                 && let Some(parent) = std::path::Path::new(path).parent()
@@ -61,11 +58,16 @@ impl MfsStore {
                 .context("Failed to connect to SQLite pool")?
         };
 
-        Self::with_pool(pool, capacity).await
+        Self::with_pool(pool, capacity, config.batch_size, config.flush_interval_ms).await
     }
 
     /// Creates a new MfsStore with a specific L1 capacity and an existing SQLite pool.
-    pub async fn with_pool(pool: SqlitePool, capacity: NonZeroUsize) -> Result<Self> {
+    pub async fn with_pool(
+        pool: SqlitePool,
+        capacity: NonZeroUsize,
+        batch_size: usize,
+        flush_interval_ms: u64,
+    ) -> Result<Self> {
         // Enable WAL mode for better concurrency
         sqlx::query("PRAGMA journal_mode=WAL;")
             .execute(&pool)
@@ -128,9 +130,10 @@ impl MfsStore {
         // Setup async write buffer
         let (tx, rx) = mpsc::unbounded_channel::<WriteOp>();
         let pool_clone = pool.clone();
+        let flush_interval = std::time::Duration::from_millis(flush_interval_ms);
 
         tokio::spawn(async move {
-            Self::flush_worker(pool_clone, rx).await;
+            Self::flush_worker(pool_clone, rx, batch_size, flush_interval).await;
         });
 
         Ok(Self {
@@ -140,8 +143,13 @@ impl MfsStore {
         })
     }
 
-    async fn flush_worker(pool: SqlitePool, mut rx: mpsc::UnboundedReceiver<WriteOp>) {
-        let mut interval = tokio::time::interval(std::time::Duration::from_millis(100));
+    async fn flush_worker(
+        pool: SqlitePool,
+        mut rx: mpsc::UnboundedReceiver<WriteOp>,
+        batch_size: usize,
+        flush_interval: std::time::Duration,
+    ) {
+        let mut interval = tokio::time::interval(flush_interval);
         let mut buffer = Vec::new();
 
         loop {
@@ -150,28 +158,34 @@ impl MfsStore {
                     match op {
                         WriteOp::Set { key, value } => {
                             buffer.push(WriteOp::Set { key, value });
-                            if buffer.len() >= 100
-                                && let Err(e) = Self::flush_batch(&pool, &mut buffer).await {
+                            if buffer.len() >= batch_size {
+                                let start = Instant::now();
+                                if let Err(e) = Self::flush_batch(&pool, &mut buffer).await {
                                     tracing::error!(error = %e, "L2 batch flush failed");
+                                } else {
+                                    record_mem_operation("flush_batch", "L2", true, start.elapsed().as_secs_f64());
                                 }
+                            }
                         }
                         WriteOp::Delete { key } => {
                             buffer.push(WriteOp::Delete { key });
-                            if buffer.len() >= 100
-                                && let Err(e) = Self::flush_batch(&pool, &mut buffer).await {
+                            if buffer.len() >= batch_size {
+                                let start = Instant::now();
+                                if let Err(e) = Self::flush_batch(&pool, &mut buffer).await {
                                     tracing::error!(error = %e, "L2 batch flush failed");
+                                } else {
+                                    record_mem_operation("flush_batch", "L2", true, start.elapsed().as_secs_f64());
                                 }
+                            }
                         }
                         WriteOp::Flush(tx) => {
                             let res = Self::flush_batch(&pool, &mut buffer).await;
                             let _ = tx.send(res);
                         }
                         WriteOp::Clear => {
-                            // Flush current buffer first
                             if let Err(e) = Self::flush_batch(&pool, &mut buffer).await {
                                 tracing::error!(error = %e, "L2 final flush before clear failed");
                             }
-                            // Now clear L2
                             if let Err(e) = sqlx::query("DELETE FROM state").execute(&pool).await {
                                 tracing::error!(error = %e, "L2 clear failed");
                             }
@@ -179,10 +193,14 @@ impl MfsStore {
                     }
                 }
                 _ = interval.tick() => {
-                    if !buffer.is_empty()
-                        && let Err(e) = Self::flush_batch(&pool, &mut buffer).await {
+                    if !buffer.is_empty() {
+                        let start = Instant::now();
+                        if let Err(e) = Self::flush_batch(&pool, &mut buffer).await {
                             tracing::error!(error = %e, "L2 periodic flush failed");
+                        } else {
+                            record_mem_operation("flush_periodic", "L2", true, start.elapsed().as_secs_f64());
                         }
+                    }
                 }
             }
         }
@@ -746,7 +764,8 @@ mod tests {
     #[tokio::test]
     async fn test_cross_project_isolation_vulnerability() {
         // We use :memory: for fast tests.
-        let store = MfsStore::new("sqlite::memory:")
+        let config = sisyphus_types::CacheConfig::default();
+        let store = MfsStore::new("sqlite::memory:", &config)
             .await
             .expect("Failed to init store");
 

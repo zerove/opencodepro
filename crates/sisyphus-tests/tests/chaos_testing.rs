@@ -160,14 +160,14 @@ async fn test_chaos_random_delay() {
 
 #[tokio::test]
 async fn test_dag_empty_graph() {
-    let config = dag::linear_chain(0);
+    let config = dag::linear_chain(0).expect("empty chain");
     assert_eq!(config.nodes.len(), 0);
     assert_eq!(config.edges.len(), 0);
 }
 
 #[tokio::test]
 async fn test_dag_single_node() {
-    let config = dag::single_node("solo", "t1");
+    let config = dag::single_node("solo", "t1").expect("single node");
     assert_eq!(config.nodes.len(), 1);
     assert_eq!(config.nodes[0].name, "solo");
 }
@@ -175,7 +175,7 @@ async fn test_dag_single_node() {
 #[tokio::test]
 async fn test_dag_linear_chain_various_sizes() {
     for size in &[1, 5, 10, 100] {
-        let config = dag::linear_chain(*size);
+        let config = dag::linear_chain(*size).expect("chain");
         assert_eq!(config.nodes.len(), *size);
         if *size > 1 {
             assert_eq!(config.edges.len(), size - 1);
@@ -187,7 +187,7 @@ async fn test_dag_linear_chain_various_sizes() {
 
 #[tokio::test]
 async fn test_dag_wide_fanout() {
-    let config = dag::wide_fanout(100);
+    let config = dag::wide_fanout(100).expect("fanout");
     assert_eq!(config.nodes.len(), 101);
     assert_eq!(config.edges.len(), 100);
 }
@@ -195,14 +195,14 @@ async fn test_dag_wide_fanout() {
 #[tokio::test]
 async fn test_dag_wide_fanout_max_edges() {
     // Fanout to 1000 parallel leaves
-    let config = dag::wide_fanout(1000);
+    let config = dag::wide_fanout(1000).expect("fanout");
     assert_eq!(config.nodes.len(), 1001);
     assert_eq!(config.edges.len(), 1000);
 }
 
 #[tokio::test]
 async fn test_dag_diamond_structure() {
-    let config = dag::diamond();
+    let config = dag::diamond().expect("diamond");
     assert_eq!(config.nodes.len(), 4);
     assert_eq!(config.edges.len(), 4);
 
@@ -297,9 +297,10 @@ async fn test_anomaly_detector_concurrent_safety() {
 
 #[tokio::test]
 async fn test_storage_concurrent_smoke() {
-    let store = sisyphus_mem::MfsStore::new("sqlite::memory:")
-        .await
-        .expect("Store init failed");
+    let store =
+        sisyphus_mem::MfsStore::new("sqlite::memory:", &sisyphus_types::CacheConfig::default())
+            .await
+            .expect("Store init failed");
 
     let store = Arc::new(store);
     let mut handles = Vec::new();
@@ -323,7 +324,7 @@ async fn test_storage_concurrent_smoke() {
 #[tokio::test]
 async fn test_storage_contended_keys() {
     let store = Arc::new(
-        sisyphus_mem::MfsStore::new("sqlite::memory:")
+        sisyphus_mem::MfsStore::new("sqlite::memory:", &sisyphus_types::CacheConfig::default())
             .await
             .expect("Store init failed"),
     );

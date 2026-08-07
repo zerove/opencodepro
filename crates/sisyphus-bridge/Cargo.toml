@@ -51,6 +51,7 @@ tracing-opentelemetry = { workspace = true }
 jsonwebtoken = { workspace = true }
 chrono = { workspace = true }
 thiserror = { workspace = true }
+async-stream = "0.3"
 
 [features]
 default = ["sandbox"]

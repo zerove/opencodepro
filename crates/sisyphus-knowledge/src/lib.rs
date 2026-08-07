@@ -29,7 +29,7 @@ pub enum KnowledgeError {
 
 /// Serializable snapshot of the entire knowledge graph for disk persistence.
 #[derive(Serialize, Deserialize)]
-struct KnowledgeSnapshot {
+pub struct KnowledgeSnapshot {
     assets: Vec<CognitiveAsset>,
     relations: Vec<AssetRelation>,
 }
@@ -105,7 +105,7 @@ impl KnowledgeGraph {
     }
 
     /// Serialize the graph to a JSON-serializable snapshot.
-    fn to_snapshot(&self) -> KnowledgeSnapshot {
+    pub fn to_snapshot(&self) -> KnowledgeSnapshot {
         let assets: Vec<CognitiveAsset> = self.assets.values().cloned().collect();
 
         // Reconstruct relations from the petgraph
@@ -128,7 +128,7 @@ impl KnowledgeGraph {
     }
 
     /// Reconstruct from a snapshot.
-    fn from_snapshot(snapshot: KnowledgeSnapshot) -> Self {
+    pub fn from_snapshot(snapshot: KnowledgeSnapshot) -> Self {
         let mut graph = KnowledgeGraph::new();
         for asset in snapshot.assets {
             graph.add_asset(asset);

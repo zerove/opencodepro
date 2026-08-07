@@ -154,6 +154,15 @@ pub enum CoreError {
     #[error("Strategic Pivot triggered: {0}")]
     StrategicPivot(String),
 
+    #[error("Kernel initialization error: {0}")]
+    KernelInitError(String),
+
+    #[error("Serialization/Deserialization error: {0}")]
+    SerializationError(String),
+
+    #[error("Execution context error: {0}")]
+    ExecutionError(String),
+
     #[error("Internal error: {0}")]
     Internal(String),
 }

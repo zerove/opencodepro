@@ -3,7 +3,7 @@
 use super::types::*;
 use axum::{
     extract::{Path, State},
-    http::{header, HeaderMap, StatusCode},
+    http::{HeaderMap, StatusCode},
     response::IntoResponse,
     Json,
 };
@@ -475,7 +475,7 @@ pub(super) async fn list_benchmarks_handler(
 }
 
 pub(super) async fn get_breaker_metrics_handler(
-    State(state): State<RestApiState>,
+    State(_state): State<RestApiState>,
     req: axum::extract::Query<BreakerMetricsRequest>,
 ) -> impl IntoResponse {
     // Note: Circuit breaker metrics are tracked per-model in the LLM client.
@@ -785,7 +785,7 @@ pub(super) async fn chaos_status_handler(
 }
 
 pub(super) async fn anomaly_report_handler(
-    State(state): State<RestApiState>,
+    State(_state): State<RestApiState>,
     req: axum::extract::Query<AnomalyRequest>,
 ) -> impl IntoResponse {
     // Note: Anomaly detection is available via sisyphus_intel::AnomalyDetector.

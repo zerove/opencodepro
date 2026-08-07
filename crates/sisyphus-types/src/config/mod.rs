@@ -54,6 +54,10 @@ pub struct Config {
     #[serde(default)]
     pub chaos: ChaosConfig,
 
+    /// JWT authentication configuration for REST API.
+    #[serde(default)]
+    pub jwt: JwtConfig,
+
     /// Bearer token for gRPC bridge authentication. Empty = no auth.
     #[serde(default)]
     pub auth_token: String,
@@ -75,6 +79,47 @@ fn default_http_address() -> String {
     "http://[::1]:8080".into()
 }
 
+/// JWT configuration for REST API authentication.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct JwtConfig {
+    /// Secret key for signing tokens. MUST be set via config or SISYPHUS_JWT_SECRET env var.
+    /// No default provided - must be explicitly configured for production.
+    #[serde(default)]
+    pub secret: String,
+    /// Access token TTL in seconds (default: 900 = 15 minutes)
+    #[serde(default = "default_jwt_access_ttl")]
+    pub access_ttl_secs: i64,
+    /// Refresh token TTL in seconds (default: 604800 = 7 days)
+    #[serde(default = "default_jwt_refresh_ttl")]
+    pub refresh_ttl_secs: i64,
+    /// Token issuer (default: "sisyphus-bridge")
+    #[serde(default = "default_jwt_issuer")]
+    pub issuer: String,
+}
+
+fn default_jwt_access_ttl() -> i64 {
+    900
+}
+
+fn default_jwt_refresh_ttl() -> i64 {
+    604800
+}
+
+fn default_jwt_issuer() -> String {
+    "sisyphus-bridge".to_string()
+}
+
+impl Default for JwtConfig {
+    fn default() -> Self {
+        Self {
+            secret: String::new(), // Empty = must be configured via env or config file
+            access_ttl_secs: default_jwt_access_ttl(),
+            refresh_ttl_secs: default_jwt_refresh_ttl(),
+            issuer: default_jwt_issuer(),
+        }
+    }
+}
+
 impl Default for Config {
     fn default() -> Self {
         Self {
@@ -88,6 +133,7 @@ impl Default for Config {
             registry: RegistryConfig::default(),
             jcode: JcodeConfig::default(),
             chaos: ChaosConfig::default(),
+            jwt: JwtConfig::default(),
             auth_token: String::new(),
             bridge_address: default_bridge_address(),
             http_address: default_http_address(),
@@ -244,6 +290,18 @@ impl Config {
         if let Some(v) = env_string("SISYPHUS_AUTH_TOKEN") {
             self.auth_token = v;
         }
+        if let Some(v) = env_string("SISYPHUS_JWT_SECRET") {
+            self.jwt.secret = v;
+        }
+        if let Some(v) = env_u64("SISYPHUS_JWT_ACCESS_TTL_SECS") {
+            self.jwt.access_ttl_secs = v as i64;
+        }
+        if let Some(v) = env_u64("SISYPHUS_JWT_REFRESH_TTL_SECS") {
+            self.jwt.refresh_ttl_secs = v as i64;
+        }
+        if let Some(v) = env_string("SISYPHUS_JWT_ISSUER") {
+            self.jwt.issuer = v;
+        }
         if let Some(v) = env_string("SISYPHUS_BRIDGE_ADDRESS") {
             self.bridge_address = v;
         }
@@ -290,6 +348,16 @@ impl Config {
     pub fn validate(&self) -> Result<(), TypesError> {
         if self.auth_token.is_empty() {
             // auth_token is optional; empty = no auth
+        }
+        // Validate JWT config: secret is required if auth is enabled via auth_token
+        if !self.auth_token.is_empty() && self.jwt.secret.is_empty() {
+            return Err(TypesError::ConfigValidationError(
+                "jwt.secret must be set when auth_token is configured (use SISYPHUS_JWT_SECRET env var)".to_string()
+            ));
+        }
+        // Also warn if JWT is configured but auth_token is not (for REST API JWT auth)
+        if self.jwt.secret.is_empty() && !self.auth_token.is_empty() {
+            // This case is covered above
         }
         self.validate_address(&self.bridge_address, "bridge_address")?;
         self.validate_address(&self.http_address, "http_address")?;

@@ -4,29 +4,132 @@
 //! - `types`：请求/响应 DTO 与共享状态（`RestApiState`）
 //! - `handlers`：基础处理器（认知映射、技能、工作区、目标执行、路线图、会话）
 //! - `handlers_ext`：扩展处理器（技能市场/对等注册表、工具执行、混沌工程、插件）
+//! - `sse_handlers`：Server-Sent Events 实时流式端点
 
 pub(crate) mod handlers;
 pub(crate) mod handlers_ext;
+pub(crate) mod sse_handlers;
 pub mod types;
 
 pub use types::RestApiState;
 
 use axum::{
+    extract::{Request, State},
+    http::{header, StatusCode},
+    middleware::{self, Next},
+    response::{IntoResponse, Response},
     routing::{delete, get, patch, post},
     Router,
 };
+use std::convert::Infallible;
 use tower_http::services::ServeDir;
 
 use super::http_openapi;
 
 use handlers::*;
 use handlers_ext::*;
+use sse_handlers::*;
+
+/// JWT authentication middleware for the REST API.
+/// Validates Bearer token using JWT if jwt_config is configured.
+async fn jwt_auth_middleware(
+    State(state): State<RestApiState>,
+    request: Request,
+    next: Next,
+) -> Result<Response, Infallible> {
+    if let Some(jwt_config) = &state.jwt_config {
+        if jwt_config.secret.is_empty() {
+            // JWT config exists but secret is empty - treat as no auth
+            return Ok(next.run(request).await);
+        }
+
+        // Try to create JWT service to validate
+        let jwt_service = match crate::auth_jwt::JwtService::new(jwt_config.clone()) {
+            Ok(s) => s,
+            Err(_) => {
+                let body = axum::Json(serde_json::json!({
+                    "error": "Internal server error: JWT configuration invalid",
+                    "code": 500
+                }));
+                return Ok((StatusCode::INTERNAL_SERVER_ERROR, body).into_response());
+            }
+        };
+
+        let provided = request
+            .headers()
+            .get(header::AUTHORIZATION)
+            .and_then(|v| v.to_str().ok())
+            .and_then(|v| v.strip_prefix("Bearer "))
+            .map(|s| s.trim());
+
+        match provided {
+            Some(token) => match jwt_service.validate_access_token(token) {
+                Ok(_) => Ok(next.run(request).await),
+                Err(_) => {
+                    let body = axum::Json(serde_json::json!({
+                        "error": "Unauthorized: Invalid or expired token",
+                        "code": 401
+                    }));
+                    Ok((StatusCode::UNAUTHORIZED, body).into_response())
+                }
+            },
+            None => {
+                let body = axum::Json(serde_json::json!({
+                    "error": "Unauthorized: Missing Authorization header",
+                    "code": 401
+                }));
+                Ok((StatusCode::UNAUTHORIZED, body).into_response())
+            }
+        }
+    } else {
+        // No JWT config - pass through
+        Ok(next.run(request).await)
+    }
+}
+
+/// Bearer-token authentication middleware for the REST API.
+///
+/// When `RestApiState.auth_token` is `Some`, every request under the wrapped
+/// router must carry `Authorization: Bearer <token>`. Otherwise the request is
+/// rejected with 401. When the token is `None` (development mode), requests
+/// pass through untouched.
+async fn bearer_auth_middleware(
+    State(state): State<RestApiState>,
+    request: Request,
+    next: Next,
+) -> Result<Response, Infallible> {
+    if let Some(expected) = state.auth_token.as_deref() {
+        let provided = request
+            .headers()
+            .get(header::AUTHORIZATION)
+            .and_then(|v| v.to_str().ok())
+            .and_then(|v| v.strip_prefix("Bearer "))
+            .map(|s| s.trim());
+
+        match provided {
+            Some(actual) if actual == expected => Ok(next.run(request).await),
+            _ => {
+                let body = axum::Json(serde_json::json!({
+                    "error": "Unauthorized",
+                    "code": 401
+                }));
+                Ok((StatusCode::UNAUTHORIZED, body).into_response())
+            }
+        }
+    } else {
+        Ok(next.run(request).await)
+    }
+}
 
 /// Build the axum Router with all REST API routes.
 pub fn build_router(state: RestApiState) -> Router {
-    Router::new()
+    let public_routes = Router::new()
         .route("/health", get(health_handler))
-        .nest_service("/dashboard", ServeDir::new("static/dashboard"))
+        .route("/openapi.json", get(http_openapi::openapi_json))
+        .route("/swagger-ui/*rest", get(http_openapi::swagger_ui_handler))
+        .route("/api/events/health", get(sse_health_handler));
+
+    let protected_routes = Router::new()
         .route("/api/skills/available", get(list_available_skills_handler))
         .route("/api/skills/install", post(install_remote_skill_handler))
         .route("/api/skills/installed", get(list_installed_skills_handler))
@@ -146,7 +249,31 @@ pub fn build_router(state: RestApiState) -> Router {
         .route("/api/chaos/status", get(chaos_status_handler))
         .route("/api/anomaly", get(anomaly_report_handler))
         .route("/api/workspaces/:id", delete(delete_workspace_handler))
-        .route("/openapi.json", get(http_openapi::openapi_json))
-        .route("/swagger-ui/*rest", get(http_openapi::swagger_ui_handler))
+        // SSE endpoints
+        .route("/api/events", get(sse_handler))
+        .route("/api/events/broadcast", post(broadcast_event_handler))
+        .route("/api/events/health", get(sse_health_handler));
+
+    // Apply auth middleware: JWT takes precedence over static bearer token
+    let router = if state.jwt_config.is_some() {
+        protected_routes
+            .route_layer(middleware::from_fn_with_state(
+                state.clone(),
+                jwt_auth_middleware,
+            ))
+            .merge(public_routes)
+    } else if state.auth_token.is_some() {
+        protected_routes
+            .route_layer(middleware::from_fn_with_state(
+                state.clone(),
+                bearer_auth_middleware,
+            ))
+            .merge(public_routes)
+    } else {
+        protected_routes.merge(public_routes)
+    };
+
+    router
+        .nest_service("/dashboard", ServeDir::new("static/dashboard"))
         .with_state(state)
 }

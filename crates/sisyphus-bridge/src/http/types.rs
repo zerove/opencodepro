@@ -657,15 +657,58 @@ pub struct SkillEntry {
 
 // ── Shared State ──────────────────────────────────────────────────────────
 
+use sisyphus_types::config::JwtConfig;
+
 #[derive(Clone)]
 pub struct RestApiState {
     pub bridge: Arc<MySisyphusBridge>,
     pub session_db: PathBuf,
+    /// Optional static bearer token protecting all `/api/*` routes.
+    /// `None` = no authentication (development mode).
+    pub auth_token: Option<String>,
+    /// JWT configuration for token-based authentication.
+    /// If `jwt.secret` is set, JWT authentication is enabled for REST API.
+    pub jwt_config: Option<JwtConfig>,
 }
 
 impl RestApiState {
     pub fn new(bridge: Arc<MySisyphusBridge>, data_dir: PathBuf) -> Self {
         let session_db = data_dir.join("sessions.json");
-        Self { bridge, session_db }
+        Self {
+            bridge,
+            session_db,
+            auth_token: None,
+            jwt_config: None,
+        }
+    }
+
+    /// Create state with optional bearer-token authentication for the REST API.
+    pub fn new_with_auth(
+        bridge: Arc<MySisyphusBridge>,
+        data_dir: PathBuf,
+        auth_token: Option<String>,
+    ) -> Self {
+        let session_db = data_dir.join("sessions.json");
+        Self {
+            bridge,
+            session_db,
+            auth_token,
+            jwt_config: None,
+        }
+    }
+
+    /// Create state with JWT configuration for token-based authentication.
+    pub fn new_with_jwt(
+        bridge: Arc<MySisyphusBridge>,
+        data_dir: PathBuf,
+        jwt_config: JwtConfig,
+    ) -> Self {
+        let session_db = data_dir.join("sessions.json");
+        Self {
+            bridge,
+            session_db,
+            auth_token: None,
+            jwt_config: Some(jwt_config),
+        }
     }
 }

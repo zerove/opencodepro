@@ -70,10 +70,14 @@ impl Consensus for DummyConsensus {
 
 async fn setup_kernel(db_url: Option<&str>) -> SisyphusKernel {
     let url = db_url.unwrap_or("sqlite::memory:");
-    let state_store = Arc::new(MfsStore::new(url).await.expect("Failed to init MfsStore"));
+    let state_store = Arc::new(
+        MfsStore::new(url, &sisyphus_types::CacheConfig::default())
+            .await
+            .expect("Failed to init MfsStore"),
+    );
 
     // Get stores from MfsStore internals
-    let store = sisyphus_mem::SisyphusStore::new(url)
+    let store = sisyphus_mem::SisyphusStore::new(url, &sisyphus_types::Config::default())
         .await
         .expect("Failed to init SisyphusStore");
     let sop_store = store.sop.clone();
@@ -247,7 +251,7 @@ mod tests {
 
         // Instance 1: Write data
         {
-            let store = MfsStore::new(&db_path)
+            let store = MfsStore::new(&db_path, &sisyphus_types::CacheConfig::default())
                 .await
                 .expect("Failed to init store 1");
             store
@@ -264,7 +268,7 @@ mod tests {
 
         // Instance 2: Read data
         {
-            let store = MfsStore::new(&db_path)
+            let store = MfsStore::new(&db_path, &sisyphus_types::CacheConfig::default())
                 .await
                 .expect("Failed to init store 2");
             let val = store
