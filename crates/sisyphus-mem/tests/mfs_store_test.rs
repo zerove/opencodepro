@@ -7,7 +7,7 @@ const PROJECT_ID: &str = "test_project";
 #[tokio::test]
 async fn test_basic_get_set() {
     // Use in-memory DB for speed
-    let store = MfsStore::new("sqlite::memory:")
+    let store = MfsStore::new("sqlite::memory:", &sisyphus_types::CacheConfig::default())
         .await
         .expect("Failed to create store");
 
@@ -59,7 +59,7 @@ async fn test_persistence() {
     let _ = std::fs::remove_file(format!("{}-shm", db_path.to_str().unwrap()));
 
     {
-        let store = MfsStore::new(&db_url)
+        let store = MfsStore::new(&db_url, &sisyphus_types::CacheConfig::default())
             .await
             .expect("Failed to create store");
         let key = "persist_key";
@@ -74,7 +74,7 @@ async fn test_persistence() {
 
     // Re-open store to verify persistence
     {
-        let store = MfsStore::new(&db_url)
+        let store = MfsStore::new(&db_url, &sisyphus_types::CacheConfig::default())
             .await
             .expect("Failed to create store");
         let key = "persist_key";
@@ -90,7 +90,7 @@ async fn test_persistence() {
 
 #[tokio::test]
 async fn test_snapshot_restore() {
-    let store = MfsStore::new("sqlite::memory:")
+    let store = MfsStore::new("sqlite::memory:", &sisyphus_types::CacheConfig::default())
         .await
         .expect("Failed to create store");
 
@@ -140,7 +140,7 @@ async fn test_snapshot_restore() {
 
 #[tokio::test]
 async fn test_prefix_listing() {
-    let store = MfsStore::new("sqlite::memory:")
+    let store = MfsStore::new("sqlite::memory:", &sisyphus_types::CacheConfig::default())
         .await
         .expect("Failed to create store");
 
@@ -177,7 +177,7 @@ async fn test_prefix_listing() {
 #[tokio::test]
 async fn test_concurrent_access() {
     let store = std::sync::Arc::new(
-        MfsStore::new("sqlite::memory:")
+        MfsStore::new("sqlite::memory:", &sisyphus_types::CacheConfig::default())
             .await
             .expect("Failed to create store"),
     );

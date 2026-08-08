@@ -88,7 +88,11 @@ async fn setup_kernel(
     synthesizer: Arc<dyn sisyphus_intel::FlowSynthesizer>,
     meta_learner: Arc<Mutex<MetaLearner>>,
 ) -> SisyphusKernel {
-    let store = Arc::new(MfsStore::new("sqlite::memory:").await.unwrap());
+    let store = Arc::new(
+        MfsStore::new("sqlite::memory:", &sisyphus_types::CacheConfig::default())
+            .await
+            .unwrap(),
+    );
     let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
     let tool_exec = Arc::new(MockExecutor);
 

@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 async fn setup_manager() -> (RoadmapManager, Arc<MfsStore>) {
     let store = Arc::new(
-        MfsStore::new("sqlite::memory:")
+        MfsStore::new("sqlite::memory:", &sisyphus_types::CacheConfig::default())
             .await
             .expect("Failed to create MfsStore"),
     );

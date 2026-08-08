@@ -65,7 +65,7 @@ impl LlmClient for MockLlmClient {
 /// Helper: create test manager with in-memory SQLite
 async fn create_test_manager() -> (Arc<RoadmapManager>, String) {
     let store = Arc::new(
-        MfsStore::new("sqlite::memory:")
+        MfsStore::new("sqlite::memory:", &sisyphus_types::CacheConfig::default())
             .await
             .expect("Failed to create in-memory store"),
     );
@@ -707,7 +707,11 @@ async fn test_persistence_across_restart() {
 
     // First manager session
     {
-        let store = Arc::new(MfsStore::new(&db_url).await.unwrap());
+        let store = Arc::new(
+            MfsStore::new(&db_url, &sisyphus_types::CacheConfig::default())
+                .await
+                .unwrap(),
+        );
         let sql_store = Arc::new(RoadmapSqlStore::new(store.pool().clone()).await.unwrap());
         sql_store.init_schema().await.unwrap();
         let proposal_manager = Arc::new(ProposalManager::new(store.clone()));
@@ -770,7 +774,11 @@ async fn test_persistence_across_restart() {
 
     // Second manager session - load from same DB
     {
-        let store = Arc::new(MfsStore::new(&db_url).await.unwrap());
+        let store = Arc::new(
+            MfsStore::new(&db_url, &sisyphus_types::CacheConfig::default())
+                .await
+                .unwrap(),
+        );
         let sql_store = Arc::new(RoadmapSqlStore::new(store.pool().clone()).await.unwrap());
         let proposal_manager = Arc::new(ProposalManager::new(store.clone()));
         let manager = Arc::new(RoadmapManager::new(store, sql_store, proposal_manager));

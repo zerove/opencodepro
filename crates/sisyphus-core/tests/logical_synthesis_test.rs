@@ -100,7 +100,11 @@ async fn test_logical_synthesis_branching_execution() {
     ));
 
     // 4. Setup Kernel
-    let store = Arc::new(MfsStore::new("sqlite::memory:").await.unwrap());
+    let store = Arc::new(
+        MfsStore::new("sqlite::memory:", &sisyphus_types::CacheConfig::default())
+            .await
+            .unwrap(),
+    );
     let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
     let intel = Arc::new(SisyphusIntel::new(
         Arc::new(MonteCarloSimulator::new(100)),

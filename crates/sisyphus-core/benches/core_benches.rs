@@ -172,7 +172,11 @@ fn bench_mfs_storage(c: &mut Criterion) {
         let key = format!("bench_key_{}", name);
 
         // Reuse a single store for set benchmarks to avoid creating many in-memory DBs
-        let store = rt.block_on(async { MfsStore::new("sqlite::memory:").await.unwrap() });
+        let store = rt.block_on(async {
+            MfsStore::new("sqlite::memory:", &sisyphus_types::CacheConfig::default())
+                .await
+                .unwrap()
+        });
         let store_arc = Arc::new(store);
 
         group.bench_function(format!("set_{}", name), |b| {
@@ -199,7 +203,9 @@ fn bench_mfs_storage(c: &mut Criterion) {
 
         // Pre-populate store for get benchmark
         let store = rt.block_on(async {
-            let s = MfsStore::new("sqlite::memory:").await.unwrap();
+            let s = MfsStore::new("sqlite::memory:", &sisyphus_types::CacheConfig::default())
+                .await
+                .unwrap();
             s.set_state_json("bench_project", &key, payload_val.clone())
                 .await
                 .unwrap();

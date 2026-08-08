@@ -47,7 +47,7 @@ async fn test_self_programming_refinement_loop() {
         attempt: std::sync::Mutex::new(0),
     });
     let state_store = Arc::new(
-        sisyphus_mem::MfsStore::new("sqlite::memory:")
+        sisyphus_mem::MfsStore::new("sqlite::memory:", &sisyphus_types::CacheConfig::default())
             .await
             .unwrap(),
     );

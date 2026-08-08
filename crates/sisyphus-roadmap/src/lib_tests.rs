@@ -3,7 +3,7 @@ use sisyphus_types::{GoalRef, Milestone, MilestoneStatus, Phase};
 
 async fn setup_manager() -> RoadmapManager {
     let store = std::sync::Arc::new(
-        sisyphus_mem::MfsStore::new("sqlite::memory:")
+        sisyphus_mem::MfsStore::new("sqlite::memory:", &sisyphus_types::CacheConfig::default())
             .await
             .expect("Failed to create in-memory store"),
     );

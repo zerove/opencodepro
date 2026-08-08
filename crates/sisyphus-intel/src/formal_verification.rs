@@ -115,8 +115,9 @@ impl VerificationRunner {
     /// Run a proptest property test with a given strategy and test function.
     /// This allows running a specific proptest test programmatically.
     ///
-    /// Example:
-    /// ```
+    /// Example (requires `proptest` crate):
+    /// ```ignore
+    /// let runner = VerificationRunner::default();
     /// runner.run_proptest_property("addition_commutative", 100,
     ///     (0..1000u32, 0..1000u32),
     ///     |(a, b)| { prop_assert_eq!(a + b, b + a); Ok(()) }

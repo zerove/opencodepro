@@ -131,7 +131,7 @@ async fn test_strategic_governance_loop_detection() {
 
     // Create a dummy manager for the generator
     let store = Arc::new(
-        sisyphus_mem::MfsStore::new("sqlite::memory:")
+        sisyphus_mem::MfsStore::new("sqlite::memory:", &sisyphus_types::CacheConfig::default())
             .await
             .unwrap(),
     );

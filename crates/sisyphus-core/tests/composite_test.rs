@@ -28,7 +28,7 @@ impl ToolExecutor for CompositeMockExecutor {
 
 async fn make_kernel() -> (Arc<SisyphusKernel>, Arc<CompositeMockExecutor>) {
     let state_store = Arc::new(
-        sisyphus_mem::MfsStore::new("sqlite::memory:")
+        sisyphus_mem::MfsStore::new("sqlite::memory:", &sisyphus_types::CacheConfig::default())
             .await
             .unwrap(),
     );

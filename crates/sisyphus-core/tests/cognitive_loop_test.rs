@@ -36,7 +36,11 @@ impl ToolExecutor for MockExecutor {
 }
 
 async fn setup_kernel(tool_executor: Arc<MockExecutor>) -> SisyphusKernel {
-    let state_store = Arc::new(MfsStore::new("sqlite::memory:").await.unwrap());
+    let state_store = Arc::new(
+        MfsStore::new("sqlite::memory:", &sisyphus_types::CacheConfig::default())
+            .await
+            .unwrap(),
+    );
     let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
     let llm_client = Arc::new(sisyphus_tools_llm::metis::DummyLlmClient);
 

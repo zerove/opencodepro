@@ -110,7 +110,11 @@ impl Consensus for MockConsensus {
 }
 
 async fn setup_kernel(llm: Arc<dyn LlmClient>, tool_exec: Arc<dyn ToolExecutor>) -> SisyphusKernel {
-    let store = Arc::new(MfsStore::new("sqlite::memory:").await.unwrap());
+    let store = Arc::new(
+        MfsStore::new("sqlite::memory:", &sisyphus_types::CacheConfig::default())
+            .await
+            .unwrap(),
+    );
     let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
 
     let simulator = Arc::new(MonteCarloSimulator::new(10));

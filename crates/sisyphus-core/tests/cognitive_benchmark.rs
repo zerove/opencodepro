@@ -72,7 +72,7 @@ const HARD_GOALS: &[BenchmarkGoal] = &[
 
 async fn setup_test_kernel() -> SisyphusKernel {
     let store = Arc::new(
-        MfsStore::new("sqlite::memory:")
+        MfsStore::new("sqlite::memory:", &sisyphus_types::CacheConfig::default())
             .await
             .expect("Store init failed"),
     );

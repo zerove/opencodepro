@@ -12,7 +12,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 /// 辅助：创建测试管理器
 async fn create_test_manager() -> (Arc<RoadmapManager>, String) {
     let store = Arc::new(
-        MfsStore::new("sqlite::memory:")
+        MfsStore::new("sqlite::memory:", &sisyphus_types::CacheConfig::default())
             .await
             .expect("Failed to create in-memory store"),
     );
