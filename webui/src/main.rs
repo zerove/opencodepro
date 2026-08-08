@@ -1,15 +1,14 @@
-//! Sisyphus Web Dashboard — standalone server entry point.
+//! Sisyphus Web 仪表盘 —— 独立服务器入口点。
 //!
-//! Serves the axum + HTMX + SSE dashboard, proxying API calls to the
-//! gRPC bridge's REST API.
+//! 提供 axum + HTMX + SSE 仪表盘，将 API 调用代理到 gRPC bridge 的 REST API。
 //!
-//! Usage:
+//! 用法：
 //!   cargo run -p sisyphus-webui -- --bridge http://[::1]:8080 --listen 0.0.0.0:3000
 //!
-//! Environment variables:
-//!   WEBUI_BRIDGE_URL   Bridge REST API base URL (default: http://[::1]:8080)
-//!   WEBUI_LISTEN_ADDR  Listen address (default: 0.0.0.0:3000)
-//!   WEBUI_API_KEY      Optional bearer token required for protected routes
+//! 环境变量：
+//!   WEBUI_BRIDGE_URL   Bridge REST API 基础 URL (默认: http://[::1]:8080)
+//!   WEBUI_LISTEN_ADDR  监听地址 (默认: 0.0.0.0:3000)
+//!   WEBUI_API_KEY      可选的 bearer token，用于保护路由
 
 use sisyphus_webui_lib::app;
 use std::net::SocketAddr;

@@ -1,18 +1,18 @@
 <div class="stat">
-    <span class="label">Status</span>
+    <span class="label">状态</span>
     <span class="value {% if health_status == 'ok' %}status-ok{% else %}status-err{% endif %}">
         {{ health_status }}
     </span>
 </div>
 <div class="stat">
-    <span class="label">Version</span>
+    <span class="label">版本</span>
     <span class="value">{{ health_version }}</span>
 </div>
 <div class="stat">
-    <span class="label">Uptime</span>
+    <span class="label">运行时间</span>
     <span class="value">{{ uptime_secs }}s</span>
 </div>
 <div class="stat">
-    <span class="label">Active Sessions</span>
+    <span class="label">活跃会话</span>
     <span class="value">{{ session_count }}</span>
 </div>

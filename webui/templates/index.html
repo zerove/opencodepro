@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sisyphus — Cognitive Engine</title>
+    <title>Sisyphus — 认知引擎</title>
     <script src="https://unpkg.com/htmx.org@2.0.4"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -30,27 +30,27 @@
 <body>
     <div class="container">
         <h1>⚡ Sisyphus</h1>
-        <p class="subtitle">Cognitive Execution Engine — v{{ version }}</p>
+        <p class="subtitle">认知执行引擎 — v{{ version }}</p>
 
         <div class="card">
-            <h2>Status</h2>
+            <h2>状态</h2>
             <div id="status-content" hx-get="/api/health" hx-trigger="load, every 10s" hx-swap="innerHTML">
-                Loading...
+                加载中...
             </div>
         </div>
 
         <div class="card">
-            <h2>Sessions</h2>
+            <h2>会话</h2>
             <div id="sessions-content" hx-get="/api/sessions" hx-trigger="load, every 5s" hx-swap="innerHTML">
-                Loading...
+                加载中...
             </div>
         </div>
 
         <div class="card">
-            <h2>Memory Search</h2>
+            <h2>记忆搜索</h2>
             <form hx-post="/api/search" hx-target="#search-results" hx-swap="innerHTML" hx-include="#search-input">
-                <input id="search-input" name="query" placeholder="Search your memory..." required>
-                <button type="submit">Search</button>
+                <input id="search-input" name="query" placeholder="搜索你的记忆..." required>
+                <button type="submit">搜索</button>
             </form>
             <div id="search-results" class="search-results"></div>
         </div>
