@@ -9,6 +9,7 @@ use sisyphus_roadmap::{Bottleneck, DelayAlert, GoalResourceEstimate, Paralleliza
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use crate::http::sse_handlers::SseEvent;
 use crate::MySisyphusBridge;
 
 // ── Response / Request Types ───────────────────────────────────────────────
@@ -669,16 +670,38 @@ pub struct RestApiState {
     /// JWT configuration for token-based authentication.
     /// If `jwt.secret` is set, JWT authentication is enabled for REST API.
     pub jwt_config: Option<JwtConfig>,
+    /// 全局 SSE 事件广播器（客户端订阅与事件发布共享同一 channel）。
+    pub sse_broadcaster: tokio::sync::broadcast::Sender<SseEvent>,
+    /// SSE 并发连接数限制（默认 64）。
+    pub sse_connection_limit: Arc<tokio::sync::Semaphore>,
 }
 
+/// SSE 事件广播器 channel 容量。
+pub const SSE_CHANNEL_CAPACITY: usize = 1000;
+/// SSE 并发连接数上限。
+pub const SSE_MAX_CONNECTIONS: usize = 64;
+
 impl RestApiState {
+    fn new_sse_components() -> (
+        tokio::sync::broadcast::Sender<SseEvent>,
+        Arc<tokio::sync::Semaphore>,
+    ) {
+        (
+            tokio::sync::broadcast::channel(SSE_CHANNEL_CAPACITY).0,
+            Arc::new(tokio::sync::Semaphore::new(SSE_MAX_CONNECTIONS)),
+        )
+    }
+
     pub fn new(bridge: Arc<MySisyphusBridge>, data_dir: PathBuf) -> Self {
         let session_db = data_dir.join("sessions.json");
+        let (sse_broadcaster, sse_connection_limit) = Self::new_sse_components();
         Self {
             bridge,
             session_db,
             auth_token: None,
             jwt_config: None,
+            sse_broadcaster,
+            sse_connection_limit,
         }
     }
 
@@ -689,11 +712,14 @@ impl RestApiState {
         auth_token: Option<String>,
     ) -> Self {
         let session_db = data_dir.join("sessions.json");
+        let (sse_broadcaster, sse_connection_limit) = Self::new_sse_components();
         Self {
             bridge,
             session_db,
             auth_token,
             jwt_config: None,
+            sse_broadcaster,
+            sse_connection_limit,
         }
     }
 
@@ -704,11 +730,14 @@ impl RestApiState {
         jwt_config: JwtConfig,
     ) -> Self {
         let session_db = data_dir.join("sessions.json");
+        let (sse_broadcaster, sse_connection_limit) = Self::new_sse_components();
         Self {
             bridge,
             session_db,
             auth_token: None,
             jwt_config: Some(jwt_config),
+            sse_broadcaster,
+            sse_connection_limit,
         }
     }
 }

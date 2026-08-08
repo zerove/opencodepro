@@ -5,16 +5,14 @@
 use axum::{
     extract::{Query, State},
     http::StatusCode,
-    response::{IntoResponse, Sse},
+    response::{IntoResponse, Response, Sse},
     Json,
 };
-use futures_util::stream::Stream;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::borrow::Cow;
 use std::convert::Infallible;
 use std::time::Duration;
-use tokio::sync::broadcast;
 use uuid::Uuid;
 
 use crate::http::RestApiState;
@@ -178,23 +176,28 @@ pub struct SseQuery {
     pub heartbeat: Option<u64>,
 }
 
-/// SSE event broadcaster for multi-client support
-pub type EventBroadcaster = broadcast::Sender<SseEvent>;
-
-/// Get or create the global event broadcaster
-pub fn get_event_broadcaster() -> EventBroadcaster {
-    // Channel capacity of 1000 events
-    broadcast::channel(1000).0
-}
+/// SSE 并发连接数限制失败时的 HTTP 状态码
+const SSE_LIMIT_REACHED: StatusCode = StatusCode::TOO_MANY_REQUESTS;
 
 /// SSE stream handler
 pub async fn sse_handler(
-    State(_state): State<RestApiState>,
+    State(state): State<RestApiState>,
     Query(query): Query<SseQuery>,
-) -> Sse<impl Stream<Item = Result<axum::response::sse::Event, Infallible>>> {
-    // Get or create the global broadcaster
-    let broadcaster = get_event_broadcaster();
-    let receiver = broadcaster.subscribe();
+) -> Response {
+    // 并发连接数限制：超过上限直接返回 429，避免无限连接耗尽资源
+    let _permit = match state.sse_connection_limit.clone().try_acquire_owned() {
+        Ok(permit) => permit,
+        Err(_) => {
+            return (
+                SSE_LIMIT_REACHED,
+                Json(json!({"error": "Too many SSE connections"})),
+            )
+                .into_response();
+        }
+    };
+
+    // 订阅全局广播器（所有客户端共享同一 channel）
+    let receiver = state.sse_broadcaster.subscribe();
 
     // Parse event filters
     let event_filters: Option<Vec<String>> = query
@@ -214,9 +217,11 @@ pub async fn sse_handler(
             let now = std::time::Instant::now();
             if heartbeat_interval > 0 && now.duration_since(last_heartbeat) >= Duration::from_secs(heartbeat_interval) {
                 last_heartbeat = now;
-                yield Ok(axum::response::sse::Event::default()
-                    .event("heartbeat")
-                    .data(json!({"timestamp": chrono::Utc::now().to_rfc3339()}).to_string()));
+                yield Ok::<axum::response::sse::Event, Infallible>(
+                    axum::response::sse::Event::default()
+                        .event("heartbeat")
+                        .data(json!({"timestamp": chrono::Utc::now().to_rfc3339()}).to_string()),
+                );
             }
 
             // Try to receive an event with a timeout
@@ -237,7 +242,7 @@ pub async fn sse_handler(
                         .data(serde_json::to_string(&event).unwrap_or_default())
                         .id(Uuid::new_v4().to_string());
 
-                    yield Ok(sse_event);
+                    yield Ok::<axum::response::sse::Event, Infallible>(sse_event);
                 }
                 Ok(Err(_)) => break,
                 Err(_) => {
@@ -248,27 +253,27 @@ pub async fn sse_handler(
         }
     };
 
-    Sse::new(Box::pin(stream)).keep_alive(
-        axum::response::sse::KeepAlive::new()
-            .interval(Duration::from_secs(heartbeat_interval))
-            .text("keep-alive"),
-    )
+    Sse::new(Box::pin(stream))
+        .keep_alive(
+            axum::response::sse::KeepAlive::new()
+                .interval(Duration::from_secs(heartbeat_interval))
+                .text("keep-alive"),
+        )
+        .into_response()
 }
 
 /// REST endpoint to broadcast an event (for internal use)
 pub async fn broadcast_event_handler(
-    State(_state): State<RestApiState>,
+    State(state): State<RestApiState>,
     Json(payload): Json<BroadcastEventRequest>,
 ) -> impl IntoResponse {
-    let broadcaster = get_event_broadcaster();
-
     let event = SseEvent::Custom {
         event_type: payload.event_type.clone(),
         payload: payload.payload,
         timestamp: chrono::Utc::now(),
     };
 
-    match broadcaster.send(event) {
+    match state.sse_broadcaster.send(event) {
         Ok(_) => (StatusCode::OK, Json(json!({"status": "broadcasted"}))).into_response(),
         Err(_) => (
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -300,6 +305,7 @@ pub async fn sse_health_handler() -> impl IntoResponse {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Arc;
 
     #[test]
     fn test_sse_event_serialization() {
@@ -336,5 +342,41 @@ mod tests {
         let sse_str = event.to_sse_string();
         assert!(sse_str.contains("event: test_event"));
         assert!(sse_str.contains("data:"));
+    }
+
+    #[tokio::test]
+    async fn test_sse_broadcast_shared_channel() {
+        // 同一 channel 内：先订阅后广播，订阅端必须收到事件
+        let (tx, mut rx) = tokio::sync::broadcast::channel(16);
+        let event = SseEvent::Custom {
+            event_type: "shared_test".to_string(),
+            payload: json!({"k": "v"}),
+            timestamp: chrono::Utc::now(),
+        };
+        assert!(tx.send(event.clone()).is_ok());
+        let received = tokio::time::timeout(Duration::from_millis(100), rx.recv())
+            .await
+            .expect("同一 channel 内应能收到广播事件")
+            .expect("发送不应失败");
+        assert_eq!(received.event_type(), "shared_test");
+    }
+
+    #[tokio::test]
+    async fn test_sse_connection_limit() {
+        // 直接验证信号量限制：两个 acquire 成功，但当达到上限后应失败
+        let semaphore = Arc::new(tokio::sync::Semaphore::new(2));
+        let p1 = semaphore.clone().try_acquire_owned();
+        let p2 = semaphore.clone().try_acquire_owned();
+        assert!(p1.is_ok());
+        assert!(p2.is_ok());
+        // 已用尽 2 个许可，第 3 个获取失败
+        let p3 = semaphore.clone().try_acquire_owned();
+        assert!(p3.is_err(), "超过上限的获取应失败");
+        drop(p1);
+        drop(p2);
+        // 释放后可再次获取
+        let p4 = semaphore.clone().try_acquire_owned();
+        assert!(p4.is_ok());
+        drop(p4);
     }
 }
