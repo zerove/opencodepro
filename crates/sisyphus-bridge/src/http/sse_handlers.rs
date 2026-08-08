@@ -1,6 +1,6 @@
-//! Server-Sent Events (SSE) handlers for real-time event streaming.
+//! 服务端发送事件 (SSE) 处理器，用于实时事件流式传输。
 //!
-//! Provides `/api/events` endpoint for real-time event streaming using Server-Sent Events.
+//! 提供 `/api/events` 端点，基于 Server-Sent Events 实现实时事件流式传输。
 
 use axum::{
     extract::{Query, State},
@@ -17,17 +17,17 @@ use uuid::Uuid;
 
 use crate::http::RestApiState;
 
-/// SSE event types
+/// SSE 事件类型
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum SseEvent {
-    /// Cognitive iteration started
+    /// 认知迭代开始
     CognitiveIterationStarted {
         iteration: usize,
         goal_id: String,
         timestamp: chrono::DateTime<chrono::Utc>,
     },
-    /// Cognitive iteration completed
+    /// 认知迭代完成
     CognitiveIterationCompleted {
         iteration: usize,
         goal_id: String,
@@ -35,14 +35,14 @@ pub enum SseEvent {
         converged: bool,
         timestamp: chrono::DateTime<chrono::Utc>,
     },
-    /// Node execution started
+    /// 节点执行开始
     NodeExecutionStarted {
         sop_id: String,
         node_id: String,
         node_name: String,
         timestamp: chrono::DateTime<chrono::Utc>,
     },
-    /// Node execution completed
+    /// 节点执行完成
     NodeExecutionCompleted {
         sop_id: String,
         node_id: String,
@@ -51,66 +51,66 @@ pub enum SseEvent {
         output: Option<serde_json::Value>,
         timestamp: chrono::DateTime<chrono::Utc>,
     },
-    /// SOP execution started
+    /// SOP 执行开始
     SopExecutionStarted {
         sop_id: String,
         goal_id: String,
         timestamp: chrono::DateTime<chrono::Utc>,
     },
-    /// SOP execution completed
+    /// SOP 执行完成
     SopExecutionCompleted {
         sop_id: String,
         goal_id: String,
         success: bool,
         timestamp: chrono::DateTime<chrono::Utc>,
     },
-    /// Chaos fault injected
+    /// 混沌故障注入
     ChaosFaultInjected {
         fault_type: String,
         target: String,
         timestamp: chrono::DateTime<chrono::Utc>,
     },
-    /// Chaos auto-fix triggered
+    /// 混沌自动修复触发
     ChaosAutoFixTriggered {
         fault_count: u64,
         timestamp: chrono::DateTime<chrono::Utc>,
     },
-    /// Skill installed
+    /// 技能安装
     SkillInstalled {
         skill_id: String,
         version: String,
         timestamp: chrono::DateTime<chrono::Utc>,
     },
-    /// Skill uninstalled
+    /// 技能卸载
     SkillUninstalled {
         skill_id: String,
         timestamp: chrono::DateTime<chrono::Utc>,
     },
-    /// Plugin loaded
+    /// 插件加载
     PluginLoaded {
         plugin_id: String,
         version: String,
         timestamp: chrono::DateTime<chrono::Utc>,
     },
-    /// Plugin unloaded
+    /// 插件卸载
     PluginUnloaded {
         plugin_id: String,
         timestamp: chrono::DateTime<chrono::Utc>,
     },
-    /// Workspace switched
+    /// 工作区切换
     WorkspaceSwitched {
         workspace_id: String,
         workspace_name: String,
         timestamp: chrono::DateTime<chrono::Utc>,
     },
-    /// Session message added
+    /// 会话消息新增
     SessionMessageAdded {
         session_id: String,
         role: String,
         content: String,
         timestamp: chrono::DateTime<chrono::Utc>,
     },
-    /// Custom event
+    /// 自定义事件
     Custom {
         event_type: String,
         payload: serde_json::Value,
@@ -119,8 +119,8 @@ pub enum SseEvent {
 }
 
 impl SseEvent {
-    /// Create a custom event
-    #[allow(dead_code)] // Public API for broadcasting custom events
+    /// 创建自定义事件
+    #[allow(dead_code)] // 公共 API，用于广播自定义事件
     pub fn custom(event_type: String, payload: serde_json::Value) -> Self {
         Self::Custom {
             event_type,
@@ -129,7 +129,7 @@ impl SseEvent {
         }
     }
 
-    /// Get the event type as a string
+    /// 获取事件类型字符串
     pub fn event_type(&self) -> Cow<'static, str> {
         match self {
             SseEvent::CognitiveIterationStarted { .. } => "cognitive_iteration_started".into(),
@@ -150,36 +150,36 @@ impl SseEvent {
         }
     }
 
-    /// Convert to SSE format string
-    #[allow(dead_code)] // Used by tests and external consumers
+    /// 转换为 SSE 格式字符串
+    #[allow(dead_code)] // 测试与外部消费者使用
     pub fn to_sse_string(&self) -> String {
         let data = serde_json::to_string(self).unwrap_or_default();
         format!("event: {}\ndata: {}\n\n", self.event_type(), data)
     }
 }
 
-/// SSE connection query parameters
+/// SSE 连接查询参数
 #[derive(Debug, Deserialize)]
-#[allow(dead_code)] // Query params parsed from URL, used for filtering
+#[allow(dead_code)] // 从 URL 解析的查询参数，用于过滤
 pub struct SseQuery {
-    /// Filter by event types (comma-separated)
+    /// 按事件类型过滤（逗号分隔）
     pub events: Option<String>,
-    /// Filter by project ID
+    /// 按项目 ID 过滤
     pub project_id: Option<String>,
-    /// Filter by SOP ID
+    /// 按 SOP ID 过滤
     pub sop_id: Option<String>,
-    /// Filter by session ID
+    /// 按会话 ID 过滤
     pub session_id: Option<String>,
-    /// Last event ID for resumption
+    /// 用于断点续传的最后事件 ID
     pub last_event_id: Option<String>,
-    /// Heartbeat interval in seconds (0 = disabled)
+    /// 心跳间隔（秒，0 表示禁用）
     pub heartbeat: Option<u64>,
 }
 
 /// SSE 并发连接数限制失败时的 HTTP 状态码
 const SSE_LIMIT_REACHED: StatusCode = StatusCode::TOO_MANY_REQUESTS;
 
-/// SSE stream handler
+/// SSE 流处理器
 pub async fn sse_handler(
     State(state): State<RestApiState>,
     Query(query): Query<SseQuery>,
@@ -199,7 +199,7 @@ pub async fn sse_handler(
     // 订阅全局广播器（所有客户端共享同一 channel）
     let receiver = state.sse_broadcaster.subscribe();
 
-    // Parse event filters
+    // 解析事件过滤器
     let event_filters: Option<Vec<String>> = query
         .events
         .as_ref()
@@ -207,13 +207,13 @@ pub async fn sse_handler(
 
     let heartbeat_interval = query.heartbeat.unwrap_or(30);
 
-    // Create event stream from broadcast receiver
+    // 从广播接收器创建事件流
     let stream = async_stream::stream! {
         let mut receiver = receiver;
         let mut last_heartbeat = std::time::Instant::now();
 
         loop {
-            // Check if it's time for a heartbeat
+            // 检查是否该发送心跳
             let now = std::time::Instant::now();
             if heartbeat_interval > 0 && now.duration_since(last_heartbeat) >= Duration::from_secs(heartbeat_interval) {
                 last_heartbeat = now;
@@ -224,13 +224,13 @@ pub async fn sse_handler(
                 );
             }
 
-            // Try to receive an event with a timeout
+            // 尝试接收事件（带超时）
             match tokio::time::timeout(
                 Duration::from_millis(100),
                 receiver.recv()
             ).await {
                 Ok(Ok(event)) => {
-                    // Apply filters
+                    // 应用过滤器
                     if let Some(ref filters) = event_filters {
                         if !filters.contains(&event.event_type().to_string()) {
                             continue;
@@ -246,7 +246,7 @@ pub async fn sse_handler(
                 }
                 Ok(Err(_)) => break,
                 Err(_) => {
-                    // Timeout - continue loop for heartbeat
+                    // 超时 - 继续循环以发送心跳
                     continue;
                 }
             }
@@ -262,7 +262,7 @@ pub async fn sse_handler(
         .into_response()
 }
 
-/// REST endpoint to broadcast an event (for internal use)
+/// 用于内部广播事件的 REST 端点
 pub async fn broadcast_event_handler(
     State(state): State<RestApiState>,
     Json(payload): Json<BroadcastEventRequest>,
@@ -283,9 +283,9 @@ pub async fn broadcast_event_handler(
     }
 }
 
-/// Request to broadcast an event
+/// 广播事件请求
 #[derive(Debug, Deserialize)]
-#[allow(dead_code)] // Fields parsed from request body
+#[allow(dead_code)] // 从请求体解析的字段
 pub struct BroadcastEventRequest {
     pub event_type: String,
     pub payload: serde_json::Value,
@@ -294,7 +294,7 @@ pub struct BroadcastEventRequest {
     pub session_id: Option<String>,
 }
 
-/// Health check for SSE endpoint
+/// SSE 端点健康检查
 pub async fn sse_health_handler() -> impl IntoResponse {
     (
         StatusCode::OK,

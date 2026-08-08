@@ -656,7 +656,7 @@ pub struct SkillEntry {
     pub source: String,
 }
 
-// ── Shared State ──────────────────────────────────────────────────────────
+// ── 共享状态 ──────────────────────────────────────────────────────────
 
 use sisyphus_types::config::JwtConfig;
 
@@ -664,11 +664,11 @@ use sisyphus_types::config::JwtConfig;
 pub struct RestApiState {
     pub bridge: Arc<MySisyphusBridge>,
     pub session_db: PathBuf,
-    /// Optional static bearer token protecting all `/api/*` routes.
-    /// `None` = no authentication (development mode).
+    /// 可选的静态 Bearer token，保护所有 `/api/*` 路由。
+    /// `None` = 无认证（开发模式）。
     pub auth_token: Option<String>,
-    /// JWT configuration for token-based authentication.
-    /// If `jwt.secret` is set, JWT authentication is enabled for REST API.
+    /// 基于 token 的 JWT 认证配置。
+    /// 若设置了 `jwt.secret`，则为 REST API 启用 JWT 认证。
     pub jwt_config: Option<JwtConfig>,
     /// 全局 SSE 事件广播器（客户端订阅与事件发布共享同一 channel）。
     pub sse_broadcaster: tokio::sync::broadcast::Sender<SseEvent>,
