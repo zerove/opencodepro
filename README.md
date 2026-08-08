@@ -1,107 +1,107 @@
-# Sisyphus Cognitive Engine
+# Sisyphus 认知引擎
 
-A DAG-based cognitive execution engine with predict-execute-reflect-evolve loops.
+基于 DAG 的认知执行引擎，实现预测 → 执行 → 反思 → 演进循环。
 
-## Architecture
+## 架构
 
 ```
 sisyphus/
-├── crates/           # 28 Rust crates
-│   ├── sisyphus-core/        # DAG execution, cognitive loop, SOP orchestration
-│   ├── sisyphus-cli/         # TUI client (ratatui + crossterm)
-│   ├── sisyphus-bridge/      # gRPC + REST bridge service (tonic + axum)
-│   ├── sisyphus-types/       # Shared types, Config, traits
-│   ├── sisyphus-mem/         # Persistence/storage (SQLite/Postgres + vector)
-│   ├── sisyphus-intel/       # Intelligence analysis (simulation, reflection, evolution)
-│   ├── sisyphus-tools-*/     # Tool crates (agent, build, executor, llm, mcp, scm, session, system)
-│   ├── sisyphus-roadmap/     # Strategic planning (Project → Milestone → Phase → Goal)
-│   ├── sisyphus-api/         # REST API handlers (axum + OpenAPI 3.1)
-│   ├── sisyphus-sdk/         # Rust SDK client
-│   ├── sisyphus-knowledge/   # Knowledge graph & cognitive asset storage
-│   ├── sisyphus-visual/      # Visual perception & embedding
-│   ├── sisyphus-wasm-sdk/    # WASM tool SDK (guest crate)
-│   ├── sisyphus-sandboxd/    # WASM sandbox daemon (process isolation)
-│   ├── sisyphus-tests/       # Integration tests
+├── crates/           # 28 个 Rust crate
+│   ├── sisyphus-core/        # DAG 执行、认知循环、SOP 编排
+│   ├── sisyphus-cli/         # TUI 客户端 (ratatui + crossterm)
+│   ├── sisyphus-bridge/      # gRPC + REST 桥接服务 (tonic + axum)
+│   ├── sisyphus-types/       # 共享类型、配置、trait
+│   ├── sisyphus-mem/         # 持久化/存储 (SQLite/Postgres + 向量)
+│   ├── sisyphus-intel/       # 情报分析 (仿真、反思、演进)
+│   ├── sisyphus-tools-*/     # 工具 crate (agent、build、executor、llm、mcp、scm、session、system)
+│   ├── sisyphus-roadmap/     # 战略规划 (Project → Milestone → Phase → Goal)
+│   ├── sisyphus-api/         # REST API 处理器 (axum + OpenAPI 3.1)
+│   ├── sisyphus-sdk/         # Rust SDK 客户端
+│   ├── sisyphus-knowledge/   # 知识图谱与认知资产存储
+│   ├── sisyphus-visual/      # 视觉感知与嵌入
+│   ├── sisyphus-wasm-sdk/    # WASM 工具 SDK (guest crate)
+│   ├── sisyphus-sandboxd/    # WASM 沙箱守护进程 (进程隔离)
+│   ├── sisyphus-tests/       # 集成测试
 │   └── ...
-├── webui/            # Web dashboard (axum + HTMX + SSE)
-├── evals/            # Agent capability evaluations
-├── ide/              # IDE extensions
-│   ├── typescript-sdk/       # TypeScript client SDK
-│   ├── python-sdk/           # Python client SDK
-│   ├── go-sdk/               # Go client SDK
-│   ├── vscode/               # VS Code extension
-│   └── zed/                  # Zed extension
-├── desktop/tauri/    # Tauri desktop app (archived)
-└── book/             # Documentation (mdbook)
+├── webui/            # Web 仪表盘 (axum + HTMX + SSE)
+├── evals/            # Agent 能力评测
+├── ide/              # IDE 扩展
+│   ├── typescript-sdk/       # TypeScript 客户端 SDK
+│   ├── python-sdk/           # Python 客户端 SDK
+│   ├── go-sdk/               # Go 客户端 SDK
+│   ├── vscode/               # VS Code 扩展
+│   └── zed/                  # Zed 扩展
+├── desktop/tauri/    # Tauri 桌面应用 (已归档)
+└── book/             # 文档 (mdbook)
 ```
 
-## Quick Start
+## 快速开始
 
 ```bash
-# Install
+# 安装
 cargo install sisyphus-cli
 
-# Run TUI
+# 运行 TUI
 sisyphus
 
-# Run with custom bridge address
+# 使用自定义 bridge 地址
 sisyphus --bridge http://localhost:50051
 ```
 
-## Features
+## 功能特性
 
-### Core Engine
-- **DAG Execution**: Parallel node dispatch with topological ordering
-- **Cognitive Loop**: Predict -> Execute -> Reflect -> Evolve
-- **SOP Orchestration**: Standard Operating Procedures as executable graphs
-- **Sub-graph Recursion**: Nested SOP execution with context isolation
-- **Speculative Execution**: Pre-compute successor node predictions
+### 核心引擎
+- **DAG 执行**：基于拓扑排序的并行节点调度
+- **认知循环**：预测 → 执行 → 反思 → 演进
+- **SOP 编排**：标准作业程序即可执行图
+- **子图递归**：带上下文隔离的嵌套 SOP 执行
+- **推测性执行**：后继节点预测预计算
 
-### TUI
-- **Slash Commands**: Type `/` for command completion popup
-- **@file References**: Reference files with `@path/to/file.rs`
-- **Fuzzy Search**: Score-based fuzzy matching across all commands
-- **Session Management**: Create, switch, fork, undo sessions
-- **Command Palette**: Ctrl+K for quick navigation
-- **DAG Visualization**: ASCII art DAG rendering with status colors
+### TUI 终端界面
+- **斜杠命令**：输入 `/` 唤起命令补全弹窗
+- **@文件引用**：使用 `@path/to/file.rs` 引用文件
+- **模糊搜索**：基于评分的全命令模糊匹配
+- **会话管理**：创建、切换、分叉、撤销会话
+- **命令面板**：Ctrl+K 快速导航
+- **DAG 可视化**：带状态颜色的 ASCII 艺术图 DAG 渲染
 
-### Web Dashboard
-- **SSE Real-time**: Server-Sent Events for live updates
-- **WebSocket**: Bidirectional communication
-- **DAG Viewer**: Interactive SVG visualization
-- **Session Detail**: Message history with send-message form
-- **SOP Execution**: Run SOPs from the browser
-- **Skill Market**: Browse and install skills
-- **Prometheus Metrics**: /metrics endpoint
+### Web 仪表盘
+- **SSE 实时推送**：Server-Sent Events 实现实时更新
+- **WebSocket**：双向通信
+- **DAG 查看器**：交互式 SVG 可视化
+- **会话详情**：消息历史与发送消息表单
+- **SOP 执行**：从浏览器运行 SOP
+- **技能市场**：浏览与安装技能
+- **Prometheus 指标**：/metrics 端点
 
-### IDE Extensions
-- **VS Code**: Status bar, DAG viewer, Agent panel, LSP diagnostics
-- **Zed**: Extension scaffold with installation message
+### IDE 扩展
+- **VS Code**：状态栏、DAG 查看器、Agent 面板、LSP 诊断
+- **Zed**：扩展脚手架与安装提示
 
-### SDKs
-- **TypeScript**: `@sisyphus/sdk` - Full typed REST client
-- **Python**: `sisyphus_sdk` - Dataclass-based client
-- **Go**: `sisyphus` - Idiomatic Go client
+### SDK
+- **TypeScript**：`@sisyphus/sdk` - 全类型 REST 客户端
+- **Python**：`sisyphus_sdk` - 基于 dataclass 的客户端
+- **Go**：`sisyphus` - 惯用 Go 客户端
 
-### Performance
-- **Pipeline Batching**: Adaptive batch size for node execution
-- **Output Dedup Cache**: Content-hash deduplication (1000 entries)
-- **Context Compression**: Truncation for large values
-- **Execution Profiler**: Cache hit rate, slowest nodes
+### 性能优化
+- **流水线批处理**：节点执行自适应批大小
+- **输出去重缓存**：内容哈希去重 (1000 条目)
+- **上下文压缩**：大值截断
+- **执行分析器**：缓存命中率、最慢节点
 
-### Security
-- **API Key Auth**: Bearer token authentication
-- **External Directory Permissions**: Configurable file access control
-- **RBAC Model**: Role-based access control (planned)
+### 安全
+- **API Key 认证**：Bearer token 认证
+- **外部目录权限**：可配置的文件访问控制
+- **RBAC 模型**：基于角色的访问控制 (规划中)
 
-### Observability
-- **Prometheus Metrics**: Request counts, session stats, uptime
-- **Tracing**: Structured logging with tracing-subscriber
-- **SSE Events**: Real-time execution event streaming
+### 可观测性
+- **Prometheus 指标**：请求计数、会话统计、运行时间
+- **链路追踪**：基于 tracing-subscriber 的结构化日志
+- **SSE 事件**：实时执行事件流
 
-## Configuration
+## 配置
 
-See `config.example.toml` for all options. Key settings:
+完整选项见 `config.example.toml`。关键设置：
 
 ```toml
 [bridge]
@@ -116,18 +116,18 @@ shell_enabled = true
 file_access_root = "."
 ```
 
-Environment variables can be substituted with `{env:VAR}` or `{env:VAR|default}`.
+环境变量可用 `{env:VAR}` 或 `{env:VAR|default}` 替换。
 
-## Development
+## 开发
 
 ```bash
-cargo check-all          # Check all crates
-cargo test-all           # Test all crates
-cargo build --release -p sisyphus-cli  # Build release TUI
-make test-core           # Full core tests
-cargo bench -p sisyphus-core  # Benchmarks
+cargo check-all          # 检查全部 crate
+cargo test-all           # 测试全部 crate
+cargo build --release -p sisyphus-cli  # 构建 release TUI
+make test-core           # 完整 core 测试
+cargo bench -p sisyphus-core  # 基准测试
 ```
 
-## License
+## 许可证
 
 MIT
