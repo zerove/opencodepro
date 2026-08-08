@@ -79,6 +79,10 @@ impl WasmToolExecutor {
         let mut config = Config::new();
         config.consume_fuel(true);
         config.max_wasm_stack(1_000_000);
+        // wasmtime ≥46 defaults memory_reservation to 4GiB; the pooling allocator
+        // pre-maps that much per slot, which hangs in memory-constrained envs.
+        // Our WASM tools are small, so a modest reservation avoids the huge mmap.
+        config.memory_reservation(2 * 1024 * 1024);
 
         let mut pooling = wasmtime::PoolingAllocationConfig::default();
         pooling

@@ -33,6 +33,18 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo fmt --check
 
+  # ── Supply-chain audit (cargo-deny: advisories, bans, licenses, sources) ─
+  security-deny:
+    name: Supply-chain audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+      - name: Install cargo-deny
+        uses: taiki-e/install-action@cargo-deny
+      - name: Run cargo deny check
+        run: cargo deny check
+
   # ── Lint: lightweight crates (no wasmtime in dep tree) ─────────────
   lint-light:
     name: Lint (light crates)

@@ -21,7 +21,7 @@ sisyphus-types = { path = "../sisyphus-types" }
 chrono = { version = "0.4", features = ["serde"] }
 uuid = { version = "1.0", features = ["v4"] }
 utoipa = { version = "4", features = ["axum_extras", "chrono", "uuid"] }
-utoipa-swagger-ui = { version = "7", features = ["axum"] }
+utoipa-swagger-ui = { version = "7", features = ["axum", "vendored"] }
 
 [build-dependencies]
 utoipa = { version = "4", features = ["axum_extras"] }

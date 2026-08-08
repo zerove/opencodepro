@@ -106,6 +106,10 @@ impl WasmToolExecutor {
         let mut config = Config::new();
         config.consume_fuel(true);
         config.max_wasm_stack(1_000_000);
+        // wasmtime ≥46 defaults memory_reservation to 4GiB; the pooling allocator
+        // pre-maps that much per slot, which hangs in memory-constrained envs.
+        // Our WASM tools are small, so a modest reservation avoids the huge mmap.
+        config.memory_reservation(2 * 1024 * 1024);
 
         let mut pooling = wasmtime::PoolingAllocationConfig::default();
         pooling
@@ -298,7 +302,7 @@ impl ToolExecutor for WasmToolExecutor {
 }
 
 #[derive(serde::Deserialize, serde::Serialize)]
-#[serde(tag = "method")]
+#[serde(tag = "method", rename_all = "lowercase")]
 enum Request {
     Ping { id: u64 },
     Execute { id: u64, params: ExecuteParams },
@@ -385,7 +389,11 @@ async fn handle_request(
                 id,
                 result: PingResult { pong: true },
             };
-            let line = serde_json::to_string(&resp).unwrap() + "\n";
+            let line =
+                serde_json::to_string(&resp).map_err(|e| TypesError::ToolExecutionError {
+                    tool_id: "ping".into(),
+                    details: format!("Failed to serialize response: {e}"),
+                })? + "\n";
             stdout.write_all(line.as_bytes()).await.map_err(|e| {
                 TypesError::ToolExecutionError {
                     tool_id: "ping".into(),
@@ -416,7 +424,11 @@ async fn handle_request(
                     error: e.to_string(),
                 },
             };
-            let line = serde_json::to_string(&resp).unwrap() + "\n";
+            let line =
+                serde_json::to_string(&resp).map_err(|e| TypesError::ToolExecutionError {
+                    tool_id: "execute".into(),
+                    details: format!("Failed to serialize response: {e}"),
+                })? + "\n";
             stdout.write_all(line.as_bytes()).await.map_err(|e| {
                 TypesError::ToolExecutionError {
                     tool_id: "execute".into(),
@@ -492,10 +504,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         // It's a request with id
-        let request: Request = match serde_json::from_value(value) {
+        let request: Request = match serde_json::from_value(value.clone()) {
             Ok(r) => r,
             Err(e) => {
                 warn!(error = %e, "Failed to deserialize request");
+                // Respond with an error so the client never hangs waiting for a
+                // response to an unknown method or malformed request.
+                let id = value.get("id").and_then(|v| v.as_u64()).unwrap_or(0);
+                let resp = Response::ExecuteError {
+                    id,
+                    error: format!("Unknown method or malformed request: {e}"),
+                };
+                if let Ok(line) = serde_json::to_string(&resp) {
+                    let _ = writer.write_all((line + "\n").as_bytes()).await;
+                    let _ = writer.flush().await;
+                }
                 continue;
             }
         };

@@ -19,6 +19,10 @@ ignore = [
     # ratatui 0.28 → paste 1.0.15 (archived). Needs ratatui ≥0.29.
     # Pre-existing, not introduced by refactoring.
     "RUSTSEC-2024-0436",
+    # utoipa-gen 4.x → proc-macro-error 1.0.4 (unmaintained, not a vulnerability).
+    # utoipa-gen 5.x requires axum 0.8 (breaking upgrade across the workspace).
+    # Tracked: https://github.com/rust-lang/rustsec/issues (proc-macro-error).
+    "RUSTSEC-2024-0370",
 ]
 
 [licenses]
@@ -34,6 +38,7 @@ allow = [
     "Unicode-3.0",
     "CDLA-Permissive-2.0",
     "MPL-2.0",
+    "CC0-1.0",
 ]
 confidence-threshold = 0.8
 
