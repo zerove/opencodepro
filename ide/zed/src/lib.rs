@@ -1,11 +1,11 @@
-// Sisyphus Zed Extension
-// Provides: LSP diagnostics bridge via language_server_command,
-// slash commands for status/execution, and detailed installation guidance.
+// Sisyphus Zed 扩展
+// 提供: 通过 language_server_command 的 LSP 诊断桥接、
+// 状态/执行的斜杠命令，以及详细的安装指引。
 
 use std::collections::HashMap;
 use zed_extension_api::{self as zed, lsp, Command, Result};
 
-/// Bridge URL for the Sisyphus cognitive engine REST API.
+/// Sisyphus 认知引擎 REST API 的桥接 URL。
 const DEFAULT_BRIDGE_URL: &str = "http://localhost:8080";
 const BRIDGE_TIMEOUT_SECS: u64 = 10;
 
@@ -16,7 +16,7 @@ impl SisyphusExtension {
         Self
     }
 
-    /// Fetch JSON from the Sisyphus bridge and deserialize.
+    /// 从 Sisyphus bridge 获取 JSON 并反序列化。
     fn fetch_bridge<T: serde::de::DeserializeOwned>(path: &str) -> Result<T> {
         let url = format!("{}{}", DEFAULT_BRIDGE_URL, path);
         let resp = zed::http_client::fetch(
@@ -29,7 +29,7 @@ impl SisyphusExtension {
                 body: None,
             },
             zed::http_client::HttpTimeout {
-                // Use a generous timeout; some endpoints (execute) may be slow.
+                // 使用较宽裕的超时；部分端点（如 execute）可能较慢。
                 secs: BRIDGE_TIMEOUT_SECS + 20,
                 millis: 0,
             },
@@ -40,7 +40,7 @@ impl SisyphusExtension {
             .map_err(|e| format!("JSON decode failed: {}", e))
     }
 
-    /// Post JSON to the Sisyphus bridge and deserialize the response.
+    /// 向 Sisyphus bridge 发送 JSON 并反序列化响应。
     fn post_bridge<T: serde::de::DeserializeOwned>(path: &str, body: &str) -> Result<T> {
         let url = format!("{}{}", DEFAULT_BRIDGE_URL, path);
         let resp = zed::http_client::fetch(
@@ -73,18 +73,16 @@ impl zed::Extension for SisyphusExtension {
         "Sisyphus"
     }
 
-    // ── LSP Diagnostics Bridge ──────────────────────
+    // ── LSP 诊断桥接 ──────────────────────
     //
-    // `language_server_command` configures an LSP server that proxies
-    // diagnostics from the Sisyphus bridge.  Because Sisyphus does not
-    // ship a native LSP binary, we provide the command specification
-    // here so Zed can start it when available (or a user-supplied
-    // shim).
+    // `language_server_command` 配置一个 LSP 服务器，代理来自
+    // Sisyphus bridge 的诊断。由于 Sisyphus 不附带原生 LSP 二进制，
+    // 我们在此提供命令规格，Zed 可在可用时启动它（或使用用户提供的
+    // shim）。
     //
-    // Language server ID: "sisyphus-lsp"
+    // 语言服务器 ID: "sisyphus-lsp"
     //
-    // When no binary is installed the server simply won't start; no
-    // error is raised to the user.
+    // 未安装二进制时服务器不会启动；不会向用户报错。
 
     fn language_server_command(
         &mut self,
@@ -127,7 +125,7 @@ impl zed::Extension for SisyphusExtension {
         Ok(Some(serde_json::json!({
             "capabilities": {
                 "textDocumentSync": {
-                    "change": 1,        // full document sync
+                    "change": 1,        // 全文同步
                     "openClose": true,
                 },
                 "diagnosticProvider": {
@@ -144,8 +142,8 @@ impl zed::Extension for SisyphusExtension {
         _language_server_id: &zed::LanguageServerId,
         completion: lsp::Completion,
     ) -> Option<zed::CodeLabel> {
-        // Pass through LSP completions with default rendering.
-        // Sisyphus-specific completions are annotated with a [S] prefix.
+        // 透传 LSP 补全并使用默认渲染。
+        // Sisyphus 专属补全带有 [S] 前缀。
         let label = completion.label;
         if label.starts_with("[S]") {
             Some(zed::CodeLabel {
@@ -158,10 +156,10 @@ impl zed::Extension for SisyphusExtension {
         }
     }
 
-    // ── Slash Commands ──────────────────────────────
+    // ── 斜杠命令 ──────────────────────────────
     //
-    // Inline commands available via the Zed assistant (/sisyphus-status,
-    // /sisyphus-exec, /sisyphus-search).
+    // 通过 Zed 助手可用的内联命令 (/sisyphus-status、
+    // /sisyphus-exec、/sisyphus-search)。
 
     fn complete_slash_command_argument(
         &self,
@@ -170,7 +168,7 @@ impl zed::Extension for SisyphusExtension {
     ) -> Result<Vec<zed::SlashCommandArgumentCompletion>, String> {
         match command.name.as_str() {
             "sisyphus-exec" => {
-                // Suggest SOP IDs
+                // 建议 SOP ID
                 let sops: Vec<String> = Self::fetch_bridge::<Vec<String>>("/api/sops/list")
                     .unwrap_or_default();
                 Ok(sops
@@ -183,7 +181,7 @@ impl zed::Extension for SisyphusExtension {
                     .collect())
             }
             "sisyphus-search" => {
-                // No argument completion for free-text search
+                // 自由文本搜索不做参数补全
                 Ok(vec![])
             }
             _ => Ok(vec![]),
@@ -218,58 +216,56 @@ impl zed::Extension for SisyphusExtension {
         })
     }
 
-    // ── Installation Message ────────────────────────
+    // ── 安装信息 ────────────────────────
 
     fn installation_message(&self) -> Option<zed::InstallationMessage> {
         Some(zed::InstallationMessage {
-            heading: "Install Sisyphus Cognitive Engine".into(),
+            heading: "安装 Sisyphus 认知引擎".into(),
             message: format!(
                 "\
-Sisyphus requires a running instance of the cognitive engine bridge.
+Sisyphus 需要运行中的认知引擎 bridge 实例。
 
-## Quick Start
+## 快速开始
 
 ```sh
-# Install the bridge (requires Rust toolchain)
+# 安装 bridge（需要 Rust 工具链）
 cargo install sisyphus-bridge
 
-# Start the bridge (default http://localhost:8080)
+# 启动 bridge (默认 http://localhost:8080)
 sisyphus-bridge serve
 
-# (Optional) Install the LSP shim for inline diagnostics
+# (可选) 安装 LSP shim 以获取内联诊断
 cargo install sisyphus-lsp
 ```
 
-## Configuration
+## 配置
 
-By default the extension connects to `{}`.  To use a custom address,
-set the `SISYPHUS_BRIDGE_URL` environment variable before launching
-Zed:
+默认情况下扩展连接到 `{}`。要使用自定义地址，请在启动
+Zed 前设置 `SISYPHUS_BRIDGE_URL` 环境变量：
 
 ```sh
 export SISYPHUS_BRIDGE_URL=\"http://127.0.0.1:9090\"
 zed
 ```
 
-## Slash Commands (Zed Assistant)
+## 斜杠命令（Zed 助手）
 
-| Command | Description |
+| 命令 | 说明 |
 |---|---|
-| `/sisyphus-status` | Show bridge health, version, session count |
-| `/sisyphus-exec <sop-id>` | Execute a SOP by ID |
-| `/sisyphus-search <query>` | Search Sisyphus memory |
+| `/sisyphus-status` | 显示 bridge 健康状态、版本、会话数 |
+| `/sisyphus-exec <sop-id>` | 按 ID 执行一个 SOP |
+| `/sisyphus-search <query>` | 搜索 Sisyphus 记忆 |
 
-## LSP Diagnostics
+## LSP 诊断
 
-If `sisyphus-lsp` (or `sisyphus`) is on your PATH, Zed will start it
-as a language server and display diagnostics from the Sisyphus engine
-inline in your editor.",
+如果 `sisyphus-lsp`（或 `sisyphus`）在您的 PATH 中，Zed 会将其作为
+语言服务器启动，并将 Sisyphus 引擎的诊断内联显示在编辑器中。",
 
                 DEFAULT_BRIDGE_URL,
             )
             .into(),
             check: Box::new(|| {
-                // Check if either `sisyphus` or `sisyphus-lsp` is available
+                // 检查 `sisyphus` 或 `sisyphus-lsp` 是否可用
                 std::process::Command::new("sisyphus")
                     .arg("--version")
                     .output()
@@ -286,10 +282,10 @@ inline in your editor.",
     }
 }
 
-// ── Command Helpers ────────────────────────────────
+// ── 命令辅助函数 ────────────────────────────────
 
 impl SisyphusExtension {
-    /// `/sisyphus-status`: show bridge health, version, session count.
+    /// `/sisyphus-status`: 显示 bridge 健康状态、版本、会话数。
     fn cmd_status(&self) -> Result<String, String> {
         #[derive(serde::Deserialize)]
         struct Health {
@@ -308,11 +304,11 @@ impl SisyphusExtension {
 
         let active = sessions.iter().filter(|s| s.status == "active").count();
         Ok(format!(
-            "## Sisyphus Status\n\n\
-             - **Version**: {}\n\
-             - **Status**: {}\n\
-             - **Uptime**: {:.0}s\n\
-             - **Sessions**: {} ({} active)\n",
+            "## Sisyphus 状态\n\n\
+             - **版本**: {}\n\
+             - **状态**: {}\n\
+             - **运行时长**: {:.0}s\n\
+             - **会话数**: {} ({} 个活跃)\n",
             health.version,
             health.status,
             health.uptime_secs,
@@ -321,7 +317,7 @@ impl SisyphusExtension {
         ))
     }
 
-    /// `/sisyphus-exec <sop_id>`: execute a SOP and return the result.
+    /// `/sisyphus-exec <sop_id>`: 执行一个 SOP 并返回结果。
     fn cmd_exec_sop(&self, sop_id: &str) -> Result<String, String> {
         #[derive(serde::Deserialize)]
         struct ExecResult {
@@ -340,18 +336,18 @@ impl SisyphusExtension {
         let summary = if result.summary.is_empty() {
             String::new()
         } else {
-            format!("\n\n**Summary**: {}", result.summary)
+            format!("\n\n**摘要**: {}", result.summary)
         };
 
         Ok(format!(
-            "## SOP Execution: `{}`\n\n\
-             - **Status**: {}\n\
-             - **Iterations**: {}{}",
+            "## SOP 执行: `{}`\n\n\
+             - **状态**: {}\n\
+             - **迭代次数**: {}{}",
             sop_id, result.status, result.iterations, summary,
         ))
     }
 
-    /// `/sisyphus-search <query>`: search Sisyphus memory.
+    /// `/sisyphus-search <query>`: 搜索 Sisyphus 记忆。
     fn cmd_search(&self, query: &str) -> Result<String, String> {
         if query.is_empty() {
             return Err("Usage: /sisyphus-search <query>".into());
@@ -372,7 +368,7 @@ impl SisyphusExtension {
         )?;
 
         if hits.is_empty() {
-            return Ok(format!("## Search: `{}`\n\nNo results found.", query));
+            return Ok(format!("## 搜索: `{}`\n\n未找到结果。", query));
         }
 
         let rows: String = hits
@@ -388,7 +384,7 @@ impl SisyphusExtension {
             })
             .collect();
 
-        Ok(format!("## Search: `{}`\n\n{}", query, rows))
+        Ok(format!("## 搜索: `{}`\n\n{}", query, rows))
     }
 }
 

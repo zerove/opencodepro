@@ -1,9 +1,9 @@
-// Sisyphus VS Code Extension
-// Enhanced with: StatusBar connection state, Session TreeView, Agent panel, config change listener
+// Sisyphus VS Code 扩展
+// 增强: 状态栏连接状态、会话树视图、Agent 面板、配置变更监听
 
 import * as vscode from 'vscode';
 
-// ── Types ──────────────────────────────────────────
+// ── 类型定义 ──────────────────────────────────────────
 
 interface SisyphusConfig {
   baseUrl: string;
@@ -60,7 +60,7 @@ interface LspDiagnostic {
   severity: string;
 }
 
-// ── Configuration ──────────────────────────────────
+// ── 配置读取 ──────────────────────────────────
 
 function getConfig(): SisyphusConfig {
   const cfg = vscode.workspace.getConfiguration('sisyphus');
@@ -72,7 +72,7 @@ function getConfig(): SisyphusConfig {
   };
 }
 
-// ── API Client ─────────────────────────────────────
+// ── API 客户端 ─────────────────────────────────────
 
 async function apiRequest<T>(method: string, path: string, body?: unknown): Promise<T> {
   const config = getConfig();
@@ -93,7 +93,7 @@ async function apiRequest<T>(method: string, path: string, body?: unknown): Prom
   } finally { clearTimeout(timer); }
 }
 
-// ── LSP Diagnostic Collection ──────────────────────
+// ── LSP 诊断收集 ──────────────────────────────────────
 
 let diagnosticCollection: vscode.DiagnosticCollection;
 
@@ -119,16 +119,16 @@ async function refreshLspDiagnostics() {
       const uri = vscode.Uri.file(file);
       diagnosticCollection.set(uri, diags);
     }
-  } catch { /* bridge offline, ignore */ }
+  } catch { /* bridge 离线，忽略 */ }
 }
 
-// ── Status Bar ─────────────────────────────────────
+// ── 状态栏 ─────────────────────────────────────
 
 function createStatusBarItem(context: vscode.ExtensionContext): vscode.StatusBarItem {
   const statusItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
   statusItem.text = '$(sync~spin) Sisyphus';
-  statusItem.tooltip = 'Checking Sisyphus connection...';
-  statusItem.backgroundColor = undefined; // default transparent
+  statusItem.tooltip = '正在检查 Sisyphus 连接...';
+  statusItem.backgroundColor = undefined; // 默认透明
   statusItem.show();
   context.subscriptions.push(statusItem);
 
@@ -138,11 +138,11 @@ function createStatusBarItem(context: vscode.ExtensionContext): vscode.StatusBar
     try {
       const h = await apiRequest<HealthResponse>('GET', '/health');
       statusItem.text = `$(check) Sisyphus v${h.version}`;
-      statusItem.tooltip = `Status: ${h.status} | Uptime: ${h.uptime_secs}s`;
+      statusItem.tooltip = `状态: ${h.status} | 运行时长: ${h.uptime_secs}s`;
       statusItem.backgroundColor = new vscode.ThemeColor('statusBarItem.prominentBackground');
     } catch {
       statusItem.text = '$(warning) Sisyphus offline';
-      statusItem.tooltip = 'Cannot connect to Sisyphus bridge. Check config.sisyphus.baseUrl';
+      statusItem.tooltip = '无法连接 Sisyphus bridge。请检查 config.sisyphus.baseUrl';
       statusItem.backgroundColor = new vscode.ThemeColor('statusBarItem.errorBackground');
     }
   };
@@ -156,7 +156,7 @@ function createStatusBarItem(context: vscode.ExtensionContext): vscode.StatusBar
 
   startPolling();
 
-  // Restart polling when config changes
+  // 配置变更时重启轮询
   context.subscriptions.push(
     vscode.workspace.onDidChangeConfiguration(e => {
       if (e.affectsConfiguration('sisyphus')) startPolling();
@@ -166,7 +166,7 @@ function createStatusBarItem(context: vscode.ExtensionContext): vscode.StatusBar
   return statusItem;
 }
 
-// ── Session TreeView ───────────────────────────────
+// ── 会话树视图 ───────────────────────────────
 
 class SessionTreeItem extends vscode.TreeItem {
   constructor(
@@ -178,7 +178,7 @@ class SessionTreeItem extends vscode.TreeItem {
     this.description = session.status;
     this.tooltip = `ID: ${session.id}\nCreated: ${session.created_at}\nUpdated: ${session.updated_at}`;
 
-    // Icon based on session status
+    // 根据会话状态选择图标
     if (session.status === 'active' || session.status === 'running') {
       this.iconPath = new vscode.ThemeIcon('play-circle', new vscode.ThemeColor('terminal.ansiGreen'));
     } else if (session.status === 'completed' || session.status === 'idle') {
@@ -189,13 +189,13 @@ class SessionTreeItem extends vscode.TreeItem {
       this.iconPath = new vscode.ThemeIcon('circle-outline');
     }
 
-    // Context value for conditional menu items
+    // 上下文值，用于条件菜单项
     this.contextValue = 'session';
 
-    // Command when clicked
+    // 点击时执行的命令
     this.command = {
       command: 'sisyphus.status',
-      title: 'Show Session Detail',
+      title: '查看会话详情',
       arguments: [session.id],
     };
   }
@@ -217,7 +217,7 @@ class SessionTreeDataProvider implements vscode.TreeDataProvider<SessionTreeItem
   }
 
   getChildren(_element?: SessionTreeItem): Thenable<SessionTreeItem[]> {
-    if (_element) return Promise.resolve([]); // no children for leaf nodes
+    if (_element) return Promise.resolve([]); // 叶子节点无子节点
     return Promise.resolve(this.sessions.map(s => new SessionTreeItem(s)));
   }
 
@@ -243,7 +243,7 @@ class SessionTreeDataProvider implements vscode.TreeDataProvider<SessionTreeItem
   }
 }
 
-// ── Agent Panel ────────────────────────────────────
+// ── Agent 面板 ────────────────────────────────────
 
 class AgentPanelProvider implements vscode.WebviewViewProvider {
   public static readonly viewType = 'sisyphus.agentView';
@@ -255,7 +255,7 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
     webviewView.webview.options = { enableScripts: true };
     webviewView.webview.html = this.getInitialHtml();
 
-    // Handle messages from the webview
+    // 处理来自 webview 的消息
     webviewView.webview.onDidReceiveMessage(async (msg) => {
       switch (msg.type) {
         case 'send':
@@ -270,12 +270,12 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
           try {
             const agents = await apiRequest<AgentInfo[]>('GET', '/api/agents');
             webviewView.webview.postMessage({ type: 'agents', agents });
-          } catch { /* ignore */ }
+          } catch { /* 忽略 */ }
           break;
       }
     });
 
-    // Refresh agent status periodically
+    // 定期刷新 Agent 状态
     this.statusTimer = setInterval(() => {
       this.refreshAgentStatus();
     }, 10000);
@@ -286,7 +286,7 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
     try {
       const agents = await apiRequest<AgentInfo[]>('GET', '/api/agents');
       this.view.webview.postMessage({ type: 'agents', agents });
-    } catch { /* ignore */ }
+    } catch { /* 忽略 */ }
   }
 
   private getInitialHtml(): string {
@@ -323,20 +323,20 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
 <body>
   <h3>$(organization) Agents</h3>
   <div class="card">
-    <div id="agent-list"><div class="empty">Loading agents...</div></div>
+    <div id="agent-list"><div class="empty">正在加载 Agent...</div></div>
   </div>
 
-  <h3>$(comment) Chat</h3>
-  <textarea id="input" placeholder="Send message to agent..."></textarea>
+  <h3>$(comment) 聊天</h3>
+  <textarea id="input" placeholder="发送消息给 Agent..."></textarea>
   <div class="toolbar">
-    <button onclick="send()">Send</button>
+    <button onclick="send()">发送</button>
   </div>
-  <div id="response" class="response">Ready.</div>
+  <div id="response" class="response">就绪。</div>
 
 <script>
   const vscode = acquireVsCodeApi();
 
-  // Listen for messages from the extension host
+  // 监听来自扩展主进程的消息
   window.addEventListener('message', event => {
     const msg = event.data;
     if (msg.type === 'response') {
@@ -350,7 +350,7 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
     const input = document.getElementById('input');
     const text = input.value.trim();
     if (!text) return;
-    document.getElementById('response').textContent = 'Sending...';
+    document.getElementById('response').textContent = '发送中...';
     vscode.postMessage({ type: 'send', text });
     input.value = '';
   }
@@ -358,7 +358,7 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
   function renderAgents(agents) {
     const container = document.getElementById('agent-list');
     if (!agents || agents.length === 0) {
-      container.innerHTML = '<div class="empty">No agents available.</div>';
+      container.innerHTML = '<div class="empty">暂无可用 Agent。</div>';
       return;
     }
     container.innerHTML = agents.map(a => {
@@ -373,10 +373,10 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
 
   function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
-  // Initial agent load
+  // 初始加载 Agent
   vscode.postMessage({ type: 'refreshAgents' });
 
-  // Send on Ctrl+Enter
+  // Ctrl+Enter 发送
   document.getElementById('input').addEventListener('keydown', e => {
     if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) send();
   });
@@ -390,7 +390,7 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
   }
 }
 
-// ── DAG Webview Provider ───────────────────────────
+// ── DAG Webview 提供器 ───────────────────────────
 
 class DagWebviewProvider implements vscode.WebviewViewProvider {
   public static readonly viewType = 'sisyphus.dagView';
@@ -400,9 +400,9 @@ class DagWebviewProvider implements vscode.WebviewViewProvider {
     this.view = webviewView;
     webviewView.webview.options = { enableScripts: true };
     webviewView.webview.html = `<html><body style="background:#0d1117;color:#c9d1d9;font-family:system-ui;padding:16px;">
-      <h3 style="color:#58a6ff">DAG Visualization</h3>
-      <p>Select a SOP to view its execution graph.</p>
-      <button onclick="fetch('/api/sops/default/dag').then(r=>r.json()).then(g=>render(g))" style="background:#238636;color:#fff;border:none;padding:6px 12px;border-radius:4px;cursor:pointer;">Load DAG</button>
+      <h3 style="color:#58a6ff">DAG 可视化</h3>
+      <p>选择一个 SOP 查看其执行图。</p>
+      <button onclick="fetch('/api/sops/default/dag').then(r=>r.json()).then(g=>render(g))" style="background:#238636;color:#fff;border:none;padding:6px 12px;border-radius:4px;cursor:pointer;">加载 DAG</button>
       <div id="dag" style="margin-top:12px;"></div>
     </body></html>`;
   }
@@ -414,12 +414,12 @@ class DagWebviewProvider implements vscode.WebviewViewProvider {
       this.view.webview.html = this.renderDagHtml(graph);
     } catch (e: any) {
       this.view.webview.html = `<html><body style="background:#0d1117;color:#c9d1d9;font-family:system-ui;padding:16px;">
-        <p style="color:#f85149">Error loading DAG: ${e.message}</p></body></html>`;
+        <p style="color:#f85149">加载 DAG 出错: ${e.message}</p></body></html>`;
     }
   }
 
   private renderDagHtml(graph: DagGraph): string {
-    if (graph.nodes.length === 0) return '<html><body style="background:#0d1117;color:#8b949e;padding:16px;"><p>No DAG to display.</p></body></html>';
+    if (graph.nodes.length === 0) return '<html><body style="background:#0d1117;color:#8b949e;padding:16px;"><p>没有可显示的 DAG。</p></body></html>';
 
     const w = graph.width + 40; const h = graph.height + 40;
     let svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} ${h}" style="width:100%;height:auto;">`;
@@ -439,25 +439,25 @@ class DagWebviewProvider implements vscode.WebviewViewProvider {
 
     svg += '</svg>';
     return `<html><body style="background:#0d1117;color:#c9d1d9;font-family:system-ui;padding:16px;">
-      <h3 style="color:#58a6ff">DAG Visualization</h3>${svg}</body></html>`;
+      <h3 style="color:#58a6ff">DAG 可视化</h3>${svg}</body></html>`;
   }
 }
 
-// ── Extension Activation ───────────────────────────
+// ── 扩展激活 ───────────────────────────
 
 export function activate(context: vscode.ExtensionContext) {
   diagnosticCollection = vscode.languages.createDiagnosticCollection('sisyphus');
   context.subscriptions.push(diagnosticCollection);
 
-  // Status bar with connection state
+  // 带连接状态的状态栏
   createStatusBarItem(context);
 
-  // LSP diagnostics refresh
+  // LSP 诊断刷新
   refreshLspDiagnostics();
   const lspRefreshTimer = setInterval(refreshLspDiagnostics, 30000);
   context.subscriptions.push({ dispose: () => clearInterval(lspRefreshTimer) });
 
-  // Session TreeDataProvider
+  // 会话树数据提供器
   const sessionProvider = new SessionTreeDataProvider(context);
   const sessionTreeView = vscode.window.createTreeView('sisyphus.sessionView', {
     treeDataProvider: sessionProvider,
@@ -465,7 +465,7 @@ export function activate(context: vscode.ExtensionContext) {
   });
   context.subscriptions.push(sessionTreeView, sessionProvider);
 
-  // Commands
+  // 命令注册
   context.subscriptions.push(
     vscode.commands.registerCommand('sisyphus.status', async () => {
       try {
@@ -473,12 +473,12 @@ export function activate(context: vscode.ExtensionContext) {
         const sessions = await apiRequest<SessionInfo[]>('GET', '/api/sessions');
         const agents = await apiRequest<AgentInfo[]>('GET', '/api/agents');
         const panel = vscode.window.createWebviewPanel(
-          'sisyphusStatus', 'Sisyphus Status', vscode.ViewColumn.One, {}
+          'sisyphusStatus', 'Sisyphus 状态', vscode.ViewColumn.One, {}
         );
         const agentCount = Array.isArray(agents) ? agents.length : 0;
         panel.webview.html = `<!DOCTYPE html>
-<html lang="en">
-<head><meta charset="UTF-8"><title>Sisyphus Status</title>
+<html lang="zh-CN">
+<head><meta charset="UTF-8"><title>Sisyphus 状态</title>
 <style>
   body { background:#0d1117; color:#c9d1d9; font-family:system-ui; padding:24px; }
   h1 { color:#58a6ff; } .stat { margin:8px 0; } .value { color:#3fb950; font-weight:600; }
@@ -489,45 +489,45 @@ export function activate(context: vscode.ExtensionContext) {
 </head>
 <body>
   <h1>&#9889; Sisyphus v${h.version}</h1>
-  <div class="stat">Status: <span class="value">${h.status}</span></div>
-  <div class="stat">Uptime: <span class="value">${h.uptime_secs}s</span></div>
-  <div class="stat">Sessions: <span class="value">${sessions.length}</span></div>
-  <div class="stat">Agents: <span class="value">${agentCount}</span></div>
+  <div class="stat">状态: <span class="value">${h.status}</span></div>
+  <div class="stat">运行时长: <span class="value">${h.uptime_secs}s</span></div>
+  <div class="stat">会话数: <span class="value">${sessions.length}</span></div>
+  <div class="stat">Agent 数: <span class="value">${agentCount}</span></div>
 </body></html>`;
       } catch (e: any) {
-        vscode.window.showErrorMessage(`Sisyphus offline: ${e.message}`);
+        vscode.window.showErrorMessage(`Sisyphus 离线: ${e.message}`);
       }
     }),
 
     vscode.commands.registerCommand('sisyphus.newSession', async () => {
       const name = await vscode.window.showInputBox({
-        prompt: 'Session name',
+        prompt: '会话名称',
         placeHolder: 'my-session',
-        validateInput: (val) => val.trim() ? null : 'Name cannot be empty',
+        validateInput: (val) => val.trim() ? null : '名称不能为空',
       });
       if (!name) return;
       try {
         const s = await apiRequest<any>('POST', '/api/sessions', { name });
-        vscode.window.showInformationMessage(`Session created: ${s.id}`);
+        vscode.window.showInformationMessage(`会话已创建: ${s.id}`);
         sessionProvider.refresh();
-      } catch (e: any) { vscode.window.showErrorMessage(`Failed: ${e.message}`); }
+      } catch (e: any) { vscode.window.showErrorMessage(`创建失败: ${e.message}`); }
     }),
 
     vscode.commands.registerCommand('sisyphus.searchMemory', async () => {
       const query = await vscode.window.showInputBox({
-        prompt: 'Search memory',
-        placeHolder: 'search query...',
+        prompt: '搜索记忆',
+        placeHolder: '搜索关键词...',
       });
       if (!query) return;
       try {
         const results = await apiRequest<any[]>('POST', '/api/search', { query, top_k: 10 });
         const items = results.map((r: any) => ({
           label: r.id,
-          description: `Score: ${r.score.toFixed(3)}`,
+          description: `得分: ${r.score.toFixed(3)}`,
           detail: (r.content || '').substring(0, 200),
         }));
         const picked = await vscode.window.showQuickPick(items, {
-          placeHolder: `${results.length} results`,
+          placeHolder: `${results.length} 条结果`,
         });
         if (picked) {
           const doc = await vscode.workspace.openTextDocument({
@@ -536,7 +536,7 @@ export function activate(context: vscode.ExtensionContext) {
           });
           vscode.window.showTextDocument(doc);
         }
-      } catch (e: any) { vscode.window.showErrorMessage(`Search failed: ${e.message}`); }
+      } catch (e: any) { vscode.window.showErrorMessage(`搜索失败: ${e.message}`); }
     }),
 
     vscode.commands.registerCommand('sisyphus.executeSop', async () => {
@@ -546,19 +546,19 @@ export function activate(context: vscode.ExtensionContext) {
       });
       if (!sopId) return;
       await vscode.window.withProgress(
-        { location: vscode.ProgressLocation.Notification, title: `Executing: ${sopId}` },
+        { location: vscode.ProgressLocation.Notification, title: `正在执行: ${sopId}` },
         async () => {
           try {
             const r = await apiRequest<any>('POST', '/api/execute', { sop_id: sopId, context: {} });
-            vscode.window.showInformationMessage(`Result: ${r.status} (${r.iterations} iterations)`);
-          } catch (e: any) { vscode.window.showErrorMessage(`Execution failed: ${e.message}`); }
+            vscode.window.showInformationMessage(`结果: ${r.status} (${r.iterations} 次迭代)`);
+          } catch (e: any) { vscode.window.showErrorMessage(`执行失败: ${e.message}`); }
         },
       );
     }),
 
     vscode.commands.registerCommand('sisyphus.showDag', async () => {
       const sopId = await vscode.window.showInputBox({
-        prompt: 'SOP ID for DAG',
+        prompt: 'DAG 的 SOP ID',
         placeHolder: 'sop-id',
       });
       if (sopId) {
@@ -576,7 +576,7 @@ export function activate(context: vscode.ExtensionContext) {
           svg += '</svg>';
           panel.webview.html = `<html><body style="background:#0d1117;padding:16px;">${svg}</body></html>`;
         } catch (e: any) {
-          panel.webview.html = `<html><body style="color:#f85149;padding:16px;">Error: ${e.message}</body></html>`;
+          panel.webview.html = `<html><body style="color:#f85149;padding:16px;">错误: ${e.message}</body></html>`;
         }
       }
     }),
@@ -591,31 +591,31 @@ export function activate(context: vscode.ExtensionContext) {
         sessionId = sessionItem.session.id;
       } else {
         sessionId = await vscode.window.showInputBox({
-          prompt: 'Session ID to delete',
+          prompt: '要删除的会话 ID',
           placeHolder: 'session-id',
         });
       }
       if (!sessionId) return;
       const confirm = await vscode.window.showWarningMessage(
-        `Delete session ${sessionId}?`, { modal: true },
-        'Delete',
+        `删除会话 ${sessionId}?`, { modal: true },
+        '删除',
       );
       if (!confirm) return;
       try {
         await apiRequest<any>('DELETE', `/api/sessions/${sessionId}`);
-        vscode.window.showInformationMessage(`Session deleted: ${sessionId}`);
+        vscode.window.showInformationMessage(`会话已删除: ${sessionId}`);
         sessionProvider.refresh();
-      } catch (e: any) { vscode.window.showErrorMessage(`Delete failed: ${e.message}`); }
+      } catch (e: any) { vscode.window.showErrorMessage(`删除失败: ${e.message}`); }
     }),
   );
 
-  // Config change listener
+  // 配置变更监听
   context.subscriptions.push(
     vscode.workspace.onDidChangeConfiguration(e => {
       if (e.affectsConfiguration('sisyphus')) {
-        // Re-trigger status update with new config
-        // (status bar listener handles this via createStatusBarItem's onDidChangeConfiguration)
-        // Refresh sessions if auto-refresh config changed
+        // 使用新配置重新触发状态更新
+        // (状态栏监听器通过 createStatusBarItem 的 onDidChangeConfiguration 处理)
+        // 若自动刷新配置变更，则刷新会话
         if (e.affectsConfiguration('sisyphus.autoRefreshSessions')) {
           const cfg = getConfig();
           if (cfg.autoRefreshSessions) {
@@ -626,7 +626,7 @@ export function activate(context: vscode.ExtensionContext) {
     }),
   );
 
-  // Register webview providers
+  // 注册 webview 提供器
   const dagProvider = new DagWebviewProvider();
   const agentProvider = new AgentPanelProvider();
   context.subscriptions.push(
@@ -634,7 +634,7 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.window.registerWebviewViewProvider(AgentPanelProvider.viewType, agentProvider),
   );
 
-  // Initial session load
+  // 初始加载会话
   sessionProvider.refresh();
 }
 

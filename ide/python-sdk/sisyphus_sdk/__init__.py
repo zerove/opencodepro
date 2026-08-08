@@ -1,7 +1,7 @@
 """
-Sisyphus Python SDK — REST API client for the cognitive engine.
+Sisyphus Python SDK — 认知引擎 REST API 客户端。
 
-Usage:
+用法:
     from sisyphus_sdk import SisyphusClient
 
     client = SisyphusClient(base_url="http://localhost:8080")
@@ -70,12 +70,12 @@ class SkillEntry:
 
 
 class SisyphusError(Exception):
-    """Base error for Sisyphus SDK."""
+    """Sisyphus SDK 基础错误。"""
     pass
 
 
 class SisyphusClient:
-    """REST API client for the Sisyphus cognitive engine."""
+    """Sisyphus 认知引擎 REST API 客户端。"""
 
     def __init__(self, base_url: str = "http://localhost:8080",
                  auth_token: Optional[str] = None,
@@ -102,13 +102,13 @@ class SisyphusClient:
         except Exception as e:
             raise SisyphusError(f"Request failed: {e}")
 
-    # ── Health ─────────────────────────────────
+    # ── 健康检查 ─────────────────────────────────
 
     def health(self) -> HealthResponse:
         data = self._request("GET", "/health")
         return HealthResponse(**data)
 
-    # ── Sessions ───────────────────────────────
+    # ── 会话 ───────────────────────────────────
 
     def list_sessions(self) -> list[Session]:
         data = self._request("GET", "/api/v1/sessions")
@@ -129,14 +129,14 @@ class SisyphusClient:
         return self._request("POST", f"/api/v1/sessions/{session_id}/messages",
                              {"role": role, "content": content})
 
-    # ── Search ─────────────────────────────────
+    # ── 搜索 ─────────────────────────────────
 
     def search(self, query: str, top_k: int = 10) -> list[SearchResult]:
         data = self._request("POST", "/api/v1/vector/search",
                              {"query": query, "top_k": top_k})
         return [SearchResult(**r) for r in data]
 
-    # ── Execution ──────────────────────────────
+    # ── 执行 ──────────────────────────────────
 
     def execute_sop(self, sop_id: str,
                     context: Optional[dict] = None) -> ExecuteResult:
@@ -144,7 +144,7 @@ class SisyphusClient:
                              {"sop_id": sop_id, "context": context or {}})
         return ExecuteResult(**data)
 
-    # ── SOPs ───────────────────────────────────
+    # ── SOP 管理 ───────────────────────────────
 
     def list_sops(self) -> list[SopInfo]:
         data = self._request("GET", "/api/v1/sops")
@@ -153,7 +153,7 @@ class SisyphusClient:
     def get_dag(self, sop_id: str) -> dict:
         return self._request("GET", f"/api/v1/sops/{sop_id}/dag")
 
-    # ── Skills ─────────────────────────────────
+    # ── 技能 ─────────────────────────────────
 
     def list_skills(self) -> list[SkillEntry]:
         data = self._request("GET", "/api/v1/skills")
@@ -163,7 +163,7 @@ class SisyphusClient:
         return self._request("POST", "/api/v1/skills/install",
                              {"skill_id": skill_id})
 
-    # ── Auth ───────────────────────────────────
+    # ── 认证 ───────────────────────────────────
 
     def validate_auth(self, api_key: str) -> bool:
         data = self._request("POST", "/api/auth/validate",
@@ -171,10 +171,10 @@ class SisyphusClient:
         return data.get("valid", False)
 
 
-# ── Convenience async wrapper ──────────────────
+# ── 便捷异步封装 ──────────────────
 
 async def async_health(base_url: str = "http://localhost:8080") -> HealthResponse:
-    """Non-blocking health check using aiohttp (optional dependency)."""
+    """使用 aiohttp 的非阻塞健康检查（可选依赖）。"""
     try:
         import aiohttp
         async with aiohttp.ClientSession() as session:
@@ -182,5 +182,5 @@ async def async_health(base_url: str = "http://localhost:8080") -> HealthRespons
                 data = await resp.json()
                 return HealthResponse(**data)
     except ImportError:
-        # Fallback to sync
+        # 回退到同步实现
         return SisyphusClient(base_url).health()

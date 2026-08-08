@@ -1,7 +1,7 @@
 {
   "name": "sisyphus",
-  "displayName": "Sisyphus Cognitive Engine",
-  "description": "AI-powered cognitive execution engine integration for VS Code",
+  "displayName": "Sisyphus 认知引擎",
+  "description": "用于 VS Code 的 AI 认知执行引擎集成",
   "version": "0.2.0",
   "publisher": "sisyphus",
   "license": "MIT",
@@ -11,13 +11,13 @@
   "main": "./out/extension.js",
   "contributes": {
     "commands": [
-      { "command": "sisyphus.status", "title": "Sisyphus: Show Status" },
-      { "command": "sisyphus.newSession", "title": "Sisyphus: New Session" },
-      { "command": "sisyphus.searchMemory", "title": "Sisyphus: Search Memory" },
-      { "command": "sisyphus.executeSop", "title": "Sisyphus: Execute SOP" },
-      { "command": "sisyphus.showDag", "title": "Sisyphus: Show DAG" },
-      { "command": "sisyphus.refreshSessions", "title": "Sisyphus: Refresh Session List" },
-      { "command": "sisyphus.deleteSession", "title": "Sisyphus: Delete Session" }
+      { "command": "sisyphus.status", "title": "Sisyphus: 显示状态" },
+      { "command": "sisyphus.newSession", "title": "Sisyphus: 新建会话" },
+      { "command": "sisyphus.searchMemory", "title": "Sisyphus: 搜索记忆" },
+      { "command": "sisyphus.executeSop", "title": "Sisyphus: 执行 SOP" },
+      { "command": "sisyphus.showDag", "title": "Sisyphus: 显示 DAG" },
+      { "command": "sisyphus.refreshSessions", "title": "Sisyphus: 刷新会话列表" },
+      { "command": "sisyphus.deleteSession", "title": "Sisyphus: 删除会话" }
     ],
     "viewsContainers": {
       "activitybar": [
@@ -26,18 +26,18 @@
     },
     "views": {
       "sisyphus": [
-        { "type": "webview", "id": "sisyphus.dagView", "name": "DAG Viewer" },
+        { "type": "webview", "id": "sisyphus.dagView", "name": "DAG 查看器" },
         { "type": "webview", "id": "sisyphus.agentView", "name": "Agent" },
-        { "type": "treeView", "id": "sisyphus.sessionView", "name": "Sessions", "when": "config.sisyphus.baseUrl" }
+        { "type": "treeView", "id": "sisyphus.sessionView", "name": "会话", "when": "config.sisyphus.baseUrl" }
       ]
     },
     "configuration": {
       "title": "Sisyphus",
       "properties": {
-        "sisyphus.baseUrl": { "type": "string", "default": "http://localhost:8080", "description": "Sisyphus REST API base URL" },
-        "sisyphus.authToken": { "type": "string", "default": "", "description": "Bearer token for authentication" },
-        "sisyphus.refreshInterval": { "type": "number", "default": 15, "minimum": 5, "description": "Status refresh interval in seconds" },
-        "sisyphus.autoRefreshSessions": { "type": "boolean", "default": true, "description": "Auto-refresh session list" }
+        "sisyphus.baseUrl": { "type": "string", "default": "http://localhost:8080", "description": "Sisyphus REST API 基础 URL" },
+        "sisyphus.authToken": { "type": "string", "default": "", "description": "用于认证的 Bearer token" },
+        "sisyphus.refreshInterval": { "type": "number", "default": 15, "minimum": 5, "description": "状态刷新间隔（秒）" },
+        "sisyphus.autoRefreshSessions": { "type": "boolean", "default": true, "description": "自动刷新会话列表" }
       }
     }
   },

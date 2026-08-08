@@ -1,20 +1,20 @@
-// Sisyphus TypeScript SDK — Type Definitions
+// Sisyphus TypeScript SDK — 类型定义
 
-/** Health check response */
+/** 健康检查响应 */
 export interface HealthResponse {
   status: string;
   version: string;
   uptime_secs: number;
 }
 
-/** State entry */
+/** 状态条目 */
 export interface StateEntry {
   project_id: string;
   key: string;
   value: unknown;
 }
 
-/** Vector record for semantic search */
+/** 语义搜索向量记录 */
 export interface VectorRecord {
   id: string;
   content: string;
@@ -22,14 +22,14 @@ export interface VectorRecord {
   metadata: Record<string, string>;
 }
 
-/** Vector search result */
+/** 向量搜索结果 */
 export interface SearchResult {
   id: string;
   score: number;
   content: string;
 }
 
-/** Session message */
+/** 会话消息 */
 export interface Message {
   role: string;
   content: string;
@@ -51,20 +51,20 @@ export interface Session {
   child_session_ids?: string[];
 }
 
-/** SOP node */
+/** SOP 节点 */
 export interface SOPNode {
   id: string;
   kind: string;
   config: unknown;
 }
 
-/** SOP graph */
+/** SOP 图 */
 export interface SOPGraph {
   nodes: SOPNode[];
   edges: Array<[string, string]>;
 }
 
-/** Execution result */
+/** 执行结果 */
 export interface ExecutionResult {
   sop_id: string;
   status: string;
@@ -74,13 +74,13 @@ export interface ExecutionResult {
   deviation: number;
 }
 
-/** SDK configuration */
+/** SDK 配置 */
 export interface SisyphusConfig {
-  /** Base URL of the Sisyphus REST API (default: http://localhost:8080) */
+  /** Sisyphus REST API 基础 URL (默认: http://localhost:8080) */
   baseUrl?: string;
-  /** Request timeout in milliseconds (default: 30000) */
+  /** 请求超时（毫秒）(默认: 30000) */
   timeoutMs?: number;
-  /** Bearer token for authentication */
+  /** 认证用 Bearer token */
   authToken?: string;
 }
 

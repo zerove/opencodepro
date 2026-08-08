@@ -1,4 +1,4 @@
-// Package sisyphus provides a Go client for the Sisyphus cognitive engine REST API.
+// Package sisyphus 提供 Sisyphus 认知引擎 REST API 的 Go 客户端。
 package sisyphus
 
 import (
@@ -10,14 +10,14 @@ import (
 	"time"
 )
 
-// Client is the Sisyphus REST API client.
+// Client 是 Sisyphus REST API 客户端。
 type Client struct {
 	BaseURL   string
 	AuthToken string
 	HTTP      *http.Client
 }
 
-// NewClient creates a new Sisyphus client.
+// NewClient 创建新的 Sisyphus 客户端。
 func NewClient(baseURL, authToken string) *Client {
 	return &Client{
 		BaseURL:   baseURL,
@@ -26,14 +26,14 @@ func NewClient(baseURL, authToken string) *Client {
 	}
 }
 
-// HealthResponse from /health endpoint.
+// HealthResponse 来自 /health 端点。
 type HealthResponse struct {
 	Status    string `json:"status"`
 	Version   string `json:"version"`
 	UptimeSecs uint64 `json:"uptime_secs"`
 }
 
-// Session represents a conversation session.
+// Session 表示一个对话会话。
 type Session struct {
 	ID               string    `json:"id"`
 	Name             string    `json:"name"`
@@ -42,7 +42,7 @@ type Session struct {
 	ParentSessionID  *string   `json:"parent_session_id,omitempty"`
 }
 
-// Message in a session.
+// Message 是会话中的一条消息。
 type Message struct {
 	Role            string `json:"role"`
 	Content         string `json:"content"`
@@ -50,14 +50,14 @@ type Message struct {
 	EstimatedTokens uint64 `json:"estimated_tokens"`
 }
 
-// SearchResult from vector search.
+// SearchResult 来自向量搜索。
 type SearchResult struct {
 	ID      string  `json:"id"`
 	Score   float64 `json:"score"`
 	Content string  `json:"content"`
 }
 
-// ExecuteResult from SOP execution.
+// ExecuteResult 来自 SOP 执行。
 type ExecuteResult struct {
 	SopID      string  `json:"sop_id"`
 	Status     string  `json:"status"`
@@ -65,7 +65,7 @@ type ExecuteResult struct {
 	Deviation  float64 `json:"deviation"`
 }
 
-// SopInfo describes an available SOP.
+// SopInfo 描述一个可用的 SOP。
 type SopInfo struct {
 	ID          string `json:"id"`
 	Name        string `json:"name"`
@@ -73,7 +73,7 @@ type SopInfo struct {
 	Description string `json:"description"`
 }
 
-// SkillEntry in the skill market.
+// SkillEntry 是技能市场中的技能条目。
 type SkillEntry struct {
 	ID          string  `json:"id"`
 	Name        string  `json:"name"`
@@ -84,7 +84,7 @@ type SkillEntry struct {
 	Rating      float64 `json:"rating"`
 }
 
-// Health checks the bridge status.
+// Health 检查 bridge 状态。
 func (c *Client) Health() (*HealthResponse, error) {
 	var h HealthResponse
 	if err := c.get("/health", &h); err != nil {
@@ -93,7 +93,7 @@ func (c *Client) Health() (*HealthResponse, error) {
 	return &h, nil
 }
 
-// ListSessions returns all sessions.
+// ListSessions 返回所有会话。
 func (c *Client) ListSessions() ([]Session, error) {
 	var sessions []Session
 	if err := c.get("/api/v1/sessions", &sessions); err != nil {
@@ -102,7 +102,7 @@ func (c *Client) ListSessions() ([]Session, error) {
 	return sessions, nil
 }
 
-// CreateSession creates a new session.
+// CreateSession 创建新会话。
 func (c *Client) CreateSession(name string) (*Session, error) {
 	var s Session
 	if err := c.post("/api/v1/sessions", map[string]string{"name": name}, &s); err != nil {
@@ -111,7 +111,7 @@ func (c *Client) CreateSession(name string) (*Session, error) {
 	return &s, nil
 }
 
-// SearchMemory performs vector search.
+// SearchMemory 执行向量搜索。
 func (c *Client) SearchMemory(query string, topK int) ([]SearchResult, error) {
 	var results []SearchResult
 	body := map[string]interface{}{"query": query, "top_k": topK}
@@ -121,7 +121,7 @@ func (c *Client) SearchMemory(query string, topK int) ([]SearchResult, error) {
 	return results, nil
 }
 
-// ExecuteSOP runs a SOP.
+// ExecuteSOP 运行一个 SOP。
 func (c *Client) ExecuteSOP(sopID string, context map[string]interface{}) (*ExecuteResult, error) {
 	var r ExecuteResult
 	body := map[string]interface{}{"sop_id": sopID, "context": context}
@@ -131,7 +131,7 @@ func (c *Client) ExecuteSOP(sopID string, context map[string]interface{}) (*Exec
 	return &r, nil
 }
 
-// ListSOPs returns available SOPs.
+// ListSOPs 返回可用的 SOP 列表。
 func (c *Client) ListSOPs() ([]SopInfo, error) {
 	var sops []SopInfo
 	if err := c.get("/api/v1/sops", &sops); err != nil {
@@ -140,7 +140,7 @@ func (c *Client) ListSOPs() ([]SopInfo, error) {
 	return sops, nil
 }
 
-// ListSkills returns available skills.
+// ListSkills 返回可用的技能列表。
 func (c *Client) ListSkills() ([]SkillEntry, error) {
 	var skills []SkillEntry
 	if err := c.get("/api/v1/skills", &skills); err != nil {
@@ -149,12 +149,12 @@ func (c *Client) ListSkills() ([]SkillEntry, error) {
 	return skills, nil
 }
 
-// InstallSkill installs a skill by ID.
+// InstallSkill 按 ID 安装技能。
 func (c *Client) InstallSkill(skillID string) error {
 	return c.post("/api/v1/skills/install", map[string]string{"skill_id": skillID}, nil)
 }
 
-// ValidateAuth checks if an API key is valid.
+// ValidateAuth 检查 API 密钥是否有效。
 func (c *Client) ValidateAuth(apiKey string) (bool, error) {
 	var resp struct {
 		Valid   bool   `json:"valid"`
@@ -166,7 +166,7 @@ func (c *Client) ValidateAuth(apiKey string) (bool, error) {
 	return resp.Valid, nil
 }
 
-// ── Internal helpers ──────────────────────────
+// ── 内部辅助 ──────────────────────────
 
 func (c *Client) get(path string, result interface{}) error {
 	req, err := http.NewRequest("GET", c.BaseURL+path, nil)

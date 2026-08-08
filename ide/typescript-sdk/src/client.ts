@@ -1,4 +1,4 @@
-// Sisyphus TypeScript SDK — REST API Client
+// Sisyphus TypeScript SDK — REST API 客户端
 
 import type {
   SisyphusConfig,
@@ -59,13 +59,13 @@ export class SisyphusClient {
     }
   }
 
-  // ── Health ──────────────────────────────────────
+  // ── 健康检查 ──────────────────────────────────────
 
   async health(): Promise<HealthResponse> {
     return this.request<HealthResponse>('GET', '/health');
   }
 
-  // ── State CRUD ─────────────────────────────────
+  // ── 状态 CRUD ─────────────────────────────────
 
   async getState(
     projectId: string,
@@ -100,7 +100,7 @@ export class SisyphusClient {
     );
   }
 
-  // ── Vector Search ───────────────────────────────
+  // ── 向量搜索 ───────────────────────────────
 
   async vectorSearch(
     query: string,
@@ -112,7 +112,7 @@ export class SisyphusClient {
     });
   }
 
-  // ── Sessions ────────────────────────────────────
+  // ── 会话 ────────────────────────────────────
 
   async listSessions(): Promise<Session[]> {
     return this.request<Session[]>('GET', '/api/v1/sessions');
@@ -130,7 +130,7 @@ export class SisyphusClient {
     }
   }
 
-  // ── Execution ───────────────────────────────────
+  // ── 执行 ───────────────────────────────────
 
   async executeSop(
     sopId: string,

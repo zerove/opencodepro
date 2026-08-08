@@ -1,7 +1,7 @@
 {
   "name": "sisyphus",
-  "display_name": "Sisyphus Cognitive Engine",
-  "description": "AI-powered cognitive execution engine integration for Zed",
+  "display_name": "Sisyphus 认知引擎",
+  "description": "用于 Zed 的 AI 认知执行引擎集成",
   "version": "0.1.0",
   "schema_version": 1,
   "authors": ["Sisyphus Team"],
