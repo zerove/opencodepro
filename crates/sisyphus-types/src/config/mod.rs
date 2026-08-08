@@ -269,6 +269,12 @@ impl Config {
         if let Some(v) = env_usize("SISYPHUS_CACHE_VECTOR_DIMENSION") {
             self.cache.vector_dimension = v;
         }
+        if let Some(v) = env_usize("SISYPHUS_CACHE_BATCH_SIZE") {
+            self.cache.batch_size = v;
+        }
+        if let Some(v) = env_u64("SISYPHUS_CACHE_FLUSH_INTERVAL_MS") {
+            self.cache.flush_interval_ms = v;
+        }
         if let Some(v) = env_u16("SISYPHUS_METRICS_PROMETHEUS_PORT") {
             self.metrics.prometheus_port = v;
         }
@@ -630,5 +636,44 @@ sandbox = { max_memory_pages = 10, default_fuel = 1000000, wasm_tools_dir = "too
     fn test_resolve_env_placeholders_no_pattern() {
         let result = resolve_env_placeholders_str("no placeholders here");
         assert_eq!(result, "no placeholders here");
+    }
+
+    #[test]
+    fn test_apply_env_overrides_cache_batch_and_flush() {
+        std::env::set_var("SISYPHUS_CACHE_BATCH_SIZE", "250");
+        std::env::set_var("SISYPHUS_CACHE_FLUSH_INTERVAL_MS", "500");
+        let mut config = Config::default();
+        config.apply_env_overrides();
+        assert_eq!(config.cache.batch_size, 250);
+        assert_eq!(config.cache.flush_interval_ms, 500);
+        std::env::remove_var("SISYPHUS_CACHE_BATCH_SIZE");
+        std::env::remove_var("SISYPHUS_CACHE_FLUSH_INTERVAL_MS");
+    }
+
+    #[test]
+    fn test_apply_env_overrides_llm_timeouts_and_jwt() {
+        std::env::set_var("SISYPHUS_LLM_FAST_FAIL_COOLING_SECS", "60");
+        std::env::set_var("SISYPHUS_LLM_REQUEST_TIMEOUT_SECS", "10");
+        std::env::set_var("SISYPHUS_LLM_CONNECT_TIMEOUT_SECS", "3");
+        std::env::set_var("SISYPHUS_JWT_SECRET", "test-secret");
+        std::env::set_var("SISYPHUS_JWT_ACCESS_TTL_SECS", "1800");
+        std::env::set_var("SISYPHUS_JWT_REFRESH_TTL_SECS", "1209600");
+        std::env::set_var("SISYPHUS_JWT_ISSUER", "test-issuer");
+        let mut config = Config::default();
+        config.apply_env_overrides();
+        assert_eq!(config.llm.fast_fail_cooling_secs, 60);
+        assert_eq!(config.llm.request_timeout_secs, 10);
+        assert_eq!(config.llm.connect_timeout_secs, 3);
+        assert_eq!(config.jwt.secret, "test-secret");
+        assert_eq!(config.jwt.access_ttl_secs, 1800);
+        assert_eq!(config.jwt.refresh_ttl_secs, 1209600);
+        assert_eq!(config.jwt.issuer, "test-issuer");
+        std::env::remove_var("SISYPHUS_LLM_FAST_FAIL_COOLING_SECS");
+        std::env::remove_var("SISYPHUS_LLM_REQUEST_TIMEOUT_SECS");
+        std::env::remove_var("SISYPHUS_LLM_CONNECT_TIMEOUT_SECS");
+        std::env::remove_var("SISYPHUS_JWT_SECRET");
+        std::env::remove_var("SISYPHUS_JWT_ACCESS_TTL_SECS");
+        std::env::remove_var("SISYPHUS_JWT_REFRESH_TTL_SECS");
+        std::env::remove_var("SISYPHUS_JWT_ISSUER");
     }
 }

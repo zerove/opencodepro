@@ -50,10 +50,30 @@ use_sandboxd = false
 
 > **何时启用 sandboxd：** 如果 CI 或开发机上 `cargo check`/`cargo build` 因 wasmtime 的 LLVM codegen 内存峰值 >7GB 而 OOM，设置 `use_sandboxd = true` 并在 CI 中预先构建 `sisyphus-sandboxd` 二进制。bridge 将启动子进程处理 WASM 调用，自身不再链接 wasmtime。
 
+## JWT 认证
+
+可通过 `[jwt]` 为 REST API 启用基于 token 的 JWT 认证：
+
+```toml
+[jwt]
+secret = "your-256-bit-secret"
+access_ttl_secs = 900
+refresh_ttl_secs = 604800
+issuer = "sisyphus-bridge"
+```
+
+### `[jwt]` 字段
+
+| 字段 | 类型 | 默认值 | 说明 |
+|-------|------|---------|-------------|
+| `secret` | `string` | `""` | 签名密钥。生产环境必须设置；为空时不启用 JWT 认证 |
+| `access_ttl_secs` | `i64` | `900` | Access token 有效期（秒），默认 15 分钟 |
+| `refresh_ttl_secs` | `i64` | `604800` | Refresh token 有效期（秒），默认 7 天 |
+| `issuer` | `string` | `"sisyphus-bridge"` | Token 签发者标识 |
+
 ## OpenTelemetry 分布式追踪
 
 可通过 `[metrics.opentelemetry]` 启用 OpenTelemetry 追踪：
-
 ```toml
 [metrics]
 prometheus_port = 9100
@@ -117,6 +137,8 @@ sample_rate = 1.0
 | `SISYPHUS_CACHE_DATABASE_URL` | `cache.database_url` | string | `sqlite:data/sisyphus.db` |
 | `SISYPHUS_CACHE_ENABLE_VECTORS` | `cache.enable_vectors` | bool | `false` |
 | `SISYPHUS_CACHE_VECTOR_DIMENSION` | `cache.vector_dimension` | usize | `1536` |
+| `SISYPHUS_CACHE_BATCH_SIZE` | `cache.batch_size` | usize | `100` |
+| `SISYPHUS_CACHE_FLUSH_INTERVAL_MS` | `cache.flush_interval_ms` | u64 | `100` |
 | `SISYPHUS_METRICS_PROMETHEUS_PORT` | `metrics.prometheus_port` | u16 | `9100` |
 | `SISYPHUS_SANDBOX_MAX_MEMORY_PAGES` | `sandbox.max_memory_pages` | u32 | `10` |
 | `SISYPHUS_SANDBOX_DEFAULT_FUEL` | `sandbox.default_fuel` | u64 | `1_000_000` |
@@ -127,6 +149,9 @@ sample_rate = 1.0
 | `SISYPHUS_LLM_ENDPOINT` | `llm.endpoint` | string | `"http://localhost:8000/v1/chat/completions"` |
 | `SISYPHUS_LLM_MODEL` | `llm.model` | string | `"gpt-4o"` |
 | `SISYPHUS_LLM_BUDGET_MODE` | `llm.budget_mode` | string | `"Warning"` |
+| `SISYPHUS_LLM_FAST_FAIL_COOLING_SECS` | `llm.fast_fail_cooling_secs` | u64 | `30` |
+| `SISYPHUS_LLM_REQUEST_TIMEOUT_SECS` | `llm.request_timeout_secs` | u64 | `5` |
+| `SISYPHUS_LLM_CONNECT_TIMEOUT_SECS` | `llm.connect_timeout_secs` | u64 | `2` |
 | `SISYPHUS_LLM_EMBEDDING_MODEL` | `llm.embedding.model` | string | `"text-embedding-3-small"` |
 | `SISYPHUS_LLM_EMBEDDING_ENDPOINT` | `llm.embedding.endpoint` | string | `None` |
 | `SISYPHUS_LLM_EMBEDDING_PROVIDER` | `llm.embedding.provider` | string | `"dummy"` |
@@ -134,6 +159,10 @@ sample_rate = 1.0
 | `SISYPHUS_REGISTRY_TIMEOUT_SECONDS` | `registry.timeout_seconds` | u64 | `30` |
 | `SISYPHUS_JCODE_SOCKET_PATH` | `jcode.socket_path` | string | `"/tmp/jcode-debug.sock"` |
 | `SISYPHUS_AUTH_TOKEN` | `auth_token` | string | `""` |
+| `SISYPHUS_JWT_SECRET` | `jwt.secret` | string | `""` |
+| `SISYPHUS_JWT_ACCESS_TTL_SECS` | `jwt.access_ttl_secs` | i64 | `900` |
+| `SISYPHUS_JWT_REFRESH_TTL_SECS` | `jwt.refresh_ttl_secs` | i64 | `604800` |
+| `SISYPHUS_JWT_ISSUER` | `jwt.issuer` | string | `"sisyphus-bridge"` |
 | `SISYPHUS_BRIDGE_ADDRESS` | `bridge_address` | string | `"http://[::1]:50051"` |
 | `SISYPHUS_HTTP_ADDRESS` | `http_address` | string | `"http://[::1]:8080"` |
 | `SISYPHUS_CHAOS_ENABLED` | `chaos.enabled` | bool | `false` |

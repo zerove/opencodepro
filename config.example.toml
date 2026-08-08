@@ -29,6 +29,21 @@ model = "gpt-4o"
 # 类型: string | 默认: "Warning"
 # budget_mode = "Warning"
 
+# 快速失败冷却时间（秒）— 连接失败后在此窗口内直接拒绝该模型调用
+# 环境变量: SISYPHUS_LLM_FAST_FAIL_COOLING_SECS
+# 类型: u64 | 默认: 30
+# fast_fail_cooling_secs = 30
+
+# LLM 请求超时（秒）
+# 环境变量: SISYPHUS_LLM_REQUEST_TIMEOUT_SECS
+# 类型: u64 | 默认: 5
+# request_timeout_secs = 5
+
+# LLM 连接超时（秒）
+# 环境变量: SISYPHUS_LLM_CONNECT_TIMEOUT_SECS
+# 类型: u64 | 默认: 2
+# connect_timeout_secs = 2
+
 # 嵌入向量配置（用于语义搜索 / 记忆检索）
 [llm.embedding]
 # 嵌入模型名称
@@ -81,6 +96,28 @@ model = "gpt-4o"
 # 环境变量: SISYPHUS_AUTH_TOKEN
 # 类型: string | 默认: ""（不启用认证）
 auth_token = ""
+
+# ── JWT 认证（REST API token 认证）─────────────────────────────
+[jwt]
+# 签名密钥（生产环境必须设置；设置后 REST API 启用 JWT 认证）
+# 环境变量: SISYPHUS_JWT_SECRET
+# 类型: string | 默认: ""（不启用）
+# secret = ""
+
+# Access token 有效期（秒）
+# 环境变量: SISYPHUS_JWT_ACCESS_TTL_SECS
+# 类型: i64 | 默认: 900（15 分钟）
+# access_ttl_secs = 900
+
+# Refresh token 有效期（秒）
+# 环境变量: SISYPHUS_JWT_REFRESH_TTL_SECS
+# 类型: i64 | 默认: 604800（7 天）
+# refresh_ttl_secs = 604800
+
+# Token 签发者
+# 环境变量: SISYPHUS_JWT_ISSUER
+# 类型: string | 默认: "sisyphus-bridge"
+# issuer = "sisyphus-bridge"
 
 # gRPC bridge 地址（格式: http://[host]:port）
 # 环境变量: SISYPHUS_BRIDGE_ADDRESS
