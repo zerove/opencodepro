@@ -1,5 +1,6 @@
 [target.x86_64-unknown-linux-gnu]
-linker = "/usr/sbin/gcc"
+# linker 使用系统默认（/usr/bin/gcc on GitHub runner / Debian/Ubuntu）
+# 不再硬编码绝对路径，避免 CI 环境无法解析
 # mold 链接器需要 >16GB 可用内存；内存受限环境请用系统默认链接器
 # rustflags = ["-C", "link-args=-fuse-ld=mold"]
 
