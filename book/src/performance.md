@@ -39,7 +39,18 @@ Sisyphus 包含多项性能优化。
 cargo bench -p sisyphus-core
 ```
 
-基准结果存储在 `target/criterion/`。
+基准结果存储在 `target/criterion/`，包含以下 benchmark 组：
+
+| 组 | 覆盖内容 |
+|--------|--------------|
+| `dag_execution` | v1 Executor 链式 DAG 执行（5/10/20 节点） |
+| `wasm_execution` | WASM 沙箱单节点执行 |
+| `mfs_storage` | 存储层 set/get（小/10KB/100KB） |
+| `v2_adaptive_depth` | 自适应深度控制（收敛/平台期检测） |
+| `v2_anomaly_detector` | 异常检测器（观测/报告） |
+| `v2_branch_predictor` | 并行分支预测器构造 |
+
+最新基线数据见 `docs/benchmarks/v2-baseline-2026-08-09.md`（均值与 95% 置信区间），历史基线见 `docs/benchmarks/v2-baseline.md`。修改性能关键路径后运行 `make perf-analyze` 对比基线并预警超过 5% 的回归。
 
 ## 性能调优
 
