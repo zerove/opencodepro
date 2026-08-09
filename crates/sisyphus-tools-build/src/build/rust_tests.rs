@@ -61,6 +61,23 @@ fn test_extract_diags_errors() {
 }
 
 #[test]
+fn test_extract_diags_with_ansi_colors() {
+    // CI（dtolnay/rust-toolchain）设置 CARGO_TERM_COLOR=always，cargo 输出带 ANSI 色码
+    let stderr = "\u{1b}[1m\u{1b}[92m    Checking\u{1b}[0m bad-crate\n\u{1b}[1m\u{1b}[91merror[E0425]\u{1b}[0m\u{1b}[1m: cannot find value `does_not_exist` in this scope\u{1b}[0m\n \u{1b}[1m\u{1b}[94m--> \u{1b}[0msrc/lib.rs:1:34\n  \u{1b}[1m\u{1b}[94m|\u{1b}[0m\n1 | pub fn hello() -> &'static str { does_not_exist }\n  \u{1b}[1m\u{1b}[91m^^^^^^^^^^^^^^\u{1b}[0m \u{1b}[1m\u{1b}[91mnot found in this scope\u{1b}[0m\n\n\u{1b}[1m\u{1b}[91merror\u{1b}[0m\u{1b}[1m:\u{1b}[0m could not compile `bad-crate` (lib) due to 1 previous error\n";
+    let (errors, warnings) = extract_diags(stderr);
+    assert_eq!(errors.len(), 1);
+    assert_eq!(errors[0].code.as_deref(), Some("E0425"));
+    assert_eq!(
+        errors[0].message,
+        "cannot find value `does_not_exist` in this scope"
+    );
+    assert_eq!(errors[0].file.as_deref(), Some("src/lib.rs"));
+    assert_eq!(errors[0].line, Some(1));
+    assert_eq!(errors[0].col, Some(34));
+    assert!(warnings.is_empty());
+}
+
+#[test]
 fn test_extract_diags_warnings() {
     let stderr = "warning: unused variable `x`\n  --> src/lib.rs:5:9\n   |\n5 |     let x = 1;\n   |         ^ help: if you intend to use it: `_x`\n";
     let (errors, warnings) = extract_diags(stderr);

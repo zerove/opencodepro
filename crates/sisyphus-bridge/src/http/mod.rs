@@ -251,8 +251,7 @@ pub fn build_router(state: RestApiState) -> Router {
         .route("/api/workspaces/:id", delete(delete_workspace_handler))
         // SSE endpoints
         .route("/api/events", get(sse_handler))
-        .route("/api/events/broadcast", post(broadcast_event_handler))
-        .route("/api/events/health", get(sse_health_handler));
+        .route("/api/events/broadcast", post(broadcast_event_handler));
 
     // Apply auth middleware: JWT takes precedence over static bearer token
     let router = if state.jwt_config.is_some() {

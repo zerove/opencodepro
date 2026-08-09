@@ -170,10 +170,32 @@ impl LanguageBackend for RustBackend {
 
 // ── Diagnostic parser for Rust (cargo/clippy output) ──
 
+/// Strips ANSI escape sequences (e.g. `\x1b[1m\x1b[91m`) from a line.
+/// CI 环境（dtolnay/rust-toolchain）默认设置 `CARGO_TERM_COLOR=always`，
+/// cargo 输出带色码，直接 `strip_prefix("error[")` 会失败，导致诊断解析为空。
+fn strip_ansi(line: &str) -> String {
+    let mut out = String::with_capacity(line.len());
+    let mut chars = line.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\u{1b}' && chars.peek() == Some(&'[') {
+            // consume `[` then hasta `m` (或结束)
+            chars.next();
+            for c in chars.by_ref() {
+                if c == 'm' {
+                    break;
+                }
+            }
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
 pub fn extract_diags(stderr: &str) -> (Vec<Diag>, Vec<Diag>) {
     let mut errors = Vec::new();
     let mut warnings = Vec::new();
-    let mut lines = stderr.lines().peekable();
+    let mut lines = stderr.lines().map(strip_ansi).peekable();
 
     while let Some(line) = lines.next() {
         let (level, code, msg): (String, Option<String>, String) =

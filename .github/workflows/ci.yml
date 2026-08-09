@@ -143,6 +143,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@nightly
+        with:
+          # sisyphus-tools-build 的 fmt_check 测试调用 `cargo fmt`，需要 rustfmt 组件
+          components: rustfmt
       - uses: Swatinem/rust-cache@v2
       - uses: ./.github/actions/setup-protoc
       - run: |
