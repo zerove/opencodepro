@@ -1,32 +1,32 @@
-# Sisyphus — Cognitive Computation Engine
+# Sisyphus — 认知计算引擎
 
-Sisyphus is a **cognitive computation engine** for building autonomous AI agents that plan, execute, and improve their behavior through a recursive **observe–orient–decide–act** (OODA) loop.
+Sisyphus 是一个**认知计算引擎**，用于构建能够通过递归 **观察–判断–决策–行动**（observe–orient–decide–act，OODA）循环来规划、执行并改进自身行为的自主 AI 代理。
 
-## What It Does
+## 功能概述
 
-At its core, Sisyphus takes a high-level goal (expressed in natural language) and:
+Sisyphus 的核心是接收一个高层目标（以自然语言表达），然后：
 
-1. **Synthesizes** a Standard Operating Procedure (SOP) — a directed acyclic graph (DAG) of executable sub-steps.
-2. **Executes** the SOP in parallel across available nodes, respecting dependencies.
-3. **Simulates** outcomes via Monte Carlo tree search to predict success probability.
-4. **Reflects** on execution results — computing a *deviation score* between predicted and actual outcomes.
-5. **Evolves** the SOP — retrying failed nodes, increasing fuel budgets, or restructuring the graph.
+1. **合成**（Synthesize）标准操作程序（Standard Operating Procedure，SOP）—— 一个由可执行子步骤组成的有向无环图（directed acyclic graph，DAG）。
+2. **执行**（Execute）SOP，在可用节点上按依赖关系并行运行。
+3. **模拟**（Simulate）通过蒙特卡洛树搜索评估结果，预测成功概率。
+4. **反思**（Reflect）执行结果，计算预测与实际结果之间的*偏差分数*（deviation score）。
+5. **演进**（Evolve）SOP，重试失败节点、增加燃料预算，或重构图结构。
 
-This loop continues until the goal converges (deviation below threshold) or a maximum iteration limit is reached.
+该循环持续进行，直到目标收敛（偏差低于阈值）或达到最大迭代次数。
 
-## Why Sisyphus?
+## 为什么选择 Sisyphus？
 
-- **Self-improving**: The engine learns from every execution, evolving its SOPs without human intervention.
-- **Safe by design**: WASM sandboxing for tool code execution with fuel limits and memory bounds.
-- **Observable**: Built-in Prometheus metrics for every cognitive operation.
-- **Composable**: Each crate is independent; use just the parts you need.
+- **自我改进**：引擎从每次执行中学习，无需人工干预即可演进其 SOP。
+- **设计即安全**：工具代码在 WASM 沙箱中执行，带燃料上限与内存边界。
+- **可观测**：每个认知操作都内置 Prometheus 指标。
+- **可组合**：每个 crate 相互独立，可按需取用。
 
-## Project Status
+## 项目状态
 
-Sisyphus is in **active development** (v0.1.0). The core cognitive loop is functional and tested, with WASM tool execution, multi-level caching, and Prometheus metrics integration.
+Sisyphus 处于**积极开发**中（v0.1.0）。核心认知循环已可用并通过测试，具备 WASM 工具执行、多级缓存与 Prometheus 指标集成。
 
-## Next Steps
+## 下一步
 
-- Read the [Architecture Overview](architecture.md) for a high-level system design.
-- Dive into the [Key Concepts](concepts.md) to understand SOPs, cognitive loops, and DAG execution.
-- Check the [Crate Reference](crates.md) for detailed API documentation.
+- 阅读[架构总览](architecture.md)了解高层系统设计。
+- 深入[核心概念](concepts.md)理解 SOP、认知循环与 DAG 执行。
+- 查看 [Crate 参考](crates.md)获取详细 API 文档。

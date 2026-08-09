@@ -1,12 +1,12 @@
-# sisyphus-wasm-sdk — WASM Tool SDK
+# sisyphus-wasm-sdk — WASM 工具 SDK
 
-The WASM SDK provides the interface for developing tools that run inside the Sisyphus WASM sandbox. Tool authors implement the `SisyphusTool` trait and register their tools for discovery by the runtime.
+WASM SDK 提供开发在 Sisyphus WASM 沙箱内运行的工具的接口。工具作者实现 `SisyphusTool` trait 并注册工具以供运行时发现。
 
-## Core Types
+## 核心类型
 
 ### SisyphusTool
 
-Trait that every WASM tool must implement:
+每个 WASM 工具都必须实现的 trait：
 
 ```rust
 pub trait SisyphusTool: Send + Sync {
@@ -16,39 +16,39 @@ pub trait SisyphusTool: Send + Sync {
 
 ### ToolContext
 
-Input passed to a tool when invoked:
+调用工具时传入的输入：
 
 ```rust
 pub struct ToolContext {
     pub tool_id: String,
-    pub input: Value,   // JSON input arguments
-    pub state: Value,   // Current execution state
+    pub input: Value,   // JSON 输入参数
+    pub state: Value,   // 当前执行状态
 }
 ```
 
 ### ToolOutput
 
-Output produced by a tool:
+工具产生的输出：
 
 ```rust
 pub struct ToolOutput {
-    pub result: Value,              // JSON result
-    pub state_update: Option<Value>, // Optional state mutations
+    pub result: Value,              // JSON 结果
+    pub state_update: Option<Value>, // 可选状态变更
 }
 
 impl ToolOutput {
-    pub fn json(val: Value) -> Self; // Convenience constructor
+    pub fn json(val: Value) -> Self; // 便捷构造器
 }
 ```
 
-## Tool Registry
+## 工具注册表
 
-Tools are registered in a thread-safe global registry:
+工具在线程安全的全局注册表中注册：
 
 ```rust
 use sisyphus_wasm_sdk::{register_tool_as, list_tools, tool_count};
 
-// Register a tool with an explicit ID
+// 使用显式 ID 注册工具
 struct MyTool;
 impl SisyphusTool for MyTool {
     fn execute(&self, ctx: &ToolContext) -> Result<ToolOutput, String> {
@@ -58,22 +58,22 @@ impl SisyphusTool for MyTool {
 
 register_tool_as("my_tool", MyTool);
 
-// List all registered tools
+// 列出所有已注册工具
 let tools = list_tools(); // vec!["my_tool"]
 assert_eq!(tool_count(), 1);
 ```
 
-### Registry API
+### 注册表 API
 
-| Function | Description |
+| 函数 | 说明 |
 |----------|-------------|
-| `register_tool_as(id, tool)` | Register a tool with explicit ID |
-| `register_tool(tool)` | Register using type name as ID |
-| `list_tools()` | List all registered tool IDs |
-| `tool_count()` | Get number of registered tools |
-| `remove_tool(id)` | Remove a tool, returns true if it existed |
+| `register_tool_as(id, tool)` | 使用显式 ID 注册工具 |
+| `register_tool(tool)` | 使用类型名作为 ID 注册 |
+| `list_tools()` | 列出所有已注册工具 ID |
+| `tool_count()` | 获取已注册工具数量 |
+| `remove_tool(id)` | 移除工具，存在时返回 true |
 
-## Example: Implementing a Tool
+## 示例：实现一个工具
 
 ```rust
 use sisyphus_wasm_sdk::{SisyphusTool, ToolContext, ToolOutput};
@@ -97,13 +97,13 @@ impl SisyphusTool for FileReader {
     }
 }
 
-// Register the tool
+// 注册工具
 register_tool_as("file_read", FileReader);
 ```
 
-## State Management
+## 状态管理
 
-Tools communicate state through `ToolContext.state` and `ToolOutput.state_update`:
+工具通过 `ToolContext.state` 与 `ToolOutput.state_update` 通信状态：
 
 ```rust
 impl SisyphusTool for Counter {
@@ -117,18 +117,18 @@ impl SisyphusTool for Counter {
 }
 ```
 
-## Integration
+## 集成
 
-The WASM SDK is used by:
-- **sisyphus-intel** — Tool code generation references SDK types
-- **sisyphus-tests** — E2E tests exercise tool registration
-- **sisyphus-core** — Runtime discovers and executes registered tools
+WASM SDK 被以下 crate 使用：
+- **sisyphus-intel** — 工具代码生成引用 SDK 类型
+- **sisyphus-tests** — E2E 测试测试工具注册
+- **sisyphus-core** — 运行时发现并执行已注册工具
 
-## Testing
+## 测试
 
-The crate includes unit tests for:
-- Tool registration and retrieval
-- Duplicate registration handling
-- Tool removal
-- Type serialization/deserialization
-- Output construction
+crate 包含以下单元测试：
+- 工具注册与检索
+- 重复注册处理
+- 工具移除
+- 类型序列化/反序列化
+- 输出构造

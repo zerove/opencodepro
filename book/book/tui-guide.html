@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>TUI Guide - Sisyphus Documentation</title>
+        <title>TUI 指南 - Sisyphus Documentation</title>
 
 
         <!-- Custom HTML head -->
@@ -35,10 +35,10 @@
             const path_to_root = "";
             const default_light_theme = "dark";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-db31fd4d.js";
+            window.path_to_searchindex_js = "searchindex-92536088.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-8abccaca.js"></script>
+        <script src="toc-0abde3c6.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -174,92 +174,92 @@
 
                 <div id="mdbook-content" class="content">
                     <main>
-                        <h1 id="tui-guide"><a class="header" href="#tui-guide">TUI Guide</a></h1>
-<p>Sisyphus includes a full-featured Terminal User Interface built with ratatui.</p>
-<h2 id="navigation"><a class="header" href="#navigation">Navigation</a></h2>
+                        <h1 id="tui-指南"><a class="header" href="#tui-指南">TUI 指南</a></h1>
+<p>Sisyphus 包含基于 ratatui 构建的全功能终端用户界面（Terminal User Interface，TUI）。</p>
+<h2 id="导航"><a class="header" href="#导航">导航</a></h2>
 <div class="table-wrapper">
 <table>
 <thead>
-<tr><th>Key</th><th>Action</th></tr>
+<tr><th>按键</th><th>操作</th></tr>
 </thead>
 <tbody>
-<tr><td><code>Ctrl+K</code></td><td>Open command palette</td></tr>
-<tr><td><code>Ctrl+L</code></td><td>Session list</td></tr>
-<tr><td><code>Ctrl+M</code></td><td>Model list</td></tr>
-<tr><td><code>Ctrl+A</code></td><td>Agent list</td></tr>
-<tr><td><code>Ctrl+N</code></td><td>New session</td></tr>
-<tr><td><code>Ctrl+H</code></td><td>Go home</td></tr>
-<tr><td><code>Ctrl+Q</code></td><td>Exit</td></tr>
-<tr><td><code>F1</code></td><td>Help</td></tr>
+<tr><td><code>Ctrl+K</code></td><td>打开命令面板</td></tr>
+<tr><td><code>Ctrl+L</code></td><td>会话列表</td></tr>
+<tr><td><code>Ctrl+M</code></td><td>模型列表</td></tr>
+<tr><td><code>Ctrl+A</code></td><td>代理列表</td></tr>
+<tr><td><code>Ctrl+N</code></td><td>新建会话</td></tr>
+<tr><td><code>Ctrl+H</code></td><td>返回主页</td></tr>
+<tr><td><code>Ctrl+Q</code></td><td>退出</td></tr>
+<tr><td><code>F1</code></td><td>帮助</td></tr>
 </tbody>
 </table>
 </div>
-<h2 id="input-editing"><a class="header" href="#input-editing">Input Editing</a></h2>
+<h2 id="输入编辑"><a class="header" href="#输入编辑">输入编辑</a></h2>
 <div class="table-wrapper">
 <table>
 <thead>
-<tr><th>Key</th><th>Action</th></tr>
+<tr><th>按键</th><th>操作</th></tr>
 </thead>
 <tbody>
-<tr><td><code>Home</code> / <code>End</code></td><td>Move to start/end of line</td></tr>
-<tr><td><code>Ctrl+U</code></td><td>Delete to start of line</td></tr>
-<tr><td><code>Ctrl+W</code></td><td>Delete word backward</td></tr>
-<tr><td><code>Ctrl+V</code></td><td>Paste from clipboard</td></tr>
+<tr><td><code>Home</code> / <code>End</code></td><td>移至行首/行尾</td></tr>
+<tr><td><code>Ctrl+U</code></td><td>删除到行首</td></tr>
+<tr><td><code>Ctrl+W</code></td><td>向后删除一个单词</td></tr>
+<tr><td><code>Ctrl+V</code></td><td>从剪贴板粘贴</td></tr>
 </tbody>
 </table>
 </div>
-<h2 id="slash-commands"><a class="header" href="#slash-commands">Slash Commands</a></h2>
-<p>Type <code>/</code> at the start of input to trigger the slash command completion popup.</p>
-<p>Available commands:</p>
+<h2 id="斜杠命令"><a class="header" href="#斜杠命令">斜杠命令</a></h2>
+<p>在输入框开头输入 <code>/</code> 触发斜杠命令补全弹窗。</p>
+<p>可用命令：</p>
 <div class="table-wrapper">
 <table>
 <thead>
-<tr><th>Command</th><th>Description</th></tr>
+<tr><th>命令</th><th>说明</th></tr>
 </thead>
 <tbody>
-<tr><td><code>/help</code></td><td>Show keybindings &amp; help</td></tr>
-<tr><td><code>/exit</code></td><td>Exit Sisyphus</td></tr>
-<tr><td><code>/clear</code></td><td>Clear the log</td></tr>
-<tr><td><code>/theme</code></td><td>Toggle dark/light theme</td></tr>
-<tr><td><code>/sessions</code></td><td>Switch or manage sessions</td></tr>
-<tr><td><code>/new</code></td><td>Create a new session</td></tr>
-<tr><td><code>/model</code></td><td>Switch AI model</td></tr>
-<tr><td><code>/agent</code></td><td>Switch agent</td></tr>
-<tr><td><code>/dev</code></td><td>Run autonomous dev agent</td></tr>
-<tr><td><code>/todos</code></td><td>Manage todo list</td></tr>
-<tr><td><code>/lsp</code></td><td>View LSP diagnostics</td></tr>
-<tr><td><code>/sop</code></td><td>List &amp; execute SOPs</td></tr>
-<tr><td><code>/skills</code></td><td>Browse &amp; install skills</td></tr>
-<tr><td><code>/roadmap</code></td><td>View project roadmap</td></tr>
-<tr><td><code>/bridge</code></td><td>Check bridge health</td></tr>
-<tr><td><code>/home</code></td><td>Return to Home screen</td></tr>
-<tr><td><code>/search</code></td><td>Search messages in session</td></tr>
+<tr><td><code>/help</code></td><td>显示按键绑定与帮助</td></tr>
+<tr><td><code>/exit</code></td><td>退出 Sisyphus</td></tr>
+<tr><td><code>/clear</code></td><td>清空日志</td></tr>
+<tr><td><code>/theme</code></td><td>切换深色/浅色主题</td></tr>
+<tr><td><code>/sessions</code></td><td>切换或管理会话</td></tr>
+<tr><td><code>/new</code></td><td>创建新会话</td></tr>
+<tr><td><code>/model</code></td><td>切换 AI 模型</td></tr>
+<tr><td><code>/agent</code></td><td>切换代理</td></tr>
+<tr><td><code>/dev</code></td><td>运行自主开发代理</td></tr>
+<tr><td><code>/todos</code></td><td>管理待办列表</td></tr>
+<tr><td><code>/lsp</code></td><td>查看 LSP 诊断</td></tr>
+<tr><td><code>/sop</code></td><td>列出并执行 SOP</td></tr>
+<tr><td><code>/skills</code></td><td>浏览并安装技能</td></tr>
+<tr><td><code>/roadmap</code></td><td>查看项目路线图</td></tr>
+<tr><td><code>/bridge</code></td><td>检查 bridge 健康状态</td></tr>
+<tr><td><code>/home</code></td><td>返回主页屏幕</td></tr>
+<tr><td><code>/search</code></td><td>在会话中搜索消息</td></tr>
 </tbody>
 </table>
 </div>
-<h3 id="navigation-1"><a class="header" href="#navigation-1">Navigation</a></h3>
+<h3 id="导航-1"><a class="header" href="#导航-1">导航</a></h3>
 <ul>
-<li><code>Up</code> / <code>Down</code> - Navigate the completion list</li>
-<li><code>Tab</code> / <code>Enter</code> - Accept the selected completion</li>
-<li><code>Esc</code> - Close the completion popup</li>
+<li><code>Up</code> / <code>Down</code> - 在补全列表中导航</li>
+<li><code>Tab</code> / <code>Enter</code> - 接受选中的补全</li>
+<li><code>Esc</code> - 关闭补全弹窗</li>
 </ul>
-<h2 id="file-references"><a class="header" href="#file-references">@file References</a></h2>
-<p>Reference files in your input with <code>@</code> prefix:</p>
+<h2 id="文件引用"><a class="header" href="#文件引用">@文件引用</a></h2>
+<p>在输入中使用 <code>@</code> 前缀引用文件：</p>
 <pre><code>Look at @src/main.rs and @lib.rs
 </code></pre>
-<p>The file contents will be automatically expanded with a line limit of 200 lines.</p>
-<h2 id="session-features"><a class="header" href="#session-features">Session Features</a></h2>
+<p>文件内容将自动展开，行数上限为 200 行。</p>
+<h2 id="会话功能"><a class="header" href="#会话功能">会话功能</a></h2>
 <ul>
-<li><strong>Fork</strong>: Create a branch from any session</li>
-<li><strong>Undo</strong>: Revert the last message</li>
-<li><strong>Rename</strong>: Change session name</li>
-<li><strong>Compress</strong>: Summarize old messages to save tokens</li>
-<li><strong>Checkpoint</strong>: Save/restore session state</li>
-<li><strong>Export</strong>: Export as JSON or HTML</li>
-<li><strong>Import</strong>: Import from JSON</li>
+<li><strong>分叉</strong>：从任意会话创建分支</li>
+<li><strong>撤销</strong>：回退最后一条消息</li>
+<li><strong>重命名</strong>：更改会话名称</li>
+<li><strong>压缩</strong>：总结旧消息以节省 token</li>
+<li><strong>检查点</strong>：保存/恢复会话状态</li>
+<li><strong>导出</strong>：导出为 JSON 或 HTML</li>
+<li><strong>导入</strong>：从 JSON 导入</li>
 </ul>
-<h2 id="search"><a class="header" href="#search">Search</a></h2>
-<p>Press <code>/search</code> in a session to activate search mode. Navigate matches with <code>n</code> (next) and <code>p</code> (previous).</p>
+<h2 id="搜索"><a class="header" href="#搜索">搜索</a></h2>
+<p>在会话中按 <code>/search</code> 激活搜索模式。用 <code>n</code>（下一个）与 <code>p</code>（上一个）导航匹配项。</p>
 
                     </main>
 

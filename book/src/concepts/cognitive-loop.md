@@ -1,8 +1,8 @@
-# Cognitive Loop
+# 认知循环
 
-The recursive **OODA-inspired** cycle that drives Sisyphus's self-improvement behavior.
+驱动 Sisyphus 自我改进行为的递归 **OODA 启发** 周期。
 
-## Sequence Diagram
+## 时序图
 
 ```mermaid
 sequenceDiagram
@@ -42,44 +42,44 @@ sequenceDiagram
     B-->>U: SOPResponse { status, result }
 ```
 
-## Phases
+## 阶段
 
 ```
 ┌─────────────────────────────────────────────────────┐
-│                   Synthesis                           │
-│           Goal-driven SOP generation                  │
+│                   合成                                │
+│           目标驱动的 SOP 生成                        │
 └──────────────────────┬──────────────────────────────┘
                        ▼
 ┌─────────────────────────────────────────────────────┐
 │               ┌───────────┐                          │
-│               │ Simulate  │ ◄── Monte Carlo          │
-│               └─────┬─────┘     random path sampling │
+│               │  模拟     │ ◄── 蒙特卡洛             │
+│               └─────┬─────┘     随机路径采样          │
 │                     │                                │
 │   ┌─────────────────▼──────────────────────┐         │
-│   │             Execute                    │         │
-│   │    DAG parallel topological order      │         │
+│   │             执行                       │         │
+│   │     DAG 并行拓扑序执行                  │         │
 │   └─────────────────┬──────────────────────┘         │
 │                     │                                │
 │               ┌─────▼─────┐                          │
-│               │  Reflect  │ ◄── deviation score      │
+│               │  反思     │ ◄── 偏差分数            │
 │               └─────┬─────┘                          │
 │                     │                                │
-│                     │ deviation > threshold?         │
+│                     │ 偏差 > 阈值?                    │
 │                     │                                │
 │               ┌─────▼─────┐                          │
-│               │   Evolve   │ ◄── mutate SOP          │
+│               │  演进     │ ◄── 变异 SOP            │
 │               └─────┬─────┘                          │
 │                     │                                │
-│                     └── loop ────────────────────────┘
+│                     └── 循环 ────────────────────────┘
 │                                                     │
-│               convergence → return result            │
+│               收敛 → 返回结果                        │
 └─────────────────────────────────────────────────────┘
 ```
 
-## Key Implementation: `execute_with_cognition()`
+## 关键实现：`execute_with_cognition()`
 
 ```rust
-// Simplified from sisyphus-core
+// 简化为 sisyphus-core
 async fn execute_with_cognition(
     &self, graph: &SOPGraph, start: NodeIndex, sop_id: &str, ...
 ) -> Result<(NodeOutput, String, Option<SOPGraph>), String> {
@@ -87,22 +87,22 @@ async fn execute_with_cognition(
     let max_iter = 10;
 
     for iteration in 0..max_iter {
-        // 1. Predict outcome
+        // 1. 预测结果
         let prediction = intel.simulator.simulate(&current_ref, &ctx, sop_id).await?;
 
-        // 2. Execute the SOP
+        // 2. 执行 SOP
         let final_ctx = executor.execute_with_context(&current_ref, start, None).await?;
 
-        // 3. Build trace and reflect
+        // 3. 构建轨迹并反思
         let trace = build_trace(&current_ref, &final_ctx);
         let reflection = intel.reflector.reflect(&trace, &prediction).await?;
 
-        // 4. Check convergence
+        // 4. 检查收敛
         if reflection.deviation_score < CONVERGENCE_THRESHOLD {
-            return Ok((result, report, None));  // Done
+            return Ok((result, report, None));  // 完成
         }
 
-        // 5. Evolve and retry
+        // 5. 演进并重试
         let evolved = intel.evolver.evolve(&current_ref, &reflection, &prediction)?;
         current_ref = evolved;
     }
@@ -111,10 +111,10 @@ async fn execute_with_cognition(
 }
 ```
 
-## Convergence Conditions
+## 收敛条件
 
-The loop terminates when any of:
+循环在满足以下任一条件时终止：
 
-- **Deviation threshold**: `deviation_score < 0.15` (predictions match actuals)
-- **Max iterations**: Loop runs 10 times without converging
-- **No evolution**: Evolver returns `Ok(graph)` with identical structure (no changes possible)
+- **偏差阈值**：`deviation_score < 0.15`（预测与实际匹配）
+- **最大迭代**：循环 10 次未收敛
+- **无演进**：Evolver 返回结构相同的 `Ok(graph)`（无可改进）

@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Security - Sisyphus Documentation</title>
+        <title>安全 - Sisyphus Documentation</title>
 
 
         <!-- Custom HTML head -->
@@ -35,10 +35,10 @@
             const path_to_root = "";
             const default_light_theme = "dark";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-db31fd4d.js";
+            window.path_to_searchindex_js = "searchindex-92536088.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-8abccaca.js"></script>
+        <script src="toc-0abde3c6.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -174,16 +174,16 @@
 
                 <div id="mdbook-content" class="content">
                     <main>
-                        <h1 id="security"><a class="header" href="#security">Security</a></h1>
-<h2 id="api-key-authentication"><a class="header" href="#api-key-authentication">API Key Authentication</a></h2>
-<p>All API endpoints require authentication via:</p>
+                        <h1 id="安全"><a class="header" href="#安全">安全</a></h1>
+<h2 id="api-密钥认证"><a class="header" href="#api-密钥认证">API 密钥认证</a></h2>
+<p>所有 API 端点需要通过以下方式认证：</p>
 <ol>
-<li><strong>Header</strong>: <code>X-API-Key: &lt;your-key&gt;</code></li>
-<li><strong>Bearer</strong>: <code>Authorization: Bearer &lt;your-key&gt;</code></li>
+<li><strong>请求头</strong>（Header）：<code>X-API-Key: &lt;your-key&gt;</code></li>
+<li><strong>Bearer</strong>：<code>Authorization: Bearer &lt;your-key&gt;</code></li>
 </ol>
-<p>The key is validated against the <code>api.key</code> field in configuration.</p>
-<h2 id="external-directory-permissions"><a class="header" href="#external-directory-permissions">External Directory Permissions</a></h2>
-<p>The <code>external_dir_permissions</code> config controls which directories the engine can access:</p>
+<p>密钥与配置中的 <code>api.key</code> 字段比对。</p>
+<h2 id="外部目录权限"><a class="header" href="#外部目录权限">外部目录权限</a></h2>
+<p><code>external_dir_permissions</code> 配置控制引擎可访问的目录：</p>
 <pre><code class="language-toml">[tools]
 external_dir_permissions = [
     { dir = "/project", write = true },
@@ -191,42 +191,42 @@ external_dir_permissions = [
     { dir = "/home", write = false }
 ]
 </code></pre>
-<h2 id="environment-variable-substitution"><a class="header" href="#environment-variable-substitution">Environment Variable Substitution</a></h2>
-<p>Config values support env var substitution:</p>
+<h2 id="环境变量替换"><a class="header" href="#环境变量替换">环境变量替换</a></h2>
+<p>配置值支持环境变量替换：</p>
 <ul>
-<li><code>{env:VAR_NAME}</code> - Use env var, error if missing</li>
-<li><code>{env:VAR_NAME|default}</code> - Use env var with fallback</li>
-<li><code>{env:VAR_NAME:}</code> - Use env var, empty string if missing</li>
+<li><code>{env:VAR_NAME}</code> - 使用环境变量，缺失时报错</li>
+<li><code>{env:VAR_NAME|default}</code> - 使用环境变量，带默认值回退</li>
+<li><code>{env:VAR_NAME:}</code> - 使用环境变量，缺失时为空字符串</li>
 </ul>
-<h2 id="rbac-role-based-access-control"><a class="header" href="#rbac-role-based-access-control">RBAC (Role-Based Access Control)</a></h2>
-<p>Roles: <code>admin</code>, <code>user</code>, <code>viewer</code>, <code>guest</code></p>
+<h2 id="rbac基于角色的访问控制"><a class="header" href="#rbac基于角色的访问控制">RBAC（基于角色的访问控制）</a></h2>
+<p>角色：<code>admin</code>、<code>user</code>、<code>viewer</code>、<code>guest</code></p>
 <div class="table-wrapper">
 <table>
 <thead>
-<tr><th>Role</th><th>Permissions</th></tr>
+<tr><th>角色</th><th>权限</th></tr>
 </thead>
 <tbody>
-<tr><td>admin</td><td>Full access</td></tr>
-<tr><td>user</td><td>Execute, read, write</td></tr>
-<tr><td>viewer</td><td>Read-only</td></tr>
-<tr><td>guest</td><td>Health check only</td></tr>
+<tr><td>admin</td><td>完全访问</td></tr>
+<tr><td>user</td><td>执行、读取、写入</td></tr>
+<tr><td>viewer</td><td>只读</td></tr>
+<tr><td>guest</td><td>仅健康检查</td></tr>
 </tbody>
 </table>
 </div>
-<h2 id="session-isolation"><a class="header" href="#session-isolation">Session Isolation</a></h2>
-<p>Sessions are isolated by session ID. Each session maintains:</p>
+<h2 id="会话隔离"><a class="header" href="#会话隔离">会话隔离</a></h2>
+<p>会话按会话 ID 隔离。每个会话维护：</p>
 <ul>
-<li>Separate message history</li>
-<li>Separate memory context</li>
-<li>Separate DAG execution state</li>
+<li>独立的消息历史</li>
+<li>独立的记忆上下文</li>
+<li>独立的 DAG 执行状态</li>
 </ul>
-<h2 id="sandbox-execution"><a class="header" href="#sandbox-execution">Sandbox Execution</a></h2>
-<p>The WASM sandbox provides process isolation for tool execution:</p>
+<h2 id="沙箱执行"><a class="header" href="#沙箱执行">沙箱执行</a></h2>
+<p>WASM 沙箱为工具执行提供进程隔离：</p>
 <ul>
-<li>Memory limits via wasmtime config</li>
-<li>Fuel-based instruction limits</li>
-<li>No filesystem access outside allowed directories</li>
-<li>No network access (unless explicitly granted)</li>
+<li>通过 wasmtime 配置限制内存</li>
+<li>基于燃料的指令限制</li>
+<li>不允许访问允许目录之外的文件系统</li>
+<li>无网络访问（除非明确授予）</li>
 </ul>
 
                     </main>

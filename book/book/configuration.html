@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Configuration - Sisyphus Documentation</title>
+        <title>配置 - Sisyphus Documentation</title>
 
 
         <!-- Custom HTML head -->
@@ -35,10 +35,10 @@
             const path_to_root = "";
             const default_light_theme = "dark";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-db31fd4d.js";
+            window.path_to_searchindex_js = "searchindex-92536088.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-8abccaca.js"></script>
+        <script src="toc-0abde3c6.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -174,13 +174,19 @@
 
                 <div id="mdbook-content" class="content">
                     <main>
-                        <h1 id="configuration"><a class="header" href="#configuration">Configuration</a></h1>
-<p>Sisyphus is configured via TOML files deserialized into the <code>sisyphus_types::Config</code> struct.</p>
-<p>An example configuration file is provided at <code>config.example.toml</code> in the project root.</p>
-<h2 id="default-configuration"><a class="header" href="#default-configuration">Default Configuration</a></h2>
+                        <h1 id="配置"><a class="header" href="#配置">配置</a></h1>
+<p>Sisyphus 通过 TOML 文件配置，反序列化为 <code>sisyphus_types::Config</code> 结构体。</p>
+<p>项目根目录提供了示例配置文件 <code>config.example.toml</code>。</p>
+<h2 id="默认配置"><a class="header" href="#默认配置">默认配置</a></h2>
 <pre><code class="language-toml">[cognitive_loop]
 max_iterations = 10
 convergence_threshold = 0.15
+
+[cognitive_loop.adaptive_depth]
+initial_budget = 2.0
+decay = 0.3
+min_improvement = 0.15
+convergence_threshold = 0.05
 
 [executor]
 max_concurrent_tasks = 16
@@ -199,55 +205,157 @@ prometheus_port = 9100
 max_memory_pages = 10
 default_fuel = 1_000_000
 wasm_tools_dir = "tools"
+use_sandboxd = false
+# sandboxd_path = "sisyphus-sandboxd"
 </code></pre>
-<h2 id="database-backends"><a class="header" href="#database-backends">Database Backends</a></h2>
-<p>The <code>database_url</code> in <code>[cache]</code> supports two backends:</p>
+<h3 id="sandbox-字段"><a class="header" href="#sandbox-字段"><code>[sandbox]</code> 字段</a></h3>
 <div class="table-wrapper">
 <table>
 <thead>
-<tr><th>URL Prefix</th><th>Backend</th><th>Vector Support</th></tr>
+<tr><th>字段</th><th>类型</th><th>默认值</th><th>说明</th></tr>
 </thead>
 <tbody>
-<tr><td><code>sqlite:</code></td><td>SQLite (default)</td><td>Full scan + memory cosine similarity</td></tr>
-<tr><td><code>postgres://</code></td><td>PostgreSQL</td><td>pgvector ANN (<code>&lt;-&gt;</code> operator)</td></tr>
+<tr><td><code>max_memory_pages</code></td><td><code>u32</code></td><td><code>10</code></td><td>WASM 线性内存上限（以 64KB 页为单位）</td></tr>
+<tr><td><code>default_fuel</code></td><td><code>u64</code></td><td><code>1_000_000</code></td><td>沙箱默认 fuel 上限（WASM 指令数）</td></tr>
+<tr><td><code>wasm_tools_dir</code></td><td><code>string</code></td><td><code>"tools"</code></td><td>WASM 工具二进制文件目录</td></tr>
+<tr><td><code>use_sandboxd</code></td><td><code>bool</code></td><td><code>false</code></td><td>使用独立进程 sandboxd 替代嵌入式 wasmtime。为 <code>true</code> 时 bridge 启动 <code>sisyphus-sandboxd</code> 子进程执行 WASM，避免 wasmtime 编译内存压力</td></tr>
+<tr><td><code>sandboxd_path</code></td><td><code>string</code></td><td><code>None</code>（搜索 PATH）</td><td><code>sisyphus-sandboxd</code> 二进制路径，仅 <code>use_sandboxd = true</code> 时有效</td></tr>
+</tbody>
+</table>
+</div>
+<blockquote>
+<p><strong>何时启用 sandboxd：</strong> 如果 CI 或开发机上 <code>cargo check</code>/<code>cargo build</code> 因 wasmtime 的 LLVM codegen 内存峰值 &gt;7GB 而 OOM，设置 <code>use_sandboxd = true</code> 并在 CI 中预先构建 <code>sisyphus-sandboxd</code> 二进制。bridge 将启动子进程处理 WASM 调用，自身不再链接 wasmtime。</p>
+</blockquote>
+<h2 id="jwt-认证"><a class="header" href="#jwt-认证">JWT 认证</a></h2>
+<p>可通过 <code>[jwt]</code> 为 REST API 启用基于 token 的 JWT 认证：</p>
+<pre><code class="language-toml">[jwt]
+secret = "your-256-bit-secret"
+access_ttl_secs = 900
+refresh_ttl_secs = 604800
+issuer = "sisyphus-bridge"
+</code></pre>
+<h3 id="jwt-字段"><a class="header" href="#jwt-字段"><code>[jwt]</code> 字段</a></h3>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>字段</th><th>类型</th><th>默认值</th><th>说明</th></tr>
+</thead>
+<tbody>
+<tr><td><code>secret</code></td><td><code>string</code></td><td><code>""</code></td><td>签名密钥。生产环境必须设置；为空时不启用 JWT 认证</td></tr>
+<tr><td><code>access_ttl_secs</code></td><td><code>i64</code></td><td><code>900</code></td><td>Access token 有效期（秒），默认 15 分钟</td></tr>
+<tr><td><code>refresh_ttl_secs</code></td><td><code>i64</code></td><td><code>604800</code></td><td>Refresh token 有效期（秒），默认 7 天</td></tr>
+<tr><td><code>issuer</code></td><td><code>string</code></td><td><code>"sisyphus-bridge"</code></td><td>Token 签发者标识</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="opentelemetry-分布式追踪"><a class="header" href="#opentelemetry-分布式追踪">OpenTelemetry 分布式追踪</a></h2>
+<p>可通过 <code>[metrics.opentelemetry]</code> 启用 OpenTelemetry 追踪：</p>
+<pre><code class="language-toml">[metrics]
+prometheus_port = 9100
+
+[metrics.opentelemetry]
+enabled = false
+endpoint = "http://localhost:4317"
+service_name = "sisyphus-bridge"
+sample_rate = 1.0
+</code></pre>
+<h3 id="metricsopentelemetry-字段"><a class="header" href="#metricsopentelemetry-字段"><code>[metrics.opentelemetry]</code> 字段</a></h3>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>字段</th><th>类型</th><th>默认值</th><th>说明</th></tr>
+</thead>
+<tbody>
+<tr><td><code>enabled</code></td><td><code>bool</code></td><td><code>false</code></td><td>启用 OpenTelemetry OTLP 导出</td></tr>
+<tr><td><code>endpoint</code></td><td><code>string</code></td><td><code>"http://localhost:4317"</code></td><td>OTLP 导出端点</td></tr>
+<tr><td><code>service_name</code></td><td><code>string</code></td><td><code>"sisyphus-bridge"</code></td><td>服务名称用于追踪标识</td></tr>
+<tr><td><code>sample_rate</code></td><td><code>f64</code></td><td><code>1.0</code></td><td>采样率 (0.0 - 1.0)</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="数据库后端"><a class="header" href="#数据库后端">数据库后端</a></h2>
+<p><code>[cache]</code> 中的 <code>database_url</code> 支持两种后端：</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>URL 前缀</th><th>后端</th><th>向量支持</th></tr>
+</thead>
+<tbody>
+<tr><td><code>sqlite:</code></td><td>SQLite (默认)</td><td>全扫描 + 内存余弦相似度</td></tr>
+<tr><td><code>postgres://</code></td><td>PostgreSQL</td><td>pgvector ANN (<code>&lt;-&gt;</code> 操作符)</td></tr>
 </tbody>
 </table>
 </div>
 <h3 id="postgresql--pgvector"><a class="header" href="#postgresql--pgvector">PostgreSQL / pgvector</a></h3>
-<p>For semantic similarity search with ANN indexes:</p>
+<p>用于带 ANN 索引的语义相似度搜索：</p>
 <ol>
-<li>Install the <code>vector</code> extension on your Postgres server</li>
-<li>Set <code>database_url = "postgres://user:pass@host/sisyphus"</code></li>
-<li>Set <code>enable_vectors = true</code> and <code>vector_dimension = 1536</code> (or your embedding model’s dimension)</li>
-<li>SqlStore automatically runs <code>CREATE EXTENSION IF NOT EXISTS vector</code> on connect</li>
+<li>在 Postgres 服务器安装 <code>vector</code> 扩展</li>
+<li>设置 <code>database_url = "postgres://user:pass@host/sisyphus"</code></li>
+<li>设置 <code>enable_vectors = true</code> 和 <code>vector_dimension = 1536</code>（或你的嵌入模型维度）</li>
+<li>SqlStore 连接时自动运行 <code>CREATE EXTENSION IF NOT EXISTS vector</code></li>
 </ol>
-<h2 id="override-order"><a class="header" href="#override-order">Override Order</a></h2>
+<h2 id="覆盖优先级"><a class="header" href="#覆盖优先级">覆盖优先级</a></h2>
 <ol>
-<li><strong>Default values</strong> (hardcoded in each sub-config’s <code>Default</code> impl)</li>
-<li><strong>Config file</strong> (path set via <code>SISYPHUS_CONFIG</code> env var or <code>Config::from_file()</code>)</li>
-<li><strong>Environment variables</strong> (prefixed with <code>SISYPHUS_</code>, highest priority)</li>
+<li><strong>默认值</strong>（各子配置 <code>Default</code> 实现中硬编码）</li>
+<li><strong>配置文件</strong>（通过 <code>SISYPHUS_CONFIG</code> 环境变量或 <code>Config::from_file()</code> 指定路径）</li>
+<li><strong>环境变量</strong>（<code>SISYPHUS_</code> 前缀，最高优先级）</li>
 </ol>
-<h2 id="environment-variables"><a class="header" href="#environment-variables">Environment Variables</a></h2>
-<p>All environment variables use the prefix <code>SISYPHUS_</code>:</p>
+<h2 id="环境变量"><a class="header" href="#环境变量">环境变量</a></h2>
+<p>所有环境变量使用前缀 <code>SISYPHUS_</code>：</p>
 <div class="table-wrapper">
 <table>
 <thead>
-<tr><th>Variable</th><th>Overrides</th><th>Type</th><th>Default</th></tr>
+<tr><th>变量</th><th>覆盖字段</th><th>类型</th><th>默认值</th></tr>
 </thead>
 <tbody>
-<tr><td><code>SISYPHUS_CONFIG</code></td><td>Config file path</td><td>string</td><td><code>config.toml</code></td></tr>
+<tr><td><code>SISYPHUS_CONFIG</code></td><td>配置文件路径</td><td>string</td><td><code>config.toml</code></td></tr>
 <tr><td><code>SISYPHUS_COGNITIVE_LOOP_MAX_ITERATIONS</code></td><td><code>cognitive_loop.max_iterations</code></td><td>u32</td><td><code>10</code></td></tr>
 <tr><td><code>SISYPHUS_COGNITIVE_LOOP_CONVERGENCE_THRESHOLD</code></td><td><code>cognitive_loop.convergence_threshold</code></td><td>f64</td><td><code>0.15</code></td></tr>
+<tr><td><code>SISYPHUS_COGNITIVE_LOOP_ADAPTIVE_DEPTH_INITIAL_BUDGET</code></td><td><code>cognitive_loop.adaptive_depth.initial_budget</code></td><td>f64</td><td><code>2.0</code></td></tr>
+<tr><td><code>SISYPHUS_COGNITIVE_LOOP_ADAPTIVE_DEPTH_DECAY</code></td><td><code>cognitive_loop.adaptive_depth.decay</code></td><td>f64</td><td><code>0.3</code></td></tr>
+<tr><td><code>SISYPHUS_COGNITIVE_LOOP_ADAPTIVE_DEPTH_MIN_IMPROVEMENT</code></td><td><code>cognitive_loop.adaptive_depth.min_improvement</code></td><td>f64</td><td><code>0.15</code></td></tr>
+<tr><td><code>SISYPHUS_COGNITIVE_LOOP_ADAPTIVE_DEPTH_CONVERGENCE_THRESHOLD</code></td><td><code>cognitive_loop.adaptive_depth.convergence_threshold</code></td><td>f64</td><td><code>0.05</code></td></tr>
 <tr><td><code>SISYPHUS_EXECUTOR_MAX_CONCURRENT_TASKS</code></td><td><code>executor.max_concurrent_tasks</code></td><td>usize</td><td><code>16</code></td></tr>
 <tr><td><code>SISYPHUS_EXECUTOR_DEFAULT_FUEL</code></td><td><code>executor.default_fuel</code></td><td>u64</td><td><code>1_000_000</code></td></tr>
 <tr><td><code>SISYPHUS_CACHE_L1_CAPACITY</code></td><td><code>cache.l1_capacity</code></td><td>usize</td><td><code>10_000</code></td></tr>
 <tr><td><code>SISYPHUS_CACHE_DATABASE_URL</code></td><td><code>cache.database_url</code></td><td>string</td><td><code>sqlite:data/sisyphus.db</code></td></tr>
 <tr><td><code>SISYPHUS_CACHE_ENABLE_VECTORS</code></td><td><code>cache.enable_vectors</code></td><td>bool</td><td><code>false</code></td></tr>
 <tr><td><code>SISYPHUS_CACHE_VECTOR_DIMENSION</code></td><td><code>cache.vector_dimension</code></td><td>usize</td><td><code>1536</code></td></tr>
+<tr><td><code>SISYPHUS_CACHE_BATCH_SIZE</code></td><td><code>cache.batch_size</code></td><td>usize</td><td><code>100</code></td></tr>
+<tr><td><code>SISYPHUS_CACHE_FLUSH_INTERVAL_MS</code></td><td><code>cache.flush_interval_ms</code></td><td>u64</td><td><code>100</code></td></tr>
 <tr><td><code>SISYPHUS_METRICS_PROMETHEUS_PORT</code></td><td><code>metrics.prometheus_port</code></td><td>u16</td><td><code>9100</code></td></tr>
 <tr><td><code>SISYPHUS_SANDBOX_MAX_MEMORY_PAGES</code></td><td><code>sandbox.max_memory_pages</code></td><td>u32</td><td><code>10</code></td></tr>
 <tr><td><code>SISYPHUS_SANDBOX_DEFAULT_FUEL</code></td><td><code>sandbox.default_fuel</code></td><td>u64</td><td><code>1_000_000</code></td></tr>
 <tr><td><code>SISYPHUS_SANDBOX_WASM_TOOLS_DIR</code></td><td><code>sandbox.wasm_tools_dir</code></td><td>string</td><td><code>tools</code></td></tr>
+<tr><td><code>SISYPHUS_SANDBOX_USE_SANDBOXD</code></td><td><code>sandbox.use_sandboxd</code></td><td>bool</td><td><code>false</code></td></tr>
+<tr><td><code>SISYPHUS_SANDBOX_SANDBOXD_PATH</code></td><td><code>sandbox.sandboxd_path</code></td><td>string</td><td><code>None</code></td></tr>
+<tr><td><code>SISYPHUS_LLM_API_KEY</code></td><td><code>llm.api_key</code></td><td>string</td><td><code>""</code></td></tr>
+<tr><td><code>SISYPHUS_LLM_ENDPOINT</code></td><td><code>llm.endpoint</code></td><td>string</td><td><code>"http://localhost:8000/v1/chat/completions"</code></td></tr>
+<tr><td><code>SISYPHUS_LLM_MODEL</code></td><td><code>llm.model</code></td><td>string</td><td><code>"gpt-4o"</code></td></tr>
+<tr><td><code>SISYPHUS_LLM_BUDGET_MODE</code></td><td><code>llm.budget_mode</code></td><td>string</td><td><code>"Warning"</code></td></tr>
+<tr><td><code>SISYPHUS_LLM_FAST_FAIL_COOLING_SECS</code></td><td><code>llm.fast_fail_cooling_secs</code></td><td>u64</td><td><code>30</code></td></tr>
+<tr><td><code>SISYPHUS_LLM_REQUEST_TIMEOUT_SECS</code></td><td><code>llm.request_timeout_secs</code></td><td>u64</td><td><code>5</code></td></tr>
+<tr><td><code>SISYPHUS_LLM_CONNECT_TIMEOUT_SECS</code></td><td><code>llm.connect_timeout_secs</code></td><td>u64</td><td><code>2</code></td></tr>
+<tr><td><code>SISYPHUS_LLM_EMBEDDING_MODEL</code></td><td><code>llm.embedding.model</code></td><td>string</td><td><code>"text-embedding-3-small"</code></td></tr>
+<tr><td><code>SISYPHUS_LLM_EMBEDDING_ENDPOINT</code></td><td><code>llm.embedding.endpoint</code></td><td>string</td><td><code>None</code></td></tr>
+<tr><td><code>SISYPHUS_LLM_EMBEDDING_PROVIDER</code></td><td><code>llm.embedding.provider</code></td><td>string</td><td><code>"dummy"</code></td></tr>
+<tr><td><code>SISYPHUS_REGISTRY_URL</code></td><td><code>registry.registry_url</code></td><td>string</td><td><code>"https://registry.sisyphus.ai"</code></td></tr>
+<tr><td><code>SISYPHUS_REGISTRY_TIMEOUT_SECONDS</code></td><td><code>registry.timeout_seconds</code></td><td>u64</td><td><code>30</code></td></tr>
+<tr><td><code>SISYPHUS_JCODE_SOCKET_PATH</code></td><td><code>jcode.socket_path</code></td><td>string</td><td><code>"/tmp/jcode-debug.sock"</code></td></tr>
+<tr><td><code>SISYPHUS_AUTH_TOKEN</code></td><td><code>auth_token</code></td><td>string</td><td><code>""</code></td></tr>
+<tr><td><code>SISYPHUS_JWT_SECRET</code></td><td><code>jwt.secret</code></td><td>string</td><td><code>""</code></td></tr>
+<tr><td><code>SISYPHUS_JWT_ACCESS_TTL_SECS</code></td><td><code>jwt.access_ttl_secs</code></td><td>i64</td><td><code>900</code></td></tr>
+<tr><td><code>SISYPHUS_JWT_REFRESH_TTL_SECS</code></td><td><code>jwt.refresh_ttl_secs</code></td><td>i64</td><td><code>604800</code></td></tr>
+<tr><td><code>SISYPHUS_JWT_ISSUER</code></td><td><code>jwt.issuer</code></td><td>string</td><td><code>"sisyphus-bridge"</code></td></tr>
+<tr><td><code>SISYPHUS_BRIDGE_ADDRESS</code></td><td><code>bridge_address</code></td><td>string</td><td><code>"http://[::1]:50051"</code></td></tr>
+<tr><td><code>SISYPHUS_HTTP_ADDRESS</code></td><td><code>http_address</code></td><td>string</td><td><code>"http://[::1]:8080"</code></td></tr>
+<tr><td><code>SISYPHUS_CHAOS_ENABLED</code></td><td><code>chaos.enabled</code></td><td>bool</td><td><code>false</code></td></tr>
+<tr><td><code>SISYPHUS_CHAOS_DEFAULT_FAULT_PROBABILITY</code></td><td><code>chaos.default_fault_probability</code></td><td>f64</td><td><code>0.1</code></td></tr>
+<tr><td><code>SISYPHUS_CHAOS_DEFAULT_DURATION_SECONDS</code></td><td><code>chaos.default_duration_seconds</code></td><td>u64</td><td><code>300</code></td></tr>
+<tr><td><code>SISYPHUS_METRICS_OTEL_ENABLED</code></td><td><code>metrics.opentelemetry.enabled</code></td><td>bool</td><td><code>false</code></td></tr>
+<tr><td><code>SISYPHUS_METRICS_OTEL_ENDPOINT</code></td><td><code>metrics.opentelemetry.endpoint</code></td><td>string</td><td><code>"http://localhost:4317"</code></td></tr>
+<tr><td><code>SISYPHUS_METRICS_OTEL_SERVICE_NAME</code></td><td><code>metrics.opentelemetry.service_name</code></td><td>string</td><td><code>"sisyphus-bridge"</code></td></tr>
+<tr><td><code>SISYPHUS_METRICS_OTEL_SAMPLE_RATE</code></td><td><code>metrics.opentelemetry.sample_rate</code></td><td>f64</td><td><code>1.0</code></td></tr>
 </tbody>
 </table>
 </div>

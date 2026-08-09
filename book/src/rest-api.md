@@ -1,14 +1,14 @@
-# REST API Reference
+# REST API 参考
 
-All endpoints are served by the Sisyphus Bridge HTTP server (listening on `[::1]:8080` by default).
+所有端点由 Sisyphus Bridge HTTP 服务器提供服务（默认监听 `[::1]:8080`）。
 
-The OpenAPI specification is available at [`/openapi.json`](/openapi.json) or via the Swagger UI at [`/swagger-ui`](/swagger-ui).
+OpenAPI 规范位于 [`/openapi.json`](/openapi.json)，也可通过 Swagger UI 访问：[`/swagger-ui`](/swagger-ui)。
 
-## Authentication
+## 认证
 
-Include `Authorization: Bearer <token>` header. The token is configured in `config.auth_token`.
+包含 `Authorization: Bearer <token>` 请求头。token 在 `config.auth_token` 中配置。
 
-## Health
+## 健康检查
 
 ### `GET /health`
 
@@ -16,21 +16,21 @@ Include `Authorization: Bearer <token>` header. The token is configured in `conf
 { "status": "SERVING", "version": "0.1.0" }
 ```
 
-## Tool Execution
+## 工具执行
 
 ### `POST /api/execute`
 
-Execute a tool by tool ID.
+按工具 ID 执行工具。请求体：
 
 ```json
 { "tool_id": "file_read", "args_json": "{\"path\": \"/tmp/test.txt\"}", "fuel_limit": 1000000 }
 ```
 
-## Goal Execution
+## 目标执行
 
 ### `POST /api/execute/goal`
 
-Execute a cognitive goal via an SOP.
+通过 SOP 执行认知目标。请求体：
 
 ```json
 { "goal": "Analyze code", "sop_id": "code-review", "project_id": "my-project" }
@@ -38,33 +38,33 @@ Execute a cognitive goal via an SOP.
 
 ### `GET /api/execute/goal/{goal_id}/status`
 
-Get the current execution status.
+获取当前执行状态。
 
 ### `GET /api/execute/goal/{goal_id}/trace`
 
-Get the full execution trace with per-node events.
+获取含每节点事件的完整执行轨迹。
 
 ### `GET /api/execute/goal/{goal_id}/stream`
 
-Server-Sent Events stream of execution progress.
+执行进度的 Server-Sent Events 流。
 
 ### `POST /api/execute/composite`
 
-Execute multiple goals as a composite DAG.
+将多个目标作为组合 DAG 执行。请求体：
 
 ```json
 { "goals": ["analyze", "test", "deploy"], "project_id": "my-project" }
 ```
 
-## Sessions
+## 会话
 
 ### `GET /api/sessions`
 
-List all sessions.
+列出所有会话。
 
 ### `POST /api/sessions`
 
-Create a new session.
+创建新会话。请求体：
 
 ```json
 { "name": "my-session" }
@@ -72,39 +72,39 @@ Create a new session.
 
 ### `GET /api/sessions/{id}`
 
-Get session details with messages.
+获取会话详情（含消息）。
 
 ### `POST /api/sessions/{id}/messages`
 
-Add a message to a session.
+向会话添加消息。请求体：
 
 ```json
 { "role": "user", "content": "Hello" }
 ```
 
-## Tools & Agents
+## 工具与代理
 
 ### `GET /api/tools`
 
-List registered tools.
+列出已注册工具。
 
 ### `GET /api/agents`
 
-List registered agents.
+列出已注册代理。
 
-## Skills
+## 技能
 
 ### `GET /api/skills`
 
-List installed skill entries.
+列出已安装技能条目。
 
 ### `GET /api/skills/available`
 
-List available remote skills.
+列出可用远程技能。
 
 ### `POST /api/skills/install`
 
-Install a remote skill.
+安装远程技能。请求体：
 
 ```json
 { "skill_id": "code-reviewer" }
@@ -112,21 +112,21 @@ Install a remote skill.
 
 ### `GET /api/skills/installed`
 
-List installed remote skills.
+列出已安装的远程技能。
 
 ### `DELETE /api/skills/remote/{id}`
 
-Uninstall a remote skill.
+卸载远程技能。
 
-## Workspaces
+## 工作区
 
 ### `GET /api/workspaces`
 
-List all workspaces.
+列出所有工作区。
 
 ### `POST /api/workspaces`
 
-Create a workspace.
+创建工作区。请求体：
 
 ```json
 { "name": "dev", "project_id": "my-project", "root_dir": "/home/user/project" }
@@ -134,7 +134,7 @@ Create a workspace.
 
 ### `POST /api/workspaces/switch`
 
-Switch the active workspace.
+切换当前工作区。请求体：
 
 ```json
 { "id": "ws-1" }
@@ -142,17 +142,17 @@ Switch the active workspace.
 
 ### `GET /api/workspaces/current`
 
-Get the currently active workspace.
+获取当前活动工作区。
 
-## SOP Management
+## SOP 管理
 
 ### `GET /api/sops`
 
-List SOPs for the current workspace. Pass `X-Sisyphus-Workspace-Id` header.
+列出当前工作区的 SOP。传递 `X-Sisyphus-Workspace-Id` 请求头。
 
 ### `POST /api/sops`
 
-Save or create an SOP.
+保存或创建 SOP。请求体：
 
 ```json
 { "id": "review-sop", "name": "Code Review", "config": { "nodes": [...], "edges": [...] } }
@@ -160,37 +160,37 @@ Save or create an SOP.
 
 ### `GET /api/sops/{id}`
 
-Get SOP details with DAG config.
+获取 SOP 详情（含 DAG 配置）。
 
 ### `DELETE /api/sops/{id}`
 
-Delete an SOP.
+删除 SOP。
 
-## Cognitive Map
+## 认知地图
 
 ### `GET /api/cognitive/map/{sop_id}`
 
-Get the cognitive map for a running SOP.
+获取运行中 SOP 的认知地图。
 
-## Experience Engine
+## 经验引擎
 
 ### `POST /api/experience/similar`
 
-Query similar experiences by semantic similarity.
+按语义相似度查询相似经验。请求体：
 
 ```json
 { "query_text": "error during build", "action_id": "compile", "limit": 5 }
 ```
 
-## Roadmap
+## 路线图
 
 ### `GET /api/roadmap/project/{id}`
 
-Get project roadmap details.
+获取项目路线图详情。
 
 ### `POST /api/roadmap/project/{id}`
 
-Create a new project.
+创建新项目。请求体：
 
 ```json
 { "id": "my-project", "name": "My Project", "description": "..." }
@@ -198,7 +198,7 @@ Create a new project.
 
 ### `POST /api/roadmap/milestone`
 
-Add a milestone to a project.
+向项目添加里程碑。请求体：
 
 ```json
 { "project_id": "my-project", "milestone": { "id": "m1", "title": "Alpha", "status": "pending" } }
@@ -206,7 +206,7 @@ Add a milestone to a project.
 
 ### `POST /api/roadmap/phase`
 
-Add a phase to a milestone.
+向里程碑添加阶段。请求体：
 
 ```json
 { "project_id": "my-project", "milestone_id": "m1", "phase": { "id": "p1", "title": "Design" } }
@@ -214,8 +214,8 @@ Add a phase to a milestone.
 
 ### `PATCH /api/roadmap/goal/{goal_id}`
 
-Update goal status.
+更新目标状态。
 
 ### `GET /api/roadmap/health/{project_id}`
 
-Evaluate project health score.
+评估项目健康分数。

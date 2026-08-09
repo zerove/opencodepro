@@ -1,12 +1,12 @@
-# sisyphus-core — Kernel & Orchestration
+# sisyphus-core — 内核与编排
 
-The central crate that orchestrates the entire cognitive loop. Depends on all other crates.
+核心 crate，编排整个认知循环，依赖所有其他 crate。
 
-## Key Types
+## 关键类型
 
 ### `SisyphusKernel`
 
-Main entry point for the cognitive loop. Holds references to all subsystems:
+认知循环的主要入口，持有所有子系统的引用：
 
 ```rust
 pub struct SisyphusKernel {
@@ -17,19 +17,19 @@ pub struct SisyphusKernel {
 }
 ```
 
-#### Core Methods
+#### 核心方法
 
-| Method | Description |
+| 方法 | 说明 |
 |--------|-------------|
-| `execute_goal(goal, sop_id)` | Full pipeline: synthesize → execute → cognize → evolve |
-| `execute_goals(goals)` | Execute multiple goals concurrently, return composite output |
-| `execute_with_cognition(graph, start, sop_id, ctx)` | Multi-iteration loop: predict → execute → reflect → evolve |
-| `load_sop(sop_id)` | Load a previously saved SOP graph from the state store |
-| `save_sop(sop_id, graph)` | Persist an SOP graph to the state store |
+| `execute_goal(goal, sop_id)` | 完整流水线：合成 → 执行 → 认知 → 演进 |
+| `execute_goals(goals)` | 并发执行多个目标，返回组合输出 |
+| `execute_with_cognition(graph, start, sop_id, ctx)` | 多迭代循环：预测 → 执行 → 反思 → 演进 |
+| `load_sop(sop_id)` | 从状态存储加载已保存的 SOP 图 |
+| `save_sop(sop_id, graph)` | 将 SOP 图持久化到状态存储 |
 
 ### `Executor`
 
-The DAG runner that executes SOP graphs with topological parallelism:
+按拓扑序并行执行 SOP 图的 DAG 运行器：
 
 ```rust
 let ctx = Executor::new()
@@ -39,7 +39,7 @@ let ctx = Executor::new()
 
 ### `CognitiveReport`
 
-Returned from `execute_with_cognition`:
+从 `execute_with_cognition` 返回：
 
 ```rust
 pub struct CognitiveReport {
@@ -52,33 +52,33 @@ pub struct CognitiveReport {
 
 ### `DependencyResolver`
 
-Resolves dependency mappings across composite graphs:
+解析组合图之间的依赖映射：
 
 ```rust
 pub fn resolve(composite: &CompositeGraph) -> Result<Vec<String>, String>;
 ```
 
-## Execution Flow
+## 执行流程
 
-1. **Synthesize**: `FlowSynthesizer::synthesize()` converts a natural-language goal into an `SOPGraph`
-2. **Execute**: `Executor::execute_with_context()` runs the DAG with topological ordering — independent nodes run in parallel via `tokio::task::JoinSet`
-3. **Simulate**: `MonteCarloSimulator` estimates success probability and cost via random path sampling
-4. **Reflect**: `StandardReflector` compares prediction vs actual trace, producing a deviation score
-5. **Evolve**: If deviation > threshold, `StandardEvolver` mutates the SOP (fuel adjustment, retry wrappers)
-6. **Loop**: Repeat until convergence or max iterations
+1. **合成**：`FlowSynthesizer::synthesize()` 将自然语言目标转换为 `SOPGraph`
+2. **执行**：`Executor::execute_with_context()` 按拓扑序运行 DAG，独立节点通过 `tokio::task::JoinSet` 并行执行
+3. **模拟**：`MonteCarloSimulator` 通过随机路径采样估算成功概率与成本
+4. **反思**：`StandardReflector` 对比预测与实际轨迹，产生偏差分数
+5. **演进**：偏差 > 阈值时 `StandardEvolver` 变异 SOP（燃料调整、重试包装）
+6. **循环**：重复直到收敛或达到最大迭代次数
 
-## Benchmark Binary
+## 基准二进制
 
-`cargo run --release -p sisyphus-core --bin integration_stress` runs an end-to-end in-process stress test.
+`cargo run --release -p sisyphus-core --bin integration_stress` 运行端到端进程内压力测试。
 
-## Example
+## 示例
 
 ```rust
 use sisyphus_core::{SisyphusKernel, Executor, SOPGraph, WasmSOPNode};
 use sisyphus_sandbox::WasmToolExecutor;
 use std::sync::Arc;
 
-// Build a single-node SOP
+// 构建单节点 SOP
 let executor = Arc::new(WasmToolExecutor::new()?);
 let tool = WasmSOPNode {
     name: "greet".into(),

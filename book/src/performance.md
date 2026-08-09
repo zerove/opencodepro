@@ -1,90 +1,90 @@
-# Performance
+# 性能
 
-Sisyphus includes several performance optimizations.
+Sisyphus 包含多项性能优化。
 
-## Pipeline Batching
+## 流水线批处理
 
-Nodes are executed in adaptive batches based on historical execution times.
+节点根据历史执行时间进行自适应批次执行：
 
-- Fast nodes (<50ms): Larger batches (1.5x)
-- Slow nodes (>500ms): Smaller batches (0.7x)
-- Medium nodes: Maintain current batch size
+- 快速节点（<50ms）：较大批次（1.5x）
+- 慢速节点（>500ms）：较小批次（0.7x）
+- 中等节点：保持当前批次大小
 
-## Output Deduplication Cache
+## 输出去重缓存
 
-The `OutputCache` stores content-hash indexed results to avoid re-executing identical computations.
+`OutputCache` 存储内容哈希索引的结果，避免重复执行相同计算：
 
-- 1000 entry capacity
-- Content-hash based (deterministic)
-- Automatic eviction on capacity
+- 1000 条目容量
+- 基于内容哈希（确定性）
+- 达到容量自动逐出
 
-## Context Compression
+## 上下文压缩
 
-Large context values are automatically compressed:
+大上下文值自动压缩：
 
-- Strings > threshold: Truncated with marker
-- Objects > 10 keys: Kept first 10 keys
+- 字符串超过阈值：截断并加标记
+- 对象超过 10 个键：仅保留前 10 个键
 
-## Execution Profiler
+## 执行性能分析器
 
-Tracks per-node execution metrics:
+跟踪每个节点的执行指标：
 
-- Average duration by node type
-- Cache hit rate
-- Slowest nodes list
+- 按节点类型的平均时长
+- 缓存命中率
+- 最慢节点列表
 
-## Benchmarks
+## 基准测试
 
 ```bash
 cargo bench -p sisyphus-core
 ```
 
-Benchmark results are stored in `target/criterion/`.
+基准结果存储在 `target/criterion/`。
 
-## Performance Tuning
+## 性能调优
 
-### Cache Tuning
+### 缓存调优
 
-The `OutputCache` eviction policy and capacity can be tuned for different workloads.
+`OutputCache` 的逐出策略与容量可针对不同工作负载调优。
 
-| Parameter        | Default | Description                          | Recommendation                     |
+| 参数        | 默认值 | 说明                          | 建议                     |
 |------------------|---------|--------------------------------------|------------------------------------|
-| Cache capacity   | 1000    | Max entries before eviction          | Increase for repetitive workloads  |
-| Context threshold| 4096    | Bytes before compression triggers    | Decrease for memory-constrained    |
-| Batch base size  | 4       | Initial pipeline batch size          | Increase for high-throughput       |
+| 缓存容量   | 1000    | 逐出前的最大条目数          | 重复工作负载时增大 |
+| 上下文阈值 | 4096 | 触发压缩前的字节数 | 内存受限时减小 |
+| 批次基数 | 4       | 初始流水线批次大小          | 高吞吐时增大       |
 
-**Trade-offs**: A larger cache reduces re-execution at the cost of memory. Monitor the cache hit rate via the execution profiler. If hit rate is below 60%, consider increasing the capacity. If above 95%, reducing it can free memory without impact.
+**权衡**：更大的缓存以减少重复执行为代价占用更多内存。通过性能分析器监控缓存命中率。命中率低于 60% 时考虑增大容量。超过 95% 时减小容量可释放内存且不影响性能。
 
-### Sandboxd Mode Selection
+### Sandboxd 模式选择
 
-The sandbox daemon (`sandboxd`) can run in two modes:
+沙箱守护进程（`sandboxd`）可运行在两种模式：
 
-| Mode       | Latency | Isolation | Use case                     |
+| 模式       | 延迟 | 隔离 | 使用场景                     |
 |------------|---------|-----------|------------------------------|
-| **Embedded** | ~50µs  | Process   | Development, trusted workloads |
-| **Daemon**   | ~500µs | Container | Production, untrusted code     |
+| **嵌入式** | ~50µs  | 进程   | 开发、可信工作负载 |
+| **守护进程** | ~500µs | 容器 | 生产、不可信代码     |
 
-- **Embedded mode** instantiates a Wasm runtime in-process. Lowest latency but no container-level isolation. Suitable for development and CI.
-- **Daemon mode** communicates with a separate `sandboxd` process via gRPC. Higher latency per invocation but provides container-level sandboxing.
+- **嵌入式**在进程内实例化 Wasm 运行时。延迟最低，但无容器级隔离。适合开发与 CI。
+- **守护进程**通过 gRPC 与单独的 `sandboxd` 进程通信。每次调用延迟更高，但提供容器级沙箱。
 
-Switch modes by configuring the tool executor in `Config.tool_executor`. The daemon mode is the default for production deployments.
+在 `Config.tool_executor` 中通过配置工具执行器切换模式。守护进程模式是生产部署的默认。
 
-### Concurrent Task Tuning
+### 并发任务调优
 
-The cognitive loop supports configurable concurrency for parallel branch evaluation.
+认知循环支持可配置的并发，用于并行分支评估。
 
 ```toml
 # config.toml
 [cognitive_loop]
-max_concurrent_tasks = 4      # Parallel branches in ParallelBranchPredictor
-max_iterations = 30           # Upper bound on cognitive iterations
-convergence_threshold = 0.15  # Stop when deviation drops below this
+max_concurrent_tasks = 4      # ParallelBranchPredictor 中的并行分支
+max_iterations = 30           # 认知迭代次数上限
+convergence_threshold = 0.15  # 偏差低于此值时停止
 ```
 
-Tuning guidelines:
+调优指南：
 
-- **max_concurrent_tasks**: Set to the number of CPU cores for CPU-bound workloads. For I/O-bound (LLM calls), higher values (8-16) can improve throughput.
-- **max_iterations**: Lower values reduce worst-case latency. Higher values improve convergence quality.
-- **convergence_threshold**: Tighter (lower) thresholds improve output quality at the cost of more iterations.
+- **max_concurrent_tasks**：CPU 密集型工作负载设置为 CPU 核心数。I/O 密集（LLM 调用）时，更高值（8-16）可提升吞吐量。
+- **max_iterations**：更低的值降低最坏情况延迟。更高的值提升收敛质量。
+- **convergence_threshold**：更严格（更低）的阈值提升输出质量，但需要更多迭代。
 
-Monitor cognitive loop performance using the tracing spans (`predict`, `execute`, `reflect`, `evolve`) via `RUST_LOG=sisyphus_core=info`.
+使用 `RUST_LOG=sisyphus_core=info` 通过 tracing spans（`predict`、`execute`、`reflect`、`evolve`）监控认知循环性能。

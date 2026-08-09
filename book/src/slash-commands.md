@@ -1,1 +1,1 @@
-# Slash Commands
+# 斜杠命令

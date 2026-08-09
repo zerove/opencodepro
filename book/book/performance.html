@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Performance - Sisyphus Documentation</title>
+        <title>性能 - Sisyphus Documentation</title>
 
 
         <!-- Custom HTML head -->
@@ -35,10 +35,10 @@
             const path_to_root = "";
             const default_light_theme = "dark";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-db31fd4d.js";
+            window.path_to_searchindex_js = "searchindex-92536088.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-8abccaca.js"></script>
+        <script src="toc-0abde3c6.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -174,39 +174,88 @@
 
                 <div id="mdbook-content" class="content">
                     <main>
-                        <h1 id="performance"><a class="header" href="#performance">Performance</a></h1>
-<p>Sisyphus includes several performance optimizations.</p>
-<h2 id="pipeline-batching"><a class="header" href="#pipeline-batching">Pipeline Batching</a></h2>
-<p>Nodes are executed in adaptive batches based on historical execution times.</p>
+                        <h1 id="性能"><a class="header" href="#性能">性能</a></h1>
+<p>Sisyphus 包含多项性能优化。</p>
+<h2 id="流水线批处理"><a class="header" href="#流水线批处理">流水线批处理</a></h2>
+<p>节点根据历史执行时间进行自适应批次执行：</p>
 <ul>
-<li>Fast nodes (&lt;50ms): Larger batches (1.5x)</li>
-<li>Slow nodes (&gt;500ms): Smaller batches (0.7x)</li>
-<li>Medium nodes: Maintain current batch size</li>
+<li>快速节点（&lt;50ms）：较大批次（1.5x）</li>
+<li>慢速节点（&gt;500ms）：较小批次（0.7x）</li>
+<li>中等节点：保持当前批次大小</li>
 </ul>
-<h2 id="output-deduplication-cache"><a class="header" href="#output-deduplication-cache">Output Deduplication Cache</a></h2>
-<p>The <code>OutputCache</code> stores content-hash indexed results to avoid re-executing identical computations.</p>
+<h2 id="输出去重缓存"><a class="header" href="#输出去重缓存">输出去重缓存</a></h2>
+<p><code>OutputCache</code> 存储内容哈希索引的结果，避免重复执行相同计算：</p>
 <ul>
-<li>1000 entry capacity</li>
-<li>Content-hash based (deterministic)</li>
-<li>Automatic eviction on capacity</li>
+<li>1000 条目容量</li>
+<li>基于内容哈希（确定性）</li>
+<li>达到容量自动逐出</li>
 </ul>
-<h2 id="context-compression"><a class="header" href="#context-compression">Context Compression</a></h2>
-<p>Large context values are automatically compressed:</p>
+<h2 id="上下文压缩"><a class="header" href="#上下文压缩">上下文压缩</a></h2>
+<p>大上下文值自动压缩：</p>
 <ul>
-<li>Strings &gt; threshold: Truncated with marker</li>
-<li>Objects &gt; 10 keys: Kept first 10 keys</li>
+<li>字符串超过阈值：截断并加标记</li>
+<li>对象超过 10 个键：仅保留前 10 个键</li>
 </ul>
-<h2 id="execution-profiler"><a class="header" href="#execution-profiler">Execution Profiler</a></h2>
-<p>Tracks per-node execution metrics:</p>
+<h2 id="执行性能分析器"><a class="header" href="#执行性能分析器">执行性能分析器</a></h2>
+<p>跟踪每个节点的执行指标：</p>
 <ul>
-<li>Average duration by node type</li>
-<li>Cache hit rate</li>
-<li>Slowest nodes list</li>
+<li>按节点类型的平均时长</li>
+<li>缓存命中率</li>
+<li>最慢节点列表</li>
 </ul>
-<h2 id="benchmarks"><a class="header" href="#benchmarks">Benchmarks</a></h2>
+<h2 id="基准测试"><a class="header" href="#基准测试">基准测试</a></h2>
 <pre><code class="language-bash">cargo bench -p sisyphus-core
 </code></pre>
-<p>Benchmark results are stored in <code>target/criterion/</code>.</p>
+<p>基准结果存储在 <code>target/criterion/</code>。</p>
+<h2 id="性能调优"><a class="header" href="#性能调优">性能调优</a></h2>
+<h3 id="缓存调优"><a class="header" href="#缓存调优">缓存调优</a></h3>
+<p><code>OutputCache</code> 的逐出策略与容量可针对不同工作负载调优。</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>参数</th><th>默认值</th><th>说明</th><th>建议</th></tr>
+</thead>
+<tbody>
+<tr><td>缓存容量</td><td>1000</td><td>逐出前的最大条目数</td><td>重复工作负载时增大</td></tr>
+<tr><td>上下文阈值</td><td>4096</td><td>触发压缩前的字节数</td><td>内存受限时减小</td></tr>
+<tr><td>批次基数</td><td>4</td><td>初始流水线批次大小</td><td>高吞吐时增大</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>权衡</strong>：更大的缓存以减少重复执行为代价占用更多内存。通过性能分析器监控缓存命中率。命中率低于 60% 时考虑增大容量。超过 95% 时减小容量可释放内存且不影响性能。</p>
+<h3 id="sandboxd-模式选择"><a class="header" href="#sandboxd-模式选择">Sandboxd 模式选择</a></h3>
+<p>沙箱守护进程（<code>sandboxd</code>）可运行在两种模式：</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>模式</th><th>延迟</th><th>隔离</th><th>使用场景</th></tr>
+</thead>
+<tbody>
+<tr><td><strong>嵌入式</strong></td><td>~50µs</td><td>进程</td><td>开发、可信工作负载</td></tr>
+<tr><td><strong>守护进程</strong></td><td>~500µs</td><td>容器</td><td>生产、不可信代码</td></tr>
+</tbody>
+</table>
+</div>
+<ul>
+<li><strong>嵌入式</strong>在进程内实例化 Wasm 运行时。延迟最低，但无容器级隔离。适合开发与 CI。</li>
+<li><strong>守护进程</strong>通过 gRPC 与单独的 <code>sandboxd</code> 进程通信。每次调用延迟更高，但提供容器级沙箱。</li>
+</ul>
+<p>在 <code>Config.tool_executor</code> 中通过配置工具执行器切换模式。守护进程模式是生产部署的默认。</p>
+<h3 id="并发任务调优"><a class="header" href="#并发任务调优">并发任务调优</a></h3>
+<p>认知循环支持可配置的并发，用于并行分支评估。</p>
+<pre><code class="language-toml"># config.toml
+[cognitive_loop]
+max_concurrent_tasks = 4      # ParallelBranchPredictor 中的并行分支
+max_iterations = 30           # 认知迭代次数上限
+convergence_threshold = 0.15  # 偏差低于此值时停止
+</code></pre>
+<p>调优指南：</p>
+<ul>
+<li><strong>max_concurrent_tasks</strong>：CPU 密集型工作负载设置为 CPU 核心数。I/O 密集（LLM 调用）时，更高值（8-16）可提升吞吐量。</li>
+<li><strong>max_iterations</strong>：更低的值降低最坏情况延迟。更高的值提升收敛质量。</li>
+<li><strong>convergence_threshold</strong>：更严格（更低）的阈值提升输出质量，但需要更多迭代。</li>
+</ul>
+<p>使用 <code>RUST_LOG=sisyphus_core=info</code> 通过 tracing spans（<code>predict</code>、<code>execute</code>、<code>reflect</code>、<code>evolve</code>）监控认知循环性能。</p>
 
                     </main>
 

@@ -1,12 +1,12 @@
-# sisyphus-bridge — Entry Point & API
+# sisyphus-bridge — 入口点与 API
 
-The binary crate that ties all components together into a runnable gRPC service.
+将各组件整合为可运行的 gRPC 服务的二进制 crate。
 
-## Entry Point
+## 入口点
 
-### `main.rs` (gRPC Server)
+### `main.rs`（gRPC 服务器）
 
-A Tonic gRPC server listening on `[::1]:50051`:
+监听 `[::1]:50051` 的 Tonic gRPC 服务器：
 
 ```protobuf
 service SisyphusBridge {
@@ -18,11 +18,11 @@ service SisyphusBridge {
 }
 ```
 
-**`ExecuteSOP`** handles two modes:
-- **Goal execution**: If `sop_id` starts with `"goal:"`, the bridge synthesizes, executes, and runs the cognitive loop
-- **Direct execution**: Otherwise, loads a saved SOP by ID and executes it
+**`ExecuteSOP`** 支持两种模式：
+- **目标执行**：若 `sop_id` 以 `"goal:"` 开头，bridge 合成、执行并运行认知循环
+- **直接执行**：否则按 ID 加载已保存的 SOP 并执行
 
-### Request/Response
+### 请求/响应
 
 ```protobuf
 message ExecuteSOPRequest {
@@ -31,60 +31,60 @@ message ExecuteSOPRequest {
 }
 
 message SOPResponse {
-  string status = 1;   // "SUCCESS" or error string
-  string result = 2;   // Execution result + cognition report
+  string status = 1;   // "SUCCESS" 或错误字符串
+  string result = 2;   // 执行结果 + 认知报告
 }
 ```
 
-## Initialization Flow
+## 初始化流程
 
 ```
-Config (TOML + env vars)
+Config (TOML + 环境变量)
     │
     ▼
-MfsStore ← SQLite connection
+MfsStore ← SQLite 连接
     │
     ▼
-WasmToolExecutor ← tools/ directory
+WasmToolExecutor ← tools/ 目录
     │
     ▼
-SisyphusIntel ← simulator + reflector + evolver
+SisyphusIntel ← 模拟器 + 反思器 + 演进器
     │
     ▼
-GoalDrivenSynthesizer ← tool executor
+GoalDrivenSynthesizer ← 工具执行器
     │
     ▼
 SisyphusKernel ← state_store + tool_executor + intel + synthesizer
     │
     ▼
-MySisyphusBridge ← wraps kernel
+MySisyphusBridge ← 包装 kernel
     │
     ▼
-gRPC server ← tonic on [::1]:50051
+gRPC 服务器 ← tonic 监听 [::1]:50051
 ```
 
-## Configuration
+## 配置
 
-The bridge reads `config.toml` (or `$SISYPHUS_CONFIG` path) and calls `config.apply_env_overrides()` to merge environment variables. Metrics initialized on the port from `config.metrics.prometheus_port`.
+Bridge 读取 `config.toml`（或 `$SISYPHUS_CONFIG` 路径）并调用 `config.apply_env_overrides()` 合并环境变量。指标在 `config.metrics.prometheus_port` 指定的端口初始化。
 
-### ExecuteTool — Direct Tool Execution
+### ExecuteTool — 直接工具执行
 
-Calls any built-in or agent tool directly via the `ExecutorRouter`. Useful for remote access to `librarian`, `metis`, `momus`, and all file/shell/web tools.
+通过 `ExecutorRouter` 直接调用任意内置或代理工具。可用于远程访问 `librarian`、`metis`、`momus` 以及所有文件/shell/web 工具。
 
 ```protobuf
 message ExecuteToolRequest {
-  string tool_id = 1;      // e.g. "file_read", "librarian/research", "metis/analyse"
-  string args_json = 2;    // JSON-encoded arguments (see crates/tools.md for schemas)
-  uint64 fuel_limit = 3;   // max execution units (0 = default)
+  string tool_id = 1;      // 例如 "file_read", "librarian/research", "metis/analyse"
+  string args_json = 2;    // JSON 编码的参数（schema 见 crates/tools.md）
+  uint64 fuel_limit = 3;   // 最大执行单位（0 = 默认）
 }
 
 message ExecuteToolResponse {
-  string status = 1;       // "SUCCESS" or error message
-  string result_json = 2;  // JSON-encoded result
+  string status = 1;       // "SUCCESS" 或错误消息
+  string result_json = 2;  // JSON 编码的结果
 }
 ```
 
-Usage via the CLI's `BridgeClient`:
+通过 CLI 的 `BridgeClient` 使用：
 
 ```rust
 let mut client = BridgeClient::connect("http://[::1]:50051").await?;
@@ -95,15 +95,15 @@ let resp = client.execute_tool(
 println!("{}", resp.result_json);
 ```
 
-## Running
+## 运行
 
 ```bash
-# Build
+# 构建
 cargo build --release -p sisyphus-bridge
 
-# Run with default config
+# 使用默认配置运行
 ./target/release/sisyphus-bridge
 
-# Custom config
+# 自定义配置
 SISYPHUS_CONFIG=/etc/sisyphus/prod.toml ./target/release/sisyphus-bridge
 ```

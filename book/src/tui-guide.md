@@ -1,81 +1,81 @@
-# TUI Guide
+# TUI 指南
 
-Sisyphus includes a full-featured Terminal User Interface built with ratatui.
+Sisyphus 包含基于 ratatui 构建的全功能终端用户界面（Terminal User Interface，TUI）。
 
-## Navigation
+## 导航
 
-| Key | Action |
+| 按键 | 操作 |
 |-----|--------|
-| `Ctrl+K` | Open command palette |
-| `Ctrl+L` | Session list |
-| `Ctrl+M` | Model list |
-| `Ctrl+A` | Agent list |
-| `Ctrl+N` | New session |
-| `Ctrl+H` | Go home |
-| `Ctrl+Q` | Exit |
-| `F1` | Help |
+| `Ctrl+K` | 打开命令面板 |
+| `Ctrl+L` | 会话列表 |
+| `Ctrl+M` | 模型列表 |
+| `Ctrl+A` | 代理列表 |
+| `Ctrl+N` | 新建会话 |
+| `Ctrl+H` | 返回主页 |
+| `Ctrl+Q` | 退出 |
+| `F1` | 帮助 |
 
-## Input Editing
+## 输入编辑
 
-| Key | Action |
+| 按键 | 操作 |
 |-----|--------|
-| `Home` / `End` | Move to start/end of line |
-| `Ctrl+U` | Delete to start of line |
-| `Ctrl+W` | Delete word backward |
-| `Ctrl+V` | Paste from clipboard |
+| `Home` / `End` | 移至行首/行尾 |
+| `Ctrl+U` | 删除到行首 |
+| `Ctrl+W` | 向后删除一个单词 |
+| `Ctrl+V` | 从剪贴板粘贴 |
 
-## Slash Commands
+## 斜杠命令
 
-Type `/` at the start of input to trigger the slash command completion popup.
+在输入框开头输入 `/` 触发斜杠命令补全弹窗。
 
-Available commands:
+可用命令：
 
-| Command | Description |
+| 命令 | 说明 |
 |---------|-------------|
-| `/help` | Show keybindings & help |
-| `/exit` | Exit Sisyphus |
-| `/clear` | Clear the log |
-| `/theme` | Toggle dark/light theme |
-| `/sessions` | Switch or manage sessions |
-| `/new` | Create a new session |
-| `/model` | Switch AI model |
-| `/agent` | Switch agent |
-| `/dev` | Run autonomous dev agent |
-| `/todos` | Manage todo list |
-| `/lsp` | View LSP diagnostics |
-| `/sop` | List & execute SOPs |
-| `/skills` | Browse & install skills |
-| `/roadmap` | View project roadmap |
-| `/bridge` | Check bridge health |
-| `/home` | Return to Home screen |
-| `/search` | Search messages in session |
+| `/help` | 显示按键绑定与帮助 |
+| `/exit` | 退出 Sisyphus |
+| `/clear` | 清空日志 |
+| `/theme` | 切换深色/浅色主题 |
+| `/sessions` | 切换或管理会话 |
+| `/new` | 创建新会话 |
+| `/model` | 切换 AI 模型 |
+| `/agent` | 切换代理 |
+| `/dev` | 运行自主开发代理 |
+| `/todos` | 管理待办列表 |
+| `/lsp` | 查看 LSP 诊断 |
+| `/sop` | 列出并执行 SOP |
+| `/skills` | 浏览并安装技能 |
+| `/roadmap` | 查看项目路线图 |
+| `/bridge` | 检查 bridge 健康状态 |
+| `/home` | 返回主页屏幕 |
+| `/search` | 在会话中搜索消息 |
 
-### Navigation
+### 导航
 
-- `Up` / `Down` - Navigate the completion list
-- `Tab` / `Enter` - Accept the selected completion
-- `Esc` - Close the completion popup
+- `Up` / `Down` - 在补全列表中导航
+- `Tab` / `Enter` - 接受选中的补全
+- `Esc` - 关闭补全弹窗
 
-## @file References
+## @文件引用
 
-Reference files in your input with `@` prefix:
+在输入中使用 `@` 前缀引用文件：
 
 ```
 Look at @src/main.rs and @lib.rs
 ```
 
-The file contents will be automatically expanded with a line limit of 200 lines.
+文件内容将自动展开，行数上限为 200 行。
 
-## Session Features
+## 会话功能
 
-- **Fork**: Create a branch from any session
-- **Undo**: Revert the last message
-- **Rename**: Change session name
-- **Compress**: Summarize old messages to save tokens
-- **Checkpoint**: Save/restore session state
-- **Export**: Export as JSON or HTML
-- **Import**: Import from JSON
+- **分叉**：从任意会话创建分支
+- **撤销**：回退最后一条消息
+- **重命名**：更改会话名称
+- **压缩**：总结旧消息以节省 token
+- **检查点**：保存/恢复会话状态
+- **导出**：导出为 JSON 或 HTML
+- **导入**：从 JSON 导入
 
-## Search
+## 搜索
 
-Press `/search` in a session to activate search mode. Navigate matches with `n` (next) and `p` (previous).
+在会话中按 `/search` 激活搜索模式。用 `n`（下一个）与 `p`（上一个）导航匹配项。

@@ -36,10 +36,10 @@
             const path_to_root = "";
             const default_light_theme = "dark";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-db31fd4d.js";
+            window.path_to_searchindex_js = "searchindex-92536088.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-8abccaca.js"></script>
+        <script src="toc-0abde3c6.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -175,136 +175,371 @@
 
                 <div id="mdbook-content" class="content">
                     <main>
-                        <h1 id="sisyphus--cognitive-computation-engine"><a class="header" href="#sisyphus--cognitive-computation-engine">Sisyphus — Cognitive Computation Engine</a></h1>
-<p>Sisyphus is a <strong>cognitive computation engine</strong> for building autonomous AI agents that plan, execute, and improve their behavior through a recursive <strong>observe–orient–decide–act</strong> (OODA) loop.</p>
-<h2 id="what-it-does"><a class="header" href="#what-it-does">What It Does</a></h2>
-<p>At its core, Sisyphus takes a high-level goal (expressed in natural language) and:</p>
+                        <h1 id="sisyphus--认知计算引擎"><a class="header" href="#sisyphus--认知计算引擎">Sisyphus — 认知计算引擎</a></h1>
+<p>Sisyphus 是一个<strong>认知计算引擎</strong>，用于构建能够通过递归 <strong>观察–判断–决策–行动</strong>（observe–orient–decide–act，OODA）循环来规划、执行并改进自身行为的自主 AI 代理。</p>
+<h2 id="功能概述"><a class="header" href="#功能概述">功能概述</a></h2>
+<p>Sisyphus 的核心是接收一个高层目标（以自然语言表达），然后：</p>
 <ol>
-<li><strong>Synthesizes</strong> a Standard Operating Procedure (SOP) — a directed acyclic graph (DAG) of executable sub-steps.</li>
-<li><strong>Executes</strong> the SOP in parallel across available nodes, respecting dependencies.</li>
-<li><strong>Simulates</strong> outcomes via Monte Carlo tree search to predict success probability.</li>
-<li><strong>Reflects</strong> on execution results — computing a <em>deviation score</em> between predicted and actual outcomes.</li>
-<li><strong>Evolves</strong> the SOP — retrying failed nodes, increasing fuel budgets, or restructuring the graph.</li>
+<li><strong>合成</strong>（Synthesize）标准操作程序（Standard Operating Procedure，SOP）—— 一个由可执行子步骤组成的有向无环图（directed acyclic graph，DAG）。</li>
+<li><strong>执行</strong>（Execute）SOP，在可用节点上按依赖关系并行运行。</li>
+<li><strong>模拟</strong>（Simulate）通过蒙特卡洛树搜索评估结果，预测成功概率。</li>
+<li><strong>反思</strong>（Reflect）执行结果，计算预测与实际结果之间的<em>偏差分数</em>（deviation score）。</li>
+<li><strong>演进</strong>（Evolve）SOP，重试失败节点、增加燃料预算，或重构图结构。</li>
 </ol>
-<p>This loop continues until the goal converges (deviation below threshold) or a maximum iteration limit is reached.</p>
-<h2 id="why-sisyphus"><a class="header" href="#why-sisyphus">Why Sisyphus?</a></h2>
+<p>该循环持续进行，直到目标收敛（偏差低于阈值）或达到最大迭代次数。</p>
+<h2 id="为什么选择-sisyphus"><a class="header" href="#为什么选择-sisyphus">为什么选择 Sisyphus？</a></h2>
 <ul>
-<li><strong>Self-improving</strong>: The engine learns from every execution, evolving its SOPs without human intervention.</li>
-<li><strong>Safe by design</strong>: WASM sandboxing for tool code execution with fuel limits and memory bounds.</li>
-<li><strong>Observable</strong>: Built-in Prometheus metrics for every cognitive operation.</li>
-<li><strong>Composable</strong>: Each crate is independent; use just the parts you need.</li>
+<li><strong>自我改进</strong>：引擎从每次执行中学习，无需人工干预即可演进其 SOP。</li>
+<li><strong>设计即安全</strong>：工具代码在 WASM 沙箱中执行，带燃料上限与内存边界。</li>
+<li><strong>可观测</strong>：每个认知操作都内置 Prometheus 指标。</li>
+<li><strong>可组合</strong>：每个 crate 相互独立，可按需取用。</li>
 </ul>
-<h2 id="project-status"><a class="header" href="#project-status">Project Status</a></h2>
-<p>Sisyphus is in <strong>active development</strong> (v0.1.0). The core cognitive loop is functional and tested, with WASM tool execution, multi-level caching, and Prometheus metrics integration.</p>
-<h2 id="next-steps"><a class="header" href="#next-steps">Next Steps</a></h2>
+<h2 id="项目状态"><a class="header" href="#项目状态">项目状态</a></h2>
+<p>Sisyphus 处于<strong>积极开发</strong>中（v0.1.0）。核心认知循环已可用并通过测试，具备 WASM 工具执行、多级缓存与 Prometheus 指标集成。</p>
+<h2 id="下一步"><a class="header" href="#下一步">下一步</a></h2>
 <ul>
-<li>Read the <a href="#architecture-overview">Architecture Overview</a> for a high-level system design.</li>
-<li>Dive into the <a href="concepts.html">Key Concepts</a> to understand SOPs, cognitive loops, and DAG execution.</li>
-<li>Check the <a href="crates.html">Crate Reference</a> for detailed API documentation.</li>
+<li>阅读<a href="#架构总览">架构总览</a>了解高层系统设计。</li>
+<li>深入<a href="concepts.html">核心概念</a>理解 SOP、认知循环与 DAG 执行。</li>
+<li>查看 <a href="crates.html">Crate 参考</a>获取详细 API 文档。</li>
 </ul>
 <div style="break-before: page; page-break-before: always;"></div>
-<h1 id="getting-started"><a class="header" href="#getting-started">Getting Started</a></h1>
-<div style="break-before: page; page-break-before: always;"></div>
-<h1 id="architecture-overview"><a class="header" href="#architecture-overview">Architecture Overview</a></h1>
-<p>Sisyphus is organized as a <strong>Rust workspace</strong> with seven interdependent crates, each responsible for a distinct concern:</p>
-<pre><code>┌─────────────────────────────────────────────────┐
-│                   sisyphus-bridge                 │
-│           HTTP/gRPC API · Entry Points            │
-├─────────────────────────────────────────────────┤
-│                   sisyphus-core                   │
-│        Kernel · Orchestration · Cognitive Loop    │
-├────────┬────────┬────────┬────────┬──────────────┤
-│  types  │  intel  │   mem   │ sandbox │  metrics   │
-│   datatypes │cognition│storage  │WASM run │ observability│
-└────────┴────────┴────────┴────────┴──────────────┘
+<h1 id="快速开始"><a class="header" href="#快速开始">快速开始</a></h1>
+<p>本指南将带你完成 Sisyphus 的安装设置、认知引擎的运行，以及第一个 SOP 的执行。</p>
+<h2 id="环境要求"><a class="header" href="#环境要求">环境要求</a></h2>
+<p>开始之前，请确保系统满足以下要求：</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>组件</th><th>要求</th><th>说明</th></tr>
+</thead>
+<tbody>
+<tr><td><strong>Rust</strong></td><td>nightly (1.98.0+)</td><td>wasmtime/cranelift 要求；stable 在 bridge 上有 ICE (1.96.0)。已提供 <code>rust-toolchain.toml</code> 覆盖。</td></tr>
+<tr><td><strong>Go</strong></td><td>1.21+</td><td>构建 Go SDK（<code>crates/sisyphus-sdk-go</code>）所需。</td></tr>
+<tr><td><strong>Node.js</strong></td><td>20+</td><td>TypeScript SDK 与 MCP 工具服务器（<code>workers/ts-tools-mcp</code>）所需。</td></tr>
+<tr><td><strong>操作系统</strong></td><td>Linux / macOS</td><td>Windows 暂不支持 bridge 与 sandbox。</td></tr>
+</tbody>
+</table>
+</div>
+<p>安装 Rust nightly：</p>
+<pre><code class="language-bash">rustup toolchain install nightly
+rustup default nightly
 </code></pre>
-<h2 id="dependency-flow"><a class="header" href="#dependency-flow">Dependency Flow</a></h2>
+<p>验证环境：</p>
+<pre><code class="language-bash">rustc --version  # 应显示 nightly-2026-xx-xx 或类似版本
+cargo --version
+</code></pre>
+<h2 id="快速开始-1"><a class="header" href="#快速开始-1">快速开始</a></h2>
+<h3 id="1-克隆并构建"><a class="header" href="#1-克隆并构建">1. 克隆并构建</a></h3>
+<pre><code class="language-bash">git clone https://github.com/zeronhq/sisyphus-wasm.git
+cd sisyphus-wasm
+
+# 检查工作区（为提速排除重型 bridge/sandbox crate）
+make check-all
+
+# 构建完整工作区
+make build-all
+</code></pre>
+<blockquote>
+<p><strong>注意：</strong> 完整 <code>cargo check --workspace</code> 在内存低于 16 GB 的机器上可能 OOM，因为 <code>sisyphus-sandbox</code> 和 <code>sisyphus-bridge</code> 引入了 wasmtime/cranelift。日常开发请使用 <code>make check-all</code>（排除重型 crate）。</p>
+</blockquote>
+<h3 id="2-配置"><a class="header" href="#2-配置">2. 配置</a></h3>
+<p>复制示例配置并按需调整：</p>
+<pre><code class="language-bash">cp config.example.toml config.toml
+</code></pre>
+<p>默认配置可直接使用位于 <code>http://localhost:8000/v1/chat/completions</code> 的 LLM 端点。设置 <code>SISYPHUS_LLM_API_KEY</code> 和 <code>SISYPHUS_LLM_ENDPOINT</code> 指向您的 LLM 提供商：</p>
+<pre><code class="language-bash">export SISYPHUS_LLM_API_KEY="your-api-key"
+export SISYPHUS_LLM_ENDPOINT="https://api.openai.com/v1/chat/completions"
+export SISYPHUS_LLM_MODEL="gpt-4o"
+</code></pre>
+<p>查看<a href="#配置-1">配置</a>页面了解所有可用选项。</p>
+<h3 id="3-运行-bridge"><a class="header" href="#3-运行-bridge">3. 运行 Bridge</a></h3>
+<p>gRPC bridge 是引擎的主要入口，同时暴露 gRPC（端口 50051）与 HTTP REST（端口 8080）API：</p>
+<pre><code class="language-bash">cargo run -p sisyphus-bridge
+</code></pre>
+<p>默认情况下 bridge 监听 <code>http://[::1]:50051</code>（IPv6，自动回退 IPv4）。可用以下方式覆盖：</p>
+<pre><code class="language-bash">cargo run -p sisyphus-bridge -- --address http://127.0.0.1:50051
+</code></pre>
+<p>您会看到 bridge 已启动的日志输出：</p>
+<pre><code>[2026-07-30T11:40:00Z INFO  sisyphus_bridge] Starting gRPC bridge on [::1]:50051
+[2026-07-30T11:40:00Z INFO  sisyphus_bridge] HTTP REST API on [::1]:8080
+</code></pre>
+<h3 id="4-连接-tui"><a class="header" href="#4-连接-tui">4. 连接 TUI</a></h3>
+<p>在另一个终端中启动终端用户界面（Terminal User Interface，TUI）：</p>
+<pre><code class="language-bash">cargo run -p sisyphus-cli
+</code></pre>
+<p>如果 bridge 运行在非默认地址，通过 <code>--bridge</code> 标志指定：</p>
+<pre><code class="language-bash">cargo run -p sisyphus-cli -- --bridge http://127.0.0.1:50051
+</code></pre>
+<p>TUI 连接 bridge 并显示主控制台。按 <code>Ctrl+N</code> 创建新会话，然后用自然语言输入一个目标。</p>
+<p>参见<a href="#tui-指南"> TUI 指南</a> 了解键盘快捷键与功能。</p>
+<h3 id="5-用健康检查验证"><a class="header" href="#5-用健康检查验证">5. 用健康检查验证</a></h3>
+<p>bridge 运行后，用快速 REST API 调用验证连通性：</p>
+<pre><code class="language-bash">curl http://[::1]:8080/health
+</code></pre>
+<p>预期响应：</p>
+<pre><code class="language-json">{"status":"ok","version":"0.1.0"}
+</code></pre>
+<h2 id="简单示例执行一个-sop"><a class="header" href="#简单示例执行一个-sop">简单示例：执行一个 SOP</a></h2>
+<p>bridge 运行且 TUI 已连接后，按以下步骤操作：</p>
+<ol>
+<li><strong>新建会话</strong> — 在 TUI 中按 <code>Ctrl+N</code>。</li>
+<li><strong>输入目标</strong> — 输入自然语言目标，例如：
+<pre><code>Create a Markdown file named "hello-sisyphus.md" with the content "# Hello, Sisyphus!"
+</code></pre>
+</li>
+<li><strong>观察认知循环</strong> — 引擎将：
+<ul>
+<li>合成 SOP（子步骤 DAG）</li>
+<li>使用 WASM 工具或 LLM 调用执行每个步骤</li>
+<li>反思结果，必要时演进 SOP</li>
+<li>目标达成时收敛</li>
+</ul>
+</li>
+<li><strong>查看结果</strong> — 完成的会话显示执行的步骤、偏差分数与最终输出。</li>
+</ol>
+<p>您也可以通过 REST API 交互：</p>
+<pre><code class="language-bash"># 提交目标
+curl -X POST http://[::1]:8080/v1/goals \
+  -H "Content-Type: application/json" \
+  -d '{"goal": "Create a Markdown file named hello-sisyphus.md with content: # Hello, Sisyphus!"}'
+
+# 查询目标状态（将 {id} 替换为返回的目标 ID）
+curl http://[::1]:8080/v1/goals/{id}
+
+# 列出所有目标
+curl http://[::1]:8080/v1/goals
+</code></pre>
+<h3 id="以库方式运行-soprust"><a class="header" href="#以库方式运行-soprust">以库方式运行 SOP（Rust）</a></h3>
+<p>如果您将 Sisyphus 作为库集成：</p>
+<pre class="playground"><code class="language-rust">use sisyphus_core::kernel::SisyphusKernel;
+use sisyphus_types::config::Config;
+
+#[tokio::main]
+async fn main() -&gt; Result&lt;(), Box&lt;dyn std::error::Error&gt;&gt; {
+    let config = Config::from_file("config.toml")?;
+    let mut kernel = SisyphusKernel::new(config).await?;
+
+    let result = kernel.execute_goal("Create a file named hello.md").await?;
+    println!("Result: {:?}", result);
+
+    Ok(())
+}</code></pre>
+<h2 id="运行测试"><a class="header" href="#运行测试">运行测试</a></h2>
+<p>Sisyphus 拥有全面的测试套件，按不同范围使用以下命令：</p>
+<pre><code class="language-bash">make test-all          # 运行全部测试（CI 等价）
+make test-core         # 完整 sisyphus-core 测试套件（含 wasmtime）
+make test-core-quick   # 仅 lib 的 sisyphus-core 测试（约 2 秒）
+make test-tools        # 测试全部 10 个工具子 crate（仅 lib，快速）
+cargo test -p sisyphus-mem  # 存储层测试
+cargo bench -p sisyphus-core  # 认知循环基准测试
+</code></pre>
+<h2 id="下一步-1"><a class="header" href="#下一步-1">下一步</a></h2>
+<ul>
+<li><a href="#架构总览">架构总览</a> — 了解系统设计与认知循环</li>
+<li><a href="#配置-1">配置</a> — 了解所有配置选项与环境变量</li>
+<li><a href="#tui-指南">TUI 指南</a> — 掌握终端界面的键盘快捷键与斜杠命令</li>
+<li><a href="#web-仪表盘">Web 仪表盘</a> — 在浏览器中实时监控与 DAG 可视化</li>
+<li><a href="#sdk-参考">SDK 参考</a> — 使用 TypeScript、Python 或 Go SDK 构建集成</li>
+<li><a href="#rest-api-参考">REST API</a> — 通过 HTTP 端点编程控制引擎</li>
+<li><a href="#安全">安全</a> — 认证、沙箱与部署加固</li>
+<li><a href="#部署">部署</a> — 生产部署指南与最佳实践</li>
+<li><a href="#性能">性能</a> — 调优认知循环、缓存与沙箱配置</li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="架构总览"><a class="header" href="#架构总览">架构总览</a></h1>
+<p>Sisyphus 以 <strong>Rust 工作区</strong> 组织，包含 37 个成员：<code>crates/</code> 下的 35 个 crate（含 10 个 <code>sisyphus-tools-*</code> 子 crate，以及 <code>webui</code> 和 <code>evals</code>），每个 crate 负责一个明确的关注点：</p>
+<ul>
+<li><code>sisyphus-bridge</code> / <code>sisyphus-api</code> — 入口点（HTTP/gRPC/REST API）</li>
+<li><code>sisyphus-core</code> — 内核：DAG 执行器、编排、认知循环</li>
+<li><code>sisyphus-types</code> / <code>sisyphus-intel</code> / <code>sisyphus-mem</code> / <code>sisyphus-sandbox</code> / <code>sisyphus-metrics</code> — 基础层</li>
+<li><code>sisyphus-roadmap</code> / <code>sisyphus-knowledge</code> / <code>sisyphus-visual</code> / <code>sisyphus-tools-*</code>（10 个）/ <code>sisyphus-cli</code> / <code>webui</code> — 能力与客户端</li>
+</ul>
+<h2 id="依赖流向"><a class="header" href="#依赖流向">依赖流向</a></h2>
 <pre><code class="language-mermaid">graph TD
     bridge --&gt; core
+    api --&gt; bridge
+    api --&gt; mem
     core --&gt; types
     core --&gt; intel
     core --&gt; mem
     core --&gt; sandbox
     core --&gt; metrics
+    core --&gt; roadmap
+    core --&gt; knowledge
+    core --&gt; tools
     intel --&gt; types
     intel --&gt; metrics
     mem --&gt; types
     mem --&gt; metrics
     sandbox --&gt; types
     sandbox --&gt; metrics
+    sandboxd --&gt; sandbox
     metrics --&gt; types
+    tools --&gt; types
+    cli --&gt; types
+    cli --&gt; tools
+    webui --&gt; bridge
+    webui --&gt; types
+    sdk --&gt; api
 </code></pre>
-<h2 id="data-flow-cognitive-cycle"><a class="header" href="#data-flow-cognitive-cycle">Data Flow (Cognitive Cycle)</a></h2>
+<h2 id="数据流认知周期"><a class="header" href="#数据流认知周期">数据流（认知周期）</a></h2>
 <pre><code>         ┌──────────┐
-         │  GOAL    │
+         │  目标    │
          └────┬─────┘
               ▼
      ┌────────────────┐
-     │   Synthesize    │  sisyphus-intel
-     │   SOP from goal │
+     │   合成         │  sisyphus-intel
+     │   从目标生成 SOP│
      └───────┬────────┘
               ▼
      ┌────────────────┐
-     │  Execute SOP   │  sisyphus-core (DAG runner)
-     │  (parallel)    │  sisyphus-sandbox (WASM tools)
+     │ 执行 SOP      │  sisyphus-core (DAG runner)
+     │ (并行)        │  sisyphus-sandbox (WASM 工具)
      └───────┬────────┘
               ▼
      ┌────────────────┐
-     │   Simulate     │  sisyphus-intel (Monte Carlo)
-     │   Outcomes     │
+     │   模拟         │  sisyphus-intel (蒙特卡洛)
+     │   结果         │
      └───────┬────────┘
               ▼
      ┌────────────────┐
-     │   Reflect      │  sisyphus-intel (deviation)
-     │   Compare      │
+     │   反思         │  sisyphus-intel (偏差)
+     │   比较         │
      └───────┬────────┘
               ▼
      ┌────────────────┐
-     │   Evolve SOP   │  sisyphus-intel (mutate)
-     │   or Converge  │
+     │ 演进 SOP      │  sisyphus-intel (变异)
+     │ 或收敛        │
      └───────┬────────┘
               │
       ┌───────┴───────┐
       ▼               ▼
-  Converged?      Loop back
-      │           to Execute
+  已收敛?          循环回
+      │           到执行
       ▼
-   Return result
+   返回结果
 </code></pre>
-<h2 id="key-design-decisions"><a class="header" href="#key-design-decisions">Key Design Decisions</a></h2>
+<h2 id="关键设计决策"><a class="header" href="#关键设计决策">关键设计决策</a></h2>
 <ul>
-<li><strong>No <code>async</code> in trait methods</strong>: The system uses <code>async_trait</code> for trait methods that need async execution.</li>
-<li><strong>WASM-first tooling</strong>: All external tool code runs in sandboxed WASM instances with fuel and memory limits.</li>
-<li><strong>Metrics everywhere</strong>: Every significant operation records Prometheus metrics for observability.</li>
-<li><strong>Two-level cache</strong>: L1 (in-memory <code>DashMap</code>) + L2 (SQLite via <code>sqlx</code>) for fast key-value storage.</li>
+<li><strong>trait 方法不使用 <code>async</code></strong>：需要异步执行的 trait 方法使用 <code>async_trait</code>。</li>
+<li><strong>WASM 优先的工具</strong>：所有外部工具代码在带燃料与内存限制的沙箱 WASM 实例中运行。</li>
+<li><strong>处处埋点</strong>：每个重要操作都记录 Prometheus 指标以便观测。</li>
+<li><strong>两级缓存</strong>：L1（内存 <code>DashMap</code>）+ L2（<code>sqlx</code> + SQLite）提供快速键值存储。</li>
 </ul>
-<h2 id="architecture-decision-records"><a class="header" href="#architecture-decision-records">Architecture Decision Records</a></h2>
-<p>Significant architecture decisions are documented as ADRs in <a href="https://github.com/zeronhq/sisyphus-wasm/tree/main/docs/adr"><code>docs/adr/</code></a>:</p>
+<h2 id="沙箱嵌入式与守护进程架构"><a class="header" href="#沙箱嵌入式与守护进程架构">沙箱：嵌入式与守护进程架构</a></h2>
+<p>WASM 沙箱有两种运行模式，由 <code>Config.sandbox.use_sandboxd</code> 控制：</p>
+<h3 id="嵌入式模式use_sandboxd--false默认"><a class="header" href="#嵌入式模式use_sandboxd--false默认">嵌入式模式（<code>use_sandboxd = false</code>，默认）</a></h3>
+<pre><code>┌───────────────┐     ExecuteTool     ┌─────────────────┐
+│   gRPC Bridge  │ ──────────────────&gt; │  WasmToolExecutor │
+│               │ &lt;────────────────── │  (wasmtime)      │
+└───────────────┘     return result   └─────────────────┘
+</code></pre>
+<ul>
+<li><code>wasmtime</code> 在 bridge 进程中内嵌运行。</li>
+<li>部署简单，无 IPC 开销。</li>
+<li>OOM 风险：cranelift JIT 内存在进程退出前不会释放。</li>
+<li>适合开发与低吞吐场景。</li>
+</ul>
+<h3 id="守护进程模式use_sandboxd--true"><a class="header" href="#守护进程模式use_sandboxd--true">守护进程模式（<code>use_sandboxd = true</code>）</a></h3>
+<pre><code>┌───────────────┐     gRPC (IPC)     ┌──────────────────┐
+│   gRPC Bridge  │ ──────────────────&gt; │ sisyphus-sandboxd │
+│               │ &lt;────────────────── │  (wasmtime)       │
+└───────────────┘     return result   └──────────────────┘
+         │                                │
+         │ 启动时生成子进程                │ 每次调用独立的 WASM
+         │ 退出时回收                    │ 实例生命周期
+         ▼                                ▼
+   子进程池                       燃料门控执行
+</code></pre>
+<p>Bridge 启动时生成 <code>sisyphus-sandboxd</code> 作为受管子进程，优雅关闭时回收。通信通过本地 gRPC（tonic）通道进行，守护进程监听 <code>127.0.0.1:0</code>（临时端口）。</p>
+<p><strong>优势：</strong></p>
+<ul>
+<li>进程级隔离：sandboxd 崩溃不会拖垮 bridge。</li>
+<li>内存隔离：每次 WASM 调用可在全新的守护进程进程中运行。</li>
+<li>独立扩展：守护进程可部署在单独的硬件上。</li>
+<li>OOM 缓解：守护进程可在不中断 bridge 的情况下重启。</li>
+</ul>
+<p><strong>配置：</strong></p>
+<ul>
+<li><code>sandboxd_path</code>：<code>sisyphus-sandboxd</code> 二进制路径，默认为 <code>PATH</code> 搜索。</li>
+<li>守护进程通过自己的 gRPC 服务接收 <code>wasmtime</code> 执行请求，使用与 <code>ExecuteTool</code> 类似的契约。</li>
+</ul>
+<h2 id="架构决策记录"><a class="header" href="#架构决策记录">架构决策记录</a></h2>
+<p>重要的架构决策以 ADR 形式记录在 <a href="https://github.com/zeronhq/sisyphus-wasm/tree/main/docs/adr"><code>docs/adr/</code></a>：</p>
 <div class="table-wrapper">
 <table>
 <thead>
-<tr><th>ADR</th><th>Title</th><th>Status</th></tr>
+<tr><th>ADR</th><th>标题</th><th>状态</th></tr>
 </thead>
 <tbody>
-<tr><td><a href="https://github.com/zeronhq/sisyphus-wasm/blob/main/docs/adr/002-phase-3b-agent-team-architecture.md">ADR-002</a></td><td>Phase 3b Multi-Agent Team Architecture</td><td>Proposed</td></tr>
-<tr><td><a href="https://github.com/zeronhq/sisyphus-wasm/blob/main/docs/adr/003-modular-restructure.md">ADR-003</a></td><td>Monolithic-to-Modular Restructure</td><td>Accepted</td></tr>
+<tr><td><a href="https://github.com/zeronhq/sisyphus-wasm/blob/main/docs/adr/002-phase-3b-agent-team-architecture.md">ADR-002</a></td><td>阶段 3b 多代理团队架构</td><td>提案</td></tr>
+<tr><td><a href="https://github.com/zeronhq/sisyphus-wasm/blob/main/docs/adr/003-modular-restructure.md">ADR-003</a></td><td>单体到模块化重构</td><td>已接受</td></tr>
+<tr><td><a href="https://github.com/zeronhq/sisyphus-wasm/blob/main/docs/adr/004-workspace-isolation.md">ADR-004</a></td><td>多租户工作区隔离</td><td>已接受</td></tr>
+<tr><td><a href="https://github.com/zeronhq/sisyphus-wasm/blob/main/docs/adr/005-sandboxd-daemon-architecture.md">ADR-005</a></td><td>Sandboxd 守护进程架构</td><td>已接受</td></tr>
+<tr><td><a href="https://github.com/zeronhq/sisyphus-wasm/blob/main/docs/adr/006-configuration-system.md">ADR-006</a></td><td>配置系统</td><td>已接受</td></tr>
 </tbody>
 </table>
 </div>
 <div style="break-before: page; page-break-before: always;"></div>
-<h1 id="dag-execution"><a class="header" href="#dag-execution">DAG Execution</a></h1>
+<h1 id="dag-执行"><a class="header" href="#dag-执行">DAG 执行</a></h1>
 <div style="break-before: page; page-break-before: always;"></div>
 <h1 id="cognitive-loop"><a class="header" href="#cognitive-loop">Cognitive Loop</a></h1>
-<div style="break-before: page; page-break-before: always;"></div>
-<h1 id="sop-orchestration"><a class="header" href="#sop-orchestration">SOP Orchestration</a></h1>
-<div style="break-before: page; page-break-before: always;"></div>
-<h1 id="configuration"><a class="header" href="#configuration">Configuration</a></h1>
-<p>Sisyphus is configured via TOML files deserialized into the <code>sisyphus_types::Config</code> struct.</p>
-<p>An example configuration file is provided at <code>config.example.toml</code> in the project root.</p>
-<h2 id="default-configuration"><a class="header" href="#default-configuration">Default Configuration</a></h2>
+<h2 id="概述"><a class="header" href="#概述">概述</a></h2>
+<p>认知循环（Cognitive Loop）是 Sisyphus 执行引擎的核心迭代过程。它遵循 <strong>预测 → 执行 → 反思 → 演进</strong>（predict → execute → reflect → evolve）的四步循环，持续优化 SOP 图的执行质量直至收敛。</p>
+<h2 id="cognitive-loop-v2"><a class="header" href="#cognitive-loop-v2">Cognitive Loop v2</a></h2>
+<p>从 2026 年 7 月起，认知循环引入了三个新组件以提升效率、鲁棒性和探索能力。</p>
+<h3 id="adaptivedepthcontroller"><a class="header" href="#adaptivedepthcontroller">AdaptiveDepthController</a></h3>
+<p>替代固定 <code>max_iterations</code> 上限，改用基于置信度（confidence）的自适应深度控制。</p>
+<ul>
+<li>每次迭代记录置信度，在滑动窗口（默认 3 次）上计算收敛速度（convergence velocity）。</li>
+<li>使用 <code>ComplexityAnalyzer</code> 根据图拓扑、目标复杂度和经验库计算初始迭代预算。</li>
+<li>满足以下任一条件时停止：达到目标置信度（默认 0.95）、收敛停滞（窗口内改进量 &lt; 0.01）、达到硬上限（默认 30 次）。</li>
+<li>强制 <code>min_iterations</code>（默认 2）防止过早停止。</li>
+</ul>
+<h3 id="parallelbranchpredictor"><a class="header" href="#parallelbranchpredictor">ParallelBranchPredictor</a></h3>
+<p>同时模拟多个变体 SOP 图，并选择最佳分支执行。</p>
+<ul>
+<li>对每个变体执行两类模拟：<strong>执行模拟</strong>（预测成功率、成本、稳定性）和<strong>逻辑模拟</strong>（检测逻辑缺陷）。</li>
+<li>综合评分公式：<code>0.5 × success_probability + 0.3 × cost_efficiency + 0.2 × predicted_stability - logical_penalty</code></li>
+<li>通过 <code>ExperienceBank</code> 校准置信度，使历史成功数据影响分支选择。</li>
+<li>默认：<code>max_branches = 3</code>，<code>concurrency = 3</code>。</li>
+</ul>
+<h3 id="anomalydetector"><a class="header" href="#anomalydetector">AnomalyDetector</a></h3>
+<p>在运行时监控每个节点的执行指标并标记异常。</p>
+<ul>
+<li>跟踪三类指标：<strong>燃料消耗</strong>（&gt;2.0x 基线）、<strong>执行时长</strong>（&gt;3.0x 基线，&gt;5.0x 为高严重性）、<strong>错误率</strong>（&gt;30%）。</li>
+<li>使用指数加权移动平均（EWMA，alpha = 0.3）进行基线追踪。</li>
+<li>产生 <code>AnomalyReport</code>，其中的 <code>should_extra_reflect</code> 标志触发额外的反思循环。</li>
+<li>集成于 <code>StrategicManager</code>，使循环能在执行过程中自我修正。</li>
+</ul>
+<h3 id="配置"><a class="header" href="#配置">配置</a></h3>
 <pre><code class="language-toml">[cognitive_loop]
 max_iterations = 10
 convergence_threshold = 0.15
+
+[cognitive_loop.adaptive_depth]
+initial_budget = 2.0
+decay = 0.3
+min_improvement = 0.15
+convergence_threshold = 0.05
+</code></pre>
+<p>上述配置通过 <code>CognitiveLoopConfig</code> 结构体定义，位于 <code>crates/sisyphus-types/src/config/sub.rs</code>。</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="sop-编排"><a class="header" href="#sop-编排">SOP 编排</a></h1>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="配置-1"><a class="header" href="#配置-1">配置</a></h1>
+<p>Sisyphus 通过 TOML 文件配置，反序列化为 <code>sisyphus_types::Config</code> 结构体。</p>
+<p>项目根目录提供了示例配置文件 <code>config.example.toml</code>。</p>
+<h2 id="默认配置"><a class="header" href="#默认配置">默认配置</a></h2>
+<pre><code class="language-toml">[cognitive_loop]
+max_iterations = 10
+convergence_threshold = 0.15
+
+[cognitive_loop.adaptive_depth]
+initial_budget = 2.0
+decay = 0.3
+min_improvement = 0.15
+convergence_threshold = 0.05
 
 [executor]
 max_concurrent_tasks = 16
@@ -323,160 +558,262 @@ prometheus_port = 9100
 max_memory_pages = 10
 default_fuel = 1_000_000
 wasm_tools_dir = "tools"
+use_sandboxd = false
+# sandboxd_path = "sisyphus-sandboxd"
 </code></pre>
-<h2 id="database-backends"><a class="header" href="#database-backends">Database Backends</a></h2>
-<p>The <code>database_url</code> in <code>[cache]</code> supports two backends:</p>
+<h3 id="sandbox-字段"><a class="header" href="#sandbox-字段"><code>[sandbox]</code> 字段</a></h3>
 <div class="table-wrapper">
 <table>
 <thead>
-<tr><th>URL Prefix</th><th>Backend</th><th>Vector Support</th></tr>
+<tr><th>字段</th><th>类型</th><th>默认值</th><th>说明</th></tr>
 </thead>
 <tbody>
-<tr><td><code>sqlite:</code></td><td>SQLite (default)</td><td>Full scan + memory cosine similarity</td></tr>
-<tr><td><code>postgres://</code></td><td>PostgreSQL</td><td>pgvector ANN (<code>&lt;-&gt;</code> operator)</td></tr>
+<tr><td><code>max_memory_pages</code></td><td><code>u32</code></td><td><code>10</code></td><td>WASM 线性内存上限（以 64KB 页为单位）</td></tr>
+<tr><td><code>default_fuel</code></td><td><code>u64</code></td><td><code>1_000_000</code></td><td>沙箱默认 fuel 上限（WASM 指令数）</td></tr>
+<tr><td><code>wasm_tools_dir</code></td><td><code>string</code></td><td><code>"tools"</code></td><td>WASM 工具二进制文件目录</td></tr>
+<tr><td><code>use_sandboxd</code></td><td><code>bool</code></td><td><code>false</code></td><td>使用独立进程 sandboxd 替代嵌入式 wasmtime。为 <code>true</code> 时 bridge 启动 <code>sisyphus-sandboxd</code> 子进程执行 WASM，避免 wasmtime 编译内存压力</td></tr>
+<tr><td><code>sandboxd_path</code></td><td><code>string</code></td><td><code>None</code>（搜索 PATH）</td><td><code>sisyphus-sandboxd</code> 二进制路径，仅 <code>use_sandboxd = true</code> 时有效</td></tr>
+</tbody>
+</table>
+</div>
+<blockquote>
+<p><strong>何时启用 sandboxd：</strong> 如果 CI 或开发机上 <code>cargo check</code>/<code>cargo build</code> 因 wasmtime 的 LLVM codegen 内存峰值 &gt;7GB 而 OOM，设置 <code>use_sandboxd = true</code> 并在 CI 中预先构建 <code>sisyphus-sandboxd</code> 二进制。bridge 将启动子进程处理 WASM 调用，自身不再链接 wasmtime。</p>
+</blockquote>
+<h2 id="jwt-认证"><a class="header" href="#jwt-认证">JWT 认证</a></h2>
+<p>可通过 <code>[jwt]</code> 为 REST API 启用基于 token 的 JWT 认证：</p>
+<pre><code class="language-toml">[jwt]
+secret = "your-256-bit-secret"
+access_ttl_secs = 900
+refresh_ttl_secs = 604800
+issuer = "sisyphus-bridge"
+</code></pre>
+<h3 id="jwt-字段"><a class="header" href="#jwt-字段"><code>[jwt]</code> 字段</a></h3>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>字段</th><th>类型</th><th>默认值</th><th>说明</th></tr>
+</thead>
+<tbody>
+<tr><td><code>secret</code></td><td><code>string</code></td><td><code>""</code></td><td>签名密钥。生产环境必须设置；为空时不启用 JWT 认证</td></tr>
+<tr><td><code>access_ttl_secs</code></td><td><code>i64</code></td><td><code>900</code></td><td>Access token 有效期（秒），默认 15 分钟</td></tr>
+<tr><td><code>refresh_ttl_secs</code></td><td><code>i64</code></td><td><code>604800</code></td><td>Refresh token 有效期（秒），默认 7 天</td></tr>
+<tr><td><code>issuer</code></td><td><code>string</code></td><td><code>"sisyphus-bridge"</code></td><td>Token 签发者标识</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="opentelemetry-分布式追踪"><a class="header" href="#opentelemetry-分布式追踪">OpenTelemetry 分布式追踪</a></h2>
+<p>可通过 <code>[metrics.opentelemetry]</code> 启用 OpenTelemetry 追踪：</p>
+<pre><code class="language-toml">[metrics]
+prometheus_port = 9100
+
+[metrics.opentelemetry]
+enabled = false
+endpoint = "http://localhost:4317"
+service_name = "sisyphus-bridge"
+sample_rate = 1.0
+</code></pre>
+<h3 id="metricsopentelemetry-字段"><a class="header" href="#metricsopentelemetry-字段"><code>[metrics.opentelemetry]</code> 字段</a></h3>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>字段</th><th>类型</th><th>默认值</th><th>说明</th></tr>
+</thead>
+<tbody>
+<tr><td><code>enabled</code></td><td><code>bool</code></td><td><code>false</code></td><td>启用 OpenTelemetry OTLP 导出</td></tr>
+<tr><td><code>endpoint</code></td><td><code>string</code></td><td><code>"http://localhost:4317"</code></td><td>OTLP 导出端点</td></tr>
+<tr><td><code>service_name</code></td><td><code>string</code></td><td><code>"sisyphus-bridge"</code></td><td>服务名称用于追踪标识</td></tr>
+<tr><td><code>sample_rate</code></td><td><code>f64</code></td><td><code>1.0</code></td><td>采样率 (0.0 - 1.0)</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="数据库后端"><a class="header" href="#数据库后端">数据库后端</a></h2>
+<p><code>[cache]</code> 中的 <code>database_url</code> 支持两种后端：</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>URL 前缀</th><th>后端</th><th>向量支持</th></tr>
+</thead>
+<tbody>
+<tr><td><code>sqlite:</code></td><td>SQLite (默认)</td><td>全扫描 + 内存余弦相似度</td></tr>
+<tr><td><code>postgres://</code></td><td>PostgreSQL</td><td>pgvector ANN (<code>&lt;-&gt;</code> 操作符)</td></tr>
 </tbody>
 </table>
 </div>
 <h3 id="postgresql--pgvector"><a class="header" href="#postgresql--pgvector">PostgreSQL / pgvector</a></h3>
-<p>For semantic similarity search with ANN indexes:</p>
+<p>用于带 ANN 索引的语义相似度搜索：</p>
 <ol>
-<li>Install the <code>vector</code> extension on your Postgres server</li>
-<li>Set <code>database_url = "postgres://user:pass@host/sisyphus"</code></li>
-<li>Set <code>enable_vectors = true</code> and <code>vector_dimension = 1536</code> (or your embedding model’s dimension)</li>
-<li>SqlStore automatically runs <code>CREATE EXTENSION IF NOT EXISTS vector</code> on connect</li>
+<li>在 Postgres 服务器安装 <code>vector</code> 扩展</li>
+<li>设置 <code>database_url = "postgres://user:pass@host/sisyphus"</code></li>
+<li>设置 <code>enable_vectors = true</code> 和 <code>vector_dimension = 1536</code>（或你的嵌入模型维度）</li>
+<li>SqlStore 连接时自动运行 <code>CREATE EXTENSION IF NOT EXISTS vector</code></li>
 </ol>
-<h2 id="override-order"><a class="header" href="#override-order">Override Order</a></h2>
+<h2 id="覆盖优先级"><a class="header" href="#覆盖优先级">覆盖优先级</a></h2>
 <ol>
-<li><strong>Default values</strong> (hardcoded in each sub-config’s <code>Default</code> impl)</li>
-<li><strong>Config file</strong> (path set via <code>SISYPHUS_CONFIG</code> env var or <code>Config::from_file()</code>)</li>
-<li><strong>Environment variables</strong> (prefixed with <code>SISYPHUS_</code>, highest priority)</li>
+<li><strong>默认值</strong>（各子配置 <code>Default</code> 实现中硬编码）</li>
+<li><strong>配置文件</strong>（通过 <code>SISYPHUS_CONFIG</code> 环境变量或 <code>Config::from_file()</code> 指定路径）</li>
+<li><strong>环境变量</strong>（<code>SISYPHUS_</code> 前缀，最高优先级）</li>
 </ol>
-<h2 id="environment-variables"><a class="header" href="#environment-variables">Environment Variables</a></h2>
-<p>All environment variables use the prefix <code>SISYPHUS_</code>:</p>
+<h2 id="环境变量"><a class="header" href="#环境变量">环境变量</a></h2>
+<p>所有环境变量使用前缀 <code>SISYPHUS_</code>：</p>
 <div class="table-wrapper">
 <table>
 <thead>
-<tr><th>Variable</th><th>Overrides</th><th>Type</th><th>Default</th></tr>
+<tr><th>变量</th><th>覆盖字段</th><th>类型</th><th>默认值</th></tr>
 </thead>
 <tbody>
-<tr><td><code>SISYPHUS_CONFIG</code></td><td>Config file path</td><td>string</td><td><code>config.toml</code></td></tr>
+<tr><td><code>SISYPHUS_CONFIG</code></td><td>配置文件路径</td><td>string</td><td><code>config.toml</code></td></tr>
 <tr><td><code>SISYPHUS_COGNITIVE_LOOP_MAX_ITERATIONS</code></td><td><code>cognitive_loop.max_iterations</code></td><td>u32</td><td><code>10</code></td></tr>
 <tr><td><code>SISYPHUS_COGNITIVE_LOOP_CONVERGENCE_THRESHOLD</code></td><td><code>cognitive_loop.convergence_threshold</code></td><td>f64</td><td><code>0.15</code></td></tr>
+<tr><td><code>SISYPHUS_COGNITIVE_LOOP_ADAPTIVE_DEPTH_INITIAL_BUDGET</code></td><td><code>cognitive_loop.adaptive_depth.initial_budget</code></td><td>f64</td><td><code>2.0</code></td></tr>
+<tr><td><code>SISYPHUS_COGNITIVE_LOOP_ADAPTIVE_DEPTH_DECAY</code></td><td><code>cognitive_loop.adaptive_depth.decay</code></td><td>f64</td><td><code>0.3</code></td></tr>
+<tr><td><code>SISYPHUS_COGNITIVE_LOOP_ADAPTIVE_DEPTH_MIN_IMPROVEMENT</code></td><td><code>cognitive_loop.adaptive_depth.min_improvement</code></td><td>f64</td><td><code>0.15</code></td></tr>
+<tr><td><code>SISYPHUS_COGNITIVE_LOOP_ADAPTIVE_DEPTH_CONVERGENCE_THRESHOLD</code></td><td><code>cognitive_loop.adaptive_depth.convergence_threshold</code></td><td>f64</td><td><code>0.05</code></td></tr>
 <tr><td><code>SISYPHUS_EXECUTOR_MAX_CONCURRENT_TASKS</code></td><td><code>executor.max_concurrent_tasks</code></td><td>usize</td><td><code>16</code></td></tr>
 <tr><td><code>SISYPHUS_EXECUTOR_DEFAULT_FUEL</code></td><td><code>executor.default_fuel</code></td><td>u64</td><td><code>1_000_000</code></td></tr>
 <tr><td><code>SISYPHUS_CACHE_L1_CAPACITY</code></td><td><code>cache.l1_capacity</code></td><td>usize</td><td><code>10_000</code></td></tr>
 <tr><td><code>SISYPHUS_CACHE_DATABASE_URL</code></td><td><code>cache.database_url</code></td><td>string</td><td><code>sqlite:data/sisyphus.db</code></td></tr>
 <tr><td><code>SISYPHUS_CACHE_ENABLE_VECTORS</code></td><td><code>cache.enable_vectors</code></td><td>bool</td><td><code>false</code></td></tr>
 <tr><td><code>SISYPHUS_CACHE_VECTOR_DIMENSION</code></td><td><code>cache.vector_dimension</code></td><td>usize</td><td><code>1536</code></td></tr>
+<tr><td><code>SISYPHUS_CACHE_BATCH_SIZE</code></td><td><code>cache.batch_size</code></td><td>usize</td><td><code>100</code></td></tr>
+<tr><td><code>SISYPHUS_CACHE_FLUSH_INTERVAL_MS</code></td><td><code>cache.flush_interval_ms</code></td><td>u64</td><td><code>100</code></td></tr>
 <tr><td><code>SISYPHUS_METRICS_PROMETHEUS_PORT</code></td><td><code>metrics.prometheus_port</code></td><td>u16</td><td><code>9100</code></td></tr>
 <tr><td><code>SISYPHUS_SANDBOX_MAX_MEMORY_PAGES</code></td><td><code>sandbox.max_memory_pages</code></td><td>u32</td><td><code>10</code></td></tr>
 <tr><td><code>SISYPHUS_SANDBOX_DEFAULT_FUEL</code></td><td><code>sandbox.default_fuel</code></td><td>u64</td><td><code>1_000_000</code></td></tr>
 <tr><td><code>SISYPHUS_SANDBOX_WASM_TOOLS_DIR</code></td><td><code>sandbox.wasm_tools_dir</code></td><td>string</td><td><code>tools</code></td></tr>
+<tr><td><code>SISYPHUS_SANDBOX_USE_SANDBOXD</code></td><td><code>sandbox.use_sandboxd</code></td><td>bool</td><td><code>false</code></td></tr>
+<tr><td><code>SISYPHUS_SANDBOX_SANDBOXD_PATH</code></td><td><code>sandbox.sandboxd_path</code></td><td>string</td><td><code>None</code></td></tr>
+<tr><td><code>SISYPHUS_LLM_API_KEY</code></td><td><code>llm.api_key</code></td><td>string</td><td><code>""</code></td></tr>
+<tr><td><code>SISYPHUS_LLM_ENDPOINT</code></td><td><code>llm.endpoint</code></td><td>string</td><td><code>"http://localhost:8000/v1/chat/completions"</code></td></tr>
+<tr><td><code>SISYPHUS_LLM_MODEL</code></td><td><code>llm.model</code></td><td>string</td><td><code>"gpt-4o"</code></td></tr>
+<tr><td><code>SISYPHUS_LLM_BUDGET_MODE</code></td><td><code>llm.budget_mode</code></td><td>string</td><td><code>"Warning"</code></td></tr>
+<tr><td><code>SISYPHUS_LLM_FAST_FAIL_COOLING_SECS</code></td><td><code>llm.fast_fail_cooling_secs</code></td><td>u64</td><td><code>30</code></td></tr>
+<tr><td><code>SISYPHUS_LLM_REQUEST_TIMEOUT_SECS</code></td><td><code>llm.request_timeout_secs</code></td><td>u64</td><td><code>5</code></td></tr>
+<tr><td><code>SISYPHUS_LLM_CONNECT_TIMEOUT_SECS</code></td><td><code>llm.connect_timeout_secs</code></td><td>u64</td><td><code>2</code></td></tr>
+<tr><td><code>SISYPHUS_LLM_EMBEDDING_MODEL</code></td><td><code>llm.embedding.model</code></td><td>string</td><td><code>"text-embedding-3-small"</code></td></tr>
+<tr><td><code>SISYPHUS_LLM_EMBEDDING_ENDPOINT</code></td><td><code>llm.embedding.endpoint</code></td><td>string</td><td><code>None</code></td></tr>
+<tr><td><code>SISYPHUS_LLM_EMBEDDING_PROVIDER</code></td><td><code>llm.embedding.provider</code></td><td>string</td><td><code>"dummy"</code></td></tr>
+<tr><td><code>SISYPHUS_REGISTRY_URL</code></td><td><code>registry.registry_url</code></td><td>string</td><td><code>"https://registry.sisyphus.ai"</code></td></tr>
+<tr><td><code>SISYPHUS_REGISTRY_TIMEOUT_SECONDS</code></td><td><code>registry.timeout_seconds</code></td><td>u64</td><td><code>30</code></td></tr>
+<tr><td><code>SISYPHUS_JCODE_SOCKET_PATH</code></td><td><code>jcode.socket_path</code></td><td>string</td><td><code>"/tmp/jcode-debug.sock"</code></td></tr>
+<tr><td><code>SISYPHUS_AUTH_TOKEN</code></td><td><code>auth_token</code></td><td>string</td><td><code>""</code></td></tr>
+<tr><td><code>SISYPHUS_JWT_SECRET</code></td><td><code>jwt.secret</code></td><td>string</td><td><code>""</code></td></tr>
+<tr><td><code>SISYPHUS_JWT_ACCESS_TTL_SECS</code></td><td><code>jwt.access_ttl_secs</code></td><td>i64</td><td><code>900</code></td></tr>
+<tr><td><code>SISYPHUS_JWT_REFRESH_TTL_SECS</code></td><td><code>jwt.refresh_ttl_secs</code></td><td>i64</td><td><code>604800</code></td></tr>
+<tr><td><code>SISYPHUS_JWT_ISSUER</code></td><td><code>jwt.issuer</code></td><td>string</td><td><code>"sisyphus-bridge"</code></td></tr>
+<tr><td><code>SISYPHUS_BRIDGE_ADDRESS</code></td><td><code>bridge_address</code></td><td>string</td><td><code>"http://[::1]:50051"</code></td></tr>
+<tr><td><code>SISYPHUS_HTTP_ADDRESS</code></td><td><code>http_address</code></td><td>string</td><td><code>"http://[::1]:8080"</code></td></tr>
+<tr><td><code>SISYPHUS_CHAOS_ENABLED</code></td><td><code>chaos.enabled</code></td><td>bool</td><td><code>false</code></td></tr>
+<tr><td><code>SISYPHUS_CHAOS_DEFAULT_FAULT_PROBABILITY</code></td><td><code>chaos.default_fault_probability</code></td><td>f64</td><td><code>0.1</code></td></tr>
+<tr><td><code>SISYPHUS_CHAOS_DEFAULT_DURATION_SECONDS</code></td><td><code>chaos.default_duration_seconds</code></td><td>u64</td><td><code>300</code></td></tr>
+<tr><td><code>SISYPHUS_METRICS_OTEL_ENABLED</code></td><td><code>metrics.opentelemetry.enabled</code></td><td>bool</td><td><code>false</code></td></tr>
+<tr><td><code>SISYPHUS_METRICS_OTEL_ENDPOINT</code></td><td><code>metrics.opentelemetry.endpoint</code></td><td>string</td><td><code>"http://localhost:4317"</code></td></tr>
+<tr><td><code>SISYPHUS_METRICS_OTEL_SERVICE_NAME</code></td><td><code>metrics.opentelemetry.service_name</code></td><td>string</td><td><code>"sisyphus-bridge"</code></td></tr>
+<tr><td><code>SISYPHUS_METRICS_OTEL_SAMPLE_RATE</code></td><td><code>metrics.opentelemetry.sample_rate</code></td><td>f64</td><td><code>1.0</code></td></tr>
 </tbody>
 </table>
 </div>
 <div style="break-before: page; page-break-before: always;"></div>
-<h1 id="tui-guide"><a class="header" href="#tui-guide">TUI Guide</a></h1>
-<p>Sisyphus includes a full-featured Terminal User Interface built with ratatui.</p>
-<h2 id="navigation"><a class="header" href="#navigation">Navigation</a></h2>
+<h1 id="tui-指南"><a class="header" href="#tui-指南">TUI 指南</a></h1>
+<p>Sisyphus 包含基于 ratatui 构建的全功能终端用户界面（Terminal User Interface，TUI）。</p>
+<h2 id="导航"><a class="header" href="#导航">导航</a></h2>
 <div class="table-wrapper">
 <table>
 <thead>
-<tr><th>Key</th><th>Action</th></tr>
+<tr><th>按键</th><th>操作</th></tr>
 </thead>
 <tbody>
-<tr><td><code>Ctrl+K</code></td><td>Open command palette</td></tr>
-<tr><td><code>Ctrl+L</code></td><td>Session list</td></tr>
-<tr><td><code>Ctrl+M</code></td><td>Model list</td></tr>
-<tr><td><code>Ctrl+A</code></td><td>Agent list</td></tr>
-<tr><td><code>Ctrl+N</code></td><td>New session</td></tr>
-<tr><td><code>Ctrl+H</code></td><td>Go home</td></tr>
-<tr><td><code>Ctrl+Q</code></td><td>Exit</td></tr>
-<tr><td><code>F1</code></td><td>Help</td></tr>
+<tr><td><code>Ctrl+K</code></td><td>打开命令面板</td></tr>
+<tr><td><code>Ctrl+L</code></td><td>会话列表</td></tr>
+<tr><td><code>Ctrl+M</code></td><td>模型列表</td></tr>
+<tr><td><code>Ctrl+A</code></td><td>代理列表</td></tr>
+<tr><td><code>Ctrl+N</code></td><td>新建会话</td></tr>
+<tr><td><code>Ctrl+H</code></td><td>返回主页</td></tr>
+<tr><td><code>Ctrl+Q</code></td><td>退出</td></tr>
+<tr><td><code>F1</code></td><td>帮助</td></tr>
 </tbody>
 </table>
 </div>
-<h2 id="input-editing"><a class="header" href="#input-editing">Input Editing</a></h2>
+<h2 id="输入编辑"><a class="header" href="#输入编辑">输入编辑</a></h2>
 <div class="table-wrapper">
 <table>
 <thead>
-<tr><th>Key</th><th>Action</th></tr>
+<tr><th>按键</th><th>操作</th></tr>
 </thead>
 <tbody>
-<tr><td><code>Home</code> / <code>End</code></td><td>Move to start/end of line</td></tr>
-<tr><td><code>Ctrl+U</code></td><td>Delete to start of line</td></tr>
-<tr><td><code>Ctrl+W</code></td><td>Delete word backward</td></tr>
-<tr><td><code>Ctrl+V</code></td><td>Paste from clipboard</td></tr>
+<tr><td><code>Home</code> / <code>End</code></td><td>移至行首/行尾</td></tr>
+<tr><td><code>Ctrl+U</code></td><td>删除到行首</td></tr>
+<tr><td><code>Ctrl+W</code></td><td>向后删除一个单词</td></tr>
+<tr><td><code>Ctrl+V</code></td><td>从剪贴板粘贴</td></tr>
 </tbody>
 </table>
 </div>
-<h2 id="slash-commands"><a class="header" href="#slash-commands">Slash Commands</a></h2>
-<p>Type <code>/</code> at the start of input to trigger the slash command completion popup.</p>
-<p>Available commands:</p>
+<h2 id="斜杠命令"><a class="header" href="#斜杠命令">斜杠命令</a></h2>
+<p>在输入框开头输入 <code>/</code> 触发斜杠命令补全弹窗。</p>
+<p>可用命令：</p>
 <div class="table-wrapper">
 <table>
 <thead>
-<tr><th>Command</th><th>Description</th></tr>
+<tr><th>命令</th><th>说明</th></tr>
 </thead>
 <tbody>
-<tr><td><code>/help</code></td><td>Show keybindings &amp; help</td></tr>
-<tr><td><code>/exit</code></td><td>Exit Sisyphus</td></tr>
-<tr><td><code>/clear</code></td><td>Clear the log</td></tr>
-<tr><td><code>/theme</code></td><td>Toggle dark/light theme</td></tr>
-<tr><td><code>/sessions</code></td><td>Switch or manage sessions</td></tr>
-<tr><td><code>/new</code></td><td>Create a new session</td></tr>
-<tr><td><code>/model</code></td><td>Switch AI model</td></tr>
-<tr><td><code>/agent</code></td><td>Switch agent</td></tr>
-<tr><td><code>/dev</code></td><td>Run autonomous dev agent</td></tr>
-<tr><td><code>/todos</code></td><td>Manage todo list</td></tr>
-<tr><td><code>/lsp</code></td><td>View LSP diagnostics</td></tr>
-<tr><td><code>/sop</code></td><td>List &amp; execute SOPs</td></tr>
-<tr><td><code>/skills</code></td><td>Browse &amp; install skills</td></tr>
-<tr><td><code>/roadmap</code></td><td>View project roadmap</td></tr>
-<tr><td><code>/bridge</code></td><td>Check bridge health</td></tr>
-<tr><td><code>/home</code></td><td>Return to Home screen</td></tr>
-<tr><td><code>/search</code></td><td>Search messages in session</td></tr>
+<tr><td><code>/help</code></td><td>显示按键绑定与帮助</td></tr>
+<tr><td><code>/exit</code></td><td>退出 Sisyphus</td></tr>
+<tr><td><code>/clear</code></td><td>清空日志</td></tr>
+<tr><td><code>/theme</code></td><td>切换深色/浅色主题</td></tr>
+<tr><td><code>/sessions</code></td><td>切换或管理会话</td></tr>
+<tr><td><code>/new</code></td><td>创建新会话</td></tr>
+<tr><td><code>/model</code></td><td>切换 AI 模型</td></tr>
+<tr><td><code>/agent</code></td><td>切换代理</td></tr>
+<tr><td><code>/dev</code></td><td>运行自主开发代理</td></tr>
+<tr><td><code>/todos</code></td><td>管理待办列表</td></tr>
+<tr><td><code>/lsp</code></td><td>查看 LSP 诊断</td></tr>
+<tr><td><code>/sop</code></td><td>列出并执行 SOP</td></tr>
+<tr><td><code>/skills</code></td><td>浏览并安装技能</td></tr>
+<tr><td><code>/roadmap</code></td><td>查看项目路线图</td></tr>
+<tr><td><code>/bridge</code></td><td>检查 bridge 健康状态</td></tr>
+<tr><td><code>/home</code></td><td>返回主页屏幕</td></tr>
+<tr><td><code>/search</code></td><td>在会话中搜索消息</td></tr>
 </tbody>
 </table>
 </div>
-<h3 id="navigation-1"><a class="header" href="#navigation-1">Navigation</a></h3>
+<h3 id="导航-1"><a class="header" href="#导航-1">导航</a></h3>
 <ul>
-<li><code>Up</code> / <code>Down</code> - Navigate the completion list</li>
-<li><code>Tab</code> / <code>Enter</code> - Accept the selected completion</li>
-<li><code>Esc</code> - Close the completion popup</li>
+<li><code>Up</code> / <code>Down</code> - 在补全列表中导航</li>
+<li><code>Tab</code> / <code>Enter</code> - 接受选中的补全</li>
+<li><code>Esc</code> - 关闭补全弹窗</li>
 </ul>
-<h2 id="file-references"><a class="header" href="#file-references">@file References</a></h2>
-<p>Reference files in your input with <code>@</code> prefix:</p>
+<h2 id="文件引用"><a class="header" href="#文件引用">@文件引用</a></h2>
+<p>在输入中使用 <code>@</code> 前缀引用文件：</p>
 <pre><code>Look at @src/main.rs and @lib.rs
 </code></pre>
-<p>The file contents will be automatically expanded with a line limit of 200 lines.</p>
-<h2 id="session-features"><a class="header" href="#session-features">Session Features</a></h2>
+<p>文件内容将自动展开，行数上限为 200 行。</p>
+<h2 id="会话功能"><a class="header" href="#会话功能">会话功能</a></h2>
 <ul>
-<li><strong>Fork</strong>: Create a branch from any session</li>
-<li><strong>Undo</strong>: Revert the last message</li>
-<li><strong>Rename</strong>: Change session name</li>
-<li><strong>Compress</strong>: Summarize old messages to save tokens</li>
-<li><strong>Checkpoint</strong>: Save/restore session state</li>
-<li><strong>Export</strong>: Export as JSON or HTML</li>
-<li><strong>Import</strong>: Import from JSON</li>
+<li><strong>分叉</strong>：从任意会话创建分支</li>
+<li><strong>撤销</strong>：回退最后一条消息</li>
+<li><strong>重命名</strong>：更改会话名称</li>
+<li><strong>压缩</strong>：总结旧消息以节省 token</li>
+<li><strong>检查点</strong>：保存/恢复会话状态</li>
+<li><strong>导出</strong>：导出为 JSON 或 HTML</li>
+<li><strong>导入</strong>：从 JSON 导入</li>
 </ul>
-<h2 id="search"><a class="header" href="#search">Search</a></h2>
-<p>Press <code>/search</code> in a session to activate search mode. Navigate matches with <code>n</code> (next) and <code>p</code> (previous).</p>
+<h2 id="搜索"><a class="header" href="#搜索">搜索</a></h2>
+<p>在会话中按 <code>/search</code> 激活搜索模式。用 <code>n</code>（下一个）与 <code>p</code>（上一个）导航匹配项。</p>
 <div style="break-before: page; page-break-before: always;"></div>
-<h1 id="slash-commands-1"><a class="header" href="#slash-commands-1">Slash Commands</a></h1>
+<h1 id="斜杠命令-1"><a class="header" href="#斜杠命令-1">斜杠命令</a></h1>
 <div style="break-before: page; page-break-before: always;"></div>
-<h1 id="file-references-1"><a class="header" href="#file-references-1">File References</a></h1>
+<h1 id="文件引用-1"><a class="header" href="#文件引用-1">文件引用</a></h1>
 <div style="break-before: page; page-break-before: always;"></div>
-<h1 id="fuzzy-search"><a class="header" href="#fuzzy-search">Fuzzy Search</a></h1>
+<h1 id="模糊搜索"><a class="header" href="#模糊搜索">模糊搜索</a></h1>
 <div style="break-before: page; page-break-before: always;"></div>
-<h1 id="web-dashboard"><a class="header" href="#web-dashboard">Web Dashboard</a></h1>
+<h1 id="web-仪表盘"><a class="header" href="#web-仪表盘">Web 仪表盘</a></h1>
 <div style="break-before: page; page-break-before: always;"></div>
-<h1 id="sse-events"><a class="header" href="#sse-events">SSE Events</a></h1>
+<h1 id="sse-事件"><a class="header" href="#sse-事件">SSE 事件</a></h1>
 <div style="break-before: page; page-break-before: always;"></div>
-<h1 id="dag-visualization"><a class="header" href="#dag-visualization">DAG Visualization</a></h1>
+<h1 id="dag-可视化"><a class="header" href="#dag-可视化">DAG 可视化</a></h1>
 <div style="break-before: page; page-break-before: always;"></div>
-<h1 id="sdk-reference"><a class="header" href="#sdk-reference">SDK Reference</a></h1>
-<p>Sisyphus provides official SDKs for TypeScript, Python, and Go.</p>
+<h1 id="sdk-参考"><a class="header" href="#sdk-参考">SDK 参考</a></h1>
+<p>Sisyphus 提供 TypeScript、Python 与 Go 官方 SDK。</p>
 <h2 id="typescript-sdk"><a class="header" href="#typescript-sdk">TypeScript SDK</a></h2>
 <pre><code class="language-bash">npm install @sisyphus/sdk
 </code></pre>
@@ -484,18 +821,18 @@ wasm_tools_dir = "tools"
 
 const client = new SisyphusClient({ baseUrl: 'http://localhost:8080' });
 
-// Health check
+// 健康检查
 const health = await client.health();
 console.log(health.status); // "ok"
 
-// Sessions
+// 会话
 const sessions = await client.listSessions();
 const session = await client.createSession('my-session');
 
-// Search
+// 搜索
 const results = await client.searchMemory('my query', 10);
 
-// Execute SOP
+// 执行 SOP
 const result = await client.executeSop('sop-id');
 console.log(result.status); // "success"
 </code></pre>
@@ -506,18 +843,18 @@ console.log(result.status); // "success"
 
 client = SisyphusClient(base_url="http://localhost:8080")
 
-# Health check
+# 健康检查
 health = client.health()
 print(health.status)  # "ok"
 
-# Sessions
+# 会话
 sessions = client.list_sessions()
 session = client.create_session("my-session")
 
-# Search
+# 搜索
 results = client.search("my query", top_k=10)
 
-# Execute SOP
+# 执行 SOP
 result = client.execute_sop("sop-id")
 print(result.status)  # "success"
 </code></pre>
@@ -534,208 +871,257 @@ import (
 func main() {
     client := sisyphus.NewClient("http://localhost:8080", "")
 
-    // Health check
+    // 健康检查
     health, _ := client.Health()
     fmt.Println(health.Status) // "ok"
 
-    // Sessions
+    // 会话
     sessions, _ := client.ListSessions()
     session, _ := client.CreateSession("my-session")
 
-    // Search
+    // 搜索
     results, _ := client.SearchMemory("my query", 10)
 
-    // Execute SOP
+    // 执行 SOP
     result, _ := client.ExecuteSOP("sop-id", nil)
     fmt.Println(result.Status) // "success"
 }
 </code></pre>
-<h2 id="api-reference"><a class="header" href="#api-reference">API Reference</a></h2>
-<p>All SDKs expose the same core methods:</p>
+<h2 id="api-参考"><a class="header" href="#api-参考">API 参考</a></h2>
+<p>所有 SDK 暴露相同的核心方法：</p>
 <div class="table-wrapper">
 <table>
 <thead>
-<tr><th>Method</th><th>Description</th></tr>
+<tr><th>方法</th><th>说明</th></tr>
 </thead>
 <tbody>
-<tr><td><code>health()</code></td><td>Check bridge status</td></tr>
-<tr><td><code>list_sessions()</code></td><td>List all sessions</td></tr>
-<tr><td><code>create_session(name)</code></td><td>Create a new session</td></tr>
-<tr><td><code>get_session(id)</code></td><td>Get session details</td></tr>
-<tr><td><code>add_message(session_id, role, content)</code></td><td>Add message to session</td></tr>
-<tr><td><code>search(query, top_k)</code></td><td>Vector search</td></tr>
-<tr><td><code>execute_sop(sop_id, context)</code></td><td>Execute a SOP</td></tr>
-<tr><td><code>list_sops()</code></td><td>List available SOPs</td></tr>
-<tr><td><code>get_dag(sop_id)</code></td><td>Get DAG graph</td></tr>
-<tr><td><code>list_skills()</code></td><td>List available skills</td></tr>
-<tr><td><code>install_skill(skill_id)</code></td><td>Install a skill</td></tr>
-<tr><td><code>validate_auth(api_key)</code></td><td>Validate API key</td></tr>
+<tr><td><code>health()</code></td><td>检查 bridge 状态</td></tr>
+<tr><td><code>list_sessions()</code></td><td>列出所有会话</td></tr>
+<tr><td><code>create_session(name)</code></td><td>创建新会话</td></tr>
+<tr><td><code>get_session(id)</code></td><td>获取会话详情</td></tr>
+<tr><td><code>add_message(session_id, role, content)</code></td><td>向会话添加消息</td></tr>
+<tr><td><code>search(query, top_k)</code></td><td>向量搜索</td></tr>
+<tr><td><code>execute_sop(sop_id, context)</code></td><td>执行 SOP</td></tr>
+<tr><td><code>list_sops()</code></td><td>列出可用 SOP</td></tr>
+<tr><td><code>get_dag(sop_id)</code></td><td>获取 DAG 图</td></tr>
+<tr><td><code>list_skills()</code></td><td>列出可用技能</td></tr>
+<tr><td><code>install_skill(skill_id)</code></td><td>安装技能</td></tr>
+<tr><td><code>validate_auth(api_key)</code></td><td>验证 API 密钥</td></tr>
 </tbody>
 </table>
 </div>
 <div style="break-before: page; page-break-before: always;"></div>
-<h1 id="typescript"><a class="header" href="#typescript">TypeScript</a></h1>
+<h1 id="typescript-sdk-1"><a class="header" href="#typescript-sdk-1">TypeScript SDK</a></h1>
 <div style="break-before: page; page-break-before: always;"></div>
-<h1 id="python"><a class="header" href="#python">Python</a></h1>
+<h1 id="python-sdk-1"><a class="header" href="#python-sdk-1">Python SDK</a></h1>
 <div style="break-before: page; page-break-before: always;"></div>
-<h1 id="go"><a class="header" href="#go">Go</a></h1>
+<h1 id="go-语言-sdk"><a class="header" href="#go-语言-sdk">Go 语言 SDK</a></h1>
 <div style="break-before: page; page-break-before: always;"></div>
-<h1 id="rest-api-reference"><a class="header" href="#rest-api-reference">REST API Reference</a></h1>
-<p>All endpoints are served by the Sisyphus Bridge HTTP server (listening on <code>[::1]:8080</code> by default).</p>
-<p>The OpenAPI specification is available at <a href="/openapi.json"><code>/openapi.json</code></a> or via the Swagger UI at <a href="/swagger-ui"><code>/swagger-ui</code></a>.</p>
-<h2 id="authentication"><a class="header" href="#authentication">Authentication</a></h2>
-<p>Include <code>Authorization: Bearer &lt;token&gt;</code> header. The token is configured in <code>config.auth_token</code>.</p>
-<h2 id="health"><a class="header" href="#health">Health</a></h2>
+<h1 id="rest-api-参考"><a class="header" href="#rest-api-参考">REST API 参考</a></h1>
+<p>所有端点由 Sisyphus Bridge HTTP 服务器提供服务（默认监听 <code>[::1]:8080</code>）。</p>
+<p>OpenAPI 规范位于 <a href="/openapi.json"><code>/openapi.json</code></a>，也可通过 Swagger UI 访问：<a href="/swagger-ui"><code>/swagger-ui</code></a>。</p>
+<h2 id="认证"><a class="header" href="#认证">认证</a></h2>
+<p>包含 <code>Authorization: Bearer &lt;token&gt;</code> 请求头。token 在 <code>config.auth_token</code> 中配置。</p>
+<h2 id="健康检查"><a class="header" href="#健康检查">健康检查</a></h2>
 <h3 id="get-health"><a class="header" href="#get-health"><code>GET /health</code></a></h3>
 <pre><code class="language-json">{ "status": "SERVING", "version": "0.1.0" }
 </code></pre>
-<h2 id="tool-execution"><a class="header" href="#tool-execution">Tool Execution</a></h2>
+<h2 id="工具执行"><a class="header" href="#工具执行">工具执行</a></h2>
 <h3 id="post-apiexecute"><a class="header" href="#post-apiexecute"><code>POST /api/execute</code></a></h3>
-<p>Execute a tool by tool ID.</p>
+<p>按工具 ID 执行工具。请求体：</p>
 <pre><code class="language-json">{ "tool_id": "file_read", "args_json": "{\"path\": \"/tmp/test.txt\"}", "fuel_limit": 1000000 }
 </code></pre>
-<h2 id="goal-execution"><a class="header" href="#goal-execution">Goal Execution</a></h2>
+<h2 id="目标执行"><a class="header" href="#目标执行">目标执行</a></h2>
 <h3 id="post-apiexecutegoal"><a class="header" href="#post-apiexecutegoal"><code>POST /api/execute/goal</code></a></h3>
-<p>Execute a cognitive goal via an SOP.</p>
+<p>通过 SOP 执行认知目标。请求体：</p>
 <pre><code class="language-json">{ "goal": "Analyze code", "sop_id": "code-review", "project_id": "my-project" }
 </code></pre>
 <h3 id="get-apiexecutegoalgoal_idstatus"><a class="header" href="#get-apiexecutegoalgoal_idstatus"><code>GET /api/execute/goal/{goal_id}/status</code></a></h3>
-<p>Get the current execution status.</p>
+<p>获取当前执行状态。</p>
 <h3 id="get-apiexecutegoalgoal_idtrace"><a class="header" href="#get-apiexecutegoalgoal_idtrace"><code>GET /api/execute/goal/{goal_id}/trace</code></a></h3>
-<p>Get the full execution trace with per-node events.</p>
+<p>获取含每节点事件的完整执行轨迹。</p>
 <h3 id="get-apiexecutegoalgoal_idstream"><a class="header" href="#get-apiexecutegoalgoal_idstream"><code>GET /api/execute/goal/{goal_id}/stream</code></a></h3>
-<p>Server-Sent Events stream of execution progress.</p>
+<p>执行进度的 Server-Sent Events 流。</p>
 <h3 id="post-apiexecutecomposite"><a class="header" href="#post-apiexecutecomposite"><code>POST /api/execute/composite</code></a></h3>
-<p>Execute multiple goals as a composite DAG.</p>
+<p>将多个目标作为组合 DAG 执行。请求体：</p>
 <pre><code class="language-json">{ "goals": ["analyze", "test", "deploy"], "project_id": "my-project" }
 </code></pre>
-<h2 id="sessions"><a class="header" href="#sessions">Sessions</a></h2>
+<h2 id="会话"><a class="header" href="#会话">会话</a></h2>
 <h3 id="get-apisessions"><a class="header" href="#get-apisessions"><code>GET /api/sessions</code></a></h3>
-<p>List all sessions.</p>
+<p>列出所有会话。</p>
 <h3 id="post-apisessions"><a class="header" href="#post-apisessions"><code>POST /api/sessions</code></a></h3>
-<p>Create a new session.</p>
+<p>创建新会话。请求体：</p>
 <pre><code class="language-json">{ "name": "my-session" }
 </code></pre>
 <h3 id="get-apisessionsid"><a class="header" href="#get-apisessionsid"><code>GET /api/sessions/{id}</code></a></h3>
-<p>Get session details with messages.</p>
+<p>获取会话详情（含消息）。</p>
 <h3 id="post-apisessionsidmessages"><a class="header" href="#post-apisessionsidmessages"><code>POST /api/sessions/{id}/messages</code></a></h3>
-<p>Add a message to a session.</p>
+<p>向会话添加消息。请求体：</p>
 <pre><code class="language-json">{ "role": "user", "content": "Hello" }
 </code></pre>
-<h2 id="tools--agents"><a class="header" href="#tools--agents">Tools &amp; Agents</a></h2>
+<h2 id="工具与代理"><a class="header" href="#工具与代理">工具与代理</a></h2>
 <h3 id="get-apitools"><a class="header" href="#get-apitools"><code>GET /api/tools</code></a></h3>
-<p>List registered tools.</p>
+<p>列出已注册工具。</p>
 <h3 id="get-apiagents"><a class="header" href="#get-apiagents"><code>GET /api/agents</code></a></h3>
-<p>List registered agents.</p>
-<h2 id="skills"><a class="header" href="#skills">Skills</a></h2>
+<p>列出已注册代理。</p>
+<h2 id="技能"><a class="header" href="#技能">技能</a></h2>
 <h3 id="get-apiskills"><a class="header" href="#get-apiskills"><code>GET /api/skills</code></a></h3>
-<p>List installed skill entries.</p>
+<p>列出已安装技能条目。</p>
 <h3 id="get-apiskillsavailable"><a class="header" href="#get-apiskillsavailable"><code>GET /api/skills/available</code></a></h3>
-<p>List available remote skills.</p>
+<p>列出可用远程技能。</p>
 <h3 id="post-apiskillsinstall"><a class="header" href="#post-apiskillsinstall"><code>POST /api/skills/install</code></a></h3>
-<p>Install a remote skill.</p>
+<p>安装远程技能。请求体：</p>
 <pre><code class="language-json">{ "skill_id": "code-reviewer" }
 </code></pre>
 <h3 id="get-apiskillsinstalled"><a class="header" href="#get-apiskillsinstalled"><code>GET /api/skills/installed</code></a></h3>
-<p>List installed remote skills.</p>
+<p>列出已安装的远程技能。</p>
 <h3 id="delete-apiskillsremoteid"><a class="header" href="#delete-apiskillsremoteid"><code>DELETE /api/skills/remote/{id}</code></a></h3>
-<p>Uninstall a remote skill.</p>
-<h2 id="workspaces"><a class="header" href="#workspaces">Workspaces</a></h2>
+<p>卸载远程技能。</p>
+<h2 id="工作区"><a class="header" href="#工作区">工作区</a></h2>
 <h3 id="get-apiworkspaces"><a class="header" href="#get-apiworkspaces"><code>GET /api/workspaces</code></a></h3>
-<p>List all workspaces.</p>
+<p>列出所有工作区。</p>
 <h3 id="post-apiworkspaces"><a class="header" href="#post-apiworkspaces"><code>POST /api/workspaces</code></a></h3>
-<p>Create a workspace.</p>
+<p>创建工作区。请求体：</p>
 <pre><code class="language-json">{ "name": "dev", "project_id": "my-project", "root_dir": "/home/user/project" }
 </code></pre>
 <h3 id="post-apiworkspacesswitch"><a class="header" href="#post-apiworkspacesswitch"><code>POST /api/workspaces/switch</code></a></h3>
-<p>Switch the active workspace.</p>
+<p>切换当前工作区。请求体：</p>
 <pre><code class="language-json">{ "id": "ws-1" }
 </code></pre>
 <h3 id="get-apiworkspacescurrent"><a class="header" href="#get-apiworkspacescurrent"><code>GET /api/workspaces/current</code></a></h3>
-<p>Get the currently active workspace.</p>
-<h2 id="sop-management"><a class="header" href="#sop-management">SOP Management</a></h2>
+<p>获取当前活动工作区。</p>
+<h2 id="sop-管理"><a class="header" href="#sop-管理">SOP 管理</a></h2>
 <h3 id="get-apisops"><a class="header" href="#get-apisops"><code>GET /api/sops</code></a></h3>
-<p>List SOPs for the current workspace. Pass <code>X-Sisyphus-Workspace-Id</code> header.</p>
+<p>列出当前工作区的 SOP。传递 <code>X-Sisyphus-Workspace-Id</code> 请求头。</p>
 <h3 id="post-apisops"><a class="header" href="#post-apisops"><code>POST /api/sops</code></a></h3>
-<p>Save or create an SOP.</p>
+<p>保存或创建 SOP。请求体：</p>
 <pre><code class="language-json">{ "id": "review-sop", "name": "Code Review", "config": { "nodes": [...], "edges": [...] } }
 </code></pre>
 <h3 id="get-apisopsid"><a class="header" href="#get-apisopsid"><code>GET /api/sops/{id}</code></a></h3>
-<p>Get SOP details with DAG config.</p>
+<p>获取 SOP 详情（含 DAG 配置）。</p>
 <h3 id="delete-apisopsid"><a class="header" href="#delete-apisopsid"><code>DELETE /api/sops/{id}</code></a></h3>
-<p>Delete an SOP.</p>
-<h2 id="cognitive-map"><a class="header" href="#cognitive-map">Cognitive Map</a></h2>
+<p>删除 SOP。</p>
+<h2 id="认知地图"><a class="header" href="#认知地图">认知地图</a></h2>
 <h3 id="get-apicognitivemapsop_id"><a class="header" href="#get-apicognitivemapsop_id"><code>GET /api/cognitive/map/{sop_id}</code></a></h3>
-<p>Get the cognitive map for a running SOP.</p>
-<h2 id="experience-engine"><a class="header" href="#experience-engine">Experience Engine</a></h2>
+<p>获取运行中 SOP 的认知地图。</p>
+<h2 id="经验引擎"><a class="header" href="#经验引擎">经验引擎</a></h2>
 <h3 id="post-apiexperiencesimilar"><a class="header" href="#post-apiexperiencesimilar"><code>POST /api/experience/similar</code></a></h3>
-<p>Query similar experiences by semantic similarity.</p>
+<p>按语义相似度查询相似经验。请求体：</p>
 <pre><code class="language-json">{ "query_text": "error during build", "action_id": "compile", "limit": 5 }
 </code></pre>
-<h2 id="roadmap"><a class="header" href="#roadmap">Roadmap</a></h2>
+<h2 id="路线图"><a class="header" href="#路线图">路线图</a></h2>
 <h3 id="get-apiroadmapprojectid"><a class="header" href="#get-apiroadmapprojectid"><code>GET /api/roadmap/project/{id}</code></a></h3>
-<p>Get project roadmap details.</p>
+<p>获取项目路线图详情。</p>
 <h3 id="post-apiroadmapprojectid"><a class="header" href="#post-apiroadmapprojectid"><code>POST /api/roadmap/project/{id}</code></a></h3>
-<p>Create a new project.</p>
+<p>创建新项目。请求体：</p>
 <pre><code class="language-json">{ "id": "my-project", "name": "My Project", "description": "..." }
 </code></pre>
 <h3 id="post-apiroadmapmilestone"><a class="header" href="#post-apiroadmapmilestone"><code>POST /api/roadmap/milestone</code></a></h3>
-<p>Add a milestone to a project.</p>
+<p>向项目添加里程碑。请求体：</p>
 <pre><code class="language-json">{ "project_id": "my-project", "milestone": { "id": "m1", "title": "Alpha", "status": "pending" } }
 </code></pre>
 <h3 id="post-apiroadmapphase"><a class="header" href="#post-apiroadmapphase"><code>POST /api/roadmap/phase</code></a></h3>
-<p>Add a phase to a milestone.</p>
+<p>向里程碑添加阶段。请求体：</p>
 <pre><code class="language-json">{ "project_id": "my-project", "milestone_id": "m1", "phase": { "id": "p1", "title": "Design" } }
 </code></pre>
 <h3 id="patch-apiroadmapgoalgoal_id"><a class="header" href="#patch-apiroadmapgoalgoal_id"><code>PATCH /api/roadmap/goal/{goal_id}</code></a></h3>
-<p>Update goal status.</p>
+<p>更新目标状态。</p>
 <h3 id="get-apiroadmaphealthproject_id"><a class="header" href="#get-apiroadmaphealthproject_id"><code>GET /api/roadmap/health/{project_id}</code></a></h3>
-<p>Evaluate project health score.</p>
+<p>评估项目健康分数。</p>
 <div style="break-before: page; page-break-before: always;"></div>
-<h1 id="performance"><a class="header" href="#performance">Performance</a></h1>
-<p>Sisyphus includes several performance optimizations.</p>
-<h2 id="pipeline-batching"><a class="header" href="#pipeline-batching">Pipeline Batching</a></h2>
-<p>Nodes are executed in adaptive batches based on historical execution times.</p>
+<h1 id="性能"><a class="header" href="#性能">性能</a></h1>
+<p>Sisyphus 包含多项性能优化。</p>
+<h2 id="流水线批处理"><a class="header" href="#流水线批处理">流水线批处理</a></h2>
+<p>节点根据历史执行时间进行自适应批次执行：</p>
 <ul>
-<li>Fast nodes (&lt;50ms): Larger batches (1.5x)</li>
-<li>Slow nodes (&gt;500ms): Smaller batches (0.7x)</li>
-<li>Medium nodes: Maintain current batch size</li>
+<li>快速节点（&lt;50ms）：较大批次（1.5x）</li>
+<li>慢速节点（&gt;500ms）：较小批次（0.7x）</li>
+<li>中等节点：保持当前批次大小</li>
 </ul>
-<h2 id="output-deduplication-cache"><a class="header" href="#output-deduplication-cache">Output Deduplication Cache</a></h2>
-<p>The <code>OutputCache</code> stores content-hash indexed results to avoid re-executing identical computations.</p>
+<h2 id="输出去重缓存"><a class="header" href="#输出去重缓存">输出去重缓存</a></h2>
+<p><code>OutputCache</code> 存储内容哈希索引的结果，避免重复执行相同计算：</p>
 <ul>
-<li>1000 entry capacity</li>
-<li>Content-hash based (deterministic)</li>
-<li>Automatic eviction on capacity</li>
+<li>1000 条目容量</li>
+<li>基于内容哈希（确定性）</li>
+<li>达到容量自动逐出</li>
 </ul>
-<h2 id="context-compression"><a class="header" href="#context-compression">Context Compression</a></h2>
-<p>Large context values are automatically compressed:</p>
+<h2 id="上下文压缩"><a class="header" href="#上下文压缩">上下文压缩</a></h2>
+<p>大上下文值自动压缩：</p>
 <ul>
-<li>Strings &gt; threshold: Truncated with marker</li>
-<li>Objects &gt; 10 keys: Kept first 10 keys</li>
+<li>字符串超过阈值：截断并加标记</li>
+<li>对象超过 10 个键：仅保留前 10 个键</li>
 </ul>
-<h2 id="execution-profiler"><a class="header" href="#execution-profiler">Execution Profiler</a></h2>
-<p>Tracks per-node execution metrics:</p>
+<h2 id="执行性能分析器"><a class="header" href="#执行性能分析器">执行性能分析器</a></h2>
+<p>跟踪每个节点的执行指标：</p>
 <ul>
-<li>Average duration by node type</li>
-<li>Cache hit rate</li>
-<li>Slowest nodes list</li>
+<li>按节点类型的平均时长</li>
+<li>缓存命中率</li>
+<li>最慢节点列表</li>
 </ul>
-<h2 id="benchmarks"><a class="header" href="#benchmarks">Benchmarks</a></h2>
+<h2 id="基准测试"><a class="header" href="#基准测试">基准测试</a></h2>
 <pre><code class="language-bash">cargo bench -p sisyphus-core
 </code></pre>
-<p>Benchmark results are stored in <code>target/criterion/</code>.</p>
+<p>基准结果存储在 <code>target/criterion/</code>。</p>
+<h2 id="性能调优"><a class="header" href="#性能调优">性能调优</a></h2>
+<h3 id="缓存调优"><a class="header" href="#缓存调优">缓存调优</a></h3>
+<p><code>OutputCache</code> 的逐出策略与容量可针对不同工作负载调优。</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>参数</th><th>默认值</th><th>说明</th><th>建议</th></tr>
+</thead>
+<tbody>
+<tr><td>缓存容量</td><td>1000</td><td>逐出前的最大条目数</td><td>重复工作负载时增大</td></tr>
+<tr><td>上下文阈值</td><td>4096</td><td>触发压缩前的字节数</td><td>内存受限时减小</td></tr>
+<tr><td>批次基数</td><td>4</td><td>初始流水线批次大小</td><td>高吞吐时增大</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>权衡</strong>：更大的缓存以减少重复执行为代价占用更多内存。通过性能分析器监控缓存命中率。命中率低于 60% 时考虑增大容量。超过 95% 时减小容量可释放内存且不影响性能。</p>
+<h3 id="sandboxd-模式选择"><a class="header" href="#sandboxd-模式选择">Sandboxd 模式选择</a></h3>
+<p>沙箱守护进程（<code>sandboxd</code>）可运行在两种模式：</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>模式</th><th>延迟</th><th>隔离</th><th>使用场景</th></tr>
+</thead>
+<tbody>
+<tr><td><strong>嵌入式</strong></td><td>~50µs</td><td>进程</td><td>开发、可信工作负载</td></tr>
+<tr><td><strong>守护进程</strong></td><td>~500µs</td><td>容器</td><td>生产、不可信代码</td></tr>
+</tbody>
+</table>
+</div>
+<ul>
+<li><strong>嵌入式</strong>在进程内实例化 Wasm 运行时。延迟最低，但无容器级隔离。适合开发与 CI。</li>
+<li><strong>守护进程</strong>通过 gRPC 与单独的 <code>sandboxd</code> 进程通信。每次调用延迟更高，但提供容器级沙箱。</li>
+</ul>
+<p>在 <code>Config.tool_executor</code> 中通过配置工具执行器切换模式。守护进程模式是生产部署的默认。</p>
+<h3 id="并发任务调优"><a class="header" href="#并发任务调优">并发任务调优</a></h3>
+<p>认知循环支持可配置的并发，用于并行分支评估。</p>
+<pre><code class="language-toml"># config.toml
+[cognitive_loop]
+max_concurrent_tasks = 4      # ParallelBranchPredictor 中的并行分支
+max_iterations = 30           # 认知迭代次数上限
+convergence_threshold = 0.15  # 偏差低于此值时停止
+</code></pre>
+<p>调优指南：</p>
+<ul>
+<li><strong>max_concurrent_tasks</strong>：CPU 密集型工作负载设置为 CPU 核心数。I/O 密集（LLM 调用）时，更高值（8-16）可提升吞吐量。</li>
+<li><strong>max_iterations</strong>：更低的值降低最坏情况延迟。更高的值提升收敛质量。</li>
+<li><strong>convergence_threshold</strong>：更严格（更低）的阈值提升输出质量，但需要更多迭代。</li>
+</ul>
+<p>使用 <code>RUST_LOG=sisyphus_core=info</code> 通过 tracing spans（<code>predict</code>、<code>execute</code>、<code>reflect</code>、<code>evolve</code>）监控认知循环性能。</p>
 <div style="break-before: page; page-break-before: always;"></div>
-<h1 id="security"><a class="header" href="#security">Security</a></h1>
-<h2 id="api-key-authentication"><a class="header" href="#api-key-authentication">API Key Authentication</a></h2>
-<p>All API endpoints require authentication via:</p>
+<h1 id="安全"><a class="header" href="#安全">安全</a></h1>
+<h2 id="api-密钥认证"><a class="header" href="#api-密钥认证">API 密钥认证</a></h2>
+<p>所有 API 端点需要通过以下方式认证：</p>
 <ol>
-<li><strong>Header</strong>: <code>X-API-Key: &lt;your-key&gt;</code></li>
-<li><strong>Bearer</strong>: <code>Authorization: Bearer &lt;your-key&gt;</code></li>
+<li><strong>请求头</strong>（Header）：<code>X-API-Key: &lt;your-key&gt;</code></li>
+<li><strong>Bearer</strong>：<code>Authorization: Bearer &lt;your-key&gt;</code></li>
 </ol>
-<p>The key is validated against the <code>api.key</code> field in configuration.</p>
-<h2 id="external-directory-permissions"><a class="header" href="#external-directory-permissions">External Directory Permissions</a></h2>
-<p>The <code>external_dir_permissions</code> config controls which directories the engine can access:</p>
+<p>密钥与配置中的 <code>api.key</code> 字段比对。</p>
+<h2 id="外部目录权限"><a class="header" href="#外部目录权限">外部目录权限</a></h2>
+<p><code>external_dir_permissions</code> 配置控制引擎可访问的目录：</p>
 <pre><code class="language-toml">[tools]
 external_dir_permissions = [
     { dir = "/project", write = true },
@@ -743,45 +1129,45 @@ external_dir_permissions = [
     { dir = "/home", write = false }
 ]
 </code></pre>
-<h2 id="environment-variable-substitution"><a class="header" href="#environment-variable-substitution">Environment Variable Substitution</a></h2>
-<p>Config values support env var substitution:</p>
+<h2 id="环境变量替换"><a class="header" href="#环境变量替换">环境变量替换</a></h2>
+<p>配置值支持环境变量替换：</p>
 <ul>
-<li><code>{env:VAR_NAME}</code> - Use env var, error if missing</li>
-<li><code>{env:VAR_NAME|default}</code> - Use env var with fallback</li>
-<li><code>{env:VAR_NAME:}</code> - Use env var, empty string if missing</li>
+<li><code>{env:VAR_NAME}</code> - 使用环境变量，缺失时报错</li>
+<li><code>{env:VAR_NAME|default}</code> - 使用环境变量，带默认值回退</li>
+<li><code>{env:VAR_NAME:}</code> - 使用环境变量，缺失时为空字符串</li>
 </ul>
-<h2 id="rbac-role-based-access-control"><a class="header" href="#rbac-role-based-access-control">RBAC (Role-Based Access Control)</a></h2>
-<p>Roles: <code>admin</code>, <code>user</code>, <code>viewer</code>, <code>guest</code></p>
+<h2 id="rbac基于角色的访问控制"><a class="header" href="#rbac基于角色的访问控制">RBAC（基于角色的访问控制）</a></h2>
+<p>角色：<code>admin</code>、<code>user</code>、<code>viewer</code>、<code>guest</code></p>
 <div class="table-wrapper">
 <table>
 <thead>
-<tr><th>Role</th><th>Permissions</th></tr>
+<tr><th>角色</th><th>权限</th></tr>
 </thead>
 <tbody>
-<tr><td>admin</td><td>Full access</td></tr>
-<tr><td>user</td><td>Execute, read, write</td></tr>
-<tr><td>viewer</td><td>Read-only</td></tr>
-<tr><td>guest</td><td>Health check only</td></tr>
+<tr><td>admin</td><td>完全访问</td></tr>
+<tr><td>user</td><td>执行、读取、写入</td></tr>
+<tr><td>viewer</td><td>只读</td></tr>
+<tr><td>guest</td><td>仅健康检查</td></tr>
 </tbody>
 </table>
 </div>
-<h2 id="session-isolation"><a class="header" href="#session-isolation">Session Isolation</a></h2>
-<p>Sessions are isolated by session ID. Each session maintains:</p>
+<h2 id="会话隔离"><a class="header" href="#会话隔离">会话隔离</a></h2>
+<p>会话按会话 ID 隔离。每个会话维护：</p>
 <ul>
-<li>Separate message history</li>
-<li>Separate memory context</li>
-<li>Separate DAG execution state</li>
+<li>独立的消息历史</li>
+<li>独立的记忆上下文</li>
+<li>独立的 DAG 执行状态</li>
 </ul>
-<h2 id="sandbox-execution"><a class="header" href="#sandbox-execution">Sandbox Execution</a></h2>
-<p>The WASM sandbox provides process isolation for tool execution:</p>
+<h2 id="沙箱执行"><a class="header" href="#沙箱执行">沙箱执行</a></h2>
+<p>WASM 沙箱为工具执行提供进程隔离：</p>
 <ul>
-<li>Memory limits via wasmtime config</li>
-<li>Fuel-based instruction limits</li>
-<li>No filesystem access outside allowed directories</li>
-<li>No network access (unless explicitly granted)</li>
+<li>通过 wasmtime 配置限制内存</li>
+<li>基于燃料的指令限制</li>
+<li>不允许访问允许目录之外的文件系统</li>
+<li>无网络访问（除非明确授予）</li>
 </ul>
 <div style="break-before: page; page-break-before: always;"></div>
-<h1 id="deployment"><a class="header" href="#deployment">Deployment</a></h1>
+<h1 id="部署"><a class="header" href="#部署">部署</a></h1>
 
                     </main>
 

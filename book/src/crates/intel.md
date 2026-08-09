@@ -1,12 +1,12 @@
-# sisyphus-intel — Cognition & Simulation
+# sisyphus-intel — 认知与模拟
 
-The "brain" of Sisyphus — four core cognitive capabilities: **flow synthesis**, **simulation**, **reflection**, and **evolution**.
+Sisyphus 的"大脑" — 四项核心认知能力：**流程合成**（flow synthesis）、**模拟**（simulation）、**反思**（reflection）与**演进**（evolution）。
 
-## Four Cognitive Traits
+## 四个认知 traits
 
-### 1. FlowSynthesizer (Synthesis)
+### 1. FlowSynthesizer（合成）
 
-Converts a natural-language goal into a DAG of typed actions:
+将自然语言目标转换为类型化动作的 DAG：
 
 ```rust
 #[async_trait]
@@ -16,11 +16,11 @@ pub trait FlowSynthesizer: Send + Sync {
 }
 ```
 
-**Impl: `GoalDrivenSynthesizer`** — keyword-based parser that maps action verbs (fetch, process, store, search, validate) to linear or parallel DAG pipelines.
+**实现：`GoalDrivenSynthesizer`** — 基于关键词的解析器，将动作动词（fetch、process、store、search、validate）映射为线性或并行 DAG 流水线。
 
-### 2. Simulator (Prediction)
+### 2. Simulator（预测）
 
-Estimates success probability and execution cost before running:
+运行前估算成功概率与执行成本：
 
 ```rust
 #[async_trait]
@@ -30,11 +30,11 @@ pub trait Simulator: Send + Sync {
 }
 ```
 
-**Impl: `MonteCarloSimulator`** — random path sampling through the DAG. Computes blended path probabilities and estimated costs. Uses execution history from the state store to bias sampling toward historically successful paths.
+**实现：`MonteCarloSimulator`** — 对 DAG 进行随机路径采样。计算混合路径概率与估算成本。使用状态存储中的执行历史，使采样偏向历史上成功的路径。
 
-### 3. Reflector (Analysis)
+### 3. Reflector（分析）
 
-Compares predicted vs actual outcomes:
+对比预测与实际结果：
 
 ```rust
 #[async_trait]
@@ -44,11 +44,11 @@ pub trait Reflector: Send + Sync {
 }
 ```
 
-**Impl: `StandardReflector`** — string-based error classification building a deviation score (0.0 = perfect match). Generates structured improvement suggestions.
+**实现：`StandardReflector`** — 基于字符串的错误分类，构建偏差分数（0.0 = 完全匹配），生成结构化改进建议。
 
-### 4. SOPEvolver (Adaptation)
+### 4. SOPEvolver（自适应）
 
-Mutates the SOP after reflection:
+反思后变异 SOP：
 
 ```rust
 #[async_trait]
@@ -58,11 +58,11 @@ pub trait SOPEvolver: Send + Sync {
 }
 ```
 
-**Impl: `StandardEvolver`** — wraps failed nodes in retry logic, adjusts fuel budgets. Uses either `SimpleFuelPricer` (linear) or `AdaptiveFuelPricer` (exponential backoff).
+**实现：`StandardEvolver`** — 用重试逻辑包装失败节点，调整燃料预算。使用 `SimpleFuelPricer`（线性）或 `AdaptiveFuelPricer`（指数退避）。
 
-## Error Classification
+## 错误分类
 
-`ErrorCategory` classifies execution failures:
+`ErrorCategory` 对执行失败进行分类：
 
 ```rust
 pub enum ErrorCategory {
@@ -73,9 +73,9 @@ pub enum ErrorCategory {
 }
 ```
 
-Used by `StandardReflector` to determine severity and generate targeted improvement suggestions.
+`StandardReflector` 使用它判断严重级别并生成有针对性的改进建议。
 
-## Example
+## 示例
 
 ```rust
 use sisyphus_intel::*;

@@ -1,60 +1,60 @@
-# DAG Execution
+# DAG 执行
 
-Sisyphus executes SOP graphs using a **parallel topological executor** based on in-degree tracking.
+Sisyphus 使用基于入度跟踪的**并行拓扑执行器**执行 SOP 图。
 
-## Algorithm
+## 算法
 
 ```mermaid
 flowchart TD
-    A[Compute in-degree for all nodes] --> B{Find nodes<br/>with in-degree = 0}
-    B --> C[Spawn ready nodes<br/>via tokio::JoinSet]
-    C --> D[Wait for ANY node<br/>to complete]
-    D --> E[Decrement in-degree<br/>of downstream nodes]
-    E --> F{New nodes<br/>ready?}
-    F -->|Yes| C
-    F -->|No| G{All nodes<br/>done?}
-    G -->|Yes| H[Return<br/>ExecutionContext]
-    G -->|No| D
+    A[为所有节点计算入度] --> B{查找<br/>入度为 0 的节点}
+    B --> C[通过 tokio::JoinSet<br/>启动就绪节点]
+    C --> D[等待任一节点<br/>完成]
+    D --> E[递减下游节点<br/>的入度]
+    E --> F{新节点<br/>就绪?}
+    F -->|是| C
+    F -->|否| G{所有节点<br/>完成?}
+    G -->|是| H[返回<br/>ExecutionContext]
+    G -->|否| D
 ```
 
-## Parallelism Model
+## 并行模型
 
-Nodes with no dependency relationship execute simultaneously:
+无依赖关系的节点同时执行：
 
 ```mermaid
 gantt
-    title DAG Execution Timeline
+    title DAG 执行时间线
     dateFormat X
     axisFormat %s
 
-    section Batch 1
+    section 批次 1
     Node A (fetch)    : 0, 3
     Node B (validate) : 0, 2
     Node C (search)   : 0, 4
 
-    section Batch 2
+    section 批次 2
     Node D (process)  : 3, 3
     Node E (merge)    : 4, 2
 
-    section Batch 3
+    section 批次 3
     Node F (output)   : 6, 1
 ```
 
-## Code: Core Executor
+## 代码：核心执行器
 
 ```rust
-// Simplified from sisyphus-core::Executor
+// 简化为 sisyphus-core::Executor
 pub async fn execute_with_context(
     &self, sop_graph: &SOPGraph, start_node: NodeIndex, initial_ctx: Option<Arc<ExecutionContext>>,
 ) -> Result<Arc<ExecutionContext>, String> {
-    // Validate acyclic
+    // 校验无环
     toposort(&sop_graph.graph, None).map_err(|_| "SOPGraph contains cycles")?;
 
     let ctx = initial_ctx.unwrap_or_else(|| Arc::new(ExecutionContext::new()));
     let mut join_set = JoinSet::new();
     let mut in_degree: HashMap<NodeIndex, usize> = HashMap::new();
 
-    // Initialize in-degree counts
+    // 初始化入度计数
     for node in sop_graph.graph.node_indices() {
         let degree = sop_graph.graph.edges_directed(node, Incoming).count();
         in_degree.insert(node, degree);
@@ -65,18 +65,18 @@ pub async fn execute_with_context(
         }
     }
 
-    // Process results as they complete
+    // 随完成处理结果
     while let Some(result) = join_set.join_next().await {
         let (node_id, output) = result.map_err(|e| format!("Join error: {}", e))??;
-        // Store output in context
+        // 在上下文中存储输出
         ctx.set(&sop_graph.graph[node_id].name(), output).await;
-        // Fan-out to downstream nodes
+        // 扇出到下游节点
         for edge in sop_graph.graph.edges_directed(node_id, Outgoing) {
             let target = edge.target();
             let degree = in_degree.get_mut(&target).unwrap();
             *degree -= 1;
             if *degree == 0 {
-                // Spawn the now-ready node
+                // 启动现在就绪的节点
             }
         }
     }
@@ -85,12 +85,12 @@ pub async fn execute_with_context(
 }
 ```
 
-## Error Handling
+## 错误处理
 
-- **Cycle detection**: `toposort()` rejects cyclic graphs before execution begins
-- **Node errors**: Propagated up; the cognitive loop catches them and evolves the SOP
-- **Join errors**: Tokio task panics are caught and returned as errors
+- **环检测**：`toposort()` 在执行前拒绝环形图
+- **节点错误**：向上传播，认知循环捕获并演进 SOP
+- **Join 错误**：Tokio 任务 panic 被捕获并作为错误返回
 
-## Fuel & Memory
+## 燃料与内存
 
-Each node executes with its configured fuel budget. Wasmtime's fuel metering tracks WASM instruction consumption. Exhaustion triggers `ResourceExhausted`, which the cognitive loop uses to adjust fuel for retries.
+每个节点使用其配置的燃料预算执行。Wasmtime 的燃料计量跟踪 WASM 指令消耗。耗尽时触发 `ResourceExhausted`，认知循环据此为重试调整燃料。

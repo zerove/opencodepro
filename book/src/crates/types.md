@@ -1,12 +1,12 @@
-# sisyphus-types — Core Data Structures
+# sisyphus-types — 核心数据结构
 
-Shared types, traits, and configuration used by all other crates.
+其他所有 crate 共享的类型、traits 与配置。
 
-## Key Types
+## 关键类型
 
 ### `SOPGraph`
 
-A directed acyclic graph (DAG) using `petgraph::graph::DiGraph<Arc<dyn SOPNode>, f64>`:
+使用 `petgraph::graph::DiGraph<Arc<dyn SOPNode>, f64>` 的有向无环图（DAG）：
 
 ```rust
 pub struct SOPGraph {
@@ -15,7 +15,7 @@ pub struct SOPGraph {
 }
 ```
 
-Each node implements the `SOPNode` trait:
+每个节点实现 `SOPNode` trait：
 
 ```rust
 pub trait SOPNode: Send + Sync {
@@ -26,7 +26,7 @@ pub trait SOPNode: Send + Sync {
 
 ### `WasmSOPNode`
 
-Concrete node implementation backed by a WASM tool:
+由 WASM 工具支持的具象节点实现：
 
 ```rust
 pub struct WasmSOPNode {
@@ -39,7 +39,7 @@ pub struct WasmSOPNode {
 
 ### `ExecutionContext`
 
-Thread-safe shared context for propagating values through the DAG. Internally an `Arc<RwLock<HashMap<String, Value>>>`.
+线程安全的共享上下文，用于在 DAG 中传播值。内部为 `Arc<RwLock<HashMap<String, Value>>>`。
 
 ```rust
 let ctx = ExecutionContext::new();
@@ -49,7 +49,7 @@ let val = ctx.get_result("key").await;
 
 ### `ToolExecutor` Trait
 
-The abstraction that decouples `sisyphus-core` from `sisyphus-sandbox`:
+将 `sisyphus-core` 与 `sisyphus-sandbox` 解耦的抽象：
 
 ```rust
 #[async_trait]
@@ -60,7 +60,7 @@ pub trait ToolExecutor: Send + Sync {
 
 ### `StateStore` Trait
 
-Storage abstraction decoupling `sisyphus-core` from `sisyphus-mem`:
+将 `sisyphus-core` 与 `sisyphus-mem` 解耦的存储抽象：
 
 ```rust
 #[async_trait]
@@ -72,21 +72,21 @@ pub trait StateStore: Send + Sync {
 
 ### `Config`
 
-TOML-deserializable configuration for all subsystems. Supports environment variable overrides:
+所有子系统均可反序列化 TOML 的配置，支持环境变量覆盖：
 
 ```rust
 let config = Config::from_file("config.toml")?;
 config.apply_env_overrides();
-// SISYPHUS_METRICS__PROMETHEUS_PORT=9090 overrides metrics.prometheus_port
+// SISYPHUS_METRICS__PROMETHEUS_PORT=9090 覆盖 metrics.prometheus_port
 ```
 
-### Other Key Types
+### 其他关键类型
 
-| Type | Description |
+| 类型 | 说明 |
 |------|-------------|
-| `CompositeGraph` | Multiple `SOPGraph`s with cross-graph dependency mappings |
-| `DataMapping` | Defines how a sink node's output feeds a downstream graph's input |
-| `GraphDependency` | Dependency edge between two SOP graphs |
-| `ExecutionHistory` | Per-SOP execution records with timestamps and deviation scores |
-| `CognitiveReport` | Full iteration report from the cognitive loop |
-| `NodeOutput` | Typed enum for node execution results |
+| `CompositeGraph` | 多个 `SOPGraph` 及跨图依赖映射 |
+| `DataMapping` | 定义汇节点输出如何馈入下游图的输入 |
+| `GraphDependency` | 两个 SOP 图之间的依赖边 |
+| `ExecutionHistory` | 每个 SOP 的执行记录，含时间戳与偏差分数 |
+| `CognitiveReport` | 认知循环的完整迭代报告 |
+| `NodeOutput` | 节点执行结果的类型化枚举 |

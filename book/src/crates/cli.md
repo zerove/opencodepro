@@ -1,164 +1,164 @@
-# sisyphus-cli — Command-Line Interface
+# sisyphus-cli — 命令行界面
 
-The CLI binary provides direct access to Sisyphus tools and agents from the terminal. It supports both one-shot commands and an interactive TUI mode.
+CLI 二进制提供了从终端直接访问 Sisyphus 工具与代理的能力，支持一次性命令与交互式 TUI 模式。
 
-## Installation
+## 安装
 
 ```bash
 cargo build --release -p sisyphus-cli
 ./target/release/sisyphus-cli --help
 ```
 
-## Command Structure
+## 命令结构
 
 ```
 sisyphus [OPTIONS] <COMMAND>
 ```
 
-### Global Options
+### 全局选项
 
-| Flag | Env | Description |
+| 标志 | 环境变量 | 说明 |
 |------|-----|-------------|
-| `-i`, `--interactive` | | Launch interactive TUI mode |
-| `-b`, `--bridge` | `SISYPHUS_BRIDGE` | Bridge gRPC address (default: `http://[::1]:50051`) |
-| `--data-dir` | `SISYPHUS_DATA_DIR` | Data directory for todo/session storage |
-| `--config` | `SISYPHUS_CONFIG` | Path to TOML config file |
+| `-i`, `--interactive` | | 启动交互式 TUI 模式 |
+| `-b`, `--bridge` | `SISYPHUS_BRIDGE` | Bridge gRPC 地址（默认：`http://[::1]:50051`） |
+| `--data-dir` | `SISYPHUS_DATA_DIR` | 待办/会话存储的数据目录 |
+| `--config` | `SISYPHUS_CONFIG` | TOML 配置文件路径 |
 
-## File Tools
+## 文件工具
 
 ```bash
-# Read a file
+# 读取文件
 sisyphus read path/to/file.txt
 
-# Write content to a file
+# 写入内容到文件
 sisyphus write path/to/output.txt "file content"
 
-# Execute a shell command
+# 执行 shell 命令
 sisyphus exec "cargo test" --dir /path/to/project
 
-# Search the web
+# 网络搜索
 sisyphus search "Rust async/await" -n 10
 ```
 
-## Agent Subcommands
+## 代理子命令
 
-### librarian — External Research Agent
+### librarian — 外部调研代理
 
-Search the web, fetch documentation, and find code examples.
+搜索网络、获取文档、查找代码示例。
 
 ```bash
-# Research a topic (web, docs, code, or all)
+# 调研主题（web、docs、code 或全部）
 sisyphus librarian research "Rust async" --scope all -n 5
 
-# Fetch and display documentation from a URL
+# 从 URL 获取并展示文档
 sisyphus librarian fetch-docs https://doc.rust-lang.org/std/fmt/
 
-# Find code examples for a library or API
+# 查找库或 API 的代码示例
 sisyphus librarian examples "serde_json::from_str" -l rust
 
-# Synthesise findings from a JSON research report
+# 从 JSON 调研报告综合发现
 sisyphus librarian synthesise findings.json
 ```
 
-`librarian research` supports the following scopes via `--scope`:
-- `web` — Search the web for general information
-- `docs` — Fetch documentation pages
-- `code` — Find code examples
-- `all` — All of the above (default)
+`librarian research` 通过 `--scope` 支持以下范围：
+- `web` — 搜索 web 获取一般信息
+- `docs` — 获取文档页面
+- `code` — 查找代码示例
+- `all` — 以上全部（默认）
 
-### metis — Pre-Planning Analysis Agent
+### metis — 预规划分析代理
 
-Analyse a request for ambiguities and implicit requirements before implementation.
+在实现前分析请求中的歧义与隐含需求。
 
 ```bash
-# Analyse inline request text
+# 分析内联请求文本
 sisyphus metis analyse "Add user authentication with OAuth2 support"
 
-# Analyse request from a file
+# 从文件分析请求
 sisyphus metis analyse --file request.txt
 ```
 
-The analysis output includes:
-- **Summary** — High-level assessment of the request
-- **Ambiguities** — Aspects that need clarification, with severity levels and suggested resolutions
-- **Implicit Requirements** — Requirements that can be inferred but aren't explicitly stated
+分析输出包括：
+- **摘要**（Summary）— 请求的高层评估
+- **歧义**（Ambiguities）— 需要澄清的方面，含严重级别与建议解决方案
+- **隐含需求**（Implicit Requirements）— 可推断但未明确陈述的需求
 
-### momus — Plan/Code/Architecture Review Agent
+### momus — 计划/代码/架构审查代理
 
-Review plans, source code, and architecture for completeness and consistency.
+审查计划、源代码与架构的完整性与一致性。
 
 ```bash
-# Review a plan file
+# 审查计划文件
 sisyphus momus review-plan plan.md
 
-# Review a source code file
+# 审查源代码文件
 sisyphus momus review-code src/main.rs
 
-# Review architecture documentation inline
+# 内联审查架构文档
 sisyphus momus review-arch "The system uses microservices with message queues"
 
-# Review all Rust files in a directory
+# 审查目录下所有 Rust 文件
 sisyphus momus review-dir src/
 ```
 
-## Task & Session Management
+## 任务与会话管理
 
 ```bash
-# Add a todo item
+# 添加待办项
 sisyphus todo add "Fix login bug" -p high
 
-# List pending todos
+# 列出待办事项
 sisyphus todo list --status pending
 
-# Create a new session
+# 创建新会话
 sisyphus session create "Refactoring session"
 
-# List available sessions
+# 列出可用会话
 sisyphus session list
 ```
 
-## Bridge Commands
+## Bridge 命令
 
 ```bash
-# Execute a Standard Operating Procedure via the bridge gRPC
+# 通过 bridge gRPC 执行标准操作程序
 sisyphus sop run goal:deploy_to_staging
 
-# List available SOPs
+# 列出可用 SOP
 sisyphus sop list
 
-# Check bridge health
+# 检查 bridge 健康状态
 sisyphus health
 ```
 
-## Workspace Management
+## 工作区管理
 
-Workspaces provide isolated project environments with independent state (SOPs, sessions, todos).
+工作区提供隔离的项目环境，带有独立状态（SOP、会话、待办）。
 
 ```bash
-# Create a new workspace
+# 创建新工作区
 sisyphus workspace create "My Project" --project-id proj_alpha --root-dir /path/to/project
 
-# List all workspaces
+# 列出所有工作区
 sisyphus workspace list
 
-# Switch to a workspace
+# 切换到工作区
 sisyphus workspace switch <workspace-id>
 
-# Show current workspace
+# 显示当前工作区
 sisyphus workspace current
 
-# Delete a workspace (with confirmation prompt)
+# 删除工作区（带确认提示）
 sisyphus workspace delete <workspace-id>
 
-# Delete a workspace (skip confirmation)
+# 删除工作区（跳过确认）
 sisyphus workspace delete <workspace-id> -y
 ```
 
-All data persisted within a workspace (SOPs, sessions, todos, experiences) is isolated by `project_id`. Switching workspaces changes the active project context so subsequent commands operate in that project's storage namespace.
+工作区内持久化的所有数据（SOPs、会话、待办、经验）通过 `project_id` 隔离。切换工作区会改变活动的项目上下文，使后续命令在该项目的存储命名空间内操作。
 
-## Interactive TUI
+## 交互式 TUI
 
-Launch the interactive terminal UI:
+启动交互式终端界面：
 
 ```bash
 sisyphus --interactive

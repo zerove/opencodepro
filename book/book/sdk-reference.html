@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>SDK Reference - Sisyphus Documentation</title>
+        <title>SDK 参考 - Sisyphus Documentation</title>
 
 
         <!-- Custom HTML head -->
@@ -35,10 +35,10 @@
             const path_to_root = "";
             const default_light_theme = "dark";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-db31fd4d.js";
+            window.path_to_searchindex_js = "searchindex-92536088.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-8abccaca.js"></script>
+        <script src="toc-0abde3c6.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -174,8 +174,8 @@
 
                 <div id="mdbook-content" class="content">
                     <main>
-                        <h1 id="sdk-reference"><a class="header" href="#sdk-reference">SDK Reference</a></h1>
-<p>Sisyphus provides official SDKs for TypeScript, Python, and Go.</p>
+                        <h1 id="sdk-参考"><a class="header" href="#sdk-参考">SDK 参考</a></h1>
+<p>Sisyphus 提供 TypeScript、Python 与 Go 官方 SDK。</p>
 <h2 id="typescript-sdk"><a class="header" href="#typescript-sdk">TypeScript SDK</a></h2>
 <pre><code class="language-bash">npm install @sisyphus/sdk
 </code></pre>
@@ -183,18 +183,18 @@
 
 const client = new SisyphusClient({ baseUrl: 'http://localhost:8080' });
 
-// Health check
+// 健康检查
 const health = await client.health();
 console.log(health.status); // "ok"
 
-// Sessions
+// 会话
 const sessions = await client.listSessions();
 const session = await client.createSession('my-session');
 
-// Search
+// 搜索
 const results = await client.searchMemory('my query', 10);
 
-// Execute SOP
+// 执行 SOP
 const result = await client.executeSop('sop-id');
 console.log(result.status); // "success"
 </code></pre>
@@ -205,18 +205,18 @@ console.log(result.status); // "success"
 
 client = SisyphusClient(base_url="http://localhost:8080")
 
-# Health check
+# 健康检查
 health = client.health()
 print(health.status)  # "ok"
 
-# Sessions
+# 会话
 sessions = client.list_sessions()
 session = client.create_session("my-session")
 
-# Search
+# 搜索
 results = client.search("my query", top_k=10)
 
-# Execute SOP
+# 执行 SOP
 result = client.execute_sop("sop-id")
 print(result.status)  # "success"
 </code></pre>
@@ -233,42 +233,42 @@ import (
 func main() {
     client := sisyphus.NewClient("http://localhost:8080", "")
 
-    // Health check
+    // 健康检查
     health, _ := client.Health()
     fmt.Println(health.Status) // "ok"
 
-    // Sessions
+    // 会话
     sessions, _ := client.ListSessions()
     session, _ := client.CreateSession("my-session")
 
-    // Search
+    // 搜索
     results, _ := client.SearchMemory("my query", 10)
 
-    // Execute SOP
+    // 执行 SOP
     result, _ := client.ExecuteSOP("sop-id", nil)
     fmt.Println(result.Status) // "success"
 }
 </code></pre>
-<h2 id="api-reference"><a class="header" href="#api-reference">API Reference</a></h2>
-<p>All SDKs expose the same core methods:</p>
+<h2 id="api-参考"><a class="header" href="#api-参考">API 参考</a></h2>
+<p>所有 SDK 暴露相同的核心方法：</p>
 <div class="table-wrapper">
 <table>
 <thead>
-<tr><th>Method</th><th>Description</th></tr>
+<tr><th>方法</th><th>说明</th></tr>
 </thead>
 <tbody>
-<tr><td><code>health()</code></td><td>Check bridge status</td></tr>
-<tr><td><code>list_sessions()</code></td><td>List all sessions</td></tr>
-<tr><td><code>create_session(name)</code></td><td>Create a new session</td></tr>
-<tr><td><code>get_session(id)</code></td><td>Get session details</td></tr>
-<tr><td><code>add_message(session_id, role, content)</code></td><td>Add message to session</td></tr>
-<tr><td><code>search(query, top_k)</code></td><td>Vector search</td></tr>
-<tr><td><code>execute_sop(sop_id, context)</code></td><td>Execute a SOP</td></tr>
-<tr><td><code>list_sops()</code></td><td>List available SOPs</td></tr>
-<tr><td><code>get_dag(sop_id)</code></td><td>Get DAG graph</td></tr>
-<tr><td><code>list_skills()</code></td><td>List available skills</td></tr>
-<tr><td><code>install_skill(skill_id)</code></td><td>Install a skill</td></tr>
-<tr><td><code>validate_auth(api_key)</code></td><td>Validate API key</td></tr>
+<tr><td><code>health()</code></td><td>检查 bridge 状态</td></tr>
+<tr><td><code>list_sessions()</code></td><td>列出所有会话</td></tr>
+<tr><td><code>create_session(name)</code></td><td>创建新会话</td></tr>
+<tr><td><code>get_session(id)</code></td><td>获取会话详情</td></tr>
+<tr><td><code>add_message(session_id, role, content)</code></td><td>向会话添加消息</td></tr>
+<tr><td><code>search(query, top_k)</code></td><td>向量搜索</td></tr>
+<tr><td><code>execute_sop(sop_id, context)</code></td><td>执行 SOP</td></tr>
+<tr><td><code>list_sops()</code></td><td>列出可用 SOP</td></tr>
+<tr><td><code>get_dag(sop_id)</code></td><td>获取 DAG 图</td></tr>
+<tr><td><code>list_skills()</code></td><td>列出可用技能</td></tr>
+<tr><td><code>install_skill(skill_id)</code></td><td>安装技能</td></tr>
+<tr><td><code>validate_auth(api_key)</code></td><td>验证 API 密钥</td></tr>
 </tbody>
 </table>
 </div>

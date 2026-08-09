@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Architecture - Sisyphus Documentation</title>
+        <title>架构 - Sisyphus Documentation</title>
 
 
         <!-- Custom HTML head -->
@@ -35,10 +35,10 @@
             const path_to_root = "";
             const default_light_theme = "dark";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-db31fd4d.js";
+            window.path_to_searchindex_js = "searchindex-92536088.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-8abccaca.js"></script>
+        <script src="toc-0abde3c6.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -174,89 +174,137 @@
 
                 <div id="mdbook-content" class="content">
                     <main>
-                        <h1 id="architecture-overview"><a class="header" href="#architecture-overview">Architecture Overview</a></h1>
-<p>Sisyphus is organized as a <strong>Rust workspace</strong> with seven interdependent crates, each responsible for a distinct concern:</p>
-<pre><code>┌─────────────────────────────────────────────────┐
-│                   sisyphus-bridge                 │
-│           HTTP/gRPC API · Entry Points            │
-├─────────────────────────────────────────────────┤
-│                   sisyphus-core                   │
-│        Kernel · Orchestration · Cognitive Loop    │
-├────────┬────────┬────────┬────────┬──────────────┤
-│  types  │  intel  │   mem   │ sandbox │  metrics   │
-│   datatypes │cognition│storage  │WASM run │ observability│
-└────────┴────────┴────────┴────────┴──────────────┘
-</code></pre>
-<h2 id="dependency-flow"><a class="header" href="#dependency-flow">Dependency Flow</a></h2>
+                        <h1 id="架构总览"><a class="header" href="#架构总览">架构总览</a></h1>
+<p>Sisyphus 以 <strong>Rust 工作区</strong> 组织，包含 37 个成员：<code>crates/</code> 下的 35 个 crate（含 10 个 <code>sisyphus-tools-*</code> 子 crate，以及 <code>webui</code> 和 <code>evals</code>），每个 crate 负责一个明确的关注点：</p>
+<ul>
+<li><code>sisyphus-bridge</code> / <code>sisyphus-api</code> — 入口点（HTTP/gRPC/REST API）</li>
+<li><code>sisyphus-core</code> — 内核：DAG 执行器、编排、认知循环</li>
+<li><code>sisyphus-types</code> / <code>sisyphus-intel</code> / <code>sisyphus-mem</code> / <code>sisyphus-sandbox</code> / <code>sisyphus-metrics</code> — 基础层</li>
+<li><code>sisyphus-roadmap</code> / <code>sisyphus-knowledge</code> / <code>sisyphus-visual</code> / <code>sisyphus-tools-*</code>（10 个）/ <code>sisyphus-cli</code> / <code>webui</code> — 能力与客户端</li>
+</ul>
+<h2 id="依赖流向"><a class="header" href="#依赖流向">依赖流向</a></h2>
 <pre><code class="language-mermaid">graph TD
     bridge --&gt; core
+    api --&gt; bridge
+    api --&gt; mem
     core --&gt; types
     core --&gt; intel
     core --&gt; mem
     core --&gt; sandbox
     core --&gt; metrics
+    core --&gt; roadmap
+    core --&gt; knowledge
+    core --&gt; tools
     intel --&gt; types
     intel --&gt; metrics
     mem --&gt; types
     mem --&gt; metrics
     sandbox --&gt; types
     sandbox --&gt; metrics
+    sandboxd --&gt; sandbox
     metrics --&gt; types
+    tools --&gt; types
+    cli --&gt; types
+    cli --&gt; tools
+    webui --&gt; bridge
+    webui --&gt; types
+    sdk --&gt; api
 </code></pre>
-<h2 id="data-flow-cognitive-cycle"><a class="header" href="#data-flow-cognitive-cycle">Data Flow (Cognitive Cycle)</a></h2>
+<h2 id="数据流认知周期"><a class="header" href="#数据流认知周期">数据流（认知周期）</a></h2>
 <pre><code>         ┌──────────┐
-         │  GOAL    │
+         │  目标    │
          └────┬─────┘
               ▼
      ┌────────────────┐
-     │   Synthesize    │  sisyphus-intel
-     │   SOP from goal │
+     │   合成         │  sisyphus-intel
+     │   从目标生成 SOP│
      └───────┬────────┘
               ▼
      ┌────────────────┐
-     │  Execute SOP   │  sisyphus-core (DAG runner)
-     │  (parallel)    │  sisyphus-sandbox (WASM tools)
+     │ 执行 SOP      │  sisyphus-core (DAG runner)
+     │ (并行)        │  sisyphus-sandbox (WASM 工具)
      └───────┬────────┘
               ▼
      ┌────────────────┐
-     │   Simulate     │  sisyphus-intel (Monte Carlo)
-     │   Outcomes     │
+     │   模拟         │  sisyphus-intel (蒙特卡洛)
+     │   结果         │
      └───────┬────────┘
               ▼
      ┌────────────────┐
-     │   Reflect      │  sisyphus-intel (deviation)
-     │   Compare      │
+     │   反思         │  sisyphus-intel (偏差)
+     │   比较         │
      └───────┬────────┘
               ▼
      ┌────────────────┐
-     │   Evolve SOP   │  sisyphus-intel (mutate)
-     │   or Converge  │
+     │ 演进 SOP      │  sisyphus-intel (变异)
+     │ 或收敛        │
      └───────┬────────┘
               │
       ┌───────┴───────┐
       ▼               ▼
-  Converged?      Loop back
-      │           to Execute
+  已收敛?          循环回
+      │           到执行
       ▼
-   Return result
+   返回结果
 </code></pre>
-<h2 id="key-design-decisions"><a class="header" href="#key-design-decisions">Key Design Decisions</a></h2>
+<h2 id="关键设计决策"><a class="header" href="#关键设计决策">关键设计决策</a></h2>
 <ul>
-<li><strong>No <code>async</code> in trait methods</strong>: The system uses <code>async_trait</code> for trait methods that need async execution.</li>
-<li><strong>WASM-first tooling</strong>: All external tool code runs in sandboxed WASM instances with fuel and memory limits.</li>
-<li><strong>Metrics everywhere</strong>: Every significant operation records Prometheus metrics for observability.</li>
-<li><strong>Two-level cache</strong>: L1 (in-memory <code>DashMap</code>) + L2 (SQLite via <code>sqlx</code>) for fast key-value storage.</li>
+<li><strong>trait 方法不使用 <code>async</code></strong>：需要异步执行的 trait 方法使用 <code>async_trait</code>。</li>
+<li><strong>WASM 优先的工具</strong>：所有外部工具代码在带燃料与内存限制的沙箱 WASM 实例中运行。</li>
+<li><strong>处处埋点</strong>：每个重要操作都记录 Prometheus 指标以便观测。</li>
+<li><strong>两级缓存</strong>：L1（内存 <code>DashMap</code>）+ L2（<code>sqlx</code> + SQLite）提供快速键值存储。</li>
 </ul>
-<h2 id="architecture-decision-records"><a class="header" href="#architecture-decision-records">Architecture Decision Records</a></h2>
-<p>Significant architecture decisions are documented as ADRs in <a href="https://github.com/zeronhq/sisyphus-wasm/tree/main/docs/adr"><code>docs/adr/</code></a>:</p>
+<h2 id="沙箱嵌入式与守护进程架构"><a class="header" href="#沙箱嵌入式与守护进程架构">沙箱：嵌入式与守护进程架构</a></h2>
+<p>WASM 沙箱有两种运行模式，由 <code>Config.sandbox.use_sandboxd</code> 控制：</p>
+<h3 id="嵌入式模式use_sandboxd--false默认"><a class="header" href="#嵌入式模式use_sandboxd--false默认">嵌入式模式（<code>use_sandboxd = false</code>，默认）</a></h3>
+<pre><code>┌───────────────┐     ExecuteTool     ┌─────────────────┐
+│   gRPC Bridge  │ ──────────────────&gt; │  WasmToolExecutor │
+│               │ &lt;────────────────── │  (wasmtime)      │
+└───────────────┘     return result   └─────────────────┘
+</code></pre>
+<ul>
+<li><code>wasmtime</code> 在 bridge 进程中内嵌运行。</li>
+<li>部署简单，无 IPC 开销。</li>
+<li>OOM 风险：cranelift JIT 内存在进程退出前不会释放。</li>
+<li>适合开发与低吞吐场景。</li>
+</ul>
+<h3 id="守护进程模式use_sandboxd--true"><a class="header" href="#守护进程模式use_sandboxd--true">守护进程模式（<code>use_sandboxd = true</code>）</a></h3>
+<pre><code>┌───────────────┐     gRPC (IPC)     ┌──────────────────┐
+│   gRPC Bridge  │ ──────────────────&gt; │ sisyphus-sandboxd │
+│               │ &lt;────────────────── │  (wasmtime)       │
+└───────────────┘     return result   └──────────────────┘
+         │                                │
+         │ 启动时生成子进程                │ 每次调用独立的 WASM
+         │ 退出时回收                    │ 实例生命周期
+         ▼                                ▼
+   子进程池                       燃料门控执行
+</code></pre>
+<p>Bridge 启动时生成 <code>sisyphus-sandboxd</code> 作为受管子进程，优雅关闭时回收。通信通过本地 gRPC（tonic）通道进行，守护进程监听 <code>127.0.0.1:0</code>（临时端口）。</p>
+<p><strong>优势：</strong></p>
+<ul>
+<li>进程级隔离：sandboxd 崩溃不会拖垮 bridge。</li>
+<li>内存隔离：每次 WASM 调用可在全新的守护进程进程中运行。</li>
+<li>独立扩展：守护进程可部署在单独的硬件上。</li>
+<li>OOM 缓解：守护进程可在不中断 bridge 的情况下重启。</li>
+</ul>
+<p><strong>配置：</strong></p>
+<ul>
+<li><code>sandboxd_path</code>：<code>sisyphus-sandboxd</code> 二进制路径，默认为 <code>PATH</code> 搜索。</li>
+<li>守护进程通过自己的 gRPC 服务接收 <code>wasmtime</code> 执行请求，使用与 <code>ExecuteTool</code> 类似的契约。</li>
+</ul>
+<h2 id="架构决策记录"><a class="header" href="#架构决策记录">架构决策记录</a></h2>
+<p>重要的架构决策以 ADR 形式记录在 <a href="https://github.com/zeronhq/sisyphus-wasm/tree/main/docs/adr"><code>docs/adr/</code></a>：</p>
 <div class="table-wrapper">
 <table>
 <thead>
-<tr><th>ADR</th><th>Title</th><th>Status</th></tr>
+<tr><th>ADR</th><th>标题</th><th>状态</th></tr>
 </thead>
 <tbody>
-<tr><td><a href="https://github.com/zeronhq/sisyphus-wasm/blob/main/docs/adr/002-phase-3b-agent-team-architecture.md">ADR-002</a></td><td>Phase 3b Multi-Agent Team Architecture</td><td>Proposed</td></tr>
-<tr><td><a href="https://github.com/zeronhq/sisyphus-wasm/blob/main/docs/adr/003-modular-restructure.md">ADR-003</a></td><td>Monolithic-to-Modular Restructure</td><td>Accepted</td></tr>
+<tr><td><a href="https://github.com/zeronhq/sisyphus-wasm/blob/main/docs/adr/002-phase-3b-agent-team-architecture.md">ADR-002</a></td><td>阶段 3b 多代理团队架构</td><td>提案</td></tr>
+<tr><td><a href="https://github.com/zeronhq/sisyphus-wasm/blob/main/docs/adr/003-modular-restructure.md">ADR-003</a></td><td>单体到模块化重构</td><td>已接受</td></tr>
+<tr><td><a href="https://github.com/zeronhq/sisyphus-wasm/blob/main/docs/adr/004-workspace-isolation.md">ADR-004</a></td><td>多租户工作区隔离</td><td>已接受</td></tr>
+<tr><td><a href="https://github.com/zeronhq/sisyphus-wasm/blob/main/docs/adr/005-sandboxd-daemon-architecture.md">ADR-005</a></td><td>Sandboxd 守护进程架构</td><td>已接受</td></tr>
+<tr><td><a href="https://github.com/zeronhq/sisyphus-wasm/blob/main/docs/adr/006-configuration-system.md">ADR-006</a></td><td>配置系统</td><td>已接受</td></tr>
 </tbody>
 </table>
 </div>

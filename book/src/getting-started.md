@@ -1,58 +1,58 @@
-# Getting Started
+# 快速开始
 
-This guide walks you through setting up Sisyphus, running the cognitive engine, and executing your first SOP.
+本指南将带你完成 Sisyphus 的安装设置、认知引擎的运行，以及第一个 SOP 的执行。
 
-## Environment Requirements
+## 环境要求
 
-Before you begin, ensure your system meets the following requirements:
+开始之前，请确保系统满足以下要求：
 
-| Component | Requirement | Notes |
+| 组件 | 要求 | 说明 |
 |-----------|-------------|-------|
-| **Rust** | nightly (1.98.0+) | Required by wasmtime/cranelift; stable has ICE on bridge (1.96.0). A `rust-toolchain.toml` override is provided. |
-| **Go** | 1.21+ | Required for building the Go SDK (`crates/sisyphus-sdk-go`). |
-| **Node.js** | 20+ | Required for the TypeScript SDK and MCP tool servers (`workers/ts-tools-mcp`). |
-| **Operating System** | Linux / macOS | Windows is not currently supported for the bridge or sandbox. |
+| **Rust** | nightly (1.98.0+) | wasmtime/cranelift 要求；stable 在 bridge 上有 ICE (1.96.0)。已提供 `rust-toolchain.toml` 覆盖。 |
+| **Go** | 1.21+ | 构建 Go SDK（`crates/sisyphus-sdk-go`）所需。 |
+| **Node.js** | 20+ | TypeScript SDK 与 MCP 工具服务器（`workers/ts-tools-mcp`）所需。 |
+| **操作系统** | Linux / macOS | Windows 暂不支持 bridge 与 sandbox。 |
 
-To install Rust nightly:
+安装 Rust nightly：
 
 ```bash
 rustup toolchain install nightly
 rustup default nightly
 ```
 
-Verify your setup:
+验证环境：
 
 ```bash
-rustc --version  # should show nightly-2026-xx-xx or similar
+rustc --version  # 应显示 nightly-2026-xx-xx 或类似版本
 cargo --version
 ```
 
-## Quick Start
+## 快速开始
 
-### 1. Clone and Build
+### 1. 克隆并构建
 
 ```bash
 git clone https://github.com/zeronhq/sisyphus-wasm.git
 cd sisyphus-wasm
 
-# Check the workspace (excludes heavy bridge/sandbox crates for speed)
+# 检查工作区（为提速排除重型 bridge/sandbox crate）
 make check-all
 
-# Build the full workspace
+# 构建完整工作区
 make build-all
 ```
 
-> **Note:** Full `cargo check --workspace` may OOM on machines with less than 16 GB RAM because `sisyphus-sandbox` and `sisyphus-bridge` pull in wasmtime/cranelift. Use `make check-all` (which excludes heavy crates) for day-to-day development.
+> **注意：** 完整 `cargo check --workspace` 在内存低于 16 GB 的机器上可能 OOM，因为 `sisyphus-sandbox` 和 `sisyphus-bridge` 引入了 wasmtime/cranelift。日常开发请使用 `make check-all`（排除重型 crate）。
 
-### 2. Configure
+### 2. 配置
 
-Copy the example configuration and adjust as needed:
+复制示例配置并按需调整：
 
 ```bash
 cp config.example.toml config.toml
 ```
 
-The default configuration works out of the box with an LLM endpoint at `http://localhost:8000/v1/chat/completions`. Set `SISYPHUS_LLM_API_KEY` and `SISYPHUS_LLM_ENDPOINT` to point to your LLM provider:
+默认配置可直接使用位于 `http://localhost:8000/v1/chat/completions` 的 LLM 端点。设置 `SISYPHUS_LLM_API_KEY` 和 `SISYPHUS_LLM_ENDPOINT` 指向您的 LLM 提供商：
 
 ```bash
 export SISYPHUS_LLM_API_KEY="your-api-key"
@@ -60,95 +60,95 @@ export SISYPHUS_LLM_ENDPOINT="https://api.openai.com/v1/chat/completions"
 export SISYPHUS_LLM_MODEL="gpt-4o"
 ```
 
-See the [Configuration](./configuration.md) page for all available options.
+查看[配置](./configuration.md)页面了解所有可用选项。
 
-### 3. Run the Bridge
+### 3. 运行 Bridge
 
-The gRPC bridge is the main entry point for the engine. It exposes both gRPC (port 50051) and HTTP REST (port 8080) APIs:
+gRPC bridge 是引擎的主要入口，同时暴露 gRPC（端口 50051）与 HTTP REST（端口 8080）API：
 
 ```bash
 cargo run -p sisyphus-bridge
 ```
 
-By default, the bridge listens on `http://[::1]:50051` (IPv6 with automatic IPv4 fallback). You can override this with:
+默认情况下 bridge 监听 `http://[::1]:50051`（IPv6，自动回退 IPv4）。可用以下方式覆盖：
 
 ```bash
 cargo run -p sisyphus-bridge -- --address http://127.0.0.1:50051
 ```
 
-You should see log output confirming the bridge has started:
+您会看到 bridge 已启动的日志输出：
 
 ```
 [2026-07-30T11:40:00Z INFO  sisyphus_bridge] Starting gRPC bridge on [::1]:50051
 [2026-07-30T11:40:00Z INFO  sisyphus_bridge] HTTP REST API on [::1]:8080
 ```
 
-### 4. Connect the TUI
+### 4. 连接 TUI
 
-In a separate terminal, launch the Terminal User Interface:
+在另一个终端中启动终端用户界面（Terminal User Interface，TUI）：
 
 ```bash
 cargo run -p sisyphus-cli
 ```
 
-If the bridge is running on a non-default address, pass the `--bridge` flag:
+如果 bridge 运行在非默认地址，通过 `--bridge` 标志指定：
 
 ```bash
 cargo run -p sisyphus-cli -- --bridge http://127.0.0.1:50051
 ```
 
-The TUI connects to the bridge and presents the main console. Use `Ctrl+N` to create a new session, then type a goal in natural language.
+TUI 连接 bridge 并显示主控制台。按 `Ctrl+N` 创建新会话，然后用自然语言输入一个目标。
 
-See the [TUI Guide](./tui-guide.md) for keyboard shortcuts and features.
+参见[ TUI 指南](./tui-guide.md) 了解键盘快捷键与功能。
 
-### 5. Verify with a Health Check
+### 5. 用健康检查验证
 
-Once the bridge is running, verify connectivity with a quick REST API call:
+bridge 运行后，用快速 REST API 调用验证连通性：
 
 ```bash
 curl http://[::1]:8080/health
 ```
 
-Expected response:
+预期响应：
 
 ```json
 {"status":"ok","version":"0.1.0"}
 ```
 
-## Simple Example: Execute a SOP
+## 简单示例：执行一个 SOP
 
-Once the bridge is running and the TUI is connected, follow these steps:
+bridge 运行且 TUI 已连接后，按以下步骤操作：
 
-1. **Start a new session** — Press `Ctrl+N` in the TUI.
-2. **Enter a goal** — Type a natural-language goal such as:
+1. **新建会话** — 在 TUI 中按 `Ctrl+N`。
+2. **输入目标** — 输入自然语言目标，例如：
    ```
    Create a Markdown file named "hello-sisyphus.md" with the content "# Hello, Sisyphus!"
    ```
-3. **Observe the cognitive loop** — The engine will:
-   - Synthesize a SOP (a DAG of sub-steps)
-   - Execute each step using WASM tools or LLM calls
-   - Reflect on results and evolve the SOP if needed
-   - Converge when the goal is achieved
-4. **View the result** — The completed session shows the steps taken, the deviation score, and the final output.
+3. **观察认知循环** — 引擎将：
+   - 合成 SOP（子步骤 DAG）
+   - 使用 WASM 工具或 LLM 调用执行每个步骤
+   - 反思结果，必要时演进 SOP
+   - 目标达成时收敛
+4. **查看结果** — 完成的会话显示执行的步骤、偏差分数与最终输出。
 
-You can also interact via the REST API:
+您也可以通过 REST API 交互：
 
 ```bash
-# Submit a goal
+# 提交目标
 curl -X POST http://[::1]:8080/v1/goals \
   -H "Content-Type: application/json" \
   -d '{"goal": "Create a Markdown file named hello-sisyphus.md with content: # Hello, Sisyphus!"}'
 
-# Check goal status (replace {id} with the returned goal ID)
+# 查询目标状态（将 {id} 替换为返回的目标 ID）
 curl http://[::1]:8080/v1/goals/{id}
 
-# List all goals
+# 列出所有目标
 curl http://[::1]:8080/v1/goals
 ```
 
-### Running a SOP Programmatically (Rust)
+### 以库方式运行 SOP（Rust）
 
-If you are integrating Sisyphus as a library:
+如果您将 Sisyphus 作为库集成：
 
 ```rust
 use sisyphus_core::kernel::SisyphusKernel;
@@ -166,27 +166,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-## Running Tests
+## 运行测试
 
-Sisyphus has a comprehensive test suite. Use these commands for different scopes:
+Sisyphus 拥有全面的测试套件，按不同范围使用以下命令：
 
 ```bash
-make test-all          # Run all tests (CI equivalent)
-make test-core         # Full sisyphus-core test suite (includes wasmtime)
-make test-core-quick   # Lib-only sisyphus-core tests (~2 seconds)
-make test-tools        # Test all 10 tool sub-crates (lib only, fast)
-cargo test -p sisyphus-mem  # Storage layer tests
-cargo bench -p sisyphus-core  # Cognitive loop benchmarks
+make test-all          # 运行全部测试（CI 等价）
+make test-core         # 完整 sisyphus-core 测试套件（含 wasmtime）
+make test-core-quick   # 仅 lib 的 sisyphus-core 测试（约 2 秒）
+make test-tools        # 测试全部 10 个工具子 crate（仅 lib，快速）
+cargo test -p sisyphus-mem  # 存储层测试
+cargo bench -p sisyphus-core  # 认知循环基准测试
 ```
 
-## Next Steps
+## 下一步
 
-- [Architecture Overview](./architecture.md) — Understand the system design and cognitive loop
-- [Configuration](./configuration.md) — Learn about all configuration options and environment variables
-- [TUI Guide](./tui-guide.md) — Master the terminal interface with keyboard shortcuts and slash commands
-- [Web Dashboard](./web-dashboard.md) — Real-time monitoring and DAG visualization in your browser
-- [SDK Reference](./sdk-reference.md) — Build integrations with TypeScript, Python, or Go SDKs
-- [REST API](./rest-api.md) — Programmatic control of the engine via HTTP endpoints
-- [Security](./security.md) — Authentication, sandboxing, and deployment hardening
-- [Deployment](./deployment.md) — Production deployment guides and best practices
-- [Performance](./performance.md) — Tuning the cognitive loop, caching, and sandbox configuration
+- [架构总览](./architecture.md) — 了解系统设计与认知循环
+- [配置](./configuration.md) — 了解所有配置选项与环境变量
+- [TUI 指南](./tui-guide.md) — 掌握终端界面的键盘快捷键与斜杠命令
+- [Web 仪表盘](./web-dashboard.md) — 在浏览器中实时监控与 DAG 可视化
+- [SDK 参考](./sdk-reference.md) — 使用 TypeScript、Python 或 Go SDK 构建集成
+- [REST API](./rest-api.md) — 通过 HTTP 端点编程控制引擎
+- [安全](./security.md) — 认证、沙箱与部署加固
+- [部署](./deployment.md) — 生产部署指南与最佳实践
+- [性能](./performance.md) — 调优认知循环、缓存与沙箱配置

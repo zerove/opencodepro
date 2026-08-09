@@ -35,10 +35,10 @@
             const path_to_root = "";
             const default_light_theme = "dark";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-db31fd4d.js";
+            window.path_to_searchindex_js = "searchindex-92536088.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-8abccaca.js"></script>
+        <script src="toc-0abde3c6.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -174,117 +174,117 @@
 
                 <div id="mdbook-content" class="content">
                     <main>
-                        <h1 id="rest-api-reference"><a class="header" href="#rest-api-reference">REST API Reference</a></h1>
-<p>All endpoints are served by the Sisyphus Bridge HTTP server (listening on <code>[::1]:8080</code> by default).</p>
-<p>The OpenAPI specification is available at <a href="/openapi.json"><code>/openapi.json</code></a> or via the Swagger UI at <a href="/swagger-ui"><code>/swagger-ui</code></a>.</p>
-<h2 id="authentication"><a class="header" href="#authentication">Authentication</a></h2>
-<p>Include <code>Authorization: Bearer &lt;token&gt;</code> header. The token is configured in <code>config.auth_token</code>.</p>
-<h2 id="health"><a class="header" href="#health">Health</a></h2>
+                        <h1 id="rest-api-参考"><a class="header" href="#rest-api-参考">REST API 参考</a></h1>
+<p>所有端点由 Sisyphus Bridge HTTP 服务器提供服务（默认监听 <code>[::1]:8080</code>）。</p>
+<p>OpenAPI 规范位于 <a href="/openapi.json"><code>/openapi.json</code></a>，也可通过 Swagger UI 访问：<a href="/swagger-ui"><code>/swagger-ui</code></a>。</p>
+<h2 id="认证"><a class="header" href="#认证">认证</a></h2>
+<p>包含 <code>Authorization: Bearer &lt;token&gt;</code> 请求头。token 在 <code>config.auth_token</code> 中配置。</p>
+<h2 id="健康检查"><a class="header" href="#健康检查">健康检查</a></h2>
 <h3 id="get-health"><a class="header" href="#get-health"><code>GET /health</code></a></h3>
 <pre><code class="language-json">{ "status": "SERVING", "version": "0.1.0" }
 </code></pre>
-<h2 id="tool-execution"><a class="header" href="#tool-execution">Tool Execution</a></h2>
+<h2 id="工具执行"><a class="header" href="#工具执行">工具执行</a></h2>
 <h3 id="post-apiexecute"><a class="header" href="#post-apiexecute"><code>POST /api/execute</code></a></h3>
-<p>Execute a tool by tool ID.</p>
+<p>按工具 ID 执行工具。请求体：</p>
 <pre><code class="language-json">{ "tool_id": "file_read", "args_json": "{\"path\": \"/tmp/test.txt\"}", "fuel_limit": 1000000 }
 </code></pre>
-<h2 id="goal-execution"><a class="header" href="#goal-execution">Goal Execution</a></h2>
+<h2 id="目标执行"><a class="header" href="#目标执行">目标执行</a></h2>
 <h3 id="post-apiexecutegoal"><a class="header" href="#post-apiexecutegoal"><code>POST /api/execute/goal</code></a></h3>
-<p>Execute a cognitive goal via an SOP.</p>
+<p>通过 SOP 执行认知目标。请求体：</p>
 <pre><code class="language-json">{ "goal": "Analyze code", "sop_id": "code-review", "project_id": "my-project" }
 </code></pre>
 <h3 id="get-apiexecutegoalgoal_idstatus"><a class="header" href="#get-apiexecutegoalgoal_idstatus"><code>GET /api/execute/goal/{goal_id}/status</code></a></h3>
-<p>Get the current execution status.</p>
+<p>获取当前执行状态。</p>
 <h3 id="get-apiexecutegoalgoal_idtrace"><a class="header" href="#get-apiexecutegoalgoal_idtrace"><code>GET /api/execute/goal/{goal_id}/trace</code></a></h3>
-<p>Get the full execution trace with per-node events.</p>
+<p>获取含每节点事件的完整执行轨迹。</p>
 <h3 id="get-apiexecutegoalgoal_idstream"><a class="header" href="#get-apiexecutegoalgoal_idstream"><code>GET /api/execute/goal/{goal_id}/stream</code></a></h3>
-<p>Server-Sent Events stream of execution progress.</p>
+<p>执行进度的 Server-Sent Events 流。</p>
 <h3 id="post-apiexecutecomposite"><a class="header" href="#post-apiexecutecomposite"><code>POST /api/execute/composite</code></a></h3>
-<p>Execute multiple goals as a composite DAG.</p>
+<p>将多个目标作为组合 DAG 执行。请求体：</p>
 <pre><code class="language-json">{ "goals": ["analyze", "test", "deploy"], "project_id": "my-project" }
 </code></pre>
-<h2 id="sessions"><a class="header" href="#sessions">Sessions</a></h2>
+<h2 id="会话"><a class="header" href="#会话">会话</a></h2>
 <h3 id="get-apisessions"><a class="header" href="#get-apisessions"><code>GET /api/sessions</code></a></h3>
-<p>List all sessions.</p>
+<p>列出所有会话。</p>
 <h3 id="post-apisessions"><a class="header" href="#post-apisessions"><code>POST /api/sessions</code></a></h3>
-<p>Create a new session.</p>
+<p>创建新会话。请求体：</p>
 <pre><code class="language-json">{ "name": "my-session" }
 </code></pre>
 <h3 id="get-apisessionsid"><a class="header" href="#get-apisessionsid"><code>GET /api/sessions/{id}</code></a></h3>
-<p>Get session details with messages.</p>
+<p>获取会话详情（含消息）。</p>
 <h3 id="post-apisessionsidmessages"><a class="header" href="#post-apisessionsidmessages"><code>POST /api/sessions/{id}/messages</code></a></h3>
-<p>Add a message to a session.</p>
+<p>向会话添加消息。请求体：</p>
 <pre><code class="language-json">{ "role": "user", "content": "Hello" }
 </code></pre>
-<h2 id="tools--agents"><a class="header" href="#tools--agents">Tools &amp; Agents</a></h2>
+<h2 id="工具与代理"><a class="header" href="#工具与代理">工具与代理</a></h2>
 <h3 id="get-apitools"><a class="header" href="#get-apitools"><code>GET /api/tools</code></a></h3>
-<p>List registered tools.</p>
+<p>列出已注册工具。</p>
 <h3 id="get-apiagents"><a class="header" href="#get-apiagents"><code>GET /api/agents</code></a></h3>
-<p>List registered agents.</p>
-<h2 id="skills"><a class="header" href="#skills">Skills</a></h2>
+<p>列出已注册代理。</p>
+<h2 id="技能"><a class="header" href="#技能">技能</a></h2>
 <h3 id="get-apiskills"><a class="header" href="#get-apiskills"><code>GET /api/skills</code></a></h3>
-<p>List installed skill entries.</p>
+<p>列出已安装技能条目。</p>
 <h3 id="get-apiskillsavailable"><a class="header" href="#get-apiskillsavailable"><code>GET /api/skills/available</code></a></h3>
-<p>List available remote skills.</p>
+<p>列出可用远程技能。</p>
 <h3 id="post-apiskillsinstall"><a class="header" href="#post-apiskillsinstall"><code>POST /api/skills/install</code></a></h3>
-<p>Install a remote skill.</p>
+<p>安装远程技能。请求体：</p>
 <pre><code class="language-json">{ "skill_id": "code-reviewer" }
 </code></pre>
 <h3 id="get-apiskillsinstalled"><a class="header" href="#get-apiskillsinstalled"><code>GET /api/skills/installed</code></a></h3>
-<p>List installed remote skills.</p>
+<p>列出已安装的远程技能。</p>
 <h3 id="delete-apiskillsremoteid"><a class="header" href="#delete-apiskillsremoteid"><code>DELETE /api/skills/remote/{id}</code></a></h3>
-<p>Uninstall a remote skill.</p>
-<h2 id="workspaces"><a class="header" href="#workspaces">Workspaces</a></h2>
+<p>卸载远程技能。</p>
+<h2 id="工作区"><a class="header" href="#工作区">工作区</a></h2>
 <h3 id="get-apiworkspaces"><a class="header" href="#get-apiworkspaces"><code>GET /api/workspaces</code></a></h3>
-<p>List all workspaces.</p>
+<p>列出所有工作区。</p>
 <h3 id="post-apiworkspaces"><a class="header" href="#post-apiworkspaces"><code>POST /api/workspaces</code></a></h3>
-<p>Create a workspace.</p>
+<p>创建工作区。请求体：</p>
 <pre><code class="language-json">{ "name": "dev", "project_id": "my-project", "root_dir": "/home/user/project" }
 </code></pre>
 <h3 id="post-apiworkspacesswitch"><a class="header" href="#post-apiworkspacesswitch"><code>POST /api/workspaces/switch</code></a></h3>
-<p>Switch the active workspace.</p>
+<p>切换当前工作区。请求体：</p>
 <pre><code class="language-json">{ "id": "ws-1" }
 </code></pre>
 <h3 id="get-apiworkspacescurrent"><a class="header" href="#get-apiworkspacescurrent"><code>GET /api/workspaces/current</code></a></h3>
-<p>Get the currently active workspace.</p>
-<h2 id="sop-management"><a class="header" href="#sop-management">SOP Management</a></h2>
+<p>获取当前活动工作区。</p>
+<h2 id="sop-管理"><a class="header" href="#sop-管理">SOP 管理</a></h2>
 <h3 id="get-apisops"><a class="header" href="#get-apisops"><code>GET /api/sops</code></a></h3>
-<p>List SOPs for the current workspace. Pass <code>X-Sisyphus-Workspace-Id</code> header.</p>
+<p>列出当前工作区的 SOP。传递 <code>X-Sisyphus-Workspace-Id</code> 请求头。</p>
 <h3 id="post-apisops"><a class="header" href="#post-apisops"><code>POST /api/sops</code></a></h3>
-<p>Save or create an SOP.</p>
+<p>保存或创建 SOP。请求体：</p>
 <pre><code class="language-json">{ "id": "review-sop", "name": "Code Review", "config": { "nodes": [...], "edges": [...] } }
 </code></pre>
 <h3 id="get-apisopsid"><a class="header" href="#get-apisopsid"><code>GET /api/sops/{id}</code></a></h3>
-<p>Get SOP details with DAG config.</p>
+<p>获取 SOP 详情（含 DAG 配置）。</p>
 <h3 id="delete-apisopsid"><a class="header" href="#delete-apisopsid"><code>DELETE /api/sops/{id}</code></a></h3>
-<p>Delete an SOP.</p>
-<h2 id="cognitive-map"><a class="header" href="#cognitive-map">Cognitive Map</a></h2>
+<p>删除 SOP。</p>
+<h2 id="认知地图"><a class="header" href="#认知地图">认知地图</a></h2>
 <h3 id="get-apicognitivemapsop_id"><a class="header" href="#get-apicognitivemapsop_id"><code>GET /api/cognitive/map/{sop_id}</code></a></h3>
-<p>Get the cognitive map for a running SOP.</p>
-<h2 id="experience-engine"><a class="header" href="#experience-engine">Experience Engine</a></h2>
+<p>获取运行中 SOP 的认知地图。</p>
+<h2 id="经验引擎"><a class="header" href="#经验引擎">经验引擎</a></h2>
 <h3 id="post-apiexperiencesimilar"><a class="header" href="#post-apiexperiencesimilar"><code>POST /api/experience/similar</code></a></h3>
-<p>Query similar experiences by semantic similarity.</p>
+<p>按语义相似度查询相似经验。请求体：</p>
 <pre><code class="language-json">{ "query_text": "error during build", "action_id": "compile", "limit": 5 }
 </code></pre>
-<h2 id="roadmap"><a class="header" href="#roadmap">Roadmap</a></h2>
+<h2 id="路线图"><a class="header" href="#路线图">路线图</a></h2>
 <h3 id="get-apiroadmapprojectid"><a class="header" href="#get-apiroadmapprojectid"><code>GET /api/roadmap/project/{id}</code></a></h3>
-<p>Get project roadmap details.</p>
+<p>获取项目路线图详情。</p>
 <h3 id="post-apiroadmapprojectid"><a class="header" href="#post-apiroadmapprojectid"><code>POST /api/roadmap/project/{id}</code></a></h3>
-<p>Create a new project.</p>
+<p>创建新项目。请求体：</p>
 <pre><code class="language-json">{ "id": "my-project", "name": "My Project", "description": "..." }
 </code></pre>
 <h3 id="post-apiroadmapmilestone"><a class="header" href="#post-apiroadmapmilestone"><code>POST /api/roadmap/milestone</code></a></h3>
-<p>Add a milestone to a project.</p>
+<p>向项目添加里程碑。请求体：</p>
 <pre><code class="language-json">{ "project_id": "my-project", "milestone": { "id": "m1", "title": "Alpha", "status": "pending" } }
 </code></pre>
 <h3 id="post-apiroadmapphase"><a class="header" href="#post-apiroadmapphase"><code>POST /api/roadmap/phase</code></a></h3>
-<p>Add a phase to a milestone.</p>
+<p>向里程碑添加阶段。请求体：</p>
 <pre><code class="language-json">{ "project_id": "my-project", "milestone_id": "m1", "phase": { "id": "p1", "title": "Design" } }
 </code></pre>
 <h3 id="patch-apiroadmapgoalgoal_id"><a class="header" href="#patch-apiroadmapgoalgoal_id"><code>PATCH /api/roadmap/goal/{goal_id}</code></a></h3>
-<p>Update goal status.</p>
+<p>更新目标状态。</p>
 <h3 id="get-apiroadmaphealthproject_id"><a class="header" href="#get-apiroadmaphealthproject_id"><code>GET /api/roadmap/health/{project_id}</code></a></h3>
-<p>Evaluate project health score.</p>
+<p>评估项目健康分数。</p>
 
                     </main>
 

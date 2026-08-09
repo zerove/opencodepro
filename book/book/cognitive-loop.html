@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Cognitive Loop - Sisyphus Documentation</title>
+        <title>认知循环 - Sisyphus Documentation</title>
 
 
         <!-- Custom HTML head -->
@@ -35,10 +35,10 @@
             const path_to_root = "";
             const default_light_theme = "dark";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-db31fd4d.js";
+            window.path_to_searchindex_js = "searchindex-92536088.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-8abccaca.js"></script>
+        <script src="toc-0abde3c6.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -175,6 +175,46 @@
                 <div id="mdbook-content" class="content">
                     <main>
                         <h1 id="cognitive-loop"><a class="header" href="#cognitive-loop">Cognitive Loop</a></h1>
+<h2 id="概述"><a class="header" href="#概述">概述</a></h2>
+<p>认知循环（Cognitive Loop）是 Sisyphus 执行引擎的核心迭代过程。它遵循 <strong>预测 → 执行 → 反思 → 演进</strong>（predict → execute → reflect → evolve）的四步循环，持续优化 SOP 图的执行质量直至收敛。</p>
+<h2 id="cognitive-loop-v2"><a class="header" href="#cognitive-loop-v2">Cognitive Loop v2</a></h2>
+<p>从 2026 年 7 月起，认知循环引入了三个新组件以提升效率、鲁棒性和探索能力。</p>
+<h3 id="adaptivedepthcontroller"><a class="header" href="#adaptivedepthcontroller">AdaptiveDepthController</a></h3>
+<p>替代固定 <code>max_iterations</code> 上限，改用基于置信度（confidence）的自适应深度控制。</p>
+<ul>
+<li>每次迭代记录置信度，在滑动窗口（默认 3 次）上计算收敛速度（convergence velocity）。</li>
+<li>使用 <code>ComplexityAnalyzer</code> 根据图拓扑、目标复杂度和经验库计算初始迭代预算。</li>
+<li>满足以下任一条件时停止：达到目标置信度（默认 0.95）、收敛停滞（窗口内改进量 &lt; 0.01）、达到硬上限（默认 30 次）。</li>
+<li>强制 <code>min_iterations</code>（默认 2）防止过早停止。</li>
+</ul>
+<h3 id="parallelbranchpredictor"><a class="header" href="#parallelbranchpredictor">ParallelBranchPredictor</a></h3>
+<p>同时模拟多个变体 SOP 图，并选择最佳分支执行。</p>
+<ul>
+<li>对每个变体执行两类模拟：<strong>执行模拟</strong>（预测成功率、成本、稳定性）和<strong>逻辑模拟</strong>（检测逻辑缺陷）。</li>
+<li>综合评分公式：<code>0.5 × success_probability + 0.3 × cost_efficiency + 0.2 × predicted_stability - logical_penalty</code></li>
+<li>通过 <code>ExperienceBank</code> 校准置信度，使历史成功数据影响分支选择。</li>
+<li>默认：<code>max_branches = 3</code>，<code>concurrency = 3</code>。</li>
+</ul>
+<h3 id="anomalydetector"><a class="header" href="#anomalydetector">AnomalyDetector</a></h3>
+<p>在运行时监控每个节点的执行指标并标记异常。</p>
+<ul>
+<li>跟踪三类指标：<strong>燃料消耗</strong>（&gt;2.0x 基线）、<strong>执行时长</strong>（&gt;3.0x 基线，&gt;5.0x 为高严重性）、<strong>错误率</strong>（&gt;30%）。</li>
+<li>使用指数加权移动平均（EWMA，alpha = 0.3）进行基线追踪。</li>
+<li>产生 <code>AnomalyReport</code>，其中的 <code>should_extra_reflect</code> 标志触发额外的反思循环。</li>
+<li>集成于 <code>StrategicManager</code>，使循环能在执行过程中自我修正。</li>
+</ul>
+<h3 id="配置"><a class="header" href="#配置">配置</a></h3>
+<pre><code class="language-toml">[cognitive_loop]
+max_iterations = 10
+convergence_threshold = 0.15
+
+[cognitive_loop.adaptive_depth]
+initial_budget = 2.0
+decay = 0.3
+min_improvement = 0.15
+convergence_threshold = 0.05
+</code></pre>
+<p>上述配置通过 <code>CognitiveLoopConfig</code> 结构体定义，位于 <code>crates/sisyphus-types/src/config/sub.rs</code>。</p>
 
                     </main>
 

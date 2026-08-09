@@ -1,24 +1,13 @@
-# Architecture Overview
+# 架构总览
 
-Sisyphus is organized as a **Rust workspace** with 29 members (28 crates under `crates/` plus `webui` and `evals`), each responsible for a distinct concern:
+Sisyphus 以 **Rust 工作区** 组织，包含 37 个成员：`crates/` 下的 35 个 crate（含 10 个 `sisyphus-tools-*` 子 crate，以及 `webui` 和 `evals`），每个 crate 负责一个明确的关注点：
 
-```
-┌─────────────────────────────────────────────────┐
-│        sisyphus-bridge / sisyphus-api            │
-│      HTTP/gRPC/REST API · Entry Points           │
-├─────────────────────────────────────────────────┤
-│                   sisyphus-core                   │
-│        Kernel · Orchestration · Cognitive Loop    │
-├────────┬────────┬────────┬────────┬──────────────┤
-│  types  │  intel  │   mem   │ sandbox │  metrics   │
-│ datatypes│cognition│storage  │WASM run │ observability│
-├────────┼────────┼────────┼────────┼──────────────┤
-│ roadmap │knowledge│visual  │ tools-* │  cli / webui│
-│ planning│  assets │perception│ 10 crates │  clients    │
-└────────┴────────┴────────┴────────┴──────────────┘
-```
+- `sisyphus-bridge` / `sisyphus-api` — 入口点（HTTP/gRPC/REST API）
+- `sisyphus-core` — 内核：DAG 执行器、编排、认知循环
+- `sisyphus-types` / `sisyphus-intel` / `sisyphus-mem` / `sisyphus-sandbox` / `sisyphus-metrics` — 基础层
+- `sisyphus-roadmap` / `sisyphus-knowledge` / `sisyphus-visual` / `sisyphus-tools-*`（10 个）/ `sisyphus-cli` / `webui` — 能力与客户端
 
-## Dependency Flow
+## 依赖流向
 
 ```mermaid
 graph TD
@@ -49,58 +38,58 @@ graph TD
     sdk --> api
 ```
 
-## Data Flow (Cognitive Cycle)
+## 数据流（认知周期）
 
 ```
          ┌──────────┐
-         │  GOAL    │
+         │  目标    │
          └────┬─────┘
               ▼
      ┌────────────────┐
-     │   Synthesize    │  sisyphus-intel
-     │   SOP from goal │
+     │   合成         │  sisyphus-intel
+     │   从目标生成 SOP│
      └───────┬────────┘
               ▼
      ┌────────────────┐
-     │  Execute SOP   │  sisyphus-core (DAG runner)
-     │  (parallel)    │  sisyphus-sandbox (WASM tools)
+     │ 执行 SOP      │  sisyphus-core (DAG runner)
+     │ (并行)        │  sisyphus-sandbox (WASM 工具)
      └───────┬────────┘
               ▼
      ┌────────────────┐
-     │   Simulate     │  sisyphus-intel (Monte Carlo)
-     │   Outcomes     │
+     │   模拟         │  sisyphus-intel (蒙特卡洛)
+     │   结果         │
      └───────┬────────┘
               ▼
      ┌────────────────┐
-     │   Reflect      │  sisyphus-intel (deviation)
-     │   Compare      │
+     │   反思         │  sisyphus-intel (偏差)
+     │   比较         │
      └───────┬────────┘
               ▼
      ┌────────────────┐
-     │   Evolve SOP   │  sisyphus-intel (mutate)
-     │   or Converge  │
+     │ 演进 SOP      │  sisyphus-intel (变异)
+     │ 或收敛        │
      └───────┬────────┘
               │
       ┌───────┴───────┐
       ▼               ▼
-  Converged?      Loop back
-      │           to Execute
+  已收敛?          循环回
+      │           到执行
       ▼
-   Return result
+   返回结果
 ```
 
-## Key Design Decisions
+## 关键设计决策
 
-- **No `async` in trait methods**: The system uses `async_trait` for trait methods that need async execution.
-- **WASM-first tooling**: All external tool code runs in sandboxed WASM instances with fuel and memory limits.
-- **Metrics everywhere**: Every significant operation records Prometheus metrics for observability.
-- **Two-level cache**: L1 (in-memory `DashMap`) + L2 (SQLite via `sqlx`) for fast key-value storage.
+- **trait 方法不使用 `async`**：需要异步执行的 trait 方法使用 `async_trait`。
+- **WASM 优先的工具**：所有外部工具代码在带燃料与内存限制的沙箱 WASM 实例中运行。
+- **处处埋点**：每个重要操作都记录 Prometheus 指标以便观测。
+- **两级缓存**：L1（内存 `DashMap`）+ L2（`sqlx` + SQLite）提供快速键值存储。
 
-## Sandbox: Embedded vs. Daemon Architecture
+## 沙箱：嵌入式与守护进程架构
 
-The WASM sandbox can operate in two modes, controlled by `Config.sandbox.use_sandboxd`:
+WASM 沙箱有两种运行模式，由 `Config.sandbox.use_sandboxd` 控制：
 
-### Embedded Mode (`use_sandboxd = false`, default)
+### 嵌入式模式（`use_sandboxd = false`，默认）
 
 ```
 ┌───────────────┐     ExecuteTool     ┌─────────────────┐
@@ -109,12 +98,12 @@ The WASM sandbox can operate in two modes, controlled by `Config.sandbox.use_san
 └───────────────┘     return result   └─────────────────┘
 ```
 
-- `wasmtime` runs in-process in the bridge process.
-- Simple deployment, no IPC overhead.
-- Risk of OOM: cranelift JIT memory is never freed until process exit.
-- Suitable for development and low-throughput scenarios.
+- `wasmtime` 在 bridge 进程中内嵌运行。
+- 部署简单，无 IPC 开销。
+- OOM 风险：cranelift JIT 内存在进程退出前不会释放。
+- 适合开发与低吞吐场景。
 
-### Daemon Mode (`use_sandboxd = true`)
+### 守护进程模式（`use_sandboxd = true`）
 
 ```
 ┌───────────────┐     gRPC (IPC)     ┌──────────────────┐
@@ -122,32 +111,32 @@ The WASM sandbox can operate in two modes, controlled by `Config.sandbox.use_san
 │               │ <────────────────── │  (wasmtime)       │
 └───────────────┘     return result   └──────────────────┘
          │                                │
-         │ spawns on start                │ per-call WASM
-         │ reaps on exit                  │ instance lifecycle
+         │ 启动时生成子进程                │ 每次调用独立的 WASM
+         │ 退出时回收                    │ 实例生命周期
          ▼                                ▼
-   Child process pool            Fuel-gated execution
+   子进程池                       燃料门控执行
 ```
 
-The bridge spawns `sisyphus-sandboxd` as a managed child process on startup and reaps it on graceful shutdown. Communication occurs over a local gRPC (tonic) channel with the daemon listening on `127.0.0.1:0` (ephemeral port).
+Bridge 启动时生成 `sisyphus-sandboxd` 作为受管子进程，优雅关闭时回收。通信通过本地 gRPC（tonic）通道进行，守护进程监听 `127.0.0.1:0`（临时端口）。
 
-**Benefits:**
-- Process-level isolation: a sandboxd crash does not take down the bridge.
-- Memory isolation: each WASM call can run in a fresh daemon process.
-- Independent scaling: the daemon can be deployed on separate hardware.
-- OOM mitigation: daemon processes can be restarted without bridge downtime.
+**优势：**
+- 进程级隔离：sandboxd 崩溃不会拖垮 bridge。
+- 内存隔离：每次 WASM 调用可在全新的守护进程进程中运行。
+- 独立扩展：守护进程可部署在单独的硬件上。
+- OOM 缓解：守护进程可在不中断 bridge 的情况下重启。
 
-**Configuration:**
-- `sandboxd_path`: Path to `sisyphus-sandboxd` binary, defaults to `PATH` search.
-- The daemon accepts `wasmtime` execution requests via its own gRPC service, using the same `ExecuteTool`-like contract.
+**配置：**
+- `sandboxd_path`：`sisyphus-sandboxd` 二进制路径，默认为 `PATH` 搜索。
+- 守护进程通过自己的 gRPC 服务接收 `wasmtime` 执行请求，使用与 `ExecuteTool` 类似的契约。
 
-## Architecture Decision Records
+## 架构决策记录
 
-Significant architecture decisions are documented as ADRs in [`docs/adr/`](https://github.com/zeronhq/sisyphus-wasm/tree/main/docs/adr):
+重要的架构决策以 ADR 形式记录在 [`docs/adr/`](https://github.com/zeronhq/sisyphus-wasm/tree/main/docs/adr)：
 
-| ADR | Title | Status |
+| ADR | 标题 | 状态 |
 |-----|-------|--------|
-| [ADR-002](https://github.com/zeronhq/sisyphus-wasm/blob/main/docs/adr/002-phase-3b-agent-team-architecture.md) | Phase 3b Multi-Agent Team Architecture | Proposed |
-| [ADR-003](https://github.com/zeronhq/sisyphus-wasm/blob/main/docs/adr/003-modular-restructure.md) | Monolithic-to-Modular Restructure | Accepted |
-| [ADR-004](https://github.com/zeronhq/sisyphus-wasm/blob/main/docs/adr/004-workspace-isolation.md) | Multi-tenant Workspace Isolation | Accepted |
-| [ADR-005](https://github.com/zeronhq/sisyphus-wasm/blob/main/docs/adr/005-sandboxd-daemon-architecture.md) | Sandboxd Daemon Architecture | Accepted |
-| [ADR-006](https://github.com/zeronhq/sisyphus-wasm/blob/main/docs/adr/006-configuration-system.md) | Configuration System | Accepted |
+| [ADR-002](https://github.com/zeronhq/sisyphus-wasm/blob/main/docs/adr/002-phase-3b-agent-team-architecture.md) | 阶段 3b 多代理团队架构 | 提案 |
+| [ADR-003](https://github.com/zeronhq/sisyphus-wasm/blob/main/docs/adr/003-modular-restructure.md) | 单体到模块化重构 | 已接受 |
+| [ADR-004](https://github.com/zeronhq/sisyphus-wasm/blob/main/docs/adr/004-workspace-isolation.md) | 多租户工作区隔离 | 已接受 |
+| [ADR-005](https://github.com/zeronhq/sisyphus-wasm/blob/main/docs/adr/005-sandboxd-daemon-architecture.md) | Sandboxd 守护进程架构 | 已接受 |
+| [ADR-006](https://github.com/zeronhq/sisyphus-wasm/blob/main/docs/adr/006-configuration-system.md) | 配置系统 | 已接受 |
