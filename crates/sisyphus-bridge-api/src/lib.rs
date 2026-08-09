@@ -5,6 +5,10 @@
 //! (`sisyphus-bridge`) and CLI client (`sisyphus-cli`) depend on this crate
 //! instead of compiling the proto independently.
 
+// tonic 生成的 gRPC 服务方法返回 `Result<_, tonic::Status>`，`Status` 类型
+// 较大触发 `result_large_err`；生成代码不可修改，此处统一放行。
+#![allow(clippy::result_large_err)]
+
 use std::time::Duration;
 use tonic::transport::Endpoint;
 
