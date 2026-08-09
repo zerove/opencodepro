@@ -803,11 +803,10 @@ impl SqlStore {
 
             // Compute cosine similarity
             let embedding: Vec<f32> = embedding_bytes
-                .chunks_exact(4)
-                .filter_map(|chunk| {
-                    let bytes: [u8; 4] = chunk.try_into().ok()?;
-                    Some(f32::from_le_bytes(bytes))
-                })
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .map(|bytes| f32::from_le_bytes(*bytes))
                 .collect();
 
             if embedding.len() != query_embedding.len() {

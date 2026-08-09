@@ -134,11 +134,10 @@ impl VectorMemoryStore {
                 let score = self.cosine_similarity_bytes(query_embedding, &embedding_bytes);
 
                 let embedding: Vec<f32> = embedding_bytes
-                    .chunks_exact(4)
-                    .filter_map(|chunk| {
-                        let bytes = chunk.try_into().ok()?;
-                        Some(f32::from_le_bytes(bytes))
-                    })
+                    .as_chunks::<4>()
+                    .0
+                    .iter()
+                    .map(|bytes| f32::from_le_bytes(*bytes))
                     .collect();
 
                 let metadata = match serde_json::from_str(&metadata_str) {
@@ -194,11 +193,10 @@ impl VectorMemoryStore {
                 let timestamp: u64 = row.get("timestamp");
 
                 let embedding: Vec<f32> = embedding_bytes
-                    .chunks_exact(4)
-                    .filter_map(|chunk| {
-                        let bytes = chunk.try_into().ok()?;
-                        Some(f32::from_le_bytes(bytes))
-                    })
+                    .as_chunks::<4>()
+                    .0
+                    .iter()
+                    .map(|bytes| f32::from_le_bytes(*bytes))
                     .collect();
 
                 let record = VectorRecord {
@@ -230,8 +228,8 @@ impl VectorMemoryStore {
         let mut norm_b_sq = 0.0;
         let mut norm_a_sq = 0.0;
 
-        for (i, chunk) in b_bytes.chunks_exact(4).enumerate() {
-            let val_b = chunk.try_into().ok().map(f32::from_le_bytes).unwrap_or(0.0);
+        for (i, chunk) in b_bytes.as_chunks::<4>().0.iter().enumerate() {
+            let val_b = f32::from_le_bytes(*chunk);
             let val_a = a[i];
             dot_product += val_a * val_b;
             norm_b_sq += val_b * val_b;
