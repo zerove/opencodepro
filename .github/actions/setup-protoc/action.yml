@@ -1,0 +1,19 @@
+name: "Setup protoc"
+description: "Install protobuf compiler (protoc) required by tonic-build for sisyphus-bridge-api (depended on by cli/core/executor/tools-core)."
+runs:
+  using: "composite"
+  steps:
+    - name: Install protobuf-compiler (Linux)
+      if: runner.os == 'Linux'
+      shell: bash
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y protobuf-compiler
+    - name: Install protobuf (macOS)
+      if: runner.os == 'macOS'
+      shell: bash
+      run: brew install protobuf
+    - name: Install protobuf (Windows)
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: choco install protoc -y

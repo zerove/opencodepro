@@ -56,6 +56,7 @@ jobs:
         with:
           components: clippy
       - uses: Swatinem/rust-cache@v2
+      - uses: ./.github/actions/setup-protoc
       - run: |
           cargo clippy \
             --workspace \
@@ -63,7 +64,7 @@ jobs:
             --exclude sisyphus-sandboxd \
             --exclude sisyphus-tests \
             --exclude sisyphus-bridge \
-            -- -D warnings
+            -- -A clippy::double-must-use -D warnings
 
   # ── Lint: heavy crates (isolated to avoid OOM) ─────────────────────
   lint-sandbox:
@@ -76,7 +77,8 @@ jobs:
         with:
           components: clippy
       - uses: Swatinem/rust-cache@v2
-      - run: cargo clippy -p sisyphus-sandbox -- -D warnings
+      - uses: ./.github/actions/setup-protoc
+      - run: cargo clippy -p sisyphus-sandbox -- -A clippy::double-must-use -D warnings
 
   lint-tests:
     name: Lint Integration Tests
@@ -88,7 +90,8 @@ jobs:
         with:
           components: clippy
       - uses: Swatinem/rust-cache@v2
-      - run: cargo clippy -p sisyphus-tests -- -D warnings
+      - uses: ./.github/actions/setup-protoc
+      - run: cargo clippy -p sisyphus-tests -- -A clippy::double-must-use -D warnings
 
   lint-sandboxd:
     name: Lint Sandboxd
@@ -100,7 +103,8 @@ jobs:
         with:
           components: clippy
       - uses: Swatinem/rust-cache@v2
-      - run: cargo clippy -p sisyphus-sandboxd -- -D warnings
+      - uses: ./.github/actions/setup-protoc
+      - run: cargo clippy -p sisyphus-sandboxd -- -A clippy::double-must-use -D warnings
 
   # ── Bridge (no sandbox) — trait abstraction layer, no wasmtime ─────
   bridge-check:
@@ -113,8 +117,9 @@ jobs:
         with:
           components: clippy
       - uses: Swatinem/rust-cache@v2
+      - uses: ./.github/actions/setup-protoc
       - run: cargo check -p sisyphus-bridge --no-default-features
-      - run: cargo clippy -p sisyphus-bridge --no-default-features -- -D warnings
+      - run: cargo clippy -p sisyphus-bridge --no-default-features -- -A clippy::double-must-use -D warnings
       - run: cargo test -p sisyphus-bridge --no-default-features --lib
 
   # ── Bridge integration tests (no sandbox, --no-default-features) ─────
@@ -127,6 +132,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@nightly
       - uses: Swatinem/rust-cache@v2
+      - uses: ./.github/actions/setup-protoc
       - run: cargo test -p sisyphus-bridge --no-default-features --test bridge_integration_test
 
   # ── Tests: lightweight crates (full: lib + bin + doctests) ─────────
@@ -138,6 +144,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@nightly
       - uses: Swatinem/rust-cache@v2
+      - uses: ./.github/actions/setup-protoc
       - run: |
           cargo test \
             --workspace \
@@ -155,6 +162,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@nightly
       - uses: Swatinem/rust-cache@v2
+      - uses: ./.github/actions/setup-protoc
       - run: cargo test -p sisyphus-core
 
   # ── Unit tests: sandbox (wasmtime, isolated) ────────────────────────
@@ -166,6 +174,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@nightly
       - uses: Swatinem/rust-cache@v2
+      - uses: ./.github/actions/setup-protoc
       - run: cargo test -p sisyphus-sandbox --lib
 
   # ── Integration tests (wasmtime, isolated) ──────────────────────────
@@ -177,6 +186,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@nightly
       - uses: Swatinem/rust-cache@v2
+      - uses: ./.github/actions/setup-protoc
       - run: cargo test -p sisyphus-tests --lib
 
   # ── Sandboxd daemon integration tests (IPC protocol) ───────────────────
@@ -188,6 +198,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@nightly
       - uses: Swatinem/rust-cache@v2
+      - uses: ./.github/actions/setup-protoc
       - run: cargo test -p sisyphus-sandboxd
 
   # ── Bridge (full features, with sandboxd) — tests all RPCs via real gRPC ──
@@ -201,7 +212,8 @@ jobs:
         with:
           components: clippy
       - uses: Swatinem/rust-cache@v2
-      - run: cargo clippy -p sisyphus-bridge -- -D warnings
+      - uses: ./.github/actions/setup-protoc
+      - run: cargo clippy -p sisyphus-bridge -- -A clippy::double-must-use -D warnings
       - run: cargo test -p sisyphus-bridge --test bridge_integration_test
       - run: cargo test -p sisyphus-bridge --test skill_market_rest_test
       - run: cargo build --release -p sisyphus-sandboxd
@@ -215,6 +227,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@nightly
       - uses: Swatinem/rust-cache@v2
+      - uses: ./.github/actions/setup-protoc
       - run: cargo test -p sisyphus-cli
 
   # ── API + SDK crates (Rust SDK client and REST API models) ────────
@@ -226,6 +239,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@nightly
       - uses: Swatinem/rust-cache@v2
+      - uses: ./.github/actions/setup-protoc
       - run: cargo test -p sisyphus-api -p sisyphus-sdk
 
   # ── E2E smoke test: start bridge → run stress_test --quick → verify ──
@@ -237,6 +251,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@nightly
       - uses: Swatinem/rust-cache@v2
+      - uses: ./.github/actions/setup-protoc
       # Build both bridge and stress_test binary
       - run: cargo build -p sisyphus-bridge
       - run: cargo build -p sisyphus-bridge --bin stress_test
@@ -266,6 +281,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@nightly
       - uses: Swatinem/rust-cache@v2
+      - uses: ./.github/actions/setup-protoc
       - name: Build bridge with sandboxd
         run: |
           cargo build -p sisyphus-bridge --bin sisyphus-bridge --bin stress_test
@@ -324,6 +340,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@nightly
       - uses: Swatinem/rust-cache@v2
+      - uses: ./.github/actions/setup-protoc
 
       # Restore previously cached baseline from main branch
       - name: Restore baseline from cache
@@ -403,6 +420,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@nightly
       - uses: Swatinem/rust-cache@v2
+      - uses: ./.github/actions/setup-protoc
       - run: cargo build --release -p sisyphus-cli
       - uses: actions/upload-artifact@v4
         with:
@@ -417,6 +435,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@nightly
       - uses: Swatinem/rust-cache@v2
+      - uses: ./.github/actions/setup-protoc
       - run: cargo build --release -p sisyphus-sandboxd
       - uses: actions/upload-artifact@v4
         with:
@@ -433,6 +452,7 @@ jobs:
         with:
           targets: aarch64-apple-darwin
       - uses: Swatinem/rust-cache@v2
+      - uses: ./.github/actions/setup-protoc
       - run: cargo build --release -p sisyphus-cli --target aarch64-apple-darwin
       - uses: actions/upload-artifact@v4
         with:
@@ -447,6 +467,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@nightly
       - uses: Swatinem/rust-cache@v2
+      - uses: ./.github/actions/setup-protoc
       - run: cargo build --release -p sisyphus-cli
       - uses: actions/upload-artifact@v4
         with:
@@ -495,8 +516,9 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@nightly
       - uses: Swatinem/rust-cache@v2
+      - uses: ./.github/actions/setup-protoc
       - run: cargo check -p sisyphus-webui
-      - run: cargo clippy -p sisyphus-webui -- -D warnings
+      - run: cargo clippy -p sisyphus-webui -- -A clippy::double-must-use -D warnings
       - run: cargo test -p sisyphus-webui
 
   # ── Release ─────────────────────────────────────────────────────────

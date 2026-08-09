@@ -4,6 +4,10 @@
 //! 以及错误类型与跨 crate 通用 trait。
 
 #![allow(clippy::cast_precision_loss)]
+// `#[async_trait]` 宏展开的方法自带 `#[must_use]`，且返回的
+// `Pin<Box<dyn Future>>` 也被视为 must_use，新版 nightly clippy
+// 会对此误报 `double_must_use`。此处按 clippy 建议统一放行。
+#![allow(clippy::double_must_use)]
 pub mod asset;
 pub mod errors;
 pub mod experience;
