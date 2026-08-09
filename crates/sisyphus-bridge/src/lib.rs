@@ -3,6 +3,10 @@
 //! 提供 17 个 gRPC RPC 与 34 个 REST 端点（OpenAPI 3.1），
 //! 支持认知执行、技能管理、工作区隔离、混沌工程等能力。
 
+// tonic gRPC handler 的返回类型被框架强制为 `Result<_, tonic::Status>`，
+// `tonic::Status` 的 Err 变体较大（>=176 字节）触发 clippy::result_large_err。
+// 签名与框架耦合无法修改，与 sisyphus-bridge-api 生成代码保持一致，整体允许。
+#![allow(clippy::result_large_err)]
 #![recursion_limit = "256"]
 pub mod auth;
 pub mod auth_jwt;
