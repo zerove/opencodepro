@@ -36,10 +36,10 @@
             const path_to_root = "";
             const default_light_theme = "dark";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-92536088.js";
+            window.path_to_searchindex_js = "searchindex-f039fe21.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-0abde3c6.js"></script>
+        <script src="toc-ffcc50b1.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -1061,7 +1061,23 @@ func main() {
 <h2 id="基准测试"><a class="header" href="#基准测试">基准测试</a></h2>
 <pre><code class="language-bash">cargo bench -p sisyphus-core
 </code></pre>
-<p>基准结果存储在 <code>target/criterion/</code>。</p>
+<p>基准结果存储在 <code>target/criterion/</code>，包含以下 benchmark 组：</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>组</th><th>覆盖内容</th></tr>
+</thead>
+<tbody>
+<tr><td><code>dag_execution</code></td><td>v1 Executor 链式 DAG 执行（5/10/20 节点）</td></tr>
+<tr><td><code>wasm_execution</code></td><td>WASM 沙箱单节点执行</td></tr>
+<tr><td><code>mfs_storage</code></td><td>存储层 set/get（小/10KB/100KB）</td></tr>
+<tr><td><code>v2_adaptive_depth</code></td><td>自适应深度控制（收敛/平台期检测）</td></tr>
+<tr><td><code>v2_anomaly_detector</code></td><td>异常检测器（观测/报告）</td></tr>
+<tr><td><code>v2_branch_predictor</code></td><td>并行分支预测器构造</td></tr>
+</tbody>
+</table>
+</div>
+<p>最新基线数据见 <code>docs/benchmarks/v2-baseline-2026-08-09.md</code>（均值与 95% 置信区间），历史基线见 <code>docs/benchmarks/v2-baseline.md</code>。修改性能关键路径后运行 <code>make perf-analyze</code> 对比基线并预警超过 5% 的回归。</p>
 <h2 id="性能调优"><a class="header" href="#性能调优">性能调优</a></h2>
 <h3 id="缓存调优"><a class="header" href="#缓存调优">缓存调优</a></h3>
 <p><code>OutputCache</code> 的逐出策略与容量可针对不同工作负载调优。</p>
@@ -1111,6 +1127,81 @@ convergence_threshold = 0.15  # 偏差低于此值时停止
 <li><strong>convergence_threshold</strong>：更严格（更低）的阈值提升输出质量，但需要更多迭代。</li>
 </ul>
 <p>使用 <code>RUST_LOG=sisyphus_core=info</code> 通过 tracing spans（<code>predict</code>、<code>execute</code>、<code>reflect</code>、<code>evolve</code>）监控认知循环性能。</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="评测套件"><a class="header" href="#评测套件">评测套件</a></h1>
+<p>Sisyphus 通过 <code>evals/</code> 目录对专业代理（Metis、Momus、Librarian、Scribe、SecurityOracle）进行量化能力评测。评测以 JSON 用例驱动，运行结果输出得分表。</p>
+<h2 id="运行方式"><a class="header" href="#运行方式">运行方式</a></h2>
+<pre><code class="language-bash">make eval            # 等价于 cargo run -p eval-runner
+make eval-check      # 仅检查编译
+</code></pre>
+<p>评测器在 <code>evals/runner.rs</code> 中实现，自动加载 <code>evals/&lt;agent&gt;/cases.json</code> 下的全部用例，按代理分组执行，并汇总得分。</p>
+<h2 id="用例结构"><a class="header" href="#用例结构">用例结构</a></h2>
+<p>每个代理目录下的 <code>cases.json</code> 是一组用例（Case）。字段如下：</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>字段</th><th>类型</th><th>说明</th></tr>
+</thead>
+<tbody>
+<tr><td><code>id</code></td><td>string</td><td>用例唯一标识</td></tr>
+<tr><td><code>agent</code></td><td>string</td><td>目标代理：<code>metis</code>、<code>momus</code>、<code>librarian</code>、<code>scribe</code>、<code>SecurityOracle</code></td></tr>
+<tr><td><code>input</code></td><td>object</td><td>传入工具的参数（随代理而异）</td></tr>
+<tr><td><code>expected</code></td><td>object</td><td>基准输出或关键组成</td></tr>
+<tr><td><code>criteria[]</code></td><td>array</td><td>判据列表</td></tr>
+<tr><td><code>metadata</code></td><td>object（可选）</td><td>类别与难度（<code>easy</code>/<code>medium</code>/<code>hard</code>）</td></tr>
+</tbody>
+</table>
+</div>
+<blockquote>
+<p>用例结构由 <code>evals/schema.json</code>（JSON Schema draft-07）定义。<code>eval-runner</code> 启动时会用该 schema 校验全部用例文件，不合规则立即报错退出，防止无效用例混入。</p>
+</blockquote>
+<h2 id="判据类型"><a class="header" href="#判据类型">判据类型</a></h2>
+<p>每个 <code>criteria</code> 条目通过 <code>check_type</code> 选择验证方式：</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>类型</th><th>说明</th><th>示例 <code>expected_value</code></th></tr>
+</thead>
+<tbody>
+<tr><td><code>keyword</code></td><td>输出文本包含指定关键字</td><td><code>## Context</code></td></tr>
+<tr><td><code>regex</code></td><td>输出文本匹配正则</td><td><code>\[Core Conclusions\].*\[Detailed Evidence\]</code></td></tr>
+<tr><td><code>json_schema</code></td><td>输出 JSON 匹配子 schema</td><td><code>{"type": "object", ...}</code></td></tr>
+<tr><td><code>llm_judge</code></td><td>LLM 判官评估输出是否符合语义标准</td><td><code>The decision must explicitly state ...</code></td></tr>
+</tbody>
+</table>
+</div>
+<p><code>weight</code>（默认 1.0）控制判据在用例总分中的占比。用例得分为通过的判据加权和除总权重，全部通过才算 PASS。</p>
+<h2 id="代理与用例覆盖"><a class="header" href="#代理与用例覆盖">代理与用例覆盖</a></h2>
+<p>当前共 57 个用例：</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>代理</th><th>覆盖主题</th><th>用例数</th></tr>
+</thead>
+<tbody>
+<tr><td><code>metis</code></td><td>需求分析：可执行性判断、模糊识别、隐含需求（背压/异步/连接池等）</td><td>12</td></tr>
+<tr><td><code>momus</code></td><td>评审：计划（测试/指标/顺序）、代码（UAF/死锁/复杂度/SRP）、架构（过度设计/耦合/循环依赖）</td><td>11</td></tr>
+<tr><td><code>librarian</code></td><td>资料综合：去冗余、归因、冲突消解、深度技术合成、噪声过滤、版本差异</td><td>10</td></tr>
+<tr><td><code>scribe</code></td><td>文档：ADR（MADR 格式）、文档更新、决策提取</td><td>12</td></tr>
+<tr><td><code>security</code></td><td>安全审计：内存安全、注入、权限、协议 DoS</td><td>12</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="评测模式"><a class="header" href="#评测模式">评测模式</a></h2>
+<p><code>EvalRunner</code> 依据环境变量选择 LLM 客户端：</p>
+<ul>
+<li><code>LLM_API_KEY=mock</code>（默认）：使用内置 <code>MockLlmClient</code>，所有代理工具直接返回固定结构。此模式用于验证管线与结构，无真实智能，<code>llm_judge</code> 判据会按结构匹配。</li>
+<li>设置真实 <code>LLM_API_KEY</code>/<code>LLM_ENDPOINT</code>/<code>LLM_MODEL</code>：使用 <code>DynamicLlmClient</code> 调用真实模型，全量判据（含 <code>llm_judge</code>）按语义评估，得到真实能力得分。</li>
+</ul>
+<h2 id="基线报告"><a class="header" href="#基线报告">基线报告</a></h2>
+<p><code>evals/capability_baseline_report.md</code> 记录 2026-06-24 的初始基线（总体 0.86，47/57 通过）。每次重大代理提示词或工具变更后，应重新运行 <code>make eval</code> 并更新报告。</p>
+<h2 id="添加用例"><a class="header" href="#添加用例">添加用例</a></h2>
+<ol>
+<li>确定目标代理与覆盖缺口，选择 <code>evals/&lt;agent&gt;/cases.json</code> 追加用例；</li>
+<li>明确 <code>check_type</code>：结构固定用 <code>keyword</code>/<code>regex</code>，语义判断用 <code>llm_judge</code>，大对象校验用 <code>json_schema</code>；</li>
+<li>运行 <code>make eval-check</code> 确认通过编译；</li>
+<li>运行 <code>make eval</code> 确认新用例被加载并校验。</li>
+</ol>
 <div style="break-before: page; page-break-before: always;"></div>
 <h1 id="安全"><a class="header" href="#安全">安全</a></h1>
 <h2 id="api-密钥认证"><a class="header" href="#api-密钥认证">API 密钥认证</a></h2>

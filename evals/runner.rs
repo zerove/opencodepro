@@ -305,12 +305,48 @@ struct CaseResult {
     error: Option<String>,
 }
 
+// ── Schema Validation ───────────────────────────────────────────
+
+/// 使用 `evals/schema.json` 校验单个 cases.json 的所有用例。
+fn validate_cases(schema: &Value, cases_path: &Path, cases: &[Case]) -> Result<()> {
+    let compiled = JSONSchema::compile(schema)
+        .map_err(|e| anyhow::anyhow!("Failed to compile schema: {}", e))?;
+
+    for case in cases {
+        let value = serde_json::to_value(case)
+            .with_context(|| format!("Failed to serialize case {:?}", case.id))?;
+        let errors: Vec<String> = {
+            match compiled.validate(&value) {
+                Ok(_) => Vec::new(),
+                Err(iter) => iter
+                    .map(|e| format!("{}: {}", e.instance_path, e))
+                    .collect(),
+            }
+        };
+        if !errors.is_empty() {
+            return Err(anyhow::anyhow!(
+                "Case {:?} in {:?} violates schema: {}",
+                case.id,
+                cases_path,
+                errors.join("; ")
+            ));
+        }
+    }
+    Ok(())
+}
+
 // ── Main ────────────────────────────────────────────────────────
 
 #[tokio::main]
 async fn main() -> Result<()> {
     let runner = EvalRunner::new();
     let evals_dir = Path::new("evals");
+
+    // 加载并编译 schema，用于校验所有用例文件
+    let schema_content = fs::read_to_string(evals_dir.join("schema.json"))
+        .context("Failed to read evals/schema.json")?;
+    let schema: Value =
+        serde_json::from_str(&schema_content).context("Failed to parse evals/schema.json")?;
 
     let mut all_results = Vec::new();
     let mut total_score = 0.0;
@@ -328,6 +364,8 @@ async fn main() -> Result<()> {
             .with_context(|| format!("Failed to read {:?}", cases_path))?;
         let cases: Vec<Case> = serde_json::from_str(&content)
             .with_context(|| format!("Failed to parse {:?}", cases_path))?;
+
+        validate_cases(&schema, &cases_path, &cases)?;
 
         for case in cases {
             println!("Running case {}...", case.id);

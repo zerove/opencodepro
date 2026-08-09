@@ -262,5 +262,13 @@ test-ci:
 
 # — convenience —
 
+# — agent evals (57 cases across metis/momus/librarian/scribe/security) —
+
+eval:
+	cargo run -p eval-runner
+
+eval-check:
+	cargo check -p eval-runner
+
 clean:
 	cargo clean

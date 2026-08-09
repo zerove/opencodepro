@@ -35,10 +35,10 @@
             const path_to_root = "";
             const default_light_theme = "dark";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-92536088.js";
+            window.path_to_searchindex_js = "searchindex-f039fe21.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-0abde3c6.js"></script>
+        <script src="toc-ffcc50b1.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -206,7 +206,23 @@
 <h2 id="基准测试"><a class="header" href="#基准测试">基准测试</a></h2>
 <pre><code class="language-bash">cargo bench -p sisyphus-core
 </code></pre>
-<p>基准结果存储在 <code>target/criterion/</code>。</p>
+<p>基准结果存储在 <code>target/criterion/</code>，包含以下 benchmark 组：</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>组</th><th>覆盖内容</th></tr>
+</thead>
+<tbody>
+<tr><td><code>dag_execution</code></td><td>v1 Executor 链式 DAG 执行（5/10/20 节点）</td></tr>
+<tr><td><code>wasm_execution</code></td><td>WASM 沙箱单节点执行</td></tr>
+<tr><td><code>mfs_storage</code></td><td>存储层 set/get（小/10KB/100KB）</td></tr>
+<tr><td><code>v2_adaptive_depth</code></td><td>自适应深度控制（收敛/平台期检测）</td></tr>
+<tr><td><code>v2_anomaly_detector</code></td><td>异常检测器（观测/报告）</td></tr>
+<tr><td><code>v2_branch_predictor</code></td><td>并行分支预测器构造</td></tr>
+</tbody>
+</table>
+</div>
+<p>最新基线数据见 <code>docs/benchmarks/v2-baseline-2026-08-09.md</code>（均值与 95% 置信区间），历史基线见 <code>docs/benchmarks/v2-baseline.md</code>。修改性能关键路径后运行 <code>make perf-analyze</code> 对比基线并预警超过 5% 的回归。</p>
 <h2 id="性能调优"><a class="header" href="#性能调优">性能调优</a></h2>
 <h3 id="缓存调优"><a class="header" href="#缓存调优">缓存调优</a></h3>
 <p><code>OutputCache</code> 的逐出策略与容量可针对不同工作负载调优。</p>
@@ -265,7 +281,7 @@ convergence_threshold = 0.15  # 偏差低于此值时停止
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                             </a>
 
-                            <a rel="next prefetch" href="security.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next prefetch" href="eval-suite.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                             </a>
 
@@ -279,7 +295,7 @@ convergence_threshold = 0.15  # 偏差低于此值时停止
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                     </a>
 
-                    <a rel="next prefetch" href="security.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next prefetch" href="eval-suite.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                     </a>
             </nav>

@@ -10,7 +10,7 @@
     },
     "agent": {
       "type": "string",
-      "enum": ["metis", "momus", "librarian"],
+      "enum": ["metis", "momus", "librarian", "scribe", "SecurityOracle"],
       "description": "The agent being evaluated."
     },
     "input": {
