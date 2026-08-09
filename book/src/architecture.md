@@ -1,6 +1,6 @@
 # 架构总览
 
-Sisyphus 以 **Rust 工作区** 组织，包含 37 个成员：`crates/` 下的 35 个 crate（含 10 个 `sisyphus-tools-*` 子 crate，以及 `webui` 和 `evals`），每个 crate 负责一个明确的关注点：
+Sisyphus 以 **Rust 工作区** 组织，包含 **29 个成员**：`crates/` 下的 **27 个 crate**（含 10 个 `sisyphus-tools-*` 子 crate，以及 `webui` 和 `evals`），每个 crate 负责一个明确的关注点：
 
 - `sisyphus-bridge` / `sisyphus-api` — 入口点（HTTP/gRPC/REST API）
 - `sisyphus-core` — 内核：DAG 执行器、编排、认知循环
@@ -131,12 +131,12 @@ Bridge 启动时生成 `sisyphus-sandboxd` 作为受管子进程，优雅关闭�
 
 ## 架构决策记录
 
-重要的架构决策以 ADR 形式记录在 [`docs/adr/`](https://github.com/zeronhq/sisyphus-wasm/tree/main/docs/adr)：
+重要的架构决策以 ADR 形式记录在 `docs/adr/`：
 
 | ADR | 标题 | 状态 |
 |-----|-------|--------|
-| [ADR-002](https://github.com/zeronhq/sisyphus-wasm/blob/main/docs/adr/002-phase-3b-agent-team-architecture.md) | 阶段 3b 多代理团队架构 | 提案 |
-| [ADR-003](https://github.com/zeronhq/sisyphus-wasm/blob/main/docs/adr/003-modular-restructure.md) | 单体到模块化重构 | 已接受 |
-| [ADR-004](https://github.com/zeronhq/sisyphus-wasm/blob/main/docs/adr/004-workspace-isolation.md) | 多租户工作区隔离 | 已接受 |
-| [ADR-005](https://github.com/zeronhq/sisyphus-wasm/blob/main/docs/adr/005-sandboxd-daemon-architecture.md) | Sandboxd 守护进程架构 | 已接受 |
-| [ADR-006](https://github.com/zeronhq/sisyphus-wasm/blob/main/docs/adr/006-configuration-system.md) | 配置系统 | 已接受 |
+| [002-phase-3b-agent-team-architecture](docs/adr/002-phase-3b-agent-team-architecture.md) | 阶段 3b 多代理团队架构 | 提案 |
+| [003-modular-restructure](docs/adr/003-modular-restructure.md) | 单体到模块化重构 | 已接受 |
+| [004-workspace-isolation](docs/adr/004-workspace-isolation.md) | 多租户工作区隔离 | 已接受 |
+| [005-sandboxd-daemon-architecture](docs/adr/005-sandboxd-daemon-architecture.md) | Sandboxd 守护进程架构 | 已接受 |
+| [006-configuration-system](docs/adr/006-configuration-system.md) | 配置系统 | 已接受 |

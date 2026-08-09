@@ -92,7 +92,7 @@ Existing imports keep working — all public types are re-exported from the crat
 
 ## Related
 
-- ADR-002: Phase 3b Multi-Agent Team Architecture
+- [002-phase-3b-agent-team-architecture](002-phase-3b-agent-team-architecture.md): Phase 3b Multi-Agent Team Architecture
 - PR #1: CLI main.rs split
 - PR #2: Core/Intel module extraction
 - PR #3: Tools types.rs extraction

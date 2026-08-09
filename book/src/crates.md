@@ -1,6 +1,6 @@
 # Crate 参考
 
-Sisyphus 以 Rust 工作区组织，包含 37 个成员：`crates/` 下的 35 个 crate（含 10 个 `sisyphus-tools-*` 子 crate）加 `webui` 与 `evals`。
+Sisyphus 以 Rust 工作区组织，包含 **29 个成员**：`crates/` 下的 **27 个 crate**（含 10 个 `sisyphus-tools-*` 子 crate）加 `webui` 与 `evals`。
 
 ## 基础层
 
