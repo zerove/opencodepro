@@ -3,6 +3,7 @@
 
 use anyhow::{Context, Result};
 use sqlx::{SqlitePool, sqlite::SqlitePoolOptions};
+use std::str::FromStr;
 use std::sync::Arc;
 
 use crate::roadmap_store::RoadmapSqlStore;
@@ -22,12 +23,35 @@ pub struct SisyphusStore {
 impl SisyphusStore {
     /// Initializes a new SisyphusStore at the given database URL.
     pub async fn new(db_url: &str, config: &sisyphus_types::Config) -> Result<Self> {
-        // 1. Initialize the shared pool
-        let pool = SqlitePoolOptions::new()
-            .max_connections(10)
-            .connect(db_url)
-            .await
-            .context("Failed to connect to Sisyphus database pool")?;
+        // 1. Initialize the shared pool.
+        //    文件型 SQLite 需确保父目录存在（CI 干净环境没有 data/ 目录），
+        //    且 create_if_missing 让 db 文件不存在时自动创建。
+        let pool = if db_url == "sqlite::memory:" || db_url == "sqlite::memory" {
+            SqlitePoolOptions::new()
+                .max_connections(10)
+                .connect(db_url)
+                .await
+                .context("Failed to connect to in-memory SQLite pool")?
+        } else {
+            let path = db_url.strip_prefix("sqlite:").unwrap_or(db_url);
+            if path != ":memory:"
+                && let Some(parent) = std::path::Path::new(path).parent()
+                && !parent.as_os_str().is_empty()
+            {
+                std::fs::create_dir_all(parent).map_err(|e| {
+                    anyhow::anyhow!("Failed to create db parent dir '{}': {e}", parent.display())
+                })?;
+            }
+            let opts = sqlx::sqlite::SqliteConnectOptions::from_str(db_url)
+                .map_err(|e| anyhow::anyhow!("Invalid SQLite URL '{db_url}': {e}"))?
+                .create_if_missing(true)
+                .foreign_keys(true);
+            SqlitePoolOptions::new()
+                .max_connections(10)
+                .connect_with(opts)
+                .await
+                .context("Failed to connect to Sisyphus database pool")?
+        };
 
         // 2. Initialize MfsStore (handles base state, traces, and experiences)
         let state = Arc::new(MfsStore::new(db_url, &config.cache).await?);
