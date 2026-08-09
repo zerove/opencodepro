@@ -6,12 +6,12 @@ Sisyphus 是一个**认知计算引擎 (Cognitive Computation Engine)**，实现
 
 ## 🎯 当前状态
 
-- **Workspace**: 29 个成员（`crates/` 下 28 个 crate + `webui` + `evals`，`sisyphus-tools` 拆分为 10 个子 crate）
-- **测试基线**: **1272 个测试全绿**（lib + bin + doctests + 集成），0 失败 0 忽略（除需真实 LLM/网络的 4 个）
+- **Workspace**: 29 个成员（`crates/` 下 27 个 crate + `webui` + `evals`，`sisyphus-tools` 拆分为 10 个子 crate）
+- **测试基线**: **1415 个测试全绿**（lib + bin + doctests + 集成），0 失败 0 忽略（除需真实 LLM/网络的 4 个）
 - **核心能力**:
   - 认知循环 v1+v2（自适应深度控制、并行分支预测、运行时异常检测）
   - WASM 沙箱（wasmtime + 燃料计量 + 内存限制）双模式：嵌入式 + sandboxd 守护进程
-  - gRPC bridge（17 RPC）+ REST API（34 端点 + OpenAPI 3.1）
+  - gRPC bridge（34 RPC）+ REST API（49 端点 + OpenAPI 3.1）
   - 双层存储（L1 DashMap + L2 SQLite/PostgreSQL + pgvector 语义检索）
   - 混沌工程（故障注入 + 自动修复管线）
   - 自编程闭环（缺口检测 → 工具生成 → 部署 → 注册）
@@ -42,7 +42,7 @@ Sisyphus 是一个**认知计算引擎 (Cognitive Computation Engine)**，实现
 | TUI | `crates/sisyphus-cli/src/tui/` |
 | 存储层 | `crates/sisyphus-mem/src/` (store.rs, vector_memory.rs) |
 | 战略定义 | `docs/ROADMAP.md` |
-| 决策记录 | `docs/adr/` (ADR-002 ~ ADR-006) |
+| 决策记录 | `docs/adr/` (002-phase-3b ~ 006-configuration-system) |
 | 演进计划 | `docs/EVOLUTION_PLAN.md` |
 
 ## 🧪 常用命令
@@ -50,7 +50,7 @@ Sisyphus 是一个**认知计算引擎 (Cognitive Computation Engine)**，实现
 ```bash
 make check-all            # 快速检查 (排除重型 crate)
 make test-ci              # 完整 CI 模拟 (14 步)
-cargo test --workspace    # 全量测试 (1272 tests)
-cargo test -p sisyphus-bridge --test bridge_integration_test  # bridge 37 tests
+cargo test --workspace    # 全量测试 (1415 tests)
+cargo test -p sisyphus-bridge --test bridge_integration_test  # bridge 56 tests
 make bench-core           # 认知循环基准
 ```
