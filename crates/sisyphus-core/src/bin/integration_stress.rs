@@ -10,8 +10,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("🚀 Starting In-Process Integration Stress Test");
 
     // 1. 初始化核心组件
-    let tool_executor =
-        Arc::new(WasmToolExecutor::new().expect("Failed to create WasmToolExecutor"));
+    let tool_executor = Arc::new(WasmToolExecutor::new()?);
 
     // Executor 依赖的最小化 mock
     let llm_client = Arc::new(sisyphus_tools_llm::DummyLlmClient);
