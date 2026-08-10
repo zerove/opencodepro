@@ -35,7 +35,7 @@
             const path_to_root = "";
             const default_light_theme = "dark";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-f039fe21.js";
+            window.path_to_searchindex_js = "searchindex-d757ea82.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-ffcc50b1.js"></script>
@@ -175,7 +175,7 @@
                 <div id="mdbook-content" class="content">
                     <main>
                         <h1 id="架构总览"><a class="header" href="#架构总览">架构总览</a></h1>
-<p>Sisyphus 以 <strong>Rust 工作区</strong> 组织，包含 37 个成员：<code>crates/</code> 下的 35 个 crate（含 10 个 <code>sisyphus-tools-*</code> 子 crate，以及 <code>webui</code> 和 <code>evals</code>），每个 crate 负责一个明确的关注点：</p>
+<p>Sisyphus 以 <strong>Rust 工作区</strong> 组织，包含 <strong>29 个成员</strong>：<code>crates/</code> 下的 <strong>27 个 crate</strong>（含 10 个 <code>sisyphus-tools-*</code> 子 crate，以及 <code>webui</code> 和 <code>evals</code>），每个 crate 负责一个明确的关注点：</p>
 <ul>
 <li><code>sisyphus-bridge</code> / <code>sisyphus-api</code> — 入口点（HTTP/gRPC/REST API）</li>
 <li><code>sisyphus-core</code> — 内核：DAG 执行器、编排、认知循环</li>
@@ -293,18 +293,18 @@
 <li>守护进程通过自己的 gRPC 服务接收 <code>wasmtime</code> 执行请求，使用与 <code>ExecuteTool</code> 类似的契约。</li>
 </ul>
 <h2 id="架构决策记录"><a class="header" href="#架构决策记录">架构决策记录</a></h2>
-<p>重要的架构决策以 ADR 形式记录在 <a href="https://github.com/zeronhq/sisyphus-wasm/tree/main/docs/adr"><code>docs/adr/</code></a>：</p>
+<p>重要的架构决策以 ADR 形式记录在 <code>docs/adr/</code>：</p>
 <div class="table-wrapper">
 <table>
 <thead>
 <tr><th>ADR</th><th>标题</th><th>状态</th></tr>
 </thead>
 <tbody>
-<tr><td><a href="https://github.com/zeronhq/sisyphus-wasm/blob/main/docs/adr/002-phase-3b-agent-team-architecture.md">ADR-002</a></td><td>阶段 3b 多代理团队架构</td><td>提案</td></tr>
-<tr><td><a href="https://github.com/zeronhq/sisyphus-wasm/blob/main/docs/adr/003-modular-restructure.md">ADR-003</a></td><td>单体到模块化重构</td><td>已接受</td></tr>
-<tr><td><a href="https://github.com/zeronhq/sisyphus-wasm/blob/main/docs/adr/004-workspace-isolation.md">ADR-004</a></td><td>多租户工作区隔离</td><td>已接受</td></tr>
-<tr><td><a href="https://github.com/zeronhq/sisyphus-wasm/blob/main/docs/adr/005-sandboxd-daemon-architecture.md">ADR-005</a></td><td>Sandboxd 守护进程架构</td><td>已接受</td></tr>
-<tr><td><a href="https://github.com/zeronhq/sisyphus-wasm/blob/main/docs/adr/006-configuration-system.md">ADR-006</a></td><td>配置系统</td><td>已接受</td></tr>
+<tr><td><a href="docs/adr/002-phase-3b-agent-team-architecture.html">002-phase-3b-agent-team-architecture</a></td><td>阶段 3b 多代理团队架构</td><td>提案</td></tr>
+<tr><td><a href="docs/adr/003-modular-restructure.html">003-modular-restructure</a></td><td>单体到模块化重构</td><td>已接受</td></tr>
+<tr><td><a href="docs/adr/004-workspace-isolation.html">004-workspace-isolation</a></td><td>多租户工作区隔离</td><td>已接受</td></tr>
+<tr><td><a href="docs/adr/005-sandboxd-daemon-architecture.html">005-sandboxd-daemon-architecture</a></td><td>Sandboxd 守护进程架构</td><td>已接受</td></tr>
+<tr><td><a href="docs/adr/006-configuration-system.html">006-configuration-system</a></td><td>配置系统</td><td>已接受</td></tr>
 </tbody>
 </table>
 </div>
