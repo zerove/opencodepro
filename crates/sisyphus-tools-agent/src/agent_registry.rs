@@ -92,7 +92,14 @@ impl AgentRegistry {
 
     /// Register the built-in agents with their default tool prefixes.
     pub fn register_builtin(&self) {
-        let builtin: Vec<(&str, AgentInfo)> = vec![
+        for (id, info) in Self::builtin_agents() {
+            self.register(id, info);
+        }
+    }
+
+    /// Get the list of built-in agents without creating a registry.
+    pub fn builtin_agents() -> Vec<(&'static str, AgentInfo)> {
+        vec![
             (
                 "librarian",
                 AgentInfo {
@@ -156,10 +163,7 @@ impl AgentRegistry {
                     max_concurrency: 1,
                 },
             ),
-        ];
-        for (id, info) in builtin {
-            self.register(id, info);
-        }
+        ]
     }
 
     /// Register an MCP server as an agent with the given tool prefix.

@@ -127,4 +127,12 @@ pub enum TeamCommands {
         #[arg(short = 'c', long = "concurrent", default_value = "4")]
         max_concurrent: usize,
     },
+    ///列出所有可用内置代理
+    List,
+    ///显示团队执行历史
+    History {
+        ///显示最近 N 条记录（默认：10）
+        #[arg(short = 'n', long = "limit", default_value = "10")]
+        limit: usize,
+    },
 }
