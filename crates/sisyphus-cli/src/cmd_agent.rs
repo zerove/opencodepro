@@ -110,3 +110,21 @@ pub enum RulesCommands {
     ///从 AGENTS.md 重新加载项目规则
     Reload,
 }
+
+#[derive(Subcommand)]
+pub enum TeamCommands {
+    ///运行代理团队完成复杂目标
+    Run {
+        ///团队的高层目标
+        goal: String,
+        ///目标的可选上下文/背景
+        #[arg(short = 'x', long = "context")]
+        context: Option<String>,
+        ///要包含的代理 ID 逗号分隔列表（默认：全部内置）
+        #[arg(short = 'a', long = "agents")]
+        agents: Option<String>,
+        ///最大并行代理数（默认：4）
+        #[arg(short = 'c', long = "concurrent", default_value = "4")]
+        max_concurrent: usize,
+    },
+}

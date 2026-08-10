@@ -68,6 +68,8 @@ mod handle_session;
 mod handle_skill;
 #[path = "handle_sop.rs"]
 mod handle_sop;
+#[path = "handle_team.rs"]
+mod handle_team;
 #[path = "handle_todo.rs"]
 mod handle_todo;
 #[path = "handle_tool.rs"]
@@ -149,6 +151,9 @@ pub async fn dispatch(
 
         // ── metis ────────────────────────────────────────
         Commands::Metis(sub) => handle_metis::handle_metis(sub, llm_client.clone()).await?,
+
+        // ── team ────────────────────────────────────────
+        Commands::Team(sub) => handle_team::handle_team(sub).await?,
 
         // ── 技能 ───────────────────────────────────────
         Commands::Skill(sub) => handle_skill::handle_skill(sub)?,

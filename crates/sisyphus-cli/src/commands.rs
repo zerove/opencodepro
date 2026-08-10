@@ -131,6 +131,10 @@ pub enum Commands {
     #[command(subcommand)]
     Lsp(LspCommands),
 
+    ///代理团队（运行多代理协作完成复杂目标）
+    #[command(next_help_heading = "Agents", subcommand)]
+    Team(TeamCommands),
+
     ///任务编排（并行执行）
     #[command(subcommand)]
     Delegate(DelegateCommands),
