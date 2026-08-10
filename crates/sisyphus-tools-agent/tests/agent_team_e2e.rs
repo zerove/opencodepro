@@ -182,6 +182,8 @@ async fn test_agent_model_routing_pipeline_e2e() {
         tool_id: "custom/tool".into(),
         args: json!({}),
         depends_on: vec![],
+        read_keys: vec![],
+        write_keys: vec![],
     }];
 
     let report_unknown = orchestrator

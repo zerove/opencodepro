@@ -62,6 +62,8 @@ pub(crate) fn parse_decomposition_response(
             tool_id: rt.tool_id,
             args: rt.args.unwrap_or(Value::Object(serde_json::Map::new())),
             depends_on: rt.depends_on,
+            read_keys: Vec::new(),
+            write_keys: Vec::new(),
         });
     }
 
@@ -269,6 +271,8 @@ mod tests {
                 tool_id: "t".into(),
                 args: json!({}),
                 depends_on: vec![],
+                read_keys: vec![],
+                write_keys: vec![],
             },
             TaskNode {
                 id: "b".into(),
@@ -276,6 +280,8 @@ mod tests {
                 tool_id: "t".into(),
                 args: json!({}),
                 depends_on: vec!["a".into()],
+                read_keys: vec![],
+                write_keys: vec![],
             },
         ];
         assert!(detect_cycle(&tasks).is_ok());
@@ -290,6 +296,8 @@ mod tests {
                 tool_id: "t".into(),
                 args: json!({}),
                 depends_on: vec!["b".into()],
+                read_keys: vec![],
+                write_keys: vec![],
             },
             TaskNode {
                 id: "b".into(),
@@ -297,6 +305,8 @@ mod tests {
                 tool_id: "t".into(),
                 args: json!({}),
                 depends_on: vec!["a".into()],
+                read_keys: vec![],
+                write_keys: vec![],
             },
         ];
         assert!(detect_cycle(&tasks).is_err());

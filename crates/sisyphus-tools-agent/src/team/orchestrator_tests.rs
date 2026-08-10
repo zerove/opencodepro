@@ -55,6 +55,8 @@ async fn test_execute_single_task() {
         tool_id: "metis/analyse".into(),
         args: json!({"request": "test analysis"}),
         depends_on: vec![],
+        read_keys: vec![],
+        write_keys: vec![],
     }];
     let report = orch
         .run(
@@ -87,6 +89,8 @@ async fn test_execute_sequential_tasks() {
             tool_id: "metis/analyse".into(),
             args: json!({"request": "first analysis"}),
             depends_on: vec![],
+            read_keys: vec![],
+            write_keys: vec![],
         },
         TaskNode {
             id: "t2".into(),
@@ -94,6 +98,8 @@ async fn test_execute_sequential_tasks() {
             tool_id: "metis/analyse".into(),
             args: json!({"request": "second analysis"}),
             depends_on: vec!["t1".into()],
+            read_keys: vec![],
+            write_keys: vec![],
         },
     ];
     let report = orch
@@ -124,6 +130,8 @@ async fn test_execute_parallel_tasks() {
             tool_id: "metis/analyse".into(),
             args: json!({"request": "parallel A"}),
             depends_on: vec![],
+            read_keys: vec![],
+            write_keys: vec![],
         },
         TaskNode {
             id: "t2".into(),
@@ -131,6 +139,8 @@ async fn test_execute_parallel_tasks() {
             tool_id: "metis/analyse".into(),
             args: json!({"request": "parallel B"}),
             depends_on: vec![],
+            read_keys: vec![],
+            write_keys: vec![],
         },
         TaskNode {
             id: "t3".into(),
@@ -138,6 +148,8 @@ async fn test_execute_parallel_tasks() {
             tool_id: "metis/analyse".into(),
             args: json!({"request": "parallel C"}),
             depends_on: vec![],
+            read_keys: vec![],
+            write_keys: vec![],
         },
     ];
     let report = orch
@@ -169,6 +181,8 @@ async fn test_execute_diamond_dependency() {
             tool_id: "metis/analyse".into(),
             args: json!({"request": "root"}),
             depends_on: vec![],
+            read_keys: vec![],
+            write_keys: vec![],
         },
         TaskNode {
             id: "t2".into(),
@@ -176,6 +190,8 @@ async fn test_execute_diamond_dependency() {
             tool_id: "metis/analyse".into(),
             args: json!({"request": "left"}),
             depends_on: vec!["t1".into()],
+            read_keys: vec![],
+            write_keys: vec![],
         },
         TaskNode {
             id: "t3".into(),
@@ -183,6 +199,8 @@ async fn test_execute_diamond_dependency() {
             tool_id: "metis/analyse".into(),
             args: json!({"request": "right"}),
             depends_on: vec!["t1".into()],
+            read_keys: vec![],
+            write_keys: vec![],
         },
         TaskNode {
             id: "t4".into(),
@@ -190,6 +208,8 @@ async fn test_execute_diamond_dependency() {
             tool_id: "metis/analyse".into(),
             args: json!({"request": "merge"}),
             depends_on: vec!["t2".into(), "t3".into()],
+            read_keys: vec![],
+            write_keys: vec![],
         },
     ];
     let report = orch
@@ -218,6 +238,8 @@ async fn test_deadlock_detection() {
             tool_id: "metis/analyse".into(),
             args: json!({"request": "a"}),
             depends_on: vec!["t2".into()],
+            read_keys: vec![],
+            write_keys: vec![],
         },
         TaskNode {
             id: "t2".into(),
@@ -225,6 +247,8 @@ async fn test_deadlock_detection() {
             tool_id: "metis/analyse".into(),
             args: json!({"request": "b"}),
             depends_on: vec!["t1".into()],
+            read_keys: vec![],
+            write_keys: vec![],
         },
     ];
     let report = orch
@@ -253,6 +277,8 @@ async fn test_missing_dependency_deadlock() {
         tool_id: "metis/analyse".into(),
         args: json!({"request": "a"}),
         depends_on: vec!["nonexistent".into()],
+        read_keys: vec![],
+        write_keys: vec![],
     }];
     let report = orch
         .run(
@@ -286,6 +312,8 @@ async fn test_synthesis_with_llm() {
         tool_id: "metis/analyse".into(),
         args: json!({"request": "test"}),
         depends_on: vec![],
+        read_keys: vec![],
+        write_keys: vec![],
     }];
     let report = orch
         .run(
@@ -314,6 +342,8 @@ fn test_create_sequential_plan() {
             tool_id: "t".into(),
             args: json!({}),
             depends_on: vec![],
+            read_keys: vec![],
+            write_keys: vec![],
         },
         TaskNode {
             id: "t2".into(),
@@ -321,6 +351,8 @@ fn test_create_sequential_plan() {
             tool_id: "t".into(),
             args: json!({}),
             depends_on: vec![],
+            read_keys: vec![],
+            write_keys: vec![],
         },
     ];
     let plan = TeamOrchestrator::create_sequential_plan("g1", tasks);
@@ -337,6 +369,8 @@ async fn test_execute_unknown_tool_graceful() {
         tool_id: "nonexistent/tool".into(),
         args: json!({}),
         depends_on: vec![],
+        read_keys: vec![],
+        write_keys: vec![],
     }];
     let report = orch
         .run(
@@ -363,6 +397,8 @@ async fn test_report_metrics() {
         tool_id: "metis/analyse".into(),
         args: json!({"request": "test"}),
         depends_on: vec![],
+        read_keys: vec![],
+        write_keys: vec![],
     }];
     let report = orch
         .run(
@@ -389,6 +425,8 @@ async fn test_unknown_agent_fails() {
         tool_id: "metis/analyse".into(),
         args: json!({}),
         depends_on: vec![],
+        read_keys: vec![],
+        write_keys: vec![],
     }];
     let report = orch
         .run(
@@ -421,6 +459,8 @@ async fn test_tool_not_matching_agent_fails() {
         tool_id: "security/audit_code".into(),
         args: json!({}),
         depends_on: vec![],
+        read_keys: vec![],
+        write_keys: vec![],
     }];
     let report = orch
         .run(
@@ -618,6 +658,8 @@ async fn test_concurrency_limit_respected() {
             tool_id: "test/tool".into(),
             args: json!({}),
             depends_on: vec![],
+            read_keys: vec![],
+            write_keys: vec![],
         },
         TaskNode {
             id: "b".into(),
@@ -625,6 +667,8 @@ async fn test_concurrency_limit_respected() {
             tool_id: "test/tool".into(),
             args: json!({}),
             depends_on: vec![],
+            read_keys: vec![],
+            write_keys: vec![],
         },
         TaskNode {
             id: "c".into(),
@@ -632,6 +676,8 @@ async fn test_concurrency_limit_respected() {
             tool_id: "test/tool".into(),
             args: json!({}),
             depends_on: vec![],
+            read_keys: vec![],
+            write_keys: vec![],
         },
     ];
 
@@ -667,6 +713,8 @@ async fn test_event_streaming() {
                 tool_id: "metis/analyse".into(),
                 args: json!({"request": "event test 1"}),
                 depends_on: vec![],
+                read_keys: vec![],
+                write_keys: vec![],
             },
             TaskNode {
                 id: "e2".into(),
@@ -674,13 +722,18 @@ async fn test_event_streaming() {
                 tool_id: "metis/analyse".into(),
                 args: json!({"request": "event test 2"}),
                 depends_on: vec![],
+                read_keys: vec![],
+                write_keys: vec![],
             },
         ],
     };
     let (tx, mut rx) = mpsc::channel(64);
 
     // Execute with event channel
-    let report = orch.execute_plan_internal(plan, Some(tx)).await.unwrap();
+    let report = orch
+        .execute_plan_internal(plan, Some(tx), Arc::new(TeamContext::new()))
+        .await
+        .unwrap();
     assert!(report.success, "all tasks should succeed");
 
     // Collect all events (with timeout)
@@ -729,6 +782,8 @@ async fn test_event_streaming_deadlock() {
                 tool_id: "metis/analyse".into(),
                 args: json!({"request": "a"}),
                 depends_on: vec!["b".into()],
+                read_keys: vec![],
+                write_keys: vec![],
             },
             TaskNode {
                 id: "b".into(),
@@ -736,12 +791,17 @@ async fn test_event_streaming_deadlock() {
                 tool_id: "metis/analyse".into(),
                 args: json!({"request": "b"}),
                 depends_on: vec!["a".into()],
+                read_keys: vec![],
+                write_keys: vec![],
             },
         ],
     };
     let (tx, mut rx) = mpsc::channel(64);
 
-    let _report = orch.execute_plan_internal(plan, Some(tx)).await.unwrap();
+    let _report = orch
+        .execute_plan_internal(plan, Some(tx), Arc::new(TeamContext::new()))
+        .await
+        .unwrap();
 
     // Should see Error event + 2 TaskCompleted (failed)
     let mut errors = 0u32;

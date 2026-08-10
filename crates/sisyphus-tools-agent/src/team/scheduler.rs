@@ -5,10 +5,11 @@
 //! deadlock detection, and optional event streaming.
 
 use super::orchestrator::TeamOrchestrator;
-use super::{TaskNode, TaskResult, TeamError, TeamEvent, TeamPlan, TeamReport};
+use super::{TaskNode, TaskResult, TeamContext, TeamError, TeamEvent, TeamPlan, TeamReport};
 use crate::delegate::{WorkOrchestrator, WorkUnit};
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::mpsc;
 
@@ -22,6 +23,7 @@ impl TeamOrchestrator {
         &self,
         plan: TeamPlan,
         event_tx: Option<mpsc::Sender<TeamEvent>>,
+        context: Arc<TeamContext>,
     ) -> Result<TeamReport, TeamError> {
         let start = Instant::now();
         let mut task_results: Vec<TaskResult> = Vec::new();
@@ -162,22 +164,61 @@ impl TeamOrchestrator {
                 .map(|task| {
                     let executor = self.executor.clone();
                     let tool_id = task.tool_id.clone();
-                    let args_bytes = serde_json::to_vec(&task.args).unwrap_or_default();
+                    let context = context.clone();
                     let task_id = task.id.clone();
+                    let read_keys = task.read_keys.clone();
+                    let write_keys = task.write_keys.clone();
+                    let agent_id = task.agent_id.clone();
+
+                    // Inject context values into args for keys this task reads
+                    let mut args = task.args.clone();
+                    if !read_keys.is_empty() {
+                        let mut ctx_values = serde_json::Map::new();
+                        for key in &read_keys {
+                            if let Some(value) = context.read_tracked(key, &task_id) {
+                                ctx_values.insert(key.clone(), value);
+                            }
+                        }
+                        if !ctx_values.is_empty() {
+                            args["_context"] = Value::Object(ctx_values);
+                        }
+                    }
+
+                    let args_bytes = serde_json::to_vec(&args).unwrap_or_default();
 
                     WorkUnit {
                         id: task_id.clone(),
-                        name: format!("{}:{}", task.agent_id, task.tool_id),
+                        name: format!("{}:{}", agent_id, tool_id),
                         handler: Box::new(move || {
                             let ex = executor.clone();
                             let tid = tool_id.clone();
                             let args = args_bytes.clone();
+                            let ctx = context.clone();
+                            let wid = write_keys.clone();
+                            let tid_for_write = task_id.clone();
                             Box::pin(async move {
                                 let result = ex.execute(&tid, args, 0).await;
                                 match result {
                                     Ok(bytes) => {
                                         let value: Value =
                                             serde_json::from_slice(&bytes).unwrap_or(Value::Null);
+
+                                        // Capture writes from task output
+                                        // Convention: output["_writes"] = {"key": value, ...}
+                                        if let Some(writes) =
+                                            value.get("_writes").and_then(|v| v.as_object())
+                                        {
+                                            for (key, val) in writes {
+                                                if wid.contains(key) || wid.is_empty() {
+                                                    ctx.write(
+                                                        key.clone(),
+                                                        val.clone(),
+                                                        &tid_for_write,
+                                                    );
+                                                }
+                                            }
+                                        }
+
                                         Ok(value)
                                     }
                                     Err(e) => {
@@ -256,6 +297,7 @@ impl TeamOrchestrator {
             task_results,
             synthesis,
             total_duration_ms: start.elapsed().as_millis(),
+            iterations: 1, // Single iteration for basic execute_plan
         };
 
         if let Some(tx) = &event_tx {
