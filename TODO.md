@@ -50,6 +50,7 @@
     - [x] 数据侧: `CognitiveTraceBuffer` 环形缓冲 (容量 200)，`CognitiveStep`/`MicroReflection` 双路径捕获，`ExecutionManager::recent_cognitive_trace` 查询接口
     - [x] REST 接口: `GET /api/cognitive/trace?limit=N` (默认 100, 上限 200) 暴露最近决策链
     - [x] TUI 面板: `:cogtrace` 命令打开决策链视图，表格渲染 (时间/SOP/事件/摘要)，偏差与拒绝着色，Enter 查看预测↔实际与理由/指标，`r` 刷新
+    - [x] 持久化: 决策写入 SQL (`cognitive_traces` 表)，跨会话留存；`GET /api/cognitive/trace/history?sop_id=&limit=` 历史检索 (上限 1000)；TUI `h` 切换热缓冲 ⇄ SQL 历史 (历史行显示本地时钟时间)；重启恢复集成测试验证 (2026-08-11)
 
 ### 阶段 6: 分布式支持 (延后, 待单机全功能稳定后再启动)
 - [ ] **联邦学习**: 跨实例经验共享 (peer protocol 已有基础)
@@ -57,4 +58,4 @@
 
 ---
 **更新日期**: 2026-08-11
-**当前重点**: 单机全功能 — 可解释性已完成，下一项: 阶段 5 剩余能力 (待评估，或按需深化多智能体/认知循环)
+**当前重点**: 单机全功能 — 可解释性含持久化已闭环 (数据侧 → REST → TUI → SQL 历史)，下一项: 阶段 5 剩余能力 (待评估，或按需深化多智能体/认知循环)
