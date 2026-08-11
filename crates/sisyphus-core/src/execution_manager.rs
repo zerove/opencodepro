@@ -94,6 +94,9 @@ pub struct ExecutionManager {
     pub event_subscribers: Arc<DashMap<String, Vec<mpsc::UnboundedSender<ExecutionEvent>>>>,
     /// Ring buffer of recent cognitive decisions, queryable for explainability.
     pub cognitive_trace: Arc<CognitiveTraceBuffer>,
+    /// 可选的异步持久化通道：(sop_id, entry)。由 writer task 写入 SQL 存储，
+    /// 使认知决策跨会话可检索（历史）。
+    trace_persist_tx: Option<mpsc::UnboundedSender<(String, CognitiveTraceEntry)>>,
 }
 
 impl ExecutionManager {
@@ -106,7 +109,7 @@ impl ExecutionManager {
         internalization_manager: Arc<crate::internalization_manager::InternalizationManager>,
         visual_manager: Option<Arc<sisyphus_visual::VisualPerceptionManager>>,
     ) -> Self {
-        Self {
+        let mut em = Self {
             executor: Executor::new(
                 test_executor,
                 intervention_manager,
@@ -120,7 +123,29 @@ impl ExecutionManager {
             cognitive_maps: Arc::new(DashMap::new()),
             event_subscribers: Arc::new(DashMap::new()),
             cognitive_trace: Arc::new(CognitiveTraceBuffer::new(200)),
-        }
+            trace_persist_tx: None,
+        };
+        em.init_trace_persistence();
+        em
+    }
+
+    /// 启动认知决策异步持久化 writer：每个记录事件写入 SQL `cognitive_traces` 表。
+    ///
+    /// 在 `new()` 中自动调用，随 `state_store` 就地落盘，无需调用方额外配置。
+    fn init_trace_persistence(&mut self) {
+        let store = Arc::clone(&self.state_store);
+        let (tx, mut rx) = mpsc::unbounded_channel::<(String, CognitiveTraceEntry)>();
+        tokio::spawn(async move {
+            while let Some((sop_id, entry)) = rx.recv().await {
+                if let Err(e) = store
+                    .record_cognitive_trace("default", &sop_id, entry.timestamp_ms, &entry.event)
+                    .await
+                {
+                    tracing::warn!(error = %e, "Failed to persist cognitive trace");
+                }
+            }
+        });
+        self.trace_persist_tx = Some(tx);
     }
 
     /// 通知管理器有新工具部署，以便使缓存失效。
@@ -198,7 +223,7 @@ impl ExecutionManager {
         self.record_cognitive_trace(sop_id, event);
     }
 
-    /// 将认知决策事件记录到环形缓冲（如果该事件类型值得留存）。
+    /// 将认知决策事件记录到环形缓冲（如果该事件类型值得留存），并异步落盘。
     pub fn record_cognitive_trace(&self, sop_id: &str, event: ExecutionEvent) {
         let keep = matches!(
             event,
@@ -209,17 +234,46 @@ impl ExecutionManager {
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap_or_default()
                 .as_millis();
-            self.cognitive_trace.push(CognitiveTraceEntry {
+            let entry = CognitiveTraceEntry {
                 timestamp_ms,
                 sop_id: sop_id.to_string(),
                 event,
-            });
+            };
+            self.cognitive_trace.push(entry.clone());
+            if let Some(tx) = &self.trace_persist_tx {
+                // 持久化是尽力而为：channel 关闭（writer 已退出）时静默丢弃。
+                let _ = tx.send((sop_id.to_string(), entry));
+            }
         }
     }
 
     /// 返回最近的 `limit` 条认知决策（新在前）。
     pub fn recent_cognitive_trace(&self, limit: usize) -> Vec<CognitiveTraceEntry> {
         self.cognitive_trace.recent(limit)
+    }
+
+    /// 从 SQL 存储检索认知决策历史（跨会话），新在前。
+    ///
+    /// `sop_id` 为 `None` 时返回全部 SOP 的记录。
+    pub async fn cognitive_trace_history(
+        &self,
+        project_id: &str,
+        sop_id: Option<&str>,
+        limit: usize,
+    ) -> Result<Vec<CognitiveTraceEntry>, CoreError> {
+        let records = self
+            .state_store
+            .get_cognitive_traces(project_id, sop_id, limit)
+            .await
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
+        Ok(records
+            .into_iter()
+            .map(|r| CognitiveTraceEntry {
+                timestamp_ms: r.timestamp_ms,
+                sop_id: r.sop_id,
+                event: r.event,
+            })
+            .collect())
     }
 
     /// 在给定上下文中执行图谱的底层原语。

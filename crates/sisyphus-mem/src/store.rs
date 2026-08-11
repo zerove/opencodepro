@@ -127,6 +127,24 @@ impl MfsStore {
             .execute(&pool)
             .await?;
 
+        // 认知决策链持久化（可解释性）：供历史检索与跨会话趋势分析。
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS cognitive_traces (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                project_id TEXT NOT NULL,
+                sop_id TEXT NOT NULL,
+                timestamp_ms INTEGER NOT NULL,
+                event_json TEXT NOT NULL
+            )",
+        )
+        .execute(&pool)
+        .await?;
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_cog_trace_sop ON cognitive_traces(sop_id, id DESC);",
+        )
+        .execute(&pool)
+        .await?;
+
         // Setup async write buffer
         let (tx, rx) = mpsc::unbounded_channel::<WriteOp>();
         let pool_clone = pool.clone();
@@ -756,6 +774,85 @@ impl sisyphus_types::StateStore for MfsStore {
     }
 }
 
+/// 持久化的一条认知决策记录（可解释性历史）。
+#[derive(Clone, Debug)]
+pub struct CognitiveTraceRecord {
+    /// 记录时刻（epoch 毫秒）。
+    pub timestamp_ms: u128,
+    /// 所属 SOP。
+    pub sop_id: String,
+    /// 决策事件本体。
+    pub event: sisyphus_types::ExecutionEvent,
+}
+
+impl MfsStore {
+    /// 将一条认知决策事件写入 `cognitive_traces` 表。
+    pub async fn record_cognitive_trace(
+        &self,
+        project_id: &str,
+        sop_id: &str,
+        timestamp_ms: u128,
+        event: &sisyphus_types::ExecutionEvent,
+    ) -> std::result::Result<(), sisyphus_types::TypesError> {
+        let event_json = serde_json::to_string(event)
+            .map_err(|e| sisyphus_types::TypesError::InternalError(e.to_string()))?;
+        let ts = i64::try_from(timestamp_ms).map_err(|_| {
+            sisyphus_types::TypesError::InternalError(
+                "cognitive trace timestamp exceeds i64 range".to_string(),
+            )
+        })?;
+        sqlx::query(
+            "INSERT INTO cognitive_traces (project_id, sop_id, timestamp_ms, event_json)
+             VALUES (?, ?, ?, ?)",
+        )
+        .bind(project_id)
+        .bind(sop_id)
+        .bind(ts)
+        .bind(event_json)
+        .execute(&self.l2)
+        .await
+        .map_err(|e| sisyphus_types::TypesError::StateStoreError(e.to_string()))?;
+        Ok(())
+    }
+
+    /// 查询最近的认知决策历史，新在前。
+    ///
+    /// `sop_id` 为 `None` 时返回该项目全部 SOP 的记录。
+    pub async fn get_cognitive_traces(
+        &self,
+        project_id: &str,
+        sop_id: Option<&str>,
+        limit: usize,
+    ) -> std::result::Result<Vec<CognitiveTraceRecord>, sisyphus_types::TypesError> {
+        let limit = limit.clamp(1, 1000) as i64;
+        let rows = sqlx::query_as::<_, (String, i64, String)>(
+            "SELECT sop_id, timestamp_ms, event_json FROM cognitive_traces
+             WHERE project_id = ? AND (? IS NULL OR sop_id = ?)
+             ORDER BY id DESC
+             LIMIT ?",
+        )
+        .bind(project_id)
+        .bind(sop_id)
+        .bind(sop_id)
+        .bind(limit)
+        .fetch_all(&self.l2)
+        .await
+        .map_err(|e| sisyphus_types::TypesError::StateStoreError(e.to_string()))?;
+
+        rows.into_iter()
+            .map(|(sop_id, ts, json)| {
+                let event: sisyphus_types::ExecutionEvent = serde_json::from_str(&json)
+                    .map_err(|e| sisyphus_types::TypesError::InternalError(e.to_string()))?;
+                Ok(CognitiveTraceRecord {
+                    timestamp_ms: ts as u128,
+                    sop_id,
+                    event,
+                })
+            })
+            .collect()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -797,5 +894,114 @@ mod tests {
             Some(val_a),
             "Isolation failed: Project B overwrote Project A's state"
         );
+    }
+}
+
+#[cfg(test)]
+mod cognitive_trace_tests {
+    use super::*;
+    use sisyphus_types::ExecutionEvent;
+
+    fn step_event(step: &str) -> ExecutionEvent {
+        ExecutionEvent::CognitiveStep {
+            step: step.to_string(),
+            message: format!("{step} message"),
+            metrics: Some(sisyphus_types::CognitiveMetrics {
+                iteration: 1,
+                deviation: 0.2,
+                confidence: 0.8,
+                progress: 0.5,
+                token_cost: 10,
+                stability: 0.9,
+                info_gain: 0.1,
+            }),
+        }
+    }
+
+    async fn test_store() -> MfsStore {
+        MfsStore::new("sqlite::memory:", &sisyphus_types::CacheConfig::default())
+            .await
+            .expect("Failed to init store")
+    }
+
+    #[tokio::test]
+    async fn test_record_and_get_roundtrip() {
+        let store = test_store().await;
+        let ev = step_event("Predicting");
+        store
+            .record_cognitive_trace("proj", "sop-a", 1700000000123, &ev)
+            .await
+            .expect("record failed");
+
+        let rows = store
+            .get_cognitive_traces("proj", None, 10)
+            .await
+            .expect("get failed");
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].timestamp_ms, 1700000000123);
+        assert_eq!(rows[0].sop_id, "sop-a");
+        assert!(
+            matches!(rows[0].event, ExecutionEvent::CognitiveStep { ref step, .. } if step == "Predicting")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_get_filters_sop_and_orders_newest_first() {
+        let store = test_store().await;
+        store
+            .record_cognitive_trace("proj", "sop-a", 1000, &step_event("StepA1"))
+            .await
+            .unwrap();
+        store
+            .record_cognitive_trace("proj", "sop-a", 2000, &step_event("StepA2"))
+            .await
+            .unwrap();
+        store
+            .record_cognitive_trace("proj", "sop-b", 3000, &step_event("StepB1"))
+            .await
+            .unwrap();
+
+        // 全部：新在前
+        let all = store.get_cognitive_traces("proj", None, 10).await.unwrap();
+        assert_eq!(all.len(), 3);
+        assert_eq!(all[0].sop_id, "sop-b");
+
+        // 按 sop 过滤
+        let sop_a = store
+            .get_cognitive_traces("proj", Some("sop-a"), 10)
+            .await
+            .unwrap();
+        assert_eq!(sop_a.len(), 2);
+        assert!(sop_a.iter().all(|r| r.sop_id == "sop-a"));
+        assert_eq!(sop_a[0].timestamp_ms, 2000);
+        assert_eq!(sop_a[1].timestamp_ms, 1000);
+    }
+
+    #[tokio::test]
+    async fn test_get_respects_limit_and_project_isolation() {
+        let store = test_store().await;
+        for i in 0..5 {
+            store
+                .record_cognitive_trace("proj", "sop-a", 1000 + i, &step_event(&format!("S{i}")))
+                .await
+                .unwrap();
+        }
+        store
+            .record_cognitive_trace("other", "sop-a", 9999, &step_event("OtherProj"))
+            .await
+            .unwrap();
+
+        let limited = store
+            .get_cognitive_traces("proj", Some("sop-a"), 2)
+            .await
+            .unwrap();
+        assert_eq!(limited.len(), 2);
+        assert_eq!(limited[0].timestamp_ms, 1004);
+        assert_eq!(limited[1].timestamp_ms, 1003);
+
+        // 项目隔离：other 项目仅一条，proj 项目不含它
+        let other = store.get_cognitive_traces("other", None, 10).await.unwrap();
+        assert_eq!(other.len(), 1);
+        assert_eq!(other[0].timestamp_ms, 9999);
     }
 }
