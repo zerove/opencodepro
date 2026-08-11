@@ -294,3 +294,87 @@ async fn test_select_session_empty_noop() {
     app.select_session(); // should not panic when empty
     assert!(app.session_detail.is_none());
 }
+
+// ── Cognitive Trace (explainability) ────────────────────
+
+#[test]
+fn test_format_cognitive_step_event() {
+    let event = sisyphus_types::ExecutionEvent::CognitiveStep {
+        step: "Predicting".into(),
+        message: "predict node output".into(),
+        metrics: Some(sisyphus_types::CognitiveMetrics {
+            iteration: 2,
+            deviation: 0.35,
+            confidence: 0.85,
+            progress: 0.5,
+            token_cost: 120,
+            stability: 0.9,
+            info_gain: 0.05,
+        }),
+    };
+    let text = dialog::handlers::format_cognitive_event(&event);
+    assert!(text.contains("Step[Predicting]"));
+    assert!(text.contains("predict node output"));
+    assert!(text.contains("deviation: 0.35"));
+    assert!(text.contains("confidence: 0.85"));
+    assert!(text.contains("token_cost: 120"));
+}
+
+#[test]
+fn test_format_micro_reflection_event() {
+    let event = sisyphus_types::ExecutionEvent::MicroReflection {
+        node_name: "node-1".into(),
+        prediction: "expected output".into(),
+        actual: "actual output".into(),
+        decision: "adjust".into(),
+        updates: Some(std::collections::HashMap::from([(
+            "temperature".into(),
+            serde_json::json!(0.4),
+        )])),
+        reason: Some("prediction drifted".into()),
+    };
+    let text = dialog::handlers::format_cognitive_event(&event);
+    assert!(text.contains("node-1"));
+    assert!(text.contains("prediction: expected output"));
+    assert!(text.contains("actual: actual output"));
+    assert!(text.contains("decision: adjust"));
+    assert!(text.contains("reason: prediction drifted"));
+    assert!(text.contains("update temperature: 0.4"));
+}
+
+#[test]
+fn test_cognitive_trace_row_deserialize_from_rest_contract() {
+    // 契约测试：与 REST /api/cognitive/trace 返回结构对齐（CognitiveTraceEntry JSON）。
+    let json = serde_json::json!({
+        "timestamp_ms": 1700000000123_u64,
+        "sop_id": "sop-test",
+        "event": {
+            "CognitiveStep": {
+                "step": "Reflecting",
+                "message": "reflect on result",
+                "metrics": {
+                    "iteration": 1,
+                    "deviation": 0.1,
+                    "confidence": 0.9,
+                    "progress": 0.6,
+                    "token_cost": 50,
+                    "stability": 0.95,
+                    "info_gain": 0.02
+                }
+            }
+        }
+    });
+    let row: background::CognitiveTraceRow =
+        serde_json::from_value(json).expect("contract parse failed");
+    assert_eq!(row.timestamp_ms, 1700000000123);
+    assert_eq!(row.sop_id, "sop-test");
+    match row.event {
+        sisyphus_types::ExecutionEvent::CognitiveStep { step, metrics, .. } => {
+            assert_eq!(step, "Reflecting");
+            let m = metrics.expect("metrics present");
+            assert_eq!(m.deviation, 0.1);
+            assert_eq!(m.confidence, 0.9);
+        }
+        other => panic!("unexpected event variant: {other:?}"),
+    }
+}

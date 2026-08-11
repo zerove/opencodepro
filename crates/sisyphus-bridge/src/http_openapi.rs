@@ -265,6 +265,19 @@ pub(crate) async fn openapi_json() -> impl IntoResponse {
                 }
             },
 
+            // ── Cognitive Trace (Explainability) ──────────────────────────
+            "/api/cognitive/trace": {
+                "get": {
+                    "summary": "Get recent cognitive decisions (explainability)",
+                    "description": "Returns the most recent CognitiveStep / MicroReflection decisions from the cognitive loop, newest first.",
+                    "operationId": "getCognitiveTrace",
+                    "parameters": [{"name": "limit", "in": "query", "required": false, "schema": {"type": "integer", "minimum": 1, "maximum": 200, "default": 100}, "description": "Max entries to return (default 100, cap 200)"}],
+                    "responses": {
+                        "200": {"description": "Recent cognitive decision chain", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/CognitiveTraceResponse"}}}}
+                    }
+                }
+            },
+
             // ── Workspaces ───────────────────────────────────────────────
             "/api/workspaces": {
                 "get": {
@@ -541,6 +554,40 @@ pub(crate) async fn openapi_json() -> impl IntoResponse {
                     "properties": {
                         "sop_id": {"type": "string"},
                         "events": {"type": "array", "items": {"$ref": "#/components/schemas/TraceEventDetail"}}
+                    }
+                },
+
+                "CognitiveTraceEntry": {
+                    "type": "object",
+                    "description": "A single recorded cognitive decision (explainability primitive)",
+                    "properties": {
+                        "timestamp_ms": {"type": "integer", "description": "Epoch milliseconds when the decision was recorded"},
+                        "sop_id": {"type": "string", "description": "SOP the decision belongs to"},
+                        "event": {"$ref": "#/components/schemas/ExecutionEvent"}
+                    }
+                },
+                "ExecutionEvent": {
+                    "type": "object",
+                    "description": "One cognitive execution event (serde externally tagged). Variants: NodeStarted | NodeCompleted | NodeFailed | ExecutionComplete | CognitivePlan | CognitiveStep | MicroReflection | CognitiveComplete.",
+                    "properties": {
+                        "CognitiveStep": {
+                            "type": "object",
+                            "description": "Loop phase update with metrics: step, message, metrics (iteration, deviation, confidence, progress, token_cost, stability, info_gain)"
+                        },
+                        "MicroReflection": {
+                            "type": "object",
+                            "description": "Prediction vs actual per node: node_name, prediction, actual, decision, updates, reason"
+                        }
+                    }
+                },
+                "CognitiveTraceResponse": {
+                    "type": "object",
+                    "properties": {
+                        "entries": {
+                            "type": "array",
+                            "items": {"$ref": "#/components/schemas/CognitiveTraceEntry"},
+                            "description": "Recent cognitive decisions, newest first"
+                        }
                     }
                 },
 
