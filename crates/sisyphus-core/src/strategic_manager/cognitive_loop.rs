@@ -724,6 +724,7 @@ impl StrategicManager {
             sop_id.to_string(),
             event_tx.clone(),
             self.anomaly_detector.clone(),
+            Some(self.execution_manager.cognitive_trace.clone()),
         );
 
         // 2. 执行（Execute）
@@ -1144,12 +1145,17 @@ impl StrategicManager {
 
 /// 启动后台任务，将执行轨迹事件记录到结构化
 /// 存储，同时喂给异常检测器，并转发到用户事件流。
+///
+/// 微反思 (MicroReflection) 事件同时写入认知决策环形缓冲
+/// （CognitiveStep 已由 broadcast_event 记录，此处只补充微反思）。
+#[allow(clippy::too_many_arguments)]
 fn spawn_trace_recorder(
     mut trace_rx: mpsc::UnboundedReceiver<ExecutionEvent>,
     store_clone: Arc<MfsStore>,
     sop_id_clone: String,
     user_event_tx: Option<mpsc::UnboundedSender<ExecutionEvent>>,
     anomaly_det: Arc<AnomalyDetector>,
+    cognitive_trace: Option<Arc<crate::execution_manager::CognitiveTraceBuffer>>,
 ) {
     tokio::spawn(async move {
         while let Some(event) = trace_rx.recv().await {
@@ -1222,6 +1228,19 @@ fn spawn_trace_recorder(
                 _ => {}
             }
             // 2. 转发到原始事件流
+            if let Some(ref buf) = cognitive_trace {
+                if matches!(event, ExecutionEvent::MicroReflection { .. }) {
+                    let timestamp_ms = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_millis();
+                    buf.push(crate::execution_manager::CognitiveTraceEntry {
+                        timestamp_ms,
+                        sop_id: sop_id_clone.clone(),
+                        event: event.clone(),
+                    });
+                }
+            }
             if let Some(ref tx) = user_event_tx {
                 let _ = tx.send(event);
             }

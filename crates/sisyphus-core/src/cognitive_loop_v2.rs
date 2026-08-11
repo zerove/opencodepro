@@ -770,6 +770,6 @@ mod tests {
             detector.observe("node_x", 100, 50, false);
         }
         let report = detector.generate_report();
-        assert!(report.anomalies.len() > 0 || report.should_extra_reflect);
+        assert!(!report.anomalies.is_empty() || report.should_extra_reflect);
     }
 }

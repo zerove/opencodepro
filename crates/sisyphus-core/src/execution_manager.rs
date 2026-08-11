@@ -1,12 +1,86 @@
 use crate::{CoreError, ExecutionStatus, Executor};
 use dashmap::DashMap;
+use serde::{Deserialize, Serialize};
 use sisyphus_mem::{MfsStore, SopSqlStore};
 use sisyphus_types::{
     CogMap, ExecutionContext, ExecutionEvent, ExecutorRouter, SOPGraph, SOPGraphConfig,
     ToolExecutor,
 };
-use std::sync::Arc;
+use std::collections::VecDeque;
+use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
+
+/// A single recorded cognitive decision from the loop (explainability primitive).
+///
+/// Carries the SOP it belonged to plus a wall-clock timestamp so viewers can
+/// order decisions across executions.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct CognitiveTraceEntry {
+    /// Milliseconds since epoch when the event was recorded.
+    pub timestamp_ms: u128,
+    /// SOP id the event belongs to.
+    pub sop_id: String,
+    /// The decision event itself (CognitiveStep / MicroReflection / ...).
+    pub event: ExecutionEvent,
+}
+
+/// Thread-safe ring buffer of recent cognitive decisions.
+///
+/// Used to make the loop's decision stream queryable after the fact, which is
+/// the data backbone for the explainability (cognitive trace) UI. Oldest
+/// entries are dropped once `capacity` is reached.
+pub struct CognitiveTraceBuffer {
+    entries: Mutex<VecDeque<CognitiveTraceEntry>>,
+    capacity: usize,
+}
+
+impl CognitiveTraceBuffer {
+    /// Create a buffer that keeps at most `capacity` entries.
+    pub fn new(capacity: usize) -> Self {
+        Self {
+            entries: Mutex::new(VecDeque::with_capacity(capacity.min(1024))),
+            capacity: capacity.max(1),
+        }
+    }
+
+    /// Record an event, evicting the oldest entry when over capacity.
+    pub fn push(&self, entry: CognitiveTraceEntry) {
+        let mut entries = self
+            .entries
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if entries.len() >= self.capacity {
+            entries.pop_front();
+        }
+        entries.push_back(entry);
+    }
+
+    /// Return the most recent `limit` entries (newest first).
+    pub fn recent(&self, limit: usize) -> Vec<CognitiveTraceEntry> {
+        let entries = self
+            .entries
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let limit = limit.min(entries.len());
+        entries.iter().rev().take(limit).cloned().collect()
+    }
+
+    /// Number of entries currently held.
+    pub fn len(&self) -> usize {
+        self.entries
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .len()
+    }
+
+    /// Whether the buffer is empty.
+    pub fn is_empty(&self) -> bool {
+        self.entries
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .is_empty()
+    }
+}
 
 /// ExecutionManager 负责 SOP 图谱执行的底层编排，
 /// 包括工具路由、状态持久化与实时状态跟踪。
@@ -18,6 +92,8 @@ pub struct ExecutionManager {
     pub active_executions: Arc<DashMap<String, ExecutionStatus>>,
     pub cognitive_maps: Arc<DashMap<String, CogMap>>,
     pub event_subscribers: Arc<DashMap<String, Vec<mpsc::UnboundedSender<ExecutionEvent>>>>,
+    /// Ring buffer of recent cognitive decisions, queryable for explainability.
+    pub cognitive_trace: Arc<CognitiveTraceBuffer>,
 }
 
 impl ExecutionManager {
@@ -43,6 +119,7 @@ impl ExecutionManager {
             active_executions: Arc::new(DashMap::new()),
             cognitive_maps: Arc::new(DashMap::new()),
             event_subscribers: Arc::new(DashMap::new()),
+            cognitive_trace: Arc::new(CognitiveTraceBuffer::new(200)),
         }
     }
 
@@ -109,12 +186,40 @@ impl ExecutionManager {
     }
 
     /// 将执行事件广播给某个 SOP 的所有订阅者。
+    ///
+    /// 认知决策事件 (CognitiveStep / MicroReflection) 同时写入
+    /// [`CognitiveTraceBuffer`]，使决策流在事后可查询（可解释性）。
     pub fn broadcast_event(&self, sop_id: &str, event: ExecutionEvent) {
         if let Some(subscribers) = self.event_subscribers.get(sop_id) {
             let mut subs = subscribers.clone();
             subs.retain(|tx| tx.send(event.clone()).is_ok());
             self.event_subscribers.insert(sop_id.to_string(), subs);
         }
+        self.record_cognitive_trace(sop_id, event);
+    }
+
+    /// 将认知决策事件记录到环形缓冲（如果该事件类型值得留存）。
+    pub fn record_cognitive_trace(&self, sop_id: &str, event: ExecutionEvent) {
+        let keep = matches!(
+            event,
+            ExecutionEvent::CognitiveStep { .. } | ExecutionEvent::MicroReflection { .. }
+        );
+        if keep {
+            let timestamp_ms = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis();
+            self.cognitive_trace.push(CognitiveTraceEntry {
+                timestamp_ms,
+                sop_id: sop_id.to_string(),
+                event,
+            });
+        }
+    }
+
+    /// 返回最近的 `limit` 条认知决策（新在前）。
+    pub fn recent_cognitive_trace(&self, limit: usize) -> Vec<CognitiveTraceEntry> {
+        self.cognitive_trace.recent(limit)
     }
 
     /// 在给定上下文中执行图谱的底层原语。
@@ -138,5 +243,104 @@ impl ExecutionManager {
                 None,
             )
             .await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sisyphus_types::CognitiveMetrics;
+    use std::collections::HashMap;
+
+    fn step_event(step: &str) -> ExecutionEvent {
+        ExecutionEvent::CognitiveStep {
+            step: step.to_string(),
+            message: format!("{step} message"),
+            metrics: Some(CognitiveMetrics {
+                iteration: 1,
+                deviation: 0.1,
+                confidence: 0.9,
+                progress: 50.0,
+                token_cost: 10,
+                stability: 0.8,
+                info_gain: 0.2,
+            }),
+        }
+    }
+
+    fn micro_reflection() -> ExecutionEvent {
+        ExecutionEvent::MicroReflection {
+            node_name: "n1".into(),
+            prediction: "expected".into(),
+            actual: "actual".into(),
+            decision: "ADJUST".into(),
+            updates: Some(HashMap::new()),
+            reason: Some("deviation too high".into()),
+        }
+    }
+
+    #[test]
+    fn test_trace_buffer_push_and_recent() {
+        let buf = CognitiveTraceBuffer::new(10);
+        buf.push(CognitiveTraceEntry {
+            timestamp_ms: 1,
+            sop_id: "s1".into(),
+            event: step_event("Predicting"),
+        });
+        buf.push(CognitiveTraceEntry {
+            timestamp_ms: 2,
+            sop_id: "s1".into(),
+            event: micro_reflection(),
+        });
+
+        assert_eq!(buf.len(), 2);
+        let recent = buf.recent(10);
+        // Newest first.
+        assert_eq!(recent.len(), 2);
+        assert!(matches!(
+            recent[0].event,
+            ExecutionEvent::MicroReflection { .. }
+        ));
+        assert!(matches!(
+            recent[1].event,
+            ExecutionEvent::CognitiveStep { .. }
+        ));
+        assert_eq!(recent[0].sop_id, "s1");
+    }
+
+    #[test]
+    fn test_trace_buffer_evicts_oldest() {
+        let buf = CognitiveTraceBuffer::new(3);
+        for i in 0..5 {
+            buf.push(CognitiveTraceEntry {
+                timestamp_ms: i as u128,
+                sop_id: "s1".into(),
+                event: step_event(&format!("step{i}")),
+            });
+        }
+        assert_eq!(buf.len(), 3, "capacity must cap the buffer");
+        let recent = buf.recent(10);
+        assert_eq!(recent.len(), 3);
+        // Oldest (0,1) evicted; newest kept, newest first.
+        assert_eq!(recent[0].timestamp_ms, 4);
+        assert_eq!(recent[2].timestamp_ms, 2);
+    }
+
+    #[test]
+    fn test_trace_buffer_recent_limit() {
+        let buf = CognitiveTraceBuffer::new(10);
+        for i in 0..5 {
+            buf.push(CognitiveTraceEntry {
+                timestamp_ms: i as u128,
+                sop_id: "s1".into(),
+                event: step_event("step"),
+            });
+        }
+        let two = buf.recent(2);
+        assert_eq!(two.len(), 2);
+        assert_eq!(two[0].timestamp_ms, 4);
+        assert_eq!(two[1].timestamp_ms, 3);
+        assert!(buf.recent(0).is_empty());
+        assert!(!buf.is_empty());
     }
 }
