@@ -843,6 +843,212 @@ pub(super) fn render_dev_dialog(frame: &mut ratatui::Frame, area: Rect, app: &Ap
     frame.render_widget(para, area);
 }
 
+pub(super) fn render_cognitive_trace_dialog(frame: &mut ratatui::Frame, area: Rect, app: &App) {
+    let theme = app.theme();
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(" Cognitive Trace (Decision Chain) ")
+        .title_bottom(format!(
+            "{} | Enter: details | r: refresh | ↑↓/PgUp/PgDn: {} | g/G top/bottom | Esc close ",
+            app.cog_trace_status,
+            widgets::scroll_pct(app.cog_trace_scroll, app.cog_trace.len()),
+        ))
+        .border_style(Style::default().fg(theme.primary));
+
+    if app.cog_trace.is_empty() {
+        let text = Text::from(Line::from(Span::styled(
+            "No cognitive decisions recorded yet. Run a goal/SOP first, then press 'r'.",
+            Style::default().fg(theme.muted),
+        )));
+        frame.render_widget(Paragraph::new(text).block(block), area);
+        return;
+    }
+
+    // 布局：上方表格，下方可选详情
+    let (table_area, detail_area) = if app.cog_trace_detail.is_some() {
+        let chunks =
+            Layout::vertical([Constraint::Percentage(55), Constraint::Percentage(45)]).split(area);
+        (chunks[0], Some(chunks[1]))
+    } else {
+        (area, None)
+    };
+
+    let rows: Vec<Row> = app
+        .cog_trace
+        .iter()
+        .map(|row| {
+            let time = format!("{:.1}s", row.timestamp_ms as f64 / 1000.0);
+            let (tag, summary, tag_style) = cognitive_event_summary(&row.event, &theme);
+            Row::new(vec![
+                Span::styled(time, Style::default().fg(theme.muted)),
+                Span::styled(&row.sop_id, Style::default().fg(theme.fg)),
+                Span::styled(tag, tag_style),
+                Span::styled(summary, Style::default().fg(theme.fg)),
+            ])
+        })
+        .collect();
+
+    let table = Table::new(
+        rows,
+        [
+            Constraint::Length(9),
+            Constraint::Percentage(14),
+            Constraint::Percentage(16),
+            Constraint::Percentage(61),
+        ],
+    )
+    .header(Row::new(vec![
+        Span::styled(
+            "Time",
+            Style::default()
+                .fg(theme.secondary)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(
+            "SOP",
+            Style::default()
+                .fg(theme.secondary)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(
+            "Event",
+            Style::default()
+                .fg(theme.secondary)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(
+            "Summary",
+            Style::default()
+                .fg(theme.secondary)
+                .add_modifier(Modifier::BOLD),
+        ),
+    ]))
+    .block(Block::default().borders(Borders::NONE))
+    .highlight_style(Style::default().add_modifier(Modifier::REVERSED));
+
+    frame.render_stateful_widget(
+        table,
+        table_area,
+        &mut ratatui::widgets::TableState::default().with_selected(Some(app.cog_trace_scroll)),
+    );
+
+    // 决策详情面板
+    if let Some(ref detail) = app.cog_trace_detail {
+        let detail_block = Block::default()
+            .borders(Borders::ALL)
+            .title(" Decision Detail ")
+            .border_style(Style::default().fg(theme.secondary));
+        let detail_lines: Vec<Line> = detail
+            .lines()
+            .map(|l| Line::from(Span::styled(l.to_string(), Style::default().fg(theme.fg))))
+            .collect();
+        let detail_para = Paragraph::new(Text::from(detail_lines))
+            .block(detail_block)
+            .wrap(Wrap { trim: false });
+        frame.render_widget(detail_para, detail_area.unwrap_or(area));
+    }
+
+    frame.render_widget(block, area);
+}
+
+/// 将认知事件归结为 (标签, 摘要, 标签样式)，供表格单行显示。
+fn cognitive_event_summary(
+    event: &sisyphus_types::ExecutionEvent,
+    theme: &super::super::theme::Theme,
+) -> (String, String, Style) {
+    use sisyphus_types::ExecutionEvent;
+    match event {
+        ExecutionEvent::NodeStarted { node_name } => (
+            "START".into(),
+            format!("Node started: {node_name}"),
+            Style::default().fg(theme.primary),
+        ),
+        ExecutionEvent::NodeCompleted { node_name, .. } => (
+            "DONE".into(),
+            format!("Node completed: {node_name}"),
+            Style::default().fg(theme.success),
+        ),
+        ExecutionEvent::NodeFailed { node_name, .. } => (
+            "FAIL".into(),
+            format!("Node failed: {node_name}"),
+            Style::default().fg(theme.error),
+        ),
+        ExecutionEvent::ExecutionComplete { .. } => (
+            "EXEC".into(),
+            "Execution complete".into(),
+            Style::default().fg(theme.success),
+        ),
+        ExecutionEvent::CognitivePlan { plan } => (
+            "PLAN".into(),
+            format!(
+                "Cognitive plan for '{}' ({} steps)",
+                plan.goal,
+                plan.steps.len()
+            ),
+            Style::default().fg(theme.primary),
+        ),
+        ExecutionEvent::CognitiveStep {
+            step,
+            message,
+            metrics,
+        } => {
+            let metrics_txt = metrics.as_ref().map_or_else(String::new, |m| {
+                format!(" | dev {:.2} | conf {:.2}", m.deviation, m.confidence)
+            });
+            (
+                "STEP".into(),
+                format!("[{step}] {message}{metrics_txt}"),
+                Style::default().fg(theme.secondary),
+            )
+        }
+        ExecutionEvent::MicroReflection {
+            node_name,
+            prediction,
+            actual,
+            decision,
+            ..
+        } => {
+            let delta = if prediction == actual {
+                "match"
+            } else {
+                "drift"
+            };
+            let decision_style = if decision.contains("reject") {
+                theme.error
+            } else if delta == "drift" {
+                theme.warning
+            } else {
+                theme.success
+            };
+            (
+                "REFLECT".into(),
+                format!(
+                    "{node_name}: {delta} | {} -> {} | {}",
+                    truncate(prediction, 24),
+                    truncate(actual, 24),
+                    decision,
+                ),
+                Style::default().fg(decision_style),
+            )
+        }
+        ExecutionEvent::CognitiveComplete { .. } => (
+            "DONE".into(),
+            "Cognitive loop converged".into(),
+            Style::default().fg(theme.success),
+        ),
+    }
+}
+
+/// 截断过长的文本，保留尾部省略号。
+fn truncate(s: &str, max: usize) -> String {
+    if s.chars().count() <= max {
+        s.to_string()
+    } else {
+        let cut: String = s.chars().take(max.saturating_sub(1)).collect();
+        format!("{cut}…")
+    }
+}
+
 pub(super) fn render_trace_dialog(frame: &mut ratatui::Frame, area: Rect, app: &App, sop_id: &str) {
     let theme = app.theme();
     let block = Block::default()

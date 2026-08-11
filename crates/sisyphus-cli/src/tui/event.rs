@@ -365,6 +365,10 @@ fn handle_palette_key(key: KeyEvent, app: &mut App) {
                         ));
                     }
                 }
+                "cogtrace" | ":cogtrace" | "ct" | ":ct" => {
+                    app.dialog = Some(Dialog::CognitiveTrace);
+                    app.fetch_cognitive_trace();
+                }
                 "roadmap" | ":roadmap" => {
                     app.dialog = Some(Dialog::Roadmap);
                     app.roadmap_status = "connecting...".into();

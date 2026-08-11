@@ -14,6 +14,14 @@ pub struct SopTraceEvent {
     pub duration_ms: i64,
 }
 
+/// REST 认知追踪条目（与 `sisyphus-core::execution_manager::CognitiveTraceEntry` 对齐）。
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct CognitiveTraceRow {
+    pub timestamp_ms: u128,
+    pub sop_id: String,
+    pub event: sisyphus_types::ExecutionEvent,
+}
+
 #[derive(Debug)]
 pub enum BgOp {
     SopsListed {
@@ -34,6 +42,11 @@ pub enum BgOp {
         trace: Vec<SopTraceEvent>,
     },
     SopTraceFailed(String),
+    /// 认知决策链（可解释性）拉取结果。
+    CognitiveTraceFetched {
+        rows: Vec<CognitiveTraceRow>,
+    },
+    CognitiveTraceFailed(String),
     RoadmapFetched {
         projection: String,
         bottlenecks: String,
@@ -351,6 +364,34 @@ pub fn spawn_fetch_sop_trace(
         let _ = tx.send(match result {
             Ok(trace) => BgOp::SopTraceFetched { sop_id, trace },
             Err(e) => BgOp::SopTraceFailed(e),
+        });
+    });
+    rx
+}
+
+pub fn spawn_fetch_cognitive_trace(bridge_address: String) -> tokio::sync::oneshot::Receiver<BgOp> {
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    tokio::spawn(async move {
+        let url = format!("http://{}/api/cognitive/trace?limit=100", bridge_address);
+        let result = async {
+            let resp = reqwest::get(&url)
+                .await
+                .map_err(|e| format!("HTTP request failed: {e}"))?;
+            if !resp.status().is_success() {
+                return Err(format!("Bridge returned error status: {}", resp.status()));
+            }
+            let data: serde_json::Value = resp
+                .json()
+                .await
+                .map_err(|e| format!("JSON parse failed: {e}"))?;
+            let rows: Vec<CognitiveTraceRow> = serde_json::from_value(data["entries"].clone())
+                .map_err(|e| format!("Cognitive trace parse failed: {e}"))?;
+            Ok(rows)
+        }
+        .await;
+        let _ = tx.send(match result {
+            Ok(rows) => BgOp::CognitiveTraceFetched { rows },
+            Err(e) => BgOp::CognitiveTraceFailed(e),
         });
     });
     rx

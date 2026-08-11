@@ -149,6 +149,20 @@ pub struct CogMapResponse {
     pub map: Option<sisyphus_types::CogMap>,
     pub status: String,
 }
+
+// --- Cognitive Trace (Explainability) Types ---
+
+#[derive(Deserialize)]
+pub struct CognitiveTraceQuery {
+    /// 最多返回多少条最近决策（默认 100，上限 200）。
+    pub limit: Option<usize>,
+}
+
+#[derive(Serialize)]
+pub struct CognitiveTraceResponse {
+    /// 最近的认知决策链，新→旧排序。
+    pub entries: Vec<sisyphus_core::execution_manager::CognitiveTraceEntry>,
+}
 #[derive(Serialize, Deserialize)]
 pub struct ExperienceQueryRequest {
     pub query_text: String,

@@ -3,7 +3,7 @@
 use super::types::*;
 use axum::{
     body::Body,
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     response::{IntoResponse, Response},
     Json,
@@ -234,6 +234,21 @@ pub(super) async fn goal_trace_handler(
         )
             .into_response(),
     }
+}
+
+pub(super) async fn cognitive_trace_handler(
+    State(state): State<RestApiState>,
+    Query(params): Query<CognitiveTraceQuery>,
+) -> impl IntoResponse {
+    const MAX_LIMIT: usize = 200;
+    let limit = params.limit.unwrap_or(100).clamp(1, MAX_LIMIT);
+    let entries = state
+        .bridge
+        .kernel()
+        .execution_manager
+        .cognitive_trace
+        .recent(limit);
+    (StatusCode::OK, Json(CognitiveTraceResponse { entries })).into_response()
 }
 
 pub(super) async fn goal_stream_handler(

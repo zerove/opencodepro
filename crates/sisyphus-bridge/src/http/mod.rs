@@ -145,6 +145,7 @@ pub fn build_router(state: RestApiState) -> Router {
         )
         .route("/peer/v1/skills/:id", get(peer_get_skill_handler))
         .route("/api/cognitive/map/:sop_id", get(get_cognitive_map_handler))
+        .route("/api/cognitive/trace", get(cognitive_trace_handler))
         .route(
             "/api/workspaces",
             get(list_workspaces_handler).post(create_workspace_handler),

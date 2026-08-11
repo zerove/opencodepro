@@ -149,6 +149,12 @@ const COMMAND_PALETTE: &[CmdPalEntry] = &[
         shortcut: "",
     },
     CmdPalEntry {
+        label: "Cognitive Trace",
+        desc: "View cognitive decision chain",
+        command: ":cogtrace",
+        shortcut: "",
+    },
+    CmdPalEntry {
         label: "Skill Market",
         desc: "Browse & install remote skills",
         command: ":skills",
@@ -327,6 +333,12 @@ pub(crate) struct App {
     pub(crate) sop_trace_detail: Option<String>,
     pub(crate) sop_query: String,
 
+    // 认知追踪（可解释性）数据
+    pub(crate) cog_trace: Vec<super::background::CognitiveTraceRow>,
+    pub(crate) cog_trace_scroll: usize,
+    pub(crate) cog_trace_detail: Option<String>,
+    pub(crate) cog_trace_status: String,
+
     // 路线图数据（对话框状态）
     pub(crate) roadmap_projection: Option<String>,
     pub(crate) roadmap_bottlenecks: Option<String>,
@@ -477,6 +489,10 @@ impl App {
             sop_trace_scroll: 0,
             sop_trace_detail: None,
             sop_query: String::new(),
+            cog_trace: Vec::new(),
+            cog_trace_scroll: 0,
+            cog_trace_detail: None,
+            cog_trace_status: "idle".into(),
             roadmap_projection: None,
             roadmap_bottlenecks: None,
             roadmap_status: "disconnected".into(),
@@ -986,6 +1002,22 @@ impl App {
             crate::tui::background::BgOp::SopTraceFailed(e) => {
                 self.add_log(LogEntry::Error(format!("Failed to fetch trace: {e}")));
             }
+            crate::tui::background::BgOp::CognitiveTraceFetched { rows } => {
+                self.cog_trace = rows;
+                self.cog_trace_scroll = 0;
+                self.cog_trace_detail = None;
+                self.cog_trace_status = format!("connected ({} decisions)", self.cog_trace.len());
+                self.add_log(LogEntry::Info(format!(
+                    "Fetched {} cognitive decisions",
+                    self.cog_trace.len()
+                )));
+            }
+            crate::tui::background::BgOp::CognitiveTraceFailed(e) => {
+                self.cog_trace_status = format!("failed: {e}");
+                self.add_log(LogEntry::Error(format!(
+                    "Failed to fetch cognitive trace: {e}"
+                )));
+            }
             crate::tui::background::BgOp::RoadmapFetched {
                 projection,
                 bottlenecks,
@@ -1158,6 +1190,14 @@ impl App {
     pub(crate) fn fetch_sop_trace(&mut self, sop_id: String) {
         let bridge_addr = self.bridge_address.clone();
         let rx = crate::tui::background::spawn_fetch_sop_trace(bridge_addr, sop_id);
+        self.pending_op = Some(rx);
+    }
+
+    /// 拉取最近的认知决策链（可解释性）并打开追踪视图。
+    pub(crate) fn fetch_cognitive_trace(&mut self) {
+        self.cog_trace_status = "connecting...".into();
+        let bridge_addr = self.bridge_address.clone();
+        let rx = crate::tui::background::spawn_fetch_cognitive_trace(bridge_addr);
         self.pending_op = Some(rx);
     }
 }

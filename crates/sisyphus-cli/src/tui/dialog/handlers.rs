@@ -598,6 +598,133 @@ pub(super) fn handle_dev_key(key: KeyEvent, app: &mut App) {
     }
 }
 
+pub(crate) fn handle_cognitive_trace_key(code: KeyCode, app: &mut App) {
+    match code {
+        KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('Q') => {
+            app.dialog = None;
+            app.cog_trace_detail = None;
+        }
+        KeyCode::Up => {
+            app.cog_trace_scroll = app.cog_trace_scroll.saturating_sub(1);
+            app.cog_trace_detail = None;
+        }
+        KeyCode::Down => {
+            app.cog_trace_scroll = app.cog_trace_scroll.saturating_add(1);
+            app.cog_trace_detail = None;
+        }
+        KeyCode::PageUp => {
+            app.cog_trace_scroll = app.cog_trace_scroll.saturating_sub(10);
+            app.cog_trace_detail = None;
+        }
+        KeyCode::PageDown => {
+            app.cog_trace_scroll = app.cog_trace_scroll.saturating_add(10);
+            app.cog_trace_detail = None;
+        }
+        KeyCode::Home | KeyCode::Char('g') => {
+            app.cog_trace_scroll = 0;
+            app.cog_trace_detail = None;
+        }
+        KeyCode::End | KeyCode::Char('G') => {
+            app.cog_trace_scroll = usize::MAX;
+            app.cog_trace_detail = None;
+        }
+        KeyCode::Enter => {
+            // 显示选中决策的完整详情（预测/实际/理由/指标）
+            if app.cog_trace_detail.is_some() {
+                app.cog_trace_detail = None;
+            } else if let Some(row) = app.cog_trace.get(app.cog_trace_scroll) {
+                app.cog_trace_detail = Some(format_cognitive_event(&row.event));
+            }
+        }
+        KeyCode::Char('r') | KeyCode::Char('R') => {
+            // 重新拉取决策链
+            app.fetch_cognitive_trace();
+        }
+        _ => {}
+    }
+}
+
+/// 将认知事件格式化为可读的详情文本（Enter 查看）。
+pub(crate) fn format_cognitive_event(event: &sisyphus_types::ExecutionEvent) -> String {
+    match event {
+        sisyphus_types::ExecutionEvent::NodeStarted { node_name } => {
+            format!("▶ Node started: {node_name}")
+        }
+        sisyphus_types::ExecutionEvent::NodeCompleted {
+            node_name,
+            output,
+            fuel_consumed,
+            duration_ms,
+        } => {
+            let out = serde_json::to_string_pretty(&output.0)
+                .unwrap_or_else(|_| output.0.to_string());
+            format!(
+                "✔ Node completed: {node_name}\nfuel: {fuel_consumed} | duration: {duration_ms}ms\n\noutput:\n{out}"
+            )
+        }
+        sisyphus_types::ExecutionEvent::NodeFailed {
+            node_name,
+            error,
+            fuel_consumed,
+            duration_ms,
+        } => format!(
+            "✖ Node failed: {node_name}\nerror: {error}\nfuel: {fuel_consumed} | duration: {duration_ms}ms"
+        ),
+        sisyphus_types::ExecutionEvent::ExecutionComplete { result } => {
+            format!("✓ Execution complete\nresult: {}", result.0)
+        }
+        sisyphus_types::ExecutionEvent::CognitivePlan { plan } => {
+            format!(
+                "🧠 Cognitive plan: {}\nsteps: {}",
+                plan.goal,
+                plan.steps.len()
+            )
+        }
+        sisyphus_types::ExecutionEvent::CognitiveStep {
+            step,
+            message,
+            metrics,
+        } => {
+            let mut out = format!("🧠 Step[{step}]: {message}");
+            if let Some(m) = metrics {
+                out.push_str(&format!(
+                    "\niteration: {} | deviation: {:.2} | confidence: {:.2} | progress: {:.1}%",
+                    m.iteration, m.deviation, m.confidence, m.progress * 100.0
+                ));
+                out.push_str(&format!(
+                    "\nstability: {:.2} | info_gain: {:.2} | token_cost: {}",
+                    m.stability, m.info_gain, m.token_cost
+                ));
+            }
+            out
+        }
+        sisyphus_types::ExecutionEvent::MicroReflection {
+            node_name,
+            prediction,
+            actual,
+            decision,
+            updates,
+            reason,
+        } => {
+            let mut out = format!(
+                "🔍 Micro-reflection @ {node_name}\nprediction: {prediction}\nactual: {actual}\ndecision: {decision}"
+            );
+            if let Some(ref r) = reason {
+                out.push_str(&format!("\nreason: {r}"));
+            }
+            if let Some(ref ups) = updates {
+                for (k, v) in ups {
+                    out.push_str(&format!("\nupdate {k}: {v}"));
+                }
+            }
+            out
+        }
+        sisyphus_types::ExecutionEvent::CognitiveComplete { report } => {
+            format!("🎯 Cognitive loop complete\nreport:\n{report}")
+        }
+    }
+}
+
 pub(crate) fn handle_trace_key(code: KeyCode, app: &mut App) {
     match code {
         KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('Q') => {
