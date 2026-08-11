@@ -166,6 +166,14 @@ pub struct CognitiveTraceHistoryQuery {
     pub limit: Option<usize>,
 }
 
+#[derive(Deserialize)]
+pub struct CognitiveTraceSummaryQuery {
+    /// 按 SOP 过滤（可选，缺省聚合全部）。
+    pub sop_id: Option<String>,
+    /// 参与聚合的记录数上限（默认 1000）。
+    pub limit: Option<usize>,
+}
+
 #[derive(Serialize)]
 pub struct CognitiveTraceResponse {
     /// 最近的认知决策链，新→旧排序。

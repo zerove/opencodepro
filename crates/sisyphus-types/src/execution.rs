@@ -436,3 +436,34 @@ impl ExecutionContext {
         output
     }
 }
+
+/// 认知决策历史聚合摘要（跨会话健康指标）。
+///
+/// 由 `cognitive_traces` 表的历史记录聚合而来，用于评估认知循环的
+/// 稳定性与收敛质量：偏差/置信度均值反映预测质量，决策分布反映
+/// 反思频率，token 成本反映资源消耗。
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct CognitiveTraceSummary {
+    /// 参与聚合的决策总数。
+    pub total_decisions: u64,
+    /// `CognitiveStep`（认知循环阶段步进）数量。
+    pub step_count: u64,
+    /// `MicroReflection`（节点级微反思）数量。
+    pub reflection_count: u64,
+    /// 平均偏差（0.0 表示无指标样本）。
+    pub avg_deviation: f64,
+    /// 平均置信度。
+    pub avg_confidence: f64,
+    /// 平均稳定性。
+    pub avg_stability: f64,
+    /// 平均信息增益。
+    pub avg_info_gain: f64,
+    /// 累计 token 成本。
+    pub total_token_cost: u64,
+    /// 微反思决策分布（CONTINUE / ADJUST / PIVOT → 次数）。
+    pub decision_counts: std::collections::HashMap<String, u64>,
+    /// 聚合窗口内最早记录时间（epoch 毫秒）。
+    pub first_timestamp_ms: u128,
+    /// 聚合窗口内最近记录时间（epoch 毫秒）。
+    pub last_timestamp_ms: u128,
+}

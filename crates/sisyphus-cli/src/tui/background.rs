@@ -22,6 +22,22 @@ pub struct CognitiveTraceRow {
     pub event: sisyphus_types::ExecutionEvent,
 }
 
+/// REST 认知决策健康摘要（与 `sisyphus_types::CognitiveTraceSummary` 对齐）。
+#[derive(Debug, Clone, Default, serde::Deserialize)]
+pub struct CognitiveSummaryRow {
+    pub total_decisions: u64,
+    pub step_count: u64,
+    pub reflection_count: u64,
+    pub avg_deviation: f64,
+    pub avg_confidence: f64,
+    pub avg_stability: f64,
+    pub avg_info_gain: f64,
+    pub total_token_cost: u64,
+    pub decision_counts: std::collections::HashMap<String, u64>,
+    pub first_timestamp_ms: u128,
+    pub last_timestamp_ms: u128,
+}
+
 #[derive(Debug)]
 pub enum BgOp {
     SopsListed {
@@ -50,6 +66,11 @@ pub enum BgOp {
     CognitiveTraceHistoryFetched {
         rows: Vec<CognitiveTraceRow>,
     },
+    /// 认知决策健康摘要（跨会话聚合）拉取结果。
+    CognitiveSummaryFetched {
+        summary: CognitiveSummaryRow,
+    },
+    CognitiveSummaryFailed(String),
     CognitiveTraceFailed(String),
     RoadmapFetched {
         projection: String,
@@ -434,6 +455,39 @@ pub fn spawn_fetch_cognitive_trace_history(
         let _ = tx.send(match result {
             Ok(rows) => BgOp::CognitiveTraceHistoryFetched { rows },
             Err(e) => BgOp::CognitiveTraceFailed(e),
+        });
+    });
+    rx
+}
+
+pub fn spawn_fetch_cognitive_summary(
+    bridge_address: String,
+    sop_id: Option<String>,
+) -> tokio::sync::oneshot::Receiver<BgOp> {
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    tokio::spawn(async move {
+        let mut url = format!("http://{}/api/cognitive/summary?limit=1000", bridge_address);
+        if let Some(sop) = sop_id {
+            // sop_id 仅含 ASCII 标识符（如 "sop-main"），直接拼接即可。
+            url.push_str(&format!("&sop_id={sop}"));
+        }
+        let result = async {
+            let resp = reqwest::get(&url)
+                .await
+                .map_err(|e| format!("HTTP request failed: {e}"))?;
+            if !resp.status().is_success() {
+                return Err(format!("Bridge returned error status: {}", resp.status()));
+            }
+            let summary: CognitiveSummaryRow = resp
+                .json()
+                .await
+                .map_err(|e| format!("JSON parse failed: {e}"))?;
+            Ok(summary)
+        }
+        .await;
+        let _ = tx.send(match result {
+            Ok(summary) => BgOp::CognitiveSummaryFetched { summary },
+            Err(e) => BgOp::CognitiveSummaryFailed(e),
         });
     });
     rx

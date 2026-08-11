@@ -278,6 +278,33 @@ pub(super) async fn cognitive_trace_history_handler(
     }
 }
 
+/// 认知决策健康摘要（跨会话聚合），用于评估循环稳定性与收敛质量。
+pub(super) async fn cognitive_trace_summary_handler(
+    State(state): State<RestApiState>,
+    workspace: WorkspaceContext,
+    Query(params): Query<CognitiveTraceSummaryQuery>,
+) -> impl IntoResponse {
+    const MAX_LIMIT: usize = 1000;
+    let project_id = workspace
+        .project_id
+        .unwrap_or_else(|| "default".to_string());
+    let limit = params.limit.unwrap_or(1000).clamp(1, MAX_LIMIT);
+    match state
+        .bridge
+        .kernel()
+        .execution_manager
+        .cognitive_trace_summary(&project_id, params.sop_id.as_deref(), limit)
+        .await
+    {
+        Ok(summary) => (StatusCode::OK, Json(summary)).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
 pub(super) async fn goal_stream_handler(
     State(state): State<RestApiState>,
     workspace: WorkspaceContext,

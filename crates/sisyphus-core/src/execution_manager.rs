@@ -276,6 +276,21 @@ impl ExecutionManager {
             .collect())
     }
 
+    /// 聚合最近的认知决策历史为跨会话健康摘要。
+    ///
+    /// `sop_id` 为 `None` 时聚合全部 SOP；`limit` 限制参与聚合的记录数。
+    pub async fn cognitive_trace_summary(
+        &self,
+        project_id: &str,
+        sop_id: Option<&str>,
+        limit: usize,
+    ) -> Result<sisyphus_types::CognitiveTraceSummary, CoreError> {
+        self.state_store
+            .cognitive_trace_summary(project_id, sop_id, limit)
+            .await
+            .map_err(|e| CoreError::Internal(e.to_string()))
+    }
+
     /// 在给定上下文中执行图谱的底层原语。
     pub async fn execute(
         &self,

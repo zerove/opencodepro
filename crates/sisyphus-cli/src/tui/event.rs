@@ -369,6 +369,10 @@ fn handle_palette_key(key: KeyEvent, app: &mut App) {
                     app.dialog = Some(Dialog::CognitiveTrace);
                     app.fetch_cognitive_trace();
                 }
+                "cogsum" | ":cogsum" | "cs" | ":cs" => {
+                    app.dialog = Some(Dialog::CognitiveSummary);
+                    app.fetch_cognitive_summary();
+                }
                 "roadmap" | ":roadmap" => {
                     app.dialog = Some(Dialog::Roadmap);
                     app.roadmap_status = "connecting...".into();

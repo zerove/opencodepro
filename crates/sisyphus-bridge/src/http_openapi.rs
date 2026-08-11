@@ -292,6 +292,21 @@ pub(crate) async fn openapi_json() -> impl IntoResponse {
                 }
             },
 
+            "/api/cognitive/summary": {
+                "get": {
+                    "summary": "Get cognitive decision health summary",
+                    "description": "Aggregates persisted cognitive decisions across sessions into a health summary: decision counts, mean metrics (deviation/confidence/stability/info-gain), cumulative token cost, and time range. Use it to assess cognitive loop stability and convergence quality.",
+                    "operationId": "getCognitiveTraceSummary",
+                    "parameters": [
+                        {"name": "sop_id", "in": "query", "required": false, "schema": {"type": "string"}, "description": "Filter by SOP id; omit to aggregate all SOPs"},
+                        {"name": "limit", "in": "query", "required": false, "schema": {"type": "integer", "minimum": 1, "maximum": 1000, "default": 1000}, "description": "Max records to aggregate (default 1000, cap 1000)"}
+                    ],
+                    "responses": {
+                        "200": {"description": "Cognitive decision health summary", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/CognitiveTraceSummary"}}}}
+                    }
+                }
+            },
+
             // ── Workspaces ───────────────────────────────────────────────
             "/api/workspaces": {
                 "get": {
@@ -602,6 +617,23 @@ pub(crate) async fn openapi_json() -> impl IntoResponse {
                             "items": {"$ref": "#/components/schemas/CognitiveTraceEntry"},
                             "description": "Recent cognitive decisions, newest first"
                         }
+                    }
+                },
+                "CognitiveTraceSummary": {
+                    "type": "object",
+                    "description": "Cross-session health summary aggregated from persisted cognitive decisions",
+                    "properties": {
+                        "total_decisions": {"type": "integer", "description": "Records aggregated"},
+                        "step_count": {"type": "integer", "description": "CognitiveStep count"},
+                        "reflection_count": {"type": "integer", "description": "MicroReflection count"},
+                        "avg_deviation": {"type": "number", "format": "double", "description": "Mean deviation across metric-bearing steps"},
+                        "avg_confidence": {"type": "number", "format": "double", "description": "Mean confidence"},
+                        "avg_stability": {"type": "number", "format": "double", "description": "Mean stability"},
+                        "avg_info_gain": {"type": "number", "format": "double", "description": "Mean information gain"},
+                        "total_token_cost": {"type": "integer", "description": "Cumulative token cost"},
+                        "decision_counts": {"type": "object", "additionalProperties": {"type": "integer"}, "description": "Micro-reflection decision distribution (CONTINUE/ADJUST/PIVOT -> count)"},
+                        "first_timestamp_ms": {"type": "integer", "description": "Earliest record in window (epoch ms)"},
+                        "last_timestamp_ms": {"type": "integer", "description": "Newest record in window (epoch ms)"}
                     }
                 },
 

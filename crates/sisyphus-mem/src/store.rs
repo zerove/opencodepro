@@ -851,6 +851,67 @@ impl MfsStore {
             })
             .collect()
     }
+
+    /// 聚合最近的认知决策历史为健康摘要（跨会话）。
+    ///
+    /// 返回 `CognitiveTraceSummary`：决策分布、指标均值（偏差/置信度/
+    /// 稳定性/信息增益）、累计 token 成本与时间范围。`limit` 限制
+    /// 参与聚合的记录数（默认取最近 1000 条以内，由调用方决定）。
+    pub async fn cognitive_trace_summary(
+        &self,
+        project_id: &str,
+        sop_id: Option<&str>,
+        limit: usize,
+    ) -> std::result::Result<sisyphus_types::CognitiveTraceSummary, sisyphus_types::TypesError>
+    {
+        let records = self.get_cognitive_traces(project_id, sop_id, limit).await?;
+        let mut summary = sisyphus_types::CognitiveTraceSummary::default();
+        let mut deviation_sum = 0.0_f64;
+        let mut confidence_sum = 0.0_f64;
+        let mut stability_sum = 0.0_f64;
+        let mut info_gain_sum = 0.0_f64;
+        let mut metric_samples = 0_u64;
+
+        summary.total_decisions = records.len() as u64;
+        for (i, rec) in records.iter().enumerate() {
+            // records 按 id DESC（新在前）：首条即最近，末条即最早。
+            if i == 0 {
+                summary.last_timestamp_ms = rec.timestamp_ms;
+            }
+            summary.first_timestamp_ms = rec.timestamp_ms;
+
+            match &rec.event {
+                sisyphus_types::ExecutionEvent::CognitiveStep { metrics, .. } => {
+                    summary.step_count += 1;
+                    if let Some(m) = metrics {
+                        deviation_sum += m.deviation;
+                        confidence_sum += m.confidence;
+                        stability_sum += m.stability;
+                        info_gain_sum += m.info_gain;
+                        summary.total_token_cost += m.token_cost;
+                        metric_samples += 1;
+                    }
+                }
+                sisyphus_types::ExecutionEvent::MicroReflection { decision, .. } => {
+                    summary.reflection_count += 1;
+                    *summary
+                        .decision_counts
+                        .entry(decision.to_uppercase())
+                        .or_insert(0) += 1;
+                }
+                _ => {}
+            }
+        }
+
+        if metric_samples > 0 {
+            let n = metric_samples as f64;
+            summary.avg_deviation = deviation_sum / n;
+            summary.avg_confidence = confidence_sum / n;
+            summary.avg_stability = stability_sum / n;
+            summary.avg_info_gain = info_gain_sum / n;
+        }
+        Ok(summary)
+    }
 }
 
 #[cfg(test)]
@@ -1003,5 +1064,103 @@ mod cognitive_trace_tests {
         let other = store.get_cognitive_traces("other", None, 10).await.unwrap();
         assert_eq!(other.len(), 1);
         assert_eq!(other[0].timestamp_ms, 9999);
+    }
+
+    fn reflect_event(decision: &str) -> ExecutionEvent {
+        ExecutionEvent::MicroReflection {
+            node_name: "node-a".to_string(),
+            prediction: "pred".to_string(),
+            actual: "actual".to_string(),
+            decision: decision.to_string(),
+            updates: None,
+            reason: Some("tolerance".to_string()),
+        }
+    }
+
+    fn step_event_no_metrics(step: &str) -> ExecutionEvent {
+        ExecutionEvent::CognitiveStep {
+            step: step.to_string(),
+            message: format!("{step} message"),
+            metrics: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn test_cognitive_trace_summary_aggregates() {
+        let store = test_store().await;
+        store
+            .record_cognitive_trace("proj", "sop-a", 1000, &step_event("Predicting"))
+            .await
+            .unwrap();
+        store
+            .record_cognitive_trace("proj", "sop-a", 2000, &step_event("Reflecting"))
+            .await
+            .unwrap();
+        store
+            .record_cognitive_trace("proj", "sop-a", 3000, &step_event_no_metrics("Critiquing"))
+            .await
+            .unwrap();
+        store
+            .record_cognitive_trace("proj", "sop-b", 4000, &reflect_event("ADJUST"))
+            .await
+            .unwrap();
+        store
+            .record_cognitive_trace("proj", "sop-b", 5000, &reflect_event("continue"))
+            .await
+            .unwrap();
+
+        let summary = store
+            .cognitive_trace_summary("proj", None, 100)
+            .await
+            .expect("summary failed");
+
+        assert_eq!(summary.total_decisions, 5);
+        // 3 个 CognitiveStep：2 个带 metrics（均值分母=2），1 个不带。
+        assert_eq!(summary.step_count, 3);
+        assert_eq!(summary.reflection_count, 2);
+        assert!((summary.avg_deviation - 0.2).abs() < 1e-9);
+        assert!((summary.avg_confidence - 0.8).abs() < 1e-9);
+        assert!((summary.avg_stability - 0.9).abs() < 1e-9);
+        assert!((summary.avg_info_gain - 0.1).abs() < 1e-9);
+        assert_eq!(summary.total_token_cost, 20);
+        // decision 大小写归一化：ADJUST + CONTINUE
+        assert_eq!(summary.decision_counts.get("ADJUST"), Some(&1));
+        assert_eq!(summary.decision_counts.get("CONTINUE"), Some(&1));
+        // 时间窗口：新在前 → last=5000, first=1000
+        assert_eq!(summary.first_timestamp_ms, 1000);
+        assert_eq!(summary.last_timestamp_ms, 5000);
+    }
+
+    #[tokio::test]
+    async fn test_cognitive_trace_summary_sop_filter_and_limit() {
+        let store = test_store().await;
+        for i in 0..4 {
+            store
+                .record_cognitive_trace("proj", "sop-a", 1000 + i, &step_event(&format!("S{i}")))
+                .await
+                .unwrap();
+        }
+        store
+            .record_cognitive_trace("proj", "sop-b", 9999, &reflect_event("PIVOT"))
+            .await
+            .unwrap();
+
+        // SOP 过滤：仅 sop-a 的 4 条
+        let sop_a = store
+            .cognitive_trace_summary("proj", Some("sop-a"), 100)
+            .await
+            .unwrap();
+        assert_eq!(sop_a.total_decisions, 4);
+        assert_eq!(sop_a.step_count, 4);
+        assert_eq!(sop_a.reflection_count, 0);
+
+        // limit：仅聚合最近 2 条（sop-a 的 1003/1002）
+        let limited = store
+            .cognitive_trace_summary("proj", Some("sop-a"), 2)
+            .await
+            .unwrap();
+        assert_eq!(limited.total_decisions, 2);
+        assert_eq!(limited.first_timestamp_ms, 1002);
+        assert_eq!(limited.last_timestamp_ms, 1003);
     }
 }

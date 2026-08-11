@@ -16,6 +16,7 @@ pub(crate) enum Dialog {
     WorkspaceList,
     Trace { sop_id: String },
     CognitiveTrace,
+    CognitiveSummary,
     Help,
     ConfirmDelete,
     Dev { goal: String },
@@ -64,6 +65,7 @@ pub fn handle_dialog_key(key: KeyEvent, app: &mut App) {
         Dialog::SkillMarket => handlers::handle_skill_market_key(code, app),
         Dialog::Trace { sop_id: _ } => handlers::handle_trace_key(code, app),
         Dialog::CognitiveTrace => handlers::handle_cognitive_trace_key(code, app),
+        Dialog::CognitiveSummary => handlers::handle_cognitive_summary_key(code, app),
         Dialog::ConfirmDelete => match code {
             KeyCode::Char('y') | KeyCode::Char('Y') => {
                 if let Some(id) = app.confirm_delete.take() {
@@ -104,6 +106,7 @@ pub fn render_dialog_overlay(frame: &mut ratatui::Frame, area: ratatui::layout::
         Dialog::SkillMarket => renders::render_skill_market_dialog(frame, area, app),
         Dialog::Trace { sop_id } => renders::render_trace_dialog(frame, area, app, sop_id),
         Dialog::CognitiveTrace => renders::render_cognitive_trace_dialog(frame, area, app),
+        Dialog::CognitiveSummary => renders::render_cognitive_summary_dialog(frame, area, app),
         Dialog::ConfirmDelete => renders::render_confirm_dialog(frame, area, app),
         Dialog::Dev { goal: _goal } => renders::render_dev_dialog(frame, area, app),
         Dialog::Rename {

@@ -89,7 +89,7 @@ fn reflect_entry(
             node_name: "node-a".to_string(),
             prediction: prediction.to_string(),
             actual: actual.to_string(),
-            decision: "keep".to_string(),
+            decision: "CONTINUE".to_string(),
             updates: None,
             reason: Some("within tolerance".to_string()),
         },
@@ -269,4 +269,62 @@ async fn test_cognitive_trace_history_sop_filter_and_limit() {
         .as_str()
         .unwrap();
     assert_eq!(step, "A3");
+}
+
+/// Poll the summary endpoint until `total` decisions are aggregated.
+async fn wait_summary_total(app: &Router, uri: &str, total: u64) -> serde_json::Value {
+    for _ in 0..100 {
+        let (status, json) = get(app, uri).await;
+        if status == StatusCode::OK {
+            if let Some(t) = json["total_decisions"].as_u64() {
+                if t >= total {
+                    return json;
+                }
+            }
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    panic!("summary endpoint did not reach {total} decisions for {uri}");
+}
+
+#[tokio::test]
+async fn test_cognitive_trace_summary_endpoint() {
+    let (app, bridge) = setup().await;
+    let em = &bridge.kernel().execution_manager;
+    // 2 steps with metrics (0.2 dev / 0.8 conf / 10 tok each) + 1 reflection.
+    em.record_cognitive_trace("sop-m", step_entry(0, "sop-m", "Predicting").event);
+    em.record_cognitive_trace("sop-m", step_entry(0, "sop-m", "Reflecting").event);
+    em.record_cognitive_trace(
+        "sop-m",
+        reflect_entry(0, "sop-m", "expected out", "actual out").event,
+    );
+
+    let json = wait_summary_total(&app, "/api/cognitive/summary?limit=100", 3).await;
+    assert_eq!(json["total_decisions"], 3);
+    assert_eq!(json["step_count"], 2);
+    assert_eq!(json["reflection_count"], 1);
+    assert!((json["avg_deviation"].as_f64().unwrap() - 0.2).abs() < 1e-9);
+    assert!((json["avg_confidence"].as_f64().unwrap() - 0.8).abs() < 1e-9);
+    assert_eq!(json["total_token_cost"], 20);
+    assert_eq!(json["decision_counts"]["CONTINUE"], 1);
+    assert!(json["first_timestamp_ms"].as_u64().is_some());
+    assert!(json["last_timestamp_ms"].as_u64().is_some());
+}
+
+#[tokio::test]
+async fn test_cognitive_trace_summary_sop_filter() {
+    let (app, bridge) = setup().await;
+    let em = &bridge.kernel().execution_manager;
+    em.record_cognitive_trace("sop-a", step_entry(0, "sop-a", "A0").event);
+    em.record_cognitive_trace("sop-a", step_entry(0, "sop-a", "A1").event);
+    em.record_cognitive_trace(
+        "sop-b",
+        reflect_entry(0, "sop-b", "expected out", "actual out").event,
+    );
+
+    // Filter: only sop-b aggregates 1 reflection.
+    let json = wait_summary_total(&app, "/api/cognitive/summary?sop_id=sop-b", 1).await;
+    assert_eq!(json["total_decisions"], 1);
+    assert_eq!(json["reflection_count"], 1);
+    assert_eq!(json["step_count"], 0);
 }

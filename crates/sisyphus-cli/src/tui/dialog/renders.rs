@@ -1189,3 +1189,179 @@ pub(super) fn render_trace_dialog(frame: &mut ratatui::Frame, area: Rect, app: &
 
     frame.render_widget(block, area);
 }
+
+/// 认知决策健康摘要对话框（跨会话聚合）。
+pub(super) fn render_cognitive_summary_dialog(frame: &mut ratatui::Frame, area: Rect, app: &App) {
+    use ratatui::layout::Constraint;
+    let theme = app.theme();
+
+    let Some(summary) = &app.cog_summary else {
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .title(" Cognitive Health Summary (cross-session) ")
+            .title_bottom(format!(
+                "{} | r: refresh | Esc close ",
+                app.cog_summary_status
+            ))
+            .border_style(Style::default().fg(theme.primary));
+        let text = Text::from(Line::from(Span::styled(
+            "No cognitive summary yet. Run a goal/SOP first, then press 'r'.",
+            Style::default().fg(theme.muted),
+        )));
+        frame.render_widget(Paragraph::new(text).block(block), area);
+        return;
+    };
+
+    let (left, right) = {
+        let chunks = Layout::horizontal([Constraint::Percentage(50), Constraint::Percentage(50)])
+            .split(area);
+        (chunks[0], chunks[1])
+    };
+
+    let dev_style = |d: f64| {
+        if d < 0.3 {
+            theme.success
+        } else if d < 0.6 {
+            theme.warning
+        } else {
+            theme.error
+        }
+    };
+    let conf_style = |c: f64| {
+        if c >= 0.8 {
+            theme.success
+        } else if c >= 0.6 {
+            theme.warning
+        } else {
+            theme.error
+        }
+    };
+
+    let mut lines: Vec<Line> = vec![Line::from(Span::styled(
+        "─ Decisions ─",
+        Style::default()
+            .fg(theme.primary)
+            .add_modifier(Modifier::BOLD),
+    ))];
+    lines.push(Line::from(Span::raw(format!(
+        "Total:  {}",
+        summary.total_decisions
+    ))));
+    lines.push(Line::from(Span::raw(format!(
+        "Steps:  {}    Reflections:  {}",
+        summary.step_count, summary.reflection_count
+    ))));
+    lines.push(Line::from(Span::raw("")));
+    lines.push(Line::from(Span::styled(
+        "─ Quality (means) ─",
+        Style::default()
+            .fg(theme.primary)
+            .add_modifier(Modifier::BOLD),
+    )));
+    lines.push(Line::from(vec![
+        Span::styled("Deviation:  ", Style::default().fg(theme.muted)),
+        Span::styled(
+            format!("{:.3}", summary.avg_deviation),
+            Style::default().fg(dev_style(summary.avg_deviation)),
+        ),
+    ]));
+    lines.push(Line::from(vec![
+        Span::styled("Confidence: ", Style::default().fg(theme.muted)),
+        Span::styled(
+            format!("{:.3}", summary.avg_confidence),
+            Style::default().fg(conf_style(summary.avg_confidence)),
+        ),
+    ]));
+    lines.push(Line::from(Span::raw(format!(
+        "Stability:  {:.3}    Info gain:  {:.3}",
+        summary.avg_stability, summary.avg_info_gain
+    ))));
+    lines.push(Line::from(Span::raw(format!(
+        "Token cost: {}",
+        summary.total_token_cost
+    ))));
+
+    let left_para =
+        Paragraph::new(Text::from(lines)).block(Block::default().borders(Borders::NONE));
+    frame.render_widget(left_para, left);
+
+    // 右侧：决策分布 + 时间范围 + 健康判定
+    let mut right_lines: Vec<Line> = vec![Line::from(Span::styled(
+        "─ Reflection decisions ─",
+        Style::default()
+            .fg(theme.primary)
+            .add_modifier(Modifier::BOLD),
+    ))];
+    let total_refl = summary.reflection_count.max(1);
+    let bar_w = 18_usize;
+    if summary.decision_counts.is_empty() {
+        right_lines.push(Line::from(Span::styled(
+            "no micro-reflections recorded",
+            Style::default().fg(theme.muted),
+        )));
+    } else {
+        let mut sorted: Vec<(&String, &u64)> = summary.decision_counts.iter().collect();
+        sorted.sort_by(|a, b| b.1.cmp(a.1));
+        for (decision, count) in sorted {
+            let ratio = *count as f64 / total_refl as f64;
+            let filled = (ratio * bar_w as f64).round() as usize;
+            let bar: String =
+                "█".repeat(filled.min(bar_w)) + &"░".repeat(bar_w - filled.min(bar_w));
+            right_lines.push(Line::from(Span::raw(format!(
+                "{decision:<9} {:>4}  {bar} {:.0}%",
+                count,
+                ratio * 100.0
+            ))));
+        }
+    }
+    right_lines.push(Line::from(Span::raw("")));
+    right_lines.push(Line::from(Span::styled(
+        "─ Window ─",
+        Style::default()
+            .fg(theme.primary)
+            .add_modifier(Modifier::BOLD),
+    )));
+    let fmt_ts = |ms: u128| -> String {
+        chrono::DateTime::from_timestamp_millis(ms as i64)
+            .map(|dt| dt.format("%m-%d %H:%M:%S").to_string())
+            .unwrap_or_else(|| format!("{ms}ms"))
+    };
+    right_lines.push(Line::from(Span::raw(format!(
+        "from: {}",
+        fmt_ts(summary.first_timestamp_ms)
+    ))));
+    right_lines.push(Line::from(Span::raw(format!(
+        "to:   {}",
+        fmt_ts(summary.last_timestamp_ms)
+    ))));
+    right_lines.push(Line::from(Span::raw("")));
+    right_lines.push(Line::from(Span::styled(
+        "─ Health verdict ─",
+        Style::default()
+            .fg(theme.primary)
+            .add_modifier(Modifier::BOLD),
+    )));
+    let (verdict, vstyle) = if summary.total_decisions == 0 {
+        ("NO DATA".to_string(), theme.muted)
+    } else if summary.avg_deviation < 0.3 && summary.avg_confidence >= 0.6 {
+        ("STABLE".to_string(), theme.success)
+    } else if summary.avg_deviation < 0.6 && summary.avg_confidence >= 0.4 {
+        ("CAUTION".to_string(), theme.warning)
+    } else {
+        ("DRIFTING".to_string(), theme.error)
+    };
+    right_lines.push(Line::from(vec![
+        Span::styled(
+            format!("{verdict:<10}"),
+            Style::default().fg(vstyle).add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(
+            "low deviation + high confidence = stable loop",
+            Style::default().fg(theme.muted),
+        ),
+    ]));
+
+    let right_para =
+        Paragraph::new(Text::from(right_lines)).block(Block::default().borders(Borders::NONE));
+    frame.render_widget(right_para, right);
+}

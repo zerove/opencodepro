@@ -770,3 +770,16 @@ pub(crate) fn handle_trace_key(code: KeyCode, app: &mut App) {
         _ => {}
     }
 }
+
+pub(crate) fn handle_cognitive_summary_key(code: KeyCode, app: &mut App) {
+    match code {
+        KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('Q') => {
+            app.dialog = None;
+        }
+        KeyCode::Char('r') | KeyCode::Char('R') => {
+            // 重新拉取健康摘要
+            app.fetch_cognitive_summary();
+        }
+        _ => {}
+    }
+}

@@ -151,6 +151,10 @@ pub fn build_router(state: RestApiState) -> Router {
             get(cognitive_trace_history_handler),
         )
         .route(
+            "/api/cognitive/summary",
+            get(cognitive_trace_summary_handler),
+        )
+        .route(
             "/api/workspaces",
             get(list_workspaces_handler).post(create_workspace_handler),
         )

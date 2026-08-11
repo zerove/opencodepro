@@ -155,6 +155,12 @@ const COMMAND_PALETTE: &[CmdPalEntry] = &[
         shortcut: "",
     },
     CmdPalEntry {
+        label: "Cognitive Summary",
+        desc: "Cross-session cognitive health summary",
+        command: ":cogsum",
+        shortcut: "",
+    },
+    CmdPalEntry {
         label: "Skill Market",
         desc: "Browse & install remote skills",
         command: ":skills",
@@ -340,6 +346,9 @@ pub(crate) struct App {
     pub(crate) cog_trace_status: String,
     /// true = SQL 持久化历史（跨会话），false = 内存热缓冲。
     pub(crate) cog_trace_history_mode: bool,
+    // 认知决策健康摘要（跨会话聚合）
+    pub(crate) cog_summary: Option<super::background::CognitiveSummaryRow>,
+    pub(crate) cog_summary_status: String,
 
     // 路线图数据（对话框状态）
     pub(crate) roadmap_projection: Option<String>,
@@ -496,6 +505,8 @@ impl App {
             cog_trace_detail: None,
             cog_trace_status: "idle".into(),
             cog_trace_history_mode: false,
+            cog_summary: None,
+            cog_summary_status: "idle".into(),
             roadmap_projection: None,
             roadmap_bottlenecks: None,
             roadmap_status: "disconnected".into(),
@@ -1026,6 +1037,22 @@ impl App {
                     self.cog_trace.len()
                 )));
             }
+            crate::tui::background::BgOp::CognitiveSummaryFetched { summary } => {
+                self.cog_summary = Some(summary);
+                self.cog_summary_status = "connected".into();
+                if let Some(s) = &self.cog_summary {
+                    self.add_log(LogEntry::Info(format!(
+                        "Fetched cognitive summary ({} decisions)",
+                        s.total_decisions
+                    )));
+                }
+            }
+            crate::tui::background::BgOp::CognitiveSummaryFailed(e) => {
+                self.cog_summary_status = format!("failed: {e}");
+                self.add_log(LogEntry::Error(format!(
+                    "Failed to fetch cognitive summary: {e}"
+                )));
+            }
             crate::tui::background::BgOp::CognitiveTraceFailed(e) => {
                 self.cog_trace_status = format!("failed: {e}");
                 self.add_log(LogEntry::Error(format!(
@@ -1226,5 +1253,13 @@ impl App {
         self.cog_trace = Vec::new();
         self.cog_trace_detail = None;
         self.fetch_cognitive_trace();
+    }
+
+    /// 拉取认知决策健康摘要（跨会话聚合）。
+    pub(crate) fn fetch_cognitive_summary(&mut self) {
+        self.cog_summary_status = "connecting...".into();
+        let bridge_addr = self.bridge_address.clone();
+        let rx = crate::tui::background::spawn_fetch_cognitive_summary(bridge_addr, None);
+        self.pending_op = Some(rx);
     }
 }

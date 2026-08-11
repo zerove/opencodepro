@@ -378,3 +378,31 @@ fn test_cognitive_trace_row_deserialize_from_rest_contract() {
         other => panic!("unexpected event variant: {other:?}"),
     }
 }
+
+#[test]
+fn test_cognitive_summary_row_deserialize_from_rest_contract() {
+    // 契约测试：与 REST /api/cognitive/summary 返回结构对齐（CognitiveTraceSummary JSON）。
+    let json = serde_json::json!({
+        "total_decisions": 12,
+        "step_count": 8,
+        "reflection_count": 4,
+        "avg_deviation": 0.21,
+        "avg_confidence": 0.83,
+        "avg_stability": 0.91,
+        "avg_info_gain": 0.05,
+        "total_token_cost": 430,
+        "decision_counts": {"CONTINUE": 3, "ADJUST": 1},
+        "first_timestamp_ms": 1700000000000_u64,
+        "last_timestamp_ms": 1700000005000_u64
+    });
+    let summary: background::CognitiveSummaryRow =
+        serde_json::from_value(json).expect("summary contract parse failed");
+    assert_eq!(summary.total_decisions, 12);
+    assert_eq!(summary.step_count, 8);
+    assert_eq!(summary.reflection_count, 4);
+    assert!((summary.avg_deviation - 0.21).abs() < 1e-9);
+    assert!((summary.avg_confidence - 0.83).abs() < 1e-9);
+    assert_eq!(summary.total_token_cost, 430);
+    assert_eq!(summary.decision_counts.get("ADJUST"), Some(&1));
+    assert_eq!(summary.first_timestamp_ms, 1700000000000);
+}
