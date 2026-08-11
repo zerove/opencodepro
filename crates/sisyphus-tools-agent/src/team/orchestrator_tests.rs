@@ -1,5 +1,6 @@
 use super::*;
 use crate::agent_registry::AgentInfo;
+use crate::team::DelegationPolicy;
 use crate::team::TaskResult;
 use serde_json::json;
 use sisyphus_tools_core::feedback::FeedbackStore;
@@ -9,6 +10,8 @@ use sisyphus_tools_llm::circuit_breaker::CircuitBreaker;
 use sisyphus_tools_llm::metis::DummyLlmClient;
 use sisyphus_tools_llm::DynamicLlmClient;
 use sisyphus_types::Config;
+use sisyphus_types::ToolExecutor;
+use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
 fn make_registry() -> Arc<AgentRegistry> {
@@ -835,4 +838,268 @@ async fn test_event_streaming_deadlock() {
         "both tasks should emit failed TaskCompleted"
     );
     assert!(got_complete, "should still emit Complete event");
+}
+
+// ── Delegation protocol tests ─────────────────────────────────
+
+/// Scripted executor that can fail, succeed on the Nth call, or sleep.
+/// Behavior is keyed by tool_id so delegation tests can exercise
+/// retry, timeout, and fallback semantics deterministically.
+struct ScriptedExecutor {
+    calls: Arc<RwLock<HashMap<String, usize>>>,
+}
+
+#[async_trait::async_trait]
+impl ToolExecutor for ScriptedExecutor {
+    async fn execute(
+        &self,
+        tool_id: &str,
+        _args: Vec<u8>,
+        _fuel_limit: u64,
+    ) -> Result<Vec<u8>, sisyphus_types::TypesError> {
+        let count = {
+            let mut m = self.calls.write().unwrap();
+            let e = m.entry(tool_id.to_string()).or_insert(0);
+            *e += 1;
+            *e
+        };
+        match tool_id {
+            // Always fails.
+            "mock/fail" => Err(sisyphus_types::TypesError::InternalError(
+                "scripted failure".into(),
+            )),
+            // Fails on the first call, succeeds on the second.
+            "mock/succeed_on_second" => {
+                if count == 2 {
+                    Ok(json!({"result": "recovered"}).to_string().into_bytes())
+                } else {
+                    Err(sisyphus_types::TypesError::InternalError(
+                        "scripted temp failure".into(),
+                    ))
+                }
+            }
+            // Sleeps longer than a short timeout would allow.
+            "mock/slow" => {
+                tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+                Ok(json!({"result": "slow done"}).to_string().into_bytes())
+            }
+            _ => Ok(json!({"result": "ok"}).to_string().into_bytes()),
+        }
+    }
+}
+
+fn make_mock_orchestrator() -> TeamOrchestrator {
+    let reg = make_registry();
+    reg.register(
+        "mock",
+        AgentInfo {
+            display_name: "Mock".into(),
+            description: "Scripted".into(),
+            tool_prefixes: vec!["mock/".into()],
+            max_concurrency: 4,
+        },
+    );
+    reg.register(
+        "mock-fallback",
+        AgentInfo {
+            display_name: "Mock Fallback".into(),
+            description: "Scripted fallback".into(),
+            tool_prefixes: vec!["mock/".into()],
+            max_concurrency: 4,
+        },
+    );
+    let executor: Arc<dyn ToolExecutor> = Arc::new(ScriptedExecutor {
+        calls: Arc::new(RwLock::new(HashMap::new())),
+    });
+    TeamOrchestrator::new(reg, executor, None)
+}
+
+fn delegation_task(args: serde_json::Value) -> TaskNode {
+    TaskNode {
+        id: "t_deleg".into(),
+        agent_id: "mock".into(),
+        tool_id: "mock/succeed_on_second".into(),
+        args,
+        depends_on: vec![],
+        read_keys: vec![],
+        write_keys: vec![],
+    }
+}
+
+#[tokio::test]
+async fn test_delegation_retry_succeeds_on_second_attempt() {
+    let orch = make_mock_orchestrator();
+    let task = delegation_task(json!({
+        "_delegation": {"retries": 1}
+    }));
+    let report = orch
+        .execute_plan(TeamPlan {
+            goal_id: "retry".into(),
+            tasks: vec![task],
+        })
+        .await
+        .unwrap();
+
+    assert!(report.success, "retry should recover from first failure");
+    let result = &report.task_results[0];
+    assert!(result.success);
+    let output = result.output.as_ref().unwrap();
+    // Primary agent recovered via retry.
+    assert_eq!(output["_delegated_agent"], json!("mock"));
+    assert_eq!(output["result"], json!("recovered"));
+}
+
+#[tokio::test]
+async fn test_delegation_fallback_agent_takes_over() {
+    let orch = make_mock_orchestrator();
+    // Primary fails once; with retries=0 the fallback runs next and succeeds.
+    let task = delegation_task(json!({
+        "_delegation": {"retries": 0, "fallback_agents": ["mock-fallback"]}
+    }));
+    let report = orch
+        .execute_plan(TeamPlan {
+            goal_id: "fallback".into(),
+            tasks: vec![task],
+        })
+        .await
+        .unwrap();
+
+    assert!(
+        report.success,
+        "fallback should take over after primary failure"
+    );
+    let result = &report.task_results[0];
+    assert!(result.success);
+    let output = result.output.as_ref().unwrap();
+    assert_eq!(output["_delegated_agent"], json!("mock-fallback"));
+    assert_eq!(output["result"], json!("recovered"));
+}
+
+#[tokio::test]
+async fn test_delegation_timeout_counts_as_failure() {
+    let orch = make_mock_orchestrator();
+    let task = TaskNode {
+        id: "t_timeout".into(),
+        agent_id: "mock".into(),
+        tool_id: "mock/slow".into(),
+        args: json!({
+            "_delegation": {"retries": 0, "timeout_ms": 50}
+        }),
+        depends_on: vec![],
+        read_keys: vec![],
+        write_keys: vec![],
+    };
+    let report = orch
+        .execute_plan(TeamPlan {
+            goal_id: "timeout".into(),
+            tasks: vec![task],
+        })
+        .await
+        .unwrap();
+
+    assert!(!report.success, "timed-out task should fail");
+    let result = &report.task_results[0];
+    assert!(!result.success);
+    assert!(
+        result.error.as_deref().unwrap_or("").contains("timed out"),
+        "error should mention timeout, got: {:?}",
+        result.error
+    );
+}
+
+#[tokio::test]
+async fn test_delegation_exhausts_retries_without_fallback() {
+    let orch = make_mock_orchestrator();
+    let task = TaskNode {
+        id: "t_exhaust".into(),
+        agent_id: "mock".into(),
+        tool_id: "mock/fail".into(),
+        args: json!({
+            "_delegation": {"retries": 1}
+        }),
+        depends_on: vec![],
+        read_keys: vec![],
+        write_keys: vec![],
+    };
+    let report = orch
+        .execute_plan(TeamPlan {
+            goal_id: "exhaust".into(),
+            tasks: vec![task],
+        })
+        .await
+        .unwrap();
+
+    assert!(!report.success);
+    let result = &report.task_results[0];
+    assert!(!result.success);
+    assert!(
+        result
+            .error
+            .as_deref()
+            .unwrap_or("")
+            .contains("scripted failure"),
+        "error should bubble up from the tool, got: {:?}",
+        result.error
+    );
+}
+
+#[tokio::test]
+async fn test_delegation_skips_unregistered_fallback() {
+    let orch = make_mock_orchestrator();
+    // "nonexistent" is not registered; it must be filtered out during
+    // pre-validation and the task should fail with the primary's error.
+    let task = TaskNode {
+        id: "t_skip".into(),
+        agent_id: "mock".into(),
+        tool_id: "mock/fail".into(),
+        args: json!({
+            "_delegation": {"retries": 0, "fallback_agents": ["nonexistent"]}
+        }),
+        depends_on: vec![],
+        read_keys: vec![],
+        write_keys: vec![],
+    };
+    let report = orch
+        .execute_plan(TeamPlan {
+            goal_id: "skip".into(),
+            tasks: vec![task],
+        })
+        .await
+        .unwrap();
+
+    assert!(!report.success);
+    let result = &report.task_results[0];
+    assert!(!result.success);
+    assert!(
+        result
+            .error
+            .as_deref()
+            .unwrap_or("")
+            .contains("scripted failure"),
+        "unregistered fallback must not hide the primary error: {:?}",
+        result.error
+    );
+}
+
+#[test]
+fn test_delegation_policy_from_args() {
+    // Well-formed policy parses correctly from the task args convention.
+    let policy = DelegationPolicy::from_args(&json!({
+        "_delegation": {
+            "retries": 2,
+            "timeout_ms": 500,
+            "fallback_agents": ["momus", "librarian"]
+        }
+    }));
+    assert_eq!(policy.retries, 2);
+    assert_eq!(policy.timeout_ms, Some(500));
+    assert_eq!(policy.fallback_agents, vec!["momus", "librarian"]);
+
+    // Absent key yields the default (no retries / timeout / fallbacks).
+    let default = DelegationPolicy::from_args(&json!({}));
+    assert_eq!(default, DelegationPolicy::default());
+
+    // Malformed value falls back to the default rather than failing the task.
+    let malformed = DelegationPolicy::from_args(&json!({"_delegation": "not-an-object"}));
+    assert_eq!(malformed, DelegationPolicy::default());
 }

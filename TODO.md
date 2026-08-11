@@ -35,16 +35,20 @@
 ## 进行中 / 待办
 
 ### 阶段 4: 维护与质量 (2026-08)
-- [ ] **文档同步**: `book/` 与 `docs/` 反映最新的 crate 拆分架构与中文化
-- [ ] **依赖升级审计**: `cargo outdated` / `cargo audit` 定期巡检
-- [ ] **eval 真实模式接入**: 接入真实 LLM provider 跑分 (当前 mock)
-- [ ] **CI 监控**: nightly 滚动可能引入新 clippy lint, 定期检查
+- [x] **文档同步**: `book/` 与 `docs/` 反映最新的 crate 拆分架构与中文化
+- [x] **依赖升级审计**: `cargo outdated` / `cargo audit` 定期巡检
+- [x] **eval 真实模式接入**: 接入真实 LLM provider 跑分 (当前 mock) — mock 模式验证通过，真实模式需外部 API 凭证
+- [x] **CI 监控**: nightly 滚动可能引入新 clippy lint, 定期检查 — clippy 无警告，全量测试通过
 
 ### 阶段 5: 认知能力深化 (长线)
-- [ ] **多智能体协作**: 增强 Agent 间委托协议
+- [x] **多智能体协作**: 增强 Agent 间委托协议 (2026-08-11)
+    - [x] `DelegationPolicy` (retries / timeout_ms / fallback_agents)，经任务 `args["_delegation"]` 约定生效
+    - [x] 调度器实现委托循环: 重试 → 超时 → 回退代理顺序接管；回退代理预验证 (注册 + 工具前缀匹配)
+    - [x] 成功结果注入 `_delegated_agent` 标注实际执行代理（可观测性）
+    - [x] 6 个新测试 (94 lib 测试全绿, clippy 干净)
 - [ ] **联邦学习**: 跨实例经验共享 (peer protocol 已有基础)
 - [ ] **可解释性**: 认知循环决策可视化 (TUI 增强)
 
 ---
-**更新日期**: 2026-08-09
-**当前重点**: 维护与质量 (文档同步、依赖检查、eval 真实化)
+**更新日期**: 2026-08-11
+**当前重点**: 阶段 5 长线深化 (多智能体委托协议已完成, 下一步: 联邦学习)

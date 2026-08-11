@@ -88,6 +88,45 @@ impl TaskResult {
     }
 }
 
+/// Delegation policy for a task with retry, timeout, and fallback semantics.
+///
+/// This is passed per-task via the `args["_delegation"]` convention (same style
+/// as `_write_keys`), so existing [`TaskNode`] constructions remain unchanged.
+///
+/// ## Semantics
+/// 1. Execute with the task's primary `agent_id`.
+/// 2. On failure, retry up to `retries` additional times (same agent).
+/// 3. If still failing, try each `fallback_agents` in order, honoring `retries`
+///    for each candidate.
+/// 4. If `timeout_ms` is set, a single attempt exceeding it counts as a failure.
+///
+/// The successful result is annotated with `_delegated_agent` so callers can
+/// observe which agent actually produced the output (primary or fallback).
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct DelegationPolicy {
+    /// Additional attempts after the first failure (per candidate agent).
+    #[serde(default)]
+    pub retries: u32,
+    /// Per-attempt timeout in milliseconds. `None` = no timeout.
+    #[serde(default)]
+    pub timeout_ms: Option<u64>,
+    /// Candidate agents tried in order after the primary agent exhausts retries.
+    #[serde(default)]
+    pub fallback_agents: Vec<String>,
+}
+
+impl DelegationPolicy {
+    /// Parse a policy from task args using the `_delegation` convention.
+    ///
+    /// Returns the default (no retries, no timeout, no fallbacks) when the
+    /// key is absent or malformed.
+    pub fn from_args(args: &Value) -> Self {
+        args.get("_delegation")
+            .and_then(|v| serde_json::from_value(v.clone()).ok())
+            .unwrap_or_default()
+    }
+}
+
 /// Progress event emitted during team execution.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum TeamEvent {
