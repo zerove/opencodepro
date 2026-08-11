@@ -185,3 +185,88 @@ async fn test_cognitive_trace_eviction_cap() {
     let step = first["event"]["CognitiveStep"]["step"].as_str().unwrap();
     assert_eq!(step, "Bulk5");
 }
+
+/// Poll the history endpoint until `want` entries appear (the persistence
+/// writer is asynchronous).
+async fn wait_history_entries(app: &Router, uri: &str, want: usize) -> serde_json::Value {
+    for _ in 0..100 {
+        let (status, json) = get(app, uri).await;
+        if status == StatusCode::OK {
+            if let Some(arr) = json["entries"].as_array() {
+                if arr.len() >= want {
+                    return json;
+                }
+            }
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    panic!("history endpoint did not reach {want} entries for {uri}");
+}
+
+#[tokio::test]
+async fn test_cognitive_trace_history_returns_persisted() {
+    let (app, bridge) = setup().await;
+    let em = &bridge.kernel().execution_manager;
+    em.record_cognitive_trace("sop-h", step_entry(0, "sop-h", "Predicting").event);
+    em.record_cognitive_trace(
+        "sop-h",
+        reflect_entry(0, "sop-h", "expected out", "actual out").event,
+    );
+    em.record_cognitive_trace("sop-h", step_entry(0, "sop-h", "Reflecting").event);
+
+    let json = wait_history_entries(&app, "/api/cognitive/trace/history?limit=10", 3).await;
+    let entries = json["entries"].as_array().unwrap();
+    assert_eq!(entries.len(), 3);
+    // Newest first (insertion order preserved via DESC id).
+    let steps: Vec<String> = entries
+        .iter()
+        .map(|e| {
+            if let Some(s) = e["event"]["CognitiveStep"]["step"].as_str() {
+                s.to_string()
+            } else {
+                e["event"]["MicroReflection"]["node_name"]
+                    .as_str()
+                    .unwrap()
+                    .to_string()
+            }
+        })
+        .collect();
+    assert_eq!(
+        steps,
+        vec![
+            "Reflecting".to_string(),
+            "node-a".to_string(),
+            "Predicting".to_string()
+        ]
+    );
+    // All rows belong to the recorded SOP.
+    assert!(entries.iter().all(|e| e["sop_id"] == "sop-h"));
+}
+
+#[tokio::test]
+async fn test_cognitive_trace_history_sop_filter_and_limit() {
+    let (app, bridge) = setup().await;
+    let em = &bridge.kernel().execution_manager;
+    for i in 0..4 {
+        em.record_cognitive_trace("sop-a", step_entry(0, "sop-a", &format!("A{i}")).event);
+    }
+    em.record_cognitive_trace("sop-b", step_entry(0, "sop-b", "B0").event);
+
+    // Filter: only sop-b.
+    let json = wait_history_entries(&app, "/api/cognitive/trace/history?sop_id=sop-b", 1).await;
+    let entries = json["entries"].as_array().unwrap();
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0]["sop_id"], "sop-b");
+
+    // Limit applies after filtering (sop-a has 4; request 2).
+    let json =
+        wait_history_entries(&app, "/api/cognitive/trace/history?sop_id=sop-a&limit=2", 2).await;
+    let entries = json["entries"].as_array().unwrap();
+    assert_eq!(entries.len(), 2);
+    assert!(entries.iter().all(|e| e["sop_id"] == "sop-a"));
+    // Newest first.
+    let step = entries[0]["event"]["CognitiveStep"]["step"]
+        .as_str()
+        .unwrap();
+    assert_eq!(step, "A3");
+}

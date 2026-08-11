@@ -338,6 +338,8 @@ pub(crate) struct App {
     pub(crate) cog_trace_scroll: usize,
     pub(crate) cog_trace_detail: Option<String>,
     pub(crate) cog_trace_status: String,
+    /// true = SQL 持久化历史（跨会话），false = 内存热缓冲。
+    pub(crate) cog_trace_history_mode: bool,
 
     // 路线图数据（对话框状态）
     pub(crate) roadmap_projection: Option<String>,
@@ -493,6 +495,7 @@ impl App {
             cog_trace_scroll: 0,
             cog_trace_detail: None,
             cog_trace_status: "idle".into(),
+            cog_trace_history_mode: false,
             roadmap_projection: None,
             roadmap_bottlenecks: None,
             roadmap_status: "disconnected".into(),
@@ -1012,6 +1015,17 @@ impl App {
                     self.cog_trace.len()
                 )));
             }
+            crate::tui::background::BgOp::CognitiveTraceHistoryFetched { rows } => {
+                self.cog_trace = rows;
+                self.cog_trace_scroll = 0;
+                self.cog_trace_detail = None;
+                self.cog_trace_status =
+                    format!("history ({} persisted decisions)", self.cog_trace.len());
+                self.add_log(LogEntry::Info(format!(
+                    "Fetched {} persisted cognitive decisions",
+                    self.cog_trace.len()
+                )));
+            }
             crate::tui::background::BgOp::CognitiveTraceFailed(e) => {
                 self.cog_trace_status = format!("failed: {e}");
                 self.add_log(LogEntry::Error(format!(
@@ -1193,11 +1207,24 @@ impl App {
         self.pending_op = Some(rx);
     }
 
-    /// 拉取最近的认知决策链（可解释性）并打开追踪视图。
+    /// 拉取认知决策链（可解释性）并打开追踪视图：
+    /// 热缓冲（内存）或历史（SQL 持久化）取决于 cog_trace_history_mode。
     pub(crate) fn fetch_cognitive_trace(&mut self) {
         self.cog_trace_status = "connecting...".into();
         let bridge_addr = self.bridge_address.clone();
-        let rx = crate::tui::background::spawn_fetch_cognitive_trace(bridge_addr);
+        let rx = if self.cog_trace_history_mode {
+            crate::tui::background::spawn_fetch_cognitive_trace_history(bridge_addr, None)
+        } else {
+            crate::tui::background::spawn_fetch_cognitive_trace(bridge_addr)
+        };
         self.pending_op = Some(rx);
+    }
+
+    /// 切换认知追踪数据源（热缓冲 ⇄ SQL 历史）并重新拉取。
+    pub(crate) fn toggle_cog_trace_history(&mut self) {
+        self.cog_trace_history_mode = !self.cog_trace_history_mode;
+        self.cog_trace = Vec::new();
+        self.cog_trace_detail = None;
+        self.fetch_cognitive_trace();
     }
 }

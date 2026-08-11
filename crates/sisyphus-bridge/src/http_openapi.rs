@@ -277,6 +277,20 @@ pub(crate) async fn openapi_json() -> impl IntoResponse {
                     }
                 }
             },
+            "/api/cognitive/trace/history": {
+                "get": {
+                    "summary": "Get persisted cognitive decisions across sessions",
+                    "description": "Returns cognitive decisions persisted to SQL, newest first. Survives bridge restarts; use it to inspect historical decision chains.",
+                    "operationId": "getCognitiveTraceHistory",
+                    "parameters": [
+                        {"name": "sop_id", "in": "query", "required": false, "schema": {"type": "string"}, "description": "Filter by SOP id; omit for all SOPs"},
+                        {"name": "limit", "in": "query", "required": false, "schema": {"type": "integer", "minimum": 1, "maximum": 1000, "default": 100}, "description": "Max entries to return (default 100, cap 1000)"}
+                    ],
+                    "responses": {
+                        "200": {"description": "Persisted cognitive decision chain", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/CognitiveTraceResponse"}}}}
+                    }
+                }
+            },
 
             // ── Workspaces ───────────────────────────────────────────────
             "/api/workspaces": {

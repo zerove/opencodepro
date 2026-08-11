@@ -46,6 +46,10 @@ pub enum BgOp {
     CognitiveTraceFetched {
         rows: Vec<CognitiveTraceRow>,
     },
+    /// 认知决策历史（SQL 持久化）拉取结果。
+    CognitiveTraceHistoryFetched {
+        rows: Vec<CognitiveTraceRow>,
+    },
     CognitiveTraceFailed(String),
     RoadmapFetched {
         projection: String,
@@ -391,6 +395,44 @@ pub fn spawn_fetch_cognitive_trace(bridge_address: String) -> tokio::sync::onesh
         .await;
         let _ = tx.send(match result {
             Ok(rows) => BgOp::CognitiveTraceFetched { rows },
+            Err(e) => BgOp::CognitiveTraceFailed(e),
+        });
+    });
+    rx
+}
+
+pub fn spawn_fetch_cognitive_trace_history(
+    bridge_address: String,
+    sop_id: Option<String>,
+) -> tokio::sync::oneshot::Receiver<BgOp> {
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    tokio::spawn(async move {
+        let mut url = format!(
+            "http://{}/api/cognitive/trace/history?limit=100",
+            bridge_address
+        );
+        if let Some(sop) = sop_id {
+            // sop_id 仅含 ASCII 标识符（如 "sop-main"），直接拼接即可。
+            url.push_str(&format!("&sop_id={sop}"));
+        }
+        let result = async {
+            let resp = reqwest::get(&url)
+                .await
+                .map_err(|e| format!("HTTP request failed: {e}"))?;
+            if !resp.status().is_success() {
+                return Err(format!("Bridge returned error status: {}", resp.status()));
+            }
+            let data: serde_json::Value = resp
+                .json()
+                .await
+                .map_err(|e| format!("JSON parse failed: {e}"))?;
+            let rows: Vec<CognitiveTraceRow> = serde_json::from_value(data["entries"].clone())
+                .map_err(|e| format!("Cognitive trace parse failed: {e}"))?;
+            Ok(rows)
+        }
+        .await;
+        let _ = tx.send(match result {
+            Ok(rows) => BgOp::CognitiveTraceHistoryFetched { rows },
             Err(e) => BgOp::CognitiveTraceFailed(e),
         });
     });

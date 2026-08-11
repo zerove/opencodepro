@@ -845,12 +845,18 @@ pub(super) fn render_dev_dialog(frame: &mut ratatui::Frame, area: Rect, app: &Ap
 
 pub(super) fn render_cognitive_trace_dialog(frame: &mut ratatui::Frame, area: Rect, app: &App) {
     let theme = app.theme();
+    let source_label = if app.cog_trace_history_mode {
+        "SQL history (persisted)"
+    } else {
+        "live buffer (memory)"
+    };
     let block = Block::default()
         .borders(Borders::ALL)
-        .title(" Cognitive Trace (Decision Chain) ")
+        .title(format!(" Cognitive Trace (Decision Chain) — {source_label} "))
         .title_bottom(format!(
-            "{} | Enter: details | r: refresh | ↑↓/PgUp/PgDn: {} | g/G top/bottom | Esc close ",
+            "{} | Enter: details | r: refresh | h: {}/history | ↑↓/PgUp/PgDn: {} | g/G top/bottom | Esc close ",
             app.cog_trace_status,
+            if app.cog_trace_history_mode { "live" } else { "history" },
             widgets::scroll_pct(app.cog_trace_scroll, app.cog_trace.len()),
         ))
         .border_style(Style::default().fg(theme.primary));
@@ -877,7 +883,14 @@ pub(super) fn render_cognitive_trace_dialog(frame: &mut ratatui::Frame, area: Re
         .cog_trace
         .iter()
         .map(|row| {
-            let time = format!("{:.1}s", row.timestamp_ms as f64 / 1000.0);
+            let time = if app.cog_trace_history_mode {
+                let ms = row.timestamp_ms as i64;
+                chrono::DateTime::from_timestamp_millis(ms)
+                    .map(|dt| dt.format("%m-%d %H:%M:%S").to_string())
+                    .unwrap_or_else(|| format!("{ms}ms"))
+            } else {
+                format!("{:.1}s", row.timestamp_ms as f64 / 1000.0)
+            };
             let (tag, summary, tag_style) = cognitive_event_summary(&row.event, &theme);
             Row::new(vec![
                 Span::styled(time, Style::default().fg(theme.muted)),

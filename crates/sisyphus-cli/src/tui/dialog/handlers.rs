@@ -640,6 +640,10 @@ pub(crate) fn handle_cognitive_trace_key(code: KeyCode, app: &mut App) {
             // 重新拉取决策链
             app.fetch_cognitive_trace();
         }
+        KeyCode::Char('h') | KeyCode::Char('H') => {
+            // 切换热缓冲 ⇄ SQL 历史
+            app.toggle_cog_trace_history();
+        }
         _ => {}
     }
 }

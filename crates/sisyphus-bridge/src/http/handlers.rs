@@ -251,6 +251,33 @@ pub(super) async fn cognitive_trace_handler(
     (StatusCode::OK, Json(CognitiveTraceResponse { entries })).into_response()
 }
 
+/// 认知决策历史（SQL 持久化，跨会话），新在前。
+pub(super) async fn cognitive_trace_history_handler(
+    State(state): State<RestApiState>,
+    workspace: WorkspaceContext,
+    Query(params): Query<CognitiveTraceHistoryQuery>,
+) -> impl IntoResponse {
+    const MAX_LIMIT: usize = 1000;
+    let project_id = workspace
+        .project_id
+        .unwrap_or_else(|| "default".to_string());
+    let limit = params.limit.unwrap_or(100).clamp(1, MAX_LIMIT);
+    match state
+        .bridge
+        .kernel()
+        .execution_manager
+        .cognitive_trace_history(&project_id, params.sop_id.as_deref(), limit)
+        .await
+    {
+        Ok(entries) => (StatusCode::OK, Json(CognitiveTraceResponse { entries })).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
 pub(super) async fn goal_stream_handler(
     State(state): State<RestApiState>,
     workspace: WorkspaceContext,

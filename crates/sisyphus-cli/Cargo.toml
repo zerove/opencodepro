@@ -13,6 +13,7 @@ name = "sisyphus"
 path = "src/main.rs"
 
 [dependencies]
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
 sisyphus-types = { path = "../sisyphus-types" }
 sisyphus-tools-agent = { path = "../sisyphus-tools-agent" }
 sisyphus-tools-build = { path = "../sisyphus-tools-build" }
