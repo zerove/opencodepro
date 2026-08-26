@@ -1,234 +1,22 @@
-//! 认知循环 v2 — 自适应深度、并行分支评估与运行时异常检测。
+//! 认知循环 v2 — 自适应深度与运行时异常检测。
 //!
 //! ## 相对 v1 的增强
-//! - **ParallelBranchPredictor**：并发运行多个仿真/执行分支，
-//!   根据成功概率、成本与稳定性选出最优结果。
 //! - **AnomalyDetector**：监控每个节点的执行指标（燃料、耗时、错误率），
 //!   检测到异常时触发内联反思。
 //! - **AdaptiveDepthController**：基于置信度与收敛速度决定是否
 //!   继续迭代，而不是使用固定的 max_iterations 上限。
+//!
+//! 注：ParallelBranchPredictor 已于 2026-08-26 移除——其唯一入口
+//! `evaluate_branches` 从未被主认知循环调用（仅 benches 引用），
+//! 属未接线的死代码。决策记录见 docs/adr/0005-cognitive-loop-v2.md。
 
-use crate::CoreError;
 use parking_lot::Mutex;
-use sisyphus_intel::simulation::{LogicalSimulationResult, SimulationResult};
 use sisyphus_intel::ComplexityAnalyzer;
 use sisyphus_types::experience::ExperienceBank;
-use sisyphus_types::ExecutionContext;
 use sisyphus_types::SOPGraph;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tracing::{info, instrument, warn};
-
-// ---------------------------------------------------------------------------
-// ParallelBranchPredictor（并行分支预测器）
-// ---------------------------------------------------------------------------
-
-/// 单个已评估分支及其得分。
-#[derive(Debug, Clone)]
-pub struct BranchEvaluation {
-    pub branch_id: String,
-    pub simulation: SimulationResult,
-    pub logical_result: Option<LogicalSimulationResult>,
-    pub confidence: f64,
-    pub cost: u64,
-}
-
-impl BranchEvaluation {
-    /// 综合得分：越高越好。
-    /// 综合平衡成功概率、成本效率与逻辑有效性。
-    pub fn composite_score(&self) -> f64 {
-        let success_weight = 0.5;
-        let cost_weight = 0.3;
-        let stability_weight = 0.2;
-
-        let logical_penalty = self
-            .logical_result
-            .as_ref()
-            .map(|lr| {
-                if lr.is_valid {
-                    0.0
-                } else {
-                    let critical_count = lr
-                        .flaws
-                        .iter()
-                        .filter(|f| {
-                            matches!(
-                                f.severity,
-                                sisyphus_intel::simulation::FlawSeverity::Critical
-                            )
-                        })
-                        .count() as f64;
-                    critical_count * 0.2
-                }
-            })
-            .unwrap_or(0.0);
-
-        let success_score = self.simulation.success_probability * success_weight;
-        let cost_efficiency = if self.cost > 0 {
-            (1.0 / (self.cost as f64).max(1.0).ln_1p()) * cost_weight
-        } else {
-            0.0
-        };
-        let stability_score = self.simulation.predicted_stability * stability_weight;
-
-        (success_score + cost_efficiency + stability_score) - logical_penalty
-    }
-}
-
-/// 并发运行多个仿真并选择最佳路径。
-pub struct ParallelBranchPredictor {
-    /// 可并行评估的最大分支数。
-    pub max_branches: usize,
-    /// 分支仿真的并发上限。
-    pub concurrency: usize,
-}
-
-impl Default for ParallelBranchPredictor {
-    fn default() -> Self {
-        Self {
-            max_branches: 3,
-            concurrency: 3,
-        }
-    }
-}
-
-impl ParallelBranchPredictor {
-    pub fn new(max_branches: usize, concurrency: usize) -> Self {
-        Self {
-            max_branches,
-            concurrency,
-        }
-    }
-
-    /// 对同一图谱的多个变体运行并行仿真。
-    /// `variant_graphs` 应包含不同的 SOP 图谱（例如演进变体、原始图谱）。
-    /// 返回最佳分支评估以及全部评估结果供分析。
-    #[allow(clippy::too_many_arguments)]
-    #[instrument(skip_all, fields(num_variants = variant_graphs.len()))]
-    pub async fn evaluate_branches(
-        &self,
-        variant_graphs: Vec<Arc<SOPGraph>>,
-        ctx: Arc<ExecutionContext>,
-        project_id: &str,
-        sop_id: &str,
-        goal_text: Option<&str>,
-        simulator: Arc<dyn sisyphus_intel::Simulator>,
-        logical_simulator: Arc<dyn sisyphus_intel::simulation::LogicalSimulator>,
-        experience_bank: Arc<dyn ExperienceBank>,
-    ) -> Result<(BranchEvaluation, Vec<BranchEvaluation>), CoreError> {
-        if variant_graphs.is_empty() {
-            return Err(CoreError::Internal(
-                "No variant graphs provided for parallel evaluation".into(),
-            ));
-        }
-
-        // 限制分支数量
-        let graphs: Vec<_> = variant_graphs.into_iter().take(self.max_branches).collect();
-
-        let num_branches = graphs.len();
-        let mut handles = Vec::with_capacity(num_branches);
-
-        for (i, graph) in graphs.into_iter().enumerate() {
-            let branch_id = format!("branch_{}", i);
-            let project_id = project_id.to_string();
-            let sop_id = sop_id.to_string();
-            let goal_text = goal_text.map(|s| s.to_string());
-            let ctx_ref = ctx.clone();
-            let sim_clone = simulator.clone();
-            let log_sim_clone = logical_simulator.clone();
-
-            handles.push(tokio::spawn(async move {
-                // 仿真
-                let sim_result = sim_clone
-                    .simulate(
-                        Arc::clone(&graph),
-                        &ctx_ref,
-                        &project_id,
-                        &sop_id,
-                        goal_text.as_deref(),
-                    )
-                    .await;
-
-                // 逻辑仿真
-                let log_result = log_sim_clone
-                    .simulate_logic(Arc::clone(&graph), &ctx_ref, &sop_id, goal_text.as_deref())
-                    .await;
-
-                let sim = sim_result.map_err(|e| CoreError::Internal(e.to_string()))?;
-                let log = log_result.ok();
-
-                let cost_estimate = sim.estimated_cost;
-
-                Ok::<_, CoreError>(BranchEvaluation {
-                    branch_id,
-                    simulation: sim,
-                    logical_result: log,
-                    confidence: 0.0, // will be computed
-                    cost: cost_estimate,
-                })
-            }));
-        }
-
-        // 收集结果
-        let mut evaluations = Vec::with_capacity(num_branches);
-        for handle in handles {
-            match handle.await {
-                Ok(Ok(eval)) => evaluations.push(eval),
-                Ok(Err(e)) => warn!("Branch evaluation failed: {}", e),
-                Err(e) => warn!("Branch evaluation task panicked: {}", e),
-            }
-        }
-
-        if evaluations.is_empty() {
-            return Err(CoreError::Internal("All branch evaluations failed".into()));
-        }
-
-        // 使用经验库计算每个分支的置信度
-        for eval in &mut evaluations {
-            let query = sisyphus_types::experience::ExperienceQuery {
-                query_text: format!("{} {} cost={}", sop_id, eval.branch_id, eval.cost),
-                context_hash: String::new(),
-                project_id: Some(project_id.to_string()),
-                action_id: Some(eval.branch_id.clone()),
-                visual_embedding: None,
-                limit: 5,
-            };
-
-            let confidence = if let Ok(exps) = experience_bank.query_similar(query).await {
-                if exps.is_empty() {
-                    0.5 // neutral default
-                } else {
-                    let successes = exps.iter().filter(|e| e.outcome_success).count();
-                    successes as f64 / exps.len() as f64
-                }
-            } else {
-                0.5
-            };
-            eval.confidence = confidence;
-        }
-
-        // 按综合得分选出最优
-        let best = evaluations
-            .iter()
-            .max_by(|a, b| {
-                a.composite_score()
-                    .partial_cmp(&b.composite_score())
-                    .unwrap_or(std::cmp::Ordering::Equal)
-            })
-            .cloned()
-            .ok_or_else(|| CoreError::Internal("No evaluable branch found".into()))?;
-
-        info!(
-            branch_id = %best.branch_id,
-            score = best.composite_score(),
-            confidence = best.confidence,
-            cost = best.cost,
-            "ParallelBranchPredictor: selected best branch"
-        );
-
-        Ok((best, evaluations))
-    }
-}
 
 // ---------------------------------------------------------------------------
 // AnomalyDetector（异常检测器）
@@ -521,6 +309,12 @@ impl AdaptiveDepthController {
     ) -> usize {
         let depth = ComplexityAnalyzer::analyze(experience_bank, sop_graph, goal_text).await;
         let (d_max, _) = depth.to_config();
+        self.budget_from_depth(d_max)
+    }
+
+    /// 根据调用方已有的复杂度分析结果计算初始预算（P1-4 去重）。
+    /// 与 [`Self::initial_budget`] 语义一致，但不再重复执行分析。
+    pub fn budget_from_depth(&self, d_max: u32) -> usize {
         (d_max as usize)
             .min(self.max_iterations)
             .max(self.min_iterations)
@@ -666,77 +460,6 @@ mod tests {
         }
         // 连续 6 轮改进小于 0.1 后应停止
         assert!(!ctrl.observe_iteration(0.661));
-    }
-
-    #[test]
-    fn test_parallel_branch_predictor_composite_score() {
-        let eval = BranchEvaluation {
-            branch_id: "test".into(),
-            simulation: SimulationResult {
-                path_id: "path".into(),
-                success_probability: 0.8,
-                estimated_cost: 1000,
-                predicted_stability: 0.9,
-                predicted_effort: 50,
-                predicted_outcome: "success".into(),
-            },
-            logical_result: None,
-            confidence: 0.7,
-            cost: 1000,
-        };
-        let score = eval.composite_score();
-        assert!(score > 0.0, "Score should be positive, got {}", score);
-        assert!(score < 2.0, "Score should be reasonable, got {}", score);
-    }
-
-    #[test]
-    fn test_parallel_branch_predictor_logical_penalty() {
-        let log_result = LogicalSimulationResult {
-            is_valid: false,
-            flaws: vec![sisyphus_intel::simulation::LogicalFlaw {
-                node_name: "test".into(),
-                description: "Critical flaw".into(),
-                severity: sisyphus_intel::simulation::FlawSeverity::Critical,
-            }],
-            predicted_path: vec![],
-            confidence: 1.0,
-        };
-
-        let eval_with_flaw = BranchEvaluation {
-            branch_id: "flawed".into(),
-            simulation: SimulationResult {
-                path_id: "path".into(),
-                success_probability: 0.8,
-                estimated_cost: 500,
-                predicted_stability: 0.9,
-                predicted_effort: 25,
-                predicted_outcome: "success".into(),
-            },
-            logical_result: Some(log_result),
-            confidence: 0.7,
-            cost: 500,
-        };
-
-        let eval_clean = BranchEvaluation {
-            branch_id: "clean".into(),
-            simulation: SimulationResult {
-                path_id: "path".into(),
-                success_probability: 0.75,
-                estimated_cost: 500,
-                predicted_stability: 0.85,
-                predicted_effort: 25,
-                predicted_outcome: "success".into(),
-            },
-            logical_result: None,
-            confidence: 0.7,
-            cost: 500,
-        };
-
-        // 干净的分支尽管成功概率略低，综合得分应更高
-        assert!(
-            eval_clean.composite_score() > eval_with_flaw.composite_score(),
-            "Clean branch should outscore flawed branch despite logical flaws"
-        );
     }
 
     #[tokio::test]

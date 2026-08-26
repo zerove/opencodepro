@@ -1,8 +1,6 @@
 use async_trait::async_trait;
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
-use sisyphus_core::{
-    AdaptiveDepthController, AnomalyDetector, Executor, ParallelBranchPredictor, StateStore,
-};
+use sisyphus_core::{AdaptiveDepthController, AnomalyDetector, Executor, StateStore};
 use sisyphus_mem::MfsStore;
 use sisyphus_sandbox::WasmToolExecutor;
 use sisyphus_types::{SOPGraph, ToolExecutor, WasmSOPNode};
@@ -315,27 +313,11 @@ fn bench_v2_anomaly_detector(c: &mut Criterion) {
     group.finish();
 }
 
-fn bench_v2_parallel_branch_predictor(c: &mut Criterion) {
-    let mut group = c.benchmark_group("v2_branch_predictor");
-    group.measurement_time(Duration::from_secs(5));
-    group.sample_size(50);
-
-    // Construction benchmarks (predict_parallelism was removed in API migration)
-    group.bench_function("new_4_4", |b| {
-        b.iter(|| black_box(ParallelBranchPredictor::new(4, 4)));
-    });
-    group.bench_function("default", |b| {
-        b.iter(|| black_box(ParallelBranchPredictor::default()));
-    });
-
-    group.finish();
-}
-
 criterion_group!(
     name = core_benches;
     config = Criterion::default().warm_up_time(Duration::from_secs(2));
     targets = bench_dag_execution, bench_wasm_execution, bench_mfs_storage,
               bench_v2_adaptive_depth_controller, bench_v2_anomaly_detector,
-              bench_v2_parallel_branch_predictor
+
 );
 criterion_main!(core_benches);

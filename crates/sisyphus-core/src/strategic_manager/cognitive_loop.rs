@@ -66,7 +66,10 @@ impl StrategicManager {
         };
 
         let (max_iterations, convergence_threshold) = {
-            // --- 动态深度调整（v2） ---
+            // --- 动态深度调整（P1-4 去重：单一 ComplexityAnalyzer 分析）---
+            // 此前这里与 AdaptiveDepthController::initial_budget 内部对同一输入
+            // 各做一次 ComplexityAnalyzer::analyze，调参面翻倍；现在只分析一次，
+            // 控制器预算经 budget_from_depth 复用本处结果。
             let depth = sisyphus_intel::ComplexityAnalyzer::analyze(
                 self.experience_bank.clone(),
                 &current_ref,
@@ -76,27 +79,19 @@ impl StrategicManager {
 
             let (mut d_max, d_thresh) = depth.to_config();
 
+            // v2：控制器初始预算，复用上方分析结果（热启动减半前计算，
+            // 与原 initial_budget 行为等价——其内部分析同样不含热启动逻辑）
+            let v2_budget = self.depth_controller.budget_from_depth(d_max) as u32;
+
             // 如果热启动生效，可以大幅减少迭代次数
             if hot_start_active {
                 d_max = (d_max / 2).max(2);
             }
 
-            // v2：同时获取 AdaptiveDepthController 的预算
-            let v2_budget = self
-                .depth_controller
-                .initial_budget(
-                    self.experience_bank.clone(),
-                    &current_ref,
-                    goal_text.unwrap_or(sop_id),
-                )
-                .await;
             // 用户显式配置的 max_iterations 是硬上限（评审 A4 遗留缺口修复）：
             // 自适应深度只能在预算内减少迭代，不得突破用户设置的上限。
-            let final_max = effective_max_iterations(
-                d_max,
-                v2_budget as u32,
-                self.config.read().max_iterations,
-            );
+            let final_max =
+                effective_max_iterations(d_max, v2_budget, self.config.read().max_iterations);
 
             // 基线仅用于日志对比；动态结果不写回共享 config（见 dbc2f7a）。
             // 此前的写回-读回模式会让并发执行的循环互相覆盖 max_iterations/convergence_threshold

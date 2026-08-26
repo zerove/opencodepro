@@ -1,7 +1,7 @@
 # ADR 005: Cognitive Loop v2 — Adaptive Depth, Branch Evaluation, and Anomaly Detection
 
 ## Status
-Implemented (2026-07-29)
+Amended (2026-08-26): ParallelBranchPredictor removed as dead code — its only entry point `evaluate_branches` was never called by the production cognitive loop (benches/tests only). AdaptiveDepthController + AnomalyDetector remain wired in StrategicManager. Original decision below retains historical context; the ParallelBranchPredictor section is superseded.
 
 ## Context
 The original cognitive loop (v1) used a fixed `max_iterations` ceiling (default 10) and a static `convergence_threshold` (default 0.15). This was simple but wasteful — it either ran too many iterations past convergence or stopped too early on complex tasks. Additionally, v1 had no runtime anomaly detection, used a single execution path with no parallel exploration, and had no mechanism to detect degradation mid-execution.
@@ -70,13 +70,11 @@ Monitors per-node execution metrics at runtime and flags anomalies.
 
 ### Positive
 - **Better iteration efficiency**: adaptive depth saves 20–40% iterations on simple tasks while allowing complex tasks the iterations they need.
-- **Parallel exploration**: higher probability of selecting the optimal execution path without serial trial-and-error.
 - **Runtime resilience**: anomaly detection catches degradation early — fuel spikes, hung nodes, cascading failures — and triggers extra reflection before the loop escalates.
-- **Historical calibration**: experience bank integration means branch selection and confidence estimates improve over time.
 
 ### Negative
 - **Slightly higher memory footprint**: `AnomalyDetector` maintains per-node metric history (map from node name to EWMA state). `AdaptiveDepthController` keeps a confidence history vector.
-- **Increased latency per iteration**: `ParallelBranchPredictor` runs N concurrent simulations (default 3), adding simulation overhead to the predict step.
+- ~~**Increased latency per iteration**: `ParallelBranchPredictor` runs N concurrent simulations (default 3)~~ — moot after removal (the predictor was never on the production path, so no real-world latency existed to remove).
 - **Configuration surface area grows**: new `AdaptiveDepthConfig` struct with four parameters adds to the cognitive load of tuning.
 
 ### Neutral
@@ -84,8 +82,21 @@ Monitors per-node execution metrics at runtime and flags anomalies.
 - `AnomalyDetector` is optional — `StrategicManager` can be configured with a no-op detector if anomaly tracking is not needed.
 
 ## Integration Points
-- `StrategicManager::run_cognitive_loop()` wires all three components: `AdaptiveDepthController` for loop termination, `AnomalyDetector` for inline monitoring, and `ParallelBranchPredictor` for branch selection.
+- `StrategicManager::run_cognitive_loop()` wires two components: `AdaptiveDepthController` for loop termination and `AnomalyDetector` for inline monitoring. (The third, `ParallelBranchPredictor`, was documented here originally but never actually wired into the loop; removed 2026-08-26.)
 - Source: `crates/sisyphus-core/src/cognitive_loop_v2.rs`
 - Re-exported via `crates/sisyphus-core/src/lib.rs` (`pub use cognitive_loop_v2::*`).
 - `CognitiveLoopConfig` in `crates/sisyphus-types/src/config/sub.rs` includes `adaptive_depth: AdaptiveDepthConfig`.
 - Bridge gRPC exposes `StreamAnomalyReport` RPC for streaming anomaly data to clients.
+
+## Amendment 2026-08-26 (P1-4 v1/v2 decision)
+
+Investigation findings:
+- `ParallelBranchPredictor::evaluate_branches` had **zero production callers** across all 30 crates (only `benches/core_benches.rs` and integration tests referenced it). The ADR's "Integration Points" claim that StrategicManager wires it was inaccurate.
+- The depth budget was computed twice per loop start: once directly via `ComplexityAnalyzer::analyze` in `cognitive_loop.rs`, then again inside `AdaptiveDepthController::initial_budget` with identical inputs. Both were min-ed against the user cap.
+
+Actions taken:
+1. Removed `ParallelBranchPredictor`, `BranchEvaluation`, their benches, and related tests (~350 lines). If parallel branch evaluation is ever needed, reintroduce it behind an actual call site in the evolve step.
+2. Added `AdaptiveDepthController::budget_from_depth(d_max)` so the loop reuses its single `ComplexityAnalyzer::analyze` result instead of re-analyzing. `initial_budget` remains for standalone use.
+3. Documentation (`book/src/cognitive-loop.md`) updated to drop the predictor section.
+
+Behavioral impact: none on production paths — the predictor never executed there; depth budgets are numerically identical (same analysis input, same clamping).

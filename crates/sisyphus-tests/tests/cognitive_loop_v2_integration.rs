@@ -3,17 +3,15 @@
 //! Coverage:
 //! - `AdaptiveDepthController` convergence / plateau detection
 //! - `AnomalyDetector` fuel spike, error rate, and report generation
-//! - `ParallelBranchPredictor` composite score and branch sorting
 //! - `ChaosRunner` fault injection in DAG execution context
 //!
 //! These tests exercise the public API of `sisyphus_core::cognitive_loop_v2`
 //! alongside `ChaosRunner` from `sisyphus_core::chaos_testing`.
 
 use sisyphus_core::{
-    AdaptiveDepthController, AnomalyDetector, AnomalySeverity, BranchEvaluation, ChaosExperiment,
-    ChaosRunner, FaultType,
+    AdaptiveDepthController, AnomalyDetector, AnomalySeverity, ChaosExperiment, ChaosRunner,
+    FaultType,
 };
-use sisyphus_intel::simulation::SimulationResult;
 use std::time::Duration;
 
 // ---------------------------------------------------------------------------
@@ -201,99 +199,6 @@ async fn test_anomaly_detector_report_triggers_extra_reflect() {
     assert!(
         report.should_extra_reflect,
         "Many failures should trigger extra reflection"
-    );
-}
-
-// ---------------------------------------------------------------------------
-// ParallelBranchPredictor / BranchEvaluation composite score
-// ---------------------------------------------------------------------------
-
-/// Helper to construct a BranchEvaluation for testing.
-fn make_evaluation(
-    branch_id: &str,
-    success_prob: f64,
-    cost: u64,
-    stability: f64,
-) -> BranchEvaluation {
-    BranchEvaluation {
-        branch_id: branch_id.to_string(),
-        simulation: SimulationResult {
-            path_id: format!("path_{}", branch_id),
-            success_probability: success_prob,
-            estimated_cost: cost,
-            predicted_stability: stability,
-            predicted_effort: (cost / 10) as u64,
-            predicted_outcome: if success_prob > 0.6 {
-                "success".into()
-            } else {
-                "likely_failure".into()
-            },
-        },
-        logical_result: None,
-        confidence: success_prob,
-        cost,
-    }
-}
-
-#[tokio::test]
-async fn test_parallel_branch_predictor_composite_score() {
-    // Three branches with clearly different scores.
-    let high = make_evaluation("high", 0.90, 500, 0.95);
-    let medium = make_evaluation("medium", 0.65, 1500, 0.70);
-    let low = make_evaluation("low", 0.30, 5000, 0.40);
-
-    // Verify ordering.
-    assert!(
-        high.composite_score() > medium.composite_score(),
-        "high ({:.4}) should score above medium ({:.4})",
-        high.composite_score(),
-        medium.composite_score()
-    );
-    assert!(
-        medium.composite_score() > low.composite_score(),
-        "medium ({:.4}) should score above low ({:.4})",
-        medium.composite_score(),
-        low.composite_score()
-    );
-
-    // Verify selection via max_by (mimics the predictor's internal logic).
-    let evaluations = vec![low, medium, high];
-    let best = evaluations
-        .iter()
-        .max_by(|a, b| {
-            a.composite_score()
-                .partial_cmp(&b.composite_score())
-                .unwrap_or(std::cmp::Ordering::Equal)
-        })
-        .unwrap();
-    assert_eq!(best.branch_id, "high", "Best branch should be 'high'");
-}
-
-#[tokio::test]
-async fn test_parallel_branch_predictor_composite_score_cost_sensitivity() {
-    // Two branches with same success prob and stability, but different cost.
-    let cheap = make_evaluation("cheap", 0.70, 100, 0.80);
-    let expensive = make_evaluation("expensive", 0.70, 10_000, 0.80);
-
-    assert!(
-        cheap.composite_score() > expensive.composite_score(),
-        "Cheaper branch should score higher when other metrics are equal"
-    );
-}
-
-#[tokio::test]
-async fn test_parallel_branch_predictor_composite_score_positivity() {
-    // Even a "low" score should be in a reasonable positive range.
-    let eval = make_evaluation("test", 0.30, 5000, 0.40);
-    let score = eval.composite_score();
-    assert!(
-        score > 0.0 || score < 0.0, // Just ensure it doesn't NaN/inf
-        "Score should be a valid float, got {}",
-        score
-    );
-    assert!(
-        !score.is_nan() && !score.is_infinite(),
-        "Score should not be NaN or infinite"
     );
 }
 

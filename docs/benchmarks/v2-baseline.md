@@ -26,6 +26,8 @@ Generated: 2026-07-30T02:02:13+08:00
 
 ## ParallelBranchPredictor
 
+> **Removed (2026-08-26):** ParallelBranchPredictor was removed as dead code — never called by the production cognitive loop. Section kept for historical baseline context. See ADR 005 amendment.
+
 | Bench     | Mean     | StdDev (range)      |
 |-----------|----------|---------------------|
 | new_4_4   | 2.666 ns | 2.614 – 2.716 ns    |

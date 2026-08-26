@@ -82,15 +82,15 @@ cargo bench -p sisyphus-core
 
 ### 并发任务调优
 
-认知循环支持可配置的并发，用于并行分支评估。
-
 ```toml
 # config.toml
 [cognitive_loop]
-max_concurrent_tasks = 4      # ParallelBranchPredictor 中的并行分支
 max_iterations = 30           # 认知迭代次数上限
 convergence_threshold = 0.15  # 偏差低于此值时停止
 ```
+
+注：`ParallelBranchPredictor` 已移除（从未接入生产循环，见 ADR 005 修订）。
+DAG 节点级并发由 `[executor] max_concurrent_tasks` 控制。
 
 调优指南：
 
