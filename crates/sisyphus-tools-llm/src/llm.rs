@@ -18,6 +18,10 @@ pub trait EmbeddingClient: Send + Sync {
     async fn embed(&self, text: &str) -> Result<Vec<f32>, sisyphus_types::TypesError>;
 }
 
+/// 测试/开发用伪嵌入客户端：由文本哈希生成正弦伪随机向量。
+///
+/// 注意：向量之间无语义相似性可言（仅同文本确定性相同），
+/// 不得用于生产语义检索；生产环境应配置真实嵌入提供方。
 pub struct DummyEmbeddingClient;
 
 #[async_trait::async_trait]

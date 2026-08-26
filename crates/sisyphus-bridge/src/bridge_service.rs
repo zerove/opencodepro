@@ -200,6 +200,14 @@ impl MySisyphusBridge {
                     })?,
                 )
             } else {
+                // 评审 B2/P2-7：禁止静默降级。伪嵌入向量（文本哈希正弦）
+                // 无语义区分度，此配置下语义经验检索退化为噪声，
+                // 必须在启动时显式告警。
+                tracing::warn!(
+                    provider = %embedding_provider,
+                    "Embedding provider is not \"openai\"; using DummyEmbeddingClient                      (hash-based pseudo-vectors, NO semantic quality). Semantic experience \
+                     recall is degraded. Configure [llm.embedding] provider=\"openai\" for real embeddings."
+                );
                 Arc::new(sisyphus_tools_llm::DummyEmbeddingClient)
             }
         };

@@ -58,7 +58,7 @@
 6. sisyphus-api 合并入 bridge 或转为纯 OpenAPI 类型定义 crate
 
 ### P2 认知能力提升（1-2 月）
-7. 真实嵌入接入：配置缺失时显式降级 Jaccard 并告警打点，禁止静默 Dummy；补齐召回率基准
+7. 真实嵌入接入：配置缺失时显式降级并告警（✅ 第一步已实施：非 openai provider 时启动日志显式 warn 说明伪嵌入无语义质量与检索退化，DummyEmbeddingClient 补充警示文档；Jaccard 回退实现与召回率基准待实施）
 8. LLM 调用分级治理：critique 阶段超时可配置已落地（30s 默认 + 禁用语义，见 B3）；reflect/evolve 分级、指数退避与 token 预算联动仍待实施
 9. 偏差真值采集：复用 Executor 已有 fuel/duration 数据回填 CogMap 与 reflect 阶段
 
