@@ -2,10 +2,51 @@ use crate::store::MfsStore;
 use anyhow::Result;
 use sisyphus_types::TypesError;
 use sisyphus_types::experience::{ExperienceBank, ExperienceQuery, ExperienceTuple};
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use async_trait::async_trait;
 use sisyphus_tools_llm::EmbeddingClient;
+
+/// 词元集合的 Jaccard 相似度：|A∩B| / |A∪B|。
+///
+/// 伪嵌入降级路径（P2-7）的词法打分基元：小写化后按非
+/// 字母数字切分。空集合对空集合定义为 0.0（无信息）。
+fn jaccard_similarity(a: &str, b: &str) -> f64 {
+    let tokenize = |s: &str| -> HashSet<String> {
+        s.to_lowercase()
+            .split(|c: char| !c.is_alphanumeric())
+            .filter(|t| !t.is_empty())
+            .map(String::from)
+            .collect()
+    };
+    let sa = tokenize(a);
+    let sb = tokenize(b);
+    if sa.is_empty() && sb.is_empty() {
+        return 0.0;
+    }
+    let inter = sa.intersection(&sb).count();
+    let union = sa.len() + sb.len() - inter;
+    if union == 0 {
+        return 0.0;
+    }
+    inter as f64 / union as f64
+}
+
+/// 嵌入检索不可用时的回退原因。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LexicalFallbackReason {
+    /// 嵌入调用失败（网络/配额等瞬时错误）。
+    EmbedFailed,
+}
+
+impl std::fmt::Display for LexicalFallbackReason {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::EmbedFailed => write!(f, "embedding call failed"),
+        }
+    }
+}
 
 pub struct VectorExperienceBank {
     store: Arc<MfsStore>,
@@ -155,18 +196,25 @@ impl ExperienceBank for VectorExperienceBank {
     ) -> Result<Vec<ExperienceTuple>, TypesError> {
         let mut all_candidates = Vec::new();
 
-        // 1. Text-based Retrieval
-        let text_query_vec = self
-            .embedding_client
-            .embed(&query.query_text)
-            .await
-            .map_err(|e| TypesError::ExperienceError(format!("query embedding failed: {e}")))?;
-        let text_top_k = query.limit * 5;
-        let text_results = self
-            .vector_store
-            .search_similar(&text_query_vec, text_top_k)
-            .await
-            .map_err(|e| TypesError::ExperienceError(format!("text search failed: {e}")))?;
+        // 1. Text-based Retrieval（嵌入调用失败时词法回退，P2-7）
+        let text_results = match self.embedding_client.embed(&query.query_text).await {
+            Ok(text_query_vec) => {
+                let text_top_k = query.limit * 5;
+                self.vector_store
+                    .search_similar(&text_query_vec, text_top_k)
+                    .await
+                    .map_err(|e| TypesError::ExperienceError(format!("text search failed: {e}")))?
+            }
+            Err(e) => {
+                tracing::warn!(
+                    error = %e,
+                    "Embedding failed; falling back to lexical (Jaccard) retrieval.                      Results are token-overlap based, not semantic."
+                );
+                return self
+                    .lexical_fallback(&query, LexicalFallbackReason::EmbedFailed)
+                    .await;
+            }
+        };
 
         for sv in text_results {
             all_candidates.push(sv);
@@ -234,5 +282,99 @@ impl ExperienceBank for VectorExperienceBank {
         }
 
         Ok(experiences.into_iter().take(query.limit).collect())
+    }
+}
+
+impl VectorExperienceBank {
+    /// 词法回退检索：对最近经验按查询文本的 Jaccard 重合度打分。
+    ///
+    /// 伪嵌入场景下语义向量本就无意义（哈希正弦伪向量），
+    /// 词法重合度是更诚实的相似度信号。扫描上限防止全表膨胀。
+    const LEXICAL_SCAN_LIMIT: usize = 500;
+
+    async fn lexical_fallback(
+        &self,
+        query: &ExperienceQuery,
+        reason: LexicalFallbackReason,
+    ) -> Result<Vec<ExperienceTuple>, TypesError> {
+        tracing::info!(reason = %reason, scan_limit = Self::LEXICAL_SCAN_LIMIT, "Lexical fallback retrieval engaged");
+
+        let candidates = self
+            .store
+            .list_recent_experiences(Self::LEXICAL_SCAN_LIMIT)
+            .await
+            .map_err(|e| {
+                TypesError::ExperienceError(format!("lexical fallback scan failed: {e}"))
+            })?;
+
+        let mut scored: Vec<(f64, ExperienceTuple)> = candidates
+            .into_iter()
+            .map(|exp| {
+                let s = jaccard_similarity(&query.query_text, &exp.context_text);
+                (s, exp)
+            })
+            .filter(|(score, _)| *score > 0.0)
+            .collect();
+
+        scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+
+        let mut results = Vec::new();
+        for (_score, exp) in scored {
+            // 项目与动作过滤与主路径语义一致
+            #[allow(clippy::collapsible_if)]
+            if let Some(ref pid) = query.project_id {
+                if exp.project_id.as_ref() != Some(pid) && exp.project_id.is_some() {
+                    continue;
+                }
+            }
+            #[allow(clippy::collapsible_if)]
+            if let Some(ref action_id) = query.action_id {
+                if exp.action_id != *action_id {
+                    continue;
+                }
+            }
+            // 排序已完成；ExperienceTuple 无分数字段，保持接口不变
+            results.push(exp);
+            if results.len() >= query.limit {
+                break;
+            }
+        }
+
+        Ok(results)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_jaccard_identical() {
+        assert!(
+            (jaccard_similarity("deploy the service", "deploy the service") - 1.0).abs() < 1e-9
+        );
+    }
+
+    #[test]
+    fn test_jaccard_disjoint() {
+        assert_eq!(jaccard_similarity("alpha beta", "gamma delta"), 0.0);
+    }
+
+    #[test]
+    fn test_jaccard_partial_overlap() {
+        // {deploy, service} ∩ {deploy, retry} = {deploy}; union = 3
+        let s = jaccard_similarity("Deploy Service", "deploy retry");
+        assert!((s - 1.0 / 3.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_jaccard_empty_inputs() {
+        assert_eq!(jaccard_similarity("", ""), 0.0);
+        assert_eq!(jaccard_similarity("", "words here"), 0.0);
+    }
+
+    #[test]
+    fn test_jaccard_case_and_punct_insensitive() {
+        assert!((jaccard_similarity("Hello, World!", "hello world") - 1.0).abs() < 1e-9);
     }
 }

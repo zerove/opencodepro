@@ -544,6 +544,56 @@ impl MfsStore {
         }
     }
 
+    /// 列举最近 N 条经验（时间倒序），用于词法回退检索。
+    ///
+    /// Jaccard 回退路径（P2-7）：伪嵌入或嵌入调用失败时，
+    /// 语义向量检索不可用，改用对原文的词法重合度打分。
+    pub async fn list_recent_experiences(
+        &self,
+        limit: usize,
+    ) -> Result<Vec<sisyphus_types::experience::ExperienceTuple>> {
+        let rows = sqlx::query_as::<
+            _,
+            (
+                String,
+                String,
+                Option<String>,
+                Option<String>,
+                bool,
+                f64,
+                i64,
+                i64,
+            ),
+        >(
+            "SELECT context_text, context_hash, action_id, project_id, outcome_success, deviation_score, cost, timestamp FROM experiences ORDER BY timestamp DESC LIMIT ?",
+        )
+        .bind(limit as i64)
+        .fetch_all(&self.l2)
+        .await
+        .context("Failed to list recent experiences")?;
+
+        Ok(rows
+            .into_iter()
+            .map(
+                |(ctx_text, ctx_hash, action_id, proj_id, success, dev, cost, ts)| {
+                    sisyphus_types::experience::ExperienceTuple {
+                        context_text: ctx_text,
+                        context_hash: ctx_hash,
+                        action_id: action_id.unwrap_or_else(|| "unknown".to_string()),
+                        project_id: proj_id,
+                        outcome_success: success,
+                        deviation_score: dev,
+                        cost: cost as u64,
+                        timestamp: ts as u64,
+                        embedding: None,
+                        visual_embedding: None,
+                        insight: None,
+                    }
+                },
+            )
+            .collect())
+    }
+
     pub async fn query_experiences(
         &self,
         ids: &[String],
