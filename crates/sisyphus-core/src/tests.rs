@@ -759,7 +759,7 @@ async fn test_strategic_manager_evolution_verification() {
         let config = CognitiveLoopConfig {
             max_iterations: 1,
             convergence_threshold: 0.01,
-            critique_timeout_secs: 30,
+            llm_stage_timeout_secs: 30,
             adaptive_depth: sisyphus_types::config::AdaptiveDepthConfig::default(),
         };
 

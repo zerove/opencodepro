@@ -126,7 +126,7 @@ sample_rate = 1.0
 |----------|-----------|------|---------|
 | `SISYPHUS_CONFIG` | 配置文件路径 | string | `config.toml` |
 | `SISYPHUS_COGNITIVE_LOOP_MAX_ITERATIONS` | `cognitive_loop.max_iterations` | u32 | `10` |
-| `SISYPHUS_COGNITIVE_LOOP_CRITIQUE_TIMEOUT_SECS` | `cognitive_loop.critique_timeout_secs` | u64 | `30` |
+| `SISYPHUS_COGNITIVE_LOOP_LLM_STAGE_TIMEOUT_SECS` | `cognitive_loop.llm_stage_timeout_secs` | u64 | `30` |
 | `SISYPHUS_COGNITIVE_LOOP_CONVERGENCE_THRESHOLD` | `cognitive_loop.convergence_threshold` | f64 | `0.15` |
 | `SISYPHUS_COGNITIVE_LOOP_ADAPTIVE_DEPTH_INITIAL_BUDGET` | `cognitive_loop.adaptive_depth.initial_budget` | f64 | `2.0` |
 | `SISYPHUS_COGNITIVE_LOOP_ADAPTIVE_DEPTH_DECAY` | `cognitive_loop.adaptive_depth.decay` | f64 | `0.3` |

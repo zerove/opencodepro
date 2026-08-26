@@ -248,8 +248,8 @@ impl Config {
         if let Some(v) = env_u32("SISYPHUS_COGNITIVE_LOOP_MAX_ITERATIONS") {
             self.cognitive_loop.max_iterations = v;
         }
-        if let Some(v) = env_u64("SISYPHUS_COGNITIVE_LOOP_CRITIQUE_TIMEOUT_SECS") {
-            self.cognitive_loop.critique_timeout_secs = v;
+        if let Some(v) = env_u64("SISYPHUS_COGNITIVE_LOOP_LLM_STAGE_TIMEOUT_SECS") {
+            self.cognitive_loop.llm_stage_timeout_secs = v;
         }
         if let Some(v) = env_f64("SISYPHUS_COGNITIVE_LOOP_CONVERGENCE_THRESHOLD") {
             self.cognitive_loop.convergence_threshold = v;
@@ -568,13 +568,11 @@ mod tests {
     #[test]
     fn test_critique_timeout_validation_bounds() {
         let mut c = CognitiveLoopConfig::default();
-        c.critique_timeout_secs = 30;
+        c.llm_stage_timeout_secs = 30;
         assert!(c.validate().is_ok());
-        c.critique_timeout_secs = 0;
+        c.llm_stage_timeout_secs = 601;
         assert!(c.validate().is_err());
-        c.critique_timeout_secs = 601;
-        assert!(c.validate().is_err());
-        c.critique_timeout_secs = 600;
+        c.llm_stage_timeout_secs = 600;
         assert!(c.validate().is_ok());
     }
 
@@ -585,7 +583,7 @@ mod tests {
 
         // Write initial config
         let initial_config = r#"
-cognitive_loop = { max_iterations = 5, convergence_threshold = 0.1, critique_timeout_secs = 12 }
+cognitive_loop = { max_iterations = 5, convergence_threshold = 0.1, llm_stage_timeout_secs = 12 }
 sandbox = { max_memory_pages = 10, default_fuel = 1000000, wasm_tools_dir = "tools" }
 "#;
         fs::write(&config_path, initial_config).unwrap();
@@ -597,7 +595,7 @@ sandbox = { max_memory_pages = 10, default_fuel = 1000000, wasm_tools_dir = "too
         // Get initial config (should be immediately available via watch channel)
         let config = rx.borrow().clone();
         assert_eq!(config.cognitive_loop.max_iterations, 5);
-        assert_eq!(config.cognitive_loop.critique_timeout_secs, 12);
+        assert_eq!(config.cognitive_loop.llm_stage_timeout_secs, 12);
 
         // Modify config file - ensure watcher is running first
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;

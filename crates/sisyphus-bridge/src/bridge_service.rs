@@ -437,20 +437,30 @@ impl MySisyphusBridge {
 
         let tool_executor: Arc<dyn ToolExecutor> = router.clone();
         let standard_reflector = Arc::new(sisyphus_intel::StandardReflector);
-        let llm_reflector = Arc::new(sisyphus_intel::LlmReflector::new(dyn_llm_client.clone()));
+        // B3：循环内各 LLM 阶段统一使用 cognitive_loop.llm_stage_timeout_secs。
+        let stage_timeout =
+            std::time::Duration::from_secs(config_snapshot.cognitive_loop.llm_stage_timeout_secs);
+        let llm_reflector = Arc::new(sisyphus_intel::LlmReflector::with_timeout(
+            dyn_llm_client.clone(),
+            stage_timeout,
+        ));
         let reflector = Arc::new(sisyphus_intel::HybridReflector::new(
             standard_reflector,
             llm_reflector,
         ));
         let topo_evolver = Arc::new(sisyphus_intel::TopologicalSOPEvolver::new());
-        let evolver = Arc::new(sisyphus_intel::LlmEvolver::new(
+        let evolver = Arc::new(sisyphus_intel::LlmEvolver::with_timeout(
             dyn_llm_client.clone(),
             topo_evolver,
             tool_executor.clone(),
+            stage_timeout,
         ));
-        let llm_logical_simulator = Arc::new(sisyphus_intel::simulation::LlmLogicalSimulator::new(
-            dyn_llm_client.clone(),
-        ));
+        let llm_logical_simulator = Arc::new(
+            sisyphus_intel::simulation::LlmLogicalSimulator::with_timeout(
+                dyn_llm_client.clone(),
+                stage_timeout,
+            ),
+        );
         let intel = Arc::new(sisyphus_intel::SisyphusIntel::new(
             simulator.clone(),
             llm_logical_simulator,

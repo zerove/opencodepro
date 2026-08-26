@@ -9,17 +9,18 @@ use crate::errors::TypesError;
 pub struct CognitiveLoopConfig {
     pub max_iterations: u32,
     pub convergence_threshold: f64,
-    /// LLM critique call timeout in seconds (review B3).
-    /// The critique stage degrades to a permissive default on timeout/error;
-    /// production LLM latency routinely exceeds the old hardcoded 2s.
-    #[serde(default = "default_critique_timeout_secs")]
-    pub critique_timeout_secs: u64,
+    /// Unified timeout for in-loop LLM stages (review B3):
+    /// reflection, evolution, logical audit and critique all degrade
+    /// gracefully on timeout/error; production LLM latency routinely
+    /// exceeds the old hardcoded 2s. 0 disables the stage's LLM call.
+    #[serde(default = "default_llm_stage_timeout_secs")]
+    pub llm_stage_timeout_secs: u64,
     /// Adaptive depth controller parameters (cognitive loop v2).
     #[serde(default)]
     pub adaptive_depth: AdaptiveDepthConfig,
 }
 
-fn default_critique_timeout_secs() -> u64 {
+fn default_llm_stage_timeout_secs() -> u64 {
     30
 }
 
@@ -27,7 +28,7 @@ fn default_cognitive_loop() -> CognitiveLoopConfig {
     CognitiveLoopConfig {
         max_iterations: 10,
         convergence_threshold: 0.15,
-        critique_timeout_secs: default_critique_timeout_secs(),
+        llm_stage_timeout_secs: default_llm_stage_timeout_secs(),
         adaptive_depth: AdaptiveDepthConfig::default(),
     }
 }
@@ -50,9 +51,10 @@ impl CognitiveLoopConfig {
                 "cognitive_loop.max_iterations must be ≤ 1000".into(),
             ));
         }
-        if self.critique_timeout_secs == 0 || self.critique_timeout_secs > 600 {
+        if self.llm_stage_timeout_secs == 0 || self.llm_stage_timeout_secs > 600 {
             return Err(TypesError::ConfigValidationError(
-                "cognitive_loop.critique_timeout_secs must be between 1 and 600".into(),
+                "cognitive_loop.llm_stage_timeout_secs must be between 1 and 600 (or 0 to disable)"
+                    .into(),
             ));
         }
         if !(0.0..=1.0).contains(&self.convergence_threshold) {

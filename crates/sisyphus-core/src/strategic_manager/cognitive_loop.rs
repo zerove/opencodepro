@@ -912,12 +912,12 @@ impl StrategicManager {
             });
         }
 
-        // 批判（Critique）。先读出超时值并立刻释放读锁，
+        // 批判（Critique）。先读出统一的 LLM 阶段超时并立刻释放读锁，
         // 避免 parking_lot 守卫跨越 await 导致 future 不满足 Send。
-        let critique_timeout_secs = self.config.read().critique_timeout_secs;
+        let llm_stage_timeout_secs = self.config.read().llm_stage_timeout_secs;
         let critique = self
             .intelligence_manager
-            .critique_reflection(&reflection, prediction, critique_timeout_secs)
+            .critique_reflection(&reflection, prediction, llm_stage_timeout_secs)
             .await
             .map_err(|e| CoreError::Internal(e.to_string()))?;
         reflection

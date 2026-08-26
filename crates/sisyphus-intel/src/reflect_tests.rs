@@ -179,3 +179,54 @@ fn test_standard_evolver_with_adaptive_pricer() {
     let evolver = StandardEvolver::with_fuel_pricer(Arc::new(AdaptiveFuelPricer::new()));
     assert!(std::ptr::addr_of!(evolver.fuel_pricer) as usize != 0);
 }
+
+// ---------------------------------------------------------------------------
+// B3：LLM 阶段超时注入（评审建议 #8）
+// ---------------------------------------------------------------------------
+
+struct SlowLlm {
+    delay: std::time::Duration,
+}
+
+#[async_trait::async_trait]
+impl sisyphus_tools_llm::metis::LlmClient for SlowLlm {
+    async fn chat(&self, _: &str, _: &str, _: bool) -> Result<String, sisyphus_types::TypesError> {
+        tokio::time::sleep(self.delay).await;
+        Ok("{}".into())
+    }
+    async fn generate(&self, _: &str) -> Result<String, sisyphus_types::TypesError> {
+        tokio::time::sleep(self.delay).await;
+        Ok(r#"{"deviation": 0.3, "suggestions": [], "analysis": "slow"}"#.into())
+    }
+    fn get_params_for(&self, _: &str) -> (String, String, String) {
+        ("m".into(), "http://localhost".into(), "k".into())
+    }
+    fn breaker(&self) -> sisyphus_tools_llm::circuit_breaker::CircuitBreaker {
+        sisyphus_tools_llm::circuit_breaker::CircuitBreaker::default()
+    }
+}
+
+fn reflect_fixture() -> SimulationResult {
+    make_pred(10)
+}
+
+#[tokio::test]
+async fn test_llm_reflector_respects_injected_timeout() {
+    // LLM 延迟 5s，注入超时 1s：应在约 1s 处切断并降级为标准报告，
+    // 而非等待完整 LLM 延迟。
+    let reflector = LlmReflector::with_timeout(
+        Arc::new(SlowLlm {
+            delay: std::time::Duration::from_secs(5),
+        }),
+        std::time::Duration::from_secs(1),
+    );
+    let start = std::time::Instant::now();
+    let report = reflector
+        .reflect("trace", &reflect_fixture(), None)
+        .await
+        .unwrap();
+    assert!(start.elapsed() < std::time::Duration::from_secs(4));
+    // 降级报告的特征：空改进列表 + 标准轨迹解析
+    assert!(report.suggested_improvements.is_empty());
+    assert_eq!(report.deviation_score, 0.5);
+}

@@ -136,10 +136,10 @@ http_address = "http://[::1]:8080"
 # 类型: u32 | 默认: 10
 max_iterations = 10
 
-# LLM 批判（critique）调用超时秒数；0 表示禁用批判阶段
-# 环境变量: SISYPHUS_COGNITIVE_LOOP_CRITIQUE_TIMEOUT_SECS
+# 循环内 LLM 阶段统一超时秒数（反思/演进/逻辑审计/批判）；0 表示禁用对应阶段的 LLM 调用
+# 环境变量: SISYPHUS_COGNITIVE_LOOP_LLM_STAGE_TIMEOUT_SECS
 # 类型: u64 | 默认: 30
-# critique_timeout_secs = 30
+# llm_stage_timeout_secs = 30
 
 # 收敛阈值 — 偏差低于此值时提前停止循环
 # 范围: 0.0 ~ 1.0（越低越严格）

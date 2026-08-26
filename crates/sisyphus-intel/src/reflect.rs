@@ -8,12 +8,6 @@ use sisyphus_types::SOPGraph;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-/// LlmReflector 与 LlmEvolver 中单次 LLM 调用的最长等待时间。
-/// 保持较短，使不可达的 LLM 将反思/演进降级，
-/// 而不是让认知循环卡满整个 HTTP 客户端
-/// 超时（每次调用最多 60 秒）。
-const LLM_AUDIT_TIMEOUT: Duration = Duration::from_secs(2);
-
 // ---------------------------------------------------------------------------
 // 反思类型
 // ---------------------------------------------------------------------------
@@ -244,11 +238,22 @@ impl ErrorCategory {
 
 pub struct LlmReflector {
     pub llm_client: Arc<dyn LlmClient>,
+    /// 反思阶段 LLM 调用的超时（评审 B3：原硬编码 2s）。
+    pub timeout: Duration,
 }
 
 impl LlmReflector {
+    /// 测试友好构造：使用默认的 2 秒超时。
     pub fn new(llm_client: Arc<dyn LlmClient>) -> Self {
-        Self { llm_client }
+        Self::with_timeout(llm_client, Duration::from_secs(2))
+    }
+
+    /// 生产构造：显式传入统一配置的阶段超时。
+    pub fn with_timeout(llm_client: Arc<dyn LlmClient>, timeout: Duration) -> Self {
+        Self {
+            llm_client,
+            timeout,
+        }
     }
 }
 
@@ -299,37 +304,33 @@ impl Reflector for LlmReflector {
             exp_context, trace, predicted.predicted_outcome
         );
 
-        let response = match tokio::time::timeout(
-            LLM_AUDIT_TIMEOUT,
-            self.llm_client.generate(&prompt),
-        )
-        .await
-        {
-            Ok(Ok(resp)) => resp,
-            Ok(Err(e)) => {
-                tracing::warn!("LLM reflection failed, degrading to standard report: {e}");
-                return Ok(ReflectionReport {
-                    original_sop_id: "current_sop".into(),
-                    deviation_score: 0.5,
-                    suggested_improvements: Vec::new(),
-                    evolved_sop_structure: None,
-                    records: StandardReflector::parse_trace(trace),
-                });
-            }
-            Err(_) => {
-                tracing::warn!(
-                    timeout_ms = LLM_AUDIT_TIMEOUT.as_millis(),
-                    "LLM reflection timed out, degrading to standard report"
-                );
-                return Ok(ReflectionReport {
-                    original_sop_id: "current_sop".into(),
-                    deviation_score: 0.5,
-                    suggested_improvements: Vec::new(),
-                    evolved_sop_structure: None,
-                    records: StandardReflector::parse_trace(trace),
-                });
-            }
-        };
+        let response =
+            match tokio::time::timeout(self.timeout, self.llm_client.generate(&prompt)).await {
+                Ok(Ok(resp)) => resp,
+                Ok(Err(e)) => {
+                    tracing::warn!("LLM reflection failed, degrading to standard report: {e}");
+                    return Ok(ReflectionReport {
+                        original_sop_id: "current_sop".into(),
+                        deviation_score: 0.5,
+                        suggested_improvements: Vec::new(),
+                        evolved_sop_structure: None,
+                        records: StandardReflector::parse_trace(trace),
+                    });
+                }
+                Err(_) => {
+                    tracing::warn!(
+                        timeout_ms = self.timeout.as_millis(),
+                        "LLM reflection timed out, degrading to standard report"
+                    );
+                    return Ok(ReflectionReport {
+                        original_sop_id: "current_sop".into(),
+                        deviation_score: 0.5,
+                        suggested_improvements: Vec::new(),
+                        evolved_sop_structure: None,
+                        records: StandardReflector::parse_trace(trace),
+                    });
+                }
+            };
 
         let parsed: serde_json::Value = serde_json::from_str(&response)
             .map_err(|e| format!("Failed to parse LLM reflection JSON: {e}"))?;
@@ -432,18 +433,37 @@ pub struct LlmEvolver {
     pub llm_client: Arc<dyn LlmClient>,
     pub topo_evolver: Arc<crate::topological_evolver::TopologicalSOPEvolver>,
     pub tool_executor: Arc<dyn sisyphus_types::ToolExecutor>,
+    /// 演进阶段 LLM 调用的超时（评审 B3：原硬编码 2s）。
+    pub timeout: Duration,
 }
 
 impl LlmEvolver {
+    /// 测试友好构造：使用默认的 2 秒超时。
     pub fn new(
         llm_client: Arc<dyn LlmClient>,
         topo_evolver: Arc<crate::topological_evolver::TopologicalSOPEvolver>,
         tool_executor: Arc<dyn sisyphus_types::ToolExecutor>,
     ) -> Self {
+        Self::with_timeout(
+            llm_client,
+            topo_evolver,
+            tool_executor,
+            Duration::from_secs(2),
+        )
+    }
+
+    /// 生产构造：显式传入统一配置的阶段超时。
+    pub fn with_timeout(
+        llm_client: Arc<dyn LlmClient>,
+        topo_evolver: Arc<crate::topological_evolver::TopologicalSOPEvolver>,
+        tool_executor: Arc<dyn sisyphus_types::ToolExecutor>,
+        timeout: Duration,
+    ) -> Self {
         Self {
             llm_client,
             topo_evolver,
             tool_executor,
+            timeout,
         }
     }
 }
@@ -476,30 +496,26 @@ impl SOPEvolver for LlmEvolver {
             insights.unwrap_or("None")
         );
 
-        let response = match tokio::time::timeout(
-            LLM_AUDIT_TIMEOUT,
-            self.llm_client.generate(&prompt),
-        )
-        .await
-        {
-            Ok(Ok(resp)) => resp,
-            Ok(Err(e)) => {
-                tracing::warn!("LLM evolution failed: {e}");
-                return Err(sisyphus_types::IntelError::LlmError(format!(
-                    "LLM evolution failed: {e}"
-                )));
-            }
-            Err(_) => {
-                tracing::warn!(
-                    timeout_ms = LLM_AUDIT_TIMEOUT.as_millis(),
-                    "LLM evolution timed out"
-                );
-                return Err(sisyphus_types::IntelError::LlmError(format!(
-                    "LLM evolution timed out after {} ms",
-                    LLM_AUDIT_TIMEOUT.as_millis()
-                )));
-            }
-        };
+        let response =
+            match tokio::time::timeout(self.timeout, self.llm_client.generate(&prompt)).await {
+                Ok(Ok(resp)) => resp,
+                Ok(Err(e)) => {
+                    tracing::warn!("LLM evolution failed: {e}");
+                    return Err(sisyphus_types::IntelError::LlmError(format!(
+                        "LLM evolution failed: {e}"
+                    )));
+                }
+                Err(_) => {
+                    tracing::warn!(
+                        timeout_ms = self.timeout.as_millis(),
+                        "LLM evolution timed out"
+                    );
+                    return Err(sisyphus_types::IntelError::LlmError(format!(
+                        "LLM evolution timed out after {} ms",
+                        self.timeout.as_millis()
+                    )));
+                }
+            };
 
         let ops: Vec<sisyphus_types::EvolutionOp> =
             serde_json::from_str(&response).map_err(|e| {

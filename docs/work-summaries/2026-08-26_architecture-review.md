@@ -29,7 +29,7 @@
 
 - **B1. 伪嵌入客户端**：`DummyEmbeddingClient` 用文本哈希正弦生成伪向量，无语义区分度。装配逻辑 bridge_service.rs:188 仅当 `embedding_provider == "openai"` 才用真嵌入，其余一切取值（含默认）静默降级 Dummy；另 :480 处无条件硬编码。EVOLUTION_PLAN 1.2 标 ✅ 但验收标准（召回率对比）无证据。
 - **B2. 演进信号为字符串匹配**：reflect.rs 中 `suggested_improvements.iter().any(|s| s.contains("retry logic"))` 等，反思→演进闭环建立在 LLM 英文子串匹配上。
-- **B3. LLM 审计超时 2 秒**（✅ 已部分实施）：`critique_reflection` 超时改为可配置 `cognitive_loop.critique_timeout_secs`（默认 30s，0 = 禁用批判阶段），bridge 运行时重配自动生效；调用点先取值再释放读锁避免守卫跨 await。回归测试覆盖：慢 LLM 按配置切断并降级、预算内透传结果、零超时跳过调用。重试退避仍未实施。
+- **B3. LLM 审计超时 2 秒**（✅ 已实施统一旋钮）：全系统 5 处硬编码 2s（critique_reflection、LlmReflector×2、LlmEvolver、LlmLogicalSimulator）统一收敛为单一配置 `cognitive_loop.llm_stage_timeout_secs`（默认 30s；0 禁用对应阶段 LLM 调用）；三个 intel 组件经构造函数注入（`with_timeout`），旧 `new` 签名保留 2s 默认供测试零破坏。bridge 生产构造点接线该配置。micro_reflector 与 gap_analyzer 的 2s 为每节点热路径的显式设计（有注释论证），保持不变。回归测试：批判与反思阶段的慢 LLM 切断降级、预算内透传、禁用语义。重试退避仍未实施。
 - **B4. 可观测数据失真**：CogMap 节点偏差恒 0（源码自认注释），节点状态靠 `contains("Error")` 嗅探。
 
 ### C. 工程质量层（中）

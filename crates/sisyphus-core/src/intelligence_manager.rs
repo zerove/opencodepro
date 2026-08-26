@@ -154,7 +154,8 @@ impl IntelligenceManager {
         &self,
         report: &ReflectionReport,
         prediction: &SimulationResult,
-        // B3：超时秒数，来自 cognitive_loop 配置；0 表示禁用批判阶段。
+        // B3：统一的循环内 LLM 阶段超时（秒），来自 cognitive_loop 配置；
+        // 0 表示禁用该阶段的 LLM 调用。
         timeout_secs: u64,
     ) -> Result<sisyphus_types::CritiqueResult, sisyphus_types::IntelError> {
         let prompt = format!(

@@ -7,14 +7,7 @@ use sisyphus_metrics::record_simulation;
 use sisyphus_types::{ExecutionContext, SOPGraph};
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
-
-/// LlmLogicalSimulator 中单次 LLM 审计调用的最长等待时间。
-///
-/// 保持较短，使不可达的 LLM 将逻辑审计降级为
-/// 启发式通过，而不是阻碍认知循环直到完整的 HTTP
-/// 客户端超时（每次调用最多 60 秒）。
-const LLM_AUDIT_TIMEOUT: Duration = Duration::from_secs(2);
+use std::time::Instant;
 
 // ---------------------------------------------------------------------------
 // 仿真类型
@@ -95,13 +88,25 @@ pub trait Simulator: Send + Sync {
 #[derive(Clone)]
 pub struct LlmLogicalSimulator {
     pub llm_client: Arc<dyn sisyphus_tools_llm::LlmClient>,
+    /// 逻辑审计阶段 LLM 调用的超时（评审 B3：原硬编码 2s）。
+    pub timeout: std::time::Duration,
     pub confidence_threshold: f64,
 }
 
 impl LlmLogicalSimulator {
+    /// 测试友好构造：使用默认的 2 秒超时。
     pub fn new(llm_client: Arc<dyn sisyphus_tools_llm::LlmClient>) -> Self {
+        Self::with_timeout(llm_client, std::time::Duration::from_secs(2))
+    }
+
+    /// 生产构造：显式传入统一配置的阶段超时。
+    pub fn with_timeout(
+        llm_client: Arc<dyn sisyphus_tools_llm::LlmClient>,
+        timeout: std::time::Duration,
+    ) -> Self {
         Self {
             llm_client,
+            timeout,
             confidence_threshold: 0.7,
         }
     }
@@ -163,7 +168,7 @@ impl LogicalSimulator for LlmLogicalSimulator {
 
             let response = if llm_available {
                 match tokio::time::timeout(
-                    LLM_AUDIT_TIMEOUT,
+                    self.timeout,
                     self.llm_client.chat(
                         "You are a logical auditor for a cognitive engine. Analyze the provided SOP node and predict its output while checking for logical flaws.",
                         &prompt,
@@ -181,7 +186,7 @@ impl LogicalSimulator for LlmLogicalSimulator {
                     Err(_) => {
                         tracing::warn!(
                             node = %node_name,
-                            timeout_ms = LLM_AUDIT_TIMEOUT.as_millis(),
+                            timeout_ms = self.timeout.as_millis(),
                             "LLM logical audit timed out, degrading to heuristic"
                         );
                         llm_available = false;
