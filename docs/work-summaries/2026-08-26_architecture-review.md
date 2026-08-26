@@ -48,7 +48,7 @@
 
 ### P0 正确性修复（1-2 周）
 1. 循环参数局部化传参，禁止写回共享 `RwLock<CognitiveLoopConfig>`；AdaptiveDepthController 改 per-run 实例或进入循环前 reset()（✅ 已实施，见 265b958 + dbc2f7a）
-1b. 接线认知循环配置：`SisyphusKernel::new` 增加 config 参数或在 bridge 装配处调用 `with_cognitive_loop_config(shared_config.cognitive_loop.clone())`；`AdaptiveDepthController` 从 `AdaptiveDepthConfig` 构造而非 default()。否则配置文件中的 6 个认知循环参数继续全部失效
+1b. 接线认知循环配置（✅ 已实施，e3f56bb）：bridge 在 kernel 构造后调用新增的 `StrategicManager::apply_cognitive_loop_config(&self)`；控制器两个可调字段（target_confidence/min_improvement）改为 RwLock 内部可变以支持共享 Arc 下的运行时重配。映射关系：`convergence_threshold → target_confidence = 1 - threshold`（clamp 到 [0.5, 1.0]），`min_improvement` 直传。注意动态深度计算仍会在运行时覆盖基线 max_iterations/convergence_threshold（这是设计行为——基线现作为日志对比与未来策略输入保留）
 2. 错误类型统一（维持）：simulation.rs 的 String 错误收敛到 IntelError；unwrap 清理降为低优先级（真实生产路径仅约 10 处，见 C 层勘误）
 3. NodeOutput 增加 status 字段，消灭字符串嗅探
 
