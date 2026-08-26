@@ -60,7 +60,7 @@
 ### P2 认知能力提升（1-2 月）
 7. 真实嵌入接入：配置缺失时显式降级并告警（✅ 第一步已实施：非 openai provider 时启动日志显式 warn 说明伪嵌入无语义质量与检索退化，DummyEmbeddingClient 补充警示文档；Jaccard 回退实现与召回率基准待实施）
 8. LLM 调用分级治理：critique 阶段超时可配置已落地（30s 默认 + 禁用语义，见 B3）。**勘误（2026-08-26 复核）**：重试退避并非"未实施"——`provider/registry.rs` 的 `chat_with_fallback` 早已具备指数退避（base 1s × 2^attempt）+ ±25% 抖动 + Transient/Permanent/Auth 错误分级，且为生产主路径（`DynamicLlmClient::chat` → registry 回退链），自 2026-07-02 crate 拆分起即存在；此前评审结论有误。剩余待实施：reflect/evolve 分级超时与 token 预算联动
-9. 偏差真值采集（✅ 第一步已实施：`build_cog_map` 的节点偏差不再恒为 0，改为从执行轨迹回填运行时监督器逐节点记录的 `deviation_score`（取该节点最近一次记录）；fuel/duration 维度与 reflect 阶段回填待后续）
+9. 偏差真值采集（✅ 第一步已实施：`build_cog_map` 的节点偏差不再恒为 0，改为从执行轨迹回填运行时监督器逐节点记录的 `deviation_score`（取该节点最近一次记录）。✅ 第二步已实施（97a7951）：`TracePoint` 新增显式 `status` 字段，intel `build_trace` 反思 prompt 的文本嗅探改为显式状态优先、旧数据兜底；fuel/duration 真值打通另立提案——**调查发现 executor.rs 事件流的 `fuel_consumed` 填的是 WASM 配置上限而非真实消耗**（真值仅在 sandboxd 内部 `store.get_fuel()` 计算后记日志丢弃），AnomalyDetector 学到的是恒定基线、燃料维度异常检测实际失效；打通需扩展 `ToolExecutor::execute` trait 签名回传燃料（10+ 实现者），属中型跨层工作）
 
 ### P3 生态与验证（持续）
 10. 构建 ≥50 个带标准答案的 golden SOP 库，nightly 跑通过率/成本/迭代数趋势
