@@ -25,7 +25,7 @@
 //!
 //! ```json
 //! {"id": 1, "result": {"pong": true}}
-//! {"id": 2, "result": {"data": "base64_encoded_result"}}
+//! {"id": 2, "result": {"data": "base64_encoded_result", "fuel_consumed": 12345}}
 //! {"id": 2, "error": "error message"}
 //! ```
 
@@ -178,14 +178,13 @@ impl WasmToolExecutor {
     }
 }
 
-#[async_trait]
-impl ToolExecutor for WasmToolExecutor {
-    async fn execute(
+impl WasmToolExecutor {
+    /// 带测量的 WASM 执行（P2-9 燃料真值打通的核心实现）。
+    async fn execute_internal(
         &self,
         tool_id: &str,
-        _args: Vec<u8>,
         fuel_limit: u64,
-    ) -> Result<Vec<u8>, TypesError> {
+    ) -> Result<(Vec<u8>, u64), TypesError> {
         use sisyphus_types::TypesError;
 
         let span =
@@ -258,7 +257,7 @@ impl ToolExecutor for WasmToolExecutor {
             Ok(_) => {
                 let result_ptr = match results.first() {
                     Some(Val::I32(ptr)) => *ptr as usize,
-                    _ => return Ok(vec![]),
+                    _ => return Ok((vec![], fuel_consumed)),
                 };
 
                 if let Some(memory) = instance.get_memory(&mut store, "memory") {
@@ -271,10 +270,10 @@ impl ToolExecutor for WasmToolExecutor {
                             .unwrap_or(data.len());
                         data[result_ptr..end].to_vec()
                     } else {
-                        vec![]
+                        Vec::new()
                     }
                 } else {
-                    vec![]
+                    Vec::new()
                 }
             }
             Err(e) => {
@@ -293,7 +292,38 @@ impl ToolExecutor for WasmToolExecutor {
             fuel_consumed,
         );
 
-        Ok(result_bytes)
+        Ok((result_bytes, fuel_consumed))
+    }
+}
+
+#[async_trait]
+impl ToolExecutor for WasmToolExecutor {
+    async fn execute(
+        &self,
+        tool_id: &str,
+        args: Vec<u8>,
+        fuel_limit: u64,
+    ) -> Result<Vec<u8>, TypesError> {
+        let _ = args;
+        let (data, _) = self.execute_internal(tool_id, fuel_limit).await?;
+        Ok(data)
+    }
+
+    async fn execute_measured(
+        &self,
+        tool_id: &str,
+        _args: Vec<u8>,
+        fuel_limit: u64,
+    ) -> Result<(Vec<u8>, Option<sisyphus_types::ExecutionMeasurement>), TypesError> {
+        let exec_start = std::time::Instant::now();
+        let (data, fuel_consumed) = self.execute_internal(tool_id, fuel_limit).await?;
+        Ok((
+            data,
+            Some(sisyphus_types::ExecutionMeasurement {
+                fuel_consumed,
+                duration_ms: exec_start.elapsed().as_millis() as u64,
+            }),
+        ))
     }
 
     fn as_cache_invalidatable(&self) -> Option<&dyn CacheInvalidatable> {
@@ -344,6 +374,9 @@ struct PingResult {
 #[derive(serde::Serialize)]
 struct ExecuteResult {
     data: String, // base64 encoded
+    /// 实际燃料消耗（P2-9）。旧客户端忽略此字段（向后兼容）。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    fuel_consumed: Option<u64>,
 }
 
 fn base64_encode(input: &[u8]) -> String {
@@ -410,13 +443,14 @@ async fn handle_request(
         }
         Request::Execute { id, params } => {
             let result = executor
-                .execute(&params.tool_id, params.args, params.fuel_limit)
+                .execute_measured(&params.tool_id, params.args, params.fuel_limit)
                 .await;
             let resp = match result {
-                Ok(data) => Response::ExecuteSuccess {
+                Ok((data, measurement)) => Response::ExecuteSuccess {
                     id,
                     result: ExecuteResult {
                         data: base64_encode(&data),
+                        fuel_consumed: measurement.map(|m| m.fuel_consumed),
                     },
                 },
                 Err(e) => Response::ExecuteError {

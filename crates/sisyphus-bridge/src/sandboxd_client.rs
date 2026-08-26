@@ -203,14 +203,16 @@ impl SandboxdClient {
     }
 }
 
-#[async_trait]
-impl ToolExecutor for SandboxdClient {
-    async fn execute(
+impl SandboxdClient {
+    /// 执行并向解析真实燃料测量（P2-9）。旧版守护进程响应无
+    /// `fuel_consumed` 字段时返回 None（向后兼容）。
+    async fn execute_with_measurement(
         &self,
         tool_id: &str,
         args: Vec<u8>,
         fuel_limit: u64,
-    ) -> Result<Vec<u8>, TypesError> {
+    ) -> Result<(Vec<u8>, Option<sisyphus_types::ExecutionMeasurement>), TypesError> {
+        let exec_start = tokio::time::Instant::now();
         let id = self.next_id.fetch_add(1, Ordering::SeqCst);
         let request = serde_json::json!({
             "id": id,
@@ -234,10 +236,46 @@ impl ToolExecutor for SandboxdClient {
                 details: "Missing 'data' field in sandboxd response".into(),
             })?;
 
-        base64_decode(data_b64).map_err(|e| TypesError::ToolExecutionError {
+        let data = base64_decode(data_b64).map_err(|e| TypesError::ToolExecutionError {
             tool_id: tool_id.to_string(),
             details: format!("Failed to decode sandboxd result: {e}"),
-        })
+        })?;
+
+        let measurement = response
+            .get("result")
+            .and_then(|r| r.get("fuel_consumed"))
+            .and_then(|v| v.as_u64())
+            .map(|fuel_consumed| sisyphus_types::ExecutionMeasurement {
+                fuel_consumed,
+                duration_ms: exec_start.elapsed().as_millis() as u64,
+            });
+
+        Ok((data, measurement))
+    }
+}
+
+#[async_trait]
+impl ToolExecutor for SandboxdClient {
+    async fn execute(
+        &self,
+        tool_id: &str,
+        args: Vec<u8>,
+        fuel_limit: u64,
+    ) -> Result<Vec<u8>, TypesError> {
+        let (data, _) = self
+            .execute_with_measurement(tool_id, args, fuel_limit)
+            .await?;
+        Ok(data)
+    }
+
+    async fn execute_measured(
+        &self,
+        tool_id: &str,
+        args: Vec<u8>,
+        fuel_limit: u64,
+    ) -> Result<(Vec<u8>, Option<sisyphus_types::ExecutionMeasurement>), TypesError> {
+        self.execute_with_measurement(tool_id, args, fuel_limit)
+            .await
     }
 
     async fn list_tools(&self) -> Result<Vec<ToolMetadata>, TypesError> {
