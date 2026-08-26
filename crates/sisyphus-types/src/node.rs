@@ -35,12 +35,28 @@ pub struct WasmSOPNode {
 
 #[async_trait]
 impl SOPNode for WasmSOPNode {
-    async fn execute(&self, _ctx: &ExecutionContext) -> Result<NodeOutput, TypesError> {
+    async fn execute(&self, ctx: &ExecutionContext) -> Result<NodeOutput, TypesError> {
         let args = Vec::new();
-        let result = self
+        // P2-9 燃料真相管道：优先走带测量的路径。
+        let (result, measurement) = match self
             .executor
-            .execute(&self.tool_id, args, self.fuel_limit)
-            .await?;
+            .execute_measured(&self.tool_id, args, self.fuel_limit)
+            .await
+        {
+            Ok((data, Some(m))) => (data, Some(m)),
+            Ok((data, None)) => (data, None),
+            // 测量路径失败时回退普通执行，保持行为兼容。
+            Err(_) => {
+                let data = self
+                    .executor
+                    .execute(&self.tool_id, Vec::new(), self.fuel_limit)
+                    .await?;
+                (data, None)
+            }
+        };
+        if let Some(m) = measurement {
+            ctx.record_measurement(&self.name, m);
+        }
         Ok(NodeOutput::from(Value::String(
             String::from_utf8_lossy(&result).to_string(),
         )))
@@ -225,6 +241,18 @@ pub struct ToolMetadata {
     pub description: String,
 }
 
+/// 单次工具执行的真实测量数据（P2-9：燃料真值打通）。
+///
+/// 此前事件流的 `fuel_consumed` 填的是配置上限而非真实消耗，
+/// AnomalyDetector 学到的是恒定基线、燃料维度异常检测失效。
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct ExecutionMeasurement {
+    /// WASM 实际消耗的燃料（fuel_limit - store.get_fuel()）。
+    pub fuel_consumed: u64,
+    /// 工具调用总耗时（毫秒，含编译/实例化）。
+    pub duration_ms: u64,
+}
+
 #[async_trait]
 pub trait ToolExecutor: Send + Sync {
     async fn execute(
@@ -233,6 +261,21 @@ pub trait ToolExecutor: Send + Sync {
         args: Vec<u8>,
         fuel_limit: u64,
     ) -> Result<Vec<u8>, TypesError>;
+
+    /// 带测量执行的默认实现：委托 `execute` 并报告无测量数据。
+    ///
+    /// 能拿到真实燃料计量的执行器（wasmtime store.get_fuel()）
+    /// 应覆写本方法。默认实现的 measurement 为 None 时，
+    /// 消费方回退到旧的上限值语义（行为兼容）。
+    async fn execute_measured(
+        &self,
+        tool_id: &str,
+        args: Vec<u8>,
+        fuel_limit: u64,
+    ) -> Result<(Vec<u8>, Option<ExecutionMeasurement>), TypesError> {
+        let data = self.execute(tool_id, args, fuel_limit).await?;
+        Ok((data, None))
+    }
 
     /// List all tools provided by this executor.
     async fn list_tools(&self) -> Result<Vec<ToolMetadata>, TypesError> {
@@ -413,5 +456,118 @@ impl SOPNode for HumanInterventionSOPNode {
             prompt: self.prompt.clone(),
             timeout_secs: self.timeout_secs,
         }
+    }
+}
+
+#[cfg(test)]
+mod fuel_truth_tests {
+    use super::*;
+    use crate::execution::ExecutionContext;
+    use async_trait::async_trait;
+    use std::sync::Arc;
+
+    /// 提供真实测量的执行器（模拟 sandboxd / in-process WASM 路径）。
+    struct MeasuringExecutor {
+        fuel: u64,
+        fail_measured: bool,
+    }
+    #[async_trait]
+    impl ToolExecutor for MeasuringExecutor {
+        async fn execute(
+            &self,
+            _tool_id: &str,
+            _args: Vec<u8>,
+            _fuel_limit: u64,
+        ) -> Result<Vec<u8>, TypesError> {
+            Ok(b"plain".to_vec())
+        }
+        async fn execute_measured(
+            &self,
+            _tool_id: &str,
+            _args: Vec<u8>,
+            _fuel_limit: u64,
+        ) -> Result<(Vec<u8>, Option<ExecutionMeasurement>), TypesError> {
+            if self.fail_measured {
+                Err(TypesError::ToolExecutionError {
+                    tool_id: "t".into(),
+                    details: "measured path down".into(),
+                })
+            } else {
+                Ok((
+                    b"measured".to_vec(),
+                    Some(ExecutionMeasurement {
+                        fuel_consumed: self.fuel,
+                        duration_ms: 7,
+                    }),
+                ))
+            }
+        }
+    }
+
+    fn wasm_node(executor: Arc<dyn ToolExecutor>) -> WasmSOPNode {
+        WasmSOPNode {
+            name: "burn_node".into(),
+            tool_id: "t".into(),
+            fuel_limit: 100_000,
+            executor,
+        }
+    }
+
+    /// 有测量能力时必须写入 ctx，且输出走测量路径。
+    #[tokio::test]
+    async fn test_measured_path_records_measurement() {
+        let node = wasm_node(Arc::new(MeasuringExecutor {
+            fuel: 4321,
+            fail_measured: false,
+        }));
+        let ctx = ExecutionContext::new();
+        let out = node.execute(&ctx).await.expect("execute must succeed");
+        assert_eq!(out.0.as_str(), Some("measured"));
+        let m = ctx
+            .take_measurement("burn_node")
+            .expect("measurement must be recorded");
+        assert_eq!(m.fuel_consumed, 4321);
+        // take 语义：消费后不残留
+        assert!(ctx.take_measurement("burn_node").is_none());
+    }
+
+    /// 无测量能力的执行器（只用默认 execute_measured，返回 None）。
+    struct PlainExecutor;
+    #[async_trait]
+    impl ToolExecutor for PlainExecutor {
+        async fn execute(
+            &self,
+            _tool_id: &str,
+            _args: Vec<u8>,
+            _fuel_limit: u64,
+        ) -> Result<Vec<u8>, TypesError> {
+            Ok(b"plain".to_vec())
+        }
+        // execute_measured 不覆写：走 trait 默认实现（None 测量）
+    }
+
+    /// 无测量能力（trait 默认实现返回 None）时不得写入 ctx，行为与旧版一致。
+    #[tokio::test]
+    async fn test_unmeasured_executor_leaves_ctx_clean() {
+        let node = wasm_node(Arc::new(PlainExecutor));
+        let ctx = ExecutionContext::new();
+        let _ = node.execute(&ctx).await;
+        assert!(
+            ctx.get_measurement("burn_node").is_none(),
+            "默认 execute_measured 返回 None 时不得产生测量"
+        );
+    }
+
+    /// 测量路径失败时回退普通执行，保证兼容。
+    #[tokio::test]
+    async fn test_fallback_on_measured_failure() {
+        let node = wasm_node(Arc::new(MeasuringExecutor {
+            fuel: 1,
+            fail_measured: true,
+        }));
+        let ctx = ExecutionContext::new();
+        let out = node.execute(&ctx).await.expect("fallback must succeed");
+        assert_eq!(out.0.as_str(), Some("plain"));
+        assert!(ctx.get_measurement("burn_node").is_none());
     }
 }

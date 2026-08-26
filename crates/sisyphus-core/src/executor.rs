@@ -212,9 +212,17 @@ impl Executor {
                     if let Some(ref tx) = tx {
                         match &result {
                             Ok(out) => {
-                                let fuel = if let Some(wasm) = node_ref.as_any().downcast_ref::<sisyphus_types::WasmSOPNode>() {
-                                    wasm.fuel_limit as i64
-                                } else { 0 };
+                                // P2-9：优先真实测量，回退配置上限（旧执行器兼容）。
+                                let fuel = ctx_ref
+                                    .take_measurement(&name)
+                                    .map(|m| m.fuel_consumed as i64)
+                                    .unwrap_or_else(|| {
+                                        node_ref
+                                            .as_any()
+                                            .downcast_ref::<sisyphus_types::WasmSOPNode>()
+                                            .map(|wasm| wasm.fuel_limit as i64)
+                                            .unwrap_or(0)
+                                    });
                                 if let Err(e) = tx.send(ExecutionEvent::NodeCompleted {
                                     node_name: name.clone(),
                                     output: out.clone(),
@@ -225,9 +233,17 @@ impl Executor {
                                 }
                             }
                             Err(e) => {
-                                let fuel = if let Some(wasm) = node_ref.as_any().downcast_ref::<sisyphus_types::WasmSOPNode>() {
-                                    wasm.fuel_limit as i64
-                                } else { 0 };
+                                // P2-9：优先真实测量，回退配置上限（旧执行器兼容）。
+                                let fuel = ctx_ref
+                                    .take_measurement(&name)
+                                    .map(|m| m.fuel_consumed as i64)
+                                    .unwrap_or_else(|| {
+                                        node_ref
+                                            .as_any()
+                                            .downcast_ref::<sisyphus_types::WasmSOPNode>()
+                                            .map(|wasm| wasm.fuel_limit as i64)
+                                            .unwrap_or(0)
+                                    });
                                 if let Err(send_err) = tx.send(ExecutionEvent::NodeFailed {
                                     node_name: name.clone(),
                                     error: e.to_string(),
@@ -377,9 +393,17 @@ impl Executor {
                             if let Some(ref tx) = tx {
                                 match &result {
                                     Ok(out) => {
-                                        let fuel = if let Some(wasm) = node_ref.as_any().downcast_ref::<sisyphus_types::WasmSOPNode>() {
-                                            wasm.fuel_limit as i64
-                                        } else { 0 };
+                                        // P2-9：优先真实测量，回退配置上限（旧执行器兼容）。
+                                        let fuel = ctx_ref
+                                            .take_measurement(&name)
+                                            .map(|m| m.fuel_consumed as i64)
+                                            .unwrap_or_else(|| {
+                                                node_ref
+                                                    .as_any()
+                                                    .downcast_ref::<sisyphus_types::WasmSOPNode>()
+                                                    .map(|wasm| wasm.fuel_limit as i64)
+                                                    .unwrap_or(0)
+                                            });
                                         if let Err(e) = tx.send(ExecutionEvent::NodeCompleted {
                                             node_name: name.clone(),
                                             output: out.clone(),
@@ -390,9 +414,17 @@ impl Executor {
                                         }
                                     }
                                     Err(e) => {
-                                        let fuel = if let Some(wasm) = node_ref.as_any().downcast_ref::<sisyphus_types::WasmSOPNode>() {
-                                            wasm.fuel_limit as i64
-                                        } else { 0 };
+                                        // P2-9：优先真实测量，回退配置上限（旧执行器兼容）。
+                                        let fuel = ctx_ref
+                                            .take_measurement(&name)
+                                            .map(|m| m.fuel_consumed as i64)
+                                            .unwrap_or_else(|| {
+                                                node_ref
+                                                    .as_any()
+                                                    .downcast_ref::<sisyphus_types::WasmSOPNode>()
+                                                    .map(|wasm| wasm.fuel_limit as i64)
+                                                    .unwrap_or(0)
+                                            });
                                         if let Err(send_err) = tx.send(ExecutionEvent::NodeFailed {
                                             node_name: name.clone(),
                                             error: e.to_string(),

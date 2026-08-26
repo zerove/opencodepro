@@ -152,14 +152,13 @@ impl WasmToolExecutor {
     }
 }
 
-#[async_trait]
-impl ToolExecutor for WasmToolExecutor {
-    async fn execute(
+impl WasmToolExecutor {
+    /// 带测量的 WASM 执行内核（P2-9 燃料真值打通）。
+    pub(crate) async fn execute_internal(
         &self,
         tool_id: &str,
-        _args: Vec<u8>,
         fuel_limit: u64,
-    ) -> Result<Vec<u8>, sisyphus_types::TypesError> {
+    ) -> Result<(Vec<u8>, u64), sisyphus_types::TypesError> {
         use sisyphus_types::TypesError;
 
         let span =
@@ -240,7 +239,7 @@ impl ToolExecutor for WasmToolExecutor {
                 // 6. Read result string from WASM linear memory
                 let result_ptr = match results.first() {
                     Some(Val::I32(ptr)) => *ptr as usize,
-                    _ => return Ok(vec![]),
+                    _ => return Ok((vec![], fuel_consumed)),
                 };
 
                 // Read memory export (not all modules have "memory" — that's OK)
@@ -277,7 +276,43 @@ impl ToolExecutor for WasmToolExecutor {
             fuel_consumed,
         );
 
-        Ok(result_bytes)
+        Ok((result_bytes, fuel_consumed))
+    }
+}
+
+#[async_trait]
+impl ToolExecutor for WasmToolExecutor {
+    async fn execute(
+        &self,
+        tool_id: &str,
+        args: Vec<u8>,
+        fuel_limit: u64,
+    ) -> Result<Vec<u8>, sisyphus_types::TypesError> {
+        let _ = args;
+        let (data, _) = self.execute_internal(tool_id, fuel_limit).await?;
+        Ok(data)
+    }
+
+    async fn execute_measured(
+        &self,
+        tool_id: &str,
+        _args: Vec<u8>,
+        fuel_limit: u64,
+    ) -> Result<(Vec<u8>, Option<sisyphus_types::ExecutionMeasurement>), sisyphus_types::TypesError>
+    {
+        use sisyphus_types::TypesError;
+        let exec_start = Instant::now();
+        let (data, fuel_consumed) = self
+            .execute_internal(tool_id, fuel_limit)
+            .await
+            .map_err(|e: TypesError| e)?;
+        Ok((
+            data,
+            Some(sisyphus_types::ExecutionMeasurement {
+                fuel_consumed,
+                duration_ms: exec_start.elapsed().as_millis() as u64,
+            }),
+        ))
     }
     fn as_cache_invalidatable(&self) -> Option<&dyn sisyphus_types::CacheInvalidatable> {
         Some(self)

@@ -152,14 +152,14 @@ impl CustomToolExecutor {
     }
 }
 
-#[async_trait]
-impl ToolExecutor for CustomToolExecutor {
-    async fn execute(
+impl CustomToolExecutor {
+    /// 带燃料测量的执行内核（P2-9）。
+    async fn execute_internal(
         &self,
         tool_id: &str,
         args: Vec<u8>,
         fuel_limit: u64,
-    ) -> Result<Vec<u8>, TypesError> {
+    ) -> Result<(Vec<u8>, Option<u64>), TypesError> {
         let def = self
             .tools
             .get(tool_id)
@@ -264,6 +264,7 @@ impl ToolExecutor for CustomToolExecutor {
                 tool_id: tool_id.to_string(),
                 details: format!("WASM execution error: {e}"),
             })?;
+        let fuel_consumed = fuel_limit.saturating_sub(store.get_fuel().unwrap_or(0));
 
         let result_ptr = results[0].unwrap_i32() as usize;
         let data = memory.data(&store);
@@ -273,7 +274,7 @@ impl ToolExecutor for CustomToolExecutor {
                 .position(|&b| b == 0)
                 .map(|pos| result_ptr + pos)
                 .unwrap_or(data.len());
-            Ok(data[result_ptr..end].to_vec())
+            Ok((data[result_ptr..end].to_vec(), Some(fuel_consumed)))
         } else {
             Err(TypesError::ToolExecutionError {
                 tool_id: tool_id.to_string(),
@@ -285,3 +286,33 @@ impl ToolExecutor for CustomToolExecutor {
 
 // 这里的 SandboxError 应从父模块引入
 use crate::SandboxError;
+
+#[async_trait]
+impl ToolExecutor for CustomToolExecutor {
+    async fn execute(
+        &self,
+        tool_id: &str,
+        args: Vec<u8>,
+        fuel_limit: u64,
+    ) -> Result<Vec<u8>, TypesError> {
+        let (data, _) = self.execute_internal(tool_id, args, fuel_limit).await?;
+        Ok(data)
+    }
+
+    async fn execute_measured(
+        &self,
+        tool_id: &str,
+        args: Vec<u8>,
+        fuel_limit: u64,
+    ) -> Result<(Vec<u8>, Option<sisyphus_types::ExecutionMeasurement>), TypesError> {
+        let exec_start = std::time::Instant::now();
+        let (data, fuel_consumed) = self.execute_internal(tool_id, args, fuel_limit).await?;
+        Ok((
+            data,
+            fuel_consumed.map(|fuel_consumed| sisyphus_types::ExecutionMeasurement {
+                fuel_consumed,
+                duration_ms: exec_start.elapsed().as_millis() as u64,
+            }),
+        ))
+    }
+}

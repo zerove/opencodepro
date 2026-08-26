@@ -360,6 +360,9 @@ pub struct ExecutionContext {
     pub trace: Arc<RwLock<Vec<TracePoint>>>,
     pub last_node_completed: RwLock<Option<String>>,
     pub modified_files: Arc<RwLock<std::collections::HashSet<std::path::PathBuf>>>,
+    /// 每节点真实执行测量（P2-9 燃料真相管道）。由 WasmSOPNode 写入，
+    /// 执行器事件组装点读取；无测量的执行器（默认实现）不产生条目。
+    pub measurements: DashMap<String, crate::node::ExecutionMeasurement>,
 }
 
 impl Default for ExecutionContext {
@@ -376,6 +379,7 @@ impl ExecutionContext {
             trace: Arc::new(RwLock::new(Vec::new())),
             last_node_completed: RwLock::new(None),
             modified_files: Arc::new(RwLock::new(std::collections::HashSet::new())),
+            measurements: DashMap::new(),
         }
     }
 
@@ -388,7 +392,27 @@ impl ExecutionContext {
             trace: Arc::new(RwLock::new(Vec::new())),
             last_node_completed: RwLock::new(None),
             modified_files: Arc::new(RwLock::new(std::collections::HashSet::new())),
+            measurements: DashMap::with_capacity(n),
         }
+    }
+
+    /// 记录某节点的真实执行测量（P2-9）。
+    pub fn record_measurement(
+        &self,
+        node_name: &str,
+        measurement: crate::node::ExecutionMeasurement,
+    ) {
+        self.measurements.insert(node_name.to_string(), measurement);
+    }
+
+    /// 读取并移除某节点的执行测量（事件组装后消费，避免跨轮残留）。
+    pub fn take_measurement(&self, node_name: &str) -> Option<crate::node::ExecutionMeasurement> {
+        self.measurements.remove(node_name).map(|(_, m)| m)
+    }
+
+    /// 只读查看测量（诊断用，不移除）。
+    pub fn get_measurement(&self, node_name: &str) -> Option<crate::node::ExecutionMeasurement> {
+        self.measurements.get(node_name).map(|m| *m)
     }
 
     pub fn record_modified_file(&self, path: std::path::PathBuf) {
