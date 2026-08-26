@@ -12,7 +12,7 @@ impl RuntimeSupervisor for DefaultSupervisor {
         _node_name: &str,
         _output: &NodeOutput,
         _ctx: Arc<ExecutionContext>,
-    ) -> Result<SupervisorDecision, String> {
+    ) -> Result<SupervisorDecision, sisyphus_types::TypesError> {
         // 默认实现：始终继续
         Ok(SupervisorDecision::Continue { deviation: 0.0 })
     }

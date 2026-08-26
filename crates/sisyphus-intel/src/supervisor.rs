@@ -65,7 +65,7 @@ impl RuntimeSupervisor for SisyphusSupervisor {
         node_name: &str,
         output: &NodeOutput,
         ctx: Arc<ExecutionContext>,
-    ) -> Result<SupervisorDecision, String> {
+    ) -> Result<SupervisorDecision, sisyphus_types::TypesError> {
         tracing::debug!(node = %node_name, "Runtime supervisor evaluating node output");
 
         // 1. 快速启发式反思（第 1 层）

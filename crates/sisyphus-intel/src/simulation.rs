@@ -66,13 +66,6 @@ pub trait Simulator: Send + Sync {
         sop_id: &str,
         goal_text: Option<&str>,
     ) -> Result<SimulationResult, sisyphus_types::IntelError>;
-
-    async fn set_experience_bank(
-        &self,
-        _bank: Arc<dyn sisyphus_types::experience::ExperienceBank>,
-    ) -> Result<(), String> {
-        Err("Experience bank not supported by this simulator".into())
-    }
 }
 
 // ---------------------------------------------------------------------------

@@ -165,7 +165,7 @@ pub trait RuntimeSupervisor: Send + Sync {
         node_name: &str,
         output: &NodeOutput,
         ctx: Arc<ExecutionContext>,
-    ) -> Result<SupervisorDecision, String>;
+    ) -> Result<SupervisorDecision, crate::errors::TypesError>;
 }
 
 impl PartialEq<Value> for NodeOutput {
