@@ -90,9 +90,13 @@ impl StrategicManager {
                     goal_text.unwrap_or(sop_id),
                 )
                 .await;
-            let final_max = d_max.min(v2_budget as u32);
+            // 用户显式配置的 max_iterations 是硬上限（评审 A4 遗留缺口修复）：
+            // 自适应深度只能在预算内减少迭代，不得突破用户设置的上限。
+            let final_max = d_max
+                .min(v2_budget as u32)
+                .min(self.config.read().max_iterations);
 
-            // 只读基线配置用于日志对比；不再把动态结果写回共享的 self.config。
+            // 基线仅用于日志对比；动态结果不写回共享 config（见 dbc2f7a）。
             // 此前的写回-读回模式会让并发执行的循环互相覆盖 max_iterations/convergence_threshold
             // （写回值只有本运行读一次，其余全是污染）。行为与原先完全等价：
             // 本轮实际生效的就是下方局部返回的 final_max/d_thresh。
