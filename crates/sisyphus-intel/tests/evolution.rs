@@ -309,6 +309,7 @@ async fn test_llm_evolver_integration() {
         original_sop_id: "test".into(),
         deviation_score: 0.8,
         suggested_improvements: vec!["increase fuel".into(), "add retry".into()],
+        improvement_signals: vec![],
         evolved_sop_structure: None,
         records: vec![],
     };

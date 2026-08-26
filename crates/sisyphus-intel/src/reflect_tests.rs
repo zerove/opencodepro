@@ -13,6 +13,34 @@ fn make_pred(estimated_cost: u64) -> SimulationResult {
     }
 }
 
+/// 构造 StandardEvolver 行为测试用的最小 WASM 图。
+fn setup_evolver_graph() -> (SOPGraph, Arc<dyn sisyphus_types::ToolExecutor>) {
+    use sisyphus_types::{ToolExecutor, WasmSOPNode};
+
+    let exec: Arc<dyn ToolExecutor> = Arc::new(NoopExecutor);
+    let mut graph = SOPGraph::new();
+    graph.add_node(Arc::new(WasmSOPNode {
+        name: "n1".into(),
+        tool_id: "t".into(),
+        fuel_limit: 1000,
+        executor: exec.clone(),
+    }));
+    (graph, exec)
+}
+
+struct NoopExecutor;
+#[async_trait::async_trait]
+impl sisyphus_types::ToolExecutor for NoopExecutor {
+    async fn execute(
+        &self,
+        _: &str,
+        _: Vec<u8>,
+        _: u64,
+    ) -> Result<Vec<u8>, sisyphus_types::TypesError> {
+        Ok(b"ok".to_vec())
+    }
+}
+
 fn make_record(node: &str, status: &str, output: &str) -> RecordedNode {
     RecordedNode {
         node: node.into(),
@@ -178,6 +206,149 @@ fn test_error_category_severity() {
 fn test_standard_evolver_with_adaptive_pricer() {
     let evolver = StandardEvolver::with_fuel_pricer(Arc::new(AdaptiveFuelPricer::new()));
     assert!(std::ptr::addr_of!(evolver.fuel_pricer) as usize != 0);
+}
+
+// ---------------------------------------------------------------------------
+// B1：演进信号枚举化
+// ---------------------------------------------------------------------------
+
+// from_text：各类建议文案的解析语义
+#[test]
+fn test_improvement_kind_from_text_retry() {
+    assert_eq!(
+        ImprovementKind::from_text("Add retry logic to unstable nodes"),
+        Some(ImprovementKind::Retry { max_retries: 3 })
+    );
+    assert_eq!(
+        ImprovementKind::from_text("add retry to node X"),
+        Some(ImprovementKind::Retry { max_retries: 3 })
+    );
+}
+
+#[test]
+fn test_improvement_kind_from_text_fuel() {
+    assert_eq!(
+        ImprovementKind::from_text(
+            "Resource exhaustion — increase fuel or split long-running nodes"
+        ),
+        Some(ImprovementKind::FuelIncrease { factor: 1.5 })
+    );
+    assert_eq!(
+        ImprovementKind::from_text("ResourceExhausted: fuel limit exceeded"),
+        Some(ImprovementKind::FuelIncrease { factor: 1.5 })
+    );
+}
+
+#[test]
+fn test_improvement_kind_from_text_split_and_backoff() {
+    assert_eq!(
+        ImprovementKind::from_text("split long-running nodes into smaller steps"),
+        Some(ImprovementKind::NodeSplit)
+    );
+    assert_eq!(
+        ImprovementKind::from_text("Add exponential backoff between attempts"),
+        Some(ImprovementKind::Backoff)
+    );
+}
+
+#[test]
+fn test_improvement_kind_from_text_unrecognized_is_none() {
+    // 无演进语义的文本必须返回 None（安全侧倾斜），
+    // 尤其是带注解前缀的人类审阅信息。
+    assert_eq!(
+        ImprovementKind::from_text("SOP is performing within expected parameters"),
+        None
+    );
+    assert_eq!(
+        ImprovementKind::from_text("[CRITIQUE] refine the prompt wording"),
+        None
+    );
+    assert_eq!(
+        ImprovementKind::from_text("[DEEP HIGH] node X: consider caching"),
+        None
+    );
+}
+
+// 演化决策只认结构化信号：含关键词的注解文本不再误触发
+#[tokio::test]
+async fn test_evolver_ignores_keyword_annotations_without_signals() {
+    let (graph, _exec) = setup_evolver_graph();
+    let evolver = StandardEvolver::new();
+    let report = ReflectionReport {
+        original_sop_id: "t".into(),
+        deviation_score: 0.9,
+        suggested_improvements: vec![
+            "[CRITIQUE] the output mentioned retry logic in a comment".into(),
+            "[DEEP] log said fuel limit reached historically".into(),
+        ],
+        improvement_signals: vec![], // 关键：无结构化信号
+        evolved_sop_structure: None,
+        records: vec![],
+    };
+    let prediction = make_pred(10);
+    let evolved = evolver
+        .evolve(std::sync::Arc::new(graph), &report, &prediction, None)
+        .await
+        .unwrap();
+
+    // 无信号 → 图谱不变：节点名无 _retry 后缀，燃料未被调价
+    for idx in evolved.graph.node_indices() {
+        let n = evolved.graph.node_weight(idx).unwrap();
+        assert!(
+            !n.name().contains("_retry"),
+            "annotation must not trigger evolution"
+        );
+    }
+}
+
+#[tokio::test]
+async fn test_evolver_acts_on_structured_signals() {
+    let (graph, _exec) = setup_evolver_graph();
+    let evolver = StandardEvolver::new();
+    let report = ReflectionReport {
+        original_sop_id: "t".into(),
+        deviation_score: 0.9,
+        suggested_improvements: vec![],
+        improvement_signals: vec![
+            ImprovementKind::Retry { max_retries: 3 },
+            ImprovementKind::FuelIncrease { factor: 1.5 },
+        ],
+        evolved_sop_structure: None,
+        records: vec![],
+    };
+    let prediction = make_pred(10);
+    let evolved = evolver
+        .evolve(std::sync::Arc::new(graph), &report, &prediction, None)
+        .await
+        .unwrap();
+
+    let retry_count = evolved
+        .graph
+        .node_indices()
+        .filter(|&i| {
+            evolved
+                .graph
+                .node_weight(i)
+                .unwrap()
+                .name()
+                .contains("_retry")
+        })
+        .count();
+    assert!(retry_count > 0, "structured signal must drive evolution");
+}
+
+// serde 兼容：旧数据（无 improvement_signals 字段）反序列化为空信号
+#[test]
+fn test_reflection_report_legacy_deserialization() {
+    let legacy = r#"{
+        "original_sop_id": "sop1",
+        "deviation_score": 0.4,
+        "suggested_improvements": ["add retry"],
+        "evolved_sop_structure": null,
+        "records": []
+    }"#;
+    let report: ReflectionReport = serde_json::from_str(legacy).unwrap();
+    assert!(report.improvement_signals.is_empty());
 }
 
 // ---------------------------------------------------------------------------

@@ -206,6 +206,11 @@ fn bench_evolution(c: &mut Criterion) {
             "Resource exhaustion — increase fuel or split long-running nodes".into(),
             "Add retry logic to unstable nodes".into(),
         ],
+        // 基准报告的文案恰好是真信号；基准演化路径与生产一致
+        improvement_signals: vec![
+            sisyphus_intel::reflect::ImprovementKind::FuelIncrease { factor: 1.5 },
+            sisyphus_intel::reflect::ImprovementKind::Retry { max_retries: 3 },
+        ],
         evolved_sop_structure: None,
         records: vec![],
     };
@@ -258,6 +263,7 @@ fn bench_evolution(c: &mut Criterion) {
         original_sop_id: "bench_sop".into(),
         deviation_score: 0.1,
         suggested_improvements: vec!["SOP is performing within expected parameters".into()],
+        improvement_signals: vec![],
         evolved_sop_structure: None,
         records: vec![],
     };

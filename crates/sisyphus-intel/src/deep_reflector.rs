@@ -478,6 +478,7 @@ mod tests {
             original_sop_id: "test_sop".to_string(),
             deviation_score: 0.35,
             suggested_improvements: vec!["Add validation".to_string()],
+            improvement_signals: vec![],
             evolved_sop_structure: None,
             records: vec![
                 RecordedNode {

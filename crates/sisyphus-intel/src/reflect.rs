@@ -20,11 +20,77 @@ pub struct RecordedNode {
     pub output: String,
 }
 
+/// 结构化演进信号（B1：演进信号枚举化）。
+///
+/// 只有本枚举驱动自动演化；人类可读的
+/// `suggested_improvements` 字符串仅作展示与经验沉淀，
+/// 其中混有 `[CRITIQUE]`、`[DEEP]`、oracle/momus 注解等，
+/// 不再作为演化决策输入（此前靠子串匹配，注解碰巧含
+/// 关键词即误触发挥化）。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum ImprovementKind {
+    /// 为不稳定节点加重试包装。
+    Retry {
+        #[serde(default = "default_max_retries")]
+        max_retries: u32,
+    },
+    /// 提高节点燃料预算（倍率因子）。
+    FuelIncrease { factor: f64 },
+    /// 拆分长运行节点。
+    NodeSplit,
+    /// 加退避等待。
+    Backoff,
+    /// 无法归类的改进意图，携带原文供人工审阅。
+    Unclassified { note: String },
+}
+
+fn default_max_retries() -> u32 {
+    3
+}
+
+impl ImprovementKind {
+    /// 从 LLM 自由文本建议中启发式解析演进信号。
+    ///
+    /// 这是唯一的文本→信号转换点（集中、有测试覆盖），
+    /// 取代散落在演化器里的裸 `contains` 匹配。
+    /// 无法识别的文本返回 `None`——宁可不演化，不可误演化。
+    pub fn from_text(text: &str) -> Option<Self> {
+        let lower = text.to_lowercase();
+        if lower.contains("resourceexhausted")
+            || lower.contains("fuel limit")
+            || (lower.contains("increase fuel") || lower.contains("raise fuel"))
+            || lower.contains("资源耗尽")
+        {
+            Some(Self::FuelIncrease { factor: 1.5 })
+        } else if lower.contains("add retry")
+            || lower.contains("retry logic")
+            || lower.contains("增加重试")
+        {
+            Some(Self::Retry {
+                max_retries: default_max_retries(),
+            })
+        } else if lower.contains("split long-running")
+            || lower.contains("split the node")
+            || lower.contains("拆分节点")
+        {
+            Some(Self::NodeSplit)
+        } else if lower.contains("backoff") || lower.contains("退避") {
+            Some(Self::Backoff)
+        } else {
+            None
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ReflectionReport {
     pub original_sop_id: String,
     pub deviation_score: f64,
     pub suggested_improvements: Vec<String>,
+    /// 结构化演进信号（B1）。旧序列化数据反序列化为空：
+    /// 无信号 = 不演化，安全侧倾斜。
+    #[serde(default)]
+    pub improvement_signals: Vec<ImprovementKind>,
     pub evolved_sop_structure: Option<String>,
     pub records: Vec<RecordedNode>,
 }
@@ -96,14 +162,17 @@ impl SOPEvolver for StandardEvolver {
         let mut new_graph = SOPGraph::new();
         let mut node_map = std::collections::HashMap::new();
 
+        // B1：演化决策只认结构化信号。人类可读的
+        // suggested_improvements 混有 [CRITIQUE]/[DEEP]/评审注解，
+        // 此前靠子串匹配，注解碰巧含关键词即误触发挥化。
         let needs_retry = report
-            .suggested_improvements
+            .improvement_signals
             .iter()
-            .any(|s| s.contains("retry logic"));
+            .any(|sig| matches!(sig, ImprovementKind::Retry { .. }));
         let needs_fuel = report
-            .suggested_improvements
+            .improvement_signals
             .iter()
-            .any(|s| s.contains("ResourceExhausted") || s.contains("fuel limit"));
+            .any(|sig| matches!(sig, ImprovementKind::FuelIncrease { .. }));
 
         tracing::debug!(needs_retry, needs_fuel, "Evolution analysis");
 
@@ -313,6 +382,7 @@ impl Reflector for LlmReflector {
                         original_sop_id: "current_sop".into(),
                         deviation_score: 0.5,
                         suggested_improvements: Vec::new(),
+                        improvement_signals: Vec::new(),
                         evolved_sop_structure: None,
                         records: StandardReflector::parse_trace(trace),
                     });
@@ -326,6 +396,7 @@ impl Reflector for LlmReflector {
                         original_sop_id: "current_sop".into(),
                         deviation_score: 0.5,
                         suggested_improvements: Vec::new(),
+                        improvement_signals: Vec::new(),
                         evolved_sop_structure: None,
                         records: StandardReflector::parse_trace(trace),
                     });
@@ -344,6 +415,11 @@ impl Reflector for LlmReflector {
                     .collect()
             })
             .unwrap_or_default();
+        // B1：在唯一的文本→信号转换点集中提取结构化演进信号。
+        let signals: Vec<ImprovementKind> = suggestions
+            .iter()
+            .filter_map(|s| ImprovementKind::from_text(s))
+            .collect();
 
         let duration = start.elapsed();
         tracing::info!(
@@ -359,6 +435,7 @@ impl Reflector for LlmReflector {
             original_sop_id: "current_sop".into(),
             deviation_score: deviation,
             suggested_improvements: suggestions,
+            improvement_signals: signals,
             evolved_sop_structure: None,
             records: StandardReflector::parse_trace(trace),
         })
@@ -409,6 +486,14 @@ impl Reflector for HybridReflector {
             }
         }
 
+        // B1：合并两路结构化演进信号（按值去重）。
+        let mut all_signals = std_report.improvement_signals;
+        for sig in llm_report.improvement_signals {
+            if !all_signals.contains(&sig) {
+                all_signals.push(sig);
+            }
+        }
+
         let duration = start.elapsed();
         tracing::info!(
             deviation = deviation,
@@ -423,6 +508,7 @@ impl Reflector for HybridReflector {
             original_sop_id: std_report.original_sop_id,
             deviation_score: deviation,
             suggested_improvements: all_improvements,
+            improvement_signals: all_signals,
             evolved_sop_structure: None,
             records: std_report.records, // Use structured records from StandardReflector
         })
@@ -681,10 +767,18 @@ impl Reflector for StandardReflector {
 
         record_reflection("current_sop", deviation, duration.as_secs_f64());
 
+        // B1：标准反思器的建议是本 crate 的固定文案，经统一
+        // 转换点提取结构化演进信号。
+        let signals: Vec<ImprovementKind> = suggestions
+            .iter()
+            .filter_map(|s| ImprovementKind::from_text(s))
+            .collect();
+
         Ok(ReflectionReport {
             original_sop_id: "current_sop".into(),
             deviation_score: deviation,
             suggested_improvements: suggestions,
+            improvement_signals: signals,
             evolved_sop_structure: None,
             records,
         })

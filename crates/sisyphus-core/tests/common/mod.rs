@@ -77,6 +77,7 @@ impl sisyphus_intel::reflect::Reflector for MockReflector {
             original_sop_id: "mock".into(),
             deviation_score: 0.0,
             suggested_improvements: vec![],
+            improvement_signals: vec![],
             evolved_sop_structure: None,
             records: vec![],
         })

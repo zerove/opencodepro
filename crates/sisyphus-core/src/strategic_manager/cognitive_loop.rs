@@ -827,6 +827,8 @@ impl StrategicManager {
             sisyphus_intel::reflect::ReflectionReport {
                 deviation_score: convergence_threshold + 0.1,
                 suggested_improvements: vec![reason.clone()],
+                // pivot 原因是给人看的信息，不是机器可执行的演进信号
+                improvement_signals: vec![],
                 original_sop_id: sop_id.to_string(),
                 evolved_sop_structure: None,
                 records: vec![],
