@@ -116,6 +116,8 @@ async fn test_jcode_evolution_loop() {
         original_sop_id: "test".into(),
         deviation_score: 0.8,
         suggested_improvements: vec!["Increase fuel".into()],
+        // LlmEvolver 由 LLM 直接产 ops，不消费信号字段
+        improvement_signals: vec![],
         evolved_sop_structure: None,
         records: vec![],
     };
