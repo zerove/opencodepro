@@ -92,9 +92,11 @@ impl StrategicManager {
                 .await;
             // 用户显式配置的 max_iterations 是硬上限（评审 A4 遗留缺口修复）：
             // 自适应深度只能在预算内减少迭代，不得突破用户设置的上限。
-            let final_max = d_max
-                .min(v2_budget as u32)
-                .min(self.config.read().max_iterations);
+            let final_max = effective_max_iterations(
+                d_max,
+                v2_budget as u32,
+                self.config.read().max_iterations,
+            );
 
             // 基线仅用于日志对比；动态结果不写回共享 config（见 dbc2f7a）。
             // 此前的写回-读回模式会让并发执行的循环互相覆盖 max_iterations/convergence_threshold
@@ -1263,4 +1265,42 @@ fn iter_now() -> u64 {
         .duration_since(SystemTime::UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs()
+}
+
+/// 计算认知循环的有效最大迭代次数（评审 A4 遗留缺口修复，275a435）。
+///
+/// 语义：自适应深度分析只能在用户配置预算内**减少**迭代，
+/// 不得突破 `max_iterations` 硬上限。三个输入按优先级取最小值：
+/// 1. `adaptive_depth`：复杂度分析得出的动态深度上限；
+/// 2. `v2_budget`：深度控制器基于经验库给出的初始预算；
+/// 3. `user_cap`：用户显式配置的 `max_iterations`（硬顶，最高优先级约束）。
+pub fn effective_max_iterations(adaptive_depth: u32, v2_budget: u32, user_cap: u32) -> u32 {
+    adaptive_depth.min(v2_budget).min(user_cap)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_effective_max_respects_user_cap() {
+        // 用户上限低于自适应建议：硬顶必须生效。
+        assert_eq!(effective_max_iterations(30, 30, 5), 5);
+        assert_eq!(effective_max_iterations(20, 30, 10), 10);
+    }
+
+    #[test]
+    fn test_effective_max_adaptive_can_only_reduce() {
+        // 自适应/预算只能减少、不能放大超过用户上限。
+        assert_eq!(effective_max_iterations(3, 30, 20), 3);
+        assert_eq!(effective_max_iterations(30, 7, 20), 7);
+        // 全部宽松时等于用户上限。
+        assert_eq!(effective_max_iterations(u32::MAX, u32::MAX, 25), 25);
+    }
+
+    #[test]
+    fn test_effective_max_zero_cap_disables_loop() {
+        // 上限为 0 是显式的"禁止迭代"语义。
+        assert_eq!(effective_max_iterations(30, 30, 0), 0);
+    }
 }

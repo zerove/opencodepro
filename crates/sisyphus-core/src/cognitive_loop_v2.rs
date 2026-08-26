@@ -627,6 +627,33 @@ mod tests {
     }
 
     #[test]
+    fn test_adaptive_depth_controller_apply_config_runtime() {
+        // 评审 A4 接线：&self 即可运行时重配（内部可变性），且立即生效。
+        let ctrl = AdaptiveDepthController::default();
+        ctrl.apply_config(0.6, 0.05);
+        assert_eq!(*ctrl.target_confidence.read(), 0.6);
+        assert_eq!(*ctrl.min_improvement.read(), 0.05);
+
+        // 新目标 0.7 应在下一轮观察中直接生效。
+        ctrl.observe_iteration(0.65);
+        assert!(!ctrl.observe_iteration(0.71));
+    }
+
+    #[test]
+    fn test_adaptive_depth_controller_reset_clears_history() {
+        // P0-1a：循环入口重置共享控制器，防止跨运行状态污染。
+        let ctrl = AdaptiveDepthController::new(0.99, 0.001, 5, 2);
+        for i in 0..5 {
+            ctrl.observe_iteration(0.5);
+        }
+        assert!(!ctrl.observe_iteration(0.5)); // 已达硬上限
+        ctrl.reset();
+        // 重置后历史清空，同样的输入重新从 min_iterations 起步。
+        assert!(ctrl.observe_iteration(0.5));
+        assert!(ctrl.observe_iteration(0.5));
+    }
+
+    #[test]
     fn test_adaptive_depth_controller_convergence_stalled() {
         let ctrl = AdaptiveDepthController::new(0.99, 0.1, 30, 5);
         // 模拟平稳置信度
