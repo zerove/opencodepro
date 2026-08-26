@@ -43,6 +43,13 @@ impl StrategicManager {
     ) -> Result<(NodeOutput, CognitiveReport, Option<Arc<SOPGraph>>), CoreError> {
         let _start_time = std::time::Instant::now();
 
+        // v2：为本次执行周期重置共享的跟踪状态。
+        // AnomalyDetector 与 AdaptiveDepthController 挂在 StrategicManager 上被并发执行共享，
+        // 上一轮遗留的置信度历史/异常基线会让本轮误判收敛或误报异常（reset 此前无任何调用点）。
+        // 注意：这缩小而非消除竞态——彻底修复需将二者改为 per-run 实例，见架构评审 P0-1。
+        self.depth_controller.reset();
+        self.anomaly_detector.reset();
+
         // --- 热启动阶段（HOT START） ---
         let (mut current_ref, hot_start_active) = self
             .hot_start_phase(&sop_graph, goal_text, project_id, &stream_tx)
