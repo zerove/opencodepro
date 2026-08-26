@@ -311,6 +311,11 @@ pub struct TracePoint {
     pub timestamp: u64,
     pub output_summary: String,
     pub deviation_score: f64,
+    /// 监督器判定的显式状态（"ok"/"error"/"pivot"），None 表示旧数据
+    /// 或无判定。P0-3 延伸：消费方应优先使用本字段，文本嗅探仅作
+    /// None 时的兜底，避免输出提及 "Error" 造成误判。
+    #[serde(default)]
+    pub status: Option<String>,
 }
 
 /// The full execution path of a single cognitive iteration.
@@ -509,6 +514,40 @@ pub struct CognitiveTraceSummary {
     pub first_timestamp_ms: u128,
     /// 聚合窗口内最近记录时间（epoch 毫秒）。
     pub last_timestamp_ms: u128,
+}
+
+#[cfg(test)]
+mod trace_point_status_tests {
+    use super::*;
+
+    /// 旧序列化数据（无 status 字段）必须能反序列化，
+    /// 且 status 为 None（serde(default) 兼容性保证）。
+    #[test]
+    fn test_deserialize_legacy_trace_point_without_status() {
+        let legacy = r#"{
+            "node_name": "step1",
+            "timestamp": 1700000000,
+            "output_summary": "done",
+            "deviation_score": 0.05
+        }"#;
+        let tp: TracePoint = serde_json::from_str(legacy).expect("legacy data must deserialize");
+        assert_eq!(tp.node_name, "step1");
+        assert!(tp.status.is_none());
+    }
+
+    #[test]
+    fn test_trace_point_status_roundtrip() {
+        let tp = TracePoint {
+            node_name: "n".into(),
+            timestamp: 1,
+            output_summary: "PIVOT: drifted".into(),
+            deviation_score: 1.0,
+            status: Some("pivot".into()),
+        };
+        let s = serde_json::to_string(&tp).unwrap();
+        let back: TracePoint = serde_json::from_str(&s).unwrap();
+        assert_eq!(back.status.as_deref(), Some("pivot"));
+    }
 }
 
 #[cfg(test)]

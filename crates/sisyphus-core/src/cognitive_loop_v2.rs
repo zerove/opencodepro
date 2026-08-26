@@ -643,7 +643,7 @@ mod tests {
     fn test_adaptive_depth_controller_reset_clears_history() {
         // P0-1a：循环入口重置共享控制器，防止跨运行状态污染。
         let ctrl = AdaptiveDepthController::new(0.99, 0.001, 5, 2);
-        for i in 0..5 {
+        for _ in 0..5 {
             ctrl.observe_iteration(0.5);
         }
         assert!(!ctrl.observe_iteration(0.5)); // 已达硬上限

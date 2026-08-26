@@ -277,6 +277,7 @@ impl Executor {
                                 .as_secs(),
                             output_summary: output.to_string(),
                             deviation_score: deviation,
+                            status: Some("ok".into()),
                         });
                     }
                     Ok(SupervisorDecision::Pivot { reason, .. }) => {
@@ -289,6 +290,7 @@ impl Executor {
                                 .as_secs(),
                             output_summary: format!("PIVOT: {}", reason),
                             deviation_score: 1.0, // Maximum deviation
+                            status: Some("pivot".into()),
                         });
                         join_set.abort_all();
                         return Err(CoreError::StrategicPivot(reason));

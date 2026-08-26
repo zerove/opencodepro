@@ -41,13 +41,17 @@ impl SisyphusSupervisor {
         let mut lines = Vec::new();
 
         for point in trace_points {
-            let status = if point.output_summary.contains("Error")
-                || point.output_summary.contains("ResourceExhausted")
-            {
-                "error"
-            } else {
-                "ok"
-            };
+            // P0-3 延伸：显式状态字段优先，仅对缺失字段的旧数据
+            // 回退到文本嗅探。
+            let status = point.status.clone().unwrap_or_else(|| {
+                if point.output_summary.contains("Error")
+                    || point.output_summary.contains("ResourceExhausted")
+                {
+                    "error".to_string()
+                } else {
+                    "ok".to_string()
+                }
+            });
 
             lines.push(format!(
                 r#"{{"node": "{}", "status": "{}", "output": "{}"}}"#,

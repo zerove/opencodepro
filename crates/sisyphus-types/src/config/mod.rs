@@ -567,8 +567,10 @@ mod tests {
 
     #[test]
     fn test_critique_timeout_validation_bounds() {
-        let mut c = CognitiveLoopConfig::default();
-        c.llm_stage_timeout_secs = 30;
+        let mut c = CognitiveLoopConfig {
+            llm_stage_timeout_secs: 30,
+            ..Default::default()
+        };
         assert!(c.validate().is_ok());
         c.llm_stage_timeout_secs = 601;
         assert!(c.validate().is_err());
