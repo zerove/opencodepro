@@ -48,7 +48,7 @@
 
 ### P0 正确性修复（1-2 周）
 1. 循环参数局部化传参，禁止写回共享 `RwLock<CognitiveLoopConfig>`；AdaptiveDepthController 改 per-run 实例或进入循环前 reset()（✅ 已实施，见 265b958 + dbc2f7a）
-1b. 接线认知循环配置（✅ 已实施，e3f56bb）：bridge 在 kernel 构造后调用新增的 `StrategicManager::apply_cognitive_loop_config(&self)`；控制器两个可调字段（target_confidence/min_improvement）改为 RwLock 内部可变以支持共享 Arc 下的运行时重配。映射关系：`convergence_threshold → target_confidence = 1 - threshold`（clamp 到 [0.5, 1.0]），`min_improvement` 直传。遗留缺口（如实记录）：动态深度计算的输出（ComplexityAnalyzer 固定档位 3/10/20/30 与控制器初始预算取 min）仍**完全忽略**基线 `config.max_iterations`——用户设置的最大迭代上限即使接线后也不生效；`observe_iteration` 的硬上限仅在"平台期提前停止"分支且带 `convergence_threshold*1.5` 门控时被消费，不是无条件硬顶。彻底修复应在 `final_max` 计算后再与基线取 min（一行改动），涉及对"显式配置 vs 自适应"优先级的产品决策，故留待确认
+1b. 接线认知循环配置（✅ 已实施，e3f56bb）：bridge 在 kernel 构造后调用新增的 `StrategicManager::apply_cognitive_loop_config(&self)`；控制器两个可调字段（target_confidence/min_improvement）改为 RwLock 内部可变以支持共享 Arc 下的运行时重配。映射关系：`convergence_threshold → target_confidence = 1 - threshold`（clamp 到 [0.5, 1.0]），`min_improvement` 直传。遗留缺口（如实记录）：动态深度计算的输出（ComplexityAnalyzer 固定档位 3/10/20/30 与控制器初始预算取 min）仍**完全忽略**基线 `config.max_iterations`——用户设置的最大迭代上限即使接线后也不生效；`observe_iteration` 的硬上限仅在"平台期提前停止"分支且带 `convergence_threshold*1.5` 门控时被消费，不是无条件硬顶。已修复（275a435）：`final_max` 现与基线取 min，语义定为「自适应只能在用户预算内减少迭代、不得突破上限」；并提取纯函数 `effective_max_iterations` 补充回归测试（19ff3a4：上限优先、自适应只减不增、零上限禁用循环、运行时重配立即生效、重置防跨运行污染，共 5 个测试）
 2. 错误类型统一（维持）：simulation.rs 的 String 错误收敛到 IntelError；unwrap 清理降为低优先级（真实生产路径仅约 10 处，见 C 层勘误）
 3. NodeOutput 增加 status 字段，消灭字符串嗅探
 
