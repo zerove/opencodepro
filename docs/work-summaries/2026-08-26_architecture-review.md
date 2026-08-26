@@ -63,7 +63,7 @@
 9. 偏差真值采集（✅ 第一步已实施：`build_cog_map` 的节点偏差不再恒为 0，改为从执行轨迹回填运行时监督器逐节点记录的 `deviation_score`（取该节点最近一次记录）。✅ 第二步已实施（97a7951）：`TracePoint` 新增显式 `status` 字段，intel `build_trace` 反思 prompt 的文本嗅探改为显式状态优先、旧数据兜底；fuel/duration 真值打通另立提案——**调查发现 executor.rs 事件流的 `fuel_consumed` 填的是 WASM 配置上限而非真实消耗**（真值仅在 sandboxd 内部 `store.get_fuel()` 计算后记日志丢弃），AnomalyDetector 学到的是恒定基线、燃料维度异常检测实际失效；已全链路打通（d23d8db + e4e9ed2）：`ToolExecutor` 新增 `execute_measured` 默认方法（不破坏既有 10+ 实现者），sandboxd/进程内沙箱经 wasmtime `store.get_fuel()` 差值上报真值，`SandboxdClient.execute_with_measurement` 解析可选 `fuel_consumed` 字段（旧守护进程向后兼容），`WasmSOPNode` 写入 `ExecutionContext.measurements`，executor 事件组装点优先真实测量、无测量时回退配置上限。types 层 3 个回归测试覆盖测量记录/take 语义/回退路径）
 
 ### P3 生态与验证（持续）
-10. 构建 ≥50 个带标准答案的 golden SOP 库，nightly 跑通过率/成本/迭代数趋势
+10. 构建 ≥50 个带标准答案的 golden SOP 库，nightly 跑通过率/成本/迭代数趋势（✅ 第一步已实施：`evals/golden_sop/` 50 个种子用例（5 类别 × easy/medium/hard），标准答案为图结构约束 + 基线指标；`golden-sop-eval` 离线结构评测器（DAG 无环、边索引、名称唯一、基线核算）已接入 nightly 工作流。50/50 结构检查通过。执行级评测（真实通过率/成本/迭代趋势）待合成管线接入后实施）
 11. 技能市场对等协议加签名校验与速率限制
 12. DAG 执行器引入属性测试（✅ 已实施：`DependencyResolver::resolve` 的 proptest 套件，随机复合图（≤12 节点去重无环边集）×256 例验证三条拓扑不变量——全覆盖恰一次、依赖顺序约束满足、环输入拒绝或退化时仍守约束）
 

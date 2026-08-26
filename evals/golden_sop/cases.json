@@ -1,0 +1,3123 @@
+[
+  {
+    "id": "gs-file-001",
+    "goal": "Read the main configuration file and extract database connection settings",
+    "category": "file_ops",
+    "difficulty": "easy",
+    "expected_sop": {
+      "nodes": [
+        {
+          "name": "read_config",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "fs/read",
+            "fuel_limit": 100000
+          }
+        },
+        {
+          "name": "extract_settings",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "text/extract_json",
+            "fuel_limit": 100000
+          }
+        }
+      ],
+      "edges": [
+        [
+          0,
+          1
+        ]
+      ]
+    },
+    "baseline_metrics": {
+      "min_nodes": 2,
+      "max_nodes": 4,
+      "expects_retry": false,
+      "expects_test": false,
+      "expects_branch": false
+    },
+    "notes": ""
+  },
+  {
+    "id": "gs-file-002",
+    "goal": "Create a backup of all markdown documentation files before refactoring",
+    "category": "file_ops",
+    "difficulty": "easy",
+    "expected_sop": {
+      "nodes": [
+        {
+          "name": "list_docs",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "fs/glob",
+            "fuel_limit": 100000
+          }
+        },
+        {
+          "name": "copy_files",
+          "kind": {
+            "type": "Retry",
+            "child": {
+              "type": "Wasm",
+              "tool_id": "fs/copy",
+              "fuel_limit": 100000
+            },
+            "max_retries": 3
+          }
+        },
+        {
+          "name": "verify_backup",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "fs/list",
+            "fuel_limit": 100000
+          }
+        }
+      ],
+      "edges": [
+        [
+          0,
+          1
+        ],
+        [
+          1,
+          2
+        ]
+      ]
+    },
+    "baseline_metrics": {
+      "min_nodes": 3,
+      "max_nodes": 5,
+      "expects_retry": true,
+      "expects_test": false,
+      "expects_branch": false
+    },
+    "notes": ""
+  },
+  {
+    "id": "gs-file-003",
+    "goal": "Find and replace all occurrences of the deprecated API name across source files",
+    "category": "file_ops",
+    "difficulty": "medium",
+    "expected_sop": {
+      "nodes": [
+        {
+          "name": "search_old_api",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "grep/search",
+            "fuel_limit": 100000
+          }
+        },
+        {
+          "name": "replace_all",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "sed/replace",
+            "fuel_limit": 100000
+          }
+        },
+        {
+          "name": "run_tests",
+          "kind": {
+            "type": "Test",
+            "command": "cargo test --quiet",
+            "workdir": null
+          }
+        }
+      ],
+      "edges": [
+        [
+          0,
+          1
+        ],
+        [
+          1,
+          2
+        ]
+      ]
+    },
+    "baseline_metrics": {
+      "min_nodes": 3,
+      "max_nodes": 6,
+      "expects_retry": false,
+      "expects_test": true,
+      "expects_branch": false
+    },
+    "notes": ""
+  },
+  {
+    "id": "gs-code-004",
+    "goal": "Fix the failing unit test in the authentication module and verify the fix",
+    "category": "code_fix",
+    "difficulty": "medium",
+    "expected_sop": {
+      "nodes": [
+        {
+          "name": "run_failing_test",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "exec/test",
+            "fuel_limit": 100000
+          }
+        },
+        {
+          "name": "locate_bug",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "lsp/diagnostics",
+            "fuel_limit": 100000
+          }
+        },
+        {
+          "name": "apply_fix",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "edit/write",
+            "fuel_limit": 100000
+          }
+        },
+        {
+          "name": "verify_fix",
+          "kind": {
+            "type": "Test",
+            "command": "cargo test auth",
+            "workdir": null
+          }
+        }
+      ],
+      "edges": [
+        [
+          0,
+          1
+        ],
+        [
+          1,
+          2
+        ],
+        [
+          2,
+          3
+        ]
+      ]
+    },
+    "baseline_metrics": {
+      "min_nodes": 3,
+      "max_nodes": 7,
+      "expects_retry": false,
+      "expects_test": false,
+      "expects_branch": false
+    },
+    "notes": ""
+  },
+  {
+    "id": "gs-code-005",
+    "goal": "Refactor the duplicated logging code into a shared utility module",
+    "category": "refactor",
+    "difficulty": "hard",
+    "expected_sop": {
+      "nodes": [
+        {
+          "name": "find_duplicates",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "grep/multimatch",
+            "fuel_limit": 100000
+          }
+        },
+        {
+          "name": "create_module",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "fs/write",
+            "fuel_limit": 100000
+          }
+        },
+        {
+          "name": "update_call_sites",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "edit/multi",
+            "fuel_limit": 100000
+          }
+        },
+        {
+          "name": "full_test_suite",
+          "kind": {
+            "type": "Test",
+            "command": "cargo test",
+            "workdir": null
+          }
+        },
+        {
+          "name": "cleanup",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "fmt/all",
+            "fuel_limit": 100000
+          }
+        }
+      ],
+      "edges": [
+        [
+          0,
+          1
+        ],
+        [
+          0,
+          2
+        ],
+        [
+          1,
+          3
+        ],
+        [
+          2,
+          3
+        ],
+        [
+          3,
+          4
+        ]
+      ]
+    },
+    "baseline_metrics": {
+      "min_nodes": 4,
+      "max_nodes": 8,
+      "expects_retry": false,
+      "expects_test": true,
+      "expects_branch": false
+    },
+    "notes": ""
+  },
+  {
+    "id": "gs-dep-006",
+    "goal": "Upgrade the serde dependency to the latest version and resolve any breaking changes",
+    "category": "deps",
+    "difficulty": "hard",
+    "expected_sop": {
+      "nodes": [
+        {
+          "name": "check_current",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "cargo/tree",
+            "fuel_limit": 100000
+          }
+        },
+        {
+          "name": "bump_version",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "toml/edit",
+            "fuel_limit": 100000
+          }
+        },
+        {
+          "name": "build_check",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "cargo/check",
+            "fuel_limit": 100000
+          }
+        },
+        {
+          "name": "has_errors",
+          "kind": {
+            "type": "Branch",
+            "branches": {
+              "errors": 3
+            },
+            "default_next": 2
+          }
+        },
+        {
+          "name": "test_after_upgrade",
+          "kind": {
+            "type": "Test",
+            "command": "cargo test",
+            "workdir": null
+          }
+        }
+      ],
+      "edges": [
+        [
+          0,
+          1
+        ],
+        [
+          1,
+          2
+        ],
+        [
+          2,
+          3
+        ],
+        [
+          3,
+          4
+        ]
+      ]
+    },
+    "baseline_metrics": {
+      "min_nodes": 4,
+      "max_nodes": 8,
+      "expects_retry": false,
+      "expects_test": false,
+      "expects_branch": true
+    },
+    "notes": ""
+  },
+  {
+    "id": "gs-lint-007",
+    "goal": "Fix all clippy warnings in the memory storage module",
+    "category": "lint",
+    "difficulty": "medium",
+    "expected_sop": {
+      "nodes": [
+        {
+          "name": "collect_warnings",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "clippy/run",
+            "fuel_limit": 100000
+          }
+        },
+        {
+          "name": "fix_each",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "edit/iterative",
+            "fuel_limit": 100000
+          }
+        },
+        {
+          "name": "clippy_clean",
+          "kind": {
+            "type": "Test",
+            "command": "cargo clippy -- -D warnings",
+            "workdir": null
+          }
+        }
+      ],
+      "edges": [
+        [
+          0,
+          1
+        ],
+        [
+          1,
+          2
+        ]
+      ]
+    },
+    "baseline_metrics": {
+      "min_nodes": 3,
+      "max_nodes": 6,
+      "expects_retry": false,
+      "expects_test": false,
+      "expects_branch": false
+    },
+    "notes": ""
+  },
+  {
+    "id": "gs-fmt-008",
+    "goal": "Format all Rust files and commit only formatting changes separately",
+    "category": "format",
+    "difficulty": "easy",
+    "expected_sop": {
+      "nodes": [
+        {
+          "name": "run_fmt",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "cargo/fmt",
+            "fuel_limit": 100000
+          }
+        },
+        {
+          "name": "stage_changes",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "git/add",
+            "fuel_limit": 100000
+          }
+        },
+        {
+          "name": "commit_fmt",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "git/commit",
+            "fuel_limit": 100000
+          }
+        }
+      ],
+      "edges": [
+        [
+          0,
+          1
+        ],
+        [
+          1,
+          2
+        ]
+      ]
+    },
+    "baseline_metrics": {
+      "min_nodes": 3,
+      "max_nodes": 4,
+      "expects_retry": false,
+      "expects_test": false,
+      "expects_branch": false
+    },
+    "notes": ""
+  },
+  {
+    "id": "gs-git-009",
+    "goal": "Revert the last commit but keep its changes staged for rework",
+    "category": "git_ops",
+    "difficulty": "easy",
+    "expected_sop": {
+      "nodes": [
+        {
+          "name": "soft_reset",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "git/reset_soft",
+            "fuel_limit": 100000
+          }
+        },
+        {
+          "name": "confirm_status",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "git/status",
+            "fuel_limit": 100000
+          }
+        }
+      ],
+      "edges": [
+        [
+          0,
+          1
+        ]
+      ]
+    },
+    "baseline_metrics": {
+      "min_nodes": 2,
+      "max_nodes": 3,
+      "expects_retry": false,
+      "expects_test": false,
+      "expects_branch": false
+    },
+    "notes": ""
+  },
+  {
+    "id": "gs-doc-010",
+    "goal": "Generate API documentation for all public functions in the executor module",
+    "category": "docs",
+    "difficulty": "medium",
+    "expected_sop": {
+      "nodes": [
+        {
+          "name": "list_pub_fns",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "rustdoc/scan",
+            "fuel_limit": 100000
+          }
+        },
+        {
+          "name": "write_docstrings",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "edit/docs",
+            "fuel_limit": 100000
+          }
+        },
+        {
+          "name": "doc_build",
+          "kind": {
+            "type": "Test",
+            "command": "cargo doc --no-deps",
+            "workdir": null
+          }
+        }
+      ],
+      "edges": [
+        [
+          0,
+          1
+        ],
+        [
+          1,
+          2
+        ]
+      ]
+    },
+    "baseline_metrics": {
+      "min_nodes": 3,
+      "max_nodes": 5,
+      "expects_retry": false,
+      "expects_test": false,
+      "expects_branch": false
+    },
+    "notes": ""
+  },
+  {
+    "id": "gs-build-011",
+    "goal": "Diagnose why the release build fails while debug build succeeds",
+    "category": "build",
+    "difficulty": "hard",
+    "expected_sop": {
+      "nodes": [
+        {
+          "name": "repro_debug",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "cargo/build_debug",
+            "fuel_limit": 100000
+          }
+        },
+        {
+          "name": "repro_release",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "cargo/build_release",
+            "fuel_limit": 100000
+          }
+        },
+        {
+          "name": "diff_flags",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "config/compare",
+            "fuel_limit": 100000
+          }
+        },
+        {
+          "name": "isolate_opt_issue",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "cargo/build_release_lto_off",
+            "fuel_limit": 100000
+          }
+        }
+      ],
+      "edges": [
+        [
+          0,
+          2
+        ],
+        [
+          1,
+          2
+        ],
+        [
+          2,
+          3
+        ]
+      ]
+    },
+    "baseline_metrics": {
+      "min_nodes": 3,
+      "max_nodes": 6,
+      "expects_retry": false,
+      "expects_test": false,
+      "expects_branch": false
+    },
+    "notes": ""
+  },
+  {
+    "id": "gs-perf-012",
+    "goal": "Profile and reduce the startup latency of the TUI by at least 30 percent",
+    "category": "perf",
+    "difficulty": "hard",
+    "expected_sop": {
+      "nodes": [
+        {
+          "name": "measure_baseline",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "bench/startup",
+            "fuel_limit": 100000
+          }
+        },
+        {
+          "name": "profile_hotspots",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "prof/flamegraph",
+            "fuel_limit": 100000
+          }
+        },
+        {
+          "name": "lazy_init_heavy_deps",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "edit/refactor",
+            "fuel_limit": 100000
+          }
+        },
+        {
+          "name": "measure_after",
+          "kind": {
+            "type": "Test",
+            "command": "bench/startup_compare",
+            "workdir": null
+          }
+        }
+      ],
+      "edges": [
+        [
+          0,
+          1
+        ],
+        [
+          1,
+          2
+        ],
+        [
+          2,
+          3
+        ]
+      ]
+    },
+    "baseline_metrics": {
+      "min_nodes": 4,
+      "max_nodes": 7,
+      "expects_retry": false,
+      "expects_test": true,
+      "expects_branch": false
+    },
+    "notes": ""
+  },
+  {
+    "id": "gs-test-013",
+    "goal": "Add unit tests covering error paths of the config loader",
+    "category": "testing",
+    "difficulty": "medium",
+    "expected_sop": {
+      "nodes": [
+        {
+          "name": "identify_error_paths",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "analysis/scan_cfg",
+            "fuel_limit": 100000
+          }
+        },
+        {
+          "name": "write_err_tests",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "edit/tests",
+            "fuel_limit": 100000
+          }
+        },
+        {
+          "name": "run_new_tests",
+          "kind": {
+            "type": "Test",
+            "command": "cargo test config::tests",
+            "workdir": null
+          }
+        }
+      ],
+      "edges": [
+        [
+          0,
+          1
+        ],
+        [
+          1,
+          2
+        ]
+      ]
+    },
+    "baseline_metrics": {
+      "min_nodes": 3,
+      "max_nodes": 5,
+      "expects_retry": false,
+      "expects_test": true,
+      "expects_branch": false
+    },
+    "notes": ""
+  },
+  {
+    "id": "gs-test-014",
+    "goal": "Ensure the integration suite passes on a clean checkout without cached artifacts",
+    "category": "ci_verify",
+    "difficulty": "medium",
+    "expected_sop": {
+      "nodes": [
+        {
+          "name": "clean_target",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "cargo/clean",
+            "fuel_limit": 100000
+          }
+        },
+        {
+          "name": "full_build",
+          "kind": {
+            "type": "Retry",
+            "child": {
+              "type": "Wasm",
+              "tool_id": "cargo/build",
+              "fuel_limit": 100000
+            },
+            "max_retries": 3
+          }
+        },
+        {
+          "name": "integration_suite",
+          "kind": {
+            "type": "Test",
+            "command": "cargo test --workspace",
+            "workdir": null
+          }
+        }
+      ],
+      "edges": [
+        [
+          0,
+          1
+        ],
+        [
+          1,
+          2
+        ]
+      ]
+    },
+    "baseline_metrics": {
+      "min_nodes": 3,
+      "max_nodes": 5,
+      "expects_retry": true,
+      "expects_test": true,
+      "expects_branch": false
+    },
+    "notes": ""
+  },
+  {
+    "id": "gs-test-015",
+    "goal": "Set up a nightly benchmark job that fails when cognitive loop latency regresses over 10 percent",
+    "category": "benchmarking",
+    "difficulty": "hard",
+    "expected_sop": {
+      "nodes": [
+        {
+          "name": "define_bench_baseline",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "bench/baseline_capture",
+            "fuel_limit": 100000
+          }
+        },
+        {
+          "name": "wire_cron_job",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "ci/add_workflow",
+            "fuel_limit": 100000
+          }
+        },
+        {
+          "name": "regression_detected",
+          "kind": {
+            "type": "Branch",
+            "branches": {
+              "fail": 2,
+              "pass": 3
+            },
+            "default_next": 3
+          }
+        },
+        {
+          "name": "notify_slack",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "webhook/post",
+            "fuel_limit": 100000
+          }
+        },
+        {
+          "name": "archive_trend",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "storage/save_report",
+            "fuel_limit": 100000
+          }
+        }
+      ],
+      "edges": [
+        [
+          0,
+          1
+        ],
+        [
+          1,
+          2
+        ],
+        [
+          2,
+          3
+        ],
+        [
+          2,
+          4
+        ]
+      ]
+    },
+    "baseline_metrics": {
+      "min_nodes": 4,
+      "max_nodes": 8,
+      "expects_retry": false,
+      "expects_test": false,
+      "expects_branch": true
+    },
+    "notes": ""
+  },
+  {
+    "id": "gs-test-016",
+    "goal": "Verify that the WASM sandbox correctly enforces the fuel limit under adversarial input",
+    "category": "sandbox",
+    "difficulty": "hard",
+    "expected_sop": {
+      "nodes": [
+        {
+          "name": "craft_adversarial_input",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "fixture/gen_infinite_loop",
+            "fuel_limit": 100000
+          }
+        },
+        {
+          "name": "execute_with_limit",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "sandboxd/execute",
+            "fuel_limit": 100000
+          }
+        },
+        {
+          "name": "assert_fuel_trap",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "verify/fuel_consumed_equals_limit",
+            "fuel_limit": 100000
+          }
+        }
+      ],
+      "edges": [
+        [
+          0,
+          1
+        ],
+        [
+          1,
+          2
+        ]
+      ]
+    },
+    "baseline_metrics": {
+      "min_nodes": 3,
+      "max_nodes": 5,
+      "expects_retry": false,
+      "expects_test": false,
+      "expects_branch": false
+    },
+    "notes": ""
+  },
+  {
+    "id": "gs-test-017",
+    "goal": "Run property-based tests on the DAG dependency resolver with 256 random graphs",
+    "category": "property_testing",
+    "difficulty": "medium",
+    "expected_sop": {
+      "nodes": [
+        {
+          "name": "configure_proptest_cases",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "env/set_seed",
+            "fuel_limit": 100000
+          }
+        },
+        {
+          "name": "run_proptest",
+          "kind": {
+            "type": "Test",
+            "command": "cargo test resolver_proptest",
+            "workdir": null
+          }
+        },
+        {
+          "name": "report_minimal_failures",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "log/shrink_report",
+            "fuel_limit": 100000
+          }
+        }
+      ],
+      "edges": [
+        [
+          0,
+          1
+        ],
+        [
+          1,
+          2
+        ]
+      ]
+    },
+    "baseline_metrics": {
+      "min_nodes": 3,
+      "max_nodes": 5,
+      "expects_retry": false,
+      "expects_test": true,
+      "expects_branch": false
+    },
+    "notes": ""
+  },
+  {
+    "id": "gs-test-018",
+    "goal": "Validate OpenAPI schema drift between bridge proto definitions and REST handlers",
+    "category": "api_contract",
+    "difficulty": "hard",
+    "expected_sop": {
+      "nodes": [
+        {
+          "name": "export_openapi",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "http/dump_openapi",
+            "fuel_limit": 100000
+          }
+        },
+        {
+          "name": "export_proto_desc",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "grpc/descriptor",
+            "fuel_limit": 100000
+          }
+        },
+        {
+          "name": "schema_diff",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "tools/json_diff",
+            "fuel_limit": 100000
+          }
+        },
+        {
+          "name": "contract_gate",
+          "kind": {
+            "type": "Test",
+            "command": "check/no_breaking_changes",
+            "workdir": null
+          }
+        }
+      ],
+      "edges": [
+        [
+          0,
+          2
+        ],
+        [
+          1,
+          2
+        ],
+        [
+          2,
+          3
+        ]
+      ]
+    },
+    "baseline_metrics": {
+      "min_nodes": 4,
+      "max_nodes": 6,
+      "expects_retry": false,
+      "expects_test": false,
+      "expects_branch": false
+    },
+    "notes": ""
+  },
+  {
+    "id": "gs-test-019",
+    "goal": "Chaos test: kill the sandboxd daemon mid-execution and verify graceful degradation to in-process execution",
+    "category": "chaos",
+    "difficulty": "hard",
+    "expected_sop": {
+      "nodes": [
+        {
+          "name": "start_execution",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "kernel/execute_goal",
+            "fuel_limit": 100000
+          }
+        },
+        {
+          "name": "kill_daemon_at_node2",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "chaos/inject_fault",
+            "fuel_limit": 100000
+          }
+        },
+        {
+          "name": "daemon_alive",
+          "kind": {
+            "type": "Branch",
+            "branches": {
+              "yes": 3,
+              "no": 4
+            },
+            "default_next": 4
+          }
+        },
+        {
+          "name": "assert_success_via_bridge",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "verify/event_stream",
+            "fuel_limit": 100000
+          }
+        },
+        {
+          "name": "fallback_local_exec",
+          "kind": {
+            "type": "Retry",
+            "child": {
+              "type": "Wasm",
+              "tool_id": "sandbox/local_execute",
+              "fuel_limit": 100000
+            },
+            "max_retries": 3
+          }
+        }
+      ],
+      "edges": [
+        [
+          0,
+          1
+        ],
+        [
+          1,
+          2
+        ],
+        [
+          2,
+          3
+        ],
+        [
+          2,
+          4
+        ]
+      ]
+    },
+    "baseline_metrics": {
+      "min_nodes": 4,
+      "max_nodes": 8,
+      "expects_retry": true,
+      "expects_test": false,
+      "expects_branch": true
+    },
+    "notes": ""
+  },
+  {
+    "id": "gs-test-020",
+    "goal": "Confirm experience retrieval returns zero results from other projects (isolation)",
+    "category": "isolation",
+    "difficulty": "medium",
+    "expected_sop": {
+      "nodes": [
+        {
+          "name": "record_as_project_a",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "mem/record_exp",
+            "fuel_limit": 100000
+          }
+        },
+        {
+          "name": "query_as_project_b",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "mem/query_exp",
+            "fuel_limit": 100000
+          }
+        },
+        {
+          "name": "assert_empty_cross_project",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "verify/no_leak",
+            "fuel_limit": 100000
+          }
+        }
+      ],
+      "edges": [
+        [
+          0,
+          1
+        ],
+        [
+          1,
+          2
+        ]
+      ]
+    },
+    "baseline_metrics": {
+      "min_nodes": 3,
+      "max_nodes": 4,
+      "expects_retry": false,
+      "expects_test": false,
+      "expects_branch": false
+    },
+    "notes": ""
+  },
+  {
+    "id": "gs-test-021",
+    "goal": "Smoke test all five agent tools respond within their timeout budget",
+    "category": "smoke",
+    "difficulty": "easy",
+    "expected_sop": {
+      "nodes": [
+        {
+          "name": "metis_ping",
+          "kind": {
+            "type": "Retry",
+            "child": {
+              "type": "Wasm",
+              "tool_id": "metis/analyse",
+              "fuel_limit": 100000
+            },
+            "max_retries": 3
+          }
+        },
+        {
+          "name": "momus_ping",
+          "kind": {
+            "type": "Retry",
+            "child": {
+              "type": "Wasm",
+              "tool_id": "momus/review_plan",
+              "fuel_limit": 100000
+            },
+            "max_retries": 3
+          }
+        },
+        {
+          "name": "librarian_ping",
+          "kind": {
+            "type": "Retry",
+            "child": {
+              "type": "Wasm",
+              "tool_id": "librarian/research",
+              "fuel_limit": 100000
+            },
+            "max_retries": 3
+          }
+        },
+        {
+          "name": "scribe_ping",
+          "kind": {
+            "type": "Retry",
+            "child": {
+              "type": "Wasm",
+              "tool_id": "scribe/update_docs",
+              "fuel_limit": 100000
+            },
+            "max_retries": 3
+          }
+        },
+        {
+          "name": "security_ping",
+          "kind": {
+            "type": "Retry",
+            "child": {
+              "type": "Wasm",
+              "tool_id": "security/threat_model",
+              "fuel_limit": 100000
+            },
+            "max_retries": 3
+          }
+        }
+      ],
+      "edges": []
+    },
+    "baseline_metrics": {
+      "min_nodes": 5,
+      "max_nodes": 8,
+      "expects_retry": false,
+      "expects_test": false,
+      "expects_branch": false
+    },
+    "notes": ""
+  },
+  {
+    "id": "gs-test-022",
+    "goal": "Regression check: evolution must not trigger on critique text containing the word 'critical' alone",
+    "category": "evolution_guard",
+    "difficulty": "medium",
+    "expected_sop": {
+      "nodes": [
+        {
+          "name": "seed_critique_text",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "fixture/critique_with_keyword",
+            "fuel_limit": 100000
+          }
+        },
+        {
+          "name": "run_reflection",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "core/reflect",
+            "fuel_limit": 100000
+          }
+        },
+        {
+          "name": "assert_no_evolution_signal",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "verify/signals_empty",
+            "fuel_limit": 100000
+          }
+        }
+      ],
+      "edges": [
+        [
+          0,
+          1
+        ],
+        [
+          1,
+          2
+        ]
+      ]
+    },
+    "baseline_metrics": {
+      "min_nodes": 3,
+      "max_nodes": 5,
+      "expects_retry": false,
+      "expects_test": false,
+      "expects_branch": false
+    },
+    "notes": ""
+  },
+  {
+    "id": "gs-mem-023",
+    "goal": "Store this session's key decisions as experiences for future retrieval",
+    "category": "memory_write",
+    "difficulty": "easy",
+    "expected_sop": {
+      "nodes": [
+        {
+          "name": "summarize_decisions",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "llm/summarize",
+            "fuel_limit": 100000
+          }
+        },
+        {
+          "name": "record_experiences",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "mem/record_batch",
+            "fuel_limit": 100000
+          }
+        }
+      ],
+      "edges": [
+        [
+          0,
+          1
+        ]
+      ]
+    },
+    "baseline_metrics": {
+      "min_nodes": 2,
+      "max_nodes": 4,
+      "expects_retry": false,
+      "expects_test": false,
+      "expects_branch": false
+    },
+    "notes": ""
+  },
+  {
+    "id": "gs-mem-024",
+    "goal": "Retrieve prior solutions for database migration failures before planning a new migration",
+    "category": "memory_read",
+    "difficulty": "medium",
+    "expected_sop": {
+      "nodes": [
+        {
+          "name": "query_similar_experiences",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "mem/query_migration_failures",
+            "fuel_limit": 100000
+          }
+        },
+        {
+          "name": "prior_art_exists",
+          "kind": {
+            "type": "Branch",
+            "branches": {
+              "reuse": 2,
+              "novel": 3
+            },
+            "default_next": 3
+          }
+        },
+        {
+          "name": "adapt_prior_solution",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "plan/from_experience",
+            "fuel_limit": 100000
+          }
+        },
+        {
+          "name": "synthesize_novel_plan",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "sop/synthesize",
+            "fuel_limit": 100000
+          }
+        }
+      ],
+      "edges": [
+        [
+          0,
+          1
+        ],
+        [
+          1,
+          2
+        ],
+        [
+          1,
+          3
+        ]
+      ]
+    },
+    "baseline_metrics": {
+      "min_nodes": 3,
+      "max_nodes": 6,
+      "expects_retry": false,
+      "expects_test": false,
+      "expects_branch": true
+    },
+    "notes": ""
+  },
+  {
+    "id": "gs-cog-025",
+    "goal": "Synthesize a multi-step SOP for deploying the web dashboard behind nginx with TLS",
+    "category": "synthesis",
+    "difficulty": "medium",
+    "expected_sop": {
+      "nodes": [
+        {
+          "name": "gather_requirements",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "analysis/goal_decompose",
+            "fuel_limit": 100000
+          }
+        },
+        {
+          "name": "generate_draft_sop",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "sop/draft",
+            "fuel_limit": 100000
+          }
+        },
+        {
+          "name": "validate_dag_acyclic",
+          "kind": {
+            "type": "Test",
+            "command": "graph/topo_check",
+            "workdir": null
+          }
+        },
+        {
+          "name": "enroll_golden_if_best",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "golden/enroll",
+            "fuel_limit": 100000
+          }
+        }
+      ],
+      "edges": [
+        [
+          0,
+          1
+        ],
+        [
+          1,
+          2
+        ],
+        [
+          2,
+          3
+        ]
+      ]
+    },
+    "baseline_metrics": {
+      "min_nodes": 3,
+      "max_nodes": 6,
+      "expects_retry": false,
+      "expects_test": false,
+      "expects_branch": false
+    },
+    "notes": ""
+  },
+  {
+    "id": "gs-cog-026",
+    "goal": "Evaluate whether the synthesized SOP meets quality threshold before execution",
+    "category": "evaluation",
+    "difficulty": "medium",
+    "expected_sop": {
+      "nodes": [
+        {
+          "name": "load_candidate_config",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "sop/get_config",
+            "fuel_limit": 100000
+          }
+        },
+        {
+          "name": "heuristic_evaluate",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "eval/heuristic_score",
+            "fuel_limit": 100000
+          }
+        },
+        {
+          "name": "score_above_threshold",
+          "kind": {
+            "type": "Branch",
+            "branches": {
+              "accept": 3,
+              "reject_and_refine": 4
+            },
+            "default_next": 4
+          }
+        },
+        {
+          "name": "proceed_to_execution",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "kernel/execute",
+            "fuel_limit": 100000
+          }
+        },
+        {
+          "name": "back_to_synthesis",
+          "kind": {
+            "type": "Retry",
+            "child": {
+              "type": "Wasm",
+              "tool_id": "sop/refine",
+              "fuel_limit": 100000
+            },
+            "max_retries": 3
+          }
+        }
+      ],
+      "edges": [
+        [
+          0,
+          1
+        ],
+        [
+          1,
+          2
+        ],
+        [
+          2,
+          3
+        ],
+        [
+          2,
+          4
+        ]
+      ]
+    },
+    "baseline_metrics": {
+      "min_nodes": 4,
+      "max_nodes": 7,
+      "expects_retry": true,
+      "expects_test": false,
+      "expects_branch": true
+    },
+    "notes": ""
+  },
+  {
+    "id": "gs-cog-027",
+    "goal": "Detect and pivot when node execution deviates from the predicted path by over 50 percent deviation score",
+    "category": "reflection",
+    "difficulty": "hard",
+    "expected_sop": {
+      "nodes": [
+        {
+          "name": "execute_with_prediction",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "core/execute_measured_path",
+            "fuel_limit": 100000
+          }
+        },
+        {
+          "name": "compute_deviation",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "reflect/deviation_score",
+            "fuel_limit": 100000
+          }
+        },
+        {
+          "name": "deviation_over_threshold",
+          "kind": {
+            "type": "Branch",
+            "branches": {
+              "pivot": 3,
+              "continue": 4
+            },
+            "default_next": 4
+          }
+        },
+        {
+          "name": "trigger_pivot_reflection",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "reflect/deep",
+            "fuel_limit": 100000
+          }
+        },
+        {
+          "name": "log_continue",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "trace/append_ok",
+            "fuel_limit": 100000
+          }
+        }
+      ],
+      "edges": [
+        [
+          0,
+          1
+        ],
+        [
+          1,
+          2
+        ],
+        [
+          2,
+          3
+        ],
+        [
+          2,
+          4
+        ]
+      ]
+    },
+    "baseline_metrics": {
+      "min_nodes": 4,
+      "max_nodes": 7,
+      "expects_retry": false,
+      "expects_test": false,
+      "expects_branch": true
+    },
+    "notes": ""
+  },
+  {
+    "id": "gs-cog-028",
+    "goal": "Enrich the anomaly detector baseline with real fuel consumption from the last hundred executions",
+    "category": "observability",
+    "difficulty": "medium",
+    "expected_sop": {
+      "nodes": [
+        {
+          "name": "export_recent_measurements",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "ctx/export_trace_fuel",
+            "fuel_limit": 100000
+          }
+        },
+        {
+          "name": "feed_detector_observe",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "anomaly/observe_batch",
+            "fuel_limit": 100000
+          }
+        },
+        {
+          "name": "persist_ewma_state",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "store/save_baseline",
+            "fuel_limit": 100000
+          }
+        }
+      ],
+      "edges": [
+        [
+          0,
+          1
+        ],
+        [
+          1,
+          2
+        ]
+      ]
+    },
+    "baseline_metrics": {
+      "min_nodes": 3,
+      "max_nodes": 5,
+      "expects_retry": false,
+      "expects_test": false,
+      "expects_branch": false
+    },
+    "notes": ""
+  },
+  {
+    "id": "gs-cog-029",
+    "goal": "Adapt iteration depth based on task complexity: simple tasks converge in two iterations",
+    "category": "adaptive_depth",
+    "difficulty": "medium",
+    "expected_sop": {
+      "nodes": [
+        {
+          "name": "analyze_complexity",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "complexity/classify",
+            "fuel_limit": 100000
+          }
+        },
+        {
+          "name": "simple_task",
+          "kind": {
+            "type": "Branch",
+            "branches": {
+              "yes": 2,
+              "complex": 3
+            },
+            "default_next": 3
+          }
+        },
+        {
+          "name": "set_budget_two",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "depth/set_budget_2",
+            "fuel_limit": 100000
+          }
+        },
+        {
+          "name": "default_budget_from_analyzer",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "depth/initial_budget",
+            "fuel_limit": 100000
+          }
+        }
+      ],
+      "edges": [
+        [
+          0,
+          1
+        ],
+        [
+          1,
+          2
+        ],
+        [
+          1,
+          3
+        ]
+      ]
+    },
+    "baseline_metrics": {
+      "min_nodes": 3,
+      "max_nodes": 6,
+      "expects_retry": false,
+      "expects_test": false,
+      "expects_branch": true
+    },
+    "notes": ""
+  },
+  {
+    "id": "gs-cog-030",
+    "goal": "Consolidate duplicate experiences in the bank keeping highest-confidence records",
+    "category": "dedup",
+    "difficulty": "medium",
+    "expected_sop": {
+      "nodes": [
+        {
+          "name": "list_all_experiences",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "mem/list_recent",
+            "fuel_limit": 100000
+          }
+        },
+        {
+          "name": "cluster_by_jaccard_over_08",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "mem/group_similar",
+            "fuel_limit": 100000
+          }
+        },
+        {
+          "name": "keep_best_of_cluster",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "mem/prune_low_confidence",
+            "fuel_limit": 100000
+          }
+        }
+      ],
+      "edges": [
+        [
+          0,
+          1
+        ],
+        [
+          1,
+          2
+        ]
+      ]
+    },
+    "baseline_metrics": {
+      "min_nodes": 3,
+      "max_nodes": 5,
+      "expects_retry": false,
+      "expects_test": false,
+      "expects_branch": false
+    },
+    "notes": ""
+  },
+  {
+    "id": "gs-ops-031",
+    "goal": "Restart the bridge service after a proto schema update without dropping active SSE connections",
+    "category": "service_ops",
+    "difficulty": "hard",
+    "expected_sop": {
+      "nodes": [
+        {
+          "name": "drain_connections",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "bridge/drain_graceful",
+            "fuel_limit": 100000
+          }
+        },
+        {
+          "name": "reload_binary",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "systemd/restart",
+            "fuel_limit": 100000
+          }
+        },
+        {
+          "name": "health_poll_until_ready",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "http/wait_health",
+            "fuel_limit": 100000
+          }
+        },
+        {
+          "name": "sse_reconnect_verified",
+          "kind": {
+            "type": "Test",
+            "command": "sse/client_reconnect_probe",
+            "workdir": null
+          }
+        }
+      ],
+      "edges": [
+        [
+          0,
+          1
+        ],
+        [
+          1,
+          2
+        ],
+        [
+          2,
+          3
+        ]
+      ]
+    },
+    "baseline_metrics": {
+      "min_nodes": 4,
+      "max_nodes": 6,
+      "expects_retry": false,
+      "expects_test": true,
+      "expects_branch": false
+    },
+    "notes": ""
+  },
+  {
+    "id": "gs-ops-032",
+    "goal": "Rotate the LLM provider credentials and verify fallback chain integrity",
+    "category": "secrets",
+    "difficulty": "hard",
+    "expected_sop": {
+      "nodes": [
+        {
+          "name": "update_keyring",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "config/set_provider_keys",
+            "fuel_limit": 100000
+          }
+        },
+        {
+          "name": "probe_primary",
+          "kind": {
+            "type": "Retry",
+            "child": {
+              "type": "Wasm",
+              "tool_id": "llm/chat_ping",
+              "fuel_limit": 100000
+            },
+            "max_retries": 3
+          }
+        },
+        {
+          "name": "primary_ok",
+          "kind": {
+            "type": "Branch",
+            "branches": {
+              "yes": 3,
+              "check_fallback": 4
+            },
+            "default_next": 4
+          }
+        },
+        {
+          "name": "done_log",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "log/info_rotated",
+            "fuel_limit": 100000
+          }
+        },
+        {
+          "name": "probe_secondary",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "llm/chat_fallback_ping",
+            "fuel_limit": 100000
+          }
+        }
+      ],
+      "edges": [
+        [
+          0,
+          1
+        ],
+        [
+          1,
+          2
+        ],
+        [
+          2,
+          3
+        ],
+        [
+          2,
+          4
+        ]
+      ]
+    },
+    "baseline_metrics": {
+      "min_nodes": 4,
+      "max_nodes": 7,
+      "expects_retry": true,
+      "expects_test": false,
+      "expects_branch": true
+    },
+    "notes": ""
+  },
+  {
+    "id": "gs-ops-033",
+    "goal": "Set up log aggregation so TUI, bridge, and sandboxd logs are searchable in one place",
+    "category": "logging",
+    "difficulty": "medium",
+    "expected_sop": {
+      "nodes": [
+        {
+          "name": "enable_json_logging",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "tracing/config_json",
+            "fuel_limit": 100000
+          }
+        },
+        {
+          "name": "install_collector_sidecar",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "deploy/vector_agent",
+            "fuel_limit": 100000
+          }
+        },
+        {
+          "name": "search_across_sources",
+          "kind": {
+            "type": "Test",
+            "command": "query/unified_search",
+            "workdir": null
+          }
+        }
+      ],
+      "edges": [
+        [
+          0,
+          1
+        ],
+        [
+          1,
+          2
+        ]
+      ]
+    },
+    "baseline_metrics": {
+      "min_nodes": 3,
+      "max_nodes": 5,
+      "expects_retry": false,
+      "expects_test": true,
+      "expects_branch": false
+    },
+    "notes": ""
+  },
+  {
+    "id": "gs-int-034",
+    "goal": "Import an existing n8n workflow JSON as a Sisyphus SOP graph",
+    "category": "interop",
+    "difficulty": "hard",
+    "expected_sop": {
+      "nodes": [
+        {
+          "name": "parse_workflow_json",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "json/load_n8n",
+            "fuel_limit": 100000
+          }
+        },
+        {
+          "name": "map_nodes_to_kinds",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "sop/convert_nodes",
+            "fuel_limit": 100000
+          }
+        },
+        {
+          "name": "map_connections_to_edges",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "sop/convert_edges",
+            "fuel_limit": 100000
+          }
+        },
+        {
+          "name": "roundtrip_validate",
+          "kind": {
+            "type": "Test",
+            "command": "sop/from_config_check",
+            "workdir": null
+          }
+        }
+      ],
+      "edges": [
+        [
+          0,
+          1
+        ],
+        [
+          1,
+          2
+        ],
+        [
+          2,
+          3
+        ]
+      ]
+    },
+    "baseline_metrics": {
+      "min_nodes": 4,
+      "max_nodes": 6,
+      "expects_retry": false,
+      "expects_test": true,
+      "expects_branch": false
+    },
+    "notes": ""
+  },
+  {
+    "id": "gs-int-035",
+    "goal": "Publish a new versioned skill package to the internal skill market",
+    "category": "skill_market",
+    "difficulty": "medium",
+    "expected_sop": {
+      "nodes": [
+        {
+          "name": "bump_manifest_version",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "skill/bump_semver",
+            "fuel_limit": 100000
+          }
+        },
+        {
+          "name": "publish_with_backoff",
+          "kind": {
+            "type": "Retry",
+            "child": {
+              "type": "Wasm",
+              "tool_id": "market/publish",
+              "fuel_limit": 100000
+            },
+            "max_retries": 3
+          }
+        },
+        {
+          "name": "verify_listing",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "market/search_self",
+            "fuel_limit": 100000
+          }
+        }
+      ],
+      "edges": [
+        [
+          0,
+          1
+        ],
+        [
+          1,
+          2
+        ]
+      ]
+    },
+    "baseline_metrics": {
+      "min_nodes": 3,
+      "max_nodes": 5,
+      "expects_retry": true,
+      "expects_test": false,
+      "expects_branch": false
+    },
+    "notes": ""
+  },
+  {
+    "id": "gs-int-036",
+    "goal": "Configure dual-write mode where every state change goes to both SQLite and the roadmap store",
+    "category": "data_sync",
+    "difficulty": "hard",
+    "expected_sop": {
+      "nodes": [
+        {
+          "name": "enable_dual_write_flag",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "config/set_feature_flag",
+            "fuel_limit": 100000
+          }
+        },
+        {
+          "name": "wrap_state_set_hook",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "edit/state_layer",
+            "fuel_limit": 100000
+          }
+        },
+        {
+          "name": "consistency_probe",
+          "kind": {
+            "type": "Test",
+            "command": "check/stores_match",
+            "workdir": null
+          }
+        }
+      ],
+      "edges": [
+        [
+          0,
+          1
+        ],
+        [
+          1,
+          2
+        ]
+      ]
+    },
+    "baseline_metrics": {
+      "min_nodes": 3,
+      "max_nodes": 5,
+      "expects_retry": false,
+      "expects_test": true,
+      "expects_branch": false
+    },
+    "notes": ""
+  },
+  {
+    "id": "gs-sec-037",
+    "goal": "Scan all crate dependencies for known CVEs and upgrade any critical findings",
+    "category": "security_scan",
+    "difficulty": "medium",
+    "expected_sop": {
+      "nodes": [
+        {
+          "name": "cargo_deny_check",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "deny/audit",
+            "fuel_limit": 100000
+          }
+        },
+        {
+          "name": "vulnerabilities_found",
+          "kind": {
+            "type": "Branch",
+            "branches": {
+              "yes": 2,
+              "clean": 3
+            },
+            "default_next": 3
+          }
+        },
+        {
+          "name": "upgrade_critical_crates",
+          "kind": {
+            "type": "Retry",
+            "child": {
+              "type": "Wasm",
+              "tool_id": "cargo/update_pkgs",
+              "fuel_limit": 100000
+            },
+            "max_retries": 3
+          }
+        },
+        {
+          "name": "report_clean",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "report/no_action",
+            "fuel_limit": 100000
+          }
+        }
+      ],
+      "edges": [
+        [
+          0,
+          1
+        ],
+        [
+          1,
+          2
+        ],
+        [
+          1,
+          3
+        ]
+      ]
+    },
+    "baseline_metrics": {
+      "min_nodes": 3,
+      "max_nodes": 6,
+      "expects_retry": true,
+      "expects_test": false,
+      "expects_branch": true
+    },
+    "notes": ""
+  },
+  {
+    "id": "gs-sec-038",
+    "goal": "Remove all unwrap calls from production paths in the mem crate",
+    "category": "panic_hygiene",
+    "difficulty": "medium",
+    "expected_sop": {
+      "nodes": [
+        {
+          "name": "inventory_unwraps",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "grep/count_unwrap_non_test",
+            "fuel_limit": 100000
+          }
+        },
+        {
+          "name": "propagate_with_thiserror",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "edit/to_typeserror",
+            "fuel_limit": 100000
+          }
+        },
+        {
+          "name": "unwrap_free_check",
+          "kind": {
+            "type": "Test",
+            "command": "grep/verify_zero_unwrap",
+            "workdir": null
+          }
+        }
+      ],
+      "edges": [
+        [
+          0,
+          1
+        ],
+        [
+          1,
+          2
+        ]
+      ]
+    },
+    "baseline_metrics": {
+      "min_nodes": 3,
+      "max_nodes": 5,
+      "expects_retry": false,
+      "expects_test": false,
+      "expects_branch": false
+    },
+    "notes": ""
+  },
+  {
+    "id": "gs-webui-039",
+    "goal": "Add a live fuel-consumption chart per node to the web dashboard using existing SSE events",
+    "category": "dashboard",
+    "difficulty": "medium",
+    "expected_sop": {
+      "nodes": [
+        {
+          "name": "subscribe_execution_events",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "sse/connect_events",
+            "fuel_limit": 100000
+          }
+        },
+        {
+          "name": "render_fuel_chart_htmx",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "html/partial_update",
+            "fuel_limit": 100000
+          }
+        },
+        {
+          "name": "e2e_chart_populates",
+          "kind": {
+            "type": "Test",
+            "command": "browser/probe_dom",
+            "workdir": null
+          }
+        }
+      ],
+      "edges": [
+        [
+          0,
+          1
+        ],
+        [
+          1,
+          2
+        ]
+      ]
+    },
+    "baseline_metrics": {
+      "min_nodes": 3,
+      "max_nodes": 5,
+      "expects_retry": false,
+      "expects_test": false,
+      "expects_branch": false
+    },
+    "notes": ""
+  },
+  {
+    "id": "gs-release-040",
+    "goal": "Cut a patch release: bump versions, generate changelog from commits, tag, and publish artifacts",
+    "category": "release",
+    "difficulty": "hard",
+    "expected_sop": {
+      "nodes": [
+        {
+          "name": "aggregate_changelog",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "git/log_since_last_tag",
+            "fuel_limit": 100000
+          }
+        },
+        {
+          "name": "bump_workspace_versions",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "cargo/set_version",
+            "fuel_limit": 100000
+          }
+        },
+        {
+          "name": "build_release_binaries",
+          "kind": {
+            "type": "Retry",
+            "child": {
+              "type": "Wasm",
+              "tool_id": "cargo/build_release_all",
+              "fuel_limit": 100000
+            },
+            "max_retries": 3
+          }
+        },
+        {
+          "name": "tag_and_push",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "git/tag_push",
+            "fuel_limit": 100000
+          }
+        },
+        {
+          "name": "upload_artifacts",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "gh/release_upload",
+            "fuel_limit": 100000
+          }
+        }
+      ],
+      "edges": [
+        [
+          0,
+          1
+        ],
+        [
+          1,
+          2
+        ],
+        [
+          2,
+          3
+        ],
+        [
+          3,
+          4
+        ]
+      ]
+    },
+    "baseline_metrics": {
+      "min_nodes": 5,
+      "max_nodes": 8,
+      "expects_retry": true,
+      "expects_test": false,
+      "expects_branch": false
+    },
+    "notes": ""
+  },
+  {
+    "id": "gs-an-041",
+    "goal": "Analyze why the embedding recall rate is low despite having hundreds of stored experiences",
+    "category": "root_cause",
+    "difficulty": "hard",
+    "expected_sop": {
+      "nodes": [
+        {
+          "name": "dump_recent_queries",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "log/extract_query_stats",
+            "fuel_limit": 100000
+          }
+        },
+        {
+          "name": "inspect_embedding_provider",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "config/get_embedding",
+            "fuel_limit": 100000
+          }
+        },
+        {
+          "name": "using_dummy_embeddings",
+          "kind": {
+            "type": "Branch",
+            "branches": {
+              "yes": 3,
+              "no": 4
+            },
+            "default_next": 3
+          }
+        },
+        {
+          "name": "conclude_hash_vectors_no_semantics",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "analysis/report",
+            "fuel_limit": 100000
+          }
+        },
+        {
+          "name": "investigate_other_factors",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "analysis/deeper_profile",
+            "fuel_limit": 100000
+          }
+        }
+      ],
+      "edges": [
+        [
+          0,
+          1
+        ],
+        [
+          1,
+          2
+        ],
+        [
+          2,
+          3
+        ],
+        [
+          2,
+          4
+        ]
+      ]
+    },
+    "baseline_metrics": {
+      "min_nodes": 4,
+      "max_nodes": 7,
+      "expects_retry": false,
+      "expects_test": false,
+      "expects_branch": true
+    },
+    "notes": ""
+  },
+  {
+    "id": "gs-an-042",
+    "goal": "Compare Jaccard lexical retrieval against pseudo-vector retrieval on a fixed query set",
+    "category": "benchmarking",
+    "difficulty": "hard",
+    "expected_sop": {
+      "nodes": [
+        {
+          "name": "prepare_query_ground_truth_pairs",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "fixture/recall_dataset",
+            "fuel_limit": 100000
+          }
+        },
+        {
+          "name": "recall_jaccard_path",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "mem/query_forced_lexical",
+            "fuel_limit": 100000
+          }
+        },
+        {
+          "name": "recall_dummy_vector_path",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "mem/query_forced_vector",
+            "fuel_limit": 100000
+          }
+        },
+        {
+          "name": "emit_precision_recall_table",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "report/comparison_csv",
+            "fuel_limit": 100000
+          }
+        }
+      ],
+      "edges": [
+        [
+          0,
+          1
+        ],
+        [
+          0,
+          2
+        ],
+        [
+          1,
+          3
+        ],
+        [
+          2,
+          3
+        ]
+      ]
+    },
+    "baseline_metrics": {
+      "min_nodes": 4,
+      "max_nodes": 6,
+      "expects_retry": false,
+      "expects_test": false,
+      "expects_branch": false
+    },
+    "notes": ""
+  },
+  {
+    "id": "gs-an-043",
+    "goal": "Identify the top ten most executed nodes and their average real fuel consumption",
+    "category": "telemetry_analysis",
+    "difficulty": "medium",
+    "expected_sop": {
+      "nodes": [
+        {
+          "name": "export_all_traces",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "trace/export_range",
+            "fuel_limit": 100000
+          }
+        },
+        {
+          "name": "group_by_node_count_fuel_avg",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "analysis/aggregate",
+            "fuel_limit": 100000
+          }
+        },
+        {
+          "name": "render_top_ten_table",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "report/markdown_table",
+            "fuel_limit": 100000
+          }
+        }
+      ],
+      "edges": [
+        [
+          0,
+          1
+        ],
+        [
+          1,
+          2
+        ]
+      ]
+    },
+    "baseline_metrics": {
+      "min_nodes": 3,
+      "max_nodes": 5,
+      "expects_retry": false,
+      "expects_test": false,
+      "expects_branch": false
+    },
+    "notes": ""
+  },
+  {
+    "id": "gs-an-044",
+    "goal": "Trace a single goal end-to-end through predict execute reflect evolve stages and annotate timings",
+    "category": "tracing",
+    "difficulty": "medium",
+    "expected_sop": {
+      "nodes": [
+        {
+          "name": "enable_span_export",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "tracing/console_export",
+            "fuel_limit": 100000
+          }
+        },
+        {
+          "name": "run_single_goal",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "kernel/execute_goal",
+            "fuel_limit": 100000
+          }
+        },
+        {
+          "name": "annotate_stage_boundaries",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "analysis/span_tree",
+            "fuel_limit": 100000
+          }
+        }
+      ],
+      "edges": [
+        [
+          0,
+          1
+        ],
+        [
+          1,
+          2
+        ]
+      ]
+    },
+    "baseline_metrics": {
+      "min_nodes": 3,
+      "max_nodes": 5,
+      "expects_retry": false,
+      "expects_test": false,
+      "expects_branch": false
+    },
+    "notes": ""
+  },
+  {
+    "id": "gs-syn-045",
+    "goal": "Draft an ADR documenting the decision to archive the standalone REST API crate",
+    "category": "documentation",
+    "difficulty": "easy",
+    "expected_sop": {
+      "nodes": [
+        {
+          "name": "collect_evidence_overlap_stats",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "analysis/api_endpoint_counts",
+            "fuel_limit": 100000
+          }
+        },
+        {
+          "name": "write_adr_markdown",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "docs/new_adr",
+            "fuel_limit": 100000
+          }
+        },
+        {
+          "name": "adr_template_conformance",
+          "kind": {
+            "type": "Test",
+            "command": "lint/markdown_headings",
+            "workdir": null
+          }
+        }
+      ],
+      "edges": [
+        [
+          0,
+          1
+        ],
+        [
+          1,
+          2
+        ]
+      ]
+    },
+    "baseline_metrics": {
+      "min_nodes": 3,
+      "max_nodes": 5,
+      "expects_retry": false,
+      "expects_test": true,
+      "expects_branch": false
+    },
+    "notes": ""
+  },
+  {
+    "id": "gs-syn-046",
+    "goal": "Summarize weekly cognitive-loop health: iterations per goal, pivot rate, anomaly counts",
+    "category": "reporting",
+    "difficulty": "medium",
+    "expected_sop": {
+      "nodes": [
+        {
+          "name": "pull_week_traces",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "trace/export_week",
+            "fuel_limit": 100000
+          }
+        },
+        {
+          "name": "compute_health_metrics",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "analysis/loop_stats",
+            "fuel_limit": 100000
+          }
+        },
+        {
+          "name": "post_summary_to_channel",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "webhook/weekly_digest",
+            "fuel_limit": 100000
+          }
+        }
+      ],
+      "edges": [
+        [
+          0,
+          1
+        ],
+        [
+          1,
+          2
+        ]
+      ]
+    },
+    "baseline_metrics": {
+      "min_nodes": 3,
+      "max_nodes": 5,
+      "expects_retry": false,
+      "expects_test": false,
+      "expects_branch": false
+    },
+    "notes": ""
+  },
+  {
+    "id": "gs-plan-047",
+    "goal": "Plan the migration from single-binary deployment to separate bridge and sandboxd services",
+    "category": "planning",
+    "difficulty": "hard",
+    "expected_sop": {
+      "nodes": [
+        {
+          "name": "inventory_coupling_points",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "analysis/find_shared_memory_paths",
+            "fuel_limit": 100000
+          }
+        },
+        {
+          "name": "design_ipc_boundary",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "arch/grpc_contract_draft",
+            "fuel_limit": 100000
+          }
+        },
+        {
+          "name": "breaking_change_needed",
+          "kind": {
+            "type": "Branch",
+            "branches": {
+              "major_bump": 3,
+              "compatible": 4
+            },
+            "default_next": 4
+          }
+        },
+        {
+          "name": "write_migration_guide",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "docs/migration_md",
+            "fuel_limit": 100000
+          }
+        },
+        {
+          "name": "note_compat_shim",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "docs/version_matrix",
+            "fuel_limit": 100000
+          }
+        }
+      ],
+      "edges": [
+        [
+          0,
+          1
+        ],
+        [
+          1,
+          2
+        ],
+        [
+          2,
+          3
+        ],
+        [
+          2,
+          4
+        ]
+      ]
+    },
+    "baseline_metrics": {
+      "min_nodes": 4,
+      "max_nodes": 8,
+      "expects_retry": false,
+      "expects_test": false,
+      "expects_branch": true
+    },
+    "notes": ""
+  },
+  {
+    "id": "gs-plan-048",
+    "goal": "Estimate token cost savings from caching micro-reflector predictions across repeated nodes",
+    "category": "cost_analysis",
+    "difficulty": "medium",
+    "expected_sop": {
+      "nodes": [
+        {
+          "name": "sample_repeat_node_frequency",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "trace/node_repeat_histogram",
+            "fuel_limit": 100000
+          }
+        },
+        {
+          "name": "model_cache_hit_rate",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "analysis/cache_simulation",
+            "fuel_limit": 100000
+          }
+        },
+        {
+          "name": "project_token_savings",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "calc/tokens_times_rate",
+            "fuel_limit": 100000
+          }
+        }
+      ],
+      "edges": [
+        [
+          0,
+          1
+        ],
+        [
+          1,
+          2
+        ]
+      ]
+    },
+    "baseline_metrics": {
+      "min_nodes": 3,
+      "max_nodes": 5,
+      "expects_retry": false,
+      "expects_test": false,
+      "expects_branch": false
+    },
+    "notes": ""
+  },
+  {
+    "id": "gs-auto-049",
+    "goal": "Auto-triage incoming GitHub issues: label by component and detect duplicates against closed issues",
+    "category": "automation",
+    "difficulty": "hard",
+    "expected_sop": {
+      "nodes": [
+        {
+          "name": "fetch_open_issues",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "github/list_issues",
+            "fuel_limit": 100000
+          }
+        },
+        {
+          "name": "classify_component_by_keywords",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "llm/route_label",
+            "fuel_limit": 100000
+          }
+        },
+        {
+          "name": "embed_issue_bodies",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "embed/text",
+            "fuel_limit": 100000
+          }
+        },
+        {
+          "name": "nearest_neighbor_vs_closed",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "vector/search_similar_filtered",
+            "fuel_limit": 100000
+          }
+        },
+        {
+          "name": "duplicate_found",
+          "kind": {
+            "type": "Branch",
+            "branches": {
+              "comment_dup": 5,
+              "label_only": 6
+            },
+            "default_next": 6
+          }
+        },
+        {
+          "name": "post_duplicate_comment",
+          "kind": {
+            "type": "Retry",
+            "child": {
+              "type": "Wasm",
+              "tool_id": "github/comment",
+              "fuel_limit": 100000
+            },
+            "max_retries": 3
+          }
+        },
+        {
+          "name": "apply_labels",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "github/label_add",
+            "fuel_limit": 100000
+          }
+        }
+      ],
+      "edges": [
+        [
+          0,
+          1
+        ],
+        [
+          0,
+          2
+        ],
+        [
+          2,
+          3
+        ],
+        [
+          3,
+          4
+        ],
+        [
+          4,
+          5
+        ],
+        [
+          4,
+          6
+        ]
+      ]
+    },
+    "baseline_metrics": {
+      "min_nodes": 5,
+      "max_nodes": 9,
+      "expects_retry": true,
+      "expects_test": false,
+      "expects_branch": true
+    },
+    "notes": ""
+  },
+  {
+    "id": "gs-auto-050",
+    "goal": "Nightly self-heal: detect flaky tests by rerunning failures three times and quarantine persistent flakes",
+    "category": "self_healing",
+    "difficulty": "hard",
+    "expected_sop": {
+      "nodes": [
+        {
+          "name": "parse_ci_failures",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "ci/failed_jobs",
+            "fuel_limit": 100000
+          }
+        },
+        {
+          "name": "rerun_failed_three_times",
+          "kind": {
+            "type": "Retry",
+            "child": {
+              "type": "Wasm",
+              "tool_id": "cargo/test_specific",
+              "fuel_limit": 100000
+            },
+            "max_retries": 3
+          }
+        },
+        {
+          "name": "still_failing",
+          "kind": {
+            "type": "Branch",
+            "branches": {
+              "quarantine": 3,
+              "transient_flake": 4
+            },
+            "default_next": 4
+          }
+        },
+        {
+          "name": "move_to_quarantine_list",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "cfg/mark_ignored",
+            "fuel_limit": 100000
+          }
+        },
+        {
+          "name": "log_transient_note",
+          "kind": {
+            "type": "Wasm",
+            "tool_id": "report/flake_note",
+            "fuel_limit": 100000
+          }
+        }
+      ],
+      "edges": [
+        [
+          0,
+          1
+        ],
+        [
+          1,
+          2
+        ],
+        [
+          2,
+          3
+        ],
+        [
+          2,
+          4
+        ]
+      ]
+    },
+    "baseline_metrics": {
+      "min_nodes": 4,
+      "max_nodes": 7,
+      "expects_retry": true,
+      "expects_test": false,
+      "expects_branch": true
+    },
+    "notes": ""
+  }
+]

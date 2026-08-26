@@ -119,3 +119,19 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  # ── Golden SOP library structural evaluation (P3-10) ─────────────
+  golden-sop-eval:
+    name: Golden SOP Evaluation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo run --release -p eval-runner --bin golden-sop-eval
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: golden-sop-eval-log
+          path: golden_sop_report.txt
+          retention-days: 30

@@ -22,3 +22,7 @@ reqwest = { version = "0.11", features = ["json"] }
 [[bin]]
 name = "eval-runner"
 path = "runner.rs"
+
+[[bin]]
+name = "golden-sop-eval"
+path = "golden_sop/eval.rs"
