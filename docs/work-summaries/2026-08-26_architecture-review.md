@@ -23,6 +23,7 @@
 - **A1. v2 组件半接线**：`ParallelBranchPredictor::evaluate_branches` 仅被 benches 引用，主认知循环从未调用。AdaptiveDepthController 与 ComplexityAnalyzer 两套深度预算取 min 叠加，调参面翻倍。
 - **A2. 共享状态跨执行污染（已证实的并发路径）**：gRPC `ExecuteSop` → `run_execution` → `kernel.execute_goal` → `execute_with_cognition` → `run_cognitive_loop`，tonic 天然并发且无互斥；更强的是 `kernel/execution.rs:527,583` 的 `execute_composite` 用 `JoinSet.spawn` **主动并行**多个循环实例，每个都写共享 `self.config`（cognitive_loop.rs:88 写回 max_iterations/convergence_threshold）。`depth_controller.reset()` 全局 0 个调用点，置信度历史跨执行累积导致误判收敛。`active_executions` 以 sop_id 为键互写。
 - **A3. sisyphus-api 孤儿化**：无下游依赖者，4 个端点与 bridge 内置 71 个 HTTP 端点重叠。
+- **A4. 认知循环配置全链路断层（三次复核确认）**：`config.example.toml` 与 `book/src/configuration.md` 详细记载了 `[cognitive_loop]` 及 `[cognitive_loop.adaptive_depth]` 共 6 个可调参数与环境变量，但生产装配路径 `SisyphusKernel::new` 硬编码 `CognitiveLoopConfig::default()`（kernel/construction.rs:88），bridge 从不传递已解析的 `Config.cognitive_loop`；唯一的接线入口 `with_cognitive_loop_config` 在全仓库（含 ide/、evals/、webui/）零调用。且循环内动态深度计算会覆盖基线的 max_iterations/convergence_threshold（P0-1b 已局部化），因此**用户在配置文件或环境变量中设置的认知循环参数实际从不生效**。AdaptiveDepthController 同样以硬编码默认值构造（StrategicManager::new 中 `AdaptiveDepthController::default()`），未读取 `adaptive_depth` 配置段。
 
 ### B. 认知质量层（高）
 
@@ -46,7 +47,8 @@
 ## 四、优化方案
 
 ### P0 正确性修复（1-2 周）
-1. 循环参数局部化传参，禁止写回共享 `RwLock<CognitiveLoopConfig>`；AdaptiveDepthController 改 per-run 实例或进入循环前 reset()
+1. 循环参数局部化传参，禁止写回共享 `RwLock<CognitiveLoopConfig>`；AdaptiveDepthController 改 per-run 实例或进入循环前 reset()（✅ 已实施，见 265b958 + dbc2f7a）
+1b. 接线认知循环配置：`SisyphusKernel::new` 增加 config 参数或在 bridge 装配处调用 `with_cognitive_loop_config(shared_config.cognitive_loop.clone())`；`AdaptiveDepthController` 从 `AdaptiveDepthConfig` 构造而非 default()。否则配置文件中的 6 个认知循环参数继续全部失效
 2. 错误类型统一（维持）：simulation.rs 的 String 错误收敛到 IntelError；unwrap 清理降为低优先级（真实生产路径仅约 10 处，见 C 层勘误）
 3. NodeOutput 增加 status 字段，消灭字符串嗅探
 
