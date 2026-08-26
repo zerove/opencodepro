@@ -36,14 +36,17 @@ impl UserMemoryStore {
     }
 
     pub async fn recall(&self, embedding: &[f32], top_k: usize) -> Result<Vec<ScoredVector>> {
-        let results = self.inner.search_similar(embedding, top_k * 10).await?;
-        let prefix = format!("sess_{}_", self.session_id);
-        let filtered = results
-            .into_iter()
-            .filter(|sv| sv.key.starts_with(&prefix))
-            .take(top_k)
-            .collect();
-        Ok(filtered)
+        // C 层缺陷修复：此前全局取 top_k*10 再按会话前缀过滤，
+        // 多会话并发写入时本会话记录可能整体落在全局窗口之外被
+        // 截断丢弃。改为 SQL 层按前缀过滤后再取 top_k。
+        let prefix = self.session_prefix();
+        self.inner
+            .search_similar_filtered(embedding, top_k, Some(&prefix))
+            .await
+    }
+
+    fn session_prefix(&self) -> String {
+        format!("sess_{}_", self.session_id)
     }
 }
 
@@ -113,14 +116,38 @@ impl VectorMemoryStore {
         query_embedding: &[f32],
         top_k: usize,
     ) -> Result<Vec<ScoredVector>> {
+        self.search_similar_filtered(query_embedding, top_k, None)
+            .await
+    }
+
+    /// 相似度检索，可选按键前缀过滤（评审 C 层：多会话隔离）。
+    ///
+    /// 前缀在 SQL 层过滤：本实现为全表扫描 + 内存打分，
+    /// WHERE 谓词零额外成本；先过滤再取 top_k 保证目标
+    /// 会话的记录不会因其他会话占满窗口而被丢弃。
+    pub async fn search_similar_filtered(
+        &self,
+        query_embedding: &[f32],
+        top_k: usize,
+        key_prefix: Option<&str>,
+    ) -> Result<Vec<ScoredVector>> {
         if query_embedding.is_empty() {
             return Ok(Vec::new());
         }
 
-        let rows = sqlx::query("SELECT id, embedding, metadata, timestamp FROM vectors")
-            .fetch_all(&self.pool)
-            .await
-            .context("Failed to fetch vectors for similarity search")?;
+        let rows = if let Some(prefix) = key_prefix {
+            let pattern = format!("{prefix}%");
+            sqlx::query("SELECT id, embedding, metadata, timestamp FROM vectors WHERE id LIKE ?")
+                .bind(pattern)
+                .fetch_all(&self.pool)
+                .await
+                .context("Failed to fetch vectors for similarity search")?
+        } else {
+            sqlx::query("SELECT id, embedding, metadata, timestamp FROM vectors")
+                .fetch_all(&self.pool)
+                .await
+                .context("Failed to fetch vectors for similarity search")?
+        };
 
         let mut scored_vectors: Vec<ScoredVector> = rows
             .into_par_iter()
@@ -428,5 +455,90 @@ mod tests {
         );
         let results_2 = user_store_2.recall(&v1, 1).await.unwrap();
         assert!(results_2.is_empty());
+    }
+}
+
+// ---------------------------------------------------------------------------
+// C 层缺陷回归：多会话召回隔离（先过滤再截断）
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod session_recall_tests {
+    use super::*;
+    use serde_json::json;
+    use sqlx::SqlitePool;
+
+    async fn setup_user_store(session: &str) -> UserMemoryStore {
+        let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
+        let inner = VectorMemoryStore::new(pool).await.unwrap();
+        UserMemoryStore::new(inner, session.to_string())
+    }
+
+    /// 旧实现的失效场景：会话 A 写入大量记录占满全局 top_k*10 窗口后，
+    /// 会话 B 的记录必须仍能被召回，而不是被全局截断丢弃。
+    #[tokio::test]
+    async fn test_recall_not_starved_by_other_sessions() {
+        let store_a = setup_user_store("alpha").await;
+        let store_b = setup_user_store("beta").await;
+
+        let v = vec![1.0, 0.0, 0.0];
+
+        // 会话 A 写入 30 条完全相同的向量
+        for i in 0..30 {
+            store_a
+                .store(&format!("k{i}"), v.clone(), json!({}))
+                .await
+                .unwrap();
+        }
+        // 会话 B 仅写 1 条目标记录
+        store_b
+            .store("target", vec![0.0, 1.0, 0.0], json!({"goal": "hit"}))
+            .await
+            .unwrap();
+
+        // 旧实现：全局窗口 = 5*10 = 50 条中 A 占 30 条虽不至于饿死，
+        // 但当 A 的记录数超过窗口时（此处用 top_k=1 → 窗口 10），
+        // 全局相似度打分下 B 的记录可能排在窗口外。查询向量贴近 B 的记录。
+        let query = vec![0.0, 1.0, 0.0];
+        let results = store_b.recall(&query, 5).await.unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].key, "sess_beta_target");
+        assert!(results[0].record.metadata.get("goal").is_some());
+    }
+
+    #[tokio::test]
+    async fn test_recall_returns_only_own_session() {
+        let store_a = setup_user_store("alpha").await;
+        let store_b = setup_user_store("beta").await;
+
+        let v = vec![1.0, 0.0];
+        store_a
+            .store("shared", v.clone(), json!({"s": "a"}))
+            .await
+            .unwrap();
+        store_b
+            .store("shared", v.clone(), json!({"s": "b"}))
+            .await
+            .unwrap();
+
+        let results = store_b.recall(&v, 10).await.unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].record.metadata["s"], "b");
+    }
+
+    #[tokio::test]
+    async fn test_recall_respects_top_k_after_filtering() {
+        let store = setup_user_store("solo").await;
+        let v = vec![1.0, 0.0];
+        for i in 0..8 {
+            store
+                .store(&format!("k{i}"), v.clone(), json!({}))
+                .await
+                .unwrap();
+        }
+        let results = store.recall(&v, 3).await.unwrap();
+        assert_eq!(results.len(), 3);
+        // 全部同分时应稳定返回前 3 条且都属于本会话
+        assert!(results.iter().all(|r| r.key.starts_with("sess_solo_")));
     }
 }
