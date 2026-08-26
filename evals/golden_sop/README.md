@@ -26,6 +26,19 @@ golden SOP，nightly 跑通过率/成本/迭代数趋势。
 | service_ops/secrets/logging/interop/skill_market/data_sync/security_scan/panic_hygiene/dashboard/release | 10 | 运维与集成 |
 | root_cause/benchmarking/telemetry_analysis/tracing/documentation/reporting/planning/cost_analysis/automation/self_healing | 10 | 分析综合自动化 |
 
+## 嵌入召回率基准（P2-7 收尾）
+
+`recall-benchmark` binary：同一语料（5 主题 × 3 变体 + 干扰项）上对比
+两条检索路径的 Recall@5 与 MRR：
+
+| 路径 | Recall@5 | MRR |
+|------|----------|-----|
+| DummyEmbeddingClient（哈希伪向量） | 0.333 | 0.476 |
+| Jaccard 词法回退 | **0.800** | **1.000** |
+
+结论：哈希正弦伪向量无语义信号；嵌入不可用时词法回退是更优降级路径，
+P2-7 的降级策略得到数据验证。断言保证 jaccard ≥ dummy 不回归。
+
 ## 后续步骤（第二步起，待真实管线接入后实施）
 
 1. **执行评测**：对每例 goal 走完整合成 → 执行 → 反思循环，记录

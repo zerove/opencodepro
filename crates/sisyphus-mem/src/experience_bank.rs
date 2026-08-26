@@ -12,7 +12,7 @@ use sisyphus_tools_llm::EmbeddingClient;
 ///
 /// 伪嵌入降级路径（P2-7）的词法打分基元：小写化后按非
 /// 字母数字切分。空集合对空集合定义为 0.0（无信息）。
-fn jaccard_similarity(a: &str, b: &str) -> f64 {
+pub fn jaccard_similarity(a: &str, b: &str) -> f64 {
     let tokenize = |s: &str| -> HashSet<String> {
         s.to_lowercase()
             .split(|c: char| !c.is_alphanumeric())

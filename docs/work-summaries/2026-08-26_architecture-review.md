@@ -58,7 +58,7 @@
 6. sisyphus-api 合并入 bridge 或转为纯 OpenAPI 类型定义 crate
 
 ### P2 认知能力提升（1-2 月）
-7. 真实嵌入接入：配置缺失时显式降级并告警（✅ 第一步已实施：非 openai provider 时启动日志显式 warn 说明伪嵌入无语义质量与检索退化，DummyEmbeddingClient 补充警示文档。✅ 第二步已实施（1b51f58）：`query_similar` 嵌入调用失败时词法回退——`jaccard_similarity` 对最近 500 条经验按词元重合度打分排序，过滤语义与主路径一致，warn 明示结果为词法而非语义；5 个 Jaccard 边界测试。召回率基准待实施）
+7. 真实嵌入接入：配置缺失时显式降级并告警（✅ 第一步已实施：非 openai provider 时启动日志显式 warn 说明伪嵌入无语义质量与检索退化，DummyEmbeddingClient 补充警示文档。✅ 第二步已实施（1b51f58）：`query_similar` 嵌入调用失败时词法回退——`jaccard_similarity` 对最近 500 条经验按词元重合度打分排序，过滤语义与主路径一致，warn 明示结果为词法而非语义；5 个 Jaccard 边界测试。召回率基准已实施：`recall-benchmark` binary 在主题化语料上对比两路径——Jaccard 词法回退 Recall@5=0.800 / MRR=1.000，显著优于伪向量检索的 0.333 / 0.476，为"嵌入不可用即走词法回退"提供数据支撑并带防回归断言）
 8. LLM 调用分级治理：critique 阶段超时可配置已落地（30s 默认 + 禁用语义，见 B3）。**勘误（2026-08-26 复核）**：重试退避并非"未实施"——`provider/registry.rs` 的 `chat_with_fallback` 早已具备指数退避（base 1s × 2^attempt）+ ±25% 抖动 + Transient/Permanent/Auth 错误分级，且为生产主路径（`DynamicLlmClient::chat` → registry 回退链），自 2026-07-02 crate 拆分起即存在；此前评审结论有误。剩余待实施：reflect/evolve 分级超时与 token 预算联动
 9. 偏差真值采集（✅ 第一步已实施：`build_cog_map` 的节点偏差不再恒为 0，改为从执行轨迹回填运行时监督器逐节点记录的 `deviation_score`（取该节点最近一次记录）。✅ 第二步已实施（97a7951）：`TracePoint` 新增显式 `status` 字段，intel `build_trace` 反思 prompt 的文本嗅探改为显式状态优先、旧数据兜底；fuel/duration 真值打通另立提案——**调查发现 executor.rs 事件流的 `fuel_consumed` 填的是 WASM 配置上限而非真实消耗**（真值仅在 sandboxd 内部 `store.get_fuel()` 计算后记日志丢弃），AnomalyDetector 学到的是恒定基线、燃料维度异常检测实际失效；已全链路打通（d23d8db + e4e9ed2）：`ToolExecutor` 新增 `execute_measured` 默认方法（不破坏既有 10+ 实现者），sandboxd/进程内沙箱经 wasmtime `store.get_fuel()` 差值上报真值，`SandboxdClient.execute_with_measurement` 解析可选 `fuel_consumed` 字段（旧守护进程向后兼容），`WasmSOPNode` 写入 `ExecutionContext.measurements`，executor 事件组装点优先真实测量、无测量时回退配置上限。types 层 3 个回归测试覆盖测量记录/take 语义/回退路径）
 
