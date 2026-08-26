@@ -37,7 +37,7 @@
 > 勘误（2026-08-26 二次复核）：初版按文件名过滤统计得"约 886 处"，该数字将文件尾部内联 `#[cfg(test)]` 模块误计入生产代码。精确截断内联测试模块后，**真实生产代码仅约 39 处**，其中 16 处在 benches、7 处在 build.rs、6 处在 sisyphus-tests crate；核心运行时路径合计约 10 处（sdk 3、config_store 2、momus 2、observability 2、tauri 1）。项目自身的错误处理纪律实际执行良好，此问题降级为低优先级清理项。
 
 - 错误类型三风格并存：`IntelError` 枚举、裸 `String`（simulation.rs 多处）、`anyhow::Result`（MfsStore），跨层语义丢失。
-- `UserMemoryStore.recall` 先取全局 top_k×10 再按会话前缀过滤，多会话下目标记录可能不在截断窗口内。
+- ~~`UserMemoryStore.recall` 先取全局 top_k×10 再按会话前缀过滤，多会话下目标记录可能不在截断窗口内~~ ✅ 已修复（commit 83d64b9）：改为 `search_similar_filtered` SQL 层 `WHERE id LIKE` 前缀先过滤再打分截断，消除截断窗口；回归测试覆盖跨会话饿死/隔离/top_k 语义。
 - reset() 结论复核确认：`AnomalyDetector::reset` 与 `AdaptiveDepthController::reset` 定义存在（注释明确写"为新一轮执行周期重置"），core 全量搜索 `.reset()` 调用点为 0，A2 成立。
 
 ### D. 验证能力（中高）
