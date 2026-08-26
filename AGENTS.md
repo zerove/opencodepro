@@ -1,7 +1,7 @@
 # Sisyphus 项目知识库
 
-**生成时间:** 2026-08-04
-**技术栈:** Rust 工作区 (37 成员), async (tokio), gRPC (tonic), TUI (ratatui)
+**生成时间:** 2026-08-10
+**技术栈:** Rust 工作区 (30 成员), async (tokio), gRPC (tonic), TUI (ratatui)
 
 ## 概述
 
@@ -32,8 +32,6 @@ opencodepro/
 │   ├── sisyphus-tools-session/    # 工具: 会话管理
 │   ├── sisyphus-tools-system/     # 工具: 系统操作 (文件、bash、web)
 │   ├── sisyphus-roadmap/     # 路线图/规划 (Project→Milestone→Phase→Goal)
-│   ├── sisyphus-api/         # REST API (axum + OpenAPI 3.1)
-│   ├── sisyphus-sdk/         # Rust SDK 客户端
 │   ├── sisyphus-knowledge/   # 知识图谱与认知资产管理
 │   ├── sisyphus-visual/      # 视觉感知与嵌入
 │   ├── sisyphus-wasm-sdk/    # WASM 工具 SDK (guest crate)
@@ -57,9 +55,9 @@ opencodepro/
 | 认知循环核心逻辑 | `crates/sisyphus-core/src/` | DAG 执行、cognitive loop v1/v2 |
 | TUI 界面 | `crates/sisyphus-cli/src/tui/` | ratatui 组件 |
 | gRPC 服务 | `crates/sisyphus-bridge/src/` | tonic services |
-| REST API | `crates/sisyphus-bridge/src/http.rs` + `crates/sisyphus-api/` | axum + OpenAPI 3.1 |
+| REST API | `crates/sisyphus-bridge/src/http.rs` | axum + OpenAPI 3.1（独立 sisyphus-api 已归档至 ide/api）|
 | Web 仪表盘 | `webui/` | axum + HTMX + SSE |
-| Rust SDK | `crates/sisyphus-sdk/` | REST 客户端 |
+| Rust SDK | `ide/sdk/`（已归档） | REST 客户端；活跃 SDK 见 ide/python-sdk、ide/go-sdk |
 | 知识管理 | `crates/sisyphus-knowledge/` | KnowledgeGraph, AssetManager |
 | 战略规划 | `crates/sisyphus-roadmap/` | RoadmapManager, 里程碑生成 |
 | 沙箱守护进程 | `crates/sisyphus-sandboxd/` | gRPC 通信、进程隔离 |

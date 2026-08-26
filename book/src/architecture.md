@@ -2,7 +2,7 @@
 
 Sisyphus 以 **Rust 工作区** 组织，包含 **29 个成员**：`crates/` 下的 **27 个 crate**（含 10 个 `sisyphus-tools-*` 子 crate，以及 `webui` 和 `evals`），每个 crate 负责一个明确的关注点：
 
-- `sisyphus-bridge` / `sisyphus-api` — 入口点（HTTP/gRPC/REST API）
+- `sisyphus-bridge` — 入口点（HTTP/gRPC/REST API；独立 sisyphus-api 已归档至 ide/api）
 - `sisyphus-core` — 内核：DAG 执行器、编排、认知循环
 - `sisyphus-types` / `sisyphus-intel` / `sisyphus-mem` / `sisyphus-sandbox` / `sisyphus-metrics` — 基础层
 - `sisyphus-roadmap` / `sisyphus-knowledge` / `sisyphus-visual` / `sisyphus-tools-*`（10 个）/ `sisyphus-cli` / `webui` — 能力与客户端

@@ -1,0 +1,15 @@
+[package]
+name = "sisyphus-sdk"
+version = "0.1.0"
+edition = "2024"
+authors = ["Sisyphus Team"]
+description = "ARCHIVED 2026-08-26: Rust SDK for the removed standalone REST API. The active API surface is sisyphus-bridge (see ide/python-sdk, ide/go-sdk). Not a workspace member."
+license = "MIT"
+
+[dependencies]
+reqwest = { version = "0.12", features = ["json"] }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+thiserror = "1.0"
+tokio = { version = "1.0", features = ["full"] }
+url = "2.5"

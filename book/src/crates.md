@@ -1,6 +1,6 @@
 # Crate 参考
 
-Sisyphus 以 Rust 工作区组织，包含 **29 个成员**：`crates/` 下的 **27 个 crate**（含 10 个 `sisyphus-tools-*` 子 crate）加 `webui` 与 `evals`。
+Sisyphus 以 Rust 工作区组织，包含 **30 个成员**：`crates/` 下的 **28 个 crate**（含 10 个 `sisyphus-tools-*` 子 crate）加 `webui` 与 `evals`。
 
 ## 基础层
 
@@ -54,10 +54,10 @@ Sisyphus 以 Rust 工作区组织，包含 **29 个成员**：`crates/` 下的 *
 | Crate | 说明 | 依赖 |
 |-------|-------------|-------------|
 | [sisyphus-bridge](crates/bridge.md) | HTTP/gRPC API 服务器、入口点 | core, tools（全部传递依赖） |
-| sisyphus-api | REST API 处理器（axum + OpenAPI 3.1） | bridge, mem, types |
 | [sisyphus-cli](crates/cli.md) | 命令行界面 + 带代理子命令的 TUI | types, tools（10 个子 crate） |
-| sisyphus-sdk | REST API 的 Rust SDK 客户端 | api |
 | sisyphus-tauri | Tauri 桌面应用（已归档） | api, types |
+
+> 2026-08-26 归档：`sisyphus-api`（独立 REST API，4 端点与 bridge 的 71 个 HTTP 端点重叠）与 `sisyphus-sdk`（其 Rust 客户端，无下游使用者）移至 `ide/api`、`ide/sdk`，不再是 workspace 成员。活跃 API 面为 `sisyphus-bridge`。
 
 ## 测试与评测
 
@@ -65,6 +65,7 @@ Sisyphus 以 Rust 工作区组织，包含 **29 个成员**：`crates/` 下的 *
 |-------|-------------|-------------|
 | sisyphus-tests | 跨 crate 集成测试 | 全部核心 crate |
 | evals | 代理能力评测（metis/momus/librarian/scribe/security） | types, llm |
+| webui | Web 仪表盘（axum + HTMX + SSE） | bridge, types |
 
 ## Crate 依赖图
 
@@ -81,8 +82,6 @@ sisyphus-bridge → sisyphus-core
                     ├── sisyphus-tools-{10 sub-crates} → sisyphus-types
                     ├── sisyphus-cli   → sisyphus-types, sisyphus-tools-*
                     ├── sisyphus-bridge-api → sisyphus-types
-                    ├── sisyphus-api   → sisyphus-bridge, sisyphus-mem, sisyphus-types
-                    ├── sisyphus-sdk   → sisyphus-api
                     ├── sisyphus-wasm-sdk → sisyphus-types
                     ├── sisyphus-webui → sisyphus-bridge, sisyphus-types
                     └── sisyphus-metrics → sisyphus-types

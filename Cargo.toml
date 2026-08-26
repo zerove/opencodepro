@@ -21,8 +21,6 @@ members = [
     "crates/sisyphus-cli",
     "crates/sisyphus-roadmap",
     "crates/sisyphus-bridge-api",
-    "crates/sisyphus-api",
-    "crates/sisyphus-sdk",
     "evals", "crates/sisyphus-knowledge", "crates/sisyphus-visual",
     "crates/sisyphus-wasm-sdk",
     "crates/sisyphus-sandboxd",
