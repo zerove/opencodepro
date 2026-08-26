@@ -61,6 +61,12 @@ model = "gpt-4o"
 # 类型: string | 默认: "dummy"
 # provider = "dummy"
 
+# 是否允许使用伪嵌入（仅用于测试/开发）
+# 当 provider 不是 "openai" 时，若为 false，桥接启动会失败
+# 环境变量: SISYPHUS_LLM_EMBEDDING_ALLOW_DUMMY
+# 类型: bool | 默认: false
+# allow_dummy_embeddings = false
+
 # 按 agent 的模型覆盖（可选）
 # key = agent_id（如 "metis", "librarian", "momus"）
 # [llm.agents]

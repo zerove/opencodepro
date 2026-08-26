@@ -126,6 +126,12 @@ pub enum TeamCommands {
         ///最大并行代理数（默认：4）
         #[arg(short = 'c', long = "concurrent", default_value = "4")]
         max_concurrent: usize,
+        ///团队配置文件路径 (YAML/TOML)
+        #[arg(short = 'f', long = "config")]
+        config: Option<PathBuf>,
+        ///执行策略：parallel/sequential/pipeline/competitive
+        #[arg(short = 's', long = "strategy")]
+        strategy: Option<String>,
     },
     ///列出所有可用内置代理
     List,

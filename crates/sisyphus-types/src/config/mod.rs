@@ -245,6 +245,9 @@ impl Config {
         if let Some(v) = env_string("SISYPHUS_LLM_EMBEDDING_PROVIDER") {
             self.llm.embedding.provider = v;
         }
+        if let Some(v) = env_bool("SISYPHUS_LLM_EMBEDDING_ALLOW_DUMMY") {
+            self.llm.embedding.allow_dummy_embeddings = v;
+        }
         if let Some(v) = env_u32("SISYPHUS_COGNITIVE_LOOP_MAX_ITERATIONS") {
             self.cognitive_loop.max_iterations = v;
         }
@@ -692,5 +695,30 @@ sandbox = { max_memory_pages = 10, default_fuel = 1000000, wasm_tools_dir = "too
         std::env::remove_var("SISYPHUS_JWT_ACCESS_TTL_SECS");
         std::env::remove_var("SISYPHUS_JWT_REFRESH_TTL_SECS");
         std::env::remove_var("SISYPHUS_JWT_ISSUER");
+    }
+
+    #[test]
+    fn test_apply_env_overrides_embedding_allow_dummy() {
+        // 默认值应为 false
+        let mut config = Config::default();
+        config.apply_env_overrides();
+        assert!(
+            !config.llm.embedding.allow_dummy_embeddings,
+            "默认应为 false，生产环境应显式启用"
+        );
+
+        // 显式启用
+        std::env::set_var("SISYPHUS_LLM_EMBEDDING_ALLOW_DUMMY", "true");
+        let mut config = Config::default();
+        config.apply_env_overrides();
+        assert!(config.llm.embedding.allow_dummy_embeddings);
+        std::env::remove_var("SISYPHUS_LLM_EMBEDDING_ALLOW_DUMMY");
+
+        // 显式关闭
+        std::env::set_var("SISYPHUS_LLM_EMBEDDING_ALLOW_DUMMY", "false");
+        let mut config = Config::default();
+        config.apply_env_overrides();
+        assert!(!config.llm.embedding.allow_dummy_embeddings);
+        std::env::remove_var("SISYPHUS_LLM_EMBEDDING_ALLOW_DUMMY");
     }
 }

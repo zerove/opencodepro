@@ -15,6 +15,9 @@ sisyphus-mem = { path = "../sisyphus-mem" }
 tokio = { version = "1.0", features = ["process", "fs", "io-util", "time", "rt", "macros"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
+serde_yaml = "0.9"
+toml = "0.8"
+anyhow = { workspace = true }
 reqwest = { version = "0.12", features = ["json"] }
 tracing = { workspace = true }
 async-trait = { workspace = true }

@@ -156,6 +156,7 @@ sample_rate = 1.0
 | `SISYPHUS_LLM_EMBEDDING_MODEL` | `llm.embedding.model` | string | `"text-embedding-3-small"` |
 | `SISYPHUS_LLM_EMBEDDING_ENDPOINT` | `llm.embedding.endpoint` | string | `None` |
 | `SISYPHUS_LLM_EMBEDDING_PROVIDER` | `llm.embedding.provider` | string | `"dummy"` |
+| `SISYPHUS_LLM_EMBEDDING_ALLOW_DUMMY` | `llm.embedding.allow_dummy_embeddings` | bool | `false` |
 | `SISYPHUS_REGISTRY_URL` | `registry.registry_url` | string | `"https://registry.sisyphus.ai"` |
 | `SISYPHUS_REGISTRY_TIMEOUT_SECONDS` | `registry.timeout_seconds` | u64 | `30` |
 | `SISYPHUS_JCODE_SOCKET_PATH` | `jcode.socket_path` | string | `"/tmp/jcode-debug.sock"` |

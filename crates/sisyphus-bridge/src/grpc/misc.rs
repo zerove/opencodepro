@@ -4,10 +4,27 @@
 
 use crate::MySisyphusBridge;
 use sisyphus_bridge_api::{
-    BenchmarkEntry, BreakerMetricsRequest, BreakerMetricsResponse, BreakerStatus,
-    CaptureExperienceRequest, CaptureExperienceResponse, HealthCheckRequest, HealthCheckResponse,
-    ListBenchmarksRequest, ListBenchmarksResponse, SubmitFeedbackRequest, SubmitFeedbackResponse,
+    BenchmarkEntry,
+    BreakerMetricsRequest,
+    BreakerMetricsResponse,
+    BreakerStatus,
+    CaptureExperienceRequest,
+    CaptureExperienceResponse,
+    HealthCheckRequest,
+    HealthCheckResponse,
+    ListBenchmarksRequest,
+    ListBenchmarksResponse,
+    // Experience sharing
+    ListSharedExperiencesRequest,
+    ListSharedExperiencesResponse,
+    PullExperienceRequest,
+    PullExperienceResponse,
+    ShareExperienceRequest,
+    ShareExperienceResponse,
+    SubmitFeedbackRequest,
+    SubmitFeedbackResponse,
 };
+use sisyphus_types::experience::ExperienceBank;
 use tokio::sync::mpsc;
 use tokio_stream::StreamExt;
 use tonic::{Request, Response, Status};
@@ -347,5 +364,124 @@ impl MySisyphusBridge {
         let stream = tokio_stream::wrappers::BroadcastStream::new(rx)
             .map(|res| res.map_err(|e| Status::internal(format!("Broadcast error: {e}"))));
         Ok(Response::new(Box::pin(stream)))
+    }
+
+    // ── Experience Sharing (Federated Learning) ──────────────────────────
+
+    pub(crate) async fn share_experience_impl(
+        &self,
+        request: Request<ShareExperienceRequest>,
+    ) -> Result<Response<ShareExperienceResponse>, Status> {
+        let req = request.into_inner();
+        let exp_key = req.exp_key;
+
+        if req.make_global {
+            self.experience_bank
+                .share_experience(&exp_key)
+                .await
+                .map_err(|e| Status::internal(format!("share experience failed: {e}")))?;
+        } else if !req.target_project_id.is_empty() {
+            self.experience_bank
+                .unshare_experience(&exp_key, &req.target_project_id)
+                .await
+                .map_err(|e| Status::internal(format!("unshare experience failed: {e}")))?;
+        } else {
+            return Ok(Response::new(ShareExperienceResponse {
+                success: false,
+                error: "make_global=false requires target_project_id".into(),
+            }));
+        }
+
+        Ok(Response::new(ShareExperienceResponse {
+            success: true,
+            error: String::new(),
+        }))
+    }
+
+    pub(crate) async fn pull_experience_impl(
+        &self,
+        request: Request<PullExperienceRequest>,
+    ) -> Result<Response<PullExperienceResponse>, Status> {
+        let req = request.into_inner();
+
+        let query = sisyphus_types::experience::ExperienceQuery {
+            query_text: req.query_text,
+            context_hash: req.context_hash,
+            project_id: if req.project_id.is_empty() {
+                None
+            } else {
+                Some(req.project_id)
+            },
+            action_id: if req.action_id.is_empty() {
+                None
+            } else {
+                Some(req.action_id)
+            },
+            visual_embedding: None,
+            limit: req.limit.max(1) as usize,
+        };
+
+        let experiences = self
+            .experience_bank
+            .query_similar(query)
+            .await
+            .map_err(|e| Status::internal(format!("query similar failed: {e}")))?;
+
+        let proto_experiences: Vec<sisyphus_bridge_api::ExperienceTupleProto> = experiences
+            .into_iter()
+            .map(|exp| sisyphus_bridge_api::ExperienceTupleProto {
+                context_text: exp.context_text,
+                context_hash: exp.context_hash,
+                action_id: exp.action_id,
+                project_id: exp.project_id.unwrap_or_default(),
+                outcome_success: exp.outcome_success,
+                deviation_score: exp.deviation_score,
+                cost: exp.cost,
+                timestamp: exp.timestamp,
+                embedding: exp.embedding.unwrap_or_default(),
+                visual_embedding: exp.visual_embedding.unwrap_or_default(),
+                insight: exp.insight.unwrap_or_default(),
+            })
+            .collect();
+
+        Ok(Response::new(PullExperienceResponse {
+            success: true,
+            error: String::new(),
+            experiences: proto_experiences,
+        }))
+    }
+
+    pub(crate) async fn list_shared_experiences_impl(
+        &self,
+        _request: Request<ListSharedExperiencesRequest>,
+    ) -> Result<Response<ListSharedExperiencesResponse>, Status> {
+        let experiences = self
+            .experience_bank
+            .list_shared()
+            .await
+            .map_err(|e| Status::internal(format!("list shared failed: {e}")))?;
+
+        let proto_experiences: Vec<sisyphus_bridge_api::ExperienceTupleProto> = experiences
+            .into_iter()
+            .map(|exp| sisyphus_bridge_api::ExperienceTupleProto {
+                context_text: exp.context_text,
+                context_hash: exp.context_hash,
+                action_id: exp.action_id,
+                project_id: exp.project_id.unwrap_or_default(),
+                outcome_success: exp.outcome_success,
+                deviation_score: exp.deviation_score,
+                cost: exp.cost,
+                timestamp: exp.timestamp,
+                embedding: exp.embedding.unwrap_or_default(),
+                visual_embedding: exp.visual_embedding.unwrap_or_default(),
+                insight: exp.insight.unwrap_or_default(),
+            })
+            .collect();
+
+        Ok(Response::new(ListSharedExperiencesResponse {
+            success: true,
+            error: String::new(),
+            experiences: proto_experiences,
+        }))
     }
 }

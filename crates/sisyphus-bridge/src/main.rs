@@ -662,6 +662,51 @@ mod tests {
             let stream = tokio_stream::wrappers::UnboundedReceiverStream::new(rx);
             Ok(tonic::Response::new(Box::pin(stream)))
         }
+
+        // ── Experience Sharing (mock stubs) ───────────────────────────
+
+        async fn share_experience(
+            &self,
+            _request: Request<sisyphus_bridge_api::ShareExperienceRequest>,
+        ) -> Result<tonic::Response<sisyphus_bridge_api::ShareExperienceResponse>, tonic::Status>
+        {
+            Ok(tonic::Response::new(
+                sisyphus_bridge_api::ShareExperienceResponse {
+                    success: true,
+                    error: String::new(),
+                },
+            ))
+        }
+
+        async fn pull_experience(
+            &self,
+            _request: Request<sisyphus_bridge_api::PullExperienceRequest>,
+        ) -> Result<tonic::Response<sisyphus_bridge_api::PullExperienceResponse>, tonic::Status>
+        {
+            Ok(tonic::Response::new(
+                sisyphus_bridge_api::PullExperienceResponse {
+                    success: true,
+                    error: String::new(),
+                    experiences: vec![],
+                },
+            ))
+        }
+
+        async fn list_shared_experiences(
+            &self,
+            _request: Request<sisyphus_bridge_api::ListSharedExperiencesRequest>,
+        ) -> Result<
+            tonic::Response<sisyphus_bridge_api::ListSharedExperiencesResponse>,
+            tonic::Status,
+        > {
+            Ok(tonic::Response::new(
+                sisyphus_bridge_api::ListSharedExperiencesResponse {
+                    success: true,
+                    error: String::new(),
+                    experiences: vec![],
+                },
+            ))
+        }
     }
 
     #[tokio::test]

@@ -5,6 +5,7 @@ pub mod jcode_executor;
 pub mod project_rules;
 pub mod skill_registry;
 pub mod team;
+pub mod team_config;
 pub mod workspace_manager;
 
 #[cfg(test)]

@@ -7,19 +7,64 @@
 
 use sisyphus_bridge_api::sisyphus_bridge_server::SisyphusBridge;
 use sisyphus_bridge_api::{
-    AddMessageRequest, AddMessageResponse, BreakerMetricsRequest, BreakerMetricsResponse,
-    CaptureExperienceRequest, CaptureExperienceResponse, CognitiveTaskEvent,
-    CreateWorkspaceRequest, CreateWorkspaceResponse, DecomposeGoalRequest, DecomposeGoalResponse,
-    DelegateCognitiveTaskRequest, DelegateCognitiveTaskResponse, DeleteWorkspaceRequest,
-    DeleteWorkspaceResponse, ExecuteSopRequest, ExecuteToolRequest, ExecuteToolResponse,
-    ExecutionEvent, GetCurrentWorkspaceRequest, GetCurrentWorkspaceResponse, HealthCheckRequest,
-    HealthCheckResponse, InstallSkillRequest, InstallSkillResponse, ListAgentsRequest,
-    ListAgentsResponse, ListBenchmarksRequest, ListBenchmarksResponse, ListPluginsRequest,
-    ListPluginsResponse, ListSkillsRequest, ListSkillsResponse, ListSoPsRequest, ListSoPsResponse,
-    ListToolsRequest, ListToolsResponse, ListWorkspacesRequest, ListWorkspacesResponse,
-    LoadPluginRequest, LoadPluginResponse, RemoveSkillRequest, RemoveSkillResponse,
-    ShowSkillRequest, ShowSkillResponse, SopResponse, SubmitFeedbackRequest,
-    SubmitFeedbackResponse, SwitchWorkspaceRequest, SwitchWorkspaceResponse, UnloadPluginRequest,
+    AddMessageRequest,
+    AddMessageResponse,
+    BreakerMetricsRequest,
+    BreakerMetricsResponse,
+    CaptureExperienceRequest,
+    CaptureExperienceResponse,
+    CognitiveTaskEvent,
+    CreateWorkspaceRequest,
+    CreateWorkspaceResponse,
+    DecomposeGoalRequest,
+    DecomposeGoalResponse,
+    DelegateCognitiveTaskRequest,
+    DelegateCognitiveTaskResponse,
+    DeleteWorkspaceRequest,
+    DeleteWorkspaceResponse,
+    ExecuteSopRequest,
+    ExecuteToolRequest,
+    ExecuteToolResponse,
+    ExecutionEvent,
+    GetCurrentWorkspaceRequest,
+    GetCurrentWorkspaceResponse,
+    HealthCheckRequest,
+    HealthCheckResponse,
+    InstallSkillRequest,
+    InstallSkillResponse,
+    ListAgentsRequest,
+    ListAgentsResponse,
+    ListBenchmarksRequest,
+    ListBenchmarksResponse,
+    ListPluginsRequest,
+    ListPluginsResponse,
+    // Experience sharing
+    ListSharedExperiencesRequest,
+    ListSharedExperiencesResponse,
+    ListSkillsRequest,
+    ListSkillsResponse,
+    ListSoPsRequest,
+    ListSoPsResponse,
+    ListToolsRequest,
+    ListToolsResponse,
+    ListWorkspacesRequest,
+    ListWorkspacesResponse,
+    LoadPluginRequest,
+    LoadPluginResponse,
+    PullExperienceRequest,
+    PullExperienceResponse,
+    RemoveSkillRequest,
+    RemoveSkillResponse,
+    ShareExperienceRequest,
+    ShareExperienceResponse,
+    ShowSkillRequest,
+    ShowSkillResponse,
+    SopResponse,
+    SubmitFeedbackRequest,
+    SubmitFeedbackResponse,
+    SwitchWorkspaceRequest,
+    SwitchWorkspaceResponse,
+    UnloadPluginRequest,
     UnloadPluginResponse,
 };
 
@@ -271,5 +316,27 @@ impl SisyphusBridge for MySisyphusBridge {
         _request: Request<sisyphus_bridge_api::EventRequest>,
     ) -> Result<Response<tonic::codegen::BoxStream<sisyphus_bridge_api::BridgeEvent>>, Status> {
         self.stream_events_impl(_request).await
+    }
+
+    // Experience sharing (federated learning)
+    async fn share_experience(
+        &self,
+        request: Request<ShareExperienceRequest>,
+    ) -> Result<Response<ShareExperienceResponse>, Status> {
+        self.share_experience_impl(request).await
+    }
+
+    async fn pull_experience(
+        &self,
+        request: Request<PullExperienceRequest>,
+    ) -> Result<Response<PullExperienceResponse>, Status> {
+        self.pull_experience_impl(request).await
+    }
+
+    async fn list_shared_experiences(
+        &self,
+        request: Request<ListSharedExperiencesRequest>,
+    ) -> Result<Response<ListSharedExperiencesResponse>, Status> {
+        self.list_shared_experiences_impl(request).await
     }
 }

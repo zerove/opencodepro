@@ -176,6 +176,7 @@ impl MySisyphusBridge {
         );
 
         let sim_iterations = max_tasks.max(1) * 64;
+        let allow_dummy_embeddings = config_snapshot.llm.embedding.allow_dummy_embeddings;
         let embedding_client: Arc<dyn sisyphus_tools_llm::EmbeddingClient> = {
             if embedding_provider == "openai" {
                 let config = shared_config.read().map_err(|e| {
@@ -199,16 +200,31 @@ impl MySisyphusBridge {
                         }
                     })?,
                 )
-            } else {
-                // 评审 B2/P2-7：禁止静默降级。伪嵌入向量（文本哈希正弦）
-                // 无语义区分度，此配置下语义经验检索退化为噪声，
-                // 必须在启动时显式告警。
+            } else if allow_dummy_embeddings {
+                // 允许使用 DummyEmbeddingClient（测试/开发模式）。
+                // 此模式下，嵌入向量为文本哈希的伪向量，无语义区分度，
+                // 语义经验检索将退化为噪声。
                 tracing::warn!(
                     provider = %embedding_provider,
-                    "Embedding provider is not \"openai\"; using DummyEmbeddingClient                      (hash-based pseudo-vectors, NO semantic quality). Semantic experience \
-                     recall is degraded. Configure [llm.embedding] provider=\"openai\" for real embeddings."
+                    "Embedding provider is not \"openai\"; using DummyEmbeddingClient \
+                     (hash-based pseudo-vectors, NO semantic quality). \
+                     Semantic experience recall is degraded. \
+                     Set [llm.embedding] allow_dummy_embeddings = false and \
+                     provider = \"openai\" for production use."
                 );
                 Arc::new(sisyphus_tools_llm::DummyEmbeddingClient)
+            } else {
+                // B1 修复：禁止静默降级。缺少有效嵌入provider时，必须在启动时失败，
+                // 而不是仅警告后继续使用伪嵌入。
+                return Err(sisyphus_types::TypesError::ToolExecutionError {
+                    tool_id: "init".into(),
+                    details: format!(
+                        "Embedding provider '{}' is not 'openai' and allow_dummy_embeddings is false. \
+                         Configure [llm.embedding] provider='openai' with a valid API key, \
+                         or set allow_dummy_embeddings = true only for testing/development.",
+                        embedding_provider
+                    ),
+                });
             }
         };
         let experience_bank = Arc::new(

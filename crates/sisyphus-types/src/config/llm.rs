@@ -60,6 +60,10 @@ pub struct EmbeddingConfig {
     pub endpoint: Option<String>,
     #[serde(default = "default_embedding_provider")]
     pub provider: String,
+    /// Allow using dummy embedding client for testing.
+    /// When false and provider is not "openai", startup will fail.
+    #[serde(default)]
+    pub allow_dummy_embeddings: bool,
 }
 
 fn default_embedding_model() -> String {
@@ -127,6 +131,7 @@ pub fn default_llm_config() -> LlmConfig {
             model: default_embedding_model(),
             endpoint: None,
             provider: default_embedding_provider(),
+            allow_dummy_embeddings: false,
         },
         budget_mode: BudgetMode::default(),
         agents: HashMap::new(),

@@ -102,57 +102,13 @@ pub async fn run_tasks(file: PathBuf, max_concurrent: usize) -> Result<()> {
     Ok(())
 }
 
-pub async fn run_inline(commands: &[String], max_concurrent: usize) -> Result<()> {
-    let units: Vec<crate::tools::WorkUnit> = commands
-        .iter()
-        .enumerate()
-        .map(|(i, cmd)| {
-            let id = format!("task-{i}");
-            let cmd = cmd.clone();
-            let cmd_display = cmd[..cmd.len().min(40)].to_string();
-            crate::tools::work_unit(&id, &cmd_display, move || {
-                let cmd = cmd.clone();
-                async move {
-                    let output = crate::tools::bash::execute(&cmd, None, 60000).await?;
-                    Ok(serde_json::json!({
-                        "stdout": output.stdout,
-                        "stderr": output.stderr,
-                        "exit_code": output.exit_code,
-                        "duration_ms": output.duration.as_millis(),
-                    }))
-                }
-            })
-        })
-        .collect();
-
-    let orchestrator = crate::tools::WorkOrchestrator::new(max_concurrent);
-    let reports = orchestrator.run_all(units).await?;
-
-    for r in &reports {
-        let tag = if r.status == crate::tools::WorkStatus::Completed {
-            "OK"
-        } else {
-            "FAIL"
-        };
-        println!("[{}] {} {} ({}ms)", r.id, tag, r.name, r.duration_ms);
-    }
-    println!(
-        "\nDone: {}/{}",
-        reports
-            .iter()
-            .filter(|r| r.status == crate::tools::WorkStatus::Completed)
-            .count(),
-        reports.len()
-    );
-    Ok(())
-}
-
-/// 运行代理团队完成复杂目标
-pub async fn run_team(
+/// 使用配置文件运行代理团队
+pub async fn run_team_with_config(
     goal: String,
     context: Option<String>,
     agents: Option<String>,
     max_concurrent: usize,
+    team_config: sisyphus_tools_agent::team_config::TeamConfig,
 ) -> Result<()> {
     let _ = max_concurrent;
     use crate::tools::agent_registry::AgentRegistry;
@@ -169,16 +125,27 @@ pub async fn run_team(
     if let Some(ref ctx) = context {
         println!("📝 上下文: {ctx}");
     }
+    println!("⚙️  执行策略: {}", team_config.strategy);
 
     // 用选中的代理构建注册表
     let config = Arc::new(RwLock::new(Config::default()));
     let llm_client = Arc::new(DynamicLlmClient::new(config));
     let registry = Arc::new(AgentRegistry::new(llm_client.clone()));
 
-    // 注册内置代理
-    registry.register_builtin();
+    // 从配置文件注册代理
+    if team_config.agents.is_empty() {
+        // 如果配置文件没有指定代理，使用内置代理
+        registry.register_builtin();
+    } else {
+        // 注册配置文件中启用的代理
+        for agent_config in &team_config.agents {
+            if agent_config.enabled {
+                registry.register(&agent_config.id, agent_config.to_agent_info());
+            }
+        }
+    }
 
-    // 若指定则过滤代理
+    // 若指定则过滤代理 (CLI agents 参数优先)
     if let Some(agent_list) = agents {
         let selected: HashSet<String> = agent_list
             .split(',')
@@ -269,4 +236,60 @@ pub async fn run_team(
     }
 
     Ok(())
+}
+
+pub async fn run_inline(commands: &[String], max_concurrent: usize) -> Result<()> {
+    let units: Vec<crate::tools::WorkUnit> = commands
+        .iter()
+        .enumerate()
+        .map(|(i, cmd)| {
+            let id = format!("task-{i}");
+            let cmd = cmd.clone();
+            let cmd_display = cmd[..cmd.len().min(40)].to_string();
+            crate::tools::work_unit(&id, &cmd_display, move || {
+                let cmd = cmd.clone();
+                async move {
+                    let output = crate::tools::bash::execute(&cmd, None, 60000).await?;
+                    Ok(serde_json::json!({
+                        "stdout": output.stdout,
+                        "stderr": output.stderr,
+                        "exit_code": output.exit_code,
+                        "duration_ms": output.duration.as_millis(),
+                    }))
+                }
+            })
+        })
+        .collect();
+
+    let orchestrator = crate::tools::WorkOrchestrator::new(max_concurrent);
+    let reports = orchestrator.run_all(units).await?;
+
+    for r in &reports {
+        let tag = if r.status == crate::tools::WorkStatus::Completed {
+            "OK"
+        } else {
+            "FAIL"
+        };
+        println!("[{}] {} {} ({}ms)", r.id, tag, r.name, r.duration_ms);
+    }
+    println!(
+        "\nDone: {}/{}",
+        reports
+            .iter()
+            .filter(|r| r.status == crate::tools::WorkStatus::Completed)
+            .count(),
+        reports.len()
+    );
+    Ok(())
+}
+
+/// 运行代理团队完成复杂目标
+pub async fn run_team(
+    goal: String,
+    context: Option<String>,
+    agents: Option<String>,
+    max_concurrent: usize,
+) -> Result<()> {
+    let team_config = sisyphus_tools_agent::team_config::TeamConfig::default();
+    run_team_with_config(goal, context, agents, max_concurrent, team_config).await
 }
