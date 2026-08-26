@@ -60,7 +60,7 @@
 ### P2 认知能力提升（1-2 月）
 7. 真实嵌入接入：配置缺失时显式降级并告警（✅ 第一步已实施：非 openai provider 时启动日志显式 warn 说明伪嵌入无语义质量与检索退化，DummyEmbeddingClient 补充警示文档；Jaccard 回退实现与召回率基准待实施）
 8. LLM 调用分级治理：critique 阶段超时可配置已落地（30s 默认 + 禁用语义，见 B3）；reflect/evolve 分级、指数退避与 token 预算联动仍待实施
-9. 偏差真值采集：复用 Executor 已有 fuel/duration 数据回填 CogMap 与 reflect 阶段
+9. 偏差真值采集（✅ 第一步已实施：`build_cog_map` 的节点偏差不再恒为 0，改为从执行轨迹回填运行时监督器逐节点记录的 `deviation_score`（取该节点最近一次记录）；fuel/duration 维度与 reflect 阶段回填待后续）
 
 ### P3 生态与验证（持续）
 10. 构建 ≥50 个带标准答案的 golden SOP 库，nightly 跑通过率/成本/迭代数趋势

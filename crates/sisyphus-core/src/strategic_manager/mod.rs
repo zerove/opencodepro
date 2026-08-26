@@ -200,7 +200,21 @@ impl StrategicManager {
                 "pending".into()
             };
 
-            let deviation = 0.0; // In a real system, we'd track per-node deviation from the simulator
+            // P2-9：从执行轨迹回填节点偏差真值（评审 B4：此前恒为 0）。
+            // 轨迹点由运行时监督器逐节点记录，取该节点最近一次的
+            // deviation_score；未执行或无记录的节点保持 0.0。
+            let deviation = ctx
+                .trace
+                .read()
+                .map(|trace| {
+                    trace
+                        .iter()
+                        .rev()
+                        .find(|p| p.node_name == name)
+                        .map(|p| p.deviation_score)
+                        .unwrap_or(0.0)
+                })
+                .unwrap_or(0.0);
 
             nodes.push(sisyphus_types::CogNode {
                 id: node_idx.index().to_string(),
