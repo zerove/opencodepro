@@ -189,7 +189,7 @@ impl StrategicManager {
             let name = nw.name();
 
             let status = if let Some(out) = ctx.get_result(name) {
-                if out.to_string().contains("Error") || out.to_string().contains("Failed") {
+                if out.indicates_failure() {
                     "error".into()
                 } else {
                     "ok".into()

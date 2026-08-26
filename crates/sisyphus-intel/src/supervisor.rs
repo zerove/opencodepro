@@ -69,9 +69,10 @@ impl RuntimeSupervisor for SisyphusSupervisor {
         tracing::debug!(node = %node_name, "Runtime supervisor evaluating node output");
 
         // 1. 快速启发式反思（第 1 层）
+        // P0-3：显式状态字段优先（status/success/exit_code），
+        // 无显式状态时才回退到文本嗅探。
         let output_str = output.0.as_str().unwrap_or("");
-        let is_obvious_error = output_str.contains("Error")
-            || output_str.contains("Failed")
+        let is_obvious_error = output.indicates_failure()
             || output_str.contains("Exception")
             || output_str.contains("ResourceExhausted");
 

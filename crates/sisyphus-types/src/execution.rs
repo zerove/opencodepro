@@ -71,6 +71,49 @@ impl NodeOutput {
     pub fn as_value(&self) -> &Value {
         &self.0
     }
+
+    /// 显式节点状态提取（评审 P0-3：消灭字符串嗅探）。
+    ///
+    /// 按工具生态既有约定依次探测：`status`（字符串，"error"/"failed"
+    /// 视为失败）、`success`（布尔）、`exit_code`（非零为失败）。
+    /// 返回 `None` 表示输出未携带任何显式状态信号，
+    /// 调用方应回退到各自的启发式（或视为未知）。
+    pub fn explicit_status(&self) -> Option<bool> {
+        let v = self.0.as_ref();
+        // 1) status 字符串："error" / "failed" 为失败；其余非空值为成功
+        if let Some(s) = v.get("status").and_then(|s| s.as_str()) {
+            let lower = s.to_ascii_lowercase();
+            return Some(!matches!(lower.as_str(), "error" | "failed"));
+        }
+        // 2) success 布尔
+        if let Some(b) = v.get("success").and_then(|b| b.as_bool()) {
+            return Some(b);
+        }
+        // 3) exit_code 整数：非零为失败
+        if let Some(code) = v.get("exit_code").and_then(|c| c.as_i64()) {
+            return Some(code == 0);
+        }
+        None
+    }
+
+    /// 便捷判定：显式状态优先；无显式状态时回退到文本嗅探
+    /// （保持与旧逻辑兼容），完全空白输出视为健康。
+    pub fn indicates_failure(&self) -> bool {
+        if let Some(ok) = self.explicit_status() {
+            return !ok;
+        }
+        let s = self
+            .0
+            .as_str()
+            .map(str::to_ascii_lowercase)
+            .unwrap_or_default();
+        let rendered = if s.is_empty() {
+            self.0.to_string().to_ascii_lowercase()
+        } else {
+            s
+        };
+        rendered.contains("error") || rendered.contains("failed")
+    }
 }
 
 impl Default for NodeOutput {
@@ -466,4 +509,82 @@ pub struct CognitiveTraceSummary {
     pub first_timestamp_ms: u128,
     /// 聚合窗口内最近记录时间（epoch 毫秒）。
     pub last_timestamp_ms: u128,
+}
+
+#[cfg(test)]
+mod status_tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn test_explicit_status_field() {
+        // status 字符串约定："error"/"failed" 为失败，其余为成功
+        assert_eq!(
+            NodeOutput::from(json!({"status": "error"})).explicit_status(),
+            Some(false)
+        );
+        assert_eq!(
+            NodeOutput::from(json!({"status": "Failed"})).explicit_status(),
+            Some(false)
+        );
+        assert_eq!(
+            NodeOutput::from(json!({"status": "saved"})).explicit_status(),
+            Some(true)
+        );
+        assert_eq!(
+            NodeOutput::from(json!({"status": "ok"})).explicit_status(),
+            Some(true)
+        );
+    }
+
+    #[test]
+    fn test_explicit_success_and_exit_code() {
+        assert_eq!(
+            NodeOutput::from(json!({"success": true})).explicit_status(),
+            Some(true)
+        );
+        assert_eq!(
+            NodeOutput::from(json!({"success": false})).explicit_status(),
+            Some(false)
+        );
+        assert_eq!(
+            NodeOutput::from(json!({"exit_code": 0})).explicit_status(),
+            Some(true)
+        );
+        assert_eq!(
+            NodeOutput::from(json!({"exit_code": 1})).explicit_status(),
+            Some(false)
+        );
+        // 优先级：status > success > exit_code
+        let v = NodeOutput::from(json!({"status": "ok", "exit_code": 3}));
+        assert_eq!(v.explicit_status(), Some(true));
+    }
+
+    #[test]
+    fn test_no_signal_returns_none() {
+        assert_eq!(
+            NodeOutput::from(json!({"stdout": "hello"})).explicit_status(),
+            None
+        );
+        assert_eq!(NodeOutput::default().explicit_status(), None);
+    }
+
+    #[test]
+    fn test_indicates_failure_prefers_explicit_over_text() {
+        // 显式 status=ok 但文本含 "Error"：显式信号必须获胜（这正是
+        // 字符串嗅探的误报场景——输出内容讨论错误而非发生错误）。
+        let v = NodeOutput::from(json!({"status": "ok", "stdout": "no Error found"}));
+        assert!(!v.indicates_failure());
+        // 显式失败
+        assert!(NodeOutput::from(json!({"exit_code": 2})).indicates_failure());
+    }
+
+    #[test]
+    fn test_indicates_failure_falls_back_to_heuristic() {
+        // 无显式状态：保留旧嗅探语义作为兜底
+        assert!(NodeOutput::from(json!("Error: disk full")).indicates_failure());
+        assert!(NodeOutput::from(json!("operation Failed")).indicates_failure());
+        assert!(!NodeOutput::from(json!("all good")).indicates_failure());
+        assert!(!NodeOutput::default().indicates_failure());
+    }
 }
