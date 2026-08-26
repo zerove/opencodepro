@@ -28,7 +28,7 @@
 ### B. 认知质量层（高）
 
 - **B1. 伪嵌入客户端**：`DummyEmbeddingClient` 用文本哈希正弦生成伪向量，无语义区分度。装配逻辑 bridge_service.rs:188 仅当 `embedding_provider == "openai"` 才用真嵌入，其余一切取值（含默认）静默降级 Dummy；另 :480 处无条件硬编码。EVOLUTION_PLAN 1.2 标 ✅ 但验收标准（召回率对比）无证据。
-- **B2. 演进信号为字符串匹配**：reflect.rs 中 `suggested_improvements.iter().any(|s| s.contains("retry logic"))` 等，反思→演进闭环建立在 LLM 英文子串匹配上。
+- **B2. 演进信号为字符串匹配**（✅ 已实施，8ceaf33 + b214cdc）：`ImprovementKind` 枚举（Retry{max_retries}/FuelIncrease{factor}/NodeSplit/Backoff/Unclassified）+ `ReflectionReport.improvement_signals`（serde(default) 向后兼容，旧数据空信号=不演化）。`ImprovementKind::from_text` 为唯一文本→信号转换点；LlmReflector/HybridReflector/StandardReflector 生产端接线，StandardEvolver 演化决策只读结构化信号——[CRITIQUE]/[DEEP]/oracle/momus 注解与 pivot 原因不再可能因碰巧含关键词而误触发挥化。7 个回归测试覆盖解析语义、注解免疫、信号驱动、旧数据兼容。TopologicalSOPEvolver 与 FailurePatternEvolver 本就读 records 而非 suggestions，无需改动
 - **B3. LLM 审计超时 2 秒**（✅ 已实施统一旋钮；后补：kernel 构造时曾用默认参数重建 LlmLogicalSimulator 架空 bridge 注入的配置超时实例，已改为复用注入的 intel 字段，`with_cognitive_loop_config` 同时修正为委托 `apply_cognitive_loop_config` 完成控制器重配）：全系统 5 处硬编码 2s（critique_reflection、LlmReflector×2、LlmEvolver、LlmLogicalSimulator）统一收敛为单一配置 `cognitive_loop.llm_stage_timeout_secs`（默认 30s；0 禁用对应阶段 LLM 调用）；三个 intel 组件经构造函数注入（`with_timeout`），旧 `new` 签名保留 2s 默认供测试零破坏。bridge 生产构造点接线该配置。micro_reflector 与 gap_analyzer 的 2s 为每节点热路径的显式设计（有注释论证），保持不变。回归测试：批判与反思阶段的慢 LLM 切断降级、预算内透传、禁用语义。重试退避仍未实施。
 - **B4. 可观测数据失真**：CogMap 节点偏差恒 0（源码自认注释），节点状态靠 `contains("Error")` 嗅探。
 
@@ -54,7 +54,7 @@
 
 ### P1 架构收敛（2-4 周）
 4. 决断 v1/v2 关系：接入 ParallelBranchPredictor 或删除并修订 ADR 005；自适应深度保留 ComplexityAnalyzer 初始预算 + AdaptiveDepthController 运行时终止，去掉双重计算
-5. 演进信号枚举化：`enum ImprovementKind { Retry{max}, FuelIncrease{factor}, NodeSplit, Backoff }`，ReflectionReport.suggestions 改为 `Vec<(NodeId, ImprovementKind)>`
+5. 演进信号枚举化（✅ 已实施，8ceaf33）：落地为 `ReflectionReport` 新增 `improvement_signals: Vec<ImprovementKind>` 双轨字段而非替换 suggestions——保留人类可读文本供展示/经验沉淀，机器决策只读结构化信号；与提案的差异：未带 NodeId（当前演化器按轨迹 records 定位节点，signals 为图级信号），后续如需节点级定向演化再扩展
 6. sisyphus-api 合并入 bridge 或转为纯 OpenAPI 类型定义 crate
 
 ### P2 认知能力提升（1-2 月）
