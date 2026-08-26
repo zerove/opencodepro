@@ -92,23 +92,21 @@ impl StrategicManager {
                 .await;
             let final_max = d_max.min(v2_budget as u32);
 
-            let mut config_lock = self.config.write();
+            // 只读基线配置用于日志对比；不再把动态结果写回共享的 self.config。
+            // 此前的写回-读回模式会让并发执行的循环互相覆盖 max_iterations/convergence_threshold
+            // （写回值只有本运行读一次，其余全是污染）。行为与原先完全等价：
+            // 本轮实际生效的就是下方局部返回的 final_max/d_thresh。
+            // 完整背景见 docs/work-summaries/2026-08-26_architecture-review.md P0-1。
+            let baseline = self.config.read();
             tracing::info!(
-                "Updating loop parameters: max_iterations {} -> {} (v2: {}), threshold -> {}",
-                config_lock.max_iterations,
+                "Loop parameters: baseline max_iterations {}, effective {} (v2 budget {}), threshold {}",
+                baseline.max_iterations,
                 final_max,
                 v2_budget,
                 d_thresh
             );
 
-            // 用动态深度覆盖策略参数
-            config_lock.max_iterations = final_max;
-            config_lock.convergence_threshold = d_thresh;
-
-            (
-                config_lock.max_iterations as usize,
-                config_lock.convergence_threshold,
-            )
+            (final_max as usize, d_thresh)
         };
 
         let span = tracing::info_span!("strategic.run_cognitive_loop", sop_id = %sop_id, graph_nodes = sop_graph.graph.node_count());
