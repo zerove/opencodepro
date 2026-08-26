@@ -31,11 +31,13 @@
 - **B3. LLM 审计超时 2 秒**：`LLM_AUDIT_TIMEOUT = 2s`，生产延迟普遍超过，LLM 反思/演进多数情况静默降级，无分级超时与重试退避。
 - **B4. 可观测数据失真**：CogMap 节点偏差恒 0（源码自认注释），节点状态靠 `contains("Error")` 嗅探。
 
-### C. 工程质量层（中高）
+### C. 工程质量层（中）
 
-- 生产代码约 886 处 `unwrap()/expect()`（排除 tests 文件后统计），违反 AGENTS.md 自身红线，security-guard agent 规则存在但无强制机制。
-- 错误类型三风格并存：`IntelError` 枚举、裸 `String`（simulation.rs 多处）、`anyhow::Result`（MfsStore）。
+> 勘误（2026-08-26 二次复核）：初版按文件名过滤统计得"约 886 处"，该数字将文件尾部内联 `#[cfg(test)]` 模块误计入生产代码。精确截断内联测试模块后，**真实生产代码仅约 39 处**，其中 16 处在 benches、7 处在 build.rs、6 处在 sisyphus-tests crate；核心运行时路径合计约 10 处（sdk 3、config_store 2、momus 2、observability 2、tauri 1）。项目自身的错误处理纪律实际执行良好，此问题降级为低优先级清理项。
+
+- 错误类型三风格并存：`IntelError` 枚举、裸 `String`（simulation.rs 多处）、`anyhow::Result`（MfsStore），跨层语义丢失。
 - `UserMemoryStore.recall` 先取全局 top_k×10 再按会话前缀过滤，多会话下目标记录可能不在截断窗口内。
+- reset() 结论复核确认：`AnomalyDetector::reset` 与 `AdaptiveDepthController::reset` 定义存在（注释明确写"为新一轮执行周期重置"），core 全量搜索 `.reset()` 调用点为 0，A2 成立。
 
 ### D. 验证能力（中高）
 
@@ -45,7 +47,7 @@
 
 ### P0 正确性修复（1-2 周）
 1. 循环参数局部化传参，禁止写回共享 `RwLock<CognitiveLoopConfig>`；AdaptiveDepthController 改 per-run 实例或进入循环前 reset()
-2. CI 加 `-D clippy::unwrap_used`（从 core/mem 渐进推开）；统一 simulation.rs 的 String 错误到 IntelError
+2. 错误类型统一（维持）：simulation.rs 的 String 错误收敛到 IntelError；unwrap 清理降为低优先级（真实生产路径仅约 10 处，见 C 层勘误）
 3. NodeOutput 增加 status 字段，消灭字符串嗅探
 
 ### P1 架构收敛（2-4 周）
@@ -65,4 +67,4 @@
 
 ## 五、总结
 
-架构审美在线、工程习惯良好，但"宣称能力 > 验证能力"。关键断层集中在认知闭环节点（反思信号传递、经验检索、LLM 调用）的"演示可用、生产失效"。优先序：P0 并发正确性 → P1 信号结构化 → P3 评测体系兜底其余演进。
+架构审美在线、工程习惯良好（生产代码错误处理纪律经精确复核确认良好），但"宣称能力 > 验证能力"。关键断层集中在认知闭环节点（反思信号传递、经验检索、LLM 调用）的"演示可用、生产失效"，以及并发执行下的共享状态隔离缺失。优先序：P0 并发正确性 → P1 信号结构化 → P3 评测体系兜底其余演进。
