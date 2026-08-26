@@ -1,0 +1,68 @@
+# Sisyphus 架构评审（2026-08-26）
+
+> 范围：全工作区约 9.5 万行 Rust，30 个成员 crate。方法：文档比对（README / book / ADR / ROADMAP / EVOLUTION_PLAN）+ 源码逐层审查（core 认知循环、bridge 链路、mem 存储层、tools 层、CI 与测试）。所有论断附文件级证据。
+
+## 一、项目目标理解
+
+三级跃迁：**目标执行器** → **自主项目架构师**（ROADMAP.md 已达成）→ **工业级通用认知引擎**（EVOLUTION_PLAN 进行中）。本质是"以 LLM 为认知组件、以 DAG 为结构骨架"的自适应执行引擎，核心创新在于将反馈控制回路显式化为四阶段循环（predict → execute → reflect → evolve），并把 SOP 图谱作为一等可变对象在运行时演化。
+
+## 二、做得好的地方
+
+| 方面 | 评价 |
+|------|------|
+| 分层纪律 | types 作依赖根零下行依赖；core 只组合不实现工具；依赖流向单向 |
+| trait 边界 | Simulator/Reflector/SOPEvolver/ExperienceBank/ToolExecutor 全部异步 trait 化 |
+| 演进门禁 | evolve 结果须经 verify_evolution 模拟验证优于当前图才采纳（cognitive_loop.rs） |
+| 沙箱架构 | 嵌入式/sandboxd 双模式 + ADR 005 记录 OOM 权衡 |
+| 工程基建 | cargo-deny 供应链审计、per-crate CI 隔离防 OOM、MfsStore 两级缓存（L1 LRU + L2 SQLite WAL） |
+
+## 三、问题清单（均经源码二次核实）
+
+### A. 架构层（高）
+
+- **A1. v2 组件半接线**：`ParallelBranchPredictor::evaluate_branches` 仅被 benches 引用，主认知循环从未调用。AdaptiveDepthController 与 ComplexityAnalyzer 两套深度预算取 min 叠加，调参面翻倍。
+- **A2. 共享状态跨执行污染（已证实的并发路径）**：gRPC `ExecuteSop` → `run_execution` → `kernel.execute_goal` → `execute_with_cognition` → `run_cognitive_loop`，tonic 天然并发且无互斥；更强的是 `kernel/execution.rs:527,583` 的 `execute_composite` 用 `JoinSet.spawn` **主动并行**多个循环实例，每个都写共享 `self.config`（cognitive_loop.rs:88 写回 max_iterations/convergence_threshold）。`depth_controller.reset()` 全局 0 个调用点，置信度历史跨执行累积导致误判收敛。`active_executions` 以 sop_id 为键互写。
+- **A3. sisyphus-api 孤儿化**：无下游依赖者，4 个端点与 bridge 内置 71 个 HTTP 端点重叠。
+
+### B. 认知质量层（高）
+
+- **B1. 伪嵌入客户端**：`DummyEmbeddingClient` 用文本哈希正弦生成伪向量，无语义区分度。装配逻辑 bridge_service.rs:188 仅当 `embedding_provider == "openai"` 才用真嵌入，其余一切取值（含默认）静默降级 Dummy；另 :480 处无条件硬编码。EVOLUTION_PLAN 1.2 标 ✅ 但验收标准（召回率对比）无证据。
+- **B2. 演进信号为字符串匹配**：reflect.rs 中 `suggested_improvements.iter().any(|s| s.contains("retry logic"))` 等，反思→演进闭环建立在 LLM 英文子串匹配上。
+- **B3. LLM 审计超时 2 秒**：`LLM_AUDIT_TIMEOUT = 2s`，生产延迟普遍超过，LLM 反思/演进多数情况静默降级，无分级超时与重试退避。
+- **B4. 可观测数据失真**：CogMap 节点偏差恒 0（源码自认注释），节点状态靠 `contains("Error")` 嗅探。
+
+### C. 工程质量层（中高）
+
+- 生产代码约 886 处 `unwrap()/expect()`（排除 tests 文件后统计），违反 AGENTS.md 自身红线，security-guard agent 规则存在但无强制机制。
+- 错误类型三风格并存：`IntelError` 枚举、裸 `String`（simulation.rs 多处）、`anyhow::Result`（MfsStore）。
+- `UserMemoryStore.recall` 先取全局 top_k×10 再按会话前缀过滤，多会话下目标记录可能不在截断窗口内。
+
+### D. 验证能力（中高）
+
+28 个 crate 对应的评测资产仅 evals/runner.rs（404 行）。EVOLUTION_PLAN 2.1 "拦截 ≥20% 错误 SOP" 类验收标准不可度量。
+
+## 四、优化方案
+
+### P0 正确性修复（1-2 周）
+1. 循环参数局部化传参，禁止写回共享 `RwLock<CognitiveLoopConfig>`；AdaptiveDepthController 改 per-run 实例或进入循环前 reset()
+2. CI 加 `-D clippy::unwrap_used`（从 core/mem 渐进推开）；统一 simulation.rs 的 String 错误到 IntelError
+3. NodeOutput 增加 status 字段，消灭字符串嗅探
+
+### P1 架构收敛（2-4 周）
+4. 决断 v1/v2 关系：接入 ParallelBranchPredictor 或删除并修订 ADR 005；自适应深度保留 ComplexityAnalyzer 初始预算 + AdaptiveDepthController 运行时终止，去掉双重计算
+5. 演进信号枚举化：`enum ImprovementKind { Retry{max}, FuelIncrease{factor}, NodeSplit, Backoff }`，ReflectionReport.suggestions 改为 `Vec<(NodeId, ImprovementKind)>`
+6. sisyphus-api 合并入 bridge 或转为纯 OpenAPI 类型定义 crate
+
+### P2 认知能力提升（1-2 月）
+7. 真实嵌入接入：配置缺失时显式降级 Jaccard 并告警打点，禁止静默 Dummy；补齐召回率基准
+8. LLM 调用分级治理：reflect/evolve 超时可配置（默认 15-30s）+ 指数退避 + token 预算联动
+9. 偏差真值采集：复用 Executor 已有 fuel/duration 数据回填 CogMap 与 reflect 阶段
+
+### P3 生态与验证（持续）
+10. 构建 ≥50 个带标准答案的 golden SOP 库，nightly 跑通过率/成本/迭代数趋势
+11. 技能市场对等协议加签名校验与速率限制
+12. DAG 执行器引入属性测试（随机 DAG 验证拓扑不变量）
+
+## 五、总结
+
+架构审美在线、工程习惯良好，但"宣称能力 > 验证能力"。关键断层集中在认知闭环节点（反思信号传递、经验检索、LLM 调用）的"演示可用、生产失效"。优先序：P0 并发正确性 → P1 信号结构化 → P3 评测体系兜底其余演进。
