@@ -105,3 +105,6 @@ pub(crate) fn build_dep_ctx_for(
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod property_tests;

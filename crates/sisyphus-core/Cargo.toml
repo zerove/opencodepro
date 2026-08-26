@@ -41,6 +41,7 @@ sisyphus-knowledge = { version = "0.1.0", path = "../sisyphus-knowledge" }
 sisyphus_visual = { version = "0.1.0", path = "../sisyphus-visual" }
 
 [dev-dependencies]
+proptest = "1.4"
 criterion = { version = "0.5", features = ["async_tokio"] }
 sisyphus-tools-llm = { path = "../sisyphus-tools-llm" }
 tempfile = "3.10"
