@@ -29,7 +29,7 @@
 
 - **B1. 伪嵌入客户端**：`DummyEmbeddingClient` 用文本哈希正弦生成伪向量，无语义区分度。装配逻辑 bridge_service.rs:188 仅当 `embedding_provider == "openai"` 才用真嵌入，其余一切取值（含默认）静默降级 Dummy；另 :480 处无条件硬编码。EVOLUTION_PLAN 1.2 标 ✅ 但验收标准（召回率对比）无证据。
 - **B2. 演进信号为字符串匹配**：reflect.rs 中 `suggested_improvements.iter().any(|s| s.contains("retry logic"))` 等，反思→演进闭环建立在 LLM 英文子串匹配上。
-- **B3. LLM 审计超时 2 秒**：`LLM_AUDIT_TIMEOUT = 2s`，生产延迟普遍超过，LLM 反思/演进多数情况静默降级，无分级超时与重试退避。
+- **B3. LLM 审计超时 2 秒**（✅ 已部分实施）：`critique_reflection` 超时改为可配置 `cognitive_loop.critique_timeout_secs`（默认 30s，0 = 禁用批判阶段），bridge 运行时重配自动生效；调用点先取值再释放读锁避免守卫跨 await。回归测试覆盖：慢 LLM 按配置切断并降级、预算内透传结果、零超时跳过调用。重试退避仍未实施。
 - **B4. 可观测数据失真**：CogMap 节点偏差恒 0（源码自认注释），节点状态靠 `contains("Error")` 嗅探。
 
 ### C. 工程质量层（中）
@@ -59,7 +59,7 @@
 
 ### P2 认知能力提升（1-2 月）
 7. 真实嵌入接入：配置缺失时显式降级 Jaccard 并告警打点，禁止静默 Dummy；补齐召回率基准
-8. LLM 调用分级治理：reflect/evolve 超时可配置（默认 15-30s）+ 指数退避 + token 预算联动
+8. LLM 调用分级治理：critique 阶段超时可配置已落地（30s 默认 + 禁用语义，见 B3）；reflect/evolve 分级、指数退避与 token 预算联动仍待实施
 9. 偏差真值采集：复用 Executor 已有 fuel/duration 数据回填 CogMap 与 reflect 阶段
 
 ### P3 生态与验证（持续）

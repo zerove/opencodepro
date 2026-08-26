@@ -759,6 +759,7 @@ async fn test_strategic_manager_evolution_verification() {
         let config = CognitiveLoopConfig {
             max_iterations: 1,
             convergence_threshold: 0.01,
+            critique_timeout_secs: 30,
             adaptive_depth: sisyphus_types::config::AdaptiveDepthConfig::default(),
         };
 
@@ -871,4 +872,209 @@ async fn test_strategic_manager_evolution_verification() {
         assert!(report.iterations >= 1);
         assert!(!res.to_string().is_empty());
     }
+}
+
+// ---------------------------------------------------------------------------
+// B3：LLM 批判超时治理（评审建议 #8）
+// ---------------------------------------------------------------------------
+
+struct SlowLlmClient {
+    delay: std::time::Duration,
+}
+
+#[async_trait::async_trait]
+impl sisyphus_tools_llm::LlmClient for SlowLlmClient {
+    async fn chat(
+        &self,
+        _system: &str,
+        _user: &str,
+        _json_mode: bool,
+    ) -> Result<String, sisyphus_types::TypesError> {
+        tokio::time::sleep(self.delay).await;
+        Ok("{}".into())
+    }
+
+    async fn generate(&self, _prompt: &str) -> Result<String, sisyphus_types::TypesError> {
+        tokio::time::sleep(self.delay).await;
+        Ok(r#"{"critical_findings": [], "risk_score": 0.2,
+               "suggested_refinement": "slow", "should_proceed": true}"#
+            .into())
+    }
+
+    fn get_params_for(&self, _agent_id: &str) -> (String, String, String) {
+        ("m".into(), "http://localhost".into(), "k".into())
+    }
+
+    fn breaker(&self) -> sisyphus_tools_llm::circuit_breaker::CircuitBreaker {
+        sisyphus_tools_llm::circuit_breaker::CircuitBreaker::default()
+    }
+}
+
+fn critique_fixture() -> (
+    sisyphus_intel::ReflectionReport,
+    sisyphus_intel::SimulationResult,
+) {
+    let report = sisyphus_intel::ReflectionReport {
+        original_sop_id: "sop_test".into(),
+        deviation_score: 0.1,
+        suggested_improvements: vec!["improve".into()],
+        evolved_sop_structure: None,
+        records: Vec::new(),
+    };
+    let prediction = sisyphus_intel::SimulationResult {
+        path_id: "p1".into(),
+        success_probability: 0.9,
+        estimated_cost: 10,
+        predicted_stability: 1.0,
+        predicted_outcome: "ok".into(),
+        predicted_effort: 1,
+    };
+    (report, prediction)
+}
+
+struct CritiqueStubSimulator;
+#[async_trait::async_trait]
+impl sisyphus_intel::Simulator for CritiqueStubSimulator {
+    async fn simulate(
+        &self,
+        _g: Arc<SOPGraph>,
+        _ctx: &ExecutionContext,
+        _id: &str,
+        _sop_id: &str,
+        _goal: Option<&str>,
+    ) -> Result<sisyphus_intel::SimulationResult, sisyphus_types::IntelError> {
+        Ok(critique_fixture().1)
+    }
+}
+
+async fn critique_manager(llm: Arc<dyn sisyphus_tools_llm::LlmClient>) -> IntelligenceManager {
+    // 其余三个组件用空 trait 对象占位，仅满足类型约束。
+    struct NopLogical;
+    #[async_trait::async_trait]
+    impl sisyphus_intel::simulation::LogicalSimulator for NopLogical {
+        async fn simulate_logic(
+            &self,
+            _graph: Arc<SOPGraph>,
+            _context: &ExecutionContext,
+            _sop_id: &str,
+            _goal_text: Option<&str>,
+        ) -> Result<sisyphus_intel::simulation::LogicalSimulationResult, sisyphus_types::IntelError>
+        {
+            unimplemented!("not used in critique tests")
+        }
+    }
+    struct NopReflector;
+    #[async_trait::async_trait]
+    impl sisyphus_intel::reflect::Reflector for NopReflector {
+        async fn reflect(
+            &self,
+            _t: &str,
+            _p: &sisyphus_intel::SimulationResult,
+            _e: Option<&[sisyphus_types::experience::ExperienceTuple]>,
+        ) -> Result<sisyphus_intel::ReflectionReport, sisyphus_types::IntelError> {
+            Ok(critique_fixture().0)
+        }
+    }
+    struct NopEvolver;
+    #[async_trait::async_trait]
+    impl sisyphus_intel::reflect::SOPEvolver for NopEvolver {
+        async fn evolve(
+            &self,
+            g: Arc<SOPGraph>,
+            _r: &sisyphus_intel::ReflectionReport,
+            _p: &sisyphus_intel::SimulationResult,
+            _i: Option<&str>,
+        ) -> Result<Arc<SOPGraph>, sisyphus_types::IntelError> {
+            Ok(g)
+        }
+    }
+    let intel = Arc::new(sisyphus_intel::SisyphusIntel::new(
+        Arc::new(CritiqueStubSimulator),
+        Arc::new(NopLogical),
+        Arc::new(NopReflector),
+        Arc::new(NopEvolver),
+    ));
+    let synthesizer: Arc<dyn sisyphus_intel::FlowSynthesizer> = Arc::new(
+        sisyphus_intel::GoalDrivenSynthesizer::new(Arc::new(MockToolExecutor)),
+    );
+    IntelligenceManager::new(intel, synthesizer, llm)
+}
+
+#[tokio::test]
+async fn test_critique_timeout_degrades_permissively() {
+    // LLM（延迟 5s）慢于配置的超时（1s）：调用应在约 1s 处被切断并降级，
+    // 而不是等满 LLM 的 5s。
+    let mgr = critique_manager(Arc::new(SlowLlmClient {
+        delay: std::time::Duration::from_secs(5),
+    }))
+    .await;
+    let (report, prediction) = critique_fixture();
+    let start = std::time::Instant::now();
+    let result = mgr
+        .critique_reflection(&report, &prediction, 1)
+        .await
+        .unwrap();
+    let elapsed = start.elapsed();
+    assert!(
+        elapsed < std::time::Duration::from_secs(4),
+        "took {elapsed:?}"
+    );
+    assert!(result.should_proceed);
+    assert_eq!(result.risk_score, 0.0);
+    assert!(result.suggested_refinement.contains("timed out"));
+}
+
+#[tokio::test]
+async fn test_critique_within_budget_returns_llm_result() {
+    // LLM 在预算内返回：结果应原样透传而非降级。
+    let mgr = critique_manager(Arc::new(SlowLlmClient {
+        delay: std::time::Duration::from_millis(50),
+    }))
+    .await;
+    let (report, prediction) = critique_fixture();
+    let result = mgr
+        .critique_reflection(&report, &prediction, 5)
+        .await
+        .unwrap();
+    assert_eq!(result.risk_score, 0.2);
+    assert_eq!(result.suggested_refinement, "slow");
+}
+
+#[tokio::test]
+async fn test_critique_zero_timeout_disables_stage() {
+    // 零超时：跳过 LLM 调用，立即返回禁用语义的宽松默认。
+    let called = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    struct ProbeLlm(Arc<std::sync::atomic::AtomicBool>);
+    #[async_trait::async_trait]
+    impl sisyphus_tools_llm::LlmClient for ProbeLlm {
+        async fn chat(
+            &self,
+            _: &str,
+            _: &str,
+            _: bool,
+        ) -> Result<String, sisyphus_types::TypesError> {
+            Ok("{}".into())
+        }
+        async fn generate(&self, _: &str) -> Result<String, sisyphus_types::TypesError> {
+            self.0.store(true, std::sync::atomic::Ordering::SeqCst);
+            Ok("{}".into())
+        }
+        fn get_params_for(&self, _: &str) -> (String, String, String) {
+            ("m".into(), "e".into(), "k".into())
+        }
+        fn breaker(&self) -> sisyphus_tools_llm::circuit_breaker::CircuitBreaker {
+            sisyphus_tools_llm::circuit_breaker::CircuitBreaker::default()
+        }
+    }
+    let probe = Arc::new(ProbeLlm(called.clone()));
+    let mgr = critique_manager(probe as Arc<dyn sisyphus_tools_llm::LlmClient>).await;
+    let (report, prediction) = critique_fixture();
+    let start = std::time::Instant::now();
+    let result = mgr
+        .critique_reflection(&report, &prediction, 0)
+        .await
+        .unwrap();
+    assert!(start.elapsed() < std::time::Duration::from_millis(50));
+    assert!(!called.load(std::sync::atomic::Ordering::SeqCst));
+    assert!(result.suggested_refinement.contains("disabled"));
 }

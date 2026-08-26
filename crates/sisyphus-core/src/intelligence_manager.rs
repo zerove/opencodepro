@@ -13,6 +13,17 @@ pub struct IntelligenceManager {
     pub llm_client: Arc<dyn sisyphus_tools_llm::LlmClient>,
 }
 
+/// 批判阶段的宽松默认结果：无发现、零风险、允许继续。
+/// 用于 LLM 不可达、超时或被显式禁用时的安全降级。
+fn permissive_critique(reason: &str) -> sisyphus_types::CritiqueResult {
+    sisyphus_types::CritiqueResult {
+        critical_findings: Vec::new(),
+        risk_score: 0.0,
+        suggested_refinement: format!("No critique available ({})", reason),
+        should_proceed: true,
+    }
+}
+
 impl IntelligenceManager {
     pub fn new(
         intel: Arc<SisyphusIntel>,
@@ -143,6 +154,8 @@ impl IntelligenceManager {
         &self,
         report: &ReflectionReport,
         prediction: &SimulationResult,
+        // B3：超时秒数，来自 cognitive_loop 配置；0 表示禁用批判阶段。
+        timeout_secs: u64,
     ) -> Result<sisyphus_types::CritiqueResult, sisyphus_types::IntelError> {
         let prompt = format!(
             "You are a rigorous AI Architecture Critic. Analyze the following reflection report and simulation prediction.\n\n\
@@ -158,32 +171,34 @@ impl IntelligenceManager {
             prediction, report
         );
 
-        // 为批判调用设置边界，使不可达的 LLM 无法拖慢
-        // 认知循环；失败时回退到宽松的默认值。
-        let response =
-            match tokio::time::timeout(Duration::from_secs(2), self.llm_client.generate(&prompt))
-                .await
-            {
-                Ok(Ok(resp)) => resp,
-                Ok(Err(e)) => {
-                    tracing::warn!("LLM critique failed, using permissive default: {e}");
-                    return Ok(sisyphus_types::CritiqueResult {
-                        critical_findings: Vec::new(),
-                        risk_score: 0.0,
-                        suggested_refinement: "No critique available (LLM unreachable)".into(),
-                        should_proceed: true,
-                    });
-                }
-                Err(_) => {
-                    tracing::warn!("LLM critique timed out, using permissive default");
-                    return Ok(sisyphus_types::CritiqueResult {
-                        critical_findings: Vec::new(),
-                        risk_score: 0.0,
-                        suggested_refinement: "No critique available (LLM timed out)".into(),
-                        should_proceed: true,
-                    });
-                }
-            };
+        // 零超时 = 显式禁用批判阶段（跳过 LLM 调用）。
+        if timeout_secs == 0 {
+            tracing::debug!("LLM critique disabled via zero timeout");
+            return Ok(permissive_critique("disabled"));
+        }
+
+        // 为批判调用设置可配置边界（评审 B3：原硬编码 2s 远低于生产
+        // LLM 延迟），使不可达或缓慢的 LLM 无法拖慢认知循环；
+        // 失败/超时时回退到宽松默认值。
+        let timeout = Duration::from_secs(timeout_secs);
+        let response = match tokio::time::timeout(timeout, self.llm_client.generate(&prompt)).await
+        {
+            Ok(Ok(resp)) => resp,
+            Ok(Err(e)) => {
+                tracing::warn!(
+                    "LLM critique failed after {}s, using permissive default: {e}",
+                    timeout.as_secs()
+                );
+                return Ok(permissive_critique("LLM unreachable"));
+            }
+            Err(_) => {
+                tracing::warn!(
+                    "LLM critique timed out after {}s, using permissive default",
+                    timeout.as_secs()
+                );
+                return Ok(permissive_critique("LLM timed out"));
+            }
+        };
 
         serde_json::from_str::<sisyphus_types::CritiqueResult>(&response).map_err(|e| {
             sisyphus_types::IntelError::Internal(format!(
