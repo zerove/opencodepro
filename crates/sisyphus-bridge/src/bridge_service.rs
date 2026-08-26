@@ -514,6 +514,14 @@ impl MySisyphusBridge {
             embedding_client,
         ));
 
+        // ── 认知循环配置接线（评审 A4）─────────────────────────────────
+        // 此前 SisyphusKernel 内部硬编码 CognitiveLoopConfig::default()，
+        // 配置文件/环境变量中的 [cognitive_loop] 与 [cognitive_loop.adaptive_depth]
+        // 从不生效。此处把用户配置应用到 StrategicManager。
+        kernel
+            .strategic_manager
+            .apply_cognitive_loop_config(config_snapshot.cognitive_loop.clone());
+
         strategic_executor.set_kernel(Arc::downgrade(&kernel));
 
         // Create and populate the agent registry

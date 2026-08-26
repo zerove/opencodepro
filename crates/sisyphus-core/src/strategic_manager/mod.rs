@@ -149,6 +149,29 @@ impl StrategicManager {
         }
     }
 
+    /// 应用认知循环配置（评审 A4 接线）。
+    ///
+    /// 覆盖循环基线参数，并把 `AdaptiveDepthConfig` 映射到运行时控制器：
+    /// - `convergence_threshold`（置信度收敛阈值）→ `target_confidence = 1 - threshold`，
+    ///   收紧到 [0.5, 1.0] 以防退化配置；
+    /// - `min_improvement` → 同名字段。
+    pub fn apply_cognitive_loop_config(&self, cl: CognitiveLoopConfig) {
+        *self.config.write() = cl.clone();
+        let ad = &cl.adaptive_depth;
+        // 控制器可调字段为 RwLock 内部可变，&self 即可完成运行时重配。
+        self.depth_controller.apply_config(
+            (1.0 - ad.convergence_threshold).clamp(0.5, 1.0),
+            ad.min_improvement,
+        );
+        tracing::info!(
+            max_iterations = cl.max_iterations,
+            convergence_threshold = cl.convergence_threshold,
+            initial_budget = ad.initial_budget,
+            decay = ad.decay,
+            "Cognitive loop config applied"
+        );
+    }
+
     fn build_cog_map(
         sop_id: &str,
         goal_text: &str,

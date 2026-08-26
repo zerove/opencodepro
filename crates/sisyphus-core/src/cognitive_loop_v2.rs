@@ -461,9 +461,10 @@ impl AnomalyDetector {
 /// 不使用固定 max_iterations，而是采用目标置信度与最小改进量。
 pub struct AdaptiveDepthController {
     /// 停止前要达到的目标置信度（0.0 - 1.0）。
-    pub target_confidence: f64,
+    /// RwLock 包装以支持运行时重配（评审 A4：配置接线）。
+    pub target_confidence: parking_lot::RwLock<f64>,
     /// 继续迭代所需的相邻轮次最小改进量。
-    pub min_improvement: f64,
+    pub min_improvement: parking_lot::RwLock<f64>,
     /// 无论进展如何的迭代次数硬上限。
     pub max_iterations: usize,
     /// 允许提前停止前的最小迭代次数。
@@ -477,8 +478,8 @@ pub struct AdaptiveDepthController {
 impl Default for AdaptiveDepthController {
     fn default() -> Self {
         Self {
-            target_confidence: 0.95,
-            min_improvement: 0.01,
+            target_confidence: parking_lot::RwLock::new(0.95),
+            min_improvement: parking_lot::RwLock::new(0.01),
             max_iterations: 30,
             min_iterations: 2,
             convergence_window: 3,
@@ -488,6 +489,13 @@ impl Default for AdaptiveDepthController {
 }
 
 impl AdaptiveDepthController {
+    /// 应用配置参数（评审 A4 接线）。&self 即可写入（内部可变性），
+    /// 使 StrategicManager 在 Arc 共享下仍能运行时重配。
+    pub fn apply_config(&self, target_confidence: f64, min_improvement: f64) {
+        *self.target_confidence.write() = target_confidence;
+        *self.min_improvement.write() = min_improvement;
+    }
+
     pub fn new(
         target_confidence: f64,
         min_improvement: f64,
@@ -495,8 +503,8 @@ impl AdaptiveDepthController {
         min_iterations: usize,
     ) -> Self {
         Self {
-            target_confidence,
-            min_improvement,
+            target_confidence: parking_lot::RwLock::new(target_confidence),
+            min_improvement: parking_lot::RwLock::new(min_improvement),
             max_iterations,
             min_iterations,
             convergence_window: 3,
@@ -541,7 +549,7 @@ impl AdaptiveDepthController {
         }
 
         // 达到目标？
-        if confidence >= self.target_confidence {
+        if confidence >= *self.target_confidence.read() {
             info!(
                 "AdaptiveDepthController: target confidence ({:.3}) reached",
                 confidence
@@ -556,10 +564,11 @@ impl AdaptiveDepthController {
             let last = window.last().copied().unwrap_or(0.0);
             let improvement = last - first;
 
-            if improvement.abs() < self.min_improvement {
+            let min_improvement_now = *self.min_improvement.read();
+            if improvement.abs() < min_improvement_now {
                 info!(
                     "AdaptiveDepthController: convergence stalled (improvement={:.4} < min={:.4})",
-                    improvement, self.min_improvement
+                    improvement, min_improvement_now
                 );
                 return false;
             }
