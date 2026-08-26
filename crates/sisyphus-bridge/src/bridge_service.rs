@@ -487,7 +487,9 @@ impl MySisyphusBridge {
             vec![], // In production, this would be loaded from config
         ));
 
-        let embedding_client = Arc::new(sisyphus_tools_llm::DummyEmbeddingClient);
+        // 复用上方按 provider 配置构造的嵌入客户端（kernel 当前未消费
+        // 该参数，但签名上应传入配置一致的实例而非无条件 Dummy）。
+        let embedding_client = embedding_client.clone();
 
         // ── SOP Structured Store Init & Migration ──────────────────────────────
         let sop_store = store.sop.clone();

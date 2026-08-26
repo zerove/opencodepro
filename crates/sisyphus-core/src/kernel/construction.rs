@@ -36,12 +36,13 @@ impl SisyphusKernel {
         let test_executor =
             Arc::new(sisyphus_tools_executor::executor::test_cmds::TestExecutor::new());
 
+        // A4 同类断层修复：此前此处用默认参数重建 LlmLogicalSimulator，
+        // 架空了调用方（bridge）注入的配置超时实例；改为与其他组件
+        // 一致地复用注入的 intel 字段。
         let intelligence_manager = Arc::new(IntelligenceManager::new(
             Arc::new(SisyphusIntel::new(
                 intel.simulator.clone(),
-                Arc::new(sisyphus_intel::simulation::LlmLogicalSimulator::new(
-                    llm_client.clone(),
-                )),
+                intel.logical_simulator.clone(),
                 intel.reflector.clone(),
                 intel.evolver.clone(),
             )),
@@ -103,9 +104,7 @@ impl SisyphusKernel {
             channel.clone(),
         ));
 
-        let logical_simulator = Arc::new(sisyphus_intel::simulation::LlmLogicalSimulator::new(
-            llm_client.clone(),
-        ));
+        let logical_simulator = intel.logical_simulator.clone();
 
         // 为审计循环（Audit Loop）启动默认 swarm 代理
         swarm_coordinator.spawn_agent(AgentRole::Architect, "architect-0".into());
@@ -137,13 +136,13 @@ impl SisyphusKernel {
         }
     }
 
-    /// 覆盖认知循环配置（max_iterations、convergence_threshold）。
+    /// 覆盖认知循环配置。委托给 `apply_cognitive_loop_config`，
+    /// 同时完成 AdaptiveDepthController 的运行时重配（评审 A4 接线）。
     pub fn with_cognitive_loop_config(
         self,
         config: sisyphus_types::config::CognitiveLoopConfig,
     ) -> Self {
-        *self.strategic_manager.config.write() = config;
-
+        self.strategic_manager.apply_cognitive_loop_config(config);
         self
     }
 
