@@ -169,7 +169,6 @@ impl VerificationRunner {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use proptest::prelude::*;
 
     #[test]
     fn test_runner_creation() {

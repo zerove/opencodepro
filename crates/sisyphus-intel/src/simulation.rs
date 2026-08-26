@@ -347,7 +347,7 @@ impl MonteCarloSimulator {
             f64,
             f64,
         ),
-        String,
+        sisyphus_types::IntelError,
     > {
         let mut path = Vec::new();
         let mut current_node_arc = Arc::clone(&root);
@@ -369,9 +369,12 @@ impl MonteCarloSimulator {
                     break;
                 }
 
-                let mut node = current_node_arc
-                    .lock()
-                    .map_err(|_| "Lock poisoned".to_string())?;
+                let mut node = current_node_arc.lock().map_err(|_| {
+                    sisyphus_types::IntelError::SimulationFailed {
+                        sop_id: sop_id.to_string(),
+                        reason: "MCTS node lock poisoned".into(),
+                    }
+                })?;
                 let best_neighbor = probs
                     .iter()
                     .max_by(|(a_idx, _a_prob), (b_idx, _b_prob)| {
@@ -404,7 +407,11 @@ impl MonteCarloSimulator {
                         }
                     })
                     .map(|(idx, _)| *idx)
-                    .ok_or_else(|| "No best neighbor found".to_string())?;
+                    .ok_or_else(|| sisyphus_types::IntelError::SimulationFailed {
+                        sop_id: sop_id.to_string(),
+                        reason: "UCB1 selection found no best neighbor (empty transition set)"
+                            .into(),
+                    })?;
 
                 let next_node = node
                     .children
@@ -448,10 +455,12 @@ impl MonteCarloSimulator {
             }
             sim_current = next_node.unwrap_or(sim_current);
 
-            let node_weight = graph
-                .graph
-                .node_weight(sim_current)
-                .ok_or("Node weight not found")?;
+            let node_weight = graph.graph.node_weight(sim_current).ok_or_else(|| {
+                sisyphus_types::IntelError::SimulationFailed {
+                    sop_id: sop_id.to_string(),
+                    reason: format!("node index {sim_current:?} missing from graph"),
+                }
+            })?;
             let cost = if let Some(wasm) = node_weight
                 .as_any()
                 .downcast_ref::<sisyphus_types::WasmSOPNode>()
