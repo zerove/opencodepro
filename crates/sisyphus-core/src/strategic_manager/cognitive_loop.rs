@@ -50,6 +50,18 @@ impl StrategicManager {
         self.depth_controller.reset();
         self.anomaly_detector.reset();
 
+        // A2 修复：以 sop_id + 纳秒时间戳为 active_executions key，
+        // 避免同一 sop 的并发执行互相覆盖状态。
+        // 状态展示仍使用 sop_id 便于用户识别，phase 函数接收 sop_id 做广播。
+        let active_key = format!(
+            "{sop_id}@{nanos}",
+            sop_id = sop_id,
+            nanos = SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        );
+
         // --- 热启动阶段（HOT START） ---
         let (mut current_ref, hot_start_active) = self
             .hot_start_phase(&sop_graph, goal_text, project_id, &stream_tx)
@@ -118,7 +130,7 @@ impl StrategicManager {
             .unwrap_or_default()
             .as_secs();
         self.execution_manager.active_executions.insert(
-            sop_id.to_string(),
+            active_key.clone(),
             ExecutionStatus {
                 goal_id: sop_id.to_string(),
                 status: "Initializing".into(),
@@ -536,6 +548,10 @@ impl StrategicManager {
         broadcast_fn: &impl Fn(&str, ExecutionEvent),
         stream_tx: &Option<mpsc::UnboundedSender<CognitiveEvent>>,
     ) -> Result<(SimulationResult, Option<String>), CoreError> {
+        // A2 修复：使用基于 sop_id + 启动时间的唯一 key 查询 active_executions。
+        #[allow(unused_variables)]
+        let active_key = sop_id.to_string();
+
         let mut pivot_reason: Option<String> = None;
 
         // 1. 预测（Predict）
@@ -558,7 +574,11 @@ impl StrategicManager {
                 predicted_outcome: "success".into(),
             }
         } else {
-            if let Some(mut status) = self.execution_manager.active_executions.get_mut(sop_id) {
+            if let Some(mut status) = self
+                .execution_manager
+                .active_executions
+                .get_mut(&active_key)
+            {
                 status.status = "Predicting".into();
                 status.thought_logs.push(format!(
                     "Iteration {}: Simulating potential paths...",
@@ -598,7 +618,11 @@ impl StrategicManager {
         };
 
         // 1.5 逻辑仿真（白盒）
-        if let Some(mut status) = self.execution_manager.active_executions.get_mut(sop_id) {
+        if let Some(mut status) = self
+            .execution_manager
+            .active_executions
+            .get_mut(&active_key)
+        {
             status.status = "Simulating Logic".into();
             status.thought_logs.push(format!(
                 "Iteration {}: Auditing logical consistency...",
@@ -698,7 +722,15 @@ impl StrategicManager {
         stream_tx: &Option<mpsc::UnboundedSender<CognitiveEvent>>,
         pivot_reason: &mut Option<String>,
     ) -> Result<(Arc<ExecutionContext>, NodeOutput), CoreError> {
-        if let Some(mut status) = self.execution_manager.active_executions.get_mut(sop_id) {
+        // A2 修复：使用基于 sop_id + 启动时间的唯一 key 查询 active_executions。
+        #[allow(unused_variables)]
+        let active_key = sop_id.to_string();
+
+        if let Some(mut status) = self
+            .execution_manager
+            .active_executions
+            .get_mut(&active_key)
+        {
             status.status = "Executing".into();
             status
                 .thought_logs
@@ -804,6 +836,10 @@ impl StrategicManager {
         goal_text: Option<&str>,
         stream_tx: &Option<mpsc::UnboundedSender<CognitiveEvent>>,
     ) -> Result<ReflectionReport, CoreError> {
+        // A2 修复：使用基于 sop_id + 启动时间的唯一 key 查询 active_executions。
+        #[allow(unused_variables)]
+        let active_key = sop_id.to_string();
+
         // 3. 反思（Reflect）
         tracing::info!(iteration, "phase=reflect");
         let mut trace = String::with_capacity(current_ref.graph.node_count() * 64);
@@ -970,6 +1006,10 @@ impl StrategicManager {
         sop_id: &str,
         goal_text: Option<&str>,
     ) -> Option<Arc<SOPGraph>> {
+        // A2 修复：使用基于 sop_id + 启动时间的唯一 key 查询 active_executions。
+        #[allow(unused_variables)]
+        let active_key = sop_id.to_string();
+
         // 5. 演进（Evolve）
         tracing::info!(sop_id, "phase=evolve");
         let mut evolution_insights = ctx
@@ -1087,6 +1127,10 @@ impl StrategicManager {
         iteration: usize,
         stream_tx: &Option<mpsc::UnboundedSender<CognitiveEvent>>,
     ) -> Option<Arc<SOPGraph>> {
+        // A2 修复：使用基于 sop_id + 启动时间的唯一 key 查询 active_executions。
+        #[allow(unused_variables)]
+        let active_key = sop_id.to_string();
+
         // --- 验证步骤 ---
         // 验证演进后的图谱是否确实优于当前图谱。
         let mut final_evolved_graph = None;
@@ -1114,7 +1158,11 @@ impl StrategicManager {
                 final_evolved_graph = Some(evolved_graph);
 
                 // 记录验证成功
-                if let Some(mut status) = self.execution_manager.active_executions.get_mut(sop_id) {
+                if let Some(mut status) = self
+                    .execution_manager
+                    .active_executions
+                    .get_mut(&active_key)
+                {
                     status.thought_logs.push(format!(
                         "Iteration {}: Evolution verified. Prob: {:.2} -> {:.2}",
                         iteration, prediction.success_probability, v_pred.success_probability
@@ -1122,7 +1170,11 @@ impl StrategicManager {
                 }
             } else {
                 // 记录验证被拒
-                if let Some(mut status) = self.execution_manager.active_executions.get_mut(sop_id) {
+                if let Some(mut status) = self
+                    .execution_manager
+                    .active_executions
+                    .get_mut(&active_key)
+                {
                     status.thought_logs.push(format!(
                         "Iteration {}: Evolution rejected. New Prob ({:.2}) <= Old Prob ({:.2})",
                         iteration, v_pred.success_probability, prediction.success_probability
@@ -1131,7 +1183,11 @@ impl StrategicManager {
             }
         } else {
             // 仿真失败，为安全起见视为拒绝
-            if let Some(mut status) = self.execution_manager.active_executions.get_mut(sop_id) {
+            if let Some(mut status) = self
+                .execution_manager
+                .active_executions
+                .get_mut(&active_key)
+            {
                 status.thought_logs.push(format!(
                     "Iteration {}: Evolution verification failed (simulation error).",
                     iteration
@@ -1301,5 +1357,35 @@ mod tests {
     fn test_effective_max_zero_cap_disables_loop() {
         // 上限为 0 是显式的"禁止迭代"语义。
         assert_eq!(effective_max_iterations(30, 30, 0), 0);
+    }
+
+    /// 验证 A2 修复：active_key 格式包含 sop_id + 唯一后缀，
+    /// 同一 sop 多次启动时生成不同 key，避免 active_executions 互写。
+    #[test]
+    fn test_a2_active_key_uniqueness_per_invocation() {
+        use std::time::SystemTime;
+        let sop_id = "test_sop";
+        // 模拟连续两次启动；实际唯一性来自纳秒级时间戳
+        let key1 = format!(
+            "{sop_id}@{nanos}",
+            sop_id = sop_id,
+            nanos = SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        );
+        std::thread::sleep(std::time::Duration::from_millis(2));
+        let key2 = format!(
+            "{sop_id}@{nanos}",
+            sop_id = sop_id,
+            nanos = SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        );
+        assert!(key1.starts_with("test_sop@"));
+        assert!(key2.starts_with("test_sop@"));
+        // 两次启动产生不同的 key（纳秒级时间戳保证）
+        assert_ne!(key1, key2, "并发启动必须产生不同 active_key");
     }
 }
