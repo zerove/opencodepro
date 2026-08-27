@@ -31,3 +31,11 @@ path = "golden_sop/eval.rs"
 [[bin]]
 name = "recall-benchmark"
 path = "golden_sop/recall_benchmark.rs"
+
+[[bin]]
+name = "golden-sop-exec"
+path = "golden_sop/exec_eval.rs"
+
+[[bin]]
+name = "golden-sop-trend"
+path = "golden_sop/trend.rs"
