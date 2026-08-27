@@ -1,5 +1,7 @@
 pub mod manager;
 pub use manager::SisyphusStore;
+pub mod error;
+pub use error::{MemError, MemResult};
 pub mod golden_dataset;
 pub mod retrieval;
 pub mod sop_store;

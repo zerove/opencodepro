@@ -10,6 +10,7 @@ use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::mpsc;
 
+use crate::error::{MemError, MemResult};
 use crate::types::{Snapshot, WriteOp};
 
 /// Multi-Frontier Store: L1 (LRU cache) + L2 (SQLite) with async write buffering.
@@ -19,6 +20,56 @@ pub struct MfsStore {
     pub(crate) write_tx: mpsc::UnboundedSender<WriteOp>,
 }
 
+/// 内部 `new` 返回 [`MemError`]，对外 API 仍保留 `anyhow::Result` 以兼容 30+ 调用点。
+async fn new_internal(
+    db_url: &str,
+    config: &sisyphus_types::CacheConfig,
+) -> MemResult<MfsStore> {
+    let capacity = NonZeroUsize::new(config.l1_capacity)
+        .ok_or_else(|| MemError::InvalidL1Capacity(format!("got {}", config.l1_capacity)))?;
+
+    let pool = if db_url == "sqlite::memory:" || db_url == "sqlite::memory" {
+        SqlitePoolOptions::new()
+            .max_connections(5)
+            .connect(db_url)
+            .await
+            .map_err(|e| MemError::Sqlx {
+                context: "connect in-memory pool",
+                source: e,
+            })?
+    } else {
+        let path = db_url.strip_prefix("sqlite:").unwrap_or(db_url);
+        if path != ":memory:"
+            && let Some(parent) = std::path::Path::new(path).parent()
+            && !parent.as_os_str().is_empty()
+        {
+            std::fs::create_dir_all(parent).map_err(|e| MemError::CreateDbParent {
+                path: parent.display().to_string(),
+                source: e,
+            })?;
+        }
+
+        let opts = sqlx::sqlite::SqliteConnectOptions::from_str(db_url)
+            .map_err(|e| MemError::InvalidSqliteUrl {
+                url: db_url.to_string(),
+                source: e,
+            })?
+            .create_if_missing(true)
+            .foreign_keys(true);
+
+        SqlitePoolOptions::new()
+            .max_connections(5)
+            .connect_with(opts)
+            .await
+            .map_err(|e| MemError::Sqlx {
+                context: "connect file-backed pool",
+                source: e,
+            })?
+    };
+
+    MfsStore::with_pool_internal(pool, capacity, config.batch_size, config.flush_interval_ms).await
+}
+
 impl MfsStore {
     /// Creates a new MfsStore with a default L1 capacity of 10_000.
     /// `db_url` should be a sqlite connection string (e.g., "sqlite:state.db").
@@ -26,39 +77,7 @@ impl MfsStore {
     /// For file-backed databases, the file is created if it does not exist
     /// (including parent directories for relative paths).
     pub async fn new(db_url: &str, config: &sisyphus_types::CacheConfig) -> Result<Self> {
-        let capacity = NonZeroUsize::new(config.l1_capacity)
-            .ok_or_else(|| anyhow::anyhow!("Invalid L1 capacity"))?;
-
-        let pool = if db_url == "sqlite::memory:" || db_url == "sqlite::memory" {
-            SqlitePoolOptions::new()
-                .max_connections(5)
-                .connect(db_url)
-                .await
-                .context("Failed to connect to in-memory SQLite pool")?
-        } else {
-            let path = db_url.strip_prefix("sqlite:").unwrap_or(db_url);
-            if path != ":memory:"
-                && let Some(parent) = std::path::Path::new(path).parent()
-                && !parent.as_os_str().is_empty()
-            {
-                std::fs::create_dir_all(parent).map_err(|e| {
-                    anyhow::anyhow!("Failed to create db parent dir '{}': {e}", parent.display())
-                })?;
-            }
-
-            let opts = sqlx::sqlite::SqliteConnectOptions::from_str(db_url)
-                .map_err(|e| anyhow::anyhow!("Invalid SQLite URL '{db_url}': {e}"))?
-                .create_if_missing(true)
-                .foreign_keys(true);
-
-            SqlitePoolOptions::new()
-                .max_connections(5)
-                .connect_with(opts)
-                .await
-                .context("Failed to connect to SQLite pool")?
-        };
-
-        Self::with_pool(pool, capacity, config.batch_size, config.flush_interval_ms).await
+        Ok(new_internal(db_url, config).await?)
     }
 
     /// Creates a new MfsStore with a specific L1 capacity and an existing SQLite pool.
@@ -68,6 +87,16 @@ impl MfsStore {
         batch_size: usize,
         flush_interval_ms: u64,
     ) -> Result<Self> {
+        Ok(MfsStore::with_pool_internal(pool, capacity, batch_size, flush_interval_ms).await?)
+    }
+
+    /// 内部 `with_pool` 返回 [`MemError`]，对外 `pub with_pool` 仍保留 `anyhow::Result` 兼容。
+    async fn with_pool_internal(
+        pool: SqlitePool,
+        capacity: NonZeroUsize,
+        batch_size: usize,
+        flush_interval_ms: u64,
+    ) -> MemResult<MfsStore> {
         // Enable WAL mode for better concurrency
         sqlx::query("PRAGMA journal_mode=WAL;")
             .execute(&pool)
@@ -1062,18 +1091,18 @@ mod cognitive_trace_tests {
         store
             .record_cognitive_trace("proj", "sop-a", 1000, &step_event("StepA1"))
             .await
-            .unwrap();
+            .expect("test step");
         store
             .record_cognitive_trace("proj", "sop-a", 2000, &step_event("StepA2"))
             .await
-            .unwrap();
+            .expect("test step");
         store
             .record_cognitive_trace("proj", "sop-b", 3000, &step_event("StepB1"))
             .await
-            .unwrap();
+            .expect("test step");
 
         // 全部：新在前
-        let all = store.get_cognitive_traces("proj", None, 10).await.unwrap();
+        let all = store.get_cognitive_traces("proj", None, 10).await.expect("test step");
         assert_eq!(all.len(), 3);
         assert_eq!(all[0].sop_id, "sop-b");
 
@@ -1081,7 +1110,7 @@ mod cognitive_trace_tests {
         let sop_a = store
             .get_cognitive_traces("proj", Some("sop-a"), 10)
             .await
-            .unwrap();
+            .expect("test step");
         assert_eq!(sop_a.len(), 2);
         assert!(sop_a.iter().all(|r| r.sop_id == "sop-a"));
         assert_eq!(sop_a[0].timestamp_ms, 2000);
@@ -1095,23 +1124,23 @@ mod cognitive_trace_tests {
             store
                 .record_cognitive_trace("proj", "sop-a", 1000 + i, &step_event(&format!("S{i}")))
                 .await
-                .unwrap();
+                .expect("test step");
         }
         store
             .record_cognitive_trace("other", "sop-a", 9999, &step_event("OtherProj"))
             .await
-            .unwrap();
+            .expect("test step");
 
         let limited = store
             .get_cognitive_traces("proj", Some("sop-a"), 2)
             .await
-            .unwrap();
+            .expect("test step");
         assert_eq!(limited.len(), 2);
         assert_eq!(limited[0].timestamp_ms, 1004);
         assert_eq!(limited[1].timestamp_ms, 1003);
 
         // 项目隔离：other 项目仅一条，proj 项目不含它
-        let other = store.get_cognitive_traces("other", None, 10).await.unwrap();
+        let other = store.get_cognitive_traces("other", None, 10).await.expect("test step");
         assert_eq!(other.len(), 1);
         assert_eq!(other[0].timestamp_ms, 9999);
     }
@@ -1141,23 +1170,23 @@ mod cognitive_trace_tests {
         store
             .record_cognitive_trace("proj", "sop-a", 1000, &step_event("Predicting"))
             .await
-            .unwrap();
+            .expect("test step");
         store
             .record_cognitive_trace("proj", "sop-a", 2000, &step_event("Reflecting"))
             .await
-            .unwrap();
+            .expect("test step");
         store
             .record_cognitive_trace("proj", "sop-a", 3000, &step_event_no_metrics("Critiquing"))
             .await
-            .unwrap();
+            .expect("test step");
         store
             .record_cognitive_trace("proj", "sop-b", 4000, &reflect_event("ADJUST"))
             .await
-            .unwrap();
+            .expect("test step");
         store
             .record_cognitive_trace("proj", "sop-b", 5000, &reflect_event("continue"))
             .await
-            .unwrap();
+            .expect("test step");
 
         let summary = store
             .cognitive_trace_summary("proj", None, 100)
@@ -1188,18 +1217,18 @@ mod cognitive_trace_tests {
             store
                 .record_cognitive_trace("proj", "sop-a", 1000 + i, &step_event(&format!("S{i}")))
                 .await
-                .unwrap();
+                .expect("test step");
         }
         store
             .record_cognitive_trace("proj", "sop-b", 9999, &reflect_event("PIVOT"))
             .await
-            .unwrap();
+            .expect("test step");
 
         // SOP 过滤：仅 sop-a 的 4 条
         let sop_a = store
             .cognitive_trace_summary("proj", Some("sop-a"), 100)
             .await
-            .unwrap();
+            .expect("test step");
         assert_eq!(sop_a.total_decisions, 4);
         assert_eq!(sop_a.step_count, 4);
         assert_eq!(sop_a.reflection_count, 0);
@@ -1208,7 +1237,7 @@ mod cognitive_trace_tests {
         let limited = store
             .cognitive_trace_summary("proj", Some("sop-a"), 2)
             .await
-            .unwrap();
+            .expect("test step");
         assert_eq!(limited.total_decisions, 2);
         assert_eq!(limited.first_timestamp_ms, 1002);
         assert_eq!(limited.last_timestamp_ms, 1003);
