@@ -169,18 +169,20 @@ pub fn build_provider_registry(providers_cfg: &[ProviderConfig]) -> ProviderRegi
         }
 
         let provider: Result<Arc<dyn LlmProvider>, String> = match cfg.kind {
-            ProviderKind::OpenAi | ProviderKind::Google => {
-                if cfg.kind == ProviderKind::Google {
-                    GoogleGeminiProvider::new(cfg.clone())
-                        .map(|p| Arc::new(p) as Arc<dyn LlmProvider>)
-                } else {
-                    OpenAiCompatibleProvider::new(cfg.clone())
-                        .map(|p| Arc::new(p) as Arc<dyn LlmProvider>)
-                }
-            }
-            ProviderKind::Anthropic => {
-                AnthropicProvider::new(cfg.clone()).map(|p| Arc::new(p) as Arc<dyn LlmProvider>)
-            }
+            // OpenAI 兼容协议：OpenAI/Groq/Mistral/Together 共享 OpenAiCompatibleProvider
+            ProviderKind::OpenAi
+            | ProviderKind::Groq
+            | ProviderKind::Mistral
+            | ProviderKind::Together => OpenAiCompatibleProvider::new(cfg.clone())
+                .map(|p| Arc::new(p) as Arc<dyn LlmProvider>),
+            ProviderKind::Google => GoogleGeminiProvider::new(cfg.clone())
+                .map(|p| Arc::new(p) as Arc<dyn LlmProvider>),
+            ProviderKind::Anthropic => AnthropicProvider::new(cfg.clone())
+                .map(|p| Arc::new(p) as Arc<dyn LlmProvider>),
+            // Cohere 暂未实现，路由报错即可（上层可借此回退）
+            ProviderKind::Cohere => Err(format!(
+                "Cohere provider not yet implemented in this build"
+            )),
         };
 
         match provider {
@@ -197,4 +199,109 @@ pub fn build_provider_registry(providers_cfg: &[ProviderConfig]) -> ProviderRegi
 
     registry.set_fallback_order(fallback_order);
     registry
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sisyphus_types::{ProviderConfig, ProviderKind};
+
+    fn make_openai_compatible_cfg(kind: ProviderKind, name: &str, model: &str) -> ProviderConfig {
+        ProviderConfig {
+            name: name.to_string(),
+            kind,
+            endpoint: kind.default_endpoint().unwrap().to_string(),
+            api_key: "test-key".to_string(),
+            model: model.to_string(),
+            base_url: None,
+            priority: 10,
+            enabled: true,
+            max_tokens: Some(1024),
+            temperature: Some(0.1),
+        }
+    }
+
+    #[test]
+    fn registry_registers_groq_via_openai_compatible() {
+        let cfg = make_openai_compatible_cfg(ProviderKind::Groq, "groq-main", "llama-3.1-70b-versatile");
+        let r = build_provider_registry(&[cfg]);
+        assert!(r.get("groq-main").is_some());
+        assert_eq!(r.list().len(), 1);
+    }
+
+    #[test]
+    fn registry_registers_mistral_via_openai_compatible() {
+        let cfg = make_openai_compatible_cfg(ProviderKind::Mistral, "mistral-main", "mistral-large-latest");
+        let r = build_provider_registry(&[cfg]);
+        assert!(r.get("mistral-main").is_some());
+    }
+
+    #[test]
+    fn registry_registers_together_via_openai_compatible() {
+        let cfg = make_openai_compatible_cfg(ProviderKind::Together, "together-main", "meta-llama/Llama-3.3-70B-Instruct-Turbo");
+        let r = build_provider_registry(&[cfg]);
+        assert!(r.get("together-main").is_some());
+    }
+
+    #[test]
+    fn registry_registers_openai_unchanged() {
+        let cfg = make_openai_compatible_cfg(ProviderKind::OpenAi, "openai-main", "gpt-4o-mini");
+        let r = build_provider_registry(&[cfg]);
+        assert!(r.get("openai-main").is_some());
+    }
+
+    #[test]
+    fn registry_fallback_chain_orders_by_priority() {
+        let mut high = make_openai_compatible_cfg(ProviderKind::OpenAi, "openai-priority-5", "gpt-4o-mini");
+        high.priority = 5;
+        let mut low = make_openai_compatible_cfg(ProviderKind::Groq, "groq-priority-20", "llama-3.1-70b-versatile");
+        low.priority = 20;
+        let r = build_provider_registry(&[low, high]); // 故意乱序
+        let order = r.fallback_order();
+        assert_eq!(order, &["openai-priority-5".to_string(), "groq-priority-20".to_string()]);
+    }
+
+    #[test]
+    fn registry_skips_disabled_providers() {
+        let mut cfg = make_openai_compatible_cfg(ProviderKind::Groq, "groq-disabled", "llama-3.1-70b-versatile");
+        cfg.enabled = false;
+        let r = build_provider_registry(&[cfg]);
+        assert_eq!(r.list().len(), 0);
+    }
+
+    #[test]
+    fn registry_cohere_returns_error() {
+        // Cohere 暂未实现 — 路由报错
+        // 不通过 make_openai_compatible_cfg（它会 unwrap default_endpoint()）
+        let cfg = ProviderConfig {
+            name: "cohere-main".to_string(),
+            kind: ProviderKind::Cohere,
+            endpoint: "https://api.cohere.ai/v1/chat".to_string(),
+            api_key: "test-key".to_string(),
+            model: "command-r-plus".to_string(),
+            base_url: None,
+            priority: 10,
+            enabled: true,
+            max_tokens: None,
+            temperature: None,
+        };
+        let r = build_provider_registry(&[cfg]);
+        // 构造失败 → registry 中不包含
+        assert!(r.get("cohere-main").is_none());
+    }
+
+    #[test]
+    fn registry_combines_openai_groq_anthropic() {
+        let cfgs = vec![
+            make_openai_compatible_cfg(ProviderKind::OpenAi, "openai-x", "gpt-4o-mini"),
+            make_openai_compatible_cfg(ProviderKind::Groq, "groq-x", "llama-3.1-70b-versatile"),
+            make_openai_compatible_cfg(ProviderKind::Mistral, "mistral-x", "mistral-large-latest"),
+            make_openai_compatible_cfg(ProviderKind::Together, "together-x", "meta-llama/Llama-3.3-70B-Instruct-Turbo"),
+        ];
+        let r = build_provider_registry(&cfgs);
+        assert_eq!(r.list().len(), 4);
+        for name in ["openai-x", "groq-x", "mistral-x", "together-x"] {
+            assert!(r.get(name).is_some(), "{name} not registered");
+        }
+    }
 }
