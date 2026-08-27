@@ -21,6 +21,7 @@ pub mod reflect;
 pub mod simulation;
 pub mod supervisor;
 pub mod synthesis;
+pub mod token_budget;
 pub mod topological_evolver;
 
 pub use complexity::{CognitiveDepth, ComplexityAnalyzer};
