@@ -52,6 +52,7 @@ pub type PermissionRules = Vec<(String, Permission)>;
 
 pub mod feedback;
 pub mod hook;
+pub mod wisdom;
 
 pub mod bridge;
 
