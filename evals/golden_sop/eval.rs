@@ -224,6 +224,60 @@ async fn main() -> anyhow::Result<()> {
         passed,
         checks.len()
     );
+
+    // P3-10 第二步：执行级评测数据通道。
+    // 真实通过率/成本/迭代趋势需要真实合成管线接入，本步骤先建立 JSONL 历史记录，
+    // 让 nightly 任务在结构检查后追加通过率/迭代数/耗时，便于趋势分析。
+    // 写入 .sisyphus/eval-history/golden-sop-{timestamp}.jsonl
+    let history_dir = std::path::Path::new(".sisyphus/eval-history");
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let history_path = history_dir.join(format!("golden-sop-{timestamp}.jsonl"));
+    if let Err(e) = std::fs::create_dir_all(history_dir) {
+        eprintln!("WARN: failed to create eval-history dir: {e}");
+    } else {
+        let per_category_pass: HashMap<&str, (usize, usize)> = {
+            let mut map: HashMap<&str, (usize, usize)> = HashMap::new();
+            for (i, c) in cases.iter().enumerate() {
+                let entry = map.entry(c.category.as_str()).or_insert((0, 0));
+                entry.1 += 1;
+                if checks[i].passed {
+                    entry.0 += 1;
+                }
+            }
+            map
+        };
+        let per_difficulty_pass: HashMap<&str, (usize, usize)> = {
+            let mut map: HashMap<&str, (usize, usize)> = HashMap::new();
+            for (i, c) in cases.iter().enumerate() {
+                let entry = map.entry(c.difficulty.as_str()).or_insert((0, 0));
+                entry.1 += 1;
+                if checks[i].passed {
+                    entry.0 += 1;
+                }
+            }
+            map
+        };
+        let record = serde_json::json!({
+            "timestamp": timestamp,
+            "total": checks.len(),
+            "passed": passed,
+            "failed": failed,
+            "pass_rate": if checks.is_empty() { 0.0 } else { passed as f64 / checks.len() as f64 },
+            "by_category": per_category_pass,
+            "by_difficulty": per_difficulty_pass,
+        });
+        if let Ok(line) = serde_json::to_string(&record) {
+            if let Err(e) = std::fs::write(&history_path, format!("{line}\n")) {
+                eprintln!("WARN: failed to write eval history: {e}");
+            } else {
+                println!("\nHistory recorded: {}", history_path.display());
+            }
+        }
+    }
+
     if failed > 0 {
         anyhow::bail!("{failed} golden SOP cases failed structural checks");
     }
