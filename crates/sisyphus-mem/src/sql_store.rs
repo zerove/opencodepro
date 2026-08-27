@@ -2,6 +2,7 @@
 //! Replaces MfsStore's simple KV with structured tables for SOPs, Traces, Experiences, Vector embeddings.
 
 use anyhow::{Context, Result};
+use crate::error::MemError;
 use async_trait::async_trait;
 use lru::LruCache;
 use parking_lot::Mutex;
@@ -140,7 +141,7 @@ impl SqlStore {
         Ok(Self {
             l1: Arc::new(Mutex::new(LruCache::new(
                 NonZeroUsize::new(config.l1_capacity.max(1))
-                    .ok_or_else(|| anyhow::anyhow!("Invalid capacity"))?,
+                    .ok_or_else(|| MemError::InvalidL1Capacity(format!("got {}", config.l1_capacity)))?,
             ))),
             pool,
             write_tx: tx,
@@ -611,7 +612,7 @@ impl SqlStore {
         let (tx, rx) = tokio::sync::oneshot::channel();
         self.write_tx
             .send(WriteOp::Flush(tx))
-            .map_err(|e| anyhow::anyhow!("Failed to send flush signal: {e}"))?;
+            .map_err(|e| MemError::Channel { context: "flush signal", message: format!("{e}") })?;
         rx.await.context("Flush worker dropped oneshot receiver")?
     }
 

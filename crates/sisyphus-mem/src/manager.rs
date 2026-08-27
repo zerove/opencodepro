@@ -2,6 +2,7 @@
 //! Coordinates structured storage (SOPs, Roadmaps) and unstructured state (MfsStore).
 
 use anyhow::{Context, Result};
+use crate::error::MemError;
 use sqlx::{SqlitePool, sqlite::SqlitePoolOptions};
 use std::str::FromStr;
 use std::sync::Arc;
@@ -39,11 +40,11 @@ impl SisyphusStore {
                 && !parent.as_os_str().is_empty()
             {
                 std::fs::create_dir_all(parent).map_err(|e| {
-                    anyhow::anyhow!("Failed to create db parent dir '{}': {e}", parent.display())
+                    MemError::CreateDbParent { path: parent.display().to_string(), source: e }
                 })?;
             }
             let opts = sqlx::sqlite::SqliteConnectOptions::from_str(db_url)
-                .map_err(|e| anyhow::anyhow!("Invalid SQLite URL '{db_url}': {e}"))?
+                .map_err(|e| MemError::InvalidSqliteUrl { url: db_url.to_string(), source: e })?
                 .create_if_missing(true)
                 .foreign_keys(true);
             SqlitePoolOptions::new()
