@@ -1,4 +1,5 @@
 pub mod client;
+pub mod oauth;
 pub mod transport;
 pub mod types;
 
