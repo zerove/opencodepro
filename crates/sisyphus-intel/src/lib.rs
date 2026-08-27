@@ -19,6 +19,7 @@ pub mod mock;
 pub mod probabilistic_planner;
 pub mod reflect;
 pub mod simulation;
+pub mod simulation_gate;
 pub mod supervisor;
 pub mod synthesis;
 pub mod token_budget;
