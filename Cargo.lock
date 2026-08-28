@@ -1259,6 +1259,7 @@ dependencies = [
  "reqwest 0.11.27",
  "serde",
  "serde_json",
+ "sisyphus-intel",
  "sisyphus-mem",
  "sisyphus-tools-core",
  "sisyphus-tools-executor",

@@ -15,6 +15,7 @@ sisyphus-tools-core = { path = "../crates/sisyphus-tools-core" }
 sisyphus-tools-llm = { path = "../crates/sisyphus-tools-llm" }
 sisyphus-tools-executor = { path = "../crates/sisyphus-tools-executor" }
 sisyphus-types = { path = "../crates/sisyphus-types" }
+sisyphus-intel = { path = "../crates/sisyphus-intel" }
 sisyphus-mem = { path = "../crates/sisyphus-mem" }
 anyhow = "1.0"
 prettytable-rs = "0.10"
@@ -39,3 +40,7 @@ path = "golden_sop/exec_eval.rs"
 [[bin]]
 name = "golden-sop-trend"
 path = "golden_sop/trend.rs"
+
+[[bin]]
+name = "self-prog-demo"
+path = "self_prog_demo.rs"
