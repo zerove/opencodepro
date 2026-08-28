@@ -151,7 +151,14 @@ cargo test -p sisyphus-tools-llm --lib
 
 ## Future Work
 
-- [ ] **Step E: metrics 导出**：在 `sisyphus-bridge` 加 `/metrics` 端点暴露 `SharedHttpClient::stats()`。
+- [x] **Step E: metrics 导出**：在 `sisyphus-bridge` 加 `/api/metrics` 端点暴露 `SharedHttpClient::stats()` ✅ (commit 7ec6bb4, 2026-08-28)
+  - Prometheus text format 0.0.4
+  - 5 指标: requests/errors/in_flight/shutdowns/uptime
+  - 2 新单测, 13/13 bridge lib 通过
+- [x] **graceful shutdown**：bridge SIGINT/SIGTERM 协调 LLM 共享池关闭 ✅ (commit 5b00c9b, 2026-08-28)
+- [x] **性能基准**：本地 axum echo 测试 5.11x → 60.51x 加速比 ✅ (commit ebb962b)
+- [x] **文档同步**：`book/configuration.md` HTTP 客户端调优章节 ✅
 - [ ] **Crate 拆分**：考虑将 `http_client` 抽到独立 `sisyphus-tools-llm-http` crate（高 ROI 候选）。
 - [ ] **TLS 调优**：当前用 reqwest 默认（rustls + native verifier），可显式 `with_webpki_roots()` 强化。
 - [ ] **retry 中间件**：当前 5xx 由 ProviderRegistry 重试；可在 SharedHttpClient 层加 transport-level retry（仅 GET）。
+- [ ] **nightly eval 集成**：把 `http_client_bench` 接入 CI nightly workflow。
