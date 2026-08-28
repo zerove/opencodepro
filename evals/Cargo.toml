@@ -44,3 +44,7 @@ path = "golden_sop/trend.rs"
 [[bin]]
 name = "self-prog-demo"
 path = "self_prog_demo.rs"
+
+[[bin]]
+name = "http-client-bench"
+path = "http_client_bench.rs"

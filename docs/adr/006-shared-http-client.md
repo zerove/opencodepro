@@ -123,6 +123,21 @@ cargo test -p sisyphus-tools-llm --lib
 # test result: ok. 96 passed; 0 failed
 ```
 
+### 性能基准（实测）
+
+`evals/http_client_bench.rs` 测量两种策略的吞吐量差异（dev 模式 + 本地 axum echo）：
+
+| 请求数 | 并发 | 共享 client (ms) | 每请求新建 (ms) | **加速比** |
+|--------|------|------------------|-----------------|----------|
+| 50     | 5    | 2,776            | 14,193          | **5.11x** |
+| 200    | 20   | 2,146            | 69,540          | **32.40x** |
+| 500    | 50   | 4,199            | 254,066         | **60.51x** |
+
+**结论**：规模越大，共享 client 优势越显著（连接复用从 N→1 + 省去 N 次 TCP/TLS 握手）。
+这是"按最终产品性能标准"实施后第一个**可量化**的胜利。
+
+### 单元测试覆盖
+
 新增 13 测试：
 - `http_client::*` (10 个)：默认配置、env 覆盖、构造、统计、关闭幂等、关闭后拒绝、共享 state
 - `registry_shares_one_http_client_across_providers`：跨 provider 共享 + shutdown 真的生效

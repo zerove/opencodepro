@@ -195,12 +195,57 @@ sample_rate = 1.0
 
 ### OpenRouter 归因 headers
 
-OpenRouter 透传 OpenAI 协议；客户端在 provider 声明为 openrouter 时自动注入两个推荐 header：
+OpenRouter 透传 OpenAI 协议；客户端在 provider 声明为 `openrouter` 时自动注入两个推荐 header：
 
-- ：归因站点，默认 ，可通过 `base_url` 字段覆盖
-- ：固定为 `Sisyphus Cognitive Engine`
+- `HTTP-Referer`：归因站点，默认 `https://sisyphus.dev`，可通过 `base_url` 字段覆盖
+- `X-Title`：固定为 `Sisyphus Cognitive Engine`
 
 完整模型列表：<https://openrouter.ai/models>。使用 OpenAI 兼容协议但上游是不同的 provider，因此需要把 `kind` 显式声明为 `openrouter` 而非 `openai`，否则归因 header 不会被注入。
+
+## HTTP 客户端调优（共享连接池）
+
+所有 LLM provider 共享同一 [`SharedHttpClient`](https://github.com/zerove/opencodepro/blob/master/crates/sisyphus-tools-llm/src/http_client.rs)（生产级 reqwest 包装），由 `build_provider_registry` 在启动时构造一次。
+
+### 环境变量
+
+所有配置都可通过 `SISYPHUS_HTTP_*` 环境变量覆盖（无需重新编译）：
+
+| 环境变量 | 默认 | 说明 |
+|----------|------|------|
+| `SISYPHUS_HTTP_REQUEST_TIMEOUT_SECS` | 300 | 总请求超时（含连接 + 等待响应） |
+| `SISYPHUS_HTTP_CONNECT_TIMEOUT_SECS` | 10 | 单次 connect 阶段超时（防 DNS 黑洞） |
+| `SISYPHUS_HTTP_POOL_IDLE_SECS` | 90 | 空闲连接在池中保持存活时间 |
+| `SISYPHUS_HTTP_TCP_KEEPALIVE_SECS` | 60 | TCP keepalive 间隔（0 = 禁用） |
+| `SISYPHUS_HTTP_POOL_MAX_PER_HOST` | 16 | 每 host 最大并发连接数 |
+| `SISYPHUS_HTTP_REDIRECT_LIMIT` | 3 | HTTP 重定向最大次数 |
+
+### 性能收益
+
+`evals/http_client_bench.rs` 实测（本地 echo server, 50 请求, 并发 5）：
+
+```
+共享 client 总耗时:   2776 ms (55520 µs/req)
+每请求新建总耗时:     14193 ms (283860 µs/req)
+加速比:               5.11x
+```
+
+详见 ADR-006（`docs/adr/006-shared-http-client.md`）。
+
+### 启动期错误处理
+
+构造期错误（如 TLS、allocator 失败）以 `Err` 返回而非 panic。`build_provider_registry` 同样返回 `Result<ProviderRegistry, String>`，由调用方（bridge / bin）决定如何处理（log + 继续 / 退出）。
+
+### 优雅关闭
+
+```rust
+let registry = build_provider_registry(&configs)?;
+if let Some(shared) = registry.shared_http() {
+    // 等待 in-flight 请求完成（最多 5 秒）
+    let _ = shared.shutdown(Duration::from_secs(5)).await;
+}
+```
+
+关闭后新请求会被快速失败（`on_request_start` 返回 false），不再向已关闭系统发起新请求。
 
 ## 认知循环配置
 
