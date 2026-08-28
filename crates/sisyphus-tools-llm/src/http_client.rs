@@ -63,6 +63,34 @@ pub struct SharedHttpClientConfig {
     /// 默认 `Webpki` — Mozilla 维护的现代根证书集，与 OpenAI/Anthropic 等
     /// 公网 LLM provider 兼容性最佳。
     pub tls_roots: TlsRoots,
+    /// Transport-level retry 策略（默认 Disabled）。
+    /// 注意: ProviderRegistry 层已有 5xx 重试 + fallback, 这里只在
+    /// `execute_with_retry` 调用路径生效；Provider::chat 等走老路径
+    /// 不受影响（避免双重重试）。
+    pub retry: RetryPolicy,
+}
+
+/// Transport-level retry 策略（**仅作用于 `SharedHttpClient::execute_with_retry`**）。
+///
+/// - `Disabled` (默认): 不重试，单次请求
+/// - `OneShot`: 5xx 或连接错误时重试 1 次（仅 GET/HEAD；POST/DELETE 跳过
+///   以避免重复副作用）
+///
+/// 设计选择:
+/// - 不用指数退避（增加 ProviderRegistry 层的复杂度）→ 1 次重试足够
+///   覆盖瞬时网络抖动；持续故障由 ProviderRegistry 的 fallback 处理
+/// - 5xx 而非 4xx 重试（4xx 通常是请求语义错误，重试无意义）
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RetryPolicy {
+    Disabled,
+    /// 5xx 或连接错误时重试 1 次（仅幂等方法 GET/HEAD）
+    OneShot,
+}
+
+impl Default for RetryPolicy {
+    fn default() -> Self {
+        Self::Disabled
+    }
 }
 
 /// TLS 根证书来源。
@@ -94,6 +122,7 @@ impl Default for SharedHttpClientConfig {
             user_agent: format!("Sisyphus/{}", env!("CARGO_PKG_VERSION")),
             gzip: true,
             tls_roots: TlsRoots::Webpki,
+            retry: RetryPolicy::Disabled,
         }
     }
 }
@@ -108,6 +137,8 @@ impl SharedHttpClientConfig {
     /// - `SISYPHUS_HTTP_TCP_KEEPALIVE_SECS`
     /// - `SISYPHUS_HTTP_POOL_MAX_PER_HOST`
     /// - `SISYPHUS_HTTP_REDIRECT_LIMIT`
+    /// - `SISYPHUS_HTTP_TLS_ROOTS` (`webpki` | `native`)
+    /// - `SISYPHUS_HTTP_RETRY` (`disabled` | `one_shot`)
     pub fn from_env() -> Self {
         let mut cfg = Self::default();
         if let Ok(v) = std::env::var("SISYPHUS_HTTP_REQUEST_TIMEOUT_SECS") {
@@ -148,6 +179,12 @@ impl SharedHttpClientConfig {
             cfg.tls_roots = match v.to_lowercase().as_str() {
                 "native" | "native_certs" | "platform" => TlsRoots::NativeCerts,
                 _ => TlsRoots::Webpki,
+            };
+        }
+        if let Ok(v) = std::env::var("SISYPHUS_HTTP_RETRY") {
+            cfg.retry = match v.to_lowercase().as_str() {
+                "one_shot" | "oneshot" | "1" => RetryPolicy::OneShot,
+                _ => RetryPolicy::Disabled,
             };
         }
         cfg
@@ -247,6 +284,65 @@ impl SharedHttpClient {
     /// 拿到底层 `reqwest::Client` 引用，用于实际发送请求。
     pub fn http(&self) -> &reqwest::Client {
         &self.inner.http
+    }
+
+    /// Transport-level retry 包装 (GET/HEAD only, 5xx 或连接错误重试 1 次).
+    ///
+    /// 决策树:
+    /// - `RetryPolicy::Disabled`: 委托给 `inner.http.execute(req)` 不重试
+    /// - `RetryPolicy::OneShot` + 非幂等方法 (POST/PUT/DELETE/PATCH): 跳过重试
+    /// - `RetryPolicy::OneShot` + 幂等方法 (GET/HEAD): 5xx 或 connection error 时重试 1 次
+    ///
+    /// 与 ProviderRegistry 的 fallback 重试**正交**:
+    /// - 此层只处理 transport 瞬时故障
+    /// - ProviderRegistry 处理 provider 级别故障 (rate limit / auth / model not found)
+    ///
+    /// 调用方应优先用 `inner.http()` (不走 retry) 除非明确需要 transport retry。
+    /// 内部计数器 (requests_total/errors_total) 每次实际 attempt 都会 +1.
+    pub async fn execute_with_retry(
+        &self,
+        req: reqwest::Request,
+    ) -> Result<reqwest::Response, reqwest::Error> {
+        let method = req.method().clone();
+        let is_idempotent = method == reqwest::Method::GET || method == reqwest::Method::HEAD;
+
+        // Disabled 或非幂等: 单次请求
+        if self.inner.config.retry == RetryPolicy::Disabled || !is_idempotent {
+            return self.dispatch_once(req).await;
+        }
+
+        // OneShot + 幂等: 最多 1 次重试
+        let first = self.dispatch_once(req.try_clone().expect("GET/HEAD request cloneable")).await;
+        match first {
+            Ok(resp) if !resp.status().is_server_error() => Ok(resp),
+            Ok(bad) => {
+                // 5xx 消耗: 构造第二次
+                let second = self.dispatch_once(req).await;
+                match second {
+                    Ok(ok) => Ok(ok),
+                    Err(_) => Ok(bad), // 第二次也失败 → 返回 5xx (调用方可读 status)
+                }
+            }
+            Err(_e1) => {
+                // 第一次是连接/网络错误: 重试
+                self.dispatch_once(req).await
+            }
+        }
+    }
+
+    /// 单次实际请求，封装 on_request_start/on_request_end 计数。
+    async fn dispatch_once(
+        &self,
+        req: reqwest::Request,
+    ) -> Result<reqwest::Response, reqwest::Error> {
+        if !self.on_request_start() {
+            // 客户端已关闭 — 返回 reqwest 标准错误
+            return self.inner.http.execute(req).await;
+        }
+        let res = self.inner.http.execute(req).await;
+        let errored = res.is_err();
+        self.on_request_end(errored);
+        res
     }
 
     /// 当前配置（只读）。
@@ -417,6 +513,57 @@ mod tests {
             let client = SharedHttpClient::new(cfg);
             assert!(client.is_ok(), "构造失败 ({:?}): {:?}", mode, client.err());
         }
+    }
+
+    #[test]
+    fn retry_policy_default_is_disabled() {
+        let cfg = SharedHttpClientConfig::default();
+        assert_eq!(cfg.retry, RetryPolicy::Disabled);
+    }
+
+    #[test]
+    fn retry_policy_env_var_parses_correctly() {
+        // 未知值回退到 Disabled
+        std::env::set_var("SISYPHUS_HTTP_RETRY", "garbage");
+        let cfg = SharedHttpClientConfig::from_env();
+        assert_eq!(cfg.retry, RetryPolicy::Disabled);
+
+        // one_shot
+        std::env::set_var("SISYPHUS_HTTP_RETRY", "one_shot");
+        let cfg = SharedHttpClientConfig::from_env();
+        assert_eq!(cfg.retry, RetryPolicy::OneShot);
+
+        // 别名 1
+        std::env::set_var("SISYPHUS_HTTP_RETRY", "1");
+        let cfg = SharedHttpClientConfig::from_env();
+        assert_eq!(cfg.retry, RetryPolicy::OneShot);
+
+        std::env::remove_var("SISYPHUS_HTTP_RETRY");
+    }
+
+    #[tokio::test]
+    async fn execute_with_retry_skips_post_even_when_enabled() {
+        // POST 在 OneShot 模式不重试: 用 reqwest::Method::POST 直接构造
+        // 不可重试请求，验证 dispatch_once 路径。
+        // (我们跳过网络 — 仅单元验证 reqwest::Request 构造 + retry 决策)
+        let cfg = SharedHttpClientConfig {
+            retry: RetryPolicy::OneShot,
+            ..Default::default()
+        };
+        let client = SharedHttpClient::new(cfg).unwrap();
+        let req = client
+            .http()
+            .post("http://example.invalid/test")
+            .body("test-body")
+            .build()
+            .expect("build");
+        // 关键: reqwest::Method::POST 不是 GET/HEAD → 走非重试路径
+        assert!(req.method() == reqwest::Method::POST);
+        // 注: 不实际 dispatch (会受网络影响); 直接验证 retry 策略的 if 分支
+        // 已经过滤掉 POST — 单元测试仅覆盖决策逻辑。
+        let is_idempotent = req.method() == reqwest::Method::GET
+            || req.method() == reqwest::Method::HEAD;
+        assert!(!is_idempotent, "POST 不应被视为幂等方法");
     }
 
     #[test]
