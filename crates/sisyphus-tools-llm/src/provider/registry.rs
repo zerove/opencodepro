@@ -173,7 +173,8 @@ pub fn build_provider_registry(providers_cfg: &[ProviderConfig]) -> ProviderRegi
             ProviderKind::OpenAi
             | ProviderKind::Groq
             | ProviderKind::Mistral
-            | ProviderKind::Together => OpenAiCompatibleProvider::new(cfg.clone())
+            | ProviderKind::Together
+            | ProviderKind::OpenRouter => OpenAiCompatibleProvider::new(cfg.clone())
                 .map(|p| Arc::new(p) as Arc<dyn LlmProvider>),
             ProviderKind::Google => GoogleGeminiProvider::new(cfg.clone())
                 .map(|p| Arc::new(p) as Arc<dyn LlmProvider>),

@@ -24,6 +24,11 @@ pub enum ProviderKind {
     /// Together AI (OpenAI-compatible, open models).
     #[serde(rename = "together")]
     Together,
+    /// OpenRouter (OpenAI-compatible, multi-model aggregator).
+    /// 透传 OpenAI 协议；自动注入 OpenRouter 推荐的
+    /// `HTTP-Referer` 与 `X-Title` headers。
+    #[serde(rename = "openrouter")]
+    OpenRouter,
 }
 
 /// Configuration for a single LLM provider instance.
@@ -73,6 +78,7 @@ impl ProviderKind {
             ProviderKind::Cohere => "cohere",
             ProviderKind::Mistral => "mistral",
             ProviderKind::Together => "together",
+            ProviderKind::OpenRouter => "openrouter",
         }
     }
 
@@ -86,6 +92,7 @@ impl ProviderKind {
             ProviderKind::Cohere => None, // 自定义协议
             ProviderKind::Mistral => Some("https://api.mistral.ai/v1/chat/completions"),
             ProviderKind::Together => Some("https://api.together.xyz/v1/chat/completions"),
+            ProviderKind::OpenRouter => Some("https://openrouter.ai/api/v1/chat/completions"),
         }
     }
 
@@ -99,6 +106,7 @@ impl ProviderKind {
             ProviderKind::Cohere => "command-r-plus",
             ProviderKind::Mistral => "mistral-large-latest",
             ProviderKind::Together => "meta-llama/Llama-3.3-70B-Instruct-Turbo",
+            ProviderKind::OpenRouter => "anthropic/claude-3.5-sonnet",
         }
     }
 
@@ -110,6 +118,7 @@ impl ProviderKind {
                 | ProviderKind::Groq
                 | ProviderKind::Mistral
                 | ProviderKind::Together
+                | ProviderKind::OpenRouter
         )
     }
 }
@@ -125,6 +134,7 @@ impl std::str::FromStr for ProviderKind {
             "cohere" => Ok(ProviderKind::Cohere),
             "mistral" => Ok(ProviderKind::Mistral),
             "together" | "together-ai" => Ok(ProviderKind::Together),
+            "openrouter" | "open-router" => Ok(ProviderKind::OpenRouter),
             _ => Err(format!("unknown provider: {s}")),
         }
     }
@@ -174,6 +184,8 @@ mod tests {
         assert_eq!("claude".parse::<ProviderKind>().unwrap(), ProviderKind::Anthropic);
         assert_eq!("gemini".parse::<ProviderKind>().unwrap(), ProviderKind::Google);
         assert_eq!("together-ai".parse::<ProviderKind>().unwrap(), ProviderKind::Together);
+        assert_eq!("openrouter".parse::<ProviderKind>().unwrap(), ProviderKind::OpenRouter);
+        assert_eq!("open-router".parse::<ProviderKind>().unwrap(), ProviderKind::OpenRouter);
         assert!("unknown-provider".parse::<ProviderKind>().is_err());
     }
 
@@ -194,6 +206,7 @@ mod tests {
         assert!(ProviderKind::Groq.default_endpoint().is_some());
         assert!(ProviderKind::Mistral.default_endpoint().is_some());
         assert!(ProviderKind::Together.default_endpoint().is_some());
+        assert!(ProviderKind::OpenRouter.default_endpoint().is_some());
         assert!(ProviderKind::Google.default_endpoint().is_none());
         assert!(ProviderKind::Anthropic.default_endpoint().is_none());
         assert!(ProviderKind::Cohere.default_endpoint().is_none());

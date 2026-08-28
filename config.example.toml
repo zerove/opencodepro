@@ -127,6 +127,20 @@ model = "gpt-4o"
 # priority = 25
 # enabled = true
 
+# [[llm.providers]]
+# OpenRouter — 多模型聚合（一个 API key 路由到任意上游模型）。
+# 透传 OpenAI 协议；自动注入 HTTP-Referer / X-Title headers
+# （可在 base_url 中显式设置归因站点）。
+# 可用模型见 https://openrouter.ai/models
+# name = "openrouter-aggregator"
+# kind = "openrouter"
+# endpoint = "https://openrouter.ai/api/v1/chat/completions"
+# api_key = "env:OPENROUTER_API_KEY"
+# model = "anthropic/claude-3.5-sonnet"
+# base_url = "https://your-site.example.com"  # 可选：作为 OpenRouter 归因 referer
+# priority = 5  # 数值越小优先级越高
+# enabled = true
+
 # ── 认知循环配置 (评审 A4 已接线) ───────────────────────
 # 控制 sisyphus-core/cognitive_loop 阶段的迭代/深度参数
 # bridge 启动时通过 StrategicManager::apply_cognitive_loop_config 应用

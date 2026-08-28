@@ -9,6 +9,25 @@ use std::time::Duration;
 
 use super::{ChatMessage, LlmProvider, ProviderError, ProviderResponse};
 
+/// OpenRouter 归因 header：根据配置或默认值返回 referer。
+/// `None` 表示不发送该 header。
+fn openrouter_referer(cfg: &ProviderConfig) -> Option<String> {
+    if cfg.kind != ProviderKind::OpenRouter {
+        return None;
+    }
+    // 优先用 config.base_url 作为 referer（若配置者设置了一个站点），
+    // 否则使用 OpenRouter 推荐的默认占位。
+    Some(cfg.base_url.clone().unwrap_or_else(|| "https://sisyphus.dev".to_string()))
+}
+
+/// OpenRouter 归因 header：站点/应用名。
+fn openrouter_title(cfg: &ProviderConfig) -> Option<String> {
+    if cfg.kind != ProviderKind::OpenRouter {
+        return None;
+    }
+    Some("Sisyphus Cognitive Engine".to_string())
+}
+
 /// Provider that speaks the OpenAI chat completions protocol.
 pub struct OpenAiCompatibleProvider {
     config: ProviderConfig,
@@ -77,11 +96,18 @@ impl LlmProvider for OpenAiCompatibleProvider {
             body["response_format"] = json!({ "type": "json_object" });
         }
 
-        let res = self
+        let mut builder = self
             .client
             .post(&self.config.endpoint)
-            .header("Authorization", format!("Bearer {api_key}"))
-            .json(&body)
+            .header("Authorization", format!("Bearer {api_key}"));
+        // OpenRouter 推荐的归因 headers（用于在 openrouter.ai/rankings 展示）。
+        if let Some(referer) = openrouter_referer(&self.config) {
+            builder = builder.header("HTTP-Referer", referer);
+        }
+        if let Some(title) = openrouter_title(&self.config) {
+            builder = builder.header("X-Title", title);
+        }
+        let res = builder.json(&body)
             .send()
             .await
             .map_err(|e| ProviderError::Transient(format!("HTTP request failed: {e}")))?;
@@ -128,5 +154,60 @@ impl LlmProvider for OpenAiCompatibleProvider {
             input_tokens,
             output_tokens,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_cfg(kind: ProviderKind) -> ProviderConfig {
+        ProviderConfig {
+            name: "test".into(),
+            kind,
+            endpoint: "https://example.com/v1/chat/completions".into(),
+            api_key: "sk-test".into(),
+            model: "test-model".into(),
+            base_url: None,
+            priority: 10,
+            enabled: true,
+            max_tokens: None,
+            temperature: None,
+        }
+    }
+
+    #[test]
+    fn openrouter_headers_present() {
+        let cfg = make_cfg(ProviderKind::OpenRouter);
+        assert!(openrouter_referer(&cfg).is_some());
+        assert!(openrouter_title(&cfg).is_some());
+        let referer = openrouter_referer(&cfg).unwrap();
+        let title = openrouter_title(&cfg).unwrap();
+        assert!(!referer.is_empty());
+        assert!(!title.is_empty());
+    }
+
+    #[test]
+    fn non_openrouter_headers_absent() {
+        for kind in [
+            ProviderKind::OpenAi,
+            ProviderKind::Groq,
+            ProviderKind::Mistral,
+            ProviderKind::Together,
+            ProviderKind::Anthropic,
+            ProviderKind::Google,
+        ] {
+            let cfg = make_cfg(kind);
+            assert!(openrouter_referer(&cfg).is_none(), "{kind:?} should NOT set referer");
+            assert!(openrouter_title(&cfg).is_none(), "{kind:?} should NOT set title");
+        }
+    }
+
+    #[test]
+    fn openrouter_referer_uses_base_url_when_set() {
+        let mut cfg = make_cfg(ProviderKind::OpenRouter);
+        cfg.base_url = Some("https://my-app.example.com".into());
+        let referer = openrouter_referer(&cfg).unwrap();
+        assert_eq!(referer, "https://my-app.example.com");
     }
 }

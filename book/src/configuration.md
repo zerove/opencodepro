@@ -189,8 +189,18 @@ sample_rate = 1.0
 | `cohere` | (not yet implemented) | `command-r-plus` | 自定义 |
 | `mistral` | `https://api.mistral.ai/v1/chat/completions` | `mistral-large-latest` | OpenAI 兼容 |
 | `together` | `https://api.together.xyz/v1/chat/completions` | `meta-llama/Llama-3.3-70B-Instruct-Turbo` | OpenAI 兼容 |
+| `openrouter` | `https://openrouter.ai/api/v1/chat/completions` | `anthropic/claude-3.5-sonnet` | OpenAI 兼容 |
 
 切换生产 provider 只需修改 `config.toml` 的 `[[llm.providers]]` 段。优先级（`priority` 字段）控制 fallback 链顺序——数值越小越优先。
+
+### OpenRouter 归因 headers
+
+OpenRouter 透传 OpenAI 协议；客户端在 provider 声明为 openrouter 时自动注入两个推荐 header：
+
+- ：归因站点，默认 ，可通过 `base_url` 字段覆盖
+- ：固定为 `Sisyphus Cognitive Engine`
+
+完整模型列表：<https://openrouter.ai/models>。使用 OpenAI 兼容协议但上游是不同的 provider，因此需要把 `kind` 显式声明为 `openrouter` 而非 `openai`，否则归因 header 不会被注入。
 
 ## 认知循环配置
 
