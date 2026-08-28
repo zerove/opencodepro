@@ -215,6 +215,7 @@ fn page_shell(title: &str, nav_active: &str, body: &str) -> String {
         ("sop", "/sop", "SOP"),
         ("skills", "/skills", "技能"),
         ("chaos", "/chaos", "混沌"),
+        ("cogmap", "/cogmap", "认知地图"),
     ];
 
     let nav_html: String = nav_items
@@ -371,6 +372,11 @@ async fn skills_page() -> Html<String> {
 }
 
 // ── 混沌工程页面 ─────────────────────
+
+async fn cogmap_page() -> Html<String> {
+    let body = include_str!("../templates/cogmap.html");
+    Html(page_shell("实时认知地图", "cogmap", body))
+}
 
 async fn chaos_page() -> Html<String> {
     let body = r##"
@@ -1124,6 +1130,7 @@ pub fn app(bridge_url: String) -> Router {
         .route("/sop", get(sop_page))
         .route("/skills", get(skills_page))
         .route("/chaos", get(chaos_page))
+        .route("/cogmap", get(cogmap_page))
         .route("/htmx/dashboard", get(dashboard_htmx))
         .route("/htmx/sessions", get(sessions_htmx))
         .route("/htmx/session/{id}/detail", get(session_detail_htmx))

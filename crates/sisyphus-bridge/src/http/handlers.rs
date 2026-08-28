@@ -1098,3 +1098,105 @@ pub(super) async fn list_skills_handler(State(state): State<RestApiState>) -> im
         .collect();
     (StatusCode::OK, Json(entries))
 }
+
+
+// =====================================================================
+// 实时认知地图 SSE 流（EVOLUTION_PLAN §3.2 第一步）
+// ---------------------------------------------------------------------
+// 端点：`GET /api/cognitive/map/:sop_id/stream`
+//
+// 行为：
+// 1. 客户端订阅后，server 立即推送一次当前 CogMap（如果存在）
+// 2. 之后每 `poll_ms`（默认 500ms）轮询 `cognitive_maps`，
+//    若 iteration 变化或 active_node 变化则推送 `update` 事件
+// 3. 推送 `heartbeat` 事件保持连接活跃
+// 4. 客户端断开则退出循环
+//
+// 端点位置与现有 `/api/cognitive/map/:sop_id` 互补：一次性查询用前者，
+// 实时观察用后者。
+pub(super) async fn stream_cognitive_map_handler(
+    State(state): State<RestApiState>,
+    Path(sop_id): Path<String>,
+) -> impl IntoResponse {
+    use axum::response::sse::{Event, KeepAlive, Sse};
+
+    use std::time::Duration;
+
+    let kernel = state.bridge.kernel().clone();
+    let sop_id_owned = sop_id.clone();
+
+    let sse_stream = async_stream::stream! {
+        // 第一次立即推送（如果存在）
+        let initial = kernel
+            .execution_manager
+            .cognitive_maps
+            .get(&sop_id_owned)
+            .map(|m| m.clone());
+        match initial {
+            Some(map) => {
+                let payload = serde_json::to_string(&map).unwrap_or_default();
+                yield Ok::<Event, std::convert::Infallible>(
+                    Event::default()
+                        .event("snapshot")
+                        .data(payload),
+                );
+            }
+            None => {
+                yield Ok::<Event, std::convert::Infallible>(
+                    Event::default()
+                        .event("absent")
+                        .data(format!(r#"{{"sop_id":"{sop_id_owned}","message":"No active cognitive map"}}"#)),
+                );
+            }
+        }
+
+        // 轮询循环：仅在 iteration / active_node 变化时推送
+        let mut last_iteration: Option<usize> = None;
+        let mut last_active: Option<Option<String>> = None;
+        let poll_interval = Duration::from_millis(500);
+        let mut heartbeat = std::time::Instant::now();
+        let heartbeat_interval = Duration::from_secs(15);
+
+        loop {
+            tokio::time::sleep(poll_interval).await;
+
+            let current = kernel
+                .execution_manager
+                .cognitive_maps
+                .get(&sop_id_owned)
+                .map(|m| m.clone());
+
+            if let Some(map) = current {
+                let active = map.active_node.clone();
+                let iter = map.iteration;
+                if last_iteration != Some(iter) || last_active.as_ref() != Some(&active) {
+                    last_iteration = Some(iter);
+                    last_active = Some(active.clone());
+                    let payload = serde_json::to_string(&map).unwrap_or_default();
+                    yield Ok::<Event, std::convert::Infallible>(
+                        Event::default()
+                            .event("update")
+                            .data(payload),
+                    );
+                }
+            }
+
+            if heartbeat.elapsed() >= heartbeat_interval {
+                heartbeat = std::time::Instant::now();
+                yield Ok::<Event, std::convert::Infallible>(
+                    Event::default()
+                        .event("heartbeat")
+                        .data(format!(
+                            r#"{{"sop_id":"{sop_id_owned}","ts":{}}}"#,
+                            std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .map(|d| d.as_secs())
+                                .unwrap_or(0)
+                        )),
+                );
+            }
+        }
+    };
+
+    Sse::new(Box::pin(sse_stream)).keep_alive(KeepAlive::new().interval(Duration::from_secs(15)))
+}

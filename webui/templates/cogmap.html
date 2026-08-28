@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>Sisyphus · 实时认知地图</title>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 0; padding: 20px; background: #0d1117; color: #c9d1d9; }
+  h1 { color: #f0f6fc; margin: 0 0 8px 0; }
+  .meta { color: #8b949e; font-size: 0.9rem; margin-bottom: 16px; }
+  .controls { display: flex; gap: 8px; align-items: center; margin-bottom: 16px; }
+  input[type="text"] { background: #161b22; border: 1px solid #30363d; color: #c9d1d9; padding: 6px 10px; border-radius: 6px; font-size: 0.9rem; min-width: 240px; }
+  button { background: #238636; color: #fff; border: none; padding: 6px 14px; border-radius: 6px; cursor: pointer; font-size: 0.9rem; }
+  button:hover { background: #2ea043; }
+  button:disabled { background: #30363d; color: #8b949e; cursor: not-allowed; }
+  #status { font-size: 0.85rem; padding: 2px 8px; border-radius: 4px; background: #30363d; }
+  .status-live { background: #238636; }
+  .status-error { background: #da3633; }
+  .status-absent { background: #6e7681; }
+  #cogmap { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 16px; min-height: 480px; position: relative; overflow: auto; }
+  .node { display: inline-block; margin: 4px; padding: 6px 10px; background: #21262d; border: 1px solid #30363d; border-radius: 4px; font-size: 0.8rem; min-width: 80px; text-align: center; }
+  .node.active { background: #1f6feb; border-color: #58a6ff; color: #fff; font-weight: bold; }
+  .node.failed { background: #da3633; border-color: #f85149; }
+  .node.completed { background: #238636; border-color: #2ea043; color: #fff; }
+  .layer { margin-bottom: 20px; }
+  .layer-label { font-size: 0.8rem; color: #8b949e; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .edge { color: #8b949e; font-size: 0.75rem; margin: 0 8px; }
+  .stats { display: flex; gap: 16px; margin-top: 12px; font-size: 0.85rem; color: #8b949e; }
+  .stat-item { padding: 4px 10px; background: #0d1117; border-radius: 4px; }
+  .stat-value { color: #f0f6fc; font-weight: bold; }
+  #log { margin-top: 16px; max-height: 120px; overflow-y: auto; font-family: monospace; font-size: 0.75rem; color: #8b949e; background: #0d1117; border: 1px solid #30363d; border-radius: 4px; padding: 8px; }
+  .log-line { margin: 2px 0; }
+  .log-snapshot { color: #58a6ff; }
+  .log-update { color: #2ea043; }
+  .log-heartbeat { color: #8b949e; }
+  .log-absent { color: #d29922; }
+</style>
+</head>
+<body>
+  <h1>🧠 实时认知地图</h1>
+  <div class="meta">EVOLUTION_PLAN §3.2 · SSE 实时流 · 拓扑可视化</div>
+
+  <div class="controls">
+    <input type="text" id="sopId" placeholder="输入 sop_id（例: sop-abc123）" value="">
+    <button id="connectBtn">连接</button>
+    <button id="disconnectBtn" disabled>断开</button>
+    <span id="status" class="status-absent">未连接</span>
+  </div>
+
+  <div id="cogmap">
+    <div style="color: #8b949e; text-align: center; padding: 60px 0;">
+      等待连接... 输入 sop_id 后点击"连接"
+    </div>
+  </div>
+
+  <div class="stats" id="stats" style="display:none">
+    <div class="stat-item">迭代: <span class="stat-value" id="statIter">-</span></div>
+    <div class="stat-item">节点: <span class="stat-value" id="statNodes">-</span></div>
+    <div class="stat-item">边: <span class="stat-value" id="statEdges">-</span></div>
+    <div class="stat-item">活跃: <span class="stat-value" id="statActive">-</span></div>
+    <div class="stat-item">目标: <span class="stat-value" id="statGoal" style="font-size:0.75rem; max-width:300px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">-</span></div>
+  </div>
+
+  <div id="log"></div>
+
+<script>
+  let eventSource = null;
+  const $ = (id) => document.getElementById(id);
+
+  function log(text, kind) {
+    const line = document.createElement('div');
+    line.className = 'log-line log-' + (kind || '');
+    const ts = new Date().toISOString().slice(11, 19);
+    line.textContent = `[${ts}] ${text}`;
+    const logEl = $('log');
+    logEl.appendChild(line);
+    // 限制 50 行
+    while (logEl.children.length > 50) logEl.removeChild(logEl.firstChild);
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+
+  function renderCogMap(map) {
+    const cogmapEl = $('cogmap');
+    cogmapEl.innerHTML = '';
+
+    // 统计
+    $('stats').style.display = 'flex';
+    $('statIter').textContent = map.iteration ?? '-';
+    $('statNodes').textContent = map.nodes?.length ?? 0;
+    $('statEdges').textContent = map.edges?.length ?? 0;
+    $('statActive').textContent = map.active_node || '(无)';
+    $('statGoal').textContent = map.goal_text || '(无)';
+
+    // 节点按层渲染（用 BFS 拓扑分层）
+    const nodes = map.nodes || [];
+    const edges = map.edges || [];
+    const layers = topologicalLayers(nodes, edges);
+    layers.forEach((layer, idx) => {
+      const layerDiv = document.createElement('div');
+      layerDiv.className = 'layer';
+      const label = document.createElement('div');
+      label.className = 'layer-label';
+      label.textContent = `层 ${idx + 1} (${layer.length} 节点)`;
+      layerDiv.appendChild(label);
+      const nodesDiv = document.createElement('div');
+      layerDiv.appendChild(nodesDiv);
+      layer.forEach((node, i) => {
+        const div = document.createElement('span');
+        div.className = 'node';
+        if (map.active_node === node.id) div.className += ' active';
+        div.textContent = node.label || node.name || node.id;
+        if (i < layer.length - 1) {
+          const arrow = document.createElement('span');
+          arrow.className = 'edge';
+          arrow.textContent = '→';
+          nodesDiv.appendChild(div);
+          nodesDiv.appendChild(arrow);
+        } else {
+          nodesDiv.appendChild(div);
+        }
+      });
+      cogmapEl.appendChild(layerDiv);
+    });
+
+    if (nodes.length === 0) {
+      cogmapEl.innerHTML = '<div style="color:#8b949e;text-align:center;padding:60px 0;">SOP 暂无节点</div>';
+    }
+  }
+
+  function topologicalLayers(nodes, edges) {
+    // 简化拓扑分层：按入度分批
+    const indegree = new Map();
+    const adj = new Map();
+    nodes.forEach(n => {
+      indegree.set(n.id || n.name, 0);
+      adj.set(n.id || n.name, []);
+    });
+    edges.forEach(([from, to]) => {
+      if (indegree.has(to)) indegree.set(to, indegree.get(to) + 1);
+      if (adj.has(from)) adj.get(from).push(to);
+    });
+    const layers = [];
+    let current = nodes.filter(n => indegree.get(n.id || n.name) === 0);
+    const visited = new Set();
+    while (current.length > 0) {
+      layers.push(current);
+      current.forEach(n => visited.add(n.id || n.name));
+      const next = [];
+      current.forEach(n => {
+        (adj.get(n.id || n.name) || []).forEach(succ => {
+          const d = indegree.get(succ) - 1;
+          indegree.set(succ, d);
+          if (d === 0 && !visited.has(succ)) next.push(nodes.find(x => (x.id || x.name) === succ));
+        });
+      });
+      current = next.filter(Boolean);
+    }
+    return layers;
+  }
+
+  function connect() {
+    const sopId = $('sopId').value.trim();
+    if (!sopId) {
+      alert('请输入 sop_id');
+      return;
+    }
+    if (eventSource) eventSource.close();
+    const url = `/api/cognitive/map/${encodeURIComponent(sopId)}/stream`;
+    log(`连接 ${url}`, '');
+    eventSource = new EventSource(url);
+
+    eventSource.addEventListener('snapshot', (e) => {
+      try {
+        const map = JSON.parse(e.data);
+        log(`snapshot: iter=${map.iteration} nodes=${map.nodes?.length || 0}`, 'snapshot');
+        renderCogMap(map);
+        $('status').textContent = '已连接';
+        $('status').className = 'status-live';
+      } catch (err) {
+        log(`snapshot parse error: ${err}`, 'absent');
+      }
+    });
+
+    eventSource.addEventListener('update', (e) => {
+      try {
+        const map = JSON.parse(e.data);
+        log(`update: iter=${map.iteration} active=${map.active_node || '-'}`, 'update');
+        renderCogMap(map);
+      } catch (err) {
+        log(`update parse error: ${err}`, 'absent');
+      }
+    });
+
+    eventSource.addEventListener('absent', (e) => {
+      log(`SOP 无活跃认知地图（等待合成/执行）`, 'absent');
+      $('status').textContent = '等待 SOP';
+      $('status').className = 'status-absent';
+    });
+
+    eventSource.addEventListener('heartbeat', (e) => {
+      log(`heartbeat`, 'heartbeat');
+    });
+
+    eventSource.onerror = (e) => {
+      log(`连接错误: ${e.type}`, 'absent');
+      $('status').textContent = '连接错误';
+      $('status').className = 'status-error';
+    };
+
+    $('connectBtn').disabled = true;
+    $('disconnectBtn').disabled = false;
+  }
+
+  function disconnect() {
+    if (eventSource) {
+      eventSource.close();
+      eventSource = null;
+    }
+    $('connectBtn').disabled = false;
+    $('disconnectBtn').disabled = true;
+    $('status').textContent = '已断开';
+    $('status').className = 'status-absent';
+    log('已断开', '');
+  }
+
+  $('connectBtn').addEventListener('click', connect);
+  $('disconnectBtn').addEventListener('click', disconnect);
+  $('sopId').addEventListener('keypress', (e) => { if (e.key === 'Enter') connect(); });
+</script>
+</body>
+</html>
