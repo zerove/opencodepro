@@ -167,7 +167,10 @@ pub fn new(config: Config) -> Result<Self, String> {
 
 ## Future Work
 
-- [ ] **lint 自动化**: 写 `adg --production-grade` 规则覆盖 §1
+- [x] **lint 自动化**: `scripts/check_no_panic.py` + nightly CI 守护 ✅ (commit pending, 2026-08-28)
+  - 180 行 Python, 0 外部依赖
+  - 6/6 自测通过
+  - baseline 模式: 20 个既有违规固化, 新增即 fail
 - [ ] **CI 模板**: `.github/PULL_REQUEST_TEMPLATE.md` 引用本文 5 条
 - [ ] **Onboarding 文档**: `book/src/development-standards.md` 摘录本文
 - [ ] **定期审计**: 每季度跑 adg 报告未达标代码并开 issue

@@ -162,3 +162,28 @@ jobs:
           name: http-client-bench-report
           path: .sisyphus/eval-history/
           retention-days: 90
+
+  # ── ADR-007 §1 panic 检查 (PR-time baseline 守护) ─────────────
+  # 跑 scripts/check_no_panic.py 对比 baseline:
+  #   - baseline 已提交 (.sisyphus/quality/panic-baseline.json)
+  #   - 新增 panic → exit 1 → CI fail
+  #   - 故意修旧 panic → 警告, 需 PR 内同步更新 baseline
+  panic-check:
+    name: ADR-007 §1 No-Panic Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Run no-panic check
+        run: |
+          python3 scripts/check_no_panic.py --baseline .sisyphus/quality/panic-baseline.json
+      - name: Run self-tests
+        run: python3 evals/check_no_panic_test.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: panic-check-report
+          path: .sisyphus/quality/panic-baseline.json
+          retention-days: 90

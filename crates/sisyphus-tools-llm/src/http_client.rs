@@ -312,7 +312,13 @@ impl SharedHttpClient {
         }
 
         // OneShot + 幂等: 最多 1 次重试
-        let first = self.dispatch_once(req.try_clone().expect("GET/HEAD request cloneable")).await;
+        // GET/HEAD request 总是可 clone (无 body), 但用 match 显式处理
+        // clone 失败（理论上不可能）— 用 Err 返回避免 panic。
+        let cloned = match req.try_clone() {
+            Some(r) => r,
+            None => return self.dispatch_once(req).await,
+        };
+        let first = self.dispatch_once(cloned).await;
         match first {
             Ok(resp) if !resp.status().is_server_error() => Ok(resp),
             Ok(bad) => {
