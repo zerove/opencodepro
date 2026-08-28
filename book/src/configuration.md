@@ -174,3 +174,33 @@ sample_rate = 1.0
 | `SISYPHUS_METRICS_OTEL_ENDPOINT` | `metrics.opentelemetry.endpoint` | string | `"http://localhost:4317"` |
 | `SISYPHUS_METRICS_OTEL_SERVICE_NAME` | `metrics.opentelemetry.service_name` | string | `"sisyphus-bridge"` |
 | `SISYPHUS_METRICS_OTEL_SAMPLE_RATE` | `metrics.opentelemetry.sample_rate` | f64 | `1.0` |
+
+## Provider 适配（OpenAI 兼容协议）
+
+`ProviderKind` 已从 3 个扩展到 7 个。OpenAI 兼容类（OpenAI/Groq/Mistral/Together）共享
+`OpenAiCompatibleProvider` 客户端，零代码差异——仅 endpoint 与 model 不同。
+
+| Kind | 默认 Endpoint | 默认 Model | 兼容性 |
+|------|--------------|------------|--------|
+| `openai` | `https://api.openai.com/v1/chat/completions` | `gpt-4o-mini` | OpenAI 兼容 |
+| `google` | (custom protocol) | `gemini-1.5-flash` | 自定义 |
+| `anthropic` | (custom protocol) | `claude-3-5-sonnet-20241022` | 自定义 |
+| `groq` | `https://api.groq.com/openai/v1/chat/completions` | `llama-3.1-70b-versatile` | OpenAI 兼容 |
+| `cohere` | (not yet implemented) | `command-r-plus` | 自定义 |
+| `mistral` | `https://api.mistral.ai/v1/chat/completions` | `mistral-large-latest` | OpenAI 兼容 |
+| `together` | `https://api.together.xyz/v1/chat/completions` | `meta-llama/Llama-3.3-70B-Instruct-Turbo` | OpenAI 兼容 |
+
+切换生产 provider 只需修改 `config.toml` 的 `[[llm.providers]]` 段。优先级（`priority` 字段）控制 fallback 链顺序——数值越小越优先。
+
+## 认知循环配置
+
+`[cognitive_loop]` 段控制 sisyphus-core 认知循环阶段的行为。bridge 启动时通过
+`StrategicManager::apply_cognitive_loop_config` 应用（评审 A4 已接线）。
+
+| 字段 | 环境变量 | 类型 | 默认 |
+|------|----------|------|------|
+| `max_iterations` | `SISYPHUS_COGNITIVE_LOOP_MAX_ITERATIONS` | integer | 8 |
+| `convergence_threshold` | `SISYPHUS_COGNITIVE_LOOP_CONVERGENCE_THRESHOLD` | float | 0.15 |
+| `llm_stage_timeout_secs` | `SISYPHUS_COGNITIVE_LOOP_LLM_STAGE_TIMEOUT_SECS` | integer | 30 |
+
+`llm_stage_timeout_secs=0` 禁用反思/演进阶段的 LLM 调用（用于降级/纯启发式模式）。

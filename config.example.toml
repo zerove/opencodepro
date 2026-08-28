@@ -97,6 +97,56 @@ model = "gpt-4o"
 # priority = 20
 # enabled = true
 
+# OpenAI 兼容类（Groq / Mistral / Together）共享 OpenAiCompatibleProvider 客户端
+# 仅 endpoint 与 model 不同；切换生产 provider 只需改这两个字段
+
+# [[llm.providers]]
+# name = "groq-llama"
+# kind = "groq"
+# endpoint = "https://api.groq.com/openai/v1/chat/completions"
+# api_key = "env:GROQ_API_KEY"
+# model = "llama-3.1-70b-versatile"
+# priority = 5   # 优先级最高 → fallback 链首选
+# enabled = true
+
+# [[llm.providers]]
+# name = "mistral-large"
+# kind = "mistral"
+# endpoint = "https://api.mistral.ai/v1/chat/completions"
+# api_key = "env:MISTRAL_API_KEY"
+# model = "mistral-large-latest"
+# priority = 15
+# enabled = true
+
+# [[llm.providers]]
+# name = "together-llama"
+# kind = "together"
+# endpoint = "https://api.together.xyz/v1/chat/completions"
+# api_key = "env:TOGETHER_API_KEY"
+# model = "meta-llama/Llama-3.3-70B-Instruct-Turbo"
+# priority = 25
+# enabled = true
+
+# ── 认知循环配置 (评审 A4 已接线) ───────────────────────
+# 控制 sisyphus-core/cognitive_loop 阶段的迭代/深度参数
+# bridge 启动时通过 StrategicManager::apply_cognitive_loop_config 应用
+
+[cognitive_loop]
+# 最大迭代次数 (硬上限 — 自适应深度不能突破)
+# 环境变量: SISYPHUS_COGNITIVE_LOOP_MAX_ITERATIONS
+# 类型: integer | 默认: 8
+# max_iterations = 8
+
+# 收敛阈值（deviation < threshold 视为稳定）
+# 环境变量: SISYPHUS_COGNITIVE_LOOP_CONVERGENCE_THRESHOLD
+# 类型: float | 默认: 0.15
+# convergence_threshold = 0.15
+
+# 反思/演进阶段 LLM 调用超时（秒；0 禁用对应阶段 LLM）
+# 环境变量: SISYPHUS_COGNITIVE_LOOP_LLM_STAGE_TIMEOUT_SECS
+# 类型: integer | 默认: 30
+# llm_stage_timeout_secs = 30
+
 # ── 认证令牌 ──────────────────────────────────────────────────
 # 可选的 bearer token，用于保护 bridge HTTP 和 gRPC 接口
 # 环境变量: SISYPHUS_AUTH_TOKEN
