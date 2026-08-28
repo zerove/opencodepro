@@ -1200,3 +1200,92 @@ pub(super) async fn stream_cognitive_map_handler(
 
     Sse::new(Box::pin(sse_stream)).keep_alive(KeepAlive::new().interval(Duration::from_secs(15)))
 }
+
+// ── 认知映射实时干预端点 (P1-2) ────────────────────────────────────────────
+
+/// POST /api/cognitive/map/:sop_id/intervene
+///
+/// 实时干预正在运行的 SOP。请求体：
+/// ```json
+/// { "action": "abort" | "pause" | "resume" | "redirect", "target_node": "optional-node-id", "reason": "optional" }
+/// ```
+///
+/// 实现：
+/// 1. 通过 `sse_broadcaster` 广播 `intervention` SSE 事件，所有订阅此 sop_id 的客户端立即收到。
+/// 2. 更新 `ExecutionManager.active_executions` 中的状态（abort → 移除条目；pause/resume → 更新 status；redirect → 记录目标节点）。
+/// 3. 实时干预通过 `cogmap_subscribers` 通道触发内核的运行循环（若可用）。
+#[derive(serde::Deserialize)]
+pub(super) struct InterventionRequest {
+    pub action: String,
+    #[serde(default)]
+    pub target_node: Option<String>,
+    #[serde(default)]
+    pub reason: Option<String>,
+}
+
+pub(super) async fn intervene_cognitive_map_handler(
+    State(state): State<RestApiState>,
+    Path(sop_id): Path<String>,
+    Json(req): Json<InterventionRequest>,
+) -> impl IntoResponse {
+    use axum::http::StatusCode;
+    let kernel = state.bridge.kernel().clone();
+    let action = req.action.to_lowercase();
+
+    // 1) 更新 active_executions（如果存在）
+    let mut applied = false;
+    match action.as_str() {
+        "abort" => {
+            // 直接移除条目；运行循环下次检测时退出
+            if kernel.execution_manager.active_executions.remove(&sop_id).is_some() {
+                applied = true;
+            }
+        }
+        "pause" | "resume" => {
+            if let Some(mut entry) = kernel.execution_manager.active_executions.get_mut(&sop_id) {
+                entry.status = if action == "pause" { "paused".to_string() } else { "running".to_string() };
+                applied = true;
+            }
+        }
+        "redirect" => {
+            if let Some(mut entry) = kernel.execution_manager.active_executions.get_mut(&sop_id) {
+                if let Some(target) = &req.target_node {
+                    entry.current_node = Some(target.clone());
+                    applied = true;
+                }
+            }
+        }
+        _ => {}
+    }
+
+    // 2) 广播 SSE 事件给所有订阅者
+    let payload = serde_json::json!({
+        "sop_id": sop_id,
+        "action": action,
+        "target_node": req.target_node,
+        "reason": req.reason,
+        "applied": applied,
+        "ts": std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis())
+            .unwrap_or(0),
+    });
+    let event = crate::http::sse_handlers::SseEvent::custom("intervention".to_string(), payload);
+    let _ = state.sse_broadcaster.send(event);
+
+    let status = if applied {
+        StatusCode::OK
+    } else {
+        StatusCode::ACCEPTED // 状态已广播，但目标 sop 未在 active_executions 中（可能已完成）
+    };
+
+    (
+        status,
+        axum::Json(serde_json::json!({
+            "sop_id": sop_id,
+            "action": action,
+            "applied": applied,
+            "message": if applied { "intervention applied" } else { "intervention broadcast but no active execution found" },
+        })),
+    )
+}

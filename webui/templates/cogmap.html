@@ -12,6 +12,8 @@
   button { background: #238636; color: #fff; border: none; padding: 6px 14px; border-radius: 6px; cursor: pointer; font-size: 0.9rem; }
   button:hover { background: #2ea043; }
   button:disabled { background: #30363d; color: #8b949e; cursor: not-allowed; }
+  #interventionControls button { margin-left: 6px; }
+  #interventionControls input { margin-left: 6px; padding: 4px 8px; background:#0d1117; color:#c9d1d9; border:1px solid #30363d; border-radius:4px; }
   #status { font-size: 0.85rem; padding: 2px 8px; border-radius: 4px; background: #30363d; }
   .status-live { background: #238636; }
   .status-error { background: #da3633; }
@@ -44,6 +46,16 @@
     <button id="connectBtn">连接</button>
     <button id="disconnectBtn" disabled>断开</button>
     <span id="status" class="status-absent">未连接</span>
+  </div>
+
+  <div class="controls" id="interventionControls" style="display:none">
+    <strong style="color:#8b949e;">实时干预:</strong>
+    <button id="btnPause" style="background:#9e6a03">⏸ 暂停</button>
+    <button id="btnResume" style="background:#1f6feb">▶ 恢复</button>
+    <button id="btnRedirect" style="background:#8957e5">↪ 重定向</button>
+    <button id="btnAbort" style="background:#da3633">⏹ 中止</button>
+    <input type="text" id="redirectTarget" placeholder="目标节点 ID" style="width:160px">
+  </div>
   </div>
 
   <div id="cogmap">
@@ -208,9 +220,28 @@
 
     $('connectBtn').disabled = true;
     $('disconnectBtn').disabled = false;
+    $('interventionControls').style.display = 'flex';
+  }
+
+  async function intervene(action, targetNode) {
+    const sopId = $('sopId').value.trim();
+    if (!sopId) { log('请先输入 sop_id', 'absent'); return; }
+    const body = { action, target_node: targetNode || null, reason: 'manual-ui' };
+    try {
+      const resp = await fetch(`/api/cognitive/map/${encodeURIComponent(sopId)}/intervene`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const data = await resp.json();
+      log(`干预 ${action}: applied=${data.applied} — ${data.message}`, data.applied ? 'connected' : 'absent');
+    } catch (err) {
+      log(`干预失败: ${err.message}`, 'absent');
+    }
   }
 
   function disconnect() {
+    $('interventionControls').style.display = 'none';
     if (eventSource) {
       eventSource.close();
       eventSource = null;
@@ -225,6 +256,20 @@
   $('connectBtn').addEventListener('click', connect);
   $('disconnectBtn').addEventListener('click', disconnect);
   $('sopId').addEventListener('keypress', (e) => { if (e.key === 'Enter') connect(); });
+  $('btnPause').addEventListener('click', () => intervene('pause'));
+  $('btnResume').addEventListener('click', () => intervene('resume'));
+  $('btnRedirect').addEventListener('click', () => intervene('redirect', $('redirectTarget').value.trim()));
+  $('btnAbort').addEventListener('click', () => intervene('abort'));
+
+  // 全局 SSE 监听：拦截 intervention 事件（来自任何 sop）
+  const globalSse = new EventSource('/api/events');
+  globalSse.addEventListener('intervention', (e) => {
+    try {
+      const data = JSON.parse(e.data);
+      log(`🛠 干预广播 [${data.action}] sop=${data.sop_id} applied=${data.applied}`, data.applied ? 'connected' : 'absent');
+    } catch (err) { /* ignore */ }
+  });
+  globalSse.onerror = () => { /* 自动重连由浏览器处理 */ };
 </script>
 </body>
 </html>
