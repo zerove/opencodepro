@@ -135,3 +135,30 @@ jobs:
           name: golden-sop-eval-log
           path: golden_sop_report.txt
           retention-days: 30
+
+  # ── HTTP client performance regression check (ADR-006 §J) ─────────
+  # 跑 shared_http bench，与 `.sisyphus/eval-history/` 上次基线对比。
+  # 失败条件 (任一即 fail):
+  #   - 共享模式加速比 < 1.5x (连接复用失效)
+  #   - 相对上次基线 < 0.8x (性能回归 20%+)
+  http-client-bench:
+    name: HTTP Client Performance Bench
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # 拉取历史 jsonl 当基线；fetch-depth 0 保留全部 commit
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: Swatinem/rust-cache@v2
+      - name: Run benchmark
+        run: cargo run --release -p eval-runner --bin http-client-bench
+        env:
+          # 让 server 在 CI 安静运行（少 1-2s 启动时间）
+          RUST_LOG: warn
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: http-client-bench-report
+          path: .sisyphus/eval-history/
+          retention-days: 90

@@ -161,4 +161,8 @@ cargo test -p sisyphus-tools-llm --lib
 - [ ] **Crate 拆分**：考虑将 `http_client` 抽到独立 `sisyphus-tools-llm-http` crate（高 ROI 候选）。
 - [ ] **TLS 调优**：当前用 reqwest 默认（rustls + native verifier），可显式 `with_webpki_roots()` 强化。
 - [ ] **retry 中间件**：当前 5xx 由 ProviderRegistry 重试；可在 SharedHttpClient 层加 transport-level retry（仅 GET）。
-- [ ] **nightly eval 集成**：把 `http_client_bench` 接入 CI nightly workflow。
+- [x] **nightly eval 集成**：把 `http_client_bench` 接入 CI nightly workflow ✅ (commit pending, 2026-08-28)
+  - `.github/workflows/nightly.yml` 新增 `http-client-bench` job
+  - bench 增加 baseline 回归检测（< 0.8x 比例时 fail）
+  - 2 个 bench 单元测试覆盖 read_last_baseline
+  - 退出码语义: 0=通过, 1=回归

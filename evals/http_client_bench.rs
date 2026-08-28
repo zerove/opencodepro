@@ -143,12 +143,65 @@ async fn main() {
         println!("✓ 历史已写入: {}", path.display());
     }
 
-    // 6) 退出码：如果共享模式真的更快则 0，否则 1（CI 可用作 sanity check）
-    if result.speedup_ratio >= 1.5 {
-        println!("✓ 共享模式快 ≥1.5x，符合预期");
+    // 6) 退出码策略：
+    //    - 共享模式加速比 < 1.5x → 1（共享池失效）
+    //    - 若有上次 jsonl 基线且加速比 < 基线 × 0.8 → 1（性能回归 20%+）
+    //    - 否则 → 0
+    let mut exit_code = 0i32;
+    if result.speedup_ratio < 1.5 {
+        println!("✗ FAIL: 共享模式加速比 {:.2}x < 1.5x 下限，连接复用可能失效", result.speedup_ratio);
+        exit_code = 1;
     } else {
-        println!("⚠ 共享模式加速比 < 1.5x，请检查网络或 server 瓶颈");
+        println!("✓ 共享模式快 ≥1.5x，符合预期");
     }
+
+    // 与上次基线对比
+    if let Some(baseline) = read_last_baseline() {
+        let ratio = result.speedup_ratio / baseline;
+        println!("  上次基线加速比:        {:.2}x", baseline);
+        println!("  相对基线:              {:.2}× (1.00 = 不变)", ratio);
+        if ratio < 0.8 {
+            println!("✗ FAIL: 性能回归 20%+，基线 {:.2}x → 当前 {:.2}x", baseline, result.speedup_ratio);
+            exit_code = 1;
+        }
+    } else {
+        println!("  无历史基线（首次运行，仅做绝对阈值检查）");
+    }
+
+    if exit_code != 0 {
+        std::process::exit(exit_code);
+    }
+}
+
+/// 读取 `.sisyphus/eval-history/http-client-bench-*.jsonl` 中**最后**一个文件的
+/// 第一行（即最近一次 `speedup_ratio`），用作性能回归基线。
+///
+/// 返回 `None` 表示没有历史（首次运行）。
+fn read_last_baseline() -> Option<f64> {
+    let dir = std::path::PathBuf::from(".sisyphus/eval-history");
+    if !dir.exists() {
+        return None;
+    }
+    let mut entries: Vec<_> = std::fs::read_dir(&dir)
+        .ok()?
+        .filter_map(|e| e.ok())
+        .filter(|e| {
+            e.file_name()
+                .to_string_lossy()
+                .starts_with("http-client-bench-")
+                && e.file_name().to_string_lossy().ends_with(".jsonl")
+        })
+        .collect();
+    if entries.is_empty() {
+        return None;
+    }
+    // 按文件名排序（unix timestamp 后缀）→ 取最大
+    entries.sort_by_key(|e| e.file_name());
+    let last = entries.last()?.path();
+    let content = std::fs::read_to_string(&last).ok()?;
+    let line = content.lines().last()?;
+    let v: serde_json::Value = serde_json::from_str(line).ok()?;
+    v.get("speedup_ratio")?.as_f64()
 }
 
 async fn run_load(client: Arc<reqwest::Client>, url: &str, requests: usize, concurrency: usize) {
@@ -165,5 +218,70 @@ async fn run_load(client: Arc<reqwest::Client>, url: &str, requests: usize, conc
     }
     for h in handles {
         let _ = h.await;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    /// 计数器: 给每个测试唯一 timestamp 后缀
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+
+    /// 在临时目录里写一个 jsonl，验证 read_last_baseline 能否读出 speedup_ratio
+    #[test]
+    fn test_read_last_baseline_returns_speedup_ratio() {
+        let tmp = std::env::temp_dir().join(format!(
+            "sisyphus-bench-test-{}-{}",
+            std::process::id(),
+            COUNTER.fetch_add(1, Ordering::SeqCst)
+        ));
+        fs::create_dir_all(&tmp).unwrap();
+
+        // 模拟历史目录结构：".sisyphus/eval-history/" + 多个时间戳 jsonl
+        // read_last_baseline 硬编码此路径，用 chdir 切换工作目录
+        let original_cwd = std::env::current_dir().unwrap();
+        std::env::set_current_dir(&tmp).unwrap();
+
+        // 构造 .sisyphus/eval-history + 2 个 jsonl
+        let dir = tmp.join(".sisyphus").join("eval-history");
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(
+            dir.join("http-client-bench-100.jsonl"),
+            format!("{{\"requests\":200,\"concurrency\":20,\"speedup_ratio\":5.0}}\n"),
+        )
+        .unwrap();
+        fs::write(
+            dir.join("http-client-bench-200.jsonl"),
+            format!("{{\"requests\":200,\"concurrency\":20,\"speedup_ratio\":12.5}}\n"),
+        )
+        .unwrap();
+
+        let baseline = read_last_baseline();
+        std::env::set_current_dir(&original_cwd).unwrap();
+        fs::remove_dir_all(&tmp).ok();
+
+        assert_eq!(baseline, Some(12.5), "应返回最新文件 (200) 的 speedup_ratio");
+    }
+
+    /// 无历史目录时返回 None
+    #[test]
+    fn test_read_last_baseline_returns_none_when_no_history() {
+        let tmp = std::env::temp_dir().join(format!(
+            "sisyphus-bench-test-none-{}-{}",
+            std::process::id(),
+            COUNTER.fetch_add(1, Ordering::SeqCst)
+        ));
+        fs::create_dir_all(&tmp).unwrap();
+        let original_cwd = std::env::current_dir().unwrap();
+        std::env::set_current_dir(&tmp).unwrap();
+
+        let baseline = read_last_baseline();
+        std::env::set_current_dir(&original_cwd).unwrap();
+        fs::remove_dir_all(&tmp).ok();
+
+        assert_eq!(baseline, None, "无 .sisyphus/eval-history 时应返回 None");
     }
 }
