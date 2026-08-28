@@ -326,6 +326,13 @@ pub async fn metrics_handler(State(state): State<RestApiState>) -> impl IntoResp
         .map(|c| c.stats())
         .unwrap_or_default();
 
+    // SSE 活跃连接数 = SSE_MAX_CONNECTIONS - 剩余许可
+    let sse_max = crate::http::types::SSE_MAX_CONNECTIONS;
+    let sse_active = sse_max.saturating_sub(state.sse_connection_limit.available_permits());
+
+    // Chaos engineering 累计故障注入次数
+    let chaos_total = state.bridge.chaos_fault_count();
+
     let mut out = String::with_capacity(1024);
     let _ = writeln!(out, "# HELP sisyphus_http_requests_total Total HTTP requests since process start");
     let _ = writeln!(out, "# TYPE sisyphus_http_requests_total counter");
@@ -342,6 +349,12 @@ pub async fn metrics_handler(State(state): State<RestApiState>) -> impl IntoResp
     let _ = writeln!(out, "# HELP sisyphus_uptime_seconds Process uptime in seconds");
     let _ = writeln!(out, "# TYPE sisyphus_uptime_seconds gauge");
     let _ = writeln!(out, "sisyphus_uptime_seconds {}", uptime_secs);
+    let _ = writeln!(out, "# HELP sisyphus_sse_connections_active Active SSE client connections");
+    let _ = writeln!(out, "# TYPE sisyphus_sse_connections_active gauge");
+    let _ = writeln!(out, "sisyphus_sse_connections_active {}", sse_active);
+    let _ = writeln!(out, "# HELP sisyphus_chaos_faults_total Total chaos engineering faults injected");
+    let _ = writeln!(out, "# TYPE sisyphus_chaos_faults_total counter");
+    let _ = writeln!(out, "sisyphus_chaos_faults_total {}", chaos_total);
 
     (
         StatusCode::OK,
@@ -508,5 +521,37 @@ mod tests {
             .parse()
             .unwrap();
         assert!(secs < 86_400, "uptime 看起来不真实: {secs}");
+    }
+
+    #[tokio::test]
+    async fn test_metrics_handler_exposes_sse_and_chaos() {
+        // 验证两个新增指标均存在且语义正确：
+        // - sisyphus_sse_connections_active: 初始 0（无客户端）
+        // - sisyphus_chaos_faults_total: 初始 0 (MySisyphusBridge::chaos_fault_count)
+        let state = make_test_state(None).await;
+        let resp = metrics_handler(State(state)).await.into_response();
+        assert_eq!(resp.status(), axum::http::StatusCode::OK);
+        let body = axum::body::to_bytes(resp.into_body(), 4096).await.unwrap();
+        let text = String::from_utf8_lossy(&body);
+
+        // SSE 活跃连接 — 初始应为 0
+        let sse_line = text
+            .lines()
+            .find(|l| l.starts_with("sisyphus_sse_connections_active"))
+            .expect("sse line");
+        let sse_active: u64 = sse_line.split_whitespace().last().unwrap().parse().unwrap();
+        assert_eq!(sse_active, 0, "初始 SSE 连接数应为 0");
+
+        // Chaos 计数 — 初始应为 0
+        let chaos_line = text
+            .lines()
+            .find(|l| l.starts_with("sisyphus_chaos_faults_total"))
+            .expect("chaos line");
+        let chaos_total: u64 = chaos_line.split_whitespace().last().unwrap().parse().unwrap();
+        assert_eq!(chaos_total, 0, "初始 chaos count 应为 0");
+
+        // TYPE 注释齐全（Prometheus 规范）
+        assert!(text.contains("# TYPE sisyphus_sse_connections_active gauge"), "{text}");
+        assert!(text.contains("# TYPE sisyphus_chaos_faults_total counter"), "{text}");
     }
 }
