@@ -52,7 +52,7 @@ impl DynamicLlmClient {
         let provider_registry = config
             .read()
             .ok()
-            .map(|cfg| build_provider_registry(&cfg.llm.providers));
+            .and_then(|cfg| build_provider_registry(&cfg.llm.providers).ok());
         Self {
             config,
             client,

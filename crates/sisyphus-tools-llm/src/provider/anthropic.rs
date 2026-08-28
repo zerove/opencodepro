@@ -5,23 +5,20 @@
 use async_trait::async_trait;
 use serde_json::{json, Value};
 use sisyphus_types::{ProviderConfig, ProviderKind};
-use std::time::Duration;
+use std::sync::Arc;
 
 use super::{ChatMessage, ChatRole, LlmProvider, ProviderError, ProviderResponse};
+use crate::http_client::{RequestGuard, SharedHttpClient};
 
-/// Provider that translates requests to Anthropic Messages API format.
+/// Provider that translates requests to Anthropic Messages API format。
 pub struct AnthropicProvider {
     config: ProviderConfig,
-    client: reqwest::Client,
+    http: Arc<SharedHttpClient>,
 }
 
 impl AnthropicProvider {
-    pub fn new(config: ProviderConfig) -> Result<Self, String> {
-        let client = reqwest::Client::builder()
-            .timeout(Duration::from_mins(3))
-            .build()
-            .map_err(|e| format!("Failed to build HTTP client: {e}"))?;
-        Ok(Self { config, client })
+    pub fn new(config: ProviderConfig, http: Arc<SharedHttpClient>) -> Result<Self, String> {
+        Ok(Self { config, http })
     }
 }
 
@@ -68,36 +65,64 @@ impl LlmProvider for AnthropicProvider {
             body["system"] = json!(system);
         }
 
-        let res = self
-            .client
+        if !self.http.on_request_start() {
+            return Err(ProviderError::Transient(
+                "shared http client is closed".into(),
+            ));
+        }
+        let mut _req_guard = RequestGuard::new(self.http.clone());
+
+        let res = match self
+            .http
+            .http()
             .post(&self.config.endpoint)
             .header("x-api-key", &api_key)
             .header("anthropic-version", "2023-06-01")
             .json(&body)
             .send()
             .await
-            .map_err(|e| ProviderError::Transient(format!("HTTP request failed: {e}")))?;
+        {
+            Ok(r) => r,
+            Err(e) => {
+                _req_guard.mark_errored();
+                return Err(ProviderError::Transient(format!(
+                    "HTTP request failed: {e}"
+                )));
+            }
+        };
 
         let status = res.status();
-        let response_json: Value = res
-            .json()
-            .await
-            .map_err(|e| ProviderError::Transient(format!("Failed to parse response: {e}")))?;
+        let response_json: Value = match res.json().await {
+            Ok(v) => v,
+            Err(e) => {
+                _req_guard.mark_errored();
+                return Err(ProviderError::Transient(format!(
+                    "Failed to parse response: {e}"
+                )));
+            }
+        };
 
         if !status.is_success() {
             let error_msg = response_json["error"]["message"]
                 .as_str()
                 .unwrap_or("unknown error");
-            if status.as_u16() == 429 {
+            let code = status.as_u16();
+            if code == 429 {
+                _req_guard.mark_errored();
                 return Err(ProviderError::RateLimited(error_msg.to_string()));
             }
-            if status.as_u16() == 401 {
+            if code == 401 {
+                _req_guard.mark_errored();
                 return Err(ProviderError::Auth(error_msg.to_string()));
             }
-            return Err(ProviderError::Transient(format!(
-                "API error ({}): {}",
-                status.as_u16(),
-                error_msg
+            if code >= 500 {
+                _req_guard.mark_errored();
+                return Err(ProviderError::Transient(format!(
+                    "API error ({code}): {error_msg}"
+                )));
+            }
+            return Err(ProviderError::Permanent(format!(
+                "API error ({code}): {error_msg}"
             )));
         }
 

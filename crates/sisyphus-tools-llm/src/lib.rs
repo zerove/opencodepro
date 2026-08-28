@@ -4,6 +4,7 @@
 //! for managing LLM interactions across the Sisyphus toolbelt.
 
 pub mod circuit_breaker;
+pub mod http_client;
 pub mod llm;
 pub mod metis;
 pub mod model_router;

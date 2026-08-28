@@ -5,9 +5,10 @@
 use async_trait::async_trait;
 use serde_json::{json, Value};
 use sisyphus_types::{ProviderConfig, ProviderKind};
-use std::time::Duration;
+use std::sync::Arc;
 
 use super::{ChatMessage, LlmProvider, ProviderError, ProviderResponse};
+use crate::http_client::SharedHttpClient;
 
 /// OpenRouter 归因 header：根据配置或默认值返回 referer。
 /// `None` 表示不发送该 header。
@@ -28,19 +29,39 @@ fn openrouter_title(cfg: &ProviderConfig) -> Option<String> {
     Some("Sisyphus Cognitive Engine".to_string())
 }
 
+/// RAII guard：drop 时自动调用 `on_request_end(errored=false)`。
+/// 若需标记为错误，调用 `mark_errored()` 后 drop。
+struct RequestGuard {
+    http: Arc<SharedHttpClient>,
+    errored: bool,
+}
+
+impl RequestGuard {
+    fn new(http: Arc<SharedHttpClient>) -> Self {
+        Self { http, errored: false }
+    }
+    fn mark_errored(&mut self) {
+        self.errored = true;
+    }
+}
+
+impl Drop for RequestGuard {
+    fn drop(&mut self) {
+        self.http.on_request_end(self.errored);
+    }
+}
+
 /// Provider that speaks the OpenAI chat completions protocol.
+///
+/// 接收共享 [`SharedHttpClient`]——所有 provider 共享同一连接池。
 pub struct OpenAiCompatibleProvider {
     config: ProviderConfig,
-    client: reqwest::Client,
+    http: Arc<SharedHttpClient>,
 }
 
 impl OpenAiCompatibleProvider {
-    pub fn new(config: ProviderConfig) -> Result<Self, String> {
-        let client = reqwest::Client::builder()
-            .timeout(Duration::from_mins(2))
-            .build()
-            .map_err(|e| format!("Failed to build HTTP client: {e}"))?;
-        Ok(Self { config, client })
+    pub fn new(config: ProviderConfig, http: Arc<SharedHttpClient>) -> Result<Self, String> {
+        Ok(Self { config, http })
     }
 }
 
@@ -96,8 +117,18 @@ impl LlmProvider for OpenAiCompatibleProvider {
             body["response_format"] = json!({ "type": "json_object" });
         }
 
+        // 共享 client 关闭后快速失败，避免对已关闭系统继续打洞。
+        if !self.http.on_request_start() {
+            return Err(ProviderError::Transient(
+                "shared http client is closed".into(),
+            ));
+        }
+        // RAII 风格的 request 结束追踪：成功/失败/early-return 都会触发。
+        let mut _req_guard = RequestGuard::new(self.http.clone());
+
         let mut builder = self
-            .client
+            .http
+            .http()
             .post(&self.config.endpoint)
             .header("Authorization", format!("Bearer {api_key}"));
         // OpenRouter 推荐的归因 headers（用于在 openrouter.ai/rankings 展示）。
@@ -107,10 +138,19 @@ impl LlmProvider for OpenAiCompatibleProvider {
         if let Some(title) = openrouter_title(&self.config) {
             builder = builder.header("X-Title", title);
         }
-        let res = builder.json(&body)
+        let res = match builder
+            .json(&body)
             .send()
             .await
-            .map_err(|e| ProviderError::Transient(format!("HTTP request failed: {e}")))?;
+        {
+            Ok(r) => r,
+            Err(e) => {
+                _req_guard.mark_errored();
+                return Err(ProviderError::Transient(format!(
+                    "HTTP request failed: {e}"
+                )));
+            }
+        };
 
         let status = res.status();
         let response_json: Value = res
@@ -122,16 +162,25 @@ impl LlmProvider for OpenAiCompatibleProvider {
             let error_msg = response_json["error"]["message"]
                 .as_str()
                 .unwrap_or("unknown error");
-            if status.as_u16() == 429 {
+            let code = status.as_u16();
+            // 5xx 视为可重试 transient；4xx 通常 permanent（除 429）
+            if code == 429 {
+                _req_guard.mark_errored();
                 return Err(ProviderError::RateLimited(error_msg.to_string()));
             }
-            if status.as_u16() == 401 || status.as_u16() == 403 {
+            if code == 401 || code == 403 {
+                _req_guard.mark_errored();
                 return Err(ProviderError::Auth(error_msg.to_string()));
             }
-            return Err(ProviderError::Transient(format!(
-                "API error ({}): {}",
-                status.as_u16(),
-                error_msg
+            if code >= 500 {
+                _req_guard.mark_errored();
+                return Err(ProviderError::Transient(format!(
+                    "API error ({code}): {error_msg}"
+                )));
+            }
+            // 其它 4xx：permanent（4xx 是客户端错误，重试无意义）
+            return Err(ProviderError::Permanent(format!(
+                "API error ({code}): {error_msg}"
             )));
         }
 

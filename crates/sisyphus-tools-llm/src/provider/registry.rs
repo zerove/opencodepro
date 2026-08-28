@@ -9,6 +9,7 @@ use super::{
     AnthropicProvider, ChatMessage, GoogleGeminiProvider, LlmProvider, OpenAiCompatibleProvider,
     ProviderError, ProviderResponse, RetryConfig,
 };
+use crate::http_client::{SharedHttpClient, SharedHttpClientConfig};
 
 /// Manages multiple LLM providers and supports fallback chains.
 pub struct ProviderRegistry {
@@ -16,6 +17,9 @@ pub struct ProviderRegistry {
     providers: HashMap<String, Arc<dyn LlmProvider>>,
     /// Ordered list of provider names for fallback (by priority).
     fallback_order: Vec<String>,
+    /// 共享 HTTP 客户端（build_provider_registry_* 时注入；手动 register 时为 None）。
+    /// 公开便于测试断言与外部访问 stats/shutdown。
+    pub(crate) shared_http: Option<Arc<SharedHttpClient>>,
 }
 
 impl ProviderRegistry {
@@ -23,7 +27,20 @@ impl ProviderRegistry {
         Self {
             providers: HashMap::new(),
             fallback_order: Vec::new(),
+            shared_http: None,
         }
+    }
+
+    /// 拿到 registry 内部的共享 HTTP 客户端（若有）。
+    /// 可用于读 stats 或触发 shutdown。
+    pub fn shared_http(&self) -> Option<Arc<SharedHttpClient>> {
+        self.shared_http.clone()
+    }
+
+    /// 内部共享 HTTP 客户端（仅测试用）。
+    #[cfg(test)]
+    pub(crate) fn shared_http_for_test(&self) -> Option<&Arc<SharedHttpClient>> {
+        self.shared_http.as_ref()
     }
 
     /// Register a provider. If a provider with the same name exists, it is replaced.
@@ -156,7 +173,23 @@ impl Default for ProviderRegistry {
 }
 
 /// Build the default provider registry from config.
-pub fn build_provider_registry(providers_cfg: &[ProviderConfig]) -> ProviderRegistry {
+///
+/// 使用 **生产级** [`SharedHttpClient`]（连接池 + keepalive + 重定向限制 +
+/// 可观测 + 优雅关闭）；所有 provider 共享同一连接池。
+///
+/// 启动期错误（配置非法、构造失败）以 `Err` 返回——绝不 panic。
+pub fn build_provider_registry(
+    providers_cfg: &[ProviderConfig],
+) -> Result<ProviderRegistry, String> {
+    let shared = Arc::new(SharedHttpClient::new(SharedHttpClientConfig::default())?);
+    build_provider_registry_with(providers_cfg, shared)
+}
+
+/// Build provider registry with caller-provided shared HTTP client（便于测试或自定义配置）。
+pub fn build_provider_registry_with(
+    providers_cfg: &[ProviderConfig],
+    shared_client: Arc<SharedHttpClient>,
+) -> Result<ProviderRegistry, String> {
     let mut registry = ProviderRegistry::new();
     let mut fallback_order: Vec<String> = Vec::new();
 
@@ -174,12 +207,21 @@ pub fn build_provider_registry(providers_cfg: &[ProviderConfig]) -> ProviderRegi
             | ProviderKind::Groq
             | ProviderKind::Mistral
             | ProviderKind::Together
-            | ProviderKind::OpenRouter => OpenAiCompatibleProvider::new(cfg.clone())
-                .map(|p| Arc::new(p) as Arc<dyn LlmProvider>),
-            ProviderKind::Google => GoogleGeminiProvider::new(cfg.clone())
-                .map(|p| Arc::new(p) as Arc<dyn LlmProvider>),
-            ProviderKind::Anthropic => AnthropicProvider::new(cfg.clone())
-                .map(|p| Arc::new(p) as Arc<dyn LlmProvider>),
+            | ProviderKind::OpenRouter => OpenAiCompatibleProvider::new(
+                cfg.clone(),
+                shared_client.clone(),
+            )
+            .map(|p| Arc::new(p) as Arc<dyn LlmProvider>),
+            ProviderKind::Google => GoogleGeminiProvider::new(
+                cfg.clone(),
+                shared_client.clone(),
+            )
+            .map(|p| Arc::new(p) as Arc<dyn LlmProvider>),
+            ProviderKind::Anthropic => AnthropicProvider::new(
+                cfg.clone(),
+                shared_client.clone(),
+            )
+            .map(|p| Arc::new(p) as Arc<dyn LlmProvider>),
             // Cohere 暂未实现，路由报错即可（上层可借此回退）
             ProviderKind::Cohere => Err(format!(
                 "Cohere provider not yet implemented in this build"
@@ -199,7 +241,8 @@ pub fn build_provider_registry(providers_cfg: &[ProviderConfig]) -> ProviderRegi
     }
 
     registry.set_fallback_order(fallback_order);
-    registry
+    registry.shared_http = Some(shared_client);
+    Ok(registry)
 }
 
 #[cfg(test)]
@@ -225,7 +268,7 @@ mod tests {
     #[test]
     fn registry_registers_groq_via_openai_compatible() {
         let cfg = make_openai_compatible_cfg(ProviderKind::Groq, "groq-main", "llama-3.1-70b-versatile");
-        let r = build_provider_registry(&[cfg]);
+        let r = build_provider_registry(&[cfg]).unwrap();
         assert!(r.get("groq-main").is_some());
         assert_eq!(r.list().len(), 1);
     }
@@ -233,21 +276,21 @@ mod tests {
     #[test]
     fn registry_registers_mistral_via_openai_compatible() {
         let cfg = make_openai_compatible_cfg(ProviderKind::Mistral, "mistral-main", "mistral-large-latest");
-        let r = build_provider_registry(&[cfg]);
+        let r = build_provider_registry(&[cfg]).unwrap();
         assert!(r.get("mistral-main").is_some());
     }
 
     #[test]
     fn registry_registers_together_via_openai_compatible() {
         let cfg = make_openai_compatible_cfg(ProviderKind::Together, "together-main", "meta-llama/Llama-3.3-70B-Instruct-Turbo");
-        let r = build_provider_registry(&[cfg]);
+        let r = build_provider_registry(&[cfg]).unwrap();
         assert!(r.get("together-main").is_some());
     }
 
     #[test]
     fn registry_registers_openai_unchanged() {
         let cfg = make_openai_compatible_cfg(ProviderKind::OpenAi, "openai-main", "gpt-4o-mini");
-        let r = build_provider_registry(&[cfg]);
+        let r = build_provider_registry(&[cfg]).unwrap();
         assert!(r.get("openai-main").is_some());
     }
 
@@ -257,7 +300,7 @@ mod tests {
         high.priority = 5;
         let mut low = make_openai_compatible_cfg(ProviderKind::Groq, "groq-priority-20", "llama-3.1-70b-versatile");
         low.priority = 20;
-        let r = build_provider_registry(&[low, high]); // 故意乱序
+        let r = build_provider_registry(&[low, high]).unwrap(); // 故意乱序
         let order = r.fallback_order();
         assert_eq!(order, &["openai-priority-5".to_string(), "groq-priority-20".to_string()]);
     }
@@ -266,7 +309,7 @@ mod tests {
     fn registry_skips_disabled_providers() {
         let mut cfg = make_openai_compatible_cfg(ProviderKind::Groq, "groq-disabled", "llama-3.1-70b-versatile");
         cfg.enabled = false;
-        let r = build_provider_registry(&[cfg]);
+        let r = build_provider_registry(&[cfg]).unwrap();
         assert_eq!(r.list().len(), 0);
     }
 
@@ -286,9 +329,48 @@ mod tests {
             max_tokens: None,
             temperature: None,
         };
-        let r = build_provider_registry(&[cfg]);
+        let r = build_provider_registry(&[cfg]).unwrap();
         // 构造失败 → registry 中不包含
         assert!(r.get("cohere-main").is_none());
+    }
+
+    #[test]
+    /// 关键回归保护：所有 provider 必须共享同一 SharedHttpClient。
+    /// 这保证连接池复用、统计准确、shutdown 真正等待所有 in-flight。
+    #[test]
+    fn registry_shares_one_http_client_across_providers() {
+        let cfgs = vec![
+            make_openai_compatible_cfg(ProviderKind::OpenAi, "openai-shared", "gpt-4o-mini"),
+            make_openai_compatible_cfg(ProviderKind::Groq, "groq-shared", "llama-3.1-70b"),
+            make_openai_compatible_cfg(ProviderKind::OpenRouter, "or-shared", "anthropic/claude-3.5-sonnet"),
+        ];
+        let r = build_provider_registry(&cfgs).unwrap();
+        let shared = r
+            .shared_http_for_test()
+            .expect("build_provider_registry must populate shared_http")
+            .clone();
+
+        // 任意一次 on_request_start 都会让 shared.requests_total 增加
+        assert!(shared.on_request_start());
+        shared.on_request_end(false);
+        assert_eq!(shared.stats().requests_total, 1, "共享 client 计数应可见");
+
+        // 关闭后再请求应失败（验证 shutdown 真的生效）
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async {
+            let _ = shared.shutdown(Duration::from_millis(50)).await;
+        });
+        assert!(!shared.on_request_start(), "关闭后应快速失败");
+    }
+
+    /// 验证 LlmProvider: Any supertrait 让外部可 downcast（jcode provider crate 标准模式）。
+    #[test]
+    fn provider_downcast_to_openai_works() {
+        let cfg = make_openai_compatible_cfg(ProviderKind::OpenAi, "downcast-target", "gpt-4o-mini");
+        let r = build_provider_registry(&[cfg]).unwrap();
+        let p: Arc<dyn LlmProvider> = r.get("downcast-target").unwrap();
+        let any: &dyn std::any::Any = &*p;
+        assert!(any.is::<OpenAiCompatibleProvider>());
     }
 
     #[test]
@@ -299,7 +381,7 @@ mod tests {
             make_openai_compatible_cfg(ProviderKind::Mistral, "mistral-x", "mistral-large-latest"),
             make_openai_compatible_cfg(ProviderKind::Together, "together-x", "meta-llama/Llama-3.3-70B-Instruct-Turbo"),
         ];
-        let r = build_provider_registry(&cfgs);
+        let r = build_provider_registry(&cfgs).unwrap();
         assert_eq!(r.list().len(), 4);
         for name in ["openai-x", "groq-x", "mistral-x", "together-x"] {
             assert!(r.get(name).is_some(), "{name} not registered");

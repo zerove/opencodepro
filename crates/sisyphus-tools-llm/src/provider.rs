@@ -25,12 +25,13 @@ pub use types::{ChatMessage, ChatRole, ProviderError, ProviderResponse, RetryCon
 
 use async_trait::async_trait;
 use sisyphus_types::ProviderKind;
+use std::any::Any;
 
 // ── Provider trait ─────────────────────────────────────────────────────────
 
 /// Abstract interface for an LLM provider.
 #[async_trait]
-pub trait LlmProvider: Send + Sync {
+pub trait LlmProvider: Any + Send + Sync {
     /// Return the provider kind.
     fn kind(&self) -> ProviderKind;
 
@@ -60,8 +61,14 @@ mod tests {
     use super::*;
     use sisyphus_types::ProviderConfig;
     use std::sync::{Arc, Mutex};
+    use crate::http_client::SharedHttpClient;
 
     static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    /// 测试用：构造一个最小可用的共享 HTTP client（不实际发起请求）。
+    fn test_http() -> Arc<SharedHttpClient> {
+        Arc::new(SharedHttpClient::new(crate::http_client::SharedHttpClientConfig::default()).unwrap())
+    }
 
     struct MockProvider {
         name: String,
@@ -174,7 +181,7 @@ mod tests {
         let mut registry = ProviderRegistry::new();
         assert!(registry.list().is_empty());
 
-        let provider = OpenAiCompatibleProvider::new(make_openai_config()).unwrap();
+        let provider = OpenAiCompatibleProvider::new(make_openai_config(), test_http()).unwrap();
         registry.register(Arc::new(provider));
 
         let names = registry.list();
@@ -191,7 +198,7 @@ mod tests {
     #[test]
     fn test_provider_registry_remove() {
         let mut registry = ProviderRegistry::new();
-        let provider = OpenAiCompatibleProvider::new(make_openai_config()).unwrap();
+        let provider = OpenAiCompatibleProvider::new(make_openai_config(), test_http()).unwrap();
         registry.register(Arc::new(provider));
 
         assert!(registry.remove("test-openai"));
@@ -212,7 +219,7 @@ mod tests {
 
     #[test]
     fn test_openai_compatible_provider_new() {
-        let provider = OpenAiCompatibleProvider::new(make_openai_config()).unwrap();
+        let provider = OpenAiCompatibleProvider::new(make_openai_config(), test_http()).unwrap();
         assert_eq!(provider.name(), "test-openai");
         assert_eq!(provider.kind(), ProviderKind::OpenAi);
         assert_eq!(provider.model(), "gpt-4o-mini");
@@ -233,7 +240,7 @@ mod tests {
             max_tokens: Some(4096),
             temperature: Some(0.3),
         };
-        let provider = GoogleGeminiProvider::new(cfg).unwrap();
+        let provider = GoogleGeminiProvider::new(cfg, test_http()).unwrap();
         assert_eq!(provider.name(), "test-gemini");
         assert_eq!(provider.kind(), ProviderKind::Google);
         assert_eq!(provider.model(), "gemini-2.0-flash");
@@ -253,7 +260,7 @@ mod tests {
             max_tokens: Some(8192),
             temperature: Some(0.2),
         };
-        let provider = AnthropicProvider::new(cfg).unwrap();
+        let provider = AnthropicProvider::new(cfg, test_http()).unwrap();
         assert_eq!(provider.name(), "test-claude");
         assert_eq!(provider.kind(), ProviderKind::Anthropic);
         assert_eq!(provider.model(), "claude-sonnet-4-20250514");
@@ -285,7 +292,7 @@ mod tests {
                 ..make_openai_config()
             },
         ];
-        let registry = build_provider_registry(&cfgs);
+        let registry = build_provider_registry(&cfgs).unwrap();
         let order = registry.fallback_order();
         // high-pri (priority 1) should come before low-pri (priority 100)
         assert_eq!(order[0], "high-pri");
@@ -306,7 +313,7 @@ mod tests {
                 ..make_openai_config()
             },
         ];
-        let registry = build_provider_registry(&cfgs);
+        let registry = build_provider_registry(&cfgs).unwrap();
         let names = registry.list();
         assert!(names.contains(&"enabled-one".to_string()));
         assert!(!names.contains(&"disabled-one".to_string()));
