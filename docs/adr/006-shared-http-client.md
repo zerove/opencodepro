@@ -145,6 +145,7 @@ cargo test -p sisyphus-tools-llm --lib
 
 ## References
 
+- [ADR-007: 最终产品开发标准](./007-production-grade-standards.md) — 本 ADR 是该标准首例完整应用
 - jcode MODULAR_ARCHITECTURE_RFC §`jcode-provider-core` / `jcode-provider-openrouter`
 - reqwest: <https://docs.rs/reqwest/latest/reqwest/struct.ClientBuilder.html>
 - tokio Notify: <https://docs.rs/tokio/latest/tokio/sync/struct.Notify.html>
@@ -159,8 +160,15 @@ cargo test -p sisyphus-tools-llm --lib
 - [x] **性能基准**：本地 axum echo 测试 5.11x → 60.51x 加速比 ✅ (commit ebb962b)
 - [x] **文档同步**：`book/configuration.md` HTTP 客户端调优章节 ✅
 - [ ] **Crate 拆分**：考虑将 `http_client` 抽到独立 `sisyphus-tools-llm-http` crate（高 ROI 候选）。
-- [ ] **TLS 调优**：当前用 reqwest 默认（rustls + native verifier），可显式 `with_webpki_roots()` 强化。
-- [ ] **retry 中间件**：当前 5xx 由 ProviderRegistry 重试；可在 SharedHttpClient 层加 transport-level retry（仅 GET）。
+- [x] **TLS 调优**：reqwest 默认 + 生产切到 webpki-roots ✅ (commit b062bd7, 2026-08-28)
+  - TlsRoots enum (Webpki | NativeCerts)
+  - SISYPHUS_HTTP_TLS_ROOTS env var 覆盖
+  - 跨平台一致 + 容器友好
+- [x] **retry 中间件**：SharedHttpClient::execute_with_retry 包装 ✅ (commit c087751, 2026-08-28)
+  - RetryPolicy enum (Disabled | OneShot)
+  - GET/HEAD only (POST 等跳过以避免副作用)
+  - SISYPHUS_HTTP_RETRY env var 覆盖
+  - 与 ProviderRegistry fallback 正交 (transport vs provider)
 - [x] **nightly eval 集成**：把 `http_client_bench` 接入 CI nightly workflow ✅ (commit pending, 2026-08-28)
   - `.github/workflows/nightly.yml` 新增 `http-client-bench` job
   - bench 增加 baseline 回归检测（< 0.8x 比例时 fail）
