@@ -24,6 +24,7 @@ use std::path::Path;
 use std::time::Instant;
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct GoldenCase {
     id: String,
     goal: String,
@@ -42,12 +43,14 @@ struct ExpectedSop {
 }
 
 #[derive(Debug, Deserialize, Clone)]
+#[allow(dead_code)]
 struct SopNodeJson {
     name: String,
     kind: serde_json::Value,
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct BaselineMetrics {
     min_nodes: usize,
     max_nodes: usize,
@@ -92,6 +95,7 @@ impl MockSynthesizedGraph {
 }
 
 /// 计算 Jaccard 相似度：|A ∩ B| / |A ∪ B|。空集相似度定义为 1.0。
+#[allow(dead_code)]
 fn jaccard<T: Eq + std::hash::Hash>(a: &HashSet<T>, b: &HashSet<T>) -> f64 {
     if a.is_empty() && b.is_empty() {
         return 1.0;
