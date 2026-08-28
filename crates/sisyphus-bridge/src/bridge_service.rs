@@ -719,6 +719,16 @@ impl MySisyphusBridge {
     pub fn kernel(&self) -> &Arc<SisyphusKernel> {
         &self.kernel
     }
+
+    /// 优雅关闭 bridge：等待 in-flight LLM 请求完成。
+    ///
+    /// 推荐由 main.rs 在收到 SIGINT/SIGTERM 后调用。
+    /// 默认 5 秒超时（与 HTTP/gRPC graceful shutdown 对齐）。
+    pub async fn shutdown(&self, wait: std::time::Duration) -> Result<(), String> {
+        // 委托给 LLM client；DynamicLlmClient 内部会调用
+        // provider_registry.shared_http().shutdown(wait).
+        self.llm_client.shutdown(wait).await
+    }
     pub(crate) fn tool_registry(&self) -> &Arc<ToolRegistry> {
         &self.tool_registry
     }

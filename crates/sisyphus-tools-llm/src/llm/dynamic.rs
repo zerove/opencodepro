@@ -477,6 +477,17 @@ impl LlmClient for DynamicLlmClient {
     fn breaker(&self) -> crate::circuit_breaker::CircuitBreaker {
         self.breaker.clone()
     }
+
+    async fn shutdown(&self, wait: std::time::Duration) -> Result<(), String> {
+        // 等待 provider registry 共享 HTTP 池的 in-flight 请求完成。
+        // None 表示配置未加载；直接返回 Ok。
+        if let Some(reg) = self.provider_registry.as_ref() {
+            if let Some(shared) = reg.shared_http() {
+                return shared.shutdown(wait).await;
+            }
+        }
+        Ok(())
+    }
 }
 
 #[cfg(test)]

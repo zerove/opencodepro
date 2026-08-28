@@ -29,6 +29,14 @@ pub trait LlmClient: Send + Sync {
     async fn generate(&self, prompt: &str) -> Result<String, sisyphus_types::TypesError>;
     fn get_params_for(&self, agent_id: &str) -> (String, String, String);
     fn breaker(&self) -> crate::circuit_breaker::CircuitBreaker;
+
+    /// 优雅关闭 LLM 客户端及其共享 HTTP 池。
+    ///
+    /// 默认实现为空（多数测试 mock 不需要）；生产实现（如 DynamicLlmClient）
+    /// 应等待 in-flight 请求完成，最长  时长。
+    async fn shutdown(&self, _wait: std::time::Duration) -> Result<(), String> {
+        Ok(())
+    }
 }
 
 /// A dummy LLM client for development and testing.
@@ -377,5 +385,15 @@ Scope: CLI command only, no engine changes.
             .ambiguities
             .iter()
             .all(|a| a.severity != AmbiguitySeverity::Blocking));
+    }
+
+    /// 验证 LlmClient::shutdown 默认实现是空操作（mock/test 实现无须等待）。
+    /// 这是 trait 默认实现正确性的回归保护。
+    #[tokio::test]
+    async fn test_llm_client_shutdown_default_is_noop() {
+        let dummy = DummyLlmClient;
+        // 默认实现直接 Ok(())
+        let res = dummy.shutdown(std::time::Duration::from_millis(100)).await;
+        assert!(res.is_ok());
     }
 }

@@ -147,15 +147,32 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             Box::new(std::io::Error::new(std::io::ErrorKind::InvalidInput, e))
                 as Box<dyn std::error::Error>
         })?;
+    // ── 协调关闭通道：收到 SIGINT/SIGTERM 后通知 HTTP/gRPC/LLM 顺序停机 ──
+    let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
+    let mut sig_rx = shutdown_rx.clone();
+
+    tokio::spawn(async move {
+        let mut sigterm = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+            .expect("install SIGTERM handler");
+        tokio::select! {
+            _ = signal::ctrl_c() => info!("Received SIGINT"),
+            _ = sigterm.recv() => info!("Received SIGTERM"),
+        }
+        let _ = shutdown_tx.send(true);
+    });
+
     info!("Starting HTTP REST API server on {http_addr}");
 
+    let mut http_shutdown_rx = sig_rx.clone();
     let _http_handle = tokio::spawn(async move {
         match tokio::net::TcpListener::bind(http_addr).await {
             Ok(listener) => {
                 if let Err(e) = axum::serve(listener, http_app)
-                    .with_graceful_shutdown(async {
-                        signal::ctrl_c().await.ok();
-                        info!("Received SIGINT, starting HTTP graceful shutdown...");
+                    .with_graceful_shutdown(async move {
+                        // 等待 shutdown 信号
+                        let _ = http_shutdown_rx.changed().await;
+                        info!("HTTP graceful shutdown initiated (waiting up to 5s for in-flight requests)");
+                        // 留出 5s 给 in-flight HTTP 请求完成
                         tokio::time::sleep(std::time::Duration::from_secs(5)).await;
                     })
                     .await
@@ -193,13 +210,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let grpc_incoming = TcpListenerStream::new(grpc_listener);
 
     info!("Starting gRPC server on {actual_grpc_addr}");
+    let mut grpc_shutdown_rx = sig_rx.clone();
     grpc_server
-        .serve_with_incoming_shutdown(grpc_incoming, async {
-            signal::ctrl_c().await.ok();
-            info!("Received SIGINT, starting gRPC graceful shutdown...");
+        .serve_with_incoming_shutdown(grpc_incoming, async move {
+            let _ = grpc_shutdown_rx.changed().await;
+            info!("gRPC graceful shutdown initiated (waiting up to 5s for in-flight RPCs)");
             tokio::time::sleep(std::time::Duration::from_secs(5)).await;
         })
         .await?;
+
+    // 等待 shutdown 信号
+    let _ = sig_rx.changed().await;
+    info!("Bridge shutdown signal received, calling bridge.shutdown(5s)");
+    if let Err(e) = bridge.shutdown(std::time::Duration::from_secs(5)).await {
+        warn!("Bridge shutdown error: {e}");
+    } else {
+        info!("Bridge shutdown complete");
+    }
 
     Ok(())
 }
