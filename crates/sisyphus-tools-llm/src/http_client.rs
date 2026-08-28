@@ -59,6 +59,27 @@ pub struct SharedHttpClientConfig {
 
     /// 是否启用 gzip/brotli 自动解压响应。
     pub gzip: bool,
+    /// TLS 根证书源（生产应使用 `Webpki`，禁用平台 native verifier 跨平台差异）。
+    /// 默认 `Webpki` — Mozilla 维护的现代根证书集，与 OpenAI/Anthropic 等
+    /// 公网 LLM provider 兼容性最佳。
+    pub tls_roots: TlsRoots,
+}
+
+/// TLS 根证书来源。
+///
+/// - `Webpki` (默认): reqwest 内置 `webpki-roots`，跨平台一致，CI/容器友好
+/// - `NativeCerts`: 操作系统根证书库（macOS Keychain / Windows cert store /
+///   Linux ca-certificates），适合需要本企业 CA 的场景
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TlsRoots {
+    Webpki,
+    NativeCerts,
+}
+
+impl Default for TlsRoots {
+    fn default() -> Self {
+        Self::Webpki
+    }
 }
 
 impl Default for SharedHttpClientConfig {
@@ -72,6 +93,7 @@ impl Default for SharedHttpClientConfig {
             redirect_limit: 3,
             user_agent: format!("Sisyphus/{}", env!("CARGO_PKG_VERSION")),
             gzip: true,
+            tls_roots: TlsRoots::Webpki,
         }
     }
 }
@@ -121,6 +143,12 @@ impl SharedHttpClientConfig {
             if let Ok(n) = v.parse() {
                 cfg.redirect_limit = n;
             }
+        }
+        if let Ok(v) = std::env::var("SISYPHUS_HTTP_TLS_ROOTS") {
+            cfg.tls_roots = match v.to_lowercase().as_str() {
+                "native" | "native_certs" | "platform" => TlsRoots::NativeCerts,
+                _ => TlsRoots::Webpki,
+            };
         }
         cfg
     }
@@ -182,6 +210,13 @@ impl SharedHttpClient {
             .pool_max_idle_per_host(config.pool_max_per_host)
             .redirect(reqwest::redirect::Policy::limited(config.redirect_limit))
             .user_agent(config.user_agent.clone());
+
+        // TLS 根证书源选择。Webpki 是生产默认（容器友好、跨平台一致）；
+        // NativeCerts 供企业 CA 场景使用。
+        builder = match config.tls_roots {
+            TlsRoots::Webpki => builder.tls_built_in_root_certs(false),
+            TlsRoots::NativeCerts => builder.tls_built_in_root_certs(true),
+        };
 
         if config.tcp_keepalive > Duration::from_secs(0) {
             builder = builder.tcp_keepalive(config.tcp_keepalive);
@@ -347,6 +382,41 @@ mod tests {
         assert!(cfg.pool_max_per_host > 0);
         assert!(cfg.redirect_limit <= 10);
         assert!(cfg.user_agent.starts_with("Sisyphus/"));
+        // TLS 默认值应为 Webpki（生产首选）
+        assert_eq!(cfg.tls_roots, TlsRoots::Webpki);
+    }
+
+    #[test]
+    fn tls_roots_env_var_parses_correctly() {
+        // webpki (default)
+        std::env::set_var("SISYPHUS_HTTP_TLS_ROOTS", "webpki");
+        let cfg = SharedHttpClientConfig::from_env();
+        assert_eq!(cfg.tls_roots, TlsRoots::Webpki);
+
+        // native
+        std::env::set_var("SISYPHUS_HTTP_TLS_ROOTS", "native");
+        let cfg = SharedHttpClientConfig::from_env();
+        assert_eq!(cfg.tls_roots, TlsRoots::NativeCerts);
+
+        // 未知值回退到 webpki
+        std::env::set_var("SISYPHUS_HTTP_TLS_ROOTS", "garbage");
+        let cfg = SharedHttpClientConfig::from_env();
+        assert_eq!(cfg.tls_roots, TlsRoots::Webpki);
+
+        std::env::remove_var("SISYPHUS_HTTP_TLS_ROOTS");
+    }
+
+    #[test]
+    fn client_constructs_with_each_tls_mode() {
+        // 两种模式都应能成功构造（不会因为缺根证书 panic）
+        for &mode in &[TlsRoots::Webpki, TlsRoots::NativeCerts] {
+            let cfg = SharedHttpClientConfig {
+                tls_roots: mode,
+                ..Default::default()
+            };
+            let client = SharedHttpClient::new(cfg);
+            assert!(client.is_ok(), "构造失败 ({:?}): {:?}", mode, client.err());
+        }
     }
 
     #[test]
