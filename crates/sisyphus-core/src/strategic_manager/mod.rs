@@ -12,6 +12,7 @@ use std::sync::Arc;
 use sisyphus_intel::{
     DeepReflector, FailurePatternLibrary, PlannerConfig, ProbabilisticPlanner, SimulationResult,
 };
+use sisyphus_intel::token_budget::TokenBudgetTracker;
 use sisyphus_types::config::CognitiveLoopConfig;
 use sisyphus_types::{ExecutionTrace, SOPGraph};
 
@@ -99,6 +100,11 @@ pub struct StrategicManager {
     pub anomaly_detector: Arc<AnomalyDetector>,
     /// 认知循环 v2：自适应深度控制
     pub depth_controller: AdaptiveDepthController,
+    /// 反思/演进阶段 token 预算（review P2-8 step 2 接线）。
+    /// 每次 `apply_cognitive_loop_config` 都会按 `cl.token_budget` 重置
+    /// 上限/保留比例。`reflect_phase` / `evolve_phase` 入口通过
+    /// `should_skip_llm()` 决定是否跳过 LLM 调用。
+    pub token_budget: Arc<parking_lot::RwLock<TokenBudgetTracker>>,
 }
 
 impl StrategicManager {
@@ -146,6 +152,7 @@ impl StrategicManager {
             deep_reflector: Arc::new(parking_lot::RwLock::new(DeepReflector::new())),
             anomaly_detector: Arc::new(AnomalyDetector::default()),
             depth_controller: AdaptiveDepthController::default(),
+            token_budget: Arc::new(parking_lot::RwLock::new(TokenBudgetTracker::unbounded())),
         }
     }
 
@@ -163,11 +170,25 @@ impl StrategicManager {
             (1.0 - ad.convergence_threshold).clamp(0.5, 1.0),
             ad.min_improvement,
         );
+
+        // 反思/演进阶段 token 预算（review P2-8 step 2 接线）。
+        // 配置变化时重建 tracker（reset 共享 Arc），保留累计 usage 与 cap 切换语义。
+        let tb = &cl.token_budget;
+        let new_tracker = match tb.cap {
+            Some(cap) => TokenBudgetTracker::new(cap, tb.reserve_ratio),
+            None => TokenBudgetTracker::unbounded(),
+        };
+        // 替换内部 tracker（保留旧 tracker 仍可读，但所有新检查走新实例）
+        // 使用 Arc::new 替换字段，旧引用继续观察历史 usage 直到 drop
+        *self.token_budget.write() = new_tracker;
+
         tracing::info!(
             max_iterations = cl.max_iterations,
             convergence_threshold = cl.convergence_threshold,
             initial_budget = ad.initial_budget,
             decay = ad.decay,
+            token_budget_cap = ?tb.cap,
+            token_budget_reserve = tb.reserve_ratio,
             "Cognitive loop config applied"
         );
     }

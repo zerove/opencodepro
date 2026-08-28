@@ -18,7 +18,29 @@ pub struct CognitiveLoopConfig {
     /// Adaptive depth controller parameters (cognitive loop v2).
     #[serde(default)]
     pub adaptive_depth: AdaptiveDepthConfig,
+    /// 反思/演进阶段 token 预算（review P2-8 step 2 + 接线）。
+    ///  为硬上限； 保留比例（默认 0.1 = 10%）。
+    /// 使用  判定跳过 LLM 调用。
+    #[serde(default)]
+    pub token_budget: TokenBudgetConfig,
 }
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct TokenBudgetConfig {
+    /// 硬上限 token 数。 或  表示不启用预算（默认 unbounded）。
+    pub cap: Option<u64>,
+    /// 保留比例 [0.0, 1.0]。当  时跳过 LLM。
+    #[serde(default = "default_reserve_ratio")]
+    pub reserve_ratio: f64,
+}
+
+impl Default for TokenBudgetConfig {
+    fn default() -> Self {
+        Self { cap: None, reserve_ratio: default_reserve_ratio() }
+    }
+}
+
+fn default_reserve_ratio() -> f64 { 0.1 }
 
 fn default_llm_stage_timeout_secs() -> u64 {
     30
@@ -30,6 +52,7 @@ fn default_cognitive_loop() -> CognitiveLoopConfig {
         convergence_threshold: 0.15,
         llm_stage_timeout_secs: default_llm_stage_timeout_secs(),
         adaptive_depth: AdaptiveDepthConfig::default(),
+        token_budget: TokenBudgetConfig::default(),
     }
 }
 

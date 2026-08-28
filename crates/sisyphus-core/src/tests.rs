@@ -762,6 +762,7 @@ async fn test_strategic_manager_evolution_verification() {
             convergence_threshold: 0.01,
             llm_stage_timeout_secs: 30,
             adaptive_depth: sisyphus_types::config::AdaptiveDepthConfig::default(),
+            token_budget: sisyphus_types::config::TokenBudgetConfig::default(),
         };
 
         let benchmark = Arc::new(parking_lot::Mutex::new(
@@ -1079,4 +1080,59 @@ async fn test_critique_zero_timeout_disables_stage() {
     assert!(start.elapsed() < std::time::Duration::from_millis(50));
     assert!(!called.load(std::sync::atomic::Ordering::SeqCst));
     assert!(result.suggested_refinement.contains("disabled"));
+}
+
+
+// ===================================================================
+// TokenBudget 配置与跟踪器单元测试
+// ===================================================================
+
+#[test]
+fn test_token_budget_default_is_unbounded() {
+    use sisyphus_types::config::sub::TokenBudgetConfig;
+    let cfg = TokenBudgetConfig::default();
+    assert!(cfg.cap.is_none(), "默认应无 cap");
+    assert!((0.0..=1.0).contains(&cfg.reserve_ratio));
+    let tracker = if let Some(cap) = cfg.cap {
+        sisyphus_intel::token_budget::TokenBudgetTracker::new(cap, cfg.reserve_ratio)
+    } else {
+        sisyphus_intel::token_budget::TokenBudgetTracker::unbounded()
+    };
+    assert!(!tracker.should_skip_llm());
+    tracker.record(1_000_000);
+    assert!(!tracker.should_skip_llm());
+}
+
+#[test]
+fn test_token_budget_capped_skips_llm() {
+    // cap=100, reserve=0.5: 剩余 < 50 时 skip
+    let tracker = sisyphus_intel::token_budget::TokenBudgetTracker::new(100, 0.5);
+    assert!(!tracker.should_skip_llm());
+    tracker.record(40); // 剩 60, > 50
+    assert!(!tracker.should_skip_llm());
+    tracker.record(10); // 剩 50, < 50 false
+    assert!(!tracker.should_skip_llm());
+    tracker.record(1);  // 剩 49, < 50
+    assert!(tracker.should_skip_llm());
+}
+
+#[test]
+fn test_token_budget_reserve_ratio() {
+    let tracker = sisyphus_intel::token_budget::TokenBudgetTracker::new(100, 0.5);
+    tracker.record(40);
+    assert!(!tracker.should_skip_llm());
+    tracker.record(10);
+    assert!(!tracker.should_skip_llm());
+    tracker.record(1);
+    assert!(tracker.should_skip_llm());
+}
+
+#[test]
+fn test_token_budget_config_serde_roundtrip() {
+    use sisyphus_types::config::sub::TokenBudgetConfig;
+    let cfg = TokenBudgetConfig { cap: Some(50000), reserve_ratio: 0.2 };
+    let json = serde_json::to_string(&cfg).expect("serialize");
+    let back: TokenBudgetConfig = serde_json::from_str(&json).expect("deserialize");
+    assert_eq!(back.cap, Some(50000));
+    assert!((back.reserve_ratio - 0.2).abs() < 1e-9);
 }

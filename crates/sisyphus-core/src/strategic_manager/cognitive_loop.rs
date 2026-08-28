@@ -945,17 +945,27 @@ impl StrategicManager {
             });
         }
 
-        // 批判（Critique）。先读出统一的 LLM 阶段超时并立刻释放读锁，
-        // 避免 parking_lot 守卫跨越 await 导致 future 不满足 Send。
-        let llm_stage_timeout_secs = self.config.read().llm_stage_timeout_secs;
-        let critique = self
-            .intelligence_manager
-            .critique_reflection(&reflection, prediction, llm_stage_timeout_secs)
-            .await
-            .map_err(|e| CoreError::Internal(e.to_string()))?;
-        reflection
-            .suggested_improvements
-            .push(format!("[CRITIQUE] {}", critique.suggested_refinement));
+        // Token 预算检查（review P2-8 step 2 接线）：
+        // 若 budget 已耗尽到保留阈值以下，跳过 critique LLM 调用，
+        // 改用宽松默认值（与 timeout_secs=0 语义一致），保留认知循环继续推进。
+        if self.token_budget.read().should_skip_llm() {
+            tracing::info!(sop_id, "Token budget exhausted; skipping critique LLM call");
+            reflection
+                .suggested_improvements
+                .push("[CRITIQUE] skipped: token budget exhausted".to_string());
+        } else {
+            // 批判（Critique）。先读出统一的 LLM 阶段超时并立刻释放读锁，
+            // 避免 parking_lot 守卫跨越 await 导致 future 不满足 Send。
+            let llm_stage_timeout_secs = self.config.read().llm_stage_timeout_secs;
+            let critique = self
+                .intelligence_manager
+                .critique_reflection(&reflection, prediction, llm_stage_timeout_secs)
+                .await
+                .map_err(|e| CoreError::Internal(e.to_string()))?;
+            reflection
+                .suggested_improvements
+                .push(format!("[CRITIQUE] {}", critique.suggested_refinement));
+        }
 
         // 从反思中提炼语义洞察并记录到经验库
         let insight = if !reflection.suggested_improvements.is_empty() {
@@ -1336,6 +1346,8 @@ pub fn effective_max_iterations(adaptive_depth: u32, v2_budget: u32, user_cap: u
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sisyphus_intel::token_budget::TokenBudgetTracker as Tbt;
+    use sisyphus_types::config::sub::TokenBudgetConfig;
 
     #[test]
     fn test_effective_max_respects_user_cap() {
