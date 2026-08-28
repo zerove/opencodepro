@@ -488,6 +488,14 @@ impl LlmClient for DynamicLlmClient {
         }
         Ok(())
     }
+
+    /// 暴露底层 shared_http（用于 /api/metrics 等指标端点）。
+    /// 返回 None 表示 ProviderRegistry 未配置（开发模式）。
+    fn shared_http(&self) -> Option<Arc<crate::http_client::SharedHttpClient>> {
+        self.provider_registry
+            .as_ref()
+            .and_then(|reg| reg.shared_http())
+    }
 }
 
 #[cfg(test)]

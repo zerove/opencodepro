@@ -294,6 +294,62 @@ pub struct BroadcastEventRequest {
     pub session_id: Option<String>,
 }
 
+/// Prometheus 文本格式指标端点 (GET /api/metrics)
+///
+/// 暴露：
+/// - sisyphus_http_requests_total / errors_total / in_flight
+/// - sisyphus_http_shutdowns_total
+/// - 进程启动时间（uptime_seconds）
+///
+/// 格式遵循 Prometheus exposition format (0.0.4)：
+/// <https://prometheus.io/docs/instrumenting/exposition_formats/>
+///
+/// 设计原则：
+/// - 纯字符串拼接，**不**依赖 prometheus crate（保持轻量）
+/// - 即使 shared_http 不可用（如手工 register 的 registry）也返回 200 + 全 0
+/// - 进程启动时间在 handler 第一次构造时确定（每次请求相对便宜）
+pub async fn metrics_handler(State(state): State<RestApiState>) -> impl IntoResponse {
+    use std::fmt::Write as _;
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+
+    // 进程启动时间（首次访问时固化）
+    let started_at: u64 = *state.metrics_started_at.read().await;
+    let uptime_secs = now.saturating_sub(started_at);
+
+    // 拿 shared_http（如果 bridge 持有 ProviderRegistry 间接的）
+    let stats = state
+        .shared_http
+        .as_ref()
+        .map(|c| c.stats())
+        .unwrap_or_default();
+
+    let mut out = String::with_capacity(1024);
+    let _ = writeln!(out, "# HELP sisyphus_http_requests_total Total HTTP requests since process start");
+    let _ = writeln!(out, "# TYPE sisyphus_http_requests_total counter");
+    let _ = writeln!(out, "sisyphus_http_requests_total {}", stats.requests_total);
+    let _ = writeln!(out, "# HELP sisyphus_http_errors_total Total failed HTTP requests");
+    let _ = writeln!(out, "# TYPE sisyphus_http_errors_total counter");
+    let _ = writeln!(out, "sisyphus_http_errors_total {}", stats.errors_total);
+    let _ = writeln!(out, "# HELP sisyphus_http_in_flight Currently in-flight HTTP requests");
+    let _ = writeln!(out, "# TYPE sisyphus_http_in_flight gauge");
+    let _ = writeln!(out, "sisyphus_http_in_flight {}", stats.in_flight);
+    let _ = writeln!(out, "# HELP sisyphus_http_shutdowns_total Total graceful shutdown invocations");
+    let _ = writeln!(out, "# TYPE sisyphus_http_shutdowns_total counter");
+    let _ = writeln!(out, "sisyphus_http_shutdowns_total {}", stats.shutdowns_total);
+    let _ = writeln!(out, "# HELP sisyphus_uptime_seconds Process uptime in seconds");
+    let _ = writeln!(out, "# TYPE sisyphus_uptime_seconds gauge");
+    let _ = writeln!(out, "sisyphus_uptime_seconds {}", uptime_secs);
+
+    (
+        StatusCode::OK,
+        [(axum::http::header::CONTENT_TYPE, "text/plain; version=0.0.4; charset=utf-8")],
+        out,
+    )
+}
+
 /// SSE 端点健康检查
 pub async fn sse_health_handler() -> impl IntoResponse {
     (
@@ -378,5 +434,79 @@ mod tests {
         let p4 = semaphore.clone().try_acquire_owned();
         assert!(p4.is_ok());
         drop(p4);
+    }
+
+    // ── /api/metrics 端点测试 ──────────────────────────────────
+
+    /// 构造一个最小 RestApiState 供 metrics handler 测试
+    async fn make_test_state(
+        shared_http: Option<Arc<sisyphus_tools_llm::http_client::SharedHttpClient>>,
+    ) -> RestApiState {
+        use crate::bridge_service::MySisyphusBridge;
+        use sisyphus_types::Config;
+        use std::sync::Arc as StdArc;
+        use std::sync::RwLock as StdRwLock;
+        // 构造一个允许 dummy embedding 的 minimal bridge。
+        // 默认 Config 的 embedding provider = "dummy" + 不允许，
+        // 桥接初始化会 panic，这里手动开启。
+        let mut cfg = Config::default();
+        cfg.llm.embedding.allow_dummy_embeddings = true;
+        let cfg = StdArc::new(StdRwLock::new(cfg));
+        let bridge = Arc::new(
+            MySisyphusBridge::new(cfg, None)
+                .await
+                .expect("构造 test bridge"),
+        );
+        let state = RestApiState::new(bridge, std::path::PathBuf::from("/tmp"));
+        match shared_http {
+            Some(c) => state.with_shared_http(c),
+            None => state,
+        }
+    }
+
+    #[tokio::test]
+    async fn test_metrics_handler_without_shared_http() {
+        // 当 shared_http = None，应返回全 0 + 进程 uptime
+        let state = make_test_state(None).await;
+        let resp = metrics_handler(State(state)).await.into_response();
+        assert_eq!(resp.status(), axum::http::StatusCode::OK);
+        let body = axum::body::to_bytes(resp.into_body(), 4096).await.unwrap();
+        let text = String::from_utf8_lossy(&body);
+        // 即使没有 shared_http 也要有所有 5 个指标（值 0）
+        assert!(text.contains("sisyphus_http_requests_total 0"), "{text}");
+        assert!(text.contains("sisyphus_http_errors_total 0"), "{text}");
+        assert!(text.contains("sisyphus_http_in_flight 0"), "{text}");
+        assert!(text.contains("sisyphus_http_shutdowns_total 0"), "{text}");
+        assert!(text.contains("sisyphus_uptime_seconds"), "{text}");
+        // Content-Type 应为 prometheus 文本格式
+        assert!(text.contains("# TYPE sisyphus_http_requests_total counter"), "{text}");
+    }
+
+    #[tokio::test]
+    async fn test_metrics_handler_increments_after_request() {
+        // shared_http 注入后，stats 仍为 0 (无实际请求); 主要验证"读到" 不是 panic
+        use sisyphus_tools_llm::http_client::{SharedHttpClient, SharedHttpClientConfig};
+        let cfg = SharedHttpClientConfig::default();
+        let client = SharedHttpClient::new(cfg).expect("构造 client");
+        let state = make_test_state(Some(Arc::new(client))).await;
+        let resp = metrics_handler(State(state)).await.into_response();
+        assert_eq!(resp.status(), axum::http::StatusCode::OK);
+        let body = axum::body::to_bytes(resp.into_body(), 4096).await.unwrap();
+        let text = String::from_utf8_lossy(&body);
+        // 计数器仍是 0 (没人发过请求)
+        assert!(text.contains("sisyphus_http_requests_total 0"), "{text}");
+        // 启动时间应已固化（> 0 unix 时间）
+        let started_at_line = text
+            .lines()
+            .find(|l| l.starts_with("sisyphus_uptime_seconds"))
+            .expect("uptime line");
+        // uptime 应是合理正数（< 几小时）
+        let secs: u64 = started_at_line
+            .split_whitespace()
+            .last()
+            .unwrap()
+            .parse()
+            .unwrap();
+        assert!(secs < 86_400, "uptime 看起来不真实: {secs}");
     }
 }

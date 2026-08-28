@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use std::sync::Arc;
 use thiserror::Error;
 
 // ── Types ──────────────────────────────────────────────────
@@ -36,6 +37,15 @@ pub trait LlmClient: Send + Sync {
     /// 应等待 in-flight 请求完成，最长  时长。
     async fn shutdown(&self, _wait: std::time::Duration) -> Result<(), String> {
         Ok(())
+    }
+
+    /// 返回底层共享 HTTP 客户端的 Arc 引用（如果持有）。
+    ///
+    /// 默认实现为 `None`（mock/test LLM 不暴露连接池）。
+    /// 生产实现（`DynamicLlmClient`）返回 `Some(Arc<SharedHttpClient>)`
+    /// 以便 bridge 等外部组件能拿到 Prometheus 指标源。
+    fn shared_http(&self) -> Option<Arc<crate::http_client::SharedHttpClient>> {
+        None
     }
 }
 

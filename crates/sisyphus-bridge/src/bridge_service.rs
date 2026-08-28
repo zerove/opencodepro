@@ -729,6 +729,16 @@ impl MySisyphusBridge {
         // provider_registry.shared_http().shutdown(wait).
         self.llm_client.shutdown(wait).await
     }
+
+    /// 返回底层共享 HTTP 客户端（供 `/api/metrics` 等指标端点使用）。
+    ///
+    /// 委托给 LlmClient::shared_http()；DynamicLlmClient 透传 ProviderRegistry。
+    /// None 表示桥接未启用 LLM（开发/CLI 模式）。
+    pub fn shared_http(
+        &self,
+    ) -> Option<Arc<sisyphus_tools_llm::http_client::SharedHttpClient>> {
+        self.llm_client.shared_http()
+    }
     pub(crate) fn tool_registry(&self) -> &Arc<ToolRegistry> {
         &self.tool_registry
     }

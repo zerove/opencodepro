@@ -127,7 +127,8 @@ pub fn build_router(state: RestApiState) -> Router {
         .route("/health", get(health_handler))
         .route("/openapi.json", get(http_openapi::openapi_json))
         .route("/swagger-ui/*rest", get(http_openapi::swagger_ui_handler))
-        .route("/api/events/health", get(sse_health_handler));
+        .route("/api/events/health", get(sse_health_handler))
+        .route("/api/metrics", get(metrics_handler));
 
     let protected_routes = Router::new()
         .route("/api/skills/available", get(list_available_skills_handler))

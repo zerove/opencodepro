@@ -704,6 +704,11 @@ pub struct RestApiState {
     pub sse_broadcaster: tokio::sync::broadcast::Sender<SseEvent>,
     /// SSE 并发连接数限制（默认 64）。
     pub sse_connection_limit: Arc<tokio::sync::Semaphore>,
+    /// 共享 HTTP 客户端（来自 ProviderRegistry，暴露给 /api/metrics）。
+    /// `None` = 桥接未启用 LLM（开发/CLI 模式）。
+    pub shared_http: Option<Arc<sisyphus_tools_llm::http_client::SharedHttpClient>>,
+    /// 进程启动 unix 时间（秒），用于计算 uptime。首次构造时固化。
+    pub metrics_started_at: Arc<tokio::sync::RwLock<u64>>,
 }
 
 /// SSE 事件广播器 channel 容量。
@@ -725,6 +730,10 @@ impl RestApiState {
     pub fn new(bridge: Arc<MySisyphusBridge>, data_dir: PathBuf) -> Self {
         let session_db = data_dir.join("sessions.json");
         let (sse_broadcaster, sse_connection_limit) = Self::new_sse_components();
+        let started_at = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
         Self {
             bridge,
             session_db,
@@ -732,6 +741,8 @@ impl RestApiState {
             jwt_config: None,
             sse_broadcaster,
             sse_connection_limit,
+            shared_http: None,
+            metrics_started_at: Arc::new(tokio::sync::RwLock::new(started_at)),
         }
     }
 
@@ -743,6 +754,10 @@ impl RestApiState {
     ) -> Self {
         let session_db = data_dir.join("sessions.json");
         let (sse_broadcaster, sse_connection_limit) = Self::new_sse_components();
+        let started_at = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
         Self {
             bridge,
             session_db,
@@ -750,6 +765,8 @@ impl RestApiState {
             jwt_config: None,
             sse_broadcaster,
             sse_connection_limit,
+            shared_http: None,
+            metrics_started_at: Arc::new(tokio::sync::RwLock::new(started_at)),
         }
     }
 
@@ -761,6 +778,10 @@ impl RestApiState {
     ) -> Self {
         let session_db = data_dir.join("sessions.json");
         let (sse_broadcaster, sse_connection_limit) = Self::new_sse_components();
+        let started_at = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
         Self {
             bridge,
             session_db,
@@ -768,6 +789,18 @@ impl RestApiState {
             jwt_config: Some(jwt_config),
             sse_broadcaster,
             sse_connection_limit,
+            shared_http: None,
+            metrics_started_at: Arc::new(tokio::sync::RwLock::new(started_at)),
         }
+    }
+
+    /// 注入共享 HTTP 客户端（让 `/api/metrics` 能读到 ProviderRegistry 的真实统计）。
+    /// 通常在 main.rs 里 `bridge` 构造后、HTTP 服务器启动前调用。
+    pub fn with_shared_http(
+        mut self,
+        client: Arc<sisyphus_tools_llm::http_client::SharedHttpClient>,
+    ) -> Self {
+        self.shared_http = Some(client);
+        self
     }
 }
