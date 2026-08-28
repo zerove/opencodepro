@@ -67,6 +67,23 @@ jobs:
             -- -A clippy::double-must-use -D warnings
 
   # ── Lint: heavy crates (isolated to avoid OOM) ─────────────────────
+  # ── ADR-007 §1 panic 检查 (PR-time 守护) ─────────────────────
+  # 跑 no-panic-check binary self-test + 全 workspace 扫描.
+  # 轻量: < 30s, 不需要 lint-light 依赖.
+  panic-check:
+    name: ADR-007 §1 No-Panic Check
+    runs-on: ubuntu-latest
+    needs: fmt
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: Swatinem/rust-cache@v2
+      - name: Build + self-test
+        run: cargo test -p eval-runner --bin no-panic-check
+      - name: Run scan
+        run: |
+          cargo run -p eval-runner --bin no-panic-check --             --baseline .sisyphus/quality/panic-baseline.json crates/
+
   lint-sandbox:
     name: Lint Sandbox
     runs-on: ubuntu-latest
