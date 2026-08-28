@@ -19,6 +19,7 @@
 //! - `bridge` 在 `ExecuteSop` 收到 SOP 时先调 `gate.check()`
 //! - `kernel.execute_goal` 在合成 SOP 后、首次执行前调 `gate.check()`
 
+#[allow(unused_imports)]
 use async_trait::async_trait;
 use parking_lot::Mutex;
 use sisyphus_types::{ExecutionContext, IntelError, SOPGraph};
@@ -233,7 +234,8 @@ impl SimulationGate {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use async_trait::async_trait;
+    #[allow(unused_imports)]
+use async_trait::async_trait;
     use std::sync::Arc;
 
     /// Mock simulator：返回预编程的 `LogicalSimulationResult`。

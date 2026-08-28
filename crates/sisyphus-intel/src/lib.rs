@@ -18,6 +18,7 @@ pub mod micro_reflector;
 pub mod mock;
 pub mod probabilistic_planner;
 pub mod reflect;
+pub mod self_programming;
 pub mod simulation;
 pub mod simulation_gate;
 pub mod supervisor;
