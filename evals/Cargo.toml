@@ -48,3 +48,9 @@ path = "self_prog_demo.rs"
 [[bin]]
 name = "http-client-bench"
 path = "http_client_bench.rs"
+
+# ADR-007 §1 自动化: 扫生产代码 unwrap/expect/panic 调用
+# 替代 Python check_no_panic.py, 保持纯 Rust 工具链
+[[bin]]
+name = "no-panic-check"
+path = "no_panic_check.rs"

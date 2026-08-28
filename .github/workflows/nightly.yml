@@ -162,3 +162,26 @@ jobs:
           name: http-client-bench-report
           path: .sisyphus/eval-history/
           retention-days: 90
+
+  # ── ADR-007 §1 panic 检查 (Rust 实现, 纯 workspace 工具) ─────────
+  # 跑 no-panic-check binary 对比 baseline, 新增 panic 即 fail。
+  panic-check:
+    name: ADR-007 §1 No-Panic Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: Swatinem/rust-cache@v2
+      - name: Build
+        run: cargo build -p eval-runner --bin no-panic-check
+      - name: Self-tests
+        run: cargo test -p eval-runner --bin no-panic-check
+      - name: Run no-panic-check vs baseline
+        run: |
+          cargo run -p eval-runner --bin no-panic-check --             --baseline .sisyphus/quality/panic-baseline.json crates/
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: panic-check-baseline
+          path: .sisyphus/quality/panic-baseline.json
+          retention-days: 90

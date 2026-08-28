@@ -3,7 +3,10 @@
 **Status**: Accepted (2026-08-28)
 **Deciders**: core team
 **Supersedes**: N/A（约定文档，非替代任何架构 ADR）
-**Related**: ADR-006 (SharedHttpClient — 本标准的首个完整应用)
+**Related**:
+- ADR-006 (SharedHttpClient — 本标准的首个完整应用)
+- `evals/no_panic_check.rs` (本 ADR §1 的自动化检查工具, **纯 Rust 实现**)
+- `.github/workflows/nightly.yml::panic-check` (CI 守护 job)
 
 ## Context
 
@@ -24,6 +27,12 @@ review 阶段被拒（或在 commit message 显式说明 trade-off）。
 
 生产代码（非 `#[cfg(test)]`）禁止 `unwrap()` / `expect()` / `panic!()`。
 所有失败路径必须用 `Result<T, YourError>` 传播。
+
+工具: `evals/no_panic_check.rs` (Rust binary, 扫生产代码
+unwrap/expect/panic!/unimplemented!/todo!/unreachable! 调用。
+排除 `#[cfg(test)]` mod + tests/ 目录 + `*_tests.rs` 文件 + build.rs +
+momus/ 目录; 字符串字面量通过 quote 计数智能排除; JSON 输出; baseline
+模式支持 PR 守护; 10/10 单测通过)
 
 ```rust
 // ❌ BAD
@@ -167,7 +176,10 @@ pub fn new(config: Config) -> Result<Self, String> {
 
 ## Future Work
 
-- [ ] **lint 自动化**: 写 `adg --production-grade` 规则覆盖 §1
+- [x] **lint 自动化**: `evals/no_panic_check.rs` + nightly CI 守护 ✅ (commits c5b2e47 + 后续, 2026-08-28)
+  - **纯 Rust** (无 Python 依赖), 用 regex 1.10 (已在 evals)
+  - 10/10 单元测试, baseline 模式: 20 个既有违规固化, 新增即 fail
+  - 替换前次 Python 实现 (撤回 commit 1b5fde2)
 - [ ] **CI 模板**: `.github/PULL_REQUEST_TEMPLATE.md` 引用本文 5 条
 - [ ] **Onboarding 文档**: `book/src/development-standards.md` 摘录本文
 - [ ] **定期审计**: 每季度跑 adg 报告未达标代码并开 issue
