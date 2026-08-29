@@ -101,6 +101,14 @@ pub struct CustomToolExecutor {
 }
 
 impl CustomToolExecutor {
+    /// Build a custom-tool executor that hosts `tools` in-process (no WASM).
+    ///
+    /// Used for unit tests and trusted environments where the overhead of
+    /// spawning a `wasmtime` instance is not justified.
+    ///
+    /// # Errors
+    /// Returns `SandboxError` if any tool definition is malformed (e.g.
+    /// duplicate tool names).
     pub fn new(tools: Vec<CustomToolDefinition>) -> Result<Self, SandboxError> {
         let mut config = Config::new();
         config.consume_fuel(true);

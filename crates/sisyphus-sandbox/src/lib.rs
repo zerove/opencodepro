@@ -61,6 +61,11 @@ impl sisyphus_types::CacheInvalidatable for WasmToolExecutor {
 }
 
 impl WasmToolExecutor {
+    /// Build the default Wasmtime-backed sandbox.
+    ///
+    /// # Errors
+    /// Returns `SandboxError::Wasmtime` if the runtime cannot be initialized
+    /// (missing wasm32 target, OOM, etc.).
     pub fn new() -> Result<Self, SandboxError> {
         Self::with_config(None, None)
     }

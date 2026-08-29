@@ -17,6 +17,10 @@ pub struct PluginManager {
 }
 
 impl PluginManager {
+    /// Create a new plugin manager that uses `executor` to run plugin code.
+    ///
+    /// The manager is reference-counted (`Arc`) so the same instance can be
+    /// shared across all SOP executors.
     pub fn new(executor: WasmToolExecutor) -> Arc<Self> {
         let plugins = Arc::new(DashMap::new());
         let manager = Arc::new(Self {
@@ -33,6 +37,14 @@ impl PluginManager {
         manager
     }
 
+    /// Load a WASM plugin from `descriptor` and register it under its `name`.
+    ///
+    /// Replacing an existing plugin with the same name is allowed; the old
+    /// instance is dropped after the new one is successfully loaded.
+    ///
+    /// # Errors
+    /// Returns `SandboxError` if the WASM module fails to compile or the
+    /// descriptor is missing required fields (name, entry point).
     pub async fn register_plugin(&self, descriptor: PluginDescriptor) -> Result<(), String> {
         debug!(plugin = %descriptor.name, "Registering plugin");
 
@@ -46,6 +58,9 @@ impl PluginManager {
         Ok(())
     }
 
+    /// Unload a previously registered plugin by name.
+    ///
+    /// Returns an error string if no plugin with that name is registered.
     pub fn unload_plugin(&self, name: &str) -> Result<(), String> {
         debug!(plugin = %name, "Unloading plugin");
         if let Some((_, desc)) = self.plugins.remove(name) {
@@ -56,6 +71,7 @@ impl PluginManager {
         Ok(())
     }
 
+    /// Return a snapshot of all currently registered plugin descriptors.
     pub fn list_plugins(&self) -> Vec<PluginDescriptor> {
         self.plugins.iter().map(|r| r.value().clone()).collect()
     }
