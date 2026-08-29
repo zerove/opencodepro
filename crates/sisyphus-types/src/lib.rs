@@ -350,9 +350,9 @@ mod tests {
         #[test]
         fn proptest_context_interpolate(
             key in arb_context_key(),
-            value_str in proptest::string::string_regex("[a-zA-Z0-9 ]{0,32}").unwrap(),
-            prefix in proptest::string::string_regex("[a-zA-Z0-9 ]{0,16}").unwrap(),
-            suffix in proptest::string::string_regex("[a-zA-Z0-9 ]{0,16}").unwrap(),
+            value_str in "[a-zA-Z0-9 ]{0,32}",
+            prefix in "[a-zA-Z0-9 ]{0,16}",
+            suffix in "[a-zA-Z0-9 ]{0,16}",
         ) {
             let ctx = ExecutionContext::new();
             let value = Value::String(value_str.clone());
