@@ -174,6 +174,9 @@ sample_rate = 1.0
 | `SISYPHUS_METRICS_OTEL_ENDPOINT` | `metrics.opentelemetry.endpoint` | string | `"http://localhost:4317"` |
 | `SISYPHUS_METRICS_OTEL_SERVICE_NAME` | `metrics.opentelemetry.service_name` | string | `"sisyphus-bridge"` |
 | `SISYPHUS_METRICS_OTEL_SAMPLE_RATE` | `metrics.opentelemetry.sample_rate` | f64 | `1.0` |
+| `SISYPHUS_CI` | — | 设为 `1` 表示 CI 环境, 影响 SCM 工具行为 (跳过非必要网络调用) |
+| `SISYPHUS_DATA_DIR` | — | CLI 数据目录覆盖 (`--data-dir` 同效) |
+| `SISYPHUS_OUTPUT_FORMAT` | — | SCM 工具输出格式覆盖 (`json` / `text`) |
 
 ## Provider 适配（OpenAI 兼容协议）
 
@@ -218,6 +221,8 @@ OpenRouter 透传 OpenAI 协议；客户端在 provider 声明为 `openrouter` �
 | `SISYPHUS_HTTP_TCP_KEEPALIVE_SECS` | 60 | TCP keepalive 间隔（0 = 禁用） |
 | `SISYPHUS_HTTP_POOL_MAX_PER_HOST` | 16 | 每 host 最大并发连接数 |
 | `SISYPHUS_HTTP_REDIRECT_LIMIT` | 3 | HTTP 重定向最大次数 |
+| `SISYPHUS_HTTP_TLS_ROOTS` | `webpki` | TLS 根证书源: `webpki` (Mozilla 内置, 默认) / `native` (系统 CA, 用于私有 CA) |
+| `SISYPHUS_HTTP_RETRY` | `disabled` | 传输层重试: `disabled` (无) / `one_shot` (GET/HEAD 自动重试 1 次) |
 
 ### 性能收益
 
