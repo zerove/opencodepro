@@ -19,6 +19,7 @@ pub enum HookPhase {
 }
 
 impl HookPhase {
+    /// As str.
     pub fn as_str(&self) -> &'static str {
         match self {
             HookPhase::Before => "before",

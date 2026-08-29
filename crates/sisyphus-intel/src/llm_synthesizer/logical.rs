@@ -19,6 +19,7 @@ pub struct LogicalSOPSynthesizer {
 }
 
 impl LogicalSOPSynthesizer {
+    /// New.
     pub fn new(
         llm_client: Arc<dyn sisyphus_tools_llm::LlmClient>,
         tool_executor: Arc<dyn sisyphus_types::ToolExecutor>,

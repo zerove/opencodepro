@@ -37,6 +37,7 @@ pub struct FileContext {
     pub line_count: usize,
 }
 
+/// Read.
 pub fn read(path: &Path) -> ToolResult<String> {
     fs::read_to_string(path).map_err(|e| {
         if e.kind() == std::io::ErrorKind::NotFound {
@@ -47,6 +48,7 @@ pub fn read(path: &Path) -> ToolResult<String> {
     })
 }
 
+/// Read lines.
 pub fn read_lines(path: &Path, offset: usize, limit: usize) -> ToolResult<String> {
     let file = fs::File::open(path).map_err(|e| {
         if e.kind() == std::io::ErrorKind::NotFound {
@@ -92,6 +94,7 @@ pub fn write(path: &Path, content: &str) -> ToolResult<()> {
     Ok(())
 }
 
+/// Edit.
 pub fn edit(path: &Path, old_string: &str, new_string: &str) -> ToolResult<()> {
     let parent = path.parent().unwrap_or_else(|| Path::new("."));
     let mut temp_file = NamedTempFile::new_in(parent).map_err(ToolError::Io)?;
@@ -134,6 +137,7 @@ pub fn edit(path: &Path, old_string: &str, new_string: &str) -> ToolResult<()> {
     Ok(())
 }
 
+/// Edit all.
 pub fn edit_all(path: &Path, old_string: &str, new_string: &str) -> ToolResult<usize> {
     let parent = path.parent().unwrap_or_else(|| Path::new("."));
     let mut temp_file = NamedTempFile::new_in(parent).map_err(ToolError::Io)?;
@@ -173,6 +177,7 @@ pub fn edit_all(path: &Path, old_string: &str, new_string: &str) -> ToolResult<u
     Ok(count)
 }
 
+/// Glob.
 pub fn glob(pattern: &str, root: &Path) -> ToolResult<Vec<PathBuf>> {
     let full_pattern = if root == Path::new("/") {
         pattern.to_string()
@@ -196,6 +201,7 @@ pub fn glob(pattern: &str, root: &Path) -> ToolResult<Vec<PathBuf>> {
     Ok(paths)
 }
 
+/// Grep.
 pub fn grep(pattern: &str, path: &Path, include: Option<&str>) -> ToolResult<Vec<GrepMatch>> {
     let re = Regex::new(pattern).map_err(|e| ToolError::GrepError(e.to_string()))?;
     let mut matches = Vec::new();
@@ -221,6 +227,7 @@ pub fn grep(pattern: &str, path: &Path, include: Option<&str>) -> ToolResult<Vec
     Ok(matches)
 }
 
+/// Search patterns.
 pub fn search_patterns(
     patterns: &[&str],
     root: &Path,
@@ -312,6 +319,7 @@ pub fn search_patterns(
     Ok(result)
 }
 
+/// Gather context.
 pub fn gather_context(paths: &[&Path]) -> ToolResult<Vec<FileContext>> {
     let mut results = vec![];
     for path in paths {

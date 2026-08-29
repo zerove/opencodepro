@@ -9,6 +9,7 @@ pub struct DebugSocketToolCaller {
 }
 
 impl DebugSocketToolCaller {
+    /// New.
     pub fn new(socket_path: String) -> Self {
         Self { socket_path }
     }

@@ -5,6 +5,7 @@ use sisyphus_bridge_api::{
     ListWorkspacesRequest, SwitchWorkspaceRequest,
 };
 
+/// Handle workspace.
 pub async fn handle_workspace(sub: &WorkspaceCommands, bridge_addr: &str) -> Result<()> {
     let mut client = sisyphus_bridge_api::connect(bridge_addr).await?;
 

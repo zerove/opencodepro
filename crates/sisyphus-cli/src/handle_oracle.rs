@@ -4,6 +4,7 @@ use anyhow::Result;
 
 use crate::commands::*;
 
+/// Handle oracle.
 pub fn handle_oracle(sub: &OracleCommands) -> Result<()> {
     match sub {
         OracleCommands::AnalyzeFile { path } => {

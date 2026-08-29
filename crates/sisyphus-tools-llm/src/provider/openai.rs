@@ -60,6 +60,7 @@ pub struct OpenAiCompatibleProvider {
 }
 
 impl OpenAiCompatibleProvider {
+    /// New.
     pub fn new(config: ProviderConfig, http: Arc<SharedHttpClient>) -> Result<Self, String> {
         Ok(Self { config, http })
     }

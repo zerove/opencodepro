@@ -2,6 +2,7 @@ use anyhow::Result;
 
 use crate::commands::*;
 
+/// Handle run.
 pub fn handle_run(sub: &RunCommands) -> Result<()> {
     match sub {
         RunCommands::Run { args, lang, cwd } => {

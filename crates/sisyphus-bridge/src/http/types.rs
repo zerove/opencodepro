@@ -727,6 +727,7 @@ impl RestApiState {
         )
     }
 
+    /// New.
     pub fn new(bridge: Arc<MySisyphusBridge>, data_dir: PathBuf) -> Self {
         let session_db = data_dir.join("sessions.json");
         let (sse_broadcaster, sse_connection_limit) = Self::new_sse_components();

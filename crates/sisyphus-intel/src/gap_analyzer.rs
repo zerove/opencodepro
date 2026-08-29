@@ -24,6 +24,7 @@ pub struct GapAnalyzer {
 }
 
 impl GapAnalyzer {
+    /// New.
     pub fn new(llm_client: Arc<dyn sisyphus_tools_llm::LlmClient>) -> Self {
         Self { llm_client }
     }

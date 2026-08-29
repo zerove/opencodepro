@@ -9,6 +9,7 @@ use crate::*;
 
 impl SisyphusKernel {
     #[allow(clippy::too_many_arguments)]
+    /// New.
     pub fn new(
         state_store: Arc<MfsStore>,
         sop_store: Arc<SopSqlStore>,
@@ -187,6 +188,7 @@ impl SisyphusKernel {
         Ok(())
     }
 
+    /// Init mcp executors.
     pub async fn init_mcp_executors(
         &self,
         config: &sisyphus_types::config::McpConfig,

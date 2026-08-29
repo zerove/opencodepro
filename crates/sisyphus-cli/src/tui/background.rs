@@ -124,6 +124,7 @@ pub enum BgOp {
 
 // ── 后台生成器 ─────────────────────────────────
 
+/// Spawn list sops.
 pub fn spawn_list_sops(
     client: Option<crate::bridge::BridgeClient>,
     bridge_address: String,
@@ -215,6 +216,7 @@ pub fn spawn_fetch_roadmap(
     rx
 }
 
+/// Spawn session add message.
 pub fn spawn_session_add_message(
     data_dir: PathBuf,
     session_id: String,
@@ -323,6 +325,7 @@ pub fn spawn_dev_agent(
     rx
 }
 
+/// Spawn approve proposal.
 pub fn spawn_approve_proposal(
     client: Option<crate::bridge::BridgeClient>,
     bridge_address: String,
@@ -360,6 +363,7 @@ pub fn spawn_approve_proposal(
     rx
 }
 
+/// Spawn fetch sop trace.
 pub fn spawn_fetch_sop_trace(
     bridge_address: String,
     sop_id: String,
@@ -394,6 +398,7 @@ pub fn spawn_fetch_sop_trace(
     rx
 }
 
+/// Spawn fetch cognitive trace.
 pub fn spawn_fetch_cognitive_trace(bridge_address: String) -> tokio::sync::oneshot::Receiver<BgOp> {
     let (tx, rx) = tokio::sync::oneshot::channel();
     tokio::spawn(async move {
@@ -422,6 +427,7 @@ pub fn spawn_fetch_cognitive_trace(bridge_address: String) -> tokio::sync::onesh
     rx
 }
 
+/// Spawn fetch cognitive trace history.
 pub fn spawn_fetch_cognitive_trace_history(
     bridge_address: String,
     sop_id: Option<String>,
@@ -460,6 +466,7 @@ pub fn spawn_fetch_cognitive_trace_history(
     rx
 }
 
+/// Spawn fetch cognitive summary.
 pub fn spawn_fetch_cognitive_summary(
     bridge_address: String,
     sop_id: Option<String>,
@@ -493,6 +500,7 @@ pub fn spawn_fetch_cognitive_summary(
     rx
 }
 
+/// Spawn fetch available skills.
 pub fn spawn_fetch_available_skills(
     bridge_address: String,
 ) -> tokio::sync::oneshot::Receiver<BgOp> {
@@ -523,6 +531,7 @@ pub fn spawn_fetch_available_skills(
     rx
 }
 
+/// Spawn fetch installed skills.
 pub fn spawn_fetch_installed_skills(
     bridge_address: String,
 ) -> tokio::sync::oneshot::Receiver<BgOp> {
@@ -553,6 +562,7 @@ pub fn spawn_fetch_installed_skills(
     rx
 }
 
+/// Spawn install skill.
 pub fn spawn_install_skill(
     bridge_address: String,
     skill_id: String,
@@ -588,6 +598,7 @@ pub fn spawn_install_skill(
     rx
 }
 
+/// Spawn uninstall skill.
 pub fn spawn_uninstall_skill(
     bridge_address: String,
     skill_id: String,
@@ -622,6 +633,7 @@ pub fn spawn_uninstall_skill(
     rx
 }
 
+/// Spawn list workspaces.
 pub fn spawn_list_workspaces(bridge_address: String) -> tokio::sync::oneshot::Receiver<BgOp> {
     let (tx, rx) = tokio::sync::oneshot::channel();
     tokio::spawn(async move {
@@ -651,6 +663,7 @@ pub fn spawn_list_workspaces(bridge_address: String) -> tokio::sync::oneshot::Re
     rx
 }
 
+/// Spawn switch workspace.
 pub fn spawn_switch_workspace(
     bridge_address: String,
     workspace_id: String,
@@ -683,6 +696,7 @@ pub fn spawn_switch_workspace(
     rx
 }
 
+/// Spawn delete workspace.
 pub fn spawn_delete_workspace(
     bridge_address: String,
     workspace_id: String,

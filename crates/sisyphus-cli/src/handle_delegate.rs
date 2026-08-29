@@ -2,6 +2,7 @@ use anyhow::Result;
 
 use crate::commands::*;
 
+/// Handle delegate.
 pub async fn handle_delegate(sub: &DelegateCommands) -> Result<()> {
     match sub {
         DelegateCommands::Run {

@@ -455,9 +455,11 @@ pub struct RequestGuard {
 }
 
 impl RequestGuard {
+    /// New.
     pub fn new(http: Arc<SharedHttpClient>) -> Self {
         Self { http, errored: false }
     }
+    /// Mark errored.
     pub fn mark_errored(&mut self) {
         self.errored = true;
     }

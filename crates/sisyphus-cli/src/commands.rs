@@ -262,6 +262,7 @@ impl From<PriorityArg> for sisyphus_cli::tools::TodoPriority {
 
 // ── 表格格式化辅助 ────────────────────────────
 
+/// Short id.
 pub fn short_id(id: &str) -> String {
     if id.len() <= 12 {
         id.to_string()
@@ -270,6 +271,7 @@ pub fn short_id(id: &str) -> String {
     }
 }
 
+/// Print table.
 pub fn print_table(header: &[&str], rows: &[Vec<String>]) {
     if rows.is_empty() {
         return;

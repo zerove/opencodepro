@@ -141,6 +141,7 @@ impl CircuitBreaker {
         }
     }
 
+    /// Check state.
     pub fn check_state(&self, key: &str) -> Result<(), String> {
         let mut breakers = self
             .breakers
@@ -184,6 +185,7 @@ impl CircuitBreaker {
         }
     }
 
+    /// On success.
     pub fn on_success(&self, key: &str) {
         if let Ok(mut breakers) = self.breakers.write() {
             if let Some(state) = breakers.get_mut(key) {
@@ -211,6 +213,7 @@ impl CircuitBreaker {
         }
     }
 
+    /// On failure.
     pub fn on_failure(&self, key: &str) {
         if let Ok(mut breakers) = self.breakers.write() {
             if let Some(state) = breakers.get_mut(key) {

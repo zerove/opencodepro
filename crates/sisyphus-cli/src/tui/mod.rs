@@ -23,6 +23,7 @@ pub(crate) use render::ui;
 
 // ── 公开入口 ────────────────────────────────────────
 
+/// Run.
 pub fn run(data_dir: PathBuf, bridge_address: String) -> Result<()> {
     // 确保数据目录存在（与 main.rs:1134 的 CLI 模式一致）
     std::fs::create_dir_all(&data_dir)?;

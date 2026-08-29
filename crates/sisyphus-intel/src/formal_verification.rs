@@ -21,6 +21,7 @@ impl Default for VerificationRunner {
 }
 
 impl VerificationRunner {
+    /// New.
     pub fn new() -> Self {
         Self
     }

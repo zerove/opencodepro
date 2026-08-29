@@ -14,6 +14,7 @@ pub struct ClusterConsensus {
 }
 
 impl ClusterConsensus {
+    /// New.
     pub fn new(node_id: String, initial_peers: Vec<String>) -> Self {
         let mut peers = HashSet::new();
         for peer in initial_peers {

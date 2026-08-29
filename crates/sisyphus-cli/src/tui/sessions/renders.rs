@@ -9,6 +9,7 @@ use unicode_width::UnicodeWidthStr;
 use super::super::helpers::render_message_with_thought_section;
 use super::super::{App, Mode};
 
+/// Render sessions.
 pub fn render_sessions(frame: &mut ratatui::Frame, area: Rect, app: &App) {
     let theme = app.theme();
     if app.sessions.is_empty() {

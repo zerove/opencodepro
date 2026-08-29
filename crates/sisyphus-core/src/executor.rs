@@ -28,6 +28,7 @@ pub struct Executor {
 }
 
 impl Executor {
+    /// New.
     pub fn new(
         test_executor: Arc<dyn sisyphus_types::TestExecutor>,
         intervention_manager: Arc<crate::intervention_manager::InterventionManager>,
@@ -644,6 +645,7 @@ impl Executor {
         Ok(final_output)
     }
 
+    /// Execute.
     pub async fn execute(
         &self,
         sop_graph: Arc<SOPGraph>,

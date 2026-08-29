@@ -158,6 +158,7 @@ pub struct MockExecutor {
 }
 
 impl MockExecutor {
+    /// Create a fresh in-memory test fixture for sisyphus-core integration tests.
     pub fn new() -> Self {
         Self {
             call_count: AtomicUsize::new(0),

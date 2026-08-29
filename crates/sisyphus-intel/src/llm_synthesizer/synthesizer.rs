@@ -13,6 +13,7 @@ pub struct LlmDrivenSynthesizer {
 }
 
 impl LlmDrivenSynthesizer {
+    /// New.
     pub fn new(
         decomposer: Arc<dyn GoalDecomposer>,
         tool_executor: Arc<dyn sisyphus_types::ToolExecutor>,

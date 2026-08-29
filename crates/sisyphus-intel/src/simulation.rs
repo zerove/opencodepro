@@ -303,6 +303,7 @@ pub struct MonteCarloSimulator {
 }
 
 impl MonteCarloSimulator {
+    /// New.
     pub fn new(iterations: usize) -> Self {
         Self {
             iterations,
@@ -311,6 +312,7 @@ impl MonteCarloSimulator {
         }
     }
 
+    /// With state store.
     pub fn with_state_store(iterations: usize, store: Arc<dyn sisyphus_types::StateStore>) -> Self {
         Self {
             iterations,
@@ -319,6 +321,7 @@ impl MonteCarloSimulator {
         }
     }
 
+    /// With experience bank.
     pub fn with_experience_bank(
         iterations: usize,
         bank: Arc<dyn sisyphus_types::experience::ExperienceBank>,

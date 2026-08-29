@@ -51,6 +51,7 @@ pub struct RegressionTestResult {
 }
 
 impl RegressionTestResult {
+    /// Success rate.
     pub fn success_rate(&self) -> f64 {
         if self.total_tests == 0 {
             return 1.0;
@@ -70,6 +71,7 @@ pub struct SelfProgrammingManager {
 }
 
 impl SelfProgrammingManager {
+    /// New.
     pub fn new(
         llm_client: Arc<dyn sisyphus_tools_llm::LlmClient>,
         execution_manager: Arc<ExecutionManager>,
@@ -87,6 +89,7 @@ impl SelfProgrammingManager {
         }
     }
 
+    /// Set event sender.
     pub fn set_event_sender(&self, tx: mpsc::UnboundedSender<CognitiveEvent>) {
         *self.event_tx.lock() = Some(tx);
     }

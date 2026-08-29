@@ -52,6 +52,7 @@ pub struct RemoteSkillRegistry {
 }
 
 impl RemoteSkillRegistry {
+    /// New.
     pub fn new(registry_url: String, store: Arc<SkillStore>, router: Arc<ExecutorRouter>) -> Self {
         Self {
             registry_url,

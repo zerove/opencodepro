@@ -18,6 +18,7 @@ pub struct BashOutput {
     pub stderr_truncated: bool,
 }
 
+/// Execute.
 pub async fn execute(
     command: &str,
     workdir: Option<&Path>,

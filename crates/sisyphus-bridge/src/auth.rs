@@ -11,6 +11,7 @@ pub struct AuthInterceptor {
 }
 
 impl AuthInterceptor {
+    /// New.
     pub fn new(token: String) -> Self {
         Self { expected: token }
     }

@@ -4,6 +4,7 @@ use anyhow::Result;
 
 use crate::commands::*;
 
+/// Handle metis.
 pub async fn handle_metis(
     sub: &MetisCommands,
     llm_client: Arc<dyn sisyphus_cli::tools::metis::LlmClient>,

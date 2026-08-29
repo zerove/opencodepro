@@ -16,6 +16,7 @@ pub struct LlmMicroReflector {
 }
 
 impl LlmMicroReflector {
+    /// New.
     pub fn new(llm: Arc<dyn LlmClient>) -> Self {
         Self { llm }
     }

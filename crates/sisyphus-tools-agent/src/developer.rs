@@ -26,6 +26,7 @@ pub struct Developer {
 }
 
 impl Developer {
+    /// New.
     pub fn new(llm: Arc<dyn LlmClient>) -> Self {
         Self {
             llm,
@@ -46,6 +47,7 @@ impl Developer {
         self
     }
 
+    /// Plan.
     pub async fn plan(&self, goal: &str, project_context: &str) -> Result<DevelopmentPlan, String> {
         let system_prompt = r#"You are an autonomous development agent. 
 Your goal is to decompose a natural-language goal into a structured development plan.
@@ -121,6 +123,7 @@ Return ONLY the JSON object."#;
         }
     }
 
+    /// Execute step.
     pub async fn execute_step(&self, step: &DevStep) -> Result<StepResult, String> {
         let output = match &step.action {
             DevAction::CreateFile { path, content } => {
@@ -194,6 +197,7 @@ Return ONLY the JSON object."#;
         })
     }
 
+    /// Verify step.
     pub async fn verify_step(&self, step: &DevStep, result: &StepResult) -> Result<bool, String> {
         match &step.verification {
             VerificationMethod::CargoCheck => {
@@ -537,6 +541,7 @@ fn build_report(
     }
 }
 
+/// Format report.
 pub fn format_report(report: &DevelopmentReport) -> String {
     let mut output = format!("Development Report for Goal: {}\n", report.goal);
     output.push_str("--------------------------------------------------\n");

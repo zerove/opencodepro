@@ -2,6 +2,7 @@ use anyhow::Result;
 
 use crate::commands::*;
 
+/// Handle sop.
 pub async fn handle_sop(sub: &SopCommands, bridge_addr: &str) -> Result<()> {
     match sub {
         SopCommands::Run { sop_id } => {

@@ -133,6 +133,7 @@ fn now_iso() -> String {
     format!("{year:04}-{month:02}-{day:02}T{hours:02}:{minutes:02}:{seconds:02}.{millis:03}Z")
 }
 
+/// Todo add.
 pub fn todo_add(path: &Path, content: &str, priority: TodoPriority) -> ToolResult<TodoItem> {
     let mut store = TodoStore::load_or_empty(path);
     let id = format!("todo-{:x}", NEXT_ID.fetch_add(1, Ordering::SeqCst));
@@ -150,6 +151,7 @@ pub fn todo_add(path: &Path, content: &str, priority: TodoPriority) -> ToolResul
     Ok(item)
 }
 
+/// Todo list.
 pub fn todo_list(path: &Path, status_filter: Option<TodoStatus>) -> ToolResult<Vec<TodoItem>> {
     let store = TodoStore::load_or_empty(path);
     let mut items: Vec<_> = store.items.into_values().collect();
@@ -160,6 +162,7 @@ pub fn todo_list(path: &Path, status_filter: Option<TodoStatus>) -> ToolResult<V
     Ok(items)
 }
 
+/// Todo update.
 pub fn todo_update(
     path: &Path,
     id: &str,
@@ -188,6 +191,7 @@ pub fn todo_update(
     Ok(result)
 }
 
+/// Todo delete.
 pub fn todo_delete(path: &Path, id: &str) -> ToolResult<()> {
     let mut store = TodoStore::load_or_empty(path);
     if store.items.remove(id).is_none() {

@@ -4,6 +4,7 @@ use anyhow::Result;
 
 use crate::commands::*;
 
+/// Handle librarian.
 pub async fn handle_librarian(
     sub: &LibrarianCommands,
     llm_client: Arc<dyn sisyphus_cli::tools::metis::LlmClient>,

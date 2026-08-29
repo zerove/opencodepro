@@ -41,6 +41,7 @@ pub struct Theme {
 }
 
 impl Theme {
+    /// Dark.
     pub fn dark() -> Self {
         Self {
             mode: ThemeMode::Dark,
@@ -65,6 +66,7 @@ impl Theme {
         }
     }
 
+    /// Light.
     pub fn light() -> Self {
         Self {
             mode: ThemeMode::Light,

@@ -2,6 +2,7 @@ use anyhow::Result;
 
 use crate::commands::*;
 
+/// Handle health.
 pub async fn handle_health(bridge_addr: &str) -> Result<()> {
     let mut client = sisyphus_cli::bridge::BridgeClient::connect(bridge_addr).await?;
     let resp = client.health_check().await?;
@@ -10,18 +11,21 @@ pub async fn handle_health(bridge_addr: &str) -> Result<()> {
     Ok(())
 }
 
+/// Handle status.
 pub async fn handle_status(bridge_addr: &str) -> Result<()> {
     let mut client = sisyphus_cli::bridge::BridgeClient::connect(bridge_addr).await?;
     sisyphus_cli::remote::run_status(&mut client).await?;
     Ok(())
 }
 
+/// Handle learning insights.
 pub async fn handle_learning_insights(bridge_addr: &str, strategy: &Option<String>) -> Result<()> {
     let mut client = sisyphus_cli::bridge::BridgeClient::connect(bridge_addr).await?;
     sisyphus_cli::remote::run_learning_insights(&mut client, strategy.as_deref()).await?;
     Ok(())
 }
 
+/// Handle remote.
 pub async fn handle_remote(sub: &RemoteCommands, bridge_addr: &str) -> Result<()> {
     let mut client = sisyphus_cli::bridge::BridgeClient::connect(bridge_addr).await?;
     match sub {

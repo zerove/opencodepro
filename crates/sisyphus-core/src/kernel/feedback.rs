@@ -8,6 +8,7 @@ use std::sync::Arc;
 use crate::*;
 
 impl SisyphusKernel {
+    /// Handle feedback.
     pub async fn handle_feedback(
         &self,
 
@@ -109,6 +110,7 @@ impl SisyphusKernel {
         })
     }
 
+    /// Capture success.
     pub async fn capture_success(
         &self,
 
@@ -159,6 +161,7 @@ impl SisyphusKernel {
         self.save_sop(&sop_id, project_id, &graph).await
     }
 
+    /// Save sop.
     pub async fn save_sop(
         &self,
         sop_id: &str,
@@ -182,6 +185,7 @@ impl SisyphusKernel {
             .await
     }
 
+    /// Load sop.
     pub async fn load_sop(
         &self,
         sop_id: &str,
@@ -190,12 +194,14 @@ impl SisyphusKernel {
         self.execution_manager.load_sop(sop_id, project_id).await
     }
 
+    /// Broadcast event.
     pub fn broadcast_event(&self, sop_id: &str, event: ExecutionEvent) {
         crate::cognitive_dashboard::CognitiveDashboard::render(&event);
 
         self.execution_manager.broadcast_event(sop_id, event);
     }
 
+    /// Approve and apply proposal.
     pub async fn approve_and_apply_proposal(
         &self,
 

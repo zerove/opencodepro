@@ -25,6 +25,7 @@ fn permissive_critique(reason: &str) -> sisyphus_types::CritiqueResult {
 }
 
 impl IntelligenceManager {
+    /// New.
     pub fn new(
         intel: Arc<SisyphusIntel>,
         synthesizer: Arc<dyn sisyphus_intel::FlowSynthesizer>,

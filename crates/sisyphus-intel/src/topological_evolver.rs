@@ -16,6 +16,7 @@ impl Default for TopologicalSOPEvolver {
 }
 
 impl TopologicalSOPEvolver {
+    /// New.
     pub fn new() -> Self {
         Self
     }

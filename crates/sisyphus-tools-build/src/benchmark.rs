@@ -168,16 +168,19 @@ pub struct Timer {
 }
 
 impl Timer {
+    /// Start.
     pub fn start() -> Self {
         Self {
             start: Instant::now(),
         }
     }
 
+    /// Elapsed.
     pub fn elapsed(&self) -> Duration {
         self.start.elapsed()
     }
 
+    /// Elapsed secs.
     pub fn elapsed_secs(&self) -> f64 {
         self.elapsed().as_secs_f64()
     }

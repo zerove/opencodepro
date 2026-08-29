@@ -60,6 +60,7 @@ fn build_osc52(text: &str) -> Option<String> {
 
 // ── 滚动指示器 ────────────────────────────────────
 
+/// Scroll pct.
 pub fn scroll_pct(pos: usize, total: usize) -> String {
     if total <= 1 {
         String::new()

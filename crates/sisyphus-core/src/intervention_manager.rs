@@ -42,6 +42,7 @@ impl Default for InterventionManager {
 }
 
 impl InterventionManager {
+    /// New.
     pub fn new() -> Self {
         Self {
             pending: Arc::new(RwLock::new(HashMap::new())),

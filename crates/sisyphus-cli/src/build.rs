@@ -62,6 +62,7 @@ fn print_diags(label: &str, diags: &[crate::tools::build::Diag]) {
     }
 }
 
+/// Run check.
 pub fn run_check(
     package: Option<String>,
     all: bool,
@@ -89,6 +90,7 @@ pub fn run_check(
     Ok(())
 }
 
+/// Run build.
 pub fn run_build(
     package: Option<String>,
     release: bool,
@@ -116,6 +118,7 @@ pub fn run_build(
     Ok(())
 }
 
+/// Run test.
 pub fn run_test(
     package: Option<String>,
     name: Option<String>,
@@ -147,6 +150,7 @@ pub fn run_test(
     Ok(())
 }
 
+/// Run lint.
 pub fn run_lint(package: Option<String>, cwd: Option<PathBuf>, lang: Option<String>) -> Result<()> {
     let dir = cwd.as_deref().or_else(|| Some(std::path::Path::new(".")));
     let backend = resolve_backend(lang.as_deref(), dir)?;
@@ -162,6 +166,7 @@ pub fn run_lint(package: Option<String>, cwd: Option<PathBuf>, lang: Option<Stri
     Ok(())
 }
 
+/// Run fmt.
 pub fn run_fmt(check_mode: bool, cwd: Option<PathBuf>, lang: Option<String>) -> Result<()> {
     let dir = cwd.as_deref().or_else(|| Some(std::path::Path::new(".")));
     let backend = resolve_backend(lang.as_deref(), dir)?;
@@ -180,6 +185,7 @@ pub fn run_fmt(check_mode: bool, cwd: Option<PathBuf>, lang: Option<String>) -> 
     Ok(())
 }
 
+/// Run doc.
 pub fn run_doc(package: Option<String>, cwd: Option<PathBuf>, lang: Option<String>) -> Result<()> {
     let dir = cwd.as_deref().or_else(|| Some(std::path::Path::new(".")));
     let backend = resolve_backend(lang.as_deref(), dir)?;

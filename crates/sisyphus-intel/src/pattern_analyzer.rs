@@ -22,6 +22,7 @@ impl Default for PatternAnalyzer {
 }
 
 impl PatternAnalyzer {
+    /// New.
     pub fn new() -> Self {
         Self {
             pattern_frequency: HashMap::new(),
@@ -158,6 +159,7 @@ pub struct SemanticPatternAnalyzer {
 }
 
 impl SemanticPatternAnalyzer {
+    /// New.
     pub fn new(min_cluster_size: usize) -> Self {
         Self { min_cluster_size }
     }

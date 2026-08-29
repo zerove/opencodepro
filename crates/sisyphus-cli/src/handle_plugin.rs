@@ -2,6 +2,7 @@ use anyhow::Result;
 
 use crate::commands::*;
 
+/// Handle plugin.
 pub async fn handle_plugin(sub: &PluginCommands, bridge_addr: &str) -> Result<()> {
     let mut client = sisyphus_cli::bridge::BridgeClient::connect(bridge_addr).await?;
     match sub {

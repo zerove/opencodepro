@@ -2,6 +2,7 @@ use anyhow::Result;
 
 use crate::commands::*;
 
+/// Handle git.
 pub fn handle_git(sub: &GitCommands) -> Result<()> {
     match sub {
         GitCommands::Status { cwd } => sisyphus_cli::git::run_status(cwd.clone())?,

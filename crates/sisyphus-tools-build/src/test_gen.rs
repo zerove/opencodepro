@@ -26,10 +26,12 @@ impl Default for TestGenerator {
 }
 
 impl TestGenerator {
+    /// New.
     pub fn new() -> Self {
         Self { llm_client: None }
     }
 
+    /// With llm.
     pub fn with_llm(self, client: Arc<dyn LlmClient>) -> Self {
         Self {
             llm_client: Some(client),
@@ -375,7 +377,9 @@ mod tests {
     #[tokio::test]
     async fn test_generate_for_module() {
         let code = r#"
+/// Foo.
 pub fn foo() -> i32 { 42 }
+/// Bar.
 pub fn bar(x: i32) -> i32 { x }
 fn hidden() {}
 "#;

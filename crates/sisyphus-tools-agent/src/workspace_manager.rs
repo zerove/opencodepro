@@ -24,6 +24,7 @@ pub struct WorkspaceManager {
 }
 
 impl WorkspaceManager {
+    /// New.
     pub fn new(store: Arc<dyn StateStore>) -> Self {
         Self {
             store,

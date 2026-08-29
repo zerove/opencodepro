@@ -40,6 +40,7 @@ fn resolve_backend(
     }
 }
 
+/// Run diagnose.
 pub fn run_diagnose(
     lang: Option<String>,
     package: Option<String>,
@@ -133,6 +134,7 @@ pub fn run_diagnose(
     Ok(())
 }
 
+/// Run fix.
 pub fn run_fix(
     lang: Option<String>,
     package: Option<String>,

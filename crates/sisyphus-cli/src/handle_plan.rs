@@ -2,6 +2,7 @@ use anyhow::Result;
 
 use crate::commands::*;
 
+/// Handle plan.
 pub fn handle_plan(sub: &PlanCommands) -> Result<()> {
     match sub {
         PlanCommands::Create {

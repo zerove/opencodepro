@@ -12,6 +12,7 @@ pub enum CognitiveDepth {
 }
 
 impl CognitiveDepth {
+    /// To config.
     pub fn to_config(&self) -> (u32, f64) {
         match self {
             CognitiveDepth::Low => (3, 0.2),
@@ -21,6 +22,7 @@ impl CognitiveDepth {
         }
     }
 
+    /// Should simulate.
     pub fn should_simulate(&self) -> bool {
         !matches!(self, CognitiveDepth::Low)
     }

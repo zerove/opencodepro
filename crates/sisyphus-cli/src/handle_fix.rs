@@ -2,6 +2,7 @@ use anyhow::Result;
 
 use crate::commands::*;
 
+/// Handle fix.
 pub fn handle_fix(sub: &FixCommands) -> Result<()> {
     match sub {
         FixCommands::Run {

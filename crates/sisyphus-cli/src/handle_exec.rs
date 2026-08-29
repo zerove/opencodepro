@@ -3,6 +3,7 @@ use std::path::PathBuf;
 
 use anyhow::Result;
 
+/// Handle exec.
 pub async fn handle_exec(
     command: &str,
     dir: &Option<PathBuf>,
@@ -41,6 +42,7 @@ pub async fn handle_exec(
     Ok(())
 }
 
+/// Handle search.
 pub async fn handle_search(query: &str, num: usize) -> Result<()> {
     let results = sisyphus_cli::tools::web::websearch(query, num).await?;
     for (i, r) in results.iter().enumerate() {
@@ -52,6 +54,7 @@ pub async fn handle_search(query: &str, num: usize) -> Result<()> {
 
 use std::path::Path;
 
+/// Handle apply patch.
 pub fn handle_apply_patch(file: &Path, input: &Path) -> Result<()> {
     let patch_content = if input.to_string_lossy() == "-" {
         let mut buf = String::new();

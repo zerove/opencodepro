@@ -11,6 +11,7 @@ use tokio::task::JoinSet;
 use crate::*;
 
 impl SisyphusKernel {
+    /// Execute goals.
     pub async fn execute_goals(
         &self,
         goals: &[&str],
@@ -30,6 +31,7 @@ impl SisyphusKernel {
         self.execute_composite(&composite, None, project_id).await
     }
 
+    /// Execute goal.
     pub async fn execute_goal(
         &self,
         goal: &str,
@@ -220,6 +222,7 @@ impl SisyphusKernel {
         ))
     }
 
+    /// Execute goal streaming.
     pub async fn execute_goal_streaming(
         &self,
         goal: &str,
@@ -266,6 +269,7 @@ impl SisyphusKernel {
         ))
     }
 
+    /// Execute goal with project context.
     pub async fn execute_goal_with_project_context(
         &self,
 
@@ -292,6 +296,7 @@ impl SisyphusKernel {
     }
 
     #[allow(clippy::too_many_arguments)]
+    /// Execute and record.
     pub async fn execute_and_record(
         &self,
 
@@ -403,6 +408,7 @@ impl SisyphusKernel {
         result.map(|(o, r)| (o, r, health))
     }
 
+    /// Execute composite.
     pub async fn execute_composite(
         &self,
         composite: &CompositeGraph,

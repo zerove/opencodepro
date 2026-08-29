@@ -1,5 +1,6 @@
 use sisyphus_tools_core::{Permission, PermissionRules, ToolError, ToolResult};
 
+/// Check permission.
 pub fn check_permission(rules: &PermissionRules, tool_name: &str) -> Permission {
     for (pattern, permission) in rules {
         if tool_name.contains(pattern) {
@@ -23,11 +24,13 @@ impl PermissionChecker {
         }
     }
 
+    /// With external directories.
     pub fn with_external_directories(mut self, dirs: Vec<std::path::PathBuf>) -> Self {
         self.external_directories = dirs;
         self
     }
 
+    /// Check.
     pub fn check(&self, tool_name: &str) -> Permission {
         check_permission(&self.rules, tool_name)
     }
@@ -51,6 +54,7 @@ impl PermissionChecker {
         )))
     }
 
+    /// Require.
     pub fn require(&self, tool_name: &str) -> ToolResult<()> {
         match self.check(tool_name) {
             Permission::Allow => Ok(()),

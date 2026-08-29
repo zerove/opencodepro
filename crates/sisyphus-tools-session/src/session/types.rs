@@ -94,6 +94,7 @@ impl Default for CompressStrategy {
 
 // ── Private helpers ───────────────────────────────────────────────────────
 
+/// Now iso.
 pub fn now_iso() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
     let dur = SystemTime::now()

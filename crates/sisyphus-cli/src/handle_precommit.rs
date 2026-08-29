@@ -2,6 +2,7 @@ use anyhow::Result;
 
 use crate::commands::*;
 
+/// Handle precommit.
 pub fn handle_precommit(sub: &PrecommitCommands) -> Result<()> {
     match sub {
         PrecommitCommands::Install {

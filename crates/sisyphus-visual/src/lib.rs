@@ -97,6 +97,7 @@ impl std::fmt::Debug for HttpVlmProvider {
 }
 
 impl HttpVlmProvider {
+    /// New.
     pub fn new(config: VlmProviderConfig) -> Result<Self, VisualError> {
         let client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(config.timeout_secs))
@@ -252,6 +253,7 @@ pub struct SisyphusVisualProvider {
 }
 
 impl SisyphusVisualProvider {
+    /// New.
     pub fn new(llm_client: Arc<dyn LlmClient>) -> Self {
         Self {
             _llm_client: llm_client,
@@ -291,6 +293,7 @@ pub struct VisualPerceptionManager {
 }
 
 impl VisualPerceptionManager {
+    /// New.
     pub fn new(
         provider: Arc<dyn VisualPerceptionProvider>,
         llm_client: Arc<dyn LlmClient>,
@@ -332,6 +335,7 @@ impl VisualPerceptionManager {
         }
     }
 
+    /// Get embedding.
     pub async fn get_embedding(&self, image_data: &[u8]) -> Result<Vec<f32>, VisualError> {
         self.provider.get_embedding(image_data).await
     }

@@ -2,6 +2,7 @@ use anyhow::{Context, Result};
 
 use crate::commands::*;
 
+/// Handle team.
 pub async fn handle_team(sub: &TeamCommands) -> Result<()> {
     match sub {
         TeamCommands::Run {

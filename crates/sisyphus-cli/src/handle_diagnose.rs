@@ -2,6 +2,7 @@ use anyhow::Result;
 
 use crate::commands::*;
 
+/// Handle diagnose.
 pub fn handle_diagnose(sub: &DiagnoseCommands) -> Result<()> {
     match sub {
         DiagnoseCommands::Run {

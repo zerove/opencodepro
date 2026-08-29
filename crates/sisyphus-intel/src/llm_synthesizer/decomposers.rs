@@ -20,6 +20,7 @@ impl<F> LlmGoalDecomposer<F>
 where
     F: Fn(String) -> Result<Vec<ActionType>, String> + Send + Sync + 'static,
 {
+    /// New.
     pub fn new(decompose_fn: F) -> Self {
         Self { decompose_fn }
     }
@@ -40,6 +41,7 @@ pub struct FallbackGoalDecomposer {
 }
 
 impl FallbackGoalDecomposer {
+    /// New.
     pub fn new(inner: Arc<dyn GoalDecomposer>) -> Self {
         Self { inner }
     }

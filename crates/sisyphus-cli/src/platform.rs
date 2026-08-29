@@ -8,6 +8,7 @@ pub struct PlatformInfo {
     pub is_windows: bool,
 }
 
+/// Detect platform.
 pub fn detect_platform() -> PlatformInfo {
     PlatformInfo {
         os: os_name(),
@@ -29,6 +30,7 @@ fn os_name() -> String {
 
 #[cfg(unix)]
 mod unix {
+    /// Default shell.
     pub fn default_shell() -> String {
         "/bin/bash".to_string()
     }
@@ -36,6 +38,7 @@ mod unix {
 
 #[cfg(windows)]
 mod windows {
+    /// Default shell.
     pub fn default_shell() -> String {
         "powershell.exe".to_string()
     }
@@ -52,6 +55,7 @@ fn default_shell() -> String {
     }
 }
 
+/// Normalize path.
 pub fn normalize_path(path: &str) -> String {
     if cfg!(windows) {
         path.replace("/", "\\")
@@ -61,6 +65,7 @@ pub fn normalize_path(path: &str) -> String {
 }
 
 #[cfg(test)]
+/// Home dir.
 pub fn home_dir() -> Option<String> {
     use std::env;
     if cfg!(windows) {

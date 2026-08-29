@@ -2,6 +2,7 @@ use crate::bridge::BridgeClient;
 use anyhow::{Context, Result};
 use std::path::Path;
 
+/// Run list.
 pub async fn run_list(client: &mut BridgeClient) -> Result<()> {
     let plugins = client.list_plugins().await?;
     if plugins.is_empty() {
@@ -23,6 +24,7 @@ pub async fn run_list(client: &mut BridgeClient) -> Result<()> {
     Ok(())
 }
 
+/// Run load.
 pub async fn run_load(client: &mut BridgeClient, path: &Path) -> Result<()> {
     let filename = path
         .file_name()
@@ -42,6 +44,7 @@ pub async fn run_load(client: &mut BridgeClient, path: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Run watch.
 pub async fn run_watch(path: Option<&Path>) -> Result<()> {
     // 保留原有的本地文件监视器 — 监视本地文件系统
     use std::path::PathBuf;
@@ -79,6 +82,7 @@ pub async fn run_watch(path: Option<&Path>) -> Result<()> {
     }
 }
 
+/// Run unload.
 pub async fn run_unload(client: &mut BridgeClient, name: &str) -> Result<()> {
     let response = client.unload_plugin(name).await?;
     if response.success {

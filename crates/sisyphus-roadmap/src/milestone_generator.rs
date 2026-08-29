@@ -65,6 +65,7 @@ pub struct MilestoneGenerator {
 }
 
 impl MilestoneGenerator {
+    /// New.
     pub fn new(llm: Arc<dyn LlmClient>) -> Self {
         Self { llm }
     }

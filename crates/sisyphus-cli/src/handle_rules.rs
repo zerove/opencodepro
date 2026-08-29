@@ -2,6 +2,7 @@ use anyhow::Result;
 
 use crate::commands::*;
 
+/// Handle rules.
 pub fn handle_rules(sub: &RulesCommands) -> Result<()> {
     match sub {
         RulesCommands::Show => {

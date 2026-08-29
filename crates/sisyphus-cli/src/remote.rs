@@ -1,6 +1,7 @@
 use crate::bridge::BridgeClient;
 use anyhow::Result;
 
+/// Run benchmarks.
 pub async fn run_benchmarks(client: &mut BridgeClient) -> Result<()> {
     let benchmarks = client.list_benchmarks().await?;
     if benchmarks.is_empty() {
@@ -25,6 +26,7 @@ pub async fn run_benchmarks(client: &mut BridgeClient) -> Result<()> {
     Ok(())
 }
 
+/// Run status.
 pub async fn run_status(client: &mut BridgeClient) -> Result<()> {
     println!("=== Sisyphus Bridge Status ===");
 
@@ -66,6 +68,7 @@ pub async fn run_status(client: &mut BridgeClient) -> Result<()> {
     Ok(())
 }
 
+/// Run list agents.
 pub async fn run_list_agents(client: &mut BridgeClient) -> Result<()> {
     let agents = client.list_agents().await?;
     if agents.is_empty() {
@@ -84,6 +87,7 @@ pub async fn run_list_agents(client: &mut BridgeClient) -> Result<()> {
     Ok(())
 }
 
+/// Run list tools.
 pub async fn run_list_tools(client: &mut BridgeClient) -> Result<()> {
     let tools = client.list_tools().await?;
     if tools.is_empty() {
@@ -99,6 +103,7 @@ pub async fn run_list_tools(client: &mut BridgeClient) -> Result<()> {
     Ok(())
 }
 
+/// Run list skills.
 pub async fn run_list_skills(client: &mut BridgeClient) -> Result<()> {
     let skills = client.list_skills().await?;
     if skills.is_empty() {
@@ -114,6 +119,7 @@ pub async fn run_list_skills(client: &mut BridgeClient) -> Result<()> {
     Ok(())
 }
 
+/// Run exec sop.
 pub async fn run_exec_sop(client: &mut BridgeClient, sop_id: &str) -> Result<()> {
     println!("Executing SOP: {sop_id}...");
     let result = client.execute_sop(sop_id).await?;
@@ -121,6 +127,7 @@ pub async fn run_exec_sop(client: &mut BridgeClient, sop_id: &str) -> Result<()>
     Ok(())
 }
 
+/// Run decompose goal.
 pub async fn run_decompose_goal(client: &mut BridgeClient, goal: &str) -> Result<()> {
     println!("Decomposing goal: {goal}...");
     // 为 CLI 命令使用虚拟 goal_id 与空上下文
@@ -140,6 +147,7 @@ pub async fn run_decompose_goal(client: &mut BridgeClient, goal: &str) -> Result
     Ok(())
 }
 
+/// Run learning insights.
 pub async fn run_learning_insights(
     client: &mut BridgeClient,
     strategy_filter: Option<&str>,

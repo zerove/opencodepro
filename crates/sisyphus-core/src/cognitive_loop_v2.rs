@@ -77,6 +77,7 @@ impl Default for AnomalyDetector {
 }
 
 impl AnomalyDetector {
+    /// New.
     pub fn new(fuel_threshold: f64, duration_threshold: f64, error_rate_threshold: f64) -> Self {
         Self {
             history: Arc::new(Mutex::new(HashMap::new())),
@@ -284,6 +285,7 @@ impl AdaptiveDepthController {
         *self.min_improvement.write() = min_improvement;
     }
 
+    /// New.
     pub fn new(
         target_confidence: f64,
         min_improvement: f64,

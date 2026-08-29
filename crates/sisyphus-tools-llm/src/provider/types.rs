@@ -47,6 +47,7 @@ pub enum ChatRole {
 }
 
 impl ChatRole {
+    /// As str.
     pub fn as_str(&self) -> &'static str {
         match self {
             ChatRole::System => "system",

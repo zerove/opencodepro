@@ -4,6 +4,7 @@ use anyhow::Result;
 
 use crate::commands::*;
 
+/// Handle explore.
 pub fn handle_explore(sub: &ExploreCommands) -> Result<()> {
     match sub {
         ExploreCommands::Search {

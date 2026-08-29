@@ -2,6 +2,7 @@ use anyhow::Result;
 
 use crate::commands::*;
 
+/// Handle build.
 pub fn handle_build(sub: &BuildCommands) -> Result<()> {
     match sub {
         BuildCommands::Check {

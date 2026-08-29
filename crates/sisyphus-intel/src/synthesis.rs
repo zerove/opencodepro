@@ -136,6 +136,7 @@ pub struct GoalDrivenSynthesizer {
 }
 
 impl GoalDrivenSynthesizer {
+    /// New.
     pub fn new(tool_executor: Arc<dyn sisyphus_types::ToolExecutor>) -> Self {
         Self { tool_executor }
     }
@@ -276,6 +277,7 @@ pub struct DynamicSopSynthesizer {
 }
 
 impl DynamicSopSynthesizer {
+    /// New.
     pub fn new(
         tool_executor: Arc<dyn sisyphus_types::ToolExecutor>,
         llm_client: Arc<dyn LlmClient>,
@@ -387,6 +389,7 @@ pub struct MetaLearningSynthesizer {
 }
 
 impl MetaLearningSynthesizer {
+    /// New.
     pub fn new(
         inner: Arc<dyn FlowSynthesizer>,
         meta_learner: Arc<parking_lot::Mutex<sisyphus_tools_llm_tools::meta_learner::MetaLearner>>,
@@ -433,6 +436,7 @@ pub struct StrategicSopSynthesizer {
 }
 
 impl StrategicSopSynthesizer {
+    /// New.
     pub fn new(inner: Arc<dyn FlowSynthesizer>, simulator: Arc<dyn crate::Simulator>) -> Self {
         Self { inner, simulator }
     }

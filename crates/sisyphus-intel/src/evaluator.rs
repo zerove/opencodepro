@@ -9,6 +9,7 @@ pub struct HeuristicSopEvaluator {
 }
 
 impl HeuristicSopEvaluator {
+    /// New.
     pub fn new(llm: Arc<dyn LlmClient>) -> Self {
         Self { llm }
     }

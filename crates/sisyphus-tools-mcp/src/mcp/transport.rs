@@ -19,6 +19,7 @@ pub struct StdioTransport {
 }
 
 impl StdioTransport {
+    /// Spawn.
     pub fn spawn(command: &str, args: &[&str]) -> ToolResult<Self> {
         let mut child = Command::new(command)
             .args(args)
@@ -89,6 +90,7 @@ pub struct HttpTransport {
 }
 
 impl HttpTransport {
+    /// New.
     pub fn new(base_url: &str) -> Self {
         Self {
             base_url: base_url.trim_end_matches('/').to_string(),

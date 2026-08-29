@@ -36,6 +36,7 @@ pub struct LspClient {
 }
 
 impl LspClient {
+    /// Spawn.
     pub async fn spawn(command: &str, args: &[&str], root_uri: &str) -> LspResult<Self> {
         let mut child = tokio::process::Command::new(command)
             .args(args)
@@ -137,6 +138,7 @@ impl LspClient {
             .unwrap_or_default()
     }
 
+    /// Capabilities.
     pub fn capabilities(&self) -> &Value {
         &self.capabilities
     }
@@ -167,6 +169,7 @@ impl LspClient {
         Ok(())
     }
 
+    /// Open document.
     pub async fn open_document(&mut self, file_path: &str, language_id: &str) -> LspResult<()> {
         let content = tokio::fs::read_to_string(file_path)
             .await
@@ -183,6 +186,7 @@ impl LspClient {
         self.send_notification("textDocument/didOpen", params).await
     }
 
+    /// Shutdown.
     pub async fn shutdown(&mut self) -> LspResult<()> {
         let _ = self.send_request("shutdown", serde_json::json!(null)).await;
         self.send_notification("exit", serde_json::json!({}))
@@ -195,6 +199,7 @@ impl LspClient {
 
     // ── Diagnostics ───────────────────────────────────────
 
+    /// Get diagnostics.
     pub async fn get_diagnostics(&mut self, file_path: &str) -> LspResult<Vec<LspDiagnostic>> {
         let uri = to_file_uri(file_path);
         let params = serde_json::json!({
@@ -209,6 +214,7 @@ impl LspClient {
 
     // ── Goto Definition ───────────────────────────────────
 
+    /// Goto definition.
     pub async fn goto_definition(
         &mut self,
         file_path: &str,
@@ -235,6 +241,7 @@ impl LspClient {
 
     // ── Find References ───────────────────────────────────
 
+    /// Find references.
     pub async fn find_references(
         &mut self,
         file_path: &str,
@@ -254,6 +261,7 @@ impl LspClient {
 
     // ── Hover ─────────────────────────────────────────────
 
+    /// Get hover.
     pub async fn get_hover(
         &mut self,
         file_path: &str,
@@ -276,6 +284,7 @@ impl LspClient {
 
     // ── Document Symbols ──────────────────────────────────
 
+    /// Get symbols.
     pub async fn get_symbols(&mut self, file_path: &str) -> LspResult<Vec<LspDocumentSymbol>> {
         let uri = to_file_uri(file_path);
         let params = serde_json::json!({

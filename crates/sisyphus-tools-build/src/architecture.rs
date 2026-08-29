@@ -273,6 +273,7 @@ mod tests {
 use std::collections::HashMap;
 use serde::Serialize;
 
+/// Hello.
 pub fn hello() -> String {
     "world".to_string()
 }
@@ -312,6 +313,7 @@ use reqwest::Client;
 use tracing::info;
 use anyhow::Result;
 
+/// Do thing.
 pub fn do_thing() -> Result<()> {
     Ok(())
 }

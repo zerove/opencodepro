@@ -44,6 +44,7 @@ pub async fn wisdom_record(category: &str, content: &str) -> ToolResult<()> {
         .map(|_| ())
 }
 
+/// Wisdom list.
 pub async fn wisdom_list() -> ToolResult<Vec<String>> {
     let entries = NotepadManager::default_dir().list_all().await?;
     let mut cats: Vec<String> = entries
@@ -55,6 +56,7 @@ pub async fn wisdom_list() -> ToolResult<Vec<String>> {
     Ok(cats)
 }
 
+/// Wisdom get.
 pub async fn wisdom_get(category: &str) -> ToolResult<String> {
     let cat = NotepadCategory::parse(category)
         .ok_or_else(|| ToolError::NotFound(format!("unknown wisdom category: {category}")))?;
@@ -71,6 +73,7 @@ pub async fn wisdom_get(category: &str) -> ToolResult<String> {
         .join("\n\n"))
 }
 
+/// Wisdom delete.
 pub async fn wisdom_delete(category: &str) -> ToolResult<()> {
     let cat = NotepadCategory::parse(category)
         .ok_or_else(|| ToolError::NotFound(format!("unknown wisdom category: {category}")))?;
@@ -83,6 +86,7 @@ pub async fn wisdom_delete(category: &str) -> ToolResult<()> {
     Ok(())
 }
 
+/// Wisdom inject.
 pub async fn wisdom_inject() -> ToolResult<String> {
     NotepadManager::default_dir().inject(None).await
 }

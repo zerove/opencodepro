@@ -11,6 +11,7 @@ pub struct ProposalManager {
 }
 
 impl ProposalManager {
+    /// New.
     pub fn new(store: Arc<MfsStore>) -> Self {
         Self { store }
     }

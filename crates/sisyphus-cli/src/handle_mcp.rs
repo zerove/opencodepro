@@ -4,6 +4,7 @@ use anyhow::Result;
 
 use crate::commands::*;
 
+/// Handle mcp.
 pub async fn handle_mcp(
     sub: &McpCommands,
     llm_client: Arc<dyn sisyphus_cli::tools::metis::LlmClient>,

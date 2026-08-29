@@ -180,6 +180,7 @@ pub fn sop_success_labels(sop_id: &str, success: bool) -> Vec<Label> {
     ]
 }
 
+/// Mem op labels.
 pub fn mem_op_labels(op: &str, layer: &str, hit: bool) -> Vec<Label> {
     vec![
         Label::new("op", op.to_string()),

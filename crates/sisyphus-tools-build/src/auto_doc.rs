@@ -249,6 +249,7 @@ mod tests {
     #[test]
     fn test_generate_for_function_found() {
         let code = r#"
+/// Hello.
 pub fn hello(name: &str, count: u32) -> String {
     format!("Hello {}", name)
 }
@@ -272,6 +273,7 @@ pub fn hello(name: &str, count: u32) -> String {
     #[test]
     fn test_generate_for_function_async() {
         let code = r#"
+/// Fetch data.
 pub async fn fetch_data(url: &str) -> Result<String, Error> {
     Ok("data".into())
 }
@@ -285,6 +287,7 @@ pub async fn fetch_data(url: &str) -> Result<String, Error> {
     #[test]
     fn test_generate_for_module() {
         let code = r#"
+/// Foo.
 pub fn foo(x: i32) -> i32 { x }
 pub struct Bar { pub field: u32 }
 pub enum Baz { A, B }

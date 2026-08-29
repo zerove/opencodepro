@@ -8,6 +8,7 @@ use tokio::sync::mpsc;
 use crate::*;
 
 impl SisyphusKernel {
+    /// Strategic reflect.
     pub async fn strategic_reflect(
         &self,
 
@@ -92,6 +93,7 @@ impl SisyphusKernel {
         }
     }
 
+    /// Generate milestones.
     pub async fn generate_milestones(
         &self,
 

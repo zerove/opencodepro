@@ -1,4 +1,5 @@
 #[cfg(test)]
+/// Expand glob.
 pub fn expand_glob(pattern: &str) -> anyhow::Result<Vec<String>> {
     use anyhow::anyhow;
     use glob::glob;

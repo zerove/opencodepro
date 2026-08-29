@@ -28,6 +28,7 @@ impl Default for ResourceOptimizer {
 }
 
 impl ResourceOptimizer {
+    /// New.
     pub fn new() -> Self {
         Self
     }

@@ -38,6 +38,7 @@ fn resolve_backend(
     }
 }
 
+/// Run run.
 pub fn run_run(args: Vec<String>, lang: Option<String>, cwd: Option<PathBuf>) -> Result<()> {
     let dir = cwd.as_deref().or_else(|| Some(std::path::Path::new(".")));
     let backend = resolve_backend(lang.as_deref(), dir)?;

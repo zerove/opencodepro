@@ -66,14 +66,17 @@ pub struct GateHistory {
 }
 
 impl GateHistory {
+    /// New.
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// Record.
     pub fn record(&self, decision: GateDecision) {
         self.inner.lock().push(decision);
     }
 
+    /// Snapshot.
     pub fn snapshot(&self) -> Vec<GateDecision> {
         self.inner.lock().clone()
     }
@@ -127,6 +130,7 @@ pub struct SimulationGate {
 }
 
 impl SimulationGate {
+    /// New.
     pub fn new(simulator: Arc<dyn LogicalSimulator>, config: GateConfig) -> Self {
         Self {
             simulator,
@@ -135,6 +139,7 @@ impl SimulationGate {
         }
     }
 
+    /// With history.
     pub fn with_history(
         simulator: Arc<dyn LogicalSimulator>,
         config: GateConfig,
@@ -147,10 +152,12 @@ impl SimulationGate {
         }
     }
 
+    /// History.
     pub fn history(&self) -> &GateHistory {
         &self.history
     }
 
+    /// Config.
     pub fn config(&self) -> &GateConfig {
         &self.config
     }

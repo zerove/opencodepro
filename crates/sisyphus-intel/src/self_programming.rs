@@ -68,6 +68,7 @@ pub struct FileRegistrar {
 }
 
 impl FileRegistrar {
+    /// New.
     pub fn new(base_dir: PathBuf) -> Self {
         Self { base_dir }
     }
@@ -112,6 +113,7 @@ pub struct SelfProgrammingLoop {
 }
 
 impl SelfProgrammingLoop {
+    /// New.
     pub fn new(
         gap: Arc<GapAnalyzer>,
         coder: Arc<ToolCoder>,
@@ -129,14 +131,17 @@ impl SelfProgrammingLoop {
         }
     }
 
+    /// Config.
     pub fn config(&self) -> &LoopConfig {
         &self.config
     }
 
+    /// History.
     pub fn history(&self) -> Vec<ToolGenerationResult> {
         self.history.lock().clone()
     }
 
+    /// Close the loop.
     pub async fn close_the_loop(
         &self,
         gap: &ToolGap,

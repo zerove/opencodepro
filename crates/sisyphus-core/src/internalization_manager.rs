@@ -15,6 +15,7 @@ pub struct InternalizationManager {
 }
 
 impl InternalizationManager {
+    /// New.
     pub fn new(
         llm_client: Arc<dyn sisyphus_tools_llm::LlmClient>,
         knowledge_manager: Arc<sisyphus_knowledge::AssetManager>,
@@ -25,6 +26,7 @@ impl InternalizationManager {
         }
     }
 
+    /// Internalize feedback.
     pub async fn internalize_feedback(&self, req: InternalizationRequest) -> Result<(), String> {
         info!(node_id = %req.node_id, "Starting cognitive internalization for human feedback");
 

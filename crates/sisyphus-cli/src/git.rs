@@ -8,6 +8,7 @@ fn resolve_dir(cwd: Option<PathBuf>) -> Option<PathBuf> {
 
 // ── 状态 ─────────────────────────────────────────────────
 
+/// Run status.
 pub fn run_status(cwd: Option<PathBuf>) -> Result<()> {
     let dir = resolve_dir(cwd);
     let s = crate::tools::git::status(dir.as_deref())?;
@@ -61,6 +62,7 @@ fn status_char(c: char) -> &'static str {
 
 // ── 差异 ───────────────────────────────────────────────────
 
+/// Run diff.
 pub fn run_diff(pathspec: Option<String>, cached: bool, cwd: Option<PathBuf>) -> Result<()> {
     let dir = resolve_dir(cwd);
     let d = crate::tools::git::diff(pathspec.as_deref(), cached, dir.as_deref())?;
@@ -74,6 +76,7 @@ pub fn run_diff(pathspec: Option<String>, cached: bool, cwd: Option<PathBuf>) ->
 
 // ── 添加 ────────────────────────────────────────────────────
 
+/// Run add.
 pub fn run_add(pathspecs: Vec<String>, cwd: Option<PathBuf>) -> Result<()> {
     let dir = resolve_dir(cwd);
     let refs: Vec<&str> = pathspecs.iter().map(|s| s.as_str()).collect();
@@ -87,6 +90,7 @@ pub fn run_add(pathspecs: Vec<String>, cwd: Option<PathBuf>) -> Result<()> {
 
 // ── 提交 ─────────────────────────────────────────────────
 
+/// Run commit.
 pub fn run_commit(message: String, allow_empty: bool, cwd: Option<PathBuf>) -> Result<()> {
     let dir = resolve_dir(cwd);
     let out = crate::tools::git::commit(&message, allow_empty, dir.as_deref())?;
@@ -96,6 +100,7 @@ pub fn run_commit(message: String, allow_empty: bool, cwd: Option<PathBuf>) -> R
 
 // ── 日志 ────────────────────────────────────────────────────
 
+/// Run log.
 pub fn run_log(count: usize, cwd: Option<PathBuf>) -> Result<()> {
     let dir = resolve_dir(cwd);
     let log = crate::tools::git::log(count, dir.as_deref())?;
@@ -117,6 +122,7 @@ pub fn run_log(count: usize, cwd: Option<PathBuf>) -> Result<()> {
 
 // ── 分支 ─────────────────────────────────────────────────
 
+/// Run branch.
 pub fn run_branch(cwd: Option<PathBuf>) -> Result<()> {
     let dir = resolve_dir(cwd);
     let branches = crate::tools::git::branch(dir.as_deref())?;
@@ -129,6 +135,7 @@ pub fn run_branch(cwd: Option<PathBuf>) -> Result<()> {
 
 // ── 检出 ───────────────────────────────────────────────
 
+/// Run checkout.
 pub fn run_checkout(branch: String, create: bool, cwd: Option<PathBuf>) -> Result<()> {
     let dir = resolve_dir(cwd);
     let out = crate::tools::git::checkout(&branch, create, dir.as_deref())?;
@@ -138,6 +145,7 @@ pub fn run_checkout(branch: String, create: bool, cwd: Option<PathBuf>) -> Resul
 
 // ── 推送 ───────────────────────────────────────────────────
 
+/// Run push.
 pub fn run_push(
     remote: String,
     branch: Option<String>,
@@ -155,6 +163,7 @@ pub fn run_push(
 
 // ── 拉取 ───────────────────────────────────────────────────
 
+/// Run pull.
 pub fn run_pull(remote: String, branch: Option<String>, cwd: Option<PathBuf>) -> Result<()> {
     let dir = resolve_dir(cwd);
     let br = branch.unwrap_or_else(|| {
@@ -167,6 +176,7 @@ pub fn run_pull(remote: String, branch: Option<String>, cwd: Option<PathBuf>) ->
 
 // ── 摘要 ────────────────────────────────────────────────
 
+/// Run summary.
 pub fn run_summary(cwd: Option<PathBuf>) -> Result<()> {
     let dir = resolve_dir(cwd);
     let s = crate::tools::git::summary(dir.as_deref())?;

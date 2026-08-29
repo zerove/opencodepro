@@ -13,6 +13,7 @@ struct TaskDef {
     dir: Option<String>,
 }
 
+/// Run tasks.
 pub async fn run_tasks(file: PathBuf, max_concurrent: usize) -> Result<()> {
     let content = std::fs::read_to_string(&file)
         .with_context(|| format!("read task file: {}", file.display()))?;
@@ -238,6 +239,7 @@ pub async fn run_team_with_config(
     Ok(())
 }
 
+/// Run inline.
 pub async fn run_inline(commands: &[String], max_concurrent: usize) -> Result<()> {
     let units: Vec<crate::tools::WorkUnit> = commands
         .iter()

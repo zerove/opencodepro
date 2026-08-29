@@ -42,6 +42,7 @@ pub struct CognitiveReport {
 }
 
 impl CognitiveReport {
+    /// To mermaid.
     pub fn to_mermaid(&self) -> String {
         let mut mermaid = String::from("graph TD\n");
         for (i, trace) in self.traces.iter().enumerate() {
@@ -109,6 +110,7 @@ pub struct StrategicManager {
 
 impl StrategicManager {
     #[allow(clippy::too_many_arguments)]
+    /// New.
     pub fn new(
         intelligence_manager: Arc<IntelligenceManager>,
         execution_manager: Arc<ExecutionManager>,

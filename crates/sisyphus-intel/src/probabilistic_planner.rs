@@ -95,6 +95,7 @@ impl ProbabilisticPlanner {
         }
     }
 
+    /// With config and experiences.
     pub fn with_config_and_experiences(
         config: PlannerConfig,
         experience: Vec<ExperienceRecord>,

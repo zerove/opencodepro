@@ -1,5 +1,6 @@
 use anyhow::Result;
 
+/// Run list.
 pub fn run_list() -> Result<()> {
     let templates = crate::tools::list_templates();
     println!("Available project templates:");
@@ -9,6 +10,7 @@ pub fn run_list() -> Result<()> {
     Ok(())
 }
 
+/// Run generate.
 pub fn run_generate(template_name: &str, name: &str, dir: &std::path::Path) -> Result<()> {
     let template = crate::tools::TemplateType::from_str_opt(template_name).ok_or_else(|| {
         anyhow::anyhow!(

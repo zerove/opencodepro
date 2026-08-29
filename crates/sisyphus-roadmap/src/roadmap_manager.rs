@@ -414,6 +414,7 @@ impl RoadmapManager {
             .map_err(|e| RoadmapError::Internal(e.to_string()))
     }
 
+    /// Get goal description.
     pub async fn get_goal_description(
         &self,
         project_id: &str,

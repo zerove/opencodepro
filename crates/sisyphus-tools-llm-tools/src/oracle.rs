@@ -201,6 +201,7 @@ fn private_fn(x: i32) -> i32 {
     x + 1
 }
 
+/// Public async fn.
 pub async fn public_async_fn() -> String {
     \"hello\".to_string()
 }
@@ -234,6 +235,7 @@ pub struct MyStruct {
 use std::collections::HashMap;
 use regex::Regex;
 
+/// Run.
 pub fn run() {}
 ",
         );
@@ -307,6 +309,7 @@ fn bar() {}
             "src/lib.rs",
             "\
 // TODO: need to implement
+/// Add.
 pub fn add(a: i32, b: i32) -> i32 {
     a + b
 }
@@ -329,6 +332,7 @@ pub fn add(a: i32, b: i32) -> i32 {
             "src/lib.rs",
             "\
 // FIXME: fix this later
+/// Run.
 pub fn run() { loop {} }
 ",
         );

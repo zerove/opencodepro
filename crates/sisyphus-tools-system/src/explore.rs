@@ -181,6 +181,7 @@ mod tests {
             "\
 pub mod utils;
 
+/// Run.
 pub fn run() {
     println!(\"running...\");
 }
@@ -191,6 +192,7 @@ pub fn run() {
         std::fs::write(
             src.join("utils.rs"),
             "\
+/// Helper.
 pub fn helper() -> u32 {
     42
 }

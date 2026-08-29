@@ -20,6 +20,7 @@ impl SisyphusKernel {
             .map_err(|e| CoreError::Internal(e.to_string()))
     }
 
+    /// Get cached plan.
     pub async fn get_cached_plan(
         &self,
         plan_id: &str,

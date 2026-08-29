@@ -24,6 +24,7 @@ pub struct PipelineMetrics {
 }
 
 impl PipelineMetrics {
+    /// Record batch.
     pub fn record_batch(&mut self, batch_size: usize, duration_ms: u64) {
         self.total_batches += 1;
         self.total_nodes_executed += batch_size;
@@ -41,6 +42,7 @@ pub struct OutputCache {
 }
 
 impl OutputCache {
+    /// New.
     pub fn new(max_entries: usize) -> Self {
         Self {
             cache: dashmap::DashMap::new(),
@@ -91,14 +93,17 @@ impl OutputCache {
         self.cache.insert(hash, output);
     }
 
+    /// Len.
     pub fn len(&self) -> usize {
         self.cache.len()
     }
 
+    /// Is empty.
     pub fn is_empty(&self) -> bool {
         self.cache.is_empty()
     }
 
+    /// Clear.
     pub fn clear(&self) {
         self.cache.clear();
     }
@@ -169,6 +174,7 @@ pub struct ContextCompressor {
 }
 
 impl ContextCompressor {
+    /// New.
     pub fn new(threshold_bytes: usize) -> Self {
         Self { threshold_bytes }
     }
@@ -227,6 +233,7 @@ pub struct Profiler {
 }
 
 impl Profiler {
+    /// New.
     pub fn new(max_profiles: usize) -> Self {
         Self {
             profiles: Vec::with_capacity(max_profiles.min(1000)),
@@ -234,6 +241,7 @@ impl Profiler {
         }
     }
 
+    /// Record.
     pub fn record(&mut self, profile: ExecutionProfile) {
         if self.profiles.len() >= self.max_profiles {
             // 仅保留最近 75%

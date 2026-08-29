@@ -5,6 +5,7 @@ use anyhow::Result;
 
 use crate::commands::*;
 
+/// Handle todo.
 pub fn handle_todo(sub: &TodoCommands, todo_db: &Path) -> Result<()> {
     match sub {
         TodoCommands::Add { content, priority } => {

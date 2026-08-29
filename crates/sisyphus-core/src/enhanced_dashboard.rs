@@ -83,6 +83,7 @@ pub struct NodeExecution {
 }
 
 impl EnhancedDashboard {
+    /// New.
     pub fn new() -> Self {
         Self {
             start_time: Instant::now(),

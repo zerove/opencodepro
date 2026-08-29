@@ -30,6 +30,7 @@ const PLACEHOLDERS: &[&str] = &[
     "New: Home/End/Ctrl+U/W in input, type /help for all shortcuts",
 ];
 
+/// Handle home key.
 pub fn handle_home_key(key: KeyEvent, app: &mut App) {
     let code = key.code;
 
@@ -225,6 +226,7 @@ fn execute_home_command(cmd: &str, app: &mut App) {
     }
 }
 
+/// Render home.
 pub fn render_home(frame: &mut ratatui::Frame, area: Rect, app: &App) {
     let theme = app.theme();
 

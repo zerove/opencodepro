@@ -48,6 +48,7 @@ pub struct FailurePatternLibrary {
 }
 
 impl FailurePatternLibrary {
+    /// New.
     pub fn new() -> Self {
         Self {
             patterns: Vec::new(),
@@ -140,6 +141,7 @@ pub struct FailurePatternEvolver {
 }
 
 impl FailurePatternEvolver {
+    /// New.
     pub fn new(pattern_library: Arc<parking_lot::RwLock<FailurePatternLibrary>>) -> Self {
         Self {
             pattern_library,

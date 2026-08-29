@@ -29,6 +29,7 @@ impl Default for DependencyResolver {
 }
 
 impl DependencyResolver {
+    /// New.
     pub fn new() -> Self {
         Self
     }

@@ -116,16 +116,19 @@ impl DynamicLlmClient {
         )
     }
 
+    /// With provider registry.
     pub fn with_provider_registry(mut self, registry: ProviderRegistry) -> Self {
         self.provider_registry = Some(registry);
         self
     }
 
+    /// With budget provider.
     pub fn with_budget_provider(mut self, provider: Arc<dyn BudgetProvider>) -> Self {
         self.budget_provider = Some(provider);
         self
     }
 
+    /// Set context.
     pub fn set_context(&self, project_id: &str, goal_id: &str) {
         let mut ctx = self
             .current_context
@@ -137,6 +140,7 @@ impl DynamicLlmClient {
         });
     }
 
+    /// Clear context.
     pub fn clear_context(&self) {
         let mut ctx = self
             .current_context
@@ -145,6 +149,7 @@ impl DynamicLlmClient {
         *ctx = None;
     }
 
+    /// Set category.
     pub fn set_category(&self, category: &str) {
         let mut cat = self
             .current_category
@@ -153,6 +158,7 @@ impl DynamicLlmClient {
         *cat = Some(category.to_string());
     }
 
+    /// Clear category.
     pub fn clear_category(&self) {
         let mut cat = self
             .current_category
@@ -161,20 +167,24 @@ impl DynamicLlmClient {
         *cat = None;
     }
 
+    /// With breaker.
     pub fn with_breaker(mut self, breaker: CircuitBreaker) -> Self {
         self.breaker = breaker;
         self
     }
 
+    /// With router.
     pub fn with_router(mut self, router: Arc<ModelRouter>) -> Self {
         self.router = router;
         self
     }
 
+    /// Breaker.
     pub fn breaker(&self) -> &CircuitBreaker {
         &self.breaker
     }
 
+    /// Router.
     pub fn router(&self) -> &Arc<ModelRouter> {
         &self.router
     }

@@ -2,6 +2,7 @@ use anyhow::Result;
 
 use crate::commands::*;
 
+/// Handle skill.
 pub fn handle_skill(sub: &SkillCommands) -> Result<()> {
     match sub {
         SkillCommands::List => {

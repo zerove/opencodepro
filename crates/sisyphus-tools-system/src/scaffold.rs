@@ -20,6 +20,7 @@ impl TemplateType {
         }
     }
 
+    /// Description.
     pub fn description(&self) -> &'static str {
         match self {
             Self::RustLib => "Rust library crate with Cargo.toml + src/lib.rs + test",

@@ -9,6 +9,7 @@ pub struct CustomToolLoader {
 }
 
 impl CustomToolLoader {
+    /// New.
     pub fn new(tools_dir: &str) -> Self {
         Self {
             tools_dir: PathBuf::from(tools_dir),

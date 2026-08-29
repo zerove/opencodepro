@@ -115,6 +115,7 @@ impl DeepReflector {
         }
     }
 
+    /// With weights.
     pub fn with_weights(weights: HashMap<AnalysisDimension, f64>) -> Self {
         Self {
             dimension_weights: weights,

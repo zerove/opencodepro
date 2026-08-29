@@ -21,6 +21,7 @@ pub struct ToolVerifier {
 }
 
 impl ToolVerifier {
+    /// New.
     pub fn new(llm_client: Arc<dyn LlmClient>) -> Self {
         Self { llm_client }
     }

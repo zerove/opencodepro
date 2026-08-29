@@ -14,6 +14,7 @@ impl JavaBackend {
         Self { tool: "mvn".into() }
     }
 
+    /// New gradle.
     pub fn new_gradle() -> Self {
         Self {
             tool: "gradle".into(),

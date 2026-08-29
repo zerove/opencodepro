@@ -51,10 +51,12 @@ impl Default for AdaptiveFuelPricer {
 }
 
 impl AdaptiveFuelPricer {
+    /// New.
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// With bounds.
     pub fn with_bounds(mut self, min: u64, max: u64) -> Self {
         self.min_fuel = min;
         self.max_fuel = max;

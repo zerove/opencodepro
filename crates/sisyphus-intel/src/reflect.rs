@@ -131,12 +131,14 @@ impl Default for StandardEvolver {
 }
 
 impl StandardEvolver {
+    /// New.
     pub fn new() -> Self {
         Self {
             fuel_pricer: Arc::new(crate::SimpleFuelPricer),
         }
     }
 
+    /// With fuel pricer.
     pub fn with_fuel_pricer(fuel_pricer: Arc<dyn FuelPricer>) -> Self {
         Self { fuel_pricer }
     }
@@ -448,6 +450,7 @@ pub struct HybridReflector {
 }
 
 impl HybridReflector {
+    /// New.
     pub fn new(standard: Arc<dyn Reflector>, llm: Arc<dyn Reflector>) -> Self {
         Self { standard, llm }
     }

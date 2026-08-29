@@ -12,6 +12,7 @@ async fn spawn_client(
     Ok(client)
 }
 
+/// Run diagnostics.
 pub async fn run_diagnostics(
     file: &std::path::Path,
     language_id: &str,
@@ -72,6 +73,7 @@ pub async fn run_diagnostics_raw(
     Ok(diags)
 }
 
+/// Run goto def.
 pub async fn run_goto_def(
     file: &std::path::Path,
     line: u32,
@@ -104,6 +106,7 @@ pub async fn run_goto_def(
     Ok(())
 }
 
+/// Run find refs.
 pub async fn run_find_refs(
     file: &std::path::Path,
     line: u32,
@@ -140,6 +143,7 @@ pub async fn run_find_refs(
     Ok(())
 }
 
+/// Run hover.
 pub async fn run_hover(
     file: &std::path::Path,
     line: u32,
@@ -169,6 +173,7 @@ pub async fn run_hover(
     Ok(())
 }
 
+/// Run symbols.
 pub async fn run_symbols(
     file: &std::path::Path,
     language_id: &str,

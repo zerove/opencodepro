@@ -106,6 +106,7 @@ impl Clone for MySisyphusBridge {
 }
 
 impl MySisyphusBridge {
+    /// New.
     pub async fn new(
         shared_config: Arc<RwLock<Config>>,
         llm_client_override: Option<Arc<dyn LlmClient>>,
@@ -716,6 +717,7 @@ impl JcodeToolCaller for MySisyphusBridge {
 
 // ── Accessors for HTTP API ──────────────────────────────────────────────
 impl MySisyphusBridge {
+    /// Kernel.
     pub fn kernel(&self) -> &Arc<SisyphusKernel> {
         &self.kernel
     }

@@ -17,6 +17,7 @@ pub struct SisyphusSupervisor {
 }
 
 impl SisyphusSupervisor {
+    /// New.
     pub fn new(
         reflector: Arc<dyn Reflector>,
         prediction: SimulationResult,

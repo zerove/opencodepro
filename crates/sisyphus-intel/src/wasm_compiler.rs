@@ -12,6 +12,7 @@ impl Default for WasmCompiler {
 }
 
 impl WasmCompiler {
+    /// New.
     pub fn new() -> Self {
         Self {}
     }

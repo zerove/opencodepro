@@ -10,6 +10,7 @@ use super::dialog::Dialog;
 use super::helpers::copy_to_clipboard;
 use super::{App, LogEntry, Mode, ToastKind};
 
+/// Handle sessions key.
 pub fn handle_sessions_key(key: KeyEvent, app: &mut App) {
     let code = key.code;
     let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);

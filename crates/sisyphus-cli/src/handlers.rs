@@ -86,6 +86,7 @@ mod test_helpers;
 
 // ── 公开分发 ──────────────────────────────────────────
 
+/// Dispatch.
 pub async fn dispatch(
     cli: &Cli,
     sisyphus_cfg: &sisyphus_types::Config,

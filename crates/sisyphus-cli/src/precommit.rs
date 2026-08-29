@@ -22,6 +22,7 @@ fn resolve_repo(dir: Option<PathBuf>) -> Result<PathBuf> {
     Ok(PathBuf::from(root))
 }
 
+/// Run install.
 pub fn run_install(
     dir: Option<PathBuf>,
     no_fmt: bool,
@@ -72,6 +73,7 @@ pub fn run_install(
     Ok(())
 }
 
+/// Run uninstall.
 pub fn run_uninstall(dir: Option<PathBuf>) -> Result<()> {
     let repo = resolve_repo(dir)?;
     crate::tools::uninstall_precommit(&repo)?;
@@ -82,6 +84,7 @@ pub fn run_uninstall(dir: Option<PathBuf>) -> Result<()> {
     Ok(())
 }
 
+/// Run status.
 pub fn run_status(dir: Option<PathBuf>) -> Result<()> {
     let repo = resolve_repo(dir)?;
     let hooks_dir = repo.join(".git/hooks");

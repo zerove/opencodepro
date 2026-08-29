@@ -49,6 +49,7 @@ pub struct DagRenderer {
 }
 
 impl DagRenderer {
+    /// New.
     pub fn new() -> Self {
         Self {
             node_width: 20,

@@ -15,6 +15,7 @@ pub struct OpenAiLlmClient {
 }
 
 impl OpenAiLlmClient {
+    /// New.
     pub fn new(
         api_key: String,
         endpoint: String,
@@ -125,6 +126,7 @@ pub struct OpenAiEmbeddingClient {
 }
 
 impl OpenAiEmbeddingClient {
+    /// New.
     pub fn new(
         api_key: String,
         endpoint: String,

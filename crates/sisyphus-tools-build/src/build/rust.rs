@@ -192,6 +192,7 @@ fn strip_ansi(line: &str) -> String {
     out
 }
 
+/// Extract diags.
 pub fn extract_diags(stderr: &str) -> (Vec<Diag>, Vec<Diag>) {
     let mut errors = Vec::new();
     let mut warnings = Vec::new();
@@ -271,6 +272,7 @@ pub fn extract_diags(stderr: &str) -> (Vec<Diag>, Vec<Diag>) {
 
 // ── Test results parser (cargo test output) ───────────
 
+/// Parse test results.
 pub fn parse_test_results(stdout: &str, stderr: &str) -> TestResults {
     let mut passed = 0usize;
     let mut failed = 0usize;

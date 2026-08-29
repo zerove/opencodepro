@@ -10,6 +10,7 @@ pub struct BridgeClient {
 }
 
 impl BridgeClient {
+    /// New.
     pub async fn new(endpoint: String) -> Result<Self, String> {
         let channel = Channel::from_shared(endpoint)
             .map_err(|e| format!("Invalid bridge endpoint: {e}"))?
@@ -22,6 +23,7 @@ impl BridgeClient {
         })
     }
 
+    /// Execute tool.
     pub async fn execute_tool(&self, tool_id: &str, args: Value) -> Result<Value, String> {
         let args_json =
             serde_json::to_string(&args).map_err(|e| format!("Args serialization failed: {e}"))?;

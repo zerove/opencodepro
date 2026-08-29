@@ -19,6 +19,7 @@ pub struct CommandBuilder {
 }
 
 impl CommandBuilder {
+    /// New.
     pub fn new(cmd: &str) -> Self {
         Self {
             program: cmd.to_string(),
@@ -28,26 +29,31 @@ impl CommandBuilder {
         }
     }
 
+    /// Arg.
     pub fn arg(mut self, a: &str) -> Self {
         self.args.push(a.to_string());
         self
     }
 
+    /// Args.
     pub fn args(mut self, list: &[&str]) -> Self {
         self.args.extend(list.iter().map(|s| s.to_string()));
         self
     }
 
+    /// Cwd.
     pub fn cwd(mut self, path: std::path::PathBuf) -> Self {
         self.cwd = Some(path);
         self
     }
 
+    /// Timeout.
     pub fn timeout(mut self, duration: Duration) -> Self {
         self.timeout = Some(duration);
         self
     }
 
+    /// Output.
     pub async fn output(&self) -> Result<ProcessOutput> {
         let mut cmd = self.prepare_command();
 
@@ -72,6 +78,7 @@ impl CommandBuilder {
         })
     }
 
+    /// Spawn.
     pub fn spawn(&self) -> Result<tokio::process::Child> {
         let mut cmd = self.prepare_command();
 

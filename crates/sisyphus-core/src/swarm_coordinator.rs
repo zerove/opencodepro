@@ -31,6 +31,7 @@ pub struct SwarmCoordinator {
 }
 
 impl SwarmCoordinator {
+    /// New.
     pub fn new(
         strategic_manager: Arc<StrategicManager>,
         intelligence_manager: Arc<IntelligenceManager>,
@@ -44,6 +45,7 @@ impl SwarmCoordinator {
         }
     }
 
+    /// Spawn agent.
     pub fn spawn_agent(&self, role: AgentRole, id: String) {
         let prompt = match role {
             AgentRole::Architect => "You are the SOP Architect. Your goal is to propose the most efficient topological changes to the SOP graph to achieve the goal.",

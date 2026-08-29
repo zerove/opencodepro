@@ -19,6 +19,7 @@ pub struct Feedback {
 }
 
 impl Feedback {
+    /// New.
     pub fn new(
         agent_id: String,
         original_request: String,
@@ -46,12 +47,14 @@ pub struct FeedbackStore {
 }
 
 impl FeedbackStore {
+    /// Open (or create) a feedback store at `path`.
     pub fn new<P: AsRef<Path>>(path: P) -> Self {
         Self {
             base_path: path.as_ref().to_path_buf(),
         }
     }
 
+    /// Default dir.
     pub fn default_dir() -> Self {
         Self::new(".omo/feedback")
     }
@@ -60,6 +63,7 @@ impl FeedbackStore {
         self.base_path.join(format!("{agent_id}.json"))
     }
 
+    /// Save feedback.
     pub async fn save_feedback(&self, feedback: Feedback) -> ToolResult<()> {
         if !self.base_path.exists() {
             fs::create_dir_all(&self.base_path).await?;
@@ -76,6 +80,7 @@ impl FeedbackStore {
         Ok(())
     }
 
+    /// Load all for agent.
     pub async fn load_all_for_agent(&self, agent_id: &str) -> ToolResult<Vec<Feedback>> {
         let path = self.get_file_path(agent_id);
         if !path.exists() {
@@ -89,6 +94,7 @@ impl FeedbackStore {
         Ok(feedbacks)
     }
 
+    /// Get recent feedback.
     pub async fn get_recent_feedback(
         &self,
         agent_id: &str,
@@ -103,6 +109,7 @@ impl FeedbackStore {
         Ok(result)
     }
 
+    /// Query feedback.
     pub async fn query_feedback(
         &self,
         query: &str,

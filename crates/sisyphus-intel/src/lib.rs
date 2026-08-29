@@ -71,6 +71,7 @@ pub struct SisyphusIntel {
 }
 
 impl SisyphusIntel {
+    /// New.
     pub fn new(
         simulator: Arc<dyn Simulator>,
         logical_simulator: Arc<dyn simulation::LogicalSimulator>,

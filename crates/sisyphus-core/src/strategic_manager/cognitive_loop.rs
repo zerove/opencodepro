@@ -29,6 +29,7 @@ use super::{CognitiveIteration, CognitiveReport, StrategicManager};
 impl StrategicManager {
     #[allow(clippy::too_many_arguments)]
     #[instrument(skip_all, fields(sop_id = %sop_id, graph_nodes = sop_graph.graph.node_count()))]
+    /// Run cognitive loop.
     pub async fn run_cognitive_loop(
         &self,
         sop_graph: Arc<SOPGraph>,

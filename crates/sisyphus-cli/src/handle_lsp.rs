@@ -2,6 +2,7 @@ use anyhow::Result;
 
 use crate::commands::*;
 
+/// Handle lsp.
 pub async fn handle_lsp(sub: &LspCommands) -> Result<()> {
     match sub {
         LspCommands::Diagnostics {

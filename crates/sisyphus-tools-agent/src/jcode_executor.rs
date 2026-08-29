@@ -15,12 +15,14 @@ pub struct JcodeToolExecutor {
 }
 
 impl JcodeToolExecutor {
+    /// New.
     pub fn new() -> Self {
         Self {
             caller: Arc::new(Mutex::new(None)),
         }
     }
 
+    /// Set caller.
     pub fn set_caller(&self, caller: Arc<dyn JcodeToolCaller>) {
         // 锁中毒时静默跳过：调用者设置失败不应导致 panic
         if let Ok(mut lock) = self.caller.lock() {

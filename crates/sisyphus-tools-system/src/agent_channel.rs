@@ -21,6 +21,7 @@ impl Default for AgentChannel {
 }
 
 impl AgentChannel {
+    /// New.
     pub fn new() -> Self {
         Self {
             inboxes: Arc::new(RwLock::new(HashMap::new())),

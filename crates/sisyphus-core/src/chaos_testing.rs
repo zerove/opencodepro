@@ -66,6 +66,7 @@ pub struct ChaosExperimentResult {
 }
 
 impl ChaosExperimentResult {
+    /// Success rate.
     pub fn success_rate(&self) -> f64 {
         if self.operations_attempted == 0 {
             return 1.0;
@@ -98,6 +99,7 @@ impl Default for ChaosRunner {
 }
 
 impl ChaosRunner {
+    /// New.
     pub fn new() -> Self {
         Self::default()
     }
@@ -357,6 +359,7 @@ impl sisyphus_types::ToolExecutor for NoopToolExecutor {
 }
 
 #[cfg(test)]
+/// Make test store.
 pub async fn make_test_store() -> Arc<sisyphus_mem::MfsStore> {
     Arc::new(
         sisyphus_mem::MfsStore::new("sqlite::memory:", &sisyphus_types::CacheConfig::default())
