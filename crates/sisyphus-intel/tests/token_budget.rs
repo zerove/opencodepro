@@ -185,3 +185,105 @@ fn default_estimated_tokens_per_call_is_sensible() {
     assert!(DEFAULT_ESTIMATED_TOKENS_PER_CALL > 0);
     assert!(DEFAULT_ESTIMATED_TOKENS_PER_CALL < 100_000);
 }
+
+// ---------------------------------------------------------------------------
+// Additional: per-state tests + reset + clamp
+// ---------------------------------------------------------------------------
+
+#[test]
+fn tb_record_increments_usage() {
+    let t = TokenBudgetTracker::new(1000, 0.0);
+    t.record(100);
+    assert_eq!(t.usage(), 100);
+    t.record(200);
+    assert_eq!(t.usage(), 300);
+}
+
+#[test]
+fn tb_record_saturating_add() {
+    let t = TokenBudgetTracker::new(1000, 0.0);
+    t.record(u64::MAX);
+    t.record(1);
+    assert_eq!(t.usage(), u64::MAX);
+}
+
+#[test]
+fn tb_remaining_saturates_at_zero() {
+    let t = TokenBudgetTracker::new(100, 0.0);
+    t.record(200);
+    assert_eq!(t.remaining(), 0);
+}
+
+#[test]
+fn tb_should_skip_llm_when_remaining_below_reserve() {
+    let t = TokenBudgetTracker::new(1000, 0.1);
+    t.record(950);
+    assert!(t.should_skip_llm());
+}
+
+#[test]
+fn tb_should_not_skip_when_remaining_above_reserve() {
+    let t = TokenBudgetTracker::new(1000, 0.1);
+    t.record(500);
+    assert!(!t.should_skip_llm());
+}
+
+#[test]
+fn tb_is_exhausted_when_usage_equals_cap() {
+    let t = TokenBudgetTracker::new(100, 0.0);
+    t.record(100);
+    assert!(t.is_exhausted());
+}
+
+#[test]
+fn tb_is_not_exhausted_under_cap() {
+    let t = TokenBudgetTracker::new(100, 0.0);
+    t.record(99);
+    assert!(!t.is_exhausted());
+}
+
+#[test]
+fn tb_unbounded_never_exhausted() {
+    let t = TokenBudgetTracker::unbounded();
+    t.record(1_000_000);
+    assert!(!t.is_exhausted());
+    assert!(!t.should_skip_llm());
+}
+
+#[test]
+fn tb_reset_clears_usage() {
+    let t = TokenBudgetTracker::new(1000, 0.0);
+    t.record(500);
+    assert_eq!(t.usage(), 500);
+    t.reset();
+    assert_eq!(t.usage(), 0);
+    assert_eq!(t.remaining(), 1000);
+}
+
+#[test]
+fn tb_reserve_ratio_clamps_negative() {
+    let t = TokenBudgetTracker::new(1000, -1.0);
+    assert!(!t.should_skip_llm());
+}
+
+#[test]
+fn tb_reserve_ratio_clamps_above_one() {
+    let t = TokenBudgetTracker::new(1000, 5.0);
+    t.record(1);
+    assert!(t.should_skip_llm());
+}
+
+#[test]
+fn tb_zero_cap_immediately_exhausted() {
+    let t = TokenBudgetTracker::new(0, 0.0);
+    assert_eq!(t.remaining(), 0);
+    assert!(t.is_exhausted());
+}
+
+#[test]
+fn tb_debug_format() {
+    let t = TokenBudgetTracker::new(1000, 0.0);
+    let s = format!("{t:?}");
+    assert!(s.contains("TokenBudgetTracker"));
+    assert!(s.contains("1000"));
+}
