@@ -188,18 +188,24 @@ mod tests {
 
     #[test]
     fn test_duplicate_registration_replaces() {
-        {
-            let mut reg = registry().lock().unwrap();
-            reg.tools.clear();
-        }
+        // Use a unique id to avoid colliding with other tests in the same process.
+        let id = format!("dup_{}", std::process::id());
 
-        register_tool_as("dup", EchoTool);
-        register_tool_as("dup", FailingTool);
-        assert_eq!(tool_count(), 1);
+        register_tool_as(&id, EchoTool);
+        register_tool_as(&id, FailingTool);
 
         // The second registration should have replaced the first
-        let tools = list_tools();
-        assert!(tools.contains(&"dup".to_string()));
+        let tool = get_tool(&id).expect("dup should be registered");
+        // FailingTool always errors, so the second registration is observable here.
+        let ctx = ToolContext {
+            tool_id: id.clone(),
+            input: serde_json::json!({}),
+            state: serde_json::json!(null),
+        };
+        assert!(tool.execute(&ctx).is_err(), "dup should be FailingTool, not EchoTool");
+
+        // Clean up so the global registry is not polluted for other tests.
+        remove_tool(&id);
     }
 
     #[test]
