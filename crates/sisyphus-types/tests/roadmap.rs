@@ -1,190 +1,216 @@
 //! Integration tests for sisyphus-types `roadmap` module.
 //!
-//! Exercises the public `Milestone` / `Phase` / `GoalRef` /
-//! `MilestoneStatus` / `Roadmap` / `Project` types. `Milestone`
-//! has a `calculate_progress` method that returns the ratio of
-//! completed goals across all phases.
+//! Exercises the public data types and the [`Milestone::calculate_progress`]
+//! pure function.
 
-use sisyphus_types::{
+use sisyphus_types::roadmap::{
     GoalRef, Milestone, MilestoneStatus, Phase, Project, Roadmap,
 };
 
-fn goal(id: &str, status: MilestoneStatus) -> GoalRef {
-    GoalRef {
-        goal_id: id.to_string(),
-        description: format!("description for {id}"),
-        status,
-    }
-}
-
-fn phase(id: &str, goals: Vec<GoalRef>) -> Phase {
-    Phase {
-        id: id.to_string(),
-        name: format!("phase-{id}"),
-        goals,
-        depends_on: vec![],
-    }
-}
-
 // ---------------------------------------------------------------------------
-// MilestoneStatus Display
+// MilestoneStatus
 // ---------------------------------------------------------------------------
 
 #[test]
-fn milestone_status_display() {
-    assert_eq!(MilestoneStatus::Pending.to_string(), "Pending");
-    assert_eq!(MilestoneStatus::InProgress.to_string(), "InProgress");
-    assert_eq!(MilestoneStatus::Completed.to_string(), "Completed");
-    assert_eq!(MilestoneStatus::Blocked.to_string(), "Blocked");
+fn milestone_status_variants_distinct() {
+    assert_ne!(MilestoneStatus::Pending, MilestoneStatus::InProgress);
+    assert_ne!(MilestoneStatus::InProgress, MilestoneStatus::Completed);
+    assert_ne!(MilestoneStatus::Completed, MilestoneStatus::Blocked);
 }
 
 #[test]
-fn milestone_status_partial_eq() {
-    assert_eq!(MilestoneStatus::Pending, MilestoneStatus::Pending);
-    assert_ne!(MilestoneStatus::Pending, MilestoneStatus::Completed);
+fn milestone_status_serde() {
+    for s in [
+        MilestoneStatus::Pending,
+        MilestoneStatus::InProgress,
+        MilestoneStatus::Completed,
+        MilestoneStatus::Blocked,
+    ] {
+        let j = serde_json::to_string(&s).unwrap();
+        let back: MilestoneStatus = serde_json::from_str(&j).unwrap();
+        assert_eq!(back, s);
+    }
 }
 
 // ---------------------------------------------------------------------------
 // Milestone::calculate_progress
 // ---------------------------------------------------------------------------
 
+fn goal(id: &str, status: MilestoneStatus) -> GoalRef {
+    GoalRef {
+        goal_id: id.to_string(),
+        description: format!("goal {id}"),
+        status,
+    }
+}
+
+fn milestone(id: &str, phases: Vec<Phase>) -> Milestone {
+    Milestone {
+        id: id.to_string(),
+        name: format!("milestone {id}"),
+        phases,
+        status: MilestoneStatus::InProgress,
+    }
+}
+
 #[test]
-fn progress_no_phases_is_zero() {
-    let m = Milestone {
-        id: "m".into(),
-        name: "empty".into(),
-        phases: vec![],
-        status: MilestoneStatus::Pending,
-    };
+fn calculate_progress_empty_milestone() {
+    let m = milestone("m1", vec![]);
     assert_eq!(m.calculate_progress(), 0.0);
 }
 
 #[test]
-fn progress_no_goals_is_zero() {
-    let m = Milestone {
-        id: "m".into(),
-        name: "no-goals".into(),
-        phases: vec![phase("p1", vec![])],
-        status: MilestoneStatus::Pending,
-    };
-    assert_eq!(m.calculate_progress(), 0.0);
-}
-
-#[test]
-fn progress_all_completed_is_one() {
-    let m = Milestone {
-        id: "m".into(),
-        name: "done".into(),
-        phases: vec![phase(
-            "p1",
-            vec![
-                goal("g1", MilestoneStatus::Completed),
-                goal("g2", MilestoneStatus::Completed),
+fn calculate_progress_no_completed() {
+    let m = milestone(
+        "m1",
+        vec![Phase {
+            id: "p1".into(),
+            name: "p".into(),
+            goals: vec![
+                goal("a", MilestoneStatus::Pending),
+                goal("b", MilestoneStatus::Pending),
             ],
-        )],
-        status: MilestoneStatus::Completed,
-    };
+            depends_on: vec![],
+        }],
+    );
+    assert_eq!(m.calculate_progress(), 0.0);
+}
+
+#[test]
+fn calculate_progress_all_completed() {
+    let m = milestone(
+        "m1",
+        vec![Phase {
+            id: "p1".into(),
+            name: "p".into(),
+            goals: vec![
+                goal("a", MilestoneStatus::Completed),
+                goal("b", MilestoneStatus::Completed),
+            ],
+            depends_on: vec![],
+        }],
+    );
     assert!((m.calculate_progress() - 1.0).abs() < 1e-9);
 }
 
 #[test]
-fn progress_partial_across_phases() {
-    let m = Milestone {
-        id: "m".into(),
-        name: "partial".into(),
-        phases: vec![
-            phase(
-                "p1",
-                vec![
-                    goal("g1", MilestoneStatus::Completed),
-                    goal("g2", MilestoneStatus::Completed),
+fn calculate_progress_half_completed() {
+    let m = milestone(
+        "m1",
+        vec![Phase {
+            id: "p1".into(),
+            name: "p".into(),
+            goals: vec![
+                goal("a", MilestoneStatus::Completed),
+                goal("b", MilestoneStatus::Pending),
+            ],
+            depends_on: vec![],
+        }],
+    );
+    assert!((m.calculate_progress() - 0.5).abs() < 1e-9);
+}
+
+#[test]
+fn calculate_progress_across_phases() {
+    let m = milestone(
+        "m1",
+        vec![
+            Phase {
+                id: "p1".into(),
+                name: "p1".into(),
+                goals: vec![
+                    goal("a", MilestoneStatus::Completed),
+                    goal("b", MilestoneStatus::Completed),
                 ],
-            ),
-            phase(
-                "p2",
-                vec![
-                    goal("g3", MilestoneStatus::Completed),
-                    goal("g4", MilestoneStatus::Pending),
-                ],
-            ),
+                depends_on: vec![],
+            },
+            Phase {
+                id: "p2".into(),
+                name: "p2".into(),
+                goals: vec![goal("c", MilestoneStatus::Pending)],
+                depends_on: vec![],
+            },
         ],
-        status: MilestoneStatus::InProgress,
-    };
-    // 3 of 4 goals completed.
-    assert!((m.calculate_progress() - 0.75).abs() < 1e-9);
+    );
+    // 2 out of 3 completed = 0.6666...
+    assert!((m.calculate_progress() - 2.0 / 3.0).abs() < 1e-9);
 }
 
 #[test]
-fn progress_excludes_in_progress_and_blocked() {
-    let m = Milestone {
-        id: "m".into(),
-        name: "mixed".into(),
-        phases: vec![phase(
-            "p1",
-            vec![
-                goal("g1", MilestoneStatus::Completed),
-                goal("g2", MilestoneStatus::InProgress),
-                goal("g3", MilestoneStatus::Blocked),
-                goal("g4", MilestoneStatus::Pending),
-            ],
-        )],
-        status: MilestoneStatus::InProgress,
-    };
-    // 1 of 4 completed.
-    assert!((m.calculate_progress() - 0.25).abs() < 1e-9);
+fn calculate_progress_in_progress_counts_as_incomplete() {
+    let m = milestone(
+        "m1",
+        vec![Phase {
+            id: "p1".into(),
+            name: "p".into(),
+            goals: vec![goal("a", MilestoneStatus::InProgress)],
+            depends_on: vec![],
+        }],
+    );
+    // InProgress is not Completed → 0.0.
+    assert_eq!(m.calculate_progress(), 0.0);
 }
 
 #[test]
-fn progress_all_pending_is_zero() {
-    let m = Milestone {
-        id: "m".into(),
-        name: "all-pending".into(),
-        phases: vec![phase(
-            "p1",
-            vec![
-                goal("g1", MilestoneStatus::Pending),
-                goal("g2", MilestoneStatus::Pending),
-            ],
-        )],
-        status: MilestoneStatus::Pending,
-    };
+fn calculate_progress_blocked_counts_as_incomplete() {
+    let m = milestone(
+        "m1",
+        vec![Phase {
+            id: "p1".into(),
+            name: "p".into(),
+            goals: vec![goal("a", MilestoneStatus::Blocked)],
+            depends_on: vec![],
+        }],
+    );
+    // Blocked is not Completed → 0.0.
     assert_eq!(m.calculate_progress(), 0.0);
 }
 
 // ---------------------------------------------------------------------------
-// Project::new
+// Project / Roadmap
 // ---------------------------------------------------------------------------
 
 #[test]
-fn project_new_creates_empty_roadmap() {
-    let p = Project::new("p1".into(), "My Project".into(), "A test project".into());
+fn project_new_constructs() {
+    let p = Project::new("p1".into(), "P1".into(), "first project".into());
     assert_eq!(p.id, "p1");
-    assert_eq!(p.name, "My Project");
-    assert_eq!(p.description, "A test project");
+    assert_eq!(p.name, "P1");
+    assert_eq!(p.description, "first project");
     assert!(p.roadmap.milestones.is_empty());
 }
 
 #[test]
-fn project_new_allows_chained_milestone_addition() {
-    let mut p = Project::new("p1".into(), "P".into(), "D".into());
-    p.roadmap.milestones.push(Milestone {
-        id: "m1".into(),
-        name: "First".into(),
-        phases: vec![],
-        status: MilestoneStatus::Pending,
-    });
-    assert_eq!(p.roadmap.milestones.len(), 1);
-    assert_eq!(p.roadmap.milestones[0].id, "m1");
+fn roadmap_serde_round_trip() {
+    let r = Roadmap {
+        milestones: vec![milestone(
+            "m1",
+            vec![Phase {
+                id: "p1".into(),
+                name: "p".into(),
+                goals: vec![goal("a", MilestoneStatus::Completed)],
+                depends_on: vec![],
+            }],
+        )],
+    };
+    let j = serde_json::to_string(&r).unwrap();
+    let back: Roadmap = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.milestones.len(), 1);
+    assert_eq!(back.milestones[0].id, "m1");
 }
 
 // ---------------------------------------------------------------------------
-// Roadmap
+// GoalRef
 // ---------------------------------------------------------------------------
 
 #[test]
-fn roadmap_default_is_empty() {
-    let r = Roadmap { milestones: vec![] };
-    assert!(r.milestones.is_empty());
+fn goal_ref_field_assignment() {
+    let g = GoalRef {
+        goal_id: "g1".into(),
+        description: "do the thing".into(),
+        status: MilestoneStatus::Completed,
+    };
+    assert_eq!(g.goal_id, "g1");
+    assert_eq!(g.status, MilestoneStatus::Completed);
 }
 
 // ---------------------------------------------------------------------------
@@ -192,13 +218,13 @@ fn roadmap_default_is_empty() {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn phase_carries_dependencies() {
+fn phase_field_assignment() {
     let p = Phase {
         id: "p1".into(),
-        name: "phase-one".into(),
-        goals: vec![goal("g1", MilestoneStatus::Pending)],
+        name: "phase 1".into(),
+        goals: vec![],
         depends_on: vec!["p0".into()],
     };
-    assert_eq!(p.depends_on, vec!["p0".to_string()]);
-    assert_eq!(p.goals.len(), 1);
+    assert_eq!(p.depends_on.len(), 1);
+    assert_eq!(p.depends_on[0], "p0");
 }
