@@ -161,8 +161,6 @@ impl Config {
         })
     }
 
-    /// Load configuration from a TOML file.
-    /// Load config from file.
     /// Load a configuration from a TOML file at `path`.
     ///
     /// Returns [`TypesError::ConfigReadError`] if the file cannot be read and

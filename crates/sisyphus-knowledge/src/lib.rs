@@ -7,7 +7,7 @@ use metrics::counter;
 use petgraph::graph::{DiGraph, NodeIndex};
 use petgraph::visit::EdgeRef;
 use serde::{Deserialize, Serialize};
-use sisyphus_types::asset::{AssetKind, AssetRelation, CognitiveAsset, RelationType};
+pub use sisyphus_types::asset::{AssetKind, AssetRelation, CognitiveAsset, RelationType};
 use sisyphus_types::tools::ToolSpec;
 use std::collections::HashMap;
 use std::sync::Arc;

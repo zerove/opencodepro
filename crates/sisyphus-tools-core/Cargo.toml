@@ -14,3 +14,6 @@ metrics = "0.24"
 sisyphus-types = { path = "../sisyphus-types" }
 tonic = "0.12"
 sisyphus-bridge-api = { path = "../sisyphus-bridge-api" }
+
+[dev-dependencies]
+tempfile = "3"
