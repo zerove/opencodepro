@@ -11,6 +11,15 @@
 //!
 //! ```
 //! use sisyphus_intel::token_budget::TokenBudgetTracker;
+//!
+//! // Reserve 25% of a 10k-token budget for higher-priority stages.
+//! let budget = TokenBudgetTracker::new(10_000, 0.25);
+//!
+//! budget.record(7_000);
+//! assert!(!budget.should_skip_llm()); // 3000 remaining > 2500 reserve
+//!
+//! budget.record(1_000);
+//! assert!(budget.should_skip_llm()); // 2000 remaining < 2500 reserve
 //! ```
 
 use parking_lot::Mutex;
