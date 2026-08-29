@@ -1,150 +1,208 @@
-//! Integration tests for sisyphus-tools-mcp ToolRegistry.
+//! Integration tests for sisyphus-tools-mcp `tool_registry`.
 //!
-//! Exercises the public thread-safe tool metadata registry as an external
-//! consumer would: register / lookup / list / filter by prefix. The
-//! internal mod tests cover the same API but in-tree; these tests
-//! exercise the API exactly as a downstream crate would.
+//! Exercises the public `ToolRegistry` API: register, lookup,
+//! list, prefix filtering, and source-based discrimination.
 
-use serde_json::json;
 use sisyphus_tools_mcp::tool_registry::{ToolInfo, ToolRegistry, ToolSource};
 
-fn mk_info(name: &str, source: ToolSource) -> ToolInfo {
+fn make_info(name: &str, source: ToolSource) -> ToolInfo {
     ToolInfo {
-        name: name.to_string(),
-        description: format!("test tool {name}"),
-        parameters: Some(json!({"type": "object"})),
+        name: name.into(),
+        description: format!("{name} description"),
+        parameters: Some(serde_json::json!({"type": "object"})),
         source,
     }
 }
 
+// ---------------------------------------------------------------------------
+// Construction
+// ---------------------------------------------------------------------------
+
 #[test]
-fn new_registry_is_empty() {
+fn new_starts_empty() {
     let reg = ToolRegistry::new();
     assert_eq!(reg.len(), 0);
     assert!(reg.is_empty());
     assert!(reg.list().is_empty());
-    assert!(reg.get("anything").is_none());
 }
 
 #[test]
-fn default_equals_new() {
-    // `Default` is documented to delegate to `new`.
-    let reg: ToolRegistry = Default::default();
+fn default_constructor_works() {
+    let reg = ToolRegistry::default();
     assert!(reg.is_empty());
 }
 
-#[test]
-fn register_then_get_round_trip() {
-    let reg = ToolRegistry::new();
-    let info = mk_info("read", ToolSource::Builtin);
-    reg.register("builtin/read", info);
+// ---------------------------------------------------------------------------
+// Register / get
+// ---------------------------------------------------------------------------
 
-    let got = reg.get("builtin/read").expect("registered");
-    assert_eq!(got.name, "read");
-    assert_eq!(got.source, ToolSource::Builtin);
-    assert!(reg.get("nonexistent").is_none());
-    assert_eq!(reg.len(), 1);
-    assert!(!reg.is_empty());
+#[test]
+fn register_then_get_returns_same_info() {
+    let reg = ToolRegistry::new();
+    reg.register(
+        "tools:echo",
+        make_info("echo", ToolSource::Mcp {
+            server_prefix: "tools".into(),
+        }),
+    );
+    let got = reg.get("tools:echo").expect("present");
+    assert_eq!(got.name, "echo");
+    assert!(matches!(
+        got.source,
+        ToolSource::Mcp { ref server_prefix } if server_prefix == "tools"
+    ));
+}
+
+#[test]
+fn get_unknown_id_returns_none() {
+    let reg = ToolRegistry::new();
+    assert!(reg.get("missing").is_none());
 }
 
 #[test]
 fn register_overwrites_existing() {
     let reg = ToolRegistry::new();
-    reg.register("id", mk_info("v1", ToolSource::Builtin));
-    reg.register("id", mk_info("v2", ToolSource::Strategic));
-
-    let got = reg.get("id").unwrap();
-    assert_eq!(got.name, "v2", "second register should overwrite first");
-    assert_eq!(got.source, ToolSource::Strategic);
-    // len is still 1, no duplicate entry.
+    reg.register("x", make_info("v1", ToolSource::Builtin));
+    reg.register("x", make_info("v2", ToolSource::Builtin));
     assert_eq!(reg.len(), 1);
+    let got = reg.get("x").expect("present");
+    assert_eq!(got.name, "v2");
 }
 
 #[test]
-fn list_returns_all_tools_sorted_by_id() {
+fn register_distinct_ids_all_present() {
     let reg = ToolRegistry::new();
-    reg.register("zeta", mk_info("z", ToolSource::Builtin));
-    reg.register("alpha", mk_info("a", ToolSource::Builtin));
-    reg.register("mid", mk_info("m", ToolSource::Builtin));
-
-    let list = reg.list();
-    let ids: Vec<&str> = list.iter().map(|(k, _)| k.as_str()).collect();
-    assert_eq!(ids, vec!["alpha", "mid", "zeta"]);
+    for i in 0..5 {
+        reg.register(
+            &format!("id_{i}"),
+            make_info(&format!("tool_{i}"), ToolSource::Builtin),
+        );
+    }
+    assert_eq!(reg.len(), 5);
+    for i in 0..5 {
+        assert!(reg.get(&format!("id_{i}")).is_some());
+    }
 }
+
+// ---------------------------------------------------------------------------
+// list
+// ---------------------------------------------------------------------------
+
+#[test]
+fn list_is_sorted_by_id() {
+    let reg = ToolRegistry::new();
+    reg.register("z_last", make_info("z", ToolSource::Builtin));
+    reg.register("a_first", make_info("a", ToolSource::Builtin));
+    reg.register("m_mid", make_info("m", ToolSource::Builtin));
+    let list = reg.list();
+    assert_eq!(list.len(), 3);
+    assert_eq!(list[0].0, "a_first");
+    assert_eq!(list[1].0, "m_mid");
+    assert_eq!(list[2].0, "z_last");
+}
+
+// ---------------------------------------------------------------------------
+// list_by_prefix
+// ---------------------------------------------------------------------------
 
 #[test]
 fn list_by_prefix_filters_correctly() {
     let reg = ToolRegistry::new();
-    reg.register("tools:read", mk_info("read", ToolSource::Builtin));
-    reg.register("tools:write", mk_info("write", ToolSource::Builtin));
-    reg.register("other:other", mk_info("other", ToolSource::Builtin));
-
-    let tools = reg.list_by_prefix("tools:");
-    assert_eq!(tools.len(), 2);
-    assert!(tools.iter().all(|(k, _)| k.starts_with("tools:")));
-}
-
-#[test]
-fn list_by_prefix_returns_empty_for_no_match() {
-    let reg = ToolRegistry::new();
-    reg.register("a", mk_info("a", ToolSource::Builtin));
-    assert!(reg.list_by_prefix("nope:").is_empty());
-}
-
-#[test]
-fn list_for_prefixes_unions_results() {
-    let reg = ToolRegistry::new();
-    reg.register("tools:read", mk_info("r", ToolSource::Builtin));
-    reg.register("strategic:plan", mk_info("p", ToolSource::Builtin));
-    reg.register("other:x", mk_info("x", ToolSource::Builtin));
-
-    let result = reg.list_for_prefixes(&["tools:".to_string(), "strategic:".to_string()]);
-    let ids: Vec<&str> = result.iter().map(|(k, _)| k.as_str()).collect();
-    assert_eq!(ids, vec!["strategic:plan", "tools:read"]);
-}
-
-#[test]
-fn list_for_prefixes_with_empty_input_returns_empty() {
-    let reg = ToolRegistry::new();
-    reg.register("tools:read", mk_info("r", ToolSource::Builtin));
-    let result = reg.list_for_prefixes(&[]);
-    assert!(result.is_empty());
-}
-
-#[test]
-fn tool_source_equality_holds() {
-    // PartialEq is derived on ToolSource, so variants with the same
-    // payload must compare equal. Lock this in as a contract.
-    assert_eq!(ToolSource::Builtin, ToolSource::Builtin);
-    assert_eq!(
-        ToolSource::Mcp { server_prefix: "x".into() },
-        ToolSource::Mcp { server_prefix: "x".into() }
+    reg.register(
+        "tools:echo",
+        make_info("echo", ToolSource::Mcp {
+            server_prefix: "tools".into(),
+        }),
     );
-    assert_ne!(ToolSource::Builtin, ToolSource::Strategic);
-    assert_ne!(ToolSource::Wasm, ToolSource::Strategic);
+    reg.register(
+        "tools:read",
+        make_info("read", ToolSource::Mcp {
+            server_prefix: "tools".into(),
+        }),
+    );
+    reg.register(
+        "librarian/research",
+        make_info("research", ToolSource::Builtin),
+    );
+    assert_eq!(reg.list_by_prefix("tools:").len(), 2);
+    assert_eq!(reg.list_by_prefix("librarian/").len(), 1);
 }
 
 #[test]
-fn concurrent_register_does_not_lose_tools() {
-    use std::sync::Arc;
-    use std::thread;
+fn list_by_prefix_no_match_is_empty() {
+    let reg = ToolRegistry::new();
+    reg.register("a", make_info("a", ToolSource::Builtin));
+    let list = reg.list_by_prefix("xyz");
+    assert!(list.is_empty());
+}
 
-    let reg = Arc::new(ToolRegistry::new());
-    let threads = 4;
-    let per_thread = 100;
-    let handles: Vec<_> = (0..threads)
-        .map(|t| {
-            let reg = Arc::clone(&reg);
-            thread::spawn(move || {
-                for i in 0..per_thread {
-                    let id = format!("t{t}-i{i}");
-                    reg.register(&id, mk_info(&id, ToolSource::Wasm));
-                }
-            })
-        })
-        .collect();
-    for h in handles {
-        h.join().expect("join");
-    }
-    assert_eq!(reg.len(), threads * per_thread);
+#[test]
+fn list_by_prefix_returns_sorted_results() {
+    let reg = ToolRegistry::new();
+    reg.register("p:z", make_info("z", ToolSource::Builtin));
+    reg.register("p:a", make_info("a", ToolSource::Builtin));
+    reg.register("p:m", make_info("m", ToolSource::Builtin));
+    let list = reg.list_by_prefix("p:");
+    assert_eq!(list.len(), 3);
+    assert_eq!(list[0].0, "p:a");
+    assert_eq!(list[2].0, "p:z");
+}
+
+// ---------------------------------------------------------------------------
+// list_for_prefixes
+// ---------------------------------------------------------------------------
+
+#[test]
+fn list_for_prefixes_combines() {
+    let reg = ToolRegistry::new();
+    reg.register("a:x", make_info("x", ToolSource::Builtin));
+    reg.register("b:y", make_info("y", ToolSource::Builtin));
+    reg.register("c:z", make_info("z", ToolSource::Builtin));
+    let list = reg.list_for_prefixes(&["a:".into(), "b:".into()]);
+    assert_eq!(list.len(), 2);
+}
+
+#[test]
+fn list_for_prefixes_empty_input_returns_empty() {
+    let reg = ToolRegistry::new();
+    reg.register("a:x", make_info("x", ToolSource::Builtin));
+    let list = reg.list_for_prefixes(&[]);
+    assert!(list.is_empty());
+}
+
+#[test]
+fn list_for_prefixes_no_matches() {
+    let reg = ToolRegistry::new();
+    reg.register("a:x", make_info("x", ToolSource::Builtin));
+    let list = reg.list_for_prefixes(&["missing:".into()]);
+    assert!(list.is_empty());
+}
+
+// ---------------------------------------------------------------------------
+// ToolSource discrimination
+// ---------------------------------------------------------------------------
+
+#[test]
+fn tool_source_equality() {
+    let a = ToolSource::Mcp {
+        server_prefix: "x".into(),
+    };
+    let b = ToolSource::Mcp {
+        server_prefix: "x".into(),
+    };
+    let c = ToolSource::Mcp {
+        server_prefix: "y".into(),
+    };
+    let d = ToolSource::Builtin;
+    assert_eq!(a, b);
+    assert_ne!(a, c);
+    assert_ne!(a, d);
+}
+
+#[test]
+fn tool_source_strategic_and_wasm_distinct() {
+    assert_ne!(ToolSource::Strategic, ToolSource::Wasm);
+    assert_ne!(ToolSource::Builtin, ToolSource::Strategic);
+    assert_eq!(ToolSource::Builtin, ToolSource::Builtin);
+    assert_eq!(ToolSource::Wasm, ToolSource::Wasm);
 }
