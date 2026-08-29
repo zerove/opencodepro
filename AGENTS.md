@@ -57,7 +57,11 @@ opencodepro/
 | gRPC 服务 | `crates/sisyphus-bridge/src/` | tonic services |
 | REST API | `crates/sisyphus-bridge/src/http.rs` | axum + OpenAPI 3.1（独立 sisyphus-api 已归档至 ide/api）|
 | Web 仪表盘 | `webui/` | axum + HTMX + SSE |
-| Rust SDK | `ide/sdk/`（已归档） | REST 客户端；活跃 SDK 见 ide/python-sdk、ide/go-sdk |
+| Rust SDK | `ide/sdk/`（已归档） | REST 客户端；活跃 SDK 见 ide/python-sdk、ide/go-sdk、ide/typescript-sdk |
+| TypeScript SDK | `ide/typescript-sdk/` | vitest, npm 包，CI 跑 build + test |
+| VSCode 扩展 | `ide/vscode/` | TypeScript 扩展，本地开发 |
+| Zed 扩展 | `ide/zed/` | Rust 扩展（lib.rs + extension.toml），本地开发 |
+| 已归档 IDE | `ide/api/`, `ide/sdk/`, `ide/tauri/` | 历史方向冻结，不在 CI 范围内 |
 | 知识管理 | `crates/sisyphus-knowledge/` | KnowledgeGraph, AssetManager |
 | 战略规划 | `crates/sisyphus-roadmap/` | RoadmapManager, 里程碑生成 |
 | 沙箱守护进程 | `crates/sisyphus-sandboxd/` | gRPC 通信、进程隔离 |
