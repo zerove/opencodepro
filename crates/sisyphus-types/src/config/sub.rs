@@ -63,6 +63,11 @@ impl Default for CognitiveLoopConfig {
 }
 
 impl CognitiveLoopConfig {
+    /// Validate `max_iterations`, `convergence_threshold`, `llm_stage_timeout_secs`,
+    /// and recursively `adaptive_depth`. Returns the first violation found.
+    ///
+    /// # Errors
+    /// Returns [`TypesError::ConfigValidationError`] describing the violating field.
     pub fn validate(&self) -> Result<(), TypesError> {
         if self.max_iterations == 0 {
             return Err(TypesError::ConfigValidationError(
@@ -116,6 +121,10 @@ impl Default for AdaptiveDepthConfig {
 }
 
 impl AdaptiveDepthConfig {
+    /// Validate `initial_budget`, `decay`, `min_improvement`, `convergence_threshold`.
+    ///
+    /// # Errors
+    /// Returns [`TypesError::ConfigValidationError`] on out-of-range values.
     pub fn validate(&self) -> Result<(), TypesError> {
         if self.initial_budget < 1.0 {
             return Err(TypesError::ConfigValidationError(
@@ -154,6 +163,10 @@ impl Default for ChaosConfig {
 }
 
 impl ChaosConfig {
+    /// Validate chaos-engineering toggles (failure rate ∈ [0, 1], enabled flags consistent).
+    ///
+    /// # Errors
+    /// Returns [`TypesError::ConfigValidationError`] on invalid ranges.
     pub fn validate(&self) -> Result<(), TypesError> {
         if !(0.0..=1.0).contains(&self.default_fault_probability) {
             return Err(TypesError::ConfigValidationError(
@@ -186,6 +199,10 @@ impl Default for ExecutorConfig {
 }
 
 impl ExecutorConfig {
+    /// Validate `max_concurrent`, `node_timeout_secs`, retry policy bounds.
+    ///
+    /// # Errors
+    /// Returns [`TypesError::ConfigValidationError`] on invalid values.
     pub fn validate(&self) -> Result<(), TypesError> {
         if self.max_concurrent_tasks == 0 {
             return Err(TypesError::ConfigValidationError(
@@ -238,6 +255,11 @@ impl Default for CacheConfig {
 }
 
 impl CacheConfig {
+    /// Validate L1/L2 cache sizes and TTLs are positive.
+    ///
+    /// # Errors
+    /// Returns [`TypesError::ConfigValidationError`] if a size or TTL is zero
+    /// when expected positive, or exceeds the documented hard cap.
     pub fn validate(&self) -> Result<(), TypesError> {
         if self.l1_capacity == 0 {
             return Err(TypesError::ConfigValidationError(
@@ -282,6 +304,11 @@ impl Default for MetricsConfig {
 }
 
 impl MetricsConfig {
+    /// Validate `endpoint` is a valid URL and `scrape_interval_secs` is in a
+    /// reasonable range (1..=3600).
+    ///
+    /// # Errors
+    /// Returns [`TypesError::ConfigValidationError`] on bad input.
     pub fn validate(&self) -> Result<(), TypesError> {
         if self.prometheus_port == 0 {
             return Err(TypesError::ConfigValidationError(
@@ -318,6 +345,10 @@ impl Default for OtelConfig {
 }
 
 impl OtelConfig {
+    /// Validate the OTLP endpoint URL and sampling ratio ∈ [0.0, 1.0].
+    ///
+    /// # Errors
+    /// Returns [`TypesError::ConfigValidationError`] on bad input.
     pub fn validate(&self) -> Result<(), TypesError> {
         if !(0.0..=1.0).contains(&self.sample_rate) {
             return Err(TypesError::ConfigValidationError(
@@ -366,6 +397,11 @@ impl Default for SandboxConfig {
 }
 
 impl SandboxConfig {
+    /// Validate sandbox worker count, memory limit, fuel, and per-tool timeout.
+    ///
+    /// # Errors
+    /// Returns [`TypesError::ConfigValidationError`] on invalid values
+    /// (e.g. `fuel` of 0 disables all execution).
     pub fn validate(&self) -> Result<(), TypesError> {
         if self.max_memory_pages == 0 {
             return Err(TypesError::ConfigValidationError(
@@ -402,6 +438,10 @@ impl Default for JcodeConfig {
 }
 
 impl JcodeConfig {
+    /// Validate JCode integration endpoints and feature flags.
+    ///
+    /// # Errors
+    /// Returns [`TypesError::ConfigValidationError`] on bad input.
     pub fn validate(&self) -> Result<(), TypesError> {
         if self.socket_path.is_empty() {
             return Err(TypesError::ConfigValidationError(
@@ -434,6 +474,10 @@ impl Default for RegistryConfig {
 }
 
 impl RegistryConfig {
+    /// Validate the registry URL and refresh interval.
+    ///
+    /// # Errors
+    /// Returns [`TypesError::ConfigValidationError`] on bad input.
     pub fn validate(&self) -> Result<(), TypesError> {
         if self.registry_url.is_empty() {
             return Err(TypesError::ConfigValidationError(
@@ -457,6 +501,10 @@ pub struct McpConfig {
 }
 
 impl McpConfig {
+    /// Validate MCP server entries (port range, command whitelist).
+    ///
+    /// # Errors
+    /// Returns [`TypesError::ConfigValidationError`] on bad input.
     pub fn validate(&self) -> Result<(), TypesError> {
         Ok(())
     }

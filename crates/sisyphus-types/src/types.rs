@@ -260,6 +260,8 @@ pub struct NotepadSnapshot {
 }
 
 impl SisyphusNotepad {
+    /// Write a new section to the notepad, overwriting any existing section
+    /// with the same id.
     pub fn write_section(&mut self, id: String, content: String) {
         self.sections.insert(id, content);
     }
@@ -277,10 +279,13 @@ impl SisyphusNotepad {
         self.sections.insert(section_id, new_content);
     }
 
+    /// Read a section by id. Returns `None` if the section does not exist.
     pub fn read_section(&self, id: &str) -> Option<&String> {
         self.sections.get(id)
     }
 
+    /// Capture a snapshot of the current notepad state under `node_name`
+    /// for later replay or analysis.
     pub fn take_snapshot(&mut self, node_name: String) {
         self.history.push(NotepadSnapshot {
             timestamp: std::time::SystemTime::now()
@@ -292,6 +297,9 @@ impl SisyphusNotepad {
         });
     }
 
+    /// Drop the oldest sections until at most `max_insights` remain.
+    ///
+    /// Used to bound memory in long-running executions.
     pub fn prune(&mut self, max_insights: usize) {
         let mut to_update = Vec::new();
         for (id, content) in self.sections.iter() {

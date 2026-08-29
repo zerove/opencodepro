@@ -122,6 +122,10 @@ fn default_connect_timeout_secs() -> u64 {
     2
 }
 
+/// Return the built-in default LLM configuration.
+///
+/// Used when no `[llm]` table exists in `sisyphus.toml` and no env-var
+/// override is set. Points at a local llama.cpp server on port 8000.
 pub fn default_llm_config() -> LlmConfig {
     LlmConfig {
         api_key: "".into(),

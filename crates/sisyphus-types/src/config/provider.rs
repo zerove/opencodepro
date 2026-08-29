@@ -69,6 +69,10 @@ fn default_provider_enabled() -> bool {
 }
 
 impl ProviderKind {
+    /// Canonical lowercase name of the provider (e.g. `"openai"`, `"anthropic"`).
+    ///
+    /// Stable for serialization; **do not** use the variant name (which may be
+    /// `OpenAI` in Rust but `"openai"` on the wire).
     pub fn as_str(&self) -> &'static str {
         match self {
             ProviderKind::OpenAi => "openai",

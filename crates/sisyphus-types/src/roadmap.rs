@@ -43,6 +43,8 @@ pub struct Milestone {
 }
 
 impl Milestone {
+    /// Calculate overall progress in `[0.0, 1.0]` as the weighted mean of
+    /// the progress of each child milestone.
     pub fn calculate_progress(&self) -> f64 {
         let total_goals: usize = self.phases.iter().map(|p| p.goals.len()).sum();
         if total_goals == 0 {
@@ -72,6 +74,8 @@ pub struct Project {
 }
 
 impl Project {
+    /// Construct a new milestone in the `Pending` state with the given id,
+    /// name, and description.
     pub fn new(id: String, name: String, description: String) -> Self {
         Self {
             id,

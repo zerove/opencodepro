@@ -403,6 +403,9 @@ pub struct VisualSOPNode {
 }
 
 impl VisualSOPNode {
+    /// Create a new node stub with `name` and `kind`, leaving inputs/outputs empty.
+    ///
+    /// Most callers should use [`NodeBuilder`] for richer construction.
     pub fn new(name: String, kind: NodeKind) -> Self {
         Self { name, kind }
     }

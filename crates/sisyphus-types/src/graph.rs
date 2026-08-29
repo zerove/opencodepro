@@ -33,6 +33,7 @@ pub struct CompositeGraph {
 }
 
 impl CompositeGraph {
+    /// Create an empty graph registry (no SOPs, no cross-graph dependencies).
     pub fn new() -> Self {
         Self {
             graphs: HashMap::new(),
@@ -41,10 +42,14 @@ impl CompositeGraph {
         }
     }
 
+    /// Register a new SOP graph under `sop_id`. Replaces any existing graph
+    /// with the same id.
     pub fn add_graph(&mut self, sop_id: &str, config: SOPGraphConfig) {
         self.graphs.insert(sop_id.to_string(), config);
     }
 
+    /// Add a cross-SOP dependency: `from_sop` must complete before `to_sop`
+    /// can start.
     pub fn add_dependency(&mut self, dep: GraphDependency) {
         self.dependencies.push(dep);
     }
@@ -105,6 +110,11 @@ pub struct SOPGraphConfig {
 }
 
 impl SOPGraphConfig {
+    /// Build an executable graph from a [`SOPGraph`] config.
+    ///
+    /// # Errors
+    /// Returns [`TypesError::GraphError`] on invalid node ids or missing
+    /// entry points.
     pub fn from_graph(graph: &SOPGraph) -> Result<Self, TypesError> {
         let mut nodes = Vec::new();
         let mut node_indices = HashMap::new();
@@ -133,6 +143,10 @@ impl SOPGraphConfig {
         Ok(Self { nodes, edges })
     }
 
+    /// Convert this graph into a `CognitivePlan` ready for the
+    /// `execute_with_cognition` driver.
+    ///
+    /// Adds default reflection / evolution hooks if they are not present.
     pub fn into_cognitive_plan(
         self,
         plan_id: String,
@@ -211,6 +225,7 @@ impl Default for SOPGraph {
 }
 
 impl SOPGraph {
+    /// Create an empty graph registry (no SOPs, no cross-graph dependencies).
     pub fn new() -> Self {
         Self {
             graph: DiGraph::new(),
@@ -219,6 +234,10 @@ impl SOPGraph {
         }
     }
 
+    /// Construct an executable graph directly from a [`SOPGraphConfig`].
+    ///
+    /// Equivalent to `from_graph(&SOPGraph::from_config(cfg)?)` but skips
+    /// the intermediate value.
     pub fn from_config(
         config: &SOPGraphConfig,
         executor: Arc<dyn crate::node::ToolExecutor>,
@@ -333,10 +352,13 @@ impl SOPGraph {
         }))
     }
 
+    /// Add a runtime node to the executable graph and return its index.
     pub fn add_node(&mut self, node: Arc<dyn SOPNode>) -> NodeIndex {
         self.graph.add_node(node)
     }
 
+    /// Add a directed edge from `from` to `to`. Panics if either index
+    /// is invalid (use [`Self::add_node`] first).
     pub fn add_edge(&mut self, from: NodeIndex, to: NodeIndex) {
         self.graph.add_edge(from, to, ());
     }

@@ -63,6 +63,10 @@ impl<'de> Deserialize<'de> for NodeOutput {
 }
 
 impl NodeOutput {
+    /// Consume the wrapper and return the inner [`serde_json::Value`].
+    ///
+    /// Use when the caller needs to inspect the underlying JSON without
+    /// a typed schema.
     pub fn into_inner(self) -> Value {
         Arc::unwrap_or_clone(self.0)
     }
@@ -372,6 +376,7 @@ impl Default for ExecutionContext {
 }
 
 impl ExecutionContext {
+    /// Create a new, empty execution context (no results, no trace points).
     pub fn new() -> Self {
         Self {
             results: DashMap::new(),
@@ -423,6 +428,10 @@ impl ExecutionContext {
         }
     }
 
+    /// Record the output of a single node in this context.
+    ///
+    /// Overwrites any previous result for `node_name`. Used by the executor
+    /// after each node completes.
     pub fn set_result(&self, node_name: String, output: NodeOutput) {
         self.results.insert(node_name.clone(), output);
         if let Ok(mut last) = self.last_node_completed.write() {
@@ -430,6 +439,7 @@ impl ExecutionContext {
         }
     }
 
+    /// Append a single trace point to the execution history.
     pub fn push_trace_point(&self, point: TracePoint) {
         if let Ok(mut trace) = self.trace.write() {
             trace.push(point);
@@ -438,6 +448,8 @@ impl ExecutionContext {
         }
     }
 
+    /// Look up the recorded output for `node_name`. Returns `None` if the
+    /// node has not yet produced a result.
     pub fn get_result(&self, node_name: &str) -> Option<NodeOutput> {
         self.results.get(node_name).map(|r| r.clone())
     }
@@ -448,6 +460,11 @@ impl ExecutionContext {
         last_node.and_then(|name| self.get_result(&name))
     }
 
+    /// Write a `section` in the per-execution notepad, overwriting any
+    /// previous content for that section.
+    ///
+    /// The notepad is a side-channel for nodes to share intermediate findings
+    /// without going through the typed `outputs` map.
     pub fn write_notepad(&self, section: String, content: String) {
         match self.notepad.write() {
             Ok(mut notepad) => {
@@ -459,6 +476,8 @@ impl ExecutionContext {
         }
     }
 
+    /// Read a `section` from the notepad. Returns `None` if the section
+    /// was never written.
     pub fn read_notepad(&self, section: &str) -> Option<String> {
         match self.notepad.read() {
             Ok(notepad) => notepad.read_section(section).cloned(),
@@ -469,6 +488,9 @@ impl ExecutionContext {
         }
     }
 
+    /// Drop the oldest notepad sections until at most `max_insights` remain.
+    ///
+    /// Used to bound memory in long-running cognitive-loop executions.
     pub fn prune_notepad(&self, max_insights: usize) {
         match self.notepad.write() {
             Ok(mut notepad) => {
@@ -480,6 +502,10 @@ impl ExecutionContext {
         }
     }
 
+    /// Export the full execution trace (results + notepad + trace points)
+    /// as a JSON-serializable snapshot for offline analysis.
+    ///
+    /// The snapshot can be re-loaded with `Trace::import` (in sisyphus-intel).
     pub fn export_trace(
         &self,
         sop_id: String,
@@ -495,6 +521,11 @@ impl ExecutionContext {
         }
     }
 
+    /// Render `template` by substituting `{{var}}` placeholders with
+    /// results from this context.
+    ///
+    /// Unknown placeholders are left as-is. Used to build LLM prompts from
+    /// upstream node outputs.
     pub fn interpolate(&self, template: &str) -> String {
         let mut output = template.to_string();
         for item in self.results.iter() {
