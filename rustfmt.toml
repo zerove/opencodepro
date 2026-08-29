@@ -1,0 +1,25 @@
+# Sisyphus rustfmt configuration (forward-looking).
+#
+# These settings document the formatting standard for new code. The
+# existing codebase has not been regenerated with this config — running
+# `cargo fmt --all` on it would produce thousands of diffs because the
+# project predates the `chain_width = 100` default that came with
+# rustfmt 2.x.
+#
+# To bring existing code into compliance, do it incrementally per-file
+# via `cargo fmt -p <crate> -- <path>` after editing. Do not run
+# `cargo fmt --all` in a single commit.
+#
+# Stable options only. The unstable options we'd like (imports_granularity,
+# group_imports, etc.) are gated on nightly and would produce warnings on
+# stable — see https://github.com/rust-lang/rustfmt/issues/5085.
+
+edition = "2021"
+# max_width and chain_width = 100 fit GitHub PR review screens and
+# match the prevailing style for new files added in 2025+.
+max_width = 100
+chain_width = 100
+use_try_shorthand = true
+reorder_imports = true
+reorder_modules = true
+match_block_trailing_comma = true

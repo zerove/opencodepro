@@ -1,0 +1,29 @@
+# Sisyphus clippy configuration.
+#
+# Tuned to be more permissive than the default for production code (so
+# nightly churn doesn't break unrelated crates) but stricter on key
+# quality invariants that the ADR-007 standard requires.
+#
+# Suppress noisy default lints:
+# - `clippy::result_large_err` — `tonic::Status` is large; we use anyhow/Result
+#   for most call sites and don't want to fight the generated gRPC code.
+# - `clippy::needless_lifetimes` — explicit lifetimes in trait definitions
+#   are intentional for clarity in shared types.
+# - `clippy::module_name_repetitions` — `SisyphusKernel` in
+#   `sisyphus_core::SisyphusKernel` is the project name, not redundant.
+# - `clippy::missing_errors_doc` — we document public fns at the type level
+#   rather than per-error-variant.
+
+avoid-breaking-exported-api = false
+
+# Raise thresholds for "subjective" lints. These are useful guidance, not
+# rules — we'd rather flag for review than auto-fail CI.
+cognitive-complexity-threshold = 30
+too-many-arguments-threshold = 8
+type-complexity-threshold = 300
+single-char-binding-names-threshold = 6
+
+# We deliberately allow `expect`/`unwrap` in tests and benchmarks.
+# Production lints are still on (default) — see the project's ADR-007.
+allow-expect-in-tests = true
+allow-unwrap-in-tests = true
