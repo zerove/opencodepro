@@ -51,7 +51,8 @@ static UNWRAP_RE: std::sync::OnceLock<Regex> = std::sync::OnceLock::new();
 static PANIC_RE: std::sync::OnceLock<Regex> = std::sync::OnceLock::new();
 
 /// 触发 test 模式的属性注解。
-static TEST_ATTR_RE: std::sync::OnceLock<Regex> = std::sync::OnceLock::new();
+static MOD_TEST_ATTR_RE: std::sync::OnceLock<Regex> = std::sync::OnceLock::new();
+static FN_TEST_ATTR_RE: std::sync::OnceLock<Regex> = std::sync::OnceLock::new();
 
 /// 注释行 + `#[allow(...)]` 豁免。
 static COMMENT_OR_ALLOW_RE: std::sync::OnceLock<Regex> = std::sync::OnceLock::new();
@@ -69,8 +70,16 @@ fn panic_re() -> &'static Regex {
     })
 }
 
-fn test_attr_re() -> &'static Regex {
-    TEST_ATTR_RE.get_or_init(|| Regex::new(r"#\[(cfg\(test\)|test|tokio::test|case)\]").expect("valid regex"))
+/// `#[cfg(test)]` 注解 (mod 边界): 整个 mod 视为 test 代码
+fn mod_test_attr_re() -> &'static Regex {
+    MOD_TEST_ATTR_RE.get_or_init(|| Regex::new(r"#\[cfg\(test\)\]").expect("valid regex"))
+}
+
+/// `#[test]` / `#[tokio::test]` 注解 (fn 边界): 用于扩展测试覆盖
+/// (虽然 `cfg(test)` 已覆盖, 但显式记录 fn 边界便于将来基于
+/// 单 fn 粒度跳过; 当前实现与 mod_test_attr 行为等价)
+fn fn_test_attr_re() -> &'static Regex {
+    FN_TEST_ATTR_RE.get_or_init(|| Regex::new(r"#\[(test|tokio::test|case)\]").expect("valid regex"))
 }
 
 fn comment_or_allow_re() -> &'static Regex {
@@ -110,36 +119,42 @@ fn find_production_panics(path: &Path) -> Vec<Hit> {
         return Vec::new();
     };
 
-    let mut in_test = false;
     let mut brace_depth: i32 = 0;
-    let mut test_brace_depth: i32 = -1;
+    // Stack of test-brace-depths. Each entry = active test scope
+    // (#[cfg(test)] mod or #[test] fn). Supports arbitrary nesting.
+    let mut test_stack: Vec<i32> = Vec::new();
     let mut hits = Vec::new();
 
     for (line_no, line) in text.lines().enumerate() {
         let ln = (line_no + 1) as u32;
 
-        // 进入 test mod
-        if test_attr_re().is_match(line) {
-            in_test = true;
-            test_brace_depth = brace_depth;
+        // 进入 test scope: #[cfg(test)] mod 或 #[test] fn
+        if mod_test_attr_re().is_match(line) || fn_test_attr_re().is_match(line) {
+            test_stack.push(brace_depth);
         }
 
         // 跟踪 brace 深度
+        
         for ch in line.chars() {
             match ch {
-                '{' => brace_depth += 1,
+                '{' => { brace_depth += 1; }
                 '}' => {
                     brace_depth -= 1;
-                    if in_test && test_brace_depth >= 0 && brace_depth <= test_brace_depth {
-                        in_test = false;
-                        test_brace_depth = -1;
+                    
+                    while let Some(&top) = test_stack.last() {
+                        if brace_depth <= top {
+                            test_stack.pop();
+                        } else {
+                            break;
+                        }
                     }
+
                 }
                 _ => {}
             }
         }
 
-        if in_test {
+        if !test_stack.is_empty() {
             continue;
         }
         if comment_or_allow_re().is_match(line) {
@@ -148,14 +163,11 @@ fn find_production_panics(path: &Path) -> Vec<Hit> {
 
         if let Some(caps) = unwrap_re().captures(line) {
             // caps.get(1) = "unwrap" or "expect"
-            // 排除字符串字面量内的 ".unwrap()":
-            //   数 match 位置之前的 `"` 出现次数, 奇数 = 在字符串内
-            //   简化: 不处理转义 (r#""..."# 会漏报, 但场景罕见)
-            let match_start = caps.get(0).unwrap().start();
-            let quotes_before = line[..match_start].matches('"').count();
-            if quotes_before % 2 == 1 {
-                continue;
-            }
+            // 取消字符串字面量误报处理 (历史 bug):
+            //   quote 计数会把 "x".parse().unwrap() 误判为字符串内
+            //   (" 前有 1 个 " → 奇数 → 跳过), 漏报真实违规。
+            // 接受偶发误报 (如 r#""x".unwrap()"#) 以换取零漏报。
+            let _match_start = caps.get(0).unwrap().start();
             let kind = caps
                 .get(1)
                 .map(|m| m.as_str().to_string())
@@ -512,8 +524,9 @@ mod tests {
     }
 
     #[test]
-    fn string_literal_with_dot_unwrap_not_flagged() {
-        // 字符串里的 ".unwrap()" 不应误报
+    fn string_literal_with_dot_unwrap_now_flagged() {
+        // 字符串里的 ".unwrap()" 现已被报告 (历史 quote 计数误报
+        // 修复后取消字符串排除, 接受偶发误报换取零漏报)
         let tmp = tempdir();
         let p = write_rs(
             &tmp,
@@ -522,10 +535,8 @@ mod tests {
 "#,
         );
         let hits = find_production_panics(&p);
-        assert!(
-            hits.is_empty(),
-            "字符串字面量里的 .unwrap() 不应误报, got {hits:?}"
-        );
+        // 取消字符串排除后, 这种模式会被报. 接受误报.
+        assert!(!hits.is_empty(), "字符串字面量现在会报 (1 hit), got {hits:?}");
     }
 
     #[test]
