@@ -49,6 +49,7 @@ impl Default for KnowledgeGraph {
 }
 
 impl KnowledgeGraph {
+    /// Create an empty in-memory [`KnowledgeGraph`] (no assets, no relations).
     pub fn new() -> Self {
         Self {
             graph: DiGraph::new(),
@@ -57,6 +58,8 @@ impl KnowledgeGraph {
         }
     }
 
+    /// Insert `asset` into the graph. Replaces any existing asset with the
+    /// same `id`; relations involving the old id remain attached to the new node.
     pub fn add_asset(&mut self, asset: CognitiveAsset) {
         let id = asset.id.clone();
         let node_idx = self.graph.add_node(id.clone());
@@ -64,6 +67,10 @@ impl KnowledgeGraph {
         self.assets.insert(id, asset);
     }
 
+    /// Add a directed `rel` from `from_id` to `to_id`.
+    ///
+    /// # Errors
+    /// Returns [`KnowledgeError::AssetNotFound`] if either endpoint is not in the graph.
     pub fn add_relation(&mut self, rel: AssetRelation) -> Result<(), KnowledgeError> {
         let from_idx = self
             .node_map
@@ -78,10 +85,12 @@ impl KnowledgeGraph {
         Ok(())
     }
 
+    /// Look up an asset by `id`. Returns `None` if no such asset exists.
     pub fn get_asset(&self, id: &str) -> Option<&CognitiveAsset> {
         self.assets.get(id)
     }
 
+    /// Return all assets of a given `kind` (Tool / SOP / Insight / Constraint).
     pub fn find_assets_by_kind(&self, kind: AssetKind) -> Vec<&CognitiveAsset> {
         self.assets
             .values()
@@ -89,6 +98,10 @@ impl KnowledgeGraph {
             .collect()
     }
 
+    /// Return outgoing neighbors of `id` connected by an edge of type `rel_type`.
+    ///
+    /// Returns an empty `Vec` if the asset does not exist or has no outgoing
+    /// edges of that type.
     pub fn get_related_assets(&self, id: &str, rel_type: RelationType) -> Vec<&CognitiveAsset> {
         let Some(node_idx) = self.node_map.get(id) else {
             return vec![];
@@ -139,10 +152,12 @@ impl KnowledgeGraph {
         graph
     }
 
+    /// Return the number of assets currently in the graph.
     pub fn asset_count(&self) -> usize {
         self.assets.len()
     }
 
+    /// Return the total number of relations (edges) in the graph.
     pub fn relation_count(&self) -> usize {
         self.graph.edge_count()
     }
@@ -156,6 +171,10 @@ pub struct AssetManager {
 }
 
 impl AssetManager {
+    /// Create an [`AssetManager`] backed by an in-memory graph persisted to `storage_path`.
+    ///
+    /// Call [`Self::load`] to populate the graph from disk on startup,
+    /// and [`Self::save`] periodically to persist changes.
     pub fn new(storage_path: std::path::PathBuf) -> Self {
         Self {
             graph: Arc::new(RwLock::new(KnowledgeGraph::new())),
@@ -202,6 +221,10 @@ impl AssetManager {
         Ok(())
     }
 
+    /// Persist a single asset under `id`, derived from the `AssetContent` variant.
+    ///
+    /// The asset's `kind` is inferred from the content variant; `confidence`
+    /// is currently recorded but not used for ranking.
     pub async fn save_asset(
         &self,
         id: &str,
@@ -242,6 +265,10 @@ impl AssetManager {
         Ok(())
     }
 
+    /// "Sediment" a tool: register a new asset of kind `Tool` backed by a WASM module.
+    ///
+    /// Returns the new asset id, which is also used to look up the WASM path
+    /// from asset metadata at load time.
     pub async fn sediment_tool(
         &self,
         spec: ToolSpec,
@@ -264,6 +291,10 @@ impl AssetManager {
         Ok(id)
     }
 
+    /// Load a single asset by `id`.
+    ///
+    /// # Errors
+    /// Returns [`KnowledgeError::AssetNotFound`] if the asset is not registered.
     pub async fn get_asset(&self, id: &str) -> Result<CognitiveAsset, KnowledgeError> {
         let graph = self.graph.read().await;
         graph
@@ -347,6 +378,7 @@ impl AssetManager {
         Ok(None)
     }
 
+    /// Return the current number of assets in the persisted graph.
     pub async fn asset_count(&self) -> usize {
         let graph = self.graph.read().await;
         graph.asset_count()
