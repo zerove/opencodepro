@@ -199,3 +199,124 @@ fn resolve_is_deterministic_for_same_input() {
     let order2 = DependencyResolver::resolve(&c).expect("");
     assert_eq!(order1, order2);
 }
+
+// ---------------------------------------------------------------------------
+// Additional tests: empty/single/chain/diamond/mappings
+// ---------------------------------------------------------------------------
+
+#[test]
+fn dep_resolver_resolve_empty_graph() {
+    let cg = CompositeGraph::new();
+    let order = DependencyResolver::resolve(&cg).unwrap();
+    assert!(order.is_empty());
+}
+
+#[test]
+fn dep_resolver_resolve_single_graph_no_deps() {
+    let mut cg = CompositeGraph::new();
+    cg.add_graph("a".into(), SOPGraphConfig::default());
+    let order = DependencyResolver::resolve(&cg).unwrap();
+    assert_eq!(order.len(), 1);
+    assert!(order.contains(&"a".to_string()));
+}
+
+#[test]
+fn dep_resolver_resolve_two_graphs_no_deps() {
+    let mut cg = CompositeGraph::new();
+    cg.add_graph("a".into(), SOPGraphConfig::default());
+    cg.add_graph("b".into(), SOPGraphConfig::default());
+    let order = DependencyResolver::resolve(&cg).unwrap();
+    assert_eq!(order.len(), 2);
+    assert!(order.contains(&"a".to_string()));
+    assert!(order.contains(&"b".to_string()));
+}
+
+#[test]
+fn dep_resolver_resolve_three_graphs_no_deps() {
+    let mut cg = CompositeGraph::new();
+    for id in ["x", "y", "z"] {
+        cg.add_graph(id.into(), SOPGraphConfig::default());
+    }
+    let order = DependencyResolver::resolve(&cg).unwrap();
+    assert_eq!(order.len(), 3);
+}
+
+#[test]
+fn dep_resolver_resolve_with_chain_deps() {
+    let mut cg = CompositeGraph::new();
+    cg.add_graph("a".into(), SOPGraphConfig::default());
+    cg.add_graph("b".into(), SOPGraphConfig::default());
+    cg.add_graph("c".into(), SOPGraphConfig::default());
+    cg.add_dependency(GraphDependency {
+        source_sop_id: "a".into(),
+        target_sop_id: "b".into(),
+        mappings: vec![],
+    });
+    cg.add_dependency(GraphDependency {
+        source_sop_id: "b".into(),
+        target_sop_id: "c".into(),
+        mappings: vec![],
+    });
+    let order = DependencyResolver::resolve(&cg).unwrap();
+    assert_eq!(order.len(), 3);
+    let pos_a = order.iter().position(|s| s == "a").unwrap();
+    let pos_b = order.iter().position(|s| s == "b").unwrap();
+    let pos_c = order.iter().position(|s| s == "c").unwrap();
+    assert!(pos_a < pos_b);
+    assert!(pos_b < pos_c);
+}
+
+#[test]
+fn dep_resolver_resolve_with_diamond_deps() {
+    let mut cg = CompositeGraph::new();
+    for id in ["top", "left", "right", "bottom"] {
+        cg.add_graph(id.into(), SOPGraphConfig::default());
+    }
+    cg.add_dependency(GraphDependency {
+        source_sop_id: "top".into(),
+        target_sop_id: "left".into(),
+        mappings: vec![],
+    });
+    cg.add_dependency(GraphDependency {
+        source_sop_id: "top".into(),
+        target_sop_id: "right".into(),
+        mappings: vec![],
+    });
+    cg.add_dependency(GraphDependency {
+        source_sop_id: "left".into(),
+        target_sop_id: "bottom".into(),
+        mappings: vec![],
+    });
+    cg.add_dependency(GraphDependency {
+        source_sop_id: "right".into(),
+        target_sop_id: "bottom".into(),
+        mappings: vec![],
+    });
+    let order = DependencyResolver::resolve(&cg).unwrap();
+    assert_eq!(order.len(), 4);
+    let pos = |id: &str| order.iter().position(|s| s == id).unwrap();
+    assert!(pos("top") < pos("left"));
+    assert!(pos("top") < pos("right"));
+    assert!(pos("left") < pos("bottom"));
+    assert!(pos("right") < pos("bottom"));
+}
+
+#[test]
+fn dep_resolver_resolve_with_data_mapping() {
+    let mut cg = CompositeGraph::new();
+    cg.add_graph("a".into(), SOPGraphConfig::default());
+    cg.add_graph("b".into(), SOPGraphConfig::default());
+    cg.add_dependency(GraphDependency {
+        source_sop_id: "a".into(),
+        target_sop_id: "b".into(),
+        mappings: vec![DataMapping {
+            source_node: "n1".into(),
+            target_placeholder: "{n1}".into(),
+        }],
+    });
+    let order = DependencyResolver::resolve(&cg).unwrap();
+    assert_eq!(order.len(), 2);
+    let pos_a = order.iter().position(|s| s == "a").unwrap();
+    let pos_b = order.iter().position(|s| s == "b").unwrap();
+    assert!(pos_a < pos_b);
+}
