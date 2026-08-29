@@ -3,7 +3,7 @@
 //! Compatible with: OpenAI, vLLM, Ollama, Groq, Together AI, Fireworks, etc.
 
 use async_trait::async_trait;
-use metrics::{counter, histogram};
+use metrics::counter;
 use serde_json::{json, Value};
 use sisyphus_types::{ProviderConfig, ProviderKind};
 use std::sync::Arc;

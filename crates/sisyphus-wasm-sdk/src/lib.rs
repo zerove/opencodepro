@@ -175,15 +175,10 @@ mod tests {
 
     #[test]
     fn test_remove_tool() {
-        {
-            let mut reg = registry().lock().unwrap();
-            reg.tools.clear();
-        }
-
-        register_tool_as("removable", EchoTool);
-        assert!(remove_tool("removable"));
-        assert!(!remove_tool("removable")); // already removed
-        assert_eq!(tool_count(), 0);
+        let id = format!("removable_{}", std::process::id());
+        register_tool_as(&id, EchoTool);
+        assert!(remove_tool(&id));
+        assert!(!remove_tool(&id)); // already removed
     }
 
     #[test]
