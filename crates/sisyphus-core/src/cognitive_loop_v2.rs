@@ -23,6 +23,7 @@ use tracing::{info, instrument, warn};
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Copy, PartialEq)]
+/// Anomaly Severity.
 pub enum AnomalySeverity {
     Low,
     Medium,
@@ -31,6 +32,7 @@ pub enum AnomalySeverity {
 }
 
 #[derive(Debug, Clone)]
+/// Node Anomaly.
 pub struct NodeAnomaly {
     pub node_name: String,
     pub severity: AnomalySeverity,
@@ -41,6 +43,7 @@ pub struct NodeAnomaly {
 }
 
 #[derive(Debug, Clone)]
+/// Anomaly Report.
 pub struct AnomalyReport {
     pub anomalies: Vec<NodeAnomaly>,
     pub should_extra_reflect: bool,

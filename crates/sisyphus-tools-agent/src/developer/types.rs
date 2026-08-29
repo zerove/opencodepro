@@ -41,6 +41,7 @@ pub enum VerificationMethod {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+/// Step Status.
 pub enum StepStatus {
     Pending,
     InProgress,

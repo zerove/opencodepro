@@ -4,6 +4,7 @@ use sisyphus_types::{experience::ExperienceBank, SOPGraph};
 use std::sync::Arc;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+/// Cognitive Depth.
 pub enum CognitiveDepth {
     Low,
     Medium,
@@ -28,6 +29,7 @@ impl CognitiveDepth {
     }
 }
 
+/// Complexity Analyzer.
 pub struct ComplexityAnalyzer;
 
 impl ComplexityAnalyzer {

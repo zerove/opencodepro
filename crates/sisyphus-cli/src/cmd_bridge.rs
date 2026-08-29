@@ -5,6 +5,7 @@ use clap::Subcommand;
 use crate::PriorityArg;
 
 #[derive(Subcommand)]
+/// Todo Commands.
 pub enum TodoCommands {
     /// 添加新的待办事项
     Add {
@@ -37,6 +38,7 @@ pub enum TodoCommands {
 }
 
 #[derive(Subcommand)]
+/// Session Commands.
 pub enum SessionCommands {
     /// 创建新会话
     Create { name: String },
@@ -84,6 +86,7 @@ pub enum SessionCommands {
 }
 
 #[derive(Subcommand)]
+/// Plan Commands.
 pub enum PlanCommands {
     /// 从需求文本创建计划
     Create {
@@ -206,6 +209,7 @@ pub enum LspCommands {
 }
 
 #[derive(Subcommand)]
+/// Mcp Commands.
 pub enum McpCommands {
     /// 连接 MCP 服务器并显示信息 + 可用工具
     Info {
@@ -265,6 +269,7 @@ pub enum DelegateCommands {
 }
 
 #[derive(Subcommand)]
+/// Sop Commands.
 pub enum SopCommands {
     /// 按 ID 执行 SOP
     Run { sop_id: String },

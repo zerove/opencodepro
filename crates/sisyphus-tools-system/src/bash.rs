@@ -9,6 +9,7 @@ use tokio::time::{timeout, Duration};
 const MAX_OUTPUT_BYTES: usize = 10 * 1024 * 1024; // 10MB limit
 
 #[derive(Debug)]
+/// Bash Output.
 pub struct BashOutput {
     pub stdout: String,
     pub stderr: String,

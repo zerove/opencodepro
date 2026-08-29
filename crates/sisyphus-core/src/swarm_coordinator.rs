@@ -10,6 +10,7 @@ use sisyphus_types::SOPGraphConfig;
 use std::sync::Arc;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Agent Role.
 pub enum AgentRole {
     Architect,
     Auditor,
@@ -17,12 +18,14 @@ pub enum AgentRole {
     Coordinator,
 }
 
+/// Swarm Agent.
 pub struct SwarmAgent {
     pub id: String,
     pub role: AgentRole,
     pub system_prompt: String,
 }
 
+/// Swarm Coordinator.
 pub struct SwarmCoordinator {
     pub strategic_manager: Arc<StrategicManager>,
     pub intelligence_manager: Arc<IntelligenceManager>,
@@ -245,6 +248,7 @@ impl SwarmCoordinator {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+/// Audit Review.
 pub struct AuditReview {
     pub approved: bool,
     pub feedback: String,

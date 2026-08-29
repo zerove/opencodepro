@@ -5,6 +5,7 @@ use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::RwLock;
 
+/// In Memory Golden Dataset.
 pub struct InMemoryGoldenDataset {
     data: Arc<RwLock<HashMap<String, GoldenSop>>>,
 }

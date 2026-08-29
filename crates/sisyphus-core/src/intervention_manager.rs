@@ -7,6 +7,7 @@ use thiserror::Error;
 use tokio::sync::{oneshot, RwLock};
 
 #[derive(Error, Debug)]
+/// Intervention Error.
 pub enum InterventionError {
     #[error("Intervention timed out")]
     Timeout,
@@ -17,6 +18,7 @@ pub enum InterventionError {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// Intervention Request.
 pub struct InterventionRequest {
     pub node_name: String,
     pub prompt: String,
@@ -24,6 +26,7 @@ pub struct InterventionRequest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// User Feedback.
 pub struct UserFeedback {
     pub correction: String,
     pub should_pivot: bool,
@@ -31,6 +34,7 @@ pub struct UserFeedback {
     pub confidence: f32,
 }
 
+/// Intervention Manager.
 pub struct InterventionManager {
     pending: Arc<RwLock<HashMap<String, oneshot::Sender<UserFeedback>>>>,
 }

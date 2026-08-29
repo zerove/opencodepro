@@ -13,6 +13,7 @@ use tokio::sync::watch;
 use crate::errors::TypesError;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
+/// Config.
 pub struct Config {
     /// LLM client parameters.
     #[serde(default)]

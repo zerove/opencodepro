@@ -25,6 +25,7 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// Golden Sop.
 pub struct GoldenSop {
     pub goal: String,
     pub sop_config: SOPGraphConfig,
@@ -33,6 +34,7 @@ pub struct GoldenSop {
 }
 
 #[async_trait]
+/// Golden Dataset.
 pub trait GoldenDataset: Send + Sync {
     async fn enroll(
         &self,
@@ -60,6 +62,7 @@ pub use types::*;
 // ── Cognitive Map Types ────────────────────────────────────
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
+/// Cog Node.
 pub struct CogNode {
     pub id: String,
     pub label: String,
@@ -69,6 +72,7 @@ pub struct CogNode {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
+/// Cog Edge.
 pub struct CogEdge {
     pub source: String,
     pub target: String,
@@ -76,6 +80,7 @@ pub struct CogEdge {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
+/// Cog Map.
 pub struct CogMap {
     pub sop_id: String,
     pub goal_text: String,

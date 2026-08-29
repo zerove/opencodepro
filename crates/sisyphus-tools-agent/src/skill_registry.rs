@@ -10,6 +10,7 @@ use sisyphus_types::TypesError;
 use std::sync::Arc;
 
 #[derive(Debug, thiserror::Error)]
+/// Registry Error.
 pub enum RegistryError {
     #[error("Network error: {0}")]
     Network(#[from] reqwest::Error),
@@ -24,6 +25,7 @@ pub enum RegistryError {
 }
 
 #[async_trait]
+/// Skill Registry.
 pub trait SkillRegistry: Send + Sync {
     /// Fetch the list of available skills from the remote registry.
     async fn fetch_available_skills(&self) -> Result<Vec<SkillMetadata>, RegistryError>;

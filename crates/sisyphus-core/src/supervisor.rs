@@ -3,6 +3,7 @@ use async_trait::async_trait;
 use sisyphus_types::{RuntimeSupervisor, SupervisorDecision};
 use std::sync::Arc;
 
+/// Default Supervisor.
 pub struct DefaultSupervisor;
 
 #[async_trait]

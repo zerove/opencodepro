@@ -199,6 +199,7 @@ pub fn record_bridge_request(success: bool, duration_secs: f64) {
 }
 
 #[derive(Error, Debug)]
+/// Metrics Error.
 pub enum MetricsError {
     #[error("Prometheus exporter installation failed")]
     PrometheusInstallFailed,

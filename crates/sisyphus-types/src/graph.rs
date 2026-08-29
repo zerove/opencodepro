@@ -62,6 +62,7 @@ impl Default for CompositeGraph {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
+/// Node Kind.
 pub enum NodeKind {
     Wasm {
         tool_id: String,
@@ -98,12 +99,14 @@ pub enum NodeKind {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
+/// Node Config.
 pub struct SOPNodeConfig {
     pub name: String,
     pub kind: NodeKind,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
+/// Graph Config.
 pub struct SOPGraphConfig {
     pub nodes: Vec<SOPNodeConfig>,
     pub edges: Vec<(usize, usize)>,
@@ -212,6 +215,7 @@ impl SOPGraphConfig {
     }
 }
 
+/// Graph.
 pub struct SOPGraph {
     pub graph: DiGraph<Arc<dyn SOPNode>, ()>,
     pub start_node: NodeIndex,
@@ -365,6 +369,7 @@ impl SOPGraph {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
+/// Sop Evaluation.
 pub struct SopEvaluation {
     pub score: f32,
     pub metrics: HashMap<String, f32>,
@@ -373,6 +378,7 @@ pub struct SopEvaluation {
 }
 
 #[async_trait::async_trait]
+/// Sop Evaluator.
 pub trait SopEvaluator: Send + Sync {
     async fn evaluate(
         &self,
@@ -382,6 +388,7 @@ pub trait SopEvaluator: Send + Sync {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
+/// Micro Reflection Decision.
 pub enum MicroReflectionDecision {
     Continue,
     Adjust { updates: HashMap<String, Value> },
@@ -389,6 +396,7 @@ pub enum MicroReflectionDecision {
 }
 
 #[async_trait::async_trait]
+/// Micro Reflector.
 pub trait MicroReflector: Send + Sync {
     async fn predict(&self, node_name: &str, ctx: &ExecutionContext) -> Result<String, TypesError>;
 

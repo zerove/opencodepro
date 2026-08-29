@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use clap::Subcommand;
 
 #[derive(Subcommand)]
+/// Github Commands.
 pub enum GithubCommands {
     /// 生成 GitHub Actions 工作流 YAML 模板
     Action {
@@ -76,6 +77,7 @@ pub enum HashlineCommands {
 }
 
 #[derive(Subcommand)]
+/// Pr Commands.
 pub enum PrCommands {
     /// 列出打开的拉取请求
     List,
@@ -98,6 +100,7 @@ pub enum PrCommands {
 }
 
 #[derive(Subcommand)]
+/// Wisdom Commands.
 pub enum WisdomCommands {
     /// 记录一条智慧：`wisdom record <category> <content>`
     Record {
@@ -176,6 +179,7 @@ pub enum DiagnoseCommands {
 }
 
 #[derive(Subcommand)]
+/// Fix Commands.
 pub enum FixCommands {
     /// 自动应用修复，然后重新诊断
     Run {
@@ -198,6 +202,7 @@ pub enum FixCommands {
 }
 
 #[derive(Subcommand)]
+/// Init Commands.
 pub enum InitCommands {
     /// 列出可用项目模板
     List,
@@ -214,6 +219,7 @@ pub enum InitCommands {
 }
 
 #[derive(Subcommand)]
+/// Precommit Commands.
 pub enum PrecommitCommands {
     /// 安装 pre-commit 钩子（fmt + lint）
     Install {

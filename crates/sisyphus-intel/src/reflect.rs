@@ -83,6 +83,7 @@ impl ImprovementKind {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// Reflection Report.
 pub struct ReflectionReport {
     pub original_sop_id: String,
     pub deviation_score: f64,
@@ -96,6 +97,7 @@ pub struct ReflectionReport {
 }
 
 #[async_trait]
+/// Reflector.
 pub trait Reflector: Send + Sync {
     async fn reflect(
         &self,
@@ -106,6 +108,7 @@ pub trait Reflector: Send + Sync {
 }
 
 #[async_trait]
+/// Evolver.
 pub trait SOPEvolver: Send + Sync {
     async fn evolve(
         &self,
@@ -120,6 +123,7 @@ pub trait SOPEvolver: Send + Sync {
 // StandardEvolver — 重试包装 + 燃料演进
 // ---------------------------------------------------------------------------
 
+/// Standard Evolver.
 pub struct StandardEvolver {
     fuel_pricer: Arc<dyn FuelPricer>,
 }
@@ -307,6 +311,7 @@ impl ErrorCategory {
     }
 }
 
+/// Llm Reflector.
 pub struct LlmReflector {
     pub llm_client: Arc<dyn LlmClient>,
     /// 反思阶段 LLM 调用的超时（评审 B3：原硬编码 2s）。
@@ -444,6 +449,7 @@ impl Reflector for LlmReflector {
     }
 }
 
+/// Hybrid Reflector.
 pub struct HybridReflector {
     pub standard: Arc<dyn Reflector>,
     pub llm: Arc<dyn Reflector>,
@@ -518,6 +524,7 @@ impl Reflector for HybridReflector {
     }
 }
 
+/// Llm Evolver.
 pub struct LlmEvolver {
     pub llm_client: Arc<dyn LlmClient>,
     pub topo_evolver: Arc<crate::topological_evolver::TopologicalSOPEvolver>,
@@ -621,6 +628,7 @@ impl SOPEvolver for LlmEvolver {
 // StandardReflector — 错误分类的轨迹分析
 // ---------------------------------------------------------------------------
 
+/// Standard Reflector.
 pub struct StandardReflector;
 
 impl StandardReflector {

@@ -6,6 +6,7 @@ use thiserror::Error;
 // ── Types ──────────────────────────────────────────────────
 
 #[derive(Error, Debug)]
+/// Metis Error.
 pub enum MetisError {
     #[error("LLM call failed: {0}")]
     LlmError(String),
@@ -20,6 +21,7 @@ impl From<sisyphus_types::TypesError> for MetisError {
 }
 
 #[async_trait::async_trait]
+/// Llm Client.
 pub trait LlmClient: Send + Sync {
     async fn chat(
         &self,

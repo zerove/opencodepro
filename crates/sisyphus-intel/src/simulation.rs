@@ -14,6 +14,7 @@ use std::time::Instant;
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// Logical Flaw.
 pub struct LogicalFlaw {
     pub node_name: String,
     pub description: String,
@@ -21,6 +22,7 @@ pub struct LogicalFlaw {
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
+/// Flaw Severity.
 pub enum FlawSeverity {
     Critical, // Must fix before execution
     Warning,  // Potential issue, but may succeed
@@ -28,6 +30,7 @@ pub enum FlawSeverity {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// Logical Simulation Result.
 pub struct LogicalSimulationResult {
     pub is_valid: bool,
     pub flaws: Vec<LogicalFlaw>,
@@ -36,6 +39,7 @@ pub struct LogicalSimulationResult {
 }
 
 #[async_trait]
+/// Logical Simulator.
 pub trait LogicalSimulator: Send + Sync {
     async fn simulate_logic(
         &self,
@@ -47,6 +51,7 @@ pub trait LogicalSimulator: Send + Sync {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// Simulation Result.
 pub struct SimulationResult {
     pub path_id: String,
     pub success_probability: f64,
@@ -57,6 +62,7 @@ pub struct SimulationResult {
 }
 
 #[async_trait]
+/// Simulator.
 pub trait Simulator: Send + Sync {
     async fn simulate(
         &self,
@@ -79,6 +85,7 @@ pub trait Simulator: Send + Sync {
 // - 使用 Rayon 并行迭代。
 
 #[derive(Clone)]
+/// Llm Logical Simulator.
 pub struct LlmLogicalSimulator {
     pub llm_client: Arc<dyn sisyphus_tools_llm::LlmClient>,
     /// 逻辑审计阶段 LLM 调用的超时（评审 B3：原硬编码 2s）。
@@ -296,6 +303,7 @@ impl MctsNode {
 }
 
 #[derive(Clone)]
+/// Monte Carlo Simulator.
 pub struct MonteCarloSimulator {
     pub iterations: usize,
     pub state_store: Option<Arc<dyn sisyphus_types::StateStore>>,

@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use clap::Subcommand;
 
 #[derive(Subcommand)]
+/// Git Commands.
 pub enum GitCommands {
     /// 显示工作树状态
     Status {
@@ -101,6 +102,7 @@ pub enum GitCommands {
 }
 
 #[derive(Subcommand)]
+/// Build Commands.
 pub enum BuildCommands {
     /// 检查代码错误
     Check {
@@ -189,6 +191,7 @@ pub enum BuildCommands {
 }
 
 #[derive(Subcommand)]
+/// Run Commands.
 pub enum RunCommands {
     /// 运行项目（cargo run、npm start、go run . 等）
     Run {

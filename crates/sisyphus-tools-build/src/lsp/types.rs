@@ -77,6 +77,7 @@ pub fn severity_name(s: i64) -> &'static str {
 // ── LSP Error ──────────────────────────────────────────────
 
 #[derive(Debug, thiserror::Error)]
+/// Lsp Error.
 pub enum LspError {
     #[error("LSP transport error: {0}")]
     Transport(String),

@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// Tool Spec.
 pub struct ToolSpec {
     pub tool_id: String,
     pub required_capability: String,

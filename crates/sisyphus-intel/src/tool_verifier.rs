@@ -7,6 +7,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// Verification Report.
 pub struct VerificationReport {
     pub tool_name: String,
     pub unit_tests_passed: bool,
@@ -16,6 +17,7 @@ pub struct VerificationReport {
     pub failures: Vec<String>,
 }
 
+/// Tool Verifier.
 pub struct ToolVerifier {
     llm_client: Arc<dyn LlmClient>,
 }

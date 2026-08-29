@@ -5,12 +5,14 @@ use tokio::process::Command;
 use tokio::time::timeout;
 
 #[derive(Debug, Clone)]
+/// Process Output.
 pub struct ProcessOutput {
     pub status: i32,
     pub stdout: String,
     pub stderr: String,
 }
 
+/// Command Builder.
 pub struct CommandBuilder {
     program: String,
     args: Vec<String>,

@@ -8,6 +8,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 static NEXT_ID: AtomicU64 = AtomicU64::new(1);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// Todo Item.
 pub struct TodoItem {
     pub id: String,
     pub content: String,
@@ -18,6 +19,7 @@ pub struct TodoItem {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// Todo Status.
 pub enum TodoStatus {
     Pending,
     InProgress,
@@ -26,6 +28,7 @@ pub enum TodoStatus {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// Todo Priority.
 pub enum TodoPriority {
     Low,
     Medium,

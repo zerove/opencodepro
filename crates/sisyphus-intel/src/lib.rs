@@ -63,6 +63,7 @@ pub use topological_evolver::TopologicalSOPEvolver;
 // 情报编排器
 // ---------------------------------------------------------------------------
 
+/// Sisyphus Intel.
 pub struct SisyphusIntel {
     pub simulator: Arc<dyn Simulator>,
     pub logical_simulator: Arc<dyn simulation::LogicalSimulator>,

@@ -90,6 +90,7 @@ pub use dag_renderer::*;
 
 #[async_trait::async_trait]
 
+/// Consensus.
 pub trait Consensus: Send + Sync {
     async fn is_leader(&self) -> bool;
 
@@ -104,6 +105,7 @@ pub trait Consensus: Send + Sync {
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 
+/// Execution Status.
 pub struct ExecutionStatus {
     pub goal_id: String,
 
@@ -120,6 +122,7 @@ pub struct ExecutionStatus {
 
 #[derive(Error, Debug)]
 
+/// Core Error.
 pub enum CoreError {
     #[error("SOPGraph contains cycles")]
     CycleDetected,
@@ -176,6 +179,7 @@ impl From<sisyphus_types::TypesError> for CoreError {
 // 注意：`From<String> for CoreError` 已被有意移除。
 // 请显式使用 `CoreError::Internal(msg)`，让错误转换过程可见。
 
+/// Sisyphus Kernel.
 pub struct SisyphusKernel {
     pub intelligence_manager: Arc<IntelligenceManager>,
 

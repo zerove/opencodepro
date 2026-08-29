@@ -60,6 +60,7 @@ pub struct SqlStoreConfig {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+/// Sqlite Synchronous.
 pub enum SqliteSynchronous {
     Off,
     Normal,
@@ -1151,6 +1152,7 @@ impl SqlStore {
 }
 
 #[derive(Debug, Clone)]
+/// Cache Stats.
 pub struct CacheStats {
     pub size: usize,
     pub capacity: usize,

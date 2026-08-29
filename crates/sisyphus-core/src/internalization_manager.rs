@@ -2,6 +2,7 @@ use std::sync::Arc;
 use tracing::info;
 
 #[derive(Debug, Clone)]
+/// Internalization Request.
 pub struct InternalizationRequest {
     pub node_id: String,
     pub prompt: String,
@@ -9,6 +10,7 @@ pub struct InternalizationRequest {
     pub correction: String,
 }
 
+/// Internalization Manager.
 pub struct InternalizationManager {
     llm_client: Arc<dyn sisyphus_tools_llm::LlmClient>,
     knowledge_manager: Arc<sisyphus_knowledge::AssetManager>,

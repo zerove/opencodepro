@@ -227,6 +227,7 @@ pub struct ExecutionProfile {
     pub was_cached: bool,
 }
 
+/// Profiler.
 pub struct Profiler {
     profiles: Vec<ExecutionProfile>,
     max_profiles: usize,

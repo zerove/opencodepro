@@ -9,6 +9,7 @@ use crate::execution::{ExecutionContext, NodeOutput};
 use crate::graph::NodeKind;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+/// Reflection Priority.
 pub enum ReflectionPriority {
     None, // Skip reflection completely
     Low,  // Use simple heuristic or skip if output seems okay
@@ -16,6 +17,7 @@ pub enum ReflectionPriority {
 }
 
 #[async_trait]
+/// Node.
 pub trait SOPNode: Send + Sync {
     async fn execute(&self, ctx: &ExecutionContext) -> Result<NodeOutput, TypesError>;
     fn name(&self) -> &str;
@@ -26,6 +28,7 @@ pub trait SOPNode: Send + Sync {
     }
 }
 
+/// Wasm Node.
 pub struct WasmSOPNode {
     pub name: String,
     pub tool_id: String,
@@ -75,6 +78,7 @@ impl SOPNode for WasmSOPNode {
     }
 }
 
+/// Retry Node.
 pub struct RetrySOPNode {
     pub name: String,
     pub child: Arc<dyn SOPNode>,
@@ -112,6 +116,7 @@ impl SOPNode for RetrySOPNode {
     }
 }
 
+/// Branch Node.
 pub struct BranchSOPNode {
     pub name: String,
     /// A map of "condition_result" -> "next_node_index".
@@ -146,6 +151,7 @@ impl SOPNode for BranchSOPNode {
     }
 }
 
+/// Sub Graph Node.
 pub struct SubGraphSOPNode {
     pub name: String,
     pub config: crate::graph::SOPGraphConfig,
@@ -172,6 +178,7 @@ impl SOPNode for SubGraphSOPNode {
 }
 
 #[async_trait]
+/// Test Executor.
 pub trait TestExecutor: Send + Sync {
     async fn run_test(
         &self,
@@ -181,6 +188,7 @@ pub trait TestExecutor: Send + Sync {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// Test Result.
 pub struct TestResult {
     pub success: bool,
     pub stdout: String,
@@ -190,6 +198,7 @@ pub struct TestResult {
     pub error_summary: Option<String>,
 }
 
+/// Test Node.
 pub struct TestSOPNode {
     pub name: String,
     pub test_command: String,
@@ -236,6 +245,7 @@ impl SOPNode for TestSOPNode {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// Tool Metadata.
 pub struct ToolMetadata {
     pub id: String,
     pub description: String,
@@ -288,6 +298,7 @@ pub trait ToolExecutor: Send + Sync {
     }
 }
 
+/// Cache Invalidatable.
 pub trait CacheInvalidatable: Send + Sync {
     fn invalidate_cache(&self, tool_id: &str);
 }
@@ -397,6 +408,7 @@ impl ToolExecutor for ExecutorRouter {
     }
 }
 
+/// Visual Node.
 pub struct VisualSOPNode {
     pub name: String,
     pub kind: NodeKind,
@@ -432,6 +444,7 @@ impl SOPNode for VisualSOPNode {
     }
 }
 
+/// Human Intervention Node.
 pub struct HumanInterventionSOPNode {
     pub name: String,
     pub prompt: String,

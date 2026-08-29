@@ -6,6 +6,7 @@ use crate::errors::TypesError;
 // ── CognitiveLoopConfig ─────────────────────────────────────
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
+/// Cognitive Loop Config.
 pub struct CognitiveLoopConfig {
     pub max_iterations: u32,
     pub convergence_threshold: f64,
@@ -26,6 +27,7 @@ pub struct CognitiveLoopConfig {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
+/// Token Budget Config.
 pub struct TokenBudgetConfig {
     /// 硬上限 token 数。 或  表示不启用预算（默认 unbounded）。
     pub cap: Option<u64>,
@@ -98,6 +100,7 @@ impl CognitiveLoopConfig {
 // ── AdaptiveDepthConfig ────────────────────────────────────
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
+/// Adaptive Depth Config.
 pub struct AdaptiveDepthConfig {
     /// Initial budget multiplier for cognitive iterations.
     pub initial_budget: f64,
@@ -143,6 +146,7 @@ impl AdaptiveDepthConfig {
 // ── ChaosConfig ─────────────────────────────────────────────
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
+/// Chaos Config.
 pub struct ChaosConfig {
     /// Whether chaos engineering is enabled on startup.
     pub enabled: bool,
@@ -180,6 +184,7 @@ impl ChaosConfig {
 // ── ExecutorConfig ─────────────────────────────────────────
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
+/// Executor Config.
 pub struct ExecutorConfig {
     pub max_concurrent_tasks: usize,
     pub default_fuel: u64,
@@ -221,6 +226,7 @@ impl ExecutorConfig {
 // ── CacheConfig ────────────────────────────────────────────
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
+/// Cache Config.
 pub struct CacheConfig {
     pub l1_capacity: usize,
     /// Database connection URL.
@@ -283,6 +289,7 @@ impl CacheConfig {
 // ── MetricsConfig ──────────────────────────────────────────
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
+/// Metrics Config.
 pub struct MetricsConfig {
     pub prometheus_port: u16,
     /// OpenTelemetry 分布式追踪配置
@@ -322,6 +329,7 @@ impl MetricsConfig {
 // ── OpenTelemetry Config ──────────────────────────────────
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
+/// Otel Config.
 pub struct OtelConfig {
     /// 是否启用 OpenTelemetry 导出
     pub enabled: bool,
@@ -367,6 +375,7 @@ impl OtelConfig {
 // ── SandboxConfig ──────────────────────────────────────────
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
+/// Sandbox Config.
 pub struct SandboxConfig {
     pub max_memory_pages: u32,
     pub default_fuel: u64,
@@ -425,6 +434,7 @@ impl SandboxConfig {
 // ── JcodeConfig ──────────────────────────────────────────────
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
+/// Jcode Config.
 pub struct JcodeConfig {
     pub socket_path: String,
 }
@@ -455,6 +465,7 @@ impl JcodeConfig {
 // ── RegistryConfig ─────────────────────────────────────────────
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
+/// Registry Config.
 pub struct RegistryConfig {
     pub registry_url: String,
     pub timeout_seconds: u64,
@@ -491,6 +502,7 @@ impl RegistryConfig {
 // ── McpConfig ──────────────────────────────────────────────────
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
+/// Mcp Config.
 pub struct McpConfig {
     /// Stdio-based MCP servers: prefix → "command arg1 arg2".
     #[serde(default)]

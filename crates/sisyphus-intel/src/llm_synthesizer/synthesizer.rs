@@ -6,6 +6,7 @@ use async_trait::async_trait;
 use sisyphus_types::{ExecutionContext, SOPGraph};
 use std::sync::Arc;
 
+/// Llm Driven Synthesizer.
 pub struct LlmDrivenSynthesizer {
     pub decomposer: Arc<dyn GoalDecomposer>,
     pub tool_executor: Arc<dyn sisyphus_types::ToolExecutor>,

@@ -10,6 +10,7 @@ pub fn check_permission(rules: &PermissionRules, tool_name: &str) -> Permission 
     Permission::Allow
 }
 
+/// Permission Checker.
 pub struct PermissionChecker {
     rules: PermissionRules,
     /// Allowed external directories. If non-empty, file tools outside these dirs are denied.

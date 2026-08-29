@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// Asset Kind.
 pub enum AssetKind {
     Tool,
     SOP,
@@ -13,6 +14,7 @@ pub enum AssetKind {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// Cognitive Asset.
 pub struct CognitiveAsset {
     pub id: String,
     pub kind: AssetKind,
@@ -25,6 +27,7 @@ pub struct CognitiveAsset {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// Asset Content.
 pub enum AssetContent {
     Tool(ToolSpec),
     SOP(SOPGraphConfig),
@@ -33,6 +36,7 @@ pub enum AssetContent {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// Insight Data.
 pub struct InsightData {
     pub observation: String,
     pub reasoning: String,
@@ -41,6 +45,7 @@ pub struct InsightData {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// Constraint Data.
 pub struct ConstraintData {
     pub description: String,
     pub strictness: f32, // 0.0 to 1.0
@@ -57,6 +62,7 @@ pub struct AssetRelation {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// Relation Type.
 pub enum RelationType {
     Solves,
     Requires,

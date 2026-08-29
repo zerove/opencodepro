@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use clap::Subcommand;
 
 #[derive(Subcommand)]
+/// Oracle Commands.
 pub enum OracleCommands {
     ///分析源文件（函数、导入、行数）
     AnalyzeFile { path: PathBuf },
@@ -40,6 +41,7 @@ pub enum ExploreCommands {
 }
 
 #[derive(Subcommand)]
+/// Librarian Commands.
 pub enum LibrarianCommands {
     ///搜索网络并综合发现
     Research {
@@ -68,6 +70,7 @@ pub enum LibrarianCommands {
     clippy::enum_variant_names,
     reason = "all Momus commands start with Review for naming consistency"
 )]
+/// Momus Commands.
 pub enum MomusCommands {
     ///审查计划文件的完整性与一致性
     ReviewPlan { plan_file: std::path::PathBuf },
@@ -92,6 +95,7 @@ pub enum MetisCommands {
 }
 
 #[derive(Subcommand)]
+/// Skill Commands.
 pub enum SkillCommands {
     ///列出所有可用技能（来自所有来源）
     List,

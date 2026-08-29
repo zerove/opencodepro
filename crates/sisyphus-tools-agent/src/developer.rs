@@ -19,6 +19,7 @@ use std::sync::Arc;
 use tokio::task::JoinSet;
 use types::EditRequest;
 
+/// Developer.
 pub struct Developer {
     llm: Arc<dyn LlmClient>,
     checkpoint_dir: Option<PathBuf>,

@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use tokio::fs;
 use tracing::{debug, error, info};
 
+/// Custom Tool Loader.
 pub struct CustomToolLoader {
     tools_dir: PathBuf,
 }

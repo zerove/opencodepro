@@ -40,6 +40,7 @@ pub struct ChatMessage {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+/// Chat Role.
 pub enum ChatRole {
     System,
     User,

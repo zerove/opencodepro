@@ -22,6 +22,7 @@ pub struct LearningInsight {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// Strategy Insight.
 pub struct StrategyInsight {
     pub strategy: String,
     pub total_uses: u64,

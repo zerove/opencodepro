@@ -4,6 +4,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixStream;
 use tokio::time::{timeout, Duration};
 
+/// Debug Socket Tool Caller.
 pub struct DebugSocketToolCaller {
     socket_path: String,
 }

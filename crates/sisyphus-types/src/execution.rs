@@ -152,6 +152,7 @@ impl std::fmt::Display for NodeOutput {
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
+/// Supervisor Decision.
 pub enum SupervisorDecision {
     Continue {
         deviation: f64,
@@ -163,6 +164,7 @@ pub enum SupervisorDecision {
 }
 
 #[async_trait]
+/// Runtime Supervisor.
 pub trait RuntimeSupervisor: Send + Sync {
     async fn evaluate(
         &self,
@@ -191,6 +193,7 @@ impl PartialEq for NodeOutput {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
+/// Cognitive Metrics.
 pub struct CognitiveMetrics {
     pub iteration: usize,
     pub deviation: f64,
@@ -202,6 +205,7 @@ pub struct CognitiveMetrics {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+/// Critique Result.
 pub struct CritiqueResult {
     pub critical_findings: Vec<String>,
     pub risk_score: f32, // 0.0 (safe) to 1.0 (high risk)
@@ -210,6 +214,7 @@ pub struct CritiqueResult {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
+/// Execution Event.
 pub enum ExecutionEvent {
     NodeStarted {
         node_name: String,
@@ -265,6 +270,7 @@ pub struct CognitivePlan {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
+/// Cognitive Step.
 pub struct CognitiveStep {
     pub id: String,
     pub name: String,
@@ -274,6 +280,7 @@ pub struct CognitiveStep {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
+/// Cognitive Action.
 pub enum CognitiveAction {
     ToolCall { tool_id: String, args: Value },
     FileEdit { path: String, patch: String },
@@ -281,6 +288,7 @@ pub enum CognitiveAction {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
+/// Verification Criteria.
 pub struct VerificationCriteria {
     pub check_command: Option<String>,
     pub expected_pattern: Option<String>,
@@ -288,12 +296,14 @@ pub struct VerificationCriteria {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
+/// Plan Edge.
 pub struct PlanEdge {
     pub from: String,
     pub to: String,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
+/// History Record.
 pub struct HistoryRecord {
     pub timestamp: u64,
     pub trace: String,
@@ -303,6 +313,7 @@ pub struct HistoryRecord {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
+/// Execution History.
 pub struct ExecutionHistory {
     pub sop_id: String,
     pub records: Vec<HistoryRecord>,
@@ -332,6 +343,7 @@ pub struct ExecutionTrace {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
+/// Execution Feedback.
 pub struct ExecutionFeedback {
     pub plan_id: String,
     pub step_id: String,
@@ -342,6 +354,7 @@ pub struct ExecutionFeedback {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+/// Feedback Status.
 pub enum FeedbackStatus {
     Success,
     Failed,
@@ -349,6 +362,7 @@ pub enum FeedbackStatus {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
+/// Evolution Response.
 pub struct EvolutionResponse {
     pub should_pivot: bool,
     pub revised_plan: Option<CognitivePlan>,
@@ -358,6 +372,7 @@ pub struct EvolutionResponse {
 use crate::types::SisyphusNotepad;
 
 #[derive(Debug)]
+/// Execution Context.
 pub struct ExecutionContext {
     pub results: DashMap<String, NodeOutput>,
     pub notepad: Arc<RwLock<SisyphusNotepad>>,

@@ -8,6 +8,7 @@ use std::io;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
+/// Mem Error.
 pub enum MemError {
     #[error("Invalid L1 capacity: {0}")]
     InvalidL1Capacity(String),

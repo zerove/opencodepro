@@ -15,6 +15,7 @@ use crate::MySisyphusBridge;
 // ── Response / Request Types ───────────────────────────────────────────────
 
 #[derive(Serialize)]
+/// Health Response.
 pub struct HealthResponse {
     pub status: String,
     pub version: String,
@@ -23,6 +24,7 @@ pub struct HealthResponse {
 // --- Goal Execution Types ---
 
 #[derive(Serialize)]
+/// Trace Event Detail.
 pub struct TraceEventDetail {
     pub node_id: String,
     pub status: String,
@@ -32,12 +34,14 @@ pub struct TraceEventDetail {
 }
 
 #[derive(Serialize)]
+/// Goal Trace Response.
 pub struct GoalTraceResponse {
     pub sop_id: String,
     pub events: Vec<TraceEventDetail>,
 }
 
 #[derive(Serialize)]
+/// Goal Status Response.
 pub struct GoalStatusResponse {
     pub status: String,
     pub current_node: Option<String>,
@@ -47,6 +51,7 @@ pub struct GoalStatusResponse {
 }
 
 #[derive(Serialize, Deserialize)]
+/// Goal Execute Request.
 pub struct GoalExecuteRequest {
     pub goal: String,
     pub sop_id: String,
@@ -55,12 +60,14 @@ pub struct GoalExecuteRequest {
 }
 
 #[derive(Serialize)]
+/// Goal Execute Response.
 pub struct GoalExecuteResponse {
     pub output: sisyphus_types::NodeOutput,
     pub report: String,
 }
 
 #[derive(Serialize, Deserialize)]
+/// Composite Execute Request.
 pub struct CompositeExecuteRequest {
     pub goals: Vec<String>,
     pub project_id: Option<String>,
@@ -68,6 +75,7 @@ pub struct CompositeExecuteRequest {
 }
 
 #[derive(Serialize)]
+/// Composite Execute Response.
 pub struct CompositeExecuteResponse {
     pub results: std::collections::HashMap<String, sisyphus_types::NodeOutput>,
     pub execution_order: Vec<String>,
@@ -76,17 +84,20 @@ pub struct CompositeExecuteResponse {
 // --- Skill Registry Types ---
 
 #[derive(Serialize)]
+/// Remote Skill Entry.
 pub struct RemoteSkillEntry {
     pub id: String,
     pub metadata: sisyphus_types::skill::SkillMetadata,
 }
 
 #[derive(Deserialize)]
+/// Install Skill Request.
 pub struct InstallSkillRequest {
     pub skill_id: String,
 }
 
 #[derive(Clone, Debug)]
+/// Workspace Context.
 pub struct WorkspaceContext {
     pub project_id: Option<String>,
 }
@@ -114,11 +125,13 @@ where
 }
 
 #[derive(Deserialize)]
+/// Switch Workspace Request.
 pub struct SwitchWorkspaceRequest {
     pub id: String,
 }
 
 #[derive(Deserialize)]
+/// Create Workspace Request.
 pub struct CreateWorkspaceRequest {
     pub name: String,
     pub project_id: String,
@@ -127,6 +140,7 @@ pub struct CreateWorkspaceRequest {
 
 // --- SOP Management Types ---
 #[derive(Serialize, Deserialize)]
+/// Sop Save Request.
 pub struct SopSaveRequest {
     pub id: String,
     pub name: String,
@@ -135,6 +149,7 @@ pub struct SopSaveRequest {
 }
 
 #[derive(Serialize)]
+/// Sop Detail Response.
 pub struct SopDetailResponse {
     pub id: String,
     pub name: String,
@@ -145,6 +160,7 @@ pub struct SopDetailResponse {
 // --- Cognitive Map Types ---
 
 #[derive(Serialize)]
+/// Cog Map Response.
 pub struct CogMapResponse {
     pub map: Option<sisyphus_types::CogMap>,
     pub status: String,
@@ -153,6 +169,7 @@ pub struct CogMapResponse {
 // --- Cognitive Trace (Explainability) Types ---
 
 #[derive(Deserialize)]
+/// Cognitive Trace Query.
 pub struct CognitiveTraceQuery {
     /// 最多返回多少条最近决策（默认 100，上限 200）。
     pub limit: Option<usize>,
@@ -187,11 +204,13 @@ pub struct ExperienceQueryRequest {
 }
 
 #[derive(Serialize)]
+/// Experience Similar Response.
 pub struct ExperienceSimilarResponse {
     pub experiences: Vec<sisyphus_types::experience::ExperienceTuple>,
 }
 
 #[derive(Serialize, Deserialize)]
+/// Create Project Request.
 pub struct CreateProjectRequest {
     pub id: String,
     pub name: String,
@@ -199,6 +218,7 @@ pub struct CreateProjectRequest {
 }
 
 #[derive(Serialize, Deserialize)]
+/// Proposal Action Request.
 pub struct ProposalActionRequest {
     pub project_id: String,
     pub proposal_id: String,
@@ -206,16 +226,19 @@ pub struct ProposalActionRequest {
 }
 
 #[derive(Serialize)]
+/// Proposal List Response.
 pub struct ProposalListResponse {
     pub proposals: Vec<StrategicProposal>,
 }
 
 #[derive(Serialize, Deserialize)]
+/// Predict Completion Request.
 pub struct PredictCompletionRequest {
     pub project_id: String,
 }
 
 #[derive(Serialize, Deserialize)]
+/// Check Delay Alerts Request.
 pub struct CheckDelayAlertsRequest {
     pub project_id: String,
     #[serde(default)]
@@ -223,11 +246,13 @@ pub struct CheckDelayAlertsRequest {
 }
 
 #[derive(Serialize, Deserialize)]
+/// Delay Alerts Response.
 pub struct DelayAlertsResponse {
     pub alerts: Vec<DelayAlert>,
 }
 
 #[derive(Serialize, Deserialize)]
+/// Project Costs Request.
 pub struct ProjectCostsRequest {
     pub project_id: String,
     pub total_goals: usize,
@@ -235,37 +260,44 @@ pub struct ProjectCostsRequest {
 }
 
 #[derive(Serialize, Deserialize)]
+/// Find Bottlenecks Request.
 pub struct FindBottlenecksRequest {
     pub project_id: String,
 }
 
 #[derive(Serialize, Deserialize)]
+/// Suggest Parallel Execution Request.
 pub struct SuggestParallelExecutionRequest {
     pub project_id: String,
 }
 
 #[derive(Serialize, Deserialize)]
+/// Estimate Goal Resources Request.
 pub struct EstimateGoalResourcesRequest {
     pub project_id: String,
     pub goal_ids: Vec<String>,
 }
 
 #[derive(Serialize, Deserialize)]
+/// Estimate Goal Resources Response.
 pub struct EstimateGoalResourcesResponse {
     pub estimates: Vec<GoalResourceEstimate>,
 }
 
 #[derive(Serialize, Deserialize)]
+/// Find Bottlenecks Response.
 pub struct FindBottlenecksResponse {
     pub bottlenecks: Vec<Bottleneck>,
 }
 
 #[derive(Serialize, Deserialize)]
+/// Suggest Parallel Execution Response.
 pub struct SuggestParallelExecutionResponse {
     pub opportunities: Vec<ParallelizationOpportunity>,
 }
 
 #[derive(Serialize, Deserialize)]
+/// Update Goal Status Request.
 pub struct UpdateGoalStatusRequest {
     pub project_id: String,
     pub milestone_id: String,
@@ -274,12 +306,14 @@ pub struct UpdateGoalStatusRequest {
 }
 
 #[derive(Serialize, Deserialize)]
+/// Add Milestone Request.
 pub struct AddMilestoneRequest {
     pub project_id: String,
     pub milestone: sisyphus_types::Milestone,
 }
 
 #[derive(Serialize, Deserialize)]
+/// Add Phase Request.
 pub struct AddPhaseRequest {
     pub project_id: String,
     pub milestone_id: String,
@@ -287,6 +321,7 @@ pub struct AddPhaseRequest {
 }
 
 #[derive(Serialize, Deserialize)]
+/// Add Goal Request.
 pub struct AddGoalRequest {
     pub project_id: String,
     pub milestone_id: String,
@@ -296,6 +331,7 @@ pub struct AddGoalRequest {
 
 // --- Tool Execution Types ---
 #[derive(Deserialize)]
+/// Execute Tool Request.
 pub struct ExecuteToolRequest {
     pub tool_id: String,
     pub args_json: String,
@@ -303,6 +339,7 @@ pub struct ExecuteToolRequest {
 }
 
 #[derive(Serialize)]
+/// Execute Tool Response.
 pub struct ExecuteToolResponse {
     pub status: String,
     pub result_json: String,
@@ -310,6 +347,7 @@ pub struct ExecuteToolResponse {
 
 // --- Cognitive Delegation Types ---
 #[derive(Deserialize)]
+/// Delegate Cognitive Task Request.
 pub struct DelegateCognitiveTaskRequest {
     pub goal: String,
     pub context: String,
@@ -326,6 +364,7 @@ pub struct DelegateCognitiveTaskResponse {
 
 // --- Feedback Types ---
 #[derive(Deserialize)]
+/// Submit Feedback Request.
 pub struct SubmitFeedbackRequest {
     pub feedback_json: String,
     /// Optional project ID (default: "default"). Can be overridden by `x-project-id` header.
@@ -341,6 +380,7 @@ pub struct SubmitFeedbackResponse {
 
 // --- Experience Capture Types ---
 #[derive(Deserialize)]
+/// Capture Experience Request.
 pub struct CaptureExperienceRequest {
     pub plan_id: String,
     pub plan_json: String,
@@ -356,6 +396,7 @@ pub struct CaptureExperienceResponse {
 
 // --- Experience Sharing Types (multi-workspace knowledge transfer) ---
 #[derive(Deserialize)]
+/// Share Experience Request.
 pub struct ShareExperienceRequest {
     /// Storage key of the experience, e.g. "exp:1700000000".
     pub exp_key: String,
@@ -370,12 +411,14 @@ pub struct ShareExperienceResponse {
 }
 
 #[derive(Serialize)]
+/// Shared Experiences Response.
 pub struct SharedExperiencesResponse {
     pub experiences: Vec<sisyphus_types::experience::ExperienceTuple>,
 }
 
 // --- Skill Detail Types ---
 #[derive(Serialize)]
+/// Skill Detail Response.
 pub struct SkillDetailResponse {
     pub found: bool,
     pub skill: Option<sisyphus_types::skill::SkillMetadata>,
@@ -383,6 +426,7 @@ pub struct SkillDetailResponse {
 
 // --- Skill Market / Peer Registry Types ---
 #[derive(Deserialize)]
+/// Publish Skill Request.
 pub struct PublishSkillRequest {
     /// Remote registry base URL, e.g. "https://registry.sisyphus.ai".
     pub registry_url: String,
@@ -398,6 +442,7 @@ pub struct PublishSkillResponse {
 }
 
 #[derive(Serialize)]
+/// Skill Search Response.
 pub struct SkillSearchResponse {
     pub results: Vec<sisyphus_mem::skill_market::SkillRegistryEntry>,
 }
@@ -409,12 +454,14 @@ pub struct PeerSkillListResponse {
 }
 
 #[derive(Deserialize)]
+/// Search Skills Request.
 pub struct SearchSkillsRequest {
     pub q: String,
 }
 
 // --- Benchmark Types ---
 #[derive(Serialize)]
+/// Benchmark Entry.
 pub struct BenchmarkEntry {
     pub name: String,
     pub duration_secs: f64,
@@ -424,17 +471,20 @@ pub struct BenchmarkEntry {
 }
 
 #[derive(Deserialize)]
+/// List Benchmarks Request.
 pub struct ListBenchmarksRequest {
     pub name_filter: Option<String>,
 }
 
 #[derive(Serialize)]
+/// List Benchmarks Response.
 pub struct ListBenchmarksResponse {
     pub benchmarks: Vec<BenchmarkEntry>,
 }
 
 // --- Circuit Breaker Types ---
 #[derive(Serialize)]
+/// Breaker Status.
 pub struct BreakerStatus {
     pub model_name: String,
     pub state: String,
@@ -443,22 +493,26 @@ pub struct BreakerStatus {
 }
 
 #[derive(Deserialize)]
+/// Breaker Metrics Request.
 pub struct BreakerMetricsRequest {
     pub model_name: Option<String>,
 }
 
 #[derive(Serialize)]
+/// Breaker Metrics Response.
 pub struct BreakerMetricsResponse {
     pub breakers: Vec<BreakerStatus>,
 }
 
 // --- Learning Insights Types ---
 #[derive(Deserialize)]
+/// Learning Insights Request.
 pub struct LearningInsightsRequest {
     pub strategy_filter: Option<String>,
 }
 
 #[derive(Serialize)]
+/// Strategy Insight.
 pub struct StrategyInsight {
     pub strategy: String,
     pub total_uses: u64,
@@ -469,6 +523,7 @@ pub struct StrategyInsight {
 }
 
 #[derive(Serialize)]
+/// Learning Insights Response.
 pub struct LearningInsightsResponse {
     pub total_samples: u64,
     pub overall_success_rate: f64,
@@ -477,6 +532,7 @@ pub struct LearningInsightsResponse {
 
 // --- Plugin Types ---
 #[derive(Serialize)]
+/// Plugin Descriptor.
 pub struct PluginDescriptor {
     pub name: String,
     pub version: String,
@@ -487,6 +543,7 @@ pub struct PluginDescriptor {
 }
 
 #[derive(Deserialize)]
+/// Load Plugin Request.
 pub struct LoadPluginRequest {
     pub name: String,
     pub version: String,
@@ -496,17 +553,20 @@ pub struct LoadPluginRequest {
 }
 
 #[derive(Serialize)]
+/// Load Plugin Response.
 pub struct LoadPluginResponse {
     pub success: bool,
     pub error: String,
 }
 
 #[derive(Deserialize)]
+/// Unload Plugin Request.
 pub struct UnloadPluginRequest {
     pub name: String,
 }
 
 #[derive(Serialize)]
+/// Unload Plugin Response.
 pub struct UnloadPluginResponse {
     pub success: bool,
     pub error: String,
@@ -514,6 +574,7 @@ pub struct UnloadPluginResponse {
 
 // --- JCode Call Types ---
 #[derive(Deserialize)]
+/// Call Jcode Request.
 pub struct CallJcodeRequest {
     pub task_id: String,
     pub goal: String,
@@ -521,6 +582,7 @@ pub struct CallJcodeRequest {
 }
 
 #[derive(Serialize)]
+/// Call Jcode Response.
 pub struct CallJcodeResponse {
     pub success: bool,
     pub result: String,
@@ -529,6 +591,7 @@ pub struct CallJcodeResponse {
 
 // --- Chaos Types ---
 #[derive(Deserialize)]
+/// Chaos Start Request.
 pub struct ChaosStartRequest {
     pub name: String,
     pub fault_types: Vec<String>,
@@ -538,6 +601,7 @@ pub struct ChaosStartRequest {
 }
 
 #[derive(Serialize)]
+/// Chaos Start Response.
 pub struct ChaosStartResponse {
     pub success: bool,
     pub experiment_id: String,
@@ -545,11 +609,13 @@ pub struct ChaosStartResponse {
 }
 
 #[derive(Deserialize)]
+/// Chaos Stop Request.
 pub struct ChaosStopRequest {
     pub experiment_id: String,
 }
 
 #[derive(Serialize)]
+/// Chaos Experiment Result.
 pub struct ChaosExperimentResult {
     pub name: String,
     pub operations_attempted: u64,
@@ -560,6 +626,7 @@ pub struct ChaosExperimentResult {
 }
 
 #[derive(Serialize)]
+/// Chaos Stop Response.
 pub struct ChaosStopResponse {
     pub success: bool,
     pub result: ChaosExperimentResult,
@@ -567,11 +634,13 @@ pub struct ChaosStopResponse {
 }
 
 #[derive(Deserialize)]
+/// Chaos Status Request.
 pub struct ChaosStatusRequest {
     pub experiment_id: String,
 }
 
 #[derive(Serialize)]
+/// Chaos Status Response.
 pub struct ChaosStatusResponse {
     pub running: bool,
     pub result: ChaosExperimentResult,
@@ -579,6 +648,7 @@ pub struct ChaosStatusResponse {
 
 // --- Anomaly Types ---
 #[derive(Serialize)]
+/// Anomaly Report.
 pub struct AnomalyReport {
     pub node_name: String,
     pub severity: String,
@@ -590,23 +660,27 @@ pub struct AnomalyReport {
 }
 
 #[derive(Deserialize)]
+/// Anomaly Request.
 pub struct AnomalyRequest {
     pub sop_id: String,
 }
 
 // --- Delete Workspace ---
 #[derive(Deserialize)]
+/// Delete Workspace Request.
 pub struct DeleteWorkspaceRequest {
     pub workspace_id: String,
 }
 
 #[derive(Serialize)]
+/// Delete Workspace Response.
 pub struct DeleteWorkspaceResponse {
     pub success: bool,
     pub error: String,
 }
 
 #[derive(Serialize)]
+/// Session Summary.
 pub struct SessionSummary {
     pub id: String,
     pub name: String,
@@ -616,6 +690,7 @@ pub struct SessionSummary {
 }
 
 #[derive(Serialize, Deserialize)]
+/// Session Detail.
 pub struct SessionDetail {
     pub id: String,
     pub name: String,
@@ -626,6 +701,7 @@ pub struct SessionDetail {
 }
 
 #[derive(Serialize, Deserialize)]
+/// Message Dto.
 pub struct MessageDto {
     pub role: String,
     pub content: String,
@@ -634,17 +710,20 @@ pub struct MessageDto {
 }
 
 #[derive(Serialize, Deserialize)]
+/// Create Session Request.
 pub struct CreateSessionRequest {
     pub name: String,
 }
 
 #[derive(Serialize, Deserialize)]
+/// Add Message Request.
 pub struct AddMessageRequest {
     pub role: String,
     pub content: String,
 }
 
 #[derive(Serialize, Deserialize)]
+/// Execute Request.
 pub struct ExecuteRequest {
     pub tool_id: String,
     #[serde(default)]
@@ -654,12 +733,14 @@ pub struct ExecuteRequest {
 }
 
 #[derive(Serialize)]
+/// Execute Response.
 pub struct ExecuteResponse {
     pub status: String,
     pub result_json: String,
 }
 
 #[derive(Serialize)]
+/// Tool Entry.
 pub struct ToolEntry {
     pub tool_id: String,
     pub name: String,
@@ -668,6 +749,7 @@ pub struct ToolEntry {
 }
 
 #[derive(Serialize)]
+/// Agent Entry.
 pub struct AgentEntry {
     pub agent_id: String,
     pub display_name: String,
@@ -677,6 +759,7 @@ pub struct AgentEntry {
 }
 
 #[derive(Serialize)]
+/// Skill Entry.
 pub struct SkillEntry {
     pub name: String,
     pub description: String,
@@ -691,6 +774,7 @@ pub struct SkillEntry {
 use sisyphus_types::config::JwtConfig;
 
 #[derive(Clone)]
+/// Rest Api State.
 pub struct RestApiState {
     pub bridge: Arc<MySisyphusBridge>,
     pub session_db: PathBuf,

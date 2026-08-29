@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+/// Milestone Status.
 pub enum MilestoneStatus {
     Pending,
     InProgress,
@@ -20,6 +21,7 @@ impl std::fmt::Display for MilestoneStatus {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
+/// Goal Ref.
 pub struct GoalRef {
     pub goal_id: String,
     pub description: String,
@@ -27,6 +29,7 @@ pub struct GoalRef {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
+/// Phase.
 pub struct Phase {
     pub id: String,
     pub name: String,
@@ -35,6 +38,7 @@ pub struct Phase {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
+/// Milestone.
 pub struct Milestone {
     pub id: String,
     pub name: String,
@@ -61,11 +65,13 @@ impl Milestone {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
+/// Roadmap.
 pub struct Roadmap {
     pub milestones: Vec<Milestone>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
+/// Project.
 pub struct Project {
     pub id: String,
     pub name: String,

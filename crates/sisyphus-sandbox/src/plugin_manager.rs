@@ -11,6 +11,7 @@ use async_trait::async_trait;
 use sisyphus_types::PluginDescriptor;
 use sisyphus_types::PluginManagerTrait;
 
+/// Plugin Manager.
 pub struct PluginManager {
     executor: WasmToolExecutor,
     plugins: Arc<DashMap<String, PluginDescriptor>>,

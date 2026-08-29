@@ -12,6 +12,7 @@ use super::theme;
 
 // ── 技能市场 DTO ────────────────────────────────
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// Remote Skill Entry.
 pub struct RemoteSkillEntry {
     pub id: String,
     pub name: String,
@@ -22,6 +23,7 @@ pub struct RemoteSkillEntry {
 
 // ── 工作区 DTO ────────────────────────────────────
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// Workspace Entry.
 pub struct WorkspaceEntry {
     pub id: String,
     pub name: String,
@@ -47,6 +49,7 @@ pub(crate) struct StreamEvent {
 }
 
 #[derive(Debug, Clone)]
+/// Log Entry.
 pub enum LogEntry {
     Info(String),
     Success(String),

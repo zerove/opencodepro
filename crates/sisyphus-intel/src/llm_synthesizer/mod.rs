@@ -16,6 +16,7 @@ mod tests;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// Strategic Lesson.
 pub struct StrategicLesson {
     pub goal: String,
     pub sop_json: String,

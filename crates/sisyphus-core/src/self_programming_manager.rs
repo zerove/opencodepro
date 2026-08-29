@@ -60,6 +60,7 @@ impl RegressionTestResult {
     }
 }
 
+/// Self Programming Manager.
 pub struct SelfProgrammingManager {
     pub coder: ToolCoder,
     pub compiler: WasmCompiler,

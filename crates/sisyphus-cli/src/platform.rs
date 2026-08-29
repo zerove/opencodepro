@@ -1,6 +1,7 @@
 use std::path::MAIN_SEPARATOR;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Platform Info.
 pub struct PlatformInfo {
     pub os: String,
     pub shell: String,

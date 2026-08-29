@@ -16,6 +16,7 @@ use thiserror::Error;
 // ── Errors ───────────────────────────────────────────────────────────────
 
 #[derive(Error, Debug)]
+/// Visual Error.
 pub enum VisualError {
     #[error("VLM provider error: {0}")]
     ProviderError(String),
@@ -32,6 +33,7 @@ pub enum VisualError {
 // ── Types ────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// Visual Analysis Result.
 pub struct VisualAnalysisResult {
     pub description: String,
     pub detected_elements: Vec<DetectedElement>,
@@ -39,6 +41,7 @@ pub struct VisualAnalysisResult {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// Detected Element.
 pub struct DetectedElement {
     pub label: String,
     pub bounding_box: [f32; 4], // [x, y, w, h]
@@ -70,6 +73,7 @@ impl Default for VlmProviderConfig {
 // ── Provider trait ───────────────────────────────────────────────────────
 
 #[async_trait]
+/// Visual Perception Provider.
 pub trait VisualPerceptionProvider: Send + Sync {
     async fn analyze_image(
         &self,
@@ -248,6 +252,7 @@ impl VisualPerceptionProvider for HttpVlmProvider {
 
 // ── Mock provider (for testing) ─────────────────────────────────────────
 
+/// Sisyphus Visual Provider.
 pub struct SisyphusVisualProvider {
     _llm_client: Arc<dyn LlmClient>,
 }
@@ -287,6 +292,7 @@ impl VisualPerceptionProvider for SisyphusVisualProvider {
 
 // ── VisualPerceptionManager ──────────────────────────────────────────────
 
+/// Visual Perception Manager.
 pub struct VisualPerceptionManager {
     provider: Arc<dyn VisualPerceptionProvider>,
     _llm_client: Arc<dyn LlmClient>,

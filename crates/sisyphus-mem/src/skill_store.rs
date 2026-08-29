@@ -7,6 +7,7 @@ use sisyphus_types::skill::{SkillBundle, SkillMetadata};
 use sqlx::{Row, SqlitePool};
 
 #[derive(Clone)]
+/// Skill Store.
 pub struct SkillStore {
     pool: SqlitePool,
 }

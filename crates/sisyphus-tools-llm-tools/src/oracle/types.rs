@@ -15,6 +15,7 @@ pub struct FileAnalysis {
 }
 
 #[derive(Debug, Clone)]
+/// Function Info.
 pub struct FunctionInfo {
     pub name: String,
     pub line: usize,
@@ -24,6 +25,7 @@ pub struct FunctionInfo {
 }
 
 #[derive(Debug, Clone)]
+/// Code Issue.
 pub struct CodeIssue {
     pub severity: IssueSeverity,
     pub file: PathBuf,
@@ -33,6 +35,7 @@ pub struct CodeIssue {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Issue Severity.
 pub enum IssueSeverity {
     Warning,
     Style,

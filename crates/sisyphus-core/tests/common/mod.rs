@@ -16,6 +16,7 @@ use std::sync::Arc;
 // Mock Consensus
 // ---------------------------------------------------------------------------
 
+/// Mock Consensus.
 pub struct MockConsensus;
 
 #[async_trait]
@@ -39,6 +40,7 @@ impl Consensus for MockConsensus {
 // Mock LogicalSimulator
 // ---------------------------------------------------------------------------
 
+/// Mock Logical Simulator.
 pub struct MockLogicalSimulator;
 
 #[async_trait]
@@ -63,6 +65,7 @@ impl LogicalSimulator for MockLogicalSimulator {
 // Mock Reflector
 // ---------------------------------------------------------------------------
 
+/// Mock Reflector.
 pub struct MockReflector;
 
 #[async_trait]
@@ -88,6 +91,7 @@ impl sisyphus_intel::reflect::Reflector for MockReflector {
 // Mock SOPEvolver
 // ---------------------------------------------------------------------------
 
+/// Mock Evolver.
 pub struct MockEvolver;
 
 #[async_trait]
@@ -107,6 +111,7 @@ impl sisyphus_intel::reflect::SOPEvolver for MockEvolver {
 // Mock ExperienceBank
 // ---------------------------------------------------------------------------
 
+/// Mock Experience Bank.
 pub struct MockExperienceBank;
 
 #[async_trait]
@@ -126,6 +131,7 @@ impl sisyphus_types::experience::ExperienceBank for MockExperienceBank {
 // Mock FlowSynthesizer — returns a single-node graph
 // ---------------------------------------------------------------------------
 
+/// Mock Synthesizer.
 pub struct MockSynthesizer;
 
 #[async_trait]
@@ -153,6 +159,7 @@ impl sisyphus_intel::FlowSynthesizer for MockSynthesizer {
     }
 }
 
+/// Mock Executor.
 pub struct MockExecutor {
     pub call_count: AtomicUsize,
 }

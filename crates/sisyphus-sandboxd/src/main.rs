@@ -55,6 +55,7 @@ struct Args {
 }
 
 #[derive(Error, Debug)]
+/// Sandbox Error.
 pub enum SandboxError {
     #[error("Failed to create Wasmtime Engine: {0}")]
     EngineCreationFailed(#[from] wasmtime::Error),

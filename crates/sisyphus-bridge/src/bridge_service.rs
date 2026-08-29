@@ -44,6 +44,7 @@ use crate::strategic_executor::StrategicExecutor;
 use crate::tools::{register_builtin_tools, register_strategic_tools};
 use sisyphus_intel::MetaLearningSynthesizer;
 
+/// My Sisyphus Bridge.
 pub struct MySisyphusBridge {
     pub(crate) kernel: Arc<SisyphusKernel>,
     pub(crate) event_bus: tokio::sync::broadcast::Sender<sisyphus_bridge_api::BridgeEvent>,

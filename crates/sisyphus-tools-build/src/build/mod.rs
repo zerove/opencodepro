@@ -29,6 +29,7 @@ pub struct TestResults {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Test Failure.
 pub struct TestFailure {
     pub name: String,
 }

@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::time::Instant;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// Verification Report.
 pub struct VerificationReport {
     pub passed: bool,
     pub details: String,
@@ -12,6 +13,7 @@ pub struct VerificationReport {
     pub cases_failed: u32,
 }
 
+/// Verification Runner.
 pub struct VerificationRunner;
 
 impl Default for VerificationRunner {

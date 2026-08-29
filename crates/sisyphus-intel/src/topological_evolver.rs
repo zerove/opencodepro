@@ -7,6 +7,7 @@ use sisyphus_types::{EvolutionOp, SOPGraph, WasmSOPNode};
 use std::collections::HashMap;
 use std::sync::Arc;
 
+/// Topological Evolver.
 pub struct TopologicalSOPEvolver;
 
 impl Default for TopologicalSOPEvolver {

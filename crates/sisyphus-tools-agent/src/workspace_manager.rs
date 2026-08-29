@@ -8,6 +8,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+/// Workspace.
 pub struct Workspace {
     pub id: String,
     pub name: String,

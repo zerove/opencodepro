@@ -6,6 +6,7 @@ use crate::tui::app::{RemoteSkillEntry, WorkspaceEntry};
 // ── 后台操作类型 ──────────────────────────
 
 #[derive(Debug, Clone, serde::Deserialize)]
+/// Sop Trace Event.
 pub struct SopTraceEvent {
     pub node_id: String,
     pub status: String,
@@ -39,6 +40,7 @@ pub struct CognitiveSummaryRow {
 }
 
 #[derive(Debug)]
+/// Bg Op.
 pub enum BgOp {
     SopsListed {
         count: usize,

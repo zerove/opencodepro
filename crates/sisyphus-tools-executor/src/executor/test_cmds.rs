@@ -1,6 +1,7 @@
 use sisyphus_types::{TestExecutor as TestExecutorTrait, TestResult, TypesError};
 use std::path::Path;
 
+/// Test Executor.
 pub struct TestExecutor {
     // We can add configuration here, like default test commands for different languages
 }

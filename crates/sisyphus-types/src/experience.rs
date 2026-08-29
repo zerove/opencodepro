@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use crate::errors::TypesError;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// Experience Tuple.
 pub struct ExperienceTuple {
     pub context_text: String,
     pub context_hash: String,
@@ -19,6 +20,7 @@ pub struct ExperienceTuple {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// Experience Query.
 pub struct ExperienceQuery {
     pub query_text: String,
     pub context_hash: String,
@@ -29,6 +31,7 @@ pub struct ExperienceQuery {
 }
 
 #[async_trait]
+/// Experience Bank.
 pub trait ExperienceBank: Send + Sync {
     async fn record(&self, exp: ExperienceTuple) -> Result<(), TypesError>;
     async fn query_similar(

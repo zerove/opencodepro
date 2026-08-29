@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use tempfile::NamedTempFile;
 
 #[derive(Debug)]
+/// Grep Match.
 pub struct GrepMatch {
     pub file: PathBuf,
     pub line: usize,
@@ -14,6 +15,7 @@ pub struct GrepMatch {
 }
 
 #[derive(Debug, Clone)]
+/// Explore Match.
 pub struct ExploreMatch {
     pub file: PathBuf,
     pub line: usize,
@@ -24,6 +26,7 @@ pub struct ExploreMatch {
 }
 
 #[derive(Debug, Clone)]
+/// Explore Result.
 pub struct ExploreResult {
     pub matches: Vec<ExploreMatch>,
     pub files_scanned: usize,
@@ -31,6 +34,7 @@ pub struct ExploreResult {
 }
 
 #[derive(Debug, Clone)]
+/// File Context.
 pub struct FileContext {
     pub path: PathBuf,
     pub content: String,

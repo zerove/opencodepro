@@ -2,6 +2,7 @@
 use thiserror::Error;
 
 #[derive(Error, Debug)]
+/// Tool Error.
 pub enum ToolError {
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
@@ -42,6 +43,7 @@ impl From<String> for ToolError {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Permission.
 pub enum Permission {
     Allow,
     Deny,

@@ -1,6 +1,7 @@
 use async_trait::async_trait;
 use sisyphus_types::{ToolExecutor, TypesError};
 
+/// Mock Executor.
 pub struct MockExecutor;
 
 #[async_trait]

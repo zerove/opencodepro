@@ -37,6 +37,7 @@ pub struct VectorRecord {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+/// Cognitive Event.
 pub enum CognitiveEvent {
     Predict {
         prediction: serde_json::Value,
@@ -243,6 +244,7 @@ fn default_tool_fuel() -> u64 {
 use im::HashMap as ImMap;
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
+/// Sisyphus Notepad.
 pub struct SisyphusNotepad {
     /// Structural sections of the working memory.
     /// Key: Section ID (e.g., "plan.architecture"), Value: Content.
@@ -337,6 +339,7 @@ pub struct TriggerDef {
 }
 
 #[async_trait::async_trait]
+/// Experience Retriever.
 pub trait ExperienceRetriever: Send + Sync {
     async fn retrieve_relevant(
         &self,

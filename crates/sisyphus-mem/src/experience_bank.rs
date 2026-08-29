@@ -48,6 +48,7 @@ impl std::fmt::Display for LexicalFallbackReason {
     }
 }
 
+/// Vector Experience Bank.
 pub struct VectorExperienceBank {
     store: Arc<MfsStore>,
     vector_store: Arc<crate::vector_memory::VectorMemoryStore>,

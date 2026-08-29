@@ -40,6 +40,7 @@ pub struct GateDecision {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Gate Verdict.
 pub enum GateVerdict {
     /// 通过：可执行
     Allow,

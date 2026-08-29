@@ -17,6 +17,7 @@ use tokio::sync::RwLock;
 // ── Errors ───────────────────────────────────────────────────────────────
 
 #[derive(Error, Debug)]
+/// Knowledge Error.
 pub enum KnowledgeError {
     #[error("Asset not found: {0}")]
     AssetNotFound(String),
@@ -37,6 +38,7 @@ pub struct KnowledgeSnapshot {
 
 // ── KnowledgeGraph ───────────────────────────────────────────────────────
 
+/// Knowledge Graph.
 pub struct KnowledgeGraph {
     graph: DiGraph<String, RelationType>,
     node_map: HashMap<String, NodeIndex>,
@@ -166,6 +168,7 @@ impl KnowledgeGraph {
 
 // ── AssetManager ─────────────────────────────────────────────────────────
 
+/// Asset Manager.
 pub struct AssetManager {
     graph: Arc<RwLock<KnowledgeGraph>>,
     storage_path: std::path::PathBuf,

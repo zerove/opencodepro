@@ -5,6 +5,7 @@ use std::sync::Arc;
 use tonic::{transport::Channel, Request};
 
 #[derive(Clone)]
+/// Bridge Client.
 pub struct BridgeClient {
     client: Arc<tokio::sync::RwLock<SisyphusBridgeClient<Channel>>>,
 }

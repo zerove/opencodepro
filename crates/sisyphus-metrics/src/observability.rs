@@ -192,6 +192,7 @@ pub fn mem_op_labels(op: &str, layer: &str, hit: bool) -> Vec<Label> {
 // ─── Error type ───────────────────────────────────────────────────────
 
 #[derive(Error, Debug)]
+/// Observability Error.
 pub enum ObservabilityError {
     #[error("Tracing filter error: {0}")]
     FilterError(String),

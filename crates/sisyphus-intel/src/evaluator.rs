@@ -4,6 +4,7 @@ use sisyphus_types::{SOPGraphConfig, SopEvaluation, SopEvaluator, TypesError};
 use std::collections::HashMap;
 use std::sync::Arc;
 
+/// Heuristic Sop Evaluator.
 pub struct HeuristicSopEvaluator {
     llm: Arc<dyn LlmClient>,
 }

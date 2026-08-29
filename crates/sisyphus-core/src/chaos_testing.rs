@@ -344,6 +344,7 @@ fn simple_u64_random(seed: &str, max: u64) -> u64 {
 
 use async_trait::async_trait;
 
+/// Noop Tool Executor.
 pub struct NoopToolExecutor;
 
 #[async_trait]

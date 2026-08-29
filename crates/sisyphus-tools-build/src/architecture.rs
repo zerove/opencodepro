@@ -280,6 +280,7 @@ pub fn hello() -> String {
 
 fn private() {}
 
+/// My Struct.
 pub struct MyStruct {
     pub field: i32,
 }

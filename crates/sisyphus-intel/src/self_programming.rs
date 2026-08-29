@@ -34,6 +34,7 @@ pub struct AttemptRecord {
 }
 
 #[derive(Debug, Clone)]
+/// Tool Generation Result.
 pub struct ToolGenerationResult {
     pub tool_id: String,
     pub final_code: Option<String>,
@@ -51,6 +52,7 @@ pub trait Verifier: Send + Sync {
 }
 
 #[derive(Debug, Clone)]
+/// Verification Outcome.
 pub struct VerificationOutcome {
     pub passed: bool,
     pub diagnostics: String,
@@ -92,6 +94,7 @@ impl ToolRegistrar for FileRegistrar {
 }
 
 #[derive(Debug, Clone)]
+/// Loop Config.
 pub struct LoopConfig {
     pub max_attempts: usize,
     pub enabled: bool,
@@ -103,6 +106,7 @@ impl Default for LoopConfig {
     }
 }
 
+/// Self Programming Loop.
 pub struct SelfProgrammingLoop {
     _gap: Arc<GapAnalyzer>,
     coder: Arc<ToolCoder>,

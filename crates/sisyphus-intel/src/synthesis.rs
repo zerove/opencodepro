@@ -9,6 +9,7 @@ use std::sync::Arc;
 // 流程合成
 // ---------------------------------------------------------------------------
 
+/// Synthesis Result.
 pub struct SynthesisResult {
     pub graph: Arc<SOPGraph>,
     pub start_node: NodeIndex,
@@ -16,6 +17,7 @@ pub struct SynthesisResult {
 }
 
 #[async_trait]
+/// Flow Synthesizer.
 pub trait FlowSynthesizer: Send + Sync {
     async fn synthesize(
         &self,
@@ -28,6 +30,7 @@ pub trait FlowSynthesizer: Send + Sync {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+/// Action Type.
 pub enum ActionType {
     Fetch,
     Process,
@@ -131,6 +134,7 @@ fn build_plan_description(actions: &[ActionType], parallel: bool) -> String {
     }
 }
 
+/// Goal Driven Synthesizer.
 pub struct GoalDrivenSynthesizer {
     pub tool_executor: Arc<dyn sisyphus_types::ToolExecutor>,
 }
@@ -251,6 +255,7 @@ impl FlowSynthesizer for GoalDrivenSynthesizer {
 }
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+/// Dynamic Sop Plan.
 pub struct DynamicSopPlan {
     pub nodes: Vec<DynamicNode>,
     pub edges: Vec<DynamicEdge>,
@@ -258,6 +263,7 @@ pub struct DynamicSopPlan {
 }
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+/// Dynamic Node.
 pub struct DynamicNode {
     pub id: String,
     pub name: String,
@@ -266,11 +272,13 @@ pub struct DynamicNode {
 }
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+/// Dynamic Edge.
 pub struct DynamicEdge {
     pub from: String,
     pub to: String,
 }
 
+/// Dynamic Sop Synthesizer.
 pub struct DynamicSopSynthesizer {
     pub tool_executor: Arc<dyn sisyphus_types::ToolExecutor>,
     pub llm_client: Arc<dyn LlmClient>,
@@ -383,6 +391,7 @@ pub async fn synthesize_composite(
     Ok(composite)
 }
 
+/// Meta Learning Synthesizer.
 pub struct MetaLearningSynthesizer {
     pub inner: Arc<dyn FlowSynthesizer>,
     pub meta_learner: Arc<parking_lot::Mutex<sisyphus_tools_llm_tools::meta_learner::MetaLearner>>,
@@ -430,6 +439,7 @@ impl FlowSynthesizer for MetaLearningSynthesizer {
     }
 }
 
+/// Strategic Sop Synthesizer.
 pub struct StrategicSopSynthesizer {
     pub inner: Arc<dyn FlowSynthesizer>,
     pub simulator: Arc<dyn crate::Simulator>,

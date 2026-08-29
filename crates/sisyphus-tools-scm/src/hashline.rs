@@ -7,6 +7,7 @@ use std::path::Path;
 use tempfile::NamedTempFile;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Hashline Data.
 pub struct HashlineData {
     pub line_number: usize,
     pub content_hash: String,

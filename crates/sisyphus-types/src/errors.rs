@@ -1,6 +1,7 @@
 use thiserror::Error;
 
 #[derive(Debug, Error)]
+/// Types Error.
 pub enum TypesError {
     #[error("Failed to read config file '{path}': {source}")]
     ConfigReadError {
@@ -63,6 +64,7 @@ pub enum TypesError {
 }
 
 #[derive(Debug, Error)]
+/// Node Execution Error.
 pub enum NodeExecutionError {
     #[error("Tool '{tool_id}' failure: {details}")]
     ToolFailure { tool_id: String, details: String },
@@ -73,6 +75,7 @@ pub enum NodeExecutionError {
 }
 
 #[derive(Debug, Error)]
+/// Cognitive Error.
 pub enum CognitiveError {
     #[error("Iteration limit exceeded")]
     MaxIterationsReached,

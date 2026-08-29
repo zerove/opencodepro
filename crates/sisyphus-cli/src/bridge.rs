@@ -14,6 +14,7 @@ pub(crate) use sisyphus_bridge_api::{
 };
 
 #[derive(Clone)]
+/// Bridge Client.
 pub struct BridgeClient {
     inner: SisyphusBridgeClient<tonic::transport::Channel>,
     token: Option<String>,

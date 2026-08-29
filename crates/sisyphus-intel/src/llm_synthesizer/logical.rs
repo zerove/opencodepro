@@ -8,6 +8,7 @@ use async_trait::async_trait;
 use sisyphus_types::{ExecutionContext, SOPGraph};
 use std::sync::Arc;
 
+/// Logical Synthesizer.
 pub struct LogicalSOPSynthesizer {
     pub llm_client: Arc<dyn sisyphus_tools_llm::LlmClient>,
     pub tool_executor: Arc<dyn sisyphus_types::ToolExecutor>,

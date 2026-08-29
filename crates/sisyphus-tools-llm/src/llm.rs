@@ -14,6 +14,7 @@ pub mod dynamic;
 pub mod openai;
 
 #[async_trait::async_trait]
+/// Embedding Client.
 pub trait EmbeddingClient: Send + Sync {
     async fn embed(&self, text: &str) -> Result<Vec<f32>, sisyphus_types::TypesError>;
 }

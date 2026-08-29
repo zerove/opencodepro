@@ -5,11 +5,13 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+/// Subgraph Pattern.
 pub struct SubgraphPattern {
     pub nodes: Vec<(String, String)>, // (node_name, tool_id)
     pub edges: Vec<(usize, usize)>,   // Indices into the nodes vector
 }
 
+/// Pattern Analyzer.
 pub struct PatternAnalyzer {
     // 将模式映射到其在不同图谱中的出现频率
     pub pattern_frequency: HashMap<SubgraphPattern, usize>,
@@ -147,6 +149,7 @@ impl PatternAnalyzer {
 }
 
 #[derive(Debug, Clone)]
+/// Cluster Analysis.
 pub struct ClusterAnalysis {
     pub goal_cluster: String,
     pub common_failure_mode: String,
@@ -154,6 +157,7 @@ pub struct ClusterAnalysis {
     pub suggested_shift: String,
 }
 
+/// Semantic Pattern Analyzer.
 pub struct SemanticPatternAnalyzer {
     pub min_cluster_size: usize,
 }

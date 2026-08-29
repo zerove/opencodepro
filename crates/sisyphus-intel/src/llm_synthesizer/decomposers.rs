@@ -5,10 +5,12 @@ use async_trait::async_trait;
 use std::sync::Arc;
 
 #[async_trait]
+/// Goal Decomposer.
 pub trait GoalDecomposer: Send + Sync {
     async fn decompose(&self, goal: &str) -> Result<Vec<ActionType>, String>;
 }
 
+/// Llm Goal Decomposer.
 pub struct LlmGoalDecomposer<F>
 where
     F: Fn(String) -> Result<Vec<ActionType>, String> + Send + Sync + 'static,
@@ -36,6 +38,7 @@ where
     }
 }
 
+/// Fallback Goal Decomposer.
 pub struct FallbackGoalDecomposer {
     inner: Arc<dyn GoalDecomposer>,
 }

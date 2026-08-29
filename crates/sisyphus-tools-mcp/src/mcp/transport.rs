@@ -5,6 +5,7 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, Command};
 
 #[async_trait]
+/// Mcp Transport.
 pub trait McpTransport: Send + 'static {
     /// Send a JSON-RPC message and receive the response.
     async fn request(&mut self, message: &str) -> ToolResult<String>;
@@ -84,6 +85,7 @@ impl McpTransport for StdioTransport {
     }
 }
 
+/// Http Transport.
 pub struct HttpTransport {
     base_url: String,
     client: reqwest::Client,

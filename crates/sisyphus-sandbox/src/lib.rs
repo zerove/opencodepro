@@ -14,6 +14,7 @@ pub use custom_executor::CustomToolExecutor;
 pub use plugin_manager::PluginManager;
 
 #[derive(Error, Debug)]
+/// Sandbox Error.
 pub enum SandboxError {
     #[error("Failed to create Wasmtime Engine: {0}")]
     EngineCreationFailed(#[from] wasmtime::Error),
@@ -47,6 +48,7 @@ pub enum SandboxError {
 }
 
 #[derive(Clone)]
+/// Wasm Tool Executor.
 pub struct WasmToolExecutor {
     engine: Engine,
     tools_path: PathBuf,

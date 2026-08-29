@@ -5,6 +5,7 @@ use sisyphus_tools_llm::metis::LlmClient;
 // ── Types ──────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+/// Security Severity.
 pub enum SecuritySeverity {
     Critical,
     High,
@@ -24,6 +25,7 @@ impl std::fmt::Display for SecuritySeverity {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// Vulnerability.
 pub struct Vulnerability {
     pub vuln_type: String, // e.g. "Buffer Overflow", "SQL Injection"
     pub severity: SecuritySeverity,
@@ -34,6 +36,7 @@ pub struct Vulnerability {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// Security Audit Report.
 pub struct SecurityAuditReport {
     pub summary: String,
     #[serde(default)]
@@ -43,6 +46,7 @@ pub struct SecurityAuditReport {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// Attack Vector.
 pub struct AttackVector {
     pub vector: String,
     pub description: String,
@@ -51,6 +55,7 @@ pub struct AttackVector {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// Threat Model Report.
 pub struct ThreatModelReport {
     pub summary: String,
     #[serde(default)]

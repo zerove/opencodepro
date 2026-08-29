@@ -22,6 +22,7 @@ pub use cmd_bridge::*;
 // ── 主命令枚举 ──────────────────────────────────
 
 #[derive(Subcommand)]
+/// Commands.
 pub enum Commands {
     // ── 文件工具 ──────────────────────────────────────
     #[command(next_help_heading = "File Tools")]
@@ -244,6 +245,7 @@ pub enum Commands {
 // ── 共享类型 ────────────────────────────────────────
 
 #[derive(ValueEnum, Clone, Debug)]
+/// Priority Arg.
 pub enum PriorityArg {
     Low,
     Medium,

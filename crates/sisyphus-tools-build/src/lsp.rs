@@ -26,6 +26,7 @@ use tokio::process::Child;
 
 // ── LSP Client ─────────────────────────────────────────────
 
+/// Lsp Client.
 pub struct LspClient {
     child: Option<Child>,
     reader: BufReader<tokio::process::ChildStdout>,

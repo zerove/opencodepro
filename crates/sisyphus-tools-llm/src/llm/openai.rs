@@ -118,6 +118,7 @@ impl LlmClient for OpenAiLlmClient {
     }
 }
 
+/// Open Ai Embedding Client.
 pub struct OpenAiEmbeddingClient {
     pub api_key: String,
     pub endpoint: String,

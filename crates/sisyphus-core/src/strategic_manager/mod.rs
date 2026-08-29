@@ -76,6 +76,7 @@ impl CognitiveReport {
     }
 }
 
+/// Strategic Manager.
 pub struct StrategicManager {
     pub intelligence_manager: Arc<IntelligenceManager>,
     pub execution_manager: Arc<ExecutionManager>,

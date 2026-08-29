@@ -40,6 +40,7 @@ pub struct CategoryConfig {
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq)]
+/// Budget Mode.
 pub enum BudgetMode {
     /// Log a warning but allow the LLM call to proceed.
     #[default]
@@ -75,6 +76,7 @@ fn default_embedding_provider() -> String {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
+/// Llm Config.
 pub struct LlmConfig {
     #[serde(default)]
     pub api_key: String,

@@ -19,6 +19,7 @@ pub struct ToolGap {
     pub suggested_tool_spec: ToolSpec,
 }
 
+/// Gap Analyzer.
 pub struct GapAnalyzer {
     llm_client: Arc<dyn sisyphus_tools_llm::LlmClient>,
 }

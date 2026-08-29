@@ -4,6 +4,7 @@ use sisyphus_tools_llm::LlmClient;
 use sisyphus_types::tools::ToolSpec;
 use std::sync::Arc;
 
+/// Tool Coder.
 pub struct ToolCoder {
     llm_client: Arc<dyn LlmClient>,
 }
