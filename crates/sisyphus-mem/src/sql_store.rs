@@ -597,7 +597,11 @@ impl SqlStore {
                         .execute(&mut *tx)
                         .await?;
                 }
-                WriteOp::Flush(_) => unreachable!("Flush op should not be in batch"),
+                WriteOp::Flush(_) => {
+                    return Err(anyhow::anyhow!(
+                        "Flush op should not be in batch (internal invariant violation)"
+                    ));
+                }
             }
         }
 

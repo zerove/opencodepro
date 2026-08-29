@@ -158,13 +158,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut sig_rx = shutdown_rx.clone();
 
     tokio::spawn(async move {
-        let mut sigterm = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
-            .expect("install SIGTERM handler");
-        tokio::select! {
-            _ = signal::ctrl_c() => info!("Received SIGINT"),
-            _ = sigterm.recv() => info!("Received SIGTERM"),
+        match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
+            Ok(mut sigterm) => {
+                tokio::select! {
+                    _ = signal::ctrl_c() => info!("Received SIGINT"),
+                    _ = sigterm.recv() => info!("Received SIGTERM"),
+                }
+                let _ = shutdown_tx.send(true);
+            }
+            Err(e) => {
+                // 无法安装 SIGTERM handler: 记录并继续 (SIGINT 仍可工作)
+                error!(error = %e, "Failed to install SIGTERM handler; SIGINT only");
+            }
         }
-        let _ = shutdown_tx.send(true);
     });
 
     info!("Starting HTTP REST API server on {http_addr}");

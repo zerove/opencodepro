@@ -4,7 +4,7 @@
 //! Uses the Sisyphus Rust SDK to communicate with the backend.
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
-pub fn run() {
+pub fn run() -> Result<(), tauri::Error> {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .setup(|_app| {
@@ -19,7 +19,6 @@ pub fn run() {
             search_vectors,
         ])
         .run(tauri::generate_context!())
-        .expect("error while running tauri application");
 }
 
 // Tauri commands
