@@ -238,3 +238,112 @@ fn viz_width_grows_with_widest_row() {
     let wide = r.render(&nodes, &edges);
     assert!(wide.width >= single.width);
 }
+
+// ---------------------------------------------------------------------------
+// Additional edge-case coverage
+// ---------------------------------------------------------------------------
+
+#[test]
+fn render_with_all_status_types() {
+    let r = DagRenderer::new();
+    let nodes = vec![
+        ("p".to_string(), NodeStatus::Pending),
+        ("r".to_string(), NodeStatus::Running),
+        ("c".to_string(), NodeStatus::Completed),
+        ("f".to_string(), NodeStatus::Failed),
+        ("s".to_string(), NodeStatus::Skipped),
+    ];
+    let viz = r.render(&nodes, &[]);
+    assert_eq!(viz.nodes.len(), 5);
+    // Each node should keep its status.
+    for (id, expected) in [
+        ("p", NodeStatus::Pending),
+        ("r", NodeStatus::Running),
+        ("c", NodeStatus::Completed),
+        ("f", NodeStatus::Failed),
+        ("s", NodeStatus::Skipped),
+    ] {
+        let node = viz.nodes.iter().find(|n| n.id == id).expect("present");
+        assert_eq!(node.status, expected);
+    }
+}
+
+#[test]
+fn render_labels_match_node_ids() {
+    let r = DagRenderer::new();
+    let nodes = vec![("alpha".to_string(), NodeStatus::Completed)];
+    let viz = r.render(&nodes, &[]);
+    assert_eq!(viz.nodes[0].label, "alpha");
+}
+
+#[test]
+fn render_long_label_truncated() {
+    let r = DagRenderer::new();
+    let long_id = "x".repeat(50);
+    let nodes = vec![(long_id.clone(), NodeStatus::Pending)];
+    let viz = r.render(&nodes, &[]);
+    // Default node_width = 20 → label is truncated to <= node_width.
+    assert!(viz.nodes[0].label.len() <= 20);
+}
+
+#[test]
+fn render_topological_ordering_chain() {
+    let r = DagRenderer::new();
+    let nodes = vec![
+        ("a".to_string(), NodeStatus::Pending),
+        ("b".to_string(), NodeStatus::Pending),
+        ("c".to_string(), NodeStatus::Pending),
+    ];
+    let edges = vec![
+        ("a".to_string(), "b".to_string()),
+        ("b".to_string(), "c".to_string()),
+    ];
+    let viz = r.render(&nodes, &edges);
+    let row_a = viz.nodes.iter().find(|n| n.id == "a").expect("").row;
+    let row_b = viz.nodes.iter().find(|n| n.id == "b").expect("").row;
+    let row_c = viz.nodes.iter().find(|n| n.id == "c").expect("").row;
+    assert!(row_a < row_b);
+    assert!(row_b < row_c);
+}
+
+#[test]
+fn render_to_string_long_label_does_not_crash() {
+    let r = DagRenderer::new();
+    let long_id = "y".repeat(30);
+    let nodes = vec![(long_id, NodeStatus::Completed)];
+    let s = r.render_to_string(&nodes, &[]);
+    assert!(!s.is_empty());
+}
+
+#[test]
+fn render_to_string_includes_box_drawing_chars() {
+    let r = DagRenderer::new();
+    let nodes = vec![
+        ("a".to_string(), NodeStatus::Completed),
+        ("b".to_string(), NodeStatus::Pending),
+    ];
+    let edges = vec![("a".to_string(), "b".to_string())];
+    let s = r.render_to_string(&nodes, &edges);
+    // Should contain at least one of the rendering chars: '|', '-', '+'.
+    let has_chars = s.contains('|') || s.contains('-') || s.contains('+');
+    assert!(has_chars, "got: {s:?}");
+}
+
+#[test]
+fn render_disconnected_components() {
+    let r = DagRenderer::new();
+    // Two independent chains: a→b and c→d
+    let nodes = vec![
+        ("a".to_string(), NodeStatus::Completed),
+        ("b".to_string(), NodeStatus::Completed),
+        ("c".to_string(), NodeStatus::Completed),
+        ("d".to_string(), NodeStatus::Completed),
+    ];
+    let edges = vec![
+        ("a".to_string(), "b".to_string()),
+        ("c".to_string(), "d".to_string()),
+    ];
+    let viz = r.render(&nodes, &edges);
+    assert_eq!(viz.nodes.len(), 4);
+    assert_eq!(viz.edges.len(), 2);
+}
