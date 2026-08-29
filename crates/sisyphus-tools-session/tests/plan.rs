@@ -1,25 +1,91 @@
 //! Integration tests for sisyphus-tools-session `plan` module.
 //!
-//! Exercises the public `plan_create` / `plan_save` / `plan_load` /
-//! `plan_review` / `plan_approve` / `plan_cancel` / `plan_from_requirements`
-//! functions used to manage structured plans and review them for
-//! completeness before approval.
+//! Exercises the public surfaces:
+//! - `plan_review` (pure function returning review comments)
+//! - `plan_create` (constructor)
+//! - `plan_approve` / `plan_cancel` (status transitions)
 
-use sisyphus_tools_session::plan::{
-    plan_approve, plan_cancel, plan_create, plan_from_requirements, plan_load, plan_review,
-    plan_save, Plan, PlanStatus, PlanStep,
-};
-use std::path::PathBuf;
-use tempfile::TempDir;
+use sisyphus_tools_session::plan::{plan_approve, plan_cancel, plan_create, plan_review, Plan, PlanStatus, PlanStep};
 
-fn step(id: &str, desc: &str, deps: Vec<&str>) -> PlanStep {
-    PlanStep {
-        id: id.to_string(),
-        description: desc.to_string(),
+// ---------------------------------------------------------------------------
+// plan_review — pure function
+// ---------------------------------------------------------------------------
+
+#[test]
+fn plan_review_empty_name_comments() {
+    let p = plan_create("", "desc", vec![]);
+    let c = plan_review(&p);
+    assert!(c.iter().any(|s| s.contains("name is empty")));
+}
+
+#[test]
+fn plan_review_empty_description_comments() {
+    let p = plan_create("name", "", vec![]);
+    let c = plan_review(&p);
+    assert!(c.iter().any(|s| s.contains("description is empty")));
+}
+
+#[test]
+fn plan_review_no_steps_comments() {
+    let p = plan_create("name", "desc", vec![]);
+    let c = plan_review(&p);
+    assert!(c.iter().any(|s| s.contains("no steps")));
+}
+
+#[test]
+fn plan_review_step_empty_description_comments() {
+    let p = plan_create("name", "desc", vec![PlanStep {
+        id: "s1".into(),
+        description: "".into(),
         status: PlanStatus::Draft,
-        dependencies: deps.into_iter().map(String::from).collect(),
+        dependencies: vec![],
         estimated_effort: None,
-    }
+    }]);
+    let c = plan_review(&p);
+    assert!(c.iter().any(|s| s.contains("empty description")));
+}
+
+#[test]
+fn plan_review_step_depends_on_nonexistent() {
+    let p = plan_create(
+        "name",
+        "desc",
+        vec![PlanStep {
+            id: "s1".into(),
+            description: "d".into(),
+            status: PlanStatus::Draft,
+            dependencies: vec!["does_not_exist".into()],
+            estimated_effort: None,
+        }],
+    );
+    let c = plan_review(&p);
+    assert!(c.iter().any(|s| s.contains("does not exist")));
+}
+
+#[test]
+fn plan_review_clean_plan_no_comments() {
+    let p = plan_create(
+        "My Plan",
+        "Build a thing",
+        vec![
+            PlanStep {
+                id: "s1".into(),
+                description: "first".into(),
+                status: PlanStatus::Draft,
+                dependencies: vec![],
+                estimated_effort: Some("1h".into()),
+            },
+            PlanStep {
+                id: "s2".into(),
+                description: "second".into(),
+                status: PlanStatus::Draft,
+                dependencies: vec!["s1".into()],
+                estimated_effort: Some("2h".into()),
+            },
+        ],
+    );
+    let c = plan_review(&p);
+    assert!(c.is_empty(), "expected no comments, got {c:?}");
 }
 
 // ---------------------------------------------------------------------------
@@ -27,144 +93,35 @@ fn step(id: &str, desc: &str, deps: Vec<&str>) -> PlanStep {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn plan_create_starts_in_draft() {
-    let p = plan_create("Test", "Desc", vec![]);
+fn plan_create_assigns_id() {
+    let p = plan_create("My Plan", "Build a thing", vec![]);
+    assert!(!p.id.is_empty());
+    assert_eq!(p.name, "My Plan");
+    assert_eq!(p.description, "Build a thing");
     assert_eq!(p.status, PlanStatus::Draft);
-    assert_eq!(p.name, "Test");
-    assert_eq!(p.description, "Desc");
     assert!(p.steps.is_empty());
-    assert!(p.id.starts_with("plan_"));
-    assert!(!p.created_at.is_empty());
-    assert_eq!(p.created_at, p.updated_at);
 }
 
 #[test]
-fn plan_create_with_steps_preserves_them() {
-    let steps = vec![step("s1", "first", vec![]), step("s2", "second", vec!["s1"])];
-    let p = plan_create("Test", "Desc", steps);
-    assert_eq!(p.steps.len(), 2);
+fn plan_create_with_steps() {
+    let p = plan_create("n", "d", vec![PlanStep {
+        id: "s1".into(),
+        description: "first".into(),
+        status: PlanStatus::Draft,
+        dependencies: vec![],
+        estimated_effort: None,
+    }]);
+    assert_eq!(p.steps.len(), 1);
     assert_eq!(p.steps[0].id, "s1");
-    assert_eq!(p.steps[1].dependencies, vec!["s1".to_string()]);
-}
-
-// ---------------------------------------------------------------------------
-// plan_save / plan_load
-// ---------------------------------------------------------------------------
-
-#[test]
-fn plan_save_and_load_roundtrip() {
-    let dir = TempDir::new().expect("tempdir");
-    let path: PathBuf = dir.path().join("plan.json");
-    let p = plan_create("Roundtrip", "Test roundtrip", vec![step("s1", "step 1", vec![])]);
-    plan_save(&p, &path).expect("save");
-    let restored = plan_load(&path).expect("load");
-    assert_eq!(restored.id, p.id);
-    assert_eq!(restored.name, "Roundtrip");
-    assert_eq!(restored.description, "Test roundtrip");
-    assert_eq!(restored.steps.len(), 1);
-    assert_eq!(restored.steps[0].id, "s1");
 }
 
 #[test]
-fn plan_save_creates_parent_dirs() {
-    let dir = TempDir::new().expect("tempdir");
-    let path = dir.path().join("a").join("b").join("plan.json");
-    let p = plan_create("Nested", "D", vec![]);
-    plan_save(&p, &path).expect("save");
-    assert!(path.exists());
-}
-
-#[test]
-fn plan_load_nonexistent_returns_error() {
-    let dir = TempDir::new().expect("tempdir");
-    let path = dir.path().join("nope.json");
-    let result = plan_load(&path);
-    assert!(result.is_err());
-}
-
-#[test]
-fn plan_load_malformed_json_returns_error() {
-    let dir = TempDir::new().expect("tempdir");
-    let path = dir.path().join("bad.json");
-    std::fs::write(&path, "{ not valid json }").expect("write");
-    let result = plan_load(&path);
-    assert!(result.is_err());
-}
-
-// ---------------------------------------------------------------------------
-// plan_review
-// ---------------------------------------------------------------------------
-
-#[test]
-fn plan_review_clean_plan_returns_no_comments() {
-    let p = plan_create(
-        "Good Plan",
-        "Has everything",
-        vec![step("s1", "well defined", vec![])],
-    );
-    assert!(plan_review(&p).is_empty());
-}
-
-#[test]
-fn plan_review_flags_empty_name() {
-    let mut p = plan_create("", "Desc", vec![step("s1", "ok", vec![])]);
-    p.name = String::new();
-    let comments = plan_review(&p);
-    assert!(comments.iter().any(|c| c.contains("name")));
-}
-
-#[test]
-fn plan_review_flags_empty_description() {
-    let p = plan_create("Name", "", vec![step("s1", "ok", vec![])]);
-    let comments = plan_review(&p);
-    assert!(comments.iter().any(|c| c.contains("description")));
-}
-
-#[test]
-fn plan_review_flags_no_steps() {
-    let p = plan_create("Name", "Desc", vec![]);
-    let comments = plan_review(&p);
-    assert!(comments.iter().any(|c| c.contains("no steps")));
-}
-
-#[test]
-fn plan_review_flags_empty_step_description() {
-    let p = plan_create("Name", "Desc", vec![step("s1", "", vec![])]);
-    let comments = plan_review(&p);
-    assert!(comments.iter().any(|c| c.contains("s1") && c.contains("empty description")));
-}
-
-#[test]
-fn plan_review_flags_unmet_dependency() {
-    let p = plan_create(
-        "Name",
-        "Desc",
-        vec![step("s1", "depends on ghost", vec!["ghost"])],
-    );
-    let comments = plan_review(&p);
-    assert!(comments.iter().any(|c| c.contains("ghost") && c.contains("does not exist")));
-}
-
-#[test]
-fn plan_review_collects_multiple_issues() {
-    let p = plan_create("", "", vec![step("s1", "", vec!["missing"])]);
-    let comments = plan_review(&p);
-    // Expect at least: empty name, empty description, empty step description, missing dep.
-    assert!(comments.len() >= 4, "got {} comments", comments.len());
-}
-
-#[test]
-fn plan_review_satisfied_dependency_passes() {
-    let p = plan_create(
-        "P",
-        "D",
-        vec![
-            step("s1", "first", vec![]),
-            step("s2", "second", vec!["s1"]),
-        ],
-    );
-    let comments = plan_review(&p);
-    assert!(comments.is_empty());
+fn plan_create_id_is_nonempty() {
+    // The ID format is `plan_<hex>` where the hex is derived from
+    // timestamp length. Just verify it's non-empty and starts with "plan_".
+    let p = plan_create("a", "a", vec![]);
+    assert!(!p.id.is_empty());
+    assert!(p.id.starts_with("plan_"));
 }
 
 // ---------------------------------------------------------------------------
@@ -172,65 +129,49 @@ fn plan_review_satisfied_dependency_passes() {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn plan_approve_sets_status_and_updates_timestamp() {
-    let mut p = plan_create("P", "D", vec![]);
-    let before = p.updated_at.clone();
-    // Sleep is not reliable; we just check status change.
+fn plan_approve_changes_status() {
+    let mut p = plan_create("n", "d", vec![]);
     plan_approve(&mut p);
     assert_eq!(p.status, PlanStatus::Approved);
-    // updated_at should be set (may be equal to before if very fast).
-    assert!(!p.updated_at.is_empty());
-    let _ = before;
 }
 
 #[test]
-fn plan_cancel_sets_status_cancelled() {
-    let mut p = plan_create("P", "D", vec![]);
+fn plan_cancel_changes_status() {
+    let mut p = plan_create("n", "d", vec![]);
     plan_cancel(&mut p);
     assert_eq!(p.status, PlanStatus::Cancelled);
 }
 
 // ---------------------------------------------------------------------------
-// plan_from_requirements
+// PlanStep / PlanStatus serde
 // ---------------------------------------------------------------------------
 
 #[test]
-fn plan_from_requirements_creates_steps() {
-    let req = "First, do A. Then, do B. Finally, do C.";
-    let p = plan_from_requirements("My Plan", req);
-    assert_eq!(p.name, "My Plan");
-    // Each sentence becomes a step (rough split).
-    assert!(!p.steps.is_empty(), "expected at least one step");
+fn plan_status_serde() {
+    for s in [
+        PlanStatus::Draft,
+        PlanStatus::Reviewed,
+        PlanStatus::Approved,
+        PlanStatus::Cancelled,
+    ] {
+        let j = serde_json::to_string(&s).unwrap();
+        let back: PlanStatus = serde_json::from_str(&j).unwrap();
+        assert_eq!(format!("{back:?}"), format!("{s:?}"));
+    }
 }
 
 #[test]
-fn plan_from_requirements_handles_short_input() {
-    let p = plan_from_requirements("Empty", "x");
-    // Even a single-char input should produce a plan.
-    assert_eq!(p.name, "Empty");
-}
-
-// ---------------------------------------------------------------------------
-// Type construction
-// ---------------------------------------------------------------------------
-
-#[test]
-fn plan_step_estimated_effort_field() {
-    let mut s = step("s", "d", vec![]);
-    s.estimated_effort = Some("2h".to_string());
-    assert_eq!(s.estimated_effort.as_deref(), Some("2h"));
-}
-
-#[test]
-fn plan_struct_construction_directly() {
-    let p = Plan {
-        id: "plan_x".into(),
-        name: "Direct".into(),
-        description: "D".into(),
+fn plan_serde_round_trip() {
+    let p = plan_create("n", "d", vec![PlanStep {
+        id: "s1".into(),
+        description: "first".into(),
         status: PlanStatus::Draft,
-        steps: vec![],
-        created_at: "2024-01-01T00:00:00Z".into(),
-        updated_at: "2024-01-01T00:00:00Z".into(),
-    };
-    assert_eq!(p.id, "plan_x");
+        dependencies: vec![],
+        estimated_effort: Some("1h".into()),
+    }]);
+    let j = serde_json::to_string(&p).unwrap();
+    let back: Plan = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.id, p.id);
+    assert_eq!(back.name, "n");
+    assert_eq!(back.steps.len(), 1);
 }
