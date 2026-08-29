@@ -61,3 +61,84 @@ fn to_config_thresholds_are_in_unit_interval() {
         );
     }
 }
+
+// ---------------------------------------------------------------------------
+// Additional: per-variant fields + should_simulate + Copy/Debug
+// ---------------------------------------------------------------------------
+
+#[test]
+fn cd_cognitive_depth_variants_constructible() {
+    let _ = CognitiveDepth::Low;
+    let _ = CognitiveDepth::Medium;
+    let _ = CognitiveDepth::High;
+    let _ = CognitiveDepth::Ultra;
+}
+
+#[test]
+fn cd_cognitive_depth_equality() {
+    assert_eq!(CognitiveDepth::Low, CognitiveDepth::Low);
+    assert_eq!(CognitiveDepth::Ultra, CognitiveDepth::Ultra);
+    assert_ne!(CognitiveDepth::Low, CognitiveDepth::Medium);
+    assert_ne!(CognitiveDepth::High, CognitiveDepth::Ultra);
+}
+
+#[test]
+fn cd_cognitive_depth_copy() {
+    let a = CognitiveDepth::Medium;
+    let _b = a;
+    let _c = a;
+}
+
+#[test]
+fn cd_cognitive_depth_to_config_low() {
+    let (max_iter, threshold) = CognitiveDepth::Low.to_config();
+    assert_eq!(max_iter, 3);
+    assert!((threshold - 0.2).abs() < 1e-9);
+}
+
+#[test]
+fn cd_cognitive_depth_to_config_medium() {
+    let (max_iter, threshold) = CognitiveDepth::Medium.to_config();
+    assert_eq!(max_iter, 10);
+    assert!((threshold - 0.05).abs() < 1e-9);
+}
+
+#[test]
+fn cd_cognitive_depth_to_config_high() {
+    let (max_iter, threshold) = CognitiveDepth::High.to_config();
+    assert_eq!(max_iter, 20);
+    assert!((threshold - 0.01).abs() < 1e-9);
+}
+
+#[test]
+fn cd_cognitive_depth_to_config_ultra() {
+    let (max_iter, threshold) = CognitiveDepth::Ultra.to_config();
+    assert_eq!(max_iter, 30);
+    assert!((threshold - 0.005).abs() < 1e-9);
+}
+
+#[test]
+fn cd_should_simulate_low_false() {
+    assert!(!CognitiveDepth::Low.should_simulate());
+}
+
+#[test]
+fn cd_should_simulate_medium_true() {
+    assert!(CognitiveDepth::Medium.should_simulate());
+}
+
+#[test]
+fn cd_should_simulate_high_true() {
+    assert!(CognitiveDepth::High.should_simulate());
+}
+
+#[test]
+fn cd_should_simulate_ultra_true() {
+    assert!(CognitiveDepth::Ultra.should_simulate());
+}
+
+#[test]
+fn cd_cognitive_depth_debug() {
+    assert_eq!(format!("{:?}", CognitiveDepth::Low), "Low");
+    assert_eq!(format!("{:?}", CognitiveDepth::Ultra), "Ultra");
+}
