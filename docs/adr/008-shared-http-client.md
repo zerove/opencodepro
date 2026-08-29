@@ -1,4 +1,4 @@
-# ADR-006: 生产级共享 HTTP 客户端（最终产品标准）
+# ADR-008: 生产级共享 HTTP 客户端（最终产品标准）
 
 **Status**: Accepted (2026-08-28)
 **Deciders**: core team

@@ -4,7 +4,7 @@
 **Deciders**: core team
 **Supersedes**: N/A（约定文档，非替代任何架构 ADR）
 **Related**:
-- ADR-006 (SharedHttpClient — 本标准的首个完整应用)
+- ADR-008 (SharedHttpClient — 本标准的首个完整应用)
 - `evals/no_panic_check.rs` (本 ADR §1 的自动化检查工具, **纯 Rust 实现**)
 - `.github/workflows/nightly.yml::panic-check` (CI 守护 job)
 
@@ -130,7 +130,7 @@ pub fn new(config: Config) -> Result<Self, String> {
 应用标准:
 - ✅ 零 panic: `new() -> Result<Self, String>`
 - ✅ 测试: 10 个 http_client 单测 + 2 跨 provider 回归
-- ✅ 文档: 详细 doc comments + ADR-006 + book/configuration.md
+- ✅ 文档: 详细 doc comments + ADR-008 + book/configuration.md
 - ✅ 度量: stats() + `/api/metrics` (commit 7ec6bb4) + bench (ebb962b)
 - ✅ 可配置: 7 个 env var 覆盖项 + 2 模式 (TLS / retry)
 
@@ -141,7 +141,7 @@ pub fn new(config: Config) -> Result<Self, String> {
 应用标准:
 - ✅ 零 panic: `bridge.shutdown(5s) -> Result<(), String>`
 - ✅ 测试: `test_llm_client_shutdown_default_is_noop`
-- ✅ 文档: 修改 `main.rs` 注释 + ADR-006 §I
+- ✅ 文档: 修改 `main.rs` 注释 + ADR-008 §I
 - ✅ 度量: `/api/metrics` 暴露 `sisyphus_http_shutdowns_total`
 - ✅ 可配置: 关闭超时 = 参数 (默认 5s)
 
