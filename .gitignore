@@ -10,7 +10,9 @@ tmp/
 config.toml
 data/
 sqlite:data/
-.sisyphus/
+.sisyphus/*
+!.sisyphus/quality/
+!.sisyphus/quality/panic-baseline.json
 .sisyphus/sessions.json
 panic_risk.txt
 test_bash.rs
