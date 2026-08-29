@@ -9,13 +9,19 @@
 //! ```no_run
 //! use sisyphus_tools_mcp::mcp::oauth::OAuth2ClientCredentials;
 //!
+//! // Construct client, then call fetch_token from a user-provided runtime
+//! // (e.g. `tokio::runtime::Runtime::new()?.block_on(...)` or inside a
+//! // `#[tokio::main]` function).
+//! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
 //! let oauth = OAuth2ClientCredentials::new(
 //!     "https://auth.example.com/oauth/token",  // token endpoint
 //!     "my-client-id",
 //!     "my-client-secret",
 //!     Some("read:tools"),                            // scope
 //! );
-//! let token = oauth.fetch_token().await?;
+//! let _token = oauth.fetch_token().await?;
+//! # Ok(())
+//! # }
 //! ```
 //!
 //! Tokens are cached in-memory and reused until expiry (per the `expires_in`
