@@ -19,6 +19,7 @@ thiserror = "1.0"
 uuid = { version = "1.0", features = ["v4"] }
 petgraph = "0.6"
 anyhow = "1.0"
+metrics = "0.24"
 sisyphus-tools-llm = { version = "0.1.0", path = "../sisyphus-tools-llm" }
 
 [dev-dependencies]

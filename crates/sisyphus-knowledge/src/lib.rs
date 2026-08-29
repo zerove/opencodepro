@@ -3,6 +3,7 @@
 //! Provides [`KnowledgeGraph`] for in-memory graph-based asset storage and
 //! [`AssetManager`] for async CRUD, persistence, and intelligent retrieval.
 
+use metrics::counter;
 use petgraph::graph::{DiGraph, NodeIndex};
 use petgraph::visit::EdgeRef;
 use serde::{Deserialize, Serialize};
@@ -297,10 +298,14 @@ impl AssetManager {
     /// Returns [`KnowledgeError::AssetNotFound`] if the asset is not registered.
     pub async fn get_asset(&self, id: &str) -> Result<CognitiveAsset, KnowledgeError> {
         let graph = self.graph.read().await;
-        graph
+        let result = graph
             .get_asset(id)
             .cloned()
-            .ok_or_else(|| KnowledgeError::AssetNotFound(id.to_string()))
+            .ok_or_else(|| KnowledgeError::AssetNotFound(id.to_string()));
+        counter!("sisyphus_knowledge_operations_total", "op" => "get_asset",
+            "found" => if result.is_ok() { "true" } else { "false" }
+        ).increment(1);
+        result
     }
 
     /// Search for assets matching a goal string.

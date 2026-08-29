@@ -5,6 +5,7 @@ edition = "2021"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
+walkdir = "2"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 tokio = { version = "1.0", features = ["full"] }
@@ -54,3 +55,8 @@ path = "http_client_bench.rs"
 [[bin]]
 name = "no-panic-check"
 path = "no_panic_check.rs"
+
+# ADR-007 §4 自动化: 量化 sisyphus_metrics 覆盖率
+[[bin]]
+name = "metrics-coverage"
+path = "metrics_coverage.rs"
