@@ -4463,6 +4463,7 @@ dependencies = [
  "sisyphus-tools-llm",
  "sisyphus-types",
  "sqlx",
+ "sqlx-sqlite",
  "tempfile",
  "thiserror 1.0.69",
  "tokio",
