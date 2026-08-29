@@ -360,6 +360,9 @@ enum Response {
         id: u64,
         error: String,
     },
+    /// `Notification` message variant in the daemon protocol.
+    /// Currently no notification sender is implemented, but the variant
+    /// is reserved for the future server-push channel.
     #[allow(dead_code)]
     Notification {
         method: String,

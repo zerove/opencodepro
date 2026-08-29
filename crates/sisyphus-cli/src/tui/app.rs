@@ -853,6 +853,8 @@ impl App {
         self.todo_dirty = false;
     }
 
+    /// TUI handler: toggle the done state of the highlighted todo item.
+    /// Wired to a future key binding (planned for the Phase-3 TUI revamp).
     #[allow(dead_code)]
     pub(crate) fn toggle_todo_status(&mut self) {
         if self.todo_items.is_empty() {
@@ -871,6 +873,8 @@ impl App {
         }
     }
 
+    /// TUI handler: delete the highlighted todo item.
+    /// Wired to a future key binding (planned for the Phase-3 TUI revamp).
     #[allow(dead_code)]
     pub(crate) fn delete_todo(&mut self) {
         if self.todo_items.is_empty() {

@@ -9,13 +9,17 @@ fn run_cli(args: &[&str]) -> Output {
         .expect("failed to execute sisyphus-cli")
 }
 
-#[allow(dead_code)]
+/// Helper used by future assertions; intentionally retained even when
+    /// the current test suite only calls `run_cli` directly.
+    #[allow(dead_code)]
 fn run_cli_stdout(args: &[&str]) -> String {
     let out = run_cli(args);
     String::from_utf8_lossy(&out.stdout).to_string()
 }
 
-#[allow(dead_code)]
+/// Helper used by future assertions; intentionally retained even when
+    /// the current test suite only calls `run_cli` directly.
+    #[allow(dead_code)]
 fn run_cli_stderr(args: &[&str]) -> String {
     let out = run_cli(args);
     String::from_utf8_lossy(&out.stderr).to_string()
