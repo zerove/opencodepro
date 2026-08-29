@@ -5,6 +5,7 @@ use super::types::{
     ResourcesCapability, ServerCapabilities, ServerInfo, ToolsCapability,
 };
 use sisyphus_tools_core::ToolResult;
+use metrics::counter;
 
 /// High-level MCP client.
 pub struct McpClient {
@@ -191,6 +192,10 @@ impl McpClient {
             sisyphus_tools_core::ToolError::TodoError(format!("deserialize result: {e}"))
         })?;
 
+        counter!(
+            "sisyphus_mcp_tool_calls_total",
+            "tool" => name.to_string(),
+        ).increment(1);
         Ok(result)
     }
 

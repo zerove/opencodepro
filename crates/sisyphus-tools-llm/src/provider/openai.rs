@@ -3,6 +3,7 @@
 //! Compatible with: OpenAI, vLLM, Ollama, Groq, Together AI, Fireworks, etc.
 
 use async_trait::async_trait;
+use metrics::{counter, histogram};
 use serde_json::{json, Value};
 use sisyphus_types::{ProviderConfig, ProviderKind};
 use std::sync::Arc;
@@ -197,6 +198,26 @@ impl LlmProvider for OpenAiCompatibleProvider {
 
         let input_tokens = response_json["usage"]["prompt_tokens"].as_u64();
         let output_tokens = response_json["usage"]["completion_tokens"].as_u64();
+
+        let input_tokens_val = input_tokens.unwrap_or(0);
+        let output_tokens_val = output_tokens.unwrap_or(0);
+        counter!(
+            "sisyphus_llm_requests_total",
+            "provider" => "openai",
+            "model" => model.clone(),
+        ).increment(1);
+        counter!(
+            "sisyphus_llm_tokens_total",
+            "provider" => "openai",
+            "model" => model.clone(),
+            "kind" => "input",
+        ).increment(input_tokens_val);
+        counter!(
+            "sisyphus_llm_tokens_total",
+            "provider" => "openai",
+            "model" => model.clone(),
+            "kind" => "output",
+        ).increment(output_tokens_val);
 
         Ok(ProviderResponse {
             content,

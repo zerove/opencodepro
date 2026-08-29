@@ -15,6 +15,7 @@ tracing = { workspace = true }
 sisyphus-types = { path = "../sisyphus-types" }
 sisyphus-tools-core = { path = "../sisyphus-tools-core" }
 parking_lot = "0.12"
+metrics = "0.24"
 
 [dev-dependencies]
 tempfile = "3"

@@ -1,4 +1,5 @@
 use crate::executor::args::{ok_json, parse_args, str_arg, u64_arg};
+use metrics::counter;
 use serde_json::json;
 use std::path::Path;
 
@@ -25,6 +26,10 @@ use std::path::Path;
     let output = sisyphus_tools_system::bash::execute(&command, workdir_ref, timeout_ms)
         .await
         .map_err(|e| e.to_string())?;
+    counter!(
+        "sisyphus_executor_bash_total",
+        "exit_code" => output.exit_code.to_string(),
+    ).increment(1);
     ok_json(json!({
         "stdout": output.stdout,
         "stderr": output.stderr,
