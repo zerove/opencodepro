@@ -5,7 +5,7 @@
 //! `on_success` / `on_failure` and `check_state`. The breaker
 //! protects downstream calls from cascading failures.
 
-use sisyphus_tools_llm::circuit_breaker::{BreakerConfig, CircuitBreaker};
+use sisyphus_tools_llm::circuit_breaker::{BreakerConfig, BreakerMetrics, CircuitBreaker};
 use sisyphus_types::CircuitState;
 
 // ---------------------------------------------------------------------------
@@ -240,4 +240,137 @@ fn breaker_config_serialization_roundtrip() {
     assert_eq!(parsed.success_threshold, 4);
     assert_eq!(parsed.timeout_secs, 60);
     assert_eq!(parsed.half_open_max_calls, 5);
+}
+
+// ---------------------------------------------------------------------------
+// Additional: BreakerConfig + state per key + call/reset/metrics
+// ---------------------------------------------------------------------------
+
+#[test]
+fn cb_breaker_config_default_values() {
+    let c = BreakerConfig::default();
+    assert_eq!(c.failure_threshold, 5);
+    assert_eq!(c.success_threshold, 3);
+    assert_eq!(c.timeout_secs, 30);
+    assert_eq!(c.half_open_max_calls, 3);
+}
+
+#[test]
+fn cb_breaker_config_field_access() {
+    let c = BreakerConfig {
+        failure_threshold: 10,
+        success_threshold: 2,
+        timeout_secs: 60,
+        half_open_max_calls: 5,
+    };
+    assert_eq!(c.failure_threshold, 10);
+    assert_eq!(c.success_threshold, 2);
+    assert_eq!(c.timeout_secs, 60);
+    assert_eq!(c.half_open_max_calls, 5);
+}
+
+#[test]
+fn cb_breaker_config_serde() {
+    let c = BreakerConfig::default();
+    let j = serde_json::to_string(&c).unwrap();
+    let back: BreakerConfig = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.failure_threshold, c.failure_threshold);
+    assert_eq!(back.timeout_secs, c.timeout_secs);
+}
+
+#[test]
+fn cb_circuit_breaker_default_trait() {
+    let cb = CircuitBreaker::default();
+    assert_eq!(cb.state("k"), CircuitState::Closed);
+    assert_eq!(cb.metrics("k").state, CircuitState::Closed);
+}
+
+#[test]
+fn cb_circuit_breaker_state_distinct_keys() {
+    let cb = CircuitBreaker::new(BreakerConfig::default());
+    assert_eq!(cb.state("a"), CircuitState::Closed);
+    assert_eq!(cb.state("b"), CircuitState::Closed);
+    assert_eq!(cb.state("c"), CircuitState::Closed);
+}
+
+#[test]
+fn cb_circuit_breaker_call_succeeds() {
+    let cb = CircuitBreaker::new(BreakerConfig::default());
+    let r: Result<i32, String> = cb.call("k1", || Ok::<i32, &str>(42));
+    assert_eq!(r.unwrap(), 42);
+}
+
+#[test]
+fn cb_circuit_breaker_call_propagates_error() {
+    let cb = CircuitBreaker::new(BreakerConfig::default());
+    let r: Result<i32, String> = cb.call("k2", || Err::<i32, _>("boom"));
+    assert_eq!(r.unwrap_err(), "boom");
+}
+
+#[test]
+fn cb_circuit_breaker_call_metrics_on_success() {
+    let cb = CircuitBreaker::new(BreakerConfig::default());
+    let _: Result<i32, String> = cb.call("k3", || Ok::<i32, &str>(1));
+    let m = cb.metrics("k3");
+    // In Closed state, on_success resets failure_count to 0 (not incrementing success_count).
+    assert_eq!(m.state, CircuitState::Closed);
+    assert_eq!(m.failure_count, 0);
+}
+
+#[test]
+fn cb_circuit_breaker_call_metrics_on_failure() {
+    let cb = CircuitBreaker::new(BreakerConfig::default());
+    let _: Result<i32, String> = cb.call("k4", || Err::<i32, _>("e"));
+    let m = cb.metrics("k4");
+    assert_eq!(m.failure_count, 1);
+}
+
+#[test]
+fn cb_circuit_breaker_reset_clears_metrics() {
+    let cb = CircuitBreaker::new(BreakerConfig::default());
+    let _: Result<i32, String> = cb.call("k5", || Err::<i32, _>("e"));
+    assert_eq!(cb.metrics("k5").failure_count, 1);
+    cb.reset("k5");
+    assert_eq!(cb.metrics("k5").failure_count, 0);
+    assert_eq!(cb.state("k5"), CircuitState::Closed);
+}
+
+#[test]
+fn cb_circuit_breaker_reset_unknown_key_is_noop() {
+    let cb = CircuitBreaker::new(BreakerConfig::default());
+    cb.reset("nonexistent");
+    assert_eq!(cb.state("nonexistent"), CircuitState::Closed);
+}
+
+#[test]
+fn cb_circuit_breaker_reset_all() {
+    let cb = CircuitBreaker::new(BreakerConfig::default());
+    let _: Result<i32, String> = cb.call("a", || Err::<i32, _>("x"));
+    let _: Result<i32, String> = cb.call("b", || Err::<i32, _>("x"));
+    assert_eq!(cb.metrics("a").failure_count, 1);
+    assert_eq!(cb.metrics("b").failure_count, 1);
+    cb.reset_all();
+    assert_eq!(cb.metrics("a").failure_count, 0);
+    assert_eq!(cb.metrics("b").failure_count, 0);
+}
+
+#[test]
+fn cb_circuit_breaker_metrics_unknown_key() {
+    let cb = CircuitBreaker::new(BreakerConfig::default());
+    let m = cb.metrics("never");
+    assert_eq!(m.state, CircuitState::Closed);
+    assert_eq!(m.failure_count, 0);
+    assert_eq!(m.success_count, 0);
+}
+
+#[test]
+fn cb_breaker_metrics_field_access() {
+    let m = BreakerMetrics {
+        state: CircuitState::HalfOpen,
+        failure_count: 2,
+        success_count: 1,
+    };
+    assert_eq!(m.state, CircuitState::HalfOpen);
+    assert_eq!(m.failure_count, 2);
+    assert_eq!(m.success_count, 1);
 }
