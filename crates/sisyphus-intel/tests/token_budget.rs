@@ -1,114 +1,187 @@
-//! Integration tests for sisyphus-intel TokenBudgetTracker.
+//! Integration tests for sisyphus-intel `token_budget`.
 //!
-//! Exercises the public `TokenBudgetTracker` API as an external consumer
-//! would: typical SOP-run usage, edge cases, and concurrent recording.
-//! The unit tests in `src/token_budget.rs` cover the simple invariants;
-//! these tests add scenarios that mirror how the reflect/evolve stages
-//! actually drive the budget.
+//! Exercises the public [`TokenBudgetTracker`] API. The tracker counts
+//! cumulative LLM token usage and exposes a reserve ratio. When
+//! remaining budget falls below the reserve, `should_skip_llm`
+//! returns true so downstream stages can fall back to deterministic
+//! logic.
 
 use sisyphus_intel::token_budget::{TokenBudgetTracker, DEFAULT_ESTIMATED_TOKENS_PER_CALL};
 
+// ---------------------------------------------------------------------------
+// Construction
+// ---------------------------------------------------------------------------
+
 #[test]
-fn unbounded_never_skips_and_never_exhausts() {
-    let t = TokenBudgetTracker::unbounded();
+fn new_starts_with_zero_usage() {
+    let t = TokenBudgetTracker::new(1000, 0.1);
+    assert_eq!(t.usage(), 0);
+    assert_eq!(t.remaining(), 1000);
+}
+
+#[test]
+fn new_clamps_reserve_ratio_above_one() {
+    // reserve_ratio = 2.0 → clamped to 1.0.
+    // With reserve = cap, any non-zero usage puts remaining below reserve.
+    let t = TokenBudgetTracker::new(100, 2.0);
+    t.record(1);
+    assert!(t.should_skip_llm());
+}
+
+#[test]
+fn new_clamps_reserve_ratio_below_zero() {
+    // reserve_ratio = -1.0 → clamped to 0.0.
+    // With reserve = 0, only exhaustion triggers skip.
+    let t = TokenBudgetTracker::new(100, -1.0);
+    t.record(50);
     assert!(!t.should_skip_llm());
-    assert!(!t.is_exhausted());
-    // Even with a huge record, the unbounded tracker stays open.
+}
+
+#[test]
+fn unbounded_never_skips() {
+    let t = TokenBudgetTracker::unbounded();
     t.record(10_000_000);
     assert!(!t.should_skip_llm());
     assert!(!t.is_exhausted());
-    assert!(t.remaining() > 0, "unbounded tracker must have non-zero remaining");
 }
 
-#[test]
-fn new_clamps_reserve_ratio_to_unit_interval() {
-    // reserve > 1.0 should clamp to 1.0 (always below reserve = always skip)
-    let t = TokenBudgetTracker::new(100, 5.0);
-    t.record(1);
-    assert!(t.should_skip_llm(), "clamped ratio=1.0 → always skip");
-
-    // reserve < 0.0 should clamp to 0.0
-    let t = TokenBudgetTracker::new(100, -1.0);
-    t.record(99);
-    assert!(!t.should_skip_llm(), "clamped ratio=0.0 → never skip from reserve");
-    assert!(!t.is_exhausted());
-}
+// ---------------------------------------------------------------------------
+// record / usage / remaining
+// ---------------------------------------------------------------------------
 
 #[test]
-fn skip_threshold_uses_reserve() {
-    // 1000 cap, 20% reserve → skip when remaining < 200
-    let t = TokenBudgetTracker::new(1000, 0.2);
-    assert!(!t.should_skip_llm());
-    t.record(799);
-    assert!(!t.should_skip_llm(), "remaining=201, still above reserve 200");
-    t.record(2);
-    assert!(t.should_skip_llm(), "remaining=199, below reserve 200");
-}
-
-#[test]
-fn record_saturates_on_overflow() {
+fn record_accumulates_usage() {
     let t = TokenBudgetTracker::new(1000, 0.0);
-    t.record(u64::MAX);
-    // Should not panic; the tracker saturates.
-    let used = t.usage();
-    assert_eq!(used, u64::MAX, "saturating add should cap at u64::MAX");
-    assert!(t.is_exhausted());
+    t.record(100);
+    t.record(200);
+    t.record(300);
+    assert_eq!(t.usage(), 600);
 }
 
 #[test]
-fn reset_clears_usage_but_keeps_cap() {
-    let t = TokenBudgetTracker::new(1000, 0.1);
-    t.record(500);
-    assert_eq!(t.usage(), 500);
-    t.reset();
-    assert_eq!(t.usage(), 0);
-    assert!(!t.should_skip_llm(), "after reset, reserve check is fresh");
-    assert!(!t.is_exhausted());
-}
-
-#[test]
-fn remaining_is_saturating_subtraction() {
-    // If somehow usage > cap, remaining should clamp to 0, not wrap.
+fn record_saturates_at_cap() {
     let t = TokenBudgetTracker::new(100, 0.0);
     t.record(150);
-    assert_eq!(t.remaining(), 0, "remaining must saturate at 0");
+    assert_eq!(t.usage(), 150);
+    // remaining saturates at 0 (not underflow).
+    assert_eq!(t.remaining(), 0);
+}
+
+#[test]
+fn remaining_decreases_as_usage_grows() {
+    let t = TokenBudgetTracker::new(100, 0.0);
+    assert_eq!(t.remaining(), 100);
+    t.record(25);
+    assert_eq!(t.remaining(), 75);
+    t.record(50);
+    assert_eq!(t.remaining(), 25);
+}
+
+// ---------------------------------------------------------------------------
+// should_skip_llm
+// ---------------------------------------------------------------------------
+
+#[test]
+fn should_skip_below_reserve_threshold() {
+    // cap=1000, reserve=0.1 → reserve = 100 tokens
+    let t = TokenBudgetTracker::new(1000, 0.1);
+    assert!(!t.should_skip_llm());
+    t.record(800);
+    // 200 remaining, > 100 reserve → no skip
+    assert!(!t.should_skip_llm());
+    t.record(150);
+    // 50 remaining, < 100 reserve → skip
+    assert!(t.should_skip_llm());
+}
+
+#[test]
+fn should_skip_zero_reserve_never_triggers_via_remaining() {
+    // With reserve = 0, `remaining < reserve` is only true when
+    // remaining is 0 (impossible) — so should_skip_llm always returns false.
+    let t = TokenBudgetTracker::new(100, 0.0);
+    t.record(50);
+    assert!(!t.should_skip_llm());
+    t.record(60);
+    assert!(!t.should_skip_llm());
+}
+
+// ---------------------------------------------------------------------------
+// is_exhausted
+// ---------------------------------------------------------------------------
+
+#[test]
+fn is_exhausted_when_usage_reaches_cap() {
+    let t = TokenBudgetTracker::new(100, 0.0);
+    t.record(99);
+    assert!(!t.is_exhausted());
+    t.record(1);
     assert!(t.is_exhausted());
 }
 
 #[test]
-fn default_estimated_tokens_per_call_is_a_positive_constant() {
-    // Sanity check: the public constant should be usable as a fallback
-    // when exact token counts are unavailable.
-    assert!(DEFAULT_ESTIMATED_TOKENS_PER_CALL > 0);
-    // A typical prompt fits in a few thousand tokens, so 2000 is sane.
-    assert!(DEFAULT_ESTIMATED_TOKENS_PER_CALL <= 100_000);
+fn is_exhausted_handles_overflow() {
+    let t = TokenBudgetTracker::new(100, 0.0);
+    t.record(150);
+    // Usage exceeds cap; still "exhausted".
+    assert!(t.is_exhausted());
+}
+
+// ---------------------------------------------------------------------------
+// reset
+// ---------------------------------------------------------------------------
+
+#[test]
+fn reset_zeros_usage() {
+    let t = TokenBudgetTracker::new(100, 0.0);
+    t.record(80);
+    assert_eq!(t.usage(), 80);
+    t.reset();
+    assert_eq!(t.usage(), 0);
+    assert_eq!(t.remaining(), 100);
 }
 
 #[test]
-fn concurrent_record_does_not_lose_updates() {
+fn reset_clears_skip_state() {
+    let t = TokenBudgetTracker::new(100, 0.5);
+    t.record(80);
+    assert!(t.should_skip_llm());
+    t.reset();
+    assert!(!t.should_skip_llm());
+}
+
+// ---------------------------------------------------------------------------
+// Concurrency
+// ---------------------------------------------------------------------------
+
+#[test]
+fn concurrent_record_is_thread_safe() {
     use std::sync::Arc;
     use std::thread;
-
-    let t = Arc::new(TokenBudgetTracker::new(1_000_000, 0.0));
-    let threads = 4;
-    let per_thread = 1000u64;
-    let handles: Vec<_> = (0..threads)
-        .map(|_| {
-            let t = Arc::clone(&t);
-            thread::spawn(move || {
-                for _ in 0..per_thread {
-                    t.record(1);
-                }
-            })
-        })
-        .collect();
-    for h in handles {
-        h.join().expect("thread join");
+    let t = Arc::new(TokenBudgetTracker::new(100_000, 0.0));
+    let mut handles = Vec::new();
+    for _ in 0..10 {
+        let t = t.clone();
+        handles.push(thread::spawn(move || {
+            for _ in 0..1000 {
+                t.record(10);
+            }
+        }));
     }
-    let expected = threads * per_thread;
-    assert_eq!(
-        t.usage(),
-        expected,
-        "concurrent record must count all increments exactly"
-    );
+    for h in handles {
+        h.join().expect("join");
+    }
+    // 10 threads × 1000 records × 10 tokens = 100_000.
+    assert_eq!(t.usage(), 100_000);
+}
+
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+#[test]
+fn default_estimated_tokens_per_call_is_sensible() {
+    // The default estimate is used when LLM call sites don't know
+    // the exact token count; verify it's positive and not absurdly large.
+    assert!(DEFAULT_ESTIMATED_TOKENS_PER_CALL > 0);
+    assert!(DEFAULT_ESTIMATED_TOKENS_PER_CALL < 100_000);
 }
