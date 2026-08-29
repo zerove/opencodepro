@@ -358,6 +358,10 @@ impl MfsStore {
         Ok(())
     }
 
+    /// Record a single SOP node execution event in the trace log.
+    ///
+    /// Used by the cognitive loop to feed the experience bank and
+    /// enable retrospective queries like [`Self::get_most_failed_nodes`].
     pub async fn record_trace_event(
         &self,
         sop_id: &str,
@@ -390,6 +394,11 @@ impl MfsStore {
         Ok(())
     }
 
+    /// Return the top nodes by failure count, considering only nodes
+    /// with at least `min_failures` recorded failures.
+    ///
+    /// Used by [`sisyphus_intel`] reflection to surface chronic pain points
+    /// in a SOP that should be evolved away.
     pub async fn get_most_failed_nodes(&self, min_failures: i64) -> Result<Vec<(String, i64)>> {
         let rows = sqlx::query_as::<_, (String, i64)>(
             "SELECT node_id, COUNT(*) as failure_count 
@@ -459,6 +468,8 @@ impl MfsStore {
         Ok(results)
     }
 
+    /// Persist a structured [`ExperienceEntry`] for later retrieval by
+    /// the experience bank.
     pub async fn record_experience(
         &self,
         exp: &sisyphus_types::experience::ExperienceTuple,
@@ -543,6 +554,9 @@ impl MfsStore {
             .collect())
     }
 
+    /// Load a single experience entry by id.
+    ///
+    /// Returns `None` if no entry with that id exists.
     pub async fn get_experience(
         &self,
         id: &str,
@@ -623,6 +637,10 @@ impl MfsStore {
             .collect())
     }
 
+    /// Query the experience bank with a structured predicate.
+    ///
+    /// Supports filtering by tags, time range, and minimum reward; results
+    /// are sorted by reward descending and capped at `limit` entries.
     pub async fn query_experiences(
         &self,
         ids: &[String],

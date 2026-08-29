@@ -55,6 +55,11 @@ pub struct VectorExperienceBank {
 }
 
 impl VectorExperienceBank {
+    /// Open (or create) a persistent experience bank at the given `db_url`.
+    ///
+    /// All examples, queries, and outcomes are stored in a single SQLite
+    /// database file; passing `sqlite::memory:` gives an ephemeral store
+    /// for tests.
     pub async fn new(
         store: Arc<MfsStore>,
         vector_store: Arc<crate::vector_memory::VectorMemoryStore>,

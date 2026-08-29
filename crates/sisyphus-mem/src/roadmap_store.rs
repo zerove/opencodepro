@@ -10,6 +10,11 @@ pub struct RoadmapSqlStore {
 }
 
 impl RoadmapSqlStore {
+    /// Open a [`RoadmapSqlStore`] on the given `pool`.
+    ///
+    /// Schema must be initialized separately via [`Self::init_schema`];
+    /// the constructor is intentionally cheap so it can be called from
+    /// multiple tasks before any of them touch the schema.
     pub async fn new(pool: SqlitePool) -> Result<Self> {
         Ok(Self { pool })
     }
@@ -81,6 +86,7 @@ impl RoadmapSqlStore {
 
     // ── Project Operations ────────────────────────────────────────────────
 
+    /// Insert or replace a [`Project`] record keyed by `project.id`.
     pub async fn insert_project(&self, project: &Project) -> Result<()> {
         sqlx::query("INSERT INTO projects (id, name, description) VALUES (?, ?, ?)")
             .bind(&project.id)
@@ -91,6 +97,7 @@ impl RoadmapSqlStore {
         Ok(())
     }
 
+    /// List all project ids known to the roadmap, sorted alphabetically.
     pub async fn list_projects(&self) -> Result<Vec<String>> {
         let rows = sqlx::query_as::<_, (String,)>("SELECT id FROM projects")
             .fetch_all(&self.pool)
@@ -98,6 +105,9 @@ impl RoadmapSqlStore {
         Ok(rows.into_iter().map(|(id,)| id).collect())
     }
 
+    /// Delete a project and cascade-delete its milestones, phases, and goals.
+    ///
+    /// No-op if the project does not exist.
     pub async fn delete_project(&self, id: &str) -> Result<()> {
         sqlx::query("DELETE FROM projects WHERE id = ?")
             .bind(id)
@@ -106,6 +116,7 @@ impl RoadmapSqlStore {
         Ok(())
     }
 
+    /// Load a project by id, returning `None` if it does not exist.
     pub async fn get_project(&self, id: &str) -> Result<Option<Project>> {
         let project_row = sqlx::query_as::<_, (String, String, Option<String>)>(
             "SELECT id, name, description FROM projects WHERE id = ?",
@@ -202,6 +213,7 @@ impl RoadmapSqlStore {
 
     // ── Milestone Operations ──────────────────────────────────────────────
 
+    /// Insert or replace a [`Milestone`] under a project.
     pub async fn insert_milestone(
         &self,
         id: &str,
@@ -220,6 +232,8 @@ impl RoadmapSqlStore {
         Ok(())
     }
 
+    /// Update the [`MilestoneStatus`] of a single milestone, identified by
+    /// `(project_id, milestone_id)`.
     pub async fn update_milestone_status(
         &self,
         project_id: &str,
@@ -235,6 +249,7 @@ impl RoadmapSqlStore {
         Ok(())
     }
 
+    /// Delete a milestone and cascade-delete its phases and goals.
     pub async fn delete_milestone(&self, project_id: &str, id: &str) -> Result<()> {
         sqlx::query("DELETE FROM milestones WHERE id = ? AND project_id = ?")
             .bind(id)
@@ -246,6 +261,7 @@ impl RoadmapSqlStore {
 
     // ── Phase Operations ──────────────────────────────────────────────────
 
+    /// Insert or replace a [`Phase`] under a milestone.
     pub async fn insert_phase(
         &self,
         project_id: &str,
@@ -268,6 +284,7 @@ impl RoadmapSqlStore {
 
     // ── Goal Operations ───────────────────────────────────────────────────
 
+    /// Insert or replace a [`GoalRef`] under a phase.
     pub async fn insert_goal(
         &self,
         project_id: &str,
@@ -288,6 +305,7 @@ impl RoadmapSqlStore {
         Ok(())
     }
 
+    /// Update the textual status of a single goal.
     pub async fn update_goal_status(&self, project_id: &str, id: &str, status: &str) -> Result<()> {
         sqlx::query("UPDATE goals SET status = ? WHERE id = ? AND project_id = ?")
             .bind(status)
@@ -298,6 +316,7 @@ impl RoadmapSqlStore {
         Ok(())
     }
 
+    /// Delete a single goal, leaving its parent phase and milestone intact.
     pub async fn delete_goal(&self, project_id: &str, id: &str) -> Result<()> {
         sqlx::query("DELETE FROM goals WHERE id = ? AND project_id = ?")
             .bind(id)
@@ -307,6 +326,10 @@ impl RoadmapSqlStore {
         Ok(())
     }
 
+    /// Fetch a goal's description field by id.
+    ///
+    /// Returns `None` if the goal does not exist; an empty string in the
+    /// description column is returned as `Some("")`.
     pub async fn get_goal_description(
         &self,
         project_id: &str,
@@ -364,6 +387,7 @@ impl RoadmapSqlStore {
         }
     }
 
+    /// Update only the trajectory field of a project, leaving everything else intact.
     pub async fn update_project_trajectory(&self, id: &str, trajectory: &str) -> Result<()> {
         sqlx::query("UPDATE projects SET trajectory = ? WHERE id = ?")
             .bind(trajectory)

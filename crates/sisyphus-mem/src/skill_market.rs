@@ -76,6 +76,8 @@ pub struct RateLimiter {
 }
 
 impl RateLimiter {
+    /// Create a new throttle allowing up to `rate` operations per second
+    /// (token-bucket style).
     pub fn new(rate: u32) -> Self {
         Self {
             rate,

@@ -6,6 +6,11 @@ use sisyphus_types::StateStore;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+/// A single user preference entry: a key-value pair with a weight (0.0..=1.0)
+/// reflecting how strongly this preference is held.
+///
+/// Higher weight means the value is more likely to be the "winning" choice
+/// when multiple values compete for the same key.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct UserPreference {
     pub key: String,
@@ -14,6 +19,10 @@ pub struct UserPreference {
     pub last_updated: u64,
 }
 
+/// Project-scoped store for weighted user preferences.
+///
+/// All keys are prefixed (`pref:`) so they can coexist with other state
+/// entries in the same [`MfsStore`].
 pub struct UserPreferenceStore {
     store: Arc<MfsStore>,
     prefix: &'static str,
@@ -21,6 +30,7 @@ pub struct UserPreferenceStore {
 }
 
 impl UserPreferenceStore {
+    /// Create a new preference store bound to `project_id` and backed by `store`.
     pub fn new(store: Arc<MfsStore>, project_id: String) -> Self {
         Self {
             store,
@@ -33,6 +43,11 @@ impl UserPreferenceStore {
         format!("{}{}", self.prefix, key)
     }
 
+    /// Record or update a preference for `key` with `value` and `weight`.
+    ///
+    /// If the same `value` is recorded again, the weights are summed.
+    /// If a different value is recorded, the existing weight is replaced
+    /// by the new one (last-write-wins within a single key/value pair).
     pub async fn record_preference(&self, key: &str, value: Value, weight: f64) -> Result<()> {
         let full_key = self.make_key(key);
 
@@ -87,6 +102,9 @@ impl UserPreferenceStore {
         Ok(())
     }
 
+    /// Look up the current preferred value for `key`.
+    ///
+    /// Returns `None` if no preference has been recorded for this key.
     pub async fn get_preference(&self, key: &str) -> Result<Option<Value>> {
         let full_key = self.make_key(key);
         let val = self
@@ -103,6 +121,11 @@ impl UserPreferenceStore {
         Ok(None)
     }
 
+    /// Mine a list of [`sisyphus_types::Feedback`] entries for preference hints.
+    ///
+    /// Any feedback tag with the prefix `pref:` is treated as a preference
+    /// key candidate and returned. The keys are deduplicated by `Vec` order
+    /// (first occurrence wins).
     pub fn infer_preferences_from_feedback(
         &self,
         feedback: Vec<sisyphus_types::Feedback>,
@@ -120,6 +143,11 @@ impl UserPreferenceStore {
         Ok(inferred)
     }
 
+    /// Clear all preferences for this project.
+    ///
+    /// Currently a no-op stub: the underlying [`MfsStore`] does not expose
+    /// prefix-scoped deletion. A full implementation would maintain a side
+    /// index of preference keys and remove them individually.
     pub fn clear_preferences(&self) -> Result<()> {
         // MfsStore doesn't have a prefix-based delete.
         // In a real system, we'd maintain a list of preference keys.

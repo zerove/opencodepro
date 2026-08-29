@@ -16,6 +16,7 @@ impl Default for InMemoryGoldenDataset {
 }
 
 impl InMemoryGoldenDataset {
+    /// Create an empty golden dataset (no examples, no embeddings).
     pub fn new() -> Self {
         Self {
             data: Arc::new(RwLock::new(HashMap::new())),

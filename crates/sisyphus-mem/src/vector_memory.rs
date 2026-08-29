@@ -4,6 +4,9 @@ use serde_json::Value;
 use sisyphus_types::VectorRecord;
 use sqlx::{Row, SqlitePool};
 
+/// A vector record paired with its similarity score (cosine, in [-1.0, 1.0]).
+///
+/// Returned by similarity search methods like [`UserMemoryStore::recall`].
 #[derive(Debug, Clone)]
 pub struct ScoredVector {
     pub key: String,
@@ -11,16 +14,25 @@ pub struct ScoredVector {
     pub record: VectorRecord,
 }
 
+/// SQLite-backed vector store with cosine similarity search.
+///
+/// Used as the storage backend for [`UserMemoryStore`], which adds
+/// session-scoped keying on top of this raw vector index.
 pub struct VectorMemoryStore {
     pool: SqlitePool,
 }
 
+/// Per-session wrapper around [`VectorMemoryStore`].
+///
+/// All keys are automatically namespaced with the session id to prevent
+/// cross-session leakage of embeddings.
 pub struct UserMemoryStore {
     inner: VectorMemoryStore,
     session_id: String,
 }
 
 impl UserMemoryStore {
+    /// Create a session-scoped memory store backed by `inner`.
     pub fn new(inner: VectorMemoryStore, session_id: String) -> Self {
         Self { inner, session_id }
     }
@@ -29,12 +41,18 @@ impl UserMemoryStore {
         format!("sess_{}_{}", self.session_id, key)
     }
 
+    /// Store `embedding` under `key` with optional `metadata` JSON.
+    ///
+    /// Replaces any existing entry for the same key (upsert semantics).
     pub async fn store(&self, key: &str, embedding: Vec<f32>, metadata: Value) -> Result<()> {
         self.inner
             .store_embedding(&self.session_key(key), embedding, metadata)
             .await
     }
 
+    /// Return up to `top_k` vectors most similar to `embedding` by cosine similarity.
+    ///
+    /// Results are sorted by score descending (most similar first).
     pub async fn recall(&self, embedding: &[f32], top_k: usize) -> Result<Vec<ScoredVector>> {
         // C 层缺陷修复：此前全局取 top_k*10 再按会话前缀过滤，
         // 多会话并发写入时本会话记录可能整体落在全局窗口之外被
@@ -74,6 +92,11 @@ impl VectorMemoryStore {
         Ok(())
     }
 
+    /// Store a [`VectorRecord`] with an explicit vector id and namespace.
+    ///
+    /// Unlike [`UserMemoryStore::store`], this method is intended for bulk
+    /// ingestion of vectors produced by the broader memory pipeline
+    /// (e.g. SOP embeddings, tool recall caches).
     pub async fn store_embedding(
         &self,
         key: &str,
@@ -111,6 +134,10 @@ impl VectorMemoryStore {
         Ok(())
     }
 
+    /// Similarity search over the underlying [`VectorMemoryStore`].
+    ///
+    /// Returns up to `top_k` [`ScoredVector`] entries whose cosine
+    /// similarity to `query` is at least `threshold`.
     pub async fn search_similar(
         &self,
         query_embedding: &[f32],
@@ -196,6 +223,10 @@ impl VectorMemoryStore {
         Ok(scored_vectors)
     }
 
+    /// Metadata-only filter: returns all vectors whose metadata field equals `value`.
+    ///
+    /// Useful for retrieving all vectors tagged with a specific key/value pair
+    /// without computing similarities. Sorted by creation time descending.
     pub async fn search_by_metadata(
         &self,
         filter: Value,

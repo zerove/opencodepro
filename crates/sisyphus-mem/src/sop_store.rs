@@ -6,12 +6,19 @@ use sisyphus_types::StateStore;
 use sisyphus_types::graph::{NodeKind, SOPGraphConfig, SOPNodeConfig};
 use sqlx::SqlitePool;
 
+/// SQLite-backed storage for [`SOPGraph`](sisyphus_types::graph::SOPGraph) records
+/// and their full topology (nodes, edges, project scoping).
+///
+/// The store owns its schema and runs idempotent `CREATE TABLE IF NOT EXISTS`
+/// migrations in [`Self::new`].
 #[derive(Clone)]
 pub struct SopSqlStore {
     pool: SqlitePool,
 }
 
 impl SopSqlStore {
+    /// Open (or create) a [`SopSqlStore`] on the given `pool`,
+    /// running any pending schema migrations.
     pub async fn new(pool: SqlitePool) -> Result<Self> {
         let store = Self { pool };
         store.init_schema().await?;
@@ -203,6 +210,9 @@ impl SopSqlStore {
         Ok(Some(SOPGraphConfig { nodes, edges }))
     }
 
+    /// Delete a single SOP and cascade-delete its nodes.
+    ///
+    /// No-op if the SOP does not exist. Returns `Ok(())` either way.
     pub async fn delete_sop(&self, sop_id: &str, project_id: &str) -> Result<()> {
         sqlx::query("DELETE FROM sops WHERE id = ? AND project_id = ?")
             .bind(sop_id)
@@ -212,6 +222,10 @@ impl SopSqlStore {
         Ok(())
     }
 
+    /// List SOP ids, optionally filtered by `project_id`.
+    ///
+    /// When `project_id` is `None`, returns SOP ids from all projects.
+    /// Result is sorted alphabetically by id for stable output.
     pub async fn list_sops(&self, project_id: Option<&str>) -> Result<Vec<String>> {
         let rows = match project_id {
             Some(pid) => {

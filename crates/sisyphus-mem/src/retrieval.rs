@@ -2,11 +2,14 @@ use sisyphus_types::ExperienceRetriever;
 use sisyphus_types::experience::{ExperienceBank, ExperienceQuery, ExperienceTuple};
 use std::sync::Arc;
 
+/// [`ExperienceRetriever`] adapter that delegates to an in-memory [`ExperienceBank`].
 pub struct BankRetriever {
     pub bank: Arc<dyn ExperienceBank>,
 }
 
 impl BankRetriever {
+    /// Wrap `bank` behind the [`ExperienceRetriever`] trait for use by the
+    /// cognitive loop's reflection stage.
     pub fn new(bank: Arc<dyn ExperienceBank>) -> Self {
         Self { bank }
     }
