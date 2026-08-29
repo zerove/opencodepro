@@ -20,6 +20,7 @@ toml = "0.8"
 anyhow = { workspace = true }
 reqwest = { version = "0.12", features = ["json"] }
 tracing = { workspace = true }
+metrics = "0.24"
 async-trait = { workspace = true }
 thiserror = { workspace = true }
 uuid = { version = "1.23.4", features = ["v4"] }

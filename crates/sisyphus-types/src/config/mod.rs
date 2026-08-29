@@ -6,6 +6,7 @@ pub use llm::*;
 pub use provider::*;
 pub use sub::*;
 
+use metrics::counter;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use tokio::sync::watch;
@@ -161,7 +162,9 @@ impl Config {
     }
 
     /// Load configuration from a TOML file.
+    /// Load config from file.
     pub fn from_file(path: &str) -> Result<Self, TypesError> {
+        counter!("sisyphus_types_config_loads_total").increment(1);
         let content =
             std::fs::read_to_string(path).map_err(|source| TypesError::ConfigReadError {
                 path: path.into(),

@@ -1,3 +1,4 @@
+use metrics::counter;
 use sisyphus_tools_build::build::{self, BuildOutput, Diag, LanguageBackend};
 use sisyphus_tools_core::ToolResult;
 use std::collections::BTreeMap;
@@ -109,12 +110,14 @@ pub fn diagnose_auto(
 }
 
 /// Backward-compatible: runs diagnose with RustBackend (cargo check + clippy).
+/// Run diagnose.
 pub fn diagnose(
     pkg: Option<&str>,
     all: bool,
     no_clippy: bool,
     cwd: Option<&Path>,
 ) -> ToolResult<DiagnoseReport> {
+    counter!("sisyphus_diagnose_runs_total").increment(1);
     diagnose_with(&build::rust::RustBackend, pkg, all, no_clippy, cwd)
 }
 

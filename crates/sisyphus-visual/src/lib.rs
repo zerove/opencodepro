@@ -6,6 +6,7 @@
 
 pub use crate::helpers::{base64_encode, is_png, simulated_visual_state, PNG_MAGIC};
 
+use metrics::counter;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use sisyphus_tools_llm::LlmClient;
@@ -311,11 +312,13 @@ impl VisualPerceptionManager {
     }
 
     /// Processes a visual request based on the NodeKind.
+    /// Process visual node.
     pub async fn process_visual_node(
         &self,
         kind: &NodeKind,
         image_data: &[u8],
     ) -> Result<String, VisualError> {
+        counter!("sisyphus_visual_nodes_processed_total").increment(1);
         match kind {
             NodeKind::VisualAnalysis { prompt, .. } => {
                 let result = self.provider.analyze_image(image_data, prompt).await?;

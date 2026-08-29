@@ -160,16 +160,29 @@ fn main() -> Result<()> {
         );
         println!("{}", "-".repeat(78));
         let total: usize = reports.len();
-        let with: usize = reports.values().filter(|r| r.has_metrics).count();
+        // Test-only crate: sisyphus-tests (#![cfg(test)]) excluded from coverage %
+        let test_only: &[&str] = &["sisyphus-tests"];
+        let countable: Vec<_> = reports
+            .values()
+            .filter(|r| !test_only.contains(&r.name.as_str()))
+            .collect();
+        let with: usize = countable.iter().filter(|r| r.has_metrics).count();
+        let denom = countable.len().max(1);
         for r in reports.values() {
             let tot = r.helper_calls + r.macro_calls + r.tracing_spans;
-            let status = if r.has_metrics { "✓" } else { "✗" };
+            let status = if r.has_metrics {
+                "✓"
+            } else if test_only.contains(&r.name.as_str()) {
+                "N/A"
+            } else {
+                "✗"
+            };
             println!(
                 "{:<28} {:>8} {:>8} {:>8} {:>8}  {}",
                 r.name, r.helper_calls, r.macro_calls, r.tracing_spans, tot, status
             );
         }
-        println!("\n汇总: {}/{} crate 有 metrics 埋点 ({}%)", with, total, with * 100 / total.max(1));
+        println!("\n汇总: {}/{} crate 有 metrics 埋点 ({}%, 已排除 test-only crate)", with, denom, with * 100 / denom);
 
         if !no_metrics.is_empty() {
             println!("\n⚠️  以下 crate 应埋点但未埋点 (ADR-007 §4 违反):");

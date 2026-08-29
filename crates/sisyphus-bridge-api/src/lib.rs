@@ -9,6 +9,7 @@
 // 较大触发 `result_large_err`；生成代码不可修改，此处统一放行。
 #![allow(clippy::result_large_err)]
 
+use metrics::counter;
 use std::time::Duration;
 use tonic::transport::Endpoint;
 
@@ -24,9 +25,11 @@ pub use proto::*;
 /// Convenience function to connect to the Sisyphus bridge.
 /// Tries IPv6 first, falls back to IPv4 for [::1] addresses.
 /// Each attempt has a 3-second timeout.
+/// Connect to sisyphus bridge.
 pub async fn connect(
     addr: &str,
 ) -> anyhow::Result<sisyphus_bridge_client::SisyphusBridgeClient<tonic::transport::Channel>> {
+    counter!("sisyphus_bridge_api_connections_total").increment(1);
     let orig = addr.to_string();
     // Try IPv6 first
     if let Ok(Ok(client)) = tokio::time::timeout(Duration::from_secs(3), connect_to(&orig)).await {

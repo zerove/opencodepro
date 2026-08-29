@@ -4338,6 +4338,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "futures",
+ "metrics 0.24.6",
  "prost 0.13.5",
  "tokio",
  "tokio-stream",
@@ -4607,6 +4608,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "metrics 0.24.6",
  "reqwest 0.12.28",
  "serde",
  "serde_json",
@@ -4648,6 +4650,7 @@ dependencies = [
 name = "sisyphus-tools-core"
 version = "0.1.0"
 dependencies = [
+ "metrics 0.24.6",
  "serde",
  "serde_json",
  "sisyphus-bridge-api",
@@ -4705,6 +4708,7 @@ dependencies = [
 name = "sisyphus-tools-llm-tools"
 version = "0.1.0"
 dependencies = [
+ "metrics 0.24.6",
  "regex",
  "serde",
  "serde_json",
@@ -4801,6 +4805,7 @@ dependencies = [
  "async-trait",
  "dashmap",
  "im",
+ "metrics 0.24.6",
  "notify",
  "petgraph 0.6.5",
  "proptest",
@@ -4818,6 +4823,7 @@ name = "sisyphus-wasm-sdk"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "metrics 0.24.6",
  "serde",
  "serde_json",
  "tracing",
@@ -4846,6 +4852,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "metrics 0.24.6",
  "reqwest 0.12.28",
  "serde",
  "serde_json",

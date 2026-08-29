@@ -6,6 +6,7 @@ license = "MIT"
 description = "Shared gRPC types, client wrapper, and server trait for the Sisyphus Bridge protocol"
 
 [dependencies]
+metrics = "0.24"
 tonic = { version = "0.12", features = ["transport"] }
 prost = "0.13"
 tokio = { version = "1", features = ["macros", "rt", "sync"] }

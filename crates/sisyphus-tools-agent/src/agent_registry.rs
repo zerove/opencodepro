@@ -1,3 +1,4 @@
+use metrics::counter;
 use sisyphus_tools_llm::metis::LlmClient;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
@@ -37,7 +38,9 @@ impl AgentRegistry {
     }
 
     /// Register or update an agent.
+    /// Register agent.
     pub fn register(&self, id: &str, info: AgentInfo) {
+        counter!("sisyphus_agent_registered_total", "agent_id" => id.to_string()).increment(1);
         let mut map = self
             .agents
             .write()

@@ -5,6 +5,7 @@
 //! and register their tools via [`register_tool`] so the runtime can discover
 //! and execute them.
 
+use metrics::counter;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
@@ -83,7 +84,9 @@ pub fn register_tool<T: SisyphusTool + 'static>(tool: T) {
 }
 
 /// Register a tool with an explicit id.
+/// Register tool as.
 pub fn register_tool_as<T: SisyphusTool + 'static>(tool_id: &str, tool: T) {
+    counter!("sisyphus_wasm_sdk_tools_registered_total").increment(1);
     let Some(mut reg) = registry().lock().ok() else {
         tracing::error!("tool registry poisoned, register_tool_as ignored");
         return;

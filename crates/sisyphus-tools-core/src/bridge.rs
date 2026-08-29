@@ -1,3 +1,4 @@
+use metrics::counter;
 use serde_json::Value;
 use sisyphus_bridge_api::sisyphus_bridge_client::SisyphusBridgeClient;
 use sisyphus_bridge_api::ExecuteToolRequest;
@@ -25,7 +26,9 @@ impl BridgeClient {
     }
 
     /// Execute tool.
+    /// Execute tool.
     pub async fn execute_tool(&self, tool_id: &str, args: Value) -> Result<Value, String> {
+        counter!("sisyphus_core_tool_executions_total", "tool_id" => tool_id.to_string()).increment(1);
         let args_json =
             serde_json::to_string(&args).map_err(|e| format!("Args serialization failed: {e}"))?;
 
