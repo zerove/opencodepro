@@ -26,7 +26,11 @@ impl BridgeClient {
     }
 
     /// Execute tool.
-    /// Execute tool.
+    /// Execute a registered tool via the bridge gRPC service.
+    ///
+    /// Serialises `args` to JSON and dispatches to `execute_tool` on the
+    /// SisyphusBridge server. Increments
+    /// `sisyphus_core_tool_executions_total{tool_id}` for observability.
     pub async fn execute_tool(&self, tool_id: &str, args: Value) -> Result<Value, String> {
         counter!("sisyphus_core_tool_executions_total", "tool_id" => tool_id.to_string()).increment(1);
         let args_json =

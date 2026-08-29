@@ -67,6 +67,20 @@ impl IntelligenceManager {
     }
 
     /// 反思执行轨迹，计算偏差并提出改进建议。
+    /// Run the two-stage reflection pipeline on an execution trace.
+    ///
+    /// Stage 1: the base reflector produces a [`ReflectionReport`] from the
+    /// raw trace, the original prediction, and the execution context. Stage
+    /// 2 (when available) uses the expert reflection tool to enrich the
+    /// report with deeper semantic suggestions for graph evolution.
+    ///
+    /// # Arguments
+    /// * `trace` - Serialised execution trace (typically from [`ExecutionContext`])
+    /// * `prediction` - The prediction that preceded execution
+    /// * `ctx` - Current execution context for the SOP run
+    ///
+    /// # Returns
+    /// A [`ReflectionReport`] suitable for consumption by [`IntelligenceManager::evolve_graph`].
     pub async fn reflect_on_trace(
         &self,
         trace: &str,

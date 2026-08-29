@@ -163,6 +163,12 @@ impl Config {
 
     /// Load configuration from a TOML file.
     /// Load config from file.
+    /// Load a configuration from a TOML file at `path`.
+    ///
+    /// Returns [`TypesError::ConfigReadError`] if the file cannot be read and
+    /// [`TypesError::ConfigParseError`] if the TOML is malformed. Callers
+    /// should treat both as fatal: the SOP engine cannot start without a
+    /// valid config.
     pub fn from_file(path: &str) -> Result<Self, TypesError> {
         counter!("sisyphus_types_config_loads_total").increment(1);
         let content =
@@ -361,6 +367,14 @@ impl Config {
     }
 
     /// Validate all config fields, returning an error on first invalid value.
+    /// Validate the loaded config against the engine invariants.
+    ///
+    /// Checks currently enforced:
+    /// * When `auth_token` is set, `jwt.secret` must also be set
+    ///   (otherwise the bridge cannot mint API tokens).
+    /// * (Future) port ranges, retry bounds, provider model allow-list.
+    ///
+    /// Called automatically by [`Self::from_file`] and [`Self::apply_env_overrides`].
     pub fn validate(&self) -> Result<(), TypesError> {
         if self.auth_token.is_empty() {
             // auth_token is optional; empty = no auth

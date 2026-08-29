@@ -25,7 +25,14 @@ pub use proto::*;
 /// Convenience function to connect to the Sisyphus bridge.
 /// Tries IPv6 first, falls back to IPv4 for [::1] addresses.
 /// Each attempt has a 3-second timeout.
-/// Connect to sisyphus bridge.
+/// Connect to the Sisyphus bridge gRPC service.
+///
+/// Tries `addr` as-is for 3 seconds, then falls back to an IPv4 form
+/// when `addr` references `[::1]`. Each attempt is independently
+/// timeout-bounded so a single failure cannot stall the caller.
+///
+/// Most callers should not use this directly; prefer
+/// [`sisyphus_cli::bridge::BridgeClient::connect`] which adds auth.
 pub async fn connect(
     addr: &str,
 ) -> anyhow::Result<sisyphus_bridge_client::SisyphusBridgeClient<tonic::transport::Channel>> {

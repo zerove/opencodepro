@@ -29,7 +29,28 @@ use super::{CognitiveIteration, CognitiveReport, StrategicManager};
 impl StrategicManager {
     #[allow(clippy::too_many_arguments)]
     #[instrument(skip_all, fields(sop_id = %sop_id, graph_nodes = sop_graph.graph.node_count()))]
-    /// Run cognitive loop.
+    /// Run the full cognitive loop: predict → execute → reflect → evolve.
+    ///
+    /// Iterates the SOP graph until all nodes complete or a stop condition fires.
+    /// Each iteration uses the LLM-driven predictor to choose the next node,
+    /// executes it via the tool registry, reflects on the outcome through the
+    /// configured [`MicroReflector`], and applies any graph evolution produced
+    /// by the evolver before the next iteration.
+    ///
+    /// # Arguments
+    /// * `sop_graph` - The cognitive DAG to execute (shared, may be cloned)
+    /// * `sop_id` - Identifier of the SOP definition being run
+    /// * `goal_text` - Optional user-facing goal that seeded this SOP
+    /// * `project_id` - Optional project scope for outcome persistence
+    /// * `initial_ctx` - Optional pre-populated execution context
+    /// * `event_tx` - Optional channel for [`ExecutionEvent`]s (for TUI/SSE)
+    /// * `broadcast_fn` - Synchronous broadcast hook (e.g. metrics emission)
+    /// * `stream_tx` - Optional channel for [`CognitiveEvent`] streaming
+    /// * `micro_reflector` - Optional custom reflection strategy
+    ///
+    /// # Returns
+    /// The final node output, the cognitive report (reflections + evolution),
+    /// and an optional updated graph if the evolver produced structural changes.
     pub async fn run_cognitive_loop(
         &self,
         sop_graph: Arc<SOPGraph>,

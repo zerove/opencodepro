@@ -397,9 +397,18 @@ pub enum MicroReflectionDecision {
 
 #[async_trait::async_trait]
 /// Micro Reflector.
+/// Per-node reflection hook used by the cognitive loop after each node
+/// executes. Allows the scheduler to abort, retry, or continue based on a
+/// lightweight judgement that does not require the full [`StandardReflector`]
+/// (used for end-of-SOP deep reflection).
 pub trait MicroReflector: Send + Sync {
+    /// Predict what a node named `node_name` is expected to do, given the
+    /// current execution context. Returned text is recorded for the
+    /// downstream `reflect` call.
     async fn predict(&self, node_name: &str, ctx: &ExecutionContext) -> Result<String, TypesError>;
 
+    /// Compare the recorded prediction with the actual output and decide
+    /// how the loop should proceed.
     async fn reflect(
         &self,
         node_name: &str,

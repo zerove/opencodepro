@@ -22,15 +22,30 @@ impl From<sisyphus_types::TypesError> for MetisError {
 
 #[async_trait::async_trait]
 /// Llm Client.
+/// Abstraction over an LLM provider (OpenAI-compatible or local).
+///
+/// Implementations must be `Send + Sync` and safe to share across the SOP
+/// scheduler's worker pool. The `chat` and `generate` methods are expected
+/// to honour the per-agent rate limit and circuit breaker state exposed by
+/// [`Self::breaker`].
 pub trait LlmClient: Send + Sync {
+    /// Run a chat completion.
+    ///
+    /// * `system` - System prompt; prepended regardless of `json_mode`.
+    /// * `user` - The user message; if `json_mode` is true, the system prompt
+    ///   is augmented to instruct the model to reply with strict JSON.
+    /// * `json_mode` - Hint to enforce JSON output (e.g. for tool/function calling).
     async fn chat(
         &self,
         system: &str,
         user: &str,
         json_mode: bool,
     ) -> Result<String, sisyphus_types::TypesError>;
+    /// Run a single-prompt completion.
     async fn generate(&self, prompt: &str) -> Result<String, sisyphus_types::TypesError>;
+    /// Resolve provider/model/api_key triple for the given agent id.
     fn get_params_for(&self, agent_id: &str) -> (String, String, String);
+    /// Snapshot of the circuit breaker used to gate outbound LLM calls.
     fn breaker(&self) -> crate::circuit_breaker::CircuitBreaker;
 
     /// 优雅关闭 LLM 客户端及其共享 HTTP 池。

@@ -299,6 +299,15 @@ impl SharedHttpClient {
     ///
     /// 调用方应优先用 `inner.http()` (不走 retry) 除非明确需要 transport retry。
     /// 内部计数器 (requests_total/errors_total) 每次实际 attempt 都会 +1.
+    /// Execute an HTTP request with the configured retry policy.
+    ///
+    /// Behaviour by [`RetryPolicy`]:
+    /// * `Disabled` or any non-idempotent method (POST/PUT/DELETE/...) → one attempt
+    /// * `OneShot` and idempotent method (GET/HEAD) → up to 1 retry
+    /// * `Exponential` and idempotent method → exponential backoff up to `max_retries`
+    ///
+    /// Non-idempotent requests are never retried automatically to avoid double-mutation
+    /// side effects; callers must handle the error and decide.
     pub async fn execute_with_retry(
         &self,
         req: reqwest::Request,
