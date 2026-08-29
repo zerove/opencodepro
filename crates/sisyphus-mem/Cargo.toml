@@ -29,3 +29,5 @@ thiserror = "1.0"
 
 [dev-dependencies]
 tempfile = "3.8"
+# sqlx::any 在测试时需 install_drivers, sqlx-sqlite 提供 DRIVER 常量
+sqlx-sqlite = { version = "0.8" }
