@@ -158,3 +158,115 @@ fn prune_with_max_zero_empties_sections() {
     // max_insights=0 → 0 lines retained.
     assert!(pruned.is_empty() || pruned == "\n");
 }
+
+// ---------------------------------------------------------------------------
+// Additional edge cases
+// ---------------------------------------------------------------------------
+
+#[test]
+fn append_insight_to_existing_section_concatenates() {
+    let mut n = SisyphusNotepad::default();
+    n.append_insight("s".into(), "first".into());
+    let len_first = n.read_section("s").expect("").len();
+    n.append_insight("s".into(), "second".into());
+    let len_second = n.read_section("s").expect("").len();
+    assert!(len_second > len_first);
+    let content = n.read_section("s").expect("");
+    assert!(content.contains("first"));
+    assert!(content.contains("second"));
+}
+
+#[test]
+fn take_snapshot_records_state() {
+    let mut n = SisyphusNotepad::default();
+    n.write_section("x".into(), "y".into());
+    n.take_snapshot("node_a".into());
+    assert_eq!(n.history.len(), 1);
+    assert_eq!(n.history[0].trigger_node, "node_a");
+    assert!(n.history[0].snapshot.contains_key("x"));
+}
+
+#[test]
+fn take_snapshot_preserves_existing_sections() {
+    let mut n = SisyphusNotepad::default();
+    n.write_section("a".into(), "alpha".into());
+    n.take_snapshot("first".into());
+    // Modify notepad
+    n.write_section("b".into(), "beta".into());
+    n.take_snapshot("second".into());
+    assert_eq!(n.history.len(), 2);
+    // First snapshot should only have "a"; second should have "a" + "b".
+    let first = &n.history[0];
+    let second = &n.history[1];
+    assert!(first.snapshot.contains_key("a"));
+    assert!(!first.snapshot.contains_key("b"));
+    assert!(second.snapshot.contains_key("a"));
+    assert!(second.snapshot.contains_key("b"));
+}
+
+#[test]
+fn take_snapshot_with_empty_notepad_still_records() {
+    let mut n = SisyphusNotepad::default();
+    n.take_snapshot("empty_node".into());
+    assert_eq!(n.history.len(), 1);
+    assert_eq!(n.history[0].trigger_node, "empty_node");
+    assert!(n.history[0].snapshot.is_empty());
+}
+
+#[test]
+fn prune_keeps_recent_lines_per_section() {
+    let mut n = SisyphusNotepad::default();
+    let mut big = String::new();
+    for i in 0..100 {
+        big.push_str(&format!("line {i}\n"));
+    }
+    n.write_section("big".into(), big);
+    n.prune(10);
+    let content = n.read_section("big").expect("");
+    let lines: Vec<&str> = content.lines().collect();
+    assert!(lines.len() <= 10);
+}
+
+#[test]
+fn prune_does_not_affect_short_sections() {
+    let mut n = SisyphusNotepad::default();
+    n.write_section("short".into(), "a\nb\nc".into());
+    n.prune(100);
+    let content = n.read_section("short").expect("");
+    assert_eq!(content, "a\nb\nc");
+}
+
+#[test]
+fn prune_multiple_sections() {
+    let mut n = SisyphusNotepad::default();
+    let mut big = String::new();
+    for i in 0..50 {
+        big.push_str(&format!("L{i}\n"));
+    }
+    n.write_section("big_a".into(), big.clone());
+    n.write_section("big_b".into(), big);
+    n.write_section("small".into(), "tiny".into());
+    n.prune(5);
+    assert!(n.read_section("big_a").expect("").lines().count() <= 5);
+    assert!(n.read_section("big_b").expect("").lines().count() <= 5);
+    assert_eq!(n.read_section("small").expect(""), "tiny");
+}
+
+#[test]
+fn notepad_default_constructs_empty() {
+    let n = SisyphusNotepad::default();
+    assert!(n.sections.is_empty());
+    assert!(n.history.is_empty());
+}
+
+#[test]
+fn append_insight_multiple_to_same_section_grows() {
+    let mut n = SisyphusNotepad::default();
+    for i in 0..5 {
+        n.append_insight("log".into(), format!("entry {i}"));
+    }
+    let content = n.read_section("log").expect("");
+    for i in 0..5 {
+        assert!(content.contains(&format!("entry {i}")));
+    }
+}
