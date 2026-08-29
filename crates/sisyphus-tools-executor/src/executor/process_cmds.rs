@@ -4,7 +4,19 @@ use std::path::Path;
 
 // ── bash & web command implementations ────────────────────────
 
-pub async fn cmd_bash_exec(args: Vec<u8>) -> Result<Vec<u8>, String> {
+/// System command: execute a shell command in an optional working directory.
+    ///
+    /// Args (JSON):
+    /// - `command` (required): shell command string
+    /// - `workdir` (optional): working directory
+    /// - `timeout_ms` (default 30000): execution timeout in milliseconds
+    ///
+    /// Returns JSON `{ stdout, stderr, exit_code, duration_ms }`.
+    ///
+    /// **Security**: command is run via `bash -c`. Callers must validate
+    /// `workdir` to be inside the project root, otherwise arbitrary command
+    /// execution is possible.
+    pub async fn cmd_bash_exec(args: Vec<u8>) -> Result<Vec<u8>, String> {
     let v = parse_args(&args)?;
     let command = str_arg(&v, "command")?;
     let workdir = crate::executor::args::opt_str_arg(&v, "workdir");
@@ -21,7 +33,14 @@ pub async fn cmd_bash_exec(args: Vec<u8>) -> Result<Vec<u8>, String> {
     }))
 }
 
-pub async fn cmd_web_search(args: Vec<u8>) -> Result<Vec<u8>, String> {
+/// System command: search the web via the configured search backend.
+    ///
+    /// Args (JSON):
+    /// - `query` (required): search query string
+    /// - `num` (default 5): maximum number of results
+    ///
+    /// Returns JSON `{ results: [{ title, url, snippet }, ...] }`.
+    pub async fn cmd_web_search(args: Vec<u8>) -> Result<Vec<u8>, String> {
     let v = parse_args(&args)?;
     let query = str_arg(&v, "query")?;
     let num = crate::executor::args::usize_arg(&v, "num").unwrap_or(5);
@@ -41,7 +60,14 @@ pub async fn cmd_web_search(args: Vec<u8>) -> Result<Vec<u8>, String> {
     ok_json(json!({"results": list}))
 }
 
-pub async fn cmd_web_fetch(args: Vec<u8>) -> Result<Vec<u8>, String> {
+/// System command: fetch a single URL and return its body as text.
+    ///
+    /// Args (JSON):
+    /// - `url` (required): target URL
+    ///
+    /// Returns JSON `{ content, content_type }`. Large responses may be
+    /// truncated by the underlying HTTP client.
+    pub async fn cmd_web_fetch(args: Vec<u8>) -> Result<Vec<u8>, String> {
     let v = parse_args(&args)?;
     let url = str_arg(&v, "url")?;
     let result = sisyphus_tools_system::web::webfetch(&url)

@@ -4,7 +4,10 @@ use std::sync::Arc;
 
 // ── feedback command implementations ──────────────────────────
 
-pub async fn cmd_feedback_save(
+/// Feedback command: persist a single feedback entry for later analysis.
+    ///
+    /// Args (JSON): { `key`, `value`, `tags`: Vec<String>, `weight` (default 1.0) }
+    pub async fn cmd_feedback_save(
     store: Arc<sisyphus_tools_core::feedback::FeedbackStore>,
     args: Vec<u8>,
 ) -> Result<Vec<u8>, String> {
@@ -33,7 +36,12 @@ pub async fn cmd_feedback_save(
     ok_json(json!({"status": "saved"}))
 }
 
-pub async fn cmd_feedback_get(
+/// Feedback command: load a single feedback entry by id.
+    ///
+    /// Args (JSON): { `id`: feedback entry id }
+    ///
+    /// Returns JSON `{ entry: Option<Feedback> }`.
+    pub async fn cmd_feedback_get(
     store: Arc<sisyphus_tools_core::feedback::FeedbackStore>,
     args: Vec<u8>,
 ) -> Result<Vec<u8>, String> {
@@ -48,7 +56,14 @@ pub async fn cmd_feedback_get(
     ok_json(serde_json::to_value(&feedbacks).map_err(|e| format!("serialize: {e}"))?)
 }
 
-pub async fn cmd_feedback_query(
+/// Feedback command: query the feedback store by tags / time range / minimum weight.
+    ///
+    /// Args (JSON):
+    /// - `tags` (optional): list of tags (AND match)
+    /// - `since` (optional): RFC3339 timestamp lower bound
+    /// - `min_weight` (default 0.0): minimum weight filter
+    /// - `limit` (default 50): max results
+    pub async fn cmd_feedback_query(
     store: Arc<sisyphus_tools_core::feedback::FeedbackStore>,
     args: Vec<u8>,
 ) -> Result<Vec<u8>, String> {

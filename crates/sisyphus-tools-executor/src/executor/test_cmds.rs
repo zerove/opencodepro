@@ -6,6 +6,7 @@ pub struct TestExecutor {
 }
 
 impl TestExecutor {
+    /// Create an empty test registry (no test cases loaded).
     pub fn new() -> Self {
         Self {}
     }

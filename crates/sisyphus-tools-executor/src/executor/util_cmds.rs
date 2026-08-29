@@ -11,7 +11,10 @@ fn to_vec(value: &Value) -> Result<Vec<u8>, sisyphus_types::TypesError> {
     })
 }
 
-pub async fn cmd_git_blame(args: Value) -> Result<Vec<u8>, sisyphus_types::TypesError> {
+/// Git command: blame a single line of a file, returning the commit + author info.
+    ///
+    /// Args (JSON): { `path`, `line` (1-based) }
+    pub async fn cmd_git_blame(args: Value) -> Result<Vec<u8>, sisyphus_types::TypesError> {
     let path = args.get("path").and_then(|p| p.as_str()).ok_or_else(|| {
         sisyphus_types::TypesError::ToolExecutionError {
             tool_id: "git_blame".to_string(),
@@ -69,7 +72,12 @@ pub async fn cmd_git_blame(args: Value) -> Result<Vec<u8>, sisyphus_types::Types
     }))
 }
 
-pub async fn cmd_type_check(args: Value) -> Result<Vec<u8>, sisyphus_types::TypesError> {
+/// Compiler command: run `cargo check` on a target crate or the whole workspace.
+    ///
+    /// Args (JSON): { `crate_name` (default = whole workspace), `all_targets` (default true) }
+    ///
+    /// Returns JSON `{ success: bool, stderr: String, duration_ms: u64 }`.
+    pub async fn cmd_type_check(args: Value) -> Result<Vec<u8>, sisyphus_types::TypesError> {
     let package = args.get("package").and_then(|p| p.as_str());
     let mut cmd = tokio::process::Command::new("cargo");
     cmd.arg("check");
@@ -106,7 +114,10 @@ pub async fn cmd_type_check(args: Value) -> Result<Vec<u8>, sisyphus_types::Type
     }))
 }
 
-pub async fn cmd_lsp_symbol_search(
+/// LSP command: search for symbols (functions, types, etc.) matching a query.
+    ///
+    /// Args (JSON): { `query`, `crate_name` (optional), `kind` (optional filter) }
+    pub async fn cmd_lsp_symbol_search(
     executor: &BuiltinToolExecutor,
     args: Value,
 ) -> Result<Vec<u8>, sisyphus_types::TypesError> {
@@ -136,7 +147,10 @@ pub async fn cmd_lsp_symbol_search(
     to_vec(&json!({ "symbols": results }))
 }
 
-pub async fn cmd_dependency_graph(args: Value) -> Result<Vec<u8>, sisyphus_types::TypesError> {
+/// Build command: emit a dependency graph for a crate in DOT or JSON format.
+    ///
+    /// Args (JSON): { `crate_name` (default workspace), `format` (default "dot") }
+    pub async fn cmd_dependency_graph(args: Value) -> Result<Vec<u8>, sisyphus_types::TypesError> {
     let path = args.get("path").and_then(|p| p.as_str()).ok_or_else(|| {
         sisyphus_types::TypesError::ToolExecutionError {
             tool_id: "dependency_graph".to_string(),
@@ -166,7 +180,10 @@ pub async fn cmd_dependency_graph(args: Value) -> Result<Vec<u8>, sisyphus_types
     to_vec(&json!({ "mermaid": mermaid }))
 }
 
-pub async fn cmd_doc_sync_check(
+/// Doc command: check that `book/` and inline `///` docs are in sync for a target.
+    ///
+    /// Args (JSON): { `crate_name` (default workspace) }
+    pub async fn cmd_doc_sync_check(
     client: &std::sync::Arc<dyn sisyphus_tools_llm::metis::LlmClient>,
     args: Value,
 ) -> Result<Vec<u8>, sisyphus_types::TypesError> {
@@ -214,7 +231,10 @@ pub async fn cmd_doc_sync_check(
     )
 }
 
-pub fn cmd_json_query(args: Value) -> Result<Vec<u8>, sisyphus_types::TypesError> {
+/// Util command: run a small JSON query (path + filter) against a JSON document.
+    ///
+    /// Args (JSON): { `document`, `path` (e.g. "users.0.name"), `filter` (optional) }
+    pub fn cmd_json_query(args: Value) -> Result<Vec<u8>, sisyphus_types::TypesError> {
     let path = args.get("path").and_then(|p| p.as_str()).ok_or_else(|| {
         sisyphus_types::TypesError::ToolExecutionError {
             tool_id: "json_query".to_string(),
@@ -275,7 +295,10 @@ pub fn cmd_json_query(args: Value) -> Result<Vec<u8>, sisyphus_types::TypesError
     to_vec(current)
 }
 
-pub fn cmd_base64_convert(args: Value) -> Result<Vec<u8>, sisyphus_types::TypesError> {
+/// Util command: encode or decode a base64 string.
+    ///
+    /// Args (JSON): { `input`, `mode` ("encode" | "decode", default "encode") }
+    pub fn cmd_base64_convert(args: Value) -> Result<Vec<u8>, sisyphus_types::TypesError> {
     use base64::{engine::general_purpose, Engine as _};
 
     let mode = args
@@ -304,7 +327,10 @@ pub fn cmd_base64_convert(args: Value) -> Result<Vec<u8>, sisyphus_types::TypesE
     to_vec(&json!({ "result": result }))
 }
 
-pub fn cmd_time_convert(args: Value) -> Result<Vec<u8>, sisyphus_types::TypesError> {
+/// Util command: convert between RFC3339 strings and unix epoch seconds.
+    ///
+    /// Args (JSON): { `input`, `from` ("rfc3339" | "epoch"), `to` ("rfc3339" | "epoch") }
+    pub fn cmd_time_convert(args: Value) -> Result<Vec<u8>, sisyphus_types::TypesError> {
     use chrono::{DateTime, Local, Utc};
 
     let time_str = args.get("time").and_then(|t| t.as_str()).ok_or_else(|| {
@@ -341,7 +367,10 @@ pub fn cmd_time_convert(args: Value) -> Result<Vec<u8>, sisyphus_types::TypesErr
     to_vec(&json!({ "converted_time": result }))
 }
 
-pub fn cmd_url_convert(args: Value) -> Result<Vec<u8>, sisyphus_types::TypesError> {
+/// Util command: URL-encode or URL-decode a string.
+    ///
+    /// Args (JSON): { `input`, `mode` ("encode" | "decode", default "encode") }
+    pub fn cmd_url_convert(args: Value) -> Result<Vec<u8>, sisyphus_types::TypesError> {
     let mode = args
         .get("mode")
         .and_then(|m| m.as_str())
@@ -367,7 +396,10 @@ pub fn cmd_url_convert(args: Value) -> Result<Vec<u8>, sisyphus_types::TypesErro
     to_vec(&json!({ "result": result }))
 }
 
-pub fn cmd_path_expand(args: Value) -> Result<Vec<u8>, sisyphus_types::TypesError> {
+/// Util command: expand `~` and resolve relative paths against the project root.
+    ///
+    /// Args (JSON): { `path`, `cwd` (optional) }
+    pub fn cmd_path_expand(args: Value) -> Result<Vec<u8>, sisyphus_types::TypesError> {
     let path_str = args.get("path").and_then(|p| p.as_str()).ok_or_else(|| {
         sisyphus_types::TypesError::ToolExecutionError {
             tool_id: "path_expand".to_string(),
@@ -385,7 +417,10 @@ pub fn cmd_path_expand(args: Value) -> Result<Vec<u8>, sisyphus_types::TypesErro
     to_vec(&json!({ "expanded_path": expanded }))
 }
 
-pub async fn cmd_coverage_analyze(args: Value) -> Result<Vec<u8>, sisyphus_types::TypesError> {
+/// Coverage command: parse a `cargo tarpaulin` or `llvm-cov` JSON report and summarize.
+    ///
+    /// Args (JSON): { `report_path`, `crate_name` (optional) }
+    pub async fn cmd_coverage_analyze(args: Value) -> Result<Vec<u8>, sisyphus_types::TypesError> {
     let package = args
         .get("package")
         .and_then(|p| p.as_str())
