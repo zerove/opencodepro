@@ -1,116 +1,140 @@
-//! Integration tests for sisyphus-tools-system PermissionChecker.
+//! Integration tests for sisyphus-tools-system `permissions`.
 //!
-//! Exercises the public permission resolution rules used by every tool
-//! invocation. The `check_permission` function takes a list of
-//! `(pattern, Permission)` rules and returns the first match.
+//! Exercises the public [`PermissionChecker`] API: the standalone
+//! `check_permission` free function and the methods on
+//! `PermissionChecker` (constructor, `with_external_directories`,
+//! `check`, `check_path_allowed`, `require`).
 
 use sisyphus_tools_core::{Permission, PermissionRules};
 use sisyphus_tools_system::permissions::{check_permission, PermissionChecker};
+use std::path::PathBuf;
 
-fn allow<S: Into<String>>(pattern: S) -> (String, Permission) {
-    (pattern.into(), Permission::Allow)
-}
-
-fn deny<S: Into<String>>(pattern: S) -> (String, Permission) {
-    (pattern.into(), Permission::Deny)
-}
-
-fn ask<S: Into<String>>(pattern: S) -> (String, Permission) {
-    (pattern.into(), Permission::Ask)
-}
+// ---------------------------------------------------------------------------
+// check_permission (free function)
+// ---------------------------------------------------------------------------
 
 #[test]
-fn empty_rules_allows_everything() {
+fn check_permission_empty_rules_allows_everything() {
     let rules: PermissionRules = vec![];
-    assert_eq!(check_permission(&rules, "anything"), Permission::Allow);
-    assert_eq!(check_permission(&rules, "bash"), Permission::Allow);
+    assert_eq!(check_permission(&rules, "any_tool"), Permission::Allow);
+    assert_eq!(check_permission(&rules, "another"), Permission::Allow);
 }
 
 #[test]
-fn first_matching_pattern_wins() {
-    // 'web' pattern is before 'fetch'; 'web_fetch' should match 'web'
-    let rules: PermissionRules = vec![allow("web"), deny("fetch")];
-    assert_eq!(check_permission(&rules, "web_fetch"), Permission::Allow);
-    // 'myfetch' matches 'fetch' but not 'web' → Deny
-    assert_eq!(check_permission(&rules, "myfetch"), Permission::Deny);
+fn check_permission_explicit_deny() {
+    let rules = vec![("write".into(), Permission::Deny)];
+    assert_eq!(check_permission(&rules, "write"), Permission::Deny);
 }
 
 #[test]
-fn substring_match_works() {
-    // The matching is `contains`, not a glob. Confirm a pattern embedded
-    // in the middle of a tool name still matches.
-    let rules: PermissionRules = vec![deny("secret")];
-    assert_eq!(check_permission(&rules, "read_secret_file"), Permission::Deny);
-    assert_eq!(check_permission(&rules, "secret"), Permission::Deny);
-    assert_eq!(check_permission(&rules, "public"), Permission::Allow);
+fn check_permission_explicit_ask() {
+    let rules = vec![("exec".into(), Permission::Ask)];
+    assert_eq!(check_permission(&rules, "exec"), Permission::Ask);
 }
 
 #[test]
-fn unmatched_tool_defaults_to_allow() {
-    let rules: PermissionRules = vec![deny("dangerous")];
-    assert_eq!(check_permission(&rules, "dangerous_tool"), Permission::Deny);
-    assert_eq!(check_permission(&rules, "safe_tool"), Permission::Allow);
+fn check_permission_pattern_substring_match() {
+    let rules = vec![("write".into(), Permission::Deny)];
+    // "write" is a substring of "write_big" → matches.
+    assert_eq!(check_permission(&rules, "write_big"), Permission::Deny);
+    assert_eq!(check_permission(&rules, "small_write"), Permission::Deny);
 }
 
 #[test]
-fn permission_ask_preserved_through_chain() {
-    let rules: PermissionRules = vec![ask("risky")];
-    assert_eq!(check_permission(&rules, "risky_op"), Permission::Ask);
+fn check_permission_first_match_wins() {
+    let rules = vec![
+        ("read".into(), Permission::Allow),
+        ("read_secret".into(), Permission::Deny),
+    ];
+    // "read" appears first → Allow (even though "read_secret" would match "read" too).
+    assert_eq!(check_permission(&rules, "read_secret_file"), Permission::Allow);
 }
 
 #[test]
-fn checker_check_delegates_to_check_permission() {
-    let rules: PermissionRules = vec![deny("forbidden")];
-    let checker = PermissionChecker::new(rules);
-    assert_eq!(checker.check("forbidden_op"), Permission::Deny);
-    assert_eq!(checker.check("allowed_op"), Permission::Allow);
+fn check_permission_no_substring_match() {
+    let rules = vec![("write".into(), Permission::Deny)];
+    // "read" doesn't contain "write" → no match → default Allow.
+    assert_eq!(check_permission(&rules, "read"), Permission::Allow);
 }
 
+// ---------------------------------------------------------------------------
+// PermissionChecker
+// ---------------------------------------------------------------------------
+
 #[test]
-fn checker_require_returns_ok_for_allowed() {
+fn checker_new_starts_with_no_external_dirs() {
     let checker = PermissionChecker::new(vec![]);
-    assert!(checker.require("anything").is_ok());
-}
-
-#[test]
-fn checker_require_returns_err_for_deny() {
-    let rules: PermissionRules = vec![deny("blocked")];
-    let checker = PermissionChecker::new(rules);
-    assert!(checker.require("blocked_tool").is_err());
-}
-
-#[test]
-fn checker_with_external_directories_builder_pattern() {
-    let checker = PermissionChecker::new(vec![]).with_external_directories(vec![]);
-    // Empty external_directories → no path restriction → all paths OK.
-    let result = checker.check_path_allowed(std::path::Path::new("/anywhere"));
+    // No external dirs → check_path_allowed always returns Ok.
+    let result = checker.check_path_allowed(&PathBuf::from("/anywhere"));
     assert!(result.is_ok());
 }
 
 #[test]
-fn checker_check_path_allows_paths_under_allowed_dir() {
-    let dir = tempfile::tempdir().expect("tempdir");
-    let sub = dir.path().join("sub");
-    std::fs::create_dir_all(&sub).expect("mkdir");
-    let target = sub.join("file.txt");
-    std::fs::write(&target, "hi").expect("write");
-
-    let checker = PermissionChecker::new(vec![]).with_external_directories(vec![dir.path().to_path_buf()]);
-
-    let result = checker.check_path_allowed(&target);
-    assert!(result.is_ok(), "path under allowed dir should be ok: {result:?}");
+fn checker_with_external_directories_sets_dirs() {
+    let checker = PermissionChecker::new(vec![]).with_external_directories(vec![
+        PathBuf::from("/tmp"),
+    ]);
+    // Path under /tmp is allowed.
+    let result = checker.check_path_allowed(&PathBuf::from("/tmp/foo"));
+    assert!(result.is_ok());
 }
 
 #[test]
-fn checker_check_path_denies_paths_outside_allowed_dir() {
-    let allowed = tempfile::tempdir().expect("tempdir");
-    let outside = tempfile::tempdir().expect("tempdir");
-    let target = outside.path().join("file.txt");
-    std::fs::write(&target, "hi").expect("write");
+fn checker_check_delegates_to_check_permission() {
+    let rules = vec![("write".into(), Permission::Deny)];
+    let checker = PermissionChecker::new(rules);
+    assert_eq!(checker.check("write"), Permission::Deny);
+    assert_eq!(checker.check("read"), Permission::Allow);
+}
 
-    let checker = PermissionChecker::new(vec![])
-        .with_external_directories(vec![allowed.path().to_path_buf()]);
+#[test]
+fn checker_require_allow() {
+    let rules: PermissionRules = vec![];
+    let checker = PermissionChecker::new(rules);
+    assert!(checker.require("anything").is_ok());
+}
 
-    let result = checker.check_path_allowed(&target);
-    assert!(result.is_err(), "path outside allowed dir should be denied");
+#[test]
+fn checker_require_deny() {
+    let rules = vec![("dangerous".into(), Permission::Deny)];
+    let checker = PermissionChecker::new(rules);
+    let result = checker.require("dangerous_op");
+    assert!(result.is_err());
+}
+
+#[test]
+fn checker_require_ask_succeeds() {
+    // In this implementation, Ask → Ok (a real system would prompt).
+    let rules = vec![("ask_me".into(), Permission::Ask)];
+    let checker = PermissionChecker::new(rules);
+    assert!(checker.require("ask_me_op").is_ok());
+}
+
+// ---------------------------------------------------------------------------
+// check_path_allowed
+// ---------------------------------------------------------------------------
+
+#[test]
+fn check_path_allowed_with_no_directories_is_open() {
+    let checker = PermissionChecker::new(vec![]);
+    let result = checker.check_path_allowed(&PathBuf::from("/etc/passwd"));
+    assert!(result.is_ok());
+}
+
+#[test]
+fn check_path_allowed_within_allowed_dir() {
+    let tmp = std::env::temp_dir();
+    let checker = PermissionChecker::new(vec![]).with_external_directories(vec![tmp.clone()]);
+    let result = checker.check_path_allowed(&tmp.join("test.txt"));
+    // The tmp dir is allowed; the file is under it.
+    assert!(result.is_ok());
+}
+
+#[test]
+fn check_path_allowed_outside_allowed_dir() {
+    let allowed = PathBuf::from("/tmp/very_specific_dir_that_likely_does_not_exist_xyz");
+    let checker = PermissionChecker::new(vec![]).with_external_directories(vec![allowed]);
+    // Try a different path.
+    let result = checker.check_path_allowed(&PathBuf::from("/etc"));
+    assert!(result.is_err());
 }
