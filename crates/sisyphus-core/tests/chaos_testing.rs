@@ -304,3 +304,95 @@ mod dag {
         assert!(cfg.edges.is_empty());
     }
 }
+
+// ---------------------------------------------------------------------------
+// New additions: pure data type and success_rate() coverage
+// ---------------------------------------------------------------------------
+
+// (Note: original file already covers ChaosRunner; this section adds
+//  additional Field/value tests for ChaosExperiment and ChaosExperimentResult
+//  that were not previously covered.)
+
+#[test]
+fn chaos_experiment_chaos_testing_zero_probability() {
+    use sisyphus_core::chaos_testing::ChaosExperiment;
+    let exp = ChaosExperiment {
+        name: "off".into(),
+        fault_types: vec![],
+        fault_probability: 0.0,
+        duration: Duration::from_secs(0),
+        target_operations: None,
+    };
+    assert_eq!(exp.fault_probability, 0.0);
+    assert!(exp.fault_types.is_empty());
+    assert_eq!(exp.name, "off");
+}
+
+#[test]
+fn chaos_experiment_chaos_testing_targeted_operations() {
+    use sisyphus_core::chaos_testing::ChaosExperiment;
+    let exp = ChaosExperiment {
+        name: "scoped".into(),
+        fault_types: vec![FaultType::StorageReadFailure, FaultType::LlmGarbage],
+        fault_probability: 0.42,
+        duration: Duration::from_millis(500),
+        target_operations: Some(vec!["save".into(), "load".into(), "query".into()]),
+    };
+    let ops = exp.target_operations.as_ref().unwrap();
+    assert_eq!(ops.len(), 3);
+    assert!(ops.contains(&"save".to_string()));
+    assert!((exp.fault_probability - 0.42).abs() < 1e-9);
+}
+
+#[test]
+fn chaos_experiment_result_with_one_attempt_success() {
+    let r = ChaosExperimentResult {
+        name: "single".into(),
+        duration: Duration::from_millis(10),
+        operations_attempted: 1,
+        operations_succeeded: 1,
+        operations_failed: 0,
+        faults_injected: 0,
+        system_recovered: true,
+        observations: vec![],
+    };
+    assert_eq!(r.success_rate(), 1.0);
+    assert_eq!(r.operations_attempted, 1);
+}
+
+#[test]
+fn chaos_experiment_result_field_values_preserved() {
+    let r = ChaosExperimentResult {
+        name: "f".into(),
+        duration: Duration::from_millis(250),
+        operations_attempted: 100,
+        operations_succeeded: 75,
+        operations_failed: 25,
+        faults_injected: 30,
+        system_recovered: true,
+        observations: vec!["first".into(), "second".into()],
+    };
+    assert_eq!(r.duration, Duration::from_millis(250));
+    assert_eq!(r.operations_attempted, 100);
+    assert_eq!(r.operations_succeeded, 75);
+    assert_eq!(r.operations_failed, 25);
+    assert_eq!(r.faults_injected, 30);
+    assert!(r.system_recovered);
+    assert_eq!(r.observations.len(), 2);
+}
+
+#[test]
+fn chaos_experiment_result_success_rate_observations() {
+    let r = ChaosExperimentResult {
+        name: "obs".into(),
+        duration: Duration::from_secs(0),
+        operations_attempted: 1,
+        operations_succeeded: 1,
+        operations_failed: 0,
+        faults_injected: 0,
+        system_recovered: true,
+        observations: vec!["system stable".into(), "no recovery needed".into()],
+    };
+    assert_eq!(r.observations.len(), 2);
+    assert!(r.observations[0].contains("stable"));
+}
