@@ -179,7 +179,9 @@ impl VisualPerceptionProvider for HttpVlmProvider {
 
         Ok(VisualAnalysisResult {
             description: content.to_string(),
-            detected_elements: vec![], // TODO: parse structured output
+            // FIXME: parse structured elements from the OCR text. Issue #visual-structured-output.
+            // Currently returns an empty list and relies on the free-form `description`.
+            detected_elements: vec![],
             confidence: 0.9,
         })
     }
