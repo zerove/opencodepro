@@ -1,43 +1,120 @@
-# Cognitive Loop
+# 认知循环
 
-## 概述
+驱动 Sisyphus 自我改进行为的递归 **OODA 启发** 周期。
 
-认知循环（Cognitive Loop）是 Sisyphus 执行引擎的核心迭代过程。它遵循 **预测 → 执行 → 反思 → 演进**（predict → execute → reflect → evolve）的四步循环，持续优化 SOP 图的执行质量直至收敛。
+## 时序图
 
-## Cognitive Loop v2
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant B as Bridge
+    participant K as SisyphusKernel
+    participant Synth as GoalDrivenSynthesizer
+    participant Exec as Executor
+    participant Sim as MonteCarloSimulator
+    participant Ref as StandardReflector
+    participant Evo as StandardEvolver
 
-从 2026 年 7 月起，认知循环引入了三个新组件以提升效率、鲁棒性和探索能力。
+    U->>B: ExecuteGoal("summarize data")
+    B->>K: execute_goal()
+    K->>Synth: synthesize(goal)
+    Synth-->>K: SOPGraph DAG
 
-### AdaptiveDepthController
+    loop Until convergence (max 10 iterations)
+        K->>Sim: simulate(graph)
+        Sim-->>K: SimulationResult
 
-替代固定 `max_iterations` 上限，改用基于置信度（confidence）的自适应深度控制。
+        K->>Exec: execute_with_context(graph)
+        Exec-->>K: ExecutionContext
 
-- 每次迭代记录置信度，在滑动窗口（默认 3 次）上计算收敛速度（convergence velocity）。
-- 使用 `ComplexityAnalyzer` 根据图拓扑、目标复杂度和经验库计算初始迭代预算。
-- 满足以下任一条件时停止：达到目标置信度（默认 0.95）、收敛停滞（窗口内改进量 < 0.01）、达到硬上限（默认 30 次）。
-- 强制 `min_iterations`（默认 2）防止过早停止。
+        K->>Ref: reflect(trace, prediction)
+        Ref-->>K: ReflectionReport
 
-### AnomalyDetector
+        alt deviation > threshold
+            K->>Evo: evolve(graph, report)
+            Evo-->>K: Mutated SOPGraph
+            K-->>K: Loop back to execute
+        else deviation <= threshold
+            K-->>B: CognitiveReport (converged)
+        end
+    end
 
-在运行时监控每个节点的执行指标并标记异常。
-
-- 跟踪三类指标：**燃料消耗**（>2.0x 基线）、**执行时长**（>3.0x 基线，>5.0x 为高严重性）、**错误率**（>30%）。
-- 使用指数加权移动平均（EWMA，alpha = 0.3）进行基线追踪。
-- 产生 `AnomalyReport`，其中的 `should_extra_reflect` 标志触发额外的反思循环。
-- 集成于 `StrategicManager`，使循环能在执行过程中自我修正。
-
-### 配置
-
-```toml
-[cognitive_loop]
-max_iterations = 10
-convergence_threshold = 0.15
-
-[cognitive_loop.adaptive_depth]
-initial_budget = 2.0
-decay = 0.3
-min_improvement = 0.15
-convergence_threshold = 0.05
+    B-->>U: SOPResponse { status, result }
 ```
 
-上述配置通过 `CognitiveLoopConfig` 结构体定义，位于 `crates/sisyphus-types/src/config/sub.rs`。
+## 阶段
+
+```
+┌─────────────────────────────────────────────────────┐
+│                   合成                                │
+│           目标驱动的 SOP 生成                        │
+└──────────────────────┬──────────────────────────────┘
+                       ▼
+┌─────────────────────────────────────────────────────┐
+│               ┌───────────┐                          │
+│               │  模拟     │ ◄── 蒙特卡洛             │
+│               └─────┬─────┘     随机路径采样          │
+│                     │                                │
+│   ┌─────────────────▼──────────────────────┐         │
+│   │             执行                       │         │
+│   │     DAG 并行拓扑序执行                  │         │
+│   └─────────────────┬──────────────────────┘         │
+│                     │                                │
+│               ┌─────▼─────┐                          │
+│               │  反思     │ ◄── 偏差分数            │
+│               └─────┬─────┘                          │
+│                     │                                │
+│                     │ 偏差 > 阈值?                    │
+│                     │                                │
+│               ┌─────▼─────┐                          │
+│               │  演进     │ ◄── 变异 SOP            │
+│               └─────┬─────┘                          │
+│                     │                                │
+│                     └── 循环 ────────────────────────┘
+│                                                     │
+│               收敛 → 返回结果                        │
+└─────────────────────────────────────────────────────┘
+```
+
+## 关键实现：`execute_with_cognition()`
+
+```rust
+// 简化为 sisyphus-core
+async fn execute_with_cognition(
+    &self, graph: &SOPGraph, start: NodeIndex, sop_id: &str, ...
+) -> Result<(NodeOutput, String, Option<SOPGraph>), String> {
+    let mut current_ref = graph.clone();
+    let max_iter = 10;
+
+    for iteration in 0..max_iter {
+        // 1. 预测结果
+        let prediction = intel.simulator.simulate(&current_ref, &ctx, sop_id).await?;
+
+        // 2. 执行 SOP
+        let final_ctx = executor.execute_with_context(&current_ref, start, None).await?;
+
+        // 3. 构建轨迹并反思
+        let trace = build_trace(&current_ref, &final_ctx);
+        let reflection = intel.reflector.reflect(&trace, &prediction).await?;
+
+        // 4. 检查收敛
+        if reflection.deviation_score < CONVERGENCE_THRESHOLD {
+            return Ok((result, report, None));  // 完成
+        }
+
+        // 5. 演进并重试
+        let evolved = intel.evolver.evolve(&current_ref, &reflection, &prediction)?;
+        current_ref = evolved;
+    }
+
+    Err("Max iterations exceeded".into())
+}
+```
+
+## 收敛条件
+
+循环在满足以下任一条件时终止：
+
+- **偏差阈值**：`deviation_score < 0.15`（预测与实际匹配）
+- **最大迭代**：循环 10 次未收敛
+- **无演进**：Evolver 返回结构相同的 `Ok(graph)`（无可改进）

@@ -35,10 +35,10 @@
             const path_to_root = "";
             const default_light_theme = "dark";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-393c1e00.js";
+            window.path_to_searchindex_js = "searchindex-542f004a.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-ffcc50b1.js"></script>
+        <script src="toc-724ddedf.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -175,6 +175,90 @@
                 <div id="mdbook-content" class="content">
                     <main>
                         <h1 id="dag-执行"><a class="header" href="#dag-执行">DAG 执行</a></h1>
+<p>Sisyphus 使用基于入度跟踪的<strong>并行拓扑执行器</strong>执行 SOP 图。</p>
+<h2 id="算法"><a class="header" href="#算法">算法</a></h2>
+<pre><code class="language-mermaid">flowchart TD
+    A[为所有节点计算入度] --&gt; B{查找&lt;br/&gt;入度为 0 的节点}
+    B --&gt; C[通过 tokio::JoinSet&lt;br/&gt;启动就绪节点]
+    C --&gt; D[等待任一节点&lt;br/&gt;完成]
+    D --&gt; E[递减下游节点&lt;br/&gt;的入度]
+    E --&gt; F{新节点&lt;br/&gt;就绪?}
+    F --&gt;|是| C
+    F --&gt;|否| G{所有节点&lt;br/&gt;完成?}
+    G --&gt;|是| H[返回&lt;br/&gt;ExecutionContext]
+    G --&gt;|否| D
+</code></pre>
+<h2 id="并行模型"><a class="header" href="#并行模型">并行模型</a></h2>
+<p>无依赖关系的节点同时执行：</p>
+<pre><code class="language-mermaid">gantt
+    title DAG 执行时间线
+    dateFormat X
+    axisFormat %s
+
+    section 批次 1
+    Node A (fetch)    : 0, 3
+    Node B (validate) : 0, 2
+    Node C (search)   : 0, 4
+
+    section 批次 2
+    Node D (process)  : 3, 3
+    Node E (merge)    : 4, 2
+
+    section 批次 3
+    Node F (output)   : 6, 1
+</code></pre>
+<h2 id="代码核心执行器"><a class="header" href="#代码核心执行器">代码：核心执行器</a></h2>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>// 简化为 sisyphus-core::Executor
+pub async fn execute_with_context(
+    &amp;self, sop_graph: &amp;SOPGraph, start_node: NodeIndex, initial_ctx: Option&lt;Arc&lt;ExecutionContext&gt;&gt;,
+) -&gt; Result&lt;Arc&lt;ExecutionContext&gt;, String&gt; {
+    // 校验无环
+    toposort(&amp;sop_graph.graph, None).map_err(|_| "SOPGraph contains cycles")?;
+
+    let ctx = initial_ctx.unwrap_or_else(|| Arc::new(ExecutionContext::new()));
+    let mut join_set = JoinSet::new();
+    let mut in_degree: HashMap&lt;NodeIndex, usize&gt; = HashMap::new();
+
+    // 初始化入度计数
+    for node in sop_graph.graph.node_indices() {
+        let degree = sop_graph.graph.edges_directed(node, Incoming).count();
+        in_degree.insert(node, degree);
+        if degree == 0 {
+            let ctx = ctx.clone();
+            let node = sop_graph.graph[node].clone();
+            join_set.spawn(async move { node.execute(&amp;ctx).await });
+        }
+    }
+
+    // 随完成处理结果
+    while let Some(result) = join_set.join_next().await {
+        let (node_id, output) = result.map_err(|e| format!("Join error: {}", e))??;
+        // 在上下文中存储输出
+        ctx.set(&amp;sop_graph.graph[node_id].name(), output).await;
+        // 扇出到下游节点
+        for edge in sop_graph.graph.edges_directed(node_id, Outgoing) {
+            let target = edge.target();
+            let degree = in_degree.get_mut(&amp;target).unwrap();
+            *degree -= 1;
+            if *degree == 0 {
+                // 启动现在就绪的节点
+            }
+        }
+    }
+
+    Ok(ctx)
+}
+<span class="boring">}</span></code></pre>
+<h2 id="错误处理"><a class="header" href="#错误处理">错误处理</a></h2>
+<ul>
+<li><strong>环检测</strong>：<code>toposort()</code> 在执行前拒绝环形图</li>
+<li><strong>节点错误</strong>：向上传播，认知循环捕获并演进 SOP</li>
+<li><strong>Join 错误</strong>：Tokio 任务 panic 被捕获并作为错误返回</li>
+</ul>
+<h2 id="燃料与内存"><a class="header" href="#燃料与内存">燃料与内存</a></h2>
+<p>每个节点使用其配置的燃料预算执行。Wasmtime 的燃料计量跟踪 WASM 指令消耗。耗尽时触发 <code>ResourceExhausted</code>，认知循环据此为重试调整燃料。</p>
 
                     </main>
 
