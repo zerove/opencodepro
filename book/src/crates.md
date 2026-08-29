@@ -55,7 +55,7 @@ Sisyphus 以 Rust 工作区组织，包含 **30 个成员**：`crates/` 下的 *
 |-------|-------------|-------------|
 | [sisyphus-bridge](crates/bridge.md) | HTTP/gRPC API 服务器、入口点 | core, tools（全部传递依赖） |
 | [sisyphus-cli](crates/cli.md) | 命令行界面 + 带代理子命令的 TUI | types, tools（10 个子 crate） |
-| sisyphus-tauri | Tauri 桌面应用（已归档） | api, types |
+
 
 > 2026-08-26 归档：`sisyphus-api`（独立 REST API，4 端点与 bridge 的 71 个 HTTP 端点重叠）与 `sisyphus-sdk`（其 Rust 客户端，无下游使用者）移至 `ide/api`、`ide/sdk`，不再是 workspace 成员。活跃 API 面为 `sisyphus-bridge`。
 

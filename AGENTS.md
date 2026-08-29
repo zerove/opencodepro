@@ -36,7 +36,6 @@ opencodepro/
 │   ├── sisyphus-visual/      # 视觉感知与嵌入
 │   ├── sisyphus-wasm-sdk/    # WASM 工具 SDK (guest crate)
 │   ├── sisyphus-sandboxd/    # WASM 沙箱守护进程 (进程隔离)
-│   ├── sisyphus-tauri/       # Tauri 桌面应用 (已归档)
 │   └── sisyphus-bridge-api/  # Bridge API 定义
 ├── webui/                   # Web 仪表盘 (axum + HTMX + SSE)
 ├── evals/                   # 评测 (metis/momus/librarian/scribe/security)

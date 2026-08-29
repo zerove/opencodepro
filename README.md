@@ -31,7 +31,6 @@ sisyphus/
 │   ├── go-sdk/               # Go 客户端 SDK
 │   ├── vscode/               # VS Code 扩展
 │   └── zed/                  # Zed 扩展
-├── desktop/tauri/    # Tauri 桌面应用 (已归档)
 └── book/             # 文档 (mdbook)
 ```
 
