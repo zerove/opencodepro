@@ -234,7 +234,7 @@ OpenRouter 透传 OpenAI 协议；客户端在 provider 声明为 `openrouter` �
 加速比:               5.11x
 ```
 
-详见 ADR-006（[`docs/adr/006-shared-http-client.md`](https://github.com/zerove/opencodepro/blob/master/docs/adr/006-shared-http-client.md)）和 [ADR-007：最终产品开发标准](https://github.com/zerove/opencodepro/blob/master/docs/adr/007-production-grade-standards.md)。
+详见 ADR-008（[`docs/adr/008-shared-http-client.md`](https://github.com/zerove/opencodepro/blob/master/docs/adr/008-shared-http-client.md)）和 [ADR-007：最终产品开发标准](https://github.com/zerove/opencodepro/blob/master/docs/adr/007-production-grade-standards.md)。
 
 ### 启动期错误处理
 

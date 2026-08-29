@@ -35,7 +35,7 @@
             const path_to_root = "";
             const default_light_theme = "dark";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-8071cbf8.js";
+            window.path_to_searchindex_js = "searchindex-393c1e00.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-ffcc50b1.js"></script>
@@ -419,7 +419,7 @@ sample_rate = 1.0
 每请求新建总耗时:     14193 ms (283860 µs/req)
 加速比:               5.11x
 </code></pre>
-<p>详见 ADR-006（<a href="https://github.com/zerove/opencodepro/blob/master/docs/adr/006-shared-http-client.md"><code>docs/adr/006-shared-http-client.md</code></a>）和 <a href="https://github.com/zerove/opencodepro/blob/master/docs/adr/007-production-grade-standards.md">ADR-007：最终产品开发标准</a>。</p>
+<p>详见 ADR-008（<a href="https://github.com/zerove/opencodepro/blob/master/docs/adr/008-shared-http-client.md"><code>docs/adr/008-shared-http-client.md</code></a>）和 <a href="https://github.com/zerove/opencodepro/blob/master/docs/adr/007-production-grade-standards.md">ADR-007：最终产品开发标准</a>。</p>
 <h3 id="启动期错误处理"><a class="header" href="#启动期错误处理">启动期错误处理</a></h3>
 <p>构造期错误（如 TLS、allocator 失败）以 <code>Err</code> 返回而非 panic。<code>build_provider_registry</code> 同样返回 <code>Result&lt;ProviderRegistry, String&gt;</code>，由调用方（bridge / bin）决定如何处理（log + 继续 / 退出）。</p>
 <h3 id="优雅关闭"><a class="header" href="#优雅关闭">优雅关闭</a></h3>
