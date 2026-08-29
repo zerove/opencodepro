@@ -1,181 +1,243 @@
-//! Integration tests for sisyphus-tools-llm CircuitBreaker.
+//! Integration tests for sisyphus-tools-llm `circuit_breaker`.
 //!
-//! Exercises the public circuit-breaker state machine used to protect
-//! the LLM endpoint from cascading failures. The breaker has three
-//! states (Closed, Open, HalfOpen) and four transitions driven by
-//! `on_success` / `on_failure` / `check_state`.
+//! Exercises the public [`CircuitBreaker`] state machine:
+//! `Closed → Open → HalfOpen → Closed` transitions driven by
+//! `on_success` / `on_failure` and `check_state`. The breaker
+//! protects downstream calls from cascading failures.
 
 use sisyphus_tools_llm::circuit_breaker::{BreakerConfig, CircuitBreaker};
-use std::thread;
-use std::time::Duration;
+use sisyphus_types::CircuitState;
 
-fn fast_breaker(threshold: u32) -> CircuitBreaker {
-    // 0-second timeout so Open→HalfOpen transitions happen on the next call.
-    CircuitBreaker::new(BreakerConfig {
-        failure_threshold: threshold,
-        success_threshold: 2,
-        timeout_secs: 0,
-        half_open_max_calls: 1,
-    })
-}
+// ---------------------------------------------------------------------------
+// Construction
+// ---------------------------------------------------------------------------
 
 #[test]
-fn unknown_key_defaults_to_closed() {
+fn new_breaker_starts_closed() {
     let cb = CircuitBreaker::new(BreakerConfig::default());
-    assert_eq!(cb.state("never-seen"), sisyphus_types::CircuitState::Closed);
-    assert!(cb.check_state("never-seen").is_ok());
+    assert_eq!(cb.state("any_key"), CircuitState::Closed);
+    assert_eq!(cb.state("another"), CircuitState::Closed);
 }
 
 #[test]
-fn failures_open_the_circuit_at_threshold() {
-    let cb = fast_breaker(3);
-    let key = "svc-a";
+fn default_breaker_starts_closed() {
+    let cb = CircuitBreaker::default();
+    assert_eq!(cb.state("svc"), CircuitState::Closed);
+}
 
-    // 2 failures: still closed
-    for _ in 0..2 {
-        let _: Result<(), String> = cb.call(key, || Err("boom"));
-    }
-    assert_eq!(cb.state(key), sisyphus_types::CircuitState::Closed);
+// ---------------------------------------------------------------------------
+// check_state
+// ---------------------------------------------------------------------------
 
-    // 3rd failure trips the breaker
-    let _: Result<(), String> = cb.call(key, || Err("boom"));
-    assert_eq!(cb.state(key), sisyphus_types::CircuitState::Open);
+#[test]
+fn check_state_closed_allows_call() {
+    let cb = CircuitBreaker::new(BreakerConfig::default());
+    assert!(cb.check_state("svc").is_ok());
 }
 
 #[test]
-fn open_circuit_with_long_timeout_rejects_calls() {
-    // With a long timeout, the breaker stays Open and rejects the next
-    // call before invoking the closure.
+fn check_state_unknown_key_initializes_as_closed() {
+    let cb = CircuitBreaker::new(BreakerConfig::default());
+    // Even an unknown key starts in Closed.
+    assert!(cb.check_state("never_used").is_ok());
+    assert_eq!(cb.state("never_used"), CircuitState::Closed);
+}
+
+// ---------------------------------------------------------------------------
+// on_failure → Open
+// ---------------------------------------------------------------------------
+
+#[test]
+fn on_failure_increments_counter() {
+    let cb = CircuitBreaker::new(BreakerConfig {
+        failure_threshold: 5,
+        ..Default::default()
+    });
+    cb.check_state("svc").expect("initialize");
+    cb.on_failure("svc");
+    let m = cb.metrics("svc");
+    assert_eq!(m.failure_count, 1);
+    assert_eq!(m.state, CircuitState::Closed);
+}
+
+#[test]
+fn on_failure_at_threshold_opens_circuit() {
+    let cb = CircuitBreaker::new(BreakerConfig {
+        failure_threshold: 3,
+        ..Default::default()
+    });
+    cb.check_state("svc").expect("init");
+    cb.on_failure("svc");
+    cb.on_failure("svc");
+    cb.on_failure("svc");
+    assert_eq!(cb.state("svc"), CircuitState::Open);
+}
+
+#[test]
+fn on_success_in_closed_state_resets_failure_count() {
+    let cb = CircuitBreaker::new(BreakerConfig {
+        failure_threshold: 5,
+        ..Default::default()
+    });
+    cb.check_state("svc").expect("init");
+    cb.on_failure("svc");
+    cb.on_failure("svc");
+    assert_eq!(cb.metrics("svc").failure_count, 2);
+    cb.on_success("svc");
+    assert_eq!(cb.metrics("svc").failure_count, 0);
+}
+
+// ---------------------------------------------------------------------------
+// on_success in HalfOpen
+// ---------------------------------------------------------------------------
+
+#[test]
+fn on_success_in_half_open_increments_success_count() {
     let cb = CircuitBreaker::new(BreakerConfig {
         failure_threshold: 1,
-        success_threshold: 1,
-        timeout_secs: 3600, // effectively never auto-recover in this test
-        half_open_max_calls: 1,
+        success_threshold: 3,
+        timeout_secs: 0, // Open → HalfOpen immediately
+        ..Default::default()
     });
-    let key = "svc-b";
-    // Trip the breaker
-    let _: Result<(), String> = cb.call(key, || Err("first failure"));
-    assert_eq!(cb.state(key), sisyphus_types::CircuitState::Open);
+    cb.check_state("svc").expect("init");
+    cb.on_failure("svc");
+    // State is now Open; check_state transitions it to HalfOpen.
+    assert!(cb.check_state("svc").is_ok());
+    assert_eq!(cb.state("svc"), CircuitState::HalfOpen);
 
-    let called = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
-    let called_clone = called.clone();
-    let result: Result<(), String> = cb.call(key, || {
-        called_clone.store(true, std::sync::atomic::Ordering::SeqCst);
-        Err("should not run")
+    cb.on_success("svc");
+    assert_eq!(cb.metrics("svc").success_count, 1);
+    // State stays HalfOpen until threshold reached.
+    assert_eq!(cb.state("svc"), CircuitState::HalfOpen);
+}
+
+#[test]
+fn on_success_threshold_closes_half_open_circuit() {
+    let cb = CircuitBreaker::new(BreakerConfig {
+        failure_threshold: 1,
+        success_threshold: 3,
+        timeout_secs: 0,
+        ..Default::default()
     });
-    assert!(result.is_err(), "open circuit should fail the call, got {result:?}");
-    assert!(
-        !called.load(std::sync::atomic::Ordering::SeqCst),
-        "closure must not be invoked when the circuit is open"
-    );
+    cb.check_state("svc").expect("init");
+    cb.on_failure("svc");
+    assert!(cb.check_state("svc").is_ok());
+    cb.on_success("svc");
+    cb.on_success("svc");
+    cb.on_success("svc");
+    // After success_threshold consecutive successes → Closed.
+    assert_eq!(cb.state("svc"), CircuitState::Closed);
+}
+
+// ---------------------------------------------------------------------------
+// on_failure in HalfOpen → Open
+// ---------------------------------------------------------------------------
+
+#[test]
+fn on_failure_in_half_open_reopens_circuit() {
+    let cb = CircuitBreaker::new(BreakerConfig {
+        failure_threshold: 1,
+        success_threshold: 3,
+        timeout_secs: 0,
+        ..Default::default()
+    });
+    cb.check_state("svc").expect("init");
+    cb.on_failure("svc");
+    let _ = cb.check_state("svc");
+    assert_eq!(cb.state("svc"), CircuitState::HalfOpen);
+    cb.on_failure("svc");
+    assert_eq!(cb.state("svc"), CircuitState::Open);
+}
+
+// ---------------------------------------------------------------------------
+// reset
+// ---------------------------------------------------------------------------
+
+#[test]
+fn reset_clears_breaker_to_closed() {
+    let cb = CircuitBreaker::new(BreakerConfig {
+        failure_threshold: 1,
+        ..Default::default()
+    });
+    cb.check_state("svc").expect("init");
+    cb.on_failure("svc");
+    assert_eq!(cb.state("svc"), CircuitState::Open);
+    cb.reset("svc");
+    assert_eq!(cb.state("svc"), CircuitState::Closed);
+    assert_eq!(cb.metrics("svc").failure_count, 0);
 }
 
 #[test]
-fn success_in_closed_state_keeps_state_closed() {
-    // success_count is only meaningful in HalfOpen state — it's the
-    // count of consecutive successes leading to Closed. In Closed, the
-    // only counter that matters is failure_count, which is reset on
-    // every success.
-    let cb = fast_breaker(5);
-    let key = "svc-c";
-    for _ in 0..10 {
-        let _: Result<i32, String> = cb.call(key, || -> Result<i32, &str> { Ok(42) });
-    }
-    assert_eq!(cb.state(key), sisyphus_types::CircuitState::Closed);
-    let m = cb.metrics(key);
-    assert_eq!(m.failure_count, 0, "no failures should have been recorded");
-}
-
-#[test]
-fn success_resets_failure_count_in_closed_state() {
-    let cb = fast_breaker(3);
-    let key = "svc-d";
-    let _: Result<(), String> = cb.call(key, || Err("e1"));
-    let _: Result<(), String> = cb.call(key, || Err("e2"));
-    // One success resets the consecutive-failure count
-    let _: Result<i32, String> = cb.call(key, || -> Result<i32, &str> { Ok(1) });
-    // Now we need 3 more consecutive failures to trip
-    let _: Result<(), String> = cb.call(key, || Err("e3"));
-    let _: Result<(), String> = cb.call(key, || Err("e4"));
-    assert_eq!(
-        cb.state(key),
-        sisyphus_types::CircuitState::Closed,
-        "success in closed state should reset the failure counter"
-    );
-}
-
-#[test]
-fn reset_returns_to_closed_state() {
-    let cb = fast_breaker(1);
-    let key = "svc-e";
-    let _: Result<(), String> = cb.call(key, || Err("trip"));
-    assert_eq!(cb.state(key), sisyphus_types::CircuitState::Open);
-
-    cb.reset(key);
-    assert_eq!(cb.state(key), sisyphus_types::CircuitState::Closed);
-    // After reset, the breaker is fresh and accepts calls.
-    let result: Result<i32, String> = cb.call(key, || -> Result<i32, &str> { Ok(99) });
-    assert_eq!(result, Ok(99));
-}
-
-#[test]
-fn reset_all_clears_every_breaker() {
-    let cb = fast_breaker(1);
-    for k in ["a", "b", "c"] {
-        let _: Result<(), String> = cb.call(k, || Err("trip"));
-        assert_eq!(cb.state(k), sisyphus_types::CircuitState::Open);
-    }
+fn reset_all_clears_all_breakers() {
+    let cb = CircuitBreaker::new(BreakerConfig {
+        failure_threshold: 1,
+        ..Default::default()
+    });
+    cb.check_state("svc_a").expect("init");
+    cb.on_failure("svc_a");
+    cb.check_state("svc_b").expect("init");
+    cb.on_failure("svc_b");
+    assert_eq!(cb.state("svc_a"), CircuitState::Open);
+    assert_eq!(cb.state("svc_b"), CircuitState::Open);
     cb.reset_all();
-    for k in ["a", "b", "c"] {
-        assert_eq!(cb.state(k), sisyphus_types::CircuitState::Closed);
-    }
+    assert_eq!(cb.state("svc_a"), CircuitState::Closed);
+    assert_eq!(cb.state("svc_b"), CircuitState::Closed);
 }
 
+// ---------------------------------------------------------------------------
+// metrics
+// ---------------------------------------------------------------------------
+
 #[test]
-fn call_propagates_inner_value_on_success() {
+fn metrics_for_unknown_key_returns_defaults() {
     let cb = CircuitBreaker::new(BreakerConfig::default());
-    let result: Result<String, String> = cb.call("svc-f", || -> Result<String, &str> { Ok("hello".to_string()) });
-    assert_eq!(result.unwrap(), "hello");
+    let m = cb.metrics("never_seen");
+    assert_eq!(m.state, CircuitState::Closed);
+    assert_eq!(m.failure_count, 0);
+    assert_eq!(m.success_count, 0);
 }
 
 #[test]
-fn call_propagates_inner_error_message_on_failure() {
-    let cb = CircuitBreaker::new(BreakerConfig::default());
-    let result: Result<(), String> = cb.call("svc-g", || Err("specific error".to_string()));
-    let err = result.expect_err("should error");
-    assert_eq!(err, "specific error");
+fn metrics_reflects_state_correctly() {
+    let cb = CircuitBreaker::new(BreakerConfig {
+        failure_threshold: 2,
+        success_threshold: 1,
+        timeout_secs: 0,
+        ..Default::default()
+    });
+    cb.check_state("svc").expect("init");
+    cb.on_failure("svc");
+    cb.on_failure("svc");
+    let m = cb.metrics("svc");
+    assert_eq!(m.state, CircuitState::Open);
+    assert_eq!(m.failure_count, 2);
+}
+
+// ---------------------------------------------------------------------------
+// BreakerConfig
+// ---------------------------------------------------------------------------
+
+#[test]
+fn breaker_config_default_values() {
+    let cfg = BreakerConfig::default();
+    assert_eq!(cfg.failure_threshold, 5);
+    assert_eq!(cfg.success_threshold, 3);
+    assert_eq!(cfg.timeout_secs, 30);
+    assert_eq!(cfg.half_open_max_calls, 3);
 }
 
 #[test]
-fn metrics_reflect_failure_count_in_closed_state() {
-    // In Closed state, success_count is not incremented (it's a
-    // HalfOpen-only counter). Only failure_count tracks traffic.
-    let cb = fast_breaker(10);
-    let key = "svc-h";
-    let _: Result<(), String> = cb.call(key, || Err("e"));
-    let _: Result<(), String> = cb.call(key, || Err("e"));
-    let _: Result<i32, String> = cb.call(key, || -> Result<i32, &str> { Ok(1) });
-    let m = cb.metrics(key);
-    // 2 failures + 1 success → consecutive failures reset to 0
-    assert_eq!(m.failure_count, 0, "success after failures should reset the count");
-    assert_eq!(m.state, sisyphus_types::CircuitState::Closed);
-}
-
-#[test]
-fn half_open_transition_after_timeout() {
-    // timeout_secs=0 means Open→HalfOpen is immediate on next check_state.
-    let cb = fast_breaker(1);
-    let key = "svc-i";
-    let _: Result<(), String> = cb.call(key, || Err("trip"));
-    assert_eq!(cb.state(key), sisyphus_types::CircuitState::Open);
-    // The act of calling again should transition the state.
-    thread::sleep(Duration::from_millis(10));
-    let _: Result<(), String> = cb.call(key, || Err("e"));
-    // After one failure in HalfOpen, it goes back to Open.
-    let s = cb.state(key);
-    assert!(
-        s == sisyphus_types::CircuitState::Open
-            || s == sisyphus_types::CircuitState::HalfOpen,
-        "expected Open or HalfOpen after timeout + failure, got {s:?}"
-    );
+fn breaker_config_serialization_roundtrip() {
+    let cfg = BreakerConfig {
+        failure_threshold: 7,
+        success_threshold: 4,
+        timeout_secs: 60,
+        half_open_max_calls: 5,
+    };
+    let json = serde_json::to_string(&cfg).expect("");
+    let parsed: BreakerConfig = serde_json::from_str(&json).expect("");
+    assert_eq!(parsed.failure_threshold, 7);
+    assert_eq!(parsed.success_threshold, 4);
+    assert_eq!(parsed.timeout_secs, 60);
+    assert_eq!(parsed.half_open_max_calls, 5);
 }
