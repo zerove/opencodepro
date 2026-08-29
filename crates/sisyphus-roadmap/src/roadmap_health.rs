@@ -1,3 +1,4 @@
+use metrics::counter;
 use serde_json::Value;
 
 use crate::types::*;
@@ -194,6 +195,7 @@ impl RoadmapManager {
         }
 
         let healthy = problems.is_empty();
+        counter!("sisyphus_roadmap_health_evaluated_total").increment(1);
         Ok(RoadmapHealth {
             project_id: project_id.to_string(),
             healthy,

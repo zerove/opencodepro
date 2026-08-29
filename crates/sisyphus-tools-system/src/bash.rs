@@ -2,6 +2,7 @@ use sisyphus_tools_core::{ToolError, ToolResult};
 use std::io;
 use std::path::Path;
 use std::time::Instant;
+use metrics::counter;
 use tokio::io::{AsyncReadExt, BufReader};
 use tokio::process::Command;
 use tokio::time::{timeout, Duration};
@@ -91,6 +92,11 @@ pub async fn execute(
     match result {
         Ok(Ok((stdout, stderr, stdout_truncated, stderr_truncated, exit_status))) => {
             let exit_code = exit_status.code().unwrap_or(-1);
+
+            counter!(
+                "sisyphus_system_bash_executions_total",
+                "exit_code" => exit_code.to_string(),
+            ).increment(1);
 
             if exit_code == 0 {
                 Ok(BashOutput {

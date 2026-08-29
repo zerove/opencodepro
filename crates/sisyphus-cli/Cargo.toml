@@ -33,6 +33,7 @@ anyhow = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 tracing = { workspace = true }
+metrics = "0.24"
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
 tonic = "0.12"
 tokio-stream = "0.1"

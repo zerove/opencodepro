@@ -4358,6 +4358,7 @@ dependencies = [
  "crossterm",
  "futures",
  "glob",
+ "metrics 0.24.6",
  "ratatui",
  "reqwest 0.12.28",
  "serde",
@@ -4516,6 +4517,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "metrics 0.24.6",
  "serde",
  "serde_json",
  "sisyphus-mem",
@@ -4629,6 +4631,7 @@ name = "sisyphus-tools-build"
 version = "0.1.0"
 dependencies = [
  "ignore",
+ "metrics 0.24.6",
  "regex",
  "serde",
  "serde_json",
@@ -4662,6 +4665,7 @@ dependencies = [
  "async-trait",
  "base64 0.22.1",
  "chrono",
+ "metrics 0.24.6",
  "serde",
  "serde_json",
  "sisyphus-bridge-api",
@@ -4684,6 +4688,7 @@ name = "sisyphus-tools-llm"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "metrics 0.24.6",
  "parking_lot",
  "reqwest 0.12.28",
  "serde",
@@ -4718,6 +4723,7 @@ name = "sisyphus-tools-mcp"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "metrics 0.24.6",
  "parking_lot",
  "reqwest 0.12.28",
  "serde",
@@ -4736,6 +4742,7 @@ name = "sisyphus-tools-scm"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "metrics 0.24.6",
  "serde",
  "serde_json",
  "serde_yaml",
@@ -4750,6 +4757,7 @@ version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
  "chrono",
+ "metrics 0.24.6",
  "serde",
  "serde_json",
  "serde_yaml",
@@ -4772,6 +4780,7 @@ dependencies = [
  "dashmap",
  "glob",
  "ignore",
+ "metrics 0.24.6",
  "regex",
  "reqwest 0.12.28",
  "serde",

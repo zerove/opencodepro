@@ -10,6 +10,7 @@ pub mod types;
 
 pub use types::{CompressStrategy, Message, Session, SessionCheckpoint};
 
+use metrics::counter;
 use sisyphus_tools_core::{ToolError, ToolResult};
 use std::collections::HashMap;
 use std::fs;
@@ -293,6 +294,7 @@ pub fn session_create(path: &Path, name: &str) -> ToolResult<Session> {
     let id = session.id.clone();
     store.sessions.insert(id.clone(), session.clone());
     store.save(path)?;
+    counter!("sisyphus_session_created_total").increment(1);
     Ok(session)
 }
 

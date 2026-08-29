@@ -1,3 +1,4 @@
+use metrics::counter;
 use serde::{Deserialize, Serialize};
 use sisyphus_tools_core::ToolResult;
 use std::path::Path;
@@ -207,6 +208,7 @@ impl ArchitectureAnalyzer {
             .unwrap_or_default()
             .as_secs();
 
+        counter!("sisyphus_build_architecture_analyzed_total").increment(1);
         Ok(ArchitectureDoc {
             module_name,
             reports,

@@ -1,3 +1,4 @@
+use metrics::counter;
 use anyhow::{Context, Result};
 use std::collections::HashMap;
 use tonic::transport::Endpoint;
@@ -72,7 +73,9 @@ impl BridgeClient {
     }
 
     /// 按 ID 执行 SOP（标准操作程序）。
+    /// Execute sop.
     pub async fn execute_sop(&mut self, sop_id: &str) -> Result<String> {
+        counter!("sisyphus_cli_sop_executions_total").increment(1);
         let request = self.with_auth(tonic::Request::new(ExecuteSopRequest {
             sop_id: sop_id.to_string(),
             args: HashMap::new(),

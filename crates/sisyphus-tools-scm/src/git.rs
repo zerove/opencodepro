@@ -1,6 +1,7 @@
 mod types;
 pub use types::*;
 
+use metrics::counter;
 use sisyphus_tools_core::{ToolError, ToolResult};
 use std::path::Path;
 use std::process::Command;
@@ -146,7 +147,9 @@ pub fn add(pathspecs: &[&str], cwd: Option<&Path>) -> ToolResult<()> {
 }
 
 /// Create a commit.
+/// Git commit operation.
 pub fn commit(message: &str, allow_empty: bool, cwd: Option<&Path>) -> ToolResult<String> {
+    counter!("sisyphus_scm_commits_total").increment(1);
     require_git_repo(cwd)?;
     let mut args = vec!["commit", "--message", message];
     if allow_empty {

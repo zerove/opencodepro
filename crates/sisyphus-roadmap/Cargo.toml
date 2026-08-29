@@ -12,6 +12,7 @@ async-trait = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 tracing = { workspace = true }
+metrics = "0.24"
 thiserror = { workspace = true }
 sisyphus-types = { path = "../sisyphus-types" }
 sisyphus-mem = { path = "../sisyphus-mem" }

@@ -8,6 +8,7 @@ license = "MIT OR Apache-2.0"
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 tracing = { workspace = true }
+metrics = "0.24"
 tempfile = "3"
 chrono = "0.4"
 serde_yaml = "0.9"
