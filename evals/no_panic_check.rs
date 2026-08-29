@@ -119,6 +119,12 @@ fn find_production_panics(path: &Path) -> Vec<Hit> {
         return Vec::new();
     };
 
+    // 文件级 #![cfg(test)] (如 sisyphus-tests crate) 整个文件都是测试代码,
+    // 跳过整个文件 (cargo 编译时整 crate 也不会被纳入)
+    if text.lines().take(10).any(|l| l.trim() == "#![cfg(test)]") {
+        return Vec::new();
+    }
+
     let mut brace_depth: i32 = 0;
     // Stack of test-brace-depths. Each entry = active test scope
     // (#[cfg(test)] mod or #[test] fn). Supports arbitrary nesting.
