@@ -36,7 +36,7 @@
             const path_to_root = "";
             const default_light_theme = "dark";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-d757ea82.js";
+            window.path_to_searchindex_js = "searchindex-8071cbf8.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-ffcc50b1.js"></script>
@@ -349,7 +349,7 @@ cargo bench -p sisyphus-core  # 认知循环基准测试
 <h1 id="架构总览"><a class="header" href="#架构总览">架构总览</a></h1>
 <p>Sisyphus 以 <strong>Rust 工作区</strong> 组织，包含 <strong>29 个成员</strong>：<code>crates/</code> 下的 <strong>27 个 crate</strong>（含 10 个 <code>sisyphus-tools-*</code> 子 crate，以及 <code>webui</code> 和 <code>evals</code>），每个 crate 负责一个明确的关注点：</p>
 <ul>
-<li><code>sisyphus-bridge</code> / <code>sisyphus-api</code> — 入口点（HTTP/gRPC/REST API）</li>
+<li><code>sisyphus-bridge</code> — 入口点（HTTP/gRPC/REST API；独立 sisyphus-api 已归档至 ide/api）</li>
 <li><code>sisyphus-core</code> — 内核：DAG 执行器、编排、认知循环</li>
 <li><code>sisyphus-types</code> / <code>sisyphus-intel</code> / <code>sisyphus-mem</code> / <code>sisyphus-sandbox</code> / <code>sisyphus-metrics</code> — 基础层</li>
 <li><code>sisyphus-roadmap</code> / <code>sisyphus-knowledge</code> / <code>sisyphus-visual</code> / <code>sisyphus-tools-*</code>（10 个）/ <code>sisyphus-cli</code> / <code>webui</code> — 能力与客户端</li>
@@ -495,14 +495,6 @@ cargo bench -p sisyphus-core  # 认知循环基准测试
 <li>使用 <code>ComplexityAnalyzer</code> 根据图拓扑、目标复杂度和经验库计算初始迭代预算。</li>
 <li>满足以下任一条件时停止：达到目标置信度（默认 0.95）、收敛停滞（窗口内改进量 &lt; 0.01）、达到硬上限（默认 30 次）。</li>
 <li>强制 <code>min_iterations</code>（默认 2）防止过早停止。</li>
-</ul>
-<h3 id="parallelbranchpredictor"><a class="header" href="#parallelbranchpredictor">ParallelBranchPredictor</a></h3>
-<p>同时模拟多个变体 SOP 图，并选择最佳分支执行。</p>
-<ul>
-<li>对每个变体执行两类模拟：<strong>执行模拟</strong>（预测成功率、成本、稳定性）和<strong>逻辑模拟</strong>（检测逻辑缺陷）。</li>
-<li>综合评分公式：<code>0.5 × success_probability + 0.3 × cost_efficiency + 0.2 × predicted_stability - logical_penalty</code></li>
-<li>通过 <code>ExperienceBank</code> 校准置信度，使历史成功数据影响分支选择。</li>
-<li>默认：<code>max_branches = 3</code>，<code>concurrency = 3</code>。</li>
 </ul>
 <h3 id="anomalydetector"><a class="header" href="#anomalydetector">AnomalyDetector</a></h3>
 <p>在运行时监控每个节点的执行指标并标记异常。</p>
@@ -663,6 +655,7 @@ sample_rate = 1.0
 <tbody>
 <tr><td><code>SISYPHUS_CONFIG</code></td><td>配置文件路径</td><td>string</td><td><code>config.toml</code></td></tr>
 <tr><td><code>SISYPHUS_COGNITIVE_LOOP_MAX_ITERATIONS</code></td><td><code>cognitive_loop.max_iterations</code></td><td>u32</td><td><code>10</code></td></tr>
+<tr><td><code>SISYPHUS_COGNITIVE_LOOP_LLM_STAGE_TIMEOUT_SECS</code></td><td><code>cognitive_loop.llm_stage_timeout_secs</code></td><td>u64</td><td><code>30</code></td></tr>
 <tr><td><code>SISYPHUS_COGNITIVE_LOOP_CONVERGENCE_THRESHOLD</code></td><td><code>cognitive_loop.convergence_threshold</code></td><td>f64</td><td><code>0.15</code></td></tr>
 <tr><td><code>SISYPHUS_COGNITIVE_LOOP_ADAPTIVE_DEPTH_INITIAL_BUDGET</code></td><td><code>cognitive_loop.adaptive_depth.initial_budget</code></td><td>f64</td><td><code>2.0</code></td></tr>
 <tr><td><code>SISYPHUS_COGNITIVE_LOOP_ADAPTIVE_DEPTH_DECAY</code></td><td><code>cognitive_loop.adaptive_depth.decay</code></td><td>f64</td><td><code>0.3</code></td></tr>
@@ -692,6 +685,7 @@ sample_rate = 1.0
 <tr><td><code>SISYPHUS_LLM_EMBEDDING_MODEL</code></td><td><code>llm.embedding.model</code></td><td>string</td><td><code>"text-embedding-3-small"</code></td></tr>
 <tr><td><code>SISYPHUS_LLM_EMBEDDING_ENDPOINT</code></td><td><code>llm.embedding.endpoint</code></td><td>string</td><td><code>None</code></td></tr>
 <tr><td><code>SISYPHUS_LLM_EMBEDDING_PROVIDER</code></td><td><code>llm.embedding.provider</code></td><td>string</td><td><code>"dummy"</code></td></tr>
+<tr><td><code>SISYPHUS_LLM_EMBEDDING_ALLOW_DUMMY</code></td><td><code>llm.embedding.allow_dummy_embeddings</code></td><td>bool</td><td><code>false</code></td></tr>
 <tr><td><code>SISYPHUS_REGISTRY_URL</code></td><td><code>registry.registry_url</code></td><td>string</td><td><code>"https://registry.sisyphus.ai"</code></td></tr>
 <tr><td><code>SISYPHUS_REGISTRY_TIMEOUT_SECONDS</code></td><td><code>registry.timeout_seconds</code></td><td>u64</td><td><code>30</code></td></tr>
 <tr><td><code>SISYPHUS_JCODE_SOCKET_PATH</code></td><td><code>jcode.socket_path</code></td><td>string</td><td><code>"/tmp/jcode-debug.sock"</code></td></tr>
@@ -709,9 +703,96 @@ sample_rate = 1.0
 <tr><td><code>SISYPHUS_METRICS_OTEL_ENDPOINT</code></td><td><code>metrics.opentelemetry.endpoint</code></td><td>string</td><td><code>"http://localhost:4317"</code></td></tr>
 <tr><td><code>SISYPHUS_METRICS_OTEL_SERVICE_NAME</code></td><td><code>metrics.opentelemetry.service_name</code></td><td>string</td><td><code>"sisyphus-bridge"</code></td></tr>
 <tr><td><code>SISYPHUS_METRICS_OTEL_SAMPLE_RATE</code></td><td><code>metrics.opentelemetry.sample_rate</code></td><td>f64</td><td><code>1.0</code></td></tr>
+<tr><td><code>SISYPHUS_CI</code></td><td>—</td><td>设为 <code>1</code> 表示 CI 环境, 影响 SCM 工具行为 (跳过非必要网络调用)</td><td></td></tr>
+<tr><td><code>SISYPHUS_DATA_DIR</code></td><td>—</td><td>CLI 数据目录覆盖 (<code>--data-dir</code> 同效)</td><td></td></tr>
+<tr><td><code>SISYPHUS_OUTPUT_FORMAT</code></td><td>—</td><td>SCM 工具输出格式覆盖 (<code>json</code> / <code>text</code>)</td><td></td></tr>
 </tbody>
 </table>
 </div>
+<h2 id="provider-适配openai-兼容协议"><a class="header" href="#provider-适配openai-兼容协议">Provider 适配（OpenAI 兼容协议）</a></h2>
+<p><code>ProviderKind</code> 已从 3 个扩展到 7 个。OpenAI 兼容类（OpenAI/Groq/Mistral/Together）共享
+<code>OpenAiCompatibleProvider</code> 客户端，零代码差异——仅 endpoint 与 model 不同。</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Kind</th><th>默认 Endpoint</th><th>默认 Model</th><th>兼容性</th></tr>
+</thead>
+<tbody>
+<tr><td><code>openai</code></td><td><code>https://api.openai.com/v1/chat/completions</code></td><td><code>gpt-4o-mini</code></td><td>OpenAI 兼容</td></tr>
+<tr><td><code>google</code></td><td>(custom protocol)</td><td><code>gemini-1.5-flash</code></td><td>自定义</td></tr>
+<tr><td><code>anthropic</code></td><td>(custom protocol)</td><td><code>claude-3-5-sonnet-20241022</code></td><td>自定义</td></tr>
+<tr><td><code>groq</code></td><td><code>https://api.groq.com/openai/v1/chat/completions</code></td><td><code>llama-3.1-70b-versatile</code></td><td>OpenAI 兼容</td></tr>
+<tr><td><code>cohere</code></td><td>(not yet implemented)</td><td><code>command-r-plus</code></td><td>自定义</td></tr>
+<tr><td><code>mistral</code></td><td><code>https://api.mistral.ai/v1/chat/completions</code></td><td><code>mistral-large-latest</code></td><td>OpenAI 兼容</td></tr>
+<tr><td><code>together</code></td><td><code>https://api.together.xyz/v1/chat/completions</code></td><td><code>meta-llama/Llama-3.3-70B-Instruct-Turbo</code></td><td>OpenAI 兼容</td></tr>
+<tr><td><code>openrouter</code></td><td><code>https://openrouter.ai/api/v1/chat/completions</code></td><td><code>anthropic/claude-3.5-sonnet</code></td><td>OpenAI 兼容</td></tr>
+</tbody>
+</table>
+</div>
+<p>切换生产 provider 只需修改 <code>config.toml</code> 的 <code>[[llm.providers]]</code> 段。优先级（<code>priority</code> 字段）控制 fallback 链顺序——数值越小越优先。</p>
+<h3 id="openrouter-归因-headers"><a class="header" href="#openrouter-归因-headers">OpenRouter 归因 headers</a></h3>
+<p>OpenRouter 透传 OpenAI 协议；客户端在 provider 声明为 <code>openrouter</code> 时自动注入两个推荐 header：</p>
+<ul>
+<li><code>HTTP-Referer</code>：归因站点，默认 <code>https://sisyphus.dev</code>，可通过 <code>base_url</code> 字段覆盖</li>
+<li><code>X-Title</code>：固定为 <code>Sisyphus Cognitive Engine</code></li>
+</ul>
+<p>完整模型列表：<a href="https://openrouter.ai/models">https://openrouter.ai/models</a>。使用 OpenAI 兼容协议但上游是不同的 provider，因此需要把 <code>kind</code> 显式声明为 <code>openrouter</code> 而非 <code>openai</code>，否则归因 header 不会被注入。</p>
+<h2 id="http-客户端调优共享连接池"><a class="header" href="#http-客户端调优共享连接池">HTTP 客户端调优（共享连接池）</a></h2>
+<p>所有 LLM provider 共享同一 <a href="https://github.com/zerove/opencodepro/blob/master/crates/sisyphus-tools-llm/src/http_client.rs"><code>SharedHttpClient</code></a>（生产级 reqwest 包装），由 <code>build_provider_registry</code> 在启动时构造一次。</p>
+<h3 id="环境变量-1"><a class="header" href="#环境变量-1">环境变量</a></h3>
+<p>所有配置都可通过 <code>SISYPHUS_HTTP_*</code> 环境变量覆盖（无需重新编译）：</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>环境变量</th><th>默认</th><th>说明</th></tr>
+</thead>
+<tbody>
+<tr><td><code>SISYPHUS_HTTP_REQUEST_TIMEOUT_SECS</code></td><td>300</td><td>总请求超时（含连接 + 等待响应）</td></tr>
+<tr><td><code>SISYPHUS_HTTP_CONNECT_TIMEOUT_SECS</code></td><td>10</td><td>单次 connect 阶段超时（防 DNS 黑洞）</td></tr>
+<tr><td><code>SISYPHUS_HTTP_POOL_IDLE_SECS</code></td><td>90</td><td>空闲连接在池中保持存活时间</td></tr>
+<tr><td><code>SISYPHUS_HTTP_TCP_KEEPALIVE_SECS</code></td><td>60</td><td>TCP keepalive 间隔（0 = 禁用）</td></tr>
+<tr><td><code>SISYPHUS_HTTP_POOL_MAX_PER_HOST</code></td><td>16</td><td>每 host 最大并发连接数</td></tr>
+<tr><td><code>SISYPHUS_HTTP_REDIRECT_LIMIT</code></td><td>3</td><td>HTTP 重定向最大次数</td></tr>
+<tr><td><code>SISYPHUS_HTTP_TLS_ROOTS</code></td><td><code>webpki</code></td><td>TLS 根证书源: <code>webpki</code> (Mozilla 内置, 默认) / <code>native</code> (系统 CA, 用于私有 CA)</td></tr>
+<tr><td><code>SISYPHUS_HTTP_RETRY</code></td><td><code>disabled</code></td><td>传输层重试: <code>disabled</code> (无) / <code>one_shot</code> (GET/HEAD 自动重试 1 次)</td></tr>
+</tbody>
+</table>
+</div>
+<h3 id="性能收益"><a class="header" href="#性能收益">性能收益</a></h3>
+<p><code>evals/http_client_bench.rs</code> 实测（本地 echo server, 50 请求, 并发 5）：</p>
+<pre><code>共享 client 总耗时:   2776 ms (55520 µs/req)
+每请求新建总耗时:     14193 ms (283860 µs/req)
+加速比:               5.11x
+</code></pre>
+<p>详见 ADR-006（<a href="https://github.com/zerove/opencodepro/blob/master/docs/adr/006-shared-http-client.md"><code>docs/adr/006-shared-http-client.md</code></a>）和 <a href="https://github.com/zerove/opencodepro/blob/master/docs/adr/007-production-grade-standards.md">ADR-007：最终产品开发标准</a>。</p>
+<h3 id="启动期错误处理"><a class="header" href="#启动期错误处理">启动期错误处理</a></h3>
+<p>构造期错误（如 TLS、allocator 失败）以 <code>Err</code> 返回而非 panic。<code>build_provider_registry</code> 同样返回 <code>Result&lt;ProviderRegistry, String&gt;</code>，由调用方（bridge / bin）决定如何处理（log + 继续 / 退出）。</p>
+<h3 id="优雅关闭"><a class="header" href="#优雅关闭">优雅关闭</a></h3>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let registry = build_provider_registry(&amp;configs)?;
+if let Some(shared) = registry.shared_http() {
+    // 等待 in-flight 请求完成（最多 5 秒）
+    let _ = shared.shutdown(Duration::from_secs(5)).await;
+}
+<span class="boring">}</span></code></pre>
+<p>关闭后新请求会被快速失败（<code>on_request_start</code> 返回 false），不再向已关闭系统发起新请求。</p>
+<h2 id="认知循环配置"><a class="header" href="#认知循环配置">认知循环配置</a></h2>
+<p><code>[cognitive_loop]</code> 段控制 sisyphus-core 认知循环阶段的行为。bridge 启动时通过
+<code>StrategicManager::apply_cognitive_loop_config</code> 应用（评审 A4 已接线）。</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>字段</th><th>环境变量</th><th>类型</th><th>默认</th></tr>
+</thead>
+<tbody>
+<tr><td><code>max_iterations</code></td><td><code>SISYPHUS_COGNITIVE_LOOP_MAX_ITERATIONS</code></td><td>integer</td><td>8</td></tr>
+<tr><td><code>convergence_threshold</code></td><td><code>SISYPHUS_COGNITIVE_LOOP_CONVERGENCE_THRESHOLD</code></td><td>float</td><td>0.15</td></tr>
+<tr><td><code>llm_stage_timeout_secs</code></td><td><code>SISYPHUS_COGNITIVE_LOOP_LLM_STAGE_TIMEOUT_SECS</code></td><td>integer</td><td>30</td></tr>
+</tbody>
+</table>
+</div>
+<p><code>llm_stage_timeout_secs=0</code> 禁用反思/演进阶段的 LLM 调用（用于降级/纯启发式模式）。</p>
 <div style="break-before: page; page-break-before: always;"></div>
 <h1 id="tui-指南"><a class="header" href="#tui-指南">TUI 指南</a></h1>
 <p>Sisyphus 包含基于 ratatui 构建的全功能终端用户界面（Terminal User Interface，TUI）。</p>
@@ -1113,13 +1194,13 @@ func main() {
 </ul>
 <p>在 <code>Config.tool_executor</code> 中通过配置工具执行器切换模式。守护进程模式是生产部署的默认。</p>
 <h3 id="并发任务调优"><a class="header" href="#并发任务调优">并发任务调优</a></h3>
-<p>认知循环支持可配置的并发，用于并行分支评估。</p>
 <pre><code class="language-toml"># config.toml
 [cognitive_loop]
-max_concurrent_tasks = 4      # ParallelBranchPredictor 中的并行分支
 max_iterations = 30           # 认知迭代次数上限
 convergence_threshold = 0.15  # 偏差低于此值时停止
 </code></pre>
+<p>注：<code>ParallelBranchPredictor</code> 已移除（从未接入生产循环，见 ADR 005 修订）。
+DAG 节点级并发由 <code>[executor] max_concurrent_tasks</code> 控制。</p>
 <p>调优指南：</p>
 <ul>
 <li><strong>max_concurrent_tasks</strong>：CPU 密集型工作负载设置为 CPU 核心数。I/O 密集（LLM 调用）时，更高值（8-16）可提升吞吐量。</li>

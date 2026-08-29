@@ -35,7 +35,7 @@
             const path_to_root = "";
             const default_light_theme = "dark";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-d757ea82.js";
+            window.path_to_searchindex_js = "searchindex-8071cbf8.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-ffcc50b1.js"></script>
@@ -186,14 +186,6 @@
 <li>使用 <code>ComplexityAnalyzer</code> 根据图拓扑、目标复杂度和经验库计算初始迭代预算。</li>
 <li>满足以下任一条件时停止：达到目标置信度（默认 0.95）、收敛停滞（窗口内改进量 &lt; 0.01）、达到硬上限（默认 30 次）。</li>
 <li>强制 <code>min_iterations</code>（默认 2）防止过早停止。</li>
-</ul>
-<h3 id="parallelbranchpredictor"><a class="header" href="#parallelbranchpredictor">ParallelBranchPredictor</a></h3>
-<p>同时模拟多个变体 SOP 图，并选择最佳分支执行。</p>
-<ul>
-<li>对每个变体执行两类模拟：<strong>执行模拟</strong>（预测成功率、成本、稳定性）和<strong>逻辑模拟</strong>（检测逻辑缺陷）。</li>
-<li>综合评分公式：<code>0.5 × success_probability + 0.3 × cost_efficiency + 0.2 × predicted_stability - logical_penalty</code></li>
-<li>通过 <code>ExperienceBank</code> 校准置信度，使历史成功数据影响分支选择。</li>
-<li>默认：<code>max_branches = 3</code>，<code>concurrency = 3</code>。</li>
 </ul>
 <h3 id="anomalydetector"><a class="header" href="#anomalydetector">AnomalyDetector</a></h3>
 <p>在运行时监控每个节点的执行指标并标记异常。</p>

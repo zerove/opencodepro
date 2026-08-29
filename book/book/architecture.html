@@ -35,7 +35,7 @@
             const path_to_root = "";
             const default_light_theme = "dark";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-d757ea82.js";
+            window.path_to_searchindex_js = "searchindex-8071cbf8.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-ffcc50b1.js"></script>
@@ -177,7 +177,7 @@
                         <h1 id="架构总览"><a class="header" href="#架构总览">架构总览</a></h1>
 <p>Sisyphus 以 <strong>Rust 工作区</strong> 组织，包含 <strong>29 个成员</strong>：<code>crates/</code> 下的 <strong>27 个 crate</strong>（含 10 个 <code>sisyphus-tools-*</code> 子 crate，以及 <code>webui</code> 和 <code>evals</code>），每个 crate 负责一个明确的关注点：</p>
 <ul>
-<li><code>sisyphus-bridge</code> / <code>sisyphus-api</code> — 入口点（HTTP/gRPC/REST API）</li>
+<li><code>sisyphus-bridge</code> — 入口点（HTTP/gRPC/REST API；独立 sisyphus-api 已归档至 ide/api）</li>
 <li><code>sisyphus-core</code> — 内核：DAG 执行器、编排、认知循环</li>
 <li><code>sisyphus-types</code> / <code>sisyphus-intel</code> / <code>sisyphus-mem</code> / <code>sisyphus-sandbox</code> / <code>sisyphus-metrics</code> — 基础层</li>
 <li><code>sisyphus-roadmap</code> / <code>sisyphus-knowledge</code> / <code>sisyphus-visual</code> / <code>sisyphus-tools-*</code>（10 个）/ <code>sisyphus-cli</code> / <code>webui</code> — 能力与客户端</li>

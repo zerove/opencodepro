@@ -35,7 +35,7 @@
             const path_to_root = "";
             const default_light_theme = "dark";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-d757ea82.js";
+            window.path_to_searchindex_js = "searchindex-8071cbf8.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-ffcc50b1.js"></script>
@@ -258,13 +258,13 @@
 </ul>
 <p>在 <code>Config.tool_executor</code> 中通过配置工具执行器切换模式。守护进程模式是生产部署的默认。</p>
 <h3 id="并发任务调优"><a class="header" href="#并发任务调优">并发任务调优</a></h3>
-<p>认知循环支持可配置的并发，用于并行分支评估。</p>
 <pre><code class="language-toml"># config.toml
 [cognitive_loop]
-max_concurrent_tasks = 4      # ParallelBranchPredictor 中的并行分支
 max_iterations = 30           # 认知迭代次数上限
 convergence_threshold = 0.15  # 偏差低于此值时停止
 </code></pre>
+<p>注：<code>ParallelBranchPredictor</code> 已移除（从未接入生产循环，见 ADR 005 修订）。
+DAG 节点级并发由 <code>[executor] max_concurrent_tasks</code> 控制。</p>
 <p>调优指南：</p>
 <ul>
 <li><strong>max_concurrent_tasks</strong>：CPU 密集型工作负载设置为 CPU 核心数。I/O 密集（LLM 调用）时，更高值（8-16）可提升吞吐量。</li>
