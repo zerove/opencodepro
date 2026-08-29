@@ -364,7 +364,6 @@ impl Config {
         }
     }
 
-    /// Validate all config fields, returning an error on first invalid value.
     /// Validate the loaded config against the engine invariants.
     ///
     /// Checks currently enforced:
