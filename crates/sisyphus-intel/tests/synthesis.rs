@@ -140,3 +140,136 @@ fn synthesis_result_construct() {
     };
     assert_eq!(r.plan_description, "plan");
 }
+
+// ---------------------------------------------------------------------------
+// ActionType additional coverage
+// ---------------------------------------------------------------------------
+
+#[test]
+fn action_type_debug_format() {
+    for v in [
+        ActionType::Fetch,
+        ActionType::Process,
+        ActionType::Sink,
+        ActionType::Search,
+        ActionType::Validate,
+    ] {
+        let _ = format!("{:?}", v);
+    }
+}
+
+#[test]
+fn action_type_clone() {
+    let a = ActionType::Fetch;
+    let b = a.clone();
+    assert_eq!(a, b);
+}
+
+#[test]
+fn dynamic_node_unicode_fields() {
+    let n = DynamicNode {
+        id: "节点-α".into(),
+        name: "节点名".into(),
+        tool_id: "工具-β".into(),
+        args: serde_json::json!({"k": "v"}),
+    };
+    assert_eq!(n.id, "节点-α");
+    let j = serde_json::to_string(&n).unwrap();
+    let back: DynamicNode = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.id, "节点-α");
+}
+
+#[test]
+fn dynamic_edge_unicode() {
+    let e = DynamicEdge {
+        from: "源-α".into(),
+        to: "目-β".into(),
+    };
+    assert_eq!(e.from, "源-α");
+    let j = serde_json::to_string(&e).unwrap();
+    let back: DynamicEdge = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.to, "目-β");
+}
+
+#[test]
+fn dynamic_sop_plan_empty() {
+    let p = DynamicSopPlan {
+        nodes: vec![],
+        edges: vec![],
+        start_node: "".into(),
+    };
+    assert!(p.nodes.is_empty());
+    assert!(p.edges.is_empty());
+    assert_eq!(p.start_node, "");
+}
+
+#[test]
+fn dynamic_sop_plan_multi_node_serde() {
+    let p = DynamicSopPlan {
+        nodes: vec![
+            DynamicNode {
+                id: "n1".into(),
+                name: "first".into(),
+                tool_id: "t1".into(),
+                args: serde_json::json!({}),
+            },
+            DynamicNode {
+                id: "n2".into(),
+                name: "second".into(),
+                tool_id: "t2".into(),
+                args: serde_json::json!({"x": 1}),
+            },
+        ],
+        edges: vec![DynamicEdge {
+            from: "n1".into(),
+            to: "n2".into(),
+        }],
+        start_node: "n1".into(),
+    };
+    let j = serde_json::to_string(&p).unwrap();
+    let back: DynamicSopPlan = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.nodes.len(), 2);
+    assert_eq!(back.edges.len(), 1);
+    assert_eq!(back.start_node, "n1");
+}
+
+#[test]
+fn dynamic_sop_plan_clone() {
+    let p = DynamicSopPlan {
+        nodes: vec![],
+        edges: vec![],
+        start_node: "s".into(),
+    };
+    let cloned = p.clone();
+    assert_eq!(cloned.start_node, "s");
+}
+
+#[test]
+fn dynamic_node_with_complex_args() {
+    let n = DynamicNode {
+        id: "n".into(),
+        name: "n".into(),
+        tool_id: "t".into(),
+        args: serde_json::json!({
+            "nested": {"key": [1, 2, 3]},
+            "null": null,
+            "bool": true,
+        }),
+    };
+    let j = serde_json::to_string(&n).unwrap();
+    let back: DynamicNode = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.args["nested"]["key"][1], 2);
+    assert_eq!(back.args["bool"], true);
+}
+
+#[test]
+fn dynamic_edge_serde_round_trip() {
+    let e = DynamicEdge {
+        from: "a".into(),
+        to: "b".into(),
+    };
+    let j = serde_json::to_string(&e).unwrap();
+    let back: DynamicEdge = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.from, "a");
+    assert_eq!(back.to, "b");
+}
