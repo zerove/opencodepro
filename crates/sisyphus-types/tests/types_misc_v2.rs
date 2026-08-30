@@ -555,3 +555,66 @@ fn work_mode_debug() {
 fn circuit_state_debug() {
     let _ = format!("{:?}", CircuitState::Closed);
 }
+
+// ---------------------------------------------------------------------------
+// Additional TriggerDef coverage
+// ---------------------------------------------------------------------------
+
+#[test]
+fn trigger_def_with_empty_tools() {
+    let t = TriggerDef {
+        pattern: Some("p".into()),
+        tools: vec![],
+        description: None,
+        hook_phase: None,
+        hook_effect: None,
+        hook_message: None,
+    };
+    let j = serde_json::to_string(&t).unwrap();
+    let back: TriggerDef = serde_json::from_str(&j).unwrap();
+    assert!(back.tools.is_empty());
+    assert_eq!(back.pattern.as_deref(), Some("p"));
+}
+
+#[test]
+fn trigger_def_with_unicode_pattern() {
+    let t = TriggerDef {
+        pattern: Some("模式-α".into()),
+        tools: vec!["工具".into()],
+        description: Some("中文描述".into()),
+        hook_phase: Some("前".into()),
+        hook_effect: Some("执行".into()),
+        hook_message: Some("消息".into()),
+    };
+    assert_eq!(t.pattern.as_deref(), Some("模式-α"));
+    let j = serde_json::to_string(&t).unwrap();
+    let back: TriggerDef = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.description.as_deref(), Some("中文描述"));
+}
+
+#[test]
+fn trigger_def_clone() {
+    let t = TriggerDef {
+        pattern: Some("p".into()),
+        tools: vec!["t1".into()],
+        description: Some("d".into()),
+        hook_phase: Some("before".into()),
+        hook_effect: Some("e".into()),
+        hook_message: Some("m".into()),
+    };
+    let cloned = t.clone();
+    assert_eq!(cloned.pattern, t.pattern);
+    assert_eq!(cloned.tools, t.tools);
+}
+
+#[test]
+fn trigger_def_with_minimal_fields() {
+    // Only pattern set
+    let t: TriggerDef = serde_json::from_str(r#"{"pattern":"only"}"#).unwrap();
+    assert_eq!(t.pattern.as_deref(), Some("only"));
+    assert!(t.tools.is_empty());
+    assert!(t.description.is_none());
+    assert!(t.hook_phase.is_none());
+    assert!(t.hook_effect.is_none());
+    assert!(t.hook_message.is_none());
+}
