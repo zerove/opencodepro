@@ -1558,3 +1558,109 @@ fn experience_record_with_unicode_path_id() {
     };
     assert_eq!(r.path_id, "路径-α-🔍");
 }
+
+// ---------------------------------------------------------------------------
+// More tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn risk_thresholds_with_zero_all_thresholds() {
+    let t = RiskThresholds {
+        low: 0.0,
+        medium: 0.0,
+        high: 0.0,
+    };
+    let j = serde_json::to_string(&t).unwrap();
+    let back: RiskThresholds = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.high, 0.0);
+}
+
+#[test]
+fn risk_thresholds_with_max_all_thresholds() {
+    let t = RiskThresholds {
+        low: f64::MAX,
+        medium: f64::MAX,
+        high: f64::MAX,
+    };
+    let j = serde_json::to_string(&t).unwrap();
+    let back: RiskThresholds = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.high, f64::MAX);
+}
+
+#[test]
+fn ranked_path_with_above_one_composite_score() {
+    let rp = RankedPath {
+        path_id: "p".into(),
+        success_probability: 1.0,
+        estimated_cost: 0,
+        risk_level: RiskLevel::Low,
+        composite_score: 2.5,
+        predicted_outcome: "x".into(),
+        confidence: 1.0,
+    };
+    let j = serde_json::to_string(&rp).unwrap();
+    let back: RankedPath = serde_json::from_str(&j).unwrap();
+    assert!((back.composite_score - 2.5).abs() < 1e-9);
+}
+
+#[test]
+fn ranked_path_with_unicode_predicted_outcome_serde() {
+    let rp = RankedPath {
+        path_id: "p".into(),
+        success_probability: 0.5,
+        estimated_cost: 0,
+        risk_level: RiskLevel::Low,
+        composite_score: 0.5,
+        predicted_outcome: "结果-α-🔍".into(),
+        confidence: 0.5,
+    };
+    let j = serde_json::to_string(&rp).unwrap();
+    let back: RankedPath = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.predicted_outcome, "结果-α-🔍");
+}
+
+#[test]
+fn ranked_path_with_min_estimated_cost() {
+    let rp = RankedPath {
+        path_id: "p".into(),
+        success_probability: 0.5,
+        estimated_cost: 1,
+        risk_level: RiskLevel::Low,
+        composite_score: 0.5,
+        predicted_outcome: "x".into(),
+        confidence: 0.5,
+    };
+    assert_eq!(rp.estimated_cost, 1);
+    let j = serde_json::to_string(&rp).unwrap();
+    let back: RankedPath = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.estimated_cost, 1);
+}
+
+#[test]
+fn experience_record_with_negative_serde_unavailable() {
+    // ExperienceRecord doesn't implement Serde, but verify construction
+    let r = ExperienceRecord {
+        path_id: "p".into(),
+        success: false,
+        actual_cost: 100,
+    };
+    assert!(!r.success);
+    assert_eq!(r.actual_cost, 100);
+}
+
+#[test]
+fn path_summary_with_unicode_risk_distribution_value() {
+    let mut dist = std::collections::HashMap::new();
+    dist.insert(RiskLevel::Critical, 100);
+    let s = PathSummary {
+        total_paths: 100,
+        average_probability: 0.0,
+        average_cost: 1000,
+        best_path: None,
+        worst_path: None,
+        risk_distribution: dist,
+    };
+    let j = serde_json::to_string(&s).unwrap();
+    let back: PathSummary = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.risk_distribution.get(&RiskLevel::Critical), Some(&100));
+}
