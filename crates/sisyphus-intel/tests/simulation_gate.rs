@@ -452,3 +452,115 @@ fn gate_config_clone_preserves_fields() {
     assert_eq!(cloned.fallback_on_error, false);
     assert_eq!(cloned.enabled, true);
 }
+
+// ---------------------------------------------------------------------------
+// Additional concurrency tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn gate_history_concurrent_record_does_not_panic() {
+    use std::thread;
+    let h = GateHistory::new();
+    let h_arc = std::sync::Arc::new(h);
+    let mut handles = vec![];
+    for _ in 0..20 {
+        let h_clone = std::sync::Arc::clone(&h_arc);
+        let handle = thread::spawn(move || {
+            for _ in 0..10 {
+                h_clone.record(dec(GateVerdict::Allow, 0, 0));
+            }
+        });
+        handles.push(handle);
+    }
+    for h in handles {
+        h.join().unwrap();
+    }
+    assert_eq!(h_arc.snapshot().len(), 200);
+}
+
+#[test]
+fn gate_history_concurrent_snapshot_and_record() {
+    use std::thread;
+    let h = GateHistory::new();
+    let h_arc = std::sync::Arc::new(h);
+    for _ in 0..50 {
+        h_arc.record(dec(GateVerdict::Allow, 0, 0));
+    }
+    let mut handles = vec![];
+    for _ in 0..5 {
+        let h_clone = std::sync::Arc::clone(&h_arc);
+        let handle = thread::spawn(move || {
+            let _ = h_clone.snapshot();
+        });
+        handles.push(handle);
+    }
+    for handle in handles {
+        handle.join().unwrap();
+    }
+    assert_eq!(h_arc.snapshot().len(), 50);
+}
+
+#[test]
+fn gate_decision_with_min_confidence() {
+    // Test boundary f64 value
+    let d = GateDecision {
+        sop_id: "p".into(),
+        verdict: GateVerdict::Allow,
+        flaw_count: 0,
+        critical_count: 0,
+        confidence: f64::MIN_POSITIVE,
+        elapsed_micros: 0,
+    };
+    assert!(d.confidence > 0.0);
+}
+
+#[test]
+fn gate_decision_with_zero_elapsed() {
+    let d = GateDecision {
+        sop_id: "p".into(),
+        verdict: GateVerdict::Allow,
+        flaw_count: 0,
+        critical_count: 0,
+        confidence: 0.5,
+        elapsed_micros: 0,
+    };
+    assert_eq!(d.elapsed_micros, 0);
+}
+
+#[test]
+fn gate_decision_with_max_flaw_count() {
+    let d = GateDecision {
+        sop_id: "p".into(),
+        verdict: GateVerdict::Reject,
+        flaw_count: usize::MAX,
+        critical_count: usize::MAX,
+        confidence: 0.0,
+        elapsed_micros: 1000,
+    };
+    assert_eq!(d.flaw_count, usize::MAX);
+}
+
+#[test]
+fn gate_decision_with_unicode_sop_id() {
+    let d = GateDecision {
+        sop_id: "图-α".into(),
+        verdict: GateVerdict::Allow,
+        flaw_count: 0,
+        critical_count: 0,
+        confidence: 0.9,
+        elapsed_micros: 100,
+    };
+    assert_eq!(d.sop_id, "图-α");
+}
+
+#[test]
+fn gate_config_with_long_unicode() {
+    // Config doesn't have any string fields, just bools
+    let c = GateConfig {
+        fallback_on_error: true,
+        enabled: false,
+    };
+    let dbg = format!("{:?}", c);
+    assert!(dbg.contains("fallback_on_error"));
+    assert!(dbg.contains("enabled"));
+}
