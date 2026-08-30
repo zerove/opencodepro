@@ -539,3 +539,110 @@ fn asset_relation_with_max_occurrence_count() {
     let back: AssetRelation = serde_json::from_str(&j).unwrap();
     assert_eq!(back.weight, f32::MIN);
 }
+
+// ---------------------------------------------------------------------------
+// Additional AssetKind and asset relation tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn asset_kind_default_debug() {
+    use sisyphus_types::asset::AssetKind;
+    for kind in [
+        AssetKind::Tool,
+        AssetKind::SOP,
+        AssetKind::Insight,
+        AssetKind::Constraint,
+    ] {
+        let s = format!("{:?}", kind);
+        assert!(s.len() > 0);
+    }
+}
+
+#[test]
+fn insight_data_with_only_whitespace_observation() {
+    let i = InsightData {
+        observation: "   \n\t  ".into(),
+        reasoning: "r".into(),
+        evidence_ids: vec![],
+        confidence: 0.5,
+    };
+    let j = serde_json::to_string(&i).unwrap();
+    let back: InsightData = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.observation, "   \n\t  ");
+}
+
+#[test]
+fn insight_data_with_negative_confidence() {
+    let i = InsightData {
+        observation: "o".into(),
+        reasoning: "r".into(),
+        evidence_ids: vec![],
+        confidence: -0.5,
+    };
+    let j = serde_json::to_string(&i).unwrap();
+    let back: InsightData = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.confidence, -0.5);
+}
+
+#[test]
+fn constraint_data_with_negative_strictness() {
+    use sisyphus_types::asset::ConstraintData;
+    let c = ConstraintData {
+        description: "d".into(),
+        strictness: -1.0,
+        violation_penalty: 0.0,
+    };
+    let j = serde_json::to_string(&c).unwrap();
+    let back: ConstraintData = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.strictness, -1.0);
+}
+
+#[test]
+fn asset_relation_with_empty_ids() {
+    use sisyphus_types::asset::{AssetRelation, RelationType};
+    let r = AssetRelation {
+        from_id: "".into(),
+        to_id: "".into(),
+        relation_type: RelationType::Solves,
+        weight: 0.5,
+    };
+    let j = serde_json::to_string(&r).unwrap();
+    let back: AssetRelation = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.from_id, "");
+    assert_eq!(back.to_id, "");
+}
+
+#[test]
+fn asset_relation_clone_preserves_weight() {
+    use sisyphus_types::asset::{AssetRelation, RelationType};
+    let r = AssetRelation {
+        from_id: "a".into(),
+        to_id: "b".into(),
+        relation_type: RelationType::EvolvedFrom,
+        weight: 0.75,
+    };
+    let cloned = r.clone();
+    assert_eq!(cloned.weight, 0.75);
+}
+
+#[test]
+fn cognitive_asset_with_zero_created_at() {
+    let asset = CognitiveAsset {
+        id: "a".into(),
+        kind: AssetKind::Tool,
+        name: "n".into(),
+        description: "d".into(),
+        content: AssetContent::Insight(InsightData {
+            observation: "o".into(),
+            reasoning: "r".into(),
+            evidence_ids: vec![],
+            confidence: 0.0,
+        }),
+        metadata: HashMap::new(),
+        version: 0,
+        created_at: 0,
+    };
+    let j = serde_json::to_string(&asset).unwrap();
+    let back: CognitiveAsset = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.created_at, 0);
+}
