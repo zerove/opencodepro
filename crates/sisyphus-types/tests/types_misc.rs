@@ -933,3 +933,114 @@ fn plugin_descriptor_with_unicode_version() {
     let back: PluginDescriptor = serde_json::from_str(&j).unwrap();
     assert_eq!(back.version, "1.0-α");
 }
+
+// ---------------------------------------------------------------------------
+// Additional PluginDescriptor and TriggerDef tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn plugin_descriptor_with_unicode_in_all_fields() {
+    use sisyphus_types::PluginDescriptor;
+    let pd = PluginDescriptor {
+        name: "插件-α".into(),
+        version: "版本-β".into(),
+        wasm_path: std::path::PathBuf::from("/路径/插件.wasm"),
+        tool_id: "工具-γ".into(),
+        fuel_limit: 1000,
+        checksum: Some("校验-δ".into()),
+    };
+    let j = serde_json::to_string(&pd).unwrap();
+    let back: PluginDescriptor = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.name, "插件-α");
+    assert_eq!(back.version, "版本-β");
+    assert_eq!(back.tool_id, "工具-γ");
+    assert_eq!(back.checksum.as_deref(), Some("校验-δ"));
+}
+
+#[test]
+fn trigger_def_with_all_hooks_unicode() {
+    use sisyphus_types::TriggerDef;
+    let t = TriggerDef {
+        pattern: Some("模式-α".into()),
+        tools: vec!["工具-β".into()],
+        description: Some("描述-γ".into()),
+        hook_phase: Some("阶段-δ".into()),
+        hook_effect: Some("效果-ε".into()),
+        hook_message: Some("消息-ζ".into()),
+    };
+    let j = serde_json::to_string(&t).unwrap();
+    let back: TriggerDef = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.pattern.as_deref(), Some("模式-α"));
+    assert_eq!(back.hook_phase.as_deref(), Some("阶段-δ"));
+    assert_eq!(back.hook_effect.as_deref(), Some("效果-ε"));
+    assert_eq!(back.hook_message.as_deref(), Some("消息-ζ"));
+}
+
+#[test]
+fn feedback_with_unicode_tags() {
+    use sisyphus_types::Feedback;
+    let f = Feedback {
+        agent_id: "a".into(),
+        original_request: "r".into(),
+        original_output: "o".into(),
+        corrected_output: "c".into(),
+        timestamp: 0,
+        tags: vec!["标签-α".into(), "标签-β".into(), "标签-γ".into()],
+    };
+    let j = serde_json::to_string(&f).unwrap();
+    let back: Feedback = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.tags.len(), 3);
+    assert_eq!(back.tags[0], "标签-α");
+}
+
+#[test]
+fn vector_record_with_only_zero_embedding() {
+    use sisyphus_types::VectorRecord;
+    let v = VectorRecord {
+        key: "k".into(),
+        embedding: vec![0.0; 100],
+        metadata: serde_json::json!({}),
+        timestamp: 0,
+    };
+    let j = serde_json::to_string(&v).unwrap();
+    let back: VectorRecord = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.embedding.len(), 100);
+    assert!(back.embedding.iter().all(|&x| x == 0.0));
+}
+
+#[test]
+fn agent_message_with_max_payload_depth() {
+    use sisyphus_types::AgentMessage;
+    let m = AgentMessage {
+        from: "a".into(),
+        to: "b".into(),
+        kind: "request".into(),
+        payload: serde_json::json!({"l1": {"l2": {"l3": {"l4": "deep"}}}}),
+        correlation_id: "c".into(),
+    };
+    let j = serde_json::to_string(&m).unwrap();
+    let back: AgentMessage = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.payload["l1"]["l2"]["l3"]["l4"], "deep");
+}
+
+#[test]
+fn benchmark_run_with_complex_metrics() {
+    use sisyphus_types::BenchmarkRun;
+    let b = BenchmarkRun {
+        name: "n".into(),
+        timestamp: 0,
+        duration_secs: 0.0,
+        success: true,
+        metrics: serde_json::json!({
+            "stats": {"mean": 0.5, "std": 0.1},
+            "list": [1, 2, 3],
+            "null": null,
+            "bool": true
+        }),
+    };
+    let j = serde_json::to_string(&b).unwrap();
+    let back: BenchmarkRun = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.metrics["stats"]["mean"], 0.5);
+    assert_eq!(back.metrics["list"][2], 3);
+    assert_eq!(back.metrics["bool"], true);
+}
