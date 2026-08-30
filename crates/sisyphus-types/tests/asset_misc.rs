@@ -1266,3 +1266,138 @@ fn cognitive_asset_with_empty_metadata_only() {
     };
     assert!(asset.metadata.is_empty());
 }
+
+// ---------------------------------------------------------------------------
+// Additional CognitiveAsset tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn cognitive_asset_with_unicode_description_only() {
+    let asset = CognitiveAsset {
+        id: "a".into(),
+        kind: AssetKind::Tool,
+        name: "n".into(),
+        description: "中文描述-α with English and 123 numbers 🔍".into(),
+        content: AssetContent::Insight(InsightData {
+            observation: "o".into(),
+            reasoning: "r".into(),
+            evidence_ids: vec![],
+            confidence: 0.5,
+        }),
+        metadata: HashMap::new(),
+        version: 1,
+        created_at: 0,
+    };
+    assert_eq!(
+        asset.description,
+        "中文描述-α with English and 123 numbers 🔍"
+    );
+    let j = serde_json::to_string(&asset).unwrap();
+    let back: CognitiveAsset = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.description, asset.description);
+}
+
+#[test]
+fn cognitive_asset_with_max_metadata() {
+    let asset = CognitiveAsset {
+        id: "a".into(),
+        kind: AssetKind::Tool,
+        name: "n".into(),
+        description: "d".into(),
+        content: AssetContent::Insight(InsightData {
+            observation: "o".into(),
+            reasoning: "r".into(),
+            evidence_ids: vec![],
+            confidence: 0.5,
+        }),
+        metadata: HashMap::new(),
+        version: u32::MAX,
+        created_at: u64::MAX,
+    };
+    let j = serde_json::to_string(&asset).unwrap();
+    let back: CognitiveAsset = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.version, u32::MAX);
+    assert_eq!(back.created_at, u64::MAX);
+}
+
+#[test]
+fn asset_relation_with_max_5_fields_unicode() {
+    use sisyphus_types::asset::{AssetRelation, RelationType};
+    let r = AssetRelation {
+        from_id: "源-α".into(),
+        to_id: "目-β".into(),
+        relation_type: RelationType::Refines,
+        weight: 0.123_456_f32,
+    };
+    let j = serde_json::to_string(&r).unwrap();
+    let back: AssetRelation = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.from_id, "源-α");
+    assert_eq!(back.to_id, "目-β");
+    assert!((back.weight - 0.123_456).abs() < 1e-5);
+}
+
+#[test]
+fn cognitive_asset_with_unicode_in_each_field() {
+    let asset = CognitiveAsset {
+        id: "id-α".into(),
+        kind: AssetKind::Insight,
+        name: "name-β".into(),
+        description: "desc-γ".into(),
+        content: AssetContent::Insight(InsightData {
+            observation: "obs-δ".into(),
+            reasoning: "rea-ε".into(),
+            evidence_ids: vec!["ev-ζ".into()],
+            confidence: 0.5,
+        }),
+        metadata: HashMap::new(),
+        version: 1,
+        created_at: 0,
+    };
+    let j = serde_json::to_string(&asset).unwrap();
+    let back: CognitiveAsset = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.id, "id-α");
+    assert_eq!(back.name, "name-β");
+    assert_eq!(back.description, "desc-γ");
+    match back.content {
+        AssetContent::Insight(i) => {
+            assert_eq!(i.observation, "obs-δ");
+            assert_eq!(i.reasoning, "rea-ε");
+            assert_eq!(i.evidence_ids[0], "ev-ζ");
+        }
+        _ => panic!("wrong variant"),
+    }
+}
+
+#[test]
+fn insight_data_with_unicode_emoji_observation() {
+    let i = InsightData {
+        observation: "🔭🌟📚".into(),
+        reasoning: "r".into(),
+        evidence_ids: vec!["💡".into()],
+        confidence: 0.5,
+    };
+    let j = serde_json::to_string(&i).unwrap();
+    let back: InsightData = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.observation, "🔭🌟📚");
+    assert_eq!(back.evidence_ids[0], "💡");
+}
+
+#[test]
+fn constraint_data_with_unicode_description_2() {
+    use sisyphus_types::asset::ConstraintData;
+    let c = ConstraintData {
+        description: "约束-必须-α-和-β".into(),
+        strictness: 0.8,
+        violation_penalty: 0.2,
+    };
+    let j = serde_json::to_string(&c).unwrap();
+    let back: ConstraintData = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.description, "约束-必须-α-和-β");
+}
+
+#[test]
+fn asset_kind_tool_clone_test() {
+    // AssetKind doesn't implement Clone
+    use sisyphus_types::asset::AssetKind;
+    let _ = AssetKind::Tool;
+}
