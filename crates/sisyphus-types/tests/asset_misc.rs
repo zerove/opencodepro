@@ -1803,3 +1803,132 @@ fn asset_relation_with_unicode_long_ids() {
     // α is 2 bytes in UTF-8, so the byte length is 2x
     assert_eq!(back.from_id.chars().count(), 50);
 }
+
+// ---------------------------------------------------------------------------
+// More tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn insight_data_with_unicode_observation_3_chars() {
+    let i = InsightData {
+        observation: "αβγ".into(),
+        reasoning: "r".into(),
+        evidence_ids: vec![],
+        confidence: 0.5,
+    };
+    let j = serde_json::to_string(&i).unwrap();
+    let back: InsightData = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.observation, "αβγ");
+}
+
+#[test]
+fn cognitive_asset_with_only_one_metadata_key() {
+    use sisyphus_types::asset::{AssetContent, AssetKind, CognitiveAsset, InsightData};
+    let mut meta = HashMap::new();
+    meta.insert("only".into(), "value".into());
+    let asset = CognitiveAsset {
+        id: "a".into(),
+        kind: AssetKind::Tool,
+        name: "n".into(),
+        description: "d".into(),
+        content: AssetContent::Insight(InsightData {
+            observation: "o".into(),
+            reasoning: "r".into(),
+            evidence_ids: vec![],
+            confidence: 0.5,
+        }),
+        metadata: meta,
+        version: 1,
+        created_at: 0,
+    };
+    assert_eq!(asset.metadata.len(), 1);
+    assert_eq!(asset.metadata["only"], "value");
+}
+
+#[test]
+fn asset_relation_with_3_distinct_relation_types_serde() {
+    use sisyphus_types::asset::{AssetRelation, RelationType};
+    let variants = [
+        RelationType::Solves,
+        RelationType::Requires,
+        RelationType::Refines,
+    ];
+    for v in variants {
+        let r = AssetRelation {
+            from_id: "a".into(),
+            to_id: "b".into(),
+            relation_type: v.clone(),
+            weight: 0.5,
+        };
+        let j = serde_json::to_string(&r).unwrap();
+        let back: AssetRelation = serde_json::from_str(&j).unwrap();
+        // RelationType doesn't implement PartialEq, but we verify via Debug
+        let orig_dbg = format!("{:?}", v);
+        let back_dbg = format!("{:?}", back.relation_type);
+        assert_eq!(orig_dbg, back_dbg);
+    }
+}
+
+#[test]
+fn insight_data_with_max_f32_confidence() {
+    let i = InsightData {
+        observation: "o".into(),
+        reasoning: "r".into(),
+        evidence_ids: vec![],
+        confidence: f32::MAX,
+    };
+    let j = serde_json::to_string(&i).unwrap();
+    let back: InsightData = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.confidence, f32::MAX);
+}
+
+#[test]
+fn cognitive_asset_with_unicode_id_and_long_name() {
+    use sisyphus_types::asset::{AssetContent, AssetKind, CognitiveAsset, InsightData};
+    let long_name = "名-".repeat(100);
+    let asset = CognitiveAsset {
+        id: "id-α".into(),
+        kind: AssetKind::Tool,
+        name: long_name.clone(),
+        description: "d".into(),
+        content: AssetContent::Insight(InsightData {
+            observation: "o".into(),
+            reasoning: "r".into(),
+            evidence_ids: vec![],
+            confidence: 0.5,
+        }),
+        metadata: HashMap::new(),
+        version: 1,
+        created_at: 0,
+    };
+    let j = serde_json::to_string(&asset).unwrap();
+    let back: CognitiveAsset = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.name, long_name);
+}
+
+#[test]
+fn constraint_data_with_unicode_emoji_description() {
+    use sisyphus_types::asset::ConstraintData;
+    let c = ConstraintData {
+        description: "约束🔍-必须-快".into(),
+        strictness: 0.9,
+        violation_penalty: 0.1,
+    };
+    let j = serde_json::to_string(&c).unwrap();
+    let back: ConstraintData = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.description, "约束🔍-必须-快");
+}
+
+#[test]
+fn insight_data_with_unicode_special_chars() {
+    let i = InsightData {
+        observation: "a\tb\nc\rd\te".into(),
+        reasoning: "f\"g'h".into(),
+        evidence_ids: vec!["a\\b".into()],
+        confidence: 0.5,
+    };
+    let j = serde_json::to_string(&i).unwrap();
+    let back: InsightData = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.observation, "a\tb\nc\rd\te");
+    assert_eq!(back.evidence_ids[0], "a\\b");
+}
