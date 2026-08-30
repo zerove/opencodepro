@@ -842,3 +842,94 @@ fn gate_config_default_then_disabled_change() {
     c.enabled = false;
     assert!(!c.enabled);
 }
+
+// ---------------------------------------------------------------------------
+// Additional tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn gate_history_with_unicode_decisions() {
+    let h = GateHistory::new();
+    for i in 0..10 {
+        h.record(dec(GateVerdict::Allow, 0, 0));
+    }
+    let snap = h.snapshot();
+    assert_eq!(snap.len(), 10);
+    for d in &snap {
+        assert!(d.sop_id.contains("Allow"));
+    }
+}
+
+#[test]
+fn gate_decision_with_5_skipped_in_a_row() {
+    let h = GateHistory::new();
+    for _ in 0..5 {
+        h.record(dec(GateVerdict::Skipped, 0, 0));
+    }
+    let snap = h.snapshot();
+    assert_eq!(snap.len(), 5);
+    for d in &snap {
+        assert!(d.sop_id.contains("Skipped"));
+    }
+    // Skipped doesn't count in intercept_rate
+    assert_eq!(h.intercept_rate(), 0.0);
+}
+
+#[test]
+fn gate_decision_with_extreme_flaw_counts() {
+    let d = GateDecision {
+        sop_id: "p".into(),
+        verdict: GateVerdict::Reject,
+        flaw_count: 0,
+        critical_count: usize::MAX,
+        confidence: 0.5,
+        elapsed_micros: 100,
+    };
+    assert_eq!(d.critical_count, usize::MAX);
+}
+
+#[test]
+fn gate_config_debug_format() {
+    let c = GateConfig {
+        fallback_on_error: true,
+        enabled: false,
+    };
+    let dbg = format!("{:?}", c);
+    assert!(dbg.contains("enabled"));
+    assert!(dbg.contains("fallback_on_error"));
+}
+
+#[test]
+fn gate_history_initial_intercept_rate() {
+    let h = GateHistory::new();
+    assert_eq!(h.intercept_rate(), 0.0);
+    assert_eq!(h.false_positive_rate(), 0.0);
+}
+
+#[test]
+fn gate_decision_with_flaw_count_zero_critical_max() {
+    let d = GateDecision {
+        sop_id: "p".into(),
+        verdict: GateVerdict::Allow,
+        flaw_count: 0,
+        critical_count: 100,
+        confidence: 0.5,
+        elapsed_micros: 100,
+    };
+    assert_eq!(d.flaw_count, 0);
+    assert_eq!(d.critical_count, 100);
+}
+
+#[test]
+fn gate_decision_with_flaw_count_max_critical_zero() {
+    let d = GateDecision {
+        sop_id: "p".into(),
+        verdict: GateVerdict::Reject,
+        flaw_count: 100,
+        critical_count: 0,
+        confidence: 0.5,
+        elapsed_micros: 100,
+    };
+    assert_eq!(d.flaw_count, 100);
+    assert_eq!(d.critical_count, 0);
+}
