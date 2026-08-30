@@ -1488,3 +1488,112 @@ fn vector_record_with_only_unicode_key() {
     let back: VectorRecord = serde_json::from_str(&j).unwrap();
     assert_eq!(back.key, "键-".repeat(50));
 }
+
+// ---------------------------------------------------------------------------
+// More tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn feedback_with_only_long_agent_id() {
+    use sisyphus_types::Feedback;
+    let long = "a".repeat(5000);
+    let f = Feedback {
+        agent_id: long.clone(),
+        original_request: "r".into(),
+        original_output: "o".into(),
+        corrected_output: "c".into(),
+        timestamp: 0,
+        tags: vec![],
+    };
+    assert_eq!(f.agent_id.len(), 5000);
+    let j = serde_json::to_string(&f).unwrap();
+    let back: Feedback = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.agent_id, long);
+}
+
+#[test]
+fn vector_record_with_unicode_key_special_chars() {
+    use sisyphus_types::VectorRecord;
+    let v = VectorRecord {
+        key: "键-α\t\n\r".into(),
+        embedding: vec![1.0],
+        metadata: serde_json::json!({}),
+        timestamp: 0,
+    };
+    let j = serde_json::to_string(&v).unwrap();
+    let back: VectorRecord = serde_json::from_str(&j).unwrap();
+    // JSON escapes special chars
+    assert_eq!(back.key, "键-α\t\n\r");
+}
+
+#[test]
+fn plugin_descriptor_with_unicode_long_name() {
+    use sisyphus_types::PluginDescriptor;
+    let long = "插件-".repeat(100);
+    let pd = PluginDescriptor {
+        name: long.clone(),
+        version: "1".into(),
+        wasm_path: std::path::PathBuf::from("/p.wasm"),
+        tool_id: "t".into(),
+        fuel_limit: 1000,
+        checksum: None,
+    };
+    assert_eq!(pd.name, long);
+    let j = serde_json::to_string(&pd).unwrap();
+    let back: PluginDescriptor = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.name, long);
+}
+
+#[test]
+fn agent_message_with_unicode_payload_serde() {
+    use sisyphus_types::AgentMessage;
+    let m = AgentMessage {
+        from: "a".into(),
+        to: "b".into(),
+        kind: "request".into(),
+        payload: serde_json::json!({"中文": "数据-α🔍"}),
+        correlation_id: "c".into(),
+    };
+    let j = serde_json::to_string(&m).unwrap();
+    let back: AgentMessage = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.payload["中文"], "数据-α🔍");
+}
+
+#[test]
+fn benchmark_run_with_unicode_metrics() {
+    use sisyphus_types::BenchmarkRun;
+    let b = BenchmarkRun {
+        name: "n".into(),
+        timestamp: 0,
+        duration_secs: 0.0,
+        success: true,
+        metrics: serde_json::json!({"中文-α": "值-β", "键-γ": "值-δ"}),
+    };
+    let j = serde_json::to_string(&b).unwrap();
+    let back: BenchmarkRun = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.metrics["中文-α"], "值-β");
+}
+
+#[test]
+fn trigger_def_with_only_unicode_hook_message_serde() {
+    use sisyphus_types::TriggerDef;
+    let t: TriggerDef = serde_json::from_str(r#"{"hook_message":"消息-α🔍"}"#).unwrap();
+    assert_eq!(t.hook_message.as_deref(), Some("消息-α🔍"));
+}
+
+#[test]
+fn feedback_with_only_one_long_tag() {
+    use sisyphus_types::Feedback;
+    let long = "t".repeat(1000);
+    let f = Feedback {
+        agent_id: "a".into(),
+        original_request: "r".into(),
+        original_output: "o".into(),
+        corrected_output: "c".into(),
+        timestamp: 0,
+        tags: vec![long.clone()],
+    };
+    let j = serde_json::to_string(&f).unwrap();
+    let back: Feedback = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.tags[0].len(), 1000);
+}
