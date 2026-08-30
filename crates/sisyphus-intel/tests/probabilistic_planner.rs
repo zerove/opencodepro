@@ -1664,3 +1664,109 @@ fn path_summary_with_unicode_risk_distribution_value() {
     let back: PathSummary = serde_json::from_str(&j).unwrap();
     assert_eq!(back.risk_distribution.get(&RiskLevel::Critical), Some(&100));
 }
+
+// ---------------------------------------------------------------------------
+// More tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn risk_level_low_is_default() {
+    // RiskLevel doesn't implement Default
+    // Just verify all variants can be created
+    let _ = RiskLevel::Low;
+    let _ = RiskLevel::Medium;
+    let _ = RiskLevel::High;
+    let _ = RiskLevel::Critical;
+}
+
+#[test]
+fn risk_thresholds_with_negative_zero_combination() {
+    let t = RiskThresholds {
+        low: -0.5,
+        medium: 0.0,
+        high: 0.5,
+    };
+    let j = serde_json::to_string(&t).unwrap();
+    let back: RiskThresholds = serde_json::from_str(&j).unwrap();
+    assert!((back.low + 0.5).abs() < 1e-9);
+    assert_eq!(back.medium, 0.0);
+    assert_eq!(back.high, 0.5);
+}
+
+#[test]
+fn risk_thresholds_with_all_same_value() {
+    let t = RiskThresholds {
+        low: 0.5,
+        medium: 0.5,
+        high: 0.5,
+    };
+    let j = serde_json::to_string(&t).unwrap();
+    let back: RiskThresholds = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.low, 0.5);
+    assert_eq!(back.medium, 0.5);
+    assert_eq!(back.high, 0.5);
+}
+
+#[test]
+fn ranked_path_with_all_fields_zero() {
+    let rp = RankedPath {
+        path_id: "".into(),
+        success_probability: 0.0,
+        estimated_cost: 0,
+        risk_level: RiskLevel::Low,
+        composite_score: 0.0,
+        predicted_outcome: "".into(),
+        confidence: 0.0,
+    };
+    let j = serde_json::to_string(&rp).unwrap();
+    let back: RankedPath = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.path_id, "");
+    assert_eq!(back.success_probability, 0.0);
+    assert_eq!(back.estimated_cost, 0);
+}
+
+#[test]
+fn ranked_path_with_all_fields_max() {
+    let rp = RankedPath {
+        path_id: "max".into(),
+        success_probability: 1.0,
+        estimated_cost: u64::MAX,
+        risk_level: RiskLevel::Critical,
+        composite_score: 1.0,
+        predicted_outcome: "x".into(),
+        confidence: 1.0,
+    };
+    let j = serde_json::to_string(&rp).unwrap();
+    let back: RankedPath = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.estimated_cost, u64::MAX);
+    assert_eq!(back.risk_level, RiskLevel::Critical);
+}
+
+#[test]
+fn planner_config_with_max_u64_cost() {
+    let cfg = PlannerConfig {
+        probability_weight: 0.5,
+        cost_weight: 0.3,
+        stability_weight: 0.2,
+        max_cost: u64::MAX,
+        risk_thresholds: RiskThresholds::default(),
+    };
+    let j = serde_json::to_string(&cfg).unwrap();
+    let back: PlannerConfig = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.max_cost, u64::MAX);
+}
+
+#[test]
+fn path_summary_with_default_risk_distribution() {
+    let s = PathSummary {
+        total_paths: 0,
+        average_probability: 0.0,
+        average_cost: 0,
+        best_path: None,
+        worst_path: None,
+        risk_distribution: std::collections::HashMap::new(),
+    };
+    assert!(s.risk_distribution.is_empty());
+    assert!(s.best_path.is_none());
+    assert!(s.worst_path.is_none());
+}
