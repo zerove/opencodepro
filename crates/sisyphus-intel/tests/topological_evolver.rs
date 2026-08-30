@@ -176,3 +176,98 @@ fn evolution_op_serializes_for_add_retry() {
     assert!(json.contains("AddRetry"));
     assert!(json.contains("\"max_retries\":3"));
 }
+
+// ---------------------------------------------------------------------------
+// Additional edge cases: InsertNode, negative fuel, default trait
+// ---------------------------------------------------------------------------
+
+#[test]
+fn evolver_default_constructs() {
+    let e1 = TopologicalSOPEvolver::default();
+    let e2 = TopologicalSOPEvolver::new();
+    // Both produce a usable evolver (no fields to compare, but we exercise the API).
+    let _ = e1;
+    let _ = e2;
+}
+
+#[tokio::test]
+async fn apply_ops_adjust_fuel_negative_clamped_to_zero() {
+    let g = build_graph("n1", "t1", 100);
+    let evolver = TopologicalSOPEvolver::new();
+    let ops = vec![EvolutionOp::AdjustFuel {
+        node_name: "n1".into(),
+        delta: -200, // would underflow; clamped to 0
+    }];
+    let executor = Arc::new(NoopExecutor);
+    let new_g = evolver.apply_ops(&g, &ops, executor).expect("ok");
+    let node = new_g
+        .graph
+        .node_indices()
+        .next()
+        .map(|i| new_g.graph.node_weight(i).expect(""))
+        .expect("");
+    if let Some(wasm) = node.as_any().downcast_ref::<WasmSOPNode>() {
+        assert_eq!(wasm.fuel_limit, 0);
+    } else {
+        panic!("expected WasmSOPNode");
+    }
+}
+
+#[tokio::test]
+async fn apply_ops_adjust_fuel_zero_delta_preserves_fuel() {
+    let g = build_graph("n1", "t1", 100);
+    let evolver = TopologicalSOPEvolver::new();
+    let ops = vec![EvolutionOp::AdjustFuel {
+        node_name: "n1".into(),
+        delta: 0,
+    }];
+    let executor = Arc::new(NoopExecutor);
+    let new_g = evolver.apply_ops(&g, &ops, executor).expect("ok");
+    let node = new_g
+        .graph
+        .node_indices()
+        .next()
+        .map(|i| new_g.graph.node_weight(i).expect(""))
+        .expect("");
+    if let Some(wasm) = node.as_any().downcast_ref::<WasmSOPNode>() {
+        assert_eq!(wasm.fuel_limit, 100);
+    } else {
+        panic!("expected WasmSOPNode");
+    }
+}
+
+#[tokio::test]
+async fn apply_ops_adjust_fuel_large_positive() {
+    let g = build_graph("n1", "t1", 100);
+    let evolver = TopologicalSOPEvolver::new();
+    let ops = vec![EvolutionOp::AdjustFuel {
+        node_name: "n1".into(),
+        delta: 1_000_000,
+    }];
+    let executor = Arc::new(NoopExecutor);
+    let new_g = evolver.apply_ops(&g, &ops, executor).expect("ok");
+    let node = new_g
+        .graph
+        .node_indices()
+        .next()
+        .map(|i| new_g.graph.node_weight(i).expect(""))
+        .expect("");
+    if let Some(wasm) = node.as_any().downcast_ref::<WasmSOPNode>() {
+        assert_eq!(wasm.fuel_limit, 1_000_100);
+    } else {
+        panic!("expected WasmSOPNode");
+    }
+}
+
+#[test]
+fn evolution_op_serializes_for_insert_node() {
+    let op = EvolutionOp::InsertNode {
+        after_node: "a".into(),
+        new_name: "b".into(),
+        tool_id: "t".into(),
+    };
+    let json = serde_json::to_string(&op).expect("");
+    assert!(json.contains("InsertNode"));
+    assert!(json.contains("\"new_name\":\"b\""));
+}
+
