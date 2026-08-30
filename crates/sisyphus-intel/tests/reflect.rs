@@ -141,3 +141,116 @@ fn from_text_is_case_insensitive() {
     assert!(matches!(k_upper, ImprovementKind::Retry { .. }));
     assert!(matches!(k_mixed, ImprovementKind::Retry { .. }));
 }
+
+// ---------------------------------------------------------------------------
+// ImprovementKind Serde / Clone
+// ---------------------------------------------------------------------------
+
+#[test]
+fn improvement_kind_retry_serde() {
+    let k = ImprovementKind::Retry { max_retries: 5 };
+    let j = serde_json::to_string(&k).unwrap();
+    let back: ImprovementKind = serde_json::from_str(&j).unwrap();
+    match back {
+        ImprovementKind::Retry { max_retries } => assert_eq!(max_retries, 5),
+        _ => panic!("wrong variant"),
+    }
+}
+
+#[test]
+fn improvement_kind_fuel_increase_serde() {
+    let k = ImprovementKind::FuelIncrease { factor: 2.0 };
+    let j = serde_json::to_string(&k).unwrap();
+    let back: ImprovementKind = serde_json::from_str(&j).unwrap();
+    match back {
+        ImprovementKind::FuelIncrease { factor } => assert!((factor - 2.0).abs() < 1e-9),
+        _ => panic!("wrong variant"),
+    }
+}
+
+#[test]
+fn improvement_kind_node_split_serde() {
+    let k = ImprovementKind::NodeSplit;
+    let j = serde_json::to_string(&k).unwrap();
+    let back: ImprovementKind = serde_json::from_str(&j).unwrap();
+    assert_eq!(back, ImprovementKind::NodeSplit);
+}
+
+#[test]
+fn improvement_kind_backoff_serde() {
+    let k = ImprovementKind::Backoff;
+    let j = serde_json::to_string(&k).unwrap();
+    let back: ImprovementKind = serde_json::from_str(&j).unwrap();
+    assert_eq!(back, ImprovementKind::Backoff);
+}
+
+#[test]
+fn improvement_kind_unclassified_serde() {
+    let k = ImprovementKind::Unclassified {
+        note: "uncertain pattern".into(),
+    };
+    let j = serde_json::to_string(&k).unwrap();
+    let back: ImprovementKind = serde_json::from_str(&j).unwrap();
+    match back {
+        ImprovementKind::Unclassified { note } => assert_eq!(note, "uncertain pattern"),
+        _ => panic!("wrong variant"),
+    }
+}
+
+#[test]
+fn improvement_kind_retry_default_uses_serde_default() {
+    // If max_retries is missing, serde default is 3
+    let j = r#"{"Retry":{}}"#;
+    let k: ImprovementKind = serde_json::from_str(j).unwrap();
+    match k {
+        ImprovementKind::Retry { max_retries } => assert_eq!(max_retries, 3),
+        _ => panic!("wrong variant"),
+    }
+}
+
+#[test]
+fn improvement_kind_clone() {
+    let a = ImprovementKind::Retry { max_retries: 7 };
+    let b = a.clone();
+    assert_eq!(a, b);
+}
+
+#[test]
+fn improvement_kind_distinct_variants() {
+    let a = ImprovementKind::Backoff;
+    let b = ImprovementKind::NodeSplit;
+    let c = ImprovementKind::Retry { max_retries: 1 };
+    let d = ImprovementKind::FuelIncrease { factor: 1.0 };
+    let e = ImprovementKind::Unclassified { note: "x".into() };
+    assert_ne!(a, b);
+    assert_ne!(a, c);
+    assert_ne!(a, d);
+    assert_ne!(a, e);
+    assert_ne!(b, c);
+    assert_ne!(c, d);
+    assert_ne!(d, e);
+}
+
+#[test]
+fn improvement_kind_equality_within_variant() {
+    let a = ImprovementKind::Retry { max_retries: 3 };
+    let b = ImprovementKind::Retry { max_retries: 3 };
+    assert_eq!(a, b);
+    let c = ImprovementKind::Retry { max_retries: 4 };
+    assert_ne!(a, c);
+}
+
+#[test]
+fn from_text_empty_returns_none() {
+    assert!(ImprovementKind::from_text("").is_none());
+}
+
+#[test]
+fn from_text_whitespace_only_returns_none() {
+    assert!(ImprovementKind::from_text("   \n\t  ").is_none());
+}
+
+#[test]
+fn from_text_numbers_only_returns_none() {
+    assert!(ImprovementKind::from_text("12345 678 9.0").is_none());
+}
