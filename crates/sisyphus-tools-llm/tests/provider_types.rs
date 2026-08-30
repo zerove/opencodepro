@@ -180,3 +180,129 @@ fn retry_config_with_custom_values() {
     assert_eq!(cfg.max_retries, 5);
     assert_eq!(cfg.base_delay_ms, 500);
 }
+
+// ---------------------------------------------------------------------------
+// Additional coverage
+// ---------------------------------------------------------------------------
+
+#[test]
+fn chat_role_as_str() {
+    use sisyphus_tools_llm::provider::types::ChatRole;
+    assert_eq!(ChatRole::System.as_str(), "system");
+    assert_eq!(ChatRole::User.as_str(), "user");
+    assert_eq!(ChatRole::Assistant.as_str(), "assistant");
+}
+
+#[test]
+fn chat_role_debug() {
+    use sisyphus_tools_llm::provider::types::ChatRole;
+    let _ = format!("{:?}", ChatRole::System);
+    let _ = format!("{:?}", ChatRole::User);
+    let _ = format!("{:?}", ChatRole::Assistant);
+}
+
+#[test]
+fn chat_message_with_long_content() {
+    use sisyphus_tools_llm::provider::types::{ChatMessage, ChatRole};
+    let long = "x".repeat(10_000);
+    let m = ChatMessage {
+        role: ChatRole::User,
+        content: long.clone(),
+    };
+    assert_eq!(m.content.len(), 10_000);
+    let j = serde_json::to_string(&m).unwrap();
+    let back: ChatMessage = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.content.len(), 10_000);
+}
+
+#[test]
+fn chat_message_role_variants() {
+    use sisyphus_tools_llm::provider::types::{ChatMessage, ChatRole};
+    for role in [ChatRole::System, ChatRole::User, ChatRole::Assistant] {
+        let m = ChatMessage {
+            role: role.clone(),
+            content: "test".into(),
+        };
+        let j = serde_json::to_string(&m).unwrap();
+        let back: ChatMessage = serde_json::from_str(&j).unwrap();
+        assert_eq!(back.role, role);
+    }
+}
+
+#[test]
+fn provider_response_with_unicode() {
+    use sisyphus_tools_llm::provider::types::ProviderResponse;
+    let r = ProviderResponse {
+        content: "中文响应 🎉".into(),
+        model: "gpt-α".into(),
+        input_tokens: Some(10),
+        output_tokens: Some(20),
+    };
+    assert_eq!(r.content, "中文响应 🎉");
+    assert_eq!(r.model, "gpt-α");
+}
+
+#[test]
+fn provider_response_with_zero_tokens() {
+    use sisyphus_tools_llm::provider::types::ProviderResponse;
+    let r = ProviderResponse {
+        content: "".into(),
+        model: "".into(),
+        input_tokens: Some(0),
+        output_tokens: Some(0),
+    };
+    assert_eq!(r.input_tokens, Some(0));
+}
+
+#[test]
+fn provider_response_with_max_tokens() {
+    use sisyphus_tools_llm::provider::types::ProviderResponse;
+    let r = ProviderResponse {
+        content: "x".into(),
+        model: "m".into(),
+        input_tokens: Some(u64::MAX),
+        output_tokens: Some(u64::MAX),
+    };
+    assert_eq!(r.input_tokens, Some(u64::MAX));
+}
+
+#[test]
+fn provider_error_clone() {
+    use sisyphus_tools_llm::provider::types::ProviderError;
+    let e = ProviderError::Transient("retry".into());
+    let cloned = e.clone();
+    let s1 = format!("{}", e);
+    let s2 = format!("{}", cloned);
+    assert_eq!(s1, s2);
+}
+
+#[test]
+fn provider_error_debug() {
+    use sisyphus_tools_llm::provider::types::ProviderError;
+    let _ = format!("{:?}", ProviderError::Permanent("err".into()));
+    let _ = format!("{:?}", ProviderError::RateLimited("rate".into()));
+    let _ = format!("{:?}", ProviderError::Auth("auth".into()));
+}
+
+#[test]
+fn provider_error_variants() {
+    use sisyphus_tools_llm::provider::types::ProviderError;
+    let variants = vec![
+        ProviderError::Transient("a".into()),
+        ProviderError::Permanent("b".into()),
+        ProviderError::RateLimited("c".into()),
+        ProviderError::Auth("d".into()),
+    ];
+    // Each variant has distinct display
+    let displays: Vec<String> = variants.iter().map(|v| format!("{}", v)).collect();
+    let unique: std::collections::HashSet<_> = displays.iter().collect();
+    assert_eq!(unique.len(), 4);
+}
+
+#[test]
+fn retry_config_clone_or_default() {
+    use sisyphus_tools_llm::provider::types::RetryConfig;
+    let c = RetryConfig::default();
+    // Just verify default doesn't panic
+    let _ = c;
+}
