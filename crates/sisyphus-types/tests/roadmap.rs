@@ -228,3 +228,119 @@ fn phase_field_assignment() {
     assert_eq!(p.depends_on.len(), 1);
     assert_eq!(p.depends_on[0], "p0");
 }
+
+// ---------------------------------------------------------------------------
+// Project and additional coverage
+// ---------------------------------------------------------------------------
+
+#[test]
+fn project_new_constructs_empty_roadmap() {
+    use sisyphus_types::roadmap::Project;
+    let p = Project::new("p1".into(), "Test".into(), "A test project".into());
+    assert_eq!(p.id, "p1");
+    assert_eq!(p.name, "Test");
+    assert!(p.roadmap.milestones.is_empty());
+}
+
+#[test]
+fn project_unicode_fields() {
+    use sisyphus_types::roadmap::Project;
+    let p = Project::new("项目-α".into(), "项目名".into(), "描述-β".into());
+    assert_eq!(p.id, "项目-α");
+    assert_eq!(p.description, "描述-β");
+}
+
+#[test]
+fn project_serde() {
+    use sisyphus_types::roadmap::Project;
+    let p = Project::new("p".into(), "n".into(), "d".into());
+    let j = serde_json::to_string(&p).unwrap();
+    let back: Project = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.id, "p");
+    assert_eq!(back.name, "n");
+}
+
+#[test]
+fn project_clone() {
+    use sisyphus_types::roadmap::Project;
+    let p = Project::new("p".into(), "n".into(), "d".into());
+    let cloned = p.clone();
+    assert_eq!(cloned.id, "p");
+}
+
+#[test]
+fn project_with_milestones_serde() {
+    use sisyphus_types::roadmap::{Milestone, MilestoneStatus, Phase, Project};
+    let ms = Milestone {
+        id: "m1".into(),
+        name: "M1".into(),
+        phases: vec![Phase {
+            id: "p1".into(),
+            name: "P1".into(),
+            goals: vec![],
+            depends_on: vec![],
+        }],
+        status: MilestoneStatus::InProgress,
+    };
+    let mut p = Project::new("p".into(), "n".into(), "d".into());
+    p.roadmap.milestones.push(ms);
+    let j = serde_json::to_string(&p).unwrap();
+    let back: Project = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.roadmap.milestones.len(), 1);
+    assert_eq!(back.roadmap.milestones[0].id, "m1");
+}
+
+#[test]
+fn milestone_status_display() {
+    use sisyphus_types::roadmap::MilestoneStatus;
+    let _ = format!("{}", MilestoneStatus::Pending);
+    let _ = format!("{}", MilestoneStatus::InProgress);
+    let _ = format!("{}", MilestoneStatus::Completed);
+    let _ = format!("{}", MilestoneStatus::Blocked);
+}
+
+#[test]
+fn milestone_status_debug() {
+    use sisyphus_types::roadmap::MilestoneStatus;
+    let _ = format!("{:?}", MilestoneStatus::Pending);
+    let _ = format!("{:?}", MilestoneStatus::Completed);
+}
+
+#[test]
+fn milestone_status_clone() {
+    use sisyphus_types::roadmap::MilestoneStatus;
+    let a = MilestoneStatus::Completed;
+    let b = a.clone();
+    assert_eq!(a, b);
+}
+
+#[test]
+fn phase_with_unicode() {
+    use sisyphus_types::roadmap::{GoalRef, MilestoneStatus, Phase};
+    let p = Phase {
+        id: "阶段-α".into(),
+        name: "阶段名".into(),
+        goals: vec![GoalRef {
+            goal_id: "目标-1".into(),
+            description: "描述".into(),
+            status: MilestoneStatus::Pending,
+        }],
+        depends_on: vec!["依赖-1".into()],
+    };
+    assert_eq!(p.id, "阶段-α");
+    assert_eq!(p.depends_on[0], "依赖-1");
+}
+
+#[test]
+fn goal_ref_serde() {
+    use sisyphus_types::roadmap::{GoalRef, MilestoneStatus};
+    let g = GoalRef {
+        goal_id: "g".into(),
+        description: "d".into(),
+        status: MilestoneStatus::Completed,
+    };
+    let j = serde_json::to_string(&g).unwrap();
+    let back: GoalRef = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.goal_id, "g");
+    assert_eq!(back.status, MilestoneStatus::Completed);
+}
