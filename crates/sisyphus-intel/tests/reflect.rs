@@ -254,3 +254,113 @@ fn from_text_whitespace_only_returns_none() {
 fn from_text_numbers_only_returns_none() {
     assert!(ImprovementKind::from_text("12345 678 9.0").is_none());
 }
+
+// ---------------------------------------------------------------------------
+// ErrorCategory
+// ---------------------------------------------------------------------------
+
+#[test]
+fn error_category_classify_resource_exhausted() {
+    use sisyphus_intel::reflect::ErrorCategory;
+    assert_eq!(
+        ErrorCategory::classify("ResourceExhausted: out of fuel"),
+        ErrorCategory::ResourceExhausted
+    );
+    assert_eq!(
+        ErrorCategory::classify("fuel budget exceeded"),
+        ErrorCategory::ResourceExhausted
+    );
+    assert_eq!(
+        ErrorCategory::classify("out of memory while compiling"),
+        ErrorCategory::ResourceExhausted
+    );
+}
+
+#[test]
+fn error_category_classify_timeout() {
+    use sisyphus_intel::reflect::ErrorCategory;
+    assert_eq!(
+        ErrorCategory::classify("Operation timeout"),
+        ErrorCategory::Timeout
+    );
+    assert_eq!(
+        ErrorCategory::classify("Timeout exceeded"),
+        ErrorCategory::Timeout
+    );
+    assert_eq!(
+        ErrorCategory::classify("deadline missed"),
+        ErrorCategory::Timeout
+    );
+}
+
+#[test]
+fn error_category_classify_type_error() {
+    use sisyphus_intel::reflect::ErrorCategory;
+    assert_eq!(
+        ErrorCategory::classify("TypeError: cannot coerce"),
+        ErrorCategory::TypeError
+    );
+    assert_eq!(
+        ErrorCategory::classify("type mismatch"),
+        ErrorCategory::TypeError
+    );
+}
+
+#[test]
+fn error_category_classify_crash() {
+    use sisyphus_intel::reflect::ErrorCategory;
+    assert_eq!(
+        ErrorCategory::classify("thread 'main' panicked"),
+        ErrorCategory::Crash
+    );
+    assert_eq!(
+        ErrorCategory::classify("process crash detected"),
+        ErrorCategory::Crash
+    );
+    assert_eq!(
+        ErrorCategory::classify("segfault at 0x1234"),
+        ErrorCategory::Crash
+    );
+}
+
+#[test]
+fn error_category_classify_unknown() {
+    use sisyphus_intel::reflect::ErrorCategory;
+    assert_eq!(
+        ErrorCategory::classify("nothing matched"),
+        ErrorCategory::Unknown
+    );
+    assert_eq!(ErrorCategory::classify(""), ErrorCategory::Unknown);
+}
+
+#[test]
+fn error_category_severity() {
+    use sisyphus_intel::reflect::ErrorCategory;
+    assert!((ErrorCategory::Crash.severity() - 1.0).abs() < 1e-9);
+    assert!((ErrorCategory::ResourceExhausted.severity() - 0.8).abs() < 1e-9);
+    assert!((ErrorCategory::TypeError.severity() - 0.6).abs() < 1e-9);
+    assert!((ErrorCategory::Timeout.severity() - 0.5).abs() < 1e-9);
+    assert!((ErrorCategory::Unknown.severity() - 0.7).abs() < 1e-9);
+}
+
+#[test]
+fn error_category_equality() {
+    use sisyphus_intel::reflect::ErrorCategory;
+    assert_eq!(ErrorCategory::Crash, ErrorCategory::Crash);
+    assert_ne!(ErrorCategory::Crash, ErrorCategory::Timeout);
+}
+
+#[test]
+fn error_category_clone() {
+    use sisyphus_intel::reflect::ErrorCategory;
+    let a = ErrorCategory::TypeError;
+    let b = a.clone();
+    assert_eq!(a, b);
+}
+
+#[test]
+fn error_category_debug() {
+    use sisyphus_intel::reflect::ErrorCategory;
+    let _ = format!("{:?}", ErrorCategory::Crash);
+    let _ = format!("{:?}", ErrorCategory::Unknown);
+}
