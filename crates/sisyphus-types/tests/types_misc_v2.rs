@@ -618,3 +618,99 @@ fn trigger_def_with_minimal_fields() {
     assert!(t.hook_effect.is_none());
     assert!(t.hook_message.is_none());
 }
+
+// ---------------------------------------------------------------------------
+// Additional Coverage
+// ---------------------------------------------------------------------------
+
+#[test]
+fn circuit_state_default() {
+    use sisyphus_types::types::CircuitState;
+    // Just verify all variants can be constructed
+    let _ = CircuitState::Closed;
+    let _ = CircuitState::Open;
+    let _ = CircuitState::HalfOpen;
+}
+
+#[test]
+fn model_route_strategy_debug_distinct() {
+    use sisyphus_types::types::ModelRouteStrategy;
+    let s1 = format!("{:?}", ModelRouteStrategy::CostOptimized);
+    let s2 = format!("{:?}", ModelRouteStrategy::PerformanceOptimized);
+    let s3 = format!("{:?}", ModelRouteStrategy::FallbackChain);
+    assert_ne!(s1, s2);
+    assert_ne!(s2, s3);
+    assert_ne!(s1, s3);
+}
+
+#[test]
+fn evolution_op_adjust_fuel_zero_delta() {
+    let op = EvolutionOp::AdjustFuel {
+        node_name: "n".into(),
+        delta: 0,
+    };
+    let j = serde_json::to_string(&op).unwrap();
+    let back: EvolutionOp = serde_json::from_str(&j).unwrap();
+    match back {
+        EvolutionOp::AdjustFuel { delta, .. } => assert_eq!(delta, 0),
+        _ => panic!("Wrong variant"),
+    }
+}
+
+#[test]
+fn evolution_op_add_retry_zero_max() {
+    let op = EvolutionOp::AddRetry {
+        node_name: "n".into(),
+        max_retries: 0,
+    };
+    let j = serde_json::to_string(&op).unwrap();
+    let back: EvolutionOp = serde_json::from_str(&j).unwrap();
+    match back {
+        EvolutionOp::AddRetry { max_retries, .. } => assert_eq!(max_retries, 0),
+        _ => panic!("Wrong variant"),
+    }
+}
+
+#[test]
+fn evolution_op_insert_node_with_unicode() {
+    let op = EvolutionOp::InsertNode {
+        after_node: "节点-α".into(),
+        new_name: "新节点-β".into(),
+        tool_id: "工具-γ".into(),
+    };
+    let j = serde_json::to_string(&op).unwrap();
+    let back: EvolutionOp = serde_json::from_str(&j).unwrap();
+    match back {
+        EvolutionOp::InsertNode { after_node, new_name, tool_id } => {
+            assert_eq!(after_node, "节点-α");
+            assert_eq!(new_name, "新节点-β");
+            assert_eq!(tool_id, "工具-γ");
+        }
+        _ => panic!("Wrong variant"),
+    }
+}
+
+#[test]
+fn notepad_snapshot_with_unicode_trigger() {
+    let n = NotepadSnapshot {
+        timestamp: 1700000000,
+        snapshot: im::HashMap::new(),
+        trigger_node: "节点-α".into(),
+    };
+    assert_eq!(n.trigger_node, "节点-α");
+    let j = serde_json::to_string(&n).unwrap();
+    let back: NotepadSnapshot = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.trigger_node, "节点-α");
+}
+
+#[test]
+fn notepad_snapshot_with_max_timestamp() {
+    let n = NotepadSnapshot {
+        timestamp: u64::MAX,
+        snapshot: im::HashMap::new(),
+        trigger_node: "n".into(),
+    };
+    let j = serde_json::to_string(&n).unwrap();
+    let back: NotepadSnapshot = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.timestamp, u64::MAX);
+}
