@@ -824,3 +824,183 @@ fn adjust_probability_with_experience_uses_relevant_only() {
     assert!(adj_p1 > 0.5);
     assert!(adj_p2 < 0.5);
 }
+
+// ---------------------------------------------------------------------------
+// Additional adjust_probability and rank_paths tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn adjust_probability_with_multiple_experiences_same_path() {
+    let cfg = PlannerConfig {
+        probability_weight: 0.5,
+        cost_weight: 0.3,
+        stability_weight: 0.2,
+        max_cost: 1000,
+        risk_thresholds: RiskThresholds::default(),
+    };
+    let experiences = vec![
+        ExperienceRecord {
+            path_id: "p1".into(),
+            success: true,
+            actual_cost: 100,
+        },
+        ExperienceRecord {
+            path_id: "p1".into(),
+            success: true,
+            actual_cost: 100,
+        },
+        ExperienceRecord {
+            path_id: "p1".into(),
+            success: false,
+            actual_cost: 200,
+        },
+    ];
+    let p = ProbabilisticPlanner::with_config_and_experiences(cfg, experiences);
+    let adj = p.adjust_probability_with_experience("p1", 0.5);
+    // 2/3 success rate → blended value
+    assert!(adj > 0.5 && adj < 1.0);
+}
+
+#[test]
+fn adjust_probability_with_all_failures_decreases_prob() {
+    let cfg = PlannerConfig {
+        probability_weight: 0.5,
+        cost_weight: 0.3,
+        stability_weight: 0.2,
+        max_cost: 1000,
+        risk_thresholds: RiskThresholds::default(),
+    };
+    let experiences = vec![
+        ExperienceRecord {
+            path_id: "p".into(),
+            success: false,
+            actual_cost: 100,
+        },
+        ExperienceRecord {
+            path_id: "p".into(),
+            success: false,
+            actual_cost: 100,
+        },
+    ];
+    let p = ProbabilisticPlanner::with_config_and_experiences(cfg, experiences);
+    let adj = p.adjust_probability_with_experience("p", 0.8);
+    assert!(adj < 0.8);
+}
+
+#[test]
+fn rank_paths_returns_input_order_for_tied_scores() {
+    let cfg = PlannerConfig {
+        probability_weight: 0.5,
+        cost_weight: 0.3,
+        stability_weight: 0.2,
+        max_cost: 1000,
+        risk_thresholds: RiskThresholds::default(),
+    };
+    let p = ProbabilisticPlanner::new(cfg);
+    let results = vec![
+        SimulationResult {
+            path_id: "p1".into(),
+            success_probability: 0.5,
+            estimated_cost: 100,
+            predicted_stability: 0.5,
+            predicted_effort: 0,
+            predicted_outcome: "ok".into(),
+        },
+        SimulationResult {
+            path_id: "p2".into(),
+            success_probability: 0.5,
+            estimated_cost: 100,
+            predicted_stability: 0.5,
+            predicted_effort: 0,
+            predicted_outcome: "ok".into(),
+        },
+    ];
+    let ranked = p.rank_paths(&results);
+    assert_eq!(ranked.len(), 2);
+}
+
+#[test]
+fn rank_paths_with_unicode_outcome() {
+    let cfg = PlannerConfig {
+        probability_weight: 0.5,
+        cost_weight: 0.3,
+        stability_weight: 0.2,
+        max_cost: 1000,
+        risk_thresholds: RiskThresholds::default(),
+    };
+    let p = ProbabilisticPlanner::new(cfg);
+    let results = vec![SimulationResult {
+        path_id: "路径-α".into(),
+        success_probability: 0.9,
+        estimated_cost: 50,
+        predicted_stability: 0.95,
+        predicted_effort: 1,
+        predicted_outcome: "成功-🎉".into(),
+    }];
+    let ranked = p.rank_paths(&results);
+    assert_eq!(ranked[0].path_id, "路径-α");
+    assert_eq!(ranked[0].predicted_outcome, "成功-🎉");
+}
+
+#[test]
+fn summarize_with_all_risk_levels() {
+    let cfg = PlannerConfig {
+        probability_weight: 0.5,
+        cost_weight: 0.3,
+        stability_weight: 0.2,
+        max_cost: 1000,
+        risk_thresholds: RiskThresholds::default(),
+    };
+    let p = ProbabilisticPlanner::new(cfg);
+    let results = vec![
+        SimulationResult {
+            path_id: "low".into(),
+            success_probability: 1.0,
+            estimated_cost: 0,
+            predicted_stability: 1.0,
+            predicted_effort: 0,
+            predicted_outcome: "ok".into(),
+        },
+        SimulationResult {
+            path_id: "critical".into(),
+            success_probability: 0.0,
+            estimated_cost: 1000,
+            predicted_stability: 0.0,
+            predicted_effort: 0,
+            predicted_outcome: "fail".into(),
+        },
+    ];
+    let summary = p.summarize(&results);
+    assert_eq!(summary.total_paths, 2);
+    assert!(summary.risk_distribution.contains_key(&RiskLevel::Low));
+    assert!(summary.risk_distribution.contains_key(&RiskLevel::Critical));
+}
+
+#[test]
+fn summarize_with_single_path() {
+    let cfg = PlannerConfig {
+        probability_weight: 0.5,
+        cost_weight: 0.3,
+        stability_weight: 0.2,
+        max_cost: 1000,
+        risk_thresholds: RiskThresholds::default(),
+    };
+    let p = ProbabilisticPlanner::new(cfg);
+    let results = vec![SimulationResult {
+        path_id: "single".into(),
+        success_probability: 0.8,
+        estimated_cost: 100,
+        predicted_stability: 0.9,
+        predicted_effort: 1,
+        predicted_outcome: "ok".into(),
+    }];
+    let summary = p.summarize(&results);
+    assert_eq!(summary.total_paths, 1);
+    assert!((summary.average_probability - 0.8).abs() < 1e-9);
+    assert_eq!(summary.average_cost, 100);
+    assert!(summary.best_path.is_some());
+    assert!(summary.worst_path.is_some());
+    // Best and worst are the same when there's only one path
+    assert_eq!(summary.best_path.as_ref().unwrap().path_id, "single");
+    assert_eq!(summary.worst_path.as_ref().unwrap().path_id, "single");
+}
