@@ -788,3 +788,107 @@ fn sisyphus_notepad_prune_with_max_zero() {
     // Prune with max=0 should empty the section
     assert_eq!(read, Some(&"".to_string()));
 }
+
+// ---------------------------------------------------------------------------
+// Additional Coverage
+// ---------------------------------------------------------------------------
+
+#[test]
+fn circuit_state_serde_unicode() {
+    use sisyphus_types::types::CircuitState;
+    // Just verify serde is stable
+    for v in [CircuitState::Closed, CircuitState::Open, CircuitState::HalfOpen] {
+        let j = serde_json::to_string(&v).unwrap();
+        let back: CircuitState = serde_json::from_str(&j).unwrap();
+        let j2 = serde_json::to_string(&back).unwrap();
+        assert_eq!(j, j2);
+    }
+}
+
+#[test]
+fn model_route_strategy_serde_all_variants() {
+    use sisyphus_types::types::ModelRouteStrategy;
+    for v in [
+        ModelRouteStrategy::CostOptimized,
+        ModelRouteStrategy::PerformanceOptimized,
+        ModelRouteStrategy::FallbackChain,
+    ] {
+        let j = serde_json::to_string(&v).unwrap();
+        let back: ModelRouteStrategy = serde_json::from_str(&j).unwrap();
+        assert_eq!(back, v);
+    }
+}
+
+#[test]
+fn evolution_op_serialize_each_variant() {
+    use sisyphus_types::types::EvolutionOp;
+    let ops = vec![
+        EvolutionOp::AdjustFuel {
+            node_name: "n".into(),
+            delta: 10,
+        },
+        EvolutionOp::AddRetry {
+            node_name: "n".into(),
+            max_retries: 3,
+        },
+        EvolutionOp::InsertNode {
+            after_node: "a".into(),
+            new_name: "b".into(),
+            tool_id: "c".into(),
+        },
+        EvolutionOp::RemoveNode { node_name: "n".into() },
+        EvolutionOp::SwapNodes {
+            node_a: "a".into(),
+            node_b: "b".into(),
+        },
+    ];
+    for op in &ops {
+        let j = serde_json::to_string(op).unwrap();
+        let back: EvolutionOp = serde_json::from_str(&j).unwrap();
+        let j2 = serde_json::to_string(&back).unwrap();
+        assert_eq!(j, j2);
+    }
+}
+
+#[test]
+fn evolution_op_with_unicode_node_names() {
+    use sisyphus_types::types::EvolutionOp;
+    let op = EvolutionOp::RemoveNode {
+        node_name: "节点-α".into(),
+    };
+    let j = serde_json::to_string(&op).unwrap();
+    let back: EvolutionOp = serde_json::from_str(&j).unwrap();
+    match back {
+        EvolutionOp::RemoveNode { node_name } => assert_eq!(node_name, "节点-α"),
+        _ => panic!("wrong variant"),
+    }
+}
+
+#[test]
+fn work_mode_inequality() {
+    assert_ne!(WorkMode::Standard, WorkMode::UltraWork);
+}
+
+#[test]
+fn notepad_snapshot_unicode_content() {
+    let mut snapshot = im::HashMap::new();
+    snapshot.insert("section-α".into(), "content-β".into());
+    let n = NotepadSnapshot {
+        timestamp: 1000,
+        snapshot,
+        trigger_node: "节点-γ".into(),
+    };
+    let j = serde_json::to_string(&n).unwrap();
+    let back: NotepadSnapshot = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.trigger_node, "节点-γ");
+    assert_eq!(back.snapshot.get("section-α"), Some(&"content-β".to_string()));
+}
+
+#[test]
+fn sisyphus_notepad_append_long_insight() {
+    let mut n = SisyphusNotepad::default();
+    let long_insight = "x".repeat(5000);
+    n.append_insight("s".into(), long_insight.clone());
+    let read = n.read_section("s").unwrap();
+    assert!(read.contains(&long_insight));
+}
