@@ -204,3 +204,142 @@ fn quality_report_clone() {
     assert_eq!(r.axes.len(), r2.axes.len());
     assert_eq!(r.recommendations, r2.recommendations);
 }
+
+// ---------------------------------------------------------------------------
+// Additional coverage
+// ---------------------------------------------------------------------------
+
+#[test]
+fn success_rate_one_of_two() {
+    let r = make_result(1, 2);
+    assert!((r.success_rate() - 0.5).abs() < 1e-9);
+}
+
+#[test]
+fn success_rate_three_of_seven() {
+    let r = make_result(3, 7);
+    let rate = r.success_rate();
+    assert!((rate - 3.0 / 7.0).abs() < 1e-9);
+}
+
+#[test]
+fn success_rate_max_u64() {
+    let r = RegressionTestResult {
+        tool_id: "t".into(),
+        unit_tests_passed: true,
+        integration_tests_passed: true,
+        total_tests: u64::MAX,
+        passed: u64::MAX - 1,
+        failed: 1,
+        duration_ms: 0,
+        failures: vec!["f1".into()],
+    };
+    let rate = r.success_rate();
+    assert!((rate - 1.0).abs() < 0.0001);
+}
+
+#[test]
+fn result_with_zero_duration() {
+    let r = RegressionTestResult {
+        tool_id: "instant".into(),
+        unit_tests_passed: true,
+        integration_tests_passed: true,
+        total_tests: 1,
+        passed: 1,
+        failed: 0,
+        duration_ms: 0,
+        failures: vec![],
+    };
+    assert_eq!(r.duration_ms, 0);
+    assert!((r.success_rate() - 1.0).abs() < 1e-9);
+}
+
+#[test]
+fn result_with_many_failures() {
+    let r = RegressionTestResult {
+        tool_id: "noisy".into(),
+        unit_tests_passed: false,
+        integration_tests_passed: false,
+        total_tests: 100,
+        passed: 50,
+        failed: 50,
+        duration_ms: 60000,
+        failures: (0..50).map(|i| format!("failure_{}", i)).collect(),
+    };
+    assert_eq!(r.failures.len(), 50);
+    assert!((r.success_rate() - 0.5).abs() < 1e-9);
+}
+
+#[test]
+fn result_unicode_tool_id() {
+    let r = RegressionTestResult {
+        tool_id: "工具-α".into(),
+        unit_tests_passed: true,
+        integration_tests_passed: true,
+        total_tests: 1,
+        passed: 1,
+        failed: 0,
+        duration_ms: 100,
+        failures: vec![],
+    };
+    assert_eq!(r.tool_id, "工具-α");
+    let cloned = r.clone();
+    assert_eq!(cloned.tool_id, "工具-α");
+}
+
+#[test]
+fn quality_axis_unicode() {
+    let a = QualityAxis {
+        name: "性能".into(),
+        score: 0.95,
+        weight: 1.0,
+    };
+    assert_eq!(a.name, "性能");
+}
+
+#[test]
+fn quality_axis_negative_score() {
+    let a = QualityAxis {
+        name: "p".into(),
+        score: -1.0,
+        weight: 1.0,
+    };
+    assert_eq!(a.score, -1.0);
+}
+
+#[test]
+fn quality_axis_above_one_score() {
+    let a = QualityAxis {
+        name: "p".into(),
+        score: 1.5,
+        weight: 1.0,
+    };
+    assert_eq!(a.score, 1.5);
+}
+
+#[test]
+fn quality_report_recommendations_unicode() {
+    let r = QualityReport {
+        tool_id: "t".into(),
+        overall_score: 0.8,
+        axes: vec![],
+        unit_tests_passed: true,
+        integration_tests_passed: true,
+        recommendations: vec!["改进性能".into(), "增加文档".into()],
+    };
+    assert_eq!(r.recommendations.len(), 2);
+    assert_eq!(r.recommendations[0], "改进性能");
+}
+
+#[test]
+fn quality_report_empty_recommendations() {
+    let r = QualityReport {
+        tool_id: "t".into(),
+        overall_score: 1.0,
+        axes: vec![],
+        unit_tests_passed: true,
+        integration_tests_passed: true,
+        recommendations: vec![],
+    };
+    assert!(r.recommendations.is_empty());
+}
