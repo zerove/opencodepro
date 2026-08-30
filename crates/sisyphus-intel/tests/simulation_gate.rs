@@ -1,70 +1,78 @@
-//! Integration tests for sisyphus-intel `simulation_gate` module.
+//! 集成测试：simulation_gate（门控决策、统计、配置）
 //!
-//! Covers the pure-data and counter-only parts of the gate API:
-//! [`GateDecision`], [`GateVerdict`], [`GateHistory`] (record/snapshot/
-//! intercept_rate), and [`GateConfig`] default values.
+//! 覆盖 `sisyphus_intel::simulation_gate` 中的纯数据/同步模块：
+//! - `GateDecision` 字段验证
+//! - `GateVerdict::as_str` 三种分支
+//! - `GateHistory` record / snapshot / intercept_rate（空 + 混合）
+//! - `GateConfig` 默认值
 
 use sisyphus_intel::simulation_gate::{GateConfig, GateDecision, GateHistory, GateVerdict};
+use std::sync::Arc;
+
+fn dec(verdict: GateVerdict, flaw: usize, crit: usize) -> GateDecision {
+    GateDecision {
+        sop_id: format!("sop-{verdict:?}-{flaw}-{crit}"),
+        verdict,
+        flaw_count: flaw,
+        critical_count: crit,
+        confidence: 0.9,
+        elapsed_micros: 100,
+    }
+}
 
 // ---------------------------------------------------------------------------
-// GateVerdict
+// GateVerdict::as_str
 // ---------------------------------------------------------------------------
 
 #[test]
-fn gate_verdict_as_str_allow() {
+fn verdict_as_str_allow() {
     assert_eq!(GateVerdict::Allow.as_str(), "allow");
 }
 
 #[test]
-fn gate_verdict_as_str_reject() {
+fn verdict_as_str_reject() {
     assert_eq!(GateVerdict::Reject.as_str(), "reject");
 }
 
 #[test]
-fn gate_verdict_as_str_skipped() {
+fn verdict_as_str_skipped() {
     assert_eq!(GateVerdict::Skipped.as_str(), "skipped");
 }
 
 #[test]
-fn gate_verdict_equality() {
-    assert_eq!(GateVerdict::Allow, GateVerdict::Allow);
-    assert_ne!(GateVerdict::Allow, GateVerdict::Reject);
-    assert_ne!(GateVerdict::Reject, GateVerdict::Skipped);
-}
-
-#[test]
-fn gate_verdict_copy_clone() {
+fn verdict_copy_eq() {
     let v = GateVerdict::Allow;
-    let c = v; // Copy
-    let cc = v.clone();
-    assert_eq!(v, c);
-    assert_eq!(v, cc);
+    let v2 = v; // Copy
+    assert_eq!(v, v2);
 }
 
 // ---------------------------------------------------------------------------
 // GateDecision
 // ---------------------------------------------------------------------------
 
-fn dec(verdict: GateVerdict, flaw: usize, critical: usize) -> GateDecision {
-    GateDecision {
-        sop_id: "sop-1".to_string(),
-        verdict,
-        flaw_count: flaw,
-        critical_count: critical,
-        confidence: 0.8,
-        elapsed_micros: 1234,
-    }
+#[test]
+fn decision_field_access() {
+    let d = dec(GateVerdict::Reject, 3, 2);
+    assert_eq!(d.verdict, GateVerdict::Reject);
+    assert_eq!(d.flaw_count, 3);
+    assert_eq!(d.critical_count, 2);
+    assert_eq!(d.confidence, 0.9);
+    assert!(d.sop_id.contains("Reject"));
 }
 
 #[test]
-fn gate_decision_fields() {
-    let d = dec(GateVerdict::Allow, 2, 1);
-    assert_eq!(d.sop_id, "sop-1");
-    assert_eq!(d.verdict, GateVerdict::Allow);
-    assert_eq!(d.flaw_count, 2);
-    assert_eq!(d.critical_count, 1);
-    assert!((d.confidence - 0.8).abs() < 1e-9);
-    assert_eq!(d.elapsed_micros, 1234);
+fn decision_clone_eq() {
+    let d = dec(GateVerdict::Allow, 0, 0);
+    let d2 = d.clone();
+    assert_eq!(d, d2);
+}
+
+#[test]
+fn decision_debug() {
+    let d = dec(GateVerdict::Allow, 1, 0);
+    let s = format!("{d:?}");
+    assert!(s.contains("GateDecision"));
+    assert!(s.contains("Allow"));
 }
 
 // ---------------------------------------------------------------------------
@@ -72,106 +80,116 @@ fn gate_decision_fields() {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn gate_history_default_empty() {
-    let h = GateHistory::new();
-    assert!(h.snapshot().is_empty());
-}
-
-#[test]
-fn gate_history_default_trait() {
+fn history_default_empty() {
     let h = GateHistory::default();
     assert!(h.snapshot().is_empty());
+    assert_eq!(h.intercept_rate(), 0.0);
+    assert_eq!(h.false_positive_rate(), 0.0);
 }
 
 #[test]
-fn gate_history_record_appends() {
+fn history_new_same_as_default() {
+    let h = GateHistory::new();
+    assert!(h.snapshot().is_empty());
+}
+
+#[test]
+fn history_record_one() {
     let h = GateHistory::new();
     h.record(dec(GateVerdict::Allow, 0, 0));
-    h.record(dec(GateVerdict::Reject, 3, 1));
-    h.record(dec(GateVerdict::Skipped, 0, 0));
-    let snap = h.snapshot();
-    assert_eq!(snap.len(), 3);
-    assert_eq!(snap[0].verdict, GateVerdict::Allow);
-    assert_eq!(snap[1].verdict, GateVerdict::Reject);
-    assert_eq!(snap[2].verdict, GateVerdict::Skipped);
+    assert_eq!(h.snapshot().len(), 1);
+    assert_eq!(h.snapshot()[0].verdict, GateVerdict::Allow);
 }
 
 #[test]
-fn gate_history_intercept_rate_no_decisions() {
+fn history_record_many() {
     let h = GateHistory::new();
+    for _ in 0..10 {
+        h.record(dec(GateVerdict::Allow, 0, 0));
+    }
+    assert_eq!(h.snapshot().len(), 10);
+}
+
+#[test]
+fn history_intercept_rate_only_allow() {
+    let h = GateHistory::new();
+    h.record(dec(GateVerdict::Allow, 0, 0));
+    h.record(dec(GateVerdict::Allow, 0, 0));
     assert_eq!(h.intercept_rate(), 0.0);
 }
 
 #[test]
-fn gate_history_intercept_rate_all_allow() {
-    let h = GateHistory::new();
-    h.record(dec(GateVerdict::Allow, 0, 0));
-    h.record(dec(GateVerdict::Allow, 0, 0));
-    h.record(dec(GateVerdict::Allow, 0, 0));
-    assert_eq!(h.intercept_rate(), 0.0);
-}
-
-#[test]
-fn gate_history_intercept_rate_all_reject() {
+fn history_intercept_rate_only_reject() {
     let h = GateHistory::new();
     h.record(dec(GateVerdict::Reject, 1, 1));
-    h.record(dec(GateVerdict::Reject, 1, 1));
+    h.record(dec(GateVerdict::Reject, 2, 1));
     assert_eq!(h.intercept_rate(), 1.0);
 }
 
 #[test]
-fn gate_history_intercept_rate_mixed() {
+fn history_intercept_rate_mixed() {
     let h = GateHistory::new();
     h.record(dec(GateVerdict::Allow, 0, 0));
-    h.record(dec(GateVerdict::Reject, 1, 0));
     h.record(dec(GateVerdict::Allow, 0, 0));
-    h.record(dec(GateVerdict::Reject, 1, 0));
-    // 2 rejects out of 4 (allow + reject).
+    h.record(dec(GateVerdict::Reject, 1, 1));
+    h.record(dec(GateVerdict::Reject, 2, 1));
+    // 2 allow, 2 reject → 0.5
     assert!((h.intercept_rate() - 0.5).abs() < 1e-9);
 }
 
 #[test]
-fn gate_history_intercept_rate_excludes_skipped() {
+fn history_intercept_rate_skipped_excluded() {
     let h = GateHistory::new();
     h.record(dec(GateVerdict::Allow, 0, 0));
-    h.record(dec(GateVerdict::Reject, 1, 0));
     h.record(dec(GateVerdict::Skipped, 0, 0));
     h.record(dec(GateVerdict::Skipped, 0, 0));
-    // 1 reject out of 2 (allow + reject); skipped excluded.
-    assert!((h.intercept_rate() - 0.5).abs() < 1e-9);
-}
-
-#[test]
-fn gate_history_intercept_rate_only_skipped() {
-    let h = GateHistory::new();
-    h.record(dec(GateVerdict::Skipped, 0, 0));
-    h.record(dec(GateVerdict::Skipped, 0, 0));
-    // No allow + no reject → 0.0 (no division).
+    // only 1 allow in denom → 0.0
     assert_eq!(h.intercept_rate(), 0.0);
 }
 
 #[test]
-fn gate_history_false_positive_rate_always_zero() {
+fn history_intercept_rate_only_skipped_is_zero() {
     let h = GateHistory::new();
-    // No decisions → still 0.0.
-    assert_eq!(h.false_positive_rate(), 0.0);
-    h.record(dec(GateVerdict::Allow, 0, 0));
-    h.record(dec(GateVerdict::Reject, 1, 1));
-    // Implementation note: hook is always 0.0 today.
+    h.record(dec(GateVerdict::Skipped, 0, 0));
+    assert_eq!(h.intercept_rate(), 0.0);
+}
+
+#[test]
+fn history_false_positive_rate_always_zero() {
+    let h = GateHistory::new();
+    h.record(dec(GateVerdict::Allow, 5, 5));
+    h.record(dec(GateVerdict::Reject, 5, 5));
     assert_eq!(h.false_positive_rate(), 0.0);
 }
 
 #[test]
-fn gate_history_snapshot_is_clone() {
+fn history_snapshot_independence() {
     let h = GateHistory::new();
     h.record(dec(GateVerdict::Allow, 0, 0));
     let s1 = h.snapshot();
+    h.record(dec(GateVerdict::Reject, 1, 1));
     let s2 = h.snapshot();
+    // s1 captured at len=1, s2 at len=2
     assert_eq!(s1.len(), 1);
-    assert_eq!(s2.len(), 1);
-    // Both snapshots are independent Vec clones.
-    assert_eq!(s1[0].verdict, GateVerdict::Allow);
-    assert_eq!(s2[0].verdict, GateVerdict::Allow);
+    assert_eq!(s2.len(), 2);
+}
+
+#[test]
+fn history_thread_safe() {
+    let h = Arc::new(GateHistory::new());
+    let mut handles = vec![];
+    for _ in 0..5 {
+        let h2 = h.clone();
+        handles.push(std::thread::spawn(move || {
+            for _ in 0..20 {
+                h2.record(dec(GateVerdict::Allow, 0, 0));
+            }
+        }));
+    }
+    for h in handles {
+        h.join().unwrap();
+    }
+    assert_eq!(h.snapshot().len(), 100);
 }
 
 // ---------------------------------------------------------------------------
@@ -179,20 +197,28 @@ fn gate_history_snapshot_is_clone() {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn gate_config_default() {
+fn gate_config_default_enabled_fallback() {
     let c = GateConfig::default();
-    // Sanity: defaults are set (we don't pin exact values, just that
-    // they exist and are accessible).
-    let _ = c.enabled;
-    let _ = c.fallback_on_error;
+    assert!(c.enabled);
+    assert!(c.fallback_on_error);
 }
 
 #[test]
-fn gate_config_field_assignment() {
+fn gate_config_clone() {
     let c = GateConfig {
         enabled: false,
-        fallback_on_error: true,
+        fallback_on_error: false,
     };
-    assert!(!c.enabled);
-    assert!(c.fallback_on_error);
+    let c2 = c.clone();
+    assert!(!c2.enabled);
+    assert!(!c2.fallback_on_error);
+}
+
+#[test]
+fn gate_config_debug() {
+    let c = GateConfig::default();
+    let s = format!("{c:?}");
+    assert!(s.contains("GateConfig"));
+    assert!(s.contains("enabled"));
+    assert!(s.contains("fallback_on_error"));
 }
