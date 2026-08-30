@@ -2633,3 +2633,136 @@ fn asset_relation_with_unicode_from_id_special() {
     let back: AssetRelation = serde_json::from_str(&j).unwrap();
     assert_eq!(back.from_id, "源-α!@#");
 }
+
+// ---------------------------------------------------------------------------
+// More tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn cognitive_asset_with_unicode_id_via_only_letters() {
+    use sisyphus_types::asset::{AssetContent, AssetKind, CognitiveAsset, InsightData};
+    let asset = CognitiveAsset {
+        id: "αβγδε".into(),
+        kind: AssetKind::Tool,
+        name: "n".into(),
+        description: "d".into(),
+        content: AssetContent::Insight(InsightData {
+            observation: "o".into(),
+            reasoning: "r".into(),
+            evidence_ids: vec![],
+            confidence: 0.5,
+        }),
+        metadata: HashMap::new(),
+        version: 1,
+        created_at: 0,
+    };
+    let j = serde_json::to_string(&asset).unwrap();
+    let back: CognitiveAsset = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.id, "αβγδε");
+}
+
+#[test]
+fn insight_data_with_unicode_observation_via_digits() {
+    let i = InsightData {
+        observation: "0123456789".into(),
+        reasoning: "r".into(),
+        evidence_ids: vec![],
+        confidence: 0.5,
+    };
+    assert_eq!(i.observation, "0123456789");
+    let j = serde_json::to_string(&i).unwrap();
+    let back: InsightData = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.observation, "0123456789");
+}
+
+#[test]
+fn asset_relation_with_unicode_long_to_id() {
+    use sisyphus_types::asset::{AssetRelation, RelationType};
+    let long = "目-α-".repeat(50);
+    let r = AssetRelation {
+        from_id: "a".into(),
+        to_id: long.clone(),
+        relation_type: RelationType::Solves,
+        weight: 0.5,
+    };
+    assert_eq!(r.to_id, long);
+    let j = serde_json::to_string(&r).unwrap();
+    let back: AssetRelation = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.to_id, long);
+}
+
+#[test]
+fn cognitive_asset_with_unicode_metadata_value_max_2() {
+    use sisyphus_types::asset::{AssetContent, AssetKind, CognitiveAsset, InsightData};
+    let long = "v-".repeat(200);
+    let mut meta = HashMap::new();
+    meta.insert("k".into(), long.clone());
+    let asset = CognitiveAsset {
+        id: "a".into(),
+        kind: AssetKind::Tool,
+        name: "n".into(),
+        description: "d".into(),
+        content: AssetContent::Insight(InsightData {
+            observation: "o".into(),
+            reasoning: "r".into(),
+            evidence_ids: vec![],
+            confidence: 0.5,
+        }),
+        metadata: meta,
+        version: 1,
+        created_at: 0,
+    };
+    let j = serde_json::to_string(&asset).unwrap();
+    let back: CognitiveAsset = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.metadata["k"], long);
+}
+
+#[test]
+fn cognitive_asset_with_unicode_id_with_emoji() {
+    use sisyphus_types::asset::{AssetContent, AssetKind, CognitiveAsset, InsightData};
+    let asset = CognitiveAsset {
+        id: "id-🔍-🔭".into(),
+        kind: AssetKind::Tool,
+        name: "n".into(),
+        description: "d".into(),
+        content: AssetContent::Insight(InsightData {
+            observation: "o".into(),
+            reasoning: "r".into(),
+            evidence_ids: vec![],
+            confidence: 0.5,
+        }),
+        metadata: HashMap::new(),
+        version: 1,
+        created_at: 0,
+    };
+    let j = serde_json::to_string(&asset).unwrap();
+    let back: CognitiveAsset = serde_json::from_str(&j).unwrap();
+    assert!(back.id.contains("🔍"));
+}
+
+#[test]
+fn insight_data_with_unicode_observation_via_quote() {
+    let i = InsightData {
+        observation: "observation with \"quotes\" α".into(),
+        reasoning: "r".into(),
+        evidence_ids: vec![],
+        confidence: 0.5,
+    };
+    let j = serde_json::to_string(&i).unwrap();
+    let back: InsightData = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.observation, "observation with \"quotes\" α");
+}
+
+#[test]
+fn asset_relation_with_unicode_high_precision_weight() {
+    use sisyphus_types::asset::{AssetRelation, RelationType};
+    let r = AssetRelation {
+        from_id: "a".into(),
+        to_id: "b".into(),
+        relation_type: RelationType::Refines,
+        weight: 0.987_654_3_f32,
+    };
+    let j = serde_json::to_string(&r).unwrap();
+    let back: AssetRelation = serde_json::from_str(&j).unwrap();
+    assert!((back.weight - 0.987_654_3).abs() < 1e-4);
+}
