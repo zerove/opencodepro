@@ -186,3 +186,150 @@ fn simulation_result_with_high_probability() {
     let parsed: SimulationResult = serde_json::from_str(&json).expect("");
     assert_eq!(parsed.success_probability, 1.0);
 }
+
+// ---------------------------------------------------------------------------
+// Additional edge cases
+// ---------------------------------------------------------------------------
+
+#[test]
+fn flaw_severity_debug_format() {
+    // Debug formatting should not panic for any variant
+    let _ = format!("{:?}", FlawSeverity::Critical);
+    let _ = format!("{:?}", FlawSeverity::Warning);
+    let _ = format!("{:?}", FlawSeverity::Info);
+}
+
+#[test]
+fn flaw_severity_serde() {
+    let json_c = serde_json::to_string(&FlawSeverity::Critical).expect("");
+    let parsed: FlawSeverity = serde_json::from_str(&json_c).expect("");
+    assert_eq!(parsed, FlawSeverity::Critical);
+
+    let json_w = serde_json::to_string(&FlawSeverity::Warning).expect("");
+    let parsed: FlawSeverity = serde_json::from_str(&json_w).expect("");
+    assert_eq!(parsed, FlawSeverity::Warning);
+
+    let json_i = serde_json::to_string(&FlawSeverity::Info).expect("");
+    let parsed: FlawSeverity = serde_json::from_str(&json_i).expect("");
+    assert_eq!(parsed, FlawSeverity::Info);
+}
+
+#[test]
+fn logical_flaw_unicode_description() {
+    let flaw = LogicalFlaw {
+        node_name: "node_α".into(),
+        description: "缺少输入校验 🚫".into(),
+        severity: FlawSeverity::Critical,
+    };
+    let json = serde_json::to_string(&flaw).expect("");
+    let parsed: LogicalFlaw = serde_json::from_str(&json).expect("");
+    assert_eq!(parsed.node_name, "node_α");
+    assert_eq!(parsed.description, "缺少输入校验 🚫");
+}
+
+#[test]
+fn logical_flaw_serde_variants() {
+    // All three severities roundtrip via JSON
+    for sev in [FlawSeverity::Critical, FlawSeverity::Warning, FlawSeverity::Info] {
+        let flaw = LogicalFlaw {
+            node_name: "n".into(),
+            description: "d".into(),
+            severity: sev.clone(),
+        };
+        let json = serde_json::to_string(&flaw).expect("");
+        let parsed: LogicalFlaw = serde_json::from_str(&json).expect("");
+        assert_eq!(parsed.severity, sev);
+    }
+}
+
+#[test]
+fn logical_simulation_result_zero_confidence() {
+    let r = LogicalSimulationResult {
+        is_valid: false,
+        flaws: vec![LogicalFlaw {
+            node_name: "n".into(),
+            description: "d".into(),
+            severity: FlawSeverity::Critical,
+        }],
+        predicted_path: vec![],
+        confidence: 0.0,
+    };
+    let json = serde_json::to_string(&r).expect("");
+    let parsed: LogicalSimulationResult = serde_json::from_str(&json).expect("");
+    assert_eq!(parsed.confidence, 0.0);
+    assert!(parsed.predicted_path.is_empty());
+}
+
+#[test]
+fn logical_simulation_result_clone() {
+    let r = LogicalSimulationResult {
+        is_valid: true,
+        flaws: vec![],
+        predicted_path: vec!["x".into()],
+        confidence: 0.5,
+    };
+    let cloned = r.clone();
+    assert_eq!(cloned.is_valid, r.is_valid);
+    assert_eq!(cloned.confidence, r.confidence);
+    assert_eq!(cloned.predicted_path, r.predicted_path);
+}
+
+#[test]
+fn logical_simulation_result_debug() {
+    let r = LogicalSimulationResult {
+        is_valid: true,
+        flaws: vec![],
+        predicted_path: vec!["a".into()],
+        confidence: 0.9,
+    };
+    let dbg = format!("{:?}", r);
+    assert!(dbg.contains("is_valid"));
+    assert!(dbg.contains("confidence"));
+}
+
+#[test]
+fn simulation_result_unicode_outcome() {
+    let r = SimulationResult {
+        path_id: "路径-1".into(),
+        success_probability: 0.5,
+        estimated_cost: 42,
+        predicted_stability: 0.5,
+        predicted_effort: 1,
+        predicted_outcome: "成功 🎉".into(),
+    };
+    let json = serde_json::to_string(&r).expect("");
+    let parsed: SimulationResult = serde_json::from_str(&json).expect("");
+    assert_eq!(parsed.path_id, "路径-1");
+    assert_eq!(parsed.predicted_outcome, "成功 🎉");
+}
+
+#[test]
+fn simulation_result_debug_format() {
+    let r = SimulationResult {
+        path_id: "p".into(),
+        success_probability: 0.5,
+        estimated_cost: 0,
+        predicted_stability: 0.0,
+        predicted_effort: 0,
+        predicted_outcome: "x".into(),
+    };
+    let dbg = format!("{:?}", r);
+    assert!(dbg.contains("path_id"));
+    assert!(dbg.contains("predicted_outcome"));
+}
+
+#[test]
+fn simulation_result_max_u64_cost() {
+    let r = SimulationResult {
+        path_id: "max".into(),
+        success_probability: 0.0,
+        estimated_cost: u64::MAX,
+        predicted_stability: 0.0,
+        predicted_effort: u64::MAX,
+        predicted_outcome: "overflow".into(),
+    };
+    let json = serde_json::to_string(&r).expect("");
+    let parsed: SimulationResult = serde_json::from_str(&json).expect("");
+    assert_eq!(parsed.estimated_cost, u64::MAX);
+    assert_eq!(parsed.predicted_effort, u64::MAX);
+}
