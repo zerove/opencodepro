@@ -330,3 +330,125 @@ fn gate_history_snapshot_empty() {
     let s = h.snapshot();
     assert!(s.is_empty());
 }
+
+// ---------------------------------------------------------------------------
+// Additional coverage
+// ---------------------------------------------------------------------------
+
+#[test]
+fn gate_verdict_debug_distinct() {
+    // Each variant's Debug output should be distinct
+    let s_allow = format!("{:?}", GateVerdict::Allow);
+    let s_reject = format!("{:?}", GateVerdict::Reject);
+    let s_skipped = format!("{:?}", GateVerdict::Skipped);
+    assert_ne!(s_allow, s_reject);
+    assert_ne!(s_reject, s_skipped);
+    assert_ne!(s_allow, s_skipped);
+}
+
+#[test]
+fn gate_decision_with_max_confidence() {
+    let d = GateDecision {
+        sop_id: "p".into(),
+        verdict: GateVerdict::Allow,
+        flaw_count: 0,
+        critical_count: 0,
+        confidence: 1.0,
+        elapsed_micros: 0,
+    };
+    assert_eq!(d.confidence, 1.0);
+    let cloned = d.clone();
+    assert_eq!(cloned.confidence, 1.0);
+}
+
+#[test]
+fn gate_decision_with_zero_confidence() {
+    let d = GateDecision {
+        sop_id: "p".into(),
+        verdict: GateVerdict::Reject,
+        flaw_count: 100,
+        critical_count: 50,
+        confidence: 0.0,
+        elapsed_micros: 1000,
+    };
+    assert_eq!(d.confidence, 0.0);
+}
+
+#[test]
+fn gate_decision_with_max_u128_elapsed() {
+    let d = GateDecision {
+        sop_id: "p".into(),
+        verdict: GateVerdict::Allow,
+        flaw_count: 0,
+        critical_count: 0,
+        confidence: 0.5,
+        elapsed_micros: u128::MAX,
+    };
+    let j = format!("{:?}", d);
+    assert!(j.contains("GateDecision"));
+    let cloned = d.clone();
+    assert_eq!(cloned.elapsed_micros, u128::MAX);
+}
+
+#[test]
+fn gate_history_with_skipped_only() {
+    let h = GateHistory::new();
+    h.record(dec(GateVerdict::Skipped, 0, 0));
+    h.record(dec(GateVerdict::Skipped, 0, 0));
+    // Skipped doesn't count in intercept_rate
+    assert_eq!(h.intercept_rate(), 0.0);
+    assert_eq!(h.snapshot().len(), 2);
+}
+
+#[test]
+fn gate_history_skipped_doesnt_count_in_denominator() {
+    let h = GateHistory::new();
+    h.record(dec(GateVerdict::Allow, 0, 0));
+    h.record(dec(GateVerdict::Reject, 1, 1));
+    h.record(dec(GateVerdict::Skipped, 0, 0));
+    h.record(dec(GateVerdict::Skipped, 0, 0));
+    // 1 reject out of 2 (allow+reject) = 0.5
+    assert!((h.intercept_rate() - 0.5).abs() < 1e-9);
+}
+
+#[test]
+fn gate_history_mixed_high_volume() {
+    let h = GateHistory::new();
+    for _ in 0..100 {
+        h.record(dec(GateVerdict::Allow, 0, 0));
+    }
+    for _ in 0..50 {
+        h.record(dec(GateVerdict::Reject, 1, 1));
+    }
+    // 50 reject out of 150 (allow+reject) = 1/3
+    let rate = h.intercept_rate();
+    assert!((rate - (50.0 / 150.0)).abs() < 1e-9);
+    assert_eq!(h.snapshot().len(), 150);
+}
+
+#[test]
+fn gate_config_field_assignment() {
+    let c = GateConfig {
+        fallback_on_error: false,
+        enabled: false,
+    };
+    assert!(!c.fallback_on_error);
+    assert!(!c.enabled);
+    let c2 = GateConfig {
+        fallback_on_error: true,
+        enabled: true,
+    };
+    assert!(c2.fallback_on_error);
+    assert!(c2.enabled);
+}
+
+#[test]
+fn gate_config_clone_preserves_fields() {
+    let c = GateConfig {
+        fallback_on_error: false,
+        enabled: true,
+    };
+    let cloned = c.clone();
+    assert_eq!(cloned.fallback_on_error, false);
+    assert_eq!(cloned.enabled, true);
+}
