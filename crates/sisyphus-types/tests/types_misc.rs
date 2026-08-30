@@ -641,3 +641,93 @@ fn trigger_def_clone_preserves_pattern() {
     assert_eq!(cloned.pattern, t.pattern);
     assert_eq!(cloned.tools, t.tools);
 }
+
+// ---------------------------------------------------------------------------
+// Additional tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn circuit_state_default_is_closed() {
+    use sisyphus_types::CircuitState;
+    let default: CircuitState = serde_json::from_str("\"Closed\"").unwrap();
+    assert_eq!(default, CircuitState::Closed);
+}
+
+#[test]
+fn circuit_state_serde_all_three() {
+    use sisyphus_types::CircuitState;
+    for state in [CircuitState::Closed, CircuitState::Open, CircuitState::HalfOpen] {
+        let j = serde_json::to_string(&state).unwrap();
+        let back: CircuitState = serde_json::from_str(&j).unwrap();
+        assert_eq!(back, state);
+    }
+}
+
+#[test]
+fn work_mode_equality_of_same_variant() {
+    use sisyphus_types::WorkMode;
+    assert_eq!(WorkMode::Standard, WorkMode::Standard);
+    assert_eq!(WorkMode::UltraWork, WorkMode::UltraWork);
+}
+
+#[test]
+fn trigger_def_clone_preserves_all() {
+    use sisyphus_types::TriggerDef;
+    let t = TriggerDef {
+        pattern: Some("p".into()),
+        tools: vec!["t1".into(), "t2".into()],
+        description: Some("d".into()),
+        hook_phase: Some("before".into()),
+        hook_effect: Some("validate".into()),
+        hook_message: Some("user triggered".into()),
+    };
+    let cloned = t.clone();
+    assert_eq!(cloned.pattern, t.pattern);
+    assert_eq!(cloned.tools, t.tools);
+    assert_eq!(cloned.description, t.description);
+    assert_eq!(cloned.hook_phase, t.hook_phase);
+    assert_eq!(cloned.hook_effect, t.hook_effect);
+    assert_eq!(cloned.hook_message, t.hook_message);
+}
+
+#[test]
+fn trigger_def_with_only_hook_effect() {
+    use sisyphus_types::TriggerDef;
+    let t: TriggerDef = serde_json::from_str(r#"{"hook_effect":"log"}"#).unwrap();
+    assert_eq!(t.hook_effect.as_deref(), Some("log"));
+    assert!(t.pattern.is_none());
+    assert!(t.tools.is_empty());
+}
+
+#[test]
+fn feedback_with_unicode_request() {
+    use sisyphus_types::Feedback;
+    let f = Feedback {
+        agent_id: "agent-α".into(),
+        original_request: "中文请求-β".into(),
+        original_output: "输出-γ".into(),
+        corrected_output: "修正-δ".into(),
+        timestamp: 0,
+        tags: vec![],
+    };
+    let j = serde_json::to_string(&f).unwrap();
+    let back: Feedback = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.original_request, "中文请求-β");
+    assert_eq!(back.corrected_output, "修正-δ");
+}
+
+#[test]
+fn feedback_clone_preserves_unicode() {
+    use sisyphus_types::Feedback;
+    let f = Feedback {
+        agent_id: "α".into(),
+        original_request: "β".into(),
+        original_output: "γ".into(),
+        corrected_output: "δ".into(),
+        timestamp: 0,
+        tags: vec!["标签-1".into()],
+    };
+    let cloned = f.clone();
+    assert_eq!(cloned.agent_id, "α");
+    assert_eq!(cloned.tags[0], "标签-1");
+}
