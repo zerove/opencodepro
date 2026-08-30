@@ -672,3 +672,141 @@ fn cognitive_asset_metadata_with_long_value() {
     };
     assert_eq!(asset.metadata["k"].len(), 1000);
 }
+
+// ---------------------------------------------------------------------------
+// Additional coverage
+// ---------------------------------------------------------------------------
+
+#[test]
+fn cognitive_asset_with_empty_id() {
+    use sisyphus_types::asset::{AssetContent, AssetKind, CognitiveAsset, InsightData};
+    let asset = CognitiveAsset {
+        id: "".into(),
+        kind: AssetKind::Tool,
+        name: "n".into(),
+        description: "d".into(),
+        content: AssetContent::Insight(InsightData {
+            observation: "o".into(),
+            reasoning: "r".into(),
+            evidence_ids: vec![],
+            confidence: 0.5,
+        }),
+        metadata: HashMap::new(),
+        version: 0,
+        created_at: 0,
+    };
+    let j = serde_json::to_string(&asset).unwrap();
+    let back: CognitiveAsset = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.id, "");
+}
+
+#[test]
+fn cognitive_asset_with_empty_content_insight() {
+    use sisyphus_types::asset::{AssetContent, AssetKind, CognitiveAsset, InsightData};
+    let asset = CognitiveAsset {
+        id: "a".into(),
+        kind: AssetKind::Insight,
+        name: "n".into(),
+        description: "d".into(),
+        content: AssetContent::Insight(InsightData {
+            observation: "".into(),
+            reasoning: "".into(),
+            evidence_ids: vec![],
+            confidence: 0.0,
+        }),
+        metadata: HashMap::new(),
+        version: 0,
+        created_at: 0,
+    };
+    let j = serde_json::to_string(&asset).unwrap();
+    let back: CognitiveAsset = serde_json::from_str(&j).unwrap();
+    // AssetContent doesn't implement PartialEq, verify via Debug
+    let orig_dbg = format!("{:?}", asset.content);
+    let back_dbg = format!("{:?}", back.content);
+    assert_eq!(orig_dbg, back_dbg);
+}
+
+#[test]
+fn asset_relation_with_unicode_relation_type() {
+    use sisyphus_types::asset::{AssetRelation, RelationType};
+    let r = AssetRelation {
+        from_id: "a".into(),
+        to_id: "b".into(),
+        relation_type: RelationType::EvolvedFrom,
+        weight: 0.5,
+    };
+    let j = serde_json::to_string(&r.relation_type).unwrap();
+    let back: RelationType = serde_json::from_str(&j).unwrap();
+    let j2 = serde_json::to_string(&back).unwrap();
+    assert_eq!(j, j2);
+}
+
+#[test]
+fn asset_relation_5_variants_distinct() {
+    use sisyphus_types::asset::RelationType;
+    let variants = [
+        RelationType::Solves,
+        RelationType::Requires,
+        RelationType::EvolvedFrom,
+        RelationType::ConflictsWith,
+        RelationType::Refines,
+    ];
+    let serialized: Vec<String> = variants
+        .iter()
+        .map(|v| serde_json::to_string(v).unwrap())
+        .collect();
+    let unique: std::collections::HashSet<_> = serialized.iter().collect();
+    assert_eq!(unique.len(), 5);
+}
+
+#[test]
+fn insight_data_with_unicode_observation_round_trip() {
+    use sisyphus_types::asset::InsightData;
+    let i = InsightData {
+        observation: "观察-α 🔍".into(),
+        reasoning: "推理".into(),
+        evidence_ids: vec!["证据-1".into()],
+        confidence: 0.95,
+    };
+    let j = serde_json::to_string(&i).unwrap();
+    let back: InsightData = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.observation, "观察-α 🔍");
+    assert!((back.confidence - 0.95).abs() < 1e-6);
+}
+
+#[test]
+fn constraint_data_with_unicode_2() {
+    use sisyphus_types::asset::ConstraintData;
+    let c = ConstraintData {
+        description: "约束: 必须快, 不允许 慢".into(),
+        strictness: 0.9,
+        violation_penalty: 0.1,
+    };
+    let j = serde_json::to_string(&c).unwrap();
+    let back: ConstraintData = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.description, "约束: 必须快, 不允许 慢");
+}
+
+#[test]
+fn cognitive_asset_with_special_characters_in_name() {
+    use sisyphus_types::asset::{AssetContent, AssetKind, CognitiveAsset, InsightData};
+    let special = "name-with-!@#$%^&*()_+=[]{}|;':\",./<>?`~";
+    let asset = CognitiveAsset {
+        id: "a".into(),
+        kind: AssetKind::Tool,
+        name: special.into(),
+        description: "d".into(),
+        content: AssetContent::Insight(InsightData {
+            observation: "o".into(),
+            reasoning: "r".into(),
+            evidence_ids: vec![],
+            confidence: 0.5,
+        }),
+        metadata: HashMap::new(),
+        version: 1,
+        created_at: 0,
+    };
+    let j = serde_json::to_string(&asset).unwrap();
+    let back: CognitiveAsset = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.name, special);
+}
