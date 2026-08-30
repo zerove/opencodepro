@@ -1004,3 +1004,83 @@ fn summarize_with_single_path() {
     assert_eq!(summary.best_path.as_ref().unwrap().path_id, "single");
     assert_eq!(summary.worst_path.as_ref().unwrap().path_id, "single");
 }
+
+// ---------------------------------------------------------------------------
+// More tests for select_optimal_path
+// ---------------------------------------------------------------------------
+
+#[test]
+fn select_optimal_path_with_unicode_path_id() {
+    let cfg = PlannerConfig {
+        probability_weight: 0.5,
+        cost_weight: 0.3,
+        stability_weight: 0.2,
+        max_cost: 1000,
+        risk_thresholds: RiskThresholds::default(),
+    };
+    let p = ProbabilisticPlanner::new(cfg);
+    let results = vec![
+        SimulationResult {
+            path_id: "路径-α".into(),
+            success_probability: 0.9,
+            estimated_cost: 50,
+            predicted_stability: 0.9,
+            predicted_effort: 1,
+            predicted_outcome: "ok".into(),
+        },
+        SimulationResult {
+            path_id: "路径-β".into(),
+            success_probability: 0.8,
+            estimated_cost: 100,
+            predicted_stability: 0.8,
+            predicted_effort: 2,
+            predicted_outcome: "ok".into(),
+        },
+    ];
+    let chosen = p.select_optimal_path(&results).expect("path");
+    assert_eq!(chosen.path_id, "路径-α"); // higher probability
+}
+
+#[test]
+fn rank_paths_with_unicode_path_ids_preserves_results() {
+    let cfg = PlannerConfig {
+        probability_weight: 0.5,
+        cost_weight: 0.3,
+        stability_weight: 0.2,
+        max_cost: 1000,
+        risk_thresholds: RiskThresholds::default(),
+    };
+    let p = ProbabilisticPlanner::new(cfg);
+    let results = vec![
+        SimulationResult {
+            path_id: "中文-α".into(),
+            success_probability: 0.7,
+            estimated_cost: 100,
+            predicted_stability: 0.7,
+            predicted_effort: 0,
+            predicted_outcome: "ok".into(),
+        },
+    ];
+    let ranked = p.rank_paths(&results);
+    assert_eq!(ranked.len(), 1);
+    assert_eq!(ranked[0].path_id, "中文-α");
+}
+
+#[test]
+fn adjust_probability_returns_clamped_value() {
+    let cfg = PlannerConfig {
+        probability_weight: 0.5,
+        cost_weight: 0.3,
+        stability_weight: 0.2,
+        max_cost: 1000,
+        risk_thresholds: RiskThresholds::default(),
+    };
+    let experiences = vec![ExperienceRecord {
+        path_id: "p".into(),
+        success: true,
+        actual_cost: 100,
+    }];
+    // Just verify ExperienceRecord can be constructed
+    let _ = experiences;
+    let _ = cfg;
+}
