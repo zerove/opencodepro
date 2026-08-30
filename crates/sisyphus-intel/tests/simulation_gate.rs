@@ -1020,3 +1020,85 @@ fn gate_history_with_zero_decisions_default() {
     assert_eq!(h.intercept_rate(), 0.0);
     assert_eq!(h.false_positive_rate(), 0.0);
 }
+
+// ---------------------------------------------------------------------------
+// More tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn gate_history_clear_via_new() {
+    let h = GateHistory::new();
+    h.record(dec(GateVerdict::Allow, 0, 0));
+    h.record(dec(GateVerdict::Reject, 1, 1));
+    assert_eq!(h.snapshot().len(), 2);
+    // New instance is empty
+    let h2 = GateHistory::new();
+    assert_eq!(h2.snapshot().len(), 0);
+}
+
+#[test]
+fn gate_decision_with_unicode_sop_id_serde_like() {
+    let d = GateDecision {
+        sop_id: "图-α-🔍".into(),
+        verdict: GateVerdict::Allow,
+        flaw_count: 0,
+        critical_count: 0,
+        confidence: 0.5,
+        elapsed_micros: 100,
+    };
+    let cloned = d.clone();
+    assert_eq!(cloned.sop_id, "图-α-🔍");
+}
+
+#[test]
+fn gate_history_with_unicode_sop_ids() {
+    let h = GateHistory::new();
+    h.record(dec(GateVerdict::Allow, 0, 0));
+    let snap = h.snapshot();
+    assert!(snap[0].sop_id.contains("Allow"));
+}
+
+#[test]
+fn gate_history_intercept_rate_with_unicode_decisions() {
+    let h = GateHistory::new();
+    h.record(dec(GateVerdict::Allow, 0, 0));
+    h.record(dec(GateVerdict::Reject, 1, 1));
+    // 0.5
+    assert!((h.intercept_rate() - 0.5).abs() < 1e-9);
+}
+
+#[test]
+fn gate_decision_with_negative_flaw_count_max() {
+    // usize can't be negative, but verify
+    let d = GateDecision {
+        sop_id: "p".into(),
+        verdict: GateVerdict::Allow,
+        flaw_count: usize::MAX,
+        critical_count: 0,
+        confidence: 0.5,
+        elapsed_micros: 100,
+    };
+    assert_eq!(d.flaw_count, usize::MAX);
+}
+
+#[test]
+fn gate_decision_with_extreme_elapsed() {
+    let d = GateDecision {
+        sop_id: "p".into(),
+        verdict: GateVerdict::Allow,
+        flaw_count: 0,
+        critical_count: 0,
+        confidence: 0.5,
+        elapsed_micros: u128::MAX / 2,
+    };
+    assert_eq!(d.elapsed_micros, u128::MAX / 2);
+}
+
+#[test]
+fn gate_history_with_max_decisions() {
+    let h = GateHistory::new();
+    for i in 0..10000 {
+        h.record(dec(GateVerdict::Allow, 0, 0));
+    }
+    assert_eq!(h.snapshot().len(), 10000);
+}
