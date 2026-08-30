@@ -1308,3 +1308,103 @@ fn gate_history_with_unicode_3_decisions() {
     assert!(snap[1].sop_id.contains("Reject"));
     assert!(snap[2].sop_id.contains("Skipped"));
 }
+
+// ---------------------------------------------------------------------------
+// More tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn gate_history_with_alternating_5_allow_5_reject() {
+    let h = GateHistory::new();
+    for i in 0..10 {
+        if i % 2 == 0 {
+            h.record(dec(GateVerdict::Allow, 0, 0));
+        } else {
+            h.record(dec(GateVerdict::Reject, 1, 1));
+        }
+    }
+    // 5 reject / 10 = 0.5
+    assert!((h.intercept_rate() - 0.5).abs() < 1e-9);
+}
+
+#[test]
+fn gate_decision_with_unicode_sop_id_with_numbers() {
+    let d = GateDecision {
+        sop_id: "图-2024-α-β".into(),
+        verdict: GateVerdict::Allow,
+        flaw_count: 0,
+        critical_count: 0,
+        confidence: 0.5,
+        elapsed_micros: 100,
+    };
+    assert_eq!(d.sop_id, "图-2024-α-β");
+}
+
+#[test]
+fn gate_history_with_5_allow_only_intercept_0() {
+    let h = GateHistory::new();
+    for _ in 0..5 {
+        h.record(dec(GateVerdict::Allow, 0, 0));
+    }
+    assert_eq!(h.intercept_rate(), 0.0);
+}
+
+#[test]
+fn gate_decision_with_zero_critical_count_max_flaw() {
+    let d = GateDecision {
+        sop_id: "p".into(),
+        verdict: GateVerdict::Reject,
+        flaw_count: usize::MAX,
+        critical_count: 0,
+        confidence: 0.0,
+        elapsed_micros: 100,
+    };
+    assert_eq!(d.flaw_count, usize::MAX);
+    assert_eq!(d.critical_count, 0);
+}
+
+#[test]
+fn gate_history_with_3_allow_1_reject_25_percent() {
+    let h = GateHistory::new();
+    for _ in 0..3 {
+        h.record(dec(GateVerdict::Allow, 0, 0));
+    }
+    h.record(dec(GateVerdict::Reject, 1, 1));
+    // 1 reject / 4 = 0.25
+    assert!((h.intercept_rate() - 0.25).abs() < 1e-9);
+}
+
+#[test]
+fn gate_decision_with_unicode_sop_id_long_path() {
+    let long = "图-".repeat(50);
+    let d = GateDecision {
+        sop_id: long.clone(),
+        verdict: GateVerdict::Allow,
+        flaw_count: 0,
+        critical_count: 0,
+        confidence: 0.5,
+        elapsed_micros: 100,
+    };
+    assert_eq!(d.sop_id.chars().count(), 100);
+}
+
+#[test]
+fn gate_history_with_thread_safety_3_threads() {
+    use std::thread;
+    let h = GateHistory::new();
+    let h_arc = std::sync::Arc::new(h);
+    let mut handles = vec![];
+    for _ in 0..3 {
+        let h_clone = std::sync::Arc::clone(&h_arc);
+        let handle = thread::spawn(move || {
+            for _ in 0..50 {
+                h_clone.record(dec(GateVerdict::Allow, 0, 0));
+            }
+        });
+        handles.push(handle);
+    }
+    for handle in handles {
+        handle.join().unwrap();
+    }
+    assert_eq!(h_arc.snapshot().len(), 150);
+}
