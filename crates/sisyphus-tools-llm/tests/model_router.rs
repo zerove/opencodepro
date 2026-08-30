@@ -188,3 +188,124 @@ fn model_route_strategy_serde() {
         assert_eq!(back, s);
     }
 }
+
+// ---------------------------------------------------------------------------
+// Additional coverage
+// ---------------------------------------------------------------------------
+
+#[test]
+fn model_config_unicode_name() {
+    use sisyphus_tools_llm::model_router::ModelConfig;
+    let c = ModelConfig {
+        name: "模型-α".into(),
+        cost_per_1k_tokens: 0.001,
+        provider: "openai".into(),
+        max_tokens: 8192,
+        endpoint: "https://api.example.com".into(),
+        complexity_ceiling: 100,
+    };
+    let j = serde_json::to_string(&c).unwrap();
+    let back: ModelConfig = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.name, "模型-α");
+}
+
+#[test]
+fn model_config_zero_cost() {
+    use sisyphus_tools_llm::model_router::ModelConfig;
+    let c = ModelConfig {
+        name: "free".into(),
+        cost_per_1k_tokens: 0.0,
+        provider: "p".into(),
+        max_tokens: 0,
+        endpoint: "".into(),
+        complexity_ceiling: 0,
+    };
+    assert_eq!(c.cost_per_1k_tokens, 0.0);
+    let j = serde_json::to_string(&c).unwrap();
+    let back: ModelConfig = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.max_tokens, 0);
+}
+
+#[test]
+fn model_config_clone() {
+    use sisyphus_tools_llm::model_router::ModelConfig;
+    let c = ModelConfig {
+        name: "x".into(),
+        cost_per_1k_tokens: 1.0,
+        provider: "p".into(),
+        max_tokens: 100,
+        endpoint: "e".into(),
+        complexity_ceiling: 10,
+    };
+    let cloned = c.clone();
+    assert_eq!(cloned.name, "x");
+    assert_eq!(cloned.max_tokens, 100);
+}
+
+#[test]
+fn usage_record_default() {
+    use sisyphus_tools_llm::model_router::UsageRecord;
+    let r = UsageRecord::default();
+    assert_eq!(r.total_calls, 0);
+    assert_eq!(r.total_tokens, 0);
+    assert_eq!(r.total_cost, 0.0);
+    assert_eq!(r.monthly_cost, 0.0);
+    assert_eq!(r.month_start, 0);
+}
+
+#[test]
+fn usage_record_serde() {
+    use sisyphus_tools_llm::model_router::UsageRecord;
+    let r = UsageRecord {
+        total_calls: 100,
+        total_tokens: 5000,
+        total_cost: 0.5,
+        monthly_cost: 5.0,
+        month_start: 1700000000,
+    };
+    let j = serde_json::to_string(&r).unwrap();
+    let back: UsageRecord = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.total_calls, 100);
+    assert_eq!(back.total_tokens, 5000);
+    assert_eq!(back.month_start, 1700000000);
+}
+
+#[test]
+fn usage_record_clone() {
+    use sisyphus_tools_llm::model_router::UsageRecord;
+    let r = UsageRecord {
+        total_calls: 10,
+        total_tokens: 100,
+        total_cost: 0.1,
+        monthly_cost: 1.0,
+        month_start: 1,
+    };
+    let cloned = r.clone();
+    assert_eq!(cloned.total_calls, 10);
+}
+
+#[test]
+fn model_route_strategy_debug() {
+    let _ = format!("{:?}", sisyphus_types::ModelRouteStrategy::CostOptimized);
+    let _ = format!("{:?}", sisyphus_types::ModelRouteStrategy::PerformanceOptimized);
+    let _ = format!("{:?}", sisyphus_types::ModelRouteStrategy::FallbackChain);
+}
+
+#[test]
+fn model_route_strategy_copy() {
+    let a = sisyphus_types::ModelRouteStrategy::CostOptimized;
+    let b = a; // Copy
+    assert_eq!(a, b);
+}
+
+#[test]
+fn model_route_strategy_equality() {
+    assert_eq!(
+        sisyphus_types::ModelRouteStrategy::CostOptimized,
+        sisyphus_types::ModelRouteStrategy::CostOptimized
+    );
+    assert_ne!(
+        sisyphus_types::ModelRouteStrategy::CostOptimized,
+        sisyphus_types::ModelRouteStrategy::PerformanceOptimized
+    );
+}
