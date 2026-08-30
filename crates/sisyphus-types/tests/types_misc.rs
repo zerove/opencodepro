@@ -449,3 +449,121 @@ fn trigger_def_with_many_tools() {
     let back: TriggerDef = serde_json::from_str(&j).unwrap();
     assert_eq!(back.tools.len(), 50);
 }
+
+// ---------------------------------------------------------------------------
+// Additional AgentMessage coverage
+// ---------------------------------------------------------------------------
+
+#[test]
+fn agent_message_with_unicode_correlation_id() {
+    use sisyphus_types::AgentMessage;
+    let m = AgentMessage {
+        from: "alice".into(),
+        to: "bob".into(),
+        kind: "request".into(),
+        payload: serde_json::json!({}),
+        correlation_id: "关联-α".into(),
+    };
+    let j = serde_json::to_string(&m).unwrap();
+    let back: AgentMessage = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.correlation_id, "关联-α");
+}
+
+#[test]
+fn agent_message_with_nested_payload() {
+    use sisyphus_types::AgentMessage;
+    let m = AgentMessage {
+        from: "a".into(),
+        to: "b".into(),
+        kind: "request".into(),
+        payload: serde_json::json!({
+            "data": {
+                "nested": {
+                    "deep": [1, 2, 3]
+                }
+            }
+        }),
+        correlation_id: "c".into(),
+    };
+    let j = serde_json::to_string(&m).unwrap();
+    let back: AgentMessage = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.payload["data"]["nested"]["deep"][1], 2);
+}
+
+#[test]
+fn benchmark_run_with_failed_status() {
+    use sisyphus_types::BenchmarkRun;
+    let b = BenchmarkRun {
+        name: "test".into(),
+        timestamp: 0,
+        duration_secs: 1.0,
+        success: false,
+        metrics: serde_json::json!({"error": "OOM"}),
+    };
+    assert!(!b.success);
+    let j = serde_json::to_string(&b).unwrap();
+    let back: BenchmarkRun = serde_json::from_str(&j).unwrap();
+    assert!(!back.success);
+    assert_eq!(back.metrics["error"], "OOM");
+}
+
+#[test]
+fn benchmark_run_clone() {
+    use sisyphus_types::BenchmarkRun;
+    let b = BenchmarkRun {
+        name: "n".into(),
+        timestamp: 0,
+        duration_secs: 1.5,
+        success: true,
+        metrics: serde_json::json!({}),
+    };
+    let cloned = b.clone();
+    assert_eq!(cloned.name, "n");
+    assert_eq!(cloned.duration_secs, 1.5);
+}
+
+#[test]
+fn platform_config_with_windows_path_sep() {
+    use sisyphus_types::PlatformConfig;
+    let p = PlatformConfig {
+        is_windows: true,
+        path_sep: "\\".into(),
+        shell: "cmd.exe".into(),
+    };
+    let j = serde_json::to_string(&p).unwrap();
+    let back: PlatformConfig = serde_json::from_str(&j).unwrap();
+    assert!(back.is_windows);
+    assert_eq!(back.path_sep, "\\");
+    assert_eq!(back.shell, "cmd.exe");
+}
+
+#[test]
+fn platform_config_with_linux_settings() {
+    use sisyphus_types::PlatformConfig;
+    let p = PlatformConfig {
+        is_windows: false,
+        path_sep: "/".into(),
+        shell: "/bin/zsh".into(),
+    };
+    let j = serde_json::to_string(&p).unwrap();
+    let back: PlatformConfig = serde_json::from_str(&j).unwrap();
+    assert!(!back.is_windows);
+    assert_eq!(back.shell, "/bin/zsh");
+}
+
+#[test]
+fn trigger_def_with_unicode_tools() {
+    use sisyphus_types::TriggerDef;
+    let t = TriggerDef {
+        pattern: Some("p".into()),
+        tools: vec!["工具-α".into(), "工具-β".into()],
+        description: Some("d".into()),
+        hook_phase: None,
+        hook_effect: None,
+        hook_message: None,
+    };
+    let j = serde_json::to_string(&t).unwrap();
+    let back: TriggerDef = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.tools[0], "工具-α");
+    assert_eq!(back.tools[1], "工具-β");
+}
