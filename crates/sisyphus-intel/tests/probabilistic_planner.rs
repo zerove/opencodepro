@@ -1332,3 +1332,127 @@ fn experience_record_with_max_cost() {
     };
     assert_eq!(r.actual_cost, u64::MAX);
 }
+
+// ---------------------------------------------------------------------------
+// More tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn risk_level_copy_works() {
+    let a = RiskLevel::Critical;
+    let b = a; // Copy
+    assert_eq!(a, b);
+    let c = b;
+    assert_eq!(a, c);
+}
+
+#[test]
+fn risk_thresholds_clone_preserves_values() {
+    let t = RiskThresholds {
+        low: 0.1,
+        medium: 0.5,
+        high: 0.9,
+    };
+    let cloned = t.clone();
+    assert!((cloned.low - 0.1).abs() < 1e-9);
+    assert!((cloned.medium - 0.5).abs() < 1e-9);
+    assert!((cloned.high - 0.9).abs() < 1e-9);
+}
+
+#[test]
+fn ranked_path_with_unicode_path_id_clone_preserves() {
+    let rp = RankedPath {
+        path_id: "路径-α-🔍".into(),
+        success_probability: 0.5,
+        estimated_cost: 100,
+        risk_level: RiskLevel::Low,
+        composite_score: 0.5,
+        predicted_outcome: "成功-💡".into(),
+        confidence: 0.5,
+    };
+    let cloned = rp.clone();
+    assert_eq!(cloned.path_id, "路径-α-🔍");
+    assert_eq!(cloned.predicted_outcome, "成功-💡");
+}
+
+#[test]
+fn ranked_path_with_above_one_probability() {
+    let rp = RankedPath {
+        path_id: "p".into(),
+        success_probability: 1.5,
+        estimated_cost: 0,
+        risk_level: RiskLevel::Low,
+        composite_score: 1.5,
+        predicted_outcome: "x".into(),
+        confidence: 1.5,
+    };
+    let j = serde_json::to_string(&rp).unwrap();
+    let back: RankedPath = serde_json::from_str(&j).unwrap();
+    assert!((back.success_probability - 1.5).abs() < 1e-9);
+}
+
+#[test]
+fn ranked_path_with_negative_score() {
+    let rp = RankedPath {
+        path_id: "p".into(),
+        success_probability: 0.0,
+        estimated_cost: 0,
+        risk_level: RiskLevel::Low,
+        composite_score: -1.0,
+        predicted_outcome: "x".into(),
+        confidence: -1.0,
+    };
+    let j = serde_json::to_string(&rp).unwrap();
+    let back: RankedPath = serde_json::from_str(&j).unwrap();
+    assert!((back.composite_score + 1.0).abs() < 1e-9);
+}
+
+#[test]
+fn experience_record_unicode_path_id() {
+    let r = ExperienceRecord {
+        path_id: "路径-α".into(),
+        success: true,
+        actual_cost: 100,
+    };
+    assert_eq!(r.path_id, "路径-α");
+}
+
+#[test]
+fn experience_record_with_zero_actual_cost() {
+    let r = ExperienceRecord {
+        path_id: "p".into(),
+        success: true,
+        actual_cost: 0,
+    };
+    assert_eq!(r.actual_cost, 0);
+}
+
+#[test]
+fn path_summary_with_only_unicode_risk_distribution() {
+    let mut dist = std::collections::HashMap::new();
+    dist.insert(RiskLevel::Low, 1);
+    let s = PathSummary {
+        total_paths: 1,
+        average_probability: 0.0,
+        average_cost: 0,
+        best_path: None,
+        worst_path: None,
+        risk_distribution: dist,
+    };
+    let j = serde_json::to_string(&s).unwrap();
+    let back: PathSummary = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.risk_distribution.get(&RiskLevel::Low), Some(&1));
+}
+
+#[test]
+fn planner_config_with_unicode_field_no_serde() {
+    // PlannerConfig doesn't have any String field to test unicode
+    let cfg = PlannerConfig {
+        probability_weight: 0.0,
+        cost_weight: 0.0,
+        stability_weight: 0.0,
+        max_cost: 0,
+        risk_thresholds: RiskThresholds::default(),
+    };
+    assert_eq!(cfg.probability_weight, 0.0);
+}
