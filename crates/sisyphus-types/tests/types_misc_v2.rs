@@ -1541,3 +1541,103 @@ fn trigger_def_with_unicode_tools_array_serde() {
     assert_eq!(back.tools.len(), 4);
     assert_eq!(back.tools[2], "工-γ");
 }
+
+// ---------------------------------------------------------------------------
+// More tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn sisyphus_notepad_with_unicode_section_and_long_content() {
+    let mut n = SisyphusNotepad::default();
+    let long_content = "x".repeat(1000);
+    n.write_section("节-α".into(), long_content.clone());
+    let read = n.read_section("节-α").unwrap();
+    assert_eq!(read, &long_content);
+}
+
+#[test]
+fn sisyphus_notepad_with_unicode_3_overwrite_cycles() {
+    let mut n = SisyphusNotepad::default();
+    n.write_section("s".into(), "v1".into());
+    n.write_section("s".into(), "v2".into());
+    n.write_section("s".into(), "v3".into());
+    let read = n.read_section("s").unwrap();
+    assert_eq!(read, &"v3".to_string());
+}
+
+#[test]
+fn trigger_def_with_unicode_long_description() {
+    let long_desc = "描-".repeat(100);
+    let t = TriggerDef {
+        pattern: Some("p".into()),
+        tools: vec!["t".into()],
+        description: Some(long_desc.clone()),
+        hook_phase: Some("before".into()),
+        hook_effect: Some("e".into()),
+        hook_message: Some("m".into()),
+    };
+    let j = serde_json::to_string(&t).unwrap();
+    let back: TriggerDef = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.description, Some(long_desc));
+}
+
+#[test]
+fn notepad_snapshot_with_unicode_3_sections() {
+    let mut snapshot = im::HashMap::new();
+    snapshot.insert("a-α".into(), "1-β".into());
+    snapshot.insert("b-γ".into(), "2-δ".into());
+    snapshot.insert("c-ε".into(), "3-ζ".into());
+    let n = NotepadSnapshot {
+        timestamp: 1000,
+        snapshot,
+        trigger_node: "trigger-α".into(),
+    };
+    assert_eq!(n.snapshot.len(), 3);
+}
+
+#[test]
+fn evolution_op_with_unicode_each_variant_serde() {
+    use sisyphus_types::types::EvolutionOp;
+    let ops = vec![
+        ("a-α", EvolutionOp::AdjustFuel {
+            node_name: "n-β".into(),
+            delta: 10,
+        }),
+        ("b-γ", EvolutionOp::AddRetry {
+            node_name: "n-δ".into(),
+            max_retries: 3,
+        }),
+        ("c-ε", EvolutionOp::RemoveNode {
+            node_name: "n-ζ".into(),
+        }),
+    ];
+    for (label, op) in &ops {
+        let j = serde_json::to_string(op).unwrap();
+        let back: EvolutionOp = serde_json::from_str(&j).unwrap();
+        let j2 = serde_json::to_string(&back).unwrap();
+        assert_eq!(j, j2, "Failed for {}", label);
+    }
+}
+
+#[test]
+fn sisyphus_notepad_with_unicode_section_id_long() {
+    let mut n = SisyphusNotepad::default();
+    let long_id = "节-α-".repeat(50);
+    n.write_section(long_id.clone(), "v".into());
+    assert_eq!(n.sections.len(), 1);
+    let read = n.read_section(&long_id);
+    assert!(read.is_some());
+}
+
+#[test]
+fn trigger_def_with_only_unicode_each_optional_field() {
+    let t: TriggerDef = serde_json::from_str(
+        r#"{"pattern":"p-α","description":"d-β","hook_phase":"hp-γ","hook_effect":"he-δ","hook_message":"hm-ε"}"#,
+    )
+    .unwrap();
+    assert_eq!(t.pattern.as_deref(), Some("p-α"));
+    assert_eq!(t.description.as_deref(), Some("d-β"));
+    assert_eq!(t.hook_phase.as_deref(), Some("hp-γ"));
+    assert_eq!(t.hook_effect.as_deref(), Some("he-δ"));
+    assert_eq!(t.hook_message.as_deref(), Some("hm-ε"));
+}
