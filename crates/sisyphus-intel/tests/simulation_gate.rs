@@ -1102,3 +1102,117 @@ fn gate_history_with_max_decisions() {
     }
     assert_eq!(h.snapshot().len(), 10000);
 }
+
+// ---------------------------------------------------------------------------
+// More tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn gate_history_with_3_allow_2_reject_1_skipped() {
+    let h = GateHistory::new();
+    h.record(dec(GateVerdict::Allow, 0, 0));
+    h.record(dec(GateVerdict::Allow, 0, 0));
+    h.record(dec(GateVerdict::Allow, 0, 0));
+    h.record(dec(GateVerdict::Reject, 1, 1));
+    h.record(dec(GateVerdict::Reject, 1, 1));
+    h.record(dec(GateVerdict::Skipped, 0, 0));
+    // 2 reject / 5 (allow + reject) = 0.4
+    assert!((h.intercept_rate() - 0.4).abs() < 1e-9);
+}
+
+#[test]
+fn gate_decision_with_unicode_sop_id_3_segments() {
+    let d = GateDecision {
+        sop_id: "图-α-β-γ-δ".into(),
+        verdict: GateVerdict::Allow,
+        flaw_count: 0,
+        critical_count: 0,
+        confidence: 0.5,
+        elapsed_micros: 100,
+    };
+    assert_eq!(d.sop_id, "图-α-β-γ-δ");
+}
+
+#[test]
+fn gate_history_with_long_thread_safe_test() {
+    use std::thread;
+    let h = GateHistory::new();
+    let h_arc = std::sync::Arc::new(h);
+    let mut handles = vec![];
+    for _ in 0..10 {
+        let h_clone = std::sync::Arc::clone(&h_arc);
+        let handle = thread::spawn(move || {
+            for _ in 0..100 {
+                h_clone.record(dec(GateVerdict::Reject, 1, 1));
+            }
+        });
+        handles.push(handle);
+    }
+    for handle in handles {
+        handle.join().unwrap();
+    }
+    assert_eq!(h_arc.snapshot().len(), 1000);
+    assert_eq!(h_arc.intercept_rate(), 1.0);
+}
+
+#[test]
+fn gate_decision_with_only_zero_flaw_count_max_confidence() {
+    let d = GateDecision {
+        sop_id: "p".into(),
+        verdict: GateVerdict::Allow,
+        flaw_count: 0,
+        critical_count: 0,
+        confidence: 1.0,
+        elapsed_micros: 100,
+    };
+    assert_eq!(d.confidence, 1.0);
+    assert_eq!(d.flaw_count, 0);
+}
+
+#[test]
+fn gate_decision_with_only_max_flaw_count_zero_confidence() {
+    let d = GateDecision {
+        sop_id: "p".into(),
+        verdict: GateVerdict::Reject,
+        flaw_count: usize::MAX,
+        critical_count: 0,
+        confidence: 0.0,
+        elapsed_micros: 100,
+    };
+    assert_eq!(d.flaw_count, usize::MAX);
+    assert_eq!(d.confidence, 0.0);
+}
+
+#[test]
+fn gate_history_with_random_verdict_sequence() {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+    let h = GateHistory::new();
+    let mut hasher = DefaultHasher::new();
+    42.hash(&mut hasher);
+    let seed = hasher.finish();
+    for i in 0..100 {
+        let verdict = match (seed.wrapping_add(i)) % 3 {
+            0 => GateVerdict::Allow,
+            1 => GateVerdict::Reject,
+            _ => GateVerdict::Skipped,
+        };
+        h.record(dec(verdict, 0, 0));
+    }
+    assert_eq!(h.snapshot().len(), 100);
+}
+
+#[test]
+fn gate_decision_with_max_all_fields() {
+    let d = GateDecision {
+        sop_id: "max".into(),
+        verdict: GateVerdict::Reject,
+        flaw_count: usize::MAX,
+        critical_count: usize::MAX,
+        confidence: 1.0,
+        elapsed_micros: u128::MAX,
+    };
+    let j = format!("{:?}", d);
+    assert!(j.contains("max"));
+    assert!(j.contains("GateDecision"));
+}
