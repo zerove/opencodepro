@@ -128,3 +128,120 @@ fn semantic_pattern_analyzer_large_cluster_size() {
     let a = SemanticPatternAnalyzer::new(1_000_000);
     assert_eq!(a.min_cluster_size, 1_000_000);
 }
+
+// ---------------------------------------------------------------------------
+// Additional coverage
+// ---------------------------------------------------------------------------
+
+#[test]
+fn subgraph_pattern_clone() {
+    let p = SubgraphPattern {
+        nodes: vec![("a".into(), "t1".into())],
+        edges: vec![],
+    };
+    let cloned = p.clone();
+    assert_eq!(cloned.nodes, p.nodes);
+}
+
+#[test]
+fn subgraph_pattern_debug() {
+    let p = SubgraphPattern {
+        nodes: vec![],
+        edges: vec![],
+    };
+    let dbg = format!("{:?}", p);
+    assert!(dbg.contains("SubgraphPattern"));
+}
+
+#[test]
+fn subgraph_pattern_unicode_node_names() {
+    let p = SubgraphPattern {
+        nodes: vec![
+            ("节点-α".into(), "工具-1".into()),
+            ("节点-β".into(), "工具-2".into()),
+        ],
+        edges: vec![(0, 1)],
+    };
+    assert_eq!(p.nodes[0].0, "节点-α");
+    assert_eq!(p.edges[0], (0, 1));
+}
+
+#[test]
+fn cluster_analysis_unicode() {
+    let c = ClusterAnalysis {
+        goal_cluster: "构建任务".into(),
+        common_failure_mode: "内存溢出".into(),
+        evidence_count: 10,
+        suggested_shift: "使用迭代器".into(),
+    };
+    assert_eq!(c.goal_cluster, "构建任务");
+    assert_eq!(c.evidence_count, 10);
+}
+
+#[test]
+fn cluster_analysis_zero_evidence() {
+    let c = ClusterAnalysis {
+        goal_cluster: "".into(),
+        common_failure_mode: "".into(),
+        evidence_count: 0,
+        suggested_shift: "".into(),
+    };
+    assert_eq!(c.evidence_count, 0);
+    assert_eq!(c.goal_cluster, "");
+}
+
+#[test]
+fn cluster_analysis_max_evidence() {
+    let c = ClusterAnalysis {
+        goal_cluster: "g".into(),
+        common_failure_mode: "f".into(),
+        evidence_count: usize::MAX,
+        suggested_shift: "s".into(),
+    };
+    assert_eq!(c.evidence_count, usize::MAX);
+}
+
+#[test]
+fn cluster_analysis_debug_contains_all_fields() {
+    let c = ClusterAnalysis {
+        goal_cluster: "g".into(),
+        common_failure_mode: "f".into(),
+        evidence_count: 1,
+        suggested_shift: "s".into(),
+    };
+    let dbg = format!("{:?}", c);
+    assert!(dbg.contains("ClusterAnalysis"));
+    assert!(dbg.contains("goal_cluster"));
+    assert!(dbg.contains("common_failure_mode"));
+    assert!(dbg.contains("evidence_count"));
+    assert!(dbg.contains("suggested_shift"));
+}
+
+#[test]
+fn subgraph_pattern_in_hashmap_with_different_values() {
+    // Different patterns should produce different hashmap entries
+    let mut map: HashMap<SubgraphPattern, usize> = HashMap::new();
+    let p1 = SubgraphPattern {
+        nodes: vec![("a".into(), "t1".into())],
+        edges: vec![],
+    };
+    let p2 = SubgraphPattern {
+        nodes: vec![("b".into(), "t1".into())],
+        edges: vec![],
+    };
+    map.insert(p1, 1);
+    map.insert(p2, 2);
+    assert_eq!(map.len(), 2);
+}
+
+#[test]
+fn cluster_analysis_with_long_strings() {
+    let long = "x".repeat(1000);
+    let c = ClusterAnalysis {
+        goal_cluster: long.clone(),
+        common_failure_mode: long.clone(),
+        evidence_count: 1,
+        suggested_shift: long.clone(),
+    };
+    assert_eq!(c.goal_cluster.len(), 1000);
+}
