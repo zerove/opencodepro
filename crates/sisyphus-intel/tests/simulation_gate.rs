@@ -933,3 +933,90 @@ fn gate_decision_with_flaw_count_max_critical_zero() {
     assert_eq!(d.flaw_count, 100);
     assert_eq!(d.critical_count, 0);
 }
+
+// ---------------------------------------------------------------------------
+// More tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn gate_history_with_allow_only_intercept_zero() {
+    let h = GateHistory::new();
+    h.record(dec(GateVerdict::Allow, 0, 0));
+    h.record(dec(GateVerdict::Allow, 0, 0));
+    h.record(dec(GateVerdict::Allow, 0, 0));
+    assert_eq!(h.intercept_rate(), 0.0);
+    assert_eq!(h.snapshot().len(), 3);
+}
+
+#[test]
+fn gate_history_with_reject_only_intercept_one() {
+    let h = GateHistory::new();
+    h.record(dec(GateVerdict::Reject, 1, 1));
+    h.record(dec(GateVerdict::Reject, 1, 1));
+    assert_eq!(h.intercept_rate(), 1.0);
+}
+
+#[test]
+fn gate_decision_with_zero_sop_id() {
+    let d = GateDecision {
+        sop_id: "".into(),
+        verdict: GateVerdict::Allow,
+        flaw_count: 0,
+        critical_count: 0,
+        confidence: 0.5,
+        elapsed_micros: 100,
+    };
+    assert_eq!(d.sop_id, "");
+    let cloned = d.clone();
+    assert_eq!(cloned.sop_id, "");
+}
+
+#[test]
+fn gate_decision_with_zero_flaw_count_zero_critical() {
+    let d = GateDecision {
+        sop_id: "p".into(),
+        verdict: GateVerdict::Allow,
+        flaw_count: 0,
+        critical_count: 0,
+        confidence: 0.5,
+        elapsed_micros: 100,
+    };
+    assert_eq!(d.flaw_count, 0);
+    assert_eq!(d.critical_count, 0);
+}
+
+#[test]
+fn gate_config_both_false() {
+    let c = GateConfig {
+        fallback_on_error: false,
+        enabled: false,
+    };
+    assert!(!c.enabled);
+    assert!(!c.fallback_on_error);
+    let dbg = format!("{:?}", c);
+    assert!(dbg.contains("GateConfig"));
+}
+
+#[test]
+fn gate_decision_with_long_sop_id() {
+    let long = "p".repeat(1000);
+    let d = GateDecision {
+        sop_id: long.clone(),
+        verdict: GateVerdict::Allow,
+        flaw_count: 0,
+        critical_count: 0,
+        confidence: 0.5,
+        elapsed_micros: 100,
+    };
+    let cloned = d.clone();
+    assert_eq!(cloned.sop_id, long);
+}
+
+#[test]
+fn gate_history_with_zero_decisions_default() {
+    let h = GateHistory::default();
+    let snap = h.snapshot();
+    assert!(snap.is_empty());
+    assert_eq!(h.intercept_rate(), 0.0);
+    assert_eq!(h.false_positive_rate(), 0.0);
+}
