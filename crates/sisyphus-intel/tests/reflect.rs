@@ -364,3 +364,158 @@ fn error_category_debug() {
     let _ = format!("{:?}", ErrorCategory::Crash);
     let _ = format!("{:?}", ErrorCategory::Unknown);
 }
+
+// ---------------------------------------------------------------------------
+// RecordedNode
+// ---------------------------------------------------------------------------
+
+#[test]
+fn recorded_node_field_assignment() {
+    use sisyphus_intel::reflect::RecordedNode;
+    let n = RecordedNode {
+        node: "n1".into(),
+        status: "completed".into(),
+        output: "result".into(),
+    };
+    assert_eq!(n.node, "n1");
+    assert_eq!(n.status, "completed");
+    assert_eq!(n.output, "result");
+}
+
+#[test]
+fn recorded_node_serde() {
+    use sisyphus_intel::reflect::RecordedNode;
+    let n = RecordedNode {
+        node: "n".into(),
+        status: "failed".into(),
+        output: "err".into(),
+    };
+    let j = serde_json::to_string(&n).unwrap();
+    let back: RecordedNode = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.node, "n");
+    assert_eq!(back.status, "failed");
+}
+
+#[test]
+fn recorded_node_clone() {
+    use sisyphus_intel::reflect::RecordedNode;
+    let n = RecordedNode {
+        node: "n".into(),
+        status: "s".into(),
+        output: "o".into(),
+    };
+    let cloned = n.clone();
+    assert_eq!(cloned.node, n.node);
+}
+
+#[test]
+fn recorded_node_unicode() {
+    use sisyphus_intel::reflect::RecordedNode;
+    let n = RecordedNode {
+        node: "节点-α".into(),
+        status: "完成".into(),
+        output: "结果".into(),
+    };
+    assert_eq!(n.node, "节点-α");
+    let j = serde_json::to_string(&n).unwrap();
+    let back: RecordedNode = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.output, "结果");
+}
+
+#[test]
+fn recorded_node_empty_strings() {
+    use sisyphus_intel::reflect::RecordedNode;
+    let n = RecordedNode {
+        node: "".into(),
+        status: "".into(),
+        output: "".into(),
+    };
+    let j = serde_json::to_string(&n).unwrap();
+    let back: RecordedNode = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.node, "");
+}
+
+// ---------------------------------------------------------------------------
+// ReflectionReport
+// ---------------------------------------------------------------------------
+
+#[test]
+fn reflection_report_field_assignment() {
+    use sisyphus_intel::reflect::{ImprovementKind, RecordedNode, ReflectionReport};
+    let r = ReflectionReport {
+        original_sop_id: "sop-1".into(),
+        deviation_score: 0.3,
+        suggested_improvements: vec!["retry".into()],
+        improvement_signals: vec![ImprovementKind::Backoff],
+        evolved_sop_structure: Some("evolved".into()),
+        records: vec![RecordedNode {
+            node: "n1".into(),
+            status: "completed".into(),
+            output: "ok".into(),
+        }],
+    };
+    assert_eq!(r.original_sop_id, "sop-1");
+    assert_eq!(r.suggested_improvements.len(), 1);
+    assert_eq!(r.improvement_signals.len(), 1);
+    assert_eq!(r.records.len(), 1);
+    assert!(r.evolved_sop_structure.is_some());
+}
+
+#[test]
+fn reflection_report_serde() {
+    use sisyphus_intel::reflect::ReflectionReport;
+    let r = ReflectionReport {
+        original_sop_id: "sop".into(),
+        deviation_score: 0.0,
+        suggested_improvements: vec![],
+        improvement_signals: vec![],
+        evolved_sop_structure: None,
+        records: vec![],
+    };
+    let j = serde_json::to_string(&r).unwrap();
+    let back: ReflectionReport = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.original_sop_id, "sop");
+    assert!(back.evolved_sop_structure.is_none());
+}
+
+#[test]
+fn reflection_report_default_signals_empty() {
+    // Old serializations without improvement_signals should deserialize with empty Vec
+    use sisyphus_intel::reflect::ReflectionReport;
+    let j = r#"{"original_sop_id":"sop","deviation_score":0.5,"suggested_improvements":[],"evolved_sop_structure":null,"records":[]}"#;
+    let r: ReflectionReport = serde_json::from_str(j).unwrap();
+    assert_eq!(r.original_sop_id, "sop");
+    assert!(r.improvement_signals.is_empty());
+}
+
+#[test]
+fn reflection_report_clone() {
+    use sisyphus_intel::reflect::ReflectionReport;
+    let r = ReflectionReport {
+        original_sop_id: "sop".into(),
+        deviation_score: 0.5,
+        suggested_improvements: vec![],
+        improvement_signals: vec![],
+        evolved_sop_structure: None,
+        records: vec![],
+    };
+    let cloned = r.clone();
+    assert_eq!(cloned.original_sop_id, "sop");
+    assert_eq!(cloned.deviation_score, 0.5);
+}
+
+#[test]
+fn reflection_report_with_max_deviation() {
+    use sisyphus_intel::reflect::ReflectionReport;
+    let r = ReflectionReport {
+        original_sop_id: "sop".into(),
+        deviation_score: 1.0,
+        suggested_improvements: vec![],
+        improvement_signals: vec![],
+        evolved_sop_structure: None,
+        records: vec![],
+    };
+    let j = serde_json::to_string(&r).unwrap();
+    let back: ReflectionReport = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.deviation_score, 1.0);
+}
