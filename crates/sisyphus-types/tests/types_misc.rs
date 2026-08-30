@@ -2359,3 +2359,134 @@ fn feedback_with_unicode_only_original_request() {
     };
     assert_eq!(f.original_request, "请求-α-🔍");
 }
+
+// ---------------------------------------------------------------------------
+// More tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn feedback_with_unicode_3_tags_serde() {
+    use sisyphus_types::Feedback;
+    let f = Feedback {
+        agent_id: "a".into(),
+        original_request: "r".into(),
+        original_output: "o".into(),
+        corrected_output: "c".into(),
+        timestamp: 0,
+        tags: vec!["t-α".into(), "t-β".into(), "t-γ".into()],
+    };
+    let j = serde_json::to_string(&f).unwrap();
+    let back: Feedback = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.tags.len(), 3);
+    assert_eq!(back.tags[1], "t-β");
+}
+
+#[test]
+fn vector_record_with_unicode_metadata_empty_value() {
+    use sisyphus_types::VectorRecord;
+    let v = VectorRecord {
+        key: "k".into(),
+        embedding: vec![],
+        metadata: serde_json::json!({"key-α": "", "key-β": "v"}),
+        timestamp: 0,
+    };
+    let j = serde_json::to_string(&v).unwrap();
+    let back: VectorRecord = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.metadata["key-α"], "");
+    assert_eq!(back.metadata["key-β"], "v");
+}
+
+#[test]
+fn plugin_descriptor_with_unicode_4_segment_id() {
+    use sisyphus_types::PluginDescriptor;
+    let pd = PluginDescriptor {
+        name: "p-1-α-β-2".into(),
+        version: "v-α-β".into(),
+        wasm_path: std::path::PathBuf::from("/p.wasm"),
+        tool_id: "t-α-β-γ".into(),
+        fuel_limit: 1000,
+        checksum: None,
+    };
+    assert_eq!(pd.name, "p-1-α-β-2");
+    assert_eq!(pd.version, "v-α-β");
+    let j = serde_json::to_string(&pd).unwrap();
+    let back: PluginDescriptor = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.tool_id, "t-α-β-γ");
+}
+
+#[test]
+fn agent_message_with_unicode_payload_bool_number_string() {
+    use sisyphus_types::AgentMessage;
+    let m = AgentMessage {
+        from: "a".into(),
+        to: "b".into(),
+        kind: "request".into(),
+        payload: serde_json::json!({
+            "name-α": "value-β",
+            "count-γ": 42,
+            "active-δ": true,
+            "ratio-ε": 3.14
+        }),
+        correlation_id: "c".into(),
+    };
+    let j = serde_json::to_string(&m).unwrap();
+    let back: AgentMessage = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.payload["name-α"], "value-β");
+    assert_eq!(back.payload["count-γ"], 42);
+    assert_eq!(back.payload["active-δ"], true);
+    assert_eq!(back.payload["ratio-ε"], 3.14);
+}
+
+#[test]
+fn benchmark_run_with_unicode_metrics_4_types() {
+    use sisyphus_types::BenchmarkRun;
+    let b = BenchmarkRun {
+        name: "n".into(),
+        timestamp: 0,
+        duration_secs: 0.0,
+        success: true,
+        metrics: serde_json::json!({
+            "string-α": "v-β",
+            "number-γ": 42,
+            "bool-δ": true,
+            "null-ε": null
+        }),
+    };
+    let j = serde_json::to_string(&b).unwrap();
+    let back: BenchmarkRun = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.metrics["string-α"], "v-β");
+    assert_eq!(back.metrics["number-γ"], 42);
+    assert_eq!(back.metrics["bool-δ"], true);
+    assert!(back.metrics["null-ε"].is_null());
+}
+
+#[test]
+fn trigger_def_with_unicode_3_fields_2() {
+    use sisyphus_types::TriggerDef;
+    let t = TriggerDef {
+        pattern: Some("p-α".into()),
+        tools: vec!["t-β".into()],
+        description: Some("d-γ".into()),
+        hook_phase: None,
+        hook_effect: None,
+        hook_message: None,
+    };
+    let j = serde_json::to_string(&t).unwrap();
+    let back: TriggerDef = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.pattern.as_deref(), Some("p-α"));
+    assert_eq!(back.description.as_deref(), Some("d-γ"));
+}
+
+#[test]
+fn feedback_with_unicode_agent_id_short() {
+    use sisyphus_types::Feedback;
+    let f = Feedback {
+        agent_id: "α".into(),
+        original_request: "r".into(),
+        original_output: "o".into(),
+        corrected_output: "c".into(),
+        timestamp: 0,
+        tags: vec![],
+    };
+    assert_eq!(f.agent_id, "α");
+}
