@@ -542,3 +542,150 @@ fn path_summary_debug() {
     assert!(dbg.contains("PathSummary"));
     assert!(dbg.contains("total_paths"));
 }
+
+// ---------------------------------------------------------------------------
+// Additional edge cases
+// ---------------------------------------------------------------------------
+
+#[test]
+fn risk_level_ord_derived_from_declaration() {
+    use std::cmp::Ordering;
+    // RiskLevel is declared in order Low, Medium, High, Critical
+    // Derives Ord from declaration order
+    assert_eq!(RiskLevel::Low.cmp(&RiskLevel::Medium), Ordering::Less);
+    assert_eq!(RiskLevel::High.cmp(&RiskLevel::Critical), Ordering::Less);
+    assert_eq!(RiskLevel::Critical.cmp(&RiskLevel::Low), Ordering::Greater);
+}
+
+#[test]
+fn risk_level_partial_ord() {
+    use std::cmp::Ordering;
+    // PartialOrd should match Ord
+    assert_eq!(
+        RiskLevel::Low.partial_cmp(&RiskLevel::Medium),
+        Some(Ordering::Less)
+    );
+    assert_eq!(
+        RiskLevel::Critical.partial_cmp(&RiskLevel::High),
+        Some(Ordering::Greater)
+    );
+}
+
+#[test]
+fn risk_thresholds_with_zero_values() {
+    let t = RiskThresholds {
+        low: 0.0,
+        medium: 0.0,
+        high: 0.0,
+    };
+    let j = serde_json::to_string(&t).unwrap();
+    let back: RiskThresholds = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.low, 0.0);
+}
+
+#[test]
+fn risk_thresholds_with_above_one_values() {
+    let t = RiskThresholds {
+        low: 1.5,
+        medium: 2.0,
+        high: 2.5,
+    };
+    let j = serde_json::to_string(&t).unwrap();
+    let back: RiskThresholds = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.high, 2.5);
+}
+
+#[test]
+fn risk_thresholds_with_negative_values() {
+    let t = RiskThresholds {
+        low: -0.1,
+        medium: -0.5,
+        high: -1.0,
+    };
+    let j = serde_json::to_string(&t).unwrap();
+    let back: RiskThresholds = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.low, -0.1);
+}
+
+#[test]
+fn planner_config_with_zero_weights() {
+    let cfg = PlannerConfig {
+        probability_weight: 0.0,
+        cost_weight: 0.0,
+        stability_weight: 0.0,
+        max_cost: 0,
+        risk_thresholds: RiskThresholds::default(),
+    };
+    assert_eq!(cfg.max_cost, 0);
+}
+
+#[test]
+fn planner_config_with_above_one_weights() {
+    let cfg = PlannerConfig {
+        probability_weight: 1.5,
+        cost_weight: 2.0,
+        stability_weight: 1.0,
+        max_cost: u64::MAX,
+        risk_thresholds: RiskThresholds::default(),
+    };
+    let j = serde_json::to_string(&cfg).unwrap();
+    let back: PlannerConfig = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.max_cost, u64::MAX);
+}
+
+#[test]
+fn ranked_path_unicode_outcome() {
+    let rp = RankedPath {
+        path_id: "p".into(),
+        success_probability: 0.5,
+        estimated_cost: 0,
+        risk_level: RiskLevel::Low,
+        composite_score: 0.5,
+        predicted_outcome: "成功-α 🎉".into(),
+        confidence: 0.5,
+    };
+    let j = serde_json::to_string(&rp).unwrap();
+    let back: RankedPath = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.predicted_outcome, "成功-α 🎉");
+}
+
+#[test]
+fn ranked_path_with_max_values() {
+    let rp = RankedPath {
+        path_id: "p".into(),
+        success_probability: 1.0,
+        estimated_cost: u64::MAX,
+        risk_level: RiskLevel::Critical,
+        composite_score: 1.0,
+        predicted_outcome: "x".into(),
+        confidence: 1.0,
+    };
+    let j = serde_json::to_string(&rp).unwrap();
+    let back: RankedPath = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.estimated_cost, u64::MAX);
+    assert_eq!(back.risk_level, RiskLevel::Critical);
+}
+
+#[test]
+fn path_summary_with_unicode_path() {
+    let rp = RankedPath {
+        path_id: "路径-α".into(),
+        success_probability: 0.5,
+        estimated_cost: 0,
+        risk_level: RiskLevel::Low,
+        composite_score: 0.5,
+        predicted_outcome: "ok".into(),
+        confidence: 0.5,
+    };
+    let s = PathSummary {
+        total_paths: 1,
+        average_probability: 0.5,
+        average_cost: 0,
+        best_path: Some(rp.clone()),
+        worst_path: Some(rp),
+        risk_distribution: std::collections::HashMap::new(),
+    };
+    let j = serde_json::to_string(&s).unwrap();
+    let back: PathSummary = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.best_path.unwrap().path_id, "路径-α");
+}
