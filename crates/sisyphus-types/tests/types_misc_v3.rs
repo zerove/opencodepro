@@ -381,3 +381,103 @@ fn platform_config_clone() {
     let cloned = p.clone();
     assert_eq!(cloned.path_sep, "");
 }
+
+// ---------------------------------------------------------------------------
+// Additional PluginDescriptor and VectorRecord coverage
+// ---------------------------------------------------------------------------
+
+#[test]
+fn plugin_descriptor_with_max_fuel_limit() {
+    use sisyphus_types::PluginDescriptor;
+    let pd = PluginDescriptor {
+        name: "p".into(),
+        version: "1".into(),
+        wasm_path: std::path::PathBuf::from("/x.wasm"),
+        tool_id: "t".into(),
+        fuel_limit: u64::MAX,
+        checksum: None,
+    };
+    assert_eq!(pd.fuel_limit, u64::MAX);
+}
+
+#[test]
+fn plugin_descriptor_zero_fuel_limit() {
+    use sisyphus_types::PluginDescriptor;
+    let pd = PluginDescriptor {
+        name: "p".into(),
+        version: "1".into(),
+        wasm_path: std::path::PathBuf::from("/x.wasm"),
+        tool_id: "t".into(),
+        fuel_limit: 0,
+        checksum: None,
+    };
+    assert_eq!(pd.fuel_limit, 0);
+}
+
+#[test]
+fn vector_record_with_max_timestamp() {
+    use sisyphus_types::VectorRecord;
+    let v = VectorRecord {
+        key: "k".into(),
+        embedding: vec![],
+        metadata: serde_json::json!({}),
+        timestamp: u64::MAX,
+    };
+    let j = serde_json::to_string(&v).unwrap();
+    let back: VectorRecord = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.timestamp, u64::MAX);
+}
+
+#[test]
+fn vector_record_clone_with_metadata() {
+    use sisyphus_types::VectorRecord;
+    let v = VectorRecord {
+        key: "k".into(),
+        embedding: vec![1.0, 2.0],
+        metadata: serde_json::json!({"a": 1}),
+        timestamp: 0,
+    };
+    let cloned = v.clone();
+    assert_eq!(cloned.key, "k");
+    assert_eq!(cloned.embedding, vec![1.0, 2.0]);
+}
+
+#[test]
+fn agent_message_clone_preserves_payload() {
+    use sisyphus_types::AgentMessage;
+    let m = AgentMessage {
+        from: "a".into(),
+        to: "b".into(),
+        kind: "request".into(),
+        payload: serde_json::json!({"key": "value"}),
+        correlation_id: "c".into(),
+    };
+    let cloned = m.clone();
+    assert_eq!(cloned.payload["key"], "value");
+}
+
+#[test]
+fn benchmark_run_debug_format() {
+    use sisyphus_types::BenchmarkRun;
+    let b = BenchmarkRun {
+        name: "n".into(),
+        timestamp: 0,
+        duration_secs: 0.0,
+        success: false,
+        metrics: serde_json::json!({}),
+    };
+    let dbg = format!("{:?}", b);
+    assert!(dbg.contains("BenchmarkRun"));
+}
+
+#[test]
+fn platform_config_debug_format() {
+    use sisyphus_types::PlatformConfig;
+    let p = PlatformConfig {
+        is_windows: false,
+        path_sep: "/".into(),
+        shell: "sh".into(),
+    };
+    let dbg = format!("{:?}", p);
+    assert!(dbg.contains("PlatformConfig"));
+}
