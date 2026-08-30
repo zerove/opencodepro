@@ -769,3 +769,109 @@ fn asset_relation_serde_with_high_precision_weight() {
     let back: AssetRelation = serde_json::from_str(&j).unwrap();
     assert!((back.weight - 0.123_456_78_f32).abs() < 1e-6);
 }
+
+// ---------------------------------------------------------------------------
+// Additional AssetContent variant tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn asset_content_sop_with_unicode_name() {
+    use sisyphus_types::asset::AssetContent;
+    use sisyphus_types::graph::SOPGraphConfig;
+    let cfg = SOPGraphConfig::default();
+    let c = AssetContent::SOP(cfg);
+    let j = serde_json::to_string(&c).unwrap();
+    let back: AssetContent = serde_json::from_str(&j).unwrap();
+    let j2 = serde_json::to_string(&back).unwrap();
+    assert_eq!(j, j2);
+}
+
+#[test]
+fn asset_content_tool_with_long_inputs() {
+    use sisyphus_types::asset::AssetContent;
+    use sisyphus_types::tools::ToolSpec;
+    let tool = ToolSpec {
+        tool_id: "x".repeat(1000),
+        required_capability: "y".into(),
+        expected_input: serde_json::json!({}),
+        expected_output: serde_json::json!({}),
+        success_criteria: "ok".into(),
+        test_command: None,
+        workdir: None,
+    };
+    let c = AssetContent::Tool(tool);
+    let j = serde_json::to_string(&c).unwrap();
+    let back: AssetContent = serde_json::from_str(&j).unwrap();
+    let j2 = serde_json::to_string(&back).unwrap();
+    assert_eq!(j, j2);
+}
+
+#[test]
+fn insight_data_with_long_evidence_ids() {
+    let i = InsightData {
+        observation: "o".into(),
+        reasoning: "r".into(),
+        evidence_ids: (0..1000).map(|i| format!("ev-{}", i)).collect(),
+        confidence: 0.5,
+    };
+    let j = serde_json::to_string(&i).unwrap();
+    let back: InsightData = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.evidence_ids.len(), 1000);
+}
+
+#[test]
+fn constraint_data_with_long_description() {
+    use sisyphus_types::asset::ConstraintData;
+    let long = "x".repeat(5000);
+    let c = ConstraintData {
+        description: long.clone(),
+        strictness: 0.5,
+        violation_penalty: 0.5,
+    };
+    let j = serde_json::to_string(&c).unwrap();
+    let back: ConstraintData = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.description.len(), 5000);
+}
+
+#[test]
+fn asset_relation_with_long_ids() {
+    use sisyphus_types::asset::{AssetRelation, RelationType};
+    let long_id = "x".repeat(500);
+    let r = AssetRelation {
+        from_id: long_id.clone(),
+        to_id: long_id.clone(),
+        relation_type: RelationType::Solves,
+        weight: 0.5,
+    };
+    let j = serde_json::to_string(&r).unwrap();
+    let back: AssetRelation = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.from_id.len(), 500);
+}
+
+#[test]
+fn asset_kind_tool_debug() {
+    use sisyphus_types::asset::AssetKind;
+    let dbg = format!("{:?}", AssetKind::Tool);
+    assert_eq!(dbg, "Tool");
+}
+
+#[test]
+fn asset_kind_sop_debug() {
+    use sisyphus_types::asset::AssetKind;
+    let dbg = format!("{:?}", AssetKind::SOP);
+    assert_eq!(dbg, "SOP");
+}
+
+#[test]
+fn asset_kind_insight_debug() {
+    use sisyphus_types::asset::AssetKind;
+    let dbg = format!("{:?}", AssetKind::Insight);
+    assert_eq!(dbg, "Insight");
+}
+
+#[test]
+fn asset_kind_constraint_debug() {
+    use sisyphus_types::asset::AssetKind;
+    let dbg = format!("{:?}", AssetKind::Constraint);
+    assert_eq!(dbg, "Constraint");
+}
