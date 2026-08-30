@@ -834,3 +834,102 @@ fn trigger_def_with_empty_tools_array() {
     let back: TriggerDef = serde_json::from_str(&j).unwrap();
     assert!(back.tools.is_empty());
 }
+
+// ---------------------------------------------------------------------------
+// Additional tests for VectorRecord and AgentMessage
+// ---------------------------------------------------------------------------
+
+#[test]
+fn vector_record_with_special_floats() {
+    use sisyphus_types::VectorRecord;
+    let v = VectorRecord {
+        key: "k".into(),
+        embedding: vec![0.0, 1.0, -1.0, f32::MIN_POSITIVE],
+        metadata: serde_json::json!({}),
+        timestamp: 0,
+    };
+    let j = serde_json::to_string(&v).unwrap();
+    let back: VectorRecord = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.embedding.len(), 4);
+    assert_eq!(back.embedding[0], 0.0);
+    assert_eq!(back.embedding[2], -1.0);
+}
+
+#[test]
+fn vector_record_with_large_embedding() {
+    use sisyphus_types::VectorRecord;
+    let emb: Vec<f32> = (0..10000).map(|i| (i as f32) / 10000.0).collect();
+    let v = VectorRecord {
+        key: "k".into(),
+        embedding: emb,
+        metadata: serde_json::json!({}),
+        timestamp: 0,
+    };
+    let j = serde_json::to_string(&v).unwrap();
+    let back: VectorRecord = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.embedding.len(), 10000);
+}
+
+#[test]
+fn agent_message_with_long_correlation_id() {
+    use sisyphus_types::AgentMessage;
+    let long_id = "x".repeat(1000);
+    let m = AgentMessage {
+        from: "a".into(),
+        to: "b".into(),
+        kind: "request".into(),
+        payload: serde_json::json!({}),
+        correlation_id: long_id.clone(),
+    };
+    let j = serde_json::to_string(&m).unwrap();
+    let back: AgentMessage = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.correlation_id.len(), 1000);
+}
+
+#[test]
+fn feedback_with_negative_timestamp_serde() {
+    use sisyphus_types::Feedback;
+    let f = Feedback {
+        agent_id: "a".into(),
+        original_request: "r".into(),
+        original_output: "o".into(),
+        corrected_output: "c".into(),
+        timestamp: -1000000,
+        tags: vec![],
+    };
+    let j = serde_json::to_string(&f).unwrap();
+    let back: Feedback = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.timestamp, -1000000);
+}
+
+#[test]
+fn feedback_clone_preserves_timestamp() {
+    use sisyphus_types::Feedback;
+    let f = Feedback {
+        agent_id: "a".into(),
+        original_request: "r".into(),
+        original_output: "o".into(),
+        corrected_output: "c".into(),
+        timestamp: 42,
+        tags: vec!["t".into()],
+    };
+    let cloned = f.clone();
+    assert_eq!(cloned.timestamp, 42);
+    assert_eq!(cloned.tags, vec!["t"]);
+}
+
+#[test]
+fn plugin_descriptor_with_unicode_version() {
+    use sisyphus_types::PluginDescriptor;
+    let pd = PluginDescriptor {
+        name: "p".into(),
+        version: "1.0-α".into(),
+        wasm_path: std::path::PathBuf::from("/p.wasm"),
+        tool_id: "t".into(),
+        fuel_limit: 1000,
+        checksum: None,
+    };
+    let j = serde_json::to_string(&pd).unwrap();
+    let back: PluginDescriptor = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.version, "1.0-α");
+}
