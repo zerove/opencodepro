@@ -736,3 +736,109 @@ fn gate_config_with_default_state() {
     assert!(c.enabled);
     assert!(c.fallback_on_error);
 }
+
+// ---------------------------------------------------------------------------
+// Additional tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn gate_history_with_negative_skipped_count_does_not_panic() {
+    let h = GateHistory::new();
+    h.record(dec(GateVerdict::Skipped, 0, 0));
+    // Just verify it doesn't panic
+    let _ = h.snapshot();
+}
+
+#[test]
+fn gate_decision_with_5_fields_all_set() {
+    let d = GateDecision {
+        sop_id: "complete".into(),
+        verdict: GateVerdict::Reject,
+        flaw_count: 100,
+        critical_count: 50,
+        confidence: 0.5,
+        elapsed_micros: 1000,
+    };
+    assert_eq!(d.sop_id, "complete");
+    assert_eq!(d.verdict, GateVerdict::Reject);
+    assert_eq!(d.flaw_count, 100);
+    assert_eq!(d.critical_count, 50);
+    assert!((d.confidence - 0.5).abs() < 1e-9);
+    assert_eq!(d.elapsed_micros, 1000);
+}
+
+#[test]
+fn gate_decision_clone_preserves_all() {
+    let d = GateDecision {
+        sop_id: "p".into(),
+        verdict: GateVerdict::Allow,
+        flaw_count: 5,
+        critical_count: 2,
+        confidence: 0.7,
+        elapsed_micros: 500,
+    };
+    let cloned = d.clone();
+    assert_eq!(d, cloned);
+}
+
+#[test]
+fn gate_decision_partial_eq_same() {
+    let d1 = GateDecision {
+        sop_id: "p".into(),
+        verdict: GateVerdict::Allow,
+        flaw_count: 0,
+        critical_count: 0,
+        confidence: 0.5,
+        elapsed_micros: 100,
+    };
+    let d2 = d1.clone();
+    assert_eq!(d1, d2);
+}
+
+#[test]
+fn gate_decision_partial_eq_different_verdict() {
+    let d1 = GateDecision {
+        sop_id: "p".into(),
+        verdict: GateVerdict::Allow,
+        flaw_count: 0,
+        critical_count: 0,
+        confidence: 0.5,
+        elapsed_micros: 100,
+    };
+    let d2 = GateDecision {
+        sop_id: "p".into(),
+        verdict: GateVerdict::Reject,
+        flaw_count: 0,
+        critical_count: 0,
+        confidence: 0.5,
+        elapsed_micros: 100,
+    };
+    assert_ne!(d1, d2);
+}
+
+#[test]
+fn gate_history_concurrent_record_50_threads() {
+    use std::thread;
+    let h = GateHistory::new();
+    let h_arc = std::sync::Arc::new(h);
+    let mut handles = vec![];
+    for _ in 0..50 {
+        let h_clone = std::sync::Arc::clone(&h_arc);
+        let handle = thread::spawn(move || {
+            h_clone.record(dec(GateVerdict::Allow, 0, 0));
+        });
+        handles.push(handle);
+    }
+    for h in handles {
+        h.join().unwrap();
+    }
+    assert_eq!(h_arc.snapshot().len(), 50);
+}
+
+#[test]
+fn gate_config_default_then_disabled_change() {
+    let mut c = GateConfig::default();
+    assert!(c.enabled);
+    c.enabled = false;
+    assert!(!c.enabled);
+}
