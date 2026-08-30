@@ -1719,3 +1719,81 @@ fn sisyphus_notepad_with_unicode_long_section_id_500() {
     let read = n.read_section(&long_id);
     assert!(read.is_some());
 }
+
+// ---------------------------------------------------------------------------
+// More tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn sisyphus_notepad_with_unicode_section_id_with_dot() {
+    let mut n = SisyphusNotepad::default();
+    n.write_section("section.α-β.γ".into(), "v".into());
+    let read = n.read_section("section.α-β.γ");
+    assert!(read.is_some());
+}
+
+#[test]
+fn sisyphus_notepad_with_unicode_4_sections() {
+    let mut n = SisyphusNotepad::default();
+    n.write_section("节-α".into(), "v1".into());
+    n.write_section("节-β".into(), "v2".into());
+    n.write_section("节-γ".into(), "v3".into());
+    n.write_section("节-δ".into(), "v4".into());
+    assert_eq!(n.sections.len(), 4);
+}
+
+#[test]
+fn trigger_def_with_unicode_3_segment_pattern_2() {
+    let t: TriggerDef = serde_json::from_str(r#"{"pattern":"前-α-中-β-后-γ"}"#).unwrap();
+    assert_eq!(t.pattern.as_deref(), Some("前-α-中-β-后-γ"));
+}
+
+#[test]
+fn notepad_snapshot_with_unicode_each_field() {
+    let mut snapshot = im::HashMap::new();
+    snapshot.insert("节-α".into(), "内容-β".into());
+    let n = NotepadSnapshot {
+        timestamp: 1700000000,
+        snapshot,
+        trigger_node: "触发-γ".into(),
+    };
+    let j = serde_json::to_string(&n).unwrap();
+    let back: NotepadSnapshot = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.trigger_node, "触发-γ");
+    assert_eq!(back.timestamp, 1700000000);
+    assert_eq!(back.snapshot.get("节-α"), Some(&"内容-β".to_string()));
+}
+
+#[test]
+fn evolution_op_with_unicode_max_delta() {
+    use sisyphus_types::types::EvolutionOp;
+    let op = EvolutionOp::AdjustFuel {
+        node_name: "节-α".into(),
+        delta: i64::MAX,
+    };
+    let j = serde_json::to_string(&op).unwrap();
+    let back: EvolutionOp = serde_json::from_str(&j).unwrap();
+    match back {
+        EvolutionOp::AdjustFuel { node_name, delta } => {
+            assert_eq!(node_name, "节-α");
+            assert_eq!(delta, i64::MAX);
+        }
+        _ => panic!("wrong"),
+    }
+}
+
+#[test]
+fn sisyphus_notepad_with_unicode_section_id_via_only_emoji() {
+    let mut n = SisyphusNotepad::default();
+    n.write_section("🔍".into(), "search".into());
+    let read = n.read_section("🔍");
+    assert_eq!(read, Some(&"search".to_string()));
+}
+
+#[test]
+fn sisyphus_notepad_with_unicode_section_id_emoji_combined() {
+    let mut n = SisyphusNotepad::default();
+    n.write_section("🔍-α-β".into(), "v".into());
+    let read = n.read_section("🔍-α-β");
+    assert!(read.is_some());
+}
