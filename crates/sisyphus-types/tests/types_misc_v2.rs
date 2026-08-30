@@ -714,3 +714,77 @@ fn notepad_snapshot_with_max_timestamp() {
     let back: NotepadSnapshot = serde_json::from_str(&j).unwrap();
     assert_eq!(back.timestamp, u64::MAX);
 }
+
+// ---------------------------------------------------------------------------
+// Additional Notepad tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn sisyphus_notepad_with_unicode_section_id() {
+    let mut n = SisyphusNotepad::default();
+    n.write_section("计划-α".into(), "内容-β".into());
+    let read = n.read_section("计划-α");
+    assert_eq!(read, Some(&"内容-β".to_string()));
+}
+
+#[test]
+fn sisyphus_notepad_overwrite_unicode_section() {
+    let mut n = SisyphusNotepad::default();
+    n.write_section("section".into(), "first".into());
+    n.write_section("section".into(), "second".into());
+    let read = n.read_section("section");
+    assert_eq!(read, Some(&"second".to_string()));
+}
+
+#[test]
+fn sisyphus_notepad_write_multiple_sections() {
+    let mut n = SisyphusNotepad::default();
+    for i in 0..10 {
+        n.write_section(format!("section-{}", i), format!("content-{}", i));
+    }
+    for i in 0..10 {
+        let read = n.read_section(&format!("section-{}", i));
+        assert_eq!(read, Some(&format!("content-{}", i)));
+    }
+}
+
+#[test]
+fn sisyphus_notepad_append_to_unicode_section() {
+    let mut n = SisyphusNotepad::default();
+    n.append_insight("模块-α".into(), "洞察-β".into());
+    let read = n.read_section("模块-α");
+    assert!(read.is_some());
+    assert!(read.unwrap().contains("洞察-β"));
+}
+
+#[test]
+fn sisyphus_notepad_take_snapshot_with_long_trigger_name() {
+    let mut n = SisyphusNotepad::default();
+    n.write_section("s".into(), "c".into());
+    let long_name = "节点-α".repeat(100);
+    n.take_snapshot(long_name.clone());
+    assert_eq!(n.history.len(), 1);
+    assert_eq!(n.history[0].trigger_node, long_name);
+}
+
+#[test]
+fn sisyphus_notepad_take_snapshot_records_state() {
+    let mut n = SisyphusNotepad::default();
+    n.write_section("section1".into(), "value1".into());
+    n.take_snapshot("trigger1".into());
+    n.write_section("section2".into(), "value2".into());
+    n.take_snapshot("trigger2".into());
+    assert_eq!(n.history.len(), 2);
+    assert_eq!(n.history[0].trigger_node, "trigger1");
+    assert_eq!(n.history[1].trigger_node, "trigger2");
+}
+
+#[test]
+fn sisyphus_notepad_prune_with_max_zero() {
+    let mut n = SisyphusNotepad::default();
+    n.write_section("s".into(), "line1\nline2\nline3".into());
+    n.prune(0);
+    let read = n.read_section("s");
+    // Prune with max=0 should empty the section
+    assert_eq!(read, Some(&"".to_string()));
+}
