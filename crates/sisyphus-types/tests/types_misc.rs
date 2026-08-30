@@ -1597,3 +1597,111 @@ fn feedback_with_only_one_long_tag() {
     let back: Feedback = serde_json::from_str(&j).unwrap();
     assert_eq!(back.tags[0].len(), 1000);
 }
+
+// ---------------------------------------------------------------------------
+// More tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn trigger_def_with_unicode_tools_serde_2() {
+    use sisyphus_types::TriggerDef;
+    let t = TriggerDef {
+        pattern: Some("p".into()),
+        tools: vec!["工-α".into(), "工-β".into()],
+        description: Some("d".into()),
+        hook_phase: Some("before".into()),
+        hook_effect: Some("e".into()),
+        hook_message: Some("m".into()),
+    };
+    let j = serde_json::to_string(&t).unwrap();
+    let back: TriggerDef = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.tools[0], "工-α");
+}
+
+#[test]
+fn feedback_with_only_one_tag() {
+    use sisyphus_types::Feedback;
+    let f = Feedback {
+        agent_id: "a".into(),
+        original_request: "r".into(),
+        original_output: "o".into(),
+        corrected_output: "c".into(),
+        timestamp: 0,
+        tags: vec!["only-tag".into()],
+    };
+    assert_eq!(f.tags.len(), 1);
+    let j = serde_json::to_string(&f).unwrap();
+    let back: Feedback = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.tags[0], "only-tag");
+}
+
+#[test]
+fn vector_record_with_unicode_metadata_array() {
+    use sisyphus_types::VectorRecord;
+    let v = VectorRecord {
+        key: "k".into(),
+        embedding: vec![0.5, 0.6],
+        metadata: serde_json::json!({
+            "list": ["α", "β", "γ", "🔍"]
+        }),
+        timestamp: 0,
+    };
+    let j = serde_json::to_string(&v).unwrap();
+    let back: VectorRecord = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.metadata["list"][0], "α");
+    assert_eq!(back.metadata["list"][3], "🔍");
+}
+
+#[test]
+fn plugin_descriptor_with_max_fuel_limit_v3() {
+    use sisyphus_types::PluginDescriptor;
+    let pd = PluginDescriptor {
+        name: "p".into(),
+        version: "1".into(),
+        wasm_path: std::path::PathBuf::from("/p.wasm"),
+        tool_id: "t".into(),
+        fuel_limit: u64::MAX,
+        checksum: None,
+    };
+    assert_eq!(pd.fuel_limit, u64::MAX);
+}
+
+#[test]
+fn agent_message_with_only_unicode_kind() {
+    use sisyphus_types::AgentMessage;
+    let m = AgentMessage {
+        from: "a".into(),
+        to: "b".into(),
+        kind: "类型-中文-α".into(),
+        payload: serde_json::json!({}),
+        correlation_id: "c".into(),
+    };
+    assert_eq!(m.kind, "类型-中文-α");
+}
+
+#[test]
+fn benchmark_run_with_negative_duration_secs() {
+    use sisyphus_types::BenchmarkRun;
+    let b = BenchmarkRun {
+        name: "n".into(),
+        timestamp: 0,
+        duration_secs: -0.5,
+        success: false,
+        metrics: serde_json::json!({}),
+    };
+    assert_eq!(b.duration_secs, -0.5);
+}
+
+#[test]
+fn feedback_with_unicode_original_output() {
+    use sisyphus_types::Feedback;
+    let f = Feedback {
+        agent_id: "a".into(),
+        original_request: "r".into(),
+        original_output: "输出-α-🔍".into(),
+        corrected_output: "c".into(),
+        timestamp: 0,
+        tags: vec![],
+    };
+    assert_eq!(f.original_output, "输出-α-🔍");
+}
