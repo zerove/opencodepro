@@ -440,3 +440,93 @@ fn asset_relation_unicode_again() {
     };
     assert_eq!(r.from_id, "资产-α");
 }
+
+// ---------------------------------------------------------------------------
+// AssetContent::SOP variant
+// ---------------------------------------------------------------------------
+
+#[test]
+fn asset_content_sop_variant_serde() {
+    use sisyphus_types::asset::AssetContent;
+    use sisyphus_types::graph::SOPGraphConfig;
+    let c = AssetContent::SOP(SOPGraphConfig::default());
+    let j = serde_json::to_string(&c).unwrap();
+    let back: AssetContent = serde_json::from_str(&j).unwrap();
+    let j2 = serde_json::to_string(&back).unwrap();
+    assert_eq!(j, j2);
+}
+
+#[test]
+fn asset_content_tool_variant_serde() {
+    use sisyphus_types::asset::AssetContent;
+    use sisyphus_types::tools::ToolSpec;
+    let tool = ToolSpec {
+        tool_id: "test_tool".into(),
+        required_capability: "test".into(),
+        expected_input: serde_json::json!({}),
+        expected_output: serde_json::json!({}),
+        success_criteria: "ok".into(),
+        test_command: None,
+        workdir: None,
+    };
+    let c = AssetContent::Tool(tool);
+    let j = serde_json::to_string(&c).unwrap();
+    let back: AssetContent = serde_json::from_str(&j).unwrap();
+    let j2 = serde_json::to_string(&back).unwrap();
+    assert_eq!(j, j2);
+}
+
+#[test]
+fn asset_content_insight_with_high_confidence() {
+    use sisyphus_types::asset::{AssetContent, InsightData};
+    let i = InsightData {
+        observation: "high".into(),
+        reasoning: "because".into(),
+        evidence_ids: vec!["e1".into(), "e2".into()],
+        confidence: 0.99,
+    };
+    let c = AssetContent::Insight(i);
+    let j = serde_json::to_string(&c).unwrap();
+    let back: AssetContent = serde_json::from_str(&j).unwrap();
+    let j2 = serde_json::to_string(&back).unwrap();
+    assert_eq!(j, j2);
+}
+
+#[test]
+fn asset_content_constraint_with_high_strictness() {
+    use sisyphus_types::asset::{AssetContent, ConstraintData};
+    let cd = ConstraintData {
+        description: "must be fast".into(),
+        strictness: 1.0,
+        violation_penalty: 1.0,
+    };
+    let c = AssetContent::Constraint(cd);
+    let j = serde_json::to_string(&c).unwrap();
+    let back: AssetContent = serde_json::from_str(&j).unwrap();
+    let j2 = serde_json::to_string(&back).unwrap();
+    assert_eq!(j, j2);
+}
+
+#[test]
+fn asset_content_variants_distinct_via_serde() {
+    use sisyphus_types::asset::{AssetContent, ConstraintData, InsightData};
+    let variants = vec![
+        AssetContent::Insight(InsightData {
+            observation: "o".into(),
+            reasoning: "r".into(),
+            evidence_ids: vec![],
+            confidence: 0.5,
+        }),
+        AssetContent::Constraint(ConstraintData {
+            description: "d".into(),
+            strictness: 0.5,
+            violation_penalty: 0.5,
+        }),
+    ];
+    let serialized: Vec<String> = variants
+        .iter()
+        .map(|v| serde_json::to_string(v).unwrap())
+        .collect();
+    let unique: std::collections::HashSet<_> = serialized.iter().collect();
+    assert_eq!(unique.len(), 2);
+}
