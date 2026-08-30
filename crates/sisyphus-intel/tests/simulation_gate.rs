@@ -658,3 +658,81 @@ fn gate_history_with_only_allows_intercept_zero() {
     }
     assert_eq!(h.intercept_rate(), 0.0);
 }
+
+// ---------------------------------------------------------------------------
+// Additional GateVerdict tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn gate_verdict_as_str_allow_returns_static_str() {
+    let s: &'static str = GateVerdict::Allow.as_str();
+    assert_eq!(s, "allow");
+}
+
+#[test]
+fn gate_verdict_as_str_reject_returns_static_str() {
+    let s: &'static str = GateVerdict::Reject.as_str();
+    assert_eq!(s, "reject");
+}
+
+#[test]
+fn gate_verdict_as_str_skipped_returns_static_str() {
+    let s: &'static str = GateVerdict::Skipped.as_str();
+    assert_eq!(s, "skipped");
+}
+
+#[test]
+fn gate_history_default_matches_new() {
+    let h1 = GateHistory::new();
+    let h2 = GateHistory::default();
+    assert_eq!(h1.snapshot().len(), h2.snapshot().len());
+    assert_eq!(h1.intercept_rate(), h2.intercept_rate());
+}
+
+#[test]
+fn gate_history_record_does_not_change_existing_snapshots() {
+    let h = GateHistory::new();
+    h.record(dec(GateVerdict::Allow, 0, 0));
+    let snap1 = h.snapshot();
+    h.record(dec(GateVerdict::Reject, 1, 1));
+    let snap2 = h.snapshot();
+    // snap1 is independent and should still have 1 entry
+    assert_eq!(snap1.len(), 1);
+    assert_eq!(snap2.len(), 2);
+}
+
+#[test]
+fn gate_decision_with_negative_elapsed() {
+    // Elapsed should be u128 >= 0, but no validation
+    let d = GateDecision {
+        sop_id: "p".into(),
+        verdict: GateVerdict::Allow,
+        flaw_count: 0,
+        critical_count: 0,
+        confidence: 0.5,
+        elapsed_micros: 100,
+    };
+    assert_eq!(d.elapsed_micros, 100);
+}
+
+#[test]
+fn gate_decision_with_all_unicode_sop_id() {
+    let d = GateDecision {
+        sop_id: "图-α-β-γ-δ".into(),
+        verdict: GateVerdict::Allow,
+        flaw_count: 0,
+        critical_count: 0,
+        confidence: 0.5,
+        elapsed_micros: 100,
+    };
+    let cloned = d.clone();
+    assert_eq!(cloned.sop_id, "图-α-β-γ-δ");
+}
+
+#[test]
+fn gate_config_with_default_state() {
+    let c = GateConfig::default();
+    // Default: enabled=true, fallback_on_error=true
+    assert!(c.enabled);
+    assert!(c.fallback_on_error);
+}
