@@ -481,3 +481,113 @@ fn platform_config_debug_format() {
     let dbg = format!("{:?}", p);
     assert!(dbg.contains("PlatformConfig"));
 }
+
+// ---------------------------------------------------------------------------
+// Additional PluginDescriptor tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn plugin_descriptor_with_unicode_path() {
+    use sisyphus_types::PluginDescriptor;
+    let pd = PluginDescriptor {
+        name: "p".into(),
+        version: "1".into(),
+        wasm_path: std::path::PathBuf::from("/路径/插件.wasm"),
+        tool_id: "t".into(),
+        fuel_limit: 1000,
+        checksum: None,
+    };
+    let j = serde_json::to_string(&pd).unwrap();
+    let back: PluginDescriptor = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.wasm_path.to_str().unwrap(), "/路径/插件.wasm");
+}
+
+#[test]
+fn plugin_descriptor_with_unicode_tool_id() {
+    use sisyphus_types::PluginDescriptor;
+    let pd = PluginDescriptor {
+        name: "p".into(),
+        version: "1".into(),
+        wasm_path: std::path::PathBuf::from("/p.wasm"),
+        tool_id: "工具-α".into(),
+        fuel_limit: 1000,
+        checksum: None,
+    };
+    let j = serde_json::to_string(&pd).unwrap();
+    let back: PluginDescriptor = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.tool_id, "工具-α");
+}
+
+#[test]
+fn plugin_descriptor_clone_with_checksum() {
+    use sisyphus_types::PluginDescriptor;
+    let pd = PluginDescriptor {
+        name: "p".into(),
+        version: "1".into(),
+        wasm_path: std::path::PathBuf::from("/p.wasm"),
+        tool_id: "t".into(),
+        fuel_limit: 1000,
+        checksum: Some("abc".into()),
+    };
+    let cloned = pd.clone();
+    assert_eq!(cloned.name, "p");
+    assert_eq!(cloned.checksum, Some("abc".into()));
+}
+
+#[test]
+fn vector_record_with_unicode_key() {
+    use sisyphus_types::VectorRecord;
+    let v = VectorRecord {
+        key: "键-α".into(),
+        embedding: vec![0.5],
+        metadata: serde_json::json!({}),
+        timestamp: 0,
+    };
+    let j = serde_json::to_string(&v).unwrap();
+    let back: VectorRecord = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.key, "键-α");
+}
+
+#[test]
+fn vector_record_with_unicode_metadata() {
+    use sisyphus_types::VectorRecord;
+    let v = VectorRecord {
+        key: "k".into(),
+        embedding: vec![],
+        metadata: serde_json::json!({"作者": "张-α", "标签": "中文"}),
+        timestamp: 0,
+    };
+    let j = serde_json::to_string(&v).unwrap();
+    let back: VectorRecord = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.metadata["作者"], "张-α");
+    assert_eq!(back.metadata["标签"], "中文");
+}
+
+#[test]
+fn agent_message_debug_format() {
+    use sisyphus_types::AgentMessage;
+    let m = AgentMessage {
+        from: "a".into(),
+        to: "b".into(),
+        kind: "request".into(),
+        payload: serde_json::json!({}),
+        correlation_id: "c".into(),
+    };
+    let dbg = format!("{:?}", m);
+    assert!(dbg.contains("AgentMessage"));
+}
+
+#[test]
+fn agent_message_unicode_kind() {
+    use sisyphus_types::AgentMessage;
+    let m = AgentMessage {
+        from: "a".into(),
+        to: "b".into(),
+        kind: "发布-请求".into(),
+        payload: serde_json::json!({}),
+        correlation_id: "c".into(),
+    };
+    let j = serde_json::to_string(&m).unwrap();
+    let back: AgentMessage = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.kind, "发布-请求");
+}
