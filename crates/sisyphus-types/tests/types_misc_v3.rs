@@ -820,3 +820,113 @@ fn platform_config_with_all_long_strings() {
     assert_eq!(back.path_sep.len(), 1000);
     assert_eq!(back.shell.len(), 1000);
 }
+
+// ---------------------------------------------------------------------------
+// Additional tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn benchmark_run_with_empty_metrics() {
+    use sisyphus_types::BenchmarkRun;
+    let b = BenchmarkRun {
+        name: "n".into(),
+        timestamp: 0,
+        duration_secs: 0.0,
+        success: false,
+        metrics: serde_json::json!({}),
+    };
+    let j = serde_json::to_string(&b).unwrap();
+    let back: BenchmarkRun = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.metrics, serde_json::json!({}));
+}
+
+#[test]
+fn benchmark_run_with_null_metrics() {
+    use sisyphus_types::BenchmarkRun;
+    let b = BenchmarkRun {
+        name: "n".into(),
+        timestamp: 0,
+        duration_secs: 0.0,
+        success: false,
+        metrics: serde_json::Value::Null,
+    };
+    let j = serde_json::to_string(&b).unwrap();
+    let back: BenchmarkRun = serde_json::from_str(&j).unwrap();
+    assert!(back.metrics.is_null());
+}
+
+#[test]
+fn vector_record_with_nan_embedding() {
+    use sisyphus_types::VectorRecord;
+    let v = VectorRecord {
+        key: "k".into(),
+        embedding: vec![f32::NAN, 0.5, 1.0],
+        metadata: serde_json::json!({}),
+        timestamp: 0,
+    };
+    // NaN doesn't roundtrip via JSON, but should not panic
+    let j = serde_json::to_string(&v).unwrap_or_default();
+    let _ = j;
+}
+
+#[test]
+fn agent_message_with_unicode_from_and_to() {
+    use sisyphus_types::AgentMessage;
+    let m = AgentMessage {
+        from: "发-α".into(),
+        to: "收-β".into(),
+        kind: "request".into(),
+        payload: serde_json::json!({}),
+        correlation_id: "c".into(),
+    };
+    let j = serde_json::to_string(&m).unwrap();
+    let back: AgentMessage = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.from, "发-α");
+    assert_eq!(back.to, "收-β");
+}
+
+#[test]
+fn platform_config_with_unicode_path_sep() {
+    use sisyphus_types::PlatformConfig;
+    let p = PlatformConfig {
+        is_windows: false,
+        path_sep: "/中文/".into(),
+        shell: "sh".into(),
+    };
+    let j = serde_json::to_string(&p).unwrap();
+    let back: PlatformConfig = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.path_sep, "/中文/");
+}
+
+#[test]
+fn plugin_descriptor_with_max_fuel_limit_v2() {
+    use sisyphus_types::PluginDescriptor;
+    let pd = PluginDescriptor {
+        name: "p".into(),
+        version: "1".into(),
+        wasm_path: std::path::PathBuf::from("/p.wasm"),
+        tool_id: "t".into(),
+        fuel_limit: u64::MAX,
+        checksum: None,
+    };
+    let j = serde_json::to_string(&pd).unwrap();
+    let back: PluginDescriptor = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.fuel_limit, u64::MAX);
+}
+
+#[test]
+fn feedback_with_long_corrected_output() {
+    use sisyphus_types::Feedback;
+    let long = "x".repeat(10000);
+    let f = Feedback {
+        agent_id: "a".into(),
+        original_request: "r".into(),
+        original_output: "o".into(),
+        corrected_output: long.clone(),
+        timestamp: 0,
+        tags: vec![],
+    };
+    let j = serde_json::to_string(&f).unwrap();
+    let back: Feedback = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.corrected_output.len(), 10000);
+}
