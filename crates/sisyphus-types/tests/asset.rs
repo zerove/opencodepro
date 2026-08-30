@@ -951,3 +951,153 @@ fn constraint_data_with_max_penalty() {
     let back: ConstraintData = serde_json::from_str(&j).unwrap();
     assert_eq!(back.violation_penalty, 1.0);
 }
+
+// ---------------------------------------------------------------------------
+// Additional asset tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn asset_content_with_sop_via_serde() {
+    use sisyphus_types::asset::AssetContent;
+    use sisyphus_types::graph::SOPGraphConfig;
+    let cfg = SOPGraphConfig::default();
+    let c = AssetContent::SOP(cfg);
+    let j = serde_json::to_string(&c).unwrap();
+    let back: AssetContent = serde_json::from_str(&j).unwrap();
+    let j2 = serde_json::to_string(&back).unwrap();
+    assert_eq!(j, j2);
+}
+
+#[test]
+fn asset_content_with_tool_via_serde() {
+    use sisyphus_types::asset::AssetContent;
+    use sisyphus_types::tools::ToolSpec;
+    let tool = ToolSpec {
+        tool_id: "t".into(),
+        required_capability: "c".into(),
+        expected_input: serde_json::json!({}),
+        expected_output: serde_json::json!({}),
+        success_criteria: "ok".into(),
+        test_command: None,
+        workdir: None,
+    };
+    let c = AssetContent::Tool(tool);
+    let j = serde_json::to_string(&c).unwrap();
+    let back: AssetContent = serde_json::from_str(&j).unwrap();
+    let j2 = serde_json::to_string(&back).unwrap();
+    assert_eq!(j, j2);
+}
+
+#[test]
+fn asset_content_with_insight_via_serde() {
+    use sisyphus_types::asset::{AssetContent, InsightData};
+    let i = InsightData {
+        observation: "o".into(),
+        reasoning: "r".into(),
+        evidence_ids: vec!["e".into()],
+        confidence: 0.5,
+    };
+    let c = AssetContent::Insight(i);
+    let j = serde_json::to_string(&c).unwrap();
+    let back: AssetContent = serde_json::from_str(&j).unwrap();
+    let j2 = serde_json::to_string(&back).unwrap();
+    assert_eq!(j, j2);
+}
+
+#[test]
+fn asset_content_with_constraint_via_serde() {
+    use sisyphus_types::asset::{AssetContent, ConstraintData};
+    let cd = ConstraintData {
+        description: "d".into(),
+        strictness: 0.5,
+        violation_penalty: 0.5,
+    };
+    let c = AssetContent::Constraint(cd);
+    let j = serde_json::to_string(&c).unwrap();
+    let back: AssetContent = serde_json::from_str(&j).unwrap();
+    let j2 = serde_json::to_string(&back).unwrap();
+    assert_eq!(j, j2);
+}
+
+#[test]
+fn cognitive_asset_with_unicode_id_3_times() {
+    use sisyphus_types::asset::{AssetContent, AssetKind, CognitiveAsset, InsightData};
+    for id in ["资产-α", "资产-β", "资产-γ"] {
+        let asset = CognitiveAsset {
+            id: id.into(),
+            kind: AssetKind::Tool,
+            name: "n".into(),
+            description: "d".into(),
+            content: AssetContent::Insight(InsightData {
+                observation: "o".into(),
+                reasoning: "r".into(),
+                evidence_ids: vec![],
+                confidence: 0.5,
+            }),
+            metadata: HashMap::new(),
+            version: 1,
+            created_at: 0,
+        };
+        let j = serde_json::to_string(&asset).unwrap();
+        let back: CognitiveAsset = serde_json::from_str(&j).unwrap();
+        assert_eq!(back.id, id);
+    }
+}
+
+#[test]
+fn asset_relation_5_variants_clone_preserves() {
+    use sisyphus_types::asset::{AssetRelation, RelationType};
+    let variants = vec![
+        AssetRelation {
+            from_id: "a".into(),
+            to_id: "b".into(),
+            relation_type: RelationType::Solves,
+            weight: 0.0,
+        },
+        AssetRelation {
+            from_id: "a".into(),
+            to_id: "b".into(),
+            relation_type: RelationType::Requires,
+            weight: 0.0,
+        },
+        AssetRelation {
+            from_id: "a".into(),
+            to_id: "b".into(),
+            relation_type: RelationType::EvolvedFrom,
+            weight: 0.0,
+        },
+        AssetRelation {
+            from_id: "a".into(),
+            to_id: "b".into(),
+            relation_type: RelationType::ConflictsWith,
+            weight: 0.0,
+        },
+        AssetRelation {
+            from_id: "a".into(),
+            to_id: "b".into(),
+            relation_type: RelationType::Refines,
+            weight: 0.0,
+        },
+    ];
+    for v in &variants {
+        let cloned = v.clone();
+        // RelationType doesn't implement PartialEq, but we can verify via Debug
+        let orig_dbg = format!("{:?}", v.relation_type);
+        let clone_dbg = format!("{:?}", cloned.relation_type);
+        assert_eq!(orig_dbg, clone_dbg);
+    }
+}
+
+#[test]
+fn insight_data_with_only_unicode_observation() {
+    use sisyphus_types::asset::InsightData;
+    let i = InsightData {
+        observation: "🔭".into(),
+        reasoning: "".into(),
+        evidence_ids: vec![],
+        confidence: 0.0,
+    };
+    let j = serde_json::to_string(&i).unwrap();
+    let back: InsightData = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.observation, "🔭");
+}
