@@ -222,3 +222,111 @@ fn gate_config_debug() {
     assert!(s.contains("enabled"));
     assert!(s.contains("fallback_on_error"));
 }
+
+// ---------------------------------------------------------------------------
+// GateVerdict additional coverage
+// ---------------------------------------------------------------------------
+
+#[test]
+fn gate_verdict_debug_format() {
+    let _ = format!("{:?}", GateVerdict::Allow);
+    let _ = format!("{:?}", GateVerdict::Reject);
+    let _ = format!("{:?}", GateVerdict::Skipped);
+}
+
+#[test]
+fn gate_verdict_clone() {
+    let a = GateVerdict::Allow;
+    let b = a.clone();
+    assert_eq!(a, b);
+}
+
+#[test]
+fn gate_decision_debug_format() {
+    let d = dec(GateVerdict::Allow, 0, 0);
+    let dbg = format!("{:?}", d);
+    assert!(dbg.contains("GateDecision"));
+    assert!(dbg.contains("sop_id"));
+}
+
+#[test]
+fn gate_decision_unicode_sop_id() {
+    let d = GateDecision {
+        sop_id: "图-α".into(),
+        verdict: GateVerdict::Allow,
+        flaw_count: 0,
+        critical_count: 0,
+        confidence: 0.99,
+        elapsed_micros: 1234,
+    };
+    assert_eq!(d.sop_id, "图-α");
+    let cloned = d.clone();
+    assert_eq!(cloned.sop_id, "图-α");
+}
+
+#[test]
+fn gate_decision_high_flaw_count() {
+    let d = GateDecision {
+        sop_id: "p".into(),
+        verdict: GateVerdict::Reject,
+        flaw_count: 1000,
+        critical_count: 50,
+        confidence: 0.1,
+        elapsed_micros: u128::MAX,
+    };
+    assert_eq!(d.flaw_count, 1000);
+    assert_eq!(d.critical_count, 50);
+    assert_eq!(d.elapsed_micros, u128::MAX);
+}
+
+#[test]
+fn gate_decision_partial_eq_self() {
+    let d = dec(GateVerdict::Allow, 0, 0);
+    assert_eq!(d, d.clone());
+}
+
+#[test]
+fn gate_decision_partial_eq_distinct() {
+    let d1 = dec(GateVerdict::Allow, 0, 0);
+    let d2 = dec(GateVerdict::Reject, 1, 1);
+    assert_ne!(d1, d2);
+}
+
+#[test]
+fn gate_history_clone_via_default() {
+    let h1 = GateHistory::default();
+    let h2 = GateHistory::new();
+    // Both empty, but distinct; we just verify they don't panic on construction
+    let _ = h1.snapshot();
+    let _ = h2.snapshot();
+}
+
+#[test]
+fn gate_history_intercept_rate_one_decision_allow() {
+    let h = GateHistory::new();
+    h.record(dec(GateVerdict::Allow, 0, 0));
+    assert_eq!(h.intercept_rate(), 0.0);
+    assert_eq!(h.false_positive_rate(), 0.0);
+}
+
+#[test]
+fn gate_history_intercept_rate_one_decision_reject() {
+    let h = GateHistory::new();
+    h.record(dec(GateVerdict::Reject, 1, 1));
+    assert_eq!(h.intercept_rate(), 1.0);
+}
+
+#[test]
+fn gate_history_false_positive_rate_with_reject() {
+    // FPR is always 0 by design (no labeled ground truth)
+    let h = GateHistory::new();
+    h.record(dec(GateVerdict::Reject, 5, 3));
+    assert_eq!(h.false_positive_rate(), 0.0);
+}
+
+#[test]
+fn gate_history_snapshot_empty() {
+    let h = GateHistory::new();
+    let s = h.snapshot();
+    assert!(s.is_empty());
+}
