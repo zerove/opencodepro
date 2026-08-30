@@ -333,3 +333,92 @@ fn simulation_result_max_u64_cost() {
     assert_eq!(parsed.estimated_cost, u64::MAX);
     assert_eq!(parsed.predicted_effort, u64::MAX);
 }
+
+// ---------------------------------------------------------------------------
+// Additional edge cases
+// ---------------------------------------------------------------------------
+
+#[test]
+fn logical_simulation_result_with_many_flaws() {
+    let flaws: Vec<LogicalFlaw> = (0..100)
+        .map(|i| LogicalFlaw {
+            node_name: format!("n{}", i),
+            description: format!("d{}", i),
+            severity: FlawSeverity::Warning,
+        })
+        .collect();
+    let r = LogicalSimulationResult {
+        is_valid: false,
+        flaws,
+        predicted_path: vec![],
+        confidence: 0.0,
+    };
+    assert_eq!(r.flaws.len(), 100);
+    let j = serde_json::to_string(&r).unwrap();
+    let back: LogicalSimulationResult = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.flaws.len(), 100);
+    assert_eq!(back.flaws[42].node_name, "n42");
+}
+
+#[test]
+fn logical_simulation_result_with_long_predicted_path() {
+    let path: Vec<String> = (0..50).map(|i| format!("step-{}", i)).collect();
+    let r = LogicalSimulationResult {
+        is_valid: true,
+        flaws: vec![],
+        predicted_path: path.clone(),
+        confidence: 0.99,
+    };
+    assert_eq!(r.predicted_path.len(), 50);
+    let j = serde_json::to_string(&r).unwrap();
+    let back: LogicalSimulationResult = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.predicted_path[49], "step-49");
+}
+
+#[test]
+fn flaw_severity_inequality() {
+    assert_ne!(FlawSeverity::Critical, FlawSeverity::Warning);
+    assert_ne!(FlawSeverity::Critical, FlawSeverity::Info);
+    assert_ne!(FlawSeverity::Warning, FlawSeverity::Info);
+}
+
+#[test]
+fn logical_flaw_with_empty_strings() {
+    let flaw = LogicalFlaw {
+        node_name: "".into(),
+        description: "".into(),
+        severity: FlawSeverity::Info,
+    };
+    assert_eq!(flaw.node_name, "");
+    let j = serde_json::to_string(&flaw).unwrap();
+    let back: LogicalFlaw = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.description, "");
+}
+
+#[test]
+fn logical_flaw_unicode_node_name() {
+    let flaw = LogicalFlaw {
+        node_name: "节点-α".into(),
+        description: "中文问题".into(),
+        severity: FlawSeverity::Critical,
+    };
+    let j = serde_json::to_string(&flaw).unwrap();
+    let back: LogicalFlaw = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.node_name, "节点-α");
+}
+
+#[test]
+fn simulation_result_unicode_path_id() {
+    let r = SimulationResult {
+        path_id: "路径-α".into(),
+        success_probability: 0.5,
+        estimated_cost: 100,
+        predicted_stability: 0.5,
+        predicted_effort: 5,
+        predicted_outcome: "中文结果".into(),
+    };
+    assert_eq!(r.path_id, "路径-α");
+    let j = serde_json::to_string(&r).unwrap();
+    let back: SimulationResult = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.predicted_outcome, "中文结果");
+}
