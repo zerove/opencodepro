@@ -1261,3 +1261,122 @@ fn trigger_def_with_only_unicode_tools() {
     assert_eq!(back.tools[0], "工具-0");
     assert_eq!(back.tools[9], "工具-9");
 }
+
+// ---------------------------------------------------------------------------
+// Additional tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn trigger_def_with_only_pattern_unicode_clone() {
+    use sisyphus_types::TriggerDef;
+    let t = TriggerDef {
+        pattern: Some("模式-α".into()),
+        tools: vec![],
+        description: None,
+        hook_phase: None,
+        hook_effect: None,
+        hook_message: None,
+    };
+    let cloned = t.clone();
+    assert_eq!(cloned.pattern, t.pattern);
+}
+
+#[test]
+fn trigger_def_with_empty_all_optional_fields() {
+    use sisyphus_types::TriggerDef;
+    let t = TriggerDef {
+        pattern: None,
+        tools: vec![],
+        description: None,
+        hook_phase: None,
+        hook_effect: None,
+        hook_message: None,
+    };
+    let j = serde_json::to_string(&t).unwrap();
+    let back: TriggerDef = serde_json::from_str(&j).unwrap();
+    assert!(back.pattern.is_none());
+    assert!(back.tools.is_empty());
+}
+
+#[test]
+fn benchmark_run_with_negative_timestamp() {
+    use sisyphus_types::BenchmarkRun;
+    let b = BenchmarkRun {
+        name: "n".into(),
+        timestamp: 0,
+        duration_secs: 0.0,
+        success: false,
+        metrics: serde_json::json!({}),
+    };
+    let j = serde_json::to_string(&b).unwrap();
+    let back: BenchmarkRun = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.timestamp, 0);
+}
+
+#[test]
+fn feedback_with_only_agent_id() {
+    use sisyphus_types::Feedback;
+    let f = Feedback {
+        agent_id: "a".into(),
+        original_request: "".into(),
+        original_output: "".into(),
+        corrected_output: "".into(),
+        timestamp: 0,
+        tags: vec![],
+    };
+    assert_eq!(f.agent_id, "a");
+    let j = serde_json::to_string(&f).unwrap();
+    let back: Feedback = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.agent_id, "a");
+}
+
+#[test]
+fn vector_record_with_unicode_in_metadata_array() {
+    use sisyphus_types::VectorRecord;
+    let v = VectorRecord {
+        key: "k".into(),
+        embedding: vec![],
+        metadata: serde_json::json!({"tags": ["中文-α", "中文-β", "中文-γ"]}),
+        timestamp: 0,
+    };
+    let j = serde_json::to_string(&v).unwrap();
+    let back: VectorRecord = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.metadata["tags"][0], "中文-α");
+    assert_eq!(back.metadata["tags"][1], "中文-β");
+}
+
+#[test]
+fn agent_message_with_all_unicode_fields() {
+    use sisyphus_types::AgentMessage;
+    let m = AgentMessage {
+        from: "发-α".into(),
+        to: "收-β".into(),
+        kind: "类型-γ".into(),
+        payload: serde_json::json!({"key": "值-δ"}),
+        correlation_id: "关联-ε".into(),
+    };
+    let j = serde_json::to_string(&m).unwrap();
+    let back: AgentMessage = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.from, "发-α");
+    assert_eq!(back.to, "收-β");
+    assert_eq!(back.kind, "类型-γ");
+    assert_eq!(back.payload["key"], "值-δ");
+    assert_eq!(back.correlation_id, "关联-ε");
+}
+
+#[test]
+fn plugin_descriptor_with_empty_all_optional() {
+    use sisyphus_types::PluginDescriptor;
+    let pd = PluginDescriptor {
+        name: "p".into(),
+        version: "1".into(),
+        wasm_path: std::path::PathBuf::from("/p.wasm"),
+        tool_id: "t".into(),
+        fuel_limit: 0,
+        checksum: None,
+    };
+    let j = serde_json::to_string(&pd).unwrap();
+    let back: PluginDescriptor = serde_json::from_str(&j).unwrap();
+    assert!(back.checksum.is_none());
+    assert_eq!(back.fuel_limit, 0);
+}
