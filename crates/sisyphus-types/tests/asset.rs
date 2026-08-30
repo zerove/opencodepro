@@ -810,3 +810,144 @@ fn cognitive_asset_with_special_characters_in_name() {
     let back: CognitiveAsset = serde_json::from_str(&j).unwrap();
     assert_eq!(back.name, special);
 }
+
+// ---------------------------------------------------------------------------
+// Additional CognitiveAsset tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn cognitive_asset_with_long_description() {
+    use sisyphus_types::asset::{AssetContent, AssetKind, CognitiveAsset, InsightData};
+    let long = "x".repeat(5000);
+    let asset = CognitiveAsset {
+        id: "a".into(),
+        kind: AssetKind::Tool,
+        name: "n".into(),
+        description: long.clone(),
+        content: AssetContent::Insight(InsightData {
+            observation: "o".into(),
+            reasoning: "r".into(),
+            evidence_ids: vec![],
+            confidence: 0.5,
+        }),
+        metadata: HashMap::new(),
+        version: 1,
+        created_at: 0,
+    };
+    let j = serde_json::to_string(&asset).unwrap();
+    let back: CognitiveAsset = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.description.len(), 5000);
+}
+
+#[test]
+fn cognitive_asset_with_negative_version() {
+    use sisyphus_types::asset::{AssetContent, AssetKind, CognitiveAsset, InsightData};
+    // Version is u32, can't be negative
+    let asset = CognitiveAsset {
+        id: "a".into(),
+        kind: AssetKind::Tool,
+        name: "n".into(),
+        description: "d".into(),
+        content: AssetContent::Insight(InsightData {
+            observation: "o".into(),
+            reasoning: "r".into(),
+            evidence_ids: vec![],
+            confidence: 0.5,
+        }),
+        metadata: HashMap::new(),
+        version: 0,
+        created_at: 0,
+    };
+    assert_eq!(asset.version, 0);
+}
+
+#[test]
+fn cognitive_asset_with_max_created_at() {
+    use sisyphus_types::asset::{AssetContent, AssetKind, CognitiveAsset, InsightData};
+    let asset = CognitiveAsset {
+        id: "a".into(),
+        kind: AssetKind::Tool,
+        name: "n".into(),
+        description: "d".into(),
+        content: AssetContent::Insight(InsightData {
+            observation: "o".into(),
+            reasoning: "r".into(),
+            evidence_ids: vec![],
+            confidence: 0.5,
+        }),
+        metadata: HashMap::new(),
+        version: 1,
+        created_at: u64::MAX,
+    };
+    let j = serde_json::to_string(&asset).unwrap();
+    let back: CognitiveAsset = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.created_at, u64::MAX);
+}
+
+#[test]
+fn asset_relation_with_unicode_in_5_fields() {
+    use sisyphus_types::asset::{AssetRelation, RelationType};
+    let r = AssetRelation {
+        from_id: "α".into(),
+        to_id: "β".into(),
+        relation_type: RelationType::Refines,
+        weight: 0.7,
+    };
+    assert_eq!(r.from_id, "α");
+    let j = serde_json::to_string(&r).unwrap();
+    let back: AssetRelation = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.to_id, "β");
+}
+
+#[test]
+fn cognitive_asset_with_unicode_in_metadata_key() {
+    use sisyphus_types::asset::{AssetContent, AssetKind, CognitiveAsset, InsightData};
+    let mut meta = HashMap::new();
+    meta.insert("中文-key-α".into(), "中文-value-β".into());
+    let asset = CognitiveAsset {
+        id: "a".into(),
+        kind: AssetKind::Tool,
+        name: "n".into(),
+        description: "d".into(),
+        content: AssetContent::Insight(InsightData {
+            observation: "o".into(),
+            reasoning: "r".into(),
+            evidence_ids: vec![],
+            confidence: 0.5,
+        }),
+        metadata: meta,
+        version: 1,
+        created_at: 0,
+    };
+    let j = serde_json::to_string(&asset).unwrap();
+    let back: CognitiveAsset = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.metadata["中文-key-α"], "中文-value-β");
+}
+
+#[test]
+fn insight_data_with_unicode_observation_only() {
+    use sisyphus_types::asset::InsightData;
+    let i = InsightData {
+        observation: "观察".into(),
+        reasoning: "".into(),
+        evidence_ids: vec![],
+        confidence: 0.0,
+    };
+    assert_eq!(i.observation, "观察");
+    let j = serde_json::to_string(&i).unwrap();
+    let back: InsightData = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.observation, "观察");
+}
+
+#[test]
+fn constraint_data_with_max_penalty() {
+    use sisyphus_types::asset::ConstraintData;
+    let c = ConstraintData {
+        description: "d".into(),
+        strictness: 1.0,
+        violation_penalty: 1.0,
+    };
+    let j = serde_json::to_string(&c).unwrap();
+    let back: ConstraintData = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.violation_penalty, 1.0);
+}
