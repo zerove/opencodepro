@@ -2361,3 +2361,139 @@ fn insight_data_with_unicode_observation_and_evidence() {
     assert_eq!(back.evidence_ids[0], "ev-γ");
     assert_eq!(back.evidence_ids[1], "ev-δ");
 }
+
+// ---------------------------------------------------------------------------
+// More tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn cognitive_asset_with_unicode_id_empty_description() {
+    use sisyphus_types::asset::{AssetContent, AssetKind, CognitiveAsset, InsightData};
+    let asset = CognitiveAsset {
+        id: "id-α".into(),
+        kind: AssetKind::Tool,
+        name: "n".into(),
+        description: "".into(),
+        content: AssetContent::Insight(InsightData {
+            observation: "o".into(),
+            reasoning: "r".into(),
+            evidence_ids: vec![],
+            confidence: 0.5,
+        }),
+        metadata: HashMap::new(),
+        version: 1,
+        created_at: 0,
+    };
+    let j = serde_json::to_string(&asset).unwrap();
+    let back: CognitiveAsset = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.id, "id-α");
+    assert_eq!(back.description, "");
+}
+
+#[test]
+fn insight_data_with_unicode_observation_via_2_chars() {
+    let i = InsightData {
+        observation: "αβ".into(),
+        reasoning: "r".into(),
+        evidence_ids: vec![],
+        confidence: 0.5,
+    };
+    let j = serde_json::to_string(&i).unwrap();
+    let back: InsightData = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.observation, "αβ");
+}
+
+#[test]
+fn cognitive_asset_with_unicode_id_at_50() {
+    use sisyphus_types::asset::{AssetContent, AssetKind, CognitiveAsset, InsightData};
+    let long = "α".repeat(50);
+    let asset = CognitiveAsset {
+        id: long.clone(),
+        kind: AssetKind::Tool,
+        name: "n".into(),
+        description: "d".into(),
+        content: AssetContent::Insight(InsightData {
+            observation: "o".into(),
+            reasoning: "r".into(),
+            evidence_ids: vec![],
+            confidence: 0.5,
+        }),
+        metadata: HashMap::new(),
+        version: 1,
+        created_at: 0,
+    };
+    let j = serde_json::to_string(&asset).unwrap();
+    let back: CognitiveAsset = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.id.chars().count(), 50);
+}
+
+#[test]
+fn asset_kind_serde_via_json_field() {
+    use sisyphus_types::asset::AssetKind;
+    // JSON field naming is consistent
+    let k = AssetKind::Insight;
+    let j = serde_json::to_string(&k).unwrap();
+    let back: AssetKind = serde_json::from_str(&j).unwrap();
+    // Verify via Debug since AssetKind doesn't implement PartialEq
+    let j2 = serde_json::to_string(&back).unwrap();
+    assert_eq!(j, j2);
+}
+
+#[test]
+fn cognitive_asset_with_unicode_id_with_quotes() {
+    use sisyphus_types::asset::{AssetContent, AssetKind, CognitiveAsset, InsightData};
+    let asset = CognitiveAsset {
+        id: "id-α-\"quoted\"".into(),
+        kind: AssetKind::Tool,
+        name: "n".into(),
+        description: "d".into(),
+        content: AssetContent::Insight(InsightData {
+            observation: "o".into(),
+            reasoning: "r".into(),
+            evidence_ids: vec![],
+            confidence: 0.5,
+        }),
+        metadata: HashMap::new(),
+        version: 1,
+        created_at: 0,
+    };
+    let j = serde_json::to_string(&asset).unwrap();
+    let back: CognitiveAsset = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.id, "id-α-\"quoted\"");
+}
+
+#[test]
+fn cognitive_asset_with_only_unicode_metadata_value_clone() {
+    use sisyphus_types::asset::{AssetContent, AssetKind, CognitiveAsset, InsightData};
+    let mut meta = HashMap::new();
+    meta.insert("k-α".into(), "v-β-🔍".into());
+    let asset = CognitiveAsset {
+        id: "a".into(),
+        kind: AssetKind::Tool,
+        name: "n".into(),
+        description: "d".into(),
+        content: AssetContent::Insight(InsightData {
+            observation: "o".into(),
+            reasoning: "r".into(),
+            evidence_ids: vec![],
+            confidence: 0.5,
+        }),
+        metadata: meta,
+        version: 1,
+        created_at: 0,
+    };
+    let cloned = asset.clone();
+    assert_eq!(cloned.metadata["k-α"], "v-β-🔍");
+}
+
+#[test]
+fn insight_data_with_unicode_observation_clone_preserves_v3() {
+    let i = InsightData {
+        observation: "obs-α-🔍".into(),
+        reasoning: "r".into(),
+        evidence_ids: vec![],
+        confidence: 0.5,
+    };
+    let cloned = i.clone();
+    assert_eq!(cloned.observation, "obs-α-🔍");
+}
