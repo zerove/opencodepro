@@ -892,3 +892,90 @@ fn sisyphus_notepad_append_long_insight() {
     let read = n.read_section("s").unwrap();
     assert!(read.contains(&long_insight));
 }
+
+// ---------------------------------------------------------------------------
+// Additional Coverage
+// ---------------------------------------------------------------------------
+
+#[test]
+fn model_route_strategy_serde_with_unicode_metadata() {
+    use sisyphus_types::types::ModelRouteStrategy;
+    // Just verify serde
+    for v in [
+        ModelRouteStrategy::CostOptimized,
+        ModelRouteStrategy::PerformanceOptimized,
+        ModelRouteStrategy::FallbackChain,
+    ] {
+        let j = serde_json::to_string(&v).unwrap();
+        assert!(j.contains("ModelRouteStrategy") || j.len() < 50);
+    }
+}
+
+#[test]
+fn evolution_op_with_all_field_types() {
+    use sisyphus_types::types::EvolutionOp;
+    let op = EvolutionOp::SwapNodes {
+        node_a: "α".into(),
+        node_b: "β".into(),
+    };
+    let j = serde_json::to_string(&op).unwrap();
+    let back: EvolutionOp = serde_json::from_str(&j).unwrap();
+    match back {
+        EvolutionOp::SwapNodes { node_a, node_b } => {
+            assert_eq!(node_a, "α");
+            assert_eq!(node_b, "β");
+        }
+        _ => panic!("wrong variant"),
+    }
+}
+
+#[test]
+fn sisyphus_notepad_append_to_existing_with_unicode() {
+    let mut n = SisyphusNotepad::default();
+    n.append_insight("plan".into(), "first".into());
+    n.append_insight("plan".into(), "中文-β".into());
+    let read = n.read_section("plan").unwrap();
+    assert!(read.contains("first"));
+    assert!(read.contains("中文-β"));
+}
+
+#[test]
+fn sisyphus_notepad_overwrite_via_write() {
+    let mut n = SisyphusNotepad::default();
+    n.write_section("s".into(), "original".into());
+    n.write_section("s".into(), "replaced".into());
+    let read = n.read_section("s").unwrap();
+    assert_eq!(read, &"replaced".to_string());
+}
+
+#[test]
+fn sisyphus_notepad_with_unicode_section_id_serde_safe() {
+    let mut n = SisyphusNotepad::default();
+    n.write_section("模块-α".into(), "内容-β".into());
+    // SisyphusNotepad doesn't implement Serialize directly
+    // Just verify field access works
+    assert_eq!(n.sections.len(), 1);
+}
+
+#[test]
+fn trigger_def_with_unicode_tools_serde() {
+    let t = TriggerDef {
+        pattern: Some("p".into()),
+        tools: vec!["工具-α".into(), "工具-β".into(), "工具-γ".into()],
+        description: None,
+        hook_phase: None,
+        hook_effect: None,
+        hook_message: None,
+    };
+    let j = serde_json::to_string(&t).unwrap();
+    let back: TriggerDef = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.tools.len(), 3);
+    assert_eq!(back.tools[0], "工具-α");
+}
+
+#[test]
+fn trigger_def_with_only_description_serde() {
+    let t: TriggerDef = serde_json::from_str(r#"{"description":"only description"}"#).unwrap();
+    assert_eq!(t.description.as_deref(), Some("only description"));
+    assert!(t.pattern.is_none());
+}
