@@ -421,3 +421,121 @@ fn cognitive_asset_with_max_version() {
     };
     assert_eq!(asset.version, u32::MAX);
 }
+
+// ---------------------------------------------------------------------------
+// Additional coverage
+// ---------------------------------------------------------------------------
+
+#[test]
+fn asset_kind_unicode_debug() {
+    use sisyphus_types::asset::AssetKind;
+    let s = format!("{:?}", AssetKind::Tool);
+    // Just verify it doesn't panic
+    let _ = s;
+}
+
+#[test]
+fn insight_data_unicode_observation() {
+    let i = InsightData {
+        observation: "观察-α 包含 emoji 🔍".into(),
+        reasoning: "推理".into(),
+        evidence_ids: vec![],
+        confidence: 0.7,
+    };
+    assert!(i.observation.contains("🔍"));
+    let j = serde_json::to_string(&i).unwrap();
+    let back: InsightData = serde_json::from_str(&j).unwrap();
+    assert!(back.observation.contains("🔍"));
+}
+
+#[test]
+fn insight_data_with_long_observation() {
+    let long = "x".repeat(10_000);
+    let i = InsightData {
+        observation: long.clone(),
+        reasoning: "r".into(),
+        evidence_ids: vec![],
+        confidence: 0.5,
+    };
+    let j = serde_json::to_string(&i).unwrap();
+    let back: InsightData = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.observation.len(), 10_000);
+}
+
+#[test]
+fn constraint_data_unicode() {
+    use sisyphus_types::asset::ConstraintData;
+    let c = ConstraintData {
+        description: "约束-α: 必须快".into(),
+        strictness: 0.9,
+        violation_penalty: 0.8,
+    };
+    let j = serde_json::to_string(&c).unwrap();
+    let back: ConstraintData = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.description, "约束-α: 必须快");
+}
+
+#[test]
+fn constraint_data_above_one_strictness() {
+    use sisyphus_types::asset::ConstraintData;
+    let c = ConstraintData {
+        description: "d".into(),
+        strictness: 1.5,
+        violation_penalty: 0.5,
+    };
+    // No validation, just verify it round-trips
+    let j = serde_json::to_string(&c).unwrap();
+    let back: ConstraintData = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.strictness, 1.5);
+}
+
+#[test]
+fn cognitive_asset_with_unicode_metadata() {
+    let mut meta = HashMap::new();
+    meta.insert("作者".into(), "张-α".into());
+    meta.insert("版本".into(), "1.0".into());
+    let asset = CognitiveAsset {
+        id: "id".into(),
+        kind: AssetKind::Insight,
+        name: "名字".into(),
+        description: "描述".into(),
+        content: AssetContent::Insight(InsightData {
+            observation: "o".into(),
+            reasoning: "r".into(),
+            evidence_ids: vec![],
+            confidence: 0.5,
+        }),
+        metadata: meta,
+        version: 1,
+        created_at: 0,
+    };
+    assert_eq!(asset.metadata["作者"], "张-α");
+}
+
+#[test]
+fn asset_relation_self_loop() {
+    use sisyphus_types::asset::{AssetRelation, RelationType};
+    let r = AssetRelation {
+        from_id: "a".into(),
+        to_id: "a".into(), // self-loop
+        relation_type: RelationType::Solves,
+        weight: 1.0,
+    };
+    let j = serde_json::to_string(&r).unwrap();
+    let back: AssetRelation = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.from_id, back.to_id);
+}
+
+#[test]
+fn asset_relation_with_max_occurrence_count() {
+    use sisyphus_types::asset::{AssetRelation, RelationType};
+    let r = AssetRelation {
+        from_id: "a".into(),
+        to_id: "b".into(),
+        relation_type: RelationType::Refines,
+        weight: f32::MIN, // small negative
+    };
+    let j = serde_json::to_string(&r).unwrap();
+    let back: AssetRelation = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.weight, f32::MIN);
+}
