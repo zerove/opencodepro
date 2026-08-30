@@ -1168,3 +1168,80 @@ fn evolution_op_with_zero_and_max_delta() {
         _ => panic!("wrong"),
     }
 }
+
+// ---------------------------------------------------------------------------
+// Additional tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn evolution_op_with_unicode_remove_node() {
+    use sisyphus_types::types::EvolutionOp;
+    let op = EvolutionOp::RemoveNode {
+        node_name: "节点-α-β-γ".into(),
+    };
+    let j = serde_json::to_string(&op).unwrap();
+    let back: EvolutionOp = serde_json::from_str(&j).unwrap();
+    match back {
+        EvolutionOp::RemoveNode { node_name } => {
+            assert_eq!(node_name, "节点-α-β-γ");
+        }
+        _ => panic!("wrong"),
+    }
+}
+
+#[test]
+fn evolution_op_with_unicode_swap_nodes() {
+    use sisyphus_types::types::EvolutionOp;
+    let op = EvolutionOp::SwapNodes {
+        node_a: "α".into(),
+        node_b: "β".into(),
+    };
+    let j = serde_json::to_string(&op).unwrap();
+    let back: EvolutionOp = serde_json::from_str(&j).unwrap();
+    match back {
+        EvolutionOp::SwapNodes { node_a, node_b } => {
+            assert_eq!(node_a, "α");
+            assert_eq!(node_b, "β");
+        }
+        _ => panic!("wrong"),
+    }
+}
+
+#[test]
+fn sisyphus_notepad_with_unicode_section_id_read() {
+    let mut n = SisyphusNotepad::default();
+    n.write_section("模块-α-β".into(), "内容".into());
+    let read = n.read_section("模块-α-β");
+    assert_eq!(read, Some(&"内容".to_string()));
+}
+
+#[test]
+fn sisyphus_notepad_append_to_unicode_section_id() {
+    let mut n = SisyphusNotepad::default();
+    n.append_insight("节-α".into(), "洞-β".into());
+    let read = n.read_section("节-α");
+    assert!(read.is_some());
+    assert!(read.unwrap().contains("洞-β"));
+}
+
+#[test]
+fn trigger_def_with_only_unicode_pattern_serde() {
+    let t: TriggerDef = serde_json::from_str(r#"{"pattern":"模式-α"}"#).unwrap();
+    assert_eq!(t.pattern.as_deref(), Some("模式-α"));
+}
+
+#[test]
+fn trigger_def_with_only_unicode_description_serde() {
+    let t: TriggerDef = serde_json::from_str(r#"{"description":"描述-α"}"#).unwrap();
+    assert_eq!(t.description.as_deref(), Some("描述-α"));
+}
+
+#[test]
+fn work_mode_with_serde_round_trip() {
+    use sisyphus_types::types::WorkMode;
+    for v in [WorkMode::Standard, WorkMode::UltraWork] {
+        let j = serde_json::to_string(&v).unwrap();
+        let back: WorkMode = serde_json::from_str(&j).unwrap();
+        assert_eq!(back, v);
+    }
+}
