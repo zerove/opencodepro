@@ -1456,3 +1456,105 @@ fn planner_config_with_unicode_field_no_serde() {
     };
     assert_eq!(cfg.probability_weight, 0.0);
 }
+
+// ---------------------------------------------------------------------------
+// More tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn risk_level_with_serde_via_lowercase() {
+    // RiskLevel might serialize as different string
+    let s_low = serde_json::to_string(&RiskLevel::Low).unwrap();
+    let s_med = serde_json::to_string(&RiskLevel::Medium).unwrap();
+    let s_high = serde_json::to_string(&RiskLevel::High).unwrap();
+    let s_crit = serde_json::to_string(&RiskLevel::Critical).unwrap();
+    // All should be distinct strings
+    let set: std::collections::HashSet<_> = [&s_low, &s_med, &s_high, &s_crit]
+        .iter()
+        .map(|s| s.as_str())
+        .collect();
+    assert_eq!(set.len(), 4);
+}
+
+#[test]
+fn ranked_path_with_above_one_confidence() {
+    let rp = RankedPath {
+        path_id: "p".into(),
+        success_probability: 0.5,
+        estimated_cost: 0,
+        risk_level: RiskLevel::Low,
+        composite_score: 0.5,
+        predicted_outcome: "x".into(),
+        confidence: 1.5,
+    };
+    let j = serde_json::to_string(&rp).unwrap();
+    let back: RankedPath = serde_json::from_str(&j).unwrap();
+    assert!((back.confidence - 1.5).abs() < 1e-9);
+}
+
+#[test]
+fn ranked_path_with_zero_confidence() {
+    let rp = RankedPath {
+        path_id: "p".into(),
+        success_probability: 0.5,
+        estimated_cost: 0,
+        risk_level: RiskLevel::Low,
+        composite_score: 0.5,
+        predicted_outcome: "x".into(),
+        confidence: 0.0,
+    };
+    let j = serde_json::to_string(&rp).unwrap();
+    let back: RankedPath = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.confidence, 0.0);
+}
+
+#[test]
+fn ranked_path_with_max_estimated_cost() {
+    let rp = RankedPath {
+        path_id: "p".into(),
+        success_probability: 0.5,
+        estimated_cost: u64::MAX,
+        risk_level: RiskLevel::Low,
+        composite_score: 0.5,
+        predicted_outcome: "x".into(),
+        confidence: 0.5,
+    };
+    let j = serde_json::to_string(&rp).unwrap();
+    let back: RankedPath = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.estimated_cost, u64::MAX);
+}
+
+#[test]
+fn planner_config_with_default_then_overrides() {
+    let mut cfg = PlannerConfig::default();
+    cfg.probability_weight = 0.7;
+    cfg.cost_weight = 0.2;
+    cfg.stability_weight = 0.1;
+    assert!((cfg.probability_weight - 0.7).abs() < 1e-9);
+    assert!((cfg.cost_weight - 0.2).abs() < 1e-9);
+    assert!((cfg.stability_weight - 0.1).abs() < 1e-9);
+}
+
+#[test]
+fn planner_config_with_negative_weights() {
+    let cfg = PlannerConfig {
+        probability_weight: -0.5,
+        cost_weight: -0.5,
+        stability_weight: -0.5,
+        max_cost: 0,
+        risk_thresholds: RiskThresholds::default(),
+    };
+    let j = serde_json::to_string(&cfg).unwrap();
+    let back: PlannerConfig = serde_json::from_str(&j).unwrap();
+    assert!((back.probability_weight + 0.5).abs() < 1e-9);
+}
+
+#[test]
+fn experience_record_with_unicode_path_id() {
+    let r = ExperienceRecord {
+        path_id: "路径-α-🔍".into(),
+        success: true,
+        actual_cost: 100,
+    };
+    assert_eq!(r.path_id, "路径-α-🔍");
+}
