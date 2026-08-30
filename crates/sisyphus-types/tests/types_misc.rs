@@ -731,3 +731,106 @@ fn feedback_clone_preserves_unicode() {
     assert_eq!(cloned.agent_id, "α");
     assert_eq!(cloned.tags[0], "标签-1");
 }
+
+// ---------------------------------------------------------------------------
+// Additional VectorRecord tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn vector_record_with_empty_key() {
+    use sisyphus_types::VectorRecord;
+    let v = VectorRecord {
+        key: "".into(),
+        embedding: vec![0.5],
+        metadata: serde_json::json!({}),
+        timestamp: 0,
+    };
+    let j = serde_json::to_string(&v).unwrap();
+    let back: VectorRecord = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.key, "");
+}
+
+#[test]
+fn vector_record_with_negative_floats() {
+    use sisyphus_types::VectorRecord;
+    let v = VectorRecord {
+        key: "k".into(),
+        embedding: vec![-0.1, -0.5, -1.0],
+        metadata: serde_json::json!({}),
+        timestamp: 0,
+    };
+    let j = serde_json::to_string(&v).unwrap();
+    let back: VectorRecord = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.embedding, vec![-0.1, -0.5, -1.0]);
+}
+
+#[test]
+fn plugin_descriptor_with_relative_wasm_path() {
+    use sisyphus_types::PluginDescriptor;
+    let pd = PluginDescriptor {
+        name: "p".into(),
+        version: "1".into(),
+        wasm_path: std::path::PathBuf::from("./target/wasm32/release/plugin.wasm"),
+        tool_id: "t".into(),
+        fuel_limit: 100,
+        checksum: None,
+    };
+    let j = serde_json::to_string(&pd).unwrap();
+    let back: PluginDescriptor = serde_json::from_str(&j).unwrap();
+    assert_eq!(
+        back.wasm_path,
+        std::path::PathBuf::from("./target/wasm32/release/plugin.wasm")
+    );
+}
+
+#[test]
+fn plugin_descriptor_with_long_checksum() {
+    use sisyphus_types::PluginDescriptor;
+    let long_hash = "a".repeat(128); // SHA-512 hex length
+    let pd = PluginDescriptor {
+        name: "p".into(),
+        version: "1".into(),
+        wasm_path: std::path::PathBuf::from("/p.wasm"),
+        tool_id: "t".into(),
+        fuel_limit: 100,
+        checksum: Some(long_hash.clone()),
+    };
+    let j = serde_json::to_string(&pd).unwrap();
+    let back: PluginDescriptor = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.checksum.as_deref(), Some(long_hash.as_str()));
+    assert_eq!(back.checksum.unwrap().len(), 128);
+}
+
+#[test]
+fn trigger_def_with_only_hook_message() {
+    use sisyphus_types::TriggerDef;
+    let t: TriggerDef = serde_json::from_str(r#"{"hook_message":"hello"}"#).unwrap();
+    assert_eq!(t.hook_message.as_deref(), Some("hello"));
+    assert!(t.pattern.is_none());
+    assert!(t.hook_phase.is_none());
+}
+
+#[test]
+fn trigger_def_with_only_hook_phase() {
+    use sisyphus_types::TriggerDef;
+    let t: TriggerDef = serde_json::from_str(r#"{"hook_phase":"after"}"#).unwrap();
+    assert_eq!(t.hook_phase.as_deref(), Some("after"));
+    assert!(t.pattern.is_none());
+    assert!(t.hook_message.is_none());
+}
+
+#[test]
+fn trigger_def_with_empty_tools_array() {
+    use sisyphus_types::TriggerDef;
+    let t = TriggerDef {
+        pattern: Some("p".into()),
+        tools: vec![],
+        description: Some("d".into()),
+        hook_phase: Some("before".into()),
+        hook_effect: Some("e".into()),
+        hook_message: Some("m".into()),
+    };
+    let j = serde_json::to_string(&t).unwrap();
+    let back: TriggerDef = serde_json::from_str(&j).unwrap();
+    assert!(back.tools.is_empty());
+}
