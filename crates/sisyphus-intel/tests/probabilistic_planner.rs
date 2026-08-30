@@ -1770,3 +1770,122 @@ fn path_summary_with_default_risk_distribution() {
     assert!(s.best_path.is_none());
     assert!(s.worst_path.is_none());
 }
+
+// ---------------------------------------------------------------------------
+// More tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn risk_level_serde_returns_quoted_string() {
+    let s = serde_json::to_string(&RiskLevel::Low).unwrap();
+    // Variant should be quoted
+    assert!(s.starts_with('"') && s.ends_with('"'));
+}
+
+#[test]
+fn risk_thresholds_with_unicode_field_test_field_access_only() {
+    // RiskThresholds has no string field to test Unicode
+    let t = RiskThresholds {
+        low: 0.0,
+        medium: 0.0,
+        high: 0.0,
+    };
+    assert_eq!(t.low, 0.0);
+}
+
+#[test]
+fn ranked_path_with_unicode_predicted_outcome_3_chars() {
+    let rp = RankedPath {
+        path_id: "p".into(),
+        success_probability: 0.5,
+        estimated_cost: 0,
+        risk_level: RiskLevel::Low,
+        composite_score: 0.5,
+        predicted_outcome: "αβγ".into(),
+        confidence: 0.5,
+    };
+    let j = serde_json::to_string(&rp).unwrap();
+    let back: RankedPath = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.predicted_outcome, "αβγ");
+}
+
+#[test]
+fn ranked_path_with_long_unicode_path_id() {
+    let long = "路径-α-".repeat(50);
+    let rp = RankedPath {
+        path_id: long.clone(),
+        success_probability: 0.5,
+        estimated_cost: 0,
+        risk_level: RiskLevel::Low,
+        composite_score: 0.5,
+        predicted_outcome: "ok".into(),
+        confidence: 0.5,
+    };
+    let j = serde_json::to_string(&rp).unwrap();
+    let back: RankedPath = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.path_id, long);
+}
+
+#[test]
+fn ranked_path_with_unicode_each_field_serde() {
+    let rp = RankedPath {
+        path_id: "路径-α".into(),
+        success_probability: 0.5,
+        estimated_cost: 0,
+        risk_level: RiskLevel::Low,
+        composite_score: 0.5,
+        predicted_outcome: "结果-β".into(),
+        confidence: 0.5,
+    };
+    let j = serde_json::to_string(&rp).unwrap();
+    let back: RankedPath = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.path_id, "路径-α");
+    assert_eq!(back.predicted_outcome, "结果-β");
+}
+
+#[test]
+fn planner_config_with_weights_summing_to_one() {
+    let cfg = PlannerConfig {
+        probability_weight: 0.5,
+        cost_weight: 0.3,
+        stability_weight: 0.2,
+        max_cost: 1000,
+        risk_thresholds: RiskThresholds::default(),
+    };
+    let sum = cfg.probability_weight + cfg.cost_weight + cfg.stability_weight;
+    assert!((sum - 1.0).abs() < 1e-9);
+}
+
+#[test]
+fn path_summary_with_unicode_best_worst_paths() {
+    let best = RankedPath {
+        path_id: "最佳-α".into(),
+        success_probability: 0.9,
+        estimated_cost: 100,
+        risk_level: RiskLevel::Low,
+        composite_score: 0.9,
+        predicted_outcome: "ok-β".into(),
+        confidence: 0.9,
+    };
+    let worst = RankedPath {
+        path_id: "最差-γ".into(),
+        success_probability: 0.1,
+        estimated_cost: 1000,
+        risk_level: RiskLevel::Critical,
+        composite_score: 0.1,
+        predicted_outcome: "fail-δ".into(),
+        confidence: 0.1,
+    };
+    let s = PathSummary {
+        total_paths: 2,
+        average_probability: 0.5,
+        average_cost: 550,
+        best_path: Some(best.clone()),
+        worst_path: Some(worst.clone()),
+        risk_distribution: std::collections::HashMap::new(),
+    };
+    let j = serde_json::to_string(&s).unwrap();
+    let back: PathSummary = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.best_path.as_ref().unwrap().path_id, "最佳-α");
+    assert_eq!(back.worst_path.as_ref().unwrap().path_id, "最差-γ");
+}
