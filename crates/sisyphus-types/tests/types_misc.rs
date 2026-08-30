@@ -2615,3 +2615,127 @@ fn feedback_with_unicode_only_output() {
     };
     assert_eq!(f.original_output, "输出-α-🔍");
 }
+
+// ---------------------------------------------------------------------------
+// More tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn feedback_with_unicode_only_corrected_output_2() {
+    use sisyphus_types::Feedback;
+    let f = Feedback {
+        agent_id: "a".into(),
+        original_request: "r".into(),
+        original_output: "o".into(),
+        corrected_output: "修正-α-🔍".into(),
+        timestamp: 0,
+        tags: vec![],
+    };
+    let j = serde_json::to_string(&f).unwrap();
+    let back: Feedback = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.corrected_output, "修正-α-🔍");
+}
+
+#[test]
+fn vector_record_with_unicode_metadata_3_keys() {
+    use sisyphus_types::VectorRecord;
+    let v = VectorRecord {
+        key: "k".into(),
+        embedding: vec![0.5],
+        metadata: serde_json::json!({
+            "k1-α": "v1-β",
+            "k2-γ": "v2-δ",
+            "k3-ε": "v3-ζ"
+        }),
+        timestamp: 0,
+    };
+    let j = serde_json::to_string(&v).unwrap();
+    let back: VectorRecord = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.metadata["k1-α"], "v1-β");
+    assert_eq!(back.metadata["k3-ε"], "v3-ζ");
+}
+
+#[test]
+fn plugin_descriptor_with_unicode_path_with_emoji() {
+    use sisyphus_types::PluginDescriptor;
+    let pd = PluginDescriptor {
+        name: "p".into(),
+        version: "1".into(),
+        wasm_path: std::path::PathBuf::from("/path/🔍/插件.wasm"),
+        tool_id: "t".into(),
+        fuel_limit: 1000,
+        checksum: None,
+    };
+    let j = serde_json::to_string(&pd).unwrap();
+    let back: PluginDescriptor = serde_json::from_str(&j).unwrap();
+    assert!(back.wasm_path.to_str().unwrap().contains("🔍"));
+}
+
+#[test]
+fn agent_message_with_unicode_payload_array_2() {
+    use sisyphus_types::AgentMessage;
+    let m = AgentMessage {
+        from: "a".into(),
+        to: "b".into(),
+        kind: "request".into(),
+        payload: serde_json::json!([
+            {"name-α": "value-β"},
+            {"name-γ": "value-δ"},
+            {"name-ε": "value-ζ"}
+        ]),
+        correlation_id: "c".into(),
+    };
+    let j = serde_json::to_string(&m).unwrap();
+    let back: AgentMessage = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.payload[0]["name-α"], "value-β");
+    assert_eq!(back.payload[2]["name-ε"], "value-ζ");
+}
+
+#[test]
+fn benchmark_run_with_unicode_metrics_array_long() {
+    use sisyphus_types::BenchmarkRun;
+    let arr: Vec<String> = (0..20).map(|i| format!("item-α-{}", i)).collect();
+    let b = BenchmarkRun {
+        name: "n".into(),
+        timestamp: 0,
+        duration_secs: 0.0,
+        success: true,
+        metrics: serde_json::json!({"items-α": arr}),
+    };
+    let j = serde_json::to_string(&b).unwrap();
+    let back: BenchmarkRun = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.metrics["items-α"].as_array().unwrap().len(), 20);
+}
+
+#[test]
+fn trigger_def_with_unicode_long_hook_message() {
+    use sisyphus_types::TriggerDef;
+    let long = "消息-α-".repeat(50);
+    let t = TriggerDef {
+        pattern: Some("p".into()),
+        tools: vec!["t".into()],
+        description: Some("d".into()),
+        hook_phase: Some("before".into()),
+        hook_effect: Some("e".into()),
+        hook_message: Some(long.clone()),
+    };
+    let j = serde_json::to_string(&t).unwrap();
+    let back: TriggerDef = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.hook_message.as_deref(), Some(long.as_str()));
+}
+
+#[test]
+fn feedback_with_unicode_long_timestamp() {
+    use sisyphus_types::Feedback;
+    let f = Feedback {
+        agent_id: "a".into(),
+        original_request: "r".into(),
+        original_output: "o".into(),
+        corrected_output: "c".into(),
+        timestamp: i64::MAX,
+        tags: vec![],
+    };
+    let j = serde_json::to_string(&f).unwrap();
+    let back: Feedback = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.timestamp, i64::MAX);
+}
