@@ -461,3 +461,140 @@ fn goal_ref_with_unicode() {
     let back: GoalRef = serde_json::from_str(&j).unwrap();
     assert_eq!(back.goal_id, "目标-α");
 }
+
+// ---------------------------------------------------------------------------
+// Additional calculate_progress coverage
+// ---------------------------------------------------------------------------
+
+#[test]
+fn calculate_progress_single_goal_completed() {
+    use sisyphus_types::roadmap::{Milestone, MilestoneStatus, Phase};
+    let m = Milestone {
+        id: "m".into(),
+        name: "M".into(),
+        phases: vec![Phase {
+            id: "p".into(),
+            name: "P".into(),
+            goals: vec![sisyphus_types::roadmap::GoalRef {
+                goal_id: "g".into(),
+                description: "d".into(),
+                status: MilestoneStatus::Completed,
+            }],
+            depends_on: vec![],
+        }],
+        status: MilestoneStatus::Completed,
+    };
+    assert!((m.calculate_progress() - 1.0).abs() < 1e-9);
+}
+
+#[test]
+fn calculate_progress_three_of_four_completed() {
+    use sisyphus_types::roadmap::{GoalRef, Milestone, MilestoneStatus, Phase};
+    let m = Milestone {
+        id: "m".into(),
+        name: "M".into(),
+        phases: vec![Phase {
+            id: "p".into(),
+            name: "P".into(),
+            goals: vec![
+                GoalRef {
+                    goal_id: "g1".into(),
+                    description: "d".into(),
+                    status: MilestoneStatus::Completed,
+                },
+                GoalRef {
+                    goal_id: "g2".into(),
+                    description: "d".into(),
+                    status: MilestoneStatus::Completed,
+                },
+                GoalRef {
+                    goal_id: "g3".into(),
+                    description: "d".into(),
+                    status: MilestoneStatus::Completed,
+                },
+                GoalRef {
+                    goal_id: "g4".into(),
+                    description: "d".into(),
+                    status: MilestoneStatus::Pending,
+                },
+            ],
+            depends_on: vec![],
+        }],
+        status: MilestoneStatus::InProgress,
+    };
+    assert!((m.calculate_progress() - 0.75).abs() < 1e-9);
+}
+
+#[test]
+fn calculate_progress_with_three_phases() {
+    use sisyphus_types::roadmap::{GoalRef, Milestone, MilestoneStatus, Phase};
+    let m = Milestone {
+        id: "m".into(),
+        name: "M".into(),
+        phases: vec![
+            Phase {
+                id: "p1".into(),
+                name: "P1".into(),
+                goals: vec![GoalRef {
+                    goal_id: "g1".into(),
+                    description: "d".into(),
+                    status: MilestoneStatus::Completed,
+                }],
+                depends_on: vec![],
+            },
+            Phase {
+                id: "p2".into(),
+                name: "P2".into(),
+                goals: vec![GoalRef {
+                    goal_id: "g2".into(),
+                    description: "d".into(),
+                    status: MilestoneStatus::Pending,
+                }],
+                depends_on: vec![],
+            },
+            Phase {
+                id: "p3".into(),
+                name: "P3".into(),
+                goals: vec![GoalRef {
+                    goal_id: "g3".into(),
+                    description: "d".into(),
+                    status: MilestoneStatus::InProgress,
+                }],
+                depends_on: vec![],
+            },
+        ],
+        status: MilestoneStatus::InProgress,
+    };
+    // 1/3 = 0.333...
+    let progress = m.calculate_progress();
+    assert!((progress - 1.0 / 3.0).abs() < 1e-9);
+}
+
+#[test]
+fn calculate_progress_with_blocked_goals() {
+    use sisyphus_types::roadmap::{GoalRef, Milestone, MilestoneStatus, Phase};
+    let m = Milestone {
+        id: "m".into(),
+        name: "M".into(),
+        phases: vec![Phase {
+            id: "p".into(),
+            name: "P".into(),
+            goals: vec![
+                GoalRef {
+                    goal_id: "g1".into(),
+                    description: "d".into(),
+                    status: MilestoneStatus::Blocked,
+                },
+                GoalRef {
+                    goal_id: "g2".into(),
+                    description: "d".into(),
+                    status: MilestoneStatus::Completed,
+                },
+            ],
+            depends_on: vec![],
+        }],
+        status: MilestoneStatus::Blocked,
+    };
+    // 1/2
+    assert!((m.calculate_progress() - 0.5).abs() < 1e-9);
+}
