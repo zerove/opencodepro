@@ -270,3 +270,154 @@ fn cognitive_asset_serde_round_trip() {
     assert_eq!(back.id, "x");
     assert_eq!(back.version, 1);
 }
+
+// ---------------------------------------------------------------------------
+// ConstraintData additional coverage
+// ---------------------------------------------------------------------------
+
+#[test]
+fn constraint_data_field_access() {
+    let c = sisyphus_types::asset::ConstraintData {
+        description: "must be fast".into(),
+        strictness: 0.8,
+        violation_penalty: 0.5,
+    };
+    assert_eq!(c.description, "must be fast");
+    assert_eq!(c.strictness, 0.8);
+}
+
+#[test]
+fn constraint_data_serde() {
+    let c = sisyphus_types::asset::ConstraintData {
+        description: "d".into(),
+        strictness: 0.0,
+        violation_penalty: 1.0,
+    };
+    let j = serde_json::to_string(&c).unwrap();
+    let back: sisyphus_types::asset::ConstraintData = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.violation_penalty, 1.0);
+}
+
+#[test]
+fn constraint_data_clone() {
+    let c = sisyphus_types::asset::ConstraintData {
+        description: "d".into(),
+        strictness: 0.5,
+        violation_penalty: 0.5,
+    };
+    let cloned = c.clone();
+    assert_eq!(cloned.strictness, c.strictness);
+}
+
+#[test]
+fn relation_type_serde() {
+    use sisyphus_types::asset::RelationType;
+    for v in [
+        RelationType::Solves,
+        RelationType::Requires,
+        RelationType::EvolvedFrom,
+        RelationType::ConflictsWith,
+        RelationType::Refines,
+    ] {
+        let j = serde_json::to_string(&v).unwrap();
+        let back: RelationType = serde_json::from_str(&j).unwrap();
+        // RelationType doesn't implement PartialEq, but we can verify it round-trips
+        // by re-serializing and comparing strings
+        let back_j = serde_json::to_string(&back).unwrap();
+        assert_eq!(back_j, j);
+    }
+}
+
+#[test]
+fn asset_relation_serde() {
+    use sisyphus_types::asset::{AssetRelation, RelationType};
+    let r = AssetRelation {
+        from_id: "a".into(),
+        to_id: "b".into(),
+        relation_type: RelationType::Solves,
+        weight: 0.5,
+    };
+    let j = serde_json::to_string(&r).unwrap();
+    let back: AssetRelation = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.from_id, "a");
+    // Verify relation_type round-trips via Debug equality on string repr
+    let j2 = serde_json::to_string(&back.relation_type).unwrap();
+    let orig = serde_json::to_string(&RelationType::Solves).unwrap();
+    assert_eq!(j2, orig);
+}
+
+#[test]
+fn asset_relation_with_zero_weight() {
+    use sisyphus_types::asset::{AssetRelation, RelationType};
+    let r = AssetRelation {
+        from_id: "a".into(),
+        to_id: "b".into(),
+        relation_type: RelationType::Requires,
+        weight: 0.0,
+    };
+    let j = serde_json::to_string(&r).unwrap();
+    let back: AssetRelation = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.weight, 0.0);
+}
+
+#[test]
+fn asset_relation_unicode() {
+    use sisyphus_types::asset::{AssetRelation, RelationType};
+    let r = AssetRelation {
+        from_id: "资产-α".into(),
+        to_id: "资产-β".into(),
+        relation_type: RelationType::Refines,
+        weight: 1.0,
+    };
+    let j = serde_json::to_string(&r).unwrap();
+    let back: AssetRelation = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.from_id, "资产-α");
+}
+
+#[test]
+fn insight_data_with_unicode_evidence() {
+    let i = InsightData {
+        observation: "观察-α".into(),
+        reasoning: "推理-β".into(),
+        evidence_ids: vec!["证据-1".into(), "证据-2".into()],
+        confidence: 0.95,
+    };
+    assert_eq!(i.evidence_ids.len(), 2);
+    let j = serde_json::to_string(&i).unwrap();
+    let back: InsightData = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.evidence_ids[0], "证据-1");
+}
+
+#[test]
+fn insight_data_with_zero_confidence() {
+    let i = InsightData {
+        observation: "".into(),
+        reasoning: "".into(),
+        evidence_ids: vec![],
+        confidence: 0.0,
+    };
+    let j = serde_json::to_string(&i).unwrap();
+    let back: InsightData = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.confidence, 0.0);
+    assert!(back.evidence_ids.is_empty());
+}
+
+#[test]
+fn cognitive_asset_with_max_version() {
+    let asset = CognitiveAsset {
+        id: "a".into(),
+        kind: AssetKind::Insight,
+        name: "n".into(),
+        description: "d".into(),
+        content: AssetContent::Insight(InsightData {
+            observation: "o".into(),
+            reasoning: "r".into(),
+            evidence_ids: vec![],
+            confidence: 0.5,
+        }),
+        metadata: HashMap::new(),
+        version: u32::MAX,
+        created_at: 0,
+    };
+    assert_eq!(asset.version, u32::MAX);
+}
