@@ -1503,3 +1503,104 @@ fn gate_history_with_3_allow_3_reject_50() {
     // 3 / 6 = 0.5
     assert!((h.intercept_rate() - 0.5).abs() < 1e-9);
 }
+
+// ---------------------------------------------------------------------------
+// More tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn gate_history_with_5_allow_5_reject_2_skipped_50() {
+    let h = GateHistory::new();
+    for _ in 0..5 {
+        h.record(dec(GateVerdict::Allow, 0, 0));
+    }
+    for _ in 0..5 {
+        h.record(dec(GateVerdict::Reject, 1, 1));
+    }
+    for _ in 0..2 {
+        h.record(dec(GateVerdict::Skipped, 0, 0));
+    }
+    // 5 reject / 10 (allow + reject) = 0.5
+    assert!((h.intercept_rate() - 0.5).abs() < 1e-9);
+    assert_eq!(h.snapshot().len(), 12);
+}
+
+#[test]
+fn gate_decision_with_unicode_sop_id_only_at_sign_2() {
+    let d = GateDecision {
+        sop_id: "@".into(),
+        verdict: GateVerdict::Allow,
+        flaw_count: 0,
+        critical_count: 0,
+        confidence: 0.5,
+        elapsed_micros: 100,
+    };
+    assert_eq!(d.sop_id, "@");
+}
+
+#[test]
+fn gate_history_with_1_allow_3_reject_75() {
+    let h = GateHistory::new();
+    h.record(dec(GateVerdict::Allow, 0, 0));
+    for _ in 0..3 {
+        h.record(dec(GateVerdict::Reject, 1, 1));
+    }
+    // 3 reject / 4 (allow + reject) = 0.75
+    assert!((h.intercept_rate() - 0.75).abs() < 1e-9);
+}
+
+#[test]
+fn gate_decision_with_unicode_sop_id_short() {
+    let d = GateDecision {
+        sop_id: "图".into(),
+        verdict: GateVerdict::Allow,
+        flaw_count: 0,
+        critical_count: 0,
+        confidence: 0.5,
+        elapsed_micros: 100,
+    };
+    assert_eq!(d.sop_id, "图");
+}
+
+#[test]
+fn gate_history_with_3_allow_3_reject_3_skipped() {
+    let h = GateHistory::new();
+    for _ in 0..3 {
+        h.record(dec(GateVerdict::Allow, 0, 0));
+    }
+    for _ in 0..3 {
+        h.record(dec(GateVerdict::Reject, 1, 1));
+    }
+    for _ in 0..3 {
+        h.record(dec(GateVerdict::Skipped, 0, 0));
+    }
+    // 3 reject / 6 (allow + reject) = 0.5
+    assert!((h.intercept_rate() - 0.5).abs() < 1e-9);
+    assert_eq!(h.snapshot().len(), 9);
+}
+
+#[test]
+fn gate_decision_with_unicode_sop_id_with_specials_2() {
+    let d = GateDecision {
+        sop_id: "图-α-!@#-β-🔍".into(),
+        verdict: GateVerdict::Allow,
+        flaw_count: 0,
+        critical_count: 0,
+        confidence: 0.5,
+        elapsed_micros: 100,
+    };
+    assert_eq!(d.sop_id, "图-α-!@#-β-🔍");
+}
+
+#[test]
+fn gate_history_with_4_allow_4_reject_50() {
+    let h = GateHistory::new();
+    for _ in 0..4 {
+        h.record(dec(GateVerdict::Allow, 0, 0));
+    }
+    for _ in 0..4 {
+        h.record(dec(GateVerdict::Reject, 1, 1));
+    }
+    // 4 reject / 8 = 0.5
+    assert!((h.intercept_rate() - 0.5).abs() < 1e-9);
+}
