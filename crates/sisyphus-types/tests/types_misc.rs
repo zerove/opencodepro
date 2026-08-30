@@ -2224,3 +2224,138 @@ fn feedback_with_unicode_3_fields() {
     assert_eq!(back.original_output, "输出-γ");
     assert_eq!(back.corrected_output, "修正-δ");
 }
+
+// ---------------------------------------------------------------------------
+// More tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn feedback_with_unicode_agent_id_long() {
+    use sisyphus_types::Feedback;
+    let long = "α-β-γ-δ-ε-ζ-η-θ".repeat(10);
+    let f = Feedback {
+        agent_id: long.clone(),
+        original_request: "r".into(),
+        original_output: "o".into(),
+        corrected_output: "c".into(),
+        timestamp: 0,
+        tags: vec![],
+    };
+    let j = serde_json::to_string(&f).unwrap();
+    let back: Feedback = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.agent_id, long);
+}
+
+#[test]
+fn vector_record_with_unicode_metadata_3_levels_deep() {
+    use sisyphus_types::VectorRecord;
+    let v = VectorRecord {
+        key: "k".into(),
+        embedding: vec![0.5],
+        metadata: serde_json::json!({
+            "l1-α": {
+                "l2-β": {
+                    "l3-γ": "deep-value-δ"
+                }
+            }
+        }),
+        timestamp: 0,
+    };
+    let j = serde_json::to_string(&v).unwrap();
+    let back: VectorRecord = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.metadata["l1-α"]["l2-β"]["l3-γ"], "deep-value-δ");
+}
+
+#[test]
+fn plugin_descriptor_with_unicode_3_metadata_fields() {
+    use sisyphus_types::PluginDescriptor;
+    // PluginDescriptor doesn't have metadata, just test with name/version/tool_id
+    let pd = PluginDescriptor {
+        name: "插件-α".into(),
+        version: "版本-β".into(),
+        wasm_path: std::path::PathBuf::from("/p.wasm"),
+        tool_id: "工具-γ".into(),
+        fuel_limit: 1000,
+        checksum: Some("校验-δ".into()),
+    };
+    let j = serde_json::to_string(&pd).unwrap();
+    let back: PluginDescriptor = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.name, "插件-α");
+    assert_eq!(back.version, "版本-β");
+    assert_eq!(back.tool_id, "工具-γ");
+    assert_eq!(back.checksum.as_deref(), Some("校验-δ"));
+}
+
+#[test]
+fn agent_message_with_unicode_payload_max_depth() {
+    use sisyphus_types::AgentMessage;
+    let m = AgentMessage {
+        from: "a".into(),
+        to: "b".into(),
+        kind: "request".into(),
+        payload: serde_json::json!({
+            "l1-α": {
+                "l2-β": {
+                    "l3-γ": {
+                        "l4-δ": {
+                            "l5-ε": "very deep"
+                        }
+                    }
+                }
+            }
+        }),
+        correlation_id: "c".into(),
+    };
+    let j = serde_json::to_string(&m).unwrap();
+    let back: AgentMessage = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.payload["l1-α"]["l2-β"]["l3-γ"]["l4-δ"]["l5-ε"], "very deep");
+}
+
+#[test]
+fn benchmark_run_with_unicode_metrics_array_3() {
+    use sisyphus_types::BenchmarkRun;
+    let b = BenchmarkRun {
+        name: "n".into(),
+        timestamp: 0,
+        duration_secs: 0.0,
+        success: true,
+        metrics: serde_json::json!({
+            "name-α": ["值-β", "值-γ", "值-δ"]
+        }),
+    };
+    let j = serde_json::to_string(&b).unwrap();
+    let back: BenchmarkRun = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.metrics["name-α"][0], "值-β");
+    assert_eq!(back.metrics["name-α"][2], "值-δ");
+}
+
+#[test]
+fn trigger_def_with_unicode_2_tools_and_emoji_in_pattern() {
+    use sisyphus_types::TriggerDef;
+    let t = TriggerDef {
+        pattern: Some("模式-α-🔍".into()),
+        tools: vec!["t-β".into(), "t-γ".into()],
+        description: Some("d-δ".into()),
+        hook_phase: Some("前-ε".into()),
+        hook_effect: Some("效果-ζ".into()),
+        hook_message: Some("消息-η".into()),
+    };
+    let j = serde_json::to_string(&t).unwrap();
+    let back: TriggerDef = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.tools.len(), 2);
+    assert_eq!(back.tools[0], "t-β");
+}
+
+#[test]
+fn feedback_with_unicode_only_original_request() {
+    use sisyphus_types::Feedback;
+    let f = Feedback {
+        agent_id: "a".into(),
+        original_request: "请求-α-🔍".into(),
+        original_output: "o".into(),
+        corrected_output: "c".into(),
+        timestamp: 0,
+        tags: vec![],
+    };
+    assert_eq!(f.original_request, "请求-α-🔍");
+}
