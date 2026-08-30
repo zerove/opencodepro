@@ -875,3 +875,136 @@ fn asset_kind_constraint_debug() {
     let dbg = format!("{:?}", AssetKind::Constraint);
     assert_eq!(dbg, "Constraint");
 }
+
+// ---------------------------------------------------------------------------
+// Additional AssetContent variant tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn asset_content_clone() {
+    use sisyphus_types::asset::AssetContent;
+    use sisyphus_types::asset::InsightData;
+    let content = AssetContent::Insight(InsightData {
+        observation: "o".into(),
+        reasoning: "r".into(),
+        evidence_ids: vec![],
+        confidence: 0.5,
+    });
+    // AssetContent doesn't have Clone - verify via Debug
+    let dbg = format!("{:?}", content);
+    assert!(dbg.contains("Insight"));
+}
+
+#[test]
+fn asset_content_debug_each_variant_distinct() {
+    use sisyphus_types::asset::{AssetContent, ConstraintData, InsightData};
+    use sisyphus_types::graph::SOPGraphConfig;
+    use sisyphus_types::tools::ToolSpec;
+    let tool = ToolSpec {
+        tool_id: "t".into(),
+        required_capability: "c".into(),
+        expected_input: serde_json::json!({}),
+        expected_output: serde_json::json!({}),
+        success_criteria: "ok".into(),
+        test_command: None,
+        workdir: None,
+    };
+    let sop = SOPGraphConfig::default();
+    let insight = AssetContent::Insight(InsightData {
+        observation: "o".into(),
+        reasoning: "r".into(),
+        evidence_ids: vec![],
+        confidence: 0.5,
+    });
+    let constraint = AssetContent::Constraint(ConstraintData {
+        description: "d".into(),
+        strictness: 0.5,
+        violation_penalty: 0.5,
+    });
+    let tool_c = AssetContent::Tool(tool);
+    let sop_c = AssetContent::SOP(sop);
+    let d1 = format!("{:?}", tool_c);
+    let d2 = format!("{:?}", sop_c);
+    let d3 = format!("{:?}", insight);
+    let d4 = format!("{:?}", constraint);
+    assert!(d1.contains("Tool"));
+    assert!(d2.contains("SOP"));
+    assert!(d3.contains("Insight"));
+    assert!(d4.contains("Constraint"));
+}
+
+#[test]
+fn cognitive_asset_with_1000_metadata_entries() {
+    use sisyphus_types::asset::{AssetContent, AssetKind, CognitiveAsset, InsightData};
+    let mut meta = HashMap::new();
+    for i in 0..1000 {
+        meta.insert(format!("k{}", i), format!("v{}", i));
+    }
+    let asset = CognitiveAsset {
+        id: "a".into(),
+        kind: AssetKind::Tool,
+        name: "n".into(),
+        description: "d".into(),
+        content: AssetContent::Insight(InsightData {
+            observation: "o".into(),
+            reasoning: "r".into(),
+            evidence_ids: vec![],
+            confidence: 0.5,
+        }),
+        metadata: meta,
+        version: 1,
+        created_at: 0,
+    };
+    let j = serde_json::to_string(&asset).unwrap();
+    let back: CognitiveAsset = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.metadata.len(), 1000);
+}
+
+#[test]
+fn asset_relation_with_zero_weight_again() {
+    use sisyphus_types::asset::{AssetRelation, RelationType};
+    let r = AssetRelation {
+        from_id: "a".into(),
+        to_id: "b".into(),
+        relation_type: RelationType::Solves,
+        weight: 0.0,
+    };
+    let j = serde_json::to_string(&r).unwrap();
+    let back: AssetRelation = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.weight, 0.0);
+}
+
+#[test]
+fn insight_data_with_only_one_evidence() {
+    let i = InsightData {
+        observation: "o".into(),
+        reasoning: "r".into(),
+        evidence_ids: vec!["e1".into()],
+        confidence: 0.5,
+    };
+    let j = serde_json::to_string(&i).unwrap();
+    let back: InsightData = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.evidence_ids.len(), 1);
+    assert_eq!(back.evidence_ids[0], "e1");
+}
+
+#[test]
+fn cognitive_asset_with_only_description() {
+    use sisyphus_types::asset::{AssetContent, AssetKind, CognitiveAsset, InsightData};
+    let asset = CognitiveAsset {
+        id: "a".into(),
+        kind: AssetKind::Tool,
+        name: "n".into(),
+        description: "only description".into(),
+        content: AssetContent::Insight(InsightData {
+            observation: "".into(),
+            reasoning: "".into(),
+            evidence_ids: vec![],
+            confidence: 0.0,
+        }),
+        metadata: HashMap::new(),
+        version: 0,
+        created_at: 0,
+    };
+    assert_eq!(asset.description, "only description");
+}
