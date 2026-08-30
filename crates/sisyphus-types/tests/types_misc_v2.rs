@@ -1245,3 +1245,94 @@ fn work_mode_with_serde_round_trip() {
         assert_eq!(back, v);
     }
 }
+
+// ---------------------------------------------------------------------------
+// Additional tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn evolution_op_with_unicode_insert_node_serde() {
+    use sisyphus_types::types::EvolutionOp;
+    let op = EvolutionOp::InsertNode {
+        after_node: "节-α".into(),
+        new_name: "新-β".into(),
+        tool_id: "工-γ".into(),
+    };
+    let j = serde_json::to_string(&op).unwrap();
+    let back: EvolutionOp = serde_json::from_str(&j).unwrap();
+    match back {
+        EvolutionOp::InsertNode { after_node, new_name, tool_id } => {
+            assert_eq!(after_node, "节-α");
+            assert_eq!(new_name, "新-β");
+            assert_eq!(tool_id, "工-γ");
+        }
+        _ => panic!("wrong"),
+    }
+}
+
+#[test]
+fn sisyphus_notepad_with_unicode_emoji_section() {
+    let mut n = SisyphusNotepad::default();
+    n.write_section("🔍".into(), "内容-α".into());
+    let read = n.read_section("🔍");
+    assert_eq!(read, Some(&"内容-α".to_string()));
+}
+
+#[test]
+fn trigger_def_with_unicode_long_tools() {
+    let tools: Vec<String> = (0..100).map(|i| format!("工具-{}", i)).collect();
+    let t = TriggerDef {
+        pattern: Some("p".into()),
+        tools,
+        description: Some("d".into()),
+        hook_phase: Some("before".into()),
+        hook_effect: Some("e".into()),
+        hook_message: Some("m".into()),
+    };
+    let j = serde_json::to_string(&t).unwrap();
+    let back: TriggerDef = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.tools.len(), 100);
+    assert_eq!(back.tools[99], "工具-99");
+}
+
+#[test]
+fn sisyphus_notepad_with_max_sections() {
+    let mut n = SisyphusNotepad::default();
+    for i in 0..1000 {
+        n.write_section(format!("s{}", i), format!("v{}", i));
+    }
+    assert_eq!(n.sections.len(), 1000);
+}
+
+#[test]
+fn sisyphus_notepad_with_unicode_section_id_many() {
+    let mut n = SisyphusNotepad::default();
+    for i in 0..50 {
+        n.write_section(format!("键-{}", i), format!("值-{}", i));
+    }
+    assert_eq!(n.sections.len(), 50);
+}
+
+#[test]
+fn notepad_snapshot_with_unicode_trigger_node_only() {
+    let n = NotepadSnapshot {
+        timestamp: 0,
+        snapshot: im::HashMap::new(),
+        trigger_node: "节-α-β-γ".into(),
+    };
+    assert_eq!(n.trigger_node, "节-α-β-γ");
+    let j = serde_json::to_string(&n).unwrap();
+    let back: NotepadSnapshot = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.trigger_node, "节-α-β-γ");
+}
+
+#[test]
+fn work_mode_standard_and_ultra_work_distinct() {
+    use sisyphus_types::types::WorkMode;
+    assert_ne!(WorkMode::Standard, WorkMode::UltraWork);
+    let std_dbg = format!("{:?}", WorkMode::Standard);
+    let ult_dbg = format!("{:?}", WorkMode::UltraWork);
+    assert_ne!(std_dbg, ult_dbg);
+    assert_eq!(std_dbg, "Standard");
+    assert_eq!(ult_dbg, "UltraWork");
+}
