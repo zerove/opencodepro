@@ -1196,3 +1196,139 @@ fn path_summary_with_risk_distribution_unicode_path() {
     assert_eq!(back.total_paths, 1);
     assert!(back.worst_path.is_none());
 }
+
+// ---------------------------------------------------------------------------
+// More tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn risk_level_unicode_debug_format() {
+    let s = format!("{:?}", RiskLevel::Low);
+    assert_eq!(s, "Low");
+    let s = format!("{:?}", RiskLevel::Medium);
+    assert_eq!(s, "Medium");
+    let s = format!("{:?}", RiskLevel::High);
+    assert_eq!(s, "High");
+    let s = format!("{:?}", RiskLevel::Critical);
+    assert_eq!(s, "Critical");
+}
+
+#[test]
+fn risk_thresholds_field_access() {
+    let t = RiskThresholds {
+        low: 0.1,
+        medium: 0.2,
+        high: 0.3,
+    };
+    assert!((t.low - 0.1).abs() < 1e-9);
+    assert!((t.medium - 0.2).abs() < 1e-9);
+    assert!((t.high - 0.3).abs() < 1e-9);
+}
+
+#[test]
+fn risk_thresholds_with_nan_values() {
+    let t = RiskThresholds {
+        low: f64::NAN,
+        medium: 0.0,
+        high: 1.0,
+    };
+    // NaN may not roundtrip via Serde, but should not panic
+    let j = serde_json::to_string(&t).unwrap_or_default();
+    let _ = j;
+}
+
+#[test]
+fn planner_config_with_max_cost() {
+    let cfg = PlannerConfig {
+        probability_weight: 0.5,
+        cost_weight: 0.3,
+        stability_weight: 0.2,
+        max_cost: u64::MAX,
+        risk_thresholds: RiskThresholds::default(),
+    };
+    assert_eq!(cfg.max_cost, u64::MAX);
+}
+
+#[test]
+fn planner_config_field_assignment() {
+    let cfg = PlannerConfig {
+        probability_weight: 0.4,
+        cost_weight: 0.4,
+        stability_weight: 0.2,
+        max_cost: 5000,
+        risk_thresholds: RiskThresholds {
+            low: 0.1,
+            medium: 0.2,
+            high: 0.3,
+        },
+    };
+    assert!((cfg.probability_weight - 0.4).abs() < 1e-9);
+    assert_eq!(cfg.max_cost, 5000);
+    assert!((cfg.risk_thresholds.low - 0.1).abs() < 1e-9);
+}
+
+#[test]
+fn ranked_path_with_negative_probability() {
+    let rp = RankedPath {
+        path_id: "p".into(),
+        success_probability: -0.5,
+        estimated_cost: 0,
+        risk_level: RiskLevel::Low,
+        composite_score: -0.5,
+        predicted_outcome: "ok".into(),
+        confidence: -0.5,
+    };
+    let j = serde_json::to_string(&rp).unwrap();
+    let back: RankedPath = serde_json::from_str(&j).unwrap();
+    assert!((back.success_probability + 0.5).abs() < 1e-9);
+}
+
+#[test]
+fn path_summary_with_no_best_no_worst() {
+    let s = PathSummary {
+        total_paths: 0,
+        average_probability: 0.0,
+        average_cost: 0,
+        best_path: None,
+        worst_path: None,
+        risk_distribution: std::collections::HashMap::new(),
+    };
+    let j = serde_json::to_string(&s).unwrap();
+    let back: PathSummary = serde_json::from_str(&j).unwrap();
+    assert!(back.best_path.is_none());
+    assert!(back.worst_path.is_none());
+    assert_eq!(back.total_paths, 0);
+}
+
+#[test]
+fn experience_record_field_access() {
+    let r = ExperienceRecord {
+        path_id: "p".into(),
+        success: true,
+        actual_cost: 100,
+    };
+    assert_eq!(r.path_id, "p");
+    assert!(r.success);
+    assert_eq!(r.actual_cost, 100);
+}
+
+#[test]
+fn experience_record_with_zero_cost() {
+    let r = ExperienceRecord {
+        path_id: "p".into(),
+        success: false,
+        actual_cost: 0,
+    };
+    assert_eq!(r.actual_cost, 0);
+    assert!(!r.success);
+}
+
+#[test]
+fn experience_record_with_max_cost() {
+    let r = ExperienceRecord {
+        path_id: "p".into(),
+        success: true,
+        actual_cost: u64::MAX,
+    };
+    assert_eq!(r.actual_cost, u64::MAX);
+}
