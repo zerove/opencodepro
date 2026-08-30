@@ -1216,3 +1216,95 @@ fn gate_decision_with_max_all_fields() {
     assert!(j.contains("max"));
     assert!(j.contains("GateDecision"));
 }
+
+// ---------------------------------------------------------------------------
+// More tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn gate_history_with_5_allow_5_reject_50_50() {
+    let h = GateHistory::new();
+    for _ in 0..5 {
+        h.record(dec(GateVerdict::Allow, 0, 0));
+    }
+    for _ in 0..5 {
+        h.record(dec(GateVerdict::Reject, 1, 1));
+    }
+    // 5 reject / 10 (allow + reject) = 0.5
+    assert!((h.intercept_rate() - 0.5).abs() < 1e-9);
+    assert_eq!(h.snapshot().len(), 10);
+}
+
+#[test]
+fn gate_decision_with_unicode_sop_id_with_emoji() {
+    let d = GateDecision {
+        sop_id: "图-α-🔍".into(),
+        verdict: GateVerdict::Allow,
+        flaw_count: 0,
+        critical_count: 0,
+        confidence: 0.5,
+        elapsed_micros: 100,
+    };
+    assert!(d.sop_id.contains("🔍"));
+}
+
+#[test]
+fn gate_history_with_100_allow_100_reject_50_50() {
+    let h = GateHistory::new();
+    for _ in 0..100 {
+        h.record(dec(GateVerdict::Allow, 0, 0));
+    }
+    for _ in 0..100 {
+        h.record(dec(GateVerdict::Reject, 1, 1));
+    }
+    // 100 / 200 = 0.5
+    assert!((h.intercept_rate() - 0.5).abs() < 1e-9);
+}
+
+#[test]
+fn gate_decision_with_only_max_u128_elapsed() {
+    let d = GateDecision {
+        sop_id: "p".into(),
+        verdict: GateVerdict::Allow,
+        flaw_count: 0,
+        critical_count: 0,
+        confidence: 0.5,
+        elapsed_micros: u128::MAX,
+    };
+    let cloned = d.clone();
+    assert_eq!(cloned.elapsed_micros, u128::MAX);
+}
+
+#[test]
+fn gate_history_with_1_allow_1_reject_50_50() {
+    let h = GateHistory::new();
+    h.record(dec(GateVerdict::Allow, 0, 0));
+    h.record(dec(GateVerdict::Reject, 1, 1));
+    assert!((h.intercept_rate() - 0.5).abs() < 1e-9);
+}
+
+#[test]
+fn gate_decision_with_unicode_sop_id_5_chars() {
+    let d = GateDecision {
+        sop_id: "图-1-2-3-α".into(),
+        verdict: GateVerdict::Allow,
+        flaw_count: 0,
+        critical_count: 0,
+        confidence: 0.5,
+        elapsed_micros: 100,
+    };
+    assert_eq!(d.sop_id, "图-1-2-3-α");
+}
+
+#[test]
+fn gate_history_with_unicode_3_decisions() {
+    let h = GateHistory::new();
+    h.record(dec(GateVerdict::Allow, 0, 0));
+    h.record(dec(GateVerdict::Reject, 1, 1));
+    h.record(dec(GateVerdict::Skipped, 0, 0));
+    let snap = h.snapshot();
+    assert_eq!(snap.len(), 3);
+    assert!(snap[0].sop_id.contains("Allow"));
+    assert!(snap[1].sop_id.contains("Reject"));
+    assert!(snap[2].sop_id.contains("Skipped"));
+}
