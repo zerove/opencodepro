@@ -256,3 +256,162 @@ fn evolver_generate_evolution_ops_returns_ops_for_failures() {
     // Should produce at least one op for the recurring failure.
     assert!(!ops.is_empty());
 }
+
+// ---------------------------------------------------------------------------
+// Additional FailureCategory and MutationSuggestion tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn failure_category_serde() {
+    use sisyphus_intel::failure_pattern_evolver::FailureCategory;
+    for v in [
+        FailureCategory::FuelExhaustion,
+        FailureCategory::OutputMismatch,
+        FailureCategory::DependencyMissing,
+        FailureCategory::Timeout,
+        FailureCategory::ToolError,
+        FailureCategory::LogicError,
+        FailureCategory::ResourceUnavailable,
+    ] {
+        let j = serde_json::to_string(&v).unwrap();
+        let back: FailureCategory = serde_json::from_str(&j).unwrap();
+        assert_eq!(back, v);
+    }
+}
+
+#[test]
+fn failure_category_distinct_via_serde() {
+    use sisyphus_intel::failure_pattern_evolver::FailureCategory;
+    let variants = [
+        FailureCategory::FuelExhaustion,
+        FailureCategory::OutputMismatch,
+        FailureCategory::DependencyMissing,
+        FailureCategory::Timeout,
+        FailureCategory::ToolError,
+        FailureCategory::LogicError,
+        FailureCategory::ResourceUnavailable,
+    ];
+    let serialized: Vec<String> = variants
+        .iter()
+        .map(|v| serde_json::to_string(v).unwrap())
+        .collect();
+    let unique: std::collections::HashSet<_> = serialized.iter().collect();
+    assert_eq!(unique.len(), 7);
+}
+
+#[test]
+fn failure_category_debug() {
+    use sisyphus_intel::failure_pattern_evolver::FailureCategory;
+    let _ = format!("{:?}", FailureCategory::FuelExhaustion);
+    let _ = format!("{:?}", FailureCategory::ResourceUnavailable);
+}
+
+#[test]
+fn mutation_suggestion_field_assignment() {
+    use sisyphus_intel::failure_pattern_evolver::{FailureCategory, MutationSuggestion};
+    let m = MutationSuggestion {
+        node_name: "n1".into(),
+        category: FailureCategory::Timeout,
+        description: "increase timeout".into(),
+        confidence: 0.8,
+    };
+    assert_eq!(m.node_name, "n1");
+    assert_eq!(m.category, FailureCategory::Timeout);
+    assert_eq!(m.confidence, 0.8);
+}
+
+#[test]
+fn mutation_suggestion_serde() {
+    use sisyphus_intel::failure_pattern_evolver::{FailureCategory, MutationSuggestion};
+    let m = MutationSuggestion {
+        node_name: "n".into(),
+        category: FailureCategory::ToolError,
+        description: "retry tool".into(),
+        confidence: 0.6,
+    };
+    let j = serde_json::to_string(&m).unwrap();
+    let back: MutationSuggestion = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.node_name, "n");
+    assert_eq!(back.confidence, 0.6);
+}
+
+#[test]
+fn mutation_suggestion_clone() {
+    use sisyphus_intel::failure_pattern_evolver::{FailureCategory, MutationSuggestion};
+    let m = MutationSuggestion {
+        node_name: "n".into(),
+        category: FailureCategory::OutputMismatch,
+        description: "fix output".into(),
+        confidence: 0.5,
+    };
+    let cloned = m.clone();
+    assert_eq!(cloned.node_name, "n");
+}
+
+#[test]
+fn mutation_suggestion_unicode() {
+    use sisyphus_intel::failure_pattern_evolver::{FailureCategory, MutationSuggestion};
+    let m = MutationSuggestion {
+        node_name: "节点-α".into(),
+        category: FailureCategory::LogicError,
+        description: "修复-β".into(),
+        confidence: 0.7,
+    };
+    let j = serde_json::to_string(&m).unwrap();
+    let back: MutationSuggestion = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.node_name, "节点-α");
+    assert_eq!(back.description, "修复-β");
+}
+
+#[test]
+fn failure_pattern_field_assignment() {
+    use sisyphus_intel::failure_pattern_evolver::{FailureCategory, FailurePattern};
+    let p = FailurePattern {
+        id: "p1".into(),
+        category: FailureCategory::FuelExhaustion,
+        description: "out of fuel".into(),
+        affected_node: "n1".into(),
+        occurrence_count: 5,
+        last_seen: 1000,
+        evolution_ops: vec![],
+        success_rate_after_fix: 0.5,
+    };
+    assert_eq!(p.id, "p1");
+    assert_eq!(p.occurrence_count, 5);
+}
+
+#[test]
+fn failure_pattern_serde() {
+    use sisyphus_intel::failure_pattern_evolver::{FailureCategory, FailurePattern};
+    let p = FailurePattern {
+        id: "p".into(),
+        category: FailureCategory::DependencyMissing,
+        description: "missing dep".into(),
+        affected_node: "n".into(),
+        occurrence_count: 3,
+        last_seen: 0,
+        evolution_ops: vec![],
+        success_rate_after_fix: 0.0,
+    };
+    let j = serde_json::to_string(&p).unwrap();
+    let back: FailurePattern = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.id, "p");
+}
+
+#[test]
+fn failure_pattern_clone() {
+    use sisyphus_intel::failure_pattern_evolver::{FailureCategory, FailurePattern};
+    let p = FailurePattern {
+        id: "p".into(),
+        category: FailureCategory::Timeout,
+        description: "d".into(),
+        affected_node: "n".into(),
+        occurrence_count: 0,
+        last_seen: 0,
+        evolution_ops: vec![],
+        success_rate_after_fix: 0.0,
+    };
+    let cloned = p.clone();
+    assert_eq!(cloned.id, "p");
+    assert_eq!(cloned.occurrence_count, 0);
+}
