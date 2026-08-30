@@ -1380,3 +1380,111 @@ fn plugin_descriptor_with_empty_all_optional() {
     assert!(back.checksum.is_none());
     assert_eq!(back.fuel_limit, 0);
 }
+
+// ---------------------------------------------------------------------------
+// Additional tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn feedback_with_only_corrected_output() {
+    use sisyphus_types::Feedback;
+    let f = Feedback {
+        agent_id: "a".into(),
+        original_request: "".into(),
+        original_output: "".into(),
+        corrected_output: "fixed".into(),
+        timestamp: 0,
+        tags: vec![],
+    };
+    assert_eq!(f.corrected_output, "fixed");
+}
+
+#[test]
+fn vector_record_with_unicode_metadata_complex_2() {
+    use sisyphus_types::VectorRecord;
+    let v = VectorRecord {
+        key: "k".into(),
+        embedding: vec![1.0, 2.0],
+        metadata: serde_json::json!({
+            "nested": {
+                "deep": {
+                    "value": "中文-α🔍"
+                }
+            }
+        }),
+        timestamp: 0,
+    };
+    let j = serde_json::to_string(&v).unwrap();
+    let back: VectorRecord = serde_json::from_str(&j).unwrap();
+    assert_eq!(
+        back.metadata["nested"]["deep"]["value"],
+        "中文-α🔍"
+    );
+}
+
+#[test]
+fn plugin_descriptor_with_unicode_path_with_spaces() {
+    use sisyphus_types::PluginDescriptor;
+    let pd = PluginDescriptor {
+        name: "p".into(),
+        version: "1".into(),
+        wasm_path: std::path::PathBuf::from("/路径/插件 名称.wasm"),
+        tool_id: "t".into(),
+        fuel_limit: 1000,
+        checksum: None,
+    };
+    let j = serde_json::to_string(&pd).unwrap();
+    let back: PluginDescriptor = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.wasm_path.to_str().unwrap(), "/路径/插件 名称.wasm");
+}
+
+#[test]
+fn agent_message_with_long_payload() {
+    use sisyphus_types::AgentMessage;
+    let long_payload = "x".repeat(5000);
+    let m = AgentMessage {
+        from: "a".into(),
+        to: "b".into(),
+        kind: "request".into(),
+        payload: serde_json::Value::String(long_payload.clone()),
+        correlation_id: "c".into(),
+    };
+    let j = serde_json::to_string(&m).unwrap();
+    let back: AgentMessage = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.payload.as_str().unwrap().len(), 5000);
+}
+
+#[test]
+fn benchmark_run_with_unicode_name() {
+    use sisyphus_types::BenchmarkRun;
+    let b = BenchmarkRun {
+        name: "测试-α-β".into(),
+        timestamp: 0,
+        duration_secs: 0.0,
+        success: true,
+        metrics: serde_json::json!({}),
+    };
+    assert_eq!(b.name, "测试-α-β");
+}
+
+#[test]
+fn trigger_def_with_only_unicode_hook_effect() {
+    use sisyphus_types::TriggerDef;
+    let t: TriggerDef = serde_json::from_str(r#"{"hook_effect":"效果-α"}"#).unwrap();
+    assert_eq!(t.hook_effect.as_deref(), Some("效果-α"));
+    assert!(t.pattern.is_none());
+}
+
+#[test]
+fn vector_record_with_only_unicode_key() {
+    use sisyphus_types::VectorRecord;
+    let v = VectorRecord {
+        key: "键-".repeat(50),
+        embedding: vec![1.0],
+        metadata: serde_json::json!({}),
+        timestamp: 0,
+    };
+    let j = serde_json::to_string(&v).unwrap();
+    let back: VectorRecord = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.key, "键-".repeat(50));
+}
