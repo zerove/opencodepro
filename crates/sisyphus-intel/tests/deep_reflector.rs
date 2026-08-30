@@ -7,8 +7,8 @@
 //! - 其他结构（`NodeDeviationReport`/`CognitiveCorrection`/`DeviationPattern`）
 
 use sisyphus_intel::deep_reflector::{
-    AnalysisDimension, CognitiveCorrection, CorrectionPriority, DeepDeviationReport, DeviationPattern,
-    DimensionScore, NodeDeviationReport,
+    AnalysisDimension, CognitiveCorrection, CorrectionPriority, CorrectionType, DeepDeviationReport,
+    DeviationPattern, DimensionScore, NodeDeviationReport,
 };
 
 // ---------------------------------------------------------------------------
@@ -317,4 +317,126 @@ fn deviation_pattern_serde() {
     let json = serde_json::to_string(&p).unwrap();
     let back: DeviationPattern = serde_json::from_str(&json).unwrap();
     assert_eq!(back.frequency, 5);
+}
+
+// ---------------------------------------------------------------------------
+// Additional enums
+// ---------------------------------------------------------------------------
+
+#[test]
+fn correction_type_distinct_variants() {
+    let variants = [
+        CorrectionType::IncreaseFuel,
+        CorrectionType::AddRetry,
+        CorrectionType::ModifyLogic,
+        CorrectionType::ChangeTool,
+        CorrectionType::AddValidation,
+        CorrectionType::ReorderNodes,
+        CorrectionType::AddFallback,
+        CorrectionType::SplitNode,
+    ];
+    // 8 distinct variants
+    for (i, a) in variants.iter().enumerate() {
+        for (j, b) in variants.iter().enumerate() {
+            if i == j {
+                assert_eq!(a, b);
+            } else {
+                assert_ne!(a, b);
+            }
+        }
+    }
+}
+
+#[test]
+fn correction_type_serde() {
+    for v in [
+        CorrectionType::IncreaseFuel,
+        CorrectionType::AddRetry,
+        CorrectionType::ModifyLogic,
+        CorrectionType::ChangeTool,
+    ] {
+        let j = serde_json::to_string(&v).unwrap();
+        let back: CorrectionType = serde_json::from_str(&j).unwrap();
+        assert_eq!(back, v);
+    }
+}
+
+#[test]
+fn correction_type_clone() {
+    let a = CorrectionType::SplitNode;
+    let b = a;
+    let c = a.clone();
+    assert_eq!(b, c);
+}
+
+#[test]
+fn correction_type_debug() {
+    let _ = format!("{:?}", CorrectionType::AddFallback);
+    let _ = format!("{:?}", CorrectionType::ReorderNodes);
+}
+
+#[test]
+fn correction_priority_ordering() {
+    // Derives Ord from variant declaration order: Critical < High < Medium < Low
+    assert!(CorrectionPriority::Critical < CorrectionPriority::High);
+    assert!(CorrectionPriority::High < CorrectionPriority::Medium);
+    assert!(CorrectionPriority::Medium < CorrectionPriority::Low);
+    assert!(CorrectionPriority::Low > CorrectionPriority::Critical);
+}
+
+#[test]
+fn correction_priority_serde() {
+    for v in [
+        CorrectionPriority::Critical,
+        CorrectionPriority::High,
+        CorrectionPriority::Medium,
+        CorrectionPriority::Low,
+    ] {
+        let j = serde_json::to_string(&v).unwrap();
+        let back: CorrectionPriority = serde_json::from_str(&j).unwrap();
+        assert_eq!(back, v);
+    }
+}
+
+#[test]
+fn correction_priority_distinct() {
+    assert_ne!(CorrectionPriority::Critical, CorrectionPriority::Low);
+    assert_eq!(CorrectionPriority::High, CorrectionPriority::High);
+}
+
+#[test]
+fn correction_priority_clone_copy() {
+    let a = CorrectionPriority::Critical;
+    let b = a; // Copy
+    let c = a.clone();
+    assert_eq!(a, b);
+    assert_eq!(a, c);
+}
+
+#[test]
+fn analysis_dimension_serde_all_variants() {
+    let variants = [
+        AnalysisDimension::OutputQuality,
+        AnalysisDimension::ResourceEfficiency,
+        AnalysisDimension::TemporalAccuracy,
+        AnalysisDimension::LogicCorrectness,
+        AnalysisDimension::ToolReliability,
+    ];
+    for v in variants {
+        let j = serde_json::to_string(&v).unwrap();
+        let back: AnalysisDimension = serde_json::from_str(&j).unwrap();
+        assert_eq!(back, v);
+    }
+}
+
+#[test]
+fn analysis_dimension_hash_distinct() {
+    use std::collections::HashSet;
+    let mut set: HashSet<AnalysisDimension> = HashSet::new();
+    set.insert(AnalysisDimension::OutputQuality);
+    set.insert(AnalysisDimension::ResourceEfficiency);
+    set.insert(AnalysisDimension::TemporalAccuracy);
+    set.insert(AnalysisDimension::LogicCorrectness);
+    set.insert(AnalysisDimension::ToolReliability);
+    assert_eq!(set.len(), 5);
 }
