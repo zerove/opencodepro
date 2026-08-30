@@ -371,3 +371,111 @@ fn action_type_inequality() {
     assert_ne!(ActionType::Sink, ActionType::Search);
     assert_ne!(ActionType::Validate, ActionType::Fetch);
 }
+
+// ---------------------------------------------------------------------------
+// Additional ActionType and DynamicNode tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn action_type_hash_set() {
+    use std::collections::HashSet;
+    // ActionType doesn't implement Hash by default; this is a placeholder
+    // showing that Debug works for all variants
+    let mut s: HashSet<String> = HashSet::new();
+    for v in [
+        ActionType::Fetch,
+        ActionType::Process,
+        ActionType::Sink,
+        ActionType::Search,
+        ActionType::Validate,
+    ] {
+        s.insert(format!("{:?}", v));
+    }
+    assert_eq!(s.len(), 5);
+}
+
+#[test]
+fn action_type_distinct_debug() {
+    let variants = [
+        ("Fetch", ActionType::Fetch),
+        ("Process", ActionType::Process),
+        ("Sink", ActionType::Sink),
+        ("Search", ActionType::Search),
+        ("Validate", ActionType::Validate),
+    ];
+    let mut seen = std::collections::HashSet::new();
+    for (expected, v) in variants {
+        let s = format!("{:?}", v);
+        assert_eq!(s, expected);
+        seen.insert(s);
+    }
+    assert_eq!(seen.len(), 5);
+}
+
+#[test]
+fn dynamic_node_with_empty_id() {
+    let n = DynamicNode {
+        id: "".into(),
+        name: "name".into(),
+        tool_id: "t".into(),
+        args: serde_json::json!({}),
+    };
+    assert_eq!(n.id, "");
+    let j = serde_json::to_string(&n).unwrap();
+    let back: DynamicNode = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.id, "");
+}
+
+#[test]
+fn dynamic_node_with_complex_args_nested_arrays() {
+    let n = DynamicNode {
+        id: "n".into(),
+        name: "n".into(),
+        tool_id: "t".into(),
+        args: serde_json::json!({
+            "matrix": [[1, 2], [3, 4], [5, 6]],
+            "list": ["a", "b", "c"],
+            "deep": {"level1": {"level2": {"level3": "value"}}}
+        }),
+    };
+    let j = serde_json::to_string(&n).unwrap();
+    let back: DynamicNode = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.args["matrix"][1][0], 3);
+    assert_eq!(back.args["list"][2], "c");
+    assert_eq!(back.args["deep"]["level1"]["level2"]["level3"], "value");
+}
+
+#[test]
+fn dynamic_edge_self_loop() {
+    let e = DynamicEdge {
+        from: "n".into(),
+        to: "n".into(),
+    };
+    let j = serde_json::to_string(&e).unwrap();
+    let back: DynamicEdge = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.from, back.to);
+}
+
+#[test]
+fn dynamic_edge_unicode_v2() {
+    let e = DynamicEdge {
+        from: "源-α".into(),
+        to: "目-β".into(),
+    };
+    let j = serde_json::to_string(&e).unwrap();
+    let back: DynamicEdge = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.from, "源-α");
+    assert_eq!(back.to, "目-β");
+}
+
+#[test]
+fn dynamic_sop_plan_with_empty_start_node() {
+    let p = DynamicSopPlan {
+        nodes: vec![],
+        edges: vec![],
+        start_node: "".into(),
+    };
+    let j = serde_json::to_string(&p).unwrap();
+    let back: DynamicSopPlan = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.start_node, "");
+}
