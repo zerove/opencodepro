@@ -1436,3 +1436,108 @@ fn sisyphus_notepad_with_emoji_section_id_serde_safe() {
     let read = n.read_section("🔍");
     assert_eq!(read, Some(&"内容".to_string()));
 }
+
+// ---------------------------------------------------------------------------
+// More tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn sisyphus_notepad_with_unicode_section_id_prune() {
+    let mut n = SisyphusNotepad::default();
+    n.write_section("节-α".into(), "line1\nline2\nline3".into());
+    n.prune(2);
+    let read = n.read_section("节-α").unwrap();
+    // Should keep last 2 lines
+    assert!(read.contains("line2"));
+    assert!(read.contains("line3"));
+}
+
+#[test]
+fn sisyphus_notepad_with_only_one_section_prune() {
+    let mut n = SisyphusNotepad::default();
+    n.write_section("s".into(), "single".into());
+    n.prune(10);
+    let read = n.read_section("s").unwrap();
+    assert_eq!(read, &"single".to_string());
+}
+
+#[test]
+fn trigger_def_with_unicode_3_segment_id_in_field() {
+    let t = TriggerDef {
+        pattern: Some("前缀-α-中缀-β-后缀-γ".into()),
+        tools: vec!["t".into()],
+        description: Some("d".into()),
+        hook_phase: None,
+        hook_effect: None,
+        hook_message: None,
+    };
+    assert_eq!(
+        t.pattern.as_deref(),
+        Some("前缀-α-中缀-β-后缀-γ")
+    );
+}
+
+#[test]
+fn notepad_snapshot_with_unicode_2_sections() {
+    let mut snapshot = im::HashMap::new();
+    snapshot.insert("节-α".into(), "内容-β".into());
+    snapshot.insert("节-γ".into(), "内容-δ".into());
+    let n = NotepadSnapshot {
+        timestamp: 1000,
+        snapshot,
+        trigger_node: "触发-ε".into(),
+    };
+    assert_eq!(n.snapshot.len(), 2);
+    let j = serde_json::to_string(&n).unwrap();
+    let back: NotepadSnapshot = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.snapshot.get("节-α"), Some(&"内容-β".to_string()));
+}
+
+#[test]
+fn evolution_op_with_negative_delta_serde() {
+    use sisyphus_types::types::EvolutionOp;
+    let op = EvolutionOp::AdjustFuel {
+        node_name: "n-α".into(),
+        delta: -100,
+    };
+    let j = serde_json::to_string(&op).unwrap();
+    let back: EvolutionOp = serde_json::from_str(&j).unwrap();
+    match back {
+        EvolutionOp::AdjustFuel { node_name, delta } => {
+            assert_eq!(node_name, "n-α");
+            assert_eq!(delta, -100);
+        }
+        _ => panic!("wrong"),
+    }
+}
+
+#[test]
+fn sisyphus_notepad_with_long_unicode_section_id() {
+    let mut n = SisyphusNotepad::default();
+    let long_id = "节-α-".repeat(50);
+    n.write_section(long_id.clone(), "v".into());
+    let read = n.read_section(&long_id);
+    assert!(read.is_some());
+}
+
+#[test]
+fn trigger_def_with_unicode_tools_array_serde() {
+    let tools = vec![
+        "工-α".to_string(),
+        "工-β".to_string(),
+        "工-γ".to_string(),
+        "工-δ".to_string(),
+    ];
+    let t = TriggerDef {
+        pattern: Some("p".into()),
+        tools: tools.clone(),
+        description: Some("d".into()),
+        hook_phase: Some("before".into()),
+        hook_effect: Some("e".into()),
+        hook_message: Some("m".into()),
+    };
+    let j = serde_json::to_string(&t).unwrap();
+    let back: TriggerDef = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.tools.len(), 4);
+    assert_eq!(back.tools[2], "工-γ");
+}
