@@ -714,3 +714,109 @@ fn agent_message_with_complex_payload_round_trip() {
     assert_eq!(back.payload["data"]["obj"]["key"], "val");
     assert_eq!(back.payload["data"]["num"], 42.5);
 }
+
+// ---------------------------------------------------------------------------
+// Additional PluginDescriptor and VectorRecord tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn plugin_descriptor_with_max_version_string() {
+    use sisyphus_types::PluginDescriptor;
+    let long_version = "v".repeat(1000);
+    let pd = PluginDescriptor {
+        name: "p".into(),
+        version: long_version.clone(),
+        wasm_path: std::path::PathBuf::from("/p.wasm"),
+        tool_id: "t".into(),
+        fuel_limit: 100,
+        checksum: None,
+    };
+    let j = serde_json::to_string(&pd).unwrap();
+    let back: PluginDescriptor = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.version.len(), 1000);
+}
+
+#[test]
+fn plugin_descriptor_with_max_name_string() {
+    use sisyphus_types::PluginDescriptor;
+    let long_name = "n".repeat(1000);
+    let pd = PluginDescriptor {
+        name: long_name.clone(),
+        version: "1".into(),
+        wasm_path: std::path::PathBuf::from("/p.wasm"),
+        tool_id: "t".into(),
+        fuel_limit: 100,
+        checksum: None,
+    };
+    let j = serde_json::to_string(&pd).unwrap();
+    let back: PluginDescriptor = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.name.len(), 1000);
+}
+
+#[test]
+fn vector_record_with_unicode_key_in_hash() {
+    use sisyphus_types::VectorRecord;
+    use std::collections::HashMap;
+    let mut map = HashMap::new();
+    map.insert("键-α".to_string(), vec![0.5_f32; 100]);
+    let v = VectorRecord {
+        key: "k".into(),
+        embedding: vec![],
+        metadata: serde_json::to_value(&map).unwrap(),
+        timestamp: 0,
+    };
+    let j = serde_json::to_string(&v).unwrap();
+    let back: VectorRecord = serde_json::from_str(&j).unwrap();
+    assert!(back.metadata["键-α"].is_array());
+}
+
+#[test]
+fn agent_message_with_only_unicode_from() {
+    use sisyphus_types::AgentMessage;
+    let m = AgentMessage {
+        from: "发信人-α".into(),
+        to: "b".into(),
+        kind: "request".into(),
+        payload: serde_json::json!({}),
+        correlation_id: "c".into(),
+    };
+    assert_eq!(m.from, "发信人-α");
+}
+
+#[test]
+fn benchmark_run_with_max_metrics_complex() {
+    use sisyphus_types::BenchmarkRun;
+    let metrics = serde_json::json!({
+        "name": "test",
+        "iterations": 1000,
+        "mean_ms": 0.5,
+        "stddev": 0.1,
+        "tags": ["fast", "reliable"]
+    });
+    let b = BenchmarkRun {
+        name: "n".into(),
+        timestamp: 0,
+        duration_secs: 0.5,
+        success: true,
+        metrics,
+    };
+    let j = serde_json::to_string(&b).unwrap();
+    let back: BenchmarkRun = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.metrics["iterations"], 1000);
+    assert_eq!(back.metrics["tags"][1], "reliable");
+}
+
+#[test]
+fn platform_config_with_all_long_strings() {
+    use sisyphus_types::PlatformConfig;
+    let long = "x".repeat(1000);
+    let p = PlatformConfig {
+        is_windows: false,
+        path_sep: long.clone(),
+        shell: long.clone(),
+    };
+    let j = serde_json::to_string(&p).unwrap();
+    let back: PlatformConfig = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.path_sep.len(), 1000);
+    assert_eq!(back.shell.len(), 1000);
+}
