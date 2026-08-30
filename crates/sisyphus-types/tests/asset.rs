@@ -530,3 +530,145 @@ fn asset_content_variants_distinct_via_serde() {
     let unique: std::collections::HashSet<_> = serialized.iter().collect();
     assert_eq!(unique.len(), 2);
 }
+
+// ---------------------------------------------------------------------------
+// Additional coverage
+// ---------------------------------------------------------------------------
+
+#[test]
+fn asset_kind_serde_all_distinct() {
+    use sisyphus_types::asset::AssetKind;
+    let kinds = [
+        AssetKind::Tool,
+        AssetKind::SOP,
+        AssetKind::Insight,
+        AssetKind::Constraint,
+    ];
+    let serialized: Vec<String> = kinds
+        .iter()
+        .map(|k| serde_json::to_string(k).unwrap())
+        .collect();
+    // All four should produce distinct JSON strings
+    let unique: std::collections::HashSet<_> = serialized.iter().collect();
+    assert_eq!(unique.len(), 4);
+}
+
+#[test]
+fn insight_data_clone_preserves_all_fields() {
+    use sisyphus_types::asset::InsightData;
+    let i = InsightData {
+        observation: "obs".into(),
+        reasoning: "rea".into(),
+        evidence_ids: vec!["e1".into(), "e2".into()],
+        confidence: 0.7,
+    };
+    let cloned = i.clone();
+    assert_eq!(cloned.observation, "obs");
+    assert_eq!(cloned.reasoning, "rea");
+    assert_eq!(cloned.evidence_ids.len(), 2);
+    assert_eq!(cloned.confidence, 0.7);
+}
+
+#[test]
+fn constraint_data_serde_unicode() {
+    use sisyphus_types::asset::ConstraintData;
+    let c = ConstraintData {
+        description: "约束-α".into(),
+        strictness: 0.5,
+        violation_penalty: 0.5,
+    };
+    let j = serde_json::to_string(&c).unwrap();
+    let back: ConstraintData = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.description, "约束-α");
+}
+
+#[test]
+fn asset_relation_serde_unicode() {
+    use sisyphus_types::asset::{AssetRelation, RelationType};
+    let r = AssetRelation {
+        from_id: "资产-α".into(),
+        to_id: "资产-β".into(),
+        relation_type: RelationType::Solves,
+        weight: 0.5,
+    };
+    let j = serde_json::to_string(&r).unwrap();
+    let back: AssetRelation = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.from_id, "资产-α");
+    assert_eq!(back.to_id, "资产-β");
+}
+
+#[test]
+fn asset_relation_serde_with_weight_one() {
+    use sisyphus_types::asset::{AssetRelation, RelationType};
+    let r = AssetRelation {
+        from_id: "a".into(),
+        to_id: "b".into(),
+        relation_type: RelationType::Requires,
+        weight: 1.0,
+    };
+    let j = serde_json::to_string(&r).unwrap();
+    let back: AssetRelation = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.weight, 1.0);
+}
+
+#[test]
+fn asset_relation_serde_with_weight_zero_negative() {
+    use sisyphus_types::asset::{AssetRelation, RelationType};
+    let r = AssetRelation {
+        from_id: "a".into(),
+        to_id: "b".into(),
+        relation_type: RelationType::Refines,
+        weight: -1.0,
+    };
+    let j = serde_json::to_string(&r).unwrap();
+    let back: AssetRelation = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.weight, -1.0);
+}
+
+#[test]
+fn cognitive_asset_with_unicode_id() {
+    use sisyphus_types::asset::{AssetContent, AssetKind, CognitiveAsset, InsightData};
+    let asset = CognitiveAsset {
+        id: "资产-α".into(),
+        kind: AssetKind::Tool,
+        name: "名字".into(),
+        description: "描述-β".into(),
+        content: AssetContent::Insight(InsightData {
+            observation: "o".into(),
+            reasoning: "r".into(),
+            evidence_ids: vec![],
+            confidence: 0.5,
+        }),
+        metadata: HashMap::new(),
+        version: 1,
+        created_at: 0,
+    };
+    let j = serde_json::to_string(&asset).unwrap();
+    let back: CognitiveAsset = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.id, "资产-α");
+    assert_eq!(back.description, "描述-β");
+}
+
+#[test]
+fn cognitive_asset_metadata_with_long_value() {
+    use sisyphus_types::asset::{AssetContent, AssetKind, CognitiveAsset, InsightData};
+    let long_value = "x".repeat(1000);
+    let mut meta = HashMap::new();
+    meta.insert("k".into(), long_value.clone());
+    let asset = CognitiveAsset {
+        id: "a".into(),
+        kind: AssetKind::Tool,
+        name: "n".into(),
+        description: "d".into(),
+        content: AssetContent::Insight(InsightData {
+            observation: "o".into(),
+            reasoning: "r".into(),
+            evidence_ids: vec![],
+            confidence: 0.5,
+        }),
+        metadata: meta,
+        version: 1,
+        created_at: 0,
+    };
+    assert_eq!(asset.metadata["k"].len(), 1000);
+}
