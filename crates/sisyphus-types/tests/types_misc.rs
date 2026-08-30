@@ -303,3 +303,149 @@ fn trigger_def_serde() {
     let back: TriggerDef = serde_json::from_str(&j).unwrap();
     assert_eq!(back.description.as_deref(), Some("d"));
 }
+
+// ---------------------------------------------------------------------------
+// Additional coverage
+// ---------------------------------------------------------------------------
+
+#[test]
+fn feedback_with_long_tags() {
+    let f = Feedback {
+        agent_id: "a".into(),
+        original_request: "r".into(),
+        original_output: "o".into(),
+        corrected_output: "c".into(),
+        timestamp: 0,
+        tags: (0..100).map(|i| format!("tag-{}", i)).collect(),
+    };
+    let j = serde_json::to_string(&f).unwrap();
+    let back: Feedback = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.tags.len(), 100);
+    assert_eq!(back.tags[42], "tag-42");
+}
+
+#[test]
+fn plugin_descriptor_with_unicode_checksum() {
+    use sisyphus_types::PluginDescriptor;
+    let pd = PluginDescriptor {
+        name: "插件".into(),
+        version: "1.0".into(),
+        wasm_path: PathBuf::from("/path/插件.wasm"),
+        tool_id: "工具".into(),
+        fuel_limit: 5000,
+        checksum: Some("哈希-α".into()),
+    };
+    let j = serde_json::to_string(&pd).unwrap();
+    let back: PluginDescriptor = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.name, "插件");
+    assert_eq!(back.checksum.as_deref(), Some("哈希-α"));
+}
+
+#[test]
+fn vector_record_with_long_embedding() {
+    use sisyphus_types::VectorRecord;
+    let emb: Vec<f32> = (0..1000).map(|i| i as f32 / 1000.0).collect();
+    let v = VectorRecord {
+        key: "k".into(),
+        embedding: emb,
+        metadata: serde_json::json!({}),
+        timestamp: 0,
+    };
+    assert_eq!(v.embedding.len(), 1000);
+    let j = serde_json::to_string(&v).unwrap();
+    let back: VectorRecord = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.embedding.len(), 1000);
+    assert!((back.embedding[500] - 0.5).abs() < 1e-3);
+}
+
+#[test]
+fn agent_message_with_unicode_payload() {
+    use sisyphus_types::AgentMessage;
+    let m = AgentMessage {
+        from: "发-α".into(),
+        to: "收-β".into(),
+        kind: "请求".into(),
+        payload: serde_json::json!({"内容": "数据-γ"}),
+        correlation_id: "关联-1".into(),
+    };
+    let j = serde_json::to_string(&m).unwrap();
+    let back: AgentMessage = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.from, "发-α");
+    assert_eq!(back.payload["内容"], "数据-γ");
+}
+
+#[test]
+fn benchmark_run_with_max_metrics() {
+    use sisyphus_types::BenchmarkRun;
+    let b = BenchmarkRun {
+        name: "n".into(),
+        timestamp: u64::MAX,
+        duration_secs: f64::MAX,
+        success: true,
+        metrics: serde_json::json!({"x": 1.0e308}),
+    };
+    let j = serde_json::to_string(&b).unwrap();
+    let back: BenchmarkRun = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.timestamp, u64::MAX);
+}
+
+#[test]
+fn platform_config_debug() {
+    use sisyphus_types::PlatformConfig;
+    let p = PlatformConfig::default();
+    let _ = format!("{:?}", p);
+}
+
+#[test]
+fn circuit_state_equality() {
+    use sisyphus_types::CircuitState;
+    assert_eq!(CircuitState::Closed, CircuitState::Closed);
+    assert_ne!(CircuitState::Open, CircuitState::Closed);
+    assert_ne!(CircuitState::HalfOpen, CircuitState::Open);
+}
+
+#[test]
+fn circuit_state_debug() {
+    use sisyphus_types::CircuitState;
+    let _ = format!("{:?}", CircuitState::Closed);
+    let _ = format!("{:?}", CircuitState::HalfOpen);
+}
+
+#[test]
+fn work_mode_ultrawork() {
+    use sisyphus_types::WorkMode;
+    let wm = WorkMode::UltraWork;
+    let j = serde_json::to_string(&wm).unwrap();
+    let back: WorkMode = serde_json::from_str(&j).unwrap();
+    assert_eq!(back, WorkMode::UltraWork);
+}
+
+#[test]
+fn custom_tool_definition_default_fuel() {
+    use sisyphus_types::CustomToolDefinition;
+    let t = CustomToolDefinition {
+        name: "n".into(),
+        description: "d".into(),
+        handler: PathBuf::from("/h"),
+        schema: serde_json::json!({}),
+        fuel_limit: 1_000_000, // default
+    };
+    assert_eq!(t.fuel_limit, 1_000_000);
+}
+
+#[test]
+fn trigger_def_with_many_tools() {
+    use sisyphus_types::TriggerDef;
+    let tools: Vec<String> = (0..50).map(|i| format!("tool-{}", i)).collect();
+    let t = TriggerDef {
+        pattern: Some("on_event".into()),
+        tools: tools.clone(),
+        description: Some("multi-tool trigger".into()),
+        hook_phase: Some("after".into()),
+        hook_effect: Some("execute".into()),
+        hook_message: Some("event".into()),
+    };
+    let j = serde_json::to_string(&t).unwrap();
+    let back: TriggerDef = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.tools.len(), 50);
+}
