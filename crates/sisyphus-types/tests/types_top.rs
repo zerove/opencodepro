@@ -468,3 +468,111 @@ fn trigger_def_with_all_hook_fields() {
     assert_eq!(back.hook_message.as_deref(), Some("user saved file"));
     assert_eq!(back.hook_effect.as_deref(), Some("validate"));
 }
+
+// ---------------------------------------------------------------------------
+// Additional MetaLearningSample and FormalVerificationConfig coverage
+// ---------------------------------------------------------------------------
+
+#[test]
+fn meta_learning_sample_with_max_duration() {
+    use sisyphus_types::MetaLearningSample;
+    let s = MetaLearningSample {
+        context: serde_json::json!({}),
+        strategy: "s".into(),
+        params: serde_json::json!({}),
+        success: true,
+        duration_secs: f64::MAX,
+        timestamp: 0,
+    };
+    let j = serde_json::to_string(&s).unwrap();
+    let back: MetaLearningSample = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.duration_secs, f64::MAX);
+}
+
+#[test]
+fn meta_learning_sample_with_negative_duration() {
+    use sisyphus_types::MetaLearningSample;
+    let s = MetaLearningSample {
+        context: serde_json::json!({}),
+        strategy: "s".into(),
+        params: serde_json::json!({}),
+        success: false,
+        duration_secs: -0.5,
+        timestamp: 0,
+    };
+    let j = serde_json::to_string(&s).unwrap();
+    let back: MetaLearningSample = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.duration_secs, -0.5);
+}
+
+#[test]
+fn meta_learning_sample_failed_strategy() {
+    use sisyphus_types::MetaLearningSample;
+    let s = MetaLearningSample {
+        context: serde_json::json!({"task": "build"}),
+        strategy: "retry".into(),
+        params: serde_json::json!({"max": 3}),
+        success: false,
+        duration_secs: 1.0,
+        timestamp: 100,
+    };
+    assert!(!s.success);
+    let j = serde_json::to_string(&s).unwrap();
+    let back: MetaLearningSample = serde_json::from_str(&j).unwrap();
+    assert!(!back.success);
+}
+
+#[test]
+fn formal_verification_config_all_enabled() {
+    use sisyphus_types::FormalVerificationConfig;
+    let c = FormalVerificationConfig {
+        enable_kani: true,
+        enable_loom: true,
+        enable_proptest: true,
+        max_proptest_cases: 10000,
+    };
+    assert!(c.enable_kani);
+    assert!(c.enable_loom);
+    assert!(c.enable_proptest);
+}
+
+#[test]
+fn formal_verification_config_default() {
+    use sisyphus_types::FormalVerificationConfig;
+    let c = FormalVerificationConfig::default();
+    // Default values should not have all flags enabled
+    assert!(!c.enable_kani);
+    assert!(!c.enable_loom);
+    assert!(!c.enable_proptest);
+    assert_eq!(c.max_proptest_cases, 0);
+}
+
+#[test]
+fn formal_verification_config_clone() {
+    use sisyphus_types::FormalVerificationConfig;
+    let c = FormalVerificationConfig {
+        enable_kani: true,
+        enable_loom: false,
+        enable_proptest: true,
+        max_proptest_cases: 1000,
+    };
+    let cloned = c.clone();
+    assert_eq!(cloned.enable_kani, true);
+    assert_eq!(cloned.max_proptest_cases, 1000);
+}
+
+#[test]
+fn meta_learning_sample_unicode() {
+    use sisyphus_types::MetaLearningSample;
+    let s = MetaLearningSample {
+        context: serde_json::json!({"key": "值-α"}),
+        strategy: "策略-β".into(),
+        params: serde_json::json!({}),
+        success: true,
+        duration_secs: 0.5,
+        timestamp: 0,
+    };
+    let j = serde_json::to_string(&s).unwrap();
+    let back: MetaLearningSample = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.strategy, "策略-β");
+}
