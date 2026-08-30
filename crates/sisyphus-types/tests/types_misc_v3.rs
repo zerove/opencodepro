@@ -1,0 +1,383 @@
+//! Integration tests for sisyphus-types `types` module's
+//! additional structs: `Feedback`, `PluginDescriptor`, `VectorRecord`,
+//! `AgentMessage`, `BenchmarkRun`, `PlatformConfig`, and
+//! `CognitiveEvent` enum.
+
+use sisyphus_types::types::{
+    AgentMessage, BenchmarkRun, CognitiveEvent, Feedback, PlatformConfig, PluginDescriptor,
+    VectorRecord,
+};
+
+// ---------------------------------------------------------------------------
+// Feedback
+// ---------------------------------------------------------------------------
+
+#[test]
+fn feedback_field_assignment() {
+    let f = Feedback {
+        agent_id: "agent_1".into(),
+        original_request: "do X".into(),
+        original_output: "did Y".into(),
+        corrected_output: "should have done Z".into(),
+        timestamp: 1700000000,
+        tags: vec!["accuracy".into(), "high-priority".into()],
+    };
+    assert_eq!(f.agent_id, "agent_1");
+    assert_eq!(f.timestamp, 1700000000);
+    assert_eq!(f.tags.len(), 2);
+}
+
+#[test]
+fn feedback_serde_round_trip() {
+    let f = Feedback {
+        agent_id: "a".into(),
+        original_request: "r".into(),
+        original_output: "o".into(),
+        corrected_output: "c".into(),
+        timestamp: 42,
+        tags: vec!["t1".into()],
+    };
+    let j = serde_json::to_string(&f).unwrap();
+    let back: Feedback = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.agent_id, "a");
+    assert_eq!(back.timestamp, 42);
+    assert_eq!(back.tags, vec!["t1"]);
+}
+
+#[test]
+fn feedback_clone() {
+    let f = Feedback {
+        agent_id: "a".into(),
+        original_request: "r".into(),
+        original_output: "o".into(),
+        corrected_output: "c".into(),
+        timestamp: 0,
+        tags: vec![],
+    };
+    let cloned = f.clone();
+    assert_eq!(cloned.agent_id, "a");
+    assert!(cloned.tags.is_empty());
+}
+
+#[test]
+fn feedback_empty_tags() {
+    let f = Feedback {
+        agent_id: "".into(),
+        original_request: "".into(),
+        original_output: "".into(),
+        corrected_output: "".into(),
+        timestamp: 0,
+        tags: vec![],
+    };
+    let j = serde_json::to_string(&f).unwrap();
+    let back: Feedback = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.agent_id, "");
+}
+
+// ---------------------------------------------------------------------------
+// PluginDescriptor
+// ---------------------------------------------------------------------------
+
+#[test]
+fn plugin_descriptor_field_assignment() {
+    let pd = PluginDescriptor {
+        name: "test_plugin".into(),
+        version: "1.0.0".into(),
+        wasm_path: std::path::PathBuf::from("/tmp/plugin.wasm"),
+        tool_id: "tool_x".into(),
+        fuel_limit: 1_000_000,
+        checksum: Some("abc123".into()),
+    };
+    assert_eq!(pd.name, "test_plugin");
+    assert_eq!(pd.fuel_limit, 1_000_000);
+    assert_eq!(pd.checksum.as_deref(), Some("abc123"));
+}
+
+#[test]
+fn plugin_descriptor_serde() {
+    let pd = PluginDescriptor {
+        name: "p".into(),
+        version: "0.1".into(),
+        wasm_path: std::path::PathBuf::from("/p.wasm"),
+        tool_id: "t".into(),
+        fuel_limit: 100,
+        checksum: None,
+    };
+    let j = serde_json::to_string(&pd).unwrap();
+    let back: PluginDescriptor = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.tool_id, "t");
+    assert_eq!(back.checksum, None);
+}
+
+#[test]
+fn plugin_descriptor_clone() {
+    let pd = PluginDescriptor {
+        name: "p".into(),
+        version: "1".into(),
+        wasm_path: std::path::PathBuf::from("/x.wasm"),
+        tool_id: "t".into(),
+        fuel_limit: 0,
+        checksum: None,
+    };
+    let cloned = pd.clone();
+    assert_eq!(cloned.name, "p");
+    assert_eq!(cloned.fuel_limit, 0);
+}
+
+// ---------------------------------------------------------------------------
+// VectorRecord
+// ---------------------------------------------------------------------------
+
+#[test]
+fn vector_record_field_assignment() {
+    let vr = VectorRecord {
+        key: "k1".into(),
+        embedding: vec![0.1, 0.2, 0.3, 0.4],
+        metadata: serde_json::json!({"source": "test"}),
+        timestamp: 12345,
+    };
+    assert_eq!(vr.key, "k1");
+    assert_eq!(vr.embedding.len(), 4);
+    assert_eq!(vr.timestamp, 12345);
+}
+
+#[test]
+fn vector_record_serde() {
+    let vr = VectorRecord {
+        key: "k".into(),
+        embedding: vec![1.0, 2.0],
+        metadata: serde_json::json!({}),
+        timestamp: 99,
+    };
+    let j = serde_json::to_string(&vr).unwrap();
+    let back: VectorRecord = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.key, "k");
+    assert_eq!(back.embedding, vec![1.0, 2.0]);
+}
+
+#[test]
+fn vector_record_empty_embedding() {
+    let vr = VectorRecord {
+        key: "empty".into(),
+        embedding: vec![],
+        metadata: serde_json::json!(null),
+        timestamp: 0,
+    };
+    assert!(vr.embedding.is_empty());
+    let j = serde_json::to_string(&vr).unwrap();
+    let back: VectorRecord = serde_json::from_str(&j).unwrap();
+    assert!(back.embedding.is_empty());
+}
+
+#[test]
+fn vector_record_clone() {
+    let vr = VectorRecord {
+        key: "k".into(),
+        embedding: vec![0.5],
+        metadata: serde_json::json!({}),
+        timestamp: 1,
+    };
+    let cloned = vr.clone();
+    assert_eq!(cloned.embedding, vec![0.5]);
+}
+
+// ---------------------------------------------------------------------------
+// CognitiveEvent
+// ---------------------------------------------------------------------------
+
+#[test]
+fn cognitive_event_predict_variant() {
+    let ev = CognitiveEvent::Predict {
+        prediction: serde_json::json!({"next": "A"}),
+    };
+    let j = serde_json::to_string(&ev).unwrap();
+    let back: CognitiveEvent = serde_json::from_str(&j).unwrap();
+    match back {
+        CognitiveEvent::Predict { prediction } => {
+            assert_eq!(prediction["next"], "A");
+        }
+        _ => panic!("Wrong variant"),
+    }
+}
+
+#[test]
+fn cognitive_event_reflect_variant() {
+    let ev = CognitiveEvent::Reflect {
+        report: serde_json::json!({"score": 0.5}),
+    };
+    let j = serde_json::to_string(&ev).unwrap();
+    let back: CognitiveEvent = serde_json::from_str(&j).unwrap();
+    match back {
+        CognitiveEvent::Reflect { report } => {
+            assert_eq!(report["score"], 0.5);
+        }
+        _ => panic!("Wrong variant"),
+    }
+}
+
+#[test]
+fn cognitive_event_evolve_variant() {
+    let ev = CognitiveEvent::Evolve {
+        revised_plan: sisyphus_types::graph::SOPGraphConfig::default(),
+    };
+    let j = serde_json::to_string(&ev).unwrap();
+    let back: CognitiveEvent = serde_json::from_str(&j).unwrap();
+    match back {
+        CognitiveEvent::Evolve { .. } => {}
+        _ => panic!("Wrong variant"),
+    }
+}
+
+#[test]
+fn cognitive_event_clone() {
+    let ev = CognitiveEvent::Predict {
+        prediction: serde_json::json!({"a": 1}),
+    };
+    let cloned = ev.clone();
+    match cloned {
+        CognitiveEvent::Predict { prediction } => {
+            assert_eq!(prediction["a"], 1);
+        }
+        _ => panic!("Wrong variant"),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// AgentMessage
+// ---------------------------------------------------------------------------
+
+#[test]
+fn agent_message_field_assignment() {
+    let m = AgentMessage {
+        from: "alice".into(),
+        to: "bob".into(),
+        kind: "request".into(),
+        payload: serde_json::json!({"cmd": "run"}),
+        correlation_id: "corr-1".into(),
+    };
+    assert_eq!(m.from, "alice");
+    assert_eq!(m.to, "bob");
+    assert_eq!(m.kind, "request");
+    assert_eq!(m.correlation_id, "corr-1");
+}
+
+#[test]
+fn agent_message_serde() {
+    let m = AgentMessage {
+        from: "a".into(),
+        to: "b".into(),
+        kind: "response".into(),
+        payload: serde_json::json!({"result": "ok"}),
+        correlation_id: "corr-2".into(),
+    };
+    let j = serde_json::to_string(&m).unwrap();
+    let back: AgentMessage = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.from, "a");
+    assert_eq!(back.kind, "response");
+    assert_eq!(back.correlation_id, "corr-2");
+}
+
+#[test]
+fn agent_message_clone() {
+    let m = AgentMessage {
+        from: "a".into(),
+        to: "b".into(),
+        kind: "publish".into(),
+        payload: serde_json::json!({}),
+        correlation_id: "x".into(),
+    };
+    let cloned = m.clone();
+    assert_eq!(cloned.kind, "publish");
+}
+
+// ---------------------------------------------------------------------------
+// BenchmarkRun
+// ---------------------------------------------------------------------------
+
+#[test]
+fn benchmark_run_field_assignment() {
+    let b = BenchmarkRun {
+        name: "cognition_loop".into(),
+        timestamp: 1700000000,
+        duration_secs: 12.5,
+        success: true,
+        metrics: serde_json::json!({"throughput": 1000}),
+    };
+    assert_eq!(b.name, "cognition_loop");
+    assert!(b.success);
+    assert_eq!(b.duration_secs, 12.5);
+}
+
+#[test]
+fn benchmark_run_serde() {
+    let b = BenchmarkRun {
+        name: "test".into(),
+        timestamp: 0,
+        duration_secs: 0.0,
+        success: false,
+        metrics: serde_json::json!({}),
+    };
+    let j = serde_json::to_string(&b).unwrap();
+    let back: BenchmarkRun = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.name, "test");
+    assert!(!back.success);
+}
+
+#[test]
+fn benchmark_run_clone() {
+    let b = BenchmarkRun {
+        name: "n".into(),
+        timestamp: 1,
+        duration_secs: 0.5,
+        success: true,
+        metrics: serde_json::json!({"k": "v"}),
+    };
+    let cloned = b.clone();
+    assert_eq!(cloned.name, "n");
+    assert_eq!(cloned.metrics["k"], "v");
+}
+
+// ---------------------------------------------------------------------------
+// PlatformConfig
+// ---------------------------------------------------------------------------
+
+#[test]
+fn platform_config_default() {
+    let p = PlatformConfig::default();
+    // Default values: is_windows false, others empty
+    assert!(!p.is_windows);
+    assert_eq!(p.path_sep, "");
+    assert_eq!(p.shell, "");
+}
+
+#[test]
+fn platform_config_field_assignment() {
+    let p = PlatformConfig {
+        is_windows: true,
+        path_sep: "\\".into(),
+        shell: "powershell.exe".into(),
+    };
+    assert!(p.is_windows);
+    assert_eq!(p.path_sep, "\\");
+    assert_eq!(p.shell, "powershell.exe");
+}
+
+#[test]
+fn platform_config_serde() {
+    let p = PlatformConfig {
+        is_windows: false,
+        path_sep: "/".into(),
+        shell: "/bin/bash".into(),
+    };
+    let j = serde_json::to_string(&p).unwrap();
+    let back: PlatformConfig = serde_json::from_str(&j).unwrap();
+    assert!(!back.is_windows);
+    assert_eq!(back.shell, "/bin/bash");
+}
+
+#[test]
+fn platform_config_clone() {
+    let p = PlatformConfig::default();
+    let cloned = p.clone();
+    assert_eq!(cloned.path_sep, "");
+}
