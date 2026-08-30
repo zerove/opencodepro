@@ -2739,3 +2739,134 @@ fn feedback_with_unicode_long_timestamp() {
     let back: Feedback = serde_json::from_str(&j).unwrap();
     assert_eq!(back.timestamp, i64::MAX);
 }
+
+// ---------------------------------------------------------------------------
+// More tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn feedback_with_unicode_long_corrected_output_2() {
+    use sisyphus_types::Feedback;
+    let long = "修正-α-".repeat(20);
+    let f = Feedback {
+        agent_id: "a".into(),
+        original_request: "r".into(),
+        original_output: "o".into(),
+        corrected_output: long.clone(),
+        timestamp: 0,
+        tags: vec![],
+    };
+    let j = serde_json::to_string(&f).unwrap();
+    let back: Feedback = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.corrected_output, long);
+}
+
+#[test]
+fn vector_record_with_unicode_metadata_object_3() {
+    use sisyphus_types::VectorRecord;
+    let v = VectorRecord {
+        key: "k".into(),
+        embedding: vec![0.5],
+        metadata: serde_json::json!({
+            "config-α": {
+                "name-β": "value-γ",
+                "tags-δ": ["η-1", "η-2"]
+            }
+        }),
+        timestamp: 0,
+    };
+    let j = serde_json::to_string(&v).unwrap();
+    let back: VectorRecord = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.metadata["config-α"]["name-β"], "value-γ");
+    assert_eq!(back.metadata["config-α"]["tags-δ"][1], "η-2");
+}
+
+#[test]
+fn plugin_descriptor_with_unicode_tool_id_long_short() {
+    use sisyphus_types::PluginDescriptor;
+    let pd = PluginDescriptor {
+        name: "p".into(),
+        version: "1".into(),
+        wasm_path: std::path::PathBuf::from("/p.wasm"),
+        tool_id: "工具-α-β-γ-δ-ε".into(),
+        fuel_limit: 1000,
+        checksum: None,
+    };
+    assert_eq!(pd.tool_id, "工具-α-β-γ-δ-ε");
+}
+
+#[test]
+fn agent_message_with_unicode_payload_2_layer() {
+    use sisyphus_types::AgentMessage;
+    let m = AgentMessage {
+        from: "a".into(),
+        to: "b".into(),
+        kind: "request".into(),
+        payload: serde_json::json!({
+            "outer-α": {
+                "inner-β": {
+                    "deepest-γ": "value-δ"
+                }
+            }
+        }),
+        correlation_id: "c".into(),
+    };
+    let j = serde_json::to_string(&m).unwrap();
+    let back: AgentMessage = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.payload["outer-α"]["inner-β"]["deepest-γ"], "value-δ");
+}
+
+#[test]
+fn benchmark_run_with_unicode_metrics_array_complex() {
+    use sisyphus_types::BenchmarkRun;
+    let b = BenchmarkRun {
+        name: "n".into(),
+        timestamp: 0,
+        duration_secs: 0.0,
+        success: true,
+        metrics: serde_json::json!({
+            "name-α": [
+                {"id-β": 1, "val-γ": "a"},
+                {"id-β": 2, "val-γ": "b"}
+            ]
+        }),
+    };
+    let j = serde_json::to_string(&b).unwrap();
+    let back: BenchmarkRun = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.metrics["name-α"][0]["id-β"], 1);
+    assert_eq!(back.metrics["name-α"][1]["val-γ"], "b");
+}
+
+#[test]
+fn trigger_def_with_unicode_3_tools_array() {
+    use sisyphus_types::TriggerDef;
+    let tools = vec!["t-1-α".to_string(), "t-2-β".to_string(), "t-3-γ".to_string()];
+    let t = TriggerDef {
+        pattern: Some("p".into()),
+        tools: tools.clone(),
+        description: Some("d".into()),
+        hook_phase: Some("before".into()),
+        hook_effect: Some("e".into()),
+        hook_message: Some("m".into()),
+    };
+    let j = serde_json::to_string(&t).unwrap();
+    let back: TriggerDef = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.tools.len(), 3);
+    assert_eq!(back.tools[1], "t-2-β");
+}
+
+#[test]
+fn feedback_with_unicode_zero_tags() {
+    use sisyphus_types::Feedback;
+    let f = Feedback {
+        agent_id: "agent-α".into(),
+        original_request: "请求-β".into(),
+        original_output: "输出-γ".into(),
+        corrected_output: "修正-δ".into(),
+        timestamp: 0,
+        tags: vec![],
+    };
+    let j = serde_json::to_string(&f).unwrap();
+    let back: Feedback = serde_json::from_str(&j).unwrap();
+    assert!(back.tags.is_empty());
+}
