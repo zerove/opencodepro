@@ -9,7 +9,8 @@
 //! experience records to bias probabilities.
 
 use sisyphus_intel::probabilistic_planner::{
-    ExperienceRecord, PlannerConfig, ProbabilisticPlanner, RankedPath, RiskLevel, RiskThresholds,
+    ExperienceRecord, PathSummary, PlannerConfig, ProbabilisticPlanner, RankedPath, RiskLevel,
+    RiskThresholds,
 };
 use sisyphus_intel::SimulationResult;
 
@@ -466,4 +467,78 @@ fn planner_config_clone() {
     let cloned = cfg.clone();
     assert_eq!(cloned.max_cost, cfg.max_cost);
     assert_eq!(cloned.probability_weight, cfg.probability_weight);
+}
+
+// ---------------------------------------------------------------------------
+// PathSummary
+// ---------------------------------------------------------------------------
+
+#[test]
+fn path_summary_default_is_empty() {
+    let s = PathSummary::default();
+    assert_eq!(s.total_paths, 0);
+    assert_eq!(s.average_probability, 0.0);
+    assert_eq!(s.average_cost, 0);
+    assert!(s.best_path.is_none());
+    assert!(s.worst_path.is_none());
+    assert!(s.risk_distribution.is_empty());
+}
+
+#[test]
+fn path_summary_field_assignment() {
+    let rp = RankedPath {
+        path_id: "p1".into(),
+        success_probability: 0.9,
+        estimated_cost: 100,
+        risk_level: RiskLevel::Low,
+        composite_score: 0.9,
+        predicted_outcome: "ok".into(),
+        confidence: 0.9,
+    };
+    let mut dist = std::collections::HashMap::new();
+    dist.insert(RiskLevel::Low, 3);
+    dist.insert(RiskLevel::High, 1);
+
+    let s = PathSummary {
+        total_paths: 4,
+        average_probability: 0.7,
+        average_cost: 200,
+        best_path: Some(rp.clone()),
+        worst_path: Some(rp),
+        risk_distribution: dist,
+    };
+    assert_eq!(s.total_paths, 4);
+    assert_eq!(s.risk_distribution.get(&RiskLevel::Low), Some(&3));
+}
+
+#[test]
+fn path_summary_serde() {
+    let s = PathSummary {
+        total_paths: 2,
+        average_probability: 0.5,
+        average_cost: 100,
+        best_path: None,
+        worst_path: None,
+        risk_distribution: std::collections::HashMap::new(),
+    };
+    let j = serde_json::to_string(&s).unwrap();
+    let back: PathSummary = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.total_paths, 2);
+    assert!(back.best_path.is_none());
+}
+
+#[test]
+fn path_summary_clone() {
+    let s = PathSummary::default();
+    let cloned = s.clone();
+    assert_eq!(cloned.total_paths, 0);
+    assert_eq!(cloned.average_cost, 0);
+}
+
+#[test]
+fn path_summary_debug() {
+    let s = PathSummary::default();
+    let dbg = format!("{:?}", s);
+    assert!(dbg.contains("PathSummary"));
+    assert!(dbg.contains("total_paths"));
 }
