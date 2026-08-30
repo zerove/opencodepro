@@ -567,3 +567,77 @@ fn trigger_def_with_unicode_tools() {
     assert_eq!(back.tools[0], "工具-α");
     assert_eq!(back.tools[1], "工具-β");
 }
+
+// ---------------------------------------------------------------------------
+// Additional CircuitState and WorkMode coverage
+// ---------------------------------------------------------------------------
+
+#[test]
+fn circuit_state_serde_round_trip() {
+    use sisyphus_types::CircuitState;
+    for v in [CircuitState::Closed, CircuitState::Open, CircuitState::HalfOpen] {
+        let j = serde_json::to_string(&v).unwrap();
+        let back: CircuitState = serde_json::from_str(&j).unwrap();
+        assert_eq!(back, v);
+    }
+}
+
+#[test]
+fn circuit_state_distinct_variants() {
+    use sisyphus_types::CircuitState;
+    let variants = [CircuitState::Closed, CircuitState::Open, CircuitState::HalfOpen];
+    for (i, a) in variants.iter().enumerate() {
+        for (j, b) in variants.iter().enumerate() {
+            if i == j {
+                assert_eq!(a, b);
+            } else {
+                assert_ne!(a, b);
+            }
+        }
+    }
+}
+
+#[test]
+fn work_mode_standard_is_default() {
+    use sisyphus_types::WorkMode;
+    let wm: WorkMode = Default::default();
+    assert_eq!(wm, WorkMode::Standard);
+}
+
+#[test]
+fn work_mode_inequality() {
+    use sisyphus_types::WorkMode;
+    assert_ne!(WorkMode::Standard, WorkMode::UltraWork);
+}
+
+#[test]
+fn work_mode_clone() {
+    use sisyphus_types::WorkMode;
+    let wm = WorkMode::UltraWork;
+    let cloned = wm.clone();
+    assert_eq!(cloned, WorkMode::UltraWork);
+}
+
+#[test]
+fn trigger_def_with_unicode_pattern_only() {
+    use sisyphus_types::TriggerDef;
+    let t: TriggerDef = serde_json::from_str(r#"{"pattern":"模式-α"}"#).unwrap();
+    assert_eq!(t.pattern.as_deref(), Some("模式-α"));
+    assert!(t.tools.is_empty());
+}
+
+#[test]
+fn trigger_def_clone_preserves_pattern() {
+    use sisyphus_types::TriggerDef;
+    let t = TriggerDef {
+        pattern: Some("deploy".into()),
+        tools: vec!["t".into()],
+        description: Some("d".into()),
+        hook_phase: Some("before".into()),
+        hook_effect: Some("e".into()),
+        hook_message: Some("m".into()),
+    };
+    let cloned = t.clone();
+    assert_eq!(cloned.pattern, t.pattern);
+    assert_eq!(cloned.tools, t.tools);
+}
