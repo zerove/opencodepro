@@ -9,7 +9,7 @@
 //! experience records to bias probabilities.
 
 use sisyphus_intel::probabilistic_planner::{
-    ExperienceRecord, PlannerConfig, ProbabilisticPlanner, RiskLevel, RiskThresholds,
+    ExperienceRecord, PlannerConfig, ProbabilisticPlanner, RankedPath, RiskLevel, RiskThresholds,
 };
 use sisyphus_intel::SimulationResult;
 
@@ -301,4 +301,169 @@ fn ranked_path_predicted_outcome_preserved() {
     assert_eq!(ranked[0].predicted_outcome, "success");
     assert!((ranked[0].success_probability - 0.8).abs() < 1e-9);
     assert_eq!(ranked[0].estimated_cost, 100);
+}
+
+// ---------------------------------------------------------------------------
+// RiskLevel additional coverage
+// ---------------------------------------------------------------------------
+
+#[test]
+fn risk_level_serde_round_trip() {
+    for level in [
+        RiskLevel::Low,
+        RiskLevel::Medium,
+        RiskLevel::High,
+        RiskLevel::Critical,
+    ] {
+        let json = serde_json::to_string(&level).expect("");
+        let parsed: RiskLevel = serde_json::from_str(&json).expect("");
+        assert_eq!(parsed, level);
+    }
+}
+
+#[test]
+fn risk_level_distinct_variants() {
+    let variants = [
+        RiskLevel::Low,
+        RiskLevel::Medium,
+        RiskLevel::High,
+        RiskLevel::Critical,
+    ];
+    for (i, a) in variants.iter().enumerate() {
+        for (j, b) in variants.iter().enumerate() {
+            if i == j {
+                assert_eq!(a, b);
+            } else {
+                assert_ne!(a, b);
+            }
+        }
+    }
+}
+
+#[test]
+fn risk_level_debug_format() {
+    for level in [
+        RiskLevel::Low,
+        RiskLevel::Medium,
+        RiskLevel::High,
+        RiskLevel::Critical,
+    ] {
+        let _ = format!("{:?}", level);
+    }
+}
+
+#[test]
+fn risk_level_hash_distinct() {
+    use std::collections::HashSet;
+    let mut set: HashSet<RiskLevel> = HashSet::new();
+    set.insert(RiskLevel::Low);
+    set.insert(RiskLevel::Medium);
+    set.insert(RiskLevel::High);
+    set.insert(RiskLevel::Critical);
+    // Re-adding should not increase size
+    set.insert(RiskLevel::Low);
+    assert_eq!(set.len(), 4);
+}
+
+#[test]
+fn risk_level_copy_and_clone() {
+    let a = RiskLevel::Critical;
+    let b = a; // Copy
+    let c = a.clone();
+    assert_eq!(a, b);
+    assert_eq!(a, c);
+}
+
+#[test]
+fn ranked_path_unicode_id() {
+    let rp = RankedPath {
+        path_id: "路径-α".into(),
+        success_probability: 0.5,
+        estimated_cost: 100,
+        risk_level: RiskLevel::Medium,
+        composite_score: 0.5,
+        predicted_outcome: "成功".into(),
+        confidence: 0.5,
+    };
+    let json = serde_json::to_string(&rp).expect("");
+    let parsed: RankedPath = serde_json::from_str(&json).expect("");
+    assert_eq!(parsed.path_id, "路径-α");
+    assert_eq!(parsed.predicted_outcome, "成功");
+}
+
+#[test]
+fn ranked_path_clone() {
+    let rp = RankedPath {
+        path_id: "p".into(),
+        success_probability: 0.8,
+        estimated_cost: 50,
+        risk_level: RiskLevel::Low,
+        composite_score: 0.8,
+        predicted_outcome: "ok".into(),
+        confidence: 0.9,
+    };
+    let cloned = rp.clone();
+    assert_eq!(cloned.path_id, "p");
+    assert_eq!(cloned.risk_level, RiskLevel::Low);
+}
+
+#[test]
+fn ranked_path_debug_format() {
+    let rp = RankedPath {
+        path_id: "p".into(),
+        success_probability: 0.5,
+        estimated_cost: 0,
+        risk_level: RiskLevel::Low,
+        composite_score: 0.5,
+        predicted_outcome: "x".into(),
+        confidence: 0.5,
+    };
+    let dbg = format!("{:?}", rp);
+    assert!(dbg.contains("path_id"));
+}
+
+#[test]
+fn risk_thresholds_serde() {
+    let t = RiskThresholds {
+        low: 0.1,
+        medium: 0.4,
+        high: 0.7,
+    };
+    let json = serde_json::to_string(&t).expect("");
+    let parsed: RiskThresholds = serde_json::from_str(&json).expect("");
+    assert!((parsed.low - 0.1).abs() < 1e-9);
+    assert!((parsed.medium - 0.4).abs() < 1e-9);
+    assert!((parsed.high - 0.7).abs() < 1e-9);
+}
+
+#[test]
+fn risk_thresholds_clone() {
+    let t = RiskThresholds::default();
+    let cloned = t.clone();
+    assert_eq!(cloned.low, t.low);
+    assert_eq!(cloned.medium, t.medium);
+    assert_eq!(cloned.high, t.high);
+}
+
+#[test]
+fn planner_config_serde() {
+    let cfg = PlannerConfig {
+        probability_weight: 0.5,
+        cost_weight: 0.3,
+        stability_weight: 0.2,
+        max_cost: 10_000,
+        risk_thresholds: RiskThresholds::default(),
+    };
+    let json = serde_json::to_string(&cfg).expect("");
+    let parsed: PlannerConfig = serde_json::from_str(&json).expect("");
+    assert_eq!(parsed.max_cost, 10_000);
+    assert!((parsed.probability_weight - 0.5).abs() < 1e-9);
+}
+
+#[test]
+fn planner_config_clone() {
+    let cfg = PlannerConfig::default();
+    let cloned = cfg.clone();
+    assert_eq!(cloned.max_cost, cfg.max_cost);
+    assert_eq!(cloned.probability_weight, cfg.probability_weight);
 }
