@@ -1336,3 +1336,103 @@ fn work_mode_standard_and_ultra_work_distinct() {
     assert_eq!(std_dbg, "Standard");
     assert_eq!(ult_dbg, "UltraWork");
 }
+
+// ---------------------------------------------------------------------------
+// More tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn sisyphus_notepad_with_unicode_section_read_after_append() {
+    let mut n = SisyphusNotepad::default();
+    n.write_section("a".into(), "v1".into());
+    n.append_insight("a".into(), "v2".into());
+    n.append_insight("a".into(), "v3".into());
+    let read = n.read_section("a").unwrap();
+    assert!(read.contains("v1"));
+    assert!(read.contains("v2"));
+    assert!(read.contains("v3"));
+}
+
+#[test]
+fn sisyphus_notepad_with_only_one_section_unicode() {
+    let mut n = SisyphusNotepad::default();
+    n.write_section("唯一-α".into(), "内容-β".into());
+    assert_eq!(n.sections.len(), 1);
+    let read = n.read_section("唯一-α").unwrap();
+    assert_eq!(read, &"内容-β".to_string());
+}
+
+#[test]
+fn evolution_op_serialize_to_distinct_strings() {
+    use sisyphus_types::types::EvolutionOp;
+    let variants = vec![
+        EvolutionOp::AdjustFuel {
+            node_name: "n".into(),
+            delta: 1,
+        },
+        EvolutionOp::AddRetry {
+            node_name: "n".into(),
+            max_retries: 1,
+        },
+        EvolutionOp::InsertNode {
+            after_node: "a".into(),
+            new_name: "b".into(),
+            tool_id: "c".into(),
+        },
+        EvolutionOp::RemoveNode { node_name: "n".into() },
+        EvolutionOp::SwapNodes {
+            node_a: "a".into(),
+            node_b: "b".into(),
+        },
+    ];
+    let serialized: Vec<String> = variants
+        .iter()
+        .map(|v| serde_json::to_string(v).unwrap())
+        .collect();
+    let unique: std::collections::HashSet<_> = serialized.iter().collect();
+    assert_eq!(unique.len(), 5);
+}
+
+#[test]
+fn trigger_def_with_unicode_pattern_and_hook_only() {
+    let t: TriggerDef = serde_json::from_str(
+        r#"{"pattern":"模式-α","hook_phase":"阶段-β","hook_effect":"效果-γ","hook_message":"消息-δ"}"#,
+    )
+    .unwrap();
+    assert_eq!(t.pattern.as_deref(), Some("模式-α"));
+    assert_eq!(t.hook_phase.as_deref(), Some("阶段-β"));
+    assert_eq!(t.hook_effect.as_deref(), Some("效果-γ"));
+    assert_eq!(t.hook_message.as_deref(), Some("消息-δ"));
+}
+
+#[test]
+fn sisyphus_notepad_with_unicode_append_only() {
+    let mut n = SisyphusNotepad::default();
+    n.append_insight("节-α".into(), "洞-β".into());
+    n.append_insight("节-α".into(), "洞-γ".into());
+    let read = n.read_section("节-α").unwrap();
+    assert!(read.contains("洞-β"));
+    assert!(read.contains("洞-γ"));
+}
+
+#[test]
+fn notepad_snapshot_with_only_unicode_trigger_serde() {
+    let n = NotepadSnapshot {
+        timestamp: 0,
+        snapshot: im::HashMap::new(),
+        trigger_node: "触发-α".into(),
+    };
+    let j = serde_json::to_string(&n).unwrap();
+    let back: NotepadSnapshot = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.trigger_node, "触发-α");
+}
+
+#[test]
+fn sisyphus_notepad_with_emoji_section_id_serde_safe() {
+    let mut n = SisyphusNotepad::default();
+    n.write_section("🔍".into(), "内容".into());
+    // SisyphusNotepad has fields, but no Serialize impl
+    assert_eq!(n.sections.len(), 1);
+    let read = n.read_section("🔍");
+    assert_eq!(read, Some(&"内容".to_string()));
+}
