@@ -1044,3 +1044,119 @@ fn benchmark_run_with_complex_metrics() {
     assert_eq!(back.metrics["list"][2], 3);
     assert_eq!(back.metrics["bool"], true);
 }
+
+// ---------------------------------------------------------------------------
+// Additional VectorRecord and PluginDescriptor tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn vector_record_with_extreme_embedding_values() {
+    use sisyphus_types::VectorRecord;
+    let v = VectorRecord {
+        key: "k".into(),
+        embedding: vec![f32::MAX, f32::MIN, f32::MIN_POSITIVE, 0.0],
+        metadata: serde_json::json!({}),
+        timestamp: 0,
+    };
+    let j = serde_json::to_string(&v).unwrap();
+    let back: VectorRecord = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.embedding.len(), 4);
+    assert_eq!(back.embedding[0], f32::MAX);
+    assert_eq!(back.embedding[3], 0.0);
+}
+
+#[test]
+fn vector_record_with_infinity_embedding() {
+    use sisyphus_types::VectorRecord;
+    let v = VectorRecord {
+        key: "k".into(),
+        embedding: vec![f32::INFINITY, f32::NEG_INFINITY],
+        metadata: serde_json::json!({}),
+        timestamp: 0,
+    };
+    // Infinity might not roundtrip via Serde (becomes null), but should not panic
+    let j = serde_json::to_string(&v).unwrap_or_default();
+    let _ = j;
+}
+
+#[test]
+fn plugin_descriptor_with_absolute_wasm_path() {
+    use sisyphus_types::PluginDescriptor;
+    let pd = PluginDescriptor {
+        name: "p".into(),
+        version: "1".into(),
+        wasm_path: std::path::PathBuf::from("/usr/local/lib/plugins/my_plugin.wasm"),
+        tool_id: "t".into(),
+        fuel_limit: 1000,
+        checksum: None,
+    };
+    let j = serde_json::to_string(&pd).unwrap();
+    let back: PluginDescriptor = serde_json::from_str(&j).unwrap();
+    assert_eq!(
+        back.wasm_path,
+        std::path::PathBuf::from("/usr/local/lib/plugins/my_plugin.wasm")
+    );
+}
+
+#[test]
+fn plugin_descriptor_with_special_chars_in_path() {
+    use sisyphus_types::PluginDescriptor;
+    let pd = PluginDescriptor {
+        name: "p".into(),
+        version: "1".into(),
+        wasm_path: std::path::PathBuf::from("/path/with spaces and-dashes/file.wasm"),
+        tool_id: "t".into(),
+        fuel_limit: 1000,
+        checksum: None,
+    };
+    let j = serde_json::to_string(&pd).unwrap();
+    let back: PluginDescriptor = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.wasm_path.to_str().unwrap(), "/path/with spaces and-dashes/file.wasm");
+}
+
+#[test]
+fn feedback_with_100_tags() {
+    use sisyphus_types::Feedback;
+    let tags: Vec<String> = (0..100).map(|i| format!("tag-{}", i)).collect();
+    let f = Feedback {
+        agent_id: "a".into(),
+        original_request: "r".into(),
+        original_output: "o".into(),
+        corrected_output: "c".into(),
+        timestamp: 0,
+        tags,
+    };
+    assert_eq!(f.tags.len(), 100);
+    let j = serde_json::to_string(&f).unwrap();
+    let back: Feedback = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.tags.len(), 100);
+    assert_eq!(back.tags[50], "tag-50");
+}
+
+#[test]
+fn agent_message_with_only_unicode_to() {
+    use sisyphus_types::AgentMessage;
+    let m = AgentMessage {
+        from: "a".into(),
+        to: "接收人-α".into(),
+        kind: "request".into(),
+        payload: serde_json::json!({}),
+        correlation_id: "c".into(),
+    };
+    assert_eq!(m.to, "接收人-α");
+}
+
+#[test]
+fn benchmark_run_with_extreme_metrics() {
+    use sisyphus_types::BenchmarkRun;
+    let b = BenchmarkRun {
+        name: "n".into(),
+        timestamp: 0,
+        duration_secs: 0.0,
+        success: false,
+        metrics: serde_json::json!({"value": f64::INFINITY, "min": f64::NEG_INFINITY}),
+    };
+    let j = serde_json::to_string(&b).unwrap_or_default();
+    // Infinity might be serialized as null
+    let _ = j;
+}
