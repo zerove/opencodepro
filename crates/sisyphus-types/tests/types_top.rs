@@ -301,3 +301,170 @@ fn trigger_def_without_pattern() {
     assert!(parsed.pattern.is_none());
     assert_eq!(parsed.tools.len(), 2);
 }
+
+// ---------------------------------------------------------------------------
+// Additional coverage
+// ---------------------------------------------------------------------------
+
+#[test]
+fn feedback_with_max_timestamp() {
+    use sisyphus_types::Feedback;
+    let f = Feedback {
+        agent_id: "a".into(),
+        original_request: "r".into(),
+        original_output: "o".into(),
+        corrected_output: "c".into(),
+        timestamp: i64::MAX,
+        tags: vec![],
+    };
+    let j = serde_json::to_string(&f).unwrap();
+    let back: Feedback = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.timestamp, i64::MAX);
+}
+
+#[test]
+fn feedback_with_negative_timestamp() {
+    use sisyphus_types::Feedback;
+    let f = Feedback {
+        agent_id: "a".into(),
+        original_request: "r".into(),
+        original_output: "o".into(),
+        corrected_output: "c".into(),
+        timestamp: -1,
+        tags: vec![],
+    };
+    let j = serde_json::to_string(&f).unwrap();
+    let back: Feedback = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.timestamp, -1);
+}
+
+#[test]
+fn feedback_clone_preserves_all_fields() {
+    use sisyphus_types::Feedback;
+    let f = Feedback {
+        agent_id: "a".into(),
+        original_request: "r".into(),
+        original_output: "o".into(),
+        corrected_output: "c".into(),
+        timestamp: 0,
+        tags: vec!["t1".into()],
+    };
+    let cloned = f.clone();
+    assert_eq!(cloned.agent_id, "a");
+    assert_eq!(cloned.tags, vec!["t1"]);
+}
+
+#[test]
+fn vector_record_with_null_metadata() {
+    use sisyphus_types::VectorRecord;
+    let v = VectorRecord {
+        key: "k".into(),
+        embedding: vec![1.0, 2.0],
+        metadata: serde_json::json!(null),
+        timestamp: 0,
+    };
+    let j = serde_json::to_string(&v).unwrap();
+    let back: VectorRecord = serde_json::from_str(&j).unwrap();
+    assert!(back.metadata.is_null());
+}
+
+#[test]
+fn agent_message_publish_subscribe_kinds_unicode() {
+    use sisyphus_types::AgentMessage;
+    let m = AgentMessage {
+        from: "a".into(),
+        to: "b".into(),
+        kind: "发布".into(),
+        payload: serde_json::json!({}),
+        correlation_id: "c".into(),
+    };
+    let j = serde_json::to_string(&m).unwrap();
+    let back: AgentMessage = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.kind, "发布");
+}
+
+#[test]
+fn platform_config_default_serde() {
+    use sisyphus_types::PlatformConfig;
+    let p = PlatformConfig::default();
+    let j = serde_json::to_string(&p).unwrap();
+    let back: PlatformConfig = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.is_windows, p.is_windows);
+}
+
+#[test]
+fn formal_verification_config_zero_cases() {
+    use sisyphus_types::FormalVerificationConfig;
+    let c = FormalVerificationConfig {
+        enable_kani: false,
+        enable_loom: false,
+        enable_proptest: false,
+        max_proptest_cases: 0,
+    };
+    let j = serde_json::to_string(&c).unwrap();
+    let back: FormalVerificationConfig = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.max_proptest_cases, 0);
+}
+
+#[test]
+fn formal_verification_config_max_cases() {
+    use sisyphus_types::FormalVerificationConfig;
+    let c = FormalVerificationConfig {
+        enable_kani: true,
+        enable_loom: true,
+        enable_proptest: true,
+        max_proptest_cases: u32::MAX,
+    };
+    let j = serde_json::to_string(&c).unwrap();
+    let back: FormalVerificationConfig = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.max_proptest_cases, u32::MAX);
+}
+
+#[test]
+fn meta_learning_sample_unicode_strategy() {
+    use sisyphus_types::MetaLearningSample;
+    let s = MetaLearningSample {
+        context: serde_json::json!({"task": "中文"}),
+        strategy: "策略-α".into(),
+        params: serde_json::json!({}),
+        success: true,
+        duration_secs: 0.5,
+        timestamp: 0,
+    };
+    let j = serde_json::to_string(&s).unwrap();
+    let back: MetaLearningSample = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.strategy, "策略-α");
+    assert_eq!(back.context["task"], "中文");
+}
+
+#[test]
+fn custom_tool_definition_with_unicode() {
+    use sisyphus_types::CustomToolDefinition;
+    let t = CustomToolDefinition {
+        name: "工具-β".into(),
+        description: "中文描述".into(),
+        handler: PathBuf::from("/path/工具.wasm"),
+        schema: serde_json::json!({}),
+        fuel_limit: 100,
+    };
+    let j = serde_json::to_string(&t).unwrap();
+    let back: CustomToolDefinition = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.name, "工具-β");
+}
+
+#[test]
+fn trigger_def_with_all_hook_fields() {
+    use sisyphus_types::TriggerDef;
+    let t = TriggerDef {
+        pattern: Some("on_save".into()),
+        tools: vec!["t1".into()],
+        description: Some("save hook".into()),
+        hook_phase: Some("before".into()),
+        hook_effect: Some("validate".into()),
+        hook_message: Some("user saved file".into()),
+    };
+    let j = serde_json::to_string(&t).unwrap();
+    let back: TriggerDef = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.hook_message.as_deref(), Some("user saved file"));
+    assert_eq!(back.hook_effect.as_deref(), Some("validate"));
+}
