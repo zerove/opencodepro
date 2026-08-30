@@ -1084,3 +1084,115 @@ fn adjust_probability_returns_clamped_value() {
     let _ = experiences;
     let _ = cfg;
 }
+
+// ---------------------------------------------------------------------------
+// Additional RiskLevel and RankedPath tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn risk_level_ord_strictly_increasing() {
+    assert!(RiskLevel::Low < RiskLevel::Medium);
+    assert!(RiskLevel::Medium < RiskLevel::High);
+    assert!(RiskLevel::High < RiskLevel::Critical);
+}
+
+#[test]
+fn risk_level_min_max_compare() {
+    assert!(RiskLevel::Low < RiskLevel::Critical);
+    assert!(RiskLevel::Critical > RiskLevel::Low);
+}
+
+#[test]
+fn risk_thresholds_with_max_values() {
+    let t = RiskThresholds {
+        low: f64::MAX,
+        medium: f64::MAX,
+        high: f64::MAX,
+    };
+    let j = serde_json::to_string(&t).unwrap();
+    let back: RiskThresholds = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.low, f64::MAX);
+}
+
+#[test]
+fn risk_thresholds_with_min_values() {
+    let t = RiskThresholds {
+        low: f64::MIN,
+        medium: f64::MIN,
+        high: f64::MIN,
+    };
+    let j = serde_json::to_string(&t).unwrap();
+    let back: RiskThresholds = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.low, f64::MIN);
+}
+
+#[test]
+fn risk_thresholds_debug_format() {
+    let t = RiskThresholds {
+        low: 0.2,
+        medium: 0.5,
+        high: 0.8,
+    };
+    let dbg = format!("{:?}", t);
+    assert!(dbg.contains("RiskThresholds"));
+}
+
+#[test]
+fn ranked_path_unicode_path_id_serde() {
+    let rp = RankedPath {
+        path_id: "路径-α-🔍".into(),
+        success_probability: 0.5,
+        estimated_cost: 100,
+        risk_level: RiskLevel::Low,
+        composite_score: 0.5,
+        predicted_outcome: "ok".into(),
+        confidence: 0.5,
+    };
+    let j = serde_json::to_string(&rp).unwrap();
+    let back: RankedPath = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.path_id, "路径-α-🔍");
+}
+
+#[test]
+fn ranked_path_with_zero_cost() {
+    let rp = RankedPath {
+        path_id: "p".into(),
+        success_probability: 0.5,
+        estimated_cost: 0,
+        risk_level: RiskLevel::Low,
+        composite_score: 0.5,
+        predicted_outcome: "ok".into(),
+        confidence: 0.5,
+    };
+    assert_eq!(rp.estimated_cost, 0);
+    let j = serde_json::to_string(&rp).unwrap();
+    let back: RankedPath = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.estimated_cost, 0);
+}
+
+#[test]
+fn path_summary_with_risk_distribution_unicode_path() {
+    let rp = RankedPath {
+        path_id: "路径-α".into(),
+        success_probability: 0.5,
+        estimated_cost: 0,
+        risk_level: RiskLevel::Low,
+        composite_score: 0.5,
+        predicted_outcome: "ok".into(),
+        confidence: 0.5,
+    };
+    let mut dist = std::collections::HashMap::new();
+    dist.insert(RiskLevel::Low, 1);
+    let s = PathSummary {
+        total_paths: 1,
+        average_probability: 0.5,
+        average_cost: 0,
+        best_path: Some(rp),
+        worst_path: None,
+        risk_distribution: dist,
+    };
+    let j = serde_json::to_string(&s).unwrap();
+    let back: PathSummary = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.total_paths, 1);
+    assert!(back.worst_path.is_none());
+}
