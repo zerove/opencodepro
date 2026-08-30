@@ -689,3 +689,138 @@ fn path_summary_with_unicode_path() {
     let back: PathSummary = serde_json::from_str(&j).unwrap();
     assert_eq!(back.best_path.unwrap().path_id, "路径-α");
 }
+
+// ---------------------------------------------------------------------------
+// Additional coverage for compute_risk_score and classify_risk
+// ---------------------------------------------------------------------------
+
+#[test]
+fn compute_risk_score_zero_for_perfect_simulation() {
+    let cfg = PlannerConfig {
+        probability_weight: 0.5,
+        cost_weight: 0.3,
+        stability_weight: 0.2,
+        max_cost: 1000,
+        risk_thresholds: RiskThresholds::default(),
+    };
+    let p = ProbabilisticPlanner::new(cfg);
+    let r = SimulationResult {
+        path_id: "perfect".into(),
+        success_probability: 1.0,
+        estimated_cost: 0,
+        predicted_stability: 1.0,
+        predicted_effort: 0,
+        predicted_outcome: "ok".into(),
+    };
+    let score = p.compute_risk_score(&r);
+    assert!(score.abs() < 1e-9);
+}
+
+#[test]
+fn compute_risk_score_max_for_terrible_simulation() {
+    let cfg = PlannerConfig {
+        probability_weight: 0.5,
+        cost_weight: 0.3,
+        stability_weight: 0.2,
+        max_cost: 100,
+        risk_thresholds: RiskThresholds::default(),
+    };
+    let p = ProbabilisticPlanner::new(cfg);
+    let r = SimulationResult {
+        path_id: "bad".into(),
+        success_probability: 0.0,
+        estimated_cost: u64::MAX,
+        predicted_stability: 0.0,
+        predicted_effort: 0,
+        predicted_outcome: "fail".into(),
+    };
+    let score = p.compute_risk_score(&r);
+    // 0.5 + 0.3 (clamped) + 0.2 = 1.0
+    assert!((score - 1.0).abs() < 1e-9);
+}
+
+#[test]
+fn classify_risk_low_for_zero_score() {
+    let cfg = PlannerConfig {
+        probability_weight: 0.5,
+        cost_weight: 0.3,
+        stability_weight: 0.2,
+        max_cost: 1000,
+        risk_thresholds: RiskThresholds::default(),
+    };
+    let p = ProbabilisticPlanner::new(cfg);
+    assert_eq!(p.classify_risk(0.0), RiskLevel::Low);
+}
+
+#[test]
+fn classify_risk_medium() {
+    let cfg = PlannerConfig {
+        probability_weight: 0.5,
+        cost_weight: 0.3,
+        stability_weight: 0.2,
+        max_cost: 1000,
+        risk_thresholds: RiskThresholds::default(),
+    };
+    let p = ProbabilisticPlanner::new(cfg);
+    // Default thresholds: low=0.8, medium=0.6, high=0.4
+    // 1.0 - 0.6 = 0.4, so score 0.4 maps to Medium (since 0.4 <= 0.4)
+    assert_eq!(p.classify_risk(0.4), RiskLevel::Medium);
+}
+
+#[test]
+fn classify_risk_critical_for_max_score() {
+    let cfg = PlannerConfig {
+        probability_weight: 0.5,
+        cost_weight: 0.3,
+        stability_weight: 0.2,
+        max_cost: 1000,
+        risk_thresholds: RiskThresholds::default(),
+    };
+    let p = ProbabilisticPlanner::new(cfg);
+    assert_eq!(p.classify_risk(1.0), RiskLevel::Critical);
+}
+
+#[test]
+fn adjust_probability_returns_base_when_no_matching_experience() {
+    let cfg = PlannerConfig {
+        probability_weight: 0.5,
+        cost_weight: 0.3,
+        stability_weight: 0.2,
+        max_cost: 1000,
+        risk_thresholds: RiskThresholds::default(),
+    };
+    let p = ProbabilisticPlanner::new(cfg);
+    let adjusted = p.adjust_probability_with_experience("unknown_path", 0.7);
+    // Without matching experience, should return base
+    assert!((adjusted - 0.7).abs() < 1e-9);
+}
+
+#[test]
+fn adjust_probability_with_experience_uses_relevant_only() {
+    let cfg = PlannerConfig {
+        probability_weight: 0.5,
+        cost_weight: 0.3,
+        stability_weight: 0.2,
+        max_cost: 1000,
+        risk_thresholds: RiskThresholds::default(),
+    };
+    let experiences = vec![
+        ExperienceRecord {
+            path_id: "p1".into(),
+            success: true,
+            actual_cost: 100,
+        },
+        ExperienceRecord {
+            path_id: "p2".into(),
+            success: false,
+            actual_cost: 200,
+        },
+    ];
+    let p = ProbabilisticPlanner::with_config_and_experiences(cfg, experiences);
+    let adj_p1 = p.adjust_probability_with_experience("p1", 0.5);
+    let adj_p2 = p.adjust_probability_with_experience("p2", 0.5);
+    // p1 has success=true → should be adjusted up
+    // p2 has success=false → should be adjusted down
+    assert!(adj_p1 > 0.5);
+    assert!(adj_p2 < 0.5);
+}
