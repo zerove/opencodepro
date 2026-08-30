@@ -400,3 +400,158 @@ fn trigger_def_with_only_pattern() {
     assert!(t.tools.is_empty());
     assert!(t.description.is_none());
 }
+
+// ---------------------------------------------------------------------------
+// Additional CustomToolDefinition and EvolutionOp coverage
+// ---------------------------------------------------------------------------
+
+#[test]
+fn custom_tool_with_unicode_name() {
+    use sisyphus_types::types::CustomToolDefinition;
+    let t = CustomToolDefinition {
+        name: "工具-α".into(),
+        description: "中文描述".into(),
+        handler: std::path::PathBuf::from("/p.wasm"),
+        schema: serde_json::json!({}),
+        fuel_limit: 1000,
+    };
+    let j = serde_json::to_string(&t).unwrap();
+    let back: CustomToolDefinition = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.name, "工具-α");
+    assert_eq!(back.description, "中文描述");
+}
+
+#[test]
+fn custom_tool_with_max_fuel_limit() {
+    use sisyphus_types::types::CustomToolDefinition;
+    let t = CustomToolDefinition {
+        name: "n".into(),
+        description: "d".into(),
+        handler: std::path::PathBuf::from("/p.wasm"),
+        schema: serde_json::json!({}),
+        fuel_limit: u64::MAX,
+    };
+    let j = serde_json::to_string(&t).unwrap();
+    let back: CustomToolDefinition = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.fuel_limit, u64::MAX);
+}
+
+#[test]
+fn custom_tool_with_complex_schema() {
+    use sisyphus_types::types::CustomToolDefinition;
+    let t = CustomToolDefinition {
+        name: "n".into(),
+        description: "d".into(),
+        handler: std::path::PathBuf::from("/p.wasm"),
+        schema: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "name": {"type": "string"},
+                "age": {"type": "integer"}
+            },
+            "required": ["name"]
+        }),
+        fuel_limit: 1000,
+    };
+    let j = serde_json::to_string(&t).unwrap();
+    let back: CustomToolDefinition = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.schema["properties"]["name"]["type"], "string");
+}
+
+#[test]
+fn evolution_op_adjust_fuel_negative_delta() {
+    let op = EvolutionOp::AdjustFuel {
+        node_name: "n".into(),
+        delta: -1000,
+    };
+    let j = serde_json::to_string(&op).unwrap();
+    let back: EvolutionOp = serde_json::from_str(&j).unwrap();
+    match back {
+        EvolutionOp::AdjustFuel { node_name, delta } => {
+            assert_eq!(node_name, "n");
+            assert_eq!(delta, -1000);
+        }
+        _ => panic!("Wrong variant"),
+    }
+}
+
+#[test]
+fn evolution_op_add_retry_max_retries() {
+    let op = EvolutionOp::AddRetry {
+        node_name: "n".into(),
+        max_retries: u32::MAX,
+    };
+    let j = serde_json::to_string(&op).unwrap();
+    let back: EvolutionOp = serde_json::from_str(&j).unwrap();
+    match back {
+        EvolutionOp::AddRetry { node_name, max_retries } => {
+            assert_eq!(node_name, "n");
+            assert_eq!(max_retries, u32::MAX);
+        }
+        _ => panic!("Wrong variant"),
+    }
+}
+
+#[test]
+fn evolution_op_insert_node_serde() {
+    let op = EvolutionOp::InsertNode {
+        after_node: "n1".into(),
+        new_name: "new_node".into(),
+        tool_id: "t1".into(),
+    };
+    let j = serde_json::to_string(&op).unwrap();
+    let back: EvolutionOp = serde_json::from_str(&j).unwrap();
+    match back {
+        EvolutionOp::InsertNode { after_node, new_name, tool_id } => {
+            assert_eq!(after_node, "n1");
+            assert_eq!(new_name, "new_node");
+            assert_eq!(tool_id, "t1");
+        }
+        _ => panic!("Wrong variant"),
+    }
+}
+
+#[test]
+fn evolution_op_remove_node_serde() {
+    let op = EvolutionOp::RemoveNode { node_name: "n".into() };
+    let j = serde_json::to_string(&op).unwrap();
+    let back: EvolutionOp = serde_json::from_str(&j).unwrap();
+    match back {
+        EvolutionOp::RemoveNode { node_name } => assert_eq!(node_name, "n"),
+        _ => panic!("Wrong variant"),
+    }
+}
+
+#[test]
+fn evolution_op_swap_nodes_serde() {
+    let op = EvolutionOp::SwapNodes {
+        node_a: "a".into(),
+        node_b: "b".into(),
+    };
+    let j = serde_json::to_string(&op).unwrap();
+    let back: EvolutionOp = serde_json::from_str(&j).unwrap();
+    match back {
+        EvolutionOp::SwapNodes { node_a, node_b } => {
+            assert_eq!(node_a, "a");
+            assert_eq!(node_b, "b");
+        }
+        _ => panic!("Wrong variant"),
+    }
+}
+
+#[test]
+fn work_mode_default() {
+    let wm = WorkMode::default();
+    assert_eq!(wm, WorkMode::Standard);
+}
+
+#[test]
+fn work_mode_debug() {
+    let _ = format!("{:?}", WorkMode::Standard);
+    let _ = format!("{:?}", WorkMode::UltraWork);
+}
+
+#[test]
+fn circuit_state_debug() {
+    let _ = format!("{:?}", CircuitState::Closed);
+}
