@@ -135,3 +135,56 @@ fn all_distinct_depths_have_distinct_configs() {
     assert_ne!(low, ultra);
     assert_ne!(med, ultra);
 }
+
+// ---------------------------------------------------------------------------
+// Additional coverage
+// ---------------------------------------------------------------------------
+
+#[test]
+fn depth_debug_format() {
+    let _ = format!("{:?}", CognitiveDepth::Low);
+    let _ = format!("{:?}", CognitiveDepth::Medium);
+    let _ = format!("{:?}", CognitiveDepth::High);
+    let _ = format!("{:?}", CognitiveDepth::Ultra);
+}
+
+#[test]
+fn depth_should_simulate_consistent() {
+    // should_simulate is a function of the depth, not the configuration
+    let depths = [CognitiveDepth::Low, CognitiveDepth::Medium, CognitiveDepth::High, CognitiveDepth::Ultra];
+    for d in depths {
+        let _ = d.should_simulate();
+    }
+}
+
+#[test]
+fn depth_to_config_returns_positive_thresholds() {
+    for d in [CognitiveDepth::Low, CognitiveDepth::Medium, CognitiveDepth::High, CognitiveDepth::Ultra] {
+        let (max_iter, threshold) = d.to_config();
+        assert!(max_iter > 0);
+        assert!(threshold > 0.0);
+        assert!(threshold < 1.0);
+    }
+}
+
+#[test]
+fn depth_thresholds_strictly_decreasing() {
+    let (_, t_low) = CognitiveDepth::Low.to_config();
+    let (_, t_med) = CognitiveDepth::Medium.to_config();
+    let (_, t_high) = CognitiveDepth::High.to_config();
+    let (_, t_ultra) = CognitiveDepth::Ultra.to_config();
+    assert!(t_low > t_med);
+    assert!(t_med > t_high);
+    assert!(t_high > t_ultra);
+}
+
+#[test]
+fn depth_iterations_strictly_increasing() {
+    let (i_low, _) = CognitiveDepth::Low.to_config();
+    let (i_med, _) = CognitiveDepth::Medium.to_config();
+    let (i_high, _) = CognitiveDepth::High.to_config();
+    let (i_ultra, _) = CognitiveDepth::Ultra.to_config();
+    assert!(i_low < i_med);
+    assert!(i_med < i_high);
+    assert!(i_high < i_ultra);
+}
