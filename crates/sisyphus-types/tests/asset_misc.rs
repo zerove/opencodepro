@@ -1401,3 +1401,150 @@ fn asset_kind_tool_clone_test() {
     use sisyphus_types::asset::AssetKind;
     let _ = AssetKind::Tool;
 }
+
+// ---------------------------------------------------------------------------
+// Additional CognitiveAsset and AssetContent tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn cognitive_asset_with_unicode_in_each_string_field() {
+    use sisyphus_types::asset::{AssetContent, AssetKind, CognitiveAsset, InsightData};
+    let asset = CognitiveAsset {
+        id: "资产-α".into(),
+        kind: AssetKind::Insight,
+        name: "名称-β".into(),
+        description: "描述-γ".into(),
+        content: AssetContent::Insight(InsightData {
+            observation: "观察-δ".into(),
+            reasoning: "推理-ε".into(),
+            evidence_ids: vec!["证据-ζ".into()],
+            confidence: 0.5,
+        }),
+        metadata: HashMap::new(),
+        version: 1,
+        created_at: 0,
+    };
+    assert_eq!(asset.id, "资产-α");
+    assert_eq!(asset.name, "名称-β");
+    assert_eq!(asset.description, "描述-γ");
+    let j = serde_json::to_string(&asset).unwrap();
+    let back: CognitiveAsset = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.id, "资产-α");
+    match back.content {
+        AssetContent::Insight(i) => {
+            assert_eq!(i.observation, "观察-δ");
+            assert_eq!(i.reasoning, "推理-ε");
+            assert_eq!(i.evidence_ids[0], "证据-ζ");
+        }
+        _ => panic!("wrong variant"),
+    }
+}
+
+#[test]
+fn cognitive_asset_with_only_unicode_in_metadata() {
+    use sisyphus_types::asset::{AssetContent, AssetKind, CognitiveAsset, InsightData};
+    let mut meta = HashMap::new();
+    for i in 0..10 {
+        meta.insert(format!("键-{}", i), format!("值-{}", i));
+    }
+    let asset = CognitiveAsset {
+        id: "a".into(),
+        kind: AssetKind::Tool,
+        name: "n".into(),
+        description: "d".into(),
+        content: AssetContent::Insight(InsightData {
+            observation: "o".into(),
+            reasoning: "r".into(),
+            evidence_ids: vec![],
+            confidence: 0.5,
+        }),
+        metadata: meta,
+        version: 1,
+        created_at: 0,
+    };
+    let j = serde_json::to_string(&asset).unwrap();
+    let back: CognitiveAsset = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.metadata.len(), 10);
+    assert_eq!(back.metadata["键-5"], "值-5");
+}
+
+#[test]
+fn insight_data_with_unicode_emoji_reasoning() {
+    let i = InsightData {
+        observation: "o".into(),
+        reasoning: "因为-🔍-所以-💡".into(),
+        evidence_ids: vec![],
+        confidence: 0.5,
+    };
+    let j = serde_json::to_string(&i).unwrap();
+    let back: InsightData = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.reasoning, "因为-🔍-所以-💡");
+}
+
+#[test]
+fn asset_relation_with_5_field_unicode() {
+    use sisyphus_types::asset::{AssetRelation, RelationType};
+    let r = AssetRelation {
+        from_id: "源-α".into(),
+        to_id: "目-β".into(),
+        relation_type: RelationType::Refines,
+        weight: 0.5,
+    };
+    let j = serde_json::to_string(&r).unwrap();
+    let back: AssetRelation = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.from_id, "源-α");
+    assert_eq!(back.to_id, "目-β");
+    assert!((back.weight - 0.5).abs() < 1e-6);
+}
+
+#[test]
+fn cognitive_asset_with_only_unicode_id_and_empty_rest() {
+    use sisyphus_types::asset::{AssetContent, AssetKind, CognitiveAsset, InsightData};
+    let asset = CognitiveAsset {
+        id: "唯一-α".into(),
+        kind: AssetKind::Tool,
+        name: "".into(),
+        description: "".into(),
+        content: AssetContent::Insight(InsightData {
+            observation: "".into(),
+            reasoning: "".into(),
+            evidence_ids: vec![],
+            confidence: 0.0,
+        }),
+        metadata: HashMap::new(),
+        version: 0,
+        created_at: 0,
+    };
+    let j = serde_json::to_string(&asset).unwrap();
+    let back: CognitiveAsset = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.id, "唯一-α");
+    assert_eq!(back.name, "");
+}
+
+#[test]
+fn insight_data_with_confidence_zero_and_evidence() {
+    let i = InsightData {
+        observation: "o".into(),
+        reasoning: "r".into(),
+        evidence_ids: vec!["e1".into(), "e2".into()],
+        confidence: 0.0,
+    };
+    let j = serde_json::to_string(&i).unwrap();
+    let back: InsightData = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.confidence, 0.0);
+    assert_eq!(back.evidence_ids.len(), 2);
+}
+
+#[test]
+fn constraint_data_with_min_values() {
+    use sisyphus_types::asset::ConstraintData;
+    let c = ConstraintData {
+        description: "d".into(),
+        strictness: 0.0,
+        violation_penalty: 0.0,
+    };
+    let j = serde_json::to_string(&c).unwrap();
+    let back: ConstraintData = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.strictness, 0.0);
+    assert_eq!(back.violation_penalty, 0.0);
+}
