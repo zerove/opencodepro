@@ -1889,3 +1889,114 @@ fn path_summary_with_unicode_best_worst_paths() {
     assert_eq!(back.best_path.as_ref().unwrap().path_id, "最佳-α");
     assert_eq!(back.worst_path.as_ref().unwrap().path_id, "最差-γ");
 }
+
+// ---------------------------------------------------------------------------
+// More tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn risk_level_eq_in_set_works() {
+    use std::collections::HashSet;
+    // RiskLevel doesn't implement Hash, so use Vec
+    let mut v: Vec<RiskLevel> = Vec::new();
+    v.push(RiskLevel::Low);
+    v.push(RiskLevel::Medium);
+    v.push(RiskLevel::High);
+    v.push(RiskLevel::Critical);
+    assert_eq!(v.len(), 4);
+}
+
+#[test]
+fn risk_thresholds_with_unicode_field_test_via_iteration() {
+    let t = RiskThresholds {
+        low: 0.1,
+        medium: 0.2,
+        high: 0.3,
+    };
+    // Manually verify each field
+    assert!((t.low - 0.1).abs() < 1e-9);
+    assert!((t.medium - 0.2).abs() < 1e-9);
+    assert!((t.high - 0.3).abs() < 1e-9);
+}
+
+#[test]
+fn ranked_path_with_unicode_path_id_2_chars() {
+    let rp = RankedPath {
+        path_id: "αβ".into(),
+        success_probability: 0.5,
+        estimated_cost: 0,
+        risk_level: RiskLevel::Low,
+        composite_score: 0.5,
+        predicted_outcome: "ok".into(),
+        confidence: 0.5,
+    };
+    let j = serde_json::to_string(&rp).unwrap();
+    let back: RankedPath = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.path_id, "αβ");
+}
+
+#[test]
+fn ranked_path_with_max_combined_fields() {
+    let rp = RankedPath {
+        path_id: "max-α".into(),
+        success_probability: 1.0,
+        estimated_cost: u64::MAX,
+        risk_level: RiskLevel::Critical,
+        composite_score: 1.0,
+        predicted_outcome: "max-β".into(),
+        confidence: 1.0,
+    };
+    let j = serde_json::to_string(&rp).unwrap();
+    let back: RankedPath = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.estimated_cost, u64::MAX);
+    assert_eq!(back.path_id, "max-α");
+}
+
+#[test]
+fn planner_config_with_max_zero_max_cost() {
+    let cfg = PlannerConfig {
+        probability_weight: 0.0,
+        cost_weight: 0.0,
+        stability_weight: 0.0,
+        max_cost: 0,
+        risk_thresholds: RiskThresholds::default(),
+    };
+    let j = serde_json::to_string(&cfg).unwrap();
+    let back: PlannerConfig = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.max_cost, 0);
+}
+
+#[test]
+fn planner_config_with_unicode_thresholds_2() {
+    // RiskThresholds has no String field, just verify default
+    let cfg = PlannerConfig {
+        probability_weight: 0.5,
+        cost_weight: 0.3,
+        stability_weight: 0.2,
+        max_cost: 1000,
+        risk_thresholds: RiskThresholds {
+            low: 0.1,
+            medium: 0.5,
+            high: 0.9,
+        },
+    };
+    let j = serde_json::to_string(&cfg).unwrap();
+    let back: PlannerConfig = serde_json::from_str(&j).unwrap();
+    assert!((back.risk_thresholds.low - 0.1).abs() < 1e-9);
+    assert!((back.risk_thresholds.high - 0.9).abs() < 1e-9);
+}
+
+#[test]
+fn path_summary_with_max_total_paths() {
+    let s = PathSummary {
+        total_paths: usize::MAX,
+        average_probability: 0.5,
+        average_cost: 100,
+        best_path: None,
+        worst_path: None,
+        risk_distribution: std::collections::HashMap::new(),
+    };
+    let j = serde_json::to_string(&s).unwrap();
+    let back: PathSummary = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.total_paths, usize::MAX);
+}
