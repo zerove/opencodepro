@@ -163,3 +163,124 @@ fn implicit_requirement_clone() {
     assert_eq!(a.description, b.description);
     assert_eq!(a.confidence, b.confidence);
 }
+
+// ---------------------------------------------------------------------------
+// Additional coverage
+// ---------------------------------------------------------------------------
+
+#[test]
+fn ambiguity_serde() {
+    let a = sisyphus_tools_llm::metis::Ambiguity {
+        aspect: "scope".into(),
+        description: "unclear scope".into(),
+        severity: sisyphus_tools_llm::metis::AmbiguitySeverity::Blocking,
+        options: vec!["A".into(), "B".into()],
+        recommended: Some("A".into()),
+    };
+    let j = serde_json::to_string(&a).unwrap();
+    let back: sisyphus_tools_llm::metis::Ambiguity = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.aspect, "scope");
+    assert_eq!(back.options.len(), 2);
+    assert_eq!(back.recommended, Some("A".into()));
+}
+
+#[test]
+fn ambiguity_serde_no_recommended() {
+    let a = sisyphus_tools_llm::metis::Ambiguity {
+        aspect: "tech".into(),
+        description: "no recommendation".into(),
+        severity: sisyphus_tools_llm::metis::AmbiguitySeverity::Minor,
+        options: vec![],
+        recommended: None,
+    };
+    let j = serde_json::to_string(&a).unwrap();
+    let back: sisyphus_tools_llm::metis::Ambiguity = serde_json::from_str(&j).unwrap();
+    assert!(back.recommended.is_none());
+    assert!(back.options.is_empty());
+}
+
+#[test]
+fn ambiguity_severity_equality() {
+    use sisyphus_tools_llm::metis::AmbiguitySeverity;
+    assert_eq!(AmbiguitySeverity::Blocking, AmbiguitySeverity::Blocking);
+    assert_ne!(AmbiguitySeverity::Blocking, AmbiguitySeverity::Minor);
+}
+
+#[test]
+fn ambiguity_severity_serde() {
+    use sisyphus_tools_llm::metis::AmbiguitySeverity;
+    for v in [
+        AmbiguitySeverity::Blocking,
+        AmbiguitySeverity::Significant,
+        AmbiguitySeverity::Minor,
+    ] {
+        let j = serde_json::to_string(&v).unwrap();
+        let back: AmbiguitySeverity = serde_json::from_str(&j).unwrap();
+        assert_eq!(back, v);
+    }
+}
+
+#[test]
+fn ambiguity_severity_display() {
+    use sisyphus_tools_llm::metis::AmbiguitySeverity;
+    let _ = format!("{}", AmbiguitySeverity::Blocking);
+    let _ = format!("{}", AmbiguitySeverity::Minor);
+}
+
+#[test]
+fn ambiguity_unicode() {
+    let a = sisyphus_tools_llm::metis::Ambiguity {
+        aspect: "范围".into(),
+        description: "范围不明确".into(),
+        severity: sisyphus_tools_llm::metis::AmbiguitySeverity::Blocking,
+        options: vec!["选项-α".into()],
+        recommended: Some("选项-β".into()),
+    };
+    assert_eq!(a.aspect, "范围");
+}
+
+#[test]
+fn implicit_requirement_serde() {
+    let r = sisyphus_tools_llm::metis::ImplicitRequirement {
+        description: "d".into(),
+        rationale: "r".into(),
+        confidence: 0.7,
+    };
+    let j = serde_json::to_string(&r).unwrap();
+    let back: sisyphus_tools_llm::metis::ImplicitRequirement = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.confidence, 0.7);
+}
+
+#[test]
+fn implicit_requirement_serde_unicode() {
+    let r = sisyphus_tools_llm::metis::ImplicitRequirement {
+        description: "需求-α".into(),
+        rationale: "原因-β".into(),
+        confidence: 0.5,
+    };
+    let j = serde_json::to_string(&r).unwrap();
+    let back: sisyphus_tools_llm::metis::ImplicitRequirement = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.description, "需求-α");
+}
+
+#[test]
+fn implicit_requirement_clone_preserves_confidence() {
+    let r = sisyphus_tools_llm::metis::ImplicitRequirement {
+        description: "d".into(),
+        rationale: "r".into(),
+        confidence: 0.5,
+    };
+    let cloned = r.clone();
+    assert_eq!(cloned.confidence, 0.5);
+}
+
+#[test]
+fn implicit_requirement_above_one_confidence() {
+    // Out-of-range confidence - just verify it doesn't panic
+    let r = sisyphus_tools_llm::metis::ImplicitRequirement {
+        description: "d".into(),
+        rationale: "r".into(),
+        confidence: 1.5,
+    };
+    assert_eq!(r.confidence, 1.5);
+}
