@@ -1160,3 +1160,104 @@ fn benchmark_run_with_extreme_metrics() {
     // Infinity might be serialized as null
     let _ = j;
 }
+
+// ---------------------------------------------------------------------------
+// Additional tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn plugin_descriptor_with_unicode_tool_id_long() {
+    use sisyphus_types::PluginDescriptor;
+    let long = "工具-".repeat(100);
+    let pd = PluginDescriptor {
+        name: "p".into(),
+        version: "1".into(),
+        wasm_path: std::path::PathBuf::from("/p.wasm"),
+        tool_id: long.clone(),
+        fuel_limit: 1000,
+        checksum: None,
+    };
+    let j = serde_json::to_string(&pd).unwrap();
+    let back: PluginDescriptor = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.tool_id.len(), long.len());
+}
+
+#[test]
+fn vector_record_with_emoji_in_metadata_value() {
+    use sisyphus_types::VectorRecord;
+    let v = VectorRecord {
+        key: "k".into(),
+        embedding: vec![],
+        metadata: serde_json::json!({"emoji": "🔍🔭🌟"}),
+        timestamp: 0,
+    };
+    let j = serde_json::to_string(&v).unwrap();
+    let back: VectorRecord = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.metadata["emoji"], "🔍🔭🌟");
+}
+
+#[test]
+fn benchmark_run_with_zero_name() {
+    use sisyphus_types::BenchmarkRun;
+    let b = BenchmarkRun {
+        name: "".into(),
+        timestamp: 0,
+        duration_secs: 0.0,
+        success: false,
+        metrics: serde_json::json!({}),
+    };
+    let j = serde_json::to_string(&b).unwrap();
+    let back: BenchmarkRun = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.name, "");
+}
+
+#[test]
+fn agent_message_with_only_unicode_payload() {
+    use sisyphus_types::AgentMessage;
+    let m = AgentMessage {
+        from: "a".into(),
+        to: "b".into(),
+        kind: "request".into(),
+        payload: serde_json::json!("纯字符串-α-🔍"),
+        correlation_id: "c".into(),
+    };
+    let j = serde_json::to_string(&m).unwrap();
+    let back: AgentMessage = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.payload, "纯字符串-α-🔍");
+}
+
+#[test]
+fn feedback_with_only_long_field() {
+    use sisyphus_types::Feedback;
+    let long = "x".repeat(2000);
+    let f = Feedback {
+        agent_id: "a".into(),
+        original_request: long.clone(),
+        original_output: "o".into(),
+        corrected_output: "c".into(),
+        timestamp: 0,
+        tags: vec![],
+    };
+    let j = serde_json::to_string(&f).unwrap();
+    let back: Feedback = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.original_request.len(), 2000);
+}
+
+#[test]
+fn trigger_def_with_only_unicode_tools() {
+    use sisyphus_types::TriggerDef;
+    let tools: Vec<String> = (0..10).map(|i| format!("工具-{}", i)).collect();
+    let t = TriggerDef {
+        pattern: Some("p".into()),
+        tools: tools.clone(),
+        description: Some("d".into()),
+        hook_phase: Some("before".into()),
+        hook_effect: Some("e".into()),
+        hook_message: Some("m".into()),
+    };
+    let j = serde_json::to_string(&t).unwrap();
+    let back: TriggerDef = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.tools.len(), 10);
+    assert_eq!(back.tools[0], "工具-0");
+    assert_eq!(back.tools[9], "工具-9");
+}
