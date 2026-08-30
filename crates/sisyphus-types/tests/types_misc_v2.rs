@@ -979,3 +979,99 @@ fn trigger_def_with_only_description_serde() {
     assert_eq!(t.description.as_deref(), Some("only description"));
     assert!(t.pattern.is_none());
 }
+
+// ---------------------------------------------------------------------------
+// Additional tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn evolution_op_clone_each_variant() {
+    use sisyphus_types::types::EvolutionOp;
+    let ops = vec![
+        EvolutionOp::AdjustFuel {
+            node_name: "n".into(),
+            delta: 10,
+        },
+        EvolutionOp::AddRetry {
+            node_name: "n".into(),
+            max_retries: 3,
+        },
+        EvolutionOp::InsertNode {
+            after_node: "a".into(),
+            new_name: "b".into(),
+            tool_id: "c".into(),
+        },
+        EvolutionOp::RemoveNode { node_name: "n".into() },
+        EvolutionOp::SwapNodes {
+            node_a: "a".into(),
+            node_b: "b".into(),
+        },
+    ];
+    for op in &ops {
+        let cloned = op.clone();
+        let orig_dbg = format!("{:?}", op);
+        let clone_dbg = format!("{:?}", cloned);
+        assert_eq!(orig_dbg, clone_dbg);
+    }
+}
+
+#[test]
+fn sisyphus_notepad_default_section_count() {
+    let n = SisyphusNotepad::default();
+    assert_eq!(n.sections.len(), 0);
+    assert_eq!(n.history.len(), 0);
+}
+
+#[test]
+fn sisyphus_notepad_write_section_then_read() {
+    let mut n = SisyphusNotepad::default();
+    n.write_section("a".into(), "b".into());
+    let read = n.read_section("a");
+    assert_eq!(read, Some(&"b".to_string()));
+}
+
+#[test]
+fn sisyphus_notepad_with_max_history() {
+    let mut n = SisyphusNotepad::default();
+    for i in 0..100 {
+        n.take_snapshot(format!("trigger-{}", i));
+    }
+    assert_eq!(n.history.len(), 100);
+    assert_eq!(n.history[50].trigger_node, "trigger-50");
+}
+
+#[test]
+fn trigger_def_with_unicode_pattern_and_tools() {
+    let t = TriggerDef {
+        pattern: Some("模式-α".into()),
+        tools: vec!["工具-α".into()],
+        description: Some("描述".into()),
+        hook_phase: Some("阶段-β".into()),
+        hook_effect: Some("效果-γ".into()),
+        hook_message: Some("消息-δ".into()),
+    };
+    assert_eq!(t.pattern.as_deref(), Some("模式-α"));
+    assert_eq!(t.tools[0], "工具-α");
+}
+
+#[test]
+fn work_mode_default_and_clone() {
+    let wm: WorkMode = Default::default();
+    assert_eq!(wm, WorkMode::Standard);
+    let cloned = wm.clone();
+    assert_eq!(cloned, wm);
+}
+
+#[test]
+fn model_route_strategy_with_all_variants_serde() {
+    use sisyphus_types::types::ModelRouteStrategy;
+    for v in [
+        ModelRouteStrategy::CostOptimized,
+        ModelRouteStrategy::PerformanceOptimized,
+        ModelRouteStrategy::FallbackChain,
+    ] {
+        let j = serde_json::to_string(&v).unwrap();
+        let back: ModelRouteStrategy = serde_json::from_str(&j).unwrap();
+        assert_eq!(back, v);
+    }
+}
