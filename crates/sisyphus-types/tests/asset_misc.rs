@@ -2085,3 +2085,131 @@ fn asset_relation_with_unicode_long_5_variants_serde() {
         assert_eq!(orig_dbg, back_dbg);
     }
 }
+
+// ---------------------------------------------------------------------------
+// More tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn cognitive_asset_with_unicode_id_only_emoji() {
+    use sisyphus_types::asset::{AssetContent, AssetKind, CognitiveAsset, InsightData};
+    let asset = CognitiveAsset {
+        id: "🔍🔭".into(),
+        kind: AssetKind::Tool,
+        name: "n".into(),
+        description: "d".into(),
+        content: AssetContent::Insight(InsightData {
+            observation: "o".into(),
+            reasoning: "r".into(),
+            evidence_ids: vec![],
+            confidence: 0.5,
+        }),
+        metadata: HashMap::new(),
+        version: 1,
+        created_at: 0,
+    };
+    assert_eq!(asset.id, "🔍🔭");
+    let j = serde_json::to_string(&asset).unwrap();
+    let back: CognitiveAsset = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.id, "🔍🔭");
+}
+
+#[test]
+fn insight_data_with_unicode_observation_long_emoji() {
+    let i = InsightData {
+        observation: "🔍".repeat(100),
+        reasoning: "r".into(),
+        evidence_ids: vec![],
+        confidence: 0.5,
+    };
+    let j = serde_json::to_string(&i).unwrap();
+    let back: InsightData = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.observation.chars().count(), 100);
+}
+
+#[test]
+fn asset_kind_tool_in_v3() {
+    use sisyphus_types::asset::AssetKind;
+    let k = AssetKind::Tool;
+    let dbg = format!("{:?}", k);
+    assert_eq!(dbg, "Tool");
+}
+
+#[test]
+fn cognitive_asset_with_unicode_metadata_value_short() {
+    use sisyphus_types::asset::{AssetContent, AssetKind, CognitiveAsset, InsightData};
+    let mut meta = HashMap::new();
+    meta.insert("k1".into(), "v-α".into());
+    meta.insert("k2".into(), "v-β".into());
+    meta.insert("k3".into(), "v-γ".into());
+    let asset = CognitiveAsset {
+        id: "a".into(),
+        kind: AssetKind::Tool,
+        name: "n".into(),
+        description: "d".into(),
+        content: AssetContent::Insight(InsightData {
+            observation: "o".into(),
+            reasoning: "r".into(),
+            evidence_ids: vec![],
+            confidence: 0.5,
+        }),
+        metadata: meta,
+        version: 1,
+        created_at: 0,
+    };
+    assert_eq!(asset.metadata.len(), 3);
+    let j = serde_json::to_string(&asset).unwrap();
+    let back: CognitiveAsset = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.metadata["k2"], "v-β");
+}
+
+#[test]
+fn cognitive_asset_with_high_version_only() {
+    use sisyphus_types::asset::{AssetContent, AssetKind, CognitiveAsset, InsightData};
+    let asset = CognitiveAsset {
+        id: "a".into(),
+        kind: AssetKind::Tool,
+        name: "n".into(),
+        description: "d".into(),
+        content: AssetContent::Insight(InsightData {
+            observation: "o".into(),
+            reasoning: "r".into(),
+            evidence_ids: vec![],
+            confidence: 0.5,
+        }),
+        metadata: HashMap::new(),
+        version: 1_000_000,
+        created_at: 0,
+    };
+    let j = serde_json::to_string(&asset).unwrap();
+    let back: CognitiveAsset = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.version, 1_000_000);
+}
+
+#[test]
+fn insight_data_with_unicode_evidence_id_emoji() {
+    let i = InsightData {
+        observation: "o".into(),
+        reasoning: "r".into(),
+        evidence_ids: vec!["🔍".into()],
+        confidence: 0.5,
+    };
+    let j = serde_json::to_string(&i).unwrap();
+    let back: InsightData = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.evidence_ids[0], "🔍");
+}
+
+#[test]
+fn asset_relation_with_unicode_long_id_via_chars_count() {
+    use sisyphus_types::asset::{AssetRelation, RelationType};
+    let long_id = "α".repeat(20);
+    let r = AssetRelation {
+        from_id: long_id.clone(),
+        to_id: long_id,
+        relation_type: RelationType::Solves,
+        weight: 0.5,
+    };
+    let j = serde_json::to_string(&r).unwrap();
+    let back: AssetRelation = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.from_id.chars().count(), 20);
+}
