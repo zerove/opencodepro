@@ -1164,3 +1164,105 @@ fn cognitive_asset_serde_unicode_full() {
     assert_eq!(back.description, "desc-α");
     assert_eq!(back.version, 1);
 }
+
+// ---------------------------------------------------------------------------
+// More tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn asset_kind_tool_in_serde() {
+    use sisyphus_types::asset::AssetKind;
+    let k = AssetKind::Tool;
+    let j = serde_json::to_string(&k).unwrap();
+    let back: AssetKind = serde_json::from_str(&j).unwrap();
+    let j2 = serde_json::to_string(&back).unwrap();
+    assert_eq!(j, j2);
+    assert_eq!(j, "\"Tool\"");
+}
+
+#[test]
+fn asset_kind_sop_in_serde() {
+    use sisyphus_types::asset::AssetKind;
+    let k = AssetKind::SOP;
+    let j = serde_json::to_string(&k).unwrap();
+    let back: AssetKind = serde_json::from_str(&j).unwrap();
+    let j2 = serde_json::to_string(&back).unwrap();
+    assert_eq!(j, j2);
+    assert_eq!(j, "\"SOP\"");
+}
+
+#[test]
+fn asset_kind_insight_in_serde() {
+    use sisyphus_types::asset::AssetKind;
+    let k = AssetKind::Insight;
+    let j = serde_json::to_string(&k).unwrap();
+    let back: AssetKind = serde_json::from_str(&j).unwrap();
+    let j2 = serde_json::to_string(&back).unwrap();
+    assert_eq!(j, j2);
+    assert_eq!(j, "\"Insight\"");
+}
+
+#[test]
+fn asset_kind_constraint_in_serde() {
+    use sisyphus_types::asset::AssetKind;
+    let k = AssetKind::Constraint;
+    let j = serde_json::to_string(&k).unwrap();
+    let back: AssetKind = serde_json::from_str(&j).unwrap();
+    let j2 = serde_json::to_string(&back).unwrap();
+    assert_eq!(j, j2);
+    assert_eq!(j, "\"Constraint\"");
+}
+
+#[test]
+fn cognitive_asset_with_unicode_version_string() {
+    let asset = CognitiveAsset {
+        id: "a".into(),
+        kind: AssetKind::Tool,
+        name: "n".into(),
+        description: "d".into(),
+        content: AssetContent::Insight(InsightData {
+            observation: "o".into(),
+            reasoning: "r".into(),
+            evidence_ids: vec![],
+            confidence: 0.5,
+        }),
+        metadata: HashMap::new(),
+        version: u32::MAX,
+        created_at: 0,
+    };
+    let j = serde_json::to_string(&asset).unwrap();
+    let back: CognitiveAsset = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.version, u32::MAX);
+}
+
+#[test]
+fn insight_data_with_max_u64_in_evidence_ids() {
+    let i = InsightData {
+        observation: "o".into(),
+        reasoning: "r".into(),
+        evidence_ids: (0..100).map(|i| format!("ev-{:03}", i)).collect(),
+        confidence: 0.5,
+    };
+    assert_eq!(i.evidence_ids.len(), 100);
+    assert_eq!(i.evidence_ids[50], "ev-050");
+}
+
+#[test]
+fn cognitive_asset_with_empty_metadata_only() {
+    let asset = CognitiveAsset {
+        id: "a".into(),
+        kind: AssetKind::Tool,
+        name: "n".into(),
+        description: "d".into(),
+        content: AssetContent::Insight(InsightData {
+            observation: "o".into(),
+            reasoning: "r".into(),
+            evidence_ids: vec![],
+            confidence: 0.5,
+        }),
+        metadata: HashMap::new(),
+        version: 0,
+        created_at: 0,
+    };
+    assert!(asset.metadata.is_empty());
+}
