@@ -1075,3 +1075,96 @@ fn model_route_strategy_with_all_variants_serde() {
         assert_eq!(back, v);
     }
 }
+
+// ---------------------------------------------------------------------------
+// Additional tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn trigger_def_with_max_tools() {
+    let tools: Vec<String> = (0..1000).map(|i| format!("tool-{}", i)).collect();
+    let t = TriggerDef {
+        pattern: Some("p".into()),
+        tools,
+        description: Some("d".into()),
+        hook_phase: Some("before".into()),
+        hook_effect: Some("e".into()),
+        hook_message: Some("m".into()),
+    };
+    let j = serde_json::to_string(&t).unwrap();
+    let back: TriggerDef = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.tools.len(), 1000);
+}
+
+#[test]
+fn trigger_def_with_empty_pattern_and_description() {
+    let t = TriggerDef {
+        pattern: Some("".into()),
+        tools: vec![],
+        description: Some("".into()),
+        hook_phase: None,
+        hook_effect: None,
+        hook_message: None,
+    };
+    let j = serde_json::to_string(&t).unwrap();
+    let back: TriggerDef = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.pattern.as_deref(), Some(""));
+    assert_eq!(back.description.as_deref(), Some(""));
+}
+
+#[test]
+fn sisyphus_notepad_write_then_append_preserves_both() {
+    let mut n = SisyphusNotepad::default();
+    n.write_section("s".into(), "initial".into());
+    n.append_insight("s".into(), "first insight".into());
+    let read = n.read_section("s").unwrap();
+    assert!(read.contains("initial"));
+    assert!(read.contains("first insight"));
+}
+
+#[test]
+fn sisyphus_notepad_prune_keeps_short_sections() {
+    let mut n = SisyphusNotepad::default();
+    n.write_section("short".into(), "one line".into());
+    n.prune(5);
+    let read = n.read_section("short").unwrap();
+    assert_eq!(read, &"one line".to_string());
+}
+
+#[test]
+fn sisyphus_notepad_with_5_sections() {
+    let mut n = SisyphusNotepad::default();
+    for i in 0..5 {
+        n.write_section(format!("s{}", i), format!("content{}", i));
+    }
+    assert_eq!(n.sections.len(), 5);
+}
+
+#[test]
+fn notepad_snapshot_with_5_sections() {
+    let mut snapshot = im::HashMap::new();
+    for i in 0..5 {
+        snapshot.insert(format!("s{}", i), format!("v{}", i));
+    }
+    let n = NotepadSnapshot {
+        timestamp: 1000,
+        snapshot,
+        trigger_node: "trigger".into(),
+    };
+    assert_eq!(n.snapshot.len(), 5);
+}
+
+#[test]
+fn evolution_op_with_zero_and_max_delta() {
+    use sisyphus_types::types::EvolutionOp;
+    let op = EvolutionOp::AdjustFuel {
+        node_name: "n".into(),
+        delta: i64::MAX,
+    };
+    let j = serde_json::to_string(&op).unwrap();
+    let back: EvolutionOp = serde_json::from_str(&j).unwrap();
+    match back {
+        EvolutionOp::AdjustFuel { delta, .. } => assert_eq!(delta, i64::MAX),
+        _ => panic!("wrong"),
+    }
+}
