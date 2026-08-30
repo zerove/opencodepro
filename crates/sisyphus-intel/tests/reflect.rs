@@ -519,3 +519,100 @@ fn reflection_report_with_max_deviation() {
     let back: ReflectionReport = serde_json::from_str(&j).unwrap();
     assert_eq!(back.deviation_score, 1.0);
 }
+
+// ---------------------------------------------------------------------------
+// Additional ImprovementKind tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn improvement_kind_retry_with_zero_max_retries() {
+    use sisyphus_intel::reflect::ImprovementKind;
+    let k = ImprovementKind::Retry { max_retries: 0 };
+    let j = serde_json::to_string(&k).unwrap();
+    let back: ImprovementKind = serde_json::from_str(&j).unwrap();
+    match back {
+        ImprovementKind::Retry { max_retries } => assert_eq!(max_retries, 0),
+        _ => panic!("wrong"),
+    }
+}
+
+#[test]
+fn improvement_kind_fuel_increase_zero_factor() {
+    use sisyphus_intel::reflect::ImprovementKind;
+    let k = ImprovementKind::FuelIncrease { factor: 0.0 };
+    let j = serde_json::to_string(&k).unwrap();
+    let back: ImprovementKind = serde_json::from_str(&j).unwrap();
+    match back {
+        ImprovementKind::FuelIncrease { factor } => assert_eq!(factor, 0.0),
+        _ => panic!("wrong"),
+    }
+}
+
+#[test]
+fn improvement_kind_fuel_increase_above_one_factor() {
+    use sisyphus_intel::reflect::ImprovementKind;
+    let k = ImprovementKind::FuelIncrease { factor: 5.0 };
+    let j = serde_json::to_string(&k).unwrap();
+    let back: ImprovementKind = serde_json::from_str(&j).unwrap();
+    match back {
+        ImprovementKind::FuelIncrease { factor } => assert_eq!(factor, 5.0),
+        _ => panic!("wrong"),
+    }
+}
+
+#[test]
+fn improvement_kind_unclassified_with_unicode_note() {
+    use sisyphus_intel::reflect::ImprovementKind;
+    let k = ImprovementKind::Unclassified {
+        note: "无法分类-α".into(),
+    };
+    let j = serde_json::to_string(&k).unwrap();
+    let back: ImprovementKind = serde_json::from_str(&j).unwrap();
+    match back {
+        ImprovementKind::Unclassified { note } => assert_eq!(note, "无法分类-α"),
+        _ => panic!("wrong"),
+    }
+}
+
+#[test]
+fn improvement_kind_unclassified_with_empty_note() {
+    use sisyphus_intel::reflect::ImprovementKind;
+    let k = ImprovementKind::Unclassified { note: "".into() };
+    let j = serde_json::to_string(&k).unwrap();
+    let back: ImprovementKind = serde_json::from_str(&j).unwrap();
+    match back {
+        ImprovementKind::Unclassified { note } => assert_eq!(note, ""),
+        _ => panic!("wrong"),
+    }
+}
+
+#[test]
+fn improvement_kind_serialize_to_distinct_strings() {
+    use sisyphus_intel::reflect::ImprovementKind;
+    let variants = [
+        ImprovementKind::Backoff,
+        ImprovementKind::NodeSplit,
+        ImprovementKind::Retry { max_retries: 1 },
+        ImprovementKind::FuelIncrease { factor: 1.0 },
+        ImprovementKind::Unclassified { note: "x".into() },
+    ];
+    let serialized: Vec<String> = variants
+        .iter()
+        .map(|v| serde_json::to_string(v).unwrap())
+        .collect();
+    let unique: std::collections::HashSet<_> = serialized.iter().collect();
+    assert_eq!(unique.len(), 5);
+}
+
+#[test]
+fn improvement_kind_unclassified_with_long_note() {
+    use sisyphus_intel::reflect::ImprovementKind;
+    let long = "x".repeat(10000);
+    let k = ImprovementKind::Unclassified { note: long.clone() };
+    let j = serde_json::to_string(&k).unwrap();
+    let back: ImprovementKind = serde_json::from_str(&j).unwrap();
+    match back {
+        ImprovementKind::Unclassified { note } => assert_eq!(note.len(), 10000),
+        _ => panic!("wrong"),
+    }
+}
