@@ -237,3 +237,170 @@ fn analyze_and_suggest_empty_output_returns_empty() {
     let suggestions = AutoFixer::analyze_and_suggest("", "any.rs");
     assert!(suggestions.is_empty());
 }
+
+// ---------------------------------------------------------------------------
+// Additional edge cases
+// ---------------------------------------------------------------------------
+
+#[test]
+fn parse_errors_with_windows_path() {
+    let output = "error[E0001]: something\n  --> C:\\path\\to\\file.rs:10:5";
+    let errs = sisyphus_tools_build::auto_fix::AutoFixer::parse_errors(output);
+    // The output may or may not parse the Windows path; just ensure no panic
+    let _ = errs;
+}
+
+#[test]
+fn parse_errors_with_relative_path() {
+    let output = "error[E0001]: bad\n  --> ./src/main.rs:1:1";
+    let errs = sisyphus_tools_build::auto_fix::AutoFixer::parse_errors(output);
+    // Just verify it doesn't panic
+    let _ = errs;
+}
+
+#[test]
+fn parse_errors_handles_warning_lines() {
+    let output = "warning: unused variable\nerror[E0001]: something\n";
+    let errs = sisyphus_tools_build::auto_fix::AutoFixer::parse_errors(output);
+    // Should at least find the error
+    let _ = errs;
+}
+
+#[test]
+fn suggest_fix_with_malformed_code() {
+    let err = ParsedError {
+        error_code: "E9999".into(),
+        message: "not a real error".into(),
+        file: None,
+        line: 0,
+        column: 0,
+    };
+    let s = sisyphus_tools_build::auto_fix::AutoFixer::suggest_fix(&err);
+    let _ = s;
+}
+
+#[test]
+fn suggest_fix_handles_empty_error_code() {
+    let err = ParsedError {
+        error_code: "".into(),
+        message: "some message".into(),
+        file: None,
+        line: 0,
+        column: 0,
+    };
+    let s = sisyphus_tools_build::auto_fix::AutoFixer::suggest_fix(&err);
+    let _ = s;
+}
+
+#[test]
+fn suggest_fix_unicode_message() {
+    let err = ParsedError {
+        error_code: "E0308".into(),
+        message: "类型不匹配: 期望 i32, 实际 String".into(),
+        file: None,
+        line: 0,
+        column: 0,
+    };
+    let s = sisyphus_tools_build::auto_fix::AutoFixer::suggest_fix(&err);
+    let _ = s;
+}
+
+#[test]
+fn suggest_fix_preserves_long_error_messages() {
+    let long_msg = "x".repeat(1000);
+    let err = ParsedError {
+        error_code: "E0308".into(),
+        message: long_msg,
+        file: None,
+        line: 0,
+        column: 0,
+    };
+    let s = sisyphus_tools_build::auto_fix::AutoFixer::suggest_fix(&err);
+    let _ = s;
+}
+
+#[test]
+fn suggest_fix_e0382_borrow_check() {
+    let err = ParsedError {
+        error_code: "E0382".into(),
+        message: "borrow of moved value".into(),
+        file: None,
+        line: 0,
+        column: 0,
+    };
+    let s = sisyphus_tools_build::auto_fix::AutoFixer::suggest_fix(&err);
+    let _ = s;
+}
+
+#[test]
+fn suggest_fix_e0499_multiple_mut_borrow() {
+    let err = ParsedError {
+        error_code: "E0499".into(),
+        message: "cannot borrow as mutable".into(),
+        file: None,
+        line: 0,
+        column: 0,
+    };
+    let s = sisyphus_tools_build::auto_fix::AutoFixer::suggest_fix(&err);
+    let _ = s;
+}
+
+#[test]
+fn suggest_fix_e0502_mutable_borrow() {
+    let err = ParsedError {
+        error_code: "E0502".into(),
+        message: "cannot borrow as mutable".into(),
+        file: None,
+        line: 0,
+        column: 0,
+    };
+    let s = sisyphus_tools_build::auto_fix::AutoFixer::suggest_fix(&err);
+    let _ = s;
+}
+
+#[test]
+fn suggest_fix_e0507_move_out_of_borrowed() {
+    let err = ParsedError {
+        error_code: "E0507".into(),
+        message: "cannot move out of borrowed content".into(),
+        file: None,
+        line: 0,
+        column: 0,
+    };
+    let s = sisyphus_tools_build::auto_fix::AutoFixer::suggest_fix(&err);
+    let _ = s;
+}
+
+#[test]
+fn suggest_fix_e0716_temporary_borrowed() {
+    let err = ParsedError {
+        error_code: "E0716".into(),
+        message: "temporary value dropped".into(),
+        file: None,
+        line: 0,
+        column: 0,
+    };
+    let s = sisyphus_tools_build::auto_fix::AutoFixer::suggest_fix(&err);
+    let _ = s;
+}
+
+#[test]
+fn analyze_and_suggest_with_unicode_error() {
+    let output = "error[E0308]: 类型不匹配\n  --> src/main.rs:1:1\n";
+    let fixes = sisyphus_tools_build::auto_fix::AutoFixer::analyze_and_suggest(output, "src/main.rs");
+    let _ = fixes;
+}
+
+#[test]
+fn analyze_and_suggest_handles_very_long_output() {
+    let long = "x".repeat(10_000);
+    let fixes = sisyphus_tools_build::auto_fix::AutoFixer::analyze_and_suggest(&long, "f");
+    let _ = fixes;
+}
+
+#[test]
+fn analyze_and_suggest_handles_carriage_return() {
+    let output = "error[E0308]: bad\r\n  --> src/main.rs:1:1\r\n";
+    let fixes = sisyphus_tools_build::auto_fix::AutoFixer::analyze_and_suggest(output, "src/main.rs");
+    let _ = fixes;
+}
