@@ -646,3 +646,126 @@ fn cognitive_asset_with_zero_created_at() {
     let back: CognitiveAsset = serde_json::from_str(&j).unwrap();
     assert_eq!(back.created_at, 0);
 }
+
+// ---------------------------------------------------------------------------
+// Additional InsightData tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn insight_data_with_only_whitespace() {
+    let i = InsightData {
+        observation: "   ".into(),
+        reasoning: "\t\n".into(),
+        evidence_ids: vec!["  ".into()],
+        confidence: 0.0,
+    };
+    let j = serde_json::to_string(&i).unwrap();
+    let back: InsightData = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.observation, "   ");
+    assert_eq!(back.reasoning, "\t\n");
+    assert_eq!(back.evidence_ids[0], "  ");
+}
+
+#[test]
+fn insight_data_with_above_one_confidence() {
+    let i = InsightData {
+        observation: "o".into(),
+        reasoning: "r".into(),
+        evidence_ids: vec![],
+        confidence: 1.5,
+    };
+    let j = serde_json::to_string(&i).unwrap();
+    let back: InsightData = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.confidence, 1.5);
+}
+
+#[test]
+fn constraint_data_with_max_values() {
+    use sisyphus_types::asset::ConstraintData;
+    let c = ConstraintData {
+        description: "d".into(),
+        strictness: f32::MAX,
+        violation_penalty: f32::MAX,
+    };
+    let j = serde_json::to_string(&c).unwrap();
+    let back: ConstraintData = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.strictness, f32::MAX);
+}
+
+#[test]
+fn constraint_data_with_nan_values() {
+    use sisyphus_types::asset::ConstraintData;
+    let c = ConstraintData {
+        description: "d".into(),
+        strictness: f32::NAN,
+        violation_penalty: f32::NAN,
+    };
+    // NaN might not roundtrip via Serde, but should not panic
+    let j = serde_json::to_string(&c).unwrap_or_default();
+    // Just verify it doesn't panic
+    let _ = j;
+}
+
+#[test]
+fn cognitive_asset_with_only_metadata() {
+    let mut meta = HashMap::new();
+    meta.insert("k".into(), "v".into());
+    let asset = CognitiveAsset {
+        id: "a".into(),
+        kind: AssetKind::Tool,
+        name: "n".into(),
+        description: "d".into(),
+        content: AssetContent::Insight(InsightData {
+            observation: "o".into(),
+            reasoning: "r".into(),
+            evidence_ids: vec![],
+            confidence: 0.5,
+        }),
+        metadata: meta,
+        version: 1,
+        created_at: 0,
+    };
+    let j = serde_json::to_string(&asset).unwrap();
+    let back: CognitiveAsset = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.metadata.len(), 1);
+}
+
+#[test]
+fn cognitive_asset_field_access_v2() {
+    let asset = CognitiveAsset {
+        id: "id-α".into(),
+        kind: AssetKind::SOP,
+        name: "name".into(),
+        description: "desc".into(),
+        content: AssetContent::Insight(InsightData {
+            observation: "o".into(),
+            reasoning: "r".into(),
+            evidence_ids: vec!["e".into()],
+            confidence: 0.5,
+        }),
+        metadata: HashMap::new(),
+        version: 1,
+        created_at: 100,
+    };
+    assert_eq!(asset.id, "id-α");
+    // AssetKind doesn't implement PartialEq, but we can verify it via Debug
+    let kind_dbg = format!("{:?}", asset.kind);
+    assert_eq!(kind_dbg, "SOP");
+    assert_eq!(asset.name, "name");
+    assert_eq!(asset.description, "desc");
+    assert_eq!(asset.created_at, 100);
+}
+
+#[test]
+fn asset_relation_serde_with_high_precision_weight() {
+    use sisyphus_types::asset::{AssetRelation, RelationType};
+    let r = AssetRelation {
+        from_id: "a".into(),
+        to_id: "b".into(),
+        relation_type: RelationType::Solves,
+        weight: 0.123_456_78_f32,
+    };
+    let j = serde_json::to_string(&r).unwrap();
+    let back: AssetRelation = serde_json::from_str(&j).unwrap();
+    assert!((back.weight - 0.123_456_78_f32).abs() < 1e-6);
+}
