@@ -564,3 +564,97 @@ fn gate_config_with_long_unicode() {
     assert!(dbg.contains("fallback_on_error"));
     assert!(dbg.contains("enabled"));
 }
+
+// ---------------------------------------------------------------------------
+// Additional GateVerdict and GateDecision tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn gate_verdict_with_unicode_in_decision() {
+    let d = GateDecision {
+        sop_id: "sop-图-α".into(),
+        verdict: GateVerdict::Allow,
+        flaw_count: 0,
+        critical_count: 0,
+        confidence: 0.9,
+        elapsed_micros: 100,
+    };
+    assert_eq!(d.sop_id, "sop-图-α");
+    let cloned = d.clone();
+    assert_eq!(cloned.sop_id, "sop-图-α");
+}
+
+#[test]
+fn gate_history_with_1000_decisions() {
+    let h = GateHistory::new();
+    for i in 0..1000 {
+        let verdict = if i % 3 == 0 {
+            GateVerdict::Allow
+        } else if i % 3 == 1 {
+            GateVerdict::Reject
+        } else {
+            GateVerdict::Skipped
+        };
+        h.record(dec(verdict, 0, 0));
+    }
+    assert_eq!(h.snapshot().len(), 1000);
+    // 333 allow, 334 reject (since 1000/3 = 333 r 1)
+    let rate = h.intercept_rate();
+    assert!(rate > 0.0 && rate < 1.0);
+}
+
+#[test]
+fn gate_history_alternating_verdicts() {
+    let h = GateHistory::new();
+    for _ in 0..100 {
+        h.record(dec(GateVerdict::Allow, 0, 0));
+        h.record(dec(GateVerdict::Reject, 1, 1));
+    }
+    // 100 reject out of 200 (allow+reject) = 0.5
+    assert!((h.intercept_rate() - 0.5).abs() < 1e-9);
+}
+
+#[test]
+fn gate_decision_with_negative_confidence() {
+    // Edge case: confidence should be [0.0, 1.0] but no validation
+    let d = GateDecision {
+        sop_id: "p".into(),
+        verdict: GateVerdict::Allow,
+        flaw_count: 0,
+        critical_count: 0,
+        confidence: -0.5,
+        elapsed_micros: 100,
+    };
+    assert_eq!(d.confidence, -0.5);
+}
+
+#[test]
+fn gate_decision_above_one_confidence() {
+    let d = GateDecision {
+        sop_id: "p".into(),
+        verdict: GateVerdict::Allow,
+        flaw_count: 0,
+        critical_count: 0,
+        confidence: 1.5,
+        elapsed_micros: 100,
+    };
+    assert_eq!(d.confidence, 1.5);
+}
+
+#[test]
+fn gate_history_with_only_rejects_intercept_one() {
+    let h = GateHistory::new();
+    for _ in 0..10 {
+        h.record(dec(GateVerdict::Reject, 1, 1));
+    }
+    assert_eq!(h.intercept_rate(), 1.0);
+}
+
+#[test]
+fn gate_history_with_only_allows_intercept_zero() {
+    let h = GateHistory::new();
+    for _ in 0..10 {
+        h.record(dec(GateVerdict::Allow, 0, 0));
+    }
+    assert_eq!(h.intercept_rate(), 0.0);
+}
