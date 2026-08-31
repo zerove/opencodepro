@@ -2339,3 +2339,111 @@ fn path_summary_with_only_one_risk_level() {
     assert_eq!(back.risk_distribution.get(&RiskLevel::Medium), Some(&5));
     assert_eq!(back.risk_distribution.len(), 1);
 }
+
+// ---------------------------------------------------------------------------
+// More tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn risk_thresholds_with_only_one() {
+    let t = RiskThresholds {
+        low: 0.5,
+        medium: 0.5,
+        high: 0.5,
+    };
+    let j = serde_json::to_string(&t).unwrap();
+    let back: RiskThresholds = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.low, 0.5);
+    assert_eq!(back.medium, 0.5);
+    assert_eq!(back.high, 0.5);
+}
+
+#[test]
+fn ranked_path_with_unicode_path_id_max() {
+    let long = "路径-α-🔍-".repeat(30);
+    let rp = RankedPath {
+        path_id: long.clone(),
+        success_probability: 0.5,
+        estimated_cost: 0,
+        risk_level: RiskLevel::Low,
+        composite_score: 0.5,
+        predicted_outcome: "ok".into(),
+        confidence: 0.5,
+    };
+    let j = serde_json::to_string(&rp).unwrap();
+    let back: RankedPath = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.path_id, long);
+}
+
+#[test]
+fn ranked_path_with_unicode_predicted_outcome_long_2() {
+    let long = "结果-α-🔍-".repeat(20);
+    let rp = RankedPath {
+        path_id: "p".into(),
+        success_probability: 0.5,
+        estimated_cost: 0,
+        risk_level: RiskLevel::Low,
+        composite_score: 0.5,
+        predicted_outcome: long.clone(),
+        confidence: 0.5,
+    };
+    let j = serde_json::to_string(&rp).unwrap();
+    let back: RankedPath = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.predicted_outcome, long);
+}
+
+#[test]
+fn ranked_path_with_unicode_path_id_with_only_letters() {
+    let rp = RankedPath {
+        path_id: "αβγδε".into(),
+        success_probability: 0.5,
+        estimated_cost: 0,
+        risk_level: RiskLevel::Low,
+        composite_score: 0.5,
+        predicted_outcome: "ok".into(),
+        confidence: 0.5,
+    };
+    let j = serde_json::to_string(&rp).unwrap();
+    let back: RankedPath = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.path_id, "αβγδε");
+}
+
+#[test]
+fn ranked_path_with_unicode_path_id_only_emoji() {
+    let rp = RankedPath {
+        path_id: "🔍".into(),
+        success_probability: 0.5,
+        estimated_cost: 0,
+        risk_level: RiskLevel::Low,
+        composite_score: 0.5,
+        predicted_outcome: "ok".into(),
+        confidence: 0.5,
+    };
+    let j = serde_json::to_string(&rp).unwrap();
+    let back: RankedPath = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.path_id, "🔍");
+}
+
+#[test]
+fn ranked_path_with_unicode_predicted_outcome_special() {
+    let rp = RankedPath {
+        path_id: "p".into(),
+        success_probability: 0.5,
+        estimated_cost: 0,
+        risk_level: RiskLevel::Low,
+        composite_score: 0.5,
+        predicted_outcome: "!@#$%α-β🔍".into(),
+        confidence: 0.5,
+    };
+    let j = serde_json::to_string(&rp).unwrap();
+    let back: RankedPath = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.predicted_outcome, "!@#$%α-β🔍");
+}
+
+#[test]
+fn path_summary_with_default_only() {
+    let s = PathSummary::default();
+    assert_eq!(s.total_paths, 0);
+    assert_eq!(s.average_probability, 0.0);
+    assert_eq!(s.average_cost, 0);
+}
