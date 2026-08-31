@@ -1884,3 +1884,93 @@ fn gate_history_with_7_allow_3_reject_30_3() {
     // 3 / 10 = 0.3
     assert!((h.intercept_rate() - 0.3).abs() < 1e-9);
 }
+
+// ---------------------------------------------------------------------------
+// More tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn gate_history_with_5_allow_5_reject_3() {
+    let h = GateHistory::new();
+    for _ in 0..5 {
+        h.record(dec(GateVerdict::Allow, 0, 0));
+    }
+    for _ in 0..5 {
+        h.record(dec(GateVerdict::Reject, 1, 1));
+    }
+    // 5 / 10 = 0.5
+    assert!((h.intercept_rate() - 0.5).abs() < 1e-9);
+    assert_eq!(h.snapshot().len(), 10);
+}
+
+#[test]
+fn gate_decision_with_unicode_sop_id_only_letters_4() {
+    let d = GateDecision {
+        sop_id: "αβγ".into(),
+        verdict: GateVerdict::Allow,
+        flaw_count: 0,
+        critical_count: 0,
+        confidence: 0.5,
+        elapsed_micros: 100,
+    };
+    assert_eq!(d.sop_id.chars().count(), 3);
+}
+
+#[test]
+fn gate_history_with_5_reject_5_allow_50_2() {
+    let h = GateHistory::new();
+    for _ in 0..5 {
+        h.record(dec(GateVerdict::Reject, 1, 1));
+    }
+    for _ in 0..5 {
+        h.record(dec(GateVerdict::Allow, 0, 0));
+    }
+    // 5 / 10 = 0.5
+    assert!((h.intercept_rate() - 0.5).abs() < 1e-9);
+}
+
+#[test]
+fn gate_decision_with_unicode_sop_id_3_chars() {
+    let d = GateDecision {
+        sop_id: "🔍α🔭".into(),
+        verdict: GateVerdict::Allow,
+        flaw_count: 0,
+        critical_count: 0,
+        confidence: 0.5,
+        elapsed_micros: 100,
+    };
+    assert_eq!(d.sop_id.chars().count(), 3);
+}
+
+#[test]
+fn gate_history_with_1_allow_1_reject_50_2() {
+    let h = GateHistory::new();
+    h.record(dec(GateVerdict::Allow, 0, 0));
+    h.record(dec(GateVerdict::Reject, 1, 1));
+    // 1 / 2 = 0.5
+    assert!((h.intercept_rate() - 0.5).abs() < 1e-9);
+}
+
+#[test]
+fn gate_decision_with_unicode_sop_id_with_special_2() {
+    let d = GateDecision {
+        sop_id: "a-α-🔍-β@γ".into(),
+        verdict: GateVerdict::Allow,
+        flaw_count: 0,
+        critical_count: 0,
+        confidence: 0.5,
+        elapsed_micros: 100,
+    };
+    assert_eq!(d.sop_id, "a-α-🔍-β@γ");
+}
+
+#[test]
+fn gate_history_with_alternating_2_allow_2_reject() {
+    let h = GateHistory::new();
+    h.record(dec(GateVerdict::Allow, 0, 0));
+    h.record(dec(GateVerdict::Reject, 1, 1));
+    h.record(dec(GateVerdict::Allow, 0, 0));
+    h.record(dec(GateVerdict::Reject, 1, 1));
+    // 2 / 4 = 0.5
+    assert!((h.intercept_rate() - 0.5).abs() < 1e-9);
+}
