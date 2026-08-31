@@ -218,6 +218,18 @@ convergence_threshold = 0.15
 # 类型: f64 | 默认: 0.05
 # convergence_threshold = 0.05
 
+# ── 反思/演进阶段 Token 预算 ──────────────────────────────
+# 硬上限 token 数；为 None 时表示不启用预算（默认 unbounded）
+# 环境变量: SISYPHUS_COGNITIVE_LOOP_TOKEN_BUDGET_CAP (空字符串 = 清除上限)
+# 类型: u64 | 默认: None
+[cognitive_loop.token_budget]
+# cap = 100000
+
+# 保留比例 [0.0, 1.0]。当剩余预算 < cap × reserve_ratio 时跳过 LLM 调用
+# 环境变量: SISYPHUS_COGNITIVE_LOOP_TOKEN_BUDGET_RESERVE_RATIO
+# 类型: f64 | 默认: 0.1
+# reserve_ratio = 0.1
+
 # ── 混沌工程参数 ──────────────────────────────────────────
 [chaos]
 # 启动时是否启用混沌工程

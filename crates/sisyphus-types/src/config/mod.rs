@@ -208,6 +208,10 @@ impl Config {
                 _ => None,
             })
         }
+        // Sentinel for explicit Option<T> clearing via env (empty string → None).
+        fn env_optional_u64(key: &str) -> Option<Option<u64>> {
+            std::env::var(key).ok().map(|v| if v.is_empty() { None } else { v.parse().ok() })
+        }
 
         if let Some(v) = env_string("SISYPHUS_REGISTRY_URL") {
             self.registry.registry_url = v;
@@ -346,6 +350,13 @@ impl Config {
         }
         if let Some(v) = env_f64("SISYPHUS_COGNITIVE_LOOP_ADAPTIVE_DEPTH_CONVERGENCE_THRESHOLD") {
             self.cognitive_loop.adaptive_depth.convergence_threshold = v;
+        }
+        // token_budget: 空字符串表示清除上限 (None)，非空数字设置上限 (Some(cap))
+        if let Some(v) = env_optional_u64("SISYPHUS_COGNITIVE_LOOP_TOKEN_BUDGET_CAP") {
+            self.cognitive_loop.token_budget.cap = v;
+        }
+        if let Some(v) = env_f64("SISYPHUS_COGNITIVE_LOOP_TOKEN_BUDGET_RESERVE_RATIO") {
+            self.cognitive_loop.token_budget.reserve_ratio = v;
         }
         // OpenTelemetry
         if let Some(v) = env_bool("SISYPHUS_METRICS_OTEL_ENABLED") {

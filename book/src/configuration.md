@@ -132,6 +132,8 @@ sample_rate = 1.0
 | `SISYPHUS_COGNITIVE_LOOP_ADAPTIVE_DEPTH_DECAY` | `cognitive_loop.adaptive_depth.decay` | f64 | `0.3` |
 | `SISYPHUS_COGNITIVE_LOOP_ADAPTIVE_DEPTH_MIN_IMPROVEMENT` | `cognitive_loop.adaptive_depth.min_improvement` | f64 | `0.15` |
 | `SISYPHUS_COGNITIVE_LOOP_ADAPTIVE_DEPTH_CONVERGENCE_THRESHOLD` | `cognitive_loop.adaptive_depth.convergence_threshold` | f64 | `0.05` |
+| `SISYPHUS_COGNITIVE_LOOP_TOKEN_BUDGET_CAP` | `cognitive_loop.token_budget.cap` | u64 \| 空字符串清空 | `None` |
+| `SISYPHUS_COGNITIVE_LOOP_TOKEN_BUDGET_RESERVE_RATIO` | `cognitive_loop.token_budget.reserve_ratio` | f64 | `0.1` |
 | `SISYPHUS_EXECUTOR_MAX_CONCURRENT_TASKS` | `executor.max_concurrent_tasks` | usize | `16` |
 | `SISYPHUS_EXECUTOR_DEFAULT_FUEL` | `executor.default_fuel` | u64 | `1_000_000` |
 | `SISYPHUS_CACHE_L1_CAPACITY` | `cache.l1_capacity` | usize | `10_000` |

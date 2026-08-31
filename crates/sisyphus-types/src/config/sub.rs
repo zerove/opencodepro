@@ -45,6 +45,30 @@ impl Default for TokenBudgetConfig {
     }
 }
 
+impl TokenBudgetConfig {
+    /// Validate `cap` and `reserve_ratio`. Empty `cap` (None) is allowed and
+    /// disables the budget gate; only when `cap.is_some()` is `reserve_ratio`
+    /// required to lie in [0.0, 1.0].
+    ///
+    /// # Errors
+    /// Returns [`TypesError::ConfigValidationError`] describing the violating field.
+    pub fn validate(&self) -> Result<(), TypesError> {
+        if !(0.0..=1.0).contains(&self.reserve_ratio) {
+            return Err(TypesError::ConfigValidationError(
+                "cognitive_loop.token_budget.reserve_ratio must be between 0.0 and 1.0".into(),
+            ));
+        }
+        if let Some(cap) = self.cap {
+            if cap == 0 {
+                return Err(TypesError::ConfigValidationError(
+                    "cognitive_loop.token_budget.cap must be > 0 when set".into(),
+                ));
+            }
+        }
+        Ok(())
+    }
+}
+
 fn default_reserve_ratio() -> f64 {
     0.1
 }
@@ -98,6 +122,7 @@ impl CognitiveLoopConfig {
             ));
         }
         self.adaptive_depth.validate()?;
+        self.token_budget.validate()?;
         Ok(())
     }
 }

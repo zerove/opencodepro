@@ -162,6 +162,45 @@ fn token_budget_field_assignment() {
     assert!((c.reserve_ratio - 0.5).abs() < 1e-9);
 }
 
+#[test]
+fn token_budget_default_validates_ok() {
+    // Default cap=None and reserve_ratio=0.1 must validate.
+    let c = TokenBudgetConfig::default();
+    assert!(c.validate().is_ok());
+}
+
+#[test]
+fn token_budget_reserve_ratio_above_one_rejected() {
+    let c = TokenBudgetConfig {
+        cap: Some(1000),
+        reserve_ratio: 1.5,
+    };
+    let err = c.validate().expect_err("1.5 reserve_ratio should fail");
+    let msg = format!("{err}");
+    assert!(msg.contains("reserve_ratio"), "got: {msg}");
+}
+
+#[test]
+fn token_budget_cap_zero_rejected() {
+    let c = TokenBudgetConfig {
+        cap: Some(0),
+        reserve_ratio: 0.1,
+    };
+    let err = c.validate().expect_err("cap=0 should fail");
+    let msg = format!("{err}");
+    assert!(msg.contains("cap"), "got: {msg}");
+}
+
+#[test]
+fn token_budget_none_cap_with_extreme_ratio_validates() {
+    // reserve_ratio out of range still invalid even when cap is None.
+    let c = TokenBudgetConfig {
+        cap: None,
+        reserve_ratio: 2.0,
+    };
+    assert!(c.validate().is_err());
+}
+
 // ---------------------------------------------------------------------------
 // ChaosConfig
 // ---------------------------------------------------------------------------
