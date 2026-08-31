@@ -2988,3 +2988,122 @@ fn feedback_with_unicode_only_timestamp() {
     let back: Feedback = serde_json::from_str(&j).unwrap();
     assert_eq!(back.timestamp, 1700000000);
 }
+
+// ---------------------------------------------------------------------------
+// More tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn feedback_with_unicode_only_agent_id() {
+    use sisyphus_types::Feedback;
+    let f = Feedback {
+        agent_id: "agent-α-🔍".into(),
+        original_request: "r".into(),
+        original_output: "o".into(),
+        corrected_output: "c".into(),
+        timestamp: 0,
+        tags: vec![],
+    };
+    let j = serde_json::to_string(&f).unwrap();
+    let back: Feedback = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.agent_id, "agent-α-🔍");
+}
+
+#[test]
+fn vector_record_with_unicode_metadata_5_keys() {
+    use sisyphus_types::VectorRecord;
+    let v = VectorRecord {
+        key: "k".into(),
+        embedding: vec![0.5],
+        metadata: serde_json::json!({
+            "k1-α": "v1",
+            "k2-β": "v2",
+            "k3-γ": "v3",
+            "k4-δ": "v4",
+            "k5-ε": "v5"
+        }),
+        timestamp: 0,
+    };
+    let j = serde_json::to_string(&v).unwrap();
+    let back: VectorRecord = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.metadata["k5-ε"], "v5");
+}
+
+#[test]
+fn plugin_descriptor_with_unicode_4_segment_path() {
+    use sisyphus_types::PluginDescriptor;
+    let pd = PluginDescriptor {
+        name: "p".into(),
+        version: "1".into(),
+        wasm_path: std::path::PathBuf::from("/path/α/β/γ.wasm"),
+        tool_id: "t".into(),
+        fuel_limit: 1000,
+        checksum: None,
+    };
+    let j = serde_json::to_string(&pd).unwrap();
+    let back: PluginDescriptor = serde_json::from_str(&j).unwrap();
+    assert!(back.wasm_path.to_str().unwrap().contains("γ.wasm"));
+}
+
+#[test]
+fn agent_message_with_unicode_payload_2_keys_2() {
+    use sisyphus_types::AgentMessage;
+    let m = AgentMessage {
+        from: "a".into(),
+        to: "b".into(),
+        kind: "request".into(),
+        payload: serde_json::json!({
+            "key-α": {"nested-β": "value-γ"},
+            "key-δ": {"nested-ε": "value-ζ"}
+        }),
+        correlation_id: "c".into(),
+    };
+    let j = serde_json::to_string(&m).unwrap();
+    let back: AgentMessage = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.payload["key-α"]["nested-β"], "value-γ");
+    assert_eq!(back.payload["key-δ"]["nested-ε"], "value-ζ");
+}
+
+#[test]
+fn benchmark_run_with_unicode_metrics_2_keys() {
+    use sisyphus_types::BenchmarkRun;
+    let b = BenchmarkRun {
+        name: "n".into(),
+        timestamp: 0,
+        duration_secs: 0.0,
+        success: true,
+        metrics: serde_json::json!({
+            "name-α": "v1",
+            "name-β": "v2"
+        }),
+    };
+    let j = serde_json::to_string(&b).unwrap();
+    let back: BenchmarkRun = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.metrics["name-α"], "v1");
+    assert_eq!(back.metrics["name-β"], "v2");
+}
+
+#[test]
+fn trigger_def_with_unicode_2_segment_pattern_only() {
+    use sisyphus_types::TriggerDef;
+    let t: TriggerDef = serde_json::from_str(r#"{"pattern":"前-α-中-β"}"#).unwrap();
+    assert_eq!(t.pattern.as_deref(), Some("前-α-中-β"));
+}
+
+#[test]
+fn feedback_with_unicode_3_fields_2() {
+    use sisyphus_types::Feedback;
+    let f = Feedback {
+        agent_id: "agent-α".into(),
+        original_request: "请求-β".into(),
+        original_output: "输出-γ".into(),
+        corrected_output: "修正-δ".into(),
+        timestamp: 0,
+        tags: vec![],
+    };
+    let j = serde_json::to_string(&f).unwrap();
+    let back: Feedback = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.original_request, "请求-β");
+    assert_eq!(back.original_output, "输出-γ");
+    assert_eq!(back.corrected_output, "修正-δ");
+}
