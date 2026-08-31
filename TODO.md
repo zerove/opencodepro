@@ -116,3 +116,14 @@
 - 2026-08-31 rustc 1.98 clippy 修复（10 文件 / 7 lint）
 - 2026-08-31 rustfmt 1.98 应用（366 文件 / 风格统一）
 - 2026-08-31 token_budget 端到端补齐（validate / env / 文档 / 4 测试）
+- 2026-08-31 `/health/deep` 启动自检端点（OpenAPI + 5 单元测试）
+- 2026-08-31 `make dev` 一键本地验证入口（4 子命令，CI 一致顺序）
+- 2026-08-31 `.rust-analyzer.json` IDE 配置（4 重型 crate 排除）
+- 2026-08-31 `justfile` 跨平台命令镜像
+- 2026-08-31 推送 11 个 commit 到 origin/master（前 320 个测试扩充 commit 一并）
+
+**下一步（用户可指派优先级）**:
+- 7.1: Otel 端点配置化 / AnomalyDetector 阈值化 / TUI `:health` 面板
+- 7.2: bridge CI 化 / mutation testing / wasm proptest / 混沌扩展（需 2-4h 调研）
+- 7.3: 基准基线刷新 / DAG 渲染性能 / TUI 冷启动 profile
+- 7.5: mdbook 缓存 / 部署脚本（systemd / Docker compose / k8s）
