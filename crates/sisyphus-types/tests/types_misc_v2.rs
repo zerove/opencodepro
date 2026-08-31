@@ -2409,3 +2409,80 @@ fn sisyphus_notepad_with_unicode_section_id_with_at_sign_2() {
     let read = n.read_section("@-α-β");
     assert!(read.is_some());
 }
+
+// ---------------------------------------------------------------------------
+// More tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn sisyphus_notepad_with_unicode_section_id_with_emoji_6() {
+    let mut n = SisyphusNotepad::default();
+    n.write_section("🔍".into(), "v".into());
+    let read = n.read_section("🔍");
+    assert!(read.is_some());
+}
+
+#[test]
+fn sisyphus_notepad_with_unicode_3_sections_overwrite_middle() {
+    let mut n = SisyphusNotepad::default();
+    n.write_section("节-α".into(), "v1".into());
+    n.write_section("节-β".into(), "v2".into());
+    n.write_section("节-γ".into(), "v3".into());
+    n.write_section("节-β".into(), "v2-new".into());
+    let read = n.read_section("节-β").unwrap();
+    assert_eq!(read, "v2-new");
+}
+
+#[test]
+fn trigger_def_with_unicode_pattern_5_chars_2() {
+    let t: TriggerDef = serde_json::from_str(r#"{"pattern":"前-α-中-β-后"}"#).unwrap();
+    assert_eq!(t.pattern.as_deref(), Some("前-α-中-β-后"));
+}
+
+#[test]
+fn notepad_snapshot_with_unicode_4_sections_2() {
+    let mut snapshot = im::HashMap::new();
+    snapshot.insert("a".into(), "1-α".into());
+    snapshot.insert("b".into(), "2-β".into());
+    snapshot.insert("c".into(), "3-γ".into());
+    snapshot.insert("d".into(), "4-δ".into());
+    let n = NotepadSnapshot {
+        timestamp: 0,
+        snapshot,
+        trigger_node: "t".into(),
+    };
+    assert_eq!(n.snapshot.len(), 4);
+}
+
+#[test]
+fn evolution_op_with_unicode_min_delta_4() {
+    use sisyphus_types::types::EvolutionOp;
+    let op = EvolutionOp::AdjustFuel {
+        node_name: "n".into(),
+        delta: i64::MIN,
+    };
+    let j = serde_json::to_string(&op).unwrap();
+    let back: EvolutionOp = serde_json::from_str(&j).unwrap();
+    match back {
+        EvolutionOp::AdjustFuel { delta, .. } => {
+            assert_eq!(delta, i64::MIN);
+        }
+        _ => panic!("wrong"),
+    }
+}
+
+#[test]
+fn sisyphus_notepad_with_unicode_section_id_5_chars_long() {
+    let mut n = SisyphusNotepad::default();
+    n.write_section("αβγδε".into(), "v".into());
+    let read = n.read_section("αβγδε");
+    assert!(read.is_some());
+}
+
+#[test]
+fn sisyphus_notepad_with_unicode_section_id_5_emojis() {
+    let mut n = SisyphusNotepad::default();
+    n.write_section("🔍🔭🌟📚💡".into(), "v".into());
+    let read = n.read_section("🔍🔭🌟📚💡");
+    assert!(read.is_some());
+}
