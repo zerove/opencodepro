@@ -3454,3 +3454,127 @@ fn feedback_with_unicode_only_corrected_3() {
     let back: Feedback = serde_json::from_str(&j).unwrap();
     assert_eq!(back.corrected_output, "修正-α-β-γ-δ-ε-🔍");
 }
+
+// ---------------------------------------------------------------------------
+// More tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn feedback_with_unicode_only_corrected_4() {
+    use sisyphus_types::Feedback;
+    let f = Feedback {
+        agent_id: "a".into(),
+        original_request: "r".into(),
+        original_output: "o".into(),
+        corrected_output: "修正-α-🔍".into(),
+        timestamp: 0,
+        tags: vec![],
+    };
+    let j = serde_json::to_string(&f).unwrap();
+    let back: Feedback = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.corrected_output, "修正-α-🔍");
+}
+
+#[test]
+fn vector_record_with_unicode_metadata_3_keys_3() {
+    use sisyphus_types::VectorRecord;
+    let v = VectorRecord {
+        key: "k".into(),
+        embedding: vec![0.5],
+        metadata: serde_json::json!({
+            "k1-α": "v1",
+            "k2-β": "v2",
+            "k3-γ": "v3"
+        }),
+        timestamp: 0,
+    };
+    let j = serde_json::to_string(&v).unwrap();
+    let back: VectorRecord = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.metadata["k2-β"], "v2");
+}
+
+#[test]
+fn plugin_descriptor_with_unicode_2_segment_path_2() {
+    use sisyphus_types::PluginDescriptor;
+    let pd = PluginDescriptor {
+        name: "p".into(),
+        version: "1".into(),
+        wasm_path: std::path::PathBuf::from("/a/α-β.wasm"),
+        tool_id: "t".into(),
+        fuel_limit: 1000,
+        checksum: None,
+    };
+    let j = serde_json::to_string(&pd).unwrap();
+    let back: PluginDescriptor = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.wasm_path, std::path::PathBuf::from("/a/α-β.wasm"));
+}
+
+#[test]
+fn agent_message_with_unicode_payload_2_keys_4() {
+    use sisyphus_types::AgentMessage;
+    let m = AgentMessage {
+        from: "a".into(),
+        to: "b".into(),
+        kind: "request".into(),
+        payload: serde_json::json!({
+            "k1": "v1-α",
+            "k2": "v2-β"
+        }),
+        correlation_id: "c".into(),
+    };
+    let j = serde_json::to_string(&m).unwrap();
+    let back: AgentMessage = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.payload["k1"], "v1-α");
+    assert_eq!(back.payload["k2"], "v2-β");
+}
+
+#[test]
+fn benchmark_run_with_unicode_metrics_2_keys_3() {
+    use sisyphus_types::BenchmarkRun;
+    let b = BenchmarkRun {
+        name: "n".into(),
+        timestamp: 0,
+        duration_secs: 0.0,
+        success: true,
+        metrics: serde_json::json!({
+            "k1": "v1-α",
+            "k2": "v2-β"
+        }),
+    };
+    let j = serde_json::to_string(&b).unwrap();
+    let back: BenchmarkRun = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.metrics["k1"], "v1-α");
+    assert_eq!(back.metrics["k2"], "v2-β");
+}
+
+#[test]
+fn trigger_def_with_unicode_pattern_with_special() {
+    use sisyphus_types::TriggerDef;
+    let t = TriggerDef {
+        pattern: Some("!@#$%^&*()α-β🔍".into()),
+        tools: vec!["t".into()],
+        description: Some("d".into()),
+        hook_phase: Some("before".into()),
+        hook_effect: Some("e".into()),
+        hook_message: Some("m".into()),
+    };
+    let j = serde_json::to_string(&t).unwrap();
+    let back: TriggerDef = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.pattern.as_deref(), Some("!@#$%^&*()α-β🔍"));
+}
+
+#[test]
+fn feedback_with_unicode_only_agent_id_3() {
+    use sisyphus_types::Feedback;
+    let f = Feedback {
+        agent_id: "agent-α-🔍-β-γ-δ-ε".into(),
+        original_request: "r".into(),
+        original_output: "o".into(),
+        corrected_output: "c".into(),
+        timestamp: 0,
+        tags: vec![],
+    };
+    let j = serde_json::to_string(&f).unwrap();
+    let back: Feedback = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.agent_id, "agent-α-🔍-β-γ-δ-ε");
+}
