@@ -295,7 +295,7 @@ impl MySisyphusBridge {
         tokio::spawn(async move {
             loop {
                 // Generate current anomaly report
-                let report = detector.generate_report();
+                let report = detector.lock().generate_report();
                 for anomaly in &report.anomalies {
                     let severity_str = match anomaly.severity {
                         sisyphus_core::AnomalySeverity::Low => "low",

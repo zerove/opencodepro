@@ -351,6 +351,19 @@ impl Config {
         if let Some(v) = env_f64("SISYPHUS_COGNITIVE_LOOP_ADAPTIVE_DEPTH_CONVERGENCE_THRESHOLD") {
             self.cognitive_loop.adaptive_depth.convergence_threshold = v;
         }
+        // anomaly_detector (cognitive loop v2)
+        if let Some(v) = env_f64("SISYPHUS_COGNITIVE_LOOP_ANOMALY_DETECTOR_FUEL_THRESHOLD") {
+            self.cognitive_loop.anomaly_detector.fuel_threshold = v;
+        }
+        if let Some(v) = env_f64("SISYPHUS_COGNITIVE_LOOP_ANOMALY_DETECTOR_DURATION_THRESHOLD") {
+            self.cognitive_loop.anomaly_detector.duration_threshold = v;
+        }
+        if let Some(v) = env_f64("SISYPHUS_COGNITIVE_LOOP_ANOMALY_DETECTOR_ERROR_RATE_THRESHOLD") {
+            self.cognitive_loop.anomaly_detector.error_rate_threshold = v;
+        }
+        if let Some(v) = env_usize("SISYPHUS_COGNITIVE_LOOP_ANOMALY_DETECTOR_HISTORY_WINDOW") {
+            self.cognitive_loop.anomaly_detector.history_window = v;
+        }
         // token_budget: 空字符串表示清除上限 (None)，非空数字设置上限 (Some(cap))
         if let Some(v) = env_optional_u64("SISYPHUS_COGNITIVE_LOOP_TOKEN_BUDGET_CAP") {
             self.cognitive_loop.token_budget.cap = v;
@@ -742,5 +755,58 @@ sandbox = { max_memory_pages = 10, default_fuel = 1000000, wasm_tools_dir = "too
         config.apply_env_overrides();
         assert!(!config.llm.embedding.allow_dummy_embeddings);
         std::env::remove_var("SISYPHUS_LLM_EMBEDDING_ALLOW_DUMMY");
+    }
+
+    #[test]
+    fn test_apply_env_overrides_anomaly_detector() {
+        std::env::set_var(
+            "SISYPHUS_COGNITIVE_LOOP_ANOMALY_DETECTOR_FUEL_THRESHOLD",
+            "4.5",
+        );
+        std::env::set_var(
+            "SISYPHUS_COGNITIVE_LOOP_ANOMALY_DETECTOR_DURATION_THRESHOLD",
+            "5.5",
+        );
+        std::env::set_var(
+            "SISYPHUS_COGNITIVE_LOOP_ANOMALY_DETECTOR_ERROR_RATE_THRESHOLD",
+            "0.42",
+        );
+        std::env::set_var(
+            "SISYPHUS_COGNITIVE_LOOP_ANOMALY_DETECTOR_HISTORY_WINDOW",
+            "50",
+        );
+
+        let mut config = Config::default();
+        config.apply_env_overrides();
+
+        assert!((config.cognitive_loop.anomaly_detector.fuel_threshold - 4.5).abs() < 1e-9);
+        assert!((config.cognitive_loop.anomaly_detector.duration_threshold - 5.5).abs() < 1e-9);
+        assert!((config.cognitive_loop.anomaly_detector.error_rate_threshold - 0.42).abs() < 1e-9);
+        assert_eq!(config.cognitive_loop.anomaly_detector.history_window, 50);
+
+        std::env::remove_var("SISYPHUS_COGNITIVE_LOOP_ANOMALY_DETECTOR_FUEL_THRESHOLD");
+        std::env::remove_var("SISYPHUS_COGNITIVE_LOOP_ANOMALY_DETECTOR_DURATION_THRESHOLD");
+        std::env::remove_var("SISYPHUS_COGNITIVE_LOOP_ANOMALY_DETECTOR_ERROR_RATE_THRESHOLD");
+        std::env::remove_var("SISYPHUS_COGNITIVE_LOOP_ANOMALY_DETECTOR_HISTORY_WINDOW");
+    }
+
+    #[test]
+    fn test_apply_env_overrides_anomaly_detector_missing_keeps_defaults() {
+        // 未设置环境变量时应保持 Default 值
+        for k in [
+            "SISYPHUS_COGNITIVE_LOOP_ANOMALY_DETECTOR_FUEL_THRESHOLD",
+            "SISYPHUS_COGNITIVE_LOOP_ANOMALY_DETECTOR_DURATION_THRESHOLD",
+            "SISYPHUS_COGNITIVE_LOOP_ANOMALY_DETECTOR_ERROR_RATE_THRESHOLD",
+            "SISYPHUS_COGNITIVE_LOOP_ANOMALY_DETECTOR_HISTORY_WINDOW",
+        ] {
+            std::env::remove_var(k);
+        }
+
+        let mut config = Config::default();
+        config.apply_env_overrides();
+        assert!((config.cognitive_loop.anomaly_detector.fuel_threshold - 2.0).abs() < 1e-9);
+        assert!((config.cognitive_loop.anomaly_detector.duration_threshold - 3.0).abs() < 1e-9);
+        assert!((config.cognitive_loop.anomaly_detector.error_rate_threshold - 0.3).abs() < 1e-9);
+        assert_eq!(config.cognitive_loop.anomaly_detector.history_window, 20);
     }
 }

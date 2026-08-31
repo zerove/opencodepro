@@ -19,6 +19,10 @@ pub struct CognitiveLoopConfig {
     /// Adaptive depth controller parameters (cognitive loop v2).
     #[serde(default)]
     pub adaptive_depth: AdaptiveDepthConfig,
+    /// Anomaly detector thresholds (cognitive loop v2).
+    /// 用于驱动 `AnomalyDetector::new(...)` 而非硬编码默认值。
+    #[serde(default)]
+    pub anomaly_detector: AnomalyDetectorConfig,
     /// 反思/演进阶段 token 预算（review P2-8 step 2 + 接线）。
     ///  为硬上限； 保留比例（默认 0.1 = 10%）。
     /// 使用  判定跳过 LLM 调用。
@@ -83,7 +87,69 @@ fn default_cognitive_loop() -> CognitiveLoopConfig {
         convergence_threshold: 0.15,
         llm_stage_timeout_secs: default_llm_stage_timeout_secs(),
         adaptive_depth: AdaptiveDepthConfig::default(),
+        anomaly_detector: AnomalyDetectorConfig::default(),
         token_budget: TokenBudgetConfig::default(),
+    }
+}
+
+// ── AnomalyDetectorConfig ──────────────────────────────────
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+/// Anomaly Detector Config.
+pub struct AnomalyDetectorConfig {
+    /// 燃料（fuel）异常倍数阈值：观测值 > expected * `fuel_threshold` 触发异常。
+    pub fuel_threshold: f64,
+    /// 耗时异常倍数阈值：观测值 > expected * `duration_threshold` 触发异常。
+    pub duration_threshold: f64,
+    /// 错误率阈值：节点历史错误率 > `error_rate_threshold` 触发异常。
+    pub error_rate_threshold: f64,
+    /// 移动平均的窗口大小（≥ 1）。
+    pub history_window: usize,
+}
+
+impl Default for AnomalyDetectorConfig {
+    fn default() -> Self {
+        Self {
+            fuel_threshold: 2.0,
+            duration_threshold: 3.0,
+            error_rate_threshold: 0.3,
+            history_window: 20,
+        }
+    }
+}
+
+impl AnomalyDetectorConfig {
+    /// Validate all thresholds are finite positive numbers and history_window ≥ 1.
+    ///
+    /// # Errors
+    /// Returns [`TypesError::ConfigValidationError`] on out-of-range values.
+    pub fn validate(&self) -> Result<(), TypesError> {
+        // 倍数阈值（fuel/duration）必须严格 > 0
+        for (name, value) in [
+            ("fuel_threshold", self.fuel_threshold),
+            ("duration_threshold", self.duration_threshold),
+        ] {
+            if !value.is_finite() || value <= 0.0 {
+                return Err(TypesError::ConfigValidationError(format!(
+                    "cognitive_loop.anomaly_detector.{name} must be > 0 (got {value})"
+                )));
+            }
+        }
+        // error_rate ∈ [0.0, 1.0] — 0.0 表示"零容忍"，1.0 表示"全部都视为异常"
+        if !self.error_rate_threshold.is_finite()
+            || !(0.0..=1.0).contains(&self.error_rate_threshold)
+        {
+            return Err(TypesError::ConfigValidationError(
+                "cognitive_loop.anomaly_detector.error_rate_threshold must be a finite number between 0.0 and 1.0"
+                    .into(),
+            ));
+        }
+        if self.history_window == 0 {
+            return Err(TypesError::ConfigValidationError(
+                "cognitive_loop.anomaly_detector.history_window must be ≥ 1".into(),
+            ));
+        }
+        Ok(())
     }
 }
 
@@ -122,6 +188,7 @@ impl CognitiveLoopConfig {
             ));
         }
         self.adaptive_depth.validate()?;
+        self.anomaly_detector.validate()?;
         self.token_budget.validate()?;
         Ok(())
     }

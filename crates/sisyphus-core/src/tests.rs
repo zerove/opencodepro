@@ -733,6 +733,7 @@ async fn test_strategic_manager_evolution_verification() {
             convergence_threshold: 0.01,
             llm_stage_timeout_secs: 30,
             adaptive_depth: sisyphus_types::config::AdaptiveDepthConfig::default(),
+            anomaly_detector: sisyphus_types::config::AnomalyDetectorConfig::default(),
             token_budget: sisyphus_types::config::TokenBudgetConfig::default(),
         };
 

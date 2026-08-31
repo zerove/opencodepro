@@ -776,10 +776,16 @@ fn test_delegate_run_from_file() {
 
 #[test]
 fn test_search_no_network_graceful_error() {
+    // 调用真实 DuckDuckGo，断言 CLI 不会 panic (即 process 正常退出)。
+    // 在网络可达时返回结果；在离线时返回 ToolError——两种路径都不应 panic。
+    // 该测试不假设网络状态：原断言 !stderr.is_empty() 在在线环境下会 flaky 失败。
     let out = run_cli(&["search", "zzzz_nonexistent_query_xxxxx"]);
-    // Without network, should fail with a WebError, not panic
     let stderr = String::from_utf8_lossy(&out.stderr);
-    assert!(!stderr.is_empty(), "expected error output when no network");
+    // 进程必须正常退出（成功或失败均可，但不能被 panic 杀掉）
+    assert!(
+        !stderr.contains("panic") && !stderr.contains("thread '"),
+        "search command should not panic; stderr={stderr}"
+    );
 }
 
 #[test]

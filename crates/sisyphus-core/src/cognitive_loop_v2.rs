@@ -82,14 +82,53 @@ impl Default for AnomalyDetector {
 impl AnomalyDetector {
     /// New.
     pub fn new(fuel_threshold: f64, duration_threshold: f64, error_rate_threshold: f64) -> Self {
+        Self::with_history_window(fuel_threshold, duration_threshold, error_rate_threshold, 20)
+    }
+
+    /// 使用完整参数（含 `history_window`）构造。
+    /// 当前实现尚未在 EWMA 中消费 `history_window`，但保留字段供
+    /// 未来切换为滑动窗口策略时直接使用。
+    pub fn with_history_window(
+        fuel_threshold: f64,
+        duration_threshold: f64,
+        error_rate_threshold: f64,
+        history_window: usize,
+    ) -> Self {
         Self {
             history: Arc::new(Mutex::new(HashMap::new())),
             fuel_threshold,
             duration_threshold,
             error_rate_threshold,
-            history_window: 20,
+            history_window: history_window.max(1),
             total_executions: Arc::new(Mutex::new(0)),
         }
+    }
+
+    /// 从类型层 `AnomalyDetectorConfig` 构造。
+    /// 在 `StrategicManager` 初始化阶段被调用，使阈值可配置而非硬编码。
+    pub fn from_config(cfg: &sisyphus_types::config::AnomalyDetectorConfig) -> Self {
+        Self::with_history_window(
+            cfg.fuel_threshold,
+            cfg.duration_threshold,
+            cfg.error_rate_threshold,
+            cfg.history_window,
+        )
+    }
+
+    /// 运行时覆盖阈值（用于 `apply_cognitive_loop_config`）。
+    /// 保留 `history` 缓冲以避免中断正在进行的 EWMA 跟踪。
+    /// 外部调用方需在 `Arc<Mutex<AnomalyDetector>>` 下持有写锁。
+    pub fn apply_config(
+        &mut self,
+        fuel_threshold: f64,
+        duration_threshold: f64,
+        error_rate_threshold: f64,
+        history_window: usize,
+    ) {
+        self.fuel_threshold = fuel_threshold;
+        self.duration_threshold = duration_threshold;
+        self.error_rate_threshold = error_rate_threshold;
+        self.history_window = history_window.max(1);
     }
 
     /// 记录一次节点执行观测并检查异常。
@@ -529,5 +568,72 @@ mod tests {
         }
         let report = detector.generate_report();
         assert!(!report.anomalies.is_empty() || report.should_extra_reflect);
+    }
+
+    #[test]
+    fn test_anomaly_detector_with_history_window_clamps_to_one() {
+        // history_window=0 必须被静默纠正为 1（避免后续除零）
+        let det = AnomalyDetector::with_history_window(2.0, 3.0, 0.3, 0);
+        assert_eq!(det.history_window, 1);
+    }
+
+    #[test]
+    fn test_anomaly_detector_apply_config_overrides_thresholds() {
+        let mut det = AnomalyDetector::default();
+        // 默认阈值是 2.0/3.0/0.3
+        assert!((det.fuel_threshold - 2.0).abs() < 1e-9);
+
+        det.apply_config(5.0, 7.0, 0.1, 50);
+
+        assert!((det.fuel_threshold - 5.0).abs() < 1e-9);
+        assert!((det.duration_threshold - 7.0).abs() < 1e-9);
+        assert!((det.error_rate_threshold - 0.1).abs() < 1e-9);
+        assert_eq!(det.history_window, 50);
+    }
+
+    #[test]
+    fn test_anomaly_detector_apply_config_preserves_history() {
+        // 应用新阈值不应清零 EWMA 历史——保留观测趋势。
+        let mut det = AnomalyDetector::new(2.0, 3.0, 0.3);
+        for _ in 0..3 {
+            det.observe("node_h", 100, 50, true);
+        }
+        // 取出历史快照：在 Arc<Mutex<HashMap>> 内部
+        let history_before = det.history.lock().get("node_h").cloned();
+        assert!(history_before.is_some(), "history should be populated");
+
+        det.apply_config(4.0, 4.0, 0.5, 30);
+
+        let history_after = det.history.lock().get("node_h").cloned();
+        assert_eq!(
+            history_before, history_after,
+            "EWMA history must be preserved across apply_config"
+        );
+    }
+
+    #[test]
+    fn test_anomaly_detector_from_config_matches_with_history_window() {
+        use sisyphus_types::config::AnomalyDetectorConfig;
+        let cfg = AnomalyDetectorConfig {
+            fuel_threshold: 1.5,
+            duration_threshold: 2.5,
+            error_rate_threshold: 0.4,
+            history_window: 10,
+        };
+        let det = AnomalyDetector::from_config(&cfg);
+        assert!((det.fuel_threshold - 1.5).abs() < 1e-9);
+        assert!((det.duration_threshold - 2.5).abs() < 1e-9);
+        assert!((det.error_rate_threshold - 0.4).abs() < 1e-9);
+        assert_eq!(det.history_window, 10);
+    }
+
+    #[test]
+    fn test_anomaly_detector_apply_config_clamps_history_window() {
+        let mut det = AnomalyDetector::default();
+        det.apply_config(2.0, 3.0, 0.3, 0);
+        assert_eq!(
+            det.history_window, 1,
+            "apply_config must clamp history_window to ≥ 1"
+        );
     }
 }

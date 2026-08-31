@@ -99,7 +99,7 @@ pub struct StrategicManager {
     /// 用于多维偏差分析的深度反思器
     pub deep_reflector: Arc<parking_lot::RwLock<DeepReflector>>,
     /// 认知循环 v2：运行时异常检测
-    pub anomaly_detector: Arc<AnomalyDetector>,
+    pub anomaly_detector: Arc<Mutex<AnomalyDetector>>,
     /// 认知循环 v2：自适应深度控制
     pub depth_controller: AdaptiveDepthController,
     /// 反思/演进阶段 token 预算（review P2-8 step 2 接线）。
@@ -153,7 +153,7 @@ impl StrategicManager {
                 FailurePatternLibrary::new(),
             )),
             deep_reflector: Arc::new(parking_lot::RwLock::new(DeepReflector::new())),
-            anomaly_detector: Arc::new(AnomalyDetector::default()),
+            anomaly_detector: Arc::new(Mutex::new(AnomalyDetector::default())),
             depth_controller: AdaptiveDepthController::default(),
             token_budget: Arc::new(parking_lot::RwLock::new(TokenBudgetTracker::unbounded())),
         }
@@ -174,6 +174,16 @@ impl StrategicManager {
             ad.min_improvement,
         );
 
+        // AnomalyDetector 阈值（review 7.1）：配置变化时同步覆盖。
+        // 保留 `history` 缓冲以避免中断正在进行的 EWMA 跟踪。
+        let an = &cl.anomaly_detector;
+        self.anomaly_detector.lock().apply_config(
+            an.fuel_threshold,
+            an.duration_threshold,
+            an.error_rate_threshold,
+            an.history_window,
+        );
+
         // 反思/演进阶段 token 预算（review P2-8 step 2 接线）。
         // 配置变化时重建 tracker（reset 共享 Arc），保留累计 usage 与 cap 切换语义。
         let tb = &cl.token_budget;
@@ -190,6 +200,9 @@ impl StrategicManager {
             convergence_threshold = cl.convergence_threshold,
             initial_budget = ad.initial_budget,
             decay = ad.decay,
+            anomaly_fuel_threshold = self.anomaly_detector.lock().fuel_threshold,
+            anomaly_duration_threshold = self.anomaly_detector.lock().duration_threshold,
+            anomaly_error_rate_threshold = self.anomaly_detector.lock().error_rate_threshold,
             token_budget_cap = ?tb.cap,
             token_budget_reserve = tb.reserve_ratio,
             "Cognitive loop config applied"

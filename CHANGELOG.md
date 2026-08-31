@@ -26,8 +26,23 @@
   - Windows / macOS / Linux 一致体验（`cargo install just`）
   - 镜像 `make dev` / `ci-quick` / `dev-fmt` / `dev-clippy` / `dev-test` / `ci-bridge` 等关键目标
   - 不设置 `set shell`，保留各平台默认 shell 行为
+- **AnomalyDetector 阈值配置化** (TODO 7.1 第二项)
+  - `AnomalyDetectorConfig` 类型（`fuel_threshold`/`duration_threshold`/`error_rate_threshold`/`history_window`）
+  - 校验：fuel/duration > 0 finite；error_rate ∈ [0.0, 1.0] finite；history_window ≥ 1
+  - 端到端接线：`StrategicManager::apply_cognitive_loop_config` 调用 `anomaly_detector.apply_config(...)`
+    同步覆盖运行时阈值（保留 EWMA 历史）
+  - env override：4 个 `SISYPHUS_COGNITIVE_LOOP_ANOMALY_DETECTOR_*` 变量
+  - `AnomalyDetector::from_config()` / `with_history_window()` 工厂方法
+  - `history_window = 0` 静默纠正为 `1`（避免后续除零）
+  - 8 个单元测试（`AnomalyDetectorConfig` 6 个 + `apply_config`/`from_config` 2 个）+ 2 个 env override 测试
 
 ### Fixed
+- **`test_search_no_network_graceful_error` flaky 测试**: 原断言 `!stderr.is_empty()`
+  在网络可达环境下会失败（DDG 成功响应，stderr 无内容）。
+  重写为"不 panic" 断言（`!stderr.contains("panic") && !stderr.contains("thread '")`），
+  同时覆盖在线与离线两条路径。
+
+### Changed
 - **clippy -D warnings** 7 处 rustc 1.98 升级后引入的编译错误：
   - `sisyphus-types/asset.rs` `AssetKind::SOP` / `AssetContent::SOP`
     → `#[allow(clippy::upper_case_acronyms)]`（SOP 是业务术语）
@@ -59,8 +74,10 @@
   - 4 个新边界测试（`test 22 全绿`）
 
 ### Verified
-- `cargo clippy --workspace --exclude {bridge,sandbox,sandboxd,tests} -- -D warnings` 0 错误
-- `cargo test  --workspace --exclude ... --lib` 23 套件 0 失败
+- `cargo check-all` 0 错误（默认工作区排除 bridge/sandbox/sandboxd/tests）
+- `cargo test-all` 全量套件 0 失败（含 sisyphus-types 35 + sisyphus-core 84 + sisyphus-cli 51 + bridge REST 7 + skills REST 9）
+- AnomalyDetectorConfig 新增 8 个单元测试 + 2 个 env override 测试，全部通过
+- `test_search_no_network_graceful_error` flaky 修复后回归测试通过
 - `cargo fmt --all` 风格一致
 
 [Unreleased]: https://github.com/zerove/opencodepro/compare/master...HEAD

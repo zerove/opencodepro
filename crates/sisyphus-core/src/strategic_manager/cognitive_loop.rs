@@ -4,6 +4,7 @@
 //! 每个阶段被拆分为独立的辅助函数，使编排逻辑保持清晰，
 //! 且每个阶段都可以独立演进。
 
+use parking_lot::Mutex;
 use std::sync::Arc;
 use std::time::{Instant, SystemTime};
 
@@ -70,7 +71,7 @@ impl StrategicManager {
         // 上一轮遗留的置信度历史/异常基线会让本轮误判收敛或误报异常（reset 此前无任何调用点）。
         // 注意：这缩小而非消除竞态——彻底修复需将二者改为 per-run 实例，见架构评审 P0-1。
         self.depth_controller.reset();
-        self.anomaly_detector.reset();
+        self.anomaly_detector.lock().reset();
 
         // A2 修复：以 sop_id + 纳秒时间戳为 active_executions key，
         // 避免同一 sop 的并发执行互相覆盖状态。
@@ -314,7 +315,7 @@ impl StrategicManager {
             let should_continue = self.depth_controller.observe_iteration(confidence);
 
             // v2：检查异常报告是否触发额外反思
-            let anomaly_report = self.anomaly_detector.generate_report();
+            let anomaly_report = self.anomaly_detector.lock().generate_report();
             if anomaly_report.should_extra_reflect {
                 tracing::warn!(
                     anomalies = anomaly_report.anomalies.len(),
@@ -1218,7 +1219,7 @@ fn spawn_trace_recorder(
     store_clone: Arc<MfsStore>,
     sop_id_clone: String,
     user_event_tx: Option<mpsc::UnboundedSender<ExecutionEvent>>,
-    anomaly_det: Arc<AnomalyDetector>,
+    anomaly_det: Arc<Mutex<AnomalyDetector>>,
     cognitive_trace: Option<Arc<crate::execution_manager::CognitiveTraceBuffer>>,
 ) {
     tokio::spawn(async move {
@@ -1231,7 +1232,7 @@ fn spawn_trace_recorder(
                     duration_ms,
                     ..
                 } => {
-                    anomaly_det.observe(
+                    anomaly_det.lock().observe(
                         node_name,
                         *fuel_consumed as u64,
                         *duration_ms as u64,
@@ -1244,7 +1245,7 @@ fn spawn_trace_recorder(
                     duration_ms,
                     ..
                 } => {
-                    anomaly_det.observe(
+                    anomaly_det.lock().observe(
                         node_name,
                         *fuel_consumed as u64,
                         *duration_ms as u64,

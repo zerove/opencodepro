@@ -230,6 +230,30 @@ convergence_threshold = 0.15
 # 类型: f64 | 默认: 0.1
 # reserve_ratio = 0.1
 
+# ── 异常检测器阈值 (认知循环 v2) ───────────────────────────
+# 监控每节点执行指标（燃料/耗时/错误率），超过阈值倍数时触发内联反思。
+# 类型层 `AnomalyDetectorConfig` 端到端接通。
+[cognitive_loop.anomaly_detector]
+# 燃料倍数阈值：观测值 > expected × fuel_threshold 触发异常
+# 环境变量: SISYPHUS_COGNITIVE_LOOP_ANOMALY_DETECTOR_FUEL_THRESHOLD
+# 类型: f64 (> 0) | 默认: 2.0
+# fuel_threshold = 2.0
+
+# 耗时倍数阈值：观测值 > expected × duration_threshold 触发异常
+# 环境变量: SISYPHUS_COGNITIVE_LOOP_ANOMALY_DETECTOR_DURATION_THRESHOLD
+# 类型: f64 (> 0) | 默认: 3.0
+# duration_threshold = 3.0
+
+# 错误率阈值：节点历史错误率 > error_rate_threshold 触发异常
+# 环境变量: SISYPHUS_COGNITIVE_LOOP_ANOMALY_DETECTOR_ERROR_RATE_THRESHOLD
+# 类型: f64 [0.0, 1.0] | 默认: 0.3
+# error_rate_threshold = 0.3
+
+# 移动平均的窗口大小（≥ 1；内部若传入 0 会被静默纠正为 1）
+# 环境变量: SISYPHUS_COGNITIVE_LOOP_ANOMALY_DETECTOR_HISTORY_WINDOW
+# 类型: usize (≥ 1) | 默认: 20
+# history_window = 20
+
 # ── 混沌工程参数 ──────────────────────────────────────────
 [chaos]
 # 启动时是否启用混沌工程

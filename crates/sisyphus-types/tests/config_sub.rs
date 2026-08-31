@@ -10,7 +10,7 @@
 
 use sisyphus_types::config::llm::default_llm_config;
 use sisyphus_types::config::sub::{
-    AdaptiveDepthConfig, ChaosConfig, CognitiveLoopConfig, TokenBudgetConfig,
+    AdaptiveDepthConfig, AnomalyDetectorConfig, ChaosConfig, CognitiveLoopConfig, TokenBudgetConfig,
 };
 
 // ---------------------------------------------------------------------------
@@ -133,6 +133,105 @@ fn adaptive_depth_decay_boundaries_ok() {
     assert!(c.validate().is_ok());
     c.decay = 1.0;
     assert!(c.validate().is_ok());
+}
+
+// ---------------------------------------------------------------------------
+// AnomalyDetectorConfig
+// ---------------------------------------------------------------------------
+
+#[test]
+fn anomaly_detector_default_validates_ok() {
+    let c = AnomalyDetectorConfig::default();
+    assert!(c.validate().is_ok());
+    // 默认值与 2026-08-31 之前硬编码常量保持一致
+    assert!((c.fuel_threshold - 2.0).abs() < 1e-9);
+    assert!((c.duration_threshold - 3.0).abs() < 1e-9);
+    assert!((c.error_rate_threshold - 0.3).abs() < 1e-9);
+    assert_eq!(c.history_window, 20);
+}
+
+#[test]
+fn anomaly_detector_fuel_threshold_zero_rejected() {
+    let c = AnomalyDetectorConfig {
+        fuel_threshold: 0.0,
+        ..AnomalyDetectorConfig::default()
+    };
+    let err = c.validate().expect_err("fuel_threshold=0 should fail");
+    let msg = format!("{err}");
+    assert!(
+        msg.contains("fuel_threshold"),
+        "expected fuel_threshold in error, got: {msg}"
+    );
+}
+
+#[test]
+fn anomaly_detector_duration_threshold_negative_rejected() {
+    let c = AnomalyDetectorConfig {
+        duration_threshold: -1.0,
+        ..AnomalyDetectorConfig::default()
+    };
+    let err = c.validate().expect_err("negative duration should fail");
+    let msg = format!("{err}");
+    assert!(
+        msg.contains("duration_threshold"),
+        "expected duration_threshold in error, got: {msg}"
+    );
+}
+
+#[test]
+fn anomaly_detector_error_rate_out_of_range_rejected() {
+    let c = AnomalyDetectorConfig {
+        error_rate_threshold: 1.5,
+        ..AnomalyDetectorConfig::default()
+    };
+    assert!(c.validate().is_err());
+}
+
+#[test]
+fn anomaly_detector_error_rate_nan_rejected() {
+    let c = AnomalyDetectorConfig {
+        error_rate_threshold: f64::NAN,
+        ..AnomalyDetectorConfig::default()
+    };
+    assert!(c.validate().is_err(), "NaN must be rejected");
+}
+
+#[test]
+fn anomaly_detector_history_window_zero_rejected() {
+    let c = AnomalyDetectorConfig {
+        history_window: 0,
+        ..AnomalyDetectorConfig::default()
+    };
+    let err = c.validate().expect_err("history_window=0 should fail");
+    let msg = format!("{err}");
+    assert!(
+        msg.contains("history_window"),
+        "expected history_window in error, got: {msg}"
+    );
+}
+
+#[test]
+fn anomaly_detector_boundary_values_accepted() {
+    let c = AnomalyDetectorConfig {
+        fuel_threshold: 1.0,
+        duration_threshold: 1.0,
+        error_rate_threshold: 0.0,
+        history_window: 1,
+    };
+    assert!(c.validate().is_ok());
+}
+
+#[test]
+fn anomaly_detector_embedded_in_cognitive_loop_validates() {
+    // `CognitiveLoopConfig::validate()` 必须递归校验 anomaly_detector
+    let mut c = CognitiveLoopConfig::default();
+    c.anomaly_detector.history_window = 0;
+    let err = c.validate().expect_err("embedded history_window=0 should fail");
+    let msg = format!("{err}");
+    assert!(
+        msg.contains("history_window"),
+        "expected nested validation, got: {msg}"
+    );
 }
 
 // ---------------------------------------------------------------------------
