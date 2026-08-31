@@ -119,47 +119,55 @@ pub(super) async fn health_handler(State(state): State<RestApiState>) -> impl In
     })
 }
 
+/// Pure logic for the deep health check: classify each component as
+/// `ok` / `degraded` / `absent` and return a `(all_ok, components_map)` pair
+/// ready to be serialized. Extracted from `health_deep_handler` so the
+/// classification rules can be unit-tested without spinning up an axum
+/// router and a real `RestApiState`.
+pub(super) fn health_deep_assess(
+    session_db: &std::path::Path,
+    shared_http_present: bool,
+) -> (bool, serde_json::Map<String, serde_json::Value>) {
+    let mut components = serde_json::Map::new();
+    let mut all_ok = true;
+
+    // 1) Session DB: file 已存在 → ok；否则父目录存在 → ok；否则 degraded。
+    let db_parent_exists = session_db.parent().is_some_and(|p| p.exists());
+    let db_ok = session_db.exists() || db_parent_exists;
+    components.insert(
+        "session_db".into(),
+        serde_json::json!({
+            "status": if db_ok { "ok" } else { "degraded" },
+            "path": session_db.display().to_string(),
+        }),
+    );
+    all_ok &= db_ok;
+
+    // 2) Shared HTTP client: 缺失在 CLI 模式下是预期的，不算降级。
+    let http_status = if shared_http_present { "ok" } else { "absent" };
+    components.insert(
+        "shared_http".into(),
+        serde_json::json!({ "status": http_status }),
+    );
+
+    // 3) Kernel handle: 构造时已注入，仅占位。
+    let kernel_ok = true;
+    components.insert(
+        "kernel".into(),
+        serde_json::json!({ "status": if kernel_ok { "ok" } else { "degraded" } }),
+    );
+    all_ok &= kernel_ok;
+
+    (all_ok, components)
+}
+
 /// Deep health check: probe every startup dependency (session DB directory,
 /// shared HTTP client presence, kernel handle) and report per-component
 /// status. Returns 200 only when every check is OK; partial degradation
 /// returns 207 Multi-Status with detailed per-component status. Useful for
 /// K8s readiness probes and the TUI `:health` panel (阶段 7.1).
 pub(super) async fn health_deep_handler(State(state): State<RestApiState>) -> impl IntoResponse {
-    let mut components = serde_json::Map::new();
-    let mut all_ok = true;
-
-    // 1) Session DB path: 目录存在或父目录可创建即视为可用。
-    //    DB 文件本身可能尚未创建（首次启动），所以仅检查父目录存在。
-    let db_parent_exists = state.session_db.parent().is_some_and(|p| p.exists());
-    let db_ok = state.session_db.exists() || db_parent_exists;
-    components.insert(
-        "session_db".into(),
-        serde_json::json!({
-            "status": if db_ok { "ok" } else { "degraded" },
-            "path": state.session_db.display().to_string(),
-        }),
-    );
-    all_ok &= db_ok;
-
-    // 2) Shared HTTP client (LLM provider pool) — None 在 CLI/dev 模式下是预期的。
-    let http_status = if state.shared_http.is_some() {
-        "ok"
-    } else {
-        "absent"
-    };
-    components.insert(
-        "shared_http".into(),
-        serde_json::json!({ "status": http_status }),
-    );
-    // shared_http 缺失不算降级（CLI 模式不依赖 LLM）。
-
-    // 3) Kernel handle: 仅做引用获取，不调用可能阻塞的 status 方法。
-    let kernel_ok = true; // kernel handle 始终存在（构造时已注入）。
-    components.insert(
-        "kernel".into(),
-        serde_json::json!({ "status": if kernel_ok { "ok" } else { "degraded" } }),
-    );
-    all_ok &= kernel_ok;
+    let (all_ok, components) = health_deep_assess(&state.session_db, state.shared_http.is_some());
 
     let body = serde_json::json!({
         "status": if all_ok { "ok" } else { "degraded" },
@@ -1261,4 +1269,86 @@ pub(super) async fn intervene_cognitive_map_handler(
             "message": if applied { "intervention applied" } else { "intervention broadcast but no active execution found" },
         })),
     )
+}
+
+// ---------------------------------------------------------------------------
+// 单元测试：health_deep_assess 纯函数（无需完整桥接服务）
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod health_deep_tests {
+    use super::health_deep_assess;
+    use std::path::PathBuf;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    /// 每次测试分配一个唯一子目录，避免与并行测试冲突。
+    /// 测试结束后用 best-effort 方式清理临时文件。
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+
+    fn unique_tmp_dir() -> PathBuf {
+        let n = COUNTER.fetch_add(1, Ordering::SeqCst);
+        let pid = std::process::id();
+        let dir = std::env::temp_dir().join(format!("sisyphus_health_deep_test_{pid}_{n}"));
+        std::fs::create_dir_all(&dir).expect("create temp dir");
+        dir
+    }
+
+    fn cleanup(dir: &std::path::Path) {
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn session_db_file_present_is_ok() {
+        let dir = unique_tmp_dir();
+        let db = dir.join("sessions.db");
+        std::fs::write(&db, b"").unwrap();
+        let (all_ok, components) = health_deep_assess(&db, true);
+        assert!(all_ok);
+        assert_eq!(components["session_db"]["status"], "ok");
+        assert_eq!(components["shared_http"]["status"], "ok");
+        assert_eq!(components["kernel"]["status"], "ok");
+        cleanup(&dir);
+    }
+
+    #[test]
+    fn session_db_parent_exists_is_ok() {
+        // DB 未创建但父目录存在 → ok（首次启动场景）
+        let dir = unique_tmp_dir();
+        let (all_ok, components) = health_deep_assess(&dir.join("nonexistent.db"), true);
+        assert!(all_ok);
+        assert_eq!(components["session_db"]["status"], "ok");
+        cleanup(&dir);
+    }
+
+    #[test]
+    fn session_db_path_nonexistent_parent_is_degraded() {
+        // 父目录不存在 → degraded
+        let db = PathBuf::from("/this/path/should/never/exist/abc/sessions.db");
+        let (all_ok, components) = health_deep_assess(&db, true);
+        assert!(!all_ok);
+        assert_eq!(components["session_db"]["status"], "degraded");
+    }
+
+    #[test]
+    fn shared_http_absent_does_not_count_as_degraded() {
+        // CLI/dev 模式无 LLM 客户端：absent 不触发 degraded
+        let dir = unique_tmp_dir();
+        let db = dir.join("sessions.db");
+        std::fs::write(&db, b"").unwrap();
+        let (all_ok, components) = health_deep_assess(&db, false);
+        assert!(all_ok, "absent shared_http must not degrade overall status");
+        assert_eq!(components["shared_http"]["status"], "absent");
+        cleanup(&dir);
+    }
+
+    #[test]
+    fn components_map_has_three_required_keys() {
+        let (all_ok, components) =
+            health_deep_assess(std::path::Path::new("/tmp/should_work/db.sqlite"), false);
+        // 父目录 /tmp/should_work/ 不存在 → degraded，但仍应包含三个组件键
+        assert!(!all_ok);
+        assert!(components.contains_key("session_db"));
+        assert!(components.contains_key("shared_http"));
+        assert!(components.contains_key("kernel"));
+    }
 }
