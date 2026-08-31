@@ -2026,3 +2026,81 @@ fn sisyphus_notepad_with_unicode_section_id_4_chars() {
     let read = n.read_section("αβγδ");
     assert!(read.is_some());
 }
+
+// ---------------------------------------------------------------------------
+// More tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn sisyphus_notepad_with_unicode_section_id_with_3_dots() {
+    let mut n = SisyphusNotepad::default();
+    n.write_section("a.b.c.α".into(), "v".into());
+    let read = n.read_section("a.b.c.α");
+    assert!(read.is_some());
+}
+
+#[test]
+fn sisyphus_notepad_with_unicode_5_sections_overwrite() {
+    let mut n = SisyphusNotepad::default();
+    for i in 0..5 {
+        n.write_section(format!("节-{}", i), format!("v-{}", i));
+    }
+    n.write_section("节-2".into(), "v-2-overwrite".into());
+    let read = n.read_section("节-2").unwrap();
+    assert_eq!(read, "v-2-overwrite");
+}
+
+#[test]
+fn trigger_def_with_unicode_pattern_3_chars() {
+    let t: TriggerDef = serde_json::from_str(r#"{"pattern":"αβγ"}"#).unwrap();
+    assert_eq!(t.pattern.as_deref(), Some("αβγ"));
+}
+
+#[test]
+fn notepad_snapshot_with_unicode_each_field_2() {
+    let mut snapshot = im::HashMap::new();
+    snapshot.insert("节-α".into(), "内容-β".into());
+    let n = NotepadSnapshot {
+        timestamp: 0,
+        snapshot,
+        trigger_node: "节-γ".into(),
+    };
+    let j = serde_json::to_string(&n).unwrap();
+    let back: NotepadSnapshot = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.trigger_node, "节-γ");
+    assert_eq!(back.snapshot.get("节-α"), Some(&"内容-β".to_string()));
+}
+
+#[test]
+fn evolution_op_with_unicode_min_delta_2() {
+    use sisyphus_types::types::EvolutionOp;
+    let op = EvolutionOp::AdjustFuel {
+        node_name: "n-α".into(),
+        delta: i64::MIN,
+    };
+    let j = serde_json::to_string(&op).unwrap();
+    let back: EvolutionOp = serde_json::from_str(&j).unwrap();
+    match back {
+        EvolutionOp::AdjustFuel { node_name, delta } => {
+            assert_eq!(node_name, "n-α");
+            assert_eq!(delta, i64::MIN);
+        }
+        _ => panic!("wrong"),
+    }
+}
+
+#[test]
+fn sisyphus_notepad_with_unicode_section_id_with_special() {
+    let mut n = SisyphusNotepad::default();
+    n.write_section("!@#$%α-β^&*()".into(), "v".into());
+    let read = n.read_section("!@#$%α-β^&*()");
+    assert!(read.is_some());
+}
+
+#[test]
+fn sisyphus_notepad_with_unicode_only_emoji_2_chars_2() {
+    let mut n = SisyphusNotepad::default();
+    n.write_section("🔍🔭".into(), "v".into());
+    let read = n.read_section("🔍🔭");
+    assert!(read.is_some());
+}
