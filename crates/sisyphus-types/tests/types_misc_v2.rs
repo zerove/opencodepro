@@ -1878,3 +1878,75 @@ fn sisyphus_notepad_with_unicode_2_sections_prune() {
     assert!(read.contains("line2-α"));
     assert!(read.contains("line3-α"));
 }
+
+// ---------------------------------------------------------------------------
+// More tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn sisyphus_notepad_with_unicode_section_id_with_emoji_2() {
+    let mut n = SisyphusNotepad::default();
+    n.write_section("节-α🔍".into(), "v".into());
+    let read = n.read_section("节-α🔍");
+    assert!(read.is_some());
+}
+
+#[test]
+fn sisyphus_notepad_with_unicode_section_id_5_chars_2() {
+    let mut n = SisyphusNotepad::default();
+    n.write_section("节-α-β-γ-δ".into(), "v".into());
+    let read = n.read_section("节-α-β-γ-δ");
+    assert!(read.is_some());
+}
+
+#[test]
+fn trigger_def_with_unicode_pattern_at_sign() {
+    let t: TriggerDef = serde_json::from_str(r#"{"pattern":"@trigger-α"}"#).unwrap();
+    assert_eq!(t.pattern.as_deref(), Some("@trigger-α"));
+}
+
+#[test]
+fn notepad_snapshot_with_unicode_trigger_emoji_2() {
+    let n = NotepadSnapshot {
+        timestamp: 0,
+        snapshot: im::HashMap::new(),
+        trigger_node: "🔍-α".into(),
+    };
+    let j = serde_json::to_string(&n).unwrap();
+    let back: NotepadSnapshot = serde_json::from_str(&j).unwrap();
+    assert_eq!(back.trigger_node, "🔍-α");
+}
+
+#[test]
+fn evolution_op_adjust_fuel_with_unicode_node_2_chars() {
+    use sisyphus_types::types::EvolutionOp;
+    let op = EvolutionOp::AdjustFuel {
+        node_name: "αβ".into(),
+        delta: 100,
+    };
+    let j = serde_json::to_string(&op).unwrap();
+    let back: EvolutionOp = serde_json::from_str(&j).unwrap();
+    match back {
+        EvolutionOp::AdjustFuel { node_name, delta } => {
+            assert_eq!(node_name, "αβ");
+            assert_eq!(delta, 100);
+        }
+        _ => panic!("wrong"),
+    }
+}
+
+#[test]
+fn sisyphus_notepad_with_unicode_section_id_with_at_sign() {
+    let mut n = SisyphusNotepad::default();
+    n.write_section("user@α-β".into(), "v".into());
+    let read = n.read_section("user@α-β");
+    assert!(read.is_some());
+}
+
+#[test]
+fn sisyphus_notepad_with_unicode_section_id_with_pipes() {
+    let mut n = SisyphusNotepad::default();
+    n.write_section("a|b|α|β".into(), "v".into());
+    let read = n.read_section("a|b|α|β");
+    assert!(read.is_some());
+}
