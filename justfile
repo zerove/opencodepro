@@ -95,6 +95,20 @@ dev-tui:
 run-tui:
     cargo run -p sisyphus-cli
 
+# ── 端到端测试 ───────────────────────────────────────
+
+# E2E smoke test（bridge + stress_test）
+e2e-smoke:
+    cargo build -p sisyphus-bridge
+    cargo build -p sisyphus-bridge --bin stress_test
+    ./scripts/e2e-smoke.sh
+
+# E2E /health/deep 测试（启动 bridge → curl → 验证 JSON 结构）
+e2e-health:
+    cargo build -p sisyphus-bridge
+    cargo build -p sisyphus-bridge --bin stress_test
+    ./scripts/e2e-health.sh
+
 # ── 清理 ───────────────────────────────────────────
 
 # 清理构建产物（警告：耗时重建）

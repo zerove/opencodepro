@@ -179,6 +179,13 @@ e2e-smoke:
 	cargo build -p sisyphus-bridge --bin stress_test
 	@./scripts/e2e-smoke.sh
 
+# — E2E /health/deep smoke test (启动 bridge → curl → 验证 JSON 结构) —
+
+e2e-health: $(BRIDGE_DEPS)
+	cargo build -p sisyphus-bridge
+	cargo build -p sisyphus-bridge --bin stress_test
+	@./scripts/e2e-health.sh
+
 # — bridge crate, 1.96.0 fallback (RUSTFLAGS bypasses rustc 1.96.0 ICE) —
 
 check-bridge-160: $(BRIDGE_DEPS)
