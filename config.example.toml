@@ -141,27 +141,6 @@ model = "gpt-4o"
 # priority = 5  # 数值越小优先级越高
 # enabled = true
 
-# ── 认知循环配置 (评审 A4 已接线) ───────────────────────
-# 控制 sisyphus-core/cognitive_loop 阶段的迭代/深度参数
-# bridge 启动时通过 StrategicManager::apply_cognitive_loop_config 应用
-
-[cognitive_loop]
-# 最大迭代次数 (硬上限 — 自适应深度不能突破)
-# 环境变量: SISYPHUS_COGNITIVE_LOOP_MAX_ITERATIONS
-# 类型: integer | 默认: 8
-# max_iterations = 8
-
-# 收敛阈值（deviation < threshold 视为稳定）
-# 环境变量: SISYPHUS_COGNITIVE_LOOP_CONVERGENCE_THRESHOLD
-# 类型: float | 默认: 0.15
-# convergence_threshold = 0.15
-
-# 反思/演进阶段 LLM 调用超时（秒；0 禁用对应阶段 LLM）
-# 环境变量: SISYPHUS_COGNITIVE_LOOP_LLM_STAGE_TIMEOUT_SECS
-# 类型: integer | 默认: 30
-# llm_stage_timeout_secs = 30
-
-# ── 认证令牌 ──────────────────────────────────────────────────
 # 可选的 bearer token，用于保护 bridge HTTP 和 gRPC 接口
 # 环境变量: SISYPHUS_AUTH_TOKEN
 # 类型: string | 默认: ""（不启用认证）

@@ -78,6 +78,11 @@ pub struct MomusReview {
     pub summary: String,
 }
 
+// ReviewType 变体后缀 `Review` 是 momus agent 业务术语：
+//   PlanReview / CodeReview / SpecReview / ArchitectureReview
+// 跨 plan.rs/code.rs/spec.rs/arch.rs 多模块共享。
+// Display 实现直接用变体名生成用户可见字符串。
+#[allow(clippy::enum_variant_names)]
 /// What kind of review was performed.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ReviewType {

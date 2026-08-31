@@ -89,7 +89,10 @@ fn print_table(label: &str, rows: &[TrendRow]) {
         .collect::<std::collections::HashSet<_>>()
         .into_iter()
         .collect();
-    print!("  {:<14} {:>6} {:>6} {:>6} {:>8}", "timestamp", "total", "pass", "fail", "rate");
+    print!(
+        "  {:<14} {:>6} {:>6} {:>6} {:>8}",
+        "timestamp", "total", "pass", "fail", "rate"
+    );
     for k in &extra_keys {
         print!(" {:>14}", k);
     }
@@ -131,7 +134,7 @@ fn days_to_ymd(days: u64) -> (u32, u32, u32) {
     let mut y = 1970u32;
     let mut d = days;
     loop {
-        let leap = (y % 4 == 0 && y % 100 != 0) || (y % 400 == 0);
+        let leap = y.is_multiple_of(4) && !y.is_multiple_of(100) || y.is_multiple_of(400);
         let dy = if leap { 366 } else { 365 };
         if d >= dy {
             d -= dy;
@@ -140,8 +143,21 @@ fn days_to_ymd(days: u64) -> (u32, u32, u32) {
             break;
         }
     }
-    let leap = (y % 4 == 0 && y % 100 != 0) || (y % 400 == 0);
-    let months = [31, if leap { 29 } else { 28 }, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+    let leap = y.is_multiple_of(4) && !y.is_multiple_of(100) || y.is_multiple_of(400);
+    let months = [
+        31,
+        if leap { 29 } else { 28 },
+        31,
+        30,
+        31,
+        30,
+        31,
+        31,
+        30,
+        31,
+        30,
+        31,
+    ];
     let mut mo = 1u32;
     for &dm in &months {
         if d >= dm as u64 {

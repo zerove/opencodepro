@@ -80,17 +80,12 @@ pub struct SharedHttpClientConfig {
 /// - 不用指数退避（增加 ProviderRegistry 层的复杂度）→ 1 次重试足够
 ///   覆盖瞬时网络抖动；持续故障由 ProviderRegistry 的 fallback 处理
 /// - 5xx 而非 4xx 重试（4xx 通常是请求语义错误，重试无意义）
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum RetryPolicy {
+    #[default]
     Disabled,
     /// 5xx 或连接错误时重试 1 次（仅幂等方法 GET/HEAD）
     OneShot,
-}
-
-impl Default for RetryPolicy {
-    fn default() -> Self {
-        Self::Disabled
-    }
 }
 
 /// TLS 根证书来源。
@@ -98,16 +93,11 @@ impl Default for RetryPolicy {
 /// - `Webpki` (默认): reqwest 内置 `webpki-roots`，跨平台一致，CI/容器友好
 /// - `NativeCerts`: 操作系统根证书库（macOS Keychain / Windows cert store /
 ///   Linux ca-certificates），适合需要本企业 CA 的场景
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum TlsRoots {
+    #[default]
     Webpki,
     NativeCerts,
-}
-
-impl Default for TlsRoots {
-    fn default() -> Self {
-        Self::Webpki
-    }
 }
 
 impl Default for SharedHttpClientConfig {
@@ -263,9 +253,7 @@ impl SharedHttpClient {
         // brotli/zstd 需要 feature 启用。当前生产只需 gzip（gzip 模块在 reqwest 默认 features 中）。
         let _ = config.gzip;
 
-        let http = builder
-            .build()
-            .map_err(|e| format!("build reqwest client: {e}"))?;
+        let http = builder.build().map_err(|e| format!("build reqwest client: {e}"))?;
 
         Ok(Self {
             inner: Arc::new(Inner {
@@ -337,11 +325,11 @@ impl SharedHttpClient {
                     Ok(ok) => Ok(ok),
                     Err(_) => Ok(bad), // 第二次也失败 → 返回 5xx (调用方可读 status)
                 }
-            }
+            },
             Err(_e1) => {
                 // 第一次是连接/网络错误: 重试
                 self.dispatch_once(req).await
-            }
+            },
         }
     }
 
@@ -426,7 +414,8 @@ impl SharedHttpClient {
             return Ok(());
         }
 
-        match tokio::time::timeout(wait, wait_in_flight_zero(&notifier, &self.inner.in_flight)).await
+        match tokio::time::timeout(wait, wait_in_flight_zero(&notifier, &self.inner.in_flight))
+            .await
         {
             Ok(()) => Ok(()),
             Err(_) => {
@@ -434,7 +423,7 @@ impl SharedHttpClient {
                 Err(format!(
                     "shutdown timeout after {wait:?}, {remaining} requests still in flight"
                 ))
-            }
+            },
         }
     }
 
@@ -466,7 +455,10 @@ pub struct RequestGuard {
 impl RequestGuard {
     /// New.
     pub fn new(http: Arc<SharedHttpClient>) -> Self {
-        Self { http, errored: false }
+        Self {
+            http,
+            errored: false,
+        }
     }
     /// Mark errored.
     pub fn mark_errored(&mut self) {
@@ -578,8 +570,8 @@ mod tests {
         assert!(req.method() == reqwest::Method::POST);
         // 注: 不实际 dispatch (会受网络影响); 直接验证 retry 策略的 if 分支
         // 已经过滤掉 POST — 单元测试仅覆盖决策逻辑。
-        let is_idempotent = req.method() == reqwest::Method::GET
-            || req.method() == reqwest::Method::HEAD;
+        let is_idempotent =
+            req.method() == reqwest::Method::GET || req.method() == reqwest::Method::HEAD;
         assert!(!is_idempotent, "POST 不应被视为幂等方法");
     }
 

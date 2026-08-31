@@ -138,7 +138,7 @@ impl ProviderRegistry {
 
                             tokio::time::sleep(delay).await;
                             attempt += 1;
-                        }
+                        },
                     }
                 }
             }
@@ -207,25 +207,18 @@ pub fn build_provider_registry_with(
             | ProviderKind::Groq
             | ProviderKind::Mistral
             | ProviderKind::Together
-            | ProviderKind::OpenRouter => OpenAiCompatibleProvider::new(
-                cfg.clone(),
-                shared_client.clone(),
-            )
-            .map(|p| Arc::new(p) as Arc<dyn LlmProvider>),
-            ProviderKind::Google => GoogleGeminiProvider::new(
-                cfg.clone(),
-                shared_client.clone(),
-            )
-            .map(|p| Arc::new(p) as Arc<dyn LlmProvider>),
-            ProviderKind::Anthropic => AnthropicProvider::new(
-                cfg.clone(),
-                shared_client.clone(),
-            )
-            .map(|p| Arc::new(p) as Arc<dyn LlmProvider>),
+            | ProviderKind::OpenRouter => {
+                OpenAiCompatibleProvider::new(cfg.clone(), shared_client.clone())
+                    .map(|p| Arc::new(p) as Arc<dyn LlmProvider>)
+            },
+            ProviderKind::Google => GoogleGeminiProvider::new(cfg.clone(), shared_client.clone())
+                .map(|p| Arc::new(p) as Arc<dyn LlmProvider>),
+            ProviderKind::Anthropic => AnthropicProvider::new(cfg.clone(), shared_client.clone())
+                .map(|p| Arc::new(p) as Arc<dyn LlmProvider>),
             // Cohere 暂未实现，路由报错即可（上层可借此回退）
-            ProviderKind::Cohere => Err(format!(
-                "Cohere provider not yet implemented in this build"
-            )),
+            ProviderKind::Cohere => {
+                Err("Cohere provider not yet implemented in this build".to_string())
+            },
         };
 
         match provider {
@@ -233,10 +226,10 @@ pub fn build_provider_registry_with(
                 let name = p.name().to_string();
                 registry.register(p);
                 fallback_order.push(name);
-            }
+            },
             Err(e) => {
                 tracing::error!(target: "provider", "Failed to build '{}': {e}", cfg.name);
-            }
+            },
         }
     }
 
@@ -267,7 +260,8 @@ mod tests {
 
     #[test]
     fn registry_registers_groq_via_openai_compatible() {
-        let cfg = make_openai_compatible_cfg(ProviderKind::Groq, "groq-main", "llama-3.1-70b-versatile");
+        let cfg =
+            make_openai_compatible_cfg(ProviderKind::Groq, "groq-main", "llama-3.1-70b-versatile");
         let r = build_provider_registry(&[cfg]).unwrap();
         assert!(r.get("groq-main").is_some());
         assert_eq!(r.list().len(), 1);
@@ -275,14 +269,22 @@ mod tests {
 
     #[test]
     fn registry_registers_mistral_via_openai_compatible() {
-        let cfg = make_openai_compatible_cfg(ProviderKind::Mistral, "mistral-main", "mistral-large-latest");
+        let cfg = make_openai_compatible_cfg(
+            ProviderKind::Mistral,
+            "mistral-main",
+            "mistral-large-latest",
+        );
         let r = build_provider_registry(&[cfg]).unwrap();
         assert!(r.get("mistral-main").is_some());
     }
 
     #[test]
     fn registry_registers_together_via_openai_compatible() {
-        let cfg = make_openai_compatible_cfg(ProviderKind::Together, "together-main", "meta-llama/Llama-3.3-70B-Instruct-Turbo");
+        let cfg = make_openai_compatible_cfg(
+            ProviderKind::Together,
+            "together-main",
+            "meta-llama/Llama-3.3-70B-Instruct-Turbo",
+        );
         let r = build_provider_registry(&[cfg]).unwrap();
         assert!(r.get("together-main").is_some());
     }
@@ -296,18 +298,33 @@ mod tests {
 
     #[test]
     fn registry_fallback_chain_orders_by_priority() {
-        let mut high = make_openai_compatible_cfg(ProviderKind::OpenAi, "openai-priority-5", "gpt-4o-mini");
+        let mut high =
+            make_openai_compatible_cfg(ProviderKind::OpenAi, "openai-priority-5", "gpt-4o-mini");
         high.priority = 5;
-        let mut low = make_openai_compatible_cfg(ProviderKind::Groq, "groq-priority-20", "llama-3.1-70b-versatile");
+        let mut low = make_openai_compatible_cfg(
+            ProviderKind::Groq,
+            "groq-priority-20",
+            "llama-3.1-70b-versatile",
+        );
         low.priority = 20;
         let r = build_provider_registry(&[low, high]).unwrap(); // 故意乱序
         let order = r.fallback_order();
-        assert_eq!(order, &["openai-priority-5".to_string(), "groq-priority-20".to_string()]);
+        assert_eq!(
+            order,
+            &[
+                "openai-priority-5".to_string(),
+                "groq-priority-20".to_string()
+            ]
+        );
     }
 
     #[test]
     fn registry_skips_disabled_providers() {
-        let mut cfg = make_openai_compatible_cfg(ProviderKind::Groq, "groq-disabled", "llama-3.1-70b-versatile");
+        let mut cfg = make_openai_compatible_cfg(
+            ProviderKind::Groq,
+            "groq-disabled",
+            "llama-3.1-70b-versatile",
+        );
         cfg.enabled = false;
         let r = build_provider_registry(&[cfg]).unwrap();
         assert_eq!(r.list().len(), 0);
@@ -342,7 +359,11 @@ mod tests {
         let cfgs = vec![
             make_openai_compatible_cfg(ProviderKind::OpenAi, "openai-shared", "gpt-4o-mini"),
             make_openai_compatible_cfg(ProviderKind::Groq, "groq-shared", "llama-3.1-70b"),
-            make_openai_compatible_cfg(ProviderKind::OpenRouter, "or-shared", "anthropic/claude-3.5-sonnet"),
+            make_openai_compatible_cfg(
+                ProviderKind::OpenRouter,
+                "or-shared",
+                "anthropic/claude-3.5-sonnet",
+            ),
         ];
         let r = build_provider_registry(&cfgs).unwrap();
         let shared = r
@@ -366,7 +387,8 @@ mod tests {
     /// 验证 LlmProvider: Any supertrait 让外部可 downcast（jcode provider crate 标准模式）。
     #[test]
     fn provider_downcast_to_openai_works() {
-        let cfg = make_openai_compatible_cfg(ProviderKind::OpenAi, "downcast-target", "gpt-4o-mini");
+        let cfg =
+            make_openai_compatible_cfg(ProviderKind::OpenAi, "downcast-target", "gpt-4o-mini");
         let r = build_provider_registry(&[cfg]).unwrap();
         let p: Arc<dyn LlmProvider> = r.get("downcast-target").unwrap();
         let any: &dyn std::any::Any = &*p;
@@ -379,7 +401,11 @@ mod tests {
             make_openai_compatible_cfg(ProviderKind::OpenAi, "openai-x", "gpt-4o-mini"),
             make_openai_compatible_cfg(ProviderKind::Groq, "groq-x", "llama-3.1-70b-versatile"),
             make_openai_compatible_cfg(ProviderKind::Mistral, "mistral-x", "mistral-large-latest"),
-            make_openai_compatible_cfg(ProviderKind::Together, "together-x", "meta-llama/Llama-3.3-70B-Instruct-Turbo"),
+            make_openai_compatible_cfg(
+                ProviderKind::Together,
+                "together-x",
+                "meta-llama/Llama-3.3-70B-Instruct-Turbo",
+            ),
         ];
         let r = build_provider_registry(&cfgs).unwrap();
         assert_eq!(r.list().len(), 4);

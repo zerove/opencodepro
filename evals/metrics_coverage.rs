@@ -36,12 +36,27 @@ struct CrateReport {
 
 /// 关键 operation 模式, 每个 crate 至少应该有其中之一的埋点
 const KEY_OPS: &[(&str, &[&str])] = &[
-    ("sisyphus-bridge", &["sop_execution", "bridge_request", "shutdown"]),
-    ("sisyphus-core", &["cognitive_loop", "dag_execution", "reflection"]),
+    (
+        "sisyphus-bridge",
+        &["sop_execution", "bridge_request", "shutdown"],
+    ),
+    (
+        "sisyphus-core",
+        &["cognitive_loop", "dag_execution", "reflection"],
+    ),
     ("sisyphus-intel", &["simulation", "reflection", "evolution"]),
-    ("sisyphus-mem", &["cache_hit", "cache_miss", "sql_query", "embedding_store"]),
-    ("sisyphus-tools-llm", &["llm_request", "token_usage", "error_rate"]),
-    ("sisyphus-tools-executor", &["command_execution", "tool_invoke"]),
+    (
+        "sisyphus-mem",
+        &["cache_hit", "cache_miss", "sql_query", "embedding_store"],
+    ),
+    (
+        "sisyphus-tools-llm",
+        &["llm_request", "token_usage", "error_rate"],
+    ),
+    (
+        "sisyphus-tools-executor",
+        &["command_execution", "tool_invoke"],
+    ),
     ("sisyphus-tools-mcp", &["mcp_request", "mcp_error"]),
     ("sisyphus-sandbox", &["wasm_execution", "sandbox_init"]),
     ("sisyphus-sandboxd", &["daemon_request", "wasm_load"]),
@@ -54,11 +69,7 @@ const KEY_OPS: &[(&str, &[&str])] = &[
 ];
 
 fn analyze_crate(crate_path: &Path) -> CrateReport {
-    let name = crate_path
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or("?")
-        .to_string();
+    let name = crate_path.file_name().and_then(|n| n.to_str()).unwrap_or("?").to_string();
 
     let mut report = CrateReport {
         name: name.clone(),
@@ -72,13 +83,13 @@ fn analyze_crate(crate_path: &Path) -> CrateReport {
     }
 
     let helper_re = regex::Regex::new(r"\bsisyphus_metrics::\w+").unwrap();
-    let macro_re = regex::Regex::new(r"\b(counter|gauge|histogram|describe_counter|describe_gauge|describe_histogram)!\s*\(").unwrap();
+    let macro_re = regex::Regex::new(
+        r"\b(counter|gauge|histogram|describe_counter|describe_gauge|describe_histogram)!\s*\(",
+    )
+    .unwrap();
     let span_re = regex::Regex::new(r"#\[[^\]]*tracing::instrument[^\]]*\]").unwrap();
 
-    for entry in walkdir::WalkDir::new(&src_dir)
-        .into_iter()
-        .filter_map(|e| e.ok())
-    {
+    for entry in walkdir::WalkDir::new(&src_dir).into_iter().filter_map(|e| e.ok()) {
         if !entry.file_type().is_file() {
             continue;
         }
@@ -86,7 +97,9 @@ fn analyze_crate(crate_path: &Path) -> CrateReport {
         if p.extension().and_then(|s| s.to_str()) != Some("rs") {
             continue;
         }
-        let Ok(s) = std::fs::read_to_string(p) else { continue };
+        let Ok(s) = std::fs::read_to_string(p) else {
+            continue;
+        };
 
         let n_helper = helper_re.find_iter(&s).count();
         let n_macro = macro_re.find_iter(&s).count();
@@ -96,9 +109,7 @@ fn analyze_crate(crate_path: &Path) -> CrateReport {
             report.helper_calls += n_helper;
             report.macro_calls += n_macro;
             report.tracing_spans += n_span;
-            report
-                .files
-                .push(p.strip_prefix(crate_path).unwrap_or(p).display().to_string());
+            report.files.push(p.strip_prefix(crate_path).unwrap_or(p).display().to_string());
         }
     }
 
@@ -120,21 +131,13 @@ fn analyze_crate(crate_path: &Path) -> CrateReport {
 fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().collect();
     let json_mode = args.iter().any(|a| a == "--json");
-    let target_dir = args
-        .iter()
-        .skip(1)
-        .find(|a| !a.starts_with("--"))
-        .map(String::as_str)
-        .unwrap_or("crates/");
+    let target_dir =
+        args.iter().skip(1).find(|a| !a.starts_with("--")).map(String::as_str).unwrap_or("crates/");
 
     let mut reports: BTreeMap<String, CrateReport> = BTreeMap::new();
     let mut no_metrics: Vec<String> = Vec::new();
 
-    for entry in walkdir::WalkDir::new(target_dir)
-        .max_depth(1)
-        .into_iter()
-        .filter_map(|e| e.ok())
-    {
+    for entry in walkdir::WalkDir::new(target_dir).max_depth(1).into_iter().filter_map(|e| e.ok()) {
         let p = entry.path();
         if !p.is_dir() || p == Path::new(target_dir) {
             continue;
@@ -151,7 +154,10 @@ fn main() -> Result<()> {
     }
 
     if json_mode {
-        println!("{}", serde_json::to_string_pretty(&reports.values().collect::<Vec<_>>())?);
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&reports.values().collect::<Vec<_>>())?
+        );
     } else {
         println!("=== ADR-007 §4 Metrics 覆盖率报告 ===\n");
         println!(
@@ -159,13 +165,11 @@ fn main() -> Result<()> {
             "Crate", "helper", "macro", "span", "total"
         );
         println!("{}", "-".repeat(78));
-        let total: usize = reports.len();
+        let _total: usize = reports.len();
         // Test-only crate: sisyphus-tests (#![cfg(test)]) excluded from coverage %
         let test_only: &[&str] = &["sisyphus-tests"];
-        let countable: Vec<_> = reports
-            .values()
-            .filter(|r| !test_only.contains(&r.name.as_str()))
-            .collect();
+        let countable: Vec<_> =
+            reports.values().filter(|r| !test_only.contains(&r.name.as_str())).collect();
         let with: usize = countable.iter().filter(|r| r.has_metrics).count();
         let denom = countable.len().max(1);
         for r in reports.values() {
@@ -182,7 +186,12 @@ fn main() -> Result<()> {
                 r.name, r.helper_calls, r.macro_calls, r.tracing_spans, tot, status
             );
         }
-        println!("\n汇总: {}/{} crate 有 metrics 埋点 ({}%, 已排除 test-only crate)", with, denom, with * 100 / denom);
+        println!(
+            "\n汇总: {}/{} crate 有 metrics 埋点 ({}%, 已排除 test-only crate)",
+            with,
+            denom,
+            with * 100 / denom
+        );
 
         if !no_metrics.is_empty() {
             println!("\n⚠️  以下 crate 应埋点但未埋点 (ADR-007 §4 违反):");

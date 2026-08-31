@@ -4,6 +4,9 @@ use crate::tools::ToolSpec;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+// SOP 是项目业务术语（Standard Operating Procedure），作为专有名词保留全大写。
+// 上游 utoipa/serde 不受影响，下游 cognitive_loop / knowledge 仍按 `AssetKind::SOP` 调用。
+#[allow(clippy::upper_case_acronyms)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 /// Asset Kind.
 pub enum AssetKind {
@@ -26,6 +29,7 @@ pub struct CognitiveAsset {
     pub created_at: u64,
 }
 
+#[allow(clippy::upper_case_acronyms)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 /// Asset Content.
 pub enum AssetContent {

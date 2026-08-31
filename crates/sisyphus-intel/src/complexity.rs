@@ -14,7 +14,7 @@ pub enum CognitiveDepth {
 
 impl CognitiveDepth {
     /// To config.
-    pub fn to_config(&self) -> (u32, f64) {
+    pub fn to_config(self) -> (u32, f64) {
         match self {
             CognitiveDepth::Low => (3, 0.2),
             CognitiveDepth::Medium => (10, 0.05),

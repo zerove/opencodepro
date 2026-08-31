@@ -2,6 +2,10 @@ use sisyphus_tools_core::ToolResult;
 use std::path::Path;
 
 /// Supported project template types.
+// TemplateType 变体名 `Rust*` 是公开 API：与 from_str_opt 接受的
+// "rust-lib"/"rust-bin"/"rust-workspace" 字符串一一对应，且是公共 crate
+// API 表面。修改会破坏 CLI/TUI 集成。
+#[allow(clippy::enum_variant_names)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TemplateType {
     RustLib,
@@ -201,11 +205,7 @@ mod tests {
 }
 "#;
     std::fs::write(
-        project_dir
-            .join("crates")
-            .join("core")
-            .join("src")
-            .join("lib.rs"),
+        project_dir.join("crates").join("core").join("src").join("lib.rs"),
         core_lib.as_bytes(),
     )?;
 
@@ -232,11 +232,7 @@ edition = "2021"
 "#
     );
     std::fs::write(
-        project_dir
-            .join("crates")
-            .join("cli")
-            .join("src")
-            .join("main.rs"),
+        project_dir.join("crates").join("cli").join("src").join("main.rs"),
         cli_main.as_bytes(),
     )?;
 
@@ -342,39 +338,16 @@ mod tests {
         assert!(root_toml.contains(r#""crates/cli""#));
 
         // core crate
-        assert!(project
-            .join("crates")
-            .join("core")
-            .join("Cargo.toml")
-            .exists());
-        assert!(project
-            .join("crates")
-            .join("core")
-            .join("src")
-            .join("lib.rs")
-            .exists());
-        let core_lib = std::fs::read_to_string(
-            project
-                .join("crates")
-                .join("core")
-                .join("src")
-                .join("lib.rs"),
-        )
-        .unwrap();
+        assert!(project.join("crates").join("core").join("Cargo.toml").exists());
+        assert!(project.join("crates").join("core").join("src").join("lib.rs").exists());
+        let core_lib =
+            std::fs::read_to_string(project.join("crates").join("core").join("src").join("lib.rs"))
+                .unwrap();
         assert!(core_lib.contains("core_function"));
 
         // cli crate
-        assert!(project
-            .join("crates")
-            .join("cli")
-            .join("Cargo.toml")
-            .exists());
-        assert!(project
-            .join("crates")
-            .join("cli")
-            .join("src")
-            .join("main.rs")
-            .exists());
+        assert!(project.join("crates").join("cli").join("Cargo.toml").exists());
+        assert!(project.join("crates").join("cli").join("src").join("main.rs").exists());
         let cli_toml =
             std::fs::read_to_string(project.join("crates").join("cli").join("Cargo.toml")).unwrap();
         assert!(cli_toml.contains("my-ws-core"));
