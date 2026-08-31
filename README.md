@@ -120,6 +120,18 @@ file_access_root = "."
 ## 开发
 
 ```bash
+# 一键本地验证（fmt + clippy + lib tests + bridge）
+make dev
+
+# 快速检查（不含重型 crate）
+make ci-quick
+
+# 单独步骤
+make dev-fmt       # cargo fmt --all --check
+make dev-clippy    # cargo clippy -D warnings (排除重型)
+make dev-test      # cargo test --lib (排除重型)
+
+# 完整命令
 cargo check-all          # 检查全部 crate
 cargo test-all           # 测试全部 crate
 cargo build --release -p sisyphus-cli  # 构建 release TUI

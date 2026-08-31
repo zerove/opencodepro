@@ -13,6 +13,15 @@
 - **`.rust-analyzer.json`** 锁定重型 crate 排除（sisyphus-bridge/sandbox/sandboxd/tests），
   IDE 索引内存控制在 4GB 以内
 - **TODO.md 阶段 7** 近期优先级规划（健康度 → 测试质量 → 性能 → DX → 文档运维）
+- **`/health/deep` bridge 端点** (200/207 Multi-Status, 报告 session_db/shared_http/kernel 组件级状态)
+  - OpenAPI 文档 + `HealthDeepResponse` schema
+  - 重构 handler → 纯函数 `health_deep_assess`，可独立测试
+  - 5 个单元测试（DB 存在/父目录/不存在/absent/三组件键）
+- **`make dev` 一键验证入口** (阶段 7.4 DX)
+  - `make dev` = ci-quick + ci-bridge（完整本地验证）
+  - `make ci-quick` = dev-fmt + dev-clippy + dev-test（快速）
+  - `make dev-fmt` / `dev-clippy` / `dev-test` / `ci-bridge` 单步
+  - 与 `.github/workflows/ci.yml` 步骤顺序一致
 
 ### Fixed
 - **clippy -D warnings** 7 处 rustc 1.98 升级后引入的编译错误：

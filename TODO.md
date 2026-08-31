@@ -83,7 +83,8 @@
 #### 7.1 健康度与可观测性 (最高优先)
 - [ ] **Otel 导出端点配置化**: 当前 otel 配置散落，`OpenTelemetryConfig` 缺少完整 env override 链
 - [ ] **认知循环 v2 异常检测器调优**: `AnomalyDetector` 阈值硬编码，需要从 Config 加载
-- [ ] **bridge 启动自检端点**: `GET /health/deep` 报告 workspace/llm/DB/桥接依赖
+- [x] **bridge 启动自检端点** (2026-08-31): `GET /health/deep` 报告 session_db/shared_http/kernel 组件级状态；返回 200/207 Multi-Status；OpenAPI 文档 + HealthDeepResponse schema
+- [x] **`/health/deep` 单元测试** (2026-08-31): 5 个测试覆盖 DB 文件/父目录/不存在/absent 不算降级/三组件键（重构 health_deep_handler → 薄包装 + 纯函数 health_deep_assess）
 - [ ] **TUI `:health` 面板**: 整合健康摘要 + token 预算 + DAG 进度
 
 #### 7.2 测试与质量
@@ -99,9 +100,9 @@
 - [ ] **TUI 启动时间**: 冷启动 < 200ms 目标，profile `sisyphus-cli` 入口
 
 #### 7.4 开发者体验
-- [ ] **`make dev` 统一入口**: 替代散落的 make 目标，按需组合 `check`/`fmt`/`clippy`/`test`
+- [x] **`make dev` 统一入口** (2026-08-31): 替代散落 make 目标；`make dev`/`ci-quick`/`dev-fmt`/`dev-clippy`/`dev-test`/`ci-bridge`
+- [x] **IDE Rust Analyzer 配置** (2026-08-31): `.rust-analyzer.json` 排除 4 个重型 crate
 - [ ] **`just` 适配层**: 提供 `justfile` 镜像 Makefile，跨平台 shell 一致性
-- [ ] **IDE Rust Analyzer 配置**: `.rust-analyzer.json` 锁定重型 crate 排除
 
 #### 7.5 文档与运维
 - [ ] **CHANGELOG.md 启动**: 当前 320 个本地提交无 CHANGELOG，按 keep-a-changelog 格式补 0.x.x
