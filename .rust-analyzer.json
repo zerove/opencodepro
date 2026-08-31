@@ -1,0 +1,60 @@
+{
+  "$schema": "https://rust-analyzer.github.io/schema/rust-analyzer/schema.json",
+  "_comment": "Heavy crates (wasmtime/cranelift) excluded to keep RA memory under 4GB",
+  "cargo": {
+    "allFeatures": false,
+    "features": ["default"],
+    "noDefaultFeatures": false
+  },
+  "rustc": {
+    "extraArgs": [
+      "-C",
+      "link-arg=-fuse-ld=lld"
+    ]
+  },
+  "lsp": {
+    "rust-analyzer": {
+      "diagnostics": {
+        "enable": true,
+        "experimental": {
+          "enable": false
+        }
+      },
+      "assist": {
+        "imports": {
+          "granularity": "module",
+          "group": "std::external::sisyphus"
+        }
+      },
+      "cargo": {
+        "buildScripts": {
+          "enable": true,
+          "invocationStrategy": "per_workspace"
+        },
+        "features": "default"
+      },
+      "check": {
+        "command": "cargo",
+        "allTargets": false,
+        "extraArgs": [
+          "--workspace",
+          "--exclude",
+          "sisyphus-bridge",
+          "--exclude",
+          "sisyphus-sandbox",
+          "--exclude",
+          "sisyphus-sandboxd",
+          "--exclude",
+          "sisyphus-tests"
+        ]
+      },
+      "files": {
+        "exclude": [
+          "**/target/**",
+          "**/book/**",
+          "**/node_modules/**"
+        ]
+      }
+    }
+  }
+}

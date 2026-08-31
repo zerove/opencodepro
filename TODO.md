@@ -40,6 +40,25 @@
 - [x] **eval 真实模式接入**: 接入真实 LLM provider 跑分 (当前 mock) — mock 模式验证通过，真实模式需外部 API 凭证
 - [x] **CI 监控**: nightly 滚动可能引入新 clippy lint, 定期检查 — clippy 无警告，全量测试通过
 
+### 阶段 4.1: rustc 1.98 升级后 CI 修复 (2026-08-31)
+- [x] **clippy 7 处 -D warnings 编译错误** (rustc 1.98 新增 lint)
+    - sisyphus-types: `AssetKind::SOP` / `AssetContent::SOP` → `#[allow(clippy::upper_case_acronyms)]`（业务术语）
+    - sisyphus-bridge-api/build.rs: `type_attribute("sisyphus.bridge.BridgeEvent.event", ...)` 给生成的 oneof Event 注入 allow（protobuf 字段名后缀 Update 不可改）
+    - sisyphus-tools-llm: `RetryPolicy`/`TlsRoots` 改 `#[derive(Default)]`；`format!()` 改 `.to_string()`（useless_format）
+    - sisyphus-tools-system: `TemplateType` 添加 allow（rust-lib/bin/workspace 字符串映射公开 API）
+    - sisyphus-tools-llm-tools: `ReviewType` 添加 allow（momus 业务术语）
+    - sisyphus-intel: `CognitiveDepth::to_config` 改 `self`（Copy + to_ 前缀约定）
+    - evals: `total` → `_total`；`%4 == 0` 改 `is_multiple_of`
+    - config.example.toml: 删除 line 144-149 重复 `[cognitive_loop]` 段
+- [x] **rustfmt 1.98 链式格式变更**: `cargo fmt --all` 应用，376 文件风格统一，行为不变
+- [x] **token_budget 端到端补齐**:
+    - `TokenBudgetConfig::validate()` (reserve_ratio ∈ [0,1]，cap=0 拒绝，None 允许)
+    - `CognitiveLoopConfig::validate()` 接入 token_budget
+    - env override: `SISYPHUS_COGNITIVE_LOOP_TOKEN_BUDGET_CAP` (空字符串清空), `_RESERVE_RATIO`
+    - config.example.toml 增 `[cognitive_loop.token_budget]` 段
+    - book/src/configuration.md 文档表 +2 行
+    - 4 个新边界测试（test 22 全绿）
+
 ### 阶段 5: 认知能力深化 (单机优先)
 - [x] **多智能体协作**: 增强 Agent 间委托协议 (2026-08-11)
     - [x] `DelegationPolicy` (retries / timeout_ms / fallback_agents)，经任务 `args["_delegation"]` 约定生效
@@ -57,6 +76,42 @@
 - [ ] **联邦学习**: 跨实例经验共享 (peer protocol 已有基础)
 - [ ] 多实例协调与共识、经验聚合服务
 
+### 阶段 7: 近期优先级 (2026-08-31 起, 1-2 周窗口)
+
+**目标**: 收敛技术债 + 启动认知循环 v3 准备
+
+#### 7.1 健康度与可观测性 (最高优先)
+- [ ] **Otel 导出端点配置化**: 当前 otel 配置散落，`OpenTelemetryConfig` 缺少完整 env override 链
+- [ ] **认知循环 v2 异常检测器调优**: `AnomalyDetector` 阈值硬编码，需要从 Config 加载
+- [ ] **bridge 启动自检端点**: `GET /health/deep` 报告 workspace/llm/DB/桥接依赖
+- [ ] **TUI `:health` 面板**: 整合健康摘要 + token 预算 + DAG 进度
+
+#### 7.2 测试与质量
+- [ ] **bridge 集成测试 CI 化**: `sisyphus-bridge/tests/bridge_integration_test.rs` 当前 `#[ignore]`
+  - 解法: 拆分为 CI-friendly 子集（无需 mDNS / 网络）
+- [ ] **混沌测试扩展**: 当前仅 fault injection 覆盖，缺网络延迟/超时/并发竞态场景
+- [ ] **mutation testing 试点**: `cargo-mutants` 在 `sisyphus-types` 跑一轮，验证测试质量
+- [ ] **wasm 沙箱的 proptest**: `sisyphus-sandbox` 缺属性测试，添加 host function 边界覆盖
+
+#### 7.3 性能
+- [ ] **基准基线刷新**: `docs/benchmarks/v2-baseline-2026-08-09.md` 已有，对比 `make perf-analyze` 当前数据
+- [ ] **DAG 渲染 SVG 性能**: 大型 SOP (>200 节点) 当前渲染慢，需 lazy load + viewport
+- [ ] **TUI 启动时间**: 冷启动 < 200ms 目标，profile `sisyphus-cli` 入口
+
+#### 7.4 开发者体验
+- [ ] **`make dev` 统一入口**: 替代散落的 make 目标，按需组合 `check`/`fmt`/`clippy`/`test`
+- [ ] **`just` 适配层**: 提供 `justfile` 镜像 Makefile，跨平台 shell 一致性
+- [ ] **IDE Rust Analyzer 配置**: `.rust-analyzer.json` 锁定重型 crate 排除
+
+#### 7.5 文档与运维
+- [ ] **CHANGELOG.md 启动**: 当前 320 个本地提交无 CHANGELOG，按 keep-a-changelog 格式补 0.x.x
+- [ ] **book 增量构建**: `mdbook` 当前每次全量编译，CI 缓存复用
+- [ ] **部署脚本**: 缺 systemd unit / Docker compose / k8s manifest
+
 ---
-**更新日期**: 2026-08-11
-**当前重点**: 单机全功能 — 可解释性深度闭环（追踪可视化 → SQL 持久化 → 历史检索 → 跨会话健康摘要），下一项: 阶段 5 剩余能力 (待评估，或按需深化多智能体/认知循环)
+**更新日期**: 2026-08-31
+**当前重点**: 阶段 7 启动 (健康度 → 测试质量 → 性能 → DX → 文档运维)
+**已完成**:
+- 2026-08-31 rustc 1.98 clippy 修复（10 文件 / 7 lint）
+- 2026-08-31 rustfmt 1.98 应用（366 文件 / 风格统一）
+- 2026-08-31 token_budget 端到端补齐（validate / env / 文档 / 4 测试）
