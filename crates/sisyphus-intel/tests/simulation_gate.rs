@@ -2160,3 +2160,92 @@ fn gate_history_with_alternating_2_allow_2_reject_50_3() {
     // 2 / 4 = 0.5
     assert!((h.intercept_rate() - 0.5).abs() < 1e-9);
 }
+
+// ---------------------------------------------------------------------------
+// More tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn gate_history_with_1_allow_9_reject_90() {
+    let h = GateHistory::new();
+    h.record(dec(GateVerdict::Allow, 0, 0));
+    for _ in 0..9 {
+        h.record(dec(GateVerdict::Reject, 1, 1));
+    }
+    // 9 / 10 = 0.9
+    assert!((h.intercept_rate() - 0.9).abs() < 1e-9);
+}
+
+#[test]
+fn gate_decision_with_unicode_sop_id_only_at_sign_6() {
+    let d = GateDecision {
+        sop_id: "🔍-α-@-β".into(),
+        verdict: GateVerdict::Allow,
+        flaw_count: 0,
+        critical_count: 0,
+        confidence: 0.5,
+        elapsed_micros: 100,
+    };
+    assert_eq!(d.sop_id, "🔍-α-@-β");
+}
+
+#[test]
+fn gate_history_with_3_allow_2_reject_40_2() {
+    let h = GateHistory::new();
+    for _ in 0..3 {
+        h.record(dec(GateVerdict::Allow, 0, 0));
+    }
+    for _ in 0..2 {
+        h.record(dec(GateVerdict::Reject, 1, 1));
+    }
+    // 2 / 5 = 0.4
+    assert!((h.intercept_rate() - 0.4).abs() < 1e-9);
+}
+
+#[test]
+fn gate_decision_with_unicode_sop_id_with_at_sign_5() {
+    let d = GateDecision {
+        sop_id: "@-α-🔍".into(),
+        verdict: GateVerdict::Allow,
+        flaw_count: 0,
+        critical_count: 0,
+        confidence: 0.5,
+        elapsed_micros: 100,
+    };
+    assert_eq!(d.sop_id, "@-α-🔍");
+}
+
+#[test]
+fn gate_history_with_1_allow_1_reject_50_3() {
+    let h = GateHistory::new();
+    h.record(dec(GateVerdict::Allow, 0, 0));
+    h.record(dec(GateVerdict::Reject, 1, 1));
+    // 1 / 2 = 0.5
+    assert!((h.intercept_rate() - 0.5).abs() < 1e-9);
+}
+
+#[test]
+fn gate_decision_with_unicode_sop_id_only_emojis_3() {
+    let d = GateDecision {
+        sop_id: "🔍🔭".into(),
+        verdict: GateVerdict::Allow,
+        flaw_count: 0,
+        critical_count: 0,
+        confidence: 0.5,
+        elapsed_micros: 100,
+    };
+    assert_eq!(d.sop_id, "🔍🔭");
+}
+
+#[test]
+fn gate_history_with_4_allow_6_reject_60_3() {
+    let h = GateHistory::new();
+    for _ in 0..4 {
+        h.record(dec(GateVerdict::Allow, 0, 0));
+    }
+    for _ in 0..6 {
+        h.record(dec(GateVerdict::Reject, 1, 1));
+    }
+    // 6 / 10 = 0.6
+    assert!((h.intercept_rate() - 0.6).abs() < 1e-9);
+}
