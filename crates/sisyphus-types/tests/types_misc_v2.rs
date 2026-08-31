@@ -2104,3 +2104,80 @@ fn sisyphus_notepad_with_unicode_only_emoji_2_chars_2() {
     let read = n.read_section("🔍🔭");
     assert!(read.is_some());
 }
+
+// ---------------------------------------------------------------------------
+// More tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn sisyphus_notepad_with_unicode_section_id_with_emoji_3() {
+    let mut n = SisyphusNotepad::default();
+    n.write_section("🔍-节-α".into(), "v".into());
+    let read = n.read_section("🔍-节-α");
+    assert!(read.is_some());
+}
+
+#[test]
+fn sisyphus_notepad_with_unicode_3_sections_overwrite_first() {
+    let mut n = SisyphusNotepad::default();
+    n.write_section("节-α".into(), "v1".into());
+    n.write_section("节-β".into(), "v2".into());
+    n.write_section("节-γ".into(), "v3".into());
+    n.write_section("节-α".into(), "v1-new".into());
+    let read = n.read_section("节-α").unwrap();
+    assert_eq!(read, "v1-new");
+}
+
+#[test]
+fn trigger_def_with_unicode_pattern_with_emoji_2() {
+    let t: TriggerDef = serde_json::from_str(r#"{"pattern":"🔍-α-β-γ-δ"}"#).unwrap();
+    assert_eq!(t.pattern.as_deref(), Some("🔍-α-β-γ-δ"));
+}
+
+#[test]
+fn notepad_snapshot_with_unicode_5_sections() {
+    let mut snapshot = im::HashMap::new();
+    for i in 0..5 {
+        snapshot.insert(format!("节-{}", i), format!("内容-{}", i));
+    }
+    let n = NotepadSnapshot {
+        timestamp: 0,
+        snapshot,
+        trigger_node: "触发-α".into(),
+    };
+    assert_eq!(n.snapshot.len(), 5);
+}
+
+#[test]
+fn evolution_op_with_unicode_min_delta_3() {
+    use sisyphus_types::types::EvolutionOp;
+    let op = EvolutionOp::AdjustFuel {
+        node_name: "n-α-🔍".into(),
+        delta: -100,
+    };
+    let j = serde_json::to_string(&op).unwrap();
+    let back: EvolutionOp = serde_json::from_str(&j).unwrap();
+    match back {
+        EvolutionOp::AdjustFuel { node_name, delta } => {
+            assert_eq!(node_name, "n-α-🔍");
+            assert_eq!(delta, -100);
+        }
+        _ => panic!("wrong"),
+    }
+}
+
+#[test]
+fn sisyphus_notepad_with_unicode_section_id_with_only_at_signs_2() {
+    let mut n = SisyphusNotepad::default();
+    n.write_section("@@@".into(), "v".into());
+    let read = n.read_section("@@@");
+    assert!(read.is_some());
+}
+
+#[test]
+fn sisyphus_notepad_with_unicode_section_id_with_dashes() {
+    let mut n = SisyphusNotepad::default();
+    n.write_section("---".into(), "v".into());
+    let read = n.read_section("---");
+    assert!(read.is_some());
+}
