@@ -19,22 +19,13 @@ async fn test_jcode_uds_call_chain() {
         let listener = UnixListener::bind(&socket_path_clone).expect("Failed to bind UDS");
         if let Ok((mut stream, _)) = listener.accept().await {
             let mut buf = [0u8; 1024];
-            let n = stream
-                .read(&mut buf)
-                .await
-                .expect("Failed to read from socket");
+            let n = stream.read(&mut buf).await.expect("Failed to read from socket");
             let request = String::from_utf8_lossy(&buf[..n]);
 
             if request.starts_with("tool:test_tool") {
-                stream
-                    .write_all(b"mock_response_success")
-                    .await
-                    .expect("Failed to write response");
+                stream.write_all(b"mock_response_success").await.expect("Failed to write response");
             } else {
-                stream
-                    .write_all(b"mock_response_error")
-                    .await
-                    .expect("Failed to write response");
+                stream.write_all(b"mock_response_error").await.expect("Failed to write response");
             }
         }
     });
@@ -43,9 +34,7 @@ async fn test_jcode_uds_call_chain() {
     let caller = Arc::new(DebugSocketToolCaller::new(socket_path));
 
     // 4. Test direct caller
-    let result = caller
-        .call_tool("test_tool", b"{\"param\": 1}".to_vec())
-        .await;
+    let result = caller.call_tool("test_tool", b"{\"param\": 1}".to_vec()).await;
     assert!(result.is_ok(), "Caller should succeed: {:?}", result.err());
     assert_eq!(result.unwrap(), b"mock_response_success");
 
@@ -53,9 +42,7 @@ async fn test_jcode_uds_call_chain() {
     let executor = JcodeToolExecutor::new();
     executor.set_caller(caller);
 
-    let exec_result = executor
-        .execute("test_tool", b"{\"param\": 1}".to_vec(), 1000)
-        .await;
+    let exec_result = executor.execute("test_tool", b"{\"param\": 1}".to_vec(), 1000).await;
     assert!(
         exec_result.is_ok(),
         "Executor should succeed: {:?}",
@@ -69,12 +56,7 @@ async fn test_jcode_uds_call_chain() {
 #[tokio::test]
 async fn test_jcode_connection_failure() {
     let dir = tempdir().expect("Failed to create temp dir");
-    let socket_path = dir
-        .path()
-        .join("non_existent.sock")
-        .to_str()
-        .unwrap()
-        .to_string();
+    let socket_path = dir.path().join("non_existent.sock").to_str().unwrap().to_string();
 
     let caller = DebugSocketToolCaller::new(socket_path);
     let result = caller.call_tool("test_tool", b"".to_vec()).await;

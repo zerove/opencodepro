@@ -32,13 +32,13 @@ pub fn handle_build(sub: &BuildCommands) -> Result<()> {
         )?,
         BuildCommands::Lint { package, lang, cwd } => {
             sisyphus_cli::build::run_lint(package.clone(), cwd.clone(), lang.clone())?
-        }
+        },
         BuildCommands::Fmt { check, lang, cwd } => {
             sisyphus_cli::build::run_fmt(*check, cwd.clone(), lang.clone())?
-        }
+        },
         BuildCommands::Doc { package, lang, cwd } => {
             sisyphus_cli::build::run_doc(package.clone(), cwd.clone(), lang.clone())?
-        }
+        },
     }
     Ok(())
 }
@@ -55,7 +55,7 @@ mod tests {
             Commands::Build(BuildCommands::Test { package, all, .. }) => {
                 assert_eq!(package, Some("sisyphus-core".to_string()));
                 assert!(!all);
-            }
+            },
             _ => panic!("Expected Build/Test variant"),
         }
     }
@@ -66,7 +66,7 @@ mod tests {
         match cmd {
             Commands::Build(BuildCommands::Check { all, .. }) => {
                 assert!(all);
-            }
+            },
             _ => panic!("Expected Build/Check variant"),
         }
     }
@@ -77,7 +77,7 @@ mod tests {
         match cmd {
             Commands::Build(BuildCommands::Fmt { check, .. }) => {
                 assert!(check);
-            }
+            },
             _ => panic!("Expected Build/Fmt variant"),
         }
     }
@@ -88,7 +88,7 @@ mod tests {
         match cmd {
             Commands::Build(BuildCommands::Lint { package, .. }) => {
                 assert_eq!(package, Some("sisyphus-core".to_string()));
-            }
+            },
             _ => panic!("Expected Build/Lint variant"),
         }
     }

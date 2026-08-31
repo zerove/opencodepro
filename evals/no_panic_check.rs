@@ -58,9 +58,7 @@ static FN_TEST_ATTR_RE: std::sync::OnceLock<Regex> = std::sync::OnceLock::new();
 static COMMENT_OR_ALLOW_RE: std::sync::OnceLock<Regex> = std::sync::OnceLock::new();
 
 fn unwrap_re() -> &'static Regex {
-    UNWRAP_RE.get_or_init(|| {
-        Regex::new(r#"\.(unwrap|expect)\s*\("#).expect("valid regex")
-    })
+    UNWRAP_RE.get_or_init(|| Regex::new(r#"\.(unwrap|expect)\s*\("#).expect("valid regex"))
 }
 
 fn panic_re() -> &'static Regex {
@@ -79,17 +77,27 @@ fn mod_test_attr_re() -> &'static Regex {
 /// (虽然 `cfg(test)` 已覆盖, 但显式记录 fn 边界便于将来基于
 /// 单 fn 粒度跳过; 当前实现与 mod_test_attr 行为等价)
 fn fn_test_attr_re() -> &'static Regex {
-    FN_TEST_ATTR_RE.get_or_init(|| Regex::new(r"#\[(test|tokio::test|case)\]").expect("valid regex"))
+    FN_TEST_ATTR_RE
+        .get_or_init(|| Regex::new(r"#\[(test|tokio::test|case)\]").expect("valid regex"))
 }
 
 fn comment_or_allow_re() -> &'static Regex {
-    COMMENT_OR_ALLOW_RE.get_or_init(|| Regex::new(r"^\s*//|allow\s*\(|#!\[allow").expect("valid regex"))
+    COMMENT_OR_ALLOW_RE
+        .get_or_init(|| Regex::new(r"^\s*//|allow\s*\(|#!\[allow").expect("valid regex"))
 }
 
 // ── 配置 ─────────────────────────────────────────────────────────────
 
 /// 排除的目录名（按 Rust 约定）。
-const EXCLUDE_DIRS: &[&str] = &["tests", "benches", "examples", "target", ".git", "node_modules", "momus"];
+const EXCLUDE_DIRS: &[&str] = &[
+    "tests",
+    "benches",
+    "examples",
+    "target",
+    ".git",
+    "node_modules",
+    "momus",
+];
 
 /// 视为 test infra 的文件后缀（按命名约定）。
 const EXCLUDE_FILES_SUFFIX: &[&str] = &["_tests.rs", "_test.rs", "test_helpers.rs"];
@@ -140,13 +148,15 @@ fn find_production_panics(path: &Path) -> Vec<Hit> {
         }
 
         // 跟踪 brace 深度
-        
+
         for ch in line.chars() {
             match ch {
-                '{' => { brace_depth += 1; }
+                '{' => {
+                    brace_depth += 1;
+                },
                 '}' => {
                     brace_depth -= 1;
-                    
+
                     while let Some(&top) = test_stack.last() {
                         if brace_depth <= top {
                             test_stack.pop();
@@ -154,9 +164,8 @@ fn find_production_panics(path: &Path) -> Vec<Hit> {
                             break;
                         }
                     }
-
-                }
-                _ => {}
+                },
+                _ => {},
             }
         }
 
@@ -174,10 +183,8 @@ fn find_production_panics(path: &Path) -> Vec<Hit> {
             //   (" 前有 1 个 " → 奇数 → 跳过), 漏报真实违规。
             // 接受偶发误报 (如 r#""x".unwrap()"#) 以换取零漏报。
             let _match_start = caps.get(0).unwrap().start();
-            let kind = caps
-                .get(1)
-                .map(|m| m.as_str().to_string())
-                .unwrap_or_else(|| "unwrap".to_string());
+            let kind =
+                caps.get(1).map(|m| m.as_str().to_string()).unwrap_or_else(|| "unwrap".to_string());
             hits.push(Hit {
                 file: path.display().to_string(),
                 line: ln,
@@ -186,11 +193,7 @@ fn find_production_panics(path: &Path) -> Vec<Hit> {
             });
         } else if let Some(caps) = panic_re().captures(line) {
             // 提取宏名（去掉 ! 和 (）
-            let raw = caps
-                .get(1)
-                .map(|m| m.as_str())
-                .unwrap_or("panic")
-                .to_string();
+            let raw = caps.get(1).map(|m| m.as_str()).unwrap_or("panic").to_string();
             let kind = match raw.as_str() {
                 "panic_any" => "panic",
                 other => other,
@@ -227,7 +230,9 @@ fn walkdir_skipping(root: &Path) -> Vec<PathBuf> {
     let mut out = Vec::new();
     let mut stack = vec![root.to_path_buf()];
     while let Some(dir) = stack.pop() {
-        let Ok(entries) = fs::read_dir(&dir) else { continue };
+        let Ok(entries) = fs::read_dir(&dir) else {
+            continue;
+        };
         for entry in entries.flatten() {
             let path = entry.path();
             let name = entry.file_name().to_string_lossy().to_string();
@@ -235,9 +240,8 @@ fn walkdir_skipping(root: &Path) -> Vec<PathBuf> {
             // 目录排除
             if path.is_dir() {
                 // 仅在 crates 子树内排除 (防止误把名为 sisyphus-tests 的 crate 排除)
-                let in_crate_tree = path
-                    .ancestors()
-                    .any(|p| p.file_name().map(|n| n == "crates").unwrap_or(false));
+                let in_crate_tree =
+                    path.ancestors().any(|p| p.file_name().map(|n| n == "crates").unwrap_or(false));
                 if in_crate_tree && EXCLUDE_DIRS.contains(&name.as_str()) {
                     continue;
                 }
@@ -268,7 +272,9 @@ fn write_baseline(hits: &[Hit], path: &Path) -> Result<(), String> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|e| format!("mkdir {parent:?}: {e}"))?;
     }
-    let bf = BaselineFile { hits: hits.to_vec() };
+    let bf = BaselineFile {
+        hits: hits.to_vec(),
+    };
     let json = serde_json::to_string_pretty(&bf).map_err(|e| format!("serialize: {e}"))?;
     fs::write(path, json).map_err(|e| format!("write {path:?}: {e}"))
 }
@@ -338,19 +344,19 @@ fn parse_args() -> Result<Args, String> {
             "--quiet" => quiet = true,
             "--baseline" => {
                 baseline = Some(PathBuf::from(iter.next().ok_or("--baseline 需要参数")?));
-            }
+            },
             "--write-baseline" => {
                 write_baseline = Some(PathBuf::from(
                     iter.next().ok_or("--write-baseline 需要参数")?,
                 ));
-            }
+            },
             "-h" | "--help" => {
                 print_help();
                 std::process::exit(0);
-            }
+            },
             other if other.starts_with("--") => {
                 return Err(format!("未知选项: {other}"));
-            }
+            },
             other => targets.push(PathBuf::from(other)),
         }
     }
@@ -432,7 +438,7 @@ fn main() -> ExitCode {
         Err(e) => {
             eprintln!("错误: {e}");
             ExitCode::from(2)
-        }
+        },
     }
 }
 
@@ -461,8 +467,12 @@ mod tests {
     #[test]
     fn unwrap_in_production_detected() {
         let tmp = tempdir();
-        let p = write_rs(&tmp, "bad.rs", r#"pub fn bad() -> u32 { "x".parse().unwrap() }
-"#);
+        let p = write_rs(
+            &tmp,
+            "bad.rs",
+            r#"pub fn bad() -> u32 { "x".parse().unwrap() }
+"#,
+        );
         let hits = find_production_panics(&p);
         assert_eq!(hits.len(), 1);
         assert_eq!(hits[0].kind, "unwrap");
@@ -471,8 +481,12 @@ mod tests {
     #[test]
     fn expect_in_production_detected() {
         let tmp = tempdir();
-        let p = write_rs(&tmp, "bad.rs", r#"pub fn bad() -> u32 { "x".parse().expect("parse") }
-"#);
+        let p = write_rs(
+            &tmp,
+            "bad.rs",
+            r#"pub fn bad() -> u32 { "x".parse().expect("parse") }
+"#,
+        );
         let hits = find_production_panics(&p);
         assert_eq!(hits.len(), 1);
         assert_eq!(hits[0].kind, "expect");
@@ -481,8 +495,12 @@ mod tests {
     #[test]
     fn panic_macro_detected() {
         let tmp = tempdir();
-        let p = write_rs(&tmp, "bad.rs", r#"pub fn bad() { panic!("nope"); }
-"#);
+        let p = write_rs(
+            &tmp,
+            "bad.rs",
+            r#"pub fn bad() { panic!("nope"); }
+"#,
+        );
         let hits = find_production_panics(&p);
         assert_eq!(hits.len(), 1);
         assert_eq!(hits[0].kind, "panic");
@@ -542,14 +560,21 @@ mod tests {
         );
         let hits = find_production_panics(&p);
         // 取消字符串排除后, 这种模式会被报. 接受误报.
-        assert!(!hits.is_empty(), "字符串字面量现在会报 (1 hit), got {hits:?}");
+        assert!(
+            !hits.is_empty(),
+            "字符串字面量现在会报 (1 hit), got {hits:?}"
+        );
     }
 
     #[test]
     fn unreachable_detected() {
         let tmp = tempdir();
-        let p = write_rs(&tmp, "u.rs", r#"pub fn bad() -> u32 { unreachable!() }
-"#);
+        let p = write_rs(
+            &tmp,
+            "u.rs",
+            r#"pub fn bad() -> u32 { unreachable!() }
+"#,
+        );
         let hits = find_production_panics(&p);
         assert_eq!(hits.len(), 1);
         assert_eq!(hits[0].kind, "unreachable");
@@ -579,10 +604,8 @@ mod tests {
     fn tempdir() -> PathBuf {
         let base = std::env::temp_dir();
         let pid = std::process::id();
-        let nanos = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
+        let nanos =
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
         let dir = base.join(format!("no-panic-check-test-{pid}-{nanos}"));
         fs::create_dir_all(&dir).unwrap();
         dir

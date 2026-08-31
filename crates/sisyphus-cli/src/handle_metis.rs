@@ -44,7 +44,7 @@ pub async fn handle_metis(
                     );
                 }
             }
-        }
+        },
     }
     Ok(())
 }

@@ -10,7 +10,10 @@ use sisyphus_visual::{base64_encode, is_png, simulated_visual_state};
 fn is_png_recognises_png_magic() {
     // PNG signature: 0x89 0x50 0x4E 0x47 0x0D 0x0A 0x1A 0x0A
     let png_sig: [u8; 8] = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
-    assert!(is_png(&png_sig), "8-byte PNG signature should be recognised");
+    assert!(
+        is_png(&png_sig),
+        "8-byte PNG signature should be recognised"
+    );
 
     // Add some trailing payload to make it look like a real PNG stream
     let mut png = png_sig.to_vec();

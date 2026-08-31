@@ -100,7 +100,8 @@ fn resolve_env_placeholders_substitutes() {
     unsafe {
         env::set_var("SISYPHUS_TEST_ENV", "value123");
     }
-    let result = sisyphus_types::config::resolve_env_placeholders_str("hello {env:SISYPHUS_TEST_ENV}!");
+    let result =
+        sisyphus_types::config::resolve_env_placeholders_str("hello {env:SISYPHUS_TEST_ENV}!");
     assert!(result.contains("value123"));
     unsafe {
         env::remove_var("SISYPHUS_TEST_ENV");
@@ -113,8 +114,9 @@ fn resolve_env_placeholders_uses_default() {
     unsafe {
         env::remove_var("SISYPHUS_NOT_SET_VAR_XYZ");
     }
-    let result =
-        sisyphus_types::config::resolve_env_placeholders_str("a={env:SISYPHUS_NOT_SET_VAR_XYZ|fallback}b");
+    let result = sisyphus_types::config::resolve_env_placeholders_str(
+        "a={env:SISYPHUS_NOT_SET_VAR_XYZ|fallback}b",
+    );
     assert!(result.contains("fallback"));
 }
 
@@ -134,10 +136,7 @@ fn config_save_and_load_roundtrip() {
     let dir = std::env::temp_dir().join(format!(
         "sisyphus-cfg-test-{}-{}",
         std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos()
+        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()
     ));
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join("config.toml");

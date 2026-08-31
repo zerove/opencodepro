@@ -27,10 +27,8 @@ pub async fn handle_team(sub: &TeamCommands) -> Result<()> {
 
             // 将 agents 字符串解析并合并到配置
             if let Some(agents_str) = agents {
-                let selected: std::collections::HashSet<String> = agents_str
-                    .split(',')
-                    .map(|s| s.trim().to_string())
-                    .collect();
+                let selected: std::collections::HashSet<String> =
+                    agents_str.split(',').map(|s| s.trim().to_string()).collect();
 
                 // 禁用未选中的内置代理
                 for agent in &mut team_config.agents {
@@ -55,7 +53,7 @@ pub async fn handle_team(sub: &TeamCommands) -> Result<()> {
                 team_config,
             )
             .await?;
-        }
+        },
         TeamCommands::List => {
             // 列出所有内置代理
             let agents = sisyphus_tools_agent::agent_registry::AgentRegistry::builtin_agents();
@@ -63,12 +61,12 @@ pub async fn handle_team(sub: &TeamCommands) -> Result<()> {
             for (id, info) in agents {
                 println!("  {id} - {}", info.description);
             }
-        }
+        },
         TeamCommands::History { limit } => {
             // 显示执行历史（从本地存储读取）
             println!("团队执行历史 (最近 {limit} 条):");
             println!("  (暂未实现持久化存储，后续版本将支持)");
-        }
+        },
     }
     Ok(())
 }
@@ -106,7 +104,7 @@ mod tests {
                 assert_eq!(max_concurrent, 2);
                 assert_eq!(config, None);
                 assert_eq!(strategy, None);
-            }
+            },
             _ => panic!("Expected Team/Run variant"),
         }
     }
@@ -132,7 +130,7 @@ mod tests {
                 assert_eq!(goal, "fix bugs");
                 assert_eq!(config, Some(std::path::PathBuf::from("team.yaml")));
                 assert_eq!(strategy, Some("sequential".to_string()));
-            }
+            },
             _ => panic!("Expected Team/Run variant"),
         }
     }
@@ -141,7 +139,7 @@ mod tests {
     fn test_team_commands_parse_list() {
         let cmd = parse_commands(&["team", "list"]);
         match cmd {
-            Commands::Team(TeamCommands::List) => {}
+            Commands::Team(TeamCommands::List) => {},
             _ => panic!("Expected Team/List variant"),
         }
     }
@@ -152,7 +150,7 @@ mod tests {
         match cmd {
             Commands::Team(TeamCommands::History { limit }) => {
                 assert_eq!(limit, 5);
-            }
+            },
             _ => panic!("Expected Team/History variant"),
         }
     }

@@ -181,7 +181,7 @@ fn execution_outcome_success() {
         deviation_score: Some(0.1),
         error: None,
         timestamp: 1234,
-            actual_cost: 0.0,
+        actual_cost: 0.0,
         duration_secs: 0.0,
     };
     assert!(o.success);
@@ -200,7 +200,7 @@ fn execution_outcome_failure() {
         deviation_score: Some(1.0),
         error: Some("timeout".into()),
         timestamp: 1000,
-            actual_cost: 0.0,
+        actual_cost: 0.0,
         duration_secs: 0.0,
     };
     assert!(!o.success);
@@ -218,7 +218,7 @@ fn execution_outcome_no_deviation() {
         deviation_score: None,
         error: None,
         timestamp: 0,
-            actual_cost: 0.0,
+        actual_cost: 0.0,
         duration_secs: 0.0,
     };
     assert!(o.deviation_score.is_none());

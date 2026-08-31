@@ -85,9 +85,8 @@ impl StrategicManager {
         );
 
         // --- 热启动阶段（HOT START） ---
-        let (mut current_ref, hot_start_active) = self
-            .hot_start_phase(&sop_graph, goal_text, project_id, &stream_tx)
-            .await;
+        let (mut current_ref, hot_start_active) =
+            self.hot_start_phase(&sop_graph, goal_text, project_id, &stream_tx).await;
 
         let (_current_strategy, _current_params) = {
             let context = serde_json::json!({
@@ -147,10 +146,8 @@ impl StrategicManager {
         let span = tracing::info_span!("strategic.run_cognitive_loop", sop_id = %sop_id, graph_nodes = sop_graph.graph.node_count());
         let _enter = span.enter();
 
-        let now = SystemTime::now()
-            .duration_since(SystemTime::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs();
+        let now =
+            SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap_or_default().as_secs();
         self.execution_manager.active_executions.insert(
             active_key.clone(),
             ExecutionStatus {
@@ -403,9 +400,7 @@ impl StrategicManager {
                 iteration,
                 None, // Active node would be the one currently being executed
             )?;
-            self.execution_manager
-                .cognitive_maps
-                .insert(sop_id.to_string(), cog_map);
+            self.execution_manager.cognitive_maps.insert(sop_id.to_string(), cog_map);
 
             // 战略转移分析：检查语义失败簇
             if let Ok(Some(cluster)) = self
@@ -446,10 +441,8 @@ impl StrategicManager {
             }
         }
 
-        let converged = iterations
-            .last()
-            .map(|i| i.deviation_score < convergence_threshold)
-            .unwrap_or(false);
+        let converged =
+            iterations.last().map(|i| i.deviation_score < convergence_threshold).unwrap_or(false);
 
         // 推送完成事件
         if let Some(ref tx) = stream_tx {
@@ -596,10 +589,7 @@ impl StrategicManager {
                 predicted_outcome: "success".into(),
             }
         } else {
-            if let Some(mut status) = self
-                .execution_manager
-                .active_executions
-                .get_mut(&active_key)
+            if let Some(mut status) = self.execution_manager.active_executions.get_mut(&active_key)
             {
                 status.status = "Predicting".into();
                 status.thought_logs.push(format!(
@@ -640,11 +630,7 @@ impl StrategicManager {
         };
 
         // 1.5 逻辑仿真（白盒）
-        if let Some(mut status) = self
-            .execution_manager
-            .active_executions
-            .get_mut(&active_key)
-        {
+        if let Some(mut status) = self.execution_manager.active_executions.get_mut(&active_key) {
             status.status = "Simulating Logic".into();
             status.thought_logs.push(format!(
                 "Iteration {}: Auditing logical consistency...",
@@ -681,9 +667,8 @@ impl StrategicManager {
 
         // ── 概率路径排序 ──────────────────────────────────
         // 使用概率规划器对路径排序并选择最优路径
-        let ranked_path = self
-            .probabilistic_planner
-            .select_optimal_path(std::slice::from_ref(&prediction));
+        let ranked_path =
+            self.probabilistic_planner.select_optimal_path(std::slice::from_ref(&prediction));
         if let Some(ref rp) = ranked_path {
             tracing::info!(
                 sop_id,
@@ -748,15 +733,9 @@ impl StrategicManager {
         #[allow(unused_variables)]
         let active_key = sop_id.to_string();
 
-        if let Some(mut status) = self
-            .execution_manager
-            .active_executions
-            .get_mut(&active_key)
-        {
+        if let Some(mut status) = self.execution_manager.active_executions.get_mut(&active_key) {
             status.status = "Executing".into();
-            status
-                .thought_logs
-                .push(format!("Iteration {}: Executing SOP nodes...", iteration));
+            status.thought_logs.push(format!("Iteration {}: Executing SOP nodes...", iteration));
             status.last_updated = iter_now();
         }
         broadcast_fn(
@@ -814,7 +793,7 @@ impl StrategicManager {
             Err(CoreError::StrategicPivot(reason)) => {
                 *pivot_reason = Some(reason);
                 Arc::new(ExecutionContext::new())
-            }
+            },
             Err(e) => return Err(CoreError::Internal(e.to_string())),
         };
 
@@ -826,9 +805,7 @@ impl StrategicManager {
                 .node_weight(current_start)
                 .map(|n| n.name().to_string())
                 .ok_or_else(|| CoreError::Internal("Start node not found".into()))?;
-            final_ctx
-                .get_result(&start_name)
-                .ok_or(CoreError::NoResultProduced)?
+            final_ctx.get_result(&start_name).ok_or(CoreError::NoResultProduced)?
         };
 
         // 推送执行事件
@@ -926,11 +903,7 @@ impl StrategicManager {
             if let Some(reason) = pivot_reason.as_ref() {
                 let mut lib = self.failure_pattern_library.write();
                 lib.record_failure(
-                    reflection
-                        .records
-                        .first()
-                        .map(|r| r.node.as_str())
-                        .unwrap_or("unknown"),
+                    reflection.records.first().map(|r| r.node.as_str()).unwrap_or("unknown"),
                     sisyphus_intel::failure_pattern_evolver::FailureCategory::LogicError,
                     reason,
                 );
@@ -1190,10 +1163,8 @@ impl StrategicManager {
                 final_evolved_graph = Some(evolved_graph);
 
                 // 记录验证成功
-                if let Some(mut status) = self
-                    .execution_manager
-                    .active_executions
-                    .get_mut(&active_key)
+                if let Some(mut status) =
+                    self.execution_manager.active_executions.get_mut(&active_key)
                 {
                     status.thought_logs.push(format!(
                         "Iteration {}: Evolution verified. Prob: {:.2} -> {:.2}",
@@ -1202,10 +1173,8 @@ impl StrategicManager {
                 }
             } else {
                 // 记录验证被拒
-                if let Some(mut status) = self
-                    .execution_manager
-                    .active_executions
-                    .get_mut(&active_key)
+                if let Some(mut status) =
+                    self.execution_manager.active_executions.get_mut(&active_key)
                 {
                     status.thought_logs.push(format!(
                         "Iteration {}: Evolution rejected. New Prob ({:.2}) <= Old Prob ({:.2})",
@@ -1215,10 +1184,7 @@ impl StrategicManager {
             }
         } else {
             // 仿真失败，为安全起见视为拒绝
-            if let Some(mut status) = self
-                .execution_manager
-                .active_executions
-                .get_mut(&active_key)
+            if let Some(mut status) = self.execution_manager.active_executions.get_mut(&active_key)
             {
                 status.thought_logs.push(format!(
                     "Iteration {}: Evolution verification failed (simulation error).",
@@ -1271,7 +1237,7 @@ fn spawn_trace_recorder(
                         *duration_ms as u64,
                         true,
                     );
-                }
+                },
                 ExecutionEvent::NodeFailed {
                     node_name,
                     fuel_consumed,
@@ -1284,8 +1250,8 @@ fn spawn_trace_recorder(
                         *duration_ms as u64,
                         false,
                     );
-                }
-                _ => {}
+                },
+                _ => {},
             }
             // 1. 记录到结构化存储
             match &event {
@@ -1305,7 +1271,7 @@ fn spawn_trace_recorder(
                             *duration_ms,
                         )
                         .await;
-                }
+                },
                 ExecutionEvent::NodeFailed {
                     node_name,
                     error,
@@ -1322,8 +1288,8 @@ fn spawn_trace_recorder(
                             *duration_ms,
                         )
                         .await;
-                }
-                _ => {}
+                },
+                _ => {},
             }
             // 2. 转发到原始事件流
             if let Some(ref buf) = cognitive_trace {
@@ -1348,10 +1314,7 @@ fn spawn_trace_recorder(
 
 /// 当前 Unix 时间戳（秒）。
 fn iter_now() -> u64 {
-    SystemTime::now()
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs()
+    SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap_or_default().as_secs()
 }
 
 /// 计算认知循环的有效最大迭代次数（评审 A4 遗留缺口修复，275a435）。

@@ -104,10 +104,7 @@ async fn test_single_node() {
     let idx = graph.add_node(node);
     let executor = make_executor();
 
-    let ctx = executor
-        .execute(Arc::new(graph), idx, Arc::new(MockToolExecutor))
-        .await
-        .unwrap();
+    let ctx = executor.execute(Arc::new(graph), idx, Arc::new(MockToolExecutor)).await.unwrap();
     let out = ctx.get_result("alpha").unwrap();
     assert_eq!(out, Value::String("result_alpha".into()));
 }
@@ -120,10 +117,7 @@ async fn test_linear_dag() {
     graph.add_edge(n1, n2);
 
     let executor = make_executor();
-    let ctx = executor
-        .execute(Arc::new(graph), n1, Arc::new(MockToolExecutor))
-        .await
-        .unwrap();
+    let ctx = executor.execute(Arc::new(graph), n1, Arc::new(MockToolExecutor)).await.unwrap();
 
     assert_eq!(
         ctx.get_result("step1").unwrap(),
@@ -144,9 +138,7 @@ async fn test_cycle_detection() {
     graph.add_edge(n2, n1); // cycle
 
     let executor = make_executor();
-    let result = executor
-        .execute(Arc::new(graph), n1, Arc::new(MockToolExecutor))
-        .await;
+    let result = executor.execute(Arc::new(graph), n1, Arc::new(MockToolExecutor)).await;
     assert!(result.is_err());
     assert!(result.unwrap_err().to_string().contains("cycle"));
 }
@@ -162,10 +154,7 @@ async fn test_parallel_execution() {
     graph.add_edge(n2, n3);
 
     let executor = make_executor();
-    let ctx = executor
-        .execute(Arc::new(graph), n1, Arc::new(MockToolExecutor))
-        .await
-        .unwrap();
+    let ctx = executor.execute(Arc::new(graph), n1, Arc::new(MockToolExecutor)).await.unwrap();
 
     assert_eq!(
         ctx.get_result("task1").unwrap(),
@@ -187,10 +176,7 @@ async fn test_node_error_propagated() {
     let n1 = graph.add_node(Arc::new(MockNode::failing("crash")));
     let executor = make_executor();
 
-    let ctx = executor
-        .execute(Arc::new(graph), n1, Arc::new(MockToolExecutor))
-        .await
-        .unwrap();
+    let ctx = executor.execute(Arc::new(graph), n1, Arc::new(MockToolExecutor)).await.unwrap();
     let out = ctx.get_result("crash").unwrap();
     // Error is stored as a Value::String containing the error message
     assert!(out.to_string().contains("ResourceExhausted"));

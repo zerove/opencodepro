@@ -202,13 +202,11 @@ impl Config {
             std::env::var(key).ok()
         }
         fn env_bool(key: &str) -> Option<bool> {
-            std::env::var(key)
-                .ok()
-                .and_then(|v| match v.to_lowercase().as_str() {
-                    "true" | "1" | "yes" | "on" => Some(true),
-                    "false" | "0" | "no" | "off" => Some(false),
-                    _ => None,
-                })
+            std::env::var(key).ok().and_then(|v| match v.to_lowercase().as_str() {
+                "true" | "1" | "yes" | "on" => Some(true),
+                "false" | "0" | "no" | "off" => Some(false),
+                _ => None,
+            })
         }
 
         if let Some(v) = env_string("SISYPHUS_REGISTRY_URL") {
@@ -409,9 +407,7 @@ impl Config {
     }
 
     fn validate_address(&self, addr: &str, field: &str) -> Result<(), TypesError> {
-        let stripped = addr
-            .strip_prefix("http://")
-            .or_else(|| addr.strip_prefix("https://"));
+        let stripped = addr.strip_prefix("http://").or_else(|| addr.strip_prefix("https://"));
         match stripped {
             None => Err(TypesError::ConfigValidationError(format!(
                 "{field}: \"{addr}\" must start with http:// or https://"
@@ -430,7 +426,7 @@ impl Config {
                     })?;
                 }
                 Ok(())
-            }
+            },
         }
     }
 }
@@ -535,7 +531,7 @@ impl Config {
                 Err(e) => {
                     tracing::error!(error = %e, "Failed to create file watcher");
                     return;
-                }
+                },
             };
 
             if let Err(e) = watcher.watch(&path_clone, RecursiveMode::NonRecursive) {
@@ -558,10 +554,10 @@ impl Config {
                                     "Config validation failed after reload, keeping old config"
                                 );
                             }
-                        }
+                        },
                         Err(e) => {
                             tracing::error!(error = %e, "Failed to reload config");
-                        }
+                        },
                     }
                 }
             }

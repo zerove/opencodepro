@@ -90,8 +90,7 @@ impl InterventionManager {
     ) -> Result<(), InterventionError> {
         let mut pending = self.pending.write().await;
         if let Some(tx) = pending.remove(node_name) {
-            tx.send(feedback)
-                .map_err(|e| InterventionError::Internal(format!("{:?}", e)))?;
+            tx.send(feedback).map_err(|e| InterventionError::Internal(format!("{:?}", e)))?;
             Ok(())
         } else {
             Err(InterventionError::Internal(format!(

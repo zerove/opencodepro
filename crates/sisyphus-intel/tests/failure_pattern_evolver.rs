@@ -47,7 +47,11 @@ fn library_repeat_failure_increments_count() {
         lib.record_failure("node1", FailureCategory::Timeout, "slow");
     }
     let patterns = lib.get_node_patterns("node1");
-    assert_eq!(patterns.len(), 1, "same node+category merges into one pattern");
+    assert_eq!(
+        patterns.len(),
+        1,
+        "same node+category merges into one pattern"
+    );
     assert_eq!(patterns[0].occurrence_count, 5);
 }
 
@@ -218,10 +222,7 @@ fn evolver_suggestions_sorted_by_confidence_desc() {
     }
     let lib = Arc::new(RwLock::new(lib));
     let evolver = FailurePatternEvolver::new(lib);
-    let report = make_report(vec![
-        ("n1", "failed", "x"),
-        ("n2", "failed", "y"),
-    ]);
+    let report = make_report(vec![("n1", "failed", "x"), ("n2", "failed", "y")]);
     let suggestions = evolver.analyze_and_suggest(&report);
     assert_eq!(suggestions.len(), 2);
     assert!(suggestions[0].confidence >= suggestions[1].confidence);
@@ -291,10 +292,8 @@ fn failure_category_distinct_via_serde() {
         FailureCategory::LogicError,
         FailureCategory::ResourceUnavailable,
     ];
-    let serialized: Vec<String> = variants
-        .iter()
-        .map(|v| serde_json::to_string(v).unwrap())
-        .collect();
+    let serialized: Vec<String> =
+        variants.iter().map(|v| serde_json::to_string(v).unwrap()).collect();
     let unique: std::collections::HashSet<_> = serialized.iter().collect();
     assert_eq!(unique.len(), 7);
 }

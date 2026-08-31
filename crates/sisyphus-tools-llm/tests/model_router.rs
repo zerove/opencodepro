@@ -93,7 +93,10 @@ fn router_select_performance_optimized() {
     r.register_model(cfg("weak", 0.001, 5));
     r.register_model(cfg("strong", 0.05, 100));
     let m = r
-        .select("complex prompt requiring more capacity", &ModelRouteStrategy::PerformanceOptimized)
+        .select(
+            "complex prompt requiring more capacity",
+            &ModelRouteStrategy::PerformanceOptimized,
+        )
         .unwrap();
     // Most capable (highest complexity_ceiling) wins.
     assert_eq!(m.name, "strong");
@@ -287,7 +290,10 @@ fn usage_record_clone() {
 #[test]
 fn model_route_strategy_debug() {
     let _ = format!("{:?}", sisyphus_types::ModelRouteStrategy::CostOptimized);
-    let _ = format!("{:?}", sisyphus_types::ModelRouteStrategy::PerformanceOptimized);
+    let _ = format!(
+        "{:?}",
+        sisyphus_types::ModelRouteStrategy::PerformanceOptimized
+    );
     let _ = format!("{:?}", sisyphus_types::ModelRouteStrategy::FallbackChain);
 }
 

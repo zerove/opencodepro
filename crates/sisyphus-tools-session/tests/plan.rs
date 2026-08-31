@@ -5,7 +5,9 @@
 //! - `plan_create` (constructor)
 //! - `plan_approve` / `plan_cancel` (status transitions)
 
-use sisyphus_tools_session::plan::{plan_approve, plan_cancel, plan_create, plan_review, Plan, PlanStatus, PlanStep};
+use sisyphus_tools_session::plan::{
+    plan_approve, plan_cancel, plan_create, plan_review, Plan, PlanStatus, PlanStep,
+};
 
 // ---------------------------------------------------------------------------
 // plan_review — pure function
@@ -34,13 +36,17 @@ fn plan_review_no_steps_comments() {
 
 #[test]
 fn plan_review_step_empty_description_comments() {
-    let p = plan_create("name", "desc", vec![PlanStep {
-        id: "s1".into(),
-        description: "".into(),
-        status: PlanStatus::Draft,
-        dependencies: vec![],
-        estimated_effort: None,
-    }]);
+    let p = plan_create(
+        "name",
+        "desc",
+        vec![PlanStep {
+            id: "s1".into(),
+            description: "".into(),
+            status: PlanStatus::Draft,
+            dependencies: vec![],
+            estimated_effort: None,
+        }],
+    );
     let c = plan_review(&p);
     assert!(c.iter().any(|s| s.contains("empty description")));
 }
@@ -104,13 +110,17 @@ fn plan_create_assigns_id() {
 
 #[test]
 fn plan_create_with_steps() {
-    let p = plan_create("n", "d", vec![PlanStep {
-        id: "s1".into(),
-        description: "first".into(),
-        status: PlanStatus::Draft,
-        dependencies: vec![],
-        estimated_effort: None,
-    }]);
+    let p = plan_create(
+        "n",
+        "d",
+        vec![PlanStep {
+            id: "s1".into(),
+            description: "first".into(),
+            status: PlanStatus::Draft,
+            dependencies: vec![],
+            estimated_effort: None,
+        }],
+    );
     assert_eq!(p.steps.len(), 1);
     assert_eq!(p.steps[0].id, "s1");
 }
@@ -162,13 +172,17 @@ fn plan_status_serde() {
 
 #[test]
 fn plan_serde_round_trip() {
-    let p = plan_create("n", "d", vec![PlanStep {
-        id: "s1".into(),
-        description: "first".into(),
-        status: PlanStatus::Draft,
-        dependencies: vec![],
-        estimated_effort: Some("1h".into()),
-    }]);
+    let p = plan_create(
+        "n",
+        "d",
+        vec![PlanStep {
+            id: "s1".into(),
+            description: "first".into(),
+            status: PlanStatus::Draft,
+            dependencies: vec![],
+            estimated_effort: Some("1h".into()),
+        }],
+    );
     let j = serde_json::to_string(&p).unwrap();
     let back: Plan = serde_json::from_str(&j).unwrap();
     assert_eq!(back.id, p.id);

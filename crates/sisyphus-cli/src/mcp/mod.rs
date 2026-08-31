@@ -175,9 +175,7 @@ fn tool_registry() -> &'static [ToolDef] {
 /// 启动暴露 Sisyphus 代理工具的 MCP stdio 服务器。
 /// 运行直到 stdin 关闭。
 pub async fn run_serve(client: Arc<dyn crate::tools::metis::LlmClient>) -> anyhow::Result<()> {
-    LLM_CLIENT
-        .set(client)
-        .map_err(|_| anyhow::anyhow!("LLM client already initialized"))?;
+    LLM_CLIENT.set(client).map_err(|_| anyhow::anyhow!("LLM client already initialized"))?;
 
     let stdin = tokio::io::stdin();
     let reader = BufReader::new(stdin);
@@ -206,7 +204,7 @@ pub async fn run_serve(client: Arc<dyn crate::tools::metis::LlmClient>) -> anyho
                 println!("{out}");
                 std::io::stdout().flush()?;
                 continue;
-            }
+            },
         };
 
         let response = handlers::handle_request(request).await;

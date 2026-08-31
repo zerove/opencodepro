@@ -23,7 +23,7 @@ impl ToolExecutor for SystemExecutor {
                 let content =
                     file::read(path).map_err(|e| TypesError::NodeExecutionError(e.to_string()))?;
                 Ok(content.into_bytes())
-            }
+            },
             "write" => {
                 // For write, we expect args to be "path|content"
                 let parts: Vec<&str> = args_str.splitn(2, '|').collect();
@@ -37,13 +37,13 @@ impl ToolExecutor for SystemExecutor {
                 file::write(path, content)
                     .map_err(|e| TypesError::NodeExecutionError(e.to_string()))?;
                 Ok(b"Success".to_vec())
-            }
+            },
             "shell" => {
                 let output = bash::execute(&args_str, None, 5000)
                     .await
                     .map_err(|e| TypesError::NodeExecutionError(e.to_string()))?;
                 Ok(output.stdout.into_bytes())
-            }
+            },
             _ => Err(TypesError::NodeExecutionError(format!(
                 "Unknown system tool: {tool_id}"
             ))),

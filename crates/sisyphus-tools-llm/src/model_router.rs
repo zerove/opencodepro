@@ -87,33 +87,26 @@ impl ModelRouter {
                         "No model can handle this prompt complexity".into(),
                     )
                 })
-            }
+            },
             ModelRouteStrategy::PerformanceOptimized => {
                 // Find most capable model (highest complexity ceiling)
-                models
-                    .iter()
-                    .max_by_key(|m| m.complexity_ceiling)
-                    .cloned()
-                    .ok_or_else(|| {
-                        sisyphus_tools_core::ToolError::Generic("No models available".into())
-                    })
-            }
+                models.iter().max_by_key(|m| m.complexity_ceiling).cloned().ok_or_else(|| {
+                    sisyphus_tools_core::ToolError::Generic("No models available".into())
+                })
+            },
             ModelRouteStrategy::FallbackChain => {
                 // Try models in order of registration
                 models.first().cloned().ok_or_else(|| {
                     sisyphus_tools_core::ToolError::Generic("No models available".into())
                 })
-            }
+            },
         }
     }
 
     /// Record usage for a model call.
     pub fn record_usage(&self, model: &str, cost: f64, tokens: u64) {
         if let Ok(mut usage) = self.usage.write() {
-            let now = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_secs();
+            let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
 
             let entry = usage.entry(model.to_string()).or_insert_with(|| {
                 let month_start = now - (now % (30 * 24 * 3600));
@@ -146,7 +139,7 @@ impl ModelRouter {
             Ok(usage) => {
                 let total_monthly: f64 = usage.values().map(|u| u.monthly_cost).sum();
                 (self.monthly_budget - total_monthly).max(0.0)
-            }
+            },
             _ => 0.0,
         }
     }
@@ -158,11 +151,7 @@ impl ModelRouter {
 
     /// List all registered models.
     pub fn list_models(&self) -> Vec<ModelConfig> {
-        self.models
-            .read()
-            .ok()
-            .map(|m| m.clone())
-            .unwrap_or_default()
+        self.models.read().ok().map(|m| m.clone()).unwrap_or_default()
     }
 }
 
@@ -226,9 +215,7 @@ mod tests {
     fn test_cost_optimized_selects_cheapest() {
         let router = setup_router();
         let simple_prompt = "hello world";
-        let model = router
-            .select(simple_prompt, &ModelRouteStrategy::CostOptimized)
-            .unwrap();
+        let model = router.select(simple_prompt, &ModelRouteStrategy::CostOptimized).unwrap();
         // gemma-3 is cheapest at 0.0005/1k and can handle 30 complexity
         assert_eq!(model.name, "gemma-3");
     }
@@ -236,18 +223,15 @@ mod tests {
     #[test]
     fn test_performance_selects_most_capable() {
         let router = setup_router();
-        let model = router
-            .select("complex stuff", &ModelRouteStrategy::PerformanceOptimized)
-            .unwrap();
+        let model =
+            router.select("complex stuff", &ModelRouteStrategy::PerformanceOptimized).unwrap();
         assert_eq!(model.name, "gpt-4o");
     }
 
     #[test]
     fn test_fallback_chain_returns_first() {
         let router = setup_router();
-        let model = router
-            .select("test", &ModelRouteStrategy::FallbackChain)
-            .unwrap();
+        let model = router.select("test", &ModelRouteStrategy::FallbackChain).unwrap();
         assert_eq!(model.name, "gpt-4o");
     }
 

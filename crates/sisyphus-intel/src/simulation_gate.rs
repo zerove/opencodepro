@@ -192,18 +192,12 @@ impl SimulationGate {
         }
 
         let start = Instant::now();
-        let result = self
-            .simulator
-            .simulate_logic(graph, context, sop_id, goal_text)
-            .await;
+        let result = self.simulator.simulate_logic(graph, context, sop_id, goal_text).await;
 
         match result {
             Ok(sim) => {
-                let critical_count = sim
-                    .flaws
-                    .iter()
-                    .filter(|f| f.severity == FlawSeverity::Critical)
-                    .count();
+                let critical_count =
+                    sim.flaws.iter().filter(|f| f.severity == FlawSeverity::Critical).count();
                 let verdict = if !sim.is_valid || critical_count > 0 {
                     GateVerdict::Reject
                 } else {
@@ -219,7 +213,7 @@ impl SimulationGate {
                 };
                 self.history.record(decision.clone());
                 Ok(decision)
-            }
+            },
             Err(e) if self.config.fallback_on_error => {
                 // 不阻塞生产：回退为 Skipped，并记录（让 nightly 看到失败率）
                 let decision = GateDecision {
@@ -233,7 +227,7 @@ impl SimulationGate {
                 self.history.record(decision.clone());
                 eprintln!("[simulation_gate] simulator error (fallback Skipped): {e}");
                 Ok(decision)
-            }
+            },
             Err(e) => Err(e),
         }
     }
@@ -243,7 +237,7 @@ impl SimulationGate {
 mod tests {
     use super::*;
     #[allow(unused_imports)]
-use async_trait::async_trait;
+    use async_trait::async_trait;
     use std::sync::Arc;
 
     /// Mock simulator：返回预编程的 `LogicalSimulationResult`。
@@ -326,10 +320,7 @@ use async_trait::async_trait;
                 fallback_on_error: false,
             },
         );
-        let d = gate
-            .check(empty_graph(), &empty_ctx(), "sop-x", None)
-            .await
-            .expect("ok");
+        let d = gate.check(empty_graph(), &empty_ctx(), "sop-x", None).await.expect("ok");
         assert_eq!(d.verdict, GateVerdict::Skipped);
     }
 
@@ -337,10 +328,7 @@ use async_trait::async_trait;
     async fn gate_allows_valid_sop() {
         let sim = Arc::new(MockSim::new(empty_sop()));
         let gate = SimulationGate::new(sim, GateConfig::default());
-        let d = gate
-            .check(empty_graph(), &empty_ctx(), "sop-ok", None)
-            .await
-            .expect("ok");
+        let d = gate.check(empty_graph(), &empty_ctx(), "sop-ok", None).await.expect("ok");
         assert_eq!(d.verdict, GateVerdict::Allow);
         assert_eq!(d.flaw_count, 0);
     }
@@ -349,10 +337,7 @@ use async_trait::async_trait;
     async fn gate_rejects_critical_flaw() {
         let sim = Arc::new(MockSim::new(critical_sop()));
         let gate = SimulationGate::new(sim, GateConfig::default());
-        let d = gate
-            .check(empty_graph(), &empty_ctx(), "sop-crit", None)
-            .await
-            .expect("ok");
+        let d = gate.check(empty_graph(), &empty_ctx(), "sop-crit", None).await.expect("ok");
         assert_eq!(d.verdict, GateVerdict::Reject);
         assert_eq!(d.critical_count, 1);
         assert_eq!(d.flaw_count, 1);
@@ -362,10 +347,7 @@ use async_trait::async_trait;
     async fn gate_rejects_invalid_sop() {
         let sim = Arc::new(MockSim::new(invalid_sop()));
         let gate = SimulationGate::new(sim, GateConfig::default());
-        let d = gate
-            .check(empty_graph(), &empty_ctx(), "sop-inv", None)
-            .await
-            .expect("ok");
+        let d = gate.check(empty_graph(), &empty_ctx(), "sop-inv", None).await.expect("ok");
         assert_eq!(d.verdict, GateVerdict::Reject);
     }
 
@@ -384,10 +366,7 @@ use async_trait::async_trait;
         };
         let sim = Arc::new(MockSim::new(r));
         let gate = SimulationGate::new(sim, GateConfig::default());
-        let d = gate
-            .check(empty_graph(), &empty_ctx(), "sop-warn", None)
-            .await
-            .expect("ok");
+        let d = gate.check(empty_graph(), &empty_ctx(), "sop-warn", None).await.expect("ok");
         assert_eq!(d.verdict, GateVerdict::Allow);
         assert_eq!(d.critical_count, 0);
     }

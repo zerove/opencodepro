@@ -44,7 +44,7 @@ impl HeuristicSopEvaluator {
             match &node.kind {
                 sisyphus_types::NodeKind::Retry { .. } => robustness_bonus += 0.2,
                 sisyphus_types::NodeKind::Branch { .. } => robustness_bonus += 0.1,
-                _ => {}
+                _ => {},
             }
         }
 

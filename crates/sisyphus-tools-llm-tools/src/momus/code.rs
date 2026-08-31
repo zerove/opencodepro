@@ -186,9 +186,7 @@ pub async fn review_code(
 
     // 2. Semantic review (LLM)
     let user_prompt = format!("File: {}\n\nContent:\n{}", path.to_string_lossy(), content);
-    let llm_result = client
-        .chat(CODE_REVIEW_SYSTEM_PROMPT, &user_prompt, true)
-        .await;
+    let llm_result = client.chat(CODE_REVIEW_SYSTEM_PROMPT, &user_prompt, true).await;
 
     let (llm_passed, llm_summary, llm_comments) = match llm_result {
         Ok(response) => match serde_json::from_str::<LlmReviewResponse>(&response) {
@@ -211,7 +209,7 @@ pub async fn review_code(
                     "Semantic review skipped due to parsing error.".to_string(),
                     vec![],
                 )
-            }
+            },
         },
         Err(e) => {
             comments.push(ReviewComment {
@@ -227,7 +225,7 @@ pub async fn review_code(
                 "Semantic review skipped due to LLM error.".to_string(),
                 vec![],
             )
-        }
+        },
     };
 
     comments.extend(llm_comments);

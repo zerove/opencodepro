@@ -35,10 +35,10 @@ pub async fn handle_remote(sub: &RemoteCommands, bridge_addr: &str) -> Result<()
         RemoteCommands::Skills => sisyphus_cli::remote::run_list_skills(&mut client).await?,
         RemoteCommands::Exec { sop_id } => {
             sisyphus_cli::remote::run_exec_sop(&mut client, sop_id).await?
-        }
+        },
         RemoteCommands::Decompose { goal } => {
             sisyphus_cli::remote::run_decompose_goal(&mut client, goal).await?
-        }
+        },
     }
     Ok(())
 }
@@ -66,7 +66,7 @@ mod tests {
         match cmd {
             Commands::Remote(RemoteCommands::Exec { sop_id }) => {
                 assert_eq!(sop_id, "test-sop");
-            }
+            },
             _ => panic!("Expected Remote/Exec variant"),
         }
     }
@@ -77,7 +77,7 @@ mod tests {
         match cmd {
             Commands::Remote(RemoteCommands::Decompose { goal }) => {
                 assert_eq!(goal, "build a website");
-            }
+            },
             _ => panic!("Expected Remote/Decompose variant"),
         }
     }

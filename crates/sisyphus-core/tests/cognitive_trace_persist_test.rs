@@ -64,11 +64,8 @@ async fn test_execution_manager_with(db: &str) -> ExecutionManager {
             .expect("store"),
     );
     let pool = sqlx::SqlitePool::connect(db).await.expect("pool");
-    let sop_store = Arc::new(
-        sisyphus_mem::SopSqlStore::new(pool.clone())
-            .await
-            .expect("sop store"),
-    );
+    let sop_store =
+        Arc::new(sisyphus_mem::SopSqlStore::new(pool.clone()).await.expect("sop store"));
     ExecutionManager::new(
         state_store,
         sop_store,
@@ -117,18 +114,13 @@ fn step_event(step: &str) -> ExecutionEvent {
 /// 轮询等待 writer 落盘（异步），最多 ~1s。
 async fn wait_history(em: &ExecutionManager, expected: usize) -> Vec<CognitiveTraceEntry> {
     for _ in 0..50 {
-        let rows = em
-            .cognitive_trace_history("default", None, 100)
-            .await
-            .expect("history");
+        let rows = em.cognitive_trace_history("default", None, 100).await.expect("history");
         if rows.len() >= expected {
             return rows;
         }
         tokio::time::sleep(std::time::Duration::from_millis(20)).await;
     }
-    em.cognitive_trace_history("default", None, 100)
-        .await
-        .expect("history")
+    em.cognitive_trace_history("default", None, 100).await.expect("history")
 }
 
 #[tokio::test]
@@ -172,17 +164,13 @@ async fn test_history_sop_filter_and_limit() {
     let all = wait_history(&em, 3).await;
     assert_eq!(all.len(), 3);
 
-    let sop_a = em
-        .cognitive_trace_history("default", Some("sop-a"), 10)
-        .await
-        .expect("filtered history");
+    let sop_a =
+        em.cognitive_trace_history("default", Some("sop-a"), 10).await.expect("filtered history");
     assert_eq!(sop_a.len(), 2);
     assert!(sop_a.iter().all(|r| r.sop_id == "sop-a"));
 
-    let limited = em
-        .cognitive_trace_history("default", Some("sop-a"), 1)
-        .await
-        .expect("limited history");
+    let limited =
+        em.cognitive_trace_history("default", Some("sop-a"), 1).await.expect("limited history");
     assert_eq!(limited.len(), 1);
     assert!(matches!(
         limited[0].event,

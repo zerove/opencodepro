@@ -32,10 +32,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .filter(|a| !a.starts_with('-'))
         .collect();
 
-    let addr = pos_args
-        .first()
-        .map(|s| (*s).clone())
-        .unwrap_or_else(|| "http://[::1]:50051".to_string());
+    let addr =
+        pos_args.first().map(|s| (*s).clone()).unwrap_or_else(|| "http://[::1]:50051".to_string());
 
     let (concurrency, iterations) = if is_quick {
         (1, 1)

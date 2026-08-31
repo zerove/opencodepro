@@ -53,7 +53,7 @@ impl ToolExecutor for JcodeToolExecutor {
                 return Err(TypesError::NodeExecutionError(
                     "Jcode caller mutex poisoned".into(),
                 ))
-            }
+            },
         };
 
         match caller {

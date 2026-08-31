@@ -23,17 +23,10 @@ impl RoadmapManager {
 
             for phase in &milestone.phases {
                 let dependencies_met = phase.depends_on.iter().all(|dep_id| {
-                    project
-                        .roadmap
-                        .milestones
-                        .iter()
-                        .flat_map(|m| &m.phases)
-                        .any(|p| {
-                            p.id == *dep_id
-                                && p.goals
-                                    .iter()
-                                    .all(|g| g.status == MilestoneStatus::Completed)
-                        })
+                    project.roadmap.milestones.iter().flat_map(|m| &m.phases).any(|p| {
+                        p.id == *dep_id
+                            && p.goals.iter().all(|g| g.status == MilestoneStatus::Completed)
+                    })
                 });
 
                 if !dependencies_met {
@@ -62,13 +55,8 @@ impl RoadmapManager {
     ) -> Result<String, RoadmapError> {
         let project = self.get_project_or_err(project_id).await?;
 
-        let total_goals: usize = project
-            .roadmap
-            .milestones
-            .iter()
-            .flat_map(|m| &m.phases)
-            .map(|p| p.goals.len())
-            .sum();
+        let total_goals: usize =
+            project.roadmap.milestones.iter().flat_map(|m| &m.phases).map(|p| p.goals.len()).sum();
         let completed_goals: usize = project
             .roadmap
             .milestones
@@ -182,14 +170,10 @@ impl RoadmapManager {
         let remaining_goals = total_goals.saturating_sub(completed_goals);
 
         // 进度最高者优先
-        let mut sorted: Vec<&MilestonePrediction> = milestone_preds
-            .iter()
-            .filter(|m| m.risk_level != "done")
-            .collect();
+        let mut sorted: Vec<&MilestonePrediction> =
+            milestone_preds.iter().filter(|m| m.risk_level != "done").collect();
         sorted.sort_by(|a, b| {
-            b.progress_pct
-                .partial_cmp(&a.progress_pct)
-                .unwrap_or(std::cmp::Ordering::Equal)
+            b.progress_pct.partial_cmp(&a.progress_pct).unwrap_or(std::cmp::Ordering::Equal)
         });
         let completion_order: Vec<String> = sorted.iter().map(|m| m.name.clone()).collect();
 
@@ -230,9 +214,7 @@ impl RoadmapManager {
         let mut velocity_map: HashMap<String, (f64, usize)> = HashMap::new();
         for outcome in &outcomes {
             if outcome.success && outcome.duration_secs > 0.0 {
-                let entry = velocity_map
-                    .entry(outcome.milestone_id.clone())
-                    .or_insert((0.0, 0));
+                let entry = velocity_map.entry(outcome.milestone_id.clone()).or_insert((0.0, 0));
                 entry.0 += outcome.duration_secs;
                 entry.1 += 1;
             }
@@ -291,20 +273,16 @@ impl RoadmapManager {
             risk_levels.push(risk);
 
             // 获取该里程碑的速度
-            let velocity = milestone_velocities
-                .get(&milestone.id)
-                .copied()
-                .unwrap_or(overall_velocity);
+            let velocity =
+                milestone_velocities.get(&milestone.id).copied().unwrap_or(overall_velocity);
 
             // 估算剩余时间
             let (estimated_remaining, ci_lower, ci_upper) = if velocity > 0.0 && remaining > 0 {
                 let mean = remaining as f64 / velocity;
                 // 95% 置信区间使用简单近似：mean ± 1.96 * (mean / sqrt(n))
                 // 其中 n 是该里程碑的历史样本数
-                let historical_count = velocity_map
-                    .get(&milestone.id)
-                    .map(|(_, c)| *c)
-                    .unwrap_or(0);
+                let historical_count =
+                    velocity_map.get(&milestone.id).map(|(_, c)| *c).unwrap_or(0);
                 let std_err = if historical_count > 1 {
                     mean / (historical_count as f64).sqrt()
                 } else {
@@ -344,22 +322,16 @@ impl RoadmapManager {
         let remaining_goals = total_goals.saturating_sub(completed_goals);
 
         // 进度最高者优先
-        let mut sorted: Vec<&MilestoneTimePrediction> = milestone_time_preds
-            .iter()
-            .filter(|m| m.risk_level != "done")
-            .collect();
+        let mut sorted: Vec<&MilestoneTimePrediction> =
+            milestone_time_preds.iter().filter(|m| m.risk_level != "done").collect();
         sorted.sort_by(|a, b| {
-            b.progress_pct
-                .partial_cmp(&a.progress_pct)
-                .unwrap_or(std::cmp::Ordering::Equal)
+            b.progress_pct.partial_cmp(&a.progress_pct).unwrap_or(std::cmp::Ordering::Equal)
         });
         let completion_order: Vec<String> = sorted.iter().map(|m| m.name.clone()).collect();
 
         // 汇总剩余总时间与置信区间
-        let estimated_total: f64 = milestone_time_preds
-            .iter()
-            .map(|m| m.estimated_remaining_secs)
-            .sum();
+        let estimated_total: f64 =
+            milestone_time_preds.iter().map(|m| m.estimated_remaining_secs).sum();
         let ci_lower_total: f64 = milestone_time_preds.iter().map(|m| m.ci_lower_secs).sum();
         let ci_upper_total: f64 = milestone_time_preds.iter().map(|m| m.ci_upper_secs).sum();
 

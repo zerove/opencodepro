@@ -57,9 +57,7 @@ fn send_request(
     stdin.flush().expect("Failed to flush stdin");
 
     let mut response = String::new();
-    stdout
-        .read_line(&mut response)
-        .expect("Failed to read response");
+    stdout.read_line(&mut response).expect("Failed to read response");
     response.trim().to_string()
 }
 
@@ -157,7 +155,7 @@ fn test_shutdown_notification() {
                     break None;
                 }
                 std::thread::sleep(Duration::from_millis(50));
-            }
+            },
             Err(_) => break None,
         }
     };
@@ -189,9 +187,7 @@ fn test_concurrent_requests() {
     let mut line = String::new();
     for _ in 0..2 {
         line.clear();
-        stdout
-            .read_line(&mut line)
-            .expect("Failed to read response");
+        stdout.read_line(&mut line).expect("Failed to read response");
         responses.push(line.trim().to_string());
     }
 

@@ -98,12 +98,9 @@ impl TeamOrchestrator {
                     }
                     for task_id in &remaining {
                         let task =
-                            plan.tasks
-                                .iter()
-                                .find(|t| t.id == *task_id)
-                                .ok_or_else(|| {
-                                    TeamError::Internal("task id should exist in plan".to_string())
-                                })?;
+                            plan.tasks.iter().find(|t| t.id == *task_id).ok_or_else(|| {
+                                TeamError::Internal("task id should exist in plan".to_string())
+                            })?;
                         let result = TaskResult::failed(
                             task,
                             "Dependency deadlock: unsatisfied dependencies".into(),
@@ -124,12 +121,9 @@ impl TeamOrchestrator {
                     }
                     for task_id in &remaining {
                         let task =
-                            plan.tasks
-                                .iter()
-                                .find(|t| t.id == *task_id)
-                                .ok_or_else(|| {
-                                    TeamError::Internal("task id should exist in plan".to_string())
-                                })?;
+                            plan.tasks.iter().find(|t| t.id == *task_id).ok_or_else(|| {
+                                TeamError::Internal("task id should exist in plan".to_string())
+                            })?;
                         let result = TaskResult::failed(
                             task,
                             "Concurrency deadlock: all agents at capacity".into(),
@@ -238,7 +232,7 @@ impl TeamOrchestrator {
                                                         ),
                                                     ),
                                                 }
-                                            }
+                                            },
                                             _ => fut.await,
                                         };
                                         match result {
@@ -273,7 +267,7 @@ impl TeamOrchestrator {
                                                 }
 
                                                 return Ok(value);
-                                            }
+                                            },
                                             Err(e) => last_error = Some(e.to_string()),
                                         }
                                     }

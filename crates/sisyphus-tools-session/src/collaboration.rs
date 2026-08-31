@@ -200,11 +200,11 @@ impl SessionDiff {
             match new_metadata.get(key) {
                 Some(new_val) if new_val != old_val => {
                     metadata_changes.insert(key.clone(), Some(new_val.clone()));
-                }
-                Some(_) => { /* unchanged */ }
+                },
+                Some(_) => { /* unchanged */ },
                 None => {
                     metadata_changes.insert(key.clone(), None);
-                }
+                },
             }
         }
 
@@ -285,10 +285,10 @@ impl SessionDiff {
             match value {
                 Some(v) => {
                     metadata.insert(key.clone(), v.clone());
-                }
+                },
                 None => {
                     metadata.remove(key);
-                }
+                },
             }
         }
 
@@ -419,10 +419,7 @@ impl SharedSessionRegistry {
 
         self.shares.insert(share_id.clone(), share);
 
-        self.session_shares
-            .entry(session_id.to_string())
-            .or_default()
-            .push(share_id.clone());
+        self.session_shares.entry(session_id.to_string()).or_default().push(share_id.clone());
 
         share_id
     }
@@ -846,7 +843,7 @@ mod tests {
             DiffOp::Insert { index, message } => {
                 assert_eq!(*index, 1);
                 assert_eq!(message.content, "msg2");
-            }
+            },
             _ => panic!("expected Insert"),
         }
     }
@@ -877,7 +874,7 @@ mod tests {
             } => {
                 assert_eq!(*index, 0);
                 assert_eq!(new_message.content, "hi there");
-            }
+            },
             _ => panic!("expected Modify"),
         }
     }
@@ -994,9 +991,7 @@ mod tests {
     #[test]
     fn test_session_branches_create() {
         let mut branches = SessionBranches::new("ses_1");
-        branches
-            .create_branch("experiment", Some("testing".to_string()), "v1")
-            .unwrap();
+        branches.create_branch("experiment", Some("testing".to_string()), "v1").unwrap();
         assert!(branches.branches.contains_key("experiment"));
     }
 

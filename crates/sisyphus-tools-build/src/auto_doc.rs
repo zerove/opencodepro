@@ -45,8 +45,8 @@ impl AutoDocGenerator {
                             ';' if brace_depth == 0 => {
                                 // End of signature (trait declaration)
                                 break;
-                            }
-                            _ => {}
+                            },
+                            _ => {},
                         }
                     }
 

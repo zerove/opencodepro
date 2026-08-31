@@ -104,9 +104,7 @@ impl MetaLearner {
                 continue;
             }
 
-            let entry = strategy_scores
-                .entry(sample.strategy.clone())
-                .or_insert((0.0, Vec::new()));
+            let entry = strategy_scores.entry(sample.strategy.clone()).or_insert((0.0, Vec::new()));
             entry.1.push(sample);
 
             // Weighted success: similarity * (1 if success else 0)
@@ -123,10 +121,8 @@ impl MetaLearner {
             }
 
             // Normalize success rate by total similarity of samples in this strategy
-            let total_sim: f64 = samples
-                .iter()
-                .map(|s| Self::calculate_similarity(context, &s.context))
-                .sum();
+            let total_sim: f64 =
+                samples.iter().map(|s| Self::calculate_similarity(context, &s.context)).sum();
             let normalized_score = if total_sim > 0.0 {
                 weighted_success / total_sim
             } else {
@@ -142,7 +138,7 @@ impl MetaLearner {
                             .map(|s| s.params.clone())
                             .unwrap_or_else(|| serde_json::json!({}));
                         best = Some((strategy.clone(), normalized_score, params));
-                    }
+                    },
                     None => {
                         let params = samples
                             .iter()
@@ -150,8 +146,8 @@ impl MetaLearner {
                             .map(|s| s.params.clone())
                             .unwrap_or_else(|| serde_json::json!({}));
                         best = Some((strategy.clone(), normalized_score, params));
-                    }
-                    _ => {}
+                    },
+                    _ => {},
                 }
             }
         }
@@ -161,11 +157,8 @@ impl MetaLearner {
 
     /// Get statistics for a specific strategy.
     pub fn strategy_stats(&self, strategy: &str) -> StrategyStats {
-        let relevant: Vec<&MetaLearningSample> = self
-            .samples
-            .iter()
-            .filter(|s| s.strategy == strategy)
-            .collect();
+        let relevant: Vec<&MetaLearningSample> =
+            self.samples.iter().filter(|s| s.strategy == strategy).collect();
 
         let total = relevant.len() as u64;
         if total == 0 {
@@ -217,10 +210,7 @@ impl MetaLearner {
         // Group by strategy
         let mut strategy_map: HashMap<String, Vec<&MetaLearningSample>> = HashMap::new();
         for sample in &self.samples {
-            strategy_map
-                .entry(sample.strategy.clone())
-                .or_default()
-                .push(sample);
+            strategy_map.entry(sample.strategy.clone()).or_default().push(sample);
         }
 
         let mut strategies = Vec::new();
@@ -334,10 +324,8 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let mut ml = MetaLearner::new(dir.path().to_str().unwrap());
 
-        ml.record_outcome(sample("fast", true, json!({"lang": "rust"})))
-            .unwrap();
-        ml.record_outcome(sample("accurate", false, json!({"lang": "rust"})))
-            .unwrap();
+        ml.record_outcome(sample("fast", true, json!({"lang": "rust"}))).unwrap();
+        ml.record_outcome(sample("accurate", false, json!({"lang": "rust"}))).unwrap();
 
         let strategies = ml.list_strategies();
         assert!(strategies.contains(&"fast".to_string()));
@@ -350,15 +338,11 @@ mod tests {
         let mut ml = MetaLearner::new(dir.path().to_str().unwrap());
 
         for _ in 0..3 {
-            ml.record_outcome(sample("fast", true, json!({"lang": "rust"})))
-                .unwrap();
+            ml.record_outcome(sample("fast", true, json!({"lang": "rust"}))).unwrap();
         }
-        ml.record_outcome(sample("slow", true, json!({"lang": "rust"})))
-            .unwrap();
-        ml.record_outcome(sample("slow", false, json!({"lang": "rust"})))
-            .unwrap();
-        ml.record_outcome(sample("slow", false, json!({"lang": "rust"})))
-            .unwrap();
+        ml.record_outcome(sample("slow", true, json!({"lang": "rust"}))).unwrap();
+        ml.record_outcome(sample("slow", false, json!({"lang": "rust"}))).unwrap();
+        ml.record_outcome(sample("slow", false, json!({"lang": "rust"}))).unwrap();
 
         let best = ml.best_strategy_params(&json!({"lang": "rust"}));
         assert_eq!(best, Some(("fast".to_string(), json!({}))));
@@ -376,12 +360,9 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let mut ml = MetaLearner::new(dir.path().to_str().unwrap());
 
-        ml.record_outcome(sample("test_s", true, json!({})))
-            .unwrap();
-        ml.record_outcome(sample("test_s", true, json!({})))
-            .unwrap();
-        ml.record_outcome(sample("test_s", false, json!({})))
-            .unwrap();
+        ml.record_outcome(sample("test_s", true, json!({}))).unwrap();
+        ml.record_outcome(sample("test_s", true, json!({}))).unwrap();
+        ml.record_outcome(sample("test_s", false, json!({}))).unwrap();
 
         let stats = ml.strategy_stats("test_s");
         assert_eq!(stats.total_uses, 3);
@@ -426,36 +407,24 @@ mod tests {
         let mut ml = MetaLearner::new(dir.path().to_str().unwrap());
 
         for _ in 0..3 {
-            ml.record_outcome(sample("fast", true, json!({"lang": "rust"})))
-                .unwrap();
+            ml.record_outcome(sample("fast", true, json!({"lang": "rust"}))).unwrap();
         }
-        ml.record_outcome(sample("slow", true, json!({"lang": "rust"})))
-            .unwrap();
-        ml.record_outcome(sample("slow", false, json!({"lang": "rust"})))
-            .unwrap();
-        ml.record_outcome(sample("slow", false, json!({"lang": "rust"})))
-            .unwrap();
+        ml.record_outcome(sample("slow", true, json!({"lang": "rust"}))).unwrap();
+        ml.record_outcome(sample("slow", false, json!({"lang": "rust"}))).unwrap();
+        ml.record_outcome(sample("slow", false, json!({"lang": "rust"}))).unwrap();
 
         let insight = ml.learn();
         assert_eq!(insight.total_samples, 6);
         assert!((insight.overall_success_rate - 4.0 / 6.0).abs() < 0.001);
         assert_eq!(insight.strategies.len(), 2);
 
-        let fast = insight
-            .strategies
-            .iter()
-            .find(|s| s.strategy == "fast")
-            .unwrap();
+        let fast = insight.strategies.iter().find(|s| s.strategy == "fast").unwrap();
         assert_eq!(fast.total_uses, 3);
         assert_eq!(fast.successes, 3);
         assert_eq!(fast.failures, 0);
         assert!((fast.success_rate - 1.0).abs() < 0.001);
 
-        let slow = insight
-            .strategies
-            .iter()
-            .find(|s| s.strategy == "slow")
-            .unwrap();
+        let slow = insight.strategies.iter().find(|s| s.strategy == "slow").unwrap();
         assert_eq!(slow.total_uses, 3);
         assert_eq!(slow.successes, 1);
         assert_eq!(slow.failures, 2);
@@ -514,8 +483,7 @@ mod tests {
 
         {
             let mut ml = MetaLearner::new(&path);
-            ml.record_outcome(sample("persist", true, json!({})))
-                .unwrap();
+            ml.record_outcome(sample("persist", true, json!({}))).unwrap();
         }
 
         let ml = MetaLearner::new(&path);

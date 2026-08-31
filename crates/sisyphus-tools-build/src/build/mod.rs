@@ -184,10 +184,8 @@ pub fn cargo_raw(args: &[&str], cwd: Option<&Path>) -> ToolResult<(String, Strin
 /// Returns a single Vec sorted by (file, line, col).
 pub fn merge_diagnostics(primary: &[Diag], secondary: &[Diag]) -> Vec<Diag> {
     let mut all: Vec<Diag> = primary.to_vec();
-    let existing: Vec<(Option<String>, Option<usize>, String)> = all
-        .iter()
-        .map(|d| (d.file.clone(), d.line, d.message.clone()))
-        .collect();
+    let existing: Vec<(Option<String>, Option<usize>, String)> =
+        all.iter().map(|d| (d.file.clone(), d.line, d.message.clone())).collect();
     for d in secondary {
         let key = (d.file.clone(), d.line, d.message.clone());
         if !existing.contains(&key) {

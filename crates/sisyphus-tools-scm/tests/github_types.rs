@@ -48,7 +48,7 @@ fn generate_options_field_access() {
         rust_toolchain: "nightly".into(),
         cargo_extra_flags: "--release".into(),
         exclude_packages: "bridge,sandbox".into(),
-            include_clippy: true,
+        include_clippy: true,
         include_deny: false,
     };
     assert_eq!(opts.rust_toolchain, "nightly");
@@ -62,7 +62,7 @@ fn generate_options_default_strings() {
         rust_toolchain: "stable".into(),
         cargo_extra_flags: String::new(),
         exclude_packages: String::new(),
-            include_clippy: true,
+        include_clippy: true,
         include_deny: false,
     };
     assert_eq!(opts.rust_toolchain, "stable");
@@ -76,7 +76,7 @@ fn generate_options_clone() {
         rust_toolchain: "x".into(),
         cargo_extra_flags: "y".into(),
         exclude_packages: "z".into(),
-            include_clippy: true,
+        include_clippy: true,
         include_deny: false,
     };
     let b = a.clone();
@@ -93,7 +93,7 @@ fn ci_config_field_access() {
         ci_mode: true,
         github_token: Some("ghp_xxx".into()),
         pr_number: Some(42),
-            output_format: "plain".into(),
+        output_format: "plain".into(),
     };
     assert!(c.ci_mode);
     assert_eq!(c.github_token.as_deref(), Some("ghp_xxx"));
@@ -106,7 +106,7 @@ fn ci_config_disabled_no_token() {
         ci_mode: false,
         github_token: None,
         pr_number: None,
-            output_format: "plain".into(),
+        output_format: "plain".into(),
     };
     assert!(!c.ci_mode);
     assert!(c.github_token.is_none());
@@ -119,7 +119,7 @@ fn ci_config_clone() {
         ci_mode: true,
         github_token: Some("t".into()),
         pr_number: Some(1),
-            output_format: "plain".into(),
+        output_format: "plain".into(),
     };
     let b = a.clone();
     assert_eq!(a.ci_mode, b.ci_mode);
@@ -132,7 +132,7 @@ fn ci_config_debug() {
         ci_mode: true,
         github_token: None,
         pr_number: Some(5),
-            output_format: "plain".into(),
+        output_format: "plain".into(),
     };
     let s = format!("{c:?}");
     assert!(s.contains("ci_mode"));

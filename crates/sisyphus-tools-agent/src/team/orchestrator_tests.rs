@@ -498,7 +498,7 @@ async fn test_decompose_no_llm() {
     let result = orch.decompose_goal(&goal).await;
     assert!(result.is_err());
     match result.unwrap_err() {
-        TeamError::NoPlanner => {}
+        TeamError::NoPlanner => {},
         other => panic!("expected NoPlanner error, got: {:?}", other),
     }
 }
@@ -733,10 +733,8 @@ async fn test_event_streaming() {
     let (tx, mut rx) = mpsc::channel(64);
 
     // Execute with event channel
-    let report = orch
-        .execute_plan_internal(plan, Some(tx), Arc::new(TeamContext::new()))
-        .await
-        .unwrap();
+    let report =
+        orch.execute_plan_internal(plan, Some(tx), Arc::new(TeamContext::new())).await.unwrap();
     assert!(report.success, "all tasks should succeed");
 
     // Collect all events (with timeout)
@@ -754,13 +752,13 @@ async fn test_event_streaming() {
                     if r.success {
                         completed += 1;
                     }
-                }
+                },
                 TeamEvent::Synthesizing { .. } => got_synthesizing = true,
                 TeamEvent::Complete(_) => {
                     got_complete = true;
                     break;
-                }
-                _ => {}
+                },
+                _ => {},
             },
             Ok(None) => break,
             Err(_) => break,
@@ -801,10 +799,8 @@ async fn test_event_streaming_deadlock() {
     };
     let (tx, mut rx) = mpsc::channel(64);
 
-    let _report = orch
-        .execute_plan_internal(plan, Some(tx), Arc::new(TeamContext::new()))
-        .await
-        .unwrap();
+    let _report =
+        orch.execute_plan_internal(plan, Some(tx), Arc::new(TeamContext::new())).await.unwrap();
 
     // Should see Error event + 2 TaskCompleted (failed)
     let mut errors = 0u32;
@@ -820,12 +816,12 @@ async fn test_event_streaming_deadlock() {
                     if !r.success {
                         failed_completions += 1;
                     }
-                }
+                },
                 TeamEvent::Complete(_) => {
                     got_complete = true;
                     break;
-                }
-                _ => {}
+                },
+                _ => {},
             },
             Ok(None) => break,
             Err(_) => break,
@@ -877,12 +873,12 @@ impl ToolExecutor for ScriptedExecutor {
                         "scripted temp failure".into(),
                     ))
                 }
-            }
+            },
             // Sleeps longer than a short timeout would allow.
             "mock/slow" => {
                 tokio::time::sleep(std::time::Duration::from_millis(300)).await;
                 Ok(json!({"result": "slow done"}).to_string().into_bytes())
-            }
+            },
             _ => Ok(json!({"result": "ok"}).to_string().into_bytes()),
         }
     }
@@ -1033,11 +1029,7 @@ async fn test_delegation_exhausts_retries_without_fallback() {
     let result = &report.task_results[0];
     assert!(!result.success);
     assert!(
-        result
-            .error
-            .as_deref()
-            .unwrap_or("")
-            .contains("scripted failure"),
+        result.error.as_deref().unwrap_or("").contains("scripted failure"),
         "error should bubble up from the tool, got: {:?}",
         result.error
     );
@@ -1071,11 +1063,7 @@ async fn test_delegation_skips_unregistered_fallback() {
     let result = &report.task_results[0];
     assert!(!result.success);
     assert!(
-        result
-            .error
-            .as_deref()
-            .unwrap_or("")
-            .contains("scripted failure"),
+        result.error.as_deref().unwrap_or("").contains("scripted failure"),
         "unregistered fallback must not hide the primary error: {:?}",
         result.error
     );

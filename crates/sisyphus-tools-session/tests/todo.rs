@@ -4,17 +4,16 @@
 //! [`TodoPriority`] and the `todo_*` CRUD functions. The CRUD functions
 //! use a per-test tempdir to keep state isolated.
 
-use sisyphus_tools_session::todo::{todo_add, todo_delete, todo_list, todo_update, TodoItem, TodoPriority, TodoStatus};
+use sisyphus_tools_session::todo::{
+    todo_add, todo_delete, todo_list, todo_update, TodoItem, TodoPriority, TodoStatus,
+};
 use std::path::PathBuf;
 
 fn tmp_path() -> PathBuf {
     let dir = std::env::temp_dir().join(format!(
         "sisyphus-todo-test-{}-{}",
         std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos()
+        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()
     ));
     std::fs::create_dir_all(&dir).unwrap();
     dir.join("todos.json")
@@ -42,11 +41,7 @@ fn todo_status_variants_distinct() {
 #[test]
 fn todo_priority_variants_distinct() {
     let mut seen = std::collections::HashSet::new();
-    for p in [
-        TodoPriority::Low,
-        TodoPriority::Medium,
-        TodoPriority::High,
-    ] {
+    for p in [TodoPriority::Low, TodoPriority::Medium, TodoPriority::High] {
         let d = format!("{p:?}");
         assert!(seen.insert(d.clone()));
     }

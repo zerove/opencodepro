@@ -73,7 +73,7 @@ impl MicroReflector for LlmMicroReflector {
             Ok(Err(e)) => {
                 tracing::warn!(node = %node_name, "LLM micro-reflection failed, degrading to CONTINUE: {e}");
                 return Ok(MicroReflectionDecision::Continue);
-            }
+            },
             Err(_) => {
                 tracing::warn!(
                     node = %node_name,
@@ -81,7 +81,7 @@ impl MicroReflector for LlmMicroReflector {
                     "LLM micro-reflection timed out, degrading to CONTINUE"
                 );
                 return Ok(MicroReflectionDecision::Continue);
-            }
+            },
         };
 
         let trimmed = response.trim();
@@ -95,11 +95,7 @@ impl MicroReflector for LlmMicroReflector {
                 serde_json::from_str(json_part).unwrap_or_else(|_| HashMap::new());
             Ok(MicroReflectionDecision::Adjust { updates })
         } else if upper.starts_with("PIVOT") {
-            let reason = trimmed
-                .strip_prefix("PIVOT:")
-                .unwrap_or(trimmed)
-                .trim()
-                .to_string();
+            let reason = trimmed.strip_prefix("PIVOT:").unwrap_or(trimmed).trim().to_string();
             Ok(MicroReflectionDecision::Pivot { reason })
         } else {
             Ok(MicroReflectionDecision::Continue)

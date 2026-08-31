@@ -24,7 +24,12 @@ fn to_config_yields_strictly_increasing_iteration_budgets() {
 
     // Iteration budgets (first element) must be strictly increasing
     // so that deeper analyses do more work.
-    assert!(low.0 < med.0, "Medium iterations ({}) must exceed Low ({})", med.0, low.0);
+    assert!(
+        low.0 < med.0,
+        "Medium iterations ({}) must exceed Low ({})",
+        med.0,
+        low.0
+    );
     assert!(med.0 < high.0);
     assert!(high.0 < ultra.0);
 
@@ -54,7 +59,10 @@ fn to_config_thresholds_are_in_unit_interval() {
         CognitiveDepth::Ultra,
     ] {
         let (iters, threshold) = depth.to_config();
-        assert!(iters > 0, "{depth:?} should have a positive iteration budget");
+        assert!(
+            iters > 0,
+            "{depth:?} should have a positive iteration budget"
+        );
         assert!(
             (0.0..=1.0).contains(&threshold),
             "{depth:?} threshold {threshold} must be in [0.0, 1.0]"

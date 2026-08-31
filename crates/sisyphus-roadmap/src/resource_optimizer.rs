@@ -93,11 +93,8 @@ impl ResourceOptimizer {
         }
 
         // 计算成功结果的平均耗时作为基线
-        let successful_durations: Vec<f64> = outcomes
-            .iter()
-            .filter(|o| o.success)
-            .map(|o| o.duration_secs)
-            .collect();
+        let successful_durations: Vec<f64> =
+            outcomes.iter().filter(|o| o.success).map(|o| o.duration_secs).collect();
         let avg_duration: f64 = if successful_durations.is_empty() {
             60.0
         } else {
@@ -108,11 +105,8 @@ impl ResourceOptimizer {
 
         for (goal_id, goal_outcomes) in &by_goal {
             let failure_count = goal_outcomes.iter().filter(|o| !o.success).count();
-            let success_durations: Vec<f64> = goal_outcomes
-                .iter()
-                .filter(|o| o.success)
-                .map(|o| o.duration_secs)
-                .collect();
+            let success_durations: Vec<f64> =
+                goal_outcomes.iter().filter(|o| o.success).map(|o| o.duration_secs).collect();
             let avg_goal_duration: f64 = if success_durations.is_empty() {
                 0.0
             } else {
@@ -169,9 +163,7 @@ impl ResourceOptimizer {
             };
             let a_order = severity_order(&a.severity);
             let b_order = severity_order(&b.severity);
-            a_order
-                .cmp(&b_order)
-                .then_with(|| b.failure_count.cmp(&a.failure_count))
+            a_order.cmp(&b_order).then_with(|| b.failure_count.cmp(&a.failure_count))
         });
 
         bottlenecks
@@ -192,10 +184,7 @@ impl ResourceOptimizer {
         // 按里程碑对成功结果分组，作为并行化候选
         let mut by_milestone: HashMap<String, Vec<&ExecutionOutcome>> = HashMap::new();
         for o in outcomes.iter().filter(|o| o.success) {
-            by_milestone
-                .entry(o.milestone_id.clone())
-                .or_default()
-                .push(o);
+            by_milestone.entry(o.milestone_id.clone()).or_default().push(o);
         }
 
         let mut opportunities: Vec<ParallelizationOpportunity> = Vec::new();
@@ -243,27 +232,14 @@ impl ResourceOptimizer {
         let mut cost_stats: HashMap<String, Vec<f64>> = HashMap::new();
         let mut duration_stats: HashMap<String, Vec<f64>> = HashMap::new();
         for o in outcomes.iter().filter(|o| o.success) {
-            cost_stats
-                .entry(o.goal_id.clone())
-                .or_default()
-                .push(o.actual_cost);
-            duration_stats
-                .entry(o.goal_id.clone())
-                .or_default()
-                .push(o.duration_secs);
+            cost_stats.entry(o.goal_id.clone()).or_default().push(o.actual_cost);
+            duration_stats.entry(o.goal_id.clone()).or_default().push(o.duration_secs);
         }
 
         // 无历史目标使用项目级平均值
-        let all_costs: Vec<f64> = cost_stats
-            .values()
-            .flat_map(|v| v.iter())
-            .copied()
-            .collect();
-        let all_durations: Vec<f64> = duration_stats
-            .values()
-            .flat_map(|v| v.iter())
-            .copied()
-            .collect();
+        let all_costs: Vec<f64> = cost_stats.values().flat_map(|v| v.iter()).copied().collect();
+        let all_durations: Vec<f64> =
+            duration_stats.values().flat_map(|v| v.iter()).copied().collect();
         let global_avg_cost = if all_costs.is_empty() {
             10.0
         } else {

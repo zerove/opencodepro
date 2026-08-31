@@ -18,9 +18,7 @@ pub(crate) fn handle_event(event: Event, app: &mut App, _perms: &CliPermission) 
 
             // 全局：Ctrl+C / Ctrl+Q → 快速退出（双击确认）
             if (key.code == KeyCode::Char('c') || key.code == KeyCode::Char('q'))
-                && key
-                    .modifiers
-                    .contains(crossterm::event::KeyModifiers::CONTROL)
+                && key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL)
             {
                 if app.exit_requested {
                     return Ok(true);
@@ -34,9 +32,7 @@ pub(crate) fn handle_event(event: Event, app: &mut App, _perms: &CliPermission) 
 
             // 全局：Ctrl+K → 切换命令面板（opencode 风格）
             if key.code == KeyCode::Char('k')
-                && key
-                    .modifiers
-                    .contains(crossterm::event::KeyModifiers::CONTROL)
+                && key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL)
             {
                 app.palette_open = !app.palette_open;
                 if app.palette_open {
@@ -48,9 +44,7 @@ pub(crate) fn handle_event(event: Event, app: &mut App, _perms: &CliPermission) 
 
             // 全局：Ctrl+L → 会话列表对话框
             if key.code == KeyCode::Char('l')
-                && key
-                    .modifiers
-                    .contains(crossterm::event::KeyModifiers::CONTROL)
+                && key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL)
             {
                 app.dialog = Some(Dialog::SessionList);
                 app.dialog_sel = 0;
@@ -61,9 +55,7 @@ pub(crate) fn handle_event(event: Event, app: &mut App, _perms: &CliPermission) 
 
             // 全局：Ctrl+M → 模型信息（模型列表占位）
             if key.code == KeyCode::Char('m')
-                && key
-                    .modifiers
-                    .contains(crossterm::event::KeyModifiers::CONTROL)
+                && key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL)
             {
                 let name = if app.model_name.is_empty() {
                     "default"
@@ -76,9 +68,7 @@ pub(crate) fn handle_event(event: Event, app: &mut App, _perms: &CliPermission) 
 
             // 全局：Ctrl+A → 代理信息（代理列表占位）
             if key.code == KeyCode::Char('a')
-                && key
-                    .modifiers
-                    .contains(crossterm::event::KeyModifiers::CONTROL)
+                && key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL)
             {
                 app.add_log(LogEntry::Info(
                     "Agent routing managed by bridge. See Config for profiles.".into(),
@@ -94,9 +84,7 @@ pub(crate) fn handle_event(event: Event, app: &mut App, _perms: &CliPermission) 
 
             // 全局：Ctrl+H → 返回主页
             if key.code == KeyCode::Char('h')
-                && key
-                    .modifiers
-                    .contains(crossterm::event::KeyModifiers::CONTROL)
+                && key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL)
             {
                 app.view = View::Home;
                 app.dialog = None;
@@ -106,9 +94,7 @@ pub(crate) fn handle_event(event: Event, app: &mut App, _perms: &CliPermission) 
 
             // 全局：Ctrl+D → 切换仪表盘
             if key.code == KeyCode::Char('d')
-                && key
-                    .modifiers
-                    .contains(crossterm::event::KeyModifiers::CONTROL)
+                && key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL)
             {
                 app.view = View::Dashboard;
                 app.dialog = None;
@@ -118,9 +104,7 @@ pub(crate) fn handle_event(event: Event, app: &mut App, _perms: &CliPermission) 
 
             // 全局：Ctrl+N → 新建会话
             if key.code == KeyCode::Char('n')
-                && key
-                    .modifiers
-                    .contains(crossterm::event::KeyModifiers::CONTROL)
+                && key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL)
             {
                 let db = app.data_dir.join("sessions.json");
                 match crate::tools::session_create(&db, "unnamed") {
@@ -135,7 +119,7 @@ pub(crate) fn handle_event(event: Event, app: &mut App, _perms: &CliPermission) 
                         app.session_detail_scroll = usize::MAX;
                         app.view = View::Session;
                         app.boulder_dirty = true;
-                    }
+                    },
                     Err(e) => app.add_log(LogEntry::Error(format!("Create failed: {e}"))),
                 }
                 return Ok(false);
@@ -143,9 +127,7 @@ pub(crate) fn handle_event(event: Event, app: &mut App, _perms: &CliPermission) 
 
             // 全局：Ctrl+V → 粘贴
             if key.code == KeyCode::Char('v')
-                && key
-                    .modifiers
-                    .contains(crossterm::event::KeyModifiers::CONTROL)
+                && key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL)
             {
                 let pasted = paste_from_clipboard();
                 if !pasted.is_empty() {
@@ -159,12 +141,12 @@ pub(crate) fn handle_event(event: Event, app: &mut App, _perms: &CliPermission) 
                                 .unwrap_or(app.home_input.len());
                             app.home_input.insert_str(byte_pos, &pasted);
                             app.home_cursor += pasted.chars().count();
-                        }
-                        View::Dashboard => {}
+                        },
+                        View::Dashboard => {},
                         View::Session if app.session_detail.is_some() => {
                             app.session_input.push_str(&pasted);
-                        }
-                        View::Session => {}
+                        },
+                        View::Session => {},
                     }
                 }
                 return Ok(false);
@@ -172,9 +154,7 @@ pub(crate) fn handle_event(event: Event, app: &mut App, _perms: &CliPermission) 
 
             // 引导键：Ctrl+X → leader 模式
             if key.code == KeyCode::Char('x')
-                && key
-                    .modifiers
-                    .contains(crossterm::event::KeyModifiers::CONTROL)
+                && key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL)
                 && !app.leader_mode
             {
                 app.leader_mode = true;
@@ -187,21 +167,21 @@ pub(crate) fn handle_event(event: Event, app: &mut App, _perms: &CliPermission) 
                         app.leader_mode = false;
                         app.dialog = Some(Dialog::Help);
                         return Ok(false);
-                    }
+                    },
                     KeyCode::Char('p') => {
                         app.leader_mode = false;
                         app.palette_open = true;
                         app.palette_query.clear();
                         app.palette_sel = 0;
                         return Ok(false);
-                    }
+                    },
                     KeyCode::Esc => {
                         app.leader_mode = false;
                         return Ok(false);
-                    }
+                    },
                     _ => {
                         app.leader_mode = false;
-                    }
+                    },
                 }
             }
 
@@ -227,7 +207,7 @@ pub(crate) fn handle_event(event: Event, app: &mut App, _perms: &CliPermission) 
             if app.exit_immediately {
                 return Ok(true);
             }
-        }
+        },
         Event::Mouse(m) => match m.kind {
             MouseEventKind::Down(MouseButton::Left) => {
                 if app.view == View::Session && app.session_detail.is_some() {
@@ -236,7 +216,7 @@ pub(crate) fn handle_event(event: Event, app: &mut App, _perms: &CliPermission) 
                         app.toggle_message_thoughts(msg_idx);
                     }
                 }
-            }
+            },
             MouseEventKind::ScrollDown => {
                 if app.dialog.is_some() {
                     if matches!(app.dialog, Some(Dialog::Help)) {
@@ -253,7 +233,7 @@ pub(crate) fn handle_event(event: Event, app: &mut App, _perms: &CliPermission) 
                         app.session_sel = (app.session_sel + 1).min(visible.saturating_sub(1));
                     }
                 }
-            }
+            },
             MouseEventKind::ScrollUp => {
                 if app.dialog.is_some() {
                     if matches!(app.dialog, Some(Dialog::Help)) {
@@ -269,11 +249,11 @@ pub(crate) fn handle_event(event: Event, app: &mut App, _perms: &CliPermission) 
                         app.session_sel = app.session_sel.saturating_sub(1);
                     }
                 }
-            }
-            _ => {}
+            },
+            _ => {},
         },
-        Event::Resize(_, _) => {} // ratatui handles redraw automatically
-        _ => {}
+        Event::Resize(_, _) => {}, // ratatui handles redraw automatically
+        _ => {},
     }
     Ok(false)
 }
@@ -284,25 +264,25 @@ fn handle_palette_key(key: KeyEvent, app: &mut App) {
     match code {
         KeyCode::Esc => {
             app.palette_open = false;
-        }
+        },
         KeyCode::Char(c) => {
             app.palette_query.push(c);
             app.palette_sel = 0;
-        }
+        },
         KeyCode::Backspace => {
             app.palette_query.pop();
             app.palette_sel = 0;
-        }
+        },
         KeyCode::Up => {
             if !matches.is_empty() {
                 app.palette_sel = app.palette_sel.saturating_sub(1);
             }
-        }
+        },
         KeyCode::Down => {
             if !matches.is_empty() {
                 app.palette_sel = (app.palette_sel + 1).min(matches.len().saturating_sub(1));
             }
-        }
+        },
         KeyCode::Enter => {
             if matches.is_empty() {
                 return;
@@ -314,18 +294,18 @@ fn handle_palette_key(key: KeyEvent, app: &mut App) {
             match entry.command {
                 "help" | ":help" => {
                     app.dialog = Some(Dialog::Help);
-                }
+                },
                 "home" | ":home" => {
                     app.view = View::Home;
                     app.dialog = None;
                     app.boulder_dirty = true;
-                }
+                },
                 "sessions" | "session list" | ":sessions" => {
                     app.dialog = Some(Dialog::SessionList);
                     app.dialog_sel = 0;
                     app.dialog_query.clear();
                     app.session_dirty = true;
-                }
+                },
                 "new session" | ":new" | ":create" => {
                     let db = app.data_dir.join("sessions.json");
                     match crate::tools::session_create(&db, "unnamed") {
@@ -340,20 +320,20 @@ fn handle_palette_key(key: KeyEvent, app: &mut App) {
                             app.session_detail_scroll = usize::MAX;
                             app.view = View::Session;
                             app.boulder_dirty = true;
-                        }
+                        },
                         Err(e) => app.add_log(LogEntry::Error(format!("Create failed: {e}"))),
                     }
-                }
+                },
                 "todos" | ":todos" => {
                     app.dialog = Some(Dialog::Todos);
                     app.refresh_todos();
                     app.todo_sel = 0;
-                }
+                },
                 "lsp" | ":lsp" => {
                     app.dialog = Some(Dialog::Lsp);
                     app.dialog_query.clear();
                     app.lsp_scroll = 0;
-                }
+                },
                 "sops" | ":sops" | "sop" | ":sop" => {
                     app.dialog = Some(Dialog::Sop);
                     app.sop_status = "connecting...".into();
@@ -364,15 +344,15 @@ fn handle_palette_key(key: KeyEvent, app: &mut App) {
                             app.bridge_address.clone(),
                         ));
                     }
-                }
+                },
                 "cogtrace" | ":cogtrace" | "ct" | ":ct" => {
                     app.dialog = Some(Dialog::CognitiveTrace);
                     app.fetch_cognitive_trace();
-                }
+                },
                 "cogsum" | ":cogsum" | "cs" | ":cs" => {
                     app.dialog = Some(Dialog::CognitiveSummary);
                     app.fetch_cognitive_summary();
-                }
+                },
                 "roadmap" | ":roadmap" => {
                     app.dialog = Some(Dialog::Roadmap);
                     app.roadmap_status = "connecting...".into();
@@ -382,7 +362,7 @@ fn handle_palette_key(key: KeyEvent, app: &mut App) {
                             app.bridge_address.clone(),
                         ));
                     }
-                }
+                },
                 "skills" | ":skills" => {
                     app.dialog = Some(Dialog::SkillMarket);
                     app.skill_market_status = "connecting...".into();
@@ -390,7 +370,7 @@ fn handle_palette_key(key: KeyEvent, app: &mut App) {
                         app.pending_op =
                             Some(spawn_fetch_available_skills(app.bridge_address.clone()));
                     }
-                }
+                },
                 "workspaces" | ":workspaces" => {
                     app.dialog = Some(Dialog::WorkspaceList);
                     app.workspace_status = "connecting...".into();
@@ -399,17 +379,17 @@ fn handle_palette_key(key: KeyEvent, app: &mut App) {
                             app.bridge_address.clone(),
                         ));
                     }
-                }
+                },
                 "clear" | ":clear" => {
                     app.log.clear();
                     app.scroll = 0;
-                }
+                },
                 "exit" | ":exit" | "quit" | ":quit" => {
                     app.exit_requested = true;
                     app.add_log(LogEntry::Warn(
                         "Type `exit` again to confirm, or `clear` to dismiss.".into(),
                     ));
-                }
+                },
                 cmd if cmd.starts_with(":bridge") => {
                     let db = app.data_dir.join("sessions.json");
                     app.session_input = cmd.to_string();
@@ -420,12 +400,12 @@ fn handle_palette_key(key: KeyEvent, app: &mut App) {
                         )));
                     }
                     app.boulder_dirty = true;
-                }
+                },
                 cmd if cmd.starts_with(":refresh") => {
                     app.session_dirty = true;
                     app.todo_dirty = true;
                     app.add_log(LogEntry::Info("Refreshed".into()));
-                }
+                },
                 "model" | ":model" => {
                     let name = if app.model_name.is_empty() {
                         "default"
@@ -436,7 +416,7 @@ fn handle_palette_key(key: KeyEvent, app: &mut App) {
                     app.add_log(LogEntry::Info(
                         "Use Config or bridge to switch models.".into(),
                     ));
-                }
+                },
                 "agent" | ":agent" => {
                     app.add_log(LogEntry::Info(
                         "Agent routing is managed by the bridge.".into(),
@@ -444,7 +424,7 @@ fn handle_palette_key(key: KeyEvent, app: &mut App) {
                     app.add_log(LogEntry::Info(
                         "Use Config to configure agent profiles.".into(),
                     ));
-                }
+                },
                 "theme" | ":theme" => {
                     app.toggle_theme();
                     app.add_log(LogEntry::Success(format!(
@@ -454,7 +434,7 @@ fn handle_palette_key(key: KeyEvent, app: &mut App) {
                             super::theme::ThemeMode::Light => "Light",
                         }
                     )));
-                }
+                },
                 "dev" | ":dev" => {
                     app.dev_goal.clear();
                     app.dev_context.clear();
@@ -466,10 +446,10 @@ fn handle_palette_key(key: KeyEvent, app: &mut App) {
                     app.dialog = Some(Dialog::Dev {
                         goal: String::new(),
                     });
-                }
-                _ => {}
+                },
+                _ => {},
             }
-        }
-        _ => {}
+        },
+        _ => {},
     }
 }

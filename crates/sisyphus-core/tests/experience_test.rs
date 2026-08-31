@@ -36,9 +36,7 @@ impl ToolExecutor for MockExecutor {
 
 async fn setup_kernel(tool_executor: Arc<MockExecutor>) -> SisyphusKernel {
     let state_store = Arc::new(
-        MfsStore::new("sqlite::memory:", &sisyphus_types::CacheConfig::default())
-            .await
-            .unwrap(),
+        MfsStore::new("sqlite::memory:", &sisyphus_types::CacheConfig::default()).await.unwrap(),
     );
     let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
     let llm_client = Arc::new(sisyphus_tools_llm::metis::DummyLlmClient);
@@ -61,11 +59,7 @@ async fn setup_kernel(tool_executor: Arc<MockExecutor>) -> SisyphusKernel {
     SisyphusKernel::new(
         state_store,
         Arc::new(sisyphus_mem::SopSqlStore::new(pool.clone()).await.unwrap()),
-        Arc::new(
-            sisyphus_mem::VectorMemoryStore::new(pool.clone())
-                .await
-                .unwrap(),
-        ),
+        Arc::new(sisyphus_mem::VectorMemoryStore::new(pool.clone()).await.unwrap()),
         Arc::new(MockExperienceBank),
         tool_executor as Arc<dyn ToolExecutor>,
         intel,
@@ -101,20 +95,16 @@ async fn test_experience_prediction_convergence() {
     let graph = Arc::new(graph_inner);
 
     // Run 1: Recursive cognitive loop - iterates until convergence or max iterations
-    let (_res1, report1, _) = kernel
-        .execute_with_cognition(graph.clone(), sop_id, None, None, None, None)
-        .await
-        .unwrap();
+    let (_res1, report1, _) =
+        kernel.execute_with_cognition(graph.clone(), sop_id, None, None, None, None).await.unwrap();
     // Should show iterations in the cognitive loop
     assert!(report1.iterations > 0);
     // Should show convergence attempt
     assert!(report1.final_deviation >= 0.0);
 
     // Run 2: Should now succeed on first iteration (call_count >= 2)
-    let (_res2, report2, _) = kernel
-        .execute_with_cognition(graph.clone(), sop_id, None, None, None, None)
-        .await
-        .unwrap();
+    let (_res2, report2, _) =
+        kernel.execute_with_cognition(graph.clone(), sop_id, None, None, None, None).await.unwrap();
     // May or may not converge depending on state
     assert!(report2.iterations > 0);
 }

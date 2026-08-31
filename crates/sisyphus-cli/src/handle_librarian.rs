@@ -24,14 +24,14 @@ pub async fn handle_librarian(
                 println!("[{i}] {} (relevance: {:.1})", f.claim, f.relevance);
                 println!("    source: {}", f.source_url);
             }
-        }
+        },
         LibrarianCommands::FetchDocs { url } => {
             let page = sisyphus_cli::tools::fetch_documentation(url).await?;
             println!("Title: {}", page.title);
             println!("Content length: {} bytes", page.content_length);
             println!("--- Preview ---");
             println!("{}", page.content_preview);
-        }
+        },
         LibrarianCommands::Examples { query, language } => {
             let examples = sisyphus_cli::tools::find_examples(query, language).await?;
             if examples.is_empty() {
@@ -48,7 +48,7 @@ pub async fn handle_librarian(
                     }
                 }
             }
-        }
+        },
         LibrarianCommands::Synthesise { report_file } => {
             let content = std::fs::read_to_string(report_file)?;
             let findings: Vec<sisyphus_cli::tools::ResearchFinding> =
@@ -57,7 +57,7 @@ pub async fn handle_librarian(
                 .await
                 .map_err(|e| anyhow::anyhow!("{}", e))?;
             println!("{}", synthesis);
-        }
+        },
     }
     Ok(())
 }

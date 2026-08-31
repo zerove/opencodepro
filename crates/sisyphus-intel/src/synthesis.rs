@@ -345,15 +345,13 @@ impl FlowSynthesizer for DynamicSopSynthesizer {
             let src = id_map
                 .get(&edge.from)
                 .ok_or_else(|| format!("Source node {} not found", edge.from))?;
-            let tgt = id_map
-                .get(&edge.to)
-                .ok_or_else(|| format!("Target node {} not found", edge.to))?;
+            let tgt =
+                id_map.get(&edge.to).ok_or_else(|| format!("Target node {} not found", edge.to))?;
             graph.add_edge(*src, *tgt);
         }
 
-        let start_node = id_map
-            .get(&plan.start_node)
-            .ok_or_else(|| "Start node not found".to_string())?;
+        let start_node =
+            id_map.get(&plan.start_node).ok_or_else(|| "Start node not found".to_string())?;
 
         Ok(SynthesisResult {
             graph: Arc::new(graph),
@@ -433,9 +431,7 @@ impl FlowSynthesizer for MetaLearningSynthesizer {
 
         tracing::info!(goal = %goal, hint = ?best_strategy, "Synthesizing with meta-learning hint");
 
-        self.inner
-            .synthesize(&augmented_goal, context, project_id, mode, insights)
-            .await
+        self.inner.synthesize(&augmented_goal, context, project_id, mode, insights).await
     }
 }
 
@@ -471,10 +467,8 @@ impl FlowSynthesizer for StrategicSopSynthesizer {
         let mut candidates = Vec::new();
         for directive in directives {
             let augmented_goal = format!("{}{}", goal, directive);
-            if let Ok(res) = self
-                .inner
-                .synthesize(&augmented_goal, context, project_id, mode, insights)
-                .await
+            if let Ok(res) =
+                self.inner.synthesize(&augmented_goal, context, project_id, mode, insights).await
             {
                 candidates.push(res);
             }

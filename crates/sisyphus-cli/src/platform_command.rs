@@ -88,8 +88,7 @@ impl CommandBuilder {
             cmd.current_dir(cwd);
         }
 
-        cmd.spawn()
-            .map_err(|e| anyhow!("Failed to spawn command: {e}"))
+        cmd.spawn().map_err(|e| anyhow!("Failed to spawn command: {e}"))
     }
 
     fn prepare_command(&self) -> Command {
@@ -141,11 +140,7 @@ mod tests {
                 .output()
                 .await
         } else {
-            CommandBuilder::new("sleep")
-                .arg("2")
-                .timeout(Duration::from_millis(100))
-                .output()
-                .await
+            CommandBuilder::new("sleep").arg("2").timeout(Duration::from_millis(100)).output().await
         };
 
         assert!(output.is_err());

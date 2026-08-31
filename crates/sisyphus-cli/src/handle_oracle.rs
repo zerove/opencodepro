@@ -19,13 +19,13 @@ pub fn handle_oracle(sub: &OracleCommands) -> Result<()> {
             for func in &analysis.functions {
                 println!("    {} at line {}", func.name, func.line);
             }
-        }
+        },
         OracleCommands::AnalyzeDir { path, include } => {
             let summary = sisyphus_cli::tools::analyze_directory(path, include.as_deref())?;
             println!("Directory: {}", path.display());
             println!("  Files analyzed: {}", summary.file_count);
             println!("  Total lines: {}", summary.total_lines);
-        }
+        },
         OracleCommands::CodeReview { paths } => {
             let path_refs: Vec<&Path> = paths.iter().map(|p| p.as_path()).collect();
             let issues = sisyphus_cli::tools::code_review(&path_refs)?;
@@ -42,7 +42,7 @@ pub fn handle_oracle(sub: &OracleCommands) -> Result<()> {
                     );
                 }
             }
-        }
+        },
     }
     Ok(())
 }

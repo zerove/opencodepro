@@ -15,16 +15,16 @@ pub async fn exec(
 ) -> Result<crate::tools::BashOutput> {
     // 权限检查
     match perms.check("exec") {
-        Some(true) => {} // allowed
+        Some(true) => {}, // allowed
         Some(false) => {
             anyhow::bail!("Permission denied: shell execution is blocked by config");
-        }
+        },
         None => {
             // TUI 模式：跳过权限提示 — 用户输入命令并回车
             // 已表明意图。同步的 stdin 读取与 crossterm 原始模式
             // 不兼容。
             // CLI 模式在 Commands::Exec 中有自己的权限检查。
-        }
+        },
     }
 
     let output = crate::tools::bash::execute(command, workdir, timeout_ms)

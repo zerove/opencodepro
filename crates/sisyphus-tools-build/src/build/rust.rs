@@ -203,18 +203,12 @@ pub fn extract_diags(stderr: &str) -> (Vec<Diag>, Vec<Diag>) {
             if let Some(rest) = line.strip_prefix("error[") {
                 let code_end = rest.find(']').unwrap_or(0);
                 let code = rest[..code_end].to_string();
-                let msg = rest[code_end + 1..]
-                    .trim()
-                    .trim_start_matches(':')
-                    .trim()
-                    .to_string();
+                let msg = rest[code_end + 1..].trim().trim_start_matches(':').trim().to_string();
                 (String::from("error"), Some(code), msg)
             } else if let Some(rest) = line.strip_prefix("error:") {
                 if rest.trim().starts_with("aborting due to")
                     || rest.trim().starts_with("could not compile")
-                    || rest
-                        .trim()
-                        .contains("For more information about this error")
+                    || rest.trim().contains("For more information about this error")
                 {
                     continue;
                 }
@@ -222,11 +216,7 @@ pub fn extract_diags(stderr: &str) -> (Vec<Diag>, Vec<Diag>) {
             } else if let Some(rest) = line.strip_prefix("warning[") {
                 let code_end = rest.find(']').unwrap_or(0);
                 let code = rest[..code_end].to_string();
-                let msg = rest[code_end + 1..]
-                    .trim()
-                    .trim_start_matches(':')
-                    .trim()
-                    .to_string();
+                let msg = rest[code_end + 1..].trim().trim_start_matches(':').trim().to_string();
                 (String::from("warning"), Some(code), msg)
             } else if let Some(rest) = line.strip_prefix("warning:") {
                 (String::from("warning"), None, rest.trim().to_string())

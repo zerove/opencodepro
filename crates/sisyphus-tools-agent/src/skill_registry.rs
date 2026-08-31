@@ -69,13 +69,7 @@ impl RemoteSkillRegistry {
 impl SkillRegistry for RemoteSkillRegistry {
     async fn fetch_available_skills(&self) -> Result<Vec<SkillMetadata>, RegistryError> {
         let url = format!("{}/skills", self.registry_url);
-        let skills = self
-            .http_client
-            .get(url)
-            .send()
-            .await?
-            .json::<Vec<SkillMetadata>>()
-            .await?;
+        let skills = self.http_client.get(url).send().await?.json::<Vec<SkillMetadata>>().await?;
 
         Ok(skills)
     }
@@ -83,23 +77,12 @@ impl SkillRegistry for RemoteSkillRegistry {
     async fn install_skill(&self, skill_id: &str) -> Result<(), RegistryError> {
         // 1. Download the bundle
         let url = format!("{}/skills/{}", self.registry_url, skill_id);
-        let bundle = self
-            .http_client
-            .get(url)
-            .send()
-            .await?
-            .json::<SkillBundle>()
-            .await?;
+        let bundle = self.http_client.get(url).send().await?.json::<SkillBundle>().await?;
 
         // 2. Dependency Pre-check
         // Ensure all required tools are present in the ExecutorRouter
         for tool_id in &bundle.required_tools {
-            if !self
-                .router
-                .has_tool(tool_id)
-                .await
-                .map_err(RegistryError::Storage)?
-            {
+            if !self.router.has_tool(tool_id).await.map_err(RegistryError::Storage)? {
                 return Err(RegistryError::DependencyMissing(tool_id.clone()));
             }
         }
@@ -116,10 +99,7 @@ impl SkillRegistry for RemoteSkillRegistry {
     }
 
     async fn uninstall_skill(&self, skill_id: &str) -> Result<(), RegistryError> {
-        self.store
-            .uninstall(skill_id)
-            .await
-            .map_err(RegistryError::Storage)
+        self.store.uninstall(skill_id).await.map_err(RegistryError::Storage)
     }
 
     async fn is_installed(&self, skill_id: &str) -> Result<bool, RegistryError> {
@@ -127,9 +107,6 @@ impl SkillRegistry for RemoteSkillRegistry {
     }
 
     async fn get_skill(&self, skill_id: &str) -> Result<Option<SkillBundle>, RegistryError> {
-        self.store
-            .get(skill_id)
-            .await
-            .map_err(RegistryError::Storage)
+        self.store.get(skill_id).await.map_err(RegistryError::Storage)
     }
 }

@@ -112,9 +112,7 @@ impl AgentChannel {
     /// Subscribe an agent to a topic.
     pub fn subscribe(&self, agent_id: &str, topic: &str) -> ToolResult<()> {
         if let Ok(mut map) = self.topics.write() {
-            map.entry(topic.to_string())
-                .or_default()
-                .push(agent_id.to_string());
+            map.entry(topic.to_string()).or_default().push(agent_id.to_string());
         }
         Ok(())
     }

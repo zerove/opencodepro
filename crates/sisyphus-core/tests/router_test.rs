@@ -35,17 +35,11 @@ async fn test_dynamic_tool_routing() {
     let test_file = "test_router_verify.txt";
     std::fs::write(test_file, "router-works").unwrap();
 
-    let res_sys = router_arc
-        .execute("sys:read", test_file.as_bytes().to_vec(), 0)
-        .await
-        .unwrap();
+    let res_sys = router_arc.execute("sys:read", test_file.as_bytes().to_vec(), 0).await.unwrap();
     assert_eq!(String::from_utf8_lossy(&res_sys), "router-works");
 
     // 5. Test prefixed routing (sys:shell)
-    let res_shell = router_arc
-        .execute("sys:shell", b"echo hello".to_vec(), 0)
-        .await
-        .unwrap();
+    let res_shell = router_arc.execute("sys:shell", b"echo hello".to_vec(), 0).await.unwrap();
     assert!(String::from_utf8_lossy(&res_shell).contains("hello"));
 
     // Cleanup

@@ -61,14 +61,14 @@ impl HookRegistry {
                 "deny" => {
                     denied = Some(hook.effect_payload.clone());
                     break; // Deny is terminal — stop processing
-                }
+                },
                 "inject" => {
                     instructions.push(hook.effect_payload.clone());
-                }
+                },
                 "log" => {
                     logs.push(hook.effect_payload.clone());
-                }
-                _ => {}
+                },
+                _ => {},
             }
         }
 
@@ -93,11 +93,11 @@ impl HookRegistry {
             match hook.effect_type.as_str() {
                 "inject" => {
                     instructions.push(hook.effect_payload.clone());
-                }
+                },
                 "log" => {
                     logs.push(hook.effect_payload.clone());
-                }
-                _ => {}
+                },
+                _ => {},
             }
         }
 
@@ -198,9 +198,7 @@ where
     let before = registry.run_before(tool_id);
 
     if !before.allowed {
-        let reason = before
-            .deny_reason
-            .unwrap_or_else(|| "Blocked by hook".into());
+        let reason = before.deny_reason.unwrap_or_else(|| "Blocked by hook".into());
         return Err(format!("Hook denied: {reason}"));
     }
 

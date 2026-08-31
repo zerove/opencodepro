@@ -142,10 +142,7 @@ async fn test_jcode_evolution_loop() {
     // 4. Verify the evolution
     let node_idx = evolved_graph.graph.node_indices().next().unwrap();
     let node = evolved_graph.graph.node_weight(node_idx).unwrap();
-    let wasm_node = node
-        .as_any()
-        .downcast_ref::<WasmSOPNode>()
-        .expect("Should be WasmNode");
+    let wasm_node = node.as_any().downcast_ref::<WasmSOPNode>().expect("Should be WasmNode");
 
     assert!(
         wasm_node.fuel_limit >= 100,

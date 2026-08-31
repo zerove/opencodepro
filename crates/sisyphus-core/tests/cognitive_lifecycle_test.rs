@@ -67,9 +67,7 @@ impl sisyphus_intel::FlowSynthesizer for MockSynthesizer {
 
 async fn setup_kernel() -> SisyphusKernel {
     let state_store = Arc::new(
-        MfsStore::new("sqlite::memory:", &sisyphus_types::CacheConfig::default())
-            .await
-            .unwrap(),
+        MfsStore::new("sqlite::memory:", &sisyphus_types::CacheConfig::default()).await.unwrap(),
     );
     let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
     let tool_executor = Arc::new(MockToolExecutor);
@@ -92,11 +90,7 @@ async fn setup_kernel() -> SisyphusKernel {
     SisyphusKernel::new(
         state_store,
         Arc::new(sisyphus_mem::SopSqlStore::new(pool.clone()).await.unwrap()),
-        Arc::new(
-            sisyphus_mem::VectorMemoryStore::new(pool.clone())
-                .await
-                .unwrap(),
-        ),
+        Arc::new(sisyphus_mem::VectorMemoryStore::new(pool.clone()).await.unwrap()),
         Arc::new(MockExperienceBank),
         tool_executor as Arc<dyn ToolExecutor>,
         intel,
@@ -153,26 +147,24 @@ async fn test_full_cognitive_lifecycle() {
                 report.iterations, report.converged
             );
             assert!(!output.to_string().is_empty());
-        }
+        },
         Err(e) => {
             println!("Cognitive loop returned error (acceptable in mock): {e}");
-        }
+        },
     }
 
     println!("\n--- Phase 3: Experience-Guided Synthesis ---");
     let similar_goal = "Update all deprecated APIs to new ones in the project";
 
-    let result = kernel
-        .execute_goal(similar_goal, "test_sop", "default", None, None)
-        .await;
+    let result = kernel.execute_goal(similar_goal, "test_sop", "default", None, None).await;
     match result {
         Ok((_output, report)) => {
             println!("Experience-guided execution succeeded: {}", report);
             assert!(!report.is_empty());
-        }
+        },
         Err(e) => {
             println!("Experience-guided execution returned error (acceptable): {e}");
-        }
+        },
     }
 
     println!("\n✅ Full Cognitive Lifecycle Test Passed!");

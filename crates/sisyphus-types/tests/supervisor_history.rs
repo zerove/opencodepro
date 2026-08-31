@@ -2,7 +2,9 @@
 //! pure data types: `SupervisorDecision`, `ExecutionEvent`,
 //! `ExecutionHistory`, `HistoryRecord`.
 
-use sisyphus_types::execution::{ExecutionEvent, ExecutionHistory, HistoryRecord, SupervisorDecision};
+use sisyphus_types::execution::{
+    ExecutionEvent, ExecutionHistory, HistoryRecord, SupervisorDecision,
+};
 
 // ---------------------------------------------------------------------------
 // SupervisorDecision
@@ -24,10 +26,13 @@ fn supervisor_decision_pivot_no_correction() {
         suggested_correction: None,
     };
     match d {
-        SupervisorDecision::Pivot { reason, suggested_correction } => {
+        SupervisorDecision::Pivot {
+            reason,
+            suggested_correction,
+        } => {
             assert_eq!(reason, "off track");
             assert!(suggested_correction.is_none());
-        }
+        },
         _ => panic!("expected Pivot"),
     }
 }
@@ -40,9 +45,12 @@ fn supervisor_decision_pivot_with_correction() {
         suggested_correction: Some(SOPGraphConfig::default()),
     };
     match d {
-        SupervisorDecision::Pivot { suggested_correction, .. } => {
+        SupervisorDecision::Pivot {
+            suggested_correction,
+            ..
+        } => {
             assert!(suggested_correction.is_some());
-        }
+        },
         _ => panic!("expected Pivot"),
     }
 }
@@ -180,12 +188,16 @@ fn execution_history_clone() {
 #[test]
 fn execution_event_variants() {
     // Just construct a couple of variants
-    let _ = ExecutionEvent::NodeStarted { node_name: "n1".into() };
+    let _ = ExecutionEvent::NodeStarted {
+        node_name: "n1".into(),
+    };
 }
 
 #[test]
 fn execution_event_node_started() {
-    let e = ExecutionEvent::NodeStarted { node_name: "alpha".into() };
+    let e = ExecutionEvent::NodeStarted {
+        node_name: "alpha".into(),
+    };
     match e {
         ExecutionEvent::NodeStarted { node_name } => assert_eq!(node_name, "alpha"),
         _ => panic!("expected NodeStarted"),
@@ -201,10 +213,12 @@ fn execution_event_node_failed() {
         duration_ms: 100,
     };
     match e {
-        ExecutionEvent::NodeFailed { node_name, error, .. } => {
+        ExecutionEvent::NodeFailed {
+            node_name, error, ..
+        } => {
             assert_eq!(node_name, "beta");
             assert_eq!(error, "timeout");
-        }
+        },
         _ => panic!("expected NodeFailed"),
     }
 }

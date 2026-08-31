@@ -53,10 +53,8 @@ impl AutoFixer {
             if let Some(rest) = trimmed.strip_prefix("error[") {
                 if let Some(close_bracket) = rest.find(']') {
                     let error_code = rest[..close_bracket].to_string();
-                    let message = rest[close_bracket + 1..]
-                        .trim_start_matches(':')
-                        .trim()
-                        .to_string();
+                    let message =
+                        rest[close_bracket + 1..].trim_start_matches(':').trim().to_string();
                     errors.push(ParsedError {
                         error_code,
                         message,
@@ -221,7 +219,7 @@ impl AutoFixer {
                 } else {
                     stderr
                 }
-            }
+            },
             Err(e) => format!("Failed to run cargo check: {e}"),
         }
     }

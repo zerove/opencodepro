@@ -65,10 +65,8 @@ impl DagRenderer {
         nodes: &[(String, NodeStatus)],
         edges: &[(String, String)],
     ) -> DagVisualization {
-        let _node_map: HashMap<&str, &NodeStatus> = nodes
-            .iter()
-            .map(|(id, status)| (id.as_str(), status))
-            .collect();
+        let _node_map: HashMap<&str, &NodeStatus> =
+            nodes.iter().map(|(id, status)| (id.as_str(), status)).collect();
 
         // 拓扑布局
         let layout = self.compute_layout(nodes, edges);
@@ -94,17 +92,9 @@ impl DagRenderer {
             })
             .collect();
 
-        let width = rendered_nodes
-            .iter()
-            .map(|n| n.col + self.node_width)
-            .max()
-            .unwrap_or(0);
+        let width = rendered_nodes.iter().map(|n| n.col + self.node_width).max().unwrap_or(0);
 
-        let height = rendered_nodes
-            .iter()
-            .map(|n| n.row + self.node_height)
-            .max()
-            .unwrap_or(0);
+        let height = rendered_nodes.iter().map(|n| n.row + self.node_height).max().unwrap_or(0);
 
         DagVisualization {
             nodes: rendered_nodes,
@@ -135,11 +125,8 @@ impl DagRenderer {
         }
 
         // 拓扑排序并分配层级
-        let mut queue: Vec<String> = in_degree
-            .iter()
-            .filter(|(_, &d)| d == 0)
-            .map(|(id, _)| id.clone())
-            .collect();
+        let mut queue: Vec<String> =
+            in_degree.iter().filter(|(_, &d)| d == 0).map(|(id, _)| id.clone()).collect();
 
         let mut levels: HashMap<String, usize> = HashMap::new();
         let mut col_counters: HashMap<usize, usize> = HashMap::new();

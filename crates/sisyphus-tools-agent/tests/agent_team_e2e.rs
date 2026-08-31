@@ -159,10 +159,7 @@ async fn test_agent_model_routing_pipeline_e2e() {
         context: None,
     };
 
-    let report = orchestrator
-        .run_goal(goal)
-        .await
-        .expect("Goal execution should not fail");
+    let report = orchestrator.run_goal(goal).await.expect("Goal execution should not fail");
 
     if !report.success {
         println!("Report failed. Task results: {:?}", report.task_results);
@@ -199,14 +196,7 @@ async fn test_agent_model_routing_pipeline_e2e() {
         .expect("run should return Ok even for unknown agent");
 
     assert!(!report_unknown.success, "Should fail for unknown agent");
-    let failed_task = report_unknown
-        .task_results
-        .iter()
-        .find(|r| !r.success)
-        .expect("Should have a failed task");
-    assert!(failed_task
-        .error
-        .as_ref()
-        .unwrap()
-        .contains("not registered"));
+    let failed_task =
+        report_unknown.task_results.iter().find(|r| !r.success).expect("Should have a failed task");
+    assert!(failed_task.error.as_ref().unwrap().contains("not registered"));
 }

@@ -163,21 +163,13 @@ Respond ONLY with valid JSON matching this structure:
         let parsed: serde_json::Value = serde_json::from_str(&response)
             .map_err(|e| RoadmapError::Internal(format!("Failed to parse reflection JSON: {e}")))?;
 
-        let health_assessment = parsed["health_assessment"]
-            .as_str()
-            .unwrap_or("Unable to assess health")
-            .to_string();
-        let trajectory = parsed["trajectory"]
-            .as_str()
-            .unwrap_or("Unable to determine trajectory")
-            .to_string();
+        let health_assessment =
+            parsed["health_assessment"].as_str().unwrap_or("Unable to assess health").to_string();
+        let trajectory =
+            parsed["trajectory"].as_str().unwrap_or("Unable to determine trajectory").to_string();
         let risk_factors: Vec<String> = parsed["risk_factors"]
             .as_array()
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(|v| v.as_str().map(String::from))
-                    .collect()
-            })
+            .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
             .unwrap_or_default();
         let recommendations: Vec<StrategicRecommendation> = parsed["recommendations"]
             .as_array()
@@ -376,10 +368,7 @@ mod tests {
                 .await
                 .expect("Failed to create sql store"),
         );
-        sql_store
-            .init_schema()
-            .await
-            .expect("Failed to init schema");
+        sql_store.init_schema().await.expect("Failed to init schema");
         let proposal_manager =
             Arc::new(crate::proposal_manager::ProposalManager::new(store.clone()));
         (
@@ -391,9 +380,7 @@ mod tests {
     #[tokio::test]
     async fn test_reflect_empty_project() {
         let (mgr, _store) = setup_manager().await;
-        mgr.create_project("empty", "Empty Project", "desc")
-            .await
-            .unwrap();
+        mgr.create_project("empty", "Empty Project", "desc").await.unwrap();
 
         let llm = Arc::new(FixedResponseClient(
             r#"{
@@ -425,9 +412,7 @@ mod tests {
     #[tokio::test]
     async fn test_reflect_with_milestones() {
         let (mgr, _store) = setup_manager().await;
-        mgr.create_project("p1", "Active Project", "desc")
-            .await
-            .unwrap();
+        mgr.create_project("p1", "Active Project", "desc").await.unwrap();
 
         let g1 = make_goal("g1", "Setup infra", MilestoneStatus::Completed);
         let g2 = make_goal("g2", "Build API", MilestoneStatus::InProgress);

@@ -47,11 +47,7 @@ impl BudgetProvider for SisyphusKernel {
             .count();
 
         let projection = self.resource_optimizer.project_costs(
-            &self
-                .roadmap_manager
-                .get_outcomes(project_id)
-                .await
-                .unwrap_or_default(),
+            &self.roadmap_manager.get_outcomes(project_id).await.unwrap_or_default(),
             total_goals,
             completed_goals,
         );

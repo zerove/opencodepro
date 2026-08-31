@@ -369,7 +369,7 @@ mod tests {
         // push with no remote should fail
         let err = push("origin", "master", false, Some(&path)).unwrap_err();
         match err {
-            ToolError::CommandFailed { .. } => {} // expected
+            ToolError::CommandFailed { .. } => {}, // expected
             _ => panic!("expected CommandFailed, got {err:?}"),
         }
     }

@@ -6,7 +6,9 @@
 //! - `DepReport` 默认 + serde
 //! - `DependencyManager::count_dependencies` 基于 Cargo.toml 行扫描
 
-use sisyphus_tools_system::dep_manager::{DepReport, DependencyManager, OutdatedDep, Vulnerability};
+use sisyphus_tools_system::dep_manager::{
+    DepReport, DependencyManager, OutdatedDep, Vulnerability,
+};
 
 // ---------------------------------------------------------------------------
 // Vulnerability
@@ -150,11 +152,13 @@ fn dep_report_clone() {
 #[test]
 fn count_deps_empty_cargo_toml() {
     // Use a unique tempdir per test to avoid races
-    let nanos = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    let dir = std::env::temp_dir().join(format!("sisyphus_dep_test_{}_{}", std::process::id(), nanos));
+    let nanos =
+        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+    let dir = std::env::temp_dir().join(format!(
+        "sisyphus_dep_test_{}_{}",
+        std::process::id(),
+        nanos
+    ));
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join("Cargo.toml");
     std::fs::write(&path, "").unwrap();
@@ -167,11 +171,13 @@ fn count_deps_empty_cargo_toml() {
 
 #[test]
 fn count_deps_typical_cargo_toml() {
-    let nanos = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    let dir = std::env::temp_dir().join(format!("sisyphus_dep_test2_{}_{}", std::process::id(), nanos));
+    let nanos =
+        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+    let dir = std::env::temp_dir().join(format!(
+        "sisyphus_dep_test2_{}_{}",
+        std::process::id(),
+        nanos
+    ));
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join("Cargo.toml");
     let toml = r#"[package]
@@ -204,11 +210,13 @@ fn count_deps_missing_file_returns_zero() {
 
 #[test]
 fn count_deps_comments_excluded() {
-    let nanos = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    let dir = std::env::temp_dir().join(format!("sisyphus_dep_test3_{}_{}", std::process::id(), nanos));
+    let nanos =
+        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+    let dir = std::env::temp_dir().join(format!(
+        "sisyphus_dep_test3_{}_{}",
+        std::process::id(),
+        nanos
+    ));
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join("Cargo.toml");
     let toml = r#"[package]

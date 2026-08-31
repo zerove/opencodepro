@@ -8,8 +8,8 @@
 
 use sisyphus_intel::TopologicalSOPEvolver;
 use sisyphus_types::graph::{NodeKind, SOPGraph};
-use sisyphus_types::types::EvolutionOp;
 use sisyphus_types::node::WasmSOPNode;
+use sisyphus_types::types::EvolutionOp;
 use std::sync::Arc;
 
 // ---------------------------------------------------------------------------
@@ -103,17 +103,13 @@ async fn apply_ops_add_retry_wraps_node() {
     let executor = Arc::new(NoopExecutor);
     let new_g = evolver.apply_ops(&g, &ops, executor).expect("ok");
     // The node should now be wrapped in a Retry.
-    let node = new_g
-        .graph
-        .node_indices()
-        .next()
-        .map(|i| new_g.graph.node_weight(i).expect(""))
-        .expect("");
+    let node =
+        new_g.graph.node_indices().next().map(|i| new_g.graph.node_weight(i).expect("")).expect("");
     let kind = node.to_kind();
     match kind {
         NodeKind::Retry { max_retries, .. } => {
             assert_eq!(max_retries, 5);
-        }
+        },
         other => panic!("expected Retry, got {other:?}"),
     }
 }
@@ -200,12 +196,8 @@ async fn apply_ops_adjust_fuel_negative_clamped_to_zero() {
     }];
     let executor = Arc::new(NoopExecutor);
     let new_g = evolver.apply_ops(&g, &ops, executor).expect("ok");
-    let node = new_g
-        .graph
-        .node_indices()
-        .next()
-        .map(|i| new_g.graph.node_weight(i).expect(""))
-        .expect("");
+    let node =
+        new_g.graph.node_indices().next().map(|i| new_g.graph.node_weight(i).expect("")).expect("");
     if let Some(wasm) = node.as_any().downcast_ref::<WasmSOPNode>() {
         assert_eq!(wasm.fuel_limit, 0);
     } else {
@@ -223,12 +215,8 @@ async fn apply_ops_adjust_fuel_zero_delta_preserves_fuel() {
     }];
     let executor = Arc::new(NoopExecutor);
     let new_g = evolver.apply_ops(&g, &ops, executor).expect("ok");
-    let node = new_g
-        .graph
-        .node_indices()
-        .next()
-        .map(|i| new_g.graph.node_weight(i).expect(""))
-        .expect("");
+    let node =
+        new_g.graph.node_indices().next().map(|i| new_g.graph.node_weight(i).expect("")).expect("");
     if let Some(wasm) = node.as_any().downcast_ref::<WasmSOPNode>() {
         assert_eq!(wasm.fuel_limit, 100);
     } else {
@@ -246,12 +234,8 @@ async fn apply_ops_adjust_fuel_large_positive() {
     }];
     let executor = Arc::new(NoopExecutor);
     let new_g = evolver.apply_ops(&g, &ops, executor).expect("ok");
-    let node = new_g
-        .graph
-        .node_indices()
-        .next()
-        .map(|i| new_g.graph.node_weight(i).expect(""))
-        .expect("");
+    let node =
+        new_g.graph.node_indices().next().map(|i| new_g.graph.node_weight(i).expect("")).expect("");
     if let Some(wasm) = node.as_any().downcast_ref::<WasmSOPNode>() {
         assert_eq!(wasm.fuel_limit, 1_000_100);
     } else {
@@ -270,4 +254,3 @@ fn evolution_op_serializes_for_insert_node() {
     assert!(json.contains("InsertNode"));
     assert!(json.contains("\"new_name\":\"b\""));
 }
-

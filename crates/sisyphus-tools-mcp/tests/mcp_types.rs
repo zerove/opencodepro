@@ -8,8 +8,8 @@
 
 use sisyphus_tools_mcp::mcp::types::{
     ClientCapabilities, ClientInfo, InitializeParams, InitializeResult, JsonRpcError,
-    JsonRpcNotification, JsonRpcRequest, JsonRpcResponse, ResourcesCapability,
-    ServerCapabilities, ServerInfo, ToolsCapability,
+    JsonRpcNotification, JsonRpcRequest, JsonRpcResponse, ResourcesCapability, ServerCapabilities,
+    ServerInfo, ToolsCapability,
 };
 
 // ---------------------------------------------------------------------------

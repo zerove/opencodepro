@@ -132,13 +132,11 @@ impl WasmToolExecutor {
 
     async fn load_wasm_bytes(&self, tool_id: &str) -> Result<Vec<u8>, SandboxError> {
         let wasm_path = self.tools_path.join(format!("{}.wasm", tool_id));
-        tokio::fs::read(&wasm_path)
-            .await
-            .map_err(|e| SandboxError::IoError {
-                tool_id: tool_id.to_string(),
-                path: wasm_path,
-                source: e,
-            })
+        tokio::fs::read(&wasm_path).await.map_err(|e| SandboxError::IoError {
+            tool_id: tool_id.to_string(),
+            path: wasm_path,
+            source: e,
+        })
     }
 
     async fn get_or_compile_module(&self, tool_id: &str) -> Result<Module, SandboxError> {
@@ -171,8 +169,7 @@ impl WasmToolExecutor {
         let compile_duration = compile_start.elapsed();
         info!(tool_id = %tool_id, duration_ms = compile_duration.as_millis(), "WASM module compiled");
 
-        self.module_cache
-            .insert(tool_id.to_string(), module.clone());
+        self.module_cache.insert(tool_id.to_string(), module.clone());
         debug!("Module cached");
 
         Ok(module)
@@ -202,16 +199,14 @@ impl WasmToolExecutor {
 
         let linker = Linker::new(&self.engine);
         let mut store = Store::new(&self.engine, ());
-        store
-            .set_fuel(fuel_limit)
-            .map_err(|e| TypesError::ToolExecutionError {
+        store.set_fuel(fuel_limit).map_err(|e| TypesError::ToolExecutionError {
+            tool_id: tool_id.to_string(),
+            details: SandboxError::FuelError {
                 tool_id: tool_id.to_string(),
-                details: SandboxError::FuelError {
-                    tool_id: tool_id.to_string(),
-                    source: e,
-                }
-                .to_string(),
-            })?;
+                source: e,
+            }
+            .to_string(),
+        })?;
 
         let instance = linker.instantiate(&mut store, &module).map_err(|e| {
             TypesError::ToolExecutionError {
@@ -239,12 +234,12 @@ impl WasmToolExecutor {
 
         let mut results = vec![Val::I32(0)];
         let call_start = Instant::now();
-        let call_result = execute_func
-            .call(&mut store, &params, &mut results)
-            .map_err(|e| TypesError::ToolExecutionError {
+        let call_result = execute_func.call(&mut store, &params, &mut results).map_err(|e| {
+            TypesError::ToolExecutionError {
                 tool_id: tool_id.to_string(),
                 details: SandboxError::ExecutionError(e.to_string()).to_string(),
-            });
+            }
+        });
         let call_duration = call_start.elapsed();
 
         let fuel_consumed = fuel_limit.saturating_sub(store.get_fuel().unwrap_or(0));
@@ -276,11 +271,11 @@ impl WasmToolExecutor {
                 } else {
                     Vec::new()
                 }
-            }
+            },
             Err(e) => {
                 warn!(error = %e, fuel_consumed, "WASM execution failed");
                 return Err(e);
-            }
+            },
         };
 
         let exec_duration = exec_start.elapsed();
@@ -437,18 +432,14 @@ async fn handle_request(
                     details: e.to_string(),
                 }
             })?;
-            stdout
-                .flush()
-                .await
-                .map_err(|e| TypesError::ToolExecutionError {
-                    tool_id: "ping".into(),
-                    details: e.to_string(),
-                })?;
-        }
+            stdout.flush().await.map_err(|e| TypesError::ToolExecutionError {
+                tool_id: "ping".into(),
+                details: e.to_string(),
+            })?;
+        },
         Request::Execute { id, params } => {
-            let result = executor
-                .execute_measured(&params.tool_id, params.args, params.fuel_limit)
-                .await;
+            let result =
+                executor.execute_measured(&params.tool_id, params.args, params.fuel_limit).await;
             let resp = match result {
                 Ok((data, measurement)) => Response::ExecuteSuccess {
                     id,
@@ -473,14 +464,11 @@ async fn handle_request(
                     details: e.to_string(),
                 }
             })?;
-            stdout
-                .flush()
-                .await
-                .map_err(|e| TypesError::ToolExecutionError {
-                    tool_id: "execute".into(),
-                    details: e.to_string(),
-                })?;
-        }
+            stdout.flush().await.map_err(|e| TypesError::ToolExecutionError {
+                tool_id: "execute".into(),
+                details: e.to_string(),
+            })?;
+        },
     }
     Ok(())
 }
@@ -526,7 +514,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             Err(e) => {
                 warn!(error = %e, "Failed to parse JSON request");
                 continue;
-            }
+            },
         };
 
         // Check if it's a notification (no id field)
@@ -558,7 +546,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let _ = writer.flush().await;
                 }
                 continue;
-            }
+            },
         };
 
         if let Err(e) = handle_request(&executor, request, &mut writer).await {

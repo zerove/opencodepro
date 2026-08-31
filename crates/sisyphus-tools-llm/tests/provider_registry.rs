@@ -7,8 +7,8 @@
 //! calls.
 
 use async_trait::async_trait;
-use sisyphus_tools_llm::provider::{ChatMessage, LlmProvider, ProviderError, ProviderResponse};
 use sisyphus_tools_llm::provider::ProviderRegistry;
+use sisyphus_tools_llm::provider::{ChatMessage, LlmProvider, ProviderError, ProviderResponse};
 use sisyphus_types::ProviderKind;
 use std::sync::Arc;
 
@@ -187,9 +187,7 @@ fn set_fallback_order_with_unknown_names_allowed() {
 #[tokio::test]
 async fn chat_with_provider_unknown_returns_error() {
     let r = ProviderRegistry::new();
-    let result = r
-        .chat_with_provider("nonexistent", "system", &[], false)
-        .await;
+    let result = r.chat_with_provider("nonexistent", "system", &[], false).await;
     assert!(result.is_err());
 }
 

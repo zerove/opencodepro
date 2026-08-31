@@ -89,16 +89,11 @@ fn render_palette(frame: &mut ratatui::Frame, app: &App) {
         })
         .collect();
 
-    let sel = app.palette_sel.min(
-        matching_palette_entries(&app.palette_query)
-            .len()
-            .saturating_sub(1),
-    );
-    let list = List::new(items).block(block).highlight_style(
-        Style::default()
-            .fg(theme.secondary)
-            .add_modifier(Modifier::REVERSED),
-    );
+    let sel =
+        app.palette_sel.min(matching_palette_entries(&app.palette_query).len().saturating_sub(1));
+    let list = List::new(items)
+        .block(block)
+        .highlight_style(Style::default().fg(theme.secondary).add_modifier(Modifier::REVERSED));
     frame.render_stateful_widget(
         list,
         pal_area,
@@ -154,7 +149,7 @@ pub(crate) fn render_status(app: &App) -> Line<'static> {
     let help: String = match app.view {
         View::Home => {
             "Enter: start session | Ctrl+K: palette | Ctrl+L: sessions | type prompt".into()
-        }
+        },
         View::Dashboard => "Ctrl+H home | Ctrl+D toggle dashboard".into(),
         View::Session => {
             if app.session_detail.is_some() {
@@ -172,7 +167,7 @@ pub(crate) fn render_status(app: &App) -> Line<'static> {
             } else {
                 "↑↓ select | Enter open | Ctrl+N new | Ctrl+H home | type filter".to_string()
             }
-        }
+        },
     };
 
     let spinner_chars = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏";
@@ -293,11 +288,7 @@ fn render_toasts(frame: &mut ratatui::Frame, app: &App) {
             &toast.message,
             Style::default().fg(fg).bg(bg),
         )))
-        .block(
-            Block::default()
-                .borders(Borders::NONE)
-                .style(Style::default().bg(bg)),
-        );
+        .block(Block::default().borders(Borders::NONE).style(Style::default().bg(bg)));
         frame.render_widget(ratatui::widgets::Clear, inner[i]);
         frame.render_widget(label, inner[i]);
     }

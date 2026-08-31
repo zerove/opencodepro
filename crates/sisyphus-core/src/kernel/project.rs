@@ -83,13 +83,13 @@ impl SisyphusKernel {
                 }
 
                 Some(reflection)
-            }
+            },
 
             Err(e) => {
                 tracing::warn!(project_id = %project_id, error = %e, "Strategic reflection failed");
 
                 None
-            }
+            },
         }
     }
 
@@ -103,10 +103,7 @@ impl SisyphusKernel {
     ) -> Option<Vec<sisyphus_types::Milestone>> {
         let generator = self.milestone_generator.as_ref()?;
 
-        match generator
-            .generate_milestones(&self.roadmap_manager, project_id, description)
-            .await
-        {
+        match generator.generate_milestones(&self.roadmap_manager, project_id, description).await {
             Ok(milestones) => {
                 let _ = self.channel.publish(
                     "strategic_events",
@@ -130,13 +127,13 @@ impl SisyphusKernel {
                 );
 
                 Some(milestones)
-            }
+            },
 
             Err(e) => {
                 tracing::warn!(project_id = %project_id, error = %e, "Milestone generation failed");
 
                 None
-            }
+            },
         }
     }
 
@@ -189,7 +186,7 @@ impl SisyphusKernel {
                     );
 
                     break;
-                }
+                },
             };
 
             // 2. 解析目标上下文（里程碑、阶段）
@@ -228,7 +225,7 @@ impl SisyphusKernel {
                         "Goal {} not found in any phase/milestone",
                         goal_ref.goal_id
                     )))
-                }
+                },
             };
 
             // 3. 执行目标
@@ -250,17 +247,17 @@ impl SisyphusKernel {
             match result {
                 Ok(_) => {
                     tracing::info!(project_id, goal_id = %goal_ref.goal_id, "Successfully completed goal");
-                }
+                },
 
                 Err(CoreError::StrategicPivot(reason)) => {
                     tracing::warn!(project_id, goal_id = %goal_ref.goal_id, reason, "Strategic pivot triggered. Re-evaluating roadmap...");
-                }
+                },
 
                 Err(e) => {
                     tracing::error!(project_id, goal_id = %goal_ref.goal_id, error = %e, "Goal execution failed");
 
                     return Err(e);
-                }
+                },
             }
         }
 
@@ -278,14 +275,9 @@ impl SisyphusKernel {
 
         completed_goals: usize,
     ) -> sisyphus_roadmap::types::CostProjection {
-        let outcomes = self
-            .roadmap_manager
-            .get_outcomes(project_id)
-            .await
-            .unwrap_or_default();
+        let outcomes = self.roadmap_manager.get_outcomes(project_id).await.unwrap_or_default();
 
-        self.resource_optimizer
-            .project_costs(&outcomes, total_goals, completed_goals)
+        self.resource_optimizer.project_costs(&outcomes, total_goals, completed_goals)
     }
 
     /// 从高层愿景初始化新项目，自动生成

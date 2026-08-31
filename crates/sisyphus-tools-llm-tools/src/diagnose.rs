@@ -46,10 +46,8 @@ pub fn diagnose_with(
     let mut all_diags: Vec<Diag> = check_output.errors.clone();
     all_diags.extend(check_output.warnings.iter().cloned());
     if let Some(ref lint) = lint_output {
-        let existing: Vec<(Option<String>, Option<usize>, String)> = all_diags
-            .iter()
-            .map(|d| (d.file.clone(), d.line, d.message.clone()))
-            .collect();
+        let existing: Vec<(Option<String>, Option<usize>, String)> =
+            all_diags.iter().map(|d| (d.file.clone(), d.line, d.message.clone())).collect();
         for d in lint.errors.iter().chain(lint.warnings.iter()) {
             let is_dup = existing.contains(&(d.file.clone(), d.line, d.message.clone()));
             if !is_dup {

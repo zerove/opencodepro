@@ -69,11 +69,7 @@ impl SisyphusKernel {
                 feedback.plan_id,
                 feedback.step_id,
                 feedback.error.as_deref().unwrap_or("Unknown error"),
-                reflection
-                    .suggested_improvements
-                    .first()
-                    .cloned()
-                    .unwrap_or_default()
+                reflection.suggested_improvements.first().cloned().unwrap_or_default()
             );
 
             let ctx = sisyphus_types::ExecutionContext::new();
@@ -132,7 +128,7 @@ impl SisyphusKernel {
 
                 sisyphus_types::CognitiveAction::FileEdit { path, .. } => {
                     format!("file_edit:{}", path)
-                }
+                },
 
                 sisyphus_types::CognitiveAction::ShellExecute { .. } => "shell_exec_tool".into(),
             };
@@ -180,9 +176,7 @@ impl SisyphusKernel {
             }
         }
 
-        self.execution_manager
-            .save_sop(sop_id, project_id, graph)
-            .await
+        self.execution_manager.save_sop(sop_id, project_id, graph).await
     }
 
     /// Load sop.

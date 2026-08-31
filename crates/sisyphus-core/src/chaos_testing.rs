@@ -187,23 +187,23 @@ impl ChaosRunner {
             FaultType::LlmTimeout => CoreError::Internal("Chaos: LLM timeout injected".into()),
             FaultType::LlmGarbage => {
                 CoreError::Internal("Chaos: LLM garbage response injected".into())
-            }
+            },
             FaultType::ToolCrash => CoreError::Internal("Chaos: Tool crash injected".into()),
             FaultType::ToolHang => CoreError::Internal("Chaos: Tool hang injected".into()),
             FaultType::StorageWriteFailure => {
                 CoreError::Internal("Chaos: Storage write failure injected".into())
-            }
+            },
             FaultType::StorageReadFailure => {
                 CoreError::Internal("Chaos: Storage read failure injected".into())
-            }
+            },
             FaultType::NetworkPartition => {
                 CoreError::Internal("Chaos: Network partition injected".into())
-            }
+            },
             FaultType::RandomDelay(max_ms) => {
                 let delay = simple_u64_random(op_name, max_ms);
                 std::thread::sleep(Duration::from_millis(delay));
                 return None; // Delay is not an error, just latency
-            }
+            },
         })
     }
 }

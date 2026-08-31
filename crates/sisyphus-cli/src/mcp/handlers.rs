@@ -71,32 +71,26 @@ fn handle_tools_list(req: &crate::tools::JsonRpcRequest) -> crate::tools::JsonRp
 }
 
 async fn handle_tools_call(req: crate::tools::JsonRpcRequest) -> crate::tools::JsonRpcResponse {
-    let params: crate::tools::CallToolParams = match req
-        .params
-        .as_ref()
-        .map(|p| serde_json::from_value(p.clone()))
-        .transpose()
-    {
-        Ok(Some(p)) => p,
-        Ok(None) => {
-            return jsonrpc_error(
-                req.id,
-                crate::tools::MCP_ERROR_INVALID_PARAMS,
-                "Missing tool call parameters".into(),
-            );
-        }
-        Err(e) => {
-            return jsonrpc_error(
-                req.id,
-                crate::tools::MCP_ERROR_INVALID_PARAMS,
-                format!("Invalid tool call params: {e}"),
-            );
-        }
-    };
+    let params: crate::tools::CallToolParams =
+        match req.params.as_ref().map(|p| serde_json::from_value(p.clone())).transpose() {
+            Ok(Some(p)) => p,
+            Ok(None) => {
+                return jsonrpc_error(
+                    req.id,
+                    crate::tools::MCP_ERROR_INVALID_PARAMS,
+                    "Missing tool call parameters".into(),
+                );
+            },
+            Err(e) => {
+                return jsonrpc_error(
+                    req.id,
+                    crate::tools::MCP_ERROR_INVALID_PARAMS,
+                    format!("Invalid tool call params: {e}"),
+                );
+            },
+        };
 
-    let args = params
-        .arguments
-        .unwrap_or(serde_json::Value::Object(Default::default()));
+    let args = params.arguments.unwrap_or(serde_json::Value::Object(Default::default()));
 
     let result = match params.name.as_str() {
         "metis_analyse" => execute_metis_analyse(args).await,
@@ -113,7 +107,7 @@ async fn handle_tools_call(req: crate::tools::JsonRpcRequest) -> crate::tools::J
                 crate::tools::MCP_ERROR_TOOL_NOT_FOUND,
                 format!("Tool not found: {}", params.name),
             );
-        }
+        },
     };
 
     match result {
@@ -151,16 +145,11 @@ fn get_str<'a>(args: &'a serde_json::Value, key: &str) -> Result<&'a str, String
 }
 
 fn get_str_opt<'a>(args: &'a serde_json::Value, key: &str) -> Option<&'a str> {
-    args.get(key)
-        .and_then(|v| v.as_str())
-        .filter(|s| !s.is_empty())
+    args.get(key).and_then(|v| v.as_str()).filter(|s| !s.is_empty())
 }
 
 fn get_usize(args: &serde_json::Value, key: &str, default: usize) -> usize {
-    args.get(key)
-        .and_then(|v| v.as_u64())
-        .map(|n| n as usize)
-        .unwrap_or(default)
+    args.get(key).and_then(|v| v.as_u64()).map(|n| n as usize).unwrap_or(default)
 }
 
 fn output_text(text: String) -> Result<String, String> {
@@ -172,10 +161,7 @@ fn output_json<T: serde::Serialize>(value: T) -> Result<String, String> {
 }
 
 async fn execute_metis_analyse(args: serde_json::Value) -> Result<String, String> {
-    let client = LLM_CLIENT
-        .get()
-        .ok_or("LLM client not initialized")?
-        .clone();
+    let client = LLM_CLIENT.get().ok_or("LLM client not initialized")?.clone();
     let request = get_str(&args, "request")?;
     let analysis = crate::tools::metis::analyse(request, &*client)
         .await
@@ -228,9 +214,8 @@ async fn execute_librarian_research(args: serde_json::Value) -> Result<String, S
 
 async fn execute_librarian_fetch_docs(args: serde_json::Value) -> Result<String, String> {
     let url = get_str(&args, "url")?;
-    let page = crate::tools::fetch_documentation(url)
-        .await
-        .map_err(|e| format!("Fetch error: {e}"))?;
+    let page =
+        crate::tools::fetch_documentation(url).await.map_err(|e| format!("Fetch error: {e}"))?;
     output_json(&page)
 }
 
@@ -250,9 +235,8 @@ async fn execute_librarian_synthesise(args: serde_json::Value) -> Result<String,
     let findings: Vec<crate::tools::ResearchFinding> =
         serde_json::from_str(findings_json).map_err(|e| format!("Invalid findings JSON: {e}"))?;
 
-    let synthesis = crate::tools::synthesise(&findings, &**client)
-        .await
-        .map_err(|e| e.to_string())?;
+    let synthesis =
+        crate::tools::synthesise(&findings, &**client).await.map_err(|e| e.to_string())?;
     output_text(synthesis)
 }
 

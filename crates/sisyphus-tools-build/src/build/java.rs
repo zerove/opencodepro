@@ -350,13 +350,7 @@ fn parse_mvn_test_results(stdout: &str, stderr: &str) -> TestResults {
                         .filter_map(|l| {
                             let l = l.trim();
                             if l.starts_with("Failures:") || l.starts_with("Errors:") {
-                                l.split(',')
-                                    .next()?
-                                    .split(':')
-                                    .nth(1)?
-                                    .trim()
-                                    .parse::<usize>()
-                                    .ok()
+                                l.split(',').next()?.split(':').nth(1)?.trim().parse::<usize>().ok()
                             } else {
                                 None
                             }

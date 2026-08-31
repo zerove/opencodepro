@@ -17,13 +17,13 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use sisyphus_intel::gap_analyzer::{GapAnalyzer, ToolGap};
 use sisyphus_intel::self_programming::{
-    AttemptRecord, FileRegistrar, LoopConfig, SelfProgrammingLoop, ToolGenerationResult, Verifier,
-    VerificationOutcome,
+    AttemptRecord, FileRegistrar, LoopConfig, SelfProgrammingLoop, ToolGenerationResult,
+    VerificationOutcome, Verifier,
 };
 use sisyphus_intel::tool_coder::ToolCoder;
 use sisyphus_tools_llm::{FixedResponseClient, LlmClient};
-use sisyphus_types::IntelError;
 use sisyphus_types::tools::ToolSpec;
+use sisyphus_types::IntelError;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -118,10 +118,7 @@ fn llm_response() -> String {
 }
 
 fn now_secs() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0)
+    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
 }
 
 fn ensure_history_dir() -> PathBuf {
@@ -157,7 +154,10 @@ async fn main() {
 
     // 4) 准备 gap
     let gap = make_tool_gap();
-    println!("▶ 启动 SelfProgrammingLoop，目标工具: {}", gap.suggested_tool_spec.tool_id);
+    println!(
+        "▶ 启动 SelfProgrammingLoop，目标工具: {}",
+        gap.suggested_tool_spec.tool_id
+    );
     println!("  需求: {}", gap.required_capability);
 
     // 5) 执行闭环
@@ -166,7 +166,7 @@ async fn main() {
         Err(e) => {
             eprintln!("✗ 闭环失败: {e}");
             std::process::exit(1);
-        }
+        },
     };
 
     // 6) 渲染结果

@@ -47,18 +47,9 @@ impl LspClient {
             .spawn()
             .map_err(LspError::Io)?;
 
-        let stdout = child
-            .stdout
-            .take()
-            .ok_or_else(|| LspError::Transport("no stdout".into()))?;
-        let stdin = child
-            .stdin
-            .take()
-            .ok_or_else(|| LspError::Transport("no stdin".into()))?;
-        let stderr = child
-            .stderr
-            .take()
-            .ok_or_else(|| LspError::Transport("no stderr".into()))?;
+        let stdout = child.stdout.take().ok_or_else(|| LspError::Transport("no stdout".into()))?;
+        let stdin = child.stdin.take().ok_or_else(|| LspError::Transport("no stdin".into()))?;
+        let stderr = child.stderr.take().ok_or_else(|| LspError::Transport("no stderr".into()))?;
 
         let stderr_buf: Arc<Mutex<String>> = Arc::new(Mutex::new(String::new()));
         let capture = stderr_buf.clone();
@@ -73,7 +64,7 @@ impl LspClient {
                         if let Ok(mut buf) = capture.lock() {
                             buf.push_str(&line);
                         }
-                    }
+                    },
                 }
             }
         });
@@ -133,10 +124,7 @@ impl LspClient {
 
     /// Drain the captured stderr output from the server process.
     pub fn take_stderr(&mut self) -> String {
-        self.stderr_buf
-            .lock()
-            .map(|mut b| std::mem::take(&mut *b))
-            .unwrap_or_default()
+        self.stderr_buf.lock().map(|mut b| std::mem::take(&mut *b)).unwrap_or_default()
     }
 
     /// Capabilities.
@@ -165,8 +153,7 @@ impl LspClient {
         });
         let result = self.send_request("initialize", params).await?;
         self.capabilities = result.get("capabilities").cloned().unwrap_or(Value::Null);
-        self.send_notification("initialized", serde_json::json!({}))
-            .await?;
+        self.send_notification("initialized", serde_json::json!({})).await?;
         Ok(())
     }
 
@@ -190,8 +177,7 @@ impl LspClient {
     /// Shutdown.
     pub async fn shutdown(&mut self) -> LspResult<()> {
         let _ = self.send_request("shutdown", serde_json::json!(null)).await;
-        self.send_notification("exit", serde_json::json!({}))
-            .await?;
+        self.send_notification("exit", serde_json::json!({})).await?;
         if let Some(mut child) = self.child.take() {
             let _ = child.wait().await;
         }
@@ -291,9 +277,7 @@ impl LspClient {
         let params = serde_json::json!({
             "textDocument": { "uri": uri }
         });
-        let result = self
-            .send_request("textDocument/documentSymbol", params)
-            .await?;
+        let result = self.send_request("textDocument/documentSymbol", params).await?;
 
         if let Ok(symbols) = serde_json::from_value::<Vec<LspDocumentSymbol>>(result.clone()) {
             return Ok(symbols);

@@ -20,7 +20,7 @@ pub fn handle_precommit(sub: &PrecommitCommands) -> Result<()> {
         )?,
         PrecommitCommands::Uninstall { dir } => {
             sisyphus_cli::precommit::run_uninstall(dir.clone())?
-        }
+        },
         PrecommitCommands::Status { dir } => sisyphus_cli::precommit::run_status(dir.clone())?,
     }
     Ok(())

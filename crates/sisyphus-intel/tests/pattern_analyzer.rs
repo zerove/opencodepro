@@ -2,9 +2,7 @@
 //! pure data types: `SubgraphPattern`, `ClusterAnalysis`,
 //! `SemanticPatternAnalyzer::new`.
 
-use sisyphus_intel::pattern_analyzer::{
-    ClusterAnalysis, SemanticPatternAnalyzer, SubgraphPattern,
-};
+use sisyphus_intel::pattern_analyzer::{ClusterAnalysis, SemanticPatternAnalyzer, SubgraphPattern};
 use std::collections::HashMap;
 
 // ---------------------------------------------------------------------------

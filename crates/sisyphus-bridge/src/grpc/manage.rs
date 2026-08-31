@@ -253,10 +253,7 @@ impl MySisyphusBridge {
         request: Request<CreateWorkspaceRequest>,
     ) -> Result<Response<CreateWorkspaceResponse>, Status> {
         let req = request.into_inner();
-        match self
-            .workspace_manager
-            .create_workspace(req.name, req.project_id, req.root_dir)
-            .await
+        match self.workspace_manager.create_workspace(req.name, req.project_id, req.root_dir).await
         {
             Ok(ws) => Ok(Response::new(CreateWorkspaceResponse {
                 success: true,
@@ -276,11 +273,7 @@ impl MySisyphusBridge {
         request: Request<SwitchWorkspaceRequest>,
     ) -> Result<Response<SwitchWorkspaceResponse>, Status> {
         let req = request.into_inner();
-        match self
-            .workspace_manager
-            .switch_workspace(&req.workspace_id)
-            .await
-        {
+        match self.workspace_manager.switch_workspace(&req.workspace_id).await {
             Ok(()) => Ok(Response::new(SwitchWorkspaceResponse {
                 success: true,
                 error: String::new(),
@@ -337,11 +330,7 @@ impl MySisyphusBridge {
         request: Request<DeleteWorkspaceRequest>,
     ) -> Result<Response<DeleteWorkspaceResponse>, Status> {
         let req = request.into_inner();
-        match self
-            .workspace_manager
-            .delete_workspace(&req.workspace_id)
-            .await
-        {
+        match self.workspace_manager.delete_workspace(&req.workspace_id).await {
             Ok(()) => Ok(Response::new(DeleteWorkspaceResponse {
                 success: true,
                 error: String::new(),

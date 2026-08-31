@@ -16,13 +16,7 @@ pub(super) async fn get_cognitive_map_handler(
     State(state): State<RestApiState>,
     Path(sop_id): Path<String>,
 ) -> impl IntoResponse {
-    match state
-        .bridge
-        .kernel()
-        .execution_manager
-        .cognitive_maps
-        .get(&sop_id)
-    {
+    match state.bridge.kernel().execution_manager.cognitive_maps.get(&sop_id) {
         Some(map) => (StatusCode::OK, Json(map.clone())).into_response(),
         None => (
             StatusCode::NOT_FOUND,
@@ -45,12 +39,7 @@ pub(super) async fn install_remote_skill_handler(
     State(state): State<RestApiState>,
     Json(req): Json<InstallSkillRequest>,
 ) -> impl IntoResponse {
-    match state
-        .bridge
-        .skill_registry
-        .install_skill(&req.skill_id)
-        .await
-    {
+    match state.bridge.skill_registry.install_skill(&req.skill_id).await {
         Ok(_) => StatusCode::CREATED.into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(e.to_string())).into_response(),
     }
@@ -103,12 +92,7 @@ pub(super) async fn switch_workspace_handler(
     State(state): State<RestApiState>,
     Json(req): Json<SwitchWorkspaceRequest>,
 ) -> impl IntoResponse {
-    match state
-        .bridge
-        .workspace_manager
-        .switch_workspace(&req.id)
-        .await
-    {
+    match state.bridge.workspace_manager.switch_workspace(&req.id).await {
         Ok(_) => StatusCode::OK.into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(e.to_string())).into_response(),
     }
@@ -149,14 +133,10 @@ pub(super) async fn execute_goal_handler(
         None
     };
 
-    let project_id = workspace
-        .project_id
-        .or(req.project_id)
-        .unwrap_or_else(|| "default".to_string());
+    let project_id =
+        workspace.project_id.or(req.project_id).unwrap_or_else(|| "default".to_string());
 
-    let result = kernel
-        .execute_goal(&req.goal, &req.sop_id, &project_id, event_tx, None)
-        .await;
+    let result = kernel.execute_goal(&req.goal, &req.sop_id, &project_id, event_tx, None).await;
 
     match result {
         Ok((output, report)) => (
@@ -168,7 +148,7 @@ pub(super) async fn execute_goal_handler(
                         StatusCode::INTERNAL_SERVER_ERROR,
                         Json(serde_json::json!({ "error": "Failed to serialize response" })),
                     )
-                }
+                },
             },
         ),
         Err(e) => (
@@ -208,9 +188,7 @@ pub(super) async fn goal_trace_handler(
     workspace: WorkspaceContext,
     Path(sop_id): Path<String>,
 ) -> impl IntoResponse {
-    let project_id = workspace
-        .project_id
-        .unwrap_or_else(|| "default".to_string());
+    let project_id = workspace.project_id.unwrap_or_else(|| "default".to_string());
     let store = &state.bridge.state_store;
     match store.get_traces_for_sop(&project_id, &sop_id).await {
         Ok(rows) => {
@@ -227,7 +205,7 @@ pub(super) async fn goal_trace_handler(
                 )
                 .collect();
             (StatusCode::OK, Json(GoalTraceResponse { sop_id, events })).into_response()
-        }
+        },
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(serde_json::json!({ "error": e.to_string() })),
@@ -242,12 +220,7 @@ pub(super) async fn cognitive_trace_handler(
 ) -> impl IntoResponse {
     const MAX_LIMIT: usize = 200;
     let limit = params.limit.unwrap_or(100).clamp(1, MAX_LIMIT);
-    let entries = state
-        .bridge
-        .kernel()
-        .execution_manager
-        .cognitive_trace
-        .recent(limit);
+    let entries = state.bridge.kernel().execution_manager.cognitive_trace.recent(limit);
     (StatusCode::OK, Json(CognitiveTraceResponse { entries })).into_response()
 }
 
@@ -258,9 +231,7 @@ pub(super) async fn cognitive_trace_history_handler(
     Query(params): Query<CognitiveTraceHistoryQuery>,
 ) -> impl IntoResponse {
     const MAX_LIMIT: usize = 1000;
-    let project_id = workspace
-        .project_id
-        .unwrap_or_else(|| "default".to_string());
+    let project_id = workspace.project_id.unwrap_or_else(|| "default".to_string());
     let limit = params.limit.unwrap_or(100).clamp(1, MAX_LIMIT);
     match state
         .bridge
@@ -285,9 +256,7 @@ pub(super) async fn cognitive_trace_summary_handler(
     Query(params): Query<CognitiveTraceSummaryQuery>,
 ) -> impl IntoResponse {
     const MAX_LIMIT: usize = 1000;
-    let project_id = workspace
-        .project_id
-        .unwrap_or_else(|| "default".to_string());
+    let project_id = workspace.project_id.unwrap_or_else(|| "default".to_string());
     let limit = params.limit.unwrap_or(1000).clamp(1, MAX_LIMIT);
     match state
         .bridge
@@ -310,9 +279,7 @@ pub(super) async fn goal_stream_handler(
     workspace: WorkspaceContext,
     Path(goal): Path<String>,
 ) -> impl IntoResponse {
-    let project_id = workspace
-        .project_id
-        .unwrap_or_else(|| "default".to_string());
+    let project_id = workspace.project_id.unwrap_or_else(|| "default".to_string());
     let (tx, rx) = mpsc::unbounded_channel::<sisyphus_types::ExecutionEvent>();
     let bridge_clone = state.bridge.clone();
     let goal_clone = goal.clone();
@@ -333,7 +300,7 @@ pub(super) async fn goal_stream_handler(
             Some(event) => {
                 let data = format!("data: {:?}\n\n", event);
                 Some((Ok::<_, std::io::Error>(data.into_bytes()), rx))
-            }
+            },
             None => None,
         }
     });
@@ -387,11 +354,7 @@ pub(super) async fn execute_composite_handler(
     {
         Ok(output) => {
             let response = CompositeExecuteResponse {
-                results: output
-                    .results
-                    .into_iter()
-                    .map(|(id, (out, _))| (id, out))
-                    .collect(),
+                results: output.results.into_iter().map(|(id, (out, _))| (id, out)).collect(),
                 execution_order: output.execution_order,
             };
             match serde_json::to_value(response) {
@@ -401,7 +364,7 @@ pub(super) async fn execute_composite_handler(
                     Json(serde_json::json!({ "error": "Failed to serialize response" })),
                 ),
             }
-        }
+        },
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(serde_json::json!({ "error": e.to_string() })),
@@ -414,11 +377,7 @@ pub(super) async fn list_sops_handler(
     workspace: WorkspaceContext,
 ) -> impl IntoResponse {
     let kernel = state.bridge.kernel();
-    match kernel
-        .execution_manager
-        .list_sops(workspace.project_id.as_deref())
-        .await
-    {
+    match kernel.execution_manager.list_sops(workspace.project_id.as_deref()).await {
         Ok(sops) => (StatusCode::OK, Json(sops)).into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(e.to_string())).into_response(),
     }
@@ -438,7 +397,7 @@ pub(super) async fn get_sop_handler(
                 "Missing X-Sisyphus-Workspace-Id header",
             )
                 .into_response()
-        }
+        },
     };
     match kernel.execution_manager.load_sop(&id, &project_id).await {
         Ok(sop) => {
@@ -453,7 +412,7 @@ pub(super) async fn get_sop_handler(
                 }),
             )
                 .into_response()
-        }
+        },
         Err(e) => (StatusCode::NOT_FOUND, Json(e.to_string())).into_response(),
     }
 }
@@ -471,13 +430,10 @@ pub(super) async fn save_sop_handler(
                 "Missing X-Sisyphus-Workspace-Id header",
             )
                 .into_response()
-        }
+        },
     };
     let sop_store = &state.bridge.kernel().execution_manager.sop_store;
-    match sop_store
-        .save_sop(&req.id, &project_id, &req.name, req.version, &req.config)
-        .await
-    {
+    match sop_store.save_sop(&req.id, &project_id, &req.name, req.version, &req.config).await {
         Ok(_) => StatusCode::CREATED.into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(e.to_string())).into_response(),
     }
@@ -496,7 +452,7 @@ pub(super) async fn delete_sop_handler(
                 "Missing X-Sisyphus-Workspace-Id header",
             )
                 .into_response()
-        }
+        },
     };
     let sop_store = &state.bridge.kernel().execution_manager.sop_store;
     match sop_store.delete_sop(&id, &project_id).await {
@@ -545,14 +501,11 @@ pub(super) async fn roadmap_project_handler(
             let Some(Json(req)) = payload else {
                 return (StatusCode::BAD_REQUEST, "Missing payload").into_response();
             };
-            match rm
-                .create_project(&req.id, &req.name, &req.description)
-                .await
-            {
+            match rm.create_project(&req.id, &req.name, &req.description).await {
                 Ok(p) => (StatusCode::CREATED, Json(p)).into_response(),
                 Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(e.to_string())).into_response(),
             }
-        }
+        },
         _ => StatusCode::METHOD_NOT_ALLOWED.into_response(),
     }
 }
@@ -561,12 +514,7 @@ pub(super) async fn roadmap_milestone_handler(
     State(state): State<RestApiState>,
     Json(req): Json<AddMilestoneRequest>,
 ) -> impl IntoResponse {
-    match state
-        .bridge
-        .kernel()
-        .roadmap_manager
-        .add_milestone(&req.project_id, req.milestone)
-        .await
+    match state.bridge.kernel().roadmap_manager.add_milestone(&req.project_id, req.milestone).await
     {
         Ok(_) => StatusCode::CREATED.into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(e.to_string())).into_response(),
@@ -614,7 +562,7 @@ pub(super) async fn roadmap_goal_handler(
                 Ok(_) => StatusCode::OK.into_response(),
                 Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(e.to_string())).into_response(),
             }
-        }
+        },
         _ => StatusCode::METHOD_NOT_ALLOWED.into_response(),
     }
 }
@@ -623,13 +571,7 @@ pub(super) async fn roadmap_health_handler(
     State(state): State<RestApiState>,
     Path(project_id): Path<String>,
 ) -> impl IntoResponse {
-    match state
-        .bridge
-        .kernel()
-        .roadmap_manager
-        .evaluate_health(&project_id)
-        .await
-    {
+    match state.bridge.kernel().roadmap_manager.evaluate_health(&project_id).await {
         Ok(health) => (StatusCode::OK, Json(health)).into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(e.to_string())).into_response(),
     }
@@ -641,13 +583,7 @@ pub(super) async fn predict_completion_handler(
     State(state): State<RestApiState>,
     Json(req): Json<PredictCompletionRequest>,
 ) -> impl IntoResponse {
-    match state
-        .bridge
-        .kernel()
-        .roadmap_manager
-        .predict_completion_time(&req.project_id)
-        .await
-    {
+    match state.bridge.kernel().roadmap_manager.predict_completion_time(&req.project_id).await {
         Ok(prediction) => (StatusCode::OK, Json(prediction)).into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(e.to_string())).into_response(),
     }
@@ -691,13 +627,7 @@ pub(super) async fn find_bottlenecks_handler(
     State(state): State<RestApiState>,
     Json(req): Json<FindBottlenecksRequest>,
 ) -> impl IntoResponse {
-    match state
-        .bridge
-        .kernel()
-        .roadmap_manager
-        .find_bottlenecks(&req.project_id)
-        .await
-    {
+    match state.bridge.kernel().roadmap_manager.find_bottlenecks(&req.project_id).await {
         Ok(bottlenecks) => (
             StatusCode::OK,
             Json(FindBottlenecksResponse { bottlenecks }),
@@ -711,13 +641,7 @@ pub(super) async fn suggest_parallel_execution_handler(
     State(state): State<RestApiState>,
     Json(req): Json<SuggestParallelExecutionRequest>,
 ) -> impl IntoResponse {
-    match state
-        .bridge
-        .kernel()
-        .roadmap_manager
-        .suggest_parallel_execution(&req.project_id)
-        .await
-    {
+    match state.bridge.kernel().roadmap_manager.suggest_parallel_execution(&req.project_id).await {
         Ok(opportunities) => (
             StatusCode::OK,
             Json(SuggestParallelExecutionResponse { opportunities }),
@@ -753,13 +677,7 @@ pub(super) async fn list_proposals_handler(
     State(state): State<RestApiState>,
     Path(project_id): Path<String>,
 ) -> impl IntoResponse {
-    match state
-        .bridge
-        .kernel()
-        .roadmap_manager
-        .proposal_manager()
-        .list_proposals(&project_id)
-        .await
+    match state.bridge.kernel().roadmap_manager.proposal_manager().list_proposals(&project_id).await
     {
         Ok(proposals) => (StatusCode::OK, Json(ProposalListResponse { proposals })).into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(e.to_string())).into_response(),
@@ -810,7 +728,7 @@ pub(super) async fn approve_proposal_handler(
                 "Proposal approved"
             );
             StatusCode::OK.into_response()
-        }
+        },
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(e.to_string())).into_response(),
     }
 }
@@ -837,7 +755,7 @@ pub(super) async fn reject_proposal_handler(
                 "Proposal rejected"
             );
             StatusCode::OK.into_response()
-        }
+        },
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(e.to_string())).into_response(),
     }
 }
@@ -869,7 +787,7 @@ pub(super) async fn execute_handler(
                     result_json: result_str,
                 }),
             )
-        }
+        },
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(ExecuteResponse {
@@ -894,7 +812,7 @@ pub(super) async fn list_sessions_handler(State(state): State<RestApiState>) -> 
                 })
                 .collect();
             (StatusCode::OK, Json(summary))
-        }
+        },
         Err(_) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(Vec::<SessionSummary>::new()),
@@ -926,7 +844,7 @@ pub(super) async fn create_session_handler(
                     .collect(),
             };
             (StatusCode::CREATED, Json(detail))
-        }
+        },
         Err(_) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(SessionDetail {
@@ -965,7 +883,7 @@ pub(super) async fn get_session_handler(
                     .collect(),
             };
             (StatusCode::OK, Json(detail))
-        }
+        },
         Err(_) => (
             StatusCode::NOT_FOUND,
             Json(SessionDetail {
@@ -1010,7 +928,7 @@ pub(super) async fn add_message_handler(
                     .collect(),
             };
             (StatusCode::OK, Json(detail))
-        }
+        },
         Err(_) => (
             StatusCode::NOT_FOUND,
             Json(SessionDetail {
@@ -1053,10 +971,7 @@ pub(super) async fn list_agents_handler(State(state): State<RestApiState>) -> im
         .into_iter()
         .map(|(agent_id, info)| {
             let description = if !info.tool_prefixes.is_empty() {
-                let tools = state
-                    .bridge
-                    .tool_registry()
-                    .list_for_prefixes(&info.tool_prefixes);
+                let tools = state.bridge.tool_registry().list_for_prefixes(&info.tool_prefixes);
                 let tool_names: Vec<&str> = tools.iter().map(|(_, t)| t.name.as_str()).collect();
                 if tool_names.is_empty() {
                     info.description
@@ -1098,7 +1013,6 @@ pub(super) async fn list_skills_handler(State(state): State<RestApiState>) -> im
         .collect();
     (StatusCode::OK, Json(entries))
 }
-
 
 // =====================================================================
 // 实时认知地图 SSE 流（EVOLUTION_PLAN §3.2 第一步）
@@ -1240,13 +1154,17 @@ pub(super) async fn intervene_cognitive_map_handler(
             if kernel.execution_manager.active_executions.remove(&sop_id).is_some() {
                 applied = true;
             }
-        }
+        },
         "pause" | "resume" => {
             if let Some(mut entry) = kernel.execution_manager.active_executions.get_mut(&sop_id) {
-                entry.status = if action == "pause" { "paused".to_string() } else { "running".to_string() };
+                entry.status = if action == "pause" {
+                    "paused".to_string()
+                } else {
+                    "running".to_string()
+                };
                 applied = true;
             }
-        }
+        },
         "redirect" => {
             if let Some(mut entry) = kernel.execution_manager.active_executions.get_mut(&sop_id) {
                 if let Some(target) = &req.target_node {
@@ -1254,8 +1172,8 @@ pub(super) async fn intervene_cognitive_map_handler(
                     applied = true;
                 }
             }
-        }
-        _ => {}
+        },
+        _ => {},
     }
 
     // 2) 广播 SSE 事件给所有订阅者

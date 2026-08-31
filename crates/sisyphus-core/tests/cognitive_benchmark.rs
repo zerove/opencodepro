@@ -98,11 +98,7 @@ async fn setup_test_kernel() -> SisyphusKernel {
     SisyphusKernel::new(
         store,
         Arc::new(sisyphus_mem::SopSqlStore::new(pool.clone()).await.unwrap()),
-        Arc::new(
-            sisyphus_mem::VectorMemoryStore::new(pool.clone())
-                .await
-                .unwrap(),
-        ),
+        Arc::new(sisyphus_mem::VectorMemoryStore::new(pool.clone()).await.unwrap()),
         Arc::new(MockExperienceBank),
         tool_executor as Arc<dyn sisyphus_types::ToolExecutor>,
         intel,
@@ -148,9 +144,7 @@ async fn test_cognitive_convergence_benchmark() {
 
         let graph = synthesis.graph;
 
-        let result = kernel
-            .execute_with_cognition(graph, &sop_id, None, None, None, None)
-            .await;
+        let result = kernel.execute_with_cognition(graph, &sop_id, None, None, None, None).await;
 
         match result {
             Ok((_output, report, _evolved)) => {
@@ -167,14 +161,14 @@ async fn test_cognitive_convergence_benchmark() {
                     "{:<20} | {:<10} | {:<10.4} | {:<10}",
                     goal.id, report.iterations, report.final_deviation, status
                 );
-            }
+            },
             Err(e) => {
                 println!(
                     "{:<20} | {:<10} | {:<10} | {:<10}",
                     goal.id, "ERR", "N/A", "ERROR"
                 );
                 eprintln!("Benchmark goal {} failed: {}", goal.id, e);
-            }
+            },
         }
     }
 

@@ -13,22 +13,18 @@ pub(crate) fn handle_tool(
     match sub {
         ToolCommands::RegisterMcp { prefix, command } => {
             let command_str = command.join(" ");
-            let config_path = cli
-                .config
-                .as_deref()
-                .map(|p| p.to_path_buf())
-                .unwrap_or_else(|| {
-                    [
-                        "opencode.json",
-                        "opencode.jsonc",
-                        ".opencode.json",
-                        "sisyphus.toml",
-                    ]
-                    .iter()
-                    .find(|p| Path::new(p).exists())
-                    .map(PathBuf::from)
-                    .unwrap_or_else(|| PathBuf::from("sisyphus.toml"))
-                });
+            let config_path = cli.config.as_deref().map(|p| p.to_path_buf()).unwrap_or_else(|| {
+                [
+                    "opencode.json",
+                    "opencode.jsonc",
+                    ".opencode.json",
+                    "sisyphus.toml",
+                ]
+                .iter()
+                .find(|p| Path::new(p).exists())
+                .map(PathBuf::from)
+                .unwrap_or_else(|| PathBuf::from("sisyphus.toml"))
+            });
 
             let mut cfg = if config_path.exists() {
                 let path_str = config_path.to_string_lossy();
@@ -37,15 +33,13 @@ pub(crate) fn handle_tool(
                     Err(e) => {
                         eprintln!("Warning: failed to load config: {e}, using defaults");
                         sisyphus_types::Config::default()
-                    }
+                    },
                 }
             } else {
                 sisyphus_types::Config::default()
             };
 
-            cfg.mcp
-                .stdio_servers
-                .insert(prefix.clone(), command_str.clone());
+            cfg.mcp.stdio_servers.insert(prefix.clone(), command_str.clone());
 
             let path_str = config_path.to_string_lossy().to_string();
             cfg.save_to_file(&path_str)?;
@@ -53,7 +47,7 @@ pub(crate) fn handle_tool(
             println!("Registered MCP tool '{}' -> {}", prefix, command_str);
             println!("Config saved to: {}", config_path.display());
             println!("Restart the bridge for changes to take effect.");
-        }
+        },
         ToolCommands::List => {
             let providers = &sisyphus_cfg.mcp.stdio_servers;
             let http_servers = &sisyphus_cfg.mcp.http_servers;
@@ -74,7 +68,7 @@ pub(crate) fn handle_tool(
                     println!("    {prefix}: {url}");
                 }
             }
-        }
+        },
     }
     Ok(())
 }

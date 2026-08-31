@@ -1,8 +1,8 @@
+use metrics::counter;
 use sisyphus_tools_core::{ToolError, ToolResult};
 use std::io;
 use std::path::Path;
 use std::time::Instant;
-use metrics::counter;
 use tokio::io::{AsyncReadExt, BufReader};
 use tokio::process::Command;
 use tokio::time::{timeout, Duration};
@@ -96,7 +96,8 @@ pub async fn execute(
             counter!(
                 "sisyphus_system_bash_executions_total",
                 "exit_code" => exit_code.to_string(),
-            ).increment(1);
+            )
+            .increment(1);
 
             if exit_code == 0 {
                 Ok(BashOutput {
@@ -114,13 +115,13 @@ pub async fn execute(
                     stderr,
                 })
             }
-        }
+        },
         Ok(Err(e)) => Err(e),
         Err(_) => {
             // Try to kill the child process on timeout
             let _ = child.kill().await;
             Err(ToolError::Timeout("Command timed out".to_string()))
-        }
+        },
     }
 }
 
@@ -196,9 +197,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_execute_chained_commands() {
-        let result = execute("echo first && echo second", None, 5000)
-            .await
-            .unwrap();
+        let result = execute("echo first && echo second", None, 5000).await.unwrap();
         assert!(result.stdout.contains("first"));
         assert!(result.stdout.contains("second"));
     }
@@ -212,9 +211,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_execute_unicode_output() {
-        let result = execute("echo 'Hello 世界 日本語'", None, 5000)
-            .await
-            .unwrap();
+        let result = execute("echo 'Hello 世界 日本語'", None, 5000).await.unwrap();
         assert!(result.stdout.contains("世界"));
         assert!(result.stdout.contains("日本語"));
     }
@@ -231,7 +228,7 @@ mod tests {
         match result {
             Err(ToolError::CommandFailed { code, .. }) => {
                 println!("Correctly failed with exit code: {}", code);
-            }
+            },
             Err(e) => panic!("Expected CommandFailed, got: {:?}", e),
             Ok(_) => panic!("Expected failure for invalid command"),
         }

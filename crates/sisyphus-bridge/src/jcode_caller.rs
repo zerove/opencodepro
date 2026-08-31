@@ -50,7 +50,7 @@ impl JcodeToolCaller for DebugSocketToolCaller {
                     } else {
                         last_error = "Failed to write command to jcode socket".into();
                     }
-                }
+                },
                 Ok(Err(e)) => last_error = format!("Connection error: {}", e),
                 Err(_) => last_error = "Connection timeout".into(),
             }

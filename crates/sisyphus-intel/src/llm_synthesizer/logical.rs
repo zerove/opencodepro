@@ -64,7 +64,7 @@ impl LogicalSOPSynthesizer {
                     })
                     .collect::<Vec<_>>()
                     .join("\n\n---\n\n")
-            }
+            },
             Err(_) => "Error retrieving semantic memory.".to_string(),
         }
     }
@@ -128,18 +128,8 @@ Plan: <overall strategy>"#,
         let json_start = response.find("JSON:").map(|i| i + 5).unwrap_or(0);
         let json_end = response.rfind("Plan:").unwrap_or(response.len());
         let json_str = &response[json_start..json_end].trim();
-        let plan_desc = response
-            .split("Plan:")
-            .nth(1)
-            .unwrap_or("Logical SOP")
-            .trim()
-            .to_string();
-        let reasoning = response
-            .split("JSON:")
-            .next()
-            .unwrap_or("")
-            .trim()
-            .to_string();
+        let plan_desc = response.split("Plan:").nth(1).unwrap_or("Logical SOP").trim().to_string();
+        let reasoning = response.split("JSON:").next().unwrap_or("").trim().to_string();
 
         Ok((reasoning, json_str.to_string(), plan_desc))
     }
@@ -172,27 +162,14 @@ Plan: <updated strategy>"#,
             goal, tools, current_json, feedback
         );
 
-        let response = self
-            .llm_client
-            .chat(&system_prompt, &prompt, true)
-            .await
-            .map_err(|e| e.to_string())?;
+        let response =
+            self.llm_client.chat(&system_prompt, &prompt, true).await.map_err(|e| e.to_string())?;
 
         let json_start = response.find("JSON:").map(|i| i + 5).unwrap_or(0);
         let json_end = response.rfind("Plan:").unwrap_or(response.len());
         let json_str = &response[json_start..json_end].trim();
-        let plan_desc = response
-            .split("Plan:")
-            .nth(1)
-            .unwrap_or("Logical SOP")
-            .trim()
-            .to_string();
-        let reasoning = response
-            .split("JSON:")
-            .next()
-            .unwrap_or("")
-            .trim()
-            .to_string();
+        let plan_desc = response.split("Plan:").nth(1).unwrap_or("Logical SOP").trim().to_string();
+        let reasoning = response.split("JSON:").next().unwrap_or("").trim().to_string();
 
         Ok((reasoning, json_str.to_string(), plan_desc))
     }
@@ -242,12 +219,8 @@ Plan: <high-level strategy>"#,
         let json_start = response.find("JSON:").map(|i| i + 5).unwrap_or(0);
         let json_end = response.rfind("Plan:").unwrap_or(response.len());
         let json_str = &response[json_start..json_end].trim();
-        let plan_desc = response
-            .split("Plan:")
-            .nth(1)
-            .unwrap_or("Hierarchical SOP")
-            .trim()
-            .to_string();
+        let plan_desc =
+            response.split("Plan:").nth(1).unwrap_or("Hierarchical SOP").trim().to_string();
 
         let mut config: sisyphus_types::SOPGraphConfig = serde_json::from_str(json_str)
             .map_err(|e| format!("Invalid hierarchical JSON: {}", e))?;
@@ -325,9 +298,8 @@ impl FlowSynthesizer for LogicalSOPSynthesizer {
                 tracing::debug!("First proposal successful");
                 res
             } else {
-                let res = self
-                    .refine(goal, &tools_list, &current_json, &last_critique, &lessons)
-                    .await?;
+                let res =
+                    self.refine(goal, &tools_list, &current_json, &last_critique, &lessons).await?;
                 tracing::debug!(attempt = current_attempt, "Refinement successful");
                 res
             };
@@ -355,7 +327,7 @@ impl FlowSynthesizer for LogicalSOPSynthesizer {
                 Err(e) => {
                     tracing::debug!(error = %e, "Evaluation failed");
                     return Err(e.to_string().into());
-                }
+                },
             };
 
             tracing::debug!(
@@ -394,10 +366,8 @@ impl FlowSynthesizer for LogicalSOPSynthesizer {
                 tracing::info!(goal = %goal, attempts = current_attempt + 1, score = eval_res.score, "SOP approved by evaluator and passed regression check");
 
                 // 若为新的黄金标准则收录
-                let _ = self
-                    .golden_dataset
-                    .enroll(goal, config.clone(), eval_res.score as f64)
-                    .await;
+                let _ =
+                    self.golden_dataset.enroll(goal, config.clone(), eval_res.score as f64).await;
 
                 return Ok(SynthesisResult {
                     start_node: graph

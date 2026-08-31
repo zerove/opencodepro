@@ -129,9 +129,7 @@ async fn test_team_single_pass_real() {
         context: Some("目标受众：中级 Rust 开发者".into()),
     };
 
-    run_and_report(&orch, goal, TeamWorkflow::SinglePass, "SinglePass 真实测试")
-        .await
-        .unwrap();
+    run_and_report(&orch, goal, TeamWorkflow::SinglePass, "SinglePass 真实测试").await.unwrap();
 }
 
 #[tokio::test]

@@ -12,11 +12,8 @@ use std::sync::Arc;
 
 async fn setup() -> UserPreferenceStore {
     let config = sisyphus_types::CacheConfig::default();
-    let store = Arc::new(
-        MfsStore::new("sqlite::memory:", &config)
-            .await
-            .expect("in-memory MfsStore"),
-    );
+    let store =
+        Arc::new(MfsStore::new("sqlite::memory:", &config).await.expect("in-memory MfsStore"));
     UserPreferenceStore::new(store, "integration-test".into())
 }
 
@@ -36,9 +33,8 @@ async fn extracts_pref_prefixed_tags_in_order() {
     let store = setup().await;
     let feedback = vec![fb_with_tags(&["pref:concise", "unrelated", "pref:format"])];
 
-    let inferred = store
-        .infer_preferences_from_feedback(feedback)
-        .expect("inference should succeed");
+    let inferred =
+        store.infer_preferences_from_feedback(feedback).expect("inference should succeed");
 
     assert_eq!(inferred, vec!["concise", "format"]);
 }
@@ -48,9 +44,8 @@ async fn no_pref_prefixed_tags_returns_empty() {
     let store = setup().await;
     let feedback = vec![fb_with_tags(&["just-a-tag", "another-tag"])];
 
-    let inferred = store
-        .infer_preferences_from_feedback(feedback)
-        .expect("inference should succeed");
+    let inferred =
+        store.infer_preferences_from_feedback(feedback).expect("inference should succeed");
 
     assert!(inferred.is_empty());
 }
@@ -67,9 +62,8 @@ async fn aggregates_across_multiple_feedback_entries() {
     // `pref:`-tagged occurrence is pushed onto the result, in the order
     // it appears across the feedback list. (Doc claim of "first
     // occurrence wins" is aspirational; tracked in TODO.)
-    let inferred = store
-        .infer_preferences_from_feedback(feedback)
-        .expect("inference should succeed");
+    let inferred =
+        store.infer_preferences_from_feedback(feedback).expect("inference should succeed");
 
     assert_eq!(inferred, vec!["concise", "concise", "verbose"]);
 }
@@ -77,9 +71,7 @@ async fn aggregates_across_multiple_feedback_entries() {
 #[tokio::test]
 async fn empty_feedback_returns_empty_vec() {
     let store = setup().await;
-    let inferred = store
-        .infer_preferences_from_feedback(vec![])
-        .expect("empty input is valid");
+    let inferred = store.infer_preferences_from_feedback(vec![]).expect("empty input is valid");
     assert!(inferred.is_empty());
 }
 
@@ -90,9 +82,8 @@ async fn strip_prefix_does_not_touch_partial_matches() {
     let store = setup().await;
     let feedback = vec![fb_with_tags(&["preference:foo", "prefix:bar"])];
 
-    let inferred = store
-        .infer_preferences_from_feedback(feedback)
-        .expect("inference should succeed");
+    let inferred =
+        store.infer_preferences_from_feedback(feedback).expect("inference should succeed");
 
     assert!(inferred.is_empty());
 }

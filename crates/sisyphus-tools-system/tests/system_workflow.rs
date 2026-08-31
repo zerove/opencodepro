@@ -35,15 +35,13 @@ async fn test_system_integration_workflow() {
     assert_eq!(content, "Hello Jcode!\n");
 
     // 6. Bash: Execute command in workdir
-    let bash_result = bash::execute("cat hello.txt", Some(root), 5000)
-        .await
-        .expect("bash execute failed");
+    let bash_result =
+        bash::execute("cat hello.txt", Some(root), 5000).await.expect("bash execute failed");
     assert_eq!(bash_result.stdout.trim(), "Hello Jcode!");
 
     // 7. Bash: Complex command (piping/wc)
-    let wc_result = bash::execute("ls -1 *.txt | wc -l", Some(root), 5000)
-        .await
-        .expect("bash wc failed");
+    let wc_result =
+        bash::execute("ls -1 *.txt | wc -l", Some(root), 5000).await.expect("bash wc failed");
     assert_eq!(wc_result.stdout.trim(), "2");
 }
 

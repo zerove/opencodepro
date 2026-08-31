@@ -88,7 +88,7 @@ Return ONLY the JSON object."#;
             match sisyphus_tools_system::wisdom::wisdom_inject().await {
                 Ok(w) if !w.is_empty() => {
                     format!("{project_context}\n\nWisdom from past sessions:\n{w}")
-                }
+                },
                 _ => project_context.to_string(),
             }
         } else {
@@ -99,11 +99,8 @@ Return ONLY the JSON object."#;
             format!("Goal: {goal}\n\nProject Context: {context_with_wisdom}\n\nPlan this goal.");
 
         // First attempt
-        let response = self
-            .llm
-            .chat(system_prompt, &user_prompt, true)
-            .await
-            .map_err(|e| e.to_string())?;
+        let response =
+            self.llm.chat(system_prompt, &user_prompt, true).await.map_err(|e| e.to_string())?;
         match serde_json::from_str::<DevelopmentPlan>(&response) {
             Ok(plan) => Ok(plan),
             Err(e) => {
@@ -120,7 +117,7 @@ Return ONLY the JSON object."#;
                     Ok(plan) => Ok(plan),
                     Err(e2) => Err(format!("Failed to parse DevelopmentPlan after retry: {e2}")),
                 }
-            }
+            },
         }
     }
 
@@ -131,7 +128,7 @@ Return ONLY the JSON object."#;
                 sisyphus_tools_system::file::write(Path::new(path), content)
                     .map(|()| format!("Created file: {path}"))
                     .map_err(|e| e.to_string())?
-            }
+            },
             DevAction::EditFile {
                 path,
                 old_string,
@@ -158,10 +155,10 @@ Return ONLY the JSON object."#;
                         verification_output: None,
                     });
                 }
-            }
+            },
             DevAction::ReadFile { path } => {
                 sisyphus_tools_system::file::read(Path::new(path)).map_err(|e| e.to_string())?
-            }
+            },
             DevAction::ComplexChange { description } => {
                 let system_prompt = "You are a code editor. Decompose a complex change request into a JSON array of granular edits. Each edit must be { \"path\": \"...\", \"old_string\": \"...\", \"new_string\": \"...\" }. Return ONLY the JSON array.";
                 let response = self
@@ -187,7 +184,7 @@ Return ONLY the JSON object."#;
                     }
                 }
                 summary.join("\n")
-            }
+            },
         };
 
         Ok(StepResult {
@@ -208,7 +205,7 @@ Return ONLY the JSON object."#;
                     .output()
                     .map_err(|e| e.to_string())?;
                 Ok(output.status.success())
-            }
+            },
             VerificationMethod::CargoTest => {
                 let output = Command::new("sh")
                     .arg("-c")
@@ -216,11 +213,11 @@ Return ONLY the JSON object."#;
                     .output()
                     .map_err(|e| e.to_string())?;
                 Ok(output.status.success())
-            }
+            },
             VerificationMethod::LspDiagnostics { path: _ } => {
                 // Not implemented in CLI context; assume pass
                 Ok(true)
-            }
+            },
             VerificationMethod::Command { command } => {
                 let output = Command::new("sh")
                     .arg("-c")
@@ -228,7 +225,7 @@ Return ONLY the JSON object."#;
                     .output()
                     .map_err(|e| e.to_string())?;
                 Ok(output.status.success())
-            }
+            },
             VerificationMethod::LlmReview { criteria } => {
                 let system_prompt = "You are a QA engineer. Review the provided output against the criteria. Answer ONLY 'yes' or 'no'.";
                 let user_prompt = format!(
@@ -241,7 +238,7 @@ Return ONLY the JSON object."#;
                     .await
                     .map_err(|e| e.to_string())?;
                 Ok(response.to_lowercase().starts_with("yes"))
-            }
+            },
             VerificationMethod::None => Ok(true),
         }
     }
@@ -257,7 +254,7 @@ Return ONLY the JSON object."#;
                     output: String::new(),
                     verification_output: None,
                 };
-            }
+            },
         };
 
         if result.status != StepStatus::Success {
@@ -267,7 +264,7 @@ Return ONLY the JSON object."#;
         match self.verify_step(step, &result).await {
             Ok(true) => {
                 // Success — no fix needed
-            }
+            },
             Ok(false) => {
                 // Verification failed; attempt auto-fix
                 let fix_description = format!(
@@ -290,7 +287,7 @@ Return ONLY the JSON object."#;
                     Err(e) => {
                         result.status = StepStatus::Failed(format!("Fix attempt errored: {e}"));
                         return result;
-                    }
+                    },
                 };
 
                 if fix_result.status == StepStatus::Success {
@@ -299,21 +296,21 @@ Return ONLY the JSON object."#;
                             result.status = StepStatus::Success;
                             result.output =
                                 format!("Fixed and verified. Fix output: {}", fix_result.output);
-                        }
+                        },
                         _ => {
                             result.status = StepStatus::Failed(
                                 "Verification failed even after fix attempt".to_string(),
                             );
-                        }
+                        },
                     }
                 } else {
                     result.status =
                         StepStatus::Failed(format!("Fix attempt failed: {}", fix_result.output));
                 }
-            }
+            },
             Err(e) => {
                 result.status = StepStatus::Failed(format!("Verification error: {e}"));
-            }
+            },
         }
 
         result
@@ -405,11 +402,8 @@ Return ONLY the JSON object."#;
         // Filter out already-completed steps
         let completed_ids: std::collections::HashSet<usize> =
             existing_results.iter().map(|r| r.step_id).collect();
-        let pending_steps: Vec<&DevStep> = plan
-            .steps
-            .iter()
-            .filter(|s| !completed_ids.contains(&s.id))
-            .collect();
+        let pending_steps: Vec<&DevStep> =
+            plan.steps.iter().filter(|s| !completed_ids.contains(&s.id)).collect();
 
         if pending_steps.is_empty() && !existing_results.is_empty() {
             // All done from checkpoint
@@ -520,10 +514,7 @@ fn build_report(
     step_results: Vec<StepResult>,
     artifacts: Vec<String>,
 ) -> DevelopmentReport {
-    let completed = step_results
-        .iter()
-        .filter(|r| r.status == StepStatus::Success)
-        .count();
+    let completed = step_results.iter().filter(|r| r.status == StepStatus::Success).count();
     let total = step_results.len();
 
     let overall_status = if completed == total {
@@ -553,7 +544,7 @@ pub fn format_report(report: &DevelopmentReport) -> String {
             output.push_str(&format!(
                 "Overall Status: PARTIAL FAILURE ({completed} / {total} steps completed)\n"
             ));
-        }
+        },
         DevOverallStatus::Failed(e) => output.push_str(&format!("Overall Status: FAILED ({e})\n")),
     }
 

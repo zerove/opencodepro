@@ -184,7 +184,7 @@ impl DeepReflector {
                         "Minor output quality issues".to_string(),
                     )
                 }
-            }
+            },
             "failed" | "error" => {
                 let lower = record.output.to_lowercase();
                 if lower.contains("timeout") {
@@ -212,7 +212,7 @@ impl DeepReflector {
                         format!("Logic error: {}", record.output),
                     )
                 }
-            }
+            },
             _ => (
                 0.5,
                 AnalysisDimension::LogicCorrectness,
@@ -244,19 +244,13 @@ impl DeepReflector {
         let mut scores = Vec::new();
 
         // 输出质量
-        let output_failures = report
-            .records
-            .iter()
-            .filter(|r| r.status == "failed" || r.status == "error")
-            .count();
+        let output_failures =
+            report.records.iter().filter(|r| r.status == "failed" || r.status == "error").count();
         let output_score = output_failures as f64 / report.records.len().max(1) as f64;
         scores.push(DimensionScore {
             dimension: AnalysisDimension::OutputQuality,
             score: output_score,
-            weight: *self
-                .dimension_weights
-                .get(&AnalysisDimension::OutputQuality)
-                .unwrap_or(&0.3),
+            weight: *self.dimension_weights.get(&AnalysisDimension::OutputQuality).unwrap_or(&0.3),
             explanation: format!("{}/{} nodes failed", output_failures, report.records.len()),
         });
 
@@ -303,11 +297,8 @@ impl DeepReflector {
         });
 
         // 工具可靠性
-        let tool_failures = report
-            .records
-            .iter()
-            .filter(|r| r.output.to_lowercase().contains("tool"))
-            .count();
+        let tool_failures =
+            report.records.iter().filter(|r| r.output.to_lowercase().contains("tool")).count();
         let tool_score = tool_failures as f64 / report.records.len().max(1) as f64;
         scores.push(DimensionScore {
             dimension: AnalysisDimension::ToolReliability,
@@ -346,19 +337,19 @@ impl DeepReflector {
                 let (corr_type, priority) = match node.primary_dimension {
                     AnalysisDimension::ResourceEfficiency => {
                         (CorrectionType::IncreaseFuel, CorrectionPriority::High)
-                    }
+                    },
                     AnalysisDimension::TemporalAccuracy => {
                         (CorrectionType::AddRetry, CorrectionPriority::High)
-                    }
+                    },
                     AnalysisDimension::ToolReliability => {
                         (CorrectionType::ChangeTool, CorrectionPriority::Medium)
-                    }
+                    },
                     AnalysisDimension::LogicCorrectness => {
                         (CorrectionType::ModifyLogic, CorrectionPriority::Critical)
-                    }
+                    },
                     AnalysisDimension::OutputQuality => {
                         (CorrectionType::AddValidation, CorrectionPriority::Medium)
-                    }
+                    },
                 };
 
                 corrections.push(CognitiveCorrection {
@@ -388,21 +379,21 @@ impl DeepReflector {
                     suggestions.push(
                         "Consider increasing fuel limit or optimizing resource usage".to_string(),
                     );
-                }
+                },
                 AnalysisDimension::TemporalAccuracy => {
                     suggestions
                         .push("Node may need timeout increase or parallel execution".to_string());
-                }
+                },
                 AnalysisDimension::LogicCorrectness => {
                     suggestions.push("Review node logic for correctness".to_string());
-                }
+                },
                 AnalysisDimension::ToolReliability => {
                     suggestions
                         .push("Consider adding tool fallback or retry mechanism".to_string());
-                }
+                },
                 AnalysisDimension::OutputQuality => {
                     suggestions.push("Add output validation step after this node".to_string());
-                }
+                },
             }
         }
         suggestions
@@ -442,13 +433,8 @@ impl DeepReflector {
 
         // 检测上升的偏差趋势
         if self.deviation_history.len() >= 3 {
-            let recent: Vec<f64> = self
-                .deviation_history
-                .iter()
-                .rev()
-                .take(3)
-                .map(|r| r.overall_score)
-                .collect();
+            let recent: Vec<f64> =
+                self.deviation_history.iter().rev().take(3).map(|r| r.overall_score).collect();
             if recent[0] > recent[1] && recent[1] > recent[2] {
                 patterns.push(DeviationPattern {
                     pattern_type: "increasing_deviation".to_string(),
@@ -525,9 +511,6 @@ mod tests {
         }
         let report = reflector.analyze(&test_report(), &test_prediction());
         // 应检测到 step2 的重复失败模式
-        assert!(report
-            .patterns
-            .iter()
-            .any(|p| p.pattern_type == "recurring_failure"));
+        assert!(report.patterns.iter().any(|p| p.pattern_type == "recurring_failure"));
     }
 }

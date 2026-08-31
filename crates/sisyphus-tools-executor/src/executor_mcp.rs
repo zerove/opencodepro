@@ -49,8 +49,7 @@ impl MCPToolExecutor {
     /// Register a mapping from tool_id to MCP tool name.
     /// This allows the executor to route `tool_id` values to differently-named MCP tools.
     pub fn map_tool(&mut self, tool_id: &str, mcp_tool_name: &str) {
-        self.tool_map
-            .insert(tool_id.to_string(), mcp_tool_name.to_string());
+        self.tool_map.insert(tool_id.to_string(), mcp_tool_name.to_string());
     }
 
     /// List tools available on the MCP server.
@@ -75,10 +74,7 @@ impl sisyphus_types::ToolExecutor for MCPToolExecutor {
         _fuel_limit: u64,
     ) -> Result<Vec<u8>, sisyphus_types::TypesError> {
         // Resolve MCP tool name
-        let mcp_tool = self
-            .tool_map
-            .get(tool_id)
-            .map_or(tool_id, std::string::String::as_str);
+        let mcp_tool = self.tool_map.get(tool_id).map_or(tool_id, std::string::String::as_str);
 
         // Parse optional args
         let mcp_args: Option<Value> = if args.is_empty() {
@@ -91,7 +87,7 @@ impl sisyphus_types::ToolExecutor for MCPToolExecutor {
                         tool_id: mcp_tool.to_string(),
                         details: format!("invalid JSON args for MCP tool '{mcp_tool}': {e}"),
                     })
-                }
+                },
             }
         };
 
@@ -109,7 +105,7 @@ impl sisyphus_types::ToolExecutor for MCPToolExecutor {
             match &result.content[0] {
                 sisyphus_tools_mcp::mcp::ToolContent::Text { text } => {
                     json!({ "content": text, "is_error": result.is_error.unwrap_or(false) })
-                }
+                },
                 sisyphus_tools_mcp::mcp::ToolContent::Resource { resource } => {
                     json!({
                         "content": resource.text,
@@ -117,7 +113,7 @@ impl sisyphus_types::ToolExecutor for MCPToolExecutor {
                         "mime_type": resource.mime_type,
                         "is_error": result.is_error.unwrap_or(false),
                     })
-                }
+                },
             }
         } else {
             // Multiple content items — return as array
@@ -127,7 +123,7 @@ impl sisyphus_types::ToolExecutor for MCPToolExecutor {
                 .map(|c| match c {
                     sisyphus_tools_mcp::mcp::ToolContent::Text { text } => {
                         json!({ "type": "text", "text": text })
-                    }
+                    },
                     sisyphus_tools_mcp::mcp::ToolContent::Resource { resource } => {
                         json!({
                             "type": "resource",
@@ -135,7 +131,7 @@ impl sisyphus_types::ToolExecutor for MCPToolExecutor {
                             "text": resource.text,
                             "mime_type": resource.mime_type,
                         })
-                    }
+                    },
                 })
                 .collect();
             json!({ "content": items, "is_error": result.is_error.unwrap_or(false) })
@@ -220,9 +216,7 @@ mod tests {
         );
 
         let transport = MockMcpTransport::new(responses);
-        let ex = MCPToolExecutor::from_transport(Box::new(transport))
-            .await
-            .unwrap();
+        let ex = MCPToolExecutor::from_transport(Box::new(transport)).await.unwrap();
         let args = serde_json::to_vec(&json!({"text": "hello"})).unwrap();
         let result = ex.execute("echo", args, 0).await.unwrap();
         let v: Value = serde_json::from_slice(&result).unwrap();
@@ -245,9 +239,7 @@ mod tests {
         );
 
         let transport = MockMcpTransport::new(responses);
-        let ex = MCPToolExecutor::from_transport(Box::new(transport))
-            .await
-            .unwrap();
+        let ex = MCPToolExecutor::from_transport(Box::new(transport)).await.unwrap();
         let result = ex.execute("ping", vec![], 0).await.unwrap();
         let v: Value = serde_json::from_slice(&result).unwrap();
         assert_eq!(v["content"], "done");
@@ -265,9 +257,7 @@ mod tests {
         );
 
         let transport = MockMcpTransport::new(responses);
-        let ex = MCPToolExecutor::from_transport(Box::new(transport))
-            .await
-            .unwrap();
+        let ex = MCPToolExecutor::from_transport(Box::new(transport)).await.unwrap();
         let result = ex.execute("bad_tool", vec![], 0).await;
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("execution failed"));
@@ -288,9 +278,7 @@ mod tests {
         );
 
         let transport = MockMcpTransport::new(responses);
-        let mut ex = MCPToolExecutor::from_transport(Box::new(transport))
-            .await
-            .unwrap();
+        let mut ex = MCPToolExecutor::from_transport(Box::new(transport)).await.unwrap();
         ex.map_tool("my_alias", "real_tool_name");
 
         let result = ex.execute("my_alias", vec![], 0).await.unwrap();
@@ -311,9 +299,7 @@ mod tests {
         }).to_string());
 
         let transport = MockMcpTransport::new(responses);
-        let ex = MCPToolExecutor::from_transport(Box::new(transport))
-            .await
-            .unwrap();
+        let ex = MCPToolExecutor::from_transport(Box::new(transport)).await.unwrap();
         let tools = ex.list_tools().await.unwrap();
         assert_eq!(tools.len(), 1);
         assert_eq!(tools[0].name, "greet");
@@ -323,9 +309,7 @@ mod tests {
     async fn test_mcp_executor_invalid_json_args() {
         let ex = {
             let transport = MockMcpTransport::new(mock_initialized_responses());
-            MCPToolExecutor::from_transport(Box::new(transport))
-                .await
-                .unwrap()
+            MCPToolExecutor::from_transport(Box::new(transport)).await.unwrap()
         };
         let result = ex.execute("tool", b"not valid json".to_vec(), 0).await;
         assert!(result.is_err());
@@ -350,9 +334,7 @@ mod tests {
         );
 
         let transport = MockMcpTransport::new(responses);
-        let ex = MCPToolExecutor::from_transport(Box::new(transport))
-            .await
-            .unwrap();
+        let ex = MCPToolExecutor::from_transport(Box::new(transport)).await.unwrap();
         let result = ex.execute("multi", vec![], 0).await.unwrap();
         let v: Value = serde_json::from_slice(&result).unwrap();
         assert!(v["content"].is_array());
@@ -371,9 +353,7 @@ mod tests {
         );
 
         let transport = MockMcpTransport::new(responses);
-        let ex = MCPToolExecutor::from_transport(Box::new(transport))
-            .await
-            .unwrap();
+        let ex = MCPToolExecutor::from_transport(Box::new(transport)).await.unwrap();
         let result = ex.execute("direct_tool", vec![], 0).await.unwrap();
         let v: Value = serde_json::from_slice(&result).unwrap();
         assert_eq!(v["content"], "direct");
@@ -390,9 +370,7 @@ mod tests {
         }
 
         let transport = MockMcpTransport::new(responses);
-        let ex = MCPToolExecutor::from_transport(Box::new(transport))
-            .await
-            .unwrap();
+        let ex = MCPToolExecutor::from_transport(Box::new(transport)).await.unwrap();
 
         for i in 0..3 {
             let result = ex.execute("seq", vec![], 0).await.unwrap();
@@ -405,9 +383,7 @@ mod tests {
     async fn test_mcp_executor_close_then_execute_fails() {
         let responses = mock_initialized_responses();
         let transport = MockMcpTransport::new(responses);
-        let ex = MCPToolExecutor::from_transport(Box::new(transport))
-            .await
-            .unwrap();
+        let ex = MCPToolExecutor::from_transport(Box::new(transport)).await.unwrap();
         ex.close().await.unwrap();
 
         let result = ex.execute("after_close", vec![], 0).await;
@@ -417,9 +393,7 @@ mod tests {
     #[tokio::test]
     async fn test_mcp_executor_transport_fails_on_request() {
         let transport = MockMcpTransport::new(mock_initialized_responses());
-        let ex = MCPToolExecutor::from_transport(Box::new(transport))
-            .await
-            .unwrap();
+        let ex = MCPToolExecutor::from_transport(Box::new(transport)).await.unwrap();
         let result = ex.execute("fail", vec![], 0).await;
         assert!(result.is_err());
     }
@@ -436,9 +410,7 @@ mod tests {
         );
 
         let transport = MockMcpTransport::new(responses);
-        let mut ex = MCPToolExecutor::from_transport(Box::new(transport))
-            .await
-            .unwrap();
+        let mut ex = MCPToolExecutor::from_transport(Box::new(transport)).await.unwrap();
 
         let tool_name = "some_very_long_mcp_tool_name";
         ex.map_tool("shortcut", tool_name);

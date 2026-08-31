@@ -28,29 +28,21 @@ pub async fn wisdom_record(category: &str, content: &str) -> ToolResult<()> {
     let cat = parse_category_or_experience(category);
     let name = format!(
         "auto_{}",
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|d| d.as_secs())
-            .unwrap_or(0)
+        SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
     );
     let tags = if NotepadCategory::parse(category).is_none() {
         vec![category.to_string()]
     } else {
         Vec::new()
     };
-    NotepadManager::default_dir()
-        .record(cat, &name, content, tags)
-        .await
-        .map(|_| ())
+    NotepadManager::default_dir().record(cat, &name, content, tags).await.map(|_| ())
 }
 
 /// Wisdom list.
 pub async fn wisdom_list() -> ToolResult<Vec<String>> {
     let entries = NotepadManager::default_dir().list_all().await?;
-    let mut cats: Vec<String> = entries
-        .into_iter()
-        .map(|e| e.category.label().to_string())
-        .collect();
+    let mut cats: Vec<String> =
+        entries.into_iter().map(|e| e.category.label().to_string()).collect();
     cats.sort();
     cats.dedup();
     Ok(cats)
@@ -79,9 +71,7 @@ pub async fn wisdom_delete(category: &str) -> ToolResult<()> {
         .ok_or_else(|| ToolError::NotFound(format!("unknown wisdom category: {category}")))?;
     let entries = NotepadManager::default_dir().list(cat).await?;
     for entry in entries {
-        let _ = NotepadManager::default_dir()
-            .delete(entry.category, &entry.name)
-            .await;
+        let _ = NotepadManager::default_dir().delete(entry.category, &entry.name).await;
     }
     Ok(())
 }
@@ -148,12 +138,8 @@ mod tests {
     async fn test_inject_via_manager() {
         let dir = unique_dir();
         let mgr = NotepadManager::new(&dir);
-        mgr.record(NotepadCategory::Conventions, "c1", "rule", vec![])
-            .await
-            .expect("record");
-        mgr.record(NotepadCategory::Successes, "s1", "win", vec![])
-            .await
-            .expect("record");
+        mgr.record(NotepadCategory::Conventions, "c1", "rule", vec![]).await.expect("record");
+        mgr.record(NotepadCategory::Successes, "s1", "win", vec![]).await.expect("record");
         let injected = mgr.inject(None).await.expect("inject");
         assert!(injected.contains("<wisdom>"));
         assert!(injected.contains("c1"));

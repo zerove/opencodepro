@@ -33,10 +33,7 @@ impl GoldenDataset for InMemoryGoldenDataset {
         config: SOPGraphConfig,
         metric: f64,
     ) -> Result<(), TypesError> {
-        let timestamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs();
+        let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
 
         let golden = GoldenSop {
             goal: goal.to_string(),

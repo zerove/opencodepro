@@ -56,9 +56,6 @@ pub async fn write_message(
         .write_all(body.as_bytes())
         .await
         .map_err(|e| super::types::LspError::Transport(e.to_string()))?;
-    writer
-        .flush()
-        .await
-        .map_err(|e| super::types::LspError::Transport(e.to_string()))?;
+    writer.flush().await.map_err(|e| super::types::LspError::Transport(e.to_string()))?;
     Ok(())
 }

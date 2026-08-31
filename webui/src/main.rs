@@ -34,10 +34,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("Proxying to bridge REST API at {bridge_url}");
     info!(
         "Auth: {}",
-        if std::env::var("WEBUI_API_KEY")
-            .ok()
-            .is_some_and(|k| !k.is_empty())
-        {
+        if std::env::var("WEBUI_API_KEY").ok().is_some_and(|k| !k.is_empty()) {
             "enabled (WEBUI_API_KEY)"
         } else {
             "disabled"

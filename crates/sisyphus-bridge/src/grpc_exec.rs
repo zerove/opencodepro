@@ -31,12 +31,12 @@ impl MySisyphusBridge {
                         format!("Result: {} | Cognition: {:?}", result, report),
                         synthesized_sop_id,
                     ))
-                }
+                },
                 Err(e) => {
                     let duration = start.elapsed();
                     record_sop_execution(&synthesized_sop_id, false, duration.as_secs_f64());
                     Err(Status::internal(e.to_string()))
-                }
+                },
             }
         } else {
             let graph = match self.kernel.load_sop(&sop_id, project_id).await {
@@ -53,14 +53,11 @@ impl MySisyphusBridge {
                     });
                     g.add_node(node);
                     Arc::new(g)
-                }
+                },
             };
 
-            let _start_node = graph
-                .graph
-                .node_indices()
-                .next()
-                .ok_or_else(|| Status::internal("Graph empty"))?;
+            let _start_node =
+                graph.graph.node_indices().next().ok_or_else(|| Status::internal("Graph empty"))?;
 
             match self
                 .kernel
@@ -77,12 +74,12 @@ impl MySisyphusBridge {
                         format!("Result: {} | Cognition: {:?}", result, report),
                         sop_id,
                     ))
-                }
+                },
                 Err(e) => {
                     let duration = start.elapsed();
                     record_sop_execution(&sop_id, false, duration.as_secs_f64());
                     Err(Status::internal(e.to_string()))
-                }
+                },
             }
         };
         result

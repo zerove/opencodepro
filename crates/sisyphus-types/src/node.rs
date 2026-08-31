@@ -41,22 +41,17 @@ impl SOPNode for WasmSOPNode {
     async fn execute(&self, ctx: &ExecutionContext) -> Result<NodeOutput, TypesError> {
         let args = Vec::new();
         // P2-9 燃料真相管道：优先走带测量的路径。
-        let (result, measurement) = match self
-            .executor
-            .execute_measured(&self.tool_id, args, self.fuel_limit)
-            .await
-        {
-            Ok((data, Some(m))) => (data, Some(m)),
-            Ok((data, None)) => (data, None),
-            // 测量路径失败时回退普通执行，保持行为兼容。
-            Err(_) => {
-                let data = self
-                    .executor
-                    .execute(&self.tool_id, Vec::new(), self.fuel_limit)
-                    .await?;
-                (data, None)
-            }
-        };
+        let (result, measurement) =
+            match self.executor.execute_measured(&self.tool_id, args, self.fuel_limit).await {
+                Ok((data, Some(m))) => (data, Some(m)),
+                Ok((data, None)) => (data, None),
+                // 测量路径失败时回退普通执行，保持行为兼容。
+                Err(_) => {
+                    let data =
+                        self.executor.execute(&self.tool_id, Vec::new(), self.fuel_limit).await?;
+                    (data, None)
+                },
+            };
         if let Some(m) = measurement {
             ctx.record_measurement(&self.name, m);
         }
@@ -94,7 +89,7 @@ impl SOPNode for RetrySOPNode {
                 Ok(out) => return Ok(out),
                 Err(e) => {
                     last_err = e.to_string();
-                }
+                },
             }
         }
         Err(TypesError::NodeExecutionError(format!(
@@ -209,10 +204,8 @@ pub struct TestSOPNode {
 #[async_trait]
 impl SOPNode for TestSOPNode {
     async fn execute(&self, _ctx: &ExecutionContext) -> Result<NodeOutput, TypesError> {
-        let result = self
-            .test_executor
-            .run_test(&self.test_command, self.workdir.as_deref())
-            .await?;
+        let result =
+            self.test_executor.run_test(&self.test_command, self.workdir.as_deref()).await?;
 
         let output_str = if result.success {
             format!(
@@ -539,9 +532,7 @@ mod fuel_truth_tests {
         let ctx = ExecutionContext::new();
         let out = node.execute(&ctx).await.expect("execute must succeed");
         assert_eq!(out.0.as_str(), Some("measured"));
-        let m = ctx
-            .take_measurement("burn_node")
-            .expect("measurement must be recorded");
+        let m = ctx.take_measurement("burn_node").expect("measurement must be recorded");
         assert_eq!(m.fuel_consumed, 4321);
         // take 语义：消费后不残留
         assert!(ctx.take_measurement("burn_node").is_none());

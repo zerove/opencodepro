@@ -80,16 +80,13 @@ impl OutputCache {
             // 简单的基于计数器的逐出：移除键最接近
             // 当前插入计数器的条目。这避免了在 insert() 内部调用
             // 可能死锁的 DashMap::iter()。
-            let evict_target = self
-                .insert_count
-                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            let evict_target = self.insert_count.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             // 尝试类随机逐出：选择靠近计数器的哈希
             let _ = self.cache.remove(&(evict_target ^ hash));
             // 即使该键不存在，我们也继续 — len 检查
             // 仅是参考性的，我们以略微超出容量为代价避免死锁。
         }
-        self.insert_count
-            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.insert_count.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         self.cache.insert(hash, output);
     }
 
@@ -138,10 +135,7 @@ pub fn calculate_optimal_batch_size(
         metrics.avg_batch_size as usize
     };
 
-    target_batch_size
-        .max(1)
-        .min(available_nodes)
-        .min(concurrency_limit)
+    target_batch_size.max(1).min(available_nodes).min(concurrency_limit)
 }
 
 /// 将就绪节点拆分为最优批次以进行流水线执行。
@@ -204,11 +198,8 @@ impl ContextCompressor {
         // 对大型对象：仅保留前 N 个键
         if let serde_json::Value::Object(map) = value {
             if map.len() > 10 {
-                let kept: serde_json::Map<String, serde_json::Value> = map
-                    .iter()
-                    .take(10)
-                    .map(|(k, v)| (k.clone(), v.clone()))
-                    .collect();
+                let kept: serde_json::Map<String, serde_json::Value> =
+                    map.iter().take(10).map(|(k, v)| (k.clone(), v.clone())).collect();
                 return (serde_json::Value::Object(kept), true);
             }
         }
@@ -254,11 +245,8 @@ impl Profiler {
 
     /// 获取某节点类型的平均执行时间。
     pub fn avg_duration(&self, node_pattern: &str) -> Option<f64> {
-        let matching: Vec<&ExecutionProfile> = self
-            .profiles
-            .iter()
-            .filter(|p| p.node_name.contains(node_pattern))
-            .collect();
+        let matching: Vec<&ExecutionProfile> =
+            self.profiles.iter().filter(|p| p.node_name.contains(node_pattern)).collect();
 
         if matching.is_empty() {
             return None;

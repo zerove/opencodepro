@@ -136,17 +136,12 @@ impl Executor {
         let start = Instant::now();
 
         // 优化：若已验证则跳过冗余的环检测
-        if !sop_graph
-            .is_validated
-            .load(std::sync::atomic::Ordering::SeqCst)
-        {
+        if !sop_graph.is_validated.load(std::sync::atomic::Ordering::SeqCst) {
             if toposort(&sop_graph.graph, None).is_err() {
                 tracing::error!("SOPGraph contains cycles");
                 return Err(CoreError::CycleDetected);
             }
-            sop_graph
-                .is_validated
-                .store(true, std::sync::atomic::Ordering::SeqCst);
+            sop_graph.is_validated.store(true, std::sync::atomic::Ordering::SeqCst);
         }
 
         let ctx = initial_ctx.unwrap_or_else(|| Arc::new(ExecutionContext::new()));
@@ -155,10 +150,8 @@ impl Executor {
         let mut in_degree = HashMap::new();
         let nodes = sop_graph.graph.node_indices();
         for node in nodes {
-            let degree = sop_graph
-                .graph
-                .edges_directed(node, petgraph::Direction::Incoming)
-                .count();
+            let degree =
+                sop_graph.graph.edges_directed(node, petgraph::Direction::Incoming).count();
             in_degree.insert(node, degree);
         }
 
@@ -174,7 +167,7 @@ impl Executor {
                     None => {
                         tracing::error!(node_idx = ?node, "Node not found in graph during execution");
                         continue;
-                    }
+                    },
                 };
                 let ctx_ref = Arc::clone(&ctx);
                 let tx = event_tx.clone();
@@ -270,7 +263,7 @@ impl Executor {
                 Err(e) => {
                     tracing::warn!(node = %name, error = %e, "Node execution failed");
                     NodeOutput::from(Value::String(e.to_string()))
-                }
+                },
             };
             ctx.set_result(name.clone(), output.clone());
 
@@ -296,7 +289,7 @@ impl Executor {
                             deviation_score: deviation,
                             status: Some("ok".into()),
                         });
-                    }
+                    },
                     Ok(SupervisorDecision::Pivot { reason, .. }) => {
                         tracing::warn!(node = %name, reason = %reason, "Strategic Pivot detected by supervisor! Aborting all nodes.");
                         ctx.push_trace_point(sisyphus_types::TracePoint {
@@ -311,10 +304,10 @@ impl Executor {
                         });
                         join_set.abort_all();
                         return Err(CoreError::StrategicPivot(reason));
-                    }
+                    },
                     Err(e) => {
                         tracing::error!(node = %name, error = %e, "Runtime supervisor evaluation failed");
-                    }
+                    },
                 }
             }
 
@@ -326,9 +319,8 @@ impl Executor {
             tracing::debug!(node = %name, "Node result stored");
 
             let chosen_target = if let Some(node_weight) = sop_graph.graph.node_weight(node) {
-                if let Some(_branch_node) = node_weight
-                    .as_any()
-                    .downcast_ref::<sisyphus_types::BranchSOPNode>()
+                if let Some(_branch_node) =
+                    node_weight.as_any().downcast_ref::<sisyphus_types::BranchSOPNode>()
                 {
                     output.as_f64().map(|idx| NodeIndex::new(idx as usize))
                 } else {
@@ -472,9 +464,8 @@ impl Executor {
         } else {
             None
         };
-        let output = if let Some(subgraph_node) = node_ref
-            .as_any()
-            .downcast_ref::<sisyphus_types::SubGraphSOPNode>()
+        let output = if let Some(subgraph_node) =
+            node_ref.as_any().downcast_ref::<sisyphus_types::SubGraphSOPNode>()
         {
             let config_key = serde_json::to_string(&subgraph_node.config).map_err(|e| {
                 sisyphus_types::TypesError::NodeExecutionError(format!(
@@ -530,9 +521,8 @@ impl Executor {
                         .unwrap_or_default();
 
                     // 使用 VisualSOPNode 的 kind 驱动 VLM
-                    if let Some(visual_node) = node_ref
-                        .as_any()
-                        .downcast_ref::<sisyphus_types::VisualSOPNode>()
+                    if let Some(visual_node) =
+                        node_ref.as_any().downcast_ref::<sisyphus_types::VisualSOPNode>()
                     {
                         let visual_result = v_manager
                             .process_visual_node(&visual_node.kind, &image_data)
@@ -547,9 +537,8 @@ impl Executor {
                 tracing::info!(node = %node_name, "Intercepted human intervention request");
 
                 // 查找节点配置以获取提示词
-                if let Some(interv_node) = node_ref
-                    .as_any()
-                    .downcast_ref::<sisyphus_types::HumanInterventionSOPNode>()
+                if let Some(interv_node) =
+                    node_ref.as_any().downcast_ref::<sisyphus_types::HumanInterventionSOPNode>()
                 {
                     let feedback = self
                         .intervention_manager
@@ -603,7 +592,7 @@ impl Executor {
                             reason: None,
                         });
                     }
-                }
+                },
                 Ok(sisyphus_types::MicroReflectionDecision::Adjust { updates }) => {
                     tracing::info!(node = %node_name, updates = ?updates, "Micro-reflection: Adjusting context");
                     if let Some(ref tx) = event_tx {
@@ -619,7 +608,7 @@ impl Executor {
                     for (k, v) in updates {
                         ctx.set_result(k, NodeOutput::from(v));
                     }
-                }
+                },
                 Ok(sisyphus_types::MicroReflectionDecision::Pivot { reason }) => {
                     tracing::warn!(node = %node_name, reason = %reason, "Micro-reflection: Strategic Pivot requested!");
                     if let Some(ref tx) = event_tx {
@@ -636,10 +625,10 @@ impl Executor {
                         "PIVOT: {}",
                         reason
                     )));
-                }
+                },
                 Err(e) => {
                     tracing::error!(node = %node_name, error = %e, "Micro-reflection failed");
-                }
+                },
             }
         }
         Ok(final_output)

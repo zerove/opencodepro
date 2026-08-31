@@ -79,14 +79,11 @@ impl SisyphusKernel {
         };
 
         if let Ok(exps) = self.experience_bank.query_similar(query).await {
-            let best_exp = exps
-                .into_iter()
-                .filter(|e| e.outcome_success)
-                .min_by(|a, b| {
-                    a.deviation_score
-                        .partial_cmp(&b.deviation_score)
-                        .unwrap_or(std::cmp::Ordering::Equal)
-                });
+            let best_exp = exps.into_iter().filter(|e| e.outcome_success).min_by(|a, b| {
+                a.deviation_score
+                    .partial_cmp(&b.deviation_score)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
 
             if let Some(exp) = best_exp {
                 if let Ok(graph) = self.load_sop(&exp.action_id, project_id).await {
@@ -281,18 +278,14 @@ impl SisyphusKernel {
 
         event_tx: Option<mpsc::UnboundedSender<ExecutionEvent>>,
     ) -> Result<(NodeOutput, String), CoreError> {
-        let ctx_string = self
-            .roadmap_manager
-            .synthesize_project_context(project_id)
-            .await
-            .map_err(|e| {
+        let ctx_string =
+            self.roadmap_manager.synthesize_project_context(project_id).await.map_err(|e| {
                 CoreError::Internal(format!("Failed to synthesize project context: {}", e))
             })?;
 
         let augmented_goal = format!("{}\n\n---\nCurrent project context:\n{}", goal, ctx_string);
 
-        self.execute_goal(&augmented_goal, sop_id, project_id, event_tx, None)
-            .await
+        self.execute_goal(&augmented_goal, sop_id, project_id, event_tx, None).await
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -316,9 +309,8 @@ impl SisyphusKernel {
     ) -> Result<(NodeOutput, String, Option<sisyphus_roadmap::RoadmapHealth>), CoreError> {
         let start = std::time::Instant::now();
 
-        let result = self
-            .execute_goal_with_project_context(goal, sop_id, project_id, event_tx)
-            .await;
+        let result =
+            self.execute_goal_with_project_context(goal, sop_id, project_id, event_tx).await;
 
         let (success, deviation, error) = match &result {
             Ok((_output, report)) => {
@@ -329,7 +321,7 @@ impl SisyphusKernel {
                 };
 
                 (true, dev, None)
-            }
+            },
 
             Err(e) => (false, None, Some(e.to_string())),
         };

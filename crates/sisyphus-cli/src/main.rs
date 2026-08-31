@@ -60,7 +60,7 @@ async fn main() -> Result<()> {
                     config_path.display()
                 );
                 sisyphus_types::Config::default()
-            }
+            },
         }
     } else {
         sisyphus_types::Config::default()
@@ -68,15 +68,9 @@ async fn main() -> Result<()> {
 
     let data_dir = cli.data_dir.clone().unwrap_or_else(|| {
         let sqlite = PathBuf::from(&sisyphus_cfg.cache.database_url);
-        sqlite
-            .parent()
-            .unwrap_or(Path::new(".sisyphus"))
-            .to_path_buf()
+        sqlite.parent().unwrap_or(Path::new(".sisyphus")).to_path_buf()
     });
-    let bridge_addr = cli
-        .bridge
-        .clone()
-        .unwrap_or_else(|| sisyphus_cfg.bridge_address.clone());
+    let bridge_addr = cli.bridge.clone().unwrap_or_else(|| sisyphus_cfg.bridge_address.clone());
 
     // 交互式 TUI 模式
     if cli.interactive || cli.command.is_none() {

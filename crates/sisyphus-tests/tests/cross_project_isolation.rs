@@ -77,9 +77,7 @@ async fn setup_test_kernel() -> SisyphusKernel {
     let sop_store = store.sop.clone();
     let roadmap_store = store.roadmap.clone();
     let vector_store = Arc::new(
-        sisyphus_mem::VectorMemoryStore::new(store.pool())
-            .await
-            .expect("Vector store failed"),
+        sisyphus_mem::VectorMemoryStore::new(store.pool()).await.expect("Vector store failed"),
     );
 
     let llm_client: Arc<dyn sisyphus_tools_llm::LlmClient> = Arc::new(DummyLlmClient);
@@ -139,22 +137,13 @@ async fn test_mfsstore_cross_project_key_prefixing() {
     let val_b = serde_json::json!({"theme": "light", "lang": "python"});
 
     // Project A sets value
-    store
-        .set_state_json(project_a, shared_key, val_a.clone())
-        .await
-        .expect("Set A failed");
+    store.set_state_json(project_a, shared_key, val_a.clone()).await.expect("Set A failed");
 
     // Project B sets SAME key
-    store
-        .set_state_json(project_b, shared_key, val_b.clone())
-        .await
-        .expect("Set B failed");
+    store.set_state_json(project_b, shared_key, val_b.clone()).await.expect("Set B failed");
 
     // Verify Project A reads its own value
-    let result_a = store
-        .get_state_json(project_a, shared_key)
-        .await
-        .expect("Get A failed");
+    let result_a = store.get_state_json(project_a, shared_key).await.expect("Get A failed");
     assert_eq!(
         result_a,
         Some(val_a.clone()),
@@ -162,10 +151,7 @@ async fn test_mfsstore_cross_project_key_prefixing() {
     );
 
     // Verify Project B reads its own value
-    let result_b = store
-        .get_state_json(project_b, shared_key)
-        .await
-        .expect("Get B failed");
+    let result_b = store.get_state_json(project_b, shared_key).await.expect("Get B failed");
     assert_eq!(
         result_b,
         Some(val_b.clone()),
@@ -186,32 +172,14 @@ async fn test_mfsstore_cross_project_multiple_keys() {
     let project_b = "project_beta";
 
     // Project A sets multiple keys
-    store
-        .set_state_json(project_a, "key1", serde_json::json!("a1"))
-        .await
-        .expect("Set A1 failed");
-    store
-        .set_state_json(project_a, "key2", serde_json::json!("a2"))
-        .await
-        .expect("Set A2 failed");
-    store
-        .set_state_json(project_a, "key3", serde_json::json!("a3"))
-        .await
-        .expect("Set A3 failed");
+    store.set_state_json(project_a, "key1", serde_json::json!("a1")).await.expect("Set A1 failed");
+    store.set_state_json(project_a, "key2", serde_json::json!("a2")).await.expect("Set A2 failed");
+    store.set_state_json(project_a, "key3", serde_json::json!("a3")).await.expect("Set A3 failed");
 
     // Project B sets multiple keys (some same, some different)
-    store
-        .set_state_json(project_b, "key1", serde_json::json!("b1"))
-        .await
-        .expect("Set B1 failed");
-    store
-        .set_state_json(project_b, "key2", serde_json::json!("b2"))
-        .await
-        .expect("Set B2 failed");
-    store
-        .set_state_json(project_b, "key4", serde_json::json!("b4"))
-        .await
-        .expect("Set B4 failed");
+    store.set_state_json(project_b, "key1", serde_json::json!("b1")).await.expect("Set B1 failed");
+    store.set_state_json(project_b, "key2", serde_json::json!("b2")).await.expect("Set B2 failed");
+    store.set_state_json(project_b, "key4", serde_json::json!("b4")).await.expect("Set B4 failed");
 
     // Verify all Project A keys
     assert_eq!(
@@ -263,9 +231,8 @@ async fn test_sop_sql_store_cross_project_isolation() {
         .await
         .expect("Failed to create pool");
 
-    let sop_store = sisyphus_mem::SopSqlStore::new(pool.clone())
-        .await
-        .expect("SopSqlStore init failed");
+    let sop_store =
+        sisyphus_mem::SopSqlStore::new(pool.clone()).await.expect("SopSqlStore init failed");
 
     let project_a = "project_alpha";
     let project_b = "project_beta";
@@ -312,10 +279,7 @@ async fn test_sop_sql_store_cross_project_isolation() {
         .expect("Save SOP B failed");
 
     // Load Project A's SOP
-    let loaded_a = sop_store
-        .load_sop(sop_id, project_a)
-        .await
-        .expect("Load A failed");
+    let loaded_a = sop_store.load_sop(sop_id, project_a).await.expect("Load A failed");
     assert!(loaded_a.is_some(), "Project A should find its SOP");
     assert_eq!(
         loaded_a.unwrap().nodes[0].name,
@@ -324,10 +288,7 @@ async fn test_sop_sql_store_cross_project_isolation() {
     );
 
     // Load Project B's SOP
-    let loaded_b = sop_store
-        .load_sop(sop_id, project_b)
-        .await
-        .expect("Load B failed");
+    let loaded_b = sop_store.load_sop(sop_id, project_b).await.expect("Load B failed");
     assert!(loaded_b.is_some(), "Project B should find its SOP");
     assert_eq!(
         loaded_b.unwrap().nodes[0].name,
@@ -336,14 +297,8 @@ async fn test_sop_sql_store_cross_project_isolation() {
     );
 
     // Each project lists only its own
-    let list_a = sop_store
-        .list_sops(Some(project_a))
-        .await
-        .expect("List A failed");
-    let list_b = sop_store
-        .list_sops(Some(project_b))
-        .await
-        .expect("List B failed");
+    let list_a = sop_store.list_sops(Some(project_a)).await.expect("List A failed");
+    let list_b = sop_store.list_sops(Some(project_b)).await.expect("List B failed");
     assert_eq!(list_a, vec![sop_id]);
     assert_eq!(list_b, vec![sop_id]);
 
@@ -362,10 +317,7 @@ async fn test_roadmap_sql_store_cross_project_isolation() {
     let roadmap_store = sisyphus_mem::RoadmapSqlStore::new(pool.clone())
         .await
         .expect("RoadmapSqlStore init failed");
-    roadmap_store
-        .init_schema()
-        .await
-        .expect("Schema init failed");
+    roadmap_store.init_schema().await.expect("Schema init failed");
 
     let project_a = "project_alpha";
     let project_b = "project_beta";
@@ -403,21 +355,13 @@ async fn test_roadmap_sql_store_cross_project_isolation() {
         .expect("Insert MS B failed");
 
     // Verify isolation: get project A's milestone
-    let proj_a = roadmap_store
-        .get_project(project_a)
-        .await
-        .expect("Get A failed")
-        .unwrap();
+    let proj_a = roadmap_store.get_project(project_a).await.expect("Get A failed").unwrap();
     assert_eq!(proj_a.roadmap.milestones.len(), 1);
     assert_eq!(proj_a.roadmap.milestones[0].name, "Milestone Alpha");
     assert_eq!(proj_a.roadmap.milestones[0].id, milestone_id);
 
     // Verify isolation: get project B's milestone
-    let proj_b = roadmap_store
-        .get_project(project_b)
-        .await
-        .expect("Get B failed")
-        .unwrap();
+    let proj_b = roadmap_store.get_project(project_b).await.expect("Get B failed").unwrap();
     assert_eq!(proj_b.roadmap.milestones.len(), 1);
     assert_eq!(proj_b.roadmap.milestones[0].name, "Milestone Beta");
     assert_eq!(proj_b.roadmap.milestones[0].id, milestone_id);
@@ -445,16 +389,10 @@ async fn test_roadmap_sql_store_cross_project_isolation() {
         .expect("Insert goal B failed");
 
     // Verify complete isolation by loading full projects
-    let proj_a_full = roadmap_store
-        .get_project(project_a)
-        .await
-        .expect("Get A full failed")
-        .unwrap();
-    let proj_b_full = roadmap_store
-        .get_project(project_b)
-        .await
-        .expect("Get B full failed")
-        .unwrap();
+    let proj_a_full =
+        roadmap_store.get_project(project_a).await.expect("Get A full failed").unwrap();
+    let proj_b_full =
+        roadmap_store.get_project(project_b).await.expect("Get B full failed").unwrap();
 
     assert_eq!(
         proj_a_full.roadmap.milestones[0].phases[0].goals[0].description,
@@ -474,14 +412,10 @@ async fn test_roadmap_sql_store_cross_project_isolation() {
     );
 
     // Progress calculation is per-project
-    let progress_a = roadmap_store
-        .calculate_project_progress(project_a)
-        .await
-        .expect("Progress A failed");
-    let progress_b = roadmap_store
-        .calculate_project_progress(project_b)
-        .await
-        .expect("Progress B failed");
+    let progress_a =
+        roadmap_store.calculate_project_progress(project_a).await.expect("Progress A failed");
+    let progress_b =
+        roadmap_store.calculate_project_progress(project_b).await.expect("Progress B failed");
     assert_eq!(progress_a, 0.0); // Pending
     assert_eq!(progress_b, 1.0); // Completed
 
@@ -527,10 +461,7 @@ async fn test_workspace_manager_isolation() {
     assert_eq!(all.len(), 2);
 
     // Switch to workspace 1
-    manager
-        .switch_workspace(&ws1.id)
-        .await
-        .expect("Switch to WS1 failed");
+    manager.switch_workspace(&ws1.id).await.expect("Switch to WS1 failed");
     let current = manager.get_current().await;
     assert!(current.is_some(), "Should have current workspace");
     let current_ws = current.unwrap();
@@ -538,10 +469,7 @@ async fn test_workspace_manager_isolation() {
     assert_eq!(current_ws.project_id, "proj_alpha");
 
     // Switch to workspace 2
-    manager
-        .switch_workspace(&ws2.id)
-        .await
-        .expect("Switch to WS2 failed");
+    manager.switch_workspace(&ws2.id).await.expect("Switch to WS2 failed");
     let current = manager.get_current().await;
     assert!(current.is_some(), "Should have current workspace");
     let current_ws = current.unwrap();
@@ -588,14 +516,9 @@ async fn test_full_kernel_cross_project_isolation() {
         .expect("Save beta failed");
 
     // Load back - should get correct project's SOP
-    let _loaded_alpha = kernel_alpha
-        .load_sop(sop_id, "proj_alpha")
-        .await
-        .expect("Load alpha failed");
-    let _loaded_beta = kernel_beta
-        .load_sop(sop_id, "proj_beta")
-        .await
-        .expect("Load beta failed");
+    let _loaded_alpha =
+        kernel_alpha.load_sop(sop_id, "proj_alpha").await.expect("Load alpha failed");
+    let _loaded_beta = kernel_beta.load_sop(sop_id, "proj_beta").await.expect("Load beta failed");
 
     // Cross-access should return error (SopNotFound) since they don't share project_id
     let cross_alpha = kernel_alpha.load_sop(sop_id, "proj_beta").await;
@@ -645,14 +568,8 @@ async fn test_session_todo_state_isolation() {
         .expect("Set session B failed");
 
     // Verify isolation
-    let loaded_a = store
-        .get_state_json(project_a, "session:sess_a")
-        .await
-        .expect("Get A failed");
-    let loaded_b = store
-        .get_state_json(project_b, "session:sess_a")
-        .await
-        .expect("Get B failed");
+    let loaded_a = store.get_state_json(project_a, "session:sess_a").await.expect("Get A failed");
+    let loaded_b = store.get_state_json(project_b, "session:sess_a").await.expect("Get B failed");
 
     assert_eq!(loaded_a, Some(session_a), "Project A session isolated");
     assert_eq!(loaded_b, Some(session_b), "Project B session isolated");
@@ -670,14 +587,10 @@ async fn test_session_todo_state_isolation() {
         .await
         .expect("Set todos B failed");
 
-    let loaded_todos_a = store
-        .get_state_json(project_a, "todos:main")
-        .await
-        .expect("Get todos A failed");
-    let loaded_todos_b = store
-        .get_state_json(project_b, "todos:main")
-        .await
-        .expect("Get todos B failed");
+    let loaded_todos_a =
+        store.get_state_json(project_a, "todos:main").await.expect("Get todos A failed");
+    let loaded_todos_b =
+        store.get_state_json(project_b, "todos:main").await.expect("Get todos B failed");
 
     assert_eq!(loaded_todos_a, Some(todos_a), "Project A todos isolated");
     assert_eq!(loaded_todos_b, Some(todos_b), "Project B todos isolated");
@@ -694,9 +607,7 @@ async fn test_experience_bank_cross_project_isolation() {
             .expect("Failed to init MfsStore"),
     );
     let vector_store = Arc::new(
-        sisyphus_mem::VectorMemoryStore::new(store.pool())
-            .await
-            .expect("Vector store failed"),
+        sisyphus_mem::VectorMemoryStore::new(store.pool()).await.expect("Vector store failed"),
     );
     let embedding_client = Arc::new(DummyEmbeddingClient);
 
@@ -756,10 +667,7 @@ async fn test_experience_bank_cross_project_isolation() {
         visual_embedding: None,
         limit: 10,
     };
-    let results_a = exp_bank
-        .query_similar(query_a)
-        .await
-        .expect("Query A failed");
+    let results_a = exp_bank.query_similar(query_a).await.expect("Query A failed");
     assert_eq!(
         results_a.len(),
         1,
@@ -777,10 +685,7 @@ async fn test_experience_bank_cross_project_isolation() {
         visual_embedding: None,
         limit: 10,
     };
-    let results_b = exp_bank
-        .query_similar(query_b)
-        .await
-        .expect("Query B failed");
+    let results_b = exp_bank.query_similar(query_b).await.expect("Query B failed");
     assert_eq!(
         results_b.len(),
         1,
@@ -814,10 +719,7 @@ async fn test_state_persistence_across_workspace_switch() {
         .await
         .expect("Create workspace failed");
 
-    manager
-        .switch_workspace(&ws.id)
-        .await
-        .expect("Switch failed");
+    manager.switch_workspace(&ws.id).await.expect("Switch failed");
 
     // Set some state in the workspace's project
     let project_id = &ws.project_id;
@@ -840,10 +742,7 @@ async fn test_state_persistence_across_workspace_switch() {
         .await
         .expect("Create workspace 2 failed");
 
-    manager
-        .switch_workspace(&ws2.id)
-        .await
-        .expect("Switch to ws2 failed");
+    manager.switch_workspace(&ws2.id).await.expect("Switch to ws2 failed");
 
     // Set different state for project 2
     state_store
@@ -856,21 +755,13 @@ async fn test_state_persistence_across_workspace_switch() {
         .expect("Set state 2 failed");
 
     // Switch back to first workspace and verify state persisted
-    manager
-        .switch_workspace(&ws.id)
-        .await
-        .expect("Switch back failed");
-    let state1 = state_store
-        .get_state_json(project_id, "session_data")
-        .await
-        .expect("Get state 1 failed");
+    manager.switch_workspace(&ws.id).await.expect("Switch back failed");
+    let state1 =
+        state_store.get_state_json(project_id, "session_data").await.expect("Get state 1 failed");
     assert_eq!(state1, Some(serde_json::json!({"key": "value"})));
 
     // Switch to second workspace and verify its state
-    manager
-        .switch_workspace(&ws2.id)
-        .await
-        .expect("Switch to ws2 again failed");
+    manager.switch_workspace(&ws2.id).await.expect("Switch to ws2 again failed");
     let state2 = state_store
         .get_state_json(&ws2.project_id, "session_data")
         .await
@@ -903,16 +794,10 @@ async fn test_concurrent_projects_no_interference() {
                 executor: tool_executor,
             }));
 
-            kernel
-                .save_sop(&sop_id, &project_id, &Arc::new(graph))
-                .await
-                .expect("Save SOP failed");
+            kernel.save_sop(&sop_id, &project_id, &Arc::new(graph)).await.expect("Save SOP failed");
 
             // Verify we can load it back
-            let _loaded = kernel
-                .load_sop(&sop_id, &project_id)
-                .await
-                .expect("Load SOP failed");
+            let _loaded = kernel.load_sop(&sop_id, &project_id).await.expect("Load SOP failed");
 
             project_id
         });

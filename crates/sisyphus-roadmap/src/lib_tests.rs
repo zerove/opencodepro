@@ -12,10 +12,7 @@ async fn setup_manager() -> RoadmapManager {
             .await
             .expect("Failed to create in-memory sql store"),
     );
-    sql_store
-        .init_schema()
-        .await
-        .expect("Failed to init schema");
+    sql_store.init_schema().await.expect("Failed to init schema");
     let proposal_manager =
         std::sync::Arc::new(crate::proposal_manager::ProposalManager::new(store.clone()));
     RoadmapManager::new(store, sql_store, proposal_manager)
@@ -42,14 +39,8 @@ async fn test_create_and_get_project() {
 #[tokio::test]
 async fn test_list_projects() {
     let manager = setup_manager().await;
-    manager
-        .create_project("p1", "Project 1", "First")
-        .await
-        .unwrap();
-    manager
-        .create_project("p2", "Project 2", "Second")
-        .await
-        .unwrap();
+    manager.create_project("p1", "Project 1", "First").await.unwrap();
+    manager.create_project("p2", "Project 2", "Second").await.unwrap();
     let ids = manager.list_project_ids().await.unwrap();
     assert_eq!(ids.len(), 2);
     assert!(ids.contains(&"p1".to_string()));
@@ -60,10 +51,7 @@ async fn test_list_projects() {
 async fn test_duplicate_project_rejected() {
     let manager = setup_manager().await;
     manager.create_project("dup", "Original", "").await.unwrap();
-    let err = manager
-        .create_project("dup", "Duplicate", "")
-        .await
-        .unwrap_err();
+    let err = manager.create_project("dup", "Duplicate", "").await.unwrap_err();
     assert!(
         matches!(err, RoadmapError::DuplicateProject(_)),
         "Expected DuplicateProject, got {err:?}"
@@ -73,10 +61,7 @@ async fn test_duplicate_project_rejected() {
 #[tokio::test]
 async fn test_delete_project() {
     let manager = setup_manager().await;
-    manager
-        .create_project("del-me", "To Delete", "")
-        .await
-        .unwrap();
+    manager.create_project("del-me", "To Delete", "").await.unwrap();
     manager.delete_project("del-me").await.unwrap();
     let project = manager.get_project("del-me").await.unwrap();
     assert!(project.is_none());
@@ -85,10 +70,7 @@ async fn test_delete_project() {
 #[tokio::test]
 async fn test_add_and_update_milestone() {
     let manager = setup_manager().await;
-    manager
-        .create_project("ms-test", "Milestone Test", "")
-        .await
-        .unwrap();
+    manager.create_project("ms-test", "Milestone Test", "").await.unwrap();
 
     let milestone = Milestone {
         id: "ms-1".into(),
@@ -98,10 +80,7 @@ async fn test_add_and_update_milestone() {
     };
     manager.add_milestone("ms-test", milestone).await.unwrap();
 
-    manager
-        .update_milestone_status("ms-test", "ms-1", MilestoneStatus::InProgress)
-        .await
-        .unwrap();
+    manager.update_milestone_status("ms-test", "ms-1", MilestoneStatus::InProgress).await.unwrap();
 
     let project = manager.get_project("ms-test").await.unwrap().unwrap();
     assert_eq!(project.roadmap.milestones.len(), 1);
@@ -114,10 +93,7 @@ async fn test_add_and_update_milestone() {
 #[tokio::test]
 async fn test_remove_milestone() {
     let manager = setup_manager().await;
-    manager
-        .create_project("rm-ms", "Remove Milestone", "")
-        .await
-        .unwrap();
+    manager.create_project("rm-ms", "Remove Milestone", "").await.unwrap();
     manager
         .add_milestone(
             "rm-ms",
@@ -138,10 +114,7 @@ async fn test_remove_milestone() {
 #[tokio::test]
 async fn test_add_and_update_goal() {
     let manager = setup_manager().await;
-    manager
-        .create_project("goal-test", "Goal Test", "")
-        .await
-        .unwrap();
+    manager.create_project("goal-test", "Goal Test", "").await.unwrap();
     manager
         .add_milestone(
             "goal-test",
@@ -173,10 +146,7 @@ async fn test_add_and_update_goal() {
         description: "First goal".into(),
         status: MilestoneStatus::Pending,
     };
-    manager
-        .add_goal("goal-test", "ms-1", "ph-1", goal)
-        .await
-        .unwrap();
+    manager.add_goal("goal-test", "ms-1", "ph-1", goal).await.unwrap();
 
     manager
         .update_goal_status(
@@ -197,10 +167,7 @@ async fn test_add_and_update_goal() {
 #[tokio::test]
 async fn test_calculate_progress() {
     let manager = setup_manager().await;
-    manager
-        .create_project("progress", "Progress", "")
-        .await
-        .unwrap();
+    manager.create_project("progress", "Progress", "").await.unwrap();
     manager
         .add_milestone(
             "progress",
@@ -274,10 +241,7 @@ async fn test_calculate_progress() {
 #[tokio::test]
 async fn test_progress_report() {
     let manager = setup_manager().await;
-    manager
-        .create_project("report", "Report Test", "")
-        .await
-        .unwrap();
+    manager.create_project("report", "Report Test", "").await.unwrap();
     manager
         .add_milestone(
             "report",
@@ -329,10 +293,7 @@ async fn test_progress_report() {
 #[tokio::test]
 async fn test_project_context_synthesis() {
     let manager = setup_manager().await;
-    manager
-        .create_project("ctx", "Context Test", "Testing context")
-        .await
-        .unwrap();
+    manager.create_project("ctx", "Context Test", "Testing context").await.unwrap();
     manager
         .add_milestone(
             "ctx",
@@ -381,10 +342,7 @@ async fn test_project_context_synthesis() {
 #[tokio::test]
 async fn test_goal_status_propagation() {
     let manager = setup_manager().await;
-    manager
-        .create_project("prop", "Propagation", "")
-        .await
-        .unwrap();
+    manager.create_project("prop", "Propagation", "").await.unwrap();
     manager
         .add_milestone(
             "prop",
@@ -469,10 +427,7 @@ async fn test_goal_status_propagation() {
 #[tokio::test]
 async fn test_auto_propagate_all() {
     let manager = setup_manager().await;
-    manager
-        .create_project("auto", "Auto Propagate", "")
-        .await
-        .unwrap();
+    manager.create_project("auto", "Auto Propagate", "").await.unwrap();
     manager
         .add_milestone(
             "auto",
@@ -544,10 +499,7 @@ async fn test_auto_propagate_all() {
 #[tokio::test]
 async fn test_get_next_goal() {
     let manager = setup_manager().await;
-    manager
-        .create_project("next-goal", "Next Goal Test", "")
-        .await
-        .unwrap();
+    manager.create_project("next-goal", "Next Goal Test", "").await.unwrap();
     manager
         .add_milestone(
             "next-goal",
@@ -776,10 +728,7 @@ async fn test_record_and_get_outcomes() {
 #[tokio::test]
 async fn test_evaluate_health() {
     let manager = setup_manager().await;
-    manager
-        .create_project("health", "Health Check", "")
-        .await
-        .unwrap();
+    manager.create_project("health", "Health Check", "").await.unwrap();
     manager
         .add_milestone(
             "health",
@@ -826,10 +775,7 @@ async fn test_evaluate_health() {
 #[tokio::test]
 async fn test_apply_blocking() {
     let manager = setup_manager().await;
-    manager
-        .create_project("block", "Apply Block", "")
-        .await
-        .unwrap();
+    manager.create_project("block", "Apply Block", "").await.unwrap();
     manager
         .add_milestone(
             "block",

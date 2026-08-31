@@ -34,28 +34,28 @@ pub fn handle_dialog_key(key: KeyEvent, app: &mut App) {
                 KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('Q') => {
                     app.dialog = None;
                     app.help_scroll = 0;
-                }
+                },
                 KeyCode::Up => {
                     app.help_scroll = app.help_scroll.saturating_sub(1);
-                }
+                },
                 KeyCode::Down => {
                     app.help_scroll = app.help_scroll.saturating_add(1);
-                }
+                },
                 KeyCode::PageUp => {
                     app.help_scroll = app.help_scroll.saturating_sub(10);
-                }
+                },
                 KeyCode::PageDown => {
                     app.help_scroll = app.help_scroll.saturating_add(10);
-                }
+                },
                 KeyCode::Home => {
                     app.help_scroll = 0;
-                }
+                },
                 KeyCode::End => {
                     app.help_scroll = usize::MAX; // will clamp at render
-                }
-                _ => {}
+                },
+                _ => {},
             }
-        }
+        },
         Dialog::WorkspaceList => handlers::handle_workspace_list_key(code, app),
         Dialog::SessionList => handlers::handle_session_list_key(code, app),
         Dialog::Todos => handlers::handle_todos_key(code, app),
@@ -76,12 +76,12 @@ pub fn handle_dialog_key(key: KeyEvent, app: &mut App) {
                     }
                 }
                 app.dialog = None;
-            }
+            },
             KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => {
                 app.confirm_delete = None;
                 app.dialog = None;
-            }
-            _ => {}
+            },
+            _ => {},
         },
         Dialog::Dev { goal: _ } => handlers::handle_dev_key(key, app),
         Dialog::Rename {

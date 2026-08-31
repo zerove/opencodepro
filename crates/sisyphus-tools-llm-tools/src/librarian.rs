@@ -57,18 +57,18 @@ pub async fn research(
     match scope {
         ResearchScope::Web => {
             add_web_results(query, max_results, &mut findings, &mut sources_consulted).await;
-        }
+        },
         ResearchScope::Documentation => {
             add_doc_results(query, max_results, &mut findings, &mut sources_consulted).await;
-        }
+        },
         ResearchScope::CodeExamples => {
             add_code_results(query, max_results, &mut findings, &mut sources_consulted).await;
-        }
+        },
         ResearchScope::All => {
             add_web_results(query, max_results, &mut findings, &mut sources_consulted).await;
             add_doc_results(query, max_results, &mut findings, &mut sources_consulted).await;
             add_code_results(query, max_results, &mut findings, &mut sources_consulted).await;
-        }
+        },
     }
 
     // Deduplicate by URL
@@ -268,11 +268,8 @@ pub async fn synthesise(
 
     // Sort by relevance (highest first) so the most important findings come first
     let mut sorted: Vec<&ResearchFinding> = findings.iter().collect();
-    sorted.sort_by(|a, b| {
-        b.relevance
-            .partial_cmp(&a.relevance)
-            .unwrap_or(std::cmp::Ordering::Equal)
-    });
+    sorted
+        .sort_by(|a, b| b.relevance.partial_cmp(&a.relevance).unwrap_or(std::cmp::Ordering::Equal));
 
     let mut user_prompt = format!(
         "Synthesise the following {} research findings into a professional report:\n\n",
@@ -289,9 +286,7 @@ pub async fn synthesise(
         ));
     }
 
-    client
-        .chat(SYNTHESIS_SYSTEM_PROMPT, &user_prompt, false)
-        .await
+    client.chat(SYNTHESIS_SYSTEM_PROMPT, &user_prompt, false).await
 }
 
 // ── Tests ───────────────────────────────────────────────────

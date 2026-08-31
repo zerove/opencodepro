@@ -23,9 +23,8 @@ impl Interceptor for AuthInterceptor {
             return Ok(request);
         }
         let bearer = format!("Bearer {}", self.expected);
-        let expected_val: MetadataValue<_> = bearer
-            .parse()
-            .map_err(|_| Status::internal("invalid auth token format"))?;
+        let expected_val: MetadataValue<_> =
+            bearer.parse().map_err(|_| Status::internal("invalid auth token format"))?;
 
         match request.metadata().get("authorization") {
             Some(val) if val == expected_val => Ok(request),

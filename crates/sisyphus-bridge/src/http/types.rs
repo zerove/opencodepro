@@ -113,10 +113,8 @@ where
         parts: &mut axum::http::request::Parts,
         _state: &S,
     ) -> Result<Self, Self::Rejection> {
-        let header_value = parts
-            .headers
-            .get("X-Sisyphus-Workspace-Id")
-            .and_then(|v| v.to_str().ok());
+        let header_value =
+            parts.headers.get("X-Sisyphus-Workspace-Id").and_then(|v| v.to_str().ok());
 
         Ok(WorkspaceContext {
             project_id: header_value.map(|s| s.to_string()),

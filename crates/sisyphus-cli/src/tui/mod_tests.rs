@@ -374,7 +374,7 @@ fn test_cognitive_trace_row_deserialize_from_rest_contract() {
             let m = metrics.expect("metrics present");
             assert_eq!(m.deviation, 0.1);
             assert_eq!(m.confidence, 0.9);
-        }
+        },
         other => panic!("unexpected event variant: {other:?}"),
     }
 }

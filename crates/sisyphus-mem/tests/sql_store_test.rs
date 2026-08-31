@@ -104,18 +104,13 @@ async fn store_and_search_embedding_roundtrip() {
     store.flush().await.expect("flush");
     // Verify rows via pool
     let pool = store.pool();
-    let row: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM vectors")
-        .fetch_one(pool)
-        .await
-        .expect("count");
+    let row: (i64,) =
+        sqlx::query_as("SELECT COUNT(*) FROM vectors").fetch_one(pool).await.expect("count");
     eprintln!("DEBUG row count: {}", row.0);
 
     // search similar to v1
     let query = make_vec(1.0);
-    let hits = store
-        .search_similar(proj, coll, &query, 3)
-        .await
-        .expect("search_similar");
+    let hits = store.search_similar(proj, coll, &query, 3).await.expect("search_similar");
 
     // SQLite 路径走 fetch_all + cosine similarity, store_embedding 直接 INSERT
     // 所以 hits 应该非空. 接受 self-similarity 最高 (v1 = v1) 但允许
@@ -153,13 +148,7 @@ async fn clear_cache_resets_state() {
     let store = SqlStore::new("sqlite::memory:").await.expect("construct");
     // 存一个向量后再清空
     store
-        .store_embedding(
-            Some("p"),
-            "c",
-            "x",
-            &make_vec(0.0),
-            &serde_json::json!({}),
-        )
+        .store_embedding(Some("p"), "c", "x", &make_vec(0.0), &serde_json::json!({}))
         .await
         .expect("store");
     store.flush().await.expect("flush");

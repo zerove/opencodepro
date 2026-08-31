@@ -45,10 +45,7 @@ impl CognitiveTraceBuffer {
 
     /// Record an event, evicting the oldest entry when over capacity.
     pub fn push(&self, entry: CognitiveTraceEntry) {
-        let mut entries = self
-            .entries
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut entries = self.entries.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         if entries.len() >= self.capacity {
             entries.pop_front();
         }
@@ -57,28 +54,19 @@ impl CognitiveTraceBuffer {
 
     /// Return the most recent `limit` entries (newest first).
     pub fn recent(&self, limit: usize) -> Vec<CognitiveTraceEntry> {
-        let entries = self
-            .entries
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let entries = self.entries.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         let limit = limit.min(entries.len());
         entries.iter().rev().take(limit).cloned().collect()
     }
 
     /// Number of entries currently held.
     pub fn len(&self) -> usize {
-        self.entries
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .len()
+        self.entries.lock().unwrap_or_else(std::sync::PoisonError::into_inner).len()
     }
 
     /// Whether the buffer is empty.
     pub fn is_empty(&self) -> bool {
-        self.entries
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .is_empty()
+        self.entries.lock().unwrap_or_else(std::sync::PoisonError::into_inner).is_empty()
     }
 }
 
@@ -182,10 +170,7 @@ impl ExecutionManager {
     /// 从状态存储加载 SOP 图谱。
     /// 返回所有已注册 SOP 的 ID 列表。
     pub async fn list_sops(&self, project_id: Option<&str>) -> Result<Vec<String>, CoreError> {
-        self.sop_store
-            .list_sops(project_id)
-            .await
-            .map_err(|e| CoreError::Internal(e.to_string()))
+        self.sop_store.list_sops(project_id).await.map_err(|e| CoreError::Internal(e.to_string()))
     }
 
     /// 从状态存储加载 SOP 图谱。

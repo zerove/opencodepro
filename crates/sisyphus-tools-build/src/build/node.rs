@@ -206,9 +206,7 @@ impl LanguageBackend for NodeBackend {
 fn which(cmd: &str) -> Option<String> {
     let output = std::process::Command::new("which").arg(cmd).output().ok()?;
     if output.status.success() {
-        String::from_utf8(output.stdout)
-            .ok()
-            .map(|s| s.trim().to_string())
+        String::from_utf8(output.stdout).ok().map(|s| s.trim().to_string())
     } else {
         None
     }
@@ -250,8 +248,7 @@ fn parse_tsc_diags(stderr: &str) -> (Vec<Diag>, Vec<Diag>) {
         } else if let Some(pos) = line.find(" - warning ") {
             Some((pos, " - warning ", false))
         } else {
-            line.find(": warning ")
-                .map(|pos| (pos, ": warning ", false))
+            line.find(": warning ").map(|pos| (pos, ": warning ", false))
         };
 
         if let Some((pos, sep, is_error)) = error_split.or(warn_split) {
@@ -332,9 +329,7 @@ fn parse_eslint_json(json_str: &str) -> (Vec<Diag>, Vec<Diag>) {
 
     if let Ok(results) = serde_json::from_str::<Vec<serde_json::Value>>(json_str) {
         for result in results {
-            let file = result["filePath"]
-                .as_str()
-                .map(std::string::ToString::to_string);
+            let file = result["filePath"].as_str().map(std::string::ToString::to_string);
             if let Some(messages) = result["messages"].as_array() {
                 for msg in messages {
                     let line = msg["line"].as_u64().map(|n| n as usize);

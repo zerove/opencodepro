@@ -255,11 +255,8 @@ pub fn run() {}
             &format!("fn main() {{\n    println!(\"{}\");\n}}", long),
         );
         let analysis = analyze_file(&file).unwrap();
-        let long_line_issues: Vec<_> = analysis
-            .issues
-            .iter()
-            .filter(|i| i.message.contains("line too long"))
-            .collect();
+        let long_line_issues: Vec<_> =
+            analysis.issues.iter().filter(|i| i.message.contains("line too long")).collect();
         assert_eq!(long_line_issues.len(), 1);
         assert_eq!(long_line_issues[0].severity, IssueSeverity::Style);
     }
@@ -278,11 +275,8 @@ fn bar() {}
 ",
         );
         let analysis = analyze_file(&file).unwrap();
-        let todo_issues: Vec<_> = analysis
-            .issues
-            .iter()
-            .filter(|i| i.message.contains("TODO/FIXME"))
-            .collect();
+        let todo_issues: Vec<_> =
+            analysis.issues.iter().filter(|i| i.message.contains("TODO/FIXME")).collect();
         assert_eq!(todo_issues.len(), 2);
     }
 
@@ -317,10 +311,7 @@ pub fn add(a: i32, b: i32) -> i32 {
         );
         let paths = vec![file.as_path()];
         let issues = code_review(&paths).unwrap();
-        let todo_count = issues
-            .iter()
-            .filter(|i| i.message.contains("TODO/FIXME"))
-            .count();
+        let todo_count = issues.iter().filter(|i| i.message.contains("TODO/FIXME")).count();
         assert_eq!(todo_count, 1);
     }
 

@@ -62,7 +62,7 @@ impl LogEntry {
         match self {
             LogEntry::Info(t) | LogEntry::Success(t) | LogEntry::Warn(t) | LogEntry::Error(t) => {
                 t.as_str()
-            }
+            },
         }
     }
 }
@@ -718,11 +718,9 @@ impl App {
             && msg_start < self.session_detail_scroll + 100
         {
             self.session_detail_scroll = if line_diff > 0 {
-                self.session_detail_scroll
-                    .saturating_add(line_diff as usize)
+                self.session_detail_scroll.saturating_add(line_diff as usize)
             } else {
-                self.session_detail_scroll
-                    .saturating_sub((-line_diff) as usize)
+                self.session_detail_scroll.saturating_sub((-line_diff) as usize)
             };
         }
     }
@@ -780,8 +778,7 @@ impl App {
     }
 
     pub(crate) fn prune_expired_toasts(&mut self) {
-        self.toasts
-            .retain(|t| t.created_at.elapsed() < TOAST_DURATION);
+        self.toasts.retain(|t| t.created_at.elapsed() < TOAST_DURATION);
     }
 
     pub(crate) fn perform_search(&mut self) {
@@ -805,9 +802,8 @@ impl App {
         if self.search_results.is_empty() {
             return;
         }
-        let idx = self.search_results[self
-            .search_idx
-            .min(self.search_results.len().saturating_sub(1))];
+        let idx =
+            self.search_results[self.search_idx.min(self.search_results.len().saturating_sub(1))];
         self.selected_msg = Some(idx);
         if let Some(ref detail) = self.session_detail {
             let mut line = 0usize;
@@ -957,7 +953,7 @@ impl App {
                     self.add_log(LogEntry::Info(format!("Deleted session {id}")));
                     self.session_dirty = true;
                     self.session_sel = self.session_sel.saturating_sub(1);
-                }
+                },
                 Err(e) => self.add_log(LogEntry::Error(format!(
                     "Failed to delete session {id}: {e}"
                 ))),
@@ -994,18 +990,18 @@ impl App {
                 self.sop_sops = sops;
                 self.sop_sel = 0;
                 self.sop_status = format!("connected ({} SOPs)", count);
-            }
+            },
             crate::tui::background::BgOp::SopsFailed(e) => {
                 self.sop_status = format!("failed: {e}");
-            }
+            },
             crate::tui::background::BgOp::SopExecuted { sop_id, result } => {
                 self.sop_result = Some(result);
                 self.sop_status = format!("executed {sop_id}");
-            }
+            },
             crate::tui::background::BgOp::SopExecuteFailed { sop_id, error } => {
                 self.sop_result = None;
                 self.sop_status = format!("execute {sop_id} failed: {error}");
-            }
+            },
             crate::tui::background::BgOp::SopTraceFetched { sop_id, trace } => {
                 self.sop_trace = trace
                     .into_iter()
@@ -1019,10 +1015,10 @@ impl App {
                     .collect();
                 self.sop_trace_scroll = 0;
                 self.add_log(LogEntry::Info(format!("Fetched trace for {sop_id}")));
-            }
+            },
             crate::tui::background::BgOp::SopTraceFailed(e) => {
                 self.add_log(LogEntry::Error(format!("Failed to fetch trace: {e}")));
-            }
+            },
             crate::tui::background::BgOp::CognitiveTraceFetched { rows } => {
                 self.cog_trace = rows;
                 self.cog_trace_scroll = 0;
@@ -1032,7 +1028,7 @@ impl App {
                     "Fetched {} cognitive decisions",
                     self.cog_trace.len()
                 )));
-            }
+            },
             crate::tui::background::BgOp::CognitiveTraceHistoryFetched { rows } => {
                 self.cog_trace = rows;
                 self.cog_trace_scroll = 0;
@@ -1043,7 +1039,7 @@ impl App {
                     "Fetched {} persisted cognitive decisions",
                     self.cog_trace.len()
                 )));
-            }
+            },
             crate::tui::background::BgOp::CognitiveSummaryFetched { summary } => {
                 self.cog_summary = Some(summary);
                 self.cog_summary_status = "connected".into();
@@ -1053,19 +1049,19 @@ impl App {
                         s.total_decisions
                     )));
                 }
-            }
+            },
             crate::tui::background::BgOp::CognitiveSummaryFailed(e) => {
                 self.cog_summary_status = format!("failed: {e}");
                 self.add_log(LogEntry::Error(format!(
                     "Failed to fetch cognitive summary: {e}"
                 )));
-            }
+            },
             crate::tui::background::BgOp::CognitiveTraceFailed(e) => {
                 self.cog_trace_status = format!("failed: {e}");
                 self.add_log(LogEntry::Error(format!(
                     "Failed to fetch cognitive trace: {e}"
                 )));
-            }
+            },
             crate::tui::background::BgOp::RoadmapFetched {
                 projection,
                 bottlenecks,
@@ -1073,12 +1069,12 @@ impl App {
                 self.roadmap_projection = Some(projection);
                 self.roadmap_bottlenecks = Some(bottlenecks);
                 self.roadmap_status = "connected".into();
-            }
+            },
             crate::tui::background::BgOp::RoadmapFailed(e) => {
                 self.roadmap_projection = None;
                 self.roadmap_bottlenecks = None;
                 self.roadmap_status = format!("failed: {e}");
-            }
+            },
             crate::tui::background::BgOp::BridgeCmd { entries } => {
                 for entry in entries {
                     self.add_log(entry.clone());
@@ -1088,7 +1084,7 @@ impl App {
                         message: entry.entry_text().to_string(),
                     });
                 }
-            }
+            },
             crate::tui::background::BgOp::DevResult {
                 goal,
                 report,
@@ -1103,7 +1099,7 @@ impl App {
                 }
                 self.dev_report = Some(report);
                 self.dev_status = "done".into();
-            }
+            },
             crate::tui::background::BgOp::SessionUpdated { session_id, errors } => {
                 for entry in &errors {
                     self.add_log(entry.clone());
@@ -1142,18 +1138,18 @@ impl App {
                         ];
                     }
                 }
-            }
+            },
             crate::tui::background::BgOp::TodoUpdated => {
                 self.todo_dirty = true;
-            }
+            },
             crate::tui::background::BgOp::SkillsAvailable { skills } => {
                 self.skill_market_available = skills;
                 self.skill_market_status = "available skills loaded".into();
-            }
+            },
             crate::tui::background::BgOp::SkillsInstalled { skills } => {
                 self.skill_market_installed = skills;
                 self.skill_market_status = "installed skills loaded".into();
-            }
+            },
             crate::tui::background::BgOp::SkillOpResult { success, message } => {
                 if success {
                     self.add_log(LogEntry::Success(message));
@@ -1162,15 +1158,15 @@ impl App {
                     self.add_log(LogEntry::Error(message));
                     self.skill_market_status = "operation failed".into();
                 }
-            }
+            },
             crate::tui::background::BgOp::WorkspacesListed { workspaces } => {
                 self.workspaces = workspaces;
                 self.workspace_status = "loaded".into();
-            }
+            },
             crate::tui::background::BgOp::WorkspaceSwitched { id } => {
                 self.workspace_status = format!("switched to {id}");
                 self.add_log(LogEntry::Info(format!("Workspace switched to {id}")));
-            }
+            },
             crate::tui::background::BgOp::WorkspaceOpResult { success, message } => {
                 if success {
                     self.add_log(LogEntry::Success(message));
@@ -1179,16 +1175,15 @@ impl App {
                     self.add_log(LogEntry::Error(message.clone()));
                     self.workspace_status = format!("error: {message}");
                 }
-            }
+            },
             crate::tui::background::BgOp::WorkspaceDeleted { id } => {
                 self.workspace_status = format!("deleted {id}");
                 self.add_log(LogEntry::Info(format!("Workspace deleted: {id}")));
                 // 从本地列表移除
                 self.workspaces.retain(|w| w.id != id);
-                self.workspace_sel = self
-                    .workspace_sel
-                    .min(self.workspaces.len().saturating_sub(1));
-            }
+                self.workspace_sel =
+                    self.workspace_sel.min(self.workspaces.len().saturating_sub(1));
+            },
             crate::tui::background::BgOp::OpUpdate {
                 op_id,
                 status,
@@ -1232,7 +1227,7 @@ impl App {
                     // 通用操作更新：记录日志
                     self.add_log(LogEntry::Info(format!("OpUpdate [{op_id}]: {status}")));
                 }
-            }
+            },
         }
     }
     pub(crate) fn fetch_sop_trace(&mut self, sop_id: String) {

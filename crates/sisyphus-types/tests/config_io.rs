@@ -5,8 +5,8 @@
 //! bridge, daemon). Lives in `tests/` so the public API is exercised exactly
 //! as an external consumer would.
 
-use std::io::Write;
 use sisyphus_types::Config;
+use std::io::Write;
 
 const MINIMAL_TOML: &str = r#"
 bridge_address = "http://127.0.0.1:50051"

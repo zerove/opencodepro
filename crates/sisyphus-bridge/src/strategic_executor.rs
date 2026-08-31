@@ -25,9 +25,8 @@ impl StrategicExecutor {
         cache_path: PathBuf,
         proposal_manager: Arc<ProposalManager>,
     ) -> Result<Self, sisyphus_types::TypesError> {
-        let sql_store = sisyphus_mem::RoadmapSqlStore::new(state_store.pool().clone())
-            .await
-            .map_err(|e| {
+        let sql_store =
+            sisyphus_mem::RoadmapSqlStore::new(state_store.pool().clone()).await.map_err(|e| {
                 sisyphus_types::TypesError::StateStoreError(format!(
                     "Failed to init RoadmapSqlStore: {e}"
                 ))
@@ -55,7 +54,7 @@ impl StrategicExecutor {
                 let msg = format!("Kernel RwLock poisoned in set_kernel: {}", poisoned);
                 tracing::warn!("{}", msg);
                 *poisoned.into_inner() = Some(kernel);
-            }
+            },
         }
     }
 }
@@ -69,13 +68,10 @@ impl ToolExecutor for StrategicExecutor {
         _fuel: u64,
     ) -> Result<Vec<u8>, TypesError> {
         let kernel_weak = {
-            let guard = self
-                .kernel
-                .read()
-                .map_err(|e| TypesError::ToolExecutionError {
-                    tool_id: tool_id.to_string(),
-                    details: format!("Kernel RwLock poisoned: {e}"),
-                })?;
+            let guard = self.kernel.read().map_err(|e| TypesError::ToolExecutionError {
+                tool_id: tool_id.to_string(),
+                details: format!("Kernel RwLock poisoned: {e}"),
+            })?;
             guard.clone()
         };
         let kernel = kernel_weak.and_then(|w| w.upgrade()).ok_or_else(|| {
@@ -145,9 +141,7 @@ impl ToolExecutor for StrategicExecutor {
                     .milestones
                     .iter()
                     .flat_map(|ms| {
-                        ms.phases
-                            .iter()
-                            .map(move |ph| (ms.id.as_str(), ph.id.as_str(), &ph.goals))
+                        ms.phases.iter().map(move |ph| (ms.id.as_str(), ph.id.as_str(), &ph.goals))
                     })
                     .filter(|(_, _, goals)| goals.iter().any(|g| g.goal_id == goal.goal_id))
                     .map(|(ms_id, ph_id, _)| (ms_id.to_string(), ph_id.to_string()))
@@ -193,7 +187,7 @@ impl ToolExecutor for StrategicExecutor {
                         "  None.",
                     );
                     Ok(output.into_bytes())
-                }
+                },
                 Err(e) => Err(sisyphus_types::TypesError::ToolExecutionError {
                     tool_id: tool_id.to_string(),
                     details: format!("Strategic Goal [{}] execution failed: {e}", goal.goal_id),
@@ -258,9 +252,7 @@ impl ToolExecutor for StrategicExecutor {
                     .milestones
                     .iter()
                     .flat_map(|ms| {
-                        ms.phases
-                            .iter()
-                            .map(move |ph| (ms.id.as_str(), ph.id.as_str(), &ph.goals))
+                        ms.phases.iter().map(move |ph| (ms.id.as_str(), ph.id.as_str(), &ph.goals))
                     })
                     .filter(|(_, _, goals)| goals.iter().any(|g| g.goal_id == goal.goal_id))
                     .map(|(ms_id, ph_id, _)| (ms_id.to_string(), ph_id.to_string()))
@@ -290,7 +282,7 @@ impl ToolExecutor for StrategicExecutor {
                         "cognition": report,
                     });
                     Ok(serde_json::to_vec(&output).unwrap_or_default())
-                }
+                },
                 Err(e) => {
                     let duration = 0.0;
                     sisyphus_metrics::record_sop_execution(&synth_id, false, duration);
@@ -298,7 +290,7 @@ impl ToolExecutor for StrategicExecutor {
                         tool_id: tool_id.to_string(),
                         details: format!("Goal execution failed: {e}"),
                     })
-                }
+                },
             }
         } else if tool_id == "show_roadmap" {
             let args_str = String::from_utf8_lossy(&args);
@@ -330,7 +322,7 @@ impl ToolExecutor for StrategicExecutor {
                         }
                     })?;
                     Ok(output.into_bytes())
-                }
+                },
                 Err(e) => Err(TypesError::ToolExecutionError {
                     tool_id: tool_id.to_string(),
                     details: format!("Failed to generate report: {e}"),
@@ -369,7 +361,7 @@ impl ToolExecutor for StrategicExecutor {
                         }
                     })?;
                     Ok(output.into_bytes())
-                }
+                },
                 Err(e) => Err(TypesError::ToolExecutionError {
                     tool_id: tool_id.to_string(),
                     details: format!("Replan reflection failed: {e}"),
@@ -400,10 +392,7 @@ impl ToolExecutor for StrategicExecutor {
             let generator = sisyphus_roadmap::milestone_generator::MilestoneGenerator::new(
                 self.llm_client.clone(),
             );
-            match generator
-                .generate_milestones(&manager, &project_id, &description)
-                .await
-            {
+            match generator.generate_milestones(&manager, &project_id, &description).await {
                 Ok(milestones) => {
                     let output = serde_json::to_string_pretty(&milestones).map_err(|e| {
                         TypesError::ToolExecutionError {
@@ -412,7 +401,7 @@ impl ToolExecutor for StrategicExecutor {
                         }
                     })?;
                     Ok(output.into_bytes())
-                }
+                },
                 Err(e) => Err(TypesError::ToolExecutionError {
                     tool_id: tool_id.to_string(),
                     details: format!("Auto-plan failed: {e}"),
@@ -485,7 +474,7 @@ impl ToolExecutor for StrategicExecutor {
                         }
                     })?;
                     Ok(output.into_bytes())
-                }
+                },
                 Err(e) => Err(TypesError::ToolExecutionError {
                     tool_id: tool_id.to_string(),
                     details: format!("Reflection failed: {e}"),

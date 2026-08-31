@@ -21,11 +21,8 @@ impl TeamOrchestrator {
         let mut summary_parts: Vec<String> = Vec::new();
         for result in results {
             let status = if result.success { "✓" } else { "✗" };
-            let output_str = result
-                .output
-                .as_ref()
-                .map(std::string::ToString::to_string)
-                .unwrap_or_default();
+            let output_str =
+                result.output.as_ref().map(std::string::ToString::to_string).unwrap_or_default();
             let snippet = if output_str.len() > 200 {
                 format!("{}...", &output_str[..200])
             } else {
@@ -111,10 +108,7 @@ impl TeamOrchestrator {
         let user_prompt = format!(
             "Goal: {}\n{}",
             goal.objective,
-            goal.context
-                .as_ref()
-                .map(|c| format!("Context: {c}"))
-                .unwrap_or_default(),
+            goal.context.as_ref().map(|c| format!("Context: {c}")).unwrap_or_default(),
         );
 
         let response = llm

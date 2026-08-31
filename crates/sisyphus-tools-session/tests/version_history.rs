@@ -157,14 +157,13 @@ fn push_does_not_deduplicate() {
 fn version_metadata_is_copied() {
     // Sessions with metadata should preserve it in the snapshot.
     let mut session = mk_session("s1", vec![]);
-    session
-        .metadata
-        .insert("project_id".into(), "proj-1".into());
-    session
-        .metadata
-        .insert("priority".into(), "high".into());
+    session.metadata.insert("project_id".into(), "proj-1".into());
+    session.metadata.insert("priority".into(), "high".into());
     let v = VersionHistory::snapshot(&session, None);
-    assert_eq!(v.metadata.get("project_id").map(|s| s.as_str()), Some("proj-1"));
+    assert_eq!(
+        v.metadata.get("project_id").map(|s| s.as_str()),
+        Some("proj-1")
+    );
     assert_eq!(v.metadata.get("priority").map(|s| s.as_str()), Some("high"));
 }
 

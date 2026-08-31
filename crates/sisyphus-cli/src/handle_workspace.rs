@@ -30,7 +30,7 @@ pub async fn handle_workspace(sub: &WorkspaceCommands, bridge_addr: &str) -> Res
                 eprintln!("❌ Failed to create workspace: {}", response.error);
                 std::process::exit(1);
             }
-        }
+        },
         WorkspaceCommands::Switch { workspace_id } => {
             let request = SwitchWorkspaceRequest {
                 workspace_id: workspace_id.clone(),
@@ -42,7 +42,7 @@ pub async fn handle_workspace(sub: &WorkspaceCommands, bridge_addr: &str) -> Res
                 eprintln!("❌ Failed to switch workspace: {}", response.error);
                 std::process::exit(1);
             }
-        }
+        },
         WorkspaceCommands::List => {
             let request = ListWorkspacesRequest {};
             let response = client.list_workspaces(request).await?.into_inner();
@@ -58,7 +58,7 @@ pub async fn handle_workspace(sub: &WorkspaceCommands, bridge_addr: &str) -> Res
                     );
                 }
             }
-        }
+        },
         WorkspaceCommands::Current => {
             let request = GetCurrentWorkspaceRequest {};
             let response = client.get_current_workspace(request).await?.into_inner();
@@ -73,7 +73,7 @@ pub async fn handle_workspace(sub: &WorkspaceCommands, bridge_addr: &str) -> Res
             } else {
                 println!("No active workspace. Use 'sisyphus workspace create' to create one.");
             }
-        }
+        },
         WorkspaceCommands::Delete { workspace_id, yes } => {
             if !yes {
                 print!("Delete workspace \"{}\"? [y/N] ", workspace_id);
@@ -96,7 +96,7 @@ pub async fn handle_workspace(sub: &WorkspaceCommands, bridge_addr: &str) -> Res
                 eprintln!("❌ Failed to delete workspace: {}", response.error);
                 std::process::exit(1);
             }
-        }
+        },
     }
 
     Ok(())

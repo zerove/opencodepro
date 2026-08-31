@@ -74,9 +74,7 @@ fn test_topological_adjust_fuel() {
         node_name: "node1".into(),
         delta: 50,
     }];
-    let new_graph = evolver
-        .apply_ops(&graph, &ops, exec)
-        .expect("Should adjust fuel");
+    let new_graph = evolver.apply_ops(&graph, &ops, exec).expect("Should adjust fuel");
 
     let n1_idx = new_graph
         .graph
@@ -84,10 +82,7 @@ fn test_topological_adjust_fuel() {
         .find(|&i| new_graph.graph.node_weight(i).unwrap().name() == "node1")
         .unwrap();
     let n1 = new_graph.graph.node_weight(n1_idx).unwrap();
-    let wasm_n1 = n1
-        .as_any()
-        .downcast_ref::<WasmSOPNode>()
-        .expect("Should be WasmSOPNode");
+    let wasm_n1 = n1.as_any().downcast_ref::<WasmSOPNode>().expect("Should be WasmSOPNode");
     assert_eq!(wasm_n1.fuel_limit, 150);
 }
 
@@ -99,9 +94,7 @@ fn test_topological_add_retry() {
         node_name: "node1".into(),
         max_retries: 5,
     }];
-    let new_graph = evolver
-        .apply_ops(&graph, &ops, exec)
-        .expect("Should add retry");
+    let new_graph = evolver.apply_ops(&graph, &ops, exec).expect("Should add retry");
 
     let n1_idx = new_graph
         .graph
@@ -123,9 +116,7 @@ fn test_topological_insert_node() {
         new_name: "node_mid".into(),
         tool_id: "t_mid".into(),
     }];
-    let new_graph = evolver
-        .apply_ops(&graph, &ops, exec)
-        .expect("Should insert node");
+    let new_graph = evolver.apply_ops(&graph, &ops, exec).expect("Should insert node");
 
     assert_eq!(new_graph.graph.node_count(), 3);
     let n1_idx = new_graph
@@ -156,9 +147,7 @@ fn test_topological_remove_node() {
     let ops = vec![EvolutionOp::RemoveNode {
         node_name: "node1".into(),
     }];
-    let new_graph = evolver
-        .apply_ops(&graph, &ops, exec)
-        .expect("Should remove node");
+    let new_graph = evolver.apply_ops(&graph, &ops, exec).expect("Should remove node");
 
     assert_eq!(new_graph.graph.node_count(), 1);
     assert!(new_graph
@@ -175,9 +164,7 @@ fn test_topological_swap_nodes() {
         node_a: "node1".into(),
         node_b: "node2".into(),
     }];
-    let new_graph = evolver
-        .apply_ops(&graph, &ops, exec)
-        .expect("Should swap nodes");
+    let new_graph = evolver.apply_ops(&graph, &ops, exec).expect("Should swap nodes");
 
     let n1_idx = new_graph
         .graph
@@ -322,10 +309,8 @@ async fn test_llm_evolver_integration() {
         predicted_stability: 0.9,
     };
 
-    let new_graph = evolver
-        .evolve(Arc::new(graph), &report, &prediction, None)
-        .await
-        .expect("Should evolve");
+    let new_graph =
+        evolver.evolve(Arc::new(graph), &report, &prediction, None).await.expect("Should evolve");
 
     let n1_idx = new_graph
         .graph
@@ -333,10 +318,7 @@ async fn test_llm_evolver_integration() {
         .find(|&i| new_graph.graph.node_weight(i).unwrap().name() == "node1")
         .unwrap();
     let n1 = new_graph.graph.node_weight(n1_idx).unwrap();
-    let wasm_n1 = n1
-        .as_any()
-        .downcast_ref::<WasmSOPNode>()
-        .expect("Should be WasmSOPNode");
+    let wasm_n1 = n1.as_any().downcast_ref::<WasmSOPNode>().expect("Should be WasmSOPNode");
     assert_eq!(wasm_n1.fuel_limit, 200);
 
     let n2_retry_idx = new_graph
@@ -344,10 +326,5 @@ async fn test_llm_evolver_integration() {
         .node_indices()
         .find(|&i| new_graph.graph.node_weight(i).unwrap().name() == "node2_retry")
         .unwrap();
-    assert!(new_graph
-        .graph
-        .node_weight(n2_retry_idx)
-        .unwrap()
-        .name()
-        .contains("retry"));
+    assert!(new_graph.graph.node_weight(n2_retry_idx).unwrap().name().contains("retry"));
 }

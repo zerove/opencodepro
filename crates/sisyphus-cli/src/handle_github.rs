@@ -19,7 +19,7 @@ pub(crate) fn handle_github(sub: &GithubCommands) -> Result<()> {
                 "release" => sisyphus_cli::tools::WorkflowKind::Release,
                 other => {
                     anyhow::bail!("Unknown workflow kind: {other}. Use: ci, pr-review, release")
-                }
+                },
             };
             let opts = sisyphus_cli::tools::GenerateOptions {
                 rust_toolchain: toolchain.clone(),
@@ -34,11 +34,11 @@ pub(crate) fn handle_github(sub: &GithubCommands) -> Result<()> {
                     std::fs::write(p, content)?;
                     println!("Workflow written to {}", p.display());
                     p.clone()
-                }
+                },
                 None => sisyphus_cli::tools::write_workflow(wk, &opts)?,
             };
             println!("Generated {} workflow at {}", wk.as_str(), path.display());
-        }
+        },
         GithubCommands::CiConfig => {
             let cfg = sisyphus_cli::tools::CiConfig::from_env();
             println!("CI mode: {}", cfg.ci_mode);
@@ -51,7 +51,7 @@ pub(crate) fn handle_github(sub: &GithubCommands) -> Result<()> {
                 Some(n) => println!("PR number: {n}"),
                 None => println!("PR number: not set"),
             }
-        }
+        },
     }
     Ok(())
 }

@@ -78,11 +78,7 @@ impl InternalizationManager {
             req.prompt, req.context, req.correction
         );
 
-        let response = self
-            .llm_client
-            .generate(&prompt)
-            .await
-            .map_err(|e| e.to_string())?;
+        let response = self.llm_client.generate(&prompt).await.map_err(|e| e.to_string())?;
 
         Ok(response.trim().to_string())
     }

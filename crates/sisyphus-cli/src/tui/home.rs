@@ -41,11 +41,11 @@ pub fn handle_home_key(key: KeyEvent, app: &mut App) {
                 app.slash_completion_open = false;
                 app.slash_completion_sel = 0;
                 return;
-            }
+            },
             KeyCode::Up => {
                 app.slash_completion_sel = app.slash_completion_sel.saturating_sub(1);
                 return;
-            }
+            },
             KeyCode::Down => {
                 let completions = filter_slash_commands(&app.home_input);
                 if !completions.is_empty() {
@@ -53,7 +53,7 @@ pub fn handle_home_key(key: KeyEvent, app: &mut App) {
                         (app.slash_completion_sel + 1).min(completions.len() - 1);
                 }
                 return;
-            }
+            },
             KeyCode::Tab | KeyCode::Enter => {
                 let completions = filter_slash_commands(&app.home_input);
                 if let Some((cmd, _, _)) = completions.get(app.slash_completion_sel) {
@@ -66,12 +66,12 @@ pub fn handle_home_key(key: KeyEvent, app: &mut App) {
                     return;
                 }
                 // 继续执行到 Enter 处理
-            }
+            },
             _ => {
                 // 其他按键关闭补全，然后正常处理
                 app.slash_completion_open = false;
                 app.slash_completion_sel = 0;
-            }
+            },
         }
     }
 
@@ -126,16 +126,16 @@ pub fn handle_home_key(key: KeyEvent, app: &mut App) {
                     app.view = View::Session;
                     app.home_input.clear();
                     app.home_cursor = 0;
-                }
+                },
                 Err(e) => {
                     app.add_log(LogEntry::Error(format!("Failed to create session: {e}")));
-                }
+                },
             }
-        }
+        },
         KeyCode::Esc => {
             app.home_input.clear();
             app.home_cursor = 0;
-        }
+        },
         KeyCode::Backspace => {
             if app.home_cursor > 0 {
                 let mut chars: Vec<char> = app.home_input.chars().collect();
@@ -146,21 +146,21 @@ pub fn handle_home_key(key: KeyEvent, app: &mut App) {
                     app.home_cursor = app.home_cursor.saturating_sub(1);
                 }
             }
-        }
+        },
         KeyCode::Delete => {
             let mut chars: Vec<char> = app.home_input.chars().collect();
             if app.home_cursor < chars.len() {
                 chars.remove(app.home_cursor);
                 app.home_input = chars.into_iter().collect();
             }
-        }
+        },
         KeyCode::Left => {
             app.home_cursor = app.home_cursor.saturating_sub(1);
-        }
+        },
         KeyCode::Right => {
             let char_count = app.home_input.chars().count();
             app.home_cursor = (app.home_cursor + 1).min(char_count);
-        }
+        },
         KeyCode::Home => app.home_cursor = 0,
         KeyCode::End => app.home_cursor = app.home_input.chars().count(),
         KeyCode::Char('\x16') => {
@@ -176,7 +176,7 @@ pub fn handle_home_key(key: KeyEvent, app: &mut App) {
                 app.home_input.insert_str(byte_pos, &pasted);
                 app.home_cursor += pasted.chars().count();
             }
-        }
+        },
         KeyCode::Char(c) => {
             let byte_pos = app
                 .home_input
@@ -191,8 +191,8 @@ pub fn handle_home_key(key: KeyEvent, app: &mut App) {
                 app.slash_completion_open = true;
                 app.slash_completion_sel = 0;
             }
-        }
-        _ => {}
+        },
+        _ => {},
     }
 }
 
@@ -200,7 +200,7 @@ fn execute_home_command(cmd: &str, app: &mut App) {
     match cmd {
         "/help" | ":help" => {
             app.dialog = Some(Dialog::Help);
-        }
+        },
         "/exit" | ":q" => {
             if app.exit_requested {
                 app.exit_immediately = true;
@@ -208,21 +208,21 @@ fn execute_home_command(cmd: &str, app: &mut App) {
                 app.exit_requested = true;
                 app.add_log(LogEntry::Warn("Type /exit again to confirm".into()));
             }
-        }
+        },
         "/clear" => {
             app.log.clear();
             app.scroll = 0;
-        }
+        },
         "/theme" => {
             app.theme_mode = match app.theme_mode {
                 super::theme::ThemeMode::Dark => super::theme::ThemeMode::Light,
                 super::theme::ThemeMode::Light => super::theme::ThemeMode::Dark,
             };
             app.add_log(LogEntry::Info(format!("Theme: {:?}", app.theme_mode)));
-        }
+        },
         _ => {
             app.add_log(LogEntry::Warn(format!("Unknown command: {cmd}")));
-        }
+        },
     }
 }
 
@@ -253,9 +253,7 @@ pub fn render_home(frame: &mut ratatui::Frame, area: Rect, app: &App) {
         .map(|l| {
             Line::from(Span::styled(
                 *l,
-                Style::default()
-                    .fg(theme.primary)
-                    .add_modifier(Modifier::BOLD),
+                Style::default().fg(theme.primary).add_modifier(Modifier::BOLD),
             ))
         })
         .collect();
@@ -277,20 +275,18 @@ pub fn render_home(frame: &mut ratatui::Frame, area: Rect, app: &App) {
         Style::default().fg(theme.fg)
     };
 
-    let input_block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(if app.home_input.is_empty() {
+    let input_block = Block::default().borders(Borders::ALL).border_style(Style::default().fg(
+        if app.home_input.is_empty() {
             theme.border
         } else {
             theme.primary
-        }));
+        },
+    ));
 
     let input_para = Paragraph::new(Line::from(vec![
         Span::styled(
             "\u{276f} ",
-            Style::default()
-                .fg(theme.primary)
-                .add_modifier(Modifier::BOLD),
+            Style::default().fg(theme.primary).add_modifier(Modifier::BOLD),
         ),
         Span::styled(display_text, input_style),
     ]))
@@ -331,9 +327,7 @@ pub fn render_home(frame: &mut ratatui::Frame, area: Rect, app: &App) {
                 .enumerate()
                 .map(|(i, (cmd, _, _))| {
                     let style = if i == app.slash_completion_sel {
-                        Style::default()
-                            .fg(theme.primary)
-                            .add_modifier(Modifier::BOLD)
+                        Style::default().fg(theme.primary).add_modifier(Modifier::BOLD)
                     } else {
                         Style::default().fg(theme.fg)
                     };

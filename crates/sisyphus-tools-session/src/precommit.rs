@@ -360,10 +360,7 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let result = install_precommit(dir.path(), &PrecommitConfig::default());
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("Not a git repository"));
+        assert!(result.unwrap_err().to_string().contains("Not a git repository"));
     }
 
     #[test]
@@ -396,10 +393,7 @@ mod tests {
 
         let result = uninstall_precommit(dir.path());
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("No pre-commit hook found"));
+        assert!(result.unwrap_err().to_string().contains("No pre-commit hook found"));
     }
 
     #[test]

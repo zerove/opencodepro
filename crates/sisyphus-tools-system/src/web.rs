@@ -53,10 +53,8 @@ pub async fn webfetch(url: &str) -> ToolResult<FetchResult> {
         .unwrap_or("unknown")
         .to_string();
 
-    let bytes = resp
-        .bytes()
-        .await
-        .map_err(|e| ToolError::WebError(format!("read body failed: {e}")))?;
+    let bytes =
+        resp.bytes().await.map_err(|e| ToolError::WebError(format!("read body failed: {e}")))?;
 
     if content_type.contains("text/html") {
         let html_str = String::from_utf8_lossy(&bytes);
@@ -102,10 +100,8 @@ pub async fn websearch(query: &str, num_results: usize) -> ToolResult<Vec<Search
         .await
         .map_err(|e| ToolError::WebError(format!("search request failed: {e}")))?;
 
-    let html = resp
-        .text()
-        .await
-        .map_err(|e| ToolError::WebError(format!("read response failed: {e}")))?;
+    let html =
+        resp.text().await.map_err(|e| ToolError::WebError(format!("read response failed: {e}")))?;
 
     let titles: Vec<(&str, &str)> = re_result
         .captures_iter(&html)
@@ -116,10 +112,8 @@ pub async fn websearch(query: &str, num_results: usize) -> ToolResult<Vec<Search
         })
         .collect();
 
-    let snippets: Vec<&str> = re_snippet
-        .captures_iter(&html)
-        .map(|c| c.get(1).map_or("", |m| m.as_str()))
-        .collect();
+    let snippets: Vec<&str> =
+        re_snippet.captures_iter(&html).map(|c| c.get(1).map_or("", |m| m.as_str())).collect();
 
     let strip = |s: &str| -> String {
         let s = re_tag.replace_all(s, "");
@@ -188,7 +182,7 @@ fn html_to_text(html: &str) -> String {
                     "br" | "/br" if !last_was_newline => {
                         result.push('\n');
                         last_was_newline = true;
-                    }
+                    },
                     tag if matches!(
                         tag,
                         "p" | "/p"
@@ -219,7 +213,7 @@ fn html_to_text(html: &str) -> String {
                     {
                         result.push('\n');
                         last_was_newline = true;
-                    }
+                    },
                     _ => {
                         if tag_name.starts_with('/')
                             && !last_was_newline
@@ -228,7 +222,7 @@ fn html_to_text(html: &str) -> String {
                         {
                             result.push(' ');
                         }
-                    }
+                    },
                 }
                 continue;
             }
@@ -267,12 +261,7 @@ fn html_to_text(html: &str) -> String {
         last_was_newline = false;
     }
 
-    result
-        .lines()
-        .map(str::trim)
-        .filter(|l| !l.is_empty())
-        .collect::<Vec<_>>()
-        .join("\n")
+    result.lines().map(str::trim).filter(|l| !l.is_empty()).collect::<Vec<_>>().join("\n")
 }
 
 #[cfg(test)]
@@ -458,10 +447,10 @@ mod tests {
             Ok(results) => {
                 assert!(!results.is_empty(), "should return at least one result");
                 assert!(results.len() <= 3, "at most num_results items");
-            }
+            },
             Err(e) => {
                 eprintln!("websearch skipped (network unavailable): {e}");
-            }
+            },
         }
     }
 
@@ -475,10 +464,10 @@ mod tests {
                     "content should contain 'Example'"
                 );
                 assert_eq!(result.content_type, "text/html");
-            }
+            },
             Err(e) => {
                 eprintln!("webfetch skipped (network unavailable): {e}");
-            }
+            },
         }
     }
 }

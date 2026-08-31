@@ -110,7 +110,7 @@ fn classify_risk_thresholds() {
     //   score 0.61  → Critical
     assert_eq!(p.classify_risk(0.0), RiskLevel::Low);
     assert_eq!(p.classify_risk(0.19), RiskLevel::Low);
-    assert_eq!(p.classify_risk(0.21), RiskLevel::Medium);  // 0.2 would round to 0.19999... due to f64
+    assert_eq!(p.classify_risk(0.21), RiskLevel::Medium); // 0.2 would round to 0.19999... due to f64
     assert_eq!(p.classify_risk(0.39), RiskLevel::Medium);
     assert_eq!(p.classify_risk(0.41), RiskLevel::High);
     assert_eq!(p.classify_risk(0.59), RiskLevel::High);
@@ -155,7 +155,10 @@ fn adjust_probability_blends_60_40_with_history() {
     let adj = p.adjust_probability_with_experience("p1", base);
     // 0.5 * 0.6 + (2/3) * 0.4 = 0.3 + 0.2667 = 0.5667
     let expected = 0.5 * 0.6 + (2.0 / 3.0) * 0.4;
-    assert!((adj - expected).abs() < 1e-6, "got {adj}, expected {expected}");
+    assert!(
+        (adj - expected).abs() < 1e-6,
+        "got {adj}, expected {expected}"
+    );
 }
 
 #[test]
@@ -203,7 +206,10 @@ fn rank_paths_orders_by_composite_score_desc() {
 #[test]
 fn rank_paths_preserves_input_ids() {
     let p = ProbabilisticPlanner::new(PlannerConfig::default());
-    let paths = vec![sim("alpha", 0.5, 100, 0.5, ""), sim("beta", 0.6, 100, 0.5, "")];
+    let paths = vec![
+        sim("alpha", 0.5, 100, 0.5, ""),
+        sim("beta", 0.6, 100, 0.5, ""),
+    ];
     let ranked = p.rank_paths(&paths);
     let ids: Vec<&str> = ranked.iter().map(|r| r.path_id.as_str()).collect();
     assert!(ids.contains(&"alpha"));
@@ -1051,16 +1057,14 @@ fn rank_paths_with_unicode_path_ids_preserves_results() {
         risk_thresholds: RiskThresholds::default(),
     };
     let p = ProbabilisticPlanner::new(cfg);
-    let results = vec![
-        SimulationResult {
-            path_id: "中文-α".into(),
-            success_probability: 0.7,
-            estimated_cost: 100,
-            predicted_stability: 0.7,
-            predicted_effort: 0,
-            predicted_outcome: "ok".into(),
-        },
-    ];
+    let results = vec![SimulationResult {
+        path_id: "中文-α".into(),
+        success_probability: 0.7,
+        estimated_cost: 100,
+        predicted_stability: 0.7,
+        predicted_effort: 0,
+        predicted_outcome: "ok".into(),
+    }];
     let ranked = p.rank_paths(&results);
     assert_eq!(ranked.len(), 1);
     assert_eq!(ranked[0].path_id, "中文-α");
@@ -1469,10 +1473,8 @@ fn risk_level_with_serde_via_lowercase() {
     let s_high = serde_json::to_string(&RiskLevel::High).unwrap();
     let s_crit = serde_json::to_string(&RiskLevel::Critical).unwrap();
     // All should be distinct strings
-    let set: std::collections::HashSet<_> = [&s_low, &s_med, &s_high, &s_crit]
-        .iter()
-        .map(|s| s.as_str())
-        .collect();
+    let set: std::collections::HashSet<_> =
+        [&s_low, &s_med, &s_high, &s_crit].iter().map(|s| s.as_str()).collect();
     assert_eq!(set.len(), 4);
 }
 

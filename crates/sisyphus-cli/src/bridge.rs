@@ -1,5 +1,5 @@
-use metrics::counter;
 use anyhow::{Context, Result};
+use metrics::counter;
 use std::collections::HashMap;
 use tonic::transport::Endpoint;
 
@@ -80,33 +80,21 @@ impl BridgeClient {
             sop_id: sop_id.to_string(),
             args: HashMap::new(),
         }))?;
-        let response = self
-            .inner
-            .execute_sop(request)
-            .await
-            .context("ExecuteSOP RPC failed")?;
+        let response = self.inner.execute_sop(request).await.context("ExecuteSOP RPC failed")?;
         Ok(response.into_inner().result)
     }
 
     /// 检查桥接是否健康。
     pub async fn health_check(&mut self) -> Result<HealthCheckResponse> {
         let request = self.with_auth(tonic::Request::new(HealthCheckRequest {}))?;
-        let response = self
-            .inner
-            .health_check(request)
-            .await
-            .context("HealthCheck RPC failed")?;
+        let response = self.inner.health_check(request).await.context("HealthCheck RPC failed")?;
         Ok(response.into_inner())
     }
 
     /// 列出可用的 SOP。
     pub async fn list_sops(&mut self) -> Result<Vec<SopInfo>> {
         let request = self.with_auth(tonic::Request::new(ListSoPsRequest {}))?;
-        let response = self
-            .inner
-            .list_so_ps(request)
-            .await
-            .context("ListSOPs RPC failed")?;
+        let response = self.inner.list_so_ps(request).await.context("ListSOPs RPC failed")?;
         Ok(response.into_inner().sops)
     }
 
@@ -134,11 +122,8 @@ impl BridgeClient {
         let request = self.with_auth(tonic::Request::new(ListBenchmarksRequest {
             name_filter: String::new(),
         }))?;
-        let response = self
-            .inner
-            .list_benchmarks(request)
-            .await
-            .context("ListBenchmarks RPC failed")?;
+        let response =
+            self.inner.list_benchmarks(request).await.context("ListBenchmarks RPC failed")?;
         Ok(response.into_inner().benchmarks)
     }
 
@@ -161,33 +146,21 @@ impl BridgeClient {
     /// 列出可用代理。
     pub async fn list_agents(&mut self) -> Result<Vec<AgentMetadata>> {
         let request = self.with_auth(tonic::Request::new(ListAgentsRequest {}))?;
-        let response = self
-            .inner
-            .list_agents(request)
-            .await
-            .context("ListAgents RPC failed")?;
+        let response = self.inner.list_agents(request).await.context("ListAgents RPC failed")?;
         Ok(response.into_inner().agents)
     }
 
     /// 列出可用工具。
     pub async fn list_tools(&mut self) -> Result<Vec<ToolMetadata>> {
         let request = self.with_auth(tonic::Request::new(ListToolsRequest {}))?;
-        let response = self
-            .inner
-            .list_tools(request)
-            .await
-            .context("ListTools RPC failed")?;
+        let response = self.inner.list_tools(request).await.context("ListTools RPC failed")?;
         Ok(response.into_inner().tools)
     }
 
     /// 列出已安装技能。
     pub async fn list_skills(&mut self) -> Result<Vec<SkillMetadata>> {
         let request = self.with_auth(tonic::Request::new(ListSkillsRequest { remote: true }))?;
-        let response = self
-            .inner
-            .list_skills(request)
-            .await
-            .context("ListSkills RPC failed")?;
+        let response = self.inner.list_skills(request).await.context("ListSkills RPC failed")?;
         Ok(response.into_inner().skills)
     }
 
@@ -203,11 +176,8 @@ impl BridgeClient {
             objective: objective.to_string(),
             context: context.to_string(),
         }))?;
-        let response = self
-            .inner
-            .decompose_goal(request)
-            .await
-            .context("DecomposeGoal RPC failed")?;
+        let response =
+            self.inner.decompose_goal(request).await.context("DecomposeGoal RPC failed")?;
         let inner = response.into_inner();
         if !inner.error.is_empty() {
             anyhow::bail!("DecomposeGoal failed: {}", inner.error);
@@ -234,11 +204,7 @@ impl BridgeClient {
     /// 列出桥接上注册的插件。
     pub async fn list_plugins(&mut self) -> Result<Vec<PluginDescriptor>> {
         let request = self.with_auth(tonic::Request::new(ListPluginsRequest {}))?;
-        let response = self
-            .inner
-            .list_plugins(request)
-            .await
-            .context("ListPlugins RPC failed")?;
+        let response = self.inner.list_plugins(request).await.context("ListPlugins RPC failed")?;
         Ok(response.into_inner().plugins)
     }
 
@@ -258,11 +224,7 @@ impl BridgeClient {
             tool_id: tool_id.to_string(),
             fuel_limit,
         }))?;
-        let response = self
-            .inner
-            .load_plugin(request)
-            .await
-            .context("LoadPlugin RPC failed")?;
+        let response = self.inner.load_plugin(request).await.context("LoadPlugin RPC failed")?;
         Ok(response.into_inner())
     }
 
@@ -280,11 +242,7 @@ impl BridgeClient {
             content: content.to_string(),
             session_db_path: session_db_path.to_string(),
         }))?;
-        let response = self
-            .inner
-            .add_message(request)
-            .await
-            .context("AddMessage RPC failed")?;
+        let response = self.inner.add_message(request).await.context("AddMessage RPC failed")?;
         Ok(response.into_inner())
     }
 
@@ -294,11 +252,8 @@ impl BridgeClient {
         let request = self.with_auth(tonic::Request::new(UnloadPluginRequest {
             name: name.to_string(),
         }))?;
-        let response = self
-            .inner
-            .unload_plugin(request)
-            .await
-            .context("UnloadPlugin RPC failed")?;
+        let response =
+            self.inner.unload_plugin(request).await.context("UnloadPlugin RPC failed")?;
         Ok(response.into_inner())
     }
 
@@ -323,17 +278,17 @@ impl BridgeClient {
                             session_id: s.session_id,
                             errors: vec![],
                         }
-                    }
+                    },
                     Some(sisyphus_bridge_api::bridge_event::Event::TodoUpdate(_)) => {
                         crate::tui::background::BgOp::TodoUpdated
-                    }
+                    },
                     Some(sisyphus_bridge_api::bridge_event::Event::OpUpdate(o)) => {
                         crate::tui::background::BgOp::OpUpdate {
                             op_id: o.op_id,
                             status: o.status,
                             result: o.result,
                         }
-                    }
+                    },
                     Some(sisyphus_bridge_api::bridge_event::Event::LogUpdate(l)) => {
                         let level = match l.level.as_str() {
                             "ERROR" => crate::tui::app::LogEntry::Error(l.message),
@@ -344,7 +299,7 @@ impl BridgeClient {
                         crate::tui::background::BgOp::BridgeCmd {
                             entries: vec![level],
                         }
-                    }
+                    },
                     None => continue,
                 };
                 if tx.send(bg_op).await.is_err() {

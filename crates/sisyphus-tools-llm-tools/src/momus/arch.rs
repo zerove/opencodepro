@@ -123,9 +123,7 @@ pub async fn review_architecture(client: &dyn LlmClient, arch_text: &str) -> Mom
     }
 
     // 2. Semantic review (LLM)
-    let llm_result = client
-        .chat(ARCH_REVIEW_SYSTEM_PROMPT, arch_text, true)
-        .await;
+    let llm_result = client.chat(ARCH_REVIEW_SYSTEM_PROMPT, arch_text, true).await;
 
     let (llm_passed, llm_summary, llm_comments) = match llm_result {
         Ok(response) => match serde_json::from_str::<LlmReviewResponse>(&response) {
@@ -148,7 +146,7 @@ pub async fn review_architecture(client: &dyn LlmClient, arch_text: &str) -> Mom
                     "Semantic review skipped due to parsing error.".to_string(),
                     vec![],
                 )
-            }
+            },
         },
         Err(e) => {
             comments.push(ReviewComment {
@@ -164,7 +162,7 @@ pub async fn review_architecture(client: &dyn LlmClient, arch_text: &str) -> Mom
                 "Semantic review skipped due to LLM error.".to_string(),
                 vec![],
             )
-        }
+        },
     };
 
     comments.extend(llm_comments);

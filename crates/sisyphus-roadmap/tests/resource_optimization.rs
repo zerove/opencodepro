@@ -21,10 +21,7 @@ async fn create_test_manager() -> (Arc<RoadmapManager>, String) {
             .await
             .expect("Failed to create in-memory sql store"),
     );
-    sql_store
-        .init_schema()
-        .await
-        .expect("Failed to init schema");
+    sql_store.init_schema().await.expect("Failed to init schema");
     let proposal_manager = Arc::new(ProposalManager::new(store.clone()));
 
     let manager = Arc::new(RoadmapManager::new(store, sql_store, proposal_manager));
@@ -160,10 +157,7 @@ async fn test_project_costs_with_history() {
     let (ms1_id, _ms2_id) = setup_milestones_with_goals(&manager, &project_id).await;
 
     // 记录一些历史执行结果
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_secs();
+    let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
     for (goal_id, duration, cost) in [("g1", 100.0, 5.0), ("g2", 120.0, 6.0), ("g3", 80.0, 4.0)] {
         let outcome = ExecutionOutcome {
             goal_id: goal_id.to_string(),
@@ -229,10 +223,7 @@ async fn test_find_bottlenecks_with_failures() {
     let (manager, project_id) = create_test_manager().await;
     let (ms1_id, _ms2_id) = setup_milestones_with_goals(&manager, &project_id).await;
 
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_secs();
+    let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
 
     // g1: 3 次失败（使用不同 goal_id 记录失败，因为 record_outcome 只保留最新）
     // 但我们可以通过多次调用 record_outcome 来覆盖，但最终只保留最后一个
@@ -289,10 +280,7 @@ async fn test_suggest_parallel_execution() {
     let (manager, project_id) = create_test_manager().await;
     let (ms1_id, _ms2_id) = setup_milestones_with_goals(&manager, &project_id).await;
 
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_secs();
+    let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
 
     // 在同一个里程碑中成功完成多个目标（需要至少 4 个 outcomes 才会产生建议）
     for (goal_id, duration) in [("g1", 30.0), ("g2", 60.0), ("g3", 90.0), ("g4", 45.0)] {
@@ -325,10 +313,7 @@ async fn test_suggest_parallel_execution() {
             .unwrap();
     }
 
-    let suggestions = manager
-        .suggest_parallel_execution(&project_id)
-        .await
-        .unwrap();
+    let suggestions = manager.suggest_parallel_execution(&project_id).await.unwrap();
 
     // ms1 有 4 个成功目标 -> 应该有并行化建议
     assert!(suggestions.iter().any(|s| s.goal_ids.len() >= 2));
@@ -345,10 +330,7 @@ async fn test_estimate_goal_resources_with_history() {
     let (manager, project_id) = create_test_manager().await;
     let (ms1_id, _ms2_id) = setup_milestones_with_goals(&manager, &project_id).await;
 
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_secs();
+    let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
 
     // record_outcome 只保留每个 goal 的最新结果
     // 所以我们需要创建多个 goal 来测试

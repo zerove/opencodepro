@@ -90,7 +90,7 @@ impl ProviderKind {
     pub fn default_endpoint(&self) -> Option<&'static str> {
         match self {
             ProviderKind::OpenAi => Some("https://api.openai.com/v1/chat/completions"),
-            ProviderKind::Google => None, // 自定义协议
+            ProviderKind::Google => None,    // 自定义协议
             ProviderKind::Anthropic => None, // 自定义协议
             ProviderKind::Groq => Some("https://api.groq.com/openai/v1/chat/completions"),
             ProviderKind::Cohere => None, // 自定义协议
@@ -184,12 +184,30 @@ mod tests {
 
     #[test]
     fn kind_aliases_resolve() {
-        assert_eq!("open-ai".parse::<ProviderKind>().unwrap(), ProviderKind::OpenAi);
-        assert_eq!("claude".parse::<ProviderKind>().unwrap(), ProviderKind::Anthropic);
-        assert_eq!("gemini".parse::<ProviderKind>().unwrap(), ProviderKind::Google);
-        assert_eq!("together-ai".parse::<ProviderKind>().unwrap(), ProviderKind::Together);
-        assert_eq!("openrouter".parse::<ProviderKind>().unwrap(), ProviderKind::OpenRouter);
-        assert_eq!("open-router".parse::<ProviderKind>().unwrap(), ProviderKind::OpenRouter);
+        assert_eq!(
+            "open-ai".parse::<ProviderKind>().unwrap(),
+            ProviderKind::OpenAi
+        );
+        assert_eq!(
+            "claude".parse::<ProviderKind>().unwrap(),
+            ProviderKind::Anthropic
+        );
+        assert_eq!(
+            "gemini".parse::<ProviderKind>().unwrap(),
+            ProviderKind::Google
+        );
+        assert_eq!(
+            "together-ai".parse::<ProviderKind>().unwrap(),
+            ProviderKind::Together
+        );
+        assert_eq!(
+            "openrouter".parse::<ProviderKind>().unwrap(),
+            ProviderKind::OpenRouter
+        );
+        assert_eq!(
+            "open-router".parse::<ProviderKind>().unwrap(),
+            ProviderKind::OpenRouter
+        );
         assert!("unknown-provider".parse::<ProviderKind>().is_err());
     }
 

@@ -34,7 +34,7 @@ async fn resolve_via_doh(domain: &str) -> ToolResult<IpAddr> {
             Err(e) => {
                 last_err = e.to_string();
                 continue;
-            }
+            },
         };
 
         match client.get(&url).send().await {
@@ -44,7 +44,7 @@ async fn resolve_via_doh(domain: &str) -> ToolResult<IpAddr> {
                     Err(e) => {
                         last_err = e.to_string();
                         continue;
-                    }
+                    },
                 };
                 if let Some(answer) = json["Answer"].as_array() {
                     for entry in answer {
@@ -58,13 +58,13 @@ async fn resolve_via_doh(domain: &str) -> ToolResult<IpAddr> {
                     }
                 }
                 last_err = "no A record in DoH response".into();
-            }
+            },
             Ok(resp) => {
                 last_err = format!("DoH status {}", resp.status());
-            }
+            },
             Err(e) => {
                 last_err = e.to_string();
-            }
+            },
         }
     }
 
@@ -103,10 +103,7 @@ pub fn extract_host(url: &str) -> ToolResult<&str> {
 
 /// Extract port from a URL string (defaults to 443 for https, 80 for http).
 pub fn extract_port(url: &str) -> u16 {
-    if let Some(rest) = url
-        .strip_prefix("https://")
-        .or_else(|| url.strip_prefix("http://"))
-    {
+    if let Some(rest) = url.strip_prefix("https://").or_else(|| url.strip_prefix("http://")) {
         if let Some(host_part) = rest.split('/').next() {
             if let Some(port_str) = host_part.split(':').nth(1) {
                 if let Ok(port) = port_str.parse::<u16>() {

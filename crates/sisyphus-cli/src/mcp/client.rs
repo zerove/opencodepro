@@ -8,10 +8,7 @@ async fn connect_stdio(command: &str, args: &[String]) -> Result<crate::tools::M
     let transport = crate::tools::StdioTransport::spawn(command, &args_refs)
         .context("Failed to spawn MCP server process")?;
     let mut client = crate::tools::McpClient::new(Box::new(transport));
-    client
-        .initialize("sisyphus-cli", "0.1.0")
-        .await
-        .context("MCP initialize failed")?;
+    client.initialize("sisyphus-cli", "0.1.0").await.context("MCP initialize failed")?;
     Ok(client)
 }
 
@@ -19,10 +16,7 @@ async fn connect_stdio(command: &str, args: &[String]) -> Result<crate::tools::M
 async fn connect_http(url: &str) -> Result<crate::tools::McpClient> {
     let transport = crate::tools::HttpTransport::new(url);
     let mut client = crate::tools::McpClient::new(Box::new(transport));
-    client
-        .initialize("sisyphus-cli", "0.1.0")
-        .await
-        .context("MCP initialize failed")?;
+    client.initialize("sisyphus-cli", "0.1.0").await.context("MCP initialize failed")?;
     Ok(client)
 }
 
@@ -45,13 +39,10 @@ async fn resolve_client(args: &[String]) -> Result<crate::tools::McpClient> {
 pub async fn run_info(connect_args: &[String]) -> Result<()> {
     let mut client = resolve_client(connect_args).await?;
 
-    let info = client
-        .server_info()
-        .cloned()
-        .unwrap_or(crate::tools::ServerInfo {
-            name: "unknown".into(),
-            version: "unknown".into(),
-        });
+    let info = client.server_info().cloned().unwrap_or(crate::tools::ServerInfo {
+        name: "unknown".into(),
+        version: "unknown".into(),
+    });
     println!("Connected to MCP server: {} v{}", info.name, info.version);
 
     let tools = client.list_tools().await?;

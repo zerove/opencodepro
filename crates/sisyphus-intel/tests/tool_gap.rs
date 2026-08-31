@@ -40,7 +40,10 @@ fn tool_gap_clone() {
     };
     let g2 = g.clone();
     assert_eq!(g.gap_id, g2.gap_id);
-    assert_eq!(g.suggested_tool_spec.tool_id, g2.suggested_tool_spec.tool_id);
+    assert_eq!(
+        g.suggested_tool_spec.tool_id,
+        g2.suggested_tool_spec.tool_id
+    );
 }
 
 #[test]

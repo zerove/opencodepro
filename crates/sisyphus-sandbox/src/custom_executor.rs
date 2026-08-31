@@ -137,13 +137,11 @@ impl CustomToolExecutor {
             .ok_or_else(|| SandboxError::MissingExecuteExport(tool_id.to_string()))?;
 
         let wasm_bytes =
-            tokio::fs::read(&def.handler)
-                .await
-                .map_err(|e| SandboxError::IoError {
-                    tool_id: tool_id.to_string(),
-                    path: def.handler.clone(),
-                    source: e,
-                })?;
+            tokio::fs::read(&def.handler).await.map_err(|e| SandboxError::IoError {
+                tool_id: tool_id.to_string(),
+                path: def.handler.clone(),
+                source: e,
+            })?;
 
         let engine = self.engine.clone();
         let module = tokio::task::spawn_blocking(move || Module::new(&engine, &wasm_bytes))
@@ -154,8 +152,7 @@ impl CustomToolExecutor {
                 source: e,
             })?;
 
-        self.module_cache
-            .insert(tool_id.to_string(), module.clone());
+        self.module_cache.insert(tool_id.to_string(), module.clone());
         Ok(module)
     }
 }
@@ -168,13 +165,10 @@ impl CustomToolExecutor {
         args: Vec<u8>,
         fuel_limit: u64,
     ) -> Result<(Vec<u8>, Option<u64>), TypesError> {
-        let def = self
-            .tools
-            .get(tool_id)
-            .ok_or_else(|| TypesError::ToolExecutionError {
-                tool_id: tool_id.to_string(),
-                details: "Custom tool not found".to_string(),
-            })?;
+        let def = self.tools.get(tool_id).ok_or_else(|| TypesError::ToolExecutionError {
+            tool_id: tool_id.to_string(),
+            details: "Custom tool not found".to_string(),
+        })?;
 
         // 1. JSON Schema 校验
         let args_value: Value =
@@ -200,12 +194,10 @@ impl CustomToolExecutor {
 
         let linker = Linker::new(&self.engine);
         let mut store = Store::new(&self.engine, ());
-        store
-            .set_fuel(fuel_limit)
-            .map_err(|e| TypesError::ToolExecutionError {
-                tool_id: tool_id.to_string(),
-                details: format!("Fuel error: {e}"),
-            })?;
+        store.set_fuel(fuel_limit).map_err(|e| TypesError::ToolExecutionError {
+            tool_id: tool_id.to_string(),
+            details: format!("Fuel error: {e}"),
+        })?;
 
         let instance = linker.instantiate(&mut store, &module).map_err(|e| {
             TypesError::ToolExecutionError {
@@ -266,12 +258,12 @@ impl CustomToolExecutor {
 
         // 4. 执行与读取结果
         let mut results = vec![Val::I32(0)];
-        execute_func
-            .call(&mut store, &[Val::I32(arg_ptr as i32)], &mut results)
-            .map_err(|e| TypesError::ToolExecutionError {
+        execute_func.call(&mut store, &[Val::I32(arg_ptr as i32)], &mut results).map_err(|e| {
+            TypesError::ToolExecutionError {
                 tool_id: tool_id.to_string(),
                 details: format!("WASM execution error: {e}"),
-            })?;
+            }
+        })?;
         let fuel_consumed = fuel_limit.saturating_sub(store.get_fuel().unwrap_or(0));
 
         let result_ptr = results[0].unwrap_i32() as usize;

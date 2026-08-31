@@ -4,7 +4,7 @@
 //! - `jaccard_similarity` 多种输入（相同/包含/空/标点）
 //! - `LexicalFallbackReason` Display + Copy + Eq
 
-use sisyphus_mem::experience_bank::{jaccard_similarity, LexicalFallbackReason};
+use sisyphus_mem::experience_bank::{LexicalFallbackReason, jaccard_similarity};
 
 // ---------------------------------------------------------------------------
 // jaccard_similarity
@@ -106,7 +106,10 @@ fn jaccard_duplicate_tokens_counted_once() {
 
 #[test]
 fn fallback_reason_display_embed_failed() {
-    assert_eq!(format!("{}", LexicalFallbackReason::EmbedFailed), "embedding call failed");
+    assert_eq!(
+        format!("{}", LexicalFallbackReason::EmbedFailed),
+        "embedding call failed"
+    );
 }
 
 #[test]

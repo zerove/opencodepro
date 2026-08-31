@@ -300,7 +300,7 @@ mod tests {
         match &back.content[0] {
             ToolContent::Resource { resource } => {
                 assert_eq!(resource.uri, "file:///tmp/x");
-            }
+            },
             _ => panic!("expected Resource variant"),
         }
     }

@@ -406,7 +406,7 @@ mod tests {
                     msg.contains("gh") || msg.contains("Failed to run"),
                     "Expected error about gh CLI, got: {msg}"
                 );
-            }
+            },
         }
     }
 }

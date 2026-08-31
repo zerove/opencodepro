@@ -30,11 +30,11 @@ pub(crate) async fn handle_pr(
                     );
                 }
             }
-        }
+        },
         PrCommands::Checkout { number } => {
             sisyphus_cli::tools::PrManager::checkout_pr(*number)?;
             println!("Checked out PR #{}", number);
-        }
+        },
         PrCommands::Review {
             number,
             post,
@@ -81,16 +81,16 @@ pub(crate) async fn handle_pr(
                         } else {
                             println!("\nReview comment posted: {}", url);
                         }
-                    }
+                    },
                     Err(e) => {
                         eprintln!("Warning: Failed to post PR comment: {}", e);
                         if ci_cfg.ci_mode {
                             eprintln!("(non-fatal in CI mode)");
                         }
-                    }
+                    },
                 }
             }
-        }
+        },
     }
     Ok(())
 }

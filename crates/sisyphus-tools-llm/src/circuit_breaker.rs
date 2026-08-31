@@ -91,11 +91,11 @@ impl CircuitBreaker {
             Ok(result) => {
                 self.on_success(key);
                 Ok(result)
-            }
+            },
             Err(e) => {
                 self.on_failure(key);
                 Err(e.to_string())
-            }
+            },
         }
     }
 
@@ -143,14 +143,10 @@ impl CircuitBreaker {
 
     /// Check state.
     pub fn check_state(&self, key: &str) -> Result<(), String> {
-        let mut breakers = self
-            .breakers
-            .write()
-            .map_err(|e| format!("CircuitBreaker lock poisoned: {e}"))?;
+        let mut breakers =
+            self.breakers.write().map_err(|e| format!("CircuitBreaker lock poisoned: {e}"))?;
 
-        let state = breakers
-            .entry(key.to_string())
-            .or_insert_with(BreakerState::new);
+        let state = breakers.entry(key.to_string()).or_insert_with(BreakerState::new);
 
         match state.state {
             CircuitState::Closed => Ok(()),
@@ -170,7 +166,7 @@ impl CircuitBreaker {
                     "Circuit breaker '{}' is OPEN. Retry after {}s timeout.",
                     key, self.config.timeout_secs
                 ))
-            }
+            },
 
             CircuitState::HalfOpen => {
                 if state.half_open_calls >= self.config.half_open_max_calls {
@@ -181,7 +177,7 @@ impl CircuitBreaker {
                 }
                 state.half_open_calls += 1;
                 Ok(())
-            }
+            },
         }
     }
 
@@ -193,7 +189,7 @@ impl CircuitBreaker {
                     CircuitState::Closed => {
                         // Reset failure count on success in closed state
                         state.failure_count = 0;
-                    }
+                    },
                     CircuitState::HalfOpen => {
                         state.success_count += 1;
                         if state.success_count >= self.config.success_threshold {
@@ -203,11 +199,11 @@ impl CircuitBreaker {
                             state.half_open_calls = 0;
                             tracing::info!(breaker = %key, "Circuit transitioning HalfOpen -> Closed");
                         }
-                    }
+                    },
                     CircuitState::Open => {
                         // Shouldn't happen (call was blocked), but handle gracefully
                         tracing::warn!(breaker = %key, "Unexpected success in Open state");
-                    }
+                    },
                 }
             }
         }
@@ -231,17 +227,17 @@ impl CircuitBreaker {
                                 "Circuit transitioning Closed -> Open"
                             );
                         }
-                    }
+                    },
                     CircuitState::HalfOpen => {
                         // Any failure in half-open → back to open
                         state.state = CircuitState::Open;
                         state.half_open_calls = 0;
                         tracing::warn!(breaker = %key, "Circuit transitioning HalfOpen -> Open (failure)");
-                    }
+                    },
                     CircuitState::Open => {
                         // Just update the last failure time
                         tracing::debug!(breaker = %key, "Failure while Open (extending timeout)");
-                    }
+                    },
                 }
             }
         }

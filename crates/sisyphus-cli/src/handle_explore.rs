@@ -14,10 +14,7 @@ pub fn handle_explore(sub: &ExploreCommands) -> Result<()> {
             context_lines,
             include,
         } => {
-            let root = paths
-                .first()
-                .map(|p| p.as_path())
-                .unwrap_or_else(|| Path::new("."));
+            let root = paths.first().map(|p| p.as_path()).unwrap_or_else(|| Path::new("."));
             let pattern_refs: Vec<&str> = patterns.iter().map(|s| s.as_str()).collect();
             let results = sisyphus_cli::tools::search_patterns(
                 &pattern_refs,
@@ -31,7 +28,7 @@ pub fn handle_explore(sub: &ExploreCommands) -> Result<()> {
             if results.matches.is_empty() {
                 println!("No matches found.");
             }
-        }
+        },
         ExploreCommands::FindFiles {
             pattern,
             root,
@@ -44,7 +41,7 @@ pub fn handle_explore(sub: &ExploreCommands) -> Result<()> {
             if files.is_empty() {
                 println!("No files matched.");
             }
-        }
+        },
     }
     Ok(())
 }

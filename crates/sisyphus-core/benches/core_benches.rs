@@ -104,12 +104,7 @@ fn bench_wasm_execution(c: &mut Criterion) {
 
     // Setup WasmToolExecutor pointing to workspace root tools/
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let tools_path = manifest_dir
-        .parent()
-        .unwrap()
-        .parent()
-        .unwrap()
-        .join("tools");
+    let tools_path = manifest_dir.parent().unwrap().parent().unwrap().join("tools");
     let tool_executor = Arc::new(
         WasmToolExecutor::with_config(Some(tools_path), None)
             .expect("Failed to create WasmToolExecutor"),
@@ -171,9 +166,7 @@ fn bench_mfs_storage(c: &mut Criterion) {
 
         // Reuse a single store for set benchmarks to avoid creating many in-memory DBs
         let store = rt.block_on(async {
-            MfsStore::new("sqlite::memory:", &sisyphus_types::CacheConfig::default())
-                .await
-                .unwrap()
+            MfsStore::new("sqlite::memory:", &sisyphus_types::CacheConfig::default()).await.unwrap()
         });
         let store_arc = Arc::new(store);
 
@@ -204,19 +197,14 @@ fn bench_mfs_storage(c: &mut Criterion) {
             let s = MfsStore::new("sqlite::memory:", &sisyphus_types::CacheConfig::default())
                 .await
                 .unwrap();
-            s.set_state_json("bench_project", &key, payload_val.clone())
-                .await
-                .unwrap();
+            s.set_state_json("bench_project", &key, payload_val.clone()).await.unwrap();
             s
         });
         let store_arc = Arc::new(store);
 
         group.bench_function(format!("get_{}", name), |b| {
             b.to_async(&rt).iter(|| async {
-                store_arc
-                    .get_state_json(black_box("bench_project"), black_box(&key))
-                    .await
-                    .unwrap()
+                store_arc.get_state_json(black_box("bench_project"), black_box(&key)).await.unwrap()
             })
         });
     }

@@ -230,7 +230,11 @@ fn logical_flaw_unicode_description() {
 #[test]
 fn logical_flaw_serde_variants() {
     // All three severities roundtrip via JSON
-    for sev in [FlawSeverity::Critical, FlawSeverity::Warning, FlawSeverity::Info] {
+    for sev in [
+        FlawSeverity::Critical,
+        FlawSeverity::Warning,
+        FlawSeverity::Info,
+    ] {
         let flaw = LogicalFlaw {
             node_name: "n".into(),
             description: "d".into(),

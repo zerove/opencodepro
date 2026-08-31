@@ -52,7 +52,7 @@ async fn jwt_auth_middleware(
                     "code": 500
                 }));
                 return Ok((StatusCode::INTERNAL_SERVER_ERROR, body).into_response());
-            }
+            },
         };
 
         let provided = request
@@ -71,7 +71,7 @@ async fn jwt_auth_middleware(
                         "code": 401
                     }));
                     Ok((StatusCode::UNAUTHORIZED, body).into_response())
-                }
+                },
             },
             None => {
                 let body = axum::Json(serde_json::json!({
@@ -79,7 +79,7 @@ async fn jwt_auth_middleware(
                     "code": 401
                 }));
                 Ok((StatusCode::UNAUTHORIZED, body).into_response())
-            }
+            },
         }
     } else {
         // No JWT config - pass through
@@ -114,7 +114,7 @@ async fn bearer_auth_middleware(
                     "code": 401
                 }));
                 Ok((StatusCode::UNAUTHORIZED, body).into_response())
-            }
+            },
         }
     } else {
         Ok(next.run(request).await)
@@ -284,7 +284,5 @@ pub fn build_router(state: RestApiState) -> Router {
         protected_routes.merge(public_routes)
     };
 
-    router
-        .nest_service("/dashboard", ServeDir::new("static/dashboard"))
-        .with_state(state)
+    router.nest_service("/dashboard", ServeDir::new("static/dashboard")).with_state(state)
 }

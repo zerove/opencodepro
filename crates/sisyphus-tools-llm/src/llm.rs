@@ -36,9 +36,7 @@ impl EmbeddingClient for DummyEmbeddingClient {
         text.hash(&mut hasher);
         let seed = hasher.finish();
 
-        let vector = (0..128)
-            .map(|i| ((seed as f64 + i as f64).sin()) as f32)
-            .collect();
+        let vector = (0..128).map(|i| ((seed as f64 + i as f64).sin()) as f32).collect();
         Ok(vector)
     }
 }
@@ -83,10 +81,7 @@ mod tests {
             cost: f64,
             dur: f64,
         ) -> Result<(), sisyphus_types::TypesError> {
-            self.recorded_costs
-                .lock()
-                .unwrap()
-                .push((p.to_string(), cost, dur));
+            self.recorded_costs.lock().unwrap().push((p.to_string(), cost, dur));
             Ok(())
         }
     }
@@ -447,10 +442,7 @@ mod tests {
 
         let result = client.chat("sys", "user", false).await;
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("Budget exceeded (Strict Mode)"));
+        assert!(result.unwrap_err().to_string().contains("Budget exceeded (Strict Mode)"));
     }
 
     #[tokio::test]

@@ -90,7 +90,7 @@ fn run_loop(
             Err(e) => {
                 app.add_log(LogEntry::Warn(format!("event::poll failed (IME?): {e}")));
                 false
-            }
+            },
         };
         if poll_ok {
             let event = match crossterm::event::read() {
@@ -98,15 +98,15 @@ fn run_loop(
                 Err(e) => {
                     app.add_log(LogEntry::Warn(format!("event::read failed (IME?): {e}")));
                     continue;
-                }
+                },
             };
             event_received = true;
             match handle_event(event, app, perms) {
                 Ok(true) => break,
-                Ok(false) => {}
+                Ok(false) => {},
                 Err(e) => {
                     app.add_log(LogEntry::Error(format!("handle_event error: {e}")));
-                }
+                },
             }
         }
 

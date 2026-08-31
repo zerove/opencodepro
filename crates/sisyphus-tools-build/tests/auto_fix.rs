@@ -387,7 +387,8 @@ fn suggest_fix_e0716_temporary_borrowed() {
 #[test]
 fn analyze_and_suggest_with_unicode_error() {
     let output = "error[E0308]: 类型不匹配\n  --> src/main.rs:1:1\n";
-    let fixes = sisyphus_tools_build::auto_fix::AutoFixer::analyze_and_suggest(output, "src/main.rs");
+    let fixes =
+        sisyphus_tools_build::auto_fix::AutoFixer::analyze_and_suggest(output, "src/main.rs");
     let _ = fixes;
 }
 
@@ -401,6 +402,7 @@ fn analyze_and_suggest_handles_very_long_output() {
 #[test]
 fn analyze_and_suggest_handles_carriage_return() {
     let output = "error[E0308]: bad\r\n  --> src/main.rs:1:1\r\n";
-    let fixes = sisyphus_tools_build::auto_fix::AutoFixer::analyze_and_suggest(output, "src/main.rs");
+    let fixes =
+        sisyphus_tools_build::auto_fix::AutoFixer::analyze_and_suggest(output, "src/main.rs");
     let _ = fixes;
 }

@@ -110,10 +110,13 @@ fn node_kind_wasm_carries_tool_id() {
         fuel_limit: 1000,
     };
     match kind {
-        NodeKind::Wasm { tool_id, fuel_limit } => {
+        NodeKind::Wasm {
+            tool_id,
+            fuel_limit,
+        } => {
             assert_eq!(tool_id, "tool-1");
             assert_eq!(fuel_limit, 1000);
-        }
+        },
         _ => panic!("expected Wasm"),
     }
 }
@@ -149,7 +152,7 @@ fn node_kind_branch_with_branches() {
         } => {
             assert_eq!(branches.len(), 2);
             assert_eq!(default_next, 3);
-        }
+        },
         _ => panic!("expected Branch"),
     }
 }
@@ -239,10 +242,10 @@ fn into_cognitive_plan_maps_wasm_to_tool_call() {
     match &plan.steps[0].action {
         CognitiveAction::ToolCall { tool_id, .. } => {
             assert_eq!(tool_id, "wasm_tool");
-        }
+        },
         CognitiveAction::FileEdit { .. } | CognitiveAction::ShellExecute { .. } => {
             panic!("expected ToolCall")
-        }
+        },
     }
 }
 
@@ -265,10 +268,10 @@ fn into_cognitive_plan_maps_retry_to_retry_wrapper() {
     match &plan.steps[0].action {
         CognitiveAction::ToolCall { tool_id, .. } => {
             assert_eq!(tool_id, "retry_wrapper");
-        }
+        },
         CognitiveAction::FileEdit { .. } | CognitiveAction::ShellExecute { .. } => {
             panic!("expected ToolCall")
-        }
+        },
     }
 }
 
@@ -288,10 +291,10 @@ fn into_cognitive_plan_maps_branch_to_branch_logic() {
     match &plan.steps[0].action {
         CognitiveAction::ToolCall { tool_id, .. } => {
             assert_eq!(tool_id, "branch_logic");
-        }
+        },
         CognitiveAction::FileEdit { .. } | CognitiveAction::ShellExecute { .. } => {
             panic!("expected ToolCall")
-        }
+        },
     }
 }
 
@@ -311,10 +314,10 @@ fn into_cognitive_plan_maps_visual_to_internal_handler() {
     match &plan.steps[0].action {
         CognitiveAction::ToolCall { tool_id, .. } => {
             assert_eq!(tool_id, "internal_handler");
-        }
+        },
         CognitiveAction::FileEdit { .. } | CognitiveAction::ShellExecute { .. } => {
             panic!("expected ToolCall")
-        }
+        },
     }
 }
 

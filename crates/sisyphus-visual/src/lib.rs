@@ -6,8 +6,8 @@
 
 pub use crate::helpers::{base64_encode, is_png, simulated_visual_state, PNG_MAGIC};
 
-use metrics::counter;
 use async_trait::async_trait;
+use metrics::counter;
 use serde::{Deserialize, Serialize};
 use sisyphus_tools_llm::LlmClient;
 use sisyphus_types::graph::NodeKind;
@@ -95,9 +95,7 @@ pub struct HttpVlmProvider {
 
 impl std::fmt::Debug for HttpVlmProvider {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("HttpVlmProvider")
-            .field("config", &self.config)
-            .finish_non_exhaustive()
+        f.debug_struct("HttpVlmProvider").field("config", &self.config).finish_non_exhaustive()
     }
 }
 
@@ -173,10 +171,8 @@ impl VisualPerceptionProvider for HttpVlmProvider {
             )));
         }
 
-        let response_json: serde_json::Value = response
-            .json()
-            .await
-            .map_err(|e| VisualError::HttpError(e.to_string()))?;
+        let response_json: serde_json::Value =
+            response.json().await.map_err(|e| VisualError::HttpError(e.to_string()))?;
 
         // Extract content from OpenAI-style response
         let content = response_json["choices"][0]["message"]["content"]
@@ -200,10 +196,7 @@ impl VisualPerceptionProvider for HttpVlmProvider {
         }
         let base64_image = base64_encode(image_data);
 
-        let embeddings_endpoint = self
-            .config
-            .endpoint
-            .replace("/chat/completions", "/embeddings");
+        let embeddings_endpoint = self.config.endpoint.replace("/chat/completions", "/embeddings");
 
         let request_body = serde_json::json!({
             "model": self.config.model,
@@ -229,19 +222,15 @@ impl VisualPerceptionProvider for HttpVlmProvider {
             )));
         }
 
-        let response_json: serde_json::Value = response
-            .json()
-            .await
-            .map_err(|e| VisualError::HttpError(e.to_string()))?;
+        let response_json: serde_json::Value =
+            response.json().await.map_err(|e| VisualError::HttpError(e.to_string()))?;
 
         let embedding = response_json["data"][0]["embedding"]
             .as_array()
             .ok_or_else(|| VisualError::ProviderError("No embedding array in response".into()))?;
 
-        let vector: Vec<f32> = embedding
-            .iter()
-            .filter_map(|v| v.as_f64().map(|f| f as f32))
-            .collect();
+        let vector: Vec<f32> =
+            embedding.iter().filter_map(|v| v.as_f64().map(|f| f as f32)).collect();
 
         if vector.is_empty() {
             return Err(VisualError::ProviderError("Empty embedding vector".into()));
@@ -324,7 +313,7 @@ impl VisualPerceptionManager {
                 let result = self.provider.analyze_image(image_data, prompt).await?;
                 Ok(serde_json::to_string(&result)
                     .map_err(|e| VisualError::ProcessingError(e.to_string()))?)
-            }
+            },
             NodeKind::VisualAction {
                 action_type,
                 target_selector,
@@ -337,7 +326,7 @@ impl VisualPerceptionManager {
                 let result = self.provider.analyze_image(image_data, &prompt).await?;
                 Ok(serde_json::to_string(&result)
                     .map_err(|e| VisualError::ProcessingError(e.to_string()))?)
-            }
+            },
             _ => Err(VisualError::InvalidRequest(
                 "Node is not a visual node".into(),
             )),
@@ -447,10 +436,7 @@ mod tests {
     async fn test_mock_provider_analyze() {
         let llm = Arc::new(DummyLlmClient);
         let provider = Arc::new(SisyphusVisualProvider::new(llm));
-        let result = provider
-            .analyze_image(b"test image", "describe this")
-            .await
-            .unwrap();
+        let result = provider.analyze_image(b"test image", "describe this").await.unwrap();
         assert!(result.description.contains("Simulated"));
         assert_eq!(result.confidence, 0.9);
     }
@@ -503,10 +489,7 @@ mod tests {
         // Non-PNG placeholder bytes must short-circuit without any HTTP call.
         let embedding = provider.get_embedding(&[0u8; 64]).await.unwrap();
         assert_eq!(embedding.len(), 512);
-        let analysis = provider
-            .analyze_image(&[0u8; 64], "describe")
-            .await
-            .unwrap();
+        let analysis = provider.analyze_image(&[0u8; 64], "describe").await.unwrap();
         assert!(analysis.description.contains("Simulated"));
     }
 

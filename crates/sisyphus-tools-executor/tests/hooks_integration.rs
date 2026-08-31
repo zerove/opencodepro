@@ -144,10 +144,7 @@ Instructions body
 
     let loader = SkillLoader::new().with_dir(dir.path().to_path_buf());
     let skills = loader.load_all();
-    let skill = skills
-        .iter()
-        .find(|s| s.name == "test-skill")
-        .expect("Skill should be loaded");
+    let skill = skills.iter().find(|s| s.name == "test-skill").expect("Skill should be loaded");
 
     // Convert skill triggers to hooks
     let hooks = hooks_from_skill(&skill.name, &skill.triggers, &skill.instructions);
@@ -163,8 +160,5 @@ Instructions body
         result.is_err(),
         "Tool should be blocked by skill-defined hook"
     );
-    assert!(result
-        .unwrap_err()
-        .to_string()
-        .contains("Blocked by skill integration"));
+    assert!(result.unwrap_err().to_string().contains("Blocked by skill integration"));
 }

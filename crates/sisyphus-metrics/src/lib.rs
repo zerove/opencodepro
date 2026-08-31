@@ -18,11 +18,8 @@ pub fn init_metrics(prometheus_port: u16) -> Result<(), MetricsError> {
         .map_err(|_| MetricsError::PrometheusInstallFailed)?;
 
     // Initialize tracing with JSON formatting
-    let fmt_layer = fmt::layer()
-        .json()
-        .with_target(true)
-        .with_thread_ids(true)
-        .with_thread_names(true);
+    let fmt_layer =
+        fmt::layer().json().with_target(true).with_thread_ids(true).with_thread_names(true);
 
     let env_filter =
         EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info,sisyphus=debug"));

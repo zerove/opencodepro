@@ -123,7 +123,7 @@ pub async fn dispatch(
         } => handle_file::handle_grep(pattern, path, include.as_deref())?,
         Commands::Exec { command, dir } => {
             handle_exec::handle_exec(command, dir, cli_perms).await?
-        }
+        },
         Commands::Search { query, num } => handle_exec::handle_search(query, *num).await?,
         Commands::ApplyPatch { file, input } => handle_exec::handle_apply_patch(file, input)?,
 
@@ -145,7 +145,7 @@ pub async fn dispatch(
         // ── librarian ───────────────────────────────────
         Commands::Librarian(sub) => {
             handle_librarian::handle_librarian(sub, llm_client.clone()).await?
-        }
+        },
 
         // ── momus ────────────────────────────────────────
         Commands::Momus(sub) => handle_momus::handle_momus(sub, &llm_client).await?,
@@ -217,7 +217,7 @@ pub async fn dispatch(
         Commands::Plugin(sub) => handle_plugin::handle_plugin(sub, bridge_addr).await?,
         Commands::LearningInsights { strategy } => {
             handle_remote::handle_learning_insights(bridge_addr, strategy).await?
-        }
+        },
         Commands::Health => handle_remote::handle_health(bridge_addr).await?,
         Commands::Status => handle_remote::handle_status(bridge_addr).await?,
         Commands::Remote(sub) => handle_remote::handle_remote(sub, bridge_addr).await?,

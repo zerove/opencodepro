@@ -14,10 +14,7 @@ pub struct WorkUnit {
 
 impl std::fmt::Debug for WorkUnit {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("WorkUnit")
-            .field("id", &self.id)
-            .field("name", &self.name)
-            .finish()
+        f.debug_struct("WorkUnit").field("id", &self.id).field("name", &self.name).finish()
     }
 }
 

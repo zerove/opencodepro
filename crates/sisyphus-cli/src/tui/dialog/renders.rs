@@ -35,9 +35,7 @@ pub(super) fn render_workspace_list_dialog(frame: &mut ratatui::Frame, area: Rec
         .enumerate()
         .map(|(i, ws)| {
             let style = if i == app.workspace_sel {
-                Style::default()
-                    .fg(theme.secondary)
-                    .add_modifier(Modifier::REVERSED)
+                Style::default().fg(theme.secondary).add_modifier(Modifier::REVERSED)
             } else {
                 Style::default().fg(theme.fg)
             };
@@ -52,11 +50,9 @@ pub(super) fn render_workspace_list_dialog(frame: &mut ratatui::Frame, area: Rec
         })
         .collect();
 
-    let list = List::new(items).block(block).highlight_style(
-        Style::default()
-            .fg(theme.secondary)
-            .add_modifier(Modifier::REVERSED),
-    );
+    let list = List::new(items)
+        .block(block)
+        .highlight_style(Style::default().fg(theme.secondary).add_modifier(Modifier::REVERSED));
     frame.render_stateful_widget(
         list,
         area,
@@ -70,9 +66,7 @@ pub(super) fn render_help_dialog(frame: &mut ratatui::Frame, area: Rect, app: &A
     let lines = vec![
         Line::from(Span::styled(
             "  Navigation",
-            Style::default()
-                .fg(theme.primary)
-                .add_modifier(Modifier::BOLD),
+            Style::default().fg(theme.primary).add_modifier(Modifier::BOLD),
         )),
         Line::from(vec![
             Span::styled("  Ctrl+K     ", Style::default().fg(theme.secondary)),
@@ -105,9 +99,7 @@ pub(super) fn render_help_dialog(frame: &mut ratatui::Frame, area: Rect, app: &A
         Line::from(Span::raw("")),
         Line::from(Span::styled(
             "  Session Input",
-            Style::default()
-                .fg(theme.primary)
-                .add_modifier(Modifier::BOLD),
+            Style::default().fg(theme.primary).add_modifier(Modifier::BOLD),
         )),
         Line::from(vec![
             Span::styled("  Enter      ", Style::default().fg(theme.secondary)),
@@ -156,9 +148,7 @@ pub(super) fn render_help_dialog(frame: &mut ratatui::Frame, area: Rect, app: &A
         Line::from(Span::raw("")),
         Line::from(Span::styled(
             "  Slash Commands (in input)",
-            Style::default()
-                .fg(theme.primary)
-                .add_modifier(Modifier::BOLD),
+            Style::default().fg(theme.primary).add_modifier(Modifier::BOLD),
         )),
         Line::from(vec![
             Span::styled("  /help      ", Style::default().fg(theme.secondary)),
@@ -187,9 +177,7 @@ pub(super) fn render_help_dialog(frame: &mut ratatui::Frame, area: Rect, app: &A
         Line::from(Span::raw("")),
         Line::from(Span::styled(
             "  Session History",
-            Style::default()
-                .fg(theme.primary)
-                .add_modifier(Modifier::BOLD),
+            Style::default().fg(theme.primary).add_modifier(Modifier::BOLD),
         )),
         Line::from(vec![
             Span::styled("  ↑ ↓       ", Style::default().fg(theme.secondary)),
@@ -226,9 +214,7 @@ pub(super) fn render_help_dialog(frame: &mut ratatui::Frame, area: Rect, app: &A
         Line::from(Span::raw("")),
         Line::from(Span::styled(
             "  Session List",
-            Style::default()
-                .fg(theme.primary)
-                .add_modifier(Modifier::BOLD),
+            Style::default().fg(theme.primary).add_modifier(Modifier::BOLD),
         )),
         Line::from(vec![
             Span::styled("  r          ", Style::default().fg(theme.secondary)),
@@ -272,9 +258,7 @@ pub(super) fn render_help_dialog(frame: &mut ratatui::Frame, area: Rect, app: &A
         .title_bottom(title_bottom)
         .border_style(Style::default().fg(theme.primary));
 
-    let para = Paragraph::new(Text::from(lines))
-        .block(block)
-        .scroll((scroll as u16, 0));
+    let para = Paragraph::new(Text::from(lines)).block(block).scroll((scroll as u16, 0));
     frame.render_widget(para, area);
 }
 
@@ -334,12 +318,12 @@ pub(super) fn render_todos_dialog(frame: &mut ratatui::Frame, area: Rect, app: &
                 crate::tools::TodoStatus::Cancelled => "[✗]",
             };
             let style = match item.status {
-                crate::tools::TodoStatus::Completed => Style::default()
-                    .fg(theme.success)
-                    .add_modifier(Modifier::DIM),
+                crate::tools::TodoStatus::Completed => {
+                    Style::default().fg(theme.success).add_modifier(Modifier::DIM)
+                },
                 crate::tools::TodoStatus::Cancelled => {
                     Style::default().fg(theme.error).add_modifier(Modifier::DIM)
-                }
+                },
                 crate::tools::TodoStatus::InProgress => Style::default().fg(theme.primary),
                 crate::tools::TodoStatus::Pending => Style::default().fg(theme.fg),
             };
@@ -350,11 +334,9 @@ pub(super) fn render_todos_dialog(frame: &mut ratatui::Frame, area: Rect, app: &
         })
         .collect();
 
-    let list = List::new(items).block(block).highlight_style(
-        Style::default()
-            .fg(theme.secondary)
-            .add_modifier(Modifier::REVERSED),
-    );
+    let list = List::new(items)
+        .block(block)
+        .highlight_style(Style::default().fg(theme.secondary).add_modifier(Modifier::REVERSED));
     frame.render_stateful_widget(
         list,
         area,
@@ -370,10 +352,7 @@ pub(super) fn render_lsp_dialog(frame: &mut ratatui::Frame, area: Rect, app: &Ap
         app.lsp_diagnostics.iter().collect()
     } else {
         let q = app.dialog_query.to_lowercase();
-        app.lsp_diagnostics
-            .iter()
-            .filter(|d| d.message.to_lowercase().contains(&q))
-            .collect()
+        app.lsp_diagnostics.iter().filter(|d| d.message.to_lowercase().contains(&q)).collect()
     };
 
     let block = Block::default()
@@ -392,10 +371,7 @@ pub(super) fn render_lsp_dialog(frame: &mut ratatui::Frame, area: Rect, app: &Ap
     let items: Vec<ListItem> = filtered
         .iter()
         .map(|d| {
-            let sev = d
-                .severity
-                .map(crate::tools::lsp::severity_name)
-                .unwrap_or("?");
+            let sev = d.severity.map(crate::tools::lsp::severity_name).unwrap_or("?");
             let style = match sev {
                 "error" => Style::default().fg(theme.error),
                 "warning" => Style::default().fg(theme.warning),
@@ -425,10 +401,7 @@ pub(super) fn render_sop_dialog(frame: &mut ratatui::Frame, area: Rect, app: &Ap
         app.sop_sops.iter().collect()
     } else {
         let q = app.sop_query.to_lowercase();
-        app.sop_sops
-            .iter()
-            .filter(|s| s.sop_id.to_lowercase().contains(&q))
-            .collect()
+        app.sop_sops.iter().filter(|s| s.sop_id.to_lowercase().contains(&q)).collect()
     };
 
     let items: Vec<ListItem> = if filtered.is_empty() {
@@ -473,9 +446,7 @@ pub(super) fn render_roadmap_dialog(frame: &mut ratatui::Frame, area: Rect, app:
     let roadmap_lines = if let Some(p) = &app.roadmap_projection {
         let mut lines = vec![Line::from(Span::styled(
             "── Current Progress ──",
-            Style::default()
-                .fg(theme.primary)
-                .add_modifier(Modifier::BOLD),
+            Style::default().fg(theme.primary).add_modifier(Modifier::BOLD),
         ))];
         lines.push(Line::from(Span::raw("")));
         lines.push(Line::from(Span::styled(p, Style::default().fg(theme.fg))));
@@ -506,9 +477,7 @@ pub(super) fn render_roadmap_dialog(frame: &mut ratatui::Frame, area: Rect, app:
     let proposal_lines = if let Some(b) = &app.roadmap_bottlenecks {
         let mut lines = vec![Line::from(Span::styled(
             "── Pending Strategic Proposals ──",
-            Style::default()
-                .fg(theme.warning)
-                .add_modifier(Modifier::BOLD),
+            Style::default().fg(theme.warning).add_modifier(Modifier::BOLD),
         ))];
         lines.push(Line::from(Span::raw("")));
         lines.push(Line::from(Span::styled(b, Style::default().fg(theme.fg))));
@@ -596,9 +565,7 @@ pub(super) fn render_skill_market_dialog(frame: &mut ratatui::Frame, area: Rect,
         .map(|(i, s)| {
             let is_sel = i == app.skill_market_sel;
             let style = if is_sel {
-                Style::default()
-                    .fg(theme.secondary)
-                    .add_modifier(Modifier::REVERSED)
+                Style::default().fg(theme.secondary).add_modifier(Modifier::REVERSED)
             } else {
                 Style::default().fg(theme.fg)
             };
@@ -616,9 +583,7 @@ pub(super) fn render_skill_market_dialog(frame: &mut ratatui::Frame, area: Rect,
         })
         .collect();
 
-    let avail_block = Block::default()
-        .borders(Borders::NONE)
-        .title(" Available Skills ");
+    let avail_block = Block::default().borders(Borders::NONE).title(" Available Skills ");
     let avail_list = List::new(available_items).block(avail_block);
     frame.render_stateful_widget(
         avail_list,
@@ -644,9 +609,7 @@ pub(super) fn render_skill_market_dialog(frame: &mut ratatui::Frame, area: Rect,
         .map(|(i, s)| {
             let is_sel = (i + installed_offset) == app.skill_market_sel;
             let style = if is_sel {
-                Style::default()
-                    .fg(theme.secondary)
-                    .add_modifier(Modifier::REVERSED)
+                Style::default().fg(theme.secondary).add_modifier(Modifier::REVERSED)
             } else {
                 Style::default().fg(theme.fg)
             };
@@ -664,9 +627,7 @@ pub(super) fn render_skill_market_dialog(frame: &mut ratatui::Frame, area: Rect,
         })
         .collect();
 
-    let inst_block = Block::default()
-        .borders(Borders::NONE)
-        .title(" Installed Skills ");
+    let inst_block = Block::default().borders(Borders::NONE).title(" Installed Skills ");
     let inst_list = List::new(installed_items).block(inst_block);
     frame.render_stateful_widget(
         inst_list,
@@ -701,9 +662,7 @@ pub(super) fn render_rename_dialog(frame: &mut ratatui::Frame, area: Rect, app: 
         Style::default().fg(theme.fg),
     )))
     .block(
-        Block::default()
-            .borders(Borders::ALL)
-            .border_style(Style::default().fg(theme.secondary)),
+        Block::default().borders(Borders::ALL).border_style(Style::default().fg(theme.secondary)),
     );
     let hint = Paragraph::new(Line::from(Span::styled(
         " Enter to confirm | Esc to cancel ",
@@ -727,9 +686,7 @@ pub(super) fn render_dev_dialog(frame: &mut ratatui::Frame, area: Rect, app: &Ap
 
     let focus_style = |focused: bool| {
         if focused {
-            Style::default()
-                .fg(theme.secondary)
-                .add_modifier(Modifier::REVERSED)
+            Style::default().fg(theme.secondary).add_modifier(Modifier::REVERSED)
         } else {
             Style::default().fg(theme.fg)
         }
@@ -751,9 +708,7 @@ pub(super) fn render_dev_dialog(frame: &mut ratatui::Frame, area: Rect, app: &Ap
             })
             .collect();
 
-        let para = Paragraph::new(Text::from(lines))
-            .block(block)
-            .wrap(Wrap { trim: false });
+        let para = Paragraph::new(Text::from(lines)).block(block).wrap(Wrap { trim: false });
         frame.render_widget(para, area);
         return;
     }
@@ -826,9 +781,7 @@ pub(super) fn render_dev_dialog(frame: &mut ratatui::Frame, area: Rect, app: &Ap
 
     // 运行按钮
     let run_style = if app.dev_focus == DevFocus::Run {
-        Style::default()
-            .fg(theme.secondary)
-            .add_modifier(Modifier::REVERSED)
+        Style::default().fg(theme.secondary).add_modifier(Modifier::REVERSED)
     } else {
         Style::default().fg(theme.success)
     };
@@ -913,27 +866,19 @@ pub(super) fn render_cognitive_trace_dialog(frame: &mut ratatui::Frame, area: Re
     .header(Row::new(vec![
         Span::styled(
             "Time",
-            Style::default()
-                .fg(theme.secondary)
-                .add_modifier(Modifier::BOLD),
+            Style::default().fg(theme.secondary).add_modifier(Modifier::BOLD),
         ),
         Span::styled(
             "SOP",
-            Style::default()
-                .fg(theme.secondary)
-                .add_modifier(Modifier::BOLD),
+            Style::default().fg(theme.secondary).add_modifier(Modifier::BOLD),
         ),
         Span::styled(
             "Event",
-            Style::default()
-                .fg(theme.secondary)
-                .add_modifier(Modifier::BOLD),
+            Style::default().fg(theme.secondary).add_modifier(Modifier::BOLD),
         ),
         Span::styled(
             "Summary",
-            Style::default()
-                .fg(theme.secondary)
-                .add_modifier(Modifier::BOLD),
+            Style::default().fg(theme.secondary).add_modifier(Modifier::BOLD),
         ),
     ]))
     .block(Block::default().borders(Borders::NONE))
@@ -955,9 +900,8 @@ pub(super) fn render_cognitive_trace_dialog(frame: &mut ratatui::Frame, area: Re
             .lines()
             .map(|l| Line::from(Span::styled(l.to_string(), Style::default().fg(theme.fg))))
             .collect();
-        let detail_para = Paragraph::new(Text::from(detail_lines))
-            .block(detail_block)
-            .wrap(Wrap { trim: false });
+        let detail_para =
+            Paragraph::new(Text::from(detail_lines)).block(detail_block).wrap(Wrap { trim: false });
         frame.render_widget(detail_para, detail_area.unwrap_or(area));
     }
 
@@ -1013,7 +957,7 @@ fn cognitive_event_summary(
                 format!("[{step}] {message}{metrics_txt}"),
                 Style::default().fg(theme.secondary),
             )
-        }
+        },
         ExecutionEvent::MicroReflection {
             node_name,
             prediction,
@@ -1043,7 +987,7 @@ fn cognitive_event_summary(
                 ),
                 Style::default().fg(decision_style),
             )
-        }
+        },
         ExecutionEvent::CognitiveComplete { .. } => (
             "DONE".into(),
             "Cognitive loop converged".into(),
@@ -1132,27 +1076,19 @@ pub(super) fn render_trace_dialog(frame: &mut ratatui::Frame, area: Rect, app: &
     .header(Row::new(vec![
         Span::styled(
             "Node",
-            Style::default()
-                .fg(theme.secondary)
-                .add_modifier(Modifier::BOLD),
+            Style::default().fg(theme.secondary).add_modifier(Modifier::BOLD),
         ),
         Span::styled(
             "Status",
-            Style::default()
-                .fg(theme.secondary)
-                .add_modifier(Modifier::BOLD),
+            Style::default().fg(theme.secondary).add_modifier(Modifier::BOLD),
         ),
         Span::styled(
             "Duration",
-            Style::default()
-                .fg(theme.secondary)
-                .add_modifier(Modifier::BOLD),
+            Style::default().fg(theme.secondary).add_modifier(Modifier::BOLD),
         ),
         Span::styled(
             "Fuel",
-            Style::default()
-                .fg(theme.secondary)
-                .add_modifier(Modifier::BOLD),
+            Style::default().fg(theme.secondary).add_modifier(Modifier::BOLD),
         ),
     ]))
     .block(Block::default().borders(Borders::NONE))
@@ -1181,9 +1117,8 @@ pub(super) fn render_trace_dialog(frame: &mut ratatui::Frame, area: Rect, app: &
                 .map(|l| Line::from(Span::styled(l.to_string(), Style::default().fg(theme.fg))))
                 .collect()
         };
-        let detail_para = Paragraph::new(Text::from(detail_lines))
-            .block(detail_block)
-            .wrap(Wrap { trim: false });
+        let detail_para =
+            Paragraph::new(Text::from(detail_lines)).block(detail_block).wrap(Wrap { trim: false });
         frame.render_widget(detail_para, detail_area.unwrap_or(area));
     }
 
@@ -1239,9 +1174,7 @@ pub(super) fn render_cognitive_summary_dialog(frame: &mut ratatui::Frame, area: 
 
     let mut lines: Vec<Line> = vec![Line::from(Span::styled(
         "─ Decisions ─",
-        Style::default()
-            .fg(theme.primary)
-            .add_modifier(Modifier::BOLD),
+        Style::default().fg(theme.primary).add_modifier(Modifier::BOLD),
     ))];
     lines.push(Line::from(Span::raw(format!(
         "Total:  {}",
@@ -1254,9 +1187,7 @@ pub(super) fn render_cognitive_summary_dialog(frame: &mut ratatui::Frame, area: 
     lines.push(Line::from(Span::raw("")));
     lines.push(Line::from(Span::styled(
         "─ Quality (means) ─",
-        Style::default()
-            .fg(theme.primary)
-            .add_modifier(Modifier::BOLD),
+        Style::default().fg(theme.primary).add_modifier(Modifier::BOLD),
     )));
     lines.push(Line::from(vec![
         Span::styled("Deviation:  ", Style::default().fg(theme.muted)),
@@ -1288,9 +1219,7 @@ pub(super) fn render_cognitive_summary_dialog(frame: &mut ratatui::Frame, area: 
     // 右侧：决策分布 + 时间范围 + 健康判定
     let mut right_lines: Vec<Line> = vec![Line::from(Span::styled(
         "─ Reflection decisions ─",
-        Style::default()
-            .fg(theme.primary)
-            .add_modifier(Modifier::BOLD),
+        Style::default().fg(theme.primary).add_modifier(Modifier::BOLD),
     ))];
     let total_refl = summary.reflection_count.max(1);
     let bar_w = 18_usize;
@@ -1317,9 +1246,7 @@ pub(super) fn render_cognitive_summary_dialog(frame: &mut ratatui::Frame, area: 
     right_lines.push(Line::from(Span::raw("")));
     right_lines.push(Line::from(Span::styled(
         "─ Window ─",
-        Style::default()
-            .fg(theme.primary)
-            .add_modifier(Modifier::BOLD),
+        Style::default().fg(theme.primary).add_modifier(Modifier::BOLD),
     )));
     let fmt_ts = |ms: u128| -> String {
         chrono::DateTime::from_timestamp_millis(ms as i64)
@@ -1337,9 +1264,7 @@ pub(super) fn render_cognitive_summary_dialog(frame: &mut ratatui::Frame, area: 
     right_lines.push(Line::from(Span::raw("")));
     right_lines.push(Line::from(Span::styled(
         "─ Health verdict ─",
-        Style::default()
-            .fg(theme.primary)
-            .add_modifier(Modifier::BOLD),
+        Style::default().fg(theme.primary).add_modifier(Modifier::BOLD),
     )));
     let (verdict, vstyle) = if summary.total_decisions == 0 {
         ("NO DATA".to_string(), theme.muted)

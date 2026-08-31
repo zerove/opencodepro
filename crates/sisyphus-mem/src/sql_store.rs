@@ -1,8 +1,8 @@
 //! Structured SQL Store for Sisyphus - SQLite/PostgreSQL with proper relational schema.
 //! Replaces MfsStore's simple KV with structured tables for SOPs, Traces, Experiences, Vector embeddings.
 
-use anyhow::{Context, Result};
 use crate::error::MemError;
+use anyhow::{Context, Result};
 use async_trait::async_trait;
 use lru::LruCache;
 use parking_lot::Mutex;
@@ -98,16 +98,12 @@ impl SqlStore {
         let is_postgres = url.starts_with("postgres://") || url.starts_with("postgresql://");
 
         // Connect to database using AnyPool for SQLite/Postgres compatibility
-        let pool: AnyPool = AnyPool::connect(url)
-            .await
-            .context("Failed to connect to database")?;
+        let pool: AnyPool = AnyPool::connect(url).await.context("Failed to connect to database")?;
 
         // Backend-specific setup
         if is_sqlite {
             if config.wal_mode {
-                sqlx::query("PRAGMA journal_mode=WAL;")
-                    .execute(&pool)
-                    .await?;
+                sqlx::query("PRAGMA journal_mode=WAL;").execute(&pool).await?;
             }
             sqlx::query(&format!(
                 "PRAGMA synchronous={};",
@@ -122,9 +118,7 @@ impl SqlStore {
             .await?;
         } else if is_postgres && config.enable_vectors {
             // Enable pgvector extension
-            sqlx::query("CREATE EXTENSION IF NOT EXISTS vector")
-                .execute(&pool)
-                .await?;
+            sqlx::query("CREATE EXTENSION IF NOT EXISTS vector").execute(&pool).await?;
         }
 
         // Initialize schema
@@ -141,8 +135,9 @@ impl SqlStore {
 
         Ok(Self {
             l1: Arc::new(Mutex::new(LruCache::new(
-                NonZeroUsize::new(config.l1_capacity.max(1))
-                    .ok_or_else(|| MemError::InvalidL1Capacity(format!("got {}", config.l1_capacity)))?,
+                NonZeroUsize::new(config.l1_capacity.max(1)).ok_or_else(|| {
+                    MemError::InvalidL1Capacity(format!("got {}", config.l1_capacity))
+                })?,
             ))),
             pool,
             write_tx: tx,
@@ -584,7 +579,7 @@ impl SqlStore {
                     .bind(now)
                     .execute(&mut *tx)
                     .await?;
-                }
+                },
                 WriteOp::Delete { key } => {
                     let parts: Vec<&str> = key.splitn(2, ':').collect();
                     let (project_id, actual_key) = if parts.len() == 2 {
@@ -597,27 +592,26 @@ impl SqlStore {
                         .bind(actual_key)
                         .execute(&mut *tx)
                         .await?;
-                }
+                },
                 WriteOp::Flush(_) => {
                     return Err(anyhow::anyhow!(
                         "Flush op should not be in batch (internal invariant violation)"
                     ));
-                }
+                },
             }
         }
 
-        tx.commit()
-            .await
-            .context("Failed to commit batch transaction")?;
+        tx.commit().await.context("Failed to commit batch transaction")?;
         Ok(())
     }
 
     /// Forces all buffered writes to be persisted
     pub async fn flush(&self) -> Result<()> {
         let (tx, rx) = tokio::sync::oneshot::channel();
-        self.write_tx
-            .send(WriteOp::Flush(tx))
-            .map_err(|e| MemError::Channel { context: "flush signal", message: format!("{e}") })?;
+        self.write_tx.send(WriteOp::Flush(tx)).map_err(|e| MemError::Channel {
+            context: "flush signal",
+            message: format!("{e}"),
+        })?;
         rx.await.context("Flush worker dropped oneshot receiver")?
     }
 
@@ -647,19 +641,14 @@ impl SqlStore {
 
         let pid = project_id.unwrap_or("default");
         let metadata_str = serde_json::to_string(metadata)?;
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)?
-            .as_secs() as i64;
+        let now =
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_secs() as i64;
 
         if is_pgvector {
             // pgvector text format: '[0.1,0.2,...]' — directly castable to ::vector
             let vector_text = format!(
                 "[{}]",
-                embedding
-                    .iter()
-                    .map(|v| v.to_string())
-                    .collect::<Vec<_>>()
-                    .join(",")
+                embedding.iter().map(|v| v.to_string()).collect::<Vec<_>>().join(",")
             );
 
             // Use PostgreSQL-specific query with vector type
@@ -716,11 +705,9 @@ impl SqlStore {
         // Detect backend and dispatch
         let url = &self.config.database_url;
         if url.starts_with("postgres://") || url.starts_with("postgresql://") {
-            self.search_similar_pgvector(project_id, collection, query_embedding, top_k)
-                .await
+            self.search_similar_pgvector(project_id, collection, query_embedding, top_k).await
         } else {
-            self.search_similar_sqlite(project_id, collection, query_embedding, top_k)
-                .await
+            self.search_similar_sqlite(project_id, collection, query_embedding, top_k).await
         }
     }
 
@@ -741,11 +728,7 @@ impl SqlStore {
         // Build pgvector literal
         let vector_literal = format!(
             "[{}]",
-            query_embedding
-                .iter()
-                .map(|v| v.to_string())
-                .collect::<Vec<_>>()
-                .join(",")
+            query_embedding.iter().map(|v| v.to_string()).collect::<Vec<_>>().join(",")
         );
 
         // Use cosine distance (<->) with pgvector
@@ -903,11 +886,8 @@ impl SqlStore {
             .context("Failed to clear state table")?;
 
         // 3. Restore from snapshot
-        let keys_values: Vec<(String, serde_json::Value)> = snapshot
-            .data
-            .iter()
-            .map(|(k, v)| (k.clone(), v.clone()))
-            .collect();
+        let keys_values: Vec<(String, serde_json::Value)> =
+            snapshot.data.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
 
         let mut tx = self.pool.begin().await?;
         for (key, value) in &keys_values {
@@ -955,9 +935,7 @@ impl SqlStore {
             .into_iter()
             .map(|(k,)| {
                 if let Some(pid) = project_id {
-                    k.strip_prefix(&format!("{}:", pid))
-                        .unwrap_or(&k)
-                        .to_string()
+                    k.strip_prefix(&format!("{}:", pid)).unwrap_or(&k).to_string()
                 } else {
                     k
                 }
@@ -1121,10 +1099,7 @@ impl SqlStore {
             query = query.bind(pid);
         }
 
-        let rows = query
-            .fetch_all(&self.pool)
-            .await
-            .context("Failed to fetch experiences")?;
+        let rows = query.fetch_all(&self.pool).await.context("Failed to fetch experiences")?;
 
         let experiences = rows
             .into_iter()

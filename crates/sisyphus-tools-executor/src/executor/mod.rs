@@ -89,136 +89,130 @@ impl sisyphus_types::ToolExecutor for BuiltinToolExecutor {
                             let v = serde_json::from_slice(&enriched_args)
                                 .map_err(|e| e.to_string())?;
                             util_cmds::cmd_json_query(v).map_err(|e| e.to_string())
-                        }
+                        },
                         "base64_convert" => {
                             let v = serde_json::from_slice(&enriched_args)
                                 .map_err(|e| e.to_string())?;
                             util_cmds::cmd_base64_convert(v).map_err(|e| e.to_string())
-                        }
+                        },
                         "time_convert" => {
                             let v = serde_json::from_slice(&enriched_args)
                                 .map_err(|e| e.to_string())?;
                             util_cmds::cmd_time_convert(v).map_err(|e| e.to_string())
-                        }
+                        },
                         "url_convert" => {
                             let v = serde_json::from_slice(&enriched_args)
                                 .map_err(|e| e.to_string())?;
                             util_cmds::cmd_url_convert(v).map_err(|e| e.to_string())
-                        }
+                        },
                         "path_expand" => {
                             let v = serde_json::from_slice(&enriched_args)
                                 .map_err(|e| e.to_string())?;
                             util_cmds::cmd_path_expand(v).map_err(|e| e.to_string())
-                        }
+                        },
                         "lsp_symbol_search" => {
                             let v = serde_json::from_slice(&enriched_args)
                                 .map_err(|e| e.to_string())?;
                             util_cmds::cmd_lsp_symbol_search(&self_ref, v)
                                 .await
                                 .map_err(|e| e.to_string())
-                        }
+                        },
                         "dependency_graph" => {
                             let v = serde_json::from_slice(&enriched_args)
                                 .map_err(|e| e.to_string())?;
-                            util_cmds::cmd_dependency_graph(v)
-                                .await
-                                .map_err(|e| e.to_string())
-                        }
+                            util_cmds::cmd_dependency_graph(v).await.map_err(|e| e.to_string())
+                        },
                         "doc_sync_check" => {
                             let v = serde_json::from_slice(&enriched_args)
                                 .map_err(|e| e.to_string())?;
                             util_cmds::cmd_doc_sync_check(&client, v)
                                 .await
                                 .map_err(|e| e.to_string())
-                        }
+                        },
                         "coverage_analyze" => {
                             let v = serde_json::from_slice(&enriched_args)
                                 .map_err(|e| e.to_string())?;
-                            util_cmds::cmd_coverage_analyze(v)
-                                .await
-                                .map_err(|e| e.to_string())
-                        }
+                            util_cmds::cmd_coverage_analyze(v).await.map_err(|e| e.to_string())
+                        },
                         "git_blame" => {
                             let v = serde_json::from_slice(&enriched_args)
                                 .map_err(|e| e.to_string())?;
                             util_cmds::cmd_git_blame(v).await.map_err(|e| e.to_string())
-                        }
+                        },
                         "type_check" => {
                             let v = serde_json::from_slice(&enriched_args)
                                 .map_err(|e| e.to_string())?;
-                            util_cmds::cmd_type_check(v)
-                                .await
-                                .map_err(|e| e.to_string())
-                        }
+                            util_cmds::cmd_type_check(v).await.map_err(|e| e.to_string())
+                        },
 
                         // ── feedback commands ─────────────────────────
                         "feedback/save" => {
                             feedback_cmds::cmd_feedback_save(feedback_store.clone(), enriched_args)
                                 .await
-                        }
+                        },
                         "feedback/get" => {
                             feedback_cmds::cmd_feedback_get(feedback_store.clone(), enriched_args)
                                 .await
-                        }
+                        },
                         "feedback/query" => {
                             feedback_cmds::cmd_feedback_query(feedback_store.clone(), enriched_args)
                                 .await
-                        }
+                        },
 
                         // ── librarian commands ─────────────────────────
                         "librarian/research" => {
                             agent_cmds::cmd_librarian_research(enriched_args).await
-                        }
+                        },
                         "librarian/fetch_docs" => {
                             agent_cmds::cmd_librarian_fetch_docs(enriched_args).await
-                        }
+                        },
                         "librarian/examples" => {
                             agent_cmds::cmd_librarian_examples(enriched_args).await
-                        }
+                        },
                         "librarian/synthesise" => {
                             agent_cmds::cmd_librarian_synthesise(client.as_ref(), enriched_args)
                                 .await
-                        }
+                        },
 
                         // ── metis commands ────────────────────────────
                         "metis/analyse" => {
                             agent_cmds::cmd_metis_analyse(client.as_ref(), enriched_args).await
-                        }
+                        },
 
                         // ── momus commands ────────────────────────────
                         "momus/review_plan" => {
                             agent_cmds::cmd_momus_review_plan(client.as_ref(), enriched_args).await
-                        }
+                        },
                         "momus/review_code" => {
                             agent_cmds::cmd_momus_review_code(client.as_ref(), enriched_args).await
-                        }
+                        },
                         "momus/review_code_batch" => {
                             agent_cmds::cmd_momus_review_code_batch(client.as_ref(), enriched_args)
                                 .await
-                        }
+                        },
                         "momus/review_arch" => {
                             agent_cmds::cmd_momus_review_arch(client.as_ref(), enriched_args).await
-                        }
+                        },
 
                         // ── scribe commands ────────────────────────────
                         "scribe/generate_adr" => {
                             agent_cmds::cmd_scribe_generate_adr(client.as_ref(), enriched_args)
                                 .await
-                        }
+                        },
                         "scribe/update_docs" => {
                             agent_cmds::cmd_scribe_update_docs(client.as_ref(), enriched_args).await
-                        }
+                        },
                         "scribe/apply_update" => agent_cmds::cmd_scribe_apply_update(enriched_args),
 
                         // ── security commands ─────────────────────────
                         "security/audit_code" => {
                             agent_cmds::cmd_security_audit_code(client.as_ref(), enriched_args)
                                 .await
-                        }
+                        },
                         "security/threat_model" => {
                             agent_cmds::cmd_security_threat_model(client.as_ref(), enriched_args)
                                 .await
-                        }
+                        },
 
                         other => Err(format!("unknown builtin tool: {other}")),
                     }
@@ -296,10 +290,7 @@ mod tests {
         let ex = make_executor();
         let result = ex.execute("no_such_tool", vec![], 0).await;
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("unknown builtin tool"));
+        assert!(result.unwrap_err().to_string().contains("unknown builtin tool"));
     }
 
     #[tokio::test]
@@ -390,12 +381,8 @@ mod tests {
 
         let args = mkargs(json!({"pattern": "*.rs", "root": dir.path().to_string_lossy()}));
         let result = assert_ok(ex.execute("glob", args, 0).await);
-        let files: Vec<&str> = result["files"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|v| v.as_str().unwrap())
-            .collect();
+        let files: Vec<&str> =
+            result["files"].as_array().unwrap().iter().map(|v| v.as_str().unwrap()).collect();
         assert_eq!(files.len(), 2);
         assert!(files.iter().any(|f| f.ends_with("a.rs")));
         assert!(files.iter().any(|f| f.ends_with("b.rs")));
@@ -435,10 +422,7 @@ mod tests {
         let ex = make_executor();
         let result = ex.execute("librarian/nonexistent", vec![], 0).await;
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("unknown builtin tool"));
+        assert!(result.unwrap_err().to_string().contains("unknown builtin tool"));
 
         let result = ex.execute("metis/nonexistent", vec![], 0).await;
         assert!(result.is_err());

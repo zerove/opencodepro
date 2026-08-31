@@ -132,7 +132,7 @@ fn asset_content_tool_variant() {
 fn asset_content_sop_variant() {
     let c = AssetContent::SOP(SOPGraphConfig::default());
     match c {
-        AssetContent::SOP(_) => {}
+        AssetContent::SOP(_) => {},
         _ => panic!("expected SOP"),
     }
 }
@@ -162,7 +162,7 @@ fn asset_content_constraint_variant() {
         AssetContent::Constraint(c) => {
             assert_eq!(c.description, "d");
             assert_eq!(c.strictness, 0.8);
-        }
+        },
         _ => panic!("expected Constraint"),
     }
 }
@@ -1019,31 +1019,45 @@ fn asset_content_via_debug_each_variant() {
     use sisyphus_types::graph::SOPGraphConfig;
     use sisyphus_types::tools::ToolSpec;
     let variants = vec![
-        ("Tool", AssetContent::Tool(ToolSpec {
-            tool_id: "t".into(),
-            required_capability: "c".into(),
-            expected_input: serde_json::json!({}),
-            expected_output: serde_json::json!({}),
-            success_criteria: "ok".into(),
-            test_command: None,
-            workdir: None,
-        })),
+        (
+            "Tool",
+            AssetContent::Tool(ToolSpec {
+                tool_id: "t".into(),
+                required_capability: "c".into(),
+                expected_input: serde_json::json!({}),
+                expected_output: serde_json::json!({}),
+                success_criteria: "ok".into(),
+                test_command: None,
+                workdir: None,
+            }),
+        ),
         ("SOP", AssetContent::SOP(SOPGraphConfig::default())),
-        ("Insight", AssetContent::Insight(InsightData {
-            observation: "o".into(),
-            reasoning: "r".into(),
-            evidence_ids: vec![],
-            confidence: 0.5,
-        })),
-        ("Constraint", AssetContent::Constraint(ConstraintData {
-            description: "d".into(),
-            strictness: 0.5,
-            violation_penalty: 0.5,
-        })),
+        (
+            "Insight",
+            AssetContent::Insight(InsightData {
+                observation: "o".into(),
+                reasoning: "r".into(),
+                evidence_ids: vec![],
+                confidence: 0.5,
+            }),
+        ),
+        (
+            "Constraint",
+            AssetContent::Constraint(ConstraintData {
+                description: "d".into(),
+                strictness: 0.5,
+                violation_penalty: 0.5,
+            }),
+        ),
     ];
     for (variant_name, content) in variants {
         let dbg = format!("{:?}", content);
-        assert!(dbg.contains(variant_name), "Expected {} in {}", variant_name, dbg);
+        assert!(
+            dbg.contains(variant_name),
+            "Expected {} in {}",
+            variant_name,
+            dbg
+        );
     }
 }
 
@@ -1109,10 +1123,8 @@ fn asset_relation_with_distinct_relation_types() {
             weight: 0.0,
         },
     ];
-    let serialized: Vec<String> = variants
-        .iter()
-        .map(|r| serde_json::to_string(r).unwrap())
-        .collect();
+    let serialized: Vec<String> =
+        variants.iter().map(|r| serde_json::to_string(r).unwrap()).collect();
     // Should differ in relation_type field
     assert_ne!(serialized[0], serialized[1]);
 }
@@ -1363,7 +1375,7 @@ fn cognitive_asset_with_unicode_in_each_field() {
             assert_eq!(i.observation, "obs-δ");
             assert_eq!(i.reasoning, "rea-ε");
             assert_eq!(i.evidence_ids[0], "ev-ζ");
-        }
+        },
         _ => panic!("wrong variant"),
     }
 }
@@ -1435,7 +1447,7 @@ fn cognitive_asset_with_unicode_in_each_string_field() {
             assert_eq!(i.observation, "观察-δ");
             assert_eq!(i.reasoning, "推理-ε");
             assert_eq!(i.evidence_ids[0], "证据-ζ");
-        }
+        },
         _ => panic!("wrong variant"),
     }
 }
@@ -1783,7 +1795,7 @@ fn cognitive_asset_with_unicode_name_and_observation() {
     match back.content {
         AssetContent::Insight(i) => {
             assert_eq!(i.observation, "观察-β");
-        }
+        },
         _ => panic!("wrong"),
     }
 }

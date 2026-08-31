@@ -77,7 +77,7 @@ impl TopologicalSOPEvolver {
                             node_name: node_name.clone(),
                         });
                     }
-                }
+                },
                 EvolutionOp::AddRetry {
                     node_name,
                     max_retries,
@@ -94,7 +94,7 @@ impl TopologicalSOPEvolver {
                         max_retries: *max_retries,
                     });
                     new_graph.graph[node_idx] = evolved_node;
-                }
+                },
                 EvolutionOp::InsertNode {
                     after_node,
                     new_name,
@@ -127,7 +127,7 @@ impl TopologicalSOPEvolver {
                     if new_graph.graph.neighbors(after_idx).count() == 0 {
                         new_graph.add_edge(after_idx, new_idx);
                     }
-                }
+                },
                 EvolutionOp::RemoveNode { node_name } => {
                     let node_idx = self.find_node_by_name(&new_graph, node_name)?;
 
@@ -144,7 +144,7 @@ impl TopologicalSOPEvolver {
                     }
 
                     new_graph.graph.remove_node(node_idx);
-                }
+                },
                 EvolutionOp::SwapNodes { node_a, node_b } => {
                     let idx_a = self.find_node_by_name(&new_graph, node_a)?;
                     let idx_b = self.find_node_by_name(&new_graph, node_b)?;
@@ -222,7 +222,7 @@ impl TopologicalSOPEvolver {
                     if b_to_a {
                         new_graph.add_edge(idx_a, idx_b);
                     }
-                }
+                },
             }
         }
 
@@ -238,13 +238,7 @@ impl TopologicalSOPEvolver {
         graph
             .graph
             .node_indices()
-            .find(|&idx| {
-                graph
-                    .graph
-                    .node_weight(idx)
-                    .map(|n| n.name() == name)
-                    .unwrap_or(false)
-            })
+            .find(|&idx| graph.graph.node_weight(idx).map(|n| n.name() == name).unwrap_or(false))
             .ok_or_else(|| IntelError::NodeNotFound { name: name.into() })
     }
 }

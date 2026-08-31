@@ -150,7 +150,7 @@ fn micro_reflection_decision_adjust() {
     match back {
         MicroReflectionDecision::Adjust { updates } => {
             assert_eq!(updates.get("k"), Some(&serde_json::json!(1)));
-        }
+        },
         _ => panic!("expected Adjust"),
     }
 }
@@ -171,9 +171,7 @@ fn micro_reflection_decision_pivot() {
 #[test]
 fn micro_reflection_decision_variants_distinct() {
     let d1 = MicroReflectionDecision::Continue;
-    let d2 = MicroReflectionDecision::Pivot {
-        reason: "x".into(),
-    };
+    let d2 = MicroReflectionDecision::Pivot { reason: "x".into() };
     // Compare as Debug strings (Decision has no PartialEq derived).
     assert_ne!(format!("{d1:?}"), format!("{d2:?}"));
 }

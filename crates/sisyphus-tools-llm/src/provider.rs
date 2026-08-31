@@ -59,15 +59,17 @@ pub trait LlmProvider: Any + Send + Sync {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::http_client::SharedHttpClient;
     use sisyphus_types::ProviderConfig;
     use std::sync::{Arc, Mutex};
-    use crate::http_client::SharedHttpClient;
 
     static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     /// 测试用：构造一个最小可用的共享 HTTP client（不实际发起请求）。
     fn test_http() -> Arc<SharedHttpClient> {
-        Arc::new(SharedHttpClient::new(crate::http_client::SharedHttpClientConfig::default()).unwrap())
+        Arc::new(
+            SharedHttpClient::new(crate::http_client::SharedHttpClientConfig::default()).unwrap(),
+        )
     }
 
     struct MockProvider {
@@ -95,9 +97,7 @@ mod tests {
             _m: &[ChatMessage],
             _j: bool,
         ) -> Result<ProviderResponse, ProviderError> {
-            let attempt = self
-                .current_attempt
-                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            let attempt = self.current_attempt.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             if attempt < self.fail_until {
                 Err(self.error_to_return.clone())
             } else {
@@ -359,8 +359,7 @@ mod tests {
         assert!(res.is_ok());
         assert_eq!(res.unwrap().content, "success");
         assert_eq!(
-            mock.current_attempt
-                .load(std::sync::atomic::Ordering::SeqCst),
+            mock.current_attempt.load(std::sync::atomic::Ordering::SeqCst),
             3
         );
     }
@@ -386,8 +385,7 @@ mod tests {
         assert!(res.is_ok());
         assert_eq!(res.unwrap().content, "success");
         assert_eq!(
-            mock.current_attempt
-                .load(std::sync::atomic::Ordering::SeqCst),
+            mock.current_attempt.load(std::sync::atomic::Ordering::SeqCst),
             3
         );
     }
@@ -416,8 +414,7 @@ mod tests {
             _ => panic!("Expected Permanent error"),
         }
         assert_eq!(
-            mock.current_attempt
-                .load(std::sync::atomic::Ordering::SeqCst),
+            mock.current_attempt.load(std::sync::atomic::Ordering::SeqCst),
             1
         );
     }
@@ -461,15 +458,11 @@ mod tests {
         assert_eq!(res.unwrap().content, "success");
 
         assert_eq!(
-            mock1
-                .current_attempt
-                .load(std::sync::atomic::Ordering::SeqCst),
+            mock1.current_attempt.load(std::sync::atomic::Ordering::SeqCst),
             4
         );
         assert_eq!(
-            mock2
-                .current_attempt
-                .load(std::sync::atomic::Ordering::SeqCst),
+            mock2.current_attempt.load(std::sync::atomic::Ordering::SeqCst),
             1
         );
     }

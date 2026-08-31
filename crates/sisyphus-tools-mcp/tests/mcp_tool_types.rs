@@ -97,7 +97,7 @@ fn call_tool_result_resource_content() {
         ToolContent::Resource { resource } => {
             assert_eq!(resource.uri, "file:///x");
             assert_eq!(resource.text, "body");
-        }
+        },
         _ => panic!("expected Resource variant"),
     }
 }

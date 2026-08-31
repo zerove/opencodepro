@@ -185,28 +185,19 @@ async fn test_self_evolution_e2e() {
         }
     }
 
-    resolve_handle
-        .await
-        .expect("Join error")
-        .expect("Self-programming failed");
+    resolve_handle.await.expect("Join error").expect("Self-programming failed");
 
     // Verify the events were emitted in order
     assert!(
-        events
-            .iter()
-            .any(|e| matches!(e, CognitiveEvent::ToolGenerationStarted { .. })),
+        events.iter().any(|e| matches!(e, CognitiveEvent::ToolGenerationStarted { .. })),
         "Should start generation"
     );
     assert!(
-        events
-            .iter()
-            .any(|e| matches!(e, CognitiveEvent::ToolVerified { .. })),
+        events.iter().any(|e| matches!(e, CognitiveEvent::ToolVerified { .. })),
         "Should verify tool"
     );
     assert!(
-        events
-            .iter()
-            .any(|e| matches!(e, CognitiveEvent::ToolDeployed { .. })),
+        events.iter().any(|e| matches!(e, CognitiveEvent::ToolDeployed { .. })),
         "Should deploy tool"
     );
 

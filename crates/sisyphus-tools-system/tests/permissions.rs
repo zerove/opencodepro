@@ -47,7 +47,10 @@ fn check_permission_first_match_wins() {
         ("read_secret".into(), Permission::Deny),
     ];
     // "read" appears first → Allow (even though "read_secret" would match "read" too).
-    assert_eq!(check_permission(&rules, "read_secret_file"), Permission::Allow);
+    assert_eq!(
+        check_permission(&rules, "read_secret_file"),
+        Permission::Allow
+    );
 }
 
 #[test]
@@ -71,9 +74,8 @@ fn checker_new_starts_with_no_external_dirs() {
 
 #[test]
 fn checker_with_external_directories_sets_dirs() {
-    let checker = PermissionChecker::new(vec![]).with_external_directories(vec![
-        PathBuf::from("/tmp"),
-    ]);
+    let checker =
+        PermissionChecker::new(vec![]).with_external_directories(vec![PathBuf::from("/tmp")]);
     // Path under /tmp is allowed.
     let result = checker.check_path_allowed(&PathBuf::from("/tmp/foo"));
     assert!(result.is_ok());

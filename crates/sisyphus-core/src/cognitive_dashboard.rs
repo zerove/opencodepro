@@ -17,27 +17,27 @@ impl CognitiveDashboard {
                 metrics,
             } => {
                 Self::render_cognitive_step(step, message, metrics);
-            }
+            },
             ExecutionEvent::NodeStarted { node_name } => {
                 println!("  🚀 [NODE START] {}", node_name);
-            }
+            },
             ExecutionEvent::NodeCompleted {
                 node_name, output, ..
             } => {
                 println!("  ✅ [NODE DONE] {}: {}", node_name, output);
-            }
+            },
             ExecutionEvent::NodeFailed {
                 node_name, error, ..
             } => {
                 println!("  ❌ [NODE FAIL] {}: {}", node_name, error);
-            }
+            },
             ExecutionEvent::ExecutionComplete { result } => {
                 println!("\n🎯 [FINAL RESULT] {}", result);
-            }
+            },
             ExecutionEvent::CognitiveComplete { report } => {
                 println!("\n🏁 [COGNITIVE LOOP CONVERGED]");
                 println!("📊 Report: {}", report);
-            }
+            },
             ExecutionEvent::MicroReflection {
                 node_name,
                 prediction,
@@ -62,8 +62,8 @@ impl CognitiveDashboard {
                 if let Some(r) = reason {
                     println!("    - ⚠️  Pivot Reason: {}", r);
                 }
-            }
-            _ => {}
+            },
+            _ => {},
         }
     }
 

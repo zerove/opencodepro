@@ -121,20 +121,14 @@ fn test_analyze_empty_outputs() {
 #[tokio::test]
 async fn test_reflect_structured() {
     let trace = r#"{"node":"x","status":"ok","output":"data"}"#;
-    let report = StandardReflector
-        .reflect(trace, &make_pred(10), None)
-        .await
-        .unwrap();
+    let report = StandardReflector.reflect(trace, &make_pred(10), None).await.unwrap();
     assert_eq!(report.deviation_score, 0.0);
 }
 
 #[tokio::test]
 async fn test_reflect_fallback() {
     let trace = "ResourceExhausted";
-    let report = StandardReflector
-        .reflect(trace, &make_pred(100), None)
-        .await
-        .unwrap();
+    let report = StandardReflector.reflect(trace, &make_pred(100), None).await.unwrap();
     assert_eq!(report.deviation_score, 0.8);
 }
 
@@ -286,10 +280,8 @@ async fn test_evolver_ignores_keyword_annotations_without_signals() {
         records: vec![],
     };
     let prediction = make_pred(10);
-    let evolved = evolver
-        .evolve(std::sync::Arc::new(graph), &report, &prediction, None)
-        .await
-        .unwrap();
+    let evolved =
+        evolver.evolve(std::sync::Arc::new(graph), &report, &prediction, None).await.unwrap();
 
     // 无信号 → 图谱不变：节点名无 _retry 后缀，燃料未被调价
     for idx in evolved.graph.node_indices() {
@@ -317,22 +309,13 @@ async fn test_evolver_acts_on_structured_signals() {
         records: vec![],
     };
     let prediction = make_pred(10);
-    let evolved = evolver
-        .evolve(std::sync::Arc::new(graph), &report, &prediction, None)
-        .await
-        .unwrap();
+    let evolved =
+        evolver.evolve(std::sync::Arc::new(graph), &report, &prediction, None).await.unwrap();
 
     let retry_count = evolved
         .graph
         .node_indices()
-        .filter(|&i| {
-            evolved
-                .graph
-                .node_weight(i)
-                .unwrap()
-                .name()
-                .contains("_retry")
-        })
+        .filter(|&i| evolved.graph.node_weight(i).unwrap().name().contains("_retry"))
         .count();
     assert!(retry_count > 0, "structured signal must drive evolution");
 }
@@ -392,10 +375,7 @@ async fn test_llm_reflector_respects_injected_timeout() {
         std::time::Duration::from_secs(1),
     );
     let start = std::time::Instant::now();
-    let report = reflector
-        .reflect("trace", &reflect_fixture(), None)
-        .await
-        .unwrap();
+    let report = reflector.reflect("trace", &reflect_fixture(), None).await.unwrap();
     assert!(start.elapsed() < std::time::Duration::from_secs(4));
     // 降级报告的特征：空改进列表 + 标准轨迹解析
     assert!(report.suggested_improvements.is_empty());

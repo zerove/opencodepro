@@ -42,9 +42,8 @@ async fn setup_bridge() -> (
         .await
         .expect("Failed to create bridge");
 
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-        .await
-        .expect("Failed to bind listener");
+    let listener =
+        tokio::net::TcpListener::bind("127.0.0.1:0").await.expect("Failed to bind listener");
     let addr = listener.local_addr().expect("Failed to get local addr");
     let server_addr = format!("http://{}", addr);
 
@@ -57,9 +56,8 @@ async fn setup_bridge() -> (
             .expect("Server failed");
     });
 
-    let client = SisyphusBridgeClient::connect(server_addr)
-        .await
-        .expect("Failed to connect client");
+    let client =
+        SisyphusBridgeClient::connect(server_addr).await.expect("Failed to connect client");
 
     (client, server_handle)
 }
@@ -69,10 +67,7 @@ async fn setup_bridge() -> (
 #[tokio::test]
 async fn test_health_check() {
     let (mut client, server) = setup_bridge().await;
-    let response = client
-        .health_check(HealthCheckRequest {})
-        .await
-        .expect("HealthCheck failed");
+    let response = client.health_check(HealthCheckRequest {}).await.expect("HealthCheck failed");
     let inner = response.into_inner();
     assert_eq!(inner.status, "SERVING");
     assert!(!inner.version.is_empty());
@@ -82,10 +77,7 @@ async fn test_health_check() {
 #[tokio::test]
 async fn test_list_sops_empty() {
     let (mut client, server) = setup_bridge().await;
-    let response = client
-        .list_so_ps(ListSoPsRequest {})
-        .await
-        .expect("ListSoPs failed");
+    let response = client.list_so_ps(ListSoPsRequest {}).await.expect("ListSoPs failed");
     assert!(response.into_inner().sops.is_empty());
     server.abort();
 }
@@ -116,10 +108,7 @@ async fn test_execute_sop_missing() {
 #[tokio::test]
 async fn test_list_agents() {
     let (mut client, server) = setup_bridge().await;
-    let response = client
-        .list_agents(ListAgentsRequest {})
-        .await
-        .expect("ListAgents failed");
+    let response = client.list_agents(ListAgentsRequest {}).await.expect("ListAgents failed");
     // Bridge registers builtin agents; at minimum metis, librarian, etc.
     let agents = response.into_inner().agents;
     assert!(!agents.is_empty(), "Expected at least one registered agent");
@@ -133,10 +122,7 @@ async fn test_list_agents() {
 #[tokio::test]
 async fn test_list_tools() {
     let (mut client, server) = setup_bridge().await;
-    let response = client
-        .list_tools(ListToolsRequest {})
-        .await
-        .expect("ListTools failed");
+    let response = client.list_tools(ListToolsRequest {}).await.expect("ListTools failed");
     let tools = response.into_inner().tools;
     assert!(!tools.is_empty(), "Expected at least builtin tools");
     // Verify a well-known tool exists
@@ -150,10 +136,8 @@ async fn test_list_tools() {
 #[tokio::test]
 async fn test_list_skills_empty() {
     let (mut client, server) = setup_bridge().await;
-    let response = client
-        .list_skills(ListSkillsRequest { remote: false })
-        .await
-        .expect("ListSkills failed");
+    let response =
+        client.list_skills(ListSkillsRequest { remote: false }).await.expect("ListSkills failed");
     assert!(response.into_inner().skills.is_empty());
     server.abort();
 }
@@ -209,10 +193,7 @@ async fn test_remove_skill_nonexistent() {
 #[tokio::test]
 async fn test_list_plugins_empty() {
     let (mut client, server) = setup_bridge().await;
-    let response = client
-        .list_plugins(ListPluginsRequest {})
-        .await
-        .expect("ListPlugins failed");
+    let response = client.list_plugins(ListPluginsRequest {}).await.expect("ListPlugins failed");
     assert!(response.into_inner().plugins.is_empty());
     server.abort();
 }
@@ -477,10 +458,10 @@ async fn test_negative_concurrent_requests() {
                     inner.result
                 );
                 ok_count += 1;
-            }
+            },
             Err(e) => {
                 panic!("concurrent request {i} returned gRPC error: {e}");
-            }
+            },
         }
     }
     assert_eq!(ok_count, 20, "Not all concurrent requests succeeded");
@@ -735,9 +716,8 @@ async fn setup_bridge_chaos(
         .await
         .expect("Failed to create bridge with chaos enabled");
 
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-        .await
-        .expect("Failed to bind listener");
+    let listener =
+        tokio::net::TcpListener::bind("127.0.0.1:0").await.expect("Failed to bind listener");
     let addr = listener.local_addr().expect("Failed to get local addr");
     let server_addr = format!("http://{}", addr);
 
@@ -750,9 +730,8 @@ async fn setup_bridge_chaos(
             .expect("Server failed");
     });
 
-    let client = SisyphusBridgeClient::connect(server_addr)
-        .await
-        .expect("Failed to connect client");
+    let client =
+        SisyphusBridgeClient::connect(server_addr).await.expect("Failed to connect client");
 
     (client, server_handle)
 }
@@ -835,9 +814,8 @@ async fn setup_bridge_chaos_with_bridge(
         .await
         .expect("Failed to create bridge with chaos enabled");
 
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-        .await
-        .expect("Failed to bind listener");
+    let listener =
+        tokio::net::TcpListener::bind("127.0.0.1:0").await.expect("Failed to bind listener");
     let addr = listener.local_addr().expect("Failed to get local addr");
     let server_addr = format!("http://{}", addr);
 
@@ -850,9 +828,8 @@ async fn setup_bridge_chaos_with_bridge(
             .expect("Server failed");
     });
 
-    let client = SisyphusBridgeClient::connect(server_addr)
-        .await
-        .expect("Failed to connect client");
+    let client =
+        SisyphusBridgeClient::connect(server_addr).await.expect("Failed to connect client");
 
     (bridge, client, server_handle)
 }
@@ -1042,10 +1019,10 @@ async fn test_negative_concurrent_different_tools() {
                 // Different tools may succeed or fail, but no panic/crash
                 assert!(!inner.status.is_empty(), "Iteration {i}: empty status");
                 ok_count += 1;
-            }
+            },
             Err(e) => {
                 panic!("concurrent request {i} returned gRPC error: {e}");
-            }
+            },
         }
     }
     assert_eq!(ok_count, 15, "Not all concurrent requests completed");
@@ -1110,10 +1087,10 @@ async fn test_negative_stream_execution_multiple_requests() {
                     "Iteration {i}: expected at least one stream event"
                 );
                 ok_count += 1;
-            }
+            },
             Err(e) => {
                 panic!("stream_execution {i} returned gRPC error: {e}");
-            }
+            },
         }
     }
     assert_eq!(ok_count, 10, "Not all stream requests completed");

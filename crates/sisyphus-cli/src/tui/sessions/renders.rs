@@ -95,11 +95,9 @@ pub fn render_sessions(frame: &mut ratatui::Frame, area: Rect, app: &App) {
         .collect();
 
     let adj_sel = app.session_sel.min(visible_count.saturating_sub(1));
-    let list = List::new(items).block(block).highlight_style(
-        Style::default()
-            .fg(theme.secondary)
-            .add_modifier(Modifier::REVERSED),
-    );
+    let list = List::new(items)
+        .block(block)
+        .highlight_style(Style::default().fg(theme.secondary).add_modifier(Modifier::REVERSED));
     frame.render_stateful_widget(
         list,
         chunks[1],
@@ -171,9 +169,7 @@ fn render_session_detail(
         };
         let role_style = match msg.role.as_str() {
             "user" => Style::default().fg(theme.info).add_modifier(Modifier::BOLD),
-            "assistant" => Style::default()
-                .fg(theme.success)
-                .add_modifier(Modifier::BOLD),
+            "assistant" => Style::default().fg(theme.success).add_modifier(Modifier::BOLD),
             _ => Style::default().fg(theme.muted),
         };
         let ts_style = Style::default().fg(theme.muted);
@@ -183,9 +179,7 @@ fn render_session_detail(
             msg.created_at.clone()
         };
         let sel_style = if is_sel {
-            Style::default()
-                .fg(theme.secondary)
-                .add_modifier(Modifier::BOLD)
+            Style::default().fg(theme.secondary).add_modifier(Modifier::BOLD)
         } else {
             Style::default().fg(theme.muted)
         };
@@ -262,16 +256,15 @@ fn render_session_detail(
     } else {
         format!(" Chat{mode_tag} ")
     };
-    let input_block = Block::default()
-        .borders(Borders::ALL)
-        .title(input_title)
-        .border_style(if app.session_mode == Mode::Input {
+    let input_block = Block::default().borders(Borders::ALL).title(input_title).border_style(
+        if app.session_mode == Mode::Input {
             Style::default().fg(theme.emphasized)
         } else if app.pending_op.is_some() {
             Style::default().fg(theme.error)
         } else {
             Style::default().fg(theme.muted)
-        });
+        },
+    );
 
     let input_text: &str = if !app.session_input.is_empty() {
         &app.session_input
@@ -298,11 +291,8 @@ fn render_session_detail(
     if app.session_mode == Mode::Input && !app.session_input.is_empty() {
         let prefix_width = 7;
         let char_count = app.session_input.chars().count();
-        let text_before: String = app
-            .session_input
-            .chars()
-            .take(app.session_cursor.min(char_count))
-            .collect();
+        let text_before: String =
+            app.session_input.chars().take(app.session_cursor.min(char_count)).collect();
         let cursor_display = text_before.width() as u16;
         frame.set_cursor_position((
             input_area.x + 1 + prefix_width + cursor_display,
@@ -373,10 +363,7 @@ fn render_session_detail(
             .borders(Borders::ALL)
             .title(" ⚡ Bridge Events ")
             .border_style(Style::default().fg(theme.warning));
-        let start = app
-            .stream_events
-            .len()
-            .saturating_sub((stream_area.height - 2) as usize);
+        let start = app.stream_events.len().saturating_sub((stream_area.height - 2) as usize);
         let stream_lines: Vec<Line> = app
             .stream_events
             .iter()

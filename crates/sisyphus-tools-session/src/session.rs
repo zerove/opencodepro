@@ -37,17 +37,13 @@ pub fn session_compress(path: &Path, id: &str, strategy: &CompressStrategy) -> T
         .get_mut(id)
         .ok_or_else(|| ToolError::TodoError(format!("session not found: {id}")))?;
 
-    let current_tokens = session
-        .messages
-        .iter()
-        .map(|m| m.estimated_tokens)
-        .sum::<u64>();
+    let current_tokens = session.messages.iter().map(|m| m.estimated_tokens).sum::<u64>();
 
     match strategy {
         CompressStrategy::Threshold(limit) if current_tokens <= *limit => {
             return Ok(session.clone());
-        }
-        _ => {}
+        },
+        _ => {},
     }
 
     let mut new_messages = Vec::new();
@@ -80,9 +76,7 @@ pub fn session_compress(path: &Path, id: &str, strategy: &CompressStrategy) -> T
 
     // Store original content in metadata for recovery
     for (idx, msg) in msgs.iter().enumerate() {
-        session
-            .metadata
-            .insert(format!("compressed_{idx}"), msg.content.clone());
+        session.metadata.insert(format!("compressed_{idx}"), msg.content.clone());
     }
 
     session.messages = new_messages;
@@ -100,9 +94,8 @@ pub fn session_save_checkpoint(
     session_id: &str,
     metadata: HashMap<String, String>,
 ) -> ToolResult<()> {
-    let db_dir = path
-        .parent()
-        .ok_or_else(|| ToolError::TodoError("invalid session path".into()))?;
+    let db_dir =
+        path.parent().ok_or_else(|| ToolError::TodoError("invalid session path".into()))?;
     let checkpoint_dir = db_dir.join("checkpoints");
     fs::create_dir_all(&checkpoint_dir).map_err(ToolError::Io)?;
 
@@ -121,12 +114,9 @@ pub fn session_save_checkpoint(
 
 /// Loads a session checkpoint by ID.
 pub fn session_load_checkpoint(path: &Path, session_id: &str) -> ToolResult<SessionCheckpoint> {
-    let db_dir = path
-        .parent()
-        .ok_or_else(|| ToolError::TodoError("invalid session path".into()))?;
-    let checkpoint_path = db_dir
-        .join("checkpoints")
-        .join(format!("{session_id}.json"));
+    let db_dir =
+        path.parent().ok_or_else(|| ToolError::TodoError("invalid session path".into()))?;
+    let checkpoint_path = db_dir.join("checkpoints").join(format!("{session_id}.json"));
 
     if !checkpoint_path.exists() {
         return Err(ToolError::TodoError(format!(
@@ -141,12 +131,9 @@ pub fn session_load_checkpoint(path: &Path, session_id: &str) -> ToolResult<Sess
 
 /// Clears a session checkpoint by ID.
 pub fn session_clear_checkpoint(path: &Path, session_id: &str) -> ToolResult<()> {
-    let db_dir = path
-        .parent()
-        .ok_or_else(|| ToolError::TodoError("invalid session path".into()))?;
-    let checkpoint_path = db_dir
-        .join("checkpoints")
-        .join(format!("{session_id}.json"));
+    let db_dir =
+        path.parent().ok_or_else(|| ToolError::TodoError("invalid session path".into()))?;
+    let checkpoint_path = db_dir.join("checkpoints").join(format!("{session_id}.json"));
 
     if checkpoint_path.exists() {
         fs::remove_file(checkpoint_path).map_err(ToolError::Io)?;
@@ -186,11 +173,8 @@ pub fn session_export_html(path: &Path, id: &str, output: &Path) -> ToolResult<(
         } else {
             ""
         };
-        let content_escaped = msg
-            .content
-            .replace('&', "&amp;")
-            .replace('<', "&lt;")
-            .replace('>', "&gt;");
+        let content_escaped =
+            msg.content.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;");
 
         message_html.push_str(&format!(
             r#"<div class="message {role_class}">
@@ -209,11 +193,7 @@ pub fn session_export_html(path: &Path, id: &str, output: &Path) -> ToolResult<(
     let stats = format!(
         "{} messages, ~{} tokens",
         session.message_count,
-        session
-            .messages
-            .iter()
-            .map(|m| m.estimated_tokens)
-            .sum::<u64>(),
+        session.messages.iter().map(|m| m.estimated_tokens).sum::<u64>(),
     );
 
     let html = format!(
@@ -302,11 +282,7 @@ pub fn session_create(path: &Path, name: &str) -> ToolResult<Session> {
 pub fn session_list(path: &Path) -> ToolResult<Vec<Session>> {
     let store = SessionStore::load_or_empty(path);
     let mut sessions: Vec<_> = store.sessions.into_values().collect();
-    sessions.sort_by(|a, b| {
-        b.updated_at
-            .cmp(&a.updated_at)
-            .then_with(|| b.id.cmp(&a.id))
-    });
+    sessions.sort_by(|a, b| b.updated_at.cmp(&a.updated_at).then_with(|| b.id.cmp(&a.id)));
     Ok(sessions)
 }
 

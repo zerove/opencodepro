@@ -74,10 +74,8 @@ impl ConfigStore {
                     );
                     return false;
                 }
-                let mut cfg = self
-                    .config
-                    .write()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                let mut cfg =
+                    self.config.write().unwrap_or_else(std::sync::PoisonError::into_inner);
                 // Serialize both to check if content actually changed
                 let old_json = serde_json::to_value(&*cfg).ok();
                 let new_json = serde_json::to_value(&new_config).ok();
@@ -86,7 +84,7 @@ impl ConfigStore {
                     return true;
                 }
                 false
-            }
+            },
             Err(_) => false,
         }
     }
@@ -246,12 +244,7 @@ convergence_threshold = 0.3
         let config = Arc::new(RwLock::new(Config::default()));
         let store = ConfigStore::with_config(config.clone());
         assert_eq!(
-            store
-                .config_ref()
-                .read()
-                .unwrap()
-                .cognitive_loop
-                .max_iterations,
+            store.config_ref().read().unwrap().cognitive_loop.max_iterations,
             10
         );
         assert!(!store.check_reload(), "with_config should not reload");

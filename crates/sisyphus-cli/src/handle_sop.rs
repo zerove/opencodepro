@@ -9,7 +9,7 @@ pub async fn handle_sop(sub: &SopCommands, bridge_addr: &str) -> Result<()> {
             let mut client = sisyphus_cli::bridge::BridgeClient::connect(bridge_addr).await?;
             let result = client.execute_sop(sop_id).await?;
             println!("{result}");
-        }
+        },
         SopCommands::List => {
             let mut client = sisyphus_cli::bridge::BridgeClient::connect(bridge_addr).await?;
             let sops = client.list_sops().await?;
@@ -20,7 +20,7 @@ pub async fn handle_sop(sub: &SopCommands, bridge_addr: &str) -> Result<()> {
                     println!("  {} ({} nodes)", sop.sop_id, sop.node_count);
                 }
             }
-        }
+        },
     }
     Ok(())
 }

@@ -21,10 +21,8 @@ impl OpenAiLlmClient {
         endpoint: String,
         model: String,
     ) -> Result<Self, sisyphus_types::TypesError> {
-        let client = reqwest::Client::builder()
-            .timeout(Duration::from_mins(1))
-            .build()
-            .map_err(|e| {
+        let client =
+            reqwest::Client::builder().timeout(Duration::from_mins(1)).build().map_err(|e| {
                 sisyphus_types::TypesError::InternalError(format!(
                     "Failed to build reqwest::Client: {e}"
                 ))
@@ -76,10 +74,8 @@ impl LlmClient for OpenAiLlmClient {
             .map_err(|e| format!("HTTP request failed: {e}"))?;
 
         let status = res.status();
-        let response_json: Value = res
-            .json()
-            .await
-            .map_err(|e| format!("Failed to parse response JSON: {e}"))?;
+        let response_json: Value =
+            res.json().await.map_err(|e| format!("Failed to parse response JSON: {e}"))?;
 
         if !status.is_success() {
             let error_obj = if response_json.is_array() {
@@ -133,10 +129,8 @@ impl OpenAiEmbeddingClient {
         endpoint: String,
         model: String,
     ) -> Result<Self, sisyphus_types::TypesError> {
-        let client = reqwest::Client::builder()
-            .timeout(Duration::from_secs(30))
-            .build()
-            .map_err(|e| {
+        let client =
+            reqwest::Client::builder().timeout(Duration::from_secs(30)).build().map_err(|e| {
                 sisyphus_types::TypesError::InternalError(format!(
                     "Failed to build reqwest::Client: {e}"
                 ))
@@ -171,15 +165,11 @@ impl crate::llm::EmbeddingClient for OpenAiEmbeddingClient {
             .map_err(|e| format!("HTTP request failed: {e}"))?;
 
         let status = res.status();
-        let response_json: Value = res
-            .json()
-            .await
-            .map_err(|e| format!("Failed to parse response JSON: {e}"))?;
+        let response_json: Value =
+            res.json().await.map_err(|e| format!("Failed to parse response JSON: {e}"))?;
 
         if !status.is_success() {
-            let error_msg = response_json["error"]["message"]
-                .as_str()
-                .unwrap_or("unknown error");
+            let error_msg = response_json["error"]["message"].as_str().unwrap_or("unknown error");
             return Err(sisyphus_types::TypesError::InternalError(format!(
                 "Embedding API error ({}): {}",
                 status.as_u16(),

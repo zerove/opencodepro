@@ -223,7 +223,8 @@ fn grep_with_include_filter() {
     let matches = grep("match", dir.path(), Some(".rs")).expect("grep");
     // Only .rs files contain ".rs" in their path.
     assert_eq!(matches.len(), 1);
-    assert!(matches[0].file.to_string_lossy().ends_with(".rs"),
+    assert!(
+        matches[0].file.to_string_lossy().ends_with(".rs"),
         "got {:?}",
         matches[0].file
     );

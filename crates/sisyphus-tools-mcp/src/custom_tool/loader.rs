@@ -36,10 +36,8 @@ impl CustomToolLoader {
 
         let mut loaded_defs = Vec::new();
 
-        while let Some(entry) = entries
-            .next_entry()
-            .await
-            .map_err(|e| format!("Error reading directory entry: {e}"))?
+        while let Some(entry) =
+            entries.next_entry().await.map_err(|e| format!("Error reading directory entry: {e}"))?
         {
             let path = entry.path();
             if path.extension().and_then(|s| s.to_str()) == Some("toml") {
@@ -57,10 +55,10 @@ impl CustomToolLoader {
                         );
                         debug!("Loaded custom tool: {}", def.name);
                         loaded_defs.push(def);
-                    }
+                    },
                     Err(e) => {
                         error!("Failed to load custom tool from {:?}: {}", path, e);
-                    }
+                    },
                 }
             }
         }
@@ -74,9 +72,8 @@ impl CustomToolLoader {
     }
 
     async fn load_tool(&self, path: &Path) -> Result<CustomToolDefinition, String> {
-        let content = fs::read_to_string(path)
-            .await
-            .map_err(|e| format!("Failed to read file: {e}"))?;
+        let content =
+            fs::read_to_string(path).await.map_err(|e| format!("Failed to read file: {e}"))?;
 
         let def: CustomToolDefinition =
             toml::from_str(&content).map_err(|e| format!("TOML parse error in {path:?}: {e}"))?;

@@ -41,9 +41,12 @@ fn register_then_get_returns_same_info() {
     let reg = ToolRegistry::new();
     reg.register(
         "tools:echo",
-        make_info("echo", ToolSource::Mcp {
-            server_prefix: "tools".into(),
-        }),
+        make_info(
+            "echo",
+            ToolSource::Mcp {
+                server_prefix: "tools".into(),
+            },
+        ),
     );
     let got = reg.get("tools:echo").expect("present");
     assert_eq!(got.name, "echo");
@@ -110,15 +113,21 @@ fn list_by_prefix_filters_correctly() {
     let reg = ToolRegistry::new();
     reg.register(
         "tools:echo",
-        make_info("echo", ToolSource::Mcp {
-            server_prefix: "tools".into(),
-        }),
+        make_info(
+            "echo",
+            ToolSource::Mcp {
+                server_prefix: "tools".into(),
+            },
+        ),
     );
     reg.register(
         "tools:read",
-        make_info("read", ToolSource::Mcp {
-            server_prefix: "tools".into(),
-        }),
+        make_info(
+            "read",
+            ToolSource::Mcp {
+                server_prefix: "tools".into(),
+            },
+        ),
     );
     reg.register(
         "librarian/research",

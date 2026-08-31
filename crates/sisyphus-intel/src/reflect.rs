@@ -227,12 +227,10 @@ impl SOPEvolver for StandardEvolver {
                 .graph
                 .edge_endpoints(edge)
                 .ok_or_else(|| "invalid edge endpoint in graph".to_string())?;
-            let new_source = node_map
-                .get(&source)
-                .ok_or("Source node not found in evolved graph")?;
-            let new_target = node_map
-                .get(&target)
-                .ok_or("Target node not found in evolved graph")?;
+            let new_source =
+                node_map.get(&source).ok_or("Source node not found in evolved graph")?;
+            let new_target =
+                node_map.get(&target).ok_or("Target node not found in evolved graph")?;
             new_graph.add_edge(*new_source, *new_target);
         }
 
@@ -358,10 +356,7 @@ impl Reflector for LlmReflector {
                         "Failure"
                     },
                     exp.deviation_score,
-                    exp.insight
-                        .as_ref()
-                        .map(|i| format!(" | Insight: {}", i))
-                        .unwrap_or_default()
+                    exp.insight.as_ref().map(|i| format!(" | Insight: {}", i)).unwrap_or_default()
                 ));
             }
             format!("Historical Context (Similar Tasks):\n{}", hints.join("\n"))
@@ -393,7 +388,7 @@ impl Reflector for LlmReflector {
                         evolved_sop_structure: None,
                         records: StandardReflector::parse_trace(trace),
                     });
-                }
+                },
                 Err(_) => {
                     tracing::warn!(
                         timeout_ms = self.timeout.as_millis(),
@@ -407,7 +402,7 @@ impl Reflector for LlmReflector {
                         evolved_sop_structure: None,
                         records: StandardReflector::parse_trace(trace),
                     });
-                }
+                },
             };
 
         let parsed: serde_json::Value = serde_json::from_str(&response)
@@ -416,17 +411,11 @@ impl Reflector for LlmReflector {
         let deviation = parsed["deviation"].as_f64().unwrap_or(0.5);
         let suggestions: Vec<String> = parsed["suggestions"]
             .as_array()
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
-                    .collect()
-            })
+            .map(|arr| arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
             .unwrap_or_default();
         // B1：在唯一的文本→信号转换点集中提取结构化演进信号。
-        let signals: Vec<ImprovementKind> = suggestions
-            .iter()
-            .filter_map(|s| ImprovementKind::from_text(s))
-            .collect();
+        let signals: Vec<ImprovementKind> =
+            suggestions.iter().filter_map(|s| ImprovementKind::from_text(s)).collect();
 
         let duration = start.elapsed();
         tracing::info!(
@@ -600,7 +589,7 @@ impl SOPEvolver for LlmEvolver {
                     return Err(sisyphus_types::IntelError::LlmError(format!(
                         "LLM evolution failed: {e}"
                     )));
-                }
+                },
                 Err(_) => {
                     tracing::warn!(
                         timeout_ms = self.timeout.as_millis(),
@@ -610,7 +599,7 @@ impl SOPEvolver for LlmEvolver {
                         "LLM evolution timed out after {} ms",
                         self.timeout.as_millis()
                     )));
-                }
+                },
             };
 
         let ops: Vec<sisyphus_types::EvolutionOp> =
@@ -618,9 +607,7 @@ impl SOPEvolver for LlmEvolver {
                 format!("Failed to parse evolution ops JSON: {e}. Response: {response}")
             })?;
 
-        self.topo_evolver
-            .apply_ops(&graph, &ops, self.tool_executor.clone())
-            .map(Arc::new)
+        self.topo_evolver.apply_ops(&graph, &ops, self.tool_executor.clone()).map(Arc::new)
     }
 }
 
@@ -633,10 +620,7 @@ pub struct StandardReflector;
 
 impl StandardReflector {
     pub(crate) fn parse_trace(trace: &str) -> Vec<RecordedNode> {
-        trace
-            .lines()
-            .filter_map(|line| serde_json::from_str::<RecordedNode>(line).ok())
-            .collect()
+        trace.lines().filter_map(|line| serde_json::from_str::<RecordedNode>(line).ok()).collect()
     }
 
     pub(crate) fn analyze(records: &[RecordedNode]) -> (f64, Vec<String>) {
@@ -652,11 +636,8 @@ impl StandardReflector {
         let mut severity_sum = 0.0;
 
         if error_count > 0 {
-            let errors: Vec<&str> = records
-                .iter()
-                .filter(|r| r.status == "error")
-                .map(|r| r.output.as_str())
-                .collect();
+            let errors: Vec<&str> =
+                records.iter().filter(|r| r.status == "error").map(|r| r.output.as_str()).collect();
 
             // 分类错误并建议针对性缓解
             let mut categories: Vec<ErrorCategory> =
@@ -674,26 +655,26 @@ impl StandardReflector {
                             "Resource exhaustion — increase fuel or split long-running nodes"
                                 .into(),
                         );
-                    }
+                    },
                     ErrorCategory::Timeout => {
                         suggestions.push(
                             "Timeout — shorten execution path or raise timeout ceiling".into(),
                         );
-                    }
+                    },
                     ErrorCategory::TypeError => {
                         suggestions
                             .push("Type mismatch — verify node input/output contracts".into());
-                    }
+                    },
                     ErrorCategory::Crash => {
                         suggestions.push(
                             "Node crash — review tool implementation for panics or segfaults"
                                 .into(),
                         );
-                    }
+                    },
                     ErrorCategory::Unknown => {
                         suggestions
                             .push("Unknown error — add structured error handling to node".into());
-                    }
+                    },
                 }
             }
 
@@ -780,10 +761,8 @@ impl Reflector for StandardReflector {
 
         // B1：标准反思器的建议是本 crate 的固定文案，经统一
         // 转换点提取结构化演进信号。
-        let signals: Vec<ImprovementKind> = suggestions
-            .iter()
-            .filter_map(|s| ImprovementKind::from_text(s))
-            .collect();
+        let signals: Vec<ImprovementKind> =
+            suggestions.iter().filter_map(|s| ImprovementKind::from_text(s)).collect();
 
         Ok(ReflectionReport {
             original_sop_id: "current_sop".into(),

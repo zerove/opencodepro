@@ -274,17 +274,10 @@ Scope: auth endpoints only, no frontend. Testing included.
         // Clean request should have few issues
         assert!(analysis.actionable);
         // With success criteria + scope defined, ambiguities should be low
-        let scope_issues = analysis
-            .ambiguities
-            .iter()
-            .filter(|a| a.aspect == "scope")
-            .count();
+        let scope_issues = analysis.ambiguities.iter().filter(|a| a.aspect == "scope").count();
         assert_eq!(scope_issues, 0, "scope should be clear");
-        let verify_issues = analysis
-            .ambiguities
-            .iter()
-            .filter(|a| a.aspect == "verifiability")
-            .count();
+        let verify_issues =
+            analysis.ambiguities.iter().filter(|a| a.aspect == "verifiability").count();
         assert_eq!(verify_issues, 0, "success criteria provided");
     }
 
@@ -384,15 +377,10 @@ Scope: auth endpoints only, no frontend. Testing included.
     async fn test_analyse_with_tech_specified() {
         let request = "Implement a Rust service with tokio.";
         let analysis = analyse(request, &DUMMY).await.unwrap();
-        let tech_ambiguity = analysis
-            .ambiguities
-            .iter()
-            .find(|a| a.aspect == "technology");
+        let tech_ambiguity = analysis.ambiguities.iter().find(|a| a.aspect == "technology");
         assert!(
             tech_ambiguity.is_none()
-                || tech_ambiguity
-                    .map(|a| a.severity == AmbiguitySeverity::Minor)
-                    .unwrap_or(true)
+                || tech_ambiguity.map(|a| a.severity == AmbiguitySeverity::Minor).unwrap_or(true)
         );
     }
 
@@ -408,10 +396,7 @@ Scope: CLI command only, no engine changes.
         let analysis = analyse(request, &DUMMY).await.unwrap();
         assert!(analysis.actionable);
         // All major ambiguity dimensions should be covered
-        assert!(analysis
-            .ambiguities
-            .iter()
-            .all(|a| a.severity != AmbiguitySeverity::Blocking));
+        assert!(analysis.ambiguities.iter().all(|a| a.severity != AmbiguitySeverity::Blocking));
     }
 
     /// 验证 LlmClient::shutdown 默认实现是空操作（mock/test 实现无须等待）。

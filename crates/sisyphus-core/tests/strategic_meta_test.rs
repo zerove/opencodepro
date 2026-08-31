@@ -89,9 +89,7 @@ async fn setup_kernel(
     meta_learner: Arc<Mutex<MetaLearner>>,
 ) -> SisyphusKernel {
     let store = Arc::new(
-        MfsStore::new("sqlite::memory:", &sisyphus_types::CacheConfig::default())
-            .await
-            .unwrap(),
+        MfsStore::new("sqlite::memory:", &sisyphus_types::CacheConfig::default()).await.unwrap(),
     );
     let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
     let tool_exec = Arc::new(MockExecutor);
@@ -107,11 +105,7 @@ async fn setup_kernel(
     SisyphusKernel::new(
         store,
         Arc::new(sisyphus_mem::SopSqlStore::new(pool.clone()).await.unwrap()),
-        Arc::new(
-            sisyphus_mem::VectorMemoryStore::new(pool.clone())
-                .await
-                .unwrap(),
-        ),
+        Arc::new(sisyphus_mem::VectorMemoryStore::new(pool.clone()).await.unwrap()),
         Arc::new(MockExperienceBank),
         tool_exec as Arc<dyn ToolExecutor>,
         intel,
@@ -151,10 +145,7 @@ async fn test_meta_learning_closed_loop() {
     let sop_id = "test_meta_goal";
 
     // 1. First execution: Standard SOP
-    let (res1, report1) = kernel
-        .execute_goal(goal, sop_id, "default", None, None)
-        .await
-        .unwrap();
+    let (res1, report1) = kernel.execute_goal(goal, sop_id, "default", None, None).await.unwrap();
     assert!(!res1.to_string().is_empty());
     assert!(report1.contains("Plan:"));
 
@@ -175,10 +166,7 @@ async fn test_meta_learning_closed_loop() {
     }
 
     // 3. Second execution: Should now use the "Robustness" hint
-    let (res2, report2) = kernel
-        .execute_goal(goal, sop_id, "default", None, None)
-        .await
-        .unwrap();
+    let (res2, report2) = kernel.execute_goal(goal, sop_id, "default", None, None).await.unwrap();
     assert!(!res2.to_string().is_empty());
     // The MetaLearningSynthesizer will inject the hint
     assert!(report2.contains("Plan:"));
@@ -211,10 +199,7 @@ async fn test_strategic_simulator_selection() {
     let goal = "Fetch AI news";
     let sop_id = "test_strat_goal";
 
-    let (res, report) = kernel
-        .execute_goal(goal, sop_id, "default", None, None)
-        .await
-        .unwrap();
+    let (res, report) = kernel.execute_goal(goal, sop_id, "default", None, None).await.unwrap();
     assert!(!res.to_string().is_empty());
     assert!(report.contains("Plan:"));
 }

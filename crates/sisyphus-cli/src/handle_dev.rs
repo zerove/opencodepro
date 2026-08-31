@@ -33,13 +33,13 @@ pub(crate) async fn handle_dev(
             } else {
                 println!("⚠️  Development completed with issues.");
             }
-        }
+        },
         Ok(Err(e)) => {
             eprintln!("❌ Development failed: {e:#}");
-        }
+        },
         Err(_) => {
             eprintln!("❌ Development timed out after 5 minutes.");
-        }
+        },
     }
     Ok(())
 }

@@ -157,24 +157,22 @@ impl MySisyphusBridge {
         );
 
         let store = Arc::new(
-            SisyphusStore::new(&cache_config.database_url, &config_snapshot)
-                .await
-                .map_err(|e| {
+            SisyphusStore::new(&cache_config.database_url, &config_snapshot).await.map_err(
+                |e| {
                     sisyphus_types::TypesError::StateStoreError(format!(
                         "Failed to init SisyphusStore: {e}"
                     ))
-                })?,
+                },
+            )?,
         );
         let state_store = store.state.clone();
 
         let vector_store = Arc::new(
-            sisyphus_mem::VectorMemoryStore::new(store.pool())
-                .await
-                .map_err(|e| {
-                    sisyphus_types::TypesError::StateStoreError(format!(
-                        "Failed to init VectorMemoryStore: {e}"
-                    ))
-                })?,
+            sisyphus_mem::VectorMemoryStore::new(store.pool()).await.map_err(|e| {
+                sisyphus_types::TypesError::StateStoreError(format!(
+                    "Failed to init VectorMemoryStore: {e}"
+                ))
+            })?,
         );
 
         let sim_iterations = max_tasks.max(1) * 64;
@@ -324,9 +322,7 @@ impl MySisyphusBridge {
 
         // Secondary executor: built-in tools
         let mut registry = HookRegistry::new();
-        let loader = SkillLoader::new()
-            .with_user_dir()
-            .with_project_dir(std::path::Path::new("."));
+        let loader = SkillLoader::new().with_user_dir().with_project_dir(std::path::Path::new("."));
         let skills = loader.load_all();
         for skill in skills {
             let hooks = hooks_from_skill(&skill.name, &skill.triggers, &skill.instructions);
@@ -385,10 +381,7 @@ impl MySisyphusBridge {
 
         // Load custom tools (.opencode/tools/*.toml)
         let custom_loader = CustomToolLoader::new(".opencode/tools");
-        let custom_defs = custom_loader
-            .load_and_register(&tool_registry)
-            .await
-            .unwrap_or_default();
+        let custom_defs = custom_loader.load_and_register(&tool_registry).await.unwrap_or_default();
 
         // Create CustomToolExecutor for these tools (requires sandbox)
         #[allow(unused_variables)]
@@ -438,10 +431,10 @@ impl MySisyphusBridge {
                     );
                     mcp_servers.push((prefix.clone(), command_line.clone(), tools));
                     router.register(prefix, Arc::new(mcp));
-                }
+                },
                 Err(e) => {
                     warn!("Failed to start MCP server for prefix '{prefix}': {e}");
-                }
+                },
             }
         }
         for (prefix, url) in &http_servers {
@@ -454,10 +447,10 @@ impl MySisyphusBridge {
                     );
                     mcp_servers.push((prefix.clone(), url.to_string(), tools));
                     router.register(prefix, Arc::new(mcp));
-                }
+                },
                 Err(e) => {
                     warn!("Failed to connect MCP server for '{prefix}' at {url}: {e}");
-                }
+                },
             }
         }
 
@@ -737,9 +730,7 @@ impl MySisyphusBridge {
     ///
     /// 委托给 LlmClient::shared_http()；DynamicLlmClient 透传 ProviderRegistry。
     /// None 表示桥接未启用 LLM（开发/CLI 模式）。
-    pub fn shared_http(
-        &self,
-    ) -> Option<Arc<sisyphus_tools_llm::http_client::SharedHttpClient>> {
+    pub fn shared_http(&self) -> Option<Arc<sisyphus_tools_llm::http_client::SharedHttpClient>> {
         self.llm_client.shared_http()
     }
     pub(crate) fn tool_registry(&self) -> &Arc<ToolRegistry> {
@@ -757,10 +748,7 @@ impl MySisyphusBridge {
 
     #[expect(dead_code)]
     pub(crate) async fn get_current_project_id(&self) -> Option<String> {
-        self.workspace_manager
-            .get_current()
-            .await
-            .map(|ws| ws.project_id)
+        self.workspace_manager.get_current().await.map(|ws| ws.project_id)
     }
 
     pub(crate) fn publish_event(&self, event: sisyphus_bridge_api::BridgeEvent) {

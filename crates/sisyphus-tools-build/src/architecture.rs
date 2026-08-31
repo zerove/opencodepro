@@ -129,11 +129,8 @@ impl ArchitectureAnalyzer {
 
     /// Analyze all .rs files in a directory and generate an architecture doc.
     pub fn analyze_directory(dir: &str) -> ToolResult<ArchitectureDoc> {
-        let module_name = Path::new(dir)
-            .file_name()
-            .and_then(|s| s.to_str())
-            .unwrap_or("unknown")
-            .to_string();
+        let module_name =
+            Path::new(dir).file_name().and_then(|s| s.to_str()).unwrap_or("unknown").to_string();
 
         let mut reports = Vec::new();
         let mut all_suggestions = Vec::new();

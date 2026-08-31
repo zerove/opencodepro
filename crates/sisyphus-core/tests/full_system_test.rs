@@ -111,9 +111,7 @@ impl Consensus for MockConsensus {
 
 async fn setup_kernel(llm: Arc<dyn LlmClient>, tool_exec: Arc<dyn ToolExecutor>) -> SisyphusKernel {
     let store = Arc::new(
-        MfsStore::new("sqlite::memory:", &sisyphus_types::CacheConfig::default())
-            .await
-            .unwrap(),
+        MfsStore::new("sqlite::memory:", &sisyphus_types::CacheConfig::default()).await.unwrap(),
     );
     let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
 
@@ -132,21 +130,13 @@ async fn setup_kernel(llm: Arc<dyn LlmClient>, tool_exec: Arc<dyn ToolExecutor>)
     let inner_syn = Arc::new(GoalDrivenSynthesizer::new(tool_exec.clone()));
     let syn = Arc::new(StrategicSopSynthesizer::new(inner_syn, simulator));
 
-    let roadmap_store = Arc::new(
-        sisyphus_mem::RoadmapSqlStore::new(pool.clone())
-            .await
-            .unwrap(),
-    );
+    let roadmap_store = Arc::new(sisyphus_mem::RoadmapSqlStore::new(pool.clone()).await.unwrap());
     roadmap_store.init_schema().await.unwrap();
 
     SisyphusKernel::new(
         store,
         Arc::new(sisyphus_mem::SopSqlStore::new(pool.clone()).await.unwrap()),
-        Arc::new(
-            sisyphus_mem::VectorMemoryStore::new(pool.clone())
-                .await
-                .unwrap(),
-        ),
+        Arc::new(sisyphus_mem::VectorMemoryStore::new(pool.clone()).await.unwrap()),
         Arc::new(MockExperienceBank),
         tool_exec,
         intel,
@@ -202,11 +192,7 @@ async fn test_full_system_integration_flow() {
         }],
         status: MilestoneStatus::Pending,
     };
-    kernel
-        .roadmap_manager
-        .add_milestone(project_id, milestone)
-        .await
-        .unwrap();
+    kernel.roadmap_manager.add_milestone(project_id, milestone).await.unwrap();
 
     let (event_tx, _event_rx) = mpsc::unbounded_channel();
     let (res, _report, _health) = kernel
@@ -245,10 +231,8 @@ async fn test_complex_strategic_goal() {
     let complex_goal =
         "Fetch API specs, process rate limiting rules, validate security, and save configuration";
     let (_event_tx, _event_rx) = mpsc::unbounded_channel::<sisyphus_types::ExecutionEvent>();
-    let (res, report) = kernel
-        .execute_goal(complex_goal, "complex_sop_id", "default", None, None)
-        .await
-        .unwrap();
+    let (res, report) =
+        kernel.execute_goal(complex_goal, "complex_sop_id", "default", None, None).await.unwrap();
 
     assert!(!res.to_string().is_empty());
     assert!(report.contains("Plan:"));

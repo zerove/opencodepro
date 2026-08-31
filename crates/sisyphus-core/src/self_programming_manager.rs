@@ -167,8 +167,7 @@ impl SelfProgrammingManager {
                     asset_id: asset_id.clone(),
                 })
                 .await;
-                self.execution_manager
-                    .notify_tool_deployed(&gap.suggested_tool_spec.tool_id);
+                self.execution_manager.notify_tool_deployed(&gap.suggested_tool_spec.tool_id);
 
                 info!(
                     "Tool deployed (asset_id: {}). Running regression tests...",
@@ -176,14 +175,12 @@ impl SelfProgrammingManager {
                 );
 
                 // 6. 对已部署工具运行回归测试
-                let regress_result = self
-                    .run_regression_tests(&gap.suggested_tool_spec, &asset_id)
-                    .await;
+                let regress_result =
+                    self.run_regression_tests(&gap.suggested_tool_spec, &asset_id).await;
 
                 // 7. 评估质量
-                let quality = self
-                    .evaluate_quality(&gap.suggested_tool_spec, &regress_result)
-                    .await;
+                let quality =
+                    self.evaluate_quality(&gap.suggested_tool_spec, &regress_result).await;
 
                 self.notify(CognitiveEvent::QualityEvaluation {
                     tool_id: gap.suggested_tool_spec.tool_id.clone(),
@@ -262,34 +259,30 @@ impl SelfProgrammingManager {
                 Ok(result) if result.success => {
                     passed += 1;
                     info!("Unit test passed for tool {}", tool_id);
-                }
+                },
                 Ok(result) => {
                     failures.push(format!(
                         "Unit test failed: {}",
                         result.error_summary.unwrap_or_default()
                     ));
                     warn!("Unit test failed for tool {}: {}", tool_id, result.stderr);
-                }
+                },
                 Err(e) => {
                     failures.push(format!("Unit test error: {}", e));
                     warn!("Unit test error for tool {}: {}", tool_id, e);
-                }
+                },
             }
         } else {
             // 没有显式测试命令；尝试运行常见的测试模式
             let default_cmd = format!("cargo test --test {}_test", tool_id);
             total += 1;
-            let result = self
-                .execution_manager
-                .executor
-                .test_executor
-                .run_test(&default_cmd, None)
-                .await;
+            let result =
+                self.execution_manager.executor.test_executor.run_test(&default_cmd, None).await;
 
             match result {
                 Ok(r) if r.success => {
                     passed += 1;
-                }
+                },
                 Ok(r) => {
                     // 测试 crate 可能不存在；将其视为软失败
                     info!(
@@ -298,36 +291,30 @@ impl SelfProgrammingManager {
                         r.error_summary.unwrap_or_default()
                     );
                     passed += 1; // Soft pass — no test is not a regression
-                }
+                },
                 Err(_e) => {
                     passed += 1; // Soft pass — no test harness, not a regression
-                }
+                },
             }
         }
 
         // --- 集成测试 ---
         let integration_cmd = format!("cargo test -p sisyphus-tests --test {}_test", tool_id);
         total += 1;
-        match self
-            .execution_manager
-            .executor
-            .test_executor
-            .run_test(&integration_cmd, None)
-            .await
-        {
+        match self.execution_manager.executor.test_executor.run_test(&integration_cmd, None).await {
             Ok(r) if r.success => {
                 passed += 1;
                 info!("Integration test passed for tool {}", tool_id);
-            }
+            },
             Ok(r) => {
                 let err_msg = r.error_summary.unwrap_or_default();
                 failures.push(format!("Integration test: {}", err_msg));
                 warn!("Integration test for {}: {}", tool_id, err_msg);
-            }
+            },
             Err(e) => {
                 info!("No integration test suite for {}: {}", tool_id, e);
                 passed += 1; // Soft pass
-            }
+            },
         }
 
         let duration = start.elapsed();
@@ -455,10 +442,7 @@ impl SelfProgrammingManager {
         );
 
         let tool_id = &gap.suggested_tool_spec.tool_id;
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs();
+        let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
 
         // 构建技能元数据
         let metadata = SkillMetadata {
@@ -504,10 +488,10 @@ impl SelfProgrammingManager {
                         score: quality.overall_score,
                     })
                     .await;
-                }
+                },
                 Err(e) => {
                     warn!("Failed to register skill {}: {}", bundle.metadata.id, e);
-                }
+                },
             }
         } else {
             info!(
@@ -710,10 +694,7 @@ mod tests {
     #[tokio::test]
     async fn test_skill_bundle_creation() {
         // 测试能够创建带正确元数据的有效 SkillBundle
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs();
+        let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
 
         let metadata = SkillMetadata {
             id: "skill:test_tool:1".into(),
@@ -744,10 +725,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_skill_bundle_with_sub_sops() {
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs();
+        let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
 
         let mut bundle = SkillBundle::new(
             SkillMetadata {

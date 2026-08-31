@@ -55,18 +55,12 @@ async fn setup() -> Router {
 async fn get(app: &Router, uri: &str) -> (StatusCode, axum::Json<serde_json::Value>) {
     let response = app
         .clone()
-        .oneshot(
-            Request::builder()
-                .uri(uri)
-                .body(Body::empty())
-                .expect("request build failed"),
-        )
+        .oneshot(Request::builder().uri(uri).body(Body::empty()).expect("request build failed"))
         .await
         .expect("request failed");
     let status = response.status();
-    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
-        .await
-        .expect("body read failed");
+    let bytes =
+        axum::body::to_bytes(response.into_body(), usize::MAX).await.expect("body read failed");
     let json = serde_json::from_slice(&bytes).unwrap_or(serde_json::Value::Null);
     (status, axum::Json(json))
 }
@@ -89,9 +83,8 @@ async fn post_json(
         .await
         .expect("request failed");
     let status = response.status();
-    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
-        .await
-        .expect("body read failed");
+    let bytes =
+        axum::body::to_bytes(response.into_body(), usize::MAX).await.expect("body read failed");
     let json = serde_json::from_slice(&bytes).unwrap_or(serde_json::Value::Null);
     (status, axum::Json(json))
 }

@@ -114,10 +114,7 @@ impl OAuth2ClientCredentials {
         {
             let cache = self.cache.lock();
             if let Some(cached) = cache.as_ref() {
-                let still_valid = cached
-                    .expires_at
-                    .map(|t| t > Instant::now())
-                    .unwrap_or(true);
+                let still_valid = cached.expires_at.map(|t| t > Instant::now()).unwrap_or(true);
                 if still_valid {
                     return Ok(cached.access_token.clone());
                 }
@@ -169,10 +166,8 @@ impl OAuth2ClientCredentials {
             return Err(OAuthError::BadStatus(status.as_u16(), body));
         }
 
-        let token: TokenResponse = resp
-            .json()
-            .await
-            .map_err(|e| OAuthError::Parse(e.to_string()))?;
+        let token: TokenResponse =
+            resp.json().await.map_err(|e| OAuthError::Parse(e.to_string()))?;
         Ok(token)
     }
 

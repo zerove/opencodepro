@@ -7,7 +7,7 @@ pub(crate) fn handle_hashline(sub: &HashlineCommands) -> Result<()> {
         HashlineCommands::Annotate { path } => {
             let count = sisyphus_cli::tools::hashline::annotate_file(path)?;
             println!("Annotated {} lines in {}", count, path.display());
-        }
+        },
         HashlineCommands::Verify { path } => {
             let content = std::fs::read_to_string(path)?;
             let mut valid = 0;
@@ -30,7 +30,7 @@ pub(crate) fn handle_hashline(sub: &HashlineCommands) -> Result<()> {
             if invalid > 0 {
                 std::process::exit(1);
             }
-        }
+        },
         HashlineCommands::Edit {
             path,
             hashline,
@@ -39,7 +39,7 @@ pub(crate) fn handle_hashline(sub: &HashlineCommands) -> Result<()> {
             let old =
                 sisyphus_cli::tools::hashline::edit_with_hashline(path, hashline, new_content)?;
             println!("Successfully edited line. Old content: '{}'", old);
-        }
+        },
     }
     Ok(())
 }

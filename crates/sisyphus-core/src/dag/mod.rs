@@ -59,12 +59,8 @@ impl DependencyResolver {
 
         // 添加边：source -> target（source 先于 target 执行）
         for dep in &composite.dependencies {
-            let src = node_map
-                .get(&dep.source_sop_id)
-                .ok_or(CoreError::MissingSourceNode)?;
-            let tgt = node_map
-                .get(&dep.target_sop_id)
-                .ok_or(CoreError::MissingTargetNode)?;
+            let src = node_map.get(&dep.source_sop_id).ok_or(CoreError::MissingSourceNode)?;
+            let tgt = node_map.get(&dep.target_sop_id).ok_or(CoreError::MissingTargetNode)?;
             dep_graph.add_edge(*src, *tgt, ());
         }
 

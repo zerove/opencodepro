@@ -76,8 +76,7 @@ fn publish_delivers_to_all_subscribers() {
     ch.subscribe("agent_a", "news").expect("sub");
     ch.subscribe("agent_b", "news").expect("sub");
     // No background processing — subscriptions are visible immediately.
-    ch.publish("news", make_msg("broadcaster", "news"))
-        .expect("pub");
+    ch.publish("news", make_msg("broadcaster", "news")).expect("pub");
     assert_eq!(ch.receive("agent_a").expect("").len(), 1);
     assert_eq!(ch.receive("agent_b").expect("").len(), 1);
 }
@@ -85,8 +84,7 @@ fn publish_delivers_to_all_subscribers() {
 #[test]
 fn publish_to_topic_with_no_subscribers_is_noop() {
     let ch = AgentChannel::new();
-    ch.publish("nobody_cares", make_msg("a", "b"))
-        .expect("pub");
+    ch.publish("nobody_cares", make_msg("a", "b")).expect("pub");
     // No one received the message.
     assert!(ch.receive("a").expect("").is_empty());
     assert!(ch.receive("b").expect("").is_empty());
@@ -97,10 +95,8 @@ fn subscribe_to_multiple_topics() {
     let ch = AgentChannel::new();
     ch.subscribe("agent", "topic_a").expect("sub");
     ch.subscribe("agent", "topic_b").expect("sub");
-    ch.publish("topic_a", make_msg("src", "topic_a"))
-        .expect("pub");
-    ch.publish("topic_b", make_msg("src", "topic_b"))
-        .expect("pub");
+    ch.publish("topic_a", make_msg("src", "topic_a")).expect("pub");
+    ch.publish("topic_b", make_msg("src", "topic_b")).expect("pub");
     let inbox = ch.receive("agent").expect("");
     assert_eq!(inbox.len(), 2);
 }

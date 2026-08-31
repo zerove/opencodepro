@@ -93,10 +93,7 @@ Function to test:
             return Err("LLM client not available".to_string());
         };
 
-        let response = llm_client
-            .generate(&prompt)
-            .await
-            .map_err(|e| e.to_string())?;
+        let response = llm_client.generate(&prompt).await.map_err(|e| e.to_string())?;
 
         let cleaned = response
             .trim()
@@ -424,10 +421,7 @@ fn hidden() {}
         let code = "fn private_helper() -> i32 { 42 }";
         let (_f, path) = create_temp_rs(code);
         let gen = TestGenerator::new();
-        let test = gen
-            .generate_for_function(&path, "private_helper")
-            .await
-            .unwrap();
+        let test = gen.generate_for_function(&path, "private_helper").await.unwrap();
         assert!(test.test_code.contains("not public"));
     }
 }

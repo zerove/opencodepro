@@ -63,9 +63,7 @@ async fn setup_kernel(
     synthesizer: Arc<dyn sisyphus_intel::FlowSynthesizer>,
 ) -> SisyphusKernel {
     let state_store = Arc::new(
-        MfsStore::new("sqlite::memory:", &sisyphus_types::CacheConfig::default())
-            .await
-            .unwrap(),
+        MfsStore::new("sqlite::memory:", &sisyphus_types::CacheConfig::default()).await.unwrap(),
     );
     let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
     let tool_exec = Arc::new(MockExecutor);
@@ -81,11 +79,7 @@ async fn setup_kernel(
     SisyphusKernel::new(
         state_store,
         Arc::new(sisyphus_mem::SopSqlStore::new(pool.clone()).await.unwrap()),
-        Arc::new(
-            sisyphus_mem::VectorMemoryStore::new(pool.clone())
-                .await
-                .unwrap(),
-        ),
+        Arc::new(sisyphus_mem::VectorMemoryStore::new(pool.clone()).await.unwrap()),
         Arc::new(MockExperienceBank),
         tool_exec as Arc<dyn ToolExecutor>,
         intel,

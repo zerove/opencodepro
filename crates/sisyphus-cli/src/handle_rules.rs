@@ -26,7 +26,7 @@ pub fn handle_rules(sub: &RulesCommands) -> Result<()> {
                     }
                 }
             }
-        }
+        },
         RulesCommands::Reload => {
             let root = std::env::current_dir()?;
             let rules = sisyphus_cli::tools::load_project_rules(&root);
@@ -34,10 +34,10 @@ pub fn handle_rules(sub: &RulesCommands) -> Result<()> {
                 Some(src) => {
                     let count = rules.agents.len();
                     println!("Reloaded {count} project agent(s) from {src}");
-                }
+                },
                 None => println!("No AGENTS.md found."),
             }
-        }
+        },
     }
     Ok(())
 }

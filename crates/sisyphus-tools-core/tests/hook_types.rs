@@ -2,7 +2,9 @@
 //! pure data types: `HookPhase`, `HookEffect`, `HookDef`,
 //! `BeforeHookResult`, `AfterHookResult`.
 
-use sisyphus_tools_core::hook::{AfterHookResult, BeforeHookResult, HookDef, HookEffect, HookPhase};
+use sisyphus_tools_core::hook::{
+    AfterHookResult, BeforeHookResult, HookDef, HookEffect, HookPhase,
+};
 
 // ---------------------------------------------------------------------------
 // HookPhase
@@ -25,8 +27,14 @@ fn hook_phase_serde_round_trip() {
 
 #[test]
 fn hook_phase_serde_uses_lowercase() {
-    assert_eq!(serde_json::to_string(&HookPhase::Before).unwrap(), "\"before\"");
-    assert_eq!(serde_json::to_string(&HookPhase::After).unwrap(), "\"after\"");
+    assert_eq!(
+        serde_json::to_string(&HookPhase::Before).unwrap(),
+        "\"before\""
+    );
+    assert_eq!(
+        serde_json::to_string(&HookPhase::After).unwrap(),
+        "\"after\""
+    );
 }
 
 #[test]

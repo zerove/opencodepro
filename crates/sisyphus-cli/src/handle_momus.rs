@@ -27,7 +27,7 @@ pub(crate) async fn handle_momus(
                     }
                 }
             }
-        }
+        },
         MomusCommands::ReviewCode { path } => {
             let content = std::fs::read_to_string(path)?;
             let review = sisyphus_cli::tools::review_code(llm_client.as_ref(), path, &content)
@@ -54,7 +54,7 @@ pub(crate) async fn handle_momus(
                     }
                 }
             }
-        }
+        },
         MomusCommands::ReviewArch { text } => {
             let review = sisyphus_cli::tools::review_architecture(llm_client.as_ref(), text).await;
             println!("{}", review.summary);
@@ -67,7 +67,7 @@ pub(crate) async fn handle_momus(
                     }
                 }
             }
-        }
+        },
         MomusCommands::ReviewDir { path } => {
             let walker = std::fs::read_dir(path)?;
             let mut reviews = Vec::new();
@@ -106,7 +106,7 @@ pub(crate) async fn handle_momus(
                     }
                 }
             }
-        }
+        },
     }
     Ok(())
 }

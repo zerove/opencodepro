@@ -82,8 +82,7 @@ fn diamond_has_expected_node_names() {
 fn diamond_edges_form_proper_structure() {
     let cfg = diamond().expect("ok");
     // Verify all expected edges are present.
-    let edge_set: std::collections::HashSet<(usize, usize)> =
-        cfg.edges.iter().copied().collect();
+    let edge_set: std::collections::HashSet<(usize, usize)> = cfg.edges.iter().copied().collect();
     // root→left, root→right, left→merge, right→merge
     let root_idx = cfg.nodes.iter().position(|n| n.name == "root").expect("");
     let left_idx = cfg.nodes.iter().position(|n| n.name == "left").expect("");
@@ -123,8 +122,7 @@ fn wide_fanout_creates_root_and_leaves() {
 fn wide_fanout_root_connects_to_all_leaves() {
     let cfg = wide_fanout(5).expect("ok");
     let root_idx = cfg.nodes.iter().position(|n| n.name == "root").expect("");
-    let edge_set: std::collections::HashSet<(usize, usize)> =
-        cfg.edges.iter().copied().collect();
+    let edge_set: std::collections::HashSet<(usize, usize)> = cfg.edges.iter().copied().collect();
     for i in 0..5 {
         let leaf_idx = cfg.nodes.iter().position(|n| n.name == format!("leaf_{i}")).expect("");
         assert!(edge_set.contains(&(root_idx, leaf_idx)));

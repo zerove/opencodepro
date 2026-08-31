@@ -69,9 +69,7 @@ pub struct MetricsCollector {
 
 impl MetricsCollector {
     fn uptime_secs(&self) -> u64 {
-        self.uptime_start
-            .map(|t| t.elapsed().as_secs())
-            .unwrap_or(0)
+        self.uptime_start.map(|t| t.elapsed().as_secs()).unwrap_or(0)
     }
 }
 
@@ -486,10 +484,7 @@ async fn dag_htmx(
     State(state): State<Arc<AppState>>,
     Query(params): Query<HashMap<String, String>>,
 ) -> Response {
-    let sop_id = params
-        .get("sop_id")
-        .map(|s| s.as_str())
-        .unwrap_or("default");
+    let sop_id = params.get("sop_id").map(|s| s.as_str()).unwrap_or("default");
     let graph = fetch_dag_graph(&state, sop_id).await;
     let svg = render_dag_svg(&graph);
     Html(svg).into_response()
@@ -556,7 +551,7 @@ async fn exec_result_htmx(
                 cls, r.sop_id, r.status, r.iterations, r.deviation
             ))
             .into_response()
-        }
+        },
         Err(e) => Html(format!(
             "<div class='exec-result status-err'>错误: {e}</div>"
         ))
@@ -572,9 +567,7 @@ async fn add_message_htmx(
     let _ = add_message(&state, &session_id, &req.role, &req.content).await;
 
     let event = serde_json::json!({"event_type": "message_added", "session_id": session_id});
-    let _ = state
-        .event_tx
-        .send(serde_json::to_string(&event).unwrap_or_default());
+    let _ = state.event_tx.send(serde_json::to_string(&event).unwrap_or_default());
 
     session_detail_htmx(State(state), Path(session_id)).await
 }
@@ -634,9 +627,7 @@ async fn chaos_toggle_htmx(State(state): State<Arc<AppState>>) -> Response {
             .map(|d| d.as_secs())
             .unwrap_or(0)
     });
-    let _ = state
-        .event_tx
-        .send(serde_json::to_string(&event).unwrap_or_default());
+    let _ = state.event_tx.send(serde_json::to_string(&event).unwrap_or_default());
 
     chaos_status_htmx(State(state)).await
 }
@@ -646,10 +637,7 @@ async fn chaos_probability_htmx(
     State(state): State<Arc<AppState>>,
     Query(params): Query<HashMap<String, String>>,
 ) -> Response {
-    let raw: f64 = params
-        .get("probability")
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(10.0);
+    let raw: f64 = params.get("probability").and_then(|v| v.parse().ok()).unwrap_or(10.0);
     let pct = raw.clamp(0.0, 100.0);
     *state.chaos_fault_probability.write().await = pct / 100.0;
 
@@ -681,16 +669,13 @@ async fn dashboard_events_sse(
         match rx.recv().await {
             Ok(data) => {
                 // 转义 HTML 特殊字符以避免仪表盘 XSS
-                let escaped = data
-                    .replace('&', "&amp;")
-                    .replace('<', "&lt;")
-                    .replace('>', "&gt;");
+                let escaped = data.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;");
                 let html = format!(
                     r#"<div style="padding:6px;margin-bottom:4px;background:#0d1117;border:1px solid #21262d;border-radius:4px;font-size:0.8rem;font-family:monospace;word-break:break-all;">{}</div>"#,
                     escaped
                 );
                 Some((Ok(Event::default().data(html)), rx))
-            }
+            },
             Err(_) => None,
         }
     });
@@ -843,12 +828,7 @@ async fn api_skill_install(
 // ── Bridge 客户端辅助函数 ─────────────────────
 
 async fn fetch_health(state: &AppState) -> HealthResponse {
-    match state
-        .client
-        .get(format!("{}/health", state.bridge_url))
-        .send()
-        .await
-    {
+    match state.client.get(format!("{}/health", state.bridge_url)).send().await {
         Ok(r) => r.json::<HealthResponse>().await.unwrap_or(HealthResponse {
             status: "unreachable".into(),
             version: "unknown".into(),
@@ -863,24 +843,14 @@ async fn fetch_health(state: &AppState) -> HealthResponse {
 }
 
 async fn fetch_sessions(state: &AppState) -> Vec<Session> {
-    match state
-        .client
-        .get(format!("{}/api/v1/sessions", state.bridge_url))
-        .send()
-        .await
-    {
+    match state.client.get(format!("{}/api/v1/sessions", state.bridge_url)).send().await {
         Ok(r) => r.json::<Vec<Session>>().await.unwrap_or_default(),
         Err(_) => vec![],
     }
 }
 
 async fn fetch_session_detail(state: &AppState, id: &str) -> SessionDetail {
-    match state
-        .client
-        .get(format!("{}/api/v1/sessions/{id}", state.bridge_url))
-        .send()
-        .await
-    {
+    match state.client.get(format!("{}/api/v1/sessions/{id}", state.bridge_url)).send().await {
         Ok(r) => r.json::<SessionDetail>().await.unwrap_or(SessionDetail {
             id: id.into(),
             name: "unknown".into(),
@@ -964,24 +934,14 @@ async fn execute_sop(
 }
 
 async fn fetch_sop_list(state: &AppState) -> Vec<SopInfo> {
-    match state
-        .client
-        .get(format!("{}/api/v1/sops", state.bridge_url))
-        .send()
-        .await
-    {
+    match state.client.get(format!("{}/api/v1/sops", state.bridge_url)).send().await {
         Ok(r) => r.json::<Vec<SopInfo>>().await.unwrap_or_default(),
         Err(_) => vec![],
     }
 }
 
 async fn fetch_dag_graph(state: &AppState, sop_id: &str) -> DagGraph {
-    match state
-        .client
-        .get(format!("{}/api/v1/sops/{sop_id}/dag", state.bridge_url))
-        .send()
-        .await
-    {
+    match state.client.get(format!("{}/api/v1/sops/{sop_id}/dag", state.bridge_url)).send().await {
         Ok(r) => r.json::<DagGraph>().await.unwrap_or(DagGraph {
             nodes: vec![],
             edges: vec![],
@@ -998,12 +958,7 @@ async fn fetch_dag_graph(state: &AppState, sop_id: &str) -> DagGraph {
 }
 
 async fn fetch_skill_list(state: &AppState) -> Vec<SkillEntry> {
-    match state
-        .client
-        .get(format!("{}/api/v1/skills", state.bridge_url))
-        .send()
-        .await
-    {
+    match state.client.get(format!("{}/api/v1/skills", state.bridge_url)).send().await {
         Ok(r) => r.json::<Vec<SkillEntry>>().await.unwrap_or_default(),
         Err(_) => vec![],
     }
@@ -1074,15 +1029,10 @@ async fn auth_middleware(
     request: axum::http::Request<axum::body::Body>,
     next: axum::middleware::Next,
 ) -> Result<axum::http::Response<axum::body::Body>, (StatusCode, &'static str)> {
-    let auth_token: Option<String> = std::env::var("WEBUI_API_KEY")
-        .ok()
-        .filter(|s| !s.is_empty());
+    let auth_token: Option<String> = std::env::var("WEBUI_API_KEY").ok().filter(|s| !s.is_empty());
     if let Some(ref token) = auth_token {
-        let header = request
-            .headers()
-            .get("Authorization")
-            .and_then(|v| v.to_str().ok())
-            .unwrap_or("");
+        let header =
+            request.headers().get("Authorization").and_then(|v| v.to_str().ok()).unwrap_or("");
         let expected = format!("Bearer {}", token);
         if header != expected {
             return Err((StatusCode::UNAUTHORIZED, "Missing or invalid API key"));
@@ -1094,9 +1044,7 @@ async fn auth_middleware(
 pub fn app(bridge_url: String) -> Router {
     // 从环境变量读取可选认证 token。设置后，所有非公开路由
     // 需携带 `Authorization: Bearer <WEBUI_API_KEY>`。
-    let auth_token: Option<String> = std::env::var("WEBUI_API_KEY")
-        .ok()
-        .filter(|s| !s.is_empty());
+    let auth_token: Option<String> = std::env::var("WEBUI_API_KEY").ok().filter(|s| !s.is_empty());
 
     let (event_tx, _) = broadcast::channel(256);
     let state = Arc::new(AppState {
@@ -1280,9 +1228,7 @@ mod tests {
     async fn test_chaos_status_htmx_initial_stopped() {
         let state = test_state();
         let resp = chaos_status_htmx(State(state.clone())).await;
-        let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
-            .await
-            .unwrap();
+        let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
         let html = String::from_utf8(bytes.to_vec()).unwrap();
         assert!(html.contains("已停止"));
         assert!(html.contains("10%"));
@@ -1318,10 +1264,8 @@ mod tests {
         let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         std::env::remove_var("WEBUI_API_KEY");
         let router = app("http://localhost:8080".into());
-        let resp = router
-            .oneshot(Request::builder().uri("/").body(Body::empty()).unwrap())
-            .await
-            .unwrap();
+        let resp =
+            router.oneshot(Request::builder().uri("/").body(Body::empty()).unwrap()).await.unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
     }
 
@@ -1329,18 +1273,11 @@ mod tests {
     async fn test_router_metrics_endpoint() {
         let router = app("http://localhost:8080".into());
         let resp = router
-            .oneshot(
-                Request::builder()
-                    .uri("/metrics")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
+            .oneshot(Request::builder().uri("/metrics").body(Body::empty()).unwrap())
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
-        let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
-            .await
-            .unwrap();
+        let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
         let body = String::from_utf8(bytes.to_vec()).unwrap();
         assert!(body.contains("sisyphus_requests_total"));
         assert!(body.contains("sisyphus_uptime_seconds"));
@@ -1356,12 +1293,7 @@ mod tests {
         // 无认证头 → 401
         let resp = router
             .clone()
-            .oneshot(
-                Request::builder()
-                    .uri("/api/sessions")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
+            .oneshot(Request::builder().uri("/api/sessions").body(Body::empty()).unwrap())
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
@@ -1403,12 +1335,7 @@ mod tests {
         std::env::remove_var("WEBUI_API_KEY");
         let router = app("http://localhost:8080".into());
         let resp = router
-            .oneshot(
-                Request::builder()
-                    .uri("/metrics")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
+            .oneshot(Request::builder().uri("/metrics").body(Body::empty()).unwrap())
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::OK);

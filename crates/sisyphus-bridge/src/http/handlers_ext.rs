@@ -88,7 +88,7 @@ pub(super) async fn publish_skill_handler(
                 }),
             )
                 .into_response()
-        }
+        },
         Err(e) => {
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
@@ -99,16 +99,11 @@ pub(super) async fn publish_skill_handler(
                 }),
             )
                 .into_response()
-        }
+        },
     };
 
     // Publish to the remote registry (peer protocol: POST {registry}/api/v1/skills).
-    match state
-        .bridge
-        .skill_market
-        .publish(&req.registry_url, &bundle)
-        .await
-    {
+    match state.bridge.skill_market.publish(&req.registry_url, &bundle).await {
         Ok(entry) => (
             StatusCode::OK,
             Json(PublishSkillResponse {
@@ -193,7 +188,7 @@ pub(super) async fn execute_tool_handler(
                 }),
             )
                 .into_response()
-        }
+        },
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(ExecuteToolResponse {
@@ -239,7 +234,7 @@ pub(super) async fn delegate_cognitive_task_handler(
                         }),
                     )
                         .into_response();
-                }
+                },
             };
             let plan = graph_config.into_cognitive_plan(req.goal.clone(), req.goal.clone());
             let _ = state.bridge.kernel().cache_plan(&plan.plan_id, &plan).await;
@@ -255,7 +250,7 @@ pub(super) async fn delegate_cognitive_task_handler(
                         }),
                     )
                         .into_response();
-                }
+                },
             };
             (
                 StatusCode::OK,
@@ -266,7 +261,7 @@ pub(super) async fn delegate_cognitive_task_handler(
                 }),
             )
                 .into_response()
-        }
+        },
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(DelegateCognitiveTaskResponse {
@@ -298,14 +293,9 @@ pub(super) async fn submit_feedback_handler(
                 }),
             )
                 .into_response()
-        }
+        },
     };
-    match state
-        .bridge
-        .kernel()
-        .handle_feedback(feedback, project_id)
-        .await
-    {
+    match state.bridge.kernel().handle_feedback(feedback, project_id).await {
         Ok(evolution) => {
             let evolution_json = serde_json::to_string(&evolution).unwrap_or_default();
             (
@@ -317,7 +307,7 @@ pub(super) async fn submit_feedback_handler(
                 }),
             )
                 .into_response()
-        }
+        },
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(SubmitFeedbackResponse {
@@ -347,14 +337,9 @@ pub(super) async fn capture_experience_handler(
                 }),
             )
                 .into_response()
-        }
+        },
     };
-    match state
-        .bridge
-        .kernel()
-        .capture_success(&req.plan_id, project_id, plan)
-        .await
-    {
+    match state.bridge.kernel().capture_success(&req.plan_id, project_id, plan).await {
         Ok(_) => (
             StatusCode::OK,
             Json(CaptureExperienceResponse {
@@ -378,12 +363,7 @@ pub(super) async fn share_experience_handler(
     State(state): State<RestApiState>,
     Json(req): Json<ShareExperienceRequest>,
 ) -> impl IntoResponse {
-    match state
-        .bridge
-        .experience_bank
-        .share_experience(&req.exp_key)
-        .await
-    {
+    match state.bridge.experience_bank.share_experience(&req.exp_key).await {
         Ok(_) => (
             StatusCode::OK,
             Json(ShareExperienceResponse {
@@ -418,15 +398,10 @@ pub(super) async fn unshare_experience_handler(
                 }),
             )
                 .into_response()
-        }
+        },
     };
 
-    match state
-        .bridge
-        .experience_bank
-        .unshare_experience(&req.exp_key, &project_id)
-        .await
-    {
+    match state.bridge.experience_bank.unshare_experience(&req.exp_key, &project_id).await {
         Ok(_) => (
             StatusCode::OK,
             Json(ShareExperienceResponse {
@@ -549,12 +524,7 @@ pub(super) async fn load_plugin_handler(
         fuel_limit: req.fuel_limit.unwrap_or(0),
         checksum: None,
     };
-    match state
-        .bridge
-        .plugin_manager
-        .register_plugin(descriptor)
-        .await
-    {
+    match state.bridge.plugin_manager.register_plugin(descriptor).await {
         Ok(_) => (
             StatusCode::OK,
             Json(LoadPluginResponse {
@@ -618,14 +588,9 @@ pub(super) async fn call_jcode_handler(
                 }),
             )
                 .into_response()
-        }
+        },
     };
-    match state
-        .bridge
-        .jcode_caller
-        .call_tool("jcode/call", args)
-        .await
-    {
+    match state.bridge.jcode_caller.call_tool("jcode/call", args).await {
         Ok(result) => {
             let result_str = String::from_utf8_lossy(&result).to_string();
             (
@@ -637,7 +602,7 @@ pub(super) async fn call_jcode_handler(
                 }),
             )
                 .into_response()
-        }
+        },
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(CallJcodeResponse {
@@ -669,7 +634,7 @@ pub(super) async fn chaos_start_handler(
             _ if s.starts_with("RandomDelay(") && s.ends_with(")") => {
                 let inner = s["RandomDelay(".len()..s.len() - 1].parse().ok()?;
                 Some(sisyphus_core::FaultType::RandomDelay(inner))
-            }
+            },
             _ => None,
         })
         .collect();
@@ -729,7 +694,7 @@ pub(super) async fn chaos_stop_handler(
                 }),
             )
                 .into_response()
-        }
+        },
         None => (
             StatusCode::NOT_FOUND,
             Json(ChaosStopResponse {

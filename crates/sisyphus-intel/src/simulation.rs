@@ -135,18 +135,13 @@ impl LogicalSimulator for LlmLogicalSimulator {
         // 目前假定索引大致有序，或使用 petgraph 的 topo_sort。
 
         for idx in node_indices {
-            let node_weight = graph
-                .graph
-                .node_weight(idx)
-                .ok_or_else(|| "Node weight missing".to_string())?;
+            let node_weight =
+                graph.graph.node_weight(idx).ok_or_else(|| "Node weight missing".to_string())?;
             let node_name = node_weight.name().to_string();
 
             // 从前驱节点收集输入
             let mut inputs = HashMap::new();
-            for edge in graph
-                .graph
-                .edges_directed(idx, petgraph::Direction::Incoming)
-            {
+            for edge in graph.graph.edges_directed(idx, petgraph::Direction::Incoming) {
                 let source_idx = edge.source();
                 if let Some(source_weight) = graph.graph.node_weight(source_idx) {
                     let source_name = source_weight.name();
@@ -211,24 +206,14 @@ impl LogicalSimulator for LlmLogicalSimulator {
                     virtual_context.insert(node_name.clone(), "ok".to_string());
                     predicted_path.push(node_name.clone());
                     continue;
-                }
+                },
             };
 
             if let Ok(val) = serde_json::from_str::<serde_json::Value>(&response) {
-                let output = val
-                    .get("output")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .to_string();
+                let output = val.get("output").and_then(|v| v.as_str()).unwrap_or("").to_string();
                 let flaw_desc = val.get("flaw").and_then(|v| v.as_str());
-                let severity_str = val
-                    .get("severity")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("Info");
-                let confidence = val
-                    .get("confidence")
-                    .and_then(|v| v.as_f64())
-                    .unwrap_or(0.5);
+                let severity_str = val.get("severity").and_then(|v| v.as_str()).unwrap_or("Info");
+                let confidence = val.get("confidence").and_then(|v| v.as_f64()).unwrap_or(0.5);
 
                 if let Some(desc) = flaw_desc {
                     let severity = match severity_str {
@@ -257,9 +242,7 @@ impl LogicalSimulator for LlmLogicalSimulator {
             }
         }
 
-        let is_valid = !flaws
-            .iter()
-            .any(|f| matches!(f.severity, FlawSeverity::Critical));
+        let is_valid = !flaws.iter().any(|f| matches!(f.severity, FlawSeverity::Critical));
 
         Ok(LogicalSimulationResult {
             is_valid,
@@ -411,7 +394,7 @@ impl MonteCarloSimulator {
                         match (val_a, val_b) {
                             (Ok(a), Ok(b)) => {
                                 a.partial_cmp(&b).unwrap_or(std::cmp::Ordering::Equal)
-                            }
+                            },
                             (Ok(_), Err(_)) => std::cmp::Ordering::Greater,
                             (Err(_), Ok(_)) => std::cmp::Ordering::Less,
                             (Err(_), Err(_)) => std::cmp::Ordering::Equal,
@@ -472,9 +455,8 @@ impl MonteCarloSimulator {
                     reason: format!("node index {sim_current:?} missing from graph"),
                 }
             })?;
-            let cost = if let Some(wasm) = node_weight
-                .as_any()
-                .downcast_ref::<sisyphus_types::WasmSOPNode>()
+            let cost = if let Some(wasm) =
+                node_weight.as_any().downcast_ref::<sisyphus_types::WasmSOPNode>()
             {
                 wasm.fuel_limit
             } else {
@@ -503,9 +485,8 @@ impl MonteCarloSimulator {
             None => return probs,
         };
 
-        if let Some(branch_node) = node_weight
-            .as_any()
-            .downcast_ref::<sisyphus_types::BranchSOPNode>()
+        if let Some(branch_node) =
+            node_weight.as_any().downcast_ref::<sisyphus_types::BranchSOPNode>()
         {
             let mut total_weight = 0.0;
             let mut weights = std::collections::HashMap::new();
@@ -645,7 +626,7 @@ impl Simulator for MonteCarloSimulator {
                     } else {
                         (0.5, 100u64)
                     }
-                }
+                },
                 _ => (0.5, 100u64),
             }
         } else {
@@ -755,9 +736,8 @@ impl Simulator for MonteCarloSimulator {
                 curr_node_arc = node;
                 let node_weight = graph.graph.node_weight(curr_idx);
                 total_cost += if let Some(weight) = node_weight {
-                    if let Some(wasm) = weight
-                        .as_any()
-                        .downcast_ref::<sisyphus_types::WasmSOPNode>()
+                    if let Some(wasm) =
+                        weight.as_any().downcast_ref::<sisyphus_types::WasmSOPNode>()
                     {
                         wasm.fuel_limit
                     } else {
@@ -817,10 +797,7 @@ mod tests {
         let graph = Arc::new(SOPGraph::new());
         let sim = MonteCarloSimulator::new(10);
         let ctx = ExecutionContext::new();
-        let result = sim
-            .simulate(graph, &ctx, "test-project", "empty", None)
-            .await
-            .unwrap();
+        let result = sim.simulate(graph, &ctx, "test-project", "empty", None).await.unwrap();
         assert_eq!(result.success_probability, 0.0);
         assert_eq!(result.estimated_cost, 0);
     }
@@ -878,10 +855,8 @@ mod tests {
 
         let sim = MonteCarloSimulator::new(100);
         let ctx = ExecutionContext::new();
-        let result = sim
-            .simulate(graph.clone(), &ctx, "test-project", "branch-test", None)
-            .await
-            .unwrap();
+        let result =
+            sim.simulate(graph.clone(), &ctx, "test-project", "branch-test", None).await.unwrap();
         assert!(result.success_probability >= 0.0 && result.success_probability <= 1.0);
     }
 }

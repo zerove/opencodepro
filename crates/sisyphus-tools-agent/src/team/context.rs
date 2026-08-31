@@ -55,10 +55,7 @@ impl TeamContext {
 
     /// Read a value from the shared context.
     pub fn read(&self, key: &str) -> Option<Value> {
-        let map = self
-            .shared
-            .read()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let map = self.shared.read().unwrap_or_else(std::sync::PoisonError::into_inner);
         map.get(key).cloned()
     }
 
@@ -66,16 +63,10 @@ impl TeamContext {
     ///
     /// Records the writer in key metadata for lineage tracking.
     pub fn write(&self, key: String, value: Value, writer_task_id: &str) {
-        let mut map = self
-            .shared
-            .write()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut map = self.shared.write().unwrap_or_else(std::sync::PoisonError::into_inner);
         map.insert(key.clone(), value);
 
-        let mut meta = self
-            .key_metadata
-            .write()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut meta = self.key_metadata.write().unwrap_or_else(std::sync::PoisonError::into_inner);
         let entry = meta.entry(key).or_insert(KeyMetadata {
             writers: Vec::new(),
             readers: Vec::new(),
@@ -95,10 +86,8 @@ impl TeamContext {
     pub fn read_tracked(&self, key: &str, reader_task_id: &str) -> Option<Value> {
         let value = self.read(key);
         if value.is_some() {
-            let mut meta = self
-                .key_metadata
-                .write()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let mut meta =
+                self.key_metadata.write().unwrap_or_else(std::sync::PoisonError::into_inner);
             if let Some(entry) = meta.get_mut(key) {
                 entry.readers.push(reader_task_id.to_string());
             }
@@ -108,73 +97,49 @@ impl TeamContext {
 
     /// Check if a key exists in the context.
     pub fn has(&self, key: &str) -> bool {
-        let map = self
-            .shared
-            .read()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let map = self.shared.read().unwrap_or_else(std::sync::PoisonError::into_inner);
         map.contains_key(key)
     }
 
     /// Remove a key from the context.
     pub fn remove(&self, key: &str) -> Option<Value> {
-        let mut map = self
-            .shared
-            .write()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut map = self.shared.write().unwrap_or_else(std::sync::PoisonError::into_inner);
         map.remove(key)
     }
 
     /// Get all keys currently in the context.
     pub fn keys(&self) -> Vec<String> {
-        let map = self
-            .shared
-            .read()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let map = self.shared.read().unwrap_or_else(std::sync::PoisonError::into_inner);
         map.keys().cloned().collect()
     }
 
     /// Get the entire context as a JSON object (for debugging/synthesis).
     pub fn snapshot(&self) -> Value {
-        let map = self
-            .shared
-            .read()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let map = self.shared.read().unwrap_or_else(std::sync::PoisonError::into_inner);
         Value::Object(map.iter().map(|(k, v)| (k.clone(), v.clone())).collect())
     }
 
     /// Record a task result in the execution log.
     pub fn record_task_result(&self, result: crate::team::TaskResult) {
-        let mut log = self
-            .execution_log
-            .write()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut log = self.execution_log.write().unwrap_or_else(std::sync::PoisonError::into_inner);
         log.push(result);
     }
 
     /// Get the execution log (all completed task results).
     pub fn execution_log(&self) -> Vec<crate::team::TaskResult> {
-        let log = self
-            .execution_log
-            .read()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let log = self.execution_log.read().unwrap_or_else(std::sync::PoisonError::into_inner);
         log.clone()
     }
 
     /// Get key metadata for debugging/analysis.
     pub fn key_metadata(&self) -> HashMap<String, KeyMetadata> {
-        let meta = self
-            .key_metadata
-            .read()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let meta = self.key_metadata.read().unwrap_or_else(std::sync::PoisonError::into_inner);
         meta.clone()
     }
 
     /// Mark a key as final (no more writes expected).
     pub fn mark_final(&self, key: &str) {
-        let mut meta = self
-            .key_metadata
-            .write()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut meta = self.key_metadata.write().unwrap_or_else(std::sync::PoisonError::into_inner);
         if let Some(entry) = meta.get_mut(key) {
             entry.is_final = true;
         }
@@ -199,10 +164,7 @@ impl TeamContext {
                 }
             }
         }
-        key_writers
-            .into_iter()
-            .filter(|(_, writers)| writers.len() > 1)
-            .collect()
+        key_writers.into_iter().filter(|(_, writers)| writers.len() > 1).collect()
     }
 
     /// Extract declared write keys from a task's args.
@@ -211,11 +173,7 @@ impl TeamContext {
         task.args
             .get("_write_keys")
             .and_then(|v| v.as_array())
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(|v| v.as_str().map(String::from))
-                    .collect()
-            })
+            .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
     }
 }
 
@@ -246,11 +204,7 @@ mod tests {
         ctx.write("key1".into(), json!("value1"), "task1");
         let _ = ctx.read_tracked("key1", "task2");
         let meta = ctx.key_metadata();
-        assert!(meta
-            .get("key1")
-            .unwrap()
-            .readers
-            .contains(&"task2".to_string()));
+        assert!(meta.get("key1").unwrap().readers.contains(&"task2".to_string()));
     }
 
     #[test]

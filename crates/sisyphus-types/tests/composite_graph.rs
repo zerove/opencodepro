@@ -88,7 +88,7 @@ fn node_kind_wasm_serde() {
         } => {
             assert_eq!(tool_id, "t");
             assert_eq!(fuel_limit, 1000);
-        }
+        },
         _ => panic!("expected Wasm"),
     }
 }
@@ -218,7 +218,7 @@ fn sop_node_config_serde() {
         NodeKind::Test { command, workdir } => {
             assert_eq!(command, "ls");
             assert_eq!(workdir.as_deref(), Some("/tmp"));
-        }
+        },
         _ => panic!("expected Test"),
     }
 }

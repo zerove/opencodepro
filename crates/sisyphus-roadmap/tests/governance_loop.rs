@@ -76,10 +76,7 @@ async fn test_strategic_governance_loop_detection() {
     let mut outcomes = vec![];
 
     // Normal tasks — spread across different goal IDs to create a low baseline avg
-    for (i, gid) in ["g_init", "g_setup", "g_config", "g_test"]
-        .iter()
-        .enumerate()
-    {
+    for (i, gid) in ["g_init", "g_setup", "g_config", "g_test"].iter().enumerate() {
         outcomes.push(ExecutionOutcome {
             goal_id: gid.to_string(),
             project_id: "p1".into(),
@@ -135,29 +132,19 @@ async fn test_strategic_governance_loop_detection() {
             .await
             .unwrap(),
     );
-    let sql_store = Arc::new(
-        sisyphus_mem::RoadmapSqlStore::new(store.pool().clone())
-            .await
-            .unwrap(),
-    );
+    let sql_store =
+        Arc::new(sisyphus_mem::RoadmapSqlStore::new(store.pool().clone()).await.unwrap());
     sql_store.init_schema().await.unwrap();
     let proposal_manager = Arc::new(sisyphus_roadmap::proposal_manager::ProposalManager::new(
         store.clone(),
     ));
     let manager = sisyphus_roadmap::RoadmapManager::new(store, sql_store, proposal_manager);
 
-    manager
-        .create_project("p1", "Project X", "Desc")
-        .await
-        .unwrap();
-    manager
-        .add_milestone("p1", roadmap.milestones[0].clone())
-        .await
-        .unwrap();
+    manager.create_project("p1", "Project X", "Desc").await.unwrap();
+    manager.add_milestone("p1", roadmap.milestones[0].clone()).await.unwrap();
 
-    let suggestions = generator
-        .propose_refinements(&manager, "p1", "ms1", "Goal is bottlenecked")
-        .await;
+    let suggestions =
+        generator.propose_refinements(&manager, "p1", "ms1", "Goal is bottlenecked").await;
 
     assert!(
         suggestions.is_ok(),

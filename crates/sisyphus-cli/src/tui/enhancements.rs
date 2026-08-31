@@ -263,11 +263,11 @@ pub fn expand_file_references(input: &str, workspace_root: &Path) -> String {
             Ok(content) => {
                 let replacement = format!("[File: {}]\n```\n{}\n```", file_ref.path, content);
                 result.replace_range(file_ref.start..file_ref.end, &replacement);
-            }
+            },
             Err(e) => {
                 let replacement = format!("[Error: {e}]");
                 result.replace_range(file_ref.start..file_ref.end, &replacement);
-            }
+            },
         }
     }
 

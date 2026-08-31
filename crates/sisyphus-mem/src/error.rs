@@ -14,10 +14,18 @@ pub enum MemError {
     InvalidL1Capacity(String),
 
     #[error("Invalid SQLite URL '{url}': {source}")]
-    InvalidSqliteUrl { url: String, #[source] source: sqlx::Error },
+    InvalidSqliteUrl {
+        url: String,
+        #[source]
+        source: sqlx::Error,
+    },
 
     #[error("Failed to create database parent dir '{path}': {source}")]
-    CreateDbParent { path: String, #[source] source: io::Error },
+    CreateDbParent {
+        path: String,
+        #[source]
+        source: io::Error,
+    },
 
     #[error("SQLite error in {context}")]
     Sqlx {
@@ -41,7 +49,10 @@ pub enum MemError {
     },
 
     #[error("Channel error in {context}: {message}")]
-    Channel { context: &'static str, message: String },
+    Channel {
+        context: &'static str,
+        message: String,
+    },
 
     #[error("Inconsistent buffer state: {0}")]
     InconsistentState(String),
@@ -73,7 +84,6 @@ pub enum MemError {
     #[error("Manager error: {0}")]
     Manager(String),
 }
-
 
 impl From<sqlx::Error> for MemError {
     fn from(source: sqlx::Error) -> Self {

@@ -92,12 +92,7 @@ async fn setup_kernel(db_url: Option<&str>) -> SisyphusKernel {
     let embedding_client = Arc::new(DummyEmbeddingClient);
 
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let tools_path = manifest_dir
-        .parent()
-        .unwrap()
-        .parent()
-        .unwrap()
-        .join("tools");
+    let tools_path = manifest_dir.parent().unwrap().parent().unwrap().join("tools");
     let tool_executor: Arc<dyn ToolExecutor> = Arc::new(
         sisyphus_sandbox::WasmToolExecutor::with_config(Some(tools_path), None)
             .expect("Failed to init WasmToolExecutor"),
@@ -320,16 +315,12 @@ mod tests {
             let k = Arc::clone(&kernel);
             handles.push(tokio::spawn(async move {
                 let sop_id = format!("concurrent_{}", i);
-                k.execute_goal("fetch data", &sop_id, "default", None, None)
-                    .await
+                k.execute_goal("fetch data", &sop_id, "default", None, None).await
             }));
         }
 
         for h in handles {
-            let res = h
-                .await
-                .expect("Task panicked")
-                .expect("Goal execution failed");
+            let res = h.await.expect("Task panicked").expect("Goal execution failed");
             assert!(
                 !res.0.to_string().is_empty(),
                 "Result should be a non-empty string"

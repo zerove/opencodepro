@@ -157,10 +157,10 @@ impl SkillMarket {
                     if let Ok(entries) = response.json::<Vec<SkillRegistryEntry>>().await {
                         results.extend(entries);
                     }
-                }
+                },
                 Err(e) => {
                     tracing::warn!("Failed to search registry {}: {}", registry_url, e);
-                }
+                },
             }
         }
 
@@ -181,10 +181,10 @@ impl SkillMarket {
                     if let Ok(entry) = response.json::<SkillRegistryEntry>().await {
                         return Ok(Some(entry));
                     }
-                }
+                },
                 Err(e) => {
                     tracing::warn!("Failed to get skill from {}: {}", registry_url, e);
-                }
+                },
             }
         }
 
@@ -204,10 +204,8 @@ impl SkillMarket {
             .await
             .map_err(|e| SkillMarketError::DownloadFailed(e.to_string()))?;
 
-        let bundle: SkillBundle = response
-            .json()
-            .await
-            .map_err(|e| SkillMarketError::DownloadFailed(e.to_string()))?;
+        let bundle: SkillBundle =
+            response.json().await.map_err(|e| SkillMarketError::DownloadFailed(e.to_string()))?;
 
         // Verify checksum
         let content = serde_json::to_string(&bundle)
@@ -344,11 +342,7 @@ impl SkillMarket {
 
         let best = results
             .into_iter()
-            .max_by(|a, b| {
-                a.rating
-                    .partial_cmp(&b.rating)
-                    .unwrap_or(std::cmp::Ordering::Equal)
-            })
+            .max_by(|a, b| a.rating.partial_cmp(&b.rating).unwrap_or(std::cmp::Ordering::Equal))
             .ok_or_else(|| SkillMarketError::NotFound(format!("No skills found for: {}", query)))?;
 
         self.download_and_install(&best, skill_store).await
@@ -402,20 +396,14 @@ mod tests {
     fn test_rate_limiter_disabled() {
         let mut limiter = RateLimiter::new(0);
         // rate=0 立即返回不阻塞
-        let rt = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .unwrap();
+        let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
         assert!(limiter.try_acquire().is_none());
     }
 
     #[test]
     fn test_rate_limiter_burst_then_wait() {
         let mut limiter = RateLimiter::new(2);
-        let rt = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .unwrap();
+        let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
         // 前 2 次立即获取（消耗 2 tokens）
         assert!(limiter.try_acquire().is_none());
         assert!(limiter.try_acquire().is_none());

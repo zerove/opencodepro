@@ -47,9 +47,7 @@ impl IntelligenceManager {
         mode: sisyphus_types::WorkMode,
         insights: Option<&str>,
     ) -> Result<sisyphus_intel::synthesis::SynthesisResult, sisyphus_types::IntelError> {
-        self.synthesizer
-            .synthesize(goal, ctx, project_id, mode, insights)
-            .await
+        self.synthesizer.synthesize(goal, ctx, project_id, mode, insights).await
     }
 
     /// 使用仿真器预测图谱执行的结果。
@@ -60,10 +58,7 @@ impl IntelligenceManager {
         project_id: &str,
         sop_id: &str,
     ) -> Result<SimulationResult, sisyphus_types::IntelError> {
-        self.intel
-            .simulator
-            .simulate(graph, ctx, project_id, sop_id, None)
-            .await
+        self.intel.simulator.simulate(graph, ctx, project_id, sop_id, None).await
     }
 
     /// 反思执行轨迹，计算偏差并提出改进建议。
@@ -88,11 +83,7 @@ impl IntelligenceManager {
         ctx: &ExecutionContext,
     ) -> Result<ReflectionReport, sisyphus_types::IntelError> {
         // 1. 核心反思器的基础反思
-        let mut report = self
-            .intel
-            .reflector
-            .reflect(trace, prediction, None)
-            .await?;
+        let mut report = self.intel.reflector.reflect(trace, prediction, None).await?;
 
         // 2. 使用专业工具的深度语义反思
         let mut expert_suggestions = Vec::new();
@@ -206,14 +197,14 @@ impl IntelligenceManager {
                     timeout.as_secs()
                 );
                 return Ok(permissive_critique("LLM unreachable"));
-            }
+            },
             Err(_) => {
                 tracing::warn!(
                     "LLM critique timed out after {}s, using permissive default",
                     timeout.as_secs()
                 );
                 return Ok(permissive_critique("LLM timed out"));
-            }
+            },
         };
 
         serde_json::from_str::<sisyphus_types::CritiqueResult>(&response).map_err(|e| {
@@ -232,9 +223,6 @@ impl IntelligenceManager {
         prediction: &SimulationResult,
         insights: Option<&str>,
     ) -> Result<Arc<SOPGraph>, sisyphus_types::IntelError> {
-        self.intel
-            .evolver
-            .evolve(graph, report, prediction, insights)
-            .await
+        self.intel.evolver.evolve(graph, report, prediction, insights).await
     }
 }

@@ -50,8 +50,7 @@ impl GapAnalyzer {
 
         let response = match tokio::time::timeout(
             GAP_ANALYSIS_TIMEOUT,
-            self.llm_client
-                .chat("You are a Sisyphus Gap Analyzer.", &prompt, true),
+            self.llm_client.chat("You are a Sisyphus Gap Analyzer.", &prompt, true),
         )
         .await
         {
@@ -59,14 +58,14 @@ impl GapAnalyzer {
             Ok(Err(e)) => {
                 tracing::warn!("LLM gap analysis failed, assuming no gap: {e}");
                 return Ok(None);
-            }
+            },
             Err(_) => {
                 tracing::warn!(
                     timeout_ms = GAP_ANALYSIS_TIMEOUT.as_millis(),
                     "LLM gap analysis timed out, assuming no gap"
                 );
                 return Ok(None);
-            }
+            },
         };
 
         if response.contains("GAP_FOUND") {

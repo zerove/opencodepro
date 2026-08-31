@@ -60,10 +60,7 @@ impl SopSqlStore {
             CREATE INDEX IF NOT EXISTS idx_edges_sop ON sop_edges(sop_id, project_id);
         "#;
 
-        sqlx::query(schema)
-            .execute(&self.pool)
-            .await
-            .context("Failed to initialize SOP schema")?;
+        sqlx::query(schema).execute(&self.pool).await.context("Failed to initialize SOP schema")?;
         Ok(())
     }
 
@@ -76,11 +73,7 @@ impl SopSqlStore {
         version: Option<String>,
         config: &SOPGraphConfig,
     ) -> Result<()> {
-        let mut tx = self
-            .pool
-            .begin()
-            .await
-            .context("Failed to begin transaction")?;
+        let mut tx = self.pool.begin().await.context("Failed to begin transaction")?;
 
         // 1. Insert/Update SOP metadata
         let now = std::time::SystemTime::now()
@@ -153,9 +146,7 @@ impl SopSqlStore {
             .await?;
         }
 
-        tx.commit()
-            .await
-            .context("Failed to commit SOP transaction")?;
+        tx.commit().await.context("Failed to commit SOP transaction")?;
         Ok(())
     }
 
@@ -202,10 +193,7 @@ impl SopSqlStore {
         .fetch_all(&self.pool)
         .await?;
 
-        let edges = edge_rows
-            .into_iter()
-            .map(|(src, tgt)| (src as usize, tgt as usize))
-            .collect();
+        let edges = edge_rows.into_iter().map(|(src, tgt)| (src as usize, tgt as usize)).collect();
 
         Ok(Some(SOPGraphConfig { nodes, edges }))
     }
@@ -233,12 +221,10 @@ impl SopSqlStore {
                     .bind(pid)
                     .fetch_all(&self.pool)
                     .await?
-            }
+            },
             None => {
-                sqlx::query_as::<_, (String,)>("SELECT id FROM sops")
-                    .fetch_all(&self.pool)
-                    .await?
-            }
+                sqlx::query_as::<_, (String,)>("SELECT id FROM sops").fetch_all(&self.pool).await?
+            },
         };
 
         Ok(rows.into_iter().map(|(id,)| id).collect())
@@ -266,8 +252,7 @@ impl SopSqlStore {
             if let Some(val) = mfs.get_state_json("default", &key).await? {
                 let sop_id = key.strip_prefix("sop:").unwrap_or(&key);
                 if let Ok(config) = serde_json::from_value::<SOPGraphConfig>(val) {
-                    self.save_sop(sop_id, "default", sop_id, Some("1.0.0".into()), &config)
-                        .await?;
+                    self.save_sop(sop_id, "default", sop_id, Some("1.0.0".into()), &config).await?;
                     count += 1;
                 }
             }

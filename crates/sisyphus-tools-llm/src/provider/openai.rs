@@ -39,7 +39,10 @@ struct RequestGuard {
 
 impl RequestGuard {
     fn new(http: Arc<SharedHttpClient>) -> Self {
-        Self { http, errored: false }
+        Self {
+            http,
+            errored: false,
+        }
     }
     fn mark_errored(&mut self) {
         self.errored = true;
@@ -140,18 +143,14 @@ impl LlmProvider for OpenAiCompatibleProvider {
         if let Some(title) = openrouter_title(&self.config) {
             builder = builder.header("X-Title", title);
         }
-        let res = match builder
-            .json(&body)
-            .send()
-            .await
-        {
+        let res = match builder.json(&body).send().await {
             Ok(r) => r,
             Err(e) => {
                 _req_guard.mark_errored();
                 return Err(ProviderError::Transient(format!(
                     "HTTP request failed: {e}"
                 )));
-            }
+            },
         };
 
         let status = res.status();
@@ -161,9 +160,7 @@ impl LlmProvider for OpenAiCompatibleProvider {
             .map_err(|e| ProviderError::Transient(format!("Failed to parse response: {e}")))?;
 
         if !status.is_success() {
-            let error_msg = response_json["error"]["message"]
-                .as_str()
-                .unwrap_or("unknown error");
+            let error_msg = response_json["error"]["message"].as_str().unwrap_or("unknown error");
             let code = status.as_u16();
             // 5xx 视为可重试 transient；4xx 通常 permanent（除 429）
             if code == 429 {
@@ -191,10 +188,7 @@ impl LlmProvider for OpenAiCompatibleProvider {
             .map(std::string::ToString::to_string)
             .ok_or_else(|| ProviderError::Permanent("Response missing content".to_string()))?;
 
-        let model = response_json["model"]
-            .as_str()
-            .unwrap_or(&self.config.model)
-            .to_string();
+        let model = response_json["model"].as_str().unwrap_or(&self.config.model).to_string();
 
         let input_tokens = response_json["usage"]["prompt_tokens"].as_u64();
         let output_tokens = response_json["usage"]["completion_tokens"].as_u64();
@@ -205,19 +199,22 @@ impl LlmProvider for OpenAiCompatibleProvider {
             "sisyphus_llm_requests_total",
             "provider" => "openai",
             "model" => model.clone(),
-        ).increment(1);
+        )
+        .increment(1);
         counter!(
             "sisyphus_llm_tokens_total",
             "provider" => "openai",
             "model" => model.clone(),
             "kind" => "input",
-        ).increment(input_tokens_val);
+        )
+        .increment(input_tokens_val);
         counter!(
             "sisyphus_llm_tokens_total",
             "provider" => "openai",
             "model" => model.clone(),
             "kind" => "output",
-        ).increment(output_tokens_val);
+        )
+        .increment(output_tokens_val);
 
         Ok(ProviderResponse {
             content,
@@ -269,8 +266,14 @@ mod tests {
             ProviderKind::Google,
         ] {
             let cfg = make_cfg(kind);
-            assert!(openrouter_referer(&cfg).is_none(), "{kind:?} should NOT set referer");
-            assert!(openrouter_title(&cfg).is_none(), "{kind:?} should NOT set title");
+            assert!(
+                openrouter_referer(&cfg).is_none(),
+                "{kind:?} should NOT set referer"
+            );
+            assert!(
+                openrouter_title(&cfg).is_none(),
+                "{kind:?} should NOT set title"
+            );
         }
     }
 

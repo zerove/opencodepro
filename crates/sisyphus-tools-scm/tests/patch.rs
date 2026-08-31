@@ -42,7 +42,10 @@ fn apply_patch_replaces_line() {
 ";
     let modified = apply_patch(&f, patch).expect("patch");
     assert_eq!(modified.len(), 1);
-    assert_eq!(fs::read_to_string(&f).expect("read"), "fn main() {\n    new();\n}\n");
+    assert_eq!(
+        fs::read_to_string(&f).expect("read"),
+        "fn main() {\n    new();\n}\n"
+    );
 }
 
 #[test]
@@ -79,11 +82,7 @@ fn apply_patch_removes_line() {
 #[test]
 fn apply_patch_multiple_hunks() {
     let dir = TempDir::new().expect("tempdir");
-    let f = write_file(
-        dir.path(),
-        "a.txt",
-        "old1\nold2\nold3\nold4\nold5\nold6\n",
-    );
+    let f = write_file(dir.path(), "a.txt", "old1\nold2\nold3\nold4\nold5\nold6\n");
     // Two hunks, modifying lines 1 and 5.
     let patch = "\
 --- a/a.txt
@@ -126,7 +125,10 @@ fn apply_patch_empty_patch_fails() {
     let result = apply_patch(&f, "");
     assert!(result.is_err());
     let msg = format!("{result:?}");
-    assert!(msg.contains("empty") || msg.contains("no hunks"), "got: {msg}");
+    assert!(
+        msg.contains("empty") || msg.contains("no hunks"),
+        "got: {msg}"
+    );
 }
 
 #[test]

@@ -32,7 +32,8 @@ impl BridgeClient {
     /// SisyphusBridge server. Increments
     /// `sisyphus_core_tool_executions_total{tool_id}` for observability.
     pub async fn execute_tool(&self, tool_id: &str, args: Value) -> Result<Value, String> {
-        counter!("sisyphus_core_tool_executions_total", "tool_id" => tool_id.to_string()).increment(1);
+        counter!("sisyphus_core_tool_executions_total", "tool_id" => tool_id.to_string())
+            .increment(1);
         let args_json =
             serde_json::to_string(&args).map_err(|e| format!("Args serialization failed: {e}"))?;
 
@@ -43,10 +44,8 @@ impl BridgeClient {
         });
 
         let mut client = self.client.write().await;
-        let response = client
-            .execute_tool(request)
-            .await
-            .map_err(|e| format!("Bridge call failed: {e}"))?;
+        let response =
+            client.execute_tool(request).await.map_err(|e| format!("Bridge call failed: {e}"))?;
 
         let inner = response.into_inner();
         if inner.status == "SUCCESS" {

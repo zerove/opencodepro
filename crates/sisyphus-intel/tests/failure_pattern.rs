@@ -75,10 +75,7 @@ fn library_most_common_failure_returns_max() {
     lib.record_failure("a", FailureCategory::Timeout, "x");
     lib.record_failure("a", FailureCategory::Timeout, "y");
     lib.record_failure("a", FailureCategory::LogicError, "z");
-    assert_eq!(
-        lib.most_common_failure("a"),
-        Some(FailureCategory::Timeout)
-    );
+    assert_eq!(lib.most_common_failure("a"), Some(FailureCategory::Timeout));
 }
 
 #[test]

@@ -34,10 +34,7 @@ fn make_doc(name: &str) -> ArchitectureDoc {
         module_name: name.to_string(),
         reports: vec![make_report("a", 0.3), make_report("b", 0.7)],
         coupling_analysis: "Average coupling is 0.5".to_string(),
-        suggestions: vec![
-            make_suggestion("a", "high"),
-            make_suggestion("b", "low"),
-        ],
+        suggestions: vec![make_suggestion("a", "high"), make_suggestion("b", "low")],
         generated_at: 1_700_000_000,
     }
 }

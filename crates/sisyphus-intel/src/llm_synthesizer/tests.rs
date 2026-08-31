@@ -59,9 +59,7 @@ mod adversarial_tests {
             prompt: &str,
             _stream: bool,
         ) -> Result<String, sisyphus_types::TypesError> {
-            let _count = self
-                .call_count
-                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            let _count = self.call_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             let mut mode = self.mode.lock().unwrap();
 
             if prompt.contains("Refine this design") {
@@ -237,11 +235,8 @@ mod adversarial_tests {
         {
             // Mock 简单检索：返回与查询匹配的经验
             let experiences = self.experiences.lock().unwrap();
-            let filtered: Vec<_> = experiences
-                .iter()
-                .filter(|e| e.context_text.contains(query))
-                .cloned()
-                .collect();
+            let filtered: Vec<_> =
+                experiences.iter().filter(|e| e.context_text.contains(query)).cloned().collect();
             Ok(filtered)
         }
         async fn record_experience(
@@ -351,9 +346,7 @@ impl sisyphus_types::SopEvaluator for MockEvaluator {
         _goal: &str,
         _config: &sisyphus_types::SOPGraphConfig,
     ) -> Result<sisyphus_types::SopEvaluation, sisyphus_types::TypesError> {
-        let count = self
-            .call_count
-            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let count = self.call_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         if count == 0 {
             // 第一次调用：拒绝以强制保存教训
             Ok(sisyphus_types::SopEvaluation {

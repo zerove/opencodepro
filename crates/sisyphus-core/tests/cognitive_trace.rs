@@ -13,10 +13,7 @@ use sisyphus_types::{ExecutionEvent, NodeOutput};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 fn now_ms() -> u128 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_millis())
-        .unwrap_or(0)
+    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0)
 }
 
 fn entry(sop_id: &str, node_name: &str, ts: u128) -> CognitiveTraceEntry {

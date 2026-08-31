@@ -201,9 +201,7 @@ mod tests {
 
     fn arb_json_value() -> impl Strategy<Value = Value> {
         prop_oneof![
-            proptest::string::string_regex(".{0,64}")
-                .unwrap()
-                .prop_map(Value::String),
+            proptest::string::string_regex(".{0,64}").unwrap().prop_map(Value::String),
             any::<i64>().prop_map(|n| json!(n)),
             any::<f64>().prop_map(|n| json!(n)),
             proptest::bool::ANY.prop_map(Value::Bool),

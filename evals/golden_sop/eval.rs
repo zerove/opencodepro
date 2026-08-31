@@ -77,11 +77,7 @@ impl CaseCheck {
 // ── 检查逻辑 ────────────────────────────────────────────────
 
 fn node_kind(node: &SopNodeJson) -> String {
-    node.kind
-        .get("type")
-        .and_then(|v| v.as_str())
-        .unwrap_or("<missing>")
-        .to_string()
+    node.kind.get("type").and_then(|v| v.as_str()).unwrap_or("<missing>").to_string()
 }
 
 /// 图是否有环（Kahn 拓扑计数）。

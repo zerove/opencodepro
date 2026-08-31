@@ -279,7 +279,9 @@ fn intel_error_evolution_cycle_display() {
 
 #[test]
 fn intel_error_node_not_found_display() {
-    let e = IntelError::NodeNotFound { name: "missing".into() };
+    let e = IntelError::NodeNotFound {
+        name: "missing".into(),
+    };
     let s = format!("{e}");
     assert!(s.contains("not found"));
     assert!(s.contains("missing"));

@@ -147,11 +147,7 @@ impl TeamConfig {
         let content = std::fs::read_to_string(path)
             .with_context(|| format!("读取配置文件: {}", path.display()))?;
 
-        let ext = path
-            .extension()
-            .and_then(|e| e.to_str())
-            .unwrap_or("")
-            .to_lowercase();
+        let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
 
         match ext.as_str() {
             "yaml" | "yml" => serde_yaml::from_str(&content).context("解析 YAML 配置失败"),
@@ -161,7 +157,7 @@ impl TeamConfig {
                 serde_yaml::from_str(&content)
                     .or_else(|_| toml::from_str(&content))
                     .context("解析配置失败 (尝试 YAML 和 TOML 都失败)")
-            }
+            },
         }
     }
 

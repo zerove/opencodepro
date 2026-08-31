@@ -105,9 +105,7 @@ impl SwarmCoordinator {
 
         // 2. 架构师提出初始变更
         tracing::info!("Architect {} is proposing changes...", architect.id);
-        let mut proposal = self
-            .real_agent_proposal(&architect, goal, current_config)
-            .await?;
+        let mut proposal = self.real_agent_proposal(&architect, goal, current_config).await?;
 
         let mut iteration = 0;
         let max_iterations = 3;
@@ -135,9 +133,7 @@ impl SwarmCoordinator {
                 "Architect {} is refining proposal based on feedback...",
                 architect.id
             );
-            proposal = self
-                .real_agent_refine(&architect, &proposal, &review)
-                .await?;
+            proposal = self.real_agent_refine(&architect, &proposal, &review).await?;
         }
 
         Ok(proposal)

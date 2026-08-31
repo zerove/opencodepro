@@ -22,9 +22,9 @@ async fn test_gemma4_availability() {
         Ok(response) => {
             println!("Response received: {}", response);
             assert!(!response.is_empty(), "Response was empty");
-        }
+        },
         Err(e) => {
             panic!("LLM call failed: {}", e);
-        }
+        },
     }
 }

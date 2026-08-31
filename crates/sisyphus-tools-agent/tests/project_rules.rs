@@ -5,7 +5,9 @@
 //! parse AGENTS.md files into structured agent definitions and register
 //! them with an `AgentRegistry`.
 
-use sisyphus_tools_agent::project_rules::{load_project_rules, register_project_agents, ProjectAgentDef, ProjectRules};
+use sisyphus_tools_agent::project_rules::{
+    load_project_rules, register_project_agents, ProjectAgentDef, ProjectRules,
+};
 use std::fs;
 use tempfile::TempDir;
 

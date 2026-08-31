@@ -134,7 +134,10 @@ fn cognitive_asset_basic_serialization() {
     assert_eq!(parsed.id, "asset-1");
     assert_eq!(parsed.name, "My Tool");
     assert_eq!(parsed.version, 1);
-    assert_eq!(parsed.metadata.get("author").map(String::as_str), Some("alice"));
+    assert_eq!(
+        parsed.metadata.get("author").map(String::as_str),
+        Some("alice")
+    );
 }
 
 #[test]
@@ -523,10 +526,8 @@ fn asset_content_variants_distinct_via_serde() {
             violation_penalty: 0.5,
         }),
     ];
-    let serialized: Vec<String> = variants
-        .iter()
-        .map(|v| serde_json::to_string(v).unwrap())
-        .collect();
+    let serialized: Vec<String> =
+        variants.iter().map(|v| serde_json::to_string(v).unwrap()).collect();
     let unique: std::collections::HashSet<_> = serialized.iter().collect();
     assert_eq!(unique.len(), 2);
 }
@@ -544,10 +545,7 @@ fn asset_kind_serde_all_distinct() {
         AssetKind::Insight,
         AssetKind::Constraint,
     ];
-    let serialized: Vec<String> = kinds
-        .iter()
-        .map(|k| serde_json::to_string(k).unwrap())
-        .collect();
+    let serialized: Vec<String> = kinds.iter().map(|k| serde_json::to_string(k).unwrap()).collect();
     // All four should produce distinct JSON strings
     let unique: std::collections::HashSet<_> = serialized.iter().collect();
     assert_eq!(unique.len(), 4);
@@ -751,10 +749,8 @@ fn asset_relation_5_variants_distinct() {
         RelationType::ConflictsWith,
         RelationType::Refines,
     ];
-    let serialized: Vec<String> = variants
-        .iter()
-        .map(|v| serde_json::to_string(v).unwrap())
-        .collect();
+    let serialized: Vec<String> =
+        variants.iter().map(|v| serde_json::to_string(v).unwrap()).collect();
     let unique: std::collections::HashSet<_> = serialized.iter().collect();
     assert_eq!(unique.len(), 5);
 }
@@ -1573,7 +1569,7 @@ fn cognitive_asset_with_unicode_each_field_2() {
         AssetContent::Insight(i) => {
             assert_eq!(i.evidence_ids.len(), 2);
             assert_eq!(i.evidence_ids[1], "ev-η");
-        }
+        },
         _ => panic!("wrong"),
     }
 }
@@ -1888,7 +1884,7 @@ fn cognitive_asset_with_unicode_observation_only_v2() {
     match back.content {
         AssetContent::Insight(i) => {
             assert!(i.observation.contains("🔍"));
-        }
+        },
         _ => panic!("wrong"),
     }
 }
@@ -2793,10 +2789,7 @@ fn cognitive_asset_with_unicode_id_with_special_chars_2() {
     };
     let j = serde_json::to_string(&asset).unwrap();
     let back: CognitiveAsset = serde_json::from_str(&j).unwrap();
-    assert_eq!(
-        back.id,
-        "id-α!@#$%^&*()_+={}[]|\\:;\"'<>,.?/~`β"
-    );
+    assert_eq!(back.id, "id-α!@#$%^&*()_+={}[]|\\:;\"'<>,.?/~`β");
 }
 
 // ---------------------------------------------------------------------------

@@ -13,7 +13,7 @@ pub fn handle_git(sub: &GitCommands) -> Result<()> {
         } => sisyphus_cli::git::run_diff(pathspec.clone(), *cached, cwd.clone())?,
         GitCommands::Add { pathspecs, cwd } => {
             sisyphus_cli::git::run_add(pathspecs.clone(), cwd.clone())?
-        }
+        },
         GitCommands::Commit {
             message,
             allow_empty,

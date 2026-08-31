@@ -95,10 +95,8 @@ fn baseline_comparison_debug() {
 fn continuous_benchmark_default_dir_constructor() {
     // Use a unique tempdir so that load_trends doesn't see stale state
     let id = std::process::id();
-    let nanos = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
+    let nanos =
+        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
     let dir = std::env::temp_dir().join(format!("sisyphus_test_cb_{id}_{nanos}"));
     std::fs::create_dir_all(&dir).unwrap();
     let cb = ContinuousBenchmark::new(dir.to_str().unwrap());
@@ -111,10 +109,8 @@ fn continuous_benchmark_default_dir_constructor() {
 #[test]
 fn continuous_benchmark_get_trend_unknown_name() {
     let id = std::process::id();
-    let nanos = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
+    let nanos =
+        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
     let dir = std::env::temp_dir().join(format!("sisyphus_test_cb_{id}_{nanos}_b"));
     std::fs::create_dir_all(&dir).unwrap();
     let cb = ContinuousBenchmark::new(dir.to_str().unwrap());
@@ -126,10 +122,8 @@ fn continuous_benchmark_get_trend_unknown_name() {
 #[test]
 fn continuous_benchmark_compare_with_baseline_unknown() {
     let id = std::process::id();
-    let nanos = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
+    let nanos =
+        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
     let dir = std::env::temp_dir().join(format!("sisyphus_test_cb_{id}_{nanos}_c"));
     std::fs::create_dir_all(&dir).unwrap();
     let cb = ContinuousBenchmark::new(dir.to_str().unwrap());

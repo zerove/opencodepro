@@ -47,9 +47,7 @@ impl MySisyphusBridge {
         let span = info_span!("bridge.execute_sop", sop_id = %sop_id);
         let _enter = span.enter();
 
-        let (result_str, _final_id) = self
-            .run_execution(sop_id.clone(), &project_id, None)
-            .await?;
+        let (result_str, _final_id) = self.run_execution(sop_id.clone(), &project_id, None).await?;
 
         self.publish_event(sisyphus_bridge_api::BridgeEvent {
             event: Some(sisyphus_bridge_api::bridge_event::Event::OpUpdate(
@@ -102,7 +100,7 @@ impl MySisyphusBridge {
                     error: String::new(),
                     tasks,
                 }))
-            }
+            },
             Err(e) => Ok(Response::new(DecomposeGoalResponse {
                 success: false,
                 error: e.to_string(),
@@ -135,12 +133,8 @@ impl MySisyphusBridge {
         let _enter = span.enter();
 
         let args_bytes = args_json.into_bytes();
-        let result = self
-            .kernel
-            .execution_manager
-            .tool_router
-            .execute(&tool_id, args_bytes, fuel)
-            .await;
+        let result =
+            self.kernel.execution_manager.tool_router.execute(&tool_id, args_bytes, fuel).await;
 
         match result {
             Ok(bytes) => {
@@ -150,14 +144,14 @@ impl MySisyphusBridge {
                     status: "SUCCESS".into(),
                     result_json: result_str,
                 }))
-            }
+            },
             Err(e) => {
                 record_bridge_request(false, 0.0);
                 Ok(Response::new(ExecuteToolResponse {
                     status: format!("ERROR: {e}"),
                     result_json: "".into(),
                 }))
-            }
+            },
         }
     }
 
@@ -215,7 +209,7 @@ impl MySisyphusBridge {
                         });
                         g.add_node(node);
                         Arc::new(g)
-                    }
+                    },
                 };
                 let _start_node = match graph.graph.node_indices().next() {
                     Some(n) => n,
@@ -267,7 +261,7 @@ impl MySisyphusBridge {
                             message: result.to_string(),
                             timestamp: 0,
                         }
-                    }
+                    },
                     _ => ExecutionEvent {
                         event_type: 99,
                         node_name: "unknown".into(),
@@ -320,7 +314,7 @@ impl MySisyphusBridge {
                         .map(|c| c.into_cognitive_plan(goal.clone(), goal.clone()))
                         .unwrap_or_default();
                     Arc::new(plan)
-                }
+                },
                 Err(_) => Arc::new(sisyphus_types::CognitivePlan::default()),
             };
 
@@ -334,23 +328,23 @@ impl MySisyphusBridge {
                 let (event_type, payload) = match event {
                     sisyphus_types::CognitiveEvent::Predict { prediction } => {
                         (0, serde_json::to_string(&prediction).unwrap_or_default())
-                    }
+                    },
                     sisyphus_types::CognitiveEvent::Execute { node, result } => {
                         (1, format!("Node {}: {}", node, result))
-                    }
+                    },
                     sisyphus_types::CognitiveEvent::Reflect { report } => {
                         (2, serde_json::to_string(&report).unwrap_or_default())
-                    }
+                    },
                     sisyphus_types::CognitiveEvent::Evolve { revised_plan } => {
                         (3, serde_json::to_string(&revised_plan).unwrap_or_default())
-                    }
+                    },
                     sisyphus_types::CognitiveEvent::Complete { final_result, .. } => {
                         (4, final_result.to_string())
-                    }
+                    },
                     sisyphus_types::CognitiveEvent::Verify { .. }
                     | sisyphus_types::CognitiveEvent::StrategicShift { .. } => {
                         (5, "Cognitive update: internal state evolved".to_string())
-                    }
+                    },
                     _ => (6, "Unknown cognitive event".to_string()),
                 };
                 Ok(CognitiveTaskEvent {
@@ -410,7 +404,7 @@ impl MySisyphusBridge {
                     error: String::new(),
                     plan_json,
                 }))
-            }
+            },
             Err(e) => Ok(Response::new(DelegateCognitiveTaskResponse {
                 success: false,
                 error: e.to_string(),
@@ -434,7 +428,7 @@ impl MySisyphusBridge {
                     error: format!("Failed to load session: {e}"),
                     response_content: String::new(),
                 }));
-            }
+            },
         };
 
         if session.messages.is_empty() {
@@ -492,7 +486,7 @@ impl MySisyphusBridge {
                     error: String::new(),
                     response_content: response,
                 }))
-            }
+            },
             Err(e) => Ok(Response::new(AddMessageResponse {
                 success: false,
                 error: format!("LLM chat failed: {e}"),
@@ -521,10 +515,8 @@ impl MySisyphusBridge {
         // Execute the goal autonomously using the kernel
         // We use a unique sop_id for each jcode call to avoid collisions
         let sop_id = format!("jcode_{}", task_id);
-        let result = self
-            .kernel
-            .execute_goal(&goal, &sop_id, &project_id, None, Some(&context))
-            .await;
+        let result =
+            self.kernel.execute_goal(&goal, &sop_id, &project_id, None, Some(&context)).await;
 
         match result {
             Ok((output, report)) => {
@@ -550,7 +542,7 @@ impl MySisyphusBridge {
                     result: res_str,
                     error: "".into(),
                 }))
-            }
+            },
             Err(e) => {
                 tracing::error!(task_id = %task_id, error = %e, "Jcode execution failed");
                 Ok(Response::new(sisyphus_bridge_api::CallJcodeResponse {
@@ -558,7 +550,7 @@ impl MySisyphusBridge {
                     result: "".into(),
                     error: e.to_string(),
                 }))
-            }
+            },
         }
     }
 }

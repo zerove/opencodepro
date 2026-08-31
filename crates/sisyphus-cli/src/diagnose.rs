@@ -12,31 +12,31 @@ fn resolve_backend(
                 || lang == Some("rust") =>
         {
             Ok(Box::new(crate::tools::build::rust::RustBackend))
-        }
+        },
         Some("node") | Some("ts") | Some("js") => {
             Ok(Box::new(crate::tools::build::node::NodeBackend::new()?))
-        }
+        },
         Some("python") | Some("py") => {
             Ok(Box::new(crate::tools::build::python::PythonBackend::new()?))
-        }
+        },
         Some("go") | Some("golang") => Ok(Box::new(crate::tools::build::golang::GoBackend)),
         Some("java") | Some("maven") => {
             Ok(Box::new(crate::tools::build::java::JavaBackend::new_maven()))
-        }
+        },
         Some("gradle") => Ok(Box::new(
             crate::tools::build::java::JavaBackend::new_gradle(),
         )),
         Some("fe") | Some("frontend") | Some("css") | Some("html") => {
             Ok(Box::new(crate::tools::build::frontend::FrontendBackend))
-        }
+        },
         Some(other) => {
             anyhow::bail!("Unknown language backend: {other}. Supported: rust, node/ts/js, python/py, go/golang, java/maven, gradle, fe/frontend/css/html")
-        }
+        },
         None => {
             // 自动检测
             let dir = cwd.unwrap_or(std::path::Path::new("."));
             Ok(crate::tools::build::detect_backend(dir)?)
-        }
+        },
     }
 }
 
@@ -114,11 +114,7 @@ pub fn run_diagnose(
                 (Some(f), None) => f.clone(),
                 (None, _) => "<unknown>".to_string(),
             };
-            let code = d
-                .code
-                .as_deref()
-                .map(|c| format!("[{c}]"))
-                .unwrap_or_default();
+            let code = d.code.as_deref().map(|c| format!("[{c}]")).unwrap_or_default();
             println!("  {} {} {} — {}", d.level, code, loc, d.message);
         }
         if report.all_diagnostics.len() > 20 {

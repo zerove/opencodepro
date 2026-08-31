@@ -66,7 +66,7 @@ fn diff_op_insert_serde() {
         DiffOp::Insert { index, message } => {
             assert_eq!(index, 0);
             assert_eq!(message.content, "hi");
-        }
+        },
         _ => panic!("expected Insert"),
     }
 }
@@ -90,7 +90,7 @@ fn diff_op_delete_serde() {
         DiffOp::Delete { index, message } => {
             assert_eq!(index, 3);
             assert_eq!(message.content, "old");
-        }
+        },
         _ => panic!("expected Delete"),
     }
 }
@@ -178,7 +178,7 @@ fn collaboration_event_type_forked_serde() {
     match back {
         CollaborationEventType::Forked { new_session_id } => {
             assert_eq!(new_session_id, "s2");
-        }
+        },
         _ => panic!("expected Forked"),
     }
 }
@@ -193,7 +193,7 @@ fn collaboration_event_type_branched_serde() {
     match back {
         CollaborationEventType::Branched { branch_name } => {
             assert_eq!(branch_name, "feature");
-        }
+        },
         _ => panic!("expected Branched"),
     }
 }

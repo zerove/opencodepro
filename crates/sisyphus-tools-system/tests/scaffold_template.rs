@@ -13,22 +13,34 @@ use sisyphus_tools_system::scaffold::{list_templates, TemplateType};
 
 #[test]
 fn from_str_rust_lib_long() {
-    assert_eq!(TemplateType::from_str_opt("rust-lib"), Some(TemplateType::RustLib));
+    assert_eq!(
+        TemplateType::from_str_opt("rust-lib"),
+        Some(TemplateType::RustLib)
+    );
 }
 
 #[test]
 fn from_str_rust_lib_short() {
-    assert_eq!(TemplateType::from_str_opt("lib"), Some(TemplateType::RustLib));
+    assert_eq!(
+        TemplateType::from_str_opt("lib"),
+        Some(TemplateType::RustLib)
+    );
 }
 
 #[test]
 fn from_str_rust_bin_long() {
-    assert_eq!(TemplateType::from_str_opt("rust-bin"), Some(TemplateType::RustBin));
+    assert_eq!(
+        TemplateType::from_str_opt("rust-bin"),
+        Some(TemplateType::RustBin)
+    );
 }
 
 #[test]
 fn from_str_rust_bin_short() {
-    assert_eq!(TemplateType::from_str_opt("bin"), Some(TemplateType::RustBin));
+    assert_eq!(
+        TemplateType::from_str_opt("bin"),
+        Some(TemplateType::RustBin)
+    );
 }
 
 #[test]
@@ -49,15 +61,30 @@ fn from_str_rust_workspace_short() {
 
 #[test]
 fn from_str_case_insensitive() {
-    assert_eq!(TemplateType::from_str_opt("RUST-LIB"), Some(TemplateType::RustLib));
-    assert_eq!(TemplateType::from_str_opt("Lib"), Some(TemplateType::RustLib));
-    assert_eq!(TemplateType::from_str_opt("WORKSPACE"), Some(TemplateType::RustWorkspace));
+    assert_eq!(
+        TemplateType::from_str_opt("RUST-LIB"),
+        Some(TemplateType::RustLib)
+    );
+    assert_eq!(
+        TemplateType::from_str_opt("Lib"),
+        Some(TemplateType::RustLib)
+    );
+    assert_eq!(
+        TemplateType::from_str_opt("WORKSPACE"),
+        Some(TemplateType::RustWorkspace)
+    );
 }
 
 #[test]
 fn from_str_trims_whitespace() {
-    assert_eq!(TemplateType::from_str_opt("  lib  "), Some(TemplateType::RustLib));
-    assert_eq!(TemplateType::from_str_opt("\tbin\n"), Some(TemplateType::RustBin));
+    assert_eq!(
+        TemplateType::from_str_opt("  lib  "),
+        Some(TemplateType::RustLib)
+    );
+    assert_eq!(
+        TemplateType::from_str_opt("\tbin\n"),
+        Some(TemplateType::RustBin)
+    );
 }
 
 #[test]

@@ -63,11 +63,7 @@ struct BaselineMetrics {
 }
 
 fn node_kind(node: &SopNodeJson) -> String {
-    node.kind
-        .get("type")
-        .and_then(|v| v.as_str())
-        .unwrap_or("<missing>")
-        .to_string()
+    node.kind.get("type").and_then(|v| v.as_str()).unwrap_or("<missing>").to_string()
 }
 
 /// Mock 合成图：用 goal 文本长度决定节点数（2..=5），加 1 条边。
@@ -83,13 +79,9 @@ impl MockSynthesizedGraph {
         let len = goal.len();
         // 节点数在 [2, 5]，由 goal 字符数 mod 4 决定
         let count = 2 + (len % 4);
-        let nodes: Vec<String> = (0..count)
-            .map(|i| format!("node_{i}"))
-            .collect();
+        let nodes: Vec<String> = (0..count).map(|i| format!("node_{i}")).collect();
         // 形成链式边：0→1→2→...
-        let edges: Vec<(usize, usize)> = (0..count.saturating_sub(1))
-            .map(|i| (i, i + 1))
-            .collect();
+        let edges: Vec<(usize, usize)> = (0..count.saturating_sub(1)).map(|i| (i, i + 1)).collect();
         Self { nodes, edges }
     }
 }
@@ -126,12 +118,7 @@ fn evaluate_case(case: &GoldenCase, threshold: f64) -> ExecCaseResult {
     let synth_latency_ms = start.elapsed().as_millis();
 
     // 期望节点名集合（用 name，与合成图的 node_X 形式比较 — 我们用 kind 作为语义键）
-    let exp_node_kinds: HashSet<String> = case
-        .expected_sop
-        .nodes
-        .iter()
-        .map(node_kind)
-        .collect();
+    let exp_node_kinds: HashSet<String> = case.expected_sop.nodes.iter().map(node_kind).collect();
     let exp_edge_count = case.expected_sop.edges.len();
 
     // Mock 合成图始终生成链式图，节点名是 node_X，类型未知；
@@ -142,8 +129,7 @@ fn evaluate_case(case: &GoldenCase, threshold: f64) -> ExecCaseResult {
     let node_jaccard = if exp_n == 0 && synth_n == 0 {
         1.0
     } else {
-        1.0 - (exp_n as i64 - synth_n as i64).unsigned_abs() as f64
-            / (exp_n.max(synth_n)) as f64
+        1.0 - (exp_n as i64 - synth_n as i64).unsigned_abs() as f64 / (exp_n.max(synth_n)) as f64
     };
     // 边 Jaccard：合成边数与期望边数之比
     let synth_e = synth.edges.len();
@@ -186,27 +172,22 @@ struct CategoryStat {
 fn aggregate(cases: &[GoldenCase], results: &[ExecCaseResult]) -> HashMap<String, CategoryStat> {
     let mut by_key: HashMap<String, Vec<usize>> = HashMap::new();
     for (i, c) in cases.iter().enumerate() {
-        by_key
-            .entry(c.category.clone())
-            .or_default()
-            .push(i);
+        by_key.entry(c.category.clone()).or_default().push(i);
     }
     by_key
         .into_iter()
         .map(|(k, idxs)| {
             let total = idxs.len();
             let passed = idxs.iter().filter(|&&i| results[i].passed).count();
-            let avg_node = idxs
-                .iter()
-                .map(|&i| results[i].node_jaccard)
-                .sum::<f64>()
-                / total as f64;
-            let avg_edge = idxs
-                .iter()
-                .map(|&i| results[i].edge_jaccard)
-                .sum::<f64>()
-                / total as f64;
-            let pass_rate = if total == 0 { 0.0 } else { passed as f64 / total as f64 };
+            let avg_node =
+                idxs.iter().map(|&i| results[i].node_jaccard).sum::<f64>() / total as f64;
+            let avg_edge =
+                idxs.iter().map(|&i| results[i].edge_jaccard).sum::<f64>() / total as f64;
+            let pass_rate = if total == 0 {
+                0.0
+            } else {
+                passed as f64 / total as f64
+            };
             (
                 k,
                 CategoryStat {
@@ -250,22 +231,20 @@ async fn main() -> anyhow::Result<()> {
         for (k, idxs) in by_key {
             let total = idxs.len();
             let passed = idxs.iter().filter(|&&i| results[i].passed).count();
-            let avg_node = idxs
-                .iter()
-                .map(|&i| results[i].node_jaccard)
-                .sum::<f64>()
-                / total as f64;
-            let avg_edge = idxs
-                .iter()
-                .map(|&i| results[i].edge_jaccard)
-                .sum::<f64>()
-                / total as f64;
+            let avg_node =
+                idxs.iter().map(|&i| results[i].node_jaccard).sum::<f64>() / total as f64;
+            let avg_edge =
+                idxs.iter().map(|&i| results[i].edge_jaccard).sum::<f64>() / total as f64;
             by_difficulty.insert(
                 k,
                 CategoryStat {
                     total,
                     passed,
-                    pass_rate: if total == 0 { 0.0 } else { passed as f64 / total as f64 },
+                    pass_rate: if total == 0 {
+                        0.0
+                    } else {
+                        passed as f64 / total as f64
+                    },
                     avg_node_jaccard: avg_node,
                     avg_edge_jaccard: avg_edge,
                 },
@@ -277,7 +256,10 @@ async fn main() -> anyhow::Result<()> {
     println!("  Total cases:    {total}");
     println!("  Passed:         {passed}");
     println!("  Failed:         {}", total - passed);
-    println!("  Pass rate:      {:.1}%", 100.0 * passed as f64 / total as f64);
+    println!(
+        "  Pass rate:      {:.1}%",
+        100.0 * passed as f64 / total as f64
+    );
     println!("  Avg node Jacc:  {avg_node:.3}");
     println!("  Avg edge Jacc:  {avg_edge:.3}");
     println!("  Avg latency:    {avg_latency} ms");
@@ -288,7 +270,11 @@ async fn main() -> anyhow::Result<()> {
     for (k, s) in cats {
         println!(
             "  {k:<18} {}/{}  pass={:.0}%  node={:.3}  edge={:.3}",
-            s.passed, s.total, 100.0 * s.pass_rate, s.avg_node_jaccard, s.avg_edge_jaccard
+            s.passed,
+            s.total,
+            100.0 * s.pass_rate,
+            s.avg_node_jaccard,
+            s.avg_edge_jaccard
         );
     }
     println!("\nBy difficulty:");
@@ -297,7 +283,11 @@ async fn main() -> anyhow::Result<()> {
     for (k, s) in diffs {
         println!(
             "  {k:<10} {}/{}  pass={:.0}%  node={:.3}  edge={:.3}",
-            s.passed, s.total, 100.0 * s.pass_rate, s.avg_node_jaccard, s.avg_edge_jaccard
+            s.passed,
+            s.total,
+            100.0 * s.pass_rate,
+            s.avg_node_jaccard,
+            s.avg_edge_jaccard
         );
     }
 
@@ -331,7 +321,7 @@ async fn main() -> anyhow::Result<()> {
                 } else {
                     println!("\nHistory recorded: {}", history_path.display());
                 }
-            }
+            },
             Err(e) => eprintln!("WARN: failed to serialize record: {e}"),
         }
     }
@@ -356,7 +346,11 @@ mod tests {
         for i in 0..20 {
             let goal = "x".repeat(i);
             let g = MockSynthesizedGraph::synthesize(&goal);
-            assert!((2..=5).contains(&g.nodes.len()), "i={i} got {}", g.nodes.len());
+            assert!(
+                (2..=5).contains(&g.nodes.len()),
+                "i={i} got {}",
+                g.nodes.len()
+            );
         }
     }
 

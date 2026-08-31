@@ -3,9 +3,7 @@ use std::path::{Path, PathBuf};
 
 /// 列出所有可用技能
 pub fn run_list() -> Result<()> {
-    let loader = crate::tools::SkillLoader::new()
-        .with_user_dir()
-        .with_project_dir(Path::new("."));
+    let loader = crate::tools::SkillLoader::new().with_user_dir().with_project_dir(Path::new("."));
 
     let skills = loader.load_all();
 
@@ -36,11 +34,8 @@ pub fn run_list() -> Result<()> {
             println!("     {}", skill.description);
         }
         if !skill.triggers.is_empty() {
-            let tools: Vec<&str> = skill
-                .triggers
-                .iter()
-                .flat_map(|t| t.tools.iter().map(|s| s.as_str()))
-                .collect();
+            let tools: Vec<&str> =
+                skill.triggers.iter().flat_map(|t| t.tools.iter().map(|s| s.as_str())).collect();
             if !tools.is_empty() {
                 println!("     tools: {}", tools.join(", "));
             }
@@ -52,9 +47,7 @@ pub fn run_list() -> Result<()> {
 
 /// 显示某个技能的详细信息
 pub fn run_show(name: &str) -> Result<()> {
-    let loader = crate::tools::SkillLoader::new()
-        .with_user_dir()
-        .with_project_dir(Path::new("."));
+    let loader = crate::tools::SkillLoader::new().with_user_dir().with_project_dir(Path::new("."));
 
     let skills = loader.load_all();
     let skill = skills.iter().find(|s| s.name == name);
@@ -68,13 +61,13 @@ pub fn run_show(name: &str) -> Result<()> {
             println!();
             println!("--- Instructions ---");
             println!("{}", s.instructions);
-        }
+        },
         None => {
             anyhow::bail!(
                 "Skill '{}' not found. Use 'sisyphus skill list' to see available skills.",
                 name
             );
-        }
+        },
     }
 
     Ok(())

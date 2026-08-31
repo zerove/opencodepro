@@ -125,12 +125,8 @@ pub fn annotate_file(file_path: &Path) -> ToolResult<usize> {
     // Use atomic write pattern from file.rs
     let parent = file_path.parent().unwrap_or_else(|| Path::new("."));
     let mut temp_file = NamedTempFile::new_in(parent).map_err(ToolError::Io)?;
-    temp_file
-        .write_all(new_content.as_bytes())
-        .map_err(ToolError::Io)?;
-    temp_file
-        .persist(file_path)
-        .map_err(|e| ToolError::Io(e.error))?;
+    temp_file.write_all(new_content.as_bytes()).map_err(ToolError::Io)?;
+    temp_file.persist(file_path).map_err(|e| ToolError::Io(e.error))?;
 
     Ok(count)
 }
@@ -145,10 +141,7 @@ pub fn edit_with_hashline(
     let data = parse_hashline(target_hashline)
         .ok_or_else(|| ToolError::Generic("Invalid hashline format".to_string()))?;
 
-    let lines: Vec<String> = content
-        .lines()
-        .map(std::string::ToString::to_string)
-        .collect();
+    let lines: Vec<String> = content.lines().map(std::string::ToString::to_string).collect();
     if data.line_number == 0 || data.line_number > lines.len() {
         return Err(ToolError::Generic(format!(
             "Line number {} out of bounds",
@@ -186,12 +179,8 @@ pub fn edit_with_hashline(
     let final_content = new_lines.join("\n");
     let parent = file_path.parent().unwrap_or_else(|| Path::new("."));
     let mut temp_file = NamedTempFile::new_in(parent).map_err(ToolError::Io)?;
-    temp_file
-        .write_all(final_content.as_bytes())
-        .map_err(ToolError::Io)?;
-    temp_file
-        .persist(file_path)
-        .map_err(|e| ToolError::Io(e.error))?;
+    temp_file.write_all(final_content.as_bytes()).map_err(ToolError::Io)?;
+    temp_file.persist(file_path).map_err(|e| ToolError::Io(e.error))?;
 
     Ok(old_content)
 }

@@ -55,20 +55,14 @@ impl SandboxdClient {
                 details: format!("Failed to spawn sandboxd: {e}"),
             })?;
 
-        let stdin = child
-            .stdin
-            .take()
-            .ok_or_else(|| TypesError::ToolExecutionError {
-                tool_id: "spawn".into(),
-                details: "Failed to capture sandboxd stdin".into(),
-            })?;
-        let stdout = child
-            .stdout
-            .take()
-            .ok_or_else(|| TypesError::ToolExecutionError {
-                tool_id: "spawn".into(),
-                details: "Failed to capture sandboxd stdout".into(),
-            })?;
+        let stdin = child.stdin.take().ok_or_else(|| TypesError::ToolExecutionError {
+            tool_id: "spawn".into(),
+            details: "Failed to capture sandboxd stdin".into(),
+        })?;
+        let stdout = child.stdout.take().ok_or_else(|| TypesError::ToolExecutionError {
+            tool_id: "spawn".into(),
+            details: "Failed to capture sandboxd stdout".into(),
+        })?;
 
         let conn = SandboxdConnection {
             child,
@@ -129,32 +123,23 @@ impl SandboxdClient {
                 details: format!("Failed to write to sandboxd: {e}"),
             }
         })?;
-        conn.stdin
-            .write_all(b"\n")
-            .await
-            .map_err(|e| TypesError::ToolExecutionError {
-                tool_id: "write".into(),
-                details: format!("Failed to write newline to sandboxd: {e}"),
-            })?;
-        conn.stdin
-            .flush()
-            .await
-            .map_err(|e| TypesError::ToolExecutionError {
-                tool_id: "flush".into(),
-                details: format!("Failed to flush sandboxd stdin: {e}"),
-            })?;
+        conn.stdin.write_all(b"\n").await.map_err(|e| TypesError::ToolExecutionError {
+            tool_id: "write".into(),
+            details: format!("Failed to write newline to sandboxd: {e}"),
+        })?;
+        conn.stdin.flush().await.map_err(|e| TypesError::ToolExecutionError {
+            tool_id: "flush".into(),
+            details: format!("Failed to flush sandboxd stdin: {e}"),
+        })?;
 
         // Read lines until we find the matching response id
         let mut line = String::new();
         loop {
             line.clear();
-            conn.stdout
-                .read_line(&mut line)
-                .await
-                .map_err(|e| TypesError::ToolExecutionError {
-                    tool_id: "read".into(),
-                    details: format!("Failed to read from sandboxd: {e}"),
-                })?;
+            conn.stdout.read_line(&mut line).await.map_err(|e| TypesError::ToolExecutionError {
+                tool_id: "read".into(),
+                details: format!("Failed to read from sandboxd: {e}"),
+            })?;
 
             if line.trim().is_empty() {
                 continue;
@@ -262,9 +247,7 @@ impl ToolExecutor for SandboxdClient {
         args: Vec<u8>,
         fuel_limit: u64,
     ) -> Result<Vec<u8>, TypesError> {
-        let (data, _) = self
-            .execute_with_measurement(tool_id, args, fuel_limit)
-            .await?;
+        let (data, _) = self.execute_with_measurement(tool_id, args, fuel_limit).await?;
         Ok(data)
     }
 
@@ -274,8 +257,7 @@ impl ToolExecutor for SandboxdClient {
         args: Vec<u8>,
         fuel_limit: u64,
     ) -> Result<(Vec<u8>, Option<sisyphus_types::ExecutionMeasurement>), TypesError> {
-        self.execute_with_measurement(tool_id, args, fuel_limit)
-            .await
+        self.execute_with_measurement(tool_id, args, fuel_limit).await
     }
 
     async fn list_tools(&self) -> Result<Vec<ToolMetadata>, TypesError> {

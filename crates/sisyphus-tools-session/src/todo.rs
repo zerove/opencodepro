@@ -118,9 +118,7 @@ impl TodoStore {
 
 fn now_iso() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
-    let dur = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default();
+    let dur = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default();
     let secs = dur.as_secs();
     let millis = dur.as_millis() % 1000;
     let secs_in_day = secs % 86400;

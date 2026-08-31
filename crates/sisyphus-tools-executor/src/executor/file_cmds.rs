@@ -5,12 +5,12 @@ use std::path::Path;
 // ── file command implementations ─────────────────────────────────
 
 /// Read a UTF-8 text file from disk.
-    ///
-    /// Args (JSON): { `path`: absolute or project-relative path }
-    ///
-    /// Returns JSON `{ content: String }`. Errors if the file is not UTF-8
-    /// or exceeds the configured read size limit.
-    pub fn cmd_file_read(args: Vec<u8>) -> Result<Vec<u8>, String> {
+///
+/// Args (JSON): { `path`: absolute or project-relative path }
+///
+/// Returns JSON `{ content: String }`. Errors if the file is not UTF-8
+/// or exceeds the configured read size limit.
+pub fn cmd_file_read(args: Vec<u8>) -> Result<Vec<u8>, String> {
     let v = parse_args(&args)?;
     let path = path_arg(&v, "path")?;
     let content = sisyphus_tools_system::file::read(Path::new(&path)).map_err(|e| e.to_string())?;
@@ -18,11 +18,11 @@ use std::path::Path;
 }
 
 /// Write a UTF-8 string to a file (creates parent directories as needed).
-    ///
-    /// Args (JSON): { `path`, `content`, `mode` (default "overwrite") }
-    ///
-    /// Refuses to write outside the project root by default.
-    pub fn cmd_file_write(args: Vec<u8>) -> Result<Vec<u8>, String> {
+///
+/// Args (JSON): { `path`, `content`, `mode` (default "overwrite") }
+///
+/// Refuses to write outside the project root by default.
+pub fn cmd_file_write(args: Vec<u8>) -> Result<Vec<u8>, String> {
     let v = parse_args(&args)?;
     let path = path_arg(&v, "path")?;
     let content = str_arg(&v, "content")?;
@@ -31,11 +31,11 @@ use std::path::Path;
 }
 
 /// Apply a single in-place edit to a file using a search/replace pair.
-    ///
-    /// Args (JSON): { `path`, `old_text`, `new_text` }
-    ///
-    /// Errors if `old_text` does not appear exactly once in the file.
-    pub fn cmd_file_edit(args: Vec<u8>) -> Result<Vec<u8>, String> {
+///
+/// Args (JSON): { `path`, `old_text`, `new_text` }
+///
+/// Errors if `old_text` does not appear exactly once in the file.
+pub fn cmd_file_edit(args: Vec<u8>) -> Result<Vec<u8>, String> {
     let v = parse_args(&args)?;
     let path = path_arg(&v, "path")?;
     let old = str_arg(&v, "old")?;
@@ -45,9 +45,9 @@ use std::path::Path;
 }
 
 /// Apply a single in-place edit to every file matching a glob.
-    ///
-    /// Args (JSON): { `glob`, `old_text`, `new_text` }
-    pub fn cmd_file_edit_all(args: Vec<u8>) -> Result<Vec<u8>, String> {
+///
+/// Args (JSON): { `glob`, `old_text`, `new_text` }
+pub fn cmd_file_edit_all(args: Vec<u8>) -> Result<Vec<u8>, String> {
     let v = parse_args(&args)?;
     let path = path_arg(&v, "path")?;
     let old = str_arg(&v, "old")?;
@@ -58,9 +58,9 @@ use std::path::Path;
 }
 
 /// Read a slice of a file by line range.
-    ///
-    /// Args (JSON): { `path`, `offset` (0-based), `limit` (default 100) }
-    pub fn cmd_file_read_lines(args: Vec<u8>) -> Result<Vec<u8>, String> {
+///
+/// Args (JSON): { `path`, `offset` (0-based), `limit` (default 100) }
+pub fn cmd_file_read_lines(args: Vec<u8>) -> Result<Vec<u8>, String> {
     let v = parse_args(&args)?;
     let path = path_arg(&v, "path")?;
     let offset = usize_arg(&v, "offset").unwrap_or(0);
@@ -71,28 +71,25 @@ use std::path::Path;
 }
 
 /// Expand a glob pattern to a sorted list of matching paths.
-    ///
-    /// Args (JSON): { `pattern` }
-    ///
-    /// Returns JSON `{ matches: [String] }`. Paths are relative to the
-    /// project root unless the pattern starts with `/`.
-    pub fn cmd_glob(args: Vec<u8>) -> Result<Vec<u8>, String> {
+///
+/// Args (JSON): { `pattern` }
+///
+/// Returns JSON `{ matches: [String] }`. Paths are relative to the
+/// project root unless the pattern starts with `/`.
+pub fn cmd_glob(args: Vec<u8>) -> Result<Vec<u8>, String> {
     let v = parse_args(&args)?;
     let pattern = str_arg(&v, "pattern")?;
     let root = path_arg(&v, "root")?;
     let files =
         sisyphus_tools_system::file::glob(&pattern, Path::new(&root)).map_err(|e| e.to_string())?;
-    let paths: Vec<String> = files
-        .iter()
-        .map(|p| p.to_string_lossy().into_owned())
-        .collect();
+    let paths: Vec<String> = files.iter().map(|p| p.to_string_lossy().into_owned()).collect();
     ok_json(json!({"files": paths}))
 }
 
 /// Search files for a regex, returning a list of `{ path, line, text }` matches.
-    ///
-    /// Args (JSON): { `pattern`, `glob` (default "**/*"), `max_results` (default 100) }
-    pub fn cmd_grep(args: Vec<u8>) -> Result<Vec<u8>, String> {
+///
+/// Args (JSON): { `pattern`, `glob` (default "**/*"), `max_results` (default 100) }
+pub fn cmd_grep(args: Vec<u8>) -> Result<Vec<u8>, String> {
     let v = parse_args(&args)?;
     let pattern = str_arg(&v, "pattern")?;
     let path = path_arg(&v, "path")?;

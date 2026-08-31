@@ -3,8 +3,7 @@
 //! MetaLearningSample) module.
 
 use sisyphus_types::{
-    EvolutionOp, FormalVerificationConfig, MetaLearningSample, NotepadSnapshot,
-    SisyphusNotepad,
+    EvolutionOp, FormalVerificationConfig, MetaLearningSample, NotepadSnapshot, SisyphusNotepad,
 };
 
 // ---------------------------------------------------------------------------
@@ -64,7 +63,7 @@ fn evolution_op_adjust_fuel_serde() {
         EvolutionOp::AdjustFuel { node_name, delta } => {
             assert_eq!(node_name, "n");
             assert_eq!(delta, 1000);
-        }
+        },
         _ => panic!("expected AdjustFuel"),
     }
 }
@@ -84,7 +83,7 @@ fn evolution_op_add_retry_serde() {
         } => {
             assert_eq!(node_name, "n");
             assert_eq!(max_retries, 3);
-        }
+        },
         _ => panic!("expected AddRetry"),
     }
 }
@@ -107,7 +106,7 @@ fn evolution_op_insert_node_serde() {
             assert_eq!(after_node, "a");
             assert_eq!(new_name, "b");
             assert_eq!(tool_id, "t");
-        }
+        },
         _ => panic!("expected InsertNode"),
     }
 }

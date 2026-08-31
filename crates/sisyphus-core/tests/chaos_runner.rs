@@ -5,7 +5,9 @@
 //! `success_rate`. The runner enables fault injection under
 //! controlled probabilities and target operations.
 
-use sisyphus_core::chaos_testing::{ChaosExperiment, ChaosExperimentResult, ChaosRunner, FaultType};
+use sisyphus_core::chaos_testing::{
+    ChaosExperiment, ChaosExperimentResult, ChaosRunner, FaultType,
+};
 use std::time::Duration;
 
 // ---------------------------------------------------------------------------
@@ -219,12 +221,6 @@ fn fault_type_equality() {
     assert_eq!(FaultType::LlmTimeout, FaultType::LlmTimeout);
     assert_ne!(FaultType::LlmTimeout, FaultType::LlmGarbage);
     assert_ne!(FaultType::ToolCrash, FaultType::ToolHang);
-    assert_eq!(
-        FaultType::RandomDelay(100),
-        FaultType::RandomDelay(100)
-    );
-    assert_ne!(
-        FaultType::RandomDelay(100),
-        FaultType::RandomDelay(200)
-    );
+    assert_eq!(FaultType::RandomDelay(100), FaultType::RandomDelay(100));
+    assert_ne!(FaultType::RandomDelay(100), FaultType::RandomDelay(200));
 }

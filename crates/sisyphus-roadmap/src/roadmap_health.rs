@@ -17,23 +17,17 @@ impl RoadmapManager {
             outcome.project_id, outcome.milestone_id, outcome.phase_id, outcome.goal_id
         );
         let value = serde_json::to_value(outcome)?;
-        self.store
-            .set_state_json(&outcome.project_id, &key, value)
-            .await?;
+        self.store.set_state_json(&outcome.project_id, &key, value).await?;
 
         // 更新结果索引（(project,ms,ph,goal) 元组的去重列表）
         let idx_key = format!("roadmap:outcomes:{}", outcome.project_id);
-        let mut ids: Vec<String> = match self
-            .store
-            .get_state_json(&outcome.project_id, &idx_key)
-            .await?
-        {
-            Some(Value::Array(arr)) => arr
-                .iter()
-                .filter_map(|v| v.as_str().map(String::from))
-                .collect(),
-            _ => Vec::new(),
-        };
+        let mut ids: Vec<String> =
+            match self.store.get_state_json(&outcome.project_id, &idx_key).await? {
+                Some(Value::Array(arr)) => {
+                    arr.iter().filter_map(|v| v.as_str().map(String::from)).collect()
+                },
+                _ => Vec::new(),
+            };
         let entry = format!(
             "{}:{}:{}",
             outcome.milestone_id, outcome.phase_id, outcome.goal_id
@@ -45,9 +39,7 @@ impl RoadmapManager {
                 ids.drain(0..ids.len() - 100);
             }
             let arr: Value = ids.iter().map(|s| Value::String(s.clone())).collect();
-            self.store
-                .set_state_json(&outcome.project_id, &idx_key, arr)
-                .await?;
+            self.store.set_state_json(&outcome.project_id, &idx_key, arr).await?;
         }
 
         Ok(())
@@ -60,10 +52,9 @@ impl RoadmapManager {
     ) -> Result<Vec<ExecutionOutcome>, RoadmapError> {
         let idx_key = format!("roadmap:outcomes:{}", project_id);
         let ids: Vec<String> = match self.store.get_state_json(project_id, &idx_key).await? {
-            Some(Value::Array(arr)) => arr
-                .iter()
-                .filter_map(|v| v.as_str().map(String::from))
-                .collect(),
+            Some(Value::Array(arr)) => {
+                arr.iter().filter_map(|v| v.as_str().map(String::from)).collect()
+            },
             _ => return Ok(Vec::new()),
         };
 
@@ -119,11 +110,10 @@ impl RoadmapManager {
                 });
             }
 
-            let has_blocked_goal = ms.phases.iter().any(|ph| {
-                ph.goals
-                    .iter()
-                    .any(|g| g.status == MilestoneStatus::Blocked)
-            });
+            let has_blocked_goal = ms
+                .phases
+                .iter()
+                .any(|ph| ph.goals.iter().any(|g| g.status == MilestoneStatus::Blocked));
             if has_blocked_goal && ms.status != MilestoneStatus::Blocked {
                 problems.push(RoadmapProblem {
                     severity: ProblemSeverity::Warning,
@@ -144,15 +134,9 @@ impl RoadmapManager {
 
             // 检查陈旧目标（其他已完成时仍长期待处理）
             for ph in &ms.phases {
-                let has_completed = ph
-                    .goals
-                    .iter()
-                    .any(|g| g.status == MilestoneStatus::Completed);
-                let pending: Vec<&GoalRef> = ph
-                    .goals
-                    .iter()
-                    .filter(|g| g.status == MilestoneStatus::Pending)
-                    .collect();
+                let has_completed = ph.goals.iter().any(|g| g.status == MilestoneStatus::Completed);
+                let pending: Vec<&GoalRef> =
+                    ph.goals.iter().filter(|g| g.status == MilestoneStatus::Pending).collect();
 
                 if has_completed && !pending.is_empty() && ms.status != MilestoneStatus::Blocked {
                     for g in &pending {
@@ -216,11 +200,8 @@ impl RoadmapManager {
 
         // 从近期结果获取失败目标 ID
         let outcomes = self.get_outcomes(project_id).await?;
-        let failed_goals: Vec<String> = outcomes
-            .iter()
-            .filter(|o| !o.success)
-            .map(|o| o.goal_id.clone())
-            .collect();
+        let failed_goals: Vec<String> =
+            outcomes.iter().filter(|o| !o.success).map(|o| o.goal_id.clone()).collect();
 
         if failed_goals.is_empty() {
             return Ok(health);

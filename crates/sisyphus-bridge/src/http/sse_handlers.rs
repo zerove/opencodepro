@@ -193,17 +193,15 @@ pub async fn sse_handler(
                 Json(json!({"error": "Too many SSE connections"})),
             )
                 .into_response();
-        }
+        },
     };
 
     // 订阅全局广播器（所有客户端共享同一 channel）
     let receiver = state.sse_broadcaster.subscribe();
 
     // 解析事件过滤器
-    let event_filters: Option<Vec<String>> = query
-        .events
-        .as_ref()
-        .map(|s| s.split(',').map(|s| s.trim().to_string()).collect());
+    let event_filters: Option<Vec<String>> =
+        query.events.as_ref().map(|s| s.split(',').map(|s| s.trim().to_string()).collect());
 
     let heartbeat_interval = query.heartbeat.unwrap_or(30);
 
@@ -320,11 +318,7 @@ pub async fn metrics_handler(State(state): State<RestApiState>) -> impl IntoResp
     let uptime_secs = now.saturating_sub(started_at);
 
     // 拿 shared_http（如果 bridge 持有 ProviderRegistry 间接的）
-    let stats = state
-        .shared_http
-        .as_ref()
-        .map(|c| c.stats())
-        .unwrap_or_default();
+    let stats = state.shared_http.as_ref().map(|c| c.stats()).unwrap_or_default();
 
     // SSE 活跃连接数 = SSE_MAX_CONNECTIONS - 剩余许可
     let sse_max = crate::http::types::SSE_MAX_CONNECTIONS;
@@ -334,31 +328,59 @@ pub async fn metrics_handler(State(state): State<RestApiState>) -> impl IntoResp
     let chaos_total = state.bridge.chaos_fault_count();
 
     let mut out = String::with_capacity(1024);
-    let _ = writeln!(out, "# HELP sisyphus_http_requests_total Total HTTP requests since process start");
+    let _ = writeln!(
+        out,
+        "# HELP sisyphus_http_requests_total Total HTTP requests since process start"
+    );
     let _ = writeln!(out, "# TYPE sisyphus_http_requests_total counter");
     let _ = writeln!(out, "sisyphus_http_requests_total {}", stats.requests_total);
-    let _ = writeln!(out, "# HELP sisyphus_http_errors_total Total failed HTTP requests");
+    let _ = writeln!(
+        out,
+        "# HELP sisyphus_http_errors_total Total failed HTTP requests"
+    );
     let _ = writeln!(out, "# TYPE sisyphus_http_errors_total counter");
     let _ = writeln!(out, "sisyphus_http_errors_total {}", stats.errors_total);
-    let _ = writeln!(out, "# HELP sisyphus_http_in_flight Currently in-flight HTTP requests");
+    let _ = writeln!(
+        out,
+        "# HELP sisyphus_http_in_flight Currently in-flight HTTP requests"
+    );
     let _ = writeln!(out, "# TYPE sisyphus_http_in_flight gauge");
     let _ = writeln!(out, "sisyphus_http_in_flight {}", stats.in_flight);
-    let _ = writeln!(out, "# HELP sisyphus_http_shutdowns_total Total graceful shutdown invocations");
+    let _ = writeln!(
+        out,
+        "# HELP sisyphus_http_shutdowns_total Total graceful shutdown invocations"
+    );
     let _ = writeln!(out, "# TYPE sisyphus_http_shutdowns_total counter");
-    let _ = writeln!(out, "sisyphus_http_shutdowns_total {}", stats.shutdowns_total);
-    let _ = writeln!(out, "# HELP sisyphus_uptime_seconds Process uptime in seconds");
+    let _ = writeln!(
+        out,
+        "sisyphus_http_shutdowns_total {}",
+        stats.shutdowns_total
+    );
+    let _ = writeln!(
+        out,
+        "# HELP sisyphus_uptime_seconds Process uptime in seconds"
+    );
     let _ = writeln!(out, "# TYPE sisyphus_uptime_seconds gauge");
     let _ = writeln!(out, "sisyphus_uptime_seconds {}", uptime_secs);
-    let _ = writeln!(out, "# HELP sisyphus_sse_connections_active Active SSE client connections");
+    let _ = writeln!(
+        out,
+        "# HELP sisyphus_sse_connections_active Active SSE client connections"
+    );
     let _ = writeln!(out, "# TYPE sisyphus_sse_connections_active gauge");
     let _ = writeln!(out, "sisyphus_sse_connections_active {}", sse_active);
-    let _ = writeln!(out, "# HELP sisyphus_chaos_faults_total Total chaos engineering faults injected");
+    let _ = writeln!(
+        out,
+        "# HELP sisyphus_chaos_faults_total Total chaos engineering faults injected"
+    );
     let _ = writeln!(out, "# TYPE sisyphus_chaos_faults_total counter");
     let _ = writeln!(out, "sisyphus_chaos_faults_total {}", chaos_total);
 
     (
         StatusCode::OK,
-        [(axum::http::header::CONTENT_TYPE, "text/plain; version=0.0.4; charset=utf-8")],
+        [(
+            axum::http::header::CONTENT_TYPE,
+            "text/plain; version=0.0.4; charset=utf-8",
+        )],
         out,
     )
 }
@@ -465,11 +487,7 @@ mod tests {
         let mut cfg = Config::default();
         cfg.llm.embedding.allow_dummy_embeddings = true;
         let cfg = StdArc::new(StdRwLock::new(cfg));
-        let bridge = Arc::new(
-            MySisyphusBridge::new(cfg, None)
-                .await
-                .expect("构造 test bridge"),
-        );
+        let bridge = Arc::new(MySisyphusBridge::new(cfg, None).await.expect("构造 test bridge"));
         let state = RestApiState::new(bridge, std::path::PathBuf::from("/tmp"));
         match shared_http {
             Some(c) => state.with_shared_http(c),
@@ -492,7 +510,10 @@ mod tests {
         assert!(text.contains("sisyphus_http_shutdowns_total 0"), "{text}");
         assert!(text.contains("sisyphus_uptime_seconds"), "{text}");
         // Content-Type 应为 prometheus 文本格式
-        assert!(text.contains("# TYPE sisyphus_http_requests_total counter"), "{text}");
+        assert!(
+            text.contains("# TYPE sisyphus_http_requests_total counter"),
+            "{text}"
+        );
     }
 
     #[tokio::test]
@@ -509,17 +530,10 @@ mod tests {
         // 计数器仍是 0 (没人发过请求)
         assert!(text.contains("sisyphus_http_requests_total 0"), "{text}");
         // 启动时间应已固化（> 0 unix 时间）
-        let started_at_line = text
-            .lines()
-            .find(|l| l.starts_with("sisyphus_uptime_seconds"))
-            .expect("uptime line");
+        let started_at_line =
+            text.lines().find(|l| l.starts_with("sisyphus_uptime_seconds")).expect("uptime line");
         // uptime 应是合理正数（< 几小时）
-        let secs: u64 = started_at_line
-            .split_whitespace()
-            .last()
-            .unwrap()
-            .parse()
-            .unwrap();
+        let secs: u64 = started_at_line.split_whitespace().last().unwrap().parse().unwrap();
         assert!(secs < 86_400, "uptime 看起来不真实: {secs}");
     }
 
@@ -551,7 +565,13 @@ mod tests {
         assert_eq!(chaos_total, 0, "初始 chaos count 应为 0");
 
         // TYPE 注释齐全（Prometheus 规范）
-        assert!(text.contains("# TYPE sisyphus_sse_connections_active gauge"), "{text}");
-        assert!(text.contains("# TYPE sisyphus_chaos_faults_total counter"), "{text}");
+        assert!(
+            text.contains("# TYPE sisyphus_sse_connections_active gauge"),
+            "{text}"
+        );
+        assert!(
+            text.contains("# TYPE sisyphus_chaos_faults_total counter"),
+            "{text}"
+        );
     }
 }

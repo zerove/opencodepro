@@ -43,10 +43,7 @@ impl PrManager {
 
         let mut prs = Vec::new();
         for val in raw_prs {
-            let author = val["author"]["login"]
-                .as_str()
-                .unwrap_or("unknown")
-                .to_string();
+            let author = val["author"]["login"].as_str().unwrap_or("unknown").to_string();
 
             prs.push(PullRequest {
                 number: val["number"].as_u64().unwrap_or(0),
@@ -116,12 +113,9 @@ Return your response as a clear, professional review with:
 
         let user_prompt = format!("PR #{number} Diff:\n\n{diff}");
 
-        let review = llm_client
-            .chat(system_prompt, &user_prompt, false)
-            .await
-            .map_err(|e| {
-                sisyphus_tools_core::ToolError::Generic(format!("LLM review failed: {e}"))
-            })?;
+        let review = llm_client.chat(system_prompt, &user_prompt, false).await.map_err(|e| {
+            sisyphus_tools_core::ToolError::Generic(format!("LLM review failed: {e}"))
+        })?;
 
         Ok(review)
     }

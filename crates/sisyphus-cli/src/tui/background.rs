@@ -168,10 +168,7 @@ pub fn spawn_execute_sop(
                     .await
                     .map_err(|e| format!("connect: {e}"))?,
             };
-            client
-                .execute_sop(&sop_id)
-                .await
-                .map_err(|e| format!("execute: {e}"))
+            client.execute_sop(&sop_id).await.map_err(|e| format!("execute: {e}"))
         }
         .await;
         let _ = tx.send(match result {
@@ -245,9 +242,7 @@ pub fn spawn_session_add_message(
         let mut bridge_errors: Vec<super::LogEntry> = Vec::new();
         if let Some(ref addr) = bridge_address {
             let bridge_op = async {
-                let mut client = BridgeClient::connect(addr)
-                    .await
-                    .map_err(|e| format!("{e}"))?;
+                let mut client = BridgeClient::connect(addr).await.map_err(|e| format!("{e}"))?;
                 client
                     .add_message(&session_id, &role, &content, &session_db.to_string_lossy())
                     .await
@@ -265,17 +260,17 @@ pub fn spawn_session_add_message(
                             "Bridge LLM error: {err_msg}",
                         )));
                     }
-                }
+                },
                 Ok(Err(e)) => {
                     bridge_errors.push(super::LogEntry::Error(format!(
                         "Bridge add_message failed: {e}",
                     )));
-                }
+                },
                 Err(_) => {
                     bridge_errors.push(super::LogEntry::Warn(
                         "LLM response timed out (120s), check bridge logs".into(),
                     ));
-                }
+                },
             }
         }
 
@@ -314,14 +309,14 @@ pub fn spawn_dev_agent(
                     report: formatted,
                     success,
                 });
-            }
+            },
             Err(e) => {
                 let _ = tx.send(BgOp::DevResult {
                     goal: goal_c,
                     report: format!("Development agent failed:\n{e}"),
                     success: false,
                 });
-            }
+            },
         }
     });
     rx
@@ -377,16 +372,12 @@ pub fn spawn_fetch_sop_trace(
             bridge_address, sop_id
         );
         let result = async {
-            let resp = reqwest::get(&url)
-                .await
-                .map_err(|e| format!("HTTP request failed: {e}"))?;
+            let resp = reqwest::get(&url).await.map_err(|e| format!("HTTP request failed: {e}"))?;
             if !resp.status().is_success() {
                 return Err(format!("Bridge returned error status: {}", resp.status()));
             }
-            let data: serde_json::Value = resp
-                .json()
-                .await
-                .map_err(|e| format!("JSON parse failed: {e}"))?;
+            let data: serde_json::Value =
+                resp.json().await.map_err(|e| format!("JSON parse failed: {e}"))?;
             let events: Vec<SopTraceEvent> = serde_json::from_value(data["events"].clone())
                 .map_err(|e| format!("Trace event parse failed: {e}"))?;
             Ok(events)
@@ -406,16 +397,12 @@ pub fn spawn_fetch_cognitive_trace(bridge_address: String) -> tokio::sync::onesh
     tokio::spawn(async move {
         let url = format!("http://{}/api/cognitive/trace?limit=100", bridge_address);
         let result = async {
-            let resp = reqwest::get(&url)
-                .await
-                .map_err(|e| format!("HTTP request failed: {e}"))?;
+            let resp = reqwest::get(&url).await.map_err(|e| format!("HTTP request failed: {e}"))?;
             if !resp.status().is_success() {
                 return Err(format!("Bridge returned error status: {}", resp.status()));
             }
-            let data: serde_json::Value = resp
-                .json()
-                .await
-                .map_err(|e| format!("JSON parse failed: {e}"))?;
+            let data: serde_json::Value =
+                resp.json().await.map_err(|e| format!("JSON parse failed: {e}"))?;
             let rows: Vec<CognitiveTraceRow> = serde_json::from_value(data["entries"].clone())
                 .map_err(|e| format!("Cognitive trace parse failed: {e}"))?;
             Ok(rows)
@@ -445,16 +432,12 @@ pub fn spawn_fetch_cognitive_trace_history(
             url.push_str(&format!("&sop_id={sop}"));
         }
         let result = async {
-            let resp = reqwest::get(&url)
-                .await
-                .map_err(|e| format!("HTTP request failed: {e}"))?;
+            let resp = reqwest::get(&url).await.map_err(|e| format!("HTTP request failed: {e}"))?;
             if !resp.status().is_success() {
                 return Err(format!("Bridge returned error status: {}", resp.status()));
             }
-            let data: serde_json::Value = resp
-                .json()
-                .await
-                .map_err(|e| format!("JSON parse failed: {e}"))?;
+            let data: serde_json::Value =
+                resp.json().await.map_err(|e| format!("JSON parse failed: {e}"))?;
             let rows: Vec<CognitiveTraceRow> = serde_json::from_value(data["entries"].clone())
                 .map_err(|e| format!("Cognitive trace parse failed: {e}"))?;
             Ok(rows)
@@ -481,16 +464,12 @@ pub fn spawn_fetch_cognitive_summary(
             url.push_str(&format!("&sop_id={sop}"));
         }
         let result = async {
-            let resp = reqwest::get(&url)
-                .await
-                .map_err(|e| format!("HTTP request failed: {e}"))?;
+            let resp = reqwest::get(&url).await.map_err(|e| format!("HTTP request failed: {e}"))?;
             if !resp.status().is_success() {
                 return Err(format!("Bridge returned error status: {}", resp.status()));
             }
-            let summary: CognitiveSummaryRow = resp
-                .json()
-                .await
-                .map_err(|e| format!("JSON parse failed: {e}"))?;
+            let summary: CognitiveSummaryRow =
+                resp.json().await.map_err(|e| format!("JSON parse failed: {e}"))?;
             Ok(summary)
         }
         .await;
@@ -510,16 +489,12 @@ pub fn spawn_fetch_available_skills(
     tokio::spawn(async move {
         let url = format!("http://{}/api/skills/available", bridge_address);
         let result = async {
-            let resp = reqwest::get(&url)
-                .await
-                .map_err(|e| format!("HTTP request failed: {e}"))?;
+            let resp = reqwest::get(&url).await.map_err(|e| format!("HTTP request failed: {e}"))?;
             if !resp.status().is_success() {
                 return Err(format!("Bridge returned error status: {}", resp.status()));
             }
-            let skills: Vec<RemoteSkillEntry> = resp
-                .json()
-                .await
-                .map_err(|e| format!("JSON parse failed: {e}"))?;
+            let skills: Vec<RemoteSkillEntry> =
+                resp.json().await.map_err(|e| format!("JSON parse failed: {e}"))?;
             Ok(skills)
         }
         .await;
@@ -541,16 +516,12 @@ pub fn spawn_fetch_installed_skills(
     tokio::spawn(async move {
         let url = format!("http://{}/api/skills/installed", bridge_address);
         let result = async {
-            let resp = reqwest::get(&url)
-                .await
-                .map_err(|e| format!("HTTP request failed: {e}"))?;
+            let resp = reqwest::get(&url).await.map_err(|e| format!("HTTP request failed: {e}"))?;
             if !resp.status().is_success() {
                 return Err(format!("Bridge returned error status: {}", resp.status()));
             }
-            let skills: Vec<RemoteSkillEntry> = resp
-                .json()
-                .await
-                .map_err(|e| format!("JSON parse failed: {e}"))?;
+            let skills: Vec<RemoteSkillEntry> =
+                resp.json().await.map_err(|e| format!("JSON parse failed: {e}"))?;
             Ok(skills)
         }
         .await;
@@ -641,16 +612,12 @@ pub fn spawn_list_workspaces(bridge_address: String) -> tokio::sync::oneshot::Re
     tokio::spawn(async move {
         let url = format!("http://{}/api/workspaces", bridge_address);
         let result = async {
-            let resp = reqwest::get(&url)
-                .await
-                .map_err(|e| format!("HTTP request failed: {e}"))?;
+            let resp = reqwest::get(&url).await.map_err(|e| format!("HTTP request failed: {e}"))?;
             if !resp.status().is_success() {
                 return Err(format!("Bridge returned error status: {}", resp.status()));
             }
-            let workspaces: Vec<WorkspaceEntry> = resp
-                .json()
-                .await
-                .map_err(|e| format!("JSON parse failed: {e}"))?;
+            let workspaces: Vec<WorkspaceEntry> =
+                resp.json().await.map_err(|e| format!("JSON parse failed: {e}"))?;
             Ok(workspaces)
         }
         .await;

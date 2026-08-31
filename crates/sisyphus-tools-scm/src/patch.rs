@@ -158,7 +158,7 @@ fn apply_hunks(original: &str, hunks: &[Hunk]) -> ToolResult<String> {
                     }
                     result_lines.push(actual.to_string());
                     line_idx += 1;
-                }
+                },
                 HunkLine::Removal(expected) => {
                     let actual = if line_idx < lines.len() {
                         lines[line_idx]
@@ -172,10 +172,10 @@ fn apply_hunks(original: &str, hunks: &[Hunk]) -> ToolResult<String> {
                         )));
                     }
                     line_idx += 1;
-                }
+                },
                 HunkLine::Addition(addition) => {
                     result_lines.push(addition.clone());
-                }
+                },
             }
         }
     }

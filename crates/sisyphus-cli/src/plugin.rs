@@ -26,16 +26,11 @@ pub async fn run_list(client: &mut BridgeClient) -> Result<()> {
 
 /// Run load.
 pub async fn run_load(client: &mut BridgeClient, path: &Path) -> Result<()> {
-    let filename = path
-        .file_name()
-        .context("Invalid plugin path")?
-        .to_string_lossy();
+    let filename = path.file_name().context("Invalid plugin path")?.to_string_lossy();
     let name = filename.trim_end_matches(".wasm");
     let wasm_path_str = path.to_string_lossy().to_string();
 
-    let response = client
-        .load_plugin(name, "1.0.0", &wasm_path_str, name, 0)
-        .await?;
+    let response = client.load_plugin(name, "1.0.0", &wasm_path_str, name, 0).await?;
     if response.success {
         println!("Loaded plugin '{}' from {}", name, wasm_path_str);
     } else {
@@ -56,7 +51,7 @@ pub async fn run_watch(path: Option<&Path>) -> Result<()> {
         None => {
             let cfg = sisyphus_types::Config::default();
             PathBuf::from(&cfg.sandbox.wasm_tools_dir)
-        }
+        },
     };
 
     println!("Watching for plugin changes in {}...", tools_dir.display());

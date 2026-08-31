@@ -98,7 +98,7 @@ impl EnhancedDashboard {
         match event {
             ExecutionEvent::NodeStarted { node_name } => {
                 println!("  🚀 [{}] {}", self.timestamp(), node_name);
-            }
+            },
             ExecutionEvent::NodeCompleted {
                 node_name, output, ..
             } => {
@@ -111,7 +111,7 @@ impl EnhancedDashboard {
                     node_name,
                     truncate(&output.to_string(), 60)
                 );
-            }
+            },
             ExecutionEvent::NodeFailed {
                 node_name, error, ..
             } => {
@@ -124,24 +124,24 @@ impl EnhancedDashboard {
                     node_name,
                     truncate(error, 60)
                 );
-            }
+            },
             ExecutionEvent::CognitiveStep {
                 step,
                 message,
                 metrics,
             } => {
                 self.render_enhanced_step(step, message, metrics);
-            }
+            },
             ExecutionEvent::ExecutionComplete { result } => {
                 println!("\n🎯 FINAL RESULT: {}", truncate(&result.to_string(), 100));
                 self.render_session_summary();
-            }
+            },
             ExecutionEvent::CognitiveComplete { report } => {
                 println!("\n{}", "═".repeat(60));
                 println!("🏁 COGNITIVE LOOP COMPLETE");
                 println!("{}", "═".repeat(60));
                 println!("📊 {}", report);
-            }
+            },
             ExecutionEvent::MicroReflection {
                 node_name,
                 prediction,
@@ -162,8 +162,8 @@ impl EnhancedDashboard {
                     truncate(prediction, 30),
                     truncate(actual, 30)
                 );
-            }
-            _ => {}
+            },
+            _ => {},
         }
     }
 
@@ -219,10 +219,7 @@ impl EnhancedDashboard {
             fuel_consumed: 0,
             timestamp_ms: self.start_time.elapsed().as_millis(),
         };
-        self.node_history
-            .entry(node_name.to_string())
-            .or_default()
-            .push(execution);
+        self.node_history.entry(node_name.to_string()).or_default().push(execution);
     }
 
     fn render_session_summary(&self) {

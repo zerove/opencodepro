@@ -49,10 +49,8 @@ impl DynamicLlmClient {
             .timeout(Duration::from_secs(5))
             .build()
             .unwrap_or_else(|_| reqwest::Client::new());
-        let provider_registry = config
-            .read()
-            .ok()
-            .and_then(|cfg| build_provider_registry(&cfg.llm.providers).ok());
+        let provider_registry =
+            config.read().ok().and_then(|cfg| build_provider_registry(&cfg.llm.providers).ok());
         Self {
             config,
             client,
@@ -71,10 +69,7 @@ impl DynamicLlmClient {
     /// without touching the network.
     fn trip_fast_fail(&self, model: &str) {
         let cooling_secs = {
-            let cfg = self
-                .config
-                .read()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let cfg = self.config.read().unwrap_or_else(std::sync::PoisonError::into_inner);
             cfg.llm.fast_fail_cooling_secs
         };
         self.fast_fail_until.write().insert(
@@ -91,10 +86,7 @@ impl DynamicLlmClient {
     /// True when the fast-fail cooling window for a model is active.
     fn fast_fail_active(&self, model: &str) -> bool {
         let cooling_secs = {
-            let cfg = self
-                .config
-                .read()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let cfg = self.config.read().unwrap_or_else(std::sync::PoisonError::into_inner);
             cfg.llm.fast_fail_cooling_secs
         };
         if cooling_secs == 0 {
@@ -106,10 +98,7 @@ impl DynamicLlmClient {
 
     /// Get the current request/connect timeouts from config.
     fn timeouts(&self) -> (Duration, Duration) {
-        let cfg = self
-            .config
-            .read()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let cfg = self.config.read().unwrap_or_else(std::sync::PoisonError::into_inner);
         (
             Duration::from_secs(cfg.llm.connect_timeout_secs),
             Duration::from_secs(cfg.llm.request_timeout_secs),
@@ -130,10 +119,8 @@ impl DynamicLlmClient {
 
     /// Set context.
     pub fn set_context(&self, project_id: &str, goal_id: &str) {
-        let mut ctx = self
-            .current_context
-            .write()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut ctx =
+            self.current_context.write().unwrap_or_else(std::sync::PoisonError::into_inner);
         *ctx = Some(RequestContext {
             project_id: project_id.to_string(),
             goal_id: goal_id.to_string(),
@@ -142,28 +129,22 @@ impl DynamicLlmClient {
 
     /// Clear context.
     pub fn clear_context(&self) {
-        let mut ctx = self
-            .current_context
-            .write()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut ctx =
+            self.current_context.write().unwrap_or_else(std::sync::PoisonError::into_inner);
         *ctx = None;
     }
 
     /// Set category.
     pub fn set_category(&self, category: &str) {
-        let mut cat = self
-            .current_category
-            .write()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut cat =
+            self.current_category.write().unwrap_or_else(std::sync::PoisonError::into_inner);
         *cat = Some(category.to_string());
     }
 
     /// Clear category.
     pub fn clear_category(&self) {
-        let mut cat = self
-            .current_category
-            .write()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut cat =
+            self.current_category.write().unwrap_or_else(std::sync::PoisonError::into_inner);
         *cat = None;
     }
 
@@ -195,10 +176,7 @@ impl DynamicLlmClient {
 
     /// Get base (default) LLM parameters.
     pub(super) fn get_current_params(&self) -> (String, String, String) {
-        let cfg = self
-            .config
-            .read()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let cfg = self.config.read().unwrap_or_else(std::sync::PoisonError::into_inner);
         let api_key = Self::resolve_api_key(&cfg.llm.api_key);
         (api_key, cfg.llm.endpoint.clone(), cfg.llm.model.clone())
     }
@@ -214,17 +192,10 @@ impl DynamicLlmClient {
     /// endpoint / model / api_key take precedence. Fallback fields
     /// come from the base config.
     pub fn get_params_for_category(&self, category: &str) -> (String, String, String) {
-        let cfg = self
-            .config
-            .read()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let cfg = self.config.read().unwrap_or_else(std::sync::PoisonError::into_inner);
 
         if let Some(override_) = cfg.llm.categories.get(category) {
-            let endpoint = override_
-                .endpoint
-                .as_deref()
-                .unwrap_or(&cfg.llm.endpoint)
-                .to_string();
+            let endpoint = override_.endpoint.as_deref().unwrap_or(&cfg.llm.endpoint).to_string();
             let api_key = match &override_.api_key {
                 Some(k) => Self::resolve_api_key(k),
                 None => Self::resolve_api_key(&cfg.llm.api_key),
@@ -260,10 +231,7 @@ impl LlmClient for DynamicLlmClient {
                 .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .clone();
             if let Some(cat_name) = category {
-                let cfg = self
-                    .config
-                    .read()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                let cfg = self.config.read().unwrap_or_else(std::sync::PoisonError::into_inner);
                 if let Some(cat_cfg) = cfg.llm.categories.get(&cat_name) {
                     if let Some(strategy) = &cat_cfg.strategy {
                         if let Ok(selected) = self.router.select(user, strategy) {
@@ -300,42 +268,31 @@ impl LlmClient for DynamicLlmClient {
                     role: ChatRole::User,
                     content: user.to_string(),
                 }];
-                match registry
-                    .chat_with_fallback(system, &chat_messages, json_mode)
-                    .await
-                {
+                match registry.chat_with_fallback(system, &chat_messages, json_mode).await {
                     Ok(response) => {
                         // Record cost via router
                         let token_estimate = (response.content.len() / 4).max(1) as u64;
-                        self.router
-                            .record_usage(&response.model, 0.0, token_estimate);
+                        self.router.record_usage(&response.model, 0.0, token_estimate);
                         self.clear_fast_fail(&model);
                         return Ok(response.content);
-                    }
+                    },
                     Err(e) => {
                         // All providers failed — log warning and fall through to default endpoint
                         tracing::warn!(target: "llm", "All providers failed, falling back to default endpoint: {e}");
-                    }
+                    },
                 }
             }
         }
 
         // 1. Budget Pre-check
-        let context = self
-            .current_context
-            .read()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .clone();
+        let context =
+            self.current_context.read().unwrap_or_else(std::sync::PoisonError::into_inner).clone();
         if let (Some(provider), Some(ctx)) = (&self.budget_provider, context.clone()) {
             let estimated_cost = 0.01;
-            if let Err(e) = provider
-                .check_budget(&ctx.project_id, &ctx.goal_id, estimated_cost)
-                .await
+            if let Err(e) =
+                provider.check_budget(&ctx.project_id, &ctx.goal_id, estimated_cost).await
             {
-                let cfg = self
-                    .config
-                    .read()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                let cfg = self.config.read().unwrap_or_else(std::sync::PoisonError::into_inner);
                 if cfg.llm.budget_mode == sisyphus_types::BudgetMode::Strict {
                     return Err(sisyphus_types::TypesError::InternalError(format!(
                         "Budget exceeded (Strict Mode): {e}"
@@ -396,14 +353,14 @@ impl LlmClient for DynamicLlmClient {
                 return Err(sisyphus_types::TypesError::InternalError(format!(
                     "HTTP request failed: {e}"
                 )));
-            }
+            },
             Err(_) => {
                 self.breaker.on_failure(&model);
                 self.trip_fast_fail(&model);
                 return Err(sisyphus_types::TypesError::InternalError(format!(
                     "HTTP request timed out for {model}"
                 )));
-            }
+            },
         };
 
         let status = res.status();
@@ -414,7 +371,7 @@ impl LlmClient for DynamicLlmClient {
                 return Err(sisyphus_types::TypesError::InternalError(format!(
                     "Failed to parse response JSON: {e}"
                 )));
-            }
+            },
         };
 
         if !status.is_success() {
@@ -461,17 +418,10 @@ impl LlmClient for DynamicLlmClient {
     }
 
     fn get_params_for(&self, agent_id: &str) -> (String, String, String) {
-        let cfg = self
-            .config
-            .read()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let cfg = self.config.read().unwrap_or_else(std::sync::PoisonError::into_inner);
 
         if let Some(override_) = cfg.llm.agents.get(agent_id) {
-            let endpoint = override_
-                .endpoint
-                .as_deref()
-                .unwrap_or(&cfg.llm.endpoint)
-                .to_string();
+            let endpoint = override_.endpoint.as_deref().unwrap_or(&cfg.llm.endpoint).to_string();
             let api_key = match &override_.api_key {
                 Some(k) => Self::resolve_api_key(k),
                 None => Self::resolve_api_key(&cfg.llm.api_key),
@@ -502,9 +452,7 @@ impl LlmClient for DynamicLlmClient {
     /// 暴露底层 shared_http（用于 /api/metrics 等指标端点）。
     /// 返回 None 表示 ProviderRegistry 未配置（开发模式）。
     fn shared_http(&self) -> Option<Arc<crate::http_client::SharedHttpClient>> {
-        self.provider_registry
-            .as_ref()
-            .and_then(|reg| reg.shared_http())
+        self.provider_registry.as_ref().and_then(|reg| reg.shared_http())
     }
 }
 

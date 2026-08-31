@@ -110,10 +110,7 @@ async fn test_mock_provider_analyze() {
     let llm = Arc::new(DummyLlmClient);
     let provider = Arc::new(SisyphusVisualProvider::new(llm));
 
-    let result = provider
-        .analyze_image(b"test image data", "describe this image")
-        .await
-        .unwrap();
+    let result = provider.analyze_image(b"test image data", "describe this image").await.unwrap();
 
     assert!(result.description.contains("Simulated"));
     assert!(result.description.contains("describe this image"));
@@ -127,10 +124,7 @@ async fn test_mock_provider_analyze_visual_action() {
     let provider = Arc::new(SisyphusVisualProvider::new(llm));
 
     // Test with different image data
-    let result = provider
-        .analyze_image(b"different image", "find button")
-        .await
-        .unwrap();
+    let result = provider.analyze_image(b"different image", "find button").await.unwrap();
 
     assert!(result.description.contains("Simulated"));
     assert!(result.description.contains("find button"));
@@ -188,10 +182,7 @@ async fn test_http_provider_rejects_placeholder_bytes() {
     assert_eq!(embedding.len(), 512);
     assert!(embedding.iter().all(|&v| v == 0.1));
 
-    let analysis = provider
-        .analyze_image(&[0u8; 64], "describe")
-        .await
-        .unwrap();
+    let analysis = provider.analyze_image(&[0u8; 64], "describe").await.unwrap();
     assert!(analysis.description.contains("Simulated"));
     assert_eq!(analysis.confidence, 0.9);
 }

@@ -55,16 +55,8 @@ async fn make_kernel() -> (Arc<SisyphusKernel>, Arc<CompositeMockExecutor>) {
 
     let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
     let sop_store = Arc::new(sisyphus_mem::SopSqlStore::new(pool.clone()).await.unwrap());
-    let vector_store = Arc::new(
-        sisyphus_mem::VectorMemoryStore::new(pool.clone())
-            .await
-            .unwrap(),
-    );
-    let roadmap_store = Arc::new(
-        sisyphus_mem::RoadmapSqlStore::new(pool.clone())
-            .await
-            .unwrap(),
-    );
+    let vector_store = Arc::new(sisyphus_mem::VectorMemoryStore::new(pool.clone()).await.unwrap());
+    let roadmap_store = Arc::new(sisyphus_mem::RoadmapSqlStore::new(pool.clone()).await.unwrap());
 
     let kernel = Arc::new(SisyphusKernel::new(
         state_store,
@@ -163,10 +155,8 @@ async fn test_execute_composite_linear() {
         mappings: vec![],
     });
 
-    let output: CompositeOutput = kernel
-        .execute_composite(&composite, None, "test-project")
-        .await
-        .unwrap();
+    let output: CompositeOutput =
+        kernel.execute_composite(&composite, None, "test-project").await.unwrap();
 
     assert_eq!(output.execution_order.len(), 2);
     assert_eq!(output.execution_order[0], "step1");
@@ -186,10 +176,7 @@ async fn test_execute_composite_single_graph() {
     let mut composite = CompositeGraph::new();
     composite.add_graph("solo", make_single_node_config("only", "tool_only"));
 
-    let output = kernel
-        .execute_composite(&composite, None, "test-project")
-        .await
-        .unwrap();
+    let output = kernel.execute_composite(&composite, None, "test-project").await.unwrap();
 
     assert_eq!(output.execution_order.len(), 1);
     assert!(output.results.contains_key("solo"));
@@ -205,10 +192,7 @@ async fn test_execute_composite_with_predefined_order() {
     // Override order: alpha first despite being added second
     composite.execution_order = vec!["alpha".into(), "beta".into()];
 
-    let output = kernel
-        .execute_composite(&composite, None, "test-project")
-        .await
-        .unwrap();
+    let output = kernel.execute_composite(&composite, None, "test-project").await.unwrap();
 
     assert_eq!(output.execution_order.len(), 2);
     assert_eq!(output.execution_order[0], "alpha");
@@ -221,9 +205,7 @@ async fn test_execute_composite_missing_graph() {
     let mut composite = CompositeGraph::new();
     composite.execution_order = vec!["nonexistent".into()];
 
-    let result = kernel
-        .execute_composite(&composite, None, "test-project")
-        .await;
+    let result = kernel.execute_composite(&composite, None, "test-project").await;
     assert!(result.is_err());
 }
 
@@ -259,10 +241,7 @@ async fn test_execute_goals_multi_goal() {
 async fn test_execute_goals_single_goal() {
     let (kernel, _executor) = make_kernel().await;
 
-    let output = kernel
-        .execute_goals(&["fetch only"], "test-project")
-        .await
-        .unwrap();
+    let output = kernel.execute_goals(&["fetch only"], "test-project").await.unwrap();
 
     assert_eq!(output.execution_order.len(), 1);
     assert!(output.results.contains_key("goal_0"));

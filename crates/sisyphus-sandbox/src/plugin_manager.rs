@@ -139,10 +139,10 @@ impl PluginManager {
                             // This forces WasmToolExecutor to re-compile the module on next execution
                             self.executor.module_cache.remove(&desc.tool_id);
                         }
-                    }
+                    },
                     Err(e) => {
                         warn!(plugin = %desc.name, error = %e, "Failed to check plugin checksum");
-                    }
+                    },
                 }
             }
         }
@@ -228,10 +228,7 @@ mod tests {
         manager.register_plugin(desc).await.unwrap();
 
         let module = wasmtime::Module::new(&manager.executor.engine, &wasm_v1).unwrap();
-        manager
-            .executor
-            .module_cache
-            .insert("reload_tool".to_string(), module);
+        manager.executor.module_cache.insert("reload_tool".to_string(), module);
         assert!(manager.executor.module_cache.contains_key("reload_tool"));
 
         let wasm_v2 = vec![0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x01];

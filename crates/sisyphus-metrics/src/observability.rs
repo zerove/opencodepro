@@ -64,11 +64,8 @@ pub fn init_tracing(config: TraceConfig) -> Result<(), ObservabilityError> {
     let subscriber = tracing_subscriber::registry().with(env_filter);
 
     if config.json_stdout {
-        let fmt_layer = fmt::layer()
-            .json()
-            .with_target(true)
-            .with_thread_ids(true)
-            .with_thread_names(true);
+        let fmt_layer =
+            fmt::layer().json().with_target(true).with_thread_ids(true).with_thread_names(true);
         subscriber.with(fmt_layer).try_init()?;
     } else {
         let fmt_layer = fmt::layer().with_target(true);
@@ -93,9 +90,7 @@ pub fn init_tracing_with_otlp(config: TraceConfig) -> Result<(), ObservabilityEr
         .map_err(|e| ObservabilityError::FilterError(e.to_string()))?;
 
     // Configure OTLP exporter
-    let endpoint = config
-        .otlp_endpoint
-        .unwrap_or_else(|| "http://localhost:4317".to_string());
+    let endpoint = config.otlp_endpoint.unwrap_or_else(|| "http://localhost:4317".to_string());
 
     let otlp_exporter = opentelemetry_otlp::SpanExporter::builder()
         .with_tonic()
@@ -116,16 +111,11 @@ pub fn init_tracing_with_otlp(config: TraceConfig) -> Result<(), ObservabilityEr
 
     let otel_layer = tracing_opentelemetry::layer().with_tracer(tracer);
 
-    let subscriber = tracing_subscriber::registry()
-        .with(env_filter)
-        .with(otel_layer);
+    let subscriber = tracing_subscriber::registry().with(env_filter).with(otel_layer);
 
     if config.json_stdout {
-        let fmt_layer = fmt::layer()
-            .json()
-            .with_target(true)
-            .with_thread_ids(true)
-            .with_thread_names(true);
+        let fmt_layer =
+            fmt::layer().json().with_target(true).with_thread_ids(true).with_thread_names(true);
         subscriber.with(fmt_layer).try_init()?;
     } else {
         subscriber.try_init()?;

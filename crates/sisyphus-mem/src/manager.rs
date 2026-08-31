@@ -1,8 +1,8 @@
 //! Unified memory management for Sisyphus.
 //! Coordinates structured storage (SOPs, Roadmaps) and unstructured state (MfsStore).
 
-use anyhow::{Context, Result};
 use crate::error::MemError;
+use anyhow::{Context, Result};
 use sqlx::{SqlitePool, sqlite::SqlitePoolOptions};
 use std::str::FromStr;
 use std::sync::Arc;
@@ -39,12 +39,16 @@ impl SisyphusStore {
                 && let Some(parent) = std::path::Path::new(path).parent()
                 && !parent.as_os_str().is_empty()
             {
-                std::fs::create_dir_all(parent).map_err(|e| {
-                    MemError::CreateDbParent { path: parent.display().to_string(), source: e }
+                std::fs::create_dir_all(parent).map_err(|e| MemError::CreateDbParent {
+                    path: parent.display().to_string(),
+                    source: e,
                 })?;
             }
             let opts = sqlx::sqlite::SqliteConnectOptions::from_str(db_url)
-                .map_err(|e| MemError::InvalidSqliteUrl { url: db_url.to_string(), source: e })?
+                .map_err(|e| MemError::InvalidSqliteUrl {
+                    url: db_url.to_string(),
+                    source: e,
+                })?
                 .create_if_missing(true)
                 .foreign_keys(true);
             SqlitePoolOptions::new()
@@ -60,10 +64,7 @@ impl SisyphusStore {
         let roadmap = Arc::new(RoadmapSqlStore::new(pool.clone()).await?);
 
         // 3. Ensure all schemas are initialized
-        roadmap
-            .init_schema()
-            .await
-            .context("Failed to initialize roadmap schema")?;
+        roadmap.init_schema().await.context("Failed to initialize roadmap schema")?;
 
         Ok(Self {
             state,

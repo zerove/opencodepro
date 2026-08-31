@@ -239,16 +239,16 @@ impl AssetManager {
         let (kind, description) = match &content {
             sisyphus_types::asset::AssetContent::Tool(_) => {
                 (AssetKind::Tool, "Sedimented tool".into())
-            }
+            },
             sisyphus_types::asset::AssetContent::SOP(_) => {
                 (AssetKind::SOP, "Sedimented SOP".into())
-            }
+            },
             sisyphus_types::asset::AssetContent::Insight(i) => {
                 (AssetKind::Insight, i.observation.clone())
-            }
+            },
             sisyphus_types::asset::AssetContent::Constraint(c) => {
                 (AssetKind::Constraint, c.description.clone())
-            }
+            },
         };
         let asset = CognitiveAsset {
             id: id.to_string(),
@@ -287,9 +287,7 @@ impl AssetManager {
         // Store wasm_path in metadata on next save
         let mut graph = self.graph.write().await;
         if let Some(asset) = graph.assets.get_mut(&id) {
-            asset
-                .metadata
-                .insert("wasm_path".into(), wasm_path.to_string_lossy().to_string());
+            asset.metadata.insert("wasm_path".into(), wasm_path.to_string_lossy().to_string());
         }
 
         Ok(id)
@@ -307,7 +305,8 @@ impl AssetManager {
             .ok_or_else(|| KnowledgeError::AssetNotFound(id.to_string()));
         counter!("sisyphus_knowledge_operations_total", "op" => "get_asset",
             "found" => if result.is_ok() { "true" } else { "false" }
-        ).increment(1);
+        )
+        .increment(1);
         result
     }
 
@@ -723,7 +722,7 @@ mod tests {
         let manager = AssetManager::new(path);
         let err = manager.load().await.unwrap_err();
         match err {
-            KnowledgeError::StorageError(_) => {}
+            KnowledgeError::StorageError(_) => {},
             _ => panic!("expected StorageError"),
         }
     }

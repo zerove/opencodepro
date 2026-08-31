@@ -42,7 +42,7 @@ pub fn load_project_rules(root: &Path) -> ProjectRules {
                         source: Some(candidate.to_string_lossy().to_string()),
                         agents,
                     };
-                }
+                },
                 Err(_) => continue,
             }
         }
@@ -97,10 +97,10 @@ fn parse_agents_md(content: &str) -> Vec<ProjectAgentDef> {
         let trimmed = line.trim();
 
         // Detect agent headers: ## agent: <id> or ## Agent: <id>
-        if let Some(rest) = trimmed.strip_prefix("## ").and_then(|s| {
-            s.strip_prefix("agent: ")
-                .or_else(|| s.strip_prefix("Agent: "))
-        }) {
+        if let Some(rest) = trimmed
+            .strip_prefix("## ")
+            .and_then(|s| s.strip_prefix("agent: ").or_else(|| s.strip_prefix("Agent: ")))
+        {
             // Save previous
             if let Some(prev) = current.take() {
                 agents.push(prev);
@@ -145,9 +145,7 @@ fn parse_agents_md(content: &str) -> Vec<ProjectAgentDef> {
                 }
             } else if in_tools {
                 if let Some(prefix) = trimmed.strip_prefix("- ") {
-                    agent
-                        .tool_prefixes
-                        .push(prefix.trim_end_matches('/').to_string() + "/");
+                    agent.tool_prefixes.push(prefix.trim_end_matches('/').to_string() + "/");
                 }
             }
         }

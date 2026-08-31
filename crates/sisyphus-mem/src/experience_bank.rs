@@ -210,16 +210,14 @@ impl ExperienceBank for VectorExperienceBank {
                     .search_similar(&text_query_vec, text_top_k)
                     .await
                     .map_err(|e| TypesError::ExperienceError(format!("text search failed: {e}")))?
-            }
+            },
             Err(e) => {
                 tracing::warn!(
                     error = %e,
                     "Embedding failed; falling back to lexical (Jaccard) retrieval.                      Results are token-overlap based, not semantic."
                 );
-                return self
-                    .lexical_fallback(&query, LexicalFallbackReason::EmbedFailed)
-                    .await;
-            }
+                return self.lexical_fallback(&query, LexicalFallbackReason::EmbedFailed).await;
+            },
         };
 
         for sv in text_results {
@@ -229,11 +227,10 @@ impl ExperienceBank for VectorExperienceBank {
         // 2. Visual-based Retrieval
         if let Some(ref vis_query_vec) = query.visual_embedding {
             let vis_top_k = query.limit * 5;
-            let vis_results = self
-                .vector_store
-                .search_similar(vis_query_vec, vis_top_k)
-                .await
-                .map_err(|e| TypesError::ExperienceError(format!("visual search failed: {e}")))?;
+            let vis_results =
+                self.vector_store.search_similar(vis_query_vec, vis_top_k).await.map_err(|e| {
+                    TypesError::ExperienceError(format!("visual search failed: {e}"))
+                })?;
 
             for sv in vis_results {
                 all_candidates.push(sv);
@@ -245,11 +242,8 @@ impl ExperienceBank for VectorExperienceBank {
         let mut seen_keys = std::collections::HashSet::new();
 
         // Sort candidates by score (this is a simplification, in a real system we'd normalize scores)
-        all_candidates.sort_by(|a, b| {
-            b.score
-                .partial_cmp(&a.score)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
+        all_candidates
+            .sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
 
         for sv in all_candidates {
             let metadata = sv.record.metadata;
@@ -305,11 +299,8 @@ impl VectorExperienceBank {
     ) -> Result<Vec<ExperienceTuple>, TypesError> {
         tracing::info!(reason = %reason, scan_limit = Self::LEXICAL_SCAN_LIMIT, "Lexical fallback retrieval engaged");
 
-        let candidates = self
-            .store
-            .list_recent_experiences(Self::LEXICAL_SCAN_LIMIT)
-            .await
-            .map_err(|e| {
+        let candidates =
+            self.store.list_recent_experiences(Self::LEXICAL_SCAN_LIMIT).await.map_err(|e| {
                 TypesError::ExperienceError(format!("lexical fallback scan failed: {e}"))
             })?;
 

@@ -29,9 +29,10 @@ impl TestExecutorTrait for TestExecutor {
         let workdir_ref = workdir.map(Path::new);
         let timeout_ms = 60000;
 
-        let output = sisyphus_tools_system::bash::execute(command, workdir_ref, timeout_ms)
-            .await
-            .map_err(|e| TypesError::NodeExecutionError(format!("Test execution failed: {e}")))?;
+        let output =
+            sisyphus_tools_system::bash::execute(command, workdir_ref, timeout_ms).await.map_err(
+                |e| TypesError::NodeExecutionError(format!("Test execution failed: {e}")),
+            )?;
 
         let success = output.exit_code == 0;
         let error_summary = if !success {

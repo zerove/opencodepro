@@ -154,7 +154,7 @@ impl EvalRunner {
                 } else {
                     "momus/review_plan"
                 }
-            }
+            },
             "librarian" => {
                 if case.input.get("findings").is_some() {
                     "librarian/synthesise"
@@ -163,21 +163,21 @@ impl EvalRunner {
                 } else {
                     "librarian/research"
                 }
-            }
+            },
             "scribe" => {
                 if case.input.get("context").is_some() {
                     "scribe/generate_adr"
                 } else {
                     "scribe/update_docs"
                 }
-            }
+            },
             "security" | "securityoracle" => {
                 if case.input.get("code").is_some() {
                     "security/audit_code"
                 } else {
                     "security/threat_model"
                 }
-            }
+            },
             _ => "unknown",
         };
 
@@ -196,10 +196,7 @@ impl EvalRunner {
 
                 for crit in &case.criteria {
                     total_weight += crit.weight;
-                    if self
-                        .evaluate_criterion(crit, &output_str, &output_json)
-                        .await
-                    {
+                    if self.evaluate_criterion(crit, &output_str, &output_json).await {
                         score += crit.weight;
                     } else {
                         failed_criteria.push(crit.id.clone());
@@ -220,7 +217,7 @@ impl EvalRunner {
                     failed_criteria,
                     error: None,
                 }
-            }
+            },
             Err(e) => {
                 eprintln!("Error executing case {}: {}", case.id, e);
                 CaseResult {
@@ -230,7 +227,7 @@ impl EvalRunner {
                     failed_criteria: vec!["EXECUTION_ERROR".to_string()],
                     error: Some(e.to_string()),
                 }
-            }
+            },
         }
     }
 
@@ -247,7 +244,7 @@ impl EvalRunner {
                 } else {
                     false
                 }
-            }
+            },
             CheckType::Regex => {
                 if let Some(val) = &crit.expected_value {
                     match Regex::new(val) {
@@ -257,7 +254,7 @@ impl EvalRunner {
                 } else {
                     false
                 }
-            }
+            },
             CheckType::JsonSchema => {
                 if let Some(val) = &crit.expected_value {
                     if let Ok(schema_val) = serde_json::from_str::<Value>(val) {
@@ -269,7 +266,7 @@ impl EvalRunner {
                 } else {
                     false
                 }
-            }
+            },
             CheckType::LlmJudge => {
                 let system_prompt = "You are a senior engineer judging the correctness of an AI agent's response. \
                                      Compare the Agent Output against the Expected Value. \
@@ -280,17 +277,14 @@ impl EvalRunner {
                     output_str
                 );
 
-                if let Ok(res) = self
-                    .executor
-                    .llm_client
-                    .chat(system_prompt, &user_prompt, false)
-                    .await
+                if let Ok(res) =
+                    self.executor.llm_client.chat(system_prompt, &user_prompt, false).await
                 {
                     res.to_lowercase().contains("true")
                 } else {
                     false
                 }
-            }
+            },
         }
     }
 }
@@ -318,9 +312,7 @@ fn validate_cases(schema: &Value, cases_path: &Path, cases: &[Case]) -> Result<(
         let errors: Vec<String> = {
             match compiled.validate(&value) {
                 Ok(_) => Vec::new(),
-                Err(iter) => iter
-                    .map(|e| format!("{}: {}", e.instance_path, e))
-                    .collect(),
+                Err(iter) => iter.map(|e| format!("{}: {}", e.instance_path, e)).collect(),
             }
         };
         if !errors.is_empty() {

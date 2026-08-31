@@ -20,10 +20,7 @@ async fn create_test_manager() -> (Arc<RoadmapManager>, String) {
             .await
             .expect("Failed to create in-memory sql store"),
     );
-    sql_store
-        .init_schema()
-        .await
-        .expect("Failed to init schema");
+    sql_store.init_schema().await.expect("Failed to init schema");
     let proposal_manager = Arc::new(ProposalManager::new(store.clone()));
 
     let manager = Arc::new(RoadmapManager::new(store, sql_store, proposal_manager));
@@ -155,10 +152,7 @@ async fn test_predict_completion_time_with_history() {
     let (ms1_id, ms2_id) = setup_milestones_with_goals(&manager, &project_id).await;
 
     // 记录一些历史执行结果
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_secs();
+    let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
     for (goal_id, duration) in [("g1", 100.0), ("g2", 120.0), ("g3", 80.0)] {
         let outcome = ExecutionOutcome {
             goal_id: goal_id.to_string(),
@@ -217,16 +211,10 @@ async fn test_predict_completion_time_with_history() {
     assert!(prediction.overall_velocity_goals_per_sec > 0.0);
 
     // ms1 应该是 done，ms2 应该有预测
-    let ms1_pred = prediction
-        .milestone_predictions
-        .iter()
-        .find(|m| m.milestone_id == ms1_id)
-        .unwrap();
-    let ms2_pred = prediction
-        .milestone_predictions
-        .iter()
-        .find(|m| m.milestone_id == ms2_id)
-        .unwrap();
+    let ms1_pred =
+        prediction.milestone_predictions.iter().find(|m| m.milestone_id == ms1_id).unwrap();
+    let ms2_pred =
+        prediction.milestone_predictions.iter().find(|m| m.milestone_id == ms2_id).unwrap();
 
     assert_eq!(ms1_pred.risk_level, "done");
     assert_eq!(ms1_pred.progress_pct, 100.0);
@@ -264,10 +252,7 @@ async fn test_check_delay_alerts() {
     let (ms1_id, _ms2_id) = setup_milestones_with_goals(&manager, &project_id).await;
 
     // 记录历史：ms1 很快完成，但只完成了 1 个目标
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_secs();
+    let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
     let outcome = ExecutionOutcome {
         goal_id: "g1".to_string(),
         project_id: project_id.clone(),
@@ -296,10 +281,7 @@ async fn test_check_delay_alerts() {
     // ms2 没有任何历史
 
     // 使用低阈值触发预警
-    let alerts = manager
-        .check_delay_alerts(&project_id, Some(1.1))
-        .await
-        .unwrap();
+    let alerts = manager.check_delay_alerts(&project_id, Some(1.1)).await.unwrap();
 
     // ms2 没有历史数据，预测为 0，不应该触发预警
     // ms1 已完成，跳过
@@ -319,10 +301,7 @@ async fn test_check_delay_alerts_critical() {
 
     // 模拟：历史上 ms1 很快，但现在剩余目标很多
     // 记录 5 个快速完成的历史
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_secs();
+    let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
     for i in 0..5 {
         let outcome = ExecutionOutcome {
             goal_id: format!("hist_{}", i),
@@ -372,10 +351,7 @@ async fn test_check_delay_alerts_critical() {
         .unwrap();
 
     // 这里 ms1 已完成，不会触发预警
-    let alerts = manager
-        .check_delay_alerts(&project_id, Some(2.0))
-        .await
-        .unwrap();
+    let alerts = manager.check_delay_alerts(&project_id, Some(2.0)).await.unwrap();
     assert!(alerts.is_empty());
 }
 

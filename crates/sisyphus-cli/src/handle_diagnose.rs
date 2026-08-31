@@ -40,7 +40,7 @@ mod tests {
                 assert_eq!(package, Some("sisyphus-core".to_string()));
                 assert!(!all);
                 assert!(!no_lint);
-            }
+            },
             _ => panic!("Expected Diagnose/Run variant"),
         }
     }
@@ -52,7 +52,7 @@ mod tests {
             Commands::Diagnose(DiagnoseCommands::Run { all, no_lint, .. }) => {
                 assert!(all);
                 assert!(no_lint);
-            }
+            },
             _ => panic!("Expected Diagnose/Run variant"),
         }
     }

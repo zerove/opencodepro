@@ -105,15 +105,11 @@ impl ProbabilisticPlanner {
 
     /// 按综合得分对多条路径排序（越高越好）
     pub fn rank_paths(&self, results: &[SimulationResult]) -> Vec<RankedPath> {
-        let mut ranked: Vec<RankedPath> = results
-            .iter()
-            .map(|r| self.compute_ranked_path(r))
-            .collect();
+        let mut ranked: Vec<RankedPath> =
+            results.iter().map(|r| self.compute_ranked_path(r)).collect();
 
         ranked.sort_by(|a, b| {
-            b.composite_score
-                .partial_cmp(&a.composite_score)
-                .unwrap_or(std::cmp::Ordering::Equal)
+            b.composite_score.partial_cmp(&a.composite_score).unwrap_or(std::cmp::Ordering::Equal)
         });
 
         ranked
@@ -126,11 +122,8 @@ impl ProbabilisticPlanner {
         }
         let ranked = self.rank_paths(results);
         // 过滤掉严重风险路径，除非全部都是严重风险
-        let safe_paths: Vec<_> = ranked
-            .iter()
-            .filter(|p| p.risk_level != RiskLevel::Critical)
-            .cloned()
-            .collect();
+        let safe_paths: Vec<_> =
+            ranked.iter().filter(|p| p.risk_level != RiskLevel::Critical).cloned().collect();
 
         if safe_paths.is_empty() {
             // 全部路径都是严重风险时，返回其中最优者
@@ -167,11 +160,8 @@ impl ProbabilisticPlanner {
 
     /// 基于历史经验调整成功概率
     pub fn adjust_probability_with_experience(&self, path_id: &str, base_probability: f64) -> f64 {
-        let relevant: Vec<&ExperienceRecord> = self
-            .experience
-            .iter()
-            .filter(|e| e.path_id == path_id)
-            .collect();
+        let relevant: Vec<&ExperienceRecord> =
+            self.experience.iter().filter(|e| e.path_id == path_id).collect();
 
         if relevant.is_empty() {
             return base_probability;

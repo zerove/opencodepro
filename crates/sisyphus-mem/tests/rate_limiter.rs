@@ -13,7 +13,10 @@ fn rate_zero_disables_throttling() {
     let mut rl = RateLimiter::new(0);
     // 1000 acquires should all return None (no waiting) when rate=0
     for _ in 0..1000 {
-        assert!(rl.try_acquire().is_none(), "rate=0 should never ask to wait");
+        assert!(
+            rl.try_acquire().is_none(),
+            "rate=0 should never ask to wait"
+        );
     }
 }
 
@@ -64,7 +67,10 @@ fn bucket_refills_after_sleep() {
     // Sleep 200ms → at 10/s, ~2 tokens should be available
     thread::sleep(Duration::from_millis(200));
     assert!(rl.try_acquire().is_none(), "should refill at least 1 token");
-    assert!(rl.try_acquire().is_none(), "should refill at least 2 tokens");
+    assert!(
+        rl.try_acquire().is_none(),
+        "should refill at least 2 tokens"
+    );
     // 3rd after 200ms might be a wait depending on rounding; just check
     // it doesn't crash.
     let _ = rl.try_acquire();

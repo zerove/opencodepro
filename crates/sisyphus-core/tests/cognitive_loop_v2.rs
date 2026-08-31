@@ -38,9 +38,7 @@ fn anomaly_detector_flags_high_fuel_consumption() {
     // Second obs is 10x baseline → exceeds 2x threshold.
     let anomalies = det.observe("expensive_node", 50, 100, true);
     assert!(!anomalies.is_empty());
-    assert!(anomalies
-        .iter()
-        .any(|a| a.metric == "fuel" && a.node_name == "expensive_node"));
+    assert!(anomalies.iter().any(|a| a.metric == "fuel" && a.node_name == "expensive_node"));
 }
 
 #[test]
@@ -51,9 +49,7 @@ fn anomaly_detector_flags_long_duration() {
     // Second obs is 5x baseline → exceeds 2x threshold.
     let anomalies = det.observe("slow_node", 5, 500, true);
     assert!(!anomalies.is_empty());
-    assert!(anomalies
-        .iter()
-        .any(|a| a.metric == "duration" && a.node_name == "slow_node"));
+    assert!(anomalies.iter().any(|a| a.metric == "duration" && a.node_name == "slow_node"));
 }
 
 #[test]

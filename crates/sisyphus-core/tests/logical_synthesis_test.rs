@@ -25,11 +25,7 @@ impl sisyphus_types::ToolExecutor for MockExecutor {
         _args: Vec<u8>,
         _fuel: u64,
     ) -> Result<Vec<u8>, TypesError> {
-        let res = self
-            .responses
-            .get(tool_id)
-            .cloned()
-            .unwrap_or_else(|| "default".into());
+        let res = self.responses.get(tool_id).cloned().unwrap_or_else(|| "default".into());
         Ok(res.into_bytes())
     }
 }
@@ -101,9 +97,7 @@ async fn test_logical_synthesis_branching_execution() {
 
     // 4. Setup Kernel
     let store = Arc::new(
-        MfsStore::new("sqlite::memory:", &sisyphus_types::CacheConfig::default())
-            .await
-            .unwrap(),
+        MfsStore::new("sqlite::memory:", &sisyphus_types::CacheConfig::default()).await.unwrap(),
     );
     let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
     let intel = Arc::new(SisyphusIntel::new(
@@ -116,11 +110,7 @@ async fn test_logical_synthesis_branching_execution() {
     let kernel = SisyphusKernel::new(
         store,
         Arc::new(sisyphus_mem::SopSqlStore::new(pool.clone()).await.unwrap()),
-        Arc::new(
-            sisyphus_mem::VectorMemoryStore::new(pool.clone())
-                .await
-                .unwrap(),
-        ),
+        Arc::new(sisyphus_mem::VectorMemoryStore::new(pool.clone()).await.unwrap()),
         Arc::new(MockExperienceBank),
         tool_executor.clone() as Arc<dyn sisyphus_types::ToolExecutor>,
         intel,
@@ -134,10 +124,8 @@ async fn test_logical_synthesis_branching_execution() {
     );
 
     // 5. Execute Goal
-    let (output, report) = kernel
-        .execute_goal("test branching", "sop-branch", "default", None, None)
-        .await
-        .unwrap();
+    let (output, report) =
+        kernel.execute_goal("test branching", "sop-branch", "default", None, None).await.unwrap();
 
     // 6. Verify
     assert!(!output.to_string().is_empty());

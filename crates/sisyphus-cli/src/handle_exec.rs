@@ -11,10 +11,10 @@ pub async fn handle_exec(
 ) -> Result<()> {
     // 权限检查
     match cli_perms.check("exec") {
-        Some(true) => {}
+        Some(true) => {},
         Some(false) => {
             anyhow::bail!("Permission denied: shell execution is blocked by config");
-        }
+        },
         None => {
             eprint!("⚠  Allow shell execution? [Y/n] ");
             std::io::stderr().flush().ok();
@@ -24,7 +24,7 @@ pub async fn handle_exec(
             if !answer.is_empty() && answer != "y" && answer != "yes" {
                 anyhow::bail!("Shell execution denied by user");
             }
-        }
+        },
     }
     let dir_ref = dir.as_deref();
     let output = sisyphus_cli::tools::bash::execute(command, dir_ref, 30000).await?;

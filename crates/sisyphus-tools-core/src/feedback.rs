@@ -51,15 +51,9 @@ mod tests {
             vec!["security"],
         );
 
-        store
-            .save_feedback(feedback)
-            .await
-            .expect("save should succeed");
+        store.save_feedback(feedback).await.expect("save should succeed");
 
-        let loaded = store
-            .load_all_for_agent("agent_a")
-            .await
-            .expect("load should succeed");
+        let loaded = store.load_all_for_agent("agent_a").await.expect("load should succeed");
         assert_eq!(loaded.len(), 1, "should load exactly one feedback");
         assert_eq!(loaded[0].original_request, "List files in /tmp");
         assert!(loaded[0].tags.contains(&"security".to_string()));
@@ -72,10 +66,7 @@ mod tests {
         let dir = unique_temp_dir();
         let store = FeedbackStore::new(&dir);
 
-        let loaded = store
-            .load_all_for_agent("ghost")
-            .await
-            .expect("load should succeed");
+        let loaded = store.load_all_for_agent("ghost").await.expect("load should succeed");
         assert!(loaded.is_empty(), "nonexistent agent should return empty");
     }
 
@@ -96,10 +87,8 @@ mod tests {
             store.save_feedback(fb).await.expect("save should succeed");
         }
 
-        let recent = store
-            .get_recent_feedback("agent_b", 2)
-            .await
-            .expect("get_recent should succeed");
+        let recent =
+            store.get_recent_feedback("agent_b", 2).await.expect("get_recent should succeed");
         assert_eq!(recent.len(), 2, "should return only 2 entries");
         assert_eq!(
             recent[0].original_request, "request 4",
@@ -149,10 +138,7 @@ mod tests {
             .await
             .unwrap();
 
-        let results = store
-            .query_feedback("json", None)
-            .await
-            .expect("query should succeed");
+        let results = store.query_feedback("json", None).await.expect("query should succeed");
         assert_eq!(results.len(), 2, "should find 2 entries matching 'json'");
 
         let results = store
@@ -200,10 +186,8 @@ mod tests {
             .await
             .unwrap();
 
-        let results = store
-            .query_feedback("memory", None)
-            .await
-            .expect("cross-agent query should succeed");
+        let results =
+            store.query_feedback("memory", None).await.expect("cross-agent query should succeed");
         assert_eq!(
             results.len(),
             2,
@@ -239,10 +223,7 @@ mod tests {
             "corr".to_string(),
             vec![],
         );
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs() as i64;
+        let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs() as i64;
         assert!(feedback.timestamp > 0, "timestamp should be set");
         assert!(
             (feedback.timestamp - now).abs() < 5,
@@ -257,10 +238,7 @@ mod tests {
         let store = FeedbackStore::new(&dir);
 
         let feedback = sample_feedback("agent_i", "request", "output", "correction", vec!["test"]);
-        store
-            .save_feedback(feedback)
-            .await
-            .expect("save should auto-create directory");
+        store.save_feedback(feedback).await.expect("save should auto-create directory");
 
         assert!(dir.exists(), "directory should have been created");
         assert!(dir.join("agent_i.json").exists(), "agent file should exist");
@@ -278,10 +256,7 @@ mod tests {
             store.save_feedback(fb).await.expect("save should succeed");
         }
 
-        let all = store
-            .load_all_for_agent("agent_j")
-            .await
-            .expect("load should succeed");
+        let all = store.load_all_for_agent("agent_j").await.expect("load should succeed");
         assert_eq!(all.len(), 3, "should have accumulated 3 entries");
 
         let _ = std::fs::remove_dir_all(&dir);
@@ -298,10 +273,8 @@ mod tests {
             store.save_feedback(fb).await.expect("save should succeed");
         }
 
-        let recent = store
-            .get_recent_feedback("agent_k", 99)
-            .await
-            .expect("get_recent should succeed");
+        let recent =
+            store.get_recent_feedback("agent_k", 99).await.expect("get_recent should succeed");
         assert_eq!(
             recent.len(),
             3,
@@ -316,10 +289,8 @@ mod tests {
         let dir = unique_temp_dir();
         let store = FeedbackStore::new(&dir);
 
-        let recent = store
-            .get_recent_feedback("ghost_agent", 5)
-            .await
-            .expect("get_recent should succeed");
+        let recent =
+            store.get_recent_feedback("ghost_agent", 5).await.expect("get_recent should succeed");
         assert!(recent.is_empty(), "nonexistent agent should return empty");
 
         let _ = std::fs::remove_dir_all(&dir);
@@ -351,10 +322,7 @@ mod tests {
             .await
             .unwrap();
 
-        let results = store
-            .query_feedback("ZZZZ_ZZZZ", None)
-            .await
-            .expect("query should succeed");
+        let results = store.query_feedback("ZZZZ_ZZZZ", None).await.expect("query should succeed");
         assert!(results.is_empty(), "no matches should return empty");
 
         let _ = std::fs::remove_dir_all(&dir);
@@ -440,16 +408,10 @@ mod tests {
             .await
             .unwrap();
 
-        let results = store
-            .query_feedback("JSON", None)
-            .await
-            .expect("query should succeed");
+        let results = store.query_feedback("JSON", None).await.expect("query should succeed");
         assert_eq!(results.len(), 1, "should find 1 entry matching 'JSON'");
 
-        let results = store
-            .query_feedback("json", None)
-            .await
-            .expect("query should succeed");
+        let results = store.query_feedback("json", None).await.expect("query should succeed");
         assert_eq!(results.len(), 1, "should be case-insensitive");
 
         let _ = std::fs::remove_dir_all(&dir);

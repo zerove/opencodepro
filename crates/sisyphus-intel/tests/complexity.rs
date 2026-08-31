@@ -151,7 +151,12 @@ fn depth_debug_format() {
 #[test]
 fn depth_should_simulate_consistent() {
     // should_simulate is a function of the depth, not the configuration
-    let depths = [CognitiveDepth::Low, CognitiveDepth::Medium, CognitiveDepth::High, CognitiveDepth::Ultra];
+    let depths = [
+        CognitiveDepth::Low,
+        CognitiveDepth::Medium,
+        CognitiveDepth::High,
+        CognitiveDepth::Ultra,
+    ];
     for d in depths {
         let _ = d.should_simulate();
     }
@@ -159,7 +164,12 @@ fn depth_should_simulate_consistent() {
 
 #[test]
 fn depth_to_config_returns_positive_thresholds() {
-    for d in [CognitiveDepth::Low, CognitiveDepth::Medium, CognitiveDepth::High, CognitiveDepth::Ultra] {
+    for d in [
+        CognitiveDepth::Low,
+        CognitiveDepth::Medium,
+        CognitiveDepth::High,
+        CognitiveDepth::Ultra,
+    ] {
         let (max_iter, threshold) = d.to_config();
         assert!(max_iter > 0);
         assert!(threshold > 0.0);

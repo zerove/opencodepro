@@ -54,7 +54,7 @@ fn write_op_set_variant() {
         WriteOp::Set { key, value } => {
             assert_eq!(key, "k");
             assert_eq!(value, json!(42));
-        }
+        },
         _ => panic!("expected Set"),
     }
 }

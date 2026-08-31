@@ -65,10 +65,7 @@ impl TeamOrchestrator {
     /// Concurrency is limited per-agent based on `AgentInfo.max_concurrency`.
     /// Tasks with no pending dependencies run in parallel.
     pub async fn execute_plan(&self, plan: TeamPlan) -> Result<TeamReport, TeamError> {
-        let ctx = self
-            .context
-            .clone()
-            .unwrap_or_else(|| Arc::new(TeamContext::new()));
+        let ctx = self.context.clone().unwrap_or_else(|| Arc::new(TeamContext::new()));
         self.execute_plan_internal(plan, None, ctx).await
     }
 
@@ -121,14 +118,14 @@ impl TeamOrchestrator {
             match report {
                 Ok(report) => {
                     let _ = tx.send(TeamEvent::Complete(report)).await;
-                }
+                },
                 Err(e) => {
                     let _ = tx
                         .send(TeamEvent::Error {
                             message: e.to_string(),
                         })
                         .await;
-                }
+                },
             }
         });
 
@@ -145,10 +142,7 @@ impl TeamOrchestrator {
         goal: TeamGoal,
         max_iterations: usize,
     ) -> Result<TeamReport, TeamError> {
-        let context = self
-            .context
-            .clone()
-            .unwrap_or_else(|| Arc::new(TeamContext::new()));
+        let context = self.context.clone().unwrap_or_else(|| Arc::new(TeamContext::new()));
         let mut all_results = Vec::new();
         let mut plan = self.decompose_goal(&goal).await?;
         let mut total_iterations = 0;
@@ -158,16 +152,12 @@ impl TeamOrchestrator {
             total_iterations = iteration + 1;
 
             // Execute current plan
-            let report = self
-                .execute_plan_internal(plan.clone(), None, context.clone())
-                .await?;
+            let report = self.execute_plan_internal(plan.clone(), None, context.clone()).await?;
             all_results.extend(report.task_results.clone());
 
             // Reflect on results
             if let Some(llm) = &self.planner_llm {
-                let _ = self
-                    .emit_event(&context, TeamEvent::Reflecting { iteration })
-                    .await;
+                let _ = self.emit_event(&context, TeamEvent::Reflecting { iteration }).await;
                 let reflection = self.reflect(llm.as_ref(), &goal, &report, &context).await?;
 
                 if reflection.is_complete {
@@ -193,9 +183,7 @@ impl TeamOrchestrator {
                         },
                     )
                     .await;
-                plan = self
-                    .replan(&goal, &all_results, &reflection, context.clone())
-                    .await?;
+                plan = self.replan(&goal, &all_results, &reflection, context.clone()).await?;
             } else {
                 // No LLM for reflection - single pass
                 let synthesis = self.synthesize_fallback(&plan, &all_results);
@@ -237,13 +225,13 @@ impl TeamOrchestrator {
             TeamWorkflow::SinglePass => self.run_goal(goal).await,
             TeamWorkflow::ReviewIterate { max_rounds } => {
                 self.run_review_iterate(goal, max_rounds as usize).await
-            }
+            },
             TeamWorkflow::ResearchIterate { max_rounds } => {
                 self.run_research_iterate(goal, max_rounds as usize).await
-            }
+            },
             TeamWorkflow::Adaptive { max_iterations } => {
                 self.run_goal_iterative(goal, max_iterations as usize).await
-            }
+            },
         }
     }
 
@@ -339,10 +327,8 @@ Rules:
                 .unwrap_or_default(),
         );
 
-        let response = llm
-            .generate(&prompt)
-            .await
-            .map_err(|e| TeamError::LlmFailed(e.to_string()))?;
+        let response =
+            llm.generate(&prompt).await.map_err(|e| TeamError::LlmFailed(e.to_string()))?;
 
         // Parse JSON response
         let reflection: Reflection = serde_json::from_str(&response)
@@ -410,10 +396,7 @@ Rules:
         goal: TeamGoal,
         max_rounds: usize,
     ) -> Result<TeamReport, TeamError> {
-        let context = self
-            .context
-            .clone()
-            .unwrap_or_else(|| Arc::new(TeamContext::new()));
+        let context = self.context.clone().unwrap_or_else(|| Arc::new(TeamContext::new()));
         let mut all_results = Vec::new();
         let start = std::time::Instant::now();
 
@@ -436,9 +419,8 @@ Rules:
                 }],
             };
 
-            let analysis_report = self
-                .execute_plan_internal(analysis_plan, None, context.clone())
-                .await?;
+            let analysis_report =
+                self.execute_plan_internal(analysis_plan, None, context.clone()).await?;
             all_results.extend(analysis_report.task_results);
 
             // Phase 2: momus reviews
@@ -458,9 +440,8 @@ Rules:
                 }],
             };
 
-            let review_report = self
-                .execute_plan_internal(review_plan.clone(), None, context.clone())
-                .await?;
+            let review_report =
+                self.execute_plan_internal(review_plan.clone(), None, context.clone()).await?;
             all_results.extend(review_report.task_results.clone());
 
             // Check if review passes (no critical issues)
@@ -475,8 +456,7 @@ Rules:
             if !has_critical {
                 // Review passed, synthesize final
                 let synthesis = if let Some(llm) = &self.planner_llm {
-                    self.synthesize(llm.as_ref(), &review_plan, &all_results)
-                        .await
+                    self.synthesize(llm.as_ref(), &review_plan, &all_results).await
                 } else {
                     self.synthesize_fallback(&review_plan, &all_results)
                 };
@@ -512,9 +492,8 @@ Rules:
                 }],
             };
 
-            let revise_report = self
-                .execute_plan_internal(revise_plan, None, context.clone())
-                .await?;
+            let revise_report =
+                self.execute_plan_internal(revise_plan, None, context.clone()).await?;
             all_results.extend(revise_report.task_results);
         }
 
@@ -555,10 +534,7 @@ Rules:
         goal: TeamGoal,
         max_rounds: usize,
     ) -> Result<TeamReport, TeamError> {
-        let context = self
-            .context
-            .clone()
-            .unwrap_or_else(|| Arc::new(TeamContext::new()));
+        let context = self.context.clone().unwrap_or_else(|| Arc::new(TeamContext::new()));
         let mut all_results = Vec::new();
         let start = std::time::Instant::now();
 
@@ -581,9 +557,8 @@ Rules:
                 }],
             };
 
-            let research_report = self
-                .execute_plan_internal(research_plan, None, context.clone())
-                .await?;
+            let research_report =
+                self.execute_plan_internal(research_plan, None, context.clone()).await?;
             all_results.extend(research_report.task_results);
 
             // Phase 2: metis synthesizes
@@ -604,17 +579,15 @@ Rules:
                 }],
             };
 
-            let synth_report = self
-                .execute_plan_internal(synthesize_plan.clone(), None, context.clone())
-                .await?;
+            let synth_report =
+                self.execute_plan_internal(synthesize_plan.clone(), None, context.clone()).await?;
             all_results.extend(synth_report.task_results);
 
             // Check if synthesis is sufficient (has concrete spec)
             let has_spec = context.has("spec");
             if has_spec && round >= 1 {
                 let synthesis = if let Some(llm) = &self.planner_llm {
-                    self.synthesize(llm.as_ref(), &synthesize_plan, &all_results)
-                        .await
+                    self.synthesize(llm.as_ref(), &synthesize_plan, &all_results).await
                 } else {
                     self.synthesize_fallback(&synthesize_plan, &all_results)
                 };

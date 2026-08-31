@@ -535,9 +535,7 @@ async fn build_test_kernel() -> SisyphusKernel {
             .await
             .expect("in-memory MfsStore"),
     );
-    let pool = sqlx::SqlitePool::connect("sqlite::memory:")
-        .await
-        .expect("sqlite pool");
+    let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.expect("sqlite pool");
     let tool_executor: Arc<dyn ToolExecutor> = Arc::new(MockToolExecutor);
 
     let intel = Arc::new(sisyphus_intel::SisyphusIntel::new(
@@ -555,16 +553,8 @@ async fn build_test_kernel() -> SisyphusKernel {
 
     SisyphusKernel::new(
         state_store,
-        Arc::new(
-            sisyphus_mem::SopSqlStore::new(pool.clone())
-                .await
-                .expect("sop store"),
-        ),
-        Arc::new(
-            sisyphus_mem::VectorMemoryStore::new(pool.clone())
-                .await
-                .expect("vector store"),
-        ),
+        Arc::new(sisyphus_mem::SopSqlStore::new(pool.clone()).await.expect("sop store")),
+        Arc::new(sisyphus_mem::VectorMemoryStore::new(pool.clone()).await.expect("vector store")),
         Arc::new(MockExperienceBank),
         tool_executor,
         intel,
@@ -575,11 +565,7 @@ async fn build_test_kernel() -> SisyphusKernel {
             sisyphus_tools_llm_tools::meta_learner::MetaLearner::new(".omo/test_meta"),
         )),
         Arc::new(MockConsensus),
-        Arc::new(
-            sisyphus_mem::RoadmapSqlStore::new(pool)
-                .await
-                .expect("roadmap store"),
-        ),
+        Arc::new(sisyphus_mem::RoadmapSqlStore::new(pool).await.expect("roadmap store")),
         Arc::new(sisyphus_tools_llm::DummyEmbeddingClient),
     )
 }
@@ -609,18 +595,11 @@ async fn test_kernel_save_load_roundtrip() {
     };
     let graph = make_sop_graph(&config);
 
-    kernel
-        .save_sop("test_roundtrip", "default", &graph)
-        .await
-        .unwrap();
+    kernel.save_sop("test_roundtrip", "default", &graph).await.unwrap();
     let loaded = kernel.load_sop("test_roundtrip", "default").await.unwrap();
 
     assert_eq!(loaded.graph.node_count(), 2);
-    let names: Vec<String> = loaded
-        .graph
-        .node_weights()
-        .map(|n| n.name().to_string())
-        .collect();
+    let names: Vec<String> = loaded.graph.node_weights().map(|n| n.name().to_string()).collect();
     assert!(names.contains(&"n0".to_string()));
     assert!(names.contains(&"n1".to_string()));
 
@@ -636,10 +615,7 @@ async fn test_kernel_empty_graph_load_rejected() {
     let graph: Arc<SOPGraph> = Arc::new(SOPGraph::new());
 
     // 空图谱的序列化成功
-    kernel
-        .save_sop("test_empty", "default", &graph)
-        .await
-        .unwrap();
+    kernel.save_sop("test_empty", "default", &graph).await.unwrap();
 
     // 但重新加载失败，因为 from_graph 要求至少一个节点
     assert!(
@@ -659,7 +635,7 @@ async fn test_kernel_load_nonexistent() {
                 "error should mention the sop_id: got {}",
                 e
             );
-        }
+        },
         Ok(_) => panic!("expected SopNotFound error"),
     }
 }
@@ -730,14 +706,9 @@ async fn test_strategic_manager_evolution_verification() {
                 .await
                 .expect("in-memory MfsStore"),
         );
-        let pool = sqlx::SqlitePool::connect("sqlite::memory:")
-            .await
-            .expect("sqlite pool");
-        let sop_store = Arc::new(
-            sisyphus_mem::SopSqlStore::new(pool.clone())
-                .await
-                .expect("sop store"),
-        );
+        let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.expect("sqlite pool");
+        let sop_store =
+            Arc::new(sisyphus_mem::SopSqlStore::new(pool.clone()).await.expect("sop store"));
         let knowledge = Arc::new(sisyphus_knowledge::AssetManager::new(
             std::path::PathBuf::from(".omo/test_knowledge"),
         ));
@@ -773,11 +744,7 @@ async fn test_strategic_manager_evolution_verification() {
         ));
         let roadmap = Arc::new(sisyphus_roadmap::RoadmapManager::new(
             state_store.clone(),
-            Arc::new(
-                sisyphus_mem::RoadmapSqlStore::new(pool)
-                    .await
-                    .expect("roadmap store"),
-            ),
+            Arc::new(sisyphus_mem::RoadmapSqlStore::new(pool).await.expect("roadmap store")),
             Arc::new(sisyphus_roadmap::proposal_manager::ProposalManager::new(
                 state_store.clone(),
             )),
@@ -1013,10 +980,7 @@ async fn test_critique_timeout_degrades_permissively() {
     .await;
     let (report, prediction) = critique_fixture();
     let start = std::time::Instant::now();
-    let result = mgr
-        .critique_reflection(&report, &prediction, 1)
-        .await
-        .unwrap();
+    let result = mgr.critique_reflection(&report, &prediction, 1).await.unwrap();
     let elapsed = start.elapsed();
     assert!(
         elapsed < std::time::Duration::from_secs(4),
@@ -1035,10 +999,7 @@ async fn test_critique_within_budget_returns_llm_result() {
     }))
     .await;
     let (report, prediction) = critique_fixture();
-    let result = mgr
-        .critique_reflection(&report, &prediction, 5)
-        .await
-        .unwrap();
+    let result = mgr.critique_reflection(&report, &prediction, 5).await.unwrap();
     assert_eq!(result.risk_score, 0.2);
     assert_eq!(result.suggested_refinement, "slow");
 }
@@ -1073,15 +1034,11 @@ async fn test_critique_zero_timeout_disables_stage() {
     let mgr = critique_manager(probe as Arc<dyn sisyphus_tools_llm::LlmClient>).await;
     let (report, prediction) = critique_fixture();
     let start = std::time::Instant::now();
-    let result = mgr
-        .critique_reflection(&report, &prediction, 0)
-        .await
-        .unwrap();
+    let result = mgr.critique_reflection(&report, &prediction, 0).await.unwrap();
     assert!(start.elapsed() < std::time::Duration::from_millis(50));
     assert!(!called.load(std::sync::atomic::Ordering::SeqCst));
     assert!(result.suggested_refinement.contains("disabled"));
 }
-
 
 // ===================================================================
 // TokenBudget 配置与跟踪器单元测试
@@ -1112,7 +1069,7 @@ fn test_token_budget_capped_skips_llm() {
     assert!(!tracker.should_skip_llm());
     tracker.record(10); // 剩 50, < 50 false
     assert!(!tracker.should_skip_llm());
-    tracker.record(1);  // 剩 49, < 50
+    tracker.record(1); // 剩 49, < 50
     assert!(tracker.should_skip_llm());
 }
 
@@ -1130,7 +1087,10 @@ fn test_token_budget_reserve_ratio() {
 #[test]
 fn test_token_budget_config_serde_roundtrip() {
     use sisyphus_types::config::sub::TokenBudgetConfig;
-    let cfg = TokenBudgetConfig { cap: Some(50000), reserve_ratio: 0.2 };
+    let cfg = TokenBudgetConfig {
+        cap: Some(50000),
+        reserve_ratio: 0.2,
+    };
     let json = serde_json::to_string(&cfg).expect("serialize");
     let back: TokenBudgetConfig = serde_json::from_str(&json).expect("deserialize");
     assert_eq!(back.cap, Some(50000));

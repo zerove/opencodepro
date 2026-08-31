@@ -88,12 +88,8 @@ pub fn write(path: &Path, content: &str) -> ToolResult<()> {
     let parent = path.parent().unwrap_or_else(|| Path::new("."));
     let mut temp_file = NamedTempFile::new_in(parent).map_err(ToolError::Io)?;
 
-    temp_file
-        .write_all(content.as_bytes())
-        .map_err(ToolError::Io)?;
-    temp_file
-        .persist(path)
-        .map_err(|e| ToolError::Io(e.error))?;
+    temp_file.write_all(content.as_bytes()).map_err(ToolError::Io)?;
+    temp_file.persist(path).map_err(|e| ToolError::Io(e.error))?;
 
     Ok(())
 }
@@ -120,14 +116,10 @@ pub fn edit(path: &Path, old_string: &str, new_string: &str) -> ToolResult<()> {
                 return Err(ToolError::EditAmbiguous);
             }
             let new_line = line_buffer.replace(old_string, new_string);
-            temp_file
-                .write_all(new_line.as_bytes())
-                .map_err(ToolError::Io)?;
+            temp_file.write_all(new_line.as_bytes()).map_err(ToolError::Io)?;
             replaced = true;
         } else {
-            temp_file
-                .write_all(line_buffer.as_bytes())
-                .map_err(ToolError::Io)?;
+            temp_file.write_all(line_buffer.as_bytes()).map_err(ToolError::Io)?;
         }
     }
 
@@ -135,9 +127,7 @@ pub fn edit(path: &Path, old_string: &str, new_string: &str) -> ToolResult<()> {
         return Err(ToolError::EditNoMatch);
     }
 
-    temp_file
-        .persist(path)
-        .map_err(|e| ToolError::Io(e.error))?;
+    temp_file.persist(path).map_err(|e| ToolError::Io(e.error))?;
     Ok(())
 }
 
@@ -161,13 +151,9 @@ pub fn edit_all(path: &Path, old_string: &str, new_string: &str) -> ToolResult<u
         if line_buffer.contains(old_string) {
             count += line_buffer.matches(old_string).count();
             let new_line = line_buffer.replace(old_string, new_string);
-            temp_file
-                .write_all(new_line.as_bytes())
-                .map_err(ToolError::Io)?;
+            temp_file.write_all(new_line.as_bytes()).map_err(ToolError::Io)?;
         } else {
-            temp_file
-                .write_all(line_buffer.as_bytes())
-                .map_err(ToolError::Io)?;
+            temp_file.write_all(line_buffer.as_bytes()).map_err(ToolError::Io)?;
         }
     }
 
@@ -175,9 +161,7 @@ pub fn edit_all(path: &Path, old_string: &str, new_string: &str) -> ToolResult<u
         return Err(ToolError::EditNoMatch);
     }
 
-    temp_file
-        .persist(path)
-        .map_err(|e| ToolError::Io(e.error))?;
+    temp_file.persist(path).map_err(|e| ToolError::Io(e.error))?;
     Ok(count)
 }
 

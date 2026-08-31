@@ -121,10 +121,7 @@ pub async fn review_plan(client: &dyn LlmClient, plan_text: &str, plan_name: &st
 
     // Outcome clarity
     for &(line_num, line) in &step_lines {
-        let desc = line
-            .trim_start_matches("- ")
-            .trim_start_matches("* ")
-            .trim();
+        let desc = line.trim_start_matches("- ").trim_start_matches("* ").trim();
         if desc.len() < 15 {
             comments.push(ReviewComment {
                 severity: ReviewSeverity::Major,
@@ -162,9 +159,7 @@ pub async fn review_plan(client: &dyn LlmClient, plan_text: &str, plan_name: &st
         "not in scope",
         "limitation",
     ];
-    let has_scope = scope_keywords
-        .iter()
-        .any(|k| plan_text.to_lowercase().contains(k));
+    let has_scope = scope_keywords.iter().any(|k| plan_text.to_lowercase().contains(k));
     if !has_scope && step_lines.len() > 3 {
         comments.push(ReviewComment {
             severity: ReviewSeverity::Minor,
@@ -185,9 +180,7 @@ pub async fn review_plan(client: &dyn LlmClient, plan_text: &str, plan_name: &st
         "confirm",
         "assertion",
     ];
-    let has_verification = verify_keywords
-        .iter()
-        .any(|k| plan_text.to_lowercase().contains(k));
+    let has_verification = verify_keywords.iter().any(|k| plan_text.to_lowercase().contains(k));
     if !has_verification && !step_lines.is_empty() {
         comments.push(ReviewComment {
             severity: ReviewSeverity::Major,
@@ -201,9 +194,7 @@ pub async fn review_plan(client: &dyn LlmClient, plan_text: &str, plan_name: &st
 
     // 2. Semantic review (LLM)
     let user_prompt = format!("Plan Name: {plan_name}\n\nPlan Content:\n{plan_text}");
-    let llm_result = client
-        .chat(PLAN_REVIEW_SYSTEM_PROMPT, &user_prompt, true)
-        .await;
+    let llm_result = client.chat(PLAN_REVIEW_SYSTEM_PROMPT, &user_prompt, true).await;
 
     let (llm_passed, llm_summary, llm_comments) = match llm_result {
         Ok(response) => match serde_json::from_str::<LlmReviewResponse>(&response) {
@@ -226,7 +217,7 @@ pub async fn review_plan(client: &dyn LlmClient, plan_text: &str, plan_name: &st
                     "Semantic review skipped due to parsing error.".to_string(),
                     vec![],
                 )
-            }
+            },
         },
         Err(e) => {
             comments.push(ReviewComment {
@@ -242,38 +233,23 @@ pub async fn review_plan(client: &dyn LlmClient, plan_text: &str, plan_name: &st
                 "Semantic review skipped due to LLM error.".to_string(),
                 vec![],
             )
-        }
+        },
     };
 
     comments.extend(llm_comments);
 
     // Determine pass/fail
-    let blocker_count = comments
-        .iter()
-        .filter(|c| c.severity == ReviewSeverity::Blocker)
-        .count();
-    let critical_count = comments
-        .iter()
-        .filter(|c| c.severity == ReviewSeverity::Critical)
-        .count();
+    let blocker_count = comments.iter().filter(|c| c.severity == ReviewSeverity::Blocker).count();
+    let critical_count = comments.iter().filter(|c| c.severity == ReviewSeverity::Critical).count();
     let passed = (blocker_count == 0 && critical_count == 0) && llm_passed;
 
     let summary = if passed {
         format!(
             "✅ Plan review PASSED ({} issues: {} major, {} minor, {} nitpick). Summary: {}",
             comments.len(),
-            comments
-                .iter()
-                .filter(|c| c.severity == ReviewSeverity::Major)
-                .count(),
-            comments
-                .iter()
-                .filter(|c| c.severity == ReviewSeverity::Minor)
-                .count(),
-            comments
-                .iter()
-                .filter(|c| c.severity == ReviewSeverity::Nitpick)
-                .count(),
+            comments.iter().filter(|c| c.severity == ReviewSeverity::Major).count(),
+            comments.iter().filter(|c| c.severity == ReviewSeverity::Minor).count(),
+            comments.iter().filter(|c| c.severity == ReviewSeverity::Nitpick).count(),
             llm_summary
         )
     } else {
@@ -281,14 +257,8 @@ pub async fn review_plan(client: &dyn LlmClient, plan_text: &str, plan_name: &st
             "❌ Plan review FAILED ({} blockers, {} critical, {} major, {} minor). Summary: {}",
             blocker_count,
             critical_count,
-            comments
-                .iter()
-                .filter(|c| c.severity == ReviewSeverity::Major)
-                .count(),
-            comments
-                .iter()
-                .filter(|c| c.severity == ReviewSeverity::Minor)
-                .count(),
+            comments.iter().filter(|c| c.severity == ReviewSeverity::Major).count(),
+            comments.iter().filter(|c| c.severity == ReviewSeverity::Minor).count(),
             llm_summary
         )
     };

@@ -29,7 +29,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Ok(s) => {
             info!(path = %config_path, "Loaded configuration with hot-reload");
             s
-        }
+        },
         Err(e) => {
             warn!(path = %config_path, error = %e, "Config file not found, using defaults");
             let mut cfg = Config::default();
@@ -41,7 +41,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             // Create a no-op store that never reloads
             let store = ConfigStore::with_config(cfg.clone());
             (store, cfg)
-        }
+        },
     };
 
     // ── OpenTelemetry initialization ─────────────────────────────────────
@@ -53,10 +53,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .read()
         .map(|c| c.metrics.opentelemetry.service_name.clone())
         .unwrap_or_else(|_| "sisyphus-bridge".to_string());
-    let otel_enabled = shared_config
-        .read()
-        .map(|c| c.metrics.opentelemetry.enabled)
-        .unwrap_or(false);
+    let otel_enabled =
+        shared_config.read().map(|c| c.metrics.opentelemetry.enabled).unwrap_or(false);
 
     if otel_enabled {
         let exporter = opentelemetry_otlp::SpanExporter::builder()
@@ -145,11 +143,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .layer(tower_http::cors::CorsLayer::permissive())
         .layer(tower_http::trace::TraceLayer::new_for_http());
 
-    let http_addr: std::net::SocketAddr = http_addr_str
-        .strip_prefix("http://")
-        .unwrap_or(&http_addr_str)
-        .parse()
-        .map_err(|e| {
+    let http_addr: std::net::SocketAddr =
+        http_addr_str.strip_prefix("http://").unwrap_or(&http_addr_str).parse().map_err(|e| {
             Box::new(std::io::Error::new(std::io::ErrorKind::InvalidInput, e))
                 as Box<dyn std::error::Error>
         })?;
@@ -165,11 +160,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     _ = sigterm.recv() => info!("Received SIGTERM"),
                 }
                 let _ = shutdown_tx.send(true);
-            }
+            },
             Err(e) => {
                 // 无法安装 SIGTERM handler: 记录并继续 (SIGINT 仍可工作)
                 error!(error = %e, "Failed to install SIGTERM handler; SIGINT only");
-            }
+            },
         }
     });
 
@@ -191,10 +186,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 {
                     error!("HTTP server error: {e}");
                 }
-            }
+            },
             Err(e) => {
                 error!("Failed to bind HTTP listener on {http_addr}: {e}");
-            }
+            },
         }
     });
 
@@ -209,14 +204,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let grpc_listener = match tokio::net::TcpListener::bind(grpc_addr).await {
         Ok(l) => l,
         Err(_) => {
-            let v4_addr: std::net::SocketAddr = format!("127.0.0.1:{}", grpc_addr.port())
-                .parse()
-                .map_err(|e| {
-                Box::new(std::io::Error::new(std::io::ErrorKind::InvalidInput, e))
-            })?;
+            let v4_addr: std::net::SocketAddr =
+                format!("127.0.0.1:{}", grpc_addr.port()).parse().map_err(|e| {
+                    Box::new(std::io::Error::new(std::io::ErrorKind::InvalidInput, e))
+                })?;
             warn!("Failed to bind gRPC on {grpc_addr}, falling back to {v4_addr}");
             tokio::net::TcpListener::bind(v4_addr).await?
-        }
+        },
     };
     let actual_grpc_addr = grpc_listener.local_addr().unwrap_or(grpc_addr);
     let grpc_incoming = TcpListenerStream::new(grpc_listener);
@@ -751,10 +745,7 @@ mod tests {
     #[tokio::test]
     async fn test_health_check() {
         let bridge = TestBridge("0.1.0-test");
-        let response = bridge
-            .health_check(Request::new(HealthCheckRequest {}))
-            .await
-            .unwrap();
+        let response = bridge.health_check(Request::new(HealthCheckRequest {})).await.unwrap();
         let inner = response.into_inner();
         assert_eq!(inner.status, "SERVING");
         assert_eq!(inner.version, "0.1.0-test");
@@ -778,10 +769,7 @@ mod tests {
     #[tokio::test]
     async fn test_list_sops() {
         let bridge = TestBridge("test");
-        let response = bridge
-            .list_so_ps(Request::new(ListSoPsRequest {}))
-            .await
-            .unwrap();
+        let response = bridge.list_so_ps(Request::new(ListSoPsRequest {})).await.unwrap();
         assert!(response.into_inner().sops.is_empty());
     }
 

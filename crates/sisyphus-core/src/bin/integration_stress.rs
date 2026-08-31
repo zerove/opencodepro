@@ -87,10 +87,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             for _ in 0..iterations {
                 // 真实场景中会克隆图谱结构
                 // 这里仅验证执行器能处理并发
-                match exec_ref
-                    .execute(graph_ref.clone(), root, tool_executor_clone.clone())
-                    .await
-                {
+                match exec_ref.execute(graph_ref.clone(), root, tool_executor_clone.clone()).await {
                     Ok(_) => success += 1,
                     Err(_) => failure += 1,
                 }

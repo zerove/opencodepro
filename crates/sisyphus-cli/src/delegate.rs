@@ -148,10 +148,8 @@ pub async fn run_team_with_config(
 
     // 若指定则过滤代理 (CLI agents 参数优先)
     if let Some(agent_list) = agents {
-        let selected: HashSet<String> = agent_list
-            .split(',')
-            .map(|s| s.trim().to_string())
-            .collect();
+        let selected: HashSet<String> =
+            agent_list.split(',').map(|s| s.trim().to_string()).collect();
 
         // 仅保留选中的代理
         let all_agents = registry.list();
@@ -276,10 +274,7 @@ pub async fn run_inline(commands: &[String], max_concurrent: usize) -> Result<()
     }
     println!(
         "\nDone: {}/{}",
-        reports
-            .iter()
-            .filter(|r| r.status == crate::tools::WorkStatus::Completed)
-            .count(),
+        reports.iter().filter(|r| r.status == crate::tools::WorkStatus::Completed).count(),
         reports.len()
     );
     Ok(())

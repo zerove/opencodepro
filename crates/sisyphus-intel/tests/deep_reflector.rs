@@ -7,8 +7,8 @@
 //! - 其他结构（`NodeDeviationReport`/`CognitiveCorrection`/`DeviationPattern`）
 
 use sisyphus_intel::deep_reflector::{
-    AnalysisDimension, CognitiveCorrection, CorrectionPriority, CorrectionType, DeepDeviationReport,
-    DeviationPattern, DimensionScore, NodeDeviationReport,
+    AnalysisDimension, CognitiveCorrection, CorrectionPriority, CorrectionType,
+    DeepDeviationReport, DeviationPattern, DimensionScore, NodeDeviationReport,
 };
 
 // ---------------------------------------------------------------------------

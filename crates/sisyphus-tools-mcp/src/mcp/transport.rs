@@ -53,34 +53,19 @@ impl McpTransport for StdioTransport {
             .write_all(message.as_bytes())
             .await
             .map_err(sisyphus_tools_core::ToolError::Io)?;
-        self.writer
-            .write_all(b"\n")
-            .await
-            .map_err(sisyphus_tools_core::ToolError::Io)?;
-        self.writer
-            .flush()
-            .await
-            .map_err(sisyphus_tools_core::ToolError::Io)?;
+        self.writer.write_all(b"\n").await.map_err(sisyphus_tools_core::ToolError::Io)?;
+        self.writer.flush().await.map_err(sisyphus_tools_core::ToolError::Io)?;
 
         // Read the response line
         let mut line = String::new();
-        self.reader
-            .read_line(&mut line)
-            .await
-            .map_err(sisyphus_tools_core::ToolError::Io)?;
+        self.reader.read_line(&mut line).await.map_err(sisyphus_tools_core::ToolError::Io)?;
 
         Ok(line.trim_end().to_string())
     }
 
     async fn close(&mut self) -> ToolResult<()> {
-        self.child
-            .kill()
-            .await
-            .map_err(sisyphus_tools_core::ToolError::Io)?;
-        self.child
-            .wait()
-            .await
-            .map_err(sisyphus_tools_core::ToolError::Io)?;
+        self.child.kill().await.map_err(sisyphus_tools_core::ToolError::Io)?;
+        self.child.wait().await.map_err(sisyphus_tools_core::ToolError::Io)?;
         Ok(())
     }
 }

@@ -74,10 +74,7 @@ async fn create_test_manager() -> (Arc<RoadmapManager>, String) {
             .await
             .expect("Failed to create in-memory sql store"),
     );
-    sql_store
-        .init_schema()
-        .await
-        .expect("Failed to init schema");
+    sql_store.init_schema().await.expect("Failed to init schema");
     let proposal_manager = Arc::new(ProposalManager::new(store.clone()));
 
     let manager = Arc::new(RoadmapManager::new(store, sql_store, proposal_manager));
@@ -261,16 +258,10 @@ async fn test_proposal_manager_create_and_list() {
         reviewer: None,
     };
 
-    proposal_mgr
-        .submit_proposal(&project_id, proposal.clone())
-        .await
-        .unwrap();
+    proposal_mgr.submit_proposal(&project_id, proposal.clone()).await.unwrap();
 
     // Get proposal
-    let retrieved = proposal_mgr
-        .get_proposal(&project_id, "test-proposal-1")
-        .await
-        .unwrap();
+    let retrieved = proposal_mgr.get_proposal(&project_id, "test-proposal-1").await.unwrap();
     assert!(retrieved.is_some());
     assert_eq!(retrieved.unwrap().proposal_id, "test-proposal-1");
 }
@@ -303,21 +294,12 @@ async fn test_proposal_manager_approve_reject() {
         reviewer: None,
     };
 
-    proposal_mgr
-        .submit_proposal(&project_id, proposal.clone())
-        .await
-        .unwrap();
+    proposal_mgr.submit_proposal(&project_id, proposal.clone()).await.unwrap();
 
     // Approve
-    proposal_mgr
-        .approve_proposal(&project_id, "test-proposal-2", "reviewer1")
-        .await
-        .unwrap();
-    let approved = proposal_mgr
-        .get_proposal(&project_id, "test-proposal-2")
-        .await
-        .unwrap()
-        .unwrap();
+    proposal_mgr.approve_proposal(&project_id, "test-proposal-2", "reviewer1").await.unwrap();
+    let approved =
+        proposal_mgr.get_proposal(&project_id, "test-proposal-2").await.unwrap().unwrap();
     assert_eq!(approved.status, ProposalStatus::Approved);
     assert_eq!(approved.reviewer, Some("reviewer1".to_string()));
 
@@ -344,20 +326,11 @@ async fn test_proposal_manager_approve_reject() {
         reviewer: None,
     };
 
-    proposal_mgr
-        .submit_proposal(&project_id, proposal2.clone())
-        .await
-        .unwrap();
+    proposal_mgr.submit_proposal(&project_id, proposal2.clone()).await.unwrap();
 
-    proposal_mgr
-        .reject_proposal(&project_id, "test-proposal-3", "reviewer2")
-        .await
-        .unwrap();
-    let rejected = proposal_mgr
-        .get_proposal(&project_id, "test-proposal-3")
-        .await
-        .unwrap()
-        .unwrap();
+    proposal_mgr.reject_proposal(&project_id, "test-proposal-3", "reviewer2").await.unwrap();
+    let rejected =
+        proposal_mgr.get_proposal(&project_id, "test-proposal-3").await.unwrap().unwrap();
     assert_eq!(rejected.status, ProposalStatus::Rejected);
     assert_eq!(rejected.reviewer, Some("reviewer2".to_string()));
 }
@@ -399,11 +372,7 @@ async fn test_progress_reporting() {
     assert!((report.overall_progress - 0.66666).abs() < 0.01);
 
     // Check milestone progress
-    let ms1_progress = report
-        .milestones
-        .iter()
-        .find(|m| m.milestone_id == ms1_id)
-        .unwrap();
+    let ms1_progress = report.milestones.iter().find(|m| m.milestone_id == ms1_id).unwrap();
     assert_eq!(ms1_progress.completed_count, 2);
     assert_eq!(ms1_progress.goal_count, 3);
 }
@@ -507,10 +476,7 @@ async fn test_parallel_execution_suggestions() {
             .unwrap();
     }
 
-    let suggestions = manager
-        .suggest_parallel_execution(&project_id)
-        .await
-        .unwrap();
+    let suggestions = manager.suggest_parallel_execution(&project_id).await.unwrap();
 
     assert!(!suggestions.is_empty());
     for s in suggestions {
@@ -689,10 +655,7 @@ async fn test_delay_alerts() {
             .unwrap();
     }
 
-    let alerts = manager
-        .check_delay_alerts(&project_id, Some(2.0))
-        .await
-        .unwrap();
+    let alerts = manager.check_delay_alerts(&project_id, Some(2.0)).await.unwrap();
 
     // ms1 is done, should not alert
     assert!(alerts.is_empty() || alerts.iter().all(|a| a.milestone_id != ms1_id));
@@ -708,9 +671,7 @@ async fn test_persistence_across_restart() {
     // First manager session
     {
         let store = Arc::new(
-            MfsStore::new(&db_url, &sisyphus_types::CacheConfig::default())
-                .await
-                .unwrap(),
+            MfsStore::new(&db_url, &sisyphus_types::CacheConfig::default()).await.unwrap(),
         );
         let sql_store = Arc::new(RoadmapSqlStore::new(store.pool().clone()).await.unwrap());
         sql_store.init_schema().await.unwrap();
@@ -775,9 +736,7 @@ async fn test_persistence_across_restart() {
     // Second manager session - load from same DB
     {
         let store = Arc::new(
-            MfsStore::new(&db_url, &sisyphus_types::CacheConfig::default())
-                .await
-                .unwrap(),
+            MfsStore::new(&db_url, &sisyphus_types::CacheConfig::default()).await.unwrap(),
         );
         let sql_store = Arc::new(RoadmapSqlStore::new(store.pool().clone()).await.unwrap());
         let proposal_manager = Arc::new(ProposalManager::new(store.clone()));
@@ -786,10 +745,7 @@ async fn test_persistence_across_restart() {
         let project = manager.get_project("persist-test").await.unwrap().unwrap();
         assert_eq!(project.name, "Persist Test");
 
-        let report = manager
-            .generate_progress_report("persist-test")
-            .await
-            .unwrap();
+        let report = manager.generate_progress_report("persist-test").await.unwrap();
         assert_eq!(report.completed_goals, 1);
     }
 }
@@ -799,15 +755,10 @@ async fn test_persistence_across_restart() {
 async fn test_list_project_ids() {
     let (manager, project_id) = create_test_manager().await;
 
-    let project2 = manager
-        .create_project("project-2", "Project 2", "Second project")
-        .await
-        .unwrap();
+    let project2 =
+        manager.create_project("project-2", "Project 2", "Second project").await.unwrap();
 
-    let project3 = manager
-        .create_project("project-3", "Project 3", "Third project")
-        .await
-        .unwrap();
+    let project3 = manager.create_project("project-3", "Project 3", "Third project").await.unwrap();
 
     let ids = manager.list_project_ids().await.unwrap();
     assert!(ids.contains(&project_id));
@@ -821,10 +772,8 @@ async fn test_list_project_ids() {
 async fn test_delete_project() {
     let (manager, project_id) = create_test_manager().await;
 
-    let project2 = manager
-        .create_project("project-to-delete", "To Delete", "Will be deleted")
-        .await
-        .unwrap();
+    let project2 =
+        manager.create_project("project-to-delete", "To Delete", "Will be deleted").await.unwrap();
 
     let ids_before = manager.list_project_ids().await.unwrap();
     assert!(ids_before.contains(&project2.id));

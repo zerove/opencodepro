@@ -137,10 +137,7 @@ fn buffer_entry_field_access() {
     let entry = make_entry("my-sop", 42);
     assert_eq!(entry.timestamp_ms, 42);
     assert_eq!(entry.sop_id, "my-sop");
-    assert!(matches!(
-        entry.event,
-        ExecutionEvent::NodeStarted { .. }
-    ));
+    assert!(matches!(entry.event, ExecutionEvent::NodeStarted { .. }));
 }
 
 #[test]

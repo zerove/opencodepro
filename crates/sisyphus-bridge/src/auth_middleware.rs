@@ -45,7 +45,7 @@ impl IntoResponse for AuthError {
             ),
             AuthError::InvalidToken(msg) => {
                 (StatusCode::UNAUTHORIZED, format!("Invalid token: {}", msg))
-            }
+            },
             AuthError::Expired => (StatusCode::UNAUTHORIZED, "Token expired".to_string()),
             AuthError::InsufficientPermissions => (
                 StatusCode::FORBIDDEN,
@@ -78,12 +78,9 @@ where
 
     async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
         // Extract JWT service from extensions
-        let jwt_service = parts
-            .extensions
-            .get::<Arc<crate::auth_jwt::JwtService>>()
-            .ok_or(AuthError::InvalidToken(
-                "JWT service not configured".to_string(),
-            ))?;
+        let jwt_service = parts.extensions.get::<Arc<crate::auth_jwt::JwtService>>().ok_or(
+            AuthError::InvalidToken("JWT service not configured".to_string()),
+        )?;
 
         // Extract Authorization header
         let auth_header = parts
@@ -118,17 +115,11 @@ where
     type Rejection = AuthError;
 
     async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
-        let jwt_service = parts
-            .extensions
-            .get::<Arc<crate::auth_jwt::JwtService>>()
-            .ok_or(AuthError::InvalidToken(
-                "JWT service not configured".to_string(),
-            ))?;
+        let jwt_service = parts.extensions.get::<Arc<crate::auth_jwt::JwtService>>().ok_or(
+            AuthError::InvalidToken("JWT service not configured".to_string()),
+        )?;
 
-        let auth_header = parts
-            .headers
-            .get(header::AUTHORIZATION)
-            .and_then(|v| v.to_str().ok());
+        let auth_header = parts.headers.get(header::AUTHORIZATION).and_then(|v| v.to_str().ok());
 
         let claims = if let Some(auth_header) = auth_header {
             if let Some(token) = crate::auth_jwt::extract_bearer_token(auth_header) {
@@ -197,12 +188,9 @@ pub async fn auth_middleware(
     let token =
         crate::auth_jwt::extract_bearer_token(auth_header).ok_or(AuthError::InvalidFormat)?;
 
-    let jwt_service = request
-        .extensions()
-        .get::<Arc<crate::auth_jwt::JwtService>>()
-        .ok_or(AuthError::InvalidToken(
-            "JWT service not configured".to_string(),
-        ))?;
+    let jwt_service = request.extensions().get::<Arc<crate::auth_jwt::JwtService>>().ok_or(
+        AuthError::InvalidToken("JWT service not configured".to_string()),
+    )?;
 
     let token_data = jwt_service
         .validate_access_token(&token)
@@ -220,10 +208,7 @@ pub async fn optional_auth_middleware(
     mut request: Request<Body>,
     next: Next,
 ) -> Response {
-    let auth_header = request
-        .headers()
-        .get(header::AUTHORIZATION)
-        .and_then(|v| v.to_str().ok());
+    let auth_header = request.headers().get(header::AUTHORIZATION).and_then(|v| v.to_str().ok());
 
     if let Some(auth_header) = auth_header {
         if let Some(token) = crate::auth_jwt::extract_bearer_token(auth_header) {

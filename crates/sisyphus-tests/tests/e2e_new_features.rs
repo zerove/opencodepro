@@ -167,9 +167,8 @@ fn test_create_execution_batches_empty() {
 fn test_create_execution_batches_single_batch() {
     use petgraph::graph::NodeIndex;
     let metrics = PipelineMetrics::default();
-    let nodes: Vec<(NodeIndex, String)> = (0..3)
-        .map(|i| (NodeIndex::new(i), format!("node{i}")))
-        .collect();
+    let nodes: Vec<(NodeIndex, String)> =
+        (0..3).map(|i| (NodeIndex::new(i), format!("node{i}"))).collect();
     let batches = create_execution_batches(nodes, &metrics, 8);
     assert_eq!(batches.len(), 1);
     assert_eq!(batches[0].nodes.len(), 3);

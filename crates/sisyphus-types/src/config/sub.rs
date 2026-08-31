@@ -38,11 +38,16 @@ pub struct TokenBudgetConfig {
 
 impl Default for TokenBudgetConfig {
     fn default() -> Self {
-        Self { cap: None, reserve_ratio: default_reserve_ratio() }
+        Self {
+            cap: None,
+            reserve_ratio: default_reserve_ratio(),
+        }
     }
 }
 
-fn default_reserve_ratio() -> f64 { 0.1 }
+fn default_reserve_ratio() -> f64 {
+    0.1
+}
 
 fn default_llm_stage_timeout_secs() -> u64 {
     30

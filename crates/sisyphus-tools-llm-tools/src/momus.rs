@@ -95,10 +95,7 @@ mod tests {
     async fn test_review_plan_short_steps() {
         let text = "- fix it\n- done\n";
         let review = review_plan(&DUMMY, text, "Quick fixes").await;
-        let short = review
-            .comments
-            .iter()
-            .filter(|c| c.category == "verifiability");
+        let short = review.comments.iter().filter(|c| c.category == "verifiability");
         assert!(short.count() >= 2);
         assert!(review.passed);
     }
@@ -112,10 +109,7 @@ mod tests {
 - Implement feature D
 ";
         let review = review_plan(&DUMMY, text, "Big Project").await;
-        let scope_issues = review
-            .comments
-            .iter()
-            .filter(|c| c.message.contains("scope"));
+        let scope_issues = review.comments.iter().filter(|c| c.message.contains("scope"));
         assert!(scope_issues.count() >= 1);
     }
 
@@ -129,10 +123,7 @@ mod tests {
         std::fs::write(&path, &content).unwrap();
         let review = review_code(&DUMMY, &path, &content).await.unwrap();
         assert!(!review.comments.is_empty());
-        assert!(review
-            .comments
-            .iter()
-            .any(|c| c.message.contains("Line too long")));
+        assert!(review.comments.iter().any(|c| c.message.contains("Line too long")));
     }
 
     #[tokio::test]
@@ -147,10 +138,7 @@ fn bar() {}
 ";
         std::fs::write(&path, content).unwrap();
         let review = review_code(&DUMMY, &path, content).await.unwrap();
-        let markers = review
-            .comments
-            .iter()
-            .filter(|c| c.message.contains("marker"));
+        let markers = review.comments.iter().filter(|c| c.message.contains("marker"));
         assert_eq!(markers.count(), 2);
     }
 
@@ -176,10 +164,7 @@ pub fn add(a: i32, b: i32) -> i32 {
         let content = "pub fn undoc() -> i32 { 42 }\n";
         std::fs::write(&path, content).unwrap();
         let review = review_code(&DUMMY, &path, content).await.unwrap();
-        assert!(review
-            .comments
-            .iter()
-            .any(|c| c.category == "documentation"));
+        assert!(review.comments.iter().any(|c| c.category == "documentation"));
     }
 
     #[tokio::test]
@@ -193,10 +178,7 @@ pub fn add(a: i32, b: i32) -> i32 {
         content.push_str("}\n");
         std::fs::write(&path, &content).unwrap();
         let review = review_code(&DUMMY, &path, &content).await.unwrap();
-        let complex = review
-            .comments
-            .iter()
-            .filter(|c| c.category == "complexity");
+        let complex = review.comments.iter().filter(|c| c.category == "complexity");
         assert!(complex.count() >= 1);
     }
 
@@ -245,10 +227,7 @@ Core Engine --> Bridge: sends events
     async fn test_review_architecture_missing_deps() {
         let text = "## Component A\n## Component B\n";
         let review = review_architecture(&DUMMY, text).await;
-        let dep_issues = review
-            .comments
-            .iter()
-            .filter(|c| c.message.contains("dependency"));
+        let dep_issues = review.comments.iter().filter(|c| c.message.contains("dependency"));
         assert!(dep_issues.count() >= 1);
     }
 

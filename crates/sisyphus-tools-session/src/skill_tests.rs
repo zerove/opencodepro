@@ -267,9 +267,7 @@ fn test_load_all_priority_override() {
     )
     .unwrap();
 
-    let loader = SkillLoader::new()
-        .with_builtin_dir(builtin_dir)
-        .with_dir(project_dir);
+    let loader = SkillLoader::new().with_builtin_dir(builtin_dir).with_dir(project_dir);
     let skills = loader.load_all();
     assert_eq!(skills.len(), 1);
     assert!(

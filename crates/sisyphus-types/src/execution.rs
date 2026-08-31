@@ -106,11 +106,7 @@ impl NodeOutput {
         if let Some(ok) = self.explicit_status() {
             return !ok;
         }
-        let s = self
-            .0
-            .as_str()
-            .map(str::to_ascii_lowercase)
-            .unwrap_or_default();
+        let s = self.0.as_str().map(str::to_ascii_lowercase).unwrap_or_default();
         let rendered = if s.is_empty() {
             self.0.to_string().to_ascii_lowercase()
         } else {
@@ -484,10 +480,10 @@ impl ExecutionContext {
         match self.notepad.write() {
             Ok(mut notepad) => {
                 notepad.write_section(section, content);
-            }
+            },
             Err(e) => {
                 tracing::warn!(error = %e, "ExecutionContext RwLock poisoned in write_notepad");
-            }
+            },
         }
     }
 
@@ -499,7 +495,7 @@ impl ExecutionContext {
             Err(e) => {
                 tracing::warn!(error = %e, "ExecutionContext RwLock poisoned in read_notepad");
                 None
-            }
+            },
         }
     }
 
@@ -510,10 +506,10 @@ impl ExecutionContext {
         match self.notepad.write() {
             Ok(mut notepad) => {
                 notepad.prune(max_insights);
-            }
+            },
             Err(e) => {
                 tracing::warn!(error = %e, "ExecutionContext RwLock poisoned in prune_notepad");
-            }
+            },
         }
     }
 

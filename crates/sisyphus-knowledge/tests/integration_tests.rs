@@ -257,10 +257,7 @@ async fn test_asset_manager_sediment_tool() {
     };
 
     let wasm_path = dir.path().join("tool.wasm");
-    let id = manager
-        .sediment_tool(spec, wasm_path.clone())
-        .await
-        .unwrap();
+    let id = manager.sediment_tool(spec, wasm_path.clone()).await.unwrap();
 
     assert!(id.starts_with("asset_tool_"));
 
@@ -291,7 +288,7 @@ async fn test_asset_manager_load_corrupted() {
     let manager = AssetManager::new(path);
     let err = manager.load().await.unwrap_err();
     match err {
-        sisyphus_knowledge::KnowledgeError::StorageError(_) => {}
+        sisyphus_knowledge::KnowledgeError::StorageError(_) => {},
         _ => panic!("expected StorageError"),
     }
 }

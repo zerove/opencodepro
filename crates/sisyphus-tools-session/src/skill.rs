@@ -134,10 +134,7 @@ fn parse_skill_file(path: &Path, source: SkillSource) -> Option<Skill> {
     let content = fs::read_to_string(path).ok()?;
     let (meta, body) = parse_frontmatter(&content);
 
-    let stem = path
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or("unknown");
+    let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("unknown");
 
     Some(Skill {
         name: meta.name.unwrap_or_else(|| stem.to_string()),
@@ -169,7 +166,7 @@ fn parse_frontmatter(content: &str) -> (types::SkillMeta, String) {
                 Ok(meta) => (meta, body),
                 Err(_) => (types::SkillMeta::default(), content.to_string()),
             }
-        }
+        },
         None => (types::SkillMeta::default(), content.to_string()),
     }
 }
@@ -191,10 +188,7 @@ impl std::fmt::Display for Skill {
         if !self.triggers.is_empty() {
             writeln!(f, "  triggers:")?;
             for t in &self.triggers {
-                let desc = t
-                    .description
-                    .as_deref()
-                    .unwrap_or(t.pattern.as_deref().unwrap_or("*"));
+                let desc = t.description.as_deref().unwrap_or(t.pattern.as_deref().unwrap_or("*"));
                 writeln!(f, "    - {desc}")?;
                 if !t.tools.is_empty() {
                     writeln!(f, "      tools: {}", t.tools.join(", "))?;

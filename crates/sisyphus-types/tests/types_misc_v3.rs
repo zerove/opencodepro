@@ -195,7 +195,7 @@ fn cognitive_event_predict_variant() {
     match back {
         CognitiveEvent::Predict { prediction } => {
             assert_eq!(prediction["next"], "A");
-        }
+        },
         _ => panic!("Wrong variant"),
     }
 }
@@ -210,7 +210,7 @@ fn cognitive_event_reflect_variant() {
     match back {
         CognitiveEvent::Reflect { report } => {
             assert_eq!(report["score"], 0.5);
-        }
+        },
         _ => panic!("Wrong variant"),
     }
 }
@@ -223,7 +223,7 @@ fn cognitive_event_evolve_variant() {
     let j = serde_json::to_string(&ev).unwrap();
     let back: CognitiveEvent = serde_json::from_str(&j).unwrap();
     match back {
-        CognitiveEvent::Evolve { .. } => {}
+        CognitiveEvent::Evolve { .. } => {},
         _ => panic!("Wrong variant"),
     }
 }
@@ -237,7 +237,7 @@ fn cognitive_event_clone() {
     match cloned {
         CognitiveEvent::Predict { prediction } => {
             assert_eq!(prediction["a"], 1);
-        }
+        },
         _ => panic!("Wrong variant"),
     }
 }

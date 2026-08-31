@@ -105,9 +105,8 @@ impl AnomalyDetector {
         let mut anomalies = Vec::new();
         let mut history = self.history.lock();
 
-        let (ref mut avg_fuel, ref mut avg_dur, ref mut err_count) = history
-            .entry(node_name.to_string())
-            .or_insert((0.0, 0.0, 0));
+        let (ref mut avg_fuel, ref mut avg_dur, ref mut err_count) =
+            history.entry(node_name.to_string()).or_insert((0.0, 0.0, 0));
 
         // 指数加权移动平均更新
         let alpha = 0.3;
@@ -320,9 +319,7 @@ impl AdaptiveDepthController {
     /// 根据调用方已有的复杂度分析结果计算初始预算（P1-4 去重）。
     /// 与 [`Self::initial_budget`] 语义一致，但不再重复执行分析。
     pub fn budget_from_depth(&self, d_max: u32) -> usize {
-        (d_max as usize)
-            .min(self.max_iterations)
-            .max(self.min_iterations)
+        (d_max as usize).min(self.max_iterations).max(self.min_iterations)
     }
 
     /// 在每轮迭代后记录置信度并决定是否继续。
@@ -517,10 +514,7 @@ mod tests {
         detector.observe("node_c", 100, 50, false);
         detector.observe("node_c", 100, 50, false);
         let anomalies = detector.observe("node_c", 100, 50, false);
-        let err_anomalies: Vec<_> = anomalies
-            .iter()
-            .filter(|a| a.metric == "error_rate")
-            .collect();
+        let err_anomalies: Vec<_> = anomalies.iter().filter(|a| a.metric == "error_rate").collect();
         assert!(
             !err_anomalies.is_empty(),
             "High error rate should be detected"

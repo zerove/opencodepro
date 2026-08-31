@@ -103,20 +103,14 @@ impl FailurePatternLibrary {
 
     /// 获取特定节点的模式
     pub fn get_node_patterns(&self, node_name: &str) -> Vec<&FailurePattern> {
-        self.patterns
-            .iter()
-            .filter(|p| p.affected_node == node_name)
-            .collect()
+        self.patterns.iter().filter(|p| p.affected_node == node_name).collect()
     }
 
     /// 获取节点最常见的失败类别
     pub fn most_common_failure(&self, node_name: &str) -> Option<FailureCategory> {
-        self.node_failure_counts.get(node_name).and_then(|counts| {
-            counts
-                .iter()
-                .max_by_key(|(_, count)| *count)
-                .map(|(cat, _)| *cat)
-        })
+        self.node_failure_counts
+            .get(node_name)
+            .and_then(|counts| counts.iter().max_by_key(|(_, count)| *count).map(|(cat, _)| *cat))
     }
 
     /// 获取按出现次数排序的所有模式
@@ -195,9 +189,7 @@ impl FailurePatternEvolver {
         }
 
         suggestions.sort_by(|a, b| {
-            b.confidence
-                .partial_cmp(&a.confidence)
-                .unwrap_or(std::cmp::Ordering::Equal)
+            b.confidence.partial_cmp(&a.confidence).unwrap_or(std::cmp::Ordering::Equal)
         });
         suggestions
     }
@@ -215,7 +207,7 @@ impl FailurePatternEvolver {
                             node_name: suggestion.node_name.clone(),
                             delta: 2000,
                         });
-                    }
+                    },
                     FailureCategory::Timeout => {
                         ops.push(EvolutionOp::AdjustFuel {
                             node_name: suggestion.node_name.clone(),
@@ -225,19 +217,19 @@ impl FailurePatternEvolver {
                             node_name: suggestion.node_name.clone(),
                             max_retries: 3,
                         });
-                    }
+                    },
                     FailureCategory::ToolError | FailureCategory::LogicError => {
                         ops.push(EvolutionOp::AddRetry {
                             node_name: suggestion.node_name.clone(),
                             max_retries: 2,
                         });
-                    }
+                    },
                     _ => {
                         ops.push(EvolutionOp::AddRetry {
                             node_name: suggestion.node_name.clone(),
                             max_retries: 2,
                         });
-                    }
+                    },
                 }
             }
         }

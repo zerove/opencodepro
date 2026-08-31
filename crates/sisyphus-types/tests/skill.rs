@@ -52,7 +52,10 @@ fn new_bundle_preserves_main_sop() {
     let mut sop = SOPGraphConfig::default();
     sop.nodes.push(sisyphus_types::graph::SOPNodeConfig {
         name: "n1".into(),
-        kind: sisyphus_types::NodeKind::Test { command: "echo".into(), workdir: None },
+        kind: sisyphus_types::NodeKind::Test {
+            command: "echo".into(),
+            workdir: None,
+        },
     });
     let bundle = SkillBundle::new(meta("a"), sop);
     assert_eq!(bundle.main_sop.nodes.len(), 1);
@@ -78,7 +81,10 @@ fn add_sub_sop_overwrites_same_id() {
     let mut new_sop = SOPGraphConfig::default();
     new_sop.nodes.push(sisyphus_types::graph::SOPNodeConfig {
         name: "n".into(),
-        kind: sisyphus_types::NodeKind::Test { command: "ls".into(), workdir: None },
+        kind: sisyphus_types::NodeKind::Test {
+            command: "ls".into(),
+            workdir: None,
+        },
     });
     bundle.add_sub_sop("helper".into(), new_sop);
     assert_eq!(bundle.sub_sops.len(), 1);
@@ -103,7 +109,10 @@ fn add_required_tool_appends_to_vec() {
     let mut bundle = SkillBundle::new(meta("a"), empty_sop());
     bundle.add_required_tool("tool1".into());
     bundle.add_required_tool("tool2".into());
-    assert_eq!(bundle.required_tools, vec!["tool1".to_string(), "tool2".to_string()]);
+    assert_eq!(
+        bundle.required_tools,
+        vec!["tool1".to_string(), "tool2".to_string()]
+    );
 }
 
 #[test]
@@ -122,7 +131,10 @@ fn add_required_tool_mixed_dedup() {
     bundle.add_required_tool("b".into());
     bundle.add_required_tool("a".into()); // duplicate
     bundle.add_required_tool("c".into());
-    assert_eq!(bundle.required_tools, vec!["a".to_string(), "b".to_string(), "c".to_string()]);
+    assert_eq!(
+        bundle.required_tools,
+        vec!["a".to_string(), "b".to_string(), "c".to_string()]
+    );
 }
 
 // ---------------------------------------------------------------------------

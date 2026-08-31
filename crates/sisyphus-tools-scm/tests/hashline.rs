@@ -6,8 +6,7 @@
 //! modify files even when line numbers shift between tool calls.
 
 use sisyphus_tools_scm::hashline::{
-    annotate_file, edit_with_hashline, generate_hashline, hash_content, parse_hashline,
-    verify_line,
+    annotate_file, edit_with_hashline, generate_hashline, hash_content, parse_hashline, verify_line,
 };
 use std::fs;
 use std::path::Path;
@@ -108,11 +107,7 @@ fn verify_line_errors_on_out_of_bounds_line() {
 #[test]
 fn annotate_file_writes_line_annotations_in_place() {
     let dir = TempDir::new().expect("tempdir");
-    let file = write(
-        dir.path(),
-        "lib.rs",
-        "first\nsecond\nthird\n",
-    );
+    let file = write(dir.path(), "lib.rs", "first\nsecond\nthird\n");
     let count = annotate_file(&file).expect("annotate");
     // 3 non-empty lines → 3 hashline annotations added
     assert_eq!(count, 3);
@@ -157,15 +152,14 @@ fn annotated_file_verifies_via_verify_line() {
 #[test]
 fn edit_with_hashline_replaces_targeted_line() {
     let dir = TempDir::new().expect("tempdir");
-    let file = write(
-        dir.path(),
-        "a.rs",
-        "line one\nline two OLD\nline three\n",
-    );
+    let file = write(dir.path(), "a.rs", "line one\nline two OLD\nline three\n");
     // Generate the hashline for line 2 from the original content.
     let hl = generate_hashline(Path::new("a.rs"), 2, "line two OLD");
     let result = edit_with_hashline(&file, &hl, "line two NEW").expect("edit should succeed");
-    assert!(!result.is_empty(), "edit should return non-empty diff/message");
+    assert!(
+        !result.is_empty(),
+        "edit should return non-empty diff/message"
+    );
 
     let after = fs::read_to_string(&file).expect("read");
     assert!(after.contains("line two NEW"));
@@ -175,13 +169,12 @@ fn edit_with_hashline_replaces_targeted_line() {
 #[test]
 fn edit_with_hashline_fails_on_hash_mismatch() {
     let dir = TempDir::new().expect("tempdir");
-    let file = write(
-        dir.path(),
-        "a.rs",
-        "line one\nline two\nline three\n",
-    );
+    let file = write(dir.path(), "a.rs", "line one\nline two\nline three\n");
     // Generate hashline for a line that no longer matches.
     let hl = generate_hashline(Path::new("a.rs"), 2, "different content");
     let result = edit_with_hashline(&file, &hl, "new content");
-    assert!(result.is_err(), "edit with stale hashline should fail, got {result:?}");
+    assert!(
+        result.is_err(),
+        "edit with stale hashline should fail, got {result:?}"
+    );
 }

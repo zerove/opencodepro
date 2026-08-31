@@ -27,10 +27,7 @@ async fn save_then_load_round_trip() {
     let fb = mk_feedback("agent-A", "fix typo");
     store.save_feedback(fb.clone()).await.expect("save");
 
-    let loaded = store
-        .load_all_for_agent("agent-A")
-        .await
-        .expect("load");
+    let loaded = store.load_all_for_agent("agent-A").await.expect("load");
     assert_eq!(loaded.len(), 1);
     assert_eq!(loaded[0].corrected_output, "fix typo");
     assert_eq!(loaded[0].agent_id, "agent-A");
@@ -40,10 +37,7 @@ async fn save_then_load_round_trip() {
 async fn load_returns_empty_for_unknown_agent() {
     let dir = TempDir::new().expect("tempdir");
     let store = FeedbackStore::new(dir.path());
-    let loaded = store
-        .load_all_for_agent("nonexistent")
-        .await
-        .expect("load unknown");
+    let loaded = store.load_all_for_agent("nonexistent").await.expect("load unknown");
     assert!(loaded.is_empty());
 }
 
@@ -52,14 +46,8 @@ async fn feedback_is_isolated_per_agent() {
     let dir = TempDir::new().expect("tempdir");
     let store = FeedbackStore::new(dir.path());
 
-    store
-        .save_feedback(mk_feedback("agent-A", "a-fix"))
-        .await
-        .expect("save a");
-    store
-        .save_feedback(mk_feedback("agent-B", "b-fix"))
-        .await
-        .expect("save b");
+    store.save_feedback(mk_feedback("agent-A", "a-fix")).await.expect("save a");
+    store.save_feedback(mk_feedback("agent-B", "b-fix")).await.expect("save b");
 
     let a = store.load_all_for_agent("agent-A").await.expect("a");
     let b = store.load_all_for_agent("agent-B").await.expect("b");
@@ -75,15 +63,9 @@ async fn save_appends_to_existing_file() {
     let store = FeedbackStore::new(dir.path());
 
     for i in 0..3 {
-        store
-            .save_feedback(mk_feedback("agent-X", &format!("fix-{i}")))
-            .await
-            .expect("save iter");
+        store.save_feedback(mk_feedback("agent-X", &format!("fix-{i}"))).await.expect("save iter");
     }
-    let loaded = store
-        .load_all_for_agent("agent-X")
-        .await
-        .expect("load");
+    let loaded = store.load_all_for_agent("agent-X").await.expect("load");
     assert_eq!(loaded.len(), 3, "expected three feedbacks appended");
     // FeedbackStore keeps insertion order (append)
     assert_eq!(loaded[0].corrected_output, "fix-0");

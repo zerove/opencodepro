@@ -196,9 +196,7 @@ impl NotepadManager {
         if name.is_empty() || name.contains('/') || name.contains('\\') || name.contains("..") {
             return self.base_path.join("__invalid__");
         }
-        self.base_path
-            .join(category.as_dir())
-            .join(format!("{name}.md"))
+        self.base_path.join(category.as_dir()).join(format!("{name}.md"))
     }
 
     /// Record a new notepad entry. Overwrites if the same (category, name) exists.
@@ -266,11 +264,7 @@ impl NotepadManager {
                 continue;
             }
             let raw = fs::read_to_string(&path).await?;
-            let name = path
-                .file_stem()
-                .and_then(|s| s.to_str())
-                .unwrap_or("")
-                .to_string();
+            let name = path.file_stem().and_then(|s| s.to_str()).unwrap_or("").to_string();
             if name.is_empty() {
                 continue;
             }
@@ -450,12 +444,8 @@ mod tests {
     async fn test_list_includes_recorded() {
         let dir = unique_temp_dir();
         let mgr = NotepadManager::new(&dir);
-        mgr.record(NotepadCategory::Conventions, "c1", "body1", vec![])
-            .await
-            .unwrap();
-        mgr.record(NotepadCategory::Patterns, "p1", "body2", vec![])
-            .await
-            .unwrap();
+        mgr.record(NotepadCategory::Conventions, "c1", "body1", vec![]).await.unwrap();
+        mgr.record(NotepadCategory::Patterns, "p1", "body2", vec![]).await.unwrap();
         let all = mgr.list_all().await.unwrap();
         assert_eq!(all.len(), 2);
         let convs = mgr.list(NotepadCategory::Conventions).await.unwrap();
@@ -488,9 +478,7 @@ mod tests {
         let dir = unique_temp_dir();
         let mgr = NotepadManager::new(&dir);
         for i in 0..5 {
-            mgr.record(NotepadCategory::Patterns, &format!("p{i}"), "body", vec![])
-                .await
-                .unwrap();
+            mgr.record(NotepadCategory::Patterns, &format!("p{i}"), "body", vec![]).await.unwrap();
         }
         let injected = mgr.inject(Some(2)).await.unwrap();
         assert!(injected.contains("p0"));
@@ -510,9 +498,7 @@ mod tests {
     async fn test_get_returns_recorded() {
         let dir = unique_temp_dir();
         let mgr = NotepadManager::new(&dir);
-        mgr.record(NotepadCategory::Successes, "s1", "fix", vec!["perf".into()])
-            .await
-            .unwrap();
+        mgr.record(NotepadCategory::Successes, "s1", "fix", vec!["perf".into()]).await.unwrap();
         let entry = mgr.get(NotepadCategory::Successes, "s1").await.unwrap();
         assert!(entry.is_some());
         let entry = entry.unwrap();
@@ -537,42 +523,22 @@ mod tests {
     async fn test_delete() {
         let dir = unique_temp_dir();
         let mgr = NotepadManager::new(&dir);
-        mgr.record(NotepadCategory::Patterns, "to_delete", "x", vec![])
-            .await
-            .unwrap();
-        assert!(mgr
-            .delete(NotepadCategory::Patterns, "to_delete")
-            .await
-            .unwrap());
+        mgr.record(NotepadCategory::Patterns, "to_delete", "x", vec![]).await.unwrap();
+        assert!(mgr.delete(NotepadCategory::Patterns, "to_delete").await.unwrap());
         // Idempotent: second call returns false.
-        assert!(!mgr
-            .delete(NotepadCategory::Patterns, "to_delete")
-            .await
-            .unwrap());
-        assert!(mgr
-            .get(NotepadCategory::Patterns, "to_delete")
-            .await
-            .unwrap()
-            .is_none());
+        assert!(!mgr.delete(NotepadCategory::Patterns, "to_delete").await.unwrap());
+        assert!(mgr.get(NotepadCategory::Patterns, "to_delete").await.unwrap().is_none());
     }
 
     #[tokio::test]
     async fn test_overwrite() {
         let dir = unique_temp_dir();
         let mgr = NotepadManager::new(&dir);
-        mgr.record(NotepadCategory::Experience, "fact", "old", vec![])
-            .await
-            .unwrap();
+        mgr.record(NotepadCategory::Experience, "fact", "old", vec![]).await.unwrap();
         // Sleep to ensure new timestamp > old.
         tokio::time::sleep(std::time::Duration::from_millis(1100)).await;
-        mgr.record(NotepadCategory::Experience, "fact", "new", vec![])
-            .await
-            .unwrap();
-        let entry = mgr
-            .get(NotepadCategory::Experience, "fact")
-            .await
-            .unwrap()
-            .unwrap();
+        mgr.record(NotepadCategory::Experience, "fact", "new", vec![]).await.unwrap();
+        let entry = mgr.get(NotepadCategory::Experience, "fact").await.unwrap().unwrap();
         assert_eq!(
             entry.content,
             "new

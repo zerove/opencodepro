@@ -16,10 +16,10 @@
 //! - 不在生产路径默认启用：`LoopConfig::enabled = false`
 
 use crate::gap_analyzer::{GapAnalyzer, ToolGap};
-use sisyphus_types::errors::IntelError;
 use crate::tool_coder::ToolCoder;
 use async_trait::async_trait;
 use parking_lot::Mutex;
+use sisyphus_types::errors::IntelError;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -102,7 +102,10 @@ pub struct LoopConfig {
 
 impl Default for LoopConfig {
     fn default() -> Self {
-        Self { max_attempts: 3, enabled: false }
+        Self {
+            max_attempts: 3,
+            enabled: false,
+        }
     }
 }
 
@@ -146,10 +149,7 @@ impl SelfProgrammingLoop {
     }
 
     /// Close the loop.
-    pub async fn close_the_loop(
-        &self,
-        gap: &ToolGap,
-    ) -> Result<ToolGenerationResult, IntelError> {
+    pub async fn close_the_loop(&self, gap: &ToolGap) -> Result<ToolGenerationResult, IntelError> {
         if !self.config.enabled {
             return Err(IntelError::Internal(
                 "SelfProgrammingLoop is disabled (set config.enabled=true)".into(),
@@ -268,7 +268,9 @@ mod tests {
 
     impl InMemoryRegistrar {
         fn new() -> Self {
-            Self { stored: parking_lot::Mutex::new(Vec::new()) }
+            Self {
+                stored: parking_lot::Mutex::new(Vec::new()),
+            }
         }
         fn stored(&self) -> Vec<(String, String)> {
             self.stored.lock().clone()
@@ -309,14 +311,19 @@ mod tests {
         let coder = Arc::new(ToolCoder::new(llm));
         let gap = Arc::new(GapAnalyzer::new(Arc::new(StaticLlm)));
         let registrar = Arc::new(InMemoryRegistrar::new());
-        let loop_cfg = LoopConfig { enabled, max_attempts };
+        let loop_cfg = LoopConfig {
+            enabled,
+            max_attempts,
+        };
         let l = SelfProgrammingLoop::new(gap, coder, verifier, registrar.clone(), loop_cfg);
         (l, registrar)
     }
 
     #[tokio::test]
     async fn disabled_loop_rejects() {
-        let v: Arc<dyn Verifier> = Arc::new(VerifierMock { results: vec![true] });
+        let v: Arc<dyn Verifier> = Arc::new(VerifierMock {
+            results: vec![true],
+        });
         let (l, _) = build_loop(v, false, 3);
         let res = l.close_the_loop(&test_gap()).await;
         assert!(matches!(res, Err(IntelError::Internal(_))));
@@ -324,7 +331,9 @@ mod tests {
 
     #[tokio::test]
     async fn first_attempt_success_registers_tool() {
-        let v: Arc<dyn Verifier> = Arc::new(VerifierMock { results: vec![true] });
+        let v: Arc<dyn Verifier> = Arc::new(VerifierMock {
+            results: vec![true],
+        });
         let (l, r) = build_loop(v, true, 3);
         let res = l.close_the_loop(&test_gap()).await.expect("ok");
         assert!(res.success);
@@ -335,7 +344,9 @@ mod tests {
 
     #[tokio::test]
     async fn all_attempts_fail_does_not_register() {
-        let v: Arc<dyn Verifier> = Arc::new(VerifierMock { results: vec![false, false, false] });
+        let v: Arc<dyn Verifier> = Arc::new(VerifierMock {
+            results: vec![false, false, false],
+        });
         let (l, r) = build_loop(v, true, 3);
         let res = l.close_the_loop(&test_gap()).await.expect("ok");
         assert!(!res.success);
@@ -345,7 +356,9 @@ mod tests {
 
     #[tokio::test]
     async fn history_persists_across_runs() {
-        let v: Arc<dyn Verifier> = Arc::new(VerifierMock { results: vec![true] });
+        let v: Arc<dyn Verifier> = Arc::new(VerifierMock {
+            results: vec![true],
+        });
         let (l, _) = build_loop(v, true, 1);
         l.close_the_loop(&test_gap()).await.unwrap();
         l.close_the_loop(&test_gap()).await.unwrap();

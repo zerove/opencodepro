@@ -25,7 +25,10 @@ fn host_https_with_path() {
 
 #[test]
 fn host_https_with_port() {
-    assert_eq!(extract_host("https://example.com:8080").unwrap(), "example.com");
+    assert_eq!(
+        extract_host("https://example.com:8080").unwrap(),
+        "example.com"
+    );
 }
 
 #[test]

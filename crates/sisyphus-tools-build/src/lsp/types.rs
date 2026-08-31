@@ -104,12 +104,8 @@ pub fn extract_hover_text(contents: &Value) -> String {
                 return val.to_string();
             }
             contents.to_string()
-        }
-        Value::Array(arr) => arr
-            .iter()
-            .map(extract_hover_text)
-            .collect::<Vec<_>>()
-            .join("\n"),
+        },
+        Value::Array(arr) => arr.iter().map(extract_hover_text).collect::<Vec<_>>().join("\n"),
         _ => contents.to_string(),
     }
 }

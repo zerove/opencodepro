@@ -106,7 +106,13 @@ fn fetch_result_clone() {
 
 #[test]
 fn fetch_result_common_content_types() {
-    let types = vec!["text/html", "text/plain", "application/json", "application/xml", "text/markdown"];
+    let types = vec![
+        "text/html",
+        "text/plain",
+        "application/json",
+        "application/xml",
+        "text/markdown",
+    ];
     for ct in types {
         let f = FetchResult {
             url: "u".into(),

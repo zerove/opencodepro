@@ -3,23 +3,20 @@ use std::process::{Command, Output};
 /// Helper: run the sisyphus-cli binary with args, returning stdout/stderr.
 fn run_cli(args: &[&str]) -> Output {
     let bin = assert_cmd::cargo::cargo_bin("sisyphus");
-    Command::new(bin)
-        .args(args)
-        .output()
-        .expect("failed to execute sisyphus-cli")
+    Command::new(bin).args(args).output().expect("failed to execute sisyphus-cli")
 }
 
 /// Helper used by future assertions; intentionally retained even when
-    /// the current test suite only calls `run_cli` directly.
-    #[allow(dead_code)]
+/// the current test suite only calls `run_cli` directly.
+#[allow(dead_code)]
 fn run_cli_stdout(args: &[&str]) -> String {
     let out = run_cli(args);
     String::from_utf8_lossy(&out.stdout).to_string()
 }
 
 /// Helper used by future assertions; intentionally retained even when
-    /// the current test suite only calls `run_cli` directly.
-    #[allow(dead_code)]
+/// the current test suite only calls `run_cli` directly.
+#[allow(dead_code)]
 fn run_cli_stderr(args: &[&str]) -> String {
     let out = run_cli(args);
     String::from_utf8_lossy(&out.stderr).to_string()

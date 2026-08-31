@@ -4,8 +4,8 @@ use super::types::{
     InitializeResult, JsonRpcNotification, JsonRpcRequest, JsonRpcResponse, McpTool,
     ResourcesCapability, ServerCapabilities, ServerInfo, ToolsCapability,
 };
-use sisyphus_tools_core::ToolResult;
 use metrics::counter;
+use sisyphus_tools_core::ToolResult;
 
 /// High-level MCP client.
 pub struct McpClient {
@@ -125,8 +125,7 @@ impl McpClient {
         self.server_capabilities = result.capabilities.clone();
 
         // Send initialized notification
-        self.send_notification("notifications/initialized", None)
-            .await?;
+        self.send_notification("notifications/initialized", None).await?;
 
         Ok(result)
     }
@@ -195,7 +194,8 @@ impl McpClient {
         counter!(
             "sisyphus_mcp_tool_calls_total",
             "tool" => name.to_string(),
-        ).increment(1);
+        )
+        .increment(1);
         Ok(result)
     }
 

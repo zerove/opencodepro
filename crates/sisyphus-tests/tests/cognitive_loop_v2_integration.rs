@@ -113,10 +113,7 @@ async fn test_anomaly_detector_detects_duration_spike() {
     let anomalies = detector.observe("node_b", 100, 300, true);
     assert!(!anomalies.is_empty(), "Duration spike should be detected");
 
-    let dur_anomalies: Vec<_> = anomalies
-        .iter()
-        .filter(|a| a.metric == "duration")
-        .collect();
+    let dur_anomalies: Vec<_> = anomalies.iter().filter(|a| a.metric == "duration").collect();
     assert!(
         !dur_anomalies.is_empty(),
         "At least one anomaly is about duration"
@@ -135,10 +132,7 @@ async fn test_anomaly_detector_detects_error_rate() {
 
     // The next observation should return an error_rate anomaly.
     let anomalies = detector.observe("node_c", 100, 50, false);
-    let err_anomalies: Vec<_> = anomalies
-        .iter()
-        .filter(|a| a.metric == "error_rate")
-        .collect();
+    let err_anomalies: Vec<_> = anomalies.iter().filter(|a| a.metric == "error_rate").collect();
     assert!(
         !err_anomalies.is_empty(),
         "High error rate should be detected on observe()"
@@ -152,11 +146,8 @@ async fn test_anomaly_detector_detects_error_rate() {
 
     // generate_report() should flag the global error rate and extra reflection.
     let report = detector.generate_report();
-    let global_err: Vec<_> = report
-        .anomalies
-        .iter()
-        .filter(|a| a.metric == "global_error_rate")
-        .collect();
+    let global_err: Vec<_> =
+        report.anomalies.iter().filter(|a| a.metric == "global_error_rate").collect();
     assert!(
         !global_err.is_empty(),
         "Report should contain global error rate anomaly"

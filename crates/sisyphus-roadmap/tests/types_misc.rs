@@ -3,11 +3,11 @@
 //! `MilestonePrediction`, `ProgressPrediction`, `RoadmapHealth`,
 //! `DelayAlert`, `CostProjection`, `Bottleneck`.
 
+use sisyphus_roadmap::types::ProblemSeverity;
 use sisyphus_roadmap::types::{
     AdjustmentSuggestion, Bottleneck, CostProjection, DelayAlert, MilestonePrediction,
     ProgressPrediction, RoadmapHealth, RoadmapProblem,
 };
-use sisyphus_roadmap::types::ProblemSeverity;
 
 // ---------------------------------------------------------------------------
 // RoadmapProblem

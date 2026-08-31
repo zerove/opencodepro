@@ -53,9 +53,7 @@ async fn main() {
     println!("  concurrency = {concurrency}");
 
     // 1) 启动本地 echo server
-    let listener = TcpListener::bind("127.0.0.1:0")
-        .await
-        .expect("bind local listener");
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind local listener");
     let addr = listener.local_addr().expect("local_addr");
     let server_url = format!("http://{addr}/echo");
 
@@ -76,7 +74,7 @@ async fn main() {
                             if sock.write_all(response).await.is_err() {
                                 return;
                             }
-                        }
+                        },
                         Err(_) => return,
                     }
                 }
@@ -125,8 +123,14 @@ async fn main() {
 
     println!();
     println!("── 结果 ──");
-    println!("  共享 client 总耗时:     {} ms ({} µs/req)", result.shared_total_ms, result.shared_per_req_avg_us);
-    println!("  每请求新建总耗时:       {} ms ({} µs/req)", result.per_request_new_total_ms, result.per_request_new_per_req_avg_us);
+    println!(
+        "  共享 client 总耗时:     {} ms ({} µs/req)",
+        result.shared_total_ms, result.shared_per_req_avg_us
+    );
+    println!(
+        "  每请求新建总耗时:       {} ms ({} µs/req)",
+        result.per_request_new_total_ms, result.per_request_new_per_req_avg_us
+    );
     println!("  加速比:                 {:.2}x", result.speedup_ratio);
     println!();
 
@@ -149,7 +153,10 @@ async fn main() {
     //    - 否则 → 0
     let mut exit_code = 0i32;
     if result.speedup_ratio < 1.5 {
-        println!("✗ FAIL: 共享模式加速比 {:.2}x < 1.5x 下限，连接复用可能失效", result.speedup_ratio);
+        println!(
+            "✗ FAIL: 共享模式加速比 {:.2}x < 1.5x 下限，连接复用可能失效",
+            result.speedup_ratio
+        );
         exit_code = 1;
     } else {
         println!("✓ 共享模式快 ≥1.5x，符合预期");
@@ -161,7 +168,10 @@ async fn main() {
         println!("  上次基线加速比:        {:.2}x", baseline);
         println!("  相对基线:              {:.2}× (1.00 = 不变)", ratio);
         if ratio < 0.8 {
-            println!("✗ FAIL: 性能回归 20%+，基线 {:.2}x → 当前 {:.2}x", baseline, result.speedup_ratio);
+            println!(
+                "✗ FAIL: 性能回归 20%+，基线 {:.2}x → 当前 {:.2}x",
+                baseline, result.speedup_ratio
+            );
             exit_code = 1;
         }
     } else {
@@ -186,9 +196,7 @@ fn read_last_baseline() -> Option<f64> {
         .ok()?
         .filter_map(|e| e.ok())
         .filter(|e| {
-            e.file_name()
-                .to_string_lossy()
-                .starts_with("http-client-bench-")
+            e.file_name().to_string_lossy().starts_with("http-client-bench-")
                 && e.file_name().to_string_lossy().ends_with(".jsonl")
         })
         .collect();
@@ -263,7 +271,11 @@ mod tests {
         std::env::set_current_dir(&original_cwd).unwrap();
         fs::remove_dir_all(&tmp).ok();
 
-        assert_eq!(baseline, Some(12.5), "应返回最新文件 (200) 的 speedup_ratio");
+        assert_eq!(
+            baseline,
+            Some(12.5),
+            "应返回最新文件 (200) 的 speedup_ratio"
+        );
     }
 
     /// 无历史目录时返回 None

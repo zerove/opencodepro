@@ -146,7 +146,11 @@ fn agent_message_serde() {
 #[test]
 fn circuit_state_variants_distinct() {
     let mut seen = std::collections::HashSet::new();
-    for s in [CircuitState::Closed, CircuitState::Open, CircuitState::HalfOpen] {
+    for s in [
+        CircuitState::Closed,
+        CircuitState::Open,
+        CircuitState::HalfOpen,
+    ] {
         let d = format!("{s:?}");
         assert!(seen.insert(d.clone()));
     }
@@ -154,7 +158,11 @@ fn circuit_state_variants_distinct() {
 
 #[test]
 fn circuit_state_serde() {
-    for s in [CircuitState::Closed, CircuitState::Open, CircuitState::HalfOpen] {
+    for s in [
+        CircuitState::Closed,
+        CircuitState::Open,
+        CircuitState::HalfOpen,
+    ] {
         let j = serde_json::to_string(&s).unwrap();
         let back: CircuitState = serde_json::from_str(&j).unwrap();
         assert_eq!(format!("{back:?}"), format!("{s:?}"));
@@ -575,7 +583,11 @@ fn trigger_def_with_unicode_tools() {
 #[test]
 fn circuit_state_serde_round_trip() {
     use sisyphus_types::CircuitState;
-    for v in [CircuitState::Closed, CircuitState::Open, CircuitState::HalfOpen] {
+    for v in [
+        CircuitState::Closed,
+        CircuitState::Open,
+        CircuitState::HalfOpen,
+    ] {
         let j = serde_json::to_string(&v).unwrap();
         let back: CircuitState = serde_json::from_str(&j).unwrap();
         assert_eq!(back, v);
@@ -585,7 +597,11 @@ fn circuit_state_serde_round_trip() {
 #[test]
 fn circuit_state_distinct_variants() {
     use sisyphus_types::CircuitState;
-    let variants = [CircuitState::Closed, CircuitState::Open, CircuitState::HalfOpen];
+    let variants = [
+        CircuitState::Closed,
+        CircuitState::Open,
+        CircuitState::HalfOpen,
+    ];
     for (i, a) in variants.iter().enumerate() {
         for (j, b) in variants.iter().enumerate() {
             if i == j {
@@ -656,7 +672,11 @@ fn circuit_state_default_is_closed() {
 #[test]
 fn circuit_state_serde_all_three() {
     use sisyphus_types::CircuitState;
-    for state in [CircuitState::Closed, CircuitState::Open, CircuitState::HalfOpen] {
+    for state in [
+        CircuitState::Closed,
+        CircuitState::Open,
+        CircuitState::HalfOpen,
+    ] {
         let j = serde_json::to_string(&state).unwrap();
         let back: CircuitState = serde_json::from_str(&j).unwrap();
         assert_eq!(back, state);
@@ -1111,7 +1131,10 @@ fn plugin_descriptor_with_special_chars_in_path() {
     };
     let j = serde_json::to_string(&pd).unwrap();
     let back: PluginDescriptor = serde_json::from_str(&j).unwrap();
-    assert_eq!(back.wasm_path.to_str().unwrap(), "/path/with spaces and-dashes/file.wasm");
+    assert_eq!(
+        back.wasm_path.to_str().unwrap(),
+        "/path/with spaces and-dashes/file.wasm"
+    );
 }
 
 #[test]
@@ -1416,10 +1439,7 @@ fn vector_record_with_unicode_metadata_complex_2() {
     };
     let j = serde_json::to_string(&v).unwrap();
     let back: VectorRecord = serde_json::from_str(&j).unwrap();
-    assert_eq!(
-        back.metadata["nested"]["deep"]["value"],
-        "中文-α🔍"
-    );
+    assert_eq!(back.metadata["nested"]["deep"]["value"], "中文-α🔍");
 }
 
 #[test]
@@ -1796,10 +1816,9 @@ fn benchmark_run_with_unicode_metrics_complex() {
 #[test]
 fn trigger_def_with_unicode_3_fields_only() {
     use sisyphus_types::TriggerDef;
-    let t: TriggerDef = serde_json::from_str(
-        r#"{"pattern":"p-α","tools":["t-β","t-γ"],"description":"d-δ"}"#,
-    )
-    .unwrap();
+    let t: TriggerDef =
+        serde_json::from_str(r#"{"pattern":"p-α","tools":["t-β","t-γ"],"description":"d-δ"}"#)
+            .unwrap();
     assert_eq!(t.pattern.as_deref(), Some("p-α"));
     assert_eq!(t.tools[0], "t-β");
     assert_eq!(t.tools[1], "t-γ");
@@ -1957,9 +1976,7 @@ fn feedback_with_unicode_5_tags() {
         original_output: "o".into(),
         corrected_output: "c".into(),
         timestamp: 0,
-        tags: (0..5)
-            .map(|i| format!("标签-α-{}", i))
-            .collect(),
+        tags: (0..5).map(|i| format!("标签-α-{}", i)).collect(),
     };
     assert_eq!(f.tags.len(), 5);
     let j = serde_json::to_string(&f).unwrap();
@@ -2125,7 +2142,10 @@ fn vector_record_with_unicode_metadata_object_2() {
     };
     let j = serde_json::to_string(&v).unwrap();
     let back: VectorRecord = serde_json::from_str(&j).unwrap();
-    assert_eq!(back.metadata["config-α"]["tags-δ"].as_array().unwrap().len(), 3);
+    assert_eq!(
+        back.metadata["config-α"]["tags-δ"].as_array().unwrap().len(),
+        3
+    );
     assert_eq!(back.metadata["config-α"]["tags-δ"][1], "η-2");
 }
 
@@ -2164,7 +2184,10 @@ fn agent_message_with_unicode_payload_complex() {
     };
     let j = serde_json::to_string(&m).unwrap();
     let back: AgentMessage = serde_json::from_str(&j).unwrap();
-    assert_eq!(back.payload["中文-α"]["items-β"].as_array().unwrap().len(), 3);
+    assert_eq!(
+        back.payload["中文-α"]["items-β"].as_array().unwrap().len(),
+        3
+    );
     assert_eq!(back.payload["中文-α"]["active-ε"], true);
 }
 
@@ -2308,7 +2331,10 @@ fn agent_message_with_unicode_payload_max_depth() {
     };
     let j = serde_json::to_string(&m).unwrap();
     let back: AgentMessage = serde_json::from_str(&j).unwrap();
-    assert_eq!(back.payload["l1-α"]["l2-β"]["l3-γ"]["l4-δ"]["l5-ε"], "very deep");
+    assert_eq!(
+        back.payload["l1-α"]["l2-β"]["l3-γ"]["l4-δ"]["l5-ε"],
+        "very deep"
+    );
 }
 
 #[test]
@@ -2840,7 +2866,11 @@ fn benchmark_run_with_unicode_metrics_array_complex() {
 #[test]
 fn trigger_def_with_unicode_3_tools_array() {
     use sisyphus_types::TriggerDef;
-    let tools = vec!["t-1-α".to_string(), "t-2-β".to_string(), "t-3-γ".to_string()];
+    let tools = vec![
+        "t-1-α".to_string(),
+        "t-2-β".to_string(),
+        "t-3-γ".to_string(),
+    ];
     let t = TriggerDef {
         pattern: Some("p".into()),
         tools: tools.clone(),
@@ -3205,8 +3235,7 @@ fn benchmark_run_with_unicode_metrics_3_keys() {
 #[test]
 fn trigger_def_with_unicode_4_segment_pattern() {
     use sisyphus_types::TriggerDef;
-    let t: TriggerDef =
-        serde_json::from_str(r#"{"pattern":"a-α-b-β-c-γ-d-δ"}"#).unwrap();
+    let t: TriggerDef = serde_json::from_str(r#"{"pattern":"a-α-b-β-c-γ-d-δ"}"#).unwrap();
     assert_eq!(t.pattern.as_deref(), Some("a-α-b-β-c-γ-d-δ"));
 }
 
@@ -3436,8 +3465,6 @@ fn benchmark_run_with_unicode_metrics_2_keys_2() {
     assert_eq!(back.metrics["α"], "v-α");
     assert_eq!(back.metrics["β"], "v-β");
 }
-
-
 
 #[test]
 fn feedback_with_unicode_only_corrected_3() {
@@ -3675,10 +3702,7 @@ fn benchmark_run_with_unicode_metrics_3_keys_3() {
 
 #[test]
 fn trigger_def_with_unicode_5_segment_pattern_2() {
-    let t: TriggerDef = serde_json::from_str(
-        r#"{"pattern":"a-α-b-β-c-γ"}"#,
-    )
-    .unwrap();
+    let t: TriggerDef = serde_json::from_str(r#"{"pattern":"a-α-b-β-c-γ"}"#).unwrap();
     assert_eq!(t.pattern.as_deref(), Some("a-α-b-β-c-γ"));
 }
 

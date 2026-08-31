@@ -104,9 +104,7 @@ impl WorkspaceManager {
         let id_json = serde_json::to_string(id).map_err(|e| {
             TypesError::InternalError(format!("Failed to serialize workspace ID: {e}"))
         })?;
-        self.store
-            .set("sys", "sys.current_workspace", id_json.as_bytes())
-            .await?;
+        self.store.set("sys", "sys.current_workspace", id_json.as_bytes()).await?;
 
         Ok(())
     }
@@ -142,9 +140,7 @@ impl WorkspaceManager {
             let mut current = self.current_workspace.write().await;
             if current.as_deref() == Some(id) {
                 *current = None;
-                self.store
-                    .set("sys", "sys.current_workspace", b"\"\"")
-                    .await?;
+                self.store.set("sys", "sys.current_workspace", b"\"\"").await?;
             }
         }
 

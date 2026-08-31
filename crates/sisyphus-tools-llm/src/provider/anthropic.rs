@@ -89,7 +89,7 @@ impl LlmProvider for AnthropicProvider {
                 return Err(ProviderError::Transient(format!(
                     "HTTP request failed: {e}"
                 )));
-            }
+            },
         };
 
         let status = res.status();
@@ -100,13 +100,11 @@ impl LlmProvider for AnthropicProvider {
                 return Err(ProviderError::Transient(format!(
                     "Failed to parse response: {e}"
                 )));
-            }
+            },
         };
 
         if !status.is_success() {
-            let error_msg = response_json["error"]["message"]
-                .as_str()
-                .unwrap_or("unknown error");
+            let error_msg = response_json["error"]["message"].as_str().unwrap_or("unknown error");
             let code = status.as_u16();
             if code == 429 {
                 _req_guard.mark_errored();
@@ -131,17 +129,12 @@ impl LlmProvider for AnthropicProvider {
         let content = response_json["content"]
             .as_array()
             .and_then(|arr| {
-                arr.iter()
-                    .find(|c| c["type"] == "text")
-                    .and_then(|c| c["text"].as_str())
+                arr.iter().find(|c| c["type"] == "text").and_then(|c| c["text"].as_str())
             })
             .map(std::string::ToString::to_string)
             .ok_or_else(|| ProviderError::Permanent("Response missing text content".to_string()))?;
 
-        let model = response_json["model"]
-            .as_str()
-            .unwrap_or(&self.config.model)
-            .to_string();
+        let model = response_json["model"].as_str().unwrap_or(&self.config.model).to_string();
 
         let input_tokens = response_json["usage"]["input_tokens"].as_u64();
         let output_tokens = response_json["usage"]["output_tokens"].as_u64();

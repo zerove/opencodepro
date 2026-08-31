@@ -18,7 +18,7 @@ fn from_text_fuel_increase_english() {
     match k {
         ImprovementKind::FuelIncrease { factor } => {
             assert!((factor - 1.5).abs() < 1e-9);
-        }
+        },
         _ => panic!("expected FuelIncrease, got {k:?}"),
     }
 }
@@ -57,7 +57,7 @@ fn from_text_add_retry_phrase() {
     match k {
         ImprovementKind::Retry { max_retries } => {
             assert_eq!(max_retries, 3);
-        }
+        },
         _ => panic!("expected Retry, got {k:?}"),
     }
 }
@@ -596,10 +596,8 @@ fn improvement_kind_serialize_to_distinct_strings() {
         ImprovementKind::FuelIncrease { factor: 1.0 },
         ImprovementKind::Unclassified { note: "x".into() },
     ];
-    let serialized: Vec<String> = variants
-        .iter()
-        .map(|v| serde_json::to_string(v).unwrap())
-        .collect();
+    let serialized: Vec<String> =
+        variants.iter().map(|v| serde_json::to_string(v).unwrap()).collect();
     let unique: std::collections::HashSet<_> = serialized.iter().collect();
     assert_eq!(unique.len(), 5);
 }

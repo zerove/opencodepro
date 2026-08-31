@@ -112,13 +112,11 @@ impl WasmToolExecutor {
 
     async fn load_wasm_bytes(&self, tool_id: &str) -> Result<Vec<u8>, SandboxError> {
         let wasm_path = self.tools_path.join(format!("{}.wasm", tool_id));
-        tokio::fs::read(&wasm_path)
-            .await
-            .map_err(|e| SandboxError::IoError {
-                tool_id: tool_id.to_string(),
-                path: wasm_path,
-                source: e,
-            })
+        tokio::fs::read(&wasm_path).await.map_err(|e| SandboxError::IoError {
+            tool_id: tool_id.to_string(),
+            path: wasm_path,
+            source: e,
+        })
     }
 
     async fn get_or_compile_module(&self, tool_id: &str) -> Result<Module, SandboxError> {
@@ -151,8 +149,7 @@ impl WasmToolExecutor {
         let compile_duration = compile_start.elapsed();
         tracing::info!(tool_id = %tool_id, duration_ms = compile_duration.as_millis(), "WASM module compiled");
 
-        self.module_cache
-            .insert(tool_id.to_string(), module.clone());
+        self.module_cache.insert(tool_id.to_string(), module.clone());
         tracing::debug!("Module cached");
 
         Ok(module)
@@ -182,16 +179,14 @@ impl WasmToolExecutor {
 
         let linker = Linker::new(&self.engine);
         let mut store = Store::new(&self.engine, ());
-        store
-            .set_fuel(fuel_limit)
-            .map_err(|e| TypesError::ToolExecutionError {
+        store.set_fuel(fuel_limit).map_err(|e| TypesError::ToolExecutionError {
+            tool_id: tool_id.to_string(),
+            details: SandboxError::FuelError {
                 tool_id: tool_id.to_string(),
-                details: SandboxError::FuelError {
-                    tool_id: tool_id.to_string(),
-                    source: e,
-                }
-                .to_string(),
-            })?;
+                source: e,
+            }
+            .to_string(),
+        })?;
 
         let instance = linker.instantiate(&mut store, &module).map_err(|e| {
             TypesError::ToolExecutionError {
@@ -221,16 +216,14 @@ impl WasmToolExecutor {
 
         let mut results = vec![Val::I32(0)];
         let call_start = Instant::now();
-        let call_result = execute_func
-            .call(&mut store, &params, &mut results)
-            .map_err(|e| {
-                // Translate traps (fuel exhaustion, stack overflow, memory violation)
-                // into the ResourceExhausted format the tests expect.
-                TypesError::ToolExecutionError {
-                    tool_id: tool_id.to_string(),
-                    details: SandboxError::ExecutionError(e.to_string()).to_string(),
-                }
-            });
+        let call_result = execute_func.call(&mut store, &params, &mut results).map_err(|e| {
+            // Translate traps (fuel exhaustion, stack overflow, memory violation)
+            // into the ResourceExhausted format the tests expect.
+            TypesError::ToolExecutionError {
+                tool_id: tool_id.to_string(),
+                details: SandboxError::ExecutionError(e.to_string()).to_string(),
+            }
+        });
         let call_duration = call_start.elapsed();
 
         // Check fuel consumption
@@ -266,11 +259,11 @@ impl WasmToolExecutor {
                 } else {
                     vec![]
                 }
-            }
+            },
             Err(e) => {
                 tracing::warn!(error = %e, fuel_consumed, "WASM execution failed");
                 return Err(e);
-            }
+            },
         };
 
         let exec_duration = exec_start.elapsed();
@@ -309,10 +302,8 @@ impl ToolExecutor for WasmToolExecutor {
     {
         use sisyphus_types::TypesError;
         let exec_start = Instant::now();
-        let (data, fuel_consumed) = self
-            .execute_internal(tool_id, fuel_limit)
-            .await
-            .map_err(|e: TypesError| e)?;
+        let (data, fuel_consumed) =
+            self.execute_internal(tool_id, fuel_limit).await.map_err(|e: TypesError| e)?;
         Ok((
             data,
             Some(sisyphus_types::ExecutionMeasurement {
@@ -334,12 +325,7 @@ mod tests {
     fn test_executor() -> WasmToolExecutor {
         let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         // CARGO_MANIFEST_DIR = crates/sisyphus-sandbox, tools is at workspace root
-        let tools_path = manifest_dir
-            .parent()
-            .unwrap()
-            .parent()
-            .unwrap()
-            .join("tools");
+        let tools_path = manifest_dir.parent().unwrap().parent().unwrap().join("tools");
         WasmToolExecutor::with_config(Some(tools_path), None).unwrap()
     }
 
@@ -354,10 +340,7 @@ mod tests {
         let executor = test_executor();
         let result = executor.load_wasm_bytes("nonexistent_tool_xyz").await;
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("Failed to read WASM binary"));
+        assert!(result.unwrap_err().to_string().contains("Failed to read WASM binary"));
     }
 
     #[tokio::test]
@@ -365,10 +348,7 @@ mod tests {
         let executor = test_executor();
         let result = executor.get_or_compile_module("nonexistent_tool_xyz").await;
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("Failed to read WASM binary"));
+        assert!(result.unwrap_err().to_string().contains("Failed to read WASM binary"));
     }
 
     #[tokio::test]

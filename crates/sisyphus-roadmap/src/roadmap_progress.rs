@@ -25,11 +25,8 @@ impl RoadmapManager {
 
             for ph in &ms.phases {
                 let ph_goals = ph.goals.len();
-                let ph_done = ph
-                    .goals
-                    .iter()
-                    .filter(|g| g.status == MilestoneStatus::Completed)
-                    .count();
+                let ph_done =
+                    ph.goals.iter().filter(|g| g.status == MilestoneStatus::Completed).count();
                 ms_goals += ph_goals;
                 ms_done += ph_done;
 
@@ -159,16 +156,11 @@ impl RoadmapManager {
         goal_id: &str,
         status: MilestoneStatus,
     ) -> Result<(), RoadmapError> {
-        self.update_goal_status(project_id, milestone_id, phase_id, goal_id, status)
-            .await?;
+        self.update_goal_status(project_id, milestone_id, phase_id, goal_id, status).await?;
 
         let project = self.get_project_or_err(project_id).await?;
-        let milestone = project
-            .roadmap
-            .milestones
-            .iter()
-            .find(|m| m.id == milestone_id)
-            .ok_or_else(|| {
+        let milestone =
+            project.roadmap.milestones.iter().find(|m| m.id == milestone_id).ok_or_else(|| {
                 RoadmapError::MilestoneNotFound(milestone_id.to_string(), project_id.to_string())
             })?;
 
@@ -176,27 +168,17 @@ impl RoadmapManager {
 
         let new_status = if all_goals.is_empty() {
             MilestoneStatus::Pending
-        } else if all_goals
-            .iter()
-            .all(|g| g.status == MilestoneStatus::Completed)
-        {
+        } else if all_goals.iter().all(|g| g.status == MilestoneStatus::Completed) {
             MilestoneStatus::Completed
-        } else if all_goals
-            .iter()
-            .any(|g| g.status == MilestoneStatus::Blocked)
-        {
+        } else if all_goals.iter().any(|g| g.status == MilestoneStatus::Blocked) {
             MilestoneStatus::Blocked
-        } else if all_goals
-            .iter()
-            .any(|g| g.status == MilestoneStatus::InProgress)
-        {
+        } else if all_goals.iter().any(|g| g.status == MilestoneStatus::InProgress) {
             MilestoneStatus::InProgress
         } else {
             MilestoneStatus::Pending
         };
 
-        self.update_milestone_status(project_id, milestone_id, new_status)
-            .await
+        self.update_milestone_status(project_id, milestone_id, new_status).await
     }
 
     /// 自动传播：根据目标完成情况更新所有里程碑状态。
@@ -208,27 +190,17 @@ impl RoadmapManager {
 
             let new_status = if all_goals.is_empty() {
                 MilestoneStatus::Pending
-            } else if all_goals
-                .iter()
-                .all(|g| g.status == MilestoneStatus::Completed)
-            {
+            } else if all_goals.iter().all(|g| g.status == MilestoneStatus::Completed) {
                 MilestoneStatus::Completed
-            } else if all_goals
-                .iter()
-                .any(|g| g.status == MilestoneStatus::Blocked)
-            {
+            } else if all_goals.iter().any(|g| g.status == MilestoneStatus::Blocked) {
                 MilestoneStatus::Blocked
-            } else if all_goals
-                .iter()
-                .any(|g| g.status == MilestoneStatus::InProgress)
-            {
+            } else if all_goals.iter().any(|g| g.status == MilestoneStatus::InProgress) {
                 MilestoneStatus::InProgress
             } else {
                 MilestoneStatus::Pending
             };
 
-            self.update_milestone_status(project_id, &ms.id, new_status)
-                .await?;
+            self.update_milestone_status(project_id, &ms.id, new_status).await?;
         }
 
         Ok(())

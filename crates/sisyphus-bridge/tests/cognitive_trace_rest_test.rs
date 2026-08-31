@@ -36,18 +36,12 @@ async fn setup() -> (Router, Arc<MySisyphusBridge>) {
 async fn get(app: &Router, uri: &str) -> (StatusCode, serde_json::Value) {
     let response = app
         .clone()
-        .oneshot(
-            Request::builder()
-                .uri(uri)
-                .body(Body::empty())
-                .expect("request build failed"),
-        )
+        .oneshot(Request::builder().uri(uri).body(Body::empty()).expect("request build failed"))
         .await
         .expect("request failed");
     let status = response.status();
-    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
-        .await
-        .expect("body read failed");
+    let bytes =
+        axum::body::to_bytes(response.into_body(), usize::MAX).await.expect("body read failed");
     let json = serde_json::from_slice(&bytes).unwrap_or(serde_json::Value::Null);
     (status, json)
 }
@@ -156,12 +150,7 @@ async fn test_cognitive_trace_limit_and_order() {
     // Newest first and limit honoured.
     let steps: Vec<String> = entries
         .iter()
-        .map(|e| {
-            e["event"]["CognitiveStep"]["step"]
-                .as_str()
-                .unwrap()
-                .to_string()
-        })
+        .map(|e| e["event"]["CognitiveStep"]["step"].as_str().unwrap().to_string())
         .collect();
     assert_eq!(steps, vec!["Step4".to_string(), "Step3".to_string()]);
 }
@@ -224,10 +213,7 @@ async fn test_cognitive_trace_history_returns_persisted() {
             if let Some(s) = e["event"]["CognitiveStep"]["step"].as_str() {
                 s.to_string()
             } else {
-                e["event"]["MicroReflection"]["node_name"]
-                    .as_str()
-                    .unwrap()
-                    .to_string()
+                e["event"]["MicroReflection"]["node_name"].as_str().unwrap().to_string()
             }
         })
         .collect();
@@ -265,9 +251,7 @@ async fn test_cognitive_trace_history_sop_filter_and_limit() {
     assert_eq!(entries.len(), 2);
     assert!(entries.iter().all(|e| e["sop_id"] == "sop-a"));
     // Newest first.
-    let step = entries[0]["event"]["CognitiveStep"]["step"]
-        .as_str()
-        .unwrap();
+    let step = entries[0]["event"]["CognitiveStep"]["step"].as_str().unwrap();
     assert_eq!(step, "A3");
 }
 

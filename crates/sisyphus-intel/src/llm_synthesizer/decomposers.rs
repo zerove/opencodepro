@@ -58,7 +58,7 @@ impl GoalDecomposer for FallbackGoalDecomposer {
             Err(e) => {
                 tracing::warn!(error = %e, "LLM decomposition failed, falling back to keyword matching");
                 Ok(classify_goal(goal))
-            }
+            },
         }
     }
 }

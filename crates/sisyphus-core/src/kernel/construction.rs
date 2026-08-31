@@ -181,9 +181,7 @@ impl SisyphusKernel {
 
         executor: Arc<dyn ToolExecutor>,
     ) -> Result<(), CoreError> {
-        self.execution_manager
-            .tool_router
-            .register(prefix, executor);
+        self.execution_manager.tool_router.register(prefix, executor);
 
         Ok(())
     }
@@ -213,11 +211,11 @@ impl SisyphusKernel {
                     self.register_tool_executor(prefix, Arc::new(executor))?;
 
                     tracing::info!(prefix = %prefix, "Registered MCP stdio executor");
-                }
+                },
 
                 Err(e) => {
                     tracing::error!(prefix = %prefix, error = %e, "Failed to initialize MCP stdio executor");
-                }
+                },
             }
         }
 
@@ -227,11 +225,11 @@ impl SisyphusKernel {
                     self.register_tool_executor(prefix, Arc::new(executor))?;
 
                     tracing::info!(prefix = %prefix, "Registered MCP HTTP executor");
-                }
+                },
 
                 Err(e) => {
                     tracing::error!(prefix = %prefix, error = %e, "Failed to initialize MCP HTTP executor");
-                }
+                },
             }
         }
 

@@ -64,7 +64,7 @@ impl MySisyphusBridge {
                     error: String::new(),
                     evolution_json,
                 }))
-            }
+            },
             Err(e) => Ok(Response::new(SubmitFeedbackResponse {
                 success: false,
                 error: e.to_string(),
@@ -87,11 +87,7 @@ impl MySisyphusBridge {
         let plan: sisyphus_types::CognitivePlan = serde_json::from_str(&req.plan_json)
             .map_err(|e| Status::invalid_argument(format!("Invalid plan JSON: {e}")))?;
 
-        match self
-            .kernel
-            .capture_success(&req.plan_id, &project_id, plan)
-            .await
-        {
+        match self.kernel.capture_success(&req.plan_id, &project_id, plan).await {
             Ok(_) => Ok(Response::new(CaptureExperienceResponse {
                 success: true,
                 error: String::new(),
@@ -256,14 +252,8 @@ impl MySisyphusBridge {
         });
 
         tracing::info!(
-            attempted = proto_result
-                .as_ref()
-                .map(|r| r.operations_attempted)
-                .unwrap_or(0),
-            faults = proto_result
-                .as_ref()
-                .map(|r| r.faults_injected)
-                .unwrap_or(0),
+            attempted = proto_result.as_ref().map(|r| r.operations_attempted).unwrap_or(0),
+            faults = proto_result.as_ref().map(|r| r.faults_injected).unwrap_or(0),
             "Chaos experiment stopped"
         );
 

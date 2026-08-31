@@ -31,27 +31,66 @@ fn notepad_category_label_all_variants() {
 
 #[test]
 fn notepad_category_parse_long_names() {
-    assert_eq!(NotepadCategory::parse("conventions"), Some(NotepadCategory::Conventions));
-    assert_eq!(NotepadCategory::parse("successes"), Some(NotepadCategory::Successes));
-    assert_eq!(NotepadCategory::parse("failures"), Some(NotepadCategory::Failures));
-    assert_eq!(NotepadCategory::parse("patterns"), Some(NotepadCategory::Patterns));
-    assert_eq!(NotepadCategory::parse("experience"), Some(NotepadCategory::Experience));
+    assert_eq!(
+        NotepadCategory::parse("conventions"),
+        Some(NotepadCategory::Conventions)
+    );
+    assert_eq!(
+        NotepadCategory::parse("successes"),
+        Some(NotepadCategory::Successes)
+    );
+    assert_eq!(
+        NotepadCategory::parse("failures"),
+        Some(NotepadCategory::Failures)
+    );
+    assert_eq!(
+        NotepadCategory::parse("patterns"),
+        Some(NotepadCategory::Patterns)
+    );
+    assert_eq!(
+        NotepadCategory::parse("experience"),
+        Some(NotepadCategory::Experience)
+    );
 }
 
 #[test]
 fn notepad_category_parse_short_aliases() {
-    assert_eq!(NotepadCategory::parse("conv"), Some(NotepadCategory::Conventions));
-    assert_eq!(NotepadCategory::parse("win"), Some(NotepadCategory::Successes));
-    assert_eq!(NotepadCategory::parse("fail"), Some(NotepadCategory::Failures));
-    assert_eq!(NotepadCategory::parse("pat"), Some(NotepadCategory::Patterns));
-    assert_eq!(NotepadCategory::parse("exp"), Some(NotepadCategory::Experience));
+    assert_eq!(
+        NotepadCategory::parse("conv"),
+        Some(NotepadCategory::Conventions)
+    );
+    assert_eq!(
+        NotepadCategory::parse("win"),
+        Some(NotepadCategory::Successes)
+    );
+    assert_eq!(
+        NotepadCategory::parse("fail"),
+        Some(NotepadCategory::Failures)
+    );
+    assert_eq!(
+        NotepadCategory::parse("pat"),
+        Some(NotepadCategory::Patterns)
+    );
+    assert_eq!(
+        NotepadCategory::parse("exp"),
+        Some(NotepadCategory::Experience)
+    );
 }
 
 #[test]
 fn notepad_category_parse_case_insensitive() {
-    assert_eq!(NotepadCategory::parse("CONVENTIONS"), Some(NotepadCategory::Conventions));
-    assert_eq!(NotepadCategory::parse("Successes"), Some(NotepadCategory::Successes));
-    assert_eq!(NotepadCategory::parse("PaTtErNs"), Some(NotepadCategory::Patterns));
+    assert_eq!(
+        NotepadCategory::parse("CONVENTIONS"),
+        Some(NotepadCategory::Conventions)
+    );
+    assert_eq!(
+        NotepadCategory::parse("Successes"),
+        Some(NotepadCategory::Successes)
+    );
+    assert_eq!(
+        NotepadCategory::parse("PaTtErNs"),
+        Some(NotepadCategory::Patterns)
+    );
 }
 
 #[test]
@@ -95,17 +134,15 @@ fn notepad_entry_new_basic_fields() {
     assert_eq!(e.category, NotepadCategory::Conventions);
     assert_eq!(e.content, "Use snake_case");
     assert_eq!(e.tags, vec!["style"]);
-    assert!(e.timestamp > 0, "timestamp should be populated by SystemTime");
+    assert!(
+        e.timestamp > 0,
+        "timestamp should be populated by SystemTime"
+    );
 }
 
 #[test]
 fn notepad_entry_new_empty_tags() {
-    let e = NotepadEntry::new(
-        NotepadCategory::Successes,
-        "first_test",
-        "passed",
-        vec![],
-    );
+    let e = NotepadEntry::new(NotepadCategory::Successes, "first_test", "passed", vec![]);
     assert!(e.tags.is_empty());
     assert_eq!(e.content, "passed");
 }
@@ -179,11 +216,7 @@ fn notepad_entry_to_markdown_trims_trailing_whitespace() {
 #[test]
 fn notepad_entry_from_markdown_full_front_matter() {
     let raw = "---\nname: rule\ncategory: conventions\ntimestamp: 9999\ntags: a, b, c\n---\n\nbody text\n";
-    let e = NotepadEntry::from_markdown(
-        "rule".into(),
-        NotepadCategory::Conventions,
-        raw,
-    );
+    let e = NotepadEntry::from_markdown("rule".into(), NotepadCategory::Conventions, raw);
     assert_eq!(e.timestamp, 9999);
     assert_eq!(e.tags, vec!["a", "b", "c"]);
     assert!(e.content.contains("body text"));
@@ -192,11 +225,7 @@ fn notepad_entry_from_markdown_full_front_matter() {
 #[test]
 fn notepad_entry_from_markdown_no_front_matter() {
     let raw = "just content";
-    let e = NotepadEntry::from_markdown(
-        "n".into(),
-        NotepadCategory::Successes,
-        raw,
-    );
+    let e = NotepadEntry::from_markdown("n".into(), NotepadCategory::Successes, raw);
     assert_eq!(e.timestamp, 0);
     assert!(e.tags.is_empty());
     assert_eq!(e.content, "just content");
@@ -205,11 +234,7 @@ fn notepad_entry_from_markdown_no_front_matter() {
 #[test]
 fn notepad_entry_from_markdown_partial_front_matter() {
     let raw = "---\ntimestamp: 42\n---\nbody";
-    let e = NotepadEntry::from_markdown(
-        "x".into(),
-        NotepadCategory::Failures,
-        raw,
-    );
+    let e = NotepadEntry::from_markdown("x".into(), NotepadCategory::Failures, raw);
     assert_eq!(e.timestamp, 42);
     assert!(e.tags.is_empty());
     assert!(e.content.contains("body"));

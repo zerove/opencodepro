@@ -15,10 +15,7 @@ async fn setup_manager() -> (RoadmapManager, Arc<MfsStore>) {
             .await
             .expect("Failed to create sql store"),
     );
-    sql_store
-        .init_schema()
-        .await
-        .expect("Failed to init schema");
+    sql_store.init_schema().await.expect("Failed to init schema");
     let proposal_manager = Arc::new(crate::proposal_manager::ProposalManager::new(store.clone()));
     (
         RoadmapManager::new(store.clone(), sql_store, proposal_manager),
@@ -29,9 +26,7 @@ async fn setup_manager() -> (RoadmapManager, Arc<MfsStore>) {
 #[tokio::test]
 async fn test_generate_milestones_parses_llm_response() {
     let (mgr, _store) = setup_manager().await;
-    mgr.create_project("p1", "Test Project", "A test")
-        .await
-        .unwrap();
+    mgr.create_project("p1", "Test Project", "A test").await.unwrap();
 
     let llm = Arc::new(FixedResponseClient(
         r#"{
@@ -70,10 +65,8 @@ async fn test_generate_milestones_parses_llm_response() {
     ));
 
     let r#gen = MilestoneGenerator::new(llm);
-    let milestones = r#gen
-        .generate_milestones(&mgr, "p1", "Build a web application")
-        .await
-        .unwrap();
+    let milestones =
+        r#gen.generate_milestones(&mgr, "p1", "Build a web application").await.unwrap();
 
     assert_eq!(milestones.len(), 2);
     assert_eq!(milestones[0].name, "Foundation");
@@ -92,13 +85,8 @@ async fn test_generate_milestones_invalid_json() {
 
     let llm = Arc::new(FixedResponseClient("not valid json".to_string()));
     let r#gen = MilestoneGenerator::new(llm);
-    let err = r#gen
-        .generate_milestones(&mgr, "p2", "test")
-        .await
-        .unwrap_err();
-    assert!(err
-        .to_string()
-        .contains("Failed to parse milestone proposal"));
+    let err = r#gen.generate_milestones(&mgr, "p2", "test").await.unwrap_err();
+    assert!(err.to_string().contains("Failed to parse milestone proposal"));
 }
 
 #[tokio::test]
@@ -140,10 +128,8 @@ async fn test_propose_refinements_returns_suggestions() {
     ));
 
     let r#gen = MilestoneGenerator::new(llm);
-    let suggestions = r#gen
-        .propose_refinements(&mgr, "p3", "ms1", "Goal is blocked")
-        .await
-        .unwrap();
+    let suggestions =
+        r#gen.propose_refinements(&mgr, "p3", "ms1", "Goal is blocked").await.unwrap();
 
     assert_eq!(suggestions.len(), 1);
     assert_eq!(suggestions[0].milestone_id.as_deref(), Some("ms1"));
@@ -187,10 +173,7 @@ async fn test_fill_roadmap_gaps() {
     ));
 
     let r#gen = MilestoneGenerator::new(llm);
-    let new_ms = r#gen
-        .fill_roadmap_gaps(&mgr, "p4", "Build a web app")
-        .await
-        .unwrap();
+    let new_ms = r#gen.fill_roadmap_gaps(&mgr, "p4", "Build a web app").await.unwrap();
 
     assert_eq!(new_ms.len(), 1);
     assert_eq!(new_ms[0].name, "Testing & QA");

@@ -10,13 +10,13 @@ pub async fn handle_delegate(sub: &DelegateCommands) -> Result<()> {
             max_concurrent,
         } => {
             sisyphus_cli::delegate::run_tasks(file.clone(), *max_concurrent).await?;
-        }
+        },
         DelegateCommands::Inline {
             commands,
             max_concurrent,
         } => {
             sisyphus_cli::delegate::run_inline(commands, *max_concurrent).await?;
-        }
+        },
         DelegateCommands::Team {
             goal,
             context,
@@ -30,7 +30,7 @@ pub async fn handle_delegate(sub: &DelegateCommands) -> Result<()> {
                 *max_concurrent,
             )
             .await?;
-        }
+        },
     }
     Ok(())
 }
@@ -46,7 +46,7 @@ mod tests {
         match cmd {
             Commands::Delegate(DelegateCommands::Run { max_concurrent, .. }) => {
                 assert_eq!(max_concurrent, 3);
-            }
+            },
             _ => panic!("Expected Delegate/Run variant"),
         }
     }
@@ -57,7 +57,7 @@ mod tests {
         match cmd {
             Commands::Delegate(DelegateCommands::Inline { commands, .. }) => {
                 assert_eq!(commands, &["echo hello"]);
-            }
+            },
             _ => panic!("Expected Delegate/Inline variant"),
         }
     }
@@ -85,7 +85,7 @@ mod tests {
                 assert_eq!(agents, Some("3".to_string()));
                 // 未指定时 --concurrent 默认为 4
                 assert_eq!(max_concurrent, 4);
-            }
+            },
             _ => panic!("Expected Delegate/Team variant"),
         }
     }

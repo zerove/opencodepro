@@ -3,9 +3,7 @@
 //! Exercises the public data types and the [`Milestone::calculate_progress`]
 //! pure function.
 
-use sisyphus_types::roadmap::{
-    GoalRef, Milestone, MilestoneStatus, Phase, Project, Roadmap,
-};
+use sisyphus_types::roadmap::{GoalRef, Milestone, MilestoneStatus, Phase, Project, Roadmap};
 
 // ---------------------------------------------------------------------------
 // MilestoneStatus
@@ -410,10 +408,8 @@ fn milestone_status_distinct_via_serde() {
         MilestoneStatus::Completed,
         MilestoneStatus::Blocked,
     ];
-    let serialized: Vec<String> = variants
-        .iter()
-        .map(|s| serde_json::to_string(s).unwrap())
-        .collect();
+    let serialized: Vec<String> =
+        variants.iter().map(|s| serde_json::to_string(s).unwrap()).collect();
     let unique: std::collections::HashSet<_> = serialized.iter().collect();
     assert_eq!(unique.len(), 4);
 }

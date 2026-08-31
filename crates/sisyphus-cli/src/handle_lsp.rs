@@ -14,7 +14,7 @@ pub async fn handle_lsp(sub: &LspCommands) -> Result<()> {
         } => {
             sisyphus_cli::lsp::run_diagnostics(file, language_id, server, server_args, root_uri)
                 .await?;
-        }
+        },
         LspCommands::GotoDef {
             file,
             line,
@@ -34,7 +34,7 @@ pub async fn handle_lsp(sub: &LspCommands) -> Result<()> {
                 root_uri,
             )
             .await?;
-        }
+        },
         LspCommands::FindRefs {
             file,
             line,
@@ -54,7 +54,7 @@ pub async fn handle_lsp(sub: &LspCommands) -> Result<()> {
                 root_uri,
             )
             .await?;
-        }
+        },
         LspCommands::Hover {
             file,
             line,
@@ -74,7 +74,7 @@ pub async fn handle_lsp(sub: &LspCommands) -> Result<()> {
                 root_uri,
             )
             .await?;
-        }
+        },
         LspCommands::Symbols {
             file,
             language_id,
@@ -84,7 +84,7 @@ pub async fn handle_lsp(sub: &LspCommands) -> Result<()> {
         } => {
             sisyphus_cli::lsp::run_symbols(file, language_id, server, server_args, root_uri)
                 .await?;
-        }
+        },
     }
     Ok(())
 }

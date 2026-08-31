@@ -19,11 +19,8 @@ async fn setup_experience_bank() -> Arc<VectorExperienceBank> {
         .await
         .expect("Failed to init SisyphusStore");
     let state_store = store.state.clone();
-    let vector_store = Arc::new(
-        VectorMemoryStore::new(store.pool())
-            .await
-            .expect("Vector store failed"),
-    );
+    let vector_store =
+        Arc::new(VectorMemoryStore::new(store.pool()).await.expect("Vector store failed"));
 
     Arc::new(
         VectorExperienceBank::new(state_store, vector_store, Arc::new(DummyEmbeddingClient))
@@ -109,9 +106,7 @@ async fn test_share_makes_experience_visible_across_projects() {
     );
 
     // Share it globally.
-    bank.share_experience("exp:2001")
-        .await
-        .expect("share failed");
+    bank.share_experience("exp:2001").await.expect("share failed");
 
     // After sharing: project B can now retrieve it (multi-workspace transfer).
     let after = query_project(bank.as_ref(), "shared retry strategy", "proj-b").await;
@@ -123,9 +118,7 @@ async fn test_share_makes_experience_visible_across_projects() {
     // Shared listing contains it.
     let shared = bank.list_shared().await.expect("list_shared failed");
     assert!(
-        shared
-            .iter()
-            .any(|e| e.timestamp == 2001 && e.project_id.is_none()),
+        shared.iter().any(|e| e.timestamp == 2001 && e.project_id.is_none()),
         "shared experience missing from shared listing"
     );
 
@@ -142,12 +135,8 @@ async fn test_unshare_restores_project_ownership() {
         .await
         .expect("record failed");
 
-    bank.share_experience("exp:3001")
-        .await
-        .expect("share failed");
-    bank.unshare_experience("exp:3001", "proj-a")
-        .await
-        .expect("unshare failed");
+    bank.share_experience("exp:3001").await.expect("share failed");
+    bank.unshare_experience("exp:3001", "proj-a").await.expect("unshare failed");
 
     // No longer shared.
     let shared = bank.list_shared().await.expect("list_shared failed");

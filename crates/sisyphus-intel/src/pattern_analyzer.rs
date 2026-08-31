@@ -186,10 +186,7 @@ impl SemanticPatternAnalyzer {
         };
 
         let experiences = bank.query_similar(query).await.map_err(|e| e.to_string())?;
-        let failures: Vec<_> = experiences
-            .into_iter()
-            .filter(|e| !e.outcome_success)
-            .collect();
+        let failures: Vec<_> = experiences.into_iter().filter(|e| !e.outcome_success).collect();
 
         if failures.len() < self.min_cluster_size {
             return Ok(None);
@@ -200,10 +197,7 @@ impl SemanticPatternAnalyzer {
         for fail in &failures {
             if let Some(ref insight) = fail.insight {
                 let theme = insight.split('.').next().unwrap_or("Unknown").to_string();
-                theme_counts
-                    .entry(theme)
-                    .or_default()
-                    .push(fail.context_text.clone());
+                theme_counts.entry(theme).or_default().push(fail.context_text.clone());
             }
         }
 

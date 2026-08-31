@@ -102,29 +102,17 @@ pub fn get_tool(tool_id: &str) -> Option<Arc<dyn SisyphusTool>> {
 
 /// List all registered tool ids.
 pub fn list_tools() -> Vec<String> {
-    registry()
-        .lock()
-        .ok()
-        .map(|reg| reg.tools.keys().cloned().collect())
-        .unwrap_or_default()
+    registry().lock().ok().map(|reg| reg.tools.keys().cloned().collect()).unwrap_or_default()
 }
 
 /// Number of registered tools.
 pub fn tool_count() -> usize {
-    registry()
-        .lock()
-        .ok()
-        .map(|reg| reg.tools.len())
-        .unwrap_or_default()
+    registry().lock().ok().map(|reg| reg.tools.len()).unwrap_or_default()
 }
 
 /// Remove a tool from the registry by id. Returns `true` if it existed.
 pub fn remove_tool(tool_id: &str) -> bool {
-    registry()
-        .lock()
-        .ok()
-        .map(|mut reg| reg.tools.remove(tool_id).is_some())
-        .unwrap_or(false)
+    registry().lock().ok().map(|mut reg| reg.tools.remove(tool_id).is_some()).unwrap_or(false)
 }
 
 // ── Tests ────────────────────────────────────────────────────────────────
@@ -200,7 +188,10 @@ mod tests {
             input: serde_json::json!({}),
             state: serde_json::json!(null),
         };
-        assert!(tool.execute(&ctx).is_err(), "dup should be FailingTool, not EchoTool");
+        assert!(
+            tool.execute(&ctx).is_err(),
+            "dup should be FailingTool, not EchoTool"
+        );
 
         // Clean up so the global registry is not polluted for other tests.
         remove_tool(&id);

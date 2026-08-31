@@ -85,7 +85,7 @@ pub(super) fn dispatch_slash_command(app: &mut App, cmd: &str) -> bool {
         "/help" | "/h" => {
             app.dialog = Some(Dialog::Help);
             true
-        }
+        },
         "/dev" | "/d" => {
             let goal = if args.is_empty() {
                 String::new()
@@ -101,20 +101,20 @@ pub(super) fn dispatch_slash_command(app: &mut App, cmd: &str) -> bool {
             app.dev_focus = DevFocus::Goal;
             app.dialog = Some(Dialog::Dev { goal });
             true
-        }
+        },
         "/home" => {
             app.view = View::Home;
             true
-        }
+        },
         "/sessions" => {
             app.view = View::Session;
             true
-        }
+        },
         "/clear" | "/c" => {
             app.session_input.clear();
             app.session_cursor = 0;
             true
-        }
+        },
         "/new" | "/n" => {
             let db = app.data_dir.join("sessions.json");
             match crate::tools::session_create(&db, "unnamed") {
@@ -124,11 +124,11 @@ pub(super) fn dispatch_slash_command(app: &mut App, cmd: &str) -> bool {
                         s.id, s.name
                     )));
                     app.session_dirty = true;
-                }
+                },
                 Err(e) => app.add_log(LogEntry::Error(format!("Create failed: {e}"))),
             }
             true
-        }
+        },
         _ => false,
     }
 }

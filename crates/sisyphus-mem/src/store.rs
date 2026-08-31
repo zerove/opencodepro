@@ -21,22 +21,17 @@ pub struct MfsStore {
 }
 
 /// 内部 `new` 返回 [`MemError`]，对外 API 仍保留 `anyhow::Result` 以兼容 30+ 调用点。
-async fn new_internal(
-    db_url: &str,
-    config: &sisyphus_types::CacheConfig,
-) -> MemResult<MfsStore> {
+async fn new_internal(db_url: &str, config: &sisyphus_types::CacheConfig) -> MemResult<MfsStore> {
     let capacity = NonZeroUsize::new(config.l1_capacity)
         .ok_or_else(|| MemError::InvalidL1Capacity(format!("got {}", config.l1_capacity)))?;
 
     let pool = if db_url == "sqlite::memory:" || db_url == "sqlite::memory" {
-        SqlitePoolOptions::new()
-            .max_connections(5)
-            .connect(db_url)
-            .await
-            .map_err(|e| MemError::Sqlx {
+        SqlitePoolOptions::new().max_connections(5).connect(db_url).await.map_err(|e| {
+            MemError::Sqlx {
                 context: "connect in-memory pool",
                 source: e,
-            })?
+            }
+        })?
     } else {
         let path = db_url.strip_prefix("sqlite:").unwrap_or(db_url);
         if path != ":memory:"
@@ -57,14 +52,12 @@ async fn new_internal(
             .create_if_missing(true)
             .foreign_keys(true);
 
-        SqlitePoolOptions::new()
-            .max_connections(5)
-            .connect_with(opts)
-            .await
-            .map_err(|e| MemError::Sqlx {
+        SqlitePoolOptions::new().max_connections(5).connect_with(opts).await.map_err(|e| {
+            MemError::Sqlx {
                 context: "connect file-backed pool",
                 source: e,
-            })?
+            }
+        })?
     };
 
     MfsStore::with_pool_internal(pool, capacity, config.batch_size, config.flush_interval_ms).await
@@ -98,15 +91,9 @@ impl MfsStore {
         flush_interval_ms: u64,
     ) -> MemResult<MfsStore> {
         // Enable WAL mode for better concurrency
-        sqlx::query("PRAGMA journal_mode=WAL;")
-            .execute(&pool)
-            .await?;
-        sqlx::query("PRAGMA synchronous=NORMAL;")
-            .execute(&pool)
-            .await?;
-        sqlx::query("PRAGMA mmap_size=268435456;")
-            .execute(&pool)
-            .await?;
+        sqlx::query("PRAGMA journal_mode=WAL;").execute(&pool).await?;
+        sqlx::query("PRAGMA synchronous=NORMAL;").execute(&pool).await?;
+        sqlx::query("PRAGMA mmap_size=268435456;").execute(&pool).await?;
 
         // Initialize state table
         sqlx::query(
@@ -268,22 +255,20 @@ impl MfsStore {
                     .bind(&value_str)
                     .execute(&mut *tx)
                     .await?;
-                }
+                },
                 WriteOp::Delete { key } => {
                     sqlx::query("DELETE FROM state WHERE key = ?")
                         .bind(key)
                         .execute(&mut *tx)
                         .await?;
-                }
+                },
                 WriteOp::Flush(_) | WriteOp::Clear => {
                     anyhow::bail!("Flush and Clear ops should not be in the write buffer");
-                }
+                },
             }
         }
 
-        tx.commit()
-            .await
-            .context("Failed to commit batch transaction")?;
+        tx.commit().await.context("Failed to commit batch transaction")?;
         Ok(())
     }
 
@@ -333,11 +318,8 @@ impl MfsStore {
         self.flush().await?;
 
         // 3. Restore from snapshot
-        let keys_values: Vec<(String, serde_json::Value)> = snapshot
-            .data
-            .iter()
-            .map(|(k, v)| (k.clone(), v.clone()))
-            .collect();
+        let keys_values: Vec<(String, serde_json::Value)> =
+            snapshot.data.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
         for (key, value) in &keys_values {
             let value_str = serde_json::to_string(&value)?;
             sqlx::query("INSERT INTO state (key, value) VALUES (?, ?)")
@@ -456,9 +438,7 @@ impl MfsStore {
             .into_iter()
             .map(|(k,)| {
                 if let Some(pid) = project_id {
-                    k.strip_prefix(&format!("{}:", pid))
-                        .unwrap_or(&k)
-                        .to_string()
+                    k.strip_prefix(&format!("{}:", pid)).unwrap_or(&k).to_string()
                 } else {
                     k
                 }
@@ -687,10 +667,8 @@ impl MfsStore {
             query = query.bind(pid);
         }
 
-        let rows = query
-            .fetch_all(&self.l2)
-            .await
-            .context("Failed to fetch experiences from L2")?;
+        let rows =
+            query.fetch_all(&self.l2).await.context("Failed to fetch experiences from L2")?;
 
         let experiences = rows
             .into_iter()
@@ -833,7 +811,7 @@ impl sisyphus_types::StateStore for MfsStore {
                         sisyphus_types::TypesError::InternalError(e.to_string())
                     })?))
                 }
-            }
+            },
             None => Ok(None),
         }
     }
@@ -988,15 +966,12 @@ impl MfsStore {
                         summary.total_token_cost += m.token_cost;
                         metric_samples += 1;
                     }
-                }
+                },
                 sisyphus_types::ExecutionEvent::MicroReflection { decision, .. } => {
                     summary.reflection_count += 1;
-                    *summary
-                        .decision_counts
-                        .entry(decision.to_uppercase())
-                        .or_insert(0) += 1;
-                }
-                _ => {}
+                    *summary.decision_counts.entry(decision.to_uppercase()).or_insert(0) += 1;
+                },
+                _ => {},
             }
         }
 
@@ -1020,32 +995,21 @@ mod tests {
     async fn test_cross_project_isolation_vulnerability() {
         // We use :memory: for fast tests.
         let config = sisyphus_types::CacheConfig::default();
-        let store = MfsStore::new("sqlite::memory:", &config)
-            .await
-            .expect("Failed to init store");
+        let store = MfsStore::new("sqlite::memory:", &config).await.expect("Failed to init store");
 
         // Simulation: Project A sets a value
         let project_a = "project_a";
         let project_b = "project_b";
         let key = "user_preference";
         let val_a = serde_json::json!({"theme": "dark"});
-        store
-            .set_state_json(project_a, key, val_a.clone())
-            .await
-            .expect("Set A failed");
+        store.set_state_json(project_a, key, val_a.clone()).await.expect("Set A failed");
 
         // Simulation: Project B sets the SAME key
         let val_b = serde_json::json!({"theme": "light"});
-        store
-            .set_state_json(project_b, key, val_b.clone())
-            .await
-            .expect("Set B failed");
+        store.set_state_json(project_b, key, val_b.clone()).await.expect("Set B failed");
 
         // Verify: Project A still reads its own value, NOT Project B's
-        let result = store
-            .get_state_json(project_a, key)
-            .await
-            .expect("Get failed");
+        let result = store.get_state_json(project_a, key).await.expect("Get failed");
 
         assert_eq!(
             result,
@@ -1091,10 +1055,7 @@ mod cognitive_trace_tests {
             .await
             .expect("record failed");
 
-        let rows = store
-            .get_cognitive_traces("proj", None, 10)
-            .await
-            .expect("get failed");
+        let rows = store.get_cognitive_traces("proj", None, 10).await.expect("get failed");
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].timestamp_ms, 1700000000123);
         assert_eq!(rows[0].sop_id, "sop-a");
@@ -1125,10 +1086,7 @@ mod cognitive_trace_tests {
         assert_eq!(all[0].sop_id, "sop-b");
 
         // 按 sop 过滤
-        let sop_a = store
-            .get_cognitive_traces("proj", Some("sop-a"), 10)
-            .await
-            .expect("test step");
+        let sop_a = store.get_cognitive_traces("proj", Some("sop-a"), 10).await.expect("test step");
         assert_eq!(sop_a.len(), 2);
         assert!(sop_a.iter().all(|r| r.sop_id == "sop-a"));
         assert_eq!(sop_a[0].timestamp_ms, 2000);
@@ -1149,10 +1107,8 @@ mod cognitive_trace_tests {
             .await
             .expect("test step");
 
-        let limited = store
-            .get_cognitive_traces("proj", Some("sop-a"), 2)
-            .await
-            .expect("test step");
+        let limited =
+            store.get_cognitive_traces("proj", Some("sop-a"), 2).await.expect("test step");
         assert_eq!(limited.len(), 2);
         assert_eq!(limited[0].timestamp_ms, 1004);
         assert_eq!(limited[1].timestamp_ms, 1003);
@@ -1206,10 +1162,8 @@ mod cognitive_trace_tests {
             .await
             .expect("test step");
 
-        let summary = store
-            .cognitive_trace_summary("proj", None, 100)
-            .await
-            .expect("summary failed");
+        let summary =
+            store.cognitive_trace_summary("proj", None, 100).await.expect("summary failed");
 
         assert_eq!(summary.total_decisions, 5);
         // 3 个 CognitiveStep：2 个带 metrics（均值分母=2），1 个不带。
@@ -1243,19 +1197,15 @@ mod cognitive_trace_tests {
             .expect("test step");
 
         // SOP 过滤：仅 sop-a 的 4 条
-        let sop_a = store
-            .cognitive_trace_summary("proj", Some("sop-a"), 100)
-            .await
-            .expect("test step");
+        let sop_a =
+            store.cognitive_trace_summary("proj", Some("sop-a"), 100).await.expect("test step");
         assert_eq!(sop_a.total_decisions, 4);
         assert_eq!(sop_a.step_count, 4);
         assert_eq!(sop_a.reflection_count, 0);
 
         // limit：仅聚合最近 2 条（sop-a 的 1003/1002）
-        let limited = store
-            .cognitive_trace_summary("proj", Some("sop-a"), 2)
-            .await
-            .expect("test step");
+        let limited =
+            store.cognitive_trace_summary("proj", Some("sop-a"), 2).await.expect("test step");
         assert_eq!(limited.total_decisions, 2);
         assert_eq!(limited.first_timestamp_ms, 1002);
         assert_eq!(limited.last_timestamp_ms, 1003);

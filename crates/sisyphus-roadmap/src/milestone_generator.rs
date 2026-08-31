@@ -110,11 +110,10 @@ Respond ONLY with valid JSON matching this structure:
   ]
 }";
 
-        let response = self
-            .llm
-            .chat(system, description, true)
-            .await
-            .map_err(|e| RoadmapError::Internal(format!("LLM milestone generation failed: {e}")))?;
+        let response =
+            self.llm.chat(system, description, true).await.map_err(|e| {
+                RoadmapError::Internal(format!("LLM milestone generation failed: {e}"))
+            })?;
 
         let proposal: RoadmapProposal = serde_json::from_str(&response).map_err(|e| {
             RoadmapError::Internal(format!(
@@ -176,21 +175,15 @@ Respond ONLY with valid JSON matching this structure:
             .await?
             .ok_or_else(|| RoadmapError::ProjectNotFound(project_id.to_string()))?;
 
-        let milestone = project
-            .roadmap
-            .milestones
-            .iter()
-            .find(|m| m.id == milestone_id)
-            .ok_or_else(|| {
+        let milestone =
+            project.roadmap.milestones.iter().find(|m| m.id == milestone_id).ok_or_else(|| {
                 RoadmapError::MilestoneNotFound(milestone_id.to_string(), project_id.to_string())
             })?;
 
         // 获取该里程碑的近期执行结果
         let outcomes = manager.get_outcomes(project_id).await?;
-        let relevant_outcomes: Vec<_> = outcomes
-            .iter()
-            .filter(|o| o.milestone_id == milestone_id)
-            .collect();
+        let relevant_outcomes: Vec<_> =
+            outcomes.iter().filter(|o| o.milestone_id == milestone_id).collect();
 
         // 构建上下文
         let mut context = format!(

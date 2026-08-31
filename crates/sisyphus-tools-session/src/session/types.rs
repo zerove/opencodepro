@@ -97,9 +97,7 @@ impl Default for CompressStrategy {
 /// Now iso.
 pub fn now_iso() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
-    let dur = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default();
+    let dur = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default();
     let secs = dur.as_secs();
     let millis = dur.as_millis() % 1000;
     let secs_in_day = secs % 86400;
@@ -121,8 +119,5 @@ pub(super) fn estimate_tokens(text: &str) -> u64 {
 }
 
 pub(super) fn html_escape(s: &str) -> String {
-    s.replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-        .replace('"', "&quot;")
+    s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;")
 }

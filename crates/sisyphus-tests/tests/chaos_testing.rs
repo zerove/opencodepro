@@ -105,18 +105,9 @@ async fn test_chaos_fault_injection_mixed() {
         }
     }
 
-    let num_timeout = fault_messages
-        .iter()
-        .filter(|m| m.contains("LLM timeout"))
-        .count();
-    let num_crash = fault_messages
-        .iter()
-        .filter(|m| m.contains("Tool crash"))
-        .count();
-    let num_storage = fault_messages
-        .iter()
-        .filter(|m| m.contains("Storage write"))
-        .count();
+    let num_timeout = fault_messages.iter().filter(|m| m.contains("LLM timeout")).count();
+    let num_crash = fault_messages.iter().filter(|m| m.contains("Tool crash")).count();
+    let num_storage = fault_messages.iter().filter(|m| m.contains("Storage write")).count();
 
     assert_eq!(fault_messages.len(), 30, "All 30 should fault");
     assert!(num_timeout > 0, "Should have at least one LLM timeout");
@@ -233,10 +224,7 @@ async fn test_anomaly_detector_system_wide() {
 
     // Check that we got fuel and/or duration anomalies
     let fuel_anomalies: Vec<_> = anomalies.iter().filter(|a| a.metric == "fuel").collect();
-    let dur_anomalies: Vec<_> = anomalies
-        .iter()
-        .filter(|a| a.metric == "duration")
-        .collect();
+    let dur_anomalies: Vec<_> = anomalies.iter().filter(|a| a.metric == "duration").collect();
     assert!(
         !fuel_anomalies.is_empty() || !dur_anomalies.is_empty(),
         "Should detect fuel and/or duration anomaly"

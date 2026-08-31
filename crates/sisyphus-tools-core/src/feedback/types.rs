@@ -32,10 +32,8 @@ impl Feedback {
             original_request,
             original_output,
             corrected_output,
-            timestamp: SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_secs() as i64,
+            timestamp: SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs()
+                as i64,
             tags,
         }
     }

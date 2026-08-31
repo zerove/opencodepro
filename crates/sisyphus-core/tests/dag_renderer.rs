@@ -101,9 +101,7 @@ fn render_diamond_left_right_same_row() {
 #[test]
 fn render_wide_fanout() {
     let r = DagRenderer::new();
-    let nodes: Vec<_> = (0..6)
-        .map(|i| (format!("n{i}"), NodeStatus::Pending))
-        .collect();
+    let nodes: Vec<_> = (0..6).map(|i| (format!("n{i}"), NodeStatus::Pending)).collect();
     let edges: Vec<_> = (1..6).map(|i| ("n0".to_string(), format!("n{i}"))).collect();
     let viz = r.render(&nodes, &edges);
     assert_eq!(viz.nodes.len(), 6);
@@ -161,7 +159,10 @@ fn render_to_string_chain_produces_multiline_output() {
     let s = r.render_to_string(&nodes, &edges);
     // Should have multiple lines (at least the height of one node + edges).
     let line_count = s.lines().count();
-    assert!(line_count >= 3, "expected multi-line output, got {line_count} lines");
+    assert!(
+        line_count >= 3,
+        "expected multi-line output, got {line_count} lines"
+    );
 }
 
 #[test]
@@ -207,10 +208,7 @@ fn node_status_debug() {
 #[test]
 fn viz_height_grows_with_chain_depth() {
     let r = DagRenderer::new();
-    let small = r.render(
-        &[("a".to_string(), NodeStatus::Pending)],
-        &[],
-    );
+    let small = r.render(&[("a".to_string(), NodeStatus::Pending)], &[]);
     let big = r.render(
         &[
             ("a".to_string(), NodeStatus::Pending),
@@ -231,9 +229,7 @@ fn viz_width_grows_with_widest_row() {
     // Single node
     let single = r.render(&[("a".to_string(), NodeStatus::Pending)], &[]);
     // 5 nodes on same row (one root, 4 children) - wider
-    let nodes: Vec<_> = (0..5)
-        .map(|i| (format!("n{i}"), NodeStatus::Pending))
-        .collect();
+    let nodes: Vec<_> = (0..5).map(|i| (format!("n{i}"), NodeStatus::Pending)).collect();
     let edges: Vec<_> = (1..5).map(|i| ("n0".to_string(), format!("n{i}"))).collect();
     let wide = r.render(&nodes, &edges);
     assert!(wide.width >= single.width);

@@ -13,7 +13,10 @@ use sisyphus_types::types::{
 
 #[test]
 fn model_route_strategy_equality() {
-    assert_eq!(ModelRouteStrategy::CostOptimized, ModelRouteStrategy::CostOptimized);
+    assert_eq!(
+        ModelRouteStrategy::CostOptimized,
+        ModelRouteStrategy::CostOptimized
+    );
     assert_ne!(
         ModelRouteStrategy::CostOptimized,
         ModelRouteStrategy::PerformanceOptimized
@@ -60,7 +63,11 @@ fn circuit_state_equality() {
 
 #[test]
 fn circuit_state_serde() {
-    for s in [CircuitState::Closed, CircuitState::Open, CircuitState::HalfOpen] {
+    for s in [
+        CircuitState::Closed,
+        CircuitState::Open,
+        CircuitState::HalfOpen,
+    ] {
         let j = serde_json::to_string(&s).unwrap();
         let back: CircuitState = serde_json::from_str(&j).unwrap();
         assert_eq!(back, s);
@@ -110,7 +117,7 @@ fn evolution_op_adjust_fuel() {
         EvolutionOp::AdjustFuel { node_name, delta } => {
             assert_eq!(node_name, "n1");
             assert_eq!(delta, 100);
-        }
+        },
         _ => panic!("wrong variant"),
     }
 }
@@ -130,7 +137,7 @@ fn evolution_op_add_retry() {
         } => {
             assert_eq!(node_name, "n");
             assert_eq!(max_retries, 3);
-        }
+        },
         _ => panic!("wrong variant"),
     }
 }
@@ -153,7 +160,7 @@ fn evolution_op_insert_node() {
             assert_eq!(after_node, "a");
             assert_eq!(new_name, "b");
             assert_eq!(tool_id, "t");
-        }
+        },
         _ => panic!("wrong variant"),
     }
 }
@@ -183,7 +190,7 @@ fn evolution_op_swap_nodes() {
         EvolutionOp::SwapNodes { node_a, node_b } => {
             assert_eq!(node_a, "a");
             assert_eq!(node_b, "b");
-        }
+        },
         _ => panic!("wrong variant"),
     }
 }
@@ -470,7 +477,7 @@ fn evolution_op_adjust_fuel_negative_delta() {
         EvolutionOp::AdjustFuel { node_name, delta } => {
             assert_eq!(node_name, "n");
             assert_eq!(delta, -1000);
-        }
+        },
         _ => panic!("Wrong variant"),
     }
 }
@@ -484,10 +491,13 @@ fn evolution_op_add_retry_max_retries() {
     let j = serde_json::to_string(&op).unwrap();
     let back: EvolutionOp = serde_json::from_str(&j).unwrap();
     match back {
-        EvolutionOp::AddRetry { node_name, max_retries } => {
+        EvolutionOp::AddRetry {
+            node_name,
+            max_retries,
+        } => {
             assert_eq!(node_name, "n");
             assert_eq!(max_retries, u32::MAX);
-        }
+        },
         _ => panic!("Wrong variant"),
     }
 }
@@ -502,18 +512,24 @@ fn evolution_op_insert_node_serde() {
     let j = serde_json::to_string(&op).unwrap();
     let back: EvolutionOp = serde_json::from_str(&j).unwrap();
     match back {
-        EvolutionOp::InsertNode { after_node, new_name, tool_id } => {
+        EvolutionOp::InsertNode {
+            after_node,
+            new_name,
+            tool_id,
+        } => {
             assert_eq!(after_node, "n1");
             assert_eq!(new_name, "new_node");
             assert_eq!(tool_id, "t1");
-        }
+        },
         _ => panic!("Wrong variant"),
     }
 }
 
 #[test]
 fn evolution_op_remove_node_serde() {
-    let op = EvolutionOp::RemoveNode { node_name: "n".into() };
+    let op = EvolutionOp::RemoveNode {
+        node_name: "n".into(),
+    };
     let j = serde_json::to_string(&op).unwrap();
     let back: EvolutionOp = serde_json::from_str(&j).unwrap();
     match back {
@@ -534,7 +550,7 @@ fn evolution_op_swap_nodes_serde() {
         EvolutionOp::SwapNodes { node_a, node_b } => {
             assert_eq!(node_a, "a");
             assert_eq!(node_b, "b");
-        }
+        },
         _ => panic!("Wrong variant"),
     }
 }
@@ -681,11 +697,15 @@ fn evolution_op_insert_node_with_unicode() {
     let j = serde_json::to_string(&op).unwrap();
     let back: EvolutionOp = serde_json::from_str(&j).unwrap();
     match back {
-        EvolutionOp::InsertNode { after_node, new_name, tool_id } => {
+        EvolutionOp::InsertNode {
+            after_node,
+            new_name,
+            tool_id,
+        } => {
             assert_eq!(after_node, "节点-α");
             assert_eq!(new_name, "新节点-β");
             assert_eq!(tool_id, "工具-γ");
-        }
+        },
         _ => panic!("Wrong variant"),
     }
 }
@@ -797,7 +817,11 @@ fn sisyphus_notepad_prune_with_max_zero() {
 fn circuit_state_serde_unicode() {
     use sisyphus_types::types::CircuitState;
     // Just verify serde is stable
-    for v in [CircuitState::Closed, CircuitState::Open, CircuitState::HalfOpen] {
+    for v in [
+        CircuitState::Closed,
+        CircuitState::Open,
+        CircuitState::HalfOpen,
+    ] {
         let j = serde_json::to_string(&v).unwrap();
         let back: CircuitState = serde_json::from_str(&j).unwrap();
         let j2 = serde_json::to_string(&back).unwrap();
@@ -836,7 +860,9 @@ fn evolution_op_serialize_each_variant() {
             new_name: "b".into(),
             tool_id: "c".into(),
         },
-        EvolutionOp::RemoveNode { node_name: "n".into() },
+        EvolutionOp::RemoveNode {
+            node_name: "n".into(),
+        },
         EvolutionOp::SwapNodes {
             node_a: "a".into(),
             node_b: "b".into(),
@@ -881,7 +907,10 @@ fn notepad_snapshot_unicode_content() {
     let j = serde_json::to_string(&n).unwrap();
     let back: NotepadSnapshot = serde_json::from_str(&j).unwrap();
     assert_eq!(back.trigger_node, "节点-γ");
-    assert_eq!(back.snapshot.get("section-α"), Some(&"content-β".to_string()));
+    assert_eq!(
+        back.snapshot.get("section-α"),
+        Some(&"content-β".to_string())
+    );
 }
 
 #[test]
@@ -924,7 +953,7 @@ fn evolution_op_with_all_field_types() {
         EvolutionOp::SwapNodes { node_a, node_b } => {
             assert_eq!(node_a, "α");
             assert_eq!(node_b, "β");
-        }
+        },
         _ => panic!("wrong variant"),
     }
 }
@@ -1001,7 +1030,9 @@ fn evolution_op_clone_each_variant() {
             new_name: "b".into(),
             tool_id: "c".into(),
         },
-        EvolutionOp::RemoveNode { node_name: "n".into() },
+        EvolutionOp::RemoveNode {
+            node_name: "n".into(),
+        },
         EvolutionOp::SwapNodes {
             node_a: "a".into(),
             node_b: "b".into(),
@@ -1184,7 +1215,7 @@ fn evolution_op_with_unicode_remove_node() {
     match back {
         EvolutionOp::RemoveNode { node_name } => {
             assert_eq!(node_name, "节点-α-β-γ");
-        }
+        },
         _ => panic!("wrong"),
     }
 }
@@ -1202,7 +1233,7 @@ fn evolution_op_with_unicode_swap_nodes() {
         EvolutionOp::SwapNodes { node_a, node_b } => {
             assert_eq!(node_a, "α");
             assert_eq!(node_b, "β");
-        }
+        },
         _ => panic!("wrong"),
     }
 }
@@ -1261,11 +1292,15 @@ fn evolution_op_with_unicode_insert_node_serde() {
     let j = serde_json::to_string(&op).unwrap();
     let back: EvolutionOp = serde_json::from_str(&j).unwrap();
     match back {
-        EvolutionOp::InsertNode { after_node, new_name, tool_id } => {
+        EvolutionOp::InsertNode {
+            after_node,
+            new_name,
+            tool_id,
+        } => {
             assert_eq!(after_node, "节-α");
             assert_eq!(new_name, "新-β");
             assert_eq!(tool_id, "工-γ");
-        }
+        },
         _ => panic!("wrong"),
     }
 }
@@ -1379,16 +1414,16 @@ fn evolution_op_serialize_to_distinct_strings() {
             new_name: "b".into(),
             tool_id: "c".into(),
         },
-        EvolutionOp::RemoveNode { node_name: "n".into() },
+        EvolutionOp::RemoveNode {
+            node_name: "n".into(),
+        },
         EvolutionOp::SwapNodes {
             node_a: "a".into(),
             node_b: "b".into(),
         },
     ];
-    let serialized: Vec<String> = variants
-        .iter()
-        .map(|v| serde_json::to_string(v).unwrap())
-        .collect();
+    let serialized: Vec<String> =
+        variants.iter().map(|v| serde_json::to_string(v).unwrap()).collect();
     let unique: std::collections::HashSet<_> = serialized.iter().collect();
     assert_eq!(unique.len(), 5);
 }
@@ -1471,10 +1506,7 @@ fn trigger_def_with_unicode_3_segment_id_in_field() {
         hook_effect: None,
         hook_message: None,
     };
-    assert_eq!(
-        t.pattern.as_deref(),
-        Some("前缀-α-中缀-β-后缀-γ")
-    );
+    assert_eq!(t.pattern.as_deref(), Some("前缀-α-中缀-β-后缀-γ"));
 }
 
 #[test]
@@ -1506,7 +1538,7 @@ fn evolution_op_with_negative_delta_serde() {
         EvolutionOp::AdjustFuel { node_name, delta } => {
             assert_eq!(node_name, "n-α");
             assert_eq!(delta, -100);
-        }
+        },
         _ => panic!("wrong"),
     }
 }
@@ -1599,17 +1631,26 @@ fn notepad_snapshot_with_unicode_3_sections() {
 fn evolution_op_with_unicode_each_variant_serde() {
     use sisyphus_types::types::EvolutionOp;
     let ops = vec![
-        ("a-α", EvolutionOp::AdjustFuel {
-            node_name: "n-β".into(),
-            delta: 10,
-        }),
-        ("b-γ", EvolutionOp::AddRetry {
-            node_name: "n-δ".into(),
-            max_retries: 3,
-        }),
-        ("c-ε", EvolutionOp::RemoveNode {
-            node_name: "n-ζ".into(),
-        }),
+        (
+            "a-α",
+            EvolutionOp::AdjustFuel {
+                node_name: "n-β".into(),
+                delta: 10,
+            },
+        ),
+        (
+            "b-γ",
+            EvolutionOp::AddRetry {
+                node_name: "n-δ".into(),
+                max_retries: 3,
+            },
+        ),
+        (
+            "c-ε",
+            EvolutionOp::RemoveNode {
+                node_name: "n-ζ".into(),
+            },
+        ),
     ];
     for (label, op) in &ops {
         let j = serde_json::to_string(op).unwrap();
@@ -1698,7 +1739,7 @@ fn evolution_op_adjust_fuel_with_unicode_node_name_max() {
         EvolutionOp::AdjustFuel { node_name, delta } => {
             assert_eq!(node_name, long_name);
             assert_eq!(delta, 100);
-        }
+        },
         _ => panic!("wrong"),
     }
 }
@@ -1777,7 +1818,7 @@ fn evolution_op_with_unicode_max_delta() {
         EvolutionOp::AdjustFuel { node_name, delta } => {
             assert_eq!(node_name, "节-α");
             assert_eq!(delta, i64::MAX);
-        }
+        },
         _ => panic!("wrong"),
     }
 }
@@ -1852,7 +1893,7 @@ fn evolution_op_with_unicode_negative_delta() {
         EvolutionOp::AdjustFuel { node_name, delta } => {
             assert_eq!(node_name, "节-α");
             assert_eq!(delta, -1000);
-        }
+        },
         _ => panic!("wrong"),
     }
 }
@@ -1930,7 +1971,7 @@ fn evolution_op_adjust_fuel_with_unicode_node_2_chars() {
         EvolutionOp::AdjustFuel { node_name, delta } => {
             assert_eq!(node_name, "αβ");
             assert_eq!(delta, 100);
-        }
+        },
         _ => panic!("wrong"),
     }
 }
@@ -2006,7 +2047,7 @@ fn evolution_op_with_unicode_max_delta_2() {
         EvolutionOp::AdjustFuel { node_name, delta } => {
             assert_eq!(node_name, "节-α-β");
             assert_eq!(delta, i64::MAX);
-        }
+        },
         _ => panic!("wrong"),
     }
 }
@@ -2084,7 +2125,7 @@ fn evolution_op_with_unicode_min_delta_2() {
         EvolutionOp::AdjustFuel { node_name, delta } => {
             assert_eq!(node_name, "n-α");
             assert_eq!(delta, i64::MIN);
-        }
+        },
         _ => panic!("wrong"),
     }
 }
@@ -2161,7 +2202,7 @@ fn evolution_op_with_unicode_min_delta_3() {
         EvolutionOp::AdjustFuel { node_name, delta } => {
             assert_eq!(node_name, "n-α-🔍");
             assert_eq!(delta, -100);
-        }
+        },
         _ => panic!("wrong"),
     }
 }
@@ -2237,7 +2278,7 @@ fn evolution_op_with_unicode_max_delta_3() {
         EvolutionOp::AdjustFuel { node_name, delta } => {
             assert_eq!(node_name, "n-α-🔍");
             assert_eq!(delta, 1000);
-        }
+        },
         _ => panic!("wrong"),
     }
 }
@@ -2314,7 +2355,7 @@ fn evolution_op_with_unicode_max_delta_4() {
         EvolutionOp::AdjustFuel { node_name, delta } => {
             assert_eq!(node_name, "n-α-β-γ-🔍");
             assert_eq!(delta, i64::MAX);
-        }
+        },
         _ => panic!("wrong"),
     }
 }
@@ -2389,7 +2430,7 @@ fn evolution_op_with_unicode_zero_delta_2() {
         EvolutionOp::AdjustFuel { node_name, delta } => {
             assert_eq!(node_name, "n-α");
             assert_eq!(delta, 0);
-        }
+        },
         _ => panic!("wrong"),
     }
 }
@@ -2466,7 +2507,7 @@ fn evolution_op_with_unicode_min_delta_4() {
     match back {
         EvolutionOp::AdjustFuel { delta, .. } => {
             assert_eq!(delta, i64::MIN);
-        }
+        },
         _ => panic!("wrong"),
     }
 }

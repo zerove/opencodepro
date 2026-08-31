@@ -81,7 +81,7 @@ impl UserPreferenceStore {
                 }
                 pref.last_updated = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
                 pref
-            }
+            },
             None => UserPreference {
                 key: key.to_string(),
                 value,
@@ -175,10 +175,7 @@ mod tests {
     async fn test_record_and_get_preference() {
         let (pref_store, _) = setup_store().await;
 
-        pref_store
-            .record_preference("theme", json!("dark"), 1.0)
-            .await
-            .unwrap();
+        pref_store.record_preference("theme", json!("dark"), 1.0).await.unwrap();
         let val = pref_store.get_preference("theme").await.unwrap();
         assert_eq!(val, Some(json!("dark")));
     }
@@ -188,14 +185,8 @@ mod tests {
         let (pref_store, _) = setup_store().await;
 
         // Same value increases weight
-        pref_store
-            .record_preference("font", json!("JetBrains Mono"), 1.0)
-            .await
-            .unwrap();
-        pref_store
-            .record_preference("font", json!("JetBrains Mono"), 1.0)
-            .await
-            .unwrap();
+        pref_store.record_preference("font", json!("JetBrains Mono"), 1.0).await.unwrap();
+        pref_store.record_preference("font", json!("JetBrains Mono"), 1.0).await.unwrap();
 
         // We can't easily check the weight from the public API (get_preference returns Value),
         // but we can verify it still returns the correct value.
@@ -207,14 +198,8 @@ mod tests {
     async fn test_preference_overwrite() {
         let (pref_store, _) = setup_store().await;
 
-        pref_store
-            .record_preference("lang", json!("en"), 1.0)
-            .await
-            .unwrap();
-        pref_store
-            .record_preference("lang", json!("fr"), 1.0)
-            .await
-            .unwrap();
+        pref_store.record_preference("lang", json!("en"), 1.0).await.unwrap();
+        pref_store.record_preference("lang", json!("fr"), 1.0).await.unwrap();
 
         let val = pref_store.get_preference("lang").await.unwrap();
         assert_eq!(val, Some(json!("fr")));
@@ -243,9 +228,7 @@ mod tests {
             },
         ];
 
-        let inferred = pref_store
-            .infer_preferences_from_feedback(feedback)
-            .unwrap();
+        let inferred = pref_store.infer_preferences_from_feedback(feedback).unwrap();
         assert_eq!(inferred, vec!["dark_mode", "concise"]);
     }
 }

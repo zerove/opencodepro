@@ -59,9 +59,7 @@ impl RoadmapManager {
         let project = Project::new(id.to_string(), name.to_string(), description.to_string());
 
         self.sql_store.insert_project(&project).await.map_err(|e| {
-            if e.to_string()
-                .contains("UNIQUE constraint failed: projects.id")
-            {
+            if e.to_string().contains("UNIQUE constraint failed: projects.id") {
                 RoadmapError::DuplicateProject(id.to_string())
             } else {
                 RoadmapError::Internal(e.to_string())
@@ -73,10 +71,7 @@ impl RoadmapManager {
 
     /// 按 ID 检索项目并从细粒度存储中水合（hydrate）。
     pub async fn get_project(&self, id: &str) -> Result<Option<Project>, RoadmapError> {
-        self.sql_store
-            .get_project(id)
-            .await
-            .map_err(|e| RoadmapError::Internal(e.to_string()))
+        self.sql_store.get_project(id).await.map_err(|e| RoadmapError::Internal(e.to_string()))
     }
 
     /// 更新已有项目（替换完整文档）。
@@ -98,10 +93,7 @@ impl RoadmapManager {
 
     /// 列出全部项目 ID。
     pub async fn list_project_ids(&self) -> Result<Vec<String>, RoadmapError> {
-        self.sql_store
-            .list_projects()
-            .await
-            .map_err(|e| RoadmapError::Internal(e.to_string()))
+        self.sql_store.list_projects().await.map_err(|e| RoadmapError::Internal(e.to_string()))
     }
 
     /// 列出全部完整项目。
@@ -283,9 +275,7 @@ impl RoadmapManager {
             reviewer: None,
         };
 
-        self.proposal_manager
-            .submit_proposal(project_id, proposal)
-            .await
+        self.proposal_manager.submit_proposal(project_id, proposal).await
     }
 
     /// 向里程碑内的阶段添加目标。
@@ -350,9 +340,7 @@ impl RoadmapManager {
 
     /// 获取项目，不存在时返回 `ProjectNotFound` 错误。
     pub async fn get_project_or_err(&self, id: &str) -> Result<Project, RoadmapError> {
-        self.get_project(id)
-            .await?
-            .ok_or_else(|| RoadmapError::ProjectNotFound(id.to_string()))
+        self.get_project(id).await?.ok_or_else(|| RoadmapError::ProjectNotFound(id.to_string()))
     }
 
     /// 将结构化战略提案动作应用到路线图。
@@ -387,7 +375,7 @@ impl RoadmapManager {
                 // 注意：基于位置的插入（after_milestone_id）需要
                 // 更新 project_milestones_key 列表顺序。
                 Ok(())
-            }
+            },
             ProposalAction::DeleteGoal {
                 goal_id,
                 rationale: _,
@@ -395,10 +383,7 @@ impl RoadmapManager {
             ProposalAction::Reprioritize {
                 target_id,
                 new_priority,
-            } => {
-                self.update_goal_priority(project_id, target_id, new_priority)
-                    .await
-            }
+            } => self.update_goal_priority(project_id, target_id, new_priority).await,
             ProposalAction::PivotTrajectory {
                 new_trajectory,
                 rationale: _,
@@ -630,7 +615,7 @@ impl RoadmapManager {
             Err(e) => {
                 warn!(project_id, error = %e, "Strategic reflection failed");
                 return Err(e);
-            }
+            },
         };
 
         info!(
@@ -651,9 +636,7 @@ impl RoadmapManager {
             // 尝试从最高优先级建议创建提案
             if let Some(proposal) = reflector.propose_pivot(&reflection, project_id) {
                 if config.auto_submit {
-                    self.proposal_manager
-                        .submit_proposal(project_id, proposal.clone())
-                        .await?;
+                    self.proposal_manager.submit_proposal(project_id, proposal.clone()).await?;
                     proposal_submitted = true;
                     proposal_id = Some(proposal.proposal_id.clone());
                     info!(project_id, proposal_id = %proposal.proposal_id, "Governance proposal auto-submitted");

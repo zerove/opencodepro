@@ -53,9 +53,7 @@ async fn test_project_isolation() {
     let sop_store = store.sop.clone();
     let roadmap_store = store.roadmap.clone();
     let vector_store = Arc::new(
-        sisyphus_mem::VectorMemoryStore::new(store.pool())
-            .await
-            .expect("Vector store failed"),
+        sisyphus_mem::VectorMemoryStore::new(store.pool()).await.expect("Vector store failed"),
     );
 
     // 2. Setup Components
@@ -144,14 +142,8 @@ async fn test_project_isolation() {
 
     // 5. Save unique SOPs for each project
 
-    kernel
-        .save_sop(sop_id_alpha, project_alpha, &graph_alpha)
-        .await
-        .expect("Save alpha failed");
-    kernel
-        .save_sop(sop_id_beta, project_beta, &graph_beta)
-        .await
-        .expect("Save beta failed");
+    kernel.save_sop(sop_id_alpha, project_alpha, &graph_alpha).await.expect("Save alpha failed");
+    kernel.save_sop(sop_id_beta, project_beta, &graph_beta).await.expect("Save beta failed");
 
     // 5. CROSS-ACCESS VERIFICATION
     let load_attempt_1 = kernel.load_sop(sop_id_alpha, project_beta).await;

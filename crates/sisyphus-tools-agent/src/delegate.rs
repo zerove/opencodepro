@@ -104,7 +104,7 @@ impl WorkOrchestrator {
                             let _ = tx.send(DelegateEvent::Completed(report.clone())).await;
                             reports.push(report);
                             continue;
-                        }
+                        },
                     };
                     let tx = tx.clone();
                     let _ = tx
@@ -154,7 +154,7 @@ impl WorkOrchestrator {
                                 duration_ms: 0,
                             };
                             reports.push(report);
-                        }
+                        },
                     }
                 }
                 drop(tx);
@@ -356,9 +356,9 @@ mod tests {
                         break;
                     }
                     tokio::time::sleep(std::time::Duration::from_millis(10)).await;
-                }
+                },
                 Err(TryRecvError::Disconnected) => break,
-                _ => {}
+                _ => {},
             }
         }
         let reports = handle.await.unwrap();

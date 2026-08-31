@@ -40,13 +40,8 @@ fn generate_for_function_returns_doc_for_pub_fn() {
 #[test]
 fn generate_for_function_returns_err_for_missing_function() {
     let dir = TempDir::new().expect("tempdir");
-    let file = write(
-        dir.path(),
-        "lib.rs",
-        "pub fn present() -> u8 { 0 }\n",
-    );
-    let result =
-        AutoDocGenerator::generate_for_function(file.to_str().unwrap(), "nonexistent");
+    let file = write(dir.path(), "lib.rs", "pub fn present() -> u8 { 0 }\n");
+    let result = AutoDocGenerator::generate_for_function(file.to_str().unwrap(), "nonexistent");
     // Either Ok with empty doc or Err — both are valid. We just want
     // no panic.
     let _ = result;
@@ -86,13 +81,18 @@ fn private_helper() {}
 ",
     );
 
-    let items =
-        AutoDocGenerator::generate_for_module(file.to_str().unwrap()).expect("ok");
+    let items = AutoDocGenerator::generate_for_module(file.to_str().unwrap()).expect("ok");
     let names: Vec<&str> = items.iter().map(|(name, _)| name.as_str()).collect();
 
     // Public items should be present; private items should not.
-    assert!(names.contains(&"greet"), "missing pub fn 'greet' in {names:?}");
-    assert!(names.contains(&"Counter"), "missing pub struct in {names:?}");
+    assert!(
+        names.contains(&"greet"),
+        "missing pub fn 'greet' in {names:?}"
+    );
+    assert!(
+        names.contains(&"Counter"),
+        "missing pub struct in {names:?}"
+    );
     assert!(names.contains(&"Color"), "missing pub enum in {names:?}");
     assert!(names.contains(&"Greeter"), "missing pub trait in {names:?}");
     assert!(
@@ -105,8 +105,7 @@ fn private_helper() {}
 fn generate_for_module_returns_empty_for_empty_file() {
     let dir = TempDir::new().expect("tempdir");
     let file = write(dir.path(), "empty.rs", "");
-    let items =
-        AutoDocGenerator::generate_for_module(file.to_str().unwrap()).expect("ok");
+    let items = AutoDocGenerator::generate_for_module(file.to_str().unwrap()).expect("ok");
     assert!(items.is_empty());
 }
 
@@ -126,8 +125,7 @@ pub fn multi_line(
 }
 ",
     );
-    let items =
-        AutoDocGenerator::generate_for_module(file.to_str().unwrap()).expect("ok");
+    let items = AutoDocGenerator::generate_for_module(file.to_str().unwrap()).expect("ok");
     assert!(
         items.iter().any(|(n, _)| n == "multi_line"),
         "multiline fn not detected: {:?}",

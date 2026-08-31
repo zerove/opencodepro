@@ -45,9 +45,7 @@ impl UserMemoryStore {
     ///
     /// Replaces any existing entry for the same key (upsert semantics).
     pub async fn store(&self, key: &str, embedding: Vec<f32>, metadata: Value) -> Result<()> {
-        self.inner
-            .store_embedding(&self.session_key(key), embedding, metadata)
-            .await
+        self.inner.store_embedding(&self.session_key(key), embedding, metadata).await
     }
 
     /// Return up to `top_k` vectors most similar to `embedding` by cosine similarity.
@@ -58,9 +56,7 @@ impl UserMemoryStore {
         // 多会话并发写入时本会话记录可能整体落在全局窗口之外被
         // 截断丢弃。改为 SQL 层按前缀过滤后再取 top_k。
         let prefix = self.session_prefix();
-        self.inner
-            .search_similar_filtered(embedding, top_k, Some(&prefix))
-            .await
+        self.inner.search_similar_filtered(embedding, top_k, Some(&prefix)).await
     }
 
     fn session_prefix(&self) -> String {
@@ -103,15 +99,12 @@ impl VectorMemoryStore {
         embedding: Vec<f32>,
         metadata: Value,
     ) -> Result<()> {
-        let timestamp = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)?
-            .as_secs() as i64;
+        let timestamp =
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_secs() as i64;
 
         // Convert Vec<f32> to bytes
-        let embedding_bytes: Vec<u8> = embedding
-            .iter()
-            .flat_map(|f| f.to_le_bytes().to_vec())
-            .collect();
+        let embedding_bytes: Vec<u8> =
+            embedding.iter().flat_map(|f| f.to_le_bytes().to_vec()).collect();
 
         let metadata_str = serde_json::to_string(&metadata)?;
 
@@ -143,8 +136,7 @@ impl VectorMemoryStore {
         query_embedding: &[f32],
         top_k: usize,
     ) -> Result<Vec<ScoredVector>> {
-        self.search_similar_filtered(query_embedding, top_k, None)
-            .await
+        self.search_similar_filtered(query_embedding, top_k, None).await
     }
 
     /// 相似度检索，可选按键前缀过滤（评审 C 层：多会话隔离）。
@@ -213,11 +205,8 @@ impl VectorMemoryStore {
             .collect();
 
         // Sort by score descending
-        scored_vectors.sort_by(|a, b| {
-            b.score
-                .partial_cmp(&a.score)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
+        scored_vectors
+            .sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
         scored_vectors.truncate(top_k);
 
         Ok(scored_vectors)
@@ -308,7 +297,7 @@ impl VectorMemoryStore {
         match (metadata, filter) {
             (Value::Object(m_obj), Value::Object(f_obj)) => {
                 f_obj.iter().all(|(k, f_val)| m_obj.get(k) == Some(f_val))
-            }
+            },
             (m, f) => m == f,
         }
     }
@@ -333,18 +322,9 @@ mod tests {
         let v2 = vec![0.0, 1.0, 0.0];
         let v3 = vec![0.9, 0.1, 0.0];
 
-        store
-            .store_embedding("key1", v1.clone(), json!({"tag": "a"}))
-            .await
-            .unwrap();
-        store
-            .store_embedding("key2", v2.clone(), json!({"tag": "b"}))
-            .await
-            .unwrap();
-        store
-            .store_embedding("key3", v3.clone(), json!({"tag": "a"}))
-            .await
-            .unwrap();
+        store.store_embedding("key1", v1.clone(), json!({"tag": "a"})).await.unwrap();
+        store.store_embedding("key2", v2.clone(), json!({"tag": "b"})).await.unwrap();
+        store.store_embedding("key3", v3.clone(), json!({"tag": "a"})).await.unwrap();
 
         // Search for something close to v1
         let results = store.search_similar(&v1, 2).await.unwrap();
@@ -359,31 +339,16 @@ mod tests {
     async fn test_metadata_filter() {
         let store = setup_store().await;
 
-        store
-            .store_embedding("key1", vec![1.0], json!({"tag": "a", "val": 1}))
-            .await
-            .unwrap();
-        store
-            .store_embedding("key2", vec![1.0], json!({"tag": "b", "val": 1}))
-            .await
-            .unwrap();
-        store
-            .store_embedding("key3", vec![1.0], json!({"tag": "a", "val": 2}))
-            .await
-            .unwrap();
+        store.store_embedding("key1", vec![1.0], json!({"tag": "a", "val": 1})).await.unwrap();
+        store.store_embedding("key2", vec![1.0], json!({"tag": "b", "val": 1})).await.unwrap();
+        store.store_embedding("key3", vec![1.0], json!({"tag": "a", "val": 2})).await.unwrap();
 
         // Filter by tag=a
-        let results = store
-            .search_by_metadata(json!({"tag": "a"}), 10)
-            .await
-            .unwrap();
+        let results = store.search_by_metadata(json!({"tag": "a"}), 10).await.unwrap();
         assert_eq!(results.len(), 2);
 
         // Filter by tag=a AND val=1
-        let results = store
-            .search_by_metadata(json!({"tag": "a", "val": 1}), 10)
-            .await
-            .unwrap();
+        let results = store.search_by_metadata(json!({"tag": "a", "val": 1}), 10).await.unwrap();
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].key, "key1");
     }
@@ -394,20 +359,14 @@ mod tests {
         let results = store.search_similar(&[1.0, 0.0], 10).await.unwrap();
         assert!(results.is_empty());
 
-        let results = store
-            .search_by_metadata(json!({"tag": "a"}), 10)
-            .await
-            .unwrap();
+        let results = store.search_by_metadata(json!({"tag": "a"}), 10).await.unwrap();
         assert!(results.is_empty());
     }
 
     #[tokio::test]
     async fn test_empty_query() {
         let store = setup_store().await;
-        store
-            .store_embedding("key1", vec![1.0], json!({}))
-            .await
-            .unwrap();
+        store.store_embedding("key1", vec![1.0], json!({})).await.unwrap();
 
         let results = store.search_similar(&[], 10).await.unwrap();
         assert!(results.is_empty());
@@ -416,10 +375,7 @@ mod tests {
     #[tokio::test]
     async fn test_dimension_mismatch() {
         let store = setup_store().await;
-        store
-            .store_embedding("key1", vec![1.0, 0.0], json!({}))
-            .await
-            .unwrap();
+        store.store_embedding("key1", vec![1.0, 0.0], json!({})).await.unwrap();
 
         // Query with 3 dims instead of 2
         let results = store.search_similar(&[1.0, 0.0, 0.0], 10).await.unwrap();
@@ -436,10 +392,7 @@ mod tests {
         // But we can test if we can store and retrieve without crashing.
         let store = setup_store().await;
         let v = vec![f32::NAN, f32::INFINITY, f32::NEG_INFINITY];
-        store
-            .store_embedding("key1", v.clone(), json!({}))
-            .await
-            .unwrap();
+        store.store_embedding("key1", v.clone(), json!({})).await.unwrap();
 
         let results = store.search_similar(&[1.0, 1.0, 1.0], 1).await.unwrap();
         assert_eq!(results.len(), 1);
@@ -463,14 +416,8 @@ mod tests {
         let v1 = vec![1.0, 0.0];
         let v2 = vec![0.0, 1.0];
 
-        user_store
-            .store("fact1", v1.clone(), json!({}))
-            .await
-            .unwrap();
-        user_store
-            .store("fact2", v2.clone(), json!({}))
-            .await
-            .unwrap();
+        user_store.store("fact1", v1.clone(), json!({})).await.unwrap();
+        user_store.store("fact2", v2.clone(), json!({})).await.unwrap();
 
         // Recall for user_123
         let results = user_store.recall(&v1, 1).await.unwrap();
@@ -516,16 +463,10 @@ mod session_recall_tests {
 
         // 会话 A 写入 30 条完全相同的向量
         for i in 0..30 {
-            store_a
-                .store(&format!("k{i}"), v.clone(), json!({}))
-                .await
-                .unwrap();
+            store_a.store(&format!("k{i}"), v.clone(), json!({})).await.unwrap();
         }
         // 会话 B 仅写 1 条目标记录
-        store_b
-            .store("target", vec![0.0, 1.0, 0.0], json!({"goal": "hit"}))
-            .await
-            .unwrap();
+        store_b.store("target", vec![0.0, 1.0, 0.0], json!({"goal": "hit"})).await.unwrap();
 
         // 旧实现：全局窗口 = 5*10 = 50 条中 A 占 30 条虽不至于饿死，
         // 但当 A 的记录数超过窗口时（此处用 top_k=1 → 窗口 10），
@@ -543,14 +484,8 @@ mod session_recall_tests {
         let store_b = setup_user_store("beta").await;
 
         let v = vec![1.0, 0.0];
-        store_a
-            .store("shared", v.clone(), json!({"s": "a"}))
-            .await
-            .unwrap();
-        store_b
-            .store("shared", v.clone(), json!({"s": "b"}))
-            .await
-            .unwrap();
+        store_a.store("shared", v.clone(), json!({"s": "a"})).await.unwrap();
+        store_b.store("shared", v.clone(), json!({"s": "b"})).await.unwrap();
 
         let results = store_b.recall(&v, 10).await.unwrap();
         assert_eq!(results.len(), 1);
@@ -562,10 +497,7 @@ mod session_recall_tests {
         let store = setup_user_store("solo").await;
         let v = vec![1.0, 0.0];
         for i in 0..8 {
-            store
-                .store(&format!("k{i}"), v.clone(), json!({}))
-                .await
-                .unwrap();
+            store.store(&format!("k{i}"), v.clone(), json!({})).await.unwrap();
         }
         let results = store.recall(&v, 3).await.unwrap();
         assert_eq!(results.len(), 3);

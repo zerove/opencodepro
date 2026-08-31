@@ -101,7 +101,7 @@ impl LlmProvider for GoogleGeminiProvider {
                 return Err(ProviderError::Transient(format!(
                     "HTTP request failed: {e}"
                 )));
-            }
+            },
         };
 
         let status = res.status();
@@ -112,7 +112,7 @@ impl LlmProvider for GoogleGeminiProvider {
                 return Err(ProviderError::Transient(format!(
                     "Failed to parse response: {e}"
                 )));
-            }
+            },
         };
 
         if !status.is_success() {
@@ -150,10 +150,7 @@ impl LlmProvider for GoogleGeminiProvider {
                 ProviderError::Permanent("Response missing content field".to_string())
             })?;
 
-        let model = response_json["model"]
-            .as_str()
-            .unwrap_or(&self.config.model)
-            .to_string();
+        let model = response_json["model"].as_str().unwrap_or(&self.config.model).to_string();
 
         let input_tokens = response_json["usage"]["prompt_tokens"].as_u64();
         let output_tokens = response_json["usage"]["completion_tokens"].as_u64();

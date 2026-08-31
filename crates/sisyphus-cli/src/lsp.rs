@@ -25,10 +25,7 @@ pub async fn run_diagnostics(
         println!("No diagnostics.");
     } else {
         for d in &diags {
-            let sev = d
-                .severity
-                .map(crate::tools::lsp::severity_name)
-                .unwrap_or("?");
+            let sev = d.severity.map(crate::tools::lsp::severity_name).unwrap_or("?");
             let r = &d.range;
             println!(
                 "  {}:{}  {}  {}",
@@ -57,17 +54,14 @@ pub async fn run_diagnostics_raw(
 
     tokio::time::sleep(tokio::time::Duration::from_millis(300)).await;
 
-    let diags = client
-        .get_diagnostics(&file.to_string_lossy())
-        .await
-        .map_err(|e| {
-            let stderr = client.take_stderr();
-            if stderr.is_empty() {
-                anyhow::anyhow!("Failed to get diagnostics: {e}")
-            } else {
-                anyhow::anyhow!("Failed to get diagnostics: {e}\nServer stderr:\n{stderr}")
-            }
-        })?;
+    let diags = client.get_diagnostics(&file.to_string_lossy()).await.map_err(|e| {
+        let stderr = client.take_stderr();
+        if stderr.is_empty() {
+            anyhow::anyhow!("Failed to get diagnostics: {e}")
+        } else {
+            anyhow::anyhow!("Failed to get diagnostics: {e}\nServer stderr:\n{stderr}")
+        }
+    })?;
 
     client.shutdown().await.ok();
     Ok(diags)
@@ -161,11 +155,7 @@ pub async fn run_hover(
 
     tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
 
-    match client
-        .get_hover(&file.to_string_lossy(), line, col)
-        .await
-        .context("hover failed")?
-    {
+    match client.get_hover(&file.to_string_lossy(), line, col).await.context("hover failed")? {
         Some(hover) => println!("{}", hover.contents),
         None => println!("No hover information."),
     }
@@ -189,10 +179,8 @@ pub async fn run_symbols(
 
     tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
 
-    let symbols = client
-        .get_symbols(&file.to_string_lossy())
-        .await
-        .context("get-symbols failed")?;
+    let symbols =
+        client.get_symbols(&file.to_string_lossy()).await.context("get-symbols failed")?;
 
     if symbols.is_empty() {
         println!("No symbols found.");

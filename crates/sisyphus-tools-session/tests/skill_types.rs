@@ -39,7 +39,11 @@ fn skill_source_priority_values() {
 
 #[test]
 fn skill_source_serde() {
-    for s in [SkillSource::BuiltIn, SkillSource::User, SkillSource::Project] {
+    for s in [
+        SkillSource::BuiltIn,
+        SkillSource::User,
+        SkillSource::Project,
+    ] {
         let j = serde_json::to_string(&s).unwrap();
         let back: SkillSource = serde_json::from_str(&j).unwrap();
         assert_eq!(back, s);

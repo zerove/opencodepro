@@ -99,9 +99,8 @@ impl RoadmapSqlStore {
 
     /// List all project ids known to the roadmap, sorted alphabetically.
     pub async fn list_projects(&self) -> Result<Vec<String>> {
-        let rows = sqlx::query_as::<_, (String,)>("SELECT id FROM projects")
-            .fetch_all(&self.pool)
-            .await?;
+        let rows =
+            sqlx::query_as::<_, (String,)>("SELECT id FROM projects").fetch_all(&self.pool).await?;
         Ok(rows.into_iter().map(|(id,)| id).collect())
     }
 
@@ -109,10 +108,7 @@ impl RoadmapSqlStore {
     ///
     /// No-op if the project does not exist.
     pub async fn delete_project(&self, id: &str) -> Result<()> {
-        sqlx::query("DELETE FROM projects WHERE id = ?")
-            .bind(id)
-            .execute(&self.pool)
-            .await?;
+        sqlx::query("DELETE FROM projects WHERE id = ?").bind(id).execute(&self.pool).await?;
         Ok(())
     }
 
@@ -156,12 +152,7 @@ impl RoadmapSqlStore {
             let mut phases = Vec::new();
             for (p_id, p_name, p_deps_str) in phases_rows {
                 let depends_on = p_deps_str
-                    .map(|s| {
-                        s.split(',')
-                            .filter(|x| !x.is_empty())
-                            .map(String::from)
-                            .collect()
-                    })
+                    .map(|s| s.split(',').filter(|x| !x.is_empty()).map(String::from).collect())
                     .unwrap_or_default();
 
                 let goals_rows = sqlx::query_as::<_, (String, String, String)>("SELECT id, description, status FROM goals WHERE phase_id = ? AND project_id = ?")

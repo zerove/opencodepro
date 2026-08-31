@@ -169,9 +169,7 @@ fn bench_reflection(c: &mut Criterion) {
 
     group.bench_function("reflect_100_nodes", |b| {
         b.to_async(&rt).iter(|| async {
-            reflector
-                .reflect(black_box(&trace), black_box(&prediction), None)
-                .await
+            reflector.reflect(black_box(&trace), black_box(&prediction), None).await
         })
     });
 

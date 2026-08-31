@@ -41,37 +41,25 @@ impl AgentRegistry {
     /// Register agent.
     pub fn register(&self, id: &str, info: AgentInfo) {
         counter!("sisyphus_agent_registered_total", "agent_id" => id.to_string()).increment(1);
-        let mut map = self
-            .agents
-            .write()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut map = self.agents.write().unwrap_or_else(std::sync::PoisonError::into_inner);
         map.insert(id.to_string(), info);
     }
 
     /// Look up an agent by ID.
     pub fn get(&self, id: &str) -> Option<AgentInfo> {
-        let map = self
-            .agents
-            .read()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let map = self.agents.read().unwrap_or_else(std::sync::PoisonError::into_inner);
         map.get(id).cloned()
     }
 
     /// Check if an agent is registered.
     pub fn has(&self, id: &str) -> bool {
-        let map = self
-            .agents
-            .read()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let map = self.agents.read().unwrap_or_else(std::sync::PoisonError::into_inner);
         map.contains_key(id)
     }
 
     /// List all registered agent IDs and their info.
     pub fn list(&self) -> Vec<(String, AgentInfo)> {
-        let map = self
-            .agents
-            .read()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let map = self.agents.read().unwrap_or_else(std::sync::PoisonError::into_inner);
         let mut items: Vec<_> = map.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
         items.sort_by(|a, b| a.0.cmp(&b.0));
         items
@@ -86,10 +74,7 @@ impl AgentRegistry {
 
     /// Unregister an agent.
     pub fn unregister(&self, id: &str) -> bool {
-        let mut map = self
-            .agents
-            .write()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut map = self.agents.write().unwrap_or_else(std::sync::PoisonError::into_inner);
         map.remove(id).is_some()
     }
 
@@ -190,10 +175,7 @@ impl AgentRegistry {
     ///
     /// Returns `Some(agent_id)` if a matching agent is found.
     pub fn resolve_agent_for_tool(&self, tool_id: &str) -> Option<String> {
-        let map = self
-            .agents
-            .read()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let map = self.agents.read().unwrap_or_else(std::sync::PoisonError::into_inner);
         for (agent_id, info) in map.iter() {
             for prefix in &info.tool_prefixes {
                 if tool_id.starts_with(prefix) {

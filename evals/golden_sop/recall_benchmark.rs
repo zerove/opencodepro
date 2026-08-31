@@ -77,10 +77,7 @@ const TOP_K: usize = 5;
 
 async fn dummy_vector_ranking(query: &str) -> Vec<usize> {
     let client = DummyEmbeddingClient;
-    let qv = client
-        .embed(query)
-        .await
-        .expect("dummy embed must not fail");
+    let qv = client.embed(query).await.expect("dummy embed must not fail");
 
     let doc_vecs: Vec<Vec<f32>> = {
         let mut v = Vec::with_capacity(CORPUS.len());
@@ -133,11 +130,7 @@ fn recall_at_k(ranking: &[usize], relevant: &[usize], k: usize) -> f64 {
     if relevant.is_empty() {
         return 0.0;
     }
-    let hits = ranking
-        .iter()
-        .take(k)
-        .filter(|i| relevant.contains(i))
-        .count();
+    let hits = ranking.iter().take(k).filter(|i| relevant.contains(i)).count();
     hits as f64 / relevant.len() as f64
 }
 

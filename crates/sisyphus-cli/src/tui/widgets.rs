@@ -46,11 +46,7 @@ pub fn render_list(
                 .title(title)
                 .border_style(Style::default().fg(theme.primary)),
         )
-        .highlight_style(
-            Style::default()
-                .fg(theme.secondary)
-                .add_modifier(Modifier::REVERSED),
-        );
+        .highlight_style(Style::default().fg(theme.secondary).add_modifier(Modifier::REVERSED));
     let sel = selected.min(count.saturating_sub(1));
     frame.render_stateful_widget(
         list,

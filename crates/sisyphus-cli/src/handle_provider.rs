@@ -33,7 +33,7 @@ pub(crate) fn handle_provider(
                     );
                 }
             }
-        }
+        },
         ProviderCommands::Test { name, prompt } => {
             let providers = &config.llm.providers;
             let provider = providers.iter().find(|p| p.name == *name);
@@ -58,15 +58,15 @@ pub(crate) fn handle_provider(
                         println!("Prompt: {}", prompt);
                         println!("Test call would go here (API call disabled in CLI test mode).");
                     }
-                }
+                },
                 None => {
                     eprintln!(
                         "Provider '{}' not found. Use `provider list` to see available providers.",
                         name
                     );
-                }
+                },
             }
-        }
+        },
         ProviderCommands::Fallback => {
             let providers = &config.llm.providers;
             println!("Fallback chain for provider routing:");
@@ -92,7 +92,7 @@ pub(crate) fn handle_provider(
             println!("  - Transient/RateLimited errors -> skip to next provider");
             println!("  - Permanent/Auth errors -> abort immediately");
             println!("  - All providers exhausted -> fallback to default endpoint");
-        }
+        },
     }
     Ok(())
 }

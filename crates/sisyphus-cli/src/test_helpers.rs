@@ -15,9 +15,7 @@ use clap::Parser;
 /// # 恐慌（Panics）
 /// 参数解析失败或未提供命令时恐慌。
 pub fn parse_commands(args: &[&str]) -> Commands {
-    let full: Vec<&str> = std::iter::once("sisyphus")
-        .chain(args.iter().copied())
-        .collect();
+    let full: Vec<&str> = std::iter::once("sisyphus").chain(args.iter().copied()).collect();
     let cli = Cli::try_parse_from(full).expect("failed to parse CLI args");
     cli.command.expect("no command provided")
 }

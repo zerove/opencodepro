@@ -12,10 +12,22 @@ use sisyphus_tools_system::scaffold::{list_templates, TemplateInfo, TemplateType
 
 #[test]
 fn template_type_from_str_opt() {
-    assert_eq!(TemplateType::from_str_opt("rust-lib"), Some(TemplateType::RustLib));
-    assert_eq!(TemplateType::from_str_opt("lib"), Some(TemplateType::RustLib));
-    assert_eq!(TemplateType::from_str_opt("rust-bin"), Some(TemplateType::RustBin));
-    assert_eq!(TemplateType::from_str_opt("bin"), Some(TemplateType::RustBin));
+    assert_eq!(
+        TemplateType::from_str_opt("rust-lib"),
+        Some(TemplateType::RustLib)
+    );
+    assert_eq!(
+        TemplateType::from_str_opt("lib"),
+        Some(TemplateType::RustLib)
+    );
+    assert_eq!(
+        TemplateType::from_str_opt("rust-bin"),
+        Some(TemplateType::RustBin)
+    );
+    assert_eq!(
+        TemplateType::from_str_opt("bin"),
+        Some(TemplateType::RustBin)
+    );
     assert_eq!(
         TemplateType::from_str_opt("rust-workspace"),
         Some(TemplateType::RustWorkspace)
@@ -33,7 +45,10 @@ fn template_type_from_str_opt_case_insensitive() {
         TemplateType::from_str_opt("RUST-LIB"),
         Some(TemplateType::RustLib)
     );
-    assert_eq!(TemplateType::from_str_opt("Lib"), Some(TemplateType::RustLib));
+    assert_eq!(
+        TemplateType::from_str_opt("Lib"),
+        Some(TemplateType::RustLib)
+    );
 }
 
 #[test]
