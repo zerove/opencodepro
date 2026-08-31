@@ -102,7 +102,7 @@
 #### 7.4 开发者体验
 - [x] **`make dev` 统一入口** (2026-08-31): 替代散落 make 目标；`make dev`/`ci-quick`/`dev-fmt`/`dev-clippy`/`dev-test`/`ci-bridge`
 - [x] **IDE Rust Analyzer 配置** (2026-08-31): `.rust-analyzer.json` 排除 4 个重型 crate
-- [ ] **`just` 适配层**: 提供 `justfile` 镜像 Makefile，跨平台 shell 一致性
+- [x] **`just` 适配层** (2026-08-31): `justfile` 镜像 Makefile 关键目标，跨平台友好（Windows / macOS / Linux），不强制 set shell 保留各平台默认行为
 
 #### 7.5 文档与运维
 - [ ] **CHANGELOG.md 启动**: 当前 320 个本地提交无 CHANGELOG，按 keep-a-changelog 格式补 0.x.x

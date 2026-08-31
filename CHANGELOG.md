@@ -22,6 +22,10 @@
   - `make ci-quick` = dev-fmt + dev-clippy + dev-test（快速）
   - `make dev-fmt` / `dev-clippy` / `dev-test` / `ci-bridge` 单步
   - 与 `.github/workflows/ci.yml` 步骤顺序一致
+- **`justfile` 跨平台命令镜像** (阶段 7.4 收尾)
+  - Windows / macOS / Linux 一致体验（`cargo install just`）
+  - 镜像 `make dev` / `ci-quick` / `dev-fmt` / `dev-clippy` / `dev-test` / `ci-bridge` 等关键目标
+  - 不设置 `set shell`，保留各平台默认 shell 行为
 
 ### Fixed
 - **clippy -D warnings** 7 处 rustc 1.98 升级后引入的编译错误：
