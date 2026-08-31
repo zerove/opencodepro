@@ -47,8 +47,45 @@ HEAVY_PACKAGES = sisyphus-sandbox sisyphus-sandboxd sisyphus-tests
 .PHONY: test-ci
 .PHONY: perf-analyze
 .PHONY: dev-tui run-tui clean
+.PHONY: dev ci-quick dev-fmt dev-clippy dev-test ci-bridge
 
 all: check-all
+
+# — 一键开发入口（阶段 7.4 DX）—
+
+# make dev: 完整本地验证流水线 (轻量级 + bridge)
+# 跳过重型 crate (sandbox/tests)，按依赖顺序:
+#   1) fmt 校验     → 防止风格漂移
+#   2) clippy 严格  → 提前抓 lint
+#   3) lib 单元测试  → 快速回归
+#   4) bridge 单独   → 单独验证（重型 crate）
+dev: ci-quick ci-bridge
+	@echo ""
+	@echo "✅ 完整本地验证通过（fmt + clippy + lib tests + bridge clippy）"
+
+# make ci-quick: 不含重型 crate 的快速检查（默认开发循环）
+ci-quick: dev-fmt dev-clippy dev-test
+	@echo "✅ ci-quick: fmt + clippy + lib tests"
+
+# make dev-fmt: 仅 fmt 校验
+dev-fmt:
+	@echo "━━━ 1/4 fmt check ━━━"
+	cargo fmt --all --check
+
+# make dev-clippy: 全工作区 clippy 严格（排除重型）
+dev-clippy:
+	@echo "━━━ 2/4 clippy ━━━"
+	cargo clippy --workspace --exclude sisyphus-bridge --exclude sisyphus-sandbox --exclude sisyphus-sandboxd --exclude sisyphus-tests -- -D warnings
+
+# make dev-test: lib 单元测试
+dev-test:
+	@echo "━━━ 3/4 lib tests ━━━"
+	cargo test --workspace --exclude sisyphus-bridge --exclude sisyphus-sandbox --exclude sisyphus-sandboxd --exclude sisyphus-tests --lib
+
+# make ci-bridge: bridge 单独 clippy（重型 crate 隔离）
+ci-bridge:
+	@echo "━━━ 4/4 bridge clippy ━━━"
+	cargo clippy -p sisyphus-bridge -- -D warnings
 
 # — workspace commands (exclude heavy crates) —
 
