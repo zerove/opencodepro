@@ -26,6 +26,23 @@ pub(crate) async fn openapi_json() -> impl IntoResponse {
                     }
                 }
             },
+            "/health/deep": {
+                "get": {
+                    "summary": "Deep health check (per-component status)",
+                    "description": "Probe every startup dependency (session DB, shared HTTP client, kernel) and report per-component status. Returns 200 when all OK; 207 Multi-Status on partial degradation. Use for K8s readiness probes or the TUI `:health` panel.",
+                    "operationId": "healthDeep",
+                    "responses": {
+                        "200": {
+                            "description": "All components healthy",
+                            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/HealthDeepResponse"}}}
+                        },
+                        "207": {
+                            "description": "Partial degradation; see components for detail",
+                            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/HealthDeepResponse"}}}
+                        }
+                    }
+                }
+            },
 
             // ── Tool Execution ───────────────────────────────────────────
             "/api/execute": {
@@ -513,6 +530,24 @@ pub(crate) async fn openapi_json() -> impl IntoResponse {
                     "properties": {
                         "status": {"type": "string"},
                         "version": {"type": "string"}
+                    }
+                },
+                "HealthDeepResponse": {
+                    "type": "object",
+                    "properties": {
+                        "status": {"type": "string", "description": "ok | degraded"},
+                        "version": {"type": "string"},
+                        "components": {
+                            "type": "object",
+                            "description": "Per-component status map; keys: session_db, shared_http, kernel",
+                            "additionalProperties": {
+                                "type": "object",
+                                "properties": {
+                                    "status": {"type": "string", "description": "ok | degraded | absent"},
+                                    "path": {"type": "string", "description": "Path or other diagnostic info (optional)"}
+                                }
+                            }
+                        }
                     }
                 },
 

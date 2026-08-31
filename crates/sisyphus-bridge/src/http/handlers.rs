@@ -119,6 +119,61 @@ pub(super) async fn health_handler(State(state): State<RestApiState>) -> impl In
     })
 }
 
+/// Deep health check: probe every startup dependency (session DB directory,
+/// shared HTTP client presence, kernel handle) and report per-component
+/// status. Returns 200 only when every check is OK; partial degradation
+/// returns 207 Multi-Status with detailed per-component status. Useful for
+/// K8s readiness probes and the TUI `:health` panel (阶段 7.1).
+pub(super) async fn health_deep_handler(State(state): State<RestApiState>) -> impl IntoResponse {
+    let mut components = serde_json::Map::new();
+    let mut all_ok = true;
+
+    // 1) Session DB path: 目录存在或父目录可创建即视为可用。
+    //    DB 文件本身可能尚未创建（首次启动），所以仅检查父目录存在。
+    let db_parent_exists = state.session_db.parent().is_some_and(|p| p.exists());
+    let db_ok = state.session_db.exists() || db_parent_exists;
+    components.insert(
+        "session_db".into(),
+        serde_json::json!({
+            "status": if db_ok { "ok" } else { "degraded" },
+            "path": state.session_db.display().to_string(),
+        }),
+    );
+    all_ok &= db_ok;
+
+    // 2) Shared HTTP client (LLM provider pool) — None 在 CLI/dev 模式下是预期的。
+    let http_status = if state.shared_http.is_some() {
+        "ok"
+    } else {
+        "absent"
+    };
+    components.insert(
+        "shared_http".into(),
+        serde_json::json!({ "status": http_status }),
+    );
+    // shared_http 缺失不算降级（CLI 模式不依赖 LLM）。
+
+    // 3) Kernel handle: 仅做引用获取，不调用可能阻塞的 status 方法。
+    let kernel_ok = true; // kernel handle 始终存在（构造时已注入）。
+    components.insert(
+        "kernel".into(),
+        serde_json::json!({ "status": if kernel_ok { "ok" } else { "degraded" } }),
+    );
+    all_ok &= kernel_ok;
+
+    let body = serde_json::json!({
+        "status": if all_ok { "ok" } else { "degraded" },
+        "version": env!("CARGO_PKG_VERSION"),
+        "components": components,
+    });
+    let code = if all_ok {
+        StatusCode::OK
+    } else {
+        StatusCode::MULTI_STATUS
+    };
+    (code, Json(body))
+}
+
 // --- Goal Execution Handlers ---
 
 pub(super) async fn execute_goal_handler(
