@@ -258,12 +258,13 @@ mod tests {
         fs::create_dir_all(&dir).unwrap();
         fs::write(
             dir.join("http-client-bench-100.jsonl"),
-            format!("{{\"requests\":200,\"concurrency\":20,\"speedup_ratio\":5.0}}\n"),
+            // rustc 1.98 clippy::useless_format 修复：直接用字符串（单层花括号）
+            "{\"requests\":200,\"concurrency\":20,\"speedup_ratio\":5.0}\n",
         )
         .unwrap();
         fs::write(
             dir.join("http-client-bench-200.jsonl"),
-            format!("{{\"requests\":200,\"concurrency\":20,\"speedup_ratio\":12.5}}\n"),
+            "{\"requests\":200,\"concurrency\":20,\"speedup_ratio\":12.5}\n",
         )
         .unwrap();
 

@@ -1257,11 +1257,11 @@ mod tests {
     // ── 路由测试 ─────────────────────────────────────────
 
     /// 串行化修改进程全局 WEBUI_API_KEY 环境变量的测试。
-    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    static ENV_LOCK: std::sync::OnceLock<tokio::sync::Mutex<()>> = std::sync::OnceLock::new(); // rustc 1.98 clippy await_holding_lock 改用 OnceLock+tokio Mutex
 
     #[tokio::test]
     async fn test_router_index_serves_dashboard() {
-        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = ENV_LOCK.get_or_init(|| tokio::sync::Mutex::new(())).lock().await;
         std::env::remove_var("WEBUI_API_KEY");
         let router = app("http://localhost:8080".into());
         let resp =
@@ -1285,7 +1285,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_router_auth_required_when_token_set() {
-        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = ENV_LOCK.get_or_init(|| tokio::sync::Mutex::new(())).lock().await;
         // 为认证中间件设置环境变量
         std::env::set_var("WEBUI_API_KEY", "test-secret-key");
         let router = app("http://localhost:8080".into());
@@ -1330,7 +1330,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_router_events_public_no_auth() {
-        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = ENV_LOCK.get_or_init(|| tokio::sync::Mutex::new(())).lock().await;
         // 未设置 WEBUI_API_KEY → 公开路由无需认证即可访问。
         std::env::remove_var("WEBUI_API_KEY");
         let router = app("http://localhost:8080".into());

@@ -362,6 +362,7 @@ fn risk_level_debug_format() {
 #[test]
 fn risk_level_hash_distinct() {
     use std::collections::HashSet;
+    // rustc 1.98 unused_imports: HashSet 未实际使用（RiskLevel 不实现 Hash）
     let mut set: HashSet<RiskLevel> = HashSet::new();
     set.insert(RiskLevel::Low);
     set.insert(RiskLevel::Medium);
@@ -376,7 +377,8 @@ fn risk_level_hash_distinct() {
 fn risk_level_copy_and_clone() {
     let a = RiskLevel::Critical;
     let b = a; // Copy
-    let c = a.clone();
+               // rustc 1.98 clippy::clone_on_copy 修复：直接 Copy 复制
+    let c = a;
     assert_eq!(a, b);
     assert_eq!(a, c);
 }
@@ -1525,15 +1527,18 @@ fn ranked_path_with_max_estimated_cost() {
     let back: RankedPath = serde_json::from_str(&j).unwrap();
     assert_eq!(back.estimated_cost, u64::MAX);
 }
-
 #[test]
 fn planner_config_with_default_then_overrides() {
-    let mut cfg = PlannerConfig::default();
-    cfg.probability_weight = 0.7;
-    cfg.cost_weight = 0.2;
-    cfg.stability_weight = 0.1;
+    // rustc 1.98 clippy::field_reassign_with_default 修复：用 struct update
+    let cfg = PlannerConfig {
+        probability_weight: 0.7,
+        cost_weight: 0.2,
+        stability_weight: 0.1,
+        ..PlannerConfig::default()
+    };
     assert!((cfg.probability_weight - 0.7).abs() < 1e-9);
     assert!((cfg.cost_weight - 0.2).abs() < 1e-9);
+    assert!((cfg.stability_weight - 0.1).abs() < 1e-9);
     assert!((cfg.stability_weight - 0.1).abs() < 1e-9);
 }
 
@@ -1898,13 +1903,14 @@ fn path_summary_with_unicode_best_worst_paths() {
 
 #[test]
 fn risk_level_eq_in_set_works() {
-    use std::collections::HashSet;
+    // rustc 1.98 unused_imports: HashSet 未实际使用（RiskLevel 不实现 Hash）
     // RiskLevel doesn't implement Hash, so use Vec
-    let mut v: Vec<RiskLevel> = Vec::new();
-    v.push(RiskLevel::Low);
-    v.push(RiskLevel::Medium);
-    v.push(RiskLevel::High);
-    v.push(RiskLevel::Critical);
+    let v: Vec<RiskLevel> = vec![
+        RiskLevel::Low,
+        RiskLevel::Medium,
+        RiskLevel::High,
+        RiskLevel::Critical,
+    ];
     assert_eq!(v.len(), 4);
 }
 

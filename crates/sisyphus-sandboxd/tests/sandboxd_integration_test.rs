@@ -194,7 +194,9 @@ fn test_concurrent_requests() {
     // Sort by id so order doesn't matter
     responses.sort();
 
-    for (_i, resp) in responses.iter().enumerate() {
+    // rustc 1.98 clippy::unused_enumerate_index 修复：去除 `.enumerate()`，
+    // 因为 `_i` 在循环体中未使用。
+    for resp in responses.iter() {
         let parsed: serde_json::Value = serde_json::from_str(resp).expect("Invalid JSON response");
         assert_eq!(parsed["result"]["pong"], true);
         // Responses should have ids 1 or 2

@@ -61,8 +61,11 @@ fn config_validate_default_ok() {
 
 #[test]
 fn config_validate_auth_token_requires_jwt_secret() {
-    let mut c = Config::default();
-    c.auth_token = "my-token".to_string();
+    // rustc 1.98 clippy::field_reassign_with_default 修复：struct update 语法
+    let c = Config {
+        auth_token: "my-token".to_string(),
+        ..Config::default()
+    };
     // jwt.secret is still empty → validation must fail.
     let r = c.validate();
     assert!(r.is_err());
@@ -72,12 +75,16 @@ fn config_validate_auth_token_requires_jwt_secret() {
 
 #[test]
 fn config_validate_with_both_auth_token_and_jwt_secret_ok() {
-    let mut c = Config::default();
-    c.auth_token = "my-token".to_string();
-    c.jwt.secret = "secret".to_string();
+    let c = Config {
+        auth_token: "my-token".to_string(),
+        jwt: sisyphus_types::JwtConfig {
+            secret: "secret".to_string(),
+            ..Default::default()
+        },
+        ..Config::default()
+    };
     assert!(c.validate().is_ok());
 }
-
 // ---------------------------------------------------------------------------
 // apply_env_overrides
 // ---------------------------------------------------------------------------

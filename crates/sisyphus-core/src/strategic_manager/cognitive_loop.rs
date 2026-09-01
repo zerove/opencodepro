@@ -1332,8 +1332,8 @@ pub fn effective_max_iterations(adaptive_depth: u32, v2_budget: u32, user_cap: u
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sisyphus_intel::token_budget::TokenBudgetTracker as Tbt;
-    use sisyphus_types::config::sub::TokenBudgetConfig;
+    // rustc 1.98 unused_imports: Tbt/TokenBudgetConfig 在该文件测试中未直接使用
+    //（之前由 cfg(test) 模块直接引用，但实际只在其他位置用 String 解析）
 
     #[test]
     fn test_effective_max_respects_user_cap() {

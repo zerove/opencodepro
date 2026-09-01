@@ -286,8 +286,8 @@ fn provider_error_debug() {
 
 #[test]
 fn provider_error_variants() {
-    use sisyphus_tools_llm::provider::types::ProviderError;
-    let variants = vec![
+    // rustc 1.98 clippy::useless_vec 修复：直接用数组
+    let variants = [
         ProviderError::Transient("a".into()),
         ProviderError::Permanent("b".into()),
         ProviderError::RateLimited("c".into()),

@@ -133,7 +133,8 @@ fn template_type_eq_copy() {
 #[test]
 fn template_type_clone() {
     let a = TemplateType::RustBin;
-    let b = a.clone();
+    // rustc 1.98 clippy::clone_on_copy 修复：直接 Copy 复制
+    let b = a;
     assert_eq!(a, b);
 }
 

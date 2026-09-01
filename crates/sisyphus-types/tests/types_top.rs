@@ -550,14 +550,14 @@ fn formal_verification_config_default() {
 #[test]
 fn formal_verification_config_clone() {
     use sisyphus_types::FormalVerificationConfig;
-    let c = FormalVerificationConfig {
+    let c1 = FormalVerificationConfig {
         enable_kani: true,
         enable_loom: false,
         enable_proptest: true,
         max_proptest_cases: 1000,
     };
-    let cloned = c.clone();
-    assert_eq!(cloned.enable_kani, true);
+    let cloned = c1; // Copy
+    assert!(cloned.enable_kani);
     assert_eq!(cloned.max_proptest_cases, 1000);
 }
 

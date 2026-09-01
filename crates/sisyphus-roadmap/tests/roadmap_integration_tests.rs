@@ -339,7 +339,7 @@ async fn test_proposal_manager_approve_reject() {
 #[tokio::test]
 async fn test_progress_reporting() {
     let (manager, project_id) = create_test_manager().await;
-    let (ms1_id, ms2_id) = setup_milestones_with_goals(&manager, &project_id).await;
+    let (ms1_id, _ms2_id) = setup_milestones_with_goals(&manager, &project_id).await;
 
     // Complete some goals
     manager
@@ -765,13 +765,12 @@ async fn test_list_project_ids() {
     assert!(ids.contains(&project2.id));
     assert!(ids.contains(&project3.id));
     assert_eq!(ids.len(), 3);
+    assert_eq!(ids.len(), 3);
 }
 
-/// Test: delete project
 #[tokio::test]
 async fn test_delete_project() {
-    let (manager, project_id) = create_test_manager().await;
-
+    let (manager, _project_id) = create_test_manager().await;
     let project2 =
         manager.create_project("project-to-delete", "To Delete", "Will be deleted").await.unwrap();
 

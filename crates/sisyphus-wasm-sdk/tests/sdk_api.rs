@@ -63,12 +63,12 @@ fn tool_count_reflects_registrations() {
     let id = unique_id("count_test");
     let before = tool_count();
     register_tool_as(&id, TestAddTool);
-    // Use `>=` rather than `== before + 1` because a parallel test in
-    // the same binary may have registered another tool between our
-    // `before` snapshot and our `after` call.
+    // rustc 1.98 clippy::int_plus_one 修复：`after > before` 等价。
+    // 注释保留：使用 `>`/`>=` 而非 `== before + 1` 是因为同一二进制中
+    // 可能有并行测试在 `before` 快照和 `after` 调用之间注册了其他工具。
     let after = tool_count();
     assert!(
-        after >= before + 1,
+        after > before,
         "register_tool_as should bump the count: before={before} after={after}"
     );
     assert!(

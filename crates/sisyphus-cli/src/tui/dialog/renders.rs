@@ -1,8 +1,8 @@
 use ratatui::{
-    layout::{Constraint, Layout, Rect},
+    layout::{Constraint, Layout, Margin, Rect},
     style::{Modifier, Style},
     text::{Line, Span, Text},
-    widgets::{Block, Borders, List, ListItem, Paragraph, Row, Table, Wrap},
+    widgets::{Block, Borders, Cell, List, ListItem, Paragraph, Row, Table, Wrap},
 };
 
 use super::super::widgets;
@@ -1289,4 +1289,134 @@ pub(super) fn render_cognitive_summary_dialog(frame: &mut ratatui::Frame, area: 
     let right_para =
         Paragraph::new(Text::from(right_lines)).block(Block::default().borders(Borders::NONE));
     frame.render_widget(right_para, right);
+}
+
+/// 渲染 `:health` 对话框（bridge `/health/deep` 启动健康度）。
+///
+/// 顶端状态条（OK / DEGRADED）+ 组件清单表格 + raw JSON 详情。
+pub(super) fn render_health_dialog(frame: &mut ratatui::Frame, area: Rect, app: &App) {
+    use ratatui::layout::{Constraint, Direction, Layout};
+
+    let theme = app.theme();
+
+    let verdict = if app.health_all_ok { "OK" } else { "DEGRADED" };
+    let verdict_style = if app.health_all_ok {
+        Style::default().fg(theme.success).add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(theme.error).add_modifier(Modifier::BOLD)
+    };
+
+    // 1) 顶部状态条
+    let mut status_lines = vec![Line::from(vec![
+        Span::raw("Overall: "),
+        Span::styled(verdict, verdict_style),
+        Span::raw(format!("  ({})", app.health_status)),
+    ])];
+    if let Some(t) = app.health_last_refresh {
+        let elapsed = t.elapsed().as_secs();
+        status_lines.push(Line::from(Span::styled(
+            format!("Last refresh: {elapsed}s ago  (r: refresh, Esc: close)"),
+            Style::default().fg(theme.muted),
+        )));
+    } else {
+        status_lines.push(Line::from(Span::styled(
+            "No refresh yet — press r to probe /health/deep".to_string(),
+            Style::default().fg(theme.muted),
+        )));
+    }
+
+    let status_block = Block::default().borders(Borders::ALL).title(" Bridge Health (`:health`) ");
+    let status_para = Paragraph::new(Text::from(status_lines)).block(status_block);
+    frame.render_widget(status_para, area);
+
+    // 内部布局：状态条 + 组件表 + 详情
+    let inner = area.inner(Margin::new(1, 1));
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(4),
+            Constraint::Min(5),
+            Constraint::Length(8),
+        ])
+        .split(inner);
+
+    // 2) 组件清单（status / path 等）
+    let header = Row::new(vec![
+        Cell::from("Component")
+            .style(Style::default().fg(theme.muted).add_modifier(Modifier::BOLD)),
+        Cell::from("Status").style(Style::default().fg(theme.muted).add_modifier(Modifier::BOLD)),
+        Cell::from("Detail").style(Style::default().fg(theme.muted).add_modifier(Modifier::BOLD)),
+    ]);
+
+    let rows: Vec<Row> = if app.health_components.is_empty() {
+        vec![Row::new(vec![
+            Cell::from("—"),
+            Cell::from("—"),
+            Cell::from("no data; press r"),
+        ])]
+    } else {
+        // 排序：ok → absent → degraded，便于快速读出异常
+        let mut keys: Vec<&String> = app.health_components.keys().collect();
+        keys.sort_by_key(|k| {
+            let status = app
+                .health_components
+                .get(*k)
+                .and_then(|v| v.get("status"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            match status {
+                "ok" => 0,
+                "absent" => 1,
+                _ => 2,
+            }
+        });
+        keys.into_iter()
+            .map(|k| {
+                let v = app.health_components.get(k).cloned().unwrap_or(serde_json::Value::Null);
+                let status =
+                    v.get("status").and_then(|s| s.as_str()).unwrap_or("unknown").to_string();
+                let detail = v
+                    .get("path")
+                    .and_then(|p| p.as_str())
+                    .map(|s| s.to_string())
+                    .unwrap_or_else(|| v.to_string());
+                let status_style = match status.as_str() {
+                    "ok" => Style::default().fg(theme.success),
+                    "degraded" => Style::default().fg(theme.error),
+                    "absent" => Style::default().fg(theme.muted),
+                    _ => Style::default(),
+                };
+                Row::new(vec![
+                    Cell::from(k.clone()),
+                    Cell::from(status).style(status_style),
+                    Cell::from(detail),
+                ])
+            })
+            .collect()
+    };
+
+    let table = Table::new(
+        rows,
+        [
+            Constraint::Length(16),
+            Constraint::Length(12),
+            Constraint::Min(20),
+        ],
+    )
+    .header(header)
+    .block(Block::default().borders(Borders::ALL).title(" Components "));
+    frame.render_widget(table, chunks[1]);
+
+    // 3) 原始 JSON 预览（clamp scroll）
+    let raw_text =
+        serde_json::to_string_pretty(&serde_json::Value::Object(app.health_components.clone()))
+            .unwrap_or_else(|_| "<failed to serialize>".into());
+    let raw_lines: Vec<Line> = raw_text
+        .lines()
+        .skip(app.health_scroll)
+        .map(|l| Line::from(Span::raw(l.to_string())))
+        .collect();
+    let raw_para = Paragraph::new(Text::from(raw_lines))
+        .block(Block::default().borders(Borders::ALL).title(" Raw components JSON "));
+    frame.render_widget(raw_para, chunks[2]);
 }

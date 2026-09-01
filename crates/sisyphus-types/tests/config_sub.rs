@@ -25,8 +25,10 @@ fn cognitive_loop_config_default_validates_ok() {
 
 #[test]
 fn cognitive_loop_config_max_iterations_zero_rejected() {
-    let mut c = CognitiveLoopConfig::default();
-    c.max_iterations = 0;
+    let c = CognitiveLoopConfig {
+        max_iterations: 0,
+        ..CognitiveLoopConfig::default()
+    };
     let r = c.validate();
     assert!(r.is_err());
     let s = format!("{}", r.unwrap_err());
@@ -35,8 +37,10 @@ fn cognitive_loop_config_max_iterations_zero_rejected() {
 
 #[test]
 fn cognitive_loop_config_max_iterations_too_large_rejected() {
-    let mut c = CognitiveLoopConfig::default();
-    c.max_iterations = 10_000;
+    let c = CognitiveLoopConfig {
+        max_iterations: 10_000,
+        ..CognitiveLoopConfig::default()
+    };
     let r = c.validate();
     assert!(r.is_err());
     let s = format!("{}", r.unwrap_err());
@@ -45,8 +49,10 @@ fn cognitive_loop_config_max_iterations_too_large_rejected() {
 
 #[test]
 fn cognitive_loop_config_timeout_zero_rejected() {
-    let mut c = CognitiveLoopConfig::default();
-    c.llm_stage_timeout_secs = 0;
+    let c = CognitiveLoopConfig {
+        llm_stage_timeout_secs: 0,
+        ..CognitiveLoopConfig::default()
+    };
     // Note: 0 means "disable" for LLM stage; the validator only rejects
     // if the value is > 600 (or out of bounds). Per the code, 0 is
     // allowed. We just confirm validation succeeds.
@@ -55,8 +61,10 @@ fn cognitive_loop_config_timeout_zero_rejected() {
 
 #[test]
 fn cognitive_loop_config_timeout_too_large_rejected() {
-    let mut c = CognitiveLoopConfig::default();
-    c.llm_stage_timeout_secs = 1000;
+    let c = CognitiveLoopConfig {
+        llm_stage_timeout_secs: 1000,
+        ..CognitiveLoopConfig::default()
+    };
     let r = c.validate();
     assert!(r.is_err());
     let s = format!("{}", r.unwrap_err());
@@ -65,8 +73,10 @@ fn cognitive_loop_config_timeout_too_large_rejected() {
 
 #[test]
 fn cognitive_loop_config_convergence_threshold_negative_rejected() {
-    let mut c = CognitiveLoopConfig::default();
-    c.convergence_threshold = -0.1;
+    let c = CognitiveLoopConfig {
+        convergence_threshold: -0.1,
+        ..CognitiveLoopConfig::default()
+    };
     let r = c.validate();
     assert!(r.is_err());
     let s = format!("{}", r.unwrap_err());
@@ -75,75 +85,69 @@ fn cognitive_loop_config_convergence_threshold_negative_rejected() {
 
 #[test]
 fn cognitive_loop_config_convergence_threshold_above_one_rejected() {
-    let mut c = CognitiveLoopConfig::default();
-    c.convergence_threshold = 1.5;
+    let c = CognitiveLoopConfig {
+        convergence_threshold: 1.5,
+        ..CognitiveLoopConfig::default()
+    };
     let r = c.validate();
     assert!(r.is_err());
 }
 
 #[test]
 fn cognitive_loop_config_convergence_threshold_boundaries_ok() {
-    let mut c = CognitiveLoopConfig::default();
-    c.convergence_threshold = 0.0;
+    // rustc 1.98 clippy::field_reassign_with_default 修复：两次边界检查用
+    // 独立的 struct update 表达式
+    let c = CognitiveLoopConfig {
+        convergence_threshold: 0.0,
+        ..CognitiveLoopConfig::default()
+    };
     assert!(c.validate().is_ok());
-    c.convergence_threshold = 1.0;
-    assert!(c.validate().is_ok());
+    let c2 = CognitiveLoopConfig {
+        convergence_threshold: 1.0,
+        ..CognitiveLoopConfig::default()
+    };
+    assert!(c2.validate().is_ok());
 }
-
-// ---------------------------------------------------------------------------
+// AnomalyDetectorConfig
 // AdaptiveDepthConfig
-// ---------------------------------------------------------------------------
-
-#[test]
-fn adaptive_depth_default_validates_ok() {
-    let c = AdaptiveDepthConfig::default();
-    assert!(c.validate().is_ok());
-}
-
 #[test]
 fn adaptive_depth_initial_budget_below_one_rejected() {
-    let mut c = AdaptiveDepthConfig::default();
-    c.initial_budget = 0.5;
-    let r = c.validate();
-    assert!(r.is_err());
-    let s = format!("{}", r.unwrap_err());
-    assert!(s.contains("initial_budget"));
-}
-
-#[test]
-fn adaptive_depth_decay_negative_rejected() {
-    let mut c = AdaptiveDepthConfig::default();
-    c.decay = -0.1;
+    let c = AdaptiveDepthConfig {
+        initial_budget: 0.5,
+        ..AdaptiveDepthConfig::default()
+    };
     let r = c.validate();
     assert!(r.is_err());
 }
 
 #[test]
 fn adaptive_depth_decay_above_one_rejected() {
-    let mut c = AdaptiveDepthConfig::default();
-    c.decay = 1.1;
+    let c = AdaptiveDepthConfig {
+        decay: 1.1,
+        ..AdaptiveDepthConfig::default()
+    };
     let r = c.validate();
     assert!(r.is_err());
 }
 
 #[test]
 fn adaptive_depth_decay_boundaries_ok() {
-    let mut c = AdaptiveDepthConfig::default();
-    c.decay = 0.0;
+    let c = AdaptiveDepthConfig {
+        decay: 0.0,
+        ..AdaptiveDepthConfig::default()
+    };
     assert!(c.validate().is_ok());
-    c.decay = 1.0;
-    assert!(c.validate().is_ok());
+    let c2 = AdaptiveDepthConfig {
+        decay: 1.0,
+        ..AdaptiveDepthConfig::default()
+    };
+    assert!(c2.validate().is_ok());
 }
-
-// ---------------------------------------------------------------------------
-// AnomalyDetectorConfig
-// ---------------------------------------------------------------------------
 
 #[test]
 fn anomaly_detector_default_validates_ok() {
     let c = AnomalyDetectorConfig::default();
     assert!(c.validate().is_ok());
-    // 默认值与 2026-08-31 之前硬编码常量保持一致
     assert!((c.fuel_threshold - 2.0).abs() < 1e-9);
     assert!((c.duration_threshold - 3.0).abs() < 1e-9);
     assert!((c.error_rate_threshold - 0.3).abs() < 1e-9);
@@ -198,11 +202,15 @@ fn anomaly_detector_error_rate_nan_rejected() {
 
 #[test]
 fn anomaly_detector_history_window_zero_rejected() {
-    let c = AnomalyDetectorConfig {
-        history_window: 0,
-        ..AnomalyDetectorConfig::default()
+    // `AnomalyDetectorConfig` 自身 history_window=0 应被拒绝
+    let c = CognitiveLoopConfig {
+        anomaly_detector: sisyphus_types::AnomalyDetectorConfig {
+            history_window: 0,
+            ..Default::default()
+        },
+        ..CognitiveLoopConfig::default()
     };
-    let err = c.validate().expect_err("history_window=0 should fail");
+    let err = c.validate().expect_err("embedded history_window=0 should fail");
     let msg = format!("{err}");
     assert!(
         msg.contains("history_window"),

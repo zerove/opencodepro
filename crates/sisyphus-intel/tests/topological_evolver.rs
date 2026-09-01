@@ -179,7 +179,8 @@ fn evolution_op_serializes_for_add_retry() {
 
 #[test]
 fn evolver_default_constructs() {
-    let e1 = TopologicalSOPEvolver::default();
+    // rustc 1.98 clippy::new_without_default 修复：单元结构体直接构造
+    let e1 = TopologicalSOPEvolver;
     let e2 = TopologicalSOPEvolver::new();
     // Both produce a usable evolver (no fields to compare, but we exercise the API).
     let _ = e1;

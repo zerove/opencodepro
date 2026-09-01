@@ -554,7 +554,7 @@ fn asset_kind_default_debug() {
         AssetKind::Constraint,
     ] {
         let s = format!("{:?}", kind);
-        assert!(s.len() > 0);
+        assert!(!s.is_empty());
     }
 }
 
@@ -1109,7 +1109,8 @@ fn constraint_data_with_high_strictness_and_penalty() {
 #[test]
 fn asset_relation_with_distinct_relation_types() {
     use sisyphus_types::asset::{AssetRelation, RelationType};
-    let variants = vec![
+    // rustc 1.98 clippy::useless_vec 修复：直接使用数组
+    let variants = [
         AssetRelation {
             from_id: "a".into(),
             to_id: "b".into(),

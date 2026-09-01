@@ -130,7 +130,8 @@ fn fallback_reason_eq_single_variant() {
 #[test]
 fn fallback_reason_clone() {
     let x = LexicalFallbackReason::EmbedFailed;
-    let y = x.clone();
+    // rustc 1.98 clippy::clone_on_copy 修复：直接 Copy 复制
+    let y = x;
     assert_eq!(x, y);
 }
 

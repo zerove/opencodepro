@@ -150,7 +150,7 @@ fn search_recurses_into_subdirectories() {
 fn gather_context_returns_content_for_existing_files() {
     let dir = TempDir::new().expect("tempdir");
     write(dir.path(), "a.rs", "line1\nline2\nline3\n");
-    let files = vec![dir.path().join("a.rs")];
+    let files = [dir.path().join("a.rs")];
     let ctx = gather_context(&files.iter().map(|p| p.as_path()).collect::<Vec<_>>()).expect("ok");
     assert_eq!(ctx.len(), 1);
     let fc = &ctx[0];

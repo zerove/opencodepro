@@ -33,8 +33,8 @@ fn render_single_node_no_edges() {
     assert!(viz.edges.is_empty());
     // Single node should have width 0 (it's at column 0 with no extra
     // content beyond the node box).
-    assert!(viz.width > 0 || viz.width == 0); // accept any
-    assert!(viz.height > 0 || viz.height == 0);
+    let _ = viz.width; // accept any non-negative
+    let _ = viz.height;
 }
 
 #[test]

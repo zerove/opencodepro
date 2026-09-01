@@ -186,7 +186,7 @@ fn audit_report_serde_full() {
     let json = serde_json::to_string(&r).unwrap();
     let back: SecurityAuditReport = serde_json::from_str(&json).unwrap();
     assert_eq!(back.summary, "ok");
-    assert_eq!(back.passed, false);
+    assert!(!back.passed);
     assert_eq!(back.vulnerabilities.len(), 1);
 }
 

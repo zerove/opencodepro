@@ -82,10 +82,10 @@
 
 #### 7.1 健康度与可观测性 (最高优先)
 - [ ] **Otel 导出端点配置化**: 当前 otel 配置散落，`OpenTelemetryConfig` 缺少完整 env override 链
-- [ ] **认知循环 v2 异常检测器调优**: `AnomalyDetector` 阈值硬编码，需要从 Config 加载
+- [x] **认知循环 v2 异常检测器调优** (2026-08-31): `AnomalyDetector` 阈值从 Config 加载
 - [x] **bridge 启动自检端点** (2026-08-31): `GET /health/deep` 报告 session_db/shared_http/kernel 组件级状态；返回 200/207 Multi-Status；OpenAPI 文档 + HealthDeepResponse schema
 - [x] **`/health/deep` 单元测试** (2026-08-31): 5 个测试覆盖 DB 文件/父目录/不存在/absent 不算降级/三组件键（重构 health_deep_handler → 薄包装 + 纯函数 health_deep_assess）
-- [ ] **TUI `:health` 面板**: 整合健康摘要 + token 预算 + DAG 进度
+- [x] **TUI `:health` 面板** (2026-09-01): `palette` `health`/`:health`/`h`/`:h` 调起；`r` 刷新、`Esc`/`q` 关闭、`j`/`k` 翻 raw JSON；渲染三层（顶部 OK/DEGRADED 状态条 + 组件表（按 ok→absent→degraded 排序）+ Raw components JSON）；后台 `spawn_fetch_health_deep` 解析 `/health/deep`（接受 200/207 Multi-Status）；纯函数 `parse_health_deep_response` + 5 个单元测试 + 1 个集成测试 `test_health_deep_no_bridge_graceful_error`
 
 #### 7.2 测试与质量
 - [ ] **bridge 集成测试 CI 化**: `sisyphus-bridge/tests/bridge_integration_test.rs` 当前 `#[ignore]`
@@ -121,9 +121,33 @@
 - 2026-08-31 `.rust-analyzer.json` IDE 配置（4 重型 crate 排除）
 - 2026-08-31 `justfile` 跨平台命令镜像
 - 2026-08-31 推送 11 个 commit 到 origin/master（前 320 个测试扩充 commit 一并）
+- 2026-08-31 **AnomalyDetector 阈值配置化**（AnomalyDetectorConfig / 4 env / from_config / apply_config / 13 测试，commit 4dfbd15）
+- 2026-08-31 **修复 `test_search_no_network_graceful_error` flaky 测试**（从 stderr 非空改为不 panic）
+- 2026-09-01 **TUI `:health` 面板**（bridge 启动健康度可视化，8 文件 / +316 行 / 5 单元 + 1 集成测试）
+- 2026-09-01 **修复 `sisyphus-cli` clippy `iter_out_of_bounds` + `iter_count` 警告**（rustc 1.98 新增 lint）
 
 **下一步（用户可指派优先级）**:
-- 7.1: Otel 端点配置化 / AnomalyDetector 阈值化 / TUI `:health` 面板
+- 7.1: Otel 端点配置化扫尾（已基本就绪）
 - 7.2: bridge CI 化 / mutation testing / wasm proptest / 混沌扩展（需 2-4h 调研）
 - 7.3: 基准基线刷新 / DAG 渲染性能 / TUI 冷启动 profile
 - 7.5: mdbook 缓存 / 部署脚本（systemd / Docker compose / k8s）
+
+**后续 1-2 周路线（基于当前实际状态）**:
+1. **Otel 端点配置化扫尾 (P2)**: 确认 bridge / 各工具子 crate 都读同一 config、不重复。预计 0.5d 验证。
+2. **bridge 集成测试 CI 化 (P1)**: `bridge_integration_test.rs` 当前 50 个测试无 `#[ignore]`，但 OOM 风险仍存在 → 拆分为 `bridge_integration_test_core.rs` (无 sandbox，CI 跑) + 现有 (需 nightly + 16GB+)。预计 0.5d。
+3. **mutation testing 试点 (P2)**: `cargo-mutants` 在 `sisyphus-types` 跑一轮，验证测试质量（重点 config validate / apply_env_overrides）。预计 1d + 2h 调研。
+4. **CHANGELOG 0.x.x 标签 (P2)**: 当前 Unreleased 段已填 8+ 条变更，给个 v0.x.0 标签便于发布追踪。预计 0.5h。
+5. **book 增量构建 CI (P3)**: mdbook 加增量缓存到 `.github/workflows`，减少 5-10 min 全量重建。预计 0.5d。
+6. **部署脚本 (P3)**: systemd unit / Docker compose 增量 / k8s manifest 起步模板。预计 1-2d。
+7. **TUI `:health` 面板增强 (P3)**: 当前仅展示 `/health/deep`，下一步聚合 token 预算 + DAG 进度。预计 0.5-1d。
+
+---
+
+**总体进度（截至 2026-09-01 20:50）**:
+- 阶段 1-4: 100%
+- 阶段 5（认知能力深化）: 100%
+- 阶段 6（分布式）: 0%（按计划延后）
+- 阶段 7（近期 1-2 周）: ~50% (7.4 完成; 7.1 完成 3/3; 7.2/7.3/7.5 待办)
+- 测试总数: ~615+ 通过（sisyphus-cli 53 = 51 既有 + 1 health 集成 + 1 health 单元共 5 + 其他）
+- 编译警告: 0
+- clippy -D warnings: 0

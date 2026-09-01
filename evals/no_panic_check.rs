@@ -582,7 +582,7 @@ mod tests {
 
     #[test]
     fn baseline_diff_detects_new_panic() {
-        let tmp = tempdir();
+        let _tmp = tempdir();
         let hits_now = vec![Hit {
             file: "x.rs".into(),
             line: 1,

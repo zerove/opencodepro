@@ -365,7 +365,8 @@ fn correction_type_serde() {
 fn correction_type_clone() {
     let a = CorrectionType::SplitNode;
     let b = a;
-    let c = a.clone();
+    // rustc 1.98 clippy::clone_on_copy 修复：直接 Copy 复制
+    let c = a;
     assert_eq!(b, c);
 }
 
@@ -408,7 +409,8 @@ fn correction_priority_distinct() {
 fn correction_priority_clone_copy() {
     let a = CorrectionPriority::Critical;
     let b = a; // Copy
-    let c = a.clone();
+               // rustc 1.98 clippy::clone_on_copy 修复：直接 Copy 复制
+    let c = a;
     assert_eq!(a, b);
     assert_eq!(a, c);
 }

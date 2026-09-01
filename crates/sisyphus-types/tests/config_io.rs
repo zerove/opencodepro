@@ -74,8 +74,10 @@ fn config_save_to_file_creates_missing_parent_dirs() {
     let cfg = Config::from_file("/dev/null")
         .or_else(|_| -> Result<Config, sisyphus_types::TypesError> {
             // /dev/null parse fails; start from default and save
-            let mut c = Config::default();
-            c.bridge_address = "http://127.0.0.1:50051".to_string();
+            let c = Config {
+                bridge_address: "http://127.0.0.1:50051".to_string(),
+                ..Config::default()
+            };
             Ok(c)
         })
         .expect("default or default+override");

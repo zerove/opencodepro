@@ -182,8 +182,8 @@ fn concurrent_record_is_thread_safe() {
 fn default_estimated_tokens_per_call_is_sensible() {
     // The default estimate is used when LLM call sites don't know
     // the exact token count; verify it's positive and not absurdly large.
-    assert!(DEFAULT_ESTIMATED_TOKENS_PER_CALL > 0);
-    assert!(DEFAULT_ESTIMATED_TOKENS_PER_CALL < 100_000);
+    const _: () = assert!(DEFAULT_ESTIMATED_TOKENS_PER_CALL > 0);
+    const _: () = assert!(DEFAULT_ESTIMATED_TOKENS_PER_CALL < 100_000);
 }
 
 // ---------------------------------------------------------------------------

@@ -353,6 +353,10 @@ fn handle_palette_key(key: KeyEvent, app: &mut App) {
                     app.dialog = Some(Dialog::CognitiveSummary);
                     app.fetch_cognitive_summary();
                 },
+                "health" | ":health" | "h" | ":h" => {
+                    app.dialog = Some(Dialog::Health);
+                    app.fetch_health_deep();
+                },
                 "roadmap" | ":roadmap" => {
                     app.dialog = Some(Dialog::Roadmap);
                     app.roadmap_status = "connecting...".into();

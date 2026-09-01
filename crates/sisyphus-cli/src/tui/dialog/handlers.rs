@@ -772,3 +772,23 @@ pub(crate) fn handle_cognitive_summary_key(code: KeyCode, app: &mut App) {
         _ => {},
     }
 }
+
+/// 处理 `:health` 对话框按键。
+/// `r`/`R` 重新拉取 `/health/deep`；`Esc`/`q` 关闭。
+pub(crate) fn handle_health_key(code: KeyCode, app: &mut App) {
+    match code {
+        KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('Q') => {
+            app.dialog = None;
+        },
+        KeyCode::Char('r') | KeyCode::Char('R') => {
+            app.fetch_health_deep();
+        },
+        KeyCode::Down | KeyCode::Char('j') => {
+            app.health_scroll = app.health_scroll.saturating_add(1);
+        },
+        KeyCode::Up | KeyCode::Char('k') => {
+            app.health_scroll = app.health_scroll.saturating_sub(1);
+        },
+        _ => {},
+    }
+}

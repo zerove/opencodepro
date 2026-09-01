@@ -116,7 +116,8 @@ fn depth_clone_and_copy() {
     let a = CognitiveDepth::High;
     let b = a; // Copy
     let c = a; // Used after copy → Copy is fine
-    let d = a.clone(); // Clone also works
+               // rustc 1.98 clippy::clone_on_copy 修复：直接用 Copy 复制
+    let d = a; // Copy works for CognitiveDepth
     assert_eq!(a, b);
     assert_eq!(a, c);
     assert_eq!(a, d);

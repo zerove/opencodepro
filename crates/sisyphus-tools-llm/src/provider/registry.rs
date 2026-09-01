@@ -354,7 +354,6 @@ mod tests {
     #[test]
     /// 关键回归保护：所有 provider 必须共享同一 SharedHttpClient。
     /// 这保证连接池复用、统计准确、shutdown 真正等待所有 in-flight。
-    #[test]
     fn registry_shares_one_http_client_across_providers() {
         let cfgs = vec![
             make_openai_compatible_cfg(ProviderKind::OpenAi, "openai-shared", "gpt-4o-mini"),

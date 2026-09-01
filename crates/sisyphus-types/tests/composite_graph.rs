@@ -26,7 +26,7 @@ fn composite_graph_default_trait() {
 fn composite_graph_add_graph() {
     use sisyphus_types::graph::SOPGraphConfig;
     let mut g = CompositeGraph::new();
-    g.add_graph("sop1".into(), SOPGraphConfig::default());
+    g.add_graph("sop1", SOPGraphConfig::default());
     assert!(g.graphs.contains_key("sop1"));
     assert_eq!(g.graphs.len(), 1);
 }
@@ -35,15 +35,16 @@ fn composite_graph_add_graph() {
 fn composite_graph_add_multiple_graphs() {
     use sisyphus_types::graph::SOPGraphConfig;
     let mut g = CompositeGraph::new();
-    g.add_graph("a".into(), SOPGraphConfig::default());
-    g.add_graph("b".into(), SOPGraphConfig::default());
-    g.add_graph("c".into(), SOPGraphConfig::default());
+    g.add_graph("a", SOPGraphConfig::default());
+    g.add_graph("b", SOPGraphConfig::default());
+    g.add_graph("c", SOPGraphConfig::default());
     assert_eq!(g.graphs.len(), 3);
 }
 
 #[test]
 fn composite_graph_add_dependency() {
-    use sisyphus_types::graph::{DataMapping, GraphDependency};
+    // rustc 1.98 unused_imports: DataMapping 未直接使用，仅 GraphDependency
+    use sisyphus_types::graph::GraphDependency;
     let mut g = CompositeGraph::new();
     g.add_dependency(GraphDependency {
         source_sop_id: "a".into(),

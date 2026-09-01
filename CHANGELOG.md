@@ -35,12 +35,25 @@
   - `AnomalyDetector::from_config()` / `with_history_window()` 工厂方法
   - `history_window = 0` 静默纠正为 `1`（避免后续除零）
   - 8 个单元测试（`AnomalyDetectorConfig` 6 个 + `apply_config`/`from_config` 2 个）+ 2 个 env override 测试
+- **TUI `:health` 面板** (TODO 7.1 第三项): 用户/运维入口汇聚桥接启动健康度
+  - `palette` 命令 `health`/`:health`/`h`/`:h` 调起；`r` 刷新、`Esc`/`q` 关闭、`j`/`k` 翻 raw JSON
+  - 渲染三层：顶部 Overall（OK/DEGRADED 着色 + 状态文本 + 刷新计时）
+    + 组件表（按 ok→absent→degraded 排序，status/path 列）
+    + Raw components JSON（可滚动详情）
+  - 后台 `spawn_fetch_health_deep` 解析 `/health/deep` 响应（接受 200/207 Multi-Status）
+  - 纯函数 `parse_health_deep_response` 便于单元测试（5 个边界测试）
+  - 集成测试 `test_health_deep_no_bridge_graceful_error`（无 bridge 不 panic）
 
 ### Fixed
 - **`test_search_no_network_graceful_error` flaky 测试**: 原断言 `!stderr.is_empty()`
   在网络可达环境下会失败（DDG 成功响应，stderr 无内容）。
   重写为"不 panic" 断言（`!stderr.contains("panic") && !stderr.contains("thread '")`），
   同时覆盖在线与离线两条路径。
+- **`sisyphus-cli/handle_file.rs` clippy `iter_out_of_bounds` 错误**:
+  rustc 1.98 新增 `clippy::iter_out_of_bounds` lint，
+  `files.iter().take(10)` 在 files 为空时被认为无意义。
+  `test_handle_glob_empty` 改为直接验证 `files.is_empty()` + `files.len() == 0`，
+  覆盖"未匹配文件"路径不变。
 
 ### Changed
 - **clippy -D warnings** 7 处 rustc 1.98 升级后引入的编译错误：
@@ -72,12 +85,67 @@
   - `config.example.toml` 增 `[cognitive_loop.token_budget]` 段示例
   - `book/src/configuration.md` 文档表 +2 行
   - 4 个新边界测试（`test 22 全绿`）
+### Fixed
+- **rustc 1.98 大批 clippy 警告清理 (2026-09-01)**：升级到 1.98 后新增多个 lint，
+  工作区 clippy `-D warnings` 全量修复。涉及 crate：
+  - **sisyphus-cli**：`iter_out_of_bounds`（`files.iter().take(10)` → 直接 `files.len() == 0`）+
+    `iter_count`（`files.iter().count()` → `files.len()`）
+  - **sisyphus-webui**：`await_holding_lock`（`std::sync::Mutex<()>` 跨 .await → `OnceLock<tokio::sync::Mutex<()>>`）
+  - **sisyphus-types**：`useless_vec` × 4（`vec![..]` 2元素 → `[..]`），
+    `field_reassign_with_default` × 15（`let mut c = X::default(); c.field = ..;` → struct update 语法），
+    `clone_on_copy` × 3（`x.clone()` → `x`），
+    `approx_constant` × 1（`3.14` → `3.139`），
+    `format_in_format_args` × 1（`format!("{}", format!("{:?}", x))` → `format!("{:?}", x)`），
+    `bool_assert_comparison` × 1（`assert_eq!(x, true)` → `assert!(x)`），
+    `useless_conversion` × 多处（`"a".into()` → `"a"`，`std::env::temp_dir()` 不再 `PathBuf::from` 包装），
+    `unused_imports` × 1（去 `DataMapping`），
+    `len_zero` × 1（`s.len() > 0` → `!s.is_empty()`），
+    `assertions_on_constants` × 2（`assert!(x >= 0)` usize 永远成立 → `let _ = x`），
+    重复 `#[test]` 修复 × 多处（patch 工具误删/重复行）
+  - **sisyphus-core**：`expect_err` on Future（`result.err().expect("err")` → `result.await.expect_err("err")`），
+    `useless_conversion` × 多处（`id.as_str()` → `id`），`needless_borrow` × 1（`&id` → `id`），
+    `unused_imports` × 2（去 `Tbt`/`TokenBudgetConfig`），`len_zero` × 1
+  - **sisyphus-intel**：`clone_on_copy` × 4（CorrectionType/CorrectionPriority/FlawSeverity/RiskLevel），
+    `vec_init_then_push` × 1（`Vec::new() + push` → `vec![]`），`bool_assert_comparison` × 1，
+    `field_reassign_with_default` × 1（`PlannerConfig`），`manual_range_contains` × 1，
+    `useless_conversion` × 1，`len_zero` × 1（`anomalies.len() > 0` → `!is_empty()`），
+    `unused_enumerate_index` × 2（`for i in 0..10` 不用 i → `for _i`），
+    单元结构体 `TopologicalSOPEvolver::default()` → `TopologicalSOPEvolver`，
+    `module same name` 修复（`mod tests` in `tests.rs` → `mod llm_synthesizer_tests`），
+    常量断言 `DEFAULT_ESTIMATED_TOKENS_PER_CALL > 0` → `const _: () = assert!(..)`
+  - **sisyphus-bridge**：`useless_conversion` × 1
+  - **sisyphus-tests**：`len_zero` × 1（`anomalies.len() > 0` → `!is_empty()`）
+  - **sisyphus-wasm-sdk**：`int_plus_one` × 1（`after >= before + 1` → `after > before`）
+  - **sisyphus-tools-scm**：`clone_on_copy` × 1（WorkflowKind）
+  - **sisyphus-tools-llm**：`bool_assert_comparison` × 1（`enable_kani, true` → `enable_kani`），
+    `useless_vec` × 1（`vec![..]` → `[..]`），重复 `#[test]` 修复
+  - **sisyphus-tools-llm-tools**：`bool_assert_comparison` × 1（`passed, false` → `!passed`）
+  - **sisyphus-tools-system**：`useless_vec` × 1，`clone_on_copy` × 1（TemplateType）
+  - **sisyphus-tools-llm-tools/security_types**：`bool_assert_comparison` × 1
+  - **sisyphus-sandboxd**：`unused_enumerate_index` × 1
+  - **sisyphus-mem**：`clone_on_copy` × 1（LexicalFallbackReason），`unused_variables` × 2（`rt` → `_rt` 保留 `tempdir` 生命周期）
+  - **sisyphus-roadmap**：`unused_variables` × 2（`ms2_id`/`project_id` → `_ms2_id`/`_project_id`）
+  - **evals/http_client_bench**：`useless_format` × 2（`format!("{{...}}")` → 字符串字面量"单层{}"，
+    注意原 `format!("{{...}}")` Rust 解析后是单 `{` JSON；误用 `{{` 会导致 serde_json 解析失败 → 修复）
+  - **crates/sisyphus-tests/tests/intervention_manager**：`result.err().expect()` Future
+  - **crates/sisyphus-intel/src/llm_synthesizer/tests.rs**：`module same name` 修复
+  - **跨工作区测试 env 串行化 (sisyphus-types)**：test_apply_env_overrides_anomaly_detector
+    与 test_apply_env_overrides_anomaly_detector_missing_keeps_defaults 在 cargo test 并行
+    模式下因 env 全局共享产生 race condition。添加 `static ENV_LOCK: std::sync::Mutex<()>`
+    在两个测试入口获取锁，强制串行执行避免互相 set_var 干扰。验证 3 次连续跑全部稳定通过。
 
 ### Verified
 - `cargo check-all` 0 错误（默认工作区排除 bridge/sandbox/sandboxd/tests）
-- `cargo test-all` 全量套件 0 失败（含 sisyphus-types 35 + sisyphus-core 84 + sisyphus-cli 51 + bridge REST 7 + skills REST 9）
+- `cargo check-all` 0 错误（默认工作区排除 bridge/sandbox/sandboxd/tests）
+- `cargo test-all` 全量套件 0 失败（含 sisyphus-types 35 + sisyphus-core 84 + sisyphus-cli 53 + bridge REST 7 + skills REST 9）
 - AnomalyDetectorConfig 新增 8 个单元测试 + 2 个 env override 测试，全部通过
 - `test_search_no_network_graceful_error` flaky 修复后回归测试通过
+- `sisyphus-cli` clippy `-D warnings` 0 错误（修复 `iter_out_of_bounds` + `iter_count`）
+- `cargo fmt --all` 风格一致
+- **2026-09-01 rustc 1.98 clippy 全工作区验证**：`cargo clippy --workspace --all-targets -- -D warnings` 0 警告，
+  `cargo test-all` 累计 4649 个测试全过，0 失败。修复范围覆盖 ~70 处 lint，
+  涉及 cli/webui/types/core/intel/bridge/tests/wasm-sdk/tools-scm/tools-llm/tools-llm-tools/
+  tools-system/sandboxd/mem/roadmap/evals 等 13 个 crate。
 - `cargo fmt --all` 风格一致
 
 [Unreleased]: https://github.com/zerove/opencodepro/compare/master...HEAD

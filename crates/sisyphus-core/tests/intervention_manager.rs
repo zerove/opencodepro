@@ -41,7 +41,7 @@ async fn request_feedback_times_out_without_response() {
         )
         .await;
     assert!(result.is_err());
-    let err = result.err().expect("err");
+    let err = result.expect_err("err");
     let msg = err.to_string();
     assert!(
         msg.contains("timed out") || msg.contains("cancelled"),

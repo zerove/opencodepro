@@ -237,7 +237,8 @@ fn gate_verdict_debug_format() {
 #[test]
 fn gate_verdict_clone() {
     let a = GateVerdict::Allow;
-    let b = a.clone();
+    // rustc 1.98 clippy::clone_on_copy 修复：直接 Copy 复制
+    let b = a;
     assert_eq!(a, b);
 }
 
@@ -449,13 +450,9 @@ fn gate_config_clone_preserves_fields() {
         enabled: true,
     };
     let cloned = c.clone();
-    assert_eq!(cloned.fallback_on_error, false);
-    assert_eq!(cloned.enabled, true);
+    assert!(!cloned.fallback_on_error);
+    assert!(cloned.enabled);
 }
-
-// ---------------------------------------------------------------------------
-// Additional concurrency tests
-// ---------------------------------------------------------------------------
 
 #[test]
 fn gate_history_concurrent_record_does_not_panic() {
@@ -850,7 +847,7 @@ fn gate_config_default_then_disabled_change() {
 #[test]
 fn gate_history_with_unicode_decisions() {
     let h = GateHistory::new();
-    for i in 0..10 {
+    for _i in 0..10 {
         h.record(dec(GateVerdict::Allow, 0, 0));
     }
     let snap = h.snapshot();
@@ -1097,7 +1094,7 @@ fn gate_decision_with_extreme_elapsed() {
 #[test]
 fn gate_history_with_max_decisions() {
     let h = GateHistory::new();
-    for i in 0..10000 {
+    for _i in 0..10000 {
         h.record(dec(GateVerdict::Allow, 0, 0));
     }
     assert_eq!(h.snapshot().len(), 10000);

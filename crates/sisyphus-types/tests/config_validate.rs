@@ -22,8 +22,10 @@ fn minimal_config_validates_ok() {
 
 #[test]
 fn auth_token_without_jwt_secret_is_rejected() {
-    let mut cfg = Config::default();
-    cfg.auth_token = "my-token".to_string();
+    let cfg = Config {
+        auth_token: "my-token".to_string(),
+        ..Config::default()
+    };
     // jwt.secret left empty
     let msg = err_msg(cfg.validate());
     assert!(
@@ -34,16 +36,23 @@ fn auth_token_without_jwt_secret_is_rejected() {
 
 #[test]
 fn auth_token_with_jwt_secret_validates() {
-    let mut cfg = Config::default();
-    cfg.auth_token = "my-token".to_string();
-    cfg.jwt.secret = "s3cr3t".to_string();
+    let cfg = Config {
+        auth_token: "my-token".to_string(),
+        jwt: sisyphus_types::JwtConfig {
+            secret: "s3cr3t".to_string(),
+            ..Default::default()
+        },
+        ..Config::default()
+    };
     cfg.validate().expect("auth+secret should be valid");
 }
 
 #[test]
 fn invalid_bridge_address_scheme_is_rejected() {
-    let mut cfg = Config::default();
-    cfg.bridge_address = "ftp://server:21".to_string();
+    let cfg = Config {
+        bridge_address: "ftp://server:21".to_string(),
+        ..Config::default()
+    };
     let msg = err_msg(cfg.validate());
     assert!(
         msg.contains("bridge_address") || msg.contains("http"),
@@ -53,8 +62,10 @@ fn invalid_bridge_address_scheme_is_rejected() {
 
 #[test]
 fn empty_bridge_address_is_rejected() {
-    let mut cfg = Config::default();
-    cfg.bridge_address = String::new();
+    let cfg = Config {
+        bridge_address: String::new(),
+        ..Config::default()
+    };
     let msg = err_msg(cfg.validate());
     assert!(
         msg.contains("bridge_address"),

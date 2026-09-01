@@ -45,11 +45,7 @@ async fn setup() -> Router {
     let bridge = MySisyphusBridge::new(shared_config, Some(Arc::new(DummyLlmClient)))
         .await
         .expect("Failed to create bridge");
-
-    build_router(RestApiState::new(
-        Arc::new(bridge),
-        std::path::PathBuf::from(std::env::temp_dir()),
-    ))
+    build_router(RestApiState::new(Arc::new(bridge), std::env::temp_dir()))
 }
 
 async fn get(app: &Router, uri: &str) -> (StatusCode, axum::Json<serde_json::Value>) {

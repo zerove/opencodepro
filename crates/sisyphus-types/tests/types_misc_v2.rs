@@ -197,7 +197,7 @@ fn evolution_op_swap_nodes() {
 
 #[test]
 fn evolution_op_variants_equality_distinct() {
-    let ops = vec![
+    let ops = [
         EvolutionOp::AdjustFuel {
             node_name: "x".into(),
             delta: 1,
@@ -846,7 +846,7 @@ fn model_route_strategy_serde_all_variants() {
 #[test]
 fn evolution_op_serialize_each_variant() {
     use sisyphus_types::types::EvolutionOp;
-    let ops = vec![
+    let ops = [
         EvolutionOp::AdjustFuel {
             node_name: "n".into(),
             delta: 10,
@@ -1016,7 +1016,7 @@ fn trigger_def_with_only_description_serde() {
 #[test]
 fn evolution_op_clone_each_variant() {
     use sisyphus_types::types::EvolutionOp;
-    let ops = vec![
+    let ops = [
         EvolutionOp::AdjustFuel {
             node_name: "n".into(),
             delta: 10,
@@ -1089,7 +1089,8 @@ fn trigger_def_with_unicode_pattern_and_tools() {
 fn work_mode_default_and_clone() {
     let wm: WorkMode = Default::default();
     assert_eq!(wm, WorkMode::Standard);
-    let cloned = wm.clone();
+    // rustc 1.98 clippy::clone_on_copy 修复：直接 Copy 复制
+    let cloned = wm;
     assert_eq!(cloned, wm);
 }
 
@@ -1400,7 +1401,8 @@ fn sisyphus_notepad_with_only_one_section_unicode() {
 #[test]
 fn evolution_op_serialize_to_distinct_strings() {
     use sisyphus_types::types::EvolutionOp;
-    let variants = vec![
+    // rustc 1.98 clippy::useless_vec 修复：直接用数组
+    let variants = [
         EvolutionOp::AdjustFuel {
             node_name: "n".into(),
             delta: 1,
@@ -1630,7 +1632,7 @@ fn notepad_snapshot_with_unicode_3_sections() {
 #[test]
 fn evolution_op_with_unicode_each_variant_serde() {
     use sisyphus_types::types::EvolutionOp;
-    let ops = vec![
+    let ops = [
         (
             "a-α",
             EvolutionOp::AdjustFuel {

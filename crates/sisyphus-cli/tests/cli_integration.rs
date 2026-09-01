@@ -823,3 +823,14 @@ fn test_health_help() {
     assert!(stdout.contains("health"));
     assert!(stdout.contains("检查桥接健康状态"));
 }
+
+#[test]
+fn test_health_deep_no_bridge_graceful_error() {
+    // `:health` 调起 bridge `/health/deep`——无 bridge 时不应 panic。
+    // 该测试 hermetic：用不可达地址（端口 1，连接立即失败）。
+    let out = run_cli(&["--bridge", "127.0.0.1:1", "health"]);
+    assert!(
+        !out.status.success(),
+        "health should fail without a running bridge"
+    );
+}

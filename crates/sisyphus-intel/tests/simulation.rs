@@ -26,7 +26,8 @@ fn flaw_severity_equality() {
 fn flaw_severity_clone_copy() {
     let s = FlawSeverity::Critical;
     let s2 = s; // Copy
-    let s3 = s.clone();
+                // rustc 1.98 clippy::clone_on_copy 修复：直接 Copy 复制
+    let s3 = s;
     let _ = s;
     assert_eq!(s2, s3);
 }
@@ -238,7 +239,7 @@ fn logical_flaw_serde_variants() {
         let flaw = LogicalFlaw {
             node_name: "n".into(),
             description: "d".into(),
-            severity: sev.clone(),
+            severity: sev, // Copy 即可
         };
         let json = serde_json::to_string(&flaw).expect("");
         let parsed: LogicalFlaw = serde_json::from_str(&json).expect("");

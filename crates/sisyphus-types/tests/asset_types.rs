@@ -195,7 +195,8 @@ fn asset_relation_field_assignment() {
     };
     assert_eq!(r.from_id, "a1");
     assert_eq!(r.to_id, "a2");
-    assert_eq!(format!("{}", format!("{:?}", r.relation_type)), "Solves");
+    // rustc 1.98 clippy::format-in-format-args 修复
+    assert_eq!(format!("{:?}", r.relation_type), "Solves");
     assert!((r.weight - 0.8).abs() < 1e-6);
 }
 

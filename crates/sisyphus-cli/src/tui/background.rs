@@ -122,6 +122,16 @@ pub enum BgOp {
         status: String,
         result: String,
     },
+    /// bridge `/health/deep` 拉取结果。
+    HealthDeepFetched {
+        /// 整体 ok 标志（与 HTTP 200/207 一致）
+        all_ok: bool,
+        /// 组件级状态 map
+        components: serde_json::Map<String, serde_json::Value>,
+        /// 原始 JSON（便于渲染全部字段）
+        raw: serde_json::Value,
+    },
+    HealthDeepFailed(String),
 }
 
 // ── 后台生成器 ─────────────────────────────────
@@ -695,4 +705,104 @@ pub fn spawn_delete_workspace(
         });
     });
     rx
+}
+
+/// Spawn fetch bridge `/health/deep`.
+/// 解析 `all_ok` 与 `components` 两层结构，便于 TUI `:health` 面板渲染。
+pub fn spawn_fetch_health_deep(bridge_address: String) -> tokio::sync::oneshot::Receiver<BgOp> {
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    tokio::spawn(async move {
+        let url = format!("http://{}/health/deep", bridge_address);
+        let result = async {
+            let resp = reqwest::get(&url).await.map_err(|e| format!("HTTP request failed: {e}"))?;
+            // `/health/deep` 在组件降级时返回 207 Multi-Status；视作可解析的成功。
+            let status = resp.status();
+            if !(status.is_success() || status.as_u16() == 207) {
+                return Err(format!("bridge returned {}", status));
+            }
+            let raw: serde_json::Value =
+                resp.json().await.map_err(|e| format!("JSON parse failed: {e}"))?;
+            parse_health_deep_response(&raw).ok_or_else(|| "missing fields".to_string())
+        }
+        .await;
+        let _ = tx.send(match result {
+            Ok((all_ok, components, raw)) => BgOp::HealthDeepFetched {
+                all_ok,
+                components,
+                raw,
+            },
+            Err(e) => BgOp::HealthDeepFailed(e),
+        });
+    });
+    rx
+}
+
+/// 解析 `/health/deep` JSON 响应到 `(all_ok, components, raw)`。
+/// 该函数是纯函数，便于单元测试覆盖边界条件。
+pub fn parse_health_deep_response(
+    raw: &serde_json::Value,
+) -> Option<(
+    bool,
+    serde_json::Map<String, serde_json::Value>,
+    serde_json::Value,
+)> {
+    let all_ok = raw.get("all_ok").and_then(|v| v.as_bool())?;
+    let components = raw.get("components").and_then(|v| v.as_object())?.clone();
+    Some((all_ok, components, raw.clone()))
+}
+
+#[cfg(test)]
+mod health_deep_parse_tests {
+    use super::parse_health_deep_response;
+
+    #[test]
+    fn parse_ok_response_extracts_components() {
+        let raw = serde_json::json!({
+            "all_ok": true,
+            "components": {
+                "session_db": {"status": "ok", "path": "/data/s.db"},
+                "shared_http": {"status": "absent"},
+                "kernel": {"status": "ok"},
+            }
+        });
+        let (all_ok, components, _back) = parse_health_deep_response(&raw).expect("parse");
+        assert!(all_ok);
+        assert_eq!(components.len(), 3);
+        assert_eq!(components["session_db"]["status"], "ok");
+        assert_eq!(components["shared_http"]["status"], "absent");
+    }
+
+    #[test]
+    fn parse_degraded_response_keeps_all_ok_false() {
+        let raw = serde_json::json!({
+            "all_ok": false,
+            "components": {
+                "session_db": {"status": "degraded"},
+                "shared_http": {"status": "ok"},
+                "kernel": {"status": "ok"},
+            }
+        });
+        let (all_ok, components, _) = parse_health_deep_response(&raw).expect("parse");
+        assert!(!all_ok);
+        assert_eq!(components["session_db"]["status"], "degraded");
+    }
+
+    #[test]
+    fn parse_missing_all_ok_returns_none() {
+        let raw = serde_json::json!({"components": {}});
+        assert!(parse_health_deep_response(&raw).is_none());
+    }
+
+    #[test]
+    fn parse_missing_components_returns_none() {
+        let raw = serde_json::json!({"all_ok": true});
+        assert!(parse_health_deep_response(&raw).is_none());
+    }
+
+    #[test]
+    fn parse_all_ok_wrong_type_returns_none() {
+        // `all_ok` 必须是 bool；字符串应拒绝
+        let raw = serde_json::json!({"all_ok": "true", "components": {}});
+        assert!(parse_health_deep_response(&raw).is_none());
+    }
 }

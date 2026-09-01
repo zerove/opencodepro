@@ -87,9 +87,12 @@ mod tests {
 
     #[test]
     fn test_handle_glob_empty() {
+        // rustc 1.98 新增 `iter_out_of_bounds` lint：对长度 < take 数量的迭代器
+        // 视为无意义操作。该测试改为验证 `Vec` 本身为空（与 handle_glob 的
+        // "未匹配文件" 路径行为一致）。
         let files: Vec<std::path::PathBuf> = vec![];
-        let shown: Vec<_> = files.iter().take(10).collect();
-        assert!(shown.is_empty());
+        assert!(files.is_empty());
+        assert_eq!(files.len(), 0);
     }
 
     #[test]

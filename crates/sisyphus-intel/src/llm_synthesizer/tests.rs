@@ -6,7 +6,7 @@ use crate::{ActionType, FlowSynthesizer};
 use std::sync::Arc;
 
 #[cfg(test)]
-mod tests {
+mod llm_synthesizer_tests {
     use super::*;
 
     #[tokio::test]

@@ -603,6 +603,9 @@ mod tests {
     use std::fs;
     use tempfile::tempdir;
 
+    /// 串行化修改 SISYPHUS_*_ANOMALY_DETECTOR_* 环境变量的测试。
+    /// 同进程并行测试间共享 env，必须互斥避免 race。
+    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
     #[test]
     fn test_critique_timeout_validation_bounds() {
         let mut c = CognitiveLoopConfig {
@@ -759,6 +762,7 @@ sandbox = { max_memory_pages = 10, default_fuel = 1000000, wasm_tools_dir = "too
 
     #[test]
     fn test_apply_env_overrides_anomaly_detector() {
+        let _guard = ENV_LOCK.lock().unwrap();
         std::env::set_var(
             "SISYPHUS_COGNITIVE_LOOP_ANOMALY_DETECTOR_FUEL_THRESHOLD",
             "4.5",
@@ -792,6 +796,7 @@ sandbox = { max_memory_pages = 10, default_fuel = 1000000, wasm_tools_dir = "too
 
     #[test]
     fn test_apply_env_overrides_anomaly_detector_missing_keeps_defaults() {
+        let _guard = ENV_LOCK.lock().unwrap();
         // 未设置环境变量时应保持 Default 值
         for k in [
             "SISYPHUS_COGNITIVE_LOOP_ANOMALY_DETECTOR_FUEL_THRESHOLD",

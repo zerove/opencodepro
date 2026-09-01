@@ -214,7 +214,7 @@ fn dep_resolver_resolve_empty_graph() {
 #[test]
 fn dep_resolver_resolve_single_graph_no_deps() {
     let mut cg = CompositeGraph::new();
-    cg.add_graph("a".into(), SOPGraphConfig::default());
+    cg.add_graph("a", SOPGraphConfig::default());
     let order = DependencyResolver::resolve(&cg).unwrap();
     assert_eq!(order.len(), 1);
     assert!(order.contains(&"a".to_string()));
@@ -223,8 +223,8 @@ fn dep_resolver_resolve_single_graph_no_deps() {
 #[test]
 fn dep_resolver_resolve_two_graphs_no_deps() {
     let mut cg = CompositeGraph::new();
-    cg.add_graph("a".into(), SOPGraphConfig::default());
-    cg.add_graph("b".into(), SOPGraphConfig::default());
+    cg.add_graph("a", SOPGraphConfig::default());
+    cg.add_graph("b", SOPGraphConfig::default());
     let order = DependencyResolver::resolve(&cg).unwrap();
     assert_eq!(order.len(), 2);
     assert!(order.contains(&"a".to_string()));
@@ -235,7 +235,7 @@ fn dep_resolver_resolve_two_graphs_no_deps() {
 fn dep_resolver_resolve_three_graphs_no_deps() {
     let mut cg = CompositeGraph::new();
     for id in ["x", "y", "z"] {
-        cg.add_graph(id.into(), SOPGraphConfig::default());
+        cg.add_graph(id, SOPGraphConfig::default());
     }
     let order = DependencyResolver::resolve(&cg).unwrap();
     assert_eq!(order.len(), 3);
@@ -244,9 +244,9 @@ fn dep_resolver_resolve_three_graphs_no_deps() {
 #[test]
 fn dep_resolver_resolve_with_chain_deps() {
     let mut cg = CompositeGraph::new();
-    cg.add_graph("a".into(), SOPGraphConfig::default());
-    cg.add_graph("b".into(), SOPGraphConfig::default());
-    cg.add_graph("c".into(), SOPGraphConfig::default());
+    cg.add_graph("a", SOPGraphConfig::default());
+    cg.add_graph("b", SOPGraphConfig::default());
+    cg.add_graph("c", SOPGraphConfig::default());
     cg.add_dependency(GraphDependency {
         source_sop_id: "a".into(),
         target_sop_id: "b".into(),
@@ -270,7 +270,7 @@ fn dep_resolver_resolve_with_chain_deps() {
 fn dep_resolver_resolve_with_diamond_deps() {
     let mut cg = CompositeGraph::new();
     for id in ["top", "left", "right", "bottom"] {
-        cg.add_graph(id.into(), SOPGraphConfig::default());
+        cg.add_graph(id, SOPGraphConfig::default());
     }
     cg.add_dependency(GraphDependency {
         source_sop_id: "top".into(),
@@ -304,8 +304,8 @@ fn dep_resolver_resolve_with_diamond_deps() {
 #[test]
 fn dep_resolver_resolve_with_data_mapping() {
     let mut cg = CompositeGraph::new();
-    cg.add_graph("a".into(), SOPGraphConfig::default());
-    cg.add_graph("b".into(), SOPGraphConfig::default());
+    cg.add_graph("a", SOPGraphConfig::default());
+    cg.add_graph("b", SOPGraphConfig::default());
     cg.add_dependency(GraphDependency {
         source_sop_id: "a".into(),
         target_sop_id: "b".into(),

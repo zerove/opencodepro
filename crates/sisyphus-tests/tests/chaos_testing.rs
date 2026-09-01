@@ -274,7 +274,7 @@ async fn test_anomaly_detector_concurrent_safety() {
     let report = detector.generate_report();
     // Should complete without panics, regardless of what the report contains
     assert!(
-        report.anomalies.len() > 0 || !report.should_extra_reflect,
+        !report.anomalies.is_empty() || !report.should_extra_reflect,
         "Should produce valid report"
     );
 }

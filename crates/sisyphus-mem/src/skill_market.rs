@@ -396,14 +396,14 @@ mod tests {
     fn test_rate_limiter_disabled() {
         let mut limiter = RateLimiter::new(0);
         // rate=0 立即返回不阻塞
-        let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+        let _rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
         assert!(limiter.try_acquire().is_none());
     }
 
     #[test]
     fn test_rate_limiter_burst_then_wait() {
         let mut limiter = RateLimiter::new(2);
-        let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+        let _rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
         // 前 2 次立即获取（消耗 2 tokens）
         assert!(limiter.try_acquire().is_none());
         assert!(limiter.try_acquire().is_none());

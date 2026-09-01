@@ -23,8 +23,10 @@ fn workflow_kind_debug() {
 
 #[test]
 fn workflow_kind_clone() {
+    // rustc 1.98 clippy::clone_on_copy 修复：WorkflowKind 派生 Copy，
+    // 用直接赋值验证复制语义（保持原测试意图：确保类型可复制）。
     let a = WorkflowKind::Ci;
-    let b = a.clone();
+    let b = a; // Copy 直接复制
     assert_eq!(format!("{a:?}"), format!("{b:?}"));
 }
 

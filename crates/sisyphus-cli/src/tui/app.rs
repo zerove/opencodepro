@@ -164,6 +164,12 @@ const COMMAND_PALETTE: &[CmdPalEntry] = &[
         shortcut: "",
     },
     CmdPalEntry {
+        label: "Bridge Health",
+        desc: "Probe /health/deep (启动健康度)",
+        command: ":health",
+        shortcut: "h",
+    },
+    CmdPalEntry {
         label: "Skill Market",
         desc: "Browse & install remote skills",
         command: ":skills",
@@ -353,6 +359,13 @@ pub(crate) struct App {
     pub(crate) cog_summary: Option<super::background::CognitiveSummaryRow>,
     pub(crate) cog_summary_status: String,
 
+    // bridge `/health/deep` 启动健康度数据（阶段 7.1）
+    pub(crate) health_all_ok: bool,
+    pub(crate) health_components: serde_json::Map<String, serde_json::Value>,
+    pub(crate) health_status: String,
+    pub(crate) health_scroll: usize,
+    pub(crate) health_last_refresh: Option<std::time::Instant>,
+
     // 路线图数据（对话框状态）
     pub(crate) roadmap_projection: Option<String>,
     pub(crate) roadmap_bottlenecks: Option<String>,
@@ -510,6 +523,11 @@ impl App {
             cog_trace_history_mode: false,
             cog_summary: None,
             cog_summary_status: "idle".into(),
+            health_all_ok: false,
+            health_components: serde_json::Map::new(),
+            health_status: "idle".into(),
+            health_scroll: 0,
+            health_last_refresh: None,
             roadmap_projection: None,
             roadmap_bottlenecks: None,
             roadmap_status: "disconnected".into(),
@@ -1062,6 +1080,31 @@ impl App {
                     "Failed to fetch cognitive trace: {e}"
                 )));
             },
+            crate::tui::background::BgOp::HealthDeepFetched {
+                all_ok,
+                components,
+                raw: _,
+            } => {
+                self.health_all_ok = all_ok;
+                self.health_components = components;
+                self.health_status = if all_ok {
+                    "all components ok".into()
+                } else {
+                    "one or more components degraded".into()
+                };
+                self.health_last_refresh = Some(std::time::Instant::now());
+                self.add_log(LogEntry::Info(format!(
+                    "Health probe: {} ({} components)",
+                    if all_ok { "ok" } else { "degraded" },
+                    self.health_components.len()
+                )));
+            },
+            crate::tui::background::BgOp::HealthDeepFailed(e) => {
+                self.health_status = format!("failed: {e}");
+                self.add_log(LogEntry::Error(format!(
+                    "Failed to fetch /health/deep: {e}"
+                )));
+            },
             crate::tui::background::BgOp::RoadmapFetched {
                 projection,
                 bottlenecks,
@@ -1262,6 +1305,14 @@ impl App {
         self.cog_summary_status = "connecting...".into();
         let bridge_addr = self.bridge_address.clone();
         let rx = crate::tui::background::spawn_fetch_cognitive_summary(bridge_addr, None);
+        self.pending_op = Some(rx);
+    }
+
+    /// 拉取 bridge `/health/deep` 启动健康度（阶段 7.1）。
+    pub(crate) fn fetch_health_deep(&mut self) {
+        self.health_status = "connecting...".into();
+        let bridge_addr = self.bridge_address.clone();
+        let rx = crate::tui::background::spawn_fetch_health_deep(bridge_addr);
         self.pending_op = Some(rx);
     }
 }

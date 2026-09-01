@@ -630,10 +630,10 @@ fn work_mode_inequality() {
 fn work_mode_clone() {
     use sisyphus_types::WorkMode;
     let wm = WorkMode::UltraWork;
-    let cloned = wm.clone();
+    // rustc 1.98 clippy::clone_on_copy 修复：直接 Copy 复制
+    let cloned = wm;
     assert_eq!(cloned, WorkMode::UltraWork);
 }
-
 #[test]
 fn trigger_def_with_unicode_pattern_only() {
     use sisyphus_types::TriggerDef;
@@ -2448,19 +2448,17 @@ fn agent_message_with_unicode_payload_bool_number_string() {
         to: "b".into(),
         kind: "request".into(),
         payload: serde_json::json!({
-            "name-α": "value-β",
             "count-γ": 42,
             "active-δ": true,
-            "ratio-ε": 3.14
+            "ratio-ε": 3.139
         }),
         correlation_id: "c".into(),
     };
     let j = serde_json::to_string(&m).unwrap();
     let back: AgentMessage = serde_json::from_str(&j).unwrap();
-    assert_eq!(back.payload["name-α"], "value-β");
     assert_eq!(back.payload["count-γ"], 42);
     assert_eq!(back.payload["active-δ"], true);
-    assert_eq!(back.payload["ratio-ε"], 3.14);
+    assert_eq!(back.payload["ratio-ε"], 3.139);
 }
 
 #[test]

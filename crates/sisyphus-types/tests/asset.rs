@@ -513,7 +513,8 @@ fn asset_content_constraint_with_high_strictness() {
 #[test]
 fn asset_content_variants_distinct_via_serde() {
     use sisyphus_types::asset::{AssetContent, ConstraintData, InsightData};
-    let variants = vec![
+    // rustc 1.98 clippy::useless_vec 修复：直接用数组
+    let variants = [
         AssetContent::Insight(InsightData {
             observation: "o".into(),
             reasoning: "r".into(),
