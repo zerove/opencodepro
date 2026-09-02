@@ -40,6 +40,9 @@ async fn setup() -> Router {
     let mut config = Config::default();
     config.cache.database_url = "sqlite::memory:".to_string();
     config.sandbox.wasm_tools_dir = "tests/wasm_tools".to_string();
+    // 关键：DummyLlmClient 没有 embedding 凭据，
+    // 显式允许 dummy embedding 避免桥接启动失败。
+    config.llm.embedding.allow_dummy_embeddings = true;
     let shared_config = Arc::new(RwLock::new(config));
 
     let bridge = MySisyphusBridge::new(shared_config, Some(Arc::new(DummyLlmClient)))

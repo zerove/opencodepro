@@ -1,3 +1,4 @@
+BRIDGE_DEPS = crates/sisyphus-bridge/src/main.rs crates/sisyphus-bridge/Cargo.toml crates/sisyphus-bridge/proto/bridge.proto
 # Build targets for crates excluded from workspace commands.
 #
 # Memory notes:
@@ -29,7 +30,6 @@
 #   make test-tools       # test all 10 sisyphus-tools-* sub-crates (lib only, fast)
 #   make check-tools      # check all 10 tools sub-crates
 
-BRIDGE_DEPS = crates/sisyphus-bridge/src/main.rs crates/sisyphus-bridge/build.rs crates/sisyphus-bridge/proto/bridge.proto
 
 TOOLS_PACKAGES = \
 	sisyphus-tools-agent sisyphus-tools-build sisyphus-tools-core \

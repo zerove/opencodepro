@@ -133,6 +133,13 @@
     与 test_apply_env_overrides_anomaly_detector_missing_keeps_defaults 在 cargo test 并行
     模式下因 env 全局共享产生 race condition。添加 `static ENV_LOCK: std::sync::Mutex<()>`
     在两个测试入口获取锁，强制串行执行避免互相 set_var 干扰。验证 3 次连续跑全部稳定通过。
+- **2026-09-02 bridge 集成测试 fixture 修复 (TODO 7.2 完成项)**:
+  - 3 个 setup helper(`setup_bridge` / `setup_bridge_chaos` / `setup_bridge_chaos_with_bridge`)
+    缺少 `config.llm.embedding.allow_dummy_embeddings = true`,导致 DummyLlmClient 启动时直接
+    panic(`"Embedding provider 'dummy' is not 'openai'..."`)。修复后 89 个 bridge 集成测试全过(之前 52 个全部 panic)。
+  - `Makefile` 中 `BRIDGE_DEPS` 引用不存在的 `build.rs`,导致 `make test-bridge` 立即失败。
+    替换为 `Cargo.toml`(build dependency 用 manifest 触发)。
+
 
 ### Verified
 - `cargo check-all` 0 错误（默认工作区排除 bridge/sandbox/sandboxd/tests）
