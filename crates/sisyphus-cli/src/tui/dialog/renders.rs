@@ -1375,11 +1375,29 @@ pub(super) fn render_health_dialog(frame: &mut ratatui::Frame, area: Rect, app: 
                 let v = app.health_components.get(k).cloned().unwrap_or(serde_json::Value::Null);
                 let status =
                     v.get("status").and_then(|s| s.as_str()).unwrap_or("unknown").to_string();
-                let detail = v
-                    .get("path")
-                    .and_then(|p| p.as_str())
-                    .map(|s| s.to_string())
-                    .unwrap_or_else(|| v.to_string());
+                // 优先显示组件特定字段：
+                //   session_db → path
+                //   token_budget → usage/cap/exhausted 摘要
+                //   其他 → 整 JSON
+                let detail = if let Some(p) = v.get("path").and_then(|p| p.as_str()) {
+                    p.to_string()
+                } else if k == "token_budget" {
+                    let usage = v.get("usage").and_then(|n| n.as_u64()).unwrap_or(0);
+                    let cap = v.get("cap").and_then(|n| n.as_u64());
+                    let exhausted = v.get("exhausted").and_then(|b| b.as_bool()).unwrap_or(false);
+                    match cap {
+                        Some(c) => format!(
+                            "{}/{} tokens{}",
+                            usage,
+                            c,
+                            if exhausted { " (exhausted)" } else { "" }
+                        ),
+                        None => format!("{} tokens (unbounded)", usage),
+                    }
+                } else {
+                    v.to_string()
+                };
+
                 let status_style = match status.as_str() {
                     "ok" => Style::default().fg(theme.success),
                     "degraded" => Style::default().fg(theme.error),

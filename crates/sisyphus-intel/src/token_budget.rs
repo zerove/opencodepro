@@ -86,12 +86,39 @@ impl TokenBudgetTracker {
         self.cap != u64::MAX && self.usage() >= self.cap
     }
 
+    /// Read-only snapshot of the tracker's current state. Used by health
+    /// endpoints and TUI panels to avoid exposing the internal `Mutex`.
+    /// Returns `cap = None` when the tracker is unbounded (`u64::MAX`).
+    pub fn snapshot(&self) -> TokenBudgetSnapshot {
+        let cap = if self.cap == u64::MAX {
+            None
+        } else {
+            Some(self.cap)
+        };
+        TokenBudgetSnapshot {
+            usage: self.usage(),
+            cap,
+            exhausted: self.is_exhausted(),
+        }
+    }
+
     /// Reset usage (e.g., between runs).
     pub fn reset(&self) {
         *self.usage.lock() = 0;
     }
 }
 
+/// Read-only snapshot of [`TokenBudgetTracker`].
+///
+/// `cap = None` indicates an unbounded tracker (the original used
+/// `u64::MAX` as a sentinel). Safe to serialize to JSON and
+/// send over the wire (e.g. to TUI `:health` panel).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TokenBudgetSnapshot {
+    pub usage: u64,
+    pub cap: Option<u64>,
+    pub exhausted: bool,
+}
 #[cfg(test)]
 mod tests {
     use super::*;

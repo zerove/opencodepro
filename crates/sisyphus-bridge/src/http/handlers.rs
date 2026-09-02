@@ -127,6 +127,7 @@ pub(super) async fn health_handler(State(state): State<RestApiState>) -> impl In
 pub(super) fn health_deep_assess(
     session_db: &std::path::Path,
     shared_http_present: bool,
+    token_budget: Option<&sisyphus_intel::token_budget::TokenBudgetSnapshot>,
 ) -> (bool, serde_json::Map<String, serde_json::Value>) {
     let mut components = serde_json::Map::new();
     let mut all_ok = true;
@@ -157,6 +158,32 @@ pub(super) fn health_deep_assess(
         serde_json::json!({ "status": if kernel_ok { "ok" } else { "degraded" } }),
     );
     all_ok &= kernel_ok;
+    // 4) Token budget（阶段 7.1 增强）：可选组件。
+    // 无 cap（unbounded）→ ok；使用率 < 90% → ok；≥ 90% 或已耗尽 → degraded。
+    if let Some(snap) = token_budget {
+        let status = if snap.exhausted {
+            "degraded"
+        } else if let Some(cap) = snap.cap {
+            let used_ratio = snap.usage as f64 / cap.max(1) as f64;
+            if used_ratio >= 0.9 {
+                "degraded"
+            } else {
+                "ok"
+            }
+        } else {
+            "ok" // unbounded tracker
+        };
+        components.insert(
+            "token_budget".into(),
+            serde_json::json!({
+                "status": status,
+                "usage": snap.usage,
+                "cap": snap.cap,
+                "exhausted": snap.exhausted,
+            }),
+        );
+        all_ok &= status == "ok";
+    }
 
     (all_ok, components)
 }
@@ -167,9 +194,15 @@ pub(super) fn health_deep_assess(
 /// returns 207 Multi-Status with detailed per-component status. Useful for
 /// K8s readiness probes and the TUI `:health` panel (阶段 7.1).
 pub(super) async fn health_deep_handler(State(state): State<RestApiState>) -> impl IntoResponse {
-    let (all_ok, components) = health_deep_assess(&state.session_db, state.shared_http.is_some());
-
+    // Token budget snapshot（阶段 7.1 增强）：从 kernel.strategic_manager 读快照
+    let token_snap = state.bridge.kernel().strategic_manager.token_budget.read().snapshot();
+    let (all_ok, components) = health_deep_assess(
+        &state.session_db,
+        state.shared_http.is_some(),
+        Some(&token_snap),
+    );
     let body = serde_json::json!({
+        "status": if all_ok { "ok" } else { "degraded" },
         "status": if all_ok { "ok" } else { "degraded" },
         "version": env!("CARGO_PKG_VERSION"),
         "components": components,
@@ -1302,7 +1335,7 @@ mod health_deep_tests {
         let dir = unique_tmp_dir();
         let db = dir.join("sessions.db");
         std::fs::write(&db, b"").unwrap();
-        let (all_ok, components) = health_deep_assess(&db, true);
+        let (all_ok, components) = health_deep_assess(&db, true, None);
         assert!(all_ok);
         assert_eq!(components["session_db"]["status"], "ok");
         assert_eq!(components["shared_http"]["status"], "ok");
@@ -1314,7 +1347,7 @@ mod health_deep_tests {
     fn session_db_parent_exists_is_ok() {
         // DB 未创建但父目录存在 → ok（首次启动场景）
         let dir = unique_tmp_dir();
-        let (all_ok, components) = health_deep_assess(&dir.join("nonexistent.db"), true);
+        let (all_ok, components) = health_deep_assess(&dir.join("nonexistent.db"), true, None);
         assert!(all_ok);
         assert_eq!(components["session_db"]["status"], "ok");
         cleanup(&dir);
@@ -1324,7 +1357,7 @@ mod health_deep_tests {
     fn session_db_path_nonexistent_parent_is_degraded() {
         // 父目录不存在 → degraded
         let db = PathBuf::from("/this/path/should/never/exist/abc/sessions.db");
-        let (all_ok, components) = health_deep_assess(&db, true);
+        let (all_ok, components) = health_deep_assess(&db, true, None);
         assert!(!all_ok);
         assert_eq!(components["session_db"]["status"], "degraded");
     }
@@ -1335,20 +1368,102 @@ mod health_deep_tests {
         let dir = unique_tmp_dir();
         let db = dir.join("sessions.db");
         std::fs::write(&db, b"").unwrap();
-        let (all_ok, components) = health_deep_assess(&db, false);
+        let (all_ok, components) = health_deep_assess(&db, false, None);
         assert!(all_ok, "absent shared_http must not degrade overall status");
         assert_eq!(components["shared_http"]["status"], "absent");
         cleanup(&dir);
     }
-
     #[test]
     fn components_map_has_three_required_keys() {
-        let (all_ok, components) =
-            health_deep_assess(std::path::Path::new("/tmp/should_work/db.sqlite"), false);
+        let (all_ok, components) = health_deep_assess(
+            std::path::Path::new("/tmp/should_work/db.sqlite"),
+            false,
+            None,
+        );
         // 父目录 /tmp/should_work/ 不存在 → degraded，但仍应包含三个组件键
         assert!(!all_ok);
         assert!(components.contains_key("session_db"));
         assert!(components.contains_key("shared_http"));
         assert!(components.contains_key("kernel"));
+    }
+
+    // ── Token budget 集成（阶段 7.1 增强）──────────────────────
+    // 纯函数 health_deep_assess 的 token_budget 行为：
+    //   - exhausted → degraded（即使 cap 充足）
+    //   - usage / cap ≥ 0.9 → degraded
+    //   - usage / cap < 0.9 且未耗尽 → ok
+    //   - cap = None（unbounded tracker）→ ok
+    //   - token_budget = None → 不添加该组件键
+
+    use sisyphus_intel::token_budget::{TokenBudgetSnapshot, TokenBudgetTracker};
+
+    fn snap(usage: u64, cap: Option<u64>, exhausted: bool) -> TokenBudgetSnapshot {
+        TokenBudgetSnapshot {
+            usage,
+            cap,
+            exhausted,
+        }
+    }
+
+    #[test]
+    fn token_budget_unbounded_is_ok() {
+        let s = snap(50_000, None, false);
+        let (all_ok, components) =
+            health_deep_assess(std::path::Path::new("/tmp/x.db"), true, Some(&s));
+        assert!(all_ok);
+        assert_eq!(components["token_budget"]["status"], "ok");
+        assert_eq!(components["token_budget"]["usage"], 50_000);
+        assert!(components["token_budget"]["cap"].is_null());
+    }
+
+    #[test]
+    fn token_budget_low_usage_is_ok() {
+        // 50% 使用率
+        let s = snap(500, Some(1000), false);
+        let (all_ok, components) =
+            health_deep_assess(std::path::Path::new("/tmp/x.db"), true, Some(&s));
+        assert!(all_ok);
+        assert_eq!(components["token_budget"]["status"], "ok");
+    }
+
+    #[test]
+    fn token_budget_high_usage_is_degraded() {
+        // 95% 使用率（≥ 90% 阈值）
+        let s = snap(950, Some(1000), false);
+        let (all_ok, components) =
+            health_deep_assess(std::path::Path::new("/tmp/x.db"), true, Some(&s));
+        assert!(!all_ok);
+        assert_eq!(components["token_budget"]["status"], "degraded");
+    }
+
+    #[test]
+    fn token_budget_exhausted_is_degraded() {
+        // 即使 cap 充足、usage < 90%，exhausted=true 也要 degraded
+        let s = snap(500, Some(1000), true);
+        let (all_ok, components) =
+            health_deep_assess(std::path::Path::new("/tmp/x.db"), true, Some(&s));
+        assert!(!all_ok);
+        assert_eq!(components["token_budget"]["status"], "degraded");
+    }
+
+    #[test]
+    fn token_budget_absent_when_none() {
+        // token_budget = None → 不添加到 components map
+        let (_, components) = health_deep_assess(std::path::Path::new("/tmp/x.db"), true, None);
+        assert!(!components.contains_key("token_budget"));
+    }
+
+    #[test]
+    fn token_budget_tracker_snapshot_integration() {
+        // 端到端：从 TokenBudgetTracker 取 snapshot 喂入 health_deep_assess
+        let tracker = TokenBudgetTracker::new(1000, 0.0);
+        tracker.record(950); // 95% → 应为 degraded
+        let s = tracker.snapshot();
+        assert!(s.cap.is_some());
+        assert!(!s.exhausted);
+        let (all_ok, components) =
+            health_deep_assess(std::path::Path::new("/tmp/x.db"), true, Some(&s));
+        assert!(!all_ok);
+        assert_eq!(components["token_budget"]["usage"], 950);
     }
 }

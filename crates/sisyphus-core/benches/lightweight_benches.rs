@@ -27,7 +27,7 @@ fn bench_anomaly_detector(c: &mut Criterion) {
         group.throughput(Throughput::Elements(*n as u64));
         group.bench_with_input(BenchmarkId::from_parameter(n), n, |b, &n| {
             b.iter(|| {
-                let mut detector = AnomalyDetector::default();
+                let detector = AnomalyDetector::default();
                 for i in 0..n {
                     let node = format!("n{i}");
                     let _ = detector.observe(&node, 100, 50, true);
@@ -81,7 +81,7 @@ fn bench_dag_renderer(c: &mut Criterion) {
 fn bench_anomaly_detector_boundaries(c: &mut Criterion) {
     let mut group = c.benchmark_group("anomaly_detector_boundaries");
     group.bench_function("observe_1000", |b| {
-        let mut detector = AnomalyDetector::default();
+        let detector = AnomalyDetector::default();
         b.iter(|| {
             for i in 0..1000usize {
                 let node = format!("n{i}");

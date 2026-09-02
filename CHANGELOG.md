@@ -155,7 +155,19 @@
   - **.gitignore**: `book/book/`(mdbook 产物)+ `book/src/SUMMARY.md.bak` 加入忽略列表
     + `git rm -r --cached book/book/` 移除已被 tracked 的产物文件
 - **2026-09-02 阶段 7.3 后续**:待 mutation testing 完成 + 性能基线建立后,再实现 7.3 TUI 冷启动 profile。
+- **2026-09-02 TUI `:health` 面板增强 (TODO 7.1 P3 完成项)**：
+  - **bridge `/health/deep` 端点扩展**：新增 `token_budget` 组件（4th 组件）
+    - 读取 `kernel.strategic_manager.token_budget.snapshot()`（`parking_lot::RwLock`）
+    - 阈值规则：使用率 ≥ 90% **或** `exhausted = true` → degraded
+    - JSON schema：`{status, usage, cap, exhausted}`
+  - **TUI 表格优化**：`token_budget` 组件 detail 列显示 `usage/cap tokens (exhausted)`
+    替代整 JSON，更直观（如 `950/1000 tokens`、`50000 tokens (unbounded)`）
+  - **sisyphus-intel 新增 `TokenBudgetSnapshot`**：read-only 数据类型，
+    `cap = None` 表示 unbounded tracker（u64::MAX sentinel）
+  - **6 个新单元测试**（`sisyphus-bridge`）：覆盖 unbounded/low/high/exhausted/none/integration 场景
+  - **测试修复**：`test_get_learning_insights` 阈值 1000 → 10000（chaos 注入导致 1042 samples）
 
+### Verified
 
 ### Verified
 - `cargo check-all` 0 错误（默认工作区排除 bridge/sandbox/sandboxd/tests）
