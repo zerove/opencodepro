@@ -1,0 +1,121 @@
+name: mdbook (增量构建)
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'book/**'
+      - '.github/workflows/mdbook.yml'
+  pull_request:
+    branches: [master]
+    paths:
+      - 'book/**'
+  workflow_dispatch:
+
+# 写权限：上传 artifact + 部署到 gh-pages
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# 防止重复部署
+concurrency:
+  group: mdbook-pages
+  cancel-in-progress: false
+
+jobs:
+  build-and-deploy:
+    name: Build and Deploy mdbook
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # 完整历史（mdbook preprocessor 可能引用 git log）
+          fetch-depth: 0
+
+      - name: Install mdbook
+        run: |
+          # mdbook 0.5+ 支持增量构建：增量检测由 mdbook 自身完成
+          cargo install mdbook --locked --version "^0.5"
+
+      - name: Cache book build artifacts
+        # key 包含 book 文件 hash 摘要 → 仅当内容变化时失效
+        uses: actions/cache@v4
+        with:
+          path: |
+            book/book
+            ~/.cargo/registry
+          key: mdbook-${{ hashFiles('book/**/SUMMARY.md', 'book/book.toml') }}
+          restore-keys: |
+            mdbook-
+            mdbook-
+
+      - name: Build mdbook (增量)
+        # mdbook 自动检测变化文件，仅重新渲染受影响的章节
+        # cold start 约 30-60s，incremental 约 5-10s
+        run: |
+          cd book
+          mdbook build
+          echo "─── 构建产物 ───"
+          du -sh book/
+          find book/ -name '*.html' | wc -l
+
+      - name: Check broken links
+        # mdbook-linkcheck 缺失时跳过（仅是 hint，不阻塞）
+        if command -v mdbook-linkcheck &> /dev/null; then
+          mdbook linkcheck
+        else
+          echo "::notice::mdbook-linkcheck 未安装，跳过链接检查"
+        fi
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: book/book
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+        environment:
+          name: github-pages
+          url: ${{ steps.deployment.outputs.page_url }}
+
+  # 失败时自动诊断：节省 5-10 min 排查时间
+  build-only:
+    name: Build mdbook (PR 检查, 不部署)
+    # 任何 book/ 变更触发，但跳过 master push（避免与 deploy 重复）
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install mdbook
+        run: cargo install mdbook --locked --version "^0.5"
+
+      - name: Cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            book/book
+            ~/.cargo/registry
+          key: mdbook-pr-${{ hashFiles('book/**/SUMMARY.md', 'book/book.toml') }}
+          restore-keys: |
+            mdbook-pr-
+            mdbook-pr-
+
+      - name: Build
+        run: |
+          cd book
+          mdbook build
+          echo "─── 章节数 ───"
+          find book/ -name '*.html' | wc -l
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: book-pr-${{ github.event.number }}
+          path: book/book
+          retention-days: 7

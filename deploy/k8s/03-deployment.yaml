@@ -1,0 +1,171 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sisyphus-bridge
+  namespace: sisyphus
+  labels:
+    app.kubernetes.io/name: sisyphus-bridge
+    app.kubernetes.io/component: bridge
+spec:
+  # 2 副本实现滚动升级与高可用
+  # 实际生产推荐 3 副本 + PodDisruptionBudget
+  replicas: 2
+
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: sisyphus-bridge
+      app.kubernetes.io/component: bridge
+
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: sisyphus-bridge
+        app.kubernetes.io/component: bridge
+      annotations:
+        # 触发滚动升级（每次镜像变更时）
+        reloader.stakater.com/auto: "true"
+        # Prometheus 抓取注解
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+
+    spec:
+      # 安全：禁止特权升级 + 以非 root 运行
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532     # distroless / sisyphus 用户
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+
+      # 优雅停机（先停止接收新请求）
+      terminationGracePeriodSeconds: 30
+
+      # 反亲和性：避免同一节点双副本
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: sisyphus-bridge
+                topologyKey: kubernetes.io/hostname
+
+      containers:
+        - name: bridge
+          # CI 推送到 ghcr.io/zerove/sisyphus-bridge:tag
+          image: ghcr.io/zerove/sisyphus-bridge:latest
+          imagePullPolicy: IfNotPresent
+
+          ports:
+            - name: grpc
+              containerPort: 50051
+              protocol: TCP
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+
+          env:
+            - name: RUST_LOG
+              value: "info"
+            - name: SISYPHUS_CONFIG
+              value: /etc/sisyphus/config.toml
+            - name: SISYPHUS_DATA_DIR
+              value: /var/lib/sisyphus
+            # 从 Secret 注入敏感字段
+            - name: SISYPHUS_LLM_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: sisyphus-bridge-secrets
+                  key: SISYPHUS_LLM_API_KEY
+            - name: SISYPHUS_AUTH_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: sisyphus-bridge-secrets
+                  key: SISYPHUS_AUTH_TOKEN
+            - name: SISYPHUS_JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: sisyphus-bridge-secrets
+                  key: SISYPHUS_JWT_SECRET
+
+          volumeMounts:
+            - name: config
+              mountPath: /etc/sisyphus
+              readOnly: true
+            - name: data
+              mountPath: /var/lib/sisyphus
+            - name: tmp
+              mountPath: /tmp
+
+          # 资源限制（基准值，按实际负载调整）
+          resources:
+            requests:
+              cpu: 500m
+              memory: 512Mi
+              ephemeral-storage: 100Mi
+            limits:
+              cpu: 2
+              memory: 2Gi
+              ephemeral-storage: 1Gi
+
+          # 存活探针：HTTP /health/deep 端点
+          livenessProbe:
+            httpGet:
+              path: /health/deep
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 30
+            timeoutSeconds: 5
+            successThreshold: 1
+            failureThreshold: 3
+
+          # 就绪探针：HTTP /health（轻量版）
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            successThreshold: 1
+            failureThreshold: 2
+
+          # 启动探针：放宽超时，cold start 期间不杀
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            successThreshold: 1
+            failureThreshold: 30  # 5 分钟总启动窗口
+
+          # 安全：容器级别限制
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+
+      volumes:
+        - name: config
+          configMap:
+            name: sisyphus-bridge-config
+        - name: data
+          # 简易本地存储；生产应改用 PVC / shared filesystem
+          emptyDir:
+            sizeLimit: 1Gi
+        - name: tmp
+          emptyDir:
+            sizeLimit: 100Mi

@@ -84,3 +84,74 @@ fn config_save_to_file_creates_missing_parent_dirs() {
     cfg.save_to_file(nested.to_str().unwrap()).expect("save with nested parent");
     assert!(nested.exists(), "nested path should be created");
 }
+
+// ── mutation testing 防护 ──
+// cargo-mutants 抓"把 save_to_file 替换为 Ok(())"会绕过 round-trip 测试
+// （如果 cfg 是 default 的话）。需要验证**非默认配置**能真正写入并读出。
+#[test]
+fn config_save_to_file_writes_non_default_values() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("non_default.toml");
+
+    let cfg = Config {
+        bridge_address: "http://192.168.1.100:50051".to_string(),
+        http_address: "http://0.0.0.0:9999".to_string(),
+        auth_token: "secret-token-xyz".to_string(),
+        ..Config::default()
+    };
+
+    cfg.save_to_file(path.to_str().unwrap()).expect("save non-default");
+
+    // 关键断言：文件存在且**包含**特定非默认字符串
+    let content = std::fs::read_to_string(&path).expect("read back");
+    assert!(
+        content.contains("192.168.1.100"),
+        "bridge_address must be written"
+    );
+    assert!(content.contains("9999"), "http_address must be written");
+    assert!(
+        content.contains("secret-token-xyz"),
+        "auth_token must be written"
+    );
+}
+
+#[test]
+fn config_save_to_file_round_trip_with_jwt_defaults() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("jwt_default.toml");
+
+    let original = Config::default();
+    original.save_to_file(path.to_str().unwrap()).expect("save");
+
+    // 关键断言：重新读取后 JWT 三个默认值不变
+    // (mutation 抓"replace default_jwt_access_ttl_secs with 0/1/-1"
+    //  → 因为 default_jwt_access_ttl_secs 已被 serde 写入文件,反序列化可还原真实值)
+    let reloaded = Config::from_file(path.to_str().unwrap()).expect("from_file");
+    assert_eq!(reloaded.jwt.access_ttl_secs, original.jwt.access_ttl_secs);
+    assert_eq!(reloaded.jwt.refresh_ttl_secs, original.jwt.refresh_ttl_secs);
+    assert_eq!(reloaded.jwt.issuer, original.jwt.issuer);
+    // 进一步：验证默认值都是合理正值（防止替换为 0/负数）
+    assert!(
+        reloaded.jwt.access_ttl_secs > 0,
+        "access_ttl_secs must be positive"
+    );
+    assert!(
+        reloaded.jwt.refresh_ttl_secs > 0,
+        "refresh_ttl_secs must be positive"
+    );
+    assert!(
+        reloaded.jwt.refresh_ttl_secs > reloaded.jwt.access_ttl_secs,
+        "refresh > access"
+    );
+    assert!(!reloaded.jwt.issuer.is_empty(), "issuer must be non-empty");
+}
+
+#[test]
+fn config_default_jwt_ttl_values_are_sane() {
+    // 显式验证 default_jwt_access_ttl_secs / refresh_ttl_secs / issuer 返回值
+    // (mutation 抓"replace ... with 0/1/-1"或"with String::new()")
+    let c = Config::default();
+    assert!(c.jwt.access_ttl_secs > 0);
+    assert!(c.jwt.refresh_ttl_secs > c.jwt.access_ttl_secs);
+    assert!(!c.jwt.issuer.is_empty());
+}

@@ -36,7 +36,7 @@
             const path_to_root = "";
             const default_light_theme = "dark";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-542f004a.js";
+            window.path_to_searchindex_js = "searchindex-d69bc66b.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-724ddedf.js"></script>
@@ -1931,6 +1931,12 @@ sample_rate = 1.0
 <tr><td><code>SISYPHUS_COGNITIVE_LOOP_ADAPTIVE_DEPTH_DECAY</code></td><td><code>cognitive_loop.adaptive_depth.decay</code></td><td>f64</td><td><code>0.3</code></td></tr>
 <tr><td><code>SISYPHUS_COGNITIVE_LOOP_ADAPTIVE_DEPTH_MIN_IMPROVEMENT</code></td><td><code>cognitive_loop.adaptive_depth.min_improvement</code></td><td>f64</td><td><code>0.15</code></td></tr>
 <tr><td><code>SISYPHUS_COGNITIVE_LOOP_ADAPTIVE_DEPTH_CONVERGENCE_THRESHOLD</code></td><td><code>cognitive_loop.adaptive_depth.convergence_threshold</code></td><td>f64</td><td><code>0.05</code></td></tr>
+<tr><td><code>SISYPHUS_COGNITIVE_LOOP_TOKEN_BUDGET_CAP</code></td><td><code>cognitive_loop.token_budget.cap</code></td><td>u64 | 空字符串清空</td><td><code>None</code></td></tr>
+<tr><td><code>SISYPHUS_COGNITIVE_LOOP_TOKEN_BUDGET_RESERVE_RATIO</code></td><td><code>cognitive_loop.token_budget.reserve_ratio</code></td><td>f64</td><td><code>0.1</code></td></tr>
+<tr><td><code>SISYPHUS_COGNITIVE_LOOP_ANOMALY_DETECTOR_FUEL_THRESHOLD</code></td><td><code>cognitive_loop.anomaly_detector.fuel_threshold</code></td><td>f64 (&gt; 0)</td><td><code>2.0</code></td></tr>
+<tr><td><code>SISYPHUS_COGNITIVE_LOOP_ANOMALY_DETECTOR_DURATION_THRESHOLD</code></td><td><code>cognitive_loop.anomaly_detector.duration_threshold</code></td><td>f64 (&gt; 0)</td><td><code>3.0</code></td></tr>
+<tr><td><code>SISYPHUS_COGNITIVE_LOOP_ANOMALY_DETECTOR_ERROR_RATE_THRESHOLD</code></td><td><code>cognitive_loop.anomaly_detector.error_rate_threshold</code></td><td>f64 [0.0, 1.0]</td><td><code>0.3</code></td></tr>
+<tr><td><code>SISYPHUS_COGNITIVE_LOOP_ANOMALY_DETECTOR_HISTORY_WINDOW</code></td><td><code>cognitive_loop.anomaly_detector.history_window</code></td><td>usize (≥ 1)</td><td><code>20</code></td></tr>
 <tr><td><code>SISYPHUS_EXECUTOR_MAX_CONCURRENT_TASKS</code></td><td><code>executor.max_concurrent_tasks</code></td><td>usize</td><td><code>16</code></td></tr>
 <tr><td><code>SISYPHUS_EXECUTOR_DEFAULT_FUEL</code></td><td><code>executor.default_fuel</code></td><td>u64</td><td><code>1_000_000</code></td></tr>
 <tr><td><code>SISYPHUS_CACHE_L1_CAPACITY</code></td><td><code>cache.l1_capacity</code></td><td>usize</td><td><code>10_000</code></td></tr>

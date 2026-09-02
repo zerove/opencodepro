@@ -56,3 +56,9 @@ required-features = ["sandbox"]
 name = "core_benches"
 harness = false
 required-features = ["sandbox"]
+
+[[bench]]
+name = "lightweight_benches"
+harness = false
+# 不依赖 sandbox，可在默认 feature 下运行
+# 覆盖：AnomalyDetector / DagRenderer 等纯计算路径

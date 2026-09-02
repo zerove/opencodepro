@@ -1,0 +1,43 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: sisyphus-bridge-grpc
+  namespace: sisyphus
+  labels:
+    app.kubernetes.io/name: sisyphus-bridge
+    app.kubernetes.io/component: grpc
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: sisyphus-bridge
+    app.kubernetes.io/component: bridge
+  ports:
+    - name: grpc
+      port: 50051
+      targetPort: grpc
+      protocol: TCP
+  # gRPC 长连接：不要过早回收
+  sessionAffinity: ClientIP
+  sessionAffinityConfig:
+    clientIP:
+      timeoutSeconds: 3600
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: sisyphus-bridge-http
+  namespace: sisyphus
+  labels:
+    app.kubernetes.io/name: sisyphus-bridge
+    app.kubernetes.io/component: http
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: sisyphus-bridge
+    app.kubernetes.io/component: bridge
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+      protocol: TCP

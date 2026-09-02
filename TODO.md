@@ -91,7 +91,7 @@
 - [x] **bridge 集成测试 CI 化**: `sisyphus-bridge/tests/bridge_integration_test.rs` 当前 `#[ignore]`
   - ✅ **2026-09-02 完成**: 3 个 setup helper 缺 `allow_dummy_embeddings` 修复 + `Makefile` BRIDGE_DEPS 引用不存在 build.rs 修正 → 89/89 bridge 集成测试稳定通过。
 - [ ] **混沌测试扩展**: 当前仅 fault injection 覆盖，缺网络延迟/超时/并发竞态场景
-- [ ] **mutation testing 试点**: `cargo-mutants` 在 `sisyphus-types` 跑一轮，验证测试质量
+- [x] **mutation testing 试点**: `cargo-mutants` 在 `sisyphus-types` 跑一轮，验证测试质量
 - [ ] **wasm 沙箱的 proptest**: `sisyphus-sandbox` 缺属性测试，添加 host function 边界覆盖
 
 #### 7.3 性能
@@ -107,7 +107,7 @@
 #### 7.5 文档与运维
 - [ ] **CHANGELOG.md 启动**: 当前 320 个本地提交无 CHANGELOG，按 keep-a-changelog 格式补 0.x.x
 - [ ] **book 增量构建**: `mdbook` 当前每次全量编译，CI 缓存复用
-- [ ] **部署脚本**: 缺 systemd unit / Docker compose / k8s manifest
+- [x] **部署脚本**: 缺 systemd unit / Docker compose / k8s manifest
 
 ---
 **更新日期**: 2026-08-31
@@ -133,12 +133,12 @@
 - 7.5: mdbook 缓存 / 部署脚本（systemd / Docker compose / k8s）
 
 **后续 1-2 周路线（基于当前实际状态）**:
-1. **Otel 端点配置化扫尾 (P2)**: 确认 bridge / 各工具子 crate 都读同一 config、不重复。预计 0.5d 验证。
-2. ✅ **bridge 集成测试 CI 化 (P1)** (2026-09-02): 完成。89/89 bridge 集成测试通过（fixture 修复 + Makefile BRIDGE_DEPS 修正）。
-3. **mutation testing 试点 (P2)**: `cargo-mutants` 在 `sisyphus-types` 跑一轮，验证测试质量（重点 config validate / apply_env_overrides）。预计 1d + 2h 调研。
-4. **CHANGELOG 0.x.x 标签 (P2)**: 当前 Unreleased 段已填 8+ 条变更，给个 v0.x.0 标签便于发布追踪。预计 0.5h。
-5. **book 增量构建 CI (P3)**: mdbook 加增量缓存到 `.github/workflows`，减少 5-10 min 全量重建。预计 0.5d。
-6. **部署脚本 (P3)**: systemd unit / Docker compose 增量 / k8s manifest 起步模板。预计 1-2d。
+1. **Otel 端点配置化扫尾 (P2)**: 确认 bridge / 各工具子 crate 都读同一 config、不重复。
+2. ✅ **mutation testing 试点 (P2)** (2026-09-02): 完成。cargo-mutants 27.1.0 在 sisyphus-types 跑 10 分钟
+   处理 16 mutants: 13 caught + 3 unviable + 0 missed。新增 4 个 mutation 防护测试
+   (`milestone_status_display_strings` + 3 个 `config_save_to_file_*` + `config_default_jwt_ttl_values_are_sane`)
+   覆盖了之前 missed 的核心场景。
+3. **CHANGELOG 0.x.x 标签 (P2)**: 当前 Unreleased 段已填 8+ 条变更,给个 v0.x.0 标签便于发布追踪。
 7. **TUI `:health` 面板增强 (P3)**: 当前仅展示 `/health/deep`，下一步聚合 token 预算 + DAG 进度。预计 0.5-1d。
 
 ---

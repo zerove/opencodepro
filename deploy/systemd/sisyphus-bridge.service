@@ -1,0 +1,71 @@
+# ── Sisyphus Bridge systemd unit ────────────────────────────────────
+# 部署目标：Linux 主机（systemd v250+）
+# 安装：
+#   1. 把 sisyphus-bridge 二进制放到 /usr/local/bin/sisyphus-bridge
+#   2. 把 config.toml 放到 /etc/sisyphus/config.toml
+#   3. 把此文件放到 /etc/systemd/system/sisyphus-bridge.service
+#   4. 创建专用用户：sudo useradd --system --no-create-home --shell /usr/sbin/nologin sisyphus
+#   5. 启动：sudo systemctl daemon-reload && sudo systemctl enable --now sisyphus-bridge
+#   6. 验证：systemctl status sisyphus-bridge
+#
+# 安全加固建议：
+#   - 让 sisyphus 用户对 /var/lib/sisyphus 拥有读写权限
+#   - 配置 DynamicUser / NoNewPrivileges / ProtectSystem
+#   - 配置网络 firewall 仅暴露 50051/8080 给受信子网
+
+[Unit]
+Description=Sisyphus Cognitive Bridge (gRPC :50051 + HTTP :8080)
+Documentation=https://github.com/zerove/opencodepro
+After=network-online.target
+Wants=network-online.target
+# 可选：依赖数据库
+# After=postgresql.service
+# Wants=postgresql.service
+
+[Service]
+Type=simple
+User=sisyphus
+Group=sisyphus
+WorkingDirectory=/var/lib/sisyphus
+
+# 二进制与配置路径
+ExecStart=/usr/local/bin/sisyphus-bridge
+Environment=SISYPHUS_CONFIG=/etc/sisyphus/config.toml
+Environment=SISYPHUS_DATA_DIR=/var/lib/sisyphus
+Environment=RUST_LOG=info
+
+# 重启策略：异常退出后 5s 重启
+Restart=on-failure
+RestartSec=5s
+
+# 资源限制（保护机器：bridge 不应独占）
+LimitNOFILE=65536
+LimitNPROC=4096
+MemoryMax=2G
+TasksMax=4096
+
+# 安全加固
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictNamespaces=true
+RestrictRealtime=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+# 允许网络（gRPC + HTTP 必需）
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+
+# 状态与日志输出
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=sisyphus-bridge
+
+[Install]
+WantedBy=multi-user.target

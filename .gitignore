@@ -37,3 +37,8 @@ record_*.py
 *.orig
 *.rej
 symbiosis_*.log
+
+# mdbook 构建产物
+book/book/
+book/src/SUMMARY.md.bak
+

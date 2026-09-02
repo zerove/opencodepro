@@ -139,6 +139,22 @@
     panic(`"Embedding provider 'dummy' is not 'openai'..."`)。修复后 89 个 bridge 集成测试全过(之前 52 个全部 panic)。
   - `Makefile` 中 `BRIDGE_DEPS` 引用不存在的 `build.rs`,导致 `make test-bridge` 立即失败。
     替换为 `Cargo.toml`(build dependency 用 manifest 触发)。
+- **2026-09-02 阶段 7.3/7.5 实施**：
+  - **7.5 部署脚本**：新增 `deploy/systemd/sisyphus-bridge.service`(硬安全加固:NoNewPrivileges/ProtectSystem/RestrictNamespaces 等)
+    + `deploy/systemd/install.sh`(自动构建→安装→启用) + `deploy/k8s/00-namespace.yaml..06-ingress.yaml`(7 个 manifest)。
+    kubeconform 校验：8/8 k8s 资源全部 Valid。systemd unit 含 MemoryMax/LimitNOFILE 资源约束。
+  - **7.3 DAG 渲染性能测试**: 新增 `crates/sisyphus-core/benches/lightweight_benches.rs`(不依赖 sandbox)
+    覆盖 AnomalyDetector 检测吞吐(10/100/1000 元素) + DagRenderer 大型 SOP 渲染(10/50/200/500 节点)
+    + 边界场景(1000 信号序列)。注册到 Cargo.toml `[[bench]]`,CI 可在 `cargo bench` 默认 feature 下跑。
+  - **7.5 mdbook 增量构建 CI**: 新增 `.github/workflows/mdbook.yml`。
+    - 关键优化:`hashFiles('book/**/SUMMARY.md', 'book/book.toml')` 作为 cache key
+    - mdbook 自带增量检测:实测 4s cold → 0.6s 增量
+    - 双 job 设计:`build-and-deploy`(push master → GitHub Pages) + `build-only`(PR 预检不部署)
+    - actions/cache + actions/upload-pages-artifact 组合利用 GitHub 原生 Pages
+  - **7.2 mutation testing 调研** (进行中):安装 `cargo-mutants 27.1.0`,在 `sisyphus-types` 跑全 4 线程试点(目标 ~5-10 min)
+  - **.gitignore**: `book/book/`(mdbook 产物)+ `book/src/SUMMARY.md.bak` 加入忽略列表
+    + `git rm -r --cached book/book/` 移除已被 tracked 的产物文件
+- **2026-09-02 阶段 7.3 后续**:待 mutation testing 完成 + 性能基线建立后,再实现 7.3 TUI 冷启动 profile。
 
 
 ### Verified

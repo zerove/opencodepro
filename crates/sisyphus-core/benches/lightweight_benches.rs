@@ -1,0 +1,101 @@
+//! 轻量级 criterion bench：测试无需 sandbox 依赖的纯计算路径。
+//! 与 `core_benches` 不同，此 bench 可以在 `cargo bench` 不带 --features sandbox 时跑，
+//! 适合 CI 快速性能回归检查（每次 release PR 跑 < 30s）。
+//!
+//! 覆盖：
+//! - AnomalyDetector 检测吞吐
+//! - DagRenderer 大型 SOP 图谱渲染（10 / 50 / 200 / 500 节点）
+
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use sisyphus_core::AnomalyDetector;
+use sisyphus_core::DagRenderer;
+use sisyphus_core::NodeStatus;
+
+#[inline(always)]
+fn black_box<T>(v: T) -> T {
+    std::hint::black_box(v)
+}
+
+// ---------------------------------------------------------------------------
+// AnomalyDetector 检测吞吐
+// ---------------------------------------------------------------------------
+
+fn bench_anomaly_detector(c: &mut Criterion) {
+    let mut group = c.benchmark_group("anomaly_detector");
+    let sizes = [10usize, 100, 1_000];
+    for n in sizes.iter() {
+        group.throughput(Throughput::Elements(*n as u64));
+        group.bench_with_input(BenchmarkId::from_parameter(n), n, |b, &n| {
+            b.iter(|| {
+                let mut detector = AnomalyDetector::default();
+                for i in 0..n {
+                    let node = format!("n{i}");
+                    let _ = detector.observe(&node, 100, 50, true);
+                }
+            });
+        });
+    }
+    group.finish();
+}
+
+// ---------------------------------------------------------------------------
+// DagRenderer 大型 SOP 渲染
+// ---------------------------------------------------------------------------
+
+fn bench_dag_renderer(c: &mut Criterion) {
+    let mut group = c.benchmark_group("dag_renderer");
+    for n in [10usize, 50, 200, 500] {
+        group.throughput(Throughput::Elements(n as u64));
+        group.bench_with_input(BenchmarkId::from_parameter(n), &n, |b, &n| {
+            let mut nodes: Vec<(String, NodeStatus)> = Vec::with_capacity(n);
+            for i in 0..n {
+                let status = match i % 4 {
+                    0 => NodeStatus::Pending,
+                    1 => NodeStatus::Running,
+                    2 => NodeStatus::Completed,
+                    _ => NodeStatus::Failed,
+                };
+                nodes.push((format!("n{i}"), status));
+            }
+            let mut edges: Vec<(String, String)> = Vec::with_capacity(n.saturating_sub(1) * 2);
+            for i in 0..n.saturating_sub(1) {
+                edges.push((format!("n{i}"), format!("n{}", i + 1)));
+                if i % 5 == 0 && i + 2 < n {
+                    edges.push((format!("n{i}"), format!("n{}", i + 2)));
+                }
+            }
+            let renderer = DagRenderer::new();
+            b.iter(|| {
+                let viz = renderer.render(black_box(&nodes), black_box(&edges));
+                let _ = viz.width * viz.height;
+            });
+        });
+    }
+    group.finish();
+}
+
+// ---------------------------------------------------------------------------
+// AnomalyDetector 边界场景
+// ---------------------------------------------------------------------------
+
+fn bench_anomaly_detector_boundaries(c: &mut Criterion) {
+    let mut group = c.benchmark_group("anomaly_detector_boundaries");
+    group.bench_function("observe_1000", |b| {
+        let mut detector = AnomalyDetector::default();
+        b.iter(|| {
+            for i in 0..1000usize {
+                let node = format!("n{i}");
+                let _ = detector.observe(black_box(&node), 100, 50, true);
+            }
+        });
+    });
+    group.finish();
+}
+
+criterion_group!(
+    benches,
+    bench_anomaly_detector,
+    bench_anomaly_detector_boundaries,
+    bench_dag_renderer
+);
+criterion_main!(benches);

@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: sisyphus
+  labels:
+    name: sisyphus
+    app.kubernetes.io/part-of: sisyphus

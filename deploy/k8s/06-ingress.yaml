@@ -1,0 +1,38 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: sisyphus-bridge-http
+  namespace: sisyphus
+  labels:
+    app.kubernetes.io/name: sisyphus-bridge
+    app.kubernetes.io/component: ingress
+  annotations:
+    # cert-manager 自动签发 Let's Encrypt 证书
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    # 强制 HTTPS
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - bridge.sisyphus.example.com
+      secretName: sisyphus-bridge-tls
+  rules:
+    - host: bridge.sisyphus.example.com
+      http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: sisyphus-bridge-http
+                port:
+                  number: 8080
+          - path: /health
+            pathType: Prefix
+            backend:
+              service:
+                name: sisyphus-bridge-http
+                port:
+                  number: 8080

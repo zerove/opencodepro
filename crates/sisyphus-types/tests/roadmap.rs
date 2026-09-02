@@ -594,3 +594,27 @@ fn calculate_progress_with_blocked_goals() {
     // 1/2
     assert!((m.calculate_progress() - 0.5).abs() < 1e-9);
 }
+
+// ── mutation testing 防护：验证 Display 输出文本 ──
+// cargo-mutants 抓到"替换 fmt 返回 Ok(Default::default())"会清空所有变体输出
+// → 显式 assert_eq 文本内容是必要的回归保护
+#[test]
+fn milestone_status_display_strings() {
+    assert_eq!(format!("{}", MilestoneStatus::Pending), "Pending");
+    assert_eq!(format!("{}", MilestoneStatus::InProgress), "InProgress");
+    assert_eq!(format!("{}", MilestoneStatus::Completed), "Completed");
+    assert_eq!(format!("{}", MilestoneStatus::Blocked), "Blocked");
+
+    // 防止"全部返回相同字符串"型 mutant 漏检：4 个变体必须互不相等
+    let displays: Vec<String> = [
+        MilestoneStatus::Pending,
+        MilestoneStatus::InProgress,
+        MilestoneStatus::Completed,
+        MilestoneStatus::Blocked,
+    ]
+    .iter()
+    .map(|s| format!("{s}"))
+    .collect();
+    let unique: std::collections::HashSet<_> = displays.iter().collect();
+    assert_eq!(unique.len(), 4, "displays must all be distinct");
+}

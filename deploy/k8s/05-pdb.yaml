@@ -1,0 +1,12 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: sisyphus-bridge-pdb
+  namespace: sisyphus
+spec:
+  # 滚动升级 / 节点维护时至少保持 1 副本可用
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: sisyphus-bridge
+      app.kubernetes.io/component: bridge

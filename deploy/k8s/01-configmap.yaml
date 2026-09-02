@@ -1,0 +1,35 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: sisyphus-bridge-config
+  namespace: sisyphus
+  labels:
+    app.kubernetes.io/name: sisyphus-bridge
+    app.kubernetes.io/component: config
+data:
+  # 基础桥接配置（生产请通过 Kustomize overlay 或 sealed-secrets 覆盖）
+  config.toml: |
+    # ── Sisyphus Cognitive Bridge ──
+    # 部署目标：Kubernetes 集群（多副本 + Service + ConfigMap）
+    #
+    # 关键环境变量覆盖（避免硬编码到 ConfigMap）：
+    #   SISYPHUS_BRIDGE_ADDRESS      gRPC 监听地址（0.0.0.0:50051）
+    #   SISYPHUS_HTTP_ADDRESS        HTTP 监听地址（0.0.0.0:8080）
+    #   SISYPHUS_CACHE_DATABASE_URL  SQLite/PostgreSQL 连接串
+    #   SISYPHUS_LLM_PROVIDER        LLM provider 标识
+    #   SISYPHUS_LLM_API_KEY         LLM API 凭据（务必用 Secret 注入）
+    bridge_address = "0.0.0.0:50051"
+    http_address = "0.0.0.0:8080"
+
+    [bridge]
+    max_concurrent_requests = 64
+
+    [cache]
+    # 在 k8s 集群中推荐用 PostgreSQL
+    database_url = "sqlite:///var/lib/sisyphus/cache.db"
+
+    [sandbox]
+    wasm_tools_dir = "/var/lib/sisyphus/wasm-tools"
+
+    [chaos]
+    enabled = false
