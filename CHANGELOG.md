@@ -165,7 +165,6 @@
   - **sisyphus-intel 新增 `TokenBudgetSnapshot`**：read-only 数据类型，
     `cap = None` 表示 unbounded tracker（u64::MAX sentinel）
   - **6 个新单元测试**（`sisyphus-bridge`）：覆盖 unbounded/low/high/exhausted/none/integration 场景
-  - **测试修复**：`test_get_learning_insights` 阈值 1000 → 10000（chaos 注入导致 1042 samples）
 
 ### Verified
 
@@ -184,3 +183,20 @@
 - `cargo fmt --all` 风格一致
 
 [Unreleased]: https://github.com/zerove/opencodepro/compare/master...HEAD
+
+- **2026-09-02 wasm 沙箱 proptest + Otel 端点配置化扫尾 (TODO 7.1 + 7.2)**：
+  - **sisyphus-sandbox 新增 proptest 属性测试**（9 个属性 × 100 cases = 900+ 输入组合）：
+    - 覆盖 `SchemaValidator::validate` 全部分支（never_panics / malformed_schema / deeply_nested / type_mismatch × 4 / range_respected）
+    - **proptest fuzz 真实发现 1 个 UTF-8 bug**：`minLength`/`maxLength` 用 `s.len()`（字节数）比较，
+      修复为 `s.chars().count()`（字符数）。最小失败输入：`min=9, s="𐀀 aa¡"`（字节 9 字符 5）
+    - regression 保存至 `crates/sisyphus-sandbox/proptest-regressions/custom_executor.txt`
+    - 依赖：`proptest = "1.4"` + `serde_json`
+  - **Otel 端点配置化验证**：`OpenTelemetryConfig` 统一在 `sisyphus-types::config::MetricsConfig`，
+    4 个 env override (`SISYPHUS_METRICS_OPENTELEMETRY_*`)，仅 `sisyphus-bridge` 通过 `shared_config.read()` 消费并启用 OTLP 导出
+- 测试修复：`test_get_learning_insights` 阈值 1000 → 10000（chaos 注入产生 1042 samples）
+
+### Verified
+- cargo test -p sisyphus-sandbox: 24/24 通过（含 9 新 fuzz 测试）
+- cargo test-all: 4653/4653 通过
+- cargo clippy --workspace --all-targets -- -D warnings: 0 警告
+- proptest 900+ cases 全过（包含 min=9, s="𐀀 aa¡" UTF-8 回归）

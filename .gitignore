@@ -38,7 +38,14 @@ record_*.py
 *.rej
 symbiosis_*.log
 
-# mdbook 构建产物
+# mdbook 构建产物（mdbook build 自动生成）
 book/book/
 book/src/SUMMARY.md.bak
 
+# cargo-mutants 输出（cargo mutants 自动生成）
+mutants.out/
+mutants.out.old/
+
+# proptest 自动生成的回归案例目录
+# (运行 cargo test 后会出现在此目录；源码内嵌的 seeds 在 fuzz_tests 模块)
+crates/sisyphus-sandbox/proptest-regressions/

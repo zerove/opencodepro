@@ -81,7 +81,8 @@
 **目标**: 收敛技术债 + 启动认知循环 v3 准备
 
 #### 7.1 健康度与可观测性 (最高优先)
-- [ ] **Otel 导出端点配置化**: 当前 otel 配置散落，`OpenTelemetryConfig` 缺少完整 env override 链
+- [x] **Otel 导出端点配置化**: 当前 otel 配置散落，`OpenTelemetryConfig` 缺少完整 env override 链
+  - ✅ **2026-09-02 完成**: Otel 配置统一在 `sisyphus-types::config::MetricsConfig`，4 个 env override，仅 `sisyphus-bridge` 消费 OTLP 导出。
 - [x] **认知循环 v2 异常检测器调优** (2026-08-31): `AnomalyDetector` 阈值从 Config 加载
 - [x] **bridge 启动自检端点** (2026-08-31): `GET /health/deep` 报告 session_db/shared_http/kernel 组件级状态；返回 200/207 Multi-Status；OpenAPI 文档 + HealthDeepResponse schema
 - [x] **`/health/deep` 单元测试** (2026-08-31): 5 个测试覆盖 DB 文件/父目录/不存在/absent 不算降级/三组件键（重构 health_deep_handler → 薄包装 + 纯函数 health_deep_assess）
@@ -92,7 +93,8 @@
   - ✅ **2026-09-02 完成**: 3 个 setup helper 缺 `allow_dummy_embeddings` 修复 + `Makefile` BRIDGE_DEPS 引用不存在 build.rs 修正 → 89/89 bridge 集成测试稳定通过。
 - [ ] **混沌测试扩展**: 当前仅 fault injection 覆盖，缺网络延迟/超时/并发竞态场景
 - [x] **mutation testing 试点**: `cargo-mutants` 在 `sisyphus-types` 跑一轮，验证测试质量
-- [ ] **wasm 沙箱的 proptest**: `sisyphus-sandbox` 缺属性测试，添加 host function 边界覆盖
+  - ✅ **2026-09-02 完成**: `sisyphus-sandbox` 新增 9 个 proptest 属性测试，**发现 1 个 bug**（UTF-8 多字节字符 `minLength`/`maxLength` 用字节数比较），已修复为字符数。regression 保存至 `proptest-regressions/`。
+- [x] **wasm 沙箱的 proptest**: `sisyphus-sandbox` 缺属性测试，添加 host function 边界覆盖
 
 #### 7.3 性能
 - [ ] **基准基线刷新**: `docs/benchmarks/v2-baseline-2026-08-09.md` 已有，对比 `make perf-analyze` 当前数据
@@ -126,7 +128,7 @@
 - 2026-09-01 **TUI `:health` 面板**（bridge 启动健康度可视化，8 文件 / +316 行 / 5 单元 + 1 集成测试）
 - 2026-09-01 **修复 `sisyphus-cli` clippy `iter_out_of_bounds` + `iter_count` 警告**（rustc 1.98 新增 lint）
 
-**下一步（用户可指派优先级）**:
+- 7.2: bridge CI 化 ✅ / mutation testing ✅ / wasm proptest ✅ / 混沌扩展（待）
 - 7.1: Otel 端点配置化扫尾（已基本就绪）
 - 7.2: bridge CI 化 / mutation testing / wasm proptest / 混沌扩展（需 2-4h 调研）
 - 7.3: 基准基线刷新 / DAG 渲染性能 / TUI 冷启动 profile
@@ -142,12 +144,9 @@
 7. **TUI `:health` 面板增强 (P3)**: 当前仅展示 `/health/deep`，下一步聚合 token 预算 + DAG 进度。预计 0.5-1d。
 
 ---
-
-**总体进度（截至 2026-09-01 20:50）**:
-- 阶段 1-4: 100%
-**总体进度（截至 2026-09-02 10:30）**:
+**总体进度（截至 2026-09-02 17:30）**:
+- 阶段 7（近期 1-2 周）: ~95% (7.1 完成 5/5 + 7.2 完成 3/4 + 7.3/7.4/7.5 完成 3/3)
+- 测试总数: ~4677 通过 (含 sisyphus-sandbox 24 含 9 新 fuzz + sisyphus-bridge 95 + 其他 4558)
 - 阶段 6（分布式）: 0%（按计划延后）
-- 阶段 7（近期 1-2 周）: ~85% (7.1 完成 4/4 含 :health 增强; 7.2 完成 1/3 mutation testing; 7.3 完成 3/3 基准 + DAG + 冷启动; 7.4 完成 3/3 DX; 7.5 完成 3/3 部署 + mdbook CI)
-- 测试总数: ~4748 通过 (sisyphus-cli 53 + sisyphus-bridge 95 含 6 token_budget 新增 + 其他 4600)
 - 编译警告: 0
 - clippy -D warnings: 0

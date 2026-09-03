@@ -57,13 +57,16 @@ impl SchemaValidator {
 
     fn validate_string(schema: &Value, args: &Value) -> Result<(), String> {
         let s = args.as_str().ok_or("Expected a string")?;
+        // minLength / maxLength 是字符数（JSON Schema spec），不是字节数。
+        // proptest fuzz 发现 UTF-8 多字节字符判定 bug：旧实现用 s.len() 字节数。
+        let char_count = s.chars().count();
         if let Some(min) = schema.get("minLength").and_then(|m| m.as_u64()) {
-            if s.len() < min as usize {
+            if char_count < min as usize {
                 return Err(format!("String too short (min {})", min));
             }
         }
         if let Some(max) = schema.get("maxLength").and_then(|m| m.as_u64()) {
-            if s.len() > max as usize {
+            if char_count > max as usize {
                 return Err(format!("String too long (max {})", max));
             }
         }
@@ -314,5 +317,141 @@ impl ToolExecutor for CustomToolExecutor {
                 duration_ms: exec_start.elapsed().as_millis() as u64,
             }),
         ))
+    }
+}
+
+// ── Property-based fuzz tests for `SchemaValidator::validate` ──
+//
+// proptest fuzzes arbitrary schema/args combinations to discover
+// panics, infinite loops, or wrong-typed branches.
+//
+// Note: `SchemaValidator` is private so these tests must live in the
+// same module (cfg(test) mod). Coverage: 9 properties × 100 cases = 900+.
+
+#[cfg(test)]
+mod fuzz_tests {
+    use super::SchemaValidator;
+    use proptest::prelude::*;
+    use serde_json::Value;
+
+    fn arb_json_value() -> impl Strategy<Value = Value> {
+        prop_oneof![
+            any::<bool>().prop_map(Value::Bool),
+            any::<i64>().prop_map(|n| Value::Number(n.into())),
+            "[a-zA-Z0-9_ ]{0,32}".prop_map(Value::String),
+            Just(Value::Null),
+            proptest::collection::vec(any::<i64>().prop_map(|n| Value::Number(n.into())), 0..4)
+                .prop_map(Value::Array),
+        ]
+    }
+
+    fn arb_simple_schema() -> impl Strategy<Value = Value> {
+        prop_oneof![
+            Just(serde_json::json!({"type": "object"})),
+            Just(serde_json::json!({"type": "string"})),
+            Just(serde_json::json!({"type": "integer"})),
+            Just(serde_json::json!({"type": "number"})),
+            Just(serde_json::json!({"type": "boolean"})),
+        ]
+    }
+
+    proptest! {
+        #[test]
+        fn schema_validator_never_panics(
+            schema in arb_simple_schema(),
+            value in arb_json_value()
+        ) {
+            // 仅断言不 panic（Ok 或 Err 都接受）
+            let _ = SchemaValidator::validate(&schema, &value);
+        }
+
+        #[test]
+        fn schema_validator_handles_malformed_schema(value in arb_json_value()) {
+            for schema in [
+                serde_json::json!({}),
+                serde_json::json!({"type": "unknown"}),
+                serde_json::json!({"type": Value::Null}),
+                serde_json::json!({"type": 42}),
+                serde_json::json!({"type": "object", "properties": "not_an_object"}),
+                serde_json::json!({"type": "object", "required": "not_an_array"}),
+                serde_json::json!({"type": "object", "properties": Value::Null}),
+            ] {
+                let _ = SchemaValidator::validate(&schema, &value);
+            }
+        }
+
+        #[test]
+        fn schema_validator_handles_deeply_nested_args(depth in 0usize..5) {
+            let mut v = Value::Null;
+            for _ in 0..depth {
+                v = serde_json::json!({ "foo": v });
+            }
+            let schema = serde_json::json!({"type": "object"});
+            let _ = SchemaValidator::validate(&schema, &v);
+        }
+
+        #[test]
+        fn object_schema_rejects_non_object(
+            value in prop_oneof![
+                any::<i64>().prop_map(Value::from),
+                "[a-z]{0,8}".prop_map(Value::String),
+                Just(Value::Null),
+            ]
+        ) {
+            let schema = serde_json::json!({"type": "object"});
+            prop_assert!(SchemaValidator::validate(&schema, &value).is_err());
+        }
+
+        #[test]
+        fn string_schema_rejects_non_string(value in arb_json_value()) {
+            let schema = serde_json::json!({"type": "string"});
+            if !value.is_string() {
+                prop_assert!(SchemaValidator::validate(&schema, &value).is_err());
+            }
+        }
+
+        #[test]
+        fn number_schema_rejects_non_number(value in arb_json_value()) {
+            let schema = serde_json::json!({"type": "integer"});
+            if !value.is_number() {
+                prop_assert!(SchemaValidator::validate(&schema, &value).is_err());
+            }
+        }
+
+        #[test]
+        fn boolean_schema_rejects_non_bool(value in arb_json_value()) {
+            let schema = serde_json::json!({"type": "boolean"});
+            if !value.is_boolean() {
+                prop_assert!(SchemaValidator::validate(&schema, &value).is_err());
+            }
+        }
+
+        #[test]
+        fn string_min_length_respected(min in 0u64..16, s in ".*") {
+            let schema = serde_json::json!({"type": "string", "minLength": min});
+            let value = Value::String(s.clone());
+            let r = SchemaValidator::validate(&schema, &value);
+            if (s.chars().count() as u64) < min {
+                prop_assert!(r.is_err(), "string len < min should fail");
+            } else {
+                prop_assert!(r.is_ok(), "string len >= min should pass");
+            }
+        }
+
+        #[test]
+        fn number_range_respected(
+            min in -1000i64..1000,
+            max in -1000i64..1000,
+            v in -2000i64..2000
+        ) {
+            let schema = serde_json::json!({"type": "integer", "minimum": min, "maximum": max});
+            let value = Value::Number(v.into());
+            let r = SchemaValidator::validate(&schema, &value);
+            if v < min || v > max {
+                prop_assert!(r.is_err(), "v={} out of [{},{}] should fail", v, min, max);
+            } else {
+                prop_assert!(r.is_ok(), "v={} in [{},{}] should pass", v, min, max);
+            }
+        }
     }
 }

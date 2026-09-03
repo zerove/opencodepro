@@ -4537,6 +4537,7 @@ dependencies = [
  "async-trait",
  "dashmap",
  "hex",
+ "proptest",
  "serde_json",
  "sha2",
  "sisyphus-metrics",
