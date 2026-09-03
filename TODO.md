@@ -149,3 +149,54 @@
 - 测试总数: ~4682 通过 (含 sisyphus-bridge 100 含 5 chaos_extended + sisyphus-sandbox 24 + 其他 4558)
 - 编译警告: 0
 - clippy -D warnings: 0
+---
+
+## 🎉 v0.1.0 标签 (2026-09-03)
+
+阶段 7 全部完成 (7.1/7.2/7.3/7.4/7.5)。v0.1.0 tag 指向 `07f9b5a`。
+
+### 关键交付
+- **健康度**: `/health/deep` (4 组件) + TUI `:health` + token_budget 集成 + AnomalyDetector 配置化
+- **测试质量**: 100 bridge 集成测试 + 24 sandbox fuzz + 9 mutation 防护 + 900+ proptest cases
+- **真实 bug 修复**: `minLength` 字符数 vs 字节数（proptest fuzz 发现）
+- **性能**: DagRenderer 500 节点 1ms / TUI 启动 0.5s / 全工作区 0 警告
+- **部署**: systemd unit + 7 k8s manifests + mdbook CI（kubeconform 8/8 Valid）
+
+### 已知限制
+- bridge 集成测试需 sandbox 关闭 (CI 用 `--no-default-features`)
+- proptest fuzz 范围限于 `SchemaValidator::validate`，WASM 运行时未 fuzz（成本高）
+- mutation testing 仅 `sisyphus-types` 试点（16 mutants），其他 crate 未跑
+
+---
+
+## 🚀 阶段 8 计划（v0.2 候选，2026-09-15 起，2-3 周窗口）
+
+### 8.1 性能优化（高 ROI）
+- [ ] **DagRenderer 大规模压力测试**: 1000-5000 节点 benchmark + 优化 layout 算法
+- [ ] **bridge gRPC 流式响应**: 大 payload (1MB+) 分块流式替代一次性
+- [ ] **CLI 启动并行化**: tokio runtime 预初始化 + 插件懒加载
+
+### 8.2 可观测性扩展
+- [ ] **tracing span 覆盖率**: 关键路径 100% 覆盖 (execute_goal / execute_sop / token_budget 检查)
+- [ ] **metrics Prometheus 端点**: `/metrics` 暴露到 bridge 端口（已有 sse_handlers）
+- [ ] **健康度端点扩展**: 增加 `/health/live` (liveness) + `/health/ready` (readiness) 分离
+
+### 8.3 分布式 v2 启动
+- [ ] **peer 协议真实环境测试**: 3 节点 bridge cluster 互连
+- [ ] **experience bank 跨实例同步**: CRDT 或 last-writer-wins 策略
+- [ ] **共识机制 benchmark**: BridgeConsensus 在 5 节点下的 latency / throughput
+
+### 8.4 开发者体验
+- [ ] **devcontainer.json**: VS Code Remote Container 一键搭建
+- [ ] **cargo-deny 配置强化**: license 扫描 + advisory 阻断
+- [ ] **bench 趋势 dashboard**: criterion-compare 集成 GitHub Pages
+
+### 8.5 文档与社区
+- [ ] **book/ 添加 tutorial 章节**: 5 分钟上手 + 完整端到端示例
+- [ ] **贡献者指南完善**: CONTRIBUTING.md 包含 commit 规范 / PR 模板
+- [ ] **示例工程 `examples/`**: 3 个完整场景（CLI / Bridge / 多 Agent 协作）
+
+### 8.6 待 v0.1.0 反馈（社区）
+- [ ] **CHANGELOG v0.2.0 changelog 模板**: 基于 v0.1.0 改进
+- [ ] **GitHub Release Notes**: 自动从 CHANGELOG 生成 release artifacts
+- [ ] **Docker Hub 镜像**: ghcr.io/zerove/sisyphus-bridge:v0.2.0
