@@ -200,3 +200,21 @@
 - cargo test-all: 4653/4653 通过
 - cargo clippy --workspace --all-targets -- -D warnings: 0 警告
 - proptest 900+ cases 全过（包含 min=9, s="𐀀 aa¡" UTF-8 回归）
+
+- **2026-09-03 v0.1.0 tag + 混沌测试扩展 (TODO 7.2 完成全部 4/4)**：
+  - 新增 `crates/sisyphus-bridge/tests/chaos_extended.rs`（5 个测试）：
+    - `chaos_concurrent_health_check_no_race` (50 并发 health_check < 5s)
+    - `chaos_concurrent_list_sops_no_race` (30 并发 list_sops < 5s)
+    - `chaos_burst_100_health_checks` (100 并发 ≥ 90% 成功，10s 内)
+    - `chaos_large_args_payload_does_not_crash` (10KB JSON args 不 panic)
+    - `chaos_repeated_connect_disconnect` (10 次连/断/连 鲁棒)
+  - 覆盖 race / load / payload / reconnect 边界
+  - bridge 总测试：95 → 100 (含 5 新 chaos_extended)
+  - **v0.1.0 git tag 创建**：阶段 7 收尾（实际版本 `0.1.0`）
+  - 总体进度：阶段 7 ~98% (7.1 5/5 + 7.2 4/4 + 7.3/7.4/7.5 3/3)
+
+### Verified
+- cargo test -p sisyphus-bridge: 100/100 通过 (含 5 chaos_extended)
+- cargo test-all: 4653/4653 通过
+- cargo clippy --workspace --all-targets -- -D warnings: 0 警告
+- git tag v0.1.0 创建成功

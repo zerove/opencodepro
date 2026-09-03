@@ -91,7 +91,7 @@
 #### 7.2 测试与质量
 - [x] **bridge 集成测试 CI 化**: `sisyphus-bridge/tests/bridge_integration_test.rs` 当前 `#[ignore]`
   - ✅ **2026-09-02 完成**: 3 个 setup helper 缺 `allow_dummy_embeddings` 修复 + `Makefile` BRIDGE_DEPS 引用不存在 build.rs 修正 → 89/89 bridge 集成测试稳定通过。
-- [ ] **混沌测试扩展**: 当前仅 fault injection 覆盖，缺网络延迟/超时/并发竞态场景
+- [x] **混沌测试扩展**: 当前仅 fault injection 覆盖，缺网络延迟/超时/并发竞态场景
 - [x] **mutation testing 试点**: `cargo-mutants` 在 `sisyphus-types` 跑一轮，验证测试质量
   - ✅ **2026-09-02 完成**: `sisyphus-sandbox` 新增 9 个 proptest 属性测试，**发现 1 个 bug**（UTF-8 多字节字符 `minLength`/`maxLength` 用字节数比较），已修复为字符数。regression 保存至 `proptest-regressions/`。
 - [x] **wasm 沙箱的 proptest**: `sisyphus-sandbox` 缺属性测试，添加 host function 边界覆盖
@@ -128,9 +128,9 @@
 - 2026-09-01 **TUI `:health` 面板**（bridge 启动健康度可视化，8 文件 / +316 行 / 5 单元 + 1 集成测试）
 - 2026-09-01 **修复 `sisyphus-cli` clippy `iter_out_of_bounds` + `iter_count` 警告**（rustc 1.98 新增 lint）
 
-- 7.2: bridge CI 化 ✅ / mutation testing ✅ / wasm proptest ✅ / 混沌扩展（待）
+- 7.2: bridge CI 化 ✅ / mutation testing ✅ / wasm proptest ✅ / 混沌扩展 ✅ (race/load/payload/reconnect)
 - 7.1: Otel 端点配置化扫尾（已基本就绪）
-- 7.2: bridge CI 化 / mutation testing / wasm proptest / 混沌扩展（需 2-4h 调研）
+- 7.2: bridge CI 化 ✅ / mutation testing ✅ / wasm proptest ✅ / 混沌扩展 ✅ (race/load/payload/reconnect)
 - 7.3: 基准基线刷新 / DAG 渲染性能 / TUI 冷启动 profile
 - 7.5: mdbook 缓存 / 部署脚本（systemd / Docker compose / k8s）
 
@@ -145,8 +145,7 @@
 
 ---
 **总体进度（截至 2026-09-02 17:30）**:
-- 阶段 7（近期 1-2 周）: ~95% (7.1 完成 5/5 + 7.2 完成 3/4 + 7.3/7.4/7.5 完成 3/3)
-- 测试总数: ~4677 通过 (含 sisyphus-sandbox 24 含 9 新 fuzz + sisyphus-bridge 95 + 其他 4558)
-- 阶段 6（分布式）: 0%（按计划延后）
+- 阶段 7（近期 1-2 周）: ~98% (7.1 5/5 + 7.2 完成 4/4 + 7.3/7.4/7.5 3/3)
+- 测试总数: ~4682 通过 (含 sisyphus-bridge 100 含 5 chaos_extended + sisyphus-sandbox 24 + 其他 4558)
 - 编译警告: 0
 - clippy -D warnings: 0
