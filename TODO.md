@@ -226,7 +226,12 @@
 - [x] **book/ 添加 tutorial 章节** (2026-09-04): `book/src/tutorial.md` 端到端教程
   - 3 个完整场景：CLI（创建 Markdown）/ Bridge（REST API + K8s probe）/ 多 Agent（delegation + fallback）
   - 与 getting-started 互补：getting-started 是 5 分钟安装；tutorial 是端到端实战
-- [ ] **贡献者指南完善**: CONTRIBUTING.md 包含 commit 规范 / PR 模板
+- [x] **贡献者指南完善** (2026-09-04): CONTRIBUTING.md + PR/Issue 模板
+  - `CONTRIBUTING.md` (246 行): 行为准则 / 快速开始 / 项目结构 / 代码规范 / commit 规范 / PR 流程 / bug 报告 / 发布流程
+  - `.github/PULL_REQUEST_TEMPLATE.md` (72 行): 变更摘要 / 关联 issue / 测试覆盖 / 影响范围 / 自查清单
+  - `.github/ISSUE_TEMPLATE/bug_report.md` (44 行): 复现步骤 / 环境 / 日志
+  - `.github/ISSUE_TEMPLATE/feature_request.md` (40 行): 问题背景 / API 草稿 / 影响范围 / 优先级
+  - commit 规范采用 [Conventional Commits](https://www.conventionalcommits.org/)
 - [x] **示例工程 `examples/`** (2026-09-04): 2 个可编译 cargo examples
   - `crates/sisyphus-core/examples/config_basic.rs`：从 env vars 构造 Config + 校验
   - `crates/sisyphus-core/examples/sop_graph.rs`：构造 CompositeGraph（跨 SOP 依赖）

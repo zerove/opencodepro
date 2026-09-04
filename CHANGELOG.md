@@ -78,6 +78,12 @@
   - `config_basic.rs`：env vars 构造 Config + 校验流程
   - `sop_graph.rs`：CompositeGraph 跨 SOP 依赖 + 拓扑序
   - 全部通过 clippy + 编译 + 实际运行验证
+- **贡献者指南完善** (TODO 8.5 第二项):
+  - `CONTRIBUTING.md` (246 行): 行为准则 / 快速开始 / 项目结构 / 代码规范 /
+    Conventional Commits / PR 流程 / bug 报告 / 发布流程
+  - `.github/PULL_REQUEST_TEMPLATE.md` (72 行): 变更摘要 / 关联 / 测试 / 自查清单
+  - `.github/ISSUE_TEMPLATE/{bug_report,feature_request}.md` (40+44 行): 结构化 bug + 特性报告
+  - commit 规范：`<type>(<scope>): <subject>` + 中文 subject
 
 ### Fixed
 - **`test_search_no_network_graceful_error` flaky 测试**: 原断言 `!stderr.is_empty()`
