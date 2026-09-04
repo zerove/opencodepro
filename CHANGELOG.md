@@ -84,6 +84,12 @@
   - `.github/PULL_REQUEST_TEMPLATE.md` (72 行): 变更摘要 / 关联 / 测试 / 自查清单
   - `.github/ISSUE_TEMPLATE/{bug_report,feature_request}.md` (40+44 行): 结构化 bug + 特性报告
   - commit 规范：`<type>(<scope>): <subject>` + 中文 subject
+- **cargo-deny 强化** (TODO 8.4 第二项):
+  - 修复：升级 `wasmtime 47.0.3 → 47.0.4`（CVE RUSTSEC-2026-0269 修复）
+  - 修复：升级 `h2 0.4.15 → 0.4.19`（RUSTSEC-2026-0258 patched in 0.4.16）
+  - 文档化：deny.toml advisory ignore 段按"来源 + 修复路径 + 影响评估 + 跟踪"
+    格式重写，9 个剩余 advisory 全部有据可查
+  - 验证：`cargo deny check` 全部 ok
 
 ### Fixed
 - **`test_search_no_network_graceful_error` flaky 测试**: 原断言 `!stderr.is_empty()`

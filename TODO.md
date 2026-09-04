@@ -219,7 +219,17 @@
   - 内存/CPU 约束：8GB / 4 CPU（rust-analyzer + cargo 编译需要）
   - mount 持久化 cargo registry + target 缓存
   - 注意：devcontainer 不影响 CI（CI 用 .github/workflows/ci.yml）
-- [ ] **cargo-deny 配置强化**: license 扫描 + advisory 阻断
+- [x] **cargo-deny 配置强化** (2026-09-04): 主动审计 + 文档化当前 advisory
+  - 实际修复：升级 `wasmtime 47.0.3 → 47.0.4` (RUSTSEC-2026-0269, 已 CVE)
+  - 实际修复：升级 `h2 0.4.15 → 0.4.19` (RUSTSEC-2026-0258, patched in 0.4.16)
+  - 文档化剩余 9 个 advisory 为 ignore 段，每条带：
+    * 来源（哪个 crate 引入）
+    * 修复路径（如"im → imbl 迁移"）
+    * 跟踪 issue / 阶段规划
+    * 实际影响评估（如 lru UB 仅当 panic-Drop 触发）
+  - skip 段补 `h2 0.3.x` (reqwest 0.11 legacy)
+  - 移除 stale `lru = 0.12` skip（unnecessary）
+  - 验证：`cargo deny check` 全部 ok（licenses/bans/advisories/sources）
 - [ ] **bench 趋势 dashboard**: criterion-compare 集成 GitHub Pages
 
 ### 8.5 文档与社区

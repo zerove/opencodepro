@@ -1,5 +1,12 @@
 # cargo-deny configuration for Sisyphus supply chain audit
 # Auto-generated from `cargo deny init` and adapted for the project.
+#
+# 运行：
+#   cargo deny check              # 全套检查（licenses + bans + advisories + sources）
+#   cargo deny check advisories   # 仅 advisory
+#   cargo deny check licenses     # 仅 license
+#
+# 状态：2026-09-04 审计
 
 [graph]
 all-features = false
@@ -9,20 +16,77 @@ no-default-features = false
 feature-depth = 1
 
 [advisories]
+# ── 已解决（移出 ignore，需保持依赖更新）────────────────────────────────
+# RUSTSEC-2026-0269 (wasmtime 47.0.3) → 47.0.4 修复（cargo update -p wasmtime）
+# RUSTSEC-2026-0258 (h2 0.4.15) → 0.4.16 修复（cargo update -p h2@0.4.15）
+
 ignore = [
-    # eval-runner (evals/) → reqwest 0.11 → rustls-pemfile 1.0.4 is archived.
-    # Not in production crate tree; will resolve when eval-runner updates reqwest.
-    "RUSTSEC-2025-0134",
-    # sisyphus-mem pins lru = "0.12"; the 0.16.3 fix is incompatible.
-    # Pre-existing, not introduced by refactoring.
-    "RUSTSEC-2026-0002",
-    # ratatui 0.28 → paste 1.0.15 (archived). Needs ratatui ≥0.29.
-    # Pre-existing, not introduced by refactoring.
-    "RUSTSEC-2024-0436",
-    # utoipa-gen 4.x → proc-macro-error 1.0.4 (unmaintained, not a vulnerability).
-    # utoipa-gen 5.x requires axum 0.8 (breaking upgrade across the workspace).
-    # Tracked: https://github.com/rust-lang/rustsec/issues (proc-macro-error).
+    # ── RUSTSEC-2024-0370: proc-macro-error 1.0.4 (unmaintained, not a vulnerability) ──
+    # 来源: utoipa-gen 4.x → proc-macro-error 1.0.4（unmaintained, 不是漏洞）。
+    # 修复: utoipa-gen 5.x 需要 axum 0.8（破坏性升级跨整个工作区）。
+    # 跟踪: https://github.com/RustSec/advisory-db/issues/1650
     "RUSTSEC-2024-0370",
+
+    # ── RUSTSEC-2026-0247: bitmaps is unmaintained ──
+    # 来源: im 15.x → bitmaps 2.1（已 archive，无 fix）。
+    # 修复: 替换 im 为 imbl（API 兼容 fork）— 需要 sisyphus-types 迁移。
+    # 跟踪: 阶段 8.x — 计划迁移 im → imbl（TODO 8.4.2 + 后续）。
+    "RUSTSEC-2026-0247",
+
+    # ── RUSTSEC-2026-0248: im is unmaintained ──
+    # 来源: sisyphus-types 直接依赖 im 15.1.0（unmaintained）。
+    # 修复: 替换为 imbl 2.x（维护的 fork，API 兼容）。
+    # 跟踪: 阶段 8.x — 计划迁移 im → imbl（TODO 8.4.2 + 后续）。
+    "RUSTSEC-2026-0248",
+
+    # ── RUSTSEC-2023-0126: im::OrdSet unsound (UB on insert) ──
+    # 来源: im 15.x 持续 unsound，reachable from safe code。
+    # 严重性: High（CWE-119 aliasing violation）。
+    # 修复: 无 safe upgrade（im 已 unmaintained）。替换 im → imbl。
+    # 当前代码 sisyphus-types 只用 ImMap（HashMap-like），**未触及 OrdSet**，
+    # 但同一 crate 受影响，需要迁移。
+    # 跟踪: 阶段 8.x — 计划迁移 im → imbl。
+    "RUSTSEC-2023-0126",
+
+    # ── RUSTSEC-2026-0251: sized-chunks is unmaintained ──
+    # 来源: im 的子依赖（sized_chunks crate 已 archive）。
+    # 修复: 同 im，迁移到 imbl 后自动消除。
+    # 跟踪: 阶段 8.x — 计划迁移 im → imbl。
+    "RUSTSEC-2026-0251",
+
+    # ── RUSTSEC-2026-0253: lru 0.12.x use-after-free in pop() ──
+    # 来源: ratatui 0.28.x → lru 0.12.5（含 UB）；sisyphus-mem 直接依赖 lru 0.12。
+    # 修复: lru 0.18.2+ 修复 panic safety。
+    # 阻塞: ratatui 0.28 锁 lru 0.12.x，升级需 ratatui 0.29+（破坏性 API 变化）。
+    # 实际影响: 仅当 unwinding panic + Drop-panicking key 时触发；sisyphus-mem 的 key 是 String，
+    #          Drop 不会 panic，因此实际不可达。
+    # 跟踪: 阶段 8.x — 评估 ratatui 0.29 升级可行性（TODO 8.4.2）。
+    "RUSTSEC-2026-0253",
+
+    # ── RUSTSEC-2025-0134: rustls-pemfile 1.0.4 (archived) ──
+    # 来源: eval-runner (evals/) → reqwest 0.11 → rustls-pemfile 1.0.4（archived）。
+    # 不在生产 crate 树，eval-runner 更新 reqwest 时自动解决。
+    # 跟踪: evals/ 升级 reqwest 至 0.12。
+    "RUSTSEC-2025-0134",
+
+    # ── RUSTSEC-2026-0002: lru 0.16.3 fix incompatibility (memory crate) ──
+    # 来源: sisyphus-mem pins lru = "0.12"；0.16.3 修复与 API 不兼容。
+    # 预存在，非本轮重构引入。
+    # 跟踪: 阶段 8.x — 评估 lru 0.18+ 升级（与 RUSTSEC-2026-0253 联动）。
+    "RUSTSEC-2026-0002",
+
+    # ── RUSTSEC-2024-0436: paste 1.0.15 (archived) ──
+    # 来源: ratatui 0.28 → paste 1.0.15（archived）。需要 ratatui ≥0.29。
+    # 跟踪: 阶段 8.x — 评估 ratatui 0.29 升级。
+    "RUSTSEC-2024-0436",
+
+    # ── RUSTSEC-2026-0258: h2 0.3.x (unbounded empty DATA frames) ──
+    # 来源: reqwest 0.11 → h2 0.3.27（patched 在 h2 0.4.16+，但 0.3 分支不维护）。
+    # 严重性: Low（CVE 编号 GHSA-q83h-524g-xf6h，reachability 受限）。
+    # 阻塞: h2 0.3.x 是 hyper 0.14.x 的 lockfile 版本，hyper 0.14 锁 reqwest 0.11。
+    # 修复: reqwest 0.11 → 0.12（h2 0.4.x 已升级到 0.4.19）。
+    # 跟踪: evals/ 升级 reqwest 至 0.12 时自动解决。
+    "RUSTSEC-2026-0258",
 ]
 
 [licenses]
@@ -67,6 +131,9 @@ skip = [
     # fixedbitset duplicated via petgraph versions
     { name = "fixedbitset", version = "0.4" },
     { name = "fixedbitset", version = "0.5" },
+    # h2: 0.3.x (reqwest 0.11 legacy) vs 0.4.x (modern)
+    { name = "h2", version = "0.3" },
+    { name = "h2", version = "0.4" },
 ]
 skip-tree = [
     # wasmtime and its many deps
