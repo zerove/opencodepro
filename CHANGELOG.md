@@ -6,6 +6,45 @@
 > **说明**: 本仓库 2026-08-31 之前的 320+ 个本地提交以边界测试扩充为主，
 > 未在此追溯。本 CHANGELOG 自 v0.x 起从此日期开始记录。
 
+## 发布流程（v0.2.0 模板）
+
+发版时按以下步骤整理 CHANGELOG：
+
+1. **合并 Unreleased → 版本段**：将 `## [Unreleased]` 改名为 `## [v0.2.0] - <YYYY-MM-DD>`
+2. **校验分组**：Unreleased 段下应只有 `### Added` / `### Fixed` / `### Changed` / `### Deprecated` / `### Removed` / `### Security` 子段
+   （keep-a-changelog 规范）。如出现不属于这 6 类的内容，重写为正确分类
+3. **生成 Verified 段**：在版本段底部加 `### Verified`，列出关键 CI 验证（如 `cargo test-all: 4689/4689 通过`）
+4. **创建新 Unreleased**：在版本段**之前**插入空的 `## [Unreleased]` 段（保持工作流）
+5. **git tag**：本地 `git tag -a v0.2.0 -m "Release v0.2.0"`，推到 origin 触发 `.github/workflows/release.yml`
+6. **GitHub Release**：release.yml 会自动从 `git log` 生成 release notes（`generate_release_notes: true`），
+   此 CHANGELOG 段作为 v0.2.0 的引用存档
+
+### 模板骨架
+
+```markdown
+## [v0.2.0] - 2026-XX-XX
+
+> 阶段 8 收尾：可观测性 + 开发者体验 + 文档 + 供应链加固
+
+### Added
+- （从 [Unreleased] 段迁移，按主题分组）
+
+### Fixed
+- ...
+
+### Changed
+- ...
+
+### Verified
+- cargo test-all: NNNN/NNNN 通过
+- cargo clippy --workspace --all-targets -- -D warnings: 0 警告
+- cargo deny check: 全部 ok
+```
+
+详细发布检查表见 [CONTRIBUTING.md § 发布流程](./CONTRIBUTING.md#发布流程)。
+
+---
+
 ## [Unreleased]
 
 ### Added
@@ -84,6 +123,11 @@
   - `.github/PULL_REQUEST_TEMPLATE.md` (72 行): 变更摘要 / 关联 / 测试 / 自查清单
   - `.github/ISSUE_TEMPLATE/{bug_report,feature_request}.md` (40+44 行): 结构化 bug + 特性报告
   - commit 规范：`<type>(<scope>): <subject>` + 中文 subject
+- **CHANGELOG v0.2.0 模板** (TODO 8.6 第一项):
+  - 在 CHANGELOG.md 顶部加"发布流程（v0.2.0 模板）"段
+  - 6 步发布指南（合并 Unreleased → 校验分组 → Verified 段 → 新 Unreleased → git tag → release.yml 自动生成 release notes）
+  - 模板骨架：版本段 + Added/Fixed/Changed + Verified
+  - release.yml 自动 `generate_release_notes: true`（已存在，本文档做引用存档约定）
 - **cargo-deny 强化** (TODO 8.4 第二项):
   - 修复：升级 `wasmtime 47.0.3 → 47.0.4`（CVE RUSTSEC-2026-0269 修复）
   - 修复：升级 `h2 0.4.15 → 0.4.19`（RUSTSEC-2026-0258 patched in 0.4.16）

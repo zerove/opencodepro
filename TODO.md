@@ -249,6 +249,12 @@
   - 全部通过 clippy + 编译 + 实际执行
 
 ### 8.6 待 v0.1.0 反馈（社区）
-- [ ] **CHANGELOG v0.2.0 changelog 模板**: 基于 v0.1.0 改进
+- [x] **CHANGELOG v0.2.0 changelog 模板** (2026-09-04): 发布流程文档化
+  - 在 CHANGELOG.md 顶部加 "## 发布流程（v0.2.0 模板）" 段，含 6 步指南
+  - 模板骨架：版本段 + Added/Fixed/Changed + Verified（CI 验证清单）
+  - keep-a-changelog 规范：6 类标准分组（Added/Fixed/Changed/Deprecated/Removed/Security）
+  - release.yml 已自动从 git log 生成 release notes（`generate_release_notes: true`），
+    CHANGELOG.md 作为引用存档而非生成源
 - [ ] **GitHub Release Notes**: 自动从 CHANGELOG 生成 release artifacts
+  - 当前由 release.yml 自动生成；待 v0.2.0 实际发布后审计
 - [ ] **Docker Hub 镜像**: ghcr.io/zerove/sisyphus-bridge:v0.2.0
