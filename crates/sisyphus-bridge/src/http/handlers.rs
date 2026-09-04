@@ -11,6 +11,7 @@ use axum::{
 use futures_util::stream::{self};
 use sisyphus_types::{graph::SOPGraphConfig, ToolExecutor};
 use tokio::sync::mpsc;
+use tracing::instrument;
 
 pub(super) async fn get_cognitive_map_handler(
     State(state): State<RestApiState>,
@@ -217,6 +218,11 @@ pub(super) async fn health_deep_handler(State(state): State<RestApiState>) -> im
 
 // --- Goal Execution Handlers ---
 
+#[instrument(
+    name = "http.execute_goal",
+    skip(state, req, workspace),
+    fields(goal_len = req.goal.len(), sop_id = %req.sop_id, project_id)
+)]
 pub(super) async fn execute_goal_handler(
     State(state): State<RestApiState>,
     workspace: WorkspaceContext,
@@ -231,6 +237,7 @@ pub(super) async fn execute_goal_handler(
 
     let project_id =
         workspace.project_id.or(req.project_id).unwrap_or_else(|| "default".to_string());
+    tracing::Span::current().record("project_id", project_id.as_str());
 
     let result = kernel.execute_goal(&req.goal, &req.sop_id, &project_id, event_tx, None).await;
 

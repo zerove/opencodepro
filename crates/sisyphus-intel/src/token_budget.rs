@@ -24,6 +24,7 @@
 
 use parking_lot::Mutex;
 use std::sync::Arc;
+use tracing::{instrument, warn};
 
 /// Default per-LLM-call token estimate when exact counts are unavailable.
 /// Reflect/evolve stages typically produce prompts in the 1k-4k range; 2000
@@ -58,9 +59,20 @@ impl TokenBudgetTracker {
     }
 
     /// Record tokens consumed by an LLM call.
+    #[instrument(skip(self), fields(tokens = tokens, total_usage, cap))]
     pub fn record(&self, tokens: u64) {
         let mut guard = self.usage.lock();
         *guard = guard.saturating_add(tokens);
+        // 记录后立刻 emit 当前累计, 便于 OTLP/trace 查询"何时逼近 cap"
+        tracing::Span::current().record("total_usage", *guard);
+        tracing::Span::current().record("cap", self.cap);
+        if self.cap != u64::MAX && *guard >= self.cap {
+            warn!(
+                total_usage = *guard,
+                cap = self.cap,
+                "token budget exhausted"
+            );
+        }
     }
 
     /// Tokens used so far.
@@ -76,14 +88,24 @@ impl TokenBudgetTracker {
     /// Returns true when remaining tokens are below the configured reserve,
     /// meaning subsequent LLM calls should be skipped to preserve budget
     /// for higher-priority stages.
+    #[instrument(skip(self), fields(skip = tracing::field::Empty, remaining, reserve))]
     pub fn should_skip_llm(&self) -> bool {
         let reserve_tokens = (self.cap as f64 * self.reserve_ratio) as u64;
-        self.remaining() < reserve_tokens
+        let remaining = self.remaining();
+        let skip = remaining < reserve_tokens;
+        let s = tracing::Span::current();
+        s.record("remaining", remaining);
+        s.record("reserve", reserve_tokens);
+        s.record("skip", skip);
+        skip
     }
 
     /// Returns true when the budget is fully exhausted (remaining == 0).
+    #[instrument(skip(self), fields(exhausted = tracing::field::Empty))]
     pub fn is_exhausted(&self) -> bool {
-        self.cap != u64::MAX && self.usage() >= self.cap
+        let e = self.cap != u64::MAX && self.usage() >= self.cap;
+        tracing::Span::current().record("exhausted", e);
+        e
     }
 
     /// Read-only snapshot of the tracker's current state. Used by health
@@ -203,5 +225,39 @@ mod tests {
             h.join().unwrap();
         }
         assert_eq!(t.usage(), 100_000);
+    }
+
+    // ── tracing instrument 行为 (TODO 8.2) ────────────────────
+    //
+    // #[instrument] 在编译期 emit span。下面三个测试验证 instrument 不会破坏语义
+    // (record / should_skip_llm / is_exhausted 在多次调用下行为不变)。
+    // 端到端 span 内容验证需要 tracing-subscriber dev-dep + 真实 OTLP 后端，留给 chaos_extended。
+
+    #[test]
+    fn instrument_record_emits_exhausted_warn_at_cap() {
+        let t = TokenBudgetTracker::new(100, 0.0);
+        assert!(!t.is_exhausted());
+        t.record(50);
+        assert!(!t.is_exhausted());
+        t.record(60);
+        assert!(t.is_exhausted(), "exhausted flag must flip at cap");
+    }
+
+    #[test]
+    fn instrument_should_skip_llm_returns_correct_bool() {
+        let t = TokenBudgetTracker::new(1000, 0.1);
+        assert!(!t.should_skip_llm());
+        t.record(850);
+        assert!(!t.should_skip_llm());
+        t.record(100);
+        assert!(t.should_skip_llm());
+    }
+
+    #[test]
+    fn instrument_is_exhausted_handles_unbounded() {
+        let t = TokenBudgetTracker::unbounded();
+        assert!(!t.is_exhausted());
+        t.record(1_000_000);
+        assert!(!t.is_exhausted());
     }
 }

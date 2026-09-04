@@ -177,7 +177,14 @@
 - [ ] **CLI 启动并行化**: tokio runtime 预初始化 + 插件懒加载
 
 ### 8.2 可观测性扩展
-- [ ] **tracing span 覆盖率**: 关键路径 100% 覆盖 (execute_goal / execute_sop / token_budget 检查)
+- [x] **tracing span 覆盖率** (2026-09-04): 关键路径 100% 覆盖 (execute_goal / execute_sop / token_budget 检查)
+  - `TokenBudgetTracker::record` / `should_skip_llm` / `is_exhausted`: 命名 span + 业务字段（tokens / total_usage / cap / remaining / reserve / skip / exhausted）；record 触发 cap 时 emit `warn!("token budget exhausted")`
+  - `http.execute_goal` / `http.execute_tool` axum handler：goal_len / sop_id / project_id / tool_id / fuel
+  - `grpc.execute_sop` / `grpc.execute_tool`：替换原 `info_span!()` 手动调用为声明式 `#[instrument]`；sop_id / project_id / tool_id / fuel / chaos
+  - 测试：
+    - `token_budget::tests::instrument_*` (3 个)：验证 instrument 不破坏语义（record 跨 cap → exhausted、should_skip_llm 返回正确、unbounded 永不 exhausted）
+    - `chaos_extended::tracing_http_handlers_compile_with_instrument`：HTTP /api/metrics 路由 + handler 编译后无 panic
+    - `chaos_extended::tracing_grpc_handlers_compile_with_instrument`：gRPC execute_sop 调用链无 panic
 - [x] **metrics Prometheus 端点** (2026-09-04): `/api/metrics` 暴露 Prometheus 0.0.4 文本格式
   - 端点已存在 (sse_handlers.rs)，本轮补 OpenAPI 文档 + 集成测试
   - Counters: `sisyphus_http_requests_total` / `_errors_total` / `_shutdowns_total` / `_chaos_faults_total`

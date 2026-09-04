@@ -56,6 +56,14 @@
     Content-Type `text/plain; version=0.0.4`）
   - 集成测试：`prometheus_metrics_exposes_standard_names`（200 + Content-Type +
     7 关键指标名 + `# HELP`/`# TYPE`）+ `prometheus_metrics_concurrent_scrape_safe`（5 并发 scrape）
+- **tracing span 覆盖率 (TODO 8.2)**:
+  - `TokenBudgetTracker::record` / `should_skip_llm` / `is_exhausted`：`#[instrument]` +
+    业务字段（tokens / total_usage / cap / remaining / reserve / skip / exhausted）；
+    `record` 跨 cap 时 emit `warn!("token budget exhausted")`
+  - `http.execute_goal` / `http.execute_tool` (axum handler)：goal_len / sop_id / project_id / tool_id / fuel
+  - `grpc.execute_sop` / `grpc.execute_tool`：替换 `info_span!()` 为 `#[instrument]`，
+    含 sop_id / project_id / tool_id / fuel / chaos 字段
+  - 测试：`token_budget` 3 个 instrument_* + `chaos_extended` 2 个 sanity 测试
 
 ### Fixed
 - **`test_search_no_network_graceful_error` flaky 测试**: 原断言 `!stderr.is_empty()`

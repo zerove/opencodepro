@@ -17,9 +17,10 @@ use std::sync::Arc;
 use tokio::sync::mpsc;
 use tokio_stream::StreamExt;
 use tonic::{Request, Response, Status};
-use tracing::info_span;
+use tracing::instrument;
 
 impl MySisyphusBridge {
+    #[instrument(name = "grpc.execute_sop", skip_all, fields(sop_id, project_id))]
     pub(crate) async fn execute_sop_impl(
         &self,
         request: Request<ExecuteSopRequest>,
@@ -32,6 +33,8 @@ impl MySisyphusBridge {
             .to_string();
         let req = request.into_inner();
         let sop_id = req.sop_id.clone();
+        tracing::Span::current().record("sop_id", sop_id.as_str());
+        tracing::Span::current().record("project_id", project_id.as_str());
 
         self.publish_event(sisyphus_bridge_api::BridgeEvent {
             event: Some(sisyphus_bridge_api::bridge_event::Event::OpUpdate(
@@ -43,9 +46,6 @@ impl MySisyphusBridge {
                 },
             )),
         });
-
-        let span = info_span!("bridge.execute_sop", sop_id = %sop_id);
-        let _enter = span.enter();
 
         let (result_str, _final_id) = self.run_execution(sop_id.clone(), &project_id, None).await?;
 
@@ -109,6 +109,11 @@ impl MySisyphusBridge {
         }
     }
 
+    #[instrument(
+        name = "grpc.execute_tool",
+        skip_all,
+        fields(tool_id, fuel, chaos = self.chaos_enabled)
+    )]
     pub(crate) async fn execute_tool_impl(
         &self,
         request: Request<ExecuteToolRequest>,
@@ -121,6 +126,8 @@ impl MySisyphusBridge {
         } else {
             self.default_fuel
         };
+        tracing::Span::current().record("tool_id", tool_id.as_str());
+        tracing::Span::current().record("fuel", fuel);
 
         // ── Chaos Engineering: inject faults before execution ──────────
         if self.chaos_enabled {
@@ -128,9 +135,6 @@ impl MySisyphusBridge {
                 return Ok(Response::new(fault_response));
             }
         }
-
-        let span = info_span!("bridge.execute_tool", tool_id = %tool_id);
-        let _enter = span.enter();
 
         let args_bytes = args_json.into_bytes();
         let result =

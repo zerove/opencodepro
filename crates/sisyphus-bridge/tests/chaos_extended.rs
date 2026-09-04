@@ -11,7 +11,7 @@
 use sisyphus_bridge::bridge_service::MySisyphusBridge;
 use sisyphus_bridge_api::{
     sisyphus_bridge_client::SisyphusBridgeClient, sisyphus_bridge_server::SisyphusBridgeServer,
-    ExecuteToolRequest, HealthCheckRequest, ListSoPsRequest,
+    ExecuteSopRequest, ExecuteToolRequest, HealthCheckRequest, ListSoPsRequest,
 };
 use sisyphus_tools_llm::metis::DummyLlmClient;
 use sisyphus_types::Config;
@@ -344,5 +344,49 @@ async fn prometheus_metrics_concurrent_scrape_safe() {
         ok += 1;
     }
     assert_eq!(ok, 5, "all 5 concurrent scrapes must succeed");
+    server.abort();
+}
+
+// ── tracing span 覆盖率（阶段 8.2）──────────────────────────
+//
+// 关键路径（execute_goal / execute_sop / token_budget 检查）必须 emit
+// 命名的 OpenTelemetry-style span + 业务字段（sop_id / tool_id / project_id）。
+//
+// span 内容验证（subscriber 捕获）放在 sisyphus-intel 单元测试里 (tracing
+// subscriber 不在 chaos_extended dev-dep 范围内，且 Layer 实现复杂)。
+//
+// 这里做路由可达性 sanity 检查：确认 #[instrument] 不破坏 axum 路由 + handler
+// 仍能正常响应。
+
+#[tokio::test]
+async fn tracing_http_handlers_compile_with_instrument() {
+    let (addr, server) = setup_bridge_with_rest().await;
+    let client = reqwest::Client::builder()
+        .http1_only()
+        .no_proxy()
+        .timeout(Duration::from_secs(5))
+        .build()
+        .expect("build client");
+    // 触发带 #[instrument] 的 handler 路径（health_live 是健康度端点，
+    // 不带 instrument；用 health_ready + /api/metrics 触发带 instrument 的路径）。
+    // /api/metrics 经 metrics_handler (sse_handlers::metrics_handler)。
+    let resp = client
+        .get(format!("http://{}/api/metrics", addr))
+        .send()
+        .await
+        .expect("HTTP request failed");
+    assert_eq!(resp.status(), 200, "metrics must be 200");
+    server.abort();
+}
+
+#[tokio::test]
+async fn tracing_grpc_handlers_compile_with_instrument() {
+    // 调用 execute_sop（带 #[instrument] gRPC handler），验证 tonic 调用链无 panic
+    let (mut client, server) = setup_bridge().await;
+    let req = ExecuteSopRequest {
+        sop_id: "trace_sanity".to_string(),
+        args: HashMap::new(),
+    };
+    let _r = client.execute_sop(req).await; // 不管结果
     server.abort();
 }

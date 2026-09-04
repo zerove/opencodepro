@@ -9,6 +9,7 @@ use axum::{
 };
 use sisyphus_types::types::BenchmarkRun;
 use sisyphus_types::ToolExecutor;
+use tracing::instrument;
 use uuid::Uuid;
 
 /// 从请求头或请求体提取 project_id，默认 "default"。
@@ -164,6 +165,11 @@ pub(super) async fn peer_publish_skill_handler(
     }
 }
 
+#[instrument(
+    name = "http.execute_tool",
+    skip(state, req),
+    fields(tool_id = %req.tool_id, fuel = req.fuel_limit.unwrap_or(state.bridge.default_fuel))
+)]
 pub(super) async fn execute_tool_handler(
     State(state): State<RestApiState>,
     Json(req): Json<ExecuteToolRequest>,
