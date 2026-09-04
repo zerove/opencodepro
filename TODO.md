@@ -179,7 +179,16 @@
 ### 8.2 可观测性扩展
 - [ ] **tracing span 覆盖率**: 关键路径 100% 覆盖 (execute_goal / execute_sop / token_budget 检查)
 - [ ] **metrics Prometheus 端点**: `/metrics` 暴露到 bridge 端口（已有 sse_handlers）
-- [ ] **健康度端点扩展**: 增加 `/health/live` (liveness) + `/health/ready` (readiness) 分离
+- [x] **健康度端点扩展** (2026-09-04): 增加 `/health/live` (liveness) + `/health/ready` (readiness) 分离
+  - liveness: 始终 200（HTTP 能响应即存活，不检查依赖；避免依赖抖动触发 pod 重启）
+  - readiness: 复用 `health_deep_assess`；任一依赖 degraded → 503 Service Unavailable
+  - OpenAPI 文档：2 条新路径
+  - 测试：`chaos_extended::health_live_always_ok` + `health_ready_reports_components`（2 个 HTTP/1.1 + no_proxy 测试）
+  - K8s Deployment 用法：
+    ```yaml
+    livenessProbe:  httpGet { path: /health/live }
+    readinessProbe: httpGet { path: /health/ready }
+    ```
 
 ### 8.3 分布式 v2 启动
 - [ ] **peer 协议真实环境测试**: 3 节点 bridge cluster 互连

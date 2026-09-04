@@ -43,6 +43,14 @@
   - 后台 `spawn_fetch_health_deep` 解析 `/health/deep` 响应（接受 200/207 Multi-Status）
   - 纯函数 `parse_health_deep_response` 便于单元测试（5 个边界测试）
   - 集成测试 `test_health_deep_no_bridge_graceful_error`（无 bridge 不 panic）
+- **K8s 标准健康度端点** (TODO 8.2): `/health/live` + `/health/ready` 分离 liveness / readiness
+  - `GET /health/live`: 始终 200（livenessProbe；进程能响应 HTTP 即存活；不查依赖以避免抖动触发 pod 重启）
+  - `GET /health/ready`: 复用 `health_deep_assess`；200/503（readinessProbe；任一依赖 degraded → 不接收流量）
+  - OpenAPI 文档：2 条新路径
+  - 测试：`chaos_extended::health_live_always_ok` + `health_ready_reports_components`
+  - 测试关键修正：(1) reqwest `.http1_only()`（axum 0.7 不接 HTTP/2 prior knowledge）；
+    (2) reqwest `.no_proxy()`（开发环境 `HTTP_PROXY=127.0.0.1:7890` 会拦截本地请求，
+    reqwest 默认 `no_proxy` 解析不支持 `127.*` 通配）
 
 ### Fixed
 - **`test_search_no_network_graceful_error` flaky 测试**: 原断言 `!stderr.is_empty()`
