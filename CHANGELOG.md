@@ -70,6 +70,14 @@
   - 端口转发 bridge gRPC (50051) + HTTP (8080)
   - 8GB / 4 CPU 约束；持久化 cargo registry + target volume
   - 不影响 CI（仅本地开发体验）
+- **book/tutorial.md** (TODO 8.5 第一项): 端到端教程章节
+  - 3 个完整场景：CLI 创建 Markdown / Bridge REST API + K8s probe / 多 Agent delegation
+  - 与 getting-started 互补：前者 5 分钟安装，后者端到端实战
+  - 在 book/src/SUMMARY.md 注册
+- **2 个 cargo examples** (TODO 8.5 第三项): `crates/sisyphus-core/examples/`
+  - `config_basic.rs`：env vars 构造 Config + 校验流程
+  - `sop_graph.rs`：CompositeGraph 跨 SOP 依赖 + 拓扑序
+  - 全部通过 clippy + 编译 + 实际运行验证
 
 ### Fixed
 - **`test_search_no_network_graceful_error` flaky 测试**: 原断言 `!stderr.is_empty()`

@@ -2,6 +2,7 @@
 
 - [简介](./introduction.md)
 - [快速开始](./getting-started.md)
+- [端到端教程](./tutorial.md)
 - [架构](./architecture.md)
   - [DAG 执行](./dag-execution.md)
   - [认知循环](./cognitive-loop.md)

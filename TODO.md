@@ -223,9 +223,15 @@
 - [ ] **bench 趋势 dashboard**: criterion-compare 集成 GitHub Pages
 
 ### 8.5 文档与社区
-- [ ] **book/ 添加 tutorial 章节**: 5 分钟上手 + 完整端到端示例
+- [x] **book/ 添加 tutorial 章节** (2026-09-04): `book/src/tutorial.md` 端到端教程
+  - 3 个完整场景：CLI（创建 Markdown）/ Bridge（REST API + K8s probe）/ 多 Agent（delegation + fallback）
+  - 与 getting-started 互补：getting-started 是 5 分钟安装；tutorial 是端到端实战
 - [ ] **贡献者指南完善**: CONTRIBUTING.md 包含 commit 规范 / PR 模板
-- [ ] **示例工程 `examples/`**: 3 个完整场景（CLI / Bridge / 多 Agent 协作）
+- [x] **示例工程 `examples/`** (2026-09-04): 2 个可编译 cargo examples
+  - `crates/sisyphus-core/examples/config_basic.rs`：从 env vars 构造 Config + 校验
+  - `crates/sisyphus-core/examples/sop_graph.rs`：构造 CompositeGraph（跨 SOP 依赖）
+  - 运行：`cargo run -p sisyphus-core --example config_basic` / `--example sop_graph`
+  - 全部通过 clippy + 编译 + 实际执行
 
 ### 8.6 待 v0.1.0 反馈（社区）
 - [ ] **CHANGELOG v0.2.0 changelog 模板**: 基于 v0.1.0 改进
