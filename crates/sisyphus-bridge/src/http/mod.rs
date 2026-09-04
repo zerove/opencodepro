@@ -125,6 +125,8 @@ async fn bearer_auth_middleware(
 pub fn build_router(state: RestApiState) -> Router {
     let public_routes = Router::new()
         .route("/health", get(health_handler))
+        .route("/health/live", get(health_live_handler))
+        .route("/health/ready", get(health_ready_handler))
         .route("/health/deep", get(health_deep_handler))
         .route("/openapi.json", get(http_openapi::openapi_json))
         .route("/swagger-ui/*rest", get(http_openapi::swagger_ui_handler))

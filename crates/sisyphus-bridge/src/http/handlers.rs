@@ -1304,6 +1304,43 @@ pub(super) async fn intervene_cognitive_map_handler(
     )
 }
 
+// ── K8s 标准健康度端点（阶段 8.2）────────────────────────
+// liveness: 始终 200（进程能响应 HTTP 即存活）
+// readiness: 200 当所有关键依赖 OK；503 当任一 degraded
+// 用法（K8s Deployment.yaml）：
+//   livenessProbe:  httpGet /health/live
+//   readinessProbe: httpGet /health/ready
+
+/// Liveness probe: 始终返回 200，只要 HTTP server 能响应即视为存活。
+/// 不检查任何依赖（避免依赖抖动触发 pod 重启）。
+pub(super) async fn health_live_handler() -> impl IntoResponse {
+    let body = serde_json::json!({
+        "status": "ok",
+        "kind": "liveness",
+        "version": env!("CARGO_PKG_VERSION"),
+    });
+    (StatusCode::OK, Json(body))
+}
+
+/// Readiness probe: 200 当所有关键依赖 OK；503 当任一 degraded。
+/// 复用 `health_deep_assess`（无 token_budget 维度，保持轻量）。
+pub(super) async fn health_ready_handler(State(state): State<RestApiState>) -> impl IntoResponse {
+    let (all_ok, components) =
+        health_deep_assess(&state.session_db, state.shared_http.is_some(), None);
+    let body = serde_json::json!({
+        "status": if all_ok { "ok" } else { "degraded" },
+        "kind": "readiness",
+        "version": env!("CARGO_PKG_VERSION"),
+        "components": components,
+    });
+    let code = if all_ok {
+        StatusCode::OK
+    } else {
+        StatusCode::SERVICE_UNAVAILABLE
+    };
+    (code, Json(body))
+}
+
 // ---------------------------------------------------------------------------
 // 单元测试：health_deep_assess 纯函数（无需完整桥接服务）
 // ---------------------------------------------------------------------------

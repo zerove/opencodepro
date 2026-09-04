@@ -59,3 +59,4 @@ sandbox = ["sisyphus-sandbox"]
 
 [dev-dependencies]
 tower = { version = "0.4", features = ["util"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }

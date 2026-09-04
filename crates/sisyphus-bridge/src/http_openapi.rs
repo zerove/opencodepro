@@ -43,6 +43,36 @@ pub(crate) async fn openapi_json() -> impl IntoResponse {
                     }
                 }
             },
+            "/health/live": {
+                "get": {
+                    "summary": "K8s liveness probe (always 200 if process responds)",
+                    "description": "Returns 200 unconditionally as long as the HTTP server is responsive. Does NOT check any dependencies (avoids pod restarts from transient downstream issues). Suitable for K8s livenessProbe.",
+                    "operationId": "healthLive",
+                    "responses": {
+                        "200": {
+                            "description": "Process is alive",
+                            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/HealthResponse"}}}
+                        }
+                    }
+                }
+            },
+            "/health/ready": {
+                "get": {
+                    "summary": "K8s readiness probe (200 when all dependencies OK, 503 otherwise)",
+                    "description": "Returns 200 when all critical dependencies (session DB, shared HTTP, kernel) are OK; 503 Service Unavailable on any degradation. Suitable for K8s readinessProbe — traffic only routed to ready pods.",
+                    "operationId": "healthReady",
+                    "responses": {
+                        "200": {
+                            "description": "All dependencies healthy",
+                            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/HealthDeepResponse"}}}
+                        },
+                        "503": {
+                            "description": "Service unavailable; not ready to receive traffic",
+                            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/HealthDeepResponse"}}}
+                        }
+                    }
+                }
+            },
 
             // ── Tool Execution ───────────────────────────────────────────
             "/api/execute": {

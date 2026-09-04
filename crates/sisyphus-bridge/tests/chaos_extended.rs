@@ -1,10 +1,11 @@
-//! 混沌测试扩展（TODO 7.2 第四项）
+//! 混沌测试扩展（TODO 7.2 第四项 + 阶段 8.2 健康度端点）
 //!
 //! 覆盖 bridge 端未在 bridge_integration_test.rs 测的边角：
 //! - 并发请求竞态（同一 session 并行 health_check / execute_tool）
 //! - 高并发短突发（100 并发 health_check）
 //! - 大 payload 鲁棒性（10KB JSON args 不导致 panic）
 //! - 重复连接（10 次连/断/连）
+//! - K8s 标准健康度端点（/health/live, /health/ready）
 
 use sisyphus_bridge::bridge_service::MySisyphusBridge;
 use sisyphus_bridge_api::{
@@ -23,8 +24,6 @@ async fn setup_bridge() -> (SisyphusBridgeClient<Channel>, tokio::task::JoinHand
     let mut config = Config::default();
     config.cache.database_url = "sqlite::memory:".to_string();
     config.sandbox.wasm_tools_dir = "tests/wasm_tools".to_string();
-    // 关键：DummyLlmClient 没有 embedding 凭据，
-    // 显式允许 dummy embedding 避免桥接启动失败。
     config.llm.embedding.allow_dummy_embeddings = true;
     let shared_config = Arc::new(RwLock::new(config));
 
@@ -49,8 +48,6 @@ async fn setup_bridge() -> (SisyphusBridgeClient<Channel>, tokio::task::JoinHand
     (client, server_handle)
 }
 
-// ── 并发请求竞态 ──────────────────────────────────────────────
-
 #[tokio::test]
 async fn chaos_concurrent_health_check_no_race() {
     let (client, server) = setup_bridge().await;
@@ -61,7 +58,6 @@ async fn chaos_concurrent_health_check_no_race() {
             let _ = c.health_check(HealthCheckRequest {}).await;
         }));
     }
-    // 50 并发调用应在 5s 内全部完成，无 panic
     let start = Instant::now();
     for h in handles {
         let r = tokio::time::timeout(Duration::from_secs(5), h).await;
@@ -79,7 +75,6 @@ async fn chaos_concurrent_list_sops_no_race() {
     for _ in 0..30 {
         let mut c = client.clone();
         handles.push(tokio::spawn(async move {
-            // 每次不同 filter（ListSoPsRequest 无字段，简化为空请求）
             let _ = c.list_so_ps(ListSoPsRequest {}).await;
         }));
     }
@@ -91,8 +86,6 @@ async fn chaos_concurrent_list_sops_no_race() {
     assert!(start.elapsed() < Duration::from_secs(5));
     server.abort();
 }
-
-// ── 高并发突发 ──────────────────────────────────────────────
 
 #[tokio::test]
 async fn chaos_burst_100_health_checks() {
@@ -112,7 +105,6 @@ async fn chaos_burst_100_health_checks() {
         }
     }
     let elapsed = start.elapsed();
-    // 100 并发 health_check 应在 10s 完成 ≥ 90% 成功
     assert!(
         success >= 90,
         "only {} / 100 succeeded in {:?}",
@@ -122,12 +114,9 @@ async fn chaos_burst_100_health_checks() {
     server.abort();
 }
 
-// ── 大 payload 鲁棒性 ─────────────────────────────────────────
-
 #[tokio::test]
 async fn chaos_large_args_payload_does_not_crash() {
     let (mut client, server) = setup_bridge().await;
-    // 构造 ~10KB JSON args
     let mut big_args = HashMap::new();
     big_args.insert("data".to_string(), "x".repeat(10_000));
     big_args.insert("name".to_string(), "test_tool".to_string());
@@ -136,7 +125,6 @@ async fn chaos_large_args_payload_does_not_crash() {
         args_json: serde_json::to_string(&big_args).unwrap(),
         fuel_limit: 10000,
     };
-    // bridge 对 execute_tool 总是返回 Ok（status != "SUCCESS" 表示失败）
     let resp = client.execute_tool(r).await.expect("ExecuteTool transport failed");
     let inner = resp.into_inner();
     let msg = format!("{inner:?}");
@@ -151,17 +139,109 @@ async fn chaos_large_args_payload_does_not_crash() {
     server.abort();
 }
 
-// ── 重复连接 ─────────────────────────────────────────────────
-
 #[tokio::test]
 async fn chaos_repeated_connect_disconnect() {
     for _i in 0..10 {
         let (client, server) = setup_bridge().await;
-        // 连上后立即做一次轻量调用
         let _r = client.clone().health_check(HealthCheckRequest {}).await;
         server.abort();
-        // 强制 server 任务退出
         tokio::time::sleep(Duration::from_millis(20)).await;
     }
-    // 跑完不 panic 即通过
+}
+
+// ── K8s 健康度端点（阶段 8.2）─────────────────────────────
+//
+// 端点 /health/live 和 /health/ready 由 axum 路由提供，区别于 gRPC 端点。
+// 这里在测试中通过 spawn axum server 后用 reqwest (HTTP/1.1) 直接测。
+// 关键修正（两处）：
+//   1. axum 0.7 默认只接 HTTP/1.1；reqwest 必须 .http1_only() 否则用
+//      HTTP/2 prior knowledge 升级，axum 返回 502 Bad Gateway（connection-level）。
+//   2. 在 Claude Code / Cursor 等开发环境下 HTTP_PROXY=127.0.0.1:7890 会干扰本地
+//      请求；reqwest 默认 no_proxy() 解析不支持 "127.*" 这种通配。
+//      显式 .no_proxy() 强制直连本进程 spawn 的 axum。
+
+use sisyphus_bridge::http::{build_router, RestApiState};
+
+async fn setup_bridge_with_rest() -> (std::net::SocketAddr, tokio::task::JoinHandle<()>) {
+    let mut config = Config::default();
+    config.cache.database_url = "sqlite::memory:".to_string();
+    config.sandbox.wasm_tools_dir = "tests/wasm_tools".to_string();
+    config.llm.embedding.allow_dummy_embeddings = true;
+    let shared_config = Arc::new(RwLock::new(config));
+
+    let bridge = Arc::new(
+        MySisyphusBridge::new(shared_config, Some(Arc::new(DummyLlmClient)))
+            .await
+            .expect("Failed to create bridge"),
+    );
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+
+    let data_dir = std::env::temp_dir();
+    let rest_state = RestApiState::new(bridge.clone(), data_dir);
+    let http_app = build_router(rest_state);
+
+    let server = tokio::spawn(async move {
+        if let Err(e) = axum::serve(listener, http_app).await {
+            eprintln!("axum serve error: {e}");
+        }
+    });
+
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    (addr, server)
+}
+
+#[tokio::test]
+async fn health_live_always_ok() {
+    let (addr, server) = setup_bridge_with_rest().await;
+    let url = format!("http://{}/health/live", addr);
+    // 关键: 在某些开发环境下 (如 Claude Code / Cursor) HTTP_PROXY 会被设置,
+    // 且 reqwest 的默认 no_proxy 解析不支持 wildcard (e.g. "127.*")。
+    // 显式 no_proxy() 强制 reqwest 不走系统代理, 直连本地 axum。
+    let client = reqwest::Client::builder()
+        .http1_only()
+        .no_proxy()
+        .timeout(Duration::from_secs(5))
+        .build()
+        .expect("build client");
+    let resp = client.get(&url).send().await.expect("HTTP request failed");
+    let status = resp.status();
+    let text = resp.text().await.unwrap_or_default();
+    eprintln!("[health_live] status={} body={}", status, text);
+    assert_eq!(
+        status, 200,
+        "liveness must be 200, got {} body={}",
+        status, text
+    );
+    let body: serde_json::Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(body["status"], "ok");
+    assert_eq!(body["kind"], "liveness");
+    server.abort();
+}
+
+#[tokio::test]
+async fn health_ready_reports_components() {
+    let (addr, server) = setup_bridge_with_rest().await;
+    let url = format!("http://{}/health/ready", addr);
+    let client = reqwest::Client::builder()
+        .http1_only()
+        .no_proxy()
+        .timeout(Duration::from_secs(5))
+        .build()
+        .expect("build client");
+    let resp = client.get(&url).send().await.expect("HTTP request failed");
+    let status = resp.status();
+    let text = resp.text().await.unwrap_or_default();
+    eprintln!("[health_ready] status={} body={}", status, text);
+    assert_eq!(
+        status, 200,
+        "readiness should be 200 when deps OK, got {} body={}",
+        status, text
+    );
+    let body: serde_json::Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(body["status"], "ok");
+    assert_eq!(body["kind"], "readiness");
+    assert!(body["components"].is_object());
+    server.abort();
 }
