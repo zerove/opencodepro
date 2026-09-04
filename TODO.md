@@ -210,7 +210,15 @@
 - [ ] **共识机制 benchmark**: BridgeConsensus 在 5 节点下的 latency / throughput
 
 ### 8.4 开发者体验
-- [ ] **devcontainer.json**: VS Code Remote Container 一键搭建
+- [x] **devcontainer.json** (2026-09-04): VS Code Remote Container 一键搭建
+  - base image: `mcr.microsoft.com/devcontainers/rust:1-bookworm`
+  - postCreateCommand: 切换到 nightly + 装 rustfmt/clippy/rust-src + cargo-deny
+  - 7 个 VS Code 扩展（rust-analyzer / Even Better TOML / crates / GitHub Actions / Docker / LLDB / Rust）
+  - 与仓库 `.rust-analyzer.json` 协同：rust-analyzer.cargo.features=all
+  - 端口转发：bridge gRPC (50051) + HTTP (8080)
+  - 内存/CPU 约束：8GB / 4 CPU（rust-analyzer + cargo 编译需要）
+  - mount 持久化 cargo registry + target 缓存
+  - 注意：devcontainer 不影响 CI（CI 用 .github/workflows/ci.yml）
 - [ ] **cargo-deny 配置强化**: license 扫描 + advisory 阻断
 - [ ] **bench 趋势 dashboard**: criterion-compare 集成 GitHub Pages
 

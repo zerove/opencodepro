@@ -1,0 +1,90 @@
+{
+  // ── Sisyphus 开发容器 (TODO 8.4 第一项) ────────────────────
+  //
+  // VS Code Remote Containers 一键搭建完整开发环境：
+  // 1. 安装 nightly Rust toolchain (与 CI 一致)
+  // 2. 安装 rustfmt + clippy + rust-analyzer 组件
+  // 3. 安装 cargo-deny (供应链审计)
+  // 4. 暴露 bridge gRPC (50051) + HTTP (8080) 端口
+  //
+  // 用法：
+  //   - 安装 VS Code + "Dev Containers" 扩展
+  //   - 命令面板 (Ctrl+Shift+P) → "Dev Containers: Reopen in Container"
+  //   - 首次构建约 5-8 分钟（拉镜像 + 装 nightly + 缓存索引）
+  //
+  // 注意：base image 是 rust:1-bookworm (含 stable rust)。
+  // postCreateCommand 用 rustup 切换到 nightly，与 .github/workflows/ci.yml
+  // 保持一致 — 这样本地与 CI 用同一 toolchain，避免 "works on my machine"。
+
+  "name": "Sisyphus Rust (nightly)",
+  "image": "mcr.microsoft.com/devcontainers/rust:1-bookworm",
+
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        // LSP / 跳转 / 补全
+        "rust-lang.rust-analyzer",
+        // TOML 语法高亮
+        "tamasfe.even-better-toml",
+        // Cargo.toml 依赖提示
+        "serayuzgur.crates",
+        // GitHub Actions 工作流编辑
+        "github.vscode-github-actions",
+        // Dockerfile / docker-compose
+        "ms-azuretools.vscode-docker",
+        // 调试器
+        "vadimcn.vscode-lldb",
+        // 官方 Rust 扩展（含 snippets）
+        "rust-lang.rust"
+      ],
+      "settings": {
+        // 与仓库 .rust-analyzer.json 对齐：排除重型 crate，避免 IDE OOM
+        "rust-analyzer.linkedProjects": ["Cargo.toml"],
+        "rust-analyzer.cargo.features": "all",
+        "rust-analyzer.check.command": "clippy",
+        "[rust]": {
+          "editor.defaultFormatter": "rust-lang.rust",
+          "editor.formatOnSave": true
+        },
+        "[toml]": {
+          "editor.defaultFormatter": "tamasfe.even-better-toml"
+        }
+      }
+    }
+  },
+
+  "postCreateCommand": {
+    // 切换到 nightly toolchain（与 CI 一致）+ 装 rustfmt / clippy / rust-src
+    "setup-toolchain": "rustup toolchain install nightly --profile minimal --component rustfmt clippy rust-src && rustup default nightly && rustc --version && cargo --version",
+    // cargo-deny 用于供应链审计（CI 在 .github/workflows/ci.yml 中使用）
+    "install-tools": "cargo install --locked cargo-deny 2>/dev/null || echo 'cargo-deny install skipped (may already be present)'",
+    // 预下载依赖（vscode 启动后第一次 build 不会卡 download）
+    "prewarm": "cargo fetch && echo 'cargo fetch done'"
+  },
+
+  // 端口转发：bridge gRPC + HTTP
+  "forwardPorts": [50051, 8080],
+
+  "otherPortsAttributes": {
+    "50051": {
+      "label": "bridge gRPC",
+      "onAutoForward": "silent"
+    },
+    "8080": {
+      "label": "bridge HTTP / OpenAPI",
+      "onAutoForward": "notify"
+    }
+  },
+
+  // 容器运行约束：rust-analyzer + cargo 编译需要大量内存
+  "runArgs": ["--memory=8g", "--cpus=4"],
+
+  // 非 root 用户 (devcontainer 默认 vscode 用户)
+  "remoteUser": "vscode",
+
+  // mount 本地 cargo 缓存到容器，避免每次重建全量编译
+  "mounts": [
+    "source=cargo-registry,target=/usr/local/cargo/registry,type=volume",
+    "source=cargo-target-${devcontainerId},target=${containerWorkspaceFolder}/target,type=volume"
+  ]
+}

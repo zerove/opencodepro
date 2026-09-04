@@ -64,6 +64,12 @@
   - `grpc.execute_sop` / `grpc.execute_tool`：替换 `info_span!()` 为 `#[instrument]`，
     含 sop_id / project_id / tool_id / fuel / chaos 字段
   - 测试：`token_budget` 3 个 instrument_* + `chaos_extended` 2 个 sanity 测试
+- **`.devcontainer/devcontainer.json`** (TODO 8.4 第一项): VS Code Remote Container 一键搭建
+  - base image `rust:1-bookworm` + `postCreateCommand` 切到 nightly（与 CI 一致）
+  - 7 个 VS Code 扩展（rust-analyzer / TOML / crates / Actions / Docker / LLDB / Rust）
+  - 端口转发 bridge gRPC (50051) + HTTP (8080)
+  - 8GB / 4 CPU 约束；持久化 cargo registry + target volume
+  - 不影响 CI（仅本地开发体验）
 
 ### Fixed
 - **`test_search_no_network_graceful_error` flaky 测试**: 原断言 `!stderr.is_empty()`
