@@ -51,6 +51,11 @@
   - 测试关键修正：(1) reqwest `.http1_only()`（axum 0.7 不接 HTTP/2 prior knowledge）；
     (2) reqwest `.no_proxy()`（开发环境 `HTTP_PROXY=127.0.0.1:7890` 会拦截本地请求，
     reqwest 默认 `no_proxy` 解析不支持 `127.*` 通配）
+- **`/api/metrics` Prometheus 端点文档化 + 测试** (TODO 8.2):
+  - OpenAPI 新增 `/api/metrics` 路径（`operationId: prometheusMetrics`，
+    Content-Type `text/plain; version=0.0.4`）
+  - 集成测试：`prometheus_metrics_exposes_standard_names`（200 + Content-Type +
+    7 关键指标名 + `# HELP`/`# TYPE`）+ `prometheus_metrics_concurrent_scrape_safe`（5 并发 scrape）
 
 ### Fixed
 - **`test_search_no_network_graceful_error` flaky 测试**: 原断言 `!stderr.is_empty()`

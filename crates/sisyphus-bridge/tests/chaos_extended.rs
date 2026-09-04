@@ -1,4 +1,4 @@
-//! 混沌测试扩展（TODO 7.2 第四项 + 阶段 8.2 健康度端点）
+//! 混沌测试扩展（TODO 7.2 第四项 + 阶段 8.2 健康度端点 + 指标端点）
 //!
 //! 覆盖 bridge 端未在 bridge_integration_test.rs 测的边角：
 //! - 并发请求竞态（同一 session 并行 health_check / execute_tool）
@@ -6,6 +6,7 @@
 //! - 大 payload 鲁棒性（10KB JSON args 不导致 panic）
 //! - 重复连接（10 次连/断/连）
 //! - K8s 标准健康度端点（/health/live, /health/ready）
+//! - Prometheus 指标端点 (/api/metrics)
 
 use sisyphus_bridge::bridge_service::MySisyphusBridge;
 use sisyphus_bridge_api::{
@@ -243,5 +244,105 @@ async fn health_ready_reports_components() {
     assert_eq!(body["status"], "ok");
     assert_eq!(body["kind"], "readiness");
     assert!(body["components"].is_object());
+    server.abort();
+}
+
+// ── Prometheus 指标端点（阶段 8.2）─────────────────────────
+//
+// 端点 /api/metrics 由 axum 路由提供 (Prometheus 0.0.4 文本格式)。
+// 验证：(1) 200 响应；(2) Content-Type 是 text/plain; version=0.0.4；
+// (3) 关键指标名都在 (counters + gauges)；(4) 多线程安全（5 并发请求都 200）。
+
+#[tokio::test]
+async fn prometheus_metrics_exposes_standard_names() {
+    let (addr, server) = setup_bridge_with_rest().await;
+    let url = format!("http://{}/api/metrics", addr);
+    let client = reqwest::Client::builder()
+        .http1_only()
+        .no_proxy()
+        .timeout(Duration::from_secs(5))
+        .build()
+        .expect("build client");
+    let resp = client.get(&url).send().await.expect("HTTP request failed");
+    let status = resp.status();
+    let ct = resp
+        .headers()
+        .get(axum::http::header::CONTENT_TYPE)
+        .map(|v| v.to_str().unwrap_or("").to_string())
+        .unwrap_or_default();
+    let text = resp.text().await.unwrap_or_default();
+    eprintln!(
+        "[metrics] status={} ct={} body_bytes={}",
+        status,
+        ct,
+        text.len()
+    );
+    assert_eq!(status, 200, "metrics must be 200");
+    assert!(
+        ct.starts_with("text/plain"),
+        "Content-Type must be Prometheus exposition, got {}",
+        ct
+    );
+    assert!(
+        ct.contains("version=0.0.4"),
+        "missing Prometheus version, got {}",
+        ct
+    );
+
+    // 关键指标必须出现 (counters + gauges)
+    for name in [
+        "sisyphus_http_requests_total",
+        "sisyphus_http_errors_total",
+        "sisyphus_http_in_flight",
+        "sisyphus_http_shutdowns_total",
+        "sisyphus_uptime_seconds",
+        "sisyphus_sse_connections_active",
+        "sisyphus_chaos_faults_total",
+    ] {
+        assert!(
+            text.contains(name),
+            "missing metric {} in body:\n{}",
+            name,
+            text
+        );
+    }
+
+    // # HELP 和 # TYPE 行至少出现 1 次
+    assert!(text.contains("# HELP"), "missing # HELP comments");
+    assert!(text.contains("# TYPE"), "missing # TYPE comments");
+    server.abort();
+}
+
+#[tokio::test]
+async fn prometheus_metrics_concurrent_scrape_safe() {
+    // 5 个并发 scrape 必须都返回 200；handler 内部读 shared_http + RwLock<u64>，
+    // 验证并发读无 panic / 无 race。
+    let (addr, server) = setup_bridge_with_rest().await;
+    let url = format!("http://{}/api/metrics", addr);
+    let mut handles = vec![];
+    for _ in 0..5 {
+        let url = url.clone();
+        handles.push(tokio::spawn(async move {
+            let client = reqwest::Client::builder()
+                .http1_only()
+                .no_proxy()
+                .timeout(Duration::from_secs(5))
+                .build()
+                .expect("build client");
+            let r = client.get(&url).send().await.expect("HTTP request failed");
+            (r.status(), r.text().await.unwrap_or_default())
+        }));
+    }
+    let mut ok = 0;
+    for h in handles {
+        let (status, body) = tokio::time::timeout(Duration::from_secs(5), h)
+            .await
+            .expect("metrics scrape timed out")
+            .expect("scrape task panicked");
+        assert_eq!(status, 200, "concurrent scrape got {}", status);
+        assert!(body.contains("sisyphus_uptime_seconds"), "missing uptime");
+        ok += 1;
+    }
+    assert_eq!(ok, 5, "all 5 concurrent scrapes must succeed");
     server.abort();
 }

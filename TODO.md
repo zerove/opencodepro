@@ -178,7 +178,14 @@
 
 ### 8.2 可观测性扩展
 - [ ] **tracing span 覆盖率**: 关键路径 100% 覆盖 (execute_goal / execute_sop / token_budget 检查)
-- [ ] **metrics Prometheus 端点**: `/metrics` 暴露到 bridge 端口（已有 sse_handlers）
+- [x] **metrics Prometheus 端点** (2026-09-04): `/api/metrics` 暴露 Prometheus 0.0.4 文本格式
+  - 端点已存在 (sse_handlers.rs)，本轮补 OpenAPI 文档 + 集成测试
+  - Counters: `sisyphus_http_requests_total` / `_errors_total` / `_shutdowns_total` / `_chaos_faults_total`
+  - Gauges: `sisyphus_http_in_flight` / `_sse_connections_active` / `_uptime_seconds`
+  - OpenAPI: `operationId: prometheusMetrics`，Content-Type: `text/plain; version=0.0.4`
+  - 测试：
+    - `prometheus_metrics_exposes_standard_names` (200 + Content-Type + 7 关键 metric 名 + # HELP/# TYPE)
+    - `prometheus_metrics_concurrent_scrape_safe` (5 并发 scrape 全 200，无 race)
 - [x] **健康度端点扩展** (2026-09-04): 增加 `/health/live` (liveness) + `/health/ready` (readiness) 分离
   - liveness: 始终 200（HTTP 能响应即存活，不检查依赖；避免依赖抖动触发 pod 重启）
   - readiness: 复用 `health_deep_assess`；任一依赖 degraded → 503 Service Unavailable

@@ -550,6 +550,21 @@ pub(crate) async fn openapi_json() -> impl IntoResponse {
                         "200": {"description": "Health evaluation"}
                     }
                 }
+            },
+
+            // ── Observability ───────────────────────────────────────────
+            "/api/metrics": {
+                "get": {
+                    "summary": "Prometheus text-format metrics",
+                    "description": "Exposes Sisyphus bridge metrics in Prometheus 0.0.4 exposition format. Counters: sisyphus_http_requests_total / sisyphus_http_errors_total / sisyphus_http_shutdowns_total / sisyphus_chaos_faults_total. Gauges: sisyphus_http_in_flight / sisyphus_sse_connections_active / sisyphus_uptime_seconds. Scrape this endpoint with Prometheus or any OTLP-compatible backend.",
+                    "operationId": "prometheusMetrics",
+                    "responses": {
+                        "200": {
+                            "description": "Prometheus exposition format (text/plain; version=0.0.4)",
+                            "content": {"text/plain": {"schema": {"type": "string", "description": "Prometheus 0.0.4 text exposition"}}}
+                        }
+                    }
+                }
             }
         },
 
