@@ -1,0 +1,88 @@
+syntax = "proto3";
+
+package sisyphus.cluster;
+
+// Cluster service — multi-instance peer protocol (ADR-009 § 1)
+//
+// 设计要点:
+// 1. Join 握手：节点启动时调用，告诉集群自己的 node_id + addr
+// 2. Stream 双向流：长连接，传输 PeerJoined / PeerLeft / StateProposal / ExperienceSync 事件
+// 3. mDNS 服务发现（_sisyphus-bridge._tcp.local）作为零配置发现
+// 4. 静态配置 fallback: [cluster].peers = ["node-1:50051", ...] 用于 K8s 等多播受限环境
+service Cluster {
+  // 单次握手：节点启动时调用一次，告知自己的 node_id + 监听地址
+  rpc Join (JoinRequest) returns (JoinResponse);
+
+  // 双向流：建立后保持长连接，传输集群事件
+  // 服务端推送 PeerJoined / PeerLeft / ExperienceSync
+  // 客户端推送 StateProposal / ExperienceSync
+  rpc Stream (stream ClusterEvent) returns (stream ClusterEvent);
+}
+
+// Join 请求
+message JoinRequest {
+  // 本节点唯一 ID（UUID 或 hostname-derived）
+  string node_id = 1;
+  // 本节点 gRPC 监听地址（其他节点连接此地址）
+  string grpc_addr = 2;
+  // 集群名（多套集群并存时区分）
+  string cluster_name = 3;
+}
+
+// Join 响应：当前已知 peers 列表（含自己）
+message JoinResponse {
+  // 当前集群成员（含发起 Join 的节点本身）
+  repeated PeerInfo peers = 1;
+  // 当前 leader 节点 ID（字典序最小）
+  string leader_id = 2;
+}
+
+// Peer 信息
+message PeerInfo {
+  string node_id = 1;
+  string grpc_addr = 2;
+  // 加入时间（Unix epoch seconds）
+  int64 joined_at = 3;
+}
+
+// 集群事件（双向流的 payload）
+message ClusterEvent {
+  oneof event {
+    PeerJoined peer_joined = 1;
+    PeerLeft peer_left = 2;
+    StateProposal state_proposal = 3;
+    ExperienceSync experience_sync = 4;
+  }
+}
+
+// 新 peer 加入
+message PeerJoined {
+  PeerInfo peer = 1;
+}
+
+// peer 离开（graceful shutdown 或 TTL 过期）
+message PeerLeft {
+  string node_id = 1;
+  // 离开原因（"shutdown" / "ttl_expired" / "removed"）
+  string reason = 2;
+}
+
+// 状态变更提案（用于跨节点共识 / 配置同步）
+message StateProposal {
+  string key = 1;
+  bytes value = 2;
+  // Vector clock (CRDT) — 每个 node_id 的最近 seen version
+  map<string, uint64> vector_clock = 3;
+}
+
+// Experience sync（CRDT 同步事件，TODO 8.3.2 + 8.3.1 集成）
+message ExperienceSync {
+  // exp_key: exp:{timestamp}
+  string exp_key = 1;
+  // CRDT version
+  uint64 version = 2;
+  // CRDT vector_clock (JSON-serialized BTreeMap)
+  string vector_clock_json = 3;
+  // 序列化 payload (ExperienceTuple JSON)
+  bytes payload = 4;
+}

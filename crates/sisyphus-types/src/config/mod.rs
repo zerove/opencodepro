@@ -56,6 +56,11 @@ pub struct Config {
     #[serde(default)]
     pub chaos: ChaosConfig,
 
+    /// Cluster peer protocol parameters (TODO 8.3.1 / ADR-009 § 1).
+    /// 默认 disabled（保持单机行为），启用后启动 mDNS + 双向 stream。
+    #[serde(default)]
+    pub cluster: ClusterConfig,
+
     /// JWT authentication configuration for REST API.
     #[serde(default)]
     pub jwt: JwtConfig,
@@ -135,6 +140,7 @@ impl Default for Config {
             registry: RegistryConfig::default(),
             jcode: JcodeConfig::default(),
             chaos: ChaosConfig::default(),
+            cluster: ClusterConfig::default(),
             jwt: JwtConfig::default(),
             auth_token: String::new(),
             bridge_address: default_bridge_address(),
@@ -339,6 +345,21 @@ impl Config {
         if let Some(v) = env_u64("SISYPHUS_CHAOS_DEFAULT_DURATION_SECONDS") {
             self.chaos.default_duration_seconds = v;
         }
+        if let Some(v) = env_bool("SISYPHUS_CLUSTER_ENABLED") {
+            self.cluster.enabled = v;
+        }
+        if let Some(v) = env_string("SISYPHUS_CLUSTER_NODE_ID") {
+            self.cluster.node_id = v;
+        }
+        if let Some(v) = env_string("SISYPHUS_CLUSTER_NAME") {
+            self.cluster.cluster_name = v;
+        }
+        if let Some(v) = env_u64("SISYPHUS_CLUSTER_JOIN_TIMEOUT_SECS") {
+            self.cluster.join_timeout_secs = v;
+        }
+        if let Some(v) = env_u64("SISYPHUS_CLUSTER_PEER_TTL_SECS") {
+            self.cluster.peer_ttl_secs = v;
+        }
         if let Some(v) = env_f64("SISYPHUS_COGNITIVE_LOOP_ADAPTIVE_DEPTH_INITIAL_BUDGET") {
             self.cognitive_loop.adaptive_depth.initial_budget = v;
         }
@@ -418,6 +439,7 @@ impl Config {
         self.sandbox.validate()?;
         self.registry.validate()?;
         self.chaos.validate()?;
+        self.cluster.validate()?;
         Ok(())
     }
 

@@ -52,6 +52,7 @@ jsonwebtoken = { workspace = true }
 chrono = { workspace = true }
 thiserror = { workspace = true }
 async-stream = "0.3"
+mdns-sd = "0.21.1"
 
 [features]
 default = ["sandbox"]

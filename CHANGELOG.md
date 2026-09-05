@@ -106,6 +106,48 @@
   6. query_experiences（IN 多 id）反序列化
   7. 损坏 vector_clock JSON 回退到空 map（健壮性）
 
+### Added (peer 协议骨架, 2026-09-05, TODO 8.3.1 / ADR-009 § 1 Phase A)
+- **cluster.proto 新增**（`crates/sisyphus-bridge-api/proto/cluster.proto`）：
+  - `Cluster` service: `Join` (握手) + `Stream` (双向流)
+  - `JoinRequest/Response`, `PeerInfo`, `ClusterEvent` (PeerJoined/PeerLeft/StateProposal/ExperienceSync)
+  - ExperienceSync 携带 CRDT version + vector_clock_json + payload bytes
+- **sisyphus-bridge-api `cluster_proto` 模块**：tonic::include_proto!("sisyphus.cluster")
+- **mdns-sd 0.21 集成**（crates/sisyphus-bridge/Cargo.toml + peer/discovery.rs）：
+  - `MdnsConfig`（service_type + cluster_name）+ `DiscoveryError` enum
+  - `register_local_node` + `browse_peers` + `create_daemon`
+  - 后台 std::thread 把同步 browse receiver 转发到 async mpsc
+- **`crates/sisyphus-bridge/src/peer/`** 新模块：
+  - `manager.rs`: PeerInfo + PeerStatus + ClusterEvent (4 变体)
+  - PeerManager：parking_lot::RwLock<BTreeMap> + broadcast::Sender，
+    leader = 字典序最小（含自己），TTL 字段就绪（evict_expired 留 Phase B）
+  - `service.rs`: ClusterServiceImpl（tonic Cluster trait），
+    StreamStream 关联类型 = Pin<Box<dyn Stream + Send + Sync>>
+  - proto ↔ Rust 类型双向转换（mgr_event_to_proto / proto_to_mgr_event）
+- **Config 加 [cluster] section**（sisyphus-types）：
+  - 6 个字段：enabled / node_id / cluster_name / mdns_service_type /
+    peers (静态 fallback) / join_timeout_secs / peer_ttl_secs
+  - 6 个 env override：`SISYPHUS_CLUSTER_{ENABLED,NODE_ID,NAME,JOIN_TIMEOUT_SECS,PEER_TTL_SECS}`
+  - validate: join_timeout ≥ 1, peer_ttl ≥ 5, peer_ttl > join_timeout
+- **测试**：
+  - 24 个 peer 单元测试（manager 12 + service 8 + discovery 4）
+  - 4 个 2 节点 in-process 集成测试（tests/cluster_integration.rs）：
+    1. join 握手返回 peer 列表 + leader
+    2. stream 双向流传播 PeerJoined 事件
+    3. manager 状态隔离
+    4. 双向 join 验证 leader 字典序最小
+- **明确未实现**（避免误用）：
+  - bridge_service / main.rs 启动集成（留待后续 PR）
+  - TTL 过期清理（peer_ttl 字段已就绪）
+  - 静态 peer fallback dial（[cluster].peers 字段已就绪）
+  - Experience CRDT 端到端 2 节点 sync（CRDT API + peer broadcast 已就绪）
+
+### Verified (2026-09-05, peer 协议)
+- cargo test -p sisyphus-bridge --lib peer: 24/24 通过
+- cargo test -p sisyphus-bridge --test cluster_integration: 4/4 通过
+- cargo clippy --workspace --all-targets -- -D warnings: 0 警告
+- cargo test-all: 4601/4601 通过（默认 workspace 排除 bridge 测试）
+- cargo build -p sisyphus-bridge: 编译通过（mdns-sd 0.21 + tonic 0.12）
+
 ### Added (累计)
 - **`.rust-analyzer.json`** 锁定重型 crate 排除（sisyphus-bridge/sandbox/sandboxd/tests），
   IDE 索引内存控制在 4GB 以内

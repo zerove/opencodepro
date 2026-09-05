@@ -17,9 +17,14 @@ pub mod proto {
     tonic::include_proto!("sisyphus.bridge");
 }
 
+pub mod cluster_proto {
+    tonic::include_proto!("sisyphus.cluster");
+}
+
 // Re-export all generated types and sub-modules at the crate root
 // so callers can write `use sisyphus_bridge_api::sisyphus_bridge_server::SisyphusBridge`
 // or `use sisyphus_bridge_api::ExecuteSopRequest` directly.
+pub use cluster_proto::*;
 pub use proto::*;
 
 /// Convenience function to connect to the Sisyphus bridge.

@@ -618,3 +618,100 @@ impl McpConfig {
         Ok(())
     }
 }
+
+// ── ClusterConfig (TODO 8.3.1) ─────────────────────────────────────────────
+
+/// Cluster peer protocol configuration (ADR-009 § 1).
+///
+/// 默认 `enabled = false` 保持单机行为不变；启用后启动 mDNS discovery +
+/// 静态 peer fallback，建立双向 stream 与其他节点通信。
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct ClusterConfig {
+    /// Whether cluster peer protocol is enabled on startup.
+    #[serde(default)]
+    pub enabled: bool,
+
+    /// 本节点唯一 ID（默认从 HOSTNAME 派生；可通过 env 覆盖）。
+    /// 留空字符串 = 启动时自动派生。
+    #[serde(default)]
+    pub node_id: String,
+
+    /// 集群名（多套集群并存时区分；默认 `_sisyphus-bridge`）。
+    #[serde(default = "default_cluster_name")]
+    pub cluster_name: String,
+
+    /// mDNS 服务类型（RFC 6763）；默认 `_sisyphus-bridge._tcp.local`。
+    #[serde(default = "default_mdns_service_type")]
+    pub mdns_service_type: String,
+
+    /// 静态 peer 列表（K8s 等多播受限环境 fallback）。
+    /// 格式：`["node-1:50051", "node-2:50051"]`
+    #[serde(default)]
+    pub peers: Vec<String>,
+
+    /// Join 超时（秒）
+    #[serde(default = "default_cluster_join_timeout_secs")]
+    pub join_timeout_secs: u64,
+
+    /// Peer TTL（秒）：超过此时间无心跳视为离线。
+    #[serde(default = "default_cluster_peer_ttl_secs")]
+    pub peer_ttl_secs: u64,
+}
+
+fn default_cluster_name() -> String {
+    "_sisyphus-bridge".to_string()
+}
+
+fn default_mdns_service_type() -> String {
+    "_sisyphus-bridge._tcp.local".to_string()
+}
+
+fn default_cluster_join_timeout_secs() -> u64 {
+    10
+}
+
+fn default_cluster_peer_ttl_secs() -> u64 {
+    30
+}
+
+impl Default for ClusterConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            node_id: String::new(),
+            cluster_name: default_cluster_name(),
+            mdns_service_type: default_mdns_service_type(),
+            peers: Vec::new(),
+            join_timeout_secs: default_cluster_join_timeout_secs(),
+            peer_ttl_secs: default_cluster_peer_ttl_secs(),
+        }
+    }
+}
+
+impl ClusterConfig {
+    /// Validate cluster peer protocol settings.
+    ///
+    /// 校验：
+    /// - join_timeout_secs ≥ 1
+    /// - peer_ttl_secs ≥ 5（避免误判瞬时网络抖动）
+    /// - peer_ttl_secs > join_timeout_secs（heartbeat 间隔应大于 join 超时）
+    pub fn validate(&self) -> Result<(), crate::errors::TypesError> {
+        use crate::errors::TypesError;
+        if self.join_timeout_secs < 1 {
+            return Err(TypesError::ConfigValidationError(
+                "cluster.join_timeout_secs must be ≥ 1".into(),
+            ));
+        }
+        if self.peer_ttl_secs < 5 {
+            return Err(TypesError::ConfigValidationError(
+                "cluster.peer_ttl_secs must be ≥ 5".into(),
+            ));
+        }
+        if self.peer_ttl_secs <= self.join_timeout_secs {
+            return Err(TypesError::ConfigValidationError(
+                "cluster.peer_ttl_secs must be > join_timeout_secs".into(),
+            ));
+        }
+        Ok(())
+    }
+}

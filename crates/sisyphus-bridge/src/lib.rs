@@ -19,6 +19,7 @@ pub mod grpc_handlers;
 pub mod http;
 pub mod http_openapi;
 pub mod jcode_caller;
+pub mod peer;
 pub mod sandboxd_client;
 pub mod strategic_executor;
 pub mod tools;

@@ -15,6 +15,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "sisyphus.bridge.BridgeEvent.event",
             "#[allow(clippy::enum_variant_names)]",
         )
-        .compile_protos(&["proto/bridge.proto"], &["proto"])?;
+        // Suppress enum_variant_names on ClusterEvent oneof (generated enum from
+        // peer_joined/peer_left/state_proposal/experience_sync — canonical
+        // protobuf naming for the cluster wire protocol).
+        .type_attribute(
+            "sisyphus.cluster.ClusterEvent.event",
+            "#[allow(clippy::enum_variant_names)]",
+        )
+        .compile_protos(
+            &["proto/bridge.proto", "proto/cluster.proto"],
+            &["proto"],
+        )?;
     Ok(())
 }

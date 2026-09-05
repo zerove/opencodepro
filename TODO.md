@@ -226,10 +226,18 @@
     ```
 
 ### 8.3 分布式 v2 启动
-- [ ] **peer 协议真实环境测试**: 3 节点 bridge cluster 互连
-  - 设计草案：`docs/adr/009-distributed-v2-architecture.md` § Peer 协议
-  - gRPC bidirectional streaming + mDNS 服务发现
-  - 实施路径：Phase A (1 周) 留待 v0.3+
+- [x] **peer 协议骨架实施** (TODO 8.3.1 / ADR-009 § 1 Phase A, 2026-09-05)
+  - cluster.proto 新增（Cluster service + JoinRequest/Response + ClusterEvent 双向流）
+  - mdns-sd 0.21 集成（MdnsConfig + register_local_node + browse_peers）
+  - PeerManager 状态管理（parking_lot::RwLock + broadcast::Sender，leader = 字典序最小）
+  - ClusterServiceImpl gRPC service impl（Join + Stream）
+  - 6 个 env override（SISYPHUS_CLUSTER_*）
+  - ClusterConfig 校验（join_timeout ≥ 1, peer_ttl > join_timeout, peer_ttl ≥ 5）
+  - 24 个 peer 单元测试（manager + service + discovery）+ 4 个 2 节点集成测试
+  - **未完成**：bridge_service / main.rs 集成（留待后续 PR，避免 30+ 调用点改动）
+  - **未完成**：TTL 过期清理（peer_ttl 字段已就绪，evict_expired 留待 Phase B）
+  - **未完成**：static peer fallback（[cluster].peers 字段已就绪，dial 逻辑留待）
+  - **未完成**：Experience CRDT 端到端 2 节点 sync（CRDT API 已就绪，peer broadcast 留待）
 - [x] **experience bank 跨实例同步**: CRDT 或 last-writer-wins 策略 (2026-09-05)
   - 设计草案：ADR-009 § Experience CRDT
   - LWW-Element-Set + vector clock：merge_crdt 纯函数 + bump_local_clock
