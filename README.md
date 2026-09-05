@@ -37,11 +37,15 @@ sisyphus/
 ## 快速开始
 
 ```bash
-# 安装
+# 方式 1: 从源码安装（开发推荐）
 cargo install sisyphus-cli
-
-# 运行 TUI
 sisyphus
+
+# 方式 2: 用 Docker（生产推荐）
+docker pull ghcr.io/zerove/sisyphus-bridge:latest
+docker run -d -p 50051:50051 -p 8080:8080 \
+  -e SISYPHUS_LLM_API_KEY="your-key" \
+  ghcr.io/zerove/sisyphus-bridge:latest
 
 # 使用自定义 bridge 地址
 sisyphus --bridge http://localhost:50051

@@ -236,7 +236,10 @@ Closes: #123
 2. 更新 `book/src/configuration.md` 的版本号引用
 3. 打 git tag：`git tag -a v0.x.x -m "..."`
 4. 推送 tag 触发 `.github/workflows/release.yml`：跨平台构建 + GitHub Release 自动生成
-5. Docker Hub 镜像：手动 `docker buildx build --platform linux/amd64,linux/arm64 -t ghcr.io/zerove/sisyphus-bridge:v0.x.x --push .`
+5. Docker 镜像：推送 tag 自动触发 `.github/workflows/docker-release.yml`
+   - 多平台构建（linux/amd64 + linux/arm64）
+   - 推送至 `ghcr.io/zerove/sisyphus-bridge:v0.x.x`
+   - 验证：`docker pull ghcr.io/zerove/sisyphus-bridge:v0.x.x`
 
 ## 联系方式
 

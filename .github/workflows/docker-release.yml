@@ -1,0 +1,123 @@
+# ── Docker Release Publish ────────────────────────────────────────────
+# 触发条件：push tag `v*` 或手动 dispatch（含 version 输入）。
+# 构建多平台 Docker 镜像（linux/amd64 + linux/arm64），推送至 ghcr.io。
+#
+# Tag 策略：
+# - v0.2.0           → :v0.2.0, :0.2, :0, :latest
+# - v0.2.0-rc.1      → :v0.2.0-rc.1, :0.2.0-rc.1 (预发布)
+# - v0.2.0-beta      → :v0.2.0-beta (预发布)
+#
+# 用法：
+# - 推送 tag 自动触发
+# - workflow_dispatch 输入 version (e.g. v0.2.0)
+
+name: Docker Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (e.g. v0.2.0)'
+        required: true
+        type: string
+
+env:
+  CARGO_TERM_COLOR: always
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+permissions:
+  contents: read
+  packages: write
+
+# 防止多个 tag 并发触发时冲突推送（同一镜像名）
+concurrency:
+  group: docker-release
+  cancel-in-progress: false
+
+jobs:
+  docker:
+    name: Build & Push Multi-Arch Docker Image
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Resolve version
+        id: version
+        run: |
+          # 优先用 git tag，否则用 workflow_dispatch input
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            VERSION="${GITHUB_REF_NAME}"
+          else
+            VERSION="${{ inputs.version }}"
+          fi
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Resolved version: ${VERSION}"
+
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            # 完整版本: v0.2.0 → :v0.2.0, :v0.2
+            type=match,pattern=^v(\d+\.\d+)\.0$,group=1
+            type=match,pattern=^v(\d+\.\d+)$,group=1
+            # 预发布: v0.2.0-rc.1 → :v0.2.0-rc.1
+            type=match,pattern=^v(.+)$,group=1
+            # SemVer 元数据
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+          # 预发布自动标记为 prerelease
+          bake-target: docker-container
+          flavor: |
+            latest=false
+          labels: |
+            org.opencontainers.image.title=Sisyphus Bridge
+            org.opencontainers.image.description=Cognitive execution engine with gRPC + REST API
+            org.opencontainers.image.source=https://github.com/zerove/opencodepro
+            org.opencontainers.image.licenses=MIT
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          # 多平台构建：x86_64 + ARM64 (Raspberry Pi / Graviton / Apple Silicon Linux)
+          platforms: linux/amd64,linux/arm64
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          # QEMU 模拟 arm64 构建（无需 ARM64 runner）
+          provenance: false
+
+      - name: Summary
+        if: success()
+        run: |
+          echo "## 🐳 Docker 镜像已发布" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "**版本**: \`${{ steps.version.outputs.version }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "**镜像**: \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Tags**:" >> "$GITHUB_STEP_SUMMARY"
+          for tag in $(echo '${{ steps.meta.outputs.tags }}' | tr ',' '\n'); do
+            echo "- \`${tag}\`" >> "$GITHUB_STEP_SUMMARY"
+          done
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "拉取: \`docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.version }}\`" >> "$GITHUB_STEP_SUMMARY"

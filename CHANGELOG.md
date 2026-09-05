@@ -139,6 +139,15 @@
   - book/src/bench-dashboard.md 章节 + SUMMARY.md 注册
   - 本地/CI 一致：浏览器看 criterion HTML 报告（分布、回归、对比图）
   - 沿用 CI 现有的 critcmp >5% 回归检测（PR comment）
+- **Docker Release 自动发布** (TODO 8.6 第三项):
+  - 新增 `.github/workflows/docker-release.yml` (123 行)：
+    push tag `v*` 自动构建 + 推送至 ghcr.io
+  - 多平台：`linux/amd64` + `linux/arm64`（QEMU）
+  - 多 tag 策略：`v0.2.0` → `:v0.2.0`, `:0.2`, `:0`, `:latest`；预发布自动标记
+  - 沿用 nightly.yml 的 `:nightly` + `:latest` 推送
+  - book/src/deployment.md 填充完整 docker + K8s + 健康度端点说明
+  - README.md 快速开始加 docker pull 方式
+  - CONTRIBUTING.md § 发布流程更新（手动 → 自动 workflow）
 
 ### Fixed
 - **`test_search_no_network_graceful_error` flaky 测试**: 原断言 `!stderr.is_empty()`

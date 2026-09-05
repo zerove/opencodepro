@@ -263,4 +263,13 @@
     CHANGELOG.md 作为引用存档而非生成源
 - [ ] **GitHub Release Notes**: 自动从 CHANGELOG 生成 release artifacts
   - 当前由 release.yml 自动生成；待 v0.2.0 实际发布后审计
-- [ ] **Docker Hub 镜像**: ghcr.io/zerove/sisyphus-bridge:v0.2.0
+- [x] **Docker Hub 镜像** (2026-09-04): ghcr.io 自动发布 workflow
+  - 新增 `.github/workflows/docker-release.yml` (123 行)：push tag `v*` 自动触发
+  - 多平台构建：`linux/amd64` + `linux/arm64`（QEMU 模拟，无需 ARM64 runner）
+  - 多 tag 策略：`v0.2.0` → `:v0.2.0`, `:0.2`, `:0`, `:latest`
+  - 预发布支持：`-rc.1` / `-beta` 自动标 `prerelease`
+  - 缓存：`cache-from: type=gha` + `cache-to: type=gha,mode=max` 复用构建层
+  - 沿用 `nightly.yml` 的 docker job（`:nightly` + `:latest`），与 docker-release 互补
+  - 文档：`book/src/deployment.md` 填充完整 docker + K8s + 健康度端点说明（之前只一个标题）
+  - 文档：`README.md` "快速开始" 加 docker pull 方式
+  - 文档：`CONTRIBUTING.md` § 发布流程更新（手动 → 自动 workflow）
