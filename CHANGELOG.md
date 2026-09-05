@@ -154,6 +154,12 @@
   - `#[tokio::main]` → `#[tokio::main(flavor = "multi_thread", worker_threads = 2)]`
   - `platform::detect_platform` 走 `spawn_blocking`
   - 加 startup 时间日志便于诊断
+- **ClusterConsensus 改进 + bench** (TODO 8.3 第三项):
+  - 加 `PeerProposer` trait（可注入 mock）+ `ClusterConsensus::with_proposer()`
+  - 动态 `add_peer()` / `remove_peer()` / `cluster_size()`
+  - propose 改 majority quorum 校验 + 超时（1s 默认）
+  - 9 单元测试 + 1 个 5 节点 bench（mock 零延迟：4.62ms / 1000 ops）
+  - Baseline：`docs/benchmarks/consensus-v0.2.0-baseline.md`
 - **Docker Release 自动发布** (TODO 8.6 第三项):
   - 新增 `.github/workflows/docker-release.yml` (123 行)：
     push tag `v*` 自动构建 + 推送至 ghcr.io

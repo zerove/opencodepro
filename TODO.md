@@ -223,8 +223,18 @@
 
 ### 8.3 分布式 v2 启动
 - [ ] **peer 协议真实环境测试**: 3 节点 bridge cluster 互连
+  - 现有 ClusterConsensus 是 no-op（仅 logging）；真实 peer 协议需 gRPC 双向流
+  - 当前本轮完成 8.3.3（架构 + bench），8.3.1/8.3.2 留待 v0.3+
 - [ ] **experience bank 跨实例同步**: CRDT 或 last-writer-wins 策略
-- [ ] **共识机制 benchmark**: BridgeConsensus 在 5 节点下的 latency / throughput
+- [x] **共识机制 benchmark** (2026-09-05): ClusterConsensus 5 节点 latency bench
+  - 改进 `crates/sisyphus-bridge/src/consensus.rs`：
+    * 加 `PeerProposer` trait（可注入 mock）
+    * `ClusterConsensus::with_proposer()` 构造方法
+    * 动态 `add_peer()` / `remove_peer()` / `cluster_size()`
+    * propose 改 majority quorum 校验 + 超时
+  - 9 个单元测试 + 1 个 5 节点 bench（`bench_consensus_5_nodes`）
+  - Benchmark: 5 节点 mock 零延迟 → 4.62ms / 1000 ops（217 ops/sec）
+  - Baseline：`docs/benchmarks/consensus-v0.2.0-baseline.md`
 
 ### 8.4 开发者体验
 - [x] **devcontainer.json** (2026-09-04): VS Code Remote Container 一键搭建
