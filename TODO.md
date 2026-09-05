@@ -172,7 +172,15 @@
 ## 🚀 阶段 8 计划（v0.2 候选，2026-09-15 起，2-3 周窗口）
 
 ### 8.1 性能优化（高 ROI）
-- [ ] **DagRenderer 大规模压力测试**: 1000-5000 节点 benchmark + 优化 layout 算法
+- [x] **DagRenderer 大规模压力测试** (2026-09-05): 1000-5000 节点 bench + 算法优化
+  - 扩展 `lightweight_benches::bench_dag_renderer` 至 7 个规模 [10, 50, 200, 500, 1000, 2000, 5000]
+  - 优化 `compute_layout`：`queue.sort()` → `queue.sort_unstable()`
+    - sort_unstable 是 introsort 实现（不保证等值元素相对顺序，但节点 ID 唯一性保证输出确定性）
+    - 性能改进：8-32%（5000 节点：10.8ms → 8.86ms）
+  - 关键发现：throughput 在 483-800 Kelem/s 间波动，**接近 O(N) 线性扩展**
+  - 5000 节点 8.86 ms，远低于 TUI 60fps 预算（16.67 ms）
+  - Baseline：`docs/benchmarks/dag-renderer-v0.2.0-baseline.md`
+    + `target/criterion/dag_renderer/v0_2_0_dag_renderer/`
 - [ ] **bridge gRPC 流式响应**: 大 payload (1MB+) 分块流式替代一次性
 - [ ] **CLI 启动并行化**: tokio runtime 预初始化 + 插件懒加载
 

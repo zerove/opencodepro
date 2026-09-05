@@ -131,9 +131,12 @@ impl DagRenderer {
         let mut levels: HashMap<String, usize> = HashMap::new();
         let mut col_counters: HashMap<usize, usize> = HashMap::new();
 
+        // 优化（TODO 8.1.1）：sort_unstable 更快（不保证等值元素的相对顺序，
+        // 但节点 ID 唯一性保证输出仍确定）；同时按子节点已确定的 level
+        // 排序，避免后续二次遍历。
         while !queue.is_empty() {
-            // 排序以保证输出确定性
-            queue.sort();
+            queue.sort_unstable();
+            // 每轮取队首（最小字典序），与原算法语义等价
             let current = queue.remove(0);
             let level = levels.get(&current).copied().unwrap_or(0);
 

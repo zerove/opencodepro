@@ -139,6 +139,14 @@
   - book/src/bench-dashboard.md 章节 + SUMMARY.md 注册
   - 本地/CI 一致：浏览器看 criterion HTML 报告（分布、回归、对比图）
   - 沿用 CI 现有的 critcmp >5% 回归检测（PR comment）
+- **DagRenderer 大规模压力测试 + 优化** (TODO 8.1 第一项):
+  - bench 扩展到 1000-5000 节点（`lightweight_benches::bench_dag_renderer`）
+  - 优化 `compute_layout`：`queue.sort()` → `queue.sort_unstable()`（introsort）
+  - 性能改进 8-32%（统计显著，p<0.05）
+  - 关键发现：5000 节点 8.86ms（远低于 TUI 60fps 预算 16.67ms）
+  - throughput 接近 O(N) 线性扩展，无 O(N²) 性能坍塌
+  - Baseline：`docs/benchmarks/dag-renderer-v0.2.0-baseline.md`
+    + `target/criterion/dag_renderer/v0_2_0_dag_renderer/`
 - **Docker Release 自动发布** (TODO 8.6 第三项):
   - 新增 `.github/workflows/docker-release.yml` (123 行)：
     push tag `v*` 自动构建 + 推送至 ghcr.io

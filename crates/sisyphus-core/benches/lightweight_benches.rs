@@ -44,7 +44,8 @@ fn bench_anomaly_detector(c: &mut Criterion) {
 
 fn bench_dag_renderer(c: &mut Criterion) {
     let mut group = c.benchmark_group("dag_renderer");
-    for n in [10usize, 50, 200, 500] {
+    // 扩展到 5000 节点（TODO 8.1.1）：验证 DAG 渲染算法在大规模下的性能
+    for n in [10usize, 50, 200, 500, 1000, 2000, 5000] {
         group.throughput(Throughput::Elements(n as u64));
         group.bench_with_input(BenchmarkId::from_parameter(n), &n, |b, &n| {
             let mut nodes: Vec<(String, NodeStatus)> = Vec::with_capacity(n);
