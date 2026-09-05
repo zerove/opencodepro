@@ -160,6 +160,13 @@
   - propose 改 majority quorum 校验 + 超时（1s 默认）
   - 9 单元测试 + 1 个 5 节点 bench（mock 零延迟：4.62ms / 1000 ops）
   - Baseline：`docs/benchmarks/consensus-v0.2.0-baseline.md`
+- **bench dashboard gh-pages 部署** (TODO 8.4.3 余项):
+  - ci.yml bench-core 加 `Generate bench dashboard` step
+  - 调 `scripts/bench-dashboard.sh` 生成 index.html
+  - upload-artifact (90 天保留)
+  - mdbook.yml `needs: [bench-core]` + download-artifact
+  - 合并到 `book/book/bench/` 路径（与 mdbook 一并 deploy-pages）
+  - PR comment (sticky-pull-request-comment) 显示 dashboard 链接
 - **Docker Release 自动发布** (TODO 8.6 第三项):
   - 新增 `.github/workflows/docker-release.yml` (123 行)：
     push tag `v*` 自动构建 + 推送至 ghcr.io

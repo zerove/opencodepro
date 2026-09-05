@@ -25,9 +25,11 @@ concurrency:
 
 jobs:
   build-and-deploy:
-    name: Build and Deploy mdbook
+    name: Build and Deploy mdbook + bench dashboard
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # 依赖 bench-core：让 bench dashboard 报告能合并到 gh-pages
+    needs: [bench-core]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -64,11 +66,32 @@ jobs:
 
       - name: Check broken links
         # mdbook-linkcheck 缺失时跳过（仅是 hint，不阻塞）
-        if command -v mdbook-linkcheck &> /dev/null; then
-          mdbook linkcheck
-        else
-          echo "::notice::mdbook-linkcheck 未安装，跳过链接检查"
-        fi
+        # 用 run: | 块（避免 YAML 解析器把 'then' 后内容当 mapping key）
+        run: |
+          if command -v mdbook-linkcheck &> /dev/null; then
+            mdbook linkcheck
+          else
+            echo "::notice::mdbook-linkcheck 未安装，跳过链接检查"
+          fi
+
+      - name: Download bench dashboard artifact
+        # 合并 bench report 到 gh-pages/bench/ 路径
+        # 优点：与 mdbook 一并部署；gh-pages 不需第二个 job
+        # 失败时跳过（bench 不是部署关键路径）
+        uses: actions/download-artifact@v4
+        with:
+          name: bench-dashboard
+          path: book/book/bench
+        continue-on-error: true
+
+      - name: Verify bench dashboard merged
+        if: hashFiles('book/book/bench/index.html') != ''
+        run: |
+          echo "─── bench dashboard 合并到 mdbook ───"
+          ls -la book/book/bench/
+          echo "─── mdbook + bench 总产物 ───"
+          du -sh book/book/
+          find book/book/ -name '*.html' | wc -l
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3

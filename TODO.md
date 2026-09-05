@@ -267,7 +267,11 @@
   - 本地/CI 一致：浏览器直接看每 bench 的 report（含分布、回归检测、对比图）
   - book/src/bench-dashboard.md 章节：在 book/SUMMARY.md 注册
   - CI 已有的 critcmp >5% 回归检测保留（PR comment）
-  - 待跟进：把 `docs/benchmarks/dashboard/` 部署到 gh-pages（需扩展 mdbook.yml）
+  - 改进 (8.4.3 余项, 2026-09-05): bench dashboard gh-pages 部署
+  - `.github/workflows/ci.yml` bench-core 加 `Generate bench dashboard` step + 上传 artifact
+  - `.github/workflows/mdbook.yml` build-and-deploy 加 `needs: [bench-core]` + 下载 artifact
+  - 合并到 `book/book/bench/` 路径（与 mdbook 一并 deploy-pages）
+  - PR comment 用 `marocchino/sticky-pull-request-comment` 显示 dashboard 链接
 
 ### 8.5 文档与社区
 - [x] **book/ 添加 tutorial 章节** (2026-09-04): `book/src/tutorial.md` 端到端教程

@@ -419,6 +419,37 @@ jobs:
           path: target/criterion
           key: bench-baseline-main-${{ github.sha }}
 
+      # ── Bench Dashboard (P0: gh-pages 部署替代方案) ──────────────────
+      # 生成 docs/benchmarks/dashboard/index.html + 上传 artifact。
+      # 全 PR + main 都跑（不依赖 baseline cache）。
+      # 部署策略：mdbook.yml 部署时把 bench dashboard 合并到 gh-pages/bench/
+      # 路径（详见 .github/workflows/mdbook.yml 的 deploy step）。
+      - name: Generate bench dashboard
+        run: |
+          ./scripts/bench-dashboard.sh || echo "::warning::bench-dashboard.sh failed, skipping artifact"
+        env:
+          OUTPUT_DIR: ${{ runner.temp }}/bench-dashboard
+        continue-on-error: true
+
+      - name: Upload bench dashboard artifact
+        if: hashFiles('${{ runner.temp }}/bench-dashboard/index.html') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: bench-dashboard
+          path: ${{ runner.temp }}/bench-dashboard
+          retention-days: 90
+          if-no-files-found: ignore
+
+      - name: Comment PR with bench summary
+        if: github.event_name == 'pull_request' && hashFiles('${{ runner.temp }}/bench-dashboard/index.html') != ''
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: bench-dashboard
+          message: |
+            📊 **Bench Dashboard** ([详情](${{ steps.upload-artifact.outputs.artifact-url }}))
+            跑 ${{ steps.upload-artifact.outputs.artifact-size }} 大小；含 criterion 报告（分布/回归/对比图）
+            本地查看：`./scripts/bench-dashboard.sh` 然后浏览器打开 `docs/benchmarks/dashboard/index.html`
+
   # ── CLI release builds ──────────────────────────────────────────────
   build:
     name: Build
