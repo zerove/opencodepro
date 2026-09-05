@@ -32,6 +32,7 @@
   - [Go](./sdk-go.md)
 - [REST API](./rest-api.md)
 - [性能](./performance.md)
+  - [Bench Dashboard](./bench-dashboard.md)
 - [评测套件](./eval-suite.md)
 - [安全](./security.md)
 - [部署](./deployment.md)

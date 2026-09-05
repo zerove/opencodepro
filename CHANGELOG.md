@@ -134,6 +134,11 @@
   - 文档化：deny.toml advisory ignore 段按"来源 + 修复路径 + 影响评估 + 跟踪"
     格式重写，9 个剩余 advisory 全部有据可查
   - 验证：`cargo deny check` 全部 ok
+- **bench dashboard** (TODO 8.4 第三项):
+  - `scripts/bench-dashboard.sh` (173 行)：跑 cargo bench + 生成 `docs/benchmarks/dashboard/index.html`
+  - book/src/bench-dashboard.md 章节 + SUMMARY.md 注册
+  - 本地/CI 一致：浏览器看 criterion HTML 报告（分布、回归、对比图）
+  - 沿用 CI 现有的 critcmp >5% 回归检测（PR comment）
 
 ### Fixed
 - **`test_search_no_network_graceful_error` flaky 测试**: 原断言 `!stderr.is_empty()`

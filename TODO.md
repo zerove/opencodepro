@@ -230,7 +230,13 @@
   - skip 段补 `h2 0.3.x` (reqwest 0.11 legacy)
   - 移除 stale `lru = 0.12` skip（unnecessary）
   - 验证：`cargo deny check` 全部 ok（licenses/bans/advisories/sources）
-- [ ] **bench 趋势 dashboard**: criterion-compare 集成 GitHub Pages
+- [x] **bench 趋势 dashboard** (2026-09-04): criterion HTML 报告 + 入口索引
+  - `scripts/bench-dashboard.sh` (173 行)：跑 cargo bench + 生成 `docs/benchmarks/dashboard/index.html`
+  - 自动从 `target/criterion/*/*/estimate.json` 抽取 mean 估计
+  - 本地/CI 一致：浏览器直接看每 bench 的 report（含分布、回归检测、对比图）
+  - book/src/bench-dashboard.md 章节：在 book/SUMMARY.md 注册
+  - CI 已有的 critcmp >5% 回归检测保留（PR comment）
+  - 待跟进：把 `docs/benchmarks/dashboard/` 部署到 gh-pages（需扩展 mdbook.yml）
 
 ### 8.5 文档与社区
 - [x] **book/ 添加 tutorial 章节** (2026-09-04): `book/src/tutorial.md` 端到端教程
