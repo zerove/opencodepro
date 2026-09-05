@@ -286,7 +286,7 @@ fn custom_tool_round_trip() {
 fn notepad_snapshot_field_access() {
     let s = NotepadSnapshot {
         timestamp: 1234,
-        snapshot: im::HashMap::new(),
+        snapshot: imbl::HashMap::new(),
         trigger_node: "n1".into(),
     };
     assert_eq!(s.timestamp, 1234);
@@ -714,7 +714,7 @@ fn evolution_op_insert_node_with_unicode() {
 fn notepad_snapshot_with_unicode_trigger() {
     let n = NotepadSnapshot {
         timestamp: 1700000000,
-        snapshot: im::HashMap::new(),
+        snapshot: imbl::HashMap::new(),
         trigger_node: "节点-α".into(),
     };
     assert_eq!(n.trigger_node, "节点-α");
@@ -727,7 +727,7 @@ fn notepad_snapshot_with_unicode_trigger() {
 fn notepad_snapshot_with_max_timestamp() {
     let n = NotepadSnapshot {
         timestamp: u64::MAX,
-        snapshot: im::HashMap::new(),
+        snapshot: imbl::HashMap::new(),
         trigger_node: "n".into(),
     };
     let j = serde_json::to_string(&n).unwrap();
@@ -897,7 +897,7 @@ fn work_mode_inequality() {
 
 #[test]
 fn notepad_snapshot_unicode_content() {
-    let mut snapshot = im::HashMap::new();
+    let mut snapshot = imbl::HashMap::new();
     snapshot.insert("section-α".into(), "content-β".into());
     let n = NotepadSnapshot {
         timestamp: 1000,
@@ -1174,7 +1174,7 @@ fn sisyphus_notepad_with_5_sections() {
 
 #[test]
 fn notepad_snapshot_with_5_sections() {
-    let mut snapshot = im::HashMap::new();
+    let mut snapshot = imbl::HashMap::new();
     for i in 0..5 {
         snapshot.insert(format!("s{}", i), format!("v{}", i));
     }
@@ -1353,7 +1353,7 @@ fn sisyphus_notepad_with_unicode_section_id_many() {
 fn notepad_snapshot_with_unicode_trigger_node_only() {
     let n = NotepadSnapshot {
         timestamp: 0,
-        snapshot: im::HashMap::new(),
+        snapshot: imbl::HashMap::new(),
         trigger_node: "节-α-β-γ".into(),
     };
     assert_eq!(n.trigger_node, "节-α-β-γ");
@@ -1456,7 +1456,7 @@ fn sisyphus_notepad_with_unicode_append_only() {
 fn notepad_snapshot_with_only_unicode_trigger_serde() {
     let n = NotepadSnapshot {
         timestamp: 0,
-        snapshot: im::HashMap::new(),
+        snapshot: imbl::HashMap::new(),
         trigger_node: "触发-α".into(),
     };
     let j = serde_json::to_string(&n).unwrap();
@@ -1513,7 +1513,7 @@ fn trigger_def_with_unicode_3_segment_id_in_field() {
 
 #[test]
 fn notepad_snapshot_with_unicode_2_sections() {
-    let mut snapshot = im::HashMap::new();
+    let mut snapshot = imbl::HashMap::new();
     snapshot.insert("节-α".into(), "内容-β".into());
     snapshot.insert("节-γ".into(), "内容-δ".into());
     let n = NotepadSnapshot {
@@ -1617,7 +1617,7 @@ fn trigger_def_with_unicode_long_description() {
 
 #[test]
 fn notepad_snapshot_with_unicode_3_sections() {
-    let mut snapshot = im::HashMap::new();
+    let mut snapshot = imbl::HashMap::new();
     snapshot.insert("a-α".into(), "1-β".into());
     snapshot.insert("b-γ".into(), "2-δ".into());
     snapshot.insert("c-ε".into(), "3-ζ".into());
@@ -1719,7 +1719,7 @@ fn trigger_def_with_unicode_2_segment_pattern() {
 fn notepad_snapshot_with_only_unicode_trigger_emoji() {
     let n = NotepadSnapshot {
         timestamp: 0,
-        snapshot: im::HashMap::new(),
+        snapshot: imbl::HashMap::new(),
         trigger_node: "🔍".into(),
     };
     let j = serde_json::to_string(&n).unwrap();
@@ -1793,7 +1793,7 @@ fn trigger_def_with_unicode_3_segment_pattern_2() {
 
 #[test]
 fn notepad_snapshot_with_unicode_each_field() {
-    let mut snapshot = im::HashMap::new();
+    let mut snapshot = imbl::HashMap::new();
     snapshot.insert("节-α".into(), "内容-β".into());
     let n = NotepadSnapshot {
         timestamp: 1700000000,
@@ -1870,7 +1870,7 @@ fn trigger_def_with_unicode_pattern_emoji_2() {
 
 #[test]
 fn notepad_snapshot_with_unicode_3_sections_2() {
-    let mut snapshot = im::HashMap::new();
+    let mut snapshot = imbl::HashMap::new();
     snapshot.insert("a-α".into(), "1-β".into());
     snapshot.insert("b-γ".into(), "2-δ".into());
     snapshot.insert("c-ε".into(), "3-ζ".into());
@@ -1952,7 +1952,7 @@ fn trigger_def_with_unicode_pattern_at_sign() {
 fn notepad_snapshot_with_unicode_trigger_emoji_2() {
     let n = NotepadSnapshot {
         timestamp: 0,
-        snapshot: im::HashMap::new(),
+        snapshot: imbl::HashMap::new(),
         trigger_node: "🔍-α".into(),
     };
     let j = serde_json::to_string(&n).unwrap();
@@ -2024,7 +2024,7 @@ fn trigger_def_with_unicode_only_emoji_pattern() {
 
 #[test]
 fn notepad_snapshot_with_unicode_4_sections() {
-    let mut snapshot = im::HashMap::new();
+    let mut snapshot = imbl::HashMap::new();
     for i in 0..4 {
         snapshot.insert(format!("节-{}", i), format!("内容-{}", i));
     }
@@ -2101,7 +2101,7 @@ fn trigger_def_with_unicode_pattern_3_chars() {
 
 #[test]
 fn notepad_snapshot_with_unicode_each_field_2() {
-    let mut snapshot = im::HashMap::new();
+    let mut snapshot = imbl::HashMap::new();
     snapshot.insert("节-α".into(), "内容-β".into());
     let n = NotepadSnapshot {
         timestamp: 0,
@@ -2179,7 +2179,7 @@ fn trigger_def_with_unicode_pattern_with_emoji_2() {
 
 #[test]
 fn notepad_snapshot_with_unicode_5_sections() {
-    let mut snapshot = im::HashMap::new();
+    let mut snapshot = imbl::HashMap::new();
     for i in 0..5 {
         snapshot.insert(format!("节-{}", i), format!("内容-{}", i));
     }
@@ -2256,7 +2256,7 @@ fn trigger_def_with_unicode_pattern_2_chars() {
 
 #[test]
 fn notepad_snapshot_with_unicode_2_sections_2() {
-    let mut snapshot = im::HashMap::new();
+    let mut snapshot = imbl::HashMap::new();
     snapshot.insert("节-α".into(), "内容-α".into());
     snapshot.insert("节-β".into(), "内容-β".into());
     let n = NotepadSnapshot {
@@ -2332,7 +2332,7 @@ fn trigger_def_with_unicode_pattern_5_chars() {
 
 #[test]
 fn notepad_snapshot_with_unicode_3_sections_3() {
-    let mut snapshot = im::HashMap::new();
+    let mut snapshot = imbl::HashMap::new();
     snapshot.insert("a-α".into(), "1-β".into());
     snapshot.insert("b-γ".into(), "2-δ".into());
     snapshot.insert("c-ε".into(), "3-ζ".into());
@@ -2408,7 +2408,7 @@ fn trigger_def_with_unicode_pattern_with_dash_2() {
 
 #[test]
 fn notepad_snapshot_with_unicode_2_sections_3() {
-    let mut snapshot = im::HashMap::new();
+    let mut snapshot = imbl::HashMap::new();
     snapshot.insert("α".into(), "1".into());
     snapshot.insert("β".into(), "2".into());
     let n = NotepadSnapshot {
@@ -2484,7 +2484,7 @@ fn trigger_def_with_unicode_pattern_5_chars_2() {
 
 #[test]
 fn notepad_snapshot_with_unicode_4_sections_2() {
-    let mut snapshot = im::HashMap::new();
+    let mut snapshot = imbl::HashMap::new();
     snapshot.insert("a".into(), "1-α".into());
     snapshot.insert("b".into(), "2-β".into());
     snapshot.insert("c".into(), "3-γ".into());

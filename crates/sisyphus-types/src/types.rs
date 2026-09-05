@@ -248,7 +248,7 @@ use imbl::HashMap as ImMap;
 pub struct SisyphusNotepad {
     /// Structural sections of the working memory.
     /// Key: Section ID (e.g., "plan.architecture"), Value: Content.
-    /// Using im::HashMap for O(1) structural sharing snapshots.
+    /// Using imbl::HashMap for O(1) structural sharing snapshots.
     pub sections: ImMap<String, String>,
     /// Track changes for regression and auditing.
     pub history: Vec<NotepadSnapshot>,
