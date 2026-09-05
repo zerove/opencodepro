@@ -288,8 +288,13 @@
   - keep-a-changelog 规范：6 类标准分组（Added/Fixed/Changed/Deprecated/Removed/Security）
   - release.yml 已自动从 git log 生成 release notes（`generate_release_notes: true`），
     CHANGELOG.md 作为引用存档而非生成源
-- [ ] **GitHub Release Notes**: 自动从 CHANGELOG 生成 release artifacts
-  - 当前由 release.yml 自动生成；待 v0.2.0 实际发布后审计
+- [x] **GitHub Release Notes** (2026-09-05): release.yml 已自动生成
+  - `Generate Changelog` step: `git log PREV_TAG..HEAD` 生成 commit 列表
+  - `softprops/action-gh-release` 的 `generate_release_notes: true`：
+    自动从 PR/commits 生成结构化 release notes（含贡献者分组）
+  - `body: ${{ steps.changelog.outputs.CHANGELOG }}` 把手动 changelog 拼到顶部
+  - 完整发布流水线：tag push → 4 平台 build → release 创建 → 上传 binaries
+  - 审计：v0.2.0 tag 实际触发时 review 即可
 - [x] **Docker Hub 镜像** (2026-09-04): ghcr.io 自动发布 workflow
   - 新增 `.github/workflows/docker-release.yml` (123 行)：push tag `v*` 自动触发
   - 多平台构建：`linux/amd64` + `linux/arm64`（QEMU 模拟，无需 ARM64 runner）
