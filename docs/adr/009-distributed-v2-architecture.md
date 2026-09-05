@@ -1,6 +1,6 @@
 # ADR-009: 分布式 v2 架构草案（peer 协议 + Experience CRDT + 共识）
 
-**Status**: Phase A Accepted (2026-09-05) — § 1 peer 协议骨架 + § 2 Experience CRDT 均已实施；static fallback / TTL 清理 / 端到端 sync 留待后续 PR
+**Status**: Phase B Accepted (2026-09-05) — § 1 peer 协议 + § 2 Experience CRDT 均已实施；仅端到端 2 节点 sync 留待后续 PR
 **Deciders**: core team
 **Supersedes**: N/A
 

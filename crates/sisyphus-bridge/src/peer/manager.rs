@@ -93,6 +93,10 @@ impl ClusterEvent {
 ///
 /// 线程安全：内部用 `parking_lot::RwLock` 保护 peer 列表。
 /// 异步友好：事件通过 `tokio::sync::broadcast` 广播。
+///
+/// TTL 机制：
+/// - 每个 peer 维护 `last_seen: Instant`（on_peer_joined / touch 时刷新）
+/// - `evict_expired()` 移除 last_seen 超过 peer_ttl 的 peer，并广播 PeerLeft
 pub struct PeerManager {
     /// 本节点 ID（用于过滤自己的事件）
     self_node_id: String,
@@ -101,8 +105,9 @@ pub struct PeerManager {
     /// 事件广播通道（订阅者通过 subscribe() 接收）
     event_tx: broadcast::Sender<ClusterEvent>,
     /// TTL：超过此时间无心跳视为离线
-    #[allow(dead_code)]
     peer_ttl: Duration,
+    /// 每个 peer 的最后心跳时间（与 peers 同步维护）
+    last_seen: Arc<RwLock<BTreeMap<String, Instant>>>,
 }
 
 impl PeerManager {
@@ -114,6 +119,7 @@ impl PeerManager {
             peers: Arc::new(RwLock::new(BTreeMap::new())),
             event_tx,
             peer_ttl,
+            last_seen: Arc::new(RwLock::new(BTreeMap::new())),
         }
     }
 
@@ -156,10 +162,14 @@ impl PeerManager {
     /// 处理一个 peer 加入事件。返回是否真的新增（已存在返回 false）。
     pub fn on_peer_joined(&self, info: PeerInfo) -> bool {
         let mut peers = self.peers.write();
+        let mut last_seen = self.last_seen.write();
         if peers.contains_key(&info.node_id) {
+            // 已存在：刷新 last_seen（视为重连 / 心跳）
+            last_seen.insert(info.node_id.clone(), Instant::now());
             return false;
         }
         peers.insert(info.node_id.clone(), info.clone());
+        last_seen.insert(info.node_id.clone(), Instant::now());
         // 广播事件（忽略 NoActiveReceivers 错误：可能没有订阅者）
         let _ = self.event_tx.send(ClusterEvent::PeerJoined(info));
         true
@@ -168,7 +178,9 @@ impl PeerManager {
     /// 处理一个 peer 离开事件。返回是否真的移除。
     pub fn on_peer_left(&self, node_id: &str, reason: impl Into<String>) -> bool {
         let mut peers = self.peers.write();
+        let mut last_seen = self.last_seen.write();
         if peers.remove(node_id).is_some() {
+            last_seen.remove(node_id);
             let _ = self.event_tx.send(ClusterEvent::PeerLeft {
                 node_id: node_id.to_string(),
                 reason: reason.into(),
@@ -180,17 +192,52 @@ impl PeerManager {
     }
 
     /// 处理心跳 / Stream 事件：更新 last_seen 用于 TTL 判定
-    pub fn touch(&self, node_id: &str) {
-        // 当前简化实现：仅在 broadcast 通道发送一个心跳（订阅者忽略）
-        // TODO: 维护 last_seen Instant map
-        let _ = node_id;
+    pub fn touch(&self, node_id: &str) -> bool {
+        let mut last_seen = self.last_seen.write();
+        if last_seen.contains_key(node_id) {
+            last_seen.insert(node_id.to_string(), Instant::now());
+            true
+        } else {
+            false
+        }
     }
 
-    /// TTL 过期清理：移除 last_seen 超过 peer_ttl 的 peer
+    /// TTL 过期清理：移除 last_seen 超过 peer_ttl 的 peer，并广播 PeerLeft
+    ///
+    /// 返回被移除的 peer node_id 列表。
     pub fn evict_expired(&self) -> Vec<String> {
-        // 当前简化实现：返回空列表（完整 TTL 实现需 last_seen map）
-        // 实际逻辑留待 8.3.1 Phase B
-        Vec::new()
+        let now = Instant::now();
+        let mut expired = Vec::new();
+        {
+            // 第一遍：扫描 last_seen 找出过期节点
+            let last_seen = self.last_seen.read();
+            for (node_id, ts) in last_seen.iter() {
+                if now.duration_since(*ts) > self.peer_ttl {
+                    expired.push(node_id.clone());
+                }
+            }
+        }
+        // 第二遍：移除并广播（避免持锁期间发广播）
+        let mut peers = self.peers.write();
+        let mut last_seen = self.last_seen.write();
+        let mut evicted = Vec::new();
+        for node_id in &expired {
+            if peers.remove(node_id).is_some() {
+                last_seen.remove(node_id);
+                let _ = self.event_tx.send(ClusterEvent::PeerLeft {
+                    node_id: node_id.clone(),
+                    reason: "ttl_expired".to_string(),
+                });
+                evicted.push(node_id.clone());
+            }
+        }
+        evicted
+    }
+
+    /// 获取某 peer 的 last_seen（用于监控 / 测试）
+    #[allow(dead_code)]
+    pub fn last_seen(&self, node_id: &str) -> Option<Instant> {
+        self.last_seen.read().get(node_id).copied()
     }
 
     /// 广播一个 StateProposal 事件
@@ -349,9 +396,63 @@ mod tests {
     }
 
     #[test]
-    fn test_peer_manager_evict_expired_returns_empty_initially() {
+    fn test_peer_manager_evict_expired_no_expired_within_ttl() {
         let mgr = PeerManager::new("node-a", Duration::from_secs(30));
         mgr.on_peer_joined(PeerInfo::new("node-b", "addr"));
+        // 新加入的 peer 立即调用 evict_expired：last_seen = now，TTL=30s，未过期
+        assert!(mgr.evict_expired().is_empty());
+        assert_eq!(mgr.cluster_size(), 2);
+    }
+
+    #[test]
+    fn test_peer_manager_touch_updates_last_seen() {
+        let mgr = PeerManager::new("node-a", Duration::from_secs(30));
+        mgr.on_peer_joined(PeerInfo::new("node-b", "addr"));
+        // touch 存在的 peer 应返回 true
+        assert!(mgr.touch("node-b"));
+        // touch 不存在的 peer 返回 false
+        assert!(!mgr.touch("unknown"));
+        // last_seen 应被设置
+        assert!(mgr.last_seen("node-b").is_some());
+    }
+
+    #[test]
+    fn test_peer_manager_evict_expired_removes_old_peers() {
+        // 用极短 TTL（10ms）让 last_seen 立即过期
+        let mgr = PeerManager::new("node-a", Duration::from_millis(10));
+        mgr.on_peer_joined(PeerInfo::new("node-b", "addr"));
+        assert_eq!(mgr.cluster_size(), 2);
+        // 睡 50ms 让 TTL 过期
+        std::thread::sleep(Duration::from_millis(50));
+        let evicted = mgr.evict_expired();
+        assert_eq!(evicted, vec!["node-b".to_string()]);
+        assert_eq!(mgr.cluster_size(), 1);
+        // 广播事件：再次调用 evict_expired 应无更多事件
+        assert!(mgr.evict_expired().is_empty());
+    }
+
+    #[test]
+    fn test_peer_manager_touch_prevents_eviction() {
+        let mgr = PeerManager::new("node-a", Duration::from_millis(50));
+        mgr.on_peer_joined(PeerInfo::new("node-b", "addr"));
+        // 30ms 后 touch 刷新 last_seen
+        std::thread::sleep(Duration::from_millis(30));
+        mgr.touch("node-b");
+        // 再等 30ms（总计 60ms，但 last_seen 只有 30ms），不应过期
+        std::thread::sleep(Duration::from_millis(30));
+        assert!(mgr.evict_expired().is_empty());
+        assert_eq!(mgr.cluster_size(), 2);
+    }
+
+    #[test]
+    fn test_peer_manager_on_peer_left_clears_last_seen() {
+        let mgr = PeerManager::new("node-a", Duration::from_secs(30));
+        mgr.on_peer_joined(PeerInfo::new("node-b", "addr"));
+        assert!(mgr.last_seen("node-b").is_some());
+        mgr.on_peer_left("node-b", "shutdown");
+        assert!(mgr.last_seen("node-b").is_none());
+        // 即使 TTL 过期也不会再处理这个 node_id
+        std::thread::sleep(Duration::from_millis(50));
         assert!(mgr.evict_expired().is_empty());
     }
 }

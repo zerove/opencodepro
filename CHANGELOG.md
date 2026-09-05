@@ -148,6 +148,41 @@
 - cargo test-all: 4601/4601 通过（默认 workspace 排除 bridge 测试）
 - cargo build -p sisyphus-bridge: 编译通过（mdns-sd 0.21 + tonic 0.12）
 
+### Added (peer 协议 Phase B, 2026-09-05, TODO 8.3.1)
+- **`PeerManager` last_seen tracking + TTL 清理**（peer/manager.rs）：
+  - `last_seen: Arc<RwLock<BTreeMap<String, Instant>>>` 字段
+  - `on_peer_joined/on_peer_left` 同步维护 last_seen
+  - `touch(node_id)` 实际更新 last_seen（心跳）
+  - `evict_expired()` 真实实现：扫描 last_seen，超 peer_ttl 的广播 PeerLeft
+  - 4 个新单元测试（last_seen 跟踪 + evict_expired + touch 防过期）
+- **静态 peer fallback dialer**（peer/fallback.rs 新模块）：
+  - `StaticPeerConfig::from_types()` 从 ClusterConfig 派生
+  - `spawn_static_peers()` 启动每个 peer 一个后台 task
+  - `connect_and_join` gRPC channel + Join 握手
+  - `run_stream` 双向流：本地 manager 事件 → outbound proto；
+    对端 proto 事件 → manager.on_peer_joined/left
+  - 指数退避重连（reconnect_initial_delay → reconnect_max_delay）
+  - 5 个单元测试（config from_types + proto 转换 + endpoint parse）
+- **main.rs 集成**（crates/sisyphus-bridge/src/main.rs）：
+  - gRPC server 注册 ClusterService（Cluster proto via tonic）
+  - 读取 [cluster] config：enabled / node_id / cluster_name / peer_ttl_secs
+  - 派生 node_id：env (SISYPHUS_CLUSTER_NODE_ID / HOSTNAME) > Config > "local-node"
+  - 启动 static peer dialers（如 [cluster].peers 非空）
+  - 转换 grpc_server 为 `let mut` 支持后续 add_service 调用
+- **测试**：
+  - 33 个 peer 单元测试（之前 24 + 5 fallback + 4 新 TTL）
+  - 4 个 2 节点集成测试（保持通过）
+- **验证**：
+  - cargo test -p sisyphus-bridge --lib peer: 33/33 通过
+  - cargo test -p sisyphus-bridge --test cluster_integration: 4/4 通过
+  - cargo clippy --workspace --all-targets -- -D warnings: 0 警告
+  - cargo test-all: 4672/4672 通过
+
+### Verified (peer 协议 Phase B, 2026-09-05)
+- cargo build -p sisyphus-bridge: 编译通过（mdns-sd 0.21 + tonic 0.12）
+- 9 个新增 peer 测试通过（5 fallback + 4 TTL）
+- main.rs gRPC server 启动 ClusterService 无 panic（disable 时只 info 日志）
+
 ### Added (累计)
 - **`.rust-analyzer.json`** 锁定重型 crate 排除（sisyphus-bridge/sandbox/sandboxd/tests），
   IDE 索引内存控制在 4GB 以内

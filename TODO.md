@@ -233,10 +233,11 @@
   - ClusterServiceImpl gRPC service impl（Join + Stream）
   - 6 个 env override（SISYPHUS_CLUSTER_*）
   - ClusterConfig 校验（join_timeout ≥ 1, peer_ttl > join_timeout, peer_ttl ≥ 5）
-  - 24 个 peer 单元测试（manager + service + discovery）+ 4 个 2 节点集成测试
-  - **未完成**：bridge_service / main.rs 集成（留待后续 PR，避免 30+ 调用点改动）
-  - **未完成**：TTL 过期清理（peer_ttl 字段已就绪，evict_expired 留待 Phase B）
-  - **未完成**：static peer fallback（[cluster].peers 字段已就绪，dial 逻辑留待）
+  - 33 个 peer 单元测试（manager 16 + service 8 + discovery 4 + fallback 5）+ 4 个 2 节点集成测试
+  - **Phase B 完成** (2026-09-05)：
+    - TTL 清理：last_seen map + touch() + evict_expired() 实际实现
+    - 静态 peer fallback dialer：spawn_static_peers + 指数退避重连
+    - main.rs 集成：ClusterService 注册 + static dialers 启动
   - **未完成**：Experience CRDT 端到端 2 节点 sync（CRDT API 已就绪，peer broadcast 留待）
 - [x] **experience bank 跨实例同步**: CRDT 或 last-writer-wins 策略 (2026-09-05)
   - 设计草案：ADR-009 § Experience CRDT
