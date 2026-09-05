@@ -48,7 +48,25 @@
 ## [Unreleased]
 
 ### Added
-- **CHANGELOG.md** 项目变更日志（keep-a-changelog 格式）
+- **im → imbl 迁移遗漏修复** (TODO 8.4.2 P1 余项, 2026-09-05):
+  - 修复 `c55c586` 提交遗漏的 20 处 `tests/types_misc_v2.rs` 集成测试 `im::HashMap` 引用 → `imbl::HashMap`
+  - 文档注释 `src/types.rs` 同步更新
+  - 验证：cargo test -p sisyphus-types --test types_misc_v2 198/198 + clippy 0 警告 + test-all 4656/4656
+- **CLI 冷启动 profile + criterion bench** (TODO 7.3 第三项, 2026-09-05):
+  - 真实启动时间基线：`docs/benchmarks/cli-startup-v0.2.0-baseline.md`
+    - Release 模式中位数 10 ms（5 次测量）
+    - Debug 模式中位数 22 ms（开发者日常）
+    - 远低于 < 200 ms 目标（20x / 22x 余量）
+  - 新增 `cli_startup/config_default` criterion bench（214 ns，纯 Config 构造，CI 回归追踪）
+  - 验证 8.1.3 multi_thread runtime + spawn_blocking 优化的实测效果
+
+### Verified (2026-09-05)
+- cargo test -p sisyphus-types --test types_misc_v2: 198/198 通过
+- cargo clippy --workspace --all-targets -- -D warnings: 0 警告
+- cargo test-all: 4656/4656 通过
+- cli_startup/config_default bench: 214.47 ns（中位数）
+
+### Added (累计)
 - **`.rust-analyzer.json`** 锁定重型 crate 排除（sisyphus-bridge/sandbox/sandboxd/tests），
   IDE 索引内存控制在 4GB 以内
 - **TODO.md 阶段 7** 近期优先级规划（健康度 → 测试质量 → 性能 → DX → 文档运维）

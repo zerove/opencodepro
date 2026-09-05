@@ -10,6 +10,7 @@ use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Through
 use sisyphus_core::AnomalyDetector;
 use sisyphus_core::DagRenderer;
 use sisyphus_core::NodeStatus;
+use sisyphus_types::Config;
 
 #[inline(always)]
 fn black_box<T>(v: T) -> T {
@@ -93,10 +94,32 @@ fn bench_anomaly_detector_boundaries(c: &mut Criterion) {
     group.finish();
 }
 
+// ---------------------------------------------------------------------------
+// CLI startup 模拟（纯 Config 加载，不含 clap / dynamic loader）
+// ---------------------------------------------------------------------------
+
+/// 模拟 CLI 启动中"sisyphus_types::Config 构造"这一耗时阶段。
+///
+/// 真实启动耗时数据见 `docs/benchmarks/cli-startup-v0.2.0-baseline.md`：
+/// release 中位数 10ms，debug 中位数 22ms（包含 fork + dylib + clap）。
+///
+/// 本 bench 仅隔离 Config 部分（CI 可追踪回归），不模拟进程 fork。
+fn bench_cli_config_default(c: &mut Criterion) {
+    let mut group = c.benchmark_group("cli_startup");
+    group.bench_function("config_default", |b| {
+        b.iter(|| {
+            let cfg = Config::default();
+            let _ = black_box(&cfg);
+        });
+    });
+    group.finish();
+}
+
 criterion_group!(
     benches,
     bench_anomaly_detector,
     bench_anomaly_detector_boundaries,
-    bench_dag_renderer
+    bench_dag_renderer,
+    bench_cli_config_default
 );
 criterion_main!(benches);

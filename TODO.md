@@ -99,7 +99,11 @@
 #### 7.3 性能
 - [ ] **基准基线刷新**: `docs/benchmarks/v2-baseline-2026-08-09.md` 已有，对比 `make perf-analyze` 当前数据
 - [ ] **DAG 渲染 SVG 性能**: 大型 SOP (>200 节点) 当前渲染慢，需 lazy load + viewport
-- [ ] **TUI 启动时间**: 冷启动 < 200ms 目标，profile `sisyphus-cli` 入口
+- [x] **TUI 启动时间**: 冷启动 < 200ms 目标，profile `sisyphus-cli` 入口 (2026-09-05)
+  - Release 模式中位数 10 ms（5 次测量）；Debug 模式中位数 22 ms
+  - 详见 `docs/benchmarks/cli-startup-v0.2.0-baseline.md`
+  - 新增 `cli_startup/config_default` criterion bench（214 ns，CI 追踪回归）
+  - 远低于 < 200 ms 目标（20x / 22x 余量）
 
 #### 7.4 开发者体验
 - [x] **`make dev` 统一入口** (2026-08-31): 替代散落 make 目标；`make dev`/`ci-quick`/`dev-fmt`/`dev-clippy`/`dev-test`/`ci-bridge`
