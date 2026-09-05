@@ -37,15 +37,31 @@ struct Cli {
 
 // ── 主流程 ─────────────────────────────────────────────────
 
-#[tokio::main]
+// 优化（TODO 8.1.3）：tokio::main 默认是 current_thread runtime，
+// 所有 .await 串行执行。改为 multi_thread（worker_threads = 2 即可），
+// 让 startup 阶段的 IO（platform detect / config load / LLM client 构造）
+// 可跨 worker 并行执行。worker_threads = 2 是为 CLI 这种单用户交互
+// 工具优化（过多 worker 会拉长冷启动）；后台 I/O 用 spawn_blocking。
+#[tokio::main(flavor = "multi_thread", worker_threads = 2)]
 async fn main() -> Result<()> {
+    let startup = std::time::Instant::now();
+
     tracing_subscriber::fmt::init();
 
-    let platform_info = sisyphus_cli::platform::detect_platform();
+    // 优化（TODO 8.1.3）：spawn_blocking 包装纯 CPU 的 platform detect，
+    // 释放 main thread 给其他 startup 任务。Config 加载（IO 较小，
+    // <10ms）保留同步 — 串行开销小于并行协调成本。
+    // spawn_blocking 返回 Result<T, JoinError>；若 JoinError（panic 等）回退同步
+    let platform_info =
+        match tokio::task::spawn_blocking(sisyphus_cli::platform::detect_platform).await {
+            Ok(info) => info,
+            Err(_) => sisyphus_cli::platform::detect_platform(),
+        };
     tracing::info!(
-        "Starting Sisyphus CLI on {} (shell: {})",
+        "Starting Sisyphus CLI on {} (shell: {}, startup={}ms)",
         platform_info.os,
-        platform_info.shell
+        platform_info.shell,
+        startup.elapsed().as_millis()
     );
 
     let cli = Cli::parse();

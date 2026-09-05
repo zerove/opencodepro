@@ -49,6 +49,18 @@ impl MySisyphusBridge {
 
         let (result_str, _final_id) = self.run_execution(sop_id.clone(), &project_id, None).await?;
 
+        // 大 payload 检测（TODO 8.1.2）：unary execute_sop 把 result 整体放进
+        // string response。如果 >1MB，建议改用 stream_execution（server-streaming），
+        // 通过 mpsc 通道产出事件，避免 protobuf 默认 2GB 单消息限制。
+        const LARGE_PAYLOAD_THRESHOLD: usize = 1_048_576; // 1 MiB
+        if result_str.len() > LARGE_PAYLOAD_THRESHOLD {
+            tracing::warn!(
+                sop_id = %sop_id,
+                payload_bytes = result_str.len(),
+                "execute_sop result exceeds 1MB; recommend using stream_execution RPC for large results"
+            );
+        }
+
         self.publish_event(sisyphus_bridge_api::BridgeEvent {
             event: Some(sisyphus_bridge_api::bridge_event::Event::OpUpdate(
                 sisyphus_bridge_api::OperationUpdate {
@@ -143,6 +155,17 @@ impl MySisyphusBridge {
         match result {
             Ok(bytes) => {
                 let result_str = String::from_utf8_lossy(&bytes).to_string();
+                // 大 payload 检测（TODO 8.1.2）：ExecuteToolResponse.result_json
+                // 是 string。>1MB 时记录 warn，建议改用 server-streaming 端点
+                // （未来扩展）或拆分多 RPC 调用。
+                const LARGE_PAYLOAD_THRESHOLD: usize = 1_048_576; // 1 MiB
+                if result_str.len() > LARGE_PAYLOAD_THRESHOLD {
+                    tracing::warn!(
+                        tool_id = %tool_id,
+                        payload_bytes = result_str.len(),
+                        "execute_tool result exceeds 1MB; recommend server-streaming for large tool outputs"
+                    );
+                }
                 record_bridge_request(true, 0.0);
                 Ok(Response::new(ExecuteToolResponse {
                     status: "SUCCESS".into(),

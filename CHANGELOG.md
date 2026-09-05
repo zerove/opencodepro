@@ -147,6 +147,13 @@
   - throughput 接近 O(N) 线性扩展，无 O(N²) 性能坍塌
   - Baseline：`docs/benchmarks/dag-renderer-v0.2.0-baseline.md`
     + `target/criterion/dag_renderer/v0_2_0_dag_renderer/`
+- **bridge gRPC 大 payload 检测** (TODO 8.1 第二项):
+  - `execute_sop_impl` + `execute_tool_impl` 加 >1MB warn 日志
+  - 引导客户端改用 `stream_execution`（已 server-streaming）
+- **CLI 启动并行化** (TODO 8.1 第三项):
+  - `#[tokio::main]` → `#[tokio::main(flavor = "multi_thread", worker_threads = 2)]`
+  - `platform::detect_platform` 走 `spawn_blocking`
+  - 加 startup 时间日志便于诊断
 - **Docker Release 自动发布** (TODO 8.6 第三项):
   - 新增 `.github/workflows/docker-release.yml` (123 行)：
     push tag `v*` 自动构建 + 推送至 ghcr.io

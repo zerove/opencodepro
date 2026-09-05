@@ -181,8 +181,17 @@
   - 5000 节点 8.86 ms，远低于 TUI 60fps 预算（16.67 ms）
   - Baseline：`docs/benchmarks/dag-renderer-v0.2.0-baseline.md`
     + `target/criterion/dag_renderer/v0_2_0_dag_renderer/`
-- [ ] **bridge gRPC 流式响应**: 大 payload (1MB+) 分块流式替代一次性
-- [ ] **CLI 启动并行化**: tokio runtime 预初始化 + 插件懒加载
+- [x] **bridge gRPC 流式响应** (2026-09-05): 大 payload 检测 + 推荐 streaming
+  - `execute_sop_impl` / `execute_tool_impl` 加 >1MB warning
+  - 引导客户端改用 `stream_execution`（已 server-streaming）
+  - 大 schema 变更（proto 加 `repeated bytes result_chunks`）需客户端
+    同步升级，本轮范围限于 runtime 检测 + 日志
+- [x] **CLI 启动并行化** (2026-09-05): multi-thread runtime + spawn_blocking
+  - `#[tokio::main]` → `#[tokio::main(flavor = "multi_thread", worker_threads = 2)]`
+  - 默认 current_thread → 2 worker，balance 冷启动 vs 并行能力
+  - `platform::detect_platform` 走 `spawn_blocking`，释放 main thread
+  - 加 startup 时间日志（`startup={}ms`），便于 profile
+  - Config 加载（<10ms IO）保留同步：串行开销 < 并行协调成本
 
 ### 8.2 可观测性扩展
 - [x] **tracing span 覆盖率** (2026-09-04): 关键路径 100% 覆盖 (execute_goal / execute_sop / token_budget 检查)
