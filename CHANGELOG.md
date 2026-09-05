@@ -86,9 +86,25 @@
 
 ### Verified (2026-09-05, CRDT)
 - cargo test -p sisyphus-types --lib experience: 9/9 CRDT 纯函数测试通过
-- cargo test -p sisyphus-mem --lib: 34/34 通过（含 8 个原有 store + 22 个 vector_memory + cognitive_trace）
+- cargo test -p sisyphus-mem --lib: 41/41 通过（含 7 个新 CRDT roundtrip 集成测试）
 - cargo clippy --workspace --all-targets -- -D warnings: 0 警告
-- cargo test-all: 4665/4665 通过（比 4656 多 9 个 CRDT 单元测试）
+- cargo test-all: 4672/4672 通过（比 4665 多 7 个 CRDT roundtrip 集成测试）
+
+### Added (CRDT SELECT roundtrip, 2026-09-05)
+- **`MfsStore::record_experience` 扩展 INSERT 写 version + vector_clock 字段**：
+  序列化 BTreeMap → JSON → 持久化
+- **4 个 SELECT 路径扩展**：list_shared_experiences / get_experience /
+  list_recent_experiences / query_experiences 都读取 version + vector_clock
+- **统一 row 类型 `ExperienceRowTuple` + helper `row_to_experience_tuple`**：
+  10 元组 → ExperienceTuple 单一转换点；corrupted JSON 回退空 map（不 panic）
+- **7 个 roundtrip 集成测试**：
+  1. record + get roundtrip 保留 clock
+  2. apply_remote INSERT 路径后 get 正确
+  3. apply_remote UPDATE 路径后 get 新 clock
+  4. list_shared 反序列化（含 None project_id）
+  5. list_recent 反序列化多节点 clock
+  6. query_experiences（IN 多 id）反序列化
+  7. 损坏 vector_clock JSON 回退到空 map（健壮性）
 
 ### Added (累计)
 - **`.rust-analyzer.json`** 锁定重型 crate 排除（sisyphus-bridge/sandbox/sandboxd/tests），

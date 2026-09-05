@@ -237,7 +237,8 @@
   - MfsStore::apply_remote_experience API（原子 CAS + Applied/Kept/Equal 决策）
   - VectorExperienceBank 自动 bump 本地 version
   - 9 个 CRDT 纯函数单元测试（types 层）
-  - 集成测试暂留待 SELECT 路径扩展后 + 8.3.1 peer 协议端到端 2 节点 sync
+  - 7 个 roundtrip 集成测试（SELECT 反序列化 + corrupted JSON 健壮性）完成
+  - 端到端 2 节点 sync 留待 8.3.1 peer 协议落地
 - [x] **共识机制 benchmark** (2026-09-05): ClusterConsensus 5 节点 latency bench
   - 改进 `crates/sisyphus-bridge/src/consensus.rs`：
     * 加 `PeerProposer` trait（可注入 mock）

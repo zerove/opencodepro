@@ -13,6 +13,45 @@ use tokio::sync::mpsc;
 use crate::error::{MemError, MemResult};
 use crate::types::{Snapshot, WriteOp};
 
+/// CRDT (TODO 8.3.2) SELECT 反序列化的统一 row 元组类型。
+///
+/// 4 个 SELECT 路径（list_shared / get_experience / list_recent / query_experiences）
+/// 都返回这个 10 元组。vector_clock 是 JSON 序列化的 BTreeMap。
+type ExperienceRowTuple = (
+    String,         // context_text
+    String,         // context_hash
+    Option<String>, // action_id
+    Option<String>, // project_id
+    bool,           // outcome_success
+    f64,            // deviation_score
+    i64,            // cost
+    i64,            // timestamp
+    i64,            // version (CRDT)
+    String,         // vector_clock JSON (CRDT)
+);
+
+/// CRDT row → ExperienceTuple 转换。失败时 vector_clock 反序列化回退为空 map。
+fn row_to_experience_tuple(row: ExperienceRowTuple) -> sisyphus_types::experience::ExperienceTuple {
+    let (ctx_text, ctx_hash, action_id, proj_id, success, dev, cost, ts, ver, vc_json) = row;
+    let vector_clock: std::collections::BTreeMap<String, u64> =
+        serde_json::from_str(&vc_json).unwrap_or_default();
+    sisyphus_types::experience::ExperienceTuple {
+        context_text: ctx_text,
+        context_hash: ctx_hash,
+        action_id: action_id.unwrap_or_else(|| "unknown".to_string()),
+        project_id: proj_id,
+        outcome_success: success,
+        deviation_score: dev,
+        cost: cost as u64,
+        timestamp: ts as u64,
+        embedding: None,
+        visual_embedding: None,
+        insight: None,
+        version: ver as u64,
+        vector_clock,
+    }
+}
+
 /// Multi-Frontier Store: L1 (LRU cache) + L2 (SQLite) with async write buffering.
 pub struct MfsStore {
     pub(crate) l1: Arc<Mutex<LruCache<String, serde_json::Value>>>,
@@ -503,9 +542,14 @@ impl MfsStore {
         &self,
         exp: &sisyphus_types::experience::ExperienceTuple,
     ) -> Result<()> {
+        let vc_json = serde_json::to_string(&exp.vector_clock)
+            .context("Failed to serialize vector_clock for record_experience")?;
         sqlx::query(
-            "INSERT INTO experiences (id, context_text, context_hash, action_id, project_id, outcome_success, deviation_score, cost, timestamp) 
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            "INSERT INTO experiences
+                (id, context_text, context_hash, action_id, project_id,
+                 outcome_success, deviation_score, cost, timestamp,
+                 version, vector_clock)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(format!("exp:{}", exp.timestamp))
         .bind(&exp.context_text)
@@ -516,12 +560,19 @@ impl MfsStore {
         .bind(exp.deviation_score)
         .bind(exp.cost as i64)
         .bind(exp.timestamp as i64)
+        .bind(exp.version as i64)
+        .bind(&vc_json)
         .execute(&self.l2)
         .await
         .context("Failed to record experience")?;
         Ok(())
     }
 
+    /// CRDT (TODO 8.3.2) SELECT 反序列化的统一 row 类型。
+    ///
+    /// 4 个 SELECT 路径（list_shared / get_experience / list_recent / query_experiences）
+    /// 都返回这个 10 元组。vector_clock 是 JSON 序列化的 BTreeMap。
+    /// 放在 impl 外做 type alias，绕过 inherent associated types 不稳定限制。
     /// Update the project ownership of an experience.
     /// Passing `None` makes the experience globally shared (visible to all projects).
     pub async fn update_experience_project(
@@ -667,47 +718,14 @@ impl MfsStore {
     pub async fn list_shared_experiences(
         &self,
     ) -> Result<Vec<sisyphus_types::experience::ExperienceTuple>> {
-        let rows = sqlx::query_as::<
-            _,
-            (
-                String,
-                String,
-                Option<String>,
-                Option<String>,
-                bool,
-                f64,
-                i64,
-                i64,
-            ),
-        >(
-            "SELECT context_text, context_hash, action_id, project_id, outcome_success, deviation_score, cost, timestamp FROM experiences WHERE project_id IS NULL ORDER BY timestamp DESC",
+        let rows = sqlx::query_as::<_, ExperienceRowTuple>(
+            "SELECT context_text, context_hash, action_id, project_id, outcome_success, deviation_score, cost, timestamp, version, vector_clock FROM experiences WHERE project_id IS NULL ORDER BY timestamp DESC",
         )
         .fetch_all(&self.l2)
         .await
         .context("Failed to list shared experiences")?;
 
-        Ok(rows
-            .into_iter()
-            .map(
-                |(ctx_text, ctx_hash, action_id, proj_id, success, dev, cost, ts)| {
-                    sisyphus_types::experience::ExperienceTuple {
-                        context_text: ctx_text,
-                        context_hash: ctx_hash,
-                        action_id: action_id.unwrap_or_else(|| "unknown".to_string()),
-                        project_id: proj_id,
-                        outcome_success: success,
-                        deviation_score: dev,
-                        cost: cost as u64,
-                        timestamp: ts as u64,
-                        embedding: None,
-                        visual_embedding: None,
-                        insight: None,
-                        version: 0,
-                        vector_clock: std::collections::BTreeMap::new(),
-                    }
-                },
-            )
-            .collect())
+        Ok(rows.into_iter().map(row_to_experience_tuple).collect())
     }
 
     /// Load a single experience entry by id.
@@ -717,32 +735,14 @@ impl MfsStore {
         &self,
         id: &str,
     ) -> Result<Option<sisyphus_types::experience::ExperienceTuple>> {
-        let row = sqlx::query_as::<_, (
-            String, String, Option<String>, Option<String>, bool, f64, i64, i64
-        )>("SELECT context_text, context_hash, action_id, project_id, outcome_success, deviation_score, cost, timestamp FROM experiences WHERE id = ?")
+        let row = sqlx::query_as::<_, ExperienceRowTuple>(
+            "SELECT context_text, context_hash, action_id, project_id, outcome_success, deviation_score, cost, timestamp, version, vector_clock FROM experiences WHERE id = ?",
+        )
         .bind(id)
         .fetch_optional(&self.l2)
         .await?;
 
-        if let Some((ctx_text, ctx_hash, action_id, proj_id, success, dev, cost, ts)) = row {
-            Ok(Some(sisyphus_types::experience::ExperienceTuple {
-                context_text: ctx_text,
-                context_hash: ctx_hash,
-                action_id: action_id.unwrap_or_else(|| "unknown".to_string()),
-                project_id: proj_id,
-                outcome_success: success,
-                deviation_score: dev,
-                cost: cost as u64,
-                timestamp: ts as u64,
-                embedding: None,
-                visual_embedding: None,
-                insight: None,
-                version: 0,
-                vector_clock: std::collections::BTreeMap::new(),
-            }))
-        } else {
-            Ok(None)
-        }
+        Ok(row.map(row_to_experience_tuple))
     }
 
     /// 列举最近 N 条经验（时间倒序），用于词法回退检索。
@@ -753,48 +753,15 @@ impl MfsStore {
         &self,
         limit: usize,
     ) -> Result<Vec<sisyphus_types::experience::ExperienceTuple>> {
-        let rows = sqlx::query_as::<
-            _,
-            (
-                String,
-                String,
-                Option<String>,
-                Option<String>,
-                bool,
-                f64,
-                i64,
-                i64,
-            ),
-        >(
-            "SELECT context_text, context_hash, action_id, project_id, outcome_success, deviation_score, cost, timestamp FROM experiences ORDER BY timestamp DESC LIMIT ?",
+        let rows = sqlx::query_as::<_, ExperienceRowTuple>(
+            "SELECT context_text, context_hash, action_id, project_id, outcome_success, deviation_score, cost, timestamp, version, vector_clock FROM experiences ORDER BY timestamp DESC LIMIT ?",
         )
         .bind(limit as i64)
         .fetch_all(&self.l2)
         .await
         .context("Failed to list recent experiences")?;
 
-        Ok(rows
-            .into_iter()
-            .map(
-                |(ctx_text, ctx_hash, action_id, proj_id, success, dev, cost, ts)| {
-                    sisyphus_types::experience::ExperienceTuple {
-                        context_text: ctx_text,
-                        context_hash: ctx_hash,
-                        action_id: action_id.unwrap_or_else(|| "unknown".to_string()),
-                        project_id: proj_id,
-                        outcome_success: success,
-                        deviation_score: dev,
-                        cost: cost as u64,
-                        timestamp: ts as u64,
-                        embedding: None,
-                        visual_embedding: None,
-                        insight: None,
-                        version: 0,
-                        vector_clock: std::collections::BTreeMap::new(),
-                    }
-                },
-            )
-            .collect())
+        Ok(rows.into_iter().map(row_to_experience_tuple).collect())
     }
 
     /// Query the experience bank with a structured predicate.
@@ -812,7 +779,7 @@ impl MfsStore {
         }
 
         let mut query_str = String::from(
-            "SELECT context_text, context_hash, action_id, project_id, outcome_success, deviation_score, cost, timestamp FROM experiences WHERE id IN (",
+            "SELECT context_text, context_hash, action_id, project_id, outcome_success, deviation_score, cost, timestamp, version, vector_clock FROM experiences WHERE id IN (",
         );
         let placeholders: Vec<String> = (0..ids.len()).map(|_| "?".to_string()).collect();
         query_str.push_str(&placeholders.join(","));
@@ -825,19 +792,7 @@ impl MfsStore {
             query_str.push_str(" AND outcome_success = 1");
         }
 
-        let mut query = sqlx::query_as::<
-            _,
-            (
-                String,
-                String,
-                Option<String>,
-                Option<String>,
-                bool,
-                f64,
-                i64,
-                i64,
-            ),
-        >(&query_str);
+        let mut query = sqlx::query_as::<_, ExperienceRowTuple>(&query_str);
 
         for id in ids {
             query = query.bind(id);
@@ -850,30 +805,7 @@ impl MfsStore {
         let rows =
             query.fetch_all(&self.l2).await.context("Failed to fetch experiences from L2")?;
 
-        let experiences = rows
-            .into_iter()
-            .map(
-                |(ctx_text, ctx_hash, action_id, proj_id, success, dev, cost, ts)| {
-                    sisyphus_types::experience::ExperienceTuple {
-                        context_text: ctx_text,
-                        context_hash: ctx_hash,
-                        action_id: action_id.unwrap_or_else(|| "unknown".to_string()),
-                        project_id: proj_id,
-                        outcome_success: success,
-                        deviation_score: dev,
-                        cost: cost as u64,
-                        timestamp: ts as u64,
-                        embedding: None,
-                        visual_embedding: None,
-                        insight: None,
-                        version: 0,
-                        vector_clock: std::collections::BTreeMap::new(),
-                    }
-                },
-            )
-            .collect();
-
-        Ok(experiences)
+        Ok(rows.into_iter().map(row_to_experience_tuple).collect())
     }
 }
 
@@ -1202,9 +1134,218 @@ mod tests {
 
     // ── CRDT (TODO 8.3.2) 集成测试 ───────────────────────────────────
 
-    // CRDT (TODO 8.3.2) 集成测试: 端到端 roundtrip 需要扩展 SELECT
-    // 反序列化 version/vector_clock，留待 8.3.1 peer 协议一起做。当前覆盖
-    // 见 sisyphus-types experience::crdt_tests（9 个纯函数测试）。
+    /// In-memory test store helper (mod tests 私有副本，避免借用 cognitive_trace_tests::test_store)
+    async fn test_store() -> MfsStore {
+        MfsStore::new("sqlite::memory:", &sisyphus_types::CacheConfig::default())
+            .await
+            .expect("Failed to init store")
+    }
+
+    /// 构造一个带 version + vector_clock 的 ExperienceTuple 用于测试。
+    fn make_exp_with_clock(
+        timestamp: u64,
+        text: &str,
+        project: Option<&str>,
+        node_id: &str,
+        version: u64,
+    ) -> sisyphus_types::experience::ExperienceTuple {
+        let mut vc = std::collections::BTreeMap::new();
+        vc.insert(node_id.to_string(), version);
+        sisyphus_types::experience::ExperienceTuple {
+            context_text: text.into(),
+            context_hash: format!("hash-{text}"),
+            action_id: "act".into(),
+            project_id: project.map(|s| s.into()),
+            outcome_success: true,
+            deviation_score: 0.1,
+            cost: 10,
+            timestamp,
+            embedding: None,
+            visual_embedding: None,
+            insight: None,
+            version,
+            vector_clock: vc,
+        }
+    }
+
+    /// record_experience + get_experience roundtrip：version + vector_clock 持久化并反序列化
+    #[tokio::test]
+    async fn test_crdt_record_and_get_roundtrip_preserves_clock() {
+        let store = test_store().await;
+        let exp = make_exp_with_clock(
+            1_700_000_000_100,
+            "crdt-roundtrip",
+            Some("proj-a"),
+            "node-a",
+            7,
+        );
+        store.record_experience(&exp).await.expect("record failed");
+
+        let got =
+            store.get_experience("exp:1700000000100").await.expect("get failed").expect("missing");
+
+        assert_eq!(got.version, 7);
+        assert_eq!(got.vector_clock.get("node-a"), Some(&7));
+        assert_eq!(got.context_text, "crdt-roundtrip");
+    }
+
+    /// apply_remote_experience INSERT 路径后 get_experience 也能读回正确 clock
+    #[tokio::test]
+    async fn test_crdt_apply_remote_insert_then_get_preserves_clock() {
+        let store = test_store().await;
+        let exp = make_exp_with_clock(
+            1_700_000_000_200,
+            "remote-insert",
+            Some("proj-a"),
+            "node-b",
+            3,
+        );
+        let result = store.apply_remote_experience(&exp).await.expect("apply failed");
+        assert_eq!(result, crate::store::ApplyResult::Applied);
+
+        let got =
+            store.get_experience("exp:1700000000200").await.expect("get failed").expect("missing");
+
+        assert_eq!(got.version, 3);
+        assert_eq!(got.vector_clock.get("node-b"), Some(&3));
+    }
+
+    /// apply_remote_experience UPDATE 路径后 get_experience 读回新 clock
+    #[tokio::test]
+    async fn test_crdt_apply_remote_update_then_get_preserves_new_clock() {
+        let store = test_store().await;
+        // local version 1
+        let local = make_exp_with_clock(1_700_000_000_300, "old-text", Some("proj-a"), "node-a", 1);
+        store.record_experience(&local).await.expect("record local failed");
+
+        // remote version 5 with 2 nodes
+        let mut remote_vc = std::collections::BTreeMap::new();
+        remote_vc.insert("node-a".to_string(), 3);
+        remote_vc.insert("node-b".to_string(), 2);
+        let remote = sisyphus_types::experience::ExperienceTuple {
+            context_text: "new-text".into(),
+            context_hash: "hash-new".into(),
+            action_id: "act".into(),
+            project_id: Some("proj-a".into()),
+            outcome_success: true,
+            deviation_score: 0.2,
+            cost: 20,
+            timestamp: 1_700_000_000_300,
+            embedding: None,
+            visual_embedding: None,
+            insight: None,
+            version: 5,
+            vector_clock: remote_vc.clone(),
+        };
+        let result = store.apply_remote_experience(&remote).await.expect("apply failed");
+        assert_eq!(result, crate::store::ApplyResult::Applied);
+
+        let got =
+            store.get_experience("exp:1700000000300").await.expect("get failed").expect("missing");
+
+        assert_eq!(got.version, 5);
+        assert_eq!(got.vector_clock, remote_vc);
+        assert_eq!(got.context_text, "new-text");
+    }
+
+    /// list_shared_experiences 反序列化 version + vector_clock
+    #[tokio::test]
+    async fn test_crdt_list_shared_preserves_clock() {
+        let store = test_store().await;
+        // share via update_experience_project (project_id = None)
+        let exp = make_exp_with_clock(1_700_000_000_400, "shared-text", None, "node-x", 11);
+        store.record_experience(&exp).await.expect("record failed");
+
+        let shared = store.list_shared_experiences().await.expect("list failed");
+
+        assert_eq!(shared.len(), 1);
+        assert_eq!(shared[0].version, 11);
+        assert_eq!(shared[0].vector_clock.get("node-x"), Some(&11));
+        assert_eq!(shared[0].project_id, None);
+    }
+
+    /// list_recent_experiences 反序列化 vector_clock（含多节点）
+    #[tokio::test]
+    async fn test_crdt_list_recent_preserves_multi_node_clock() {
+        let store = test_store().await;
+        let mut vc = std::collections::BTreeMap::new();
+        vc.insert("node-a".to_string(), 5);
+        vc.insert("node-b".to_string(), 3);
+        let exp = sisyphus_types::experience::ExperienceTuple {
+            context_text: "multi-node".into(),
+            context_hash: "hash-multi".into(),
+            action_id: "act".into(),
+            project_id: Some("proj-x".into()),
+            outcome_success: true,
+            deviation_score: 0.0,
+            cost: 0,
+            timestamp: 1_700_000_000_500,
+            embedding: None,
+            visual_embedding: None,
+            insight: None,
+            version: 8,
+            vector_clock: vc.clone(),
+        };
+        store.record_experience(&exp).await.expect("record failed");
+
+        let recent = store.list_recent_experiences(10).await.expect("list failed");
+
+        assert_eq!(recent.len(), 1);
+        assert_eq!(recent[0].version, 8);
+        assert_eq!(recent[0].vector_clock, vc);
+    }
+
+    /// query_experiences（多 id IN 路径）反序列化 vector_clock
+    #[tokio::test]
+    async fn test_crdt_query_experiences_preserves_clock() {
+        let store = test_store().await;
+        let exp1 = make_exp_with_clock(1_700_000_000_601, "q1", Some("proj-q"), "node-q", 2);
+        let exp2 = make_exp_with_clock(1_700_000_000_602, "q2", Some("proj-q"), "node-q", 4);
+        store.record_experience(&exp1).await.expect("rec 1");
+        store.record_experience(&exp2).await.expect("rec 2");
+
+        let results = store
+            .query_experiences(
+                &[
+                    "exp:1700000000601".to_string(),
+                    "exp:1700000000602".to_string(),
+                ],
+                Some("proj-q"),
+                false,
+            )
+            .await
+            .expect("query failed");
+
+        assert_eq!(results.len(), 2);
+        for r in &results {
+            assert!(r.version >= 2);
+            assert_eq!(r.vector_clock.get("node-q"), Some(&r.version));
+        }
+    }
+
+    /// 损坏的 vector_clock JSON 应回退到空 map（不 panic）
+    #[tokio::test]
+    async fn test_crdt_corrupted_vector_clock_falls_back_to_empty() {
+        let store = test_store().await;
+        // 直接插入合法记录
+        let exp = make_exp_with_clock(1_700_000_000_700, "baseline", Some("proj-x"), "node-x", 1);
+        store.record_experience(&exp).await.expect("rec failed");
+
+        // 通过 sqlite 直接注入损坏的 vector_clock
+        sqlx::query("UPDATE experiences SET vector_clock = ? WHERE id = ?")
+            .bind("{not valid json")
+            .bind("exp:1700000000700")
+            .execute(&store.l2)
+            .await
+            .expect("corrupt update");
+
+        let got =
+            store.get_experience("exp:1700000000700").await.expect("get failed").expect("missing");
+
+        // version 仍可读，vector_clock 回退为空
+        assert_eq!(got.version, 1);
+        assert!(got.vector_clock.is_empty());
+    }
 }
 
 #[cfg(test)]
