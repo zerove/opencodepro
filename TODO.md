@@ -223,9 +223,13 @@
 
 ### 8.3 分布式 v2 启动
 - [ ] **peer 协议真实环境测试**: 3 节点 bridge cluster 互连
-  - 现有 ClusterConsensus 是 no-op（仅 logging）；真实 peer 协议需 gRPC 双向流
-  - 当前本轮完成 8.3.3（架构 + bench），8.3.1/8.3.2 留待 v0.3+
+  - 设计草案：`docs/adr/009-distributed-v2-architecture.md` § Peer 协议
+  - gRPC bidirectional streaming + mDNS 服务发现
+  - 实施路径：Phase A (1 周) 留待 v0.3+
 - [ ] **experience bank 跨实例同步**: CRDT 或 last-writer-wins 策略
+  - 设计草案：ADR-009 § Experience CRDT
+  - LWW-Element-Set + vector clock
+  - 实施路径：Phase B (1 周) 留待 v0.3+
 - [x] **共识机制 benchmark** (2026-09-05): ClusterConsensus 5 节点 latency bench
   - 改进 `crates/sisyphus-bridge/src/consensus.rs`：
     * 加 `PeerProposer` trait（可注入 mock）
