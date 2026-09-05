@@ -85,6 +85,8 @@ impl LogicalSOPSynthesizer {
                 .as_secs(),
             embedding: None,
             insight: Some(feedback.to_string()),
+            version: 0,
+            vector_clock: std::collections::BTreeMap::new(),
         };
         let _ = self.retriever.record_experience(exp).await;
     }

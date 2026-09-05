@@ -995,6 +995,8 @@ impl StrategicManager {
             visual_embedding: None,
             embedding: None,
             insight,
+            version: 0,
+            vector_clock: std::collections::BTreeMap::new(),
         };
         let _ = self.experience_bank.record(exp_to_record).await;
 

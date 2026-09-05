@@ -230,10 +230,14 @@
   - 设计草案：`docs/adr/009-distributed-v2-architecture.md` § Peer 协议
   - gRPC bidirectional streaming + mDNS 服务发现
   - 实施路径：Phase A (1 周) 留待 v0.3+
-- [ ] **experience bank 跨实例同步**: CRDT 或 last-writer-wins 策略
+- [x] **experience bank 跨实例同步**: CRDT 或 last-writer-wins 策略 (2026-09-05)
   - 设计草案：ADR-009 § Experience CRDT
-  - LWW-Element-Set + vector clock
-  - 实施路径：Phase B (1 周) 留待 v0.3+
+  - LWW-Element-Set + vector clock：merge_crdt 纯函数 + bump_local_clock
+  - store.rs 加 version/vector_clock 列 + ALTER TABLE migration
+  - MfsStore::apply_remote_experience API（原子 CAS + Applied/Kept/Equal 决策）
+  - VectorExperienceBank 自动 bump 本地 version
+  - 9 个 CRDT 纯函数单元测试（types 层）
+  - 集成测试暂留待 SELECT 路径扩展后 + 8.3.1 peer 协议端到端 2 节点 sync
 - [x] **共识机制 benchmark** (2026-09-05): ClusterConsensus 5 节点 latency bench
   - 改进 `crates/sisyphus-bridge/src/consensus.rs`：
     * 加 `PeerProposer` trait（可注入 mock）

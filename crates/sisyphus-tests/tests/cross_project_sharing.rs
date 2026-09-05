@@ -42,6 +42,8 @@ fn make_experience(context: &str, project_id: Option<&str>, timestamp: u64) -> E
         embedding: None,
         visual_embedding: None,
         insight: None,
+        version: 0,
+        vector_clock: std::collections::BTreeMap::new(),
     }
 }
 

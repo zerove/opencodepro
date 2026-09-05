@@ -1,6 +1,6 @@
 # ADR-009: 分布式 v2 架构草案（peer 协议 + Experience CRDT + 共识）
 
-**Status**: Proposed (2026-09-05)
+**Status**: Partially Accepted (2026-09-05) — § 2 Experience CRDT 核心已实现，§ 1 peer 协议留待 v0.3+
 **Deciders**: core team
 **Supersedes**: N/A
 

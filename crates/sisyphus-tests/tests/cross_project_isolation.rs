@@ -636,6 +636,8 @@ async fn test_experience_bank_cross_project_isolation() {
             embedding: None,
             visual_embedding: None,
             insight: None,
+            version: 0,
+            vector_clock: std::collections::BTreeMap::new(),
         })
         .await
         .expect("Record A failed");
@@ -654,6 +656,8 @@ async fn test_experience_bank_cross_project_isolation() {
             embedding: None,
             visual_embedding: None,
             insight: None,
+            version: 0,
+            vector_clock: std::collections::BTreeMap::new(),
         })
         .await
         .expect("Record B failed");

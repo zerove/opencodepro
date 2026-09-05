@@ -20,6 +20,20 @@ pub struct MfsStore {
     pub(crate) write_tx: mpsc::UnboundedSender<WriteOp>,
 }
 
+/// CRDT (TODO 8.3.2) `apply_remote_experience` 的返回结果。
+///
+/// 与 `sisyphus_types::experience::MergeDecision` 1:1 对应，但用
+/// 业务语义命名（Applied / Kept / Equal），便于调用方分支处理。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ApplyResult {
+    /// remote 胜出，已写入本地
+    Applied,
+    /// 本地版本严格新，保留本地
+    Kept,
+    /// 完全等价，无需操作
+    Equal,
+}
+
 /// 内部 `new` 返回 [`MemError`]，对外 API 仍保留 `anyhow::Result` 以兼容 30+ 调用点。
 async fn new_internal(db_url: &str, config: &sisyphus_types::CacheConfig) -> MemResult<MfsStore> {
     let capacity = NonZeroUsize::new(config.l1_capacity)
@@ -130,11 +144,46 @@ impl MfsStore {
                 outcome_success BOOLEAN NOT NULL,
                 deviation_score REAL NOT NULL,
                 cost INTEGER NOT NULL,
-                timestamp INTEGER NOT NULL
+                timestamp INTEGER NOT NULL,
+                -- CRDT (TODO 8.3.2 / ADR-009 § 2): version + vector_clock for LWW-Element-Set
+                version INTEGER NOT NULL DEFAULT 0,
+                vector_clock TEXT NOT NULL DEFAULT '{}'
             )",
         )
         .execute(&pool)
         .await?;
+
+        // CRDT 迁移 (TODO 8.3.2): 旧库 ALTER TABLE 加 version/vector_clock 列
+        let exp_columns =
+            sqlx::query_as::<_, (String,)>("SELECT name FROM pragma_table_info('experiences')")
+                .fetch_all(&pool)
+                .await
+                .map_err(|e| MemError::Sqlx {
+                    context: "query experiences schema",
+                    source: e,
+                })?;
+        let has_version = exp_columns.iter().any(|(name,)| name == "version");
+        let has_vector_clock = exp_columns.iter().any(|(name,)| name == "vector_clock");
+        if !has_version {
+            sqlx::query("ALTER TABLE experiences ADD COLUMN version INTEGER NOT NULL DEFAULT 0")
+                .execute(&pool)
+                .await
+                .map_err(|e| MemError::Sqlx {
+                    context: "add version column",
+                    source: e,
+                })?;
+        }
+        if !has_vector_clock {
+            sqlx::query(
+                "ALTER TABLE experiences ADD COLUMN vector_clock TEXT NOT NULL DEFAULT '{}'",
+            )
+            .execute(&pool)
+            .await
+            .map_err(|e| MemError::Sqlx {
+                context: "add vector_clock column",
+                source: e,
+            })?;
+        }
 
         sqlx::query("CREATE INDEX IF NOT EXISTS idx_exp_project ON experiences(project_id);")
             .execute(&pool)
@@ -489,6 +538,131 @@ impl MfsStore {
         Ok(result.rows_affected() > 0)
     }
 
+    /// CRDT (TODO 8.3.2 / ADR-009 § 2): 原子比较并应用 remote experience。
+    ///
+    /// 三种返回：
+    /// - `Applied`: remote 胜出，已写入本地（merge_crdt 决定 ApplyRemote）
+    /// - `Kept`: 本地版本严格新（merge_crdt 决定 KeepLocal）
+    /// - `Equal`: 完全等价，无需操作
+    ///
+    /// 实现要点：
+    /// 1. SELECT 读本地 (version, vector_clock)
+    /// 2. 调用 `merge_crdt` 决策
+    /// 3. 如果 ApplyRemote，用 UPDATE 原子覆盖 payload 字段
+    /// 4. 不存在 id 时直接 INSERT（视为新建）
+    ///
+    /// **注意**: 不是严格意义上的 CAS（缺少乐观锁），但配合 version 字段做后置校验：
+    /// apply 之后再读一次，若发现中间有并发修改则放弃（callers 需重试）。
+    pub async fn apply_remote_experience(
+        &self,
+        exp: &sisyphus_types::experience::ExperienceTuple,
+    ) -> Result<ApplyResult> {
+        let id = format!("exp:{}", exp.timestamp);
+
+        // 1. 读本地状态
+        let local: Option<(i64, String, i64)> =
+            sqlx::query_as("SELECT version, vector_clock, timestamp FROM experiences WHERE id = ?")
+                .bind(&id)
+                .fetch_optional(&self.l2)
+                .await
+                .context("Failed to query local experience for CRDT merge")?;
+
+        let (local_ver, local_vc_json) = match local {
+            Some((v, vc, _)) => (v as u64, vc),
+            None => {
+                // 本地不存在 → 直接 INSERT（视为新建），返回 Applied
+                self.insert_experience_full(exp).await?;
+                return Ok(ApplyResult::Applied);
+            },
+        };
+
+        let local_vc: std::collections::BTreeMap<String, u64> =
+            serde_json::from_str(&local_vc_json).unwrap_or_default();
+
+        // 2. CRDT 决策
+        let decision = sisyphus_types::experience::merge_crdt(
+            &local_vc,
+            local_ver,
+            &exp.vector_clock,
+            exp.version,
+        );
+
+        match decision {
+            sisyphus_types::experience::MergeDecision::Equal => Ok(ApplyResult::Equal),
+            sisyphus_types::experience::MergeDecision::KeepLocal => Ok(ApplyResult::Kept),
+            sisyphus_types::experience::MergeDecision::ApplyRemote => {
+                // 3. 原子覆盖 payload
+                let new_vc_json = serde_json::to_string(&exp.vector_clock)
+                    .context("Failed to serialize vector_clock")?;
+                let result = sqlx::query(
+                    "UPDATE experiences SET
+                        context_text = ?,
+                        context_hash = ?,
+                        action_id = ?,
+                        project_id = ?,
+                        outcome_success = ?,
+                        deviation_score = ?,
+                        cost = ?,
+                        version = ?,
+                        vector_clock = ?
+                     WHERE id = ?",
+                )
+                .bind(&exp.context_text)
+                .bind(&exp.context_hash)
+                .bind(&exp.action_id)
+                .bind(&exp.project_id)
+                .bind(exp.outcome_success)
+                .bind(exp.deviation_score)
+                .bind(exp.cost as i64)
+                .bind(exp.version as i64)
+                .bind(&new_vc_json)
+                .bind(&id)
+                .execute(&self.l2)
+                .await
+                .context("Failed to apply remote experience")?;
+
+                if result.rows_affected() == 0 {
+                    // 并发删除等罕见情况
+                    Ok(ApplyResult::Kept)
+                } else {
+                    Ok(ApplyResult::Applied)
+                }
+            },
+        }
+    }
+
+    /// CRDT INSERT（apply_remote_experience 在本地不存在时调用）。
+    async fn insert_experience_full(
+        &self,
+        exp: &sisyphus_types::experience::ExperienceTuple,
+    ) -> Result<()> {
+        let id = format!("exp:{}", exp.timestamp);
+        let vc_json = serde_json::to_string(&exp.vector_clock)
+            .context("Failed to serialize vector_clock for INSERT")?;
+        sqlx::query(
+            "INSERT INTO experiences
+                (id, context_text, context_hash, action_id, project_id,
+                 outcome_success, deviation_score, cost, timestamp,
+                 version, vector_clock)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        )
+        .bind(&id)
+        .bind(&exp.context_text)
+        .bind(&exp.context_hash)
+        .bind(&exp.action_id)
+        .bind(&exp.project_id)
+        .bind(exp.outcome_success)
+        .bind(exp.deviation_score)
+        .bind(exp.cost as i64)
+        .bind(exp.timestamp as i64)
+        .bind(exp.version as i64)
+        .bind(&vc_json)
+        .execute(&self.l2)
+        .await
+        .context("Failed to insert experience (CRDT new entry)")?;
+        Ok(())
+    }
+
     /// List experiences that are globally shared (no project ownership).
     pub async fn list_shared_experiences(
         &self,
@@ -528,6 +702,8 @@ impl MfsStore {
                         embedding: None,
                         visual_embedding: None,
                         insight: None,
+                        version: 0,
+                        vector_clock: std::collections::BTreeMap::new(),
                     }
                 },
             )
@@ -561,6 +737,8 @@ impl MfsStore {
                 embedding: None,
                 visual_embedding: None,
                 insight: None,
+                version: 0,
+                vector_clock: std::collections::BTreeMap::new(),
             }))
         } else {
             Ok(None)
@@ -611,6 +789,8 @@ impl MfsStore {
                         embedding: None,
                         visual_embedding: None,
                         insight: None,
+                        version: 0,
+                        vector_clock: std::collections::BTreeMap::new(),
                     }
                 },
             )
@@ -686,6 +866,8 @@ impl MfsStore {
                         embedding: None,
                         visual_embedding: None,
                         insight: None,
+                        version: 0,
+                        vector_clock: std::collections::BTreeMap::new(),
                     }
                 },
             )
@@ -1017,6 +1199,12 @@ mod tests {
             "Isolation failed: Project B overwrote Project A's state"
         );
     }
+
+    // ── CRDT (TODO 8.3.2) 集成测试 ───────────────────────────────────
+
+    // CRDT (TODO 8.3.2) 集成测试: 端到端 roundtrip 需要扩展 SELECT
+    // 反序列化 version/vector_clock，留待 8.3.1 peer 协议一起做。当前覆盖
+    // 见 sisyphus-types experience::crdt_tests（9 个纯函数测试）。
 }
 
 #[cfg(test)]

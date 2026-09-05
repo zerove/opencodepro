@@ -368,6 +368,8 @@ impl SisyphusKernel {
             embedding: None,
             visual_embedding: None,
             insight: None,
+            version: 0,
+            vector_clock: std::collections::BTreeMap::new(),
         };
 
         // 成功后捕获视觉经验

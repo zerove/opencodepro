@@ -48,6 +48,24 @@
 ## [Unreleased]
 
 ### Added
+- **Experience CRDT（LWW-Element-Set + vector clock）** (TODO 8.3.2 / ADR-009 § 2, 2026-09-05):
+  - `ExperienceTuple` 加 `version: u64` + `vector_clock: BTreeMap<String, u64>` 字段
+    （serde default，向后兼容）
+  - `merge_crdt()` 纯函数：vector clock 比较 + version tie-break，返回
+    `MergeDecision::{ApplyRemote, KeepLocal, Equal}`
+  - `bump_local_clock()` 辅助：本地写入时自增 `version` 与 `node_id` 计数器
+  - 4 种 `ClockOrdering` 显式枚举（Before / After / Equal / Concurrent），
+    解决并发冲突的语义歧义
+  - `MfsStore::apply_remote_experience()` API：原子比较+合并，
+    返回 `ApplyResult::{Applied, Kept, Equal}`；本地不存在时自动 INSERT
+  - `experiences` 表 schema 加 `version` + `vector_clock` 列；
+    ALTER TABLE 迁移（启动探测列存在性，无重复迁移）
+  - `VectorExperienceBank::record()` 自动 `bump_local_clock`，
+    `node_id` 来自 `SISYPHUS_CLUSTER_NODE_ID` env var 或 `HOSTNAME` fallback
+  - 14 个 `ExperienceTuple` 构造点更新（store + mem + core + intel + tests）
+  - 9 个纯函数单元测试（merge_crdt 6 + bump_local_clock 2 + roundtrip 1）
+  - 集成测试暂留待：SELECT 反序列化 version/vector_clock 路径扩展 +
+    8.3.1 peer 协议端到端 2 节点 sync 验证（todo 注释保留）
 - **im → imbl 迁移遗漏修复** (TODO 8.4.2 P1 余项, 2026-09-05):
   - 修复 `c55c586` 提交遗漏的 20 处 `tests/types_misc_v2.rs` 集成测试 `im::HashMap` 引用 → `imbl::HashMap`
   - 文档注释 `src/types.rs` 同步更新
@@ -65,6 +83,12 @@
 - cargo clippy --workspace --all-targets -- -D warnings: 0 警告
 - cargo test-all: 4656/4656 通过
 - cli_startup/config_default bench: 214.47 ns（中位数）
+
+### Verified (2026-09-05, CRDT)
+- cargo test -p sisyphus-types --lib experience: 9/9 CRDT 纯函数测试通过
+- cargo test -p sisyphus-mem --lib: 34/34 通过（含 8 个原有 store + 22 个 vector_memory + cognitive_trace）
+- cargo clippy --workspace --all-targets -- -D warnings: 0 警告
+- cargo test-all: 4665/4665 通过（比 4656 多 9 个 CRDT 单元测试）
 
 ### Added (累计)
 - **`.rust-analyzer.json`** 锁定重型 crate 排除（sisyphus-bridge/sandbox/sandboxd/tests），

@@ -27,6 +27,8 @@ fn experience_tuple_field_assignment() {
         embedding: None,
         visual_embedding: None,
         insight: Some("a tip".into()),
+        version: 0,
+        vector_clock: std::collections::BTreeMap::new(),
     };
     assert_eq!(t.context_text, "build a thing");
     assert!(t.outcome_success);
@@ -51,6 +53,8 @@ fn experience_tuple_serde_round_trip() {
         embedding: None,
         visual_embedding: None,
         insight: None,
+        version: 0,
+        vector_clock: std::collections::BTreeMap::new(),
     };
     let j = serde_json::to_string(&t).unwrap();
     let back: ExperienceTuple = serde_json::from_str(&j).unwrap();

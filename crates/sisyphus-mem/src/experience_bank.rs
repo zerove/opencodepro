@@ -1,7 +1,9 @@
 use crate::store::MfsStore;
 use anyhow::Result;
 use sisyphus_types::TypesError;
-use sisyphus_types::experience::{ExperienceBank, ExperienceQuery, ExperienceTuple};
+use sisyphus_types::experience::{
+    ExperienceBank, ExperienceQuery, ExperienceTuple, bump_local_clock,
+};
 use std::collections::HashSet;
 use std::sync::Arc;
 
@@ -147,6 +149,16 @@ impl VectorExperienceBank {
 #[async_trait]
 impl ExperienceBank for VectorExperienceBank {
     async fn record(&self, mut exp: ExperienceTuple) -> Result<(), TypesError> {
+        // 0. CRDT (TODO 8.3.2): bump local version + vector_clock
+        // 默认 node_id 用 hostname；后续可通过 Config.cluster.node_id 配置覆盖。
+        // 保持向后兼容：调用方未设置 version/vector_clock 时自动 bump。
+        let node_id = std::env::var("SISYPHUS_CLUSTER_NODE_ID").unwrap_or_else(|_| {
+            std::env::var("HOSTNAME").unwrap_or_else(|_| "local-node".to_string())
+        });
+        let (new_vc, new_ver) = bump_local_clock(&exp.vector_clock, exp.version, &node_id);
+        exp.vector_clock = new_vc;
+        exp.version = new_ver;
+
         // 1. Generate text embedding for the context
         let text_embedding = self
             .embedding_client

@@ -350,8 +350,14 @@ impl SqlStore {
             timestamp INTEGER NOT NULL,
             embedding BLOB,
             visual_embedding BLOB,
-            insight TEXT
+            insight TEXT,
+            -- CRDT (TODO 8.3.2): version + vector_clock for LWW-Element-Set
+            version INTEGER NOT NULL DEFAULT 0,
+            vector_clock TEXT NOT NULL DEFAULT '{}'
         );
+
+        -- CRDT 迁移: ALTER TABLE 补齐 version/vector_clock 列（仅旧库需执行）
+        PRAGMA table_info(experiences);
 
         CREATE INDEX IF NOT EXISTS idx_exp_project ON experiences(project_id);
         CREATE INDEX IF NOT EXISTS idx_exp_action ON experiences(action_id);
@@ -1046,6 +1052,8 @@ impl SqlStore {
                 embedding: None,
                 visual_embedding: None,
                 insight: None,
+                version: 0,
+                vector_clock: std::collections::BTreeMap::new(),
             }))
         } else {
             Ok(None)
@@ -1117,6 +1125,8 @@ impl SqlStore {
                         embedding: None,
                         visual_embedding: None,
                         insight: None,
+                        version: 0,
+                        vector_clock: std::collections::BTreeMap::new(),
                     }
                 },
             )

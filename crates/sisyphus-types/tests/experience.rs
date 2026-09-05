@@ -20,6 +20,8 @@ fn make_tuple(success: bool) -> ExperienceTuple {
         embedding: None,
         visual_embedding: None,
         insight: Some("lesson learned".into()),
+        version: 0,
+        vector_clock: std::collections::BTreeMap::new(),
     }
 }
 
