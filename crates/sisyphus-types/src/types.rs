@@ -241,7 +241,7 @@ fn default_tool_fuel() -> u64 {
     1_000_000
 }
 
-use im::HashMap as ImMap;
+use imbl::HashMap as ImMap;
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 /// Sisyphus Notepad.

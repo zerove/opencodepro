@@ -15,7 +15,8 @@ toml = "0.8"
 thiserror = { workspace = true }
 tracing = { workspace = true }
 metrics = "0.24"
-im = { version = "15.1.0", features = ["serde"] }
+# imbl: API 兼容 fork of im (maintained); 修复 RUSTSEC-2026-0247/0248/0251 + 2023-0126
+imbl = { version = "2", features = ["serde"] }
 dashmap = "6.1"
 notify = "6.0"
 tokio = { version = "1.0", features = ["rt", "macros", "sync", "fs", "time"] }

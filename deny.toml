@@ -21,38 +21,14 @@ feature-depth = 1
 # RUSTSEC-2026-0258 (h2 0.4.15) → 0.4.16 修复（cargo update -p h2@0.4.15）
 
 ignore = [
-    # ── RUSTSEC-2024-0370: proc-macro-error 1.0.4 (unmaintained, not a vulnerability) ──
-    # 来源: utoipa-gen 4.x → proc-macro-error 1.0.4（unmaintained, 不是漏洞）。
-    # 修复: utoipa-gen 5.x 需要 axum 0.8（破坏性升级跨整个工作区）。
-    # 跟踪: https://github.com/RustSec/advisory-db/issues/1650
-    "RUSTSEC-2024-0370",
-
-    # ── RUSTSEC-2026-0247: bitmaps is unmaintained ──
-    # 来源: im 15.x → bitmaps 2.1（已 archive，无 fix）。
-    # 修复: 替换 im 为 imbl（API 兼容 fork）— 需要 sisyphus-types 迁移。
-    # 跟踪: 阶段 8.x — 计划迁移 im → imbl（TODO 8.4.2 + 后续）。
+    # ── RUSTSEC-2026-0247/0251: bitmaps/sized-chunks is unmaintained (imbl transitive) ──
+    # 来源: imbl 2.0.3 仍依赖 bitmaps 2.1 + sized-chunks 0.6（im 已 archive，
+    # 但 imbl 还没替换这些子依赖）。
+    # 修复: 等待 imbl 上游迁移（GitHub issue 跟踪）— 或 imbl 升级。
+    # 当前代码 sisyphus-types 只用 imbl::HashMap（同 im::HashMap 用法），
+    # 未触及 OrdSet/sized-chunks 路径。
+    # 跟踪: https://github.com/jneem/imbl/issues
     "RUSTSEC-2026-0247",
-
-    # ── RUSTSEC-2026-0248: im is unmaintained ──
-    # 来源: sisyphus-types 直接依赖 im 15.1.0（unmaintained）。
-    # 修复: 替换为 imbl 2.x（维护的 fork，API 兼容）。
-    # 跟踪: 阶段 8.x — 计划迁移 im → imbl（TODO 8.4.2 + 后续）。
-    "RUSTSEC-2026-0248",
-
-    # ── RUSTSEC-2023-0126: im::OrdSet unsound (UB on insert) ──
-    # 来源: im 15.x 持续 unsound，reachable from safe code。
-    # 严重性: High（CWE-119 aliasing violation）。
-    # 修复: 无 safe upgrade（im 已 unmaintained）。替换 im → imbl。
-    # 当前代码 sisyphus-types 只用 ImMap（HashMap-like），**未触及 OrdSet**，
-    # 但同一 crate 受影响，需要迁移。
-    # 跟踪: 阶段 8.x — 计划迁移 im → imbl。
-    "RUSTSEC-2023-0126",
-
-    # ── RUSTSEC-2026-0251: sized-chunks is unmaintained ──
-    # 来源: im 的子依赖（sized_chunks crate 已 archive）。
-    # 修复: 同 im，迁移到 imbl 后自动消除。
-    # 跟踪: 阶段 8.x — 计划迁移 im → imbl。
-    "RUSTSEC-2026-0251",
 
     # ── RUSTSEC-2026-0253: lru 0.12.x use-after-free in pop() ──
     # 来源: ratatui 0.28.x → lru 0.12.5（含 UB）；sisyphus-mem 直接依赖 lru 0.12。
