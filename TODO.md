@@ -331,3 +331,74 @@
   - 文档：`book/src/deployment.md` 填充完整 docker + K8s + 健康度端点说明（之前只一个标题）
   - 文档：`README.md` "快速开始" 加 docker pull 方式
   - 文档：`CONTRIBUTING.md` § 发布流程更新（手动 → 自动 workflow）
+
+---
+
+## 🚀 阶段 9 计划（v0.3 候选，2026-09-06 起，3-4 周窗口）
+
+**目标**: 完成分布式 v2 端到端 sync + 启动认知循环 v3 架构设计
+
+### 9.1 分布式 v2 收尾（最高优先）
+
+#### 9.1.1 peer broadcast 集成
+- [x] **ExperienceSync 事件广播**: PeerManager::broadcast 接入 ClusterEvent
+- [x] **ExperienceSyncHandler**: 订阅 PeerManager 事件，将远程 experience 写入本地 bank
+- [x] **broadcast_experience**: 发送端调用，将本地 experience 推送到所有 peer
+- [ ] **启动时全量 sync**: 新节点加入时请求所有 peer 的 experience
+- [ ] **运行时增量 sync**: 本地 store 变更后主动广播到 peer
+
+#### 9.1.2 端到端集成测试
+- [ ] **2 节点 sync 测试**: `cluster_integration.rs` 扩展
+  - 节点 A capture_experience → 节点 B 可见
+  - 节点 B capture_experience → 节点 A 可见
+  - 并发写入冲突：LWW 策略验证
+- [ ] **3 节点 Docker Compose**: 本地多节点验证
+- [ ] **chaos 扩展**: 网络分区 + 节点重启后 sync 恢复
+
+### 9.2 认知循环 v3 研究（探索性）
+
+#### 9.2.1 架构设计（ADR-010）
+- [ ] **问题分析**: 当前 v2 的瓶颈（token 预算限制、反思深度不足）
+- [ ] **候选方向**:
+  - SOP 图神经网络嵌入（节点语义编码）
+  - 自适应 token 预算分配
+  - 长期记忆压缩与检索
+- [ ] **决策记录**: ADR-010 编写
+
+#### 9.2.2 认知能力原型
+- [ ] **SOP 嵌入实验**: 将 SOP 节点编码为向量
+- [ ] **相似度检索**: 基于嵌入的经验检索
+- [ ] **评估**: 与当前 experience bank 对比
+
+### 9.3 测试质量巩固
+
+#### 9.3.1 Mutation Testing 扩展
+- [ ] **sisyphus-mem mutation**: 覆盖 store/memory 路径
+- [ ] **sisyphus-bridge mutation**: 覆盖 gRPC handler 路径
+- [ ] **修复 missed mutants**: 基于 cargo-mutants 报告
+
+#### 9.3.2 Fuzz Testing
+- [ ] **sandbox wasm proptest 扩展**: host function 边界覆盖
+- [ ] **HTTP handler fuzz**: axum 请求模糊测试
+- [ ] **gRPC payload fuzz**: prost message 变异测试
+
+### 9.4 文档与发布
+
+#### 9.4.1 CHANGELOG v0.2.0
+- [ ] **发布笔记**: 基于 git log 生成结构化 changelog
+- [ ] **v0.2.0 tag**: 打标签触发 release workflow
+- [ ] **release notes review**: 人工检查自动生成内容
+
+#### 9.4.2 文档优化
+- [ ] **mdbook 增量构建**: CI 缓存优化
+- [ ] **ADR 索引**: 文档化所有架构决策
+- [ ] **API 参考更新**: 同步 REST/gRPC 最新接口
+
+---
+
+**更新日期**: 2026-09-06
+**当前重点**: 9.1.1 peer broadcast 集成
+**前置条件**:
+- 阶段 8.3 peer 协议 Phase B ✅
+- Experience CRDT API ✅
+- Consensus benchmark ✅
