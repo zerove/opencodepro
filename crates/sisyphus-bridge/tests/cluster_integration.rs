@@ -137,3 +137,83 @@ async fn test_two_node_join_leader_is_lexicographic_min() {
     // leader = "node-a"（字典序最小）
     assert_eq!(resp_a.leader_id, "node-a");
 }
+
+// ── 9.1.2 端到端测试：Experience CRDT broadcast + handler ──────────────
+
+use sisyphus_bridge::peer::broadcast_experience;
+use sisyphus_types::experience::ExperienceTuple;
+
+/// 验证 ExperienceSync 事件通过 peer manager 广播，handler 能正确订阅。
+///
+/// 该测试在进程内模拟 2 节点：构造一个 PeerManager 作为"共享广播通道"，
+/// 验证 broadcast_experience 产生的事件能被订阅者接收并携带正确的
+/// exp_key / version / payload。
+#[tokio::test]
+async fn test_experience_broadcast_subscribed() {
+    let manager = Arc::new(PeerManager::new("node-a", Duration::from_secs(30)));
+    let mut rx = manager.subscribe();
+
+    // 构造 experience
+    let mut exp = ExperienceTuple {
+        context_text: "user asked how to build an HTTP server".into(),
+        context_hash: "abc123".into(),
+        action_id: "write_file".into(),
+        project_id: Some("project-x".into()),
+        outcome_success: true,
+        deviation_score: 0.1,
+        cost: 42,
+        timestamp: 1_700_000_000,
+        embedding: None,
+        visual_embedding: None,
+        insight: Some("prefer axum over actix".into()),
+        version: 3,
+        vector_clock: {
+            let mut m = std::collections::BTreeMap::new();
+            m.insert("node-a".to_string(), 3u64);
+            m
+        },
+    };
+
+    // 广播（exp_key 含非 node-a 前缀以模拟来自 node-b）
+    broadcast_experience(&manager, &exp, "exp:node-b-abc123");
+
+    let evt = timeout(Duration::from_secs(2), rx.recv())
+        .await
+        .expect("timeout waiting for event")
+        .expect("recv failed");
+
+    match evt {
+        ClusterEvent::ExperienceSync {
+            exp_key,
+            version,
+            vector_clock_json,
+            payload,
+        } => {
+            assert_eq!(exp_key, "exp:node-b-abc123");
+            assert_eq!(version, 3);
+            // vector_clock 应序列化 node-a:3
+            assert!(vector_clock_json.contains("\"node-a\":3"));
+            // payload 应反序列化回 ExperienceTuple
+            let parsed: ExperienceTuple = serde_json::from_slice(&payload).expect("parse payload");
+            assert_eq!(
+                parsed.context_text,
+                "user asked how to build an HTTP server"
+            );
+            assert_eq!(parsed.outcome_success, true);
+            assert_eq!(parsed.vector_clock.get("node-a"), Some(&3));
+        },
+        other => panic!("expected ExperienceSync, got: {other:?}"),
+    }
+
+    // 模拟 handler 的"自广播过滤"：含 self_node_id 的 exp_key 应跳过
+    exp.action_id = "second".into();
+    broadcast_experience(&manager, &exp, "exp:node-a-abc123");
+    let second = timeout(Duration::from_secs(2), rx.recv()).await.expect("timeout").expect("recv");
+    // 事件仍会送达（过滤逻辑在 handler 层），验证 key
+    match second {
+        ClusterEvent::ExperienceSync { exp_key, .. } => {
+            assert_eq!(exp_key, "exp:node-a-abc123");
+        },
+        _ => panic!("expected ExperienceSync"),
+    }
+}

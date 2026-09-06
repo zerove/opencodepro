@@ -34,14 +34,14 @@ pub fn broadcast_experience(
         Err(e) => {
             tracing::error!(error = %e, "broadcast_experience: failed to serialize experience");
             return;
-        }
+        },
     };
     let vector_clock_json = match serde_json::to_string(&exp.vector_clock) {
         Ok(j) => j,
         Err(e) => {
             tracing::error!(error = %e, "broadcast_experience: failed to serialize vector_clock");
             return;
-        }
+        },
     };
     peer_manager.broadcast_experience_sync(exp_key, exp.version, vector_clock_json, payload);
 }
@@ -71,10 +71,7 @@ impl ExperienceSyncHandler {
     /// 启动事件循环：监听 peer 事件并处理 ExperienceSync
     ///
     /// `shutdown_rx` 收到信号时退出循环。返回 `JoinHandle` 供调用方管理生命周期。
-    pub fn spawn(
-        self,
-        mut shutdown_rx: broadcast::Receiver<()>,
-    ) -> JoinHandle<()> {
+    pub fn spawn(self, mut shutdown_rx: broadcast::Receiver<()>) -> JoinHandle<()> {
         let mut events = self.peer_manager.subscribe();
         let experience_bank = self.experience_bank;
         let self_node_id = self.self_node_id;
@@ -140,7 +137,7 @@ impl ExperienceSyncHandler {
             Err(e) => {
                 tracing::warn!(error = %e, exp_key = %exp_key, "failed to deserialize remote experience");
                 return;
-            }
+            },
         };
 
         // 关键：在写入前清空 version/vector_clock，让 record() 内部用本地 node_id bump
@@ -182,10 +179,12 @@ mod tests {
 
         let evt = rx.try_recv().expect("should receive event");
         match evt {
-            MgrEvent::ExperienceSync { exp_key, version, .. } => {
+            MgrEvent::ExperienceSync {
+                exp_key, version, ..
+            } => {
                 assert_eq!(exp_key, "exp:test:node-b:42");
                 assert_eq!(version, 42);
-            }
+            },
             _ => panic!("expected ExperienceSync"),
         }
     }

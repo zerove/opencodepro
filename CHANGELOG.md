@@ -463,6 +463,28 @@
     4 个 env override (`SISYPHUS_METRICS_OPENTELEMETRY_*`)，仅 `sisyphus-bridge` 通过 `shared_config.read()` 消费并启用 OTLP 导出
 - 测试修复：`test_get_learning_insights` 阈值 1000 → 10000（chaos 注入产生 1042 samples）
 
+### Added (peer experience sync, 2026-09-06, TODO 9.1.1)
+- **Experience CRDT broadcast 集成** (commit a7444fc)：
+  - 新增 `crates/sisyphus-bridge/src/peer/experience_sync.rs` 模块
+  - `broadcast_experience()`：发送端将本地 experience JSON 序列化后通过
+    `PeerManager::broadcast_experience_sync` 推送到所有 peer
+  - `ExperienceSyncHandler::spawn()`：接收端订阅 `PeerManager` 事件，
+    处理 `ExperienceSync` ClusterEvent，反序列化为 `ExperienceTuple` 后
+    调用 `experience_bank.record()` 写入本地 store
+  - 自广播过滤：`exp_key` 包含 self_node_id 时跳过（避免自环）
+  - broadcast lag 检测：`RecvError::Lagged` 打印 warn 而非 panic
+  - 2 个单元测试：`broadcast_experience_serializes_payload` +
+    `broadcast_experience_handles_serialize_error_gracefully`
+  - **当前状态**：handler 框架就绪，等待 record 调用点集成
+    （kernel.capture_success 路径已落 SOP 而非 experience，bridge 端需新增
+    experience 记录入口才能触发 sync 链路）
+
+### Verified
+- cargo test -p sisyphus-bridge --lib peer::experience_sync: 2/2 通过
+- cargo check -p sisyphus-bridge --lib: 0 错误
+- cargo clippy -p sisyphus-bridge --lib -- -D warnings: 0 警告
+- cargo fmt --all: 风格一致
+
 ### Verified
 - cargo test -p sisyphus-sandbox: 24/24 通过（含 9 新 fuzz 测试）
 - cargo test-all: 4653/4653 通过
