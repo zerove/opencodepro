@@ -1293,6 +1293,71 @@ async fn test_execute_goal_blocks_when_critical_flaws_persist() {
 }
 
 #[tokio::test]
+async fn test_execute_goal_streaming_blocks_when_critical_flaws_persist() {
+    // 与门禁测试相同的内核构造（CriticalFlawSimulator + ScriptedLlmClient）。
+    let state_store = Arc::new(
+        sisyphus_mem::MfsStore::new("sqlite::memory:", &sisyphus_types::CacheConfig::default())
+            .await
+            .expect("in-memory MfsStore"),
+    );
+    let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.expect("sqlite pool");
+    let tool_executor: Arc<dyn ToolExecutor> = Arc::new(MockToolExecutor);
+
+    let intel = Arc::new(sisyphus_intel::SisyphusIntel::new(
+        Arc::new(sisyphus_intel::MonteCarloSimulator::new(1)),
+        Arc::new(CriticalFlawSimulator),
+        Arc::new(sisyphus_intel::StandardReflector),
+        Arc::new(sisyphus_intel::StandardEvolver::new()),
+    ));
+
+    let synthesizer: Arc<dyn sisyphus_intel::FlowSynthesizer> = Arc::new(
+        sisyphus_intel::GoalDrivenSynthesizer::new(tool_executor.clone()),
+    );
+
+    let llm: Arc<dyn sisyphus_tools_llm::LlmClient> = Arc::new(ScriptedLlmClient);
+
+    let kernel = SisyphusKernel::new(
+        state_store,
+        Arc::new(sisyphus_mem::SopSqlStore::new(pool.clone()).await.expect("sop store")),
+        Arc::new(sisyphus_mem::VectorMemoryStore::new(pool.clone()).await.expect("vector store")),
+        Arc::new(MockExperienceBank),
+        tool_executor,
+        intel,
+        llm.clone(),
+        llm,
+        synthesizer,
+        Arc::new(parking_lot::Mutex::new(
+            sisyphus_tools_llm_tools::meta_learner::MetaLearner::new(".omo/test_meta"),
+        )),
+        Arc::new(MockConsensus),
+        Arc::new({
+            let store =
+                sisyphus_mem::RoadmapSqlStore::new(pool.clone()).await.expect("roadmap store");
+            store.init_schema().await.expect("init roadmap schema");
+            store
+        }),
+        Arc::new(sisyphus_tools_llm::DummyEmbeddingClient),
+    );
+
+    // 流式入口必须与非流式共享同一仿真门禁：持久 Critical 缺陷应阻断。
+    let result = kernel
+        .execute_goal_streaming(
+            "goal via streaming",
+            "sop-critical-stream",
+            "default",
+            None,
+            None,
+        )
+        .await;
+
+    assert!(
+        result.is_err(),
+        "流式入口必须与非流式共享门禁，当前却返回了 Ok: {:?}",
+        result.as_ref().map(|(o, _)| o.to_string())
+    );
+}
+
+#[tokio::test]
 async fn test_execute_and_record_persists_structured_metadata() {
     let recorder = Arc::new(RecordingExperienceBank::new());
 

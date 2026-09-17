@@ -31,24 +31,15 @@ impl SisyphusKernel {
         self.execute_composite(&composite, None, project_id).await
     }
 
-    /// Execute goal.
-    pub async fn execute_goal(
+    /// 共同准备阶段：意图分析 → 经验检索 → 合成 → Swarm 审计 → 逻辑仿真门禁。
+    /// 流式与非流式入口共享此管线（P0-2）。
+    async fn prepare_goal_execution(
         &self,
         goal: &str,
         sop_id: &str,
         project_id: &str,
-        event_tx: Option<mpsc::UnboundedSender<ExecutionEvent>>,
-        context_json: Option<&str>,
-    ) -> Result<(NodeOutput, String), CoreError> {
-        let ctx = ExecutionContext::new();
-
-        if let Some(ctx_str) = context_json {
-            ctx.notepad
-                .write()
-                .unwrap_or_else(|e| e.into_inner())
-                .write_section("context".into(), ctx_str.into());
-        }
-
+        ctx: &ExecutionContext,
+    ) -> Result<(Arc<SOPGraph>, String), CoreError> {
         tracing::debug!("[execute_goal] Analyzing intent for goal: {goal}");
 
         let mode = IntentGate::analyze(goal, &self.intelligence_manager.llm_client).await;
@@ -107,7 +98,7 @@ impl SisyphusKernel {
 
         let synthesis = self
             .intelligence_manager
-            .synthesize_goal(goal, &ctx, project_id, mode, insights.as_deref())
+            .synthesize_goal(goal, ctx, project_id, mode, insights.as_deref())
             .await
             .map_err(|e| CoreError::Internal(e.to_string()))?;
 
@@ -117,9 +108,7 @@ impl SisyphusKernel {
         );
 
         // --- Swarm 审计与逻辑仿真循环 ---
-        tracing::debug!(
-            "[execute_goal] Entering refinement loop (Swarm Audit + Logical Simulation)..."
-        );
+        tracing::debug!("[prepare] Entering refinement loop (Swarm Audit + Logical Simulation)...");
         let mut current_config = sisyphus_types::SOPGraphConfig::from_graph(&synthesis.graph)
             .map_err(|e| CoreError::Internal(e.to_string()))?;
         let mut simulation_attempts = 0;
@@ -155,7 +144,7 @@ impl SisyphusKernel {
 
             let sim_result = self
                 .logical_simulator
-                .simulate_logic(sim_graph, &ctx, sop_id, Some(goal))
+                .simulate_logic(sim_graph, ctx, sop_id, Some(goal))
                 .await
                 .map_err(|e| CoreError::Internal(format!("Logical simulation failed: {}", e)))?;
 
@@ -210,10 +199,31 @@ impl SisyphusKernel {
             self.test_executor.clone(),
         )
         .map_err(|e| CoreError::Internal(format!("Final graph build failed: {}", e)))?;
-        tracing::debug!("[execute_goal] Refinement loop complete. SOP ready for execution.");
-        // --- Swarm 审计循环结束 ---
+        tracing::debug!("[prepare] Refinement loop complete. SOP ready for execution.");
 
-        let plan_desc = synthesis.plan_description;
+        Ok((graph, synthesis.plan_description))
+    }
+
+    /// Execute goal.
+    pub async fn execute_goal(
+        &self,
+        goal: &str,
+        sop_id: &str,
+        project_id: &str,
+        event_tx: Option<mpsc::UnboundedSender<ExecutionEvent>>,
+        context_json: Option<&str>,
+    ) -> Result<(NodeOutput, String), CoreError> {
+        let ctx = ExecutionContext::new();
+
+        if let Some(ctx_str) = context_json {
+            ctx.notepad
+                .write()
+                .unwrap_or_else(|e| e.into_inner())
+                .write_section("context".into(), ctx_str.into());
+        }
+
+        let (graph, plan_desc) =
+            self.prepare_goal_execution(goal, sop_id, project_id, &ctx).await?;
 
         tracing::debug!("[execute_goal] Entering cognitive loop...");
 
@@ -251,29 +261,19 @@ impl SisyphusKernel {
     ) -> Result<(NodeOutput, String), CoreError> {
         let ctx = ExecutionContext::new();
 
-        let mode = IntentGate::analyze(goal, &self.intelligence_manager.llm_client).await;
-
-        let synthesis = self
-            .intelligence_manager
-            .synthesize_goal(goal, &ctx, project_id, mode, None)
-            .await
-            .map_err(|e| CoreError::Internal(e.to_string()))?;
+        // P0-2：与非流式入口共享同一准备管线（意图 → 经验 → 合成 →
+        // Swarm 审计 → 逻辑仿真门禁），仅事件交付方式不同。
+        let (graph, plan_desc) =
+            self.prepare_goal_execution(goal, sop_id, project_id, &ctx).await?;
 
         let (res, report_obj, _) = self
-            .execute_with_cognition(
-                synthesis.graph,
-                sop_id,
-                Some(project_id),
-                None,
-                event_tx,
-                stream_tx,
-            )
+            .execute_with_cognition(graph, sop_id, Some(project_id), None, event_tx, stream_tx)
             .await
             .map_err(|e| CoreError::Internal(e.to_string()))?;
 
         let report_str = format!(
             "Plan: {} | Report: {} iterations, converged={}",
-            synthesis.plan_description, report_obj.iterations, report_obj.converged
+            plan_desc, report_obj.iterations, report_obj.converged
         );
 
         let mermaid_graph = report_obj.to_mermaid();
