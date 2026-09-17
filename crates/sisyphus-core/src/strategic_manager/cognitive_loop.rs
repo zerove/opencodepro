@@ -19,7 +19,7 @@ use sisyphus_mem::MfsStore;
 use sisyphus_types::SOPGraph;
 use sisyphus_types::{CognitiveEvent, CognitiveMetrics, ExecutionTrace};
 
-use crate::cognitive_loop_v2::AnomalyDetector;
+use crate::cognitive_loop_v2::{AdaptiveDepthController, AnomalyDetector};
 use crate::{CoreError, ExecutionContext, ExecutionEvent, ExecutionStatus, Executor, NodeOutput};
 
 // OpenTelemetry span helpers
@@ -66,12 +66,28 @@ impl StrategicManager {
     ) -> Result<(NodeOutput, CognitiveReport, Option<Arc<SOPGraph>>), CoreError> {
         let _start_time = std::time::Instant::now();
 
-        // v2：为本次执行周期重置共享的跟踪状态。
-        // AnomalyDetector 与 AdaptiveDepthController 挂在 StrategicManager 上被并发执行共享，
-        // 上一轮遗留的置信度历史/异常基线会让本轮误判收敛或误报异常（reset 此前无任何调用点）。
-        // 注意：这缩小而非消除竞态——彻底修复需将二者改为 per-run 实例，见架构评审 P0-1。
-        self.depth_controller.reset();
-        self.anomaly_detector.lock().reset();
+        // P0-1：每次运行使用独立的控制器与检测器实例（从共享配置模板
+        // 继承参数），不再触碰 StrategicManager 上的共享实例。并发运行
+        // 的置信度历史/异常基线互不污染，也无需在启动时 reset（reset
+        // 会清掉其他并发运行的状态）。
+        let depth_controller = {
+            let shared = &self.depth_controller;
+            let local = AdaptiveDepthController::new(
+                *shared.target_confidence.read(),
+                *shared.min_improvement.read(),
+                shared.max_iterations,
+                shared.min_iterations,
+            );
+            local
+        };
+        let anomaly_detector = {
+            let shared = self.anomaly_detector.lock();
+            Arc::new(Mutex::new(AnomalyDetector::new(
+                shared.fuel_threshold,
+                shared.duration_threshold,
+                shared.error_rate_threshold,
+            )))
+        };
 
         // A2 修复：以 sop_id + 纳秒时间戳为 active_executions key，
         // 避免同一 sop 的并发执行互相覆盖状态。
@@ -115,7 +131,7 @@ impl StrategicManager {
 
             // v2：控制器初始预算，复用上方分析结果（热启动减半前计算，
             // 与原 initial_budget 行为等价——其内部分析同样不含热启动逻辑）
-            let v2_budget = self.depth_controller.budget_from_depth(d_max) as u32;
+            let v2_budget = depth_controller.budget_from_depth(d_max) as u32;
 
             // 如果热启动生效，可以大幅减少迭代次数
             if hot_start_active {
@@ -244,6 +260,7 @@ impl StrategicManager {
                     &event_tx,
                     &broadcast_fn,
                     &stream_tx,
+                    &anomaly_detector,
                     &mut pivot_reason,
                 )
                 .instrument(exec_span)
@@ -312,10 +329,10 @@ impl StrategicManager {
             });
 
             // v2：将置信度反馈给 AdaptiveDepthController
-            let should_continue = self.depth_controller.observe_iteration(confidence);
+            let should_continue = depth_controller.observe_iteration(confidence);
 
             // v2：检查异常报告是否触发额外反思
-            let anomaly_report = self.anomaly_detector.lock().generate_report();
+            let anomaly_report = anomaly_detector.lock().generate_report();
             if anomaly_report.should_extra_reflect {
                 tracing::warn!(
                     anomalies = anomaly_report.anomalies.len(),
@@ -728,6 +745,7 @@ impl StrategicManager {
         event_tx: &Option<mpsc::UnboundedSender<ExecutionEvent>>,
         broadcast_fn: &impl Fn(&str, ExecutionEvent),
         stream_tx: &Option<mpsc::UnboundedSender<CognitiveEvent>>,
+        anomaly_detector: &Arc<Mutex<AnomalyDetector>>,
         pivot_reason: &mut Option<String>,
     ) -> Result<(Arc<ExecutionContext>, NodeOutput), CoreError> {
         // A2 修复：使用基于 sop_id + 启动时间的唯一 key 查询 active_executions。
@@ -763,7 +781,7 @@ impl StrategicManager {
             self.execution_manager.state_store.clone(),
             sop_id.to_string(),
             event_tx.clone(),
-            self.anomaly_detector.clone(),
+            anomaly_detector.clone(),
             Some(self.execution_manager.cognitive_trace.clone()),
         );
 

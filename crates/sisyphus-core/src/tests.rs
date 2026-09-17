@@ -1389,6 +1389,68 @@ async fn test_execute_and_record_persists_structured_metadata() {
     );
 }
 
+#[tokio::test]
+async fn test_concurrent_loops_have_independent_depth_history() {
+    let manager = setup_manager(vec![0.5, 0.6, 0.7, 0.8]).await;
+
+    let config_sop = SOPGraphConfig {
+        nodes: vec![SOPNodeConfig {
+            name: "n0".into(),
+            kind: NodeKind::Wasm {
+                tool_id: "t".into(),
+                fuel_limit: 100,
+            },
+        }],
+        edges: vec![],
+    };
+    let graph_a = make_sop_graph(&config_sop);
+    let graph_b = make_sop_graph(&config_sop);
+
+    // 两个循环并发执行。共享控制器下，B 启动时 reset() 会清掉
+    // A 的置信度历史；隔离实现下互不影响。
+    let (a, b) = tokio::join!(
+        manager.run_cognitive_loop(
+            graph_a,
+            "sop-a",
+            None,
+            None,
+            None,
+            None,
+            |_id, _e| {},
+            None,
+            None,
+        ),
+        manager.run_cognitive_loop(
+            graph_b,
+            "sop-b",
+            None,
+            None,
+            None,
+            None,
+            |_id, _e| {},
+            None,
+            None,
+        ),
+    );
+    assert!(
+        a.is_ok(),
+        "loop a failed: {:?}",
+        a.as_ref().err().map(|e| e.to_string())
+    );
+    assert!(
+        b.is_ok(),
+        "loop b failed: {:?}",
+        b.as_ref().err().map(|e| e.to_string())
+    );
+
+    // 隔离后管理器上的共享实例历史仍为空（不再被任何运行触碰/重置），
+    // 证明运行使用的是各自独立的实例。
+    assert!(
+        manager.depth_controller.confidence_history().is_empty(),
+        "运行不得触碰管理器共享的 depth_controller 历史"
+    );
+}
+
 struct MockSimulator {
     probs: parking_lot::Mutex<VecDeque<f64>>,
 }
