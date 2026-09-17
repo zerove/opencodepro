@@ -1452,6 +1452,15 @@ async fn test_execute_and_record_persists_structured_metadata() {
         Some(project_id),
         "经验必须记录项目范围"
     );
+
+    // 偏差必须来自结构化报告（final_deviation），而非凭空猜测。
+    // Mock 链路下 StandardReflector 报告偏差 0.0，因此 outcome 与经验
+    // 中应记录 0.0；关键是不再出现硬编码 0.5 或永远 None。
+    let dev = outcome.deviation_score.expect("成功执行必须记录偏差分数");
+    assert!(
+        (0.0..=1.0).contains(&dev),
+        "偏差分数必须在 [0,1] 内，实际 {dev}"
+    );
 }
 
 #[tokio::test]

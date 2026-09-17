@@ -309,6 +309,51 @@ impl SisyphusKernel {
         self.execute_goal(&augmented_goal, sop_id, project_id, event_tx, None).await
     }
 
+    /// Execute with project context, returning the structured cognitive
+    /// report so callers can persist real metrics instead of parsing
+    /// display strings (P2-2).
+    pub async fn execute_goal_with_context_structured(
+        &self,
+        goal: &str,
+        sop_id: &str,
+        project_id: &str,
+        event_tx: Option<mpsc::UnboundedSender<ExecutionEvent>>,
+    ) -> Result<
+        (
+            NodeOutput,
+            String,
+            crate::strategic_manager::CognitiveReport,
+        ),
+        CoreError,
+    > {
+        let ctx_string =
+            self.roadmap_manager.synthesize_project_context(project_id).await.map_err(|e| {
+                CoreError::Internal(format!("Failed to synthesize project context: {}", e))
+            })?;
+
+        let augmented_goal = format!("{}\n\n---\nCurrent project context:\n{}", goal, ctx_string);
+        let ctx = ExecutionContext::new();
+
+        let (graph, plan_desc) =
+            self.prepare_goal_execution(&augmented_goal, sop_id, project_id, &ctx).await?;
+
+        let (res, report_obj, _) = self
+            .execute_with_cognition(graph, sop_id, Some(project_id), None, event_tx, None)
+            .await
+            .map_err(|e| CoreError::Internal(e.to_string()))?;
+
+        let report_str = format!(
+            "Plan: {} | Report: {} iterations, converged={}",
+            plan_desc, report_obj.iterations, report_obj.converged
+        );
+        let report_str = format!(
+            "{report_str}\n\n### Execution Trace\n```mermaid\n{}```",
+            report_obj.to_mermaid()
+        );
+
+        Ok((res, report_str, report_obj))
+    }
+
     #[allow(clippy::too_many_arguments)]
     /// Execute and record.
     pub async fn execute_and_record(
@@ -330,18 +375,14 @@ impl SisyphusKernel {
     ) -> Result<(NodeOutput, String, Option<sisyphus_roadmap::RoadmapHealth>), CoreError> {
         let start = std::time::Instant::now();
 
+        // P2-2：改走结构化路径，用 CognitiveReport.final_deviation 记录
+        // 真实偏差，取代对展示串的关键词猜测（旧逻辑恒为 None 或 0.5）。
         let result =
-            self.execute_goal_with_project_context(goal, sop_id, project_id, event_tx).await;
+            self.execute_goal_with_context_structured(goal, sop_id, project_id, event_tx).await;
 
         let (success, deviation, error) = match &result {
-            Ok((_output, report)) => {
-                let dev = if report.contains("deviation=") || report.contains("deviation_score") {
-                    Some(0.5) // moderate deviation as fallback
-                } else {
-                    None
-                };
-
-                (true, dev, None)
+            Ok((_output, _report_str, structured)) => {
+                (true, Some(structured.final_deviation.clamp(0.0, 1.0)), None)
             },
 
             Err(e) => (false, None, Some(e.to_string())),
@@ -426,7 +467,7 @@ impl SisyphusKernel {
         if !success {
             let health = self.roadmap_manager.apply_blocking(project_id).await.ok();
 
-            return result.map(|(o, r)| (o, r, health));
+            return result.map(|(o, r, _structured)| (o, r, health));
         }
 
         let health = self.roadmap_manager.evaluate_health(project_id).await.ok();
@@ -435,7 +476,7 @@ impl SisyphusKernel {
 
         self.strategic_reflect(project_id).await;
 
-        result.map(|(o, r)| (o, r, health))
+        result.map(|(o, r, _structured)| (o, r, health))
     }
 
     /// Execute composite.
