@@ -125,11 +125,21 @@ impl SisyphusKernel {
         let mut simulation_attempts = 0;
         let max_simulation_attempts = 3;
 
+        // P1-1：仿真检出的 Critical 缺陷回灌给下一轮 Swarm 审计，
+        // 并在重试耗尽后阻断执行（此前为静默放行）。
+        let mut flaw_feedback: Option<String> = None;
+
         loop {
             // 1. Swarm 审计用于高层优化
+            let audit_goal = match flaw_feedback.as_deref() {
+                Some(flaws) => format!(
+                    "{goal}\n\nKnown critical flaws from logical simulation (must be fixed):\n{flaws}"
+                ),
+                None => goal.to_string(),
+            };
             let evolved_config = self
                 .swarm_coordinator
-                .coordinate_evolution(goal, &current_config)
+                .coordinate_evolution(&audit_goal, &current_config)
                 .await
                 .map_err(|e| CoreError::Internal(format!("Swarm audit failed: {}", e)))?;
 
@@ -149,6 +159,18 @@ impl SisyphusKernel {
                 .await
                 .map_err(|e| CoreError::Internal(format!("Logical simulation failed: {}", e)))?;
 
+            let critical_flaws: Vec<String> = sim_result
+                .flaws
+                .iter()
+                .filter(|f| {
+                    matches!(
+                        f.severity,
+                        sisyphus_intel::simulation::FlawSeverity::Critical
+                    )
+                })
+                .map(|f| format!("[{}] {}", f.node_name, f.description))
+                .collect();
+
             if sim_result.is_valid {
                 tracing::debug!(
                     "[execute_goal] SOP passed logical simulation. Proceeding to execution."
@@ -159,30 +181,26 @@ impl SisyphusKernel {
 
             simulation_attempts += 1;
             if simulation_attempts >= max_simulation_attempts {
-                tracing::debug!("[execute_goal] Max simulation attempts reached. Proceeding with best available (may contain warnings).");
-                current_config = evolved_config;
-                break;
+                if critical_flaws.is_empty() {
+                    tracing::debug!("[execute_goal] Max simulation attempts reached with warnings only. Proceeding with best available.");
+                    current_config = evolved_config;
+                    break;
+                }
+                // P1-1 门禁：Critical 缺陷重试耗尽后阻断，不得静默执行。
+                return Err(CoreError::Internal(format!(
+                    "Logical simulation still reports {} critical flaw(s) after {max_simulation_attempts} refinement attempts; execution blocked: {}",
+                    critical_flaws.len(),
+                    critical_flaws.join("; ")
+                )));
             }
-
-            let critical_flaws: Vec<_> = sim_result
-                .flaws
-                .iter()
-                .filter(|f| {
-                    matches!(
-                        f.severity,
-                        sisyphus_intel::simulation::FlawSeverity::Critical
-                    )
-                })
-                .collect();
 
             tracing::debug!(
                 "[execute_goal] Simulation detected {critical_flaws_len} critical flaws. Triggering re-evolution...",
                 critical_flaws_len = critical_flaws.len()
             );
 
-            // 通过临时目标增强，将缺陷描述注入下一轮演进循环
-            // 在真实系统中，我们会直接将其传给协调器。
-            // 目前，我们包装当前配置并让 swarm 尝试修复。
+            // 将缺陷描述注入下一轮审计目标，使架构师针对性修复。
+            flaw_feedback = Some(critical_flaws.join("\n"));
             current_config = evolved_config;
         }
 

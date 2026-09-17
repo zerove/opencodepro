@@ -1142,6 +1142,147 @@ async fn test_cognitive_loop_receives_goal_text_not_project_id() {
     );
 }
 
+// ---------------------------------------------------------------------------
+// 仿真门禁回归：Critical 缺陷重试耗尽后必须阻断，不得静默执行（评审 P1-1）
+// ---------------------------------------------------------------------------
+
+/// 始终报告 Critical 缺陷的逻辑仿真替身。
+struct CriticalFlawSimulator;
+
+#[async_trait::async_trait]
+impl sisyphus_intel::simulation::LogicalSimulator for CriticalFlawSimulator {
+    async fn simulate_logic(
+        &self,
+        _graph: Arc<SOPGraph>,
+        _context: &ExecutionContext,
+        _sop_id: &str,
+        _goal_text: Option<&str>,
+    ) -> Result<sisyphus_intel::simulation::LogicalSimulationResult, sisyphus_types::IntelError>
+    {
+        Ok(sisyphus_intel::simulation::LogicalSimulationResult {
+            is_valid: false,
+            flaws: vec![sisyphus_intel::simulation::LogicalFlaw {
+                node_name: "n0".into(),
+                description: "persistent critical flaw".into(),
+                severity: sisyphus_intel::simulation::FlawSeverity::Critical,
+            }],
+            predicted_path: vec![],
+            confidence: 0.1,
+        })
+    }
+}
+
+/// 脚本化 LLM：generate 返回 Standard；chat 对审查请求返回 approved，
+/// 其余（提案/修正）返回与测试图等价的合法配置 JSON。
+struct ScriptedLlmClient;
+
+#[async_trait::async_trait]
+impl sisyphus_tools_llm::LlmClient for ScriptedLlmClient {
+    async fn generate(&self, _prompt: &str) -> Result<String, sisyphus_types::TypesError> {
+        Ok(r#"{"critical_findings": [], "risk_score": 0.1, "suggested_refinement": "none", "should_proceed": true}"#.into())
+    }
+
+    async fn chat(
+        &self,
+        _system: &str,
+        user: &str,
+        _stream: bool,
+    ) -> Result<String, sisyphus_types::TypesError> {
+        if user.contains("review this proposal") {
+            Ok(r#"{"approved": true, "feedback": "ok"}"#.into())
+        } else {
+            let cfg = SOPGraphConfig {
+                nodes: vec![SOPNodeConfig {
+                    name: "n0".into(),
+                    kind: NodeKind::Wasm {
+                        tool_id: "t".into(),
+                        fuel_limit: 100,
+                    },
+                }],
+                edges: vec![],
+            };
+            serde_json::to_string(&cfg)
+                .map_err(|e| sisyphus_types::TypesError::InternalError(e.to_string()))
+        }
+    }
+
+    fn get_params_for(&self, _agent_id: &str) -> (String, String, String) {
+        (
+            "test_key".into(),
+            "http://test:8080".into(),
+            "test-model".into(),
+        )
+    }
+
+    fn breaker(&self) -> sisyphus_tools_llm::circuit_breaker::CircuitBreaker {
+        sisyphus_tools_llm::circuit_breaker::CircuitBreaker::default()
+    }
+}
+
+#[tokio::test]
+async fn test_execute_goal_blocks_when_critical_flaws_persist() {
+    let state_store = Arc::new(
+        sisyphus_mem::MfsStore::new("sqlite::memory:", &sisyphus_types::CacheConfig::default())
+            .await
+            .expect("in-memory MfsStore"),
+    );
+    let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.expect("sqlite pool");
+    let tool_executor: Arc<dyn ToolExecutor> = Arc::new(MockToolExecutor);
+
+    let intel = Arc::new(sisyphus_intel::SisyphusIntel::new(
+        Arc::new(sisyphus_intel::MonteCarloSimulator::new(1)),
+        Arc::new(CriticalFlawSimulator),
+        Arc::new(sisyphus_intel::StandardReflector),
+        Arc::new(sisyphus_intel::StandardEvolver::new()),
+    ));
+
+    let synthesizer: Arc<dyn sisyphus_intel::FlowSynthesizer> = Arc::new(
+        sisyphus_intel::GoalDrivenSynthesizer::new(tool_executor.clone()),
+    );
+
+    let llm: Arc<dyn sisyphus_tools_llm::LlmClient> = Arc::new(ScriptedLlmClient);
+
+    let kernel = SisyphusKernel::new(
+        state_store,
+        Arc::new(sisyphus_mem::SopSqlStore::new(pool.clone()).await.expect("sop store")),
+        Arc::new(sisyphus_mem::VectorMemoryStore::new(pool.clone()).await.expect("vector store")),
+        Arc::new(MockExperienceBank),
+        tool_executor,
+        intel,
+        llm.clone(),
+        llm,
+        synthesizer,
+        Arc::new(parking_lot::Mutex::new(
+            sisyphus_tools_llm_tools::meta_learner::MetaLearner::new(".omo/test_meta"),
+        )),
+        Arc::new(MockConsensus),
+        Arc::new({
+            let store =
+                sisyphus_mem::RoadmapSqlStore::new(pool.clone()).await.expect("roadmap store");
+            store.init_schema().await.expect("init roadmap schema");
+            store
+        }),
+        Arc::new(sisyphus_tools_llm::DummyEmbeddingClient),
+    );
+
+    // 仿真持续报告 Critical 缺陷。重试耗尽后应阻断执行而非放行。
+    let result = kernel
+        .execute_goal(
+            "goal with persistent critical flaw",
+            "sop-critical",
+            "default",
+            None,
+            None,
+        )
+        .await;
+
+    assert!(
+        result.is_err(),
+        "Critical 缺陷重试耗尽后必须阻断执行，当前却返回了 Ok: {:?}",
+        result.as_ref().map(|(o, _)| o.to_string())
+    );
+}
+
 struct MockSimulator {
     probs: parking_lot::Mutex<VecDeque<f64>>,
 }
