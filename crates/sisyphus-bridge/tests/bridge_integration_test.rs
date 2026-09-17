@@ -264,6 +264,42 @@ async fn test_execute_tool_builtin_read() {
     server.abort();
 }
 
+/// 战略循环公共接口验收：strategic:next_goal 工具经过 ExecuteTool RPC
+/// 路由到 StrategicExecutor。kernel 未设置时应得到结构化错误而非
+/// panic/挂起，证明桥接层的集成边界行为稳定（内核注入路径属
+/// bridge-test-full 专项）。
+#[tokio::test]
+async fn test_execute_tool_strategic_next_goal_reports_kernel_state() {
+    let (mut client, server) = setup_bridge().await;
+    let response = client
+        .execute_tool(ExecuteToolRequest {
+            tool_id: "strategic:next_goal".into(),
+            args_json: r#"{"project_id": "nonexistent-project"}"#.into(),
+            fuel_limit: 0,
+        })
+        .await
+        .expect("ExecuteTool failed");
+    let inner = response.into_inner();
+    // 无 kernel/项目时必须失败且错误可观察，不能 panic 或挂起。
+    assert_ne!(
+        inner.status, "SUCCESS",
+        "未注入 kernel 时不应成功: {}",
+        inner.result_json
+    );
+    // 错误必须携带结构化上下文：工具名与失败原因。
+    assert!(
+        inner.status.contains("next_goal"),
+        "status 应包含工具名，实际: {}",
+        inner.status
+    );
+    assert!(
+        inner.status.contains("Project 'nonexistent-project' not found"),
+        "status 应指明项目不存在，实际: {}",
+        inner.status
+    );
+    server.abort();
+}
+
 #[tokio::test]
 async fn test_execute_tool_builtin_bash() {
     let (mut client, server) = setup_bridge().await;
