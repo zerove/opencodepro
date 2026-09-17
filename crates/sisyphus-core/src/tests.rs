@@ -565,7 +565,12 @@ async fn build_test_kernel() -> SisyphusKernel {
             sisyphus_tools_llm_tools::meta_learner::MetaLearner::new(".omo/test_meta"),
         )),
         Arc::new(MockConsensus),
-        Arc::new(sisyphus_mem::RoadmapSqlStore::new(pool).await.expect("roadmap store")),
+        Arc::new({
+            let store =
+                sisyphus_mem::RoadmapSqlStore::new(pool.clone()).await.expect("roadmap store");
+            store.init_schema().await.expect("init roadmap schema");
+            store
+        }),
         Arc::new(sisyphus_tools_llm::DummyEmbeddingClient),
     )
 }
@@ -646,126 +651,9 @@ async fn test_kernel_load_nonexistent() {
 
 #[tokio::test]
 async fn test_strategic_manager_evolution_verification() {
-    use crate::strategic_manager::*;
-    use sisyphus_types::config::CognitiveLoopConfig;
     use sisyphus_types::{NodeKind, SOPGraphConfig, SOPNodeConfig};
-    use std::collections::VecDeque;
 
-    struct MockSimulator {
-        probs: parking_lot::Mutex<VecDeque<f64>>,
-    }
-    impl MockSimulator {
-        fn new(p: Vec<f64>) -> Self {
-            Self {
-                probs: parking_lot::Mutex::new(VecDeque::from(p)),
-            }
-        }
-    }
-    #[async_trait::async_trait]
-    impl sisyphus_intel::Simulator for MockSimulator {
-        async fn simulate(
-            &self,
-            _g: Arc<SOPGraph>,
-            _ctx: &ExecutionContext,
-            _id: &str,
-            _sop_id: &str,
-            _goal: Option<&str>,
-        ) -> Result<sisyphus_intel::SimulationResult, sisyphus_types::IntelError> {
-            let p = self.probs.lock().pop_front().unwrap_or(0.5);
-            Ok(sisyphus_intel::SimulationResult {
-                path_id: "p1".into(),
-                success_probability: p,
-                estimated_cost: 100,
-                predicted_stability: 1.0,
-                predicted_effort: 50,
-                predicted_outcome: "ok".into(),
-            })
-        }
-    }
-
-    async fn setup_manager(probs: Vec<f64>) -> StrategicManager {
-        let simulator = Arc::new(MockSimulator::new(probs));
-        let intel = Arc::new(sisyphus_intel::SisyphusIntel::new(
-            simulator,
-            Arc::new(MockLogicalSimulator),
-            Arc::new(MockReflector),
-            Arc::new(MockEvolver),
-        ));
-
-        let llm: Arc<dyn sisyphus_tools_llm::LlmClient> =
-            Arc::new(sisyphus_tools_llm::DummyLlmClient);
-        let synthesizer: Arc<dyn sisyphus_intel::FlowSynthesizer> = Arc::new(
-            sisyphus_intel::GoalDrivenSynthesizer::new(Arc::new(MockToolExecutor)),
-        );
-
-        let intelligence_manager =
-            Arc::new(IntelligenceManager::new(intel, synthesizer, llm.clone()));
-
-        let state_store = Arc::new(
-            sisyphus_mem::MfsStore::new("sqlite::memory:", &sisyphus_types::CacheConfig::default())
-                .await
-                .expect("in-memory MfsStore"),
-        );
-        let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.expect("sqlite pool");
-        let sop_store =
-            Arc::new(sisyphus_mem::SopSqlStore::new(pool.clone()).await.expect("sop store"));
-        let knowledge = Arc::new(sisyphus_knowledge::AssetManager::new(
-            std::path::PathBuf::from(".omo/test_knowledge"),
-        ));
-        let intervention = Arc::new(crate::intervention_manager::InterventionManager::new());
-        let internalization =
-            Arc::new(crate::internalization_manager::InternalizationManager::new(
-                llm.clone(),
-                knowledge.clone(),
-            ));
-        let execution_manager = Arc::new(ExecutionManager::new(
-            state_store.clone(),
-            sop_store,
-            Arc::new(MockToolExecutor),
-            Arc::new(MockTestExecutor),
-            intervention.clone(),
-            internalization.clone(),
-            None,
-        ));
-
-        let config = CognitiveLoopConfig {
-            max_iterations: 1,
-            convergence_threshold: 0.01,
-            llm_stage_timeout_secs: 30,
-            adaptive_depth: sisyphus_types::config::AdaptiveDepthConfig::default(),
-            anomaly_detector: sisyphus_types::config::AnomalyDetectorConfig::default(),
-            token_budget: sisyphus_types::config::TokenBudgetConfig::default(),
-        };
-
-        let benchmark = Arc::new(parking_lot::Mutex::new(
-            sisyphus_tools_build::benchmark::ContinuousBenchmark::new(".omo/test_bench"),
-        ));
-        let meta_learner = Arc::new(parking_lot::Mutex::new(
-            sisyphus_tools_llm_tools::meta_learner::MetaLearner::new(".omo/test_meta"),
-        ));
-        let roadmap = Arc::new(sisyphus_roadmap::RoadmapManager::new(
-            state_store.clone(),
-            Arc::new(sisyphus_mem::RoadmapSqlStore::new(pool).await.expect("roadmap store")),
-            Arc::new(sisyphus_roadmap::proposal_manager::ProposalManager::new(
-                state_store.clone(),
-            )),
-        ));
-
-        StrategicManager::new(
-            intelligence_manager,
-            execution_manager,
-            config,
-            Arc::new(crate::AgentChannel::new()),
-            benchmark,
-            meta_learner,
-            Arc::new(MockExperienceBank),
-            knowledge,
-            roadmap,
-            intervention,
-            internalization,
-            None,
-        )
-    }
+    // MockSimulator 与 setup_manager 已提升到模块级（见文件末尾）。
 
     // 场景 1：演进被接受（0.5 -> 0.8）
     {
@@ -1096,4 +984,282 @@ fn test_token_budget_config_serde_roundtrip() {
     let back: TokenBudgetConfig = serde_json::from_str(&json).expect("deserialize");
     assert_eq!(back.cap, Some(50000));
     assert!((back.reserve_ratio - 0.2).abs() < 1e-9);
+}
+
+// ---------------------------------------------------------------------------
+// 参数顺序回归：goal_text 与 project_id 不得错位（评审 P0-0）
+// ---------------------------------------------------------------------------
+
+/// 记录最近一次查询的经验库，用于断言目标文本正确传入。
+struct RecordingExperienceBank {
+    last_query: parking_lot::Mutex<Option<String>>,
+}
+
+#[async_trait::async_trait]
+impl sisyphus_types::experience::ExperienceBank for RecordingExperienceBank {
+    async fn record(
+        &self,
+        _exp: sisyphus_types::experience::ExperienceTuple,
+    ) -> Result<(), sisyphus_types::TypesError> {
+        Ok(())
+    }
+
+    async fn query_similar(
+        &self,
+        query: sisyphus_types::experience::ExperienceQuery,
+    ) -> Result<Vec<sisyphus_types::experience::ExperienceTuple>, sisyphus_types::TypesError> {
+        *self.last_query.lock() = Some(query.query_text);
+        Ok(vec![])
+    }
+}
+
+#[tokio::test]
+async fn test_cognitive_loop_receives_goal_text_not_project_id() {
+    let recorder = Arc::new(RecordingExperienceBank {
+        last_query: parking_lot::Mutex::new(None),
+    });
+
+    // 构建注入 RecordingExperienceBank 的内核，走真实 kernel 公共入口。
+    let state_store = Arc::new(
+        sisyphus_mem::MfsStore::new("sqlite::memory:", &sisyphus_types::CacheConfig::default())
+            .await
+            .expect("in-memory MfsStore"),
+    );
+    let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.expect("sqlite pool");
+    let tool_executor: Arc<dyn ToolExecutor> = Arc::new(MockToolExecutor);
+
+    let intel = Arc::new(sisyphus_intel::SisyphusIntel::new(
+        Arc::new(sisyphus_intel::MonteCarloSimulator::new(1)),
+        Arc::new(MockLogicalSimulator),
+        Arc::new(sisyphus_intel::StandardReflector),
+        Arc::new(sisyphus_intel::StandardEvolver::new()),
+    ));
+
+    let synthesizer: Arc<dyn sisyphus_intel::FlowSynthesizer> = Arc::new(
+        sisyphus_intel::GoalDrivenSynthesizer::new(tool_executor.clone()),
+    );
+
+    let llm: Arc<dyn sisyphus_tools_llm::LlmClient> = Arc::new(sisyphus_tools_llm::DummyLlmClient);
+
+    let kernel = SisyphusKernel::new(
+        state_store,
+        Arc::new(sisyphus_mem::SopSqlStore::new(pool.clone()).await.expect("sop store")),
+        Arc::new(sisyphus_mem::VectorMemoryStore::new(pool.clone()).await.expect("vector store")),
+        recorder.clone(),
+        tool_executor,
+        intel,
+        llm.clone(),
+        llm,
+        synthesizer,
+        Arc::new(parking_lot::Mutex::new(
+            sisyphus_tools_llm_tools::meta_learner::MetaLearner::new(".omo/test_meta"),
+        )),
+        Arc::new(MockConsensus),
+        Arc::new({
+            let store =
+                sisyphus_mem::RoadmapSqlStore::new(pool.clone()).await.expect("roadmap store");
+            store.init_schema().await.expect("init roadmap schema");
+            store
+        }),
+        Arc::new(sisyphus_tools_llm::DummyEmbeddingClient),
+    );
+
+    // 通过真实存储路径预置项目/里程碑/阶段/目标，goal_text 应来自 roadmap。
+    let unique_goal = "goal-marker-9f31c2";
+    let project_id = "proj-8a7d21";
+    let sop_id = "goal-param-regression";
+    kernel
+        .roadmap_manager
+        .create_project(project_id, "param-regression", "test project")
+        .await
+        .expect("create project");
+    kernel
+        .roadmap_manager
+        .add_milestone(
+            project_id,
+            sisyphus_types::Milestone {
+                id: "ms-1".into(),
+                name: "ms".into(),
+                phases: vec![],
+                status: sisyphus_types::MilestoneStatus::Pending,
+            },
+        )
+        .await
+        .expect("add milestone");
+    kernel
+        .roadmap_manager
+        .add_phase(
+            project_id,
+            "ms-1",
+            sisyphus_types::Phase {
+                id: "ph-1".into(),
+                name: "ph".into(),
+                goals: vec![],
+                depends_on: vec![],
+            },
+        )
+        .await
+        .expect("add phase");
+    kernel
+        .roadmap_manager
+        .add_goal(
+            project_id,
+            "ms-1",
+            "ph-1",
+            sisyphus_types::GoalRef {
+                goal_id: sop_id.to_string(),
+                description: unique_goal.to_string(),
+                status: sisyphus_types::MilestoneStatus::Pending,
+            },
+        )
+        .await
+        .expect("add goal");
+
+    let config_sop = SOPGraphConfig {
+        nodes: vec![SOPNodeConfig {
+            name: "n0".into(),
+            kind: NodeKind::Wasm {
+                tool_id: "t".into(),
+                fuel_limit: 100,
+            },
+        }],
+        edges: vec![],
+    };
+    let sop_graph = make_sop_graph(&config_sop);
+
+    // execute_with_cognition 内部从 roadmap 取 goal_description 后调用
+    // run_cognitive_loop。若参数错位，经验查询文本将是项目标识。
+    let _ = kernel
+        .execute_with_cognition(sop_graph, sop_id, Some(project_id), None, None, None)
+        .await
+        .expect("loop runs");
+
+    let observed = recorder.last_query.lock().clone();
+    assert_eq!(
+        observed.as_deref(),
+        Some(unique_goal),
+        "经验检索必须收到目标文本，而不是项目标识"
+    );
+}
+
+struct MockSimulator {
+    probs: parking_lot::Mutex<VecDeque<f64>>,
+}
+impl MockSimulator {
+    fn new(p: Vec<f64>) -> Self {
+        Self {
+            probs: parking_lot::Mutex::new(VecDeque::from(p)),
+        }
+    }
+}
+#[async_trait::async_trait]
+impl sisyphus_intel::Simulator for MockSimulator {
+    async fn simulate(
+        &self,
+        _g: Arc<SOPGraph>,
+        _ctx: &ExecutionContext,
+        _id: &str,
+        _sop_id: &str,
+        _goal: Option<&str>,
+    ) -> Result<sisyphus_intel::SimulationResult, sisyphus_types::IntelError> {
+        let p = self.probs.lock().pop_front().unwrap_or(0.5);
+        Ok(sisyphus_intel::SimulationResult {
+            path_id: "p1".into(),
+            success_probability: p,
+            estimated_cost: 100,
+            predicted_stability: 1.0,
+            predicted_effort: 50,
+            predicted_outcome: "ok".into(),
+        })
+    }
+}
+
+use crate::strategic_manager::StrategicManager;
+use sisyphus_types::config::CognitiveLoopConfig;
+use std::collections::VecDeque;
+
+async fn setup_manager(probs: Vec<f64>) -> StrategicManager {
+    let simulator = Arc::new(MockSimulator::new(probs));
+    let intel = Arc::new(sisyphus_intel::SisyphusIntel::new(
+        simulator,
+        Arc::new(MockLogicalSimulator),
+        Arc::new(MockReflector),
+        Arc::new(MockEvolver),
+    ));
+
+    let llm: Arc<dyn sisyphus_tools_llm::LlmClient> = Arc::new(sisyphus_tools_llm::DummyLlmClient);
+    let synthesizer: Arc<dyn sisyphus_intel::FlowSynthesizer> = Arc::new(
+        sisyphus_intel::GoalDrivenSynthesizer::new(Arc::new(MockToolExecutor)),
+    );
+
+    let intelligence_manager = Arc::new(IntelligenceManager::new(intel, synthesizer, llm.clone()));
+
+    let state_store = Arc::new(
+        sisyphus_mem::MfsStore::new("sqlite::memory:", &sisyphus_types::CacheConfig::default())
+            .await
+            .expect("in-memory MfsStore"),
+    );
+    let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.expect("sqlite pool");
+    let sop_store =
+        Arc::new(sisyphus_mem::SopSqlStore::new(pool.clone()).await.expect("sop store"));
+    let knowledge = Arc::new(sisyphus_knowledge::AssetManager::new(
+        std::path::PathBuf::from(".omo/test_knowledge"),
+    ));
+    let intervention = Arc::new(crate::intervention_manager::InterventionManager::new());
+    let internalization = Arc::new(crate::internalization_manager::InternalizationManager::new(
+        llm.clone(),
+        knowledge.clone(),
+    ));
+    let execution_manager = Arc::new(ExecutionManager::new(
+        state_store.clone(),
+        sop_store,
+        Arc::new(MockToolExecutor),
+        Arc::new(MockTestExecutor),
+        intervention.clone(),
+        internalization.clone(),
+        None,
+    ));
+
+    let config = CognitiveLoopConfig {
+        max_iterations: 1,
+        convergence_threshold: 0.01,
+        llm_stage_timeout_secs: 30,
+        adaptive_depth: sisyphus_types::config::AdaptiveDepthConfig::default(),
+        anomaly_detector: sisyphus_types::config::AnomalyDetectorConfig::default(),
+        token_budget: sisyphus_types::config::TokenBudgetConfig::default(),
+    };
+
+    let benchmark = Arc::new(parking_lot::Mutex::new(
+        sisyphus_tools_build::benchmark::ContinuousBenchmark::new(".omo/test_bench"),
+    ));
+    let meta_learner = Arc::new(parking_lot::Mutex::new(
+        sisyphus_tools_llm_tools::meta_learner::MetaLearner::new(".omo/test_meta"),
+    ));
+    let roadmap = Arc::new(sisyphus_roadmap::RoadmapManager::new(
+        state_store.clone(),
+        Arc::new({
+            let store =
+                sisyphus_mem::RoadmapSqlStore::new(pool.clone()).await.expect("roadmap store");
+            store.init_schema().await.expect("init roadmap schema");
+            store
+        }),
+        Arc::new(sisyphus_roadmap::proposal_manager::ProposalManager::new(
+            state_store.clone(),
+        )),
+    ));
+
+    StrategicManager::new(
+        intelligence_manager,
+        execution_manager,
+        config,
+        Arc::new(crate::AgentChannel::new()),
+        benchmark,
+        meta_learner,
+        Arc::new(MockExperienceBank),
+        knowledge,
+        roadmap,
+        intervention,
+        internalization,
+        None,
+    )
 }

@@ -42,8 +42,8 @@ impl SisyphusKernel {
             .run_cognitive_loop(
                 sop_graph,
                 sop_id,
-                project_id,
                 goal_text.as_deref(),
+                project_id,
                 initial_ctx,
                 event_tx,
                 |sid, event| self.broadcast_event(sid, event),
