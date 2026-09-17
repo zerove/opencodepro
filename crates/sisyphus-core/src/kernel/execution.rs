@@ -349,6 +349,12 @@ impl SisyphusKernel {
 
         let elapsed = start.elapsed();
 
+        // P2-1：timestamp 必须是墙钟时间；elapsed 只进 duration_secs。
+        let wall_now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+
         let outcome = sisyphus_roadmap::ExecutionOutcome {
             goal_id: goal_id.to_string(),
 
@@ -364,21 +370,28 @@ impl SisyphusKernel {
 
             error,
 
-            timestamp: elapsed.as_secs(),
+            timestamp: wall_now,
 
             actual_cost: 0.0, // actual cost tracking TBD at this layer
 
             duration_secs: elapsed.as_secs_f64(),
         };
 
-        let _ = self.roadmap_manager.record_outcome(&outcome).await;
+        if let Err(e) = self.roadmap_manager.record_outcome(&outcome).await {
+            tracing::warn!(
+                project_id,
+                goal_id,
+                error = %e,
+                "Failed to persist execution outcome; health evaluation will use stale data"
+            );
+        }
 
         // 记录结构化经验用于蒙特卡洛偏置
         let mut experience = sisyphus_types::experience::ExperienceTuple {
             context_text: goal.to_string(),
             context_hash: format!("{:x}", md5::compute(goal)),
             action_id: sop_id.to_string(),
-            project_id: None,
+            project_id: Some(project_id.to_string()),
             outcome_success: success,
             deviation_score: deviation.unwrap_or(0.0),
             cost: 0, // Actual cost tracking TBD
@@ -406,7 +419,9 @@ impl SisyphusKernel {
             }
         }
 
-        let _ = self.experience_bank.record(experience).await;
+        if let Err(e) = self.experience_bank.record(experience).await {
+            tracing::warn!(project_id, error = %e, "Failed to record experience");
+        }
 
         if !success {
             let health = self.roadmap_manager.apply_blocking(project_id).await.ok();

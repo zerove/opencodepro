@@ -993,14 +993,25 @@ fn test_token_budget_config_serde_roundtrip() {
 /// 记录最近一次查询的经验库，用于断言目标文本正确传入。
 struct RecordingExperienceBank {
     last_query: parking_lot::Mutex<Option<String>>,
+    last_record: parking_lot::Mutex<Option<sisyphus_types::experience::ExperienceTuple>>,
+}
+
+impl RecordingExperienceBank {
+    fn new() -> Self {
+        Self {
+            last_query: parking_lot::Mutex::new(None),
+            last_record: parking_lot::Mutex::new(None),
+        }
+    }
 }
 
 #[async_trait::async_trait]
 impl sisyphus_types::experience::ExperienceBank for RecordingExperienceBank {
     async fn record(
         &self,
-        _exp: sisyphus_types::experience::ExperienceTuple,
+        exp: sisyphus_types::experience::ExperienceTuple,
     ) -> Result<(), sisyphus_types::TypesError> {
+        *self.last_record.lock() = Some(exp);
         Ok(())
     }
 
@@ -1015,9 +1026,7 @@ impl sisyphus_types::experience::ExperienceBank for RecordingExperienceBank {
 
 #[tokio::test]
 async fn test_cognitive_loop_receives_goal_text_not_project_id() {
-    let recorder = Arc::new(RecordingExperienceBank {
-        last_query: parking_lot::Mutex::new(None),
-    });
+    let recorder = Arc::new(RecordingExperienceBank::new());
 
     // 构建注入 RecordingExperienceBank 的内核，走真实 kernel 公共入口。
     let state_store = Arc::new(
@@ -1280,6 +1289,103 @@ async fn test_execute_goal_blocks_when_critical_flaws_persist() {
         result.is_err(),
         "Critical 缺陷重试耗尽后必须阻断执行，当前却返回了 Ok: {:?}",
         result.as_ref().map(|(o, _)| o.to_string())
+    );
+}
+
+#[tokio::test]
+async fn test_execute_and_record_persists_structured_metadata() {
+    let recorder = Arc::new(RecordingExperienceBank::new());
+
+    // 与门禁测试相同的内核构造，但仿真有效、经验库可观测。
+    let state_store = Arc::new(
+        sisyphus_mem::MfsStore::new("sqlite::memory:", &sisyphus_types::CacheConfig::default())
+            .await
+            .expect("in-memory MfsStore"),
+    );
+    let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.expect("sqlite pool");
+    let tool_executor: Arc<dyn ToolExecutor> = Arc::new(MockToolExecutor);
+
+    let intel = Arc::new(sisyphus_intel::SisyphusIntel::new(
+        Arc::new(sisyphus_intel::MonteCarloSimulator::new(1)),
+        Arc::new(MockLogicalSimulator),
+        Arc::new(sisyphus_intel::StandardReflector),
+        Arc::new(sisyphus_intel::StandardEvolver::new()),
+    ));
+
+    let synthesizer: Arc<dyn sisyphus_intel::FlowSynthesizer> = Arc::new(
+        sisyphus_intel::GoalDrivenSynthesizer::new(tool_executor.clone()),
+    );
+
+    let llm: Arc<dyn sisyphus_tools_llm::LlmClient> = Arc::new(ScriptedLlmClient);
+
+    let kernel = SisyphusKernel::new(
+        state_store,
+        Arc::new(sisyphus_mem::SopSqlStore::new(pool.clone()).await.expect("sop store")),
+        Arc::new(sisyphus_mem::VectorMemoryStore::new(pool.clone()).await.expect("vector store")),
+        recorder.clone(),
+        tool_executor,
+        intel,
+        llm.clone(),
+        llm,
+        synthesizer,
+        Arc::new(parking_lot::Mutex::new(
+            sisyphus_tools_llm_tools::meta_learner::MetaLearner::new(".omo/test_meta"),
+        )),
+        Arc::new(MockConsensus),
+        Arc::new({
+            let store =
+                sisyphus_mem::RoadmapSqlStore::new(pool.clone()).await.expect("roadmap store");
+            store.init_schema().await.expect("init roadmap schema");
+            store
+        }),
+        Arc::new(sisyphus_tools_llm::DummyEmbeddingClient),
+    );
+
+    let project_id = "proj-rec-7c1d";
+    kernel
+        .roadmap_manager
+        .create_project(project_id, "rec", "structured metadata test")
+        .await
+        .expect("create project");
+
+    let before = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+
+    let _ = kernel
+        .execute_and_record(
+            "structured metadata goal",
+            "sop-rec",
+            project_id,
+            "ms-x",
+            "ph-x",
+            "goal-x",
+            None,
+        )
+        .await
+        .expect("execute_and_record ok");
+
+    let after = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+
+    // outcome.timestamp 必须是墙钟时间而非耗时（耗时对快速执行约为 0）。
+    let outcomes = kernel.roadmap_manager.get_outcomes(project_id).await.expect("outcomes");
+    let outcome = outcomes.iter().find(|o| o.goal_id == "goal-x").expect("outcome persisted");
+    assert!(
+        outcome.timestamp >= before && outcome.timestamp <= after,
+        "outcome.timestamp 必须是墙钟时间 [{before}, {after}]，实际 {}",
+        outcome.timestamp
+    );
+
+    // 经验元组必须携带项目范围。
+    let recorded = recorder.last_record.lock().clone().expect("experience recorded");
+    assert_eq!(
+        recorded.project_id.as_deref(),
+        Some(project_id),
+        "经验必须记录项目范围"
     );
 }
 
