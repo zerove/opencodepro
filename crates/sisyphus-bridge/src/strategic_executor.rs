@@ -19,32 +19,23 @@ pub(crate) struct StrategicExecutor {
 }
 
 impl StrategicExecutor {
-    pub(crate) async fn new(
+    pub(crate) fn new(
         state_store: Arc<MfsStore>,
+        sql_store: Arc<sisyphus_mem::RoadmapSqlStore>,
         llm_client: Arc<dyn LlmClient>,
         cache_path: PathBuf,
         proposal_manager: Arc<ProposalManager>,
-    ) -> Result<Self, sisyphus_types::TypesError> {
-        let sql_store =
-            sisyphus_mem::RoadmapSqlStore::new(state_store.pool().clone()).await.map_err(|e| {
-                sisyphus_types::TypesError::StateStoreError(format!(
-                    "Failed to init RoadmapSqlStore: {e}"
-                ))
-            })?;
-        sql_store.init_schema().await.map_err(|e| {
-            sisyphus_types::TypesError::StateStoreError(format!(
-                "Failed to init Roadmap schema: {e}"
-            ))
-        })?;
-
-        Ok(Self {
+    ) -> Self {
+        // 必须复用内核的路线图库。状态库使用独立连接池，
+        // 在内存数据库配置下，从状态池另建路线图库将看不到内核的项目。
+        Self {
             kernel: Arc::new(RwLock::new(None)),
             state_store,
             llm_client,
             cache_path,
-            sql_store: Arc::new(sql_store),
+            sql_store,
             proposal_manager,
-        })
+        }
     }
 
     pub(crate) fn set_kernel(&self, kernel: Weak<SisyphusKernel>) {

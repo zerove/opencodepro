@@ -364,15 +364,13 @@ impl MySisyphusBridge {
             state_store.clone(),
         ));
 
-        let strategic_executor = Arc::new(
-            StrategicExecutor::new(
-                state_store.clone(),
-                dyn_llm_client.clone(),
-                cache_config.database_url.clone().into(),
-                proposal_manager.clone(),
-            )
-            .await?,
-        );
+        let strategic_executor = Arc::new(StrategicExecutor::new(
+            state_store.clone(),
+            sql_store.clone(),
+            dyn_llm_client.clone(),
+            cache_config.database_url.clone().into(),
+            proposal_manager.clone(),
+        ));
 
         router.register("strategic", strategic_executor.clone());
 
