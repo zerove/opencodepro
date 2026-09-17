@@ -49,13 +49,13 @@ impl SisyphusKernel {
                 .write_section("context".into(), ctx_str.into());
         }
 
-        println!("DEBUG: [execute_goal] Analyzing intent for goal: {}", goal);
+        tracing::debug!("[execute_goal] Analyzing intent for goal: {goal}");
 
         let mode = IntentGate::analyze(goal, &self.intelligence_manager.llm_client).await;
 
-        println!("DEBUG: [execute_goal] Intent analyzed. Mode: {:?}", mode);
+        tracing::debug!("[execute_goal] Intent analyzed. Mode: {mode:?}");
 
-        println!("DEBUG: [execute_goal] Searching for successful experiences...");
+        tracing::debug!("[execute_goal] Searching for successful experiences...");
 
         // 开始：经验检索（BEGIN_EXP_RETRIEVAL）
 
@@ -95,15 +95,15 @@ impl SisyphusKernel {
 
                     ));
 
-                    println!(
-                        "DEBUG: [execute_goal] Found and injecting most relevant experience: {}",
+                    tracing::debug!(
+                        "[execute_goal] Found and injecting most relevant experience: {}",
                         exp.action_id
                     );
                 }
             }
         }
 
-        println!("DEBUG: [execute_goal] Synthesizing SOP...");
+        tracing::debug!("[execute_goal] Synthesizing SOP...");
 
         let synthesis = self
             .intelligence_manager
@@ -111,14 +111,14 @@ impl SisyphusKernel {
             .await
             .map_err(|e| CoreError::Internal(e.to_string()))?;
 
-        println!(
-            "DEBUG: [execute_goal] Synthesis complete. Plan: {}",
+        tracing::debug!(
+            "[execute_goal] Synthesis complete. Plan: {}",
             synthesis.plan_description
         );
 
         // --- Swarm 审计与逻辑仿真循环 ---
-        println!(
-            "DEBUG: [execute_goal] Entering refinement loop (Swarm Audit + Logical Simulation)..."
+        tracing::debug!(
+            "[execute_goal] Entering refinement loop (Swarm Audit + Logical Simulation)..."
         );
         let mut current_config = sisyphus_types::SOPGraphConfig::from_graph(&synthesis.graph)
             .map_err(|e| CoreError::Internal(e.to_string()))?;
@@ -150,8 +150,8 @@ impl SisyphusKernel {
                 .map_err(|e| CoreError::Internal(format!("Logical simulation failed: {}", e)))?;
 
             if sim_result.is_valid {
-                println!(
-                    "DEBUG: [execute_goal] SOP passed logical simulation. Proceeding to execution."
+                tracing::debug!(
+                    "[execute_goal] SOP passed logical simulation. Proceeding to execution."
                 );
                 current_config = evolved_config;
                 break;
@@ -159,7 +159,7 @@ impl SisyphusKernel {
 
             simulation_attempts += 1;
             if simulation_attempts >= max_simulation_attempts {
-                println!("DEBUG: [execute_goal] Max simulation attempts reached. Proceeding with best available (may contain warnings).");
+                tracing::debug!("[execute_goal] Max simulation attempts reached. Proceeding with best available (may contain warnings).");
                 current_config = evolved_config;
                 break;
             }
@@ -175,7 +175,10 @@ impl SisyphusKernel {
                 })
                 .collect();
 
-            println!("DEBUG: [execute_//T_goal] Simulation detected {} critical flaws. Triggering re-evolution...", critical_flaws.len());
+            tracing::debug!(
+                "[execute_goal] Simulation detected {critical_flaws_len} critical flaws. Triggering re-evolution...",
+                critical_flaws_len = critical_flaws.len()
+            );
 
             // 通过临时目标增强，将缺陷描述注入下一轮演进循环
             // 在真实系统中，我们会直接将其传给协调器。
@@ -189,19 +192,19 @@ impl SisyphusKernel {
             self.test_executor.clone(),
         )
         .map_err(|e| CoreError::Internal(format!("Final graph build failed: {}", e)))?;
-        println!("DEBUG: [execute_goal] Refinement loop complete. SOP ready for execution.");
+        tracing::debug!("[execute_goal] Refinement loop complete. SOP ready for execution.");
         // --- Swarm 审计循环结束 ---
 
         let plan_desc = synthesis.plan_description;
 
-        println!("DEBUG: [execute_goal] Entering cognitive loop...");
+        tracing::debug!("[execute_goal] Entering cognitive loop...");
 
         let (res, report_obj, _) = self
             .execute_with_cognition(graph, sop_id, Some(project_id), None, event_tx, None)
             .await
             .map_err(|e| CoreError::Internal(e.to_string()))?;
 
-        println!("DEBUG: [execute_goal] Cognitive loop completed.");
+        tracing::debug!("[execute_goal] Cognitive loop completed.");
 
         let report_str = format!(
             "Plan: {} | Report: {} iterations, converged={}",

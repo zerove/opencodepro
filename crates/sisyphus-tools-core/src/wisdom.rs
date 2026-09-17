@@ -270,7 +270,11 @@ impl NotepadManager {
             }
             out.push(NotepadEntry::from_markdown(name, category, &raw));
         }
-        out.sort_by_key(|e| std::cmp::Reverse(e.timestamp));
+        out.sort_by(|a, b| {
+            std::cmp::Reverse(a.timestamp)
+                .cmp(&std::cmp::Reverse(b.timestamp))
+                .then_with(|| a.name.cmp(&b.name))
+        });
         Ok(out)
     }
 
