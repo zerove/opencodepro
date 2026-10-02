@@ -32,6 +32,34 @@ ADR-009 § Risk 2 写的是「启动时强制全量 sync（每个 peer 发送本
 - **幂等**：补齐走的是同一条 `ExperienceSync` → `apply_remote` → `merge_crdt` 路径，已天然幂等（返回 `Applied` / `Kept` / `Equal`）。
 - **有界**：单次响应的条目数必须有上界。
 
+### 前置缺陷 P1：经验行标识会碰撞（2026-10-02 在实施前发现）
+
+本文原先假定「dial 方持有 (node_id → 最大 counter) 即可推断自己缺哪些经验」。**该假定在当前 schema 上不成立**，实施前必须先修。
+
+事实（已实测）：
+
+- 经验行的主键是 `id = format!("exp:{}", exp.timestamp)`，而 `timestamp` 取自 `SystemTime::now().duration_since(UNIX_EPOCH).as_secs()`——**秒级精度**。
+- `record_experience` 用的是裸 `INSERT`，没有 `OR REPLACE` / `ON CONFLICT`。
+- 实测：同一秒内写入两条经验，第二条返回 `Err("Failed to record experience")`，第一条完好。
+- `execute_and_record` 对该错误只 `tracing::warn!` 后继续，**丢失是静默的**，不影响目标执行结果。
+
+影响：单机侧，两个目标执行 / 反思阶段在**同一秒内**完成即丢一条经验；多节点侧因并发写与时钟差异，概率显著更高。
+
+对反熵方案的影响：`bump_local_clock` 确实让 `vector_clock[node_id]` 成为该节点内每条记录的递增计数，但**行标识 `exp:{ts}` 既不编码来源节点、也不编码该计数**。因此「我持有 node-a 的 counter ≤ N」无法推出「我持有 node-a 的这批行」——紧凑摘要算不出差量。
+
+**因此本 ADR 的实施被两个前置项阻塞**：
+
+- **P1（数据正确性）** 经验行标识需无碰撞。可选方案见下。
+- **P2（本 ADR）** 行标识稳定后再做反熵，否则差量计算建立在错误前提上。
+
+### P1 的候选修复（待决策，本 ADR 不选定）
+
+1. **主键纳入来源与计数**：`id = exp:{ts}:{origin}:{counter}`。`origin`/`counter` 在 `bump_local_clock` 后已存在于 `vector_clock` 里，无需新增字段。代价：`origin` 的定义（哪个节点是来源）需要明确——远程应用时该取哪个。
+2. **提高时间戳精度**：`as_millis()` 或 `as_nanos()`。改动最小，但只是降低概率而非消除；同纳秒写入在高并发下仍可能发生。
+3. **内容判别式**：`id = exp:{ts}:{短哈希(context_text + action_id)}`。同一目标同秒的重复写入会折叠为一行——语义上可接受（本来就是同一条经验）；不同目标不再碰撞。代价：改变了 id 格式，存量行需迁移。
+
+三者都需要一次 schema / id 推导的集中化（当前 `format!("exp:{}", ts)` 散落在 `store.rs` 与 `experience_bank.rs` 多处，应收敛为单一函数），并配套迁移策略。建议单独开 ADR 决策，不在本文件内定。
+
 ## 决策选项
 
 ### 选项 A：版本向量反熵（采纳）
