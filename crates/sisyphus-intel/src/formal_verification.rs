@@ -118,13 +118,22 @@ impl VerificationRunner {
     /// Run a proptest property test with a given strategy and test function.
     /// This allows running a specific proptest test programmatically.
     ///
-    /// Example (requires `proptest` crate):
-    /// ```ignore
+    /// Example:
+    /// ```no_run
+    /// # use proptest::prelude::*;
+    /// use sisyphus_intel::formal_verification::VerificationRunner;
+    ///
     /// let runner = VerificationRunner::default();
-    /// runner.run_proptest_property("addition_commutative", 100,
+    /// let report = runner.run_proptest_property(
+    ///     "addition_commutative",
+    ///     100,
     ///     (0..1000u32, 0..1000u32),
-    ///     |(a, b)| { prop_assert_eq!(a + b, b + a); Ok(()) }
+    ///     |(a, b)| {
+    ///         prop_assert_eq!(a + b, b + a);
+    ///         Ok(())
+    ///     },
     /// );
+    /// # let _ = report;
     /// ```
     pub fn run_proptest_property<S, F>(
         &self,

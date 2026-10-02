@@ -11,13 +11,15 @@ use tokio::time::{interval, Duration};
 ///
 /// # Example
 ///
-/// ```ignore
+/// ```no_run
 /// use sisyphus_tools_system::config_store::ConfigStore;
 ///
-/// let (store, config) = ConfigStore::load("config.toml").await.unwrap();
-/// // Start background reload task
+/// // load 是同步的（返回 Result<(ConfigStore, Arc<RwLock<Config>>), String>），
+/// // 此前示例误写成 .await，因为标了 ```ignore 从不编译而无人发现。
+/// let (store, config) = ConfigStore::load("config.toml").unwrap();
+/// // 热重载需要后台轮询任务
 /// tokio::spawn(async move { store.start_watching().await });
-/// // Read current config via config.read().unwrap()
+/// // 读当前配置：config.read().unwrap()
 /// ```
 pub struct ConfigStore {
     config: Arc<RwLock<Config>>,
@@ -93,8 +95,11 @@ impl ConfigStore {
     ///
     /// This never returns under normal operation. Spawn it as a background task:
     ///
-    /// ```ignore
+    /// ```no_run
+    /// # use sisyphus_tools_system::config_store::ConfigStore;
+    /// # async fn demo(store: ConfigStore) {
     /// tokio::spawn(async move { store.start_watching().await });
+    /// # }
     /// ```
     pub async fn start_watching(&self) {
         let mut ticker = interval(self.poll_interval);

@@ -163,7 +163,7 @@
 - [x] **孤儿源文件扫描**: `scripts/audit_orphans.py` + `make audit-orphans` + CI 作业 `audit-sources`。从 crate 根沿 `mod` 声明遍历，找出 `src/` 下从未被引入的文件。已端到端验证：移除 `sisyphus-mem/src/lib.rs` 的 `mod tests;` 即被抓出，恢复后归零。
 - [x] **忽略测试理由审计**: `scripts/audit_ignored.py` + `make audit-ignored` + CI 作业 `audit-sources`。全仓 15 处 `#[ignore]` 而 CI 从不使用 `--include-ignored`——被忽略即等于没有覆盖。本审计只接受指向外部前置条件的理由（网络、凭据/环境变量、外部工具链、需要运行中的服务、已声明的能力缺口），裸 `#[ignore]` 与其他理由一律报出。已用 4 个合成用例验证精度：拦截 `requires dedicated runner` 与裸 `#[ignore]`，放行诚实理由、以及仅在注释中引用该属性的说明文字。
 - [x] **解除 2 处失效的 `#[ignore]`**: `bridge_integration_test` 中两处 `#[ignore = "requires dedicated runner"]` 的真实原因不是资源受限，而是当时测试失败（内核未注入、失败被吞成成功）。本轮两个成因均已修复，用例自包含（内存 SQLite + DummyLlmClient）。保持忽略会让本轮修复的失败传播语义在 CI 中零覆盖——而 CI 早已不带 `--include-ignored` 运行这个测试目标。
-- [x] **1 处从不编译的文档示例改为 `no_run`**: `peer/service.rs` 的 `add_cluster_service_example` 标为 ```ignore，从不参与编译——因此示例里连 `Arc` / `Duration` 的导入都缺失也无人发现。改为 ```no_run 后它会被编译检查（现为 `- compile ... ok`）。全仓另有 5 处 ```ignore 文档示例待同样处理。
+- [x] **6 处从不编译的文档示例改为 `no_run`**: `peer/service.rs`、`config_store.rs`（2 处）、`node.rs`、`core/lib.rs`、`formal_verification.rs` 均标为 ```ignore，从不参与编译。转换过程查出 **3 处真实文档缺陷**：`ConfigStore::load` 是同步函数却被示例写成 `.await`（会误导调用方）、`ExecutorRouter` 示例有未定义的 `args` 与多余的 `mut`（`register` 取 `&self`）、`peer/service.rs` 示例缺 `Arc` / `Duration` 导入。另修掉 `ExecutorRouter::register` 上重复两遍的文档注释。
 - [x] **修复 `resolve_backend` 三份副本**（扫描过程中发现）: `sisyphus-cli` 的 `build.rs` / `run.rs` / `diagnose.rs` 各有一份 36 行的 `resolve_backend`，逐字复制且已漂移（diagnose 版多一行注释）。新增语言需同步改三处，漏改即分叉——与 `fallback.rs` 是同一类漂移风险。已收敛为 `build.rs` 的 `pub(crate)` 单一实现。
 - [ ] **重复实现扫描（尝试失败，未采用）**: 见「六、一个被否决的方案」。
 - [ ] **TODO 勾选门禁**: 每个阶段勾选项要求附带对应测试名；`make todo-audit` 交叉核对测试是否真实存在且在跑。这需要先定义「测试名」的书写规范，成本高于前两项。

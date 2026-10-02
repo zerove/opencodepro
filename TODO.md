@@ -421,6 +421,7 @@
 - [x] **孤儿源文件扫描**: `scripts/audit_orphans.py` + `make audit-orphans` + CI。已端到端验证（移除 `mod tests;` 即被抓出）
 - [x] **忽略测试理由审计**: `scripts/audit_ignored.py` + `make audit-ignored` + CI。`#[ignore]` 必须指向外部前置条件，不接受「测试当前失败」。合成用例验证：拦截 `requires dedicated runner` 与裸 `#[ignore]`，放行诚实理由与注释中引用的属性
 - [x] **解除 2 处失效的 `#[ignore]`**: `bridge_integration_test` 中两处 `#[ignore = "requires dedicated runner"]` 的真实原因是测试失败（内核未注入、失败被吞成成功），本轮修复后已自包含通过；保持忽略会让本轮修复的失败传播语义在 CI 中零覆盖
+- [x] **6 处从不编译的文档示例改为 `no_run`**: `peer/service.rs`、`config_store.rs`(2)、`node.rs`、`core/lib.rs`、`formal_verification.rs`。查出 3 处真实文档缺陷（`.await` 用在同步函数 `ConfigStore::load` 上、示例变量未定义、缺导入），并修掉 `ExecutorRouter::register` 重复的文档注释
 - [x] **修复 `sisyphus-cli` `resolve_backend` 三份副本**: `build.rs`/`run.rs`/`diagnose.rs` 各一份 36 行副本且已漂移，收敛为 `build.rs` 的 `pub(crate)` 单一实现
 - [ ] **重复实现扫描（尝试失败，未采用）**: 正则 + 字节级比对抓不住「复制后各自加注释」这一真实漂移形态；需 `syn` 级 AST 比对。详见状态报告第六节
 - [ ] **TODO 勾选门禁**: 勾选项须附带测试名，`make todo-audit` 交叉核对是否真实存在且在跑

@@ -241,13 +241,25 @@ pub struct SisyphusKernel {
 /// 需要全部 13 个依赖。
 ///
 /// # 示例
-/// ```ignore
+/// ```no_run
+/// # use std::sync::Arc;
+/// # use sisyphus_core::{Consensus, KernelBuilder};
+/// # use sisyphus_tools_llm_tools::meta_learner::MetaLearner;
+/// # fn demo(
+/// #     meta_learner: Arc<parking_lot::Mutex<MetaLearner>>,
+/// #     consensus: Arc<dyn Consensus>,
+/// #     store: Arc<sisyphus_mem::MfsStore>,
+/// #     llm: Arc<dyn sisyphus_tools_llm::LlmClient>,
+/// #     exec: Arc<dyn sisyphus_types::ToolExecutor>,
+/// # ) {
 /// let kernel = KernelBuilder::new(meta_learner, consensus)
-///     .state_store(my_store)
-///     .llm_client(my_llm)
-///     .tool_executor(my_exec)
-///     // ... other fields ...
-///     .build()?; // 缺少必需字段时返回 CoreError::Internal
+///     .state_store(store)
+///     .llm_client(llm)
+///     .tool_executor(exec)
+///     // ... 其余必填字段：sop_store / vector_store / experience_bank / intel /
+///     //     fast_llm_client / synthesizer / sql_store / embedding_client
+///     .build(); // 缺任一必填字段时返回 Err(CoreError::Internal)
+/// # }
 /// ```
 pub struct KernelBuilder {
     state_store: Option<Arc<MfsStore>>,

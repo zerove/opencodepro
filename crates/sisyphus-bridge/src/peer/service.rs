@@ -240,8 +240,8 @@ pub(crate) fn apply_mgr_event(manager: &PeerManager, evt: MgrEvent) {
 /// # Ok(())
 /// # }
 /// ```
-/// 此前该示例标为 ```ignore，从不参与编译——因此连 `Arc` / `Duration` 的
-/// 导入都缺失也无人发现。改为 ```no_run 后它会被编译检查，示例随 API 演进
+/// 此前该示例标记为 ignore（不参与编译），因此连 `Arc` / `Duration` 的
+/// 导入都缺失也无人发现。改为 no_run 后它会被编译检查，示例随 API 演进
 /// 腐烂时能立刻暴露。
 /// tonic 0.12 中 Server::add_service 是 consuming method（返回 Self），无需 helper。
 /// 直接调用方链式：Server::builder().add_service(ClusterServer::new(...)).serve(addr)

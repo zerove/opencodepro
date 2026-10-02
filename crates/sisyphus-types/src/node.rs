@@ -304,17 +304,38 @@ pub trait CacheInvalidatable: Send + Sync {
 ///
 /// # Example
 ///
-/// ```ignore
-/// let mut router = ExecutorRouter::new(builtin_executor);
-/// router.register("wasm", wasm_executor);
-/// router.register("mcp", mcp_executor);
+/// ```no_run
+/// use async_trait::async_trait;
+/// use sisyphus_types::{ExecutorRouter, ToolExecutor, TypesError};
+/// use std::sync::Arc;
 ///
-/// // dispatches to builtin_executor.execute("file_read", ...)
-/// router.execute("file_read", args, 0).await;
+/// struct Noop;
+/// #[async_trait]
+/// impl ToolExecutor for Noop {
+///     async fn execute(&self, _id: &str, _args: Vec<u8>, _fuel: u64)
+///         -> Result<Vec<u8>, TypesError> { Ok(b"ok".to_vec()) }
+/// }
 ///
-/// // dispatches to mcp_executor.execute("echo", ...)
-/// router.execute("mcp:echo", args, 0).await;
+/// # async fn demo(
+/// #     builtin: Arc<dyn ToolExecutor>,
+/// #     wasm: Arc<dyn ToolExecutor>,
+/// #     mcp: Arc<dyn ToolExecutor>,
+/// # ) -> Result<(), TypesError> {
+/// let router = ExecutorRouter::new(builtin);
+/// router.register("wasm", wasm);
+/// router.register("mcp", mcp);
+///
+/// let args: Vec<u8> = Vec::new();
+/// // 无前缀 → 走 default
+/// router.execute("file_read", args.clone(), 0).await?;
+/// // 前缀命中 → 剥离前缀后转发给 mcp
+/// router.execute("mcp:echo", args, 0).await?;
+/// # Ok::<(), TypesError>(())
+/// # }
+/// # fn main() {}
 /// ```
+/// 此前该示例标记为 ignore（不参与编译），因此 `mut`（`register` 取
+/// `&self`，并不需要）与未定义的 `args` 都无人发现。
 pub struct ExecutorRouter {
     routers: DashMap<String, Arc<dyn ToolExecutor>>,
     pub default: Arc<dyn ToolExecutor>,
@@ -332,10 +353,6 @@ impl ExecutorRouter {
         }
     }
 
-    /// Register a sub-executor under a prefix.
-    ///
-    /// After registration, tool IDs of the form `"{prefix}:{name}"` will be
-    /// dispatched to this executor with `{name}` as the tool_id.
     /// Register a sub-executor under a prefix.
     ///
     /// After registration, tool IDs of the form `"{prefix}:{name}"` will be
