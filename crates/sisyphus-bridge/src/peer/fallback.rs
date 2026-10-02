@@ -22,7 +22,7 @@ use sisyphus_bridge_api::cluster_proto::{ClusterEvent as ProtoEvent, JoinRequest
 use sisyphus_mem::experience_bank::VectorExperienceBank;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::mpsc;
+use tokio::sync::{broadcast, mpsc};
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tokio_stream::StreamExt;
 use tonic::transport::{Channel, Endpoint};
@@ -80,13 +80,27 @@ pub fn spawn_static_peers(
     config: StaticPeerConfig,
     manager: Arc<PeerManager>,
 ) -> Vec<tokio::task::JoinHandle<()>> {
+    spawn_static_peers_with_catchup(config, manager, None)
+}
+
+/// 同 [`spawn_static_peers`]，但订阅「Lagged 补齐」信号。
+///
+/// ADR-011：入站通道 Lagged 意味着确实丢了事件（而非连接断开），重连无法
+/// 补救。收到信号后向本 peer 重发一次 `SyncRequest`，由反熵按摘要算出差量
+/// 并经幂等合并路径补齐。`None` 表示不订阅（仅依赖建连时的首次反熵拉取）。
+pub fn spawn_static_peers_with_catchup(
+    config: StaticPeerConfig,
+    manager: Arc<PeerManager>,
+    catchup_rx: Option<broadcast::Receiver<()>>,
+) -> Vec<tokio::task::JoinHandle<()>> {
     let mut handles = Vec::with_capacity(config.peers.len());
     for grpc_addr in &config.peers {
         let cfg = config.clone();
         let mgr = Arc::clone(&manager);
         let addr = grpc_addr.clone();
+        let rx = catchup_rx.as_ref().map(broadcast::Receiver::resubscribe);
         let handle = tokio::spawn(async move {
-            run_dial_loop(cfg, mgr, addr).await;
+            run_dial_loop(cfg, mgr, addr, rx).await;
         });
         handles.push(handle);
     }
@@ -97,14 +111,25 @@ pub fn spawn_static_peers(
 // adg:allow async function called without await
 // 误报：本函数由 spawn_static_peers 里的 tokio::spawn 驱动，
 // 并在 run_dial_loop 的调用点 await 其结果，不存在未等待的竞态。
-async fn run_dial_loop(config: StaticPeerConfig, manager: Arc<PeerManager>, grpc_addr: String) {
+async fn run_dial_loop(
+    config: StaticPeerConfig,
+    manager: Arc<PeerManager>,
+    grpc_addr: String,
+    catchup_rx: Option<broadcast::Receiver<()>>,
+) {
     let mut backoff = config.reconnect_initial_delay;
     loop {
         match connect_and_join(&config, &grpc_addr).await {
             Ok(channel) => {
                 // 连接成功，重置 backoff
                 backoff = config.reconnect_initial_delay;
-                if let Err(e) = run_stream(&manager, channel, config.experience_bank.as_ref()).await
+                if let Err(e) = run_stream(
+                    &manager,
+                    channel,
+                    config.experience_bank.as_ref(),
+                    catchup_rx.as_ref().map(broadcast::Receiver::resubscribe),
+                )
+                .await
                 {
                     tracing::warn!(
                         grpc_addr = %grpc_addr,
@@ -171,6 +196,7 @@ async fn run_stream(
     manager: &PeerManager,
     channel: Channel,
     experience_bank: Option<&Arc<VectorExperienceBank>>,
+    catchup_rx: Option<broadcast::Receiver<()>>,
 ) -> Result<(), String> {
     let mut client = ClusterClient::new(channel);
 
@@ -211,60 +237,167 @@ async fn run_stream(
         }
     }
 
-    // inbound: 对端 proto 事件 → manager
-    while let Some(result) = inbound.next().await {
-        match result {
-            Ok(proto_evt) => {
-                // 反熵应答与实时广播都是 ExperienceSync，接收侧无法从事件本身
-                // 分辨。因此翻页完全由服务端下发的 `SyncPageEnd{ more }` 控制，
-                // 而不是本地计数——否则实时广播会被误计入页内，使游标偏移错乱。
-                if let Some(cursor) = paging.as_mut() {
-                    if let Some(marker) = cursor.absorb_page_end(&proto_evt) {
-                        if marker.more {
-                            match anti_entropy::request_sync(
-                                cursor.bank(),
-                                &sync_tx,
-                                marker.next_offset,
-                            )
-                            .await
-                            {
-                                Ok(_) => cursor.set_offset(marker.next_offset),
-                                Err(e) => {
-                                    tracing::warn!(
-                                        error = %e,
-                                        offset = marker.next_offset,
-                                        "anti-entropy: paging request failed; stopping paging"
-                                    );
-                                    paging = None;
-                                },
-                            }
-                        } else {
-                            tracing::info!(
-                                synced = marker.delivered,
-                                total_offset = marker.next_offset,
-                                "anti-entropy: sync completed"
-                            );
-                            paging = None;
-                        }
-                    }
-                }
+    let mut catchup_pending = false;
 
-                // `SyncPageEnd` 是纯控制标记，不进入 manager 事件总线。
-                if !is_page_end(&proto_evt) {
-                    if let Some(mgr_evt) = proto_to_mgr_event(proto_evt) {
-                        apply_mgr_event(manager, mgr_evt);
-                    }
+    // 声明为 mut：`select!` 每一轮都以 `&mut` 借用这个 receiver，
+    // 跨轮次的接收位置必须保留。
+    let mut catchup_rx = catchup_rx;
+
+    // inbound: 对端 proto 事件 → manager
+    loop {
+        tokio::select! {
+            // ADR-011：入站 Lagged 表示确实丢了事件，重连救不回来。向本 peer
+            // 重发一次 SyncRequest，反熵按摘要算出差量并经幂等合并补齐。
+            // 发送失败只记日志——与初始反熵拉取同等对待，不拖垮主循环。
+            _ = recv_catchup(catchup_rx.as_mut()) => {
+                match paging {
+                    // 已有分页会话在途：不并发开第二个。两个都没有 session ID
+                    // 的分页会话一旦交错，服务端下发的 `SyncPageEnd` 就无法归属，
+                    // 会把游标推进到错误的偏移。挂起它，等当前会话收尾再从 0 重来。
+                    Some(_) => {
+                        tracing::warn!("anti-entropy: catch-up deferred until paging finishes");
+                        catchup_pending = true;
+                    },
+                    None => {
+                        // 发送失败只记日志——与初始反熵拉取同等对待，不拖垮主循环。
+                        if let Some(bank) = experience_bank {
+                            if let Err(e) = anti_entropy::request_sync(bank, &sync_tx, 0).await {
+                                tracing::warn!(error = %e, "anti-entropy: lagged catch-up request failed");
+                            } else {
+                                paging = Some(PagingCursor::new(bank.clone()));
+                                tracing::info!("anti-entropy: lagged catch-up requested");
+                            }
+                        }
+                    },
                 }
             },
-            Err(status) => {
-                outbound_task.abort();
-                return Err(format!("inbound stream error: {status}"));
+            result = inbound.next() => {
+                // 流已结束：对端关闭了连接。按重连处理，与 Err 分支同样处置。
+                let Some(result) = result else {
+                    outbound_task.abort();
+                    return Err("inbound stream ended".to_string());
+                };
+                match result {
+                    Ok(proto_evt) => {
+                        // 反熵应答与实时广播都是 ExperienceSync，接收侧无法从事件本身
+                        // 分辨。因此翻页完全由服务端下发的 `SyncPageEnd{ more }` 控制，
+                        // 而不是本地计数——否则实时广播会被误计入页内，使游标偏移错乱。
+                        if let Some(cursor) = paging.as_mut() {
+                            if let Some(marker) = cursor.absorb_page_end(&proto_evt) {
+                                if marker.more {
+                                    match anti_entropy::request_sync(
+                                        cursor.bank(),
+                                        &sync_tx,
+                                        marker.next_offset,
+                                    )
+                                    .await
+                                    {
+                                        Ok(_) => cursor.set_offset(marker.next_offset),
+                                        Err(e) => {
+                                            tracing::warn!(
+                                                error = %e,
+                                                offset = marker.next_offset,
+                                                "anti-entropy: paging request failed; stopping paging"
+                                            );
+                                            paging = None;
+                                            resume_pending_catchup(
+                                                &mut catchup_pending,
+                                                experience_bank,
+                                                &mut paging,
+                                                &sync_tx,
+                                            )
+                                            .await;
+                                        },
+                                    }
+                                } else {
+                                    tracing::info!(
+                                        synced = marker.delivered,
+                                        total_offset = marker.next_offset,
+                                        "anti-entropy: sync completed"
+                                    );
+                                    paging = None;
+                                    resume_pending_catchup(
+                                        &mut catchup_pending,
+                                        experience_bank,
+                                        &mut paging,
+                                        &sync_tx,
+                                    )
+                                    .await;
+                                }
+                            }
+                        }
+
+                        // `SyncPageEnd` 是纯控制标记，不进入 manager 事件总线。
+                        if !is_page_end(&proto_evt) {
+                            if let Some(mgr_evt) = proto_to_mgr_event(proto_evt) {
+                                apply_mgr_event(manager, mgr_evt);
+                            }
+                        }
+                    },
+                    Err(status) => {
+                        outbound_task.abort();
+                        return Err(format!("inbound stream error: {status}"));
+                    },
+                }
             },
         }
     }
+}
 
-    outbound_task.abort();
-    Err("inbound stream ended".to_string())
+/// 等待一次补齐信号。
+///
+/// 刻意做成每次调用重建的 future 而非常驻 future：`recv()` 一旦返回，
+/// 常驻 future 就已完成；在 `select!` 里复用已完成 future 会立即反复 ready，
+/// 把补齐变成无休止的反熵请求风暴。每次重建也让「Closed」（发送端已释放）
+/// 自然退化为永久 pending，不再反复唤醒 `select!`。
+async fn recv_catchup(rx: Option<&mut broadcast::Receiver<()>>) {
+    let Some(rx) = rx else {
+        // 没有信号源：永久 pending，主循环不受影响。
+        std::future::pending::<()>().await;
+        return;
+    };
+    match rx.recv().await {
+        Ok(()) => {},
+        // 信号本身也可能 Lagged。补齐信号容量极小且语义幂等：一次 Lagged
+        // 意味着期间已有多次丢事件，漏掉其中任何一次都会留下缺口，
+        // 因此把 Lagged 本身当作「需要补齐」处理，而不是丢弃。
+        Err(broadcast::error::RecvError::Lagged(n)) => {
+            tracing::warn!(
+                lagged = n,
+                "anti-entropy: catch-up signal lagged; re-syncing anyway"
+            );
+        },
+        // Sender 已释放：`ExperienceSyncHandler` 已停止，不会再有新的丢事件。
+        Err(broadcast::error::RecvError::Closed) => {
+            std::future::pending::<()>().await;
+        },
+    }
+}
+
+/// 分页会话收尾后兑现被挂起的补齐信号。
+///
+/// 从 offset 0 重新发起而不是接着当前偏移：挂起期间本地可能又新增了经验，
+/// 增量请求按摘要只回差量，从 0 重来才覆盖完整区间。
+async fn resume_pending_catchup(
+    pending: &mut bool,
+    experience_bank: Option<&Arc<VectorExperienceBank>>,
+    paging: &mut Option<PagingCursor>,
+    sync_tx: &mpsc::UnboundedSender<ProtoEvent>,
+) {
+    if !*pending {
+        return;
+    }
+    *pending = false;
+    let Some(bank) = experience_bank else {
+        return;
+    };
+    match anti_entropy::request_sync(bank, sync_tx, 0).await {
+        Ok(_) => {
+            *paging = Some(PagingCursor::new(bank.clone()));
+            tracing::info!("anti-entropy: deferred catch-up started");
+        },
+        Err(e) => tracing::warn!(error = %e, "anti-entropy: deferred catch-up request failed"),
+    }
 }
 
 /// 反熵翻页游标（dial 方）。

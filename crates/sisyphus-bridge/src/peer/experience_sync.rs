@@ -106,6 +106,11 @@ pub struct ExperienceSyncHandler {
     peer_manager: Arc<PeerManager>,
     /// 本节点 ID，用于过滤自广播
     self_node_id: String,
+    /// ADR-010：入站通道 Lagged 时广播的「请求补齐」信号（ADR-011）。
+    ///
+    /// `None` 表示不启用（例如测试里只关心合并路径）。拨号器侧订阅它，
+    /// 收到后向自己的 peer 重发一次 `SyncRequest`。
+    catchup_tx: Option<broadcast::Sender<()>>,
 }
 
 impl ExperienceSyncHandler {
@@ -119,7 +124,18 @@ impl ExperienceSyncHandler {
             experience_bank,
             peer_manager,
             self_node_id: self_node_id.into(),
+            catchup_tx: None,
         }
+    }
+
+    /// 开启 Lagged 补齐：入站事件被丢弃时通知拨号器重新拉取差量。
+    ///
+    /// 传入的 sender 与拨号器侧的 receiver 配对。刻意做成构造期的一次性装配
+    /// （而非运行期可调），避免出现「拨号器已订阅但 handler 还没装上信号」的
+    /// 窗口——那种窗口内的 Lagged 会被静默吞掉，且难以复现。
+    pub fn with_catchup_signal(mut self, catchup_tx: broadcast::Sender<()>) -> Self {
+        self.catchup_tx = Some(catchup_tx);
+        self
     }
 
     /// 启动事件循环：监听**入站** peer 事件并处理 ExperienceSync
@@ -141,6 +157,7 @@ impl ExperienceSyncHandler {
         let mut events = peer_manager.subscribe_inbound();
         let experience_bank = self.experience_bank;
         let self_node_id = self.self_node_id;
+        let catchup_tx = self.catchup_tx;
 
         tokio::spawn(async move {
             // 持有一个强引用，保证 Sender 不会在本任务存活期间被丢弃。
@@ -187,7 +204,35 @@ impl ExperienceSyncHandler {
                                             break;
                                         }
                                         Err(broadcast::error::RecvError::Lagged(n)) => {
-                                            tracing::warn!(lagged = n, "ExperienceSyncHandler: lagged, may have missed events");
+                                            // ADR-011：确实丢了事件。仅记日志意味着那些经验
+                                            // 永久缺失——重连也救不回来，因为连接没断。
+                                            // 这里主动请求差量重放：反熵按摘要算差量，
+                                            // 漏掉的行会被重新算出并经同一幂等合并路径入库。
+                                            //
+                                            // 不做时间节流：节流假定了「一簇 Lagged 的首次触发
+                                            // 能覆盖整簇的丢失」，这个假定是错的。补齐请求会在
+                                            // 发出时快照一次摘要，而**快照之后**发生的丢失同样
+                                            // 需要补齐；按时间窗抑制掉，就再也没人会来补。
+                                            //
+                                            // 密集信号由拨号侧限流：`catchup_pending` 保证同一时刻
+                                            // 只有一个分页会话，密集信号被合并成一次延迟补齐。
+                                            // 上界由同步往返耗时决定，而非人为时间窗。
+                                            if let Some(tx) = &catchup_tx {
+                                                // Err 只意味着当前没有订阅者（拨号器尚未启动或
+                                                // 已退出）。这不致命：拨号器建连时会自己发一次
+                                                // 全量反熵拉取。
+                                                if let Err(send_err) = tx.send(()) {
+                                                    tracing::debug!(
+                                                        error = %send_err,
+                                                        "Lagged catchup signal has no subscriber"
+                                                    );
+                                                }
+                                            }
+                                            tracing::warn!(
+                                                lagged = n,
+                                                catchup_signalled = catchup_tx.is_some(),
+                                                "ExperienceSyncHandler: lagged; requested anti-entropy catch-up"
+                                            );
                                         }
                                     }
                                 }

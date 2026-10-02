@@ -177,10 +177,7 @@ pub fn sync_request_event(digest: &ExperienceDigest, offset: u64) -> ClusterEven
     ClusterEvent {
         event: Some(
             sisyphus_bridge_api::cluster_proto::cluster_event::Event::SyncRequest(
-                sisyphus_bridge_api::cluster_proto::SyncRequest {
-                    vector_clock: digest_to_sync_request_payload(digest),
-                    offset,
-                },
+                digest_to_sync_request_payload(digest, offset),
             ),
         ),
     }
@@ -189,23 +186,53 @@ pub fn sync_request_event(digest: &ExperienceDigest, offset: u64) -> ClusterEven
 /// 把 dial 方摘要转成 proto 的 `SyncRequest` 载荷。
 pub fn digest_to_sync_request_payload(
     digest: &ExperienceDigest,
-) -> std::collections::HashMap<String, u64> {
-    digest.iter().map(|(k, v)| (k.clone(), *v)).collect()
+    offset: u64,
+) -> sisyphus_bridge_api::cluster_proto::SyncRequest {
+    let origins = digest
+        .iter()
+        .map(
+            |(origin, d)| sisyphus_bridge_api::cluster_proto::OriginDigest {
+                origin: origin.clone(),
+                max: d.max,
+                holes: d.holes.clone(),
+            },
+        )
+        .collect();
+    sisyphus_bridge_api::cluster_proto::SyncRequest {
+        vector_clock: Default::default(),
+        offset,
+        origins,
+    }
 }
 
 /// 解析对端发来的 proto `SyncRequest` 载荷。
 ///
-/// 空载荷按「请求全量」处理：新节点首次连接时摘要本就为空，而对端也可能是
-/// 老版本（不会发 `SyncRequest`，因此不会走到这里）。此时多传一些数据是可
-/// 接受的代价，因为合并路径幂等；反过来把空当成「不需要」会导致新节点永远
-/// 收不到任何东西。
+/// `origins` 为空时按「请求全量」处理：新节点首次连接时摘要本就为空，而对端
+/// 也可能是老版本（只发已废弃的 `vector_clock`，不发 `origins`）。此时多传
+/// 一些数据是可接受的代价，因为合并路径幂等；反过来把空当成「不需要」会导致
+/// 新节点永远收不到任何东西。
 pub fn parse_sync_request_payload(
-    payload: &std::collections::HashMap<String, u64>,
+    payload: &sisyphus_bridge_api::cluster_proto::SyncRequest,
 ) -> ExperienceDigest {
-    if payload.is_empty() {
+    if payload.origins.is_empty() {
         tracing::debug!("anti-entropy: empty sync request treated as full pull");
+        return ExperienceDigest::new();
     }
-    payload.iter().map(|(k, v)| (k.clone(), *v)).collect()
+    payload
+        .origins
+        .iter()
+        .map(|o| {
+            // 空洞必须升序去重，否则 `holds` 的二分查找会失效——那会把实际
+            // 持有的行误判成缺失，反过来白拉一遍。
+            let mut holes = o.holes.clone();
+            holes.sort_unstable();
+            holes.dedup();
+            (
+                o.origin.clone(),
+                sisyphus_types::experience::OriginDigest { max: o.max, holes },
+            )
+        })
+        .collect()
 }
 
 /// 拨号侧触发一次反熵：导出摘要并写入流。
@@ -391,7 +418,7 @@ mod tests {
     #[test]
     fn digest_payload_roundtrip() {
         let digest = digest_from_keys(["exp:1:node-a:3", "exp:2:node-b:7"]);
-        let payload = digest_to_sync_request_payload(&digest);
+        let payload = digest_to_sync_request_payload(&digest, 0);
         let parsed = parse_sync_request_payload(&payload);
         assert_eq!(parsed, digest);
     }

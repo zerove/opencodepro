@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::errors::TypesError;
 
@@ -90,12 +90,42 @@ pub fn experience_counter_from_key(key: &str) -> Option<u64> {
     counter.parse().ok()
 }
 
-/// 节点的紧凑摘要：(node_id → 该节点已写入的最大 counter)。
+/// 单个 origin 的持有情况：最大写入计数 + 该范围内的空洞。
 ///
-/// 只依赖行标识而不依赖行内容，因此计算成本与经验正文大小无关。这就是
+/// ADR-010 最初只记 `max`，隐含前提是「单个 origin 内持有的一定是 1..=max
+/// 的连续前缀」。这个前提在**广播 Lagged** 下不成立：接收端可能丢中间几条而
+/// 保有尾部，此时 `max` 仍然很大，对端据此算出的差量为空，那个洞永久留存。
+///
+/// 因此额外携带空洞列表。正常节点空洞恒为空（写入序号由 `fetch_add` 单调
+/// 分配），所以这个字段不改变常规传输量；只有真正存在丢失时才变长，
+/// 而那正是需要修复的量。
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OriginDigest {
+    /// 本地持有的最大 counter。0 表示该 origin 一条都没有。
+    pub max: u64,
+    /// `1..=max` 之中本地**缺失**的 counter，升序。
+    ///
+    /// 保持升序是为了让 [`OriginDigest::holds`] 能二分查找——空洞很多时线性
+    /// 查找会让每次差量计算退化成 O(总行数)。
+    pub holes: Vec<u64>,
+}
+
+impl OriginDigest {
+    /// 本地是否确实持有该 origin 的第 `counter` 条。
+    ///
+    /// 语义是「有证据地持有」而非「没被告知缺失」：只有落在 `1..=max` 且不在
+    /// 空洞里才算持有。未出现在摘要里的 origin 一律视为不持有。
+    pub fn holds(&self, counter: u64) -> bool {
+        counter > 0 && counter <= self.max && self.holes.binary_search(&counter).is_err()
+    }
+}
+
+/// 节点的紧凑摘要：(node_id → 该节点的持有情况)。
+///
+/// 只依赖行标识而不依赖行内容，因此计算成本与经验正文大小无关。这是
 /// ADR-010 反熵补偿成立的前提——行标识编码了来源与计数，于是「我有什么」
 /// 可以用一个小得多的 map 表达，而不是把整个经验库发过去。
-pub type ExperienceDigest = BTreeMap<String, u64>;
+pub type ExperienceDigest = BTreeMap<String, OriginDigest>;
 
 /// 把若干条经验主键折叠成紧凑摘要。
 ///
@@ -107,7 +137,9 @@ pub fn digest_from_keys<'a, I>(keys: I) -> ExperienceDigest
 where
     I: IntoIterator<Item = &'a str>,
 {
-    let mut digest = ExperienceDigest::new();
+    // 先按 origin 收集实际持有的 counter，再折叠成「最大计数 + 空洞」。
+    // 不能直接增量折叠：只看 max 的话，空洞信息在折叠那一步就永久丢失了。
+    let mut per_origin: BTreeMap<String, BTreeSet<u64>> = BTreeMap::new();
     for key in keys {
         let (Some(origin), Some(counter)) = (
             experience_origin_from_key(key),
@@ -115,21 +147,46 @@ where
         ) else {
             continue;
         };
-        let slot = digest.entry(origin.to_string()).or_insert(0);
-        if *slot < counter {
-            *slot = counter;
-        }
+        per_origin.entry(origin.to_string()).or_default().insert(counter);
     }
-    digest
+
+    per_origin
+        .into_iter()
+        .map(|(origin, present)| {
+            // 空洞必须如实上报，否则对端无从知道该补什么。
+            //
+            // 这里用「相邻元素的间隙」来枚举空洞，而不是遍历 `1..=max`：
+            // 后者是 O(max)，在「某节点写过千万条而本地只收到零星几条」时会
+            // 退化成千万次无意义迭代。前者是 O(rows)——而我们为了建这个集合
+            // 本来就得遍历全部 rows，因此不引入任何额外量级。
+            let max = present.iter().next_back().copied().unwrap_or(0);
+            let mut holes: Vec<u64> = Vec::new();
+            let mut prev = 0u64;
+            for &counter in present.iter() {
+                // checked_add：`prev == u64::MAX` 时不再产出空洞，
+                // 而不是回绕成 0 并把整个区间错报为缺失。
+                let Some(gap_start) = prev.checked_add(1) else {
+                    break;
+                };
+                if counter > gap_start {
+                    holes.extend(gap_start..counter);
+                }
+                prev = counter;
+            }
+            (origin, OriginDigest { max, holes })
+        })
+        .collect()
 }
 
 /// 计算反熵差量：对端应当回送给 `local` 的经验主键。
 ///
 /// 纯函数，不触碰 I/O，因此可以脱离数据库与网络单独验证。
 ///
-/// 语义：对每个来源节点 `origin`，回送该节点中 `counter > local[origin]` 的行。
-/// 因为写入计数在单个 origin 内单调递增，这就精确地等于「对方没有、我有」——
-/// 已持有的行不会重复传输，断线期间的写入一个不漏。
+/// 语义：回送 `local` **确实没有**的每一行，而不是「counter 超出已持有上界」
+/// 的行。早期版本用 `counter > local[origin]` 判断，那等价于假定本地持有的
+/// 一定是 `1..=max` 的连续前缀；广播 Lagged 会在中间打洞而尾部照常抵达，
+/// 于是该假定不成立——对端看到本地 `max` 很大，算出差量为空，洞永久留存。
+/// 改用 [`OriginDigest::holds`] 逐条断言，代价是对端多发一个空洞列表。
 ///
 /// 前提是主键编码了来源与计数。旧格式主键（`exp:{timestamp}`）解析不出
 /// origin，会被这里丢弃；理由见 [`digest_from_keys`]。
@@ -149,7 +206,9 @@ where
             ) else {
                 return false;
             };
-            counter > local.get(origin).copied().unwrap_or(0)
+            let known = local.get(origin);
+            // 摘要里没有这个 origin，就等于一条也没有（`None` 时 `holds` 恒假）。
+            !known.is_some_and(|d| d.holds(counter))
         })
         .collect()
 }
@@ -438,10 +497,48 @@ mod anti_entropy_tests {
             "exp:100:node-a:1",
             "exp:101:node-a:2",
             "exp:102:node-a:3",
-            "exp:200:node-b:7",
+            // 连续持有：生产中写入序号由 fetch_add 单调分配，不会跳号。
+            "exp:200:node-b:1",
+            "exp:201:node-b:2",
+            "exp:202:node-b:3",
         ]);
-        assert_eq!(digest.get("node-a"), Some(&3));
-        assert_eq!(digest.get("node-b"), Some(&7));
+        assert_eq!(digest.get("node-a").map(|d| d.max), Some(3));
+        assert_eq!(digest.get("node-b").map(|d| d.max), Some(3));
+        // 连续持有时不应产生空洞——这是 ADR-011 保持常规传输量不变的前提。
+        assert!(digest.values().all(|d| d.holes.is_empty()));
+    }
+
+    /// 稀疏 origin：只持有 counter 7 时，1..6 就是真实缺失，必须如实上报。
+    ///
+    /// 生产中单个 origin 的写入序号不会跳号，所以这种形态只出现在测试数据里；
+    /// 但语义必须成立：持有集合是事实，不是推测。把它谎报成「持有 1..=7」
+    /// 只会让真正缺失的行永远补不上。
+    #[test]
+    fn sparse_origin_reports_every_absent_counter() {
+        let digest = digest_from_keys(["exp:200:node-b:7"]);
+        let node_b = digest.get("node-b").expect("node-b 应有摘要条目");
+        assert_eq!(node_b.max, 7);
+        assert_eq!(node_b.holes, vec![1, 2, 3, 4, 5, 6]);
+    }
+
+    /// 连续性：一个origin 内空洞确实被摘要捕捉到。
+    ///
+    /// 摘要的核心断言是「有洞就要说得出洞」，否则对端无从知道该补什么。
+    #[test]
+    fn digest_records_holes_within_contiguous_prefix() {
+        let digest = digest_from_keys([
+            "exp:1:node-a:1",
+            "exp:2:node-a:2",
+            // 缺 3
+            "exp:4:node-a:4",
+            "exp:5:node-a:5",
+        ]);
+        let node_a = digest.get("node-a").expect("node-a 应有摘要条目");
+        assert_eq!(node_a.max, 5);
+        assert_eq!(node_a.holes, vec![3], "缺失的 counter 必须进入空洞列表");
+        assert!(!node_a.holds(3), "空洞内不得被判定为持有");
+        assert!(node_a.holds(4));
+        assert!(!node_a.holds(6), "超出 max 不得被判定为持有");
     }
 
     /// 空库摘要为空——新节点正是从空摘要出发拉取全量的。
@@ -457,7 +554,7 @@ mod anti_entropy_tests {
     #[test]
     fn digest_skips_legacy_key_format() {
         let digest = digest_from_keys(["exp:1600000000", "exp:100:node-a:4"]);
-        assert_eq!(digest.get("node-a"), Some(&4));
+        assert_eq!(digest.get("node-a").map(|d| d.max), Some(4));
         assert_eq!(digest.len(), 1, "旧格式行不应产生任何 origin 条目");
     }
 
@@ -509,6 +606,40 @@ mod anti_entropy_tests {
         ];
         let missing = sorted_missing_keys(missing_keys(&local, remote));
         assert_eq!(missing, vec!["exp:1:node-b:1", "exp:6:node-a:6"]);
+    }
+
+    /// ADR-011：广播 Lagged 造成的尾部空洞必须能被反熵发现。
+    ///
+    /// 这是 ADR-010 摘要语义的直接后果，也是本用例存在的唯一理由：
+    /// `ExperienceDigest` 只记 (origin → 最大 counter)，因此只能表达
+    /// 「持有 0..N 连续区间」。本地持有 1..4 与 6..7、缺 5 时，摘要仍报 7，
+    /// 对端据此算出差量为空——那个洞永久留在库里，没有任何机制会补它。
+    #[test]
+    fn hole_inside_contiguous_prefix_is_still_detected() {
+        let local = digest_from_keys([
+            "exp:1:node-a:1",
+            "exp:2:node-a:2",
+            "exp:3:node-a:3",
+            "exp:4:node-a:4",
+            // 缺 5
+            "exp:6:node-a:6",
+            "exp:7:node-a:7",
+        ]);
+        let remote = [
+            "exp:1:node-a:1",
+            "exp:2:node-a:2",
+            "exp:3:node-a:3",
+            "exp:4:node-a:4",
+            "exp:5:node-a:5",
+            "exp:6:node-a:6",
+            "exp:7:node-a:7",
+        ];
+        let missing = sorted_missing_keys(missing_keys(&local, remote));
+        assert_eq!(
+            missing,
+            vec!["exp:5:node-a:5"],
+            "尾部空洞内的缺失行必须仍被识别为差量"
+        );
     }
 
     /// 旧格式行不会被请求（它们无法参与摘要），这是已记录的取舍而非缺陷。

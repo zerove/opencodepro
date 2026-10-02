@@ -262,7 +262,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // ── Cluster service registration (peer manager 已在桥接构造前创建) ──
     if let Some(runtime) = cluster_runtime.as_ref() {
         use sisyphus_bridge::peer::ExperienceSyncHandler;
-        use sisyphus_bridge::peer::{spawn_static_peers, ClusterServiceImpl, StaticPeerConfig};
+        use sisyphus_bridge::peer::{
+            spawn_static_peers_with_catchup, ClusterServiceImpl, StaticPeerConfig,
+        };
 
         let cfg = match shared_config.read() {
             Ok(c) => c.cluster.clone(),
@@ -282,7 +284,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             StaticPeerConfig::from_types(&cfg, runtime.node_id.clone(), self_grpc_addr);
         // ADR-010：拨号器连接建立后据此发起反熵拉取（补齐断连期间的丢失）。
         dial_cfg.experience_bank = Some(experience_bank.clone());
-        let handles = spawn_static_peers(dial_cfg, runtime.peer_manager.clone());
+
+        // ADR-011：入站通道 Lagged 时的补齐信号。
+        // 通道容量 1 足够：信号语义是幂等的「再拉一次」，即使多次 Lagged
+        // 合并成一次补齐，反熵也会按摘要算出完整差量（摘要记空洞，不记次数）。
+        // 反过来不设时间节流：节流窗口里发生的丢失会被压制到下一次信号之后，
+        // 而那次信号未必再来——Lagged 只在溢出那一刻发一次。
+        let (catchup_tx, catchup_rx) = tokio::sync::broadcast::channel::<()>(1);
+        let handles = spawn_static_peers_with_catchup(
+            dial_cfg,
+            runtime.peer_manager.clone(),
+            Some(catchup_rx),
+        );
 
         // 经验同步接收端：把 peer 广播来的经验按 CRDT 合并进本地库。
         // 处理器持有的是未装饰的 VectorExperienceBank，远程应用不会再次广播。
@@ -292,6 +305,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             runtime.peer_manager.clone(),
             runtime.node_id.clone(),
         )
+        .with_catchup_signal(catchup_tx)
         .spawn(sync_shutdown_rx);
 
         info!(

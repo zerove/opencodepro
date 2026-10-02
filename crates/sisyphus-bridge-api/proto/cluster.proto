@@ -66,16 +66,37 @@ message ClusterEvent {
 // 不会补回、新节点对既有经验一无所知。SyncRequest 让 dial 方按自己实际持有的
 // 内容拉取差量，传输量正比于真实差量而与历史总量无关。
 message SyncRequest {
-  // dial 方当前持有的 (node_id → 最大 counter)。
-  // 因为行标识 exp:{ts}:{origin}:{counter} 编码了来源与计数，对端只需比较
-  // 每个 origin 的最大 counter，就能推出 dial 方缺哪些行。
-  map<string, uint64> vector_clock = 1;
+  // ADR-011：dial 方每个 origin 的持有情况。
+  //
+  // 最初这里只有 (node_id → 最大 counter) 的 map，隐含前提是「持有的行构成
+  // 1..=max 的连续前缀」。广播 Lagged 会在中间打洞而尾部照常抵达，此时
+  // max 依旧很大，对端据此算出的差量为空，那个洞就永久留在库里。
+  // 改为携带空洞列表后，「我有什么」才真正可表达。
+  repeated OriginDigest origins = 3;
+
+  // 已废弃，保留字段号不回收：老节点仍会发送它。忽略即可——服务端把
+  // origins 为空的请求当作「请求全量」，对老节点的行为天然退化为正确。
+  map<string, uint64> vector_clock = 1 [deprecated = true];
+
   // 分页游标：对端已经发来多少条，跳过前这么多条差量。
   //
   // 必需而非可选——差量按主键字典序稳定排序，因此「跳过前 N 条」在多次请求
   // 之间是确定的。缺少它时对端只能回送首页，>128 条的差量永远补不齐，
   // 而表现为「重连后少了部分经验」，极难归因。
   uint64 offset = 2;
+}
+
+// ADR-011：单个 origin 的持有情况。
+message OriginDigest {
+  // 来源节点 id。
+  string origin = 1;
+  // 本地持有的最大 counter；0 表示一条都没有。
+  uint64 max = 2;
+  // 1..=max 之中本地缺失的 counter，升序。
+  //
+  // 正常节点恒为空（写入序号由 fetch_add 单调分配），所以常规传输量不受影响；
+  // 只有真正发生丢失时才变长，而那正是需要修复的量。
+  repeated uint64 holes = 3;
 }
 
 // ADR-010：反熵页尾标记。由 **peer 侧**（被 dial 的一方）在一页差量发完后

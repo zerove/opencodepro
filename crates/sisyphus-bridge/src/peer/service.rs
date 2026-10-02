@@ -12,7 +12,7 @@ use crate::peer::anti_entropy;
 use crate::peer::manager::{ClusterEvent as MgrEvent, PeerInfo, PeerManager};
 use sisyphus_bridge_api::cluster_proto::{
     cluster_server::Cluster, ClusterEvent as ProtoEvent, ExperienceSync, JoinRequest, JoinResponse,
-    PeerInfo as ProtoPeerInfo, PeerJoined, PeerLeft, StateProposal, SyncRequest,
+    PeerInfo as ProtoPeerInfo, PeerJoined, PeerLeft, StateProposal,
 };
 use std::pin::Pin;
 use std::sync::Arc;
@@ -132,7 +132,7 @@ impl Cluster for ClusterServiceImpl {
                         // ADR-010：先识别反熵请求。它不进入 manager 事件总线——
                         // 而是把差量直接回写到 outbound 通道，因为应答的传输方向
                         // 与请求相反（请求来自 dial 方，应答回到 dial 方）。
-                        if let Some(SyncRequest { vector_clock, offset }) =
+                        if let Some(sync_request) =
                             match proto_evt.event.clone() {
                                 Some(sisyphus_bridge_api::cluster_proto::cluster_event::Event::SyncRequest(
                                     req,
@@ -140,9 +140,10 @@ impl Cluster for ClusterServiceImpl {
                                 _ => None,
                             }
                         {
+                            let offset = sync_request.offset;
                             handle_sync_request(
                                 bank_for_inbound.as_ref(),
-                                vector_clock,
+                                &sync_request,
                                 offset,
                                 &out_tx_sync,
                             ).await;
@@ -190,7 +191,7 @@ pub(crate) fn is_page_end(evt: &ProtoEvent) -> bool {
 /// 消息超出默认 4MB 限制，整条流被拒——反而比不同步更糟。
 async fn handle_sync_request(
     experience_bank: Option<&Arc<sisyphus_mem::experience_bank::VectorExperienceBank>>,
-    vector_clock: std::collections::HashMap<String, u64>,
+    request: &sisyphus_bridge_api::cluster_proto::SyncRequest,
     offset: u64,
     out_tx: &mpsc::UnboundedSender<ProtoEvent>,
 ) {
@@ -201,7 +202,7 @@ async fn handle_sync_request(
         return;
     };
 
-    let requested = anti_entropy::parse_sync_request_payload(&vector_clock);
+    let requested = anti_entropy::parse_sync_request_payload(request);
     match anti_entropy::serve_sync_request(
         bank,
         &requested,

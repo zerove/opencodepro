@@ -27,6 +27,6 @@ pub use anti_entropy::{
     request_sync, serve_sync_request, sync_request_event, SyncPage, SYNC_PAGE_SIZE,
 };
 
-pub use fallback::{spawn_static_peers, StaticPeerConfig};
+pub use fallback::{spawn_static_peers, spawn_static_peers_with_catchup, StaticPeerConfig};
 pub use manager::{ClusterEvent as MgrEvent, PeerInfo, PeerManager, PeerStatus};
 pub use service::ClusterServiceImpl;

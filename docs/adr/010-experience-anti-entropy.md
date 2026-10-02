@@ -262,8 +262,8 @@ message SyncPageEnd {
 
 ### 遗留
 
-- 第三个丢失窗口（订阅者 `Lagged`）仍未闭合：`ExperienceSyncHandler` 对 `RecvError::Lagged` 仍是 `continue`。这需要请求侧重放而非本 ADR 的差量机制，单独处理。
-- 分页传输重叠（见上文缺陷 6）：如需消除，需把摘要粒度从 `(origin, max counter)` 改为逐行键集合，或引入会话级去重。当前规模下重叠传输的代价可接受。
+- ~~第三个丢失窗口（订阅者 `Lagged`）仍未闭合~~ → **已由 ADR-011 闭合**。但不是本 ADR 预想的「触发一次差量重放即可」：ADR-010 的摘要 `(origin → max counter)` 只能表达连续前缀，对广播 `Lagged` 造成的尾部空洞**结构性失明**，对端算出空差量，重放多少次都不收敛。ADR-011 同时升级了摘要为 `(origin → {max, holes})` 并新增补齐信号。本 ADR 的「传输量正比于真实差量」结论在升级后依然成立。
+- 分页传输重叠（见上文缺陷 6）：如需消除，需引入会话级去重，或把摘要粒度从 `(origin, max counter)` 改为逐行键集合。当前规模下重叠传输的代价可接受。
 
 ## 实施路径
 
@@ -274,6 +274,8 @@ message SyncPageEnd {
 5. ✅ 协议层集成测试（7 例）。✅ 双节点 gRPC 全链路用例（4 例，含 >128 条多页差量）。
 
 ## References
+
+- ADR-011（第三窗口的闭合，以及本 ADR 摘要语义被升级的原因）
 
 - ADR-009 § Risk 2（本 ADR 补充其未实施的缓解措施）与 § 2（CRDT 合并语义）
 - `crates/sisyphus-bridge/src/peer/anti_entropy.rs` — 反熵核心

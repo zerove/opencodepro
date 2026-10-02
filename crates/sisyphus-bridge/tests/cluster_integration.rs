@@ -222,7 +222,8 @@ async fn test_experience_broadcast_subscribed() {
 // ── 9.1.2 端到端：双节点经验同步真正落库 + CRDT 冲突 ──────────────────────
 
 use sisyphus_bridge::peer::{
-    spawn_static_peers, ExperienceSyncHandler, PeerBroadcastExperienceBank, StaticPeerConfig,
+    spawn_static_peers, spawn_static_peers_with_catchup, ExperienceSyncHandler,
+    PeerBroadcastExperienceBank, StaticPeerConfig,
 };
 use sisyphus_mem::experience_bank::VectorExperienceBank;
 use sisyphus_types::experience::{experience_store_id, ExperienceBank, ExperienceQuery};
@@ -239,6 +240,9 @@ struct SyncNode {
     /// 必须随节点一起持有：一旦全部发送端被丢弃，ExperienceSyncHandler
     /// 会在 select! 里收到 Closed 并立刻退出，节点就变成「收得到但不处理」。
     _shutdown: tokio::sync::broadcast::Sender<()>,
+    /// ADR-011：补齐信号订阅。用于断言「确实丢了事件并触发了恢复」，
+    /// 而不只是「最终数据对了」——后者在丢失没发生时同样成立。
+    catchup_rx: tokio::sync::broadcast::Receiver<()>,
 }
 
 impl SyncNode {
@@ -314,8 +318,14 @@ async fn start_sync_node(node_id: &'static str, dial_peers: Vec<String>) -> Sync
     });
 
     let (shutdown_tx, shutdown_rx) = tokio::sync::broadcast::channel(1);
-    let _sync =
-        ExperienceSyncHandler::new(bank.clone(), manager.clone(), node_id).spawn(shutdown_rx);
+
+    // ADR-011：Lagged 补齐信号。与 main.rs 的生产装配保持一致。
+    let (catchup_tx, catchup_rx) = tokio::sync::broadcast::channel::<()>(1);
+    // 拨号器拿一份，测试再拿一份：验证「丢事件→补齐」链路真的跑过。
+    let observer_rx = catchup_tx.subscribe();
+    let _sync = ExperienceSyncHandler::new(bank.clone(), manager.clone(), node_id)
+        .with_catchup_signal(catchup_tx)
+        .spawn(shutdown_rx);
 
     if !dial_peers.is_empty() {
         let cfg = StaticPeerConfig {
@@ -328,7 +338,7 @@ async fn start_sync_node(node_id: &'static str, dial_peers: Vec<String>) -> Sync
             // ADR-010：让拨号器带上经验库，否则不会发起反熵拉取。
             experience_bank: Some(bank.clone()),
         };
-        let _dialers = spawn_static_peers(cfg, manager.clone());
+        let _dialers = spawn_static_peers_with_catchup(cfg, manager.clone(), Some(catchup_rx));
     }
 
     SyncNode {
@@ -337,6 +347,7 @@ async fn start_sync_node(node_id: &'static str, dial_peers: Vec<String>) -> Sync
         broadcast,
         grpc_addr,
         events,
+        catchup_rx: observer_rx,
         _shutdown: shutdown_tx,
     }
 }
@@ -854,5 +865,155 @@ async fn test_dialer_pages_through_delta_larger_than_one_page() {
         "拨号器未能翻页拉完 {total} 条差量，只拿到 {got} 条。\
          若恰好等于 {page_size} 说明只补了第一页——page-end 标记或游标推进有问题。",
         page_size = SYNC_PAGE_SIZE
+    );
+}
+
+// ── 9.1.4 ADR-011：广播接收端 Lagged 导致的事件丢失，由反熵补齐 ────────────────
+
+/// 真实触发 Lagged：broadcast 容量有限，只要在 handler 没调 `recv()` 的窗口内
+/// 塞超过容量的入站事件，它一定会收到 `RecvError::Lagged(n)`。
+///
+/// 这不是为了测 throttle 而测 throttle：真正的判定是「handler 在 Lagged 后
+/// 发出了补齐信号，拨号器据此重新拉取」。
+#[tokio::test]
+async fn lagged_broadcast_triggers_catchup_signal() {
+    let bank = build_bank().await;
+    let manager = Arc::new(PeerManager::new("lag-sender", Duration::from_secs(30)));
+    // 容量 1 制造极端背压：handler 极可能来不及消费。
+    // 必须持有 shutdown sender：一旦它被丢弃，handler 在 select! 里立刻收到
+    // Closed 并退出，就永远不会经历 Lagged。
+    let (_shutdown_tx, shutdown_rx) = tokio::sync::broadcast::channel(1);
+    let (catchup_tx, mut catchup_rx) = tokio::sync::broadcast::channel::<()>(1);
+
+    let _handler = ExperienceSyncHandler::new(bank, manager.clone(), "lag-sender")
+        .with_catchup_signal(catchup_tx)
+        .spawn(shutdown_rx);
+
+    // 灌入远超容量的入站事件。
+    for i in 0..512u64 {
+        manager.deliver_inbound_experience_sync(format!("flood-{i}"), i, "{}", vec![0u8; 64]);
+    }
+
+    // `expect` 而非 `let _ =`：信号必须真的发出来。收到后无需再断言内容
+    // （信号无携带数据），能取到即证明补齐链路被触发。
+    tokio::time::timeout(Duration::from_secs(5), catchup_rx.recv())
+        .await
+        .expect("Lagged 后应在超时内发出补齐信号")
+        .expect("补齐信号通道不应关闭");
+}
+
+/// 反向对照：没有订阅补齐信号时，即使 Lagged 也不应发信号。
+/// 这条保证补齐信号是 `with_catchup_signal` 引入的，而非既有行为。
+#[tokio::test]
+async fn no_catchup_signal_without_subscription() {
+    let bank = build_bank().await;
+    let manager = Arc::new(PeerManager::new("lag-quiet", Duration::from_secs(30)));
+    let (catchup_tx, mut catchup_rx) = tokio::sync::broadcast::channel::<()>(1);
+    // 保留 sender 以免通道关闭，但不发信号。
+    let _keep = catchup_tx.clone();
+
+    let (_shutdown_tx, shutdown_rx) = tokio::sync::broadcast::channel(1);
+    let _handler =
+        ExperienceSyncHandler::new(bank, manager.clone(), "lag-quiet").spawn(shutdown_rx);
+
+    for i in 0..512u64 {
+        manager.deliver_inbound_experience_sync(format!("flood-{i}"), i, "{}", vec![0u8; 64]);
+    }
+
+    let result = tokio::time::timeout(Duration::from_millis(500), catchup_rx.recv()).await;
+    assert!(result.is_err(), "未订阅补齐信号时不应收到任何信号");
+}
+
+/// 端到端：补齐信号必须真的让拨号器重发 `SyncRequest{offset:0}`，把
+/// Lagged 丢掉的经验补回本地。这是本节的核心用例。
+#[tokio::test]
+async fn catchup_signal_reruns_anti_entropy() {
+    let total = 40u64;
+    let node_a = start_sync_node("node-a", vec![]).await;
+    let a_bank = node_a.bank();
+    for i in 0..total {
+        node_a
+            .broadcast
+            .record(experience(1_700_200_000 + i, &format!("lag-{i}")))
+            .await
+            .expect("A 批量记录经验应成功");
+    }
+    assert_eq!(a_bank.keys().await.expect("A 读键").len() as u64, total);
+
+    let mut node_b = start_sync_node("node-b", vec![node_a.grpc_addr.clone()]).await;
+    let b_bank = node_b.bank();
+
+    // 等到正常反熵把它补齐——这一步证明基线可用。
+    for attempt in 0..100 {
+        if b_bank.keys().await.map(|k| k.len()).unwrap_or(0) as u64 == total {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        assert!(
+            attempt < 100,
+            "正常反熵未能补齐 {total} 条，基线失败，后续 Lagged 用例无意义"
+        );
+    }
+
+    // 真实制造 Lagged：入站通道容量 256。`deliver_inbound_experience_sync` 是
+    // 同步调用，循环内没有 await 点，因此 handler 任务在这段里根本不会被调度
+    // ——只要单批超过容量，就**确定性地**溢出，不依赖竞态。
+    //
+    // 关键：洪泛与经验写入交错。若先灌完再写经验，末尾的经验仍走正常广播，
+    // 测试会在丢失根本没发生时虚假通过——上一版正是这样假通过的。
+    let extra = 30u64;
+    for i in 0..extra {
+        for j in 0..600u64 {
+            node_b.manager.deliver_inbound_experience_sync(
+                format!("flood-{i}-{j}"),
+                i * 600 + j,
+                "{}",
+                vec![0u8; 64],
+            );
+        }
+        node_a
+            .broadcast
+            .record(experience(1_700_300_000 + i, &format!("post-lag-{i}")))
+            .await
+            .expect("A 追加经验应成功");
+    }
+
+    let expected_keys: std::collections::BTreeSet<String> = {
+        let mut s = std::collections::BTreeSet::new();
+        for k in a_bank.keys().await.expect("A 读键") {
+            s.insert(k);
+        }
+        s
+    };
+
+    let expected = total + extra;
+    for _ in 0..150 {
+        if b_bank.keys().await.map(|k| k.len()).unwrap_or(0) as u64 == expected {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+
+    // 断言**逐条**对齐而不仅是数量：总数相等但集合不同（旧的空洞失明行为
+    // 就会让 B 停在 52 条）仍需被拦住，而且集合比对能顺带发现重复行。
+    let actual_keys: std::collections::BTreeSet<String> =
+        b_bank.keys().await.unwrap_or_default().into_iter().collect();
+
+    assert_eq!(
+        actual_keys,
+        expected_keys,
+        "Lagged 补齐后 B 的行集合应与 A 完全一致。\n\
+         若停在更小的数量，说明纯广播丢失后没有补偿路径；\n\
+         若数量相等而集合不同，说明幂等合并出了问题。\n\
+         仍缺：{:?}",
+        expected_keys.difference(&actual_keys).take(20).collect::<Vec<_>>()
+    );
+
+    // 上面的数据断言在「丢失没真正发生」时同样会通过，所以额外证明：
+    // 本轮确实丢了事件并触发了补齐信号。否则这个用例只是在测普通广播，
+    // 对 Lagged 路径零覆盖。
+    assert!(
+        tokio::time::timeout(Duration::from_secs(5), node_b.catchup_rx.recv()).await.is_ok(),
+        "补齐信号从未触发：洪泛没压垮 handler，本用例没有真正覆盖 Lagged 路径"
     );
 }
