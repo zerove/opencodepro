@@ -1026,8 +1026,15 @@ async fn catchup_signal_reruns_anti_entropy() {
 /// 无法归属，游标会被推进到错误的偏移——这类 bug 表现为「行数对了但集合不对」，
 /// 数量断言抓不住，因此本用例断言集合。
 ///
-/// 复现路径：B 加入时 A 的差量跨越多页（`more = true`），分页会话在途；此时
-/// 用洪泛触发 Lagged 信号，拨号侧必须挂起它，等最后一页收尾后再补一轮。
+/// ## 为什么必须先等第一页落地
+///
+/// 早期版本在建好 B 之后立即洪泛。实测（装 tracing subscriber 抓日志）发现：
+/// 洪泛是同步写入的，而拨号器的流任务还没被调度，**所有 Lagged 信号都落在
+/// `paging = None` 上**——延后分支一次都没执行过。把延后改成丢弃的变异
+/// （`drop(catchup_pending)`）在该版本下能存活，说明它对这条路径零覆盖。
+///
+/// 现在先轮询等 B 真正收到第一页：那一刻分页会话必然在途（`paging = Some`），
+/// 洪泛落在会话中途，延后分支必被触发。页数取 6 轮以把时间窗拉宽。
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn catchup_deferred_while_paging_converges_exactly() {
     use sisyphus_bridge::peer::SYNC_PAGE_SIZE;
@@ -1035,8 +1042,9 @@ async fn catchup_deferred_while_paging_converges_exactly() {
     let node_a = start_sync_node("node-a", vec![]).await;
     let a_bank = node_a.bank();
 
-    // 跨多页，确保 B 的初始反熵必然进入多轮翻页（`more = true`）。
-    let total = SYNC_PAGE_SIZE as u64 * 2 + 7;
+    // 跨很多页，确保 B 的初始反熵必然进入多轮翻页（`more = true`），
+    // 且在洪泛落下时分页尚未结束。
+    let total = SYNC_PAGE_SIZE as u64 * 6 + 7;
     for i in 0..total {
         node_a
             .broadcast
@@ -1048,7 +1056,23 @@ async fn catchup_deferred_while_paging_converges_exactly() {
     let mut node_b = start_sync_node("node-b", vec![node_a.grpc_addr.clone()]).await;
     let b_bank = node_b.bank();
 
-    // 洪泛压垮 B 的入站通道，制造真实的 Lagged 信号。
+    // 先等第一页真正落库：此时拨号器正处于分页会话中途。
+    let mut first_page_landed = false;
+    for _ in 0..600 {
+        let got = b_bank.keys().await.map(|k| k.len()).unwrap_or(0);
+        if got >= SYNC_PAGE_SIZE {
+            first_page_landed = true;
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    assert!(
+        first_page_landed,
+        "B 始终没收到第一页，本用例无法进入「分页在途」状态"
+    );
+
+    // 此时洪泛压垮 B 的入站通道：handler 正在忙着逐条写库，必然落后于
+    // 写入速度，于是产生真实的 Lagged 信号——而分页会话还在进行中。
     for i in 0..3u64 {
         for j in 0..600u64 {
             node_b.manager.deliver_inbound_experience_sync(
@@ -1063,18 +1087,13 @@ async fn catchup_deferred_while_paging_converges_exactly() {
     let expected_keys: std::collections::BTreeSet<String> =
         a_bank.keys().await.expect("A 读键").into_iter().collect();
 
-    #[allow(unused_mut, clippy::needless_late_init)]
-    let mut seen_catchup;
-    for _ in 0..150 {
+    for _ in 0..300 {
         let got = b_bank.keys().await.map(|k| k.len()).unwrap_or(0);
         if got as u64 == total {
             break;
         }
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
-    // 信号可能已被拨号器消费；补齐信号本身已被上面的收敛行为证明。
-    seen_catchup =
-        tokio::time::timeout(Duration::from_millis(200), node_b.catchup_rx.recv()).await.is_ok();
 
     let actual_keys: std::collections::BTreeSet<String> =
         b_bank.keys().await.unwrap_or_default().into_iter().collect();
@@ -1095,8 +1114,12 @@ async fn catchup_deferred_while_paging_converges_exactly() {
         "行数应恒为 {total}，重复合并不应产生额外行"
     );
 
+    // 洪泛确实造成了 Lagged：信号已被拨号器消费，这里只确认它发生过。
     assert!(
-        seen_catchup,
+        node_b.catchup_rx.try_recv().is_ok()
+            || tokio::time::timeout(Duration::from_millis(200), node_b.catchup_rx.recv())
+                .await
+                .is_ok(),
         "洪泛从未触发补齐信号，本用例没有覆盖「分页在途时延后」这条路径"
     );
 }
