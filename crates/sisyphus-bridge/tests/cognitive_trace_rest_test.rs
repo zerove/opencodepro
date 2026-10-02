@@ -27,7 +27,7 @@ async fn setup() -> (Router, Arc<MySisyphusBridge>) {
     let shared_config = Arc::new(RwLock::new(config));
 
     let bridge = Arc::new(
-        MySisyphusBridge::new(shared_config, Some(Arc::new(DummyLlmClient)))
+        MySisyphusBridge::new(shared_config, Some(Arc::new(DummyLlmClient)), None)
             .await
             .expect("Failed to create bridge"),
     );

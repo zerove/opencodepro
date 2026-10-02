@@ -33,15 +33,26 @@ async fn setup_bridge() -> (
     SisyphusBridgeClient<tonic::transport::Channel>,
     tokio::task::JoinHandle<()>,
 ) {
+    let (_, client, server) = setup_bridge_with_kernel().await;
+    (client, server)
+}
+
+/// 保留桥接实例，供测试通过公开内核接口准备数据和检查持久化结果。
+async fn setup_bridge_with_kernel() -> (
+    MySisyphusBridge,
+    SisyphusBridgeClient<tonic::transport::Channel>,
+    tokio::task::JoinHandle<()>,
+) {
     let mut config = Config::default();
     config.cache.database_url = "sqlite::memory:".to_string();
     config.sandbox.wasm_tools_dir = "tests/wasm_tools".to_string();
     // 关键：DummyLlmClient 没有 embedding 凭据，
     // 显式允许 dummy embedding 避免桥接启动失败。
     config.llm.embedding.allow_dummy_embeddings = true;
+    config.llm.embedding.provider = "dummy".into();
     let shared_config = Arc::new(RwLock::new(config));
 
-    let bridge = MySisyphusBridge::new(shared_config, Some(Arc::new(DummyLlmClient)))
+    let bridge = MySisyphusBridge::new(shared_config, Some(Arc::new(DummyLlmClient)), None)
         .await
         .expect("Failed to create bridge");
 
@@ -62,7 +73,7 @@ async fn setup_bridge() -> (
     let client =
         SisyphusBridgeClient::connect(server_addr).await.expect("Failed to connect client");
 
-    (client, server_handle)
+    (bridge, client, server_handle)
 }
 
 // ── Core RPCs ─────────────────────────────────────────────────────────────
@@ -264,12 +275,12 @@ async fn test_execute_tool_builtin_read() {
     server.abort();
 }
 
-/// 战略循环公共接口验收：strategic:next_goal 工具经过 ExecuteTool RPC
-/// 路由到 StrategicExecutor。kernel 未设置时应得到结构化错误而非
-/// panic/挂起，证明桥接层的集成边界行为稳定（内核注入路径属
-/// bridge-test-full 专项）。
+/// 战略循环公共接口验收：构造桥接时已创建并注入内核，
+/// strategic:next_goal 经由真实远程过程调用（gRPC）路由到 StrategicExecutor。
+/// 此用例覆盖项目不存在的错误映射，不覆盖目标执行。
 #[tokio::test]
-async fn test_execute_tool_strategic_next_goal_reports_kernel_state() {
+#[ignore = "requires dedicated runner"]
+async fn test_execute_tool_strategic_next_goal_missing_project() {
     let (mut client, server) = setup_bridge().await;
     let response = client
         .execute_tool(ExecuteToolRequest {
@@ -280,10 +291,10 @@ async fn test_execute_tool_strategic_next_goal_reports_kernel_state() {
         .await
         .expect("ExecuteTool failed");
     let inner = response.into_inner();
-    // 无 kernel/项目时必须失败且错误可观察，不能 panic 或挂起。
+    // 内核已注入，失败原因必须是项目不存在。
     assert_ne!(
         inner.status, "SUCCESS",
-        "未注入 kernel 时不应成功: {}",
+        "项目不存在时不应成功: {}",
         inner.result_json
     );
     // 错误必须携带结构化上下文：工具名与失败原因。
@@ -297,7 +308,106 @@ async fn test_execute_tool_strategic_next_goal_reports_kernel_state() {
         "status 应指明项目不存在，实际: {}",
         inner.status
     );
+    assert_eq!(inner.result_json, "", "失败响应不应携带结果");
     server.abort();
+}
+
+/// 真实桥接内核路径验收：项目、里程碑、阶段、目标均通过公开内核准备。
+/// DummyLlmClient.chat 返回分析对象而非 SOPGraphConfig，导致提案解析失败。
+/// 本用例验证实际进入 execute_and_record 后的失败响应及持久化记录，
+/// 不将其宣称为成功执行、反思、演进的完整验收。
+#[tokio::test]
+#[ignore = "requires dedicated runner"]
+async fn test_execute_tool_strategic_next_goal_records_kernel_failure_with_dummy() {
+    use sisyphus_types::{GoalRef, Milestone, MilestoneStatus, Phase};
+
+    let (bridge, mut client, server) = setup_bridge_with_kernel().await;
+    let manager = &bridge.kernel().roadmap_manager;
+    let project_id = "bridge-kernel-project";
+    let milestone_id = "bridge-kernel-milestone";
+    let phase_id = "bridge-kernel-phase";
+    let goal_id = "bridge-kernel-goal";
+
+    // 在请求前准备完整层级，避免项目缺失或无待办目标分支提前返回。
+    manager
+        .create_project(project_id, "桥接内核验收", "仅使用虚拟客户端")
+        .await
+        .expect("创建验收项目失败");
+    manager
+        .add_milestone(
+            project_id,
+            Milestone {
+                id: milestone_id.into(),
+                name: "验收里程碑".into(),
+                status: MilestoneStatus::Pending,
+                phases: vec![Phase {
+                    id: phase_id.into(),
+                    name: "验收阶段".into(),
+                    depends_on: vec![],
+                    goals: vec![GoalRef {
+                        goal_id: goal_id.into(),
+                        description: "Explain this project".into(),
+                        status: MilestoneStatus::Pending,
+                    }],
+                }],
+            },
+        )
+        .await
+        .expect("创建里程碑、阶段及目标失败");
+    let next_goal = manager
+        .get_next_goal(project_id)
+        .await
+        .expect("读取待办目标失败")
+        .expect("必须存在待办目标");
+    assert_eq!(next_goal.goal_id, goal_id);
+    assert_eq!(next_goal.status, MilestoneStatus::Pending);
+    assert!(manager.get_outcomes(project_id).await.expect("读取初始执行记录失败").is_empty());
+
+    let response = tokio::time::timeout(
+        std::time::Duration::from_secs(60),
+        client.execute_tool(ExecuteToolRequest {
+            tool_id: "strategic:next_goal".into(),
+            args_json: serde_json::json!({"project_id": project_id}).to_string(),
+            fuel_limit: 0,
+        }),
+    )
+    .await;
+    server.abort();
+    let inner = response
+        .expect("战略目标请求不应挂起")
+        .expect("战略目标失败应通过响应表达，而非传输错误")
+        .into_inner();
+
+    // 记录只能由真实内核执行路径产生，不能用任意非成功响应蒙混过关。
+    let outcomes = manager.get_outcomes(project_id).await.expect("读取内核执行记录失败");
+    assert_eq!(outcomes.len(), 1, "必须且只能记录本次目标执行");
+    let outcome = &outcomes[0];
+    assert_eq!(outcome.project_id, project_id);
+    assert_eq!(outcome.milestone_id, milestone_id);
+    assert_eq!(outcome.phase_id, phase_id);
+    assert_eq!(outcome.goal_id, goal_id);
+    assert!(!outcome.success, "虚拟环境不应被误判为成功执行");
+    assert_eq!(outcome.deviation_score, None);
+    let error = outcome.error.as_deref().expect("失败记录必须携带内核错误");
+    assert!(
+        error.contains("Swarm audit failed:")
+            && error.contains("Failed to parse proposal JSON:")
+            && error.contains("Dummy analysis for:"),
+        "应观察到虚拟客户端无法生成提案的已知限制，实际: {error}"
+    );
+    assert!(
+        inner.status.starts_with("ERROR: "),
+        "实际响应: {}",
+        inner.status
+    );
+    assert!(
+        inner.status.contains(&format!(
+            "Strategic Goal [{goal_id}] execution failed: {error}"
+        )),
+        "响应必须与持久化的内核错误一致，实际: {}",
+        inner.status
+    );
+    assert_eq!(inner.result_json, "", "失败响应不应携带结果");
 }
 
 #[tokio::test]
@@ -754,7 +864,7 @@ async fn setup_bridge_chaos(
     config.chaos.default_fault_probability = fault_probability;
     let shared_config = Arc::new(RwLock::new(config));
 
-    let bridge = MySisyphusBridge::new(shared_config, Some(Arc::new(DummyLlmClient)))
+    let bridge = MySisyphusBridge::new(shared_config, Some(Arc::new(DummyLlmClient)), None)
         .await
         .expect("Failed to create bridge with chaos enabled");
 
@@ -855,7 +965,7 @@ async fn setup_bridge_chaos_with_bridge(
     config.chaos.default_fault_probability = fault_probability;
     let shared_config = Arc::new(RwLock::new(config));
 
-    let bridge = MySisyphusBridge::new(shared_config, Some(Arc::new(DummyLlmClient)))
+    let bridge = MySisyphusBridge::new(shared_config, Some(Arc::new(DummyLlmClient)), None)
         .await
         .expect("Failed to create bridge with chaos enabled");
 

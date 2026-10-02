@@ -107,8 +107,52 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         config.http_address.clone()
     };
 
+    // ── Cluster peer protocol (TODO 8.3.1 Phase B) ───────────────────────
+    // 必须在桥接构造之前完成：内核的经验库要拿到 peer 管理器才能把本地
+    // 新增经验广播出去，而内核由 MySisyphusBridge::new 内部构造。
+    let cluster_runtime: Option<sisyphus_bridge::bridge_service::ClusterRuntime> = {
+        use sisyphus_bridge::peer::PeerManager;
+
+        let cfg = match shared_config.read() {
+            Ok(c) => c.cluster.clone(),
+            Err(_) => sisyphus_types::ClusterConfig::default(),
+        };
+        if !cfg.enabled {
+            info!(
+                static_peers = cfg.peers.len(),
+                "Cluster peer protocol disabled (set [cluster].enabled = true to enable)"
+            );
+            None
+        } else {
+            let derived = std::env::var("SISYPHUS_CLUSTER_NODE_ID")
+                .ok()
+                .or_else(|| std::env::var("HOSTNAME").ok())
+                .unwrap_or_else(|| "local-node".to_string());
+            let self_node_id = if cfg.node_id.is_empty() {
+                derived
+            } else {
+                cfg.node_id.clone()
+            };
+            let peer_ttl = std::time::Duration::from_secs(cfg.peer_ttl_secs);
+            let manager = std::sync::Arc::new(PeerManager::new(self_node_id.clone(), peer_ttl));
+            info!(
+                node_id = %self_node_id,
+                cluster = %cfg.cluster_name,
+                peer_ttl_secs = cfg.peer_ttl_secs,
+                static_peers = cfg.peers.len(),
+                "Cluster peer protocol enabled (peer manager created before kernel)"
+            );
+            Some(sisyphus_bridge::bridge_service::ClusterRuntime {
+                peer_manager: manager,
+                node_id: self_node_id,
+            })
+        }
+    };
+
     // Initialize bridge with shared config for dynamic updates
-    let bridge = Arc::new(MySisyphusBridge::new(shared_config.clone(), None).await?);
+    let bridge = Arc::new(
+        MySisyphusBridge::new(shared_config.clone(), None, cluster_runtime.clone()).await?,
+    );
 
     // Spawn config hot-reload in background
     tokio::spawn(async move {
@@ -215,51 +259,50 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let actual_grpc_addr = grpc_listener.local_addr().unwrap_or(grpc_addr);
     let grpc_incoming = TcpListenerStream::new(grpc_listener);
 
-    // ── Cluster peer protocol (TODO 8.3.1 Phase B) ───────────────────────
-    let _cluster_manager: Option<std::sync::Arc<sisyphus_bridge::peer::PeerManager>> = {
-        use sisyphus_bridge::peer::{
-            spawn_static_peers, ClusterServiceImpl, PeerManager, StaticPeerConfig,
-        };
+    // ── Cluster service registration (peer manager 已在桥接构造前创建) ──
+    if let Some(runtime) = cluster_runtime.as_ref() {
+        use sisyphus_bridge::peer::ExperienceSyncHandler;
+        use sisyphus_bridge::peer::{spawn_static_peers, ClusterServiceImpl, StaticPeerConfig};
+
         let cfg = match shared_config.read() {
             Ok(c) => c.cluster.clone(),
             Err(_) => sisyphus_types::ClusterConfig::default(),
         };
-        if !cfg.enabled {
-            info!(
-                static_peers = cfg.peers.len(),
-                "Cluster peer protocol disabled (set [cluster].enabled = true to enable)"
-            );
-            None
-        } else {
-            let derived = std::env::var("SISYPHUS_CLUSTER_NODE_ID")
-                .ok()
-                .or_else(|| std::env::var("HOSTNAME").ok())
-                .unwrap_or_else(|| "local-node".to_string());
-            let self_node_id = if cfg.node_id.is_empty() {
-                derived
-            } else {
-                cfg.node_id.clone()
-            };
-            let peer_ttl = std::time::Duration::from_secs(cfg.peer_ttl_secs);
-            let manager = std::sync::Arc::new(PeerManager::new(self_node_id.clone(), peer_ttl));
-            let service = ClusterServiceImpl::new(manager.clone());
-            grpc_server = grpc_server.add_service(
-                sisyphus_bridge_api::cluster_proto::cluster_server::ClusterServer::new(service),
-            );
-            let self_grpc_addr = format!("http://{actual_grpc_addr}");
-            let dial_cfg = StaticPeerConfig::from_types(&cfg, self_node_id.clone(), self_grpc_addr);
-            let handles = spawn_static_peers(dial_cfg, manager.clone());
-            info!(
-                node_id = %self_node_id,
-                cluster = %cfg.cluster_name,
-                peer_ttl_secs = cfg.peer_ttl_secs,
-                static_peers = cfg.peers.len(),
-                dialer_handles = handles.len(),
-                "Cluster peer protocol enabled (ClusterService registered + static dialers started)"
-            );
-            Some(manager)
-        }
-    };
+        let service = ClusterServiceImpl::new(runtime.peer_manager.clone());
+        grpc_server = grpc_server.add_service(
+            sisyphus_bridge_api::cluster_proto::cluster_server::ClusterServer::new(service),
+        );
+        let self_grpc_addr = format!("http://{actual_grpc_addr}");
+        let dial_cfg = StaticPeerConfig::from_types(&cfg, runtime.node_id.clone(), self_grpc_addr);
+        let handles = spawn_static_peers(dial_cfg, runtime.peer_manager.clone());
+
+        // 经验同步接收端：把 peer 广播来的经验按 CRDT 合并进本地库。
+        // 处理器持有的是未装饰的 VectorExperienceBank，远程应用不会再次广播。
+        let (sync_shutdown_tx, sync_shutdown_rx) = tokio::sync::broadcast::channel(1);
+        let sync_handle = ExperienceSyncHandler::new(
+            bridge.experience_bank().clone(),
+            runtime.peer_manager.clone(),
+            runtime.node_id.clone(),
+        )
+        .spawn(sync_shutdown_rx);
+
+        info!(
+            node_id = %runtime.node_id,
+            cluster = %cfg.cluster_name,
+            static_peers = cfg.peers.len(),
+            dialer_handles = handles.len(),
+            "ClusterService registered, static dialers and experience sync started"
+        );
+
+        // 跟随既有关闭信号：先通知处理器停止，等待在途合并完成再返回，
+        // 避免进程退出时截断正在写入的远程经验。
+        let mut sync_sig_rx = sig_rx.clone();
+        tokio::spawn(async move {
+            let _ = sync_sig_rx.changed().await;
+            let _ = sync_shutdown_tx.send(());
+            let _ = tokio::time::timeout(std::time::Duration::from_secs(5), sync_handle).await;
+        });
+    }
 
     info!("Starting gRPC server on {actual_grpc_addr}");
     let mut grpc_shutdown_rx = sig_rx.clone();

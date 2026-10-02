@@ -8,9 +8,14 @@
 //! - 每个 peer 一个连接，独立的 tokio task（不互相阻塞）
 //! - 重连：连接断开后指数退避重试（避免 K8s pod restart 期间风暴）
 //! - `Join` 后订阅本地 manager 事件，转发到对端的 `Stream`
-//! - 对端推送的事件 → 本地 manager.on_peer_joined/left
+//! - 对端推送的事件 → 本地 manager
 
-use crate::peer::manager::{ClusterEvent as MgrEvent, PeerInfo, PeerManager};
+use crate::peer::manager::PeerManager;
+// proto ↔ Rust 类型的转换统一放在 service.rs。
+// 此前这里曾镜像一份独立副本，两边各自演化：service.rs 修好入站处理后，
+// 拨号器（生产路径走的正是这里）仍在静默丢弃 ExperienceSync，
+// 导致跨节点经验同步从未真正打通。单一实现消除这类漂移。
+use crate::peer::service::{apply_mgr_event, mgr_event_to_proto, proto_to_mgr_event};
 use sisyphus_bridge_api::cluster_proto::cluster_client::ClusterClient;
 use sisyphus_bridge_api::cluster_proto::{ClusterEvent as ProtoEvent, JoinRequest};
 use std::sync::Arc;
@@ -60,7 +65,7 @@ impl StaticPeerConfig {
 /// 每个 task 流程：
 /// 1. 指数退避重连循环
 /// 2. 建立 gRPC channel + Join 握手
-/// 3. 双向 Stream：本地 manager 事件 → outbound；对端事件 → manager.on_peer_*
+/// 3. 双向 Stream：本地 manager 事件 → outbound；对端事件 → manager
 /// 4. 流断开 → 回到重连循环
 ///
 /// 返回 tokio::JoinHandle 列表（每个 peer 一个）。
@@ -82,10 +87,13 @@ pub fn spawn_static_peers(
 }
 
 /// 单个 peer 的 dial 循环（指数退避重连）
+// adg:allow async function called without await
+// 误报：本函数由 spawn_static_peers 里的 tokio::spawn 驱动，
+// 并在 run_dial_loop 的调用点 await 其结果，不存在未等待的竞态。
 async fn run_dial_loop(config: StaticPeerConfig, manager: Arc<PeerManager>, grpc_addr: String) {
     let mut backoff = config.reconnect_initial_delay;
     loop {
-        match connect_and_join(&config, &manager, &grpc_addr).await {
+        match connect_and_join(&config, &grpc_addr).await {
             Ok(channel) => {
                 // 连接成功，重置 backoff
                 backoff = config.reconnect_initial_delay;
@@ -113,16 +121,16 @@ async fn run_dial_loop(config: StaticPeerConfig, manager: Arc<PeerManager>, grpc
 }
 
 /// 建立 gRPC channel + Join 握手
-async fn connect_and_join(
-    config: &StaticPeerConfig,
-    _manager: &PeerManager,
-    grpc_addr: &str,
-) -> Result<Channel, String> {
+async fn connect_and_join(config: &StaticPeerConfig, grpc_addr: &str) -> Result<Channel, String> {
     let endpoint = Endpoint::try_from(grpc_addr.to_string())
         .map_err(|e| format!("invalid endpoint: {e}"))?
         .connect_timeout(Duration::from_secs(config.join_timeout_secs))
         .timeout(Duration::from_secs(config.join_timeout_secs * 2));
 
+    // adg:allow connections must be released after use
+    // 误报：tonic 的 Channel 是可克隆的多路复用客户端句柄，
+    // 底层连接由 channel 内部池化管理；这里刻意保留原句柄返回给 run_stream，
+    // clone 仅用于 Join 客户端，不存在未释放的连接。
     let channel = endpoint.connect().await.map_err(|e| format!("connect: {e}"))?;
 
     let mut client = ClusterClient::new(channel.clone());
@@ -193,88 +201,10 @@ async fn run_stream(manager: &PeerManager, channel: Channel) -> Result<(), Strin
     Err("inbound stream ended".to_string())
 }
 
-// ── proto ↔ Rust 类型转换（与 service.rs 中的版本镜像） ──
-
-fn mgr_event_to_proto(evt: MgrEvent) -> Option<ProtoEvent> {
-    use sisyphus_bridge_api::cluster_proto::{
-        cluster_event::Event, ExperienceSync as ES, PeerInfo as ProtoPeerInfo, PeerJoined as PJ,
-        PeerLeft as PL, StateProposal as SP,
-    };
-    match evt {
-        MgrEvent::PeerJoined(p) => Some(ProtoEvent {
-            event: Some(Event::PeerJoined(PJ {
-                peer: Some(ProtoPeerInfo {
-                    node_id: p.node_id,
-                    grpc_addr: p.grpc_addr,
-                    joined_at: p.joined_at,
-                }),
-            })),
-        }),
-        MgrEvent::PeerLeft { node_id, reason } => Some(ProtoEvent {
-            event: Some(Event::PeerLeft(PL { node_id, reason })),
-        }),
-        MgrEvent::StateProposal { key, value } => Some(ProtoEvent {
-            event: Some(Event::StateProposal(SP {
-                key,
-                value,
-                vector_clock: Default::default(),
-            })),
-        }),
-        MgrEvent::ExperienceSync {
-            exp_key,
-            version,
-            vector_clock_json,
-            payload,
-        } => Some(ProtoEvent {
-            event: Some(Event::ExperienceSync(ES {
-                exp_key,
-                version,
-                vector_clock_json,
-                payload,
-            })),
-        }),
-    }
-}
-
-fn proto_to_mgr_event(evt: ProtoEvent) -> Option<MgrEvent> {
-    use sisyphus_bridge_api::cluster_proto::cluster_event::Event;
-    evt.event.and_then(|e| match e {
-        Event::PeerJoined(p) => {
-            p.peer.map(|info| MgrEvent::PeerJoined(PeerInfo::new(info.node_id, info.grpc_addr)))
-        },
-        Event::PeerLeft(pl) => Some(MgrEvent::PeerLeft {
-            node_id: pl.node_id,
-            reason: pl.reason,
-        }),
-        Event::StateProposal(_) | Event::ExperienceSync(_) => None,
-    })
-}
-
-fn apply_mgr_event(manager: &PeerManager, evt: MgrEvent) {
-    match evt {
-        MgrEvent::PeerJoined(p) => {
-            let _ = manager.on_peer_joined(p);
-        },
-        MgrEvent::PeerLeft { node_id, reason } => {
-            let _ = manager.on_peer_left(&node_id, reason);
-        },
-        MgrEvent::StateProposal { .. } | MgrEvent::ExperienceSync { .. } => {},
-    }
-}
-
-#[allow(dead_code)]
-fn _unused_unbounded_stream() -> UnboundedReceiverStream<ProtoEvent> {
-    let (_tx, rx) = mpsc::unbounded_channel::<ProtoEvent>();
-    UnboundedReceiverStream::new(rx)
-}
-
-// 显式 use 让 Stream trait 可用（run_stream 函数用 .next()）
-#[allow(unused_imports)]
-use StreamExt as _;
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::peer::manager::{ClusterEvent as MgrEvent, PeerInfo};
 
     #[test]
     fn test_static_peer_config_from_types() {
@@ -331,6 +261,25 @@ mod tests {
         };
         let mgr = proto_to_mgr_event(proto).expect("convert");
         assert!(matches!(mgr, MgrEvent::PeerJoined(_)));
+    }
+
+    /// 拨号器与服务端共用同一套转换函数；入站 ExperienceSync 必须被保留，
+    /// 否则跨节点经验同步在这条生产路径上会被静默丢弃。
+    #[test]
+    fn test_proto_to_mgr_event_keeps_inbound_experience_sync() {
+        use sisyphus_bridge_api::cluster_proto::cluster_event::Event;
+        use sisyphus_bridge_api::cluster_proto::ExperienceSync as ES;
+
+        let proto = ProtoEvent {
+            event: Some(Event::ExperienceSync(ES {
+                exp_key: "exp:1:node-x".into(),
+                version: 3,
+                vector_clock_json: "{}".into(),
+                payload: vec![1, 2, 3],
+            })),
+        };
+        let mgr = proto_to_mgr_event(proto).expect("ExperienceSync 不应被丢弃");
+        assert!(matches!(mgr, MgrEvent::ExperienceSync { version: 3, .. }));
     }
 
     #[test]

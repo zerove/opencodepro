@@ -4363,6 +4363,7 @@ dependencies = [
  "sisyphus-tools-session",
  "sisyphus-tools-system",
  "sisyphus-types",
+ "sqlx",
  "thiserror 1.0.69",
  "tokio",
  "tokio-stream",

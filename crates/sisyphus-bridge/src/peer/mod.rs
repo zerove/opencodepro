@@ -17,7 +17,9 @@ pub mod fallback;
 pub mod manager;
 pub mod service;
 
-pub use experience_sync::{broadcast_experience, ExperienceSyncHandler};
+pub use experience_sync::{
+    broadcast_experience, ExperienceSyncHandler, PeerBroadcastExperienceBank,
+};
 
 pub use fallback::{spawn_static_peers, StaticPeerConfig};
 pub use manager::{ClusterEvent as MgrEvent, PeerInfo, PeerManager, PeerStatus};

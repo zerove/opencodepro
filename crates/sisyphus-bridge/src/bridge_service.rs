@@ -106,11 +106,24 @@ impl Clone for MySisyphusBridge {
     }
 }
 
+/// 集群运行时：由 `main` 在构造桥接之前创建，供内核经验库装饰与后续
+/// ClusterService / 经验同步处理器共享同一个 peer 管理器。
+#[derive(Clone)]
+pub struct ClusterRuntime {
+    pub peer_manager: Arc<crate::peer::PeerManager>,
+    pub node_id: String,
+}
+
 impl MySisyphusBridge {
     /// New.
+    ///
+    /// `cluster` 传入集群运行时（peer 管理器 + 本节点 ID）时，内核的经验库
+    /// 会被 [`PeerBroadcastExperienceBank`] 装饰，本地新增经验在落库成功后自动
+    /// 推送给所有 peer；`None` 表示单节点运行，行为与集群之前完全一致。
     pub async fn new(
         shared_config: Arc<RwLock<Config>>,
         llm_client_override: Option<Arc<dyn LlmClient>>,
+        cluster: Option<ClusterRuntime>,
     ) -> Result<Self, sisyphus_types::TypesError> {
         let config_snapshot = shared_config
             .read()
@@ -527,11 +540,23 @@ impl MySisyphusBridge {
                 "Failed to init WorkspaceManager: {e}"
             ))
         })?;
+        // 集群模式下，内核写经验时顺带广播到 peer；接收端走 apply_remote，
+        // 不经过该装饰器，因此不会形成广播回环。
+        let kernel_experience_bank: Arc<dyn sisyphus_types::experience::ExperienceBank> =
+            match cluster.as_ref() {
+                Some(runtime) => Arc::new(crate::peer::PeerBroadcastExperienceBank::new(
+                    experience_bank.clone(),
+                    runtime.peer_manager.clone(),
+                    runtime.node_id.clone(),
+                )),
+                None => experience_bank.clone(),
+            };
+
         let kernel = Arc::new(SisyphusKernel::new(
             state_store.clone(),
             sop_store.clone(),
             vector_store.clone(),
-            experience_bank.clone(),
+            kernel_experience_bank,
             tool_executor,
             intel,
             dyn_llm_client.clone(),
@@ -712,6 +737,15 @@ impl MySisyphusBridge {
     /// Kernel.
     pub fn kernel(&self) -> &Arc<SisyphusKernel> {
         &self.kernel
+    }
+
+    /// 未被集群广播装饰的底层经验库。
+    ///
+    /// 经验同步处理器必须拿这个实例而不是内核里的 `dyn ExperienceBank`：
+    /// 内核那份在集群模式下被 [`PeerBroadcastExperienceBank`] 包了，远程经验
+    /// 经它落库会再次广播，形成回环。
+    pub fn experience_bank(&self) -> &Arc<sisyphus_mem::experience_bank::VectorExperienceBank> {
+        &self.experience_bank
     }
 
     /// 优雅关闭 bridge：等待 in-flight LLM 请求完成。

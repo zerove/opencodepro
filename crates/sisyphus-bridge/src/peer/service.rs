@@ -121,7 +121,7 @@ impl Cluster for ClusterServiceImpl {
 }
 
 /// Manager ClusterEvent → proto ClusterEvent（部分子集，不含 inbound only 事件）
-fn mgr_event_to_proto(evt: MgrEvent) -> Option<ProtoEvent> {
+pub(crate) fn mgr_event_to_proto(evt: MgrEvent) -> Option<ProtoEvent> {
     match evt {
         MgrEvent::PeerJoined(p) => Some(ProtoEvent {
             event: Some(
@@ -174,7 +174,7 @@ fn mgr_event_to_proto(evt: MgrEvent) -> Option<ProtoEvent> {
 }
 
 /// proto ClusterEvent → Manager ClusterEvent
-fn proto_to_mgr_event(evt: ProtoEvent) -> Option<MgrEvent> {
+pub(crate) fn proto_to_mgr_event(evt: ProtoEvent) -> Option<MgrEvent> {
     use sisyphus_bridge_api::cluster_proto::cluster_event::Event;
     evt.event.and_then(|e| match e {
         Event::PeerJoined(p) => {
@@ -185,12 +185,17 @@ fn proto_to_mgr_event(evt: ProtoEvent) -> Option<MgrEvent> {
             reason: pl.reason,
         }),
         Event::StateProposal(_) => None, // state proposal inbound handled separately
-        Event::ExperienceSync(_) => None, // experience sync inbound handled separately
+        Event::ExperienceSync(e) => Some(MgrEvent::ExperienceSync {
+            exp_key: e.exp_key,
+            version: e.version,
+            vector_clock_json: e.vector_clock_json,
+            payload: e.payload,
+        }),
     })
 }
 
 /// 应用一个 manager 事件
-fn apply_mgr_event(manager: &PeerManager, evt: MgrEvent) {
+pub(crate) fn apply_mgr_event(manager: &PeerManager, evt: MgrEvent) {
     match evt {
         MgrEvent::PeerJoined(p) => {
             let _ = manager.on_peer_joined(p);
@@ -198,8 +203,19 @@ fn apply_mgr_event(manager: &PeerManager, evt: MgrEvent) {
         MgrEvent::PeerLeft { node_id, reason } => {
             let _ = manager.on_peer_left(&node_id, reason);
         },
-        MgrEvent::StateProposal { .. } | MgrEvent::ExperienceSync { .. } => {
-            // 暂不处理 inbound state proposal/experience sync — 留待 8.3.2 集成
+        MgrEvent::StateProposal { .. } => {
+            // 状态提案尚无消费方（TODO 8.3.3 共识），保持丢弃。
+        },
+        MgrEvent::ExperienceSync {
+            exp_key,
+            version,
+            vector_clock_json,
+            payload,
+        } => {
+            // 投递到本地事件总线，由 ExperienceSyncHandler 按 CRDT 合并落库。
+            // 此前这里直接丢弃，跨节点经验同步实际从未打通。
+            // 注意用 deliver_ 而非 broadcast_：已经来自远端，再转发会形成回环。
+            manager.deliver_inbound_experience_sync(exp_key, version, vector_clock_json, payload);
         },
     }
 }

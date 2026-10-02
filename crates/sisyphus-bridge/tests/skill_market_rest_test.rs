@@ -45,7 +45,7 @@ async fn setup() -> Router {
     config.llm.embedding.allow_dummy_embeddings = true;
     let shared_config = Arc::new(RwLock::new(config));
 
-    let bridge = MySisyphusBridge::new(shared_config, Some(Arc::new(DummyLlmClient)))
+    let bridge = MySisyphusBridge::new(shared_config, Some(Arc::new(DummyLlmClient)), None)
         .await
         .expect("Failed to create bridge");
     build_router(RestApiState::new(Arc::new(bridge), std::env::temp_dir()))

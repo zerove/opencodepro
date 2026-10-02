@@ -487,7 +487,8 @@ mod tests {
         let mut cfg = Config::default();
         cfg.llm.embedding.allow_dummy_embeddings = true;
         let cfg = StdArc::new(StdRwLock::new(cfg));
-        let bridge = Arc::new(MySisyphusBridge::new(cfg, None).await.expect("构造 test bridge"));
+        let bridge =
+            Arc::new(MySisyphusBridge::new(cfg, None, None).await.expect("构造 test bridge"));
         let state = RestApiState::new(bridge, std::path::PathBuf::from("/tmp"));
         match shared_http {
             Some(c) => state.with_shared_http(c),

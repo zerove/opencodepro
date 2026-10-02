@@ -61,3 +61,5 @@ sandbox = ["sisyphus-sandbox"]
 [dev-dependencies]
 tower = { version = "0.4", features = ["util"] }
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+# cluster_integration.rs 的双节点经验同步用例需要为每个节点建内存库
+sqlx = { version = "0.8", default-features = false, features = ["sqlite", "runtime-tokio-rustls"] }

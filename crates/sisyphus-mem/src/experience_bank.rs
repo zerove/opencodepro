@@ -1,4 +1,4 @@
-use crate::store::MfsStore;
+use crate::store::{ApplyResult, MfsStore};
 use anyhow::Result;
 use sisyphus_types::TypesError;
 use sisyphus_types::experience::{
@@ -102,6 +102,45 @@ impl VectorExperienceBank {
             .list_shared_experiences()
             .await
             .map_err(|e| TypesError::ExperienceError(format!("list shared failed: {e}")))
+    }
+
+    /// 应用来自其他节点的经验（TODO 9.1 跨节点同步）。
+    ///
+    /// 与 [`ExperienceBank::record`] 的区别是这里**不做本地时钟 bump**：
+    /// 远程经验携带的是发送节点的 version/vector_clock，合并判定完全交给
+    /// [`MfsStore::apply_remote_experience`] 的 `merge_crdt`（LWW-Element-Set +
+    /// vector clock）。若改走 `record()`，本地会把远端版本当作自己的新写入，
+    /// 并发冲突退化为「最后到达者获胜」，同时丢失 happened-before 信息。
+    ///
+    /// 合并获胜时补建向量索引：CRDT 落库只写关系表，向量检索依赖本地的
+    /// embedding，缺失会让远程经验无法被 `query_similar` 召回。
+    pub async fn apply_remote(&self, exp: &ExperienceTuple) -> Result<ApplyResult, TypesError> {
+        let outcome =
+            self.store.apply_remote_experience(exp).await.map_err(|e| {
+                TypesError::ExperienceError(format!("apply remote experience: {e}"))
+            })?;
+
+        if matches!(outcome, ApplyResult::Applied) {
+            let key = format!("exp:{}", exp.timestamp);
+            let text_embedding = self
+                .embedding_client
+                .embed(&exp.context_text)
+                .await
+                .map_err(|e| TypesError::ExperienceError(format!("embedding failed: {e}")))?;
+            let metadata = serde_json::json!({
+                "exp_key": key,
+                "success": exp.outcome_success,
+                "timestamp": exp.timestamp,
+                "project_id": exp.project_id,
+                "modality": "text",
+            });
+            self.vector_store
+                .store_embedding(&key, text_embedding, metadata)
+                .await
+                .map_err(|e| TypesError::ExperienceError(format!("vector store failed: {e}")))?;
+        }
+
+        Ok(outcome)
     }
 
     async fn set_project_ownership(

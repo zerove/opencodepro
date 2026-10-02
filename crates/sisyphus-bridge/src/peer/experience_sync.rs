@@ -1,7 +1,7 @@
 //! Experience sync module (TODO 9.1.1)
 //!
 //! 跨节点 experience 同步：
-//! - 发送端：本地 store 新增 experience 后，调用 `broadcast_experience_sync` 推送到所有 peer
+//! - 发送端：本地 store 新增 experience 后，调用 `broadcast_experience` 推送到所有 peer
 //! - 接收端：监听 PeerManager 事件，应用 CRDT 合并策略
 //!
 //! CRDT 策略：LWW-Element-Set + vector clock（参考 sisyphus_types::experience::merge_crdt）
@@ -9,12 +9,17 @@
 //! - 收到的 vector clock happened-before 本地 → 丢弃
 //! - 并发写入 → LWW (version + node_id tie-break)
 //!
-//! 当前实现：直接调用 `experience_bank.record()` 让其内部的 CRDT bump 逻辑处理。
-//! 后续优化：MfsStore 暴露 `apply_remote_experience` API 进行原子 CAS。
+//! 接收端必须走 `VectorExperienceBank::apply_remote`（内部即
+//! `MfsStore::apply_remote_experience`），而不是 `record()`：后者会用本地
+//! node_id bump 时钟，把远程写入伪装成本地新写入，既破坏冲突判定，也让
+//! 本地时钟与其他节点失去可比性。
 
 use crate::peer::manager::{ClusterEvent as MgrEvent, PeerManager};
+use async_trait::async_trait;
 use sisyphus_mem::experience_bank::VectorExperienceBank;
-use sisyphus_types::experience::{ExperienceBank, ExperienceTuple};
+use sisyphus_mem::store::ApplyResult;
+use sisyphus_types::experience::{ExperienceBank, ExperienceQuery, ExperienceTuple};
+use sisyphus_types::TypesError;
 use std::sync::Arc;
 use tokio::sync::broadcast;
 use tokio::task::JoinHandle;
@@ -44,6 +49,55 @@ pub fn broadcast_experience(
         },
     };
     peer_manager.broadcast_experience_sync(exp_key, exp.version, vector_clock_json, payload);
+}
+
+/// 本地经验广播装饰器：把「本地成功落库」的每次写入推送给所有 peer。
+///
+/// 注入到 `SisyphusKernel` 的 `Arc<dyn ExperienceBank>`，因此
+/// `execute_and_record` 与认知循环 `reflect_phase` 的写入都会自动广播，
+/// 无需在两条调用链上分别插入钩子。
+///
+/// 关键约束：先本地落库、成功后才广播。广播失败只记日志，不影响本地结果——
+/// 经验同步是尽力而为的旁路，不应让跨节点故障拖垮本节点的目标执行。
+///
+/// 不会形成回环：接收端走 [`ExperienceSyncHandler`] → `apply_remote`，
+/// 而 `apply_remote` 不经过本装饰器，因此远程应用不会被再次广播。
+pub struct PeerBroadcastExperienceBank {
+    inner: Arc<VectorExperienceBank>,
+    peer_manager: Arc<PeerManager>,
+    node_id: String,
+}
+
+impl PeerBroadcastExperienceBank {
+    pub fn new(
+        inner: Arc<VectorExperienceBank>,
+        peer_manager: Arc<PeerManager>,
+        node_id: impl Into<String>,
+    ) -> Self {
+        Self {
+            inner,
+            peer_manager,
+            node_id: node_id.into(),
+        }
+    }
+}
+
+#[async_trait]
+impl ExperienceBank for PeerBroadcastExperienceBank {
+    async fn record(&self, exp: ExperienceTuple) -> Result<(), TypesError> {
+        self.inner.record(exp.clone()).await?;
+        // exp_key 内嵌本节点 ID，接收端据此过滤自发事件，避免自环。
+        let exp_key = format!("exp:{}:{}", exp.timestamp, self.node_id);
+        broadcast_experience(&self.peer_manager, &exp, exp_key);
+        Ok(())
+    }
+
+    async fn query_similar(
+        &self,
+        query: ExperienceQuery,
+    ) -> Result<Vec<ExperienceTuple>, TypesError> {
+        self.inner.query_similar(query).await
+    }
 }
 
 /// ExperienceSyncHandler：订阅 PeerManager 事件，将远程 experience 写入本地 bank
@@ -79,45 +133,48 @@ impl ExperienceSyncHandler {
         tokio::spawn(async move {
             loop {
                 tokio::select! {
-                    biased;
-                    _ = shutdown_rx.recv() => {
-                        tracing::info!("ExperienceSyncHandler: shutdown signal received");
-                        break;
-                    }
-                    result = events.recv() => {
-                        match result {
-                            Ok(MgrEvent::ExperienceSync {
-                                exp_key,
-                                version,
-                                vector_clock_json,
-                                payload,
-                            }) => {
-                                // 过滤自己广播的事件（node_id 嵌入 exp_key）
-                                if exp_key.contains(&self_node_id) {
-                                    tracing::trace!(exp_key = %exp_key, "skipping own broadcast");
-                                    continue;
+                                biased;
+                                _ = shutdown_rx.recv() => {
+                                    tracing::info!("ExperienceSyncHandler: shutdown signal received");
+                                    break;
                                 }
-                                Self::handle_remote_sync(
-                                    &experience_bank,
-                                    &exp_key,
-                                    version,
-                                    &vector_clock_json,
-                                    payload,
-                                ).await;
-                            }
-                            Ok(_) => {
-                                // 其他事件类型不处理
-                            }
-                            Err(broadcast::error::RecvError::Closed) => {
-                                tracing::warn!("ExperienceSyncHandler: peer manager channel closed");
-                                break;
-                            }
-                            Err(broadcast::error::RecvError::Lagged(n)) => {
-                                tracing::warn!(lagged = n, "ExperienceSyncHandler: lagged, may have missed events");
-                            }
-                        }
-                    }
+                                result = events.recv() => {
+                                    match result {
+                                        Ok(MgrEvent::ExperienceSync {
+                                            exp_key,
+                                            version,
+                                            vector_clock_json,
+                                            payload,
+                                        }) => {
+                                            // 过滤自己广播的事件。按后缀精确匹配而不是子串包含：
+                // 子串匹配下 "node-a" 会连带吞掉 "node-ab"、"node-a-2" 的经验。
+                // 发送端统一用 `exp:<timestamp>:<node_id>` 构造 key，节点 ID 落在末段。
+                let own_suffix = format!(":{}", self_node_id);
+                if exp_key.ends_with(&own_suffix) {
+                    tracing::trace!(exp_key = %exp_key, "skipping own broadcast");
+                    continue;
                 }
+                                            Self::handle_remote_sync(
+                                                &experience_bank,
+                                                &exp_key,
+                                                version,
+                                                &vector_clock_json,
+                                                payload,
+                                            ).await;
+                                        }
+                                        Ok(_) => {
+                                            // 其他事件类型不处理
+                                        }
+                                        Err(broadcast::error::RecvError::Closed) => {
+                                            tracing::warn!("ExperienceSyncHandler: peer manager channel closed");
+                                            break;
+                                        }
+                                        Err(broadcast::error::RecvError::Lagged(n)) => {
+                                            tracing::warn!(lagged = n, "ExperienceSyncHandler: lagged, may have missed events");
+                                        }
+                                    }
+                                }
+                            }
             }
             tracing::info!("ExperienceSyncHandler: stopped");
         })
@@ -128,11 +185,11 @@ impl ExperienceSyncHandler {
         experience_bank: &Arc<VectorExperienceBank>,
         exp_key: &str,
         remote_version: u64,
-        _vector_clock_json: &str,
+        vector_clock_json: &str,
         payload: Vec<u8>,
     ) {
         // 解析 payload
-        let mut remote_exp: ExperienceTuple = match serde_json::from_slice(&payload) {
+        let remote_exp: ExperienceTuple = match serde_json::from_slice(&payload) {
             Ok(exp) => exp,
             Err(e) => {
                 tracing::warn!(error = %e, exp_key = %exp_key, "failed to deserialize remote experience");
@@ -140,24 +197,51 @@ impl ExperienceSyncHandler {
             },
         };
 
-        // 关键：在写入前清空 version/vector_clock，让 record() 内部用本地 node_id bump
-        // 否则来自 remote 的 version 会被错误地保留（应该反映本地操作历史）
-        // 注意：此处仍保留 remote_exp 的 vector_clock，因为它是 happened-before 信息
-        let _ = remote_version; // 仅为日志/未来使用
-        remote_exp.version = 0;
-        // 保留 vector_clock：让本地 bump_local_clock 看到 remote 的因果信息
+        // envelope 与 payload 的 version 必须一致，否则说明传输层有 bug。
+        // 不一致时以 payload 为准继续合并，但留下告警便于排查。
+        if remote_exp.version != remote_version {
+            tracing::warn!(
+                exp_key = %exp_key,
+                envelope_version = remote_version,
+                payload_version = remote_exp.version,
+                "experience sync version mismatch; using payload value",
+            );
+        }
+        if serde_json::from_str::<std::collections::BTreeMap<String, u64>>(vector_clock_json)
+            .is_err()
+        {
+            tracing::warn!(
+                exp_key = %exp_key,
+                "experience sync vector_clock envelope is not a clock map",
+            );
+        }
 
-        if let Err(e) = experience_bank.record(remote_exp).await {
-            tracing::error!(
-                error = %e,
-                exp_key = %exp_key,
-                "failed to record remote experience"
-            );
-        } else {
-            tracing::info!(
-                exp_key = %exp_key,
-                "applied remote experience to local store"
-            );
+        // 关键：走 CRDT 合并路径，而不是 record()。
+        // record() 会用本地 node_id bump version/vector_clock，把远程经验当成本地
+        // 新写入，于是并发冲突退化为「最后到达者获胜」，且本地时钟被污染后
+        // 无法再与其他节点正确比较。apply_remote 把 version/vector_clock 原样
+        // 交给 merge_crdt 判定（LWW-Element-Set + vector clock）。
+        match experience_bank.apply_remote(&remote_exp).await {
+            Ok(ApplyResult::Applied) => {
+                tracing::info!(
+                    exp_key = %exp_key,
+                    version = remote_exp.version,
+                    "applied remote experience to local store",
+                );
+            },
+            Ok(ApplyResult::Kept) => {
+                tracing::debug!(
+                    exp_key = %exp_key,
+                    version = remote_exp.version,
+                    "local experience is newer; remote discarded",
+                );
+            },
+            Ok(ApplyResult::Equal) => {
+                tracing::trace!(exp_key = %exp_key, "remote experience already present");
+            },
+            Err(e) => {
+                tracing::error!(error = %e, exp_key = %exp_key, "failed to apply remote experience");
+            },
         }
     }
 }

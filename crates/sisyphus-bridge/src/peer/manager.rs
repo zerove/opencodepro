@@ -248,8 +248,35 @@ impl PeerManager {
         });
     }
 
-    /// 广播一个 ExperienceSync 事件（TODO 8.3.2 集成）
+    /// 广播一个本地产生的 `ExperienceSync` 事件。
+    ///
+    /// 事件同时进入本地订阅者（`ExperienceSyncHandler`）与已建立的对端流，
+    /// 由 `PeerBroadcastExperienceBank` 在本地落库成功后调用。
     pub fn broadcast_experience_sync(
+        &self,
+        exp_key: impl Into<String>,
+        version: u64,
+        vector_clock_json: impl Into<String>,
+        payload: Vec<u8>,
+    ) {
+        let _ = self.event_tx.send(ClusterEvent::ExperienceSync {
+            exp_key: exp_key.into(),
+            version,
+            vector_clock_json: vector_clock_json.into(),
+            payload,
+        });
+    }
+
+    /// 把从远端收到的 `ExperienceSync` 投递到本地事件总线。
+    ///
+    /// 与 [`PeerManager::broadcast_experience_sync`] 的区别：后者是本地产生的
+    /// 写入，会顺着已建立的流再发给其他 peer；本方法只让本地订阅者
+    /// （`ExperienceSyncHandler`）看到它。若在此再走一次转发，事件会在集群里
+    /// 无限反弹。
+    ///
+    /// 此前 `ClusterServiceImpl::apply_mgr_event` 对入站 `ExperienceSync` 直接
+    /// 丢弃（标着「留待 8.3.2 集成」），导致跨节点经验同步整条链路不通。
+    pub fn deliver_inbound_experience_sync(
         &self,
         exp_key: impl Into<String>,
         version: u64,

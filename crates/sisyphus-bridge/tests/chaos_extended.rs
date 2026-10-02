@@ -28,7 +28,7 @@ async fn setup_bridge() -> (SisyphusBridgeClient<Channel>, tokio::task::JoinHand
     config.llm.embedding.allow_dummy_embeddings = true;
     let shared_config = Arc::new(RwLock::new(config));
 
-    let bridge = MySisyphusBridge::new(shared_config, Some(Arc::new(DummyLlmClient)))
+    let bridge = MySisyphusBridge::new(shared_config, Some(Arc::new(DummyLlmClient)), None)
         .await
         .expect("Failed to create bridge");
 
@@ -171,7 +171,7 @@ async fn setup_bridge_with_rest() -> (std::net::SocketAddr, tokio::task::JoinHan
     let shared_config = Arc::new(RwLock::new(config));
 
     let bridge = Arc::new(
-        MySisyphusBridge::new(shared_config, Some(Arc::new(DummyLlmClient)))
+        MySisyphusBridge::new(shared_config, Some(Arc::new(DummyLlmClient)), None)
             .await
             .expect("Failed to create bridge"),
     );
