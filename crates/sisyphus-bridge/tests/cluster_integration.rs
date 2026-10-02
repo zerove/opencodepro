@@ -1028,13 +1028,25 @@ async fn catchup_signal_reruns_anti_entropy() {
 ///
 /// ## 为什么必须先等第一页落地
 ///
-/// 早期版本在建好 B 之后立即洪泛。实测（装 tracing subscriber 抓日志）发现：
-/// 洪泛是同步写入的，而拨号器的流任务还没被调度，**所有 Lagged 信号都落在
-/// `paging = None` 上**——延后分支一次都没执行过。把延后改成丢弃的变异
-/// （`drop(catchup_pending)`）在该版本下能存活，说明它对这条路径零覆盖。
+/// 早期版本在建好 B 之后立即洪泛。把延后改成丢弃的变异（`drop(catchup_pending)`）
+/// 在该版本下能存活，说明它对这条路径零覆盖。
 ///
-/// 现在先轮询等 B 真正收到第一页：那一刻分页会话必然在途（`paging = Some`），
-/// 洪泛落在会话中途，延后分支必被触发。页数取 6 轮以把时间窗拉宽。
+/// 实测（临时注入 tracing subscriber 抓日志）给出的真实原因，比「落在
+/// `paging = None`」更早一步：**两个分支一次都没执行**，21 个 Lagged 信号在
+/// 拨号器 `resubscribe` 之前就发完了，比拨号器 Join 早约 11ms。
+/// `broadcast::Receiver::resubscribe` 只从订阅那一刻开始计数，看不到订阅之前
+/// 已发出的信号——因此这些信号既没进 `Some` 分支，也没进 `None` 分支，
+/// 而是在接收端根本不存在。`tx.send(())` 仍然返回 `Ok`（有订阅者：上游那个
+/// `observer`），所以服务端日志里的 `catchup_signalled=true` 会误导人以为
+/// 信号一定被消费。**发送成功不等于信号被消费。**
+///
+/// 这个缺口本身是安全的：`run_stream` 每次流建立时无条件发一次全量反熵拉取，
+/// 建连时错过的信号由它兜住。危险的是它会伪装成覆盖——用例照样通过、断言照样
+/// 成立，却什么都没验到。
+///
+/// 现在先轮询等 B 真正收到第一页：那一刻拨号器已 `resubscribe` 且分页会话在途
+/// （`paging = Some`），洪泛落在会话中途，延后分支必被触发。页数取 6 轮以把
+/// 时间窗拉宽。
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn catchup_deferred_while_paging_converges_exactly() {
     use sisyphus_bridge::peer::SYNC_PAGE_SIZE;

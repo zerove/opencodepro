@@ -106,10 +106,11 @@ B 每收到一页就多持有一批行，于是下一页的差量随之**缩短*
 
 把 `catchup_pending = true` 改成 `drop(catchup_pending)`（即延后改为丢弃，正是被测的缺陷），用例**仍然通过**。
 
-装 tracing subscriber 抓日志后原因清楚：
+装 tracing subscriber 抓日志后原因清楚（下面是旧版用例的真实时间线）：
 
 ```
-04.779  WARN  lagged（×36）          ← 洪泛立刻压垮通道
+04.779  WARN  lagged（×21）          ← 洪泛立刻压垮通道，信号全部发完
+04.811  INFO  Join successful         ← 拨号器建连
 04.822  INFO  sync request sent       ← 拨号器才开始工作
 04.843  INFO  replied sent=128 more=true
 04.862  INFO  sync request sent
@@ -118,11 +119,35 @@ B 每收到一页就多持有一批行，于是下一页的差量随之**缩短*
 04.917  INFO  replied sent=7 more=false   ← 分页已收尾
 ```
 
-洪泛是**同步**写入的，而拨号器的流任务当时还没被调度。36 个 Lagged 信号全部落在 `paging = None` 上——走的是 `None` 分支，延后分支一次都没执行。
+洪泛是**同步**写入的，比拨号器建连早约 11ms 把 21 个信号全发完了。
 
-顺带一提：这条路径此前还被 ADR-011 记录为「用洪泛制造信号」就够了。既有断言「信号确实触发过」只证明 Lagged 发生了，完全不能证明信号撞上的是分页在途的时刻。
+这里要修正一版早先的错误归因。我当时写的是「信号全部落在 `paging = None` 上，
+走的是 `None` 分支」——这不对。装上日志实测两个分支各出现过 0 次：
+`None` 分支的 `anti-entropy: lagged catch-up requested` 和 `Some` 分支的
+`anti-entropy: catch-up deferred until paging finishes` 都是零条。
+信号根本没进拨号器的接收端。
 
-修正：先轮询等 B 真正收到第一页，那一刻 `paging = Some` 必然成立，再洪泛；差量同时从 3 页加到 7 页以拉宽时间窗。
+机制是 `broadcast::Receiver::resubscribe`：`run_stream` 每次（重）连接都用
+它拿一个新的接收器，而它**只从订阅那一刻开始计数**，看不到订阅之前已发出的信号。
+实测对照（`sisyphus-bridge` 内临时探针，事后删除）：
+
+| 时序 | `send()` | `try_recv()` |
+|------|----------|--------------|
+| 先发后 `resubscribe`（实际发生的） | `Ok`（无错） | `Empty`（信号丢失） |
+| 先 `resubscribe` 后发 | `Ok` | `Ok`（收到） |
+
+也就是说**发送成功不等于信号被消费**：`tx.send(())` 返回 `Ok`，因为上游那个
+`observer` 本身就是订阅者。于是服务端日志里的 `catchup_signalled=true` 会
+误导人——它只说明 `catchup_tx.is_some()`，不说明有人听见了。真正的丢弃发生在
+接收端，而且不报错、无日志。
+
+顺带一提，这条路径此前还被 ADR-011 记录为「用洪泛制造信号」就够了。既有断言「信号确实触发过」只证明 Lagged 发生了，完全不能证明信号被消费、更不能证明信号撞上的是分页在途的时刻。
+
+这个缺口本身不致命：`run_stream` 在每次流建立时无条件发一次全量反熵拉取
+（ADR-010 引入），建连瞬间错过的信号由它兜住，最终仍然收敛。致命的是它
+**伪装成覆盖**——用例照样通过、断言照样成立，却什么都没验到。
+
+修正：先轮询等 B 真正收到第一页，那一刻拨号器已 `resubscribe` 且 `paging = Some` 必然成立，再洪泛；差量同时从 3 页加到 7 页以拉宽时间窗。
 
 修正后：M1 变异被捕获，缺失键正是被丢弃那一段（`exp:...:40` 起）；连续 5 次运行稳定通过（2.5–4.7 秒）。
 
