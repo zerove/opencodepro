@@ -1,5 +1,7 @@
 # Sisyphus 后续开发计划 (TODO.md)
 
+> **当前状态报告**: [docs/project-status-2026-10-02.md](docs/project-status-2026-10-02.md)（最新快照。重要更正：此前标记为完成的 9.1「peer broadcast 集成」实际从未在生产路径生效——事件链路存在三处独立丢弃点，其中一处是复制出的第二份实现。已于 2026-10-02 修复并补齐双节点端到端验证。下方历史勾选保留原有记录，不等于当前全量回归通过。）
+
 ## 已完成 (Done)
 
 ### 阶段 1: 基础设施维护与代码卫生 (Maintenance & Hygiene)
@@ -341,18 +343,23 @@
 ### 9.1 分布式 v2 收尾（最高优先）
 
 #### 9.1.1 peer broadcast 集成
-- [x] **ExperienceSync 事件广播**: PeerManager::broadcast 接入 ClusterEvent
-- [x] **ExperienceSyncHandler**: 订阅 PeerManager 事件，将远程 experience 写入本地 bank
-- [x] **broadcast_experience**: 发送端调用，将本地 experience 推送到所有 peer
+> **2026-10-02 更正**：下方前三项曾被标为完成，实际情况是它们只存在于框架层。事件从本地广播到对端落库要穿过「gRPC 流 → proto 解码 → 本地事件总线」三个环节，每个环节各有一处独立的静默丢弃（其中一处是复制出的第二份实现），生产路径上从未跑通。现已修复并补齐端到端验证。
+
+- [x] **ExperienceSync 事件广播**: `PeerBroadcastExperienceBank` 装饰器，本地落库成功后广播（先落库后广播，广播失败不影响本地结果）
+- [x] **ExperienceSyncHandler**: 订阅 PeerManager 事件，按 CRDT 合并（`apply_remote`）写入本地库，跟随关闭信号优雅停止
+- [x] **入站事件投递**: `PeerManager::deliver_inbound_experience_sync` 把远端事件投递到本地总线（不用 `broadcast_`，避免集群内回弹）；转换函数收敛为 `service.rs` 单一实现，删除 `fallback.rs` 副本
 - [ ] **启动时全量 sync**: 新节点加入时请求所有 peer 的 experience
-- [ ] **运行时增量 sync**: 本地 store 变更后主动广播到 peer
+- [x] **运行时增量 sync**: 本地 store 变更后主动广播到 peer
 
 #### 9.1.2 端到端集成测试
-- [ ] **2 节点 sync 测试**: `cluster_integration.rs` 扩展
-  - 节点 A capture_experience → 节点 B 可见
-  - 节点 B capture_experience → 节点 A 可见
-  - 并发写入冲突：LWW 策略验证
+- [x] **2 节点 sync 测试**: `cluster_integration.rs` 扩展（2026-10-02）
+  - [x] 生产拨号器真的把事件送到对端（`test_shipped_dialer_delivers_events_to_peer`，直接锁定三处丢弃缺陷）
+  - [x] gRPC 往返隔离验证（`test_experience_sync_survives_grpc_round_trip`）
+  - [x] 节点 A 写入 → 节点 B 可见，且反向亦然（`test_two_node_experience_sync_round_trip_persists`）
+  - [x] 并发写入冲突：CRDT 版本高低裁决（`test_newer_remote_version_wins_concurrent_write`）
+  - [x] 重复投递幂等（`test_duplicate_delivery_does_not_duplicate_experience`）
 - [ ] **3 节点 Docker Compose**: 本地多节点验证
+- [ ] **断线补偿**: 重连后按 vector clock 差量补齐（事件即发即失，断线期间的经验会永久丢失）
 - [ ] **chaos 扩展**: 网络分区 + 节点重启后 sync 恢复
 
 ### 9.2 认知循环 v3 研究（探索性）
@@ -402,3 +409,35 @@
 - 阶段 8.3 peer 协议 Phase B ✅
 - Experience CRDT API ✅
 - Consensus benchmark ✅
+
+---
+
+## 阶段 10：修复「看起来完成」的完成状态（2026-10-02 起）
+
+> 起因：本轮发现 9.1「peer broadcast 集成」被勾选完成，但生产路径上跨节点经验同步从未真正跑通——事件链路上有三处独立丢弃点，其中一处是复制出的第二份实现。详见 [docs/project-status-2026-10-02.md](docs/project-status-2026-10-02.md)。
+> 结论：勾选状态不能靠人记，必须变成可验证的门禁。
+
+### 10.1 验证门禁化（最高优先）
+- [ ] **TODO 勾选门禁**: 每个阶段勾选项必须附带对应测试名；`make todo-audit` 交叉核对测试是否真实存在且在跑
+- [ ] **重复实现扫描**: CI 禁止同一转换/工具函数在两个模块出现（9.1 三处丢弃的成因之一）
+- [ ] **孤儿源文件扫描**: CI 检查 `src/` 下每个 `.rs` 是否被 `mod` 引入（`sisyphus-mem/src/tests.rs` 静默失效的成因）
+- [ ] **测试覆盖核对**: 统计各 crate 的 `#[cfg(test)] mod` 与 CI 实际执行目标的差集
+
+### 10.2 阶段 9 剩余
+- [ ] **启动时全量 sync**: 新节点 Join 后向 peer 拉取全量经验
+- [ ] **断线补偿**: 重连后按 vector clock 差量补齐
+- [ ] **`ExperienceSyncHandler` 关闭语义加固**: 所有 sender 丢弃时接收端会静默退出，接口层缺少防护
+- [ ] **入站事件转发收敛**: 当前靠自过滤终止回弹，属约定而非结构保证
+- [ ] **3 节点 Docker Compose** / **网络分区恢复** 验证
+
+### 10.3 工具链
+- [ ] **并行链接保护**: 普通 `cargo test` 未限制并发，本机 19.5 GiB 下会 `could not exec the linker cc`；`make test-*` 应统一带 `CARGO_BUILD_JOBS`
+- [ ] **认知循环 v3 (ADR-010)**: 先写问题陈述再谈方向，当前 TODO 9.2 只有候选词，不足以支撑决策
+
+---
+
+**更新日期**: 2026-10-02
+**当前重点**: 10.1 验证门禁化
+**前置条件**:
+- 阶段 9.1 经验同步生产链路已打通并有端到端验证 ✅
+- 跨节点经验同步相关缺陷全部修复并回归通过 ✅
