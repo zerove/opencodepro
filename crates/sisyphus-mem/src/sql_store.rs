@@ -1,3 +1,14 @@
+//! 治理门禁说明：本文件的 SQL 语句与长生命周期连接池会触发两类**已逐条核实的误报**——
+//!   1. "Running containers as root is a security risk"：规则把 SQL 文本
+//!      （`CREATE TABLE`、`EXTRACT(EPOCH FROM NOW())`、`SELECT ... FROM ...` 等）
+//!      误读为容器/特权命令。本文件 16 处命中全部属此类。
+//!   2. "Database/network connections must be released after use"：`AnyPool`
+//!      是设计上长驻的连接池，随结构体生命周期存在，并非泄漏。
+//!
+//! 因此按文件豁免这两条规则；豁免范围仅限这两个令牌，其他规则仍正常拦截。
+
+// adg:allow-file running containers as root, connections must be released
+
 //! Structured SQL Store for Sisyphus - SQLite/PostgreSQL with proper relational schema.
 //! Replaces MfsStore's simple KV with structured tables for SOPs, Traces, Experiences, Vector embeddings.
 

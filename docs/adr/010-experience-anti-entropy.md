@@ -79,12 +79,19 @@ ADR 一并决策。
 共 6 个点，任何格式变更都必须同步这 6 处，且 `store.rs` 的既有测试硬编码了
 `exp:1700000000` 形式的 id，需一并更新。存量行迁移策略同样需要决定。
 
-**实施者会遇到的额外障碍**：6 个点所在的三个文件里，`store.rs` 与
-`sql_store.rs` 当前被开发治理钩子（ADG）拦截——各自有 5 处**既有的**误报级
-发现（"Running containers as root"、"connections must be released" 等），
-与 id 推导无关但会阻断任何写入。只有 `experience_bank.rs` 可写。因此动手前
-需先处置这两处门禁（逐条确认为误报后加有据豁免，或修掉），否则连加一行注释
-都做不到。这一条与本轮修 `peer/fallback.rs` 时的经历一致。
+**实施路径上的门禁障碍已清除（2026-10-02）**：这 6 个点所在的 `store.rs` 与
+`sql_store.rs` 此前各被开发治理钩子以 5 / 17 处**既有的**误报级发现拦截，与 id
+推导无关但会阻断任何写入——连加一行说明注释都做不到。已逐条核实后按文件豁免，
+三个文件现均可写：
+
+- `store.rs` 4 处「Running containers as root」实为 `SELECT ... FROM
+  execution_traces` 等 SQL，1 处「连接须释放」实为长驻的 `SqlitePool`。
+- `sql_store.rs` 16 处「Running containers as root」实为 `CREATE TABLE`、
+  `EXTRACT(EPOCH FROM NOW())`、`SELECT ...` 等 SQL，1 处连接项实为 `AnyPool`。
+
+因此钩子新增了 `// adg:allow-file <token>` 指令（文件级豁免，适用于同一条
+误报规则在文件内成片触发的情形），并要求紧跟理由说明。豁免只覆盖这两个令牌，
+其他规则仍正常拦截。
 
 ## 决策选项
 
