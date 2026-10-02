@@ -25,6 +25,7 @@ BRIDGE_DEPS = crates/sisyphus-bridge/src/main.rs crates/sisyphus-bridge/Cargo.to
 #   make check-bridge-160 # check bridge only (1.96.0 fallback with -C lto=off)
 #   make build-bridge     # build bridge only
 #   make test-bridge      # test bridge only
+#   make test-bridge-dedicated  # manual: ignore 标记的专用 runner 用例 (单任务/串行)
 #   make test-core        # full sisyphus-core test suite
 #   make test-core-quick  # lib-only sisyphus-core tests (~2s)
 #   make test-tools       # test all 10 sisyphus-tools-* sub-crates (lib only, fast)
@@ -43,7 +44,7 @@ HEAVY_PACKAGES = sisyphus-sandbox sisyphus-sandboxd sisyphus-tests
 .PHONY: check-bridge build-bridge test-bridge check-bridge-160
 .PHONY: check-bridge-nosandbox test-bridge-nosandbox
 .PHONY: check-sandbox build-sandboxd test-sandbox check-sandboxd test-tests check-tests
-.PHONY: test-bridge-full test-cli-handlers
+.PHONY: test-bridge-full test-bridge-dedicated test-cli-handlers
 .PHONY: test-ci
 .PHONY: perf-analyze
 .PHONY: dev-tui run-tui clean
@@ -118,6 +119,20 @@ test-bridge-nosandbox: $(BRIDGE_DEPS)
 test-bridge-full: $(BRIDGE_DEPS)
 	cargo clippy -p sisyphus-bridge -- -D warnings
 	cargo test -p sisyphus-bridge --test bridge_integration_test
+
+# — bridge dedicated-runner tests（#[ignore = "requires dedicated runner"] 用例）—
+#
+#   仅在专用运行环境手动执行，不进默认 CI/dev 流水线：
+#   - CARGO_BUILD_JOBS=1  限制单编译任务，避免内存受限环境 OOM
+#   - --no-default-features  不编译可选 sandbox 依赖
+#   - -- --include-ignored --test-threads=1  跑全部用例且串行，避免共享状态互扰
+#
+#   用法：
+#     make test-bridge-dedicated          # 全部用例（含 ignore）
+#     make test-bridge-dedicated FILTER=test_execute_tool_strategic_next_goal_missing_project  # 单用例
+
+test-bridge-dedicated: $(BRIDGE_DEPS)
+	CARGO_BUILD_JOBS=1 cargo test -p sisyphus-bridge --no-default-features --test bridge_integration_test -- --include-ignored --test-threads=1 $(if $(FILTER),$(FILTER) --exact,)
 
 test-cli-handlers:
 	cargo test -p sisyphus-cli --lib

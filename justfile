@@ -58,6 +58,12 @@ build-bridge:
 test-bridge:
     cargo test -p sisyphus-bridge
 
+# 专用 runner 手动测试 bridge（含 #[ignore = "requires dedicated runner"] 用例）
+# 单编译任务 + no-default-features + 全部用例串行执行，不进默认 CI
+# 用法: just test-bridge-dedicated  /  just test-bridge-dedicated test_name
+test-bridge-dedicated FILTER='':
+    CARGO_BUILD_JOBS=1 cargo test -p sisyphus-bridge --no-default-features --test bridge_integration_test -- --include-ignored --test-threads=1 {{ if FILTER == "" { "" } else { FILTER + " --exact" } }}
+
 # ── 沙箱 crate 专用 ────────────────────────────────
 
 # 检查 sandbox（wasmtime 重型）
