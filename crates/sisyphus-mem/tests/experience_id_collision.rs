@@ -97,3 +97,54 @@ async fn local_clock_is_monotonic() {
     let c2: u64 = k2.rsplit(':').next().and_then(|s| s.parse().ok()).expect("计数段");
     assert!(c2 > c1, "本地写入计数必须单调递增，实际 {c1} → {c2}");
 }
+
+/// 回归锁定：进程重启后本地写入计数必须接着历史最大值继续，而不是从 0 重开。
+///
+/// 计数回退的危害不止于主键碰撞：`counter` 同时就是写入的 `version`。一旦回退，
+/// 重启后的新写入会被对端按 CRDT 版本裁决当成旧版本而丢弃——刚发生的经验凭空
+/// 消失，且**不产生任何错误**。比主键碰撞更隐蔽，因为它丢的是最新数据。
+#[tokio::test]
+async fn sequence_resumes_from_store_after_restart() {
+    let cache = sisyphus_types::CacheConfig::default();
+    let store = Arc::new(MfsStore::new("sqlite::memory:", &cache).await.expect("建内存状态库"));
+    let vectors = Arc::new(
+        VectorMemoryStore::new(
+            sqlx::SqlitePool::connect("sqlite::memory:").await.expect("建向量库"),
+        )
+        .await
+        .expect("初始化向量库"),
+    );
+
+    // 每次调用都新建一个经验库实例，共用同一份存储——这正是重启的等价形态：
+    // local_seq 挂在实例上，存储活了下来。
+    let fresh_bank = || {
+        let store = Arc::clone(&store);
+        let vectors = Arc::clone(&vectors);
+        async move {
+            VectorExperienceBank::new(
+                store,
+                vectors,
+                Arc::new(sisyphus_tools_llm::DummyEmbeddingClient),
+            )
+            .await
+            .expect("初始化经验库")
+        }
+    };
+
+    let ts = 1_700_000_002u64;
+    let before = fresh_bank()
+        .await
+        .record_with_id(experience(ts, "before-restart"))
+        .await
+        .expect("写入成功");
+    let c_before: u64 = before.rsplit(':').next().and_then(|s| s.parse().ok()).expect("计数段");
+
+    let after =
+        fresh_bank().await.record_with_id(experience(ts, "after-restart")).await.expect("写入成功");
+    let c_after: u64 = after.rsplit(':').next().and_then(|s| s.parse().ok()).expect("计数段");
+
+    assert!(
+        c_after > c_before,
+        "重启后计数必须接着历史最大值继续，实际 {c_before} → {c_after}"
+    );
+}

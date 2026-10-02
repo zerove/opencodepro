@@ -10,6 +10,15 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use sisyphus_tools_llm::EmbeddingClient;
 
+/// 本节点 ID。
+///
+/// 构造时解析一次（要用于序号恢复），写入时复用，避免两处读环境变量得到
+/// 不同结果——一旦不一致，恢复出的序号会被算到错误的 origin 上，等于没恢复。
+fn local_node_id() -> String {
+    std::env::var("SISYPHUS_CLUSTER_NODE_ID")
+        .unwrap_or_else(|_| std::env::var("HOSTNAME").unwrap_or_else(|_| "local-node".to_string()))
+}
+
 /// 词元集合的 Jaccard 相似度：|A∩B| / |A∪B|。
 ///
 /// 伪嵌入降级路径（P2-7）的词法打分基元：小写化后按非
@@ -63,9 +72,10 @@ pub struct VectorExperienceBank {
     /// 后果有二：同秒写入的行主键相同而互相覆盖；`merge_crdt` 的版本裁决
     /// 对本地写入完全失效。序号存在实例上，因此单调递增。
     ///
-    /// 已知局限：进程重启后序号归零。若重启前最后一条写入与重启后第一条
-    /// 落在同一秒且计数相同，主键仍可能冲突——需要严格保证时应从存储层
-    /// 恢复最大计数。
+    /// 跨重启的单调性由 [`VectorExperienceBank::new`] 从存储层恢复：
+    /// 不恢复而从 0 重开，重启后的新写入会拿到比历史更小的 `counter`，
+    /// `version` 一并回退，远端节点按 CRDT 版本裁决会把这些**新**写入当成
+    /// 旧版本丢弃——比主键碰撞更隐蔽，因为它丢的是刚发生的经验。
     local_seq: std::sync::atomic::AtomicU64,
 }
 
@@ -80,16 +90,77 @@ impl VectorExperienceBank {
         vector_store: Arc<crate::vector_memory::VectorMemoryStore>,
         embedding_client: Arc<dyn EmbeddingClient>,
     ) -> Result<Self> {
+        // 把本地序号抬到历史最大值之上，保证重启后写入的 version 不回退。
+        // 查不到（空库/旧格式主键）时保持 0，与首次启动行为一致。
+        let origin = local_node_id();
+        let recovered = store.max_local_counter(&origin).await.unwrap_or_else(|e| {
+            // 恢复失败不应阻止启动：退化行为与修复前一致（从 0 开始），
+            // 但必须出声，否则会静默地退回到有缺陷的模式。
+            tracing::warn!(
+                error = %e,
+                "failed to recover local experience sequence; falling back to 0",
+            );
+            0
+        });
+        if recovered > 0 {
+            tracing::info!(
+                recovered_seq = recovered,
+                "resumed local experience sequence from store",
+            );
+        }
+
         Ok(Self {
             store,
             vector_store,
             embedding_client,
-            local_seq: std::sync::atomic::AtomicU64::new(0),
+            local_seq: std::sync::atomic::AtomicU64::new(recovered),
         })
     }
 
     #[expect(dead_code)]
     const INDEX_KEY: &'static str = "exp:index";
+
+    /// 底层存储句柄（ADR-010 反熵需要直接读主键与批量取载荷）。
+    ///
+    /// 反熵要回答两个问题：「我有什么」（摘要，主键即可）与「把这些行的
+    /// 内容发出去」（需要完整载荷）。这两个都不是 `ExperienceBank` trait 的
+    /// 能力，因此这里直接暴露 store；刻意不扩展 trait——它会被其他实现者
+    /// 实现，而反熵确实只关心这个落盘实现。
+    pub fn store(&self) -> &Arc<MfsStore> {
+        &self.store
+    }
+
+    /// 导出本地经验库的紧凑摘要（ADR-010 反熵）。
+    ///
+    /// 返回 (node_id → 最大写入计数)。dial 方把它随 `SyncRequest` 发给对端，
+    /// 对端据此算出自己该补发哪些行。
+    pub async fn digest(&self) -> Result<sisyphus_types::experience::ExperienceDigest, TypesError> {
+        self.store
+            .experience_digest()
+            .await
+            .map_err(|e| TypesError::ExperienceError(format!("experience digest failed: {e}")))
+    }
+
+    /// 列出全部经验主键（ADR-010 反熵差量筛选）。
+    pub async fn keys(&self) -> Result<Vec<String>, TypesError> {
+        self.store
+            .experience_keys()
+            .await
+            .map_err(|e| TypesError::ExperienceError(format!("experience keys failed: {e}")))
+    }
+
+    /// 按主键批量读取经验的完整载荷（ADR-010 反熵差量回送）。
+    ///
+    /// 返回顺序与 `ids` 一致，因此调用方可直接按切片分页。
+    pub async fn load_by_keys(
+        &self,
+        ids: &[String],
+    ) -> Result<Vec<(String, ExperienceTuple)>, TypesError> {
+        self.store
+            .load_experiences_by_keys(ids)
+            .await
+            .map_err(|e| TypesError::ExperienceError(format!("load experiences failed: {e}")))
+    }
 
     /// Make an experience globally shared: remove its project ownership so that
     /// it becomes visible to queries from any project (multi-workspace knowledge
@@ -211,11 +282,8 @@ impl VectorExperienceBank {
     /// 相同**的主键，否则对端按自己的规则重算会把同一行存成两条。
     pub async fn record_with_id(&self, mut exp: ExperienceTuple) -> Result<String, TypesError> {
         // 0. CRDT (TODO 8.3.2): bump local version + vector_clock
-        // 默认 node_id 用 hostname；后续可通过 Config.cluster.node_id 配置覆盖。
         // 保持向后兼容：调用方未设置 version/vector_clock 时自动 bump。
-        let node_id = std::env::var("SISYPHUS_CLUSTER_NODE_ID").unwrap_or_else(|_| {
-            std::env::var("HOSTNAME").unwrap_or_else(|_| "local-node".to_string())
-        });
+        let node_id = local_node_id();
         // 本地序号保证单调：仅靠传入时钟自增无法做到（见 local_seq 字段说明）。
         let seq = self.local_seq.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
         let (new_vc, new_ver) = bump_local_clock(&exp.vector_clock, exp.version, &node_id);

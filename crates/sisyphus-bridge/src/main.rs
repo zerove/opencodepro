@@ -268,19 +268,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             Ok(c) => c.cluster.clone(),
             Err(_) => sisyphus_types::ClusterConfig::default(),
         };
-        let service = ClusterServiceImpl::new(runtime.peer_manager.clone());
+        // ADR-010：service 挂上经验库，以便应答对端的 `SyncRequest`。
+        let experience_bank = bridge.experience_bank().clone();
+        let service = ClusterServiceImpl::with_experience_bank(
+            runtime.peer_manager.clone(),
+            experience_bank.clone(),
+        );
         grpc_server = grpc_server.add_service(
             sisyphus_bridge_api::cluster_proto::cluster_server::ClusterServer::new(service),
         );
         let self_grpc_addr = format!("http://{actual_grpc_addr}");
-        let dial_cfg = StaticPeerConfig::from_types(&cfg, runtime.node_id.clone(), self_grpc_addr);
+        let mut dial_cfg =
+            StaticPeerConfig::from_types(&cfg, runtime.node_id.clone(), self_grpc_addr);
+        // ADR-010：拨号器连接建立后据此发起反熵拉取（补齐断连期间的丢失）。
+        dial_cfg.experience_bank = Some(experience_bank.clone());
         let handles = spawn_static_peers(dial_cfg, runtime.peer_manager.clone());
 
         // 经验同步接收端：把 peer 广播来的经验按 CRDT 合并进本地库。
         // 处理器持有的是未装饰的 VectorExperienceBank，远程应用不会再次广播。
         let (sync_shutdown_tx, sync_shutdown_rx) = tokio::sync::broadcast::channel(1);
         let sync_handle = ExperienceSyncHandler::new(
-            bridge.experience_bank().clone(),
+            experience_bank,
             runtime.peer_manager.clone(),
             runtime.node_id.clone(),
         )

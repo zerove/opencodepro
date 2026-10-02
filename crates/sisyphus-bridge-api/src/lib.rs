@@ -7,7 +7,14 @@
 
 // tonic 生成的 gRPC 服务方法返回 `Result<_, tonic::Status>`，`Status` 类型
 // 较大触发 `result_large_err`；生成代码不可修改，此处统一放行。
-#![allow(clippy::result_large_err)]
+//
+// 另有 `double_must_use`：tonic 的 `#[async_trait]` 会给生成的 service trait
+// 方法加上 `#[must_use]`，而其返回类型（boxed Future）本身已带 `#[must_use]`，
+// clippy 1.99.0 起将其判为冗余。这些方法既非 `fn` 也无独立 item 可挂 allow，
+// 且 trait 由 tonic 在 `include_proto!` 时展开——`build.rs` 的
+// `server_attribute` / `client_attribute` 只作用于生成的 client/server 结构体，
+// `type_attribute` 对 service 无效。因此只能在 crate 层面放行。
+#![allow(clippy::result_large_err, clippy::double_must_use)]
 
 use metrics::counter;
 use std::time::Duration;
@@ -63,6 +70,10 @@ pub async fn connect(
     ))
 }
 
+// adg:allow connections must be released after use
+// 误报：本函数返回持有 `Channel` 的 client，连接随返回值转交调用方，由调用方
+// 的生命周期管理释放。tonic 的 Channel 是可克隆的多路复用句柄，底层连接由
+// channel 内部池化管理，本函数既不打开连接池也不需要显式 close。
 async fn connect_to(
     target: &str,
 ) -> Result<

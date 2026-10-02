@@ -1,0 +1,405 @@
+//! 跨节点经验反熵补偿（ADR-010）
+//!
+//! 经验同步事件是**即发即失**的：流建立前的广播永久丢失，断连期间其他节点
+//! 产生的经验重连后不会补回，新节点加入时对既有经验一无所知。这个模块补上
+//! 收敛机制，闭合三个丢失窗口。
+//!
+//! 协议（挂在既有双向 `Stream` 上，不新增 RPC）：
+//!
+//! ```text
+//! dialer ──Join──> peer
+//! dialer ──SyncRequest{ vector_clock }──> peer
+//! peer   ──ExperienceSync[]（分页, more 标志）──> dialer
+//! ```
+//!
+//! 关键设计：
+//! - **传输量正比于真实差量**，与历史总量无关。dial 方发的是 (node_id →
+//!   最大 counter) 的紧凑摘要，不是整个经验库。
+//! - **复用既有 `ExperienceSync` 载荷**，因此接收端走与实时广播完全相同的
+//!   `apply_remote` → `merge_crdt` 路径，不引入第二套合并语义，天然幂等。
+//! - **有界**：每页最多 `SYNC_PAGE_SIZE` 条，防止一次回灌撑爆单条 gRPC 消息。
+//! - **不得阻塞写入路径**：反熵是连接建立后触发的旁路，失败只记日志。
+
+use sisyphus_bridge_api::cluster_proto::{ClusterEvent, ExperienceSync};
+use sisyphus_mem::experience_bank::VectorExperienceBank;
+use sisyphus_types::experience::{
+    missing_keys, sorted_missing_keys, ExperienceDigest, ExperienceTuple,
+};
+use std::sync::Arc;
+
+/// 单次 `SyncResponse` 的条目上界。
+///
+/// 必须有界：经验库随运行时间单调增长，一次无界回灌会让单条 gRPC 消息
+/// 超出默认 4MB 限制，整条流被服务端拒绝——反而比不同步更糟。
+/// 取 128 与 ADR-010 一致；单条经验典型在数 KB 量级。
+pub const SYNC_PAGE_SIZE: usize = 128;
+
+/// 反熵应答：算好差量、装好一页，返回是否还有后续页。
+///
+/// 纯逻辑（I/O 已在上层完成），因此可脱离数据库与 gRPC 单独验证。
+///
+/// `local` 是 dial 方报告的摘要；`remote_rows` 是本节点库中
+/// (主键, 载荷) 的完整列表。返回的是本节点应当回送的那一页。
+///
+/// 分页是**无状态**的：`offset` 表示「从排好序的完整差量集合里跳过多少条」。
+/// 调用方每次都用同一个 `local` 重新计算差量，因此顺序必须稳定——
+/// 这由 [`sorted_missing_keys`] 保证，否则两次请求可能对同一区间给出不同
+/// 结果，造成重复或漏发。
+pub fn build_sync_page(
+    local: &ExperienceDigest,
+    remote_rows: &[(String, ExperienceTuple)],
+    offset: usize,
+    page_size: usize,
+) -> (Vec<ExperienceSync>, bool) {
+    let keys: Vec<&str> = remote_rows.iter().map(|(id, _)| id.as_str()).collect();
+    let delta = sorted_missing_keys(missing_keys(local, keys));
+
+    let page = &delta[offset.min(delta.len())..];
+    let take = &page[..page.len().min(page_size)];
+
+    let experiences = take
+        .iter()
+        .filter_map(|key| {
+            let (_, exp) = remote_rows.iter().find(|(id, _)| id == key)?;
+            // 序列化失败（如 NaN 浮点）不应中断整页同步：跳过该条并继续。
+            // 反熵是尽力而为的旁路，一条坏数据不该挡住其余经验的补齐。
+            let payload = match serde_json::to_vec(exp) {
+                Ok(p) => p,
+                Err(e) => {
+                    tracing::warn!(exp_key = %key, error = %e, "anti-entropy: skipping unserializable experience");
+                    return None;
+                },
+            };
+            let vector_clock_json = match serde_json::to_string(&exp.vector_clock) {
+                Ok(j) => j,
+                Err(e) => {
+                    tracing::warn!(exp_key = %key, error = %e, "anti-entropy: skipping experience with unserializable clock");
+                    return None;
+                },
+            };
+            Some(ExperienceSync {
+                exp_key: (*key).to_string(),
+                version: exp.version,
+                vector_clock_json,
+                payload,
+            })
+        })
+        .collect();
+
+    let consumed = offset.min(delta.len()) + take.len();
+    let more = consumed < delta.len();
+    (experiences, more)
+}
+
+/// 分页应答结果：本页经验 + 是否还有后续页 + 下一游标。
+#[derive(Debug, Clone, PartialEq)]
+pub struct SyncPage {
+    /// 本页经验（已按主键字典序稳定排序）。
+    pub experiences: Vec<ExperienceSync>,
+    /// 是否还有后续页。
+    pub more: bool,
+    /// 请求方下一次 `SyncRequest` 应携带的 offset。
+    ///
+    /// 刻意与「本页实际发出一条数」分开：序列化失败的条目会被跳过，
+    /// 但**游标必须按差量集合的索引推进**，否则下一轮会重新计算同一段
+    /// 而永远卡在同一页。
+    pub next_offset: u64,
+}
+
+/// 服务端角色：算出 dial 方缺的差量并分页回送。
+///
+/// 复用同一批 `ExperienceSync` 载荷 → dial 端 `ExperienceSyncHandler` 的处理
+/// 路径与实时广播完全相同，不引入第二套合并语义，因此天然幂等。
+///
+/// 分页是**无状态**的：每次都从本地库重新计算完整差量再取第 `offset` 段。
+/// 这意味着库在翻页期间变化时，已发出的页不会作废，只是新写入的行可能落到
+/// 已翻过的区间里——那些行会被下一次重连时的 `SyncRequest` 补齐。反之，
+/// 把差量缓存在会话里则会因新写入而永久漏发。
+pub async fn serve_sync_request(
+    experience_bank: &Arc<VectorExperienceBank>,
+    requested: &ExperienceDigest,
+    offset: usize,
+    page_size: usize,
+) -> Result<SyncPage, String> {
+    let all_keys = experience_bank.keys().await.map_err(|e| {
+        tracing::warn!(error = %e, "anti-entropy: failed to list local experience keys");
+        format!("key listing failed: {e}")
+    })?;
+
+    let delta = sorted_missing_keys(missing_keys(requested, all_keys.iter().map(|s| s.as_str())));
+    let total = delta.len();
+    let start = offset.min(total);
+
+    let page_keys: Vec<String> =
+        delta[start..].iter().take(page_size).map(|k| (*k).to_string()).collect();
+
+    let rows = experience_bank.load_by_keys(&page_keys).await.map_err(|e| {
+        tracing::warn!(error = %e, "anti-entropy: failed to load delta rows");
+        format!("row load failed: {e}")
+    })?;
+
+    let (experiences, _) = build_sync_page(requested, &rows, 0, page_size);
+    // `build_sync_page` 会再用 `requested` 过滤一遍 `rows`。这是必要的防御：
+    // `load_by_keys` 只保证返回存在的行，若并发删除使某键消失，过滤会把它剔除
+    // 而不会发出一条悬空引用。但过滤后的条数可能少于 `page_keys`，因此游标
+    // 必须按 `page_keys`（差量集合索引）而非 `experiences.len()` 推进——
+    // 否则每页都会因过滤少一条而卡住，永远翻不到下一页。
+    let next_offset = start + page_keys.len();
+    let more = next_offset < total;
+
+    tracing::debug!(
+        delta_total = total,
+        page_len = experiences.len(),
+        more,
+        next_offset,
+        "anti-entropy: served sync page"
+    );
+
+    Ok(SyncPage {
+        experiences,
+        more,
+        next_offset: next_offset as u64,
+    })
+}
+
+/// dial 方角色：导出本地摘要，交给调用方随流发出。
+///
+/// 单独成函数是为了让「摘要导出失败」不阻断连接建立：反熵是旁路，
+/// 拿不到摘要就退化成只依赖实时广播，与反熵落地前的行为一致。
+pub async fn local_digest(
+    experience_bank: &Arc<VectorExperienceBank>,
+) -> Result<ExperienceDigest, String> {
+    experience_bank.digest().await.map_err(|e| format!("digest export failed: {e}"))
+}
+
+/// 把 dial 方摘要与游标封装成一条 `SyncRequest` 事件。
+pub fn sync_request_event(digest: &ExperienceDigest, offset: u64) -> ClusterEvent {
+    ClusterEvent {
+        event: Some(
+            sisyphus_bridge_api::cluster_proto::cluster_event::Event::SyncRequest(
+                sisyphus_bridge_api::cluster_proto::SyncRequest {
+                    vector_clock: digest_to_sync_request_payload(digest),
+                    offset,
+                },
+            ),
+        ),
+    }
+}
+
+/// 把 dial 方摘要转成 proto 的 `SyncRequest` 载荷。
+pub fn digest_to_sync_request_payload(
+    digest: &ExperienceDigest,
+) -> std::collections::HashMap<String, u64> {
+    digest.iter().map(|(k, v)| (k.clone(), *v)).collect()
+}
+
+/// 解析对端发来的 proto `SyncRequest` 载荷。
+///
+/// 空载荷按「请求全量」处理：新节点首次连接时摘要本就为空，而对端也可能是
+/// 老版本（不会发 `SyncRequest`，因此不会走到这里）。此时多传一些数据是可
+/// 接受的代价，因为合并路径幂等；反过来把空当成「不需要」会导致新节点永远
+/// 收不到任何东西。
+pub fn parse_sync_request_payload(
+    payload: &std::collections::HashMap<String, u64>,
+) -> ExperienceDigest {
+    if payload.is_empty() {
+        tracing::debug!("anti-entropy: empty sync request treated as full pull");
+    }
+    payload.iter().map(|(k, v)| (k.clone(), *v)).collect()
+}
+
+/// 拨号侧触发一次反熵：导出摘要并写入流。
+///
+/// 返回发送的摘要规模，便于调用方打点。
+pub async fn request_sync(
+    experience_bank: &Arc<VectorExperienceBank>,
+    out_tx: &tokio::sync::mpsc::UnboundedSender<ClusterEvent>,
+    offset: u64,
+) -> Result<usize, String> {
+    let digest = local_digest(experience_bank).await?;
+    let count = digest.len();
+
+    out_tx
+        .send(sync_request_event(&digest, offset))
+        .map_err(|_| "outbound channel closed".to_string())?;
+
+    tracing::info!(
+        origin_count = count,
+        offset,
+        "anti-entropy: sync request sent"
+    );
+    Ok(count)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    // 仅测试使用：非测试代码不构造摘要（摘要来自真实经验库）。
+    use sisyphus_types::experience::digest_from_keys;
+
+    fn exp(version: u64, vc: &[(&str, u64)]) -> ExperienceTuple {
+        ExperienceTuple {
+            context_text: "ctx".into(),
+            context_hash: "h".into(),
+            action_id: "a".into(),
+            project_id: None,
+            outcome_success: true,
+            deviation_score: 0.0,
+            cost: 0,
+            timestamp: 1,
+            embedding: None,
+            visual_embedding: None,
+            insight: None,
+            version,
+            vector_clock: vc.iter().map(|(k, v)| ((*k).to_string(), *v)).collect(),
+        }
+    }
+
+    fn rows(pairs: &[(&str, u64)]) -> Vec<(String, ExperienceTuple)> {
+        pairs.iter().map(|(id, v)| ((*id).to_string(), exp(*v, &[("node-a", *v)]))).collect()
+    }
+
+    /// 新节点（空摘要）应拿到全部经验。
+    #[test]
+    fn empty_digest_gets_everything() {
+        let rows = rows(&[("exp:1:node-a:1", 1), ("exp:2:node-a:2", 2)]);
+        let (page, more) = build_sync_page(&ExperienceDigest::new(), &rows, 0, 128);
+        assert_eq!(page.len(), 2);
+        assert!(!more);
+        assert_eq!(page[0].exp_key, "exp:1:node-a:1");
+    }
+
+    /// 已同步的节点差量为空——幂等性的直接证据。
+    #[test]
+    fn synced_digest_yields_nothing() {
+        let rows = rows(&[("exp:1:node-a:1", 1), ("exp:2:node-a:2", 2)]);
+        let digest = digest_from_keys(["exp:1:node-a:1", "exp:2:node-a:2"]);
+        let (page, more) = build_sync_page(&digest, &rows, 0, 128);
+        assert!(page.is_empty());
+        assert!(!more);
+    }
+
+    /// 断线补偿：只补差量。
+    #[test]
+    fn only_gap_is_sent() {
+        let rows = rows(&[
+            ("exp:1:node-a:1", 1),
+            ("exp:2:node-a:2", 2),
+            ("exp:3:node-a:3", 3),
+        ]);
+        let digest = digest_from_keys(["exp:1:node-a:1"]);
+        let (page, _) = build_sync_page(&digest, &rows, 0, 128);
+        let keys: Vec<_> = page.iter().map(|e| e.exp_key.as_str()).collect();
+        assert_eq!(keys, vec!["exp:2:node-a:2", "exp:3:node-a:3"]);
+    }
+
+    /// 分页上界：单页不得超过 page_size，且 more 标志正确。
+    #[test]
+    fn page_size_is_bounded_and_more_flag_is_set() {
+        let many: Vec<(String, ExperienceTuple)> = (1..=10)
+            .map(|i| {
+                (
+                    format!("exp:1:node-a:{i}"),
+                    exp(i as u64, &[("node-a", i as u64)]),
+                )
+            })
+            .collect();
+
+        let (page, more) = build_sync_page(&ExperienceDigest::new(), &many, 0, 4);
+        assert_eq!(page.len(), 4);
+        assert!(more);
+
+        // 翻到最后一页
+        let (last, more) = build_sync_page(&ExperienceDigest::new(), &many, 8, 4);
+        assert_eq!(last.len(), 2);
+        assert!(!more, "最后一页之后不应再有更多");
+    }
+
+    /// 翻页不重不漏：把差量按固定页大小切开，合起来恰好覆盖全部且互不重叠。
+    #[test]
+    fn paging_covers_exactly_once() {
+        let many: Vec<(String, ExperienceTuple)> = (1..=7)
+            .map(|i| {
+                (
+                    format!("exp:1:node-a:{i}"),
+                    exp(i as u64, &[("node-a", i as u64)]),
+                )
+            })
+            .collect();
+        let local = ExperienceDigest::new();
+        let page_size = 3;
+
+        let mut collected = Vec::new();
+        let mut offset = 0;
+        loop {
+            let (page, more) = build_sync_page(&local, &many, offset, page_size);
+            collected.extend(page.iter().map(|e| e.exp_key.clone()));
+            if !more {
+                break;
+            }
+            offset += page_size;
+            assert!(offset < 100, "分页不应无限循环");
+        }
+
+        assert_eq!(collected.len(), 7, "每条经验恰好补齐一次");
+        let unique: std::collections::HashSet<_> = collected.iter().collect();
+        assert_eq!(unique.len(), 7, "不应重复补齐");
+    }
+
+    /// offset 超过差量长度时返回空页而不是 panic。
+    #[test]
+    fn offset_beyond_delta_is_safe() {
+        let rows = rows(&[("exp:1:node-a:1", 1)]);
+        let (page, more) = build_sync_page(&ExperienceDigest::new(), &rows, 999, 128);
+        assert!(page.is_empty());
+        assert!(!more);
+    }
+
+    /// 载荷与版本号必须随行一同回送，否则接收端无法做 CRDT 合并。
+    #[test]
+    fn payload_carries_version_and_clock() {
+        let rows = vec![(
+            "exp:5:node-a:5".to_string(),
+            exp(5, &[("node-a", 5), ("node-b", 2)]),
+        )];
+        let (page, _) = build_sync_page(&ExperienceDigest::new(), &rows, 0, 128);
+        assert_eq!(page.len(), 1);
+        assert_eq!(page[0].version, 5);
+
+        let clock: std::collections::BTreeMap<String, u64> =
+            serde_json::from_str(&page[0].vector_clock_json).expect("clock 应可解析");
+        assert_eq!(clock.get("node-a"), Some(&5));
+        assert_eq!(clock.get("node-b"), Some(&2));
+
+        let decoded: ExperienceTuple =
+            serde_json::from_slice(&page[0].payload).expect("载荷应可解析");
+        assert_eq!(decoded.version, 5);
+    }
+
+    /// 多 origin 差量：各来源独立比较。
+    #[test]
+    fn multi_origin_delta_is_per_origin() {
+        let rows = rows(&[("exp:1:node-a:5", 5), ("exp:1:node-b:1", 1)]);
+        // 本地已同步 node-a 到 5，node-b 一条没有
+        let digest = digest_from_keys(["exp:1:node-a:5"]);
+        let (page, _) = build_sync_page(&digest, &rows, 0, 128);
+        let keys: Vec<_> = page.iter().map(|e| e.exp_key.as_str()).collect();
+        assert_eq!(keys, vec!["exp:1:node-b:1"]);
+    }
+
+    /// digest ↔ proto 载荷往返不丢信息。
+    #[test]
+    fn digest_payload_roundtrip() {
+        let digest = digest_from_keys(["exp:1:node-a:3", "exp:2:node-b:7"]);
+        let payload = digest_to_sync_request_payload(&digest);
+        let parsed = parse_sync_request_payload(&payload);
+        assert_eq!(parsed, digest);
+    }
+
+    /// 空 SyncRequest 等价于请求全量——对端没有摘要时只能如此。
+    #[test]
+    fn empty_sync_request_means_full_pull() {
+        let parsed = parse_sync_request_payload(&Default::default());
+        assert!(parsed.is_empty());
+    }
+}

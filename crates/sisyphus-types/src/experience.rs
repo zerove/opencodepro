@@ -74,6 +74,95 @@ pub fn experience_origin_from_key(key: &str) -> Option<&str> {
     head.rsplit_once(':').map(|(_, origin)| origin)
 }
 
+/// 从存储主键中取出写入计数（该节点的第几次写入）。
+///
+/// 与 [`experience_origin_from_key`] 成对使用：两者要么都成功，要么在主键
+/// 不符合 `exp:{timestamp}:{origin}:{counter}` 时都返回 `None`。
+///
+/// 用途是进程重启后把本地序号恢复到历史最大值——序号回退会让 `version` 也
+/// 回退，跨节点 CRDT 的版本裁决会把重启后的新写入误判成旧版本而丢弃。
+pub fn experience_counter_from_key(key: &str) -> Option<u64> {
+    let rest = key.strip_prefix("exp:")?;
+    let counter = rest.rsplit(':').next()?;
+    if counter.is_empty() || !counter.chars().all(|c| c.is_ascii_digit()) {
+        return None;
+    }
+    counter.parse().ok()
+}
+
+/// 节点的紧凑摘要：(node_id → 该节点已写入的最大 counter)。
+///
+/// 只依赖行标识而不依赖行内容，因此计算成本与经验正文大小无关。这就是
+/// ADR-010 反熵补偿成立的前提——行标识编码了来源与计数，于是「我有什么」
+/// 可以用一个小得多的 map 表达，而不是把整个经验库发过去。
+pub type ExperienceDigest = BTreeMap<String, u64>;
+
+/// 把若干条经验主键折叠成紧凑摘要。
+///
+/// 主键不符合 `exp:{timestamp}:{origin}:{counter}` 的行（ADR-010 之前遗留的
+/// 旧格式 `exp:{timestamp}`）解析不出 origin/counter，直接跳过——它们既不
+/// 参与摘要，也不会被差量计算请求，因此不会被反熵补齐。这是已记录的取舍：
+/// 项目处于 0.x，清库重建即可，不写迁移。
+pub fn digest_from_keys<'a, I>(keys: I) -> ExperienceDigest
+where
+    I: IntoIterator<Item = &'a str>,
+{
+    let mut digest = ExperienceDigest::new();
+    for key in keys {
+        let (Some(origin), Some(counter)) = (
+            experience_origin_from_key(key),
+            experience_counter_from_key(key),
+        ) else {
+            continue;
+        };
+        let slot = digest.entry(origin.to_string()).or_insert(0);
+        if *slot < counter {
+            *slot = counter;
+        }
+    }
+    digest
+}
+
+/// 计算反熵差量：对端应当回送给 `local` 的经验主键。
+///
+/// 纯函数，不触碰 I/O，因此可以脱离数据库与网络单独验证。
+///
+/// 语义：对每个来源节点 `origin`，回送该节点中 `counter > local[origin]` 的行。
+/// 因为写入计数在单个 origin 内单调递增，这就精确地等于「对方没有、我有」——
+/// 已持有的行不会重复传输，断线期间的写入一个不漏。
+///
+/// 前提是主键编码了来源与计数。旧格式主键（`exp:{timestamp}`）解析不出
+/// origin，会被这里丢弃；理由见 [`digest_from_keys`]。
+///
+/// 对端应当对结果排序（[`sorted_missing_keys`]）后再分页，否则顺序不稳定的
+/// 集合在分页时会重复或漏发。
+pub fn missing_keys<'a, I>(local: &ExperienceDigest, remote_keys: I) -> Vec<&'a str>
+where
+    I: IntoIterator<Item = &'a str>,
+{
+    remote_keys
+        .into_iter()
+        .filter(|key| {
+            let (Some(origin), Some(counter)) = (
+                experience_origin_from_key(key),
+                experience_counter_from_key(key),
+            ) else {
+                return false;
+            };
+            counter > local.get(origin).copied().unwrap_or(0)
+        })
+        .collect()
+}
+
+/// 按字典序排好差量，让分页在多次请求间保持稳定。
+///
+/// 分页是无状态的（每页都从完整的差量集合里取一段），因此顺序必须稳定：
+/// 否则两次请求可能对同一区间给出不同结果，造成重复或漏发。
+pub fn sorted_missing_keys(mut keys: Vec<&str>) -> Vec<&str> {
+    keys.sort_unstable();
+    keys
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 /// Experience Query.
 pub struct ExperienceQuery {
@@ -333,5 +422,143 @@ mod crdt_tests {
             merge_crdt(&vc, 1, &new_vc, new_ver),
             MergeDecision::ApplyRemote
         );
+    }
+}
+
+#[cfg(test)]
+mod anti_entropy_tests {
+    use super::*;
+
+    /// 反熵差量的核心前提：行标识能推出来源与计数。
+    ///
+    /// 若这一条失效，摘要就无法表达「我有什么」，ADR-010 整体不成立。
+    #[test]
+    fn digest_folds_keys_into_max_counter_per_origin() {
+        let digest = digest_from_keys([
+            "exp:100:node-a:1",
+            "exp:101:node-a:2",
+            "exp:102:node-a:3",
+            "exp:200:node-b:7",
+        ]);
+        assert_eq!(digest.get("node-a"), Some(&3));
+        assert_eq!(digest.get("node-b"), Some(&7));
+    }
+
+    /// 空库摘要为空——新节点正是从空摘要出发拉取全量的。
+    #[test]
+    fn digest_of_empty_store_is_empty() {
+        assert!(digest_from_keys(Vec::<&str>::new()).is_empty());
+    }
+
+    /// 旧格式主键解析不出 origin/counter，必须跳过而不是计入某个节点。
+    ///
+    /// 若把它们计到某个 origin 下，会把计数虚高，对端据此判断「你都有了」
+    /// 从而永远不再补齐真实的新经验。
+    #[test]
+    fn digest_skips_legacy_key_format() {
+        let digest = digest_from_keys(["exp:1600000000", "exp:100:node-a:4"]);
+        assert_eq!(digest.get("node-a"), Some(&4));
+        assert_eq!(digest.len(), 1, "旧格式行不应产生任何 origin 条目");
+    }
+
+    /// 新节点加入：对端持有的全部经验都是差量。
+    #[test]
+    fn new_node_requests_everything() {
+        let remote = ["exp:1:node-a:1", "exp:2:node-a:2", "exp:3:node-b:1"];
+        let missing = sorted_missing_keys(missing_keys(&ExperienceDigest::new(), remote));
+        assert_eq!(
+            missing,
+            vec!["exp:1:node-a:1", "exp:2:node-a:2", "exp:3:node-b:1"]
+        );
+    }
+
+    /// 断线补偿：只请求 counter 超出已持有范围的部分。
+    ///
+    /// 这是 ADR-010 相对「连接后全量拉取」的核心优势：传输量正比于真实差量。
+    #[test]
+    fn reconnect_requests_only_the_gap() {
+        let local = digest_from_keys(["exp:1:node-a:1", "exp:2:node-a:2", "exp:3:node-a:3"]);
+        let remote = [
+            "exp:1:node-a:1",
+            "exp:2:node-a:2",
+            "exp:3:node-a:3",
+            "exp:9:node-a:4",
+            "exp:9:node-a:5",
+        ];
+        let missing = sorted_missing_keys(missing_keys(&local, remote));
+        assert_eq!(missing, vec!["exp:9:node-a:4", "exp:9:node-a:5"]);
+    }
+
+    /// 已完全同步时差量为空——幂等性的前提。
+    #[test]
+    fn already_synced_yields_empty_delta() {
+        let keys = ["exp:1:node-a:1", "exp:2:node-a:2"];
+        let local = digest_from_keys(keys);
+        assert!(missing_keys(&local, keys).is_empty());
+    }
+
+    /// 多 origin 各自独立比较：一个节点落后不影响另一个节点的判断。
+    #[test]
+    fn delta_is_computed_per_origin() {
+        // 本地对 node-a 已同步到 5，对 node-b 一条都没有
+        let local = digest_from_keys(["exp:1:node-a:1", "exp:5:node-a:5"]);
+        let remote = [
+            "exp:5:node-a:5",
+            "exp:6:node-a:6", // 本地缺
+            "exp:1:node-b:1", // 本地全缺
+        ];
+        let missing = sorted_missing_keys(missing_keys(&local, remote));
+        assert_eq!(missing, vec!["exp:1:node-b:1", "exp:6:node-a:6"]);
+    }
+
+    /// 旧格式行不会被请求（它们无法参与摘要），这是已记录的取舍而非缺陷。
+    #[test]
+    fn delta_never_requests_legacy_rows() {
+        let local = ExperienceDigest::new();
+        let missing = sorted_missing_keys(missing_keys(&local, ["exp:1600000000"]));
+        assert!(missing.is_empty());
+    }
+
+    /// 排序必须稳定，否则无状态分页会重复或漏发。
+    ///
+    /// 模拟分页场景：三次不同顺序的输入，排好后分页取区间结果一致。
+    #[test]
+    fn sorted_delta_is_stable_across_input_orders() {
+        let a = [
+            "exp:1:node-a:1",
+            "exp:2:node-a:2",
+            "exp:3:node-a:3",
+            "exp:4:node-a:4",
+        ];
+        let mut b = a;
+        b.reverse();
+
+        let local = ExperienceDigest::new();
+        let page_a = sorted_missing_keys(missing_keys(&local, a));
+        let page_b = sorted_missing_keys(missing_keys(&local, b));
+        assert_eq!(page_a, page_b);
+
+        // 按固定页大小切片，每页互不重叠且合起来覆盖全部
+        let page_size = 3;
+        let first: Vec<_> = page_a[..page_size].to_vec();
+        let second: Vec<_> = page_a[page_size..].to_vec();
+        assert_eq!(first.len(), 3);
+        assert_eq!(second.len(), 1);
+        assert!(first.iter().all(|k| !second.contains(k)));
+    }
+
+    /// origin 中含分隔符时仍能正确解析。
+    ///
+    /// node_id 来自环境变量，在容器编排里完全可能是含 `-`、`.` 甚至 `:` 的
+    /// 字符串（如 k8s 的 `node.cluster.local`）。解析只按最后两段切分，
+    /// 因此中间的 `:` 会被归到 head 里一并丢弃。
+    #[test]
+    fn origin_with_dots_and_hyphens_parses() {
+        let key = "exp:1700000000:node-1.cluster.local:42";
+        assert_eq!(
+            experience_origin_from_key(key),
+            Some("node-1.cluster.local")
+        );
+        assert_eq!(experience_counter_from_key(key), Some(42));
     }
 }

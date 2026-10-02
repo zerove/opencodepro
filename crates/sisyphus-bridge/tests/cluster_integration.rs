@@ -292,15 +292,17 @@ async fn build_bank() -> Arc<VectorExperienceBank> {
 /// 启动一个节点；`dial_peers` 非空时按生产路径建立到对端的静态拨号。
 async fn start_sync_node(node_id: &'static str, dial_peers: Vec<String>) -> SyncNode {
     let manager = Arc::new(PeerManager::new(node_id, Duration::from_secs(30)));
+    // 观察**入站**通道：用例关心的是「对端发来的事件到了没有」，而入站事件
+    // 不再进入本地广播通道（否则会被拨号器转发回去，在集群里回弹）。
     // 必须在拨号与处理器启动前订阅，否则会漏掉先于订阅发出的事件。
-    let events = manager.subscribe();
+    let events = manager.subscribe_inbound();
     let bank = build_bank().await;
     let broadcast = Arc::new(PeerBroadcastExperienceBank::new(
         bank.clone(),
         manager.clone(),
     ));
 
-    let service = ClusterServiceImpl::new(manager.clone());
+    let service = ClusterServiceImpl::with_experience_bank(manager.clone(), bank.clone());
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.expect("bind");
     let grpc_addr = format!("http://{}", listener.local_addr().expect("addr"));
     let _server = tokio::spawn(async move {
@@ -323,6 +325,8 @@ async fn start_sync_node(node_id: &'static str, dial_peers: Vec<String>) -> Sync
             join_timeout_secs: 5,
             reconnect_initial_delay: Duration::from_millis(200),
             reconnect_max_delay: Duration::from_millis(500),
+            // ADR-010：让拨号器带上经验库，否则不会发起反熵拉取。
+            experience_bank: Some(bank.clone()),
         };
         let _dialers = spawn_static_peers(cfg, manager.clone());
     }
@@ -393,7 +397,7 @@ async fn wait_for_link(src: &Arc<PeerManager>, dst: &Arc<PeerManager>) {
 
     let mut noise: Vec<String> = Vec::new();
     for _ in 0..60 {
-        let mut rx = dst.subscribe();
+        let mut rx = dst.subscribe_inbound();
         src.broadcast_experience_sync(
             probe_key.clone(),
             0,
@@ -489,20 +493,30 @@ async fn test_duplicate_delivery_does_not_duplicate_experience() {
     wait_for_link(&node_a.manager, &node_b.manager).await;
     let b_bank = node_b.bank();
     let exp = experience(1_700_000_010, "delivered twice");
+
+    // 必须先订阅再 record：`record()` 的广播是即发即失的，晚一步就永远
+    // 错过。这也是该用例必须从本地广播通道读的原因。
+    let mut local_events = node_a.manager.subscribe();
     node_a.broadcast.record(exp.clone()).await.expect("A 记录经验应成功");
 
     // 从广播事件里取出 A 实际使用的主键：它必须与 A 本地落库的主键一致，
     // 否则对端会存成另一行。捕获它也让下面的重放用的是同一个 id。
+    //
+    // 必须从 `subscribe()`（本地广播通道）读，而不是 `node_a.events`
+    // （入站通道）：`record()` 走的是 `broadcast_experience_sync` → `event_tx`，
+    // 而入站通道 `inbound_tx` 刻意不接收本地产生的事件，否则会在集群里回弹。
+    // 顺带说明：用例原先用 `try_recv` 硬循环，失败时报「A 未广播」——实际是
+    // 读错了通道；`try_recv` 返回空就 panic，把「读错源」伪装成「没广播」。
     let key = loop {
-        match node_a.events.try_recv() {
-            // 跳过链路探测用的探针，它不是真实经验
-            Ok(ClusterEvent::ExperienceSync { exp_key, .. })
+        match tokio::time::timeout(Duration::from_secs(2), local_events.recv()).await {
+            Ok(Ok(ClusterEvent::ExperienceSync { exp_key, .. }))
                 if !exp_key.starts_with("link-probe:") =>
             {
                 break exp_key
             },
-            Ok(_) => continue,
-            Err(_) => panic!("A 未广播 ExperienceSync"),
+            Ok(Ok(_)) => continue,
+            Ok(Err(e)) => panic!("A 的本地广播通道意外关闭：{e}"),
+            Err(_) => panic!("A 未广播 ExperienceSync（2s 超时）"),
         }
     };
     assert!(
@@ -625,11 +639,12 @@ async fn test_shipped_dialer_delivers_events_to_peer() {
         join_timeout_secs: 5,
         reconnect_initial_delay: Duration::from_millis(200),
         reconnect_max_delay: Duration::from_millis(500),
+        experience_bank: None,
     };
     let _dialers = spawn_static_peers(cfg, manager_b.clone());
 
     for attempt in 0..40 {
-        let mut rx = manager_b.subscribe();
+        let mut rx = manager_b.subscribe_inbound();
         manager_a.on_peer_joined(PeerInfo::new("node-b", "http://127.0.0.1:1"));
         let key = format!("probe-{attempt}");
         manager_a.broadcast_experience_sync(key.clone(), 1u64, String::from("{}"), vec![7u8, 7u8]);
@@ -658,4 +673,186 @@ async fn test_shipped_dialer_delivers_events_to_peer() {
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
     panic!("生产拨号器未能把 A 的事件送达 B");
+}
+
+/// ADR-010 全链路：新节点加入后应拉到对端的既有经验（丢失窗口 1）。
+///
+/// 这是反熵真正要解决的场景：A 先积累经验，B 后加入。B 的拨号器在流建立后
+/// 发起 `SyncRequest`，A 按 B 的摘要回送差量，B 走与实时广播相同的
+/// `ExperienceSync` → `apply_remote` 路径落库。
+///
+/// 注意 A 侧**不广播**这些经验——广播是即发即失的，B 加入时它们早已发完。
+/// 用例能通过，唯一可能就是反熵真的生效了。
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn test_new_node_pulls_history_via_anti_entropy() {
+    let node_a = start_sync_node("node-a", vec![]).await;
+    let a_bank = node_a.bank();
+
+    // A 先积累 3 条经验（此时 B 尚不存在，不会被广播出去）。
+    for i in 1..=3u64 {
+        node_a
+            .broadcast
+            .record(experience(1_700_001_000 + i, &format!("history-{i}")))
+            .await
+            .expect("A 记录经验应成功");
+    }
+    assert_eq!(a_bank.keys().await.expect("A 读键").len(), 3);
+
+    // B 现在才加入。
+    let mut node_b = start_sync_node("node-b", vec![node_a.grpc_addr.clone()]).await;
+    let b_bank = node_b.bank();
+
+    for i in 1..=3u64 {
+        let hash = format!("hash-{}", 1_700_001_000 + i);
+        wait_for(
+            &format!("B 反熵拉取到 {hash}"),
+            &mut node_b.events,
+            || async { find_in(&b_bank, &hash).await.is_some() },
+        )
+        .await;
+    }
+
+    let keys = b_bank.keys().await.expect("B 读键");
+    assert_eq!(
+        keys.len(),
+        3,
+        "B 应恰好持有 A 的 3 条历史，实际 {}",
+        keys.len()
+    );
+}
+
+/// ADR-010 全链路：反熵回送的内容必须与实时广播完全同构。
+///
+/// 反熵的价值在于复用既有合并路径；若载荷字段有缺失（比如丢了
+/// vector_clock），接收端就无法做 CRDT 裁决，会静默写坏数据。
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn test_anti_entropy_delivers_crdt_complete_payload() {
+    let node_a = start_sync_node("node-a", vec![]).await;
+    node_a
+        .broadcast
+        .record(experience(1_700_001_100, "anti-entropy payload"))
+        .await
+        .expect("A 记录经验应成功");
+
+    let mut node_b = start_sync_node("node-b", vec![node_a.grpc_addr.clone()]).await;
+    let b_bank = node_b.bank();
+
+    wait_for("B 反熵拉取", &mut node_b.events, || async {
+        find_in(&b_bank, "hash-1700001100").await.is_some()
+    })
+    .await;
+
+    let got = find_in(&b_bank, "hash-1700001100").await.expect("B 必须持有该经验");
+    assert_eq!(got.context_text, "anti-entropy payload");
+    assert_eq!(got.project_id.as_deref(), Some("sync-project"));
+    assert!(
+        got.version > 0,
+        "反熵回送必须带 version，收到 {}",
+        got.version
+    );
+    assert!(
+        !got.vector_clock.is_empty(),
+        "反熵回送必须带 vector_clock，否则接收端无法做 CRDT 裁决"
+    );
+}
+
+/// ADR-010 全链路：反熵幂等——已同步的节点不应被重复灌入。
+///
+/// 关键在于反熵与实时广播可能对同一行各送达一次（连接建立时先发 `SyncRequest`，
+/// 随后历史经验又被广播）。CRDT 裁决必须把后者判为等价而非重复行。
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn test_anti_entropy_does_not_duplicate_rows() {
+    let node_a = start_sync_node("node-a", vec![]).await;
+    let a_bank = node_a.bank();
+
+    node_a
+        .broadcast
+        .record(experience(1_700_001_200, "written before join"))
+        .await
+        .expect("A 记录经验应成功");
+    assert_eq!(a_bank.keys().await.expect("A 读键").len(), 1);
+
+    let mut node_b = start_sync_node("node-b", vec![node_a.grpc_addr.clone()]).await;
+    let b_bank = node_b.bank();
+
+    wait_for("B 反熵拉取", &mut node_b.events, || async {
+        find_in(&b_bank, "hash-1700001200").await.is_some()
+    })
+    .await;
+
+    // 等一段时间，给可能并行的实时广播一个机会。
+    tokio::time::sleep(Duration::from_millis(500)).await;
+
+    let keys = b_bank.keys().await.expect("B 读键");
+    assert_eq!(
+        keys.len(),
+        1,
+        "反熵与广播可能对同一行各送达一次，CRDT 必须去重，实际 {} 行",
+        keys.len()
+    );
+}
+
+/// ADR-010 全链路：差量超过单页时，真实拨号器必须翻页拉完。
+///
+/// 这是本轮修复的核心缺陷的回归锁定。差量走真实路径：
+/// `run_stream` 发 `SyncRequest` → peer 分页回送 → `SyncPageEnd` 驱动
+/// dialer 发下一次 `SyncRequest` → ……直到 `more=false`。
+///
+/// 写入 `SYNC_PAGE_SIZE + 5` 条，**故意选一个非整数倍**，这样：
+/// - 若 dialer 不翻页，只能拿到 128 条，用例失败；
+/// - 若页尾判定把末页误当满页，会多发一轮请求拿到空页，行数仍为 `total`。
+///
+/// 注意本用例断言的是「不漏 + 不重行」，**不是**「传输不重叠」。分页游标
+/// 按差量集合索引推进，而每次请求的摘要已随本地落库而推进，但摘要粒度是
+/// `(origin, max counter)`，因此翻页区间仍可能重叠、重复传输若干条。
+/// 这是有意的权衡：重叠由 CRDT 幂等合并吸收，不重复则需要会话级去重状态，
+/// 而会话状态在断连重连时会丢，反倒更容易漏。详见 ADR-010 遗留限制。
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn test_dialer_pages_through_delta_larger_than_one_page() {
+    use sisyphus_bridge::peer::SYNC_PAGE_SIZE;
+
+    let node_a = start_sync_node("node-a", vec![]).await;
+    let a_bank = node_a.bank();
+
+    // 非整数倍页大小：3 页。最后一页只有 5 条。
+    let total = SYNC_PAGE_SIZE as u64 + 5;
+    for i in 0..total {
+        node_a
+            .broadcast
+            .record(experience(1_700_100_000 + i, &format!("bulk-{i}")))
+            .await
+            .expect("A 批量记录经验应成功");
+    }
+    assert_eq!(
+        a_bank.keys().await.expect("A 读键").len() as u64,
+        total,
+        "A 应先持有全部 {total} 条"
+    );
+
+    // B 后加入，走真实 dialer 翻页。
+    let node_b = start_sync_node("node-b", vec![node_a.grpc_addr.clone()]).await;
+    let b_bank = node_b.bank();
+
+    // 等到全部到位：差量跨 3 页，链路与每页往返都要时间。
+    for attempt in 0..80 {
+        let got = b_bank.keys().await.map(|k| k.len()).unwrap_or(0);
+        if got as u64 == total {
+            // 多等几拍，确认不会又冒出重复行。
+            tokio::time::sleep(Duration::from_millis(400)).await;
+            let final_count = b_bank.keys().await.map(|k| k.len()).unwrap_or(0);
+            assert_eq!(
+                final_count as u64, total,
+                "翻页补齐后行数应恒为 {total}（第 {attempt} 轮）"
+            );
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+
+    let got = b_bank.keys().await.map(|k| k.len()).unwrap_or(0);
+    panic!(
+        "拨号器未能翻页拉完 {total} 条差量，只拿到 {got} 条。\
+         若恰好等于 {page_size} 说明只补了第一页——page-end 标记或游标推进有问题。",
+        page_size = SYNC_PAGE_SIZE
+    );
 }

@@ -15,9 +15,11 @@ use crate::peer::manager::PeerManager;
 // 此前这里曾镜像一份独立副本，两边各自演化：service.rs 修好入站处理后，
 // 拨号器（生产路径走的正是这里）仍在静默丢弃 ExperienceSync，
 // 导致跨节点经验同步从未真正打通。单一实现消除这类漂移。
-use crate::peer::service::{apply_mgr_event, mgr_event_to_proto, proto_to_mgr_event};
+use crate::peer::anti_entropy;
+use crate::peer::service::{apply_mgr_event, is_page_end, mgr_event_to_proto, proto_to_mgr_event};
 use sisyphus_bridge_api::cluster_proto::cluster_client::ClusterClient;
 use sisyphus_bridge_api::cluster_proto::{ClusterEvent as ProtoEvent, JoinRequest};
+use sisyphus_mem::experience_bank::VectorExperienceBank;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc;
@@ -26,7 +28,7 @@ use tokio_stream::StreamExt;
 use tonic::transport::{Channel, Endpoint};
 
 /// 静态 peer dial 配置
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct StaticPeerConfig {
     /// 静态 peer 列表（gRPC 地址，如 `http://node-1:50051`）
     pub peers: Vec<String>,
@@ -40,6 +42,10 @@ pub struct StaticPeerConfig {
     pub reconnect_initial_delay: Duration,
     /// 重连最大延迟（避免无限增长）
     pub reconnect_max_delay: Duration,
+    /// 本节点经验库（ADR-010 反熵：连接建立后据此发 `SyncRequest`）。
+    ///
+    /// `None` 表示不启用反熵，退化为只依赖实时广播——与反熵落地前一致。
+    pub experience_bank: Option<Arc<VectorExperienceBank>>,
 }
 
 impl StaticPeerConfig {
@@ -56,6 +62,7 @@ impl StaticPeerConfig {
             join_timeout_secs: cluster_config.join_timeout_secs,
             reconnect_initial_delay: Duration::from_secs(1),
             reconnect_max_delay: Duration::from_secs(60),
+            experience_bank: None,
         }
     }
 }
@@ -97,7 +104,8 @@ async fn run_dial_loop(config: StaticPeerConfig, manager: Arc<PeerManager>, grpc
             Ok(channel) => {
                 // 连接成功，重置 backoff
                 backoff = config.reconnect_initial_delay;
-                if let Err(e) = run_stream(&manager, channel).await {
+                if let Err(e) = run_stream(&manager, channel, config.experience_bank.as_ref()).await
+                {
                     tracing::warn!(
                         grpc_addr = %grpc_addr,
                         error = %e,
@@ -155,12 +163,23 @@ async fn connect_and_join(config: &StaticPeerConfig, grpc_addr: &str) -> Result<
 }
 
 /// 双向 Stream：本地事件 → outbound，对端事件 → manager
-async fn run_stream(manager: &PeerManager, channel: Channel) -> Result<(), String> {
+///
+/// ADR-010：连接建立后发起一次反熵拉取。经验广播是即发即失的——流建好之前
+/// 的广播永久丢失，断连期间的写入不会补回，新节点对既有经验一无所知。
+/// 这一处同时覆盖「新节点加入」与「重连补偿」两个场景。
+async fn run_stream(
+    manager: &PeerManager,
+    channel: Channel,
+    experience_bank: Option<&Arc<VectorExperienceBank>>,
+) -> Result<(), String> {
     let mut client = ClusterClient::new(channel);
 
     // outbound: 本地 manager 事件 → proto
     let mut sub = manager.subscribe();
     let (out_tx, out_rx) = mpsc::unbounded_channel::<ProtoEvent>();
+    // 克隆必须在 `move` 进广播 task **之前**完成：task 拿走原 `out_tx`，
+    // 反熵请求用自己的那一份。
+    let sync_tx = out_tx.clone();
     let outbound_task = tokio::spawn(async move {
         loop {
             match sub.recv().await {
@@ -182,12 +201,59 @@ async fn run_stream(manager: &PeerManager, channel: Channel) -> Result<(), Strin
         client.stream(tonic::Request::new(outbound)).await.map_err(|e| format!("stream: {e}"))?;
     let mut inbound = response.into_inner();
 
+    // ADR-010：流已建立，发起一次反熵拉取补齐历史差量。
+    // 失败只记日志——反熵是旁路，不应因为它拖垮实时广播与本地写入。
+    let mut paging = experience_bank.map(|bank| PagingCursor::new(bank.clone()));
+    if let Some(bank) = experience_bank {
+        if let Err(e) = anti_entropy::request_sync(bank, &sync_tx, 0).await {
+            tracing::warn!(error = %e, "anti-entropy: initial sync request failed");
+            paging = None;
+        }
+    }
+
     // inbound: 对端 proto 事件 → manager
     while let Some(result) = inbound.next().await {
         match result {
             Ok(proto_evt) => {
-                if let Some(mgr_evt) = proto_to_mgr_event(proto_evt) {
-                    apply_mgr_event(manager, mgr_evt);
+                // 反熵应答与实时广播都是 ExperienceSync，接收侧无法从事件本身
+                // 分辨。因此翻页完全由服务端下发的 `SyncPageEnd{ more }` 控制，
+                // 而不是本地计数——否则实时广播会被误计入页内，使游标偏移错乱。
+                if let Some(cursor) = paging.as_mut() {
+                    if let Some(marker) = cursor.absorb_page_end(&proto_evt) {
+                        if marker.more {
+                            match anti_entropy::request_sync(
+                                cursor.bank(),
+                                &sync_tx,
+                                marker.next_offset,
+                            )
+                            .await
+                            {
+                                Ok(_) => cursor.set_offset(marker.next_offset),
+                                Err(e) => {
+                                    tracing::warn!(
+                                        error = %e,
+                                        offset = marker.next_offset,
+                                        "anti-entropy: paging request failed; stopping paging"
+                                    );
+                                    paging = None;
+                                },
+                            }
+                        } else {
+                            tracing::info!(
+                                synced = marker.delivered,
+                                total_offset = marker.next_offset,
+                                "anti-entropy: sync completed"
+                            );
+                            paging = None;
+                        }
+                    }
+                }
+
+                // `SyncPageEnd` 是纯控制标记，不进入 manager 事件总线。
+                if !is_page_end(&proto_evt) {
+                    if let Some(mgr_evt) = proto_to_mgr_event(proto_evt) {
+                        apply_mgr_event(manager, mgr_evt);
+                    }
                 }
             },
             Err(status) => {
@@ -199,6 +265,43 @@ async fn run_stream(manager: &PeerManager, channel: Channel) -> Result<(), Strin
 
     outbound_task.abort();
     Err("inbound stream ended".to_string())
+}
+
+/// 反熵翻页游标（dial 方）。
+///
+/// 游标只由服务端的 [`SyncPageEnd`] 标记推进：差量页以普通 `ExperienceSync`
+/// 事件的形式发送，与实时广播在 wire 上完全相同，本地无法区分二者，
+/// 因此不能靠计数推测页边界。
+struct PagingCursor {
+    bank: Arc<VectorExperienceBank>,
+    offset: u64,
+}
+
+impl PagingCursor {
+    fn new(bank: Arc<VectorExperienceBank>) -> Self {
+        Self { bank, offset: 0 }
+    }
+
+    fn bank(&self) -> &Arc<VectorExperienceBank> {
+        &self.bank
+    }
+
+    fn set_offset(&mut self, offset: u64) {
+        self.offset = offset;
+    }
+
+    /// 识别页尾标记；非标记事件返回 `None`。
+    fn absorb_page_end(
+        &mut self,
+        evt: &ProtoEvent,
+    ) -> Option<sisyphus_bridge_api::cluster_proto::SyncPageEnd> {
+        match &evt.event {
+            Some(sisyphus_bridge_api::cluster_proto::cluster_event::Event::SyncPageEnd(marker)) => {
+                Some(*marker)
+            },
+            _ => None,
+        }
+    }
 }
 
 #[cfg(test)]

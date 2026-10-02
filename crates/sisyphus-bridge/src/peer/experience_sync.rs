@@ -97,7 +97,10 @@ impl ExperienceBank for PeerBroadcastExperienceBank {
     }
 }
 
-/// ExperienceSyncHandler：订阅 PeerManager 事件，将远程 experience 写入本地 bank
+/// ExperienceSyncHandler：订阅 PeerManager 的**入站**事件，将远程 experience 写入本地 bank
+///
+/// 订阅入站通道而非本地广播通道，这同时解决了两个问题：远程经验能到达（本地
+/// 通道里根本没有它们），以及远端事件不会被拨号器再转发回集群形成回弹。
 pub struct ExperienceSyncHandler {
     experience_bank: Arc<VectorExperienceBank>,
     peer_manager: Arc<PeerManager>,
@@ -119,15 +122,29 @@ impl ExperienceSyncHandler {
         }
     }
 
-    /// 启动事件循环：监听 peer 事件并处理 ExperienceSync
+    /// 启动事件循环：监听**入站** peer 事件并处理 ExperienceSync
     ///
     /// `shutdown_rx` 收到信号时退出循环。返回 `JoinHandle` 供调用方管理生命周期。
+    ///
+    /// 订阅的是入站通道（[`PeerManager::subscribe_inbound`]）而非本地广播通道：
+    /// 本地写入已经由 `PeerBroadcastExperienceBank` 直接落库，这里再看到一遍只会
+    /// 多做一次无用的 CRDT 合并；而远程经验只有走入站通道才会到达，订阅本地通道
+    /// 则完全收不到。订阅入站通道同时意味着事件不会经拨号器回流到集群。
+    ///
+    /// 任务全程持有 `Arc<PeerManager>`：`broadcast::Receiver` 不会让通道保持存活，
+    /// 只有 `Sender` 存活才不会收到 `Closed`。此前 `self.peer_manager` 只在调用
+    /// `subscribe()` 时借用一下就被丢弃，于是调用方一旦没有别处持有 PeerManager，
+    /// 通道立刻关闭、接收端在 `select!` 里静默退出——进程看起来还在跑，跨节点
+    /// 经验同步却已经死了。
     pub fn spawn(self, mut shutdown_rx: broadcast::Receiver<()>) -> JoinHandle<()> {
-        let mut events = self.peer_manager.subscribe();
+        let peer_manager = self.peer_manager;
+        let mut events = peer_manager.subscribe_inbound();
         let experience_bank = self.experience_bank;
         let self_node_id = self.self_node_id;
 
         tokio::spawn(async move {
+            // 持有一个强引用，保证 Sender 不会在本任务存活期间被丢弃。
+            let _keep_manager_alive = peer_manager;
             loop {
                 tokio::select! {
                                 biased;
@@ -143,11 +160,13 @@ impl ExperienceSyncHandler {
                                             vector_clock_json,
                                             payload,
                                         }) => {
-                // 过滤自己广播的事件：主键里编码了来源节点，解析出来与本节点
-                // 相同即丢弃。不能用后缀包含判断——origin 不是主键的末段，
+                // 防御性自过滤：入站通道已保证事件来自远端，正常情况下 origin
+                // 不会是本节点。这里仍保留比对，以防某个对端把本节点的事件原样
+                // 回送——那种情况下重复应用是幂等的（CRDT 判为 Equal），但白白
+                // 走一次写路径。注意不能用后缀包含判断：origin 不是主键的末段，
                 // 那会让 "node-a" 连带吞掉 "node-ab" 的经验。
                 if experience_origin_from_key(&exp_key) == Some(self_node_id.as_str()) {
-                    tracing::trace!(exp_key = %exp_key, "skipping own broadcast");
+                    tracing::trace!(exp_key = %exp_key, "skipping echoed own experience");
                     continue;
                 }
                                             Self::handle_remote_sync(
@@ -162,7 +181,9 @@ impl ExperienceSyncHandler {
                                             // 其他事件类型不处理
                                         }
                                         Err(broadcast::error::RecvError::Closed) => {
-                                            tracing::warn!("ExperienceSyncHandler: peer manager channel closed");
+                                            // 任务自己持有 Arc<PeerManager>，正常情况下
+                                            // 不可能到这里。真的到了说明拓扑被拆掉了。
+                                            tracing::error!("ExperienceSyncHandler: inbound channel closed unexpectedly; stopping");
                                             break;
                                         }
                                         Err(broadcast::error::RecvError::Lagged(n)) => {

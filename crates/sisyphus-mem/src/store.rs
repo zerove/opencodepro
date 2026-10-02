@@ -14,7 +14,8 @@ use async_trait::async_trait;
 use lru::LruCache;
 use parking_lot::Mutex;
 use sisyphus_metrics::record_mem_operation;
-use sqlx::{SqlitePool, sqlite::SqlitePoolOptions};
+use sisyphus_types::experience::{experience_counter_from_key, experience_origin_from_key};
+use sqlx::{Row, SqlitePool, sqlite::SqlitePoolOptions};
 use std::num::NonZeroUsize;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -61,6 +62,48 @@ fn row_to_experience_tuple(row: ExperienceRowTuple) -> sisyphus_types::experienc
         version: ver as u64,
         vector_clock,
     }
+}
+
+/// ADR-010 反熵：按**列名**从行取经验载荷。
+///
+/// 与 [`row_to_experience_tuple`] 重复是有意的，两者服务不同调用方：
+/// 既有 4 条 SELECT 路径（list_shared / get_experience / list_recent /
+/// query_experiences）走元组反序列化，而反熵批量路径要一并取回 `id`，
+/// 元组会变成 11 元组，超出 sqlx 为 `Type` 实现元组的 arity 上限（9）。
+///
+/// 具体行类型而非泛型：反熵查询固定跑在本 store 的 `SqlitePool` 上，写死
+/// `SqliteRow` 比泛型少一堆 `Decode`/`Type` 约束，可读性也更好。
+///
+/// 列用名字取而非下标，因为下标位置依赖具体驱动的列顺序。这里每个字段的
+/// `unwrap_or_default` 都是**局部降级**：列缺失时该行退化为默认值经验，而不是让
+/// 整批反熵回送失败——反熵是旁路，不应因一行脏数据拖垮整次同步。
+fn experience_tuple_from_row(
+    row: sqlx::sqlite::SqliteRow,
+) -> sisyphus_types::experience::ExperienceTuple {
+    let ctx_text: String = row.try_get("context_text").unwrap_or_default();
+    let ctx_hash: String = row.try_get("context_hash").unwrap_or_default();
+    let action_id: Option<String> = row.try_get("action_id").ok();
+    let proj_id: Option<String> = row.try_get("project_id").ok();
+    let success: bool = row.try_get("outcome_success").unwrap_or(false);
+    let dev: f64 = row.try_get("deviation_score").unwrap_or(0.0);
+    let cost: i64 = row.try_get("cost").unwrap_or(0);
+    let ts: i64 = row.try_get("timestamp").unwrap_or(0);
+    let ver: i64 = row.try_get("version").unwrap_or(0);
+    let vc_json: String = row.try_get("vector_clock").unwrap_or_default();
+    row_to_experience_tuple((
+        ctx_text,
+        ctx_hash,
+        action_id,
+        proj_id,
+        success,
+        dev,
+        // `.max(0)` 防负数回绕成巨大的 u64：库外数据写坏了不该把该经验
+        // 的成本/时间戳变成天文数字，污染按这两个字段的检索。
+        cost.max(0),
+        ts.max(0),
+        ver.max(0),
+        vc_json,
+    ))
 }
 
 /// Multi-Frontier Store: L1 (LRU cache) + L2 (SQLite) with async write buffering.
@@ -580,6 +623,37 @@ impl MfsStore {
         Ok(())
     }
 
+    /// 查询本节点在库中已用掉的**最大写入计数**，供重启后恢复本地序号。
+    ///
+    /// 本地写入的主键形如 `exp:{timestamp}:{origin}:{counter}`，`counter` 随每次
+    /// 写入单调递增。若序号不恢复而从 0 重开，后续写入会拿到比历史更小的
+    /// `counter`，进而让 `version` 回退——远端节点按 CRDT 版本裁决时会把这些
+    /// **新**写入当成旧版本丢弃。因此启动时必须先把序号抬到历史最大值之上。
+    ///
+    /// 只统计本节点自己写下的行：按 `id` 解析出 `origin` 与 `counter` 后过滤。
+    /// 远程合并进来的行 origin 不同，不会干扰本节点序号。P1 修复之前遗留的
+    /// 旧格式主键（`exp:{timestamp}`）解析不出 counter，跳过即可。
+    pub async fn max_local_counter(&self, origin: &str) -> Result<u64> {
+        let ids = sqlx::query_scalar::<_, String>("SELECT id FROM experiences")
+            .fetch_all(&self.l2)
+            .await
+            .context("Failed to list experience ids for sequence recovery")?;
+
+        let max = ids
+            .iter()
+            .filter_map(|id| {
+                let parsed_origin = experience_origin_from_key(id)?;
+                if parsed_origin != origin {
+                    return None;
+                }
+                experience_counter_from_key(id)
+            })
+            .max()
+            .unwrap_or(0);
+
+        Ok(max)
+    }
+
     /// CRDT (TODO 8.3.2) SELECT 反序列化的统一 row 类型。
     ///
     /// 4 个 SELECT 路径（list_shared / get_experience / list_recent / query_experiences）
@@ -599,6 +673,89 @@ impl MfsStore {
             .await
             .context("Failed to update experience project")?;
         Ok(result.rows_affected() > 0)
+    }
+
+    /// 导出本地经验库的紧凑摘要（ADR-010 反熵）。
+    ///
+    /// 返回 (node_id → 最大写入计数)。这是 dial 方发给对端的 `SyncRequest`
+    /// 内容：对端只需比较每个 origin 的最大计数，就能算出自己应该补发哪些行。
+    ///
+    /// 与 [`Self::max_local_counter`] 的区别：后者只统计**本节点自己**写的行
+    /// （用于重启后恢复本地序号），而这里要统计**全部**来源——否则一个只见过
+    /// node-a 的节点会把 node-b 写的经验误当成缺失而反复请求。
+    pub async fn experience_digest(&self) -> Result<sisyphus_types::experience::ExperienceDigest> {
+        let ids = sqlx::query_scalar::<_, String>("SELECT id FROM experiences")
+            .fetch_all(&self.l2)
+            .await
+            .context("Failed to list experience ids for anti-entropy digest")?;
+
+        Ok(sisyphus_types::experience::digest_from_keys(
+            ids.iter().map(|s| s.as_str()),
+        ))
+    }
+
+    /// 列出全部经验行主键（ADR-010 反熵差量筛选）。
+    ///
+    /// 差量计算需要完整的键集合才能比对摘要，因此这里不做分页——摘要比较
+    /// 在内存里做，一次全量键列表比多次分页查询更简单也更快，且键本身很短。
+    /// 真正的体积上界由 [`Self::load_experiences_by_keys`] 的分批与反熵的
+    /// 页大小共同保证。
+    pub async fn experience_keys(&self) -> Result<Vec<String>> {
+        sqlx::query_scalar::<_, String>("SELECT id FROM experiences ORDER BY id")
+            .fetch_all(&self.l2)
+            .await
+            .context("Failed to list experience keys")
+    }
+
+    /// 按主键集合批量读取经验的完整载荷（ADR-010 反熵差量回送）。
+    ///
+    /// 单独查询每行会比一次取回多一个数量级的往返；差量应回送 N 条时这里只发
+    /// 一次 SQL。返回顺序与 `ids` 的顺序一致，调用方可直接按切片分页。
+    ///
+    /// 结果中可能少于 `ids` 的长度：主键不存在时（对端清单过期）该行被跳过，
+    /// 而非报错——对端给出的清单是**建议**，本库才是事实。
+    pub async fn load_experiences_by_keys(
+        &self,
+        ids: &[String],
+    ) -> Result<Vec<(String, sisyphus_types::experience::ExperienceTuple)>> {
+        if ids.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        // 分批查询：SQLite 的变量数上限为 999，超过需分片。
+        // 每批上限 500 是保守取值，留足余量。
+        const BATCH: usize = 500;
+        let mut out: Vec<(String, sisyphus_types::experience::ExperienceTuple)> =
+            Vec::with_capacity(ids.len());
+        for chunk in ids.chunks(BATCH) {
+            let placeholders = vec!["?"; chunk.len()].join(", ");
+            let sql = format!(
+                "SELECT id, context_text, context_hash, action_id, project_id, \
+                 outcome_success, deviation_score, cost, timestamp, version, vector_clock \
+                 FROM experiences WHERE id IN ({placeholders})"
+            );
+            // 用 `Row` + 按列名取值而非 `query_as` 元组：载荷本身已是 10 元组，
+            // 再加上 `id` 就成了 11 元组，超出 sqlx 为 `Type` 实现元组的 arity 上限。
+            let mut query = sqlx::query(&sql);
+            for id in chunk {
+                query = query.bind(id);
+            }
+            let rows = query
+                .fetch_all(&self.l2)
+                .await
+                .context("Failed to load experiences for anti-entropy delta")?;
+            for row in rows {
+                let id: String = row.try_get("id").unwrap_or_default();
+                out.push((id, experience_tuple_from_row(row)));
+            }
+        }
+
+        // 恢复为调用方给定的顺序，使分页切片与 ids 一一对应。
+        let mut by_id: std::collections::HashMap<
+            String,
+            sisyphus_types::experience::ExperienceTuple,
+        > = out.into_iter().collect();
+        Ok(ids.iter().filter_map(|id| by_id.remove(id).map(|exp| (id.clone(), exp))).collect())
     }
 
     /// CRDT (TODO 8.3.2 / ADR-009 § 2): 原子比较并应用 remote experience。

@@ -52,7 +52,45 @@ message ClusterEvent {
     PeerLeft peer_left = 2;
     StateProposal state_proposal = 3;
     ExperienceSync experience_sync = 4;
+    // ADR-010：dial 方发版本向量，请求对端补发差量。
+    // 挂在既有双向流上，不新增 RPC。
+    SyncRequest sync_request = 5;
+    // ADR-010：peer 方发页尾标记，告知差量一页结束与翻页游标。
+    SyncPageEnd sync_page_end = 6;
   }
+}
+
+// ADR-010：反熵补偿请求。由 **dial 方**（发起 Join 的一侧）发出。
+//
+// 经验同步事件是即发即失的：流建立前的广播永久丢失、断连期间的经验重连后
+// 不会补回、新节点对既有经验一无所知。SyncRequest 让 dial 方按自己实际持有的
+// 内容拉取差量，传输量正比于真实差量而与历史总量无关。
+message SyncRequest {
+  // dial 方当前持有的 (node_id → 最大 counter)。
+  // 因为行标识 exp:{ts}:{origin}:{counter} 编码了来源与计数，对端只需比较
+  // 每个 origin 的最大 counter，就能推出 dial 方缺哪些行。
+  map<string, uint64> vector_clock = 1;
+  // 分页游标：对端已经发来多少条，跳过前这么多条差量。
+  //
+  // 必需而非可选——差量按主键字典序稳定排序，因此「跳过前 N 条」在多次请求
+  // 之间是确定的。缺少它时对端只能回送首页，>128 条的差量永远补不齐，
+  // 而表现为「重连后少了部分经验」，极难归因。
+  uint64 offset = 2;
+}
+
+// ADR-010：反熵页尾标记。由 **peer 侧**（被 dial 的一方）在一页差量发完后
+// 发出，告知 dial 方「本页结束、是否还有下一页、下一页从哪里开始」。
+//
+// 必需而非可选：差量页以普通 `ExperienceSync` 事件的形式发送，与实时广播在
+// wire 上完全相同，dial 方无法从事件本身分辨二者。若靠 dial 方本地计数来猜
+// 页边界，实时广播会被误计入页内，使游标偏移错乱并漏发整页差量。
+message SyncPageEnd {
+  // 还有更多页时为 true。
+  bool more = 1;
+  // 下一轮 SyncRequest 应携带的 offset。
+  uint64 next_offset = 2;
+  // 本页实际回送的条数（仅用于日志）。
+  uint32 delivered = 3;
 }
 
 // 新 peer 加入
@@ -77,7 +115,7 @@ message StateProposal {
 
 // Experience sync（CRDT 同步事件，TODO 8.3.2 + 8.3.1 集成）
 message ExperienceSync {
-  // exp_key: exp:{timestamp}
+  // exp_key: exp:{timestamp}:{origin}:{counter}
   string exp_key = 1;
   // CRDT version
   uint64 version = 2;

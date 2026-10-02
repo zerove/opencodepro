@@ -11,6 +11,7 @@
 //! - `service`: Cluster gRPC service impl（Join + Stream）
 //! - `client`: 主动 dial 其他 peer 的 gRPC client
 
+pub mod anti_entropy;
 pub mod discovery;
 pub mod experience_sync;
 pub mod fallback;
@@ -19,6 +20,11 @@ pub mod service;
 
 pub use experience_sync::{
     broadcast_experience, ExperienceSyncHandler, PeerBroadcastExperienceBank,
+};
+
+pub use anti_entropy::{
+    build_sync_page, digest_to_sync_request_payload, local_digest, parse_sync_request_payload,
+    request_sync, serve_sync_request, sync_request_event, SyncPage, SYNC_PAGE_SIZE,
 };
 
 pub use fallback::{spawn_static_peers, StaticPeerConfig};

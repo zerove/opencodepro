@@ -204,6 +204,31 @@ impl From<tracing_subscriber::util::TryInitError> for ObservabilityError {
 mod tests {
     use super::*;
 
+    /// 在作用域内安装一个最小 registry 订阅者，然后校验 span 的元数据。
+    ///
+    /// `Span::metadata()` 依赖当前 dispatcher：进程内没有任何订阅者时，
+    /// `tracing` 直接返回 `Span::none()`，断言必然拿到 `None`。这批用例原先
+    /// 依赖「别的测试恰好装上了进程级全局订阅者」——单独跑
+    /// `cargo test -p sisyphus-metrics` 6 个全失败，混在 `cargo test-all` 里
+    /// 却全绿。测试的正确性不能取决于同进程里还有谁在跑。
+    ///
+    /// 这里用 `with_default`（线程局部）而不是 `set_global_default`（进程全局、
+    /// 只能成功一次）：前者不与其他用例争抢那一个全局槽位，因此并行执行时
+    /// 互不干扰，也不需要 `Once` 之类的串行化。
+    fn assert_span_metadata<F>(make_span: F, expected_name: &'static str)
+    where
+        F: FnOnce() -> Span,
+    {
+        tracing::subscriber::with_default(tracing_subscriber::registry(), || {
+            let span = make_span();
+            assert_eq!(
+                span.metadata().map(|m| m.name()),
+                Some(expected_name),
+                "span name mismatch for {expected_name}",
+            );
+        });
+    }
+
     #[test]
     fn test_trace_config_default() {
         let config = TraceConfig::default();
@@ -215,38 +240,35 @@ mod tests {
 
     #[test]
     fn test_cognitive_loop_span_creation() {
-        let span = cognitive_loop_span("test_sop", 1);
-        assert_eq!(span.metadata().map(|m| m.name()), Some("cognitive_loop"));
+        assert_span_metadata(|| cognitive_loop_span("test_sop", 1), "cognitive_loop");
     }
 
     #[test]
     fn test_node_execution_span_creation() {
-        let span = node_execution_span("fetch_data", "test_sop");
-        assert_eq!(span.metadata().map(|m| m.name()), Some("node_execution"));
+        assert_span_metadata(
+            || node_execution_span("fetch_data", "test_sop"),
+            "node_execution",
+        );
     }
 
     #[test]
     fn test_reflection_span_creation() {
-        let span = reflection_span("test_sop", 1);
-        assert_eq!(span.metadata().map(|m| m.name()), Some("reflection"));
+        assert_span_metadata(|| reflection_span("test_sop", 1), "reflection");
     }
 
     #[test]
     fn test_evolution_span_creation() {
-        let span = evolution_span("test_sop", 1);
-        assert_eq!(span.metadata().map(|m| m.name()), Some("evolution"));
+        assert_span_metadata(|| evolution_span("test_sop", 1), "evolution");
     }
 
     #[test]
     fn test_memory_span_creation() {
-        let span = memory_span("get", "l1");
-        assert_eq!(span.metadata().map(|m| m.name()), Some("memory_access"));
+        assert_span_metadata(|| memory_span("get", "l1"), "memory_access");
     }
 
     #[test]
     fn test_tool_span_creation() {
-        let span = tool_span("bash");
-        assert_eq!(span.metadata().map(|m| m.name()), Some("tool_execution"));
+        assert_span_metadata(|| tool_span("bash"), "tool_execution");
     }
 
     #[test]

@@ -8,10 +8,11 @@
 //! 接收到的 peer 事件直接喂给 manager.on_peer_joined/left，
 //! manager 内部 broadcast 给订阅者。
 
+use crate::peer::anti_entropy;
 use crate::peer::manager::{ClusterEvent as MgrEvent, PeerInfo, PeerManager};
 use sisyphus_bridge_api::cluster_proto::{
     cluster_server::Cluster, ClusterEvent as ProtoEvent, ExperienceSync, JoinRequest, JoinResponse,
-    PeerInfo as ProtoPeerInfo, PeerJoined, PeerLeft, StateProposal,
+    PeerInfo as ProtoPeerInfo, PeerJoined, PeerLeft, StateProposal, SyncRequest,
 };
 use std::pin::Pin;
 use std::sync::Arc;
@@ -27,12 +28,32 @@ pub type RequestStream = Pin<Box<dyn Stream<Item = Result<ProtoEvent, Status>> +
 #[derive(Clone)]
 pub struct ClusterServiceImpl {
     manager: Arc<PeerManager>,
+    /// 本节点经验库（ADR-010 反熵：收到 `SyncRequest` 时据此计算差量）。
+    ///
+    /// `None` 表示本节点未启用经验库（如测试夹具或单节点模式）。此时收到
+    /// `SyncRequest` 会记一条日志并跳过——反熵是尽力而为的旁路，不应因为
+    /// 它缺席而影响流的其余部分。
+    experience_bank: Option<Arc<sisyphus_mem::experience_bank::VectorExperienceBank>>,
 }
 
 impl ClusterServiceImpl {
-    /// 新建 service impl
+    /// 新建 service impl（不参与反熵）
     pub fn new(manager: Arc<PeerManager>) -> Self {
-        Self { manager }
+        Self {
+            manager,
+            experience_bank: None,
+        }
+    }
+
+    /// 新建 service impl，并挂上本节点经验库以提供反熵差量。
+    pub fn with_experience_bank(
+        manager: Arc<PeerManager>,
+        experience_bank: Arc<sisyphus_mem::experience_bank::VectorExperienceBank>,
+    ) -> Self {
+        Self {
+            manager,
+            experience_bank: Some(experience_bank),
+        }
     }
 }
 
@@ -76,6 +97,9 @@ impl Cluster for ClusterServiceImpl {
 
         // 创建一个 outbound channel，把 manager 事件转成 proto 推到客户端
         let (out_tx, out_rx) = mpsc::unbounded_channel::<ProtoEvent>();
+        // 克隆必须在 `move` 进广播 task **之前**完成：task 拿走原 `out_tx`，
+        // 应答反熵请求用自己的那一份（ADR-010）。
+        let out_tx_sync = out_tx.clone();
         let mut sub = manager.subscribe();
 
         // 后台任务：从 manager broadcast 转发到 outbound channel
@@ -100,10 +124,35 @@ impl Cluster for ClusterServiceImpl {
 
         // 处理客户端发来的事件：feed 给 manager
         let manager_for_inbound = Arc::clone(&manager);
+        let bank_for_inbound = self.experience_bank.clone();
         tokio::spawn(async move {
             while let Some(result) = inbound.next().await {
                 match result {
                     Ok(proto_evt) => {
+                        // ADR-010：先识别反熵请求。它不进入 manager 事件总线——
+                        // 而是把差量直接回写到 outbound 通道，因为应答的传输方向
+                        // 与请求相反（请求来自 dial 方，应答回到 dial 方）。
+                        if let Some(SyncRequest { vector_clock, offset }) =
+                            match proto_evt.event.clone() {
+                                Some(sisyphus_bridge_api::cluster_proto::cluster_event::Event::SyncRequest(
+                                    req,
+                                )) => Some(req),
+                                _ => None,
+                            }
+                        {
+                            handle_sync_request(
+                                bank_for_inbound.as_ref(),
+                                vector_clock,
+                                offset,
+                                &out_tx_sync,
+                            ).await;
+                            continue;
+                        }
+                        // `SyncPageEnd` 是 dial 方发来的控制消息（本节点作为
+                        // dial 方时的翻页信号），服务端不消费它。
+                        if is_page_end(&proto_evt) {
+                            continue;
+                        }
                         if let Some(mgr_evt) = proto_to_mgr_event(proto_evt) {
                             apply_mgr_event(&manager_for_inbound, mgr_evt);
                         }
@@ -117,6 +166,90 @@ impl Cluster for ClusterServiceImpl {
         let out_stream = UnboundedReceiverStream::new(out_rx).map(Ok);
         let pinned: Self::StreamStream = Box::pin(out_stream);
         Ok(Response::new(pinned))
+    }
+}
+
+/// 判定事件是否为反熵页尾标记（纯控制消息，不进入 manager 事件总线）。
+pub(crate) fn is_page_end(evt: &ProtoEvent) -> bool {
+    matches!(
+        evt.event,
+        Some(sisyphus_bridge_api::cluster_proto::cluster_event::Event::SyncPageEnd(_))
+    )
+}
+
+/// ADR-010：应答一条 `SyncRequest`，把差量分页回写给请求方。
+///
+/// **差量以既有 `ExperienceSync` 事件的形式发送**，因此请求方的
+/// `ExperienceSyncHandler` 用与实时广播**完全相同**的路径接收并落库——
+/// 反熵不引入第二套合并语义，这是它幂等的根源。
+///
+/// 每页末尾补发 [`SyncPageEnd`] 标记：差量事件与实时广播在 wire 上无法区分，
+/// 缺少页边界时 dial 方只能靠计数推测，而实时广播会被误计入页内使游标错乱。
+///
+/// 单页有界是有意为之：经验库随运行时间单调增长，无界回灌会让单条 gRPC
+/// 消息超出默认 4MB 限制，整条流被拒——反而比不同步更糟。
+async fn handle_sync_request(
+    experience_bank: Option<&Arc<sisyphus_mem::experience_bank::VectorExperienceBank>>,
+    vector_clock: std::collections::HashMap<String, u64>,
+    offset: u64,
+    out_tx: &mpsc::UnboundedSender<ProtoEvent>,
+) {
+    let Some(bank) = experience_bank else {
+        tracing::debug!(
+            "anti-entropy: SyncRequest received but this node has no experience bank; skipping"
+        );
+        return;
+    };
+
+    let requested = anti_entropy::parse_sync_request_payload(&vector_clock);
+    match anti_entropy::serve_sync_request(
+        bank,
+        &requested,
+        offset as usize,
+        anti_entropy::SYNC_PAGE_SIZE,
+    )
+    .await
+    {
+        Ok(page) => {
+            let count = page.experiences.len();
+            for sync in page.experiences {
+                let evt = ProtoEvent {
+                    event: Some(
+                        sisyphus_bridge_api::cluster_proto::cluster_event::Event::ExperienceSync(
+                            sync,
+                        ),
+                    ),
+                };
+                if out_tx.send(evt).is_err() {
+                    tracing::debug!("anti-entropy: outbound channel closed while serving sync");
+                    return;
+                }
+            }
+            // 页尾标记必须在该页所有差量之后发出，否则请求方会提前翻页，
+            // 造成后续页与本页交错。
+            let end = ProtoEvent {
+                event: Some(
+                    sisyphus_bridge_api::cluster_proto::cluster_event::Event::SyncPageEnd(
+                        sisyphus_bridge_api::cluster_proto::SyncPageEnd {
+                            more: page.more,
+                            next_offset: page.next_offset,
+                            delivered: count as u32,
+                        },
+                    ),
+                ),
+            };
+            let _ = out_tx.send(end);
+            tracing::info!(
+                sent = count,
+                more = page.more,
+                next_offset = page.next_offset,
+                "anti-entropy: replied to sync request"
+            );
+        },
+        Err(e) => {
+            // 反熵失败不影响实时广播与本地写入，只记日志。
+            tracing::warn!(error = %e, "anti-entropy: failed to serve sync request");
+        },
     }
 }
 
@@ -191,6 +324,9 @@ pub(crate) fn proto_to_mgr_event(evt: ProtoEvent) -> Option<MgrEvent> {
             vector_clock_json: e.vector_clock_json,
             payload: e.payload,
         }),
+        // ADR-010 控制消息，不是成员/经验事件：与 `is_page_end` 一样不进入
+        // 事件总线，由调用方在转 manager 之前就分流掉。
+        Event::SyncRequest(_) | Event::SyncPageEnd(_) => None,
     })
 }
 

@@ -102,8 +102,20 @@ pub struct PeerManager {
     self_node_id: String,
     /// peer 列表（按 node_id 排序；BTreeMap 便于取最小）
     peers: Arc<RwLock<BTreeMap<String, PeerInfo>>>,
-    /// 事件广播通道（订阅者通过 subscribe() 接收）
+    /// 事件广播通道（**本地产生**，需要转发给所有 peer）
+    ///
+    /// 拨号器 [`crate::peer::fallback::spawn_static_peers`] 与服务端
+    /// [`crate::peer::service::ClusterServiceImpl::stream`] 订阅的是这一路。
     event_tx: broadcast::Sender<ClusterEvent>,
+    /// 入站事件通道（**从远端收到**，只供本地消费，不再转发）
+    ///
+    /// 与 `event_tx` 分离是为了让「不把远端事件再转发回去」成为结构保证，
+    /// 而不是靠接收端解析主键、自行比对 origin 的约定。之前两者共用一个通道：
+    /// 入站事件重新进入 `event_tx` 后会被拨号器当作本地事件再发给所有 peer，
+    /// 回弹靠 `ExperienceSyncHandler` 的自过滤终止——主键一旦不符合预期格式
+    /// （`experience_origin_from_key` 返回 `None`）就拦不住，全连接集群下还会
+    /// 出现 O(N²) 的重复投递。
+    inbound_tx: broadcast::Sender<ClusterEvent>,
     /// TTL：超过此时间无心跳视为离线
     peer_ttl: Duration,
     /// 每个 peer 的最后心跳时间（与 peers 同步维护）
@@ -114,10 +126,12 @@ impl PeerManager {
     /// 新建 PeerManager。broadcast 容量默认 256。
     pub fn new(self_node_id: impl Into<String>, peer_ttl: Duration) -> Self {
         let (event_tx, _) = broadcast::channel(256);
+        let (inbound_tx, _) = broadcast::channel(256);
         Self {
             self_node_id: self_node_id.into(),
             peers: Arc::new(RwLock::new(BTreeMap::new())),
             event_tx,
+            inbound_tx,
             peer_ttl,
             last_seen: Arc::new(RwLock::new(BTreeMap::new())),
         }
@@ -128,9 +142,21 @@ impl PeerManager {
         &self.self_node_id
     }
 
-    /// 订阅事件广播
+    /// 订阅**本地产生**的事件广播。
+    ///
+    /// 这条通道的事件会被拨号器转发给所有 peer，因此只应供「要把自己的事件
+    /// 发出去」的组件订阅（拨号器、服务端 stream）。远端来的事件走
+    /// [`PeerManager::subscribe_inbound`]。
     pub fn subscribe(&self) -> broadcast::Receiver<ClusterEvent> {
         self.event_tx.subscribe()
+    }
+
+    /// 订阅**入站**（从远端收到）的事件。
+    ///
+    /// 这条通道不会流向任何 peer：`ExperienceSyncHandler` 订阅它，把远程经验
+    /// 合并进本地库；拨号器不订阅它，因此事件不会在集群里反弹。
+    pub fn subscribe_inbound(&self) -> broadcast::Receiver<ClusterEvent> {
+        self.inbound_tx.subscribe()
     }
 
     /// 当前 peer 数量（含自己）
@@ -267,12 +293,12 @@ impl PeerManager {
         });
     }
 
-    /// 把从远端收到的 `ExperienceSync` 投递到本地事件总线。
+    /// 把从远端收到的 `ExperienceSync` 投递到**入站**事件总线。
     ///
     /// 与 [`PeerManager::broadcast_experience_sync`] 的区别：后者是本地产生的
-    /// 写入，会顺着已建立的流再发给其他 peer；本方法只让本地订阅者
-    /// （`ExperienceSyncHandler`）看到它。若在此再走一次转发，事件会在集群里
-    /// 无限反弹。
+    /// 写入，会顺着已建立的流再发给其他 peer；本方法只写入 `inbound_tx`，
+    /// 拨号器不订阅该通道，因此事件到此为止。若在此再走一次转发，事件会在
+    /// 集群里无限反弹。
     ///
     /// 此前 `ClusterServiceImpl::apply_mgr_event` 对入站 `ExperienceSync` 直接
     /// 丢弃（标着「留待 8.3.2 集成」），导致跨节点经验同步整条链路不通。
@@ -283,7 +309,7 @@ impl PeerManager {
         vector_clock_json: impl Into<String>,
         payload: Vec<u8>,
     ) {
-        let _ = self.event_tx.send(ClusterEvent::ExperienceSync {
+        let _ = self.inbound_tx.send(ClusterEvent::ExperienceSync {
             exp_key: exp_key.into(),
             version,
             vector_clock_json: vector_clock_json.into(),
@@ -366,6 +392,59 @@ mod tests {
         match evt.unwrap() {
             ClusterEvent::PeerJoined(p) => assert_eq!(p.node_id, "node-b"),
             _ => panic!("expected PeerJoined"),
+        }
+    }
+
+    /// 回归锁定：入站事件不得进入本地广播通道。
+    ///
+    /// 两条通道合并成一条时，远端来的经验会重新进入 `event_tx`，被拨号器当成
+    /// 本地事件再发给所有 peer；回弹只能靠接收端解析主键、比对 origin 的约定
+    /// 终止，而主键格式一旦不符合预期（`experience_origin_from_key` 返回 `None`）
+    /// 就拦不住，全连接集群下退化为 O(N²) 重复投递。
+    #[test]
+    fn test_inbound_experience_sync_stays_off_local_broadcast_channel() {
+        let mgr = PeerManager::new("node-b", Duration::from_secs(30));
+        let mut local = mgr.subscribe();
+        let mut inbound = mgr.subscribe_inbound();
+
+        // 模拟对端发来的经验
+        mgr.deliver_inbound_experience_sync("exp:1:node-a:0", 1, "{}", vec![1]);
+
+        assert!(inbound.try_recv().is_ok(), "入站订阅者应收到远程经验");
+        assert!(
+            local.try_recv().is_err(),
+            "本地广播通道不应看到入站事件，否则会被拨号器转发回集群"
+        );
+    }
+
+    /// 反向断言：本地产生的写入只走本地广播通道。
+    ///
+    /// `ExperienceSyncHandler` 订阅的是入站通道，本地经验已经由
+    /// `PeerBroadcastExperienceBank` 直接落库，不应该再经 CRDT 合并走一遍。
+    #[test]
+    fn test_local_broadcast_is_not_visible_on_inbound_channel() {
+        let mgr = PeerManager::new("node-a", Duration::from_secs(30));
+        let mut inbound = mgr.subscribe_inbound();
+        let mut local = mgr.subscribe();
+
+        mgr.broadcast_experience_sync("exp:1:node-a:0", 1, "{}", vec![1]);
+
+        assert!(local.try_recv().is_ok(), "本地订阅者应收到广播");
+        assert!(inbound.try_recv().is_err(), "入站通道不应收到本地广播");
+    }
+
+    /// 本地广播必须仍能到达拨号器订阅的通道（分离两路不能误伤出站）。
+    #[test]
+    fn test_local_broadcast_reaches_dialer_channel() {
+        let mgr = PeerManager::new("node-a", Duration::from_secs(30));
+        let mut dialer = mgr.subscribe();
+        mgr.broadcast_experience_sync("exp:1:node-a:7", 1, "{}", vec![1]);
+
+        match dialer.try_recv() {
+            Ok(ClusterEvent::ExperienceSync { exp_key, .. }) => {
+                assert_eq!(exp_key, "exp:1:node-a:7");
+            },
+            other => panic!("拨号器通道应收到本地广播，实际：{other:?}"),
         }
     }
 
