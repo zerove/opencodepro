@@ -145,6 +145,7 @@
    - `execute_and_record` 对该错误只 `tracing::warn!` 后继续，**丢失完全静默**，不影响目标执行结果。
    - 单机：两个目标执行 / 反思阶段在同一秒内完成即丢一条。多节点：并发写与时钟差异使概率显著更高。
    - 同时它**推翻了 ADR-010 的摘要前提**：行标识既不编码来源节点也不编码 vector clock 计数，因此紧凑版本向量算不出差量。修复方案与取舍见 [ADR-010](adr/010-experience-anti-entropy.md) 的「前置缺陷 P1」一节（建议单独开 ADR 决策）。
+   - **不要用「把 warn 升级成 error」来解决**：`execute_and_record` 用 `warn!` 且吞掉错误是**有意设计**，`crates/sisyphus-core/src/tests.rs` 有测试锁定它——经验库写失败不得让目标执行失败（结果已落库）。升级日志级别会推翻这个契约且不修复任何丢失。真正要改的是 id 格式。
 
 1. ~~**并行链接 OOM**~~ **已处理**：在 19.5 GiB 机器上并行链接多个重型测试二进制会失败（`linking with cc failed` / `could not exec the linker cc`），实测 `-j 2` 仍不安全、`-j 1` 稳定。已在 Makefile 中给所有会产生多个测试二进制的目标（`test-all`、`test-tools`、`test-bridge`、`test-bridge-nosandbox`、`test-bridge-full`、`test-cli-handlers`）加上 `CARGO_BUILD_JOBS=1`，并在文件头部记录了这条约束。
 

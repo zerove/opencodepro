@@ -52,13 +52,39 @@ ADR-009 § Risk 2 写的是「启动时强制全量 sync（每个 peer 发送本
 - **P1（数据正确性）** 经验行标识需无碰撞。可选方案见下。
 - **P2（本 ADR）** 行标识稳定后再做反熵，否则差量计算建立在错误前提上。
 
-### P1 的候选修复（待决策，本 ADR 不选定）
+### P1 的候选修复（**并非等价**，本 ADR 不选定）
 
-1. **主键纳入来源与计数**：`id = exp:{ts}:{origin}:{counter}`。`origin`/`counter` 在 `bump_local_clock` 后已存在于 `vector_clock` 里，无需新增字段。代价：`origin` 的定义（哪个节点是来源）需要明确——远程应用时该取哪个。
-2. **提高时间戳精度**：`as_millis()` 或 `as_nanos()`。改动最小，但只是降低概率而非消除；同纳秒写入在高并发下仍可能发生。
-3. **内容判别式**：`id = exp:{ts}:{短哈希(context_text + action_id)}`。同一目标同秒的重复写入会折叠为一行——语义上可接受（本来就是同一条经验）；不同目标不再碰撞。代价：改变了 id 格式，存量行需迁移。
+三个方案对「本 ADR 能否实施」的影响差别很大，不能当作并列选项：
 
-三者都需要一次 schema / id 推导的集中化（当前 `format!("exp:{}", ts)` 散落在 `store.rs` 与 `experience_bank.rs` 多处，应收敛为单一函数），并配套迁移策略。建议单独开 ADR 决策，不在本文件内定。
+1. **主键纳入来源与计数**：`id = exp:{ts}:{origin}:{counter}`。
+   - **唯一能让本 ADR 落地的选项**。行标识一旦编码来源与计数，dial 方持有
+     (node_id → max counter) 就能推出缺哪些行，紧凑摘要成立。
+   - `origin`/`counter` 在 `bump_local_clock` 之后已存在于 `vector_clock` 里，
+     无需新增 `ExperienceTuple` 字段，因此不改变跨节点序列化格式。
+   - 代价：`origin` 的定义需要明确（哪个节点是本行的产生者）。对本地写入，
+     就是 `bump_local_clock` 刚自增的那个 entry——建议让该函数把它一并返回，
+     顺带改善这个 API；对远程应用，需约定取远端 tuple 自带的 origin。
+2. **提高时间戳精度**（`as_millis()` / `as_nanos()`）：改动最小，但只是降低
+   概率而非消除；**并且行标识仍不编码来源，本 ADR 的摘要前提依然不成立**，
+   反熵依旧无法实施。
+3. **内容判别式**（`id = exp:{ts}:{短哈希(context_text + action_id)}`）：
+   同一目标同秒的重复写入折叠为一行——但那是**两次不同的执行**，折叠等于
+   丢一次执行的 deviation_score，仍是数据损失；同样不解锁本 ADR。
+
+因此：**若只修碰撞而不选方案 1，ADR-010 会永久阻塞**。建议把 P1 的修复与本
+ADR 一并决策。
+
+三者都需要把 id 推导收敛为单一函数——当前 `format!("exp:{}", exp.timestamp)`
+散落在 `store.rs`（3 处）、`experience_bank.rs`（2 处）、`sql_store.rs`（1 处）
+共 6 个点，任何格式变更都必须同步这 6 处，且 `store.rs` 的既有测试硬编码了
+`exp:1700000000` 形式的 id，需一并更新。存量行迁移策略同样需要决定。
+
+**实施者会遇到的额外障碍**：6 个点所在的三个文件里，`store.rs` 与
+`sql_store.rs` 当前被开发治理钩子（ADG）拦截——各自有 5 处**既有的**误报级
+发现（"Running containers as root"、"connections must be released" 等），
+与 id 推导无关但会阻断任何写入。只有 `experience_bank.rs` 可写。因此动手前
+需先处置这两处门禁（逐条确认为误报后加有据豁免，或修掉），否则连加一行注释
+都做不到。这一条与本轮修 `peer/fallback.rs` 时的经历一致。
 
 ## 决策选项
 
