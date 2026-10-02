@@ -1,7 +1,13 @@
 use anyhow::Result;
 use std::path::PathBuf;
 
-fn resolve_backend(
+/// 从 `--lang` 选项字符串解析语言后端，并在未指定时按项目特征自动检测。
+///
+/// 曾以三份副本存在于 `build.rs` / `run.rs` / `diagnose.rs`（36 行逐字复制，
+/// 仅差一行注释）。新增语言需同步改三处，漏改即产生行为分叉——与
+/// `sisyphus-bridge/src/peer/fallback.rs` 复制 `service.rs` 的转换函数、
+/// 导致跨节点经验同步从未生效，是同一类漂移风险。故收敛到此一处。
+pub(crate) fn resolve_backend(
     lang: Option<&str>,
     cwd: Option<&std::path::Path>,
 ) -> Result<Box<dyn crate::tools::build::LanguageBackend>> {

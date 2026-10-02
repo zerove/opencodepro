@@ -104,6 +104,16 @@ build-all:
 test-all:
 	CARGO_BUILD_JOBS=1 cargo test-all
 
+# — 结构审计（不需要编译，纯静态扫描）——
+
+# 孤儿源文件：src/ 下从未被 mod 引入的文件，不参与编译。
+# 曾出现 crates/sisyphus-mem/src/tests.rs（227 行 7 个用例）从未被引用，
+# 看似有覆盖实则从未运行过。
+audit-orphans:
+	@python3 scripts/audit_orphans.py
+
+.PHONY: audit-orphans
+
 # — bridge crate (nightly+, no workaround needed) —
 
 check-bridge: $(BRIDGE_DEPS)
