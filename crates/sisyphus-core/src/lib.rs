@@ -148,6 +148,17 @@ pub enum CoreError {
     #[error("Execution failed to produce result")]
     NoResultProduced,
 
+    /// 节点执行失败且没有既有分支恢复入口，保留原始类型与错误链。
+    ///
+    /// `source` 装箱：`TypesError` 的最大变体有 144 字节，直接内联会把整个
+    /// `CoreError` 撑大到触发 `clippy::result_large_err` 的尺寸。
+    #[error("Node '{node_name}' execution failed: {source}")]
+    NodeExecutionFailed {
+        node_name: String,
+        #[source]
+        source: Box<sisyphus_types::TypesError>,
+    },
+
     #[error("Graph {0} not found in composite")]
     GraphNotFound(String),
 

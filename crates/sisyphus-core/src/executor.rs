@@ -3,7 +3,7 @@
 use futures::future::BoxFuture;
 use petgraph::algo::toposort;
 use petgraph::graph::NodeIndex;
-use petgraph::visit::EdgeRef;
+use petgraph::visit::{Dfs, EdgeRef};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -258,22 +258,15 @@ impl Executor {
 
         while let Some(res) = join_set.join_next().await {
             let (node, name, result) = res.map_err(|e| CoreError::Internal(e.to_string()))?;
-            let output = match result {
-                Ok(out) => out,
+            let (output, failure) = match result {
+                Ok(out) => (out, None),
                 Err(e) => {
                     tracing::warn!(node = %name, error = %e, "Node execution failed");
-                    NodeOutput::from(Value::String(e.to_string()))
+                    // 字符串仅供既有分支和监督器读取，不再充当成功凭据。
+                    (NodeOutput::from(Value::String(e.to_string())), Some(e))
                 },
             };
             ctx.set_result(name.clone(), output.clone());
-
-            self.trigger_speculative_predictions(
-                node,
-                Arc::clone(&sop_graph),
-                Arc::clone(&ctx),
-                micro_reflector.clone(),
-            )
-            .await;
 
             if let Some(ref sup) = supervisor {
                 match sup.evaluate(&name, &output, Arc::clone(&ctx)).await {
@@ -287,7 +280,7 @@ impl Executor {
                                 .as_secs(),
                             output_summary: output.to_string(),
                             deviation_score: deviation,
-                            status: Some("ok".into()),
+                            status: Some(if failure.is_some() { "error" } else { "ok" }.into()),
                         });
                     },
                     Ok(SupervisorDecision::Pivot { reason, .. }) => {
@@ -310,6 +303,38 @@ impl Executor {
                     },
                 }
             }
+
+            if let Some(source) = failure {
+                // BranchSOPNode 以先前输出（包括错误文本）决定恢复路径。
+                // 仅阻断确定没有下游分支入口的失败，避免破坏已有直接或间接恢复。
+                // 可达分支不等于已恢复。完整恢复判定需要独立的图级状态协议，
+                // 本次定点修复不改变这部分既有语义。
+                let mut descendants = Dfs::new(&sop_graph.graph, node);
+                let mut has_recovery_branch = false;
+                while let Some(next) = descendants.next(&sop_graph.graph) {
+                    if next != node
+                        && sop_graph.graph[next].as_any().is::<sisyphus_types::BranchSOPNode>()
+                    {
+                        has_recovery_branch = true;
+                        break;
+                    }
+                }
+                if !has_recovery_branch {
+                    join_set.abort_all();
+                    return Err(CoreError::NodeExecutionFailed {
+                        node_name: name,
+                        source: Box::new(source),
+                    });
+                }
+            }
+
+            self.trigger_speculative_predictions(
+                node,
+                Arc::clone(&sop_graph),
+                Arc::clone(&ctx),
+                micro_reflector.clone(),
+            )
+            .await;
 
             if name.starts_with("Rigorous-") {
                 let section_id = name.replace("Rigorous-", "notepad.").to_lowercase();

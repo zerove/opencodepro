@@ -3,6 +3,11 @@
 //! Provides mock implementations and a builder for constructing a test
 //! `SisyphusKernel` without duplicating boilerplate across test files.
 
+// 本模块被 12 个集成测试各自 `mod common;` 引入，每个测试只用到其中一部分
+// 夹具，未使用的成员按文件维度被判为死代码。夹具集成本就是共享的，
+// 因此在模块层级豁免，而不是给每个成员单独标注。
+#![allow(dead_code)]
+
 use async_trait::async_trait;
 use sisyphus_core::{Consensus, SOPGraph, WasmSOPNode};
 use sisyphus_intel::simulation::LogicalSimulationResult;

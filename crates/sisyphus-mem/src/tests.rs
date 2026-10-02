@@ -1,227 +1,142 @@
-#[cfg(test)]
-mod unit_tests {
-    use crate::store::MfsStore;
-    use serde::{Deserialize, Serialize};
-    use serde_json::json;
-    use sisyphus_types::StateStore;
-    use std::sync::Arc;
+//! MfsStore 状态存取回归测试。
+//!
+//! 这些用例此前寄居在本文件却未被 `lib.rs` 引用，因此从未参与编译，
+//! 属于静默失效的覆盖。`lib.rs` 已通过 `#[cfg(test)] mod tests;` 接入。
+//! 原实现停留在 `MfsStore::new(db_url)` 单参数与同步 `restore_snapshot`
+//! 的旧接口上，此处按当前签名重写。
 
-    #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
-    struct TestState {
-        count: i32,
-        name: String,
-    }
+use crate::store::MfsStore;
+use serde::{Deserialize, Serialize};
+use serde_json::json;
+use sisyphus_types::StateStore;
+use std::sync::Arc;
 
-    const PROJECT_ID: &str = "test_project";
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
+struct TestState {
+    count: i32,
+    name: String,
+}
 
-    async fn setup_store() -> (MfsStore, String) {
-        let db_path = ":memory:".to_string();
-        let store = MfsStore::new(&format!("sqlite:{}", db_path)).await.unwrap();
-        (store, db_path)
-    }
+const PROJECT_ID: &str = "test_project";
 
-    #[tokio::test]
-    async fn test_basic_set_get() {
-        let (store, _) = setup_store().await;
-        let state = TestState {
-            count: 42,
-            name: "Sisyphus".to_string(),
-        };
-        let key = "user_1";
+async fn setup_store() -> MfsStore {
+    let config = sisyphus_types::CacheConfig::default();
+    MfsStore::new("sqlite::memory:", &config).await.expect("初始化内存状态库失败")
+}
 
-        store
-            .set_state_json(PROJECT_ID, key, serde_json::to_value(&state).unwrap())
-            .await
-            .unwrap();
-        let retrieved_val = store
-            .get_state_json(PROJECT_ID, key)
-            .await
-            .unwrap()
-            .unwrap();
-        let retrieved: TestState = serde_json::from_value(retrieved_val).unwrap();
+#[tokio::test]
+async fn test_basic_set_get() {
+    let store = setup_store().await;
+    let state = TestState {
+        count: 42,
+        name: "Sisyphus".to_string(),
+    };
 
-        assert_eq!(retrieved, state);
-    }
-
-    #[tokio::test]
-    async fn test_get_missing_key() {
-        let (store, _) = setup_store().await;
-        let val = store
-            .get_state_json(PROJECT_ID, "nonexistent")
-            .await
-            .unwrap();
-        assert_eq!(val, None);
-    }
-
-    #[tokio::test]
-    async fn test_overwrite_value() {
-        let (store, _) = setup_store().await;
-        store
-            .set_state_json(PROJECT_ID, "k", json!("first"))
-            .await
-            .unwrap();
-        store
-            .set_state_json(PROJECT_ID, "k", json!("second"))
-            .await
-            .unwrap();
-        let val = store
-            .get_state_json(PROJECT_ID, "k")
-            .await
-            .unwrap()
-            .unwrap();
-        assert_eq!(val, json!("second"));
-    }
-
-    #[tokio::test]
-    async fn test_update_then_revert() {
-        let (store, _) = setup_store().await;
-
-        store
-            .set_state_json(PROJECT_ID, "k", json!("v1"))
-            .await
-            .unwrap();
-
-        let snap = store.take_snapshot().unwrap();
-
-        store
-            .set_state_json(PROJECT_ID, "k", json!("v2"))
-            .await
-            .unwrap();
-        assert_eq!(
-            store
-                .get_state_json(PROJECT_ID, "k")
-                .await
-                .unwrap()
-                .unwrap(),
-            json!("v2")
-        );
-
-        store.restore_snapshot(snap).await.unwrap();
-        assert_eq!(
-            store
-                .get_state_json(PROJECT_ID, "k")
-                .await
-                .unwrap()
-                .unwrap(),
-            json!("v1")
-        );
-    }
-
-    #[tokio::test]
-    async fn test_snapshot_restore() {
-        let (store, _) = setup_store().await;
-
-        store
-            .set_state_json(PROJECT_ID, "k1", json!(1))
-            .await
-            .unwrap();
-        store
-            .set_state_json(PROJECT_ID, "k2", json!(2))
-            .await
-            .unwrap();
-
-        let snapshot = store.take_snapshot().unwrap();
-
-        store
-            .set_state_json(PROJECT_ID, "k1", json!(10))
-            .await
-            .unwrap();
-        store
-            .set_state_json(PROJECT_ID, "k3", json!(3))
-            .await
-            .unwrap();
-
-        store.restore_snapshot(snapshot).await.unwrap();
-
-        let v1 = store
-            .get_state_json(PROJECT_ID, "k1")
-            .await
-            .unwrap()
-            .unwrap();
-        let v2 = store
-            .get_state_json(PROJECT_ID, "k2")
-            .await
-            .unwrap()
-            .unwrap();
-        let v3 = store.get_state_json(PROJECT_ID, "k3").await.unwrap();
-
-        assert_eq!(v1, json!(1));
-        assert_eq!(v2, json!(2));
-        assert_eq!(v3, None);
-    }
-
-    #[tokio::test]
-    async fn test_concurrent_access() {
-        let (store, _) = setup_store().await;
-        let store = Arc::new(store);
-        let mut handles = vec![];
-
-        for i in 0..10 {
-            let s = Arc::clone(&store);
-            handles.push(tokio::spawn(async move {
-                s.set_state_json(PROJECT_ID, &format!("key_{}", i), json!(i))
-                    .await
-                    .unwrap();
-            }));
-        }
-
-        for h in handles {
-            h.await.unwrap();
-        }
-
-        for i in 0..10 {
-            let val = store
-                .get_state_json(PROJECT_ID, &format!("key_{}", i))
-                .await
-                .unwrap()
-                .unwrap();
-            assert_eq!(val, json!(i));
-        }
-    }
-
-    /*
-    #[tokio::test]
-    async fn test_lru_eviction() {
-        let db_path = ":memory:".to_string();
-        let store = MfsStore::with_capacity(
-            &format!("sqlite:{}", db_path),
-            NonZeroUsize::new(3).unwrap(),
+    store
+        .set_state_json(
+            PROJECT_ID,
+            "user_1",
+            serde_json::to_value(&state).expect("序列化失败"),
         )
         .await
-        .unwrap();
+        .expect("写入状态失败");
+    let retrieved_val = store
+        .get_state_json(PROJECT_ID, "user_1")
+        .await
+        .expect("读取状态失败")
+        .expect("写入后必须能读到");
+    let retrieved: TestState = serde_json::from_value(retrieved_val).expect("反序列化失败");
 
-        // Insert 4 items with capacity 3 - L1 must stay bounded at 3
-        store.set_state_json("a", json!(1)).await.unwrap();
-        store.set_state_json("b", json!(2)).await.unwrap();
-        store.set_state_json("c", json!(3)).await.unwrap();
-        assert_eq!(store.len(), 3, "L1 cache should hold 3 items");
+    assert_eq!(retrieved, state);
+}
 
-        store.set_state_json("d", json!(4)).await.unwrap();
-        assert_eq!(
-            store.len(),
-            3,
-            "L1 cache must not exceed capacity after eviction"
-        );
+#[tokio::test]
+async fn test_get_missing_key() {
+    let store = setup_store().await;
+    let val =
+        store.get_state_json(PROJECT_ID, "nonexistent").await.expect("读取不存在的键不应报错");
+    assert_eq!(val, None);
+}
 
-        // Force flush to ensure evicted items are persisted to L2
-        store.flush().await.unwrap();
+#[tokio::test]
+async fn test_overwrite_value() {
+    let store = setup_store().await;
+    store.set_state_json(PROJECT_ID, "k", json!("first")).await.expect("首次写入失败");
+    store.set_state_json(PROJECT_ID, "k", json!("second")).await.expect("覆盖写入失败");
+    let val =
+        store.get_state_json(PROJECT_ID, "k").await.expect("读取失败").expect("覆盖后必须能读到");
+    assert_eq!(val, json!("second"));
+}
 
-        // All data still accessible via L2 fallback (write-through persistence)
-        assert_eq!(
-            store.get_state_json("a").await.unwrap(),
-            Some(json!(1)),
-            "L2 fallback should serve evicted keys"
-        );
-        assert_eq!(store.get_state_json("b").await.unwrap(), Some(json!(2)), "");
-        assert_eq!(store.get_state_json("c").await.unwrap(), Some(json!(3)), "");
-        assert_eq!(store.get_state_json("d").await.unwrap(), Some(json!(4)), "");
+#[tokio::test]
+async fn test_update_then_revert() {
+    let store = setup_store().await;
 
-        // After fetching from L2, L1 is re-populated; make sure it stays bounded
-        assert_eq!(
-            store.len(),
-            3,
-            "L1 cache should still be bounded after L2 fallback reads"
-        );
+    store.set_state_json(PROJECT_ID, "k", json!("v1")).await.expect("写入 v1 失败");
+
+    let snap = store.take_snapshot().expect("创建快照失败");
+
+    store.set_state_json(PROJECT_ID, "k", json!("v2")).await.expect("写入 v2 失败");
+    assert_eq!(
+        store.get_state_json(PROJECT_ID, "k").await.expect("读取失败").expect("v2 必须可读"),
+        json!("v2")
+    );
+
+    store.restore_snapshot(snap).await.expect("恢复快照失败");
+    assert_eq!(
+        store.get_state_json(PROJECT_ID, "k").await.expect("恢复后读取失败").expect("v1 必须可读"),
+        json!("v1")
+    );
+}
+
+#[tokio::test]
+async fn test_snapshot_restore() {
+    let store = setup_store().await;
+    store.set_state_json(PROJECT_ID, "k1", json!(1)).await.expect("写入 k1 失败");
+    store.set_state_json(PROJECT_ID, "k2", json!(2)).await.expect("写入 k2 失败");
+
+    let snapshot = store.take_snapshot().expect("创建快照失败");
+
+    store.set_state_json(PROJECT_ID, "k1", json!(10)).await.expect("覆盖 k1 失败");
+    store.set_state_json(PROJECT_ID, "k3", json!(3)).await.expect("新增 k3 失败");
+
+    store.restore_snapshot(snapshot).await.expect("恢复快照失败");
+
+    let v1 =
+        store.get_state_json(PROJECT_ID, "k1").await.expect("读取 k1 失败").expect("k1 必须存在");
+    let v2 =
+        store.get_state_json(PROJECT_ID, "k2").await.expect("读取 k2 失败").expect("k2 必须存在");
+    let v3 = store.get_state_json(PROJECT_ID, "k3").await.expect("读取 k3 失败");
+
+    assert_eq!(v1, json!(1));
+    assert_eq!(v2, json!(2));
+    assert_eq!(v3, None, "快照之后新增的键必须被回滚");
+}
+
+#[tokio::test]
+async fn test_concurrent_access() {
+    let store = Arc::new(setup_store().await);
+    let mut handles = vec![];
+
+    for i in 0..10 {
+        let s = Arc::clone(&store);
+        handles.push(tokio::spawn(async move {
+            s.set_state_json(PROJECT_ID, &format!("key_{}", i), json!(i))
+                .await
+                .expect("并发写入失败");
+        }));
     }
-    */
+
+    for h in handles {
+        h.await.expect("并发写入任务 panic");
+    }
+
+    for i in 0..10 {
+        let val = store
+            .get_state_json(PROJECT_ID, &format!("key_{}", i))
+            .await
+            .expect("读取失败")
+            .expect("并发写入的键必须全部可读");
+        assert_eq!(val, json!(i));
+    }
 }

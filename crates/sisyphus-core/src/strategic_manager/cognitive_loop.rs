@@ -281,6 +281,7 @@ impl StrategicManager {
                     max_iterations,
                     convergence_threshold,
                     goal_text,
+                    project_id,
                     &stream_tx,
                 )
                 .instrument(reflect_span)
@@ -296,6 +297,7 @@ impl StrategicManager {
                     &prediction,
                     sop_id,
                     goal_text,
+                    project_id,
                 )
                 .instrument(evolve_span)
                 .await;
@@ -813,7 +815,7 @@ impl StrategicManager {
                 *pivot_reason = Some(reason);
                 Arc::new(ExecutionContext::new())
             },
-            Err(e) => return Err(CoreError::Internal(e.to_string())),
+            Err(e) => return Err(e),
         };
 
         let result = if let Some(reason) = pivot_reason.as_ref() {
@@ -852,6 +854,7 @@ impl StrategicManager {
         max_iterations: usize,
         convergence_threshold: f64,
         goal_text: Option<&str>,
+        project_id: Option<&str>,
         stream_tx: &Option<mpsc::UnboundedSender<CognitiveEvent>>,
     ) -> Result<ReflectionReport, CoreError> {
         // A2 修复：使用基于 sop_id + 启动时间的唯一 key 查询 active_executions。
@@ -1009,7 +1012,9 @@ impl StrategicManager {
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap_or_default()
                 .as_secs(),
-            project_id: None,
+            // 反思产生的经验必须落在项目作用域内，否则按项目检索时取不到，
+            // 且多项目共享经验库时无法区分归属。
+            project_id: project_id.map(str::to_string),
             visual_embedding: None,
             embedding: None,
             insight,
@@ -1031,6 +1036,7 @@ impl StrategicManager {
         prediction: &SimulationResult,
         sop_id: &str,
         goal_text: Option<&str>,
+        project_id: Option<&str>,
     ) -> Option<Arc<SOPGraph>> {
         // A2 修复：使用基于 sop_id + 启动时间的唯一 key 查询 active_executions。
         #[allow(unused_variables)]
@@ -1050,7 +1056,9 @@ impl StrategicManager {
             query_text: goal_text.unwrap_or(sop_id).to_string(),
             context_hash: format!("{:x}", md5::compute(goal_text.unwrap_or(sop_id))),
             action_id: None,
-            project_id: None,
+            // 演进只应借鉴同项目的经验，跨项目取用会让一个项目的失败模式
+            // 污染另一个项目的演进方向。
+            project_id: project_id.map(str::to_string),
             visual_embedding: None,
             limit: 5,
         };

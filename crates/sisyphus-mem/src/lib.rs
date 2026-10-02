@@ -22,3 +22,6 @@ pub use types::{Snapshot, WriteOp};
 pub mod user_preferences;
 pub mod vector_memory;
 pub use vector_memory::{ScoredVector, UserMemoryStore, VectorMemoryStore};
+
+#[cfg(test)]
+mod tests;

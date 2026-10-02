@@ -3,6 +3,7 @@
 use super::*;
 use sisyphus_types::{NodeKind, NodeOutput, SOPGraphConfig, SOPNodeConfig};
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use tokio::sync::mpsc;
 
 // ---------------------------------------------------------------------------
@@ -427,7 +428,7 @@ async fn test_executor_diamond_dag() {
 }
 
 #[tokio::test]
-async fn test_executor_node_failure_stored_as_value() {
+async fn test_executor_node_failure_blocks_unrecovered_execution() {
     let executor = build_executor();
 
     // 在 n0 上失败的 mock 执行器
@@ -473,7 +474,7 @@ async fn test_executor_node_failure_stored_as_value() {
 
     let graph = SOPGraph::from_config(&config, Arc::new(FailOnFirst), Arc::new(MockTestExecutor))
         .expect("graph from config");
-    let (tx, _rx) = mpsc::unbounded_channel();
+    let (tx, mut rx) = mpsc::unbounded_channel();
 
     let res = executor
         .execute_with_context(
@@ -488,25 +489,25 @@ async fn test_executor_node_failure_stored_as_value() {
         )
         .await;
 
-    assert!(res.is_ok());
-    let ctx = res.unwrap();
-
-    // 失败节点将错误存储为 Value::String
-    let n0_out = ctx.get_result("n0").unwrap();
-    assert_eq!(
-        n0_out.0,
-        Arc::new(serde_json::Value::String(
-            sisyphus_types::TypesError::ToolExecutionError {
-                tool_id: "fail".to_string(),
-                details: "intentional failure".to_string(),
-            }
-            .to_string()
-        ))
+    // 没有分支恢复入口的失败必须让整次执行失败，不能把错误文本当成功结果返回。
+    let err = res.expect_err("未恢复的节点失败不得返回成功上下文");
+    assert!(
+        matches!(&err, CoreError::NodeExecutionFailed { node_name, .. } if node_name == "n0"),
+        "期望结构化节点失败，实际：{err:?}"
+    );
+    assert!(
+        std::error::Error::source(&err).is_some(),
+        "必须保留原始错误来源"
     );
 
-    // n1 仍会执行，因为执行器在失败后继续
-    let n1_out = ctx.get_result("n1").unwrap();
-    assert_eq!(n1_out.0, Arc::new(serde_json::Value::String("ok".into())));
+    // 普通后继不是恢复入口，不应被调度。
+    let mut failed_nodes = Vec::new();
+    while let Some(event) = rx.recv().await {
+        if let ExecutionEvent::NodeFailed { node_name, .. } = event {
+            failed_nodes.push(node_name);
+        }
+    }
+    assert_eq!(failed_nodes, vec!["n0".to_string()]);
 }
 
 #[tokio::test]
@@ -1156,7 +1157,39 @@ async fn test_cognitive_loop_receives_goal_text_not_project_id() {
 // ---------------------------------------------------------------------------
 
 /// 始终报告 Critical 缺陷的逻辑仿真替身。
-struct CriticalFlawSimulator;
+#[derive(Default)]
+struct CriticalFlawSimulator {
+    calls: AtomicUsize,
+}
+
+#[derive(Default)]
+struct CountingToolExecutor {
+    calls: AtomicUsize,
+}
+
+#[async_trait::async_trait]
+impl ToolExecutor for CountingToolExecutor {
+    async fn execute(
+        &self,
+        _tool_id: &str,
+        _args: Vec<u8>,
+        _fuel_limit: u64,
+    ) -> Result<Vec<u8>, sisyphus_types::TypesError> {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        Ok(b"mock".to_vec())
+    }
+}
+
+fn assert_critical_gate_blocked(result: Result<(NodeOutput, String), CoreError>) {
+    match result {
+        Err(CoreError::Internal(message)) => assert_eq!(
+            message,
+            "Logical simulation still reports 1 critical flaw(s) after 3 refinement attempts; execution blocked: [n0] persistent critical flaw",
+            "必须是严重仿真门禁错误，其他失败不能证明门禁生效"
+        ),
+        other => panic!("应由严重仿真门禁阻断，实际为 {other:?}"),
+    }
+}
 
 #[async_trait::async_trait]
 impl sisyphus_intel::simulation::LogicalSimulator for CriticalFlawSimulator {
@@ -1168,6 +1201,7 @@ impl sisyphus_intel::simulation::LogicalSimulator for CriticalFlawSimulator {
         _goal_text: Option<&str>,
     ) -> Result<sisyphus_intel::simulation::LogicalSimulationResult, sisyphus_types::IntelError>
     {
+        self.calls.fetch_add(1, Ordering::SeqCst);
         Ok(sisyphus_intel::simulation::LogicalSimulationResult {
             is_valid: false,
             flaws: vec![sisyphus_intel::simulation::LogicalFlaw {
@@ -1181,7 +1215,7 @@ impl sisyphus_intel::simulation::LogicalSimulator for CriticalFlawSimulator {
     }
 }
 
-/// 脚本化 LLM：generate 返回 Standard；chat 对审查请求返回 approved，
+/// 脚本化 LLM：generate 不含 UltraWork，意图分析回退到 Standard；chat 对审查请求返回 approved，
 /// 其余（提案/修正）返回与测试图等价的合法配置 JSON。
 struct ScriptedLlmClient;
 
@@ -1236,11 +1270,12 @@ async fn test_execute_goal_blocks_when_critical_flaws_persist() {
             .expect("in-memory MfsStore"),
     );
     let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.expect("sqlite pool");
-    let tool_executor: Arc<dyn ToolExecutor> = Arc::new(MockToolExecutor);
+    let tool_executor = Arc::new(CountingToolExecutor::default());
+    let simulator = Arc::new(CriticalFlawSimulator::default());
 
     let intel = Arc::new(sisyphus_intel::SisyphusIntel::new(
         Arc::new(sisyphus_intel::MonteCarloSimulator::new(1)),
-        Arc::new(CriticalFlawSimulator),
+        simulator.clone(),
         Arc::new(sisyphus_intel::StandardReflector),
         Arc::new(sisyphus_intel::StandardEvolver::new()),
     ));
@@ -1256,7 +1291,7 @@ async fn test_execute_goal_blocks_when_critical_flaws_persist() {
         Arc::new(sisyphus_mem::SopSqlStore::new(pool.clone()).await.expect("sop store")),
         Arc::new(sisyphus_mem::VectorMemoryStore::new(pool.clone()).await.expect("vector store")),
         Arc::new(MockExperienceBank),
-        tool_executor,
+        tool_executor.clone(),
         intel,
         llm.clone(),
         llm,
@@ -1285,10 +1320,16 @@ async fn test_execute_goal_blocks_when_critical_flaws_persist() {
         )
         .await;
 
-    assert!(
-        result.is_err(),
-        "Critical 缺陷重试耗尽后必须阻断执行，当前却返回了 Ok: {:?}",
-        result.as_ref().map(|(o, _)| o.to_string())
+    assert_critical_gate_blocked(result);
+    assert_eq!(
+        simulator.calls.load(Ordering::SeqCst),
+        3,
+        "必须耗尽三次仿真尝试"
+    );
+    assert_eq!(
+        tool_executor.calls.load(Ordering::SeqCst),
+        0,
+        "门禁阻断前不得执行工具"
     );
 }
 
@@ -1301,11 +1342,12 @@ async fn test_execute_goal_streaming_blocks_when_critical_flaws_persist() {
             .expect("in-memory MfsStore"),
     );
     let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.expect("sqlite pool");
-    let tool_executor: Arc<dyn ToolExecutor> = Arc::new(MockToolExecutor);
+    let tool_executor = Arc::new(CountingToolExecutor::default());
+    let simulator = Arc::new(CriticalFlawSimulator::default());
 
     let intel = Arc::new(sisyphus_intel::SisyphusIntel::new(
         Arc::new(sisyphus_intel::MonteCarloSimulator::new(1)),
-        Arc::new(CriticalFlawSimulator),
+        simulator.clone(),
         Arc::new(sisyphus_intel::StandardReflector),
         Arc::new(sisyphus_intel::StandardEvolver::new()),
     ));
@@ -1321,7 +1363,7 @@ async fn test_execute_goal_streaming_blocks_when_critical_flaws_persist() {
         Arc::new(sisyphus_mem::SopSqlStore::new(pool.clone()).await.expect("sop store")),
         Arc::new(sisyphus_mem::VectorMemoryStore::new(pool.clone()).await.expect("vector store")),
         Arc::new(MockExperienceBank),
-        tool_executor,
+        tool_executor.clone(),
         intel,
         llm.clone(),
         llm,
@@ -1350,23 +1392,23 @@ async fn test_execute_goal_streaming_blocks_when_critical_flaws_persist() {
         )
         .await;
 
-    assert!(
-        result.is_err(),
-        "流式入口必须与非流式共享门禁，当前却返回了 Ok: {:?}",
-        result.as_ref().map(|(o, _)| o.to_string())
+    assert_critical_gate_blocked(result);
+    assert_eq!(
+        simulator.calls.load(Ordering::SeqCst),
+        3,
+        "流式入口必须耗尽三次仿真尝试"
+    );
+    assert_eq!(
+        tool_executor.calls.load(Ordering::SeqCst),
+        0,
+        "流式门禁阻断前不得执行工具"
     );
 }
 
-#[tokio::test]
-async fn test_execute_and_record_persists_structured_metadata() {
-    let recorder = Arc::new(RecordingExperienceBank::new());
-
-    // 与门禁测试相同的内核构造，但仿真有效、经验库可观测。
-    let state_store = Arc::new(
-        sisyphus_mem::MfsStore::new("sqlite::memory:", &sisyphus_types::CacheConfig::default())
-            .await
-            .expect("in-memory MfsStore"),
-    );
+async fn build_recording_kernel(
+    state_store: Arc<sisyphus_mem::MfsStore>,
+    recorder: Arc<dyn sisyphus_types::experience::ExperienceBank>,
+) -> SisyphusKernel {
     let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.expect("sqlite pool");
     let tool_executor: Arc<dyn ToolExecutor> = Arc::new(MockToolExecutor);
 
@@ -1383,11 +1425,11 @@ async fn test_execute_and_record_persists_structured_metadata() {
 
     let llm: Arc<dyn sisyphus_tools_llm::LlmClient> = Arc::new(ScriptedLlmClient);
 
-    let kernel = SisyphusKernel::new(
+    SisyphusKernel::new(
         state_store,
         Arc::new(sisyphus_mem::SopSqlStore::new(pool.clone()).await.expect("sop store")),
         Arc::new(sisyphus_mem::VectorMemoryStore::new(pool.clone()).await.expect("vector store")),
-        recorder.clone(),
+        recorder,
         tool_executor,
         intel,
         llm.clone(),
@@ -1404,7 +1446,18 @@ async fn test_execute_and_record_persists_structured_metadata() {
             store
         }),
         Arc::new(sisyphus_tools_llm::DummyEmbeddingClient),
+    )
+}
+
+#[tokio::test]
+async fn test_execute_and_record_persists_structured_metadata() {
+    let recorder = Arc::new(RecordingExperienceBank::new());
+    let state_store = Arc::new(
+        sisyphus_mem::MfsStore::new("sqlite::memory:", &sisyphus_types::CacheConfig::default())
+            .await
+            .expect("in-memory MfsStore"),
     );
+    let kernel = build_recording_kernel(state_store, recorder.clone()).await;
 
     let project_id = "proj-rec-7c1d";
     kernel
@@ -1418,7 +1471,7 @@ async fn test_execute_and_record_persists_structured_metadata() {
         .unwrap_or_default()
         .as_secs();
 
-    let _ = kernel
+    let (output, _, _) = kernel
         .execute_and_record(
             "structured metadata goal",
             "sop-rec",
@@ -1453,19 +1506,254 @@ async fn test_execute_and_record_persists_structured_metadata() {
         "经验必须记录项目范围"
     );
 
-    // 偏差必须来自结构化报告（final_deviation），而非凭空猜测。
-    // Mock 链路下 StandardReflector 报告偏差 0.0，因此 outcome 与经验
-    // 中应记录 0.0；关键是不再出现硬编码 0.5 或永远 None。
+    // 当前 reflect_phase 传入 n0:"mock" 文本而非逐行 JSON 记录，
+    // StandardReflector 使用无错误文本的兜底偏差 0.1，不是结构化记录的 0.0。
+    assert_eq!(output.as_value(), &serde_json::json!("mock"));
+    assert!(outcome.success);
+    assert!(outcome.error.is_none());
+    assert_eq!(outcome.project_id, project_id);
+    assert_eq!(outcome.milestone_id, "ms-x");
+    assert_eq!(outcome.phase_id, "ph-x");
     let dev = outcome.deviation_score.expect("成功执行必须记录偏差分数");
-    assert!(
-        (0.0..=1.0).contains(&dev),
-        "偏差分数必须在 [0,1] 内，实际 {dev}"
+    assert_eq!(dev, 0.1, "必须持久化当前反思链路的真实偏差");
+    assert_eq!(recorded.action_id, "sop-rec");
+    assert_eq!(recorded.context_text, "structured metadata goal");
+    assert_eq!(
+        recorded.context_hash,
+        format!("{:x}", md5::compute("structured metadata goal"))
     );
+    assert!(recorded.outcome_success);
+    assert_eq!(
+        recorded.deviation_score, dev,
+        "同次执行的经验与目标结果必须记录相同偏差"
+    );
+}
+
+// 没有现成的日志捕获测试设施。此订阅器只记录当前异步调用的告警，
+// 不安装全局订阅器，不新增依赖，也不依赖格式化后的终端文本。
+#[derive(Clone, Default)]
+struct WarningCapture {
+    events: Arc<parking_lot::Mutex<Vec<HashMap<String, String>>>>,
+}
+
+#[derive(Default)]
+struct WarningFields(HashMap<String, String>);
+
+impl tracing::field::Visit for WarningFields {
+    fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
+        self.0.insert(field.name().to_string(), format!("{value:?}"));
+    }
+
+    fn record_str(&mut self, field: &tracing::field::Field, value: &str) {
+        self.0.insert(field.name().to_string(), value.to_string());
+    }
+}
+
+impl tracing::Subscriber for WarningCapture {
+    fn enabled(&self, metadata: &tracing::Metadata<'_>) -> bool {
+        *metadata.level() == tracing::Level::WARN
+    }
+
+    fn new_span(&self, _: &tracing::span::Attributes<'_>) -> tracing::span::Id {
+        static NEXT_SPAN: AtomicUsize = AtomicUsize::new(1);
+        tracing::span::Id::from_u64(
+            u64::try_from(NEXT_SPAN.fetch_add(1, Ordering::Relaxed)).expect("span id"),
+        )
+    }
+
+    fn record(&self, _: &tracing::span::Id, _: &tracing::span::Record<'_>) {}
+    fn record_follows_from(&self, _: &tracing::span::Id, _: &tracing::span::Id) {}
+    fn enter(&self, _: &tracing::span::Id) {}
+    fn exit(&self, _: &tracing::span::Id) {}
+
+    fn event(&self, event: &tracing::Event<'_>) {
+        if *event.metadata().level() != tracing::Level::WARN
+            || event.metadata().target() != "sisyphus_core::kernel::execution"
+        {
+            return;
+        }
+        let mut fields = WarningFields::default();
+        event.record(&mut fields);
+        self.events.lock().push(fields.0);
+    }
+}
+
+struct FailingExperienceBank;
+
+#[async_trait::async_trait]
+impl sisyphus_types::experience::ExperienceBank for FailingExperienceBank {
+    async fn record(
+        &self,
+        _: sisyphus_types::experience::ExperienceTuple,
+    ) -> Result<(), sisyphus_types::TypesError> {
+        Err(sisyphus_types::TypesError::StateStoreError(
+            "experience-write-sentinel".into(),
+        ))
+    }
+
+    async fn query_similar(
+        &self,
+        _: sisyphus_types::experience::ExperienceQuery,
+    ) -> Result<Vec<sisyphus_types::experience::ExperienceTuple>, sisyphus_types::TypesError> {
+        Ok(vec![])
+    }
+}
+
+async fn assert_recording_failure_warns(fail_outcome: bool) {
+    use tracing::instrument::WithSubscriber;
+
+    let state_store = if fail_outcome {
+        // MfsStore 是具体类型，写入先入队，关闭 SQLite 并不能使 record_outcome
+        // 同步失败。让独立运行时退出以取消后台写入器，使发送端确定性关闭。
+        // SQLite 连接池归当前运行时所有，仍可正常读取项目执行上下文。
+        let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.expect("state pool");
+        Arc::new(
+            tokio::task::spawn_blocking(move || {
+                let runtime = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .expect("writer runtime");
+                runtime
+                    .block_on(sisyphus_mem::MfsStore::with_pool(
+                        pool,
+                        std::num::NonZeroUsize::new(64).expect("nonzero capacity"),
+                        1,
+                        10,
+                    ))
+                    .expect("state store")
+            })
+            .await
+            .expect("writer runtime task"),
+        )
+    } else {
+        Arc::new(
+            sisyphus_mem::MfsStore::new("sqlite::memory:", &sisyphus_types::CacheConfig::default())
+                .await
+                .expect("state store"),
+        )
+    };
+
+    if fail_outcome {
+        let failure = sisyphus_types::StateStore::set_state_json(
+            state_store.as_ref(),
+            "warn-project",
+            "closed-writer-probe",
+            serde_json::json!(true),
+        )
+        .await
+        .expect_err("后台接收端必须已关闭，不能用无关数据库错误代替写入失败");
+        assert!(
+            matches!(failure, sisyphus_types::TypesError::StateStoreError(ref message)
+            if message == "channel closed"),
+            "实际故障为 {failure:?}"
+        );
+    }
+
+    let recorder = Arc::new(RecordingExperienceBank::new());
+    let bank: Arc<dyn sisyphus_types::experience::ExperienceBank> = if fail_outcome {
+        recorder.clone()
+    } else {
+        Arc::new(FailingExperienceBank)
+    };
+    let mut kernel = build_recording_kernel(state_store, bank).await;
+    let simulator = Arc::new(CriticalFlawSimulator::default());
+    kernel.logical_simulator = simulator.clone();
+    kernel
+        .roadmap_manager
+        .create_project("warn-project", "warnings", "test")
+        .await
+        .expect("create project");
+
+    let capture = WarningCapture::default();
+    let result = kernel
+        .execute_and_record(
+            "warning capture goal",
+            "warn-sop",
+            "warn-project",
+            "warn-ms",
+            "warn-phase",
+            "warn-goal",
+            None,
+        )
+        .with_subscriber(capture.clone())
+        .await;
+    // 写入告警不得覆盖原始门禁错误，也不能把其他执行失败误认成门禁成功。
+    assert_critical_gate_blocked(result.map(|(output, report, _)| (output, report)));
+    assert_eq!(simulator.calls.load(Ordering::SeqCst), 3);
+
+    let events = capture.events.lock().clone();
+    assert_eq!(
+        events.len(),
+        1,
+        "只应出现所注入失败分支的告警，实际 {events:?}"
+    );
+    let warning = &events[0];
+    assert_eq!(
+        warning.get("project_id").map(String::as_str),
+        Some("warn-project")
+    );
+    let error = warning.get("error").expect("告警必须携带实际写入错误");
+    if fail_outcome {
+        assert_eq!(
+            warning.get("message").map(String::as_str),
+            Some("Failed to persist execution outcome; health evaluation will use stale data")
+        );
+        assert_eq!(
+            warning.get("goal_id").map(String::as_str),
+            Some("warn-goal")
+        );
+        assert!(
+            error.contains("channel closed"),
+            "告警必须包含闭合发送通道错误：{error}"
+        );
+        let experience =
+            recorder.last_record.lock().clone().expect("结果写入失败后仍须尝试记录经验");
+        assert_eq!(experience.action_id, "warn-sop");
+        assert!(!experience.outcome_success);
+    } else {
+        assert_eq!(
+            warning.get("message").map(String::as_str),
+            Some("Failed to record experience")
+        );
+        assert!(
+            error.contains("experience-write-sentinel"),
+            "告警必须包含经验写入错误：{error}"
+        );
+        let outcomes = kernel.roadmap_manager.get_outcomes("warn-project").await.expect("outcomes");
+        let outcome = outcomes
+            .iter()
+            .find(|outcome| outcome.goal_id == "warn-goal")
+            .expect("经验写入失败不得影响已保存的结果");
+        assert!(!outcome.success);
+        assert_eq!(outcome.deviation_score, None);
+    }
+}
+
+#[tokio::test]
+async fn test_execute_and_record_warns_when_outcome_write_fails() {
+    assert_recording_failure_warns(true).await;
+}
+
+#[tokio::test]
+async fn test_execute_and_record_warns_when_experience_write_fails() {
+    assert_recording_failure_warns(false).await;
 }
 
 #[tokio::test]
 async fn test_concurrent_loops_have_independent_depth_history() {
     let manager = setup_manager(vec![0.5, 0.6, 0.7, 0.8]).await;
+    manager.depth_controller.observe_iteration(0.37);
+    let depth_before = manager.depth_controller.confidence_history();
+    // 预置可从公共报告查询到的非空历史，防止 reset 后的空历史造成假阳性。
+    let anomaly_before = {
+        let detector = manager.anomaly_detector.lock();
+        for _ in 0..4 {
+            detector.observe("shared-history-sentinel", 100, 10, false);
+        }
+        detector.generate_report()
+    };
+    assert_eq!(anomaly_before.anomalies.len(), 1);
+    assert_eq!(anomaly_before.anomalies[0].observed, 4.0);
 
     let config_sop = SOPGraphConfig {
         nodes: vec![SOPNodeConfig {
@@ -1517,12 +1805,33 @@ async fn test_concurrent_loops_have_independent_depth_history() {
         b.as_ref().err().map(|e| e.to_string())
     );
 
-    // 隔离后管理器上的共享实例历史仍为空（不再被任何运行触碰/重置），
-    // 证明运行使用的是各自独立的实例。
-    assert!(
-        manager.depth_controller.confidence_history().is_empty(),
-        "运行不得触碰管理器共享的 depth_controller 历史"
+    assert_eq!(
+        manager.depth_controller.confidence_history(),
+        depth_before,
+        "运行不得触碰或重置管理器共享的深度控制器历史"
     );
+    // 公共报告不暴露完整燃料/耗时历史，但新增节点或清空历史会改变此错误率摘要。
+    let anomaly_after = manager.anomaly_detector.lock().generate_report();
+    assert_eq!(
+        anomaly_after.overall_severity,
+        anomaly_before.overall_severity
+    );
+    assert_eq!(
+        anomaly_after.should_extra_reflect,
+        anomaly_before.should_extra_reflect
+    );
+    assert_eq!(
+        anomaly_after.anomalies.len(),
+        anomaly_before.anomalies.len()
+    );
+    for (after, before) in anomaly_after.anomalies.iter().zip(&anomaly_before.anomalies) {
+        assert_eq!(after.node_name, before.node_name);
+        assert_eq!(after.severity, before.severity);
+        assert_eq!(after.metric, before.metric);
+        assert_eq!(after.observed, before.observed);
+        assert_eq!(after.expected, before.expected);
+        assert_eq!(after.description, before.description);
+    }
 }
 
 struct MockSimulator {

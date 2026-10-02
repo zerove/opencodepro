@@ -229,8 +229,7 @@ impl SisyphusKernel {
 
         let (res, report_obj, _) = self
             .execute_with_cognition(graph, sop_id, Some(project_id), None, event_tx, None)
-            .await
-            .map_err(|e| CoreError::Internal(e.to_string()))?;
+            .await?;
 
         tracing::debug!("[execute_goal] Cognitive loop completed.");
 
@@ -268,8 +267,7 @@ impl SisyphusKernel {
 
         let (res, report_obj, _) = self
             .execute_with_cognition(graph, sop_id, Some(project_id), None, event_tx, stream_tx)
-            .await
-            .map_err(|e| CoreError::Internal(e.to_string()))?;
+            .await?;
 
         let report_str = format!(
             "Plan: {} | Report: {} iterations, converged={}",
@@ -339,8 +337,7 @@ impl SisyphusKernel {
 
         let (res, report_obj, _) = self
             .execute_with_cognition(graph, sop_id, Some(project_id), None, event_tx, None)
-            .await
-            .map_err(|e| CoreError::Internal(e.to_string()))?;
+            .await?;
 
         let report_str = format!(
             "Plan: {} | Report: {} iterations, converged={}",
