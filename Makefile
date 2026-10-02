@@ -17,6 +17,11 @@ BRIDGE_DEPS = crates/sisyphus-bridge/src/main.rs crates/sisyphus-bridge/Cargo.to
 # sisyphus-core   — wasmtime transitive dep; full test needs CARGO_BUILD_JOBS=1.
 # sisyphus-tools-* — 10 sub-crates, lightweight, fast to check individually.
 #
+# 内存约束（2026-10-02 实测）：在 19.5 GiB 机器上并行链接多个重型测试二进制会
+# OOM，报 `linking with cc failed` 或 `could not exec the linker cc`。`-j 2` 仍
+# 不安全，`-j 1` 稳定。因此所有会产生多个测试二进制的目标都显式带
+# CARGO_BUILD_JOBS=1。直接敲 `cargo test` 不受此保护，需自行加 -j 1。
+#
 # Usage:
 #   make check-all         # lightweight batch (alias: --exclude bridge/sandbox/tests)
 #   make check-sandbox     # sandbox alone (wasmtime, isolated)
@@ -43,7 +48,7 @@ HEAVY_PACKAGES = sisyphus-sandbox sisyphus-sandboxd sisyphus-tests
 .PHONY: all check-all build-all test-all
 .PHONY: check-bridge build-bridge test-bridge check-bridge-160
 .PHONY: check-bridge-nosandbox test-bridge-nosandbox
-.PHONY: check-sandbox build-sandboxd test-sandbox check-sandboxd test-tests check-tests
+.PHONY: check-sandbox build-sandboxd test-sandbox check-sandboxd test-sandboxd test-tests check-tests
 .PHONY: test-bridge-full test-bridge-dedicated test-cli-handlers
 .PHONY: test-ci
 .PHONY: perf-analyze
@@ -97,7 +102,7 @@ build-all:
 	cargo build-all
 
 test-all:
-	cargo test-all
+	CARGO_BUILD_JOBS=1 cargo test-all
 
 # — bridge crate (nightly+, no workaround needed) —
 
@@ -108,17 +113,17 @@ build-bridge: $(BRIDGE_DEPS)
 	cargo build -p sisyphus-bridge
 
 test-bridge: $(BRIDGE_DEPS)
-	cargo test -p sisyphus-bridge
+	CARGO_BUILD_JOBS=1 cargo test -p sisyphus-bridge
 
 check-bridge-nosandbox: $(BRIDGE_DEPS)
 	cargo check -p sisyphus-bridge --no-default-features
 
 test-bridge-nosandbox: $(BRIDGE_DEPS)
-	cargo test -p sisyphus-bridge --no-default-features --lib
+	CARGO_BUILD_JOBS=1 cargo test -p sisyphus-bridge --no-default-features --lib
 
 test-bridge-full: $(BRIDGE_DEPS)
 	cargo clippy -p sisyphus-bridge -- -D warnings
-	cargo test -p sisyphus-bridge --test bridge_integration_test
+	CARGO_BUILD_JOBS=1 cargo test -p sisyphus-bridge --test bridge_integration_test
 
 # — bridge dedicated-runner tests（#[ignore = "requires dedicated runner"] 用例）—
 #
@@ -135,7 +140,7 @@ test-bridge-dedicated: $(BRIDGE_DEPS)
 	CARGO_BUILD_JOBS=1 cargo test -p sisyphus-bridge --no-default-features --test bridge_integration_test -- --include-ignored --test-threads=1 $(if $(FILTER),$(FILTER) --exact,)
 
 test-cli-handlers:
-	cargo test -p sisyphus-cli --lib
+	CARGO_BUILD_JOBS=1 cargo test -p sisyphus-cli --lib
 
 check-stress-test:
 	cargo check -p sisyphus-bridge --bin stress_test
@@ -211,7 +216,7 @@ check-bridge-160: $(BRIDGE_DEPS)
 test-tools:
 	for pkg in $(TOOLS_PACKAGES); do \
 		echo "━━━ testing $$pkg (lib)"; \
-		cargo test -p "$$pkg" --lib; \
+		CARGO_BUILD_JOBS=1 cargo test -p "$$pkg" --lib; \
 	done
 
 check-tools:
@@ -267,7 +272,7 @@ check-sandbox:
 	cargo check -p sisyphus-sandbox
 
 test-sandbox:
-	cargo test -p sisyphus-sandbox --lib
+	CARGO_BUILD_JOBS=1 cargo test -p sisyphus-sandbox --lib
 
 # — sisyphus-sandboxd (wasmtime via sandbox, heavy, isolated daemon) —
 
@@ -277,13 +282,18 @@ check-sandboxd:
 build-sandboxd:
 	cargo build --release -p sisyphus-sandboxd
 
+# cranelift-codegen 即使单任务也会把 rustc 撑爆（实测 rustc-LLVM OOM），
+# 关掉调试信息才编得过。代价是该配置下需要全量重编。
+test-sandboxd:
+	CARGO_BUILD_JOBS=1 CARGO_PROFILE_DEV_DEBUG=0 cargo test -p sisyphus-sandboxd
+
 # — sisyphus-tests (wasmtime via sandbox, heavy, isolated) —
 
 check-tests:
 	cargo check -p sisyphus-tests
 
 test-tests:
-	cargo test -p sisyphus-tests --lib
+	CARGO_BUILD_JOBS=1 cargo test -p sisyphus-tests --lib
 
 # — CI simulation (mirrors .github/workflows/ci.yml) —
 

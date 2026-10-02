@@ -431,7 +431,7 @@
 - [ ] **3 节点 Docker Compose** / **网络分区恢复** 验证
 
 ### 10.3 工具链
-- [ ] **并行链接保护**: 普通 `cargo test` 未限制并发，本机 19.5 GiB 下会 `could not exec the linker cc`；`make test-*` 应统一带 `CARGO_BUILD_JOBS`
+- [x] **并行链接保护**: 实测 19.5 GiB 下 `-j 2` 仍会 OOM、`-j 1` 稳定；`test-all`/`test-tools`/`test-bridge*`/`test-cli-handlers` 已统一带 `CARGO_BUILD_JOBS=1`，Makefile 头部记录约束（直接敲 `cargo test` 仍需自行加 `-j 1`）
 - [ ] **认知循环 v3 (ADR-010)**: 先写问题陈述再谈方向，当前 TODO 9.2 只有候选词，不足以支撑决策
 
 ---

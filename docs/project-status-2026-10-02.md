@@ -89,20 +89,33 @@
 
 全部为本轮实际执行：
 
+**工作区全量**（这是「core 的行为变更没有影响任何下游」的直接证据）：
+
 | 命令 | 结果 |
 |------|------|
-| `cargo check -p sisyphus-core --all-targets` | 通过（修掉 1 个新增 dead_code 警告后） |
-| `cargo test -p sisyphus-core -j 1` | **296 passed / 0 failed**（lib 91 + 各集成目标） |
-| `cargo test -p sisyphus-core --test executor_failure_semantics` | **12 passed / 0 failed**（含在上项内） |
-| `cargo test -p sisyphus-mem` | **118 passed / 0 failed**（含恢复的 7 个孤儿用例） |
-| `cargo test -p sisyphus-bridge --no-default-features` | **160 passed / 0 failed / 3 ignored** |
-| `cargo test -p sisyphus-bridge --test cluster_integration` | **10 passed / 0 failed**（新增 5 个，含在上项内） |
-| `cargo test -p sisyphus-bridge --test bridge_integration_test -- --include-ignored --test-threads=1` | **54 passed / 0 failed / 0 ignored**（`make test-bridge-dedicated` 等价命令，`#[ignore]` 用例全部实际执行） |
+| `cargo test-all -j 1`（全 workspace，排除 bridge/sandbox/sandboxd/tests） | **4697 passed / 0 failed / 17 ignored** |
+| `cargo test -p sisyphus-bridge --no-default-features -j 1` | **160 passed / 0 failed / 3 ignored** |
+| `cargo test -p sisyphus-sandbox -p sisyphus-tests -j 1` | **113 passed / 0 failed / 3 ignored** |
+| `CARGO_PROFILE_DEV_DEBUG=0 cargo test -p sisyphus-sandboxd -j 1` | **6 passed / 0 failed / 0 ignored** |
 | `cargo fmt --all --check` | 通过（pre-commit 门禁） |
 | `cargo clippy` | 通过，0 警告（pre-commit 门禁） |
 | `cargo check-all` | 通过（pre-commit 门禁） |
 
-本轮涉及的三条链路合计 **574 个测试全绿**（core 296 + mem 118 + bridge 160），0 失败。
+四条命令合起来覆盖了全部 27 个 workspace 成员（含 `webui` 与 `evals`，二者都是 workspace 成员，已被 `test-all` 编译并执行）：**4976 passed / 0 failed / 23 ignored**。
+
+**本轮改动直接涉及的 crate**（已含在上面的全量里，仅作定位用，**不可与全量相加**）：
+
+| 命令 | 结果 |
+|------|------|
+| `cargo test -p sisyphus-core -j 1` | 296 passed / 0 failed（lib 91 + 各集成目标） |
+| `cargo test -p sisyphus-mem -j 1` | 118 passed / 0 failed（含恢复的 7 个孤儿用例） |
+| `cargo test -p sisyphus-bridge --test cluster_integration` | 10 passed / 0 failed（新增 5 个） |
+| `... bridge_integration_test -- --include-ignored --test-threads=1` | 54 passed / 0 failed（`#[ignore]` 用例全部实际执行） |
+
+计数口径提醒，避免后续误读：
+
+- `bridge_integration_test` 的 **54（专项）与 52（常规）来自同一个测试二进制**，54 = 52 + 2 个原被忽略的用例，两者重叠，不能相加。bridge 的去重总数是 160。
+- core 296 与 mem 118 已包含在 `test-all` 的 4697 内（两者都是默认成员），同样不可叠加。
 
 `cluster_integration` 新增的 5 个用例：
 
@@ -114,13 +127,15 @@
 
 测试可靠性上做了两处改进：等待逻辑改为投递可识别探针直到链路真正可用（而不是赌固定 sleep），超时时报告已观察到的事件类型；不再用一次性广播 + 睡眠的组合制造假阴性。
 
-**未验证**：本轮未跑 `sisyphus-cli` / `sisyphus-sandbox` / `webui` / `evals`。「并行链接 OOM」（见遗留问题 1）导致前两次批量回归失败，改用 `-j 1` 后通过。
+**未验证**：无 Rust 代码未覆盖。`sisyphus-sandboxd` 需要 `CARGO_PROFILE_DEV_DEBUG=0` 才能在本机构建（见遗留问题 1）。
 
 ---
 
 ## 四、遗留问题（本轮发现但未处理）
 
-1. **并行链接 OOM**：本机 19.5 GiB 内存下，多个重型测试二进制并行链接会失败（`could not exec the linker cc`）。`CARGO_BUILD_JOBS=2` 可规避。项目现有的 `make test-bridge-dedicated` 已经用了 `CARGO_BUILD_JOBS=1`，但普通 `cargo test` 没有这个保护。
+1. ~~**并行链接 OOM**~~ **已处理**：在 19.5 GiB 机器上并行链接多个重型测试二进制会失败（`linking with cc failed` / `could not exec the linker cc`），实测 `-j 2` 仍不安全、`-j 1` 稳定。已在 Makefile 中给所有会产生多个测试二进制的目标（`test-all`、`test-tools`、`test-bridge`、`test-bridge-nosandbox`、`test-bridge-full`、`test-cli-handlers`）加上 `CARGO_BUILD_JOBS=1`，并在文件头部记录了这条约束。
+
+   另有一例更极端：**`sisyphus-sandboxd` 即使 `-j 1` 也会在编译 `cranelift-codegen` 时单 crate OOM**（`rustc-LLVM ERROR: out of memory`）。加 `CARGO_PROFILE_DEV_DEBUG=0` 后可通过（代价是该配置下要全量重编）。`make test-sandboxd` 目前没有带这个开关，建议补上。**直接敲 `cargo test` 仍不受并发保护**，需自行加 `-j 1`。
 2. **`ExperienceSyncHandler` 的 shutdown 语义脆弱**：一旦所有 `broadcast::Sender` 被丢弃，接收端会在 `select!` 里收到 `Closed` 并**静默退出**。本轮测试就踩到了这个坑（接收端一起来就死）。生产代码目前显式持有一个 sender，但接口本身没有防护——建议后续把关闭信号改成 `watch` 或加存活探针。
 3. **入站事件会被无条件转发回对端**：`apply_mgr_event` 投递到本地事件总线后，本节点的静态拨号器又会把它转发回对端。目前靠自过滤（后缀匹配）终止，不会无限回弹，但这是靠约定而非靠结构保证。
 4. **`StateProposal` 仍被丢弃**：`ClusterConsensus` 有实现但没有消费方，属阶段 9 后续。
@@ -130,14 +145,16 @@
 
 ## 五、后续开发计划
 
-### 阶段 A：回归补齐与收口（0.5 天，最高优先）
+### 阶段 A：回归补齐与收口（本轮已完成）
 
 在提交本轮改动前必须补齐，否则「已修复」的结论只覆盖了部分范围。
 
-- [ ] `cargo test -p sisyphus-bridge --no-default-features` 全量（含 `bridge_integration_test`、`chaos_extended`、`cognitive_trace_rest_test`、`skill_market_rest_test`）
-- [ ] `make test-bridge-dedicated`（`#[ignore]` 专项）
-- [ ] `cargo test-all`（默认成员）
-- [ ] `cargo clippy --workspace --all-targets -- -D warnings`
+- [x] `cargo test -p sisyphus-bridge --no-default-features` 全量：160 通过 / 0 失败
+- [x] `#[ignore]` 专项（`make test-bridge-dedicated` 等价命令）：54 通过 / 0 失败
+- [x] `cargo test-all`（默认成员）：4697 通过 / 0 失败
+- [x] `cargo test -p sisyphus-sandbox -p sisyphus-tests`：113 通过 / 0 失败
+- [x] `cargo test -p sisyphus-sandboxd`（需 `CARGO_PROFILE_DEV_DEBUG=0`）：6 通过 / 0 失败
+- [x] `cargo clippy` / `cargo fmt --check` / `cargo check-all`（pre-commit 门禁每次提交均已跑）
 
 ### 阶段 B：把「看起来完成」变成「可验证完成」（1 天）
 
