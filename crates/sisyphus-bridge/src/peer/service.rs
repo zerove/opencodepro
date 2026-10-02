@@ -140,11 +140,9 @@ impl Cluster for ClusterServiceImpl {
                                 _ => None,
                             }
                         {
-                            let offset = sync_request.offset;
                             handle_sync_request(
                                 bank_for_inbound.as_ref(),
                                 &sync_request,
-                                offset,
                                 &out_tx_sync,
                             ).await;
                             continue;
@@ -192,7 +190,6 @@ pub(crate) fn is_page_end(evt: &ProtoEvent) -> bool {
 async fn handle_sync_request(
     experience_bank: Option<&Arc<sisyphus_mem::experience_bank::VectorExperienceBank>>,
     request: &sisyphus_bridge_api::cluster_proto::SyncRequest,
-    offset: u64,
     out_tx: &mpsc::UnboundedSender<ProtoEvent>,
 ) {
     let Some(bank) = experience_bank else {
@@ -203,13 +200,11 @@ async fn handle_sync_request(
     };
 
     let requested = anti_entropy::parse_sync_request_payload(request);
-    match anti_entropy::serve_sync_request(
-        bank,
-        &requested,
-        offset as usize,
-        anti_entropy::SYNC_PAGE_SIZE,
-    )
-    .await
+    // ADR-012：游标取主键而非下标。老节点的 `offset` 一律忽略（按空游标
+    // 从头回送）：合并路径幂等，重发一轮只浪费带宽，不会造成错漏。
+    let cursor = request.cursor.as_str();
+    match anti_entropy::serve_sync_request(bank, &requested, cursor, anti_entropy::SYNC_PAGE_SIZE)
+        .await
     {
         Ok(page) => {
             let count = page.experiences.len();
@@ -233,7 +228,12 @@ async fn handle_sync_request(
                     sisyphus_bridge_api::cluster_proto::cluster_event::Event::SyncPageEnd(
                         sisyphus_bridge_api::cluster_proto::SyncPageEnd {
                             more: page.more,
-                            next_offset: page.next_offset,
+                            // 已废弃字段恒置 0：老 dial 方读它推进，而新语义下
+                            // 「从哪一页继续」由 `next_cursor` 决定。老方读到 0
+                            // 会从第一页重来，靠摘要缩短收敛（见 ADR-012）。
+                            #[allow(deprecated)]
+                            next_offset: 0,
+                            next_cursor: page.next_cursor.clone(),
                             delivered: count as u32,
                         },
                     ),
@@ -243,7 +243,7 @@ async fn handle_sync_request(
             tracing::info!(
                 sent = count,
                 more = page.more,
-                next_offset = page.next_offset,
+                next_cursor = %page.next_cursor,
                 "anti-entropy: replied to sync request"
             );
         },

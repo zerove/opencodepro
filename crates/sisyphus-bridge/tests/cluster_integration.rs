@@ -499,6 +499,8 @@ async fn test_two_node_experience_sync_round_trip_persists() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn test_duplicate_delivery_does_not_duplicate_experience() {
     let mut node_a = start_sync_node("node-a", vec![]).await;
+    // `node_b.events` 在下方需要可变借用；clippy 对具体用法不可见，
+    // 因此这里的 mut 不可去。
     let mut node_b = start_sync_node("node-b", vec![node_a.grpc_addr.clone()]).await;
 
     wait_for_link(&node_a.manager, &node_b.manager).await;
@@ -1015,5 +1017,86 @@ async fn catchup_signal_reruns_anti_entropy() {
     assert!(
         tokio::time::timeout(Duration::from_secs(5), node_b.catchup_rx.recv()).await.is_ok(),
         "补齐信号从未触发：洪泛没压垮 handler，本用例没有真正覆盖 Lagged 路径"
+    );
+}
+
+/// 补齐信号在分页会话在途时必须被**延后**到会话收尾，而不是并发开第二个。
+///
+/// 两个都没有 session ID 的分页会话一旦交错，服务端下发的 `SyncPageEnd` 就
+/// 无法归属，游标会被推进到错误的偏移——这类 bug 表现为「行数对了但集合不对」，
+/// 数量断言抓不住，因此本用例断言集合。
+///
+/// 复现路径：B 加入时 A 的差量跨越多页（`more = true`），分页会话在途；此时
+/// 用洪泛触发 Lagged 信号，拨号侧必须挂起它，等最后一页收尾后再补一轮。
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn catchup_deferred_while_paging_converges_exactly() {
+    use sisyphus_bridge::peer::SYNC_PAGE_SIZE;
+
+    let node_a = start_sync_node("node-a", vec![]).await;
+    let a_bank = node_a.bank();
+
+    // 跨多页，确保 B 的初始反熵必然进入多轮翻页（`more = true`）。
+    let total = SYNC_PAGE_SIZE as u64 * 2 + 7;
+    for i in 0..total {
+        node_a
+            .broadcast
+            .record(experience(1_700_400_000 + i, &format!("defer-{i}")))
+            .await
+            .expect("A 批量记录经验应成功");
+    }
+
+    let mut node_b = start_sync_node("node-b", vec![node_a.grpc_addr.clone()]).await;
+    let b_bank = node_b.bank();
+
+    // 洪泛压垮 B 的入站通道，制造真实的 Lagged 信号。
+    for i in 0..3u64 {
+        for j in 0..600u64 {
+            node_b.manager.deliver_inbound_experience_sync(
+                format!("flood-{i}-{j}"),
+                i * 600 + j,
+                "{}",
+                vec![0u8; 64],
+            );
+        }
+    }
+
+    let expected_keys: std::collections::BTreeSet<String> =
+        a_bank.keys().await.expect("A 读键").into_iter().collect();
+
+    #[allow(unused_mut, clippy::needless_late_init)]
+    let mut seen_catchup;
+    for _ in 0..150 {
+        let got = b_bank.keys().await.map(|k| k.len()).unwrap_or(0);
+        if got as u64 == total {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    // 信号可能已被拨号器消费；补齐信号本身已被上面的收敛行为证明。
+    seen_catchup =
+        tokio::time::timeout(Duration::from_millis(200), node_b.catchup_rx.recv()).await.is_ok();
+
+    let actual_keys: std::collections::BTreeSet<String> =
+        b_bank.keys().await.unwrap_or_default().into_iter().collect();
+
+    assert_eq!(
+        actual_keys,
+        expected_keys,
+        "分页在途时的补齐被延后执行后，B 的行集合仍应与 A 完全一致。\n\
+         若集合偏小：延后的补齐被丢弃了（丢失永久化）。\n\
+         若集合偏大或存在错位行：两个分页会话交错，`SyncPageEnd` 归属错乱。\n\
+         仍缺：{:?}",
+        expected_keys.difference(&actual_keys).take(20).collect::<Vec<_>>()
+    );
+
+    assert_eq!(
+        actual_keys.len() as u64,
+        total,
+        "行数应恒为 {total}，重复合并不应产生额外行"
+    );
+
+    assert!(
+        seen_catchup,
+        "洪泛从未触发补齐信号，本用例没有覆盖「分页在途时延后」这条路径"
     );
 }

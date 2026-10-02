@@ -98,27 +98,34 @@ pub struct SyncPage {
     pub experiences: Vec<ExperienceSync>,
     /// 是否还有后续页。
     pub more: bool,
-    /// 请求方下一次 `SyncRequest` 应携带的 offset。
+    /// 请求方下一次 `SyncRequest` 应携带的游标键。
     ///
-    /// 刻意与「本页实际发出一条数」分开：序列化失败的条目会被跳过，
-    /// 但**游标必须按差量集合的索引推进**，否则下一轮会重新计算同一段
-    /// 而永远卡在同一页。
-    pub next_offset: u64,
+    /// 这是**主键**而不是下标（ADR-012）。原先用 `offset` 下标定位下一段，
+    /// 但差量集合每翻一页就会缩短：B 收到一页就多持有一批行，那些行随即
+    /// 从差量里消失，差量整体前移。于是按旧下标切片必然跳过一批仍缺失的行，
+    /// 表现为差量跨 3 页以上时尾部静默丢失。
+    ///
+    /// 游标改为「最后一个已送达主键」，服务端据此取严格大于它的下一段：
+    /// 无论差量如何缩短或前移，位置都由内容本身决定，不再依赖会漂移的下标。
+    pub next_cursor: String,
 }
+
+/// 分页游标：上一页最后一个已送达的主键；空串表示从头开始。
+pub type SyncCursor = String;
 
 /// 服务端角色：算出 dial 方缺的差量并分页回送。
 ///
 /// 复用同一批 `ExperienceSync` 载荷 → dial 端 `ExperienceSyncHandler` 的处理
 /// 路径与实时广播完全相同，不引入第二套合并语义，因此天然幂等。
 ///
-/// 分页是**无状态**的：每次都从本地库重新计算完整差量再取第 `offset` 段。
-/// 这意味着库在翻页期间变化时，已发出的页不会作废，只是新写入的行可能落到
-/// 已翻过的区间里——那些行会被下一次重连时的 `SyncRequest` 补齐。反之，
-/// 把差量缓存在会话里则会因新写入而永久漏发。
+/// 分页是**无状态**的：每次都从本地库重新计算完整差量，再取游标之后的
+/// `page_size` 条。差量集合会随 dial 方接收而缩短，但游标是内容而非下标，
+/// 因此缩短只影响「还剩多少条」，不影响「从哪一条继续」——这是 ADR-010
+/// 用 `offset` 下标时丢失尾部行的根因。
 pub async fn serve_sync_request(
     experience_bank: &Arc<VectorExperienceBank>,
     requested: &ExperienceDigest,
-    offset: usize,
+    cursor: &str,
     page_size: usize,
 ) -> Result<SyncPage, String> {
     let all_keys = experience_bank.keys().await.map_err(|e| {
@@ -127,9 +134,11 @@ pub async fn serve_sync_request(
     })?;
 
     let delta = sorted_missing_keys(missing_keys(requested, all_keys.iter().map(|s| s.as_str())));
-    let total = delta.len();
-    let start = offset.min(total);
 
+    // 差量已按主键字典序排序，因此「严格大于游标」等价于游标之后的全部。
+    // 游键不在差量里也没关系：比如它已被 dial 方持有而被本轮差量排除，
+    // 二分查找仍然给出正确的插入点。
+    let start = delta.partition_point(|k| *k <= cursor);
     let page_keys: Vec<String> =
         delta[start..].iter().take(page_size).map(|k| (*k).to_string()).collect();
 
@@ -139,26 +148,35 @@ pub async fn serve_sync_request(
     })?;
 
     let (experiences, _) = build_sync_page(requested, &rows, 0, page_size);
-    // `build_sync_page` 会再用 `requested` 过滤一遍 `rows`。这是必要的防御：
-    // `load_by_keys` 只保证返回存在的行，若并发删除使某键消失，过滤会把它剔除
-    // 而不会发出一条悬空引用。但过滤后的条数可能少于 `page_keys`，因此游标
-    // 必须按 `page_keys`（差量集合索引）而非 `experiences.len()` 推进——
-    // 否则每页都会因过滤少一条而卡住，永远翻不到下一页。
-    let next_offset = start + page_keys.len();
-    let more = next_offset < total;
+    // `build_sync_page` 只发 `rows` 里仍在的键：`page_keys` 算出后、
+    // `load_by_keys` 执行前的并发删除会让实际发出条数少于 `page_keys`。
+    // 游标必须按**请求区间**而非 `experiences.len()` 推进——否则每页都会
+    // 因少发一条而把位置留在段内，同一段被反复重算，永远翻不到下一页。
+    let consumed = start + page_keys.len();
+    let more = consumed < delta.len();
+
+    // 游标取本区间最后一个**差量主键**（而非实际发出的最后一条）：
+    // 前者在过滤发生后仍然正确地把位置推过整段，后者在「末条被过滤」时
+    // 会把游标留在段内，造成下一页重复发送已发过的内容。
+    let next_cursor = page_keys
+        .last()
+        .cloned()
+        // 本页为空（差量已耗尽）时游标不动：留在原地让 dial 方以
+        // `more = false` 收尾，而不是凭空跳到一个未经确认的位置。
+        .unwrap_or_else(|| cursor.to_string());
 
     tracing::debug!(
-        delta_total = total,
+        delta_total = delta.len(),
         page_len = experiences.len(),
         more,
-        next_offset,
+        next_cursor = %next_cursor,
         "anti-entropy: served sync page"
     );
 
     Ok(SyncPage {
         experiences,
         more,
-        next_offset: next_offset as u64,
+        next_cursor,
     })
 }
 
@@ -173,11 +191,11 @@ pub async fn local_digest(
 }
 
 /// 把 dial 方摘要与游标封装成一条 `SyncRequest` 事件。
-pub fn sync_request_event(digest: &ExperienceDigest, offset: u64) -> ClusterEvent {
+pub fn sync_request_event(digest: &ExperienceDigest, cursor: &str) -> ClusterEvent {
     ClusterEvent {
         event: Some(
             sisyphus_bridge_api::cluster_proto::cluster_event::Event::SyncRequest(
-                digest_to_sync_request_payload(digest, offset),
+                digest_to_sync_request_payload(digest, cursor),
             ),
         ),
     }
@@ -186,7 +204,7 @@ pub fn sync_request_event(digest: &ExperienceDigest, offset: u64) -> ClusterEven
 /// 把 dial 方摘要转成 proto 的 `SyncRequest` 载荷。
 pub fn digest_to_sync_request_payload(
     digest: &ExperienceDigest,
-    offset: u64,
+    cursor: &str,
 ) -> sisyphus_bridge_api::cluster_proto::SyncRequest {
     let origins = digest
         .iter()
@@ -200,7 +218,11 @@ pub fn digest_to_sync_request_payload(
         .collect();
     sisyphus_bridge_api::cluster_proto::SyncRequest {
         vector_clock: Default::default(),
-        offset,
+        // 已废弃字段必须显式置 0：proto3 的标量默认值本身就是 0，但显式写出
+        // 能让「我们不再发送 offset」这件事在代码里可见，而不是靠省略。
+        #[allow(deprecated)]
+        offset: 0,
+        cursor: cursor.to_string(),
         origins,
     }
 }
@@ -241,18 +263,18 @@ pub fn parse_sync_request_payload(
 pub async fn request_sync(
     experience_bank: &Arc<VectorExperienceBank>,
     out_tx: &tokio::sync::mpsc::UnboundedSender<ClusterEvent>,
-    offset: u64,
+    cursor: &str,
 ) -> Result<usize, String> {
     let digest = local_digest(experience_bank).await?;
     let count = digest.len();
 
     out_tx
-        .send(sync_request_event(&digest, offset))
+        .send(sync_request_event(&digest, cursor))
         .map_err(|_| "outbound channel closed".to_string())?;
 
     tracing::info!(
         origin_count = count,
-        offset,
+        cursor = %cursor,
         "anti-entropy: sync request sent"
     );
     Ok(count)
@@ -418,7 +440,7 @@ mod tests {
     #[test]
     fn digest_payload_roundtrip() {
         let digest = digest_from_keys(["exp:1:node-a:3", "exp:2:node-b:7"]);
-        let payload = digest_to_sync_request_payload(&digest, 0);
+        let payload = digest_to_sync_request_payload(&digest, "");
         let parsed = parse_sync_request_payload(&payload);
         assert_eq!(parsed, digest);
     }

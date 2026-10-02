@@ -231,7 +231,7 @@ async fn run_stream(
     // 失败只记日志——反熵是旁路，不应因为它拖垮实时广播与本地写入。
     let mut paging = experience_bank.map(|bank| PagingCursor::new(bank.clone()));
     if let Some(bank) = experience_bank {
-        if let Err(e) = anti_entropy::request_sync(bank, &sync_tx, 0).await {
+        if let Err(e) = anti_entropy::request_sync(bank, &sync_tx, "").await {
             tracing::warn!(error = %e, "anti-entropy: initial sync request failed");
             paging = None;
         }
@@ -261,7 +261,7 @@ async fn run_stream(
                     None => {
                         // 发送失败只记日志——与初始反熵拉取同等对待，不拖垮主循环。
                         if let Some(bank) = experience_bank {
-                            if let Err(e) = anti_entropy::request_sync(bank, &sync_tx, 0).await {
+                            if let Err(e) = anti_entropy::request_sync(bank, &sync_tx, "").await {
                                 tracing::warn!(error = %e, "anti-entropy: lagged catch-up request failed");
                             } else {
                                 paging = Some(PagingCursor::new(bank.clone()));
@@ -285,18 +285,23 @@ async fn run_stream(
                         if let Some(cursor) = paging.as_mut() {
                             if let Some(marker) = cursor.absorb_page_end(&proto_evt) {
                                 if marker.more {
+                                    // 先把游标推进到本轮的 next_cursor，再发下一页请求。
+                                    // 顺序不能颠倒：用旧游标请求会拿到**同一页**，
+                                    // 形成死循环且永不前进。
+                                    let next_cursor = marker.next_cursor.clone();
+                                    cursor.set_cursor(next_cursor.clone());
                                     match anti_entropy::request_sync(
                                         cursor.bank(),
                                         &sync_tx,
-                                        marker.next_offset,
+                                        cursor.cursor(),
                                     )
                                     .await
                                     {
-                                        Ok(_) => cursor.set_offset(marker.next_offset),
+                                        Ok(_) => {},
                                         Err(e) => {
                                             tracing::warn!(
                                                 error = %e,
-                                                offset = marker.next_offset,
+                                                cursor = %next_cursor,
                                                 "anti-entropy: paging request failed; stopping paging"
                                             );
                                             paging = None;
@@ -312,7 +317,7 @@ async fn run_stream(
                                 } else {
                                     tracing::info!(
                                         synced = marker.delivered,
-                                        total_offset = marker.next_offset,
+                                        next_cursor = %marker.next_cursor,
                                         "anti-entropy: sync completed"
                                     );
                                     paging = None;
@@ -376,8 +381,13 @@ async fn recv_catchup(rx: Option<&mut broadcast::Receiver<()>>) {
 
 /// 分页会话收尾后兑现被挂起的补齐信号。
 ///
-/// 从 offset 0 重新发起而不是接着当前偏移：挂起期间本地可能又新增了经验，
-/// 增量请求按摘要只回差量，从 0 重来才覆盖完整区间。
+/// 从空游标重新发起而不是接着当前偏移：挂起期间本地可能又新增了经验，
+/// 增量请求按摘要只回差量，从头重来才覆盖完整区间。
+///
+/// `pending` 只在**请求真的发出去之后**才清位。若发送失败，标志保留为真，
+/// 由下一次 `Lagged` 或下次会话收尾时再次尝试；若在此之前就清位，信号会被
+/// 静默吞掉，补齐请求再也发不出去——而失败原因（摘要导出错误、通道关闭）
+/// 通常是暂时的，重试本就有意义。
 async fn resume_pending_catchup(
     pending: &mut bool,
     experience_bank: Option<&Arc<VectorExperienceBank>>,
@@ -387,16 +397,24 @@ async fn resume_pending_catchup(
     if !*pending {
         return;
     }
-    *pending = false;
     let Some(bank) = experience_bank else {
+        // 没有经验库，补齐本就无从谈起，清位避免每轮空转。
+        *pending = false;
         return;
     };
-    match anti_entropy::request_sync(bank, sync_tx, 0).await {
+    match anti_entropy::request_sync(bank, sync_tx, "").await {
         Ok(_) => {
+            *pending = false;
             *paging = Some(PagingCursor::new(bank.clone()));
             tracing::info!("anti-entropy: deferred catch-up started");
         },
-        Err(e) => tracing::warn!(error = %e, "anti-entropy: deferred catch-up request failed"),
+        Err(e) => {
+            // 保留标志：等下一次机会重试，而不是把信号吞掉。
+            tracing::warn!(
+                error = %e,
+                "anti-entropy: deferred catch-up request failed; will retry on next trigger"
+            );
+        },
     }
 }
 
@@ -407,20 +425,32 @@ async fn resume_pending_catchup(
 /// 因此不能靠计数推测页边界。
 struct PagingCursor {
     bank: Arc<VectorExperienceBank>,
-    offset: u64,
+    /// ADR-012：游标是主键而非下标。
+    ///
+    /// 差量集合每翻一页就缩短一次（本地收到即持有，那些行随即从差量消失，
+    /// 差量整体前移），因此「跳过前 N 条」的下标会在缩短后错位，跳过一批
+    /// 仍缺失的行。游标记录最后一个已送达的主键，位置由内容决定。
+    cursor: String,
 }
 
 impl PagingCursor {
     fn new(bank: Arc<VectorExperienceBank>) -> Self {
-        Self { bank, offset: 0 }
+        Self {
+            bank,
+            cursor: String::new(),
+        }
     }
 
     fn bank(&self) -> &Arc<VectorExperienceBank> {
         &self.bank
     }
 
-    fn set_offset(&mut self, offset: u64) {
-        self.offset = offset;
+    fn cursor(&self) -> &str {
+        &self.cursor
+    }
+
+    fn set_cursor(&mut self, cursor: String) {
+        self.cursor = cursor;
     }
 
     /// 识别页尾标记；非标记事件返回 `None`。
@@ -430,7 +460,7 @@ impl PagingCursor {
     ) -> Option<sisyphus_bridge_api::cluster_proto::SyncPageEnd> {
         match &evt.event {
             Some(sisyphus_bridge_api::cluster_proto::cluster_event::Event::SyncPageEnd(marker)) => {
-                Some(*marker)
+                Some(marker.clone())
             },
             _ => None,
         }
@@ -518,6 +548,28 @@ mod tests {
         assert!(matches!(mgr, MgrEvent::ExperienceSync { version: 3, .. }));
     }
 
+    /// 建一个空的经验库（只需 `local_digest` 能导出摘要）。
+    async fn test_bank() -> std::sync::Arc<sisyphus_mem::experience_bank::VectorExperienceBank> {
+        use sisyphus_mem::experience_bank::VectorExperienceBank;
+        use sisyphus_mem::{SisyphusStore, VectorMemoryStore};
+        use sisyphus_tools_llm::DummyEmbeddingClient;
+
+        let mut config = sisyphus_types::Config::default();
+        config.cluster.node_id = "catchup-test".to_string();
+        let store = SisyphusStore::new("sqlite::memory:", &config).await.expect("store init");
+        let vector_store =
+            Arc::new(VectorMemoryStore::new(store.pool()).await.expect("vector store init"));
+        Arc::new(
+            VectorExperienceBank::new(
+                store.state.clone(),
+                vector_store,
+                Arc::new(DummyEmbeddingClient),
+            )
+            .await
+            .expect("exp bank init"),
+        )
+    }
+
     #[test]
     fn test_endpoint_parse_succeeds() {
         // Endpoint::try_from 校验 URL 格式
@@ -526,5 +578,49 @@ mod tests {
         // 非法格式应失败
         let bad = Endpoint::try_from("not a url".to_string());
         assert!(bad.is_err());
+    }
+
+    /// 补齐信号不得被发送失败吞掉：`pending` 必须保持为真以便重试。
+    ///
+    /// 修复前 `*pending = false` 在发请求**之前**执行，于是任何一次发送失败
+    /// （摘要导出报错、出站通道已关闭）都会把信号静默丢弃，之后再无补齐时机——
+    /// 而失败原因通常是暂时的，重试本就有意义。
+    #[tokio::test]
+    async fn deferred_catchup_survives_failed_send() {
+        let bank = test_bank().await;
+        let (tx, rx) = mpsc::unbounded_channel::<ProtoEvent>();
+        // 关掉接收端：`send` 确定性地返回 Err，模拟通道已关闭。
+        drop(rx);
+
+        let mut pending = true;
+        let mut paging: Option<PagingCursor> = None;
+        resume_pending_catchup(&mut pending, Some(&bank), &mut paging, &tx).await;
+
+        assert!(pending, "发送失败必须保留补齐信号，否则它被永久吞掉");
+        assert!(paging.is_none(), "发送失败不应开启新的分页会话");
+
+        // 第二次尝试：通道仍然关闭，标志必须仍为真（可反复重试）。
+        resume_pending_catchup(&mut pending, Some(&bank), &mut paging, &tx).await;
+        assert!(pending, "重试同样失败时信号仍须保留");
+
+        // 第三次：换成可用的通道，信号应被兑现并开启分页会话。
+        let (tx2, mut rx2) = mpsc::unbounded_channel::<ProtoEvent>();
+        resume_pending_catchup(&mut pending, Some(&bank), &mut paging, &tx2).await;
+        assert!(!pending, "请求发出成功后必须清位");
+        assert!(paging.is_some(), "成功后应开启新的分页会话");
+        assert!(
+            rx2.try_recv().is_ok(),
+            "兑现后必须真的往流里写入了 SyncRequest"
+        );
+    }
+
+    /// 没有经验库时补齐无从谈起，应当清位以免每轮空转。
+    #[tokio::test]
+    async fn deferred_catchup_clears_without_bank() {
+        let (tx, _rx) = mpsc::unbounded_channel::<ProtoEvent>();
+        let mut pending = true;
+        let mut paging: Option<PagingCursor> = None;
+        resume_pending_catchup(&mut pending, None, &mut paging, &tx).await;
+        assert!(!pending, "没有经验库时补齐无从谈起，应清位");
     }
 }
