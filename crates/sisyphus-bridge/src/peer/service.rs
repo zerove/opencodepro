@@ -41,15 +41,37 @@ pub struct ClusterServiceImpl {
     /// 都收敛，数据上看不出差别，于是丢信号这件事在任何测试里都不可见。
     /// 有了这个计数，测试才能断言「确实发出了第二次请求」。
     sync_requests_seen: Arc<std::sync::atomic::AtomicU64>,
-    /// ADR-013：Join 闸门。闸门关闭时（0 个许可）`Join` 一直挂起，直到显式打开。
+    /// ADR-013：`Join` 被调用的总次数（含被闸门挡住而挂起的那些）。
     ///
-    /// 用 `Semaphore` 而非 `Notify`：信号量会**保留**已发放的许可，即使发放时
-    /// 还没有任何等待者，晚到的 `acquire` 也能立刻拿到；而 `Notify::notify_one`
-    /// 在无等待者时会丢失唤醒，先检查标志再 await 的经典写法因此存在竞态。
+    /// 用于证明「重连确实发生过」：被闸门挡住时第一次 `Join` 会超时失败并进入
+    /// 退避重试，计数因此能区分「只尝试过一次」与「已经重试过」。
+    join_attempts_seen: Arc<std::sync::atomic::AtomicU64>,
+    /// ADR-013：测试用的「强制断流」信号。
     ///
-    /// 仅用于制造「拨号器已 spawn、但尚未建连」这个确定性窗口，从而稳定复现
-    /// 建连前发出的补齐信号。生产路径恒为打开状态（构造函数即发放 1 个许可）。
-    join_gate: Arc<tokio::sync::Semaphore>,
+    /// 广播通道：每次 `stream()` 调用各自订阅一份，信号只投递给**当时已建立的**
+    /// 流。断流后再建的新流订阅时刻晚于信号，因此不会被误伤——这正是重连用例
+    /// 需要的语义（断一次流，而不是让后续重连反复断）。
+    stream_break: tokio::sync::broadcast::Sender<()>,
+    /// ADR-013：断流**已生效**的确认广播，由 stream 断流分支在退出前发出。
+    break_ack_tx: tokio::sync::broadcast::Sender<()>,
+    /// 断流已生效的既成事实。标志位用于消除「订阅晚于确认」的竞态。
+    break_ack_seen: Arc<std::sync::atomic::AtomicBool>,
+    /// ADR-013：Join 闸门标志。为 `false` 时 `Join` 挂起，直到显式置为 `true`。
+    ///
+    /// 刻意用「布尔标志 + 唤醒通道」而不是 `Semaphore`：闸门需要在**运行期反复
+    /// 开/关**——先放行第一次 Join 以建出可用的流，断流后再关闸门把重连的那次
+    /// Join 挡住。信号量是单调发放的（许可发出去不会因被取走而「回到 0」），
+    /// 无法表达「关」，且 `add_permits` 过大还会 panic。
+    ///
+    /// 唤醒用**广播**而非 `Notify`：标志位检查与 await 之间可能已有等待者被唤走
+    /// （惊群），此时后到的 `notify_one` 会丢失唤醒并让 Join 永久挂起；广播不会
+    /// 丢失，且配合「先查标志再 await」的双重检查没有竞态。
+    ///
+    /// 仅用于制造确定性的建连/断流窗口。生产路径恒为放行（标志初始即 `true`）。
+    join_admit: Arc<std::sync::atomic::AtomicBool>,
+    /// 闸门翻转时的唤醒广播。容量 1 足够：它是纯粹的「状态已变，请重查」信号，
+    /// 真实状态在 `join_admit` 上。
+    join_wake: tokio::sync::broadcast::Sender<()>,
 }
 
 impl ClusterServiceImpl {
@@ -72,12 +94,16 @@ impl ClusterServiceImpl {
         experience_bank: Option<Arc<sisyphus_mem::experience_bank::VectorExperienceBank>>,
     ) -> Self {
         // ADR-013：生产路径闸门恒开，因此 Join 不受任何额外延迟影响。
-        let join_gate = Arc::new(tokio::sync::Semaphore::new(1));
         Self {
             manager,
             experience_bank,
             sync_requests_seen: Arc::new(std::sync::atomic::AtomicU64::new(0)),
-            join_gate,
+            join_attempts_seen: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            stream_break: tokio::sync::broadcast::Sender::new(1),
+            break_ack_tx: tokio::sync::broadcast::Sender::new(1),
+            break_ack_seen: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            join_admit: Arc::new(std::sync::atomic::AtomicBool::new(true)),
+            join_wake: tokio::sync::broadcast::Sender::new(1),
         }
     }
 
@@ -97,12 +123,22 @@ impl ClusterServiceImpl {
             manager,
             experience_bank: Some(experience_bank),
             sync_requests_seen: Arc::new(std::sync::atomic::AtomicU64::new(0)),
-            // 0 个许可：Join 会阻塞到 `open()` 被调用。
-            join_gate: Arc::new(tokio::sync::Semaphore::new(0)),
+            join_attempts_seen: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            stream_break: tokio::sync::broadcast::Sender::new(1),
+            break_ack_tx: tokio::sync::broadcast::Sender::new(1),
+            break_ack_seen: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            // 闸门关闭：用例需要先显式放行才能建连。
+            join_admit: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            join_wake: tokio::sync::broadcast::Sender::new(1),
         };
         let handle = JoinGateHandle {
-            gate: Arc::clone(&service.join_gate),
+            gate: Arc::clone(&service.join_admit),
+            wake: service.join_wake.clone(),
             seen: Arc::clone(&service.sync_requests_seen),
+            attempts: Arc::clone(&service.join_attempts_seen),
+            break_tx: service.stream_break.clone(),
+            break_ack_tx: service.break_ack_tx.clone(),
+            break_ack_seen: Arc::clone(&service.break_ack_seen),
         };
         (service, handle)
     }
@@ -116,27 +152,76 @@ impl ClusterServiceImpl {
 /// ADR-013：闸门与计数的外部句柄，供测试打开闸门并读取请求数。
 #[derive(Clone)]
 pub struct JoinGateHandle {
-    gate: Arc<tokio::sync::Semaphore>,
+    gate: Arc<std::sync::atomic::AtomicBool>,
+    wake: tokio::sync::broadcast::Sender<()>,
     seen: Arc<std::sync::atomic::AtomicU64>,
+    attempts: Arc<std::sync::atomic::AtomicU64>,
+    break_tx: tokio::sync::broadcast::Sender<()>,
+    break_ack_tx: tokio::sync::broadcast::Sender<()>,
+    break_ack_seen: Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl JoinGateHandle {
-    /// 放行闸门：唤醒所有正在等待的 Join，并让后续 Join 立即通过。
+    /// 放行或关闭 Join 闸门。
     ///
-    /// 只发放 **1** 个许可而不是「补满」：`add_permits(n)` 的 `n` 是**新增**许可数，
-    /// 超过 `MAX_PERMITS` 会 panic（信号量持有者数量本就远小于该上限）。
-    /// 已持有的许可足以让后续每个 Join 依次通过——每个 Join 拿到许可后即返回，
-    /// 许可随之释放，因此不必预发放大量许可。
+    /// 可**反向**使用（关闸门）是重连用例的前提：先放行以建出流，断流后再关闸门
+    /// 把重连的那次 Join 挡住，从而把「断流」与「重连」之间那段窗口稳定暴露出来。
     ///
-    /// 刻意不叫 `open`：资源审查规则会把 `pub fn open(&self)` 读成「打开文件句柄」
-    /// 而误报为资源泄漏（这里的 `open` 释放的是信号量许可，与文件无关）。
-    pub fn release_gate(&self) {
-        self.gate.add_permits(1);
+    /// 唤醒用广播：无等待者时发送失败属于正常状态（此时没有 Join 需要被唤醒），
+    /// 因此刻意忽略返回值。任何正在挂起的 Join 都会因这次广播重新检查标志位。
+    pub fn set_join_gate(&self, admit: bool) {
+        self.gate.store(admit, std::sync::atomic::Ordering::SeqCst);
+        let _ = self.wake.send(());
+    }
+
+    /// 闸门当前是否放行。
+    pub fn join_gate_admitted(&self) -> bool {
+        self.gate.load(std::sync::atomic::Ordering::SeqCst)
     }
 
     /// 服务端已收到的 `SyncRequest` 总数。
     pub fn sync_requests_seen(&self) -> u64 {
         self.seen.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    /// 服务端被调用过的 `Join` 总次数（含被闸门挡住而挂起的）。
+    pub fn join_attempts_seen(&self) -> u64 {
+        self.attempts.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    /// ADR-013：强制断开**当前已建立**的服务端流，让拨号方回到重连路径。
+    ///
+    /// 这是重连用例与「建连前」用例的关键区别：后者用 Join 闸门把拨号器挡在
+    /// 建连之前，从未有过成功流；本方法则让一条**已经跑通**的流中断，从而制造
+    /// 「已建立流 → 断开 → 重连」的真实窗口。
+    ///
+    /// 广播语义保证只断一次：断流后拨号方重连时，`stream()` 里的新订阅时刻晚于
+    /// 本次信号，不会被再次误伤，否则流会反复重建、用例永远等不到稳定态。
+    pub fn break_established_stream(&self) {
+        let _ = self.break_tx.send(());
+    }
+
+    /// ADR-013：等待 `break_established_stream` 真正作用到某条流上。
+    ///
+    /// 广播的 `send` 只保证信号进了通道，**不保证**对应那条流已经结束。用例必须
+    /// 在发信号之前就确认旧流已死：否则洪泛产生的补齐信号可能被**旧流**抢先
+    /// 消费掉，信号根本没落在目标窗口内，测的其实是另一条路径。断流分支在退出前
+    /// 发一次确认，使「断流已完成」成为可等待的确定事实。
+    pub async fn await_stream_break_applied(&self, timeout: std::time::Duration) -> bool {
+        let mut ack = self.break_ack_tx.subscribe();
+        loop {
+            // 先看已发生的事实，再等未来的确认，避免订阅竞态漏掉确认。
+            if self.break_ack_seen.load(std::sync::atomic::Ordering::SeqCst) {
+                return true;
+            }
+            // tokio 的 broadcast 接收器没有 `recv_timeout`，用外层超时表达期限。
+            match tokio::time::timeout(timeout, ack.recv()).await {
+                Ok(Ok(())) | Ok(Err(tokio::sync::broadcast::error::RecvError::Lagged(_))) => {},
+                Ok(Err(tokio::sync::broadcast::error::RecvError::Closed)) => return false,
+                // `timeout` 到期即视为未在期限内生效。
+                Err(_) => return false,
+            }
+        }
     }
 }
 
@@ -146,11 +231,29 @@ impl Cluster for ClusterServiceImpl {
         Pin<Box<dyn Stream<Item = Result<ProtoEvent, Status>> + Send + Sync + 'static>>;
     /// Join 握手：返回当前已知 peer 列表 + leader
     async fn join(&self, request: Request<JoinRequest>) -> Result<Response<JoinResponse>, Status> {
-        // ADR-013：闸门默认已放行（构造函数发放 1 个许可），这一步不产生任何额外
-        // 延迟；只有测试用 `gated` 构造时才会真的阻塞。放在最前面是为了让「被闸门
-        // 挡住」的时刻精确落在拨号器 spawn 之后、进入 run_stream 之前。
-        let _permit =
-            self.join_gate.acquire().await.map_err(|_| Status::unavailable("join gate closed"))?;
+        // ADR-013：闸门默认放行（标志初始为 true），这一步不产生任何额外延迟；只有
+        // 测试用 `gated` 构造时才会真的挂起。放在最前面是为了让「被闸门挡住」的
+        // 时刻精确落在拨号器 spawn 之后、进入 run_stream 之前。
+        self.join_attempts_seen.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+
+        // ADR-013：闸门关闭时在此挂起，直到被放行。
+        //
+        // 「先查标志、再等唤醒」的双重检查不可省：检查通过到真正挂起之间可能已有
+        // 一次唤醒广播被其他等待者抢先消费（惊群），只查一次会让 Join 在闸门已经
+        // 放行的情况下仍永久等待。
+        while !self.join_admit.load(std::sync::atomic::Ordering::SeqCst) {
+            let mut wake = self.join_wake.subscribe();
+            if self.join_admit.load(std::sync::atomic::Ordering::SeqCst) {
+                break;
+            }
+            // `Lagged` 表示期间错过多次唤醒：闸门是布尔量，重查即可，不需要知道
+            // 错过几次。`Closed` 不可能发生——句柄与服务共享同一个发送端。
+            match wake.recv().await {
+                Ok(()) | Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {},
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+            }
+        }
+
         let req = request.into_inner();
         let info = PeerInfo::new(req.node_id.clone(), req.grpc_addr.clone());
 
@@ -258,8 +361,34 @@ impl Cluster for ClusterServiceImpl {
             }
         });
 
-        // outbound: 把 mpsc::UnboundedReceiver 转成 Stream
-        let out_stream = UnboundedReceiverStream::new(out_rx).map(Ok);
+        // ADR-013：测试要求断流时，向拨号方**结束** outbound 流（而不是仅关闭
+        // inbound 处理任务）。只有让 `inbound.next()` 在拨号侧返回 `None`，
+        // `run_stream` 才会走「inbound stream ended」分支返回 Err，从而确定性地
+        // 回到 `run_dial_loop` 的重连路径。用 `select!` 包住原流：断流信号先到就
+        // 直接结束，之后原流被 drop。
+        let mut break_rx = self.stream_break.subscribe();
+        let break_ack_tx = self.break_ack_tx.clone();
+        let break_ack_seen = Arc::clone(&self.break_ack_seen);
+        let raw = UnboundedReceiverStream::new(out_rx);
+        let out_stream = async_stream::stream! {
+            let mut raw = raw;
+            loop {
+                tokio::select! {
+                    biased;
+                    _ = break_rx.recv() => {
+                        // ADR-013：先记既成事实再发确认。任何先检查标志位的
+                        // 等待者都会立刻返回，无需依赖广播的投递时机。
+                        break_ack_seen.store(true, std::sync::atomic::Ordering::SeqCst);
+                        let _ = break_ack_tx.send(());
+                        break;
+                    },
+                    item = raw.next() => match item {
+                        Some(evt) => yield Ok(evt),
+                        None => break,
+                    },
+                }
+            }
+        };
         let pinned: Self::StreamStream = Box::pin(out_stream);
         Ok(Response::new(pinned))
     }

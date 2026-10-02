@@ -1220,7 +1220,7 @@ async fn catchup_signal_sent_before_connect_is_still_consumed() {
     );
 
     // 放行建连。拨号器此时才进入 run_stream 并发出首次全量拉取。
-    gate.release_gate();
+    gate.set_join_gate(true);
 
     // 等到计数稳定：首次拉取 1 次 + 被消费信号触发的补齐 1 次 = 2。
     for _ in 0..100 {
@@ -1240,5 +1240,157 @@ async fn catchup_signal_sent_before_connect_is_still_consumed() {
          若只有 1 次，说明信号被建连那一步的 `resubscribe` 静默吃掉了\
          （数据仍会靠首次拉取收敛，所以只断言数据永远抓不到这个 bug）。\
          若超过 2 次，说明补齐变成了请求风暴。"
+    );
+}
+
+/// ADR-013：轮询等待条件成立，返回是否在期限内成立。
+///
+/// 与上面的 `wait_for` 有意分开：那个会顺带排空事件订阅并用 panic 报错，而本用例
+/// 必须**原样保留** `catchup_rx`（它自己要用它确认信号发出过），也不能让等待失败
+/// 抢先于断言报出——否则读到的失败信息会指错地方。
+async fn wait_until<F, Fut>(timeout: Duration, mut probe: F) -> bool
+where
+    F: FnMut() -> Fut,
+    Fut: std::future::Future<Output = bool>,
+{
+    let deadline = std::time::Instant::now() + timeout;
+    loop {
+        if probe().await {
+            return true;
+        }
+        if std::time::Instant::now() >= deadline {
+            return false;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+}
+
+/// ADR-013：**已建立的流被断开后**，断流到重连之间发出的补齐信号必须被消费。
+///
+/// 与 `catchup_signal_sent_before_connect_is_still_consumed` 的区别是本用例
+/// 先让 B 真的连上 A 并跑出一次 `SyncRequest`，再断开这条流。信号发出时：
+/// - 此前存在一条**成功建立过的**流（`join_attempts_seen` 已 ≥ 1、且已有首次拉取）；
+/// - 当前没有流（刚被服务端主动断开）；
+/// - 下一次 `connect_and_join` 尚未完成。
+///
+/// 这正是 `resubscribe` 会把信号整个跳过的窗口：接收位置随新接收器一起被重置，
+/// 断流期间发出的信号既不进 `Some` 分支也不进 `None` 分支，且 `tx.send()` 仍返回
+/// `Ok`（spawn 时已存在订阅者），因此丢失完全静默。
+///
+/// 时序（闸门先放行建出流，断流后再关闭，把重连那次 Join 挡住）：
+/// 1. 放行闸门 → B 建连 A，发出首次全量拉取（计数 = 1）；
+/// 2. 确认首次拉取已抵达（证明确实有过成功流，而不是从未建连）；
+/// 3. 关闭闸门 + 强制断流 → B 退出 `run_stream`，进入退避，重连被闸门挂起；
+/// 4. 洪泛 B 的入站通道，逼出真实的 `Lagged` 与补齐信号（落在断流与重连之间）；
+/// 5. 放行闸门 → 重连成功，先发首次拉取（计数 = 2），再消费保留的信号（计数 = 3）。
+///
+/// 断言计数而不是最终数据：有无此修复两者都靠重连时的全量拉取收敛，数据一致。
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn catchup_signal_sent_while_reconnecting_is_still_consumed() {
+    // 闸门装在被拨号方 A 上：B 是拨号方。
+    let node_a = start_sync_node_inner("node-a", vec![], true).await;
+    let gate = node_a.gate.clone().expect("闸门构造的节点必须带回闸门句柄");
+
+    // B 作为拨号方去连 A。
+    let mut node_b = start_sync_node("node-b", vec![node_a.grpc_addr.clone()]).await;
+
+    // 步骤 1：放行闸门，B 建连并发出首次全量拉取。
+    gate.set_join_gate(true);
+    let connected = wait_until(Duration::from_secs(10), || async {
+        gate.sync_requests_seen() >= 1
+    })
+    .await;
+    assert!(
+        connected,
+        "B 从未成功建连并发出首次拉取，本用例没有覆盖到任何东西"
+    );
+    // 首次拉取已抵达 ⇒ 此前确实存在一条成功建立的流。
+    assert!(gate.join_attempts_seen() >= 1, "至少应有一次 Join 尝试");
+
+    // 步骤 2：关闸门并主动断流。B 会从 run_stream 返回 Err，退避后重连，
+    // 而重连的 Join 被闸门挂起——此刻流已断、新的流尚未建立。
+    gate.set_join_gate(false);
+    gate.break_established_stream();
+
+    // 必须等断流**真正作用到两端**再洪泛，否则补齐信号可能被**旧流**抢先消费：
+    // 信号根本没落在「已断流、未重连」的窗口内，测的其实是另一条路径。两级确认：
+    //
+    // 1. 服务端流已结束（广播 send 只保证信号进通道，不保证流已断）；
+    // 2. 拨号方已退出 `run_stream` 并回到拨号循环、卡在重连的 `Join` 上
+    //    （`join_attempts_seen` 只在 `join()` 入口自增，而 `join()` 只能在
+    //     `run_stream` 返回之后才会被再次调用）。
+    //
+    // 第 2 条是真正的同步点：此刻旧流已不复存在，新的流尚未建立。
+    let broke = gate.await_stream_break_applied(Duration::from_secs(10)).await;
+    assert!(
+        broke,
+        "服务端未在期限内断开已建立的流，本用例没有覆盖任何东西"
+    );
+    let attempts_before = gate.join_attempts_seen();
+    let rejoined = wait_until(Duration::from_secs(10), || async {
+        gate.join_attempts_seen() > attempts_before
+    })
+    .await;
+    assert!(
+        rejoined,
+        "拨号方未在期限内回到重连路径（Join 尝试数仍为 {}），本用例没有覆盖任何东西",
+        attempts_before
+    );
+
+    // 步骤 3：洪泛压垮 B 的入站通道（容量 256），迫使 ExperienceSyncHandler 产生
+    // 真实的 Lagged 并发出补齐信号。信号因此精确落在「已断流、未重连」的窗口内。
+    for i in 0..3u64 {
+        for j in 0..600u64 {
+            node_b.manager.deliver_inbound_experience_sync(
+                format!("reconnect-flood-{i}-{j}"),
+                10_000 + i * 600 + j,
+                "{}",
+                vec![0u8; 64],
+            );
+        }
+    }
+
+    // 确认信号确实发出了（observer 是独立订阅，能看到 handler 的 send）。
+    // 只确认「发过」不够——真正的断言在下面的计数上。
+    let signalled = node_b.catchup_rx.try_recv().is_ok()
+        || tokio::time::timeout(Duration::from_millis(300), node_b.catchup_rx.recv()).await.is_ok();
+    assert!(signalled, "洪泛从未触发补齐信号，本用例没有覆盖任何东西");
+
+    // 断流与重连之间不应有任何请求抵达服务端：重连的 Join 还被闸门挂着。
+    let before_reconnect = gate.sync_requests_seen();
+    assert_eq!(
+        before_reconnect, 1,
+        "断流到重连之间不应有新的 SyncRequest；仍应为首次拉取的 1 次"
+    );
+
+    // 步骤 4：放行重连。重连后应先有该次建连的首次拉取（计数 1 → 2），
+    // 再消费断流期间保留的信号（计数 2 → 3）。
+    gate.set_join_gate(true);
+
+    let consumed = wait_until(Duration::from_secs(10), || async {
+        gate.sync_requests_seen() >= 3
+    })
+    .await;
+    // 再等一会儿，确认不会冒出第 4 次（补齐信号是幂等单次，不是风暴）。
+    tokio::time::sleep(Duration::from_millis(300)).await;
+
+    assert!(
+        consumed,
+        "断流期间发出的补齐信号没有被消费：SyncRequest 只有 {} 次，\
+         应为 3 次（首次拉取 1 + 重连后首次拉取 1 + 保留信号触发的补齐 1）。\
+         若只有 2 次，说明信号被重连那一步的 `resubscribe` 静默吃掉了\
+         （数据仍会靠重连时的全量拉取收敛，所以只断言数据永远抓不到这个 bug）。",
+        gate.sync_requests_seen()
+    );
+    assert_eq!(
+        gate.sync_requests_seen(),
+        3,
+        "超出 3 次，说明补齐变成了请求风暴"
+    );
+    assert!(
+        gate.join_attempts_seen() >= 2,
+        "必须有至少两次 Join 尝试（首次建连 + 断流后重连），\
+         实际 {} 次——若不足说明重连根本没发生，本用例退化成建连前窗口",
+        gate.join_attempts_seen()
     );
 }

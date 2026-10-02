@@ -62,8 +62,17 @@ peer），但**不能**把它当作信号可达性的证据。
 
 ## 覆盖情况
 
-用例：`catchup_signal_sent_before_connect_is_still_consumed`
-（`crates/sisyphus-bridge/tests/cluster_integration.rs`）。
+两个用例，都在 `crates/sisyphus-bridge/tests/cluster_integration.rs`，
+覆盖**两个不同**的窗口——这两者此前被混为一谈，必须分开看：
+
+| 用例 | 窗口 | 是否已有过成功流 |
+|------|------|------------------|
+| `catchup_signal_sent_before_connect_is_still_consumed` | 拨号器已 spawn、首次 Join 尚未完成 | 否 |
+| `catchup_signal_sent_while_reconnecting_is_still_consumed` | 已建立的流被断开、到重连完成之间 | 是 |
+
+第二个用例才是「跨重连」的本意：它先让 B 真的连上 A 并跑出一次 `SyncRequest`
+（证明确实存在过成功流），再断开这条流，然后才在断流与重连之间发信号。
+断言 `join_attempts_seen() >= 2` 正是为了防止它悄悄退化成第一个用例。
 
 ### 关键：断言计数，不断言数据
 
@@ -72,40 +81,57 @@ peer），但**不能**把它当作信号可达性的证据。
 
 因此断言的是**服务端收到的 `SyncRequest` 次数**：
 
-- 建连时首次全量拉取 → 1 次
-- 建连前发出的信号被消费 → 再触发一次补齐请求 → 共 2 次
+- 首次建连的全量拉取 → 1 次
+- 断流后重连的全量拉取 → 共 2 次
+- 断流期间发出的信号被消费 → 再触发一次补齐请求 → 共 3 次
 
 计数由 ADR-013 新增的 `sync_requests_seen` 提供（服务端收到请求时自增，早于应答）。
+重连是否真的发生过由 `join_attempts_seen` 证明。
 
-### 关键：用 Join 闸门制造窗口
+### 关键：用 Join 闸门 + 强制断流制造窗口
 
-需要一个「拨号器已 spawn、但尚未建连」的确定性时刻。`PeerManager` 没有可用的
-断流手段，所以改为在**被拨号方**把 `Join` 挡住：拨号任务已启动（接收器已创建），
-却卡在 `connect_and_join`，此时发出的信号精确落在目标窗口内。
+需要一个「流已断、重连未完成」的确定性时刻。手段有两处：
 
-闸门用 `Semaphore`（0 许可 = 关闭）而非 `Notify`：信号量**保留**已发放的许可，
-而 `notify_one` 在无等待者时会丢失唤醒。
+1. **Join 闸门**（装在**被拨号方**）：`Join` 关闭时挂起，把拨号器卡在
+   `connect_and_join`。
+2. **强制断流**：服务端主动结束 outbound 流，让拨号方的 `inbound.next()`
+   返回 `None`，`run_stream` 走「inbound stream ended」返回 `Err`，回到拨号循环。
 
-两个必须踩过才知道的细节：
+闸门**可以反向使用**（关→开）这一点是重连用例的前提：先放行建出流，断流后再
+关闸门把重连那次 `Join` 挡住。因此闸门从最初的 `Semaphore` 改成
+「`AtomicBool` 标志 + `join_wake` 唤醒广播」——信号量是单调发放的，表达不了「关」。
+
+三个必须踩过才知道的细节：
 
 1. **闸门要装在被拨号方，不是拨号方。** 拨号方 B 连的是 A；把闸门装在 B 自己身上
    毫无作用，B 会直接连上 A 跑完，计数恒为 0（第一版就是这么写的，失败于
    `left: 0`）。
-2. `add_permits(n)` 的 `n` 是**新增**许可数，传 `usize::MAX >> 1` 会 panic
-   （超过 `MAX_PERMITS`）。发 1 个就够：每个 Join 取走许可后立刻返回并释放。
+2. **同步点必须选在「拨号方已回到重连路径」，不是「服务端流已结束」。**
+   广播 `send` 只保证信号进通道，不保证流已断；即使服务端那一侧已经结束，
+   拨号方的 `run_stream` 仍可能在 `select!` 里。最初的版本因此**抖了 4/5**：
+   洪泛产生的补齐信号被**旧流**抢先消费掉，计数提前变成 2，落在错误的窗口。
+   正确做法是等 `join_attempts_seen()` 增长——`join()` 只在 `run_dial_loop`
+   里被调用，而它只能在 `run_stream` 返回之后才再次被调用，所以这个计数增长
+   **恰好**意味着「旧流已不复存在，新的流尚未建立」。
+3. **`add_permits(n)` 的 `n` 是新增许可数**，传 `usize::MAX >> 1` 会 panic
+   （超过 `MAX_PERMITS`）。改成布尔标志后该问题消失。
 
 ### 变异验证
 
 把 `run_dial_loop` 还原成 `catchup_rx.as_ref().map(broadcast::Receiver::resubscribe)`
-**并同步还原 `run_stream` 的签名**（只改调用点会类型不匹配、编译不过，
-那不是有效变异），用例稳定失败：
+**并同步还原 `run_stream` / `recv_catchup` 的拥有式签名**（只改调用点会类型不匹配、
+编译不过，那不是有效变异；实际需要改 5 处才编译通过），两个用例都稳定失败：
 
 ```
-left: 1
-right: 2
+catchup_signal_sent_before_connect_is_still_consumed:
+  left: 1
+ right: 2
+
+catchup_signal_sent_while_reconnecting_is_still_consumed:
+  SyncRequest 只有 2 次，应为 3 次
 ```
 
-连续 3 次变异运行均为同一签名；修复后连续 8 次运行全绿。
+连续 4 次变异运行均为同一签名；修复后连续 12 次运行全绿。
 
 ### 注意：`make test-all` 不包含 bridge
 
@@ -130,9 +156,11 @@ cargo test -p sisyphus-bridge --test cluster_integration
 ## 代价
 
 - `run_stream` 的参数从「拥有接收器」变成「借用接收器」，调用方需持有 `mut`。
-- `ClusterServiceImpl` 多两个字段（一个 `AtomicU64`、一个 `Semaphore`），
-  以及 `Join` 开头一次 `acquire()`。生产路径闸门恒有 1 个许可，这次 `acquire`
-  立即返回，不引入额外延迟。
+- `ClusterServiceImpl` 多几个字段（`sync_requests_seen` / `join_attempts_seen`
+  两个 `AtomicU64`、`join_admit` 与 `stream_break` 等测试钩子），以及 `Join` 开头
+  一次标志位检查。生产路径 `join_admit` 恒为 `true`，检查立即通过，不引入延迟。
+  这些字段**无条件编译**（而非 `#[cfg(test)]`）：集成测试位于 `tests/`，链接的是
+  未开启 `cfg(test)` 的库，用 `cfg` 门控会让它们在测试里根本不存在。
 - 无运行时开销——`broadcast` 通道本来就在，只是省掉了每次重连的一次 `resubscribe`。
 
 ## 遗留
