@@ -428,7 +428,10 @@
 - [ ] **TODO 勾选门禁**: 勾选项须附带测试名，`make todo-audit` 交叉核对是否真实存在且在跑
 
 ### 10.2 阶段 9 剩余
-- [ ] **启动时全量 sync**: 新节点 Join 后向 peer 拉取全量经验
+> 协议已定：见 [ADR-010](docs/adr/010-experience-anti-entropy.md)（版本向量反熵，挂进现有双向 `Stream`，不新增 RPC）
+
+- [x] **ADR-010**: 跨节点经验的反熵补偿方案——dial 方发版本向量，peer 只回送差量，分页有界
+- [ ] **启动时全量 sync**: 新节点 Join 后向 peer 拉取全量经验（ADR-010 选项 A 实施后即闭合）
 - [ ] **断线补偿**: 重连后按 vector clock 差量补齐
 - [ ] **`ExperienceSyncHandler` 关闭语义加固**: 所有 sender 丢弃时接收端会静默退出，接口层缺少防护
 - [ ] **入站事件转发收敛**: 当前靠自过滤终止回弹，属约定而非结构保证

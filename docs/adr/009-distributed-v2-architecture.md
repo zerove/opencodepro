@@ -1,6 +1,7 @@
 # ADR-009: 分布式 v2 架构草案（peer 协议 + Experience CRDT + 共识）
 
 **Status**: Phase B Accepted (2026-09-05) — § 1 peer 协议 + § 2 Experience CRDT 均已实施；仅端到端 2 节点 sync 留待后续 PR
+> **2026-10-02 更正**：上述 Status 高估了实际状态。§ 2 的 CRDT 数据结构与合并算法确已实现，但**未被任何生产路径调用**——跨节点经验同步的事件链路存在三处静默丢弃（proto 解码、事件应用、以及 `fallback.rs` 复制自 `service.rs` 却仍在丢弃的第二份实现）。因此在该日期之前，同步链路实际是断的，2 节点端到端从未成立。三处已修复并补齐双节点用例（10/10 通过）。§ Risk 2 指出的丢失窗口仍未闭合，处理方案见 [ADR-010](010-experience-anti-entropy.md)。
 **Deciders**: core team
 **Supersedes**: N/A
 

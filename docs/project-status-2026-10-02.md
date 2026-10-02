@@ -176,8 +176,10 @@
 
 ### 10.2 阶段 9 收尾（2-3 天）
 
-- [ ] 启动时全量 sync：新节点 Join 后向 peer 请求全量经验
-- [ ] 断线补偿：重连后按 vector clock 差量补齐（事件是即发即失的，断线期间的经验会永久丢失）
+> 协议已定：[ADR-010](adr/010-experience-anti-entropy.md) 给出跨节点经验的反熵补偿方案——dial 方发版本向量、peer 只回送差量、分页有界，挂在现有双向 `Stream` 上不新增 RPC。同时更正了 ADR-009 的 Status：它声称 CRDT「已实施」，而按本轮证据，那只是框架层。
+
+- [ ] 启动时全量 sync：新节点 Join 后向 peer 请求全量经验（事件是即发即失的，新节点对既有经验一无所知）
+- [ ] 断线补偿：重连后按 vector clock 差量补齐（断线期间的经验会永久丢失）
 - [ ] `ExperienceSyncHandler` 关闭语义加固（见遗留问题 2）
 - [ ] 3 节点 Docker Compose 验证（TODO 9.1.2）
 - [ ] 网络分区 → 恢复后状态收敛测试（TODO 9.1.2）
