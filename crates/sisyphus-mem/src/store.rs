@@ -552,6 +552,7 @@ impl MfsStore {
     pub async fn record_experience(
         &self,
         exp: &sisyphus_types::experience::ExperienceTuple,
+        id: &str,
     ) -> Result<()> {
         let vc_json = serde_json::to_string(&exp.vector_clock)
             .context("Failed to serialize vector_clock for record_experience")?;
@@ -562,7 +563,7 @@ impl MfsStore {
                  version, vector_clock)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
-        .bind(format!("exp:{}", exp.timestamp))
+        .bind(id)
         .bind(&exp.context_text)
         .bind(&exp.context_hash)
         .bind(&exp.action_id)
@@ -618,13 +619,13 @@ impl MfsStore {
     pub async fn apply_remote_experience(
         &self,
         exp: &sisyphus_types::experience::ExperienceTuple,
+        id: &str,
     ) -> Result<ApplyResult> {
-        let id = format!("exp:{}", exp.timestamp);
-
-        // 1. 读本地状态
+        // 使用发送方算出的主键：它编码了来源节点与计数，本地按 timestamp 重算
+        // 会得到不同的 id，导致同一行在本库变成两条。
         let local: Option<(i64, String, i64)> =
             sqlx::query_as("SELECT version, vector_clock, timestamp FROM experiences WHERE id = ?")
-                .bind(&id)
+                .bind(id)
                 .fetch_optional(&self.l2)
                 .await
                 .context("Failed to query local experience for CRDT merge")?;
@@ -633,7 +634,7 @@ impl MfsStore {
             Some((v, vc, _)) => (v as u64, vc),
             None => {
                 // 本地不存在 → 直接 INSERT（视为新建），返回 Applied
-                self.insert_experience_full(exp).await?;
+                self.insert_experience_full(exp, id).await?;
                 return Ok(ApplyResult::Applied);
             },
         };
@@ -678,7 +679,7 @@ impl MfsStore {
                 .bind(exp.cost as i64)
                 .bind(exp.version as i64)
                 .bind(&new_vc_json)
-                .bind(&id)
+                .bind(id)
                 .execute(&self.l2)
                 .await
                 .context("Failed to apply remote experience")?;
@@ -697,8 +698,8 @@ impl MfsStore {
     async fn insert_experience_full(
         &self,
         exp: &sisyphus_types::experience::ExperienceTuple,
+        id: &str,
     ) -> Result<()> {
-        let id = format!("exp:{}", exp.timestamp);
         let vc_json = serde_json::to_string(&exp.vector_clock)
             .context("Failed to serialize vector_clock for INSERT")?;
         sqlx::query(
@@ -708,7 +709,7 @@ impl MfsStore {
                  version, vector_clock)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
-        .bind(&id)
+        .bind(id)
         .bind(&exp.context_text)
         .bind(&exp.context_hash)
         .bind(&exp.action_id)
@@ -1179,6 +1180,13 @@ mod tests {
         }
     }
 
+    /// 测试用的主键推导：与生产路径同一函数，避免两处逻辑漂移。
+    fn sid(exp: &sisyphus_types::experience::ExperienceTuple) -> String {
+        let (origin, counter) =
+            sisyphus_types::experience::infer_origin(&exp.vector_clock, "local-node");
+        sisyphus_types::experience::experience_store_id(exp.timestamp, &origin, counter)
+    }
+
     /// record_experience + get_experience roundtrip：version + vector_clock 持久化并反序列化
     #[tokio::test]
     async fn test_crdt_record_and_get_roundtrip_preserves_clock() {
@@ -1190,10 +1198,13 @@ mod tests {
             "node-a",
             7,
         );
-        store.record_experience(&exp).await.expect("record failed");
+        store.record_experience(&exp, &sid(&exp)).await.expect("record failed");
 
-        let got =
-            store.get_experience("exp:1700000000100").await.expect("get failed").expect("missing");
+        let got = store
+            .get_experience("exp:1700000000100:node-a:7")
+            .await
+            .expect("get failed")
+            .expect("missing");
 
         assert_eq!(got.version, 7);
         assert_eq!(got.vector_clock.get("node-a"), Some(&7));
@@ -1211,11 +1222,10 @@ mod tests {
             "node-b",
             3,
         );
-        let result = store.apply_remote_experience(&exp).await.expect("apply failed");
+        let result = store.apply_remote_experience(&exp, &sid(&exp)).await.expect("apply failed");
         assert_eq!(result, crate::store::ApplyResult::Applied);
 
-        let got =
-            store.get_experience("exp:1700000000200").await.expect("get failed").expect("missing");
+        let got = store.get_experience(&sid(&exp)).await.expect("get failed").expect("missing");
 
         assert_eq!(got.version, 3);
         assert_eq!(got.vector_clock.get("node-b"), Some(&3));
@@ -1227,7 +1237,7 @@ mod tests {
         let store = test_store().await;
         // local version 1
         let local = make_exp_with_clock(1_700_000_000_300, "old-text", Some("proj-a"), "node-a", 1);
-        store.record_experience(&local).await.expect("record local failed");
+        store.record_experience(&local, &sid(&local)).await.expect("record local failed");
 
         // remote version 5 with 2 nodes
         let mut remote_vc = std::collections::BTreeMap::new();
@@ -1248,11 +1258,11 @@ mod tests {
             version: 5,
             vector_clock: remote_vc.clone(),
         };
-        let result = store.apply_remote_experience(&remote).await.expect("apply failed");
+        let result =
+            store.apply_remote_experience(&remote, &sid(&remote)).await.expect("apply failed");
         assert_eq!(result, crate::store::ApplyResult::Applied);
 
-        let got =
-            store.get_experience("exp:1700000000300").await.expect("get failed").expect("missing");
+        let got = store.get_experience(&sid(&remote)).await.expect("get failed").expect("missing");
 
         assert_eq!(got.version, 5);
         assert_eq!(got.vector_clock, remote_vc);
@@ -1265,7 +1275,7 @@ mod tests {
         let store = test_store().await;
         // share via update_experience_project (project_id = None)
         let exp = make_exp_with_clock(1_700_000_000_400, "shared-text", None, "node-x", 11);
-        store.record_experience(&exp).await.expect("record failed");
+        store.record_experience(&exp, &sid(&exp)).await.expect("record failed");
 
         let shared = store.list_shared_experiences().await.expect("list failed");
 
@@ -1297,7 +1307,7 @@ mod tests {
             version: 8,
             vector_clock: vc.clone(),
         };
-        store.record_experience(&exp).await.expect("record failed");
+        store.record_experience(&exp, &sid(&exp)).await.expect("record failed");
 
         let recent = store.list_recent_experiences(10).await.expect("list failed");
 
@@ -1312,18 +1322,11 @@ mod tests {
         let store = test_store().await;
         let exp1 = make_exp_with_clock(1_700_000_000_601, "q1", Some("proj-q"), "node-q", 2);
         let exp2 = make_exp_with_clock(1_700_000_000_602, "q2", Some("proj-q"), "node-q", 4);
-        store.record_experience(&exp1).await.expect("rec 1");
-        store.record_experience(&exp2).await.expect("rec 2");
+        store.record_experience(&exp1, &sid(&exp1)).await.expect("rec 1");
+        store.record_experience(&exp2, &sid(&exp2)).await.expect("rec 2");
 
         let results = store
-            .query_experiences(
-                &[
-                    "exp:1700000000601".to_string(),
-                    "exp:1700000000602".to_string(),
-                ],
-                Some("proj-q"),
-                false,
-            )
+            .query_experiences(&[sid(&exp1), sid(&exp2)], Some("proj-q"), false)
             .await
             .expect("query failed");
 
@@ -1340,18 +1343,21 @@ mod tests {
         let store = test_store().await;
         // 直接插入合法记录
         let exp = make_exp_with_clock(1_700_000_000_700, "baseline", Some("proj-x"), "node-x", 1);
-        store.record_experience(&exp).await.expect("rec failed");
+        store.record_experience(&exp, &sid(&exp)).await.expect("rec failed");
 
         // 通过 sqlite 直接注入损坏的 vector_clock
         sqlx::query("UPDATE experiences SET vector_clock = ? WHERE id = ?")
             .bind("{not valid json")
-            .bind("exp:1700000000700")
+            .bind("exp:1700000000700:node-x:1")
             .execute(&store.l2)
             .await
             .expect("corrupt update");
 
-        let got =
-            store.get_experience("exp:1700000000700").await.expect("get failed").expect("missing");
+        let got = store
+            .get_experience("exp:1700000000700:node-x:1")
+            .await
+            .expect("get failed")
+            .expect("missing");
 
         // version 仍可读，vector_clock 回退为空
         assert_eq!(got.version, 1);

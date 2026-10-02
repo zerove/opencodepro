@@ -27,6 +27,53 @@ pub struct ExperienceTuple {
     pub vector_clock: BTreeMap<String, u64>,
 }
 
+/// 经验行的存储主键。
+///
+/// 历史上这里只用 `exp:{timestamp}`，而 `timestamp` 是**秒级**的
+/// `SystemTime::now()...as_secs()`。同一秒内的两次写入会撞主键：实测第二条
+/// INSERT 直接失败，且上层只 `warn!` 后继续，**丢失完全静默**。
+///
+/// 改为纳入来源节点与该节点内的写入计数（两者在 `bump_local_clock` 之后都已
+/// 存在于 `vector_clock` 中），因此：
+/// - 同一秒内的不同写入不再冲突；
+/// - 行标识编码了来源与计数，dial 方持有 (node_id → max counter) 即可推出
+///   自己缺哪些行——这是跨节点反熵补偿（ADR-010）成立的前提。
+///
+/// 不新增字段，因此不改变跨节点序列化格式，wire 兼容性不受影响。
+pub fn experience_store_id(timestamp: u64, origin: &str, counter: u64) -> String {
+    format!("exp:{timestamp}:{origin}:{counter}")
+}
+
+/// 从 vector clock 推断该行的来源节点与其写入计数。
+///
+/// 对**本地**写入，`bump_local_clock` 会自增 `node_id` 对应的条目，因此
+/// 「哪个条目刚被自增」由调用方给出更可靠，这里只作为无法得知 origin 时的
+/// 兜底：取计数最大的条目。跨节点场景下 origin 应由发送方通过
+/// [`experience_store_id`] 算好后随 `exp_key` 一同传输。
+pub fn infer_origin(vector_clock: &BTreeMap<String, u64>, fallback: &str) -> (String, u64) {
+    vector_clock
+        .iter()
+        .max_by_key(|(_, v)| **v)
+        .map(|(node, counter)| (node.clone(), *counter))
+        .unwrap_or_else(|| (fallback.to_string(), 0))
+}
+
+/// 从存储主键中取出来源节点。
+///
+/// 主键形如 `exp:{timestamp}:{origin}:{counter}`，来源在倒数第二段——因此
+/// **不能用后缀匹配来判断是否为本节点自己产生**（origin 不是末段）。
+pub fn experience_origin_from_key(key: &str) -> Option<&str> {
+    let rest = key.strip_prefix("exp:")?;
+    let mut parts = rest.rsplitn(2, ':');
+    // 第一段是 counter，第二段是 origin + 更早的字段。
+    let counter = parts.next()?;
+    if counter.is_empty() || !counter.chars().all(|c| c.is_ascii_digit()) {
+        return None;
+    }
+    let head = parts.next()?;
+    head.rsplit_once(':').map(|(_, origin)| origin)
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 /// Experience Query.
 pub struct ExperienceQuery {

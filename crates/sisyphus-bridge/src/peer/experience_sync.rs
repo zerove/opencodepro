@@ -18,7 +18,9 @@ use crate::peer::manager::{ClusterEvent as MgrEvent, PeerManager};
 use async_trait::async_trait;
 use sisyphus_mem::experience_bank::VectorExperienceBank;
 use sisyphus_mem::store::ApplyResult;
-use sisyphus_types::experience::{ExperienceBank, ExperienceQuery, ExperienceTuple};
+use sisyphus_types::experience::{
+    experience_origin_from_key, ExperienceBank, ExperienceQuery, ExperienceTuple,
+};
 use sisyphus_types::TypesError;
 use std::sync::Arc;
 use tokio::sync::broadcast;
@@ -65,19 +67,13 @@ pub fn broadcast_experience(
 pub struct PeerBroadcastExperienceBank {
     inner: Arc<VectorExperienceBank>,
     peer_manager: Arc<PeerManager>,
-    node_id: String,
 }
 
 impl PeerBroadcastExperienceBank {
-    pub fn new(
-        inner: Arc<VectorExperienceBank>,
-        peer_manager: Arc<PeerManager>,
-        node_id: impl Into<String>,
-    ) -> Self {
+    pub fn new(inner: Arc<VectorExperienceBank>, peer_manager: Arc<PeerManager>) -> Self {
         Self {
             inner,
             peer_manager,
-            node_id: node_id.into(),
         }
     }
 }
@@ -85,10 +81,11 @@ impl PeerBroadcastExperienceBank {
 #[async_trait]
 impl ExperienceBank for PeerBroadcastExperienceBank {
     async fn record(&self, exp: ExperienceTuple) -> Result<(), TypesError> {
-        self.inner.record(exp.clone()).await?;
-        // exp_key 内嵌本节点 ID，接收端据此过滤自发事件，避免自环。
-        let exp_key = format!("exp:{}:{}", exp.timestamp, self.node_id);
-        broadcast_experience(&self.peer_manager, &exp, exp_key);
+        // 必须用底层返回的主键广播：它与本地落库的主键完全一致。若在这里
+        // 另算一份，对端会把它存成另一行，CRDT 合并也就无从比对。
+        let payload = exp.clone();
+        let key = self.inner.record_with_id(exp).await?;
+        broadcast_experience(&self.peer_manager, &payload, key);
         Ok(())
     }
 
@@ -146,11 +143,10 @@ impl ExperienceSyncHandler {
                                             vector_clock_json,
                                             payload,
                                         }) => {
-                                            // 过滤自己广播的事件。按后缀精确匹配而不是子串包含：
-                // 子串匹配下 "node-a" 会连带吞掉 "node-ab"、"node-a-2" 的经验。
-                // 发送端统一用 `exp:<timestamp>:<node_id>` 构造 key，节点 ID 落在末段。
-                let own_suffix = format!(":{}", self_node_id);
-                if exp_key.ends_with(&own_suffix) {
+                // 过滤自己广播的事件：主键里编码了来源节点，解析出来与本节点
+                // 相同即丢弃。不能用后缀包含判断——origin 不是主键的末段，
+                // 那会让 "node-a" 连带吞掉 "node-ab" 的经验。
+                if experience_origin_from_key(&exp_key) == Some(self_node_id.as_str()) {
                     tracing::trace!(exp_key = %exp_key, "skipping own broadcast");
                     continue;
                 }
@@ -221,7 +217,9 @@ impl ExperienceSyncHandler {
         // 新写入，于是并发冲突退化为「最后到达者获胜」，且本地时钟被污染后
         // 无法再与其他节点正确比较。apply_remote 把 version/vector_clock 原样
         // 交给 merge_crdt 判定（LWW-Element-Set + vector clock）。
-        match experience_bank.apply_remote(&remote_exp).await {
+        // 采用发送方算出的主键：它编码了来源节点与写入计数，本地按
+        // timestamp 重算会得到不同的 id，同一行将对端与本地各存一份。
+        match experience_bank.apply_remote(&remote_exp, exp_key).await {
             Ok(ApplyResult::Applied) => {
                 tracing::info!(
                     exp_key = %exp_key,

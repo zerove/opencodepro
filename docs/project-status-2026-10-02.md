@@ -19,7 +19,8 @@
 | 5 | 同上 | `apply_mgr_event` 同样丢弃入站 `ExperienceSync` | 同上 |
 | 6 | `sisyphus-bridge/src/peer/fallback.rs` | 复制了一整套与 `service.rs` 重复的转换函数，那份副本仍在丢弃 `ExperienceSync`——而**生产拨号器走的正是它** | 修好 4/5 也不生效：握手正常、事件从不流动 |
 | 7 | `sisyphus-bridge/src/peer/experience_sync.rs` | 自广播过滤用子串包含 | `node-a` 会连带吞掉 `node-ab`、`node-a-2` 的经验 |
-| 8 | 开发工具链 `~/bin/jcode-adg-pre-tool` | 治理钩子不识别 Rust 的 `#[cfg(test)]` 模块，把测试代码按生产标准拦截 | 合法迭代被阻断；钩子自身的报告重定向写反导致明细不可见 |
+| 8 | `sisyphus-mem` + `sisyphus-types` | 经验行主键只用秒级时间戳，同秒写入撞主键且失败被静默吞掉；连带本地 CRDT 时钟退化（version 恒为 1） | 目标执行经验丢失；CRDT 在单节点下从未生效 |
+| 9 | 开发工具链 `~/bin/jcode-adg-pre-tool` | 治理钩子不识别 Rust 的 `#[cfg(test)]` 模块，把测试代码按生产标准拦截 | 合法迭代被阻断；钩子自身的报告重定向写反导致明细不可见 |
 
 **关键教训**：4/5/6 是同一条链路上的三处独立丢弃点，且其中一处是「复制粘贴出的第二份实现」。这类缺陷靠阅读代码很难发现——`TODO.md` 与代码注释都声称该功能已完成。是新写的双节点端到端用例把它们逐个逼出来的。
 
@@ -144,21 +145,22 @@
 
 ## 四、遗留问题（本轮发现但未处理）
 
-0. **P1 · 经验行标识会碰撞，同秒写入静默丢数据**（在实施 ADR-010 前核对数据模型时发现，已实测）
-   - 经验行主键为 `id = format!("exp:{}", exp.timestamp)`，`timestamp` 取自 `.as_secs()`——**秒级精度**；`record_experience` 用裸 `INSERT`，无 `OR REPLACE` / `ON CONFLICT`。
-   - 实测：同一秒写入两条经验，第二条返回 `Err("Failed to record experience")`，第一条完好。
-   - `execute_and_record` 对该错误只 `tracing::warn!` 后继续，**丢失完全静默**，不影响目标执行结果。
-   - 单机：两个目标执行 / 反思阶段在同一秒内完成即丢一条。多节点：并发写与时钟差异使概率显著更高。
-   - 同时它**推翻了 ADR-010 的摘要前提**：行标识既不编码来源节点也不编码 vector clock 计数，因此紧凑版本向量算不出差量。修复方案与取舍见 [ADR-010](adr/010-experience-anti-entropy.md) 的「前置缺陷 P1」一节（建议单独开 ADR 决策）。
-   - **不要用「把 warn 升级成 error」来解决**：`execute_and_record` 用 `warn!` 且吞掉错误是**有意设计**，`crates/sisyphus-core/src/tests.rs` 有测试锁定它——经验库写失败不得让目标执行失败（结果已落库）。升级日志级别会推翻这个契约且不修复任何丢失。真正要改的是 id 格式。
+0. ~~**P1 · 经验行标识会碰撞，同秒写入静默丢数据**~~ **已修复**（发现与修复过程见 [ADR-010](adr/010-experience-anti-entropy.md) 的「前置缺陷 P1」）
+   - 原始症状：主键 `exp:{as_secs()}` 秒级精度 + 裸 INSERT；同一秒第二条写入失败，`execute_and_record` 只 `warn!` 后继续。
+   - 修复分两层，**第二层是实施第一层时才发现的**：
+     1. 主键改为 `exp:{ts}:{origin}:{counter}`；接收端采用发送方传来的主键，不再本地重算。不新增字段，因此不改变序列化格式。
+     2. **本地 CRDT 时钟退化**：`bump_local_clock` 只从传入时钟自增，而 `execute_and_record` 每次都传空时钟，导致**每条本地经验的 version 恒为 1、vc 计数恒为 1**。后果是同秒写入仍会冲突（第一层修复形同虚设），且 `merge_crdt` 的版本裁决对本地写入完全失效——CRDT 在单节点场景下从未真正起作用。改为经验库持有实例级单调序号。
+   - 已知局限：进程重启后序号归零（需从存储层恢复最大计数才能严格保证）；存量行保留旧主键，项目 0.x 清库重建即可。
+   - 回归保护：`crates/sisyphus-mem/tests/experience_id_collision.rs`。
 
 1. ~~**并行链接 OOM**~~ **已处理**：在 19.5 GiB 机器上并行链接多个重型测试二进制会失败（`linking with cc failed` / `could not exec the linker cc`），实测 `-j 2` 仍不安全、`-j 1` 稳定。已在 Makefile 中给所有会产生多个测试二进制的目标（`test-all`、`test-tools`、`test-bridge`、`test-bridge-nosandbox`、`test-bridge-full`、`test-cli-handlers`）加上 `CARGO_BUILD_JOBS=1`，并在文件头部记录了这条约束。
 
    另有一例更极端：**`sisyphus-sandboxd` 即使 `-j 1` 也会在编译 `cranelift-codegen` 时单 crate OOM**（`rustc-LLVM ERROR: out of memory`）。加 `CARGO_PROFILE_DEV_DEBUG=0` 后可通过（代价是该配置下要全量重编）。`make test-sandboxd` 目前没有带这个开关，建议补上。**直接敲 `cargo test` 仍不受并发保护**，需自行加 `-j 1`。
 2. **`ExperienceSyncHandler` 的 shutdown 语义脆弱**：一旦所有 `broadcast::Sender` 被丢弃，接收端会在 `select!` 里收到 `Closed` 并**静默退出**。本轮测试就踩到了这个坑（接收端一起来就死）。生产代码目前显式持有一个 sender，但接口本身没有防护——建议后续把关闭信号改成 `watch` 或加存活探针。
-3. **入站事件会被无条件转发回对端**：`apply_mgr_event` 投递到本地事件总线后，本节点的静态拨号器又会把它转发回对端。目前靠自过滤（后缀匹配）终止，不会无限回弹，但这是靠约定而非靠结构保证。
+3. **入站事件会被无条件转发回对端**：`apply_mgr_event` 投递到本地事件总线后，本节点的静态拨号器又会把它转发回对端。目前靠自过滤终止，不会无限回弹。自过滤原按主键后缀匹配，但新主键里 origin 在倒数第二段、后缀匹配必然失效——已改为解析主键取出来源节点（`experience_origin_from_key`）。仍属靠约定而非靠结构保证。
 4. **`StateProposal` 仍被丢弃**：`ClusterConsensus` 有实现但没有消费方，属阶段 9 后续。
 5. **启动时全量 sync / 断线后增量恢复**（TODO 9.1.1 后两项）仍未实现：目前只在本地写入时增量广播，没有「新节点加入时拉取全量」和「重连后补偿」。
+6. **`sisyphus-metrics` 测试隔离脆弱性**（本轮回归时发现，**非本轮引入**）：`observability::tests` 里 6 个 `test_*_span_creation` 断言 `span.metadata()`，而该方法在没有全局 tracing 订阅者时返回 `None`。表现为 `cargo test -p sisyphus-metrics` 单独跑 6 失败、作为 `cargo test-all` 的一部分跑全绿；在 `git stash` 后的干净树上同样复现。正确修法是在测试内自行安装 `tracing_subscriber::registry()`，而不是依赖进程级全局状态。本轮仅记录。
 
 ---
 

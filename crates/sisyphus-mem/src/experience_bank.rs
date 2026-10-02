@@ -2,7 +2,7 @@ use crate::store::{ApplyResult, MfsStore};
 use anyhow::Result;
 use sisyphus_types::TypesError;
 use sisyphus_types::experience::{
-    ExperienceBank, ExperienceQuery, ExperienceTuple, bump_local_clock,
+    ExperienceBank, ExperienceQuery, ExperienceTuple, bump_local_clock, experience_store_id,
 };
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -55,6 +55,18 @@ pub struct VectorExperienceBank {
     store: Arc<MfsStore>,
     vector_store: Arc<crate::vector_memory::VectorMemoryStore>,
     embedding_client: Arc<dyn EmbeddingClient>,
+    /// 本地写入的单调序号。
+    ///
+    /// 必需：调用方（如 `execute_and_record`）每次都传入 `vector_clock` 为空、
+    /// `version` 为 0 的新 tuple，`bump_local_clock` 只能从这个空输入自增，
+    /// 于是**每一条本地经验都会得到同一个 version 与同一个 vc 计数**。
+    /// 后果有二：同秒写入的行主键相同而互相覆盖；`merge_crdt` 的版本裁决
+    /// 对本地写入完全失效。序号存在实例上，因此单调递增。
+    ///
+    /// 已知局限：进程重启后序号归零。若重启前最后一条写入与重启后第一条
+    /// 落在同一秒且计数相同，主键仍可能冲突——需要严格保证时应从存储层
+    /// 恢复最大计数。
+    local_seq: std::sync::atomic::AtomicU64,
 }
 
 impl VectorExperienceBank {
@@ -72,6 +84,7 @@ impl VectorExperienceBank {
             store,
             vector_store,
             embedding_client,
+            local_seq: std::sync::atomic::AtomicU64::new(0),
         })
     }
 
@@ -114,14 +127,20 @@ impl VectorExperienceBank {
     ///
     /// 合并获胜时补建向量索引：CRDT 落库只写关系表，向量检索依赖本地的
     /// embedding，缺失会让远程经验无法被 `query_similar` 召回。
-    pub async fn apply_remote(&self, exp: &ExperienceTuple) -> Result<ApplyResult, TypesError> {
+    /// `remote_key` 是发送方算出的主键（随 ExperienceSync 一同传输）。采用它
+    /// 而非本地重算，才能保证同一行在对端与本地是同一个 id。
+    pub async fn apply_remote(
+        &self,
+        exp: &ExperienceTuple,
+        remote_key: &str,
+    ) -> Result<ApplyResult, TypesError> {
+        let key = remote_key.to_string();
         let outcome =
-            self.store.apply_remote_experience(exp).await.map_err(|e| {
+            self.store.apply_remote_experience(exp, &key).await.map_err(|e| {
                 TypesError::ExperienceError(format!("apply remote experience: {e}"))
             })?;
 
         if matches!(outcome, ApplyResult::Applied) {
-            let key = format!("exp:{}", exp.timestamp);
             let text_embedding = self
                 .embedding_client
                 .embed(&exp.context_text)
@@ -185,18 +204,33 @@ impl VectorExperienceBank {
     }
 }
 
-#[async_trait]
-impl ExperienceBank for VectorExperienceBank {
-    async fn record(&self, mut exp: ExperienceTuple) -> Result<(), TypesError> {
+impl VectorExperienceBank {
+    /// 写入一条本地经验，返回其存储主键。
+    ///
+    /// 主键必须由这里产生并回传给调用方：跨节点广播需要携带**与本地落库完全
+    /// 相同**的主键，否则对端按自己的规则重算会把同一行存成两条。
+    pub async fn record_with_id(&self, mut exp: ExperienceTuple) -> Result<String, TypesError> {
         // 0. CRDT (TODO 8.3.2): bump local version + vector_clock
         // 默认 node_id 用 hostname；后续可通过 Config.cluster.node_id 配置覆盖。
         // 保持向后兼容：调用方未设置 version/vector_clock 时自动 bump。
         let node_id = std::env::var("SISYPHUS_CLUSTER_NODE_ID").unwrap_or_else(|_| {
             std::env::var("HOSTNAME").unwrap_or_else(|_| "local-node".to_string())
         });
+        // 本地序号保证单调：仅靠传入时钟自增无法做到（见 local_seq 字段说明）。
+        let seq = self.local_seq.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
         let (new_vc, new_ver) = bump_local_clock(&exp.vector_clock, exp.version, &node_id);
         exp.vector_clock = new_vc;
         exp.version = new_ver;
+        // 本行的来源与写入计数。以本地序号为准，避免 vc 停在 1。
+        let origin = node_id.clone();
+        let counter = seq;
+        let entry = exp.vector_clock.entry(origin.clone()).or_insert(0);
+        if *entry < counter {
+            *entry = counter;
+        }
+        if exp.version < counter {
+            exp.version = counter;
+        }
 
         // 1. Generate text embedding for the context
         let text_embedding = self
@@ -207,9 +241,11 @@ impl ExperienceBank for VectorExperienceBank {
         exp.embedding = Some(text_embedding.clone());
 
         // 2. Store the full experience object in MfsStore for easy retrieval
-        let key = format!("exp:{}", exp.timestamp);
+        //    主键纳入来源节点与该节点的写入计数：仅用秒级 timestamp 会在
+        //    同一秒内的两次写入之间撞主键，导致第二条静默丢失。
+        let key = experience_store_id(exp.timestamp, &origin, counter);
         self.store
-            .record_experience(&exp)
+            .record_experience(&exp, &key)
             .await
             .map_err(|e| TypesError::ExperienceError(format!("store record failed: {e}")))?;
 
@@ -228,7 +264,7 @@ impl ExperienceBank for VectorExperienceBank {
 
         // 4. If visual embedding is provided, store it in the vector store as well
         if let Some(ref vis_emb) = exp.visual_embedding {
-            let vis_key = format!("vis_exp:{}", exp.timestamp);
+            let vis_key = format!("vis_{key}");
             let vis_metadata = serde_json::json!({
                 "exp_key": key,
                 "success": exp.outcome_success,
@@ -244,7 +280,14 @@ impl ExperienceBank for VectorExperienceBank {
                 })?;
         }
 
-        Ok(())
+        Ok(key)
+    }
+}
+
+#[async_trait]
+impl ExperienceBank for VectorExperienceBank {
+    async fn record(&self, exp: ExperienceTuple) -> Result<(), TypesError> {
+        self.record_with_id(exp).await.map(|_| ())
     }
 
     async fn query_similar(

@@ -547,7 +547,6 @@ impl MySisyphusBridge {
                 Some(runtime) => Arc::new(crate::peer::PeerBroadcastExperienceBank::new(
                     experience_bank.clone(),
                     runtime.peer_manager.clone(),
-                    runtime.node_id.clone(),
                 )),
                 None => experience_bank.clone(),
             };

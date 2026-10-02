@@ -225,7 +225,7 @@ use sisyphus_bridge::peer::{
     spawn_static_peers, ExperienceSyncHandler, PeerBroadcastExperienceBank, StaticPeerConfig,
 };
 use sisyphus_mem::experience_bank::VectorExperienceBank;
-use sisyphus_types::experience::{ExperienceBank, ExperienceQuery};
+use sisyphus_types::experience::{experience_store_id, ExperienceBank, ExperienceQuery};
 
 /// 一个带完整生产接线（peer 管理器 + ClusterService + 经验同步处理器 +
 /// 广播装饰经验库）的测试节点。
@@ -298,7 +298,6 @@ async fn start_sync_node(node_id: &'static str, dial_peers: Vec<String>) -> Sync
     let broadcast = Arc::new(PeerBroadcastExperienceBank::new(
         bank.clone(),
         manager.clone(),
-        node_id,
     ));
 
     let service = ClusterServiceImpl::new(manager.clone());
@@ -492,13 +491,32 @@ async fn test_duplicate_delivery_does_not_duplicate_experience() {
     let exp = experience(1_700_000_010, "delivered twice");
     node_a.broadcast.record(exp.clone()).await.expect("A 记录经验应成功");
 
+    // 从广播事件里取出 A 实际使用的主键：它必须与 A 本地落库的主键一致，
+    // 否则对端会存成另一行。捕获它也让下面的重放用的是同一个 id。
+    let key = loop {
+        match node_a.events.try_recv() {
+            // 跳过链路探测用的探针，它不是真实经验
+            Ok(ClusterEvent::ExperienceSync { exp_key, .. })
+                if !exp_key.starts_with("link-probe:") =>
+            {
+                break exp_key
+            },
+            Ok(_) => continue,
+            Err(_) => panic!("A 未广播 ExperienceSync"),
+        }
+    };
+    assert!(
+        key.starts_with(&format!("exp:{}", exp.timestamp)),
+        "主键应以时间戳开头，实际 {key}"
+    );
+
     wait_for("B 首次收到", &mut node_b.events, || async {
         find_in(&b_bank, "hash-1700000010").await.is_some()
     })
     .await;
 
-    // 同一 payload 重放一次（模拟网络重传），CRDT 判定 Equal，不得重复写入。
-    let outcome = node_b.bank.apply_remote(&exp).await.expect("重放合并应成功");
+    // 同一 payload、同��主键重放一次（模拟网络重传），CRDT 判定 Equal。
+    let outcome = node_b.bank.apply_remote(&exp, &key).await.expect("重放合并应成功");
     assert_eq!(
         format!("{outcome:?}"),
         "Equal",
@@ -507,34 +525,37 @@ async fn test_duplicate_delivery_does_not_duplicate_experience() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn test_newer_remote_version_wins_concurrent_write() {
-    let mut node_a = start_sync_node("node-a", vec![]).await;
-    let mut node_b = start_sync_node("node-b", vec![node_a.grpc_addr.clone()]).await;
+async fn test_same_row_higher_version_wins_regardless_of_node() {
+    let node_a = start_sync_node("node-a", vec![]).await;
+    let node_b = start_sync_node("node-b", vec![node_a.grpc_addr.clone()]).await;
 
     wait_for_link(&node_a.manager, &node_b.manager).await;
     let b_bank = node_b.bank();
     let ts = 1_700_000_020;
+    // 同一主键 = 同一行。主键现在编码了来源与计数，所以「不同节点同一秒写入」
+    // 不再是冲突，而是两行——这正是被修复的碰撞语义。
+    let key = experience_store_id(ts, "node-a", 7);
 
-    // A 先落一条本地经验。
-    node_a.broadcast.record(experience(ts, "from node-a")).await.expect("A 记录经验应成功");
-    wait_for("B 收到 A 的首条", &mut node_b.events, || async {
-        find_in(&b_bank, &format!("hash-{ts}")).await.is_some()
-    })
-    .await;
+    let mut local = experience(ts, "from node-a");
+    local.version = 7;
+    local.vector_clock.insert("node-a".into(), 7);
+    node_b.bank.apply_remote(&local, &key).await.expect("首条写入应成功");
+    assert!(find_in(&b_bank, &format!("hash-{ts}")).await.is_some());
 
-    // 构造一条同 timestamp、version 更高的远程写入模拟并发覆盖。
-    let mut newer = experience(ts, "from node-b newer");
-    newer.version = 99;
-    let outcome = node_b.bank.apply_remote(&newer).await.expect("高版本合并应成功");
-    assert_eq!(format!("{outcome:?}"), "Applied", "更高版本必须覆盖本地");
-
+    // 同一主键、更高版本 → 覆盖
+    let mut newer = experience(ts, "from node-a newer");
+    newer.version = 8;
+    newer.vector_clock.insert("node-a".into(), 8);
+    let outcome = node_b.bank.apply_remote(&newer, &key).await.expect("高版本合并应成功");
+    assert_eq!(format!("{outcome:?}"), "Applied", "更高版本必须覆盖");
     let merged = node_b.find_by_hash(&format!("hash-{ts}")).await.expect("合并后仍可检索");
-    assert_eq!(merged.context_text, "from node-b newer");
+    assert_eq!(merged.context_text, "from node-a newer");
 
-    // 反向：把低版本写回 A，A 必须保留自己更新的内容。
-    let mut older = experience(ts, "from node-b older");
-    older.version = 1;
-    let outcome_a = node_a.bank.apply_remote(&older).await.expect("低版本合并应成功");
+    // 同一主键、更低版本 → 保留本地（发给持有该行的 node_b）
+    let mut older = experience(ts, "from node-a older");
+    older.version = 3;
+    older.vector_clock.insert("node-a".into(), 3);
+    let outcome_a = node_b.bank.apply_remote(&older, &key).await.expect("低版本合并应成功");
     assert_eq!(
         format!("{outcome_a:?}"),
         "Kept",

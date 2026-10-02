@@ -32,66 +32,60 @@ ADR-009 § Risk 2 写的是「启动时强制全量 sync（每个 peer 发送本
 - **幂等**：补齐走的是同一条 `ExperienceSync` → `apply_remote` → `merge_crdt` 路径，已天然幂等（返回 `Applied` / `Kept` / `Equal`）。
 - **有界**：单次响应的条目数必须有上界。
 
-### 前置缺陷 P1：经验行标识会碰撞（2026-10-02 在实施前发现）
+### 前置缺陷 P1：经验行标识会碰撞（2026-10-02 发现并已修复）
 
-本文原先假定「dial 方持有 (node_id → 最大 counter) 即可推断自己缺哪些经验」。**该假定在当前 schema 上不成立**，实施前必须先修。
+**已修复**。修复分两层，第二层是实施中才发现的：
 
-事实（已实测）：
+**第一层 · 主键碰撞**（原始症状）
 
 - 经验行的主键是 `id = format!("exp:{}", exp.timestamp)`，而 `timestamp` 取自 `SystemTime::now().duration_since(UNIX_EPOCH).as_secs()`——**秒级精度**。
 - `record_experience` 用的是裸 `INSERT`，没有 `OR REPLACE` / `ON CONFLICT`。
 - 实测：同一秒内写入两条经验，第二条返回 `Err("Failed to record experience")`，第一条完好。
 - `execute_and_record` 对该错误只 `tracing::warn!` 后继续，**丢失是静默的**，不影响目标执行结果。
 
-影响：单机侧，两个目标执行 / 反思阶段在**同一秒内**完成即丢一条经验；多节点侧因并发写与时钟差异，概率显著更高。
+修复：主键改为 `exp:{timestamp}:{origin}:{counter}`（见 `experience_store_id`）。`origin` 与 `counter`
+在 `bump_local_clock` 之后已存在于 `vector_clock` 中，**不新增字段，因此不改变跨节点序列化格式**。
+接收端采用发送方随 `ExperienceSync` 传来的主键，不再按本地 timestamp 重算——否则同一行会对端本地各存一份。
 
-对反熵方案的影响：`bump_local_clock` 确实让 `vector_clock[node_id]` 成为该节点内每条记录的递增计数，但**行标识 `exp:{ts}` 既不编码来源节点、也不编码该计数**。因此「我持有 node-a 的 counter ≤ N」无法推出「我持有 node-a 的这批行」——紧凑摘要算不出差量。
+**第二层 · 本地 CRDT 时钟退化**（实施第一层时发现，否则第一层无效）
 
-**因此本 ADR 的实施被两个前置项阻塞**：
+原以为纳入 `counter` 就能防碰撞，实测发现 `bump_local_clock` 只从**传入**的时钟自增，而
+`execute_and_record` 每次都构造 `vector_clock` 为空、`version` 为 0 的新 tuple。结果是：
 
-- **P1（数据正确性）** 经验行标识需无碰撞。可选方案见下。
-- **P2（本 ADR）** 行标识稳定后再做反熵，否则差量计算建立在错误前提上。
+```
+第1次本地写入: ({'node-a': 1}, 1)
+第2次本地写入: ({'node-a': 1}, 1)
+第3次本地写入: ({'node-a': 1}, 1)
+```
 
-### P1 的候选修复（**并非等价**，本 ADR 不选定）
+**每一条本地经验的 version 恒为 1、vc 计数恒为 1**。后果有二：同秒写入仍然撞主键（第一层
+修复形同虚设）；`merge_crdt` 的版本裁决对本地写入完全失效——CRDT 在单节点场景下从未真正起作用。
 
-三个方案对「本 ADR 能否实施」的影响差别很大，不能当作并列选项：
+修复：`VectorExperienceBank` 增加实例级单调序号 `local_seq`，写入时以它为准推进 vc 计数与
+version。
 
-1. **主键纳入来源与计数**：`id = exp:{ts}:{origin}:{counter}`。
-   - **唯一能让本 ADR 落地的选项**。行标识一旦编码来源与计数，dial 方持有
-     (node_id → max counter) 就能推出缺哪些行，紧凑摘要成立。
-   - `origin`/`counter` 在 `bump_local_clock` 之后已存在于 `vector_clock` 里，
-     无需新增 `ExperienceTuple` 字段，因此不改变跨节点序列化格式。
-   - 代价：`origin` 的定义需要明确（哪个节点是本行的产生者）。对本地写入，
-     就是 `bump_local_clock` 刚自增的那个 entry——建议让该函数把它一并返回，
-     顺带改善这个 API；对远程应用，需约定取远端 tuple 自带的 origin。
-2. **提高时间戳精度**（`as_millis()` / `as_nanos()`）：改动最小，但只是降低
-   概率而非消除；**并且行标识仍不编码来源，本 ADR 的摘要前提依然不成立**，
-   反熵依旧无法实施。
-3. **内容判别式**（`id = exp:{ts}:{短哈希(context_text + action_id)}`）：
-   同一目标同秒的重复写入折叠为一行——但那是**两次不同的执行**，折叠等于
-   丢一次执行的 deviation_score，仍是数据损失；同样不解锁本 ADR。
+**已知局限**：进程重启后 `local_seq` 归零。若重启前最后一条写入与重启后第一条落在同一秒
+且计数相同，主键仍可能冲突。需要严格保证时应从存储层恢复最大计数。
 
-因此：**若只修碰撞而不选方案 1，ADR-010 会永久阻塞**。建议把 P1 的修复与本
-ADR 一并决策。
+**存量行**：`data/*.db` 中已写入的行保留旧格式主键，不会被新格式的检索命中，也不参与
+未来的反熵摘要。项目处于 0.x，清库重建即可，未写迁移脚本。
 
-三者都需要把 id 推导收敛为单一函数——当前 `format!("exp:{}", exp.timestamp)`
-散落在 `store.rs`（3 处）、`experience_bank.rs`（2 处）、`sql_store.rs`（1 处）
-共 6 个点，任何格式变更都必须同步这 6 处，且 `store.rs` 的既有测试硬编码了
-`exp:1700000000` 形式的 id，需一并更新。存量行迁移策略同样需要决定。
+回归保护：`crates/sisyphus-mem/tests/experience_id_collision.rs` 锁定同秒写入不丢与本地计数单调两项。
 
-**实施路径上的门禁障碍已清除（2026-10-02）**：这 6 个点所在的 `store.rs` 与
-`sql_store.rs` 此前各被开发治理钩子以 5 / 17 处**既有的**误报级发现拦截，与 id
-推导无关但会阻断任何写入——连加一行说明注释都做不到。已逐条核实后按文件豁免，
-三个文件现均可写：
+### P1 修复方案的取舍（已决策）
 
-- `store.rs` 4 处「Running containers as root」实为 `SELECT ... FROM
-  execution_traces` 等 SQL，1 处「连接须释放」实为长驻的 `SqlitePool`。
-- `sql_store.rs` 16 处「Running containers as root」实为 `CREATE TABLE`、
-  `EXTRACT(EPOCH FROM NOW())`、`SELECT ...` 等 SQL，1 处连接项实为 `AnyPool`。
+先评估过三个方案，**它们不等价**：
 
-因此钩子新增了 `// adg:allow-file <token>` 指令（文件级豁免，适用于同一条
-误报规则在文件内成片触发的情形），并要求紧跟理由说明。豁免只覆盖这两个令牌，
-其他规则仍正常拦截。
+1. **主键纳入来源与计数** —— **已采纳**。行标识一旦编码来源与计数，紧凑摘要成立，
+   ADR-010 才可能落地。
+2. **提高时间戳精度**（毫秒 / 纳秒）—— 改动最小，但只是降低概率而非消除；且行标识
+   仍不编码来源，本 ADR 的摘要前提依旧不成立。**未采纳。**
+3. **内容判别式**（`exp:{ts}:{短哈希(context_text + action_id)}`）—— 同一目标同秒的
+   两次执行会折叠为一行，而那是两次不同的执行，折叠等于丢掉其中一次的
+   deviation_score，仍是数据损失；同样不解锁本 ADR。**未采纳。**
+
+配套改动：把散落 6 处的 `format!("exp:{}", exp.timestamp)` 统一为 `experience_store_id`，
+`record_experience` / `apply_remote_experience` / `insert_experience_full` 改为接收显式主键。
 
 ## 决策选项
 
