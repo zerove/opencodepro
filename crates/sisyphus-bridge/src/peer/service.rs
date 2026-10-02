@@ -223,17 +223,26 @@ pub(crate) fn apply_mgr_event(manager: &PeerManager, evt: MgrEvent) {
 /// 启动 cluster service：把 service impl 注册到 tonic ServerBuilder
 ///
 /// 典型用法：
-/// ```ignore
-/// use tonic::transport::Server;
-/// use sisyphus_bridge_api::cluster_proto::cluster_server::ClusterServer;
-///
+/// ```no_run
+/// # use std::sync::Arc;
+/// # use std::time::Duration;
+/// # use sisyphus_bridge::peer::manager::PeerManager;
+/// # use sisyphus_bridge::peer::service::ClusterServiceImpl;
+/// # use sisyphus_bridge_api::cluster_proto::cluster_server::ClusterServer;
+/// # use tonic::transport::Server;
+/// # async fn run() -> Result<(), Box<dyn std::error::Error>> {
 /// let manager = Arc::new(PeerManager::new("node-a", Duration::from_secs(30)));
-/// let service = ClusterServiceImpl::new(manager.clone());
+/// let service = ClusterServiceImpl::new(manager);
 /// Server::builder()
 ///     .add_service(ClusterServer::new(service))
-///     .serve(addr)
+///     .serve("127.0.0.1:50051".parse()?)
 ///     .await?;
+/// # Ok(())
+/// # }
 /// ```
+/// 此前该示例标为 ```ignore，从不参与编译——因此连 `Arc` / `Duration` 的
+/// 导入都缺失也无人发现。改为 ```no_run 后它会被编译检查，示例随 API 演进
+/// 腐烂时能立刻暴露。
 /// tonic 0.12 中 Server::add_service 是 consuming method（返回 Self），无需 helper。
 /// 直接调用方链式：Server::builder().add_service(ClusterServer::new(...)).serve(addr)
 /// 本函数仅作为文档示例保留。

@@ -279,7 +279,10 @@ async fn test_execute_tool_builtin_read() {
 /// strategic:next_goal 经由真实远程过程调用（gRPC）路由到 StrategicExecutor。
 /// 此用例覆盖项目不存在的错误映射，不覆盖目标执行。
 #[tokio::test]
-#[ignore = "requires dedicated runner"]
+// 此前带 `#[ignore = "requires dedicated runner"]`：忽略的理由不是资源受限，
+// 而是当时它们失败（内核未注入、失败被吞成成功）。本轮两个成因均已修复，
+// 用例本身自包含（内存 SQLite + DummyLlmClient），故移出忽略——
+// 否则本轮修复的失败传播语义在 CI 中将没有任何回归保护。
 async fn test_execute_tool_strategic_next_goal_missing_project() {
     let (mut client, server) = setup_bridge().await;
     let response = client
@@ -317,7 +320,10 @@ async fn test_execute_tool_strategic_next_goal_missing_project() {
 /// 本用例验证实际进入 execute_and_record 后的失败响应及持久化记录，
 /// 不将其宣称为成功执行、反思、演进的完整验收。
 #[tokio::test]
-#[ignore = "requires dedicated runner"]
+// 此前带 `#[ignore = "requires dedicated runner"]`：忽略的理由不是资源受限，
+// 而是当时它们失败（内核未注入、失败被吞成成功）。本轮两个成因均已修复，
+// 用例本身自包含（内存 SQLite + DummyLlmClient），故移出忽略——
+// 否则本轮修复的失败传播语义在 CI 中将没有任何回归保护。
 async fn test_execute_tool_strategic_next_goal_records_kernel_failure_with_dummy() {
     use sisyphus_types::{GoalRef, Milestone, MilestoneStatus, Phase};
 

@@ -33,10 +33,10 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo fmt --check
 
-  # ── 结构审计：孤儿源文件（src/ 下未被 mod 引入，不参与编译）──────
-  # 不需要 Rust 工具链，纯静态扫描，放在格式检查之后作为快速反馈。
-  audit-orphans:
-    name: Audit orphan sources
+  # ── 结构审计：孤儿源文件 / 忽略测试理由（无需 Rust 工具链）──────────
+  # 两者都是纯静态扫描，放在格式检查之后作为快速反馈。
+  audit-sources:
+    name: Audit sources
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -45,6 +45,8 @@ jobs:
           python-version: '3.11'
       - name: Scan for source files never referenced by any crate
         run: python3 scripts/audit_orphans.py
+      - name: Audit #[ignore] reasons
+        run: python3 scripts/audit_ignored.py
 
   # ── Supply-chain audit (cargo-deny: advisories, bans, licenses, sources) ─
   security-deny:

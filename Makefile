@@ -112,7 +112,16 @@ test-all:
 audit-orphans:
 	@python3 scripts/audit_orphans.py
 
-.PHONY: audit-orphans
+# 忽略测试的理由审计：#[ignore] 必须指向外部前置条件（网络/凭据/工具链/
+# 运行中服务/已声明缺口），不能是「测试当前失败」。CI 不跑 --include-ignored，
+# 被忽略即等于没有覆盖。
+audit-ignored:
+	@python3 scripts/audit_ignored.py
+
+# 全部结构审计（不需编译）
+audit: audit-orphans audit-ignored
+
+.PHONY: audit-orphans audit-ignored audit
 
 # — bridge crate (nightly+, no workaround needed) —
 
