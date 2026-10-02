@@ -98,6 +98,13 @@ pub fn spawn_static_peers_with_catchup(
         let cfg = config.clone();
         let mgr = Arc::clone(&manager);
         let addr = grpc_addr.clone();
+        // ADR-013：每个 peer 任务持有自己的接收器（多播必须各持一份）。
+        // 这份接收器从**任务 spawn 那一刻**起就一直有效并跨重连复用，
+        // 因此补齐信号在拨号器尚未建连时发出也不会丢。
+        //
+        // 注意这份接收器的存在会让 `tx.send()` 永远返回 `Ok`——只要还有
+        // 任何 peer 任务活着，「没有订阅者」就不会发生。这是设计上的取舍：
+        // 信号宁可被某个 peer 消费掉，也不该在没有任何接收者时静默失败。
         let rx = catchup_rx.as_ref().map(broadcast::Receiver::resubscribe);
         let handle = tokio::spawn(async move {
             run_dial_loop(cfg, mgr, addr, rx).await;
@@ -115,7 +122,9 @@ async fn run_dial_loop(
     config: StaticPeerConfig,
     manager: Arc<PeerManager>,
     grpc_addr: String,
-    catchup_rx: Option<broadcast::Receiver<()>>,
+    // ADR-013：声明为 mut——每次重连都把**同一个**接收器按可变引用交给
+    // `run_stream`（`recv()` 需要 `&mut self`），接收位置因此跨重连保留。
+    mut catchup_rx: Option<broadcast::Receiver<()>>,
 ) {
     let mut backoff = config.reconnect_initial_delay;
     loop {
@@ -123,11 +132,21 @@ async fn run_dial_loop(
             Ok(channel) => {
                 // 连接成功，重置 backoff
                 backoff = config.reconnect_initial_delay;
+                // ADR-013：把**同一个**接收器交给 `run_stream`，跨重连复用。
+                // 此前这里每次重连都 `resubscribe` 取新接收器，而 `resubscribe`
+                // 只从订阅那一刻开始计数——断连（或流任务尚未进入 `select!`）
+                // 期间发出的补齐信号会被整个跳过，既不进 `Some` 分支也不进
+                // `None` 分支。`tx.send()` 仍返回 `Ok`（spawn 时已存在一个
+                // 订阅者），因此这种丢弃不报错、无日志：发送成功 ≠ 信号被消费。
+                //
+                // 复用同一个接收器后，信号留在通道里，重连后第一轮 `select!`
+                // 就能取到（容量 1 下多次合并为 `Lagged`，`recv_catchup` 已把
+                // `Lagged` 视作「需要补齐」）。
                 if let Err(e) = run_stream(
                     &manager,
                     channel,
                     config.experience_bank.as_ref(),
-                    catchup_rx.as_ref().map(broadcast::Receiver::resubscribe),
+                    catchup_rx.as_mut(),
                 )
                 .await
                 {
@@ -196,7 +215,7 @@ async fn run_stream(
     manager: &PeerManager,
     channel: Channel,
     experience_bank: Option<&Arc<VectorExperienceBank>>,
-    catchup_rx: Option<broadcast::Receiver<()>>,
+    catchup_rx: Option<&mut broadcast::Receiver<()>>,
 ) -> Result<(), String> {
     let mut client = ClusterClient::new(channel);
 
@@ -239,8 +258,9 @@ async fn run_stream(
 
     let mut catchup_pending = false;
 
-    // 声明为 mut：`select!` 每一轮都以 `&mut` 借用这个 receiver，
-    // 跨轮次的接收位置必须保留。
+    // ADR-013：接收器由 `run_dial_loop` 按可变引用传入并跨重连复用，接收位置
+    // 因此得以保留——重连后第一轮 `select!` 就能取到断连期间发出的信号。
+    // 声明为 mut：`select!` 每一轮都以 `&mut` 借用它。
     let mut catchup_rx = catchup_rx;
 
     // inbound: 对端 proto 事件 → manager
@@ -249,7 +269,7 @@ async fn run_stream(
             // ADR-011：入站 Lagged 表示确实丢了事件，重连救不回来。向本 peer
             // 重发一次 SyncRequest，反熵按摘要算出差量并经幂等合并补齐。
             // 发送失败只记日志——与初始反熵拉取同等对待，不拖垮主循环。
-            _ = recv_catchup(catchup_rx.as_mut()) => {
+            _ = recv_catchup(catchup_rx.as_deref_mut()) => {
                 match paging {
                     // 已有分页会话在途：不并发开第二个。两个都没有 session ID
                     // 的分页会话一旦交错，服务端下发的 `SyncPageEnd` 就无法归属，
