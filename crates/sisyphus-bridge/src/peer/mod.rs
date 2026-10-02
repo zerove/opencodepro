@@ -29,4 +29,4 @@ pub use anti_entropy::{
 
 pub use fallback::{spawn_static_peers, spawn_static_peers_with_catchup, StaticPeerConfig};
 pub use manager::{ClusterEvent as MgrEvent, PeerInfo, PeerManager, PeerStatus};
-pub use service::ClusterServiceImpl;
+pub use service::{ClusterServiceImpl, JoinGateHandle};

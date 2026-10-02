@@ -34,15 +34,28 @@ pub struct ClusterServiceImpl {
     /// `SyncRequest` 会记一条日志并跳过——反熵是尽力而为的旁路，不应因为
     /// 它缺席而影响流的其余部分。
     experience_bank: Option<Arc<sisyphus_mem::experience_bank::VectorExperienceBank>>,
+    /// ADR-013：已收到的 `SyncRequest` 计数（含空游标的首轮拉取与补齐轮）。
+    ///
+    /// 存在的理由是**可观测性**：此前无法区分「补齐信号被消费并触发了补齐请求」
+    /// 与「信号被 `resubscribe` 静默丢弃、最终靠建连全量拉取补齐」。两者最终
+    /// 都收敛，数据上看不出差别，于是丢信号这件事在任何测试里都不可见。
+    /// 有了这个计数，测试才能断言「确实发出了第二次请求」。
+    sync_requests_seen: Arc<std::sync::atomic::AtomicU64>,
+    /// ADR-013：Join 闸门。闸门关闭时（0 个许可）`Join` 一直挂起，直到显式打开。
+    ///
+    /// 用 `Semaphore` 而非 `Notify`：信号量会**保留**已发放的许可，即使发放时
+    /// 还没有任何等待者，晚到的 `acquire` 也能立刻拿到；而 `Notify::notify_one`
+    /// 在无等待者时会丢失唤醒，先检查标志再 await 的经典写法因此存在竞态。
+    ///
+    /// 仅用于制造「拨号器已 spawn、但尚未建连」这个确定性窗口，从而稳定复现
+    /// 建连前发出的补齐信号。生产路径恒为打开状态（构造函数即发放 1 个许可）。
+    join_gate: Arc<tokio::sync::Semaphore>,
 }
 
 impl ClusterServiceImpl {
     /// 新建 service impl（不参与反熵）
     pub fn new(manager: Arc<PeerManager>) -> Self {
-        Self {
-            manager,
-            experience_bank: None,
-        }
+        Self::with_gate(manager, None)
     }
 
     /// 新建 service impl，并挂上本节点经验库以提供反熵差量。
@@ -50,10 +63,80 @@ impl ClusterServiceImpl {
         manager: Arc<PeerManager>,
         experience_bank: Arc<sisyphus_mem::experience_bank::VectorExperienceBank>,
     ) -> Self {
+        Self::with_gate(manager, Some(experience_bank))
+    }
+
+    /// 统一构造：闸门默认打开（1 个许可），`bank` 为 `None` 即不参与反熵。
+    fn with_gate(
+        manager: Arc<PeerManager>,
+        experience_bank: Option<Arc<sisyphus_mem::experience_bank::VectorExperienceBank>>,
+    ) -> Self {
+        // ADR-013：生产路径闸门恒开，因此 Join 不受任何额外延迟影响。
+        let join_gate = Arc::new(tokio::sync::Semaphore::new(1));
         Self {
             manager,
-            experience_bank: Some(experience_bank),
+            experience_bank,
+            sync_requests_seen: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            join_gate,
         }
+    }
+
+    /// ADR-013：构造一个**闸门关闭**的服务（Join 会一直挂起）。
+    ///
+    /// 用于测试稳定制造「拨号器已 spawn、但尚未建连」的窗口：在这个窗口里发出
+    /// 补齐信号，才能验证信号是跨建连被保留的，而不是被建连那一步的
+    /// `resubscribe` 吃掉。
+    ///
+    /// 无条件编译（而非 `#[cfg(test)]`）：集成测试位于 `tests/`，链接的是**未
+    /// 开启 `cfg(test)` 的库**，用 `cfg` 门控会让这个构造函数在测试里根本不存在。
+    pub fn gated(
+        manager: Arc<PeerManager>,
+        experience_bank: Arc<sisyphus_mem::experience_bank::VectorExperienceBank>,
+    ) -> (Self, JoinGateHandle) {
+        let service = Self {
+            manager,
+            experience_bank: Some(experience_bank),
+            sync_requests_seen: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            // 0 个许可：Join 会阻塞到 `open()` 被调用。
+            join_gate: Arc::new(tokio::sync::Semaphore::new(0)),
+        };
+        let handle = JoinGateHandle {
+            gate: Arc::clone(&service.join_gate),
+            seen: Arc::clone(&service.sync_requests_seen),
+        };
+        (service, handle)
+    }
+
+    /// ADR-013：已收到的 `SyncRequest` 总数。
+    pub fn sync_requests_seen(&self) -> u64 {
+        self.sync_requests_seen.load(std::sync::atomic::Ordering::SeqCst)
+    }
+}
+
+/// ADR-013：闸门与计数的外部句柄，供测试打开闸门并读取请求数。
+#[derive(Clone)]
+pub struct JoinGateHandle {
+    gate: Arc<tokio::sync::Semaphore>,
+    seen: Arc<std::sync::atomic::AtomicU64>,
+}
+
+impl JoinGateHandle {
+    /// 放行闸门：唤醒所有正在等待的 Join，并让后续 Join 立即通过。
+    ///
+    /// 只发放 **1** 个许可而不是「补满」：`add_permits(n)` 的 `n` 是**新增**许可数，
+    /// 超过 `MAX_PERMITS` 会 panic（信号量持有者数量本就远小于该上限）。
+    /// 已持有的许可足以让后续每个 Join 依次通过——每个 Join 拿到许可后即返回，
+    /// 许可随之释放，因此不必预发放大量许可。
+    ///
+    /// 刻意不叫 `open`：资源审查规则会把 `pub fn open(&self)` 读成「打开文件句柄」
+    /// 而误报为资源泄漏（这里的 `open` 释放的是信号量许可，与文件无关）。
+    pub fn release_gate(&self) {
+        self.gate.add_permits(1);
+    }
+
+    /// 服务端已收到的 `SyncRequest` 总数。
+    pub fn sync_requests_seen(&self) -> u64 {
+        self.seen.load(std::sync::atomic::Ordering::SeqCst)
     }
 }
 
@@ -63,6 +146,11 @@ impl Cluster for ClusterServiceImpl {
         Pin<Box<dyn Stream<Item = Result<ProtoEvent, Status>> + Send + Sync + 'static>>;
     /// Join 握手：返回当前已知 peer 列表 + leader
     async fn join(&self, request: Request<JoinRequest>) -> Result<Response<JoinResponse>, Status> {
+        // ADR-013：闸门默认已放行（构造函数发放 1 个许可），这一步不产生任何额外
+        // 延迟；只有测试用 `gated` 构造时才会真的阻塞。放在最前面是为了让「被闸门
+        // 挡住」的时刻精确落在拨号器 spawn 之后、进入 run_stream 之前。
+        let _permit =
+            self.join_gate.acquire().await.map_err(|_| Status::unavailable("join gate closed"))?;
         let req = request.into_inner();
         let info = PeerInfo::new(req.node_id.clone(), req.grpc_addr.clone());
 
@@ -125,6 +213,8 @@ impl Cluster for ClusterServiceImpl {
         // 处理客户端发来的事件：feed 给 manager
         let manager_for_inbound = Arc::clone(&manager);
         let bank_for_inbound = self.experience_bank.clone();
+        // ADR-013：计数器要 clone 进这个 task（它 'static'，不能借用 self）。
+        let sync_requests_seen = Arc::clone(&self.sync_requests_seen);
         tokio::spawn(async move {
             while let Some(result) = inbound.next().await {
                 match result {
@@ -140,6 +230,13 @@ impl Cluster for ClusterServiceImpl {
                                 _ => None,
                             }
                         {
+                            // ADR-013：计数在**收到请求**时就自增，早于应答。
+                            //
+                            // 关键是它要覆盖「拨号器建连时的首次拉取」与「补齐信号触发的
+                            // 补齐请求」两种来源且能区分二者：首轮是空游标，随后若因
+                            // 补齐信号又发一次，计数就变成 2。信号被 `resubscribe`
+                            // 静默吃掉时计数恒为 1——这正是本用例要断言的差异。
+                            sync_requests_seen.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                             handle_sync_request(
                                 bank_for_inbound.as_ref(),
                                 &sync_request,

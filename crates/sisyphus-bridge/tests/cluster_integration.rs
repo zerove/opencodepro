@@ -243,6 +243,10 @@ struct SyncNode {
     /// ADR-011：补齐信号订阅。用于断言「确实丢了事件并触发了恢复」，
     /// 而不只是「最终数据对了」——后者在丢失没发生时同样成立。
     catchup_rx: tokio::sync::broadcast::Receiver<()>,
+    /// ADR-013：仅闸门构造的节点有值。用于放行 Join 并读取服务端收到的
+    /// `SyncRequest` 计数——这是区分「信号被消费」与「靠建连全量拉取补齐」
+    /// 的唯一可观测手段（两者最终都收敛，数据上看不出差别）。
+    gate: Option<sisyphus_bridge::peer::JoinGateHandle>,
 }
 
 impl SyncNode {
@@ -295,6 +299,16 @@ async fn build_bank() -> Arc<VectorExperienceBank> {
 
 /// 启动一个节点；`dial_peers` 非空时按生产路径建立到对端的静态拨号。
 async fn start_sync_node(node_id: &'static str, dial_peers: Vec<String>) -> SyncNode {
+    start_sync_node_inner(node_id, dial_peers, false).await
+}
+
+/// ADR-013：`gated` 为真时用**闸门关闭**的服务，从而把拨号器的 Join 挡在门外，
+/// 制造一个「拨号器已 spawn、但尚未建连」的确定性窗口。
+async fn start_sync_node_inner(
+    node_id: &'static str,
+    dial_peers: Vec<String>,
+    gated: bool,
+) -> SyncNode {
     let manager = Arc::new(PeerManager::new(node_id, Duration::from_secs(30)));
     // 观察**入站**通道：用例关心的是「对端发来的事件到了没有」，而入站事件
     // 不再进入本地广播通道（否则会被拨号器转发回去，在集群里回弹）。
@@ -306,7 +320,16 @@ async fn start_sync_node(node_id: &'static str, dial_peers: Vec<String>) -> Sync
         manager.clone(),
     ));
 
-    let service = ClusterServiceImpl::with_experience_bank(manager.clone(), bank.clone());
+    // ADR-013：闸门构造会一并返回句柄，供用例放行并读取 SyncRequest 计数。
+    let (service, gate) = if gated {
+        let (svc, gate) = ClusterServiceImpl::gated(manager.clone(), bank.clone());
+        (svc, Some(gate))
+    } else {
+        (
+            ClusterServiceImpl::with_experience_bank(manager.clone(), bank.clone()),
+            None,
+        )
+    };
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.expect("bind");
     let grpc_addr = format!("http://{}", listener.local_addr().expect("addr"));
     let _server = tokio::spawn(async move {
@@ -348,6 +371,7 @@ async fn start_sync_node(node_id: &'static str, dial_peers: Vec<String>) -> Sync
         grpc_addr,
         events,
         catchup_rx: observer_rx,
+        gate,
         _shutdown: shutdown_tx,
     }
 }
@@ -1133,5 +1157,88 @@ async fn catchup_deferred_while_paging_converges_exactly() {
                 .await
                 .is_ok(),
         "洪泛从未触发补齐信号，本用例没有覆盖「分页在途时延后」这条路径"
+    );
+}
+
+/// ADR-013：补齐信号必须跨「建连」被保留，不能被建连那一步的 `resubscribe` 吃掉。
+///
+/// ## 这个缺口为什么数据上看不见
+///
+/// `run_stream` 在每次流建立时都无条件发一次全量反熵拉取。因此信号被丢弃与否，
+/// **最终行集合完全一样**——只断言收敛状态的用例对这个 bug 恒真，是典型假覆盖。
+///
+/// ## 用计数而不是数据来断言
+///
+/// 本用例断言服务端收到的 `SyncRequest` 次数：
+///
+/// - 建连时首次全量拉取 → 计数 +1
+/// - 若建连前发出的信号被消费 → 再发一次补齐请求 → 计数再 +1
+///
+/// 变异（把 `run_dial_loop` 里的 `catchup_rx.as_mut()` 还原成
+/// `catchup_rx.as_ref().map(broadcast::Receiver::resubscribe)`）会让计数停在 1，
+/// 因为新订阅者看不到订阅前发出的信号。用例因此必然失败。
+///
+/// ## 为什么用 Join 闸门
+///
+/// 需要一个「拨号器已 spawn、但还没建连」的窗口。`PeerManager` 没有可用的断流手段，
+/// 所以改为在**服务端**把 Join 挡住：拨号器的任务已启动（接收器已创建），却卡在
+/// `connect_and_join`，此时发出的信号就精确落在目标窗口内。
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn catchup_signal_sent_before_connect_is_still_consumed() {
+    // 闸门必须装在**被拨号方 A** 上：B 是拨号方，它连的是 A。装在 B 自己的服务上
+    // 毫无作用——没人会连 B，B 的拨号器会直接连上 A 并正常跑完，计数恒为 0。
+    let node_a = start_sync_node_inner("node-a", vec![], true).await;
+    let gate = node_a.gate.clone().expect("闸门构造的节点必须带回闸门句柄");
+
+    // B 作为拨号方去连 A；此时 A 的 Join 被闸门挡住，B 卡在 connect_and_join。
+    let mut node_b = start_sync_node("node-b", vec![node_a.grpc_addr.clone()]).await;
+
+    // 洪泛压垮 B 的入站通道（容量 256），迫使 ExperienceSyncHandler 产生真实的
+    // Lagged 并发出补齐信号。此刻拨号器还卡在 Join，信号落在建连之前。
+    for i in 0..3u64 {
+        for j in 0..600u64 {
+            node_b.manager.deliver_inbound_experience_sync(
+                format!("pre-connect-flood-{i}-{j}"),
+                i * 600 + j,
+                "{}",
+                vec![0u8; 64],
+            );
+        }
+    }
+
+    // 确认信号确实发出了（observer 是独立订阅，能看到 handler 的 send）。
+    // 只确认「发过」不够——本用例的真正断言在下面的计数上。
+    let signalled = node_b.catchup_rx.try_recv().is_ok()
+        || tokio::time::timeout(Duration::from_millis(300), node_b.catchup_rx.recv()).await.is_ok();
+    assert!(signalled, "洪泛从未触发补齐信号，本用例没有覆盖任何东西");
+
+    // 建连仍未发生：闸门关着，计数必须为 0。
+    assert_eq!(
+        gate.sync_requests_seen(),
+        0,
+        "闸门关闭期间不该有任何 SyncRequest 抵达服务端"
+    );
+
+    // 放行建连。拨号器此时才进入 run_stream 并发出首次全量拉取。
+    gate.release_gate();
+
+    // 等到计数稳定：首次拉取 1 次 + 被消费信号触发的补齐 1 次 = 2。
+    for _ in 0..100 {
+        if gate.sync_requests_seen() >= 2 {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    // 再等一会儿，确认不会冒出第 3 次（补齐信号是幂等单次，不是风暴）。
+    tokio::time::sleep(Duration::from_millis(300)).await;
+
+    assert_eq!(
+        gate.sync_requests_seen(),
+        2,
+        "建连前发出的补齐信号必须被消费：应先有建连时的首次全量拉取，\
+         再有一次由该信号触发的补齐请求。\
+         若只有 1 次，说明信号被建连那一步的 `resubscribe` 静默吃掉了\
+         （数据仍会靠首次拉取收敛，所以只断言数据永远抓不到这个 bug）。\
+         若超过 2 次，说明补齐变成了请求风暴。"
     );
 }
