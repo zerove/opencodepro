@@ -93,21 +93,27 @@
 
 | 命令 | 结果 |
 |------|------|
-| `cargo test-all -j 1`（全 workspace，排除 bridge/sandbox/sandboxd/tests） | **4697 passed / 0 failed / 17 ignored** |
-| `cargo test -p sisyphus-bridge --no-default-features -j 1` | **163 passed / 0 failed / 0 ignored**（解除 2 处失效 `#[ignore]` + 1 处从不编译的 ```ignore 文档示例后） |
+| `cargo test-all -j 1`（全 workspace，排除 bridge/sandbox/sandboxd/tests） | **4702 passed / 0 failed / 12 ignored** |
+| `cargo test -p sisyphus-bridge --no-default-features -j 1` | **163 passed / 0 failed / 0 ignored**（解除 2 处失效 `#[ignore]` + 1 处从不编译的文档示例后） |
 | `cargo test -p sisyphus-sandbox -p sisyphus-tests -j 1` | **113 passed / 0 failed / 3 ignored** |
 | `CARGO_PROFILE_DEV_DEBUG=0 cargo test -p sisyphus-sandboxd -j 1` | **6 passed / 0 failed / 0 ignored** |
 | `cargo fmt --all --check` | 通过（pre-commit 门禁） |
 | `cargo clippy` | 通过，0 警告（pre-commit 门禁） |
 | `cargo check-all` | 通过（pre-commit 门禁） |
 
-四条命令合起来覆盖了全部 27 个 workspace 成员（含 `webui` 与 `evals`，二者都是 workspace 成员，已被 `test-all` 编译并执行）：**4979 passed / 0 failed / 23 ignored**。
+四条命令合起来覆盖了全部 27 个 workspace 成员（含 `webui` 与 `evals`，二者都是 workspace 成员，已被 `test-all` 编译并执行）：**4984 passed / 0 failed / 15 ignored**。
+
+> **数字修正记录（2026-10-02 晚间）**：本报告早前版本给出过 4976 / 4979 等数字，均不准确，现予更正。两个来源：
+> 1. 文档示例从 `ignore` 改为 `no_run` 后，5 个原本计入「忽略」的 doctest 开始参与编译并通过，`test-all` 由 4697/17 变为 4702/12（+5/−5，与改动数精确对应）。
+> 2. `sisyphus-core` 早前记作 296，那是**对被 `tail -40` 截断的输出手工求和**的结果；改为脚本累计后为 331。
+>
+> 现所有数字均由脚本对完整输出求和得出。教训与本轮其他两条一致：结论必须能被重新执行验证。
 
 **本轮改动直接涉及的 crate**（已含在上面的全量里，仅作定位用，**不可与全量相加**）：
 
 | 命令 | 结果 |
 |------|------|
-| `cargo test -p sisyphus-core -j 1` | 296 passed / 0 failed（lib 91 + 各集成目标） |
+| `cargo test -p sisyphus-core -j 1` | 331 passed / 0 failed（含 1 个 doctest） |
 | `cargo test -p sisyphus-mem -j 1` | 118 passed / 0 failed（含恢复的 7 个孤儿用例） |
 | `cargo test -p sisyphus-bridge --test cluster_integration` | 10 passed / 0 failed（新增 5 个） |
 | `... bridge_integration_test -- --include-ignored --test-threads=1` | 54 passed / 0 failed（`#[ignore]` 用例全部实际执行） |
@@ -115,7 +121,7 @@
 计数口径提醒，避免后续误读：
 
 - `bridge_integration_test` 的专项运行（`--include-ignored`）与常规运行出自**同一个测试二进制**，两者重叠，不能相加。该目标原有 2 处失效 ignore 已于本轮解除，现在常规运行即 54 通过 / 0 忽略。
-- core 296 与 mem 118 已包含在 `test-all` 的 4697 内（两者都是默认成员），同样不可叠加。
+- core 331 与 mem 118 已包含在 `test-all` 的 4702 内（两者都是默认成员），同样不可叠加。
 
 `cluster_integration` 新增的 5 个用例：
 
@@ -149,9 +155,9 @@
 
 在提交本轮改动前必须补齐，否则「已修复」的结论只覆盖了部分范围。
 
-- [x] `cargo test -p sisyphus-bridge --no-default-features` 全量：160 通过 / 0 失败
+- [x] `cargo test -p sisyphus-bridge --no-default-features` 全量：163 通过 / 0 失败
 - [x] `#[ignore]` 专项（`make test-bridge-dedicated` 等价命令）：54 通过 / 0 失败
-- [x] `cargo test-all`（默认成员）：4697 通过 / 0 失败
+- [x] `cargo test-all`（默认成员）：4702 通过 / 0 失败
 - [x] `cargo test -p sisyphus-sandbox -p sisyphus-tests`：113 通过 / 0 失败
 - [x] `cargo test -p sisyphus-sandboxd`（需 `CARGO_PROFILE_DEV_DEBUG=0`）：6 通过 / 0 失败
 - [x] `cargo clippy` / `cargo fmt --check` / `cargo check-all`（pre-commit 门禁每次提交均已跑）
@@ -161,7 +167,7 @@
 本轮最贵的教训是：TODO 勾选与代码事实脱节，靠人工读代码发现不了。建议把验证做成机制而不是靠人记。
 
 - [x] **孤儿源文件扫描**: `scripts/audit_orphans.py` + `make audit-orphans` + CI 作业 `audit-sources`。从 crate 根沿 `mod` 声明遍历，找出 `src/` 下从未被引入的文件。已端到端验证：移除 `sisyphus-mem/src/lib.rs` 的 `mod tests;` 即被抓出，恢复后归零。
-- [x] **忽略测试理由审计**: `scripts/audit_ignored.py` + `make audit-ignored` + CI 作业 `audit-sources`。全仓 15 处 `#[ignore]` 而 CI 从不使用 `--include-ignored`——被忽略即等于没有覆盖。本审计只接受指向外部前置条件的理由（网络、凭据/环境变量、外部工具链、需要运行中的服务、已声明的能力缺口），裸 `#[ignore]` 与其他理由一律报出。已用 4 个合成用例验证精度：拦截 `requires dedicated runner` 与裸 `#[ignore]`，放行诚实理由、以及仅在注释中引用该属性的说明文字。
+- [x] **忽略测试理由审计**: `scripts/audit_ignored.py` + `make audit-ignored` + CI 作业 `audit-sources`。建立时全仓有 15 处 `#[ignore]`（其中 2 处是失效理由，已于本轮解除，现存 13 处），而 CI 从不使用 `--include-ignored`——被忽略即等于没有覆盖。本审计只接受指向外部前置条件的理由（网络、凭据/环境变量、外部工具链、需要运行中的服务、已声明的能力缺口），裸 `#[ignore]` 与其他理由一律报出。已用 4 个合成用例验证精度：拦截 `requires dedicated runner` 与裸 `#[ignore]`，放行诚实理由、以及仅在注释中引用该属性的说明文字。
 - [x] **解除 2 处失效的 `#[ignore]`**: `bridge_integration_test` 中两处 `#[ignore = "requires dedicated runner"]` 的真实原因不是资源受限，而是当时测试失败（内核未注入、失败被吞成成功）。本轮两个成因均已修复，用例自包含（内存 SQLite + DummyLlmClient）。保持忽略会让本轮修复的失败传播语义在 CI 中零覆盖——而 CI 早已不带 `--include-ignored` 运行这个测试目标。
 - [x] **6 处从不编译的文档示例改为 `no_run`**: `peer/service.rs`、`config_store.rs`（2 处）、`node.rs`、`core/lib.rs`、`formal_verification.rs` 均标为 ```ignore，从不参与编译。转换过程查出 **3 处真实文档缺陷**：`ConfigStore::load` 是同步函数却被示例写成 `.await`（会误导调用方）、`ExecutorRouter` 示例有未定义的 `args` 与多余的 `mut`（`register` 取 `&self`）、`peer/service.rs` 示例缺 `Arc` / `Duration` 导入。另修掉 `ExecutorRouter::register` 上重复两遍的文档注释。
 - [x] **修复 `resolve_backend` 三份副本**（扫描过程中发现）: `sisyphus-cli` 的 `build.rs` / `run.rs` / `diagnose.rs` 各有一份 36 行的 `resolve_backend`，逐字复制且已漂移（diagnose 版多一行注释）。新增语言需同步改三处，漏改即分叉——与 `fallback.rs` 是同一类漂移风险。已收敛为 `build.rs` 的 `pub(crate)` 单一实现。
