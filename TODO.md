@@ -423,7 +423,8 @@
 - [x] **解除 2 处失效的 `#[ignore]`**: `bridge_integration_test` 中两处 `#[ignore = "requires dedicated runner"]` 的真实原因是测试失败（内核未注入、失败被吞成成功），本轮修复后已自包含通过；保持忽略会让本轮修复的失败传播语义在 CI 中零覆盖
 - [x] **6 处从不编译的文档示例改为 `no_run`**: `peer/service.rs`、`config_store.rs`(2)、`node.rs`、`core/lib.rs`、`formal_verification.rs`。查出 3 处真实文档缺陷（`.await` 用在同步函数 `ConfigStore::load` 上、示例变量未定义、缺导入），并修掉 `ExecutorRouter::register` 重复的文档注释
 - [x] **修复 `sisyphus-cli` `resolve_backend` 三份副本**: `build.rs`/`run.rs`/`diagnose.rs` 各一份 36 行副本且已漂移，收敛为 `build.rs` 的 `pub(crate)` 单一实现
-- [ ] **重复实现扫描（尝试失败，未采用）**: 正则 + 字节级比对抓不住「复制后各自加注释」这一真实漂移形态；需 `syn` 级 AST 比对。详见状态报告第六节
+- [ ] **重复实现扫描（尝试失败，未采用）**: 正则 + 字节级比对抓不住「复制后各自加注释」这一真实漂移形态；需 `syn` 级 AST 比对。详见状态报告 6.1
+- [ ] **文档示例围栏审计（尝试失败，未采用）**: 「围栏前须有理由」无法区分理由与普通说明文字，合成用例即证伪；不可判定的门禁只会制造已覆盖的错觉。详见状态报告 6.2
 - [ ] **TODO 勾选门禁**: 勾选项须附带测试名，`make todo-audit` 交叉核对是否真实存在且在跑
 
 ### 10.2 阶段 9 剩余
