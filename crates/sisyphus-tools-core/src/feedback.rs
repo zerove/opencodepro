@@ -18,7 +18,17 @@ mod tests {
 
     fn unique_temp_dir() -> PathBuf {
         let n = TEST_COUNTER.fetch_add(1, Ordering::SeqCst);
-        std::env::temp_dir().join(format!("sisyphus_feedback_test_{}", n))
+        let dir = std::env::temp_dir().join(format!("sisyphus_feedback_test_{n}"));
+        // 清掉上一次运行残留的目录。
+        //
+        // 计数器只在**单次进程内**递增，跨进程会从 0 重新开始。若上次运行留下
+        // `sisyphus_feedback_test_0`，本次运行的第一个测试就会复用它——
+        // 而 `test_query_when_base_path_not_exists` 的前提正是"目录不存在"，
+        // 于是该断言（及依赖空目录的查询类用例）在高频重复运行下成组失败。
+        //
+        // 与 `wisdom.rs` 的同名函数保持一致；那里早已有这一步。
+        let _ = std::fs::remove_dir_all(&dir);
+        dir
     }
 
     fn sample_feedback(
