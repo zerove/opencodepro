@@ -102,9 +102,17 @@ pub fn spawn_static_peers_with_catchup(
         // 这份接收器从**任务 spawn 那一刻**起就一直有效并跨重连复用，
         // 因此补齐信号在拨号器尚未建连时发出也不会丢。
         //
-        // 注意这份接收器的存在会让 `tx.send()` 永远返回 `Ok`——只要还有
-        // 任何 peer 任务活着，「没有订阅者」就不会发生。这是设计上的取舍：
+        // 注意这份接收器的存在会让 `tx.send()` 返回 `Ok`——只要**至少有一个**
+        // peer 任务活着，「没有订阅者」就不会发生。这是设计上的取舍：
         // 信号宁可被某个 peer 消费掉，也不该在没有任何接收者时静默失败。
+        //
+        // 但这**不是**「send 永远成功」：`resubscribe` 位于本循环体内，
+        // `config.peers` 为空时循环体一次都不执行，不存在任何接收器，
+        // `tx.send(())` 会返回 `Err(SendError)`，handler 侧
+        // `Lagged catchup signal has no subscriber` 日志照常触发。
+        // 未配置静态 peer 的节点（单机启动、纯被拨号、靠服务发现加入）即属此列。
+        // 该行为由 `experience_sync.rs` 的
+        // `catchup_signal_send_fails_when_peer_list_is_empty` 钉住（ADR-013）。
         let rx = catchup_rx.as_ref().map(broadcast::Receiver::resubscribe);
         let handle = tokio::spawn(async move {
             run_dial_loop(cfg, mgr, addr, rx).await;

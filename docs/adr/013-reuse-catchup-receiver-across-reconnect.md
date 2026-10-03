@@ -43,11 +43,10 @@ run_stream(..., catchup_rx.as_ref().map(broadcast::Receiver::resubscribe)).await
 - 信号因此留在通道里，重连后第一轮 `select!` 就能取到（容量 1 下多次合并为
   `Lagged`，`recv_catchup` 已把 `Lagged` 视作「需要补齐」）。
 
-顺带修正一处**死代码**：`ExperienceSyncHandler` 里 `tx.send()` 失败时打的
-`Lagged catchup signal has no subscriber` 日志，在有 peer 任务存活时永远不会
-触发——`spawn_static_peers_with_catchup` 一进来就 `resubscribe` 了一份，那份
-接收器跟着 dial loop 活到进程结束。保留该分支是为了语义完整（确实可能没有任何
-peer），但**不能**把它当作信号可达性的证据。
+顺带记录一处**当时误判为死代码**的日志：`ExperienceSyncHandler` 里 `tx.send()`
+失败时打的 `Lagged catchup signal has no subscriber`。本 ADR 早期版本称它在有
+peer 任务存活时永不触发，并建议删除；该判断后来被推翻（见「更正」小节）——
+未配置静态 peer 的节点上它是活的，因此**保留**。
 
 ## 这个窗口会不会丢数据
 
@@ -208,5 +207,27 @@ cargo test -p sisyphus-bridge --test cluster_integration
 
 - 若将来去掉建连时的无条件全量拉取（改为仅靠信号驱动），「首次拉取 vs 信号补齐」
   的计数区分将失效，届时需要新的可观测点。
-- `ExperienceSyncHandler` 的 `no subscriber` 日志实际不可达（见上），可考虑
-  改为在 dial loop 全部退出时才启用，或直接删除以免误导。
+- ~~`ExperienceSyncHandler` 的 `no subscriber` 日志实际不可达~~ —— **该结论已
+  被推翻，见下。** 这条日志**不是死代码**，因此不应按「误导性死代码」删除。
+
+### 更正：`no subscriber` 日志并非死代码
+
+本 ADR 早期版本写「有 peer 任务存活时永远不会触发」，理由是
+`spawn_static_peers_with_catchup` 一进来就 `resubscribe` 了一份接收器。
+**这条推理漏掉了条件。** `resubscribe` 发生在
+`for grpc_addr in &config.peers` 循环**内部**；`peers` 为空时循环体一次都不执行，
+没有任何接收器被创建，`catchup_tx.send(())` 因此返回 `Err(SendError)`，
+那条日志照常触发。
+
+也就是说，未配置任何静态 peer 的节点（单机启动、纯被拨号、靠服务发现加入的部署）
+上，这个分支是**活的**。原有表述把「有 peer 时不可达」误写成了「恒不可达」。
+
+新增用例 `catchup_signal_send_fails_when_peer_list_is_empty` 走真实装配路径
+`spawn_static_peers_with_catchup`（而非手工造 `broadcast::channel`——那只能验证
+tokio 语义，证明不了生产接线），把该行为钉住。
+
+有效变异：把 `resubscribe` 提到循环之外并 `mem::forget` 强制存活（模拟「peers 为空
+时也仍有一个订阅者」），用例稳定失败，连续 3 次一致。
+
+这个更正也再次印证了本 ADR 的一贯教训：**「不可达」这类否定性结论同样需要实证。**
+它是推理出来的，不是测出来的；推理的前提（循环体总会执行）恰好在这里不成立。

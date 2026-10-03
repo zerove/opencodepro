@@ -148,10 +148,10 @@ pub async fn serve_sync_request(
     })?;
 
     let (experiences, _) = build_sync_page(requested, &rows, 0, page_size);
-    // `build_sync_page` 只发 `rows` 里仍在的键：`page_keys` 算出后、
-    // `load_by_keys` 执行前的并发删除会让实际发出条数少于 `page_keys`。
-    // 游标必须按**请求区间**而非 `experiences.len()` 推进——否则每页都会
-    // 因少发一条而把位置留在段内，同一段被反复重算，永远翻不到下一页。
+    // `build_sync_page` 会再用 `requested` 过滤一遍 `rows`：若并发删除使某键消失，
+    // 过滤会把它剔除而不会发出一条悬空引用。因此实际发出条数可能少于
+    // `page_keys`，而游标必须按**请求区间**而非 `experiences.len()` 推进——
+    // 否则每页都会因过滤少一条而反复重算同一段，永远翻不到下一页。
     let consumed = start + page_keys.len();
     let more = consumed < delta.len();
 
@@ -220,6 +220,10 @@ pub fn digest_to_sync_request_payload(
         vector_clock: Default::default(),
         // 已废弃字段必须显式置 0：proto3 的标量默认值本身就是 0，但显式写出
         // 能让「我们不再发送 offset」这件事在代码里可见，而不是靠省略。
+        //
+        // `#[allow(deprecated)]` 与这段注释是一体：显式赋 0 必然触碰已废弃字段，
+        // 没有这个属性 clippy 的 `-D warnings` 会把告警升级为错误、整个 crate
+        // 编不过。它抑制的是「使用已废弃字段」这一个诊断，不影响其它告警。
         #[allow(deprecated)]
         offset: 0,
         cursor: cursor.to_string(),

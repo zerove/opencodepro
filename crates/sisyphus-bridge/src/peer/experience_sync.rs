@@ -313,6 +313,7 @@ impl ExperienceSyncHandler {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::peer::{spawn_static_peers_with_catchup, StaticPeerConfig};
     use std::time::Duration;
 
     #[test]
@@ -346,5 +347,48 @@ mod tests {
         let exp = ExperienceTuple::default();
         broadcast_experience(&mgr, &exp, "exp:test:1");
         // 无需断言 — 仅确保不 panic
+    }
+
+    /// ADR-013 遗留项的实证：那条 `no subscriber` 日志并非死代码。
+    ///
+    /// ADR 原先写「有 peer 任务存活时永远不会触发」，理由是
+    /// `spawn_static_peers_with_catchup` 一进来就 `resubscribe` 了一份接收器。
+    /// 但那是**有条件**的结论：`resubscribe` 发生在
+    /// `for grpc_addr in &config.peers` 循环体内。`peers` 为空时循环体一次都不
+    /// 执行，没有任何接收器被创建，`catchup_tx.send(())` 因此返回 `Err(SendError)`
+    /// ——那条日志照常触发。
+    ///
+    /// 因此 `main.rs` 中未配置任何静态 peer 的节点（单机启动、纯被拨号、
+    /// 靠服务发现加入的部署）上，这条分支是**活的**。
+    ///
+    /// 用例走真实装配路径 `spawn_static_peers_with_catchup`（而非手工造一个
+    /// `broadcast::channel`）——手工造通道只能验证 tokio 的语义，证明不了生产
+    /// 接线。断言同样取自装配返回的发送端，而不是新建的通道。
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn catchup_signal_send_fails_when_peer_list_is_empty() {
+        let mgr = Arc::new(PeerManager::new("node-a", Duration::from_secs(30)));
+        let (catchup_tx, catchup_rx) = tokio::sync::broadcast::channel::<()>(1);
+
+        // 真实装配路径，但 peers 为空：循环体不执行，不会产生任何 resubscribe，
+        // `catchup_rx` 随之被装配函数消费掉——这正是「没有任何订阅者」的来源。
+        let dial_cfg = StaticPeerConfig {
+            peers: vec![],
+            self_node_id: "node-a".to_string(),
+            self_grpc_addr: "http://node-a:50051".to_string(),
+            join_timeout_secs: 5,
+            reconnect_initial_delay: Duration::from_millis(10),
+            reconnect_max_delay: Duration::from_millis(50),
+            experience_bank: None,
+        };
+        let handles = spawn_static_peers_with_catchup(dial_cfg, Arc::clone(&mgr), Some(catchup_rx));
+        assert!(handles.is_empty(), "peers 为空时不应产生任何拨号任务");
+
+        // 这正是 ExperienceSyncHandler 在 Lagged 分支里执行的那一次发送。
+        let send_result = catchup_tx.send(());
+        assert!(
+            send_result.is_err(),
+            "peers 为空时没有任何接收器，`catchup_tx.send(())` 本应返回 \
+             Err(SendError)，实际却成功了——说明存在预期之外的订阅者"
+        );
     }
 }
