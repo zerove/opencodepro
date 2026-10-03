@@ -393,7 +393,12 @@ mod tests {
 
     #[test]
     fn test_learn_empty() {
-        let ml = MetaLearner::default_dir();
+        // 必须用临时目录，不能用 `default_dir()`（`.omo/meta`）。
+        // 后者是**开发者本机的共享目录**且被 .gitignore 忽略：本机一旦有历史
+        // 样本，`total_samples` 就不再是 0，该用例必失败（实测 left: 284）。
+        // 于是 CI 全绿、开发者本地持续红，且与代码改动无关——极难定位。
+        let dir = tempfile::tempdir().unwrap();
+        let ml = MetaLearner::new(dir.path().join("meta").to_str().unwrap());
         let insight = ml.learn();
         assert_eq!(insight.total_samples, 0);
         assert_eq!(insight.overall_success_rate, 0.0);
