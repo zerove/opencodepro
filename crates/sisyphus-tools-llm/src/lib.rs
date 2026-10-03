@@ -32,6 +32,23 @@ pub use provider::{
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
+
+    /// **全 crate 唯一**的进程级 env 测试锁。
+    ///
+    /// 进程内所有线程共享同一份环境变量，所以只要两个用例中有一个在写 env，
+    /// 另一个在读 env，就必须互斥——**与它们是否碰同一个变量名无关**。
+    ///
+    /// 此前 `llm.rs` / `provider.rs` / `http_client.rs` 各有一把独立 `ENV_LOCK`，
+    /// 其正确性依赖"这三者碰的变量名恰好不相交"这一**隐式约定**。任何一次
+    /// 重构让它们产生交集，竞争就会静默回归且极难定位。合并成一把锁后，
+    /// 该不变量由类型系统保证，而非靠后人自觉。
+    ///
+    /// 特别提醒：`SharedHttpClientConfig::from_env()` 是**无条件全量读取**全部
+    /// `SISYPHUS_HTTP_*`，不是按需读取。所以 `http_client` 里"只写一个变量、
+    /// 只断言一个字段"的用例同样会被其他用例的写入污染——**不能**按变量名
+    /// 划分锁的粒度。
+    pub(crate) static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     #[test]
     fn test_breaker_config_default() {

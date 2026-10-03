@@ -477,18 +477,7 @@ impl Drop for RequestGuard {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Mutex;
-
-    /// 串行化**所有走 `SharedHttpClientConfig::from_env()` 的用例**。
-    ///
-    /// `from_env()` 会一次性读取全部 `SISYPHUS_HTTP_*` 变量，所以只要某个用例
-    /// 设了其中任意一个，其他正在调用 `from_env()` 的用例就可能读到它——哪怕
-    /// 它们断言的字段与该变量无关（读侧是全量解析，不是按需读取）。
-    ///
-    /// 该锁与 `llm.rs` / `provider.rs` 各自的 `ENV_LOCK` **故意分离**：那些模块
-    /// 只碰 `GOOGLE_GENERATIVE_AI_API_KEY`、`MY_TEST_KEY_42` 等不相交变量。
-    /// 若将来某处让它们产生交集，必须合并为一把共享锁。
-    static ENV_LOCK: Mutex<()> = Mutex::new(());
+    use crate::tests::ENV_LOCK;
 
     #[test]
     fn default_config_is_sane() {

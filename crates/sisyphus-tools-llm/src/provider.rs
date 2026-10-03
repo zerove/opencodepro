@@ -60,10 +60,9 @@ pub trait LlmProvider: Any + Send + Sync {
 mod tests {
     use super::*;
     use crate::http_client::SharedHttpClient;
+    use crate::tests::ENV_LOCK;
     use sisyphus_types::ProviderConfig;
-    use std::sync::{Arc, Mutex};
-
-    static ENV_LOCK: Mutex<()> = Mutex::new(());
+    use std::sync::Arc;
 
     /// 测试用：构造一个最小可用的共享 HTTP client（不实际发起请求）。
     fn test_http() -> Arc<SharedHttpClient> {

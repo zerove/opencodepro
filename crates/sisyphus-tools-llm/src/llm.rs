@@ -49,6 +49,7 @@ pub use openai::{OpenAiEmbeddingClient, OpenAiLlmClient};
 mod tests {
     use super::*;
     use crate::metis::LlmClient;
+    use crate::tests::ENV_LOCK;
     use async_trait::async_trait;
     use sisyphus_types::Config;
     use std::sync::{Arc, Mutex, RwLock};
@@ -109,7 +110,6 @@ mod tests {
         assert_eq!(ctx.as_ref().unwrap().project_id, "proj-1");
     }
 
-    static ENV_LOCK: Mutex<()> = Mutex::new(());
     // ... (rest of existing tests)
 
     fn make_config(api_key: &str, endpoint: &str, model: &str) -> Arc<RwLock<Config>> {
