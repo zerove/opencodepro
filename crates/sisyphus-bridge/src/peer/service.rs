@@ -72,6 +72,14 @@ pub struct ClusterServiceImpl {
     /// 闸门翻转时的唤醒广播。容量 1 足够：它是纯粹的「状态已变，请重查」信号，
     /// 真实状态在 `join_admit` 上。
     join_wake: tokio::sync::broadcast::Sender<()>,
+    /// ADR-013：断流钩子是否启用。仅 `gated` 构造置 `true`。
+    ///
+    /// 实测把 `select!` 恒定包在 outbound 流上会让每条消息多付约 1.1–1.6 µs
+    /// （见 `tests/hook_overhead.rs`，裸流的 3 倍以上），而断流能力只有测试需要。
+    /// 与其让所有生产流量为它付费，不如**按实例**启用：`false` 时 outbound 退回
+    /// 裸 `UnboundedReceiverStream`，生产路径每条消息省下整个 `async_stream` +
+    /// `select!` 包装。
+    break_hook_enabled: bool,
 }
 
 impl ClusterServiceImpl {
@@ -104,6 +112,8 @@ impl ClusterServiceImpl {
             break_ack_seen: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             join_admit: Arc::new(std::sync::atomic::AtomicBool::new(true)),
             join_wake: tokio::sync::broadcast::Sender::new(1),
+            // 生产构造不启用断流钩子：每条消息都不该为测试设施付费。
+            break_hook_enabled: false,
         }
     }
 
@@ -130,6 +140,8 @@ impl ClusterServiceImpl {
             // 闸门关闭：用例需要先显式放行才能建连。
             join_admit: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             join_wake: tokio::sync::broadcast::Sender::new(1),
+            // 只有测试构造启用断流钩子。
+            break_hook_enabled: true,
         };
         let handle = JoinGateHandle {
             gate: Arc::clone(&service.join_admit),
@@ -146,6 +158,15 @@ impl ClusterServiceImpl {
     /// ADR-013：已收到的 `SyncRequest` 总数。
     pub fn sync_requests_seen(&self) -> u64 {
         self.sync_requests_seen.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    /// ADR-013：本实例是否启用了断流钩子。
+    ///
+    /// 供测试钉住「生产构造不开、测试构造开」这条不变量：钩子让每条消息多付约
+    /// 1.1–1.6 µs（见 `tests/hook_overhead.rs`），一旦被误改为生产也开，性能就
+    /// 悄悄回退了——而功能测试不会发现，因为断流能力本来就是测试在用。
+    pub fn break_hook_enabled(&self) -> bool {
+        self.break_hook_enabled
     }
 }
 
@@ -365,31 +386,51 @@ impl Cluster for ClusterServiceImpl {
         // inbound 处理任务）。只有让 `inbound.next()` 在拨号侧返回 `None`，
         // `run_stream` 才会走「inbound stream ended」分支返回 Err，从而确定性地
         // 回到 `run_dial_loop` 的重连路径。用 `select!` 包住原流：断流信号先到就
-        // 直接结束，之后原流被 drop。
-        let mut break_rx = self.stream_break.subscribe();
-        let break_ack_tx = self.break_ack_tx.clone();
-        let break_ack_seen = Arc::clone(&self.break_ack_seen);
+        // 直接结束，之后原流被 drop。**仅在 `gated` 测试构造下启用**——生产路径
+        // 不该为测试设施的每消息开销付费，详见下方注释。
         let raw = UnboundedReceiverStream::new(out_rx);
-        let out_stream = async_stream::stream! {
-            let mut raw = raw;
-            loop {
-                tokio::select! {
-                    biased;
-                    _ = break_rx.recv() => {
-                        // ADR-013：先记既成事实再发确认。任何先检查标志位的
-                        // 等待者都会立刻返回，无需依赖广播的投递时机。
-                        break_ack_seen.store(true, std::sync::atomic::Ordering::SeqCst);
-                        let _ = break_ack_tx.send(());
-                        break;
-                    },
-                    item = raw.next() => match item {
-                        Some(evt) => yield Ok(evt),
-                        None => break,
-                    },
+
+        // ADR-013：断流钩子**按实例启用**。生产构造（`new` / `with_experience_bank`）
+        // 置 `break_hook_enabled = false`，此处直接返回裸流——每条消息因此省下
+        // 一层 `async_stream` 生成器加一次 `select!` 分派（实测约 1.1–1.6 µs/条，
+        // 见 `tests/hook_overhead.rs`）。只有 `gated` 测试构造才包这层。
+        //
+        // 语义等价性：裸流在 `out_rx` 关闭时自然结束，与钩子版的 `None => break`
+        // 分支行为一致；拨号侧 `inbound.next()` 因此同样得到 `None`、走同样的
+        // 「inbound stream ended」重连路径。
+        //
+        // 注意：不要把 `.map(Ok)` 写成「零成本」。实测（`tests/hook_overhead.rs`
+        // 形态 c）它的成本**低于本基准的噪声底**——跨多次运行差值在 −6 ns 到
+        // +109 ns 之间摆动，而裸流自身就会波动约 35%。也就是说现有基准既不能
+        // 证明它免费、也不能量化它要付多少；能站住的只有「它比钩子的 select!
+        // 分派（+1120~+1571 ns/条）低一个量级以上」。
+        let pinned: Self::StreamStream = if self.break_hook_enabled {
+            let mut break_rx = self.stream_break.subscribe();
+            let break_ack_tx = self.break_ack_tx.clone();
+            let break_ack_seen = Arc::clone(&self.break_ack_seen);
+            let out_stream = async_stream::stream! {
+                let mut raw = raw;
+                loop {
+                    tokio::select! {
+                        biased;
+                        _ = break_rx.recv() => {
+                            // ADR-013：先记既成事实再发确认。任何先检查标志位的
+                            // 等待者都会立刻返回，无需依赖广播的投递时机。
+                            break_ack_seen.store(true, std::sync::atomic::Ordering::SeqCst);
+                            let _ = break_ack_tx.send(());
+                            break;
+                        },
+                        item = raw.next() => match item {
+                            Some(evt) => yield Ok(evt),
+                            None => break,
+                        },
+                    }
                 }
-            }
+            };
+            Box::pin(out_stream)
+        } else {
+            Box::pin(raw.map(Ok))
         };
-        let pinned: Self::StreamStream = Box::pin(out_stream);
         Ok(Response::new(pinned))
     }
 }

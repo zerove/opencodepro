@@ -6,7 +6,7 @@
 //! ```
 //!
 //! 为什么要留这个文件：ADR-013 的「代价」小节断言钩子让每条消息多付
-//! 1.0–1.5 µs（约 2.7–3.4 倍）。那个数字如果只能靠一段已经被删掉的临时代码
+//! 1.1–1.6 µs（约 3 倍）。那个数字如果只能靠一段已经被删掉的临时代码
 //! 复现，它和 ADR 批评的那些「凭直觉写的声明」没有区别。
 //!
 //! ## 测的是什么
@@ -111,36 +111,93 @@ async fn bench_hooked() -> Duration {
     t.elapsed()
 }
 
+/// 形态 (c)：**优化后的生产路径**——`UnboundedReceiverStream::map(Ok)`，无钩子。
+///
+/// 这一形态此前被当作「零成本」直接断言，没人测过。实测结论要谨慎：跨多次
+/// 运行，(c) 相对裸流的差值在 **−6 ns 到 +109 ns** 之间来回摆动，而裸流自身
+/// 也会在 **540–735 ns** 之间波动（约 35%）。也就是说 `.map` 的成本**落在本
+/// 基准的噪声底之下，无法与裸流区分**——既不能宣称它免费，也不能宣称它要多
+/// 付几十纳秒。单次运行的数字（含本文件内中位数 of 5）都不足以支撑这种断言。
+///
+/// 能站住的只有相对量级：优化移掉的 `select!` 分派是 +1120~+1571 ns/条，
+/// 稳定在裸流的 3 倍以上，远超噪声；而 `.map` 相对它的量级可忽略。
+async fn bench_map_only() -> Duration {
+    let (tx, rx) = mpsc::unbounded_channel::<u64>();
+    let mapped = UnboundedReceiverStream::new(rx).map(Ok::<_, std::io::Error>);
+    let done = tokio::spawn(async move {
+        let mut mapped = mapped;
+        let mut n = 0usize;
+        while mapped.next().await.is_some() {
+            n += 1;
+        }
+        n
+    });
+    let t = Instant::now();
+    for i in 0..N {
+        tx.send(i as u64).unwrap();
+    }
+    drop(tx);
+    let _ = tokio::time::timeout(Duration::from_secs(30), done).await;
+    t.elapsed()
+}
+
 fn median(mut v: Vec<Duration>) -> Duration {
     v.sort();
     v[v.len() / 2]
 }
 
 /// 打印结果而不设门限：这是**测量**而非断言。绝对值随机器而变，任何硬编码
-/// 门限都会在别的机器上变成 flaky。用例只保证「两种形态都能跑完并出数」。
+/// 门限都会在别的机器上变成 flaky。用例只保证「三种形态都能跑完并出数」。
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 #[ignore = "耗时基准，按需手动运行；绝对值随机器而变，不适合 CI 断言"]
 async fn measure_stream_hook_overhead() {
     // 预热，避免首次分配/首次 poll 计入。
     let _ = bench_bare().await;
     let _ = bench_hooked().await;
+    let _ = bench_map_only().await;
 
     let mut bare = Vec::with_capacity(REPEAT);
     let mut hooked = Vec::with_capacity(REPEAT);
+    let mut map_only = Vec::with_capacity(REPEAT);
     for _ in 0..REPEAT {
         bare.push(bench_bare().await);
         hooked.push(bench_hooked().await);
+        map_only.push(bench_map_only().await);
     }
 
     let b = median(bare);
     let h = median(hooked);
-    let per_msg_bare = b.as_nanos() as f64 / N as f64;
-    let per_msg_hooked = h.as_nanos() as f64 / N as f64;
+    let m = median(map_only);
+    let per = |d: Duration| d.as_nanos() as f64 / N as f64;
+    let (per_bare, per_hooked, per_map) = (per(b), per(h), per(m));
     println!("\n=== ADR-013 断流钩子开销（每 {N} 条消息，中位数 of {REPEAT}）===");
-    println!("(a) 裸流     : {b:?}");
-    println!("(b) 带钩子流 : {h:?}");
-    println!("每条消息额外成本: {:.1} ns", per_msg_hooked - per_msg_bare);
-    println!("每条消息        : {per_msg_bare:.1} ns -> {per_msg_hooked:.1} ns");
-    println!("相对开销        : {:.2}x", per_msg_hooked / per_msg_bare);
+    println!("(a) 裸流              : {b:?}");
+    println!("(b) 带钩子流 (优化前) : {h:?}");
+    println!("(c) .map(Ok) (优化后) : {m:?}");
+    println!("\n每条消息:");
+    println!("  (a) 裸流              : {per_bare:.1} ns");
+    println!(
+        "  (b) 带钩子流 (优化前) : {per_hooked:.1} ns  ({:+.1} ns vs 裸流)",
+        per_hooked - per_bare
+    );
+    println!(
+        "  (c) .map(Ok) (优化后) : {per_map:.1} ns  ({:+.1} ns vs 裸流)",
+        per_map - per_bare
+    );
+    println!(
+        "\n优化收益 ((b) -> (c)): 每条省下 {:.1} ns",
+        per_hooked - per_map
+    );
+    println!(
+        "相对开销 (b/a): {:.2}x, (c/a): {:.2}x",
+        per_hooked / per_bare,
+        per_map / per_bare
+    );
     println!("\n注：载荷为 u64，不含 protobuf 序列化与 socket 开销，故这是上界。");
+    println!(
+        "(c) 的成本低于本基准噪声底（裸流自身跨运行波动可达 35%），\
+         故 (c)-vs-(a) 的 {:+.1} ns",
+        per_map - per_bare
+    );
+    println!("不能当作「.map 要付多少 ns」的结论；能站住的只有 (b) 显著高于 (a)。");
 }

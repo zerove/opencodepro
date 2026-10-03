@@ -1394,3 +1394,49 @@ async fn catchup_signal_sent_while_reconnecting_is_still_consumed() {
         gate.join_attempts_seen()
     );
 }
+
+/// ADR-013：断流钩子只在测试构造上启用，生产路径不付每消息开销。
+///
+/// 钩子（`async_stream::stream!` 包一层 `select!`）实测让每条消息多付约
+/// 1.1–1.6 µs（见 `tests/hook_overhead.rs`），而断流能力只有测试需要。
+/// 因此它按实例启用：`gated` 构造开，生产构造关。
+///
+/// 这条不变量值得单独钉住，理由是它**只影响性能、不影响功能**：如果哪天有人
+/// 把 `break_hook_enabled` 在生产构造上改成 `true`，断流用例仍然全绿（它们用的
+/// 是 `gated`），性能却悄悄回退到优化前。没有这条用例，这类回退不会被发现。
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn break_hook_enabled_only_for_gated_construction() {
+    let bank = build_bank().await;
+
+    // 生产构造：必须关闭。
+    let prod = ClusterServiceImpl::with_experience_bank(
+        Arc::new(PeerManager::new("node-a", Duration::from_secs(30))),
+        bank.clone(),
+    );
+    assert!(
+        !prod.break_hook_enabled(),
+        "生产构造启用了断流钩子，每条消息将多付约 1.1–1.6 µs——这正是 ADR-013\
+         记录并已消除的开销"
+    );
+
+    // 不参与反熵的生产构造同样应关闭。
+    let prod_no_bank = ClusterServiceImpl::new(Arc::new(PeerManager::new(
+        "node-c",
+        Duration::from_secs(30),
+    )));
+    assert!(
+        !prod_no_bank.break_hook_enabled(),
+        "`new` 构造也启用了断流钩子"
+    );
+
+    // 测试构造：必须开启，否则断流窗口无法制造。
+    let (gated, _gate) = ClusterServiceImpl::gated(
+        Arc::new(PeerManager::new("node-b", Duration::from_secs(30))),
+        bank,
+    );
+    assert!(
+        gated.break_hook_enabled(),
+        "`gated` 构造未启用断流钩子，断流窗口无法制造——\
+         catchup_signal_sent_while_reconnecting_is_still_consumed 会因此失效"
+    );
+}
