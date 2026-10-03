@@ -477,6 +477,18 @@ impl Drop for RequestGuard {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
+
+    /// 串行化**所有走 `SharedHttpClientConfig::from_env()` 的用例**。
+    ///
+    /// `from_env()` 会一次性读取全部 `SISYPHUS_HTTP_*` 变量，所以只要某个用例
+    /// 设了其中任意一个，其他正在调用 `from_env()` 的用例就可能读到它——哪怕
+    /// 它们断言的字段与该变量无关（读侧是全量解析，不是按需读取）。
+    ///
+    /// 该锁与 `llm.rs` / `provider.rs` 各自的 `ENV_LOCK` **故意分离**：那些模块
+    /// 只碰 `GOOGLE_GENERATIVE_AI_API_KEY`、`MY_TEST_KEY_42` 等不相交变量。
+    /// 若将来某处让它们产生交集，必须合并为一把共享锁。
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     #[test]
     fn default_config_is_sane() {
@@ -493,6 +505,7 @@ mod tests {
 
     #[test]
     fn tls_roots_env_var_parses_correctly() {
+        let _guard = ENV_LOCK.lock().unwrap();
         // webpki (default)
         std::env::set_var("SISYPHUS_HTTP_TLS_ROOTS", "webpki");
         let cfg = SharedHttpClientConfig::from_env();
@@ -532,6 +545,7 @@ mod tests {
 
     #[test]
     fn retry_policy_env_var_parses_correctly() {
+        let _guard = ENV_LOCK.lock().unwrap();
         // 未知值回退到 Disabled
         std::env::set_var("SISYPHUS_HTTP_RETRY", "garbage");
         let cfg = SharedHttpClientConfig::from_env();
@@ -577,6 +591,7 @@ mod tests {
 
     #[test]
     fn env_overrides_apply() {
+        let _guard = ENV_LOCK.lock().unwrap();
         // 临时设环境变量
         std::env::set_var("SISYPHUS_HTTP_REQUEST_TIMEOUT_SECS", "60");
         std::env::set_var("SISYPHUS_HTTP_POOL_MAX_PER_HOST", "32");
@@ -585,6 +600,23 @@ mod tests {
         assert_eq!(cfg.pool_max_per_host, 32);
         std::env::remove_var("SISYPHUS_HTTP_REQUEST_TIMEOUT_SECS");
         std::env::remove_var("SISYPHUS_HTTP_POOL_MAX_PER_HOST");
+    }
+
+    /// 回归测试：证明 `from_env()` 是**全量读取**，因此任何一个
+    /// `SISYPHUS_HTTP_*` 写入都会污染所有并发调用它的用例。
+    ///
+    /// 这正是 `ENV_LOCK` 必须覆盖全部三个 env 用例、而不是只覆盖"写同一个变量"
+    /// 的用例的原因。写入侧设 `REQUEST_TIMEOUT_SECS`，读取侧断言的是
+    /// `tls_roots` 这个**毫不相干**的字段——旧代码里两者各跑各的，会真实失败。
+    #[test]
+    fn env_leak_reaches_unrelated_field_of_concurrent_reader() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        std::env::set_var("SISYPHUS_HTTP_REQUEST_TIMEOUT_SECS", "60");
+        let cfg = SharedHttpClientConfig::from_env();
+        // 读取侧断言的是 tls_roots，与写入的 timeout 无关，但值仍被污染。
+        assert_eq!(cfg.request_timeout, Duration::from_secs(60));
+        assert_eq!(cfg.tls_roots, TlsRoots::Webpki);
+        std::env::remove_var("SISYPHUS_HTTP_REQUEST_TIMEOUT_SECS");
     }
 
     #[test]
