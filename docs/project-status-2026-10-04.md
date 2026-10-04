@@ -516,6 +516,10 @@ cargo test --workspace --no-run --message-format=json | grep rust_backend_test_e
 | 经 `run()`（内含 `serialized`） | 3 | `doc_tests_excluded_from_passed` 等 |
 | 直接 `serialized(\|\| …)` | 4 | `real_*` 系列 |
 
+> ⚠️ **这句话当时是不完整的**，见下面 (6)：它只覆盖了**这一个测试文件**，
+> 而 `src/build/rust_tests.rs` 里另有 7 个同样拉起嵌套 cargo 的单元测试不受此约束。
+> 「文件内无遗漏」≠「进程内无遗漏」。
+
 **(4) 两条会真的咬人的失败模式**
 
 - **非重入 `Mutex` 死锁**：`serialized` 里若再调 `run()` 就会自死锁。
@@ -530,6 +534,63 @@ cargo test --workspace --no-run --message-format=json | grep rust_backend_test_e
 
 **(5) 副作用确认**：`.cargo/config.toml` 无生效的 linker 覆盖，
 默认链接器未被污染（之前搜到的 `link-args` 只是注释掉的 mold 示例）。
+
+**(6) 闸门加漏了第二个进程——后续才发现，代价是一次真实红灯**
+
+上面 (3) 说「7/7 用例全部持闸门，无遗漏」，**这句话本身不完整**。
+它只核对了 `tests/rust_backend_test_e2e.rs` 一个文件。实际去测并发度时
+跑出 `MAKE_EXIT=2`，失败的是**另一个文件里的单元测试**：
+
+```
+test build::rust::tests::test_test_with_failures ... FAILED
+  linking with cc failed -> rust-lld what(): Resource temporarily unavailable
+  collect2: fatal error: ld terminated with signal 6 [Aborted]
+test result: FAILED. 112 passed; 1 failed
+make: *** [Makefile:123: test-all] Error 101
+```
+
+`src/build/rust_tests.rs` 里有 **7 个**单元测试真实拉起嵌套 cargo
+（`test_check_on_*`、`test_fmt_check_*`、`test_build_valid`、`test_test_*`），
+它们和集成测试是**不同进程**，闸门互不约束——这就是我漏掉的边界。
+
+> 根因是**闸门加在了文件级**，而正确的作用域是**所有会拉起嵌套 cargo 的测试
+> 进程**。`sisyphus-bridge` 里 `service.rs` 的 `with_gate` 注释已经点出这个坑：
+> 用 `#[cfg(test)]` 门控会让集成测试根本找不到构造函数。同类问题，同一个教训。
+
+**修复**：给 `rust_tests.rs` 也加进程级闸门，并把 **8 处**嵌套 cargo 调用
+全部用 `serialized(|| …)` 包住（不是新增闸门就够——漏包一处等于没加）。
+
+**(7) 关键诚实点：对照组也全过，所以「必要性」未被证明**
+
+修完先压测 12 轮全过，但这不能证明什么，于是回退修复做**同条件 A/B**：
+
+| 组别 | 结果 |
+|------|------|
+| 对照组（`git stash` 回退闸门） | PASS=12 FAIL=0 |
+| 实验组（保留闸门） | PASS=12 FAIL=0 |
+
+**两组都全过。** 说明该故障在「只有这一个 crate 在跑」的轻负载下**根本复现不了**——
+它需要 `make test-all` 全量负载下多个 crate 的嵌套 cargo 同时抢额度。
+因此本次修复的定位必须写清楚：
+
+- ✅ **已证实**：全量负载下确实存在第二个无闸门的嵌套 cargo 进程，
+  且它**已经真实导致过一次** `make test-all` 退出码 2（本次实测，非推演）。
+- ✅ **已证实**：修复后 `make test-all` 真实 `MAKE_EXIT=0`、`4763 passed`、
+  零 abort，且连续多轮稳定。
+- ❌ **未证实**：无法在本会话内构造出「修复前失败、修复后通过」的对照——
+  隔离运行复现不出该故障。**故这是「收窄触发面 + 消除已观测缺口」，不是「已验证修复」。**
+
+记录一个反直觉的点：**闸门有效性的最好证据，恰恰来自它没被触发的那些轮次**。
+12/12 全过的对照组说明单 crate 压测对本故障没有检出力，
+再往下压 100 轮也只是浪费机器时间。
+
+**(8) 完整流程复跑**（修复后，真实路径）
+
+```
+make test-all                          → MAKE_EXIT=0  passed=4763 failed=0  abort_or_link_hits=0
+language_backend_guards --ignored -j1   → 13 passed / 0 failed（真实 Go/Python/Maven 工具链）
+cargo fmt --all / clippy --all-targets  → 通过
+```
 
 
 ### 5.5 连带发现：认知追踪落盘竞态（**已确定性复现并修复**）

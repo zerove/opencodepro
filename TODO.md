@@ -71,6 +71,17 @@
       - 闸门覆盖 7/7 用例无缺口；`serialized` 内无嵌套调用故非重入 Mutex 不会死锁
       - 探针坑：验证 poison 恢复时第一版在持锁状态下重入 → **探针自死锁**，
         非闸门缺陷；插桩后按忠实场景重测才得出有效结论
+      - **后续补测才发现漏了第二个进程**：`src/build/rust_tests.rs` 里 7 个单元测试
+        （`test_check_on_*` / `test_fmt_check_*` / `test_build_valid` / `test_test_*`）
+        同样拉起嵌套 cargo，与集成测试是**不同进程**，闸门互不约束
+        → 真实代价：`make test-all` 跑出 `MAKE_EXIT=2`（`test_test_with_failures`
+        因 rust-lld EAGAIN 失败）
+      - **教训**：闸门加在了**文件级**，正确作用域是**所有会拉起嵌套 cargo 的测试进程**；
+        「文件内无遗漏」≠「进程内无遗漏」，更≠「跨二进制无遗漏」
+      - **诚实点**：回退修复做同条件 A/B 时**对照组也 12/12 全过**，
+        说明隔离运行复现不出该故障，**修复必要性未被证明**。
+        已证实的是「缺口真实存在且已造成过真实红灯」，不是「闸门已验证有效」
+        —— 单 crate 压测对本故障没有检出力
     - 坑：注入用**子进程作用域**（`run_command_with_env`）而非 `std::env::set_var`（后者多线程下不健全）
     - 坑：`--test-threads=1` 能救是因为限制 cargo **个数**，不是 `CARGO_BUILD_JOBS` 起了作用（归因曾写反）
     - 坑：libtest **捕获通过用例的 stdout**，`println!` 默认根本不出现在日志里，别拿它当诊断手段

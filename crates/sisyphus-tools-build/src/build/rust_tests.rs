@@ -1,6 +1,34 @@
 use super::*;
 use std::fs;
+use std::sync::{Mutex, MutexGuard, OnceLock};
 use tempfile::TempDir;
+
+/// 闸门：本进程内**同时只允许一个**嵌套 `cargo` 在跑。
+///
+/// 背景：本机 `vm.overcommit_memory=2`（严格提交），`CommitLimit ≈ RAM × 80%`。
+/// 链接期 rust-lld 申请大块提交内存会拿到 `EAGAIN` 并 abort，即使 free available
+/// 还有十 GiB。并行拉起多个嵌套 cargo 会同时抢这笔额度，导致 `cargo test` 报
+/// `linking with cc failed` / `signal 6 [Aborted]` —— 而这与被测代码无关，
+/// 是纯粹的测试设施抖动（2026-10-04 实测：`test_test_with_failures` 因此失败，
+/// `make test-all` 退出码 2）。
+///
+/// 与 `tests/rust_backend_test_e2e.rs` 里的闸门是**两个独立的进程级闸门**：
+/// 单元测试二进制与集成测试二进制不同进程，互不约束。两者合起来才覆盖
+/// 「同进程内不并发」。跨进程并发靠 `CARGO_BUILD_JOBS=1` 与 cargo 自身的
+/// 串行调度，本 crate 无法在测试层再加一道。
+///
+/// poison 恢复：某个用例 panic 后 `Mutex` 被 poison，若不恢复则后续全部用例
+/// 连带失败、把计数彻底污染，故用 `unwrap_or_else(|e| e.into_inner())`。
+fn cargo_gate() -> MutexGuard<'static, ()> {
+    static GATE: OnceLock<Mutex<()>> = OnceLock::new();
+    GATE.get_or_init(|| Mutex::new(())).lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+/// 持闸门执行闭包，把并发嵌套 cargo 限为 1。
+fn serialized<T>(f: impl FnOnce() -> T) -> T {
+    let _guard = cargo_gate();
+    f()
+}
 
 fn write_toml(dir: &Path, content: &str) {
     // Ensure standalone project: append empty [workspace] so parent workspace
@@ -111,7 +139,7 @@ edition = "2021"
     );
     write_src(path, "pub fn hello() -> &'static str { \"hello\" }\n");
     let backend = RustBackend;
-    let result = backend.check(None, false, Some(path)).unwrap();
+    let result = serialized(|| backend.check(None, false, Some(path))).unwrap();
     assert!(result.success);
     assert!(result.errors.is_empty());
 }
@@ -130,7 +158,7 @@ edition = "2021"
     );
     write_src(path, "pub fn hello() -> &'static str { does_not_exist }\n");
     let backend = RustBackend;
-    let result = backend.check(None, false, Some(path)).unwrap();
+    let result = serialized(|| backend.check(None, false, Some(path))).unwrap();
     assert!(!result.success);
     assert!(!result.errors.is_empty());
 }
@@ -149,7 +177,7 @@ edition = "2021"
     );
     write_src(path, "pub fn foo() -> u8 {\n    42\n}\n");
     let backend = RustBackend;
-    let ok = backend.fmt_check(Some(path)).unwrap();
+    let ok = serialized(|| backend.fmt_check(Some(path))).unwrap();
     assert!(ok);
 }
 
@@ -168,10 +196,10 @@ edition = "2021"
     write_src(path, "pub fn foo() -> u8 { 42 }\n");
     let backend = RustBackend;
     // First check it
-    backend.fmt_check(Some(path)).unwrap();
+    serialized(|| backend.fmt_check(Some(path))).unwrap();
     // Then break formatting
     fs::write(path.join("src/lib.rs"), "pub fn foo() -> u8 {\n42\n}\n").unwrap();
-    let ok = backend.fmt_check(Some(path)).unwrap();
+    let ok = serialized(|| backend.fmt_check(Some(path))).unwrap();
     assert!(!ok);
 }
 
@@ -189,7 +217,7 @@ edition = "2021"
     );
     write_src(path, "pub fn works() -> i32 { 1 + 2 }\n");
     let backend = RustBackend;
-    let result = backend.build(None, false, Some(path)).unwrap();
+    let result = serialized(|| backend.build(None, false, Some(path))).unwrap();
     assert!(result.success);
 }
 
@@ -219,7 +247,7 @@ fn it_also_works() { assert!(true); }
     )
     .unwrap();
     let backend = RustBackend;
-    let results = backend.test(None, None, false, Some(path)).unwrap();
+    let results = serialized(|| backend.test(None, None, false, Some(path))).unwrap();
     // 失败时必须带上 cargo 的原始输出。这些用例真实调用 `cargo test`，
     // 断言 `passed == 2` 只说明"数量不对"，不说明"为什么不对"。曾有一次
     // 整包运行失败（56 次里 1 次），却因断言信息只有 left/right 而完全
@@ -256,7 +284,7 @@ fn failing() { assert!(false, "intentional failure"); }
     )
     .unwrap();
     let backend = RustBackend;
-    let results = backend.test(None, None, false, Some(path)).unwrap();
+    let results = serialized(|| backend.test(None, None, false, Some(path))).unwrap();
     assert_eq!(results.passed, 1);
     assert_eq!(results.failed, 1);
     assert_eq!(results.failures.len(), 1);
