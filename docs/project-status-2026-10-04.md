@@ -139,6 +139,8 @@ $ mvn -q test
 | 严格 clippy | `cargo clippy -p sisyphus-tools-build -p sisyphus-cli --all-targets -- -D warnings` | 无告警 |
 | 格式 | `cargo fmt --all --check` | 通过 |
 | 全工作区 | `make test-all` | **4762 passed / 0 failed / 25 ignored** |
+| CI job 确切命令 | `cargo test -p sisyphus-tools-build --test language_backend_guards -- --ignored --test-threads=1` | 13 passed / 0 failed |
+| `audit_ignored.py` | `python3 scripts/audit_ignored.py` | **exit 0**（修复前 exit 1，`audit-sources` 长期红） |
 
 全工作区计数可完整对账：相对上轮基线 4750/23，
 本轮新增 12 条通过（Java 3 + CLI 判定 6 + 提示语 3）、2 条 ignored（两条新 Maven e2e），
@@ -198,6 +200,31 @@ Test result: no tests ran. 0 passed; 0 failed; ...
 零计数的成因不同（没测试步骤 vs 过滤器滤光），
 所以改成让后端自报身份，而不是让 CLI 猜。
 
+### 4.3 `audit-sources` CI job 长期失败的根因（顺带修掉）
+
+加 CI job 时发现 `scripts/audit_ignored.py` **退出码是 1**，即 `audit-sources` job
+**一直红着**（已用 `git stash` 确认早于本轮改动，非本次引入）。
+两处独立缺陷，都属「判据写错导致假阳性」：
+
+1. **`blank_comments()` 不认 Rust raw string**。它只跳普通 `"` 字符串，
+   于是 `rust_backend_test_e2e.rs` 里 `r#"..."#` 包住的**探针工程源码**
+   （内含模拟的 `#[ignore = "演示 ignored"]`）被当成该文件真实的忽略点。
+2. **`ACCEPTED` 白名单词太窄**。只认 `toolchain`/`installed`，
+   于是 `requires real python3 + pytest`、`requires real mvn + jdk`
+   这类**更具体、更诚实**的理由反而被判非法。
+
+修复：`blank_comments()` 增加 raw string 支持（`r"..."` / `r#"..."#` / `r##"..."##`），
+`ACCEPTED` 增加显式外部可执行文件名与测量型用例的词。
+结果：`rejected 12 → 0`，**exit 1 → 0**。
+
+双向实测确认没把门放松：
+- 注入 `#[ignore = "测试当前失败，暂时跳过"]` → 仍被判非法、exit 1
+- 真实存在的 2 处探针源码 `#[ignore]` → 不再误报
+
+**这与本轮修的守卫缺陷是同一个思维错误**：用错误的判据去推断意图，
+结果既漏报（Java 编译失败被当成全通过）又误报（合法的 pytest ignore 被当非法）。
+判据必须锚在**意图**上，而不是字符串表面。
+
 ## 5. 环境噪音（非代码缺陷）
 
 - **rustc 会在编译 `sisyphus-core` 时随机 SIGABRT**，与并行度无关。
@@ -242,12 +269,19 @@ pub enum TestOutcome {
 
 让调用方不再需要「靠 failed==0 反推有没有跑过」。
 
-### 7.2 e2e 测试进 CI
+### 7.2 e2e 测试进 CI（已完成）
 
-`language_backend_guards.rs` 13 条目前全是 `#[ignore]`。
-它们依赖 `go` / `python3 + pytest` / `mvn`，价值很高
-（本次两个自身 bug 和 Java 缺陷都是它们抓出来的）。
-建议在 CI 加一个带工具链的 job 跑 `--ignored`，而不是长期挂着。
+原先这 13 条全是 `#[ignore]` 且**无任何 CI job 跑它们**——
+这正是本轮 6 个缺陷能长期存活的原因（Java 后端干脆一条守卫都没有）。
+
+已新增 `toolchain-e2e` job（`.github/workflows/ci.yml`）：
+装 go 1.22 / python 3.11 + pytest / temurin 17 + Maven，
+跑 `--ignored --test-threads=1`，并打印工具链版本便于排障。
+`timeout-minutes: 20`（Maven 首次要下插件与依赖）。
+
+附带一条守卫：断言 `rust_backend_test_e2e.rs` 的**自身**测试没被加 `#[ignore]`
+（它在 `test-light` 里已执行）。判据必须先剥掉 `r#"..."#` 探针源码字符串，
+否则会把探针里模拟的 `#[ignore]` 当成本文件的属性而误报——已双向实测。
 
 ### 7.3 补齐剩余后端的守卫
 
@@ -266,11 +300,17 @@ pub enum TestOutcome {
 > **用「我记得」代替「我查过」**。当时只 grep 了 `language_backend_guards.rs`，
 > 没有列出 `tests/` 目录全貌就下了结论。
 
-### 7.4 清理环境告警
+### 7.4 ~~`.cargo/config.toml` 补并发限制~~（已作废，勿执行）
 
-- `executor_failure_semantics.rs` 的 `fetch_update` → `try_update`（已在同批清理）
-- `.cargo/config.toml` 的 `test-all` 补上 `CARGO_BUILD_JOBS=1`
-  （TODO 10.3 说 Makefile 已加，但直接敲 `cargo test-all` 仍会撞并行链接）
+旧建议是“给 `.cargo/config.toml` 的 `test-all` 补上 `CARGO_BUILD_JOBS=1`”。
+
+**实测后作废**：本轮 `make test-all` **已经带了** `CARGO_BUILD_JOBS=1`
+（`Makefile:120`）**仍然 SIGABRT**，同一条命令重跑即通过。见第 5 节。
+既然 `-j 1` 不能根除，给 `.cargo/config.toml` 再加一份只是**制造安全幻觉**，
+而且会让直接敲 `cargo test-all` 的人付出全部编译并行度的代价。
+
+已确认 `.cargo/config.toml` **无 `[env]` 段**，故本轮未做任何改动。
+正确做法仍是：**遇到 SIGABRT 直接重跑**。
 
 ## 8. 明确不在本次范围
 

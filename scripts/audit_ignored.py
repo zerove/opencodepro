@@ -40,34 +40,78 @@ ACCEPTED = (
     "running", "requires a running",  # 需要运行中的服务
     "mock llm",           # 已声明的能力缺口（测试依赖尚未实现的夹具）
     "sandbox", "docker",  # 需要特定运行环境
+    # ── 2026-10-04 补：显式点名外部可执行文件 ──
+    # 原列表只有 "toolchain"/"installed" 两个泛化词，于是
+    # `requires real python3 + pytest`、`requires real mvn + jdk` 这类
+    # **完全合法且信息更具体**的理由反而被判非法，导致 audit-sources 失败。
+    # 判据应该是「有没有说清缺什么」，而不是「有没有用某个固定词」。
+    "requires real",
+    "python3", "pytest", "mvn", "maven", "go toolchain", "node", "npm",
+    "javac", "jdk", "gradle", "vitest",
+    "downloads plugins",  # maven 首次拉插件/依赖
+    # ── 2026-10-04 补：测量型用例（本就不该在 CI 断言）──
+    # bridge/tests/hook_overhead.rs 的耗时基准：绝对值随机器而变，
+    # 任何硬编码门限都会在别的 runner 上变成 flaky。它是合法的。
+    "耗时基准", "benchmark", "bench ",
 )
 
 SCAN_DIRS = ("crates", "webui", "evals")
 
 
 def blank_comments(src: str) -> str:
-    """把注释内容替换为空格但保留换行，使行号不变。
+    """把注释与字符串字面量内容替换为空格但保留换行，使行号不变。
 
     必须做这一步：文档里常会引用 `#[ignore = "..."]` 作为说明，
     例如解释「此前带 #[ignore] 是因为测试失败」。不剥离就会把文档
     里的示例当成真实的忽略点。
+
+    2026-10-04 补：**Rust raw string**（`r"..."` / `r#"..."#`）。
+    原实现只跳普通 `"` 字符串，于是
+    `crates/sisyphus-tools-build/tests/rust_backend_test_e2e.rs` 里
+    用 `r#"..."#` 包住的探针工程源码（内含模拟的 `#[ignore = "演示 ignored"]`）
+    被当成该文件**真实**的忽略点，审计报 `rejected=12` 且退出码 1，
+    使 `audit-sources` job 长期失败。
+    同类问题已在 `.github/workflows/ci.yml` 的 toolchain-e2e job 里修正过一次，
+    两处判据必须一致。
     """
     out = list(src)
     i, n = 0, len(src)
+
+    def _blank(a: int, b: int) -> None:
+        """把 [a, b) 区间除换行外全部写成空格（保行号）。"""
+        for k in range(a, min(b, n)):
+            if out[k] != '\n':
+                out[k] = ' '
+
     while i < n:
         c = src[i]
+        # ── raw string: r"..." / r#"..."# / r##"..."## ──
+        if c == 'r' and i + 1 < n and (src[i + 1] == '"' or src[i + 1] == '#'):
+            j = i + 1
+            hashes = 0
+            while j < n and src[j] == '#':
+                hashes += 1
+                j += 1
+            if j < n and src[j] == '"':
+                term = '"' + '#' * hashes
+                end = src.find(term, j + 1)
+                if end == -1:
+                    _blank(i, n)
+                    break
+                end += len(term)
+                # 保留 r / 引号 / # 骨架，仅填掉内容（行号不变）
+                _blank(j + 1, end - len(term))
+                i = end
+                continue
         if c == '/' and i + 1 < n and src[i + 1] == '/':
             j = src.find('\n', i)
             j = n if j == -1 else j
-            for k in range(i, j):
-                out[k] = ' '
+            _blank(i, j)
             i = j
         elif c == '/' and i + 1 < n and src[i + 1] == '*':
             j = src.find('*/', i + 2)
             j = n if j == -1 else j + 2
-            for k in range(i, min(j, n)):
-                if out[k] != '\n':
-                    out[k] = ' '
+            _blank(i, j)
             i = j
         elif c == '"':
             j = i + 1
