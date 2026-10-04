@@ -260,7 +260,16 @@ mod tests {
     fn init_repo() -> (TempDir, PathBuf) {
         let dir = TempDir::new().unwrap();
         let path = dir.path().to_path_buf();
-        init(&path).unwrap();
+        // 显式设定初始分支，不依赖开发者本机或 CI 的 `init.defaultBranch`。
+        //
+        // `init` 用的是 `git init`，其默认分支名取自全局 `init.defaultBranch`，
+        // 未设置时才是 `master`。若开发者本机设了 `init.defaultBranch=main`
+        // （或 CI 用了不同 git 版本），`test_init_and_status_empty` 断言
+        // `s.branch == "master"` 就会失败。已用有效变异确认：注入
+        // `init.defaultBranch=main` 后该用例立即 FAILED。
+        //
+        // 注意必须用 `git init -b`，它是仓库局部的，不写入任何全局配置。
+        git_args(&["init", "-b", "master"], Some(&path)).unwrap();
         git_args(&["config", "user.email", "test@test.com"], Some(&path)).unwrap();
         git_args(&["config", "user.name", "Test User"], Some(&path)).unwrap();
         (dir, path)
