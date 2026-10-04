@@ -300,6 +300,79 @@ fn test_parse_test_results_compile_failure_yields_zero_passed() {
     assert_eq!(r.failed, 1);
 }
 
+// ── 文档测试结果不得混入 passed ─────────────────────────
+//
+// 下面两个测试的输入均**实测抓取自真实的 `cargo test` 双流**，不是构造的
+// 理想情况。关键在于流的分离：
+//
+// - `Running` / `Doc-tests` 分段标记由cargo 写入 **stderr**；
+// - `running N tests` / `test <路径> - <条目> (line N)` / `test result:`
+//   由 libtest 写入 **stdout**。
+//
+// `parse_test_results` 把两流拼成 `format!("{stdout}\n{stderr}")`，因此所有
+// 分段标记必然排在所有 `test result:` 行之后。**基于标记的区间判断在此
+// 拼接顺序下原理上不可能生效**——这一点已被实测确认（第一次尝试的修复
+// 正是这样写的，编译通过、逻辑在独立复现中正确，但在真实路径上毫无作用）。
+//
+// 可用的判别特征只在 stdout 内部：libtest 对文档测试条目使用
+// `test <路径> - <条目> (line N)` 命名。故按 stdout 的 `running N test(s)`
+// 块归组，块内命中该约定则整块跳过。
+#[test]
+fn test_parse_test_results_excludes_doc_tests_from_passed() {
+    // stdout 实测抓取：两个单元测试 + 一个文档测试，共两个 `test result:`。
+    let stdout = "\n\
+running 2 tests\n\
+test it_also_works ... ok\n\
+test it_works ... ok\n\
+\n\
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\n\
+\n\
+\n\
+running 1 test\n\
+test src/lib.rs - documented (line 8) ... ok\n\
+\n\
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.46s\n\
+";
+    // stderr 实测抓取：分段标记确实在这里，且位于所有 test result 行之后。
+    let stderr = "   Compiling test-crate v0.1.0 (/tmp/x)\n    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.02s\n     Running unittests src/lib.rs (target/debug/deps/test_crate-1111111111111111)\n   Doc-tests test-crate\n";
+    let r = parse_test_results(stdout, stderr);
+    // 单元测试 2 个通过；文档测试的 1 个通过不得计入。
+    assert_eq!(
+        r.passed, 2,
+        "文档测试的 passed 不得累加进单元测试计数\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    assert_eq!(r.failed, 0);
+}
+
+#[test]
+fn test_parse_test_results_doc_test_failure_not_counted() {
+    // 文档测试失败同样不得污染单元测试的 failed 计数。
+    let stdout = "\n\
+running 2 tests\n\
+test it_works ... ok\n\
+test it_also_works ... ok\n\
+\n\
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\n\
+\n\
+\n\
+running 1 test\n\
+test src/lib.rs - documented (line 8) ... FAILED\n\
+\n\
+failures:\n\
+\n\
+    src/lib.rs - documented (line 8)\n\
+\n\
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.46s\n\
+";
+    let stderr = "   Doc-tests test-crate\n";
+    let r = parse_test_results(stdout, stderr);
+    assert_eq!(r.passed, 2);
+    assert_eq!(
+        r.failed, 0,
+        "文档测试的失败不得计入单元测试 failed\nstdout:\n{stdout}"
+    );
+}
+
 #[test]
 fn test_parse_test_results_no_test_result_line_yields_zero() {
     // cargo 进程异常退出（如被 OOM kill）时，输出里根本没有 test result 行。

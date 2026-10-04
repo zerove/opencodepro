@@ -262,7 +262,39 @@ pub fn extract_diags(stderr: &str) -> (Vec<Diag>, Vec<Diag>) {
 
 // ── Test results parser (cargo test output) ───────────
 
-/// Parse test results.
+/// 判定 libtest 输出中一个测试块的起始行：`running N test` 或
+/// `running N tests`（N 为数字）。
+///
+/// libtest 在 stdout 中为每个测试目标输出这种行，于是 stdout 天然被切成
+/// 「块」结构：起始行 → 各条目行 → `test result:` 汇总行。
+fn is_libtest_block_start(line: &str) -> bool {
+    let Some(rest) = line.strip_prefix("running ") else {
+        return false;
+    };
+    if let Some(count) = rest.strip_suffix(" tests") {
+        return count.parse::<usize>().is_ok();
+    }
+    if let Some(count) = rest.strip_suffix(" test") {
+        return count.parse::<usize>().is_ok();
+    }
+    false
+}
+
+/// 判定 libtest 文档测试的条目行。
+///
+/// libtest 对文档测试使用 `test <路径> - <条目> (line N)` 命名，例如
+/// `test src/lib.rs - documented (line 8) ... ok`。普通单元测试不会命中。
+fn is_doc_test_entry(line: &str) -> bool {
+    let Some(rest) = line.strip_prefix("test ") else {
+        return false;
+    };
+    // 必须出现 ` - ` 分隔符与 ` (line N)` 位置后缀。
+    rest.contains(" - ") && rest.contains(" (line ")
+}
+
+/// Parse test results from cargo test output.
+///
+/// 只统计单元测试目标的结果，不含 `Doc-tests` 段，详见函数体内注释。
 pub fn parse_test_results(stdout: &str, stderr: &str) -> TestResults {
     let mut passed = 0usize;
     let mut failed = 0usize;
@@ -272,9 +304,38 @@ pub fn parse_test_results(stdout: &str, stderr: &str) -> TestResults {
     let mut failures = Vec::new();
 
     let combined = format!("{stdout}\n{stderr}");
+    // `cargo test` 会为每个测试目标各输出一行 `test result:`，其中包含
+    // `Doc-tests <crate>` 段。原先把所有这些行一律累加，于是文档测试的
+    // 通过数被计入 `passed`。
+    //
+    // 该缺陷已实测确认：给测试用临时 crate 加一段可运行的文档示例后，
+    // cargo 输出 `ok. 2 passed`（unittest）与 `ok. 1 passed`（doc-test），
+    // 累加得 passed=3，调用方 `assert_eq!(results.passed, 2)` 随之失败——
+    // 单元测试其实全部通过。
+    //
+    // 不能靠 `Running` / `Doc-tests` 分段标记来区分：这些标记由 cargo 写在
+    // **stderr**，而 `test result:` 写在 **stdout**。本函数把两流拼成
+    // `format!("{stdout}\n{stderr}")`，所有标记必然排在所有 `test result:`
+    // 行之后，基于标记的区间判断在原理上不可能生效（已实测确认）。
+    //
+    // 可用的判别特征只能在 stdout 内部：libtest 对文档测试条目使用
+    // `test <路径> - <条目> (line N)` 命名约定。故按 stdout 中每个
+    // `running N test(s)` 起始的块归组，块内条目命中该约定则整块跳过。
+    //
+    // 零测试的文档测试块不含这样的条目，但它的 `test result:` 恒为
+    // `0 passed`，跳过与否都不影响 `passed`，因此这一盲区是安全的。
+    let mut block_is_doc_tests = false;
     for line in combined.lines() {
         let trimmed = line.trim();
-        if trimmed.starts_with("test result: ") {
+        if is_libtest_block_start(trimmed) {
+            // 新块开始，块类型待定，由紧随其后的条目决定。
+            block_is_doc_tests = false;
+            continue;
+        }
+        if is_doc_test_entry(trimmed) {
+            block_is_doc_tests = true;
+        }
+        if trimmed.starts_with("test result: ") && !block_is_doc_tests {
             let body = if let Some(b) = trimmed.strip_prefix("test result: ") {
                 if let Some(b) = b.strip_prefix("ok.") {
                     b.trim()
