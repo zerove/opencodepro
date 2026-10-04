@@ -134,14 +134,14 @@ $ mvn -q test
 |------|------|------|
 | crate 单测 | `cargo test -p sisyphus-tools-build` | 110 passed / 0 failed |
 | Java 单测 | `cargo test -p sisyphus-tools-build --lib java` | 5 passed / 0 failed |
-| CLI 判定单测 | `cargo test -p sisyphus-cli --lib build::` | 6 passed / 0 failed |
+| CLI 判定单测 | `cargo test -p sisyphus-cli --lib build::` | **9 passed / 0 failed**（6 条判定 + 3 条提示语） |
 | 真实工具链 e2e | `... --test language_backend_guards -- --ignored` | **13 passed / 0 failed**（原 11 + 新增 2 条 Maven） |
 | 严格 clippy | `cargo clippy -p sisyphus-tools-build -p sisyphus-cli --all-targets -- -D warnings` | 无告警 |
 | 格式 | `cargo fmt --all --check` | 通过 |
-| 全工作区 | `make test-all` | **4759 passed / 0 failed / 25 ignored** |
+| 全工作区 | `make test-all` | **4762 passed / 0 failed / 25 ignored** |
 
 全工作区计数可完整对账：相对上轮基线 4750/23，
-本轮新增 9 条通过（Java 3 条 + CLI 判定 6 条）、2 条 ignored（两条新 Maven e2e），
+本轮新增 12 条通过（Java 3 + CLI 判定 6 + 提示语 3）、2 条 ignored（两条新 Maven e2e），
 **没有其他变动**。
 
 e2e 覆盖的场景（均真实拉起 `go` / `python3 -m pytest` / `mvn` 子进程）：
@@ -169,6 +169,34 @@ Error: 1 test(s) failed          # 退出码 1
 
 其中「全部 skip」仍报 `ok`（与 cargo / pytest 一致）——跳过是测试作者的显式意图，
 降级成 `no tests ran` 反而会在 CI 上制造噪声信号。
+
+### 4.2 改提示语时自己引入的回归（已修）
+
+第一版提示语是**统一**的「可能是空工程、没有测试文件，或过滤器没命中任何用例」。
+实测 `--lang fe` 后发现这是**错的**：
+
+```
+$ sisyphus build test --lang fe -C <有 index.html 的目录>
+Test result: no tests ran. 0 passed; 0 failed; ...
+提示：零用例。可能是空工程、没有测试文件，或过滤器（如 -k/-Dtest）没命中任何用例。
+```
+
+`frontend` 后端的 `test()` 恒返回全 0（HTML/CSS 本就无测试步骤），
+对它说「过滤器没命中」是凭空给建议。修法：提示语按 `backend.name()` 分流。
+
+```
+$ sisyphus build test --lang fe -C <同上>
+Test result: no tests ran. 0 passed; 0 failed; ...
+提示：`frontend` 后端没有测试步骤，HTML/CSS 不做单元测试。
+
+$ sisyphus build test --lang python -C <空目录>
+Test result: no tests ran. 0 passed; 0 failed; ...
+提示：零用例（后端 `python`）。可能是空工程、没有测试文件，或过滤器没命中任何用例。
+```
+
+注意这里与本轮修的解析器 bug 同源：**不能只靠计数反推语义**。
+零计数的成因不同（没测试步骤 vs 过滤器滤光），
+所以改成让后端自报身份，而不是让 CLI 猜。
 
 ## 5. 环境噪音（非代码缺陷）
 
@@ -223,10 +251,20 @@ pub enum TestOutcome {
 
 ### 7.3 补齐剩余后端的守卫
 
-本轮教训是**守卫覆盖不全**：`rust` 与 `frontend` 目前仍无真实工具链 e2e。
-`rust` 后端走 `cargo test`，但它自身就在 Rust 仓库里，自举成本高；
-`frontend` 没有测试步骤，但它的零用例行为会被新判定式标成 `no tests ran`
-（语义上偏负面，建议单独考虑给它一条豁免路径）。
+本轮教训是**守卫覆盖不全**：在写这份报告时，我曾错误地写下
+「`rust` 与 `frontend` 目前仍无真实工具链 e2e」。
+**实际上 `rust_backend_test_e2e.rs` 早已存在**，含 7 条**不带 `#[ignore]`** 的
+真实 `cargo test` e2e（已实测 7 passed / 0 failed），覆盖文档测试不计入 `passed`、
+`--no-fail-fast` 缺省导致后续目标不运行等单测覆盖不到的路径。
+
+因此真实结论是：**6 个后端里 5 个已有真实工具链 e2e**（rust / go / python / java / node），
+只剩 `frontend` 没有——而它本就没有测试步骤（`test()` 直接返回全 0）。
+4.2 节已实测：它不受新提示语影响（提示语按 `backend.name()` 分流，
+会明确说「没有测试步骤」），故**无需额外豁免路径**，这一点已闭环。
+
+> 记录这个错误是因为它与本轮修的 bug 同类：
+> **用「我记得」代替「我查过」**。当时只 grep 了 `language_backend_guards.rs`，
+> 没有列出 `tests/` 目录全貌就下了结论。
 
 ### 7.4 清理环境告警
 

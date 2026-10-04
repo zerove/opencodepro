@@ -155,6 +155,19 @@ fn test_status_label(r: &TestResults) -> &'static str {
     STATUS_OK
 }
 
+/// 零用例时的诊断提示。
+///
+/// 必须区分「这个后端压根没有测试步骤」与「有测试步骤但没命中用例」——
+/// 对 HTML/CSS 说“可能是过滤器没命中”属于凭空给建议。
+fn no_tests_hint(backend_name: &str) -> String {
+    if matches!(backend_name, "frontend" | "fe" | "css" | "html") {
+        return format!("提示：`{backend_name}` 后端没有测试步骤，HTML/CSS 不做单元测试。");
+    }
+    format!(
+        "提示：零用例（后端 `{backend_name}`）。可能是空工程、没有测试文件，或过滤器没命中任何用例。"
+    )
+}
+
 /// Run test.
 pub fn run_test(
     package: Option<String>,
@@ -168,7 +181,7 @@ pub fn run_test(
     let dir_ref = cwd_or_current(cwd);
     let r = backend.test(package.as_deref(), name.as_deref(), all, dir_ref.as_deref())?;
 
-    // 状态不能只看 `failed == 0`，见 `test_status_label` 的文档。
+    let backend_name = backend.name();
     let status = test_status_label(&r);
     println!(
         "Test result: {status}. {} passed; {} failed; {} ignored; {} measured; {} filtered out",
@@ -176,9 +189,7 @@ pub fn run_test(
     );
 
     if status == STATUS_NO_TESTS {
-        println!(
-            "提示：零用例。可能是空工程、没有测试文件，或过滤器（如 -k/-Dtest）没命中任何用例。"
-        );
+        println!("{}", no_tests_hint(backend_name));
     }
 
     if !r.failures.is_empty() {
@@ -291,5 +302,29 @@ mod tests {
     #[test]
     fn skipped_with_passes_is_ok() {
         assert_eq!(test_status_label(&res(1, 0, 3, 0)), STATUS_OK);
+    }
+
+    /// frontend 后端的 `test()` 恒返回全 0。如果提示语统一说
+    /// “可能是过滤器没命中”，就是对 HTML/CSS 凭空给建议——实测过就是这个 bug。
+    #[test]
+    fn frontend_hint_says_no_test_step() {
+        let h = no_tests_hint("frontend");
+        assert!(h.contains("没有测试步骤"), "实际提示: {h}");
+        assert!(!h.contains("过滤器"), "不应提过滤器: {h}");
+    }
+
+    #[test]
+    fn real_backend_hint_mentions_filter() {
+        let h = no_tests_hint("python");
+        assert!(h.contains("过滤器"), "实际提示: {h}");
+        assert!(h.contains("python"), "应标明后端: {h}");
+    }
+
+    /// 后端名必须原样出现在提示里，否则用户不知道是哪个语言报的这个结果。
+    #[test]
+    fn hint_includes_backend_name() {
+        for b in ["rust", "go", "python", "node", "java-maven"] {
+            assert!(no_tests_hint(b).contains(b), "后端 {b} 未出现在提示中");
+        }
     }
 }

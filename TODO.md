@@ -1,6 +1,6 @@
 # Sisyphus 后续开发计划 (TODO.md)
 
-> **当前状态报告**: [docs/project-status-2026-10-04.md](docs/project-status-2026-10-04.md)（最新快照。多语言测试守卫的 6 个缺陷全部修复并有真实工具链端到端验证：Go 多包部分构建失败曾被漏判、Python 全部通过曾报 `passed=0`、Node 混合结果曾报 `passed=2 failed=0`、vitest 套件加载失败守卫因只读 stdout 而从不触发、以及收尾时才发现的 Java/Maven 同类缺陷（`[INFO]` 前缀 + 千分位逗号使解析永不命中，且 `test()` 丢弃 `success` 导致编译失败被当成全通过）。根因 `sisyphus-cli/src/build.rs` 的 `if r.failed == 0 { "ok" }` 已改为 `test_status_label()`，区分 `ok` / `FAILED` / `no tests ran`，配 6 条单测。真实工具链 e2e 从 11 条增至 13 条。历史快照见 [docs/project-status-2026-10-02.md](docs/project-status-2026-10-02.md)。）
+> **当前状态报告**: [docs/project-status-2026-10-04.md](docs/project-status-2026-10-04.md)（最新快照。多语言测试守卫的 6 个缺陷全部修复并有真实工具链端到端验证：Go 多包部分构建失败曾被漏判、Python 全部通过曾报 `passed=0`、Node 混合结果曾报 `passed=2 failed=0`、vitest 套件加载失败守卫因只读 stdout 而从不触发、以及收尾时才发现的 Java/Maven 同类缺陷（`[INFO]` 前缀 + 千分位逗号使解析永不命中，且 `test()` 丢弃 `success` 导致编译失败被当成全通过）。根因 `sisyphus-cli/src/build.rs` 的 `if r.failed == 0 { "ok" }` 已改为 `test_status_label()`，区分 `ok` / `FAILED` / `no tests ran`，配 9 条单测。真实工具链 e2e 从 11 条增至 13 条；全工作区回归 4762 通过 / 0 失败。历史快照见 [docs/project-status-2026-10-02.md](docs/project-status-2026-10-02.md)。）
 
 ## 已完成 (Done)
 
@@ -36,7 +36,8 @@
     - vitest 套件加载失败守卫从不触发（标记在 stderr 且带 ANSI）
     - 失败用例名带 ANSI 转义码（解析前未去色）
     - **Java/Maven 同类缺陷**（收尾时用真实 `mvn` 才发现）：`[INFO]` 前缀使 `starts_with` 永不命中、数字带千分位逗号、`test()` 丢弃 `success` 使编译失败被当成全通过
-- [x] **测试判定式根治** (2026-10-04): `sisyphus-cli/src/build.rs` 的 `if r.failed == 0 { "ok" }` → `test_status_label()`，区分 `ok` / `FAILED` / `no tests ran`，6 条单测 + 真实 CLI 三路径验证
+- [x] **测试判定式根治** (2026-10-04): `sisyphus-cli/src/build.rs` 的 `if r.failed == 0 { "ok" }` → `test_status_label()`，区分 `ok` / `FAILED` / `no tests ran`，9 条单测 + 真实 CLI 四路径验证（空工程 / 通过 / 失败 / frontend）
+    - 零用例提示语按 `backend.name()` 分流：frontend 说「没有测试步骤」而不是「过滤器没命中」（实测发现第一版统一提示语对 HTML/CSS 是错误建议）
 - [x] **真实工具链 e2e** (2026-10-04): `language_backend_guards.rs` 11 → 13 条（新增 Maven 编译失败 / 全通过）
 - [x] **GitHub Actions CI 全绿** (2026-08-09, 27/27 jobs; 修复 linker/clippy/protoc/组件缺失)
 - [x] **WebUI 中文化**
