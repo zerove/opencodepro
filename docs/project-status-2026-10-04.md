@@ -441,6 +441,25 @@ Node 侧的 3 个缺陷由 `src/build/node.rs` 的解析器单测覆盖，
 教训：后端测试失败时，**先 `git stash` 做基线对照**，
 再怀疑代码；否则会把环境问题写成「回归」。
 
+### 5.10 `sisyphus-bridge` 的 7 个既有 clippy 错误（**已修**）
+
+`git stash` 对照确认它们是基线已有的、与本轮改动无关。
+既然本轮就在动这个 crate 的邻近代码，一并清掉：
+
+| lint | 数量 | 处理 |
+|------|------|------|
+| `field_reassign_with_default` | 2 | 改用结构体字面量 + `..Default::default()` |
+| `bool_assert_comparison` | 2 | `assert_eq!(x, true)` → `assert!(x)` |
+| `unused_mut` | 1 | `node_a` 只被读取 |
+
+其中 `unused_mut` 那处的旁边本来就有一条注释在解释
+「`node_b.events` 需要可变借用，所以 `mut` 不能去」——只是它写在了
+`node_b` 头上，把真正多余的 `node_a` 漏掉了。
+
+改的是**真实双节点集群测试**里的断言，不是空跑：
+`peer::experience_sync` 3 passed、`cluster_integration` 21 passed，
+`-D warnings` 下 clippy 0 错误。
+
 ## 6. 提交
 
 按时间倒序（均为本轮）：

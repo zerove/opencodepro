@@ -320,9 +320,11 @@ mod tests {
     fn test_broadcast_experience_serializes_payload() {
         let mgr = Arc::new(PeerManager::new("node-a", Duration::from_secs(30)));
         let mut rx = mgr.subscribe();
-        let mut exp = ExperienceTuple::default();
-        exp.context_text = "test".to_string();
-        exp.version = 42;
+        let exp = ExperienceTuple {
+            context_text: "test".to_string(),
+            version: 42,
+            ..Default::default()
+        };
 
         broadcast_experience(&mgr, &exp, "exp:test:node-b:42");
 

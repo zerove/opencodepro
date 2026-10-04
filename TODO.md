@@ -81,9 +81,12 @@
     - 本地复现真实 e2e 前必须先 `pip install pytest`，否则会把环境问题误当成代码回归
 - [x] **「112s 慢测试」是我的误判** (2026-10-04): 测试实跑 2.80s，54s 全是编译
     - 我当时把 `cargo test` 的 `real 0m56s` 当成了测试耗时
-- [ ] **`sisyphus-bridge` 有 7 个既有 clippy 错误** (2026-10-04 新发现): `git stash` 验证为基线已有，与本轮无关
-    - `cluster_integration.rs` 5 处（field_reassign_with_default / unused_mut / bool_assert_comparison）
-    - `peer/experience_sync.rs:324` 1 处
+- [x] **`sisyphus-bridge` 的 7 个 clippy 错误，已修** (2026-10-04): `cargo clippy -p sisyphus-bridge --all-targets -- -D warnings` 现为 **0 错误**
+    - `field_reassign_with_default` 2 处 → 改用结构体字面量 + `..Default::default()`
+    - `bool_assert_comparison` 2 处 → `assert_eq!(x, true)` 改 `assert!(x)`
+    - `unused_mut` 1 处：`node_a` 只读无需 `mut`（旁边注释本就在解释 `node_b` 为什么要 mut）
+    - 验证：clippy 0 错；`peer::experience_sync` 3 passed；`cluster_integration` 21 passed
+    - 注：这些断言都在真实双节点集群测试里，不是空跑
 - [x] **GitHub Actions CI 全绿** (2026-08-09, 27/27 jobs; 修复 linker/clippy/protoc/组件缺失)
 - [x] **WebUI 中文化**
 - [x] **eval 评测套件** (57 例, schema 校验 + mock/真实双模式)

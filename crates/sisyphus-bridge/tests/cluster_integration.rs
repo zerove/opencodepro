@@ -200,7 +200,7 @@ async fn test_experience_broadcast_subscribed() {
                 parsed.context_text,
                 "user asked how to build an HTTP server"
             );
-            assert_eq!(parsed.outcome_success, true);
+            assert!(parsed.outcome_success);
             assert_eq!(parsed.vector_clock.get("node-a"), Some(&3));
         },
         other => panic!("expected ExperienceSync, got: {other:?}"),
@@ -499,7 +499,7 @@ async fn test_two_node_experience_sync_round_trip_persists() {
     let seen = find_in(&b_bank, "hash-1700000001").await.expect("B 必须持有 A 的经验");
     assert_eq!(seen.context_text, "goal from node-a");
     assert_eq!(seen.project_id.as_deref(), Some("sync-project"));
-    assert_eq!(seen.outcome_success, true);
+    assert!(seen.outcome_success);
 
     // B → A
     node_b
@@ -522,9 +522,9 @@ async fn test_two_node_experience_sync_round_trip_persists() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn test_duplicate_delivery_does_not_duplicate_experience() {
-    let mut node_a = start_sync_node("node-a", vec![]).await;
+    let node_a = start_sync_node("node-a", vec![]).await;
     // `node_b.events` 在下方需要可变借用；clippy 对具体用法不可见，
-    // 因此这里的 mut 不可去。
+    // 因此这里的 mut 不可去。`node_a` 只被读取，不加 mut。
     let mut node_b = start_sync_node("node-b", vec![node_a.grpc_addr.clone()]).await;
 
     wait_for_link(&node_a.manager, &node_b.manager).await;
@@ -631,9 +631,11 @@ async fn test_experience_sync_survives_grpc_round_trip() {
     // 让服务端的订阅任务先跑起来，否则广播会打在订阅建立之前。
     tokio::time::sleep(Duration::from_millis(150)).await;
 
-    let mut exp = ExperienceTuple::default();
-    exp.context_text = "round trip".into();
-    exp.version = 7;
+    let exp = ExperienceTuple {
+        context_text: "round trip".into(),
+        version: 7,
+        ..Default::default()
+    };
     broadcast_experience(&manager_a, &exp, "exp:1700000000:node-b");
 
     let local = timeout(Duration::from_secs(2), sub_a.recv())
