@@ -346,30 +346,64 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 
 #[test]
 fn test_parse_test_results_doc_test_failure_not_counted() {
-    // 文档测试失败同样不得污染单元测试的 failed 计数。
+    // 文档测试失败同样不得污染单元测试的计数与失败列表。
+    //
+    // 这里的 stdout 是**实测抓取的真实输出**，包含 libtest 的一个易被忽略
+    // 的结构：文档测试失败时会出现**两个** `failures:` 标记。
+    //
+    //   - 第一个紧跟失败条目行之后（无缩进），它下面挂的是
+    //     `---- <名称> stdout ----` 与 panic 文本；
+    //   - 第二个才是真正的失败清单，条目带缩进。
+    //
+    // 早先本测试的输入把两者简化成了一个 `failures:`，于是无论
+    // `failures` 是否混入文档测试条目，断言都会通过——一次假绿灯。
+    // 输入不真实，等于没测。真实 panic 文本（`left: 2` / `right: 3` 等）
+    // 也必须保留：它们正是会被误当成失败条目收进列表的那些行。
     let stdout = "\n\
 running 2 tests\n\
-test it_works ... ok\n\
 test it_also_works ... ok\n\
+test it_works ... ok\n\
 \n\
 test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\n\
 \n\
 \n\
 running 1 test\n\
-test src/lib.rs - documented (line 8) ... FAILED\n\
+test src/lib.rs - documented (line 7) ... FAILED\n\
 \n\
 failures:\n\
 \n\
-    src/lib.rs - documented (line 8)\n\
+---- src/lib.rs - documented (line 7) stdout ----\n\
+Test executable failed (exit status: 101).\n\
 \n\
-test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.46s\n\
+stderr:\n\
+\n\
+thread 'main' panicked at src/lib.rs:3:1:\n\
+assertion `left == right` failed\n\
+  left: 2\n\
+ right: 3\n\
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\n\
+\n\
+\n\
+\n\
+failures:\n\
+    src/lib.rs - documented (line 7)\n\
+\n\
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.57s\n\
 ";
-    let stderr = "   Doc-tests test-crate\n";
+    // stderr 实测抓取：分段标记在这里，且排在所有 test result 行之后。
+    let stderr = "     Running unittests src/lib.rs (target/debug/deps/docfail-9028b339931dbea8)\n   Doc-tests docfail\n";
     let r = parse_test_results(stdout, stderr);
-    assert_eq!(r.passed, 2);
+    assert_eq!(r.passed, 2, "文档测试不得计入 passed\nstdout:\n{stdout}");
     assert_eq!(
         r.failed, 0,
         "文档测试的失败不得计入单元测试 failed\nstdout:\n{stdout}"
+    );
+    // 计数与条目列表必须同口径。只查 failed 会漏掉列表里混入的条目——
+    // CLI 会把它打印成一条既没被计入 failed、又无法解释的失败。
+    assert!(
+        r.failures.is_empty(),
+        "文档测试的失败条目不得进入 failures，实际混入: {:?}",
+        r.failures.iter().map(|f| &f.name).collect::<Vec<_>>()
     );
 }
 

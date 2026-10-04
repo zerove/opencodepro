@@ -364,17 +364,28 @@ pub fn parse_test_results(stdout: &str, stderr: &str) -> TestResults {
         }
     }
 
+    // `failures` 必须与上面计数保持同一口径：文档测试的条目同样不得进入
+    // 列表。否则 CLI 会打印一个既没被计入 `failed`、调用方又无法解释的条目。
     let mut in_failures = false;
+    let mut in_doc_test_block = false;
     for line in combined.lines() {
         let trimmed = line.trim();
         if trimmed == "failures:" {
             in_failures = true;
             continue;
         }
+        if is_libtest_block_start(trimmed) {
+            in_doc_test_block = false;
+        } else if is_doc_test_entry(trimmed) {
+            in_doc_test_block = true;
+        }
         if in_failures {
             if trimmed.is_empty() || trimmed.starts_with("test result") {
                 in_failures = false;
-            } else if !trimmed.starts_with("----") && !trimmed.starts_with("FAILED") {
+            } else if !trimmed.starts_with("----")
+                && !trimmed.starts_with("FAILED")
+                && !in_doc_test_block
+            {
                 failures.push(TestFailure {
                     name: trimmed.to_string(),
                 });
