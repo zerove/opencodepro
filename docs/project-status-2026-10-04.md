@@ -227,22 +227,63 @@ Test result: no tests ran. 0 passed; 0 failed; ...
 
 ## 5. 环境噪音（非代码缺陷）
 
-- **rustc 会在编译 `sisyphus-core` 时随机 SIGABRT**，与并行度无关。
+- **rustc 会在编译 `sisyphus-core` 时随机 SIGABRT**，成因**至今未定**。
   表现：`process didn't exit successfully: ...rustc --crate-name sisyphus_core ...
   (signal: 6, SIGABRT)`，退出码 101。
 
-  本次实测**直接推翻了旧记录里“只有 `-j 1` 稳定”的结论**：
-  第一次 `make test-all`（Makefile 里已带 `CARGO_BUILD_JOBS=1`）**仍然 SIGABRT**，
-  第二次重跑完全相同的命令则一次通过（4759 passed / 0 failed / exit 0）。
-  也就是说这不是并发 OOM，而是**概率性崩溃**，与 `-j 1` / `-j 2` 都对不上。
+  **实测事实**（可复现的部分）：第一次 `make test-all`（Makefile 里已带
+  `CARGO_BUILD_JOBS=1`）SIGABRT，第二次跑完全相同的命令一次通过
+  （4759 passed / 0 failed / exit 0）。
 
-  当前状态：机器 19 GiB 内存（free 显示 13 GiB available）+ 12 核，
-  已排除 OOM（available 充足时崩溃）；`RUSTC_WRAPPER` / `RUSTFLAGS` /
-  `sccache` / `CARGO_BUILD_JOBS` 均无外部干扰设置。
-  故 `Makefile` 的 `CARGO_BUILD_JOBS=1` **保留**（它至少避免了已知的最坏情形），
-  但**不再声称它能根除此崩溃**。
+  **不成立的推论**（本轮已纠正）：旧记录写「故这不是并发 OOM，
+  而是概率性崩溃，与 `-j 1`/`-j 2` 都对不上」。这**超出了证据**——
+  崩溃发生在**rustc 编译期**（不是测试运行期），而此时
+  `--test-threads` 根本不参与；因此`-j 1` 确实**未覆盖到**崩溃场景，
+  但“与并发无关”仍未得到证明——**编译期也存在其他并发**
+  （多任务争用内存带宽/内存分配器内部并行），本轮**未做二分取证**，
+  且原始日志已被后续运行覆盖。
 
-  遇到时的处置：**直接重跑**，不要试图调并发参数。
+  已排除 / 已核查：
+  - **不是内核 OOM killer**：崩溃时 `available` 约 13 GiB（充足），
+    且 `dmesg` 中无任何 `oom-kill` / `out of memory` 记录
+    （注：`dmesg` 缓冲区已轮转，故这是**弱证据**，非决定性排除）
+  - `RUSTC_WRAPPER` / `RUSTFLAGS` / `sccache` / `CARGO_BUILD_JOBS` 均无外部干扰设置
+  - 机器 19 GiB 内存 + 12 核；存在 5 GiB swap（已用 61 MiB）
+
+  当前处置：`Makefile` 的 `CARGO_BUILD_JOBS=1` **保留**（它防的是
+  另一个已实测存在的场景：多二进制并行链接 OOM，那是**真**发生的）。
+  遇到 rustc SIGABRT 时：**直接重跑**。
+
+  **下次复现时应立即取证**（本轮的教训——现场一丢就再也查不出）：
+
+  | 步骤 | 命令 | 作用 |
+  |------|------|------|
+  | 1 | `make rustc-abort-forensics` | 自动循环重编 + 保留 core（**推荐**） |
+  | 2 | `coredumpctl list` | 事后取现场（`core_pattern` 已配 systemd-coredump） |
+  | 3 | `coredumpctl info <PID>` | 看崩溃线程栈，直接判定 rustc 内部哪个阶段 |
+
+  根因已查清：`ulimit -c` 当前为 **0**，即即便崩溃也**不留任何现场**——
+  这正是上一轮“日志已被覆盖、无法再取证”的直接原因。
+
+  `make rustc-abort-forensics` 已实跑验证（`ROUNDS=1`，4m24s）：
+
+  ```
+  ⚠  ulimit -c = 0；已在本目标子 shell 内覆盖为 unlimited
+     core_pattern: |/usr/lib/systemd/systemd-coredump %P %u %g %s %t %c %h %d %F
+  ✓ coredumpctl 可用（复现后用 coredumpctl info <PID> 看栈）
+  === 循环重编 1 轮（JOBS=1，每轮强制 touch 重编）===
+    [ 1/1] ok
+  === 1 轮均未复现 —— 这是**阴性结果**，不证明成因 ===
+  ```
+
+  两个设计要点（均由实跑暴露后修正）：
+  - 每轮 `touch crates/sisyphus-core/src/lib.rs` 强制**真重编**，
+    否则 cargo 命中缓存直接返回，循环毫无意义
+  - 输出重定向到 `$JCODE_SCRATCH_DIR/forensics/round-N.log`，
+    保留完整崩溃输出而不淹没终端
+
+  `JOBS=N` 可调构建并发做二分：`JOBS=1` 复刻 `make test-all` 场景，
+  `JOBS=12` 对照全并行。
 - `sisyphus-core/tests/executor_failure_semantics.rs:48` 有 1 个
   `fetch_update` 弃用告警（rustc 1.99）。不影响测试，已在同批清理为 `try_update`。
 

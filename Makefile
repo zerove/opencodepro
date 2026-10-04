@@ -55,7 +55,7 @@ TOOLS_PACKAGES = \
 
 HEAVY_PACKAGES = sisyphus-sandbox sisyphus-sandboxd sisyphus-tests
 
-.PHONY: all check-all build-all test-all scan-flaky flaky-replay
+.PHONY: all check-all build-all test-all scan-flaky flaky-replay rustc-abort-forensics
 .PHONY: check-bridge build-bridge test-bridge check-bridge-160
 .PHONY: check-bridge-nosandbox test-bridge-nosandbox
 .PHONY: check-sandbox build-sandboxd test-sandbox check-sandboxd test-sandboxd test-tests check-tests
@@ -138,6 +138,59 @@ flaky-replay:
 	@test -d "$(or $(REPORT_DIR),$$JCODE_SCRATCH_DIR/flaky-reports)" || \
 		{ echo "没有现场目录；先跑 make scan-flaky"; exit 2; }
 	@ls -1 "$(or $(REPORT_DIR),$$JCODE_SCRATCH_DIR/flaky-reports)"/*.log 2>/dev/null || true
+
+# — rustc 随机 SIGABRT 取证 —
+#
+# 背景：实测出现过 `rustc --crate-name sisyphus_core ... (signal: 6, SIGABRT)`，
+# 重跑即过，**成因至今未定**（尚未排除编译期内存压力 / rustc 内部并行等）。
+# 每次想查都查不到的根本原因：`ulimit -c` 默认是 0，崩溃**不留任何现场**。
+#
+# 用法：make rustc-abort-forensics            # 默认 5 轮
+#       make rustc-abort-forensics ROUNDS=20  # 加轮次
+#       JOBS=4 make rustc-abort-forensics     # 改变构建并发（默认 1，即复刻 make test-all 场景）
+#
+# 原理：每一轮 `touch` 一个 crate 内源文件强制 rustc **真正重编 sisyphus-core**
+#       （不加 touch 则 cargo 命中缓存直接返回，循环毫无意义）。
+#       每次都在子 shell 内 `ulimit -c unlimited`；一旦复现，
+#       现场由 systemd-coredump 接管，用 coredumpctl 事后分析。
+#
+# ⚠ 单轮可能耗时数分钟（sisyphus-core 依赖 wasmtime）。若只想快速看一眼，
+#   用 ROUNDS=1；本目标**故意不用 -s（静默）之外的静默**，因为崩溃信息
+#   必须落盘才有意义，故输出重定向到日志文件而非终端。
+rustc-abort-forensics:
+	@echo "=== 前置检查 ==="
+	@if [ "$$(ulimit -c)" = "0" ]; then \
+		echo "⚠  ulimit -c = 0；已在本目标子 shell 内覆盖为 unlimited"; \
+	else echo "✓ ulimit -c = $$(ulimit -c)"; fi
+	@echo "   core_pattern: $$(cat /proc/sys/kernel/core_pattern 2>/dev/null || echo 未知)"
+	@command -v coredumpctl >/dev/null 2>&1 \
+		&& echo "✓ coredumpctl 可用（复现后用 coredumpctl info <PID> 看栈）" \
+		|| echo "⚠  coredumpctl 不可用；请人工检查 /var/lib/systemd/coredump/"
+	@mkdir -p "$(or $(FORENSIC_DIR),$$JCODE_SCRATCH_DIR/forensics)"
+	@echo "=== 循环重编 $(or $(ROUNDS),5) 轮（JOBS=$${JOBS:-1}，每轮强制 touch 重编）==="
+	@fail=0; i=0; \
+	while [ $$i -lt $(or $(ROUNDS),5) ]; do \
+		i=$$((i+1)); \
+		printf "  [%2d/%s] " "$$i" "$(or $(ROUNDS),5)"; \
+		touch crates/sisyphus-core/src/lib.rs; \
+		log="$(or $(FORENSIC_DIR),$$JCODE_SCRATCH_DIR/forensics)/round-$$i.log"; \
+		if ( ulimit -c unlimited; CARGO_BUILD_JOBS=$${JOBS:-1} \
+			cargo build -p sisyphus-core --tests ) >"$$log" 2>&1; then \
+			echo "ok"; \
+		else \
+			echo "✗ 崩溃复现（第 $$i 轮）"; fail=1; \
+			echo "--- 立即取证 ---"; \
+			echo "    日志: $$log"; \
+			coredumpctl list --no-pager 2>/dev/null | tail -3 \
+				|| echo "    (coredumpctl 不可用，请人工检查 /var/lib/systemd/coredump/)"; \
+			echo "    栈:   coredumpctl info <PID>"; \
+			break; \
+		fi; \
+	done; \
+	if [ $$fail -eq 0 ]; then \
+		echo "=== $(or $(ROUNDS),5) 轮均未复现 —— 这是**阴性结果**，不证明成因 ==="; \
+	fi
+	@touch crates/sisyphus-core/src/lib.rs 2>/dev/null || true
 
 # — 结构审计（不需要编译，纯静态扫描）——
 
