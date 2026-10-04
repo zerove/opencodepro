@@ -156,8 +156,25 @@ pub fn run_command(
     args: &[&str],
     cwd: Option<&Path>,
 ) -> ToolResult<(String, String, bool)> {
+    run_command_with_env(cmd, args, cwd, &[])
+}
+
+/// Same as [`run_command`], but with extra environment variables for the child.
+///
+/// Env is set **on the child process** rather than via `std::env::set_var`:
+/// mutating the global environment from a multithreaded test binary is
+/// unsound (and would leak into sibling tests).
+pub fn run_command_with_env(
+    cmd: &str,
+    args: &[&str],
+    cwd: Option<&Path>,
+    env: &[(&str, &str)],
+) -> ToolResult<(String, String, bool)> {
     let mut command = Command::new(cmd);
     command.args(args);
+    for (k, v) in env {
+        command.env(k, v);
+    }
     if let Some(dir) = cwd {
         command.current_dir(dir);
     }
@@ -174,8 +191,33 @@ pub fn run_command(
 }
 
 /// Run `cargo` with the given arguments.
+///
+/// ## 为什么给子进程注入 `CARGO_BUILD_JOBS=1`
+///
+/// 本函数会被**测试**调用（`rust_backend_test_e2e.rs` 的探针 crate），
+/// 而 libtest 默认**并行**跑测试，于是会同时拉起 N 个嵌套 cargo 进程，
+/// 每个都跑完整的 rustc + 链接器。本机 `vm.overcommit_memory=2`
+/// （严格模式，`CommitLimit ≈ RAM × 80%`）下，这会直接撞墙：
+///
+/// ```text
+/// LLVM ERROR: out of memory
+/// Allocation failed
+/// collect2: fatal error: ld terminated with signal 6 [Aborted]
+/// ```
+///
+/// 实测：`cargo test --test rust_backend_test_e2e` 并行时 3 条失败
+/// （`LLVM ERROR: out of memory`），同一命令加 `--test-threads=1`
+/// 后 7 条全过（4.25s）。
+///
+/// **注意**：这不是让外层构建变慢的调优，而是防止嵌套进程把
+/// 提交内存撑爆。注入在**子进程**上，调用方的显式设置优先。
 pub fn cargo_raw(args: &[&str], cwd: Option<&Path>) -> ToolResult<(String, String, bool)> {
-    run_command("cargo", args, cwd)
+    let jobs = std::env::var("CARGO_BUILD_JOBS").ok();
+    match jobs {
+        // Callers already constrained it (e.g. Makefile); respect that.
+        Some(_) => run_command("cargo", args, cwd),
+        None => run_command_with_env("cargo", args, cwd, &[("CARGO_BUILD_JOBS", "1")]),
+    }
 }
 
 // ── "零测试被执行" 守卫（多语言共用） ──────────────────

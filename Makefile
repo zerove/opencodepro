@@ -22,15 +22,12 @@ BRIDGE_DEPS = crates/sisyphus-bridge/src/main.rs crates/sisyphus-bridge/Cargo.to
 # 多个测试二进制的目标都显式带 CARGO_BUILD_JOBS=1。直接敲 `cargo test` 不受此保护，
 # 需自行加 -j 1。
 #
-# ⚠ 修正（2026-10-04）：旧注释写「`-j 2` 仍不安全，`-j 1` 稳定」。本轮实测发现
-# **已带 `-j 1` 的 `make test-all` 仍出现过一次 SIGABRT**，同一条命令重跑即通过。
-#
-# 但**成因未定，不能说 `-j 1` 无效**：这里限制的是**构建级**并发
-#（CARGO_BUILD_JOBS），而 `make test-all` 路径上**测试线程级**并发
-#（`--test-threads`，默认 = CPU 核数）从未被限制。二者在观测上等价，
-# 且该次 SIGABRT 的原始日志已被后续运行覆盖、无法再取证。
-# 所以正确做法是：**遇到 SIGABRT 直接重跑并保留现场**，
-# 要根治请先分别试 `--test-threads=1` 与 `-j 1` 做二分取证。
+# ⚠ 修正（2026-10-04 晚）：本机 `vm.overcommit_memory=2`（**严格模式**），
+#   `CommitLimit ≈ RAM × 80%`。实测链接期 rust-lld 撞上该上限后抛 EAGAIN
+#   （`what(): Resource temporarily unavailable`）→ SIGABRT，
+#   即便 free available 还有 10 GiB。**排查务必看 Committed_AS，
+#   别拿 free available 当「已排除 OOM」的依据**（我犯过这个错）。
+#   `make rustc-abort-forensics` 会实时打印提交内存占限比。
 #
 # Usage:
 #   make check-all         # lightweight batch (alias: --exclude bridge/sandbox/tests)
@@ -110,10 +107,11 @@ ci-bridge:
 # rustc SIGABRT（ICE 标记 `0x0`），与 Makefile 头部记录的 OOM 现象同源。
 # `check` 虽然不链接最终二进制，但 rustc 前端的 codegen 峰值同样吃内存。
 #
-# ⚠ 实测修正（2026-10-04）：`test-all` **已带** `-j 1` 仍会随机 SIGABRT，
-# 同一条命令重跑即通过。所以这**不是**并发 OOM，而是概率性崩溃，
-# `-j 1` 不能根除它。CARGO_BUILD_JOBS=1 保留（避开已知最坏情况），
-# 但遇到 SIGABRT 时的正确处置是**直接重跑**，而不是继续调并发参数。
+# ⚠ 实测修正（2026-10-04 晚）：`test-all` **已带** `-j 1` 仍出现过一次 SIGABRT，
+# 同一条命令重跑即通过。**根因已查明**（详见头部注释与取证目标）：
+# 链接期 rust-lld 撞 `Committed_AS` 上限抛 EAGAIN。`-j 1` 把并行链接数
+# 降到 1，确实降低提交峰值——它**不是**无效，只是无法消除单链接器的占用。
+# 遇到 SIGABRT：**直接重跑**，并用 `make rustc-abort-forensics` 留现场。
 
 check-all:
 	CARGO_BUILD_JOBS=1 cargo check-all
@@ -139,58 +137,74 @@ flaky-replay:
 		{ echo "没有现场目录；先跑 make scan-flaky"; exit 2; }
 	@ls -1 "$(or $(REPORT_DIR),$$JCODE_SCRATCH_DIR/flaky-reports)"/*.log 2>/dev/null || true
 
-# — rustc 随机 SIGABRT 取证 —
+# — rustc / 链接器 SIGABRT 取证 —
 #
-# 背景：实测出现过 `rustc --crate-name sisyphus_core ... (signal: 6, SIGABRT)`，
-# 重跑即过，**成因至今未定**（尚未排除编译期内存压力 / rustc 内部并行等）。
-# 每次想查都查不到的根本原因：`ulimit -c` 默认是 0，崩溃**不留任何现场**。
+# 背景：实测出现过
+#   error: linking with `cc` failed
+#     = note: what(): Resource temporarily unavailable        ← EAGAIN
+#   collect2: fatal error: ld terminated with signal 6 [Aborted]
+# 崩溃发生在 **rust-lld（链接期）**，而非 rustc codegen 阶段。
+# 根因（本机 vm.overcommit_memory=2 严格模式 + ratio=80）：
+# Committed_AS 撞上 CommitLimit（实测峰值 18.4/21.1 GiB = 87%），
+# 即使 free available 还有 10 GiB 也会分配失败。
+#
+# ⚠ 排查时**务必看 Committed_AS 而非 free available**，后者会误导：
+#    真实 RAM 空闲 != 提交额度空闲，两者差一个数量级。
 #
 # 用法：make rustc-abort-forensics            # 默认 5 轮
 #       make rustc-abort-forensics ROUNDS=20  # 加轮次
-#       JOBS=4 make rustc-abort-forensics     # 改变构建并发（默认 1，即复刻 make test-all 场景）
+#       JOBS=4 make rustc-abort-forensics     # 改变构建并发（默认 1）
 #
-# 原理：每一轮 `touch` 一个 crate 内源文件强制 rustc **真正重编 sisyphus-core**
+# 原理：每轮 touch 一个 crate 内源文件强制 rustc **真正重编 sisyphus-core**
 #       （不加 touch 则 cargo 命中缓存直接返回，循环毫无意义）。
-#       每次都在子 shell 内 `ulimit -c unlimited`；一旦复现，
-#       现场由 systemd-coredump 接管，用 coredumpctl 事后分析。
-#
-# ⚠ 单轮可能耗时数分钟（sisyphus-core 依赖 wasmtime）。若只想快速看一眼，
-#   用 ROUNDS=1；本目标**故意不用 -s（静默）之外的静默**，因为崩溃信息
-#   必须落盘才有意义，故输出重定向到日志文件而非终端。
+#       每轮打印提交内存占限比；一旦复现，现场由 systemd-coredump 接管。
 rustc-abort-forensics:
 	@echo "=== 前置检查 ==="
-	@if [ "$$(ulimit -c)" = "0" ]; then \
-		echo "⚠  ulimit -c = 0；已在本目标子 shell 内覆盖为 unlimited"; \
-	else echo "✓ ulimit -c = $$(ulimit -c)"; fi
-	@echo "   core_pattern: $$(cat /proc/sys/kernel/core_pattern 2>/dev/null || echo 未知)"
+	@echo "  overcommit_memory = $$(cat /proc/sys/vm/overcommit_memory 2>/dev/null || echo '?') (0=启发 1=始终 2=严格)"
+	@echo "  overcommit_ratio  = $$(cat /proc/sys/vm/overcommit_ratio 2>/dev/null || echo '?')"
+	@c=$$(awk '/Committed_AS/{print $$2}' /proc/meminfo); \
+	 l=$$(awk '/CommitLimit/{print $$2}' /proc/meminfo); \
+	 echo "  提交内存 Committed_AS = $$((c/1024)) MiB / CommitLimit $$((l/1024)) MiB = $$(( c*100/l ))%"; \
+	 echo "  ⚠ 这是实际的墙；free available 高**不代表**提交额度充裕"
+	@echo "  ulimit -c = $$(ulimit -c) (0 = 崩溃不留现场，本目标已覆盖)"
 	@command -v coredumpctl >/dev/null 2>&1 \
-		&& echo "✓ coredumpctl 可用（复现后用 coredumpctl info <PID> 看栈）" \
-		|| echo "⚠  coredumpctl 不可用；请人工检查 /var/lib/systemd/coredump/"
+		&& echo "  ✓ coredumpctl 可用（复现后 coredumpctl info <PID> 看栈）" \
+		|| echo "  ⚠ coredumpctl 不可用；请人工检查 /var/lib/systemd/coredump/"
 	@mkdir -p "$(or $(FORENSIC_DIR),$$JCODE_SCRATCH_DIR/forensics)"
 	@echo "=== 循环重编 $(or $(ROUNDS),5) 轮（JOBS=$${JOBS:-1}，每轮强制 touch 重编）==="
 	@fail=0; i=0; \
 	while [ $$i -lt $(or $(ROUNDS),5) ]; do \
 		i=$$((i+1)); \
-		printf "  [%2d/%s] " "$$i" "$(or $(ROUNDS),5)"; \
 		touch crates/sisyphus-core/src/lib.rs; \
 		log="$(or $(FORENSIC_DIR),$$JCODE_SCRATCH_DIR/forensics)/round-$$i.log"; \
-		if ( ulimit -c unlimited; CARGO_BUILD_JOBS=$${JOBS:-1} \
-			cargo build -p sisyphus-core --tests ) >"$$log" 2>&1; then \
-			echo "ok"; \
+		( ulimit -c unlimited; CARGO_BUILD_JOBS=$${JOBS:-1} \
+			cargo build -p sisyphus-core --tests ) >"$$log" 2>&1 & \
+		bpid=$$!; \
+		while kill -0 $$bpid 2>/dev/null; do \
+			c=$$(awk '/Committed_AS/{print $$2}' /proc/meminfo); \
+			l=$$(awk '/CommitLimit/{print $$2}' /proc/meminfo); \
+			printf "  [%2d/%s] commit=$$((c/1024))/$$((l/1024))MiB($$(( c*100/l ))%%) \r" \
+				"$$i" "$(or $(ROUNDS),5)"; \
+			sleep 5; \
+		done; \
+		wait $$bpid; rc=$$?; \
+		if [ $$rc -eq 0 ]; then echo " ok  (第 $$i 轮)"; \
 		else \
-			echo "✗ 崩溃复现（第 $$i 轮）"; fail=1; \
+			echo " ✗ 崩溃复现（第 $$i 轮，exit=$$rc）"; fail=1; \
 			echo "--- 立即取证 ---"; \
 			echo "    日志: $$log"; \
+			grep -m2 -E "what\(\)|signal 6|linking with" "$$log" | sed "s/^/    /"; \
 			coredumpctl list --no-pager 2>/dev/null | tail -3 \
-				|| echo "    (coredumpctl 不可用，请人工检查 /var/lib/systemd/coredump/)"; \
+				|| echo "    (coredumpctl 不可用)"; \
 			echo "    栈:   coredumpctl info <PID>"; \
 			break; \
 		fi; \
 	done; \
 	if [ $$fail -eq 0 ]; then \
-		echo "=== $(or $(ROUNDS),5) 轮均未复现 —— 这是**阴性结果**，不证明成因 ==="; \
+		echo "=== $(or $(ROUNDS),5) 轮均未复现 —— 阴性结果，不证明成因 ==="; \
 	fi
 	@touch crates/sisyphus-core/src/lib.rs 2>/dev/null || true
+
 
 # — 结构审计（不需要编译，纯静态扫描）——
 

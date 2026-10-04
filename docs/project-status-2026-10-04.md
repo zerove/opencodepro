@@ -11,7 +11,17 @@
 这不是某个解析器的 bug，而是判定式本身缺一个「测试是否真的跑过」的维度。
 
 本轮已把判定式本身修掉：拆出 `test_status_label()`，区分
-`ok` / `FAILED` / `no tests ran` 三种状态，并配 6 条单元测试。
+`ok` / `FAILED` / `no tests ran` 三种状态，并配 **9 条单元测试**
+（6 条判定 + 3 条提示语）。此外：
+
+- 6 个后端解析缺陷全部修复，并用**真实工具链**端到端验证（13 条 e2e）；
+- e2e 已**接入 CI**（新增 `toolchain-e2e` job）——此前它们全是 `#[ignore]`
+  且无任何 CI job 执行，这正是缺陷能长期存活的原因；
+- 顺带修复长期失败的 `audit-sources` job（exit 1 → 0）。
+
+**本轮另有两项非预期的收获**（详见第 5 节）：
+SIGABRT 的成因**已查明**（链接期 rust-lld 撞 `Committed_AS` 上限），
+以及一个真实的数据丢失竞态（`ExecutionManager` drop 时可能丢认知追踪）。
 
 ## 1. 缺陷清单（按严重度）
 
@@ -138,7 +148,8 @@ $ mvn -q test
 | 真实工具链 e2e | `... --test language_backend_guards -- --ignored` | **13 passed / 0 failed**（原 11 + 新增 2 条 Maven） |
 | 严格 clippy | `cargo clippy -p sisyphus-tools-build -p sisyphus-cli --all-targets -- -D warnings` | 无告警 |
 | 格式 | `cargo fmt --all --check` | 通过 |
-| 全工作区 | `make test-all` | **4762 passed / 0 failed / 25 ignored** |
+| 全工作区 | `make test-all` | **4762 passed / 0 failed / 25 ignored**（MAKE_EXIT=0，无 OOM/SIGABRT） |
+| 嵌套 cargo 守卫 | `cargo test -p sisyphus-tools-build --test rust_backend_test_e2e`（并行） | 7 passed / 0 failed |
 | CI job 确切命令 | `cargo test -p sisyphus-tools-build --test language_backend_guards -- --ignored --test-threads=1` | 13 passed / 0 failed |
 | `audit_ignored.py` | `python3 scripts/audit_ignored.py` | **exit 0**（修复前 exit 1，`audit-sources` 长期红） |
 
@@ -225,72 +236,153 @@ Test result: no tests ran. 0 passed; 0 failed; ...
 结果既漏报（Java 编译失败被当成全通过）又误报（合法的 pytest ignore 被当非法）。
 判据必须锚在**意图**上，而不是字符串表面。
 
-## 5. 环境噪音（非代码缺陷）
+## 5. 环境噪音：rustc SIGABRT —— **成因已查明（2026-10-04 晚补测）**
 
-- **rustc 会在编译 `sisyphus-core` 时随机 SIGABRT**，成因**至今未定**。
-  表现：`process didn't exit successfully: ...rustc --crate-name sisyphus_core ...
-  (signal: 6, SIGABRT)`，退出码 101。
+> ⚠ 本节在初版报告里写过“成因至今未定”。补测后**已定位**，
+> 下文保留推理过程以便复核。
 
-  **实测事实**（可复现的部分）：第一次 `make test-all`（Makefile 里已带
-  `CARGO_BUILD_JOBS=1`）SIGABRT，第二次跑完全相同的命令一次通过
-  （4759 passed / 0 failed / exit 0）。
+### 5.1 症状
 
-  **不成立的推论**（本轮已纠正）：旧记录写「故这不是并发 OOM，
-  而是概率性崩溃，与 `-j 1`/`-j 2` 都对不上」。这**超出了证据**——
-  崩溃发生在**rustc 编译期**（不是测试运行期），而此时
-  `--test-threads` 根本不参与；因此`-j 1` 确实**未覆盖到**崩溃场景，
-  但“与并发无关”仍未得到证明——**编译期也存在其他并发**
-  （多任务争用内存带宽/内存分配器内部并行），本轮**未做二分取证**，
-  且原始日志已被后续运行覆盖。
+```
+error: linking with `cc` failed: exit status: 1
+  = note: terminate called after throwing an instance of 'std::system_error'
+            what():  Resource temporarily unavailable          ← EAGAIN
+          PLEASE submit a bug report to .../llvm/llvm-project/issues/...
+  Stack dump:
+  0.  Program arguments: .../bin/rust-lld -flavor gnu -plugin ...
+  ...  rust-lld  ...
+  collect2: fatal error: ld terminated with signal 6 [Aborted]
+error: could not compile `sisyphus-core` (test "enhanced_dashboard")
+```
 
-  已排除 / 已核查：
-  - **不是内核 OOM killer**：崩溃时 `available` 约 13 GiB（充足），
-    且 `dmesg` 中无任何 `oom-kill` / `out of memory` 记录
-    （注：`dmesg` 缓冲区已轮转，故这是**弱证据**，非决定性排除）
-  - `RUSTC_WRAPPER` / `RUSTFLAGS` / `sccache` / `CARGO_BUILD_JOBS` 均无外部干扰设置
-  - 机器 19 GiB 内存 + 12 核；存在 5 GiB swap（已用 61 MiB）
+### 5.2 三个被我写错的地方（初版推论）
 
-  当前处置：`Makefile` 的 `CARGO_BUILD_JOBS=1` **保留**（它防的是
-  另一个已实测存在的场景：多二进制并行链接 OOM，那是**真**发生的）。
-  遇到 rustc SIGABRT 时：**直接重跑**。
+| 初版结论 | 实际 |
+|----------|------|
+| “崩溃发生在 **rustc 编译期**，`-j 1` 已覆盖不到” | 崩在**链接期**（rust-lld），而链接正是 `CARGO_BUILD_JOBS` 管的范围，所以 `-j 1` **确实管到了** |
+| “不是并发 OOM，而是概率性崩溃” | **就是提交内存（commit）耗尽**导致的分配失败 |
+| “已排除 OOM（available 充足时崩溃）” | **恰恰相反**：撞的是 `Committed_AS` 上限，不是真实 RAM |
 
-  **下次复现时应立即取证**（本轮的教训——现场一丢就再也查不出）：
+第三项是关键教训。两种内存记账完全不同：
 
-  | 步骤 | 命令 | 作用 |
-  |------|------|------|
-  | 1 | `make rustc-abort-forensics` | 自动循环重编 + 保留 core（**推荐**） |
-  | 2 | `coredumpctl list` | 事后取现场（`core_pattern` 已配 systemd-coredump） |
-  | 3 | `coredumpctl info <PID>` | 看崩溃线程栈，直接判定 rustc 内部哪个阶段 |
+```
+free 的 available  ≈ 10.4 GiB   ← 真实空闲 RAM（我拿这个当“已排除”的依据）
+Committed_AS      ≈ 18.4 GiB / CommitLimit 21.1 GiB (87%)   ← 实际被撞的墙
+```
 
-  根因已查清：`ulimit -c` 当前为 **0**，即即便崩溃也**不留任何现场**——
-  这正是上一轮“日志已被覆盖、无法再取证”的直接原因。
+`vm.overcommit_memory = 2`（**严格模式**）+ `overcommit_ratio = 80`，
+故 `CommitLimit ≈ RAM × 80%`。当 lld 申请一大块连续虚拟地址空间时，
+即使物理内存还有 10 GiB，也会因**提交量超限**直接返回 `EAGAIN`。
+这完美解释了“随机”表现：取决于当时 `buff/cache` 与其他进程的提交量。
 
-  `make rustc-abort-forensics` 已实跑验证（`ROUNDS=1`，4m24s）：
+### 5.3 正确结论与处置
 
-  ```
-  ⚠  ulimit -c = 0；已在本目标子 shell 内覆盖为 unlimited
-     core_pattern: |/usr/lib/systemd/systemd-coredump %P %u %g %s %t %c %h %d %F
-  ✓ coredumpctl 可用（复现后用 coredumpctl info <PID> 看栈）
-  === 循环重编 1 轮（JOBS=1，每轮强制 touch 重编）===
-    [ 1/1] ok
-  === 1 轮均未复现 —— 这是**阴性结果**，不证明成因 ===
-  ```
+- `CARGO_BUILD_JOBS=1` **不是**无用，它把同时链接的二进制数降到 1，
+  确实降低提交峰值（这正是最初加它的原因，结论没变）
+- 但它**不保证不撞墙**：单个 lld 自身申请的大块虚拟内存就可能超限
+- `make rustc-abort-forensics`（本轮新增，实跑验证可用）现已能保留现场，
+  且它**监控的正是 `Committed_AS`**（这是关键，详见 Makefile 注释）
 
-  两个设计要点（均由实跑暴露后修正）：
-  - 每轮 `touch crates/sisyphus-core/src/lib.rs` 强制**真重编**，
-    否则 cargo 命中缓存直接返回，循环毫无意义
-  - 输出重定向到 `$JCODE_SCRATCH_DIR/forensics/round-N.log`，
-    保留完整崩溃输出而不淹没终端
+### 5.4 下一步（**待验证**）
 
-  `JOBS=N` 可调构建并发做二分：`JOBS=1` 复刻 `make test-all` 场景，
-  `JOBS=12` 对照全并行。
-- `sisyphus-core/tests/executor_failure_semantics.rs:48` 有 1 个
-  `fetch_update` 弃用告警（rustc 1.99）。不影响测试，已在同批清理为 `try_update`。
+根治需降低链接期提交量，三选一（均未验证）：
+
+| 方案 | 预期效果 | 风险 |
+|------|----------|------|
+| 切 `mold` | 链接器内存占用大降 | `.cargo/config.toml` 已注明需 >16 GB；**本机 lld 已够用，未实测** |
+| `CARGO_PROFILE_DEV_DEBUG=0` | 去调试信息，显著减小链接输入 | 已用于 `test-sandboxd`；全量重编代价 |
+| 调低 `overcommit_ratio` | 直接抬高 `CommitLimit` | **需 root，改系统全局设置**，不应由项目仓库决定 |
+
+**本项目不做系统级修改**（会影响该机器上所有用户与项目）。
+
+
+### 5.5 连带发现：`test_persist_survives_buffer_recreation` 失败（**真实缺陷**）
+
+补跑 `make test-all` 时出现（同一轮未再 SIGABRT，编译链接均通过）：
+
+```
+thread 'test_persist_survives_buffer_recreation' panicked at
+  crates/sisyphus-core/tests/cognitive_trace_persist_test.rs:194:5:
+assertion `left == right` failed
+  left: 0
+ right: 1
+```
+
+**已定位的机制**（读代码所得，尚未构造出稳定复现）：
+
+1. `ExecutionManager::init_trace_persistence`（`execution_manager.rs:123`）
+   用 `tokio::spawn` 起一个**游离**写入任务，
+   `while let Some(...) = rx.recv().await` 消费无界 channel。
+2. `record_cognitive_trace` 只是 `tx.send(..)`，**同步返回**。
+3. 测试在 `wait_history(&em1, 1).await` 后直接 `drop(em1)`，
+   **没有任何 flush / join 等待 writer 落盘完成**。
+4. `drop` 关闭 channel 后 writer 才被唤醒完成写入，
+   而此时测试已经建 `em2` 去读——**存在真实的数据丢失窗口**。
+5. 落盘本身是普通 `INSERT`（`sisyphus-mem/src/store.rs:1170`），
+   pool `max_connections(5)`，无显式 checkpoint。
+
+单独重跑**通过**（3 passed / 112s），说明这是竞态而非确定性缺陷。
+`112s` 跑 3 个用例也偏慢，原因未查（同属未闭环）。
+
+**风险等级**：这不只是测试问题——`ExecutionManager` 被 drop 时
+认知追踪可能丢失同样适用于**生产路径**（如 bridge 重启）。
+但修复需审计 `ExecutionManager` 的所有消费方与生命周期，
+**本轮不做**（超出本轮改动范围）。
+
+### 5.6 第二次相关失败：嵌套 cargo 撞同一堵墙（**已修复**）
+
+补跑 `make test-all` 时 `rust_backend_test_e2e` 有 3 条失败：
+
+```
+LLVM ERROR: out of memory
+Allocation failed
+collect2: fatal error: ld terminated with signal 6 [Aborted]
+```
+
+与 5.1 **同根因**（链接期提交内存耗尽），但触发方式不同：
+libtest 默认并行跑测试，每条用例各起一个**完整的嵌套 cargo 构建**，
+于是在外层全量并发之上又叠了一层并发。
+
+**已做的改动**：`cargo_raw()` 给子进程注入 `CARGO_BUILD_JOBS=1`
+（仅当调用方未设置时），并新增 `run_command_with_env()`。
+注入在**子进程**上而非 `std::env::set_var`——后者在多线程测试二进制里不健全。
+
+**修正后的验证**（先回滚又重跑了真实全量负载）：
+
+| 实验 | 结果 |
+|------|------|
+| 修复后**并行**单跑该 e2e | 7 passed（1.35s） |
+| 移除修复后**并行**单跑 | 7 passed ← 单跑无法复现，对照无效 |
+| 移除修复 + 人工压测到 commit **99%**（20936/21122 MiB） | 仍 7 passed（压测进程自身抛 `MemoryError`，压力真实） |
+| **修复后跑完整 `make test-all`**（真实负载） | **该 3 条全过**，未再出现 `LLVM ERROR` |
+
+结论：前三个实验都**不足以**判定，单跑场景与原失败场景不可比。
+真正的判据是最后一行——只有在**外层 4762 用例全量并行**这个
+原失败负载下才复现得了，而修复后该负载下通过。
+（注意这仍属**单次观察**，不是统计显著的结论；负载相关缺陷本就需要多次复现。）
+
+**另一处自己踩的坑**：本条改动里的 ``` 代码块没标语言，
+被 rustdoc 当成 Rust doctest 编译，`LLVM ERROR: out of memory`
+不是合法 Rust → `expected one of '!' or '::', found 'ERROR'`。
+**我自己引入的失败**，已改成 ```text。教训：文档里的输出样例必须标语言。
+
+真正的处置仍是第 5.4 节：降低链接期提交量（均未实测）。
 
 ## 6. 提交
 
-`6c3a52e fix(build): 修正 Go/Python/Node 测试守卫漏报与计数错误`
-（+936 / −66，7 文件；pre-commit 检查通过）
+按时间倒序（均为本轮）：
+
+| 提交 | 内容 |
+|------|------|
+| `9d55081` | 查清 SIGABRT 取证失败根因（`ulimit -c = 0`），交付 `make rustc-abort-forensics`；纠正第 5 节同源过度归因 |
+| `947f44e` | 纠正 SIGABRT 过度归因（报告第 7.4 节）；补上 `scan-flaky` 缺失的并发限制 |
+| `56c712e` | 真实工具链 e2e 接入 CI（新增 `toolchain-e2e` job）；修复长期失败的 `audit-sources` job |
+| `6f95d40` | 零用例提示语按后端分流；纠正报告里一处不实陈述 |
+| `65e410e` | 修复 Java/Maven 解析漏报并根治测试判定式 |
+| `564fa2e` | 新增本状态报告并更新 TODO 计划 |
+| `6c3a52e` | 修正 Go/Python/Node 测试守卫漏报与计数错误 |
+
+提交前均通过 pre-commit：`cargo fmt --all --check` / `cargo clippy` / `cargo check-all`。
 
 ## 7. 建议的后续动作
 
@@ -351,18 +443,21 @@ pub enum TestOutcome {
 
 同时确认 `.cargo/config.toml` **无 `[env]` 段**，本轮未做任何改动。
 
-> **归因未查明，不得当作已解决**：本轮 `make test-all`（已带 `-j 1`）
-> 出现过 SIGABRT，同一条命令重跑即通过。但这**不足以**断定
-> 「`-j 1` 不能根除它」——构建级并发（`CARGO_BUILD_JOBS`）已被限制，
-> **测试线程级并发（`--test-threads`，默认 = CPU 核数）并未被限制**，
-> 而后者在 `make test-all` 路径上同样生效。二者在观测上等价，
-> 且 SIGABRT 原始日志已被后续运行覆盖、无法再取证。
+> **归因已查明（初版此处写的是“成因至今未定”，现已过时）**：详见第 5 节。
+> 崩溃发生在**链接期 rust-lld**，抛 `EAGAIN`，真因是本机
+> `vm.overcommit_memory=2`（严格模式）+ `ratio=80`，
+> `Committed_AS` 撞上 `CommitLimit`（实测 21.1 GiB）。
 >
-> 因此正确说法是：**SIGABRT 的成因至今未定**，
-> 既不能称它为并发问题，也不能称它与并发无关。
-> 遇到 SIGABRT 直接重跑；真要根治，应先取证再动手——
-> 保留失败现场（`make scan-flaky` 或 `RUST_BACKTRACE=1` 重跑），
-> 再分别试 `--test-threads=1` 与 `-j 1` 做二分。
+> 初版那段推理（「`-j 1` 未覆盖到，因为崩在编译期而非链接期」）
+> **本身也是错的**：链接期正是 `CARGO_BUILD_JOBS` 管的范围，
+> 所以 `-j 1` **确实管到了**——它降低并行链接数，从而降低提交峰值。
+> 它只是无法消除单个链接器自身的占用，故不能**保证**不撞墙。
+>
+> 也就是说：初版「`-j 1` 不能根除」的**结论碰巧对**，但**理由完全错**。
+>
+> 排查务必看 `Committed_AS` 而非 `free available`——初版拿
+> `available` 充足当“已排除 OOM”的依据，方向就反了。
+> `make rustc-abort-forensics`（见 7.5）已把该指标做成实时输出。
 >
 > 本轮已顺手补上唯一真正缺失的一处：`Makefile` 的 `scan-flaky` 目标及其伴随的
 > `cargo test --workspace --lib --no-run` **原先未带** `CARGO_BUILD_JOBS=1`，
@@ -371,6 +466,29 @@ pub enum TestOutcome {
 > 其余未受限的调用经核查**属有意为之**：`test-ci` 刻意镜像 CI
 > （GitHub runner 16 GiB，本就无此限制）；`test-core-quick` / `test-core-min`
 > 是单包 lib 测试，只产出一个二进制，不触发并行链接。
+
+### 7.5 SIGABRT —— **成因已查明**（补测时捕获）
+
+见第 5 节：**链接期 rust-lld 撞 `Committed_AS` 上限抛 EAGAIN**，
+本机 `vm.overcommit_memory=2` + `ratio=80`，
+故 `CommitLimit ≈ RAM × 80%`（实测 21.1 GiB）。
+
+`make rustc-abort-forensics` 已能**按需复现**并实时打印提交内存占限比：
+
+```
+=== 前置检查 ===
+  overcommit_memory = 2 (0=启发 1=始终 2=严格)
+  overcommit_ratio  = 80
+  提交内存 Committed_AS = 17777 MiB / CommitLimit 21122 MiB = 84%
+=== 循环重编 1 轮 ===
+  [ 1/1] commit=19515/21122MiB(92%) ✗ 崩溃复现（第 1 轮，exit=101）
+    error: linking with `cc` failed: exit status: 1
+```
+
+注意崩溃当轮提交量冲到 **92%**，而成功轮次峰值仅 88%——**相关性直接可见**。
+
+根治方案见 5.4（三选一，**均未实测**）。
+**本项目不改系统级 `overcommit_*` 设置**（需 root，且会影响该机器所有用户）。
 
 ## 8. 明确不在本次范围
 

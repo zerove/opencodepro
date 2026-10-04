@@ -43,6 +43,29 @@
     - `blank_comments()` 不认 Rust raw string（`r#"..."#`），把探针源码里模拟的 `#[ignore]` 当成真实忽略点
     - `ACCEPTED` 白名单太窄，`requires real python3 + pytest` / `requires real mvn + jdk` 这类诚实理由反被判非法
     - 双向实测：注入 `#[ignore = "测试当前失败"]` 仍被判非法（未放松门禁）
+- [x] **交付 rustc/链接器 SIGABRT 取证工具** (2026-10-04): `make rustc-abort-forensics`，实跑通过
+    - 根因：`ulimit -c = 0`，崩溃不留现场——之前“无法取证”并非日志被覆盖，而是从未记录
+    - 轮询强制 `touch lib.rs` 重编（否则 cargo 命中缓存，循环无意义）；输出落盘到 `$JCODE_SCRATCH_DIR/forensics/`
+- [x] **SIGABRT 成因已查明** (2026-10-04 晚): 崩在**链接期 rust-lld**，抛 `EAGAIN «Resource temporarily unavailable»`
+    - 真因：本机 `vm.overcommit_memory=2`（严格模式）+ `ratio=80`，`CommitLimit ≈ RAM×80%`（21.1 GiB）
+    - 实测：崩溃当轮 `Committed_AS` 冲到 **92%**，成功轮次峰值仅 88%——相关性直接可见
+    - **关键教训**：排查须看 `Committed_AS` 而非 `free available`（后者有 10 GiB 会误导）
+    - `-j 1` 不是无效：它降低并行链接数，确实降低提交峰值，只是无法消除单链接器占用
+    - 根治三选一（切 mold / `CARGO_PROFILE_DEV_DEBUG=0` / 调 overcommit_ratio）**均未实测**
+    - **不改系统级 overcommit 设置**（需 root，影响该机器所有用户）
+- [x] **嵌套 cargo 撞同一堵墙，已修复** (2026-10-04): `cargo_raw` 给子进程注入 `CARGO_BUILD_JOBS=1`
+    - 症状：`rust_backend_test_e2e` 3 条报 `LLVM ERROR: out of memory`，与 SIGABRT 同根因
+    - 真实负载（完整 `make test-all`）下验证：修复后 **4762 passed / 0 failed / 0 OOM**
+    - 坑：注入用**子进程作用域**（`run_command_with_env`）而非 `std::env::set_var`（后者多线程下不健全）
+    - 坑：文档里的输出样例必须标 ```text，否则被 rustdoc 当 Rust doctest 编译而失败（我自己踩的）
+    - 教训：单跑该测试**无法**复现，对照实验只有在原负载下才有意义
+- [ ] **SIGABRT 根治方案均未实测** (2026-10-04): 三选一（切 mold / `CARGO_PROFILE_DEV_DEBUG=0` / 调 `overcommit_ratio`）
+- [ ] **`test_persist_survives_buffer_recreation` 竞态** (2026-10-04): 补跑时暴露的真实缺陷
+    - `init_trace_persistence` 用游离 `tokio::spawn` 写 channel，`record_cognitive_trace` 仅 `send` 后同步返回
+    - 测试 `drop(em1)` **无 flush/join** 等 writer 落盘；单跑通过（3 passed），属竞态
+    - **不只影响测试**：生产路径（如 bridge 重启）drop 时同样可能丢认知追踪
+    - 修复需审计 `ExecutionManager` 全部消费方与生命周期，本轮不做
+- [ ] **`cognitive_trace_persist_test` 耗时异常** (2026-10-04): 3 个用例耗 112s，原因未查
 - [x] **GitHub Actions CI 全绿** (2026-08-09, 27/27 jobs; 修复 linker/clippy/protoc/组件缺失)
 - [x] **WebUI 中文化**
 - [x] **eval 评测套件** (57 例, schema 校验 + mock/真实双模式)
