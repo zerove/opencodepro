@@ -481,13 +481,33 @@ mod tests {
     async fn test_inject_limit_per_category() {
         let dir = unique_temp_dir();
         let mgr = NotepadManager::new(&dir);
+        // 直接写入带确定性时间戳的条目，而不是连续调用 `record`。
+        //
+        // `record` 用 `SystemTime::now().as_secs()` 打时间戳，精度只有秒。
+        // 连续 5 次写入极快，只要恰好跨过秒边界，最先写的 p0 就会落到较早的
+        // 那一秒，被 `inject(Some(2))` 的 `take(2)` 排除，断言 `contains("p0")`
+        // 随之失败。此缺陷实测约 1/80 复现：单次 `cargo test` 几乎必然全绿，
+        // 只有高频复跑才暴露。显式 sleep 1.1s（如同文件的 `test_overwrite`）
+        // 能绕过，但会让每次运行都多花 5 秒；写死时间戳则完全确定且零开销。
+        //
+        // 时间戳从大到小，故 p0 最新、p4 最旧。
+        let base_ts = 1_000_000i64;
         for i in 0..5 {
-            mgr.record(NotepadCategory::Patterns, &format!("p{i}"), "body", vec![]).await.unwrap();
+            let entry = NotepadEntry {
+                name: format!("p{i}"),
+                category: NotepadCategory::Patterns,
+                timestamp: base_ts - i as i64,
+                tags: vec![],
+                content: "body".into(),
+            };
+            let path = mgr.entry_path(NotepadCategory::Patterns, &entry.name);
+            tokio::fs::create_dir_all(path.parent().unwrap()).await.unwrap();
+            tokio::fs::write(&path, entry.to_markdown()).await.unwrap();
         }
         let injected = mgr.inject(Some(2)).await.unwrap();
-        assert!(injected.contains("p0"));
-        assert!(injected.contains("p1"));
-        assert!(!injected.contains("p4"), "limit=2 should exclude older p4");
+        assert!(injected.contains("p0"), "应保留最新的 p0，实际: {injected}");
+        assert!(injected.contains("p1"), "应保留次新的 p1，实际: {injected}");
+        assert!(!injected.contains("p4"), "limit=2 应排除较旧的 p4");
     }
 
     #[tokio::test]
