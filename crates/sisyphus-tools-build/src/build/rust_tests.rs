@@ -220,8 +220,14 @@ fn it_also_works() { assert!(true); }
     .unwrap();
     let backend = RustBackend;
     let results = backend.test(None, None, false, Some(path)).unwrap();
-    assert_eq!(results.passed, 2);
-    assert_eq!(results.failed, 0);
+    // 失败时必须带上 cargo 的原始输出。这些用例真实调用 `cargo test`，
+    // 断言 `passed == 2` 只说明"数量不对"，不说明"为什么不对"。曾有一次
+    // 整包运行失败（56 次里 1 次），却因断言信息只有 left/right 而完全
+    // 无法定位——cargo 可能根本没真正执行测试（此时它输出
+    // `test result: ok. 0 passed` 而非报错），也可能是编译失败或输出被截断，
+    // 三种情况在断言处看起来完全一样。
+    assert_eq!(results.passed, 2, "cargo stdout:\n{}", results.raw_stdout);
+    assert_eq!(results.failed, 0, "cargo stderr:\n{}", results.raw_stderr);
 }
 
 #[test]
