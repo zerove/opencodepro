@@ -45,7 +45,7 @@ TOOLS_PACKAGES = \
 
 HEAVY_PACKAGES = sisyphus-sandbox sisyphus-sandboxd sisyphus-tests
 
-.PHONY: all check-all build-all test-all
+.PHONY: all check-all build-all test-all scan-flaky flaky-replay
 .PHONY: check-bridge build-bridge test-bridge check-bridge-160
 .PHONY: check-bridge-nosandbox test-bridge-nosandbox
 .PHONY: check-sandbox build-sandboxd test-sandbox check-sandboxd test-sandboxd test-tests check-tests
@@ -103,6 +103,21 @@ build-all:
 
 test-all:
 	CARGO_BUILD_JOBS=1 cargo test-all
+
+# 概率性失败（flaky test）扫描：把每个 crate 的 lib 测试二进制重复跑多轮，
+# 统计失败率。单次 `cargo test` 全绿无法证明不存在竞态——本项目多处缺陷
+# 失败率都在 1/16 以下，只在高频复跑下才暴露。
+#
+# 用法：make scan-flaky ROUNDS=32
+scan-flaky:
+	cargo test --workspace --lib --no-run
+	python3 scripts/scan_flaky.py --rounds $(or $(ROUNDS),16)
+
+# 仅重跑上次扫描抓到的失败现场（现场已落盘，不必重新扫描）。
+flaky-replay:
+	@test -d "$(or $(REPORT_DIR),$$JCODE_SCRATCH_DIR/flaky-reports)" || \
+		{ echo "没有现场目录；先跑 make scan-flaky"; exit 2; }
+	@ls -1 "$(or $(REPORT_DIR),$$JCODE_SCRATCH_DIR/flaky-reports)"/*.log 2>/dev/null || true
 
 # — 结构审计（不需要编译，纯静态扫描）——
 
