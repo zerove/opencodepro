@@ -267,3 +267,48 @@ fn test_backend_name() {
     let backend = RustBackend;
     assert_eq!(backend.name(), "rust");
 }
+
+// ── 退化输出：cargo 未真正执行测试时的真实输出 ─────────────
+//
+// `test_test_simple` 曾在整包运行中概率失败（约 0.4%），而调用方只看
+// `results.passed`。下列用例把真实观察到的退化输出固化为测试，使「为什么
+// passed 会不等于预期」这件事有据可查，而不是只能靠猜。
+//
+// 这些输出均取自实测，不是构造出来的理想情况：
+// - `ok. 0 passed`：crate 只有 src/main.rs 而无 src/lib.rs 时，cargo 输出
+//   `running 0 tests` + `ok. 0 passed`，且**退出码为 0**（不报错）。
+// - 编译失败：cargo 输出 `test result: FAILED. 0 passed; 1 failed`。
+#[test]
+fn test_parse_test_results_zero_passed_is_not_success() {
+    // cargo 在没有可测目标时仍报 ok。这是「看起来成功、实际什么都没跑」
+    // 的典型形态，调用方必须靠 passed 计数而非退出码来判断。
+    let stdout = "running 0 tests\n\ntest result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out\n";
+    let r = parse_test_results(stdout, "");
+    assert_eq!(
+        r.passed, 0,
+        "无测试可跑时 passed 必须如实为 0，不能被当成全通过"
+    );
+    assert_eq!(r.failed, 0);
+}
+
+#[test]
+fn test_parse_test_results_compile_failure_yields_zero_passed() {
+    // 编译失败时 cargo 输出的 test result 是 FAILED 且 passed 为 0。
+    let stdout = "error[E0425]: cannot find value `x` in this scope\n --> src/lib.rs:2:5\ntest result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out\n";
+    let r = parse_test_results(stdout, "");
+    assert_eq!(r.passed, 0);
+    assert_eq!(r.failed, 1);
+}
+
+#[test]
+fn test_parse_test_results_no_test_result_line_yields_zero() {
+    // cargo 进程异常退出（如被 OOM kill）时，输出里根本没有 test result 行。
+    // 此时解析结果全为 0，调用方的断言会以 left:0 right:2 失败——这是正确
+    // 行为：把「什么都没跑」如实暴露，而不是静默当成通过。
+    let stdout = "";
+    let stderr = "error: could not compile `test-crate` (lib test) due to 1 previous error\n";
+    let r = parse_test_results(stdout, stderr);
+    assert_eq!(r.passed, 0);
+    assert_eq!(r.failed, 0);
+    assert!(r.failures.is_empty());
+}
