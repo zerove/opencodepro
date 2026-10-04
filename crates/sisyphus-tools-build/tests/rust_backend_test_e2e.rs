@@ -183,3 +183,52 @@ pub fn documented() {}
     assert_eq!(r.failures.len(), 1, "failures 恰为 [failing]");
     assert_eq!(r.failures[0].name, "failing");
 }
+
+/// 真实编译失败。
+///
+/// 实测结论（此前从未在真实路径上验证过，只有一条基于**合成输入**的
+/// 单测）：编译失败时 cargo 的 **stdout 为 0 字节**，根本不含任何
+/// `test result:` 行；stderr 里只有 rustc 诊断与 `could not compile`。
+///
+/// 因此 `passed` 与 `failed` **都是 0**，`failures` 为空。这如实反映
+/// 「没有任何测试被执行」，而不是凭空造出一个失败计数。
+///
+/// 判据重点：`raw_stderr` 必须完整保留诊断信息——调用方据此才能判断
+/// 真实原因是编译失败而非测试失败。
+#[test]
+fn real_compile_error_yields_all_zero_but_keeps_diagnostics() {
+    let dir = tempfile::tempdir().unwrap();
+    probe(
+        dir.path(),
+        "cerr",
+        r#"
+#[test]
+fn pass_a() { assert_eq!(2 + 2, 4); }
+
+#[test]
+fn broken() { let y = x; }
+"#,
+    );
+    let r = run(dir.path());
+    println!(
+        "passed={} failed={} failures={:?}\nraw_stdout_len={}\nraw_stderr:\n{}",
+        r.passed,
+        r.failed,
+        r.failures.iter().map(|f| &f.name).collect::<Vec<_>>(),
+        r.raw_stdout.len(),
+        r.raw_stderr
+    );
+    assert_eq!(r.passed, 0, "编译失败时没有任何测试被执行");
+    assert_eq!(
+        r.failed, 0,
+        "真实编译失败输出不含 test result 行，failed 应为 0"
+    );
+    assert!(r.failures.is_empty());
+    assert_eq!(r.raw_stdout.len(), 0, "实测 stdout 为 0 字节");
+    // 诊断必须完整保留，否则调用方无从判断真实原因。
+    assert!(
+        r.raw_stderr.contains("E0425") && r.raw_stderr.contains("could not compile"),
+        "raw_stderr 必须保留完整编译诊断，实际:\n{}",
+        r.raw_stderr
+    );
+}

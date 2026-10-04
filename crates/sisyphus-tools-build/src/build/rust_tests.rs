@@ -293,11 +293,32 @@ fn test_parse_test_results_zero_passed_is_not_success() {
 
 #[test]
 fn test_parse_test_results_compile_failure_yields_zero_passed() {
-    // 编译失败时 cargo 输出的 test result 是 FAILED 且 passed 为 0。
-    let stdout = "error[E0425]: cannot find value `x` in this scope\n --> src/lib.rs:2:5\ntest result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out\n";
-    let r = parse_test_results(stdout, "");
+    // 输入是**实测抓取的真实编译失败输出**（不是构造的）。
+    //
+    // 本测试原先断言「编译失败时 cargo 输出
+    // `test result: FAILED. 0 passed; 1 failed`」——那是**合成输入**，与
+    // 现实不符。实测：编译失败时 cargo 的 **stdout 为 0 字节**，根本不含
+    // 任何 `test result:` 行；stderr 里只有 rustc 诊断与
+    // `could not compile`。
+    //
+    // 因此 `failed` 同样是 0：解析器如实反映「没有任何测试被执行」，
+    // 而不是凭空造出一个失败计数。调用方要判断编译是否失败，应看
+    // `raw_stderr`（实测含完整 338 字节诊断）或退出码——
+    // `RustBackend::test()` 目前丢弃了退出码 `_success`，这属已知缺口。
+    let stdout = "";
+    let stderr = "error[E0425]: cannot find value `x` in this scope\n --> src/lib.rs:5:13\n  |\n5 |     let y = x;\n  |             ^ not found\n\nerror: aborting due to 1 previous error\n\nerror: could not compile `cerr` (lib test) due to 1 previous error\n";
+    let r = parse_test_results(stdout, stderr);
     assert_eq!(r.passed, 0);
-    assert_eq!(r.failed, 1);
+    assert_eq!(
+        r.failed, 0,
+        "真实编译失败输出里没有 test result 行，failed 应为 0 而非 1"
+    );
+    assert!(r.failures.is_empty());
+    // 诊断信息本身必须完整保留，供调用方判断真实原因。
+    assert!(
+        r.raw_stderr.contains("could not compile"),
+        "raw_stderr 必须保留 cargo 的原始诊断"
+    );
 }
 
 // ── 文档测试结果不得混入 passed ─────────────────────────
