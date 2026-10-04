@@ -51,26 +51,36 @@
     - 实测：崩溃当轮 `Committed_AS` 冲到 **92%**，成功轮次峰值仅 88%——相关性直接可见
     - **关键教训**：排查须看 `Committed_AS` 而非 `free available`（后者有 10 GiB 会误导）
     - `-j 1` 不是无效：它降低并行链接数，确实降低提交峰值，只是无法消除单链接器占用
-    - 根治三选一（切 mold / `CARGO_PROFILE_DEV_DEBUG=0` / 调 overcommit_ratio）**均未实测**
+    - 根治三选一（切 mold / `CARGO_PROFILE_DEV_DEBUG=0` / 调 overcommit_ratio）：
+      `debug=0` **已实测**（仅降 4.7% 峰值，不足以根治），mold/lld **仍未实测**
     - **不改系统级 overcommit 设置**（需 root，影响该机器所有用户）
-- [x] **嵌套 cargo 撞同一堵墙，已修复** (2026-10-04): `cargo_raw` 给子进程注入 `CARGO_BUILD_JOBS=1`
-    - 症状：`rust_backend_test_e2e` 3 条报 `LLVM ERROR: out of memory`，与 SIGABRT 同根因
-    - 真实负载（完整 `make test-all`）下验证：修复后 **4762 passed / 0 failed / 0 OOM**
+- [x] **嵌套 cargo 撞同一堵墙（第一轮修错，第二轮才修对）** (2026-10-04)
+    - 第一轮修错：`cargo_raw` 注入 `CARGO_BUILD_JOBS=1` 只管**单个** cargo 内部并行度，
+      管不到「同时有几个嵌套 cargo」；7 条用例被 libtest 并行调度，**守卫层错**
+    - 推翻它的证据：`make test-all` 真实退出码 **2**（不是 0），`rust_backend_test_e2e` 2 条失败，
+      错误为 `LLVM ERROR: out of memory` + `signal 6 [Aborted]`
+    - 第二轮修复：测试文件内**跨用例全局 `Mutex` 闸门**，并发嵌套 cargo 限为 1
+      - `unwrap_or_else(|e| e.into_inner())` 防一个用例 panic 后**二次毒化**后续全部用例
+    - 对照压测（`--test-threads=8`）：修复前 10 轮失败 1，修复后 26 轮 0 失败
     - 坑：注入用**子进程作用域**（`run_command_with_env`）而非 `std::env::set_var`（后者多线程下不健全）
+    - 坑：`--test-threads=1` 能救是因为限制 cargo **个数**，不是 `CARGO_BUILD_JOBS` 起了作用（归因曾写反）
+    - 坑：libtest **捕获通过用例的 stdout**，`println!` 默认根本不出现在日志里，别拿它当诊断手段
+    - 教训：修复后必须跑**完整**负载并看**真实退出码**，只看「4763 passed / 0 failed」会漏掉 exit 2
     - 坑：文档里的输出样例必须标 ```text，否则被 rustdoc 当 Rust doctest 编译而失败（我自己踩的）
     - 教训：单跑该测试**无法**复现，对照实验只有在原负载下才有意义
 - [ ] **SIGABRT 根治手段：已实测一部分，仍未验证** (2026-10-04)
-    - **第一版 A/B 作废**：两组编译规模差 40 倍（8 vs 330 crate），崩的是 `serde_derive`
+    - 根因已定性：**提交内存（commit）额度耗尽**，不是真实 RAM 不足
+      - `vm.overcommit_memory=2` + `overcommit_ratio=80` → `CommitLimit ≈ 21122 MiB`
+      - lld 申请大块连续虚拟地址时，即便 available 还有 10 GiB 也会因**提交量超限**返回 `EAGAIN`
+      - 这解释了「随机」表现：取决于当时 `buff/cache` 与其他进程的提交量
+    - 第一版 A/B **作废**：两组编译规模差 40 倍（8 vs 330 crate），崩的是 `serde_derive`
       这个小 proc-macro 而非大二进制，不构成对照
-    - **第二版（同条件预热后重测）**：`CommitLimit=21122 MiB`
-      - `debug=2`（默认）：预热 **rc=101 崩溃**，测量 rc=0，峰值 19803 MiB
-      - `debug=0`：预热 rc=0，测量 rc=0，峰值 18868 MiB
-    - **结论**：`debug=0` 实测能降 ~4.7% 峰值，但**不能宣布修复**——
-      同配置下预热崩、测量过，说明故障是**概率性/负载相关**，单次跑过不算证据；
-      且 4.7% 不足以跨过那堵墙
+    - 第二版（同条件预热后重测）：`debug=0` 峰值 18868 MiB vs `debug=2` 19803 MiB
+      → 实测降 **4.7%**；但 `debug=2` 自己就出现过「预热崩、测量过」，**不能宣布修复**
     - 尚未实测且与成因对得上：切 `mold` / `-fuse-ld=lld`（都是链接器选择）
-    - **不改系统级 `overcommit_ratio`**（需 root，影响该机器所有用户）
+    - **不改系统级 `overcommit_ratio`**（需 root，影响该机器所有用户与项目）
     - 取证工具：`make rustc-abort-forensics`
+    - 注：仓库侧只能**收窄触发面**（见上条闸门），整个链路仍会概率性复发
 - [x] **`test_persist_survives_buffer_recreation` 竞态，已修复** (2026-10-04): 确定性复现 5/30 轮丢失 → 修复后 0/30
     - 真因：`record_cognitive_trace` 是同步函数，只 `send` 就返回；无任何 await 持久化的手段
     - `ExecutionManager` 被 `Arc` 持有且克隆进 `SelfProgrammingManager`/`StrategicManager`，**`Drop` 不是可靠刷盘点**

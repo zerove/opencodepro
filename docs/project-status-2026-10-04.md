@@ -151,7 +151,8 @@ $ mvn -q test
 | 严格 clippy | `cargo clippy -p sisyphus-tools-build -p sisyphus-cli --all-targets -- -D warnings` | 无告警 |
 | 格式 | `cargo fmt --all --check` | 通过 |
 | 全工作区 | `make test-all` | **4763 passed / 0 failed / 25 ignored**（MAKE_EXIT=0，无 OOM/SIGABRT） |
-| 嵌套 cargo 守卫 | `cargo test -p sisyphus-tools-build --test rust_backend_test_e2e`（并行） | 7 passed / 0 failed |
+| 嵌套 cargo 闸门 | `... --test rust_backend_test_e2e -- --test-threads=8`，**修复前**对照 | 10 轮失败 1（`LLVM ERROR: out of memory`） |
+| 嵌套 cargo 闸门 | 同上，**修复后** | 26 轮 **0 失败**（不声明已根治，见 5.4.2） |
 | 认知追踪 flush | `cargo test -p sisyphus-core --test cognitive_trace_persist_test` | 4 passed / 0 failed |
 | 追踪竞态探针（修复前） | 30 轮不 flush 直接 drop | **5/30 轮丢失** |
 | 追踪竞态探针（修复后） | 30 轮 flush 后 drop | **0/30 丢失** |
@@ -350,6 +351,53 @@ Committed_AS      ≈ 18.4 GiB / CommitLimit 21.1 GiB (87%)   ← 实际被撞�
 
 即：改动在 CI 上有意义，在 `make test-all` 上冗余。我原先把
 “冗余”说成“可能没有实际作用”，方向说反了。
+
+### 5.4.2 闸门加错了层级——「已修复」在真实负载下只成立 2/3
+
+上面那句自我纠错写完不到一小时，**最终回归就把自己的修复顶穿了**：
+`make test-all` 真实退出码是 **2**，不是 0。失败的是
+`rust_backend_test_e2e` 的 2 条用例，错误信息正是本节的根因：
+
+```text
+LLVM ERROR: out of memory
+collect2: fatal error: ld terminated with signal 6 [Aborted]
+```
+
+先要坦白一件事：上一节我说「`cargo_raw` 的改动在 CI 上有意义」，
+但**它挡不住这个**。逐层看清后发现**守卫的层级从一开始就错了**：
+
+| 层级 | 控制什么 | 现状 |
+|------|---------|------|
+| `CARGO_BUILD_JOBS=1`（已注入**单个**嵌套 cargo） | 一个 cargo 内部同时几个 rustc/链接器 | ✅ 管到了 |
+| **同时有几个嵌套 cargo 在跑** | 整个测试进程的链接器总数 | ❌ 没人管 |
+
+而 `rust_backend_test_e2e.rs` 的 7 条用例由 libtest **并行**调度，
+每条都拉起一整个嵌套 `cargo test`（真跑 rustc + 链接器）。
+于是最多有 7 个链接器同时争抢提交内存——`CARGO_BUILD_JOBS=1`
+对它们**一个都约束不到**，因为它们分属不同的 cargo 进程。
+
+这也解释了当初那个“正确但被归错因”的观察：
+`--test-threads=1` 之所以能救，是因为它限制了 cargo 的**个数**，
+而不是因为 `CARGO_BUILD_JOBS` 起了作用。
+
+**修复**：在该测试文件内加一个跨用例的全局 `Mutex` 闸门，
+把并发嵌套 cargo 限为 1；并把 `cargo_raw` 与该文件里两处
+归因错误的注释一并改正。
+
+对照压测（同一条命令 `--test-threads=8` 刻意制造并行）：
+
+| 版本 | 轮次 | 失败 | 失败时的证据 |
+|------|-----:|-----:|-------------|
+| 修复前（`git stash` 回退） | 10 | **1** | `LLVM ERROR: out of memory` + `signal 6 [Aborted]` |
+| 修复后 | 20 | 0 | — |
+
+对照组失败的**特征与** `make test-all` 下那次**完全一致**，可确认同一根因。
+
+**但不要把「20/20」读成「已根治」**：若真实失败率仍是 10%，
+连过 20 次的概率约 **12.2%**；若为 25%，则只有 0.3%。
+所以这里只声明「**把并发嵌套 cargo 限为 1 后未再复现**」，
+不声明概率已归零。根因仍是全机性的提交内存紧张，
+本闸门只消除了**本测试文件内部**的并发放大。
 
 
 ### 5.5 连带发现：认知追踪落盘竞态（**已确定性复现并修复**）

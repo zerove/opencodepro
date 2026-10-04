@@ -209,6 +209,15 @@ pub fn run_command_with_env(
 /// （`LLVM ERROR: out of memory`），同一命令加 `--test-threads=1`
 /// 后 7 条全过（4.25s）。
 ///
+/// **但不要把这个归因给本函数。** 复测显示：本函数的守卫**有效却不足**
+/// ——注入的 `CARGO_BUILD_JOBS=1` 只约束**单个** cargo 内部的并行度，
+/// 而调用它的 e2e 用例由 libtest 并行调度，会**同时存在多个嵌套 cargo**，
+/// 守卫管不到「cargo 的个数」。实测同一压测命令下：无此守卫 10 轮失败 1 轮，
+/// 而仅靠本函数仍会失败。
+/// `--test-threads=1` 之所以能救，靠的也是限制 cargo **个数**这层含义。
+/// 真正的修复在测试侧用全局闸门串行化，见
+/// `tests/rust_backend_test_e2e.rs` 的文件头注释。
+///
 /// **注意**：这不是让外层构建变慢的调优，而是防止嵌套进程把
 /// 提交内存撑爆。注入在**子进程**上，调用方的显式设置优先。
 pub fn cargo_raw(args: &[&str], cwd: Option<&Path>) -> ToolResult<(String, String, bool)> {

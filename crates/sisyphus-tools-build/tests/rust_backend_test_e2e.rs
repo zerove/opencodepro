@@ -11,11 +11,68 @@
 //!    统计——修复 `passed` 时极易连带破坏这三个字段。
 //!
 //! 每个探针 crate 都在测试内用 `TempDir` 现造，不依赖任何外部目录或环境变量。
+//!
+//! ## 为什么必须串行
+//!
+//! 本文件每条用例都会拉起一个**完整的嵌套 `cargo test`**（真跑 rustc +
+//! 链接器）。`cargo_raw()` 已给子进程注入 `CARGO_BUILD_JOBS=1`，但那只限制
+//! 了**单个** cargo 内部的并行度，**限制不了同时有几个 cargo 在跑**——
+//! 而本文件的 7 条用例默认由 libtest **并行**调度，于是会有多个链接器同时
+//! 争抢提交内存。在 `vm.overcommit_memory=2` 的严格模式（`CommitLimit ≈
+//! RAM × 80%`）下实测约 1/3 概率撞墙：
+//!
+//! ```text
+//! LLVM ERROR: out of memory
+//! collect2: fatal error: ld terminated with signal 6 [Aborted]
+//! ```
+//!
+//! 这正是「实测把 `cargo_raw` 修好之后仍然复现」的原因——**守卫的层级错了**：
+//! 它设在单个 cargo 内部，而瓶颈在 cargo 之间。
+//!
+//! 故此处用一个**跨用例的全局闸门**把并发嵌套 cargo 限为 1。
+//!
+//! ## 实测证据
+//!
+//! 同一条压测命令（`--test-threads=8` 刻意制造并行），对照两种代码：
+//!
+//! | 版本 | 轮次 | 失败 | 失败时证据 |
+//! |------|-----:|-----:|-----------|
+//! | 修复前 | 10 | 1 | `LLVM ERROR: out of memory` + `signal 6 [Aborted]` |
+//! | 修复后 | 20 | 0 | —（含上表同一压测脚本） |
+//!
+//! 对照组的失败特征与 `make test-all` 下的失败**完全一致**，可确认同一根因。
+//!
+//! **但不要把「20/20」读成「概率已归零」**：若真实失败率仍是 10%，
+//! 连过 20 次的概率约 12%。所以此处只声明「把并发嵌套 cargo 限为 1 后
+//! 未再复现」，不声明已根治；根因仍是全机性的提交内存紧张（见
+//! `cargo_raw` 注释），本闸门只消除了**本测试文件**内的并发放大。
+//!
+//! （同一现象此前曾以「并行时 3 条失败、`--test-threads=1` 后 7 条全过」
+//! 记录在 `cargo_raw` 的注释里——那条观察是对的，但**归因归错了**：
+//! `--test-threads=1` 起作用是因为它限制了 cargo 的**个数**，
+//! 而不是因为 `cargo_raw` 里的 `CARGO_BUILD_JOBS`。）
 
 use sisyphus_tools_build::build::rust::RustBackend;
 use sisyphus_tools_build::build::{LanguageBackend, TestResults};
 use std::fs;
 use std::path::Path;
+use std::sync::{Mutex, MutexGuard, OnceLock};
+
+/// 闸门：整个进程内**同时只允许一个**嵌套 `cargo` 在跑。
+///
+/// `std::sync::Mutex` 被 poison 过一次（某个用例 panic）后仍必须能被后续用例
+/// 使用，否则一个失败会把后续全部用例二次毒化、把计数彻底污染。故用
+/// `unwrap_or_else(|e| e.into_inner())` 显式恢复。
+fn gate() -> MutexGuard<'static, ()> {
+    static GATE: OnceLock<Mutex<()>> = OnceLock::new();
+    GATE.get_or_init(|| Mutex::new(())).lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+/// 取得闸门并跑闭包，把并发嵌套 cargo 限为 1。
+fn serialized<T>(f: impl FnOnce() -> T) -> T {
+    let _guard = gate();
+    f()
+}
 
 /// 写一个可编译运行的探针 crate，`lib` 为其 `src/lib.rs` 内容。
 fn probe(dir: &Path, name: &str, lib: &str) {
@@ -31,8 +88,9 @@ fn probe(dir: &Path, name: &str, lib: &str) {
     fs::write(src.join("lib.rs"), lib).unwrap();
 }
 
+/// 跑一次真实 `cargo test`；全程持闸门，杜绝多个链接器同时抢提交内存。
 fn run(dir: &Path) -> TestResults {
-    RustBackend.test(None, None, false, Some(dir)).unwrap()
+    serialized(|| RustBackend.test(None, None, false, Some(dir)).unwrap())
 }
 
 const TWO_DOC_OK: &str = r#"
@@ -209,9 +267,11 @@ fn pass_a() { assert_eq!(2 + 2, 4); }
 fn broken() { let y = x; }
 "#,
     );
-    let err = RustBackend
-        .test(None, None, false, Some(dir.path()))
-        .expect_err("编译失败必须返回 Err，不能伪装成 0 passed / 0 failed");
+    let err = serialized(|| {
+        RustBackend
+            .test(None, None, false, Some(dir.path()))
+            .expect_err("编译失败必须返回 Err，不能伪装成 0 passed / 0 failed")
+    });
     let msg = err.to_string();
     println!("err = {msg}");
     assert!(
@@ -243,9 +303,11 @@ fn alpha() { assert!(true); }
 fn beta() { assert!(true); }
 "#,
     );
-    let r = RustBackend
-        .test(None, Some("nonexistent_test_name"), false, Some(dir.path()))
-        .expect("过滤无匹配是正常退出（码 0），必须解析成功而非返回 Err");
+    let r = serialized(|| {
+        RustBackend
+            .test(None, Some("nonexistent_test_name"), false, Some(dir.path()))
+            .expect("过滤无匹配是正常退出（码 0），必须解析成功而非返回 Err")
+    });
     assert_eq!(r.failed, 0);
     assert_eq!(
         r.filtered_out, 2,
@@ -268,9 +330,11 @@ fn real_missing_package_returns_err_with_real_reason() {
 fn only_one() { assert!(true); }
 "#,
     );
-    let err = RustBackend
-        .test(Some("nosuchpkg"), None, false, Some(dir.path()))
-        .expect_err("包不存在时不得返回 Ok(0 passed)");
+    let err = serialized(|| {
+        RustBackend
+            .test(Some("nosuchpkg"), None, false, Some(dir.path()))
+            .expect_err("包不存在时不得返回 Ok(0 passed)")
+    });
     let msg = err.to_string();
     assert!(
         msg.contains("did not match any packages"),
@@ -301,12 +365,13 @@ fn real_zero_test_target_is_not_treated_as_compile_error() {
     )
     .unwrap();
 
-    let r = RustBackend.test(None, None, false, Some(dir.path())).unwrap_or_else(|e| {
-        panic!(
-            "零测试目标是合法工程（cargo 退出码 0），不得报编译失败: {}",
-            e.to_string().chars().take(160).collect::<String>()
-        )
-    });
+    let r =
+        serialized(|| RustBackend.test(None, None, false, Some(dir.path()))).unwrap_or_else(|e| {
+            panic!(
+                "零测试目标是合法工程（cargo 退出码 0），不得报编译失败: {}",
+                e.to_string().chars().take(160).collect::<String>()
+            )
+        });
     assert_eq!(r.passed, 0);
     assert_eq!(r.failed, 0);
 }
