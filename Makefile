@@ -22,10 +22,15 @@ BRIDGE_DEPS = crates/sisyphus-bridge/src/main.rs crates/sisyphus-bridge/Cargo.to
 # 多个测试二进制的目标都显式带 CARGO_BUILD_JOBS=1。直接敲 `cargo test` 不受此保护，
 # 需自行加 -j 1。
 #
-# ⚠ 修正（2026-10-04）：旧注释写「`-j 2` 仍不安全，`-j 1` 稳定」。实测**已带 `-j 1`
-# 的 `make test-all` 仍会随机 SIGABRT**，同一条命令重跑即通过（4759 passed / 0 failed）。
-# 故这是**概率性崩溃**（非并发 OOM），`-j 1` 不能根除。CARGO_BUILD_JOBS=1 保留，
-# 但遇到 SIGABRT 时请**直接重跑**，不要继续调并发参数。
+# ⚠ 修正（2026-10-04）：旧注释写「`-j 2` 仍不安全，`-j 1` 稳定」。本轮实测发现
+# **已带 `-j 1` 的 `make test-all` 仍出现过一次 SIGABRT**，同一条命令重跑即通过。
+#
+# 但**成因未定，不能说 `-j 1` 无效**：这里限制的是**构建级**并发
+#（CARGO_BUILD_JOBS），而 `make test-all` 路径上**测试线程级**并发
+#（`--test-threads`，默认 = CPU 核数）从未被限制。二者在观测上等价，
+# 且该次 SIGABRT 的原始日志已被后续运行覆盖、无法再取证。
+# 所以正确做法是：**遇到 SIGABRT 直接重跑并保留现场**，
+# 要根治请先分别试 `--test-threads=1` 与 `-j 1` 做二分取证。
 #
 # Usage:
 #   make check-all         # lightweight batch (alias: --exclude bridge/sandbox/tests)
@@ -125,7 +130,7 @@ test-all:
 #
 # 用法：make scan-flaky ROUNDS=32
 scan-flaky:
-	cargo test --workspace --lib --no-run
+	CARGO_BUILD_JOBS=1 cargo test --workspace --lib --no-run
 	python3 scripts/scan_flaky.py --rounds $(or $(ROUNDS),16)
 
 # 仅重跑上次扫描抓到的失败现场（现场已落盘，不必重新扫描）。

@@ -304,13 +304,32 @@ pub enum TestOutcome {
 
 旧建议是“给 `.cargo/config.toml` 的 `test-all` 补上 `CARGO_BUILD_JOBS=1`”。
 
-**实测后作废**：本轮 `make test-all` **已经带了** `CARGO_BUILD_JOBS=1`
-（`Makefile:120`）**仍然 SIGABRT**，同一条命令重跑即通过。见第 5 节。
-既然 `-j 1` 不能根除，给 `.cargo/config.toml` 再加一份只是**制造安全幻觉**，
-而且会让直接敲 `cargo test-all` 的人付出全部编译并行度的代价。
+**作废理由**：`CARGO_BUILD_JOBS=1` 已存在于 `Makefile` 的全部重目标上
+（`git show 6c3a52e:Makefile` 确认早于本轮改动）。往 `.cargo/config.toml`
+再加一份只是**重复已有设置**，没有任何新约束。
 
-已确认 `.cargo/config.toml` **无 `[env]` 段**，故本轮未做任何改动。
-正确做法仍是：**遇到 SIGABRT 直接重跑**。
+同时确认 `.cargo/config.toml` **无 `[env]` 段**，本轮未做任何改动。
+
+> **归因未查明，不得当作已解决**：本轮 `make test-all`（已带 `-j 1`）
+> 出现过 SIGABRT，同一条命令重跑即通过。但这**不足以**断定
+> 「`-j 1` 不能根除它」——构建级并发（`CARGO_BUILD_JOBS`）已被限制，
+> **测试线程级并发（`--test-threads`，默认 = CPU 核数）并未被限制**，
+> 而后者在 `make test-all` 路径上同样生效。二者在观测上等价，
+> 且 SIGABRT 原始日志已被后续运行覆盖、无法再取证。
+>
+> 因此正确说法是：**SIGABRT 的成因至今未定**，
+> 既不能称它为并发问题，也不能称它与并发无关。
+> 遇到 SIGABRT 直接重跑；真要根治，应先取证再动手——
+> 保留失败现场（`make scan-flaky` 或 `RUST_BACKTRACE=1` 重跑），
+> 再分别试 `--test-threads=1` 与 `-j 1` 做二分。
+>
+> 本轮已顺手补上唯一真正缺失的一处：`Makefile` 的 `scan-flaky` 目标及其伴随的
+> `cargo test --workspace --lib --no-run` **原先未带** `CARGO_BUILD_JOBS=1`，
+> 而它是唯一会同时产出多个重型测试二进制的目标，已加上。
+>
+> 其余未受限的调用经核查**属有意为之**：`test-ci` 刻意镜像 CI
+> （GitHub runner 16 GiB，本就无此限制）；`test-core-quick` / `test-core-min`
+> 是单包 lib 测试，只产出一个二进制，不触发并行链接。
 
 ## 8. 明确不在本次范围
 
