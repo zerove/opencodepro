@@ -224,3 +224,89 @@ fn broken() { let y = x; }
         "错误信息必须含 cargo 原始诊断，实际: {msg}"
     );
 }
+
+/// 名称过滤无匹配：CLI 的 `-n` 参数常用场景，退出码 0 且有
+/// `test result:` 行，**绝不能**被上面的编译失败守卫误伤。
+///
+/// 实测：stdout 含两段 `test result: ok. 0 passed; 0 failed; ...; 2 filtered out;`。
+#[test]
+fn real_filter_with_no_match_is_not_treated_as_compile_error() {
+    let dir = tempfile::tempdir().unwrap();
+    probe(
+        dir.path(),
+        "filt",
+        r#"
+#[test]
+fn alpha() { assert!(true); }
+
+#[test]
+fn beta() { assert!(true); }
+"#,
+    );
+    let r = RustBackend
+        .test(None, Some("nonexistent_test_name"), false, Some(dir.path()))
+        .expect("过滤无匹配是正常退出（码 0），必须解析成功而非返回 Err");
+    assert_eq!(r.failed, 0);
+    assert_eq!(
+        r.filtered_out, 2,
+        "被过滤掉的 2 个测试必须如实计入 filtered_out"
+    );
+}
+
+/// `--package` 指定的包不存在：同样是非零退出码 + stdout 0 字节。
+///
+/// 守卫应返回 Err（确实没执行任何测试），但诊断须透出真实原因
+/// `did not match any packages`，而不是含糊的「编译失败」。
+#[test]
+fn real_missing_package_returns_err_with_real_reason() {
+    let dir = tempfile::tempdir().unwrap();
+    probe(
+        dir.path(),
+        "nosuch",
+        r#"
+#[test]
+fn only_one() { assert!(true); }
+"#,
+    );
+    let err = RustBackend
+        .test(Some("nosuchpkg"), None, false, Some(dir.path()))
+        .expect_err("包不存在时不得返回 Ok(0 passed)");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("did not match any packages"),
+        "错误信息必须透出真实原因，实际: {msg}"
+    );
+}
+
+/// **零测试目标**（只有 `[[bin]]`、无 lib/集成测试）：退出码 0，
+/// stdout 仍含一段 `test result: ok. 0 passed; 0 failed; 0 ignored;
+/// 0 measured; 0 filtered out;`。
+///
+/// 这是「项目里一个测试都没有」的合法工程，守卫绝不能把它误判成编译失败。
+/// （注：本条一度被我写成「无 `test result:` 行」，那是 `head -3` 截断输出
+/// 造成的误读，已按完整 stdout 更正。）
+#[test]
+fn real_zero_test_target_is_not_treated_as_compile_error() {
+    let dir = tempfile::tempdir().unwrap();
+    // 只声明 bin，且不写任何 #[test] —— 显式排除 lib 测试目标。
+    std::fs::write(
+        dir.path().join("Cargo.toml"),
+        "[workspace]\n\n[package]\nname = \"notarget\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n[[bin]]\nname = \"notarget\"\npath = \"src/main.rs\"\n",
+    )
+    .unwrap();
+    std::fs::create_dir_all(dir.path().join("src")).unwrap();
+    std::fs::write(
+        dir.path().join("src/main.rs"),
+        "fn main() { println!(\"hi\"); }\n",
+    )
+    .unwrap();
+
+    let r = RustBackend.test(None, None, false, Some(dir.path())).unwrap_or_else(|e| {
+        panic!(
+            "零测试目标是合法工程（cargo 退出码 0），不得报编译失败: {}",
+            &e.to_string().chars().take(160).collect::<String>()
+        )
+    });
+    assert_eq!(r.passed, 0);
+    assert_eq!(r.failed, 0);
+}
