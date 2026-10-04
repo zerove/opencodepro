@@ -178,6 +178,43 @@ pub fn cargo_raw(args: &[&str], cwd: Option<&Path>) -> ToolResult<(String, Strin
     run_command("cargo", args, cwd)
 }
 
+// ── "零测试被执行" 守卫（多语言共用） ──────────────────
+//
+// 各语言后端的 `test()` 解析器只在看到自己的通过/失败标记时才计数，遇到
+// **构建期失败**（编译错误、测试文件无法加载、收集阶段报错）时会如实给出
+// `passed=0 / failed=0`。仅凭这两个计数无法区分「0 个测试通过」与「一个测试
+// 都没跑起来」，而唯一的生产消费点 `sisyphus-cli/src/build.rs` 是
+// `if r.failed == 0 { "ok" }`，于是构建失败会被显示成「测试全部通过」。
+//
+// 各语言的判据不同（见各后端的 `test()`），但**结构一致**：拿「本次运行确实
+// 执行了测试」的阳性标记去反证，而不是只看退出码——测试真的失败时退出码同样
+// 非零，那一刻必须照常解析出失败用例。
+
+/// 去掉 ANSI 转义序列（`\x1b[1m`、`\x1b[91m` …）。
+///
+/// vitest / tsc / eslint 等 Node 工具默认对 TTY 输出上色，标记会被转义码
+/// 拆开（`Failed Suites` 变成 `[1m[41m Failed Suites [49m[22m`），直接
+/// `contains("Failed Suites")` 会漏判。本函数按 CSI 序列（`ESC [ … 字母`）
+/// 逐段吞掉，与 cargo 场景同一问题，故与 `rust.rs::strip_ansi` 行为一致。
+pub fn strip_ansi(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut chars = s.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\u{1b}' && chars.peek() == Some(&'[') {
+            chars.next(); // 吞掉 '['
+                          // 吞到 CSI 的终止字母为止（0x40..=0x7e 区间，首个即终止）。
+            for c in chars.by_ref() {
+                if ('\u{40}'..='\u{7e}').contains(&c) {
+                    break;
+                }
+            }
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
 // ── Diagnostic merging helpers (language-agnostic) ────
 
 /// Merge two sets of diagnostics, deduplicating by (file, line, message).

@@ -52,7 +52,29 @@ impl LanguageBackend for GoBackend {
             args.push("-run");
             args.push(n);
         }
-        let (stdout, stderr, _success) = build::run_command("go", &args, cwd)?;
+        let (stdout, stderr, success) = build::run_command("go", &args, cwd)?;
+        // 实测（go1.27）：包编译失败时**退出码非零**，且 stdout 有这么一行：
+        //
+        //     FAIL\t<pkg> [build failed]
+        //
+        // （不是 `[setup failed]`；只有 `TestMain`/依赖下载/setup 阶段出问题
+        // 才是后者。单包编译失败实测 stdout 共 29 字节：`FAIL\tbad [build failed]\nFAIL\n`。）
+        // 关键在于：`parse_go_test_results` 只认 `--- PASS:` / `--- FAIL:` 行，
+        // 构建失败时两者都没有，于是如实给出 passed=0 / failed=0；而调用方
+        // （`sisyphus-cli/src/build.rs` 的 `if r.failed == 0 { "ok" }`）会把
+        // 「编译失败」显示成「0 个测试全部通过」。
+        //
+        // 判据取 go 自己给的 `[build failed]` 标记，**而不是**「没有 PASS 行」：
+        // 多包工程里只要有一个包构建失败，go 会照常执行其余能编译的包，stdout
+        // 里同时存在 `--- PASS:` 与 `FAIL\t<pkg> [build failed]`（实测：goodpkg
+        // 打印 `--- PASS: TestGood`，badpkg 打印 `[build failed]`）。此时按
+        // 「无 PASS 行」判定会漏判，那个坏包被彻底吞掉，而 CLI 仍然报 ok。
+        if !success && stdout.contains("[build failed]") {
+            return Err(ToolError::Generic(format!(
+                "`go test` 未能完整执行：有包构建失败。go 原始诊断：\n{}",
+                build::strip_ansi(&format!("{stdout}{stderr}")).trim()
+            )));
+        }
         Ok(parse_go_test_results(&stdout, &stderr))
     }
 

@@ -304,7 +304,7 @@ fn real_zero_test_target_is_not_treated_as_compile_error() {
     let r = RustBackend.test(None, None, false, Some(dir.path())).unwrap_or_else(|e| {
         panic!(
             "零测试目标是合法工程（cargo 退出码 0），不得报编译失败: {}",
-            &e.to_string().chars().take(160).collect::<String>()
+            e.to_string().chars().take(160).collect::<String>()
         )
     });
     assert_eq!(r.passed, 0);

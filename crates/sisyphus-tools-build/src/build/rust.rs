@@ -1,3 +1,4 @@
+use crate::build::strip_ansi;
 use crate::build::{self, BuildOutput, Diag, LanguageBackend, TestFailure, TestResults};
 use sisyphus_tools_core::{ToolError, ToolResult};
 use std::path::Path;
@@ -182,28 +183,10 @@ impl LanguageBackend for RustBackend {
 }
 
 // ── Diagnostic parser for Rust (cargo/clippy output) ──
-
-/// Strips ANSI escape sequences (e.g. `\x1b[1m\x1b[91m`) from a line.
-/// CI 环境（dtolnay/rust-toolchain）默认设置 `CARGO_TERM_COLOR=always`，
-/// cargo 输出带色码，直接 `strip_prefix("error[")` 会失败，导致诊断解析为空。
-fn strip_ansi(line: &str) -> String {
-    let mut out = String::with_capacity(line.len());
-    let mut chars = line.chars().peekable();
-    while let Some(c) = chars.next() {
-        if c == '\u{1b}' && chars.peek() == Some(&'[') {
-            // consume `[` then hasta `m` (或结束)
-            chars.next();
-            for c in chars.by_ref() {
-                if c == 'm' {
-                    break;
-                }
-            }
-        } else {
-            out.push(c);
-        }
-    }
-    out
-}
+//
+// `extract_diags` 在解析前统一走 `strip_ansi`（见 `mod.rs`）去掉 ANSI 转义码：
+// CI 环境（dtolnay/rust-toolchain）默认设置 `CARGO_TERM_COLOR=always`，
+// cargo 输出带色码，直接 `strip_prefix("error[")` 会失败，导致诊断解析为空。
 
 /// Extract diags.
 pub fn extract_diags(stderr: &str) -> (Vec<Diag>, Vec<Diag>) {
