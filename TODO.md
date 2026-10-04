@@ -1,6 +1,6 @@
 # Sisyphus 后续开发计划 (TODO.md)
 
-> **当前状态报告**: [docs/project-status-2026-10-02.md](docs/project-status-2026-10-02.md)（最新快照。重要更正：此前标记为完成的 9.1「peer broadcast 集成」实际从未在生产路径生效——事件链路存在三处独立丢弃点，其中一处是复制出的第二份实现。已于 2026-10-02 修复并补齐双节点端到端验证。下方历史勾选保留原有记录，不等于当前全量回归通过。）
+> **当前状态报告**: [docs/project-status-2026-10-04.md](docs/project-status-2026-10-04.md)（最新快照。多语言测试守卫的 5 个缺陷全部修复并有真实工具链端到端验证：Go 多包部分构建失败曾被漏判、Python 全部通过曾报 `passed=0`、Node 混合结果曾报 `passed=2 failed=0`、vitest 套件加载失败守卫因只读 stdout 而从不触发。根因是 `sisyphus-cli/src/build.rs` 的 `if r.failed == 0 { "ok" }` 缺「测试是否真的跑过」这一维度。历史快照见 [docs/project-status-2026-10-02.md](docs/project-status-2026-10-02.md)。）
 
 ## 已完成 (Done)
 
@@ -444,11 +444,24 @@
 - [x] **并行链接保护**: 实测 19.5 GiB 下 `-j 2` 仍会 OOM、`-j 1` 稳定；`test-all`/`test-tools`/`test-bridge*`/`test-cli-handlers` 已统一带 `CARGO_BUILD_JOBS=1`，Makefile 头部记录约束（直接敲 `cargo test` 仍需自行加 `-j 1`）
 - [ ] **认知循环 v3 (ADR-010)**: 先写问题陈述再谈方向，当前 TODO 9.2 只有候选词，不足以支撑决策
 
+### 10.4 多语言测试守卫（2026-10-04）
+> 详见 [状态报告 2026-10-04](docs/project-status-2026-10-04.md)。提交 `6c3a52e`（+936/−66）。
+
+- [x] **Go 守卫：多包部分构建失败被漏判**: `go test ./...` 在某包构建失败时仍执行其余包，stdout 同时有 `--- PASS` 与 `FAIL\t<pkg> [build failed]`，「没有 PASS 行」判据必然漏判。改用明确的 `[build failed]` 标记
+- [x] **Python 解析器：全部通过却报 `passed=0`**: `strip_suffix(" passed")` 对 `1 passed in 0.36s` 永不命中（整行以 ` in 0.36s` 结尾）。改为逗号切分取数字+标签，`error` 归 failed、`skipped` 归 ignored
+- [x] **vitest 解析器：混合结果报 `passed=2 failed=0`**: `Tests 1 failed | 1 passed (2)` 同一行兼含两词，旧代码先匹配 `passed`。重写为优先解析权威汇总行，且只认 `Tests` 行（`Test Files` 行格式相同但语义是文件级）
+- [x] **vitest 套件加载失败守卫从不触发**: `Failed Suites` 在 stderr 且带 ANSI，原守卫只看 stdout。改为合并 stdout/stderr、解析前内部去色
+- [x] **真实工具链 e2e 回归**: 新增 `tests/language_backend_guards.rs`，11 条真实拉起 `go` / `python3 -m pytest`，覆盖 Go 单包/多包/通过/失败、Python 全过/混合/跳过/两类收集错误/fixture 报错/失败
+- [ ] **`TestResults` 增加执行状态维度**（治本，建议单独立项）: 引入 `TestOutcome { Ran, NoTests, NotExecuted }`，让调用方不再靠 `failed == 0` 反推测试是否跑过。这是本次全部缺陷的放大器，不修的话每加一个语言后端都要重踩
+- [ ] **e2e 纳入 CI**: 11 条 e2e 目前全 `#[ignore]`，依赖 go/pytest 工具链。建议 CI 增设带工具链的 job 跑 `--ignored`，而不是长期挂着
+- [ ] **清理环境告警**: `sisyphus-core/tests/executor_failure_semantics.rs:48` 的 `fetch_update` 弃用告警；`.cargo/config.toml` 的 `test-all` 补 `CARGO_BUILD_JOBS=1`（Makefile 已加，直接敲 `cargo test-all` 仍会撞并行链接 OOM）
+
 ---
 
-**更新日期**: 2026-10-02
-**当前重点**: 10.1 验证门禁化
+**更新日期**: 2026-10-04
+**当前重点**: 10.4 多语言测试守卫收尾（治本的 `TestOutcome` 改造待立项）
 **前置条件**:
 - 阶段 9.1 经验同步生产链路已打通并有端到端验证 ✅
 - 跨节点经验同步相关缺陷全部修复并回归通过 ✅
-- 工作区全量回归 4984 通过 / 0 失败（含 webui/evals/sandbox/sandboxd）✅
+- 工作区全量回归 4750 通过 / 0 失败（`cargo test-all -j 2`，排除 bridge/sandbox）✅
+- 多语言测试守卫 5 缺陷修复 + 11 条真实工具链 e2e 全绿 ✅
