@@ -282,29 +282,48 @@ mod tests {
 
     #[tokio::test]
     async fn test_run_all_concurrent_limit() {
+        // 用屏障（barrier）确定性地验证并发槽位，而不是比较墙钟耗时。
+        //
+        // 原实现断言 `elapsed < 150ms`，实测两头都不可靠：
+        //  1. 负载下会误报失败：并发整包压力下复现到 `took too long: 199ms`。
+        //     这是墙钟断言的固有缺陷，与被测的并发语义无关。
+        //  2. 抓不住真问题：把槽位从 2 改成 1（并发完全失效）后，该断言
+        //     仍然通过——因为串行耗时约 100ms < 150ms，余量过大。
+        // 屏障方案下，两个任务必须同时进入才能放行；槽位只有 1 时第二个
+        // 永远等不到，会被 `timeout` 判定为失败，与机器负载无关。
         let orchestrator = WorkOrchestrator::new(2);
+        // 每个闭包 `move` 进自己的一份 `Arc` 克隆：`work_unit` 要求 `'static`，
+        // 闭包若只借用局部 `barrier` 会报 E0373。
+        let barrier = std::sync::Arc::new(tokio::sync::Barrier::new(2));
+        let ba = barrier.clone();
+        let bb = barrier.clone();
         let units = vec![
-            work_unit("a", "slow A", || async {
-                tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+            work_unit("a", "A", move || async move {
+                ba.wait().await;
                 ok_task("alpha").await
             }),
-            work_unit("b", "slow B", || async {
-                tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+            work_unit("b", "B", move || async move {
+                bb.wait().await;
                 ok_task("beta").await
             }),
-            work_unit("c", "fast C", || async { ok_task("gamma").await }),
         ];
-        let start = Instant::now();
-        let reports = orchestrator.run_all(units).await.unwrap();
-        let elapsed = start.elapsed();
+        // 若两个任务确实并发，两者都会到达屏障；串行则只有一个能到。
+        let reports = tokio::time::timeout(
+            std::time::Duration::from_secs(10),
+            orchestrator.run_all(units),
+        )
+        .await
+        .expect("两个任务应能并发进入并越过屏障；若超时说明槽位限制为 1")
+        .unwrap();
+        assert_eq!(reports.len(), 2);
+        assert!(reports.iter().all(|r| r.status == WorkStatus::Completed));
 
-        // With 2 concurrent slots and 2 slow tasks, should take ~50ms not 100ms+
-        assert!(
-            elapsed.as_millis() < 150,
-            "took too long: {}ms, expected <150ms with concurrency=2",
-            elapsed.as_millis()
-        );
-        assert_eq!(reports.len(), 3);
+        // 未尝试在此断言「槽位=2 时第三个任务必须被挡住」：`run_all` 在循环里
+        // 于 `spawn` 之前串行地 `acquire_owned().await`，主协程会先持有一个
+        // 许可去 spawn 前一个，再取下一个。因此参与者数量由获取顺序而非
+        // 屏障机制决定，写成屏障断言会得到与 max_concurrent 无关的结果
+        //（实测槽位改为 3 仍通过）。此处只验证并发确实发生，不臆造
+        // 无法用该机制观测的语义。
     }
 
     #[tokio::test]
