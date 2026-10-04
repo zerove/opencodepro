@@ -59,7 +59,18 @@
     - 坑：注入用**子进程作用域**（`run_command_with_env`）而非 `std::env::set_var`（后者多线程下不健全）
     - 坑：文档里的输出样例必须标 ```text，否则被 rustdoc 当 Rust doctest 编译而失败（我自己踩的）
     - 教训：单跑该测试**无法**复现，对照实验只有在原负载下才有意义
-- [ ] **SIGABRT 根治方案均未实测** (2026-10-04): 三选一（切 mold / `CARGO_PROFILE_DEV_DEBUG=0` / 调 `overcommit_ratio`）
+- [ ] **SIGABRT 根治手段：已实测一部分，仍未验证** (2026-10-04)
+    - **第一版 A/B 作废**：两组编译规模差 40 倍（8 vs 330 crate），崩的是 `serde_derive`
+      这个小 proc-macro 而非大二进制，不构成对照
+    - **第二版（同条件预热后重测）**：`CommitLimit=21122 MiB`
+      - `debug=2`（默认）：预热 **rc=101 崩溃**，测量 rc=0，峰值 19803 MiB
+      - `debug=0`：预热 rc=0，测量 rc=0，峰值 18868 MiB
+    - **结论**：`debug=0` 实测能降 ~4.7% 峰值，但**不能宣布修复**——
+      同配置下预热崩、测量过，说明故障是**概率性/负载相关**，单次跑过不算证据；
+      且 4.7% 不足以跨过那堵墙
+    - 尚未实测且与成因对得上：切 `mold` / `-fuse-ld=lld`（都是链接器选择）
+    - **不改系统级 `overcommit_ratio`**（需 root，影响该机器所有用户）
+    - 取证工具：`make rustc-abort-forensics`
 - [x] **`test_persist_survives_buffer_recreation` 竞态，已修复** (2026-10-04): 确定性复现 5/30 轮丢失 → 修复后 0/30
     - 真因：`record_cognitive_trace` 是同步函数，只 `send` 就返回；无任何 await 持久化的手段
     - `ExecutionManager` 被 `Arc` 持有且克隆进 `SelfProgrammingManager`/`StrategicManager`，**`Drop` 不是可靠刷盘点**
