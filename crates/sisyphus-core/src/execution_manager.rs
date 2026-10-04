@@ -82,9 +82,18 @@ pub struct ExecutionManager {
     pub event_subscribers: Arc<DashMap<String, Vec<mpsc::UnboundedSender<ExecutionEvent>>>>,
     /// Ring buffer of recent cognitive decisions, queryable for explainability.
     pub cognitive_trace: Arc<CognitiveTraceBuffer>,
-    /// 可选的异步持久化通道：(sop_id, entry)。由 writer task 写入 SQL 存储，
+    /// 可选的异步持久化通道。由 writer task 写入 SQL 存储，
     /// 使认知决策跨会话可检索（历史）。
-    trace_persist_tx: Option<mpsc::UnboundedSender<(String, CognitiveTraceEntry)>>,
+    trace_persist_tx: Option<mpsc::UnboundedSender<TracePersistCmd>>,
+}
+
+/// writer task 的指令：落盘一条记录，或作为 flush 屏障确认已排空。
+enum TracePersistCmd {
+    /// 落盘一条认知决策。`ExecutionEvent` 远大于 oneshot sender，故装箱。
+    Record(Box<(String, CognitiveTraceEntry)>),
+    /// flush 屏障：writer 处理到此处即说明此前所有指令都已落盘。
+    /// 通过 `oneshot` 回执，让调用方能真正 await 到持久化完成。
+    Flush(tokio::sync::oneshot::Sender<()>),
 }
 
 impl ExecutionManager {
@@ -122,18 +131,53 @@ impl ExecutionManager {
     /// 在 `new()` 中自动调用，随 `state_store` 就地落盘，无需调用方额外配置。
     fn init_trace_persistence(&mut self) {
         let store = Arc::clone(&self.state_store);
-        let (tx, mut rx) = mpsc::unbounded_channel::<(String, CognitiveTraceEntry)>();
+        let (tx, mut rx) = mpsc::unbounded_channel::<TracePersistCmd>();
         tokio::spawn(async move {
-            while let Some((sop_id, entry)) = rx.recv().await {
-                if let Err(e) = store
-                    .record_cognitive_trace("default", &sop_id, entry.timestamp_ms, &entry.event)
-                    .await
-                {
-                    tracing::warn!(error = %e, "Failed to persist cognitive trace");
+            while let Some(cmd) = rx.recv().await {
+                match cmd {
+                    TracePersistCmd::Record(payload) => {
+                        let (sop_id, entry) = *payload;
+                        if let Err(e) = store
+                            .record_cognitive_trace(
+                                "default",
+                                &sop_id,
+                                entry.timestamp_ms,
+                                &entry.event,
+                            )
+                            .await
+                        {
+                            tracing::warn!(error = %e, "Failed to persist cognitive trace");
+                        }
+                    },
+                    // 队列是 FIFO 且 writer 串行处理：轮到屏障时前面的指令必然已落盘。
+                    TracePersistCmd::Flush(ack) => {
+                        let _ = ack.send(());
+                    },
                 }
             }
         });
         self.trace_persist_tx = Some(tx);
+    }
+
+    /// 等待此前所有认知决策记录落盘完成。
+    ///
+    /// [`record_cognitive_trace`] 只把指令投入 channel 就返回，因此进程退出、
+    /// manager 被 drop 或测试重建实例时，尚在队列里的记录会静默丢失。
+    /// 本方法往队列里追加一个屏障指令并等其回执，从而给出真正的
+    /// “已持久化”保证：返回时，此前记录均已写入 `cognitive_traces`。
+    ///
+    /// 未启用持久化（`trace_persist_tx` 为 `None`）或 writer 已退出时立即返回。
+    pub async fn flush_cognitive_traces(&self) {
+        let Some(tx) = &self.trace_persist_tx else {
+            return;
+        };
+        let (ack_tx, ack_rx) = tokio::sync::oneshot::channel();
+        if tx.send(TracePersistCmd::Flush(ack_tx)).is_err() {
+            // writer 已退出：无法保证落盘，也不阻塞调用方。
+            return;
+        }
+        // writer 异常退出时回执被丢弃；超时避免永久挂起调用方。
+        let _ = tokio::time::timeout(std::time::Duration::from_secs(5), ack_rx).await;
     }
 
     /// 通知管理器有新工具部署，以便使缓存失效。
@@ -227,7 +271,10 @@ impl ExecutionManager {
             self.cognitive_trace.push(entry.clone());
             if let Some(tx) = &self.trace_persist_tx {
                 // 持久化是尽力而为：channel 关闭（writer 已退出）时静默丢弃。
-                let _ = tx.send((sop_id.to_string(), entry));
+                let _ = tx.send(TracePersistCmd::Record(Box::new((
+                    sop_id.to_string(),
+                    entry,
+                ))));
             }
         }
     }

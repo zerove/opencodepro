@@ -300,7 +300,11 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-          cache: maven
+          # 不能写 `cache: maven`：它用 `**/pom.xml` 算缓存 key，而本仓库
+          # 没有签入任何 pom.xml——Maven 探针是在测试里用 TempDir 现造的。
+          # setup-java 的 cache.ts 对「无文件匹配」是直接 throw
+          # （No file in ... matched to [...]），会让本 job 失败。
+          # 探针工程每次都是全新的，本来也没有可复用的依赖缓存。
 
       - name: Install pytest
         run: python3 -m pip install --upgrade pytest

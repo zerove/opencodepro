@@ -60,12 +60,30 @@
     - 坑：文档里的输出样例必须标 ```text，否则被 rustdoc 当 Rust doctest 编译而失败（我自己踩的）
     - 教训：单跑该测试**无法**复现，对照实验只有在原负载下才有意义
 - [ ] **SIGABRT 根治方案均未实测** (2026-10-04): 三选一（切 mold / `CARGO_PROFILE_DEV_DEBUG=0` / 调 `overcommit_ratio`）
-- [ ] **`test_persist_survives_buffer_recreation` 竞态** (2026-10-04): 补跑时暴露的真实缺陷
-    - `init_trace_persistence` 用游离 `tokio::spawn` 写 channel，`record_cognitive_trace` 仅 `send` 后同步返回
-    - 测试 `drop(em1)` **无 flush/join** 等 writer 落盘；单跑通过（3 passed），属竞态
-    - **不只影响测试**：生产路径（如 bridge 重启）drop 时同样可能丢认知追踪
-    - 修复需审计 `ExecutionManager` 全部消费方与生命周期，本轮不做
-- [ ] **`cognitive_trace_persist_test` 耗时异常** (2026-10-04): 3 个用例耗 112s，原因未查
+- [x] **`test_persist_survives_buffer_recreation` 竞态，已修复** (2026-10-04): 确定性复现 5/30 轮丢失 → 修复后 0/30
+    - 真因：`record_cognitive_trace` 是同步函数，只 `send` 就返回；无任何 await 持久化的手段
+    - `ExecutionManager` 被 `Arc` 持有且克隆进 `SelfProgrammingManager`/`StrategicManager`，**`Drop` 不是可靠刷盘点**
+    - 修复：channel 元素改为 `TracePersistCmd`（`Record` / `Flush`），`Flush` 用 oneshot 回执作 FIFO 屏障
+    - 接入 `MySisyphusBridge::shutdown()`，让 SIGINT/SIGTERM 真实路径排空队列
+    - clippy 报了 `large_enum_variant`，装箱 `Record` 载荷修掉（`ExecutionEvent` 比 oneshot sender 大得多）
+    - **本条是生产缺陷**：bridge 关闭时丢跨会话认知追踪历史，不只是测试问题
+- [x] **CI `toolchain-e2e` 会直接失败：已修** (2026-10-04): 移除 `cache: maven`
+    - `setup-java@v4` 用 `**/pom.xml` 算缓存 key，而本仓库**没有签入任何 pom.xml**
+      （Maven 探针是测试里 `TempDir` 现造的）
+    - `cache.ts:96-100` 对「无文件匹配」是 `throw` 而非 warning → job 必红
+    - Maven 本身**不需要安装**：runner 镜像（Ubuntu 24.04）预装 Maven 3.9.16
+- [x] **`language_backend_guards.rs` 注释说「拉起 vitest」，实际无 vitest 用例** (2026-10-04)
+    - 13 条全是 go / pytest / mvn；Node 侧 3 个缺陷靠 `node.rs` 解析器单测覆盖
+    - 注释已改，避免后人误以为 Node 有真实工具链 e2e
+- [ ] **本机 pytest 缺失会导致 e2e 假红** (2026-10-04 踩坑): 已用 `git stash` 对照确认非代码回归
+    - 现象：6 条 pytest 用例报 `passed=0 failed=0`（后端跑 `python3 -m pytest` 直接报错）
+    - 本机 `python3` 是 mise 3.14，**未装 pytest**；CI 里由 `pip install pytest` 保证
+    - 本地复现真实 e2e 前必须先 `pip install pytest`，否则会把环境问题误当成代码回归
+- [x] **「112s 慢测试」是我的误判** (2026-10-04): 测试实跑 2.80s，54s 全是编译
+    - 我当时把 `cargo test` 的 `real 0m56s` 当成了测试耗时
+- [ ] **`sisyphus-bridge` 有 7 个既有 clippy 错误** (2026-10-04 新发现): `git stash` 验证为基线已有，与本轮无关
+    - `cluster_integration.rs` 5 处（field_reassign_with_default / unused_mut / bool_assert_comparison）
+    - `peer/experience_sync.rs:324` 1 处
 - [x] **GitHub Actions CI 全绿** (2026-08-09, 27/27 jobs; 修复 linker/clippy/protoc/组件缺失)
 - [x] **WebUI 中文化**
 - [x] **eval 评测套件** (57 例, schema 校验 + mock/真实双模式)

@@ -752,6 +752,9 @@ impl MySisyphusBridge {
     /// 推荐由 main.rs 在收到 SIGINT/SIGTERM 后调用。
     /// 默认 5 秒超时（与 HTTP/gRPC graceful shutdown 对齐）。
     pub async fn shutdown(&self, wait: std::time::Duration) -> Result<(), String> {
+        // 先把认知追踪队列排空：SOP 执行完毕到进程退出之间仍可能有记录
+        // 只待在 writer 队列里，进程一退就再也检索不到跨会话历史。
+        self.kernel().execution_manager.flush_cognitive_traces().await;
         // 委托给 LLM client；DynamicLlmClient 内部会调用
         // provider_registry.shared_http().shutdown(wait).
         self.llm_client.shutdown(wait).await

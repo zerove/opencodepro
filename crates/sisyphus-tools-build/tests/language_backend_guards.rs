@@ -6,11 +6,15 @@
 //! `if r.failed == 0 { "ok" }`，于是构建失败会被显示成「测试全部通过」。
 //! 三个后端为此各自加了守卫，本文件锁住这些守卫的判据。
 //!
-//! **这些用例真的拉起 go / pytest / vitest 子进程**，因此：
+//! **覆盖范围**：go / pytest / mvn —— **本文件不含 vitest 用例**。
+//! Node 侧的守卫（套件加载失败、混合结果、ANSI 污染用例名）由
+//! `src/build/node.rs` 的解析器单测覆盖，那些用例只喂字符串、不起 npm 进程。
+//!
+//! **这些用例真的拉起 go / pytest / mvn 子进程**，因此：
 //! - 需要对应工具链在 PATH 上；
 //! - 因此统一标 `#[ignore = "requires real toolchain"]`，不进默认 `cargo test`。
 //!   与 `bridge_integration_test` 用 `#[ignore]` 的理由不同——那些是因为 OOM，
-//!   这些只是慢（pytest 约 0.2s、vitest 约 0.4s、go 首次约 1s）且依赖外部工具。
+//!   这些只是慢（pytest 约 0.2s、mvn 首次约 10s、go 首次约 1s）且依赖外部工具。
 //!
 //! 运行方式：
 //!

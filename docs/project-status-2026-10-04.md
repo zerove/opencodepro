@@ -14,7 +14,9 @@
 `ok` / `FAILED` / `no tests ran` 三种状态，并配 **9 条单元测试**
 （6 条判定 + 3 条提示语）。此外：
 
-- 6 个后端解析缺陷全部修复，并用**真实工具链**端到端验证（13 条 e2e）；
+- 6 个后端解析缺陷全部修复，并用**真实工具链**端到端验证（13 条 e2e，
+  覆盖 Go / Python / Maven——**不含 Node/vitest**，Node 侧的 3 个缺陷靠
+  单元测试锁定解析器，未拉起真实 npm 进程）；
 - e2e 已**接入 CI**（新增 `toolchain-e2e` job）——此前它们全是 `#[ignore]`
   且无任何 CI job 执行，这正是缺陷能长期存活的原因；
 - 顺带修复长期失败的 `audit-sources` job（exit 1 → 0）。
@@ -145,11 +147,14 @@ $ mvn -q test
 | crate 单测 | `cargo test -p sisyphus-tools-build` | 110 passed / 0 failed |
 | Java 单测 | `cargo test -p sisyphus-tools-build --lib java` | 5 passed / 0 failed |
 | CLI 判定单测 | `cargo test -p sisyphus-cli --lib build::` | **9 passed / 0 failed**（6 条判定 + 3 条提示语） |
-| 真实工具链 e2e | `... --test language_backend_guards -- --ignored` | **13 passed / 0 failed**（原 11 + 新增 2 条 Maven） |
+| 真实工具链 e2e | `... --test language_backend_guards -- --ignored` | **13 passed / 0 failed**（原 11 + 新增 2 条 Maven；**无 Node**，见第 0 节说明） |
 | 严格 clippy | `cargo clippy -p sisyphus-tools-build -p sisyphus-cli --all-targets -- -D warnings` | 无告警 |
 | 格式 | `cargo fmt --all --check` | 通过 |
-| 全工作区 | `make test-all` | **4762 passed / 0 failed / 25 ignored**（MAKE_EXIT=0，无 OOM/SIGABRT） |
+| 全工作区 | `make test-all` | **4763 passed / 0 failed / 25 ignored**（MAKE_EXIT=0，无 OOM/SIGABRT） |
 | 嵌套 cargo 守卫 | `cargo test -p sisyphus-tools-build --test rust_backend_test_e2e`（并行） | 7 passed / 0 failed |
+| 认知追踪 flush | `cargo test -p sisyphus-core --test cognitive_trace_persist_test` | 4 passed / 0 failed |
+| 追踪竞态探针（修复前） | 30 轮不 flush 直接 drop | **5/30 轮丢失** |
+| 追踪竞态探针（修复后） | 30 轮 flush 后 drop | **0/30 丢失** |
 | CI job 确切命令 | `cargo test -p sisyphus-tools-build --test language_backend_guards -- --ignored --test-threads=1` | 13 passed / 0 failed |
 | `audit_ignored.py` | `python3 scripts/audit_ignored.py` | **exit 0**（修复前 exit 1，`audit-sources` 长期红） |
 
@@ -296,11 +301,11 @@ Committed_AS      ≈ 18.4 GiB / CommitLimit 21.1 GiB (87%)   ← 实际被撞�
 **本项目不做系统级修改**（会影响该机器上所有用户与项目）。
 
 
-### 5.5 连带发现：`test_persist_survives_buffer_recreation` 失败（**真实缺陷**）
+### 5.5 连带发现：认知追踪落盘竞态（**已确定性复现并修复**）
 
 补跑 `make test-all` 时出现（同一轮未再 SIGABRT，编译链接均通过）：
 
-```
+```text
 thread 'test_persist_survives_buffer_recreation' panicked at
   crates/sisyphus-core/tests/cognitive_trace_persist_test.rs:194:5:
 assertion `left == right` failed
@@ -308,26 +313,51 @@ assertion `left == right` failed
  right: 1
 ```
 
-**已定位的机制**（读代码所得，尚未构造出稳定复现）：
+上一版报告写“尚未构造出稳定复现”，本轮把它复现出来了——
+方法是**去掉测试自带的等待**，直接模拟生产关闭路径：
 
-1. `ExecutionManager::init_trace_persistence`（`execution_manager.rs:123`）
-   用 `tokio::spawn` 起一个**游离**写入任务，
-   `while let Some(...) = rx.recv().await` 消费无界 channel。
-2. `record_cognitive_trace` 只是 `tx.send(..)`，**同步返回**。
-3. 测试在 `wait_history(&em1, 1).await` 后直接 `drop(em1)`，
-   **没有任何 flush / join 等待 writer 落盘完成**。
-4. `drop` 关闭 channel 后 writer 才被唤醒完成写入，
-   而此时测试已经建 `em2` 去读——**存在真实的数据丢失窗口**。
-5. 落盘本身是普通 `INSERT`（`sisyphus-mem/src/store.rs:1170`），
-   pool `max_connections(5)`，无显式 checkpoint。
+| 场景 | 结果 |
+|------|------|
+| 记录后**不 flush 直接 drop**（30 轮） | **5/30 轮丢失** ← 确定性复现 |
+| 记录后 `flush_cognitive_traces()` 再 drop（30 轮） | **0/30 丢失** |
 
-单独重跑**通过**（3 passed / 112s），说明这是竞态而非确定性缺陷。
-`112s` 跑 3 个用例也偏慢，原因未查（同属未闭环）。
+**根因**（不是“linker 撞内存”的同源问题）：
 
-**风险等级**：这不只是测试问题——`ExecutionManager` 被 drop 时
-认知追踪可能丢失同样适用于**生产路径**（如 bridge 重启）。
-但修复需审计 `ExecutionManager` 的所有消费方与生命周期，
-**本轮不做**（超出本轮改动范围）。
+1. `record_cognitive_trace` 是**同步函数**，`tx.send()` 后立即返回，
+   调用方**没有任何手段 await 到持久化完成**。
+2. writer 由 `tokio::spawn` 起的**游离任务**消费；`drop` 关闭 channel
+   后它才被唤醒，此时 SQL 写入可能根本没发生。
+3. `ExecutionManager` 被 `Arc` 持有，并且**克隆进**
+   `SelfProgrammingManager` / `StrategicManager`，
+   所以**`Drop` 实现不是可靠刷盘点**——不能靠 drop hook 修。
+4. 旧测试用轮询 `wait_history` 等待，且 `let _ = wait_history(..)`
+   **丢弃返回值**，轮询超时（1s）也是静默通过。
+
+**修复**：channel 元素从 `(String, entry)` 改为 `TracePersistCmd`：
+
+```text
+enum TracePersistCmd {
+    Record(Box<(String, CognitiveTraceEntry)>),   // 装箱：见下
+    Flush(oneshot::Sender<()>),                  // FIFO 屏障
+}
+```
+
+`Flush` 指令与 writer 串行处理构成 FIFO 屏障——轮到它时，
+前面的 `Record` 必然已落盘；`flush_cognitive_traces()` 等回执，
+返回即代表“已持久化”。同时接入 `MySisyphusBridge::shutdown()`，
+让 SIGINT/SIGTERM 真实关闭路径也排空队列。
+
+**过程中的两个插曲**：
+
+- clippy 报 `large_enum_variant`（`ExecutionEvent` 比 oneshot sender
+  大得多）——**clippy 抓到了我自己的问题**，已装箱。
+- 我原先把 `cargo test` 的 `real 0m56s` 当成测试耗时，
+  实际 **3 个用例只跑 2.80s**，54s 全是编译。
+  **“112s 慢测试”是我自己的误判**，已撤回。
+
+**风险等级**：**生产缺陷**——bridge 关闭时丢跨会话认知追踪历史。
+已由 `test_flush_cognitive_traces_survives_recreation`（10 轮）覆盖，
+临时探针已删除。
 
 ### 5.6 第二次相关失败：嵌套 cargo 撞同一堵墙（**已修复**）
 
@@ -367,6 +397,49 @@ libtest 默认并行跑测试，每条用例各起一个**完整的嵌套 cargo 
 **我自己引入的失败**，已改成 ```text。教训：文档里的输出样例必须标语言。
 
 真正的处置仍是第 5.4 节：降低链接期提交量（均未实测）。
+
+### 5.7 `toolchain-e2e` job 引入即失败（**已修**）
+
+上一版把 e2e 接进 CI 时写了 `cache: maven`，这个 job **一旦上线必红**：
+
+- `setup-java@v4` 用 `**/pom.xml` 算缓存 key，
+  而本仓库**没有签入任何 pom.xml**（Maven 探针是测试里 `TempDir` 现造的）。
+- `setup-java/src/cache.ts:96-100` 对“无文件匹配”是 `throw`，**不是** warning：
+
+```text
+const fileHash = await glob.hashFiles(pattern.join('\n'));
+if (!fileHash) {
+  throw new Error(`No file in ${process.cwd()} matched to [${pattern}] ...`);
+}
+```
+
+已移除该行并在 YAML 里写下原因（避免后人“好心”加回来）。
+
+**Maven 从哪来**：不需要安装步骤。GitHub 的 `ubuntu-latest`
+（Ubuntu 24.04 镜像）**预装 Maven 3.9.16**，已核对官方
+`actions/runner-images` 的 `Ubuntu2404-Readme.md`。
+即之前「Maven 安装来源不明」的疑点，答案是：靠 runner 镜像自带。
+
+### 5.8 `language_backend_guards.rs` 头注释称会拉起 vitest（**已修**）
+
+上一版自己写的注释是错的：它声称「这些用例真的拉起 go / pytest / vitest
+子进程」，但文件里**没有任何 vitest 用例**（`grep` 确认 vitest 只出现在
+注释里）。13 条实为 go / pytest / mvn。
+Node 侧的 3 个缺陷由 `src/build/node.rs` 的解析器单测覆盖，
+那些用例只喂字符串、**不起 npm 进程**。注释已改正，
+避免后人误以为 Node 有真实工具链 e2e 覆盖。
+
+### 5.9 一个环境假红，差点被我当成代码回归（已排查）
+
+重跑 e2e 时 **6 条 pytest 用例报 `passed=0 failed=0`**。
+第一反应是「我改坏了」——但我本轮对该文件只动了注释。
+
+`git stash` 对照确认：**未改代码的基线同样失败**。真因是本机
+`python3` 是 mise 3.14 且**未装 pytest**，后端执行 `python3 -m pytest`
+直接报错。装上 pytest 9.1.1 后重跑：**13 passed / 0 failed**。
+
+教训：后端测试失败时，**先 `git stash` 做基线对照**，
+再怀疑代码；否则会把环境问题写成「回归」。
 
 ## 6. 提交
 

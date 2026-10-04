@@ -179,18 +179,46 @@ async fn test_history_sop_filter_and_limit() {
 }
 
 #[tokio::test]
+async fn test_flush_cognitive_traces_survives_recreation() {
+    // bridge 关闭（SIGINT/SIGTERM）时的真实语义：先 flush 再丢弃实例。
+    // 修复前不 flush 直接 drop，实测 30 轮中有 5 轮丢失认知追踪。
+    let mut lost = 0;
+    const ROUNDS: usize = 10;
+    for i in 0..ROUNDS {
+        let db = temp_db_path(&format!("flush_{i}"));
+        let _ = std::fs::remove_file(&db);
+
+        let em1 = test_execution_manager_with(&db).await;
+        em1.record_cognitive_trace("sop-a", step_event("Flushed"));
+        em1.flush_cognitive_traces().await;
+        drop(em1);
+
+        let em2 = test_execution_manager_with(&db).await;
+        let rows = em2.cognitive_trace_history("default", None, 100).await.expect("history");
+        if rows.len() != 1 {
+            lost += 1;
+        }
+        drop(em2);
+        let _ = std::fs::remove_file(&db);
+    }
+    assert_eq!(
+        lost, 0,
+        "{lost}/{ROUNDS} rounds lost cognitive trace after flush"
+    );
+}
+
+#[tokio::test]
 async fn test_persist_survives_buffer_recreation() {
     // 模拟 bridge 重启：新 ExecutionManager 实例读同一 SQL 文件仍可取回历史。
     let db = temp_db_path("restart");
     let em1 = test_execution_manager_with(&db).await;
     em1.record_cognitive_trace("sop-a", step_event("BeforeRestart"));
 
-    // 等待第一次落盘完成（writer 已消费 channel）。
-    let _ = wait_history(&em1, 1).await;
-    drop(em1);
+    // flush 屏障：等待 writer 把队列排空（修复前是轮询等待，失败被静默吞掉）。
+    em1.flush_cognitive_traces().await;
 
     let em2 = test_execution_manager_with(&db).await;
-    let rows = wait_history(&em2, 1).await;
+    let rows = em2.cognitive_trace_history("default", None, 100).await.expect("history");
     assert_eq!(rows.len(), 1);
     assert!(matches!(
         rows[0].event,
