@@ -75,7 +75,20 @@ impl LanguageBackend for RustBackend {
         if all {
             args.push("--workspace");
         }
-        let (stdout, stderr, _success) = build::cargo_raw(&args, cwd)?;
+        let (stdout, stderr, success) = build::cargo_raw(&args, cwd)?;
+        // cargo 失败而输出里没有任何 `test result:` 行，说明**根本没有测试
+        // 被执行**——典型情形是编译失败（实测：stdout 0 字节，stderr 只有
+        // rustc 诊断与 `could not compile`）。此时 `parse_test_results` 会如实
+        // 给出 passed=0 / failed=0，若直接返回，调用方（如 CLI 的
+        // `if r.failed == 0 { "ok" }`）会把编译失败当成测试全部通过。
+        //
+        // 故此处如实报错，不再把「编译失败」伪装成「0 个测试全部通过」。
+        if !success && !stdout.contains("test result: ") {
+            return Err(ToolError::Generic(format!(
+                "`cargo test` 未能执行任何测试（退出码非零）。cargo 原始诊断：\n{}",
+                stderr.trim()
+            )));
+        }
         Ok(parse_test_results(&stdout, &stderr))
     }
 

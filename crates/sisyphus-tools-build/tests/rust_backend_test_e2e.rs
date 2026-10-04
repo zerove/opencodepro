@@ -184,19 +184,19 @@ pub fn documented() {}
     assert_eq!(r.failures[0].name, "failing");
 }
 
-/// 真实编译失败。
+/// 真实编译失败：应返回 Err，而非伪装成「0 个测试全部通过」。
 ///
 /// 实测结论（此前从未在真实路径上验证过，只有一条基于**合成输入**的
 /// 单测）：编译失败时 cargo 的 **stdout 为 0 字节**，根本不含任何
 /// `test result:` 行；stderr 里只有 rustc 诊断与 `could not compile`。
 ///
-/// 因此 `passed` 与 `failed` **都是 0**，`failures` 为空。这如实反映
-/// 「没有任何测试被执行」，而不是凭空造出一个失败计数。
-///
-/// 判据重点：`raw_stderr` 必须完整保留诊断信息——调用方据此才能判断
-/// 真实原因是编译失败而非测试失败。
+/// `parse_test_results` 对此如实给出 passed=0 / failed=0。但仅凭这两个
+/// 计数无法区分「编译失败」与「0 个测试通过」——CLI 的
+/// `if r.failed == 0 { "ok" }` 会把编译失败显示成 `Test result: ok. 0 passed;
+/// 0 failed`。故 `RustBackend::test()` 现在对「退出码非零且无任何
+/// `test result:` 行」直接返回 Err。
 #[test]
-fn real_compile_error_yields_all_zero_but_keeps_diagnostics() {
+fn real_compile_error_returns_err_instead_of_fake_success() {
     let dir = tempfile::tempdir().unwrap();
     probe(
         dir.path(),
@@ -209,26 +209,18 @@ fn pass_a() { assert_eq!(2 + 2, 4); }
 fn broken() { let y = x; }
 "#,
     );
-    let r = run(dir.path());
-    println!(
-        "passed={} failed={} failures={:?}\nraw_stdout_len={}\nraw_stderr:\n{}",
-        r.passed,
-        r.failed,
-        r.failures.iter().map(|f| &f.name).collect::<Vec<_>>(),
-        r.raw_stdout.len(),
-        r.raw_stderr
-    );
-    assert_eq!(r.passed, 0, "编译失败时没有任何测试被执行");
-    assert_eq!(
-        r.failed, 0,
-        "真实编译失败输出不含 test result 行，failed 应为 0"
-    );
-    assert!(r.failures.is_empty());
-    assert_eq!(r.raw_stdout.len(), 0, "实测 stdout 为 0 字节");
-    // 诊断必须完整保留，否则调用方无从判断真实原因。
+    let err = RustBackend
+        .test(None, None, false, Some(dir.path()))
+        .expect_err("编译失败必须返回 Err，不能伪装成 0 passed / 0 failed");
+    let msg = err.to_string();
+    println!("err = {msg}");
     assert!(
-        r.raw_stderr.contains("E0425") && r.raw_stderr.contains("could not compile"),
-        "raw_stderr 必须保留完整编译诊断，实际:\n{}",
-        r.raw_stderr
+        msg.contains("未能执行任何测试"),
+        "错误信息应说明未执行任何测试，实际: {msg}"
+    );
+    // 原始诊断必须透出，调用方才能判断真实原因。
+    assert!(
+        msg.contains("could not compile"),
+        "错误信息必须含 cargo 原始诊断，实际: {msg}"
     );
 }
