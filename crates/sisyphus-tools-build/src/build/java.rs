@@ -92,7 +92,25 @@ impl LanguageBackend for JavaBackend {
             }
             a
         };
-        let (stdout, stderr, _success) = build::run_command(&self.tool, &args, cwd)?;
+        let (stdout, stderr, success) = build::run_command(&self.tool, &args, cwd)?;
+        // 实测（mvn 3.10 + surefire 3.2.5）：**编译失败时一条 `Tests run`
+        // 都不打印**（整个输出 `Tests run` 出现 0 次），只有
+        // `[ERROR] COMPILATION ERROR :` 与 `BUILD FAILURE`。
+        // 此时 `parse_mvn_test_results` 如实给出 0/0，而调用方
+        // （`sisyphus-cli/src/build.rs` 的 `if r.failed == 0 { "ok" }`）
+        // 会把编译失败显示成「0 个测试全部通过」。
+        //
+        // 判据用 maven 自己打的 `COMPILATION ERROR` 标记，而不是「没有
+        // Tests run 行」——后者为真时，**跑完了但零用例**（空工程、没有
+        // 测试类、被 -Dtest 过滤掉）也成立，会误报。
+        let combined = build::strip_ansi(&format!("{stdout}\n{stderr}"));
+        if !success && combined.contains("COMPILATION ERROR") {
+            return Err(ToolError::Generic(format!(
+                "`{}` 未能执行任何测试（编译阶段失败）。原始诊断：\n{}",
+                self.tool,
+                combined.trim()
+            )));
+        }
         Ok(parse_mvn_test_results(&stdout, &stderr))
     }
 
@@ -309,21 +327,30 @@ fn parse_checkstyle_output(_stderr: &str, stdout: &str) -> (Vec<Diag>, Vec<Diag>
 }
 
 fn parse_mvn_test_results(stdout: &str, stderr: &str) -> TestResults {
-    // Maven test output:
-    //   Tests run: 10, Failures: 1, Errors: 0, Skipped: 0
-    //   [INFO] --- surefire:...
-    //   Failed tests: com.example.MyTest#testMethod
+    // Maven test output（实测 mvn 3.10 + surefire 3.2.5）:
+    //   [INFO] Tests run: 10, Failures: 1, Errors: 0, Skipped: 0
+    //   [INFO] Tests run: 10, Failures: 1, Errors: 0, Skipped: 0, Time elapsed: 0.1 s -- in probe.MyTest
+    //   [ERROR] Failed tests:
+    //   [ERROR]   probe.MyTest#testMethod
+    //
+    // 两个要点，都是被真实输出打脸后改的：
+    //
+    // 1. **每行都带 `[INFO] ` / `[ERROR] ` 前缀**，所以判据必须先剥前缀，
+    //    不能用 `starts_with("Tests run:")`——那样一条都匹配不上，
+    //    通过的项目会被报成 passed=0 / failed=0。
+    // 2. `Tests run:` 在同一份输出里出现**多次**（每个测试类一次 + 末尾汇总一次），
+    //    按类逐条累加会把计数翻倍，所以取**最大**的那次作为权威值。
     let combined = format!("{stdout}\n{stderr}");
-    let mut passed = 0usize;
-    let mut failed = 0usize;
+    let mut total = 0usize;
+    let mut failures_count = 0usize;
+    let mut errors_count = 0usize;
+    let mut skipped = 0usize;
     let mut failures = Vec::new();
 
     for line in combined.lines() {
-        let t = line.trim();
-        // Extract failure names
-        if t.starts_with("Failed tests:") {
-            let rest = t.trim_start_matches("Failed tests:").trim();
-            // Each test name is on the same line or next lines
+        let t = strip_maven_prefix(line);
+        if t.starts_with("Failed tests:") || t.starts_with("Tests in error:") {
+            let rest = t.split_once(':').map(|(_, r)| r).unwrap_or("").trim();
             for name in rest.split(',').map(str::trim).filter(|s| !s.is_empty()) {
                 failures.push(crate::build::TestFailure {
                     name: name.to_string(),
@@ -332,54 +359,69 @@ fn parse_mvn_test_results(stdout: &str, stderr: &str) -> TestResults {
         }
     }
 
-    // Parse summary: "Tests run: 10, Failures: 1, Errors: 0, Skipped: 0"
+    // 汇总行：取最大值，类级行自然被末尾汇总行盖掉。
     for line in combined.lines() {
-        let t = line.trim();
-        if t.starts_with("Tests run:") {
-            for part in t.split(',') {
-                let p = part.trim();
-                if let Some(n) = p
-                    .strip_prefix("Tests run:")
-                    .and_then(|s| s.trim().split(' ').next())
-                    .and_then(|s| s.parse().ok())
-                {
-                    // Tests run includes both passed and failed; compute passed = total - failures - errors
-                    let total: usize = n;
-                    let fail_count: usize = combined
-                        .lines()
-                        .filter_map(|l| {
-                            let l = l.trim();
-                            if l.starts_with("Failures:") || l.starts_with("Errors:") {
-                                l.split(',').next()?.split(':').nth(1)?.trim().parse::<usize>().ok()
-                            } else {
-                                None
-                            }
-                        })
-                        .sum();
-                    // Or just fall back to reasonable defaults
-                    passed = total.saturating_sub(fail_count);
-                }
-                if let Some(n) = p
-                    .strip_prefix("Failures:")
-                    .and_then(|s| s.trim().split(' ').next())
-                    .and_then(|s| s.parse::<usize>().ok())
-                {
-                    failed += n;
-                }
+        let t = strip_maven_prefix(line);
+        let Some(rest) = t.strip_prefix("Tests run:") else {
+            continue;
+        };
+        // `Tests run: 10` 的 10 紧跟前缀。注意要先按逗号切开再取，
+        // 直接 `split_whitespace().next()` 拿到的是 `"1,"`（带逗号），
+        // 解析必定失败——这正是「通过项目报成 0」的根因。
+        for part in rest.split(',') {
+            let p = part.trim();
+            if let Ok(n) = p.parse::<usize>() {
+                total = total.max(n);
+            }
+        }
+        for part in rest.split(',') {
+            let p = part.trim();
+            // `Failures: 0` 里第一个空白分隔的 token 是 `Failures:` 而不是数字，
+            // 所以数字要从**冒号后**取，不能取首个 token。
+            let Some((label, num)) = p.rsplit_once(':') else {
+                continue;
+            };
+            let label = label.trim();
+            let Ok(n) = num.trim().parse::<usize>() else {
+                continue;
+            };
+            if label == "Failures" {
+                failures_count = failures_count.max(n);
+            } else if label == "Errors" {
+                errors_count = errors_count.max(n);
+            } else if label == "Skipped" {
+                skipped = skipped.max(n);
             }
         }
     }
 
+    // `Errors` 与 `Failures` 同属没通过；`Tests run` 含两者，
+    // 故通过数要减掉两者。
+    let failed = failures_count + errors_count;
+
     TestResults {
-        passed,
+        passed: total.saturating_sub(failed),
         failed,
-        ignored: 0,
+        ignored: skipped,
         measured: 0,
         filtered_out: 0,
         failures,
         raw_stdout: stdout.to_string(),
         raw_stderr: stderr.to_string(),
     }
+}
+
+/// 剥掉 maven 输出行首的 `[INFO] ` / `[ERROR] ` / `[WARNING] ` / `[DEBUG] ` 前缀。
+///
+/// maven 每行输出都带这类前缀，不剥的话任何 `starts_with` 判据都落空。
+fn strip_maven_prefix(line: &str) -> &str {
+    let t = line.trim();
+    for p in ["[INFO] ", "[ERROR] ", "[WARNING] ", "[DEBUG] "] {
+        if let Some(rest) = t.strip_prefix(p) {
+            return rest.trim();
+        }
+    }
+    t
 }
 
 #[cfg(test)]
@@ -404,5 +446,70 @@ mod tests {
         assert_eq!(mvn.name(), "java-maven");
         let gradle = JavaBackend::new_gradle();
         assert_eq!(gradle.name(), "java-gradle");
+    }
+
+    /// 回归（真实 mvn 3.10 + surefire 3.2.5 输出抓取，非构造）：
+    /// 通过时 stdout 是
+    /// `[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0`。
+    /// 行首的 `[INFO] ` 前缀使旧的 `starts_with("Tests run:")` 永不命中，
+    /// 于是通过的项目被报成 passed=0 / failed=0。
+    #[test]
+    fn test_parse_mvn_real_passing_output_is_not_zero() {
+        let stdout = "\
+[INFO] --- surefire:3.2.5:test (default-test) @ probe ---
+[INFO] Running probe.OkTest
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.063 s -- in probe.OkTest
+[INFO]
+[INFO] Results:
+[INFO]
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0
+[INFO]
+[INFO] BUILD SUCCESS
+";
+        let r = parse_mvn_test_results(stdout, "");
+        assert_eq!(r.passed, 1, "真实通过输出必须计 1，旧解析器报 0");
+        assert_eq!(r.failed, 0);
+    }
+
+    /// 回归：编译失败时 mvn **一条 `Tests run` 都不打印**（实测 0 行），
+    /// 只有 `[ERROR] COMPILATION ERROR :` 与 `BUILD FAILURE`。
+    /// 解析器必须据此区分「编译失败」与「跑了但零用例」。
+    #[test]
+    fn test_parse_mvn_compile_failure_has_no_tests_run_line() {
+        let stdout = "\
+[ERROR] COMPILATION ERROR :
+[INFO] -------------------------------------------------------------
+[ERROR] /tmp/probe/src/main/java/probe/Broken.java:[5,9] cannot find symbol
+  symbol:   method undefinedFunc()
+[INFO] 1 error
+[INFO] -------------------------------------------------------------
+[INFO] BUILD FAILURE
+[INFO] Total time:  2.434 s
+[ERROR] Failed to execute goal org.apache.maven.plugins:maven-compiler-plugin:3.16.0:compile (default-compile) on project probe: Compilation failure
+";
+        let r = parse_mvn_test_results(stdout, "");
+        assert_eq!(
+            (r.passed, r.failed),
+            (0, 0),
+            "编译失败时解析器只能报 0/0——真谓词在 test() 层的守卫，不在这里"
+        );
+        assert!(
+            stdout.contains("COMPILATION ERROR"),
+            "输入确实是编译失败输出"
+        );
+    }
+
+    /// 失败计数：`Errors` 也属于没通过，不能只数 `Failures`。
+    #[test]
+    fn test_parse_mvn_errors_count_as_failed() {
+        let stdout = "\
+[INFO] Results:
+[INFO] Tests run: 3, Failures: 1, Errors: 1, Skipped: 0
+[ERROR] Failed tests:
+[ERROR]   probe.OkTest#passes
+";
+        let r = parse_mvn_test_results(stdout, "");
+        assert_eq!(r.failed, 2, "Failures 1 + Errors 1 都要算失败");
+        assert_eq!(r.passed, 1);
     }
 }

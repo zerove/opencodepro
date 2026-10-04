@@ -18,9 +18,14 @@ BRIDGE_DEPS = crates/sisyphus-bridge/src/main.rs crates/sisyphus-bridge/Cargo.to
 # sisyphus-tools-* — 10 sub-crates, lightweight, fast to check individually.
 #
 # 内存约束（2026-10-02 实测）：在 19.5 GiB 机器上并行链接多个重型测试二进制会
-# OOM，报 `linking with cc failed` 或 `could not exec the linker cc`。`-j 2` 仍
-# 不安全，`-j 1` 稳定。因此所有会产生多个测试二进制的目标都显式带
-# CARGO_BUILD_JOBS=1。直接敲 `cargo test` 不受此保护，需自行加 -j 1。
+# OOM，报 `linking with cc failed` 或 `could not exec the linker cc`。因此所有会产生
+# 多个测试二进制的目标都显式带 CARGO_BUILD_JOBS=1。直接敲 `cargo test` 不受此保护，
+# 需自行加 -j 1。
+#
+# ⚠ 修正（2026-10-04）：旧注释写「`-j 2` 仍不安全，`-j 1` 稳定」。实测**已带 `-j 1`
+# 的 `make test-all` 仍会随机 SIGABRT**，同一条命令重跑即通过（4759 passed / 0 failed）。
+# 故这是**概率性崩溃**（非并发 OOM），`-j 1` 不能根除。CARGO_BUILD_JOBS=1 保留，
+# 但遇到 SIGABRT 时请**直接重跑**，不要继续调并发参数。
 #
 # Usage:
 #   make check-all         # lightweight batch (alias: --exclude bridge/sandbox/tests)
@@ -94,12 +99,22 @@ ci-bridge:
 	cargo clippy -p sisyphus-bridge -- -D warnings
 
 # — workspace commands (exclude heavy crates) —
+#
+# 2026-10-04 补：`check-all` / `build-all` 原先没带 CARGO_BUILD_JOBS=1，
+# 与 `test-all` 不一致。实测本机会在 `cargo check-all` 默认并行下撞
+# rustc SIGABRT（ICE 标记 `0x0`），与 Makefile 头部记录的 OOM 现象同源。
+# `check` 虽然不链接最终二进制，但 rustc 前端的 codegen 峰值同样吃内存。
+#
+# ⚠ 实测修正（2026-10-04）：`test-all` **已带** `-j 1` 仍会随机 SIGABRT，
+# 同一条命令重跑即通过。所以这**不是**并发 OOM，而是概率性崩溃，
+# `-j 1` 不能根除它。CARGO_BUILD_JOBS=1 保留（避开已知最坏情况），
+# 但遇到 SIGABRT 时的正确处置是**直接重跑**，而不是继续调并发参数。
 
 check-all:
-	cargo check-all
+	CARGO_BUILD_JOBS=1 cargo check-all
 
 build-all:
-	cargo build-all
+	CARGO_BUILD_JOBS=1 cargo build-all
 
 test-all:
 	CARGO_BUILD_JOBS=1 cargo test-all

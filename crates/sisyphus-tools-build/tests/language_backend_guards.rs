@@ -22,6 +22,7 @@
 //! 每个探针工程都在测试内用 `TempDir` 现造，不依赖任何外部目录或环境变量。
 
 use sisyphus_tools_build::build::golang::GoBackend;
+use sisyphus_tools_build::build::java::JavaBackend;
 use sisyphus_tools_build::build::python::PythonBackend;
 use sisyphus_tools_build::build::LanguageBackend;
 use std::fs;
@@ -367,4 +368,111 @@ fn pytest_real_failure_is_parsed_not_rejected() {
     println!("passed={} failed={}", r.passed, r.failed);
     assert_eq!(r.failed, 1, "失败用例必须被解析出来");
     assert_eq!(r.passed, 0);
+}
+
+// ── Java / Maven ────────────────────────────────────────
+
+/// 写一个最小可用的 Maven 工程；`broken` 为 true 时额外放一个编译不过的类。
+///
+/// Maven 比 Go/Python 慢很多（首次要拉取插件与依赖，实测联网约 70s，
+/// 之后靠 `~/.m2` 缓存），所以两条用例都标 `#[ignore]`。
+fn maven_project(dir: &Path, broken: bool) {
+    fs::write(
+        dir.join("pom.xml"),
+        r#"<project xmlns="http://maven.apache.org/POM/4.0.0">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>probe</groupId>
+  <artifactId>probe</artifactId>
+  <version>1.0</version>
+  <packaging>jar</packaging>
+  <properties>
+    <maven.compiler.source>21</maven.compiler.source>
+    <maven.compiler.target>21</maven.compiler.target>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+  </properties>
+  <dependencies>
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <version>5.10.2</version>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <version>3.2.5</version>
+      </plugin>
+    </plugins>
+  </build>
+</project>
+"#,
+    )
+    .unwrap();
+
+    let main = dir.join("src/main/java/probe");
+    let test = dir.join("src/test/java/probe");
+    fs::create_dir_all(&main).unwrap();
+    fs::create_dir_all(&test).unwrap();
+
+    if broken {
+        fs::write(
+            main.join("Broken.java"),
+            "package probe;\n\npublic class Broken {\n    void boom() {\n        undefinedFunc();\n    }\n}\n",
+        )
+        .unwrap();
+    }
+    fs::write(
+        test.join("OkTest.java"),
+        "package probe;\n\nimport org.junit.jupiter.api.Test;\nimport static org.junit.jupiter.api.Assertions.assertEquals;\n\npublic class OkTest {\n    @Test\n    void passes() {\n        assertEquals(2, 1 + 1);\n    }\n}\n",
+    )
+    .unwrap();
+}
+
+fn maven_backend() -> JavaBackend {
+    JavaBackend::new_maven()
+}
+
+/// Maven 编译失败 → Err。
+///
+/// 实测（mvn 3.10 + surefire 3.2.5）：编译失败时**一条 `Tests run` 都不打印**，
+/// 只有 `[ERROR] COMPILATION ERROR :`。解析器对这种输出只能给 0/0，
+/// 再经 `if r.failed == 0 { "ok" }` 就会被显示成「0 个测试全部通过」。
+#[test]
+#[ignore = "requires real mvn + jdk (slow: downloads plugins/deps)"]
+fn maven_compile_failure_returns_err() {
+    let dir = tempfile::tempdir().unwrap();
+    maven_project(dir.path(), true);
+    let err = maven_backend()
+        .test(None, None, false, Some(dir.path()))
+        .expect_err("Maven 编译失败必须返回 Err，不能伪装成 0 passed / 0 failed");
+    let msg = err.to_string();
+    println!("err = {msg}");
+    assert!(
+        msg.contains("编译阶段失败"),
+        "错误信息应说明编译阶段失败，实际: {msg}"
+    );
+    assert!(
+        msg.contains("cannot find symbol"),
+        "错误信息必须透出 javac 原始诊断，实际: {msg}"
+    );
+}
+
+/// Maven 全部通过 → Ok，且 passed 正常计数。
+///
+/// 真实输出每行都带 `[INFO] ` 前缀（`[INFO] Tests run: 1, ...`），
+/// 旧的 `starts_with("Tests run:")` 一条都匹配不上，会把通过的项目报成 0。
+#[test]
+#[ignore = "requires real mvn + jdk (slow: downloads plugins/deps)"]
+fn maven_passing_project_counts_passed() {
+    let dir = tempfile::tempdir().unwrap();
+    maven_project(dir.path(), false);
+    let r = maven_backend()
+        .test(None, None, false, Some(dir.path()))
+        .expect("全部通过的 Maven 项目不得被守卫拒绝");
+    println!("passed={} failed={}", r.passed, r.failed);
+    assert_eq!(r.passed, 1, "真实 mvn 输出带 [INFO] 前缀，必须能取到计数");
+    assert_eq!(r.failed, 0);
 }
