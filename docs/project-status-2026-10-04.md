@@ -327,8 +327,8 @@ Committed_AS      ≈ 18.4 GiB / CommitLimit 21.1 GiB (87%)   ← 实际被撞�
 
 | 方案 | 预期 | 状态 |
 |------|------|------|
-| 切 `mold` | 链接器内存占用大降 | 未实测；`.cargo/config.toml` 已注明需 >16 GB |
-| `-fuse-ld=lld` 替代 GNU ld | 同上 | 未实测 |
+| 切 `mold` | 链接器内存占用大降 | **已实测：无效，且更早撞墙**（见 5.4.3） |
+| `-fuse-ld=lld` 替代 GNU ld | 同上 | 未实测；本机已默认走 `rust-lld` |
 | 调低 `overcommit_ratio` | 直接抬高 `CommitLimit` | **需 root，改系统全局设置**，项目不应决定 |
 
 前两项都是**链接器选择**，而本轮已确认崩溃正发生在链接期；
@@ -398,6 +398,66 @@ collect2: fatal error: ld terminated with signal 6 [Aborted]
 所以这里只声明「**把并发嵌套 cargo 限为 1 后未再复现**」，
 不声明概率已归零。根因仍是全机性的提交内存紧张，
 本闸门只消除了**本测试文件内部**的并发放大。
+
+### 5.4.3 mold 实测：**无效，而且更早撞墙**
+
+本机 mold 已装（`/usr/sbin/mold` 2.40.4），故把它实测掉，
+而不是继续挂着当“未验证方案”。
+
+先说**方法上踩的两个坑**，都是我自己造的：
+
+1. 第一版用**机器级 `Committed_AS`** 当指标。可这台机器上有
+   8 个 java 进程占着 ~6.4 GiB 提交量，机器级指标的波动主要由它们
+   造成，而不是链接器。实测那次 `BASE=20394 MiB` 已占上限 **96.5%**，
+   剩余余量才 728 MiB——**信号早被噪声淹没了**。
+2. 第二版改用链接器进程的 `VmHWM`，却又挑了
+   `full_system_test` —— 该文件首行是 `#![cfg(feature = "broken_tests")]`，
+   默认特性下**整个文件被编译掉**，touch 它根本不会触发链接，
+   于是测出 `LINKER_PEAK_RSS_MiB=0`。零不是“链接器很省”，是**压根没链接**。
+
+换成 `chaos_testing`（398 行、无 cfg 门控、实测能链出 4 MiB 产物）
+才拿到真实数字：
+
+| 链接器 | 链接器进程峰值 RSS | 结果 |
+|--------|------------------:|------|
+| 默认（`rust-lld`，gcc 16.2.1 驱动） | **286 MiB** | 链接成功 |
+| `mold 2.40.4` | — | **链接失败** |
+
+mold 的失败信息是：
+
+```text
+mold: fatal: .../rustcXXXXXX/list: mmap failed: Cannot allocate memory
+collect2: error: ld returned 1 exit status
+error: could not compile `rustversion` (lib) due to 1 previous error
+```
+
+**这个结果比预期更有价值。** 它不是“mold 也没省内存”，而是：
+
+- `mmap failed: Cannot allocate memory` 与 rust-lld 的
+  `EAGAIN «Resource temporarily unavailable»` **是同一面墙**——
+  都是 `vm.overcommit_memory=2` 的提交量硬上限，不是链接器算法差异；
+- 且 mold **在预热阶段（编依赖）就崩了**，比 rust-lld 崩得更早、
+  崩在更小的 crate 上（`rustversion` 而非最终大二进制）；
+- 当时全机 `Committed_AS` = 19369 MiB / 21123 MiB（91.7%），
+  余量 1754 MiB。
+
+**所以「换一个更省内存的链接器」这个思路本身就是错的**：
+省下的是**物理驻留（RSS）**，而撞的是**提交量（commit）**。
+mold 在 RSS 维度可能确实更省，但只要全机余量不足，
+`mmap` 一样会被内核拒绝。**换链接器治不了这个问题。**
+
+至此三个候选全部有了实测结论：
+
+| 方案 | 实测结论 |
+|------|---------|
+| `CARGO_PROFILE_DEV_DEBUG=0` | 降峰值 4.7%，**不足以根治** |
+| 切 `mold` | **无效**，且更早撞同一面墙 |
+| 调 `overcommit_ratio` | 需 root、改全机，**项目不做** |
+
+**最终结论**：SIGABRT 无法在**不碰系统设置**的前提下于本仓库内根治。
+仓库侧能做的只是**收窄触发面**（`CARGO_BUILD_JOBS=1` + 嵌套 cargo 闸门），
+这也是当前唯一已生效的措施。**根治需要机器所有者调高 `overcommit_ratio`
+或加内存**，不属于仓库职责。
 
 
 ### 5.5 连带发现：认知追踪落盘竞态（**已确定性复现并修复**）

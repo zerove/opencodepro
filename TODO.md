@@ -52,7 +52,7 @@
     - **关键教训**：排查须看 `Committed_AS` 而非 `free available`（后者有 10 GiB 会误导）
     - `-j 1` 不是无效：它降低并行链接数，确实降低提交峰值，只是无法消除单链接器占用
     - 根治三选一（切 mold / `CARGO_PROFILE_DEV_DEBUG=0` / 调 overcommit_ratio）：
-      `debug=0` **已实测**（仅降 4.7% 峰值，不足以根治），mold/lld **仍未实测**
+      **三者均已实测**，结论见下方「SIGABRT 根治手段」条（mold 无效、debug=0 仅降 4.7%）
     - **不改系统级 overcommit 设置**（需 root，影响该机器所有用户）
 - [x] **嵌套 cargo 撞同一堵墙（第一轮修错，第二轮才修对）** (2026-10-04)
     - 第一轮修错：`cargo_raw` 注入 `CARGO_BUILD_JOBS=1` 只管**单个** cargo 内部并行度，
@@ -68,19 +68,27 @@
     - 教训：修复后必须跑**完整**负载并看**真实退出码**，只看「4763 passed / 0 failed」会漏掉 exit 2
     - 坑：文档里的输出样例必须标 ```text，否则被 rustdoc 当 Rust doctest 编译而失败（我自己踩的）
     - 教训：单跑该测试**无法**复现，对照实验只有在原负载下才有意义
-- [ ] **SIGABRT 根治手段：已实测一部分，仍未验证** (2026-10-04)
+- [x] **SIGABRT 根治手段：三个候选全部实测完毕，均不能在仓库内根治** (2026-10-04)
     - 根因已定性：**提交内存（commit）额度耗尽**，不是真实 RAM 不足
-      - `vm.overcommit_memory=2` + `overcommit_ratio=80` → `CommitLimit ≈ 21122 MiB`
+      - `vm.overcommit_memory=2` + `overcommit_ratio=80` → `CommitLimit ≈ 21123 MiB`
       - lld 申请大块连续虚拟地址时，即便 available 还有 10 GiB 也会因**提交量超限**返回 `EAGAIN`
       - 这解释了「随机」表现：取决于当时 `buff/cache` 与其他进程的提交量
-    - 第一版 A/B **作废**：两组编译规模差 40 倍（8 vs 330 crate），崩的是 `serde_derive`
-      这个小 proc-macro 而非大二进制，不构成对照
-    - 第二版（同条件预热后重测）：`debug=0` 峰值 18868 MiB vs `debug=2` 19803 MiB
-      → 实测降 **4.7%**；但 `debug=2` 自己就出现过「预热崩、测量过」，**不能宣布修复**
-    - 尚未实测且与成因对得上：切 `mold` / `-fuse-ld=lld`（都是链接器选择）
-    - **不改系统级 `overcommit_ratio`**（需 root，影响该机器所有用户与项目）
+    - `CARGO_PROFILE_DEV_DEBUG=0`：实测降 **4.7%** 峰值，**不足以根治**
+    - 切 `mold`（本机 2.40.4）：**无效**——`mmap failed: Cannot allocate memory`，
+      与 rust-lld 的 `EAGAIN` 是**同一面墙**，且崩得**更早**（编依赖阶段就挂）
+    - 关键认知：换链接器省的是 **RSS**，撞的是 **commit**，两者不是一回事，**思路本身错了**
+    - `overcommit_ratio`：**需 root、改全机，仓库不做**
+    - **结论**：仓库侧只能**收窄触发面**（`CARGO_BUILD_JOBS=1` + 嵌套 cargo 闸门），
+      根治需机器所有者调高 `overcommit_ratio` 或加内存
     - 取证工具：`make rustc-abort-forensics`
-    - 注：仓库侧只能**收窄触发面**（见上条闸门），整个链路仍会概率性复发
+- [ ] **链接器 A/B 的方法学教训（本轮踩坑，值得记住）** (2026-10-04)
+    - **不要用机器级 `Committed_AS` 做单次对照**：本机 8 个 java 进程占 ~6.4 GiB，
+      机器级指标波动主要来自它们而非链接器。实测那次 `BASE` 已占上限 96.5%，
+      剩余余量 728 MiB，**信号被噪声淹没**
+    - **必须改用链接器进程自身的 `VmHWM`**（只增不减，读到即峰值）
+    - **测链接器前先确认目标真会链接**：曾挑 `full_system_test`，它首行是
+      `#![cfg(feature = "broken_tests")]`，默认特性下整个文件被编译掉，
+      touch 它不触发链接，测出 `RSS=0`。**零不是「链接器省」，是「压根没链接」**
 - [x] **`test_persist_survives_buffer_recreation` 竞态，已修复** (2026-10-04): 确定性复现 5/30 轮丢失 → 修复后 0/30
     - 真因：`record_cognitive_trace` 是同步函数，只 `send` 就返回；无任何 await 持久化的手段
     - `ExecutionManager` 被 `Arc` 持有且克隆进 `SelfProgrammingManager`/`StrategicManager`，**`Drop` 不是可靠刷盘点**

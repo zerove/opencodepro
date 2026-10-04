@@ -1,7 +1,13 @@
 [target.x86_64-unknown-linux-gnu]
 # linker 使用系统默认（/usr/bin/gcc on GitHub runner / Debian/Ubuntu）
 # 不再硬编码绝对路径，避免 CI 环境无法解析
-# mold 链接器需要 >16GB 可用内存；内存受限环境请用系统默认链接器
+#
+# 不要开 mold：已实测无效（2026-10-04，本机 mold 2.40.4）。
+# 链接 SIGABRT 的根因是 vm.overcommit_memory=2 的**提交量**上限，
+# 而非链接器的物理驻留（RSS）。mold 省的是 RSS，撞的仍是 commit：
+#   mold: fatal: ...: mmap failed: Cannot allocate memory
+# 即换链接器治不了这个问题，且实测崩得**更早**（编依赖阶段就失败）。
+# 详见 docs/project-status-2026-10-04.md 第 5.4.3 节。
 # rustflags = ["-C", "link-args=-fuse-ld=mold"]
 
 [alias]
