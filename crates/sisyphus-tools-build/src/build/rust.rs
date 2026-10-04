@@ -366,6 +366,12 @@ pub fn parse_test_results(stdout: &str, stderr: &str) -> TestResults {
 
     // `failures` 必须与上面计数保持同一口径：文档测试的条目同样不得进入
     // 列表。否则 CLI 会打印一个既没被计入 `failed`、调用方又无法解释的条目。
+    //
+    // 真实输出里有个容易踩空的事实：libtest 打完失败条目后，紧接着的
+    // **空行**就会把 `in_failures` 置回 false。因此下面 `---- ... ----` 与
+    // `FAILED` 两个过滤条件实际很少被触发——曾用「去掉它们」做变异，测试
+    // 依然全绿，说明那次变异并未真正改变行为，不算有效变异。真正有效的那
+    // 一处是 `!in_doc_test_block`：去掉后精确报出混入的文档测试条目。
     let mut in_failures = false;
     let mut in_doc_test_block = false;
     for line in combined.lines() {

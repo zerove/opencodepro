@@ -408,6 +408,71 @@ test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; 
 }
 
 #[test]
+fn test_parse_test_results_real_mixed_targets_with_unit_failure() {
+    // 输入是**实测抓取的真实 `cargo test` 输出**，场景为一个同时含
+    // 失败单元测试、通过集成测试、零文档测试的 crate（`--no-fail-fast`）。
+    //
+    // 这个场景同时压三件事：
+    // 1. `running 0 tests` 的文档测试块——无条目可判类型，但其
+    //    `test result:` 恒为 `0 passed`，跳过与否都不影响 `passed`；
+    // 2. 单元测试块里 libtest 同样输出**两个** `failures:`（失败条目行
+    //    之后一个、真正清单之前一个），中间夹 `---- failing stdout ----`
+    //    与 panic 文本——这些行都不得被当成失败条目；
+    // 3. 集成测试块必须正常累加，不得因文档测试块的存在而漏计。
+    //
+    // 实测解析结果：passed=2 failed=1，failures 恰为 ["failing"]。
+    let stdout = "\n\
+running 2 tests\n\
+test failing ... FAILED\n\
+test passing ... ok\n\
+\n\
+failures:\n\
+\n\
+---- failing stdout ----\n\
+\n\
+thread 'failing' panicked at src/lib.rs:5:16:\n\
+assertion `left == right` failed: intentional\n\
+  left: 2\n\
+ right: 3\n\
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\n\
+\n\
+\n\
+failures:\n\
+    failing\n\
+\n\
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\n\
+\n\
+\n\
+running 1 test\n\
+test it_passes ... ok\n\
+\n\
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\n\
+\n\
+\n\
+running 0 tests\n\
+\n\
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\n\
+";
+    let stderr = "     Running unittests src/lib.rs (target/debug/deps/failut-1609747)\n   Doc-tests failut\n     Running tests/it.rs (target/debug/deps/it-1610231)\n";
+    let r = parse_test_results(stdout, stderr);
+
+    // 2 个单元测试里 1 过 1 败 + 1 个集成测试通过 = passed 2 / failed 1。
+    assert_eq!(
+        r.passed, 2,
+        "单元测试 1 个通过 + 集成测试 1 个通过；文档测试的 0 passed 不影响\nstdout:\n{stdout}"
+    );
+    assert_eq!(r.failed, 1, "失败的单元测试必须如实计入\nstdout:\n{stdout}");
+    // panic 文本、`---- ... ----` 标题等都不得混入失败条目。
+    assert_eq!(
+        r.failures.len(),
+        1,
+        "失败条目应恰为 [failing]，实际混入: {:?}",
+        r.failures.iter().map(|f| &f.name).collect::<Vec<_>>()
+    );
+    assert_eq!(r.failures[0].name, "failing");
+}
+
+#[test]
 fn test_parse_test_results_no_test_result_line_yields_zero() {
     // cargo 进程异常退出（如被 OOM kill）时，输出里根本没有 test result 行。
     // 此时解析结果全为 0，调用方的断言会以 left:0 right:2 失败——这是正确
