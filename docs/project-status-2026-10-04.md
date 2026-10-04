@@ -459,6 +459,78 @@ mold 在 RSS 维度可能确实更省，但只要全机余量不足，
 这也是当前唯一已生效的措施。**根治需要机器所有者调高 `overcommit_ratio`
 或加内存**，不属于仓库职责。
 
+> **措辞更正**：上表「调 `overcommit_ratio`」一行只是**评估**，并未实测。
+> 该项需 root 且改全机状态，本会话未执行（也不应擅自执行）。
+> 实测过的只有 `debug=0` 与 `mold` 两项。此前若称「三者均已实测」是错的。
+
+
+### 5.4.4 验收补强：把「已修复」从单次绿灯抬到可复现结论
+
+上面 5.4.2 的闸门修复原本只有**一次** `make test-all` 绿灯支撑。
+但这故障是**概率性**的——修复前同一条压测路径 10 轮失败 1（失败率约 10%），
+所以单次通过的信息量只有 `0.9`，**不足以证明收窄生效**。补做了四项检查：
+
+**(1) 多轮采样——用真实验收路径本身**
+
+不是跑探针，而是连续跑完整的 `make test-all`（就是 CI 与人用的那条路径）：
+
+```
+round=1 MAKE_EXIT=0 passed/failed=4763/0 abort_hits=0
+round=2 MAKE_EXIT=0 passed/failed=4763/0 abort_hits=0
+round=3 MAKE_EXIT=0 passed/failed=4763/0 abort_hits=0
+```
+
+3/3 全绿、零 SIGABRT。**这不能证明失败概率归零**，但把「单次运气」
+与「真实收窄」区分开了：修复前 1/10 的失败率，连续 3 次通过的概率约 0.73，
+连过 3 次不能算强证据，但配合下面 (2)(3) 的结构性检查才站得住。
+
+**(2) CI 是否真的跑到这个测试——我先搞错了，后自己推翻**
+
+`ci.yml` 里 `toolchain-e2e` job 的注释写「rust 后端的 e2e……已在 test-light 里跑过」。
+我 grep 了一遍发现没有任何 `cargo test ... rust_backend_test_e2e`，
+一度认定**该测试在 CI 里完全没有覆盖**。
+
+**这个结论是错的。** `test-light` 用的是：
+
+```
+cargo test --workspace --exclude sisyphus-sandbox --exclude sisyphus-sandboxd \
+  --exclude sisyphus-tests --exclude sisyphus-bridge
+```
+
+`--workspace` 隐式包含**所有成员 crate 的所有测试 target**。用真实构建产物证实：
+
+```bash
+cargo test --workspace --no-run --message-format=json | grep rust_backend_test_e2e
+# "target":{"kind":["test"],...,"name":"rust_backend_test_e2e"
+```
+
+`--list` 也枚举出 7 条用例。**注释是对的，CI 确实覆盖**——是我用 grep
+推断了 `--workspace` 的语义。教训：注释与实际行为冲突时，**先跑一次真实命令**再下结论。
+
+**(3) 闸门有没有覆盖缺口**
+
+逐用例核对，确认 **7/7 全部持闸门**，无一遗漏：
+
+| 路径 | 用例数 | 说明 |
+|------|-------|------|
+| 经 `run()`（内含 `serialized`） | 3 | `doc_tests_excluded_from_passed` 等 |
+| 直接 `serialized(\|\| …)` | 4 | `real_*` 系列 |
+
+**(4) 两条会真的咬人的失败模式**
+
+- **非重入 `Mutex` 死锁**：`serialized` 里若再调 `run()` 就会自死锁。
+  静态扫描确认嵌套调用 **0 处**，安全。
+- **poison 二次毒化**：某用例 panic 后闸门被 poison，若不恢复则后续全部用例
+  连带失败、把计数彻底污染。已用 `unwrap_or_else(\|e\| e.into_inner())` 恢复。
+  以**忠实场景**（用例 A panic 并已释放锁，用例 B 随后取锁）单独复现验证：**通过**。
+
+> 复现过程中我自己的第一版探针写错了——它在主线程仍持有锁时重新取锁，
+> 那是**探针自死锁**，不是闸门缺陷。插桩定位后重写为忠实场景才得到有效结论。
+> 这里也印证了 5.4.1 的教训：**阴性/阳性结果都得先确认测的是目标本身**。
+
+**(5) 副作用确认**：`.cargo/config.toml` 无生效的 linker 覆盖，
+默认链接器未被污染（之前搜到的 `link-args` 只是注释掉的 mold 示例）。
+
 
 ### 5.5 连带发现：认知追踪落盘竞态（**已确定性复现并修复**）
 

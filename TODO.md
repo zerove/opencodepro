@@ -52,7 +52,8 @@
     - **关键教训**：排查须看 `Committed_AS` 而非 `free available`（后者有 10 GiB 会误导）
     - `-j 1` 不是无效：它降低并行链接数，确实降低提交峰值，只是无法消除单链接器占用
     - 根治三选一（切 mold / `CARGO_PROFILE_DEV_DEBUG=0` / 调 overcommit_ratio）：
-      **三者均已实测**，结论见下方「SIGABRT 根治手段」条（mold 无效、debug=0 仅降 4.7%）
+      **实测过 mold 与 debug=0 两者**；`overcommit_ratio` 仅**评估**未实测（需 root），
+      结论见下方「SIGABRT 根治手段」条（mold 无效、debug=0 仅降 4.7%）
     - **不改系统级 overcommit 设置**（需 root，影响该机器所有用户）
 - [x] **嵌套 cargo 撞同一堵墙（第一轮修错，第二轮才修对）** (2026-10-04)
     - 第一轮修错：`cargo_raw` 注入 `CARGO_BUILD_JOBS=1` 只管**单个** cargo 内部并行度，
@@ -62,6 +63,14 @@
     - 第二轮修复：测试文件内**跨用例全局 `Mutex` 闸门**，并发嵌套 cargo 限为 1
       - `unwrap_or_else(|e| e.into_inner())` 防一个用例 panic 后**二次毒化**后续全部用例
     - 对照压测（`--test-threads=8`）：修复前 10 轮失败 1，修复后 26 轮 0 失败
+    - **验收补强**（原仅有单次绿灯，概率性故障不足以据此宣称修复）：
+      - 真实验收路径连续 3 轮完整 `make test-all`：`MAKE_EXIT=0`、`4763/0`、`abort_hits=0`
+      - CI 覆盖已证实：`test-light` 的 `--workspace` 隐式含该 target
+        （`cargo test --workspace --no-run --message-format=json` 里可见 `rust_backend_test_e2e`）
+        ——**我曾用 grep 误判为「CI 完全没覆盖」，是自己推翻的错误结论**
+      - 闸门覆盖 7/7 用例无缺口；`serialized` 内无嵌套调用故非重入 Mutex 不会死锁
+      - 探针坑：验证 poison 恢复时第一版在持锁状态下重入 → **探针自死锁**，
+        非闸门缺陷；插桩后按忠实场景重测才得出有效结论
     - 坑：注入用**子进程作用域**（`run_command_with_env`）而非 `std::env::set_var`（后者多线程下不健全）
     - 坑：`--test-threads=1` 能救是因为限制 cargo **个数**，不是 `CARGO_BUILD_JOBS` 起了作用（归因曾写反）
     - 坑：libtest **捕获通过用例的 stdout**，`println!` 默认根本不出现在日志里，别拿它当诊断手段
