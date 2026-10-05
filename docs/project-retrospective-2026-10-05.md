@@ -1118,6 +1118,69 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out;
 
 ### 本轮实测确认的结论汇总
 
+#### 新发现（尚未修复，已取证）：`cognitive_loop.convergence_threshold` 配置项未接线
+
+**这是本轮为响应「检查路径太窄」而扩大范围后新挖出的真实缺陷，不在原报告结论内。**
+
+现象：文档与配置模板都承诺该值控制收敛，但代码只用它打日志。
+
+- `config.example.toml:197` 与 `book/src/performance.md:89` 写着
+  `convergence_threshold = 0.15  # 偏差低于此值时停止`
+- `book/src/configuration.md:130/269` 将其列为正式配置项与
+  `SISYPHUS_COGNITIVE_LOOP_CONVERGENCE_THRESHOLD` 环境变量，默认 `0.15`
+- 但 `StrategicManager::apply_cognitive_loop_config`
+  （`strategic_manager/mod.rs:199-203`）仅把 `cl.convergence_threshold`
+  写进 `tracing::info!` 日志，**没有任何代码读取它做判定**
+
+实际生效的阈值来自完全另一条路径：
+
+```
+cognitive_loop.rs:118  let (max_iterations, convergence_threshold) = {
+    let depth = ComplexityAnalyzer::analyze(...)   // 由图结构 + 经验库打分
+    depth.to_config()                               // Low/Medium/High/Ultra
+}
+```
+
+`ComplexityAnalyzer::to_config()`（`complexity.rs:17-24`）的映射为
+`Low→0.2`、`Medium→0.05`、`High→0.01`、`Ultra→0.005`，
+`final_score` 由 `structural_score*0.4 + rarity_score*0.6` 算出
+（`complexity.rs:80-89`）。该阈值随后传给
+`SisyphusSupervisor::new`（`cognitive_loop.rs:850`），
+并直接决定 `deviation > threshold * success_probability`
+是否成立（`supervisor.rs:120-122`），即**是否触发 StrategicPivot**。
+
+取证方式（临时插桩后已全部移除，`git status` 干净）：在
+`supervisor.rs` 的 pivot 分支与 `cognitive_loop.rs` 的计数处各打一条
+探针，构造「偏差 0.9 连跑两轮」的场景，实测输出：
+
+```
+PROBE supervisor pivot: dev=0.9 eff_thr=0.001 base=0.01 prob=0.1
+PROBE iter=0 exec_pivot=true real_count=0
+PROBE iter=1 exec_pivot=false real_count=1
+```
+
+`base=0.01` 而非配置里的 `0.15`，直接证明配置值从未到达 supervisor。
+
+影响面：用户改 `convergence_threshold` 只会影响日志，不会改变循环行为；
+且由于真实阈值完全由图结构与经验库打分决定，`Low` 档的 `0.2` 意味着
+**偏差在 0.2~1.0 之间的迭代都不会 pivot**，这与文档「偏差低于此值时停止」
+的描述方向相反（一个管停止、一个管 pivot，本就是两个不同语义）。
+
+为何本轮不直接修：修法有两种且**行为差异很大**——
+（a）删掉该配置项并改文档；（b）让配置真正参与判定（需决定它与
+`ComplexityAnalyzer` 阈值谁优先，以及如何保留自适应语义）。
+这属于配置契约变更，会改变现网行为，应由维护者决策而非本轮复盘顺手改。
+本轮只保证结论有据可查。
+
+连带纠正本轮自身的一个错误假设：我最初以为夹具里 `0.01` 是
+「比生产默认 0.15 严格 15 倍的测试专用值」，据此想补「生产阈值下的
+P0.1 用例」。插桩后发现前提不成立——`0.01` 对应
+`CognitiveDepth::High`，是**真实可达**的一档（`final_score ∈ [0.6, 0.85)`），
+而非测试专用值。据此撤回该方向的改动（已 `git checkout` 还原），
+并改为记录上面这条真正的配置缺陷。
+教训：**看到测试夹具里的魔法数，先查它在生产路径上对应什么，
+再判断它是不是「测试专用」。**
+
 - **代码卫生确实良好**：`panic!` 0 处、真 `unsafe` 0 处、`todo!()`/`unimplemented!()` 0 处。
 - **`#[ignore]` 基本合理**：26 条属性中 24 条为真，理由经实跑核实成立；1 条理由错误已改；
   2 条是 fixture 字符串内的假 ignore。
