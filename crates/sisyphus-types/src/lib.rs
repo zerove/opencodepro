@@ -3,6 +3,10 @@
 //! 定义 Config、ExecutionContext、SOPGraph、ToolExecutor 等核心类型，
 //! 以及错误类型与跨 crate 通用 trait。
 
+// `cast_precision_loss` 属 pedantic 组，本项目 clippy 以默认组运行（无
+// [workspace.lints]，未启用 pedantic），此处为预防性放行：若将来启用 pedantic，
+// 该 lint 会在本 crate 触发（实测 sisyphus-types 命中多处），届时需逐处改为
+// 受检转换而非整体放行。
 #![allow(clippy::cast_precision_loss)]
 // `#[async_trait]` 宏展开的方法自带 `#[must_use]`，且返回的
 // `Pin<Box<dyn Future>>` 也被视为 must_use，新版 nightly clippy
