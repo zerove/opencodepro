@@ -15,7 +15,9 @@
 | `#[allow(dead_code)]` | 11 处 / 6 文件 | 需关注 |
 | `#[allow(unused/clippy)]` | 32 处 / 14 文件 | **偏高** |
 | 测试文件 : 生产文件 | 183 : 364 | 合理 |
-| 真实工具链 e2e | **13 条** | 偏少 |
+| `#[test]` 函数总数 | **5098**（单元 1420 / 集成 3668） | 数量充足 |
+| 真实工具链 e2e（`#[ignore]`，需真工具链） | **13 条**（均在 `tools-build/tests/language_backend_guards.rs`） | 偏少 |
+| `#[ignore]` 测试总数 | 30 条 | 合理 |
 
 **最反直觉的结论：这个项目的代码卫生比它给自己的印象好得多。**
 AGENTS.md 里那套「不得使用 unwrap()」「不得 panic」的规则，从数据看**基本被切实执行了**。
@@ -40,6 +42,8 @@ prompt 字符串里的一句英文 "Audit `unsafe` blocks for undefined behavior
 
 ## 3. 测试构成
 
+- **测试函数总数 5098**（实测 `#[test]` / `#[tokio::test]` 标注）：
+  单元测试 1420（`src/` 内）+ 集成测试 3668（`tests/` 目录内）。
 - 测试文件 183 个，生产源文件 364 个。
 - 单个测试文件规模极大：`sisyphus-types/tests/asset_misc.rs` **5435 行**、
   `types_misc.rs` 4066 行、`asset.rs` 3847 行。这类"巨型 misc 测试文件"通常
@@ -100,9 +104,7 @@ test result: FAILED. 0 passed; 2 failed
 
 ## 4. 真正值得处理的问题（按优先级）
 
-### P1 — 核心认知引擎的端到端验证证据不足（**未证实，属推测**）
-
-这是我认为**最值得投入**的方向，但我必须标明：**我没有测量证据**。
+### P1 — 核心认知引擎的端到端验证证据不足（**本轮已完成测量，结论修正**）
 
 `sisyphus-tests` 里最接近端到端的是 `test_full_pipeline` 和
 `test_dag_execution`，前者因 schema 不匹配被 ignore，后者用
@@ -110,9 +112,21 @@ test result: FAILED. 0 passed; 2 failed
 **predict → execute → reflect → evolve 这条主干，在本次复盘能看到的范围内，
 没有一条真正跑通「真实工具 + 真实 LLM 接口」的完整链路。**
 
-4763 个测试里绝大多数是不碰外部依赖的单元测试。数量与信心不成正比。
-下一步该怎么查：看 `evals/` 里有多少用例真的跨越进程边界拉起了组件，
-而不是在内存里 mock 一遍。**这需要单独一轮测量。**
+4763 这个数字是我最初写的估计，**实测为 5098**（见第 3 节）。
+其中大多数是**纯逻辑层**测试——`sisyphus-types`(1447) + `sisyphus-intel`(706) = 2153 个，
+占集成测试的 59%，这两个 crate 本身就是纯计算，不需要外部依赖。
+真正需要外部依赖的 `sisyphus-tests` 只有 81 个。
+
+跨进程/跨组件边界的证据（实测，`crates/*/tests/` 内引用数）：
+`tonic` 7 个文件、`sisyphus_bridge::` 7 个文件、`TcpListener` 3 个、
+`wasmtime` 2 个、`sisyphus_sandbox::` 2 个——**集中在少数几个 bridge/sandbox 测试文件**。
+
+`evals/` 有 19 个测试函数，但**不在 `cargo test --workspace` 默认范围内**
+（workspace members 未包含 `evals`），需单独跑。
+
+> **注意这条结论与我最初的推测方向相反**：我原以为「测试都堆在内存 mock 里」，
+> 实测是「测试确实很多，但集中在不需要外部依赖的纯逻辑 crate」，
+> 而需要跨组件的那部分（evals + bridge e2e）不在默认测试路径上。
 
 ### P2 — `#[allow(unused/clippy)]` 32 处，集中在认知主循环 ✅ **已完成**
 
@@ -197,7 +211,7 @@ types_misc 4066 + asset 3847 + types_misc_v2 2531）。这类文件会持续吸�
 |---------|------|---------|
 | `sisyphus-tests` 两条 `#[ignore]` 是否可通过 | **已完成**（不可通过，理由成立） | — |
 | `hook_overhead.rs` 的 `#[ignore]` 是否仍合理 | **部分**：理由（耗时基准）本身成立，但未实跑 | 编译期 SIGABRT |
-| 认知主循环端到端覆盖真相（P1） | **未测量** | 需专门一轮，本次仅列为推测 |
+| 认知主循环端到端覆盖真相（P1） | **已完成**：方向与原推测相反，见第 4 节 P1 | — |
 | `#[allow(unused)]` 11 处逐处审计（P2） | **已完成**：2 处死代码已删，91 测试通过 | — |
 
 **本报告不含任何未标注为「实测」的结论。**
