@@ -77,7 +77,7 @@ prompt 字符串里的一句英文 "Audit `unsafe` blocks for undefined behavior
 | `tools-build/tests/language_backend_guards.rs` ×13 | requires real toolchain | **成立**，本会话实跑通过 |
 | `bridge/tests/hook_overhead.rs:152` | 耗时基准，绝对值随机器而变 | **成立（已实跑）**：裸流自身跨运行波动可达 **35%**，任何硬编码门限必然 flaky |
 | `tools-llm/tests/llm_availability.rs` | 需要真实 API key 与网络 | **成立** |
-| `sisyphus-tests/src/lib.rs:147,309` | Requires mock LLM that returns valid SOP JSON | **已修复**（提交 `4f2c1e8`）：mock 补齐 schema 后两条测试转正 |
+| `sisyphus-tests/src/lib.rs:147,309` | Requires mock LLM that returns valid SOP JSON | **已修复**（提交 `d80a7ea`）：mock 补齐 schema 后两条测试转正 |
 
 最后一条我原本**强烈怀疑是过期理由**：注释说「需要能返回合法 SOP JSON 的
 mock LLM」，但 `setup_kernel` 里明明已经注入了
