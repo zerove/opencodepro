@@ -169,7 +169,7 @@ assert_eq!(LanguageBackend::name(&backend), "node");
 
 | 分组 | 条数 | 实跑结果 | 判定 |
 |------|------|----------|------|
-| `language_backend_guards.rs` | 13 | **12 passed, 1 failed** | 理由成立 |
+| `language_backend_guards.rs` | 13 | **13 passed**（限制 JVM 堆后全部通过） | 理由成立 |
 | `web.rs`（需网络） | 2 | **2 passed**（修复后） | 发现并修复 bug |
 | `team_integration.rs` | 6 | **6 passed in 0.00s（实际未执行）** | 静默跳过，已修 |
 | `llm_availability.rs` | 1 | failed（400 invalid key） | 理由成立 |
@@ -228,7 +228,7 @@ error: could not compile `sisyphus-bridge` (lib)
 已把理由改为**真实的阻塞原因**，并删除误导性注释（提交随本节一并提交）。
 这与 AGENTS.md「bridge 在 1.96.0 stable 有 ICE / OOM」的记录一致。
 
-#### 3.4.3 核实：`language_backend_guards.rs` 13 条理由成立
+#### 3.4.3 核实：`language_backend_guards.rs` 13 条理由成立（本轮已全部跑通）
 
 本机实际具备 **go / python3 / pytest / mvn / java / node** 全部工具链，
 因此「requires real toolchain」这个理由字面上看起来是「自我否定」的。
@@ -239,16 +239,39 @@ test result: FAILED. 12 passed; 1 failed; 0 ignored
 ```
 
 **12 条通过**。唯一失败的是 `maven_compile_failure_returns_err`，
-失败原因是 **JVM OOM**，不是代码缺陷：
+失败原因是 **JVM OOM**：
 
 ```
 There is insufficient memory for the Java Runtime Environment to continue.
 Native memory allocation (mmap) failed ... error='Not enough space' (errno=12)
 ```
 
-即：忽略理由成立，但 `mvn` 那 2 条比别的更重（要起 JVM + 下载插件）。
-本机 19 GB 内存、可用约 9 GB，仍不足以让 JVM 起来。
-这条属于**环境限制**，不是可以靠改测试解决的问题。
+**我当时把它归类为「环境限制」，这个结论下得太早了。** 实测发现真正原因是
+**JVM 默认堆预留过大**，而不是机器内存不够：
+
+```
+$ java -XX:+PrintFlagsFinal -version | grep MaxHeapSize
+size_t MaxHeapSize = 5247074304   # 5 GB
+```
+
+限制堆之后 JVM 立即正常启动，两条 maven 测试全部通过：
+
+```bash
+$ MAVEN_OPTS="-Xmx512m -XX:MaxMetaspaceSize=128m" \
+    cargo test -p sisyphus-tools-build --test language_backend_guards -- --ignored maven
+
+test maven_compile_failure_returns_err ... ok
+test maven_passing_project_counts_passed ... ok
+test result: ok. 2 passed; 0 failed; 0 ignored; 11 filtered out; finished in 27.06s
+```
+
+即 `language_backend_guards.rs` 的 **13 条 `#[ignore]` 全部可以跑通**，
+且代码侧无需任何修改。忽略理由成立，但这是一个**可通过环境变量解决**的阻塞，
+不应写成「无法验证」。
+
+> 这条 `maven_compile_failure_returns_err` 守的是一个真实回归：
+> 注释里写明「编译失败时一条 `Tests run` 都不打印」，
+> 旧解析器会把它报成「0 个测试全部通过」。属于有价值的回归防护。
 
 #### 3.4.4 排除误报：`rust_backend_test_e2e.rs` 的 2 条不是真的 ignore
 
@@ -562,8 +585,8 @@ cargo test  -p sisyphus-core --lib   # 91 passed; 0 failed; 0 ignored
 | `#[allow(unused)]` 11 处逐处审计（P2） | **已完成**：2 处死代码已删，91 测试通过 | — |
 | 全量 26 条 `#[ignore]` 逐条实跑 | **已完成**，见 3.4：13 条工具链、2 条网络、1 条 LLM、1 条 hook、1 条 UDS 均已跑过 | — |
 | `team_integration` 6 条的真实行为 | **已完成**：实跑发现静默跳过假绿，已修 | — |
-| `maven_compile_failure_returns_err` | **未完成**：本机 JVM 起不来（19 GB 内存、可用 9 GB 仍 OOM） | **环境限制**，非代码问题 |
-| `hook_overhead.rs` / `jcode_call_chain_test.rs` 的**编译** | **未完成**：两者均需编译 bridge 默认特性，本机 rustc OOM | **环境限制**，见 3.4.2 |
+| `maven_compile_failure_returns_err` | **已完成（已突破环境限制）**：原因是 JVM 默认堆预留 5 GB，`MAVEN_OPTS="-Xmx512m"` 后 13 条工具链测试全部跑通 | — |
+| `hook_overhead.rs` / `jcode_call_chain_test.rs` 的**编译** | **未完成**：4 种手段均 OOM（rustc / rust-lld / cranelift-codegen / opentelemetry_sdk） | **环境限制**，见 3.4.7 |
 | `team_integration` 6 条在**真实 LLM 配置下**的运行结果 | **未完成**：本机无 `LLM_API_KEY`/`ENDPOINT`/`MODEL` | **环境限制** |
 | **真实工具 + 真实 LLM API 的完整端到端链路** | **仍未覆盖**：当前通过的是结构正确的 Dummy LLM + 内存执行器 | **环境限制**，见 P1 |
 
@@ -587,3 +610,35 @@ cargo test  -p sisyphus-core --lib   # 91 passed; 0 failed; 0 ignored
   2 条是 fixture 字符串内的假 ignore。
 - **`#[ignore]` 会掩盖坏测试**：`webfetch` 那条一旦按理由启用就会立即失败——
   长期跳过的测试可能从未被真正执行过。
+
+#### 3.4.7 确认：bridge 编译阻塞是真实的环境限制
+
+与 maven 不同，bridge 这一项我尝试了多种方式均**未能**突破，
+因此「环境限制」的结论经过实测检验，不是推测。
+
+试过的手段与结果：
+
+| 手段 | 结果 |
+|------|------|
+| 默认并行度编译 `sisyphus-bridge` | `rustc-LLVM ERROR: out of memory`（rustc） |
+| `CARGO_BUILD_JOBS=1` + `DEBUG=0` | rustc 通过，但 **rust-lld 链接器** OOM（`ld terminated with signal 6`） |
+| 追加 `-Clink-arg=-Wl,--threads=1` | `cranelift-codegen`（wasmtime 依赖）rustc OOM |
+| `cargo test -p sisyphus-bridge --no-default-features --lib`（**CI 实际用的路径**） | `opentelemetry_sdk` rustc OOM |
+
+**这不是某个 crate 的问题，而是内存总量不足。** 本机 20 GB 内存、
+当前可用约 10 GB，而长期运行的基础设施已占用约 6 GB：
+
+| 进程 | RSS |
+|------|-----|
+| nacos (`-Xms1g -Xmx2g`) | 1471 MB |
+| skywalking java | 1318 MB |
+| elasticsearch jdk | 857 MB |
+| 5 个 `UseG1GC -Xmx256m` java | 约 2900 MB |
+
+这些**不是本项目进程**，不应由本次审计终止。
+在可用内存只有约 10 GB 的情况下，
+`cranelift-codegen` 与 `opentelemetry_sdk` 这类大型 codegen crate
+均无法完成编译。
+
+因此 `hook_overhead.rs` 与 `jcode_call_chain_test.rs` 两条确实无法在本机验证，
+**维持 `#[ignore]` 是正确的**，且这个结论现在有了 4 次独立尝试的实测支撑。

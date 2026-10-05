@@ -23,6 +23,18 @@
 //!     -- --ignored --test-threads=1
 //! ```
 //!
+//! **内存不紧张时（> 4 GB 可用）实测 13 条全部通过。** 若 `mvn` 用例报
+//! `There is insufficient memory for the Java Runtime Environment to continue`
+//! 或 `Native memory allocation (mmap) failed ... errno=12`，
+//! 原因是 JVM 默认把堆预留到 5 GB（见 `java -XX:+PrintFlagsFinal -version`
+//! 的 `MaxHeapSize`），而非实际需要那么多。限制堆即可，无需改代码：
+//!
+//! ```sh
+//! MAVEN_OPTS="-Xmx512m -XX:MaxMetaspaceSize=128m" \
+//!     cargo test -p sisyphus-tools-build --test language_backend_guards \
+//!     -- --ignored --test-threads=1
+//! ```
+//!
 //! 每个探针工程都在测试内用 `TempDir` 现造，不依赖任何外部目录或环境变量。
 
 use sisyphus_tools_build::build::golang::GoBackend;
@@ -445,7 +457,7 @@ fn maven_backend() -> JavaBackend {
 /// 只有 `[ERROR] COMPILATION ERROR :`。解析器对这种输出只能给 0/0，
 /// 再经 `if r.failed == 0 { "ok" }` 就会被显示成「0 个测试全部通过」。
 #[test]
-#[ignore = "requires real mvn + jdk (slow: downloads plugins/deps)"]
+#[ignore = "requires real mvn + jdk; if JVM OOMs set MAVEN_OPTS=-Xmx512m (see module docs)"]
 fn maven_compile_failure_returns_err() {
     let dir = tempfile::tempdir().unwrap();
     maven_project(dir.path(), true);
@@ -469,7 +481,7 @@ fn maven_compile_failure_returns_err() {
 /// 真实输出每行都带 `[INFO] ` 前缀（`[INFO] Tests run: 1, ...`），
 /// 旧的 `starts_with("Tests run:")` 一条都匹配不上，会把通过的项目报成 0。
 #[test]
-#[ignore = "requires real mvn + jdk (slow: downloads plugins/deps)"]
+#[ignore = "requires real mvn + jdk; if JVM OOMs set MAVEN_OPTS=-Xmx512m (see module docs)"]
 fn maven_passing_project_counts_passed() {
     let dir = tempfile::tempdir().unwrap();
     maven_project(dir.path(), false);
