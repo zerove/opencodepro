@@ -2158,8 +2158,9 @@ fn failing_node_sop() -> Arc<SOPGraph> {
 ///    空串既不含 `Error` 也不含 `ResourceExhausted`，因此命中的是
 ///    **`else` 臂的 0.1**，而不是同一 `if` 的 0.8 臂；
 /// 4. `effective_threshold = base * max(success_prob, 0.1)`，
-///    测试里 `MockSimulator` 给 0.1、阈值取 Low 档，故 base = 0.2、
-///    effective = 0.02，0.1 > 0.02 触发 `StrategicPivot`；
+///    `MockSimulator` 首次给 0.1，队列耗尽后回退 0.5；
+///    探针实测两次调用的 base 均为 **0.01**（不是 Low 档的 0.2），
+///    effective 分别为 0.001 与 0.005，0.1 > 二者均触发 `StrategicPivot`；
 /// 5. 唯一迭代只产出 pivot 占位文本 → `AllIterationsPivoted`。
 ///
 /// 变异证据（已实测，均使本用例失败）：

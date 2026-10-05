@@ -847,10 +847,18 @@ a successful iteration was replaced by pivot placeholder text:
 真正决定 pivot 的是同一 `if` 的 `else` 臂 **0.1**。已按实测结果重写注释，
 并把「哪些变异无效」也写进去，避免后人重复踩。
 
-真实链路（已由变异反推确认）：执行失败 → 轨迹为空 →
+真实链路（已由变异 + 临时插桩反推确认）：执行失败 → 轨迹为空 →
 `output.indicates_failure()` 跳过快速通道 → 空串命中兜底 `else` 臂 0.1
-→ `effective_threshold = 0.2 × 0.1 = 0.02`，0.1 > 0.02 触发 `StrategicPivot`
-→ 唯一迭代只产占位文本 → `AllIterationsPivoted`。
+→ 插桩实测 `base = 0.01`、`prob = 0.1 / 0.5`（`MockSimulator` 队列耗尽
+后回退 0.5），`effective = 0.001 / 0.005`，0.1 均大于二者 → 触发
+`StrategicPivot` → 唯一迭代只产占位文本 → `AllIterationsPivoted`。
+
+插桩已移除（`git status` 确认 `sisyphus-intel` 无残留改动）。
+
+**注意**：我最初在注释里写「阈值取 Low 档，base = 0.2」，同样是错的——
+实测 base 是 **0.01**。这与上面的 0.8/0.1 误判是同一类错误：
+**先按直觉写下结论，再用变异反推修正**。本轮至少有 3 处注释
+（驱动分支、阈值档位、prob 序列）是在实测后才准确的。
 
 core lib 测试由 **97 passed 变为 98 passed**（新增本用例）。
 
