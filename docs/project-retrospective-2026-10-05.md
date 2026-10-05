@@ -560,7 +560,7 @@ cargo test   -p sisyphus-core --lib   # 91 passed; 0 failed; 0 ignored
 | `clippy::cast_precision_loss` | 6 | **属 pedantic 组，本项目未启用**（无 `[workspace.lints]`），当前完全失效。启用 pedantic 后 `cli` 命中 50 处、`metrics` 3 处，故保留作预防性放行并加注说明 |
 | `deprecated` | 2 | **已核实**：删掉后报 `use of deprecated field`，属协议兼容 shim。`anti_entropy.rs:224` 的命中是注释里引用该属性名，非真实属性 |
 | `unused_imports` | 2 | `core/lib.rs:410` 已验证正当（删掉后报 `unused import: kernel::*`） |
-| `clippy::upper_case_acronyms` | 2 | **已实测必要**：命中 2 处（`asset.rs`） |
+| `clippy::upper_case_acronyms` | 2 | **本轮补做删除验证**（此前仅记「实测必要」而无触发计数）：删除 `asset.rs` 两处属性后 clippy 触发 2 条 `name \`SOP\` contains a capitalized acronym`（`asset.rs:13` 的 `SOP` 与第 35 行 `SOP(SOPGraphConfig)` 的 `SOP` 前缀）。改名会波及全仓 API，属破坏性变更，豁免正当 |
 | `clippy::type_complexity` | 2 | 结构体字段嵌套较深（`AnomalyDetector.history` 等），拆分会降低内聚性 |
 | `unused_variables` | 1 | **本轮已删 3 处失效的**（`cognitive_loop.rs`），余下 1 处在 `bridge_service.rs`，删掉后报 unused variable |
 | `unused_mut` | 1 | `bridge_service.rs`，在 `#[cfg(feature=\"sandbox\")]` 内，已验证正当 |
@@ -644,19 +644,43 @@ PROBE SUMMARY ok=20 biz_err=0
 第 5 个 `test_execute_tool_strategic_next_goal` 断言 `outcome.success` 为真，
 实测该「成功」是假的，已改为断言「记录与实际发生的事自洽」并重命名。
 
-### P2.7 — 遗留：`ActionType` 语义标签被当作可执行 `tool_id`（未修，需独立决策）
+### P2.7 — 遗留：规划器合成的 `tool_id` 全部指向未注册的 `fast_tool`（未修，机制已纠正）
 
 修复 `AllIterationsPivoted` 后，`test_execute_tool_strategic_next_goal` 暴露出
-更深层的契约问题：
+更深层的契约问题。**本节上一版对机制的描述是错的**（详见下方「机制纠正」），
+真实故障路径依然存在，但根因与原先记述不同。
 
-- 规划器合成的动作是**语义标签**：`ActionType::Fetch → "fetch"`，与
-  `process`/`sink`/`search`/`validate` 同级（`sisyphus-intel/src/synthesis.rs:120`）
-- 真实工具名是 `builtin:web_fetch`（`bridge/src/tools.rs:52`）
-- 标签被当作 `tool_id` 塞进 `WasmSOPNode`，无 `builtin:` 前缀 →
-  `ExecutorRouter` 落到 default 执行器 → 无 sandbox 时为 `NoopToolExecutor` → 必然失败
+**实测确认的真实机制**：
 
-**这不是测试夹具问题**：生产中规划器合成任何未知动作都会走同一条失败路径。
-本轮只让它「如实失败」，未改规划器契约——那会牵动工具注册表与规划器的
+- 规划器合成的 `tool_id` 来自 `tool_id_for_action`
+  （`sisyphus-intel/src/synthesis.rs:108`），5 种动作
+  **全部硬编码返回同一个 `"fast_tool"`**（第 110-114 行）
+- `fast_tool` 在全仓**没有任何注册**：bridge 注册表只有
+  `builtin:file_read`/`bash_exec`/`web_fetch` 等 13 个真实工具
+  （`bridge/src/tools.rs:8-64`）；`fast_tool` 只出现在 intel 自身源码、
+  benches、`integration_stress.rs` 与 core 的测试夹具里
+- 无 `builtin:` 前缀 → `ExecutorRouter` 落到 **default 执行器**
+  （`types/src/lib.rs:539` 实测确认：无前缀回退 default）
+- bridge 里 default 是 **WASM 执行器**（`bridge_service.rs:363`
+  `ExecutorRouter::new(wasm_executor)`）；仅在 `--no-default-features`
+  无 sandbox 时才退化为 `NoopToolExecutor`（第 330 行）
+
+即：规划器合成的任意动作都会把 `"fast_tool"` 交给 WASM 执行器尝试
+加载一个名为 `fast_tool` 的 WASM 模块，必然失败。
+
+**机制纠正**：上一版称「`ActionType::Fetch → "fetch"`（`synthesis.rs:120`）
+的语义标签被当作 `tool_id`」。实测 `synthesis.rs:120` 是 `action_label()`
+函数，返回值仅用于节点 `name` 与描述文本；同一文件第 182、197、203、234 行
+调用点显示 `name: action_label(...)` 与 `tool_id: tool_id_for_action(...)`
+**始终成对且分开使用**，语义标签从未被赋给 `tool_id`。
+
+故障仍然发生，但真实原因是 `tool_id_for_action` 是个未完成的占位实现
+（5 个分支返回同一值，且有测试 `test_tool_id_all_actions_return_fast_tool`
+把这个行为**固化为期望**），而非标签/ID 混用。
+
+**为何仍不修**：正确修法需要为每种动作类型指定真实工具
+（`Fetch → builtin:web_fetch`、`Search → builtin:web_search`、
+`Process/Sink/Validate` 尚无对应工具），这会牵动工具注册表与规划器的
 职责边界，超出缺陷修复范围，需要独立设计。
 
 ### P0.2 — 预测期 `Logical Flaw` 污染执行结果，伪造「Strategic Pivot」占位文本（本轮已修）
@@ -949,7 +973,7 @@ CI 的 `bridge-integration-test` job 用 `--no-default-features`，不受影响�
 | 2 处 `#[allow(deprecated)]` | **已完成**：删掉后编译器报 `use of deprecated field`（`SyncRequest::offset` / `SyncPageEnd::next_offset`），在 `-D warnings` 下会编译失败，属正当协议兼容 shim | — |
 | 43 处 `clippy::*` 豁免 | **已完成审计**：逐处删除后跑 clippy 比对。37 处实测必要（附触发计数）；6 处 `cast_precision_loss` 属未启用的 pedantic 组，当前失效但保留 | — |
 | bridge 战略目标用例断言过时 | **已修复后又修正**（`d53b88b` → `71b01ac`）：先按「dummy 能回显合法配置」改写为断言成功；随后 P0 修复证明该「成功」本身是假的（工具从未真正执行），再次改写为断言「记录与实际发生的事自洽」，用例重命名为 `..._records_kernel_outcome_with_dummy` | — |
-| `ActionType` 语义标签被当作可执行 `tool_id` | **未完成**（P2.7）：`synthesis.rs:120` 的 `Fetch → "fetch"` 是语义标签，真实工具为 `builtin:web_fetch`；无前缀必然落到 `NoopToolExecutor`。生产中规划器合成未知动作会走同一失败路径。本轮只让它如实失败，未改规划器契约 | **需独立设计**，超出缺陷修复范围 |
+| `ActionType` 语义标签被当作可执行 `tool_id` | **未完成**（P2.7），但**机制描述已纠正**：并非标签被当作 `tool_id`（`action_label` 与 `tool_id_for_action` 始终分开使用）；真实根因是 `tool_id_for_action` 5 个分支全部返回未注册的 `"fast_tool"`，经 default 路由落到 WASM 执行器必然失败。且有测试把该占位行为固化为期望 | **需独立设计**（为每种动作指定真实工具 ID） |
 | `execute_sop` / `execute_tool` 把执行失败报告为 `SUCCESS` | **P0，已修**（`71b01ac`）：新增 `CoreError::AllIterationsPivoted`，全程零真实产出时如实返回 Err。实测 20 路由 20/20 假 SUCCESS 变为 20/20 真 Internal。连带修正 5 个依赖「伪造成成功」的测试 | 已修 |
 
 **本报告不含任何未标注为「实测」的结论。**
