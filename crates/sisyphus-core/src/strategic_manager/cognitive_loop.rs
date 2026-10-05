@@ -206,6 +206,22 @@ impl StrategicManager {
         let mut final_result = NodeOutput::default();
         let mut final_evolved: Option<Arc<SOPGraph>> = None;
         let initial_ctx_for_iter = initial_ctx;
+        // 统计「本轮产出的是真实执行结果」而非 StrategicPivot 占位文本的次数。
+        //
+        // 背景：`execute_phase` 捕获 `CoreError::StrategicPivot` 后不向上报错，
+        // 而是构造 `"Strategic Pivot: ..."` 文本当作节点输出（见 execute_phase
+        // 内的 result 分支）。若不做区分，一轮里所有节点都失败的情况会被
+        // 伪装成正常执行，最终 `run_cognitive_loop` 无条件 `Ok`，桥接层再
+        // 硬编码 status="SUCCESS"，调用方将无法分辨「执行成功」与「一执行就崩」。
+        //
+        // 语义边界：**只有当全部迭代都只产出 pivot 占位文本、零真实执行结果时**
+        // 才判定为失败；只要有任意一轮拿到了真实执行结果，就仍然视为成功
+        // （中途 pivot 后恢复是合法路径）。
+        //
+        // 关键：统计依据是 `exec_pivot`（执行期 pivot 信号）而**不是**
+        // `pivot_reason`。后者有两个来源——预测阶段的「Logical Flaw Detected」
+        // 与执行阶段的 StrategicPivot——前者并不代表本轮没执行。
+        let mut real_result_iterations: usize = 0;
 
         for iteration in 0..max_iterations {
             let iter_start = Instant::now();
@@ -220,6 +236,9 @@ impl StrategicManager {
 
             // 1. 预测（Predict）
             let predict_span = cognitive_loop_span(sop_id, iteration);
+            // `exec_pivot` 只标记**执行阶段**发生的 StrategicPivot，与
+            // `pivot_reason` 的预测期赋值（Logical Flaw）严格区分。
+            let mut exec_pivot = false;
             let (prediction, mut pivot_reason) = self
                 .predict_phase(
                     &current_ref,
@@ -262,11 +281,15 @@ impl StrategicManager {
                     &stream_tx,
                     &anomaly_detector,
                     &mut pivot_reason,
+                    &mut exec_pivot,
                 )
                 .instrument(exec_span)
                 .await?;
 
             final_result = result.clone();
+            if !exec_pivot {
+                real_result_iterations += 1;
+            }
 
             // 3. 反思（Reflect）
             let reflect_span = reflection_span(sop_id, iteration);
@@ -463,6 +486,24 @@ impl StrategicManager {
 
         let converged =
             iterations.last().map(|i| i.deviation_score < convergence_threshold).unwrap_or(false);
+
+        // 零真实产出的硬失败：每一轮都以 StrategicPivot 收场。
+        //
+        // 若不加拦截，`final_result` 会是 `"Strategic Pivot: ..."` 占位文本，
+        // 上层（run_execution → execute_sop_impl）会把它当作正常结果，
+        // 最终向客户端返回 status="SUCCESS"，把「所有节点都执行失败」
+        // 伪装成成功。有了这个分支，客户端会收到真正的错误。
+        //
+        // 判定条件用「零真实结果」而非「converged」：中途 pivot 后恢复是
+        // 合法路径，不应被误判为失败。
+        if real_result_iterations == 0 {
+            // `final_result` 此时就是占位文本，取其字符串作为 pivot 原因。
+            let last_pivot = final_result.as_value().as_str().unwrap_or("unknown").to_string();
+            return Err(CoreError::AllIterationsPivoted(
+                iterations.len(),
+                last_pivot,
+            ));
+        }
 
         // 推送完成事件
         if let Some(ref tx) = stream_tx {
@@ -748,6 +789,7 @@ impl StrategicManager {
         stream_tx: &Option<mpsc::UnboundedSender<CognitiveEvent>>,
         anomaly_detector: &Arc<Mutex<AnomalyDetector>>,
         pivot_reason: &mut Option<String>,
+        exec_pivot: &mut bool,
     ) -> Result<(Arc<ExecutionContext>, NodeOutput), CoreError> {
         // A2 修复：使用基于 sop_id + 启动时间的唯一 key 查询 active_executions。
         let active_key = sop_id.to_string();
@@ -811,6 +853,7 @@ impl StrategicManager {
             Ok(ctx) => ctx,
             Err(CoreError::StrategicPivot(reason)) => {
                 *pivot_reason = Some(reason);
+                *exec_pivot = true;
                 Arc::new(ExecutionContext::new())
             },
             Err(e) => return Err(e),

@@ -104,16 +104,40 @@ async fn test_execute_sop_missing() {
             sop_id: "nonexistent".to_string(),
             args: HashMap::new(),
         })
-        .await
-        .expect("ExecuteSop failed");
-    // The bridge creates an empty SOP graph for any ID, which executes with an empty result.
-    // We verify a response is returned, even if the SOP was created on-the-fly.
-    let inner = response.into_inner();
-    assert_eq!(
-        inner.status, "SUCCESS",
-        "SOP execution failed: {}",
-        inner.result
-    );
+        .await;
+    // 不存在的 SOP：`load_sop` 失败后 `run_execution` 会合成一个单节点图，
+    // 节点 tool_id 无 `builtin:` 前缀 → 落到 default 执行器。无 sandbox 时
+    // default 是 `NoopToolExecutor`，节点必然执行失败。
+    //
+    // 内核现在会把这个失败如实上报（`CoreError::AllIterationsPivoted`），
+    // 而不是伪装成 `status="SUCCESS"`。因此本用例断言的是
+    // **错误被如实传递**，而不是某个具体业务结局：
+    //
+    // - 若将来 default 执行器能真正执行（如启用了 sandbox），Ok 分支仍成立；
+    // - 当前无 sandbox 环境下，应收到 `Code::Internal` 业务错误。
+    //
+    // 两者都合法。真正要防的是 panic / 传输层错误 / 服务崩溃。
+    match response {
+        Ok(resp) => {
+            let inner = resp.into_inner();
+            assert_eq!(
+                inner.status, "SUCCESS",
+                "SOP 执行成功时状态必须为 SUCCESS: {}",
+                inner.result
+            );
+        },
+        Err(e) => {
+            assert_eq!(
+                e.code(),
+                tonic::Code::Internal,
+                "失败必须是可解释的业务错误，否则可能死锁或服务崩溃: {e:?}"
+            );
+            assert!(
+                e.message().contains("ended in StrategicPivot without any real execution result"),
+                "内核应如实上报 StrategicPivot 全程零真实产出，实际: {e:?}"
+            );
+        },
+    }
     server.abort();
 }
 
@@ -326,8 +350,16 @@ async fn test_execute_tool_strategic_next_goal_missing_project() {
 /// 早已实现，导致用例被解除忽略后一直失败，却因 CI 从不使用 `--include-ignored`
 /// 而无人发现。现改为断言真实成功路径——覆盖强度不低于原断言，因为它同时
 /// 验证了内核执行、持久化记录与 RPC 响应的三者一致性。
+///
+/// **重要修正（StrategicPivot 缺陷修复后）**：本用例曾断言 `outcome.success`
+/// 为真。实测发现该“成功”是假的——规划器合成的节点 tool_id 是语义标签
+/// `ActionType::Fetch`（字面量 `"fetch"`），并非真实工具 `builtin:web_fetch`；
+/// 无 `builtin:` 前缀 → `NoopToolExecutor` → 节点执行失败 → 监督器判
+/// StrategicPivot → 该失败被 `execute_phase` 吞掉并伪造成成功。
+/// 修复后内核如实以 `AllIterationsPivoted` 上报，故本用例改为断言
+/// 「记录与实际发生的事自洽」，而非断言某个具体结局。
 #[tokio::test]
-async fn test_execute_tool_strategic_next_goal_records_kernel_success_with_dummy() {
+async fn test_execute_tool_strategic_next_goal_records_kernel_outcome_with_dummy() {
     use sisyphus_types::{GoalRef, Milestone, MilestoneStatus, Phase};
 
     let (bridge, mut client, server) = setup_bridge_with_kernel().await;
@@ -395,41 +427,70 @@ async fn test_execute_tool_strategic_next_goal_records_kernel_success_with_dummy
     assert_eq!(outcome.milestone_id, milestone_id);
     assert_eq!(outcome.phase_id, phase_id);
     assert_eq!(outcome.goal_id, goal_id);
-    assert!(
-        outcome.success,
-        "回显合法配置后内核应执行成功，实际错误: {:?}",
-        outcome.error
-    );
-    assert!(
-        outcome.error.is_none(),
-        "成功执行不应携带内核错误，实际: {:?}",
-        outcome.error
-    );
-    // 真实内核跑完后会算出偏差分；只要是有限非负值即可，具体阈值由认知循环算法决定，
-    // 不断言精确数值以免算法调整导致假红。
-    let deviation = outcome.deviation_score.expect("成功执行应记录偏差分（认知循环已产出度量）");
-    assert!(
-        deviation.is_finite() && deviation >= 0.0,
-        "偏差分应为有限非负值，实际: {deviation}"
-    );
-    assert!(
-        !inner.status.starts_with("ERROR: "),
-        "实际响应: {}",
-        inner.status
-    );
-    // 成功时 status 为平铺的 SUCCESS，认知度量与反思段落都在 result_json 正文里
-    // （见 strategic_executor.rs::execute_and_record 成功分支；该字段是纯文本，
-    // 不是 JSON——失败路径才会填结构化的 error 字段）。
-    assert_eq!(inner.status, "SUCCESS", "实际响应: {}", inner.status);
-    let details = &inner.result_json;
-    assert!(
-        details.contains(goal_id) && details.contains("Completed"),
-        "结果正文必须回指被执行的战略目标并标记完成，实际: {details}"
-    );
-    assert!(
-        details.contains("Reflection") && details.contains("Execution Trace"),
-        "成功执行应附带反思段落与执行轨迹，实际: {details}"
-    );
+    // 内核执行记录必须与「实际发生了什么」一致。
+    //
+    // 本用例**不**断言成功：在 `--no-default-features` 下没有可用工具执行器，
+    // 规划器合成的节点 tool_id 是语义标签（`ActionType::Fetch` → 字面量
+    // `"fetch"`，见 sisyphus-intel/src/synthesis.rs:120），并非真实工具
+    // `builtin:web_fetch`；无 `builtin:` 前缀 → 落到 default 执行器
+    // `NoopToolExecutor` → 节点必然失败 → 监督器判 StrategicPivot →
+    // 全程零真实产出 → 内核以 `AllIterationsPivoted` 上报。
+    //
+    // 修复前这个失败被 `execute_phase` 吞掉、伪造成 `success=true`，
+    // 断言因此“通过”，但工具从未真正执行。修复后必须如实断言失败。
+    //
+    // 断言结构：`success` 与 `error` 必须自洽（要么真成功、要么如实报错），
+    // 这样无论后续是否接上真实执行器，用例都不会因语义变化而假红。
+    if outcome.success {
+        assert!(
+            outcome.error.is_none(),
+            "成功执行不应携带内核错误，实际: {:?}",
+            outcome.error
+        );
+        let deviation =
+            outcome.deviation_score.expect("成功执行应记录偏差分（认知循环已产出度量）");
+        assert!(
+            deviation.is_finite() && deviation >= 0.0,
+            "偏差分应为有限非负值，实际: {deviation}"
+        );
+    } else {
+        // 失败路径：错误信息必须具体指出「零真实产出」这一根因，
+        // 而不是空字符串或泛化描述，否则等于把失败原因又藏起来。
+        let err = outcome.error.as_deref().expect("失败执行必须携带内核错误，不得静默");
+        assert!(
+            err.contains("ended in StrategicPivot without any real execution result"),
+            "失败原因应明确指出 StrategicPivot 全程零真实产出，实际: {err}"
+        );
+    }
+    // RPC 响应必须与内核记录一致：内核报错时响应不得声称成功。
+    // 这条约束正是本次缺陷的要害——修复前内核记录与 RPC 都声称成功，
+    // 而工具从未真正执行。
+    if outcome.success {
+        assert_eq!(inner.status, "SUCCESS", "实际响应: {}", inner.status);
+        // 成功时 status 为平铺的 SUCCESS，认知度量与反思段落都在 result_json 正文里
+        // （见 strategic_executor.rs::execute_and_record 成功分支；该字段是纯文本，
+        // 不是 JSON——失败路径才会填结构化的 error 字段）。
+        let details = &inner.result_json;
+        assert!(
+            details.contains(goal_id) && details.contains("Completed"),
+            "结果正文必须回指被执行的战略目标并标记完成，实际: {details}"
+        );
+        assert!(
+            details.contains("Reflection") && details.contains("Execution Trace"),
+            "成功执行应附带反思段落与执行轨迹，实际: {details}"
+        );
+    } else {
+        assert!(
+            inner.status.starts_with("ERROR: "),
+            "内核记录失败时 RPC 响应不得声称成功，实际: {}",
+            inner.status
+        );
+        assert!(
+            inner.status.contains("StrategicPivot"),
+            "失败响应应保留根因（StrategicPivot 全程零真实产出），实际: {}",
+            inner.status
+        );
+    }
 }
 
 #[tokio::test]
@@ -605,9 +666,15 @@ async fn test_negative_concurrent_requests() {
     //
     // 本用例的目的是**并发健壮性**（不死锁、不 panic、服务不崩），而不是
     // 工具执行成功。`--no-default-features` 下 `ExecutorRouter` 的 default
-    // 执行器是 `NoopToolExecutor`，对任何 tool 都返回 `Sandbox disabled`；
-    // 带 sandbox 时才可能真正执行。因此断言「20 路都成功」会把环境差异
-    // 误报成缺陷（CI 的 bridge-integration-test job 正是无 sandbox 路径）。
+    // 执行器是 `NoopToolExecutor`，对任何 tool 都返回 `Sandbox disabled`，
+    // 因此这 20 路**在当前实现下全是业务失败**（实测 20/20 为
+    // `Code::Internal` + `AllIterationsPivoted`），而非成功。
+    //
+    // 注意：历史上这些请求曾被伪装成 `status="SUCCESS"`——`execute_phase`
+    // 吞掉 `CoreError::StrategicPivot` 并构造占位文本当结果，桥接层再硬编码
+    // SUCCESS。现已修复（core 新增 `CoreError::AllIterationsPivoted`）。
+    // 因此本用例**不应**断言「20 路都 SUCCESS」，那等于把掩盖失败的
+    // 行为固化为期望。
     //
     // 正确判据：20 路请求都必须要**得到应答**——要么 OK，要么是可解释的
     // 业务错误（gRPC `Status::internal`，因为 `execute_sop_impl` 把内核错误
@@ -710,12 +777,26 @@ async fn test_negative_execute_sop_empty_id() {
             sop_id: "".into(),
             args: HashMap::new(),
         })
-        .await
-        .expect("ExecuteSOP with empty ID should not panic");
-    let inner = response.into_inner();
-    // Bridge creates an empty SOP for any ID; empty ID should still work
-    // but we verify no crash happens and we get a response
-    assert!(!inner.status.is_empty(), "Expected non-empty status");
+        .await;
+    // 桥接会为任意 ID（含空串）合成一个单节点图。该节点的 tool_id 无
+    // `builtin:` 前缀，在无 sandbox 环境下必然执行失败，内核以
+    // `AllIterationsPivoted` 如实上报。
+    //
+    // 本用例的意图是「空 ID 不得引发 panic / 传输错误」，
+    // 因此 Ok 与可解释的 Internal 都合法；真正要防的是死锁与服务崩溃。
+    match response {
+        Ok(resp) => {
+            let inner = resp.into_inner();
+            assert!(!inner.status.is_empty(), "Expected non-empty status");
+        },
+        Err(e) => {
+            assert_eq!(
+                e.code(),
+                tonic::Code::Internal,
+                "失败必须是可解释的业务错误，否则可能死锁或服务崩溃: {e:?}"
+            );
+        },
+    }
     server.abort();
 }
 
@@ -766,11 +847,23 @@ async fn test_negative_large_sop_args() {
             sop_id: "large_args".into(),
             args: large_args,
         })
-        .await
-        .expect("ExecuteSOP with large args should not panic");
-    let inner = response.into_inner();
-    // The bridge should handle large payloads without OOM
-    assert!(!inner.status.is_empty());
+        .await;
+    // 大 payload 不应引发 OOM / panic / 传输错误。本用例的真正目的是
+    // 「大入参不崩溃」，因此 Ok 与可解释的 Internal 都算通过；
+    // `large_args` 同样无 `builtin:` 前缀，内核会如实报 AllIterationsPivoted。
+    match response {
+        Ok(resp) => {
+            let inner = resp.into_inner();
+            assert!(!inner.status.is_empty());
+        },
+        Err(e) => {
+            assert_eq!(
+                e.code(),
+                tonic::Code::Internal,
+                "失败必须是可解释的业务错误，否则可能 OOM 或服务崩溃: {e:?}"
+            );
+        },
+    }
     server.abort();
 }
 
@@ -1248,10 +1341,23 @@ async fn test_negative_execute_sop_with_invalid_args_json() {
             sop_id: "complex_args".into(),
             args,
         })
-        .await
-        .expect("ExecuteSOP with complex args should not panic");
-    let inner = response.into_inner();
-    assert!(!inner.status.is_empty());
+        .await;
+    // 嵌套对象 / 数组等复杂入参不得引发 panic 或传输错误。
+    // `complex_args` 无 `builtin:` 前缀，内核会如实报 AllIterationsPivoted，
+    // 因此 Ok 与可解释的 Internal 都算通过。
+    match response {
+        Ok(resp) => {
+            let inner = resp.into_inner();
+            assert!(!inner.status.is_empty());
+        },
+        Err(e) => {
+            assert_eq!(
+                e.code(),
+                tonic::Code::Internal,
+                "失败必须是可解释的业务错误，否则可能 panic 或服务崩溃: {e:?}"
+            );
+        },
+    }
     server.abort();
 }
 

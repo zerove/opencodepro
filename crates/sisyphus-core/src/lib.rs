@@ -173,6 +173,13 @@ pub enum CoreError {
     #[error("Strategic Pivot triggered: {0}")]
     StrategicPivot(String),
 
+    /// 所有迭代均以 `StrategicPivot` 收场，没有任何一次拿到真实执行结果。
+    ///
+    /// 与 `StrategicPivot` 的区别：后者是单次迭代内的转向（调用方通常据此
+    /// 继续下一轮），本变体表示**整个循环零真实产出**，属于失败而非转向。
+    #[error("All {0} cognitive iterations ended in StrategicPivot without any real execution result; last pivot: {1}")]
+    AllIterationsPivoted(usize, String),
+
     #[error("Kernel initialization error: {0}")]
     KernelInitError(String),
 
