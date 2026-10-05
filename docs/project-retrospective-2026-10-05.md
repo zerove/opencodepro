@@ -14,10 +14,10 @@
 | 生产代码 `panic!` | **0 处** | 优秀 |
 | 生产代码真 `unsafe` | **0 处**（唯一 1 处在 LLM prompt 字符串里） | 优秀 |
 | `todo!()` / `unimplemented!()` | **0 处** | 优秀 |
-| `#[allow(...)]` 合计 | **67 处**（口径见下；含 `tests/` 目录则 70 处） | 已逐类实测裁决 |
-| └ `dead_code` | 17 处（crates 9 + evals 8） | **已全部实测裁决**：逐处删属性后 `cargo check --all-targets` 验证。crates 侧原 14 处中 5 处失效已删（`c49b34f`），余 9 处承载真实未读字段/未构造变体/未接线方法 |
+| `#[allow(...)]` 合计 | **63 处**（口径见下；含 `tests/` 目录则 66 处） | 已逐类实测裁决。口径为**语法感知**统计：先剥离行/块注释与字符串字面量再匹配 `#!?[\s*allow\s*\(`，因此不计函数名（如 `test_hook_allow`）、注释与字符串内的 `#[allow(...)]` 字面量 |
+| └ `dead_code` | 14 处（crates 非测试 6 + evals 8） | **已全部实测裁决**：逐处删属性后 `cargo check --all-targets` / `cargo clippy` 验证。crates 非测试侧原 14 处中 5 处失效已删（`c49b34f`），余 6 处经本轮逐处移除验证确实触发真实告警（`sandboxd` 1 处 `Notification` never constructed、`cli/app.rs` 2 处 `toggle_todo_status`/`delete_todo` never used、`bridge` 3 处字段 never read）。另有 3 处在 `tests/` 内（`cli/tests/cli_integration.rs` 2、`core/tests/common/mod.rs` 1），不计入本口径 |
 | └ `unused_*`（imports/variables/mut） | 4 处 | 已删 3 处失效豁免；余 1 处经验证正当 |
-| └ `clippy::*` | 47 处 | **已逐处实测**：41 处必要（含触发计数），6 处 `cast_precision_loss` 属未启用的 pedantic 组 |
+| └ `clippy::*` | 43 处 | **已逐处实测**：37 处必要（含触发计数），6 处 `cast_precision_loss` 属未启用的 pedantic 组 |
 | └ `deprecated` | 2 处 | 已核实为协议兼容 shim，删掉会触发 `-D warnings` 失败 |
 | 测试文件 : 生产文件 | 183 : 392 | 合理 |
 | `#[test]` 函数总数 | **5088**（crates/ 内：单元 1420 + 集成 3668） | 数量充足 |
@@ -26,18 +26,31 @@
 | `#[ignore]` 真实属性数 | **26 条**（其中 2 条是 fixture 字符串内的**假**，实际被跳过的测试 **24 条**） | 合理，已逐条核实 |
 
 > **统计口径（所有 `#[allow]` 类数字均按此计算）**：
-> ```bash
-> grep -rnE '#!?\[allow\(' crates/ evals/ --include='*.rs' | grep -v '/tests/'
-> # -> 粗查命中数含假命中，不能直接作为结论；全文扫描结果为 67
+> ```text
+> 现行口径 = 语法感知扫描：遍历 crates/ evals/ webui/ ide/ 的 .rs 文件，
+> 先剥离行注释、块注释与字符串（含 raw string）字面量，
+> 再匹配 #!?\[\s*allow\s*\(
+>
+> 排除 tests/ 目录与 src/tests.rs : 63 处
+> 含 tests                       : 66 处
 > ```
-> 即：**全仓 crates/ + evals/，排除 tests/ 目录**。原始命中里 **5 条是假命中**
-> （属性文本出现在注释或字符串字面量中，不是真实生效的豁免）：
+>
+> 能同时正确处理**多行属性**与 **`#![allow(` 模块级**形态，
+> 且不会把函数名（如 `test_hook_allow`）、注释、字符串字面量误计为生效豁免。
+> 即：**全仓 crates/ + evals/，排除 tests/ 目录**。此前记为「67 处」，
+> 只列出 3 行 5 条假命中。本轮用语法感知脚本重扫后总数为 **63 / 66**，
+> 比原值**少 4 处**，差异可完整列举——旧正则把**函数名**也算进去了：
 >
 > | 假命中 | 原因 |
 > |--------|------|
+> | `tools-executor/tests/hooks_integration.rs:59` | 函数名 `test_hook_allow`，旧正则 `allow\(` 命中了名字 |
+> | `tools-system/tests/permissions.rs:93` | 函数名 `checker_require_allow` |
+> | `tools-system/src/permissions.rs:122` | 函数名 `test_check_permission_no_match_returns_allow` |
+> | `intel/tests/simulation_gate.rs:28,114,306` | 3 个 `*_allow` 测试函数名 |
 > | `bridge-api/build.rs:8,12` | `tonic_build` 的 `type_attribute()` **字符串字面量**，属性被注入**生成代码**，手写源码本身无豁免 |
 > | `evals/no_panic_check.rs:57` | 文档注释 `/// ...` 中的示例文本 |
 > | `evals/no_panic_check.rs:544` | 测试 fixture 写入的源码字符串 |
+> | `bridge/peer/anti_entropy.rs:224` | 注释（为 227 行 `#[allow(deprecated)]` 做解释）；旧列表已正确排除，但未列出行号 |
 >
 > **本轮修正的两处口径错误**（此前结论有误，已实测推翻）：
 > 1. 此前把 `build.rs:25,32` 记为「假命中」并给出「模板字符串内」的说明，
@@ -50,9 +63,26 @@
 > 
 > **两个踩过的坑**：
 > 1. 早前口径写成 `grep -rn '#\[allow('`，漏掉 `#![allow(` 形态的 19 处模块级豁免，
->    得出偏低的 54。必须用 `-E '#!?\[allow('`。
-> 2. 单行正则还漏掉**跨行属性**，如 `cli/cmd_agent.rs:69` 的
->    `#[allow(\n    clippy::enum_variant_names,\n    reason = ...)]`，故最终以全文扫描为准。
+>    得出偏低的 54。必须能匹配 `#!` 前缀。
+> 2. 纯文本正则无论怎么调都无法同时正确处理多行属性、字符串字面量与函数名。
+>    **这就是本轮改用语法感知脚本的原因**——口径必须可复现且不依赖人工剔错。
+>
+> **本轮（第三次）修正的三个数字**：
+>
+> | 项目 | 旧值 | 实测值 | 差异原因 |
+> |------|------|--------|---------|
+> | `#[allow]` 总数（排除 tests/） | 67 | **63** | 旧正则把函数名（`test_hook_allow` 等 4 处）、字符串字面量、注释算进去了 |
+> | `dead_code` | 17 | **14** | 旧值误含 `tests/` 内 3 处（`cli/tests/cli_integration.rs` 2、`core/tests/common/mod.rs` 1） |
+> | `clippy::*` | 47 | **43** | 沿用了含 tests 的旧口径 |
+>
+> **本轮补入汇总表的两个类别**（正文结论汇总里本已记录，此处是让摘要表可求和）：
+> - `clippy::upper_case_acronyms` 2 处（`sisyphus-types/src/asset.rs:9,32`）
+> - `clippy::type_complexity` 2 处（`core/src/cognitive_loop_v2.rs:55`、
+>   `core/src/kernel/execution.rs:500`）
+>
+> **求和校验**（本轮新增，防止分类数字再次各自漂移）：
+> `43 clippy + 14 dead_code + 2 deprecated + 4 unused_* = 63` ✓ 与总数一致。
+> 建议后续任何改动都跑一次这个校验——分类小计对不上总数，就说明有口径混用。
 **最反直觉的结论：这个项目的代码卫生比它给自己的印象好得多。**
 AGENTS.md 里那套「不得使用 unwrap()」「不得 panic」的规则，从数据看**基本被切实执行了**。
 
@@ -522,7 +552,7 @@ cargo test   -p sisyphus-core --lib   # 91 passed; 0 failed; 0 ignored
 | lint 名 | 处数 | 本轮核实情况 |
 |--------|------|------------|
 | `clippy::too_many_arguments` | 13 | **已实测**：属默认组 lint。13 处集中在 5 个 phase 函数与 4 个构造函数，均为依赖注入形态（`Arc<Manager>` + `Config` + `Channel`），改结构体只会搬运参数而无行为收益 |
-| `dead_code` | 17 | **crates 侧 14 处、evals 侧 8 处，全部已实测裁决**（方法：删属性 → `cargo check --all-targets` → 统计 `never used/never constructed/never read`）。crates 侧 5 处失效已删除（`sse_handlers.rs:123/154`、`peer/manager.rs:264`、`peer/service.rs:24/653`）；其余 9 处经实测确认真实触发 |
+| `dead_code` | 14 | **已全部实测裁决**（方法：删属性 → `cargo check --all-targets` → 统计 `never used/never constructed/never read`）。实测分布：crates 非测试 6 处、evals 8 处；另有 3 处在 `tests/` 内不计入本口径。crates 非测试侧 5 处失效已删（`sse_handlers.rs:123/154`、`peer/manager.rs:264`、`peer/service.rs:24/653`）；其余 6 处经逐处移除验证确实触发真实告警（`sandboxd` 1 处 `Notification` never constructed、`cli/app.rs` 2 处 `toggle_todo_status`/`delete_todo` never used、`bridge` 3 处字段 never read） |
 | `clippy::double_must_use` | 8 | **已实测必要**：删掉后 `sisyphus-types` 命中 22 处、`intel` 8、`core` 3、`bridge` 1。根因是 `#[async_trait]` 宏展开自带 `#[must_use]`，无法逐方法挂载 |
 | `clippy::enum_variant_names` | 3 | **已实测必要**：各命中 1 处（`momus/types.rs`、`scaffold.rs`、`cli/cmd_agent.rs`） |
 | `clippy::collapsible_if` | 4 | **已实测必要**：`experience_bank.rs` 命中 4 处。嵌套 `if let` + 过滤条件折叠会损失可读性 |
@@ -908,16 +938,16 @@ CI 的 `bridge-integration-test` job 用 `--no-default-features`，不受影响�
 | `sisyphus-tests` 两条 `#[ignore]` 是否可通过 | **已完成**（不可通过，理由成立） | — |
 | `hook_overhead.rs` 的 `#[ignore]` 是否仍合理 | **本轮未能复现成功**：4 种编译手段均 OOM（见 5.2）。上一轮的「1 passed」依赖于当时内存空闲，不稳定。**忽略理由本身仍成立**（它是有耗时的基准，不适合 CI 断言） | 记忆不足 |
 | 认知主循环端到端覆盖真相（P1） | **已完成**：方向与原推测相反，见第 4 节 P1 | — |
-| `#[allow(unused*)]` 逐处审计（P2） | **已完成**：用编译器裁决法核实全部 `unused_*` 类，删 3 处失效豁免，91 测试通过 | — |
+| `#[allow(unused*)]` 逐处审计（P2） | **已完成**：用编译器裁决法核实全部 `unused_*` 类，删 3 处失效豁免。`c49b34f` 当时 `91 passed`，`3309edb` 新增 3 个回归测试后为 **94 passed** | — |
 | 全量 26 条 `#[ignore]` 逐条核实 | **已完成**：13 条工具链全部跑通、2 条网络跑通、1 条 LLM 跑出真实错误、1 条 UDS 实跑前先验代码、2 条为 fixture 假 ignore；**`hook_overhead` 未能编译**（见 5.2） | — |
 | `team_integration` 6 条的真实行为 | **已完成**：实跑发现静默跳过假绿，已修 | — |
-| `maven_compile_failure_returns_err` | **已完成（已突破环境限制）**：原因是 JVM 默认堆预留 5 GB，`MAVEN_OPTS="-Xmx512m"` 后 13 条工具链测试全部跑通 | — |
+| `maven_compile_failure_returns_err` | **已完成（已突破环境限制，本轮重跑取证）**：`MAVEN_OPTS="-Xmx512m -XX:MaxMetaspaceSize=128m"` 下实测 `13 passed; 0 failed`（385.12s，rc=0），13 条工具链测试全部跑通，不再依赖 `4dc689d` 的历史声称 | — |
 | `hook_overhead.rs` / `jcode_call_chain_test.rs` 的**编译** | **部分解除**：`--no-default-features` 路径实测可编译（bridge 85 + 54 测试通过）；带 sandbox 仍 OOM | 见 5.2 |
 | `team_integration` 6 条在**真实 LLM 配置下**的运行结果 | **未完成**：本机无 `LLM_API_KEY`/`ENDPOINT`/`MODEL` | **环境限制** |
 | **真实工具 + 真实 LLM API 的完整端到端链路** | **仍未覆盖**：当前通过的是 Dummy LLM（回显合法配置）+ 内存执行器 | **环境限制**，见 P1 |
-| `crates/` 侧 14 处 `#[allow(dead_code)]` | **已完成**（`c49b34f`）：14 处逐个实测裁决，5 处失效已删，9 处真实需要 | — |
+| `crates/` 侧 6 处 `#[allow(dead_code)]`（非测试代码） | **已完成**（`c49b34f` + 本轮复核）：原 14 处逐个实测裁决，5 处失效已删；剩余 6 处在 `3309edb` 之后的复核中逐处移除并实跑 clippy，逐一触发真实 `never used/read/constructed` 告警 | — |
 | 2 处 `#[allow(deprecated)]` | **已完成**：删掉后编译器报 `use of deprecated field`（`SyncRequest::offset` / `SyncPageEnd::next_offset`），在 `-D warnings` 下会编译失败，属正当协议兼容 shim | — |
-| 47 处 `clippy::*` 豁免 | **已完成审计**：逐处删除后跑 clippy 比对。41 处实测必要（附触发计数）；6 处 `cast_precision_loss` 属未启用的 pedantic 组，当前失效但保留 | — |
+| 43 处 `clippy::*` 豁免 | **已完成审计**：逐处删除后跑 clippy 比对。37 处实测必要（附触发计数）；6 处 `cast_precision_loss` 属未启用的 pedantic 组，当前失效但保留 | — |
 | bridge 战略目标用例断言过时 | **已修复后又修正**（`d53b88b` → `71b01ac`）：先按「dummy 能回显合法配置」改写为断言成功；随后 P0 修复证明该「成功」本身是假的（工具从未真正执行），再次改写为断言「记录与实际发生的事自洽」，用例重命名为 `..._records_kernel_outcome_with_dummy` | — |
 | `ActionType` 语义标签被当作可执行 `tool_id` | **未完成**（P2.7）：`synthesis.rs:120` 的 `Fetch → "fetch"` 是语义标签，真实工具为 `builtin:web_fetch`；无前缀必然落到 `NoopToolExecutor`。生产中规划器合成未知动作会走同一失败路径。本轮只让它如实失败，未改规划器契约 | **需独立设计**，超出缺陷修复范围 |
 | `execute_sop` / `execute_tool` 把执行失败报告为 `SUCCESS` | **P0，已修**（`71b01ac`）：新增 `CoreError::AllIterationsPivoted`，全程零真实产出时如实返回 Err。实测 20 路由 20/20 假 SUCCESS 变为 20/20 真 Internal。连带修正 5 个依赖「伪造成成功」的测试 | 已修 |
@@ -940,9 +970,10 @@ CI 的 `bridge-integration-test` job 用 `--no-default-features`，不受影响�
 | `9bb22aa` | 收窄 `exec_eval.rs` 中 3 处过宽的 `#[allow(dead_code)]`，从结构体级改为字段级 |
 | `d53b88b` | 修正 `test_execute_tool_strategic_next_goal` 的过时断言：Dummy LLM 实际能生成合法提案（实测 `success=true`），改为断言真实成功路径 |
 | `66b37fe` | 修正并发用例断言：区分业务失败（`Status::internal`）与真正回归，消除对 sandbox 的环境依赖 |
-| `c49b34f` | crates 侧 14 处 `#[allow(dead_code)]` 逐个实测裁决，删除 5 处失效豁免 |
+| `c49b34f` | crates 侧 14 处 `#[allow(dead_code)]` 逐个实测裁决，删除 5 处失效豁免（删除前口径） |
 | `fafc20a` / `c7edfce` | 插桩定位并发用例失败真因：`StrategicPivot` 吞掉执行失败并伪装成 SUCCESS；更正 `66b37fe` 基于错误前提的说明 |
 | `71b01ac` | 修复 P0：全程 StrategicPivot 零真实产出时如实返回 `AllIterationsPivoted`；连带修正 5 个依赖「伪造成成功」的测试 |
+| `3309edb` | 修复 P0.2：预测期 `Logical Flaw` 不再伪造 pivot 占位文本（占位判定改用执行期 `exec_pivot`）；新增 3 个直测并经双向变异验证有效；修正报告统计口径（allow 67→63、dead_code 17→14、clippy 47→43） |
 
 ### 本轮实测确认的结论汇总
 
@@ -953,15 +984,17 @@ CI 的 `bridge-integration-test` job 用 `--no-default-features`，不受影响�
   长期跳过的测试可能从未被真正执行过。
 - **「环境限制」不应是默认借口**：maven 那条我一开始归为环境限制，
   实测只是 JVM 默认堆预留 5 GB，一个环境变量就解开了。
-- **会掩盖死代码的两类豁免已全部裁决完毕**（`unused_*` 4 处、`dead_code` 17 处、
+- **会掩盖死代码的两类豁免已全部裁决完毕**（`unused_*` 4 处、`dead_code` 14 处、
   `deprecated` 2 处）：删 3 + 5 处失效、收窄 3 处过宽，其余经编译器实测为必要。
   **这三类里没有一处是掩盖死代码的残留，且每个数字都由实际删除验证得出。**
-- **已实测**：47 处 `clippy::*` 豁免全部逐处裁决（编译器删除法 + 默认 lint 组验证）。
+- **已实测**：43 处 `clippy::*` 豁免全部逐处裁决（编译器删除法 + 默认 lint 组验证）。
   `double_must_use` 8 处、`result_large_err` 5 处、`enum_variant_names` 2 处、
   `collapsible_if` 4 处、`upper_case_acronyms` 2 处均实测必要并附触发计数；
   6 处 `cast_precision_loss` 属 pedantic 组而项目未启用 pedantic，当前失效，
   保留作预防性放行并加注。`too_many_arguments` 13 处与 `type_complexity` 2 处
   经人工核实为构造函数依赖注入与字段内聚性考量，不建议重构。
+- **求和校验**：43 + 14 (`dead_code`) + 2 (`deprecated`) + 4 (`unused_*`) = **63**，
+  与语法感知统计的总数一致。
 
 ### 本轮踩过的坑：重定向顺序让裁决全部失真
 
