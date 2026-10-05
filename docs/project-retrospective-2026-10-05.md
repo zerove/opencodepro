@@ -14,11 +14,11 @@
 | 生产代码 `panic!` | **0 处** | 优秀 |
 | 生产代码真 `unsafe` | **0 处**（唯一 1 处在 LLM prompt 字符串里） | 优秀 |
 | `todo!()` / `unimplemented!()` | **0 处** | 优秀 |
-| `#[allow(...)]` 合计 | **54 处**（口径见上） | 已逐类核实 |
-| └ `dead_code` | 19 处（crates 8 + evals 11） | crates 侧 8 处已逐处核实为预留接线位；evals 侧 11 处未审计 |
+| `#[allow(...)]` 合计 | **54 处**（口径见下） | 已逐类核实 |
+| └ `dead_code` | 19 处（crates 8 + evals 11） | **已全部核实**：均为 serde 反序列化字段或预留接线位；其中 3 处原为结构体级豁免、范围过宽，已收窄到字段级（提交 `9bb22aa`） |
 | └ `unused_*`（imports/variables/mut） | 4 处 | 已删 3 处失效豁免；余 1 处经验证正当 |
-| └ `clippy::*` | 27 处 | 多数为 `too_many_arguments` 等风格项 |
-| └ `deprecated` | 3 处 | 未审计 |
+| └ `clippy::*` | 27 处 | **未逐处审计**（风格类，非死代码类） |
+| └ `deprecated` | 3 处 | 已核实为协议兼容 shim，删掉会触发 `-D warnings` 失败 |
 | 测试文件 : 生产文件 | 183 : 364 | 合理 |
 | `#[test]` 函数总数 | **5088**（crates/ 内：单元 1420 + 集成 3668） | 数量充足 |
 | ADR-013 钩子开销 | 优化后相对开销 **3.04x → 1.06x** | 已验证优化有效 |
@@ -718,8 +718,9 @@ MAVEN_OPTS="-Xmx512m -XX:MaxMetaspaceSize=128m" \
 | `hook_overhead.rs` / `jcode_call_chain_test.rs` 的**编译** | **未完成**：4 种手段均 OOM（rustc / rust-lld / cranelift-codegen / opentelemetry_sdk） | **环境限制**，见 3.4.7 |
 | `team_integration` 6 条在**真实 LLM 配置下**的运行结果 | **未完成**：本机无 `LLM_API_KEY`/`ENDPOINT`/`MODEL` | **环境限制** |
 | **真实工具 + 真实 LLM API 的完整端到端链路** | **仍未覆盖**：当前通过的是结构正确的 Dummy LLM + 内存执行器 | **环境限制**，见 P1 |
-| `evals/` 侧 11 处 `#[allow(dead_code)]` | **未审计**：本轮只逐处核实了 crates 侧 8 处 | 待办，非阻塞 |
-| 3 处 `#[allow(deprecated)]` | **未审计** | 待办，非阻塞 |
+| `evals/` 侧 8 处 `#[allow(dead_code)]` | **已完成**：编译器裁决法核实，全部承载真实 serde 字段；3 处过宽的已收窄到字段级（`9bb22aa`） | — |
+| 3 处 `#[allow(deprecated)]` | **已完成**：删掉后编译器报 `use of deprecated field`（`SyncRequest::offset` / `SyncPageEnd::next_offset`），在 `-D warnings` 下会编译失败，属正当协议兼容 shim | — |
+| 27 处 `clippy::*` 豁免 | **未审计**：风格类豁免，本轮未逐处验证 | 待办，非阻塞 |
 
 **本报告不含任何未标注为「实测」的结论。**
 
@@ -735,6 +736,8 @@ MAVEN_OPTS="-Xmx512m -XX:MaxMetaspaceSize=128m" \
 | `d090118` | 消除 `team_integration` 6 条集成测试的静默跳过假绿；纠正 `jcode_call_chain_test.rs` 的错误 ignore 理由 |
 | `4dc689d` | 解除 `language_backend_guards` 的 JVM OOM 阻塞（`MAVEN_OPTS=-Xmx512m`），13 条全部跑通；写入模块文档 |
 | `fb259a8` | 删除 `cognitive_loop.rs` 中 3 处失效的 `#[allow(unused_variables)]`（编译器裁决法核实） |
+| `3bf9986` | 修正 `#[allow]` 统计口径为可复现命令，删除不可复现的 `hook_overhead` 结论 |
+| `9bb22aa` | 收窄 `exec_eval.rs` 中 3 处过宽的 `#[allow(dead_code)]`，从结构体级改为字段级 |
 
 ### 本轮实测确认的结论汇总
 
@@ -745,3 +748,9 @@ MAVEN_OPTS="-Xmx512m -XX:MaxMetaspaceSize=128m" \
   长期跳过的测试可能从未被真正执行过。
 - **「环境限制」不应是默认借口**：maven 那条我一开始归为环境限制，
   实测只是 JVM 默认堆预留 5 GB，一个环境变量就解开了。
+- **会掩盖死代码的两类豁免已全部裁决完毕**（`unused_*` 4 处、`dead_code` 19 处、
+  `deprecated` 3 处）：删 3 处失效、收窄 3 处过宽，其余经编译器验证为必要。
+  **这三类里没有一处是掩盖死代码的残留。**
+- **尚未审计**：27 处 `clippy::*` 豁免（13 处 `too_many_arguments` 4 处
+  `enum_variant_names` 4 处 `collapsible_if` 等）。它们是风格类而非死代码类，
+  本轮未逐处验证，不对其正当性下结论。
