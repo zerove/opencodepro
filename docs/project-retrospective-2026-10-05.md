@@ -584,6 +584,23 @@ PROBE SUMMARY ok=20 biz_err=0
 6. 于是 `execute_sop` 收到 `Ok`，回 `status="SUCCESS"`。
 
 **结论**：节点**确实执行失败了**，但失败被 `StrategicPivot` 吞掉并伪装成成功。
+
+**缺陷范围已确认不止并发用例**：
+- `run_cognitive_loop` 末尾无条件 `Ok(...)`（`cognitive_loop.rs:483`），
+  `converged` 只放进 `CognitiveReport`，不影响返回的 `Result`。
+- `execute_sop_impl` 把 `report` 仅插值进调试字符串
+  （`grpc_exec.rs:74`），随后 `status` **硬编码为 `"SUCCESS"`**
+  （`grpc/execution.rs:78`）。`converged=false` 这一信息在桥接层被丢弃。
+- 全仓无任何调用方解析 `"Strategic Pivot"` 前缀（grep 零命中），
+  因此**调用方无法区分「执行成功」与「一执行就崩并被掩盖」**。
+
+**最小修复方向**（本轮只定位、未实施，避免在未与用户确认语义前改动核心执行路径）：
+在 `execute_phase` 捕获 `StrategicPivot` 时区分「首轮即 pivot」与「迭代中途 pivot」，
+若循环最终未产出任何真实执行结果，应让 `run_cognitive_loop` 返回
+`Err`（如新增 `CoreError::AllIterationsPivoted`），而非把 pivot 文本当作结果。
+最小侵入方案是在桥接层用 `!report.converged` 决定 `status`，但那会把
+「收敛但有偏差」也误判为失败，需先定义 `converged` 的语义边界。
+
 这不是测试不稳定，而是**生产行为缺陷**——`execute_sop` 会把「工具全部失败」
 报告为 `SUCCESS`。
 
