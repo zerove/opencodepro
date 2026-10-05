@@ -67,6 +67,12 @@ pub trait LlmClient: Send + Sync {
 }
 
 /// A dummy LLM client for development and testing.
+///
+/// The response shape is chosen from the prompt, so a single mock can stand in
+/// for every agent that asks for structured JSON. Each branch is keyed on a
+/// phrase that appears in the corresponding real prompt (see the callers that
+/// parse these payloads: `swarm_coordinator::real_agent_proposal`,
+/// `strategic_manager::cognitive_loop`, `metis` analysis).
 pub struct DummyLlmClient;
 
 #[async_trait::async_trait]
@@ -77,6 +83,24 @@ impl LlmClient for DummyLlmClient {
         user: &str,
         _json_mode: bool,
     ) -> Result<String, sisyphus_types::TypesError> {
+        // swarm_coordinator::call_agent routes every agent through `chat`, so the
+        // SOP proposal payload has to be recognised here too — not only in
+        // `generate`. Echo the config the prompt already carries so the proposal
+        // stays a no-op instead of failing to deserialise.
+        if user.contains("SOPGraphConfig") {
+            return Ok(extract_embedded_sop_config(user)
+                .unwrap_or_else(|| json!({"nodes": [], "edges": []}).to_string()));
+        }
+        // real_agent_review asks for an AuditReview (`approved` + `feedback`).
+        // Approving keeps the swarm loop moving; the proposal it reviews is the
+        // unchanged config echoed above, so approval is the neutral answer.
+        if user.contains("'approved'") || user.contains("\"approved\"") {
+            return Ok(json!({
+                "approved": true,
+                "feedback": "Dummy approval: proposal is unchanged from the current config.",
+            })
+            .to_string());
+        }
         Ok(json!({
             "ambiguities": [],
             "implicit_requirements": [],
@@ -87,6 +111,14 @@ impl LlmClient for DummyLlmClient {
     }
 
     async fn generate(&self, prompt: &str) -> Result<String, sisyphus_types::TypesError> {
+        if prompt.contains("SOPGraphConfig") {
+            // swarm_coordinator::real_agent_proposal embeds the current config in
+            // the prompt and asks for an optimized SOPGraphConfig back. Echo the
+            // embedded config through unchanged: it is valid by construction and
+            // keeps the proposal a no-op, which is what a neutral mock should do.
+            return Ok(extract_embedded_sop_config(prompt)
+                .unwrap_or_else(|| json!({"nodes": [], "edges": []}).to_string()));
+        }
         if prompt.contains("critical_findings") || prompt.contains("Critique") {
             Ok(json!({
                 "critical_findings": [],
@@ -118,6 +150,47 @@ impl LlmClient for DummyLlmClient {
     fn breaker(&self) -> crate::circuit_breaker::CircuitBreaker {
         crate::circuit_breaker::CircuitBreaker::default()
     }
+}
+
+/// Pull the first balanced `{...}` object out of `text` and return it verbatim.
+///
+/// Used by [`DummyLlmClient`] to echo an SOP config that the caller already
+/// embedded in its prompt. String literals and escapes are skipped so that a
+/// brace inside a JSON string value cannot end the scan early.
+///
+/// Returns `None` when no balanced object is present.
+fn extract_embedded_sop_config(text: &str) -> Option<String> {
+    let bytes = text.as_bytes();
+    let start = text.find('{')?;
+    let mut depth = 0usize;
+    let mut in_string = false;
+    let mut escaped = false;
+
+    for (idx, byte) in bytes.iter().enumerate().skip(start) {
+        let ch = *byte as char;
+        if in_string {
+            if escaped {
+                escaped = false;
+            } else if ch == '\\' {
+                escaped = true;
+            } else if ch == '"' {
+                in_string = false;
+            }
+            continue;
+        }
+        match ch {
+            '"' => in_string = true,
+            '{' => depth += 1,
+            '}' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(text[start..=idx].to_string());
+                }
+            },
+            _ => {},
+        }
+    }
+    None
 }
 
 /// An LLM client that returns a fixed response string.

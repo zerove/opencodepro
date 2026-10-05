@@ -77,13 +77,13 @@ prompt 字符串里的一句英文 "Audit `unsafe` blocks for undefined behavior
 | `tools-build/tests/language_backend_guards.rs` ×13 | requires real toolchain | **成立**，本会话实跑通过 |
 | `bridge/tests/hook_overhead.rs:152` | 耗时基准，绝对值随机器而变 | **成立（已实跑）**：裸流自身跨运行波动可达 **35%**，任何硬编码门限必然 flaky |
 | `tools-llm/tests/llm_availability.rs` | 需要真实 API key 与网络 | **成立** |
-| `sisyphus-tests/src/lib.rs:147,309` | Requires mock LLM that returns valid SOP JSON | **成立**（详见下） |
+| `sisyphus-tests/src/lib.rs:147,309` | Requires mock LLM that returns valid SOP JSON | **已修复**（提交 `4f2c1e8`）：mock 补齐 schema 后两条测试转正 |
 
 最后一条我原本**强烈怀疑是过期理由**：注释说「需要能返回合法 SOP JSON 的
 mock LLM」，但 `setup_kernel` 里明明已经注入了
 `sisyphus_tools_llm::metis::DummyLlmClient`——理由与代码看起来矛盾。
 
-实测（`cargo test -p sisyphus-tests --lib -- --ignored --test-threads=1`）：
+第一轮实测（`cargo test -p sisyphus-tests --lib -- --ignored --test-threads=1`）：
 
 ```
 test tests::test_concurrent_execution ... FAILED
@@ -98,13 +98,39 @@ test tests::test_full_pipeline ... FAILED
 test result: FAILED. 0 passed; 2 failed
 ```
 
-**我的怀疑被证伪。** `DummyLlmClient.chat` 固定返回 *analysis* 结构
-（`ambiguities` / `implicit_requirements` / `summary` / `actionable`），
-而 SOP 优化器要的是 *SOPGraphConfig* 结构（需要 `nodes` 字段）。
-两者根本不是同一个 schema，所以「需要 mock」的理由**准确成立**。
+**当时的结论**：`DummyLlmClient.chat` 固定返回 *analysis* 结构，
+而 SOP 优化器要的是 *SOPGraphConfig*（需要 `nodes` 字段）。
+两者不是同一个 schema，所以「需要 mock」的理由**准确成立**。
 
 > 教训：注释说「需要 X」时，先验证 X 是否真的不存在。我差点把一条准确的注释
 > 当成过期注释去"修"，那会把真实的覆盖缺口重新打开。
+
+#### 3.2.1 后续：这条缺口最终被补上了（第二轮）
+
+上一节我停在「理由成立」。但**理由成立不等于不该修**——它说的是
+「缺一个 mock」，而 mock 是可以补的。于是本轮动手补：
+
+1. `DummyLlmClient` 新增按 prompt 分派的分支，缺什么返回什么：
+   - `SOPGraphConfig` → 从 prompt 里回显它自带的 config（**大括号配平提取**，
+     跳过 JSON 字符串内的括号与转义），使 proposal 成为 no-op
+   - `'approved'` → 返回 `AuditReview { approved: true, feedback }`
+2. 踩了一个坑：第一次只改了 `generate()`，测试仍失败。报错信息才暴露
+   `swarm_coordinator::call_agent` 走的是 **`chat()`** 而非 `generate()`。
+   **只看代码结构猜调用路径会错，失败信息里写着真实路径。**
+3. 又踩一个：`PathBuf::parent` 不存在（`parent()` 定义在 `Path` 上），
+   编译器直接指出。以及前置 hook 因文件内既有 `unwrap()` 拦下了写入，
+   需先用 `replace` 工具移除 `unwrap()` 才能用 `edit`。
+
+**最终验证（默认路径，无需 `--ignored`）**：
+
+```
+test tests::test_full_pipeline ... ok
+test tests::test_concurrent_execution ... ok
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured
+```
+
+两条测试的 `#[ignore]` 已删除，**从「永久跳过」变成「默认执行」**。
+同时顺手清掉 `setup_kernel` 里的两处 `unwrap()`（AGENTS.md 明令禁止）。
 
 ## 4. 真正值得处理的问题（按优先级）
 

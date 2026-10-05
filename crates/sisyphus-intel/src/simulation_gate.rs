@@ -19,8 +19,6 @@
 //! - `bridge` 在 `ExecuteSop` 收到 SOP 时先调 `gate.check()`
 //! - `kernel.execute_goal` 在合成 SOP 后、首次执行前调 `gate.check()`
 
-#[allow(unused_imports)]
-use async_trait::async_trait;
 use parking_lot::Mutex;
 use sisyphus_types::{ExecutionContext, IntelError, SOPGraph};
 use std::sync::Arc;

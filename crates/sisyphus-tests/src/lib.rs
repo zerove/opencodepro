@@ -92,7 +92,15 @@ async fn setup_kernel(db_url: Option<&str>) -> SisyphusKernel {
     let embedding_client = Arc::new(DummyEmbeddingClient);
 
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let tools_path = manifest_dir.parent().unwrap().parent().unwrap().join("tools");
+    // CARGO_MANIFEST_DIR is `<workspace>/crates/sisyphus-tests`, so two parents
+    // reach the workspace root. Both hops are compile-time constants, but go
+    // through expect() rather than unwrap() so a malformed layout fails loudly
+    // instead of silently pointing the executor at the wrong directory.
+    let workspace_root = manifest_dir
+        .parent()
+        .and_then(std::path::Path::parent)
+        .expect("crates/sisyphus-tests must live two levels under the workspace root");
+    let tools_path = workspace_root.join("tools");
     let tool_executor: Arc<dyn ToolExecutor> = Arc::new(
         sisyphus_sandbox::WasmToolExecutor::with_config(Some(tools_path), None)
             .expect("Failed to init WasmToolExecutor"),
@@ -144,7 +152,6 @@ mod tests {
     use sisyphus_core::WasmSOPNode;
 
     #[tokio::test]
-    #[ignore = "Requires mock LLM that returns valid SOP JSON for synthesis"]
     async fn test_full_pipeline() {
         let kernel = setup_kernel(None).await;
         let sop_id = "full_pipeline_test";
@@ -306,7 +313,6 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "Requires mock LLM that returns valid SOP JSON for synthesis"]
     async fn test_concurrent_execution() {
         let kernel = Arc::new(setup_kernel(None).await);
         let mut handles = vec![];
