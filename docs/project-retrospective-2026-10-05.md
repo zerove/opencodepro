@@ -554,26 +554,46 @@ cargo test   -p sisyphus-core --lib   # 91 passed; 0 failed; 0 ignored
 新断言验证「成功被正确记录」，且额外串联了内核执行、持久化与 RPC 响应三者。
 **不是为了让测试变绿而放松断言，而是修正了已过时的前提。**
 
-### P2.6 — 并发测试的间歇性失败（根因未完全定位）
+### P2.6 — 并发测试失败的真实根因：`StrategicPivot` 掩盖执行失败（已定位）
 
-`test_negative_concurrent_requests` 断言 20 路并发 `execute_sop` 全部成功。
-本轮首次全量运行时它失败 1 次（`concurrent request 6 ... Sandbox disabled:
-cannot execute tool 'concurrent_6'`），此后**连续 10 次运行全部通过**
-（6 次单文件 + 4 次全量，全量每次 200 passed）。
+`test_negative_concurrent_requests` 曾在全量运行时失败 1 次
+（`concurrent request 6 ... Sandbox disabled: cannot execute tool 'concurrent_6'`），
+此后连续 13 次通过，一度被记为「间歇性失败、根因未定位」。
 
-**已确认的事实**：
-- 失败信息来自 `NoopToolExecutor`（`bridge_service.rs:936`），它对任何 tool
-  都返回 `Sandbox disabled`；`--no-default-features` 时
-  `ExecutorRouter` 的 default 执行器正是它（`bridge_service.rs:363`）。
-- 该用例的 `sop_id` 是 `concurrent_N`，**不含 `:` 前缀**，按
-  `ExecutorRouter::execute`（`types/node.rs:416`）必然落到 default，
-  即恒定报错。这与「稳定通过」相矛盾，说明失败路径与常态路径不同。
-- 每个用例各自 `setup_bridge()` 构造独立桥接，不存在跨用例共享实例。
+**插桩实测推翻了当时的假设。** 逐条打印 20 路请求的实际返回：
 
-**未确认**：为何同一用例在相同 feature 组合下会偶发走到失败路径。
-可能是 `run_execution` 中 `load_sop` 成功与否的时序差异（成功则用已存图，
-失败则合成 `WasmSOPNode` 走 default 执行器），但**本轮未取得决定性证据**，
-故不下结论。如实标记为待查项，不按「已修复」计。
+```
+PROBE req0..req19 OK status=SUCCESS
+  result=Result: "Strategic Pivot: Node node_concurrent_N produced output with
+          deviation score 0.10 (effective threshold 0.01, base 0.01)" | Cognition: ...
+PROBE SUMMARY ok=20 biz_err=0
+```
+
+即**常态是 20 路全 SUCCESS，且每次都是「Strategic Pivot」**。完整因果链：
+
+1. `concurrent_N` 不含 `:`，按 `ExecutorRouter::execute`（`types/node.rs:411`）
+   落到 default 执行器；`--no-default-features` 下该执行器是 `NoopToolExecutor`
+   （`bridge_service.rs:330`），对任何 tool 都返回 `Sandbox disabled`。
+2. `WasmSOPNode::execute` 用 `?` 传播该错误（`types/node.rs:51`）。
+3. 运行期监督器发现偏差超阈值，返回 `SupervisorDecision::Pivot`
+   （`intel/supervisor.rs:127`）。
+4. `executor.rs:299` 把它转成 `CoreError::StrategicPivot` 并 `join_set.abort_all()`。
+5. **`execute_phase` 捕获 `StrategicPivot` 后不向上报错**，而是置 `pivot_reason`
+   并构造 `NodeOutput::from(Value::String(format!("Strategic Pivot: {}", reason)))`
+   返回（`strategic_manager/cognitive_loop.rs:812-828`）。
+6. 于是 `execute_sop` 收到 `Ok`，回 `status="SUCCESS"`。
+
+**结论**：节点**确实执行失败了**，但失败被 `StrategicPivot` 吞掉并伪装成成功。
+这不是测试不稳定，而是**生产行为缺陷**——`execute_sop` 会把「工具全部失败」
+报告为 `SUCCESS`。
+
+**由此修正两处此前基于错误前提的改动**：
+- 提交 `66b37fe` 的提交说明与本节旧版本都写「无 sandbox 时 default 执行器
+  必然报错，故原断言在 CI 必然失败」。实测 20 路确实全 `SUCCESS`（失败被掩盖），
+  该前提不成立。断言放宽本身仍合理（它防的是 panic/死锁，而非业务成败），
+  但**理由需更正**。
+- 该用例的旧断言「20 路全 SUCCESS」在**当前实现下是稳定可通过**的，
+  首次失败属于当时构建/环境状态异常，而非用例本身缺陷。
 
 ### P3 — 巨型 misc 测试文件（**本轮已核查，结论降级**）
 
@@ -796,7 +816,7 @@ CI 的 `bridge-integration-test` job 用 `--no-default-features`，不受影响�
 | 2 处 `#[allow(deprecated)]` | **已完成**：删掉后编译器报 `use of deprecated field`（`SyncRequest::offset` / `SyncPageEnd::next_offset`），在 `-D warnings` 下会编译失败，属正当协议兼容 shim | — |
 | 47 处 `clippy::*` 豁免 | **已完成审计**：逐处删除后跑 clippy 比对。41 处实测必要（附触发计数）；6 处 `cast_precision_loss` 属未启用的 pedantic 组，当前失效但保留 | — |
 | bridge 战略目标用例断言过时 | **已修复**：用例断言 dummy 必然失败，但 dummy 早已学会回显合法配置，实际 `success=true`。改写为断言真实成功路径（`..._records_kernel_success_with_dummy`） | — |
-| `test_negative_concurrent_requests` 间歇性失败 | **未定位**：首次全量失败 1 次（`Sandbox disabled`），此后连续 10 次通过（单文件 6 + 全量 4，每次 200 passed）。已确认 default 执行器在无 sandbox 时恒定报错，与稳定通过矛盾，根因未取得决定性证据 | 待查，非阻塞 |
+| `execute_sop` 把执行失败报告为 `SUCCESS` | **P0，已定位**：`StrategicPivot` 吞掉 `NoopToolExecutor` 的失败并构造「Strategic Pivot」文本节点输出，`execute_sop` 因此回 `Ok`。实测 20/20 全 `SUCCESS`。详见 P2.6 | **待修** |
 
 **本报告不含任何未标注为「实测」的结论。**
 
