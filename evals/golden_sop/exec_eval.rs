@@ -24,13 +24,15 @@ use std::path::Path;
 use std::time::Instant;
 
 #[derive(Debug, Deserialize)]
-#[allow(dead_code)]
 struct GoldenCase {
     id: String,
     goal: String,
     category: String,
     difficulty: String,
     expected_sop: ExpectedSop,
+    // 仅 baseline_metrics 未被读取（eval.rs 的同类字段已逐字段标注）；
+    // 其余字段都有真实读取点，故豁免只加在字段上而非整个结构体。
+    #[allow(dead_code)]
     baseline_metrics: BaselineMetrics,
     #[allow(dead_code)]
     notes: String,
@@ -43,12 +45,15 @@ struct ExpectedSop {
 }
 
 #[derive(Debug, Deserialize, Clone)]
-#[allow(dead_code)]
 struct SopNodeJson {
+    // name 尚未参与判定（结构检查只提取 kind），但仍需反序列化以校验 JSON 完整性。
+    #[allow(dead_code)]
     name: String,
     kind: serde_json::Value,
 }
 
+/// 基准阈值。当前执行式评估只用 `nodes.len()` 做区间比较，
+/// 其余字段先反序列化保留，等判定逻辑接入后再去掉豁免。
 #[derive(Debug, Deserialize)]
 #[allow(dead_code)]
 struct BaselineMetrics {
