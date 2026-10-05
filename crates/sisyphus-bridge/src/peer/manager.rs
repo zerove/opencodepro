@@ -261,7 +261,6 @@ impl PeerManager {
     }
 
     /// 获取某 peer 的 last_seen（用于监控 / 测试）
-    #[allow(dead_code)]
     pub fn last_seen(&self, node_id: &str) -> Option<Instant> {
         self.last_seen.read().get(node_id).copied()
     }

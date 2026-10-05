@@ -120,7 +120,6 @@ pub enum SseEvent {
 
 impl SseEvent {
     /// 创建自定义事件
-    #[allow(dead_code)] // 公共 API，用于广播自定义事件
     pub fn custom(event_type: String, payload: serde_json::Value) -> Self {
         Self::Custom {
             event_type,
@@ -151,7 +150,6 @@ impl SseEvent {
     }
 
     /// 转换为 SSE 格式字符串
-    #[allow(dead_code)] // 测试与外部消费者使用
     pub fn to_sse_string(&self) -> String {
         let data = serde_json::to_string(self).unwrap_or_default();
         format!("event: {}\ndata: {}\n\n", self.event_type(), data)

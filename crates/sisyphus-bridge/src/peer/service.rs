@@ -21,7 +21,6 @@ use tokio_stream::{wrappers::UnboundedReceiverStream, Stream, StreamExt};
 use tonic::{Request, Response, Status};
 
 /// 类型别名：用于测试时的请求流构造
-#[allow(dead_code)]
 pub type RequestStream = Pin<Box<dyn Stream<Item = Result<ProtoEvent, Status>> + Send + 'static>>;
 
 /// Cluster service 实现
@@ -650,7 +649,6 @@ pub(crate) fn apply_mgr_event(manager: &PeerManager, evt: MgrEvent) {
 /// tonic 0.12 中 Server::add_service 是 consuming method（返回 Self），无需 helper。
 /// 直接调用方链式：Server::builder().add_service(ClusterServer::new(...)).serve(addr)
 /// 本函数仅作为文档示例保留。
-#[allow(dead_code)]
 pub fn add_cluster_service_example(manager: Arc<PeerManager>) -> ClusterServiceImpl {
     ClusterServiceImpl::new(manager)
 }
