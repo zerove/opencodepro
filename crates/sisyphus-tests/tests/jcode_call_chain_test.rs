@@ -6,8 +6,17 @@ use tempfile::tempdir;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixListener;
 
+/// 忽略理由：**并非**需要外部 Jcode UDS server。
+///
+/// 本用例在第 2 步自行 bind UDS 并 spawn mock server，唯一的外部依赖是
+/// `sisyphus_bridge` 这个 crate。而 `sisyphus-tests` 的集成测试目标需要链接
+/// sisyphus-bridge 的默认特性（sandbox/wasmtime），实测在本机编译即 OOM：
+/// `rustc-LLVM ERROR: out of memory ... could not compile sisyphus-bridge`。
+/// CI 侧对应地只跑 `cargo test -p sisyphus-tests --lib`，不跑本集成测试目标。
+///
+/// 若要启用，需先让 bridge 在默认特性下可完成编译。
 #[tokio::test]
-#[ignore = "Requires running Jcode UDS server"]
+#[ignore = "requires sisyphus-bridge default features (sandbox/wasmtime); OOMs on this runner"]
 async fn test_jcode_uds_call_chain() {
     // 1. Setup temporary directory for socket
     let dir = tempdir().expect("Failed to create temp dir");

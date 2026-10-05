@@ -118,10 +118,12 @@ async fn run_and_report(
 #[tokio::test]
 #[ignore = "requires LLM_API_KEY, LLM_ENDPOINT, LLM_MODEL env vars"]
 async fn test_team_single_pass_real() {
-    let Some(orch) = make_integration_orchestrator().await else {
-        eprintln!("Skipping: LLM not configured");
-        return;
-    };
+    // 不可静默跳过：这些用例已由 `#[ignore]` 隔离，只有在显式 `--ignored` 时才会跑。
+    // 若此时 LLM 仍未配置就 return，会让 `cargo test -- --ignored` 报出
+    // "6 passed" 而实际一条都没执行——用 panic 让配置缺失立即可见。
+    let orch = make_integration_orchestrator()
+        .await
+        .expect("LLM not configured; set LLM_API_KEY / LLM_ENDPOINT / LLM_MODEL");
 
     let goal = TeamGoal {
         id: "integration-single-pass".into(),
@@ -135,10 +137,12 @@ async fn test_team_single_pass_real() {
 #[tokio::test]
 #[ignore = "requires LLM_API_KEY, LLM_ENDPOINT, LLM_MODEL env vars"]
 async fn test_team_review_iterate_real() {
-    let Some(orch) = make_integration_orchestrator().await else {
-        eprintln!("Skipping: LLM not configured");
-        return;
-    };
+    // 不可静默跳过：这些用例已由 `#[ignore]` 隔离，只有在显式 `--ignored` 时才会跑。
+    // 若此时 LLM 仍未配置就 return，会让 `cargo test -- --ignored` 报出
+    // "6 passed" 而实际一条都没执行——用 panic 让配置缺失立即可见。
+    let orch = make_integration_orchestrator()
+        .await
+        .expect("LLM not configured; set LLM_API_KEY / LLM_ENDPOINT / LLM_MODEL");
 
     let goal = TeamGoal {
         id: "integration-review-iterate".into(),
@@ -160,10 +164,12 @@ async fn test_team_review_iterate_real() {
 #[tokio::test]
 #[ignore = "requires LLM_API_KEY, LLM_ENDPOINT, LLM_MODEL env vars"]
 async fn test_team_research_iterate_real() {
-    let Some(orch) = make_integration_orchestrator().await else {
-        eprintln!("Skipping: LLM not configured");
-        return;
-    };
+    // 不可静默跳过：这些用例已由 `#[ignore]` 隔离，只有在显式 `--ignored` 时才会跑。
+    // 若此时 LLM 仍未配置就 return，会让 `cargo test -- --ignored` 报出
+    // "6 passed" 而实际一条都没执行——用 panic 让配置缺失立即可见。
+    let orch = make_integration_orchestrator()
+        .await
+        .expect("LLM not configured; set LLM_API_KEY / LLM_ENDPOINT / LLM_MODEL");
 
     let goal = TeamGoal {
         id: "integration-research-iterate".into(),
@@ -186,10 +192,12 @@ async fn test_team_research_iterate_real() {
 #[tokio::test]
 #[ignore = "requires LLM_API_KEY, LLM_ENDPOINT, LLM_MODEL env vars"]
 async fn test_team_adaptive_real() {
-    let Some(orch) = make_integration_orchestrator().await else {
-        eprintln!("Skipping: LLM not configured");
-        return;
-    };
+    // 不可静默跳过：这些用例已由 `#[ignore]` 隔离，只有在显式 `--ignored` 时才会跑。
+    // 若此时 LLM 仍未配置就 return，会让 `cargo test -- --ignored` 报出
+    // "6 passed" 而实际一条都没执行——用 panic 让配置缺失立即可见。
+    let orch = make_integration_orchestrator()
+        .await
+        .expect("LLM not configured; set LLM_API_KEY / LLM_ENDPOINT / LLM_MODEL");
 
     let goal = TeamGoal {
         id: "integration-adaptive".into(),
@@ -210,10 +218,12 @@ async fn test_team_adaptive_real() {
 #[tokio::test]
 #[ignore = "requires LLM_API_KEY, LLM_ENDPOINT, LLM_MODEL env vars"]
 async fn test_team_streamed_events_real() {
-    let Some(orch) = make_integration_orchestrator().await else {
-        eprintln!("Skipping: LLM not configured");
-        return;
-    };
+    // 不可静默跳过：这些用例已由 `#[ignore]` 隔离，只有在显式 `--ignored` 时才会跑。
+    // 若此时 LLM 仍未配置就 return，会让 `cargo test -- --ignored` 报出
+    // "6 passed" 而实际一条都没执行——用 panic 让配置缺失立即可见。
+    let orch = make_integration_orchestrator()
+        .await
+        .expect("LLM not configured; set LLM_API_KEY / LLM_ENDPOINT / LLM_MODEL");
 
     use sisyphus_tools_agent::team::TeamEvent;
 
@@ -249,10 +259,12 @@ async fn test_team_streamed_events_real() {
 #[tokio::test]
 #[ignore = "requires LLM_API_KEY, LLM_ENDPOINT, LLM_MODEL env vars"]
 async fn test_team_concurrent_goals_real() {
-    let Some(orch) = make_integration_orchestrator().await else {
-        eprintln!("Skipping: LLM not configured");
-        return;
-    };
+    // 不可静默跳过：这些用例已由 `#[ignore]` 隔离，只有在显式 `--ignored` 时才会跑。
+    // 若此时 LLM 仍未配置就 return，会让 `cargo test -- --ignored` 报出
+    // "6 passed" 而实际一条都没执行——用 panic 让配置缺失立即可见。
+    let orch = make_integration_orchestrator()
+        .await
+        .expect("LLM not configured; set LLM_API_KEY / LLM_ENDPOINT / LLM_MODEL");
 
     let orch = Arc::new(orch);
     let mut handles = vec![];

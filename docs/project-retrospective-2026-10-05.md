@@ -162,6 +162,165 @@ assert_eq!(LanguageBackend::name(&backend), "node");
 > 我搜的是 `tests/` 目录，于是「所有 `#[ignore]`」这个说法从一开始就漏了 `src/`。
 > 若当时写成「审计 `#[ignore]`」并全仓 grep，就会发现这个空测试。
 
+### 3.4 全量 26 条 `#[ignore]` 逐条实跑核实
+
+至此不再抽样，而是把 `crates/` + `evals/` 下**全部** 26 条真实
+`#[ignore]` 属性（另有 5 条出现在注释里）逐条实跑，结论如下。
+
+| 分组 | 条数 | 实跑结果 | 判定 |
+|------|------|----------|------|
+| `language_backend_guards.rs` | 13 | **12 passed, 1 failed** | 理由成立 |
+| `web.rs`（需网络） | 2 | **2 passed**（修复后） | 发现并修复 bug |
+| `team_integration.rs` | 6 | **6 passed in 0.00s（实际未执行）** | 静默跳过，已修 |
+| `llm_availability.rs` | 1 | failed（400 invalid key） | 理由成立 |
+| `hook_overhead.rs` | 1 | 编译 OOM | 理由成立 |
+| `jcode_call_chain_test.rs` | 1 | 编译 OOM | **理由错误，已改** |
+| `rust_backend_test_e2e.rs` | 2 | — | 非真实 ignore（见下） |
+
+#### 3.4.1 修复：`webfetch` 测试断言与实现不符
+
+`web.rs` 的 `test_webfetch_basic` 实跑**直接失败**：
+
+```
+left:  "text/html; charset=utf-8"
+right: "text/html"
+```
+
+原断言写的是 `assert_eq!(result.content_type, "text/html")`，
+但 `webfetch` 会**原样返回** `Content-Type` 头（`web.rs:49`），
+而 `example.com` 的响应带 charset。
+
+**是测试错、不是实现错**：同函数第 59 行的判定本身就是
+`content_type.contains("text/html")`，能正确处理带 charset 的取值。
+所以正确做法是让断言与实现语义一致：
+
+```rust
+assert!(
+    result.content_type.contains("text/html"),
+    "content_type should be HTML, got {:?}", result.content_type
+);
+```
+
+**危害**：这条测试的 `#[ignore]` 理由（需网络）本身是对的，
+但一旦按理由去启用它，它会**立即失败**。也就是说
+`#[ignore]` 长期掩盖了一个从未被验证过的错误断言。
+修复后实跑：`-- --ignored test_web` → **2 passed**。提交 `af0b635`。
+
+> 另外注意：这两个网络测试在 `Err` 分支只 `eprintln!` 而不失败，
+> 属于「网络不通即自跳过」。在无网络环境下它们依然会绿，
+> 这一点应知悉——它们验证的是「不 panic」而非「联网正确」。
+
+#### 3.4.2 纠正：`jcode_call_chain_test.rs` 的忽略理由是错的
+
+原注释写 `#[ignore = "Requires running Jcode UDS server"]`，
+但该测试**第 21-34 行自行 `UnixListener::bind` 并 spawn 了 mock server**，
+并不需要任何外部 Jcode 进程。真正的阻塞是别的：
+
+```
+rustc-LLVM ERROR: out of memory
+error: could not compile `sisyphus-bridge` (lib)
+```
+
+`sisyphus-tests` 的集成测试目标需要链接 bridge 默认特性（sandbox/wasmtime），
+在本机直接编译 OOM。CI 侧也印证了这一点：
+`ci.yml` 只跑 `cargo test -p sisyphus-tests --lib`，不跑该集成测试目标。
+
+已把理由改为**真实的阻塞原因**，并删除误导性注释（提交随本节一并提交）。
+这与 AGENTS.md「bridge 在 1.96.0 stable 有 ICE / OOM」的记录一致。
+
+#### 3.4.3 核实：`language_backend_guards.rs` 13 条理由成立
+
+本机实际具备 **go / python3 / pytest / mvn / java / node** 全部工具链，
+因此「requires real toolchain」这个理由字面上看起来是「自我否定」的。
+逐条实跑（`-- --ignored`）：
+
+```
+test result: FAILED. 12 passed; 1 failed; 0 ignored
+```
+
+**12 条通过**。唯一失败的是 `maven_compile_failure_returns_err`，
+失败原因是 **JVM OOM**，不是代码缺陷：
+
+```
+There is insufficient memory for the Java Runtime Environment to continue.
+Native memory allocation (mmap) failed ... error='Not enough space' (errno=12)
+```
+
+即：忽略理由成立，但 `mvn` 那 2 条比别的更重（要起 JVM + 下载插件）。
+本机 19 GB 内存、可用约 9 GB，仍不足以让 JVM 起来。
+这条属于**环境限制**，不是可以靠改测试解决的问题。
+
+#### 3.4.4 排除误报：`rust_backend_test_e2e.rs` 的 2 条不是真的 ignore
+
+```rust
+const TWO_DOC_OK: &str = r#"
+#[test]
+#[ignore = "演示 ignored"]     // ← 这是被测代码的「输入字符串」
+fn ignored_one() { assert!(true); }
+"#;
+```
+
+这 2 处 `#[ignore]` 出现在 **fixture 源码字符串内部**，
+是喂给 RustBackend 测试数据用的，不是本仓库真实被跳过的测试。
+它们的存在是为了验证 backend 能正确解析 `ignored` 计数
+（`assert_eq!(r.ignored, 1, "ignored 必须如实计入")`）。判定正确，无需修改。
+
+#### 3.4.5 `llm_availability.rs`：env 存在但无效
+
+`GOOGLE_GENERATIVE_AI_API_KEY` 在本机**是 set 的**，但实跑返回：
+
+```
+LLM call failed: Internal system error: LLM API error (400): Please pass a valid API key
+```
+
+所以测试里的 `.expect("...must be set")` 会通过，真正被挡在 API 校验上。
+忽略理由（requires valid key）依然成立，且**恰好被这次实跑证实**。
+
+#### 3.4.6 修复：`team_integration.rs` 6 条是「静默跳过」的假绿测试
+
+这是本轮**最有价值的发现**。实跑结果是：
+
+```
+test result: ok. 6 passed; 0 failed; 0 ignored; ... finished in 0.00s
+```
+
+**0.00 秒、6 passed**——但一条都没真正执行。原因：
+
+```rust
+let Some(orch) = make_integration_orchestrator().await else {
+    eprintln!("Skipping: LLM not configured");
+    return;                       // ← 直接 return，测试算作通过
+};
+```
+
+`make_integration_orchestrator()` 在 env 缺失时返回 `None`，
+于是 6 条测试各自「跳过」并报告 ok。加 `--nocapture` 可确认：
+6 行 `Skipping: LLM not configured`。
+
+**问题性质**：这与 `#[ignore]` 是**两套重叠且互相掩盖**的跳过机制。
+`#[ignore]` 已经保证了默认不跑，此时再静默 return，
+等于让「配置缺失」在手动验证时也表现为**全绿**。
+这会把「LLM 集成根本不可用」伪装成「6 条集成测试通过」。
+
+**修复**：既然已由 `#[ignore]` 隔离，就不必再自跳过；
+配置缺失应当立即暴露：
+
+```rust
+let orch = make_integration_orchestrator()
+    .await
+    .expect("LLM not configured; set LLM_API_KEY / LLM_ENDPOINT / LLM_MODEL");
+```
+
+修复后行为变得诚实：
+
+| 命令 | 修复前 | 修复后 |
+|------|--------|--------|
+| `cargo test -p sisyphus-tools-agent --test team_integration` | 6 ignored | 6 ignored（不变） |
+| `... -- --ignored`（本机无配置） | **6 passed**（假） | **6 failed**（真） |
+
+> **推广**：这类 `let Some(x) = f() else { return }` 守卫在本仓库值得单独排查，
+> 因为它把「跳过」伪装成「通过」，会让真实覆盖缺口不可见。
+
 ## 4. 真正值得处理的问题（按优先级）
 
 ### P1 — 跨组件（e2e）验证覆盖不足（**本轮已完成测量，结论已修正**）
