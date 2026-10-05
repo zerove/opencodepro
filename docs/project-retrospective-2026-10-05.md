@@ -820,6 +820,64 @@ a successful iteration was replaced by pivot placeholder text:
 新用例 **FAILED**，缺口补上。这条记录说明：**测试通过与测试有效是两件事**——
 若不做变异验证，本报告会把「5 个用例全绿」当成覆盖已完备。
 
+#### P0.1 补测：真实 `StandardReflector` 路径（本轮）
+
+上节 3 个用例都注入 `ScriptedReflector`/`SequencedReflector`，锁的是
+「守卫读的那个数」——它是**合成夹具**，并不能回答「真实反思器到底会不会
+产出那个数」。本轮补一个不注入任何脚本化 reflector 的真实路径用例
+`test_all_pivoted_with_real_reflector_is_error`。
+
+实现上踩到一个真实的接线事实：`run_cognitive_loop` 执行的是**调用方传入的图**，
+而 `SOPGraph::from_config` 已把执行器绑进每个 `WasmSOPNode`
+（`sisyphus-types/src/graph.rs:263-268`）。因此给 `ExecutionManager` 换
+`FailingToolExecutor` **完全无效**——首次运行实测得到 `got Ok: "mock"`，
+证明失败执行器从未进入链路。必须在建图时传入。
+
+**变异验证（先错了两次，最终双向都成立）**：
+
+| 变异点 | 结果 |
+|--------|------|
+| 把 `reflect.rs` 的 0.8 臂改为 0.1 | **仍然全绿**（未命中） |
+| 把 `analyze()` 偏差公式改坏 | **仍然全绿**（未命中） |
+| 把 `else` 臂的 0.1 改为 0.0 | **FAILED**，错误变为 `NodeExecutionFailed` |
+| 让 `FailingToolExecutor` 改返回 `Ok` | **FAILED**，`got Ok: "success"` |
+
+前两次全绿说明我最初写在注释里的链路描述**是错的**：我以为 trace 含 `Error`
+会命中 0.8 臂，实测该分支根本不进（失败节点不写 trace，轨迹为空串），
+真正决定 pivot 的是同一 `if` 的 `else` 臂 **0.1**。已按实测结果重写注释，
+并把「哪些变异无效」也写进去，避免后人重复踩。
+
+真实链路（已由变异反推确认）：执行失败 → 轨迹为空 →
+`output.indicates_failure()` 跳过快速通道 → 空串命中兜底 `else` 臂 0.1
+→ `effective_threshold = 0.2 × 0.1 = 0.02`，0.1 > 0.02 触发 `StrategicPivot`
+→ 唯一迭代只产占位文本 → `AllIterationsPivoted`。
+
+core lib 测试由 **97 passed 变为 98 passed**（新增本用例）。
+
+#### 顺带纠正：上轮提交的 test-light 计数是假的
+
+上上条提交（`ea18cbe`）的验收记录里写「test-light：30 套件 750 passed」。
+本轮用**完全捕获输出**（不再 `| tail -40`）重跑同一 CI 命令，实测：
+
+```
+套件 221（其中 22 个 Doc-tests）· passed 4773 · failed 0 · ignored 24
+```
+
+原因是我上一轮用了 `... | grep ... | tail -40`，管道**截断了输出**，
+只统计到末尾 40 行里的数字，于是把 221 套件读成 30 套件、把 4773 读成 750。
+`FAILED` 计数同样只覆盖尾部——当时「0 failed」这一结论**并不成立**，
+只是恰好真的没失败。这与 P2.7 那一轮的「假绿」是同一类错误：
+**用截断的证据支撑全量结论**。
+
+已改为完整捕获到日志文件后再统计，并把本轮门禁全部重跑：
+
+| 门禁（CI 原始命令） | 结果 |
+|---|---|
+| `cargo fmt --check` | rc=0 |
+| `cargo clippy --workspace --exclude sandbox/sandboxd/tests/bridge --all-targets -- -A clippy::double-must-use -D warnings` | rc=0 |
+| test-light（同上 workspace 范围） | 221 套件 / 4773 passed / 0 failed / 24 ignored |
+| `cargo test -p sisyphus-core`（全目标） | 339 passed / 0 failed |
+
 ### P3 — 巨型 misc 测试文件（**本轮已核查，结论降级**）
 
 `sisyphus-types/tests/` 下 4 个大文件合计 15,879 行：

@@ -23,6 +23,31 @@ impl ToolExecutor for MockToolExecutor {
     }
 }
 
+/// 总是执行失败的工具执行器。
+///
+/// 用途：让**真实** `StandardReflector` 有真实失败可观察。
+/// `MockToolExecutor` 永远返回 `Ok("mock")`，trace 里不会出现错误，
+/// 因此用真实反思器验证 pivot 链路时必须换成会失败的那个。
+///
+/// 注意：触发偏差的不是 `reflect.rs:730-736` 那个「trace 含 Error 就 0.8」
+/// 的兜底（实测该分支不生效，见 `test_all_pivoted_with_real_reflector_is_error`
+/// 的注释），而是同一个 `else` 臂里的 **0.1**。
+struct FailingToolExecutor;
+
+#[async_trait::async_trait]
+impl sisyphus_types::ToolExecutor for FailingToolExecutor {
+    async fn execute(
+        &self,
+        _tool_id: &str,
+        _args: Vec<u8>,
+        _fuel_limit: u64,
+    ) -> Result<Vec<u8>, sisyphus_types::TypesError> {
+        Err(sisyphus_types::TypesError::NodeExecutionError(
+            "mock tool failure for real-reflector pivot test".into(),
+        ))
+    }
+}
+
 struct MockTestExecutor;
 #[async_trait::async_trait]
 impl sisyphus_types::TestExecutor for MockTestExecutor {
@@ -2078,6 +2103,9 @@ async fn setup_manager_with_reflector(deviation: f64) -> StrategicManager {
     )
 }
 
+/// 单节点成功图：执行器烘焙进节点，返回 `Ok("mock")`。
+///
+/// P0.1 的脚本化 reflector 用例依赖它，让偏差完全由注入的 reflector 决定。
 fn single_node_sop() -> Arc<SOPGraph> {
     make_sop_graph(&SOPGraphConfig {
         nodes: vec![SOPNodeConfig {
@@ -2089,6 +2117,188 @@ fn single_node_sop() -> Arc<SOPGraph> {
         }],
         edges: vec![],
     })
+}
+
+/// 单节点失败图，执行器**烘焙进节点**——这是让真实执行真正失败的唯一途径。
+///
+/// `SOPGraph::from_config` 会把执行器绑进每个 `WasmSOPNode`
+/// （`sisyphus-types/src/graph.rs:263-268`），因此给 `ExecutionManager`
+/// 换执行器对 `run_cognitive_loop` 无效，必须在这里建图。
+fn failing_node_sop() -> Arc<SOPGraph> {
+    SOPGraph::from_config(
+        &SOPGraphConfig {
+            nodes: vec![SOPNodeConfig {
+                name: "n0".into(),
+                kind: NodeKind::Wasm {
+                    tool_id: "t".into(),
+                    fuel_limit: 100,
+                },
+            }],
+            edges: vec![],
+        },
+        Arc::new(FailingToolExecutor),
+        Arc::new(MockTestExecutor),
+    )
+    .expect("failing graph from config")
+}
+
+/// 用**真实** `StandardReflector` 复验零产出守卫（非合成夹具）。
+///
+/// 覆盖动机：P0.1 的其余用例都用 `ScriptedReflector`/`SequencedReflector`
+/// 直接返回脚本化偏差，属合成夹具——它锁的是「守卫读的那个数」，而不是
+/// 「真实反思器会不会产出那个数」。本用例不注入任何脚本化 reflector，
+/// 改用生产 `StandardReflector`，其偏差完全由真实 trace 推导。
+///
+/// 实际走通的链路（由变异验证反推得出，**不要按直觉写**）：
+///
+/// 1. `FailingToolExecutor` 执行失败 → 节点不写成功 trace，轨迹为空；
+/// 2. `SisyphusSupervisor` 的 `output.indicates_failure()` 为真，
+///    跳过快速通道，`build_trace(&ctx)` 得到空字符串；
+/// 3. `StandardReflector::reflect` 走 `records.is_empty()` 兜底分支，
+///    空串既不含 `Error` 也不含 `ResourceExhausted`，因此命中的是
+///    **`else` 臂的 0.1**，而不是同一 `if` 的 0.8 臂；
+/// 4. `effective_threshold = base * max(success_prob, 0.1)`，
+///    测试里 `MockSimulator` 给 0.1、阈值取 Low 档，故 base = 0.2、
+///    effective = 0.02，0.1 > 0.02 触发 `StrategicPivot`；
+/// 5. 唯一迭代只产出 pivot 占位文本 → `AllIterationsPivoted`。
+///
+/// 变异证据（已实测，均使本用例失败）：
+/// - 把 `else` 臂的 0.1 改成 0.0 → 失败，错误变为 `NodeExecutionFailed`；
+/// - 让 `FailingToolExecutor` 改返回 `Ok` → 失败，`got Ok: "success"`。
+///
+/// 反之，把 0.8 臂改成 0.1、或把 `analyze()` 的偏差改坏，**本用例仍全绿**
+/// ——说明这两处与本路径无关。这正是「测试通过 ≠ 测试有效」的实例。
+#[tokio::test]
+async fn test_all_pivoted_with_real_reflector_is_error() {
+    let manager = setup_manager_with_real_reflector(".omo/test_knowledge_real_reflector").await;
+
+    let err = match manager
+        .run_cognitive_loop(
+            failing_node_sop(),
+            "test_real_reflector_pivot",
+            None,
+            None,
+            None,
+            None,
+            |_id, _e| {},
+            None,
+            None,
+        )
+        .await
+    {
+        Ok((res, _, _)) => {
+            panic!("real reflector must detect the failure and pivot, got Ok: {res}")
+        },
+        Err(e) => e,
+    };
+
+    assert!(
+        matches!(err, CoreError::AllIterationsPivoted(..)),
+        "expected AllIterationsPivoted from the real reflector path, got: {err:?}"
+    );
+
+    let msg = err.to_string();
+    assert!(
+        !msg.contains("SUCCESS"),
+        "error message must not claim success: {msg}"
+    );
+}
+
+/// 构造使用生产 `StandardReflector` 的 manager（不注入任何脚本化偏差）。
+///
+/// 与 `setup_manager_with_reflector` 的唯一区别是 reflector 实例；其余
+/// 夹具（内存 store、DummyLlm、MockToolExecutor）保持一致，以便对比。
+///
+/// 注意：这里给 `ExecutionManager` 传 `FailingToolExecutor` 是**多余**的——
+/// `run_cognitive_loop` 执行时用的是「调用方传入的图」，而图在
+/// `SOPGraph::from_config` 时就把执行器绑进了每个 `WasmSOPNode`
+/// （`sisyphus-types/src/graph.rs:263-268`）。真正生效的是
+/// `failing_node_sop()` 建图时用的执行器。保留此处是为了让 manager
+/// 自身与图保持一致。
+async fn setup_manager_with_real_reflector(knowledge_dir: &str) -> StrategicManager {
+    let simulator = Arc::new(MockSimulator::new(vec![0.1]));
+    let intel = Arc::new(sisyphus_intel::SisyphusIntel::new(
+        simulator,
+        Arc::new(MockLogicalSimulator),
+        Arc::new(sisyphus_intel::StandardReflector),
+        Arc::new(MockEvolver),
+    ));
+
+    let llm: Arc<dyn sisyphus_tools_llm::LlmClient> = Arc::new(sisyphus_tools_llm::DummyLlmClient);
+    let synthesizer: Arc<dyn sisyphus_intel::FlowSynthesizer> = Arc::new(
+        sisyphus_intel::GoalDrivenSynthesizer::new(Arc::new(MockToolExecutor)),
+    );
+
+    let intelligence_manager = Arc::new(IntelligenceManager::new(intel, synthesizer, llm.clone()));
+
+    let state_store = Arc::new(
+        sisyphus_mem::MfsStore::new("sqlite::memory:", &sisyphus_types::CacheConfig::default())
+            .await
+            .expect("in-memory MfsStore"),
+    );
+    let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.expect("sqlite pool");
+    let sop_store =
+        Arc::new(sisyphus_mem::SopSqlStore::new(pool.clone()).await.expect("sop store"));
+    let knowledge = Arc::new(sisyphus_knowledge::AssetManager::new(
+        std::path::PathBuf::from(knowledge_dir),
+    ));
+    let intervention = Arc::new(crate::intervention_manager::InterventionManager::new());
+    let internalization = Arc::new(crate::internalization_manager::InternalizationManager::new(
+        llm.clone(),
+        knowledge.clone(),
+    ));
+    let execution_manager = Arc::new(ExecutionManager::new(
+        state_store.clone(),
+        sop_store,
+        Arc::new(FailingToolExecutor),
+        Arc::new(MockTestExecutor),
+        intervention.clone(),
+        internalization.clone(),
+        None,
+    ));
+
+    let config = CognitiveLoopConfig {
+        max_iterations: 2,
+        convergence_threshold: 0.01,
+        llm_stage_timeout_secs: 30,
+        adaptive_depth: sisyphus_types::config::AdaptiveDepthConfig::default(),
+        anomaly_detector: sisyphus_types::config::AnomalyDetectorConfig::default(),
+        token_budget: sisyphus_types::config::TokenBudgetConfig::default(),
+    };
+
+    let benchmark = Arc::new(parking_lot::Mutex::new(
+        sisyphus_tools_build::benchmark::ContinuousBenchmark::new(".omo/test_bench_real_refl"),
+    ));
+    let meta_learner = Arc::new(parking_lot::Mutex::new(
+        sisyphus_tools_llm_tools::meta_learner::MetaLearner::new(".omo/test_meta_real_refl"),
+    ));
+    let roadmap = Arc::new(sisyphus_roadmap::RoadmapManager::new(
+        state_store.clone(),
+        Arc::new({
+            let store =
+                sisyphus_mem::RoadmapSqlStore::new(pool.clone()).await.expect("roadmap store");
+            store.init_schema().await.expect("init roadmap schema");
+            store
+        }),
+        Arc::new(sisyphus_roadmap::proposal_manager::ProposalManager::new(
+            state_store.clone(),
+        )),
+    ));
+
+    StrategicManager::new(
+        intelligence_manager,
+        execution_manager,
+        config,
+        Arc::new(crate::AgentChannel::new()),
+        benchmark,
+        meta_learner,
+        Arc::new(MockExperienceBank),
+        knowledge,
+        roadmap,
+        intervention,
+        internalization,
+        None,
+    )
 }
 
 /// 全部迭代都在执行期 pivot 时，必须返回 `AllIterationsPivoted` 而不是 Ok。
