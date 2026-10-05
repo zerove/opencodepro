@@ -594,23 +594,40 @@ PROBE SUMMARY ok=20 biz_err=0
 - 全仓无任何调用方解析 `"Strategic Pivot"` 前缀（grep 零命中），
   因此**调用方无法区分「执行成功」与「一执行就崩并被掩盖」**。
 
-**最小修复方向**（本轮只定位、未实施，避免在未与用户确认语义前改动核心执行路径）：
-在 `execute_phase` 捕获 `StrategicPivot` 时区分「首轮即 pivot」与「迭代中途 pivot」，
-若循环最终未产出任何真实执行结果，应让 `run_cognitive_loop` 返回
-`Err`（如新增 `CoreError::AllIterationsPivoted`），而非把 pivot 文本当作结果。
-最小侵入方案是在桥接层用 `!report.converged` 决定 `status`，但那会把
-「收敛但有偏差」也误判为失败，需先定义 `converged` 的语义边界。
+**已实施（`71b01ac`）**：采纳方案 A，未改动规划器契约。
 
-这不是测试不稳定，而是**生产行为缺陷**——`execute_sop` 会把「工具全部失败」
-报告为 `SUCCESS`。
+- 新增 `CoreError::AllIterationsPivoted(usize, String)`（`core/src/lib.rs`）
+- `run_cognitive_loop` 统计 `real_result_iterations`，全为 0 时返回 `Err`
+- 判定依据是 `execute_phase` 新回报的 `exec_pivot` 信号，**不是** `pivot_reason`：
+  后者有两个来源——预测期的「Logical Flaw Detected」（`:715`）与执行期的
+  StrategicPivot（`:813`），前者不代表本轮没执行。首次实现误用了 `pivot_reason`，
+  导致 `fetch` 用例被误判失败，已修正。
+- 语义边界：只要有任意一轮拿到真实执行结果即视为成功，中途 pivot 后恢复
+  不被误判为失败
 
-**由此修正两处此前基于错误前提的改动**：
-- 提交 `66b37fe` 的提交说明与本节旧版本都写「无 sandbox 时 default 执行器
-  必然报错，故原断言在 CI 必然失败」。实测 20 路确实全 `SUCCESS`（失败被掩盖），
-  该前提不成立。断言放宽本身仍合理（它防的是 panic/死锁，而非业务成败），
-  但**理由需更正**。
-- 该用例的旧断言「20 路全 SUCCESS」在**当前实现下是稳定可通过**的，
-  首次失败属于当时构建/环境状态异常，而非用例本身缺陷。
+**修复实测**：20 路并发由 20/20 `SUCCESS`（内容均为 `Strategic Pivot` 占位文本）
+变为 20/20 `Code::Internal` + `ended in StrategicPivot without any real execution result`。
+
+**连带暴露并修正 5 个测试**：它们的断言都依赖「伪造成成功」才通过。
+其中 4 个（`test_execute_sop_missing` 等）注释声明的意图是「不 panic、拿到应答」，
+却用 `.expect()` 强制要求 `Ok`——断言方式与声明意图不符。
+第 5 个 `test_execute_tool_strategic_next_goal` 断言 `outcome.success` 为真，
+实测该「成功」是假的，已改为断言「记录与实际发生的事自洽」并重命名。
+
+### P2.7 — 遗留：`ActionType` 语义标签被当作可执行 `tool_id`（未修，需独立决策）
+
+修复 `AllIterationsPivoted` 后，`test_execute_tool_strategic_next_goal` 暴露出
+更深层的契约问题：
+
+- 规划器合成的动作是**语义标签**：`ActionType::Fetch → "fetch"`，与
+  `process`/`sink`/`search`/`validate` 同级（`sisyphus-intel/src/synthesis.rs:120`）
+- 真实工具名是 `builtin:web_fetch`（`bridge/src/tools.rs:52`）
+- 标签被当作 `tool_id` 塞进 `WasmSOPNode`，无 `builtin:` 前缀 →
+  `ExecutorRouter` 落到 default 执行器 → 无 sandbox 时为 `NoopToolExecutor` → 必然失败
+
+**这不是测试夹具问题**：生产中规划器合成任何未知动作都会走同一条失败路径。
+本轮只让它「如实失败」，未改规划器契约——那会牵动工具注册表与规划器的
+职责边界，超出缺陷修复范围，需要独立设计。
 
 ### P3 — 巨型 misc 测试文件（**本轮已核查，结论降级**）
 
@@ -832,8 +849,9 @@ CI 的 `bridge-integration-test` job 用 `--no-default-features`，不受影响�
 | `crates/` 侧 14 处 `#[allow(dead_code)]` | **已完成**（`c49b34f`）：14 处逐个实测裁决，5 处失效已删，9 处真实需要 | — |
 | 2 处 `#[allow(deprecated)]` | **已完成**：删掉后编译器报 `use of deprecated field`（`SyncRequest::offset` / `SyncPageEnd::next_offset`），在 `-D warnings` 下会编译失败，属正当协议兼容 shim | — |
 | 47 处 `clippy::*` 豁免 | **已完成审计**：逐处删除后跑 clippy 比对。41 处实测必要（附触发计数）；6 处 `cast_precision_loss` 属未启用的 pedantic 组，当前失效但保留 | — |
-| bridge 战略目标用例断言过时 | **已修复**：用例断言 dummy 必然失败，但 dummy 早已学会回显合法配置，实际 `success=true`。改写为断言真实成功路径（`..._records_kernel_success_with_dummy`） | — |
-| `execute_sop` 把执行失败报告为 `SUCCESS` | **P0，已定位**：`StrategicPivot` 吞掉 `NoopToolExecutor` 的失败并构造「Strategic Pivot」文本节点输出，`execute_sop` 因此回 `Ok`。实测 20/20 全 `SUCCESS`。详见 P2.6 | **待修** |
+| bridge 战略目标用例断言过时 | **已修复后又修正**（`d53b88b` → `71b01ac`）：先按「dummy 能回显合法配置」改写为断言成功；随后 P0 修复证明该「成功」本身是假的（工具从未真正执行），再次改写为断言「记录与实际发生的事自洽」，用例重命名为 `..._records_kernel_outcome_with_dummy` | — |
+| `ActionType` 语义标签被当作可执行 `tool_id` | **未完成**（P2.7）：`synthesis.rs:120` 的 `Fetch → "fetch"` 是语义标签，真实工具为 `builtin:web_fetch`；无前缀必然落到 `NoopToolExecutor`。生产中规划器合成未知动作会走同一失败路径。本轮只让它如实失败，未改规划器契约 | **需独立设计**，超出缺陷修复范围 |
+| `execute_sop` / `execute_tool` 把执行失败报告为 `SUCCESS` | **P0，已修**（`71b01ac`）：新增 `CoreError::AllIterationsPivoted`，全程零真实产出时如实返回 Err。实测 20 路由 20/20 假 SUCCESS 变为 20/20 真 Internal。连带修正 5 个依赖「伪造成成功」的测试 | 已修 |
 
 **本报告不含任何未标注为「实测」的结论。**
 
@@ -854,6 +872,8 @@ CI 的 `bridge-integration-test` job 用 `--no-default-features`，不受影响�
 | `d53b88b` | 修正 `test_execute_tool_strategic_next_goal` 的过时断言：Dummy LLM 实际能生成合法提案（实测 `success=true`），改为断言真实成功路径 |
 | `66b37fe` | 修正并发用例断言：区分业务失败（`Status::internal`）与真正回归，消除对 sandbox 的环境依赖 |
 | `c49b34f` | crates 侧 14 处 `#[allow(dead_code)]` 逐个实测裁决，删除 5 处失效豁免 |
+| `fafc20a` / `c7edfce` | 插桩定位并发用例失败真因：`StrategicPivot` 吞掉执行失败并伪装成 SUCCESS；更正 `66b37fe` 基于错误前提的说明 |
+| `71b01ac` | 修复 P0：全程 StrategicPivot 零真实产出时如实返回 `AllIterationsPivoted`；连带修正 5 个依赖「伪造成成功」的测试 |
 
 ### 本轮实测确认的结论汇总
 
