@@ -194,6 +194,12 @@ max_iterations = 10
 # 范围: 0.0 ~ 1.0（越低越严格）
 # 环境变量: SISYPHUS_COGNITIVE_LOOP_CONVERGENCE_THRESHOLD
 # 类型: f64 | 默认: 0.15
+#
+# 生效方式：实际阈值 = min(自适应档位, 本值)。
+# 自适应档位由 ComplexityAnalyzer 按复杂度给出
+# （Low 0.2 / Medium 0.05 / High 0.01 / Ultra 0.005），
+# 因此本值只能在**更严**的方向生效——写更大的数不会放宽判定。
+# 设为 0.0 表示不额外收紧，完全采用自适应档位。
 convergence_threshold = 0.15
 
 # ── 自适应深度控制器参数 (认知循环 v2) ────────────────────

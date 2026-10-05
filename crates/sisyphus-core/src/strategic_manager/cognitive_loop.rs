@@ -146,18 +146,26 @@ impl StrategicManager {
             // 基线仅用于日志对比；动态结果不写回共享 config（见 dbc2f7a）。
             // 此前的写回-读回模式会让并发执行的循环互相覆盖 max_iterations/convergence_threshold
             // （写回值只有本运行读一次，其余全是污染）。行为与原先完全等价：
-            // 本轮实际生效的就是下方局部返回的 final_max/d_thresh。
+            // 本轮实际生效的就是下方局部返回的 final_max/eff_threshold。
             // 完整背景见 docs/work-summaries/2026-08-26_architecture-review.md P0-1。
             let baseline = self.config.read();
+            let user_threshold = baseline.convergence_threshold;
+            // 自适应阈值只能在用户包络内收紧（见 effective_convergence_threshold）。
+            // 接线修复：此前 d_thresh 直接生效，cognitive_loop.convergence_threshold
+            // 只被 apply_cognitive_loop_config 写进日志，从不影响循环行为。
+            let eff_threshold = effective_convergence_threshold(d_thresh, user_threshold);
             tracing::info!(
-                "Loop parameters: baseline max_iterations {}, effective {} (v2 budget {}), threshold {}",
+                "Loop parameters: baseline max_iterations {}, effective {} (v2 budget {}), \
+                 threshold adaptive {} -> effective {} (user {})",
                 baseline.max_iterations,
                 final_max,
                 v2_budget,
-                d_thresh
+                d_thresh,
+                eff_threshold,
+                user_threshold
             );
 
-            (final_max as usize, d_thresh)
+            (final_max as usize, eff_threshold)
         };
 
         let span = tracing::info_span!("strategic.run_cognitive_loop", sop_id = %sop_id, graph_nodes = sop_graph.graph.node_count());
@@ -1396,6 +1404,41 @@ pub fn effective_max_iterations(adaptive_depth: u32, v2_budget: u32, user_cap: u
     adaptive_depth.min(v2_budget).min(user_cap)
 }
 
+/// 计算认知循环的有效收敛阈值（`convergence_threshold` 接线修复）。
+///
+/// **背景**：ADR 005 决定用自适应深度控制器取代 v1 的静态
+/// `convergence_threshold`，因此循环的实际偏差阈值改为由
+/// [`sisyphus_intel::ComplexityAnalyzer`] 按复杂度分档给出
+/// （Low 0.2 / Medium 0.05 / High 0.01 / Ultra 0.005，
+/// 见 `sisyphus-intel/src/complexity.rs:17-24`）。
+/// 但顶层 `cognitive_loop.convergence_threshold` 字段并未随之下线，
+/// 而是被文档、配置模板和环境变量当作可用旋钮承诺：
+/// - `config.example.toml:193-197`（「偏差低于此值时提前停止循环」）
+/// - `book/src/performance.md:89`、`:99`
+/// - `book/src/configuration.md:12,130,269`
+/// - `SISYPHUS_COGNITIVE_LOOP_CONVERGENCE_THRESHOLD`
+///
+/// 结果：用户设置的值**从不生效**，而 `apply_cognitive_loop_config`
+/// 只把它写进日志，看起来像是已应用。
+///
+/// **语义**：与 [`effective_max_iterations`] 同构——自适应分析只能在用户
+/// 配置的包络内**收紧**，不得突破用户的明确设定：
+/// 1. 取 `min(adaptive_threshold, user_threshold)`；
+/// 2. 用户配置为 `0.0` 时视为「不额外收紧」，完全采用自适应档位。
+///
+/// 采用 min 而非直接采用用户值，是因为偏差阈值**越小越严格**
+/// （偏差低于该值才算收敛），直接采用用户值会**放大**宽松度——
+/// 用户写 0.15 时实际生效的 Ultra 档 0.005 比 0.15 严格得多，
+/// 反向采用会把「更严」误当成「更松」。min 语义保证：
+/// **用户在任一方向上设置的约束都不会被自适应分析突破**。
+pub fn effective_convergence_threshold(adaptive_threshold: f64, user_threshold: f64) -> f64 {
+    if user_threshold <= 0.0 {
+        adaptive_threshold
+    } else {
+        adaptive_threshold.min(user_threshold)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1422,6 +1465,60 @@ mod tests {
     fn test_effective_max_zero_cap_disables_loop() {
         // 上限为 0 是显式的"禁止迭代"语义。
         assert_eq!(effective_max_iterations(30, 30, 0), 0);
+    }
+
+    /// 用户阈值比自适应档位更严时必须生效（min 语义的收紧方向）。
+    #[test]
+    fn test_effective_threshold_user_can_tighten() {
+        // Ultra 档 0.005，用户要求 0.001 → 更严，采用用户值。
+        assert!((effective_convergence_threshold(0.005, 0.001) - 0.001).abs() < f64::EPSILON);
+        // Low 档 0.2，用户要求 0.15（文档默认）→ 采用用户值。
+        assert!((effective_convergence_threshold(0.2, 0.15) - 0.15).abs() < f64::EPSILON);
+    }
+
+    /// 自适应档位比用户阈值更严时不得被放宽。
+    ///
+    /// 这是最容易写反的方向：用户写 0.15 但实际命中 Ultra 档 0.005，
+    /// 若直接采用用户值就会把严格判定**放宽** 30 倍。
+    #[test]
+    fn test_effective_threshold_adaptive_is_never_loosened() {
+        assert!((effective_convergence_threshold(0.005, 0.15) - 0.005).abs() < f64::EPSILON);
+        assert!((effective_convergence_threshold(0.01, 0.15) - 0.01).abs() < f64::EPSILON);
+        // 等值时无争议。
+        assert!((effective_convergence_threshold(0.05, 0.05) - 0.05).abs() < f64::EPSILON);
+    }
+
+    /// 用户阈值 0.0 表示「不额外收紧」，完全采用自适应档位。
+    #[test]
+    fn test_effective_threshold_zero_means_no_override() {
+        for adaptive in [0.2, 0.05, 0.01, 0.005] {
+            assert!(
+                (effective_convergence_threshold(adaptive, 0.0) - adaptive).abs() < f64::EPSILON
+            );
+        }
+    }
+
+    /// 四档复杂度全覆盖：用户包络永远不破。
+    #[test]
+    fn test_effective_threshold_covers_all_complexity_tiers() {
+        // (ComplexityAnalyzer 档位, 对应阈值)
+        for adaptive in [0.2, 0.05, 0.01, 0.005] {
+            for user in [0.0, 0.001, 0.05, 0.15, 1.0] {
+                let eff = effective_convergence_threshold(adaptive, user);
+                assert!(
+                    eff > 0.0,
+                    "有效阈值必须为正：adaptive={adaptive} user={user}"
+                );
+                if user > 0.0 {
+                    assert!(
+                        eff <= adaptive + f64::EPSILON && eff <= user + f64::EPSILON,
+                        "有效阈值必须同时不宽于自适应与用户设定：adaptive={adaptive} user={user} eff={eff}"
+                    );
+                } else {
+                    assert!((eff - adaptive).abs() < f64::EPSILON);
+                }
+            }
+        }
     }
 
     /// 验证 A2 修复：active_key 格式包含 sop_id + 唯一后缀，

@@ -182,6 +182,14 @@ async fn test_history_sop_filter_and_limit() {
 async fn test_flush_cognitive_traces_survives_recreation() {
     // bridge 关闭（SIGINT/SIGTERM）时的真实语义：先 flush 再丢弃实例。
     // 修复前不 flush 直接 drop，实测 30 轮中有 5 轮丢失认知追踪。
+    //
+    // 2026-10-05 记录一个**尚未闭环**的偶发现象，勿当成本用例的已知行为：
+    // 全量 `cargo test -p sisyphus-core` 期间曾出现一次 `1/10 rounds lost`。
+    // 事后定向复跑约 130 轮（单测 x3、6 并发、8 并发、全量 core、CI test-light）
+    // 均未复现。插桩测量显示 flush 阶段增量恒为约 0.1ms（峰值 0.19s）、
+    // `record_cognitive_trace` 写入峰值约 1s，都远低于 flush 内 5s 的超时，
+    // 因此「超时导致回执被丢弃」这一假说已被证伪；FIFO 屏障逻辑本身也正确。
+    // 根因至今未能定位，如再现请记录当次完整日志（含 SQLITE/IO 报错）。
     let mut lost = 0;
     const ROUNDS: usize = 10;
     for i in 0..ROUNDS {

@@ -86,7 +86,7 @@ cargo bench -p sisyphus-core
 # config.toml
 [cognitive_loop]
 max_iterations = 30           # 认知迭代次数上限
-convergence_threshold = 0.15  # 偏差低于此值时停止
+convergence_threshold = 0.15  # 偏差低于此值时停止（仅能比自适应档位更严）
 ```
 
 注：`ParallelBranchPredictor` 已移除（从未接入生产循环，见 ADR 005 修订）。
@@ -97,5 +97,8 @@ DAG 节点级并发由 `[executor] max_concurrent_tasks` 控制。
 - **max_concurrent_tasks**：CPU 密集型工作负载设置为 CPU 核心数。I/O 密集（LLM 调用）时，更高值（8-16）可提升吞吐量。
 - **max_iterations**：更低的值降低最坏情况延迟。更高的值提升收敛质量。
 - **convergence_threshold**：更严格（更低）的阈值提升输出质量，但需要更多迭代。
+  实际生效值 = `min(自适应档位, 本值)`，自适应档位由 `ComplexityAnalyzer`
+  按复杂度给出（Low 0.2 / Medium 0.05 / High 0.01 / Ultra 0.005）。
+  因此**本值只能收紧、不能放宽**：设为 `0.0` 表示完全采用自适应档位。
 
 使用 `RUST_LOG=sisyphus_core=info` 通过 tracing spans（`predict`、`execute`、`reflect`、`evolve`）监控认知循环性能。

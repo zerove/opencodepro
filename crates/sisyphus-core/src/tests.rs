@@ -2495,6 +2495,25 @@ async fn setup_manager_with_sequenced_reflector_and_logic(
     knowledge_dir: &str,
     critical_flaw: bool,
 ) -> StrategicManager {
+    setup_manager_with_seq_threshold(
+        deviations,
+        max_iterations,
+        knowledge_dir,
+        critical_flaw,
+        0.01,
+    )
+    .await
+}
+
+/// [`setup_manager_with_sequenced_reflector_and_logic`] 的变体，
+/// 允许指定 `convergence_threshold`，用于验证用户阈值真的参与生效。
+async fn setup_manager_with_seq_threshold(
+    deviations: impl IntoIterator<Item = f64>,
+    max_iterations: u32,
+    knowledge_dir: &str,
+    critical_flaw: bool,
+    threshold: f64,
+) -> StrategicManager {
     let simulator = Arc::new(MockSimulator::new(vec![0.1]));
     let logic: Arc<dyn sisyphus_intel::simulation::LogicalSimulator> = if critical_flaw {
         Arc::new(CriticalFlawSimulator::default())
@@ -2543,7 +2562,7 @@ async fn setup_manager_with_sequenced_reflector_and_logic(
 
     let config = CognitiveLoopConfig {
         max_iterations,
-        convergence_threshold: 0.01,
+        convergence_threshold: threshold,
         llm_stage_timeout_secs: 30,
         adaptive_depth: sisyphus_types::config::AdaptiveDepthConfig::default(),
         anomaly_detector: sisyphus_types::config::AnomalyDetectorConfig::default(),
@@ -2625,6 +2644,110 @@ async fn test_partial_pivot_then_recovery_still_succeeds() {
     assert_eq!(
         report.iterations, 2,
         "both iterations should have run: one pivoted, one recovered"
+    );
+}
+
+/// 用户配置的 `convergence_threshold` 必须真正参与生效（接线回归）。
+///
+/// **缺陷背景**：ADR 005 用自适应深度取代了 v1 的静态阈值，实际阈值改由
+/// `ComplexityAnalyzer` 按复杂度分档给出（Low 0.2 / Medium 0.05 /
+/// High 0.01 / Ultra 0.005）。但顶层 `cognitive_loop.convergence_threshold`
+/// 仍被文档、配置模板与环境变量承诺为可用旋钮，实际只被写进日志——
+/// 用户设的值从不生效。
+///
+/// **可观测性分析**（决定了本用例为何只锁定一个方向）：
+/// 本夹具实测命中自适应 **High 档 0.01**。因为修复采用 min 语义
+/// （见 `effective_convergence_threshold`），有效阈值 = min(0.01, user)：
+/// - `user = 0.001`（更严）→ 有效 0.001，偏差 0.05 无法收敛；
+/// - `user = 0.9`（更松）→ 有效仍被拉到 0.01，偏差 0.05 同样不收敛。
+///
+/// 也就是说**放宽方向在行为上不可观测**（这是 min 语义的刻意安全属性：
+/// 用户写大数不能放松严格判定）。未接线的旧版本同样表现为「不收敛」，
+/// 因此本用例改用**诊断文本**作为接线证据：pivot 原因里回显的
+/// `base {:.2}` 在接线后是 0.001（渲染为 `0.00`），未接线时则是
+/// 自适应档位 0.01（渲染为 `0.01`）。两者可直接区分。
+#[tokio::test]
+async fn test_user_configured_threshold_tightens_convergence() {
+    // 偏差恒为 0.05；用户把阈值压到 0.001，远严于自适应档位。
+    let manager = setup_manager_with_seq_threshold(
+        [0.05],
+        3,
+        ".omo/test_knowledge_threshold_tighten",
+        false,
+        0.001,
+    )
+    .await;
+
+    let (_res, report, _evolved) = manager
+        .run_cognitive_loop(
+            single_node_sop(),
+            "test_threshold_tighten",
+            None,
+            None,
+            None,
+            None,
+            |_id, _e| {},
+            None,
+            None,
+        )
+        .await
+        .expect("loop should complete without pivoting");
+
+    assert!(
+        !report.converged,
+        "deviation 0.05 exceeds the user-tightened threshold 0.001, so it must NOT converge: {report:?}"
+    );
+    // 不能断言具体迭代次数：循环可能因自适应深度控制器的置信度平台期
+    // 而提前跳出，那与阈值无关。真正的不变量是「未收敛」。
+    // 接线生效的旁证：pivot 诊断里的 base 阈值为 0.001（被 {:.2} 舍入成 0.00），
+    // 而非未接线时恒定的自适应档位 0.01（会显示为 0.01）。
+    let pivot_hint = report
+        .history
+        .iter()
+        .flat_map(|it| it.suggestions.iter())
+        .find(|s| s.contains("effective threshold"))
+        .expect("a pivot at this threshold must record the supervisor diagnostic");
+    assert!(
+        pivot_hint.contains("base 0.00"),
+        "effective base threshold must come from the user setting 0.001 (rendered as 0.00), \
+         not the unwired adaptive tier 0.01: {pivot_hint}"
+    );
+}
+
+/// min 语义的对偶：放宽用户阈值不能绕过自适应档位。
+///
+/// 与上一个用例成对，锁定「用户写大数也不能把严格判定放松」这一侧。
+/// 注意它在**未接线**的旧版本下也会通过（有效阈值恒为 0.01），
+/// 因此不作为接线证据，只用于防止后人把 min 误改成 max。
+#[tokio::test]
+async fn test_loosening_user_threshold_cannot_bypass_adaptive() {
+    let manager = setup_manager_with_seq_threshold(
+        [0.05],
+        3,
+        ".omo/test_knowledge_threshold_loosen",
+        false,
+        0.9,
+    )
+    .await;
+
+    let (_res, report, _evolved) = manager
+        .run_cognitive_loop(
+            single_node_sop(),
+            "test_threshold_loosen",
+            None,
+            None,
+            None,
+            None,
+            |_id, _e| {},
+            None,
+            None,
+        )
+        .await
+        .expect("loop should complete without pivoting");
+
+    assert!(
+        !report.converged,
+        "adaptive tier must not be loosened by a large user threshold: {report:?}"
     );
 }
 
