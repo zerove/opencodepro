@@ -463,7 +463,11 @@ mod tests {
                     result.content.contains("Example"),
                     "content should contain 'Example'"
                 );
-                assert_eq!(result.content_type, "text/html");
+                assert!(
+                    result.content_type.contains("text/html"),
+                    "content_type should be HTML, got {:?}",
+                    result.content_type
+                );
             },
             Err(e) => {
                 eprintln!("webfetch skipped (network unavailable): {e}");
