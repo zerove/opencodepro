@@ -627,10 +627,15 @@ mod tests {
     // -----------------------------------------------------------------------
 
     #[test]
-    fn test_tool_id_maps_to_registered_builtin_tools() {
-        // Each action must resolve to a tool that actually exists in the bridge
-        // registry. A plausible-looking but unregistered ID would silently route
-        // to the default (WASM) executor and fail at execution time.
+    fn test_tool_id_is_stable_per_action() {
+        // Pins the action -> ID mapping so it cannot silently regress to a
+        // placeholder such as the "fast_tool" that 913ae9d removed.
+        //
+        // This does NOT prove the IDs are registered: the expectations below are
+        // hand-written literals, so renaming a tool in the bridge registry
+        // leaves this test green. Registry consistency is verified in
+        // `sisyphus-bridge` by `tools::tests::planner_tool_ids_exist_in_registry`,
+        // which checks the synthesizer's real output against the real registry.
         let cases = [
             (ActionType::Fetch, "builtin:web_fetch"),
             (ActionType::Search, "builtin:web_search"),

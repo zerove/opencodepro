@@ -1055,6 +1055,18 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out;
     **教训：判定「某个值被当作 X 使用」必须看赋值点，
     而不是看它出现在哪个字符串字面量附近。**
 
+18. **测试的名字不等于测试的机制**（本轮第二次同类错误）：
+    `913ae9d` 新增的用例叫 `test_tool_id_maps_to_registered_builtin_tools`，
+    注释写着「actually exists in the bridge registry」，我据此把
+    P2.7 的验证闭环评为 strong。实际断言是 `assert_eq!(映射结果, "字面量")`
+    ——两边都是手写常量，**中间没有任何东西连接真实注册表**。
+    实测证明：把 bridge 注册表的 `builtin:web_search` 改名，
+    intel 侧 4 个测试全部照旧通过。
+    **教训：评估一个测试的证明力，要问「断言的两端分别来自哪里」。
+    两端都是同一处的字面量 → 它锁的是常量一致性，不是外部契约；
+    至少一端必须来自被声称的权威源（真实 registry、真实文件、真实调用）。**
+    这次的代价是上一轮给出的结论被自己的证据推翻，已在第 7 节改写。
+
 ## 7. 复盘未能完成的部分（如实列出）
 
 | 想验证的 | 状态 | 阻塞原因 |
@@ -1074,6 +1086,7 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out;
 | 43 处 `clippy::*` 豁免 | **已完成审计**：逐处删除后跑 clippy 比对。37 处实测必要（附触发计数）；6 处 `cast_precision_loss` 属未启用的 pedantic 组，当前失效但保留 | — |
 | bridge 战略目标用例断言过时 | **已修复后又修正**（`d53b88b` → `71b01ac`）：先按「dummy 能回显合法配置」改写为断言成功；随后 P0 修复证明该「成功」本身是假的（工具从未真正执行），再次改写为断言「记录与实际发生的事自洽」，用例重命名为 `..._records_kernel_outcome_with_dummy` | — |
 | `ActionType` 语义标签被当作可执行 `tool_id` | **已修**（`913ae9d`）：机制曾误判——并非标签被当作 `tool_id`，而是 `tool_id_for_action` 5 个分支全部返回未注册的 `"fast_tool"`。已映射到 `builtin:web_fetch`/`web_search`/`bash_exec`，并修掉 3 处绕过映射函数的硬编码；删除固化了占位行为的测试，替换为 3 个断言真实不变量的用例并经双向变异验证 | 已修 |
+| **P2.7 修复的「注册表一致性」验证** | **上一轮结论已推翻并降级**：`913ae9d` 加的测试名声称「maps to registered builtin tools」且注释写「actually exists in the bridge registry」，但断言双方都是**手写字面量**——把 bridge 注册表里的 `builtin:web_search` 改名成 `builtin:web_search_v2`，intel 侧 4 个测试**全部照旧通过**（含名字里写着 registered 的那个），属假绿。**本轮补上真闭环**：在 bridge 侧新增 `tools::tests::planner_tool_ids_exist_in_registry`，走生产 `GoalDrivenSynthesizer` 产出真实 `SOPGraph`，再对真实 registry 断言命中。同名漂移下 intel 仍 4/4 假绿而新测试 FAILED 并指名漂移项，证明闭环有效。同时把 intel 侧测试改名 `test_tool_id_is_stable_per_action` 并加注「不验证注册」，防止再被误读 | 已修 |
 | `team_integration` 6 条在**真实 LLM 配置下**的运行结果 | **仍缺凭据，但已核实不是代码缺陷**：本轮实跑 `cargo test -p sisyphus-tools-agent --test team_integration -- --ignored`，6/6 **如实 FAILED** 并给出 `LLM not configured; set LLM_API_KEY / LLM_ENDPOINT / LLM_MODEL`。用例用 `panic`（而非 `return`）暴露配置缺失，ignore 理由准确，不存在静默跳过或假绿。本机无任何 LLM 相关环境变量 | **环境限制**（缺凭据，非代码问题） |
 | `execute_sop` / `execute_tool` 把执行失败报告为 `SUCCESS` | **P0，已修**（`71b01ac`）：新增 `CoreError::AllIterationsPivoted`，全程零真实产出时如实返回 Err。实测 20 路由 20/20 假 SUCCESS 变为 20/20 真 Internal。连带修正 5 个依赖「伪造成成功」的测试 | 已修 |
 
@@ -1101,6 +1114,7 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out;
 | `3309edb` | 修复 P0.2：预测期 `Logical Flaw` 不再伪造 pivot 占位文本（占位判定改用执行期 `exec_pivot`）；新增 3 个直测并经双向变异验证有效；修正报告统计口径（allow 67→63、dead_code 17→14、clippy 47→43） |
 | `ee5406f` | 纠正 P2.7 机制描述（原误判为「语义标签被当作 tool_id」）；补做 `upper_case_acronyms` 删除验证（触发 2 条 `SOP` acronym 告警，`SOP` 全仓 259 处引用故豁免正当） |
 | `913ae9d` | 修复 P2.7：`tool_id_for_action` 映射到真实注册的 `builtin:` 工具，修掉 3 处绕过映射的硬编码 `fast_tool`，删除固化了占位行为的测试并替换为 3 个真实不变量用例（双向变异验证）；补齐 P0.1「中途 pivot 后恢复」的覆盖缺口（3 个新用例 + `SequencedReflector` 夹具，两轮变异验证） |
+| 本轮 | 推翻自身结论：补上 P2.7 的跨 crate 注册表闭环测试（bridge 侧断言真实 synthesizer 产出命中真实 registry），并用「bridge 侧改名 → intel 侧 4/4 假绿 vs 新测试指名失败」双向变异证明有效性；同时纠正 intel 侧误导性测试命名 |
 
 ### 本轮实测确认的结论汇总
 

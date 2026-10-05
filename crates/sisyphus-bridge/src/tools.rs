@@ -219,3 +219,83 @@ pub(crate) fn register_strategic_tools(reg: &Arc<sisyphus_tools_mcp::tool_regist
         );
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use async_trait::async_trait;
+    use sisyphus_intel::FlowSynthesizer;
+    use sisyphus_types::{ExecutionContext, ToolExecutor, TypesError, WorkMode};
+
+    struct Stub;
+    #[async_trait]
+    impl ToolExecutor for Stub {
+        async fn execute(
+            &self,
+            _tool_id: &str,
+            _args: Vec<u8>,
+            _fuel_limit: u64,
+        ) -> Result<Vec<u8>, TypesError> {
+            Ok(Vec::new())
+        }
+    }
+
+    /// Every tool ID the planner can synthesize must exist in this crate's
+    /// registry.
+    ///
+    /// Regression motivation (913ae9d): `tool_id_for_action` used to return
+    /// `"fast_tool"` for every action — an ID that exists nowhere in the
+    /// codebase. Unregistered IDs silently fall through `ExecutorRouter` to the
+    /// default (WASM) executor, so every synthesized plan failed at run time
+    /// while still looking well-formed. Asserting the mapping in `sisyphus-intel`
+    /// cannot catch that: its expected values are hand-written literals that
+    /// would drift silently if a tool were renamed here. This test closes the
+    /// loop by checking the planner's real output against the real registry.
+    #[tokio::test]
+    async fn planner_tool_ids_exist_in_registry() {
+        let registry = Arc::new(sisyphus_tools_mcp::tool_registry::ToolRegistry::new());
+        register_builtin_tools(&registry);
+
+        let synthesizer = sisyphus_intel::GoalDrivenSynthesizer::new(Arc::new(Stub));
+        // Goals that drive each classifier branch, plus the empty-actions
+        // fallback and the parallel merge path.
+        let goals = [
+            "fetch the documentation from the website",
+            "search for rust memory safety patterns",
+            "process and transform the input data",
+            "parallel fetch from two sources",
+            "validate the result of the previous step",
+            "zzz-no-classifier-keyword-matches",
+        ];
+
+        for goal in goals {
+            let result = synthesizer
+                .synthesize(
+                    goal,
+                    &ExecutionContext::new(),
+                    "proj",
+                    WorkMode::Standard,
+                    None,
+                )
+                .await
+                .unwrap_or_else(|e| panic!("synthesize({goal:?}) failed: {e:?}"));
+
+            let mut checked = 0usize;
+            // `graph` is a public field, so the builtin tools stay a private
+            // implementation detail of sisyphus-tools-mcp rather than a new
+            // dependency here.
+            for node in result.graph.graph.node_weights() {
+                let Some(wasm) = node.as_any().downcast_ref::<sisyphus_types::WasmSOPNode>() else {
+                    continue;
+                };
+                let id = wasm.tool_id.as_str();
+                assert!(
+                    registry.get(id).is_some(),
+                    "planner produced unregistered tool ID {id:?} for goal {goal:?}"
+                );
+                checked += 1;
+            }
+            assert!(checked > 0, "goal {goal:?} produced no node to check");
+        }
+    }
+}
