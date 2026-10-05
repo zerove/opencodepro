@@ -183,13 +183,17 @@ async fn test_flush_cognitive_traces_survives_recreation() {
     // bridge 关闭（SIGINT/SIGTERM）时的真实语义：先 flush 再丢弃实例。
     // 修复前不 flush 直接 drop，实测 30 轮中有 5 轮丢失认知追踪。
     //
-    // 2026-10-05 记录一个**尚未闭环**的偶发现象，勿当成本用例的已知行为：
+    // 2026-10-05 曾记录一个**尚未闭环**的偶发现象，勿当成本用例的已知行为：
     // 全量 `cargo test -p sisyphus-core` 期间曾出现一次 `1/10 rounds lost`。
     // 事后定向复跑约 130 轮（单测 x3、6 并发、8 并发、全量 core、CI test-light）
     // 均未复现。插桩测量显示 flush 阶段增量恒为约 0.1ms（峰值 0.19s）、
-    // `record_cognitive_trace` 写入峰值约 1s，都远低于 flush 内 5s 的超时，
+    // `record_cognitive_trace` 写入峰值约 1s，都远低于 5s 超时，
     // 因此「超时导致回执被丢弃」这一假说已被证伪；FIFO 屏障逻辑本身也正确。
-    // 根因至今未能定位，如再现请记录当次完整日志（含 SQLITE/IO 报错）。
+    //
+    // 随后定位并修复了一个**确定存在**的相邻缺陷：写入失败此前只由
+    // `tracing::warn` 记录，`flush_cognitive_traces` 一律返回 `()`，
+    // 即写入彻底失败也对外谎报「已持久化」（见同文件下两个 flush 回归用例）。
+    // 本用例偶发丢失的**确切根因仍未定位**，如再现请记录当次完整日志。
     let mut lost = 0;
     const ROUNDS: usize = 10;
     for i in 0..ROUNDS {
@@ -198,7 +202,7 @@ async fn test_flush_cognitive_traces_survives_recreation() {
 
         let em1 = test_execution_manager_with(&db).await;
         em1.record_cognitive_trace("sop-a", step_event("Flushed"));
-        em1.flush_cognitive_traces().await;
+        em1.flush_cognitive_traces().await.expect("flush");
         drop(em1);
 
         let em2 = test_execution_manager_with(&db).await;
@@ -223,7 +227,7 @@ async fn test_persist_survives_buffer_recreation() {
     em1.record_cognitive_trace("sop-a", step_event("BeforeRestart"));
 
     // flush 屏障：等待 writer 把队列排空（修复前是轮询等待，失败被静默吞掉）。
-    em1.flush_cognitive_traces().await;
+    em1.flush_cognitive_traces().await.expect("flush must succeed");
 
     let em2 = test_execution_manager_with(&db).await;
     let rows = em2.cognitive_trace_history("default", None, 100).await.expect("history");
@@ -233,4 +237,92 @@ async fn test_persist_survives_buffer_recreation() {
         ExecutionEvent::CognitiveStep { ref step, .. } if step == "BeforeRestart"
     ));
     assert_eq!(rows[0].sop_id, "sop-a");
+}
+
+/// 回归：`flush_cognitive_traces` 不得对**写入彻底失败**谎报成功。
+///
+/// 修复前，writer 的 `record_cognitive_trace` 失败只由 `tracing::warn`
+/// 记录，而 flush 无论写入结果一律返回 `()`，其文档却承诺
+/// 「返回时，此前记录均已写入 `cognitive_traces`」。bridge 优雅关闭因此
+/// 把彻底丢失的认知追踪当成已持久化。
+#[tokio::test]
+async fn test_flush_reports_write_failure_instead_of_silent_success() {
+    let dir = std::env::temp_dir().join(format!("sisyphus_cog_trace_ro_{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("dir");
+    let db = dir.join("readonly.db").to_string_lossy().to_string();
+
+    let em = test_execution_manager_with(&db).await;
+
+    // 删掉目标表：此后每次 INSERT 都必然报「no such table」。
+    //
+    // 曾试过把目录 chmod 成只读，但 SQLite 已持有的文件描述符不因 chmod 失效，
+    // 写入往往照样成功（实测确实如此：flush 返回 Ok）。该手法依赖时序、不可靠，
+    // 故改用 DDL 层面的确定性失败——这也让被验证的确实是一次真实 INSERT。
+    drop_table(&db).await;
+
+    em.record_cognitive_trace("sop-a", step_event("WillFail"));
+    let outcome = em.flush_cognitive_traces().await;
+
+    // 核心断言：写入彻底失败时 flush 必须报错，而不是返回 Ok。
+    let err = outcome.expect_err("flush must not claim success when every write failed");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("failed to persist"),
+        "error should name the persistence failure, got: {msg}"
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// 回归：写入恢复正常后，flush 的错误计数不残留，下一次 flush 必须成功。
+///
+/// 防止 `TraceFlushAck` 累积的失败数被 `mem::take` 之外的方式泄漏到后续屏障，
+/// 导致「一次失败、之后永远失败」这种误报。
+#[tokio::test]
+async fn test_flush_error_count_resets_after_recovery() {
+    let dir = std::env::temp_dir().join(format!("sisyphus_cog_trace_reset_{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("dir");
+    let db = dir.join("reset.db").to_string_lossy().to_string();
+
+    let em = test_execution_manager_with(&db).await;
+
+    drop_table(&db).await;
+    em.record_cognitive_trace("sop-a", step_event("Fails"));
+    assert!(
+        em.flush_cognitive_traces().await.is_err(),
+        "目标表缺失时写入必然失败，flush 应当报错"
+    );
+
+    // 重建目标表，模拟「故障恢复」。
+    recreate_table(&db).await;
+
+    em.record_cognitive_trace("sop-a", step_event("Succeeds"));
+    em.flush_cognitive_traces().await.expect("恢复写权限后 flush 必须成功，失败计数不得残留");
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// 删除 `cognitive_traces` 表，使后续 INSERT 必然失败。
+async fn drop_table(db: &str) {
+    let pool = sqlx::SqlitePool::connect(db).await.expect("pool");
+    sqlx::query("DROP TABLE IF EXISTS cognitive_traces").execute(&pool).await.expect("drop table");
+}
+
+/// 按 `MfsStore::with_pool_internal` 的建表语句原样重建 `cognitive_traces`。
+async fn recreate_table(db: &str) {
+    let pool = sqlx::SqlitePool::connect(db).await.expect("pool");
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS cognitive_traces (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            project_id TEXT NOT NULL,
+            sop_id TEXT NOT NULL,
+            timestamp_ms INTEGER NOT NULL,
+            event_json TEXT NOT NULL
+        )",
+    )
+    .execute(&pool)
+    .await
+    .expect("recreate table");
 }

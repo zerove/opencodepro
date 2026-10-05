@@ -754,10 +754,17 @@ impl MySisyphusBridge {
     pub async fn shutdown(&self, wait: std::time::Duration) -> Result<(), String> {
         // 先把认知追踪队列排空：SOP 执行完毕到进程退出之间仍可能有记录
         // 只待在 writer 队列里，进程一退就再也检索不到跨会话历史。
-        self.kernel().execution_manager.flush_cognitive_traces().await;
+        // flush 现在会如实报告写入失败/超时，不能静默丢弃：即使后续 LLM
+        // shutdown 成功，也要把「认知追踪未持久化」这件事带回给调用方。
+        let trace_flush = self.kernel().execution_manager.flush_cognitive_traces().await.err();
         // 委托给 LLM client；DynamicLlmClient 内部会调用
         // provider_registry.shared_http().shutdown(wait).
-        self.llm_client.shutdown(wait).await
+        let llm = self.llm_client.shutdown(wait).await;
+        match (trace_flush, llm) {
+            (Some(trace_err), Ok(())) => Err(trace_err.to_string()),
+            (Some(trace_err), Err(llm_err)) => Err(format!("{llm_err}; {trace_err}")),
+            (None, result) => result,
+        }
     }
 
     /// 返回底层共享 HTTP 客户端（供 `/api/metrics` 等指标端点使用）。

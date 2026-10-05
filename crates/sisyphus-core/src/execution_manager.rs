@@ -92,8 +92,20 @@ enum TracePersistCmd {
     /// 落盘一条认知决策。`ExecutionEvent` 远大于 oneshot sender，故装箱。
     Record(Box<(String, CognitiveTraceEntry)>),
     /// flush 屏障：writer 处理到此处即说明此前所有指令都已落盘。
-    /// 通过 `oneshot` 回执，让调用方能真正 await 到持久化完成。
-    Flush(tokio::sync::oneshot::Sender<()>),
+    ///
+    /// 回执携带**自上次 flush 以来**累积的写入失败信息（条数 + 首条错误），
+    /// 使调用方能区分「已落盘」与「已排队但写失败了」。后者此前仅由
+    /// `tracing::warn` 记录，导致 flush 对彻底失败的写入谎报成功。
+    Flush(tokio::sync::oneshot::Sender<TraceFlushAck>),
+}
+
+/// flush 屏障的回执：自上次 flush 起写入失败的累积情况。
+#[derive(Debug, Default)]
+struct TraceFlushAck {
+    /// 落盘失败的记录条数。
+    failed: usize,
+    /// 第一条失败的原始错误。后续错误只计数，避免回执随失败数无限膨胀。
+    first_error: Option<String>,
 }
 
 impl ExecutionManager {
@@ -133,6 +145,8 @@ impl ExecutionManager {
         let store = Arc::clone(&self.state_store);
         let (tx, mut rx) = mpsc::unbounded_channel::<TracePersistCmd>();
         tokio::spawn(async move {
+            // 自上次 flush 起累积的写入失败，由下一个屏障回传给调用方。
+            let mut ack = TraceFlushAck::default();
             while let Some(cmd) = rx.recv().await {
                 match cmd {
                     TracePersistCmd::Record(payload) => {
@@ -146,12 +160,21 @@ impl ExecutionManager {
                             )
                             .await
                         {
-                            tracing::warn!(error = %e, "Failed to persist cognitive trace");
+                            ack.failed += 1;
+                            if ack.first_error.is_none() {
+                                ack.first_error = Some(e.to_string());
+                            }
+                            tracing::warn!(
+                                error = %e,
+                                failed_since_flush = ack.failed,
+                                "Failed to persist cognitive trace"
+                            );
                         }
                     },
                     // 队列是 FIFO 且 writer 串行处理：轮到屏障时前面的指令必然已落盘。
-                    TracePersistCmd::Flush(ack) => {
-                        let _ = ack.send(());
+                    // 回执带上期间失败的条数，让调用方不会把「写失败」当成「已落盘」。
+                    TracePersistCmd::Flush(reply) => {
+                        let _ = reply.send(std::mem::take(&mut ack));
                     },
                 }
             }
@@ -159,25 +182,50 @@ impl ExecutionManager {
         self.trace_persist_tx = Some(tx);
     }
 
-    /// 等待此前所有认知决策记录落盘完成。
+    /// 等待此前所有认知决策记录落盘完成，并报告期间的写入失败。
     ///
     /// [`record_cognitive_trace`] 只把指令投入 channel 就返回，因此进程退出、
     /// manager 被 drop 或测试重建实例时，尚在队列里的记录会静默丢失。
     /// 本方法往队列里追加一个屏障指令并等其回执，从而给出真正的
-    /// “已持久化”保证：返回时，此前记录均已写入 `cognitive_traces`。
+    /// “已持久化”保证：返回 `Ok(())` 时，此前记录均已写入 `cognitive_traces`。
     ///
-    /// 未启用持久化（`trace_persist_tx` 为 `None`）或 writer 已退出时立即返回。
-    pub async fn flush_cognitive_traces(&self) {
+    /// **失败不再静默**：若屏障之前有记录写入失败（磁盘只读、SQL 锁、
+    /// 库损坏等），返回 [`CoreError::MfsSaveError`] 并带上失败条数与首条错误。
+    /// 修复前这些失败仅由 `tracing::warn` 记录而 `flush` 返回 `()`，
+    /// 使调用方（bridge 优雅关闭）把彻底失败的写入当成已持久化。
+    ///
+    /// 未启用持久化（`trace_persist_tx` 为 `None`）或 writer 已退出时返回
+    /// [`CoreError::MfsSaveError`]：此时无法保证落盘，调用方必须知情。
+    pub async fn flush_cognitive_traces(&self) -> Result<(), CoreError> {
         let Some(tx) = &self.trace_persist_tx else {
-            return;
+            return Err(CoreError::MfsSaveError(
+                "cognitive trace persistence is disabled; flush cannot guarantee durability"
+                    .to_string(),
+            ));
         };
-        let (ack_tx, ack_rx) = tokio::sync::oneshot::channel();
+        let (ack_tx, ack_rx) = tokio::sync::oneshot::channel::<TraceFlushAck>();
         if tx.send(TracePersistCmd::Flush(ack_tx)).is_err() {
             // writer 已退出：无法保证落盘，也不阻塞调用方。
-            return;
+            return Err(CoreError::MfsSaveError(
+                "cognitive trace writer has exited; queued traces were not persisted".to_string(),
+            ));
         }
         // writer 异常退出时回执被丢弃；超时避免永久挂起调用方。
-        let _ = tokio::time::timeout(std::time::Duration::from_secs(5), ack_rx).await;
+        // 超时同样是「无法保证落盘」，必须显式报告而非静默放行。
+        match tokio::time::timeout(std::time::Duration::from_secs(5), ack_rx).await {
+            Ok(Ok(ack)) if ack.failed > 0 => Err(CoreError::MfsSaveError(format!(
+                "{} cognitive trace(s) failed to persist since last flush; first error: {}",
+                ack.failed,
+                ack.first_error.as_deref().unwrap_or("unknown")
+            ))),
+            Ok(Ok(_)) => Ok(()),
+            Ok(Err(_)) => Err(CoreError::MfsSaveError(
+                "cognitive trace writer dropped the flush barrier before acknowledging".to_string(),
+            )),
+            Err(_) => Err(CoreError::MfsSaveError(
+                "cognitive trace flush timed out after 5s; durability not guaranteed".to_string(),
+            )),
+        }
     }
 
     /// 通知管理器有新工具部署，以便使缓存失效。
