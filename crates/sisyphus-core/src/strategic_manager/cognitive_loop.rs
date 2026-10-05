@@ -857,10 +857,6 @@ impl StrategicManager {
         project_id: Option<&str>,
         stream_tx: &Option<mpsc::UnboundedSender<CognitiveEvent>>,
     ) -> Result<ReflectionReport, CoreError> {
-        // A2 修复：使用基于 sop_id + 启动时间的唯一 key 查询 active_executions。
-        #[allow(unused_variables)]
-        let active_key = sop_id.to_string();
-
         // 3. 反思（Reflect）
         tracing::info!(iteration, "phase=reflect");
         let mut trace = String::with_capacity(current_ref.graph.node_count() * 64);
@@ -1038,10 +1034,6 @@ impl StrategicManager {
         goal_text: Option<&str>,
         project_id: Option<&str>,
     ) -> Option<Arc<SOPGraph>> {
-        // A2 修复：使用基于 sop_id + 启动时间的唯一 key 查询 active_executions。
-        #[allow(unused_variables)]
-        let active_key = sop_id.to_string();
-
         // 5. 演进（Evolve）
         tracing::info!(sop_id, "phase=evolve");
         let mut evolution_insights = ctx
