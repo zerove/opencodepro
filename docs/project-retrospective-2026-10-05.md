@@ -14,10 +14,10 @@
 | 生产代码 `panic!` | **0 处** | 优秀 |
 | 生产代码真 `unsafe` | **0 处**（唯一 1 处在 LLM prompt 字符串里） | 优秀 |
 | `todo!()` / `unimplemented!()` | **0 处** | 优秀 |
-| `#[allow(...)]` 合计 | **66 处**（口径见下，字符串字面量内的 4 处已剔除） | 已逐类核实 |
+| `#[allow(...)]` 合计 | **68 处**（口径见下，71 条 grep 命中中 5 条为假） | 已逐类核实 |
 | └ `dead_code` | 19 处（crates 8 + evals 11） | **已全部核实**：均为 serde 反序列化字段或预留接线位；其中 3 处原为结构体级豁免、范围过宽，已收窄到字段级（提交 `9bb22aa`） |
 | └ `unused_*`（imports/variables/mut） | 4 处 | 已删 3 处失效豁免；余 1 处经验证正当 |
-| └ `clippy::*` | 41 处 | **已逐处实测**：36 处必要（含触发计数），6 处属未启用的 pedantic 组 |
+| └ `clippy::*` | 43 处 | **已逐处实测**：37 处必要（含触发计数），6 处属未启用的 pedantic 组 |
 | └ `deprecated` | 2 处 | 已核实为协议兼容 shim，删掉会触发 `-D warnings` 失败 |
 | 测试文件 : 生产文件 | 183 : 392 | 合理 |
 | `#[test]` 函数总数 | **5088**（crates/ 内：单元 1420 + 集成 3668） | 数量充足 |
@@ -26,11 +26,27 @@
 | `#[ignore]` 真实属性数 | **26 条**（其中 2 条是 fixture 字符串内的**假**，实际被跳过的测试 **24 条**） | 合理，已逐条核实 |
 
 > **统计口径（所有 `#[allow]` 类数字均按此计算）**：
-> `grep -rn '#\[allow(' crates/ evals/ --include='*.rs' | grep -v '/tests/'`
-> 即：**全仓 crates/ + evals/，排除 tests/ 目录**。
-> 注意这**不等于**「生产代码」——src/ 里 `#[cfg(test)] mod` 内部的豁免也会被计入，
-> 逐处核实时会单独说明。
-
+> ```bash
+> grep -rnE '#!?\[allow\(' crates/ evals/ --include='*.rs' | grep -v '/tests/'
+> # -> 73 条原始命中
+> ```
+> 即：**全仓 crates/ + evals/，排除 tests/ 目录**。73 条原始命中里 **5 条是假命中**，
+> 真实属性 **68 处**：
+>
+> | 假命中 | 原因 |
+> |--------|------|
+> | `bridge-api/build.rs:25,32` | build 脚本模板字符串内的属性文本 |
+> | `bridge/peer/anti_entropy.rs:224` | 注释里引用属性名（真实属性在 227 行） |
+> | `evals/no_panic_check.rs:57` | 文档注释 `/// 注释行 + \`#[allow(...)]\` 豁免。` |
+> | `evals/no_panic_check.rs:544` | 测试 fixture 写入的源码字符串 |
+>
+> 注意这**不等于**「生产代码」——src/ 里 `#[cfg(test)] mod` 内部的豁免也会被计入。
+> 
+> **两个踩过的坑**：
+> 1. 早前口径写成 `grep -rn '#\[allow('`，漏掉 `#![allow(` 形态的 19 处模块级豁免，
+>    得出偏低的 54。必须用 `-E '#!?\[allow('`。
+> 2. 单行正则还漏掉**跨行属性**，如 `cli/cmd_agent.rs:69` 的
+>    `#[allow(\n    clippy::enum_variant_names,\n    reason = ...)]`，故最终以全文扫描为准。
 **最反直觉的结论：这个项目的代码卫生比它给自己的印象好得多。**
 AGENTS.md 里那套「不得使用 unwrap()」「不得 panic」的规则，从数据看**基本被切实执行了**。
 
@@ -502,7 +518,7 @@ cargo test   -p sisyphus-core --lib   # 91 passed; 0 failed; 0 ignored
 | `clippy::too_many_arguments` | 13 | **已实测**：属默认组 lint。13 处集中在 5 个 phase 函数与 4 个构造函数，均为依赖注入形态（`Arc<Manager>` + `Config` + `Channel`），改结构体只会搬运参数而无行为收益 |
 | `dead_code` | 19 | **crates 侧 8 处**已逐处核实：`sandboxd/main.rs`(1)、`cli/tui/app.rs`(2)、`bridge/peer/service.rs`(2)、`bridge/http/sse_handlers.rs`(4)、`bridge/peer/manager.rs`(1)、`bridge/auth_jwt.rs`(1)，均为预留接线位。**evals 侧 11 处**（`golden_sop/exec_eval.rs` 5、`golden_sop/eval.rs` 2、`runner.rs` 1 等）**本轮未审计** |
 | `clippy::double_must_use` | 8 | **已实测必要**：删掉后 `sisyphus-types` 命中 22 处、`intel` 8、`core` 3、`bridge` 1。根因是 `#[async_trait]` 宏展开自带 `#[must_use]`，无法逐方法挂载 |
-| `clippy::enum_variant_names` | 2 | **已实测必要**：各命中 1 处（`momus/types.rs`、`scaffold.rs`） |
+| `clippy::enum_variant_names` | 3 | **已实测必要**：各命中 1 处（`momus/types.rs`、`scaffold.rs`、`cli/cmd_agent.rs`） |
 | `clippy::collapsible_if` | 4 | **已实测必要**：`experience_bank.rs` 命中 4 处。嵌套 `if let` + 过滤条件折叠会损失可读性 |
 | `clippy::result_large_err` | 5 | **已实测必要**：`bridge` 命中 16 处。`tonic::Status` ≥176 字节，框架强制返回类型，无法修改 |
 | `clippy::cast_precision_loss` | 6 | **属 pedantic 组，本项目未启用**（无 `[workspace.lints]`），当前完全失效。启用 pedantic 后 `cli` 命中 50 处、`metrics` 3 处，故保留作预防性放行并加注说明 |
@@ -510,6 +526,7 @@ cargo test   -p sisyphus-core --lib   # 91 passed; 0 failed; 0 ignored
 | `unused_imports` | 2 | `core/lib.rs:410` 已验证正当（删掉后报 `unused import: kernel::*`） |
 | `clippy::upper_case_acronyms` | 2 | **已实测必要**：命中 2 处（`asset.rs`） |
 | `clippy::type_complexity` | 2 | 结构体字段嵌套较深（`AnomalyDetector.history` 等），拆分会降低内聚性 |
+| `unused_variables` | 1 | **本轮已删 3 处失效的**（`cognitive_loop.rs`），余下 1 处在 `bridge_service.rs`，删掉后报 unused variable |
 | `unused_mut` | 1 | `bridge_service.rs`，在 `#[cfg(feature=\"sandbox\")]` 内，已验证正当 |
 
 ### P3 — 巨型 misc 测试文件（**本轮已核查，结论降级**）
@@ -722,7 +739,7 @@ MAVEN_OPTS="-Xmx512m -XX:MaxMetaspaceSize=128m" \
 | **真实工具 + 真实 LLM API 的完整端到端链路** | **仍未覆盖**：当前通过的是结构正确的 Dummy LLM + 内存执行器 | **环境限制**，见 P1 |
 | `evals/` 侧 8 处 `#[allow(dead_code)]` | **已完成**：编译器裁决法核实，全部承载真实 serde 字段；3 处过宽的已收窄到字段级（`9bb22aa`） | — |
 | 2 处 `#[allow(deprecated)]` | **已完成**：删掉后编译器报 `use of deprecated field`（`SyncRequest::offset` / `SyncPageEnd::next_offset`），在 `-D warnings` 下会编译失败，属正当协议兼容 shim | — |
-| 41 处 `clippy::*` 豁免 | **已完成审计**：逐处删除后跑 clippy 比对。36 处实测必要（附触发计数）；6 处 `cast_precision_loss` 属未启用的 pedantic 组，当前失效但保留 | — |
+| 43 处 `clippy::*` 豁免 | **已完成审计**：逐处删除后跑 clippy 比对。37 处实测必要（附触发计数）；6 处 `cast_precision_loss` 属未启用的 pedantic 组，当前失效但保留 | — |
 
 **本报告不含任何未标注为「实测」的结论。**
 
@@ -753,7 +770,7 @@ MAVEN_OPTS="-Xmx512m -XX:MaxMetaspaceSize=128m" \
 - **会掩盖死代码的两类豁免已全部裁决完毕**（`unused_*` 4 处、`dead_code` 19 处、
   `deprecated` 2 处）：删 3 处失效、收窄 3 处过宽，其余经编译器验证为必要。
   **这三类里没有一处是掩盖死代码的残留。**
-- **已实测**：41 处 `clippy::*` 豁免全部逐处裁决（编译器删除法 + 默认 lint 组验证）。
+- **已实测**：43 处 `clippy::*` 豁免全部逐处裁决（编译器删除法 + 默认 lint 组验证）。
   `double_must_use` 8 处、`result_large_err` 5 处、`enum_variant_names` 2 处、
   `collapsible_if` 4 处、`upper_case_acronyms` 2 处均实测必要并附触发计数；
   6 处 `cast_precision_loss` 属 pedantic 组而项目未启用 pedantic，当前失效，
