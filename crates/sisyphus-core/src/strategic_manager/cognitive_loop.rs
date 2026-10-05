@@ -584,7 +584,6 @@ impl StrategicManager {
         stream_tx: &Option<mpsc::UnboundedSender<CognitiveEvent>>,
     ) -> Result<(SimulationResult, Option<String>), CoreError> {
         // A2 修复：使用基于 sop_id + 启动时间的唯一 key 查询 active_executions。
-        #[allow(unused_variables)]
         let active_key = sop_id.to_string();
 
         let mut pivot_reason: Option<String> = None;
@@ -751,7 +750,6 @@ impl StrategicManager {
         pivot_reason: &mut Option<String>,
     ) -> Result<(Arc<ExecutionContext>, NodeOutput), CoreError> {
         // A2 修复：使用基于 sop_id + 启动时间的唯一 key 查询 active_executions。
-        #[allow(unused_variables)]
         let active_key = sop_id.to_string();
 
         if let Some(mut status) = self.execution_manager.active_executions.get_mut(&active_key) {
@@ -1154,7 +1152,6 @@ impl StrategicManager {
         stream_tx: &Option<mpsc::UnboundedSender<CognitiveEvent>>,
     ) -> Option<Arc<SOPGraph>> {
         // A2 修复：使用基于 sop_id + 启动时间的唯一 key 查询 active_executions。
-        #[allow(unused_variables)]
         let active_key = sop_id.to_string();
 
         // --- 验证步骤 ---
