@@ -644,23 +644,23 @@ PROBE SUMMARY ok=20 biz_err=0
 第 5 个 `test_execute_tool_strategic_next_goal` 断言 `outcome.success` 为真，
 实测该「成功」是假的，已改为断言「记录与实际发生的事自洽」并重命名。
 
-### P2.7 — 遗留：规划器合成的 `tool_id` 全部指向未注册的 `fast_tool`（未修，机制已纠正）
+### P2.7 — 规划器合成的 `tool_id` 指向未注册的 `fast_tool`（**本轮已修**，机制曾误判）
 
 修复 `AllIterationsPivoted` 后，`test_execute_tool_strategic_next_goal` 暴露出
 更深层的契约问题。**本节上一版对机制的描述是错的**（详见下方「机制纠正」），
-真实故障路径依然存在，但根因与原先记述不同。
+真实故障路径确实存在，但根因与原先记述不同。
 
 **实测确认的真实机制**：
 
 - 规划器合成的 `tool_id` 来自 `tool_id_for_action`
   （`sisyphus-intel/src/synthesis.rs:108`），5 种动作
-  **全部硬编码返回同一个 `"fast_tool"`**（第 110-114 行）
+  **全部硬编码返回同一个 `"fast_tool"`**（原第 110-114 行）
 - `fast_tool` 在全仓**没有任何注册**：bridge 注册表只有
   `builtin:file_read`/`bash_exec`/`web_fetch` 等 13 个真实工具
   （`bridge/src/tools.rs:8-64`）；`fast_tool` 只出现在 intel 自身源码、
   benches、`integration_stress.rs` 与 core 的测试夹具里
 - 无 `builtin:` 前缀 → `ExecutorRouter` 落到 **default 执行器**
-  （`types/src/lib.rs:539` 实测确认：无前缀回退 default）
+  （`types/src/node.rs:339-354` 与其测试实测确认：无前缀回退 default）
 - bridge 里 default 是 **WASM 执行器**（`bridge_service.rs:363`
   `ExecutorRouter::new(wasm_executor)`）；仅在 `--no-default-features`
   无 sandbox 时才退化为 `NoopToolExecutor`（第 330 行）
@@ -670,18 +670,44 @@ PROBE SUMMARY ok=20 biz_err=0
 
 **机制纠正**：上一版称「`ActionType::Fetch → "fetch"`（`synthesis.rs:120`）
 的语义标签被当作 `tool_id`」。实测 `synthesis.rs:120` 是 `action_label()`
-函数，返回值仅用于节点 `name` 与描述文本；同一文件第 182、197、203、234 行
-调用点显示 `name: action_label(...)` 与 `tool_id: tool_id_for_action(...)`
+函数，返回值仅用于节点 `name` 与描述文本；同一文件的调用点显示
+`name: action_label(...)` 与 `tool_id: tool_id_for_action(...)`
 **始终成对且分开使用**，语义标签从未被赋给 `tool_id`。
 
 故障仍然发生，但真实原因是 `tool_id_for_action` 是个未完成的占位实现
 （5 个分支返回同一值，且有测试 `test_tool_id_all_actions_return_fast_tool`
 把这个行为**固化为期望**），而非标签/ID 混用。
 
-**为何仍不修**：正确修法需要为每种动作类型指定真实工具
-（`Fetch → builtin:web_fetch`、`Search → builtin:web_search`、
-`Process/Sink/Validate` 尚无对应工具），这会牵动工具注册表与规划器的
-职责边界，超出缺陷修复范围，需要独立设计。
+**修复**（`913ae9d`）：映射到真实注册的工具，并补上前缀语义：
+
+| 动作 | 修复前 | 修复后 |
+|------|--------|--------|
+| `Fetch` | `fast_tool`（未注册） | `builtin:web_fetch` |
+| `Search` | `fast_tool`（未注册） | `builtin:web_search` |
+| `Process` / `Sink` / `Validate` | `fast_tool`（未注册） | `builtin:bash_exec` |
+
+后三者没有专用 builtin 工具。`bash_exec` 是唯一能真正完成任意变换、
+输出结果或校验的**已注册**工具；映射到「看起来合理但未注册」的名字只会
+让每个合成计划在执行期失败。
+
+前缀是必需的：`ExecutorRouter` 只按已知前缀分发并**剥离前缀后转发**，
+所以 `builtin:web_fetch` 到达 `BuiltinToolExecutor` 时是 `web_fetch`，
+正好命中其 `match` 分支；裸 ID 会静默落到 default。
+
+同时修掉 3 处**绕过映射函数**的硬编码 `"fast_tool"`（`synthesis.rs`
+的空动作兜底节点与 parallel merge 节点、`llm_synthesizer` 的兜底节点）。
+现 `intel/src` 下已无 `fast_tool` 残留。
+
+**测试**：删除 `test_tool_id_all_actions_return_fast_tool`——它把占位
+行为固化为期望，等于给未完成的实现盖章。替换为三个断言真实不变量的用例：
+映射值正确、必须带可路由前缀、不同工具的动作不得塌缩成同一值。
+
+变异验证：
+
+| 注入缺陷 | 结果 |
+|----------|------|
+| 退回单一 `fast_tool` | 3 个用例全部 **FAILED** |
+| 去掉 `builtin:` 前缀（保留不同工具名） | `test_tool_ids_carry_routable_prefix` **FAILED** |
 
 ### P0.2 — 预测期 `Logical Flaw` 污染执行结果，伪造「Strategic Pivot」占位文本（本轮已修）
 
@@ -751,6 +777,48 @@ pivot，`pivot_reason` 的预测期分支从未被触发。
 2. 生效阈值来自 `ComplexityAnalyzer::to_config()`（Low/Medium/High/Ultra
    分别为 0.2/0.05/0.01/0.005），**不是** `config.convergence_threshold`
    ——后者在本测试中完全不生效。
+
+### P0.1 — 补上「中途 pivot 后恢复」的覆盖缺口（本轮已补）
+
+守卫 `AllIterationsPivoted` 的注释明确写着「**中途 pivot 后恢复是合法路径**」，
+但此前没有任何测试覆盖它。当时只有两个极端：全部 pivot（→ Err）与
+全部成功（→ Ok）。守卫条件若被误写成「任一 pivot 即失败」，这两个用例
+**都会照样通过**——缺口是真实的，不是理论担忧。
+
+新增 `SequencedReflector`（按调用次序返回偏差序列，用尽后重复末值）与
+参数化的 `setup_manager_with_sequenced_reflector[_and_logic]`，新增 3 个用例：
+
+| 测试 | 覆盖场景 |
+|------|----------|
+| `test_partial_pivot_then_recovery_still_succeeds` | 第 1 轮 pivot、第 2 轮恢复 → 必须 `Ok`，且两轮都跑了 |
+| `test_pivot_diagnostics_do_not_leak_into_recovered_result` | 恢复后的结果不得含任何 pivot 诊断文本 |
+| `test_prediction_flaw_plus_recovery_uses_execution_signal_only` | 预测期 flaw 与执行期 pivot **同时存在**时，占位判定只认执行期信号 |
+
+**变异验证一**：把守卫误写成「任一 pivot 即失败」
+
+| 用例 | 结果 |
+|------|------|
+| `test_partial_pivot_then_recovery_still_succeeds` | **FAILED** |
+| `test_pivot_diagnostics_do_not_leak_into_recovered_result` | **FAILED** |
+| `test_all_iterations_pivoted_...`（既有） | ok ← **旧用例发现不了** |
+| `test_successful_execution_...`（既有） | ok ← **旧用例发现不了** |
+
+**变异验证二（暴露了一个更隐蔽的问题）**：把占位判定退回
+`pivot_reason.is_some()`，**5 个用例全部照常通过**。排查后确认原因：
+它们都用 `MockLogicalSimulator`（不报 flaw），`pivot_reason` 恒为 `None`，
+于是 `None.is_some()` 恒为 `false`，与 `exec_pivot` 行为完全一致——
+两种写法在这个场景下**不可区分**。
+
+只有当预测期 `pivot_reason` 与执行期 `exec_pivot` **取值相反**时差异才可观测。
+因此才有第三个用例（用 `CriticalFlawSimulator` 让预测期也赋值）。重做该变异：
+
+```
+a successful iteration was replaced by pivot placeholder text:
+"Strategic Pivot: Logical Flaw Detected: persistent critical flaw"
+```
+
+新用例 **FAILED**，缺口补上。这条记录说明：**测试通过与测试有效是两件事**——
+若不做变异验证，本报告会把「5 个用例全绿」当成覆盖已完备。
 
 ### P3 — 巨型 misc 测试文件（**本轮已核查，结论降级**）
 
@@ -841,9 +909,24 @@ CI 的 `bridge-integration-test` job 用 `--no-default-features`，不受影响�
 未做重试就下了「结构性不可行」的结论。**教训：把一次瞬时 OOM 当成结构性
 限制前，必须重试并变换 feature 组合。**
 
-> 注：更早一轮曾记录「提交内存降到 66% 时 `hook_overhead` 编译并跑通（1 passed）」。
-> 本轮未能复现该结果（带 sandbox 仍 OOM），故 `hook_overhead` 的结论仍以
-> 「本机不可验证」记述，不宣称已验证。
+**`hook_overhead` 的阻塞原因曾被误判，本轮已实测跑通**：
+
+上表中的 OOM 记录（`memory allocation of 34832 bytes failed`）来自**带 sandbox**
+路径。`hook_overhead` 走 `--no-default-features`，前两次尝试均 `rc=124`
+（超时，**不是** OOM——日志中 `memory allocation` / `out of memory` /
+`signal: 9` 命中数为 **0**）。第三次改用 `nohup` 让编译脱离工具层 600 秒
+上限后**编译成功**（增量 1m34s），实跑结果：
+
+```
+running 1 test
+test measure_stream_hook_overhead ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out;
+             finished in 1.48s
+```
+
+**「4 种编译手段均 OOM」与「本机不可验证」两个记录都是错的**：
+真实原因只是全量重建依赖链耗时超过工具层上限。`#[ignore]` 保留是对的——
+它只测量不设门限，绝对值随机器而变，写死门限会在别的机器上变 flaky。
 
 ### 5.3 ADR-013 断流钩子开销实测
 
@@ -861,7 +944,7 @@ CI 的 `bridge-integration-test` job 用 `--no-default-features`，不受影响�
 **能站住的只有「(b) 显著高于 (a)」，不能断言「.map 的成本是多少」。**
 这也是它必须 `#[ignore]` 的根本原因。
 
-## 6. 本次测量中我自己犯的 15 次错（记录在此避免重犯）
+## 6. 本次测量中我自己犯的 17 次错（记录在此避免重犯）
 
 1. **审计脚本把 `llm.rs` 的 12 处 `unsafe` 误报成 1 处。**
    原因：按大括号配平剥离 `#[cfg(test)]` 块时，`#[cfg(test)]` 直接标在 `impl`
@@ -955,25 +1038,43 @@ CI 的 `bridge-integration-test` job 用 `--no-default-features`，不受影响�
 另外两个**工具自身的坑**：一次 `rm` 含通配符且指向工作区外被安全门拦下
 （拦得对——那批历史日志不是我的）；一次审计脚本因大括号配平 bug 静默吞掉半个文件。
 
+16. **把「工具超时」当成「内存不足」写进报告**，并据此下了
+    「4 种编译手段均 OOM」「本机不可验证」两个结论。
+    实际日志里 `memory allocation` / `out of memory` / `signal: 9`
+    命中数全为 **0**，`rc=124` 是超时而非 OOM；且 `target/debug/deps/`
+    下本就有它编译产出的 `.d` 文件。改用 `nohup` 让编译脱离工具层 600 秒
+    上限后，**实跑 1 passed（1.48s）**。
+    **教训：`rc=124` 是超时，`rc=137` 才是被杀。两者归因完全不同，
+    混淆会把「慢」写成「结构性不可行」，并连带影响「ignore 是否合理」
+    的判断——我据此怀疑过一个本来正确的 `#[ignore]`。**
+
+17. **分析 P2.7 时看错了函数**：报告称「`synthesis.rs:120` 的语义标签
+    被当作 `tool_id`」，实际第 120 行是 `action_label()`，与
+    `tool_id_for_action()` 是两个函数，调用点始终成对分开使用。
+    我当时看到 `Fetch → "fetch"` 字符串眼熟就下了结论，没打开定义看。
+    **教训：判定「某个值被当作 X 使用」必须看赋值点，
+    而不是看它出现在哪个字符串字面量附近。**
+
 ## 7. 复盘未能完成的部分（如实列出）
 
 | 想验证的 | 状态 | 阻塞原因 |
 |---------|------|---------|
 | `sisyphus-tests` 两条 `#[ignore]` 是否可通过 | **已完成**（不可通过，理由成立） | — |
-| `hook_overhead.rs` 的 `#[ignore]` 是否仍合理 | **本轮未能复现成功**：4 种编译手段均 OOM（见 5.2）。上一轮的「1 passed」依赖于当时内存空闲，不稳定。**忽略理由本身仍成立**（它是有耗时的基准，不适合 CI 断言） | 记忆不足 |
+| `hook_overhead.rs` 的 `#[ignore]` 是否仍合理 | **已实测跑通，ignore 理由成立**：`--no-default-features` 下实跑 `1 passed`（1.48s）。上一轮「本机不可验证」的记录是错的——真实原因是编译慢，不是 OOM 也不是不稳定。保留 ignore 是正确的：它只测量不设门限，绝对值随机器而变 | — |
 | 认知主循环端到端覆盖真相（P1） | **已完成**：方向与原推测相反，见第 4 节 P1 | — |
-| `#[allow(unused*)]` 逐处审计（P2） | **已完成**：用编译器裁决法核实全部 `unused_*` 类，删 3 处失效豁免。`c49b34f` 当时 `91 passed`，`3309edb` 新增 3 个回归测试后为 **94 passed** | — |
-| 全量 26 条 `#[ignore]` 逐条核实 | **已完成**：13 条工具链全部跑通、2 条网络跑通、1 条 LLM 跑出真实错误、1 条 UDS 实跑前先验代码、2 条为 fixture 假 ignore；**`hook_overhead` 未能编译**（见 5.2） | — |
-| `team_integration` 6 条的真实行为 | **已完成**：实跑发现静默跳过假绿，已修 | — |
+| `#[allow(unused*)]` 逐处审计（P2） | **已完成**：用编译器裁决法核实全部 `unused_*` 类，删 3 处失效豁免。`c49b34f` 当时 `91 passed`，`3309edb` 新增 3 个回归测试后为 94 passed，`913ae9d` 再新增 3 个（P0.1）后为 **97 passed** | — |
+| 全量 26 条 `#[ignore]` 逐条核实 | **已完成**：13 条工具链全部跑通、2 条网络跑通、1 条 LLM 跑出真实错误、1 条 UDS 实跑前先验代码、2 条为 fixture 假 ignore；**`hook_overhead` 本轮实跑通过**（1 passed，见 5.2），**26 条全部有据可查** | — |
+| `team_integration` 6 条的真实行为 | **已完成**：静默跳过假绿已修（`d090118`）；本轮另核实真实 LLM 场景，6/6 如实 FAILED，见下一行 | — |
 | `maven_compile_failure_returns_err` | **已完成（已突破环境限制，本轮重跑取证）**：`MAVEN_OPTS="-Xmx512m -XX:MaxMetaspaceSize=128m"` 下实测 `13 passed; 0 failed`（385.12s，rc=0），13 条工具链测试全部跑通，不再依赖 `4dc689d` 的历史声称 | — |
 | `hook_overhead.rs` / `jcode_call_chain_test.rs` 的**编译** | **部分解除**：`--no-default-features` 路径实测可编译（bridge 85 + 54 测试通过）；带 sandbox 仍 OOM | 见 5.2 |
-| `team_integration` 6 条在**真实 LLM 配置下**的运行结果 | **未完成**：本机无 `LLM_API_KEY`/`ENDPOINT`/`MODEL` | **环境限制** |
+| `team_integration` 6 条在**真实 LLM 配置下**的运行结果 | **仍缺凭据，但已核实不是代码缺陷**：本轮实跑 `cargo test -p sisyphus-tools-agent --test team_integration -- --ignored`，6/6 **如实 FAILED** 并给出 `LLM not configured; set LLM_API_KEY / LLM_ENDPOINT / LLM_MODEL`。用例用 `panic`（而非 `return`）暴露配置缺失，ignore 理由准确，不存在静默跳过或假绿。本机无任何 LLM 相关环境变量 | **环境限制**（缺凭据，非代码问题） |
 | **真实工具 + 真实 LLM API 的完整端到端链路** | **仍未覆盖**：当前通过的是 Dummy LLM（回显合法配置）+ 内存执行器 | **环境限制**，见 P1 |
 | `crates/` 侧 6 处 `#[allow(dead_code)]`（非测试代码） | **已完成**（`c49b34f` + 本轮复核）：原 14 处逐个实测裁决，5 处失效已删；剩余 6 处在 `3309edb` 之后的复核中逐处移除并实跑 clippy，逐一触发真实 `never used/read/constructed` 告警 | — |
 | 2 处 `#[allow(deprecated)]` | **已完成**：删掉后编译器报 `use of deprecated field`（`SyncRequest::offset` / `SyncPageEnd::next_offset`），在 `-D warnings` 下会编译失败，属正当协议兼容 shim | — |
 | 43 处 `clippy::*` 豁免 | **已完成审计**：逐处删除后跑 clippy 比对。37 处实测必要（附触发计数）；6 处 `cast_precision_loss` 属未启用的 pedantic 组，当前失效但保留 | — |
 | bridge 战略目标用例断言过时 | **已修复后又修正**（`d53b88b` → `71b01ac`）：先按「dummy 能回显合法配置」改写为断言成功；随后 P0 修复证明该「成功」本身是假的（工具从未真正执行），再次改写为断言「记录与实际发生的事自洽」，用例重命名为 `..._records_kernel_outcome_with_dummy` | — |
-| `ActionType` 语义标签被当作可执行 `tool_id` | **未完成**（P2.7），但**机制描述已纠正**：并非标签被当作 `tool_id`（`action_label` 与 `tool_id_for_action` 始终分开使用）；真实根因是 `tool_id_for_action` 5 个分支全部返回未注册的 `"fast_tool"`，经 default 路由落到 WASM 执行器必然失败。且有测试把该占位行为固化为期望 | **需独立设计**（为每种动作指定真实工具 ID） |
+| `ActionType` 语义标签被当作可执行 `tool_id` | **已修**（`913ae9d`）：机制曾误判——并非标签被当作 `tool_id`，而是 `tool_id_for_action` 5 个分支全部返回未注册的 `"fast_tool"`。已映射到 `builtin:web_fetch`/`web_search`/`bash_exec`，并修掉 3 处绕过映射函数的硬编码；删除固化了占位行为的测试，替换为 3 个断言真实不变量的用例并经双向变异验证 | 已修 |
+| `team_integration` 6 条在**真实 LLM 配置下**的运行结果 | **仍缺凭据，但已核实不是代码缺陷**：本轮实跑 `cargo test -p sisyphus-tools-agent --test team_integration -- --ignored`，6/6 **如实 FAILED** 并给出 `LLM not configured; set LLM_API_KEY / LLM_ENDPOINT / LLM_MODEL`。用例用 `panic`（而非 `return`）暴露配置缺失，ignore 理由准确，不存在静默跳过或假绿。本机无任何 LLM 相关环境变量 | **环境限制**（缺凭据，非代码问题） |
 | `execute_sop` / `execute_tool` 把执行失败报告为 `SUCCESS` | **P0，已修**（`71b01ac`）：新增 `CoreError::AllIterationsPivoted`，全程零真实产出时如实返回 Err。实测 20 路由 20/20 假 SUCCESS 变为 20/20 真 Internal。连带修正 5 个依赖「伪造成成功」的测试 | 已修 |
 
 **本报告不含任何未标注为「实测」的结论。**
@@ -998,6 +1099,8 @@ CI 的 `bridge-integration-test` job 用 `--no-default-features`，不受影响�
 | `fafc20a` / `c7edfce` | 插桩定位并发用例失败真因：`StrategicPivot` 吞掉执行失败并伪装成 SUCCESS；更正 `66b37fe` 基于错误前提的说明 |
 | `71b01ac` | 修复 P0：全程 StrategicPivot 零真实产出时如实返回 `AllIterationsPivoted`；连带修正 5 个依赖「伪造成成功」的测试 |
 | `3309edb` | 修复 P0.2：预测期 `Logical Flaw` 不再伪造 pivot 占位文本（占位判定改用执行期 `exec_pivot`）；新增 3 个直测并经双向变异验证有效；修正报告统计口径（allow 67→63、dead_code 17→14、clippy 47→43） |
+| `ee5406f` | 纠正 P2.7 机制描述（原误判为「语义标签被当作 tool_id」）；补做 `upper_case_acronyms` 删除验证（触发 2 条 `SOP` acronym 告警，`SOP` 全仓 259 处引用故豁免正当） |
+| `913ae9d` | 修复 P2.7：`tool_id_for_action` 映射到真实注册的 `builtin:` 工具，修掉 3 处绕过映射的硬编码 `fast_tool`，删除固化了占位行为的测试并替换为 3 个真实不变量用例（双向变异验证）；补齐 P0.1「中途 pivot 后恢复」的覆盖缺口（3 个新用例 + `SequencedReflector` 夹具，两轮变异验证） |
 
 ### 本轮实测确认的结论汇总
 
