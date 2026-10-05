@@ -585,9 +585,12 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires actual Node.js toolchain installed"]
     fn test_backend_name() {
-        // Can't instantiate without actual tools, but we can test parsing
+        // `name` is a pure literal on the unit struct — no toolchain needed.
+        // `NodeBackend::new()` is what probes for a package manager, so it is
+        // that constructor (not this assertion) that needs an installed Node.
+        let backend = NodeBackend { pm: "npm".into() };
+        assert_eq!(LanguageBackend::name(&backend), "node");
     }
     // ── vitest 守卫：用实测捕获的真实字节锁定判据 ──────────
     //

@@ -20,7 +20,7 @@
 | `#[test]` 函数总数 | **5088**（crates/ 内：单元 1420 + 集成 3668） | 数量充足 |
 | ADR-013 钩子开销 | 优化后相对开销 **3.04x → 1.06x** | 已验证优化有效 |
 | 真实工具链 e2e（`#[ignore]`，需真工具链） | **13 条**（均在 `tools-build/tests/language_backend_guards.rs`） | 偏少 |
-| `#[ignore]` 测试总数 | 30 条 | 合理 |
+| `#[ignore]` 测试总数 | **27 条**（修复前 30 条） | 合理 |
 
 **最反直觉的结论：这个项目的代码卫生比它给自己的印象好得多。**
 AGENTS.md 里那套「不得使用 unwrap()」「不得 panic」的规则，从数据看**基本被切实执行了**。
@@ -131,6 +131,36 @@ test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured
 
 两条测试的 `#[ignore]` 已删除，**从「永久跳过」变成「默认执行」**。
 同时顺手清掉 `setup_kernel` 里的两处 `unwrap()`（AGENTS.md 明令禁止）。
+
+### 3.3 补完：`src/` 内的 `#[ignore]`（上一轮漏审）
+
+上一轮我只审了 `tests/` 目录，**漏了 `src/` 里的 3 处**。其中 1 处是真空测试：
+
+```rust
+#[test]
+#[ignore = "requires actual Node.js toolchain installed"]
+fn test_backend_name() {
+    // Can't instantiate without actual tools, but we can test parsing
+}
+```
+
+**函数体是空的，零断言，必然通过**——而它的 `#[ignore]` 理由是**错的**：
+需要工具链的是 `NodeBackend::new()`（它会探测包管理器），
+而 `name()` 只是结构体上的字面量。已改为真实断言并删除 `#[ignore>`：
+
+```rust
+let backend = NodeBackend { pm: "npm".into() };
+assert_eq!(LanguageBackend::name(&backend), "node");
+```
+
+**旁证**：同 crate 的 `rust.rs` / `frontend.rs` / `java.rs` 三个 backend
+**早就有同名测试且未被 ignore**，只有 `node` 被跳过了。
+
+验证：`cargo test -p sisyphus-tools-build --lib` → **114 passed; 0 failed; 0 ignored**。
+
+> **教训：审计范围要按「问题类型」而非「目录」划定。**
+> 我搜的是 `tests/` 目录，于是「所有 `#[ignore]`」这个说法从一开始就漏了 `src/`。
+> 若当时写成「审计 `#[ignore]`」并全仓 grep，就会发现这个空测试。
 
 ## 4. 真正值得处理的问题（按优先级）
 
