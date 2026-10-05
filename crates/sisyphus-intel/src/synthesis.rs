@@ -105,13 +105,26 @@ pub(crate) fn classify_goal(goal: &str) -> Vec<ActionType> {
     actions
 }
 
+/// Map a semantic action to the ID of a **real, registered** tool.
+///
+/// The `builtin:` prefix is mandatory: [`ExecutorRouter`] dispatches on the
+/// prefix and strips it before forwarding, so `builtin:web_fetch` reaches
+/// `BuiltinToolExecutor` as `web_fetch` and hits its `match` arm. A bare or
+/// unregistered ID falls through to the router's `default` executor (the WASM
+/// executor in the bridge), which cannot run anything by that name.
+///
+/// `Process`, `Sink` and `Validate` have no purpose-built builtin tool. They
+/// are mapped to `bash_exec`, which is the only registered tool able to
+/// actually carry out an arbitrary transformation, emit its result, or check
+/// it. Mapping them to a plausible-looking but unregistered name would make
+/// every synthesized plan fail at execution time.
+///
+/// [`ExecutorRouter`]: sisyphus_types::node::ExecutorRouter
 pub(crate) fn tool_id_for_action(action: &ActionType) -> &str {
     match action {
-        ActionType::Fetch => "fast_tool",
-        ActionType::Process => "fast_tool",
-        ActionType::Sink => "fast_tool",
-        ActionType::Search => "fast_tool",
-        ActionType::Validate => "fast_tool",
+        ActionType::Fetch => "builtin:web_fetch",
+        ActionType::Search => "builtin:web_search",
+        ActionType::Process | ActionType::Sink | ActionType::Validate => "builtin:bash_exec",
     }
 }
 
@@ -163,7 +176,7 @@ impl FlowSynthesizer for GoalDrivenSynthesizer {
         if actions.is_empty() {
             let n = graph.add_node(Arc::new(sisyphus_types::WasmSOPNode {
                 name: "default".into(),
-                tool_id: "fast_tool".into(),
+                tool_id: "builtin:bash_exec".into(),
                 fuel_limit: 1_000_000,
                 executor: self.tool_executor.clone(),
             }));
@@ -206,7 +219,7 @@ impl FlowSynthesizer for GoalDrivenSynthesizer {
             }));
             let merge = graph.add_node(Arc::new(sisyphus_types::WasmSOPNode {
                 name: "merge".into(),
-                tool_id: "fast_tool".into(),
+                tool_id: "builtin:bash_exec".into(),
                 fuel_limit: 1_000_000,
                 executor: self.tool_executor.clone(),
             }));
@@ -614,13 +627,53 @@ mod tests {
     // -----------------------------------------------------------------------
 
     #[test]
-    fn test_tool_id_all_actions_return_fast_tool() {
-        // 目前所有动作映射到 "fast_tool"
-        assert_eq!(tool_id_for_action(&ActionType::Fetch), "fast_tool");
-        assert_eq!(tool_id_for_action(&ActionType::Process), "fast_tool");
-        assert_eq!(tool_id_for_action(&ActionType::Sink), "fast_tool");
-        assert_eq!(tool_id_for_action(&ActionType::Search), "fast_tool");
-        assert_eq!(tool_id_for_action(&ActionType::Validate), "fast_tool");
+    fn test_tool_id_maps_to_registered_builtin_tools() {
+        // Each action must resolve to a tool that actually exists in the bridge
+        // registry. A plausible-looking but unregistered ID would silently route
+        // to the default (WASM) executor and fail at execution time.
+        let cases = [
+            (ActionType::Fetch, "builtin:web_fetch"),
+            (ActionType::Search, "builtin:web_search"),
+            (ActionType::Process, "builtin:bash_exec"),
+            (ActionType::Sink, "builtin:bash_exec"),
+            (ActionType::Validate, "builtin:bash_exec"),
+        ];
+        for (action, expected) in cases {
+            assert_eq!(tool_id_for_action(&action), expected);
+        }
+    }
+
+    #[test]
+    fn test_tool_ids_carry_routable_prefix() {
+        // `ExecutorRouter` only dispatches on a known prefix and strips it
+        // before forwarding; a bare ID silently falls through to `default`.
+        for action in [
+            ActionType::Fetch,
+            ActionType::Process,
+            ActionType::Sink,
+            ActionType::Search,
+            ActionType::Validate,
+        ] {
+            let id = tool_id_for_action(&action);
+            assert!(
+                id.starts_with("builtin:"),
+                "{id:?} lacks the builtin: prefix and would fall through to the default executor"
+            );
+        }
+    }
+
+    #[test]
+    fn test_tool_ids_are_distinct_where_tools_differ() {
+        // Guards against regressing to a single placeholder for every action.
+        // Process/Sink/Validate intentionally share bash_exec.
+        assert_ne!(
+            tool_id_for_action(&ActionType::Fetch),
+            tool_id_for_action(&ActionType::Process)
+        );
+        assert_ne!(
+            tool_id_for_action(&ActionType::Search),
+            tool_id_for_action(&ActionType::Sink)
+        );
     }
 
     // -----------------------------------------------------------------------

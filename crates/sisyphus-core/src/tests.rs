@@ -2199,6 +2199,313 @@ async fn test_prediction_phase_logical_flaw_is_not_counted_as_zero_execution() {
     );
 }
 
+/// 反射器按调用次序返回脚本化的偏差序列，用尽后重复最后一个值。
+///
+/// 用于构造「先 pivot、随后恢复」的多轮场景：单轮夹具无法表达
+/// 「中途失败但整体成功」这条合法路径。
+struct SequencedReflector {
+    deviations: std::sync::Mutex<std::collections::VecDeque<f64>>,
+}
+
+impl SequencedReflector {
+    fn new(deviations: impl IntoIterator<Item = f64>) -> Self {
+        Self {
+            deviations: std::sync::Mutex::new(deviations.into_iter().collect()),
+        }
+    }
+}
+
+#[async_trait::async_trait]
+impl sisyphus_intel::reflect::Reflector for SequencedReflector {
+    async fn reflect(
+        &self,
+        _trace: &str,
+        _predicted: &sisyphus_intel::SimulationResult,
+        _experiences: Option<&[sisyphus_types::experience::ExperienceTuple]>,
+    ) -> Result<sisyphus_intel::reflect::ReflectionReport, sisyphus_types::IntelError> {
+        let deviation = {
+            let mut queue = self.deviations.lock().map_err(|_| {
+                sisyphus_types::IntelError::Internal("reflector lock poisoned".into())
+            })?;
+            if queue.len() > 1 {
+                // More scripted deviations remain: consume one but keep the tail
+                // so later calls still have something to fall back on.
+                queue.pop_front().unwrap_or(0.0)
+            } else {
+                // Last scripted value (or an empty sequence) repeats forever, so
+                // extra iterations behave deterministically.
+                queue.front().copied().unwrap_or(0.0)
+            }
+        };
+        Ok(sisyphus_intel::reflect::ReflectionReport {
+            original_sop_id: "sequenced".into(),
+            deviation_score: deviation,
+            suggested_improvements: vec![],
+            improvement_signals: vec![],
+            evolved_sop_structure: None,
+            records: vec![],
+        })
+    }
+}
+
+/// 构造一个反射器按次序返回 `deviations`、迭代上限为 `max_iterations` 的 manager。
+///
+/// 与 `setup_manager_with_reflector` 同构，但支持多轮：偏差序列里较大的值
+/// 会触发执行期 StrategicPivot，较小的值则放行，从而覆盖
+/// 「中途 pivot 后恢复」这条合法路径。
+async fn setup_manager_with_sequenced_reflector(
+    deviations: impl IntoIterator<Item = f64>,
+    max_iterations: u32,
+    knowledge_dir: &str,
+) -> StrategicManager {
+    setup_manager_with_sequenced_reflector_and_logic(
+        deviations,
+        max_iterations,
+        knowledge_dir,
+        false,
+    )
+    .await
+}
+
+/// 与 `setup_manager_with_sequenced_reflector` 相同，但可让逻辑仿真报告一个
+/// Critical 缺陷，从而使**预测期**的 `pivot_reason` 也被赋值。
+///
+/// 三个信号源必须能同时存在才能验证占位文本判定：
+/// - 预测期 `pivot_reason`（Logical Flaw）
+/// - 执行期 `exec_pivot`（StrategicPivot）
+/// - 执行成功（`exec_pivot == false` 且 `pivot_reason.is_some()`）
+///
+/// 若夹具不报 flaw，则 `pivot_reason` 恒为 `None`，此时
+/// `pivot_reason.is_some()` 与 `exec_pivot` 在行为上完全等价，
+/// 占位判定的变异无法被任何用例发现。
+async fn setup_manager_with_sequenced_reflector_and_logic(
+    deviations: impl IntoIterator<Item = f64>,
+    max_iterations: u32,
+    knowledge_dir: &str,
+    critical_flaw: bool,
+) -> StrategicManager {
+    let simulator = Arc::new(MockSimulator::new(vec![0.1]));
+    let logic: Arc<dyn sisyphus_intel::simulation::LogicalSimulator> = if critical_flaw {
+        Arc::new(CriticalFlawSimulator::default())
+    } else {
+        Arc::new(MockLogicalSimulator)
+    };
+    let intel = Arc::new(sisyphus_intel::SisyphusIntel::new(
+        simulator,
+        logic,
+        Arc::new(SequencedReflector::new(deviations)),
+        Arc::new(MockEvolver),
+    ));
+
+    let llm: Arc<dyn sisyphus_tools_llm::LlmClient> = Arc::new(sisyphus_tools_llm::DummyLlmClient);
+    let synthesizer: Arc<dyn sisyphus_intel::FlowSynthesizer> = Arc::new(
+        sisyphus_intel::GoalDrivenSynthesizer::new(Arc::new(MockToolExecutor)),
+    );
+
+    let intelligence_manager = Arc::new(IntelligenceManager::new(intel, synthesizer, llm.clone()));
+
+    let state_store = Arc::new(
+        sisyphus_mem::MfsStore::new("sqlite::memory:", &sisyphus_types::CacheConfig::default())
+            .await
+            .expect("in-memory MfsStore"),
+    );
+    let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.expect("sqlite pool");
+    let sop_store =
+        Arc::new(sisyphus_mem::SopSqlStore::new(pool.clone()).await.expect("sop store"));
+    let knowledge = Arc::new(sisyphus_knowledge::AssetManager::new(
+        std::path::PathBuf::from(knowledge_dir),
+    ));
+    let intervention = Arc::new(crate::intervention_manager::InterventionManager::new());
+    let internalization = Arc::new(crate::internalization_manager::InternalizationManager::new(
+        llm.clone(),
+        knowledge.clone(),
+    ));
+    let execution_manager = Arc::new(ExecutionManager::new(
+        state_store.clone(),
+        sop_store,
+        Arc::new(MockToolExecutor),
+        Arc::new(MockTestExecutor),
+        intervention.clone(),
+        internalization.clone(),
+        None,
+    ));
+
+    let config = CognitiveLoopConfig {
+        max_iterations,
+        convergence_threshold: 0.01,
+        llm_stage_timeout_secs: 30,
+        adaptive_depth: sisyphus_types::config::AdaptiveDepthConfig::default(),
+        anomaly_detector: sisyphus_types::config::AnomalyDetectorConfig::default(),
+        token_budget: sisyphus_types::config::TokenBudgetConfig::default(),
+    };
+
+    let benchmark = Arc::new(parking_lot::Mutex::new(
+        sisyphus_tools_build::benchmark::ContinuousBenchmark::new(".omo/test_bench_seq"),
+    ));
+    let meta_learner = Arc::new(parking_lot::Mutex::new(
+        sisyphus_tools_llm_tools::meta_learner::MetaLearner::new(".omo/test_meta_seq"),
+    ));
+    let roadmap = Arc::new(sisyphus_roadmap::RoadmapManager::new(
+        state_store.clone(),
+        Arc::new({
+            let store =
+                sisyphus_mem::RoadmapSqlStore::new(pool.clone()).await.expect("roadmap store");
+            store.init_schema().await.expect("init roadmap schema");
+            store
+        }),
+        Arc::new(sisyphus_roadmap::proposal_manager::ProposalManager::new(
+            state_store.clone(),
+        )),
+    ));
+
+    StrategicManager::new(
+        intelligence_manager,
+        execution_manager,
+        config,
+        Arc::new(crate::AgentChannel::new()),
+        benchmark,
+        meta_learner,
+        Arc::new(MockExperienceBank),
+        knowledge,
+        roadmap,
+        intervention,
+        internalization,
+        None,
+    )
+}
+
+/// 中途 pivot、随后恢复并成功，必须仍然返回 Ok。
+///
+/// 回归动机（71b01ac）：`AllIterationsPivoted` 守卫的注释明确写着
+/// 「中途 pivot 后恢复是合法路径」，但此前没有任何测试覆盖这条路径——
+/// 只有「全部 pivot」和「全部成功」两个极端，守卫条件写错（例如写成
+/// `exec_pivot == true` 即失败）不会被任何用例发现。
+#[tokio::test]
+async fn test_partial_pivot_then_recovery_still_succeeds() {
+    // 第 1 轮偏差 0.9（> convergence_threshold）→ 执行期 StrategicPivot；
+    // 第 2 轮偏差 0.0 → 放行并产出真实执行结果。
+    let manager =
+        setup_manager_with_sequenced_reflector([0.9, 0.0], 2, ".omo/test_knowledge_partial_pivot")
+            .await;
+
+    let (res, report, _evolved) = manager
+        .run_cognitive_loop(
+            single_node_sop(),
+            "test_partial_pivot",
+            None,
+            None,
+            None,
+            None,
+            |_id, _e| {},
+            None,
+            None,
+        )
+        .await
+        .expect("a later real execution must make the loop succeed despite an earlier pivot");
+
+    assert!(
+        !res.to_string().is_empty(),
+        "successful execution must return a real result"
+    );
+    assert!(
+        !res.to_string().contains("Strategic Pivot"),
+        "the final result must be the recovered execution, not the pivot placeholder: {res}"
+    );
+    assert_eq!(
+        report.iterations, 2,
+        "both iterations should have run: one pivoted, one recovered"
+    );
+}
+
+/// 中途 pivot 后恢复时，`pivot_reason` 诊断信息不得出现在最终结果里。
+///
+/// 覆盖 `execute_phase` 占位文本判定的第二个来源：即使本轮是**成功**的
+/// 执行，只要历史上曾发生执行期 pivot，最终返回的就必须是真实产出，
+/// 而不是任何形式的 pivot 说明文本。
+#[tokio::test]
+async fn test_pivot_diagnostics_do_not_leak_into_recovered_result() {
+    let manager =
+        setup_manager_with_sequenced_reflector([0.9, 0.0], 2, ".omo/test_knowledge_pivot_leak")
+            .await;
+
+    let (res, _report, _evolved) = manager
+        .run_cognitive_loop(
+            single_node_sop(),
+            "test_pivot_leak",
+            None,
+            None,
+            None,
+            None,
+            |_id, _e| {},
+            None,
+            None,
+        )
+        .await
+        .expect("recovery after pivot must succeed");
+
+    let text = res.to_string();
+    assert!(
+        !text.contains("Strategic Pivot"),
+        "pivot placeholder leaked into a recovered result: {text}"
+    );
+    assert!(
+        !text.contains("Logical Flaw"),
+        "prediction-phase diagnostics leaked into a recovered result: {text}"
+    );
+}
+
+/// 预测期 flaw 与「中途 pivot 后恢复」同时出现时，占位判定必须只认执行期信号。
+///
+/// 这是本组用例里**唯一**能捕获占位判定变异的一个。实测证据：
+/// 把 `execute_phase` 的判定从 `*exec_pivot` 改回 `pivot_reason.is_some()`
+/// 后，本文件其余 4 个 pivot 用例**全部照常通过**——因为它们用
+/// `MockLogicalSimulator`（不报 flaw），此时 `pivot_reason` 恒为 `None`，
+/// `None.is_some()` 恒为 `false`，与 `exec_pivot` 行为完全一致。
+///
+/// 只有当预测期 `pivot_reason` 与执行期 `exec_pivot` **取值相反**时，
+/// 两种写法才会产生可观测的差异：
+/// - 第 2 轮：预测期报 flaw（`pivot_reason = Some`），但 supervisor 放行
+///   （`exec_pivot = false`）→ 真实执行成功 → 必须返回真实产出。
+#[tokio::test]
+async fn test_prediction_flaw_plus_recovery_uses_execution_signal_only() {
+    let manager = setup_manager_with_sequenced_reflector_and_logic(
+        [0.9, 0.0],
+        2,
+        ".omo/test_knowledge_flaw_recovery",
+        true,
+    )
+    .await;
+
+    let (res, _report, _evolved) = manager
+        .run_cognitive_loop(
+            single_node_sop(),
+            "test_flaw_recovery",
+            None,
+            None,
+            None,
+            None,
+            |_id, _e| {},
+            None,
+            None,
+        )
+        .await
+        .expect("recovery must succeed even with a prediction-phase flaw present");
+
+    let text = res.to_string();
+    assert!(
+        !text.contains("Strategic Pivot"),
+        "a successful iteration was replaced by pivot placeholder text: {text}"
+    );
+    assert!(
+        !text.contains("Logical Flaw"),
+        "prediction-phase diagnostics leaked into an executed result: {text}"
+    );
+    assert!(
+        !text.is_empty(),
+        "successful execution must return a real result, not diagnostics"
+    );
+}
+
 /// 与 `setup_manager_with_reflector` 相同，但逻辑仿真报告一个 Critical 缺陷，
 /// 从而在预测期把 `pivot_reason` 置为 `Logical Flaw Detected: ...`。
 ///

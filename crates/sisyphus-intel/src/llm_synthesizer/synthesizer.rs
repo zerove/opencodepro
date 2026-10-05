@@ -45,7 +45,7 @@ impl FlowSynthesizer for LlmDrivenSynthesizer {
             if actions.is_empty() {
                 let n = graph.add_node(Arc::new(sisyphus_types::WasmSOPNode {
                     name: "default".into(),
-                    tool_id: "fast_tool".into(),
+                    tool_id: "builtin:bash_exec".into(),
                     fuel_limit: 1_000_000,
                     executor: self.tool_executor.clone(),
                 }));
