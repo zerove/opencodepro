@@ -104,29 +104,44 @@ test result: FAILED. 0 passed; 2 failed
 
 ## 4. 真正值得处理的问题（按优先级）
 
-### P1 — 核心认知引擎的端到端验证证据不足（**本轮已完成测量，结论修正**）
+### P1 — 跨组件（e2e）验证覆盖不足（**本轮已完成测量，结论已修正**）
+
+**问题仍然存在，但性质与我最初的推测不同。** 不是「测试都是内存 mock」，
+而是「跨组件验证不在本地默认测试路径上」。
+
+实测依据：
+- `test-all` 排除 bridge / sandbox / sandboxd / tests 四个 crate，
+  而它们正是唯一做跨进程验证的地方（tonic、TcpListener、wasmtime）
+- 这四个 crate 在 CI 里有对应 job，所以不是「不测」，而是**本地默认不测**
+- 代价：开发者在本地跑 `make test-all` 得到全绿时，
+  **恰恰看不到跨组件那一层的任何信号**
 
 `sisyphus-tests` 里最接近端到端的是 `test_full_pipeline` 和
-`test_dag_execution`，前者因 schema 不匹配被 ignore，后者用
-`DummyToolExecutor`（全内存假执行器）。也就是说：
-**predict → execute → reflect → evolve 这条主干，在本次复盘能看到的范围内，
-没有一条真正跑通「真实工具 + 真实 LLM 接口」的完整链路。**
+`test_dag_execution`，前者因 schema 不匹配被 ignore（理由已核实成立，见 3.2），
+后者用 `DummyToolExecutor`（全内存假执行器）。在本次复盘能看到的范围内，
+**认知主循环 predict → execute → reflect → evolve 这条主干，
+没有一条测试跑通「真实工具 + 真实 LLM 接口」的完整链路。**
 
-4763 这个数字是我最初写的估计，**实测为 5098**（见第 3 节）。
-其中大多数是**纯逻辑层**测试——`sisyphus-types`(1447) + `sisyphus-intel`(706) = 2153 个，
-占集成测试的 59%，这两个 crate 本身就是纯计算，不需要外部依赖。
-真正需要外部依赖的 `sisyphus-tests` 只有 81 个。
+作为对照，测试**总量并不少**：实测 `#[test]` 共 **5098** 个
+（单元 1420 + 集成 3668，见第 3 节）。问题不在数量，而在分布——
+集成测试中 **2153 个（59%）** 集中在 `sisyphus-types`(1447) 与
+`sisyphus-intel`(706) 这两个纯计算 crate，它们本就不需要外部依赖；
+真正需要跨组件的 `sisyphus-tests` 只有 81 个。
 
-跨进程/跨组件边界的证据（实测，`crates/*/tests/` 内引用数）：
-`tonic` 7 个文件、`sisyphus_bridge::` 7 个文件、`TcpListener` 3 个、
-`wasmtime` 2 个、`sisyphus_sandbox::` 2 个——**集中在少数几个 bridge/sandbox 测试文件**。
+跨进程/跨组件边界的证据（实测，`crates/*/tests/` 内**文件数**）：
+`tonic` 7、`sisyphus_bridge::` 7、`TcpListener` 3、`wasmtime` 2、
+`sisyphus_sandbox::` 2——集中在少数几个 bridge/sandbox 测试文件里。
 
-`evals/` 有 19 个测试函数，但**不在 `cargo test --workspace` 默认范围内**
-（workspace members 未包含 `evals`），需单独跑。
+`evals/` 有 19 个测试函数，**在 `cargo test --workspace` 默认范围内**
+（`evals` 是 workspace member 且未被 `test-all` 排除）。
 
-> **注意这条结论与我最初的推测方向相反**：我原以为「测试都堆在内存 mock 里」，
-> 实测是「测试确实很多，但集中在不需要外部依赖的纯逻辑 crate」，
-> 而需要跨组件的那部分（evals + bridge e2e）不在默认测试路径上。
+> **本条结论与我最初的推测方向相反**：我原以为「测试都堆在内存 mock 里」，
+> 实测是「测试很多，但集中在不需要外部依赖的纯逻辑 crate」，
+> 而跨组件那一层被 `test-all` 排除、靠 CI 单独跑。
+
+**建议（低成本）**：在 `make test-all` 末尾加一句提醒，列出被排除的四个 crate
+及其 CI 对应 job，避免开发者把本地全绿误读为全量验证。
+比改造测试结构更划算。
 
 ### P2 — `#[allow(unused/clippy)]` 32 处，集中在认知主循环 ✅ **已完成**
 
@@ -201,6 +216,15 @@ types_misc 4066 + asset 3847 + types_misc_v2 2531）。这类文件会持续吸�
    正则把类型名当成了形参。改用「函数体内按 `fn` 名配平大括号再统计 `\b形参\b`」
    后才得到可信结论。**教训：静态分析脚本本身必须先用已知答案校验，
    否则它会自信地编造数据。**
+
+5. **把 `grep -c evals` 的返回值 1 读成了 0**，
+   写下「`evals` 不在 workspace 中」的错误断言并提交。
+   **工具返回了正确答案，我没读对**——这类错误比工具算错更隐蔽，
+   因为表面上「查过了」。**教训：核对工具输出时，要先复述它的原话再下结论。**
+
+6. **报告中「4763 个测试」是估计值，未经实测就写进了正文**。
+   实测为 5098。**教训：叙述性文字里的数字同样需要出处，
+   「顺手写个大概数字」的危害等同于代码里的魔法数字。**
 
 另外两个**工具自身的坑**：一次 `rm` 含通配符且指向工作区外被安全门拦下
 （拦得对——那批历史日志不是我的）；一次审计脚本因大括号配平 bug 静默吞掉半个文件。

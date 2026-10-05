@@ -121,6 +121,14 @@ build-all:
 
 test-all:
 	CARGO_BUILD_JOBS=1 cargo test-all
+	@echo ""
+	@echo "━━━ ⚠️  本次未覆盖的 crate ━━━"
+	@echo "sisyphus-bridge / sisyphus-sandbox / sisyphus-sandboxd / sisyphus-tests"
+	@echo "因编译开销大被排除。它们是本仓**唯一做跨进程/跨组件验证**的地方"
+	@echo "（tonic / gRPC / wasmtime / TcpListener），本地全绿 ≠ 全量验证。"
+	@echo "这四个 crate 在 CI 中有对应 job："
+	@echo "  .github/workflows/ci.yml — bridge_integration_test / skill_market_rest_test / sisyphus-tests --lib"
+	@echo "本地需单独验证请用： cargo test -p sisyphus-bridge --no-default-features --lib"
 
 # 概率性失败（flaky test）扫描：把每个 crate 的 lib 测试二进制重复跑多轮，
 # 统计失败率。单次 `cargo test` 全绿无法证明不存在竞态——本项目多处缺陷
