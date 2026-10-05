@@ -529,6 +529,43 @@ cargo test   -p sisyphus-core --lib   # 91 passed; 0 failed; 0 ignored
 | `unused_variables` | 1 | **本轮已删 3 处失效的**（`cognitive_loop.rs`），余下 1 处在 `bridge_service.rs`，删掉后报 unused variable |
 | `unused_mut` | 1 | `bridge_service.rs`，在 `#[cfg(feature=\"sandbox\")]` 内，已验证正当 |
 
+### P2.5 — bridge 集成测试：一个从未被发现的真实失败（本轮修复）
+
+`test_execute_tool_strategic_next_goal_records_kernel_failure_with_dummy`
+断言内核执行**失败**（`!outcome.success` 且错误含
+`"Failed to parse proposal JSON:"`）。本轮首次真正运行该用例后发现它**一直
+是失败的**：提交 `4b60559` 解除了它的 `#[ignore]` 并注明「两个成因均已修复」，
+但只改了 ignore 没改断言；而 `DummyLlmClient.generate` 早已学会
+`extract_embedded_sop_config` 原样回显配置，提案变成**合法**的
+（`metis.rs:117`），内核因此成功执行。
+
+之所以没人发现：CI 从不使用 `--include-ignored`，而该用例曾长期处于忽略态。
+
+本轮实测 `outcome.success=true, error=None, deviation_score=Some(0.11)`，
+遂将用例改写为断言**真实成功路径**（`..._records_kernel_success_with_dummy`）：
+校验持久化记录、`SUCCESS` 状态、结果正文含目标 ID 与 `Completed`、
+反思段落与执行轨迹齐备。覆盖强度不低于原断言——原断言验证「失败被正确传播」，
+新断言验证「成功被正确记录」，且额外串联了内核执行、持久化与 RPC 响应三者。
+**不是为了让测试变绿而放松断言，而是修正了已过时的前提。**
+
+### P2.6 — 并发测试在 `--no-default-features` 下不稳定（本轮发现，未修）
+
+`test_negative_concurrent_requests` 断言 20 路并发 `execute_sop` 全部成功。
+实测：
+
+| 运行方式 | 结果 |
+|----------|------|
+| `--no-default-features` 单独运行该用例 | **passed** |
+| `--no-default-features` 全量运行（默认并行） | **FAILED**（1/20 报 `Sandbox disabled`） |
+| `--no-default-features` 全量 + `--test-threads=1` | **54 passed** |
+
+根因已定位到一半：`--no-default-features` 时 `tool_router` 装的是
+`NoopToolExecutor`（`bridge_service.rs:936`），它对**任何** tool 都返回
+`Sandbox disabled` 错误。因此该用例在无 sandbox 环境下**本不应通过**——
+单独运行时能过，说明存在跨用例的共享状态或注册表残留。
+**本轮未修复**，如实记录：这属于 `#[cfg(not(feature = "sandbox"))]` 下的
+执行器选择问题，需在无 sandbox 时改用 mock 执行器或让该用例条件跳过。
+
 ### P3 — 巨型 misc 测试文件（**本轮已核查，结论降级**）
 
 `sisyphus-types/tests/` 下 4 个大文件合计 15,879 行：
@@ -594,24 +631,33 @@ MAVEN_OPTS="-Xmx512m -XX:MaxMetaspaceSize=128m" \
 **仓库侧已修复**（提交 `4dc689d`）：方法写进了模块文档与 2 条用例的
 `#[ignore]` 理由，避免下一个人重复排查。
 
-### 5.2 未解除：bridge 编译（可用内存不足）
+### 5.2 部分解除：bridge 编译（此前结论已被本轮实测推翻）
 
-当前可用内存约 10 GB，其中约 6 GB 被**非本项目的基础设施**占用。
-在这些进程不终止的前提下，bridge 相关的 4 种编译方式全部失败：
+**早前结论「bridge 4 种方式全部 OOM、无法编译」是错的。** 本轮在同样约 10 GB
+可用内存下重测，`--no-default-features` 路径（正是 CI 实际使用的路径）全部通过：
 
-| 尝试 | 失败点 |
-|------|--------|
-| 默认并行 | `sisyphus-mem` rustc OOM |
-| `CARGO_BUILD_JOBS=1` + `DEBUG=0` | `rust-lld` 链接器 OOM（`ld terminated with signal 6`） |
-| `+ -Clink-arg=-Wl,--threads=1` | `cranelift-codegen`（wasmtime 依赖）rustc OOM |
-| `--no-default-features`（**CI 实际路径**） | `opentelemetry_sdk` rustc OOM |
+| 命令 | 早前结论 | 本轮实测 |
+|------|----------|----------|
+| `cargo check -p sisyphus-bridge --all-targets` | 未测 | **通过**，1m06s |
+| `cargo check -p sisyphus-bridge --no-default-features --lib` | `opentelemetry_sdk` rustc OOM | **通过**，2m15s |
+| `cargo test -p sisyphus-bridge --no-default-features --lib` | 未测 | **85 passed** |
+| `cargo test -p sisyphus-bridge --no-default-features --test bridge_integration_test` | 未测 | **54 passed**（需 `--test-threads=1`，见下） |
+| 带 sandbox（默认 feature，含 wasmtime） | rust-lld OOM | **仍然 OOM**（`memory allocation of 34832 bytes failed`） |
 
-这些基础设施进程**不属于本项目，不应由本次审计终止**。
-因此 `hook_overhead.rs` 与 `jcode_call_chain_test.rs` 维持 `#[ignore]` 是正确的。
+结论修正为：**OOM 与 sandbox 特性（wasmtime）绑定，而非 bridge crate 本身。**
+CI 的 `bridge-integration-test` job 用 `--no-default-features`，不受影响；
+`bridge-test-full` job 启用 sandbox，在本机内存条件下仍无法编译——这一条
+维持原判断。`hook_overhead.rs` 与 `jcode_call_chain_test.rs` 的 `#[ignore]`
+因此仍然正确。
+
+早前之所以误判：4 次尝试均在**默认 feature（带 sandbox）**下进行，而
+`--no-default-features` 那次被 `opentelemetry_sdk` 的瞬时内存压力打断，
+未做重试就下了「结构性不可行」的结论。**教训：把一次瞬时 OOM 当成结构性
+限制前，必须重试并变换 feature 组合。**
 
 > 注：更早一轮曾记录「提交内存降到 66% 时 `hook_overhead` 编译并跑通（1 passed）」。
-> 本轮以 4 次失败为准——**那次的成功依赖于当时机器上恰好没有占满内存**，
-> 不可作为稳定结论。
+> 本轮未能复现该结果（带 sandbox 仍 OOM），故 `hook_overhead` 的结论仍以
+> 「本机不可验证」记述，不宣称已验证。
 
 ### 5.3 ADR-013 断流钩子开销实测
 
@@ -734,12 +780,14 @@ MAVEN_OPTS="-Xmx512m -XX:MaxMetaspaceSize=128m" \
 | 全量 26 条 `#[ignore]` 逐条核实 | **已完成**：13 条工具链全部跑通、2 条网络跑通、1 条 LLM 跑出真实错误、1 条 UDS 实跑前先验代码、2 条为 fixture 假 ignore；**`hook_overhead` 未能编译**（见 5.2） | — |
 | `team_integration` 6 条的真实行为 | **已完成**：实跑发现静默跳过假绿，已修 | — |
 | `maven_compile_failure_returns_err` | **已完成（已突破环境限制）**：原因是 JVM 默认堆预留 5 GB，`MAVEN_OPTS="-Xmx512m"` 后 13 条工具链测试全部跑通 | — |
-| `hook_overhead.rs` / `jcode_call_chain_test.rs` 的**编译** | **未完成**：4 种手段均 OOM（rustc / rust-lld / cranelift-codegen / opentelemetry_sdk） | **环境限制**，见 3.4.7 |
+| `hook_overhead.rs` / `jcode_call_chain_test.rs` 的**编译** | **部分解除**：`--no-default-features` 路径实测可编译（bridge 85 + 54 测试通过）；带 sandbox 仍 OOM | 见 5.2 |
 | `team_integration` 6 条在**真实 LLM 配置下**的运行结果 | **未完成**：本机无 `LLM_API_KEY`/`ENDPOINT`/`MODEL` | **环境限制** |
-| **真实工具 + 真实 LLM API 的完整端到端链路** | **仍未覆盖**：当前通过的是结构正确的 Dummy LLM + 内存执行器 | **环境限制**，见 P1 |
+| **真实工具 + 真实 LLM API 的完整端到端链路** | **仍未覆盖**：当前通过的是 Dummy LLM（回显合法配置）+ 内存执行器 | **环境限制**，见 P1 |
 | `evals/` 侧 8 处 `#[allow(dead_code)]` | **已完成**：编译器裁决法核实，全部承载真实 serde 字段；3 处过宽的已收窄到字段级（`9bb22aa`） | — |
 | 2 处 `#[allow(deprecated)]` | **已完成**：删掉后编译器报 `use of deprecated field`（`SyncRequest::offset` / `SyncPageEnd::next_offset`），在 `-D warnings` 下会编译失败，属正当协议兼容 shim | — |
 | 43 处 `clippy::*` 豁免 | **已完成审计**：逐处删除后跑 clippy 比对。37 处实测必要（附触发计数）；6 处 `cast_precision_loss` 属未启用的 pedantic 组，当前失效但保留 | — |
+| bridge 战略目标用例断言过时 | **已修复**：用例断言 dummy 必然失败，但 dummy 早已学会回显合法配置，实际 `success=true`。改写为断言真实成功路径（`..._records_kernel_success_with_dummy`） | — |
+| `test_negative_concurrent_requests` 在 `--no-default-features` 下不稳定 | **未修复**：单独运行通过、全量并行运行失败（`Sandbox disabled`）。根因为无 sandbox 时 `tool_router` 装的是恒定报错的 `NoopToolExecutor`，需改用 mock 或条件跳过 | 待办，非阻塞 |
 
 **本报告不含任何未标注为「实测」的结论。**
 

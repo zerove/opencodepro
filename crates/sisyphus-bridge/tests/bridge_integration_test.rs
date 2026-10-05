@@ -316,15 +316,18 @@ async fn test_execute_tool_strategic_next_goal_missing_project() {
 }
 
 /// 真实桥接内核路径验收：项目、里程碑、阶段、目标均通过公开内核准备。
-/// DummyLlmClient.chat 返回分析对象而非 SOPGraphConfig，导致提案解析失败。
-/// 本用例验证实际进入 execute_and_record 后的失败响应及持久化记录，
-/// 不将其宣称为成功执行、反思、演进的完整验收。
+/// DummyLlmClient.generate 遇 SOPGraphConfig 提示词时会原样回显内嵌配置
+/// （见 metis.rs::extract_embedded_sop_config），因此提案是**合法**的，
+/// 内核能真正完成执行并记录成功。
+///
+/// 此前本用例断言的是相反的结论（`!outcome.success` 且错误包含
+/// "Failed to parse proposal JSON:"），那是 DummyLlmClient 尚未学会回显配置
+/// 时的行为。4b60559 解除了本用例的 `#[ignore]` 但未同步断言，而回显能力
+/// 早已实现，导致用例被解除忽略后一直失败，却因 CI 从不使用 `--include-ignored`
+/// 而无人发现。现改为断言真实成功路径——覆盖强度不低于原断言，因为它同时
+/// 验证了内核执行、持久化记录与 RPC 响应的三者一致性。
 #[tokio::test]
-// 此前带 `#[ignore = "requires dedicated runner"]`：忽略的理由不是资源受限，
-// 而是当时它们失败（内核未注入、失败被吞成成功）。本轮两个成因均已修复，
-// 用例本身自包含（内存 SQLite + DummyLlmClient），故移出忽略——
-// 否则本轮修复的失败传播语义在 CI 中将没有任何回归保护。
-async fn test_execute_tool_strategic_next_goal_records_kernel_failure_with_dummy() {
+async fn test_execute_tool_strategic_next_goal_records_kernel_success_with_dummy() {
     use sisyphus_types::{GoalRef, Milestone, MilestoneStatus, Phase};
 
     let (bridge, mut client, server) = setup_bridge_with_kernel().await;
@@ -392,28 +395,41 @@ async fn test_execute_tool_strategic_next_goal_records_kernel_failure_with_dummy
     assert_eq!(outcome.milestone_id, milestone_id);
     assert_eq!(outcome.phase_id, phase_id);
     assert_eq!(outcome.goal_id, goal_id);
-    assert!(!outcome.success, "虚拟环境不应被误判为成功执行");
-    assert_eq!(outcome.deviation_score, None);
-    let error = outcome.error.as_deref().expect("失败记录必须携带内核错误");
     assert!(
-        error.contains("Swarm audit failed:")
-            && error.contains("Failed to parse proposal JSON:")
-            && error.contains("Dummy analysis for:"),
-        "应观察到虚拟客户端无法生成提案的已知限制，实际: {error}"
+        outcome.success,
+        "回显合法配置后内核应执行成功，实际错误: {:?}",
+        outcome.error
     );
     assert!(
-        inner.status.starts_with("ERROR: "),
+        outcome.error.is_none(),
+        "成功执行不应携带内核错误，实际: {:?}",
+        outcome.error
+    );
+    // 真实内核跑完后会算出偏差分；只要是有限非负值即可，具体阈值由认知循环算法决定，
+    // 不断言精确数值以免算法调整导致假红。
+    let deviation = outcome.deviation_score.expect("成功执行应记录偏差分（认知循环已产出度量）");
+    assert!(
+        deviation.is_finite() && deviation >= 0.0,
+        "偏差分应为有限非负值，实际: {deviation}"
+    );
+    assert!(
+        !inner.status.starts_with("ERROR: "),
         "实际响应: {}",
         inner.status
     );
+    // 成功时 status 为平铺的 SUCCESS，认知度量与反思段落都在 result_json 正文里
+    // （见 strategic_executor.rs::execute_and_record 成功分支；该字段是纯文本，
+    // 不是 JSON——失败路径才会填结构化的 error 字段）。
+    assert_eq!(inner.status, "SUCCESS", "实际响应: {}", inner.status);
+    let details = &inner.result_json;
     assert!(
-        inner.status.contains(&format!(
-            "Strategic Goal [{goal_id}] execution failed: {error}"
-        )),
-        "响应必须与持久化的内核错误一致，实际: {}",
-        inner.status
+        details.contains(goal_id) && details.contains("Completed"),
+        "结果正文必须回指被执行的战略目标并标记完成，实际: {details}"
     );
-    assert_eq!(inner.result_json, "", "失败响应不应携带结果");
+    assert!(
+        details.contains("Reflection") && details.contains("Execution Trace"),
+        "成功执行应附带反思段落与执行轨迹，实际: {details}"
+    );
 }
 
 #[tokio::test]
