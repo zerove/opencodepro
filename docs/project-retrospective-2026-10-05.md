@@ -14,10 +14,10 @@
 | 生产代码 `panic!` | **0 处** | 优秀 |
 | 生产代码真 `unsafe` | **0 处**（唯一 1 处在 LLM prompt 字符串里） | 优秀 |
 | `todo!()` / `unimplemented!()` | **0 处** | 优秀 |
-| `#[allow(...)]` 合计 | **68 处**（口径见下，71 条 grep 命中中 5 条为假） | 已逐类核实 |
-| └ `dead_code` | 19 处（crates 8 + evals 11） | **已全部核实**：均为 serde 反序列化字段或预留接线位；其中 3 处原为结构体级豁免、范围过宽，已收窄到字段级（提交 `9bb22aa`） |
+| `#[allow(...)]` 合计 | **67 处**（口径见下；含 `tests/` 目录则 70 处） | 已逐类实测裁决 |
+| └ `dead_code` | 17 处（crates 9 + evals 8） | **已全部实测裁决**：逐处删属性后 `cargo check --all-targets` 验证。crates 侧原 14 处中 5 处失效已删（`c49b34f`），余 9 处承载真实未读字段/未构造变体/未接线方法 |
 | └ `unused_*`（imports/variables/mut） | 4 处 | 已删 3 处失效豁免；余 1 处经验证正当 |
-| └ `clippy::*` | 43 处 | **已逐处实测**：37 处必要（含触发计数），6 处属未启用的 pedantic 组 |
+| └ `clippy::*` | 47 处 | **已逐处实测**：41 处必要（含触发计数），6 处 `cast_precision_loss` 属未启用的 pedantic 组 |
 | └ `deprecated` | 2 处 | 已核实为协议兼容 shim，删掉会触发 `-D warnings` 失败 |
 | 测试文件 : 生产文件 | 183 : 392 | 合理 |
 | `#[test]` 函数总数 | **5088**（crates/ 内：单元 1420 + 集成 3668） | 数量充足 |
@@ -30,15 +30,21 @@
 > grep -rnE '#!?\[allow\(' crates/ evals/ --include='*.rs' | grep -v '/tests/'
 > # -> 73 条原始命中
 > ```
-> 即：**全仓 crates/ + evals/，排除 tests/ 目录**。73 条原始命中里 **5 条是假命中**，
-> 真实属性 **68 处**：
+> 即：**全仓 crates/ + evals/，排除 tests/ 目录**。原始命中里 **5 条是假命中**
+> （属性文本出现在注释或字符串字面量中，不是真实生效的豁免）：
 >
 > | 假命中 | 原因 |
 > |--------|------|
-> | `bridge-api/build.rs:25,32` | build 脚本模板字符串内的属性文本 |
-> | `bridge/peer/anti_entropy.rs:224` | 注释里引用属性名（真实属性在 227 行） |
-> | `evals/no_panic_check.rs:57` | 文档注释 `/// 注释行 + \`#[allow(...)]\` 豁免。` |
+> | `bridge-api/build.rs:8,12` | `tonic_build` 的 `type_attribute()` **字符串字面量**，属性被注入**生成代码**，手写源码本身无豁免 |
+> | `evals/no_panic_check.rs:57` | 文档注释 `/// ...` 中的示例文本 |
 > | `evals/no_panic_check.rs:544` | 测试 fixture 写入的源码字符串 |
+>
+> **本轮修正的两处口径错误**（此前结论有误，已实测推翻）：
+> 1. 此前把 `build.rs:25,32` 记为「假命中」并给出「模板字符串内」的说明，
+>    但复核发现真实位置是 **8,12 行**，且性质是**注入生成代码的字符串**——
+>    结论（不计入手写源码）不变，**行号与机制描述此前是错的**。
+> 2. 此前称 `anti_entropy.rs:224` 是「注释里引用属性名」，实测**该注释正是在为
+>    227 行的 `#[allow(deprecated)]` 做解释**，二者是同一件事，不构成独立假命中。
 >
 > 注意这**不等于**「生产代码」——src/ 里 `#[cfg(test)] mod` 内部的豁免也会被计入。
 > 
@@ -516,7 +522,7 @@ cargo test   -p sisyphus-core --lib   # 91 passed; 0 failed; 0 ignored
 | lint 名 | 处数 | 本轮核实情况 |
 |--------|------|------------|
 | `clippy::too_many_arguments` | 13 | **已实测**：属默认组 lint。13 处集中在 5 个 phase 函数与 4 个构造函数，均为依赖注入形态（`Arc<Manager>` + `Config` + `Channel`），改结构体只会搬运参数而无行为收益 |
-| `dead_code` | 19 | **crates 侧 8 处**已逐处核实：`sandboxd/main.rs`(1)、`cli/tui/app.rs`(2)、`bridge/peer/service.rs`(2)、`bridge/http/sse_handlers.rs`(4)、`bridge/peer/manager.rs`(1)、`bridge/auth_jwt.rs`(1)，均为预留接线位。**evals 侧 11 处**（`golden_sop/exec_eval.rs` 5、`golden_sop/eval.rs` 2、`runner.rs` 1 等）**本轮未审计** |
+| `dead_code` | 17 | **crates 侧 14 处、evals 侧 8 处，全部已实测裁决**（方法：删属性 → `cargo check --all-targets` → 统计 `never used/never constructed/never read`）。crates 侧 5 处失效已删除（`sse_handlers.rs:123/154`、`peer/manager.rs:264`、`peer/service.rs:24/653`）；其余 9 处经实测确认真实触发 |
 | `clippy::double_must_use` | 8 | **已实测必要**：删掉后 `sisyphus-types` 命中 22 处、`intel` 8、`core` 3、`bridge` 1。根因是 `#[async_trait]` 宏展开自带 `#[must_use]`，无法逐方法挂载 |
 | `clippy::enum_variant_names` | 3 | **已实测必要**：各命中 1 处（`momus/types.rs`、`scaffold.rs`、`cli/cmd_agent.rs`） |
 | `clippy::collapsible_if` | 4 | **已实测必要**：`experience_bank.rs` 命中 4 处。嵌套 `if let` + 过滤条件折叠会损失可读性 |
@@ -786,9 +792,9 @@ CI 的 `bridge-integration-test` job 用 `--no-default-features`，不受影响�
 | `hook_overhead.rs` / `jcode_call_chain_test.rs` 的**编译** | **部分解除**：`--no-default-features` 路径实测可编译（bridge 85 + 54 测试通过）；带 sandbox 仍 OOM | 见 5.2 |
 | `team_integration` 6 条在**真实 LLM 配置下**的运行结果 | **未完成**：本机无 `LLM_API_KEY`/`ENDPOINT`/`MODEL` | **环境限制** |
 | **真实工具 + 真实 LLM API 的完整端到端链路** | **仍未覆盖**：当前通过的是 Dummy LLM（回显合法配置）+ 内存执行器 | **环境限制**，见 P1 |
-| `evals/` 侧 8 处 `#[allow(dead_code)]` | **已完成**：编译器裁决法核实，全部承载真实 serde 字段；3 处过宽的已收窄到字段级（`9bb22aa`） | — |
+| `crates/` 侧 14 处 `#[allow(dead_code)]` | **已完成**（`c49b34f`）：14 处逐个实测裁决，5 处失效已删，9 处真实需要 | — |
 | 2 处 `#[allow(deprecated)]` | **已完成**：删掉后编译器报 `use of deprecated field`（`SyncRequest::offset` / `SyncPageEnd::next_offset`），在 `-D warnings` 下会编译失败，属正当协议兼容 shim | — |
-| 43 处 `clippy::*` 豁免 | **已完成审计**：逐处删除后跑 clippy 比对。37 处实测必要（附触发计数）；6 处 `cast_precision_loss` 属未启用的 pedantic 组，当前失效但保留 | — |
+| 47 处 `clippy::*` 豁免 | **已完成审计**：逐处删除后跑 clippy 比对。41 处实测必要（附触发计数）；6 处 `cast_precision_loss` 属未启用的 pedantic 组，当前失效但保留 | — |
 | bridge 战略目标用例断言过时 | **已修复**：用例断言 dummy 必然失败，但 dummy 早已学会回显合法配置，实际 `success=true`。改写为断言真实成功路径（`..._records_kernel_success_with_dummy`） | — |
 | `test_negative_concurrent_requests` 间歇性失败 | **未定位**：首次全量失败 1 次（`Sandbox disabled`），此后连续 10 次通过（单文件 6 + 全量 4，每次 200 passed）。已确认 default 执行器在无 sandbox 时恒定报错，与稳定通过矛盾，根因未取得决定性证据 | 待查，非阻塞 |
 
@@ -808,6 +814,9 @@ CI 的 `bridge-integration-test` job 用 `--no-default-features`，不受影响�
 | `fb259a8` | 删除 `cognitive_loop.rs` 中 3 处失效的 `#[allow(unused_variables)]`（编译器裁决法核实） |
 | `3bf9986` | 修正 `#[allow]` 统计口径为可复现命令，删除不可复现的 `hook_overhead` 结论 |
 | `9bb22aa` | 收窄 `exec_eval.rs` 中 3 处过宽的 `#[allow(dead_code)]`，从结构体级改为字段级 |
+| `d53b88b` | 修正 `test_execute_tool_strategic_next_goal` 的过时断言：Dummy LLM 实际能生成合法提案（实测 `success=true`），改为断言真实成功路径 |
+| `66b37fe` | 修正并发用例断言：区分业务失败（`Status::internal`）与真正回归，消除对 sandbox 的环境依赖 |
+| `c49b34f` | crates 侧 14 处 `#[allow(dead_code)]` 逐个实测裁决，删除 5 处失效豁免 |
 
 ### 本轮实测确认的结论汇总
 
@@ -818,10 +827,10 @@ CI 的 `bridge-integration-test` job 用 `--no-default-features`，不受影响�
   长期跳过的测试可能从未被真正执行过。
 - **「环境限制」不应是默认借口**：maven 那条我一开始归为环境限制，
   实测只是 JVM 默认堆预留 5 GB，一个环境变量就解开了。
-- **会掩盖死代码的两类豁免已全部裁决完毕**（`unused_*` 4 处、`dead_code` 19 处、
-  `deprecated` 2 处）：删 3 处失效、收窄 3 处过宽，其余经编译器验证为必要。
-  **这三类里没有一处是掩盖死代码的残留。**
-- **已实测**：43 处 `clippy::*` 豁免全部逐处裁决（编译器删除法 + 默认 lint 组验证）。
+- **会掩盖死代码的两类豁免已全部裁决完毕**（`unused_*` 4 处、`dead_code` 17 处、
+  `deprecated` 2 处）：删 3 + 5 处失效、收窄 3 处过宽，其余经编译器实测为必要。
+  **这三类里没有一处是掩盖死代码的残留，且每个数字都由实际删除验证得出。**
+- **已实测**：47 处 `clippy::*` 豁免全部逐处裁决（编译器删除法 + 默认 lint 组验证）。
   `double_must_use` 8 处、`result_large_err` 5 处、`enum_variant_names` 2 处、
   `collapsible_if` 4 处、`upper_case_acronyms` 2 处均实测必要并附触发计数；
   6 处 `cast_precision_loss` 属 pedantic 组而项目未启用 pedantic，当前失效，
