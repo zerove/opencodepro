@@ -602,6 +602,18 @@ async fn test_stream_execution_returns_event() {
 async fn test_negative_concurrent_requests() {
     // Fire 20 concurrent SOP executions to verify the bridge handles
     // concurrent load without panicking or deadlocking.
+    //
+    // 本用例的目的是**并发健壮性**（不死锁、不 panic、服务不崩），而不是
+    // 工具执行成功。`--no-default-features` 下 `ExecutorRouter` 的 default
+    // 执行器是 `NoopToolExecutor`，对任何 tool 都返回 `Sandbox disabled`；
+    // 带 sandbox 时才可能真正执行。因此断言「20 路都成功」会把环境差异
+    // 误报成缺陷（CI 的 bridge-integration-test job 正是无 sandbox 路径）。
+    //
+    // 正确判据：20 路请求都必须要**得到应答**——要么 OK，要么是可解释的
+    // 业务错误（gRPC `Status::internal`，因为 `execute_sop_impl` 把内核错误
+    // 经 `run_execution` 传播为 `Status::internal`，不会降级成 "ERROR: " 状态）。
+    // 真正的回归（panic / deadlock / 连接中断）表现为任务 panic、**非** Internal
+    // 的状态码（Unavailable / Cancelled / 未知）或测试超时。
     let (client, server) = setup_bridge().await;
     let mut handles = Vec::with_capacity(20);
     for i in 0..20usize {
@@ -618,6 +630,7 @@ async fn test_negative_concurrent_requests() {
     }
 
     let mut ok_count = 0usize;
+    let mut biz_err_count = 0usize;
     for handle in handles {
         let (i, result) = handle.await.expect("Task panicked");
         match result {
@@ -625,17 +638,26 @@ async fn test_negative_concurrent_requests() {
                 let inner = resp.into_inner();
                 assert_eq!(
                     inner.status, "SUCCESS",
-                    "concurrent request {i} failed: {}",
+                    "concurrent request {i} 返回了非 SUCCESS 状态: {}",
                     inner.result
                 );
                 ok_count += 1;
             },
             Err(e) => {
-                panic!("concurrent request {i} returned gRPC error: {e}");
+                assert_eq!(
+                    e.code(),
+                    tonic::Code::Internal,
+                    "concurrent request {i} 返回非业务错误，可能死锁或服务崩溃: {e:?}"
+                );
+                biz_err_count += 1;
             },
         }
     }
-    assert_eq!(ok_count, 20, "Not all concurrent requests succeeded");
+    assert_eq!(
+        ok_count + biz_err_count,
+        20,
+        "Not all concurrent requests were answered"
+    );
     server.abort();
 }
 

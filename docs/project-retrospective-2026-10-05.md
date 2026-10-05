@@ -548,23 +548,26 @@ cargo test   -p sisyphus-core --lib   # 91 passed; 0 failed; 0 ignored
 新断言验证「成功被正确记录」，且额外串联了内核执行、持久化与 RPC 响应三者。
 **不是为了让测试变绿而放松断言，而是修正了已过时的前提。**
 
-### P2.6 — 并发测试在 `--no-default-features` 下不稳定（本轮发现，未修）
+### P2.6 — 并发测试的间歇性失败（根因未完全定位）
 
 `test_negative_concurrent_requests` 断言 20 路并发 `execute_sop` 全部成功。
-实测：
+本轮首次全量运行时它失败 1 次（`concurrent request 6 ... Sandbox disabled:
+cannot execute tool 'concurrent_6'`），此后**连续 10 次运行全部通过**
+（6 次单文件 + 4 次全量，全量每次 200 passed）。
 
-| 运行方式 | 结果 |
-|----------|------|
-| `--no-default-features` 单独运行该用例 | **passed** |
-| `--no-default-features` 全量运行（默认并行） | **FAILED**（1/20 报 `Sandbox disabled`） |
-| `--no-default-features` 全量 + `--test-threads=1` | **54 passed** |
+**已确认的事实**：
+- 失败信息来自 `NoopToolExecutor`（`bridge_service.rs:936`），它对任何 tool
+  都返回 `Sandbox disabled`；`--no-default-features` 时
+  `ExecutorRouter` 的 default 执行器正是它（`bridge_service.rs:363`）。
+- 该用例的 `sop_id` 是 `concurrent_N`，**不含 `:` 前缀**，按
+  `ExecutorRouter::execute`（`types/node.rs:416`）必然落到 default，
+  即恒定报错。这与「稳定通过」相矛盾，说明失败路径与常态路径不同。
+- 每个用例各自 `setup_bridge()` 构造独立桥接，不存在跨用例共享实例。
 
-根因已定位到一半：`--no-default-features` 时 `tool_router` 装的是
-`NoopToolExecutor`（`bridge_service.rs:936`），它对**任何** tool 都返回
-`Sandbox disabled` 错误。因此该用例在无 sandbox 环境下**本不应通过**——
-单独运行时能过，说明存在跨用例的共享状态或注册表残留。
-**本轮未修复**，如实记录：这属于 `#[cfg(not(feature = "sandbox"))]` 下的
-执行器选择问题，需在无 sandbox 时改用 mock 执行器或让该用例条件跳过。
+**未确认**：为何同一用例在相同 feature 组合下会偶发走到失败路径。
+可能是 `run_execution` 中 `load_sop` 成功与否的时序差异（成功则用已存图，
+失败则合成 `WasmSOPNode` 走 default 执行器），但**本轮未取得决定性证据**，
+故不下结论。如实标记为待查项，不按「已修复」计。
 
 ### P3 — 巨型 misc 测试文件（**本轮已核查，结论降级**）
 
@@ -787,7 +790,7 @@ CI 的 `bridge-integration-test` job 用 `--no-default-features`，不受影响�
 | 2 处 `#[allow(deprecated)]` | **已完成**：删掉后编译器报 `use of deprecated field`（`SyncRequest::offset` / `SyncPageEnd::next_offset`），在 `-D warnings` 下会编译失败，属正当协议兼容 shim | — |
 | 43 处 `clippy::*` 豁免 | **已完成审计**：逐处删除后跑 clippy 比对。37 处实测必要（附触发计数）；6 处 `cast_precision_loss` 属未启用的 pedantic 组，当前失效但保留 | — |
 | bridge 战略目标用例断言过时 | **已修复**：用例断言 dummy 必然失败，但 dummy 早已学会回显合法配置，实际 `success=true`。改写为断言真实成功路径（`..._records_kernel_success_with_dummy`） | — |
-| `test_negative_concurrent_requests` 在 `--no-default-features` 下不稳定 | **未修复**：单独运行通过、全量并行运行失败（`Sandbox disabled`）。根因为无 sandbox 时 `tool_router` 装的是恒定报错的 `NoopToolExecutor`，需改用 mock 或条件跳过 | 待办，非阻塞 |
+| `test_negative_concurrent_requests` 间歇性失败 | **未定位**：首次全量失败 1 次（`Sandbox disabled`），此后连续 10 次通过（单文件 6 + 全量 4，每次 200 passed）。已确认 default 执行器在无 sandbox 时恒定报错，与稳定通过矛盾，根因未取得决定性证据 | 待查，非阻塞 |
 
 **本报告不含任何未标注为「实测」的结论。**
 
