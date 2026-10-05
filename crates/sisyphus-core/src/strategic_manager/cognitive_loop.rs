@@ -859,8 +859,15 @@ impl StrategicManager {
             Err(e) => return Err(e),
         };
 
-        let result = if let Some(reason) = pivot_reason.as_ref() {
-            NodeOutput::from(Value::String(format!("Strategic Pivot: {}", reason)))
+        // 占位文本必须以**执行期** pivot 为准，不能看 `pivot_reason`：
+        // 后者会被预测阶段的「Logical Flaw Detected」污染（第 723 行），
+        // 导致一次执行成功的迭代被替换成 `"Strategic Pivot: ..."` 假结果，
+        // 而上层仍会把它当正常结果返回给客户端。
+        let result = if *exec_pivot {
+            NodeOutput::from(Value::String(format!(
+                "Strategic Pivot: {}",
+                pivot_reason.as_deref().unwrap_or("unknown")
+            )))
         } else {
             let start_name = current_ref
                 .graph

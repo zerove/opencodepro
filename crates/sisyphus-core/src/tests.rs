@@ -1955,3 +1955,336 @@ async fn setup_manager(probs: Vec<f64>) -> StrategicManager {
         None,
     )
 }
+
+// ---------------------------------------------------------------------------
+// 零真实产出的硬失败拦截（AllIterationsPivoted）
+// ---------------------------------------------------------------------------
+
+/// 恒定返回指定偏差分的反射器，用来把 supervisor 的 pivot 判定变成确定行为。
+///
+/// 偏差阈值在 `setup_manager` 中是 `convergence_threshold = 0.01`，
+/// 因此返回值 >0.01 即稳定触发 `SupervisorDecision::Pivot`。
+struct ScriptedReflector(f64);
+#[async_trait::async_trait]
+impl sisyphus_intel::reflect::Reflector for ScriptedReflector {
+    async fn reflect(
+        &self,
+        _trace: &str,
+        _predicted: &sisyphus_intel::SimulationResult,
+        _experiences: Option<&[sisyphus_types::experience::ExperienceTuple]>,
+    ) -> Result<sisyphus_intel::reflect::ReflectionReport, sisyphus_types::IntelError> {
+        Ok(sisyphus_intel::reflect::ReflectionReport {
+            original_sop_id: "scripted".into(),
+            deviation_score: self.0,
+            suggested_improvements: vec![],
+            improvement_signals: vec![],
+            evolved_sop_structure: None,
+            records: vec![],
+        })
+    }
+}
+
+/// 构造一个只差反射器与仿真概率的 StrategicManager。
+///
+/// 与 `setup_manager` 同构，区别有二：
+/// 1. 注入脚本化偏差分，从而能精确控制 supervisor 是否触发 StrategicPivot；
+/// 2. `success_probability` 固定为 0.1，低于 `SisyphusSupervisor` 的
+///    快速放行门槛（`>= 0.5`）。若输出被判定为健康且概率达标，
+///    supervisor 会直接返回 `Continue{deviation: 0.05}` 并**跳过反射器**，
+///    脚本化偏差分将完全不起作用。
+async fn setup_manager_with_reflector(deviation: f64) -> StrategicManager {
+    let simulator = Arc::new(MockSimulator::new(vec![0.1]));
+    let intel = Arc::new(sisyphus_intel::SisyphusIntel::new(
+        simulator,
+        Arc::new(MockLogicalSimulator),
+        Arc::new(ScriptedReflector(deviation)),
+        Arc::new(MockEvolver),
+    ));
+
+    let llm: Arc<dyn sisyphus_tools_llm::LlmClient> = Arc::new(sisyphus_tools_llm::DummyLlmClient);
+    let synthesizer: Arc<dyn sisyphus_intel::FlowSynthesizer> = Arc::new(
+        sisyphus_intel::GoalDrivenSynthesizer::new(Arc::new(MockToolExecutor)),
+    );
+
+    let intelligence_manager = Arc::new(IntelligenceManager::new(intel, synthesizer, llm.clone()));
+
+    let state_store = Arc::new(
+        sisyphus_mem::MfsStore::new("sqlite::memory:", &sisyphus_types::CacheConfig::default())
+            .await
+            .expect("in-memory MfsStore"),
+    );
+    let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.expect("sqlite pool");
+    let sop_store =
+        Arc::new(sisyphus_mem::SopSqlStore::new(pool.clone()).await.expect("sop store"));
+    let knowledge = Arc::new(sisyphus_knowledge::AssetManager::new(
+        std::path::PathBuf::from(".omo/test_knowledge_pivot"),
+    ));
+    let intervention = Arc::new(crate::intervention_manager::InterventionManager::new());
+    let internalization = Arc::new(crate::internalization_manager::InternalizationManager::new(
+        llm.clone(),
+        knowledge.clone(),
+    ));
+    let execution_manager = Arc::new(ExecutionManager::new(
+        state_store.clone(),
+        sop_store,
+        Arc::new(MockToolExecutor),
+        Arc::new(MockTestExecutor),
+        intervention.clone(),
+        internalization.clone(),
+        None,
+    ));
+
+    let config = CognitiveLoopConfig {
+        max_iterations: 1,
+        convergence_threshold: 0.01,
+        llm_stage_timeout_secs: 30,
+        adaptive_depth: sisyphus_types::config::AdaptiveDepthConfig::default(),
+        anomaly_detector: sisyphus_types::config::AnomalyDetectorConfig::default(),
+        token_budget: sisyphus_types::config::TokenBudgetConfig::default(),
+    };
+
+    let benchmark = Arc::new(parking_lot::Mutex::new(
+        sisyphus_tools_build::benchmark::ContinuousBenchmark::new(".omo/test_bench_pivot"),
+    ));
+    let meta_learner = Arc::new(parking_lot::Mutex::new(
+        sisyphus_tools_llm_tools::meta_learner::MetaLearner::new(".omo/test_meta_pivot"),
+    ));
+    let roadmap = Arc::new(sisyphus_roadmap::RoadmapManager::new(
+        state_store.clone(),
+        Arc::new({
+            let store =
+                sisyphus_mem::RoadmapSqlStore::new(pool.clone()).await.expect("roadmap store");
+            store.init_schema().await.expect("init roadmap schema");
+            store
+        }),
+        Arc::new(sisyphus_roadmap::proposal_manager::ProposalManager::new(
+            state_store.clone(),
+        )),
+    ));
+
+    StrategicManager::new(
+        intelligence_manager,
+        execution_manager,
+        config,
+        Arc::new(crate::AgentChannel::new()),
+        benchmark,
+        meta_learner,
+        Arc::new(MockExperienceBank),
+        knowledge,
+        roadmap,
+        intervention,
+        internalization,
+        None,
+    )
+}
+
+fn single_node_sop() -> Arc<SOPGraph> {
+    make_sop_graph(&SOPGraphConfig {
+        nodes: vec![SOPNodeConfig {
+            name: "n0".into(),
+            kind: NodeKind::Wasm {
+                tool_id: "t".into(),
+                fuel_limit: 100,
+            },
+        }],
+        edges: vec![],
+    })
+}
+
+/// 全部迭代都在执行期 pivot 时，必须返回 `AllIterationsPivoted` 而不是 Ok。
+///
+/// 回归动机（71b01ac）：此前 `execute_phase` 把 StrategicPivot 吞掉并构造
+/// `"Strategic Pivot: ..."` 占位文本，`final_result` 非空，于是上层
+/// `execute_sop_impl` 直接返回 `status="SUCCESS"`——所有节点都没真正执行成功
+/// 却被伪装成成功。
+#[tokio::test]
+async fn test_all_iterations_pivoted_is_error_not_placeholder_success() {
+    let manager = setup_manager_with_reflector(0.9).await;
+
+    // SOPGraph 未实现 Debug，不能用 expect_err/expect（它们要求 Ok 类型: Debug），
+    // 改为显式 match 取出错误。
+    let err = match manager
+        .run_cognitive_loop(
+            single_node_sop(),
+            "test_all_pivot",
+            None,
+            None,
+            None,
+            None,
+            |_id, _e| {},
+            None,
+            None,
+        )
+        .await
+    {
+        Ok((res, _, _)) => panic!("every iteration pivoted, yet the loop returned Ok: {res}"),
+        Err(e) => e,
+    };
+
+    assert!(
+        matches!(err, CoreError::AllIterationsPivoted(..)),
+        "expected AllIterationsPivoted, got: {err:?}"
+    );
+
+    let msg = err.to_string();
+    assert!(
+        !msg.contains("SUCCESS"),
+        "error message must not claim success: {msg}"
+    );
+}
+
+/// 偏差分低于阈值时执行真实成功，必须仍然返回 Ok。
+///
+/// 这是 `AllIterationsPivoted` 拦截的反向保护：若统计条件写错（例如把
+/// 预测期的 pivot_reason 也算作「零真实执行」），合法执行会被误判为失败。
+#[tokio::test]
+async fn test_successful_execution_is_not_flagged_as_all_pivoted() {
+    // 0.0 < convergence_threshold(0.01)，supervisor 放行，节点产出真实结果。
+    let manager = setup_manager_with_reflector(0.0).await;
+
+    let (res, report, _evolved) = manager
+        .run_cognitive_loop(
+            single_node_sop(),
+            "test_no_pivot",
+            None,
+            None,
+            None,
+            None,
+            |_id, _e| {},
+            None,
+            None,
+        )
+        .await
+        .expect("legitimate execution must still succeed");
+
+    assert!(
+        !res.to_string().is_empty(),
+        "successful execution must return a real result"
+    );
+    assert!(
+        !res.to_string().contains("Strategic Pivot"),
+        "successful execution must not return pivot placeholder text: {res}"
+    );
+    assert!(report.iterations >= 1);
+}
+
+/// 预测期「Logical Flaw Detected」不等于「零真实执行」。
+///
+/// `pivot_reason` 有两个来源：预测阶段的逻辑缺陷（第 723 行）与执行阶段的
+/// StrategicPivot（第 855 行）。若统计条件误用 `pivot_reason` 而不是执行期
+/// 信号，则一次「预测期发现缺陷、但执行阶段正常产出」的健康迭代会被判为
+/// 失败——这是本用例要防的误伤。
+#[tokio::test]
+async fn test_prediction_phase_logical_flaw_is_not_counted_as_zero_execution() {
+    let manager = setup_manager_with_critical_flaw_reflector(0.0).await;
+
+    let (res, _report, _evolved) = manager
+        .run_cognitive_loop(
+            single_node_sop(),
+            "test_predict_flaw",
+            None,
+            None,
+            None,
+            None,
+            |_id, _e| {},
+            None,
+            None,
+        )
+        .await
+        .expect("prediction-phase logical flaw must not be treated as zero real execution");
+
+    assert!(
+        !res.to_string().contains("Strategic Pivot"),
+        "prediction-phase flaw must not produce pivot placeholder: {res}"
+    );
+}
+
+/// 与 `setup_manager_with_reflector` 相同，但逻辑仿真报告一个 Critical 缺陷，
+/// 从而在预测期把 `pivot_reason` 置为 `Logical Flaw Detected: ...`。
+///
+/// 执行期反射器返回 0.0，supervisor 放行，因此本轮确有真实执行结果。
+async fn setup_manager_with_critical_flaw_reflector(deviation: f64) -> StrategicManager {
+    let simulator = Arc::new(MockSimulator::new(vec![0.1]));
+    let intel = Arc::new(sisyphus_intel::SisyphusIntel::new(
+        simulator,
+        Arc::new(CriticalFlawSimulator::default()),
+        Arc::new(ScriptedReflector(deviation)),
+        Arc::new(MockEvolver),
+    ));
+
+    let llm: Arc<dyn sisyphus_tools_llm::LlmClient> = Arc::new(sisyphus_tools_llm::DummyLlmClient);
+    let synthesizer: Arc<dyn sisyphus_intel::FlowSynthesizer> = Arc::new(
+        sisyphus_intel::GoalDrivenSynthesizer::new(Arc::new(MockToolExecutor)),
+    );
+
+    let intelligence_manager = Arc::new(IntelligenceManager::new(intel, synthesizer, llm.clone()));
+
+    let state_store = Arc::new(
+        sisyphus_mem::MfsStore::new("sqlite::memory:", &sisyphus_types::CacheConfig::default())
+            .await
+            .expect("in-memory MfsStore"),
+    );
+    let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.expect("sqlite pool");
+    let sop_store =
+        Arc::new(sisyphus_mem::SopSqlStore::new(pool.clone()).await.expect("sop store"));
+    let knowledge = Arc::new(sisyphus_knowledge::AssetManager::new(
+        std::path::PathBuf::from(".omo/test_knowledge_flaw"),
+    ));
+    let intervention = Arc::new(crate::intervention_manager::InterventionManager::new());
+    let internalization = Arc::new(crate::internalization_manager::InternalizationManager::new(
+        llm.clone(),
+        knowledge.clone(),
+    ));
+    let execution_manager = Arc::new(ExecutionManager::new(
+        state_store.clone(),
+        sop_store,
+        Arc::new(MockToolExecutor),
+        Arc::new(MockTestExecutor),
+        intervention.clone(),
+        internalization.clone(),
+        None,
+    ));
+
+    let config = CognitiveLoopConfig {
+        max_iterations: 1,
+        convergence_threshold: 0.01,
+        llm_stage_timeout_secs: 30,
+        adaptive_depth: sisyphus_types::config::AdaptiveDepthConfig::default(),
+        anomaly_detector: sisyphus_types::config::AnomalyDetectorConfig::default(),
+        token_budget: sisyphus_types::config::TokenBudgetConfig::default(),
+    };
+
+    let benchmark = Arc::new(parking_lot::Mutex::new(
+        sisyphus_tools_build::benchmark::ContinuousBenchmark::new(".omo/test_bench_flaw"),
+    ));
+    let meta_learner = Arc::new(parking_lot::Mutex::new(
+        sisyphus_tools_llm_tools::meta_learner::MetaLearner::new(".omo/test_meta_flaw"),
+    ));
+    let roadmap = Arc::new(sisyphus_roadmap::RoadmapManager::new(
+        state_store.clone(),
+        Arc::new({
+            let store =
+                sisyphus_mem::RoadmapSqlStore::new(pool.clone()).await.expect("roadmap store");
+            store.init_schema().await.expect("init roadmap schema");
+            store
+        }),
+        Arc::new(sisyphus_roadmap::proposal_manager::ProposalManager::new(
+            state_store.clone(),
+        )),
+    ));
+
+    StrategicManager::new(
+        intelligence_manager,
+        execution_manager,
+        config,
+        Arc::new(crate::AgentChannel::new()),
+        benchmark,
+        meta_learner,
+        Arc::new(MockExperienceBank),
+        knowledge,
+        roadmap,
+        intervention,
+        internalization,
+        None,
+    )
+}

@@ -629,6 +629,75 @@ PROBE SUMMARY ok=20 biz_err=0
 本轮只让它「如实失败」，未改规划器契约——那会牵动工具注册表与规划器的
 职责边界，超出缺陷修复范围，需要独立设计。
 
+### P0.2 — 预测期 `Logical Flaw` 污染执行结果，伪造「Strategic Pivot」占位文本（本轮已修）
+
+`71b01ac` 之后补测「预测期发现逻辑缺陷、但执行阶段正常产出」这一路径时，
+发现**同一类伪成功的第二个漏洞**，与 P0 是不同的孔：
+
+`execute_phase` 用 `pivot_reason` 决定是否输出占位文本，而 `pivot_reason`
+有两个赋值来源：
+
+| 来源 | 位置 | 语义 |
+|------|------|------|
+| 预测期逻辑缺陷 | `cognitive_loop.rs:723` `Logical Flaw Detected: ...` | 规划阶段发现隐患，**执行本身可以完全成功** |
+| 执行期 StrategicPivot | `cognitive_loop.rs:855` | 节点执行确实失败 |
+
+原代码 `if let Some(reason) = pivot_reason.as_ref()` 不区分二者，于是：
+
+1. 预测期发现 Critical flaw → `pivot_reason = Some(...)`
+2. supervisor 放行（偏差 0.0 < 阈值），节点**真实执行成功**，产出 `"mock"`
+3. 但 `execute_phase` 仍输出 `"Strategic Pivot: Logical Flaw Detected: ..."`
+4. `exec_pivot` 仍为 `false`，`real_result_iterations` 计入 1 → **循环返回 Ok**
+5. 上层拿到非空字符串 → `execute_sop_impl` 返回 `status="SUCCESS"`
+
+实测断言输出（修复前）：
+
+```
+prediction-phase flaw must not produce pivot placeholder:
+"Strategic Pivot: Logical Flaw Detected: persistent critical flaw"
+```
+
+即：**一次真实成功的执行，其结果被替换成了假的 pivot 文案，且整体报成功。**
+
+**修复**：占位文本判定从 `pivot_reason` 改为 `*exec_pivot`，与失败守卫
+统计同一个执行期信号。两个来源就此彻底分离：
+
+- `exec_pivot` = 执行阶段真的失败了 → 占位文本 + 计入失败守卫
+- `pivot_reason` = 供反思/演进消费的诊断信息，不再影响结果内容
+
+**为何第一轮没发现**：原 20 路并发探测与 5 个失败用例都只有执行期
+pivot，`pivot_reason` 的预测期分支从未被触发。
+
+### 新增回归测试（含变异验证）
+
+`sisyphus-core` 新增 3 个直测，覆盖三种语义边界：
+
+| 测试 | 覆盖场景 |
+|------|----------|
+| `test_all_iterations_pivoted_is_error_not_placeholder_success` | 全部迭代执行期 pivot → `AllIterationsPivoted` |
+| `test_successful_execution_is_not_flagged_as_all_pivoted` | 合法执行仍返回 Ok，且不含占位文本 |
+| `test_prediction_phase_logical_flaw_is_not_counted_as_zero_execution` | 预测期 Logical Flaw 不得污染结果 |
+
+**变异测试证明用例有效**（仅靠「测试通过」不能说明问题）：
+
+| 注入的缺陷 | 结果 |
+|-----------|------|
+| 关闭失败守卫 `if false && real_result_iterations == 0` | `test_all_iterations_pivoted` **FAILED** |
+| 占位判定退回 `pivot_reason.is_some()` | `test_prediction_phase_logical_flaw` **FAILED** |
+
+首次尝试反向变异时**脚本断言失败导致变异根本没应用**，却输出了「全部
+通过」的假结果；修正为按精确内容匹配后才得到上表的有效结论。
+
+**测试夹具的两处非显然约束**（均由实测失败暴露，不是推测）：
+
+1. `SisyphusSupervisor` 有快速放行通道：输出被判为健康且
+   `success_probability >= 0.5` 时直接返回 `Continue{0.05}`，**完全不调用反射器**。
+   最初用 `vec![0.5]` 做夹具，脚本化偏差 `0.9` 根本未被读取，测试拿到
+   `"mock"` 而非 pivot。须用 `< 0.5` 的概率才能驱动真实路径。
+2. 生效阈值来自 `ComplexityAnalyzer::to_config()`（Low/Medium/High/Ultra
+   分别为 0.2/0.05/0.01/0.005），**不是** `config.convergence_threshold`
+   ——后者在本测试中完全不生效。
+
 ### P3 — 巨型 misc 测试文件（**本轮已核查，结论降级**）
 
 `sisyphus-types/tests/` 下 4 个大文件合计 15,879 行：
