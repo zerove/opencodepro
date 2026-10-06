@@ -62,11 +62,16 @@ impl ClusterConsensus {
     pub async fn add_peer(&self, peer_id: String) {
         let mut peers = self.peers.write().await;
         if peers.insert(peer_id.clone()) {
-            // 重新计算 leader（字典序最小）
+            // 重新计算 leader（字典序最小）。`all` 至少含 `node_id`，故实际不会为空；
+            // 仍不用 `unwrap()`：ADR-007 §1 的 panic-check 以 panic-baseline.json
+            // 为门禁，生产代码新增 panic 路径会让该 job 直接失败。
+            // 语义等价（既有 test_add_peer_recomputes_leader 等用例守护）：
+            // `min()` 取最小值副本；为 None 时保留现有 leader。
             let mut all = peers.clone();
             all.insert(self.node_id.clone());
-            let new_leader = all.into_iter().min().unwrap();
-            *self.leader_id.write().await = new_leader;
+            if let Some(new_leader) = all.into_iter().min() {
+                *self.leader_id.write().await = new_leader;
+            }
         }
     }
 
@@ -74,10 +79,12 @@ impl ClusterConsensus {
     pub async fn remove_peer(&self, peer_id: &str) {
         let mut peers = self.peers.write().await;
         if peers.remove(peer_id) {
+            // 同 `add_peer`：为 None 时保留现有 leader，不做 panic 解包。
             let mut all = peers.clone();
             all.insert(self.node_id.clone());
-            let new_leader = all.into_iter().min().unwrap();
-            *self.leader_id.write().await = new_leader;
+            if let Some(new_leader) = all.into_iter().min() {
+                *self.leader_id.write().await = new_leader;
+            }
         }
     }
 
