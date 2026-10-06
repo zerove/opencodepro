@@ -4,14 +4,15 @@ use axum::response::IntoResponse;
 use axum::Json;
 
 pub(crate) async fn openapi_json() -> impl IntoResponse {
-    Json(serde_json::json!({
-        "openapi": "3.1.0",
-        "info": {
-            "title": "Sisyphus Bridge REST API",
-            "version": env!("CARGO_PKG_VERSION"),
-            "description": "REST API for the Sisyphus Cognitive Engine"
-        },
-        "servers": [{"url": "http://localhost:8080", "description": "Local dev"}],
+    // 这份文档不能用单个 `json!` 字面量表达：serde_json 的 muncher 对每个 key
+    // 都吃掉一层宏展开深度，而 lib.rs 固定了 `#![recursion_limit = "256"]`。
+    // 一份完整的 OpenAPI 文档（全部路径 + 全部 schema）远超这个上限，
+    // 直接展开会报 "recursion limit reached while expanding $crate::json_internal"。
+    // 所以这里按章节切成多个较小的 `json!`，再用 `extend` 合并。
+    // 拆分的唯一约束是：每个 `json!` 字面量自身都要在 256 层以内。
+    let mut path_chunks: Vec<serde_json::Value> = Vec::new();
+
+    path_chunks.push(serde_json::json!({
         "paths": {
             // ── Health ───────────────────────────────────────────────────
             "/health": {
@@ -86,6 +87,19 @@ pub(crate) async fn openapi_json() -> impl IntoResponse {
                 }
             },
 
+            "/api/tools/execute": {
+                "post": {
+                    "summary": "Execute a registered tool by id",
+                    "description": "Routes args_json to the tool router by tool_id and returns the raw tool output as a string. fuel_limit falls back to the bridge default when omitted. Unlike /api/execute, tool failures are returned as HTTP 500 with status=\"ERROR: <message>\" rather than an error envelope.",
+                    "operationId": "executeToolById",
+                    "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ExecuteToolRequest"}}}},
+                    "responses": {
+                        "200": {"description": "Execution result", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ExecuteToolResponse"}}}},
+                        "500": {"description": "Tool execution failed; status carries the error message", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ExecuteToolResponse"}}}}
+                    }
+                }
+            },
+
             // ── Goal Execution ──────────────────────────────────────────
             "/api/execute/goal": {
                 "post": {
@@ -139,6 +153,11 @@ pub(crate) async fn openapi_json() -> impl IntoResponse {
             },
 
             // ── SSE ──────────────────────────────────────────────────────
+        }
+    }));
+
+    path_chunks.push(serde_json::json!({
+        "paths": {
             "/api/events": {
                 "get": {
                     "summary": "Subscribe to the server-sent event stream",
@@ -250,6 +269,19 @@ pub(crate) async fn openapi_json() -> impl IntoResponse {
                     }
                 }
             },
+            "/api/skills/{id}": {
+                "get": {
+                    "summary": "Get a single skill's metadata",
+                    "operationId": "showSkill",
+                    "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string"}}],
+                    "responses": {
+                        "200": {"description": "Skill found", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/SkillDetailResponse"}}}},
+                        "404": {"description": "Skill not found; body still carries found=false", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/SkillDetailResponse"}}}},
+                        "500": {"description": "Registry lookup failed", "content": {"application/json": {"schema": {"type": "string"}}}}
+                    }
+                }
+            },
+
             "/api/skills/available": {
                 "get": {
                     "summary": "List available remote skills",
@@ -354,6 +386,32 @@ pub(crate) async fn openapi_json() -> impl IntoResponse {
                 }
             },
 
+            "/api/cognitive/map/{sop_id}/stream": {
+                "get": {
+                    "summary": "Stream cognitive map updates for an SOP (SSE)",
+                    "description": "Complements /api/cognitive/map/{sop_id}: use the plain GET for a one-shot snapshot and this stream for live observation. On subscribe the server emits a `snapshot` event with the current CogMap, or `absent` when no map exists for this sop_id. Afterwards it polls the in-memory cognitive map every 500ms and emits an `update` event only when iteration or active_node changed. A `heartbeat` event is emitted every 15s to keep the connection alive. The stream ends when the client disconnects; axum also sends its own keep-alive comments.",
+                    "operationId": "streamCognitiveMap",
+                    "parameters": [{"name": "sop_id", "in": "path", "required": true, "schema": {"type": "string"}}],
+                    "responses": {
+                        "200": {"description": "Server-sent event stream (event names: snapshot | absent | update | heartbeat)", "content": {"text/event-stream": {"schema": {"type": "string"}}}},
+                        "429": {"description": "Too many concurrent SSE connections", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorResponse"}}}}
+                    }
+                }
+            },
+            "/api/cognitive/map/{sop_id}/intervene": {
+                "post": {
+                    "summary": "Intervene on a running SOP's cognitive map",
+                    "description": "Applies a live intervention to a running SOP. Supported actions: `abort` (drop the active execution entry so the run loop exits), `pause` / `resume` (flip execution status), `redirect` (set current_node to target_node). Every request also broadcasts an `intervention` SSE event to subscribers of this sop_id. Returns 200 when the action was applied to an active execution, 202 when only the broadcast happened (the SOP may have already finished); an unknown action is treated the same as the 202 case.",
+                    "operationId": "interveneCognitiveMap",
+                    "parameters": [{"name": "sop_id", "in": "path", "required": true, "schema": {"type": "string"}}],
+                    "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/InterventionRequest"}}}},
+                    "responses": {
+                        "200": {"description": "Intervention applied to the active execution", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/InterventionResponse"}}}},
+                        "202": {"description": "Intervention broadcast but no active execution matched this sop_id", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/InterventionResponse"}}}}
+                    }
+                }
+            },
+
             // ── Cognitive Trace (Explainability) ──────────────────────────
             "/api/cognitive/trace": {
                 "get": {
@@ -397,6 +455,11 @@ pub(crate) async fn openapi_json() -> impl IntoResponse {
             },
 
             // ── Workspaces ───────────────────────────────────────────────
+        }
+    }));
+
+    path_chunks.push(serde_json::json!({
+        "paths": {
             "/api/workspaces": {
                 "get": {
                     "summary": "List workspaces",
@@ -430,6 +493,19 @@ pub(crate) async fn openapi_json() -> impl IntoResponse {
                     "operationId": "getCurrentWorkspace",
                     "responses": {
                         "200": {"description": "Current workspace or null", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/WorkspaceEntry"}}}}
+                    }
+                }
+            },
+
+            "/api/workspaces/{id}": {
+                "delete": {
+                    "summary": "Delete a workspace",
+                    "description": "Removes the workspace registration. Sessions stored under this workspace id are not cascaded by this endpoint.",
+                    "operationId": "deleteWorkspace",
+                    "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string"}}],
+                    "responses": {
+                        "200": {"description": "Workspace deleted", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/DeleteWorkspaceResponse"}}}},
+                        "500": {"description": "Deletion failed", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/DeleteWorkspaceResponse"}}}}
                     }
                 }
             },
@@ -531,7 +607,39 @@ pub(crate) async fn openapi_json() -> impl IntoResponse {
                 }
             },
 
+            "/api/experience/capture": {
+                "post": {
+                    "summary": "Capture a successful plan as a reusable experience",
+                    "description": "Parses plan_json into a CognitivePlan and stores it under plan_id in the experience bank so later runs can retrieve it via /api/experience/similar. project_id resolves from the x-project-id header first, then the body field, then \"default\".",
+                    "operationId": "captureExperience",
+                    "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/CaptureExperienceRequest"}}}},
+                    "responses": {
+                        "200": {"description": "Experience captured", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/CaptureExperienceResponse"}}}},
+                        "400": {"description": "plan_json is not a valid CognitivePlan", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/CaptureExperienceResponse"}}}},
+                        "500": {"description": "Capture failed", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/CaptureExperienceResponse"}}}}
+                    }
+                }
+            },
+            "/api/feedback": {
+                "post": {
+                    "summary": "Submit execution feedback and trigger evolution",
+                    "description": "Parses feedback_json into an ExecutionFeedback and hands it to the cognitive evolution loop, returning the resulting evolution record serialized as evolution_json. project_id resolves from the x-project-id header first, then the body field, then \"default\".",
+                    "operationId": "submitFeedback",
+                    "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/SubmitFeedbackRequest"}}}},
+                    "responses": {
+                        "200": {"description": "Feedback accepted and evolution produced", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/SubmitFeedbackResponse"}}}},
+                        "400": {"description": "feedback_json is not a valid ExecutionFeedback", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/SubmitFeedbackResponse"}}}},
+                        "500": {"description": "Evolution failed", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/SubmitFeedbackResponse"}}}}
+                    }
+                }
+            },
+
             // ── Roadmap ──────────────────────────────────────────────────
+        }
+    }));
+
+    path_chunks.push(serde_json::json!({
+        "paths": {
             "/api/roadmap/project/{id}": {
                 "get": {
                     "summary": "Get project details",
@@ -594,7 +702,49 @@ pub(crate) async fn openapi_json() -> impl IntoResponse {
                 }
             },
 
+            "/api/roadmap/predict": {
+                "post": {
+                    "summary": "Predict project completion time with confidence intervals",
+                    "description": "Derives per-milestone velocity (goals/sec) from stored execution outcomes, then projects remaining time with a 95% confidence interval at both milestone and project level. has_sufficient_data reports whether the history was rich enough to make the projection meaningful.",
+                    "operationId": "predictCompletion",
+                    "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/PredictCompletionRequest"}}}},
+                    "responses": {
+                        "200": {"description": "Completion time prediction", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/CompletionTimePrediction"}}}},
+                        "500": {"description": "Prediction failed; body is the error message as a JSON string", "content": {"application/json": {"schema": {"type": "string"}}}}
+                    }
+                }
+            },
+            "/api/roadmap/project-costs": {
+                "post": {
+                    "summary": "Project remaining cost and duration",
+                    "description": "Extrapolates remaining cost and wall-clock duration from the project's recorded execution outcomes. total_goals / completed_goals come from the caller because progress bookkeeping lives on the roadmap side.",
+                    "operationId": "projectRoadmapCosts",
+                    "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ProjectCostsRequest"}}}},
+                    "responses": {
+                        "200": {"description": "Cost projection", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/CostProjection"}}}},
+                        "500": {"description": "Projection failed; body is the error message as a JSON string", "content": {"application/json": {"schema": {"type": "string"}}}}
+                    }
+                }
+            },
+            "/api/roadmap/bottlenecks": {
+                "post": {
+                    "summary": "Find execution pipeline bottlenecks",
+                    "description": "Aggregates stored execution outcomes into per-goal bottleneck records ranked by severity (low / medium / high), failure count, average duration and downstream blocking count.",
+                    "operationId": "findRoadmapBottlenecks",
+                    "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/FindBottlenecksRequest"}}}},
+                    "responses": {
+                        "200": {"description": "Detected bottlenecks", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/FindBottlenecksResponse"}}}},
+                        "500": {"description": "Analysis failed; body is the error message as a JSON string", "content": {"application/json": {"schema": {"type": "string"}}}}
+                    }
+                }
+            },
+
             // ── Observability ───────────────────────────────────────────
+        }
+    }));
+
+    path_chunks.push(serde_json::json!({
+        "paths": {
             "/api/metrics": {
                 "get": {
                     "summary": "Prometheus text-format metrics",
@@ -607,12 +757,163 @@ pub(crate) async fn openapi_json() -> impl IntoResponse {
                         }
                     }
                 }
-            }
-        },
+            },
 
-        "components": {
-            "schemas": {
-                "HealthResponse": {
+            // ── Observability (Benchmark / Breaker / Insight) ────────────
+            "/api/benchmarks": {
+                "get": {
+                    "summary": "List recorded benchmark runs",
+                    "description": "Returns the last 100 runs for every registered benchmark name, flattened into a single list. The name_filter query parameter is accepted for API compatibility but currently not applied by the handler.",
+                    "operationId": "listBenchmarks",
+                    "parameters": [{"name": "name_filter", "in": "query", "required": false, "schema": {"type": "string"}, "description": "Filter by benchmark name; accepted but not currently applied"}],
+                    "responses": {
+                        "200": {"description": "Benchmark runs", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ListBenchmarksResponse"}}}}
+                    }
+                }
+            },
+            "/api/breakers": {
+                "get": {
+                    "summary": "Circuit breaker metrics per model",
+                    "description": "Circuit breaker state is tracked inside the LLM client trait object, which the bridge cannot downcast, so this endpoint currently returns an empty breaker list. The model_name filter is accepted but unused.",
+                    "operationId": "getBreakerMetrics",
+                    "parameters": [{"name": "model_name", "in": "query", "required": false, "schema": {"type": "string"}, "description": "Filter by model; accepted but not currently applied"}],
+                    "responses": {
+                        "200": {"description": "Breaker metrics (currently always an empty list)", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/BreakerMetricsResponse"}}}}
+                    }
+                }
+            },
+            "/api/insights": {
+                "get": {
+                    "summary": "Meta-learning insights per strategy",
+                    "description": "Aggregates the meta-learner's running statistics into per-strategy success rates and durations plus an overall success rate. strategy_filter narrows the result to a single strategy when supplied.",
+                    "operationId": "getLearningInsights",
+                    "parameters": [{"name": "strategy_filter", "in": "query", "required": false, "schema": {"type": "string"}, "description": "Return only this strategy; omit for all"}],
+                    "responses": {
+                        "200": {"description": "Learning insights", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/LearningInsightsResponse"}}}}
+                    }
+                }
+            },
+            "/api/anomaly": {
+                "get": {
+                    "summary": "Anomaly reports for an SOP",
+                    "description": "Anomaly detection lives in sisyphus_intel::AnomalyDetector behind the IntelligenceManager trait, which the bridge cannot downcast, so this endpoint currently returns an empty array. The sop_id query parameter is accepted but unused.",
+                    "operationId": "getAnomalyReports",
+                    "parameters": [{"name": "sop_id", "in": "query", "required": true, "schema": {"type": "string"}, "description": "SOP to analyse; accepted but not currently applied"}],
+                    "responses": {
+                        "200": {"description": "Anomaly reports (currently always an empty array)", "content": {"application/json": {"schema": {"type": "array", "items": {"$ref": "#/components/schemas/AnomalyReport"}}}}}
+                    }
+                }
+            },
+
+            // ── Plugins ──────────────────────────────────────────────────
+            "/api/plugins": {
+                "get": {
+                    "summary": "List registered WASM plugins",
+                    "operationId": "listPlugins",
+                    "responses": {
+                        "200": {"description": "Plugin list", "content": {"application/json": {"schema": {"type": "array", "items": {"$ref": "#/components/schemas/PluginDescriptor"}}}}}
+                    }
+                }
+            },
+            "/api/plugins/load": {
+                "post": {
+                    "summary": "Load (register) a WASM plugin",
+                    "description": "Registers a plugin descriptor with the plugin manager, which compiles and instantiates the WASM module at wasm_path and exposes it as tool_id. fuel_limit defaults to 0 when omitted, and the checksum is always left unset by this endpoint.",
+                    "operationId": "loadPlugin",
+                    "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/LoadPluginRequest"}}}},
+                    "responses": {
+                        "200": {"description": "Plugin loaded", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/LoadPluginResponse"}}}},
+                        "500": {"description": "Plugin registration failed", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/LoadPluginResponse"}}}}
+                    }
+                }
+            },
+            "/api/plugins/unload": {
+                "post": {
+                    "summary": "Unload a WASM plugin by name",
+                    "operationId": "unloadPlugin",
+                    "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/UnloadPluginRequest"}}}},
+                    "responses": {
+                        "200": {"description": "Plugin unloaded", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/UnloadPluginResponse"}}}},
+                        "500": {"description": "Unload failed (e.g. no such plugin)", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/UnloadPluginResponse"}}}}
+                    }
+                }
+            },
+
+            // ── JCode Delegation ─────────────────────────────────────────
+            "/api/jcode/call": {
+                "post": {
+                    "summary": "Delegate a task to JCode over the sandbox bridge",
+                    "description": "Forwards {task_id, goal, context} to the jcode/call tool on the sandbox RPC client and returns the raw tool output as a string in `result`.",
+                    "operationId": "callJcode",
+                    "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/CallJcodeRequest"}}}},
+                    "responses": {
+                        "200": {"description": "JCode call completed", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/CallJcodeResponse"}}}},
+                        "400": {"description": "Context could not be encoded", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/CallJcodeResponse"}}}},
+                        "500": {"description": "JCode call failed", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/CallJcodeResponse"}}}}
+                    }
+                }
+            },
+
+            // ── Chaos Engineering ────────────────────────────────────────
+            "/api/chaos/start": {
+                "post": {
+                    "summary": "Start a chaos experiment",
+                    "description": "Injects faults into matching operations for the configured duration. fault_types accepts LlmTimeout | LlmGarbage | ToolCrash | ToolHang | StorageWriteFailure | StorageReadFailure | NetworkPartition | RandomDelay(<ms>); unrecognised entries are silently dropped. An empty target_operations list means all operations. The returned experiment_id is generated by the handler and is not tracked by the chaos runner itself, so /api/chaos/status ignores it.",
+                    "operationId": "chaosStart",
+                    "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ChaosStartRequest"}}}},
+                    "responses": {
+                        "200": {"description": "Experiment started", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ChaosStartResponse"}}}}
+                    }
+                }
+            },
+            "/api/chaos/stop": {
+                "post": {
+                    "summary": "Stop the running chaos experiment",
+                    "description": "Stops whichever experiment is currently running and returns its final counters. experiment_id is accepted in the body but unused — the runner tracks a single active experiment.",
+                    "operationId": "chaosStop",
+                    "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ChaosStopRequest"}}}},
+                    "responses": {
+                        "200": {"description": "Experiment stopped with final results", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ChaosStopResponse"}}}},
+                        "404": {"description": "No experiment was running", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ChaosStopResponse"}}}}
+                    }
+                }
+            },
+            "/api/chaos/status": {
+                "get": {
+                    "summary": "Get chaos experiment status",
+                    "description": "Reports whether an experiment is currently running. experiment_id is accepted as a query parameter but unused — the runner tracks a single active experiment. Counter fields in `result` are placeholders while an experiment is active.",
+                    "operationId": "chaosStatus",
+                    "parameters": [{"name": "experiment_id", "in": "query", "required": true, "schema": {"type": "string"}, "description": "Accepted but unused; the runner tracks a single active experiment"}],
+                    "responses": {
+                        "200": {"description": "Chaos status", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ChaosStatusResponse"}}}}
+                    }
+                }
+            }
+        }
+    }));
+
+    // 每块都带一层 `{"paths": { ... }}` 包装，直接 `extend` 会互相覆盖同名 key。
+    // 先把包装层拆掉再合并，才能得到扁平的路径表。
+    fn flatten(
+        chunk: serde_json::Value,
+        key: &str,
+        into: &mut serde_json::Map<String, serde_json::Value>,
+    ) {
+        match chunk.get(key).and_then(serde_json::Value::as_object) {
+            Some(block) => into.extend(block.iter().map(|(k, v)| (k.clone(), v.clone()))),
+            None => unreachable!("每个分块的顶层包装键恒为 {key}"),
+        }
+    }
+    let mut all_paths = serde_json::Map::new();
+    for chunk in path_chunks {
+        flatten(chunk, "paths", &mut all_paths);
+    }
+
+    let mut schema_chunks: Vec<serde_json::Value> = Vec::new();
+
+    schema_chunks.push(serde_json::json!({
+        "schemas": {
+            "HealthResponse": {
                     "type": "object",
                     "properties": {
                         "status": {"type": "string"},
@@ -904,7 +1205,13 @@ pub(crate) async fn openapi_json() -> impl IntoResponse {
                         "tags": {"type": "array", "items": {"type": "string"}}
                     }
                 },
-                "InstallSkillRequest": {
+                // ── Skills ───────────────────────────────────────────────────
+        }
+    }));
+
+    schema_chunks.push(serde_json::json!({
+        "schemas": {
+            "InstallSkillRequest": {
                     "type": "object",
                     "required": ["skill_id"],
                     "properties": {"skill_id": {"type": "string"}}
@@ -919,7 +1226,13 @@ pub(crate) async fn openapi_json() -> impl IntoResponse {
                         "root_dir": {"type": "string"}
                     }
                 },
-                "CreateWorkspaceRequest": {
+                // ── Workspaces ───────────────────────────────────────────────
+        }
+    }));
+
+    schema_chunks.push(serde_json::json!({
+        "schemas": {
+            "CreateWorkspaceRequest": {
                     "type": "object",
                     "required": ["name", "project_id", "root_dir"],
                     "properties": {
@@ -1058,7 +1371,13 @@ pub(crate) async fn openapi_json() -> impl IntoResponse {
                     }
                 },
 
-                "CreateProjectRequest": {
+                // ── Roadmap ──────────────────────────────────────────────────
+        }
+    }));
+
+    schema_chunks.push(serde_json::json!({
+        "schemas": {
+            "CreateProjectRequest": {
                     "type": "object",
                     "required": ["id", "name", "description"],
                     "properties": {
@@ -1120,9 +1439,401 @@ pub(crate) async fn openapi_json() -> impl IntoResponse {
                         "description": {"type": "string"},
                         "status": {"type": "string"}
                     }
+                },
+
+                // ── Cognitive Map Live Intervention ──────────────────────────
+
+                "InterventionRequest": {
+                    "type": "object",
+                    "required": ["action"],
+                    "properties": {
+                        "action": {"type": "string", "description": "abort | pause | resume | redirect; matched case-insensitively. Unrecognised values are broadcast but never applied."},
+                        "target_node": {"type": "string", "description": "Node to jump to; required for the redirect action, ignored otherwise"},
+                        "reason": {"type": "string", "description": "Free-form reason recorded in the broadcast intervention event"}
+                    }
+                },
+                "InterventionResponse": {
+                    "type": "object",
+                    "description": "Outcome of a live intervention request. applied=false means the SOP had no entry in active_executions (it may have already finished) but the intervention event was still broadcast.",
+                    "properties": {
+                        "sop_id": {"type": "string"},
+                        "action": {"type": "string", "description": "Action as lower-cased by the handler"},
+                        "applied": {"type": "boolean", "description": "Whether the action mutated the active execution"},
+                        "message": {"type": "string"}
+                    }
+                },
+
+                // ── Tool Execution (by tool id) ─────────────────────────────
+
+                "ExecuteToolRequest": {
+                    "type": "object",
+                    "required": ["tool_id", "args_json"],
+                    "properties": {
+                        "tool_id": {"type": "string"},
+                        "args_json": {"type": "string", "description": "Raw JSON string passed to the tool as its argument bytes"},
+                        "fuel_limit": {"type": "integer", "format": "int64", "description": "Fuel ceiling for the tool call; falls back to the bridge default when omitted"}
+                    }
+                },
+                "ExecuteToolResponse": {
+                    "type": "object",
+                    "properties": {
+                        "status": {"type": "string", "description": "SUCCESS on 200; on failure the status field carries \"ERROR: <message>\""},
+                        "result_json": {"type": "string", "description": "Raw tool output as a UTF-8 string (lossy); empty on failure"}
+                    }
+                },
+
+                // ── Skill Detail ───────────────────────────────────────────
+
+                "SkillDetailResponse": {
+                    "type": "object",
+                    "properties": {
+                        "found": {"type": "boolean"},
+                        "skill": {"$ref": "#/components/schemas/SkillMetadata"}
+                    }
+                },
+
+                // ── Workspace Deletion ─────────────────────────────────────
+
+                "DeleteWorkspaceResponse": {
+                    "type": "object",
+                    "properties": {
+                        "success": {"type": "boolean"},
+                        "error": {"type": "string"}
+                    }
+                },
+
+                // ── Feedback & Experience Capture ───────────────────────────
+
+                "SubmitFeedbackRequest": {
+                    "type": "object",
+                    "required": ["feedback_json"],
+                    "properties": {
+                        "feedback_json": {"type": "string", "description": "JSON-encoded ExecutionFeedback"},
+                        "project_id": {"type": "string", "description": "Target project; the x-project-id header takes precedence, \"default\" is used when neither is set"}
+                    }
+                },
+                "SubmitFeedbackResponse": {
+                    "type": "object",
+                    "properties": {
+                        "success": {"type": "boolean"},
+                        "error": {"type": "string"},
+                        "evolution_json": {"type": "string", "description": "JSON-encoded evolution record produced from the feedback; empty on failure"}
+                    }
+                },
+                "CaptureExperienceRequest": {
+                    "type": "object",
+                    "required": ["plan_id", "plan_json"],
+                    "properties": {
+                        "plan_id": {"type": "string", "description": "Storage key the plan is captured under"},
+                        "plan_json": {"type": "string", "description": "JSON-encoded CognitivePlan"},
+                        "project_id": {"type": "string", "description": "Target project; the x-project-id header takes precedence, \"default\" is used when neither is set"}
+                    }
+                },
+                "CaptureExperienceResponse": {
+                    "type": "object",
+                    "properties": {
+                        "success": {"type": "boolean"},
+                        "error": {"type": "string"}
+                    }
+                },
+
+                // ── Roadmap Prediction & Resource Optimization ──────────────
+
                 }
-            }
+    }));
+
+    schema_chunks.push(serde_json::json!({
+        "schemas": {
+            "PredictCompletionRequest": {
+                    "type": "object",
+                    "required": ["project_id"],
+                    "properties": {"project_id": {"type": "string"}}
+                },
+                "MilestoneTimePrediction": {
+                    "type": "object",
+                    "description": "Per-milestone completion forecast with a 95% confidence interval",
+                    "properties": {
+                        "milestone_id": {"type": "string"},
+                        "name": {"type": "string"},
+                        "estimated_remaining_secs": {"type": "number", "format": "double"},
+                        "ci_lower_secs": {"type": "number", "format": "double", "description": "95% confidence interval lower bound (secs)"},
+                        "ci_upper_secs": {"type": "number", "format": "double", "description": "95% confidence interval upper bound (secs)"},
+                        "progress_pct": {"type": "number", "format": "double"},
+                        "remaining_goals": {"type": "integer"},
+                        "risk_level": {"type": "string", "description": "low | medium | high | done"},
+                        "velocity_goals_per_sec": {"type": "number", "format": "double", "description": "Historical throughput in goals/sec"}
+                    }
+                },
+                "CompletionTimePrediction": {
+                    "type": "object",
+                    "description": "Project-level completion forecast derived from historical execution velocity",
+                    "properties": {
+                        "project_id": {"type": "string"},
+                        "project_name": {"type": "string"},
+                        "overall_progress_pct": {"type": "number", "format": "double"},
+                        "remaining_goals": {"type": "integer"},
+                        "estimated_total_remaining_secs": {"type": "number", "format": "double"},
+                        "ci_lower_total_secs": {"type": "number", "format": "double", "description": "95% confidence interval lower bound (secs)"},
+                        "ci_upper_total_secs": {"type": "number", "format": "double", "description": "95% confidence interval upper bound (secs)"},
+                        "milestone_predictions": {"type": "array", "items": {"$ref": "#/components/schemas/MilestoneTimePrediction"}},
+                        "estimated_completion_order": {"type": "array", "items": {"type": "string"}, "description": "Milestone ids in predicted completion order"},
+                        "risk_level": {"type": "string", "description": "low | medium | high | done"},
+                        "overall_velocity_goals_per_sec": {"type": "number", "format": "double"},
+                        "has_sufficient_data": {"type": "boolean", "description": "False when history was too sparse for the projection to be meaningful"}
+                    }
+                },
+                "ProjectCostsRequest": {
+                    "type": "object",
+                    "required": ["project_id", "total_goals", "completed_goals"],
+                    "properties": {
+                        "project_id": {"type": "string"},
+                        "total_goals": {"type": "integer", "description": "Total goals planned for the project"},
+                        "completed_goals": {"type": "integer", "description": "Goals already completed"}
+                    }
+                },
+                "CostProjection": {
+                    "type": "object",
+                    "description": "Extrapolated remaining cost and duration for a project",
+                    "properties": {
+                        "total_goals": {"type": "integer"},
+                        "completed_goals": {"type": "integer"},
+                        "remaining_goals": {"type": "integer"},
+                        "avg_cost_per_goal": {"type": "number", "format": "double"},
+                        "avg_duration_per_goal_secs": {"type": "number", "format": "double"},
+                        "projected_remaining_cost": {"type": "number", "format": "double"},
+                        "projected_remaining_duration_secs": {"type": "number", "format": "double"},
+                        "confidence": {"type": "number", "format": "double", "description": "Confidence in the projection, 0.0-1.0"}
+                    }
+                },
+                "FindBottlenecksRequest": {
+                    "type": "object",
+                    "required": ["project_id"],
+                    "properties": {"project_id": {"type": "string"}}
+                },
+                "Bottleneck": {
+                    "type": "object",
+                    "description": "A goal identified as a bottleneck in the execution pipeline",
+                    "properties": {
+                        "goal_id": {"type": "string"},
+                        "description": {"type": "string"},
+                        "failure_count": {"type": "integer"},
+                        "avg_duration_secs": {"type": "number", "format": "double"},
+                        "blocking_count": {"type": "integer", "description": "How many other goals this one blocked"},
+                        "severity": {"type": "string", "description": "low | medium | high"}
+                    }
+                },
+                "FindBottlenecksResponse": {
+                    "type": "object",
+                    "properties": {
+                        "bottlenecks": {"type": "array", "items": {"$ref": "#/components/schemas/Bottleneck"}}
+                    }
+                },
+
+                // ── Benchmarks / Breakers / Learning Insights / Anomaly ────
+
+                "BenchmarkEntry": {
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string"},
+                        "duration_secs": {"type": "number", "format": "double"},
+                        "timestamp": {"type": "integer", "format": "int64", "description": "Epoch seconds"},
+                        "success": {"type": "boolean"},
+                        "metrics_json": {"type": "string", "description": "JSON-encoded metric map"}
+                    }
+                },
+                "ListBenchmarksResponse": {
+                    "type": "object",
+                    "properties": {
+                        "benchmarks": {"type": "array", "items": {"$ref": "#/components/schemas/BenchmarkEntry"}, "description": "Recent runs across all benchmark names, flattened"}
+                    }
+                },
+                "BreakerStatus": {
+                    "type": "object",
+                    "properties": {
+                        "model_name": {"type": "string"},
+                        "state": {"type": "string"},
+                        "failure_count": {"type": "integer", "format": "int32"},
+                        "success_count": {"type": "integer", "format": "int32"}
+                    }
+                },
+                "BreakerMetricsResponse": {
+                    "type": "object",
+                    "properties": {
+                        "breakers": {"type": "array", "items": {"$ref": "#/components/schemas/BreakerStatus"}, "description": "Currently always empty; breaker state lives behind the LlmClient trait object"}
+                    }
+                },
+                "StrategyInsight": {
+                    "type": "object",
+                    "properties": {
+                        "strategy": {"type": "string"},
+                        "total_uses": {"type": "integer", "format": "int64"},
+                        "successes": {"type": "integer", "format": "int64"},
+                        "failures": {"type": "integer", "format": "int64"},
+                        "avg_duration_secs": {"type": "number", "format": "double"},
+                        "success_rate": {"type": "number", "format": "double"}
+                    }
+                },
+                "LearningInsightsResponse": {
+                    "type": "object",
+                    "properties": {
+                        "total_samples": {"type": "integer", "format": "int64"},
+                        "overall_success_rate": {"type": "number", "format": "double"},
+                        "strategies": {"type": "array", "items": {"$ref": "#/components/schemas/StrategyInsight"}}
+                    }
+                },
+                "AnomalyReport": {
+                    "type": "object",
+                    "properties": {
+                        "node_name": {"type": "string"},
+                        "severity": {"type": "string"},
+                        "metric": {"type": "string"},
+                        "observed": {"type": "number", "format": "double"},
+                        "expected": {"type": "number", "format": "double"},
+                        "description": {"type": "string"},
+                        "timestamp": {"type": "integer", "format": "int64", "description": "Epoch seconds"}
+                    }
+                },
+
+                // ── Plugins ────────────────────────────────────────────────
+
+                "PluginDescriptor": {
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string"},
+                        "version": {"type": "string"},
+                        "wasm_path": {"type": "string"},
+                        "tool_id": {"type": "string"},
+                        "fuel_limit": {"type": "integer", "format": "int64"},
+                        "checksum": {"type": "string", "description": "Empty when the plugin was loaded without a checksum"}
+                    }
+                },
+                "LoadPluginRequest": {
+                    "type": "object",
+                    "required": ["name", "version", "wasm_path", "tool_id"],
+                    "properties": {
+                        "name": {"type": "string"},
+                        "version": {"type": "string"},
+                        "wasm_path": {"type": "string", "description": "Filesystem path to the plugin's .wasm module"},
+                        "tool_id": {"type": "string", "description": "Tool id the plugin is exposed under"},
+                        "fuel_limit": {"type": "integer", "format": "int64", "description": "Fuel ceiling for plugin execution; defaults to 0 when omitted"}
+                    }
+                },
+                "LoadPluginResponse": {
+                    "type": "object",
+                    "properties": {
+                        "success": {"type": "boolean"},
+                        "error": {"type": "string"}
+                    }
+                },
+                "UnloadPluginRequest": {
+                    "type": "object",
+                    "required": ["name"],
+                    "properties": {"name": {"type": "string"}}
+                },
+                "UnloadPluginResponse": {
+                    "type": "object",
+                    "properties": {
+                        "success": {"type": "boolean"},
+                        "error": {"type": "string"}
+                    }
+                },
+
+                // ── JCode Delegation ───────────────────────────────────────
+
+                "CallJcodeRequest": {
+                    "type": "object",
+                    "required": ["task_id", "goal", "context_json"],
+                    "properties": {
+                        "task_id": {"type": "string"},
+                        "goal": {"type": "string"},
+                        "context_json": {"type": "string", "description": "Context forwarded verbatim as the `context` field of the jcode/call payload"}
+                    }
+                },
+                "CallJcodeResponse": {
+                    "type": "object",
+                    "properties": {
+                        "success": {"type": "boolean"},
+                        "result": {"type": "string", "description": "Raw JCode tool output as a UTF-8 string; empty on failure"},
+                        "error": {"type": "string"}
+                    }
+                },
+
+                // ── Chaos Engineering ──────────────────────────────────────
+
+                "ChaosStartRequest": {
+                    "type": "object",
+                    "required": ["name", "fault_types", "fault_probability", "duration_seconds", "target_operations"],
+                    "properties": {
+                        "name": {"type": "string"},
+                        "fault_types": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "LlmTimeout | LlmGarbage | ToolCrash | ToolHang | StorageWriteFailure | StorageReadFailure | NetworkPartition | RandomDelay(<ms>); unrecognised entries are dropped"
+                        },
+                        "fault_probability": {"type": "number", "format": "double", "description": "Per-operation probability of injecting a fault, 0.0-1.0"},
+                        "duration_seconds": {"type": "integer", "format": "int64"},
+                        "target_operations": {"type": "array", "items": {"type": "string"}, "description": "Operations to fault; an empty list targets all operations"}
+                    }
+                },
+                "ChaosStartResponse": {
+                    "type": "object",
+                    "properties": {
+                        "success": {"type": "boolean"},
+                        "experiment_id": {"type": "string", "description": "Handler-generated UUID; not tracked by the chaos runner, so /api/chaos/status ignores it"},
+                        "error": {"type": "string"}
+                    }
+                },
+                "ChaosStopRequest": {
+                    "type": "object",
+                    "required": ["experiment_id"],
+                    "properties": {
+                        "experiment_id": {"type": "string", "description": "Accepted but unused; the runner stops whichever experiment is currently active"}
+                    }
+                },
+                "ChaosExperimentResult": {
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string"},
+                        "operations_attempted": {"type": "integer", "format": "int64"},
+                        "operations_succeeded": {"type": "integer", "format": "int64"},
+                        "operations_failed": {"type": "integer", "format": "int64"},
+                        "faults_injected": {"type": "integer", "format": "int64"},
+                        "success_rate": {"type": "number", "format": "double"}
+                    }
+                },
+                "ChaosStopResponse": {
+                    "type": "object",
+                    "properties": {
+                        "success": {"type": "boolean"},
+                        "result": {"$ref": "#/components/schemas/ChaosExperimentResult"},
+                        "error": {"type": "string"}
+                    }
+                },
+                "ChaosStatusResponse": {
+                    "type": "object",
+                    "properties": {
+                        "running": {"type": "boolean"},
+                        "result": {"$ref": "#/components/schemas/ChaosExperimentResult", "description": "Placeholder counters while an experiment is active"}
+                    }
+                }
         }
+    }));
+
+    let mut all_schemas = serde_json::Map::new();
+    for chunk in schema_chunks {
+        flatten(chunk, "schemas", &mut all_schemas);
+    }
+
+    Json(serde_json::json!({
+        "openapi": "3.1.0",
+        "info": {
+            "title": "Sisyphus Bridge REST API",
+            "version": env!("CARGO_PKG_VERSION"),
+            "description": "REST API for the Sisyphus Cognitive Engine"
+        },
+        "servers": [{"url": "http://localhost:8080", "description": "Local dev"}],
+        "paths": serde_json::Value::Object(all_paths),
+        "components": {"schemas": serde_json::Value::Object(all_schemas)}
     }))
 }
 
