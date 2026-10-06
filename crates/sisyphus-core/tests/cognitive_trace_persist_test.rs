@@ -203,8 +203,16 @@ async fn test_flush_cognitive_traces_survives_recreation() {
     // busy_timeout（5s）内无法取得写锁而失败，最终 rows == 0。修复 caf4ee7 之前
     // 该场景下 flush 仍返回 `()`，于是这类真实写失败会被本用例静默计成
     // 「丢失」；修复后 flush 会返回 Err 并让 `.expect("flush")` 直接报错。
-    // 本用例偶发丢失的**确切根因仍未定位**（尚无法判定当时是否正是写锁竞争），
-    // 如再现请记录当次完整日志。
+    //
+    // 状态（2026-10-06 更新）：写锁竞争是**症状吻合的候选**，但仍**未证实**为
+    // 那次 1/10 的成因。已累计约 155 轮未复现（本轮新增 25 轮
+    // `--test-threads=8` 并发复跑，全过）。同时已排查并排除其他路径：
+    // - `MfsStore::record_cognitive_trace` 直写 `self.l2`，无 L1 缓冲，
+    //   因此 flush 屏障确实等价于「SQL 已落盘」，不存在“任务完成但未提交”。
+    // - `record_cognitive_trace` 里 `let _ = tx.send(..)` 的静默丢弃不会漏过
+    //   屏障：unbounded channel 仅在接收端已 drop 时发送失败，而那种情况下
+    //   屏障自身的 `tx.send(Flush)` 同样失败，flush 会返回 Err。
+    // 本用例偶发丢失的**确切根因仍未定位**，如再现请记录当次完整日志。
     //
     // 断言已从「累计计数」改为「首次异常立即 panic 并打印轮次/行数/step 内容/
     // 库路径」：原写法只在末尾报 `N/10 rounds lost`，把到底是 0 行还是多行
