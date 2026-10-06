@@ -1159,10 +1159,16 @@ pub(super) async fn stream_cognitive_map_handler(
                 );
             }
             None => {
+                // 必须用 serde_json 序列化而非 format! 拼接：sop_id 来自 URL 路径，
+                // 含引号/反斜杠/控制字符时会产出**非法 JSON**，客户端 JSON.parse
+                // 直接抛异常（webui 的 catch 是空的，表现为静默失败）。
+                let payload = serde_json::json!({
+                    "sop_id": sop_id_owned,
+                    "message": "No active cognitive map",
+                })
+                .to_string();
                 yield Ok::<Event, std::convert::Infallible>(
-                    Event::default()
-                        .event("absent")
-                        .data(format!(r#"{{"sop_id":"{sop_id_owned}","message":"No active cognitive map"}}"#)),
+                    Event::default().event("absent").data(payload),
                 );
             }
         }
@@ -1351,6 +1357,49 @@ pub(super) async fn health_ready_handler(State(state): State<RestApiState>) -> i
 // ---------------------------------------------------------------------------
 // 单元测试：health_deep_assess 纯函数（无需完整桥接服务）
 // ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod cognitive_map_payload_tests {
+    /// `stream_cognitive_map_handler` 在无活跃映射时推送 `absent` 事件。
+    /// sop_id 来自 URL 路径，构造 payload 时必须保证输出恒为合法 JSON。
+    fn absent_payload(sop_id: &str) -> String {
+        serde_json::json!({
+            "sop_id": sop_id,
+            "message": "No active cognitive map",
+        })
+        .to_string()
+    }
+
+    #[test]
+    fn absent_payload_is_valid_json_for_hostile_sop_ids() {
+        // 这些字符都能出现在 URL 路径中。用 format! 拼接会产出非法 JSON，
+        // 客户端 JSON.parse 抛异常；webui 的 catch 是空的，表现为静默失败。
+        for hostile in ["normal", "a\"b", "x\\y", "a\nb", "{\"evil\":1}", "中文项目"] {
+            let raw = absent_payload(hostile);
+            let parsed: serde_json::Value = serde_json::from_str(&raw)
+                .unwrap_or_else(|e| panic!("sop_id={hostile:?} 产出非法 JSON {raw:?}: {e}"));
+
+            // 不只是「能解析」——值必须原样往返，不能被截断或改写
+            assert_eq!(
+                parsed["sop_id"], hostile,
+                "sop_id={hostile:?} 未原样往返，实际 {raw:?}"
+            );
+            assert_eq!(parsed["message"], "No active cognitive map");
+        }
+    }
+
+    /// 回归防护：确认 format! 拼接确实会产生非法 JSON。
+    /// 若本测试失败，说明该反例已不成立，可移除。
+    #[test]
+    fn format_string_concatenation_would_produce_invalid_json() {
+        let hostile = "a\"b";
+        let broken = format!(r#"{{"sop_id":"{hostile}","message":"No active cognitive map"}}"#);
+        assert!(
+            serde_json::from_str::<serde_json::Value>(&broken).is_err(),
+            "format! 拼接本应产生非法 JSON，若现在合法说明反例需重新选择"
+        );
+    }
+}
 
 #[cfg(test)]
 mod execution_event_tx_tests {
