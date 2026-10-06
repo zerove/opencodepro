@@ -193,7 +193,18 @@ async fn test_flush_cognitive_traces_survives_recreation() {
     // 随后定位并修复了一个**确定存在**的相邻缺陷：写入失败此前只由
     // `tracing::warn` 记录，`flush_cognitive_traces` 一律返回 `()`，
     // 即写入彻底失败也对外谎报「已持久化」（见同文件下两个 flush 回归用例）。
-    // 本用例偶发丢失的**确切根因仍未定位**，如再现请记录当次完整日志。
+    //
+    // 2026-10-06 用探针实测：**已证伪**「删主库后 -wal 残留导致读到旧轮次记录」
+    // 这一假说。探针显示 -wal 确有 135992 字节未 checkpoint 数据，但删主库后
+    // 仍只读到 1 行（仅本轮记录）——WAL header 的 salt/校验和因主库消失而失效，
+    // 残留 frame 被 SQLite 直接丢弃。
+    //
+    // 同轮实测**可复现**的另一机制：数据库写锁被占住时，认知追踪写入在
+    // busy_timeout（5s）内无法取得写锁而失败，最终 rows == 0。修复 caf4ee7 之前
+    // 该场景下 flush 仍返回 `()`，于是这类真实写失败会被本用例静默计成
+    // 「丢失」；修复后 flush 会返回 Err 并让 `.expect("flush")` 直接报错。
+    // 本用例偶发丢失的**确切根因仍未定位**（尚无法判定当时是否正是写锁竞争），
+    // 如再现请记录当次完整日志。
     //
     // 断言已从「累计计数」改为「首次异常立即 panic 并打印轮次/行数/step 内容/
     // 库路径」：原写法只在末尾报 `N/10 rounds lost`，把到底是 0 行还是多行
@@ -201,8 +212,9 @@ async fn test_flush_cognitive_traces_survives_recreation() {
     const ROUNDS: usize = 10;
     for i in 0..ROUNDS {
         let db = temp_db_path(&format!("flush_{i}"));
-        // 连同 -wal/-shm sidecar 一并清除：只删主库文件可能残留上一轮未
-        // checkpoint 的 WAL 数据，让本轮读到**旧轮次**的记录（行数 > 1）。
+        // 连同 -wal/-shm sidecar 一并清除。注意：这是**防御性**措施，不是已观测
+        // 失败模式的修复——实测删主库后 SQLite 会因 WAL header 校验失效而丢弃残留
+        // frame（见下方注释中已证伪的假说）。
         remove_db_and_sidecars(&db);
 
         let em1 = test_execution_manager_with(&db).await;
@@ -317,10 +329,67 @@ async fn test_flush_error_count_resets_after_recovery() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// 写锁竞争下，flush 必须报告失败而不能谎报已持久化。
+///
+/// 回归 `caf4ee7` 修复前的真实症状：SQLite 写锁被占住时，认知追踪写入在
+/// busy_timeout 内取不到写锁而失败，旧实现仍返回 `()`，调用方把这次
+/// **彻底丢失**的写入当成已落盘。并行 `cargo test` 下多个测试进程/连接池
+/// 争抢写锁正是该场景的来源。
+///
+/// 与本文件另两个 flush 回归用例的分工（经变异实测确认）：
+/// - `..._write_failure_instead_of_silent_success` / `..._error_count_resets_after_recovery`
+///   守 `ack.failed > 0` 分支（写入**快速失败**，如表缺失）。
+/// - 本用例守 **5s 超时**分支：写入并非立刻报错，而是被写锁卡住直到
+///   `flush_cognitive_traces` 的 barrier 超时。两条路径互不覆盖，
+///   变异 `ack.failed` 判据时本用例仍通过，变异超时分支时唯独本用例失败。
+#[tokio::test]
+async fn test_flush_reports_failure_under_write_lock_pressure() {
+    let db = temp_db_path("lock_pressure");
+    remove_db_and_sidecars(&db);
+
+    // 先建库：裸 `SqlitePool::connect` 不带 create_if_missing，
+    // 库文件不存在时会报 SQLite code 14。
+    let em = test_execution_manager_with(&db).await;
+
+    // 显式 `BEGIN IMMEDIATE` 长期占住写锁，模拟并行测试中的竞争者。
+    let blocker = {
+        let pool = sqlx::SqlitePool::connect(&db).await.expect("blocker pool");
+        sqlx::query("BEGIN IMMEDIATE").execute(&pool).await.expect("begin immediate");
+        pool
+    };
+    let held = tokio::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+        drop(blocker);
+    });
+
+    em.record_cognitive_trace("sop-a", step_event("UnderLockPressure"));
+
+    // 核心断言：写入未能落盘时 flush 必须报错，而不是返回 Ok(())。
+    let flush = em.flush_cognitive_traces().await;
+    let rows = em.cognitive_trace_history("default", None, 100).await.expect("history");
+
+    held.abort();
+
+    assert!(
+        rows.is_empty(),
+        "前提不成立：持有写锁时写入本应失败，却读到 {} 行；该用例将退化为空断言",
+        rows.len()
+    );
+    assert!(
+        flush.is_err(),
+        "写锁竞争下 flush 谎报成功（rows=0），写入已静默丢失；db={db}"
+    );
+
+    remove_db_and_sidecars(&db);
+}
+
 /// 删除 SQLite 主库及其 `-wal` / `-shm` sidecar 文件。
 ///
-/// 只删主库文件是不够的：WAL 模式下未 checkpoint 的数据可能仍在 `-wal` 里，
-/// 重新打开同一路径时会读到上一轮遗留的记录，让「本轮写入是否成功」变得不可判定。
+/// 连同 SQLite 的 `-wal`/`-shm` sidecar 一并删除。
+///
+/// 防御性清理：仅删主库而留下 sidecar，会在同路径重开时引入不确定的初始状态。
+/// 注意这**不是**已观测失败模式的修复——实测删主库后，SQLite 会因 WAL header
+/// 的 salt/校验和随主库一同消失而丢弃残留 frame，仍只读到本轮数据。
 fn remove_db_and_sidecars(db: &str) {
     for suffix in ["", "-wal", "-shm"] {
         let _ = std::fs::remove_file(format!("{db}{suffix}"));
