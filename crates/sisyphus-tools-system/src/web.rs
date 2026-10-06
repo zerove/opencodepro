@@ -46,6 +46,15 @@ pub async fn webfetch(url: &str) -> ToolResult<FetchResult> {
         .await
         .map_err(|e| ToolError::WebError(format!("request failed: {e}")))?;
 
+    // 必须检查状态码：404/500 的错误页面同样是 HTML，若直接返回会被
+    // 当作正常内容交给调用方（表现为「抓到了内容但内容是错误页」）。
+    let status = resp.status();
+    if !status.is_success() {
+        return Err(ToolError::WebError(format!(
+            "fetch {url} returned HTTP {status}"
+        )));
+    }
+
     let content_type = resp
         .headers()
         .get(reqwest::header::CONTENT_TYPE)
@@ -78,12 +87,33 @@ pub async fn webfetch(url: &str) -> ToolResult<FetchResult> {
 /// No API key required. Returns up to `num_results` results.
 /// Uses DoH-based direct connection first, then falls back to default client.
 pub async fn websearch(query: &str, num_results: usize) -> ToolResult<Vec<SearchResult>> {
+    websearch_via(
+        "https://html.duckduckgo.com/html/",
+        "html.duckduckgo.com",
+        443,
+        query,
+        num_results,
+    )
+    .await
+}
+
+/// websearch 的可注入端点版本
+///
+/// 端点/主机/端口分离传入，使状态码处理与结果解析等逻辑可在本地回环服务器上
+/// 被测试覆盖（真实 DuckDuckGo 会返回 202 反爬页，无法稳定用于断言）。
+async fn websearch_via(
+    endpoint: &str,
+    host: &str,
+    port: u16,
+    query: &str,
+    num_results: usize,
+) -> ToolResult<Vec<SearchResult>> {
     let re_result = ddg_re(r#"<a[^>]*class="result__a"[^>]*href="([^"]*)"[^>]*>(.*?)</a>"#)?;
     let re_snippet = ddg_re(r#"<a[^>]*class="result__snippet"[^>]*>(.*?)</a>"#)?;
     let re_tag = ddg_re(r"<[^>]*>")?;
 
     // Try DoH-based direct connection first, fallback to default client.
-    let client = match build_direct_client("html.duckduckgo.com", 443).await {
+    let client = match build_direct_client(host, port).await {
         Ok(c) => c,
         Err(_) => reqwest::Client::builder()
             .user_agent("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36")
@@ -94,11 +124,24 @@ pub async fn websearch(query: &str, num_results: usize) -> ToolResult<Vec<Search
 
     let params = [("q", query)];
     let resp = client
-        .post("https://html.duckduckgo.com/html/")
+        .post(endpoint)
         .form(&params)
         .send()
         .await
         .map_err(|e| ToolError::WebError(format!("search request failed: {e}")))?;
+
+    // 必须检查状态码：DuckDuckGo 对疑似自动化请求返回 202 并附反爬页面，
+    // 该页面能正常「解析」但不含任何结果。不检查就会把上游拒绝误报成
+    // 「no results found」，调用方无法区分「确实无结果」与「被限流/拦截」。
+    //
+    // 注意必须是精确 200 而不是 is_success()：DuckDuckGo 反爬返回 202，
+    // 而 202 属于 2xx，is_success() 会放行，反爬页照样被误报成零结果。
+    let status = resp.status();
+    if status != reqwest::StatusCode::OK {
+        return Err(ToolError::WebError(format!(
+            "search endpoint returned HTTP {status} (likely rate-limited or blocked)"
+        )));
+    }
 
     let html =
         resp.text().await.map_err(|e| ToolError::WebError(format!("read response failed: {e}")))?;
@@ -472,5 +515,107 @@ mod tests {
             "content_type should be HTML, got {:?}",
             result.content_type
         );
+    }
+
+    // ── HTTP 错误处理（本地回环，不依赖外网） ─
+
+    /// 起一个只回固定状态行的本地 HTTP 服务器，返回其端口。
+    async fn spawn_status_server(status_line: &'static str) -> u16 {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let port = listener.local_addr().expect("addr").port();
+        tokio::spawn(async move {
+            while let Ok((mut sock, _)) = listener.accept().await {
+                let body = "<html><body>error page</body></html>";
+                let resp = format!(
+                    "HTTP/1.1 {status_line}\r\nContent-Type: text/html\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                let _ = sock.read(&mut [0u8; 1024]).await;
+                let _ = sock.write_all(resp.as_bytes()).await;
+                let _ = sock.flush().await;
+            }
+        });
+        port
+    }
+
+    #[tokio::test]
+    async fn test_webfetch_rejects_error_status_instead_of_returning_error_page() {
+        // 404 的响应体是 HTML 错误页：若不检查状态码，会被当作正常内容返回
+        let port = spawn_status_server("404 Not Found").await;
+        let url = format!("http://127.0.0.1:{port}/missing");
+        let err = webfetch(&url).await.expect_err("404 必须报错而非返回错误页内容");
+        let msg = err.to_string();
+        assert!(msg.contains("404"), "错误信息应含状态码，实际: {msg}");
+    }
+
+    #[tokio::test]
+    async fn test_webfetch_accepts_ok_status() {
+        let port = spawn_status_server("200 OK").await;
+        let url = format!("http://127.0.0.1:{port}/ok");
+        let result = webfetch(&url).await.expect("200 应正常返回");
+        assert!(
+            result.content.contains("error page"),
+            "200 响应体应被正常提取，实际: {}",
+            result.content
+        );
+    }
+
+    #[tokio::test]
+    async fn test_webfetch_rejects_server_error() {
+        let port = spawn_status_server("500 Internal Server Error").await;
+        let url = format!("http://127.0.0.1:{port}/boom");
+        let err = webfetch(&url).await.expect_err("500 必须报错");
+        assert!(err.to_string().contains("500"), "实际: {err}");
+    }
+
+    #[tokio::test]
+    async fn test_websearch_reports_block_status_instead_of_no_results() {
+        // 202 是 DuckDuckGo 的反爬响应：响应体是能解析但无结果的 HTML。
+        // 若不检查状态码，调用方只会看到「no results found」，无从判断
+        // 是「确实没搜到」还是「被上游拦截」。
+        let port = spawn_status_server("202 Accepted").await;
+        let endpoint = format!("http://127.0.0.1:{port}/html");
+        let err = websearch_via(&endpoint, "127.0.0.1", port, "rust", 3)
+            .await
+            .expect_err("202 必须报错而非返回零结果");
+        let msg = err.to_string();
+        assert!(msg.contains("202"), "错误信息应含状态码，实际: {msg}");
+    }
+
+    #[tokio::test]
+    async fn test_websearch_parses_results_from_ok_response() {
+        let port = spawn_ddg_result_server().await;
+        let endpoint = format!("http://127.0.0.1:{port}/html");
+        let results = websearch_via(&endpoint, "127.0.0.1", port, "rust", 3)
+            .await
+            .expect("200 且含结果时应正常解析");
+        assert_eq!(results.len(), 1, "应解析出 1 条结果");
+        assert_eq!(results[0].title, "Rust Language");
+        assert_eq!(results[0].url, "https://www.rust-lang.org/");
+    }
+
+    /// 返回一段符合 DuckDuckGo 结果结构的 HTML，验证解析路径未被状态码检查误伤
+    async fn spawn_ddg_result_server() -> u16 {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let port = listener.local_addr().expect("addr").port();
+        tokio::spawn(async move {
+            while let Ok((mut sock, _)) = listener.accept().await {
+                let body = concat!(
+                    r#"<div class="result"><a class="result__a" href="https://www.rust-lang.org/">"#,
+                    "Rust Language</a>",
+                    r#"<a class="result__snippet">A language empowering everyone</a></div>"#
+                );
+                let resp = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                let _ = sock.read(&mut [0u8; 1024]).await;
+                let _ = sock.write_all(resp.as_bytes()).await;
+                let _ = sock.flush().await;
+            }
+        });
+        port
     }
 }

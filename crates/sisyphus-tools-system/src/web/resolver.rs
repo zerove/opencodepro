@@ -76,13 +76,24 @@ async fn resolve_via_doh(domain: &str) -> ToolResult<IpAddr> {
 /// Build a reqwest client with DoH-based DNS resolution and direct connection
 /// (no system proxy), bypassing both DNS hijack and HTTP proxy dependency.
 pub async fn build_direct_client(host: &str, port: u16) -> ToolResult<reqwest::Client> {
-    let ip = resolve_via_doh(host).await?;
-    let addr = SocketAddr::new(ip, port);
-    reqwest::Client::builder()
+    // 字面 IP（回环地址、裸 IPv4/IPv6）无法走 DoH 解析。若仍去查 DoH，
+    // 必然失败并回退到**带代理**的客户端，于是本地/内网请求被代理劫持
+    // （表现为莫名其妙的 502）。这类目标本就不需要 DNS，直接 no_proxy 连接。
+    let client = reqwest::Client::builder()
         .user_agent("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36")
         .no_proxy()
+        .timeout(std::time::Duration::from_secs(20));
+    if let Ok(ip) = host.parse::<std::net::IpAddr>() {
+        return client
+            .resolve(host, SocketAddr::new(ip, port))
+            .build()
+            .map_err(|e| ToolError::WebError(format!("failed to build direct client: {e}")));
+    }
+
+    let ip = resolve_via_doh(host).await?;
+    let addr = SocketAddr::new(ip, port);
+    client
         .resolve(host, addr)
-        .timeout(std::time::Duration::from_secs(20))
         .build()
         .map_err(|e| ToolError::WebError(format!("failed to build direct client: {e}")))
 }
