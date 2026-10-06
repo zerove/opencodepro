@@ -1235,4 +1235,97 @@ mod tests {
             }
         }
     }
+
+    /// 把 axum 的路径参数语法转为 OpenAPI 的
+    ///
+    /// `/api/sessions/:id` → `/api/sessions/{id}`
+    fn normalize_axum_path(path: &str) -> String {
+        let mut out = String::with_capacity(path.len() + 4);
+        let mut chars = path.chars().peekable();
+        while let Some(c) = chars.next() {
+            if c != ':' {
+                out.push(c);
+                continue;
+            }
+            let mut name = String::new();
+            while let Some(&n) = chars.peek() {
+                if n == '/' || n == '}' {
+                    break;
+                }
+                name.push(n);
+                chars.next();
+            }
+            out.push('{');
+            out.push_str(&name);
+            out.push('}');
+        }
+        out
+    }
+
+    /// OpenAPI 必须覆盖所有对外暴露的路由。
+    ///
+    /// 未收录的端点在 Swagger UI 里完全不可见 —— 开发者看到的是
+    /// 「接口不存在」，而不是「文档漏了」。这不是文档洁癖问题：
+    /// 上一轮就发现 `/api/events` 整条 SSE 链路从未进过文档。
+    #[tokio::test]
+    async fn every_route_is_documented() {
+        use axum::routing::MethodRouter;
+        let _ = std::any::type_name::<MethodRouter>();
+
+        let doc = doc().await;
+        let paths = doc.pointer("/paths").and_then(Value::as_object).expect("paths");
+
+        // 从路由表读取真实注册的路径
+        let mod_src = include_str!("http/mod.rs");
+        let mut routes: Vec<(String, String)> = Vec::new();
+        for line in mod_src.lines() {
+            let line = line.trim();
+            let Some(rest) = line.strip_prefix(".route(") else {
+                continue;
+            };
+            let Some((path, method)) = rest.split_once(',') else {
+                continue;
+            };
+            let path = path.trim().trim_matches('"').to_string();
+            // nest_service / ServeDir 不是 API 端点
+            if path.starts_with("/dashboard") || path.is_empty() {
+                continue;
+            }
+            let method =
+                method.trim().split(['(', ',']).next().unwrap_or_default().trim().to_uppercase();
+            routes.push((method, path));
+        }
+        assert!(
+            routes.len() > 30,
+            "路由解析明显失败，只读到 {} 条",
+            routes.len()
+        );
+
+        // OpenAPI 不描述文档自身
+        const DOC_ROUTES: [&str; 2] = ["/openapi.json", "/swagger-ui/*rest"];
+
+        let undocumented: Vec<String> = routes
+            .iter()
+            .filter(|(_, p)| !DOC_ROUTES.contains(&p.as_str()))
+            .filter(|(method, path)| {
+                // axum 路径参数 `:id` → OpenAPI 路径参数 `{id}`。
+                // 必须成对替换：只把 `:` 换成 `{` 会得到 `{id` 这种残缺形式，
+                // 与文档永远匹配不上，测试会误报一堆假阳性。
+                let oa_path = normalize_axum_path(path);
+                let m_lower = method.to_lowercase();
+                !paths.contains_key(&oa_path)
+                    || !paths[&oa_path]
+                        .as_object()
+                        .map(|op| op.contains_key(&m_lower))
+                        .unwrap_or(false)
+            })
+            .map(|(m, p)| format!("{m} {p}"))
+            .collect();
+
+        assert!(
+            undocumented.is_empty(),
+            "以下路由未收录进 OpenAPI（Swagger UI 中不可见）:\n  {}",
+            undocumented.join("\n  ")
+        );
+    }
 }
