@@ -520,6 +520,7 @@ pub(super) fn render_confirm_dialog(
     let question = match target {
         super::ConfirmTarget::Session => "Delete this session?",
         super::ConfirmTarget::Todo => "Delete this todo?",
+        super::ConfirmTarget::Workspace => "Delete this workspace?",
     };
 
     let text = Text::from(vec![

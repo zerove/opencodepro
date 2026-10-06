@@ -3,7 +3,8 @@ pub(crate) mod renders;
 
 use crossterm::event::{KeyCode, KeyEvent};
 
-use super::{App, LogEntry};
+use super::background::spawn_delete_workspace;
+use super::{App, LogEntry, ToastKind};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Dialog {
@@ -33,6 +34,7 @@ pub(crate) enum Dialog {
 pub(crate) enum ConfirmTarget {
     Session,
     Todo,
+    Workspace,
 }
 
 /// 对话框打开时处理按键事件。
@@ -95,6 +97,14 @@ pub fn handle_dialog_key(key: KeyEvent, app: &mut App) {
                             if crate::tools::todo_delete(&db, &id).is_ok() {
                                 app.add_log(LogEntry::Success(format!("Deleted todo {id}")));
                                 app.todo_dirty = true;
+                            }
+                        },
+                        ConfirmTarget::Workspace => {
+                            // 工作区删除走异步后台任务，`id` 即目标工作区 id
+                            app.add_toast(ToastKind::Info, format!("Deleting workspace {id}..."));
+                            if app.pending_op.is_none() {
+                                app.pending_op =
+                                    Some(spawn_delete_workspace(app.bridge_address.clone(), id));
                             }
                         },
                     }

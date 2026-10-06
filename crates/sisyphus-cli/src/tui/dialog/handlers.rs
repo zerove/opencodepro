@@ -1,9 +1,9 @@
 use crossterm::event::{KeyCode, KeyEvent};
 
 use super::super::background::{
-    spawn_delete_workspace, spawn_dev_agent, spawn_execute_sop, spawn_fetch_available_skills,
-    spawn_fetch_installed_skills, spawn_install_skill, spawn_list_sops, spawn_list_workspaces,
-    spawn_switch_workspace, spawn_uninstall_skill,
+    spawn_dev_agent, spawn_execute_sop, spawn_fetch_available_skills, spawn_fetch_installed_skills,
+    spawn_install_skill, spawn_list_sops, spawn_list_workspaces, spawn_switch_workspace,
+    spawn_uninstall_skill,
 };
 use super::super::{App, DevFocus, LogEntry, ToastKind, View};
 use super::{ConfirmTarget, Dialog};
@@ -40,13 +40,10 @@ pub(super) fn handle_workspace_list_key(code: KeyCode, app: &mut App) {
             }
         },
         KeyCode::Char('d') | KeyCode::Delete => {
+            // 删除工作区可能连带丢失未提交内容，需二次确认
             if let Some(ws) = app.workspaces.get(app.workspace_sel) {
-                let name = ws.name.clone();
-                let id = ws.id.clone();
-                app.add_toast(ToastKind::Info, format!("Deleting workspace: {}...", name));
-                if app.pending_op.is_none() {
-                    app.pending_op = Some(spawn_delete_workspace(app.bridge_address.clone(), id));
-                }
+                app.confirm_delete = Some(ws.id.clone());
+                app.dialog = Some(Dialog::ConfirmDelete(ConfirmTarget::Workspace));
             }
         },
         _ => {},

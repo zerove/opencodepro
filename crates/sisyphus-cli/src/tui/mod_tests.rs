@@ -264,6 +264,34 @@ fn press(app: &mut App, code: KeyCode) {
 }
 
 #[tokio::test]
+async fn test_delete_workspace_requires_confirmation() {
+    let mut app = App::new(PathBuf::from("/tmp/nonexistent"), "addr".into());
+    app.workspaces = vec![crate::tui::app::WorkspaceEntry {
+        id: "ws-1".to_string(),
+        name: "my-workspace".to_string(),
+        project_id: "proj-1".to_string(),
+    }];
+
+    // 按 d 只应进入确认状态，不得直接派发删除后台任务
+    app.dialog = Some(dialog::Dialog::WorkspaceList);
+    press(&mut app, KeyCode::Char('d'));
+    assert!(
+        matches!(app.dialog, Some(dialog::Dialog::ConfirmDelete(_))),
+        "按 d 应进入确认状态而非直接删除工作区"
+    );
+    assert_eq!(app.confirm_delete.as_deref(), Some("ws-1"));
+    assert!(
+        app.pending_op.is_none(),
+        "确认前不得派发删除工作区的后台任务"
+    );
+
+    // 按 n 取消：不应派发任务
+    press(&mut app, KeyCode::Char('n'));
+    assert!(app.dialog.is_none());
+    assert!(app.pending_op.is_none(), "取消后不得派发删除任务");
+}
+
+#[tokio::test]
 async fn test_toggle_todo_empty_no_panic() {
     let mut app = App::new(PathBuf::from("/tmp/nonexistent"), "addr".into());
     app.todo_dirty = true;
