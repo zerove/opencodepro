@@ -22,7 +22,8 @@ pub struct SisyphusKernel {
 | 方法 | 说明 |
 |--------|-------------|
 | `execute_goal(goal, sop_id)` | 完整流水线：合成 → 执行 → 认知 → 演进 |
-| `execute_goals(goals)` | 并发执行多个目标，返回组合输出 |
+| `execute_goals(goals)` | 并发执行多个目标，返回组合输出（不转发事件） |
+| `execute_goals_with_events(goals, event_tx)` | 同上，但把各子图执行事件转发到 `event_tx`，供 SSE 订阅 |
 | `execute_with_cognition(graph, start, sop_id, ctx)` | 多迭代循环：预测 → 执行 → 反思 → 演进 |
 | `load_sop(sop_id)` | 从状态存储加载已保存的 SOP 图 |
 | `save_sop(sop_id, graph)` | 将 SOP 图持久化到状态存储 |

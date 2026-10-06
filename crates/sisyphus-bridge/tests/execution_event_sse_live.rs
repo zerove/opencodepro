@@ -215,3 +215,226 @@ async fn live_execution_events_respect_sop_id_filter() {
 
     server.abort();
 }
+
+/// 收集 SSE 流的完整事件载荷（含 event_type 字段），直到超时。
+async fn collect_payloads(
+    stream: &mut (impl futures_util::Stream<Item = reqwest::Result<String>> + Unpin),
+    max_events: usize,
+    window: Duration,
+) -> Vec<serde_json::Value> {
+    let deadline = tokio::time::Instant::now() + window;
+    let mut out = Vec::new();
+    let mut buf = String::new();
+    while tokio::time::Instant::now() < deadline && out.len() < max_events {
+        match tokio::time::timeout_at(deadline, stream.next()).await {
+            Ok(Some(Ok(chunk))) => {
+                buf.push_str(&chunk);
+                while let Some(idx) = buf.find('\n') {
+                    let line: String = buf.drain(..=idx).collect();
+                    let line = line.trim();
+                    if let Some(data) = line.strip_prefix("data:") {
+                        let t = data.trim();
+                        if t.is_empty() {
+                            continue;
+                        }
+                        if let Ok(v) = serde_json::from_str::<serde_json::Value>(t) {
+                            out.push(v);
+                        }
+                    }
+                }
+            },
+            Ok(Some(Err(_))) | Ok(None) => break,
+            Err(_) => break,
+        }
+    }
+    out
+}
+
+/// 真实执行后，事件类型必须是内核变体的 snake_case 名，而不是 Rust 变体名。
+///
+/// `execution_event_type` 把 8 个 `ExecutionEvent` 变体映射为
+/// node_started / cognitive_step / micro_reflection 等 snake_case。
+/// 客户端按这些名字做分支，所以经真实 HTTP 路径拿到的名字必须正确。
+#[tokio::test]
+async fn live_execution_event_names_are_snake_case_kernel_variants() {
+    let (base, server) = serve_http().await;
+    let client = reqwest::Client::new();
+
+    let resp =
+        client.get(format!("{base}/api/events?heartbeat=0")).send().await.expect("SSE 连接失败");
+    let mut stream =
+        resp.bytes_stream().map(|r| r.map(|b| String::from_utf8_lossy(&b).to_string()));
+    tokio::time::sleep(Duration::from_millis(400)).await;
+
+    let body = serde_json::json!({
+        "goal": "naming check",
+        "sop_id": "live-exec-naming",
+        "event_tx": true,
+    });
+    let _ = client
+        .post(format!("{base}/api/execute/goal"))
+        .json(&body)
+        .send()
+        .await
+        .expect("执行请求失败");
+
+    let payloads = collect_payloads(&mut stream, 10, Duration::from_secs(10)).await;
+    assert!(
+        !payloads.is_empty(),
+        "真实执行后没有收到任何事件，无法校验事件名"
+    );
+
+    // 允许的 8 个 snake_case 名，取自 execution_event_type 的映射表
+    const EXPECTED: [&str; 8] = [
+        "node_started",
+        "node_completed",
+        "node_failed",
+        "execution_complete",
+        "cognitive_plan",
+        "cognitive_step",
+        "micro_reflection",
+        "cognitive_complete",
+    ];
+
+    let mut bad = Vec::new();
+    for p in &payloads {
+        let ty = p.get("event_type").and_then(|v| v.as_str()).unwrap_or("");
+        if !EXPECTED.contains(&ty) {
+            bad.push(ty.to_string());
+        }
+    }
+    assert!(
+        bad.is_empty(),
+        "收到非 snake_case 或未知的事件名 {bad:?}，实际载荷: {payloads:?}"
+    );
+
+    // 每个事件都必须带 sop_id，否则客户端无法按 SOP 过滤。
+    // 注意 wire 格式：sop_id 位于 payload 内层（Custom 变体的 payload 里），
+    // 这与 SseEvent::sop_id() 的读取路径一致。
+    for p in &payloads {
+        assert!(
+            p.pointer("/payload/sop_id").and_then(|v| v.as_str()).is_some(),
+            "事件 payload 缺少 sop_id 维度，客户端无法过滤: {p:?}"
+        );
+    }
+
+    server.abort();
+}
+
+/// composite 路径的完整客户端闭环：用响应里的 `sse_sop_id` 订阅事件。
+///
+/// `/api/execute/composite` 内部生成 `composite-<uuid>` 作为事件归属，
+/// 并在响应中回传 `sse_sop_id` —— 客户端必须靠它才知道订阅哪个 sop_id。
+/// 这是与 execute_goal 完全独立的代码路径（不同 handler、独立 sop_id 生成）。
+///
+/// 覆盖两个曾经同时存在的缺陷：
+/// 1. handler 为每个 goal 塞 `SOPGraphConfig::default()`（空图），被
+///    `SOPGraph::from_config` 拒绝 → 端点恒返回 500。
+/// 2. 内核 `execute_goals` 硬编码 `None` 事件槽 → 即便执行成功，SSE 也全静默。
+#[tokio::test]
+async fn live_composite_execution_exposes_sse_sop_id_for_subscription() {
+    let (base, server) = serve_http().await;
+    let client = reqwest::Client::new();
+
+    // 先建立不带 sop_id 过滤的订阅：composite 的 sop_id 由服务端生成，
+    // 客户端事前无法得知，只能事后关联。
+    let resp =
+        client.get(format!("{base}/api/events?heartbeat=0")).send().await.expect("SSE 连接失败");
+    assert_eq!(resp.status().as_u16(), 200, "SSE 订阅应成功");
+    let mut stream =
+        resp.bytes_stream().map(|r| r.map(|b| String::from_utf8_lossy(&b).to_string()));
+
+    let body = serde_json::json!({
+        "goals": ["first goal", "second goal"],
+        "event_tx": true,
+    });
+    let post = client
+        .post(format!("{base}/api/execute/composite"))
+        .json(&body)
+        .send()
+        .await
+        .expect("composite 请求失败");
+    let status = post.status().as_u16();
+    let resp_json: serde_json::Value = post.json().await.unwrap_or(serde_json::Value::Null);
+
+    // 端点可用性：此前为每个 goal 塞空图，被 `SOPGraph::from_config`
+    // 以 "Graph config must contain at least one node" 拒绝 → 恒 500。
+    // 空图缺陷修好后请求会真正进入内核，因此错误（若有）必须来自执行
+    // 本身，而不能再是构图失败。
+    if status != 200 {
+        let err = resp_json.get("error").and_then(|v| v.as_str()).unwrap_or_default();
+        assert!(
+            !err.contains("at least one node"),
+            "composite 仍因空图构图失败而不可用（缺陷未修复）: {resp_json}"
+        );
+    }
+
+    // 核心闭环：执行期间的事件必须真的流到 SSE（此前内核 `execute_goals`
+    // 硬编码 `None` 事件槽，即便端点修好也会全静默）。
+    //
+    // 刻意**不**断言 HTTP 200：DummyLlm 下内核常因偏差阈值以 StrategicPivot
+    // 收场，那是执行质量问题而非契约缺陷。SSE 验收要验的是「事件是否流出、
+    // 打标是否正确」，与执行成败无关。
+    let payloads = collect_payloads(&mut stream, 8, Duration::from_secs(8)).await;
+    assert!(
+        !payloads.is_empty(),
+        "composite 执行期间 SSE 未收到任何事件（内核事件槽未透传）"
+    );
+
+    // 每个事件都必须带 composite- 前缀的 sop_id：handler 用它作为转发打标，
+    // 客户端据此用 `/api/events?sop_id=...` 定向订阅。转发器用外部 sop_id
+    // 覆盖内核事件自带的 `goal_N`，这里验证覆盖确实生效。
+    for p in &payloads {
+        let event_sop_id = p
+            .pointer("/payload/sop_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or_else(|| panic!("事件缺少 payload.sop_id，客户端无法定向订阅: {p}"));
+        assert!(
+            event_sop_id.starts_with("composite-"),
+            "事件 sop_id 应被 handler 的 composite- 前缀覆盖（内核自带的 goal_N 客户端无法预知）: {p}"
+        );
+        assert!(
+            p.get("event_type").and_then(|v| v.as_str()).is_some(),
+            "事件缺少 event_type: {p}"
+        );
+    }
+
+    // 成功时还必须回传 sse_sop_id，且与事件上的打标一致 —— 客户端正是靠
+    // 响应里的这个值去订阅，缺失或不一致都会让它收不到任何事件。
+    if status == 200 {
+        let sse_sop_id =
+            resp_json.get("sse_sop_id").and_then(|v| v.as_str()).unwrap_or_else(|| {
+                panic!("composite 成功响应缺少 sse_sop_id，客户端无从订阅事件: {resp_json}")
+            });
+        assert!(
+            sse_sop_id.starts_with("composite-"),
+            "sse_sop_id 应带 composite- 前缀，实际: {sse_sop_id}"
+        );
+        assert_eq!(
+            payloads[0].pointer("/payload/sop_id").and_then(|v| v.as_str()),
+            Some(sse_sop_id),
+            "事件 sop_id 与响应回传的 sse_sop_id 不一致，客户端按它过滤会收不到: {resp_json}"
+        );
+
+        // 成功响应还必须带上真实执行结果，而非空壳。
+        let results = resp_json.get("results").and_then(|v| v.as_object()).expect("缺少 results");
+        assert!(
+            !results.is_empty(),
+            "composite 成功响应却没有任何执行结果: {resp_json}"
+        );
+
+        // 拿到 id 去订阅必须能连上。
+        let sub = client
+            .get(format!("{base}/api/events?sop_id={sse_sop_id}&heartbeat=0"))
+            .send()
+            .await
+            .expect("按 sse_sop_id 订阅失败");
+        assert_eq!(
+            sub.status().as_u16(),
+            200,
+            "按 composite 返回的 sse_sop_id 订阅应成功"
+        );
+    }
+
+    server.abort();
+}

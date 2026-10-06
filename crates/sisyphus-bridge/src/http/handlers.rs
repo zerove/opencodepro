@@ -515,23 +515,16 @@ pub(super) async fn execute_composite_handler(
 
     let project_id = workspace.project_id.or(req.project_id);
 
-    let composite = sisyphus_types::CompositeGraph {
-        graphs: req
-            .goals
-            .into_iter()
-            .map(|g| (g.clone(), sisyphus_types::SOPGraphConfig::default()))
-            .collect(),
-        dependencies: vec![],
-        execution_order: vec![],
-    };
+    // 此前这里为每个 goal 硬塞 `SOPGraphConfig::default()`（空图），
+    // 而 `SOPGraph::from_config` 拒绝零节点图，因此该端点在生产路径上
+    // **永远** 返回 500。改为复用内核的合成管线：每个 goal 经
+    // `synthesize_composite` 生成真实 SOP 图，再交由 `execute_composite`
+    // 按依赖顺序执行。
+    let goals = req.goals;
+    let goal_refs: Vec<&str> = goals.iter().map(String::as_str).collect();
+    let project = project_id.as_deref().unwrap_or("default");
 
-    let result = kernel
-        .execute_composite(
-            &composite,
-            event_tx.clone(),
-            project_id.as_deref().unwrap_or("default"),
-        )
-        .await;
+    let result = kernel.execute_goals_with_events(&goal_refs, project, event_tx.clone()).await;
 
     // 等待转发器排空，确保执行末尾事件送达（理由同 execute_goal）
     drop(event_tx);

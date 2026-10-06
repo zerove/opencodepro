@@ -17,6 +17,20 @@ impl SisyphusKernel {
         goals: &[&str],
         project_id: &str,
     ) -> Result<CompositeOutput, CoreError> {
+        self.execute_goals_with_events(goals, project_id, None).await
+    }
+
+    /// Execute goals, forwarding every subgraph's events to `event_tx`.
+    ///
+    /// [`Self::execute_goals`] is the fire-and-forget form: it hardcodes
+    /// `None` for the event sink, so subscribers see nothing. REST clients
+    /// that need live progress must use this variant.
+    pub async fn execute_goals_with_events(
+        &self,
+        goals: &[&str],
+        project_id: &str,
+        event_tx: Option<mpsc::UnboundedSender<ExecutionEvent>>,
+    ) -> Result<CompositeOutput, CoreError> {
         let ctx = ExecutionContext::new();
 
         let composite = sisyphus_intel::synthesize_composite(
@@ -28,7 +42,7 @@ impl SisyphusKernel {
         .await
         .map_err(|e| CoreError::Internal(e.to_string()))?;
 
-        self.execute_composite(&composite, None, project_id).await
+        self.execute_composite(&composite, event_tx, project_id).await
     }
 
     /// 共同准备阶段：意图分析 → 经验检索 → 合成 → Swarm 审计 → 逻辑仿真门禁。
