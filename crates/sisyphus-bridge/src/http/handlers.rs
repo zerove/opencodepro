@@ -1353,6 +1353,56 @@ pub(super) async fn health_ready_handler(State(state): State<RestApiState>) -> i
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
+mod execution_event_tx_tests {
+    use super::*;
+    use sisyphus_types::ExecutionEvent;
+
+    /// 当前 `execute_goal_handler` / `execute_composite_handler` 的写法：
+    /// 只取 `unbounded_channel()` 的 sender，receiver 立即被丢弃。
+    /// 本测试固定该行为的语义后果，作为接线前的诊断基线。
+    #[test]
+    fn dropping_receiver_silently_swallows_execution_events() {
+        let tx = mpsc::unbounded_channel::<ExecutionEvent>().0;
+
+        // receiver 已随 tuple 丢弃，send 返回 Err —— 事件被静默吞掉，
+        // 调用方无法察觉，且不会 panic 或记录日志。
+        let res = tx.send(ExecutionEvent::NodeStarted {
+            node_name: "fetch".to_string(),
+        });
+        assert!(
+            res.is_err(),
+            "丢弃 receiver 后 send 必须失败，否则事件流向不明"
+        );
+
+        // 后续事件同样静默失败，说明这是稳定的丢失而非偶发
+        assert!(tx
+            .send(ExecutionEvent::NodeCompleted {
+                node_name: "fetch".to_string(),
+                output: sisyphus_types::NodeOutput::from(serde_json::json!("ok")),
+                fuel_consumed: 0,
+                duration_ms: 1,
+            })
+            .is_err());
+    }
+
+    /// 保留 receiver 时事件可被消费 —— 与上一测试对照，说明缺陷在丢弃而非发送端。
+    #[tokio::test]
+    async fn retained_receiver_receives_execution_events() {
+        let (tx, mut rx) = mpsc::unbounded_channel::<ExecutionEvent>();
+        tx.send(ExecutionEvent::NodeStarted {
+            node_name: "fetch".to_string(),
+        })
+        .expect("receiver 存活时 send 应成功");
+
+        let got = rx.recv().await.expect("应收到事件");
+        match got {
+            ExecutionEvent::NodeStarted { node_name } => assert_eq!(node_name, "fetch"),
+            other => panic!("期望 NodeStarted，实际: {other:?}"),
+        }
+    }
+}
+
+#[cfg(test)]
 mod health_deep_tests {
     use super::health_deep_assess;
     use std::path::PathBuf;
