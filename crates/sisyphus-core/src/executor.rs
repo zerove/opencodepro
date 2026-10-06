@@ -269,32 +269,72 @@ impl Executor {
             ctx.set_result(name.clone(), output.clone());
 
             if let Some(ref sup) = supervisor {
+                // 必须先记录当前节点，再让 supervisor 评估。
+                // supervisor 通过 `ctx.trace` 重建执行轨迹来做偏差判定，
+                // 旧顺序（先 evaluate 后 push）导致 evaluate 时 trace 恒为空
+                // ——首个节点必然如此——`StandardReflector::parse_trace` 得不到
+                // 任何记录，走无记录兜底分支（reflect.rs:735）把**成功**执行
+                // 判成 0.1 偏差，越过 High 档 0.01 阈值后无条件 pivot。
+                // 实测 sisyphus-tests 的 5 个集成用例（test_full_pipeline、
+                // test_dag_execution、test_cognitive_loop、
+                // test_wasm_tool_chain、test_concurrent_execution）即以此失败。
+                ctx.push_trace_point(sisyphus_types::TracePoint {
+                    node_name: name.clone(),
+                    timestamp: std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs(),
+                    output_summary: output.to_string(),
+                    deviation_score: 0.0,
+                    status: Some(if failure.is_some() { "error" } else { "ok" }.into()),
+                });
+
                 match sup.evaluate(&name, &output, Arc::clone(&ctx)).await {
                     Ok(SupervisorDecision::Continue { deviation }) => {
                         tracing::debug!(node = %name, deviation, "Supervisor approved execution to continue");
-                        ctx.push_trace_point(sisyphus_types::TracePoint {
-                            node_name: name.clone(),
-                            timestamp: std::time::SystemTime::now()
-                                .duration_since(std::time::UNIX_EPOCH)
-                                .unwrap_or_default()
-                                .as_secs(),
-                            output_summary: output.to_string(),
-                            deviation_score: deviation,
-                            status: Some(if failure.is_some() { "error" } else { "ok" }.into()),
-                        });
+                        // 轨迹点已在 evaluate 之前写入（见上），此处只回填
+                        // supervisor 判定的偏差值，避免同节点出现两条记录。
+                        if let Ok(mut trace) = ctx.trace.write() {
+                            if let Some(point) = trace.iter_mut().rev().find(|p| {
+                                p.node_name == name && p.status.as_deref() != Some("pivot")
+                            }) {
+                                point.deviation_score = deviation;
+                            }
+                        }
                     },
                     Ok(SupervisorDecision::Pivot { reason, .. }) => {
                         tracing::warn!(node = %name, reason = %reason, "Strategic Pivot detected by supervisor! Aborting all nodes.");
-                        ctx.push_trace_point(sisyphus_types::TracePoint {
-                            node_name: name.clone(),
-                            timestamp: std::time::SystemTime::now()
-                                .duration_since(std::time::UNIX_EPOCH)
-                                .unwrap_or_default()
-                                .as_secs(),
-                            output_summary: format!("PIVOT: {}", reason),
-                            deviation_score: 1.0, // Maximum deviation
-                            status: Some("pivot".into()),
-                        });
+                        // 就地改写 evaluate 之前写入的那条记录：把状态标记为
+                        // pivot 并记录原因，不追加第二条（同上，避免重复）。
+                        let marked = if let Ok(mut trace) = ctx.trace.write() {
+                            trace
+                                .iter_mut()
+                                .rev()
+                                .find(|p| {
+                                    p.node_name == name && p.status.as_deref() != Some("pivot")
+                                })
+                                .map(|p| {
+                                    p.output_summary = format!("PIVOT: {}", reason);
+                                    p.deviation_score = 1.0; // Maximum deviation
+                                    p.status = Some("pivot".into());
+                                })
+                                .is_some()
+                        } else {
+                            false
+                        };
+                        if !marked {
+                            // 理论上不会发生（evaluate 前刚写入）；保底补写以免丢失 pivot 事实。
+                            ctx.push_trace_point(sisyphus_types::TracePoint {
+                                node_name: name.clone(),
+                                timestamp: std::time::SystemTime::now()
+                                    .duration_since(std::time::UNIX_EPOCH)
+                                    .unwrap_or_default()
+                                    .as_secs(),
+                                output_summary: format!("PIVOT: {}", reason),
+                                deviation_score: 1.0,
+                                status: Some("pivot".into()),
+                            });
+                        }
                         join_set.abort_all();
                         return Err(CoreError::StrategicPivot(reason));
                     },

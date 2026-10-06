@@ -1,8 +1,10 @@
-use crate::reflect::Reflector;
+use crate::reflect::{RecordedNode, Reflector};
 use crate::simulation::SimulationResult;
 use async_trait::async_trait;
 use sisyphus_types::SOPGraph;
-use sisyphus_types::{ExecutionContext, NodeOutput, RuntimeSupervisor, SupervisorDecision};
+use sisyphus_types::{
+    ExecutionContext, NodeOutput, RuntimeSupervisor, SupervisorDecision, TracePoint,
+};
 use std::sync::Arc;
 
 /// 偏差判定的**绝对**阈值下限。
@@ -56,11 +58,29 @@ impl SisyphusSupervisor {
     }
 
     /// 从当前执行上下文构造轨迹的辅助函数。
+    ///
+    /// **必须走 serde 序列化**：下游 `StandardReflector::parse_trace`
+    /// （reflect.rs:622）对每行做 `serde_json::from_str`，解析失败的行
+    /// 被 `filter_map(..., ok())` **静默丢弃**。手工 `format!` 拼串在
+    /// `output_summary` 含引号、反斜杠或换行时会产出非法 JSON，整条记录消失；
+    /// 一旦所有记录都被丢弃，`StandardReflector` 走无记录兜底分支
+    /// （reflect.rs:735），把**成功**执行判成 0.1 偏差，恰好越过 High 档
+    /// 0.01 阈值，导致节点被无条件 pivot。实测 sisyphus-tests 的 5 个集成
+    /// 用例（test_full_pipeline 等）即以此失败。
     fn build_trace(&self, ctx: &ExecutionContext) -> String {
         let trace_points = ctx.trace.read().map(|t| t.clone()).unwrap_or_default();
-        let mut lines = Vec::new();
+        render_trace(&trace_points)
+    }
+}
 
-        for point in trace_points {
+/// 把轨迹点渲染为 `parse_trace` 可逐行解析的 JSONL。
+///
+/// 抽成自由函数以便单测直接覆盖，无需构造 `SisyphusSupervisor`
+/// （其构造需要 `ExperienceBank` 实现，而本 crate 内没有可直接用的）。
+fn render_trace(points: &[TracePoint]) -> String {
+    points
+        .iter()
+        .filter_map(|point| {
             // P0-3 延伸：显式状态字段优先，仅对缺失字段的旧数据
             // 回退到文本嗅探。
             let status = point.status.clone().unwrap_or_else(|| {
@@ -73,13 +93,16 @@ impl SisyphusSupervisor {
                 }
             });
 
-            lines.push(format!(
-                r#"{{"node": "{}", "status": "{}", "output": "{}"}}"#,
-                point.node_name, status, point.output_summary
-            ));
-        }
-        lines.join("\n")
-    }
+            // 字段名必须与 `RecordedNode` 完全一致，否则 parse_trace 丢行。
+            serde_json::to_string(&RecordedNode {
+                node: point.node_name.clone(),
+                status,
+                output: point.output_summary.clone(),
+            })
+            .ok()
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 #[async_trait]
@@ -171,7 +194,77 @@ impl RuntimeSupervisor for SisyphusSupervisor {
 
 #[cfg(test)]
 mod tests {
-    use super::{scaled_deviation_threshold, MIN_EFFECTIVE_THRESHOLD};
+    use super::{render_trace, scaled_deviation_threshold, MIN_EFFECTIVE_THRESHOLD};
+    use crate::reflect::StandardReflector;
+    use sisyphus_types::TracePoint;
+
+    fn point(name: &str, output: &str, status: Option<&str>) -> TracePoint {
+        TracePoint {
+            node_name: name.into(),
+            timestamp: 0,
+            output_summary: output.into(),
+            deviation_score: 0.0,
+            status: status.map(str::to_string),
+        }
+    }
+
+    /// 回归：`build_trace` 旧实现用 `format!` 手工拼 JSON，
+    /// `output_summary` 含引号/反斜杠/换行时产出非法 JSON，
+    /// `parse_trace` 静默丢行 → `StandardReflector` 无记录兜底判 0.1 偏差
+    /// → 越过 High 档 0.01 阈值 → 无条件 pivot。
+    /// 本测试直接断言「拼出的行必须能被 parse_trace 解析」。
+    #[test]
+    fn test_build_trace_escapes_special_chars() {
+        let nasty = "he said \"hi\" \\ path\nsecond line\ttabbed";
+        let trace = render_trace(&[point("n1", nasty, Some("ok"))]);
+        let records = StandardReflector::parse_trace(&trace);
+
+        assert_eq!(
+            records.len(),
+            1,
+            "含引号/换行的输出必须仍被解析为 1 条记录，实际 {} 条（trace={trace}）",
+            records.len()
+        );
+        assert_eq!(records[0].output, nasty);
+        assert_eq!(records[0].status, "ok");
+        assert_eq!(records[0].node, "n1");
+    }
+
+    /// 多条记录必须全部保留且逐行可解析（旧实现会在含转义字符时整行丢失）。
+    #[test]
+    fn test_render_trace_keeps_all_lines() {
+        let points = vec![
+            point("plain", "hello", Some("ok")),
+            point("quoted", "say \"x\"", Some("ok")),
+            point("backslash", "a\\b", Some("error")),
+            point("unicode", "节点完成 ✅", Some("ok")),
+        ];
+        let trace = render_trace(&points);
+        let records = StandardReflector::parse_trace(&trace);
+        assert_eq!(records.len(), points.len(), "trace={trace}");
+        for (rec, p) in records.iter().zip(points.iter()) {
+            assert_eq!(rec.node, p.node_name);
+            assert_eq!(rec.output, p.output_summary);
+        }
+    }
+
+    /// 解析后的成功记录必须让偏差落到 0，而非无记录兜底的 0.1。
+    /// 这是与阈值的直接契约：High 档 0.01，0.1 必然误触发 pivot。
+    #[test]
+    fn test_rendered_ok_records_yield_zero_deviation() {
+        let trace = render_trace(&[point("n1", "he said \"hi\"", Some("ok"))]);
+        let records = StandardReflector::parse_trace(&trace);
+        assert_eq!(records.len(), 1);
+        let (deviation, _) = StandardReflector::analyze(&records);
+        assert_eq!(
+            deviation, 0.0,
+            "成功记录偏差必须为 0，否则越过 0.01 阈值误触发 pivot"
+        );
+        assert!(
+            deviation <= MIN_EFFECTIVE_THRESHOLD,
+            "偏差 {deviation} 仍会越过 High 档阈值"
+        );
+    }
 
     /// 回归：High 档 base 0.01 叠加 MCTS 低分 0.1 时，
     /// 旧纯乘性公式得到 0.001，偏差判定退化为「任何非零偏差即转向」。
