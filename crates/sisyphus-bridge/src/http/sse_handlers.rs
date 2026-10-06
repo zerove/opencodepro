@@ -179,8 +179,9 @@ impl SseEvent {
 
     /// 提取事件携带的项目 ID（若该变体包含）
     ///
-    /// `Custom` 变体从 payload 读取。当前仅用于判断事件是否携带项目维度
-    /// （广播端点会写入），`?project_id=` 服务端过滤尚未启用，见 `SseQuery`。
+    /// `Custom` 变体从 payload 读取。用于 `?project_id=` 服务端过滤：
+    /// 广播端点会把请求顶层的 `project_id` 注入 payload，订阅方据此判定归属。
+    /// 不携带项目维度的事件不会投递给带项目过滤的订阅者（避免跨项目泄露）。
     pub fn project_id(&self) -> Option<&str> {
         match self {
             SseEvent::Custom { payload, .. } => payload.get("project_id").and_then(|v| v.as_str()),
@@ -522,15 +523,15 @@ fn inject_broadcast_dimensions(
 #[derive(Debug, Deserialize)]
 // 字段豁免说明：`event_type` / `payload` 已被 broadcast_event_handler 使用；
 //   `project_id` / `sop_id` / `session_id` 经 inject_broadcast_dimensions
-//   写入事件 payload，参与 `?sop_id=` / `?session_id=` 服务端过滤
-//   （`project_id` 会一并携带，但 `?project_id=` 过滤尚未生效，见 SseQuery 说明）。
+//   写入事件 payload，参与 `?project_id=` / `?sop_id=` / `?session_id=`
+//   三维服务端过滤。
 #[allow(dead_code)]
 pub struct BroadcastEventRequest {
     /// 事件类型。**已生效**
     pub event_type: String,
     /// 事件载荷。**已生效**
     pub payload: serde_json::Value,
-    /// 项目 ID。**已写入事件 payload**（`?project_id=` 过滤尚未生效）
+    /// 项目 ID。**已生效**：写入事件 payload，参与 `?project_id=` 过滤
     pub project_id: Option<String>,
     /// SOP ID。**已生效**：写入事件 payload，参与 `?sop_id=` 过滤
     pub sop_id: Option<String>,
