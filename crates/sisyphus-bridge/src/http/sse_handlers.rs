@@ -149,6 +149,28 @@ impl SseEvent {
         }
     }
 
+    /// 提取事件携带的 SOP ID（若该变体包含）
+    ///
+    /// 用于 `?sop_id=` 服务端过滤。只有节点/SOP 执行类事件带有此维度，
+    /// 其余变体返回 `None`（**不匹配任何 sop_id 过滤条件**）。
+    pub fn sop_id(&self) -> Option<&str> {
+        match self {
+            SseEvent::NodeExecutionStarted { sop_id, .. }
+            | SseEvent::NodeExecutionCompleted { sop_id, .. }
+            | SseEvent::SopExecutionStarted { sop_id, .. }
+            | SseEvent::SopExecutionCompleted { sop_id, .. } => Some(sop_id),
+            _ => None,
+        }
+    }
+
+    /// 提取事件携带的会话 ID（若该变体包含）
+    pub fn session_id(&self) -> Option<&str> {
+        match self {
+            SseEvent::SessionMessageAdded { session_id, .. } => Some(session_id),
+            _ => None,
+        }
+    }
+
     /// 转换为 SSE 格式字符串
     pub fn to_sse_string(&self) -> String {
         let data = serde_json::to_string(self).unwrap_or_default();
@@ -159,22 +181,24 @@ impl SseEvent {
 /// SSE 连接查询参数
 #[derive(Debug, Deserialize)]
 // 字段豁免说明（ADR-007 反模式要求给出正当理由）：
-//   `events` / `heartbeat` 已被 sse_handler 实际读取并生效；
-//   `project_id` / `sop_id` / `session_id` / `last_event_id` 目前**仅从 URL 解析、
-//   尚未参与过滤**——客户端可传但会被忽略。保留它们是为了不破坏既有 API 契约
-//   （去掉字段会让传这些参数的客户端报 400/422 而非静默忽略），并为后续实现
-//   预留位置。此处**不是**「为审计保留」，而是「解析已实现、过滤待实现」。
+//   `events` / `heartbeat` / `sop_id` / `session_id` 均已生效并参与过滤；
+//   `project_id` / `last_event_id` 目前**仅从 URL 解析、尚未参与过滤**，保留它们是为了
+//   不破坏既有 API 契约（去掉字段会让传这些参数的客户端报 400/422 而非静默忽略）。
+//   - `project_id`：`SseEvent` 任何变体都没有该字段，实现过滤需先改事件结构（公开 API 变更）；
+//   - `last_event_id`：事件 ID 为每次生成的随机 UUID，重连携带的 ID 无可匹配的历史，
+//     且仓库内无任何客户端消费该参数。补齐需要引入带序号的全局事件日志，属独立特性。
+//   此处**不是**「为审计保留」，而是「解析已实现、过滤待实现」。
 #[allow(dead_code)]
 pub struct SseQuery {
     /// 按事件类型过滤（逗号分隔）。**已生效**
     pub events: Option<String>,
-    /// 按项目 ID 过滤。**已解析但未生效**（见上方说明）
+    /// 按项目 ID 过滤。**已解析但未生效**（`SseEvent` 无此维度，见上方说明）
     pub project_id: Option<String>,
-    /// 按 SOP ID 过滤。**已解析但未生效**
+    /// 按 SOP ID 过滤。**已生效**（仅匹配携带该 `sop_id` 的节点/SOP 执行类事件）
     pub sop_id: Option<String>,
-    /// 按会话 ID 过滤。**已解析但未生效**
+    /// 按会话 ID 过滤。**已生效**（仅匹配 `session_message_added` 事件）
     pub session_id: Option<String>,
-    /// 用于断点续传的最后事件 ID。**已解析但未生效**
+    /// 用于断点续传的最后事件 ID。**已解析但未生效**（见上方说明）
     pub last_event_id: Option<String>,
     /// 心跳间隔（秒，0 表示禁用）。**已生效**
     pub heartbeat: Option<u64>,
@@ -182,6 +206,46 @@ pub struct SseQuery {
 
 /// SSE 并发连接数限制失败时的 HTTP 状态码
 const SSE_LIMIT_REACHED: StatusCode = StatusCode::TOO_MANY_REQUESTS;
+
+/// 解析维度过滤值：去空白，空串视为未提供
+///
+/// `?sop_id=`（空值）被归一化为 `None`（不过滤），而不是「只匹配空 ID」
+/// 这种永不命中、客户端也无法与「无结果」区分的条件。
+fn normalize_dimension(raw: Option<&String>) -> Option<String> {
+    raw.map(|s| s.trim().to_string()).filter(|s| !s.is_empty())
+}
+
+/// 判断事件是否应推送给当前订阅者
+///
+/// 三个维度为「与」（AND）关系，全部满足才推送：
+/// - `type_filters` 非空时，事件类型必须命中其中之一；
+/// - `sop_filter` 要求事件**携带**该 `sop_id` 且值相等（维度缺失即不匹配）；
+/// - `session_filter` 同理。
+///
+/// 抽为独立纯函数以便在不启动 HTTP 服务的情况下直接验证过滤语义。
+fn matches_filters(
+    event: &SseEvent,
+    type_filters: Option<&[String]>,
+    sop_filter: Option<&str>,
+    session_filter: Option<&str>,
+) -> bool {
+    if let Some(filters) = type_filters {
+        if !filters.iter().any(|f| f.as_str() == event.event_type()) {
+            return false;
+        }
+    }
+    if let Some(want) = sop_filter {
+        if event.sop_id() != Some(want) {
+            return false;
+        }
+    }
+    if let Some(want) = session_filter {
+        if event.session_id() != Some(want) {
+            return false;
+        }
+    }
+    true
+}
 
 /// SSE 流处理器
 pub async fn sse_handler(
@@ -206,6 +270,11 @@ pub async fn sse_handler(
     // 解析事件过滤器
     let event_filters: Option<Vec<String>> =
         query.events.as_ref().map(|s| s.split(',').map(|s| s.trim().to_string()).collect());
+
+    // 按维度过滤：事件必须携带该维度且值匹配才推送。
+    // 维度缺失的事件（如 skill_installed 没有 sop_id）在此维度下被排除。
+    let sop_filter: Option<String> = normalize_dimension(query.sop_id.as_ref());
+    let session_filter: Option<String> = normalize_dimension(query.session_id.as_ref());
 
     let heartbeat_interval = query.heartbeat.unwrap_or(30);
 
@@ -232,11 +301,14 @@ pub async fn sse_handler(
                 receiver.recv()
             ).await {
                 Ok(Ok(event)) => {
-                    // 应用过滤器
-                    if let Some(ref filters) = event_filters {
-                        if !filters.contains(&event.event_type().to_string()) {
-                            continue;
-                        }
+                    // 应用过滤器（类型 / sop_id / session_id 三维取交集）
+                    if !matches_filters(
+                        &event,
+                        event_filters.as_deref(),
+                        sop_filter.as_deref(),
+                        session_filter.as_deref(),
+                    ) {
+                        continue;
                     }
 
                     let sse_event = axum::response::sse::Event::default()
@@ -446,6 +518,152 @@ mod tests {
         let sse_str = event.to_sse_string();
         assert!(sse_str.contains("event: test_event"));
         assert!(sse_str.contains("data:"));
+    }
+
+    fn node_started(sop: &str) -> SseEvent {
+        SseEvent::NodeExecutionStarted {
+            sop_id: sop.to_string(),
+            node_id: "n1".to_string(),
+            node_name: "fetch".to_string(),
+            timestamp: chrono::Utc::now(),
+        }
+    }
+
+    #[test]
+    fn test_sop_id_extracted_only_from_sop_scoped_variants() {
+        assert_eq!(node_started("sop-a").sop_id(), Some("sop-a"));
+        // 认知迭代事件没有 sop_id 维度
+        let goal_only = SseEvent::CognitiveIterationStarted {
+            iteration: 1,
+            goal_id: "g1".to_string(),
+            timestamp: chrono::Utc::now(),
+        };
+        assert_eq!(goal_only.sop_id(), None);
+    }
+
+    #[test]
+    fn test_session_id_extracted_only_from_session_variant() {
+        let msg = SseEvent::SessionMessageAdded {
+            session_id: "sess-1".to_string(),
+            role: "user".to_string(),
+            content: "hi".to_string(),
+            timestamp: chrono::Utc::now(),
+        };
+        assert_eq!(msg.session_id(), Some("sess-1"));
+        assert_eq!(node_started("sop-a").session_id(), None);
+    }
+
+    #[test]
+    fn test_sop_filter_excludes_other_sop_and_dimensionless_events() {
+        // 命中：sop_id 相等
+        assert!(matches_filters(
+            &node_started("sop-a"),
+            None,
+            Some("sop-a"),
+            None
+        ));
+        // 不命中：sop_id 不同
+        assert!(!matches_filters(
+            &node_started("sop-b"),
+            None,
+            Some("sop-a"),
+            None
+        ));
+        // 不命中：事件根本不带 sop_id 维度（不得当作「匹配全部」）
+        let skill = SseEvent::SkillInstalled {
+            skill_id: "s1".to_string(),
+            version: "1.0".to_string(),
+            timestamp: chrono::Utc::now(),
+        };
+        assert!(!matches_filters(&skill, None, Some("sop-a"), None));
+    }
+
+    #[test]
+    fn test_no_filter_pushes_everything() {
+        assert!(matches_filters(&node_started("sop-a"), None, None, None));
+        let skill = SseEvent::SkillInstalled {
+            skill_id: "s1".to_string(),
+            version: "1.0".to_string(),
+            timestamp: chrono::Utc::now(),
+        };
+        assert!(matches_filters(&skill, None, None, None));
+    }
+
+    #[test]
+    fn test_type_and_dimension_filters_are_conjunctive() {
+        let types = vec!["node_execution_started".to_string()];
+        // 类型命中且 sop 命中 → 推送
+        assert!(matches_filters(
+            &node_started("sop-a"),
+            Some(&types),
+            Some("sop-a"),
+            None
+        ));
+        // 类型命中但 sop 不命中 → 不推送
+        assert!(!matches_filters(
+            &node_started("sop-b"),
+            Some(&types),
+            Some("sop-a"),
+            None
+        ));
+        // sop 命中但类型不命中 → 不推送
+        assert!(!matches_filters(
+            &node_started("sop-a"),
+            Some(&["skill_installed".to_string()]),
+            Some("sop-a"),
+            None
+        ));
+    }
+
+    #[test]
+    fn test_session_filter_excludes_other_sessions() {
+        let mine = SseEvent::SessionMessageAdded {
+            session_id: "sess-1".to_string(),
+            role: "user".to_string(),
+            content: "hi".to_string(),
+            timestamp: chrono::Utc::now(),
+        };
+        let other = SseEvent::SessionMessageAdded {
+            session_id: "sess-2".to_string(),
+            role: "user".to_string(),
+            content: "hi".to_string(),
+            timestamp: chrono::Utc::now(),
+        };
+        assert!(matches_filters(&mine, None, None, Some("sess-1")));
+        assert!(!matches_filters(&other, None, None, Some("sess-1")));
+        // 节点事件没有 session 维度，被排除
+        assert!(!matches_filters(
+            &node_started("sop-a"),
+            None,
+            None,
+            Some("sess-1")
+        ));
+    }
+
+    #[test]
+    fn test_dimension_normalization_treats_blank_as_absent() {
+        assert_eq!(normalize_dimension(None), None);
+        assert_eq!(normalize_dimension(Some(&"".to_string())), None);
+        // 纯空白同样视为未提供
+        assert_eq!(normalize_dimension(Some(&"   ".to_string())), None);
+        // 正常值去空白后保留
+        assert_eq!(
+            normalize_dimension(Some(&"  sop-a ".to_string())),
+            Some("sop-a".to_string())
+        );
+    }
+
+    #[test]
+    fn test_blank_filter_does_not_silently_blackhole_stream() {
+        // 空串被归一化为「无过滤」，事件仍应推送（而非永不命中）
+        let raw = "".to_string();
+        let normalized = normalize_dimension(Some(&raw));
+        assert!(matches_filters(
+            &node_started("sop-a"),
+            None,
+            normalized.as_deref(),
+            None
+        ));
     }
 
     #[tokio::test]
