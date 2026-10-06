@@ -194,11 +194,16 @@ async fn test_flush_cognitive_traces_survives_recreation() {
     // `tracing::warn` 记录，`flush_cognitive_traces` 一律返回 `()`，
     // 即写入彻底失败也对外谎报「已持久化」（见同文件下两个 flush 回归用例）。
     // 本用例偶发丢失的**确切根因仍未定位**，如再现请记录当次完整日志。
-    let mut lost = 0;
+    //
+    // 断言已从「累计计数」改为「首次异常立即 panic 并打印轮次/行数/step 内容/
+    // 库路径」：原写法只在末尾报 `N/10 rounds lost`，把到底是 0 行还是多行
+    // 这一决定性信息丢掉了，复发时仍无法缩小范围。
     const ROUNDS: usize = 10;
     for i in 0..ROUNDS {
         let db = temp_db_path(&format!("flush_{i}"));
-        let _ = std::fs::remove_file(&db);
+        // 连同 -wal/-shm sidecar 一并清除：只删主库文件可能残留上一轮未
+        // checkpoint 的 WAL 数据，让本轮读到**旧轮次**的记录（行数 > 1）。
+        remove_db_and_sidecars(&db);
 
         let em1 = test_execution_manager_with(&db).await;
         em1.record_cognitive_trace("sop-a", step_event("Flushed"));
@@ -208,15 +213,23 @@ async fn test_flush_cognitive_traces_survives_recreation() {
         let em2 = test_execution_manager_with(&db).await;
         let rows = em2.cognitive_trace_history("default", None, 100).await.expect("history");
         if rows.len() != 1 {
-            lost += 1;
+            // 0 行与 >1 行指向完全不同的机制（写入未生效 vs 残留/重复），
+            // 必须把观测值与库路径打出来，否则复发时仍拿不到可用的定位信息。
+            let steps: Vec<String> = rows
+                .iter()
+                .map(|r| match &r.event {
+                    ExecutionEvent::CognitiveStep { step, .. } => step.clone(),
+                    other => format!("{other:?}"),
+                })
+                .collect();
+            panic!(
+                "round {i}: expected exactly 1 trace, got {} ({steps:?}); db={db}",
+                rows.len()
+            );
         }
         drop(em2);
-        let _ = std::fs::remove_file(&db);
+        remove_db_and_sidecars(&db);
     }
-    assert_eq!(
-        lost, 0,
-        "{lost}/{ROUNDS} rounds lost cognitive trace after flush"
-    );
 }
 
 #[tokio::test]
@@ -302,6 +315,16 @@ async fn test_flush_error_count_resets_after_recovery() {
     em.flush_cognitive_traces().await.expect("恢复写权限后 flush 必须成功，失败计数不得残留");
 
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// 删除 SQLite 主库及其 `-wal` / `-shm` sidecar 文件。
+///
+/// 只删主库文件是不够的：WAL 模式下未 checkpoint 的数据可能仍在 `-wal` 里，
+/// 重新打开同一路径时会读到上一轮遗留的记录，让「本轮写入是否成功」变得不可判定。
+fn remove_db_and_sidecars(db: &str) {
+    for suffix in ["", "-wal", "-shm"] {
+        let _ = std::fs::remove_file(format!("{db}{suffix}"));
+    }
 }
 
 /// 删除 `cognitive_traces` 表，使后续 INSERT 必然失败。
