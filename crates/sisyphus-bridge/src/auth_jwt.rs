@@ -50,12 +50,21 @@ pub struct JwtService {
 }
 
 #[derive(Clone, Debug)]
-#[allow(dead_code)] // Fields are written for future audit/inspection use
 struct RefreshTokenEntry {
+    /// 未被读取：`validate_refresh` 只校验 `revoked`，身份信息仍以 JWT claims
+    /// 为准。保留供将来审计/吊销端点查「这个 refresh token 属于谁」。
+    #[allow(dead_code)]
     user_id: String,
+    /// 未被读取：角色鉴权走 `JwtClaims::roles`（见 `require_role`），不查此副本。
+    #[allow(dead_code)]
     roles: Vec<String>,
+    /// 未被读取：项目鉴权走 `JwtClaims::project_ids`（见 `check_project_access`）。
+    #[allow(dead_code)]
     project_ids: Vec<String>,
+    /// 未被读取：refresh token 过期时间取自 JWT 的 `exp` claim，故无需本地时间戳。
+    #[allow(dead_code)]
     created_at: DateTime<Utc>,
+    /// 已生效：`validate_refresh` / `refresh` / `logout` 均读写此字段。
     revoked: bool,
 }
 

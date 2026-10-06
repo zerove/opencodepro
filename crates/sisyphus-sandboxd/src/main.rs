@@ -357,8 +357,15 @@ enum Response {
         error: String,
     },
     /// `Notification` message variant in the daemon protocol.
-    /// Currently no notification sender is implemented, but the variant
-    /// is reserved for the future server-push channel.
+    ///
+    /// 保留理由（ADR-007 反模式要求 `#[allow(dead_code)]` 必须给出正当理由）：
+    /// JSON-RPC 规范要求服务端可主动推送 notification。本枚举是 daemon 对
+    /// 客户端的**响应**类型，`Notification` 变体预留给未来的 server-push
+    /// 通道（如 long-running execute 的进度回报）。
+    ///
+    /// **不可删除**：本枚举是 `#[serde(untagged)]`，变体集合参与 wire format。
+    /// 删除后再加回来需要重新确认序列化顺序与 untagged 匹配优先级，属于
+    /// 对外协议的破坏性变更。当前无任何构造该变体的代码，故必须显式豁免 lint。
     #[allow(dead_code)]
     Notification {
         method: String,

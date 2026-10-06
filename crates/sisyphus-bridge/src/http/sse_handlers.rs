@@ -158,19 +158,25 @@ impl SseEvent {
 
 /// SSE 连接查询参数
 #[derive(Debug, Deserialize)]
-#[allow(dead_code)] // 从 URL 解析的查询参数，用于过滤
+// 字段豁免说明（ADR-007 反模式要求给出正当理由）：
+//   `events` / `heartbeat` 已被 sse_handler 实际读取并生效；
+//   `project_id` / `sop_id` / `session_id` / `last_event_id` 目前**仅从 URL 解析、
+//   尚未参与过滤**——客户端可传但会被忽略。保留它们是为了不破坏既有 API 契约
+//   （去掉字段会让传这些参数的客户端报 400/422 而非静默忽略），并为后续实现
+//   预留位置。此处**不是**「为审计保留」，而是「解析已实现、过滤待实现」。
+#[allow(dead_code)]
 pub struct SseQuery {
-    /// 按事件类型过滤（逗号分隔）
+    /// 按事件类型过滤（逗号分隔）。**已生效**
     pub events: Option<String>,
-    /// 按项目 ID 过滤
+    /// 按项目 ID 过滤。**已解析但未生效**（见上方说明）
     pub project_id: Option<String>,
-    /// 按 SOP ID 过滤
+    /// 按 SOP ID 过滤。**已解析但未生效**
     pub sop_id: Option<String>,
-    /// 按会话 ID 过滤
+    /// 按会话 ID 过滤。**已解析但未生效**
     pub session_id: Option<String>,
-    /// 用于断点续传的最后事件 ID
+    /// 用于断点续传的最后事件 ID。**已解析但未生效**
     pub last_event_id: Option<String>,
-    /// 心跳间隔（秒，0 表示禁用）
+    /// 心跳间隔（秒，0 表示禁用）。**已生效**
     pub heartbeat: Option<u64>,
 }
 
@@ -281,12 +287,21 @@ pub async fn broadcast_event_handler(
 
 /// 广播事件请求
 #[derive(Debug, Deserialize)]
-#[allow(dead_code)] // 从请求体解析的字段
+// 字段豁免说明：`event_type` / `payload` 已被 broadcast_event_handler 使用；
+//   `project_id` / `sop_id` / `session_id` 目前仅从请求体解析、未参与过滤
+//   （广播是全量的，不按维度筛选）。保留以维持 API 契约：删掉字段会让
+//   现有客户端的请求体反序列化失败。
+#[allow(dead_code)]
 pub struct BroadcastEventRequest {
+    /// 事件类型。**已生效**
     pub event_type: String,
+    /// 事件载荷。**已生效**
     pub payload: serde_json::Value,
+    /// 项目 ID。**已解析但未生效**（广播目前是全量的）
     pub project_id: Option<String>,
+    /// SOP ID。**已解析但未生效**
     pub sop_id: Option<String>,
+    /// 会话 ID。**已解析但未生效**
     pub session_id: Option<String>,
 }
 

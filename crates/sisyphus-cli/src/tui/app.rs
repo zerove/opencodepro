@@ -870,8 +870,16 @@ impl App {
         self.todo_dirty = false;
     }
 
-    /// TUI handler: toggle the done state of the highlighted todo item.
-    /// Wired to a future key binding (planned for the Phase-3 TUI revamp).
+    /// 切换高亮 todo 项的状态（Pending → InProgress → Completed → Pending）。
+    ///
+    /// **当前未被按键绑定调用**：`dialog/handlers.rs` 里的自由函数
+    /// `toggle_todo` 承担实际按键处理（并额外弹出 toast）。本方法保留是因为
+    /// 它是同一逻辑的 App 级入口，供 Phase-3 TUI 改版接线；已有 4 处
+    /// `mod_tests.rs` 用例直接调用它。
+    ///
+    /// `#[allow(dead_code)]` 保留：**仅测试构建**下有调用方，`cargo check`
+    /// 的非测试构建确实会报 "method is never used"（已实测确认），故必须豁免。
+    /// （我一度以为测试调用可免除该标记，实测证明不能。）
     #[allow(dead_code)]
     pub(crate) fn toggle_todo_status(&mut self) {
         if self.todo_items.is_empty() {
@@ -890,8 +898,15 @@ impl App {
         }
     }
 
-    /// TUI handler: delete the highlighted todo item.
-    /// Wired to a future key binding (planned for the Phase-3 TUI revamp).
+    /// 删除高亮 todo 项，**需按两次确认**（首次仅记录意图）。
+    ///
+    /// 与 `dialog/handlers.rs` 的自由函数 `delete_todo` 并存且**行为不同**：
+    /// 后者直接删除并弹 toast，本方法走 `confirm_delete` 二次确认流程
+    /// （首次按键只提示 "Press Delete again to confirm"）。
+    /// 因此**不可简单删除**——它承载的是唯一一处删除确认逻辑。
+    ///
+    /// `#[allow(dead_code)]` 保留：这是唯一能说明「该方法有意未被接线」的地方，
+    /// 移除标记后 clippy 会以 dead_code 报警迫使后来者删掉这段确认逻辑。
     #[allow(dead_code)]
     pub(crate) fn delete_todo(&mut self) {
         if self.todo_items.is_empty() {
