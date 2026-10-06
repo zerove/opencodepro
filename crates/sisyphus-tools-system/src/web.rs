@@ -440,38 +440,37 @@ mod tests {
 
     // ── websearch + webfetch (network, ignored by default) ─
 
+    /// 网络不可用时**必须失败**，不得静默跳过。
+    ///
+    /// 原写法用 `match { Ok(..) => assert, Err(e) => eprintln!(..) }`，
+    /// 于是断网/DNS 失败时该用例照样报 `passed` —— 与本仓库已修掉的
+    /// 6 个「守卫失效」缺陷同类（全通过却报 passed=0、
+    /// 部分构建失败漏判等）。改为 `expect`，让「跳过」变成显式失败，
+    /// 真正跑这个用例（`cargo test -- --ignored`）时才有判别力。
     #[tokio::test]
     #[ignore = "requires network"]
     async fn test_websearch_basic() {
-        match websearch("rust programming", 3).await {
-            Ok(results) => {
-                assert!(!results.is_empty(), "should return at least one result");
-                assert!(results.len() <= 3, "at most num_results items");
-            },
-            Err(e) => {
-                eprintln!("websearch skipped (network unavailable): {e}");
-            },
-        }
+        let results = websearch("rust programming", 3)
+            .await
+            .expect("websearch 不应失败：本用例已显式 #[ignore]，手动运行时必须有真实网络");
+        assert!(!results.is_empty(), "should return at least one result");
+        assert!(results.len() <= 3, "at most num_results items");
     }
 
     #[tokio::test]
     #[ignore = "requires network"]
     async fn test_webfetch_basic() {
-        match webfetch("https://example.com").await {
-            Ok(result) => {
-                assert!(
-                    result.content.contains("Example"),
-                    "content should contain 'Example'"
-                );
-                assert!(
-                    result.content_type.contains("text/html"),
-                    "content_type should be HTML, got {:?}",
-                    result.content_type
-                );
-            },
-            Err(e) => {
-                eprintln!("webfetch skipped (network unavailable): {e}");
-            },
-        }
+        let result = webfetch("https://example.com")
+            .await
+            .expect("webfetch 不应失败：本用例已显式 #[ignore]，手动运行时必须有真实网络");
+        assert!(
+            result.content.contains("Example"),
+            "content should contain 'Example'"
+        );
+        assert!(
+            result.content_type.contains("text/html"),
+            "content_type should be HTML, got {:?}",
+            result.content_type
+        );
     }
 }
