@@ -166,6 +166,11 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - uses: ./.github/actions/setup-protoc
       - run: cargo test -p sisyphus-bridge --no-default-features --test bridge_integration_test
+      - run: cargo test -p sisyphus-bridge --no-default-features --test anti_entropy_integration
+      - run: cargo test -p sisyphus-bridge --no-default-features --test cluster_integration
+      - run: cargo test -p sisyphus-bridge --no-default-features --test chaos_extended
+      - run: cargo test -p sisyphus-bridge --no-default-features --test cognitive_trace_rest_test
+      - run: cargo test -p sisyphus-bridge --no-default-features --test hook_overhead
 
   # ── Tests: lightweight crates (full: lib + bin + doctests) ─────────
   test-light:

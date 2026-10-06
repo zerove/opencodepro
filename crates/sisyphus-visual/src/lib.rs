@@ -186,8 +186,10 @@ impl VisualPerceptionProvider for HttpVlmProvider {
 
         Ok(VisualAnalysisResult {
             description: content.to_string(),
-            // FIXME: parse structured elements from the OCR text. Issue #visual-structured-output.
-            // Currently returns an empty list and relies on the free-form `description`.
+            // FIXME(#visual-structured-output): 从 OCR 文本解析出结构化元素。
+            // 视觉模型当前只回自由文本 `description`，未约定结构化 schema，
+            // 故此处恒返回空列表。实现该 issue 时需同时定义输出 schema 并在此解析，
+            // 属于接口变更，需同步 `VisualAnalysisResult` 的消费方（webui / bridge）。
             detected_elements: vec![],
             confidence: 0.9,
         })

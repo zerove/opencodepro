@@ -303,8 +303,10 @@ mod tests {
         assert!(format!("{err:?}").contains("Quorum"));
     }
 
-    /// TODO 8.3.3 consensus benchmark: 5 节点 propose 延迟
-    /// 用 mock proposer (零延迟 ack) 测纯 consensus 开销
+    /// Consensus 开销基准：5 节点 propose 延迟。
+    ///
+    /// 用 mock proposer（零延迟 ack）测纯 consensus 开销。
+    /// 曾经的 `TODO 8.3.3` 已完成——本用例即其实现，故移除该标记。
     #[tokio::test]
     async fn bench_consensus_5_nodes() {
         let proposer = Arc::new(MockProposer {
