@@ -6,7 +6,7 @@ use super::super::background::{
     spawn_switch_workspace, spawn_uninstall_skill,
 };
 use super::super::{App, DevFocus, LogEntry, ToastKind, View};
-use super::Dialog;
+use super::{ConfirmTarget, Dialog};
 
 // ── 工作区列表对话框 ─────────────────────────────────
 
@@ -110,7 +110,7 @@ pub(super) fn handle_session_list_key(code: KeyCode, app: &mut App) {
             {
                 if let Some(s) = app.sessions.get(idx) {
                     app.confirm_delete = Some(s.id.clone());
-                    app.dialog = Some(Dialog::ConfirmDelete);
+                    app.dialog = Some(Dialog::ConfirmDelete(ConfirmTarget::Session));
                 }
             }
         },
@@ -197,7 +197,13 @@ pub(super) fn handle_todos_key(code: KeyCode, app: &mut App) {
         },
         KeyCode::Char(' ') | KeyCode::Enter => toggle_todo(app),
         KeyCode::Char('a') => app.todo_adding = String::new(),
-        KeyCode::Char('d') | KeyCode::Delete => delete_todo(app),
+        KeyCode::Char('d') | KeyCode::Delete => {
+            // 删除不可撤销：先弹确认框，仅在明确按 y 后才落盘删除
+            if let Some(item) = app.todo_items.get(app.todo_sel) {
+                app.confirm_delete = Some(item.id.clone());
+                app.dialog = Some(Dialog::ConfirmDelete(ConfirmTarget::Todo));
+            }
+        },
         KeyCode::Char('r') | KeyCode::Char('R') => {
             app.todo_dirty = true;
             app.add_toast(ToastKind::Info, "Refreshed todos");
@@ -207,34 +213,7 @@ pub(super) fn handle_todos_key(code: KeyCode, app: &mut App) {
 }
 
 fn toggle_todo(app: &mut App) {
-    if app.todo_items.is_empty() {
-        return;
-    }
-    let db = app.data_dir.join("todos.json");
-    let item = &app.todo_items[app.todo_sel];
-    let new_status = match item.status {
-        crate::tools::TodoStatus::Pending => crate::tools::TodoStatus::InProgress,
-        crate::tools::TodoStatus::InProgress => crate::tools::TodoStatus::Completed,
-        crate::tools::TodoStatus::Completed => crate::tools::TodoStatus::Pending,
-        crate::tools::TodoStatus::Cancelled => crate::tools::TodoStatus::Pending,
-    };
-    if crate::tools::todo_update(&db, &item.id, None, Some(new_status.clone()), None).is_ok() {
-        app.todo_dirty = true;
-        app.add_toast(ToastKind::Success, format!("Todo: {:?}", new_status));
-    }
-}
-
-fn delete_todo(app: &mut App) {
-    if app.todo_items.is_empty() {
-        return;
-    }
-    let id = app.todo_items[app.todo_sel].id.clone();
-    let db = app.data_dir.join("todos.json");
-    if crate::tools::todo_delete(&db, &id).is_ok() {
-        app.todo_dirty = true;
-        app.add_toast(ToastKind::Info, "Deleted todo");
-        app.add_log(LogEntry::Info(format!("Deleted todo {id}")));
-    }
+    app.toggle_todo_status();
 }
 
 // ── LSP 对话框 ───────────────────────────────────────

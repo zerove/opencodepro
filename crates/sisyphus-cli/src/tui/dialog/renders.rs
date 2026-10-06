@@ -505,18 +505,25 @@ pub(super) fn render_roadmap_dialog(frame: &mut ratatui::Frame, area: Rect, app:
 
 // ── 确认对话框 ─────────────────────────────────────
 
-pub(super) fn render_confirm_dialog(frame: &mut ratatui::Frame, area: Rect, app: &App) {
+pub(super) fn render_confirm_dialog(
+    frame: &mut ratatui::Frame,
+    area: Rect,
+    app: &App,
+    target: super::ConfirmTarget,
+) {
     let theme = app.theme();
     let block = Block::default()
         .borders(Borders::ALL)
         .title(" Confirm ")
         .border_style(Style::default().fg(theme.warning));
 
+    let question = match target {
+        super::ConfirmTarget::Session => "Delete this session?",
+        super::ConfirmTarget::Todo => "Delete this todo?",
+    };
+
     let text = Text::from(vec![
-        Line::from(Span::styled(
-            "Delete this session?",
-            Style::default().fg(theme.fg),
-        )),
+        Line::from(Span::styled(question, Style::default().fg(theme.fg))),
         Line::from(""),
         Line::from(Span::styled(
             "Press y to confirm, n or Esc to cancel",

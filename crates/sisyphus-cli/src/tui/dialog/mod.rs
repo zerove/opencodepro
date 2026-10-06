@@ -19,9 +19,20 @@ pub(crate) enum Dialog {
     CognitiveSummary,
     Health,
     Help,
-    ConfirmDelete,
+    ConfirmDelete(ConfirmTarget),
+
     Dev { goal: String },
     Rename { session_id: String, name: String },
+}
+
+/// 待确认删除的对象类型
+///
+/// 删除会话与删除 todo 都需二次确认，但二者的持久化后端与状态字段不同，
+/// 必须区分，否则确认框会对错误的对象执行删除。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ConfirmTarget {
+    Session,
+    Todo,
 }
 
 /// 对话框打开时处理按键事件。
@@ -68,13 +79,24 @@ pub fn handle_dialog_key(key: KeyEvent, app: &mut App) {
         Dialog::CognitiveTrace => handlers::handle_cognitive_trace_key(code, app),
         Dialog::CognitiveSummary => handlers::handle_cognitive_summary_key(code, app),
         Dialog::Health => handlers::handle_health_key(code, app),
-        Dialog::ConfirmDelete => match code {
+        Dialog::ConfirmDelete(target) => match code {
             KeyCode::Char('y') | KeyCode::Char('Y') => {
                 if let Some(id) = app.confirm_delete.take() {
-                    let db = app.data_dir.join("sessions.json");
-                    if crate::tools::session_delete(&db, &id).is_ok() {
-                        app.add_log(LogEntry::Success(format!("Deleted session {id}")));
-                        app.session_dirty = true;
+                    match target {
+                        ConfirmTarget::Session => {
+                            let db = app.data_dir.join("sessions.json");
+                            if crate::tools::session_delete(&db, &id).is_ok() {
+                                app.add_log(LogEntry::Success(format!("Deleted session {id}")));
+                                app.session_dirty = true;
+                            }
+                        },
+                        ConfirmTarget::Todo => {
+                            let db = app.data_dir.join("todos.json");
+                            if crate::tools::todo_delete(&db, &id).is_ok() {
+                                app.add_log(LogEntry::Success(format!("Deleted todo {id}")));
+                                app.todo_dirty = true;
+                            }
+                        },
                     }
                 }
                 app.dialog = None;
@@ -110,7 +132,7 @@ pub fn render_dialog_overlay(frame: &mut ratatui::Frame, area: ratatui::layout::
         Dialog::CognitiveTrace => renders::render_cognitive_trace_dialog(frame, area, app),
         Dialog::CognitiveSummary => renders::render_cognitive_summary_dialog(frame, area, app),
         Dialog::Health => renders::render_health_dialog(frame, area, app),
-        Dialog::ConfirmDelete => renders::render_confirm_dialog(frame, area, app),
+        Dialog::ConfirmDelete(target) => renders::render_confirm_dialog(frame, area, app, *target),
         Dialog::Dev { goal: _goal } => renders::render_dev_dialog(frame, area, app),
         Dialog::Rename {
             session_id: _,

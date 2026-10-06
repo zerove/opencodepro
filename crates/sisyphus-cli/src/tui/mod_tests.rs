@@ -1,4 +1,5 @@
 use super::*;
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use tokio;
 
 // ── LogEntry ──────────────────────────────────────────
@@ -218,7 +219,7 @@ async fn test_toggle_todo_status_cycles() {
 }
 
 #[tokio::test]
-async fn test_delete_todo_removes_item() {
+async fn test_delete_todo_requires_confirmation() {
     let dir = tempfile::tempdir().unwrap();
     let db = dir.path().join("todos.json");
     let _item = crate::tools::todo_add(&db, "delete me", crate::tools::TodoPriority::Low).unwrap();
@@ -227,21 +228,47 @@ async fn test_delete_todo_removes_item() {
     app.todo_dirty = true;
     app.refresh_todos();
     assert_eq!(app.todo_items.len(), 1);
+    let todo_id = app.todo_items[0].id.clone();
 
-    // 第一次调用设置确认，第二次真正删除
-    app.delete_todo();
-    assert!(app.confirm_delete.is_some());
-    app.delete_todo();
+    // 打开 todo 面板，按 d：此时**不得**删除，只应弹出确认框
+    app.dialog = Some(dialog::Dialog::Todos);
+    press(&mut app, KeyCode::Char('d'));
+    assert!(
+        matches!(app.dialog, Some(dialog::Dialog::ConfirmDelete(_))),
+        "按 d 应进入确认状态而非直接删除"
+    );
+    app.refresh_todos();
+    assert_eq!(app.todo_items.len(), 1, "确认前 todo 不得被删除");
+
+    // 按 n 取消：todo 仍在
+    press(&mut app, KeyCode::Char('n'));
+    assert!(app.dialog.is_none());
     app.todo_dirty = true;
     app.refresh_todos();
-    assert!(app.todo_items.is_empty());
+    assert_eq!(app.todo_items.len(), 1, "取消后 todo 不得被删除");
+    assert!(app.confirm_delete.is_none());
+
+    // 再次按 d 并按 y：此时才真正删除
+    app.dialog = Some(dialog::Dialog::Todos);
+    press(&mut app, KeyCode::Char('d'));
+    assert_eq!(app.confirm_delete.as_deref(), Some(todo_id.as_str()));
+    press(&mut app, KeyCode::Char('y'));
+    app.todo_dirty = true;
+    app.refresh_todos();
+    assert!(app.todo_items.is_empty(), "确认后 todo 应被删除");
+}
+
+/// 通过真实按键分发路径发送一次按键
+fn press(app: &mut App, code: KeyCode) {
+    dialog::handle_dialog_key(KeyEvent::new(code, KeyModifiers::NONE), app);
 }
 
 #[tokio::test]
 async fn test_toggle_todo_empty_no_panic() {
     let mut app = App::new(PathBuf::from("/tmp/nonexistent"), "addr".into());
+    app.todo_dirty = true;
+    app.refresh_todos();
     app.toggle_todo_status(); // should not panic when empty
-    app.delete_todo(); // should not panic when empty
 }
 
 // ── 带临时文件的 App 会话 ───────────────────────
