@@ -117,6 +117,18 @@ impl LanguageBackend for RustBackend {
         cwd: Option<&Path>,
     ) -> ToolResult<BuildOutput> {
         let mut args = vec!["fix"];
+        // cargo fix 默认启用 VCS 检查：找不到 git 仓库时报错，而**向上**
+        // 逐级查找父目录。当目标项目位于某个大仓库内部时（典型如临时
+        // 目录建在 ~/.cache 或 ~/.<tool>/scratch 下），它会误认父级仓库
+        // 为 VCS 根，随后扫描该仓库的全部历史 —— 在 163MB 的仓库上实测
+        // 表现为进程进入 D 状态（__wait_on_buffer）且数十分钟不返回，
+        // 整个调用方（例如 fix_and_diagnose）无限挂起。
+        //
+        // 本工具的职责是对给定目录执行修复，不负责替用户管理版本控制：
+        // 是否提交由调用方决定。因此禁用 VCS 检查，让工具在任何目录都可用。
+        // 实测只需这一个 flag：既能跳过向上查找仓库，也仍会实际改写文件
+        // （临时项目里 `let x = 1;` 被成功修正）。
+        args.push("--allow-no-vcs");
         if apply_lint_fixes {
             args.push("--clippy");
         }
