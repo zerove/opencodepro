@@ -159,6 +159,10 @@ impl SseEvent {
             | SseEvent::NodeExecutionCompleted { sop_id, .. }
             | SseEvent::SopExecutionStarted { sop_id, .. }
             | SseEvent::SopExecutionCompleted { sop_id, .. } => Some(sop_id),
+            // Custom 变体的维度信息只能来自 payload。生产中唯一真正广播的事件
+            // （`intervention`）就是 Custom，若不在此提取，`?sop_id=` 过滤会把
+            // 它连同它自己所属 sop 的订阅者一起全部丢弃。
+            SseEvent::Custom { payload, .. } => payload.get("sop_id").and_then(|v| v.as_str()),
             _ => None,
         }
     }
@@ -167,6 +171,8 @@ impl SseEvent {
     pub fn session_id(&self) -> Option<&str> {
         match self {
             SseEvent::SessionMessageAdded { session_id, .. } => Some(session_id),
+            // 同 sop_id：Custom 事件的会话维度来自 payload
+            SseEvent::Custom { payload, .. } => payload.get("session_id").and_then(|v| v.as_str()),
             _ => None,
         }
     }
@@ -184,7 +190,10 @@ impl SseEvent {
 //   `events` / `heartbeat` / `sop_id` / `session_id` 均已生效并参与过滤；
 //   `project_id` / `last_event_id` 目前**仅从 URL 解析、尚未参与过滤**，保留它们是为了
 //   不破坏既有 API 契约（去掉字段会让传这些参数的客户端报 400/422 而非静默忽略）。
-//   - `project_id`：`SseEvent` 任何变体都没有该字段，实现过滤需先改事件结构（公开 API 变更）；
+//   - `project_id`：当前生产中唯一被广播的事件（`intervention`）是 `Custom` 变体，
+//     其 payload 不含项目维度；工作区/JWT 虽有 `project_id`，但广播点未把它带进事件，
+//     且全局广播 channel 本身不区分项目。实现过滤需先确定「事件属于哪个项目」
+//     的判定规则（当前 workspace 概念与事件无绑定关系），属独立特性。
 //   - `last_event_id`：事件 ID 为每次生成的随机 UUID，重连携带的 ID 无可匹配的历史，
 //     且仓库内无任何客户端消费该参数。补齐需要引入带序号的全局事件日志，属独立特性。
 //   此处**不是**「为审计保留」，而是「解析已实现、过滤待实现」。
@@ -192,11 +201,13 @@ impl SseEvent {
 pub struct SseQuery {
     /// 按事件类型过滤（逗号分隔）。**已生效**
     pub events: Option<String>,
-    /// 按项目 ID 过滤。**已解析但未生效**（`SseEvent` 无此维度，见上方说明）
+    /// 按项目 ID 过滤。**已解析但未生效**（生产事件不带项目维度，见上方说明）
     pub project_id: Option<String>,
-    /// 按 SOP ID 过滤。**已生效**（仅匹配携带该 `sop_id` 的节点/SOP 执行类事件）
+    /// 按 SOP ID 过滤。**已生效**（匹配节点/SOP 执行类事件，以及 payload 携带
+    /// `sop_id` 的 Custom 事件 —— 含生产中唯一真正广播的 `intervention`）
     pub sop_id: Option<String>,
-    /// 按会话 ID 过滤。**已生效**（仅匹配 `session_message_added` 事件）
+    /// 按会话 ID 过滤。**已生效**（`session_message_added` 事件，或 payload 携带
+    /// `session_id` 的 Custom 事件）
     pub session_id: Option<String>,
     /// 用于断点续传的最后事件 ID。**已解析但未生效**（见上方说明）
     pub last_event_id: Option<String>,
@@ -527,6 +538,58 @@ mod tests {
             node_name: "fetch".to_string(),
             timestamp: chrono::Utc::now(),
         }
+    }
+
+    /// 复现 `intervene_cognitive_map_handler` 广播的干预事件：
+    /// 生产中唯一真正发送的 SseEvent，经由 `SseEvent::custom` 构造，
+    /// sop_id 只存在于 payload 内部，不是枚举字段。
+    fn intervention_event(sop: &str) -> SseEvent {
+        SseEvent::custom(
+            "intervention".to_string(),
+            json!({
+                "sop_id": sop,
+                "action": "pause",
+                "target_node": null,
+                "reason": null,
+                "applied": true,
+            }),
+        )
+    }
+
+    #[test]
+    fn test_intervention_event_survives_its_own_sop_filter() {
+        // `handlers.rs` 的文档承诺「所有订阅此 sop_id 的客户端立即收到」。
+        // 干预事件是生产中唯一真正广播的 SseEvent，因此这条承诺必须对它成立。
+        let event = intervention_event("sop-abc");
+
+        assert_eq!(
+            event.sop_id(),
+            Some("sop-abc"),
+            "intervention 事件的 sop_id 必须可提取，否则它无法通过自己所属 sop 的过滤"
+        );
+        assert!(
+            matches_filters(&event, None, Some("sop-abc"), None),
+            "订阅 ?sop_id=sop-abc 的客户端必须能收到 sop-abc 的干预事件"
+        );
+        // 其他 sop 的订阅者不应收到
+        assert!(!matches_filters(&event, None, Some("sop-other"), None));
+    }
+
+    #[test]
+    fn test_custom_event_without_dimension_is_not_matched_by_any_filter() {
+        // payload 缺维度字段时必须返回 None。若误返回 Some("")，
+        // 订阅 `?sop_id=`（空值，会被归一化为不过滤）与维度为空的边界就乱了。
+        let plain = SseEvent::custom("heartbeat_like".to_string(), json!({"value": 1}));
+        assert_eq!(plain.sop_id(), None);
+        assert_eq!(plain.session_id(), None);
+
+        // 非字符串的维度值不得被强制转成字符串
+        let numeric = SseEvent::custom("bad".to_string(), json!({"sop_id": 42}));
+        assert_eq!(numeric.sop_id(), None);
+
+        // 显式 null 同样视为无维度
+        let null_dim = SseEvent::custom("bad".to_string(), json!({"sop_id": null}));
+        assert_eq!(null_dim.sop_id(), None);
     }
 
     #[test]
