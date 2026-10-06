@@ -40,10 +40,49 @@ payload 中缺失该键、值为 `null`、或值不是字符串时，视为**无
 |------|------|--------|
 | `intervention` | `Custom` | `POST /api/cognitive/map/:sop_id/intervene`，payload 含 `sop_id` |
 | 调用方自定义 | `Custom` | `POST /api/events/broadcast` |
+| `node_started` | `Custom` | `POST /api/execute/goal` 执行期间，payload 为内核 `ExecutionEvent::NodeStarted` 原文加 `sop_id` |
+| `node_completed` | `Custom` | 同上，`ExecutionEvent::NodeCompleted` |
+| `node_failed` | `Custom` | 同上，`ExecutionEvent::NodeFailed` |
+| `execution_complete` | `Custom` | 同上，`ExecutionEvent::ExecutionComplete` |
+| `cognitive_plan` | `Custom` | 同上，`ExecutionEvent::CognitivePlan` |
+| `cognitive_step` | `Custom` | 同上，`ExecutionEvent::CognitiveStep` |
+| `micro_reflection` | `Custom` | 同上，`ExecutionEvent::MicroReflection` |
+| `cognitive_complete` | `Custom` | 同上，`ExecutionEvent::CognitiveComplete` |
 
-`SseEvent` 枚举还定义了认知迭代、节点执行、技能安装等 14 个变体，但**它们目前没有生产发送方**，仅在测试中构造。订阅这些事件类型不会收到数据。
+`SseEvent` 枚举还定义了认知迭代、技能安装等变体，但**它们目前没有生产发送方**，仅在测试中构造。订阅这些事件类型不会收到数据。
 
-同样地，`POST /api/execute/goal` 与 `/api/execute/composite` 执行 SOP 时，内核产生的 `ExecutionEvent`（节点开始/完成/失败、执行完成、认知步骤、微反思等）**不会**转发到 SSE：HTTP 层虽向内核传入了 `event_tx`，但只取了 sender 而丢弃 receiver，事件在发送端即被静默丢弃。这与 gRPC 的 `stream_events` 是两套独立通道。
+内核 `ExecutionEvent` 共 8 个变体，全部以 `Custom` 事件转发（snake_case 命名），payload 保留原始字段（含 `fuel_consumed`、`duration_ms`）并注入 `sop_id`。事件名与 gRPC `stream_events` 是两套独立通道但共享同一批内核事件。
+
+## 执行端点与事件订阅
+
+`POST /api/execute/goal` 的事件归属请求自身的 `sop_id`，因此订阅时用同一个值即可：
+
+```bash
+curl -N 'http://localhost:50051/api/events?sop_id=sop-abc' &
+curl -X POST localhost:50051/api/execute/goal \
+  -H 'content-type: application/json' \
+  -d '{"sop_id":"sop-abc","goal":"...","event_tx":true}'
+```
+
+`POST /api/execute/composite` 内部各图的 `sop_id` 由内核生成、在 REST 层不可见，因此响应体额外返回 `sse_sop_id`（形如 `composite-<uuid>`）。客户端**必须用这个值**订阅，复合执行内部图的事件才能命中：
+
+```bash
+SID=$(curl -s -X POST localhost:50051/api/execute/composite \
+  -H 'content-type: application/json' -d '{"...":"..."}' | jq -r .sse_sop_id)
+curl -N "http://localhost:50051/api/events?sop_id=$SID"
+```
+
+由于 `sse_sop_id` 在执行开始时生成，需在请求进行中订阅；执行结束后订阅收不到已发出的事件（当前无事件重放，见「未生效参数」）。
+
+## `event_tx` 参数
+
+| 取值 | 行为 |
+|------|------|
+| 未传 / `null` | 转发 |
+| `true` | 转发 |
+| `false` | **完全不建立转发器** |
+
+默认转发是刻意的：内核已经产生了这些事件，丢弃接收端只会让它们在发送端静默失败。
 
 ## 未生效参数
 

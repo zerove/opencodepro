@@ -738,6 +738,10 @@ pub(crate) async fn openapi_json() -> impl IntoResponse {
                             "type": "array",
                             "items": {"type": "string"},
                             "description": "Order goals were executed in"
+                        },
+                        "sse_sop_id": {
+                            "type": "string",
+                            "description": "SSE subscription id for this composite run (composite-<uuid>). Individual graph sop_ids are generated inside the kernel and not visible here, so clients must pass this value as ?sop_id= to /api/events to receive node events."
                         }
                     }
                 },

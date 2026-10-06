@@ -79,6 +79,13 @@ pub struct CompositeExecuteRequest {
 pub struct CompositeExecuteResponse {
     pub results: std::collections::HashMap<String, sisyphus_types::NodeOutput>,
     pub execution_order: Vec<String>,
+    /// 本次复合执行在 SSE 中的事件归属标识（`composite-<uuid>`）。
+    ///
+    /// 复合执行没有单一 sop_id，客户端据此用
+    /// `/api/events?sop_id=<本字段值>` 订阅本次执行的实时事件。
+    /// 新增字段对既有客户端是兼容的（反序列化不受影响）。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sse_sop_id: Option<String>,
 }
 
 // --- Skill Registry Types ---

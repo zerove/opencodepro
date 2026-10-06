@@ -216,6 +216,65 @@ pub(super) async fn health_deep_handler(State(state): State<RestApiState>) -> im
     (code, Json(body))
 }
 
+// ── 内核执行事件 → SSE 转发 ───────────────────────────────────────────────
+
+/// 把内核 `ExecutionEvent` 流转发到 SSE 广播器
+///
+/// 内核通过 `mpsc::UnboundedSender<ExecutionEvent>` 推送执行进度，
+/// 该 channel 与 SSE 的 `broadcast::Sender<SseEvent>` 是两套独立通道，
+/// 必须显式桥接，否则事件在发送端即被丢弃（`send` 返回 `Err`，
+/// 不 panic、不记日志 —— 客户端只能看到「执行完了但没有任何过程」）。
+///
+/// `sop_id` 由调用方补齐：内核事件本身只带 `node_name`，不知道归属哪个 SOP。
+///
+/// 返回 JoinHandle；调用方 drop 掉 sender 后应 await 它，确保缓冲区事件
+/// 已全部推送（直接 abort 会丢掉执行末尾的完成事件）。
+fn spawn_sse_event_forwarder(
+    broadcaster: tokio::sync::broadcast::Sender<crate::http::sse_handlers::SseEvent>,
+    mut rx: mpsc::UnboundedReceiver<sisyphus_types::ExecutionEvent>,
+    sop_id: String,
+) -> tokio::task::JoinHandle<()> {
+    tokio::spawn(async move {
+        while let Some(event) = rx.recv().await {
+            let sse_event =
+                crate::http::sse_handlers::SseEvent::from_execution_event(&event, &sop_id);
+            // send 失败仅表示当前无 SSE 订阅者，属正常情况（没人订阅时
+            // 不该让内核执行失败），因此只忽略错误继续消费。
+            let _ = broadcaster.send(sse_event);
+        }
+    })
+}
+
+/// 按 `event_tx` 请求参数决定是否接线内核事件到 SSE
+///
+/// 返回 `(内核 sender, 转发器句柄)`；两者同时为 `None` 表示不转发。
+///
+/// 抽为独立函数的原因：这段接线本身就是缺陷所在 —— 旧实现只取
+/// `unbounded_channel()` 的 sender 而丢弃 receiver，内核 `send` 立即
+/// 返回 `Err`，事件被静默吞掉。若把它内联在 handler 里，测试就只能
+/// 测到转发器本身，handler 是否真正调用它无从验证（变异退回旧写法时
+/// 全部测试仍会通过）。
+///
+/// `event_tx` 语义：`None` 或 `Some(true)` 表示转发（内核已产生事件，
+/// 丢弃反而是错的）；`Some(false)` 是调用方明确不要，才完全不转发。
+fn wire_execution_events(
+    broadcaster: tokio::sync::broadcast::Sender<crate::http::sse_handlers::SseEvent>,
+    event_tx: Option<bool>,
+    sop_id: String,
+) -> (
+    Option<mpsc::UnboundedSender<sisyphus_types::ExecutionEvent>>,
+    Option<tokio::task::JoinHandle<()>>,
+) {
+    if event_tx == Some(false) {
+        return (None, None);
+    }
+    let (tx, rx) = mpsc::unbounded_channel();
+    (
+        Some(tx),
+        Some(spawn_sse_event_forwarder(broadcaster, rx, sop_id)),
+    )
+}
+
 // --- Goal Execution Handlers ---
 
 #[instrument(
@@ -229,17 +288,27 @@ pub(super) async fn execute_goal_handler(
     Json(req): Json<GoalExecuteRequest>,
 ) -> impl IntoResponse {
     let kernel = state.bridge.kernel();
-    let event_tx = if req.event_tx.unwrap_or(false) {
-        Some(mpsc::unbounded_channel().0)
-    } else {
-        None
-    };
+    let sop_id = req.sop_id.clone();
+
+    // 真正把内核执行事件转发到 SSE。旧实现只取 sender 而丢弃 receiver，
+    // 内核 send 立即返回 Err，事件被静默吞掉（不 panic、不记日志），
+    // 客户端传 `event_tx: true` 却收不到任何东西。
+    let (event_tx, event_forwarder) =
+        wire_execution_events(state.sse_broadcaster.clone(), req.event_tx, sop_id.clone());
 
     let project_id =
         workspace.project_id.or(req.project_id).unwrap_or_else(|| "default".to_string());
     tracing::Span::current().record("project_id", project_id.as_str());
 
-    let result = kernel.execute_goal(&req.goal, &req.sop_id, &project_id, event_tx, None).await;
+    let result = kernel.execute_goal(&req.goal, &sop_id, &project_id, event_tx, None).await;
+
+    // 等待转发器排空。event_tx 已随上面的调用 move 进内核，执行结束时内核
+    // 侧的 sender 全部释放 → channel 关闭 → 转发器推完缓冲区后自行退出。
+    // 必须 await 而非 abort，否则执行末尾的完成/失败事件会丢失
+    // （这正是旧实现「客户端收不到任何东西」的一部分）。
+    if let Some(handle) = event_forwarder {
+        let _ = handle.await;
+    }
 
     match result {
         Ok((output, report)) => (
@@ -429,11 +498,20 @@ pub(super) async fn execute_composite_handler(
     Json(req): Json<CompositeExecuteRequest>,
 ) -> impl IntoResponse {
     let kernel = state.bridge.kernel();
-    let event_tx = if req.event_tx.unwrap_or(false) {
-        Some(mpsc::unbounded_channel().0)
-    } else {
-        None
-    };
+
+    // composite 执行多个 goal，没有单一 sop_id 可归属。这里用请求级标识
+    // 填充 sop_id 维度，订阅方以 `?sop_id=composite-<uuid>` 过滤本次执行。
+    // 注意：单个 goal 的执行进度无法按其自身 sop_id 过滤 —— 复合图内
+    // 各图由内核内部生成 sop_id，不在 REST 层可见。若需按单图过滤，
+    // 应改用 `/api/execute/goal` 逐个执行。
+    let composite_sop_id = format!("composite-{}", uuid::Uuid::new_v4());
+
+    // 与 execute_goal 同样的接线：保留 receiver，否则事件在发送端被丢弃。
+    let (event_tx, event_forwarder) = wire_execution_events(
+        state.sse_broadcaster.clone(),
+        req.event_tx,
+        composite_sop_id.clone(),
+    );
 
     let project_id = workspace.project_id.or(req.project_id);
 
@@ -447,18 +525,28 @@ pub(super) async fn execute_composite_handler(
         execution_order: vec![],
     };
 
-    match kernel
+    let result = kernel
         .execute_composite(
             &composite,
-            event_tx,
+            event_tx.clone(),
             project_id.as_deref().unwrap_or("default"),
         )
-        .await
-    {
+        .await;
+
+    // 等待转发器排空，确保执行末尾事件送达（理由同 execute_goal）
+    drop(event_tx);
+    if let Some(handle) = event_forwarder {
+        let _ = handle.await;
+    }
+
+    match result {
         Ok(output) => {
             let response = CompositeExecuteResponse {
                 results: output.results.into_iter().map(|(id, (out, _))| (id, out)).collect(),
                 execution_order: output.execution_order,
+                // 告知客户端本次执行的事件归属标识，否则它无从知道
+                // 该用哪个 sop_id 去 /api/events 订阅
+                sse_sop_id: Some(composite_sop_id),
             };
             match serde_json::to_value(response) {
                 Ok(val) => (StatusCode::OK, Json(val)),
@@ -1357,6 +1445,207 @@ pub(super) async fn health_ready_handler(State(state): State<RestApiState>) -> i
 // ---------------------------------------------------------------------------
 // 单元测试：health_deep_assess 纯函数（无需完整桥接服务）
 // ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod wiring_tests {
+    use super::wire_execution_events;
+    use crate::http::sse_handlers::SseEvent;
+    use sisyphus_types::ExecutionEvent;
+
+    /// 核心回归测试：接线必须产生一个**活的**转发器，
+    /// 内核通过返回的 sender 发送的事件必须真的到达 SSE 订阅者。
+    ///
+    /// 这正是旧实现失败的地方 —— 它只返回 sender 而丢弃 receiver，
+    /// 内核 send 立即 Err。此测试若退回旧写法必然失败。
+    #[tokio::test]
+    async fn wired_sender_delivers_events_to_sse() {
+        for (label, event_tx_param) in [("未传", None), ("显式 true", Some(true))] {
+            let (sse_tx, mut sse_rx) = tokio::sync::broadcast::channel::<SseEvent>(16);
+            let (kern_tx, handle) =
+                wire_execution_events(sse_tx, event_tx_param, "sop-w".to_string());
+
+            let kern_tx = kern_tx.expect(
+                "event_tx 未传或为 true 时必须返回内核 sender —— \
+                 旧实现虽返回 sender 但丢弃 receiver，事件无处可去",
+            );
+            kern_tx
+                .send(ExecutionEvent::NodeStarted {
+                    node_name: "n".to_string(),
+                })
+                .expect("返回的 sender 必须仍然有效（receiver 不得被丢弃）");
+
+            let got = sse_rx.recv().await.expect("SSE 订阅者应收到事件");
+            assert_eq!(got.event_type(), "node_started", "case: {label}");
+            assert_eq!(got.sop_id(), Some("sop-w"), "case: {label}");
+
+            drop(kern_tx);
+            let handle = handle.expect("转发器句柄");
+            tokio::time::timeout(std::time::Duration::from_secs(5), handle)
+                .await
+                .expect("转发器应退出")
+                .expect("不得 panic");
+        }
+    }
+
+    /// 显式 `event_tx: false` 是调用方明确不要，必须完全不建转发器。
+    #[tokio::test]
+    async fn explicit_false_disables_forwarding() {
+        let (sse_tx, _rx) = tokio::sync::broadcast::channel::<SseEvent>(16);
+        let (kern_tx, handle) = wire_execution_events(sse_tx, Some(false), "sop-off".to_string());
+
+        assert!(kern_tx.is_none(), "event_tx=false 时不应创建内核 sender");
+        assert!(handle.is_none(), "event_tx=false 时不应创建转发器");
+    }
+
+    /// 转发器句柄必须被 await（而非被丢弃/abort），否则执行末尾的事件会丢。
+    /// 本测试确认：sender 释放后，转发器在有限时间内自行结束 —— 这是
+    /// handler 里 `handle.await` 能够正常返回的前提。
+    #[tokio::test]
+    async fn forwarder_handle_resolves_after_sender_dropped() {
+        let (sse_tx, mut sse_rx) = tokio::sync::broadcast::channel::<SseEvent>(16);
+        let (kern_tx, handle) = wire_execution_events(sse_tx, None, "sop-q".to_string());
+        let kern_tx = kern_tx.expect("应有 sender");
+
+        kern_tx
+            .send(ExecutionEvent::ExecutionComplete {
+                result: sisyphus_types::NodeOutput::from(serde_json::json!("done")),
+            })
+            .expect("sender 应有效");
+
+        // 末尾事件必须已经送达，handle 才可能结束
+        let _ = sse_rx.recv().await.expect("应收到 execution_complete");
+
+        let handle = handle.expect("转发器句柄");
+        drop(kern_tx);
+        tokio::time::timeout(std::time::Duration::from_secs(5), handle)
+            .await
+            .expect("sender 释放后转发器必须自行退出，否则 handler 的 await 会挂起")
+            .expect("不得 panic");
+    }
+}
+
+#[cfg(test)]
+mod sse_forwarder_tests {
+    use super::spawn_sse_event_forwarder;
+    use crate::http::sse_handlers::{matches_filters, SseEvent};
+    use sisyphus_types::ExecutionEvent;
+    use tokio::sync::mpsc;
+
+    /// 端到端验证转发器：内核 mpsc 里的 ExecutionEvent 必须真的到达
+    /// SSE 广播订阅者。旧实现丢弃 receiver，此链路完全不存在。
+    #[tokio::test]
+    async fn execution_events_reach_sse_subscribers() {
+        let (sse_tx, mut sse_rx) = tokio::sync::broadcast::channel::<SseEvent>(32);
+        let (kern_tx, kern_rx) = mpsc::unbounded_channel::<ExecutionEvent>();
+
+        let handle = spawn_sse_event_forwarder(sse_tx, kern_rx, "sop-live".to_string());
+
+        // 模拟内核在执行过程中推送的典型事件序列
+        kern_tx
+            .send(ExecutionEvent::NodeStarted {
+                node_name: "fetch".to_string(),
+            })
+            .expect("转发器应仍在运行");
+        kern_tx
+            .send(ExecutionEvent::NodeCompleted {
+                node_name: "fetch".to_string(),
+                output: sisyphus_types::NodeOutput::from(serde_json::json!("rows")),
+                fuel_consumed: 5,
+                duration_ms: 50,
+            })
+            .expect("转发器应仍在运行");
+        kern_tx
+            .send(ExecutionEvent::ExecutionComplete {
+                result: sisyphus_types::NodeOutput::from(serde_json::json!("all done")),
+            })
+            .expect("转发器应仍在运行");
+
+        // 顺序与数量都必须保真
+        let first = sse_rx.recv().await.expect("应收到 node_started");
+        let second = sse_rx.recv().await.expect("应收到 node_completed");
+        let third = sse_rx.recv().await.expect("应收到 execution_complete");
+
+        assert_eq!(first.event_type(), "node_started");
+        assert_eq!(second.event_type(), "node_completed");
+        assert_eq!(third.event_type(), "execution_complete");
+
+        // 每个事件都必须归属正确 sop，否则无法按 sop 订阅
+        for ev in [&first, &second, &third] {
+            assert_eq!(ev.sop_id(), Some("sop-live"));
+            assert!(matches_filters(ev, None, Some("sop-live"), None));
+            assert!(!matches_filters(ev, None, Some("other-sop"), None));
+        }
+
+        // 关闭 sender 后转发器应自行退出（不能泄漏 task）
+        drop(kern_tx);
+        tokio::time::timeout(std::time::Duration::from_secs(5), handle)
+            .await
+            .expect("转发器应在 channel 关闭后退出，不得挂起")
+            .expect("转发器 task 不应 panic");
+    }
+
+    /// 无 SSE 订阅者时，转发器必须安静地丢弃事件而不是让内核执行失败。
+    #[tokio::test]
+    async fn forwarder_survives_absent_subscribers() {
+        let (sse_tx, sse_rx) = tokio::sync::broadcast::channel::<SseEvent>(8);
+        drop(sse_rx); // 模拟无人订阅
+
+        let (kern_tx, kern_rx) = mpsc::unbounded_channel::<ExecutionEvent>();
+        let handle = spawn_sse_event_forwarder(sse_tx, kern_rx, "sop-x".to_string());
+
+        for _ in 0..20 {
+            kern_tx
+                .send(ExecutionEvent::NodeStarted {
+                    node_name: "n".to_string(),
+                })
+                .expect("发送不应因无订阅者而中断");
+        }
+        drop(kern_tx);
+
+        tokio::time::timeout(std::time::Duration::from_secs(5), handle)
+            .await
+            .expect("无订阅者时也应正常退出")
+            .expect("不得 panic");
+    }
+
+    /// 转发器必须把缓冲区里已排队的事件全部推完才退出。
+    /// 若实现为「收到即 abort」，执行末尾的完成事件会在客户端侧丢失。
+    #[tokio::test]
+    async fn forwarder_drains_buffered_events_before_exit() {
+        let (sse_tx, mut sse_rx) = tokio::sync::broadcast::channel::<SseEvent>(64);
+        let (kern_tx, kern_rx) = mpsc::unbounded_channel::<ExecutionEvent>();
+
+        // 先灌满缓冲，再启动转发器 —— 事件必须一条不落地送达
+        for _ in 0..10 {
+            kern_tx
+                .send(ExecutionEvent::NodeStarted {
+                    node_name: "n".to_string(),
+                })
+                .expect("转发器未启动，channel 仍有容量");
+        }
+        let handle = spawn_sse_event_forwarder(sse_tx, kern_rx, "sop-drain".to_string());
+        drop(kern_tx);
+
+        let mut received = 0;
+        while let Ok(_ev) = sse_rx.try_recv() {
+            received += 1;
+        }
+        // 等转发器退出后再数，确保不是"还没推完"
+        tokio::time::timeout(std::time::Duration::from_secs(5), handle)
+            .await
+            .expect("应退出")
+            .expect("不得 panic");
+
+        let mut total = received;
+        while sse_rx.try_recv().is_ok() {
+            total += 1;
+        }
+        assert_eq!(
+            total, 10,
+            "已排队的 10 个事件必须全部送达，实际只收到 {total} 个"
+        );
+    }
+}
 
 #[cfg(test)]
 mod cognitive_map_payload_tests {

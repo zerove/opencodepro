@@ -56,6 +56,8 @@ OpenAPI 规范位于 [`/openapi.json`](/openapi.json)，也可通过 Swagger UI 
 { "goals": ["analyze", "test", "deploy"], "project_id": "my-project" }
 ```
 
+响应体含 `sse_sop_id`（形如 `composite-<uuid>`）。复合执行内部各图的 `sop_id` 由内核生成、在此不可见，因此订阅 SSE 事件时必须用 `sse_sop_id` 作为 `?sop_id=` 的值，详见 [SSE 事件](sse-events.md#执行端点与事件订阅)。
+
 ## 会话
 
 ### `GET /api/sessions`

@@ -182,6 +182,62 @@ impl SseEvent {
         let data = serde_json::to_string(self).unwrap_or_default();
         format!("event: {}\ndata: {}\n\n", self.event_type(), data)
     }
+
+    /// 把内核的 `ExecutionEvent` 转为可广播的 `SseEvent`
+    ///
+    /// 内核事件不带 `sop_id`（只有 `node_name`），因此由调用方补齐归属，
+    /// 注入 payload 后即可被 `?sop_id=` 服务端过滤正确识别。
+    ///
+    /// 采用 `Custom` 承载而非扩展枚举：`SseEvent` 是公开 API，新增变体是
+    /// 破坏性变更；而 `ExecutionEvent` 本身已 `Serialize`，整体放入 payload
+    /// 可无损保留全部字段（含 `fuel_consumed` / `duration_ms` 等枚举变体
+    /// 中无处安放的信息），事件名用 snake_case 与既有 SSE 事件保持一致。
+    pub fn from_execution_event(event: &sisyphus_types::ExecutionEvent, sop_id: &str) -> Self {
+        // 序列化为 {"NodeStarted": {...}} 的外部标签形态，取出内部值。
+        // 失败时退回 NullValue 而不是丢弃事件：SSE 流的语义是「尽力送达」，
+        // 一个无法序列化的变体不应中断整条流。
+        let inner = serde_json::to_value(event)
+            .ok()
+            .and_then(|v| match v {
+                // 外部标签枚举只有一个键，该键即变体名，取出其内部值
+                serde_json::Value::Object(m) => m.into_iter().next().map(|(_, val)| val),
+                other => Some(other),
+            })
+            .unwrap_or(serde_json::Value::Null);
+
+        let event_type = execution_event_type(event);
+        let mut payload = match inner {
+            serde_json::Value::Object(m) => m,
+            _ => serde_json::Map::new(),
+        };
+        // 维度键必须与 sop_id()/session_id() 读取的键名一致
+        payload.insert(
+            "sop_id".to_string(),
+            serde_json::Value::String(sop_id.to_string()),
+        );
+
+        SseEvent::Custom {
+            event_type,
+            payload: serde_json::Value::Object(payload),
+            timestamp: chrono::Utc::now(),
+        }
+    }
+}
+
+/// 内核执行事件的 snake_case 事件名
+fn execution_event_type(event: &sisyphus_types::ExecutionEvent) -> String {
+    use sisyphus_types::ExecutionEvent as E;
+    match event {
+        E::NodeStarted { .. } => "node_started",
+        E::NodeCompleted { .. } => "node_completed",
+        E::NodeFailed { .. } => "node_failed",
+        E::ExecutionComplete { .. } => "execution_complete",
+        E::CognitivePlan { .. } => "cognitive_plan",
+        E::CognitiveStep { .. } => "cognitive_step",
+        E::MicroReflection { .. } => "micro_reflection",
+        E::CognitiveComplete { .. } => "cognitive_complete",
+    }
+    .to_string()
 }
 
 /// SSE 连接查询参数
@@ -234,7 +290,11 @@ fn normalize_dimension(raw: Option<&String>) -> Option<String> {
 /// - `session_filter` 同理。
 ///
 /// 抽为独立纯函数以便在不启动 HTTP 服务的情况下直接验证过滤语义。
-fn matches_filters(
+///
+/// `pub(crate)` 而非私有：`handlers.rs` 的转发器测试需要用同一套过滤语义
+/// 验证「转发出来的事件确实能被 `?sop_id=` 识别」，避免测试里复制一份
+/// 过滤逻辑导致验证失真。
+pub(crate) fn matches_filters(
     event: &SseEvent,
     type_filters: Option<&[String]>,
     sop_filter: Option<&str>,
@@ -529,6 +589,172 @@ mod tests {
         let sse_str = event.to_sse_string();
         assert!(sse_str.contains("event: test_event"));
         assert!(sse_str.contains("data:"));
+    }
+
+    #[test]
+    fn test_every_execution_event_variant_maps_to_sse() {
+        use sisyphus_types::ExecutionEvent as E;
+
+        // 覆盖全部 8 个变体：任何新增变体若忘记映射，本测试的
+        // 「变体数量」断言会先失败，强制补齐。
+        let variants = vec![
+            (
+                E::NodeStarted {
+                    node_name: "fetch".to_string(),
+                },
+                "node_started",
+            ),
+            (
+                E::NodeCompleted {
+                    node_name: "fetch".to_string(),
+                    output: sisyphus_types::NodeOutput::from(serde_json::json!("ok")),
+                    fuel_consumed: 42,
+                    duration_ms: 120,
+                },
+                "node_completed",
+            ),
+            (
+                E::NodeFailed {
+                    node_name: "fetch".to_string(),
+                    error: "timeout".to_string(),
+                    fuel_consumed: 7,
+                    duration_ms: 3000,
+                },
+                "node_failed",
+            ),
+            (
+                E::ExecutionComplete {
+                    result: sisyphus_types::NodeOutput::from(serde_json::json!("done")),
+                },
+                "execution_complete",
+            ),
+            (
+                E::CognitivePlan {
+                    plan: sisyphus_types::CognitivePlan::default(),
+                },
+                "cognitive_plan",
+            ),
+            (
+                E::CognitiveStep {
+                    step: "Predicting".to_string(),
+                    message: "预测执行结果".to_string(),
+                    metrics: None,
+                },
+                "cognitive_step",
+            ),
+            (
+                E::MicroReflection {
+                    node_name: "fetch".to_string(),
+                    prediction: "200".to_string(),
+                    actual: "500".to_string(),
+                    decision: "retry".to_string(),
+                    updates: None,
+                    reason: Some("上游错误".to_string()),
+                },
+                "micro_reflection",
+            ),
+            (
+                E::CognitiveComplete {
+                    report: "已收敛".to_string(),
+                },
+                "cognitive_complete",
+            ),
+        ];
+
+        // 变体总数守卫：ExecutionEvent 新增变体时本测试会先失败，
+        // 强制补齐映射而非静默漏掉。
+        assert_eq!(
+            variants.len(),
+            8,
+            "ExecutionEvent 变体数已变（当前 {}），必须为新变体补映射与测试",
+            variants.len()
+        );
+
+        for (event, expected_type) in variants {
+            let sse = SseEvent::from_execution_event(&event, "sop-abc");
+            assert_eq!(
+                sse.event_type(),
+                expected_type,
+                "变体 {expected_type} 的事件名不符"
+            );
+            // 归属必须可被服务端过滤识别
+            assert_eq!(
+                sse.sop_id(),
+                Some("sop-abc"),
+                "变体 {expected_type} 未携带 sop_id，无法按 sop 过滤"
+            );
+            // payload 必须保留原始字段，不能只剩维度
+            if let SseEvent::Custom { payload, .. } = &sse {
+                assert!(
+                    payload.as_object().map(|m| m.len()).unwrap_or(0) >= 2,
+                    "变体 {expected_type} 的 payload 只剩维度，原始字段丢失: {payload}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_execution_event_payload_preserves_metric_fields() {
+        // fuel_consumed / duration_ms 在 SseEvent 枚举中无处安放，
+        // 放入 Custom payload 是无损保留它们的关键，必须逐字段核对。
+        let event = sisyphus_types::ExecutionEvent::NodeCompleted {
+            node_name: "fetch".to_string(),
+            output: sisyphus_types::NodeOutput::from(serde_json::json!({"rows": 3})),
+            fuel_consumed: 99,
+            duration_ms: 1234,
+        };
+        let sse = SseEvent::from_execution_event(&event, "sop-1");
+        let SseEvent::Custom { payload, .. } = &sse else {
+            panic!("应映射为 Custom");
+        };
+
+        assert_eq!(payload["node_name"], "fetch");
+        assert_eq!(payload["fuel_consumed"], 99);
+        assert_eq!(payload["duration_ms"], 1234);
+        assert_eq!(payload["sop_id"], "sop-1");
+        assert_eq!(payload["output"], serde_json::json!({"rows": 3}));
+    }
+
+    #[test]
+    fn test_mapped_execution_events_pass_sop_filter() {
+        // 端到端：内核事件经映射后必须能通过自己所属 sop 的过滤
+        let event = sisyphus_types::ExecutionEvent::NodeStarted {
+            node_name: "fetch".to_string(),
+        };
+        let sse = SseEvent::from_execution_event(&event, "sop-abc");
+
+        assert!(matches_filters(&sse, None, Some("sop-abc"), None));
+        assert!(!matches_filters(&sse, None, Some("sop-other"), None));
+        // 也能被类型过滤命中
+        assert!(matches_filters(
+            &sse,
+            Some(&["node_started".to_string()]),
+            None,
+            None
+        ));
+        assert!(!matches_filters(
+            &sse,
+            Some(&["node_completed".to_string()]),
+            None,
+            None
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_execution_event_reaches_subscriber_end_to_end() {
+        // 走真实广播链路：发送 ExecutionEvent → 转换 → 广播 → 订阅者收到，
+        // 确认不是只有纯函数层面正确。
+        let (tx, mut rx) = tokio::sync::broadcast::channel::<SseEvent>(16);
+        let event = sisyphus_types::ExecutionEvent::ExecutionComplete {
+            result: sisyphus_types::NodeOutput::from(serde_json::json!("finished")),
+        };
+
+        tx.send(SseEvent::from_execution_event(&event, "sop-e2e")).expect("应有订阅者");
+
+        let got = rx.recv().await.expect("订阅者应收到事件");
+        assert_eq!(got.event_type(), "execution_complete");
+        assert_eq!(got.sop_id(), Some("sop-e2e"));
+        assert!(matches_filters(&got, None, Some("sop-e2e"), None));
     }
 
     fn node_started(sop: &str) -> SseEvent {
