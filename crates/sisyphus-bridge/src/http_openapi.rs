@@ -138,6 +138,48 @@ pub(crate) async fn openapi_json() -> impl IntoResponse {
                 }
             },
 
+            // ── SSE ──────────────────────────────────────────────────────
+            "/api/events": {
+                "get": {
+                    "summary": "Subscribe to the server-sent event stream",
+                    "operationId": "streamEvents",
+                    "description": "Long-lived SSE stream. All provided filters are ANDed; blank values are treated as absent. An event is delivered only when it carries every requested dimension (a missing dimension never matches). NOTE: reconnecting does not replay past events — event ids are random per push and last_event_id is parsed but unused.",
+                    "parameters": [
+                        {"name": "events", "in": "query", "required": false, "schema": {"type": "string"}, "description": "Comma-separated event types to include"},
+                        {"name": "sop_id", "in": "query", "required": false, "schema": {"type": "string"}, "description": "Only events carrying this SOP id"},
+                        {"name": "session_id", "in": "query", "required": false, "schema": {"type": "string"}, "description": "Only events carrying this session id"},
+                        {"name": "project_id", "in": "query", "required": false, "schema": {"type": "string"}, "description": "Only events carrying this project id"},
+                        {"name": "heartbeat", "in": "query", "required": false, "schema": {"type": "integer", "default": 30}, "description": "Heartbeat interval in seconds; 0 disables"},
+                        {"name": "last_event_id", "in": "query", "required": false, "schema": {"type": "string"}, "description": "Parsed but currently unused; resumption is not implemented"}
+                    ],
+                    "responses": {
+                        "200": {"description": "Server-sent event stream", "content": {"text/event-stream": {"schema": {"type": "string"}}}},
+                        "429": {"description": "Too many concurrent SSE connections", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorResponse"}}}}
+                    }
+                }
+            },
+            "/api/events/broadcast": {
+                "post": {
+                    "summary": "Broadcast a custom event to SSE subscribers",
+                    "operationId": "broadcastEvent",
+                    "description": "Top-level sop_id / session_id / project_id declare the event's ownership and take precedence over same-named keys inside payload. Blank values count as absent, leaving any payload-provided dimension intact.",
+                    "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/BroadcastEventRequest"}}}},
+                    "responses": {
+                        "200": {"description": "Event broadcast", "content": {"application/json": {"schema": {"type": "object", "properties": {"status": {"type": "string"}}}}}},
+                        "500": {"description": "No active subscribers", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorResponse"}}}}
+                    }
+                }
+            },
+            "/api/events/health": {
+                "get": {
+                    "summary": "SSE subsystem health",
+                    "operationId": "sseHealth",
+                    "responses": {
+                        "200": {"description": "SSE status", "content": {"application/json": {"schema": {"type": "object", "properties": {"status": {"type": "string"}, "service": {"type": "string"}}}}}}
+                    }
+                }
+            },
+
             // ── Session Management ───────────────────────────────────────
             "/api/sessions": {
                 "get": {
@@ -726,6 +768,27 @@ pub(crate) async fn openapi_json() -> impl IntoResponse {
                         "event_tx": {"type": "boolean"}
                     }
                 },
+                "ErrorResponse": {
+                    "type": "object",
+                    "description": "Uniform error envelope returned by REST endpoints",
+                    "properties": {
+                        "error": {"type": "string"}
+                    }
+                },
+
+                "BroadcastEventRequest": {
+                    "type": "object",
+                    "description": "Broadcast a custom event. Top-level sop_id / session_id / project_id declare the event's ownership and are written into the event payload, taking precedence over same-named keys inside payload. Blank values count as absent.",
+                    "required": ["event_type", "payload"],
+                    "properties": {
+                        "event_type": {"type": "string", "description": "Event type delivered as the SSE event name"},
+                        "payload": {"description": "Arbitrary JSON payload; non-object payloads are broadcast unchanged"},
+                        "sop_id": {"type": "string", "description": "SOP this event belongs to"},
+                        "session_id": {"type": "string", "description": "Session this event belongs to"},
+                        "project_id": {"type": "string", "description": "Project this event belongs to"}
+                    }
+                },
+
                 "CompositeExecuteResponse": {
                     "type": "object",
                     "properties": {
@@ -1085,4 +1148,91 @@ pub(crate) async fn swagger_ui_handler() -> impl IntoResponse {
         [(axum::http::header::CONTENT_TYPE, "text/html; charset=utf-8")],
         html,
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::Value;
+
+    /// 收集文档里出现的所有 `#/components/schemas/X` 引用名
+    fn collect_refs(v: &Value, out: &mut Vec<String>) {
+        match v {
+            Value::Object(m) => {
+                for (k, val) in m {
+                    if k == "$ref" {
+                        if let Some(name) = val.as_str().and_then(|s| s.rsplit('/').next()) {
+                            out.push(name.to_string());
+                        }
+                    } else {
+                        collect_refs(val, out);
+                    }
+                }
+            },
+            Value::Array(a) => {
+                for x in a {
+                    collect_refs(x, out);
+                }
+            },
+            _ => {},
+        }
+    }
+
+    /// 走真实 handler 取出文档 —— 与客户端拿到的完全一致。
+    /// 直接读源码里的 json! 字面量会漏掉 handler 层可能做的加工。
+    async fn doc() -> Value {
+        let resp = openapi_json().await.into_response();
+        assert_eq!(resp.status(), 200);
+        let body = axum::body::to_bytes(resp.into_body(), 1 << 20).await.expect("应能读取响应体");
+        serde_json::from_slice(&body).expect("OpenAPI 文档必须是合法 JSON")
+    }
+
+    /// 每个 `$ref` 都必须指向真实存在的 schema。
+    ///
+    /// 悬空引用不会让 `/openapi.json` 返回错误 —— 它照常返回 200，
+    /// Swagger UI 却在渲染时才报错，开发者看到的是空白页。
+    /// 没有这个测试，悬空引用会一直潜伏。
+    #[tokio::test]
+    async fn every_schema_ref_resolves() {
+        let doc = doc().await;
+        let schemas = doc
+            .pointer("/components/schemas")
+            .and_then(Value::as_object)
+            .expect("必须存在 components.schemas");
+
+        let mut refs = Vec::new();
+        collect_refs(&doc, &mut refs);
+        assert!(!refs.is_empty(), "应至少存在一些 $ref 引用");
+
+        let dangling: Vec<_> =
+            refs.iter().filter(|name| !schemas.contains_key(name.as_str())).collect();
+        assert!(
+            dangling.is_empty(),
+            "以下 $ref 指向不存在的 schema（Swagger UI 会渲染失败）: {dangling:?}"
+        );
+    }
+
+    /// 每个 path 必须有至少一个操作，且 operationId 全局唯一。
+    #[tokio::test]
+    async fn operation_ids_are_unique() {
+        let doc = doc().await;
+        let paths = doc.pointer("/paths").and_then(Value::as_object).expect("paths");
+
+        let mut seen = std::collections::HashSet::new();
+        for (path, item) in paths {
+            for (method, op) in item.as_object().expect("path 项应为对象") {
+                if !matches!(method.as_str(), "get" | "post" | "put" | "delete" | "patch") {
+                    continue;
+                }
+                let id = op
+                    .get("operationId")
+                    .and_then(Value::as_str)
+                    .unwrap_or_else(|| panic!("{method} {path} 缺少 operationId"));
+                assert!(
+                    seen.insert(id.to_string()),
+                    "operationId 重复: {id}（OpenAPI 要求全局唯一，客户端代码生成会冲突）"
+                );
+            }
+        }
+    }
 }
