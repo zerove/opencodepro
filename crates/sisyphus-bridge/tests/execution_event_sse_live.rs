@@ -371,10 +371,6 @@ async fn live_composite_execution_exposes_sse_sop_id_for_subscription() {
 
     // 核心闭环：执行期间的事件必须真的流到 SSE（此前内核 `execute_goals`
     // 硬编码 `None` 事件槽，即便端点修好也会全静默）。
-    //
-    // 刻意**不**断言 HTTP 200：DummyLlm 下内核常因偏差阈值以 StrategicPivot
-    // 收场，那是执行质量问题而非契约缺陷。SSE 验收要验的是「事件是否流出、
-    // 打标是否正确」，与执行成败无关。
     let payloads = collect_payloads(&mut stream, 8, Duration::from_secs(8)).await;
     assert!(
         !payloads.is_empty(),
@@ -399,40 +395,49 @@ async fn live_composite_execution_exposes_sse_sop_id_for_subscription() {
         );
     }
 
-    // 成功时还必须回传 sse_sop_id，且与事件上的打标一致 —— 客户端正是靠
-    // 响应里的这个值去订阅，缺失或不一致都会让它收不到任何事件。
-    if status == 200 {
-        let sse_sop_id =
-            resp_json.get("sse_sop_id").and_then(|v| v.as_str()).unwrap_or_else(|| {
-                panic!("composite 成功响应缺少 sse_sop_id，客户端无从订阅事件: {resp_json}")
-            });
-        assert!(
-            sse_sop_id.starts_with("composite-"),
-            "sse_sop_id 应带 composite- 前缀，实际: {sse_sop_id}"
-        );
+    // **无条件**断言 `sse_sop_id` 存在且与事件打标一致。
+    //
+    // 这里刻意不按 status 分支：DummyLlm 下内核几乎总以 StrategicPivot
+    // 收场（HTTP 500），若把断言放进 `if status == 200`，整段就是死代码 ——
+    // 实测确实从未执行过，也就从未验证过契约。composite 的 sop_id 由服务端
+    // 生成，客户端无从推算，所以**无论执行成败都必须回传**：此刻事件已经
+    // 广播出去了，客户端拿不到 id 就等于收到了却无法订阅。
+    let sse_sop_id = resp_json.get("sse_sop_id").and_then(|v| v.as_str()).unwrap_or_else(|| {
+        panic!(
+            "composite 响应缺少 sse_sop_id（status={status}）。事件已广播，\
+             客户端却无从得知该用哪个 sop_id 订阅: {resp_json}"
+        )
+    });
+    assert!(
+        sse_sop_id.starts_with("composite-"),
+        "sse_sop_id 应带 composite- 前缀，实际: {sse_sop_id}"
+    );
+    for p in &payloads {
         assert_eq!(
-            payloads[0].pointer("/payload/sop_id").and_then(|v| v.as_str()),
+            p.pointer("/payload/sop_id").and_then(|v| v.as_str()),
             Some(sse_sop_id),
-            "事件 sop_id 与响应回传的 sse_sop_id 不一致，客户端按它过滤会收不到: {resp_json}"
+            "事件 sop_id 与响应回传的 sse_sop_id 不一致，客户端按它过滤会收不到: {p}"
         );
+    }
 
-        // 成功响应还必须带上真实执行结果，而非空壳。
+    // 拿到 id 去订阅必须能连上 —— 这是客户端拿到 id 后的第一步动作。
+    let sub = client
+        .get(format!("{base}/api/events?sop_id={sse_sop_id}&heartbeat=0"))
+        .send()
+        .await
+        .expect("按 sse_sop_id 订阅失败");
+    assert_eq!(
+        sub.status().as_u16(),
+        200,
+        "按 composite 返回的 sse_sop_id 订阅应成功"
+    );
+
+    // 成功时还要带上真实执行结果，而非空壳。
+    if status == 200 {
         let results = resp_json.get("results").and_then(|v| v.as_object()).expect("缺少 results");
         assert!(
             !results.is_empty(),
             "composite 成功响应却没有任何执行结果: {resp_json}"
-        );
-
-        // 拿到 id 去订阅必须能连上。
-        let sub = client
-            .get(format!("{base}/api/events?sop_id={sse_sop_id}&heartbeat=0"))
-            .send()
-            .await
-            .expect("按 sse_sop_id 订阅失败");
-        assert_eq!(
-            sub.status().as_u16(),
-            200,
-            "按 composite 返回的 sse_sop_id 订阅应成功"
         );
     }
 

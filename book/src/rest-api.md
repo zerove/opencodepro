@@ -58,6 +58,10 @@ OpenAPI 规范位于 [`/openapi.json`](/openapi.json)，也可通过 Swagger UI 
 
 响应体含 `sse_sop_id`（形如 `composite-<uuid>`）。复合执行内部各图的 `sop_id` 由内核生成、在此不可见，因此订阅 SSE 事件时必须用 `sse_sop_id` 作为 `?sop_id=` 的值，详见 [SSE 事件](sse-events.md#执行端点与事件订阅)。
 
+`sse_sop_id` **无论执行成功或失败都会回传**（失败时与 `error` 并列）。因为该标识由服务端生成、客户端无从推算，而执行期间的事件已经广播到 SSE —— 此时不告知订阅 id，客户端就会陷入「收到了事件却不知道该订阅哪个 sop_id」的困境。
+
+> 对比 `POST /api/execute/goal`：它的 `sop_id` 由客户端在请求中指定，失败时客户端本就知道该订阅什么，因此失败响应无需回传。
+
 ## 会话
 
 ### `GET /api/sessions`

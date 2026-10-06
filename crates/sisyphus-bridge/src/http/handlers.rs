@@ -551,7 +551,17 @@ pub(super) async fn execute_composite_handler(
         },
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
-            Json(serde_json::json!({ "error": e.to_string() })),
+            // 失败时事件已经广播出去了（转发器在 match 之前就已排空），
+            // 而 composite 的 sop_id 由服务端生成、客户端无从推算。因此
+            // 失败响应同样必须回传 `sse_sop_id`，否则客户端收到了事件却
+            // 不知道该用哪个 sop_id 去订阅，事件流等于凭空消失。
+            //
+            // 对比 execute_goal：它的 sop_id 由客户端提供，失败时客户端
+            // 本就知道，无需回传 —— 这是两条路径的实质差异。
+            Json(serde_json::json!({
+                "error": e.to_string(),
+                "sse_sop_id": composite_sop_id,
+            })),
         ),
     }
 }
