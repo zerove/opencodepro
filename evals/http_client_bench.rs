@@ -234,13 +234,29 @@ mod tests {
     use super::*;
     use std::fs;
     use std::sync::atomic::{AtomicU64, Ordering};
+    use std::sync::{Mutex, MutexGuard, OnceLock};
 
     /// 计数器: 给每个测试唯一 timestamp 后缀
     static COUNTER: AtomicU64 = AtomicU64::new(0);
 
+    /// `set_current_dir` 改的是**进程级**全局状态，不是线程级。
+    /// libtest 默认多线程并行跑同一二进制内的测试，因此两个都会 chdir 的
+    /// 测试会互相踩：`test_read_last_baseline_returns_none_when_no_history`
+    /// 会在另一个测试正停留在它含 `.sisyphus/eval-history` 的临时目录时
+    /// 调用 `read_last_baseline()`，读到别人的 fixture 而非 None。
+    ///
+    /// 用互斥锁把「chdir → 读 → chdir 回来」整段串行化。把
+    /// `read_last_baseline` 改成接受显式路径才是根治，但那要改生产代码
+    /// 签名并审计全部调用方，与本次并行稳定性修复不成比例。
+    fn cwd_lock() -> MutexGuard<'static, ()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(())).lock().unwrap_or_else(|e| e.into_inner())
+    }
+
     /// 在临时目录里写一个 jsonl，验证 read_last_baseline 能否读出 speedup_ratio
     #[test]
     fn test_read_last_baseline_returns_speedup_ratio() {
+        let _guard = cwd_lock();
         let tmp = std::env::temp_dir().join(format!(
             "sisyphus-bench-test-{}-{}",
             std::process::id(),
@@ -282,6 +298,7 @@ mod tests {
     /// 无历史目录时返回 None
     #[test]
     fn test_read_last_baseline_returns_none_when_no_history() {
+        let _guard = cwd_lock();
         let tmp = std::env::temp_dir().join(format!(
             "sisyphus-bench-test-none-{}-{}",
             std::process::id(),
