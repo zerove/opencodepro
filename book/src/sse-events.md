@@ -16,7 +16,7 @@
 | `sop_id` | **已生效** | 仅推送携带该 SOP ID 的事件 |
 | `session_id` | **已生效** | 仅推送携带该会话 ID 的事件 |
 | `heartbeat` | **已生效** | 心跳间隔秒数，默认 30，`0` 表示禁用 |
-| `project_id` | 仅解析，**未生效** | 见下方「未生效参数」 |
+| `project_id` | **已生效** | 仅推送携带该项目 ID 的事件 |
 | `last_event_id` | 仅解析，**未生效** | 见下方「未生效参数」 |
 
 空值参数（如 `?sop_id=`）会被归一化为「不过滤」，而不是「只匹配空 ID」这种永不命中的条件。
@@ -28,7 +28,15 @@
 事件通过 `SseEvent` 枚举传输。维度有两个来源：
 
 - **枚举字段**：节点/SOP 执行类事件与 `session_message_added` 直接携带 `sop_id` / `session_id`；
-- **payload 字段**：`Custom` 变体（由 `POST /api/events/broadcast` 及干预广播产生）没有枚举字段，维度从 `payload` 中同名键读取。
+- **payload 字段**：`Custom` 变体（由 `POST /api/events/broadcast`、干预广播与执行事件转发器产生）没有枚举字段，维度从 `payload` 中同名键读取。
+
+`POST /api/events/broadcast` 的请求体支持在**顶层**声明归属维度：
+
+```json
+{ "event_type": "custom", "sop_id": "sop-abc", "payload": { "message": "hi" } }
+```
+
+服务端会把顶层的 `sop_id` / `session_id` / `project_id` 写入事件 payload。若 payload 内已有同名键，**以顶层为准** —— 顶层字段是专门的归属声明，payload 只是业务载荷。顶层为空白字符串时视为「未声明」，payload 内已有维度保留。payload 不是对象（如 `null`、数组）时无法写入维度，事件原样送达。
 
 payload 中缺失该键、值为 `null`、或值不是字符串时，视为**无该维度**，不会被任何维度过滤匹配。
 
@@ -86,9 +94,8 @@ curl -N "http://localhost:50051/api/events?sop_id=$SID"
 
 ## 未生效参数
 
-`project_id` 与 `last_event_id` 会从 URL 解析但不参与过滤。保留它们是为了不破坏既有 API 契约 —— 移除字段会让携带这些参数的客户端得到 400/422 而非静默忽略。
+`last_event_id` 会从 URL 解析但不参与过滤。保留它是为了不破坏既有 API 契约 —— 移除字段会让携带该参数的客户端得到 400/422 而非静默忽略。
 
-- `project_id`：全局广播 channel 不区分项目，事件与工作区/JWT 的 `project_id` 之间没有绑定关系，实现过滤需要先定义归属规则。
 - `last_event_id`：事件 ID 是每次推送生成的随机 UUID，重连时携带的 ID 没有可匹配的历史；补齐续传需要引入带序号的全局事件日志。
 
 ## 并发限制

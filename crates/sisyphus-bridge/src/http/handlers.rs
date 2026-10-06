@@ -1527,7 +1527,7 @@ mod wiring_tests {
 #[cfg(test)]
 mod sse_forwarder_tests {
     use super::spawn_sse_event_forwarder;
-    use crate::http::sse_handlers::{matches_filters, SseEvent};
+    use crate::http::sse_handlers::{matches_filters, SseEvent, SseFilters};
     use sisyphus_types::ExecutionEvent;
     use tokio::sync::mpsc;
 
@@ -1572,8 +1572,20 @@ mod sse_forwarder_tests {
         // 每个事件都必须归属正确 sop，否则无法按 sop 订阅
         for ev in [&first, &second, &third] {
             assert_eq!(ev.sop_id(), Some("sop-live"));
-            assert!(matches_filters(ev, None, Some("sop-live"), None));
-            assert!(!matches_filters(ev, None, Some("other-sop"), None));
+            assert!(matches_filters(
+                ev,
+                &SseFilters {
+                    sop_id: Some("sop-live".to_string()),
+                    ..Default::default()
+                }
+            ));
+            assert!(!matches_filters(
+                ev,
+                &SseFilters {
+                    sop_id: Some("other-sop".to_string()),
+                    ..Default::default()
+                }
+            ));
         }
 
         // 关闭 sender 后转发器应自行退出（不能泄漏 task）

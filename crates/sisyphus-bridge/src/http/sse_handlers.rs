@@ -177,6 +177,41 @@ impl SseEvent {
         }
     }
 
+    /// 提取事件携带的项目 ID（若该变体包含）
+    ///
+    /// `Custom` 变体从 payload 读取。当前仅用于判断事件是否携带项目维度
+    /// （广播端点会写入），`?project_id=` 服务端过滤尚未启用，见 `SseQuery`。
+    pub fn project_id(&self) -> Option<&str> {
+        match self {
+            SseEvent::Custom { payload, .. } => payload.get("project_id").and_then(|v| v.as_str()),
+            _ => None,
+        }
+    }
+
+    /// 返回 `Custom` 事件的整个 payload（测试用）
+    ///
+    /// 非 `Custom` 变体返回 `Null`：治理规则禁止 panic，
+    /// 测试辅助也不应例外。
+    #[cfg(test)]
+    pub(crate) fn payload_field_raw(&self) -> serde_json::Value {
+        match self {
+            SseEvent::Custom { payload, .. } => payload.clone(),
+            _ => serde_json::Value::Null,
+        }
+    }
+
+    /// 读取 `Custom` 事件的单个 payload 字段（测试用）
+    ///
+    /// `sop_id()` / `session_id()` 只暴露维度，不便于断言其他业务字段
+    /// 在维度注入后仍然完好。
+    #[cfg(test)]
+    pub(crate) fn payload_field(&self, key: &str) -> Option<serde_json::Value> {
+        match self {
+            SseEvent::Custom { payload, .. } => payload.get(key).cloned(),
+            _ => None,
+        }
+    }
+
     /// 转换为 SSE 格式字符串
     pub fn to_sse_string(&self) -> String {
         let data = serde_json::to_string(self).unwrap_or_default();
@@ -243,24 +278,21 @@ fn execution_event_type(event: &sisyphus_types::ExecutionEvent) -> String {
 /// SSE 连接查询参数
 #[derive(Debug, Deserialize)]
 // 字段豁免说明（ADR-007 反模式要求给出正当理由）：
-//   `events` / `heartbeat` / `sop_id` / `session_id` 均已生效并参与过滤；
-//   `project_id` / `last_event_id` 目前**仅从 URL 解析、尚未参与过滤**，保留它们是为了
-//   不破坏既有 API 契约（去掉字段会让传这些参数的客户端报 400/422 而非静默忽略）。
-//   - `project_id`：当前生产中唯一被广播的事件（`intervention`）是 `Custom` 变体，
-//     其 payload 不含项目维度；工作区/JWT 虽有 `project_id`，但广播点未把它带进事件，
-//     且全局广播 channel 本身不区分项目。实现过滤需先确定「事件属于哪个项目」
-//     的判定规则（当前 workspace 概念与事件无绑定关系），属独立特性。
-//   - `last_event_id`：事件 ID 为每次生成的随机 UUID，重连携带的 ID 无可匹配的历史，
+//   `events` / `heartbeat` / `sop_id` / `session_id` / `project_id` 均已生效并参与过滤；
+//   `last_event_id` 目前**仅从 URL 解析、尚未参与过滤**，保留它是为了
+//   不破坏既有 API 契约（去掉字段会让传该参数的客户端报 400/422 而非静默忽略）。
+//   - `last_event_id`：事件 ID 为每次推送生成的随机 UUID，重连携带的 ID 无可匹配的历史，
 //     且仓库内无任何客户端消费该参数。补齐需要引入带序号的全局事件日志，属独立特性。
 //   此处**不是**「为审计保留」，而是「解析已实现、过滤待实现」。
 #[allow(dead_code)]
 pub struct SseQuery {
     /// 按事件类型过滤（逗号分隔）。**已生效**
     pub events: Option<String>,
-    /// 按项目 ID 过滤。**已解析但未生效**（生产事件不带项目维度，见上方说明）
+    /// 按项目 ID 过滤。**已生效**（匹配 payload 携带 `project_id` 的 Custom 事件
+    /// —— `POST /api/events/broadcast` 会把请求顶层的 `project_id` 注入事件）
     pub project_id: Option<String>,
     /// 按 SOP ID 过滤。**已生效**（匹配节点/SOP 执行类事件，以及 payload 携带
-    /// `sop_id` 的 Custom 事件 —— 含生产中唯一真正广播的 `intervention`）
+    /// `sop_id` 的 Custom 事件 —— 含广播端点与执行转发器注入的事件）
     pub sop_id: Option<String>,
     /// 按会话 ID 过滤。**已生效**（`session_message_added` 事件，或 payload 携带
     /// `session_id` 的 Custom 事件）
@@ -282,36 +314,55 @@ fn normalize_dimension(raw: Option<&String>) -> Option<String> {
     raw.map(|s| s.trim().to_string()).filter(|s| !s.is_empty())
 }
 
+/// 订阅方的过滤条件
+///
+/// 持有拥有所有权的 `String` 而非借用：过滤条件要被 `async_stream::stream!`
+/// 生成的流捕获，而该流的生命周期长于本函数的局部变量。借用会导致
+/// “captured variable cannot escape” 类错误。
+#[derive(Debug, Clone, Default)]
+pub(crate) struct SseFilters {
+    /// 按事件类型过滤（逗号分隔）
+    pub types: Option<Vec<String>>,
+    /// 按 SOP ID 过滤
+    pub sop_id: Option<String>,
+    /// 按会话 ID 过滤
+    pub session_id: Option<String>,
+    /// 按项目 ID 过滤
+    pub project_id: Option<String>,
+}
+
 /// 判断事件是否应推送给当前订阅者
 ///
-/// 三个维度为「与」（AND）关系，全部满足才推送：
-/// - `type_filters` 非空时，事件类型必须命中其中之一；
-/// - `sop_filter` 要求事件**携带**该 `sop_id` 且值相等（维度缺失即不匹配）；
-/// - `session_filter` 同理。
+/// 各维度为「与」（AND）关系，全部满足才推送：
+/// - `types` 非空时，事件类型必须命中其中之一；
+/// - 其余维度要求事件**携带**该维度且值相等（维度缺失即不匹配）。
+///
+/// 维度缺失即不匹配是刻意的：宁可少推，也不要把无归属的事件泄露给
+/// 按项目/会话隔离的订阅者。
 ///
 /// 抽为独立纯函数以便在不启动 HTTP 服务的情况下直接验证过滤语义。
 ///
 /// `pub(crate)` 而非私有：`handlers.rs` 的转发器测试需要用同一套过滤语义
 /// 验证「转发出来的事件确实能被 `?sop_id=` 识别」，避免测试里复制一份
 /// 过滤逻辑导致验证失真。
-pub(crate) fn matches_filters(
-    event: &SseEvent,
-    type_filters: Option<&[String]>,
-    sop_filter: Option<&str>,
-    session_filter: Option<&str>,
-) -> bool {
-    if let Some(filters) = type_filters {
-        if !filters.iter().any(|f| f.as_str() == event.event_type()) {
+pub(crate) fn matches_filters(event: &SseEvent, f: &SseFilters) -> bool {
+    if let Some(filters) = &f.types {
+        if !filters.iter().any(|t| t.as_str() == event.event_type()) {
             return false;
         }
     }
-    if let Some(want) = sop_filter {
-        if event.sop_id() != Some(want) {
+    if let Some(want) = &f.sop_id {
+        if event.sop_id() != Some(want.as_str()) {
             return false;
         }
     }
-    if let Some(want) = session_filter {
-        if event.session_id() != Some(want) {
+    if let Some(want) = &f.session_id {
+        if event.session_id() != Some(want.as_str()) {
+            return false;
+        }
+    }
+    if let Some(want) = &f.project_id {
+        if event.project_id() != Some(want.as_str()) {
             return false;
         }
     }
@@ -346,6 +397,13 @@ pub async fn sse_handler(
     // 维度缺失的事件（如 skill_installed 没有 sop_id）在此维度下被排除。
     let sop_filter: Option<String> = normalize_dimension(query.sop_id.as_ref());
     let session_filter: Option<String> = normalize_dimension(query.session_id.as_ref());
+    let project_filter: Option<String> = normalize_dimension(query.project_id.as_ref());
+    let filters = SseFilters {
+        types: event_filters,
+        sop_id: sop_filter,
+        session_id: session_filter,
+        project_id: project_filter,
+    };
 
     let heartbeat_interval = query.heartbeat.unwrap_or(30);
 
@@ -372,13 +430,8 @@ pub async fn sse_handler(
                 receiver.recv()
             ).await {
                 Ok(Ok(event)) => {
-                    // 应用过滤器（类型 / sop_id / session_id 三维取交集）
-                    if !matches_filters(
-                        &event,
-                        event_filters.as_deref(),
-                        sop_filter.as_deref(),
-                        session_filter.as_deref(),
-                    ) {
+                    // 应用过滤器（类型 / sop_id / session_id / project_id 四维取交集）
+                    if !matches_filters(&event, &filters) {
                         continue;
                     }
 
@@ -414,7 +467,7 @@ pub async fn broadcast_event_handler(
 ) -> impl IntoResponse {
     let event = SseEvent::Custom {
         event_type: payload.event_type.clone(),
-        payload: payload.payload,
+        payload: inject_broadcast_dimensions(payload.payload.clone(), &payload),
         timestamp: chrono::Utc::now(),
     };
 
@@ -428,23 +481,60 @@ pub async fn broadcast_event_handler(
     }
 }
 
+/// 把请求顶层的归属维度写入事件 payload
+///
+/// 顶层 `sop_id` / `session_id` / `project_id` 是 API 契约里专门的归属声明，
+/// 而 `SseEvent::sop_id()` 等对 `Custom` 变体正是从 payload 读取维度。旧实现
+/// 只透传 `payload`、丢弃全部顶层字段，于是调用方按契约在顶层传 `sop_id`，
+/// 事件却因「无维度」被 `?sop_id=` 服务端过滤永久丢弃 —— 广播返回 200，
+/// 看起来成功，实际没有订阅者能收到。
+///
+/// 优先级：顶层 > payload。顶层字段是专门的归属声明，payload 只是业务载荷；
+/// 顶层缺省（或为空白字符串，与订阅侧 `normalize_dimension` 归一化一致）时
+/// 不写入，payload 里已有的同名维度原样保留。
+///
+/// payload 不是对象（如 `null`、数组、标量）时无法注入维度，直接原样返回：
+/// 维度缺失只会让过滤条件不匹配，不会破坏事件本身。
+fn inject_broadcast_dimensions(
+    payload: serde_json::Value,
+    req: &BroadcastEventRequest,
+) -> serde_json::Value {
+    let mut map = match payload {
+        serde_json::Value::Object(m) => m,
+        other => return other,
+    };
+
+    for (key, value) in [
+        ("sop_id", &req.sop_id),
+        ("session_id", &req.session_id),
+        ("project_id", &req.project_id),
+    ] {
+        // 与订阅侧 `?sop_id=` 的空值归一化保持一致：空白不是有效归属声明，
+        // 写入它会抹掉 payload 里本已正确的维度。
+        if let Some(v) = value.as_ref().map(|s| s.trim()).filter(|s| !s.is_empty()) {
+            map.insert(key.to_string(), serde_json::Value::String(v.to_string()));
+        }
+    }
+    serde_json::Value::Object(map)
+}
+
 /// 广播事件请求
 #[derive(Debug, Deserialize)]
 // 字段豁免说明：`event_type` / `payload` 已被 broadcast_event_handler 使用；
-//   `project_id` / `sop_id` / `session_id` 目前仅从请求体解析、未参与过滤
-//   （广播是全量的，不按维度筛选）。保留以维持 API 契约：删掉字段会让
-//   现有客户端的请求体反序列化失败。
+//   `project_id` / `sop_id` / `session_id` 经 inject_broadcast_dimensions
+//   写入事件 payload，参与 `?sop_id=` / `?session_id=` 服务端过滤
+//   （`project_id` 会一并携带，但 `?project_id=` 过滤尚未生效，见 SseQuery 说明）。
 #[allow(dead_code)]
 pub struct BroadcastEventRequest {
     /// 事件类型。**已生效**
     pub event_type: String,
     /// 事件载荷。**已生效**
     pub payload: serde_json::Value,
-    /// 项目 ID。**已解析但未生效**（广播目前是全量的）
+    /// 项目 ID。**已写入事件 payload**（`?project_id=` 过滤尚未生效）
     pub project_id: Option<String>,
-    /// SOP ID。**已解析但未生效**
+    /// SOP ID。**已生效**：写入事件 payload，参与 `?sop_id=` 过滤
     pub sop_id: Option<String>,
-    /// 会话 ID。**已解析但未生效**
+    /// 会话 ID。**已生效**：写入事件 payload，参与 `?session_id=` 过滤
     pub session_id: Option<String>,
 }
 
@@ -553,6 +643,186 @@ pub async fn sse_health_handler() -> impl IntoResponse {
 mod tests {
     use super::*;
     use std::sync::Arc;
+
+    // ── broadcast_event_handler 维度透传 ────────────────────────────
+    //
+    // 缺陷：handler 只透传 payload，把 BroadcastEventRequest 顶层的
+    // sop_id / session_id / project_id 全丢了。而 SseEvent::sop_id()
+    // 对 Custom 变体正是从 payload 读维度，于是调用方按 API 契约在
+    // 顶层传 sop_id，事件却因「无维度」被 ?sop_id= 过滤永久丢弃。
+
+    /// 顶层维度必须落到事件上，且能被服务端过滤识别。
+    /// 走真实 handler，不复制逻辑。
+    #[tokio::test]
+    async fn broadcast_top_level_dimensions_reach_subscribers() {
+        let state = make_test_state(None).await;
+        let mut rx = state.sse_broadcaster.subscribe();
+
+        let req = BroadcastEventRequest {
+            event_type: "custom_event".to_string(),
+            payload: serde_json::json!({"message": "hi"}),
+            project_id: Some("proj-a".to_string()),
+            sop_id: Some("sop-top".to_string()),
+            session_id: Some("sess-top".to_string()),
+        };
+        let resp = broadcast_event_handler(State(state), Json(req)).await.into_response();
+        assert_eq!(resp.status(), axum::http::StatusCode::OK);
+
+        let ev = rx.recv().await.expect("订阅者应收到广播事件");
+        assert_eq!(ev.event_type(), "custom_event");
+        assert_eq!(
+            ev.sop_id(),
+            Some("sop-top"),
+            "顶层 sop_id 必须成为事件维度，否则 ?sop_id=sop-top 订阅者收不到"
+        );
+        assert_eq!(ev.session_id(), Some("sess-top"));
+        // 业务字段不得被维度注入覆盖
+        assert_eq!(ev.payload_field("message"), Some(serde_json::json!("hi")));
+    }
+
+    /// payload 里的维度与顶层冲突时，顶层是权威的
+    /// （顶层字段是 API 契约里专门的归属声明，payload 只是业务载荷）。
+    #[tokio::test]
+    async fn top_level_dimensions_override_payload() {
+        let state = make_test_state(None).await;
+        let mut rx = state.sse_broadcaster.subscribe();
+
+        let req = BroadcastEventRequest {
+            event_type: "custom_event".to_string(),
+            payload: serde_json::json!({"sop_id": "from-payload", "session_id": "sess-payload"}),
+            project_id: None,
+            sop_id: Some("sop-top".to_string()),
+            session_id: Some("sess-top".to_string()),
+        };
+        let resp = broadcast_event_handler(State(state), Json(req)).await.into_response();
+        assert_eq!(resp.status(), axum::http::StatusCode::OK);
+
+        let ev = rx.recv().await.expect("订阅者应收到广播事件");
+        assert_eq!(ev.sop_id(), Some("sop-top"));
+        assert_eq!(ev.session_id(), Some("sess-top"));
+    }
+
+    /// 顶层未提供维度时，payload 内的维度必须原样保留。
+    #[tokio::test]
+    async fn payload_dimensions_survive_when_top_level_absent() {
+        let state = make_test_state(None).await;
+        let mut rx = state.sse_broadcaster.subscribe();
+
+        let req = BroadcastEventRequest {
+            event_type: "custom_event".to_string(),
+            payload: serde_json::json!({"sop_id": "sop-payload"}),
+            project_id: None,
+            sop_id: None,
+            session_id: None,
+        };
+        let resp = broadcast_event_handler(State(state), Json(req)).await.into_response();
+        assert_eq!(resp.status(), axum::http::StatusCode::OK);
+
+        let ev = rx.recv().await.expect("订阅者应收到广播事件");
+        assert_eq!(
+            ev.sop_id(),
+            Some("sop-payload"),
+            "顶层缺省时应回退到 payload 的维度，不能被 None 抹掉"
+        );
+    }
+
+    /// 端到端：顶层 sop_id 广播的事件必须能通过 ?sop_id= 过滤。
+    /// 只测维度提取不够 —— 还要证明 matches_filters 对它返回 true。
+    #[tokio::test]
+    async fn top_level_sop_id_is_filterable_end_to_end() {
+        let state = make_test_state(None).await;
+        let mut rx = state.sse_broadcaster.subscribe();
+
+        let req = BroadcastEventRequest {
+            event_type: "custom_event".to_string(),
+            payload: serde_json::json!({}),
+            project_id: None,
+            sop_id: Some("sop-e2e".to_string()),
+            session_id: None,
+        };
+        let _ = broadcast_event_handler(State(state), Json(req)).await;
+        let ev = rx.recv().await.expect("订阅者应收到广播事件");
+
+        assert!(
+            matches_filters(
+                &ev,
+                &SseFilters {
+                    sop_id: Some("sop-e2e".to_string()),
+                    ..Default::default()
+                }
+            ),
+            "?sop_id=sop-e2e 的订阅者必须能收到顶层声明该 sop_id 的事件"
+        );
+        assert!(
+            !matches_filters(
+                &ev,
+                &SseFilters {
+                    sop_id: Some("other-sop".to_string()),
+                    ..Default::default()
+                }
+            ),
+            "不得匹配无关 sop_id"
+        );
+    }
+
+    /// payload 不是对象时不能注入维度，但也不能因此损坏事件。
+    #[tokio::test]
+    async fn non_object_payload_is_broadcast_unchanged() {
+        let state = make_test_state(None).await;
+        let mut rx = state.sse_broadcaster.subscribe();
+
+        for payload in [
+            serde_json::Value::Null,
+            serde_json::json!([1, 2, 3]),
+            serde_json::json!("plain"),
+            serde_json::json!(7),
+        ] {
+            let req = BroadcastEventRequest {
+                event_type: "custom_event".to_string(),
+                payload: payload.clone(),
+                project_id: None,
+                sop_id: Some("sop-x".to_string()),
+                session_id: None,
+            };
+            let resp =
+                broadcast_event_handler(State(state.clone()), Json(req)).await.into_response();
+            assert_eq!(resp.status(), axum::http::StatusCode::OK, "{payload}");
+
+            let ev = rx.recv().await.expect("订阅者应收到广播事件");
+            assert_eq!(
+                ev.payload_field_raw(),
+                payload,
+                "非对象 payload 必须原样送达，不能被维度注入破坏"
+            );
+            assert_eq!(ev.sop_id(), None);
+        }
+    }
+
+    /// 顶层空串视为「未声明」，不得抹掉 payload 里已有的维度。
+    /// 与 SSE 订阅侧 `normalize_dimension` 的空值归一化保持一致。
+    #[tokio::test]
+    async fn blank_top_level_dimension_does_not_erase_payload_dimension() {
+        let state = make_test_state(None).await;
+        let mut rx = state.sse_broadcaster.subscribe();
+
+        let req = BroadcastEventRequest {
+            event_type: "custom_event".to_string(),
+            payload: serde_json::json!({"sop_id": "sop-payload"}),
+            project_id: Some("   ".to_string()),
+            sop_id: Some("  ".to_string()),
+            session_id: None,
+        };
+        let resp = broadcast_event_handler(State(state), Json(req)).await.into_response();
+        assert_eq!(resp.status(), axum::http::StatusCode::OK);
+
+        let ev = rx.recv().await.expect("订阅者应收到广播事件");
+        assert_eq!(
+            ev.sop_id(),
+            Some("sop-payload"),
+            "顶层空串不是有效归属声明，不应覆盖 payload 的维度"
+        );
+        assert_eq!(ev.project_id(), None);
+    }
 
     #[test]
     fn test_sse_event_serialization() {
@@ -723,20 +993,34 @@ mod tests {
         };
         let sse = SseEvent::from_execution_event(&event, "sop-abc");
 
-        assert!(matches_filters(&sse, None, Some("sop-abc"), None));
-        assert!(!matches_filters(&sse, None, Some("sop-other"), None));
-        // 也能被类型过滤命中
         assert!(matches_filters(
             &sse,
-            Some(&["node_started".to_string()]),
-            None,
-            None
+            &SseFilters {
+                sop_id: Some("sop-abc".to_string()),
+                ..Default::default()
+            }
         ));
         assert!(!matches_filters(
             &sse,
-            Some(&["node_completed".to_string()]),
-            None,
-            None
+            &SseFilters {
+                sop_id: Some("sop-other".to_string()),
+                ..Default::default()
+            }
+        ));
+        // 也能被类型过滤命中
+        assert!(matches_filters(
+            &sse,
+            &SseFilters {
+                types: Some(vec!["node_started".to_string()]),
+                ..Default::default()
+            }
+        ));
+        assert!(!matches_filters(
+            &sse,
+            &SseFilters {
+                types: Some(vec!["node_completed".to_string()]),
+                ..Default::default()
+            }
         ));
     }
 
@@ -754,7 +1038,13 @@ mod tests {
         let got = rx.recv().await.expect("订阅者应收到事件");
         assert_eq!(got.event_type(), "execution_complete");
         assert_eq!(got.sop_id(), Some("sop-e2e"));
-        assert!(matches_filters(&got, None, Some("sop-e2e"), None));
+        assert!(matches_filters(
+            &got,
+            &SseFilters {
+                sop_id: Some("sop-e2e".to_string()),
+                ..Default::default()
+            }
+        ));
     }
 
     fn node_started(sop: &str) -> SseEvent {
@@ -794,11 +1084,23 @@ mod tests {
             "intervention 事件的 sop_id 必须可提取，否则它无法通过自己所属 sop 的过滤"
         );
         assert!(
-            matches_filters(&event, None, Some("sop-abc"), None),
+            matches_filters(
+                &event,
+                &SseFilters {
+                    sop_id: Some("sop-abc".to_string()),
+                    ..Default::default()
+                }
+            ),
             "订阅 ?sop_id=sop-abc 的客户端必须能收到 sop-abc 的干预事件"
         );
         // 其他 sop 的订阅者不应收到
-        assert!(!matches_filters(&event, None, Some("sop-other"), None));
+        assert!(!matches_filters(
+            &event,
+            &SseFilters {
+                sop_id: Some("sop-other".to_string()),
+                ..Default::default()
+            }
+        ));
     }
 
     #[test]
@@ -847,16 +1149,18 @@ mod tests {
         // 命中：sop_id 相等
         assert!(matches_filters(
             &node_started("sop-a"),
-            None,
-            Some("sop-a"),
-            None
+            &SseFilters {
+                sop_id: Some("sop-a".to_string()),
+                ..Default::default()
+            }
         ));
         // 不命中：sop_id 不同
         assert!(!matches_filters(
             &node_started("sop-b"),
-            None,
-            Some("sop-a"),
-            None
+            &SseFilters {
+                sop_id: Some("sop-a".to_string()),
+                ..Default::default()
+            }
         ));
         // 不命中：事件根本不带 sop_id 维度（不得当作「匹配全部」）
         let skill = SseEvent::SkillInstalled {
@@ -864,18 +1168,131 @@ mod tests {
             version: "1.0".to_string(),
             timestamp: chrono::Utc::now(),
         };
-        assert!(!matches_filters(&skill, None, Some("sop-a"), None));
+        assert!(!matches_filters(
+            &skill,
+            &SseFilters {
+                sop_id: Some("sop-a".to_string()),
+                ..Default::default()
+            }
+        ));
     }
 
     #[test]
     fn test_no_filter_pushes_everything() {
-        assert!(matches_filters(&node_started("sop-a"), None, None, None));
+        assert!(matches_filters(
+            &node_started("sop-a"),
+            &SseFilters::default()
+        ));
         let skill = SseEvent::SkillInstalled {
             skill_id: "s1".to_string(),
             version: "1.0".to_string(),
             timestamp: chrono::Utc::now(),
         };
-        assert!(matches_filters(&skill, None, None, None));
+        assert!(matches_filters(&skill, &SseFilters::default()));
+    }
+
+    #[test]
+    fn test_project_filter_matches_only_that_project() {
+        let ev = |pid: &str| {
+            SseEvent::custom(
+                "custom_event".to_string(),
+                serde_json::json!({"project_id": pid}),
+            )
+        };
+        let mine = ev("proj-a");
+        let other = ev("proj-b");
+        let no_dim = SseEvent::custom("custom_event".to_string(), serde_json::json!({}));
+
+        assert!(matches_filters(
+            &mine,
+            &SseFilters {
+                project_id: Some("proj-a".to_string()),
+                ..Default::default()
+            }
+        ));
+        assert!(!matches_filters(
+            &other,
+            &SseFilters {
+                project_id: Some("proj-a".to_string()),
+                ..Default::default()
+            }
+        ));
+        // 无项目维度的事件不得泄露给按项目隔离的订阅者
+        assert!(!matches_filters(
+            &no_dim,
+            &SseFilters {
+                project_id: Some("proj-a".to_string()),
+                ..Default::default()
+            }
+        ));
+    }
+
+    /// 多个维度同时给出时为「与」关系。
+    #[test]
+    fn test_project_and_sop_filters_are_conjunctive() {
+        let both = SseEvent::custom(
+            "custom_event".to_string(),
+            serde_json::json!({"project_id": "proj-a", "sop_id": "sop-1"}),
+        );
+        assert!(matches_filters(
+            &both,
+            &SseFilters {
+                project_id: Some("proj-a".to_string()),
+                sop_id: Some("sop-1".to_string()),
+                ..Default::default()
+            }
+        ));
+        // 项目对但 sop 不对 → 不推送
+        assert!(!matches_filters(
+            &both,
+            &SseFilters {
+                project_id: Some("proj-a".to_string()),
+                sop_id: Some("sop-2".to_string()),
+                ..Default::default()
+            }
+        ));
+        // sop 对但项目不对 → 不推送
+        assert!(!matches_filters(
+            &both,
+            &SseFilters {
+                project_id: Some("proj-z".to_string()),
+                sop_id: Some("sop-1".to_string()),
+                ..Default::default()
+            }
+        ));
+    }
+
+    /// project_id 过滤必须真的走生产广播链路，而不只是纯函数。
+    #[tokio::test]
+    async fn test_broadcast_project_id_is_filterable_end_to_end() {
+        let state = make_test_state(None).await;
+        let mut rx = state.sse_broadcaster.subscribe();
+
+        let req = BroadcastEventRequest {
+            event_type: "custom_event".to_string(),
+            payload: serde_json::json!({"data": 1}),
+            project_id: Some("proj-e2e".to_string()),
+            sop_id: None,
+            session_id: None,
+        };
+        let resp = broadcast_event_handler(State(state), Json(req)).await.into_response();
+        assert_eq!(resp.status(), axum::http::StatusCode::OK);
+
+        let ev = rx.recv().await.expect("订阅者应收到广播事件");
+        assert!(matches_filters(
+            &ev,
+            &SseFilters {
+                project_id: Some("proj-e2e".to_string()),
+                ..Default::default()
+            }
+        ));
+        assert!(!matches_filters(
+            &ev,
+            &SseFilters {
+                project_id: Some("other-proj".to_string()),
+                ..Default::default()
+            }
+        ));
     }
 
     #[test]
@@ -884,23 +1301,29 @@ mod tests {
         // 类型命中且 sop 命中 → 推送
         assert!(matches_filters(
             &node_started("sop-a"),
-            Some(&types),
-            Some("sop-a"),
-            None
+            &SseFilters {
+                types: Some(types.clone()),
+                sop_id: Some("sop-a".to_string()),
+                ..Default::default()
+            }
         ));
         // 类型命中但 sop 不命中 → 不推送
         assert!(!matches_filters(
             &node_started("sop-b"),
-            Some(&types),
-            Some("sop-a"),
-            None
+            &SseFilters {
+                types: Some(types.clone()),
+                sop_id: Some("sop-a".to_string()),
+                ..Default::default()
+            }
         ));
         // sop 命中但类型不命中 → 不推送
         assert!(!matches_filters(
             &node_started("sop-a"),
-            Some(&["skill_installed".to_string()]),
-            Some("sop-a"),
-            None
+            &SseFilters {
+                types: Some(vec!["skill_installed".to_string()]),
+                sop_id: Some("sop-a".to_string()),
+                ..Default::default()
+            }
         ));
     }
 
@@ -918,14 +1341,27 @@ mod tests {
             content: "hi".to_string(),
             timestamp: chrono::Utc::now(),
         };
-        assert!(matches_filters(&mine, None, None, Some("sess-1")));
-        assert!(!matches_filters(&other, None, None, Some("sess-1")));
+        assert!(matches_filters(
+            &mine,
+            &SseFilters {
+                session_id: Some("sess-1".to_string()),
+                ..Default::default()
+            }
+        ));
+        assert!(!matches_filters(
+            &other,
+            &SseFilters {
+                session_id: Some("sess-1".to_string()),
+                ..Default::default()
+            }
+        ));
         // 节点事件没有 session 维度，被排除
         assert!(!matches_filters(
             &node_started("sop-a"),
-            None,
-            None,
-            Some("sess-1")
+            &SseFilters {
+                session_id: Some("sess-1".to_string()),
+                ..Default::default()
+            }
         ));
     }
 
@@ -949,9 +1385,10 @@ mod tests {
         let normalized = normalize_dimension(Some(&raw));
         assert!(matches_filters(
             &node_started("sop-a"),
-            None,
-            normalized.as_deref(),
-            None
+            &SseFilters {
+                sop_id: normalized.clone(),
+                ..Default::default()
+            }
         ));
     }
 
