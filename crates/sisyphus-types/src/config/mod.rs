@@ -767,7 +767,11 @@ sandbox = { max_memory_pages = 10, default_fuel = 1000000, wasm_tools_dir = "too
         // 会让该断言必然失败。
         //
         // 用守卫而非裸 remove_var：后者在开发者本机恰好设过该变量时会
-        // 永久删掉它，且守卫能保证后续两处 set_var 结束后一并恢复。
+        // 永久删掉它。
+        //
+        // 注意守卫只恢复**它自己创建那一刻**的 previous 值，它管不到
+        // 创建之后别人对同名变量的改动。所以下面两处显式设置也各自
+        // 用独立守卫，而不是靠这一枚「兜住全部」。
         // SAFETY: 单线程测试，变量名为配置覆盖专用。
         let _env =
             unsafe { crate::env_guard::EnvVarGuard::unset("SISYPHUS_LLM_EMBEDDING_ALLOW_DUMMY") };
@@ -780,18 +784,30 @@ sandbox = { max_memory_pages = 10, default_fuel = 1000000, wasm_tools_dir = "too
         );
 
         // 显式启用
-        // SAFETY: 同上。
-        unsafe { std::env::set_var("SISYPHUS_LLM_EMBEDDING_ALLOW_DUMMY", "true") };
-        let mut config = Config::default();
-        config.apply_env_overrides();
-        assert!(config.llm.embedding.allow_dummy_embeddings);
+        // 用守卫而非裸 set_var：守卫创建时只记住了「unset 之前的值」，
+        // 中途的裸 set_var 完全在它的视野之外。原先的注释误以为
+        // 「守卫能保证后续两处 set_var 结束后一并恢复」，实际不能——
+        // panic 时变量会残留在 "false"，泄漏给同二进制的后续测试。
+        {
+            // SAFETY: 同上。
+            let _on = unsafe {
+                crate::env_guard::EnvVarGuard::set("SISYPHUS_LLM_EMBEDDING_ALLOW_DUMMY", "true")
+            };
+            let mut config = Config::default();
+            config.apply_env_overrides();
+            assert!(config.llm.embedding.allow_dummy_embeddings);
+        }
 
         // 显式关闭
-        // SAFETY: 同上。
-        unsafe { std::env::set_var("SISYPHUS_LLM_EMBEDDING_ALLOW_DUMMY", "false") };
-        let mut config = Config::default();
-        config.apply_env_overrides();
-        assert!(!config.llm.embedding.allow_dummy_embeddings);
+        {
+            // SAFETY: 同上。
+            let _off = unsafe {
+                crate::env_guard::EnvVarGuard::set("SISYPHUS_LLM_EMBEDDING_ALLOW_DUMMY", "false")
+            };
+            let mut config = Config::default();
+            config.apply_env_overrides();
+            assert!(!config.llm.embedding.allow_dummy_embeddings);
+        }
     }
 
     #[test]

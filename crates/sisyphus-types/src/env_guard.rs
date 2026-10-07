@@ -196,32 +196,39 @@ impl MultiEnvVarGuard {
 mod tests {
     use super::*;
 
+    /// 建立「该变量**原本就有值**」的前置状态。
+    ///
+    /// 用守卫而非裸 `set_var` + 手动 `remove_var`：后者的清理语句位于
+    /// 断言之后，一旦断言 panic 就会跳过，变量永久残留给同二进制的
+    /// 后续测试——**正是本模块要消灭的缺陷**。守卫自己的测试若犯这个
+    /// 错，就是最坏的反例。
+    fn seeded(key: &'static str, value: &str) -> EnvVarGuard {
+        // SAFETY: 单线程测试，变量名带测试专用前缀（SISYPHUS_TEST_*）。
+        unsafe { EnvVarGuard::set(key, value) }
+    }
+
     #[test]
     fn restores_previous_value_on_drop() {
         const KEY: &str = "SISYPHUS_TEST_GUARD_RESTORE";
-        // SAFETY: 单线程测试，且变量名带测试专用前缀。
-        unsafe { std::env::set_var(KEY, "original") };
+        let _seed = seeded(KEY, "original");
 
         {
-            // SAFETY: 同上。
             let _g = unsafe { EnvVarGuard::set(KEY, "temporary") };
             assert_eq!(std::env::var(KEY).unwrap(), "temporary");
         }
 
         // 守卫析构后必须回到原值，而非被删除。
         assert_eq!(std::env::var(KEY).unwrap(), "original");
-        // SAFETY: 清理本测试自己设的值。
-        unsafe { std::env::remove_var(KEY) };
     }
 
     #[test]
     fn unset_restores_absent_to_absent() {
         const KEY: &str = "SISYPHUS_TEST_GUARD_ABSENT";
-        // SAFETY: 单线程测试，变量名带测试专用前缀。
-        unsafe { std::env::remove_var(KEY) };
+        let _seed = seeded(KEY, "temporary");
+        // SAFETY: 同上。
+        let _cleared = unsafe { EnvVarGuard::unset(KEY) };
 
         {
-            // SAFETY: 同上。
             let _g = unsafe { EnvVarGuard::set(KEY, "v") };
             assert!(std::env::var(KEY).is_ok());
         }
@@ -232,18 +239,14 @@ mod tests {
     #[test]
     fn unset_helper_restores_previous() {
         const KEY: &str = "SISYPHUS_TEST_GUARD_UNSET";
-        // SAFETY: 单线程测试，变量名带测试专用前缀。
-        unsafe { std::env::set_var(KEY, "present") };
+        let _seed = seeded(KEY, "present");
 
         {
-            // SAFETY: 同上。
             let _g = unsafe { EnvVarGuard::unset(KEY) };
             assert!(std::env::var(KEY).is_err());
         }
 
         assert_eq!(std::env::var(KEY).unwrap(), "present");
-        // SAFETY: 清理本测试自己设的值。
-        unsafe { std::env::remove_var(KEY) };
     }
 
     #[test]
@@ -252,13 +255,13 @@ mod tests {
         const B: &str = "SISYPHUS_TEST_MULTI_B";
         static PAIRS: [(&str, &str); 2] = [(A, "va"), (B, "vb")];
 
+        // 建立「原本不存在」的前置状态，同样用守卫保证可恢复。
         // SAFETY: 单线程测试，变量名带测试专用前缀。
-        unsafe { std::env::remove_var(A) };
+        let _a = unsafe { EnvVarGuard::unset(A) };
         // SAFETY: 同上。
-        unsafe { std::env::remove_var(B) };
+        let _b = unsafe { EnvVarGuard::unset(B) };
 
         {
-            // SAFETY: 同上。
             let g = unsafe { env_var_guards(&PAIRS) };
             assert_eq!(g.len(), 2);
             assert!(!g.is_empty());
@@ -276,11 +279,9 @@ mod tests {
     #[test]
     fn restores_after_panic_unwind() {
         const KEY: &str = "SISYPHUS_TEST_GUARD_PANIC";
-        // SAFETY: 单线程测试，变量名带测试专用前缀。
-        unsafe { std::env::set_var(KEY, "original") };
+        let _seed = seeded(KEY, "original");
 
         let result = std::panic::catch_unwind(|| {
-            // SAFETY: 同上。
             let _g = unsafe { EnvVarGuard::set(KEY, "temporary") };
             assert_eq!(std::env::var(KEY).unwrap(), "temporary");
             panic!("故意 panic，验证守卫在展开路径上仍然恢复");
@@ -293,19 +294,18 @@ mod tests {
             "original",
             "panic 展开后必须恢复原值；这正是不用 remove_var 手动清理的理由"
         );
-        // SAFETY: 清理本测试自己设的值。
-        unsafe { std::env::remove_var(KEY) };
     }
 
     /// panic 时若变量**原本不存在**，恢复后也不应凭空出现。
     #[test]
     fn absent_stays_absent_after_panic() {
         const KEY: &str = "SISYPHUS_TEST_GUARD_PANIC_ABSENT";
+        // 先确保起始状态为「不存在」，且该前置状态本身也可恢复。
+        let _seed = seeded(KEY, "temporary");
         // SAFETY: 单线程测试，变量名带测试专用前缀。
-        unsafe { std::env::remove_var(KEY) };
+        let _cleared = unsafe { EnvVarGuard::unset(KEY) };
 
         let result = std::panic::catch_unwind(|| {
-            // SAFETY: 同上。
             let _g = unsafe { EnvVarGuard::set(KEY, "temporary") };
             panic!("故意 panic");
         });

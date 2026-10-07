@@ -72,6 +72,32 @@ BARRIER_RE = re.compile(
 
 SCAN_DIRS = ("crates", "webui", "evals")
 
+# 守卫自身的实现文件。这里的 `set_var` 不是「测试里忘记清理」，
+# 而是**实现本身**——恢复动作就在同文件的 `impl Drop` 里。
+# 按定义不能要求它使用自己。
+#
+# 豁免范围是**行级**：仅 `#[cfg(test)]` 之前的实现区，见
+# check_panic_safe_cleanup 的 before_line 参数。
+#
+# 为什么必须缩到行级：早期实现是**文件级**豁免，理由是「按函数区分
+# 实现代码与测试代码需要知道边界」。但这个边界是可以机械判定的——
+# `#[cfg(test)]` 就是测试区的起点，rustfmt 保证它顶格。实测
+# env_guard.rs 的 7 处裸调用全部落在 `#[cfg(test)]`（第 195 行）
+# 之前，测试区本就没有裸调用。于是文件级豁免多出来的那一大段
+# （整个 mod tests）是一个**永不触发的保护**，却在测试区真的引入裸
+# set_var 时完全沉默——正是我们要防的那类漏报。
+# 上述文件的实现区边界：首个 `#[cfg(test)]` 所在行（1-based）。
+# 若该文件不再含测试区，自检会失败，强制重新审视豁免。
+#
+# 允许**滞后**（actual > limit）但不允许超前（actual < limit）：
+# 超前意味看豁免范围比真实测试区还宽，会盖掉本该报出的泄漏；
+# 滞后只会让更多实现代码被检查（多报噪音，不漏报）。这个方向上的
+# 不对称是刻意的：门禁宁可吵不可静默。
+GUARD_IMPL_LINE_LIMITS = {
+    "crates/sisyphus-types/src/env_guard.rs": 195,
+}
+
+
 # 生产配置的真实变量名。测试若直接改写它们，风险远高于改写
 # 测试专用名：这类变量的语义是「全局开关」，改它等于改整个二进制的
 # 行为，且 panic 后残留会静默影响后续所有测试。
@@ -84,8 +110,11 @@ PRODUCTION_ENV_VARS = {
     "GOOGLE_GENERATIVE_AI_API_KEY",
 }
 
-# 抗 panic 的清理形态：出现其一即视为已用 RAII 兜底。
-RAII_GUARD_RE = re.compile(r"\bimpl\s+Drop\b|\bstruct\s+\w*Guard\b|\bDropGuard\b")
+# 注：原先这里有个 RAII_GUARD_RE（「文件里出现过 impl Drop / *Guard
+# 即整文件免检」）。已删除——那等于把门禁关掉：impl Drop 只对它自己
+# 那枚守卫变量生效，同文件里另写的裸 set_var 与它毫无关系。实测
+# crates/sisyphus-tools-llm/src/http_client.rs 因此让 9 处真实泄漏
+# 全部免检。现在改为按「变量名 + 作用域覆盖」逐点判定。
 
 # 守卫的创建点：`EnvVarGuard::set(K, …)` / `unset(K)`。
 #
@@ -95,6 +124,11 @@ RAII_GUARD_RE = re.compile(r"\bimpl\s+Drop\b|\bstruct\s+\w*Guard\b|\bDropGuard\b
 #   env::set_var("VAR_B", "x");   // ← VAR_B 没人兜底，仍是泄漏
 # 我最初写成「有守卫即全函数豁免」，变异注入一个新变量名后门禁毫无反应，
 # 等于把门禁关掉了。放宽判据必须同时证明它仍能抓到真缺陷。
+#
+# 引号写成可选的 `"?…"` 是安全的：正则引擎在后续 `([A-Za-z_]…)` 匹配
+# 失败时会回溯，不消耗那个可选引号，故 group(1) 仍是干净的变量名。
+# （我一度怀疑这里把引号吞进了捕获组导致守卫全部失效，实测证伪：
+# group(1) 正确返回 K。那次真正的漏报根源是下面的整文件跳过。）
 GUARD_CONSTRUCT_RE = re.compile(
     r"\bEnvVarGuard\s*::\s*(?:set|unset|set_owned|unset_owned)\s*\(\s*"
     r'(?:&?\s*)?"?([A-Za-z_][A-Za-z0-9_]*)'
@@ -210,25 +244,118 @@ def env_var_name(src: str, pos: int) -> str | None:
     return m.group(0) if m else None
 
 
-def check_panic_safe_cleanup(src: str, rel: str) -> list[dict]:
+def _in_same_block(body: str, a: int, b: int) -> bool:
+    """判断 a、b 两个偏移是否落在**同一对花括号**内。
+
+    用于判定「守卫的作用域是否覆盖本次 set_var」：guard 靠词法作用域
+    生效，所以「覆盖」等价于「在同一对花括号内」。
+
+    做法：取二者中较早者，向前找到它所在块的开括号；再从该开括号
+    正向配平找到闭括号；判断较晚者是否落在这一区间内。
+
+    已知局限（保守方向：宁可多报不漏报）：字符串字面量里的花括号
+    会干扰配平。调用方传入的 `body` 已剥离注释但保留字符串，故含
+    `{` 的字面量（如 `"{}"`）可能造成误判。误判后果是「本该豁免的
+    被报出来」，属噪音而非漏报，是可接受的方向。
+    """
+    lo, hi = (a, b) if a <= b else (b, a)
+    # 从 lo 往前找最近的未配平开括号，即 lo 所在块的开头
+    depth = 0
+    open_at = -1
+    for k in range(lo - 1, -1, -1):
+        ch = body[k]
+        if ch == "}":
+            depth += 1
+        elif ch == "{":
+            if depth == 0:
+                open_at = k
+                break
+            depth -= 1
+    if open_at == -1:
+        # lo 之前没有更外层的花括号，说明它就在函数体根层
+        return True
+    # 从 open_at 正向配平，找该块的闭括号
+    depth = 0
+    for k in range(open_at, len(body)):
+        ch = body[k]
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                return open_at <= hi <= k
+    # 未配平（源码被截断等），保守视为不在同一块
+    return False
+
+
+def check_panic_safe_cleanup(
+    src: str, rel: str, before_line: int | None = None
+) -> list[dict]:
     """判定 2：set_var 之后，清理是否会被 panic 跳过。
 
     两种缺陷形态都算：
     - `set_var` 之后完全没有同函数内的 `remove_var`（最常见）
     - 有 `remove_var`，但位于 assert/unwrap 之后，断言失败即被跳过
+
+    `before_line` 为 1-based 行号下限：位于该行**之前**的调用不检查，
+    用于守卫自身实现文件的豁免（见 GUARD_IMPL_LINE_LIMITS）。
+
+    比较方向写反过一次：`line >= before_line` 就跳过，等于豁免该行
+    **之后**的全部调用，范围整个倒过来——守卫的实现区被当成测试检查，
+    而真正要防的 mod tests 反而被放过。那次是「碰巧」报出了 2 条噪音
+    才没静默溜过去；若守卫实现本身恰好满足其它判据，就会静默失效。
+    故 `before_line` 的语义由 _self_check() 单独钉住。
     """
     out: list[dict] = []
     for m in SET_VAR_RE.finditer(src):
-        fn, body_start = enclosing_fn(src, m.start())
         line = src.count("\n", 0, m.start()) + 1
+        if before_line is not None and line < before_line:
+            continue
+        fn, body_start = enclosing_fn(src, m.start())
         body = src[body_start:]
 
         # 该 set_var 的变量名若被同函数内的守卫覆盖，则已被 panic
         # 安全地兜住。注意必须比对**变量名**，不能只看有无守卫。
+        #
+        # 2026-10-07 修正：这里曾造成真实漏报。`env_guard.rs` 自己的
+        # 测试里，守卫（`EnvVarGuard::set(KEY, …)`）与裸 `set_var(KEY, …)`
+        # **同时存在**——守卫管的是它自己那条路径，裸 set_var 是**绕过**
+        # 守卫的另一条路径，panic 后照样泄漏。原判据只看「同函数内有没有
+        # 这个变量名的守卫」，于是把绕过路径一并豁免了。
+        #
+        # 判据收紧为：**该 set_var 必须本身就处在守卫的作用域内**——
+        # 即它出现在守卫创建语句的**之前**（守卫创建时会把 previous 记成
+        # 此刻的值，故它之前的所有改动都会被一并恢复）。守卫创建之后的
+        # 裸 set_var 是绕过，不豁免。
         var_name = env_var_name(src, m.end())
-        guarded = var_name is not None and var_name in {
-            g for g in GUARD_CONSTRUCT_RE.findall(body) if g
-        }
+        guarded = False
+        if var_name is not None:
+            # 判定的是「本次 set_var 的效果会不会被某枚守卫的 Drop 撤销」。
+            #
+            # 语义推演（守卫与 set_var 的三种相对位置）：
+            #   A) 守卫在外层、set_var 在其作用域内：守卫析构时恢复自己
+            #      的 previous，覆盖掉 set_var ⇒ **安全**，豁免。
+            #   B) 守卫的块已结束、set_var 在其之外（典型：
+            #      `{ let _g = Guard::set(K, "true"); … }` 之后又
+            #      `set_var(K, "false")`）：守卫早已析构，set_var
+            #      无任何兜底 ⇒ **泄漏**，必须报出。
+            #   C) set_var 在守卫创建之前：守卫 previous 记成 set_var
+            #      设下的值，析构恢复成同一个值 ⇒ 无害，但这个写法
+            #      本身可疑（set_var 的意图落空），仍按泄漏报出更安全。
+            #
+            # 我最初写成「函数内有守卫即豁免」，漏掉了 B；随后改成
+            # 「守卫在 set_var 之后才豁免」，把 A 也漏了（方向相反，
+            # 恰好是 B 的反面）。两者都不是作用域判定。
+            #
+            # 正确做法是花括号配平：找出守卫创建语句所在的块，判断
+            # 本次 set_var 的偏移是否落在该块内。guard 在 Rust 里靠
+            # 词法作用域生效，「作用域覆盖」就是「在同一对花括号内」，
+            # 而配平是机械可判定的。
+            guarded = any(
+                _in_same_block(body, g.start(), m.start() - body_start)
+                for g in GUARD_CONSTRUCT_RE.finditer(body)
+                if g.group(1) == var_name
+            )
         if guarded:
             continue
 
@@ -288,6 +415,181 @@ def check_production_env_vars(src: str, rel: str) -> list[dict]:
     return out
 
 
+def _self_check() -> list[str]:
+    """判据自检：用六个合成用例验证豁免逻辑既有判别力又不误伤。
+
+    这个门禁的判据改过两次，两次都漏掉了真实缺陷：
+      1. 「函数内有守卫即豁免」 → 漏掉不同变量名，以及守卫块已结束的情形
+      2. 「文件里有 impl Drop 即整文件免检」→ 让 http_client.rs 的
+         9 处真实泄漏、env_guard.rs 自身测试区的裸调用全部免检
+
+    两次都没有症状：脚本照常运行、输出「✅ 未发现问题」。只有拿已知
+    该报的输入去问「你报不报」，才能发现。所以固化成自检。
+
+    返回未通过的用例描述；空列表表示全部符合预期。
+    """
+    cases: list[tuple[str, str, bool]] = [
+        ("守卫在外层、set_var 在其内", '''
+fn t() {
+    let _g = EnvVarGuard::set("K", "y");
+    unsafe { env::set_var("K", "x") };
+    assert!(true);
+}''', False),
+        ("守卫的块已结束、set_var 在其外", '''
+fn t() {
+    {
+        let _g = EnvVarGuard::set("K", "y");
+        assert!(true);
+    }
+    unsafe { env::set_var("K", "x") };
+    assert!(true);
+}''', True),
+        ("无守卫、清理晚于断言", '''
+fn t() {
+    unsafe { env::set_var("K", "x") };
+    assert!(true);
+    unsafe { env::remove_var("K") };
+}''', True),
+        ("守卫管的是别的变量名", '''
+fn t() {
+    let _g = EnvVarGuard::set("OTHER", "y");
+    unsafe { env::set_var("K", "x") };
+    assert!(true);
+}''', True),
+        ("守卫在前、set_var 后、同作用域", '''
+fn t() {
+    let _g = EnvVarGuard::set("K", "y");
+    unsafe { env::set_var("K", "x") };
+}''', False),
+        ("守卫与 set_var 同在内层块", '''
+fn t() {
+    {
+        let _g = EnvVarGuard::set("K", "y");
+        unsafe { env::set_var("K", "x") };
+    }
+}''', False),
+    ]
+    failures: list[str] = []
+
+    # before_line 的方向（“该行之前不检查”）必须被钉住：这个参数一
+    # 旦写反，豁免范围就整个倒过来，而且**症状是噪音而非报错**——
+    # 守卫实现区会被当成测试报出两条，看着像真实发现，很容易被直接
+    # 修代码而不是修判据；反之若守卫实现碰巧满足其它判据，则静默
+    # 失效。两边都是“看起来在跑”。
+    #
+    # 样本的 set_var 在第 4 行（行号从下方字面量里实测，不写死，
+    # 避免改排版后失配）。语义是「**行号小于** before_line 即豁免」，
+    # 故分界在 set_var 上方时豁免，分界在下方时仍需检查：
+    #   before_line=3 → 4<3 假 → set_var 被检查（报出）
+    #   before_line=4 → 4<4 假 → 分界正好落在它身上，被检查（报出）
+    #   before_line=5 → 4<5 真 → 落入豁免区
+    # 三个值一起测：只测一个，分界两侧的效果会互相抵消，
+    # 方向写反也看起来照样通过。
+    #
+    # 我最初把期望写成「分界在上方→豁免」，与实现相反，于是自检
+    # 报我三条全错。实测后确认是**期望**写错、判据本身是对的：
+    # 豁免整个测试区正是要防的漏报面，故必须是「行号小于分界才豁免」。
+    dir_src = (
+        "struct G;\nimpl Drop for G { fn drop(&mut self) {} }\n"
+        "fn t() {\n"
+        "    unsafe { env::set_var(\"K\", \"x\") };\n"
+        "    assert!(true);\n"
+        "}\n"
+    )
+    sv_line = dir_src.count("\n", 0, dir_src.index("set_var")) + 1
+    for limit, want_reported in (
+        (sv_line - 1, True),   # 分界在 set_var 上方 → 它在豁免区之外
+        (sv_line, True),       # 分界正好落在它身上 → 行号相等，不豁免
+        (sv_line + 1, False),  # 分界在断言行 → set_var 落入豁免区
+    ):
+        got = bool(check_panic_safe_cleanup(
+            dir_src, "<self-check>", before_line=limit))
+        if got != want_reported:
+            failures.append(
+                f"before_line={limit}（set_var 在第 {sv_line} 行）："
+                f"期望{'报出' if want_reported else '豁免'}，"
+                f"实际{'报出' if got else '豁免'}——方向可能写反"
+            )
+
+    for name, src, want_reported in cases:
+        got = bool(check_panic_safe_cleanup(
+            blank_noncode(src, keep_strings=True), "<self-check>"))
+        if got != want_reported:
+            failures.append(
+                f"{name}：期望{'报出' if want_reported else '豁免'}，实际{'报出' if got else '豁免'}"
+            )
+
+    # 上一组只测 check_panic_safe_cleanup 这个纯函数，覆盖不到
+    # scan() 层的「整文件跳过」——那正是漏掉 http_client.rs 9 处的
+    # 那一行。若自检不经过 scan()，把整文件跳过加回来它照样全绿。
+    #
+    # 必须**端到端**跑一次 scan()：在临时目录里造一个「含 impl Drop
+    # 但有裸 set_var」的文件，看 scan() 是否报出它。之前试过在脚本内
+    # 拿合成源码直接判断，条件恒真（样本自己就含 impl Drop），
+    # 等于没测——这类「看起来在测、实际恒真」的断言比没有更糟。
+    import tempfile
+    with tempfile.TemporaryDirectory() as td:
+        root = pathlib.Path(td)
+        crate = root / "crates" / "sisyphus-selfcheck-probe"
+        crate.mkdir(parents=True)
+        (crate / "probe.rs").write_text(
+            "struct UnrelatedGuard;\n"
+            "impl Drop for UnrelatedGuard { fn drop(&mut self) {} }\n"
+            "fn t() {\n"
+            "    unsafe { std::env::set_var(\"SELFCHECK_K\", \"x\") };\n"
+            "    assert!(true);\n"
+            "}\n",
+            encoding="utf-8",
+        )
+        real_root = ROOT
+        try:
+            globals()["ROOT"] = root
+            globals()["SCAN_DIRS"] = ("crates",)
+            probe_findings = scan()
+        finally:
+            globals()["ROOT"] = real_root
+            globals()["SCAN_DIRS"] = ("crates", "webui", "evals")
+        if not probe_findings:
+            failures.append(
+                "含 impl Drop 的文件里的裸 set_var 未被报出——"
+                "scan() 仍存在整文件跳过逻辑；impl Drop 只对它自己那枚"
+                "守卫变量生效，同文件的裸 set_var 与它无关"
+            )
+
+    # 豁免边界必须是**真实**的 `#[cfg(test)]` 行，不能是随手写的数字。
+    # 只能偏小（滞后），不能偏大（超前）：
+    #   超前 → 豁免区伸进测试区，本该报出的泄漏被盖掉（漏报）；
+    #   滞后 → 额外检查了几行实现代码，最多报噪音（不漏报）。
+    # 即「宁可吵不可静默」。故只判 `actual < limit`。
+    #
+    # 注：滞后在本文件上恰好无害——实测实现区的裸调用在第 149 行，
+    # 远早于任何合理的滞后。但这不是判据的前提，写在这里是为了
+    # 避免有人把滞后当成“也没事”，进而把数字越调越大。
+    for rel, limit in GUARD_IMPL_LINE_LIMITS.items():
+        path = ROOT / rel
+        if not path.exists():
+            failures.append(f"豁免文件不存在：{rel}")
+            continue
+        lines = path.read_text(encoding="utf-8").splitlines()
+        actual = next(
+            (i for i, ln in enumerate(lines, 1)
+             if ln.strip().startswith("#[cfg(test)]")),
+            None,
+        )
+        if actual is None:
+            failures.append(
+                f"{rel} 已无 #[cfg(test)]，但仍在豁免列表里——"
+                "豁免范围失去意义，请重新审视"
+            )
+        elif actual < limit:
+            failures.append(
+                f"{rel} 的 #[cfg(test)] 在第 {actual} 行，"
+                f"早于豁免边界 {limit}——豁免范围已与实际不符"
+            )
+
+    return failures
+
+
 def scan() -> list[dict]:
     findings: list[dict] = []
     for base in SCAN_DIRS:
@@ -316,14 +618,29 @@ def scan() -> list[dict]:
 
             findings.extend(check_production_env_vars(src_kept, rel))
 
-            # ── 2/3：已有 RAII 守卫的文件整段跳过 panic 判定，
-            # 守卫的 Drop 会跑，天然抗 panic。生产变量判定仍要跑——
-            # 守卫只能保证「恢复原值」，不能保证「不改生产语义」。
-            if not RAII_GUARD_RE.search(src):
-                # 须传保留字符串的副本：判定「set_var 的变量名是否被
-                # 同函数内的守卫覆盖」要读出字符串内容，用剥离版会恒为
-                # False，守卫全被当成不存在。
-                findings.extend(check_panic_safe_cleanup(src_kept, rel))
+            # ── 2/3：panic 安全的判定逐个 set_var 做，不再整文件跳过。
+            #
+            # 我曾在这里按「文件里出现过 impl Drop / *Guard 就整段跳过」
+            # 放行，理由是「守卫的 Drop 会跑」。这是错的：impl Drop 只
+            # 对**它自己那枚守卫变量**生效，同文件里另写的裸 set_var
+            # 与它毫无关系。实测 crates/sisyphus-tools-llm/src/http_client.rs
+            # 因一个无关的 impl Drop 而让 9 处 set_var 全部免检，
+            # crates/sisyphus-types/src/env_guard.rs 同理。
+            #
+            # 守卫的豁免现在由 check_panic_safe_cleanup 内部按
+            # 「变量名 + 作用域是否覆盖」逐点判定。
+            #
+            # 守卫**实现文件**自身是唯一例外：那里 set_var 就是实现
+            # 本身，恢复动作在其 impl Drop 里，按定义不能要求它使用
+            # 自己。豁免精确到 `#[cfg(test)]` 之前——文件级豁免会连带
+            # 放过同文件的 mod tests，而那正是要防的漏报面。
+            #
+            # 须传保留字符串的副本：判定变量名要读出字符串内容，
+            # 用剥离版会恒为 False，守卫全被当成不存在。
+            limit = GUARD_IMPL_LINE_LIMITS.get(rel)
+            findings.extend(
+                check_panic_safe_cleanup(src_kept, rel, before_line=limit)
+            )
     return findings
 
 
@@ -332,11 +649,23 @@ def main() -> int:
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args()
 
+    # 判据自检先行：判据本身失效时，下面 scan() 无论报 0 条还是 N 条
+    # 都没有意义。宁可在这里失败，也不要输出一个建立在坏判据上的
+    # 「✅ 未发现问题」。
+    self_failures = _self_check()
+    if self_failures:
+        print("❌ 判据自检未通过，门禁本身已失效：\n")
+        for f in self_failures:
+            print(f"  - {f}")
+        print("\n这意味着下面的扫描结果不可信。请先修判据。")
+        return 2
+
     items = scan()
     bad = [i for i in items if not i["accepted"]]
 
     if args.json:
-        print(json.dumps({"findings": items, "rejected": len(bad)},
+        print(json.dumps({"findings": items, "rejected": len(bad),
+                          "self_check": "ok"},
                          ensure_ascii=False, indent=2))
         return 1 if bad else 0
 

@@ -496,21 +496,34 @@ mod tests {
     fn tls_roots_env_var_parses_correctly() {
         let _guard = ENV_LOCK.lock().unwrap();
         // webpki (default)
-        std::env::set_var("SISYPHUS_HTTP_TLS_ROOTS", "webpki");
-        let cfg = SharedHttpClientConfig::from_env();
-        assert_eq!(cfg.tls_roots, TlsRoots::Webpki);
+        {
+            // SAFETY: ENV_LOCK 已串行化本二进制的 env 访问。
+            let _g = unsafe {
+                sisyphus_types::env_guard::EnvVarGuard::set("SISYPHUS_HTTP_TLS_ROOTS", "webpki")
+            };
+            let cfg = SharedHttpClientConfig::from_env();
+            assert_eq!(cfg.tls_roots, TlsRoots::Webpki);
+        }
 
         // native
-        std::env::set_var("SISYPHUS_HTTP_TLS_ROOTS", "native");
-        let cfg = SharedHttpClientConfig::from_env();
-        assert_eq!(cfg.tls_roots, TlsRoots::NativeCerts);
+        {
+            // SAFETY: 同上。
+            let _g = unsafe {
+                sisyphus_types::env_guard::EnvVarGuard::set("SISYPHUS_HTTP_TLS_ROOTS", "native")
+            };
+            let cfg = SharedHttpClientConfig::from_env();
+            assert_eq!(cfg.tls_roots, TlsRoots::NativeCerts);
+        }
 
         // 未知值回退到 webpki
-        std::env::set_var("SISYPHUS_HTTP_TLS_ROOTS", "garbage");
-        let cfg = SharedHttpClientConfig::from_env();
-        assert_eq!(cfg.tls_roots, TlsRoots::Webpki);
-
-        std::env::remove_var("SISYPHUS_HTTP_TLS_ROOTS");
+        {
+            // SAFETY: 同上。
+            let _g = unsafe {
+                sisyphus_types::env_guard::EnvVarGuard::set("SISYPHUS_HTTP_TLS_ROOTS", "garbage")
+            };
+            let cfg = SharedHttpClientConfig::from_env();
+            assert_eq!(cfg.tls_roots, TlsRoots::Webpki);
+        }
     }
 
     #[test]
@@ -536,21 +549,33 @@ mod tests {
     fn retry_policy_env_var_parses_correctly() {
         let _guard = ENV_LOCK.lock().unwrap();
         // 未知值回退到 Disabled
-        std::env::set_var("SISYPHUS_HTTP_RETRY", "garbage");
-        let cfg = SharedHttpClientConfig::from_env();
-        assert_eq!(cfg.retry, RetryPolicy::Disabled);
+        {
+            // SAFETY: ENV_LOCK 已串行化本二进制的 env 访问。
+            let _g = unsafe {
+                sisyphus_types::env_guard::EnvVarGuard::set("SISYPHUS_HTTP_RETRY", "garbage")
+            };
+            let cfg = SharedHttpClientConfig::from_env();
+            assert_eq!(cfg.retry, RetryPolicy::Disabled);
+        }
 
         // one_shot
-        std::env::set_var("SISYPHUS_HTTP_RETRY", "one_shot");
-        let cfg = SharedHttpClientConfig::from_env();
-        assert_eq!(cfg.retry, RetryPolicy::OneShot);
+        {
+            // SAFETY: 同上。
+            let _g = unsafe {
+                sisyphus_types::env_guard::EnvVarGuard::set("SISYPHUS_HTTP_RETRY", "one_shot")
+            };
+            let cfg = SharedHttpClientConfig::from_env();
+            assert_eq!(cfg.retry, RetryPolicy::OneShot);
+        }
 
         // 别名 1
-        std::env::set_var("SISYPHUS_HTTP_RETRY", "1");
-        let cfg = SharedHttpClientConfig::from_env();
-        assert_eq!(cfg.retry, RetryPolicy::OneShot);
-
-        std::env::remove_var("SISYPHUS_HTTP_RETRY");
+        {
+            // SAFETY: 同上。
+            let _g =
+                unsafe { sisyphus_types::env_guard::EnvVarGuard::set("SISYPHUS_HTTP_RETRY", "1") };
+            let cfg = SharedHttpClientConfig::from_env();
+            assert_eq!(cfg.retry, RetryPolicy::OneShot);
+        }
     }
 
     #[tokio::test]
@@ -581,14 +606,20 @@ mod tests {
     #[test]
     fn env_overrides_apply() {
         let _guard = ENV_LOCK.lock().unwrap();
-        // 临时设环境变量
-        std::env::set_var("SISYPHUS_HTTP_REQUEST_TIMEOUT_SECS", "60");
-        std::env::set_var("SISYPHUS_HTTP_POOL_MAX_PER_HOST", "32");
+        // 临时设环境变量。用守卫而非裸 set_var + 末尾 remove_var：
+        // 后者的清理语句位于断言之后，断言 panic 时就被跳过，变量
+        // 残留在 "60"/"32"，泄漏给同二进制的后续测试。
+        // SAFETY: ENV_LOCK 已串行化本二进制的 env 访问。
+        let _timeout = unsafe {
+            sisyphus_types::env_guard::EnvVarGuard::set("SISYPHUS_HTTP_REQUEST_TIMEOUT_SECS", "60")
+        };
+        // SAFETY: 同上。
+        let _pool = unsafe {
+            sisyphus_types::env_guard::EnvVarGuard::set("SISYPHUS_HTTP_POOL_MAX_PER_HOST", "32")
+        };
         let cfg = SharedHttpClientConfig::from_env();
         assert_eq!(cfg.request_timeout, Duration::from_secs(60));
         assert_eq!(cfg.pool_max_per_host, 32);
-        std::env::remove_var("SISYPHUS_HTTP_REQUEST_TIMEOUT_SECS");
-        std::env::remove_var("SISYPHUS_HTTP_POOL_MAX_PER_HOST");
     }
 
     /// 回归测试：证明 `from_env()` 是**全量读取**，因此任何一个
@@ -600,12 +631,14 @@ mod tests {
     #[test]
     fn env_leak_reaches_unrelated_field_of_concurrent_reader() {
         let _guard = ENV_LOCK.lock().unwrap();
-        std::env::set_var("SISYPHUS_HTTP_REQUEST_TIMEOUT_SECS", "60");
+        // SAFETY: ENV_LOCK 已串行化本二进制的 env 访问。
+        let _g = unsafe {
+            sisyphus_types::env_guard::EnvVarGuard::set("SISYPHUS_HTTP_REQUEST_TIMEOUT_SECS", "60")
+        };
         let cfg = SharedHttpClientConfig::from_env();
         // 读取侧断言的是 tls_roots，与写入的 timeout 无关，但值仍被污染。
         assert_eq!(cfg.request_timeout, Duration::from_secs(60));
         assert_eq!(cfg.tls_roots, TlsRoots::Webpki);
-        std::env::remove_var("SISYPHUS_HTTP_REQUEST_TIMEOUT_SECS");
     }
 
     #[test]
