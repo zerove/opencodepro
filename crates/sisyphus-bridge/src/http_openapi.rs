@@ -2050,4 +2050,59 @@ mod tests {
             undocumented.join("\n  ")
         );
     }
+
+    /// composite 的失败响应必须声明，且必须带 `sse_sop_id`。
+    ///
+    /// 该端点的失败路径有个特殊之处：执行期间的事件**已经广播**到 SSE，
+    /// 而 `sse_sop_id` 由服务端生成、客户端无从推算（对比 `/api/execute`
+    /// 的 sop_id 由客户端自己提供）。所以失败时若不在文档里声明这个字段，
+    /// 客户端按 schema 生成的类型就看不到它 —— 于是「收到了事件，却不知道
+    /// 该订阅哪个 sop_id」。
+    ///
+    /// 这里不能只靠实现侧的测试：handler 返回了字段，不代表文档承诺了它。
+    /// 契约是给消费方看的，必须由文档本身来断言。
+    #[tokio::test]
+    async fn composite_failure_contract_documents_sse_sop_id() {
+        let doc = doc().await;
+
+        let responses = doc
+            .pointer("/paths/~1api~1execute~1composite/post/responses")
+            .and_then(Value::as_object)
+            .expect("composite 端点应声明 responses");
+
+        assert!(
+            responses.contains_key("500"),
+            "composite 端点必须声明 500 响应，实际只有 {:?}",
+            responses.keys().collect::<Vec<_>>()
+        );
+
+        // 500 指向的 schema 必须含 sse_sop_id
+        let schema_name = responses
+            .get("500")
+            .and_then(|r| r.pointer("/content/application~1json/schema/$ref"))
+            .and_then(Value::as_str)
+            .and_then(|r| r.rsplit('/').next())
+            .expect("500 响应应通过 $ref 指向一个具名 schema");
+        assert_eq!(schema_name, "CompositeExecuteErrorResponse");
+
+        let props = doc
+            .pointer("/components/schemas/CompositeExecuteErrorResponse/properties")
+            .and_then(Value::as_object)
+            .expect("CompositeExecuteErrorResponse 应有 properties");
+        assert!(
+            props.contains_key("sse_sop_id"),
+            "失败响应 schema 必须声明 sse_sop_id，否则客户端看不到该字段"
+        );
+        assert!(props.contains_key("error"), "失败响应 schema 应声明 error");
+
+        // 成功响应也要带同一个字段，两个响应的契约才对得上
+        let ok_props = doc
+            .pointer("/components/schemas/CompositeExecuteResponse/properties")
+            .and_then(Value::as_object)
+            .expect("CompositeExecuteResponse 应有 properties");
+        assert!(
+            ok_props.contains_key("sse_sop_id"),
+            "成功响应 schema 应声明 sse_sop_id，与失败响应保持一致"
+        );
+    }
 }

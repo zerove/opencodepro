@@ -119,14 +119,23 @@ impl LanguageBackend for RustBackend {
         let mut args = vec!["fix"];
         // `cargo fix` 是唯一会做 VCS 探测的常用子命令：它要确认改动可回滚，
         // 找不到 VCS 就报错，而探测会**向上**逐级查找父目录。当目标项目位于
-        // 某个 git 仓库内部时（实测：临时目录建在 ~/.jcode/scratch 下，
-        // 而 ~/.jcode 本身是仓库且 .git 达 163MB），它会一路查到那个仓库，
-        // 调用方随之长时间不返回 —— fix_and_diagnose 实测可挂起 150s 以上。
+        // 某个 git 仓库内部时，它会一路查到那个仓库并逐个打开其 pack 文件。
+        //
+        // 活体进程取证（/proc，变异态跑真实测试时抓到的卡住的 cargo fix）：
+        //   cwd     = /home/zeron/.jcode/scratch/.tmpAAqPS2（临时项目）
+        //   fd 3-6  = /home/zeron/.jcode/.git/objects/pack/pack-{c49e02cb,
+        //             ee1d6843,1ffe8459,b3e67db1}.pack
+        //   状态    = D (disk sleep)，wchan=blk_mq_get_tag
+        //   单次耗时 ≈150s，测试因此报 "over 60 seconds" 并挂起。
+        //
+        // 注意：手工探针复现不出来 —— cargo 还有另一套**独立的**工作区归属
+        // 查找，若父级存在 Cargo.toml 会在该阶段先行报错退出，走不到 VCS
+        // 探测。只有跑真实测试才能命中，故上述证据取自真实测试而非探针。
         //
         // 本工具的职责是对给定目录执行修复，不负责替用户管理版本控制：
         // 是否提交由调用方决定。因此禁用 VCS 检查，让工具在任何目录都可用。
         //
-        // 变异证据（走真实测试边界，非探针推断）：注释掉本行后
+        // 变异证据（走真实测试边界）：注释掉本行后
         // `cargo test -p sisyphus-tools-llm-tools --lib test_fix_and_diagnose`
         // 报 "has been running for over 60 seconds"（150s 仍未结束）；
         // 恢复后同一条测试 0.87s 通过。flag 在 cargo 1.99.0 上确认存在。
