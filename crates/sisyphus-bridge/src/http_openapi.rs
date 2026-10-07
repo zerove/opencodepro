@@ -147,7 +147,8 @@ pub(crate) async fn openapi_json() -> impl IntoResponse {
                     "operationId": "executeComposite",
                     "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/CompositeExecuteRequest"}}}},
                     "responses": {
-                        "200": {"description": "Composite execution results", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/CompositeExecuteResponse"}}}}
+                        "200": {"description": "Composite execution results", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/CompositeExecuteResponse"}}}},
+                        "500": {"description": "Composite execution failed. sse_sop_id is still returned: node events for this run have already been broadcast by the time the failure is reported, and this id is the only way for a client to subscribe to them.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/CompositeExecuteErrorResponse"}}}}
                     }
                 }
             },
@@ -1107,6 +1108,16 @@ pub(crate) async fn openapi_json() -> impl IntoResponse {
                             "type": "string",
                             "description": "SSE subscription id for this composite run (composite-<uuid>). Individual graph sop_ids are generated inside the kernel and not visible here, so clients must pass this value as ?sop_id= to /api/events to receive node events."
                         }
+                    }
+                },
+
+                "CompositeExecuteErrorResponse": {
+                    "type": "object",
+                    "description": "Failure envelope for composite execution. Carries sse_sop_id in addition to the usual error message because the run's node events were already broadcast before the failure was reported; without this id a client that saw those events could not subscribe to them (composite's sop_id is server-generated and not derivable by the client, unlike execute_goal whose sop_id the client supplies).",
+                    "required": ["error"],
+                    "properties": {
+                        "error": {"type": "string"},
+                        "sse_sop_id": {"type": "string", "description": "Same composite-<uuid> value the 200 response would carry; use it as ?sop_id= on /api/events"}
                     }
                 },
 

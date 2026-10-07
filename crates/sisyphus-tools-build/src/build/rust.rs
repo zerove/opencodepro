@@ -117,17 +117,19 @@ impl LanguageBackend for RustBackend {
         cwd: Option<&Path>,
     ) -> ToolResult<BuildOutput> {
         let mut args = vec!["fix"];
-        // cargo fix 默认启用 VCS 检查：找不到 git 仓库时报错，而**向上**
-        // 逐级查找父目录。当目标项目位于某个大仓库内部时（典型如临时
-        // 目录建在 ~/.cache 或 ~/.<tool>/scratch 下），它会误认父级仓库
-        // 为 VCS 根，随后扫描该仓库的全部历史 —— 在 163MB 的仓库上实测
-        // 表现为进程进入 D 状态（__wait_on_buffer）且数十分钟不返回，
-        // 整个调用方（例如 fix_and_diagnose）无限挂起。
+        // `cargo fix` 是唯一会做 VCS 探测的常用子命令：它要确认改动可回滚，
+        // 找不到 VCS 就报错，而探测会**向上**逐级查找父目录。当目标项目位于
+        // 某个 git 仓库内部时（实测：临时目录建在 ~/.jcode/scratch 下，
+        // 而 ~/.jcode 本身是仓库且 .git 达 163MB），它会一路查到那个仓库，
+        // 调用方随之长时间不返回 —— fix_and_diagnose 实测可挂起 150s 以上。
         //
         // 本工具的职责是对给定目录执行修复，不负责替用户管理版本控制：
         // 是否提交由调用方决定。因此禁用 VCS 检查，让工具在任何目录都可用。
-        // 实测只需这一个 flag：既能跳过向上查找仓库，也仍会实际改写文件
-        // （临时项目里 `let x = 1;` 被成功修正）。
+        //
+        // 变异证据（走真实测试边界，非探针推断）：注释掉本行后
+        // `cargo test -p sisyphus-tools-llm-tools --lib test_fix_and_diagnose`
+        // 报 "has been running for over 60 seconds"（150s 仍未结束）；
+        // 恢复后同一条测试 0.87s 通过。flag 在 cargo 1.99.0 上确认存在。
         args.push("--allow-no-vcs");
         if apply_lint_fixes {
             args.push("--clippy");
