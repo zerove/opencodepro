@@ -279,15 +279,30 @@ pub fn validate_workflow_yaml(yaml: &str) -> ToolResult<()> {
     Ok(())
 }
 
-/// Write a generated workflow to `.github/workflows/<name>.yml`.
+/// Write a generated workflow to `<repo_root>/.github/workflows/<name>.yml`.
 /// Creates the directory if it doesn't exist.
+///
+/// ## 为什么必须传显式 `repo_root`
+///
+/// 本函数原先硬编码相对路径 `.github/workflows`，落点完全取决于**进程级**
+/// 当前工作目录。而 `set_current_dir` 改的是全局状态、不是线程级的：libtest
+/// 默认并行跑同一二进制内的测试，任何一个测试 chdir 都会让另一个测试把
+/// workflow 写进别人的临时目录 —— 或读回别人的文件。
+///
+/// 更糟的是「chdir 进 `TempDir` → 干活 → chdir 回来」这种写法：一旦中途
+/// panic，回来的那一步不会执行，cwd 就**永久残留在一个已被删除的目录**里，
+/// 此后该测试进程内所有相对路径操作（乃至其他 crate 的用例）一并失败。
+///
+/// 故改为显式接收仓库根：调用方传 `Path::new(".")` 时行为与原先完全一致，
+/// 测试侧传各自的临时目录，从此不触碰进程 cwd。
 pub fn write_workflow(
     kind: WorkflowKind,
     opts: &GenerateOptions,
+    repo_root: &std::path::Path,
 ) -> ToolResult<std::path::PathBuf> {
-    let workflow_dir = std::path::Path::new(".github/workflows");
+    let workflow_dir = repo_root.join(".github").join("workflows");
     if !workflow_dir.exists() {
-        std::fs::create_dir_all(workflow_dir)?;
+        std::fs::create_dir_all(&workflow_dir)?;
     }
 
     let filename = format!("sisyphus-{}.yml", kind.as_str());
@@ -328,14 +343,34 @@ mod tests {
     #[test]
     fn test_write_workflow_creates_file() {
         let dir = tempfile::tempdir().unwrap();
-        let original_cwd = std::env::current_dir().unwrap();
-        std::env::set_current_dir(dir.path()).unwrap();
 
-        let path = write_workflow(WorkflowKind::Ci, &GenerateOptions::default()).unwrap();
+        let path =
+            write_workflow(WorkflowKind::Ci, &GenerateOptions::default(), dir.path()).unwrap();
+
         assert!(path.exists());
         assert!(path.ends_with("sisyphus-ci.yml"));
+        // 必须落在传入的根下，而非进程 cwd
+        assert_eq!(path.parent().unwrap(), dir.path().join(".github/workflows"));
+    }
 
-        std::env::set_current_dir(original_cwd).unwrap();
+    /// 两个根目录必须各自独立落盘，互不串写。
+    ///
+    /// 本用例与上面那个并行执行：若 `write_workflow` 依赖进程级 cwd（而非
+    /// 传入的 `repo_root`），两者会写进同一个目录，本断言随即失败。
+    #[test]
+    fn test_write_workflow_isolates_repo_roots() {
+        let a = tempfile::tempdir().unwrap();
+        let b = tempfile::tempdir().unwrap();
+
+        let path_a =
+            write_workflow(WorkflowKind::Ci, &GenerateOptions::default(), a.path()).unwrap();
+        let path_b =
+            write_workflow(WorkflowKind::Release, &GenerateOptions::default(), b.path()).unwrap();
+
+        assert_eq!(path_a.parent().unwrap(), a.path().join(".github/workflows"));
+        assert_eq!(path_b.parent().unwrap(), b.path().join(".github/workflows"));
+        assert!(path_a.exists() && path_b.exists());
+        assert_ne!(path_a, path_b);
     }
 
     #[test]

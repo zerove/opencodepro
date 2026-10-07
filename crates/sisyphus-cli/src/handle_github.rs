@@ -35,7 +35,8 @@ pub(crate) fn handle_github(sub: &GithubCommands) -> Result<()> {
                     println!("Workflow written to {}", p.display());
                     p.clone()
                 },
-                None => sisyphus_cli::tools::write_workflow(wk, &opts)?,
+                // 传 "." 保持既有行为：写入当前工作目录下的 .github/workflows
+                None => sisyphus_cli::tools::write_workflow(wk, &opts, std::path::Path::new("."))?,
             };
             println!("Generated {} workflow at {}", wk.as_str(), path.display());
         },
