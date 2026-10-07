@@ -51,6 +51,7 @@ mod tests {
     use crate::metis::LlmClient;
     use crate::tests::ENV_LOCK;
     use async_trait::async_trait;
+    use sisyphus_types::env_guard::EnvVarGuard;
     use sisyphus_types::Config;
     use std::sync::{Arc, Mutex, RwLock};
 
@@ -147,7 +148,10 @@ mod tests {
     fn test_params_from_env_override() {
         let _guard = ENV_LOCK.lock().unwrap();
 
-        unsafe { std::env::set_var("GOOGLE_GENERATIVE_AI_API_KEY", "env_key_value") };
+        // SAFETY: ENV_LOCK 串行化本二进制内所有环境变量测试。
+        // 该变量是生产配置的真实名字——本用例刻意覆盖「env 覆盖
+        // config」这一行为，无法改为显式传参，故用守卫保证恢复。
+        let _env = unsafe { EnvVarGuard::set("GOOGLE_GENERATIVE_AI_API_KEY", "env_key_value") };
 
         let config = make_config("cfg_key", "http://cfg:8080/v1/chat", "cfg-model");
         let client = DynamicLlmClient::new(config);
@@ -163,15 +167,14 @@ mod tests {
             "endpoint should still come from config"
         );
         assert_eq!(model, "cfg-model", "model should still come from config");
-
-        unsafe { std::env::remove_var("GOOGLE_GENERATIVE_AI_API_KEY") };
     }
 
     #[test]
     fn test_params_with_empty_config_fallback() {
         let _guard = ENV_LOCK.lock().unwrap();
 
-        unsafe { std::env::remove_var("GOOGLE_GENERATIVE_AI_API_KEY") };
+        // SAFETY: ENV_LOCK 串行化本二进制内所有环境变量测试。
+        let _env = unsafe { EnvVarGuard::unset("GOOGLE_GENERATIVE_AI_API_KEY") };
 
         let config = make_config("", "", "");
         let client = DynamicLlmClient::new(config);
@@ -341,7 +344,8 @@ mod tests {
     fn test_get_params_for_env_override_still_wins() {
         let _guard = ENV_LOCK.lock().unwrap();
 
-        unsafe { std::env::set_var("GOOGLE_GENERATIVE_AI_API_KEY", "env_overrides_all") };
+        // SAFETY: ENV_LOCK 串行化本二进制内所有环境变量测试。
+        let _env = unsafe { EnvVarGuard::set("GOOGLE_GENERATIVE_AI_API_KEY", "env_overrides_all") };
         let shared = make_config("base_key", "http://base:8080", "base-model");
         {
             let mut cfg = shared.write().unwrap();
@@ -360,8 +364,6 @@ mod tests {
         assert_eq!(model, "gemma-4-31b-it");
         assert_eq!(ep, "https://generativelanguage.googleapis.com/v1beta");
         assert_eq!(api, "env_overrides_all", "env var should win over override");
-
-        unsafe { std::env::remove_var("GOOGLE_GENERATIVE_AI_API_KEY") };
     }
 
     /// Helper: create config with per-agent overrides pre-loaded.

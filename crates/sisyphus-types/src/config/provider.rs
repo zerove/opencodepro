@@ -268,8 +268,11 @@ mod tests {
 
     #[test]
     fn resolve_api_key_from_env() {
-        // 临时设置一个 env 变量
-        std::env::set_var("SISYPHUS_TEST_KEY", "from-env-12345");
+        // 用守卫而非裸 set_var：断言失败时变量会被自动恢复，
+        // 不会永久残留给同二进制的其他测试。
+        // SAFETY: 单线程测试，变量名带 SISYPHUS_TEST_ 前缀。
+        let _guard =
+            unsafe { crate::env_guard::EnvVarGuard::set("SISYPHUS_TEST_KEY", "from-env-12345") };
         let cfg = ProviderConfig {
             name: "test".into(),
             kind: ProviderKind::Groq,

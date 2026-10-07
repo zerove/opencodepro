@@ -87,6 +87,19 @@ PRODUCTION_ENV_VARS = {
 # 抗 panic 的清理形态：出现其一即视为已用 RAII 兜底。
 RAII_GUARD_RE = re.compile(r"\bimpl\s+Drop\b|\bstruct\s+\w*Guard\b|\bDropGuard\b")
 
+# 守卫的创建点：`EnvVarGuard::set(K, …)` / `unset(K)`。
+#
+# 关键：必须**按变量名**判定，不能只看「函数体内有没有守卫」。
+# 守卫只覆盖它自己那个名字：
+#   let _g = EnvVarGuard::unset("VAR_A");
+#   env::set_var("VAR_B", "x");   // ← VAR_B 没人兜底，仍是泄漏
+# 我最初写成「有守卫即全函数豁免」，变异注入一个新变量名后门禁毫无反应，
+# 等于把门禁关掉了。放宽判据必须同时证明它仍能抓到真缺陷。
+GUARD_CONSTRUCT_RE = re.compile(
+    r"\bEnvVarGuard\s*::\s*(?:set|unset|set_owned|unset_owned)\s*\(\s*"
+    r'(?:&?\s*)?"?([A-Za-z_][A-Za-z0-9_]*)'
+)
+
 # 判定「是否改写生产变量名」需要读出字符串字面量内容，故对源码多取一份
 # 保留字符串的副本。代价是 raw string 里的内容也可能被误当作变量名，
 # 故仅当该变量名确实在 PRODUCTION_ENV_VARS 白名单里时才报出。
@@ -183,6 +196,20 @@ def enclosing_fn(src: str, pos: int) -> tuple[str, int]:
     return m.group(1), brace
 
 
+def env_var_name(src: str, pos: int) -> str | None:
+    """取 `set_var(...)` 第一个参数里的变量名。
+
+    变量名总是以字符串字面量给出，在保留字符串的副本上需要先剥掉
+    开头的引号。解析不出时返回 None（调用方按「未受保护」处理，
+    宁可误报也不漏报）。
+    """
+    rest = src[pos:].lstrip()
+    if rest.startswith('"'):
+        rest = rest[1:]
+    m = re.match(r"[A-Za-z_][A-Za-z0-9_]*", rest)
+    return m.group(0) if m else None
+
+
 def check_panic_safe_cleanup(src: str, rel: str) -> list[dict]:
     """判定 2：set_var 之后，清理是否会被 panic 跳过。
 
@@ -195,6 +222,15 @@ def check_panic_safe_cleanup(src: str, rel: str) -> list[dict]:
         fn, body_start = enclosing_fn(src, m.start())
         line = src.count("\n", 0, m.start()) + 1
         body = src[body_start:]
+
+        # 该 set_var 的变量名若被同函数内的守卫覆盖，则已被 panic
+        # 安全地兜住。注意必须比对**变量名**，不能只看有无守卫。
+        var_name = env_var_name(src, m.end())
+        guarded = var_name is not None and var_name in {
+            g for g in GUARD_CONSTRUCT_RE.findall(body) if g
+        }
+        if guarded:
+            continue
 
         removes = [
             r for r in REMOVE_VAR_RE.finditer(src)
@@ -232,15 +268,9 @@ def check_production_env_vars(src: str, rel: str) -> list[dict]:
     """
     out: list[dict] = []
     for m in SET_VAR_RE.finditer(src):
-        # 变量名总是以字符串字面量给出，保留字符串副本后这里会看到
-        # 开头的引号，必须先剥掉再匹配标识符。
-        rest = src[m.end():].lstrip()
-        if rest.startswith('"'):
-            rest = rest[1:]
-        var = re.match(r"[A-Za-z_][A-Za-z0-9_]*", rest)
-        if not var:
+        name = env_var_name(src, m.end())
+        if not name:
             continue
-        name = var.group(0)
         if name not in PRODUCTION_ENV_VARS:
             continue
         fn, _ = enclosing_fn(src, m.start())
@@ -290,7 +320,10 @@ def scan() -> list[dict]:
             # 守卫的 Drop 会跑，天然抗 panic。生产变量判定仍要跑——
             # 守卫只能保证「恢复原值」，不能保证「不改生产语义」。
             if not RAII_GUARD_RE.search(src):
-                findings.extend(check_panic_safe_cleanup(src, rel))
+                # 须传保留字符串的副本：判定「set_var 的变量名是否被
+                # 同函数内的守卫覆盖」要读出字符串内容，用剥离版会恒为
+                # False，守卫全被当成不存在。
+                findings.extend(check_panic_safe_cleanup(src_kept, rel))
     return findings
 
 

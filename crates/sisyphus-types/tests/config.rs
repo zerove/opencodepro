@@ -8,7 +8,6 @@
 //! - `resolve_env_placeholders_str` for known env vars
 
 use sisyphus_types::config::Config;
-use std::env;
 
 // ---------------------------------------------------------------------------
 // Default values
@@ -103,24 +102,22 @@ fn config_apply_env_overrides_does_not_panic() {
 
 #[test]
 fn resolve_env_placeholders_substitutes() {
-    // SAFETY: Single-threaded test for env::set_var.
-    unsafe {
-        env::set_var("SISYPHUS_TEST_ENV", "value123");
-    }
+    // SAFETY: Single-threaded test; the name is test-only.
+    let _guard =
+        unsafe { sisyphus_types::env_guard::EnvVarGuard::set("SISYPHUS_TEST_ENV", "value123") };
     let result =
         sisyphus_types::config::resolve_env_placeholders_str("hello {env:SISYPHUS_TEST_ENV}!");
     assert!(result.contains("value123"));
-    unsafe {
-        env::remove_var("SISYPHUS_TEST_ENV");
-    }
 }
 
 #[test]
 fn resolve_env_placeholders_uses_default() {
-    // Unset var + default → uses default.
-    unsafe {
-        env::remove_var("SISYPHUS_NOT_SET_VAR_XYZ");
-    }
+    // Unset var + default → uses default. The guard restores the previous
+    // value on drop, so a variable this developer happens to have exported
+    // is not permanently deleted.
+    // SAFETY: Single-threaded test; the name is test-only.
+    let _guard =
+        unsafe { sisyphus_types::env_guard::EnvVarGuard::unset("SISYPHUS_NOT_SET_VAR_XYZ") };
     let result = sisyphus_types::config::resolve_env_placeholders_str(
         "a={env:SISYPHUS_NOT_SET_VAR_XYZ|fallback}b",
     );

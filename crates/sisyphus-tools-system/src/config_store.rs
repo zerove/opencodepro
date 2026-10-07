@@ -118,6 +118,7 @@ impl ConfigStore {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sisyphus_types::env_guard::EnvVarGuard;
     use std::fs;
 
     /// 串行化**所有会触发 `apply_env_overrides()` 的用例**，而不仅仅是设置 env
@@ -346,7 +347,8 @@ convergence_threshold = 0.3
         write_toml(&config_path, 5);
 
         let _guard = ENV_LOCK.lock().await;
-        unsafe { std::env::set_var("SISYPHUS_COGNITIVE_LOOP_MAX_ITERATIONS", "99") };
+        // SAFETY: ENV_LOCK 串行化本二进制内所有环境变量测试。
+        let _env = unsafe { EnvVarGuard::set("SISYPHUS_COGNITIVE_LOOP_MAX_ITERATIONS", "99") };
 
         let (_store, config) = ConfigStore::load(config_path.to_str().unwrap()).unwrap();
         assert_eq!(
@@ -354,8 +356,6 @@ convergence_threshold = 0.3
             99,
             "env override should be applied on load"
         );
-
-        unsafe { std::env::remove_var("SISYPHUS_COGNITIVE_LOOP_MAX_ITERATIONS") };
     }
 
     #[tokio::test]
@@ -442,14 +442,16 @@ convergence_threshold = 0.3
                 // 与异步用例取**同一把** `ENV_LOCK`，否则两者不互斥、这个回归
                 // 测试就保护不了真实场景。
                 let _guard = ENV_LOCK.blocking_lock();
-                unsafe { std::env::set_var("SISYPHUS_COGNITIVE_LOOP_MAX_ITERATIONS", "99") };
+                // SAFETY: ENV_LOCK 串行化本二进制内所有环境变量测试；
+                // 守卫须在闭包内创建，跨线程移动不保证恢复时机正确。
+                let _env =
+                    unsafe { EnvVarGuard::set("SISYPHUS_COGNITIVE_LOOP_MAX_ITERATIONS", "99") };
                 let dir = tempfile::TempDir::new().unwrap();
                 let p = dir.path().join("writer.toml");
                 write_toml(&p, 5);
                 // 立刻复制出标量值，不让 RwLock 借用跨 await。
                 let (_store, cfg) = ConfigStore::load(p.to_str().unwrap()).unwrap();
                 let got = cfg.read().unwrap().cognitive_loop.max_iterations;
-                unsafe { std::env::remove_var("SISYPHUS_COGNITIVE_LOOP_MAX_ITERATIONS") };
                 got
             })
         };

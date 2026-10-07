@@ -73,9 +73,28 @@ def blank_comments(src: str) -> str:
     使 `audit-sources` job 长期失败。
     同类问题已在 `.github/workflows/ci.yml` 的 toolchain-e2e job 里修正过一次，
     两处判据必须一致。
+
+    **2026-10-07 补：字符串内容里的属性文本。**
+    实测 `crates/sisyphus-tools-system/src/web.rs:498` 与 `:508`：
+    ```ignore
+    .expect("websearch 不应失败：本用例已显式 #[ignore]，手动运行时必须有真实网络");
+    ```
+    这句里的 `#[ignore]` 只是**字符串字面量内部的说明文字**，却在剥离后
+    被 `IGNORE_RE` 匹配到，被判成「裸 #[ignore] 无理由」，使
+    `make audit-ignored` 长期失败——而真实的两个 `#[ignore = "requires
+    network"]` 反而正常通过。
+
+    修法：扫描阶段**额外**返回字符串字面量区间 `spans`（内容区间，不含引号
+    骨架）。`scan()` 用它判断一次 `#[ignore]` 匹配是否落在字面量内部，落在
+    内部就跳过。
+
+    为什么不能把字面量内容也 `_blank` 掉：属性 `#[ignore = "理由"]` 的理由
+    **本身就写在字符串里**，剥掉内容等于把合法理由一并抹掉——实测会让
+    24 处真实 `#[ignore]` 全部误报成「无理由」。注释可以剥、字符串不能剥。
     """
     out = list(src)
     i, n = 0, len(src)
+    spans: list[tuple[int, int]] = []
 
     def _blank(a: int, b: int) -> None:
         """把 [a, b) 区间除换行外全部写成空格（保行号）。"""
@@ -101,6 +120,7 @@ def blank_comments(src: str) -> str:
                 end += len(term)
                 # 保留 r / 引号 / # 骨架，仅填掉内容（行号不变）
                 _blank(j + 1, end - len(term))
+                spans.append((j + 1, end - len(term)))
                 i = end
                 continue
         if c == '/' and i + 1 < n and src[i + 1] == '/':
@@ -123,10 +143,15 @@ def blank_comments(src: str) -> str:
                     j += 1
                     break
                 j += 1
+            # 记录字面量区间（不含引号骨架），供 IGNORE_RE 判定「这次匹配是否
+            # 落在字符串内部」。**不能**像注释那样直接 _blank：属性
+            # #[ignore = "理由"] 的理由本身就在字符串里，剥掉就等于把合法理由
+            # 一并抹掉，24 处真实 ignore 会全部误报。
+            spans.append((i + 1, j - 1))
             i = j
         else:
             i += 1
-    return ''.join(out)
+    return ''.join(out), spans
 
 
 def next_ident(src: str, pos: int) -> str:
@@ -146,8 +171,12 @@ def scan() -> list[dict]:
                 raw = path.read_text(encoding="utf-8", errors="replace")
             except OSError:
                 continue
-            src = blank_comments(raw)
+            src, spans = blank_comments(raw)
             for m in IGNORE_RE.finditer(src):
+                # 落在字符串字面量内部的 #[ignore] 只是说明文字，不是属性。
+                # 例：.expect("本用例已显式 #[ignore]，手动运行时必须有网络")
+                if any(a <= m.start() < b for a, b in spans):
+                    continue
                 reason = (m.group(1) or "").strip()
                 line = src.count('\n', 0, m.start()) + 1
                 ok = bool(reason) and any(k in reason.lower() for k in ACCEPTED)

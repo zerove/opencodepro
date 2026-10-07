@@ -61,6 +61,7 @@ mod tests {
     use super::*;
     use crate::http_client::SharedHttpClient;
     use crate::tests::ENV_LOCK;
+    use sisyphus_types::env_guard::EnvVarGuard;
     use sisyphus_types::ProviderConfig;
     use std::sync::Arc;
 
@@ -166,13 +167,13 @@ mod tests {
     #[test]
     fn test_resolve_api_key_env_var_set() {
         let _guard = ENV_LOCK.lock().unwrap();
-        unsafe { std::env::set_var("MY_TEST_KEY_42", "resolved-value") };
+        // SAFETY: ENV_LOCK 串行化本二进制内所有环境变量测试。
+        let _env = unsafe { EnvVarGuard::set("MY_TEST_KEY_42", "resolved-value") };
         let cfg = ProviderConfig {
             api_key: "env:MY_TEST_KEY_42".into(),
             ..make_openai_config()
         };
         assert_eq!(cfg.resolve_api_key(), "resolved-value");
-        unsafe { std::env::remove_var("MY_TEST_KEY_42") };
     }
 
     #[test]

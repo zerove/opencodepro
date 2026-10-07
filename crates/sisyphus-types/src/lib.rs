@@ -13,6 +13,7 @@
 // 会对此误报 `double_must_use`。此处按 clippy 建议统一放行。
 #![allow(clippy::double_must_use)]
 pub mod asset;
+pub mod env_guard;
 pub mod errors;
 pub mod experience;
 pub mod roadmap;

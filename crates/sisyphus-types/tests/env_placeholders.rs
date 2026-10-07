@@ -4,6 +4,7 @@
 //! by `Config::resolve_env_placeholders` (and its single-string helper
 //! `resolve_env_placeholders_str`).
 
+use sisyphus_types::env_guard::EnvVarGuard;
 use sisyphus_types::resolve_env_placeholders_str;
 
 /// Use a unique env var name per test to avoid racing with other tests
@@ -16,9 +17,8 @@ fn scoped_var(label: &str) -> String {
 fn unknown_var_substitutes_empty_string() {
     let var = scoped_var("MISSING");
     // Make sure it really is missing
-    unsafe {
-        std::env::remove_var(&var);
-    }
+    // SAFETY: PID-scoped name; unique to this test.
+    let _guard = unsafe { EnvVarGuard::unset_owned(var.clone()) };
     let template = format!("prefix-{{env:{var}}}-suffix");
     let out = resolve_env_placeholders_str(&template);
     assert_eq!(out, "prefix--suffix");
@@ -27,9 +27,8 @@ fn unknown_var_substitutes_empty_string() {
 #[test]
 fn var_with_default_falls_back_when_unset() {
     let var = scoped_var("DEFAULT_FALLBACK");
-    unsafe {
-        std::env::remove_var(&var);
-    }
+    // SAFETY: PID-scoped name; unique to this test.
+    let _guard = unsafe { EnvVarGuard::unset_owned(var.clone()) };
     let out = resolve_env_placeholders_str(&format!("{{env:{var}|fallback_value}}"));
     assert_eq!(out, "fallback_value");
 }
@@ -37,14 +36,10 @@ fn var_with_default_falls_back_when_unset() {
 #[test]
 fn var_with_default_uses_env_when_set() {
     let var = scoped_var("DEFAULT_PRESENT");
-    unsafe {
-        std::env::set_var(&var, "from_env");
-    }
+    // SAFETY: PID-scoped name; unique to this test.
+    let _guard = unsafe { EnvVarGuard::set_owned(var.clone(), "from_env") };
     let out = resolve_env_placeholders_str(&format!("{{env:{var}|fallback}}"));
     assert_eq!(out, "from_env");
-    unsafe {
-        std::env::remove_var(&var);
-    }
 }
 
 #[test]

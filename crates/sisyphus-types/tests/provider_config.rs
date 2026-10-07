@@ -5,6 +5,7 @@
 //! `is_openai_compatible`, and `resolve_api_key`.
 
 use sisyphus_types::config::provider::{ProviderConfig, ProviderKind};
+use sisyphus_types::env_guard::EnvVarGuard;
 
 // ---------------------------------------------------------------------------
 // ProviderKind::as_str
@@ -160,11 +161,8 @@ fn provider_config_resolve_api_key_literal() {
 
 #[test]
 fn provider_config_resolve_api_key_env_unset() {
-    // SAFETY: test sets an env var; this test does not run in parallel
-    // with other env-touching tests in the same binary.
-    unsafe {
-        std::env::remove_var("SISYPHUS_TEST_API_KEY");
-    }
+    // SAFETY: test-only variable name; guard restores any prior value.
+    let _guard = unsafe { EnvVarGuard::unset("SISYPHUS_TEST_API_KEY") };
     let c = make_config("env:SISYPHUS_TEST_API_KEY");
     // Unset env var → empty string.
     assert_eq!(c.resolve_api_key(), "");
@@ -172,14 +170,10 @@ fn provider_config_resolve_api_key_env_unset() {
 
 #[test]
 fn provider_config_resolve_api_key_env_set() {
-    unsafe {
-        std::env::set_var("SISYPHUS_TEST_API_KEY2", "secret-value");
-    }
+    // SAFETY: test-only variable name; guard restores any prior value.
+    let _guard = unsafe { EnvVarGuard::set("SISYPHUS_TEST_API_KEY2", "secret-value") };
     let c = make_config("env:SISYPHUS_TEST_API_KEY2");
     assert_eq!(c.resolve_api_key(), "secret-value");
-    unsafe {
-        std::env::remove_var("SISYPHUS_TEST_API_KEY2");
-    }
 }
 
 #[test]

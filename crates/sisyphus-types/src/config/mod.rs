@@ -686,7 +686,9 @@ sandbox = { max_memory_pages = 10, default_fuel = 1000000, wasm_tools_dir = "too
 
     #[test]
     fn test_resolve_env_placeholders_str() {
-        std::env::set_var("SISYPHUS_TEST_VAR", "hello_world");
+        // SAFETY: 单线程测试，变量名带 SISYPHUS_TEST_ 前缀。
+        let _guard =
+            unsafe { crate::env_guard::EnvVarGuard::set("SISYPHUS_TEST_VAR", "hello_world") };
         let input = "prefix_{env:SISYPHUS_TEST_VAR}_suffix";
         let result = resolve_env_placeholders_str(input);
         assert_eq!(result, "prefix_hello_world_suffix");
@@ -694,7 +696,9 @@ sandbox = { max_memory_pages = 10, default_fuel = 1000000, wasm_tools_dir = "too
 
     #[test]
     fn test_resolve_env_placeholders_with_default() {
-        std::env::set_var("SISYPHUS_UNLIKELY_VAR_XYZ", "set_value");
+        // SAFETY: 单线程测试，变量名带 SISYPHUS_UNLIKELY_ 前缀。
+        let _guard =
+            unsafe { crate::env_guard::EnvVarGuard::set("SISYPHUS_UNLIKELY_VAR_XYZ", "set_value") };
         let result = resolve_env_placeholders_str("{env:SISYPHUS_UNLIKELY_VAR_XYZ|fallback}");
         assert_eq!(result, "set_value");
     }
@@ -720,25 +724,31 @@ sandbox = { max_memory_pages = 10, default_fuel = 1000000, wasm_tools_dir = "too
 
     #[test]
     fn test_apply_env_overrides_cache_batch_and_flush() {
-        std::env::set_var("SISYPHUS_CACHE_BATCH_SIZE", "250");
-        std::env::set_var("SISYPHUS_CACHE_FLUSH_INTERVAL_MS", "500");
+        static PAIRS: [(&str, &str); 2] = [
+            ("SISYPHUS_CACHE_BATCH_SIZE", "250"),
+            ("SISYPHUS_CACHE_FLUSH_INTERVAL_MS", "500"),
+        ];
+        // SAFETY: 单线程测试，变量名均为配置覆盖专用。
+        let _guard = unsafe { crate::env_guard::env_var_guards(&PAIRS) };
         let mut config = Config::default();
         config.apply_env_overrides();
         assert_eq!(config.cache.batch_size, 250);
         assert_eq!(config.cache.flush_interval_ms, 500);
-        std::env::remove_var("SISYPHUS_CACHE_BATCH_SIZE");
-        std::env::remove_var("SISYPHUS_CACHE_FLUSH_INTERVAL_MS");
     }
 
     #[test]
     fn test_apply_env_overrides_llm_timeouts_and_jwt() {
-        std::env::set_var("SISYPHUS_LLM_FAST_FAIL_COOLING_SECS", "60");
-        std::env::set_var("SISYPHUS_LLM_REQUEST_TIMEOUT_SECS", "10");
-        std::env::set_var("SISYPHUS_LLM_CONNECT_TIMEOUT_SECS", "3");
-        std::env::set_var("SISYPHUS_JWT_SECRET", "test-secret");
-        std::env::set_var("SISYPHUS_JWT_ACCESS_TTL_SECS", "1800");
-        std::env::set_var("SISYPHUS_JWT_REFRESH_TTL_SECS", "1209600");
-        std::env::set_var("SISYPHUS_JWT_ISSUER", "test-issuer");
+        static PAIRS: [(&str, &str); 7] = [
+            ("SISYPHUS_LLM_FAST_FAIL_COOLING_SECS", "60"),
+            ("SISYPHUS_LLM_REQUEST_TIMEOUT_SECS", "10"),
+            ("SISYPHUS_LLM_CONNECT_TIMEOUT_SECS", "3"),
+            ("SISYPHUS_JWT_SECRET", "test-secret"),
+            ("SISYPHUS_JWT_ACCESS_TTL_SECS", "1800"),
+            ("SISYPHUS_JWT_REFRESH_TTL_SECS", "1209600"),
+            ("SISYPHUS_JWT_ISSUER", "test-issuer"),
+        ];
+        // SAFETY: 单线程测试，变量名均为配置覆盖专用。
+        let _guard = unsafe { crate::env_guard::env_var_guards(&PAIRS) };
         let mut config = Config::default();
         config.apply_env_overrides();
         assert_eq!(config.llm.fast_fail_cooling_secs, 60);
@@ -748,17 +758,19 @@ sandbox = { max_memory_pages = 10, default_fuel = 1000000, wasm_tools_dir = "too
         assert_eq!(config.jwt.access_ttl_secs, 1800);
         assert_eq!(config.jwt.refresh_ttl_secs, 1209600);
         assert_eq!(config.jwt.issuer, "test-issuer");
-        std::env::remove_var("SISYPHUS_LLM_FAST_FAIL_COOLING_SECS");
-        std::env::remove_var("SISYPHUS_LLM_REQUEST_TIMEOUT_SECS");
-        std::env::remove_var("SISYPHUS_LLM_CONNECT_TIMEOUT_SECS");
-        std::env::remove_var("SISYPHUS_JWT_SECRET");
-        std::env::remove_var("SISYPHUS_JWT_ACCESS_TTL_SECS");
-        std::env::remove_var("SISYPHUS_JWT_REFRESH_TTL_SECS");
-        std::env::remove_var("SISYPHUS_JWT_ISSUER");
     }
 
     #[test]
     fn test_apply_env_overrides_embedding_allow_dummy() {
+        // 先确保变量**不存在**，再验证默认值。必须用 unset 而非 set：
+        // 本用例的第一个断言就是「未设置时应为 false」，预设成 "true"
+        // 会让该断言必然失败。
+        //
+        // 用守卫而非裸 remove_var：后者在开发者本机恰好设过该变量时会
+        // 永久删掉它，且守卫能保证后续两处 set_var 结束后一并恢复。
+        // SAFETY: 单线程测试，变量名为配置覆盖专用。
+        let _env =
+            unsafe { crate::env_guard::EnvVarGuard::unset("SISYPHUS_LLM_EMBEDDING_ALLOW_DUMMY") };
         // 默认值应为 false
         let mut config = Config::default();
         config.apply_env_overrides();
@@ -768,39 +780,43 @@ sandbox = { max_memory_pages = 10, default_fuel = 1000000, wasm_tools_dir = "too
         );
 
         // 显式启用
-        std::env::set_var("SISYPHUS_LLM_EMBEDDING_ALLOW_DUMMY", "true");
+        // SAFETY: 同上。
+        unsafe { std::env::set_var("SISYPHUS_LLM_EMBEDDING_ALLOW_DUMMY", "true") };
         let mut config = Config::default();
         config.apply_env_overrides();
         assert!(config.llm.embedding.allow_dummy_embeddings);
-        std::env::remove_var("SISYPHUS_LLM_EMBEDDING_ALLOW_DUMMY");
 
         // 显式关闭
-        std::env::set_var("SISYPHUS_LLM_EMBEDDING_ALLOW_DUMMY", "false");
+        // SAFETY: 同上。
+        unsafe { std::env::set_var("SISYPHUS_LLM_EMBEDDING_ALLOW_DUMMY", "false") };
         let mut config = Config::default();
         config.apply_env_overrides();
         assert!(!config.llm.embedding.allow_dummy_embeddings);
-        std::env::remove_var("SISYPHUS_LLM_EMBEDDING_ALLOW_DUMMY");
     }
 
     #[test]
     fn test_apply_env_overrides_anomaly_detector() {
         let _guard = ENV_LOCK.lock().unwrap();
-        std::env::set_var(
-            "SISYPHUS_COGNITIVE_LOOP_ANOMALY_DETECTOR_FUEL_THRESHOLD",
-            "4.5",
-        );
-        std::env::set_var(
-            "SISYPHUS_COGNITIVE_LOOP_ANOMALY_DETECTOR_DURATION_THRESHOLD",
-            "5.5",
-        );
-        std::env::set_var(
-            "SISYPHUS_COGNITIVE_LOOP_ANOMALY_DETECTOR_ERROR_RATE_THRESHOLD",
-            "0.42",
-        );
-        std::env::set_var(
-            "SISYPHUS_COGNITIVE_LOOP_ANOMALY_DETECTOR_HISTORY_WINDOW",
-            "50",
-        );
+        static PAIRS: [(&str, &str); 4] = [
+            (
+                "SISYPHUS_COGNITIVE_LOOP_ANOMALY_DETECTOR_FUEL_THRESHOLD",
+                "4.5",
+            ),
+            (
+                "SISYPHUS_COGNITIVE_LOOP_ANOMALY_DETECTOR_DURATION_THRESHOLD",
+                "5.5",
+            ),
+            (
+                "SISYPHUS_COGNITIVE_LOOP_ANOMALY_DETECTOR_ERROR_RATE_THRESHOLD",
+                "0.42",
+            ),
+            (
+                "SISYPHUS_COGNITIVE_LOOP_ANOMALY_DETECTOR_HISTORY_WINDOW",
+                "50",
+            ),
+        ];
+        // SAFETY: ENV_LOCK 已串行化同二进制的环境变量测试。
+        let _env = unsafe { crate::env_guard::env_var_guards(&PAIRS) };
 
         let mut config = Config::default();
         config.apply_env_overrides();
@@ -809,25 +825,25 @@ sandbox = { max_memory_pages = 10, default_fuel = 1000000, wasm_tools_dir = "too
         assert!((config.cognitive_loop.anomaly_detector.duration_threshold - 5.5).abs() < 1e-9);
         assert!((config.cognitive_loop.anomaly_detector.error_rate_threshold - 0.42).abs() < 1e-9);
         assert_eq!(config.cognitive_loop.anomaly_detector.history_window, 50);
-
-        std::env::remove_var("SISYPHUS_COGNITIVE_LOOP_ANOMALY_DETECTOR_FUEL_THRESHOLD");
-        std::env::remove_var("SISYPHUS_COGNITIVE_LOOP_ANOMALY_DETECTOR_DURATION_THRESHOLD");
-        std::env::remove_var("SISYPHUS_COGNITIVE_LOOP_ANOMALY_DETECTOR_ERROR_RATE_THRESHOLD");
-        std::env::remove_var("SISYPHUS_COGNITIVE_LOOP_ANOMALY_DETECTOR_HISTORY_WINDOW");
     }
 
     #[test]
     fn test_apply_env_overrides_anomaly_detector_missing_keeps_defaults() {
         let _guard = ENV_LOCK.lock().unwrap();
-        // 未设置环境变量时应保持 Default 值
-        for k in [
+        // 未设置环境变量时应保持 Default 值。用守卫而非裸 remove_var：
+        // 后者会永久删掉开发者本机可能已设的同名变量，且不可恢复。
+        const KEYS: [&str; 4] = [
             "SISYPHUS_COGNITIVE_LOOP_ANOMALY_DETECTOR_FUEL_THRESHOLD",
             "SISYPHUS_COGNITIVE_LOOP_ANOMALY_DETECTOR_DURATION_THRESHOLD",
             "SISYPHUS_COGNITIVE_LOOP_ANOMALY_DETECTOR_ERROR_RATE_THRESHOLD",
             "SISYPHUS_COGNITIVE_LOOP_ANOMALY_DETECTOR_HISTORY_WINDOW",
-        ] {
-            std::env::remove_var(k);
-        }
+        ];
+        // SAFETY: ENV_LOCK 已串行化同二进制的环境变量测试。
+        let _envs = KEYS
+            .iter()
+            // SAFETY: 同上。
+            .map(|k| unsafe { crate::env_guard::EnvVarGuard::unset(k) })
+            .collect::<Vec<_>>();
 
         let mut config = Config::default();
         config.apply_env_overrides();
