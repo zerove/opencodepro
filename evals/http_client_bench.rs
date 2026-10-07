@@ -163,7 +163,7 @@ async fn main() {
     }
 
     // 与上次基线对比
-    if let Some(baseline) = read_last_baseline() {
+    if let Some(baseline) = read_last_baseline(&dir) {
         let ratio = result.speedup_ratio / baseline;
         println!("  上次基线加速比:        {:.2}x", baseline);
         println!("  相对基线:              {:.2}× (1.00 = 不变)", ratio);
@@ -183,16 +183,30 @@ async fn main() {
     }
 }
 
-/// 读取 `.sisyphus/eval-history/http-client-bench-*.jsonl` 中**最后**一个文件的
+/// 读取 `dir` 下 `http-client-bench-*.jsonl` 中**最后**一个文件的
 /// 第一行（即最近一次 `speedup_ratio`），用作性能回归基线。
 ///
 /// 返回 `None` 表示没有历史（首次运行）。
-fn read_last_baseline() -> Option<f64> {
-    let dir = std::path::PathBuf::from(".sisyphus/eval-history");
+///
+/// ## 为什么必须传显式路径
+///
+/// 本函数原先硬编码相对路径 `.sisyphus/eval-history`，解析结果完全取决于
+/// **进程级**当前工作目录。而 `set_current_dir` 改的是全局状态、不是线程级
+/// 的：libtest 默认并行跑同一二进制内的测试，于是两个都 chdir 的测试会互相
+/// 踩 —— `test_read_last_baseline_returns_none_when_no_history` 在另一个测试
+/// 正停留在它含 fixture 的临时目录时调用本函数，会读到别人的数据而非 `None`
+/// （实测失败值 `Some(5.0)` 正是另一测试的 fixture）。
+///
+/// 上一个修法是用互斥锁把「chdir → 读 → chdir 回来」串行化，但那只是让两个
+/// **已知**测试不互踩：只要再有一个测试 chdir、或有人在这段窗口里调本函数，
+/// 竞争依旧成立 —— 真正的脆弱面是函数依赖全局可变状态本身。故改为显式接收
+/// 目录：生产侧 `main` 传入 `.sisyphus/eval-history`（行为与原先完全一致），
+/// 测试侧传入各自的临时目录，从此不再触碰进程 cwd，并发安全不依赖任何锁。
+fn read_last_baseline(dir: &std::path::Path) -> Option<f64> {
     if !dir.exists() {
         return None;
     }
-    let mut entries: Vec<_> = std::fs::read_dir(&dir)
+    let mut entries: Vec<_> = std::fs::read_dir(dir)
         .ok()?
         .filter_map(|e| e.ok())
         .filter(|e| {
@@ -234,43 +248,28 @@ mod tests {
     use super::*;
     use std::fs;
     use std::sync::atomic::{AtomicU64, Ordering};
-    use std::sync::{Mutex, MutexGuard, OnceLock};
 
     /// 计数器: 给每个测试唯一 timestamp 后缀
     static COUNTER: AtomicU64 = AtomicU64::new(0);
 
-    /// `set_current_dir` 改的是**进程级**全局状态，不是线程级。
-    /// libtest 默认多线程并行跑同一二进制内的测试，因此两个都会 chdir 的
-    /// 测试会互相踩：`test_read_last_baseline_returns_none_when_no_history`
-    /// 会在另一个测试正停留在它含 `.sisyphus/eval-history` 的临时目录时
-    /// 调用 `read_last_baseline()`，读到别人的 fixture 而非 None。
-    ///
-    /// 用互斥锁把「chdir → 读 → chdir 回来」整段串行化。把
-    /// `read_last_baseline` 改成接受显式路径才是根治，但那要改生产代码
-    /// 签名并审计全部调用方，与本次并行稳定性修复不成比例。
-    fn cwd_lock() -> MutexGuard<'static, ()> {
-        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-        LOCK.get_or_init(|| Mutex::new(())).lock().unwrap_or_else(|e| e.into_inner())
+    /// 计数器: 给每个测试唯一的临时目录后缀
+    fn unique_tmp(prefix: &str) -> std::path::PathBuf {
+        std::env::temp_dir().join(format!(
+            "sisyphus-bench-test-{prefix}-{}-{}",
+            std::process::id(),
+            COUNTER.fetch_add(1, Ordering::SeqCst)
+        ))
     }
 
     /// 在临时目录里写一个 jsonl，验证 read_last_baseline 能否读出 speedup_ratio
+    ///
+    /// 本测试**不 chdir**：`read_last_baseline` 现接受显式目录参数，
+    /// 并发安全由「不依赖进程级 cwd」保证，而非靠锁把调用排成一行。
     #[test]
     fn test_read_last_baseline_returns_speedup_ratio() {
-        let _guard = cwd_lock();
-        let tmp = std::env::temp_dir().join(format!(
-            "sisyphus-bench-test-{}-{}",
-            std::process::id(),
-            COUNTER.fetch_add(1, Ordering::SeqCst)
-        ));
-        fs::create_dir_all(&tmp).unwrap();
-
-        // 模拟历史目录结构：".sisyphus/eval-history/" + 多个时间戳 jsonl
-        // read_last_baseline 硬编码此路径，用 chdir 切换工作目录
-        let original_cwd = std::env::current_dir().unwrap();
-        std::env::set_current_dir(&tmp).unwrap();
-
-        // 构造 .sisyphus/eval-history + 2 个 jsonl
-        let dir = tmp.join(".sisyphus").join("eval-history");
+        let tmp = unique_tmp("ratio");
+        // 构造 eval-history + 2 个 jsonl
+        let dir = tmp.join("eval-history");
         fs::create_dir_all(&dir).unwrap();
         fs::write(
             dir.join("http-client-bench-100.jsonl"),
@@ -284,8 +283,7 @@ mod tests {
         )
         .unwrap();
 
-        let baseline = read_last_baseline();
-        std::env::set_current_dir(&original_cwd).unwrap();
+        let baseline = read_last_baseline(&dir);
         fs::remove_dir_all(&tmp).ok();
 
         assert_eq!(
@@ -298,20 +296,31 @@ mod tests {
     /// 无历史目录时返回 None
     #[test]
     fn test_read_last_baseline_returns_none_when_no_history() {
-        let _guard = cwd_lock();
-        let tmp = std::env::temp_dir().join(format!(
-            "sisyphus-bench-test-none-{}-{}",
-            std::process::id(),
-            COUNTER.fetch_add(1, Ordering::SeqCst)
-        ));
+        let tmp = unique_tmp("none");
         fs::create_dir_all(&tmp).unwrap();
-        let original_cwd = std::env::current_dir().unwrap();
-        std::env::set_current_dir(&tmp).unwrap();
+        let dir = tmp.join("eval-history");
 
-        let baseline = read_last_baseline();
-        std::env::set_current_dir(&original_cwd).unwrap();
+        let baseline = read_last_baseline(&dir);
         fs::remove_dir_all(&tmp).ok();
 
-        assert_eq!(baseline, None, "无 .sisyphus/eval-history 时应返回 None");
+        assert_eq!(baseline, None, "eval-history 不存在时应返回 None");
+    }
+
+    /// 目录存在但没有匹配的 jsonl 时也应返回 None。
+    ///
+    /// 该用例刻意与上面两个共用进程并行：它若依赖 cwd，就会读到别人的
+    /// fixture 而失败 —— 这正是修复前 `Some(5.0)` 失败的成因。
+    #[test]
+    fn test_read_last_baseline_ignores_unrelated_files() {
+        let tmp = unique_tmp("ignore");
+        let dir = tmp.join("eval-history");
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("other-bench-1.jsonl"), "{\"speedup_ratio\":9.9}\n").unwrap();
+        fs::write(dir.join("readme.txt"), "not jsonl").unwrap();
+
+        let baseline = read_last_baseline(&dir);
+        fs::remove_dir_all(&tmp).ok();
+
+        assert_eq!(baseline, None, "非 http-client-bench 前缀的文件应被忽略");
     }
 }
