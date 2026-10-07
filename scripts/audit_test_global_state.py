@@ -70,7 +70,48 @@ BARRIER_RE = re.compile(
     r"|\.unwrap\(\)|\.expect\("
 )
 
-SCAN_DIRS = ("crates", "webui", "evals")
+# 扫描范围：自动发现顶层含 .rs 文件的目录，不在此硬编码。
+#
+# 原先是 SCAN_DIRS = ("crates", "webui", "evals")，实测漏掉了 ide/（10 个
+# .rs）与 tools/（1 个）——门禁对这两个目录里的真实泄漏完全沉默。这与
+# 本项目反复遇到的失效模式同构：硬编码的清单不会随仓库生长而更新，
+# 且**症状是零**（脚本照常输出「✅ 未发现问题」）。用探针证实过：往
+# ide/ 放一个含裸 set_var 的文件，scan() 报 0 条；把 ide 加进清单后
+# 报 1 条。
+#
+# 改为「凡是顶层目录下有 .rs 文件就扫」，并显式排除产物/工具目录。
+# 硬编码的代价是新目录一出现就静默漏扫；自动发现的代价是多扫几个
+# 无害目录（最多报噪音，不漏报）——这个方向上的不对称是刻意的。
+#
+# 注意：不能用「git ls-files」代替——那会漏掉未提交的新文件，而新
+# 文件恰恰是泄漏最常被引入的地方。
+SCAN_EXCLUDE_DIRS = frozenset({
+    # 编译产物与第三方代码：不是本项目的测试，不该由本门禁判定。
+    "target", "node_modules", "book", "vendor", "dist", "build",
+    # 基础设施目录，不含 Rust 源码。
+    ".git", ".github", ".cargo", ".githooks", ".devcontainer", ".jcode",
+    ".sisyphus", "deploy", "static", "docs", "scripts",
+})
+
+
+def _scan_dirs() -> list[str]:
+    """返回顶层所有含 .rs 文件、且不在排除表里的目录名（已排序）。
+
+    刻意不写死清单。实测 ide/ 曾因不在硬编码列表里而完全免检。
+    """
+    out: list[str] = []
+    for child in ROOT.iterdir():
+        if not child.is_dir() or child.name.startswith("."):
+            continue
+        if child.name in SCAN_EXCLUDE_DIRS:
+            continue
+        try:
+            has_rs = any(child.rglob("*.rs"))
+        except OSError:
+            continue
+        if has_rs:
+            out.append(child.name)
+    return sorted(out)
 
 # 守卫自身的实现文件。这里的 `set_var` 不是「测试里忘记清理」，
 # 而是**实现本身**——恢复动作就在同文件的 `impl Drop` 里。
@@ -582,18 +623,24 @@ def check_production_env_vars(src: str, rel: str) -> list[dict]:
 
 
 def _self_check() -> list[str]:
-    """判据自检：用六个合成用例验证豁免逻辑既有判别力又不误伤。
+    """判据自检：用合成用例验证豁免逻辑既有判别力又不误伤。
 
-    这个门禁的判据改过两次，两次都漏掉了真实缺陷：
+    这个门禁的判据改过三次，每次都漏掉了真实缺陷：
       1. 「函数内有守卫即豁免」 → 漏掉不同变量名，以及守卫块已结束的情形
       2. 「文件里有 impl Drop 即整文件免检」→ 让 http_client.rs 的
          9 处真实泄漏、env_guard.rs 自身测试区的裸调用全部免检
+      3. 扫描目录硬编码成 ("crates", "webui", "evals") → ide/ 与
+         tools/ 里的泄漏完全免检
 
-    两次都没有症状：脚本照常运行、输出「✅ 未发现问题」。只有拿已知
+    三次都没有症状：脚本照常运行、输出「✅ 未发现问题」。只有拿已知
     该报的输入去问「你报不报」，才能发现。所以固化成自检。
 
     返回未通过的用例描述；空列表表示全部符合预期。
     """
+    # 下面的端到端用例要临时换掉 ROOT；不使用 globals()["ROOT"] 是因为
+    # 那写法曾让 ROOT 被 Python 当作隐式局部变量，赋值即报
+    # UnboundLocalError——一次「看起来在跑」的假失败。
+    global ROOT
     cases: list[tuple[str, str, bool]] = [
         # ── protected 判定：(a) 变量名 (b) 顺序 (c) barrier ──
         # 这三条曾全部被豁免。原实现只看「barrier 之前有没有
@@ -775,7 +822,10 @@ fn t() {
     import tempfile
     with tempfile.TemporaryDirectory() as td:
         root = pathlib.Path(td)
-        crate = root / "crates" / "sisyphus-selfcheck-probe"
+        # 目录名刻意取一个**不在**任何硬编码清单里的名字（如实
+        # 曾经用 "crates"）：否则把 SCAN_DIRS 写死回旧值时这条照样
+        # 全绿，无法暴露「扫描范围被写死」这个缺陷本身。
+        crate = root / "selfcheck_probe_dir" / "nested"
         crate.mkdir(parents=True)
         (crate / "probe.rs").write_text(
             "struct UnrelatedGuard;\n"
@@ -788,17 +838,22 @@ fn t() {
         )
         real_root = ROOT
         try:
-            globals()["ROOT"] = root
-            globals()["SCAN_DIRS"] = ("crates",)
+            ROOT = root
+            # 不改 SCAN_DIRS——正是这里要验证自动发现能捡起新目录。
             probe_findings = scan()
         finally:
-            globals()["ROOT"] = real_root
-            globals()["SCAN_DIRS"] = ("crates", "webui", "evals")
+            ROOT = real_root
         if not probe_findings:
+            # 这条用例同时覆盖两种失效，必须把两者的症状都写出来：
+            # 变异「退回硬编码目录清单」与「加回整文件跳过」都会走到这里，
+            # 只写一种会让人照着错误方向查。
             failures.append(
-                "含 impl Drop 的文件里的裸 set_var 未被报出——"
-                "scan() 仍存在整文件跳过逻辑；impl Drop 只对它自己那枚"
-                "守卫变量生效，同文件的裸 set_var 与它无关"
+                "临时目录里的探针文件未被报出（它既含 impl Drop 又含裸 "
+                "set_var，且放在一个不在任何硬编码清单里的目录下）。两种 "
+                "可能：(a) scan() 仍有整文件跳过逻辑——impl Drop 只对它"
+                "自己那枚守卫变量生效，同文件的裸 set_var 与它无关；"
+                "(b) 扫描目录被写死成固定清单，新目录被静默漏扫。"
+                "先用 print(_scan_dirs()) 确认根因再改"
             )
 
     # 豁免边界必须是**真实**的 `#[cfg(test)]` 行，不能是随手写的数字。
@@ -837,7 +892,9 @@ fn t() {
 
 def scan() -> list[dict]:
     findings: list[dict] = []
-    for base in SCAN_DIRS:
+    # 每次调用都重新发现，而不是读模块级的 SCAN_DIRS：自检会临时替换
+    # ROOT，用缓存值会扫到真实仓库去，既测不到东西又可能污染结果。
+    for base in _scan_dirs():
         root = ROOT / base
         if not root.is_dir():
             continue
