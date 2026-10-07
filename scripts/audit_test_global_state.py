@@ -82,8 +82,8 @@ SCAN_DIRS = ("crates", "webui", "evals")
 # 为什么必须缩到行级：早期实现是**文件级**豁免，理由是「按函数区分
 # 实现代码与测试代码需要知道边界」。但这个边界是可以机械判定的——
 # `#[cfg(test)]` 就是测试区的起点，rustfmt 保证它顶格。实测
-# env_guard.rs 的 7 处裸调用全部落在 `#[cfg(test)]`（第 195 行）
-# 之前，测试区本就没有裸调用。于是文件级豁免多出来的那一大段
+# env_guard.rs 的实现区全部裸调用（6 处）都落在 `#[cfg(test)]`
+# （第 195 行）之前，测试区本就没有裸调用。于是文件级豁免多出来的那一大段
 # （整个 mod tests）是一个**永不触发的保护**，却在测试区真的引入裸
 # set_var 时完全沉默——正是我们要防的那类漏报。
 # 上述文件的实现区边界：首个 `#[cfg(test)]` 所在行（1-based）。
@@ -114,7 +114,8 @@ PRODUCTION_ENV_VARS = {
 # 即整文件免检」）。已删除——那等于把门禁关掉：impl Drop 只对它自己
 # 那枚守卫变量生效，同文件里另写的裸 set_var 与它毫无关系。实测
 # crates/sisyphus-tools-llm/src/http_client.rs 因此让 9 处真实泄漏
-# 全部免检。现在改为按「变量名 + 作用域覆盖」逐点判定。
+# 全部免检（修复前的状态；现已全部改用 EnvVarGuard，裸调用为 0）。
+# 现在改为按「变量名 + 作用域覆盖」逐点判定。
 
 # 守卫的创建点：`EnvVarGuard::set(K, …)` / `unset(K)`。
 #
@@ -806,7 +807,7 @@ fn t() {
     #   滞后 → 额外检查了几行实现代码，最多报噪音（不漏报）。
     # 即「宁可吵不可静默」。故只判 `actual < limit`。
     #
-    # 注：滞后在本文件上恰好无害——实测实现区的裸调用在第 149 行，
+    # 注：滞后在本文件上恰好无害——实测实现区的末一处裸调用在第 150 行，
     # 远早于任何合理的滞后。但这不是判据的前提，写在这里是为了
     # 避免有人把滞后当成“也没事”，进而把数字越调越大。
     for rel, limit in GUARD_IMPL_LINE_LIMITS.items():
@@ -868,8 +869,9 @@ def scan() -> list[dict]:
             # 放行，理由是「守卫的 Drop 会跑」。这是错的：impl Drop 只
             # 对**它自己那枚守卫变量**生效，同文件里另写的裸 set_var
             # 与它毫无关系。实测 crates/sisyphus-tools-llm/src/http_client.rs
-            # 因一个无关的 impl Drop 而让 9 处 set_var 全部免检，
-            # crates/sisyphus-types/src/env_guard.rs 同理。
+            # 因一个无关的 impl Drop 而让 9 处 set_var 全部免检（修复前
+            # 的状态，现已全部改用 EnvVarGuard），crates/sisyphus-types/
+            # src/env_guard.rs 同理。
             #
             # 守卫的豁免现在由 check_panic_safe_cleanup 内部按
             # 「变量名 + 作用域是否覆盖」逐点判定。
