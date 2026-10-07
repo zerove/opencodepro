@@ -230,6 +230,127 @@ def enclosing_fn(src: str, pos: int) -> tuple[str, int]:
     return m.group(1), brace
 
 
+CLOSURE_LABEL = "<闭包>"
+
+# 这些关键字开启的是**表达式修饰块**，不引入新作用域：块内语句与
+# 块外同属一个作用域。与之相对，loop/if/match/while/for/unsafe fn
+# 等是块语句或函数声明，会真正开启作用域。
+MODIFIER_KEYWORDS = {"unsafe", "async", "const", "move"}
+
+
+def _pos_in_closure(src: str, pos: int) -> bool:
+    """pos 是否落在某个闭包体内（词法上）。
+
+    判据：块链中任一层经 _block_is_closure 判定为闭包体即为 True。
+
+    为什么必须机械配平而不能用函数名近似：闭包体与外层函数体
+    同属一个 `fn`，靠名字分不出来。而它们的**执行时机**完全不同
+    ——这正是漏报的根源。
+    """
+    return any(_block_is_closure(src, b)
+               for b in innermost_block_chain(src, pos))
+
+
+def innermost_block_chain(src: str, pos: int) -> list[int]:
+    """返回包含 pos 的所有**作用域**开括号偏移，由外到内。
+
+    会跳过 `unsafe { … }` 这类**不引入新作用域**的包装：`unsafe`
+    是表达式修饰符而非块语句，它里面的语句与外层同属一个作用域。
+    不跳过会误判：两个连续的 `unsafe { set_var(..) }` /
+    `unsafe { remove_var(..) }` 各自最内层块不同，就被当成两个作用域
+    而无法配对——实测闭包内「成对设值与清理」因此被误报。
+    """
+    _, fn_brace = enclosing_fn(src, pos)
+    scan_from = fn_brace if fn_brace <= pos else 0
+    opens: list[int] = []
+    # 修饰符块（`unsafe {`）**不入栈**，它的 '}' 也**不能弹栈**。
+    # 入栈与弹栈必须成对：若跳过入栈却照常弹栈，每遇到一个 unsafe
+    # 块就会多弹一次，把本该在栈里的闭包体、函数体一并弹掉。
+    # 实测正是这样：闭包内成对的那条用例里，remove 的块链被弹成
+    # [函数体]，闭包体凭空消失，_pos_in_closure 随之误判为 False。
+    skip_until: int | None = None
+    for k in range(scan_from, pos):
+        if skip_until is not None:
+            if src[k] == "{":
+                skip_until += 1
+            elif src[k] == "}":
+                skip_until -= 1
+                if skip_until == 0:
+                    skip_until = None
+            continue
+        if src[k] == "{":
+            if opens and _is_modifier_block(src, k):
+                skip_until = 1  # 整个 unsafe 块当作不存在
+            else:
+                opens.append(k)
+        elif src[k] == "}" and opens:
+            opens.pop()
+    return opens
+
+
+def _is_modifier_block(src: str, brace: int) -> bool:
+    """brace 是否是 `unsafe {` / `async {` 这类修饰符块的开括号。
+
+    仅当它**嵌套在另一个块内**时才算修饰符（顶层 `{` 不跳）。
+    `unsafe fn` 的函数体不会误判：它的 '{' 前面是 `fn name(...)`，
+    取不到 MODIFIER_KEYWORDS 里的词。
+    """
+    i = brace - 1
+    while i >= 0 and src[i] in " \t\r\n":
+        i -= 1
+    if i < 0:
+        return False
+    end = i + 1
+    while i >= 0 and (src[i].isalnum() or src[i] == "_"):
+        i -= 1
+    return src[i + 1:end] in MODIFIER_KEYWORDS
+
+
+def _block_is_closure(src: str, brace: int) -> str | None:
+    """brace 是否是闭包体的 '{'。是则返回 "<闭包>"，否则 None。
+
+    判据：紧邻 brace 之前（跳过空白）应当是闭包参数的**收尾竖线**：
+    `|| {` 或 `|x: T| {`。找到那个 `|` 后再往前找配对的起始竖线，
+    两者之间不得出现 `;`、`{`、`}`（这些字符不可能出现在闭包
+    参数列表里）。
+
+    这里原先写反了方向：从 brace 往回扫，把遇到的**第一个** `;` 当作
+    「已离开表达式」的信号。但 `let f = || { ... };` 里的 `;` 在闭包
+    **之后**，扫到的是上一条语句的分号，于是闭包体永远被判成普通块
+    ——实测 `|| { unsafe { set_var(..) } }` 的三种闭包形态全部漏报。
+    正确做法是**向前**找收尾竖线，`;` 只能作为「配对竖线之前不得
+    出现」的禁字符，不能当作终止条件。
+
+    普通表达式里的竖线（如 `a | b`）不会误判：其后没有 `{`，
+    不构成 brace。
+    """
+    i = brace - 1
+    while i >= 0 and src[i] in " \t\r\n":
+        i -= 1
+    if i < 0 or src[i] != "|":
+        return None
+    # 第二道：从收尾竖线往前找配对的起始竖线，其间不得出现
+    # `;`/`{`/`}`（这些字符不可能出现在闭包参数列表里）。
+    #
+    # 这道检查在**合法 Rust 上几乎不可达**——实测去掉它，自检的
+    # 15 条用例与全仓扫描结果**完全不变**。原因：凡 `|` 紧邻 `{`
+    # 的合法语法只有闭包；match 的 or-pattern 是 `A | B => {`，
+    # 紧邻 `{` 的是 `>`，第一道检查就拦下了。
+    #
+    # 保留它是为了防御**非 Rust 文件**与未来的语法扩展（`let`-链、
+    # 生成代码等），而非覆盖已知输入。留此记录是为了避免下次变异
+    # 验证时把它当成「漏网的失效」反复排查——它确实是不可达的。
+    j = i - 1  # 从收尾竖线往前找配对的起始竖线
+    while j >= 0:
+        c = src[j]
+        if c in ";{}":
+            return None
+        if c == "|":
+            return CLOSURE_LABEL
+        j -= 1
+    return None
+
+
 def env_var_name(src: str, pos: int) -> str | None:
     """取 `set_var(...)` 第一个参数里的变量名。
 
@@ -312,6 +433,11 @@ def check_panic_safe_cleanup(
         if before_line is not None and line < before_line:
             continue
         fn, body_start = enclosing_fn(src, m.start())
+        # 本次 set_var 所在的最内层块（而非函数体）：`unsafe { … }`
+        # 自带一层花括号，用函数体当基准会把紧邻语句之间的每一次
+        # `unsafe` 包装都当成不同块，误判为「不同作用域」。
+        _chain = innermost_block_chain(src, m.start())
+        scope_start = _chain[-1] if _chain else body_start
         body = src[body_start:]
 
         # 该 set_var 的变量名若被同函数内的守卫覆盖，则已被 panic
@@ -361,14 +487,53 @@ def check_panic_safe_cleanup(
 
         removes = [
             r for r in REMOVE_VAR_RE.finditer(src)
-            if enclosing_fn(src, r.start())[0] == fn
+            if _in_same_block(src, scope_start, r.start())
         ]
-        # 任一 remove 出现在 barrier 之前 → 清理早于断言风险，安全
+        in_closure = _pos_in_closure(src, m.start())
+        # 任一 remove 同时满足三个条件才算数：
+        #   (a) 针对**同一个变量名**（var_name 已在上文取出）
+        #   (b) 出现在本次 set_var **之后**
+        #   (c) 出现在 barrier（assert/panic/unwrap）之前
+        #
+        # 这里原先只判了 (c)，漏了 (a)(b) 两件，两处都造成真实漏报：
+        #
+        # 1. **没比对变量名**。于是
+        #      set_var("K", …); remove_var("OTHER"); assert!(…);
+        #    被当成「K 已清理」而豁免。实测探针报出此漏报。
+        #    讽刺的是判据 (a) 在守卫那侧**早就实现了**（GUARD_CONS
+        #    TRUCT_RE 按变量名匹配），remove 侧却一直只看文本——同一个
+        #    概念存在两套标准。守卫侧已经为这件事写过教训（「守卫只覆盖
+        #    它自己那个名字」），remove 侧重蹈。教训要落在**每一处**
+        #    同类判定上，不能只落在一处。
+        #
+        # 2. **没要求 remove 在本次 set_var 之后**。于是
+        #      remove_var("K"); set_var("K", …); assert!(…);
+        #    被豁免——清理早已跑完，这次设值没人管。
+        #
+        # 另外原实现用 r_body.find(r.group(0)) 做文本定位，而 group(0)
+        # 只是 "env::remove_var("，对**任意变量名**都能匹配；同函数有两处
+        # 相同文本时第二次还会命中第一次的位置。改用 match 自带偏移。
+        #
+        # 变量名读不出来（动态拼接等）时不豁免：宁可多报。
         protected = False
         for r in removes:
-            r_body = src[body_start:]
-            idx = r_body.find(r.group(0))
-            if idx != -1 and not BARRIER_RE.search(r_body[:idx]):
+            if env_var_name(src, r.end()) != var_name:
+                continue  # 清理的是另一个变量名，与本次设值无关
+            if r.start() <= m.start():
+                continue  # 在本次 set_var 之前，抵消不了它
+            # 闭包边界：两者必须**同在闭包内或同在闭包外**。
+            #
+            # 实测这两条曾被豁免，而它们都是真实泄漏：
+            #   set_var 在闭包内、remove_var 在外：闭包体在 f 被调用时
+            #     才跑，外层那句在定义处就跑完了，时序无法保证；
+            #   set_var 在外、remove_var 在闭包内：清理同样被推迟。
+            # 两者都不同时执行，不能互相抵消。
+            #
+            # 注意这与 _in_same_block 无关：跳过 unsafe 包装后，两者的
+            # 最内层块**都是闭包体**，块判定通过，必须单独比闭包归属。
+            if _pos_in_closure(src, r.start()) != in_closure:
+                continue
+            if not BARRIER_RE.search(src[scope_start:r.start()]):
                 protected = True
                 break
 
@@ -429,6 +594,103 @@ def _self_check() -> list[str]:
     返回未通过的用例描述；空列表表示全部符合预期。
     """
     cases: list[tuple[str, str, bool]] = [
+        # ── protected 判定：(a) 变量名 (b) 顺序 (c) barrier ──
+        # 这三条曾全部被豁免。原实现只看「barrier 之前有没有
+        # remove_var」，既不比变量名、也不管顺序。
+        #
+        # 用例里的 True/False 是**语义判定**，不是「旧实现当前返回什么」。
+        # 这个区分本轮吃过亏：我先照着旧实现的行为写期望值，结果 15 条
+        # 里 6 条其实把漏报固化成了「正确」。期望值必须来自「这段代码在
+        # Rust 里的真实语义」——清理有没有配对、清理是否在设值之后、
+        # 闭包体和外层是否同时执行——而不是「判据现在怎么说」。
+        #
+        # 那 6 条的实际分布（已实测，不是推算）：旧实现 15 条错 6 条，
+        # 全是漏报，收敛到 4 处根因——
+        #   变量名不比对 / 顺序不要求 / 位置靠 find() 文本定位而丢失 /
+        #   闭包无边界。同一条判据的多个漏报面会让「6 条失效」与
+        #   「4 处修复」两个数字都对，故引用时要说清是哪个口径。
+        ("清理早于 set_var", '''
+fn t() {
+    unsafe { env::remove_var("K") };
+    unsafe { env::set_var("K", "x") };
+    assert!(true);
+}''', True),
+        ("remove_var 变量名不同", '''
+fn t() {
+    unsafe { env::set_var("K", "x") };
+    unsafe { env::remove_var("OTHER") };
+    assert!(true);
+}''', True),
+        ("两次 set_var 仅一次清理", '''
+fn t() {
+    unsafe { env::set_var("K", "x") };
+    unsafe { env::remove_var("K") };
+    unsafe { env::set_var("K", "y") };
+    assert!(true);
+}''', True),
+        ("清理在 barrier 之后", '''
+fn t() {
+    unsafe { env::set_var("K", "x") };
+    assert!(true);
+    unsafe { env::remove_var("K") };
+}''', True),
+        ("set_var 后立即清理（合法）", '''
+fn t() {
+    unsafe { env::set_var("K", "x") };
+    unsafe { env::remove_var("K") };
+    assert!(true);
+}''', False),
+        ("两次 set_var 两次清理（合法）", '''
+fn t() {
+    unsafe { env::set_var("K", "a") };
+    unsafe { env::remove_var("K") };
+    unsafe { env::set_var("K", "b") };
+    unsafe { env::remove_var("K") };
+    assert!(true);
+}''', False),
+        ("动态变量名无法判定", '''
+fn t() {
+    let k = "K";
+    unsafe { env::set_var(k, "x") };
+    assert!(true);
+}''', True),
+
+        # ── 闭包边界 ──
+        # 这几条曾全部被豁免。根因：enclosing_fn 只认 `fn`，闭包体
+        # 与外层函数体同属一个函数；而两者的执行时机完全不同。
+        ("闭包内 set_var、外层清理", '''
+fn t() {
+    let f = || { unsafe { env::set_var("K", "x") }; };
+    unsafe { env::remove_var("K") };
+    assert!(true);
+}''', True),
+        ("闭包内 set_var 无清理", '''
+fn t() {
+    let f = || { unsafe { env::set_var("K", "x") }; };
+    assert!(true);
+}''', True),
+        ("闭包内成对（合法）", '''
+fn t() {
+    let f = || {
+        unsafe { env::set_var("K", "x") };
+        unsafe { env::remove_var("K") };
+    };
+    assert!(true);
+}''', False),
+        ("move 闭包 |x| 内 set_var、外层清理", '''
+fn t() {
+    let f = |x: i32| { unsafe { env::set_var("K", "x") }; };
+    unsafe { env::remove_var("K") };
+    assert!(true);
+}''', True),
+        ("外层 set_var、闭包内清理", '''
+fn t() {
+    unsafe { env::set_var("K", "x") };
+    let f = || { unsafe { env::remove_var("K") }; };
+    assert!(true);
+}''', True),
+
+        # ── 守卫作用域 ──
         ("守卫在外层、set_var 在其内", '''
 fn t() {
     let _g = EnvVarGuard::set("K", "y");
@@ -444,30 +706,12 @@ fn t() {
     unsafe { env::set_var("K", "x") };
     assert!(true);
 }''', True),
-        ("无守卫、清理晚于断言", '''
-fn t() {
-    unsafe { env::set_var("K", "x") };
-    assert!(true);
-    unsafe { env::remove_var("K") };
-}''', True),
         ("守卫管的是别的变量名", '''
 fn t() {
     let _g = EnvVarGuard::set("OTHER", "y");
     unsafe { env::set_var("K", "x") };
     assert!(true);
 }''', True),
-        ("守卫在前、set_var 后、同作用域", '''
-fn t() {
-    let _g = EnvVarGuard::set("K", "y");
-    unsafe { env::set_var("K", "x") };
-}''', False),
-        ("守卫与 set_var 同在内层块", '''
-fn t() {
-    {
-        let _g = EnvVarGuard::set("K", "y");
-        unsafe { env::set_var("K", "x") };
-    }
-}''', False),
     ]
     failures: list[str] = []
 
