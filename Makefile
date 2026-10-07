@@ -228,10 +228,18 @@ audit-orphans:
 audit-ignored:
 	@python3 scripts/audit_ignored.py
 
-# 全部结构审计（不需编译）
-audit: audit-orphans audit-ignored
+# 测试隔离审计：检测依赖进程级全局状态（set_current_dir、
+# set_global_default、set_var 无 panic 安全清理、改写生产变量名）。
+# 本项目已因此付出两次实价：eval bench 的 cwd 竞争（42e0c1e）与
+# write_workflow 写入源码树（ab42b75）。这类缺陷比孤儿文件隐蔽——
+# 只在并行下偶发，失败现场常被后续测试覆盖，看起来像网络抖动。
+audit-test-state:
+	@python3 scripts/audit_test_global_state.py
 
-.PHONY: audit-orphans audit-ignored audit
+# 全部结构审计（不需编译）
+audit: audit-orphans audit-ignored audit-test-state
+
+.PHONY: audit-orphans audit-ignored audit-test-state audit
 
 # — bridge crate (nightly+, no workaround needed) —
 

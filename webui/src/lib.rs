@@ -1023,13 +1023,20 @@ fn render_dag_svg(graph: &DagGraph) -> String {
 
 // ── 路由 ────────────────────────────────────
 
-/// 认证中间件：检查 `Authorization: Bearer <token>` 与 `WEBUI_API_KEY` 环境变量。
-/// 未配置 token 时直接放行。直接读取环境变量，无需从 State 提取。
+/// 认证中间件：检查 `Authorization: Bearer <token>` 与 State 中的 auth_token。
+/// 未配置 token 时直接放行。
+///
+/// token 由 [`app_with_token`] 显式传入（[`AuthToken`] 作为中间件 State），
+/// 不再从环境变量读取。此前中间件每请求都重读 `WEBUI_API_KEY`，这既冗余
+/// （`app()` 已经读过一次），又让 token 藏在进程全局状态里——测试只能靠
+/// `std::env::set_var` 改写它，而那正是并行执行下互相污染、且 panic 后
+/// 永久残留的来源。
 async fn auth_middleware(
+    axum::extract::State(auth): axum::extract::State<AuthToken>,
     request: axum::http::Request<axum::body::Body>,
     next: axum::middleware::Next,
 ) -> Result<axum::http::Response<axum::body::Body>, (StatusCode, &'static str)> {
-    let auth_token: Option<String> = std::env::var("WEBUI_API_KEY").ok().filter(|s| !s.is_empty());
+    let auth_token: Option<String> = auth.0.clone();
     if let Some(ref token) = auth_token {
         let header =
             request.headers().get("Authorization").and_then(|v| v.to_str().ok()).unwrap_or("");
@@ -1041,10 +1048,27 @@ async fn auth_middleware(
     Ok(next.run(request).await)
 }
 
+/// 认证中间件的 State：只携带可选 token，与 [`AppState`] 解耦。
+#[derive(Clone, Default)]
+struct AuthToken(Option<String>);
+
 pub fn app(bridge_url: String) -> Router {
     // 从环境变量读取可选认证 token。设置后，所有非公开路由
     // 需携带 `Authorization: Bearer <WEBUI_API_KEY>`。
     let auth_token: Option<String> = std::env::var("WEBUI_API_KEY").ok().filter(|s| !s.is_empty());
+    app_with_token(bridge_url, auth_token)
+}
+
+/// 与 [`app`] 相同，但认证 token 由调用方显式给出而非读环境变量。
+///
+/// 测试必须走这个入口。`app()` 读的是进程级 `WEBUI_API_KEY`，测试若要
+/// 覆盖「已设置 token」与「未设置 token」两种情形就只能改写环境变量，
+/// 而并行执行下这会互相污染，且某个断言 panic 会让清理语句被跳过、
+/// 变量永久残留给后续测试——失败现场表现为「某个无关测试突然开始
+/// 401」，极难归因。
+pub fn app_with_token(bridge_url: String, auth_token: Option<String>) -> Router {
+    // 先按 token 克隆出中间件 State，再把所有权交给 `AppState`。
+    let auth_state = AuthToken(auth_token.clone());
 
     let (event_tx, _) = broadcast::channel(256);
     let state = Arc::new(AppState {
@@ -1102,7 +1126,10 @@ pub fn app(bridge_url: String) -> Router {
         .route("/api/skills", get(api_skill_list))
         .route("/api/skills/install", post(api_skill_install))
         .route("/api/auth/validate", post(auth_validate))
-        .layer(axum_mw::from_fn(auth_middleware));
+        // 用 `from_fn_with_state` 而非 `from_fn`：token 作为中间件 State
+        // 直接传入，不依赖请求 extensions——后者在 `.layer()` 先于
+        // `with_state()` 调用时取不到值，会静默退化成「永不校验」。
+        .layer(axum_mw::from_fn_with_state(auth_state, auth_middleware));
 
     Router::new()
         .merge(public_routes)
@@ -1256,14 +1283,9 @@ mod tests {
 
     // ── 路由测试 ─────────────────────────────────────────
 
-    /// 串行化修改进程全局 WEBUI_API_KEY 环境变量的测试。
-    static ENV_LOCK: std::sync::OnceLock<tokio::sync::Mutex<()>> = std::sync::OnceLock::new(); // rustc 1.98 clippy await_holding_lock 改用 OnceLock+tokio Mutex
-
     #[tokio::test]
     async fn test_router_index_serves_dashboard() {
-        let _guard = ENV_LOCK.get_or_init(|| tokio::sync::Mutex::new(())).lock().await;
-        std::env::remove_var("WEBUI_API_KEY");
-        let router = app("http://localhost:8080".into());
+        let router = app_with_token("http://localhost:8080".into(), None);
         let resp =
             router.oneshot(Request::builder().uri("/").body(Body::empty()).unwrap()).await.unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
@@ -1271,7 +1293,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_router_metrics_endpoint() {
-        let router = app("http://localhost:8080".into());
+        let router = app_with_token("http://localhost:8080".into(), None);
         let resp = router
             .oneshot(Request::builder().uri("/metrics").body(Body::empty()).unwrap())
             .await
@@ -1285,10 +1307,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_router_auth_required_when_token_set() {
-        let _guard = ENV_LOCK.get_or_init(|| tokio::sync::Mutex::new(())).lock().await;
-        // 为认证中间件设置环境变量
-        std::env::set_var("WEBUI_API_KEY", "test-secret-key");
-        let router = app("http://localhost:8080".into());
+        let router = app_with_token(
+            "http://localhost:8080".into(),
+            Some("test-secret-key".into()),
+        );
 
         // 无认证头 → 401
         let resp = router
@@ -1324,18 +1346,52 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
-
-        std::env::remove_var("WEBUI_API_KEY");
     }
 
     #[tokio::test]
     async fn test_router_events_public_no_auth() {
-        let _guard = ENV_LOCK.get_or_init(|| tokio::sync::Mutex::new(())).lock().await;
-        // 未设置 WEBUI_API_KEY → 公开路由无需认证即可访问。
-        std::env::remove_var("WEBUI_API_KEY");
-        let router = app("http://localhost:8080".into());
+        // 未配置 token → 公开路由无需认证即可访问。
+        let router = app_with_token("http://localhost:8080".into(), None);
         let resp = router
             .oneshot(Request::builder().uri("/metrics").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+    }
+
+    /// 守护用例：token 必须来自显式参数，而非进程级环境变量。
+    ///
+    /// 若把 `app_with_token(.., Some(t))` 换回读 `WEBUI_API_KEY`，
+    /// 本用例与 `test_router_auth_required_when_token_set` 会同时失败。
+    /// 这正是本次改动的核心断言——中间件与构造器都不再碰全局状态，
+    /// 因此三个路由测试可以安全并行，不必靠互斥锁串行。
+    #[tokio::test]
+    async fn test_two_routers_with_different_tokens_are_independent() {
+        let strict = app_with_token("http://localhost:8080".into(), Some("token-a".into()));
+        let other = app_with_token("http://localhost:8080".into(), Some("token-b".into()));
+
+        // token-a 不应被 token-b 放行
+        let resp = strict
+            .oneshot(
+                Request::builder()
+                    .uri("/api/sessions")
+                    .header(header::AUTHORIZATION, "Bearer token-b")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+
+        // 反向：用 token-b 请求 token-b 的 router 应当通过
+        let resp = other
+            .oneshot(
+                Request::builder()
+                    .uri("/api/sessions")
+                    .header(header::AUTHORIZATION, "Bearer token-b")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::OK);

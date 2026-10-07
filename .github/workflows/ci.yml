@@ -47,6 +47,8 @@ jobs:
         run: python3 scripts/audit_orphans.py
       - name: Audit #[ignore] reasons
         run: python3 scripts/audit_ignored.py
+      - name: Audit process-global state in tests
+        run: python3 scripts/audit_test_global_state.py
 
   # ── Supply-chain audit (cargo-deny: advisories, bans, licenses, sources) ─
   security-deny:
