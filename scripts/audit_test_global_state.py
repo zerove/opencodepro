@@ -26,10 +26,28 @@
    之后，则断言失败时清理被跳过，变量**永久残留**给同二进制的后续
    测试。这类残留的表现是「某个无关测试突然开始认证失败」。
 
+关于「测试」与「生产」的界定，先前这里写的是「刻意不判定 `set_var`
+出现在生产代码里」。实测与实现相反，且**实现是对的**：判据对生产代码
+同样生效（探针：生产函数里 `set_var` 后无清理 → 报出 1 条；有配对清理
+→ 0 条）。理由是生产代码里的裸 `set_var` 同样污染进程环境，只是它更
+可能是「有意的配置覆盖」而非「忘了清理」；真正的配置覆盖应通过
+`Config` 而非直接改环境变量。刻意豁免的只有一处：**守卫自身的实现
+文件**（`env_guard.rs`），因为那里 `set_var` 就是实现本身，恢复动作在
+其 `impl Drop` 里，按定义不能要求它使用自己。
+
 刻意不判定的（避免门禁变成噪音而被弃用）：
-- `set_var` 出现在**生产代码**里：那是配置覆盖机制本身，不是不健全。
-- 纯串行测试二进制（`tests/` 下每个文件独立进程）里的 `set_var`。
 - 互斥锁/串行化标注：它只是缓解，不是安全性的证明。
+- 其他进程级状态（`static mut`、`OnceLock` 写入、子进程 `Command::env`）：
+  前两者由 `no_panic_check` 与 review 约定覆盖，`Command::env` 只影响
+  子进程、不污染本进程。纳入前两者会引入无法自动判定的假阳性。
+
+上面两条「曾经写着不判定、实际却要判定」的承诺已删除：实现对**任何
+位置的** `set_var` 一视同仁，含生产代码与 `tests/` 目录（实测：在
+`crates/sisyphus-mem/tests/` 下放一个裸 `set_var` → 报出 1 条）。这里
+保留更严的行为——`tests/` 下虽然每个文件独立进程，但裸 `set_var` 加上
+断言失败即残留，仍是该改的。**当前 `tests/` 下没有任何真实 `set_var`**
+（`snapshot_writeop.rs` 里的 `write_op_set_var` 只是枚举变体名，不是环境
+变量写入），所以这条承诺从未被兑现过、也没造成过噪音。
 
 用法：
     python3 scripts/audit_test_global_state.py
@@ -885,6 +903,42 @@ fn t() {
             failures.append(
                 f"{rel} 的 #[cfg(test)] 在第 {actual} 行，"
                 f"早于豁免边界 {limit}——豁免范围已与实际不符"
+            )
+
+    # 本文件头部的「刻意不判定」清单曾两次与实现脱节，且两次都是
+    # **文档承诺了、实现里根本没有**：
+    #   1. 「刻意不判定 set_var 出现在生产代码里」——实现对生产代码
+    #      同样判定（探针：无清理 → 报出 1 条）。
+    #   2. 「纯串行测试二进制（tests/ 下每个文件独立进程）里的 set_var」
+    #      —— 实现里没有任何按路径的豁免。
+    #
+    # 文档写着「刻意不判定」，读代码却找不到对应逻辑，是最坏的一种
+    # 状态：下一个人要么相信文档、以为 tests/ 下永远不会被报（于是
+    # 在那里放心写裸 set_var），要么不信、去找那条不存在的豁免。
+    #
+    # 把真实行为钉在这里。判据语义若有意改动，这里必须同步改。
+    # 用 pub fn 而非 fn：生产代码的函数通常是 pub，用测试里的 fn 形态
+    # 会让「这是生产代码」的意图丢掉。
+    for name, src, want_reported in (
+        ("生产代码里的裸 set_var（应报出：实现并不豁免生产代码）", '''
+pub fn setup() {
+    unsafe { env::set_var("K", "x") };
+    do_work();
+}''', True),
+        ("生产代码里配对清理的 set_var（合法）", '''
+pub fn setup() {
+    unsafe { env::set_var("K", "x") };
+    unsafe { env::remove_var("K") };
+    do_work();
+}''', False),
+    ):
+        got = bool(check_panic_safe_cleanup(
+            blank_noncode(src, keep_strings=True), "<self-check>"))
+        if got != want_reported:
+            failures.append(
+                f"{name}：期望{'报出' if want_reported else '豁免'}，"
+                f"实际{'报出' if got else '豁免'}——文件头部的"
+                "「刻意不判定」清单已与实现脱节，请同步更正"
             )
 
     return failures
