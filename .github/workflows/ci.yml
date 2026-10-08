@@ -63,6 +63,22 @@ jobs:
           python3 scripts/audit_workflows.py
           python3 scripts/audit_workflows.py --self-check
 
+      # GitHub Actions 的 JSON Schema 校验。check-jsonschema 内置了官方
+      # workflow schema，不需要联网拉取（actions 官方 schema 托管在
+      # SchemaStore，CI 环境拉不到就会静默跳过校验——那正是它要防的情况）。
+      #
+      # 为什么必须在 CI 里：字段位置写错（step 级 vs job 级）、类型写错这类
+      # 问题，本地 YAML 解析器**完全看不出**——它们语法合法，只有对照 schema
+      # 才知道 GitHub 根本不接受。mdbook.yml 就曾把 job 级的 environment
+      # 写在 step 里，本地所有检查全绿，部署时才暴露。
+      - name: Validate workflows against GitHub Actions schema
+        run: |
+          pip install --quiet check-jsonschema
+          check-jsonschema --builtin-schema vendor.github-workflows .github/workflows/*.yml
+          # 官方口径的 timeout 必填校验，与 scripts/audit_workflows.py 的
+          # jobs_without_timeout() 交叉对照，两边不一致会立刻暴露分歧
+          check-jsonschema --builtin-schema github-workflows-require-timeout .github/workflows/*.yml
+
   # ── Supply-chain audit (cargo-deny: advisories, bans, licenses, sources) ─
   security-deny:
     timeout-minutes: 15
