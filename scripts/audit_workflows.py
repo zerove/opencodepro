@@ -67,6 +67,10 @@ job 开始时的文件状态，对这种文件不作保证。这属于语义问�
   workflow 逐行核对，`end - 1` 下「无归属」的 6–40 行**全部**位于 `jobs:`
   之前（`name:`、`on:` 等顶层配置），没有一行是 job 内部内容。据此确认它是等价
   变换，不需要专门用例，也不值得为一个无害写法加测试。
+- `WORKFLOW_GLOBS` 的断言只覆盖「扩展名齐不齐」和「目录对不对」两个维度。
+  若有人把模式改成某个仍然存在、但恰好为空目录下的 `*.yml`，自检仍会绿灯。
+  这类配置错误在真实仓库里表现为 exit 1「未找到任何 workflow」而非静默
+  漏扫，所以可接受；但它意味着**自检保证的是模式形状，不是扫描结果非空**。
 
 退出码：0 = 全部引用有来源，2 = 发现无来源引用，1 = 用法/环境错误。
 """
@@ -80,7 +84,11 @@ import sys
 STEP_REF = re.compile(r"steps\.([A-Za-z0-9_-]+)\.")
 
 # 只扫 workflow 目录，不递归进 target/ 等目录。
-WORKFLOW_GLOB = ".github/workflows/*.yml"
+#
+# 必须同时覆盖 `.yml` 与 `.yaml`：GitHub 两者都接受，只扫 `.yml` 时，
+# 新建的 `foo.yaml` 会被静默跳过——门禁显示全绿，而新 workflow 里
+# 的引用缺陷一次也没被查过。这正是本脚本要防的那类假绿灯。
+WORKFLOW_GLOBS = (".github/workflows/*.yml", ".github/workflows/*.yaml")
 
 
 def live_code_lines(text):
@@ -788,6 +796,23 @@ jobs:
     # yaml 确实可用（否则上面每个用例都会变成异常，掩盖真实问题）
     assert yaml is not None
 
+    # glob 必须同时覆盖 .yml 与 .yaml。这条不能靠上面的用例表验证——
+    # 那些用例直接把 YAML 文本喂给 check_file()，走不到「按文件名发现
+    # 文件」这一步，glob 退化时它们仍会全绿。
+    glob_failures = []
+    for ext in (".yml", ".yaml"):
+        if not any(g.endswith(ext) for g in WORKFLOW_GLOBS):
+            glob_failures.append("WORKFLOW_GLOBS 不含 `%s`" % ext)
+    # 扩展名对了不等于目录对了。变异「把 .github/workflows/*.yml 误写成
+    # .github/*.yml」时，上面的扩展名检查仍全部通过、自检绿灯，而实际扫描
+    # 会一个文件都找不到——所以必须连目录一起断言。
+    if not all(".github/workflows/" in g for g in WORKFLOW_GLOBS):
+        glob_failures.append(
+            "WORKFLOW_GLOBS 存在不在 `.github/workflows/` 下的模式：%r"
+            % (WORKFLOW_GLOBS,)
+        )
+    failures.extend(glob_failures)
+
     if failures:
         print("自检失败：", file=sys.stderr)
         for f in failures:
@@ -800,9 +825,12 @@ def main() -> int:
     if "--self-check" in sys.argv:
         return _self_check()
 
-    paths = sorted(glob.glob(WORKFLOW_GLOB))
+    paths = sorted(p for g in WORKFLOW_GLOBS for p in glob.glob(g))
     if not paths:
-        print("未找到任何 workflow（%s）" % WORKFLOW_GLOB, file=sys.stderr)
+        print(
+            "未找到任何 workflow（%s）" % " 或 ".join(WORKFLOW_GLOBS),
+            file=sys.stderr,
+        )
         return 1
 
     try:
