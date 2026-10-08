@@ -18,7 +18,9 @@ import argparse
 import json
 import pathlib
 import re
+import shutil
 import sys
+import tempfile
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 
@@ -122,33 +124,197 @@ def reachable(entry: pathlib.Path) -> set[pathlib.Path]:
     return seen
 
 
+def _workspace_crates(root: pathlib.Path | None = None) -> list[pathlib.Path]:
+    """列出所有「参与 Cargo 构建」的 crate 目录，判据只有一个：存在 Cargo.toml。
+
+    不再按目录名硬编码，也不再按目录名排除——那正是漏洞的来源：曾经
+    ide/ 下 4 个 crate 要靠一条单独的「非 crates/ 下的成员」分支才能被看见。
+
+    这里刻意**不**用 Cargo.toml 的 workspace members 列表：ide/ 下的
+    sdk/api/tauri 是独立构建的历史归档方向（不在 workspace 里），但它们
+    确实会被各自 `cargo build` 编译，孤儿检查对它们有意义。而 ide/zed 没有
+    Cargo.toml（Zed 扩展由 Zed 自身构建），不参与 Cargo，自然也不该进来。
+
+    必须排除 root 自身：仓库根也有 Cargo.toml（虚拟 workspace 清单），
+    若把它算作 crate 目录，ROOT 下每个 .rs 都会「属于某个 crate」，
+    于是 tools/dummy_tool.rs 这类散落文件永远不会被检出。
+
+    root 参数只为自检存在：_self_check() 用临时目录跑同一条判据。
+    """
+    base = root if root is not None else ROOT
+    return sorted(
+        mf.parent for mf in base.glob("**/Cargo.toml")
+        if mf.parent != base
+        and "target" not in mf.parts and "node_modules" not in mf.parts
+    )
+
+
+def _candidate_files(crates: list[pathlib.Path], source_dirs: list[pathlib.Path]) -> set[pathlib.Path]:
+    """收集需要 mod 声明才能参与编译的源文件。
+
+    三处来源：
+      1. crate 顶层的散落 .rs（bin-only 布局，如 evals/）；
+      2. crate 的 src/ 下的全部 .rs；
+      3. **不属于任何 crate 的**散落 .rs（如 tools/dummy_tool.rs）。
+
+    刻意不收 tests/ benches/ examples/——那些 .rs 每个都是 Cargo 自动编译
+    的独立目标，本来就不需要 mod 声明，纳入会产生 191 个误报。
+    """
+    out: set[pathlib.Path] = set()
+    for member in crates:
+        out |= {p.resolve() for p in member.glob("*.rs")}
+        src_dir = member / "src"
+        if src_dir.is_dir():
+            out |= {p.resolve() for p in src_dir.rglob("*.rs")}
+    # crate 目录之外的散落 .rs。ide/zed/src/lib.rs 虽是 .rs，但 ide/zed 无
+    # Cargo.toml（Zed 扩展由 Zed 自身构建），故不纳入——它不是「忘记 mod
+    # 声明」，而是根本不走 Cargo。
+    for base in source_dirs:
+        for p in base.glob("*.rs"):
+            if not any(cr in p.parents for cr in crates):
+                out |= {p.resolve()}
+    return out
+
+
+def _source_dirs(root: pathlib.Path | None = None) -> list[pathlib.Path]:
+    """自动发现所有含 Rust 源文件的顶层目录。
+
+    与 audit_test_global_state.py 的 _scan_dirs() 保持同一判据：任何顶层目录
+    只要直接含 .rs 文件，或其某个直接子目录下含 .rs，就视为源码目录。
+
+    曾经的教训：硬编码 ("crates", "webui", "evals") 漏掉了 ide/（4 个 crate、
+    9 个 .rs）与 tools/，于是 tools/dummy_tool.rs 这个真实孤儿长期不被发现。
+    下次再加顶层目录又会重犯，所以改为发现而非列举。
+
+    target/ 不会被误收：它自身无 .rs，且其直接子目录（debug/release/criterion…）
+    下也无 .rs——编译产物只在 target/*/build/... 的深层里，不在直接子目录。
+
+    root 参数只为自检存在，见 _workspace_crates()。
+    """
+    base = root if root is not None else ROOT
+    dirs: list[pathlib.Path] = []
+    for d in sorted(base.iterdir()):
+        if not d.is_dir() or d.name.startswith("."):
+            continue
+        n = len(list(d.glob("*.rs"))) + len(list(d.glob("*/src/**/*.rs")))
+        if n:
+            dirs.append(d)
+    return dirs
+
+
 def crate_roots() -> list[pathlib.Path]:
+    """从每个 crate 里找出全部编译入口。"""
     roots: list[pathlib.Path] = []
-    for member in ROOT.glob("crates/*"):
-        if not (member / "Cargo.toml").is_file():
-            continue
+    for member in _workspace_crates():
         src = member / "src"
-        if not src.is_dir():
-            continue
-        for name in CRATE_ROOTS:
-            cand = src / name
-            if cand.is_file():
-                roots.append(cand)
-        bin_dir = src / "bin"
-        if bin_dir.is_dir():
-            roots.extend(sorted(bin_dir.glob("*.rs")))
-    # 非 crates/ 下的成员
-    for member in (ROOT / "webui", ROOT / "evals"):
-        src = member / "src"
+        # 常规布局：src/lib.rs、src/main.rs、src/bin/*.rs
         if src.is_dir():
             for name in CRATE_ROOTS:
                 cand = src / name
                 if cand.is_file():
                     roots.append(cand)
+            bin_dir = src / "bin"
+            if bin_dir.is_dir():
+                roots.extend(sorted(bin_dir.glob("*.rs")))
+        # bin-only 布局：evals/ 没有 src/，靠 Cargo.toml 的
+        # [[bin]] path = "runner.rs" 把 .rs 直接放在 crate 顶层。
+        # 漏掉这类会让 evals/ 的 5 个 .rs 全被误报成孤儿。
+        for cand in sorted(member.glob("*.rs")):
+            roots.append(cand)
     return roots
 
 
+def _self_check() -> list[str]:
+    """用临时目录跑**生产函数本身**，返回失败说明（空列表 = 全部通过）。
+
+    为什么需要：门禁的判据会静默失效。本轮改覆盖率时连着踩了两个坑，
+    都不是判据算错，而是**扫描范围**改错：
+
+      1. 从三个硬编码目录扩到 ide/ 与 tools/ 时，静默漏掉了 bin-only 布局的
+         evals/（无 src/，靠 Cargo.toml 的 [[bin]] path 挂 .rs），一度把 5 个
+         正常文件报成孤儿；
+      2. 「顺手」把 tests/ 也纳入候选，又制造 191 个误报——因为 tests/ 下
+         每个 .rs 本就是 Cargo 自动编译的独立目标，不需要 mod 声明。
+
+    两次都是改覆盖率引入的新缺陷，而当时的门禁一条都发现不了：它们全在
+    crates/ 之外。所以钉住的不是某条规则，而是三类边界本身。
+
+    关键：这里直接调用 _workspace_crates() 与 _candidate_files()，不是它们的
+    副本。最初写成「另抄一份可测版本」时，自检绿灯而生产代码里的缺陷照样
+    存在——副本与正本会漂移，这恰恰是自检最危险的失败模式：它给了安全感
+    却没给保护。
+    """
+    failures: list[str] = []
+    tmp = pathlib.Path(tempfile.mkdtemp())
+    try:
+        # ── 1. bin-only crate：.rs 直接挂顶层，无 src/ ──
+        binonly = tmp / "evals_like"
+        binonly.mkdir()
+        (binonly / "Cargo.toml").write_text(
+            '[[bin]]\nname = "eval-runner"\npath = "runner.rs"\n', encoding="utf-8")
+        (binonly / "runner.rs").write_text("fn main() {}\n", encoding="utf-8")
+        crates = _workspace_crates(tmp)
+        if binonly not in crates:
+            failures.append(
+                "bin-only 布局（无 src/、靠 [[bin]] path 挂 .rs）未被识别为 crate"
+                "——evals/ 的 5 个 .rs 会被误报成孤儿")
+        elif (binonly / "runner.rs").resolve() not in _candidate_files(crates, _source_dirs(tmp)):
+            failures.append("bin-only crate 的顶层 .rs 未进入候选集——会被漏报成孤儿")
+
+        # ── 2. tests/ 下每个 .rs 是独立目标，不需要 mod 声明 ──
+        normal = tmp / "crates_like" / "member"
+        (normal / "src").mkdir(parents=True)
+        (normal / "tests").mkdir(parents=True)
+        (normal / "benches").mkdir(parents=True)
+        (normal / "Cargo.toml").write_text("[package]\nname='m'\n", encoding="utf-8")
+        (normal / "src" / "lib.rs").write_text("//\n", encoding="utf-8")
+        (normal / "tests" / "integration.rs").write_text("#[test]\nfn t() {}\n", encoding="utf-8")
+        (normal / "benches" / "b.rs").write_text("fn main() {}\n", encoding="utf-8")
+        cands = _candidate_files(_workspace_crates(tmp), _source_dirs(tmp))
+        for stray in (normal / "tests" / "integration.rs", normal / "benches" / "b.rs"):
+            if stray.resolve() in cands:
+                failures.append(
+                    f"{stray.parent.name}/ 下的 .rs 被当成了需要 mod 声明的源文件"
+                    "——Cargo 会自动编译它们，纳入会产生 191 个误报")
+
+        # ── 3. 无 Cargo.toml 的目录（Zed 扩展等）不参与 Cargo ──
+        zed = tmp / "zed_like"
+        (zed / "src").mkdir(parents=True)
+        (zed / "src" / "lib.rs").write_text("fn main() {}\n", encoding="utf-8")
+        if zed in _workspace_crates(tmp):
+            failures.append(
+                "无 Cargo.toml 的目录被当成了 crate——"
+                "Zed 扩展由 Zed 自身构建，不走 Cargo，不该参与孤儿判定")
+        if (zed / "src" / "lib.rs").resolve() in cands:
+            failures.append("无 Cargo.toml 的目录下的 .rs 进入了候选集——会产生永久误报")
+
+        # ── 4. root 自身的 Cargo.toml（虚拟 workspace 清单）不算 crate ──
+        # 否则 ROOT 下每个 .rs 都「属于某个 crate」，tools/dummy_tool.rs 这类
+        # 散落文件永远不会被检出——这正是本轮最初的写法漏掉它的原因。
+        (tmp / "Cargo.toml").write_text("[workspace]\nmembers = []\n", encoding="utf-8")
+        loose = tmp / "tools_like"
+        loose.mkdir()
+        (loose / "stray.rs").write_text("fn main() {}\n", encoding="utf-8")
+        crates2 = _workspace_crates(tmp)
+        if tmp in crates2:
+            failures.append("root 自身的 Cargo.toml 被当成了 crate——会掩盖所有散落 .rs")
+        if (loose / "stray.rs").resolve() not in _candidate_files(crates2, _source_dirs(tmp)):
+            failures.append(
+                "crate 目录之外的散落 .rs 未进入候选集——"
+                "tools/ 这类目录下的孤儿会被漏报")
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    return failures
+
+
 def main() -> int:
+    self_failures = _self_check()
+    if self_failures:
+        print("❌ 判据自检失败：", file=sys.stderr)
+        for f in self_failures:
+            print(f"  - {f}", file=sys.stderr)
+        return 2
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--json", action="store_true", help="输出 JSON")
     args = parser.parse_args()
@@ -162,12 +328,10 @@ def main() -> int:
     for root in roots:
         reached |= reachable(root)
 
-    candidates: set[pathlib.Path] = set()
-    for base in [ROOT / "crates", ROOT / "webui", ROOT / "evals"]:
-        if not base.is_dir():
-            continue
-        for src_dir in base.glob("*/src"):
-            candidates |= {p.resolve() for p in src_dir.rglob("*.rs")}
+    # main() 直接调用 _workspace_crates() / _candidate_files()——自检检验的
+    # 必须就是生产路径真正执行的那两个函数。若这里另写一份，自检就只是在
+    # 检验一份没人用的代码。
+    candidates: set[pathlib.Path] = _candidate_files(_workspace_crates(), _source_dirs())
 
     orphans = sorted(p for p in candidates - reached)
 
