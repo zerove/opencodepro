@@ -98,6 +98,11 @@ STEP_REF = re.compile(r"steps\.([A-Za-z0-9_-]+)\.")
 # 的引用缺陷一次也没被查过。这正是本脚本要防的那类假绿灯。
 WORKFLOW_GLOBS = (".github/workflows/*.yml", ".github/workflows/*.yaml")
 
+# 审计脚本目录：用于「门禁自身是否被接线」的自检。只认 audit_* 与 scan_*，
+# 不匹配 fix_*——后者是一次性迁移脚本（fix_error_wrapping 等），跑完即弃，
+# 本就不该在 CI 里常驻执行，拿它们当门禁检查对象只会制造永久误报。
+AUDIT_SCRIPT_DIR = "scripts"
+
 
 def live_code_lines(text):
     """返回去掉整行注释后的内容。
@@ -357,7 +362,9 @@ def jobs_without_timeout(doc):
     期间 PR 一直挂着「检查进行中」，看起来像在正常跑。
 
     这正是本脚本要防的那一类：门禁本身没坏，是它的运行环境没有边界。
-    本仓库 46 个 job 里只有 6 个写了 timeout，40 个在裸奔。
+    修复前 48 个 job 里有 43 个没写 timeout（另 5 个早就有）；补齐后 48 个
+    job 全部有超时，分档 5–45 分钟。这个检查的价值就在于此——它防的不是
+    「写错 timeout」，是「新增 job 时忘了写」。
 
     判断条件必须用 `is None` 而非真值：`timeout-minutes: 0` 在 YAML 里
     解析成整数 0，是 False，按真值判断会把这个**已显式设了超时**的 job
@@ -369,6 +376,75 @@ def jobs_without_timeout(doc):
         for name, job in jobs.items()
         if isinstance(job, dict) and job.get("timeout-minutes") is None
     ]
+
+
+def audit_scripts_wired(scripts, workflow_texts):
+    """返回 [(脚本路径, 说明)]：存在却没有任何 workflow 执行的审计脚本。
+
+    这类缺陷最隐蔽的地方在于——门禁**代码本身完全正确**，自检也能全过，
+    但它从来没在 CI 里跑过，于是「防护」是零。本项目已经踩过一次同源的坑：
+    scan_flaky.py 的文档写着「便于 CI 定期拦截」，而当时没有任何 workflow
+    调用它；审计脚本若重演一遍，排查成本极高，因为 CI 全绿恰恰说明它没跑。
+
+    两种「没接线」都要覆盖：
+      1. 整个 workflow 里找不到脚本名的 run 行——完全没调用；
+      2. 调用了，但所在 job 的 if 条件恒为假——写了等于没写。
+
+    只认 `run:` 里出现的脚本路径，而不是全文包含：注释里提到脚本名
+    （例如「scan_flaky.py 原本从未被调用」）会制造假阳性。取子串匹配是为了
+    兼容 `python3 scripts/x.py --flag` 这类带参数的调用行。
+
+    workflow_texts 为 {路径: 原文}。
+    """
+    missing = []
+    for script in scripts:
+        holders = [
+            (wf_path, text)
+            for wf_path, text in workflow_texts.items()
+            if script in text
+        ]
+        if not holders:
+            missing.append((script, "没有任何 workflow 执行它"))
+            continue
+
+        # 找到调用行后，确认所在 job 的 if 不会恒假
+        executed = False
+        for _wf_path, text in holders:
+            try:
+                import yaml
+
+                doc = yaml.safe_load(text)
+            except Exception:  # noqa: BLE001
+                break
+            if not isinstance(doc, dict):
+                continue
+            for job_name, job in (doc.get("jobs") or {}).items():
+                if not isinstance(job, dict):
+                    continue
+                steps = job.get("steps") or []
+                if not any(
+                    isinstance(s, dict) and script in str(s.get("run", ""))
+                    for s in steps
+                ):
+                    continue
+                cond = job.get("if")
+                # 必须同时处理布尔与字符串两种形态：YAML 里裸写 `if: false`
+                # 解析成的是布尔 False（不是字符串 "false"），只判 str 会漏检。
+                # 这个漏检是变异测试逼出来的：注入 `if: false` 后门禁曾报 exit 0，
+                # 正是「探针能跑通不等于探针正确」的实例。
+                is_false_literal = cond is False or (
+                    isinstance(cond, str) and cond.strip().lower() == "false"
+                )
+                if is_false_literal:
+                    missing.append(
+                        (script, "job `%s` 的 if 恒为假，脚本永不执行" % job_name)
+                    )
+                else:
+                    executed = True
+        # 全文提到但没有任何 run 行调用 —— 靠注释提到也算没接
+        if not executed and not any(m[0] == script and "if 恒为假" in m[1] for m in missing):
+            missing.append((script, "仅在注释中提及，无任何 run 步骤真正执行它"))
+    return missing
 
 
 def check_file(path):
@@ -938,6 +1014,89 @@ jobs:
         )
     failures.extend(glob_failures)
 
+    # audit_scripts_wired 的用例。直接调用生产函数，不另写判定逻辑。
+    wired_cases = [
+        (
+            "run 步骤里正常调用 -> 已接线",
+            {
+                "wf.yml": (
+                    "name: w\non: push\njobs:\n  j:\n    runs-on: ubuntu-latest\n"
+                    "    steps:\n      - run: python3 scripts/audit_x.py\n"
+                )
+            },
+            ["scripts/audit_x.py"],
+            [],
+        ),
+        (
+            "只在注释里提及 -> 未接线",
+            {
+                "wf.yml": (
+                    "name: w\non: push\njobs:\n  j:\n    runs-on: ubuntu-latest\n"
+                    "    steps:\n      - run: echo hi\n"
+                    "# scripts/audit_x.py 原本从未被调用\n"
+                )
+            },
+            ["scripts/audit_x.py"],
+            ["scripts/audit_x.py"],
+        ),
+        (
+            "if 为布尔 false -> 写了等于没写",
+            {
+                "wf.yml": (
+                    "name: w\non: push\njobs:\n  j:\n    if: false\n"
+                    "    runs-on: ubuntu-latest\n"
+                    "    steps:\n      - run: python3 scripts/audit_x.py\n"
+                )
+            },
+            ["scripts/audit_x.py"],
+            ["scripts/audit_x.py"],
+        ),
+        (
+            "if 为字符串 'false' -> 同样漏跑",
+            {
+                "wf.yml": (
+                    "name: w\non: push\njobs:\n  j:\n    if: 'false'\n"
+                    "    runs-on: ubuntu-latest\n"
+                    "    steps:\n      - run: python3 scripts/audit_x.py\n"
+                )
+            },
+            ["scripts/audit_x.py"],
+            ["scripts/audit_x.py"],
+        ),
+        (
+            "if 为正常条件表达式 -> 不误报",
+            {
+                "wf.yml": (
+                    "name: w\non: push\njobs:\n  j:\n    if: github.ref == 'refs/heads/main'\n"
+                    "    runs-on: ubuntu-latest\n"
+                    "    steps:\n      - run: python3 scripts/audit_x.py\n"
+                )
+            },
+            ["scripts/audit_x.py"],
+            [],
+        ),
+        (
+            "带参数的调用行 -> 仍识别为已接线",
+            {
+                "wf.yml": (
+                    "name: w\non: push\njobs:\n  j:\n    runs-on: ubuntu-latest\n"
+                    "    steps:\n      - run: |\n"
+                    "          python3 scripts/audit_x.py --self-check\n"
+                )
+            },
+            ["scripts/audit_x.py"],
+            [],
+        ),
+    ]
+    for desc, wfs, scripts, expect_ids in wired_cases:
+        got = audit_scripts_wired(scripts, wfs)
+        got_ids = sorted({s for s, _ in got})
+        if got_ids != sorted(expect_ids):
+            failures.append(
+                "audit_scripts_wired(%s): 期望 %r，实际 %r（%r）"
+                % (desc, sorted(expect_ids), got_ids, got)
+            )
+
     if failures:
         print("自检失败：", file=sys.stderr)
         for f in failures:
@@ -967,6 +1126,13 @@ def main() -> int:
     total_refs = 0
     total_needs = 0
     problems = []
+    wf_texts = {}
+    for path in paths:
+        try:
+            with open(path, encoding="utf-8") as fh:
+                wf_texts[path] = fh.read()
+        except OSError:
+            pass
     for path in paths:
         try:
             n_refs, orphans, dups, fwd, bad_needs, n_needs, no_timeout = check_file(path)
@@ -1006,6 +1172,18 @@ def main() -> int:
         else:
             print("✅ %s: %d 个 step 引用、%d 个 needs 引用全部有来源"
                   % (rel, n_refs, n_needs))
+
+    # 门禁自身的接线检查：审计脚本存在却没人执行，等于没有防护。
+    gate_scripts = sorted(
+        p for p in glob.glob(os.path.join(AUDIT_SCRIPT_DIR, "audit_*.py"))
+    )
+    gate_scripts += sorted(
+        p for p in glob.glob(os.path.join(AUDIT_SCRIPT_DIR, "scan_*.py"))
+    )
+    if gate_scripts:
+        unwired = audit_scripts_wired(gate_scripts, wf_texts)
+        for script, why in unwired:
+            problems.append("%s: %s" % (script, why))
 
     if problems:
         print("", file=sys.stderr)
