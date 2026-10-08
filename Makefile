@@ -33,6 +33,27 @@ BRIDGE_DEPS = crates/sisyphus-bridge/src/main.rs crates/sisyphus-bridge/Cargo.to
 #   换机器或改 sysctl 后，请用下面的命令重新核对再下结论：
 #     cat /proc/sys/vm/overcommit_memory
 #
+# 内存实测（2026-10-08，用 scripts/mem_probe.py 采样，**冷编译**
+#   sisyphus-sandbox 含 cranelift/wasmtime 全套）：
+#
+#     并行度   rustc 并发驻留峰值   进程数   冷编译耗时
+#     默认 12        2.22 GB         12      411.9s
+#     -j 1           633 MB          1      >600s（未跑完）
+#
+#   两个要点：
+#   1. **单个** rustc 峰值就有 633 MB（cranelift），所以这不是「多进程才有的问题」；
+#      -j 1 也不能保证安全，只是把风险从 2.22 GB 降到 633 MB。
+#   2. **别把 Committed_AS 绝对值当成编译的影响**——本机 IDE 的 7 个 java 进程
+#      就占了 22.9 GB（基线就已 106.9% of CommitLimit），编译根本没参与。
+#      真正的编译增量只有 1.58 GB。第一次测量就踩了这个坑，得出「编译导致
+#      超限」的错误结论，进而想去调一个根本不相关的旋钮。
+#      用 mem_probe.py 看的是**增量**，不是绝对值。
+#
+#   真正的瓶颈是常驻进程而非编译。但编译侧的 12 并行仍会额外吃掉 2.22 GB，
+#   所以本文件里所有会产生多个测试二进制的目标都显式带 CARGO_BUILD_JOBS=1。
+#   注意：**裸敲 `cargo` 不受此保护**（.cargo/config.toml 无 [build] jobs 兜底），
+#   会用 nproc=12 并行。改并行度请用 make 目标，不要裸敲。
+#
 # 磁盘约束（2026-10-08 实测）：多套构建变体（--no-default-features、--features sandbox）
 #   并存会让 target/ 累积大量陈旧产物，实测涨到 130 GB（deps 下 11003 个 rlib，
 #   libtower 一个包就有 184 个不同 hash 的副本）。用 `make target-gc` 回收，
@@ -520,6 +541,9 @@ target-size:
 	@echo "--- deps 内产物数 ---"
 	@ls -1 target/debug/deps 2>/dev/null | wc -l | xargs echo "文件数:"
 
+mem-probe:
+	@python3 scripts/mem_probe.py -- env CARGO_BUILD_JOBS=1 cargo check -p sisyphus-types
+
 target-gc:
 	@python3 scripts/target_gc.py --self-check
 	@echo ""
@@ -530,4 +554,4 @@ target-gc-apply:
 	@echo ""
 	@python3 scripts/target_gc.py -y
 
-.PHONY: target-gc target-gc-apply target-size
+.PHONY: target-gc target-gc-apply target-size mem-probe
