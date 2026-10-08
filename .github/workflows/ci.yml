@@ -73,7 +73,7 @@ jobs:
       # 写在 step 里，本地所有检查全绿，部署时才暴露。
       - name: Validate workflows against GitHub Actions schema
         run: |
-          pip install --quiet check-jsonschema
+          pip install --quiet check-jsonschema==0.38.2
           check-jsonschema --builtin-schema vendor.github-workflows .github/workflows/*.yml
           # 官方口径的 timeout 必填校验，与 scripts/audit_workflows.py 的
           # jobs_without_timeout() 交叉对照，两边不一致会立刻暴露分歧
