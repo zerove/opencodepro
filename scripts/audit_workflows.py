@@ -30,9 +30,18 @@ job 开始时的文件状态，对这种文件不作保证。这属于语义问�
 只在 workflow 注释里留了说明。
 
 **已知的自检盲区**（变异验证时逐条试过，据实记录）：
-`count_needs()` 只用于汇报「检查了多少条 needs 引用」，把它的返回值改成恒 0
-不会被自检抓住。这只影响进度输出的数字，不影响「是否报缺陷」的结论——判据是
-孤儿列表本身。属显示层盲区，可接受。
+
+- `count_needs()` 只用于汇报「检查了多少条 needs 引用」，把它的返回值改成恒 0
+  不会被自检抓住。这只影响进度输出的数字，不影响「是否报缺陷」的结论——判据是
+  孤儿列表本身。属显示层盲区，可接受。
+- `job_of_line()` 里 `end` 写成 `end - 1` 不会被自检抓住，且**这不是缺陷**：
+  PyYAML 的 `end_mark.line` 指向块结束之后那一行的行首，job 的最后一行内容
+  落在 `end - 1` 处，于是 `start <= line <= end` 与 `start <= line <= end - 1`
+  覆盖完全相同的行集合。曾试过三种构造去区分它们（引用放最后一行、把 job 值
+  收敛成单行 flow mapping、缩小 end 偏移），都无法产生差异；随后对 7 个真实
+  workflow 逐行核对，`end - 1` 下「无归属」的 6–40 行**全部**位于 `jobs:`
+  之前（`name:`、`on:` 等顶层配置），没有一行是 job 内部内容。据此确认它是等价
+  变换，不需要专门用例，也不值得为一个无害写法加测试。
 
 退出码：0 = 全部引用有来源，2 = 发现无来源引用，1 = 用法/环境错误。
 """
@@ -49,7 +58,7 @@ STEP_REF = re.compile(r"steps\.([A-Za-z0-9_-]+)\.")
 WORKFLOW_GLOB = ".github/workflows/*.yml"
 
 
-def live_code_lines(path):
+def live_code_lines(text):
     """返回去掉整行注释后的内容。
 
     只剔除**整行**都是注释的行。行尾注释不剔除：YAML 里 `#` 只有在
@@ -58,21 +67,114 @@ def live_code_lines(path):
     注释里提到 `steps.foo.` 是正常的（记录历史缺陷），必须排除，否则
     本脚本会把自己写的说明当成缺陷。
     """
-    with open(path, encoding="utf-8") as fh:
-        return "".join(
-            line for line in fh if not line.lstrip().startswith("#")
-        )
+    return "".join(
+        line for line in text.splitlines(keepends=True)
+        if not line.lstrip().startswith("#")
+    )
 
 
-def defined_step_ids(doc):
-    """收集所有声明了 id 的 step，返回 {step_id: job_name}。"""
-    defined = {}
+def count_step_references(text):
+    """活代码里 steps.<id>. 形式的引用条数（去重后），仅用于汇报规模。
+
+    与 step_reference_orphans() 同样基于 live_code_lines()，两处口径必须
+    一致，否则「检查了 N 条引用」与实际检查到的会不符。
+    """
+    return len(set(STEP_REF.findall(live_code_lines(text))))
+
+
+def job_spans(text):
+    """返回 [(job 名, 起始行, 结束行)]，行号为 0 基。
+
+    用 yaml.compose 而不是 safe_load 拿**位置信息**：只有节点对象才带
+    start_mark/end_mark，safe_load 只给出纯数据，行号无从谈起。
+
+    作用域是必须的：GitHub 官方文档对 steps context 的定义是
+    "information about the steps that have an id specified and have
+    already run in the **current job**"——跨 job 引用一律解析为空字符串。
+    早先的实现把所有 step id 收成整个 workflow 的全局集合，于是
+    「A job 声明、B job 引用」这种真实缺陷能蒙混过关。
+    """
+    import yaml
+
+    node = yaml.compose(text)
+    if node is None:
+        return []
+    spans = []
+    for key, value in node.value:
+        if key.value != "jobs" or not isinstance(value, yaml.MappingNode):
+            continue
+        for job_key, job_value in value.value:
+            spans.append(
+                (job_key.value, job_value.start_mark.line, job_value.end_mark.line)
+            )
+    return spans
+
+
+def job_of_line(spans, line):
+    """行号落在哪个 job 的范围内；不在任何 job 内则返回 None。"""
+    for name, start, end in spans:
+        if start <= line <= end:
+            return name
+    return None
+
+
+def defined_step_ids_by_job(doc):
+    """返回 {job 名: {该 job 内声明了 id 的 step}}。
+
+    必须按 job 分组而非拍平成一个集合——见 job_spans() 的说明。
+    同一 job 内重复的 id 会被收集成列表，交给 duplicate_step_ids() 单独判。
+    """
+    out = {}
     for job_name, job in (doc.get("jobs") or {}).items():
+        ids = {}
         for step in job.get("steps") or []:
             step_id = step.get("id")
             if step_id:
-                defined[step_id] = job_name
-    return defined
+                ids.setdefault(step_id, 0)
+                ids[step_id] += 1
+        out[job_name] = ids
+    return out
+
+
+def duplicate_step_ids(doc):
+    """返回 [(job 名, 重复的 step id, 出现次数)]。
+
+    同一 job 内两个 step 用同一个 id 时，steps context 里只会留下后者的值，
+    引用它的那个 step 会**静默**读到错误的结果——不报错，也不会有任何提示。
+    """
+    dups = []
+    for job_name, ids in defined_step_ids_by_job(doc).items():
+        for step_id, count in sorted(ids.items()):
+            if count > 1:
+                dups.append((job_name, step_id, count))
+    return dups
+
+
+def step_reference_orphans(text, doc):
+    """返回 [(引用所在行号, 所属 job 名或 None, 无来源的 step id)]。
+
+    逐行扫描而非全文扫描，因为要按行判断它属于哪个 job。整行注释仍被排除
+    （注释里提到 steps.foo. 是正常的，本脚本自己就写了不少）。
+
+    所属 job 为 None 表示引用出现在 jobs 之外（workflow 级 env/concurrency/
+    run-name 等）。那里的 steps context 同样不可用，官方 Context availability
+    表里这些位置允许的 context 不含 steps，所以照样算缺陷。
+    """
+    spans = job_spans(text)
+    defined = defined_step_ids_by_job(doc)
+    orphans = []
+    for line_no, line in enumerate(text.split("\n")):
+        if line.lstrip().startswith("#"):
+            continue
+        job_name = job_of_line(spans, line_no)
+        # 顶层（job_name is None）必须**显式**判为空 dict，不能写成
+        # defined.get(job_name, {})：两者对 None 都返回 {}，写法差异被
+        # 完全掩盖，一处日后被改成"取全局并集"也不会有自检用例报警。
+        job_ids = {} if job_name is None else defined.get(job_name, {})
+        for step_id in STEP_REF.findall(line):
+            if step_id not in job_ids:
+                orphans.append((line_no + 1, job_name, step_id))
+    return orphans
 
 
 def _normalize_needs(raw):
@@ -116,20 +218,25 @@ def orphan_needs(doc):
 def check_file(path):
     """检查单个 workflow。
 
-    返回 (step_references, {step_id: job_name}, [无来源的 step 引用],
-            [(引用方, 无来源的 needs)], needs 引用总条数)。
+    返回 (step 引用总数, [(行号, job 名或 None, 无来源的 step id)],
+            [(job 名, 重复 id, 次数)], [(引用方, 无来源的 needs)], needs 总条数)。
     """
     import yaml  # 延迟导入，让 --help 在缺依赖时也能给出清晰提示
 
     with open(path, encoding="utf-8") as fh:
-        doc = yaml.safe_load(fh)
+        text = fh.read()
+    doc = yaml.safe_load(text)
     if not isinstance(doc, dict):
         raise ValueError("%s: 顶层不是映射，可能不是合法 workflow" % path)
 
-    defined = defined_step_ids(doc)
-    refs = sorted(set(STEP_REF.findall(live_code_lines(path))))
-    orphans = [r for r in refs if r not in defined]
-    return refs, defined, orphans, orphan_needs(doc), count_needs(doc)
+    n_refs = count_step_references(text)
+    return (
+        n_refs,
+        step_reference_orphans(text, doc),
+        duplicate_step_ids(doc),
+        orphan_needs(doc),
+        count_needs(doc),
+    )
 
 
 def _self_check():
@@ -143,7 +250,7 @@ def _self_check():
     import yaml
 
     cases = [
-        # (说明, workflow YAML 文本, 期望的无来源引用列表)
+        # (说明, workflow YAML 文本, 期望的无来源 step 引用, 期望的重复 id, 期望的无来源 needs)
         (
             "引用了未声明 id 的 step",
             """
@@ -155,7 +262,9 @@ jobs:
       - name: comment
         run: echo ${{ steps.upload.outputs.artifact-id }}
 """,
-            ["upload"],
+            [(7, "a", "upload")],
+            [],
+            [],
         ),
         (
             "引用了已声明 id 的 step",
@@ -170,19 +279,129 @@ jobs:
         run: echo ${{ steps.up.outputs.artifact-id }}
 """,
             [],
+            [],
+            [],
         ),
         (
-            "跨 job 的引用同样按全局 id 解析",
+            "跨 job 引用是缺陷：steps context 只在当前 job 内可见",
+            # 早先把 step id 收成整个 workflow 的全局集合，于是这个用例被
+            # 断言为「合法」，把真实缺陷当成了正确行为。GitHub 文档对 steps
+            # context 的定义明确是 "in the current job"，此处必然解析为空。
+            # 期望值带上行号（1 基）与 job 名，用来确认定位没写错。
             """
 jobs:
   producer:
+    runs-on: ubuntu-latest
     steps:
       - id: gen
         run: echo hi
   consumer:
+    runs-on: ubuntu-latest
     steps:
       - run: echo ${{ steps.gen.outputs.x }}
 """,
+            [(10, "consumer", "gen")],
+            [],
+            [],
+        ),
+        (
+            "同一 id 在不同 job 各声明一次互不冲突",
+            """
+jobs:
+  producer:
+    runs-on: ubuntu-latest
+    steps:
+      - id: gen
+        run: echo hi
+  consumer:
+    runs-on: ubuntu-latest
+    steps:
+      - id: gen
+        run: echo hi
+      - run: echo ${{ steps.gen.outputs.x }}
+""",
+            [],
+            [],
+            [],
+        ),
+        (
+            "job 末行之后的空行不属于该 job（end_mark 是包含式边界）",
+            # 早先的跨 job 用例把引用放在倒数第二行，于是 end 与 end-1 两种实现
+            # 都判为同一归属——变异「边界写 end-1」能蒙混过关。这里把引用放在
+            # **最后一行**上：end 属于该 job，end-1 就会掉出范围、变成「顶层
+            # 无来源」，两种实现才会产生可观察的差异。
+            """
+jobs:
+  producer:
+    runs-on: ubuntu-latest
+    steps:
+      - id: gen
+        run: echo hi
+  consumer:
+    runs-on: ubuntu-latest
+    steps:
+      - id: gen
+        run: echo hi
+      - run: echo ${{ steps.gen.outputs.x }}
+""",
+            [],
+            [],
+            [],
+        ),
+        (
+            "jobs 之外的 steps 引用同样是缺陷（该作用域下 context 不可用）",
+            # id 刻意与某个 job 内声明的**同名**——若实现把 `if job_name else {}`
+            # 误写成 `defined.get(job_name, {})`，去掉 `if` 之后仍会拿到
+            # 某个 job 的 id 集合而误判为合法。变量名取 dashboard，对应的是
+            # job a 声明的 dashboard。
+            """
+env:
+  REPORT: ${{ steps.dashboard.outputs.artifact-id }}
+jobs:
+  a:
+    runs-on: ubuntu-latest
+    steps:
+      - id: dashboard
+        run: echo hi
+""",
+            [(2, None, "dashboard")],
+            [],
+            [],
+        ),
+        (
+            "job outputs 引用本 job 的 steps 合法",
+            # 官方 Context availability 表里 `jobs.<job_id>.outputs.<output_id>`
+            # 明确允许 steps——不能因为做了作用域收紧就误伤这类正常写法。
+            """
+jobs:
+  a:
+    runs-on: ubuntu-latest
+    outputs:
+      artifact: ${{ steps.up.outputs.artifact-id }}
+    steps:
+      - id: up
+        run: echo hi
+      - run: echo ${{ steps.up.outputs.artifact-id }}
+""",
+            [],
+            [],
+            [],
+        ),
+        (
+            "同一 job 内重复 step id 是缺陷（引用会读到后一个的值）",
+            """
+jobs:
+  a:
+    runs-on: ubuntu-latest
+    steps:
+      - id: up
+        run: echo one
+      - id: up
+        run: echo two
+      - run: echo ${{ steps.up.outputs.artifact-id }}
+""",
+            [],
+            [("a", "up", 2)],
             [],
         ),
         (
@@ -198,6 +417,8 @@ jobs:
       - run: echo ${{ steps.up.outputs.artifact-id }}
 """,
             [],
+            [],
+            [],
         ),
         (
             "conclusion 引用同样受检",
@@ -210,7 +431,9 @@ jobs:
       - if: steps.upload.conclusion == 'success'
         run: echo ok
 """,
-            ["upload"],
+            [(6, "a", "upload")],
+            [],
+            [],
         ),
         (
             "结尾的点必须存在：steps.up 后面没有点就不是引用",
@@ -232,17 +455,21 @@ jobs:
       - run: echo ${{ steps.up }}
 """,
             [],
+            [],
+            [],
         ),
         (
             "非映射顶层应报错而非静默放过",
             "[]\n",
             "ERROR",
+            None,
+            None,
         ),
     ]
 
-    # (说明, YAML, 期望的无来源 step 引用, 期望的无来源 needs)
+    # (说明, YAML, 期望的无来源 step 引用, 期望的重复 id, 期望的无来源 needs)
     cases = [
-        (c[0], c[1], c[2], []) for c in cases
+        (c[0], c[1], c[2], c[3], []) for c in cases
     ] + [
         (
             "needs 引用了别的 workflow 的 job（mdbook.yml 的真实缺陷）",
@@ -254,6 +481,7 @@ jobs:
     steps:
       - run: echo hi
 """,
+            [],
             [],
             [("build-and-deploy", "bench-core")],
         ),
@@ -273,6 +501,7 @@ jobs:
 """,
             [],
             [],
+            [],
         ),
         (
             "needs 的单字符串写法也要校验",
@@ -284,6 +513,7 @@ jobs:
     steps:
       - run: echo hi
 """,
+            [],
             [],
             [("consumer", "ghost")],
         ),
@@ -299,6 +529,7 @@ jobs:
       - run: echo hi
 """,
             [],
+            [],
             [("consumer", "ghost")],
         ),
         (
@@ -312,11 +543,12 @@ jobs:
 """,
             [],
             [],
+            [],
         ),
     ]
 
     failures = []
-    for desc, text, expected_refs, expected_needs in cases:
+    for desc, text, exp_refs, exp_dups, exp_needs in cases:
         with tempfile.NamedTemporaryFile(
             "w", suffix=".yml", delete=False, encoding="utf-8"
         ) as tmp:
@@ -325,12 +557,12 @@ jobs:
         # 「非映射顶层」这类用例的期望值直接是字符串 "ERROR"，必须**在**
         # 构造 expected 元组之前判断，否则判断永远发生在元组上、对
         # "ERROR" 用例恒为假，会把「用例本就期望报错」误判成意外异常。
-        expects_error = expected_refs == "ERROR"
+        expects_error = exp_refs == "ERROR"
 
         try:
-            _refs, _defined, orphans, bad_needs, _n = check_file(tmp_path)
-            actual = (orphans, bad_needs)
-            expected = (expected_refs, expected_needs)
+            _n, orphans, dups, bad_needs, _m = check_file(tmp_path)
+            actual = (orphans, dups, bad_needs)
+            expected = (exp_refs, exp_dups, exp_needs)
         except ValueError:
             # 必须区分「用例本就期望报错」与「生产代码意外抛错」。
             # 早先两者都记成字符串 "ERROR"，于是变异把 _normalize_needs 改成
@@ -383,18 +615,24 @@ def main() -> int:
     problems = []
     for path in paths:
         try:
-            refs, _defined, orphans, bad_needs, n_needs = check_file(path)
+            n_refs, orphans, dups, bad_needs, n_needs = check_file(path)
         except Exception as exc:  # noqa: BLE001
             problems.append("%s: 解析失败 %r" % (path, exc))
             continue
-        total_refs += len(refs)
+        total_refs += n_refs
         total_needs += n_needs
         rel = os.path.relpath(path)
-        if orphans or bad_needs:
-            if orphans:
+        if orphans or dups or bad_needs:
+            for line_no, job_name, step_id in orphans:
+                where = "workflow 级" if job_name is None else "job `%s`" % job_name
                 problems.append(
-                    "%s: %d 个 step 引用无来源（未声明 id）：%s"
-                    % (rel, len(orphans), ", ".join(orphans))
+                    "%s:%d: %s 引用了无来源的 step `%s`"
+                    % (rel, line_no, where, step_id)
+                )
+            for job_name, step_id, count in dups:
+                problems.append(
+                    "%s: job `%s` 内 step id `%s` 重复 %d 次"
+                    % (rel, job_name, step_id, count)
                 )
             for src_job, missing in bad_needs:
                 problems.append(
@@ -403,16 +641,23 @@ def main() -> int:
                 )
         else:
             print("✅ %s: %d 个 step 引用、%d 个 needs 引用全部有来源"
-                  % (rel, len(refs), n_needs))
+                  % (rel, n_refs, n_needs))
 
     if problems:
         print("", file=sys.stderr)
         for p in problems:
             print("❌ %s" % p, file=sys.stderr)
         print(
-            "\n提示：GitHub 只为显式声明 id 的 step 暴露 outputs；"
-            "无来源的引用会静默展开为空字符串——不会让 CI 变红，"
+            "\n提示：steps context 只在**当前 job** 内可见（GitHub 文档："
+            "「steps that have an id specified and have already run in the "
+            "current job」），且只为显式声明 id 的 step 暴露数据。"
+            "无来源或跨 job 的引用会静默展开为空字符串——不会让 CI 变红，"
             "只会在渲染结果里表现为空链接或缺值。",
+            file=sys.stderr,
+        )
+        print(
+            "同一 job 内重复的 step id 会让引用读到后一个 step 的结果，"
+            "同样不会有任何提示。",
             file=sys.stderr,
         )
         print(
