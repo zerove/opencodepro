@@ -49,3 +49,11 @@ mutants.out.old/
 # proptest 自动生成的回归案例目录
 # (运行 cargo test 后会出现在此目录；源码内嵌的 seeds 在 fuzz_tests 模块)
 crates/sisyphus-sandbox/proptest-regressions/
+
+# scripts/run_test_chunks.sh 的断点续跑状态与逐 crate 日志。
+# 临时产物，不入库：进度文件与目标机器的已完成集绑定，
+# 提交上去只会让别人的 checkout 误以为“已经测过了”。
+.testall-progress
+.testall-chunk.log
+.testall-chunk.log.*
+.testall-chunk-summary.log

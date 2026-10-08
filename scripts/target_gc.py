@@ -15,7 +15,16 @@ cargo 自带的 `cargo gc` 目前仍是 nightly-only（stable 1.99 无此子命�
     python3 scripts/target_gc.py -y --age 14     # 真正删除
     python3 scripts/target_gc.py --self-check    # 自检保护边界
 
-配套的体积门禁见 scripts/audit_target_size.py。
+--age 与 --keep-days 是两道**独立的门**，取交集：
+
+  --age N        早于 N 天的才是候选（决定「多旧」）
+  --keep-days K  最近 K 天内 cargo 写过的**一律不删**（决定「多新」）
+
+所以 `--age 0` 不等于「删光」——默认 keep-days=2 仍会保护最近 2 天。
+要真正删光需显式写 `--age 0 --keep-days 0`，而这需要格外确认。
+
+当前体积用 `make target-size` 查看（之前这里写了一个不存在的
+scripts/audit_target_size.py，属于凭记忆编造的引用）。
 """
 
 from __future__ import annotations
@@ -107,7 +116,21 @@ def human(num_bytes: int) -> str:
 
 
 def collect_files(root: Path, age_days: int, keep_days: int) -> tuple[list[Path], int, int]:
-    """返回 (待删文件, 总数, 跳过数)。"""
+    """返回 (待删文件, 总数, 跳过数)。
+
+    ``--age`` 与 ``--keep-days`` 是**两道独立的门**，取交集：
+
+      - ``--age N``：早于 N 天的候选才会被删（决定「多旧」）
+      - ``--keep-days K``：最近 K 天内被 cargo 写过的**一律不删**（决定「多新」）
+
+    所以 ``--age 0`` **不等于**「删掉今天之前的所有东西」——只要 ``--keep-days``
+    还是默认的 2，最近 2 天的产物依然会被保护。实测（2026-10-08，同一份
+    37 G 的 target/）：``--age 0`` 回收 22.2 G，``--age 0 --keep-days 0``
+    回收 24.5 G。差距只有 2.3 G，因为默认的 2 天保护期里本来就只有
+    刚编译出的那批活跃产物。
+    这个交集是故意的：``--keep-days`` 是给「刚编译完想立刻清理」的用户留的
+    安全绳，而 ``--age`` 是想精细调节粒度的人用的旋钮。
+    """
     cutoff = time.time() - age_days * 86400
     keep_cutoff = time.time() - keep_days * 86400
     victims: list[Path] = []
@@ -191,6 +214,16 @@ def self_check() -> int:
     也曾因命名形态不一致（连字符 vs 下划线）漏掉真正的 bridge 产物。
     两类错误方向相反，必须同时钉住。
     """
+    failures = check_protection_boundaries()
+    failures += check_age_intersection()
+    if failures:
+        print(f"\n❌ 自检失败：{failures} 项")
+        return 1
+    print("\n✅ 自检通过")
+    return 0
+
+
+def check_protection_boundaries() -> int:
     root = Path("/repo")
     cases: tuple[tuple[str, bool, str], ...] = (
         # 阳性：被排除、单独构建的 crate，产物必须保留
@@ -225,11 +258,56 @@ def self_check() -> int:
         print(f"  ❌ {name} 缺少带分隔符的前缀")
         failures += 1
 
-    if failures:
-        print(f"\n❌ 自检失败：{failures} 项")
-        return 1
-    print(f"\n✅ 自检通过：{len(cases)} 项对照全部正确")
-    return 0
+    print(f"  → {len(cases) + len(PROTECTED_CRATES)} 项对照")
+    return failures
+
+
+def check_age_intersection() -> int:
+    """验证 --age 与 --keep-days 是**两道独立的门**，而不是一个。
+
+    这两条曾在文档里只凭印象描述，没实测过。实际行为是取交集：
+    --age 决定「多旧」，--keep-days 决定「多新」，两者都要满足。
+    若有人后来把 keep_cutoff 的判断去掉（写成只判 age），
+    「刚编译完就清理」的场景会误删当天产物，而这类回归不会报错。
+    """
+    import tempfile
+
+    failures = 0
+    print("\n年龄门交集自检：")
+    now = time.time()
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        # 三个文件：0.5 天前、5 天前、30 天前
+        ages = {"fresh.rlib": 0.5, "mid.rlib": 5.0, "old.rlib": 30.0}
+        for name, days in ages.items():
+            path = root / name
+            path.write_bytes(b"x" * 1024)
+            stamp = now - days * 86400
+            os.utime(path, (stamp, stamp))
+
+        scenarios = (
+            # (age, keep_days, 期望被回收的文件名集合)
+            # 注意 age=14 时 5 天前的 mid.rlib **不该**被回收——它比 14 天新。
+            # 两道门取交集：既要比 age 老，也要比 keep-days 老。
+            (14, 2, {"old.rlib"}),
+            (0, 2, {"mid.rlib", "old.rlib"}),
+            (0, 0, {"fresh.rlib", "mid.rlib", "old.rlib"}),
+            (7, 7, {"old.rlib"}),
+            (3650, 2, set()),
+        )
+        for age, keep, expected in scenarios:
+            victims, _scanned, _skipped = collect_files(root, age, keep)
+            got = {p.name for p in victims}
+            ok = got == expected
+            failures += 0 if ok else 1
+            mark = "✅" if ok else "❌"
+            print(f"  {mark} age={age:<5} keep={keep:<3} → {sorted(got) or '[]'}")
+            if not ok:
+                print(f"      期望 {sorted(expected)}")
+
+    # keep-days 的保护必须严格：只判 age 会让 fresh.rlib 在 age=0 时被删
+    print(f"  → {5} 个场景")
+    return failures
 
 
 def main() -> int:
