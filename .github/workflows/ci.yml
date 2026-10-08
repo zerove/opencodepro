@@ -23,6 +23,7 @@ env:
 jobs:
   # ── Format check (fastest feedback) ────────────────────────────────
   fmt:
+    timeout-minutes: 5
     name: Format
     runs-on: ubuntu-latest
     steps:
@@ -38,6 +39,12 @@ jobs:
   audit-sources:
     name: Audit sources
     runs-on: ubuntu-latest
+    # 四个审计脚本本地实测共约 37 秒（audit_orphans 14s / audit_ignored
+    # 10s / audit_test_global_state 12s / audit_workflows 1s）。给 5 分钟是
+    # 十几倍余量，同时仍远低于 GitHub 默认的 360 分钟——第八轮实测剪枝
+    # 前的 audit_orphans 要跑 924.7 秒，正是这种「门禁不报错、只是不动」
+    # 的退化态。超时要留出来，否则它会静默占用 runner 整整 6 小时。
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -58,6 +65,7 @@ jobs:
 
   # ── Supply-chain audit (cargo-deny: advisories, bans, licenses, sources) ─
   security-deny:
+    timeout-minutes: 15
     name: Supply-chain audit
     runs-on: ubuntu-latest
     steps:
@@ -70,6 +78,7 @@ jobs:
 
   # ── Lint: lightweight crates (no wasmtime in dep tree) ─────────────
   lint-light:
+    timeout-minutes: 20
     name: Lint (light crates)
     runs-on: ubuntu-latest
     needs: fmt
@@ -94,6 +103,7 @@ jobs:
   # 跑 no-panic-check binary self-test + 全 workspace 扫描.
   # 轻量: < 30s, 不需要 lint-light 依赖.
   panic-check:
+    timeout-minutes: 30
     name: ADR-007 §1 No-Panic Check
     runs-on: ubuntu-latest
     needs: fmt
@@ -108,6 +118,7 @@ jobs:
           cargo run -p eval-runner --bin no-panic-check --             --baseline .sisyphus/quality/panic-baseline.json crates/
 
   lint-sandbox:
+    timeout-minutes: 25
     name: Lint Sandbox
     runs-on: ubuntu-latest
     needs: fmt
@@ -121,6 +132,7 @@ jobs:
       - run: cargo clippy -p sisyphus-sandbox -- -A clippy::double-must-use -D warnings
 
   lint-tests:
+    timeout-minutes: 20
     name: Lint Integration Tests
     runs-on: ubuntu-latest
     needs: fmt
@@ -134,6 +146,7 @@ jobs:
       - run: cargo clippy -p sisyphus-tests -- -A clippy::double-must-use -D warnings
 
   lint-sandboxd:
+    timeout-minutes: 25
     name: Lint Sandboxd
     runs-on: ubuntu-latest
     needs: fmt
@@ -148,6 +161,7 @@ jobs:
 
   # ── Bridge (no sandbox) — trait abstraction layer, no wasmtime ─────
   bridge-check:
+    timeout-minutes: 25
     name: Bridge (no sandbox)
     runs-on: ubuntu-latest
     needs: lint-light
@@ -182,6 +196,7 @@ jobs:
 
   # ── Tests: lightweight crates (full: lib + bin + doctests) ─────────
   test-light:
+    timeout-minutes: 30
     name: Test (light crates)
     runs-on: ubuntu-latest
     needs: [lint-light, lint-sandbox, lint-tests]
@@ -203,6 +218,7 @@ jobs:
 
   # ── Unit tests: core (many tests, own job for speed) ────────────────
   test-core:
+    timeout-minutes: 30
     name: Test Core
     runs-on: ubuntu-latest
     needs: [lint-light, lint-sandbox, lint-tests]
@@ -215,6 +231,7 @@ jobs:
 
   # ── Unit tests: sandbox (wasmtime, isolated) ────────────────────────
   test-sandbox:
+    timeout-minutes: 40
     name: Test Sandbox
     runs-on: ubuntu-latest
     needs: [lint-light, lint-sandbox, lint-tests]
@@ -227,6 +244,7 @@ jobs:
 
   # ── Integration tests (wasmtime, isolated) ──────────────────────────
   test-integration:
+    timeout-minutes: 40
     name: Test Integration
     runs-on: ubuntu-latest
     needs: [lint-light, lint-sandbox, lint-tests]
@@ -239,6 +257,7 @@ jobs:
 
   # ── Sandboxd daemon integration tests (IPC protocol) ───────────────────
   test-sandboxd:
+    timeout-minutes: 40
     name: Test Sandboxd
     runs-on: ubuntu-latest
     needs: [lint-sandboxd]
@@ -251,6 +270,7 @@ jobs:
 
   # ── Bridge (full features, with sandboxd) — tests all RPCs via real gRPC ──
   bridge-test-full:
+    timeout-minutes: 40
     name: Bridge (full features + sandboxd)
     runs-on: ubuntu-latest
     needs: [lint-light, lint-sandboxd, bridge-integration-test]
@@ -268,6 +288,7 @@ jobs:
 
   # ── CLI handler crate tests (clap parsing, output formatting) ──────────
   test-cli-handlers:
+    timeout-minutes: 30
     name: Test CLI Handlers
     runs-on: ubuntu-latest
     needs: lint-light
@@ -366,6 +387,7 @@ jobs:
 
   # ── E2E smoke test: start bridge → run stress_test --quick → verify ──
   e2e-smoke:
+    timeout-minutes: 40
     name: E2E Smoke (bridge + stress)
     runs-on: ubuntu-latest
     needs: [bridge-test-full]
@@ -399,6 +421,7 @@ jobs:
     name: Chaos Engineering Test
     runs-on: ubuntu-latest
     needs: [bridge-test-full]
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@nightly
@@ -455,6 +478,7 @@ jobs:
   #     do NOT fail the job.
   #   - For precise local comparison, use make perf-analyze.
   bench-core:
+    timeout-minutes: 45
     name: Bench Core
     runs-on: ubuntu-latest
     needs: [lint-light]
@@ -587,6 +611,7 @@ jobs:
 
   # ── CLI release builds ──────────────────────────────────────────────
   build:
+    timeout-minutes: 40
     name: Build
     runs-on: ubuntu-latest
     needs: [test-light, test-core, test-sandbox, test-integration, bridge-check, toolchain-e2e]
@@ -602,6 +627,7 @@ jobs:
           path: target/release/sisyphus-cli
 
   build-sandboxd:
+    timeout-minutes: 40
     name: Build Sandboxd
     runs-on: ubuntu-latest
     needs: [lint-sandboxd]
@@ -617,6 +643,7 @@ jobs:
           path: target/release/sisyphus-sandboxd
 
   build-macos:
+    timeout-minutes: 40
     name: Build (macOS)
     runs-on: macos-latest
     needs: [test-light, test-core, test-sandbox, test-integration]
@@ -634,6 +661,7 @@ jobs:
           path: target/aarch64-apple-darwin/release/sisyphus-cli
 
   build-windows:
+    timeout-minutes: 40
     name: Build (Windows)
     runs-on: windows-latest
     needs: [test-light, test-core, test-sandbox, test-integration]
@@ -650,6 +678,7 @@ jobs:
 
   # ── SDK builds ──────────────────────────────────────────────────────
   sdk-typescript:
+    timeout-minutes: 15
     name: TypeScript SDK
     runs-on: ubuntu-latest
     steps:
@@ -662,6 +691,7 @@ jobs:
       - run: cd ide/typescript-sdk && npm test
 
   sdk-python:
+    timeout-minutes: 15
     name: Python SDK
     runs-on: ubuntu-latest
     steps:
@@ -673,6 +703,7 @@ jobs:
       - run: cd ide/python-sdk && python -m pytest tests/
 
   sdk-go:
+    timeout-minutes: 15
     name: Go SDK
     runs-on: ubuntu-latest
     steps:
@@ -683,6 +714,7 @@ jobs:
       - run: cd ide/go-sdk && go test ./...
 
   webui-check:
+    timeout-minutes: 20
     name: WebUI Check
     runs-on: ubuntu-latest
     needs: lint-light
@@ -699,6 +731,7 @@ jobs:
 
   # ── Release ─────────────────────────────────────────────────────────
   release:
+    timeout-minutes: 20
     name: Release
     runs-on: ubuntu-latest
     needs: [build, build-sandboxd, build-macos, build-windows, sdk-typescript, sdk-python, sdk-go, chaos-test, webui-check]

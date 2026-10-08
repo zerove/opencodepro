@@ -20,6 +20,7 @@ env:
 
 jobs:
   build-cli-linux:
+    timeout-minutes: 30
     name: Build CLI (Linux)
     runs-on: ubuntu-latest
     steps:
@@ -34,6 +35,7 @@ jobs:
           path: sisyphus-cli-linux-x86_64
 
   build-cli-macos:
+    timeout-minutes: 40
     name: Build CLI (macOS ARM64)
     runs-on: macos-latest
     steps:
@@ -50,6 +52,7 @@ jobs:
           path: sisyphus-cli-macos-arm64
 
   build-cli-windows:
+    timeout-minutes: 40
     name: Build CLI (Windows)
     runs-on: windows-latest
     steps:
@@ -64,6 +67,7 @@ jobs:
           path: sisyphus-cli-windows-x86_64.exe
 
   build-sandboxd:
+    timeout-minutes: 40
     name: Build Sandboxd (Linux)
     runs-on: ubuntu-latest
     steps:
@@ -78,6 +82,7 @@ jobs:
           path: sisyphus-sandboxd-linux-x86_64
 
   release:
+    timeout-minutes: 20
     name: Create Release
     runs-on: ubuntu-latest
     needs: [build-cli-linux, build-cli-macos, build-cli-windows, build-sandboxd]

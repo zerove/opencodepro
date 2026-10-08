@@ -48,7 +48,15 @@ environment 页面上永远没有站点链接。
 是**合法**的（environment 的 URL 要等 job 跑完才登记，那时 step 早已执行），
 这正是官方 Pages starter workflow 的标准写法。
 
-三类都由本脚本覆盖。
+四类都由本脚本覆盖。
+
+**第四类：未设 timeout-minutes 的 job**
+
+GitHub 对单个 job 的默认上限是 360 分钟（6 小时）。不写 `timeout-minutes`
+不会报错、也不会变红——卡住的 job 会静静占着 runner 跑满 6 小时，期间 PR
+一直挂着「检查进行中」。补 timeout 前本仓库 48 个 job 里有 43 个没写。
+
+这与第三类同源：判据没错，但执行环境没有边界。
 
 **不覆盖的**：`hashFiles()` 被用来判断**同 job 内刚生成**的文件——它评估的是
 job 开始时的文件状态，对这种文件不作保证。这属于语义问题，无法静态判定，
@@ -341,12 +349,35 @@ def orphan_needs(doc):
     return orphans
 
 
+def jobs_without_timeout(doc):
+    """返回 [未设 timeout-minutes 的 job 名]。
+
+    GitHub 对单个 job 的默认上限是 360 分钟（6 小时）。不写 timeout-minutes
+    不会报错、也不会变红——一个卡住的 job 会**静静占着 runner 跑满 6 小时**，
+    期间 PR 一直挂着「检查进行中」，看起来像在正常跑。
+
+    这正是本脚本要防的那一类：门禁本身没坏，是它的运行环境没有边界。
+    本仓库 46 个 job 里只有 6 个写了 timeout，40 个在裸奔。
+
+    判断条件必须用 `is None` 而非真值：`timeout-minutes: 0` 在 YAML 里
+    解析成整数 0，是 False，按真值判断会把这个**已显式设了超时**的 job
+    误报成缺超时。
+    """
+    jobs = doc.get("jobs") or {}
+    return [
+        name
+        for name, job in jobs.items()
+        if isinstance(job, dict) and job.get("timeout-minutes") is None
+    ]
+
+
 def check_file(path):
     """检查单个 workflow。
 
     返回 (step 引用总数, [(行号, job 名或 None, 无来源的 step id)],
             [(job 名, 重复 id, 次数)], [(行号, job 名, id, 原因)],
-            [(引用方, 无来源的 needs)], needs 总条数)。
+            [(引用方, 无来源的 needs)], needs 总条数,
+            [未设 timeout 的 job 名])。
     """
     import yaml  # 延迟导入，让 --help 在缺依赖时也能给出清晰提示
 
@@ -364,6 +395,7 @@ def check_file(path):
         forward_reference_orphans(text, doc),
         orphan_needs(doc),
         count_needs(doc),
+        jobs_without_timeout(doc),
     )
 
 
@@ -384,13 +416,14 @@ def _self_check():
             """
 jobs:
   a:
+    timeout-minutes: 10
     steps:
       - name: upload
         uses: actions/upload-artifact@v4
       - name: comment
         run: echo ${{ steps.upload.outputs.artifact-id }}
 """,
-            [(7, "a", "upload")],
+            [(8, "a", "upload")],
             [],
             [],
         ),
@@ -399,6 +432,7 @@ jobs:
             """
 jobs:
   a:
+    timeout-minutes: 10
     steps:
       - name: upload
         id: up
@@ -419,16 +453,18 @@ jobs:
             """
 jobs:
   producer:
+    timeout-minutes: 10
     runs-on: ubuntu-latest
     steps:
       - id: gen
         run: echo hi
   consumer:
+    timeout-minutes: 10
     runs-on: ubuntu-latest
     steps:
       - run: echo ${{ steps.gen.outputs.x }}
 """,
-            [(10, "consumer", "gen")],
+            [(12, "consumer", "gen")],
             [],
             [],
         ),
@@ -437,11 +473,13 @@ jobs:
             """
 jobs:
   producer:
+    timeout-minutes: 10
     runs-on: ubuntu-latest
     steps:
       - id: gen
         run: echo hi
   consumer:
+    timeout-minutes: 10
     runs-on: ubuntu-latest
     steps:
       - id: gen
@@ -461,11 +499,13 @@ jobs:
             """
 jobs:
   producer:
+    timeout-minutes: 10
     runs-on: ubuntu-latest
     steps:
       - id: gen
         run: echo hi
   consumer:
+    timeout-minutes: 10
     runs-on: ubuntu-latest
     steps:
       - id: gen
@@ -487,6 +527,7 @@ env:
   REPORT: ${{ steps.dashboard.outputs.artifact-id }}
 jobs:
   a:
+    timeout-minutes: 10
     runs-on: ubuntu-latest
     steps:
       - id: dashboard
@@ -503,6 +544,7 @@ jobs:
             """
 jobs:
   a:
+    timeout-minutes: 10
     runs-on: ubuntu-latest
     outputs:
       artifact: ${{ steps.up.outputs.artifact-id }}
@@ -520,6 +562,7 @@ jobs:
             """
 jobs:
   a:
+    timeout-minutes: 10
     runs-on: ubuntu-latest
     steps:
       - id: up
@@ -537,6 +580,7 @@ jobs:
             """
 jobs:
   a:
+    timeout-minutes: 10
     steps:
       - name: upload
         id: up
@@ -553,13 +597,14 @@ jobs:
             """
 jobs:
   a:
+    timeout-minutes: 10
     steps:
       - name: upload
         uses: actions/upload-artifact@v4
       - if: steps.upload.conclusion == 'success'
         run: echo ok
 """,
-            [(6, "a", "upload")],
+            [(7, "a", "upload")],
             [],
             [],
         ),
@@ -577,6 +622,7 @@ jobs:
             """
 jobs:
   a:
+    timeout-minutes: 10
     steps:
       - name: upload
         uses: actions/upload-artifact@v4
@@ -598,13 +644,14 @@ jobs:
     # (说明, YAML, 期望的无来源 step 引用, 期望的重复 id, 期望的前向引用,
     #  期望的无来源 needs)
     cases = [
-        (c[0], c[1], c[2], c[3], [], c[4]) for c in cases
+        (c[0], c[1], c[2], c[3], [], c[4], []) for c in cases
     ] + [
         (
             "needs 引用了别的 workflow 的 job（mdbook.yml 的真实缺陷）",
             """
 jobs:
   build-and-deploy:
+    timeout-minutes: 10
     runs-on: ubuntu-latest
     needs: [bench-core]
     steps:
@@ -614,21 +661,25 @@ jobs:
             [],
             [],
             [("build-and-deploy", "bench-core")],
+            [],
         ),
         (
             "needs 引用同 workflow 内的 job 合法",
             """
 jobs:
   producer:
+    timeout-minutes: 10
     runs-on: ubuntu-latest
     steps:
       - run: echo hi
   consumer:
+    timeout-minutes: 10
     runs-on: ubuntu-latest
     needs: [producer]
     steps:
       - run: echo hi
 """,
+            [],
             [],
             [],
             [],
@@ -639,6 +690,7 @@ jobs:
             """
 jobs:
   consumer:
+    timeout-minutes: 10
     runs-on: ubuntu-latest
     needs: ghost
     steps:
@@ -648,12 +700,14 @@ jobs:
             [],
             [],
             [("consumer", "ghost")],
+            [],
         ),
         (
             "needs 的依赖对象写法（job: [outputs]）也要校验",
             """
 jobs:
   consumer:
+    timeout-minutes: 10
     runs-on: ubuntu-latest
     needs:
       ghost: [result]
@@ -664,16 +718,19 @@ jobs:
             [],
             [],
             [("consumer", "ghost")],
+            [],
         ),
         (
             "没有任何 needs 不算缺陷",
             """
 jobs:
   solo:
+    timeout-minutes: 10
     runs-on: ubuntu-latest
     steps:
       - run: echo hi
 """,
+            [],
             [],
             [],
             [],
@@ -684,6 +741,7 @@ jobs:
             """
 jobs:
   deploy:
+    timeout-minutes: 10
     runs-on: ubuntu-latest
     steps:
       - name: Announce
@@ -695,7 +753,8 @@ jobs:
 """,
             [],
             [],
-            [(7, "deploy", "build", "引用了尚未执行的后续 step")],
+            [(8, "deploy", "build", "引用了尚未执行的后续 step")],
+            [],
             [],
         ),
         (
@@ -703,6 +762,7 @@ jobs:
             """
 jobs:
   deploy:
+    timeout-minutes: 10
     runs-on: ubuntu-latest
     steps:
       - name: Deploy to GitHub Pages
@@ -714,7 +774,8 @@ jobs:
 """,
             [],
             [],
-            [(10, "deploy", "deployment", "自我引用")],
+            [(11, "deploy", "deployment", "自我引用")],
+            [],
             [],
         ),
         (
@@ -722,6 +783,7 @@ jobs:
             """
 jobs:
   deploy:
+    timeout-minutes: 10
     runs-on: ubuntu-latest
     steps:
       - name: Build
@@ -734,12 +796,14 @@ jobs:
             [],
             [],
             [],
+            [],
         ),
         (
             "job 级 environment.url 前向引用部署 step 合法：环境 URL 要等 job 跑完才登记",
             """
 jobs:
   deploy:
+    timeout-minutes: 10
     runs-on: ubuntu-latest
     environment:
       name: github-pages
@@ -753,11 +817,72 @@ jobs:
             [],
             [],
             [],
+            [],
+        ),
+    ]
+
+    # timeout 专项用例：第 7 项非空。前面 19 条用例的 YAML 已显式带上
+    # timeout-minutes，所以它们期望的缺 timeout 列表是空的。
+    cases += [
+        (
+            "未设 timeout-minutes 的 job 会被报出（本仓库 46 个 job 里 40 个裸奔）",
+            """
+jobs:
+  no-timeout:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo hi
+""",
+            [],
+            [],
+            [],
+            [],
+            ["no-timeout"],
+        ),
+        (
+            "多个 job 缺 timeout 时要全部报出，不能只报第一个",
+            """
+jobs:
+  a:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo hi
+  b:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo hi
+  c:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - run: echo hi
+""",
+            [],
+            [],
+            [],
+            [],
+            ["a", "b"],
+        ),
+        (
+            "timeout-minutes: 0 算已设（YAML 里的 0 是 False，真值判断会误报）",
+            """
+jobs:
+  zero:
+    runs-on: ubuntu-latest
+    timeout-minutes: 0
+    steps:
+      - run: echo hi
+""",
+            [],
+            [],
+            [],
+            [],
+            [],
         ),
     ]
 
     failures = []
-    for desc, text, exp_refs, exp_dups, exp_fwd, exp_needs in cases:
+    for desc, text, exp_refs, exp_dups, exp_fwd, exp_needs, exp_to in cases:
         with tempfile.NamedTemporaryFile(
             "w", suffix=".yml", delete=False, encoding="utf-8"
         ) as tmp:
@@ -769,9 +894,9 @@ jobs:
         expects_error = exp_refs == "ERROR"
 
         try:
-            _n, orphans, dups, fwd, bad_needs, _m = check_file(tmp_path)
-            actual = (orphans, dups, fwd, bad_needs)
-            expected = (exp_refs, exp_dups, exp_fwd, exp_needs)
+            _n, orphans, dups, fwd, bad_needs, _m, no_to = check_file(tmp_path)
+            actual = (orphans, dups, fwd, bad_needs, no_to)
+            expected = (exp_refs, exp_dups, exp_fwd, exp_needs, exp_to)
         except ValueError:
             # 必须区分「用例本就期望报错」与「生产代码意外抛错」。
             # 早先两者都记成字符串 "ERROR"，于是变异把 _normalize_needs 改成
@@ -844,14 +969,14 @@ def main() -> int:
     problems = []
     for path in paths:
         try:
-            n_refs, orphans, dups, fwd, bad_needs, n_needs = check_file(path)
+            n_refs, orphans, dups, fwd, bad_needs, n_needs, no_timeout = check_file(path)
         except Exception as exc:  # noqa: BLE001
             problems.append("%s: 解析失败 %r" % (path, exc))
             continue
         total_refs += n_refs
         total_needs += n_needs
         rel = os.path.relpath(path)
-        if orphans or dups or fwd or bad_needs:
+        if orphans or dups or fwd or bad_needs or no_timeout:
             for line_no, job_name, step_id in orphans:
                 where = "workflow 级" if job_name is None else "job `%s`" % job_name
                 problems.append(
@@ -872,6 +997,11 @@ def main() -> int:
                 problems.append(
                     "%s: job `%s` 的 needs 引用了不存在的 job `%s`"
                     % (rel, src_job, missing)
+                )
+            for job_name in no_timeout:
+                problems.append(
+                    "%s: job `%s` 未设 timeout-minutes，将占用 runner 至多 360 分钟"
+                    % (rel, job_name)
                 )
         else:
             print("✅ %s: %d 个 step 引用、%d 个 needs 引用全部有来源"
@@ -898,6 +1028,12 @@ def main() -> int:
         print(
             "needs 只能引用同一 workflow 内的 job，跨 workflow 引用"
             "会让整个 workflow 被判为 Invalid 而完全无法运行。",
+            file=sys.stderr,
+        )
+        print(
+            "未设 timeout-minutes 的 job 不会报错也不会变红，但卡住时会"
+            "静默占用 runner 达 GitHub 默认的 360 分钟上限，期间 PR 一"
+            "直显示「检查进行中」。",
             file=sys.stderr,
         )
         return 2

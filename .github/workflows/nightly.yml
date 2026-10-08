@@ -21,6 +21,7 @@ permissions:
 jobs:
   # ── Build CLI (Linux x86_64) ──────────────────────────────────────
   build-cli:
+    timeout-minutes: 40
     name: Build CLI (Linux)
     runs-on: ubuntu-latest
     steps:
@@ -36,6 +37,7 @@ jobs:
 
   # ── Build Sandboxd (Linux x86_64) ─────────────────────────────────
   build-sandboxd:
+    timeout-minutes: 40
     name: Build Sandboxd (Linux)
     runs-on: ubuntu-latest
     steps:
@@ -51,6 +53,7 @@ jobs:
 
   # ── Build CLI (macOS ARM64) ───────────────────────────────────────
   build-cli-macos:
+    timeout-minutes: 40
     name: Build CLI (macOS ARM64)
     runs-on: macos-latest
     steps:
@@ -68,6 +71,7 @@ jobs:
 
   # ── Build CLI (Windows x86_64) ────────────────────────────────────
   build-cli-windows:
+    timeout-minutes: 40
     name: Build CLI (Windows)
     runs-on: windows-latest
     steps:
@@ -83,6 +87,7 @@ jobs:
 
   # ── Build & Push Docker Image ─────────────────────────────────────
   docker:
+    timeout-minutes: 40
     name: Build & Push Docker Image
     runs-on: ubuntu-latest
     needs: [build-cli]
@@ -122,6 +127,7 @@ jobs:
 
   # ── Golden SOP library structural evaluation (P3-10) ─────────────
   golden-sop-eval:
+    timeout-minutes: 30
     name: Golden SOP Evaluation
     runs-on: ubuntu-latest
     steps:
@@ -142,6 +148,7 @@ jobs:
   #   - 共享模式加速比 < 1.5x (连接复用失效)
   #   - 相对上次基线 < 0.8x (性能回归 20%+)
   http-client-bench:
+    timeout-minutes: 30
     name: HTTP Client Performance Bench
     runs-on: ubuntu-latest
     steps:
@@ -166,6 +173,7 @@ jobs:
   # ── ADR-007 §1 panic 检查 (Rust 实现, 纯 workspace 工具) ─────────
   # 跑 no-panic-check binary 对比 baseline, 新增 panic 即 fail。
   panic-check:
+    timeout-minutes: 30
     name: ADR-007 §1 No-Panic Check
     runs-on: ubuntu-latest
     steps:

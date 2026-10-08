@@ -40,6 +40,7 @@ env:
 
 jobs:
   flaky-scan:
+    timeout-minutes: 45
     name: Flaky scan
     runs-on: ubuntu-latest
     steps:
