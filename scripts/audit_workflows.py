@@ -1097,12 +1097,38 @@ jobs:
                 % (desc, sorted(expect_ids), got_ids, got)
             )
 
+    # gate_scripts 的 glob 不能退化。这条不能靠 wired_cases 验证——那些用例
+    # 直接把脚本名传给 audit_scripts_wired()，走不到「从磁盘发现脚本」这一步，
+    # glob 写错时它们仍会全绿。这与 WORKFLOW_GLOBS 的退化是同一类假绿灯：
+    # 检查静默空转、报告显示「0 个问题」，而实际什么都没查。
+    # 断言直接打 _gate_script_globs()，不另写一份字面量——否则验证的就是副本。
+    gate_globs = _gate_script_globs()
+    for suffix in ("audit_*.py", "scan_*.py"):
+        if not any(g.endswith(suffix) for g in gate_globs):
+            failures.append("gate_scripts 的 glob 不匹配任何 `%s`" % suffix)
+    if not all(g.startswith(AUDIT_SCRIPT_DIR.rstrip(os.sep) + os.sep) for g in gate_globs):
+        failures.append(
+            "gate_scripts 的 glob 不在 `%s/` 下：%r" % (AUDIT_SCRIPT_DIR, gate_globs)
+        )
+
     if failures:
         print("自检失败：", file=sys.stderr)
         for f in failures:
             print("  - %s" % f, file=sys.stderr)
         return 2
     return 0
+
+
+def _gate_script_globs():
+    """返回发现门禁脚本用的 glob 模式。
+
+    抽成函数是为了让 --self-check 能直接断言这些模式——自检里另写一份
+    同样的字面量，就等于验证副本，生产代码改了照样全绿。
+    """
+    return (
+        os.path.join(AUDIT_SCRIPT_DIR, "audit_*.py"),
+        os.path.join(AUDIT_SCRIPT_DIR, "scan_*.py"),
+    )
 
 
 def main() -> int:
@@ -1174,12 +1200,9 @@ def main() -> int:
                   % (rel, n_refs, n_needs))
 
     # 门禁自身的接线检查：审计脚本存在却没人执行，等于没有防护。
-    gate_scripts = sorted(
-        p for p in glob.glob(os.path.join(AUDIT_SCRIPT_DIR, "audit_*.py"))
-    )
-    gate_scripts += sorted(
-        p for p in glob.glob(os.path.join(AUDIT_SCRIPT_DIR, "scan_*.py"))
-    )
+    gate_scripts = []
+    for pattern in _gate_script_globs():
+        gate_scripts.extend(sorted(glob.glob(pattern)))
     if gate_scripts:
         unwired = audit_scripts_wired(gate_scripts, wf_texts)
         for script, why in unwired:
