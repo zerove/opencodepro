@@ -28,8 +28,14 @@ jobs:
     name: Build and Deploy mdbook + bench dashboard
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    # 依赖 bench-core：让 bench dashboard 报告能合并到 gh-pages
-    needs: [bench-core]
+    # 这里原先写着 `needs: [bench-core]`——bench-core 是 **ci.yml** 的 job 名，
+    # 而 needs 只能引用**同一 workflow 内**定义的 job，跨 workflow 没有依赖
+    # 机制。GitHub 会因此把整个 workflow 判为 Invalid 并拒绝运行，也就是说
+    # mdbook 部署从未真正执行过。
+    #
+    # bench dashboard 改由下面的 `download-artifact` 显式取：ci.yml 把它作为
+    # artifact 上传（保留 90 天），这里按名字下载。这是跨 workflow 传递产物的
+    # 正确方式，不依赖隐式的 job 依赖。
     steps:
       - name: Checkout
         uses: actions/checkout@v4

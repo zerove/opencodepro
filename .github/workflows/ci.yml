@@ -49,6 +49,12 @@ jobs:
         run: python3 scripts/audit_ignored.py
       - name: Audit process-global state in tests
         run: python3 scripts/audit_test_global_state.py
+      # workflow 自身的引用完整性。放在本 job 里是刻意的：它只需要
+      # checkout 出来的 YAML 与 PyYAML，不需要编译，几秒就能跑完。
+      - name: Audit workflow step references
+        run: |
+          python3 scripts/audit_workflows.py
+          python3 scripts/audit_workflows.py --self-check
 
   # ── Supply-chain audit (cargo-deny: advisories, bans, licenses, sources) ─
   security-deny:
@@ -532,15 +538,29 @@ jobs:
       # 全 PR + main 都跑（不依赖 baseline cache）。
       # 部署策略：mdbook.yml 部署时把 bench dashboard 合并到 gh-pages/bench/
       # 路径（详见 .github/workflows/mdbook.yml 的 deploy step）。
+      #
+      # 不用 `|| echo` 兜底：continue-on-error 已经保证 job 不会红，而 `|| echo`
+      # 是把退出码转成 0，会顺手吞掉脚本真正的失败原因。保留 continue-on-error
+      # 就够了——dashboard 是辅助产物，不该阻塞合并，但失败要留在日志里。
       - name: Generate bench dashboard
-        run: |
-          ./scripts/bench-dashboard.sh || echo "::warning::bench-dashboard.sh failed, skipping artifact"
+        run: ./scripts/bench-dashboard.sh
         env:
           OUTPUT_DIR: ${{ runner.temp }}/bench-dashboard
         continue-on-error: true
 
+      # id 必填：下面的 PR 评论要引用这个 step 的 outputs。
+      # 原先这里没写 id，却引用了 steps.upload-artifact.outputs.artifact-url，
+      # 而 GitHub 只为显式声明 id 的 step 暴露 outputs——那些引用会静默展开成
+      # 空字符串，PR 上渲染成 `([详情]())` 的空链接和「跑  大小」缺数字的句子。
+      # 这类缺陷不会让 CI 变红，只能靠读渲染结果发现。
+      #
+      # if 里不用 hashFiles 判断产物存在：它评估的是 job 开始时的文件状态，
+      # 对同 job 内刚生成的 ${{ runner.temp }} 文件不作保证（mdbook.yml:88 的
+      # 用法检查的是仓库内已存在的文件，语义不同，不能照搬）。上传本身幂等且
+      # 带 if-no-files-found: ignore，让它直接跑；成败由 conclusion 如实反映，
+      # 下面的评论据此判断。
       - name: Upload bench dashboard artifact
-        if: hashFiles('${{ runner.temp }}/bench-dashboard/index.html') != ''
+        id: bench-dashboard
         uses: actions/upload-artifact@v4
         with:
           name: bench-dashboard
@@ -548,14 +568,21 @@ jobs:
           retention-days: 90
           if-no-files-found: ignore
 
+      # 只在确实上传成功时才评论。原先用 hashFiles 判断，在同 job 内刚生成的
+      # 文件上不可靠——它可能为真而上传实际失败（或反之），评论就会指向一个
+      # 不存在的 artifact。改判 steps.bench-dashboard.conclusion。
       - name: Comment PR with bench summary
-        if: github.event_name == 'pull_request' && hashFiles('${{ runner.temp }}/bench-dashboard/index.html') != ''
+        id: bench-comment
+        if: >-
+          github.event_name == 'pull_request' &&
+          steps.bench-dashboard.conclusion == 'success' &&
+          steps.bench-dashboard.outputs.artifact-id != ''
         uses: marocchino/sticky-pull-request-comment@v2
         with:
           header: bench-dashboard
           message: |
-            📊 **Bench Dashboard** ([详情](${{ steps.upload-artifact.outputs.artifact-url }}))
-            跑 ${{ steps.upload-artifact.outputs.artifact-size }} 大小；含 criterion 报告（分布/回归/对比图）
+            📊 **Bench Dashboard** — 已上传 artifact（保留 90 天）
+            在本 run 的 Actions 页面底部下载 `bench-dashboard`；含 criterion 报告（分布/回归/对比图）。
             本地查看：`./scripts/bench-dashboard.sh` 然后浏览器打开 `docs/benchmarks/dashboard/index.html`
 
   # ── CLI release builds ──────────────────────────────────────────────

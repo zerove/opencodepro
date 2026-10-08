@@ -241,10 +241,18 @@ audit-ignored:
 audit-test-state:
 	@python3 scripts/audit_test_global_state.py
 
-# 全部结构审计（不需编译）
-audit: audit-orphans audit-ignored audit-test-state
+# workflow 引用审计：检测引用了未声明 id 的 step。
+# GitHub 只为显式声明 id 的 step 暴露 outputs，无来源的引用会**静默**
+# 展开成空字符串——不会让 CI 变红，只在渲染结果里表现为空链接或缺值。
+# ci.yml 曾真实存在这种缺陷（PR 评论渲染成 `([详情]())`），靠读 PR 才能发现。
+audit-workflows:
+	@python3 scripts/audit_workflows.py
+	@python3 scripts/audit_workflows.py --self-check
 
-.PHONY: audit-orphans audit-ignored audit-test-state audit
+# 全部结构审计（不需编译）
+audit: audit-orphans audit-ignored audit-test-state audit-workflows
+
+.PHONY: audit-orphans audit-ignored audit-test-state audit-workflows audit
 
 # — bridge crate (nightly+, no workaround needed) —
 

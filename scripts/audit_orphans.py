@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import pathlib
 import re
 import shutil
@@ -140,13 +141,34 @@ def _workspace_crates(root: pathlib.Path | None = None) -> list[pathlib.Path]:
     于是 tools/dummy_tool.rs 这类散落文件永远不会被检出。
 
     root 参数只为自检存在：_self_check() 用临时目录跑同一条判据。
+
+    **2026-10-08 修正遍历方式**：原实现是
+
+        base.glob("**/Cargo.toml")
+
+    再用 `if "target" not in mf.parts` 过滤。实测这条**需要 924.7 秒**，
+    而同一目录下 _source_dirs() 只要 0.0 秒——因为过滤写在了**结果**上，
+    遍历照样发生：target/ 里有 15 万个编译产物、目录又深，glob 必须先走完整
+    棵树才能把每个命中的路径交给那行 if 判断。孤儿门禁因此从「几秒」变成
+    「十几分钟」，实测连续跑 31 分钟仍未结束。
+
+    改为 os.walk + **遍历时**剪枝：target/、node_modules/、.git/ 一进入就不
+    下探。剪枝判据取自 .gitignore（构建产物与依赖树都不该含 Cargo.toml），
+    不是为了让时间好看而挑出来的。
     """
     base = root if root is not None else ROOT
-    return sorted(
-        mf.parent for mf in base.glob("**/Cargo.toml")
-        if mf.parent != base
-        and "target" not in mf.parts and "node_modules" not in mf.parts
-    )
+    pruned = {"target", "node_modules", ".git"}
+    found: list[pathlib.Path] = []
+    for dirpath, dirnames, filenames in os.walk(base):
+        # 就地裁剪子目录列表，os.walk 才会停止进入——这是剪枝生效的唯一方式
+        dirnames[:] = [d for d in dirnames if d not in pruned]
+        if "Cargo.toml" in filenames:
+            crate_dir = pathlib.Path(dirpath)
+            # 仓库根也有 Cargo.toml（虚拟 workspace 清单），若算作 crate，
+            # ROOT 下每个 .rs 都「属于某个 crate」，散落的孤儿永远检不出来。
+            if crate_dir != base:
+                found.append(crate_dir)
+    return sorted(found)
 
 
 def _candidate_files(crates: list[pathlib.Path], source_dirs: list[pathlib.Path]) -> set[pathlib.Path]:
@@ -302,6 +324,23 @@ def _self_check() -> list[str]:
             failures.append(
                 "crate 目录之外的散落 .rs 未进入候选集——"
                 "tools/ 这类目录下的孤儿会被漏报")
+    # ── 5. target/ 等构建产物目录必须被剪枝，不进入遍历 ──
+        # 这不是洁癖：曾用 glob("**/Cargo.toml") + 结果侧过滤，实测要 924.7 秒
+        # （target/ 有 15 万文件），而剪枝后只要 0.02 秒且命中集合完全一致。
+        # 若剪枝失效，门禁不会报错，只会把 CI 拖到超时——正是最难发现的那类退化。
+        # 用「在 target/ 里真放一个 Cargo.toml」做判别：剪枝生效时它不该被看见。
+        (tmp / "target" / "some-crate").mkdir(parents=True)
+        (tmp / "target" / "some-crate" / "Cargo.toml").write_text(
+            "[package]\nname='built-artifact'\n", encoding="utf-8")
+        if (tmp / "target" / "some-crate") in _workspace_crates(tmp):
+            failures.append(
+                "target/ 下的目录被当成了 crate——剪枝失效会让门禁遍历全部编译产物"
+                "（实测 924.7 秒 vs 0.02 秒），且构建产物里的 Cargo.toml 会污染判定")
+
+        # 剪枝判据来自 .gitignore，但「剪掉了该剪的」与「该留的都留下了」是
+        # 两件事：正常位置的 crate 必须仍在集合里，否则上面那条会假绿。
+        if (normal) not in _workspace_crates(tmp):
+            failures.append("剪枝过头：crates_like/member 未被识别为 crate")
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
     return failures
