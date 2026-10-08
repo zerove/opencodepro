@@ -22,12 +22,21 @@ BRIDGE_DEPS = crates/sisyphus-bridge/src/main.rs crates/sisyphus-bridge/Cargo.to
 # 多个测试二进制的目标都显式带 CARGO_BUILD_JOBS=1。直接敲 `cargo test` 不受此保护，
 # 需自行加 -j 1。
 #
-# ⚠ 修正（2026-10-04 晚）：本机 `vm.overcommit_memory=2`（**严格模式**），
-#   `CommitLimit ≈ RAM × 80%`。实测链接期 rust-lld 撞上该上限后抛 EAGAIN
-#   （`what(): Resource temporarily unavailable`）→ SIGABRT，
-#   即便 free available 还有 10 GiB。**排查务必看 Committed_AS，
+# ⚠ 修正（2026-10-08 再核）：当时记录的 `vm.overcommit_memory=2`（严格模式）**已不成立**。
+#   2026-10-08 实测 `/proc/sys/vm/overcommit_memory` = **0**（启发式宽松模式）。
+#   那条观察本身没造假——2026-10-04 那天确实可能是 2——但它是**环境状态**，
+#   不是仓库属性，写死在注释里会误导后来的人。
+#   保留原结论：链接期撞上限仍会抛 EAGAIN（`what(): Resource temporarily unavailable`）
+#   → SIGABRT，即便 free available 还有 10 GiB。**排查务必看 Committed_AS，
 #   别拿 free available 当「已排除 OOM」的依据**（我犯过这个错）。
 #   `make rustc-abort-forensics` 会实时打印提交内存占限比。
+#   换机器或改 sysctl 后，请用下面的命令重新核对再下结论：
+#     cat /proc/sys/vm/overcommit_memory
+#
+# 磁盘约束（2026-10-08 实测）：多套构建变体（--no-default-features、--features sandbox）
+#   并存会让 target/ 累积大量陈旧产物，实测涨到 130 GB（deps 下 11003 个 rlib，
+#   libtower 一个包就有 184 个不同 hash 的副本）。用 `make target-gc` 回收，
+#   默认只删 14 天前的产物且保护 bridge/sandbox 等单独构建的 crate。
 #
 # Usage:
 #   make check-all         # lightweight batch (alias: --exclude bridge/sandbox/tests)
@@ -42,6 +51,8 @@ BRIDGE_DEPS = crates/sisyphus-bridge/src/main.rs crates/sisyphus-bridge/Cargo.to
 #   make test-core-quick  # lib-only sisyphus-core tests (~2s)
 #   make test-tools       # test all 10 sisyphus-tools-* sub-crates (lib only, fast)
 #   make check-tools      # check all 10 tools sub-crates
+#   make target-gc        # 预览可回收的磁盘空间（不会删除）
+#   make target-gc-apply  # 真正回收 14 天前的产物
 
 
 TOOLS_PACKAGES = \
@@ -59,6 +70,7 @@ HEAVY_PACKAGES = sisyphus-sandbox sisyphus-sandboxd sisyphus-tests
 .PHONY: test-bridge-full test-bridge-dedicated test-cli-handlers
 .PHONY: test-ci
 .PHONY: perf-analyze
+.PHONY: target-gc target-gc-apply target-size
 .PHONY: dev-tui run-tui clean
 .PHONY: dev ci-quick dev-fmt dev-clippy dev-test ci-bridge
 
@@ -491,3 +503,31 @@ eval-check:
 
 clean:
 	cargo clean
+
+# — 磁盘回收（2026-10-08 新增） —
+# 为什么要单独做：多套构建变体（--no-default-features、--features sandbox）共存时，
+# target/ 会累积大量陈旧产物。实测涨到 130 GB，deps 下有 11003 个 rlib，
+# libtower 一个包就积累了 184 个不同 hash 的副本，最旧的可回溯到 2.5 个月前。
+# `cargo clean` 太粗（连当前要用的产物一起删），`cargo gc` 仍是 nightly-only，
+# 所以这个脚本按「年龄 + 保护名单」回收。
+#
+# 默认只预览不删除：删除不可逆，且误删会让下次构建全量重编。
+
+target-size:
+	@du -sh target 2>/dev/null || echo "target/ 不存在"
+	@echo "--- 分层 ---"
+	@du -sh target/debug target/release 2>/dev/null || true
+	@echo "--- deps 内产物数 ---"
+	@ls -1 target/debug/deps 2>/dev/null | wc -l | xargs echo "文件数:"
+
+target-gc:
+	@python3 scripts/target_gc.py --self-check
+	@echo ""
+	@python3 scripts/target_gc.py
+
+target-gc-apply:
+	@python3 scripts/target_gc.py --self-check
+	@echo ""
+	@python3 scripts/target_gc.py -y
+
+.PHONY: target-gc target-gc-apply target-size
