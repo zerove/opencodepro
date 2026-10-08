@@ -447,6 +447,49 @@ def audit_scripts_wired(scripts, workflow_texts):
     return missing
 
 
+# 门禁命令：除了审计脚本，还包括以命令形式调用的门禁工具。
+# 只按 *.py 发现会漏掉它们——check-jsonschema 与 cargo deny 同样是让 CI
+# 变红的关键检查，被 continue-on-error 吞掉的后果一样严重。
+GATE_COMMANDS = (
+    "check-jsonschema",
+    "cargo deny",
+)
+
+
+def _gate_markers(gate_scripts):
+    """返回需要防 continue-on-error 吞掉的标记列表。"""
+    return list(gate_scripts) + list(GATE_COMMANDS)
+
+
+def _swallowed_gates(scripts, doc):
+    """返回被 continue-on-error 吞掉的门禁脚本名。
+
+    `continue-on-error: true` 让 step 失败时 job 仍为绿色。这是给「辅助产物」
+    用的正确设计（ci.yml 的 bench dashboard 就是这么用的，有注释说明）。
+    但如果有人不慎把它加到**门禁 step** 上，那道门禁就再也不会让 CI 变红——
+    它会一直显示绿色，而实际什么都没拦住。
+
+    这类缺陷最难被发现：改动本身在 schema 上完全合法（变异验证：
+    check-jsonschema exit 0），接线检查也看不出来（脚本确实被调用了），
+    只有“把失败吞掉”这一层语义会静默反转门禁的效果。
+    """
+    swallowed = []
+    for job in (doc.get("jobs") or {}).values():
+        if not isinstance(job, dict):
+            continue
+        job_coe = job.get("continue-on-error")
+        for step in job.get("steps") or []:
+            if not isinstance(step, dict):
+                continue
+            if not (step.get("continue-on-error") or job_coe):
+                continue
+            run = str(step.get("run", ""))
+            for script in scripts:
+                if script in run:
+                    swallowed.append(script)
+    return swallowed
+
+
 def check_file(path):
     """检查单个 workflow。
 
@@ -1111,6 +1154,60 @@ jobs:
             "gate_scripts 的 glob 不在 `%s/` 下：%r" % (AUDIT_SCRIPT_DIR, gate_globs)
         )
 
+    # _swallowed_gates 的用例。直接调用生产函数。
+    gate_markers = _gate_markers(["scripts/audit_x.py"])
+    for desc, text, expect in [
+        (
+            "门禁 step 无 continue-on-error -> 未被吞掉",
+            "name: w\non: push\njobs:\n  j:\n    steps:\n"
+            "      - run: python3 scripts/audit_x.py\n",
+            [],
+        ),
+        (
+            "step 级 continue-on-error -> 吞掉",
+            "name: w\non: push\njobs:\n  j:\n    steps:\n"
+            "      - run: python3 scripts/audit_x.py\n        continue-on-error: true\n",
+            ["scripts/audit_x.py"],
+        ),
+        (
+            "job 级 continue-on-error -> 同样吞掉",
+            "name: w\non: push\njobs:\n  j:\n    continue-on-error: true\n"
+            "    steps:\n      - run: python3 scripts/audit_x.py\n",
+            ["scripts/audit_x.py"],
+        ),
+        (
+            "continue-on-error: false -> 不算吞掉",
+            "name: w\non: push\njobs:\n  j:\n    steps:\n"
+            "      - run: python3 scripts/audit_x.py\n        continue-on-error: false\n",
+            [],
+        ),
+        (
+            "辅助产物用 continue-on-error 但不涉及门禁 -> 不误报",
+            "name: w\non: push\njobs:\n  j:\n    steps:\n"
+            "      - run: ./scripts/bench-dashboard.sh\n        continue-on-error: true\n",
+            [],
+        ),
+        (
+            "命令式门禁 check-jsonschema 被吞 -> 也算",
+            "name: w\non: push\njobs:\n  j:\n    steps:\n"
+            "      - run: check-jsonschema --builtin-schema x .github/workflows/*.yml\n"
+            "        continue-on-error: true\n",
+            ["check-jsonschema"],
+        ),
+        (
+            "命令式门禁 cargo deny 被吞 -> 也算",
+            "name: w\non: push\njobs:\n  j:\n    steps:\n"
+            "      - run: cargo deny check\n        continue-on-error: true\n",
+            ["cargo deny"],
+        ),
+    ]:
+        doc = yaml.safe_load(text)
+        got = _swallowed_gates(gate_markers, doc)
+        if got != expect:
+            failures.append(
+                "_swallowed_gates(%s): 期望 %r，实际 %r" % (desc, expect, got)
+            )
+
     if failures:
         print("自检失败：", file=sys.stderr)
         for f in failures:
@@ -1207,6 +1304,21 @@ def main() -> int:
         unwired = audit_scripts_wired(gate_scripts, wf_texts)
         for script, why in unwired:
             problems.append("%s: %s" % (script, why))
+        # 被 continue-on-error 吞掉的门禁：脚本确实被调用了，但失败不再变红。
+        for path in paths:
+            try:
+                import yaml
+
+                doc = yaml.safe_load(open(path, encoding="utf-8").read())
+            except Exception:  # noqa: BLE001
+                continue
+            if not isinstance(doc, dict):
+                continue
+            for script in _swallowed_gates(_gate_markers(gate_scripts), doc):
+                problems.append(
+                    "%s: %s 所在 step 设了 continue-on-error，该门禁失败不会让 CI 变红"
+                    % (script, os.path.relpath(path))
+                )
 
     if problems:
         print("", file=sys.stderr)
