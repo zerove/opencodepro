@@ -84,7 +84,7 @@ TOOLS_PACKAGES = \
 
 HEAVY_PACKAGES = sisyphus-sandbox sisyphus-sandboxd sisyphus-tests
 
-.PHONY: all check-all build-all test-all scan-flaky flaky-replay rustc-abort-forensics
+.PHONY: all check-all build-all test-all test-all-chunk test-all-chunk-reset scan-flaky flaky-replay rustc-abort-forensics
 .PHONY: check-bridge build-bridge test-bridge check-bridge-160
 .PHONY: check-bridge-nosandbox test-bridge-nosandbox
 .PHONY: check-sandbox build-sandboxd test-sandbox check-sandboxd test-sandboxd test-tests check-tests
@@ -162,6 +162,31 @@ test-all:
 	@echo "这四个 crate 在 CI 中有对应 job："
 	@echo "  .github/workflows/ci.yml — bridge_integration_test / skill_market_rest_test / sisyphus-tests --lib"
 	@echo "本地需单独验证请用： cargo test -p sisyphus-bridge --no-default-features --lib"
+
+# 逐 crate 跑 test-all 的每个成员，每跑完一个就把名字追加到 .testall-progress。
+#
+# 为什么要这个而不是直接用 `make test-all`：
+# `cargo test --workspace` 是一次性调用，21 个 crate 串在同一进程里，
+# 任一环节卡住（或被 600s 外部超时打断）就**全部白跑**，且 `tail` 缓冲
+# 让你看不到中间进度，只能看到最后几行。
+# 实测 2026-10-08：`make test-all` 跑满 600s 被杀，已完成 24 个测试
+# 二进制却一条结论都拿不到。
+#
+# 而 `make test-all` 内部那条超时用例（cognitive_trace_persist_test）
+# 在隔离复跑时只要 29.29s，在全量并发下却要 306.47s —— 逐 crate 跑
+# 既能拿到完整结论，也能看出哪些用例对负载敏感。
+#
+# 用法：
+#   make test-all-chunk        # 跑全部，已完成的自动跳过
+#   make test-all-chunk-reset  # 清空进度，下次从头跑
+#
+# 逐个跑还能给每个 crate 单独计时，从而定位“哪个 crate 是慢的那个”。
+test-all-chunk:
+	@bash scripts/run_test_chunks.sh
+
+test-all-chunk-reset:
+	@rm -f .testall-progress .testall-chunk.log .testall-chunk.log.* .testall-chunk-summary.log
+	@echo "已清空进度，下次 make test-all-chunk 将从头开始"
 
 # 概率性失败（flaky test）扫描：把每个 crate 的 lib 测试二进制重复跑多轮，
 # 统计失败率。单次 `cargo test` 全绿无法证明不存在竞态——本项目多处缺陷
