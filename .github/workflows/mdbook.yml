@@ -105,11 +105,23 @@ jobs:
           path: book/book
 
       - name: Deploy to GitHub Pages
-        id: deployment
+        # 这里原先写着：
+        #     environment:
+        #       name: github-pages
+        #       url: ${{ steps.deployment.outputs.page_url }}
+        #
+        # 那个 url 永远求值为空。steps context 按 GitHub 文档只包含
+        # 「have already run」的 step，而 `environment.url` 恰恰在这个 step
+        # **自身执行之前**求值——引用自己 等于 引用一个尚未发生的东西。
+        # 静默展开成空字符串，不报错、不让 CI 变红，只是部署完的 environment
+        # 页面永远没有正确的站点链接。
+        #
+        # 也不需要自己写 url：`environment.name: github-pages` 指向 GitHub
+        # 为 Pages 预置的 environment，站点 URL 由 deploy-pages 与 Pages
+        # 服务本身登记。
         uses: actions/deploy-pages@v4
         environment:
           name: github-pages
-          url: ${{ steps.deployment.outputs.page_url }}
 
   # 失败时自动诊断：节省 5-10 min 排查时间
   build-only:

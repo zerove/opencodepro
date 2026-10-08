@@ -23,7 +23,32 @@ GitHub 只为显式声明 id 的 step 暴露 outputs，于是链接渲染成空�
 Invalid 并拒绝运行，mdbook 部署从未真正执行过，而且只有去 Actions 页面看
 才会发现。
 
-两类都由本脚本覆盖。
+**第三类：引用尚未执行的 step（自我引用 / 前向引用）**
+
+GitHub 文档对 `steps` context 的定义里有一句限定词容易被跳过：
+
+> The `steps` context contains a list of steps **that have an id specified and
+> have already run** in the current job.
+
+只有**已经跑完**的 step 才会出现在 context 里。`.github/workflows/mdbook.yml`
+曾真实存在这样一处：
+
+    - name: Deploy to GitHub Pages
+      id: deployment
+      uses: actions/deploy-pages@v4
+      environment:
+        name: github-pages
+        url: ${{ steps.deployment.outputs.page_url }}   # 引用自己
+
+`page_url` 由 deploy-pages 在 action 跑完之后才写入，而 `environment.url`
+恰在这个 step 执行**之前**求值，于是恒为空字符串——同样不报错、不变红，只是
+environment 页面上永远没有站点链接。
+
+**只检查 step 内部**是有意的收窄：job 级的 `environment.url` 前向引用部署 step
+是**合法**的（environment 的 URL 要等 job 跑完才登记，那时 step 早已执行），
+这正是官方 Pages starter workflow 的标准写法。
+
+三类都由本脚本覆盖。
 
 **不覆盖的**：`hashFiles()` 被用来判断**同 job 内刚生成**的文件——它评估的是
 job 开始时的文件状态，对这种文件不作保证。这属于语义问题，无法静态判定，
@@ -150,6 +175,99 @@ def duplicate_step_ids(doc):
     return dups
 
 
+def step_order_by_job(text, doc):
+    """返回 {job 名: [(step_id 或 None, 起始行, 结束行)]}，按声明顺序。
+
+    需要顺序而非集合，是因为 steps context 只含「已执行」的 step：引用一个
+    排在自己后面的 step，求值时它还没跑，输出恒为空。
+    """
+    import yaml
+
+    node = yaml.compose(text)
+    order = {}
+    if node is None:
+        return order
+    for key, value in node.value:
+        if key.value != "jobs" or not isinstance(value, yaml.MappingNode):
+            continue
+        for job_key, job_value in value.value:
+            steps = None
+            for jk, jv in job_value.value:
+                if jk.value == "steps":
+                    steps = jv
+            if steps is None or not isinstance(steps, yaml.SequenceNode):
+                order[job_key.value] = []
+                continue
+            entries = []
+            # steps 是 SequenceNode，元素直接就是 step 节点本身，
+            # 不是 MappingNode 那种 key-value 对——按对解包会抛
+            # "cannot unpack non-iterable MappingNode object"
+            for step_node in steps.value:
+                if not isinstance(step_node, yaml.MappingNode):
+                    continue
+                step_id = None
+                for pk, pv in step_node.value:
+                    if pk.value == "id":
+                        step_id = pv.value
+                entries.append((step_id, step_node.start_mark.line,
+                                step_node.end_mark.line))
+            order[job_key.value] = entries
+    return order
+
+
+def forward_reference_orphans(text, doc):
+    """返回 [(行号, job 名, step_id, 引用位置)]：引用了尚未执行的后续 step。
+
+    `.github/workflows/mdbook.yml` 曾真实存在这样一处：
+
+        - name: Deploy to GitHub Pages
+          id: deployment
+          uses: actions/deploy-pages@v4
+          environment:
+            url: ${{ steps.deployment.outputs.page_url }}   # 引用自己
+
+    steps context 按官方文档只包含 "have already run" 的 step，而
+    environment.url 恰在该 step **自身执行前**求值，于是恒为空字符串——
+    不报错、不让 CI 变红，只是部署完的 environment 页面永远没有站点链接。
+
+    判定口径：同一 job 内，引用的 id 出现在引用者自身之后即前向引用。**自我
+    引用**（id 与所在 step 相同）同样算前向——它是最容易被忽略的一种。
+    """
+    spans = job_spans(text)
+    order = step_order_by_job(text, doc)
+    orphans = []
+    for line_no, line in enumerate(text.split("\n")):
+        if line.lstrip().startswith("#"):
+            continue
+        job_name = job_of_line(spans, line_no)
+        if job_name is None:
+            continue
+        entries = order.get(job_name) or []
+        for ref in STEP_REF.findall(line):
+            # step 的行区间是 [start_mark.line, end_mark.line) 半开区间。
+            # end_mark.line 是块内容**之后**那一行的 0-based 序号，而不是
+            # 最后一行内容的序号——所以必须用 `< end` 而不是 `<= end`：
+            # 否则下一个 step 的首行会被算进上一个 step，进而把
+            # 「引用前面已执行的 step」误判成自我引用。
+            # 同时下界要用 `<= start`，因为 start_mark 正指向 `- name:` 那一行。
+            for idx, (step_id, start, end) in enumerate(entries):
+                if not (start <= line_no < end):
+                    continue
+                already_run = {
+                    sid for sid, _s, _e in entries[:idx] if sid
+                }
+                # 自我引用：所在 step 自己就声明了该 id
+                if step_id == ref:
+                    orphans.append((line_no + 1, job_name, ref, "自我引用"))
+                elif ref not in already_run:
+                    if any(sid == ref for sid, _s, _e in entries[idx + 1:]
+                           if sid):
+                        orphans.append((line_no + 1, job_name, ref,
+                                        "引用了尚未执行的后续 step"))
+                break
+    return orphans
+
+
 def step_reference_orphans(text, doc):
     """返回 [(引用所在行号, 所属 job 名或 None, 无来源的 step id)]。
 
@@ -219,7 +337,8 @@ def check_file(path):
     """检查单个 workflow。
 
     返回 (step 引用总数, [(行号, job 名或 None, 无来源的 step id)],
-            [(job 名, 重复 id, 次数)], [(引用方, 无来源的 needs)], needs 总条数)。
+            [(job 名, 重复 id, 次数)], [(行号, job 名, id, 原因)],
+            [(引用方, 无来源的 needs)], needs 总条数)。
     """
     import yaml  # 延迟导入，让 --help 在缺依赖时也能给出清晰提示
 
@@ -234,6 +353,7 @@ def check_file(path):
         n_refs,
         step_reference_orphans(text, doc),
         duplicate_step_ids(doc),
+        forward_reference_orphans(text, doc),
         orphan_needs(doc),
         count_needs(doc),
     )
@@ -467,9 +587,10 @@ jobs:
         ),
     ]
 
-    # (说明, YAML, 期望的无来源 step 引用, 期望的重复 id, 期望的无来源 needs)
+    # (说明, YAML, 期望的无来源 step 引用, 期望的重复 id, 期望的前向引用,
+    #  期望的无来源 needs)
     cases = [
-        (c[0], c[1], c[2], c[3], []) for c in cases
+        (c[0], c[1], c[2], c[3], [], c[4]) for c in cases
     ] + [
         (
             "needs 引用了别的 workflow 的 job（mdbook.yml 的真实缺陷）",
@@ -481,6 +602,7 @@ jobs:
     steps:
       - run: echo hi
 """,
+            [],
             [],
             [],
             [("build-and-deploy", "bench-core")],
@@ -502,6 +624,7 @@ jobs:
             [],
             [],
             [],
+            [],
         ),
         (
             "needs 的单字符串写法也要校验",
@@ -513,6 +636,7 @@ jobs:
     steps:
       - run: echo hi
 """,
+            [],
             [],
             [],
             [("consumer", "ghost")],
@@ -530,6 +654,7 @@ jobs:
 """,
             [],
             [],
+            [],
             [("consumer", "ghost")],
         ),
         (
@@ -544,11 +669,87 @@ jobs:
             [],
             [],
             [],
+            [],
+        ),
+        (
+            "step 引用尚未执行的后续 step（mdbook.yml 同类真实缺陷）",
+            """
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Announce
+        id: announce
+        run: echo ${{ steps.build.outputs.page_url }}
+      - name: Build
+        id: build
+        run: echo built
+""",
+            [],
+            [],
+            [(7, "deploy", "build", "引用了尚未执行的后续 step")],
+            [],
+        ),
+        (
+            "step 引用自己（mdbook.yml 的真实形态）",
+            """
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+        environment:
+          name: github-pages
+          url: ${{ steps.deployment.outputs.page_url }}
+""",
+            [],
+            [],
+            [(10, "deploy", "deployment", "自我引用")],
+            [],
+        ),
+        (
+            "引用前面已执行的 step 是合法的",
+            """
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Build
+        id: build
+        run: echo built
+      - name: Announce
+        run: echo ${{ steps.build.outputs.page_url }}
+""",
+            [],
+            [],
+            [],
+            [],
+        ),
+        (
+            "job 级 environment.url 前向引用部署 step 合法：环境 URL 要等 job 跑完才登记",
+            """
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+""",
+            [],
+            [],
+            [],
+            [],
         ),
     ]
 
     failures = []
-    for desc, text, exp_refs, exp_dups, exp_needs in cases:
+    for desc, text, exp_refs, exp_dups, exp_fwd, exp_needs in cases:
         with tempfile.NamedTemporaryFile(
             "w", suffix=".yml", delete=False, encoding="utf-8"
         ) as tmp:
@@ -560,9 +761,9 @@ jobs:
         expects_error = exp_refs == "ERROR"
 
         try:
-            _n, orphans, dups, bad_needs, _m = check_file(tmp_path)
-            actual = (orphans, dups, bad_needs)
-            expected = (exp_refs, exp_dups, exp_needs)
+            _n, orphans, dups, fwd, bad_needs, _m = check_file(tmp_path)
+            actual = (orphans, dups, fwd, bad_needs)
+            expected = (exp_refs, exp_dups, exp_fwd, exp_needs)
         except ValueError:
             # 必须区分「用例本就期望报错」与「生产代码意外抛错」。
             # 早先两者都记成字符串 "ERROR"，于是变异把 _normalize_needs 改成
@@ -615,14 +816,14 @@ def main() -> int:
     problems = []
     for path in paths:
         try:
-            n_refs, orphans, dups, bad_needs, n_needs = check_file(path)
+            n_refs, orphans, dups, fwd, bad_needs, n_needs = check_file(path)
         except Exception as exc:  # noqa: BLE001
             problems.append("%s: 解析失败 %r" % (path, exc))
             continue
         total_refs += n_refs
         total_needs += n_needs
         rel = os.path.relpath(path)
-        if orphans or dups or bad_needs:
+        if orphans or dups or fwd or bad_needs:
             for line_no, job_name, step_id in orphans:
                 where = "workflow 级" if job_name is None else "job `%s`" % job_name
                 problems.append(
@@ -633,6 +834,11 @@ def main() -> int:
                 problems.append(
                     "%s: job `%s` 内 step id `%s` 重复 %d 次"
                     % (rel, job_name, step_id, count)
+                )
+            for line_no, job_name, step_id, reason in fwd:
+                problems.append(
+                    "%s:%d: job `%s` 的 step `%s` %s"
+                    % (rel, line_no, job_name, step_id, reason)
                 )
             for src_job, missing in bad_needs:
                 problems.append(
@@ -656,8 +862,9 @@ def main() -> int:
             file=sys.stderr,
         )
         print(
-            "同一 job 内重复的 step id 会让引用读到后一个 step 的结果，"
-            "同样不会有任何提示。",
+            "同一 job 内重复的 step id 会让引用读到后一个 step 的结果；"
+            "引用尚未执行的后续 step（含自我引用）则恒为空——"
+            "steps context 只含已跑完的 step，两者都不会有提示。",
             file=sys.stderr,
         )
         print(
