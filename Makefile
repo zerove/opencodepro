@@ -135,8 +135,13 @@ test-all:
 # 失败率都在 1/16 以下，只在高频复跑下才暴露。
 #
 # 用法：make scan-flaky ROUNDS=32
+#
+# 排除项与 test-light 一致：bridge / sandboxd 在本仓库会 OOM（19.5 GiB 下
+# -j 2 都不安全）。脚本的 SLOW_CRATES 只排除「慢」crate，不含这两个，
+# 所以排除必须写在这里——否则预编译阶段就会被 OOM 杀掉，扫不成。
 scan-flaky:
-	CARGO_BUILD_JOBS=1 cargo test --workspace --lib --no-run
+	CARGO_BUILD_JOBS=1 cargo test --workspace --lib --no-run \
+		--exclude sisyphus-bridge --exclude sisyphus-sandboxd --exclude sisyphus-sandbox
 	python3 scripts/scan_flaky.py --rounds $(or $(ROUNDS),16)
 
 # 仅重跑上次扫描抓到的失败现场（现场已落盘，不必重新扫描）。

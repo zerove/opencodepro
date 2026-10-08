@@ -17,7 +17,15 @@
     python3 scripts/scan_flaky.py --rounds 40    # 提高采样
     python3 scripts/scan_flaky.py --keep-going   # 某 crate 失败后继续跑完其余 crate
 
-退出码：发现任何失败为 1，否则为 0（便于 CI 定期拦截）。
+CI：.github/workflows/flaky-scan.yml 每天定时（UTC 06:00）并支持手动触发，
+手动时可调 rounds/jobs。该 job 刻意**不**挂在 PR 上——受控 runner 负载稳定，
+恰恰是低频缺陷最难复现的环境，当门禁只会制造"扫了但扫不出"的安全感。
+
+退出码：
+    0 = 全部通过
+    1 = 发现概率性失败（失败现场已写入 $JCODE_SCRATCH_DIR/flaky-reports）
+    2 = 一个测试二进制都没找到。这不是"通过"，而是"根本没跑"——
+       若返回 0，CI 会把未执行误读成全绿，是最危险的假绿灯。
 """
 
 import argparse

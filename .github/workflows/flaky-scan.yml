@@ -1,0 +1,113 @@
+# ── Flaky Test Scan ───────────────────────────────────────────────────
+# 重复运行各 crate 的 lib 测试二进制，统计概率性失败率。
+#
+# 为什么单独一个 workflow、而不是挂进 ci.yml：
+# 单次 `cargo test` 全绿**证明不了**不存在竞态。本项目已实测到三处失败率
+# 低至 1/16 的真实缺陷（meta_learner 读本机 .omo/meta、feedback.rs 临时目录
+# 计数器跨进程复用、config_store/http_client 的进程级 env 竞争）——单次运行
+# 几乎撞不见。
+#
+# 但也正因如此，它**不适合**挂在每个 PR 上：
+#   1. 成本。20 个 crate × N 轮，即便 --jobs 4 并行也要 1.7 分钟以上，
+#      而受控的 CI runner 负载稳定，恰恰是低频缺陷最难复现的环境——
+#      付了时间却大概率什么都测不出来，只是给 PR 平白增加噪声。
+#   2. 假绿灯风险高于漏报。在稳定环境里扫 16 轮全绿，不等于代码没有 flaky；
+#      把它当门禁只会训练团队忽略红灯。
+# 所以定位为**定期 + 手动触发**的体检，报告失败时由人判断，而不是合并门禁。
+#
+# scripts/scan_flaky.py 原本从未被任何 workflow 调用，而它的文档写着
+# 「便于 CI 定期拦截」——承诺与实现脱节。本 workflow 补上这一环。
+
+name: Flaky Scan
+
+on:
+  schedule:
+    # 每天 06:00 UTC（错开 nightly.yml 的 00:00，避免两个重活撞车抢 CPU）
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+    inputs:
+      rounds:
+        description: '每个测试二进制重复轮数'
+        required: false
+        default: '16'
+      jobs:
+        description: '同时压测几个二进制'
+        required: false
+        default: '4'
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  flaky-scan:
+    name: Flaky scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: Swatinem/rust-cache@v2
+      - uses: ./.github/actions/setup-protoc
+
+      # 脚本用 `cargo metadata` 取权威 crate 列表、并按 crate 名正则匹配
+      # target/debug/deps 下的产物，所以必须先真正编译出测试二进制，
+      # 否则 workspace_lib_binaries() 返回空、脚本以退出码 2 失败
+      #（它把「一个都没扫到」显式判为失败，正是为了避免假绿灯）。
+      #
+      # 排除项对齐 ci.yml 的 test-light：bridge / sandboxd 在本仓库会 OOM
+      # （19.5 GiB 实测 -j 2 都不安全），既编不出来也跑不动。注意脚本的
+      # SLOW_CRATES 只排除「慢」crate，并**不含**这两个，所以排除必须写在
+      # 这一步，否则会在 runner 上被 OOM 直接杀掉。
+      - name: Build lib test binaries
+        run: |
+          cargo test --workspace --lib --no-run \
+            --exclude sisyphus-bridge \
+            --exclude sisyphus-sandboxd \
+            --exclude sisyphus-sandbox
+
+      # 失败现场默认写到 $JCODE_SCRATCH_DIR/flaky-reports——那是本地开发者的
+      # 目录，CI 上不会设置，会退回 /tmp/flaky-reports，而 upload-artifact
+      # 的 path 解析不到仓库内就无法可靠上传。这里显式指到工作区，
+      # 让落盘与上传路径一致；否则失败现场的保存会静默丢失，
+      # 而那正是复现 flaky 最需要的东西。
+      #
+      # --keep-going：脚本默认一遇失败就 break（`if not args.keep_going` 分支），
+      # 只跑了前几轮就中止。CI 里要的是完整现场——同一个二进制可能只有某些
+      # 轮次失败，扫完才能看出它是"偶发 1 次"还是"持续崩"，这直接决定人怎么解读。
+      - name: Scan for flaky tests
+        env:
+          JCODE_SCRATCH_DIR: ${{ github.workspace }}
+        run: |
+          python3 scripts/scan_flaky.py \
+            --keep-going \
+            --rounds "${{ github.event.inputs.rounds || '16' }}" \
+            --jobs "${{ github.event.inputs.jobs || '4' }}"
+
+      - name: Upload failure logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: flaky-reports
+          path: flaky-reports/
+          if-no-files-found: ignore
+
+      # 脚本只在 failures 非空时才 makedirs 出 flaky-reports/，所以这个目录
+      # 的存在与「本轮发现了概率性失败」严格等价——不存在恒假分支。
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "## Flaky 扫描结果"
+            echo ""
+            echo "- 轮数: ${{ github.event.inputs.rounds || '16' }}"
+            echo "- 并发: ${{ github.event.inputs.jobs || '4' }}"
+            if [ -d flaky-reports ]; then
+              echo "- 结果: 发现概率性失败，失败现场见 artifact"
+              echo ""
+              echo "请对照上面的 x/N 判断性质：偶发 1 次多为竞态，持续 N/N 多为真实缺陷。"
+              echo "低频缺陷在受控环境常无法复现，必要时在本地用 make scan-flaky 重跑。"
+            else
+              echo "- 结果: 未发现概率性失败"
+              echo ""
+              echo "注意：全绿只代表本轮这 N 次采样没撞上，不等于不存在 flaky。"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
