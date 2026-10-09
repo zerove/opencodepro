@@ -54,6 +54,7 @@ crates/sisyphus-sandbox/proptest-regressions/
 # 临时产物，不入库：进度文件与目标机器的已完成集绑定，
 # 提交上去只会让别人的 checkout 误以为“已经测过了”。
 .testall-progress
+.testall-timings
 .testall-chunk.log
 .testall-chunk.log.*
 .testall-chunk-summary.log

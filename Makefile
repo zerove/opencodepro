@@ -166,7 +166,7 @@ test-all:
 # 逐 crate 跑 test-all 的每个成员，每跑完一个就把名字追加到 .testall-progress。
 #
 # 为什么要这个而不是直接用 `make test-all`：
-# `cargo test --workspace` 是一次性调用，21 个 crate 串在同一进程里，
+# `cargo test --workspace` 是一次性调用，23 个 crate 串在同一进程里，
 # 任一环节卡住（或被 600s 外部超时打断）就**全部白跑**，且 `tail` 缓冲
 # 让你看不到中间进度，只能看到最后几行。
 # 实测 2026-10-08：`make test-all` 跑满 600s 被杀，已完成 24 个测试
@@ -175,6 +175,18 @@ test-all:
 # 而 `make test-all` 内部那条超时用例（cognitive_trace_persist_test）
 # 在隔离复跑时只要 29.29s，在全量并发下却要 306.47s —— 逐 crate 跑
 # 既能拿到完整结论，也能看出哪些用例对负载敏感。
+#
+# 实测耗时（2026-10-09，回收 93.4 GB 磁盘之后）：23 个 crate 全部通过，
+# 0 失败 0 超时。**总计约 2650s（44 分钟）**，而不是早期记的 2405s ——
+# 那个数字只是 22 个 crate 的和：`sisyphus-core` 是在外层 bash 被超时
+# 杀掉后、作为孤儿进程跑完的（32 个 ok 块 / 0 失败，已核验），我随后手动
+# 把它记进了 .testall-progress，因此它没有对应的计时行，累加时被漏掉。
+# 由进程启动时刻与日志最后写入时间反推，core 约 247–274s。
+# 2405s 与「23/23 全过」并不矛盾，但两者不可同时相加使用。
+#
+# 最慢的几个：sisyphus-cli 364s、sisyphus-knowledge 229s、
+# sisyphus-intel 219s、sisyphus-mem 208s。这解释了为什么单次
+# `make test-all` 必然超时：总耗时是 600s 上限的四倍多。
 #
 # 用法：
 #   make test-all-chunk        # 跑全部，已完成的自动跳过
@@ -185,7 +197,7 @@ test-all-chunk:
 	@bash scripts/run_test_chunks.sh
 
 test-all-chunk-reset:
-	@rm -f .testall-progress .testall-chunk.log .testall-chunk.log.* .testall-chunk-summary.log
+	@rm -f .testall-progress .testall-timings .testall-chunk.log .testall-chunk.log.* .testall-chunk-summary.log
 	@echo "已清空进度，下次 make test-all-chunk 将从头开始"
 
 # 概率性失败（flaky test）扫描：把每个 crate 的 lib 测试二进制重复跑多轮，

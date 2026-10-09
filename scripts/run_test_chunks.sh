@@ -22,6 +22,10 @@ set -uo pipefail
 
 PROGRESS=".testall-progress"
 LOG=".testall-chunk.log"
+# 每个通过 crate 的实测耗时（"<crate> <秒>"）。与 .testall-progress 分开：
+# 进度回答「哪些跑过了」，耗时回答「总共要多久」，两者混在一处会导致
+# 跳过时无法区分「本来就快」与「这次没跑」。
+TIMINGS=".testall-timings"
 # 单个 crate 的墙上时间上限。默认 600s：实测最慢的 core 在机器满载时
 # 也要 300s 出头，600s 留了余量；再大就会让「卡死」和「慢」分不清。
 CRATE_TIMEOUT="${CRATE_TIMEOUT:-600}"
@@ -29,7 +33,7 @@ CRATE_TIMEOUT="${CRATE_TIMEOUT:-600}"
 cd "$(dirname "$0")/.." || exit 1
 
 if [ "${1:-}" = "--reset" ]; then
-    rm -f "$PROGRESS" "$LOG"
+    rm -f "$PROGRESS" "$LOG" "$TIMINGS"
     echo "已重置进度"
 fi
 
@@ -136,7 +140,14 @@ for pkg in "${TARGETS[@]}"; do
 
     if [ $rc -eq 0 ]; then
         printf '✅ %ss\n' "$elapsed"
+        # 进度与耗时写入**独立文件**，不依赖 stdout。
+        # 原因：实测踩过——外层 bash 被 600s 超时杀掉时，某个 crate
+        # （sisyphus-core）已作为孤儿进程跑完并通过，但它的 ✅ 行随 stdout
+        # 一起丢了，只能事后手工补记 .testall-progress，结果「总计耗时」
+        # 漏掉了它（2405s 实为 22 个 crate 的和）。stdout 一旦丢，
+        # 耗时无法事后重建。
         echo "$pkg" >> "$PROGRESS"
+        echo "$pkg $elapsed" >> "$TIMINGS"
         done_count=$((done_count + 1))
         rm -f "$LOG.$pkg"
     elif [ $rc -eq 124 ]; then
@@ -155,6 +166,18 @@ done
 echo ""
 echo "━━━ 结果 ━━━"
 echo "通过 $done_count / ${#TARGETS[@]}，失败 $fail_count"
+
+# 总耗时从 TIMINGS 文件求和，而不是靠 stdout 累加。
+if [ -f "$TIMINGS" ]; then
+    total=$(awk '{s+=$2} END {print s+0}' "$TIMINGS")
+    n=$(wc -l < "$TIMINGS")
+    echo "已记录耗时: ${total}s（$n 个 crate，来自 $TIMINGS）"
+    if [ "$n" -lt "${#TARGETS[@]}" ]; then
+        echo "  ℹ️  本次只跑了 $n 个——已通过的会跳过。完整一轮需先 make test-all-chunk-reset"
+    fi
+    slowest=$(sort -k2 -rn "$TIMINGS" | head -3 | awk '{printf "%s=%ss ", $1, $2}')
+    echo "  最慢: $slowest"
+fi
 if [ $fail_count -gt 0 ]; then
     echo ""
     echo "失败清单："
