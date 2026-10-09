@@ -12,6 +12,11 @@
 #    在隔离复跑时只要 29.29s，在全量并发下要 306.47s。逐 crate 跑同时
 #    也给出了“哪个 crate 对机器负载敏感”的信息。
 #
+# 3. 记录必须由脱离父进程的进程来做。实测踩过：本脚本被 600s 外部超时
+#    杀掉时，正在跑的 crate 作为孤儿进程跑完并通过，但父 shell 一死就没人
+#    写耗时，总计少了它（2405s 实为 22 个 crate 之和）。现在由
+#    scripts/run_one_chunk.sh setsid 执行并 O_APPEND 落盘，父 shell 只轮询结果。
+#
 # 退出码：只要有任何 crate 失败就返回 1，并列出失败清单。
 # 用法：
 #   bash scripts/run_test_chunks.sh            # 跳过已完成的
@@ -22,18 +27,23 @@ set -uo pipefail
 
 PROGRESS=".testall-progress"
 LOG=".testall-chunk.log"
-# 每个通过 crate 的实测耗时（"<crate> <秒>"）。与 .testall-progress 分开：
-# 进度回答「哪些跑过了」，耗时回答「总共要多久」，两者混在一处会导致
-# 跳过时无法区分「本来就快」与「这次没跑」。
-TIMINGS=".testall-timings"
-# 单个 crate 的墙上时间上限。默认 600s：实测最慢的 core 在机器满载时
-# 也要 300s 出头，600s 留了余量；再大就会让「卡死」和「慢」分不清。
+# 单个状态的原子记录：每行 "<crate> <status> <秒>"，status ∈ ok|timeout|fail。
+# 它同时回答「哪些跑过了」和「总共要多久」，所以 progress 与 timings 没必要
+# 分成两个文件——分成两个就会出现「已通过但耗时丢了」或反过来的不一致
+# （实测踩过：2405s 少算了 sisyphus-core）。一行同时记两件事，写一次就一致。
+# 写入由 scripts/run_one_chunk.sh 用 O_APPEND 单行追加完成，父 shell 被杀也照写。
+STATE=".testall-state"
 CRATE_TIMEOUT="${CRATE_TIMEOUT:-600}"
 
+# 先切到仓库根，下面的相对路径都以此为基准。
 cd "$(dirname "$0")/.." || exit 1
 
+# 单个 crate 的执行器。从 $0 推导而非 $(pwd)：调用者可能在任意目录下
+# 执行本脚本，$(pwd) 会指向错误的仓库根。
+WRAPPER="$(pwd)/scripts/run_one_chunk.sh"
+
 if [ "${1:-}" = "--reset" ]; then
-    rm -f "$PROGRESS" "$LOG" "$TIMINGS"
+    rm -f "$PROGRESS" "$LOG" "$STATE" "$STATE".log.*
     echo "已重置进度"
 fi
 
@@ -121,45 +131,65 @@ done_count=0
 fail_count=0
 failed_list=()
 
+# 从单行状态文件里读某个 crate 的最后一条结果。
+# 用 grep 而不是 source/eval：状态文件是磁盘产物，当成数据而非代码执行。
+last_result() {
+    awk -v p="$1" '$1==p {r=$2; t=$3} END {if (r!="") print r, t}' "$STATE" 2>/dev/null
+}
+
 for pkg in "${TARGETS[@]}"; do
-    if [ -f "$PROGRESS" ] && grep -qxF "$pkg" "$PROGRESS"; then
-        echo "⏭️   $pkg（已通过，跳过）"
-        done_count=$((done_count + 1))
+    prev="$(last_result "$pkg")"
+    if [ -n "$prev" ]; then
+        set -- $prev
+        if [ "$1" = ok ]; then
+            echo "⏭️   $pkg（已通过 ${2}s，跳过）"
+            done_count=$((done_count + 1))
+            continue
+        fi
+        # 之前失败/超时的会重跑——它们不写 ok，状态行留着以便追溯。
+    fi
+
+    printf '▶️  %-32s ' "$pkg"
+
+    # 交给独立 wrapper 执行并记录。它 setsid 脱离父进程组，所以父 shell
+    # 被外部超时杀掉时，它照样跑完并写下结果行。父 shell 只负责等结果。
+    before=$(wc -l < "$STATE" 2>/dev/null || echo 0)
+    bash "$WRAPPER" "$pkg" "$STATE" "$CRATE_TIMEOUT"
+    rc=$?
+    after=$(wc -l < "$STATE" 2>/dev/null || echo 0)
+
+    # wrapper 已 setsid 脱离，会立刻返回；这里轮询等结果行落盘。
+    # 上限 = CRATE_TIMEOUT + 余量，超了说明 wrapper 没能记录，如实报告而不是
+    # 把它当成「通过」——「没记录」和「通过」必须区分开。
+    waited=0
+    while [ "$after" -le "$before" ] && [ "$waited" -lt $((CRATE_TIMEOUT + 120)) ]; do
+        sleep 2
+        waited=$((waited + 2))
+        after=$(wc -l < "$STATE" 2>/dev/null || echo 0)
+    done
+
+    if [ "$after" -le "$before" ]; then
+        printf '❓ 未记录结果（等 %ss 仍无记录行）\n' "$waited"
+        failed_list+=("$pkg (无结果记录)")
+        fail_count=$((fail_count + 1))
         continue
     fi
 
-    start=$(date +%s)
-    printf '▶️  %-32s ' "$pkg"
+    set -- $(last_result "$pkg")
+    status="${1:-}"; elapsed="${2:-0}"
 
-    # 单 crate 独立超时：否则一个卡死的 crate 会拖死整轮。
-    timeout "${CRATE_TIMEOUT}" \
-        env CARGO_BUILD_JOBS=1 cargo test -p "$pkg" --no-fail-fast \
-        > "$LOG.$pkg" 2>&1
-    rc=$?
-    elapsed=$(( $(date +%s) - start ))
-
-    if [ $rc -eq 0 ]; then
+    if [ "$status" = ok ]; then
         printf '✅ %ss\n' "$elapsed"
-        # 进度与耗时写入**独立文件**，不依赖 stdout。
-        # 原因：实测踩过——外层 bash 被 600s 超时杀掉时，某个 crate
-        # （sisyphus-core）已作为孤儿进程跑完并通过，但它的 ✅ 行随 stdout
-        # 一起丢了，只能事后手工补记 .testall-progress，结果「总计耗时」
-        # 漏掉了它（2405s 实为 22 个 crate 的和）。stdout 一旦丢，
-        # 耗时无法事后重建。
-        echo "$pkg" >> "$PROGRESS"
-        echo "$pkg $elapsed" >> "$TIMINGS"
         done_count=$((done_count + 1))
-        rm -f "$LOG.$pkg"
-    elif [ $rc -eq 124 ]; then
+    elif [ "$status" = timeout ]; then
         printf '⏱️  %ss 超时（上限 %ss）\n' "$elapsed" "$CRATE_TIMEOUT"
         failed_list+=("$pkg (超时 ${elapsed}s)")
         fail_count=$((fail_count + 1))
     else
         printf '❌ %ss\n' "$elapsed"
-        # 失败详情保留在日志里供查
         failed_list+=("$pkg (exit $rc)")
         fail_count=$((fail_count + 1))
-        grep -E '^test result: FAILED|^error(\[|:)' "$LOG.$pkg" 2>/dev/null | head -5 | sed 's/^/      /'
+        grep -E '^test result: FAILED|^error(\[|:)' "$STATE".log."$pkg" 2>/dev/null | head -5 | sed 's/^/      /'
     fi
 done
 
@@ -167,15 +197,17 @@ echo ""
 echo "━━━ 结果 ━━━"
 echo "通过 $done_count / ${#TARGETS[@]}，失败 $fail_count"
 
-# 总耗时从 TIMINGS 文件求和，而不是靠 stdout 累加。
-if [ -f "$TIMINGS" ]; then
-    total=$(awk '{s+=$2} END {print s+0}' "$TIMINGS")
-    n=$(wc -l < "$TIMINGS")
-    echo "已记录耗时: ${total}s（$n 个 crate，来自 $TIMINGS）"
+# 总耗时从状态文件求和，而不是靠 stdout 累加。
+# 只累加 status=ok 的行：失败和超时也会留下行，累加进去会让「总耗时」
+# 看起来像一轮完整通过的耗时。
+if [ -s "$STATE" ]; then
+    total=$(awk '$2=="ok" {s+=$3} END {print s+0}' "$STATE")
+    n=$(awk '$2=="ok"' "$STATE" | wc -l)
+    echo "已记录耗时: ${total}s（$n 个 crate 通过，来自 $STATE）"
     if [ "$n" -lt "${#TARGETS[@]}" ]; then
         echo "  ℹ️  本次只跑了 $n 个——已通过的会跳过。完整一轮需先 make test-all-chunk-reset"
     fi
-    slowest=$(sort -k2 -rn "$TIMINGS" | head -3 | awk '{printf "%s=%ss ", $1, $2}')
+    slowest=$(awk '$2=="ok"' "$STATE" | sort -k3 -rn | head -3 | awk '{printf "%s=%ss ", $1, $3}')
     echo "  最慢: $slowest"
 fi
 if [ $fail_count -gt 0 ]; then
@@ -185,7 +217,7 @@ if [ $fail_count -gt 0 ]; then
         echo "  - $f"
     done
     echo ""
-    echo "失败 crate 的完整日志保留在 ${LOG}.*"
+    echo "失败 crate 的完整日志保留在 ${STATE}.log.*"
     exit 1
 fi
 echo "全部通过"

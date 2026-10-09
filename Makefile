@@ -84,7 +84,7 @@ TOOLS_PACKAGES = \
 
 HEAVY_PACKAGES = sisyphus-sandbox sisyphus-sandboxd sisyphus-tests
 
-.PHONY: all check-all build-all test-all test-all-chunk test-all-chunk-reset scan-flaky flaky-replay rustc-abort-forensics
+.PHONY: all check-all build-all test-all test-all-chunk test-all-chunk-reset test-chunk-selfcheck scan-flaky flaky-replay rustc-abort-forensics
 .PHONY: check-bridge build-bridge test-bridge check-bridge-160
 .PHONY: check-bridge-nosandbox test-bridge-nosandbox
 .PHONY: check-sandbox build-sandboxd test-sandbox check-sandboxd test-sandboxd test-tests check-tests
@@ -163,7 +163,8 @@ test-all:
 	@echo "  .github/workflows/ci.yml — bridge_integration_test / skill_market_rest_test / sisyphus-tests --lib"
 	@echo "本地需单独验证请用： cargo test -p sisyphus-bridge --no-default-features --lib"
 
-# 逐 crate 跑 test-all 的每个成员，每跑完一个就把名字追加到 .testall-progress。
+# 逐 crate 跑 test-all 的每个成员，每跑完一个就把「状态 + 耗时」追加到
+# .testall-state（单行 "<crate> <ok|timeout|fail> <秒>"）。
 #
 # 为什么要这个而不是直接用 `make test-all`：
 # `cargo test --workspace` 是一次性调用，23 个 crate 串在同一进程里，
@@ -188,6 +189,13 @@ test-all:
 # sisyphus-intel 219s、sisyphus-mem 208s。这解释了为什么单次
 # `make test-all` 必然超时：总耗时是 600s 上限的四倍多。
 #
+# 「记录」为什么交给子进程：父 shell 被外部超时杀掉时，正在跑的 crate
+# 作为孤儿进程跑完并通过，但父 shell 一死就没人写耗时——2405s 漏算 core
+# 就是这么来的。现在 scripts/run_one_chunk.sh 用 setsid 脱离父进程组执行，
+# 并用 O_APPEND 单行追加落盘，父 shell 只轮询结果行。
+# 自检（含真实进程组 SIGKILL 与去掉 setsid 的变异对照）：
+#   make test-chunk-selfcheck
+#
 # 用法：
 #   make test-all-chunk        # 跑全部，已完成的自动跳过
 #   make test-all-chunk-reset  # 清空进度，下次从头跑
@@ -197,8 +205,14 @@ test-all-chunk:
 	@bash scripts/run_test_chunks.sh
 
 test-all-chunk-reset:
-	@rm -f .testall-progress .testall-timings .testall-chunk.log .testall-chunk.log.* .testall-chunk-summary.log
+	@rm -f .testall-progress .testall-state .testall-state.log.* .testall-chunk.log .testall-chunk.log.* .testall-chunk-summary.log
 	@echo "已清空进度，下次 make test-all-chunk 将从头开始"
+
+# 自检：证明 run_one_chunk.sh 真的能在父进程组被 SIGKILL 后仍然记录结果。
+# 必须有这一步，否则「父进程死了也能记」只是一句没人验证过的说法。
+# 内含阳性对照与变异对照（强制禁用 setsid 后必须不再记录）。
+test-chunk-selfcheck:
+	@bash scripts/selfcheck_run_one_chunk.sh
 
 # 概率性失败（flaky test）扫描：把每个 crate 的 lib 测试二进制重复跑多轮，
 # 统计失败率。单次 `cargo test` 全绿无法证明不存在竞态——本项目多处缺陷
