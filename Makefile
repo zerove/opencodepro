@@ -576,18 +576,27 @@ target-size:
 #   make mem-probe                          # 默认（轻量，仅冒烟）
 #   make mem-probe PKG=sisyphus-sandbox JOBS=2 COLD=1   # 真冷编译 -j 2
 #
-# 本机（i7-8750H 6C12T / 19 GiB）冷编译 `cargo check -p sisyphus-sandbox`
-# 的实测三档，2026-10-09，均为独立 target 目录 + 全冷依赖树：
+# 本机（i7-8750H 6C12T / 19 GiB）冷编译 `cargo check -p sisyphus-sandbox`，
+# 独立 CARGO_TARGET_DIR + 全冷依赖树，2026-10-09：
 #
 #   并行度   rustc RSS 峰值   进程数   耗时
-#   -j 12       2.22 GB        12      412s    ← 裸跑 cargo 的默认值
+#   -j 12       2.40 GB        12      224s
 #   -j  2       1.43 GB         2      542s
-#   -j  1       0.63 GB         1     >600s 未完
 #
-# 结论：`-j 2` 是本机的平衡点（比 -j 12 少 36% 内存，代价 32% 耗时）。
+# 两行可比：同工具、同命令、同冷启动条件，且均为**修正 --jobs 之后**测的
+# （即 CARGO_BUILD_JOBS 真正生效）。-j 2 省 0.97 GB（-40%），代价 318s（+142%）。
+#
+# ⚠ 不要再引用更早的 -j 12 = 2.22 GB / 412s 与 -j 1 = 633 MB：
+#   前者测于 mem_probe 修正 --jobs 之前（--jobs 只打印不生效，实际跑的是
+#   裸 cargo 默认并行度），已用上表 2.40 GB / 224s 取代；
+#   后者是 `cargo build` 的**单进程** RSS（/usr/bin/time -v 口径），
+#   与本表「并发驻留总和」不是同一指标，不可并列。
+#
+# 结论：`-j 2` 是本机的平衡点。注意耗时代价不小（+142%），
+# 只在内存吃紧时才用；日常热缓存增量编译两者差别很小。
 #
 # ⚠ 刻意**不**写进 `.cargo/config.toml` 的 `[build] jobs`：那是仓库级配置，
-# 会让 CI 与高性能机器也无条件慢 32%。真正受限的只有这台机器的重型命令，
+# 会让 CI 与高性能机器也无条件变慢。真正受限的只有这台机器的重型命令，
 # 而 `make check-all` / `test-all` 等已自带 `CARGO_BUILD_JOBS=1`，
 # 裸跑 cargo 才会落到 12 并行——那正是需要手动传 `JOBS=2` 的场景。
 MEM_PROBE_PKG ?= sisyphus-types
