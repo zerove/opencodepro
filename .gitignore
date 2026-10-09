@@ -66,3 +66,5 @@ crates/sisyphus-sandbox/proptest-regressions/
 .heavy2.start
 .heavy.end
 .heavy2.end
+.bridge-state
+.bridge-state.log.*
