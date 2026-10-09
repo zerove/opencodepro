@@ -71,6 +71,30 @@ impl Consensus for DummyConsensus {
     }
 }
 
+/// 测试专用临时目录，按进程 ID 隔离。
+///
+/// `MetaLearner` 在构造时会**读取**磁盘上已有的 `samples.json`（此处
+/// `load_samples` 会把 486 条历史样本载入内存），`FeedbackStore` /
+/// `ContinuousBenchmark` 同样把状态写在构造参数给出的目录里。此前这几处
+/// 都指向**固定的** `.omo/...` 路径，因此测试结果会受仓库里残留的运行时
+/// 数据影响，且多个测试进程互相写入同一目录。
+///
+/// 实测记录：带着一份 80KB 的残留 `samples.json` 跑
+/// `--test-threads=1`，`test_full_pipeline` / `test_concurrent_execution`
+/// 会报 `AllIterationsPivoted`；删掉该文件后同样命令 11/11 通过。
+///
+/// 注意：反向对照（保留共享 `.omo/meta_test` 路径 + 保留残留文件）**也**
+/// 通过，因此不能断言残留文件就是唯一原因；只能确认测试不应依赖固定
+/// 路径下的历史数据。按 PID 隔离消除了这个变量本身。
+fn test_state_dir(tag: &str) -> String {
+    format!(
+        "{}/sisyphus_tests_{}_{}",
+        std::env::temp_dir().display(),
+        std::process::id(),
+        tag
+    )
+}
+
 async fn setup_kernel(db_url: Option<&str>) -> SisyphusKernel {
     let url = db_url.unwrap_or("sqlite::memory:");
     let state_store = Arc::new(
@@ -124,7 +148,7 @@ async fn setup_kernel(db_url: Option<&str>) -> SisyphusKernel {
     let builtin_executor: Arc<dyn ToolExecutor> = Arc::new(BuiltinToolExecutor {
         registry: HookRegistry::new(),
         llm_client: Arc::new(sisyphus_tools_llm::metis::DummyLlmClient),
-        feedback_store: Arc::new(FeedbackStore::new(".omo/feedback")),
+        feedback_store: Arc::new(FeedbackStore::new(test_state_dir("feedback"))),
         bridge_client: None,
     });
     let router = Arc::new(ExecutorRouter::new(tool_executor.clone()));
@@ -147,7 +171,7 @@ async fn setup_kernel(db_url: Option<&str>) -> SisyphusKernel {
 
     let synthesizer = Arc::new(GoalDrivenSynthesizer::new(tool_executor.clone()));
     let experience_bank: Arc<dyn ExperienceBank> = Arc::new(DummyExperienceBank);
-    let meta_learner = Arc::new(Mutex::new(MetaLearner::new(".omo/meta_test")));
+    let meta_learner = Arc::new(Mutex::new(MetaLearner::new(&test_state_dir("meta"))));
     let consensus: Arc<dyn Consensus> = Arc::new(DummyConsensus);
 
     SisyphusKernel::new(
@@ -392,7 +416,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_benchmark_record_and_trend() {
-        let mut bm = ContinuousBenchmark::new(".omo/benchmarks_test");
+        let mut bm = ContinuousBenchmark::new(&test_state_dir("benchmarks"));
         let name = "test_bench";
 
         for i in 0..5 {
@@ -416,7 +440,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_meta_learner_outcomes() {
-        let mut ml = MetaLearner::new(".omo/meta_test");
+        let mut ml = MetaLearner::new(&test_state_dir("meta_outcomes"));
         let ctx = serde_json::json!({"task": "coding"});
 
         for _ in 0..3 {
