@@ -9,8 +9,8 @@ name = "sisyphus_knowledge"
 path = "src/lib.rs"
 
 [dependencies]
-sisyphus-types = { path = "../sisyphus-types" }
-sisyphus-intel = { path = "../sisyphus-intel" }
+sisyphus-types = { version = "0.1.0", path = "../sisyphus-types" }
+sisyphus-intel = { version = "0.1.0", path = "../sisyphus-intel" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 tokio = { version = "1.0", features = ["full"] }

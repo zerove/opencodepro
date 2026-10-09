@@ -7,10 +7,10 @@ description = "Cognitive loop: flow synthesis, Monte Carlo simulation, reflectio
 license = "MIT"
 
 [dependencies]
-sisyphus-types = { path = "../sisyphus-types" }
-sisyphus-metrics = { path = "../sisyphus-metrics" }
-sisyphus-tools-llm = { path = "../sisyphus-tools-llm" }
-sisyphus-tools-llm-tools = { path = "../sisyphus-tools-llm-tools" }
+sisyphus-types = { version = "0.1.0", path = "../sisyphus-types" }
+sisyphus-metrics = { version = "0.1.0", path = "../sisyphus-metrics" }
+sisyphus-tools-llm = { version = "0.1.0", path = "../sisyphus-tools-llm" }
+sisyphus-tools-llm-tools = { version = "0.1.0", path = "../sisyphus-tools-llm-tools" }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 md5 = "0.7"

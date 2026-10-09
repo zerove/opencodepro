@@ -18,19 +18,19 @@ async-trait = { workspace = true }
 serde_json = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 tracing = { workspace = true, features = ["attributes"] }
-sisyphus-metrics = { path = "../sisyphus-metrics" }
-sisyphus-sandbox = { path = "../sisyphus-sandbox", optional = true }
-sisyphus-types = { path = "../sisyphus-types" }
-sisyphus-mem = { path = "../sisyphus-mem" }
-sisyphus-intel = { path = "../sisyphus-intel" }
-sisyphus-tools-llm = { path = "../sisyphus-tools-llm" }
-sisyphus-tools-llm-tools = { path = "../sisyphus-tools-llm-tools" }
-sisyphus-tools-agent = { path = "../sisyphus-tools-agent" }
+sisyphus-metrics = { version = "0.1.0", path = "../sisyphus-metrics" }
+sisyphus-sandbox = { version = "0.1.0", path = "../sisyphus-sandbox", optional = true }
+sisyphus-types = { version = "0.1.0", path = "../sisyphus-types" }
+sisyphus-mem = { version = "0.1.0", path = "../sisyphus-mem" }
+sisyphus-intel = { version = "0.1.0", path = "../sisyphus-intel" }
+sisyphus-tools-llm = { version = "0.1.0", path = "../sisyphus-tools-llm" }
+sisyphus-tools-llm-tools = { version = "0.1.0", path = "../sisyphus-tools-llm-tools" }
+sisyphus-tools-agent = { version = "0.1.0", path = "../sisyphus-tools-agent" }
 
-sisyphus-tools-system = { path = "../sisyphus-tools-system" }
-sisyphus-tools-executor = { path = "../sisyphus-tools-executor" }
-sisyphus-tools-build = { path = "../sisyphus-tools-build" }
-sisyphus-roadmap = { path = "../sisyphus-roadmap" }
+sisyphus-tools-system = { version = "0.1.0", path = "../sisyphus-tools-system" }
+sisyphus-tools-executor = { version = "0.1.0", path = "../sisyphus-tools-executor" }
+sisyphus-tools-build = { version = "0.1.0", path = "../sisyphus-tools-build" }
+sisyphus-roadmap = { version = "0.1.0", path = "../sisyphus-roadmap" }
 futures = "0.3"
 parking_lot = "0.12"
 thiserror = { workspace = true }
@@ -43,7 +43,7 @@ sisyphus_visual = { version = "0.1.0", path = "../sisyphus-visual" }
 [dev-dependencies]
 proptest = "1.4"
 criterion = { version = "0.5", features = ["async_tokio"] }
-sisyphus-tools-llm = { path = "../sisyphus-tools-llm" }
+sisyphus-tools-llm = { version = "0.1.0", path = "../sisyphus-tools-llm" }
 tempfile = "3.10"
 sqlx = { version = "0.8", features = ["sqlite", "runtime-tokio-rustls"] }
 

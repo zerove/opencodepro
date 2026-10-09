@@ -16,7 +16,7 @@ opentelemetry = { workspace = true, optional = true }
 opentelemetry-otlp = { workspace = true, optional = true }
 opentelemetry_sdk = { workspace = true, optional = true }
 opentelemetry-semantic-conventions = { workspace = true, optional = true }
-sisyphus-types = { path = "../sisyphus-types" }
+sisyphus-types = { version = "0.1.0", path = "../sisyphus-types" }
 thiserror = { workspace = true }
 
 [features]

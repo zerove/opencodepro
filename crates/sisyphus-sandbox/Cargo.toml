@@ -12,8 +12,8 @@ wat = "1"
 [dependencies]
 async-trait = { workspace = true }
 tokio = { version = "1", features = ["full"] }
-sisyphus-types = { path = "../sisyphus-types" }
-sisyphus-metrics = { path = "../sisyphus-metrics" }
+sisyphus-types = { version = "0.1.0", path = "../sisyphus-types" }
+sisyphus-metrics = { version = "0.1.0", path = "../sisyphus-metrics" }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 dashmap = "6.0"

@@ -5,8 +5,8 @@ edition = "2021"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
-sisyphus-types = { path = "../sisyphus-types" }
-sisyphus-intel = { path = "../sisyphus-intel" }
+sisyphus-types = { version = "0.1.0", path = "../sisyphus-types" }
+sisyphus-intel = { version = "0.1.0", path = "../sisyphus-intel" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 metrics = "0.24"

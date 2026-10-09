@@ -5,14 +5,14 @@ edition = "2021"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
-sisyphus-core = { path = "../sisyphus-core" }
-sisyphus-intel = { path = "../sisyphus-intel" }
-sisyphus-mem = { path = "../sisyphus-mem" }
-sisyphus-sandbox = { path = "../sisyphus-sandbox" }
-sisyphus-types = { path = "../sisyphus-types" }
-sisyphus-knowledge = { path = "../sisyphus-knowledge" }
-sisyphus-tools-executor = { path = "../sisyphus-tools-executor" }
-sisyphus_visual = { path = "../sisyphus-visual" }
+sisyphus-core = { version = "0.1.0", path = "../sisyphus-core" }
+sisyphus-intel = { version = "0.1.0", path = "../sisyphus-intel" }
+sisyphus-mem = { version = "0.1.0", path = "../sisyphus-mem" }
+sisyphus-sandbox = { version = "0.1.0", path = "../sisyphus-sandbox" }
+sisyphus-types = { version = "0.1.0", path = "../sisyphus-types" }
+sisyphus-knowledge = { version = "0.1.0", path = "../sisyphus-knowledge" }
+sisyphus-tools-executor = { version = "0.1.0", path = "../sisyphus-tools-executor" }
+sisyphus_visual = { version = "0.1.0", path = "../sisyphus-visual" }
 tokio = { version = "1", features = ["full"] }
 serde_json = { workspace = true }
 async-trait = { workspace = true }
@@ -20,13 +20,13 @@ petgraph = "0.6"
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 tempfile = "3.8"
-sisyphus-tools-llm = { path = "../sisyphus-tools-llm" }
-sisyphus-roadmap = { path = "../sisyphus-roadmap" }
-sisyphus-tools-llm-tools = { path = "../sisyphus-tools-llm-tools" }
-sisyphus-tools-core = { path = "../sisyphus-tools-core" }
-sisyphus-tools-agent = { path = "../sisyphus-tools-agent" }
-sisyphus-bridge = { path = "../sisyphus-bridge" }
+sisyphus-tools-llm = { version = "0.1.0", path = "../sisyphus-tools-llm" }
+sisyphus-roadmap = { version = "0.1.0", path = "../sisyphus-roadmap" }
+sisyphus-tools-llm-tools = { version = "0.1.0", path = "../sisyphus-tools-llm-tools" }
+sisyphus-tools-core = { version = "0.1.0", path = "../sisyphus-tools-core" }
+sisyphus-tools-agent = { version = "0.1.0", path = "../sisyphus-tools-agent" }
+sisyphus-bridge = { version = "0.1.0", path = "../sisyphus-bridge" }
 parking_lot = "0.12"
-sisyphus-tools-build = { path = "../sisyphus-tools-build" }
-sisyphus-cli = { path = "../sisyphus-cli" }
+sisyphus-tools-build = { version = "0.1.0", path = "../sisyphus-tools-build" }
+sisyphus-cli = { version = "0.1.0", path = "../sisyphus-cli" }
 sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "sqlite"] }

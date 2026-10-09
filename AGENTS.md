@@ -113,8 +113,28 @@ cargo bench -p sisyphus-core   # 认知循环 benchmark
 
 ## 备注
 
-- 需要 nightly Rust（rust-override 已设），因 bridge 在 1.96.0 stable 有 ICE
+- 工具链：仓库**没有** `rust-toolchain.toml`，不固定版本。实测 stable 与
+  nightly 均可编译（含 `sisyphus-bridge`、`sisyphus-sandboxd` 的
+  `--all-targets`），代码里也没有 nightly 专属的 `#![feature(...)]` 或
+  cargo feature。
+- 本机 `rustup override` 指向 `nightly`，但环境变量 `RUSTUP_TOOLCHAIN=1.99.0`
+  会覆盖它，因此**实际生效的是 stable `rustc 1.99.0` / `cargo 1.99.0`**。
+  排查构建问题前先确认 `rustc --version`，不要假设在用 nightly。
+- CI（`.github/workflows/ci.yml`）、`Dockerfile`、`CONTRIBUTING.md` 仍统一
+  使用 nightly。若要在 stable 上开发，本地需显式设置 `RUSTUP_TOOLCHAIN`，
+  否则会与 CI 的编译器版本不一致。
 - Bridge 默认绑定 `[::1]:50051`，有 IPv6→IPv4 自动回退
+- 内部 crate 的路径依赖均带 `version = "0.1.0"`，这是 `cargo package` 的
+  硬性要求（缺 version 会报 “all dependencies must have a version
+  requirement specified when packaging”）。全部内部 crate 当前都是 0.1.0。
+- **当前仍无法完成打包**：manifest 校验已通过，但 `cargo package` 会去
+  crates.io 查 `sisyphus-bridge-api` / `sisyphus-metrics` 等内部 crate 而
+  失败（“no matching package named ... found”）。仓库没有任何发布流程
+  （无 `publish = false`、无 `cargo publish`、CI 也不打包），因此这些
+  crate 实际是**仅本地**使用。若将来要发布，必须先整体发布内部 crate，
+  或改用 workspace 依赖 + 私有 registry。
+- Release 构建已验证：`cargo build --release -p sisyphus-bridge -p sisyphus-sandboxd`
+  均成功，产物可执行（`sisyphus-sandboxd --help` 正常）。
 - 全局 CLAUDE.md 通过 `@RTK.md` 引用 RTK token 优化工具
 
 ---

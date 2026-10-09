@@ -12,4 +12,4 @@ metrics = "0.24"
 tempfile = "3"
 chrono = "0.4"
 serde_yaml = "0.9"
-sisyphus-tools-core = { path = "../sisyphus-tools-core" }
+sisyphus-tools-core = { version = "0.1.0", path = "../sisyphus-tools-core" }
