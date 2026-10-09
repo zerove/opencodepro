@@ -393,6 +393,59 @@ mod tests {
         );
     }
 
+    /// 锁定实际燃料消耗的**具体数值**，而不只是「耗尽了会报错」。
+    ///
+    /// 为什么需要：`test_execute_fuel_exhaustion` 只能证明限制**生效**，
+    /// 证明不了消耗量本身没变。RUSTSEC-2026-0315（wasmtime
+    /// `call_ref` / exception `catch` 丢失燃料计账 → 指数放大）就是
+    /// 「仍在计账、但少数路径漏记」——那种退化只会让同样的 wasm 烧掉更多
+    /// 燃料，既不会触发耗尽也不会让现有测试变红，却会直接抬高真实执行成本。
+    ///
+    /// 基线为 wasmtime 47.0.4 实测值；升级到 48.0.5 后逐一比对完全一致
+    /// （hello=2 / fast_tool=2），故可作为跨版本回归锚点。
+    ///
+    /// 注意：这是**行为锁定**，不是性能基准。数值若因上游指令计账口径调整
+    /// 而合理变化，需连同 wasmtime 升级一起更新本断言，并在提交里写明原因。
+    #[tokio::test]
+    async fn test_fuel_consumption_baseline_is_stable() {
+        use sisyphus_types::ToolExecutor;
+
+        let executor = test_executor();
+        for (tool_id, expected_fuel) in [("hello", 2u64), ("fast_tool", 2u64)] {
+            let (data, measurement) = executor
+                .execute_measured(tool_id, vec![], 1_000_000)
+                .await
+                .unwrap_or_else(|e| panic!("{tool_id} should execute: {e}"));
+            let consumed = measurement
+                .map(|m| m.fuel_consumed)
+                .unwrap_or_else(|| panic!("{tool_id} must report fuel measurement"));
+            assert_eq!(
+                consumed, expected_fuel,
+                "{tool_id} fuel consumption changed (baseline from wasmtime 47.0.4); \
+                 if the change is an intended upstream accounting change, update this \
+                 baseline in the same commit as the wasmtime bump and say why"
+            );
+            assert!(!data.is_empty() || tool_id == "fast_tool");
+        }
+    }
+
+    /// 恶意/失控模块必须被拦住，而不是靠燃料恰好用完。
+    ///
+    /// 与上面的数值断言互补：这条证明上限**有效**，那条证明计账**没漂**。
+    #[tokio::test]
+    async fn test_evil_tool_is_bounded_by_fuel() {
+        let executor = test_executor();
+        let result = executor.execute("evil_tool", vec![], 100_000).await;
+        assert!(
+            result.is_err(),
+            "evil_tool must be stopped by the fuel limit, not run to completion"
+        );
+        assert!(
+            result.unwrap_err().to_string().contains("ResourceExhausted"),
+            "evil_tool should fail with ResourceExhausted"
+        );
+    }
+
     #[tokio::test]
     async fn test_execute_memory_exhaustion() {
         let executor = test_executor();
