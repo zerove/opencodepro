@@ -155,6 +155,7 @@ impl sisyphus_intel::FlowSynthesizer for MockSynthesizer {
             tool_id: "mock_tool".into(),
             fuel_limit: 1_000_000,
             executor: Arc::new(MockExecutor::new()),
+            args: Vec::new(),
         }));
         Ok(sisyphus_intel::SynthesisResult {
             graph: Arc::new(graph),

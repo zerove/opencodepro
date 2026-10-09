@@ -10,13 +10,16 @@ use sisyphus_intel::{
 };
 use sisyphus_mem::MfsStore;
 use sisyphus_tools_build::benchmark::ContinuousBenchmark;
+use sisyphus_tools_core::feedback::FeedbackStore;
+use sisyphus_tools_core::hook::HookRegistry;
+use sisyphus_tools_executor::executor::BuiltinToolExecutor;
 use sisyphus_tools_llm::circuit_breaker::{BreakerConfig, CircuitBreaker};
 use sisyphus_tools_llm::{DummyEmbeddingClient, LlmClient};
 use sisyphus_tools_llm_tools::meta_learner::MetaLearner;
 use sisyphus_types::StateStore;
 use sisyphus_types::{
     experience::{ExperienceBank, ExperienceQuery, ExperienceTuple},
-    BenchmarkRun, CircuitState, MetaLearningSample, ToolExecutor, TypesError,
+    BenchmarkRun, CircuitState, ExecutorRouter, MetaLearningSample, ToolExecutor, TypesError,
 };
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -106,6 +109,28 @@ async fn setup_kernel(db_url: Option<&str>) -> SisyphusKernel {
             .expect("Failed to init WasmToolExecutor"),
     );
 
+    // 必须把 builtin 工具接进 router，否则 GoalDrivenSynthesizer 合成的
+    // `builtin:web_fetch` / `builtin:bash_exec` 会退回 router 的 default
+    // 执行器（即上面的 WASM 执行器），而那里根本没有同名 wasm。
+    //
+    // 实测症状：`execute_goal("fetch and store data", ...)` 报
+    // AllIterationsPivoted(1, "Node fetch produced output with deviation score
+    // 0.81")。0.81 = failure_rate 1.0 × 0.6 + Unknown 严重度 0.7 × 0.3
+    // —— 节点确实报错，而不是偏差算错。
+    //
+    // 生产路径（crates/sisyphus-bridge/src/bridge_service.rs:352-364）就是
+    // 这样装配的：WASM 作为 default，builtin 按 "builtin" 前缀注册。
+    // 这里原先只传了裸的 WasmToolExecutor，等于测的是一条生产中不存在的配置。
+    let builtin_executor: Arc<dyn ToolExecutor> = Arc::new(BuiltinToolExecutor {
+        registry: HookRegistry::new(),
+        llm_client: Arc::new(sisyphus_tools_llm::metis::DummyLlmClient),
+        feedback_store: Arc::new(FeedbackStore::new(".omo/feedback")),
+        bridge_client: None,
+    });
+    let router = Arc::new(ExecutorRouter::new(tool_executor.clone()));
+    router.register("builtin", builtin_executor);
+    let tool_executor: Arc<dyn ToolExecutor> = router;
+
     let simulator = Arc::new(MonteCarloSimulator::with_state_store(
         100,
         state_store.clone(),
@@ -181,24 +206,28 @@ mod tests {
             tool_id: "hello".into(),
             fuel_limit: 1_000_000,
             executor: tool_executor.clone(),
+            args: Vec::new(),
         }));
         let node_b = graph.add_node(Arc::new(WasmSOPNode {
             name: "node_b".into(),
             tool_id: "hello".into(),
             fuel_limit: 1_000_000,
             executor: tool_executor.clone(),
+            args: Vec::new(),
         }));
         let node_c = graph.add_node(Arc::new(WasmSOPNode {
             name: "node_c".into(),
             tool_id: "hello".into(),
             fuel_limit: 1_000_000,
             executor: tool_executor.clone(),
+            args: Vec::new(),
         }));
         let node_d = graph.add_node(Arc::new(WasmSOPNode {
             name: "node_d".into(),
             tool_id: "hello".into(),
             fuel_limit: 1_000_000,
             executor: tool_executor.clone(),
+            args: Vec::new(),
         }));
 
         graph.add_edge(node_a, node_b);
@@ -232,6 +261,7 @@ mod tests {
             tool_id: "infinite_loop".into(),
             fuel_limit: 100,
             executor: tool_executor.clone(),
+            args: Vec::new(),
         }));
 
         let (_, report, _) = kernel
@@ -293,12 +323,14 @@ mod tests {
             tool_id: "hello".into(),
             fuel_limit: 1_000_000,
             executor: tool_executor.clone(),
+            args: Vec::new(),
         }));
         let n2 = graph.add_node(Arc::new(WasmSOPNode {
             name: "step2".into(),
             tool_id: "hello".into(),
             fuel_limit: 1_000_000,
             executor: tool_executor.clone(),
+            args: Vec::new(),
         }));
         graph.add_edge(n1, n2);
 

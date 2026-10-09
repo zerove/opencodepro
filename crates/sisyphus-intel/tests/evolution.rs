@@ -55,12 +55,14 @@ fn setup_basic_graph() -> (SOPGraph, Arc<dyn ToolExecutor>) {
         tool_id: "t1".into(),
         fuel_limit: 100,
         executor: exec.clone(),
+        args: Vec::new(),
     }));
     let n2 = graph.add_node(Arc::new(WasmSOPNode {
         name: "node2".into(),
         tool_id: "t2".into(),
         fuel_limit: 100,
         executor: exec.clone(),
+        args: Vec::new(),
     }));
     graph.add_edge(n1, n2);
     (graph, exec)
@@ -268,12 +270,14 @@ fn test_topological_cycle_detection() {
         tool_id: "t1".into(),
         fuel_limit: 100,
         executor: exec.clone(),
+        args: Vec::new(),
     }));
     let n2 = graph.add_node(Arc::new(WasmSOPNode {
         name: "node2".into(),
         tool_id: "t2".into(),
         fuel_limit: 100,
         executor: exec.clone(),
+        args: Vec::new(),
     }));
     graph.add_edge(n1, n2);
     graph.add_edge(n2, n1); // Cycle!

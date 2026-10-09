@@ -1,7 +1,10 @@
 //! LLM 驱动的流水线合成器：将目标分解为动作，
 //! 并构建线性 SOP 图谱（UltraWork 模式下为严格循环）。
 
-use crate::{action_label, tool_id_for_action, FlowSynthesizer, GoalDecomposer, SynthesisResult};
+use crate::{
+    action_label, default_args_for_action, tool_id_for_action, FlowSynthesizer, GoalDecomposer,
+    SynthesisResult,
+};
 use async_trait::async_trait;
 use sisyphus_types::{ExecutionContext, SOPGraph};
 use std::sync::Arc;
@@ -48,6 +51,7 @@ impl FlowSynthesizer for LlmDrivenSynthesizer {
                     tool_id: "builtin:bash_exec".into(),
                     fuel_limit: 1_000_000,
                     executor: self.tool_executor.clone(),
+                    args: default_args_for_action(&crate::ActionType::Process, goal),
                 }));
                 return Ok(SynthesisResult {
                     graph: Arc::new(graph),
@@ -66,6 +70,7 @@ impl FlowSynthesizer for LlmDrivenSynthesizer {
                     tool_id: tool_id_for_action(action).into(),
                     fuel_limit: 1_000_000,
                     executor: self.tool_executor.clone(),
+                    args: default_args_for_action(action, goal),
                 }));
                 if first_idx.is_none() {
                     first_idx = Some(n);
@@ -85,31 +90,40 @@ impl FlowSynthesizer for LlmDrivenSynthesizer {
             })
         } else {
             let mut graph = SOPGraph::new();
+            // 这 4 个节点过去写的是裸 tool_id（无 `builtin:` 前缀）。
+            // `ExecutorRouter` 只按已注册前缀分发，裸 ID 会落到 default
+            // 执行器（WASM），必然找不到同名工具——与 913ae9d 修掉的
+            // `fast_tool` 是同一类路由缺陷，只是当时只覆盖了 mapping 函数。
             let explore = graph.add_node(Arc::new(sisyphus_types::WasmSOPNode {
                 name: "Rigorous-Explore".into(),
-                tool_id: "lsp_symbol_search".into(),
+                tool_id: "builtin:lsp_symbol_search".into(),
                 fuel_limit: 2_000_000,
                 executor: self.tool_executor.clone(),
+                args: serde_json::to_vec(&serde_json::json!({ "query": goal })).unwrap_or_default(),
             }));
             let plan = graph.add_node(Arc::new(sisyphus_types::WasmSOPNode {
                 name: "Rigorous-Plan".into(),
-                tool_id: "metis/analyse".into(),
+                tool_id: "builtin:metis/analyse".into(),
                 fuel_limit: 2_000_000,
                 executor: self.tool_executor.clone(),
+                args: serde_json::to_vec(&serde_json::json!({ "request": goal }))
+                    .unwrap_or_default(),
             }));
             graph.add_edge(explore, plan);
             let implement = graph.add_node(Arc::new(sisyphus_types::WasmSOPNode {
                 name: "Rigorous-Implement".into(),
-                tool_id: "bash_exec".into(),
+                tool_id: "builtin:bash_exec".into(),
                 fuel_limit: 5_000_000,
                 executor: self.tool_executor.clone(),
+                args: default_args_for_action(&crate::ActionType::Process, goal),
             }));
             graph.add_edge(plan, implement);
             let verify = graph.add_node(Arc::new(sisyphus_types::WasmSOPNode {
                 name: "Rigorous-Verify".into(),
-                tool_id: "type_check".into(),
+                tool_id: "builtin:type_check".into(),
                 fuel_limit: 1_000_000,
                 executor: self.tool_executor.clone(),
+                args: serde_json::to_vec(&serde_json::json!({})).unwrap_or_default(),
             }));
             graph.add_edge(implement, verify);
 

@@ -26,7 +26,15 @@ impl ToolExecutor for BenchExecutor {
 // Synthesizer benchmark
 // ---------------------------------------------------------------------------
 fn bench_synthesis(c: &mut Criterion) {
-    let rt = tokio::runtime::Runtime::new().unwrap();
+    let rt = match tokio::runtime::Runtime::new() {
+        Ok(rt) => rt,
+        Err(e) => {
+            // criterion 的 bench 函数不能返回 Result：tokio 运行时构造失败
+            // 属于 harness 级致命错误，打印后提前返回而非 panic。
+            eprintln!("failed to build tokio runtime for benchmark: {e}");
+            return;
+        },
+    };
     let executor = Arc::new(BenchExecutor);
     let synthesizer = GoalDrivenSynthesizer::new(executor);
 
@@ -86,7 +94,15 @@ fn bench_synthesis(c: &mut Criterion) {
 // Simulator benchmark
 // ---------------------------------------------------------------------------
 fn bench_simulation(c: &mut Criterion) {
-    let rt = tokio::runtime::Runtime::new().unwrap();
+    let rt = match tokio::runtime::Runtime::new() {
+        Ok(rt) => rt,
+        Err(e) => {
+            // criterion 的 bench 函数不能返回 Result：tokio 运行时构造失败
+            // 属于 harness 级致命错误，打印后提前返回而非 panic。
+            eprintln!("failed to build tokio runtime for benchmark: {e}");
+            return;
+        },
+    };
     let executor = Arc::new(BenchExecutor);
 
     // Build a multi-node graph
@@ -98,6 +114,7 @@ fn bench_simulation(c: &mut Criterion) {
                 tool_id: "fast_tool".into(),
                 fuel_limit: 1_000_000,
                 executor: executor.clone(),
+                args: Vec::new(),
             }))
         })
         .collect();
@@ -134,7 +151,15 @@ fn bench_simulation(c: &mut Criterion) {
 // Reflection benchmark
 // ---------------------------------------------------------------------------
 fn bench_reflection(c: &mut Criterion) {
-    let rt = tokio::runtime::Runtime::new().unwrap();
+    let rt = match tokio::runtime::Runtime::new() {
+        Ok(rt) => rt,
+        Err(e) => {
+            // criterion 的 bench 函数不能返回 Result：tokio 运行时构造失败
+            // 属于 harness 级致命错误，打印后提前返回而非 panic。
+            eprintln!("failed to build tokio runtime for benchmark: {e}");
+            return;
+        },
+    };
     let reflector = StandardReflector;
 
     // Build a trace with mixed results
@@ -180,7 +205,15 @@ fn bench_reflection(c: &mut Criterion) {
 // Evolution benchmark
 // ---------------------------------------------------------------------------
 fn bench_evolution(c: &mut Criterion) {
-    let rt = tokio::runtime::Runtime::new().unwrap();
+    let rt = match tokio::runtime::Runtime::new() {
+        Ok(rt) => rt,
+        Err(e) => {
+            // criterion 的 bench 函数不能返回 Result：tokio 运行时构造失败
+            // 属于 harness 级致命错误，打印后提前返回而非 panic。
+            eprintln!("failed to build tokio runtime for benchmark: {e}");
+            return;
+        },
+    };
     let executor = Arc::new(BenchExecutor);
 
     // Build a 20-node graph
@@ -192,6 +225,7 @@ fn bench_evolution(c: &mut Criterion) {
                 tool_id: "fast_tool".into(),
                 fuel_limit: 1_000_000,
                 executor: executor.clone(),
+                args: Vec::new(),
             }))
         })
         .collect();

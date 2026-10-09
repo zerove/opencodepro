@@ -79,6 +79,7 @@ fn node_kind_wasm_serde() {
     let k = NodeKind::Wasm {
         tool_id: "t".into(),
         fuel_limit: 1000,
+        args: br#"{"url":"https://example.com"}"#.to_vec(),
     };
     let j = serde_json::to_string(&k).unwrap();
     let back: NodeKind = serde_json::from_str(&j).unwrap();
@@ -86,9 +87,26 @@ fn node_kind_wasm_serde() {
         NodeKind::Wasm {
             tool_id,
             fuel_limit,
+            args,
         } => {
             assert_eq!(tool_id, "t");
             assert_eq!(fuel_limit, 1000);
+            // args 必须能穿过序列化往返，否则 SOP 持久化后再加载就丢参数。
+            assert_eq!(args, br#"{"url":"https://example.com"}"#);
+        },
+        _ => panic!("expected Wasm"),
+    }
+}
+
+#[test]
+fn node_kind_wasm_deserializes_without_args_field() {
+    // 历史持久化的 SOP 不含 args 字段，必须仍能反序列化。
+    let legacy = r#"{"Wasm":{"tool_id":"t","fuel_limit":1000}}"#;
+    let back: NodeKind = serde_json::from_str(legacy).unwrap();
+    match back {
+        NodeKind::Wasm { tool_id, args, .. } => {
+            assert_eq!(tool_id, "t");
+            assert!(args.is_empty());
         },
         _ => panic!("expected Wasm"),
     }
@@ -100,6 +118,7 @@ fn node_kind_retry_serde() {
         child: Box::new(NodeKind::Wasm {
             tool_id: "t".into(),
             fuel_limit: 100,
+            args: Vec::new(),
         }),
         max_retries: 3,
     };
@@ -147,11 +166,13 @@ fn node_kind_variants_distinct() {
         NodeKind::Wasm {
             tool_id: "t".into(),
             fuel_limit: 1,
+            args: Vec::new(),
         },
         NodeKind::Retry {
             child: Box::new(NodeKind::Wasm {
                 tool_id: "t".into(),
                 fuel_limit: 1,
+                args: Vec::new(),
             }),
             max_retries: 1,
         },
@@ -198,6 +219,7 @@ fn sop_node_config_field_assignment() {
         kind: NodeKind::Wasm {
             tool_id: "t".into(),
             fuel_limit: 100,
+            args: Vec::new(),
         },
     };
     assert_eq!(c.name, "n");

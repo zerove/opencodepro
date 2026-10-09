@@ -226,6 +226,7 @@ pub mod dag_test {
             tool_id: tool_id.to_string(),
             fuel_limit: 1000,
             executor: Arc::new(super::NoopToolExecutor),
+            args: Vec::new(),
         }));
         Ok(SOPGraphConfig::from_graph(&graph)?)
     }
@@ -240,6 +241,7 @@ pub mod dag_test {
                 tool_id: format!("tool_{}", i),
                 fuel_limit: 1000,
                 executor: Arc::new(super::NoopToolExecutor),
+                args: Vec::new(),
             }));
             indices.push(idx);
         }
@@ -257,24 +259,28 @@ pub mod dag_test {
             tool_id: "t1".into(),
             fuel_limit: 1000,
             executor: Arc::new(super::NoopToolExecutor),
+            args: Vec::new(),
         }));
         let left = graph.add_node(Arc::new(WasmSOPNode {
             name: "left".into(),
             tool_id: "t2".into(),
             fuel_limit: 1000,
             executor: Arc::new(super::NoopToolExecutor),
+            args: Vec::new(),
         }));
         let right = graph.add_node(Arc::new(WasmSOPNode {
             name: "right".into(),
             tool_id: "t3".into(),
             fuel_limit: 1000,
             executor: Arc::new(super::NoopToolExecutor),
+            args: Vec::new(),
         }));
         let merge = graph.add_node(Arc::new(WasmSOPNode {
             name: "merge".into(),
             tool_id: "t4".into(),
             fuel_limit: 1000,
             executor: Arc::new(super::NoopToolExecutor),
+            args: Vec::new(),
         }));
         graph.add_edge(root, left);
         graph.add_edge(root, right);
@@ -291,6 +297,7 @@ pub mod dag_test {
             tool_id: "t_root".into(),
             fuel_limit: 1000,
             executor: Arc::new(super::NoopToolExecutor),
+            args: Vec::new(),
         }));
         for i in 0..n {
             let leaf = graph.add_node(Arc::new(WasmSOPNode {
@@ -298,6 +305,7 @@ pub mod dag_test {
                 tool_id: format!("t_{}", i),
                 fuel_limit: 1000,
                 executor: Arc::new(super::NoopToolExecutor),
+                args: Vec::new(),
             }));
             graph.add_edge(root, leaf);
         }

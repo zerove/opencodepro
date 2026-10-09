@@ -106,6 +106,7 @@ async fn test_project_isolation() {
         tool_id: "t1".into(),
         fuel_limit: 100,
         executor: tool_executor.clone(),
+        args: Vec::new(),
     }));
     let graph_alpha = Arc::new(graph_alpha_inner);
 
@@ -115,6 +116,7 @@ async fn test_project_isolation() {
         tool_id: "t2".into(),
         fuel_limit: 100,
         executor: tool_executor.clone(),
+        args: Vec::new(),
     }));
     let graph_beta = Arc::new(graph_beta_inner);
 

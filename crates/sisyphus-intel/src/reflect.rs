@@ -204,6 +204,7 @@ impl SOPEvolver for StandardEvolver {
                     tool_id: wasm_node.tool_id.clone(),
                     fuel_limit: fuel,
                     executor: wasm_node.executor.clone(),
+                    args: wasm_node.args.clone(),
                 })
             } else {
                 node.clone()

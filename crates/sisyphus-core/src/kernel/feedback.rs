@@ -123,14 +123,26 @@ impl SisyphusKernel {
         let mut id_map = HashMap::new();
 
         for step in &final_plan.steps {
-            let tool_id = match &step.action {
-                sisyphus_types::CognitiveAction::ToolCall { tool_id, .. } => tool_id.clone(),
-
-                sisyphus_types::CognitiveAction::FileEdit { path, .. } => {
-                    format!("file_edit:{}", path)
+            let (tool_id, args) = match &step.action {
+                sisyphus_types::CognitiveAction::ToolCall { tool_id, args } => {
+                    (tool_id.clone(), args.clone())
                 },
 
-                sisyphus_types::CognitiveAction::ShellExecute { .. } => "shell_exec_tool".into(),
+                sisyphus_types::CognitiveAction::FileEdit { path, patch } => (
+                    "builtin:file_edit".into(),
+                    serde_json::json!({
+                        "path": path,
+                        "patch": patch,
+                    }),
+                ),
+
+                sisyphus_types::CognitiveAction::ShellExecute { command, timeout } => (
+                    "builtin:bash_exec".into(),
+                    serde_json::json!({
+                        "command": command,
+                        "timeout_ms": timeout,
+                    }),
+                ),
             };
 
             let idx = graph.add_node(Arc::new(WasmSOPNode {
@@ -141,6 +153,11 @@ impl SisyphusKernel {
                 fuel_limit: 1_000_000,
 
                 executor: self.execution_manager.tool_router.clone(),
+
+                // 回放成功计划时必须重建入参，否则重建出的 SOP 每个节点
+                // 都会因缺参而失败（与 WasmSOPNode 历史上 args 写死为空
+                // 是同一个缺陷）。
+                args: serde_json::to_vec(&args).unwrap_or_default(),
             }));
 
             id_map.insert(step.id.clone(), idx);

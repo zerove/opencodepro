@@ -88,6 +88,7 @@ fn make_single_node_config(name: &str, tool_id: &str) -> SOPGraphConfig {
         executor: Arc::new(CompositeMockExecutor {
             call_count: AtomicUsize::new(0),
         }),
+        args: Vec::new(),
     }));
     SOPGraphConfig::from_graph(&graph).unwrap()
 }

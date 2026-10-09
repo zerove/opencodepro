@@ -153,13 +153,15 @@ mod tests {
                 .prop_map(|(tool_id, fuel)| NodeKind::Wasm {
                     tool_id,
                     fuel_limit: fuel,
+                    args: Vec::new(),
                 })
                 .boxed()
         } else {
             prop_oneof![
                 (arb_tool_id(), 0u64..10_000_000u64).prop_map(|(tool_id, fuel)| NodeKind::Wasm {
                     tool_id,
-                    fuel_limit: fuel
+                    fuel_limit: fuel,
+                    args: Vec::new(),
                 }),
                 (arb_node_kind_depth(depth - 1), 0u32..5u32).prop_map(|(child, max_retries)| {
                     NodeKind::Retry {
@@ -240,12 +242,14 @@ mod tests {
             tool_id: "tool1".to_string(),
             fuel_limit: 100,
             executor: executor.clone(),
+            args: Vec::new(),
         });
         let node2 = Arc::new(WasmSOPNode {
             name: "node2".to_string(),
             tool_id: "tool2".to_string(),
             fuel_limit: 100,
             executor: executor.clone(),
+            args: Vec::new(),
         });
 
         let idx1 = graph.add_node(node1);
@@ -293,12 +297,14 @@ mod tests {
             tool_id: "tool1".to_string(),
             fuel_limit: 100,
             executor: executor.clone(),
+            args: Vec::new(),
         });
         let node2 = Arc::new(WasmSOPNode {
             name: "node2".to_string(),
             tool_id: "tool2".to_string(),
             fuel_limit: 100,
             executor: executor.clone(),
+            args: Vec::new(),
         });
 
         let idx1 = graph.add_node(node1);
@@ -396,6 +402,7 @@ mod tests {
                         kind: NodeKind::Wasm {
                             tool_id: gid.clone(),
                             fuel_limit: 100,
+                            args: Vec::new(),
                         },
                     }],
                     edges: vec![],

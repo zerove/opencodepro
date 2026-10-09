@@ -34,12 +34,24 @@ pub struct WasmSOPNode {
     pub tool_id: String,
     pub fuel_limit: u64,
     pub executor: Arc<dyn ToolExecutor>,
+    /// 传给底层工具的原始参数字节（JSON）。
+    ///
+    /// **历史上这里是写死的 `Vec::new()`**，因此任何需要入参的 builtin
+    /// 工具（`web_fetch` 要 `url`、`bash_exec` 要 `command`）在
+    /// `GoalDrivenSynthesizer` 合成的计划里必然失败。实测症状：
+    /// `AllIterationsPivoted(1, "Node fetch produced output with deviation
+    /// score 0.81")`，底层错误为
+    /// `Tool execution error for 'web_fetch': missing or non-string arg 'url'`。
+    ///
+    /// 保持默认空值是为了让大量只关心 `tool_id` 的 mock/测试构造点
+    /// （全仓 60+ 处）继续编译，而真正需要参数的规划器显式赋值。
+    pub args: Vec<u8>,
 }
 
 #[async_trait]
 impl SOPNode for WasmSOPNode {
     async fn execute(&self, ctx: &ExecutionContext) -> Result<NodeOutput, TypesError> {
-        let args = Vec::new();
+        let args = self.args.clone();
         // P2-9 燃料真相管道：优先走带测量的路径。
         let (result, measurement) =
             match self.executor.execute_measured(&self.tool_id, args, self.fuel_limit).await {
@@ -69,6 +81,7 @@ impl SOPNode for WasmSOPNode {
         NodeKind::Wasm {
             tool_id: self.tool_id.clone(),
             fuel_limit: self.fuel_limit,
+            args: self.args.clone(),
         }
     }
 }
@@ -536,6 +549,7 @@ mod fuel_truth_tests {
             tool_id: "t".into(),
             fuel_limit: 100_000,
             executor,
+            args: Vec::new(),
         }
     }
 

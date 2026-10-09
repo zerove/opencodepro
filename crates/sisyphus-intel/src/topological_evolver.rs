@@ -70,6 +70,7 @@ impl TopologicalSOPEvolver {
                             tool_id: wasm_node.tool_id.clone(),
                             fuel_limit: new_fuel,
                             executor: wasm_node.executor.clone(),
+                            args: wasm_node.args.clone(),
                         });
                         new_graph.graph[node_idx] = evolved_node;
                     } else {
@@ -110,6 +111,7 @@ impl TopologicalSOPEvolver {
                         tool_id: tool_id.clone(),
                         fuel_limit: 1_000_000,
                         executor: tool_executor.clone(),
+                        args: Vec::new(),
                     });
                     let new_idx = new_graph.add_node(new_node);
 
@@ -328,12 +330,14 @@ mod tests {
             tool_id: "t1".into(),
             fuel_limit: 100,
             executor: exec.clone(),
+            args: Vec::new(),
         }));
         let n2 = graph.add_node(Arc::new(WasmSOPNode {
             name: "node2".into(),
             tool_id: "t2".into(),
             fuel_limit: 100,
             executor: exec.clone(),
+            args: Vec::new(),
         }));
         graph.add_edge(n1, n2);
         (graph, exec)

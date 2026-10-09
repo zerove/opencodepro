@@ -67,6 +67,10 @@ pub enum NodeKind {
     Wasm {
         tool_id: String,
         fuel_limit: u64,
+        /// 工具入参（JSON 字节）。历史持久化的 SOP 不含此字段，
+        /// 故默认空值以保证旧数据仍可反序列化。
+        #[serde(default)]
+        args: Vec<u8>,
     },
     Retry {
         child: Box<NodeKind>,
@@ -161,9 +165,12 @@ impl SOPGraphConfig {
             .enumerate()
             .map(|(i, cfg)| {
                 let action = match cfg.kind {
-                    NodeKind::Wasm { tool_id, .. } => crate::execution::CognitiveAction::ToolCall {
-                        tool_id,
-                        args: serde_json::json!({}),
+                    NodeKind::Wasm { tool_id, args, .. } => {
+                        crate::execution::CognitiveAction::ToolCall {
+                            tool_id,
+                            args: serde_json::from_slice(&args)
+                                .unwrap_or_else(|_| serde_json::json!({})),
+                        }
                     },
                     NodeKind::Retry { .. } => crate::execution::CognitiveAction::ToolCall {
                         tool_id: "retry_wrapper".into(),
@@ -260,11 +267,13 @@ impl SOPGraph {
                 NodeKind::Wasm {
                     tool_id,
                     fuel_limit,
+                    args,
                 } => Arc::new(WasmSOPNode {
                     name: name.to_string(),
                     tool_id: tool_id.clone(),
                     fuel_limit: *fuel_limit,
                     executor,
+                    args: args.clone(),
                 }),
                 NodeKind::Retry { child, max_retries } => Arc::new(RetrySOPNode {
                     name: name.to_string(),

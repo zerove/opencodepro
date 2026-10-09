@@ -63,6 +63,7 @@ fn node(name: &str, tools: Arc<Tools>) -> Arc<WasmSOPNode> {
         tool_id: "fixture".into(),
         fuel_limit: 100,
         executor: tools,
+        args: Vec::new(),
     })
 }
 
@@ -391,6 +392,7 @@ fn fixture_config() -> sisyphus_types::SOPGraphConfig {
             kind: sisyphus_types::NodeKind::Wasm {
                 tool_id: "fixture".into(),
                 fuel_limit: 100,
+                args: Vec::new(),
             },
         }],
         edges: vec![],

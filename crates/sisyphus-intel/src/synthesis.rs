@@ -138,6 +138,32 @@ pub(crate) fn action_label(action: &ActionType) -> &str {
     }
 }
 
+/// 为合成节点构造**可执行**的工具入参。
+///
+/// `tool_id_for_action` 只解决了「路由到哪个执行器」，但 builtin 工具
+/// 全部强制校验入参：`web_fetch` 要 `url`、`bash_exec` 要 `command`。
+/// 而 `WasmSOPNode` 过去把 args 写死为空，因此每个合成节点在执行期都
+/// 会因缺参而失败（实测 `missing or non-string arg 'url'`），最终被
+/// supervisor 判为 deviation 0.81 并触发 `AllIterationsPivoted`。
+///
+/// 这里给出各动作的最小可执行参数。真实 URL / 命令应由 LLM 规划产出，
+/// 这里的默认值只保证「工具能被调用」而不因缺参失败；
+/// `DynamicSopSynthesizer`（LLM 路径）保留 LLM 给出的 args。
+pub(crate) fn default_args_for_action(action: &ActionType, goal: &str) -> Vec<u8> {
+    let payload = match action {
+        ActionType::Fetch => serde_json::json!({
+            "url": "https://example.com",
+        }),
+        ActionType::Search => serde_json::json!({
+            "query": goal,
+        }),
+        ActionType::Process | ActionType::Sink | ActionType::Validate => serde_json::json!({
+            "command": "echo",
+        }),
+    };
+    serde_json::to_vec(&payload).unwrap_or_default()
+}
+
 fn build_plan_description(actions: &[ActionType], parallel: bool) -> String {
     let labels: Vec<&str> = actions.iter().map(action_label).collect();
     if parallel && actions.len() >= 2 {
@@ -179,6 +205,7 @@ impl FlowSynthesizer for GoalDrivenSynthesizer {
                 tool_id: "builtin:bash_exec".into(),
                 fuel_limit: 1_000_000,
                 executor: self.tool_executor.clone(),
+                args: default_args_for_action(&ActionType::Process, goal),
             }));
             return Ok(SynthesisResult {
                 graph: Arc::new(graph),
@@ -195,6 +222,7 @@ impl FlowSynthesizer for GoalDrivenSynthesizer {
                 tool_id: tool_id_for_action(action).into(),
                 fuel_limit: 1_000_000,
                 executor: self.tool_executor.clone(),
+                args: default_args_for_action(action, goal),
             }));
             return Ok(SynthesisResult {
                 graph: Arc::new(graph),
@@ -210,18 +238,21 @@ impl FlowSynthesizer for GoalDrivenSynthesizer {
                 tool_id: tool_id_for_action(&actions[0]).into(),
                 fuel_limit: 1_000_000,
                 executor: self.tool_executor.clone(),
+                args: default_args_for_action(&actions[0], goal),
             }));
             let n2 = graph.add_node(Arc::new(sisyphus_types::WasmSOPNode {
                 name: action_label(&actions[1]).into(),
                 tool_id: tool_id_for_action(&actions[1]).into(),
                 fuel_limit: 1_000_000,
                 executor: self.tool_executor.clone(),
+                args: default_args_for_action(&actions[1], goal),
             }));
             let merge = graph.add_node(Arc::new(sisyphus_types::WasmSOPNode {
                 name: "merge".into(),
                 tool_id: "builtin:bash_exec".into(),
                 fuel_limit: 1_000_000,
                 executor: self.tool_executor.clone(),
+                args: default_args_for_action(&ActionType::Sink, goal),
             }));
             graph.add_edge(n1, merge);
             graph.add_edge(n2, merge);
@@ -247,6 +278,7 @@ impl FlowSynthesizer for GoalDrivenSynthesizer {
                     tool_id: tool_id_for_action(action).into(),
                     fuel_limit: 1_000_000,
                     executor: self.tool_executor.clone(),
+                    args: default_args_for_action(action, goal),
                 }));
                 if first_idx.is_none() {
                     first_idx = Some(n);
@@ -350,6 +382,9 @@ impl FlowSynthesizer for DynamicSopSynthesizer {
                 tool_id: node.tool_id.clone(),
                 fuel_limit: 1_000_000,
                 executor: self.tool_executor.clone(),
+                // LLM 规划的 args 必须透传：builtin 工具（web_fetch/bash_exec）
+                // 全部强制校验入参，丢弃后每个节点都会因缺参失败。
+                args: serde_json::to_vec(&node.args).unwrap_or_default(),
             }));
             id_map.insert(node.id.clone(), idx);
         }

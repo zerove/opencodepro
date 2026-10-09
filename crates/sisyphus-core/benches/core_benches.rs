@@ -116,6 +116,7 @@ fn bench_wasm_execution(c: &mut Criterion) {
         tool_id: "hello".into(),
         fuel_limit: 1_000_000,
         executor: tool_executor.clone(),
+        args: Vec::new(),
     }));
     let graph_arc = Arc::new(graph);
 

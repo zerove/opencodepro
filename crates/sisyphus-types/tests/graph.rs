@@ -108,11 +108,13 @@ fn node_kind_wasm_carries_tool_id() {
     let kind = NodeKind::Wasm {
         tool_id: "tool-1".into(),
         fuel_limit: 1000,
+        args: Vec::new(),
     };
     match kind {
         NodeKind::Wasm {
             tool_id,
             fuel_limit,
+            ..
         } => {
             assert_eq!(tool_id, "tool-1");
             assert_eq!(fuel_limit, 1000);
@@ -180,6 +182,7 @@ fn sop_node_config_stores_name_and_kind() {
         kind: NodeKind::Wasm {
             tool_id: "t".into(),
             fuel_limit: 100,
+            args: Vec::new(),
         },
     };
     assert_eq!(node.name, "step1");
@@ -232,6 +235,7 @@ fn into_cognitive_plan_maps_wasm_to_tool_call() {
             kind: NodeKind::Wasm {
                 tool_id: "wasm_tool".into(),
                 fuel_limit: 100,
+                args: Vec::new(),
             },
         }],
         edges: vec![],

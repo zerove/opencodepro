@@ -39,7 +39,9 @@ pub use reflect::{
 };
 pub use simulation::{MonteCarloSimulator, SimulationResult, Simulator};
 pub use supervisor::SisyphusSupervisor;
-pub(crate) use synthesis::{action_label, classify_goal, tool_id_for_action};
+pub(crate) use synthesis::{
+    action_label, classify_goal, default_args_for_action, tool_id_for_action,
+};
 pub use synthesis::{
     synthesize_composite, ActionType, FlowSynthesizer, GoalDrivenSynthesizer,
     MetaLearningSynthesizer, StrategicSopSynthesizer, SynthesisResult,

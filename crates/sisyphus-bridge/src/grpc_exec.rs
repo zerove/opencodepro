@@ -50,6 +50,9 @@ impl MySisyphusBridge {
                         tool_id,
                         executor: self.kernel.execution_manager.tool_router.clone(),
                         fuel_limit: fuel,
+                        // gRPC 调用方只给了工具名，未给入参；空 args 对
+                        // 免参工具足够，对需要入参的工具会在执行期报缺参。
+                        args: Vec::new(),
                     });
                     g.add_node(node);
                     Arc::new(g)

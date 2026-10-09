@@ -472,6 +472,7 @@ impl SelfProgrammingManager {
             kind: sisyphus_types::NodeKind::Wasm {
                 tool_id: tool_id.clone(),
                 fuel_limit: 1000,
+                args: Vec::new(),
             },
         });
 
@@ -712,6 +713,7 @@ mod tests {
                 kind: sisyphus_types::NodeKind::Wasm {
                     tool_id: "test_tool".into(),
                     fuel_limit: 1000,
+                    args: Vec::new(),
                 },
             }],
             edges: vec![],

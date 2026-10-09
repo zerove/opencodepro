@@ -244,6 +244,7 @@ async fn test_sop_sql_store_cross_project_isolation() {
             kind: sisyphus_types::NodeKind::Wasm {
                 tool_id: "tool_a".into(),
                 fuel_limit: 100,
+                args: Vec::new(),
             },
         }],
         edges: vec![],
@@ -255,6 +256,7 @@ async fn test_sop_sql_store_cross_project_isolation() {
             kind: sisyphus_types::NodeKind::Wasm {
                 tool_id: "tool_b".into(),
                 fuel_limit: 200,
+                args: Vec::new(),
             },
         }],
         edges: vec![],
@@ -495,6 +497,7 @@ async fn test_full_kernel_cross_project_isolation() {
         tool_id: "tool_alpha".into(),
         fuel_limit: 100,
         executor: tool_executor.clone(),
+        args: Vec::new(),
     }));
 
     let mut graph_beta = sisyphus_core::SOPGraph::new();
@@ -503,6 +506,7 @@ async fn test_full_kernel_cross_project_isolation() {
         tool_id: "tool_beta".into(),
         fuel_limit: 100,
         executor: tool_executor,
+        args: Vec::new(),
     }));
 
     // Save to respective kernels
@@ -796,6 +800,7 @@ async fn test_concurrent_projects_no_interference() {
                 tool_id: format!("tool_{}", i),
                 fuel_limit: 100,
                 executor: tool_executor,
+                args: Vec::new(),
             }));
 
             kernel.save_sop(&sop_id, &project_id, &Arc::new(graph)).await.expect("Save SOP failed");

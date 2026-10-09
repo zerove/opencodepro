@@ -255,6 +255,7 @@ async fn test_executor_execute_cycle() {
                 kind: NodeKind::Wasm {
                     tool_id: "tool0".into(),
                     fuel_limit: 100,
+                    args: Vec::new(),
                 },
             },
             SOPNodeConfig {
@@ -262,6 +263,7 @@ async fn test_executor_execute_cycle() {
                 kind: NodeKind::Wasm {
                     tool_id: "tool1".into(),
                     fuel_limit: 100,
+                    args: Vec::new(),
                 },
             },
         ],
@@ -340,6 +342,7 @@ async fn test_executor_execute_with_context() {
                 kind: NodeKind::Wasm {
                     tool_id: "tool0".into(),
                     fuel_limit: 100,
+                    args: Vec::new(),
                 },
             },
             SOPNodeConfig {
@@ -347,6 +350,7 @@ async fn test_executor_execute_with_context() {
                 kind: NodeKind::Wasm {
                     tool_id: "tool1".into(),
                     fuel_limit: 100,
+                    args: Vec::new(),
                 },
             },
         ],
@@ -409,6 +413,7 @@ async fn test_executor_diamond_dag() {
                 kind: NodeKind::Wasm {
                     tool_id: "t".into(),
                     fuel_limit: 100,
+                    args: Vec::new(),
                 },
             },
             SOPNodeConfig {
@@ -416,6 +421,7 @@ async fn test_executor_diamond_dag() {
                 kind: NodeKind::Wasm {
                     tool_id: "t".into(),
                     fuel_limit: 100,
+                    args: Vec::new(),
                 },
             },
             SOPNodeConfig {
@@ -423,6 +429,7 @@ async fn test_executor_diamond_dag() {
                 kind: NodeKind::Wasm {
                     tool_id: "t".into(),
                     fuel_limit: 100,
+                    args: Vec::new(),
                 },
             },
             SOPNodeConfig {
@@ -430,6 +437,7 @@ async fn test_executor_diamond_dag() {
                 kind: NodeKind::Wasm {
                     tool_id: "t".into(),
                     fuel_limit: 100,
+                    args: Vec::new(),
                 },
             },
         ],
@@ -484,6 +492,7 @@ async fn test_executor_node_failure_blocks_unrecovered_execution() {
                 kind: NodeKind::Wasm {
                     tool_id: "fail".into(),
                     fuel_limit: 100,
+                    args: Vec::new(),
                 },
             },
             SOPNodeConfig {
@@ -491,6 +500,7 @@ async fn test_executor_node_failure_blocks_unrecovered_execution() {
                 kind: NodeKind::Wasm {
                     tool_id: "ok".into(),
                     fuel_limit: 100,
+                    args: Vec::new(),
                 },
             },
         ],
@@ -612,6 +622,7 @@ async fn test_kernel_save_load_roundtrip() {
                 kind: NodeKind::Wasm {
                     tool_id: "t0".into(),
                     fuel_limit: 100,
+                    args: Vec::new(),
                 },
             },
             SOPNodeConfig {
@@ -619,6 +630,7 @@ async fn test_kernel_save_load_roundtrip() {
                 kind: NodeKind::Wasm {
                     tool_id: "t1".into(),
                     fuel_limit: 200,
+                    args: Vec::new(),
                 },
             },
         ],
@@ -690,6 +702,7 @@ async fn test_strategic_manager_evolution_verification() {
                 kind: NodeKind::Wasm {
                     tool_id: "t".into(),
                     fuel_limit: 100,
+                    args: Vec::new(),
                 },
             }],
             edges: vec![],
@@ -728,6 +741,7 @@ async fn test_strategic_manager_evolution_verification() {
                 kind: NodeKind::Wasm {
                     tool_id: "t".into(),
                     fuel_limit: 100,
+                    args: Vec::new(),
                 },
             }],
             edges: vec![],
@@ -1156,6 +1170,7 @@ async fn test_cognitive_loop_receives_goal_text_not_project_id() {
             kind: NodeKind::Wasm {
                 tool_id: "t".into(),
                 fuel_limit: 100,
+                args: Vec::new(),
             },
         }],
         edges: vec![],
@@ -1265,6 +1280,7 @@ impl sisyphus_tools_llm::LlmClient for ScriptedLlmClient {
                     kind: NodeKind::Wasm {
                         tool_id: "t".into(),
                         fuel_limit: 100,
+                        args: Vec::new(),
                     },
                 }],
                 edges: vec![],
@@ -1786,6 +1802,7 @@ async fn test_concurrent_loops_have_independent_depth_history() {
             kind: NodeKind::Wasm {
                 tool_id: "t".into(),
                 fuel_limit: 100,
+                args: Vec::new(),
             },
         }],
         edges: vec![],
@@ -2113,6 +2130,7 @@ fn single_node_sop() -> Arc<SOPGraph> {
             kind: NodeKind::Wasm {
                 tool_id: "t".into(),
                 fuel_limit: 100,
+                args: Vec::new(),
             },
         }],
         edges: vec![],
@@ -2132,6 +2150,7 @@ fn failing_node_sop() -> Arc<SOPGraph> {
                 kind: NodeKind::Wasm {
                     tool_id: "t".into(),
                     fuel_limit: 100,
+                    args: Vec::new(),
                 },
             }],
             edges: vec![],

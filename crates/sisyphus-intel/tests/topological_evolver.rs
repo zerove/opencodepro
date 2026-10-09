@@ -37,6 +37,7 @@ fn build_graph(name: &str, tool_id: &str, fuel: u64) -> SOPGraph {
         tool_id: tool_id.into(),
         fuel_limit: fuel,
         executor: Arc::new(NoopExecutor),
+        args: Vec::new(),
     }));
     g
 }

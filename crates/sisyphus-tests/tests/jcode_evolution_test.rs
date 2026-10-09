@@ -67,6 +67,7 @@ async fn test_jcode_evolution_loop() {
         tool_id: "test_tool".into(),
         fuel_limit: 10,
         executor: Arc::new(MockJcodeExecutor), // Simplified for test
+        args: Vec::new(),
     });
     graph.add_node(node);
     let graph = Arc::new(graph);

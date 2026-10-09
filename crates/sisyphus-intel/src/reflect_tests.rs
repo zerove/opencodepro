@@ -24,6 +24,7 @@ fn setup_evolver_graph() -> (SOPGraph, Arc<dyn sisyphus_types::ToolExecutor>) {
         tool_id: "t".into(),
         fuel_limit: 1000,
         executor: exec.clone(),
+        args: Vec::new(),
     }));
     (graph, exec)
 }

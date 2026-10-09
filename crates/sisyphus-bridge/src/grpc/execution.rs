@@ -233,6 +233,8 @@ impl MySisyphusBridge {
                             tool_id,
                             executor: kernel.execution_manager.tool_router.clone(),
                             fuel_limit: default_fuel,
+                            // 调用方只给了工具名，未给入参。
+                            args: Vec::new(),
                         });
                         g.add_node(node);
                         Arc::new(g)
