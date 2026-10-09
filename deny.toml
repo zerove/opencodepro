@@ -63,6 +63,20 @@ ignore = [
     # 修复: reqwest 0.11 → 0.12（h2 0.4.x 已升级到 0.4.19）。
     # 跟踪: evals/ 升级 reqwest 至 0.12 时自动解决。
     "RUSTSEC-2026-0258",
+
+    # ── RUSTSEC-2026-0292: imbl-sized-chunks 0.1.3 double free / UAF ──
+    # 触发点: `Chunk::{clear, drop_left, drop_right}` 与
+    #         `InlineArray::{clear, truncate}` 先 drop 元素、后更新元数据；
+    #         元素 Drop panic 时元数据陈旧 → 二次 drop（safe Rust 可达）。
+    # 来源: imbl 2.0.3 → imbl-sized-chunks 0.1.3（crates.io 最新 imbl 已 7.0.2）。
+    # 实际不可达（已核实）: 本仓库只用 `imbl::HashMap`，
+    #         `imbl-2.0.3/src/hash/map.rs` 对 `sized_chunks` 的引用数为 0；
+    #         受影响的是 OrdSet/OrdMap 的有序集合路径，本仓库未使用。
+    #         全仓 imbl:: 引用均集中在测试 fixture 的 `imbl::HashMap::new()`。
+    # 阻塞: 修复需 imbl-sized-chunks >= 0.2.0，而 imbl 2.0.3 将其锁死；
+    #       放宽需 imbl 2 → 7（跳 5 个大版本，属独立破坏性变更）。
+    # 跟踪: 评估 imbl 2 → 7 迁移时一并解决；届时删除本条豁免。
+    "RUSTSEC-2026-0292",
 ]
 
 [licenses]
@@ -113,7 +127,7 @@ skip = [
 ]
 skip-tree = [
     # wasmtime and its many deps
-    { name = "wasmtime", version = "45" },
+    { name = "wasmtime", version = "48" },
     # tonic and its protobuf toolchain
     { name = "tonic", version = "0.12" },
     # sqlx with bundled libsqlite3-sys
