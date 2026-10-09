@@ -123,6 +123,11 @@ cargo bench -p sisyphus-core   # 认知循环 benchmark
 - CI（`.github/workflows/ci.yml`）、`Dockerfile`、`CONTRIBUTING.md` 仍统一
   使用 nightly。若要在 stable 上开发，本地需显式设置 `RUSTUP_TOOLCHAIN`，
   否则会与 CI 的编译器版本不一致。
+- **`cargo test-all` 不等于完整 workspace 验收**：该 alias 显式
+  `--exclude sisyphus-bridge --exclude sisyphus-sandbox --exclude
+  sisyphus-sandboxd --exclude sisyphus-tests`（见 `.cargo/config.toml`），
+  这 4 个重型 crate 默认不参与。需单独跑：
+  `cargo test -p sisyphus-tests -p sisyphus-sandbox -p sisyphus-sandboxd -p sisyphus-bridge`
 - Bridge 默认绑定 `[::1]:50051`，有 IPv6→IPv4 自动回退
 - 内部 crate 的路径依赖均带 `version = "0.1.0"`，这是 `cargo package` 的
   硬性要求（缺 version 会报 “all dependencies must have a version
