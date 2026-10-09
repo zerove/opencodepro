@@ -99,6 +99,19 @@ enum TracePersistCmd {
     Flush(tokio::sync::oneshot::Sender<TraceFlushAck>),
 }
 
+/// flush 屏障回执的等待上限。
+///
+/// 转发自 [`sisyphus_mem::TRACE_FLUSH_BARRIER_TIMEOUT`]，与 SQLite 的
+/// `busy_timeout` 同源。**不要**在此另写一个字面量：历史上这里写的 5s
+/// 与 sqlx 的 `busy_timeout` 默认值恰好相等，导致两个独立的等待上限撞在
+/// 一起——写锁被占满时单条写入就能耗尽整个 busy_timeout，屏障随即超时，
+/// 对已成功落盘的写入谎报 “durability not guaranteed”。
+///
+/// 屏障为 FIFO，轮到它时前面的指令均已落盘，因此它要等的只是 writer
+/// 手头那一条写入。两者同源后，“屏障 > 单条写入最坏耗时”由构造式保证，
+/// 不再依赖两个无关数字恰好不相等。
+const TRACE_FLUSH_BARRIER_TIMEOUT: std::time::Duration = sisyphus_mem::TRACE_FLUSH_BARRIER_TIMEOUT;
+
 /// flush 屏障的回执：自上次 flush 起写入失败的累积情况。
 #[derive(Debug, Default)]
 struct TraceFlushAck {
@@ -212,7 +225,7 @@ impl ExecutionManager {
         }
         // writer 异常退出时回执被丢弃；超时避免永久挂起调用方。
         // 超时同样是「无法保证落盘」，必须显式报告而非静默放行。
-        match tokio::time::timeout(std::time::Duration::from_secs(5), ack_rx).await {
+        match tokio::time::timeout(TRACE_FLUSH_BARRIER_TIMEOUT, ack_rx).await {
             Ok(Ok(ack)) if ack.failed > 0 => Err(CoreError::MfsSaveError(format!(
                 "{} cognitive trace(s) failed to persist since last flush; first error: {}",
                 ack.failed,
@@ -222,9 +235,10 @@ impl ExecutionManager {
             Ok(Err(_)) => Err(CoreError::MfsSaveError(
                 "cognitive trace writer dropped the flush barrier before acknowledging".to_string(),
             )),
-            Err(_) => Err(CoreError::MfsSaveError(
-                "cognitive trace flush timed out after 5s; durability not guaranteed".to_string(),
-            )),
+            Err(_) => Err(CoreError::MfsSaveError(format!(
+                "cognitive trace flush timed out after {}s; durability not guaranteed",
+                TRACE_FLUSH_BARRIER_TIMEOUT.as_secs()
+            ))),
         }
     }
 

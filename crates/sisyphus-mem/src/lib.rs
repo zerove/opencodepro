@@ -10,6 +10,11 @@ pub mod sql_store;
 pub use sql_store::{SqlStore, SqlStoreConfig, SqliteSynchronous};
 pub mod store;
 pub use store::MfsStore;
+pub mod sqlite_config;
+pub use sqlite_config::{
+    SQLITE_BUSY_TIMEOUT, SQLITE_BUSY_TIMEOUT_SECS, TRACE_FLUSH_BARRIER_TIMEOUT,
+    TRACE_FLUSH_BARRIER_TIMEOUT_SECS, sqlite_options,
+};
 pub mod experience_bank;
 pub mod roadmap_store;
 pub use roadmap_store::RoadmapSqlStore;

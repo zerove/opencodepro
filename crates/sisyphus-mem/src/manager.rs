@@ -4,7 +4,6 @@
 use crate::error::MemError;
 use anyhow::{Context, Result};
 use sqlx::{SqlitePool, sqlite::SqlitePoolOptions};
-use std::str::FromStr;
 use std::sync::Arc;
 
 use crate::roadmap_store::RoadmapSqlStore;
@@ -27,10 +26,20 @@ impl SisyphusStore {
         // 1. Initialize the shared pool.
         //    文件型 SQLite 需确保父目录存在（CI 干净环境没有 data/ 目录），
         //    且 create_if_missing 让 db 文件不存在时自动创建。
+        // 内存库与文件库走同一套连接选项：内存库同样需要显式
+        // `busy_timeout`，否则它会静默回到 sqlx 默认值，使 flush 屏障的
+        // 推导失效。
+        let opts = crate::sqlite_config::sqlite_options(db_url).map_err(|e| {
+            MemError::InvalidSqliteUrl {
+                url: db_url.to_string(),
+                source: e,
+            }
+        })?;
+
         let pool = if db_url == "sqlite::memory:" || db_url == "sqlite::memory" {
             SqlitePoolOptions::new()
                 .max_connections(10)
-                .connect(db_url)
+                .connect_with(opts)
                 .await
                 .context("Failed to connect to in-memory SQLite pool")?
         } else {
@@ -44,13 +53,6 @@ impl SisyphusStore {
                     source: e,
                 })?;
             }
-            let opts = sqlx::sqlite::SqliteConnectOptions::from_str(db_url)
-                .map_err(|e| MemError::InvalidSqliteUrl {
-                    url: db_url.to_string(),
-                    source: e,
-                })?
-                .create_if_missing(true)
-                .foreign_keys(true);
             SqlitePoolOptions::new()
                 .max_connections(10)
                 .connect_with(opts)

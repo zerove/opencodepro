@@ -17,7 +17,6 @@ use sisyphus_metrics::record_mem_operation;
 use sisyphus_types::experience::{experience_counter_from_key, experience_origin_from_key};
 use sqlx::{Row, SqlitePool, sqlite::SqlitePoolOptions};
 use std::num::NonZeroUsize;
-use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::mpsc;
@@ -151,13 +150,12 @@ async fn new_internal(db_url: &str, config: &sisyphus_types::CacheConfig) -> Mem
             })?;
         }
 
-        let opts = sqlx::sqlite::SqliteConnectOptions::from_str(db_url)
-            .map_err(|e| MemError::InvalidSqliteUrl {
+        let opts = crate::sqlite_config::sqlite_options(db_url).map_err(|e| {
+            MemError::InvalidSqliteUrl {
                 url: db_url.to_string(),
                 source: e,
-            })?
-            .create_if_missing(true)
-            .foreign_keys(true);
+            }
+        })?;
 
         SqlitePoolOptions::new().max_connections(5).connect_with(opts).await.map_err(|e| {
             MemError::Sqlx {
