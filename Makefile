@@ -289,7 +289,15 @@ rustc-abort-forensics:
 	@touch crates/sisyphus-core/src/lib.rs 2>/dev/null || true
 
 
-# — 结构审计（不需要编译，纯静态扫描）——
+# — 结构审计（不需要编译，纯静态扫描）—
+#
+# 本地目标 vs CI：这三个审计在 CI 里**有**强制——ci.yml 的 `audit-sources`
+# job 直接调用对应的 python 脚本（本 job 只需 checkout + python，无需
+# Rust 工具链）。但它们**不在** .githooks/pre-commit 里，所以本地提交时
+# 不会自动跑，只有手动执行这三个 make 目标才会生效。
+#
+# 本地实测单次耗时：orphans 3.8s、ignored 2.5s、test-state 9.2s
+# （均为热缓存；首次扫描更慢）。三个合计约 15s，接进 pre-commit 成本很低。
 
 # 孤儿源文件：src/ 下从未被 mod 引入的文件，不参与编译。
 # 曾出现 crates/sisyphus-mem/src/tests.rs（227 行 7 个用例）从未被引用，
