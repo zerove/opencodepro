@@ -145,7 +145,10 @@
 
 ### 阶段 4: 维护与质量 (2026-08)
 - [x] **文档同步**: `book/` 与 `docs/` 反映最新的 crate 拆分架构与中文化
-- [x] **依赖升级审计**: `cargo outdated` / `cargo audit` 定期巡检
+- [x] **依赖升级审计**: `cargo outdated` / `cargo deny check` 定期巡检
+    - 门禁是 `cargo deny check`（读 `deny.toml`，CI `audit-sources` job 执行）。
+      **不要用 `cargo audit` 判断本仓库是否通过**——它读自己的配置、不读
+      `deny.toml`，对本仓库的 ignore 列表完全无感，会给出与 CI 不一致的结论。
 - [x] **eval 真实模式接入**: 接入真实 LLM provider 跑分 (当前 mock) — mock 模式验证通过，真实模式需外部 API 凭证
 - [x] **CI 监控**: nightly 滚动可能引入新 clippy lint, 定期检查 — clippy 无警告，全量测试通过
 
