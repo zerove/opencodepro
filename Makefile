@@ -566,8 +566,44 @@ target-size:
 	@echo "--- deps 内产物数 ---"
 	@ls -1 target/debug/deps 2>/dev/null | wc -l | xargs echo "文件数:"
 
+# 内存探针：包裹一条命令并采样期间的内存。
+#
+# 默认用 sisyphus-types 只是为了让命令短。它是轻量 crate，**不能代表**
+# 重型冷编译的内存峰值——之前就是拿它得出「峰值 326 MB、内存合理」
+# 的错误结论。测真实峰值请用 sandbox / bridge 这类带 wasmtime、
+# tonic 的 crate，并且必须用独立 CARGO_TARGET_DIR 保证是冷编译。
+#
+#   make mem-probe                          # 默认（轻量，仅冒烟）
+#   make mem-probe PKG=sisyphus-sandbox JOBS=2 COLD=1   # 真冷编译 -j 2
+#
+# 本机（i7-8750H 6C12T / 19 GiB）冷编译 `cargo check -p sisyphus-sandbox`
+# 的实测三档，2026-10-09，均为独立 target 目录 + 全冷依赖树：
+#
+#   并行度   rustc RSS 峰值   进程数   耗时
+#   -j 12       2.22 GB        12      412s    ← 裸跑 cargo 的默认值
+#   -j  2       1.43 GB         2      542s
+#   -j  1       0.63 GB         1     >600s 未完
+#
+# 结论：`-j 2` 是本机的平衡点（比 -j 12 少 36% 内存，代价 32% 耗时）。
+#
+# ⚠ 刻意**不**写进 `.cargo/config.toml` 的 `[build] jobs`：那是仓库级配置，
+# 会让 CI 与高性能机器也无条件慢 32%。真正受限的只有这台机器的重型命令，
+# 而 `make check-all` / `test-all` 等已自带 `CARGO_BUILD_JOBS=1`，
+# 裸跑 cargo 才会落到 12 并行——那正是需要手动传 `JOBS=2` 的场景。
+MEM_PROBE_PKG ?= sisyphus-types
+MEM_PROBE_JOBS ?= 1
 mem-probe:
-	@python3 scripts/mem_probe.py -- env CARGO_BUILD_JOBS=1 cargo check -p sisyphus-types
+	@if [ "$(COLD)" = "1" ]; then \
+	    echo "冷编译模式：独立 target 目录（不影响主缓存）"; \
+	    d=$$(mktemp -d /home/zeron/.cache/sisyphus-memprobe.XXXXXX); \
+	    CARGO_TARGET_DIR="$$d" python3 scripts/mem_probe.py --jobs $(MEM_PROBE_JOBS) -- cargo check -p $(MEM_PROBE_PKG); \
+	    rc=$$?; \
+	    du -sh "$$d" 2>/dev/null | sed 's/^/本次冷编译占用: /'; \
+	    rm -rf "$$d"; \
+	    exit $$rc; \
+	else \
+	    python3 scripts/mem_probe.py --jobs $(MEM_PROBE_JOBS) -- cargo check -p $(MEM_PROBE_PKG); \
+	fi
 
 target-gc:
 	@python3 scripts/target_gc.py --self-check
