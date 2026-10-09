@@ -52,6 +52,85 @@ impl ToolExecutor for DummyToolExecutor {
     }
 }
 
+/// 包裹 builtin 执行器，拦截**真实网络工具**，返回确定性结果。
+///
+/// ## 为什么需要
+///
+/// `GoalDrivenSynthesizer` 会为 `fetch` 动作生成
+/// `builtin:web_fetch`，且 `default_args_for_action`（synthesis.rs:154）
+/// 填入真实 URL `https://example.com`。于是 `execute_goal` 在测试里真的
+/// 发出 HTTP 请求。
+///
+/// 实测：`unshare -rn`（无网络）下 `test_full_pipeline` /
+/// `test_concurrent_execution` 双双 FAILED，报错与有网时**完全相同**：
+///
+/// ```text
+/// AllIterationsPivoted(1, "Strategic Pivot: Node fetch produced output
+/// with deviation score 0.81 (effective threshold 0.01, base 0.01)")
+/// ```
+///
+/// 0.81 = failure_rate 1.0 × 0.6 + Unknown 0.7 × 0.3，即节点确实报错。
+/// CI 的 `test-integration` job（ci.yml:272）会执行该套件，因此断网、
+/// DNS 被墙、或 example.com 不可达时 CI 会红灯——这是真实的
+/// **非封闭性（non-hermeticity）** 缺陷，而非偶发环境问题。
+///
+/// ## 为什么不能直接用 `DummyToolExecutor` 替换
+///
+/// 那样会把 args 管道一并盖掉：`118f558` 正是靠「args 缺失 → builtin
+/// 强校验 → 节点报错 → 0.81」观察到参数丢失的，一旦换成永远返回 `ok`
+/// 的桩，那个回归就再也测不出来了。
+///
+/// 这里只拦截**网络类**工具，其余仍走真实 `BuiltinToolExecutor`，
+/// 保留参数校验与路由的真实行为。
+struct OfflineBuiltinExecutor {
+    inner: Arc<dyn ToolExecutor>,
+}
+
+/// 需要拦截的工具：全部会发起真实网络请求。
+const NETWORK_TOOLS: &[&str] = &["web_fetch", "web_search", "bash_exec"];
+
+#[async_trait]
+impl ToolExecutor for OfflineBuiltinExecutor {
+    async fn execute(
+        &self,
+        tool_id: &str,
+        args: Vec<u8>,
+        fuel_limit: u64,
+    ) -> Result<Vec<u8>, TypesError> {
+        if NETWORK_TOOLS.contains(&tool_id) {
+            // 仍然把 args 传下去并校验，保证「参数缺失」仍会报错——
+            // 这正是 118f558 要覆盖的行为。
+            let parsed: serde_json::Value =
+                serde_json::from_slice(&args).unwrap_or(serde_json::Value::Null);
+            let missing = match tool_id {
+                "web_fetch" => parsed.get("url").and_then(|v| v.as_str()).is_none(),
+                "web_search" => parsed.get("query").and_then(|v| v.as_str()).is_none(),
+                "bash_exec" => parsed.get("command").and_then(|v| v.as_str()).is_none(),
+                _ => false,
+            };
+            if missing {
+                // 复现真实 builtin 的错误文案（errors.rs:22 的 Display），
+                // 保证「参数缺失」仍然失败、断言仍然有判别力。
+                let arg = match tool_id {
+                    "web_fetch" => "url",
+                    "web_search" => "query",
+                    _ => "command",
+                };
+                return Err(TypesError::ToolExecutionError {
+                    tool_id: tool_id.to_string(),
+                    details: format!("missing or non-string arg '{arg}'"),
+                });
+            }
+            return Ok(
+                serde_json::json!({ "content": "offline", "content_type": "text/plain" })
+                    .to_string()
+                    .into_bytes(),
+            );
+        }
+        self.inner.execute(tool_id, args, fuel_limit).await
+    }
+}
+
 struct DummyConsensus;
 
 #[async_trait]
@@ -152,7 +231,12 @@ async fn setup_kernel(db_url: Option<&str>) -> SisyphusKernel {
         bridge_client: None,
     });
     let router = Arc::new(ExecutorRouter::new(tool_executor.clone()));
-    router.register("builtin", builtin_executor);
+    router.register(
+        "builtin",
+        Arc::new(OfflineBuiltinExecutor {
+            inner: builtin_executor,
+        }),
+    );
     let tool_executor: Arc<dyn ToolExecutor> = router;
 
     let simulator = Arc::new(MonteCarloSimulator::with_state_store(
