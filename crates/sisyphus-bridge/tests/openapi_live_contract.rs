@@ -37,7 +37,7 @@ async fn serve_http() -> (String, tokio::task::JoinHandle<()>) {
 
 /// 真实 HTTP 拉取 /openapi.json，返回 (状态码, 响应体)。
 async fn fetch_openapi(base: &str) -> (u16, String) {
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder().no_proxy().build().expect("构造 HTTP 客户端失败");
     let resp =
         client.get(format!("{base}/openapi.json")).send().await.expect("请求 /openapi.json 失败");
     let status = resp.status().as_u16();

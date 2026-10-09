@@ -3,6 +3,14 @@
 //!
 //! 为什么需要这一层：单元测试直接调用内部函数并注入 broadcast channel，
 //! 绕过了 HTTP 路由、查询参数解析、跨请求的广播通道共享这些真实环节。
+//!
+//! 注意：客户端一律用 `.no_proxy()` 构造。这些用例起的是 **127.0.0.1** 上的
+//! 真实服务，而 `reqwest::Client::new()` 会读取系统代理环境变量
+//! （`HTTP_PROXY` / `http_proxy` 等）。开发机上设了
+//! `HTTP_PROXY=http://127.0.0.1:7890` 时，本机请求会被转发给代理，
+//! 代理无法访问测试进程自己的临时端口，于是**每一页**都拿到 HTTP 502，
+//! 3 条用例全红（实测：开代理 0 passed/3 failed，清掉代理 3 passed）。
+//! 这类失败与被测代码无关，但会把真实回归淹没在噪声里。
 
 use futures_util::StreamExt;
 use sisyphus_bridge::http::build_router;
@@ -63,7 +71,7 @@ async fn next_sse_data(
 #[tokio::test]
 async fn live_sse_subscriber_receives_broadcast_event() {
     let (base, server) = serve_http().await;
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder().no_proxy().build().expect("构造 HTTP 客户端失败");
 
     // 建立真实 SSE 连接
     let resp =
@@ -108,7 +116,7 @@ async fn live_sse_subscriber_receives_broadcast_event() {
 #[tokio::test]
 async fn live_sse_project_id_filter_isolates_subscribers() {
     let (base, server) = serve_http().await;
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder().no_proxy().build().expect("构造 HTTP 客户端失败");
 
     // 订阅者只关心 project-a
     let resp = client
@@ -150,7 +158,7 @@ async fn live_sse_project_id_filter_isolates_subscribers() {
 #[tokio::test]
 async fn live_sse_same_project_event_is_delivered() {
     let (base, server) = serve_http().await;
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder().no_proxy().build().expect("构造 HTTP 客户端失败");
 
     let resp = client
         .get(format!(

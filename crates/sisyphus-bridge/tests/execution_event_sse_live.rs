@@ -93,7 +93,7 @@ async fn collect_event_types(
 #[tokio::test]
 async fn live_execution_emits_events_to_sse_subscribers() {
     let (base, server) = serve_http().await;
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder().no_proxy().build().expect("构造 HTTP 客户端失败");
 
     // 建立真实 SSE 连接，不加任何过滤，接收全部事件
     let resp =
@@ -147,7 +147,7 @@ async fn live_execution_emits_events_to_sse_subscribers() {
 #[tokio::test]
 async fn live_execution_respects_event_tx_false() {
     let (base, server) = serve_http().await;
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder().no_proxy().build().expect("构造 HTTP 客户端失败");
 
     let resp =
         client.get(format!("{base}/api/events?heartbeat=0")).send().await.expect("SSE 连接失败");
@@ -180,7 +180,7 @@ async fn live_execution_respects_event_tx_false() {
 #[tokio::test]
 async fn live_execution_events_respect_sop_id_filter() {
     let (base, server) = serve_http().await;
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder().no_proxy().build().expect("构造 HTTP 客户端失败");
 
     // 只订阅 sop-watch
     let resp = client
@@ -258,7 +258,7 @@ async fn collect_payloads(
 #[tokio::test]
 async fn live_execution_event_names_are_snake_case_kernel_variants() {
     let (base, server) = serve_http().await;
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder().no_proxy().build().expect("构造 HTTP 客户端失败");
 
     let resp =
         client.get(format!("{base}/api/events?heartbeat=0")).send().await.expect("SSE 连接失败");
@@ -334,7 +334,7 @@ async fn live_execution_event_names_are_snake_case_kernel_variants() {
 #[tokio::test]
 async fn live_composite_execution_exposes_sse_sop_id_for_subscription() {
     let (base, server) = serve_http().await;
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder().no_proxy().build().expect("构造 HTTP 客户端失败");
 
     // 先建立不带 sop_id 过滤的订阅：composite 的 sop_id 由服务端生成，
     // 客户端事前无法得知，只能事后关联。
