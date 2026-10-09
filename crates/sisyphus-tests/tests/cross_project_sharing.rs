@@ -92,13 +92,18 @@ async fn test_experience_isolated_between_projects() {
 async fn test_share_makes_experience_visible_across_projects() {
     let bank = setup_experience_bank().await;
 
-    bank.record(make_experience(
-        "shared retry strategy",
-        Some("proj-a"),
-        2001,
-    ))
-    .await
-    .expect("record failed");
+    // 主键必须用 record 返回的值，不能拼 `exp:{timestamp}`：
+    // 存储主键已改为 `exp:{timestamp}:{origin}:{counter}`（纳入来源节点与
+    // 节点内计数，以修复同秒两次写入撞主键导致静默丢失的缺陷）。
+    // 硬编码旧格式会稳定地拿到 “experience exp:2001 not found”。
+    let key = bank
+        .record_with_id(make_experience(
+            "shared retry strategy",
+            Some("proj-a"),
+            2001,
+        ))
+        .await
+        .expect("record failed");
 
     // Before sharing: invisible to project B.
     let before = query_project(bank.as_ref(), "shared retry strategy", "proj-b").await;
@@ -108,7 +113,7 @@ async fn test_share_makes_experience_visible_across_projects() {
     );
 
     // Share it globally.
-    bank.share_experience("exp:2001").await.expect("share failed");
+    bank.share_experience(&key).await.expect("share failed");
 
     // After sharing: project B can now retrieve it (multi-workspace transfer).
     let after = query_project(bank.as_ref(), "shared retry strategy", "proj-b").await;
@@ -133,12 +138,14 @@ async fn test_share_makes_experience_visible_across_projects() {
 async fn test_unshare_restores_project_ownership() {
     let bank = setup_experience_bank().await;
 
-    bank.record(make_experience("rollback pattern", Some("proj-a"), 3001))
+    // 同上：主键来自 record 的返回值，不拼旧格式（见上一个用例的注释）。
+    let key = bank
+        .record_with_id(make_experience("rollback pattern", Some("proj-a"), 3001))
         .await
         .expect("record failed");
 
-    bank.share_experience("exp:3001").await.expect("share failed");
-    bank.unshare_experience("exp:3001", "proj-a").await.expect("unshare failed");
+    bank.share_experience(&key).await.expect("share failed");
+    bank.unshare_experience(&key, "proj-a").await.expect("unshare failed");
 
     // No longer shared.
     let shared = bank.list_shared().await.expect("list_shared failed");
