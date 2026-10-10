@@ -391,6 +391,81 @@ fn test_peak_memory_is_absent_not_zero_for_memoryless_module() {
     let _ = child.wait();
 }
 
+/// 协议侧的燃料上限必须真的在生效，而不只是被转发下去。
+///
+/// 去重之前这条路径完全无人验证：daemon 的 10 个测试没有一处断言「fuel_limit
+/// 小到一定程度就会拦住 guest」。于是有一个真实的失效模式没人看见——如果
+/// `execute_internal_opts` 把 `metered` 写死成 `false`，或者 `set_fuel` 的实参被
+/// 换掉，fuel_limit 会变成一个被协议忠实转发、却毫无约束力的装饰字段，而**墙钟
+/// 兜底会把每次尝试都救回来**，所有既有测试照样绿。
+///
+/// 判别方式：给同一个 `infinite_loop` 两个相差 100 倍的燃料预算，要求耗时成比例
+/// 拉开。若 `fuel_limit` 真的驱动计账，大预算会明显跑得更久；若它被忽略
+/// （`metered=false`），两次都会停在墙钟上限，耗时相同。比值不依赖机器速度。
+///
+/// 关键细节：**两个预算必须在同一个 daemon 进程里跑**。每次都起新进程的话，
+/// 每次都要重新编译 wasm，而实测小预算的整个请求只要 ~30ms——编译开销占了绝大
+/// 多数，真实执行时间被完全淹没。我第一版正是这么写的，实测两种预算都是
+/// 31-35ms，于是差点把「燃料失效」当成结论。改用同进程第二次调用（命中模块缓存）
+/// 后，预算效应清晰可见：实测 57ms（1e6）对 523ms（1e9）。
+#[test]
+fn test_fuel_limit_actually_bounds_a_runaway_guest() {
+    let small_budget = 1_000_000u64;
+    let large_budget = small_budget * 1_000;
+    let wall_clock = Duration::from_millis(sisyphus_types::node::EXECUTION_TIMEOUT_MS);
+
+    let (mut child, mut stdout, mut stdin, tmpdir) = spawn_sandboxd();
+    install_tool(&tmpdir, "infinite_loop");
+
+    /// 发一条 execute，读回响应，断言是错误，并返回耗时。
+    ///
+    /// 这里用阻塞的 [`send_request`] 而不是带超时的版本：两次调用都被墙钟兜底
+    /// 限死（墙钟在本测试里是开着的），最坏情况就是两次各等一个 5s 周期，
+    /// 不会真的挂死；换来的是流可以被反复复用，第二次调用才能命中模块缓存。
+    fn timed_execute(
+        stdout: &mut Box<dyn BufRead + Send>,
+        stdin: &mut Box<dyn Write + Send>,
+        id: u64,
+        budget: u64,
+    ) -> Duration {
+        let request = json_request(
+            id,
+            "execute",
+            &format!(r#"{{"tool_id":"infinite_loop","args":[],"fuel_limit":{budget}}}"#),
+        );
+        let start = std::time::Instant::now();
+        let response = send_request(stdout, stdin, &request);
+        let elapsed = start.elapsed();
+
+        let parsed: serde_json::Value =
+            serde_json::from_str(&response).expect("Invalid JSON response");
+        assert!(
+            parsed.get("result").is_none() || parsed["result"].is_null(),
+            "a fuel-exhausted guest must be reported as an error, got: {response}"
+        );
+        elapsed
+    }
+
+    // 第一次调用顺便把模块编进缓存，第二次才是纯执行时间。
+    let warmup = timed_execute(&mut stdout, &mut stdin, 1, small_budget);
+    let measured = timed_execute(&mut stdout, &mut stdin, 2, large_budget);
+
+    assert!(
+        measured < wall_clock,
+        "fuel_limit={large_budget} took {measured:?}, past the wall-clock bound {wall_clock:?} — \
+         the budget was too large to distinguish fuel from the clock"
+    );
+    assert!(
+        measured > warmup.saturating_mul(3),
+        "a 1000x fuel budget ({large_budget}) must take clearly longer than {small_budget}, \
+         but they took {measured:?} vs {warmup:?} — fuel_limit is not driving execution time, \
+         so it is probably not driving fuel accounting either"
+    );
+
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
 /// 墙钟兜底必须在**燃料计账失效**时独自拦住失控 guest。
 ///
 /// 这条走的是 daemon 自己的执行路径（它与 library 各有一份拷贝粘贴），而不是
