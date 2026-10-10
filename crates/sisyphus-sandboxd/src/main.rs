@@ -25,7 +25,7 @@
 //!
 //! ```json
 //! {"id": 1, "result": {"pong": true}}
-//! {"id": 2, "result": {"data": "base64_encoded_result", "fuel_consumed": 12345}}
+//! {"id": 2, "result": {"data": "base64_encoded_result", "fuel_consumed": 12345, "peak_memory_bytes": 65536}}
 //! {"id": 2, "error": "error message"}
 //! ```
 
@@ -33,6 +33,7 @@ use async_trait::async_trait;
 use clap::Parser;
 use dashmap::DashMap;
 use sisyphus_metrics::record_wasm_execution;
+pub use sisyphus_types::node::EXECUTION_TIMEOUT_MS;
 use sisyphus_types::{CacheInvalidatable, ToolExecutor, TypesError};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -93,6 +94,45 @@ struct WasmToolExecutor {
     engine: Engine,
     tools_path: PathBuf,
     module_cache: Arc<DashMap<String, Module>>,
+    /// Keeps the epoch ticker alive; see the `epoch_interruption` note in `new`.
+    _epoch_ticker: Arc<EpochTicker>,
+}
+
+/// Advances wasmtime's epoch counter on a fixed interval.
+///
+/// wasmtime only checks the epoch deadline from inside running guest code, so
+/// the counter must be moved by something outside the guest. Mirrors the
+/// sandbox crate: the daemon has its own execution path and therefore needs its
+/// own protection — sharing the library type would also remove the duplicated
+/// path, but that is a larger refactor than this fix warrants.
+struct EpochTicker {
+    shutdown: Arc<std::sync::atomic::AtomicBool>,
+}
+
+impl EpochTicker {
+    fn spawn(engine: Engine, interval: std::time::Duration) -> Self {
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        let shutdown = Arc::new(AtomicBool::new(false));
+        let flag = Arc::clone(&shutdown);
+        std::thread::Builder::new()
+            .name("wasmtime-epoch".into())
+            .spawn(move || {
+                while !flag.load(Ordering::Relaxed) {
+                    std::thread::sleep(interval);
+                    engine.increment_epoch();
+                }
+            })
+            .ok();
+        Self { shutdown }
+    }
+}
+
+impl Drop for EpochTicker {
+    fn drop(&mut self) {
+        use std::sync::atomic::Ordering;
+        self.shutdown.store(true, Ordering::Relaxed);
+    }
 }
 
 impl CacheInvalidatable for WasmToolExecutor {
@@ -107,6 +147,12 @@ impl WasmToolExecutor {
         let mut config = Config::new();
         config.consume_fuel(true);
         config.max_wasm_stack(1_000_000);
+        // Fuel is a cooperative limit: it only stops code still executing wasm
+        // instructions. If metering itself regresses, an infinite loop is never
+        // interrupted and the request hangs forever. Epoch interruption is an
+        // independent wall-clock bound enforced by the runtime, so it still
+        // traps when fuel accounting is wrong.
+        config.epoch_interruption(true);
         // wasmtime ≥46 defaults memory_reservation to 4GiB; the pooling allocator
         // pre-maps that much per slot, which hangs in memory-constrained envs.
         // Our WASM tools are small, so a modest reservation avoids the huge mmap.
@@ -122,12 +168,27 @@ impl WasmToolExecutor {
         config.allocation_strategy(wasmtime::InstanceAllocationStrategy::Pooling(pooling));
 
         let engine = Engine::new(&config)?;
+        let epoch_ticker = Arc::new(EpochTicker::spawn(
+            engine.clone(),
+            std::time::Duration::from_millis(EXECUTION_TIMEOUT_MS),
+        ));
 
         Ok(Self {
             engine,
             tools_path,
             module_cache: Arc::new(DashMap::new()),
+            _epoch_ticker: epoch_ticker,
         })
+    }
+
+    /// Arm the wall-clock deadline for one execution.
+    ///
+    /// Traps (rather than invoking a callback) so a runaway guest surfaces as an
+    /// ordinary wasm trap and lands in the same `ResourceExhausted` shape as the
+    /// fuel-exhausted path.
+    fn arm_epoch_deadline(&self, store: &mut Store<()>) {
+        store.set_epoch_deadline(1);
+        store.epoch_deadline_trap();
     }
 
     async fn load_wasm_bytes(&self, tool_id: &str) -> Result<Vec<u8>, SandboxError> {
@@ -182,7 +243,7 @@ impl WasmToolExecutor {
         &self,
         tool_id: &str,
         fuel_limit: u64,
-    ) -> Result<(Vec<u8>, u64), TypesError> {
+    ) -> Result<(Vec<u8>, u64, Option<u64>), TypesError> {
         use sisyphus_types::TypesError;
 
         let span =
@@ -219,6 +280,10 @@ impl WasmToolExecutor {
             }
         })?;
 
+        // Wall-clock backstop, independent of fuel. See the `epoch_interruption`
+        // note in `new`: fuel can fail to stop a runaway loop, this cannot.
+        self.arm_epoch_deadline(&mut store);
+
         let execute_func = instance.get_func(&mut store, "execute").ok_or_else(|| {
             TypesError::ToolExecutionError {
                 tool_id: tool_id.to_string(),
@@ -243,6 +308,11 @@ impl WasmToolExecutor {
         let call_duration = call_start.elapsed();
 
         let fuel_consumed = fuel_limit.saturating_sub(store.get_fuel().unwrap_or(0));
+        // Peak linear memory actually committed, as opposed to the configured
+        // cap. `None` when the module exports no memory — an absent measurement
+        // is not the same as zero bytes.
+        let peak_memory =
+            instance.get_memory(&mut store, "memory").map(|mem| mem.data_size(&store) as u64);
         debug!(
             fuel_consumed,
             call_duration_ms = call_duration.as_millis(),
@@ -253,7 +323,7 @@ impl WasmToolExecutor {
             Ok(_) => {
                 let result_ptr = match results.first() {
                     Some(Val::I32(ptr)) => *ptr as usize,
-                    _ => return Ok((vec![], fuel_consumed)),
+                    _ => return Ok((vec![], fuel_consumed, peak_memory)),
                 };
 
                 if let Some(memory) = instance.get_memory(&mut store, "memory") {
@@ -288,7 +358,7 @@ impl WasmToolExecutor {
             fuel_consumed,
         );
 
-        Ok((result_bytes, fuel_consumed))
+        Ok((result_bytes, fuel_consumed, peak_memory))
     }
 }
 
@@ -301,7 +371,7 @@ impl ToolExecutor for WasmToolExecutor {
         fuel_limit: u64,
     ) -> Result<Vec<u8>, TypesError> {
         let _ = args;
-        let (data, _) = self.execute_internal(tool_id, fuel_limit).await?;
+        let (data, _, _) = self.execute_internal(tool_id, fuel_limit).await?;
         Ok(data)
     }
 
@@ -312,12 +382,14 @@ impl ToolExecutor for WasmToolExecutor {
         fuel_limit: u64,
     ) -> Result<(Vec<u8>, Option<sisyphus_types::ExecutionMeasurement>), TypesError> {
         let exec_start = std::time::Instant::now();
-        let (data, fuel_consumed) = self.execute_internal(tool_id, fuel_limit).await?;
+        let (data, fuel_consumed, peak_memory_bytes) =
+            self.execute_internal(tool_id, fuel_limit).await?;
         Ok((
             data,
             Some(sisyphus_types::ExecutionMeasurement {
                 fuel_consumed,
                 duration_ms: exec_start.elapsed().as_millis() as u64,
+                peak_memory_bytes,
             }),
         ))
     }
@@ -383,6 +455,10 @@ struct ExecuteResult {
     /// 实际燃料消耗（P2-9）。旧客户端忽略此字段（向后兼容）。
     #[serde(skip_serializing_if = "Option::is_none")]
     fuel_consumed: Option<u64>,
+    /// guest 线性内存实际占用字节数。与 `fuel_consumed` 同样向后兼容：
+    /// 新增字段，旧客户端按 serde 默认行为忽略。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    peak_memory_bytes: Option<u64>,
 }
 
 fn base64_encode(input: &[u8]) -> String {
@@ -453,6 +529,7 @@ async fn handle_request(
                     result: ExecuteResult {
                         data: base64_encode(&data),
                         fuel_consumed: measurement.map(|m| m.fuel_consumed),
+                        peak_memory_bytes: measurement.and_then(|m| m.peak_memory_bytes),
                     },
                 },
                 Err(e) => Response::ExecuteError {

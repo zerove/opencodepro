@@ -257,6 +257,26 @@ pub struct ToolMetadata {
     pub description: String,
 }
 
+/// 单次 WASM 执行的墙钟上限（毫秒），同时用作 epoch 推进间隔。
+///
+/// Fuel 是首要限制，因为它确定性强、可复现；但它是**协作式**的——只在
+/// guest 仍在执行 wasm 指令时才拦得住它。一旦计账本身失效（例如
+/// `call_ref` / 异常路径漏记燃料，见 RUSTSEC-2026-0315），无限循环就永远
+/// 不会被中断，调用会挂死。因此需要一道与计账无关的墙钟兜底。
+///
+/// 5s 的依据（本仓库实测，非拍脑袋）：正常工具冷编译约 114ms、命中模块
+/// 缓存后约 0.9ms，相对 5s 有约 44 倍余量，不会误伤；而无兜底时的挂死需
+/// 人工 `kill -9`，即运行器全局超时（实测 10+ 分钟），代价高得多。
+///
+/// 余量并非无限：`tools/` 下目前只有测试用 fixture，没有真实生产负载，
+/// 因此这个值是**按现有证据选的**，尚未按生产流量标定。若日后出现耗时
+/// 超过 5s 的合法工具，应先确认它是否需要更大上限，而不是直接调高。
+///
+/// 定义在此处而非任一沙箱 crate：`sisyphus-sandbox` 与 `sisyphus-sandboxd`
+/// 各自持有独立的执行引擎与复制粘贴的执行路径，两边必须取同一个值，
+/// 否则守护进程会与其客户端行为不一致。
+pub const EXECUTION_TIMEOUT_MS: u64 = 5_000;
+
 /// 单次工具执行的真实测量数据（P2-9：燃料真值打通）。
 ///
 /// 此前事件流的 `fuel_consumed` 填的是配置上限而非真实消耗，
@@ -267,6 +287,13 @@ pub struct ExecutionMeasurement {
     pub fuel_consumed: u64,
     /// 工具调用总耗时（毫秒，含编译/实例化）。
     pub duration_ms: u64,
+    /// guest 线性内存的实际占用字节数（`Memory::data_size`）。
+    ///
+    /// 与 `fuel_consumed` 互补：燃料衡量指令数，这个衡量数据段体积。
+    /// 缺失时为 `None`（非 WASM 执行器、或未暴露 memory 导出），
+    /// 而不是 0——0 会被误读成“未占用内存”。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub peak_memory_bytes: Option<u64>,
 }
 
 #[async_trait]
@@ -537,6 +564,7 @@ mod fuel_truth_tests {
                     Some(ExecutionMeasurement {
                         fuel_consumed: self.fuel,
                         duration_ms: 7,
+                        peak_memory_bytes: None,
                     }),
                 ))
             }

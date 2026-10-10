@@ -233,6 +233,12 @@ impl SandboxdClient {
             .map(|fuel_consumed| sisyphus_types::ExecutionMeasurement {
                 fuel_consumed,
                 duration_ms: exec_start.elapsed().as_millis() as u64,
+                // Added after `fuel_consumed`; older daemons omit it entirely,
+                // so absence must degrade to `None` rather than zero.
+                peak_memory_bytes: response
+                    .get("result")
+                    .and_then(|r| r.get("peak_memory_bytes"))
+                    .and_then(|v| v.as_u64()),
             });
 
         Ok((data, measurement))

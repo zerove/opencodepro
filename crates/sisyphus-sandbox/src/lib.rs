@@ -69,6 +69,13 @@ struct ExecOpts {
     wall_clock: bool,
 }
 
+/// Result of one internal execution: payload, fuel spent, peak linear memory.
+///
+/// Named rather than spelled as a 3-tuple because the third element was easy
+/// to drop silently at call sites (`let (data, _) = ...`), which is exactly how
+/// the memory measurement gap appeared in the first place.
+type ExecOutcome = (Vec<u8>, u64, Option<u64>);
+
 impl ExecOpts {
     const DEFAULT: Self = Self {
         metered: true,
@@ -256,7 +263,7 @@ impl WasmToolExecutor {
         &self,
         tool_id: &str,
         fuel_limit: u64,
-    ) -> Result<(Vec<u8>, u64), sisyphus_types::TypesError> {
+    ) -> Result<ExecOutcome, sisyphus_types::TypesError> {
         self.execute_internal_opts(tool_id, fuel_limit, ExecOpts::DEFAULT).await
     }
 
@@ -266,7 +273,7 @@ impl WasmToolExecutor {
         tool_id: &str,
         fuel_limit: u64,
         wall_clock: bool,
-    ) -> Result<(Vec<u8>, u64), sisyphus_types::TypesError> {
+    ) -> Result<ExecOutcome, sisyphus_types::TypesError> {
         self.execute_internal_opts(
             tool_id,
             fuel_limit,
@@ -283,7 +290,7 @@ impl WasmToolExecutor {
         tool_id: &str,
         fuel_limit: u64,
         opts: ExecOpts,
-    ) -> Result<(Vec<u8>, u64), sisyphus_types::TypesError> {
+    ) -> Result<ExecOutcome, sisyphus_types::TypesError> {
         use sisyphus_types::TypesError;
 
         let span =
@@ -355,6 +362,11 @@ impl WasmToolExecutor {
 
         // Check fuel consumption
         let fuel_consumed = fuel_limit.saturating_sub(store.get_fuel().unwrap_or(0));
+        // Peak linear memory the guest actually committed to, as opposed to the
+        // configured cap. `None` when the module exports no memory — an absent
+        // measurement is not the same as zero bytes.
+        let peak_memory =
+            instance.get_memory(&mut store, "memory").map(|mem| mem.data_size(&store) as u64);
         tracing::debug!(
             fuel_consumed,
             call_duration_ms = call_duration.as_millis(),
@@ -366,7 +378,7 @@ impl WasmToolExecutor {
                 // 6. Read result string from WASM linear memory
                 let result_ptr = match results.first() {
                     Some(Val::I32(ptr)) => *ptr as usize,
-                    _ => return Ok((vec![], fuel_consumed)),
+                    _ => return Ok((vec![], fuel_consumed, peak_memory)),
                 };
 
                 // Read memory export (not all modules have "memory" — that's OK)
@@ -403,7 +415,7 @@ impl WasmToolExecutor {
             fuel_consumed,
         );
 
-        Ok((result_bytes, fuel_consumed))
+        Ok((result_bytes, fuel_consumed, peak_memory))
     }
 }
 
@@ -416,7 +428,7 @@ impl ToolExecutor for WasmToolExecutor {
         fuel_limit: u64,
     ) -> Result<Vec<u8>, sisyphus_types::TypesError> {
         let _ = args;
-        let (data, _) = self.execute_internal(tool_id, fuel_limit).await?;
+        let (data, _, _) = self.execute_internal(tool_id, fuel_limit).await?;
         Ok(data)
     }
 
@@ -429,13 +441,14 @@ impl ToolExecutor for WasmToolExecutor {
     {
         use sisyphus_types::TypesError;
         let exec_start = Instant::now();
-        let (data, fuel_consumed) =
+        let (data, fuel_consumed, peak_memory_bytes) =
             self.execute_internal(tool_id, fuel_limit).await.map_err(|e: TypesError| e)?;
         Ok((
             data,
             Some(sisyphus_types::ExecutionMeasurement {
                 fuel_consumed,
                 duration_ms: exec_start.elapsed().as_millis() as u64,
+                peak_memory_bytes,
             }),
         ))
     }
@@ -634,6 +647,34 @@ mod tests {
              memory limit, but took {elapsed:?} (>= one tick {tick:?}), which means it \
              ran until the epoch deadline fired"
         );
+    }
+
+    /// 内存计量必须真的有值，不能永远是 `None`。
+    ///
+    /// 字段是在“跨版本内存对照无数据可测”之后补的，所以它本身需要一个
+    /// 判别信号：若某天 `get_memory` 签名变化或导出名拼错，字段会静默退化为
+    /// `None`，而所有其他测试照样绿——这正是它当初缺失的方式。
+    ///
+    /// 期望值 65536 = 64KiB = wasm 线性内存的最小一页。工具都不申请更多，
+    /// 所以这是可复现的确定值；若上游默认值改变，需连同变更一起更新。
+    #[tokio::test]
+    async fn test_peak_memory_is_actually_measured() {
+        use sisyphus_types::ToolExecutor;
+
+        let executor = test_executor();
+        for tool_id in ["hello", "fast_tool"] {
+            let (_, measurement) = executor
+                .execute_measured(tool_id, vec![], 1_000_000)
+                .await
+                .unwrap_or_else(|e| panic!("{tool_id} should execute: {e}"));
+            let peak = measurement.and_then(|m| m.peak_memory_bytes).unwrap_or_else(|| {
+                panic!("{tool_id}: peak_memory_bytes is None — memory is not being measured")
+            });
+            assert_eq!(
+                peak, 65_536,
+                "{tool_id} should report exactly one 64KiB wasm page"
+            );
+        }
     }
 
     #[tokio::test]

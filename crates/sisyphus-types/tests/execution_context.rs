@@ -49,6 +49,7 @@ fn execution_context_insert_measurement() {
         ExecutionMeasurement {
             fuel_consumed: 100,
             duration_ms: 50,
+            peak_memory_bytes: None,
         },
     );
     assert_eq!(ctx.measurements.len(), 1);

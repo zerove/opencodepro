@@ -315,6 +315,8 @@ impl ToolExecutor for CustomToolExecutor {
             fuel_consumed.map(|fuel_consumed| sisyphus_types::ExecutionMeasurement {
                 fuel_consumed,
                 duration_ms: exec_start.elapsed().as_millis() as u64,
+                // Native (non-WASM) tools have no linear memory to report.
+                peak_memory_bytes: None,
             }),
         ))
     }
