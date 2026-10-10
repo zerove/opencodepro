@@ -35,6 +35,25 @@ fn spawn_sandboxd_with_env(
     Box<dyn Write + Send>,
     tempfile::TempDir,
 ) {
+    spawn_sandboxd_with_pages(10, extra_env)
+}
+
+/// Same as [`spawn_sandboxd_with_env`], but with an explicit `--max-memory-pages`.
+///
+/// The page budget is a real CLI knob that reaches all the way into wasmtime's
+/// pooling allocator, so a test that wants to observe it moving has to spawn the
+/// real binary with a real value. Hard-coding `10` in the shared helper — as the
+/// previous version of this file did — would make every such test a lie by
+/// construction: it could only ever observe the default.
+fn spawn_sandboxd_with_pages(
+    max_memory_pages: u32,
+    extra_env: &[(&str, &str)],
+) -> (
+    Child,
+    Box<dyn BufRead + Send>,
+    Box<dyn Write + Send>,
+    tempfile::TempDir,
+) {
     let bin_path = env!("CARGO_BIN_EXE_sisyphus-sandboxd");
 
     // Create a temp directory for tools — kept alive by TempDir until dropped.
@@ -44,7 +63,7 @@ fn spawn_sandboxd_with_env(
         .arg("--tools-dir")
         .arg(tmpdir.path())
         .arg("--max-memory-pages")
-        .arg("10")
+        .arg(max_memory_pages.to_string())
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
@@ -346,6 +365,90 @@ fn test_peak_memory_is_reported_over_the_protocol() {
 
     let _ = child.kill();
     let _ = child.wait();
+}
+
+/// 协议侧的 `--max-memory-pages` 必须真的改变 guest 的结果，而不只是被转发下去。
+///
+/// 补上的缺口：daemon 的 11 个测试里没有一处触碰内存限制。`--max-memory-pages`
+/// 从 CLI 一路走到 wasmtime 的 pooling allocator，此前没有任何断言看着它——于是
+/// 有两种失效都能全绿：(a) `build_executor` 把参数丢掉、恒传 10；(b) 参数传到了
+/// 但对 grow 无效。它们都是真实的静默失效。
+///
+/// 判别方式是「同一个夹具、两个预算、两个相反的结果」：`grow_past_limit` 请求
+/// 增长 64 页（加上初始 1 页共 65 页）。预算 10 页时必须拿到 `-1`，预算 80 页时
+/// 必须拿到 `1`。如果参数被忽略，两边会给出同一个值，测试立刻失败。
+///
+/// 为什么断言字符串 `-1` 而不是「报错了」：拒绝的 grow **不会 trap**，它只是返回
+/// 失败哨兵 `-1`，daemon 会把它当成一次成功执行并照常回 `result`。所以一个只断言
+/// 「`result` 不存在」的测试在这里必然永远失败，而一个只断言「`result` 存在」的测试
+/// 又恰好会被真正失控的 guest 骗过。唯一有判别力的就是值本身。
+///
+/// 注意：三个夹具都是「成功也返回、失败也返回」，所以本测试必须逐字比对负载。
+#[test]
+fn test_max_memory_pages_changes_the_outcome_over_the_protocol() {
+    // Run the same module under a budget it cannot satisfy, then under one it can.
+    let run = |pages: u32| -> String {
+        let (mut child, mut stdout, mut stdin, tmpdir) = spawn_sandboxd_with_pages(pages, &[]);
+        install_tool(&tmpdir, "grow_past_limit");
+
+        // Warm the module cache in-process first would cost a fresh spawn anyway;
+        // a single execute is enough because the budget is applied at engine
+        // construction, not per request.
+        let request = json_request(
+            1,
+            "execute",
+            r#"{"tool_id":"grow_past_limit","args":[],"fuel_limit":1000000}"#,
+        );
+        let response = send_request(&mut stdout, &mut stdin, &request);
+        let _ = child.kill();
+        let _ = child.wait();
+
+        let parsed: serde_json::Value =
+            serde_json::from_str(&response).expect("Invalid JSON response");
+        if let Some(error) = parsed.get("error").and_then(|v| v.as_str()) {
+            panic!("execute must not error, got: {response} ({error})");
+        }
+        let data = parsed["result"]["data"]
+            .as_str()
+            .unwrap_or_else(|| panic!("missing result.data in: {response}"));
+        base64_decode_to_string(data)
+    };
+
+    assert_eq!(
+        run(10),
+        "-1",
+        "a 65-page grow must be refused by the default 10-page budget"
+    );
+    assert_eq!(
+        run(80),
+        "1",
+        "an 80-page budget must allow the very same 65-page grow"
+    );
+}
+
+/// Minimal base64 decoder for assertions — the fixtures emit one short ASCII string.
+///
+/// Deliberately not a production dependency: the point is to check the *daemon's*
+/// encoding, so decoding here with independent code is a cross-check rather than a
+/// restatement of the encoder.
+fn base64_decode_to_string(input: &str) -> String {
+    const CHARS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut buffer = 0u32;
+    let mut bits = 0u32;
+    let mut out = Vec::new();
+    for &byte in input.trim_end_matches('=').as_bytes() {
+        let Some(pos) = CHARS.iter().position(|&c| c == byte) else {
+            panic!("invalid base64 character {:?}", byte as char);
+        };
+        buffer = (buffer << 6) | pos as u32;
+        bits += 6;
+        if bits >= 8 {
+            bits -= 8;
+            out.push((buffer >> bits) as u8);
+            buffer &= (1 << bits) - 1;
+        }
+    }
+    String::from_utf8(out).expect("fixture output must be utf-8")
 }
 
 /// 无内存导出的模块必须让 `peak_memory_bytes` 退化为 `None`，而非 0。

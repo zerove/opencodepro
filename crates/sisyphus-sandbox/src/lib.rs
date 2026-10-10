@@ -225,11 +225,23 @@ impl WasmToolExecutor {
         // wasmtime ≥46 defaults memory_reservation to 4GiB; the pooling allocator
         // pre-maps that much per slot, which hangs in memory-constrained envs.
         // Our WASM tools are small, so a modest reservation avoids the huge mmap.
-        config.memory_reservation(2 * 1024 * 1024);
+        //
+        // It must, however, be at least the pooling allocator's `max_memory_size`:
+        // wasmtime rejects an engine whose reservation is smaller than the largest
+        // memory a slot may hand out (`maximum memory size of 0x460000 bytes
+        // exceeds the configured memory reservation of 0x200000 bytes`). A fixed
+        // 2 MiB cap therefore made *every* `max_memory_pages` above 32 fail engine
+        // construction outright — the sandbox would refuse to start rather than
+        // enforce the limit. Floor the reservation at the configured budget so the
+        // setting is always usable, and keep the 2 MiB floor for the default 10-page
+        // budget, which is unchanged.
+        const MIN_RESERVATION: u64 = 2 * 1024 * 1024;
+        let max_memory_bytes = max_memory_pages as u64 * 65536;
+        config.memory_reservation(MIN_RESERVATION.max(max_memory_bytes));
 
         let mut pooling = wasmtime::PoolingAllocationConfig::default();
         pooling
-            .max_memory_size(max_memory_pages as usize * 65536)
+            .max_memory_size(max_memory_bytes as usize)
             // Conservative pool sizes to avoid large pre-allocated mmaps in memory-constrained envs
             .total_tables(10)
             .table_elements(100)
@@ -835,19 +847,119 @@ mod tests {
         }
     }
 
+    /// The memory limit must actually bound a guest that grows its linear memory.
+    ///
+    /// This replaces a test that asserted almost nothing. The old
+    /// `test_execute_memory_exhaustion` checked `result.is_err()` and then
+    /// accepted any of `ResourceExhausted` / `memory` / `translation`. Since a
+    /// *compile* failure is also an error — and `tools/memory_hog.wat` was
+    /// written as `(memory.grow 1000)`, which wasmtime reads as a memory index
+    /// and rejects with `unknown memory 1000` — the fixture never compiled and
+    /// the test passed for a reason that had nothing to do with memory limits.
+    ///
+    /// Two facts drive the design here:
+    ///
+    /// 1. `memory.grow` **does not trap** on failure; it returns the previous
+    ///    size, or `-1` when the grow is refused. So the observable is the
+    ///    grow's return value, not an error. Each fixture renders that value as
+    ///    a decimal string in linear memory and returns its address, which is
+    ///    the ABI this executor speaks: the `i32` result of `execute` is read
+    ///    as a pointer and the bytes there are the tool's output.
+    /// 2. A single test cannot distinguish "the limit works" from "nothing can
+    ///    grow at all". Both fixtures declare `min = 1` and no maximum of their
+    ///    own, so the only thing separating them is the configured
+    ///    `max_memory_pages`.
+    ///
+    /// The limit is exercised as configured, 10 pages: 1 + 4 = 5 fits,
+    /// 1 + 64 = 65 does not.
     #[tokio::test]
-    async fn test_execute_memory_exhaustion() {
+    async fn test_memory_limit_bounds_a_growing_guest() {
+        use sisyphus_types::ToolExecutor;
+
         let executor = test_executor();
-        let result = executor.execute("memory_hog", vec![], 1000).await;
-        assert!(result.is_err());
-        let err = result.unwrap_err();
-        let err_str = err.to_string();
-        assert!(
-            err_str.contains("ResourceExhausted")
-                || err_str.contains("memory")
-                || err_str.contains("translation"),
-            "Expected memory-related error, got: {}",
-            err_str
+        let output = |data: Vec<u8>| {
+            String::from_utf8(data.clone())
+                .unwrap_or_else(|e| panic!("grow fixture must emit utf-8, got {data:?}: {e}"))
+        };
+
+        // Positive control: growing by 4 pages stays inside the 10-page budget,
+        // so `memory.grow` reports the previous size (1), not -1.
+        let within = executor
+            .execute("grow_within_limit", vec![], 1_000_000)
+            .await
+            .unwrap_or_else(|e| panic!("grow_within_limit must compile and run: {e}"));
+        assert_eq!(
+            output(within),
+            "1",
+            "a grow that fits in the page budget must report the previous size"
+        );
+
+        // Negative case: growing by 64 pages must be refused. Same executor,
+        // same engine, same module shape — only the requested size differs.
+        let past = executor
+            .execute("grow_past_limit", vec![], 1_000_000)
+            .await
+            .unwrap_or_else(|e| panic!("grow_past_limit must compile and run: {e}"));
+        assert_eq!(
+            output(past),
+            "-1",
+            "a grow past max_memory_pages must return the -1 failure sentinel"
+        );
+
+        // `memory_hog` grows by 1000 pages, so it must fail the same way.
+        let hog = executor
+            .execute("memory_hog", vec![], 1_000_000)
+            .await
+            .unwrap_or_else(|e| panic!("memory_hog must compile and run: {e}"));
+        assert_eq!(
+            output(hog),
+            "-1",
+            "memory_hog must be refused by the page budget, not fail to compile"
+        );
+    }
+
+    /// `max_memory_pages` must change the outcome, not merely sit in the config.
+    ///
+    /// The companion to `test_memory_limit_bounds_a_growing_guest`: that test
+    /// fixes the limit at its default and proves the boundary sits where the
+    /// documentation says. This one moves the limit and shows the boundary moves
+    /// with it, which is what rules out a hard-coded 10 pages in the engine.
+    #[tokio::test]
+    async fn test_max_memory_pages_actually_moves_the_boundary() {
+        use sisyphus_types::ToolExecutor;
+
+        let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../tools")
+            .canonicalize()
+            .expect("tools dir");
+        let output = |data: Vec<u8>| String::from_utf8_lossy(&data).into_owned();
+
+        // 1 + 64 = 65 pages needed. A 70-page budget must cover it, even though
+        // the default 10-page budget refuses the very same module.
+        let roomy = WasmToolExecutor::with_config(Some(dir.clone()), Some(70))
+            .expect("engine with a 70-page budget");
+        let roomy = roomy
+            .execute("grow_past_limit", vec![], 1_000_000)
+            .await
+            .unwrap_or_else(|e| panic!("must compile and run under a 70-page budget: {e}"));
+        assert_eq!(
+            output(roomy),
+            "1",
+            "a 70-page budget must allow the 65-page grow that the default refuses"
+        );
+
+        // 1 + 4 = 5 pages needed. A 3-page budget must refuse it, even though
+        // the default 10-page budget allows the very same module.
+        let tight = WasmToolExecutor::with_config(Some(dir.clone()), Some(3))
+            .expect("engine with a 3-page budget");
+        let tight = tight
+            .execute("grow_within_limit", vec![], 1_000_000)
+            .await
+            .unwrap_or_else(|e| panic!("must compile and run under a 3-page budget: {e}"));
+        assert_eq!(
+            output(tight),
+            "-1",
+            "a 3-page budget must refuse the 5-page grow that the default allows"
         );
     }
 
