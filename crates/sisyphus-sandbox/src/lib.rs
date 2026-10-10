@@ -161,8 +161,40 @@ impl WasmToolExecutor {
         Self::with_config_inner(tools_path, max_memory_pages, false)
     }
 
+    /// Build a sandbox with the wall-clock backstop explicitly on or off.
+    ///
+    /// Not part of the supported surface: the only production caller is
+    /// `sisyphus-sandboxd`, which needs `false` to run its negative-control
+    /// test (`test_without_wall_clock_bound_a_runaway_guest_hangs`) through its
+    /// real stdio protocol. Turning the backstop off is never a production
+    /// choice, so this stays `#[doc(hidden)]` rather than joining
+    /// [`with_config`](Self::with_config) — changing that signature would ripple
+    /// through every caller for a knob nobody should reach for.
+    ///
+    /// # Safety of the knob
+    ///
+    /// `wall_clock_enabled = false` leaves fuel as the only limit. It is
+    /// honoured at **config** level (no `epoch_interruption`, no ticker), not
+    /// just by skipping `set_epoch_deadline`: with epoch interruption still on,
+    /// a ticking engine traps *any* unarmed store immediately (measured ~30ms
+    /// for `fast_tool`), which would prove nothing about a missing backstop.
+    /// With it fully off, a runaway guest really does hang — which is exactly
+    /// what the negative control asserts, and why it needs its own timeout.
+    ///
+    /// # Errors
+    /// Same as [`with_config`](Self::with_config): engine creation failure.
+    #[doc(hidden)]
+    pub fn with_config_and_backstop(
+        tools_path: Option<PathBuf>,
+        max_memory_pages: Option<u32>,
+        wall_clock_enabled: bool,
+    ) -> Result<Self, SandboxError> {
+        Self::with_config_inner(tools_path, max_memory_pages, !wall_clock_enabled)
+    }
+
     /// Shared constructor; `wall_clock_disabled` exists solely for the negative
-    /// control in `test_runaway_guest_hangs_without_any_backstop`.
+    /// control in `test_runaway_guest_hangs_without_any_backstop` and for
+    /// [`with_config_and_backstop`](Self::with_config_and_backstop).
     ///
     /// It has to be honoured at **config** level, not only in
     /// `arm_epoch_deadline`: with `epoch_interruption` still enabled, a ticking
@@ -618,21 +650,34 @@ mod tests {
     /// （等价于 wasmtime 不再计账），`infinite_loop` 不会被燃料拦住。此时
     /// 唯一还能停下它的就是与燃料无关的 epoch 中断。
     ///
-    /// 判别依据是**trap 的来源**而非耗时：wasmtime 的 epoch trap 与内存
-    /// trap 在错误文本里长得几乎一样（都是 `ResourceExhausted: ... wasm
-    /// backtrace`），所以不能靠 `is_err()` 也不能靠墙钟时长来猜。真正能
-    /// 区分的是 guest 是否“跑到了截止时间”——epoch trap 只会发生在
-    /// deadline 过期后，且必然伴随一段实际执行时长。
+    /// 判别依据是**同进程内的相对对比**，而不是绝对耗时。
     ///
-    /// **但不能用「耗时 >= 一个 tick」来判别。** `EpochTicker::spawn` 先
-    /// `sleep(interval)` 再 `increment_epoch()`，而 store 的 deadline 相对引擎
-    /// 当前 epoch 值设定；请求到达时刻与 ticker 相位无关，所以「等下一次
-    /// tick」的剩余时间在 (0, interval] 之间浮动。实测（daemon 侧同构场景）
-    /// 14 轮里有 2 轮低于一个 tick，因此那个下界是靠运气过的断言。
+    /// 为什么不看错误文本：wasmtime 的 epoch trap 与内存 trap 在错误文本里几乎
+    /// 一致（都是 `ResourceExhausted: ... wasm backtrace`），`is_err()` 只能证明
+    /// 它停了，不能证明谁停的。
+    ///
+    /// 为什么不用绝对下界：`EpochTicker::spawn` 先 `sleep(interval)` 再
+    /// `increment_epoch()`，而 store 的 deadline 相对引擎当前 epoch 值设定；
+    /// 请求到达时刻与 ticker 相位无关，所以「等下一次 tick」的剩余时间在
+    /// (0, interval] 之间浮动。实测（daemon 侧同构场景）14 轮里有 2 轮低于一个
+    /// tick，因此 `>= interval` 是靠运气过的断言。换成固定 1s 能绕过抖动，却又把
+    /// 「这台机器够不够快」写进了测试——慢机器或更大的工具可能轻松超过 1s。
+    ///
+    /// 现在改为同一个 executor 内先跑一次 `hello`（含编译与执行）量出
+    /// `baseline`，再要求失控 guest 至少比它慢 10 倍。秒级的 epoch 等待 vs
+    /// 毫秒级的正常执行，量级差异随机器速度一起缩放，任何机器上都成立。
     #[tokio::test]
     async fn test_wall_clock_bound_stops_runaway_when_fuel_metering_fails() {
         let executor = test_executor();
         let ceiling = std::time::Duration::from_millis(EXECUTION_TIMEOUT_MS * 6);
+
+        // 同进程基线：一次正常执行。
+        let warmup = Instant::now();
+        let warmup_result = executor.execute_internal_unmetered("hello", 1_000, true).await;
+        let baseline = warmup.elapsed();
+        warmup_result.expect("baseline call must succeed");
+
+        let floor = baseline.saturating_mul(10).max(std::time::Duration::from_millis(1));
 
         let start = Instant::now();
         let result = executor.execute_internal_unmetered("infinite_loop", 100, true).await;
@@ -646,12 +691,12 @@ mod tests {
             elapsed < ceiling,
             "wall-clock bound did not engage: took {elapsed:?}, ceiling {ceiling:?}"
         );
-        // 当场 trap（例如内存上限）会在毫秒级返回；跑满一个 epoch 周期是秒级。
-        // 取 1s 作为分界：远低于实测的 ~5s，也远高于任何当场 trap。
+        // 当场 trap（内存上限、未 arm 的 store）会与基线同量级；跑满一个 epoch
+        // 周期则是秒级。相对判别比绝对阈值稳。
         assert!(
-            elapsed >= std::time::Duration::from_secs(1),
-            "returned after {elapsed:?}, too fast to be the wall-clock bound engaging — \
-             something else stopped the guest immediately"
+            elapsed >= floor,
+            "returned after {elapsed:?}, not clearly slower than a normal execution \
+             ({baseline:?}) — something else stopped the guest immediately"
         );
     }
 
@@ -693,11 +738,14 @@ mod tests {
         let elapsed = start.elapsed();
 
         assert!(result.is_err(), "the guest must still be stopped");
-        // 远低于一个 epoch 周期：它是被「未 arm 的 store」当场拦下的，
-        // 不是等到了截止时间。
+        // 上界用「远小于一个 epoch 周期」而不是绝对 1s：上界比下界稳得多，
+        // 而且这里要对比的正是「当场 trap」与「等满一个周期」。上界取半个周期，
+        // 直接绑定到机制本身，而不是绑定到某台机器的速度。
+        let immediate_ceiling = std::time::Duration::from_millis(EXECUTION_TIMEOUT_MS / 2);
         assert!(
-            elapsed < std::time::Duration::from_secs(1),
-            "expected an immediate trap from the unarmed store, but it took {elapsed:?}"
+            elapsed < immediate_ceiling,
+            "expected an immediate trap from the unarmed store, but it took {elapsed:?} \
+             (ceiling {immediate_ceiling:?}, less than half an epoch cycle)"
         );
     }
 

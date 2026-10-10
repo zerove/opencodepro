@@ -399,37 +399,71 @@ fn test_peak_memory_is_absent_not_zero_for_memoryless_module() {
 /// `peak_memory` 或 `EXECUTION_TIMEOUT_MS`。所以“已同步”当时只是一句代码检视，
 /// 不是事实。
 ///
-/// 判别依据是**耗时**，而不是错误文本：`infinite_loop` 无内存导出，内存上限
-/// 拦不住它，所以能停住它的只剩 epoch。错误文本在 epoch trap 与 fuel trap
-/// 之间无法区分（都是 `ResourceExhausted`），也不能靠 `is_err()`——那只能证明
-/// 它停了，不能证明是谁停的。
+/// 判别依据是**同进程内的相对对比**，而不是绝对耗时，也不是错误文本。
+///
+/// 为什么不看错误文本：epoch trap 与 fuel trap 都是 `ResourceExhausted`，文本
+/// 上分不开。也不能靠 `is_err()`——那只能证明「它停了」，不能证明「谁停的」。
+///
+/// 为什么不用绝对下限：早先写过 `elapsed >= 一个 tick`（>=5000ms），实测 14 轮
+/// 里有 2 轮是 4995/4996ms。根因是 `EpochTicker` 先 `sleep` 再
+/// `increment_epoch()`，而 deadline 相对引擎当前 epoch 值设定，请求到达时刻
+/// 与 ticker 相位无关，等待剩余时间在 (0, interval] 之间浮动——下界根本不成立。
+/// 改成固定 1s 能绕过抖动，但又把「这台机器够不够快」写进了测试：实测冷编译
+/// 就要 ~114ms，慢机器或更大的工具可能轻松超过 1s，于是假失败。
+///
+/// 现在的做法：同一个 daemon、同一个进程里先跑 `hello` 量出「一次正常执行 +
+/// 编译 + 往返」的成本 `baseline`，再要求失控 guest 至少比它慢一个数量级。
+/// 这样判别力与机器速度无关——真正的 epoch 等待是秒级，正常执行是毫秒级，
+/// 量级差异在任何机器上都成立。
 ///
 /// 用 `fuel_limit = u64::MAX` 从协议外侧模拟计账失效：daemon 直接
 /// `set_fuel(fuel_limit)`，因此把上限设到顶就等价于「燃料永远用不完」。
+///
+/// 变异验证（判别力确实来自 `set_epoch_deadline`）：
+/// - 抹掉 `store.set_epoch_deadline(1)` → 基线调用就当场 trap，本测试失败。
+/// - 抹掉 `store.epoch_deadline_trap()` → 测试仍通过，但这是**等价变异**而非
+///   漏洞。wasmtime 官方文档写明 trap 是 store 的默认行为：
+///   "This behavior is the default if the store is not otherwise configured via
+///   epoch_deadline_trap(), ..."，并要求 "it's required to call
+///   [`Store::set_epoch_deadline`] or otherwise wasm will always immediately
+///   trap."（wasmtime 48.0.5，`src/runtime/store.rs`）也就是说
+///   `epoch_deadline_trap()` 只是把默认值写显而已，删掉不改变行为。
 #[test]
 fn test_wall_clock_bound_stops_runaway_guest_when_fuel_metering_fails() {
     use sisyphus_types::node::EXECUTION_TIMEOUT_MS;
 
-    let (mut child, stdout, stdin, tmpdir) = spawn_sandboxd();
+    let (mut child, mut stdout, mut stdin, tmpdir) = spawn_sandboxd();
     install_tool(&tmpdir, "infinite_loop");
+    install_tool(&tmpdir, "hello");
+
+    // 同一进程内的基线：一次正常执行（含冷编译与协议往返）。
+    let baseline = std::time::Instant::now();
+    let warmup = send_request(
+        &mut stdout,
+        &mut stdin,
+        &json_request(
+            1,
+            "execute",
+            r#"{"tool_id":"hello","args":[],"fuel_limit":1000}"#,
+        ),
+    );
+    let baseline = baseline.elapsed();
+    let warmup: serde_json::Value = serde_json::from_str(&warmup).expect("Invalid JSON warmup");
+    let warmup_output = warmup["result"]["data"].as_str().expect("baseline call must return data");
+    assert_eq!(
+        String::from_utf8(base64_simple_decode(warmup_output)).expect("baseline output is UTF-8"),
+        "Hello from WASM!",
+        "the baseline call must actually succeed, got: {warmup}"
+    );
 
     // 上界留 3 倍余量：它是「确实卡死了」的信号，不是性能断言。
     let ceiling = Duration::from_millis(EXECUTION_TIMEOUT_MS * 3);
-    // **不要**把「耗时 >= 一个 tick」当成判别条件。实测 14 轮中有 2 轮耗时
-    // 低于 5000ms（4995/4996ms），照那样写就是一条靠运气过的测试。
-    //
-    // 根因：`EpochTicker::spawn` 是 `sleep(interval)` **之后**才
-    // `increment_epoch()`，所以进程启动后第一次 tick 发生在启动时刻 + 一个
-    // interval；而 store 的 deadline 是相对**引擎当前 epoch 值**设的。请求到达
-    // 时刻与 ticker 相位无关，于是「等下一次 tick」的剩余时间在 (0, interval]
-    // 之间浮动。它是上界良好的下界不成立。
-    //
-    // 真正的判别依据是：进程**必须持续运行超过一个 tick 周期**才可能返回，
-    // 而当场 trap 的执行远快于 5s 冷编译 + 预热。因此这里用一个明显更宽松
-    // 但仍能排除「立刻 trap」的门槛——它衡量的是「花了几秒」，不是「精确何时」。
+    // 下界用相对量级：秒级的 epoch 等待 vs 毫秒级的正常执行。
+    // 10 倍是保守取值——实测两者相差三个数量级以上。
+    let floor = baseline.saturating_mul(10).max(Duration::from_millis(1));
 
     let request = json_request(
-        1,
+        2,
         "execute",
         r#"{"tool_id":"infinite_loop","args":[],"fuel_limit":18446744073709551615}"#,
     );
@@ -451,12 +485,13 @@ fn test_wall_clock_bound_stops_runaway_guest_when_fuel_metering_fails() {
         "runaway guest should land in the ResourceExhausted shape, got: {err}"
     );
 
-    // 当场 trap（例如内存上限）会在毫秒级返回；跑满一个 epoch 周期则是秒级。
-    // 取 1s 作为分界：它远低于实测的 ~5s，也远高于任何当场 trap。
+    // 当场 trap（例如内存上限、未 arm 的 store）会与基线同量级；跑满一个 epoch
+    // 周期则是秒级。相对判别比绝对阈值稳：它随机器速度一起缩放。
     assert!(
-        elapsed >= Duration::from_secs(1),
-        "returned after {elapsed:?}, which is too fast to be the wall-clock bound engaging — \
-         something else stopped the guest immediately"
+        elapsed >= floor,
+        "returned after {elapsed:?}, which is not clearly slower than a normal \
+         execution ({baseline:?}); something other than the wall-clock bound stopped \
+         the guest immediately"
     );
     assert!(
         elapsed < ceiling,
