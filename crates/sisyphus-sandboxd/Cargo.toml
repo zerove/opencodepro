@@ -10,17 +10,11 @@ license = "MIT"
 wat = "1"
 
 [dependencies]
-async-trait = { workspace = true }
 tokio = { version = "1", features = ["full"] }
+sisyphus-sandbox = { version = "0.1.0", path = "../sisyphus-sandbox" }
 sisyphus-types = { version = "0.1.0", path = "../sisyphus-types" }
-sisyphus-metrics = { version = "0.1.0", path = "../sisyphus-metrics" }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
-thiserror = { workspace = true }
-dashmap = "6.0"
-sha2 = "0.10"
-hex = "0.4"
-wasmtime = { version = "48", default-features = false, features = ["cranelift", "pooling-allocator"] }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 clap = { workspace = true }

@@ -4601,21 +4601,15 @@ dependencies = [
 name = "sisyphus-sandboxd"
 version = "0.1.0"
 dependencies = [
- "async-trait",
  "clap",
- "dashmap",
- "hex",
  "serde",
  "serde_json",
- "sha2",
- "sisyphus-metrics",
+ "sisyphus-sandbox",
  "sisyphus-types",
  "tempfile",
- "thiserror 1.0.69",
  "tokio",
  "tracing",
  "tracing-subscriber",
- "wasmtime",
  "wat",
 ]
 
