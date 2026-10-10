@@ -8,6 +8,14 @@ use std::time::Instant;
 use thiserror::Error;
 use wasmtime::*;
 
+/// Wall-clock bound for a single guest execution, and the epoch tick interval.
+///
+/// Fuel is the primary limit because it is deterministic and reproducible;
+/// this is the backstop for when fuel cannot help. Generous enough that a
+/// legitimate tool never trips it, tight enough that CI fails fast instead of
+/// hanging until the runner's global timeout.
+pub const EXECUTION_TIMEOUT_MS: u64 = 5_000;
+
 pub mod custom_executor;
 pub mod plugin_manager;
 pub use custom_executor::CustomToolExecutor;
@@ -47,12 +55,74 @@ pub enum SandboxError {
     ExecutionError(String),
 }
 
+/// Knobs that exist so tests can defeat one limit at a time.
+///
+/// Defeating the fuel meter or the wall-clock bound from outside is impossible,
+/// so both live as explicit parameters of the single real execution path. This
+/// keeps every other step (instantiation, deadline arming, trap translation)
+/// identical between the tested and production runs.
+#[derive(Clone, Copy)]
+struct ExecOpts {
+    /// false = fuel accounting defeated, the guest can never run out of fuel.
+    metered: bool,
+    /// false = wall-clock bound disabled; only fuel can stop the guest.
+    wall_clock: bool,
+}
+
+impl ExecOpts {
+    const DEFAULT: Self = Self {
+        metered: true,
+        wall_clock: true,
+    };
+}
+
 #[derive(Clone)]
 /// Wasm Tool Executor.
 pub struct WasmToolExecutor {
     engine: Engine,
     tools_path: PathBuf,
     pub(crate) module_cache: Arc<DashMap<String, Module>>,
+    /// Keeps the epoch ticker alive for as long as this executor exists.
+    /// Dropping it would stop epoch advancement and silently disable the
+    /// wall-clock backstop, so it is stored rather than spawned-and-forgotten.
+    _epoch_ticker: Arc<EpochTicker>,
+}
+
+/// Advances wasmtime's epoch counter on a fixed interval.
+///
+/// wasmtime only *checks* the epoch deadline from inside running guest code, so
+/// the counter has to be moved by something outside the guest. One thread per
+/// executor (not per call) keeps overhead flat and bounds concurrent tools.
+struct EpochTicker {
+    shutdown: Arc<std::sync::atomic::AtomicBool>,
+}
+
+impl EpochTicker {
+    fn spawn(engine: Engine, interval: std::time::Duration) -> Self {
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        let shutdown = Arc::new(AtomicBool::new(false));
+        let flag = Arc::clone(&shutdown);
+        // A failed spawn leaves `shutdown` false and no thread; Drop still runs,
+        // and the epoch deadline simply never fires (fuel remains primary).
+        std::thread::Builder::new()
+            .name("wasmtime-epoch".into())
+            .spawn(move || {
+                while !flag.load(Ordering::Relaxed) {
+                    std::thread::sleep(interval);
+                    engine.increment_epoch();
+                }
+            })
+            .ok();
+        Self { shutdown }
+    }
+}
+
+impl Drop for EpochTicker {
+    fn drop(&mut self) {
+        use std::sync::atomic::Ordering;
+        self.shutdown.store(true, Ordering::Relaxed);
+    }
 }
 
 impl sisyphus_types::CacheInvalidatable for WasmToolExecutor {
@@ -86,6 +156,13 @@ impl WasmToolExecutor {
         let mut config = Config::new();
         config.consume_fuel(true);
         config.max_wasm_stack(1_000_000);
+        // Fuel is a *cooperative* limit: it only stops code that still executes
+        // wasm instructions. If metering itself regresses (missed fuel
+        // accounting on `call_ref`/exception paths, see RUSTSEC-2026-0315) an
+        // infinite loop is never interrupted and the call hangs forever.
+        // Epoch interruption is an independent wall-clock bound enforced by the
+        // runtime, so it still traps when fuel accounting is wrong.
+        config.epoch_interruption(true);
         // wasmtime ≥46 defaults memory_reservation to 4GiB; the pooling allocator
         // pre-maps that much per slot, which hangs in memory-constrained envs.
         // Our WASM tools are small, so a modest reservation avoids the huge mmap.
@@ -102,12 +179,29 @@ impl WasmToolExecutor {
         config.allocation_strategy(wasmtime::InstanceAllocationStrategy::Pooling(pooling));
 
         let engine = Engine::new(&config)?;
+        let epoch_ticker = Arc::new(EpochTicker::spawn(
+            engine.clone(),
+            std::time::Duration::from_millis(EXECUTION_TIMEOUT_MS),
+        ));
 
         Ok(Self {
             engine,
             tools_path,
             module_cache: Arc::new(DashMap::new()),
+            _epoch_ticker: epoch_ticker,
         })
+    }
+
+    /// Arm the wall-clock deadline for one execution.
+    ///
+    /// Traps (rather than invoking a callback) so a runaway guest surfaces as an
+    /// ordinary wasm trap and lands in the same `ResourceExhausted` error shape
+    /// as the fuel-exhausted path.
+    fn arm_epoch_deadline(&self, store: &mut Store<()>, enabled: bool) {
+        if enabled {
+            store.set_epoch_deadline(1);
+            store.epoch_deadline_trap();
+        }
     }
 
     async fn load_wasm_bytes(&self, tool_id: &str) -> Result<Vec<u8>, SandboxError> {
@@ -158,10 +252,37 @@ impl WasmToolExecutor {
 
 impl WasmToolExecutor {
     /// 带测量的 WASM 执行内核（P2-9 燃料真值打通）。
-    pub(crate) async fn execute_internal(
+    async fn execute_internal(
         &self,
         tool_id: &str,
         fuel_limit: u64,
+    ) -> Result<(Vec<u8>, u64), sisyphus_types::TypesError> {
+        self.execute_internal_opts(tool_id, fuel_limit, ExecOpts::DEFAULT).await
+    }
+
+    #[cfg(test)]
+    pub(crate) async fn execute_internal_unmetered(
+        &self,
+        tool_id: &str,
+        fuel_limit: u64,
+        wall_clock: bool,
+    ) -> Result<(Vec<u8>, u64), sisyphus_types::TypesError> {
+        self.execute_internal_opts(
+            tool_id,
+            fuel_limit,
+            ExecOpts {
+                metered: false,
+                wall_clock,
+            },
+        )
+        .await
+    }
+
+    async fn execute_internal_opts(
+        &self,
+        tool_id: &str,
+        fuel_limit: u64,
+        opts: ExecOpts,
     ) -> Result<(Vec<u8>, u64), sisyphus_types::TypesError> {
         use sisyphus_types::TypesError;
 
@@ -179,13 +300,15 @@ impl WasmToolExecutor {
 
         let linker = Linker::new(&self.engine);
         let mut store = Store::new(&self.engine, ());
-        store.set_fuel(fuel_limit).map_err(|e| TypesError::ToolExecutionError {
-            tool_id: tool_id.to_string(),
-            details: SandboxError::FuelError {
+        store.set_fuel(if opts.metered { fuel_limit } else { u64::MAX }).map_err(|e| {
+            TypesError::ToolExecutionError {
                 tool_id: tool_id.to_string(),
-                source: e,
+                details: SandboxError::FuelError {
+                    tool_id: tool_id.to_string(),
+                    source: e,
+                }
+                .to_string(),
             }
-            .to_string(),
         })?;
 
         let instance = linker.instantiate(&mut store, &module).map_err(|e| {
@@ -198,6 +321,10 @@ impl WasmToolExecutor {
                 .to_string(),
             }
         })?;
+
+        // Wall-clock backstop, independent of fuel. See the `epoch_interruption`
+        // note in `with_config`: fuel can fail to stop a runaway loop, this cannot.
+        self.arm_epoch_deadline(&mut store, opts.wall_clock);
 
         // 5. Look for the "execute" export with dynamic signature handling
         let execute_func = instance.get_func(&mut store, "execute").ok_or_else(|| {
@@ -443,6 +570,69 @@ mod tests {
         assert!(
             result.unwrap_err().to_string().contains("ResourceExhausted"),
             "evil_tool should fail with ResourceExhausted"
+        );
+    }
+
+    /// 墙钟兜底必须在燃料失效时仍然生效。
+    ///
+    /// 覆盖的是“计账完全失效”而非“消耗变多”：把 fuel 设为 `u64::MAX`
+    /// （等价于 wasmtime 不再计账），`infinite_loop` 不会被燃料拦住。此时
+    /// 唯一还能停下它的就是与燃料无关的 epoch 中断。
+    ///
+    /// 判别依据是**trap 的来源**而非耗时：wasmtime 的 epoch trap 与内存
+    /// trap 在错误文本里长得几乎一样（都是 `ResourceExhausted: ... wasm
+    /// backtrace`），所以不能靠 `is_err()` 也不能靠墙钟时长来猜。真正能
+    /// 区分的是 guest 是否“跑到了截止时间”——epoch trap 只会发生在
+    /// deadline 过期后，且必然伴随一段实际执行时长。
+    #[tokio::test]
+    async fn test_wall_clock_bound_stops_runaway_when_fuel_metering_fails() {
+        let executor = test_executor();
+        let ceiling = std::time::Duration::from_millis(EXECUTION_TIMEOUT_MS * 6);
+
+        let start = Instant::now();
+        let result = executor.execute_internal_unmetered("infinite_loop", 100, true).await;
+        let elapsed = start.elapsed();
+
+        assert!(
+            result.is_err(),
+            "runaway guest must be stopped even though fuel can never run out"
+        );
+        assert!(
+            elapsed < ceiling,
+            "wall-clock bound did not engage: took {elapsed:?}, ceiling {ceiling:?}"
+        );
+        // 门槛至少得跨过一个 tick，否则“很快返回”可能只是当场 trap 了。
+        let tick = std::time::Duration::from_millis(EXECUTION_TIMEOUT_MS);
+        assert!(
+            elapsed >= tick,
+            "returned after {elapsed:?}, which is under one epoch tick ({tick:?}); \
+             an instant trap is not the wall-clock bound engaging"
+        );
+    }
+
+    /// 阴性对照：关掉墙钟后，同一个失控 guest 仍会被**别的上限**拦住。
+    ///
+    /// 这不是在说“关掉兜底就会挂死”，而是在固定一个关键事实：`infinite_loop`
+    /// 同时违反内存上限，所以无论如何都会 trap。区分两类 trap 的是 guest
+    /// 是否有机会跑到 deadline——开了兜底就跑到，没开就当场撞内存。
+    ///
+    /// 没有这条，上面那条的耗时下界就无法证明自己测的是兜底：它可能只是
+    /// 撞上了内存上限很快返回。
+    #[tokio::test]
+    async fn test_runaway_guest_stops_on_memory_limit_without_wall_clock_bound() {
+        let executor = test_executor();
+        let tick = std::time::Duration::from_millis(EXECUTION_TIMEOUT_MS);
+
+        let start = Instant::now();
+        let result = executor.execute_internal_unmetered("infinite_loop", 100, false).await;
+        let elapsed = start.elapsed();
+
+        assert!(result.is_err(), "memory limit should still stop the guest");
+        assert!(
+            elapsed < tick,
+            "without the wall-clock bound the guest should trap immediately on the \
+             memory limit, but took {elapsed:?} (>= one tick {tick:?}), which means it \
+             ran until the epoch deadline fired"
         );
     }
 
