@@ -23,6 +23,18 @@ fn spawn_sandboxd() -> (
     Box<dyn Write + Send>,
     tempfile::TempDir,
 ) {
+    spawn_sandboxd_with_env(&[])
+}
+
+/// Same as [`spawn_sandboxd`], but injects extra environment variables.
+fn spawn_sandboxd_with_env(
+    extra_env: &[(&str, &str)],
+) -> (
+    Child,
+    Box<dyn BufRead + Send>,
+    Box<dyn Write + Send>,
+    tempfile::TempDir,
+) {
     let bin_path = env!("CARGO_BIN_EXE_sisyphus-sandboxd");
 
     // Create a temp directory for tools — kept alive by TempDir until dropped.
@@ -36,6 +48,7 @@ fn spawn_sandboxd() -> (
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
+        .envs(extra_env.iter().copied())
         .spawn()
         .expect("Failed to spawn sandboxd");
 
@@ -68,6 +81,51 @@ fn json_request(id: u64, method: &str, params: &str) -> String {
     } else {
         format!(r#"{{"id":{id},"method":"{method}","params":{params}}}"#)
     }
+}
+
+/// Same as [`send_request`], but gives up after `timeout` instead of blocking forever.
+///
+/// 必要而非锦上添花：失控 guest 若没有被 epoch 兜底拦住，daemon 会**永久**卡在
+/// 那次执行上（它逐条处理 stdio 请求），而阻塞的 `read_line` 没有超时，测试会直接
+/// 挂死到被 CI 杀掉——挂死不是失败信号，只是噪声。返回 `Ok(None)` 让调用方
+/// 把「超时」变成可断言的失败。
+fn send_request_with_timeout(
+    stdout: Box<dyn BufRead + Send>,
+    stdin: Box<dyn Write + Send>,
+    request: String,
+    timeout: Duration,
+) -> std::io::Result<Option<String>> {
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let mut stdin = stdin;
+        let mut stdout = stdout;
+        let outcome = (|| -> std::io::Result<String> {
+            writeln!(stdin, "{request}")?;
+            stdin.flush()?;
+            let mut response = String::new();
+            stdout.read_line(&mut response)?;
+            Ok(response.trim().to_string())
+        })();
+        let _ = tx.send(outcome);
+    });
+
+    match rx.recv_timeout(timeout) {
+        Ok(Ok(response)) => Ok(Some(response)),
+        Ok(Err(e)) => Err(e),
+        Err(_) => Ok(None),
+    }
+}
+
+/// Copy a workspace tool fixture into the daemon's tools directory.
+fn install_tool(tmpdir: &tempfile::TempDir, tool_id: &str) {
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let src_wasm = manifest_dir
+        .parent()
+        .and_then(|p| p.parent())
+        .map(|p| p.join("tools").join(format!("{tool_id}.wasm")))
+        .expect("Failed to resolve tool wasm path");
+    std::fs::copy(&src_wasm, tmpdir.path().join(format!("{tool_id}.wasm")))
+        .unwrap_or_else(|e| panic!("Failed to copy {tool_id}.wasm to temp dir: {e}"));
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────
@@ -245,6 +303,206 @@ fn test_execute_hello_wasm() {
     let decoded = base64_simple_decode(b64);
     let output = String::from_utf8(decoded).expect("Output is not valid UTF-8");
     assert_eq!(output.trim(), "Hello from WASM!");
+
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+/// 内存计量必须经由**对外协议**真的有值，不能永远是 `None`。
+///
+/// 这个断言是有来由的：`peak_memory_bytes` 是在“跨版本内存对照无数据可测”
+/// 之后补进协议的，补的时候 `test_execute_hello_wasm` 已经存在但**只断言了
+/// `data`**。也就是说字段可以静默退化成 `None` 而全部测试照样绿——它当初缺失
+/// 的方式，正是现在这条断言要防止的复发方式。
+///
+/// 期望值 65536 = 64KiB = wasm 线性内存最小一页。`hello` 只申请一页，多余的
+/// `memory_hog` 会 grow 到上限且必然 trap，所以拿它做「不撞上限」的正向对照是
+/// 错的；这里只测不 grow 的模块。若工具真的申请更多，需连同本断言一起更新。
+#[test]
+fn test_peak_memory_is_reported_over_the_protocol() {
+    let (mut child, mut stdout, mut stdin, tmpdir) = spawn_sandboxd();
+    install_tool(&tmpdir, "hello");
+
+    let request = json_request(
+        1,
+        "execute",
+        r#"{"tool_id":"hello","args":[],"fuel_limit":1000}"#,
+    );
+    let response = send_request(&mut stdout, &mut stdin, &request);
+    let parsed: serde_json::Value = serde_json::from_str(&response).expect("Invalid JSON response");
+
+    let peak = parsed["result"]["peak_memory_bytes"].as_u64();
+    assert_eq!(
+        peak,
+        Some(65_536),
+        "hello should report exactly one 64KiB wasm page over the protocol, got: {response}"
+    );
+
+    // 阴断：同一响应里的 fuel 也必须真有值。两个字段都断言，避免只修一个。
+    assert!(
+        parsed["result"]["fuel_consumed"].as_u64().is_some(),
+        "fuel_consumed should be reported alongside memory, got: {response}"
+    );
+
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+/// 无内存导出的模块必须让 `peak_memory_bytes` 退化为 `None`，而非 0。
+///
+/// 这条不是为了测模块，而是为了固定「缺失」与「零」的语义差别：若某天把
+/// `None` 错写成 `Some(0)`，监控会把「没测到」读成「占用为零」，而上面那条
+/// 阳性用例照样绿。`infinite_loop.wat` 不导出 memory，正好是这个边界。
+#[test]
+fn test_peak_memory_is_absent_not_zero_for_memoryless_module() {
+    // 夹具本身是无内存导出的；若将来有人给它加上 memory，这条测试的前提就
+    // 失效了，所以在这里显式固定住前提而不是默默测别的模块。
+    let src = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(|p| p.parent())
+        .map(|p| p.join("tools").join("infinite_loop.wat"))
+        .expect("Failed to resolve infinite_loop.wat path");
+    let wat = std::fs::read_to_string(&src).expect("Failed to read infinite_loop.wat");
+    assert!(
+        !wat.contains("export \"memory\""),
+        "infinite_loop must stay memoryless for this test to mean anything"
+    );
+
+    let (mut child, stdout, stdin, tmpdir) = spawn_sandboxd();
+    install_tool(&tmpdir, "infinite_loop");
+
+    // 给足时间让墙钟兜底收尾（实测稳定在 5s 上下），否则读行会一直等。
+    let request = json_request(
+        1,
+        "execute",
+        r#"{"tool_id":"infinite_loop","args":[],"fuel_limit":100000}"#,
+    );
+    let response = send_request_with_timeout(stdout, stdin, request, Duration::from_secs(20))
+        .expect("request thread panicked")
+        .expect("daemon never answered an errored execute");
+
+    let parsed: serde_json::Value = serde_json::from_str(&response).expect("Invalid JSON response");
+    assert!(
+        parsed.get("result").is_none() || parsed["result"].is_null(),
+        "runaway guest must not report success, got: {response}"
+    );
+
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+/// 墙钟兜底必须在**燃料计账失效**时独自拦住失控 guest。
+///
+/// 这条走的是 daemon 自己的执行路径（它与 library 各有一份拷贝粘贴），而不是
+/// 复用库侧测试。原因是具体的：库侧的 `arm_epoch_deadline` 有测试，而 daemon
+/// 侧的同名函数当时**零测试**——整个 sandboxd 套件没有一处引用 epoch、
+/// `peak_memory` 或 `EXECUTION_TIMEOUT_MS`。所以“已同步”当时只是一句代码检视，
+/// 不是事实。
+///
+/// 判别依据是**耗时**，而不是错误文本：`infinite_loop` 无内存导出，内存上限
+/// 拦不住它，所以能停住它的只剩 epoch。错误文本在 epoch trap 与 fuel trap
+/// 之间无法区分（都是 `ResourceExhausted`），也不能靠 `is_err()`——那只能证明
+/// 它停了，不能证明是谁停的。
+///
+/// 用 `fuel_limit = u64::MAX` 从协议外侧模拟计账失效：daemon 直接
+/// `set_fuel(fuel_limit)`，因此把上限设到顶就等价于「燃料永远用不完」。
+#[test]
+fn test_wall_clock_bound_stops_runaway_guest_when_fuel_metering_fails() {
+    use sisyphus_types::node::EXECUTION_TIMEOUT_MS;
+
+    let (mut child, stdout, stdin, tmpdir) = spawn_sandboxd();
+    install_tool(&tmpdir, "infinite_loop");
+
+    // 上界留 3 倍余量：它是「确实卡死了」的信号，不是性能断言。
+    let ceiling = Duration::from_millis(EXECUTION_TIMEOUT_MS * 3);
+    // **不要**把「耗时 >= 一个 tick」当成判别条件。实测 14 轮中有 2 轮耗时
+    // 低于 5000ms（4995/4996ms），照那样写就是一条靠运气过的测试。
+    //
+    // 根因：`EpochTicker::spawn` 是 `sleep(interval)` **之后**才
+    // `increment_epoch()`，所以进程启动后第一次 tick 发生在启动时刻 + 一个
+    // interval；而 store 的 deadline 是相对**引擎当前 epoch 值**设的。请求到达
+    // 时刻与 ticker 相位无关，于是「等下一次 tick」的剩余时间在 (0, interval]
+    // 之间浮动。它是上界良好的下界不成立。
+    //
+    // 真正的判别依据是：进程**必须持续运行超过一个 tick 周期**才可能返回，
+    // 而当场 trap 的执行远快于 5s 冷编译 + 预热。因此这里用一个明显更宽松
+    // 但仍能排除「立刻 trap」的门槛——它衡量的是「花了几秒」，不是「精确何时」。
+
+    let request = json_request(
+        1,
+        "execute",
+        r#"{"tool_id":"infinite_loop","args":[],"fuel_limit":18446744073709551615}"#,
+    );
+
+    let start = std::time::Instant::now();
+    let response = send_request_with_timeout(stdout, stdin, request, ceiling)
+        .expect("request thread panicked")
+        .expect("daemon hung on a runaway guest: the wall-clock bound did not engage");
+    let elapsed = start.elapsed();
+
+    let parsed: serde_json::Value = serde_json::from_str(&response).expect("Invalid JSON response");
+    assert!(
+        parsed.get("result").is_none() || parsed["result"].is_null(),
+        "runaway guest must be reported as an error, got: {response}"
+    );
+    let err = parsed["error"].as_str().unwrap_or_default();
+    assert!(
+        err.contains("ResourceExhausted"),
+        "runaway guest should land in the ResourceExhausted shape, got: {err}"
+    );
+
+    // 当场 trap（例如内存上限）会在毫秒级返回；跑满一个 epoch 周期则是秒级。
+    // 取 1s 作为分界：它远低于实测的 ~5s，也远高于任何当场 trap。
+    assert!(
+        elapsed >= Duration::from_secs(1),
+        "returned after {elapsed:?}, which is too fast to be the wall-clock bound engaging — \
+         something else stopped the guest immediately"
+    );
+    assert!(
+        elapsed < ceiling,
+        "wall-clock bound took {elapsed:?}, beyond ceiling {ceiling:?}"
+    );
+
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+/// 阴性对照：**关掉**兜底时，同一个失控 guest 必须真的挂死。
+///
+/// 这是上一条的正面对照，不是补充。前一条只证明了“有兜底时会在秒级返回”，
+/// 但若没有这条，就无法排除「它其实是被别的上限在某个时刻刚好拦住」这种解释。
+///
+/// 关键前提：`infinite_loop.wat` **不导出 memory**，所以内存上限这条路对它是
+/// 封死的（daemon 以 `--max-memory-pages 10` 启动，但模块没有线性内存可供
+/// grow）。排除掉内存与燃料（已设 `u64::MAX`）之后，唯一能停住它的就是 epoch。
+/// 这也解释了为什么不能拿库侧的 `infinite_loop` 场景来类推：那份夹具在
+/// library 的 max-memory 配置下会先撞内存上限，所以库侧那条阴性对照测的是
+/// 「当场撞内存」，而这里测的才是真正的「无人拦截 → 挂死」。
+///
+/// 用运行时开关而不是编译期 flag，是因为后者要 CI 维护两套构建，而一条永远
+/// 不会被执行的 `#[ignore]` 等于没有对照。
+///
+/// 因为预期就是挂死，本测试只能通过「等不到响应」来判定，所以必须自己带超时，
+/// 否则失败模式是整个测试套件被 CI 杀掉，而不是一条清晰的断言失败。
+#[test]
+fn test_without_wall_clock_bound_a_runaway_guest_hangs() {
+    let (mut child, stdout, stdin, tmpdir) =
+        spawn_sandboxd_with_env(&[("SISYPHUS_SANDBOXD_NO_WALL_CLOCK", "1")]);
+    install_tool(&tmpdir, "infinite_loop");
+
+    let request = json_request(
+        1,
+        "execute",
+        r#"{"tool_id":"infinite_loop","args":[],"fuel_limit":18446744073709551615}"#,
+    );
+
+    let response = send_request_with_timeout(stdout, stdin, request, Duration::from_secs(20))
+        .expect("request thread panicked");
+
+    assert!(
+        response.is_none(),
+        "expected the daemon to hang without the wall-clock bound, but it answered"
+    );
 
     let _ = child.kill();
     let _ = child.wait();

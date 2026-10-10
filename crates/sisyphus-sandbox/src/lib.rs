@@ -597,6 +597,12 @@ mod tests {
     /// backtrace`），所以不能靠 `is_err()` 也不能靠墙钟时长来猜。真正能
     /// 区分的是 guest 是否“跑到了截止时间”——epoch trap 只会发生在
     /// deadline 过期后，且必然伴随一段实际执行时长。
+    ///
+    /// **但不能用「耗时 >= 一个 tick」来判别。** `EpochTicker::spawn` 先
+    /// `sleep(interval)` 再 `increment_epoch()`，而 store 的 deadline 相对引擎
+    /// 当前 epoch 值设定；请求到达时刻与 ticker 相位无关，所以「等下一次
+    /// tick」的剩余时间在 (0, interval] 之间浮动。实测（daemon 侧同构场景）
+    /// 14 轮里有 2 轮低于一个 tick，因此那个下界是靠运气过的断言。
     #[tokio::test]
     async fn test_wall_clock_bound_stops_runaway_when_fuel_metering_fails() {
         let executor = test_executor();
@@ -614,12 +620,12 @@ mod tests {
             elapsed < ceiling,
             "wall-clock bound did not engage: took {elapsed:?}, ceiling {ceiling:?}"
         );
-        // 门槛至少得跨过一个 tick，否则“很快返回”可能只是当场 trap 了。
-        let tick = std::time::Duration::from_millis(EXECUTION_TIMEOUT_MS);
+        // 当场 trap（例如内存上限）会在毫秒级返回；跑满一个 epoch 周期是秒级。
+        // 取 1s 作为分界：远低于实测的 ~5s，也远高于任何当场 trap。
         assert!(
-            elapsed >= tick,
-            "returned after {elapsed:?}, which is under one epoch tick ({tick:?}); \
-             an instant trap is not the wall-clock bound engaging"
+            elapsed >= std::time::Duration::from_secs(1),
+            "returned after {elapsed:?}, too fast to be the wall-clock bound engaging — \
+             something else stopped the guest immediately"
         );
     }
 

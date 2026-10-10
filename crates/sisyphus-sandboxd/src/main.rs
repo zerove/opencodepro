@@ -95,7 +95,20 @@ struct WasmToolExecutor {
     tools_path: PathBuf,
     module_cache: Arc<DashMap<String, Module>>,
     /// Keeps the epoch ticker alive; see the `epoch_interruption` note in `new`.
-    _epoch_ticker: Arc<EpochTicker>,
+    /// `None` only in the negative-control build (see [`wall_clock_backstop_disabled`]).
+    _epoch_ticker: Option<Arc<EpochTicker>>,
+}
+
+/// True when the wall-clock backstop is deliberately disabled for the negative
+/// control in `test_without_wall_clock_bound_a_runaway_guest_hangs`.
+///
+/// Requires the value to be exactly `1`: `std::env::var_os` treats a present
+/// but empty variable as *set*, so `SISYPHUS_SANDBOXD_NO_WALL_CLOCK=` (a very easy
+/// thing to write in a shell or CI config) would silently disable the backstop
+/// in a production process. The backstop is a safety limit — an accidental
+/// env-var typo must not turn it off.
+fn wall_clock_backstop_disabled() -> bool {
+    std::env::var("SISYPHUS_SANDBOXD_NO_WALL_CLOCK").as_deref() == Ok("1")
 }
 
 /// Advances wasmtime's epoch counter on a fixed interval.
@@ -152,7 +165,17 @@ impl WasmToolExecutor {
         // interrupted and the request hangs forever. Epoch interruption is an
         // independent wall-clock bound enforced by the runtime, so it still
         // traps when fuel accounting is wrong.
-        config.epoch_interruption(true);
+        //
+        // Only the **negative control** (`SISYPHUS_SANDBOXD_NO_WALL_CLOCK=1`)
+        // turns this off, and it has to be turned off here rather than in
+        // `arm_epoch_deadline`. With `epoch_interruption` still enabled, a
+        // ticking engine traps *any* store whose deadline is unset — measured,
+        // not assumed: skipping only the `set_epoch_deadline` call makes even
+        // `fast_tool` (which otherwise succeeds in ~1ms) trap in ~30ms. So
+        // skipping the arm alone cannot demonstrate "no backstop at all".
+        if !wall_clock_backstop_disabled() {
+            config.epoch_interruption(true);
+        }
         // wasmtime ≥46 defaults memory_reservation to 4GiB; the pooling allocator
         // pre-maps that much per slot, which hangs in memory-constrained envs.
         // Our WASM tools are small, so a modest reservation avoids the huge mmap.
@@ -168,10 +191,17 @@ impl WasmToolExecutor {
         config.allocation_strategy(wasmtime::InstanceAllocationStrategy::Pooling(pooling));
 
         let engine = Engine::new(&config)?;
-        let epoch_ticker = Arc::new(EpochTicker::spawn(
-            engine.clone(),
-            std::time::Duration::from_millis(EXECUTION_TIMEOUT_MS),
-        ));
+        // With epoch interruption disabled there is nothing to tick; spawning a
+        // ticker anyway would make the "no backstop" build raise the epoch
+        // counter for no reason and keep a thread alive.
+        let epoch_ticker = if wall_clock_backstop_disabled() {
+            None
+        } else {
+            Some(Arc::new(EpochTicker::spawn(
+                engine.clone(),
+                std::time::Duration::from_millis(EXECUTION_TIMEOUT_MS),
+            )))
+        };
 
         Ok(Self {
             engine,
@@ -187,6 +217,10 @@ impl WasmToolExecutor {
     /// ordinary wasm trap and lands in the same `ResourceExhausted` shape as the
     /// fuel-exhausted path.
     fn arm_epoch_deadline(&self, store: &mut Store<()>) {
+        if wall_clock_backstop_disabled() {
+            debug!("wall-clock backstop disabled by SISYPHUS_SANDBOXD_NO_WALL_CLOCK");
+            return;
+        }
         store.set_epoch_deadline(1);
         store.epoch_deadline_trap();
     }
