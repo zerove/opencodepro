@@ -92,7 +92,8 @@ pub struct WasmToolExecutor {
     /// Keeps the epoch ticker alive for as long as this executor exists.
     /// Dropping it would stop epoch advancement and silently disable the
     /// wall-clock backstop, so it is stored rather than spawned-and-forgotten.
-    _epoch_ticker: Arc<EpochTicker>,
+    /// `None` only in the negative-control build (see [`with_config_inner`]).
+    _epoch_ticker: Option<Arc<EpochTicker>>,
 }
 
 /// Advances wasmtime's epoch counter on a fixed interval.
@@ -157,6 +158,23 @@ impl WasmToolExecutor {
         tools_path: Option<PathBuf>,
         max_memory_pages: Option<u32>,
     ) -> Result<Self, SandboxError> {
+        Self::with_config_inner(tools_path, max_memory_pages, false)
+    }
+
+    /// Shared constructor; `wall_clock_disabled` exists solely for the negative
+    /// control in `test_runaway_guest_hangs_without_any_backstop`.
+    ///
+    /// It has to be honoured at **config** level, not only in
+    /// `arm_epoch_deadline`: with `epoch_interruption` still enabled, a ticking
+    /// engine traps *any* store whose deadline is unset. Measured, not assumed:
+    /// skipping only the `set_epoch_deadline` call traps `infinite_loop` in
+    /// ~20ms even though it exports no memory at all, so that shape cannot
+    /// demonstrate "no backstop" — it just demonstrates a second trap source.
+    fn with_config_inner(
+        tools_path: Option<PathBuf>,
+        max_memory_pages: Option<u32>,
+        wall_clock_disabled: bool,
+    ) -> Result<Self, SandboxError> {
         let tools_path = tools_path.unwrap_or_else(|| PathBuf::from("tools"));
         let max_memory_pages = max_memory_pages.unwrap_or(10);
 
@@ -169,7 +187,9 @@ impl WasmToolExecutor {
         // infinite loop is never interrupted and the call hangs forever.
         // Epoch interruption is an independent wall-clock bound enforced by the
         // runtime, so it still traps when fuel accounting is wrong.
-        config.epoch_interruption(true);
+        if !wall_clock_disabled {
+            config.epoch_interruption(true);
+        }
         // wasmtime ≥46 defaults memory_reservation to 4GiB; the pooling allocator
         // pre-maps that much per slot, which hangs in memory-constrained envs.
         // Our WASM tools are small, so a modest reservation avoids the huge mmap.
@@ -186,10 +206,16 @@ impl WasmToolExecutor {
         config.allocation_strategy(wasmtime::InstanceAllocationStrategy::Pooling(pooling));
 
         let engine = Engine::new(&config)?;
-        let epoch_ticker = Arc::new(EpochTicker::spawn(
-            engine.clone(),
-            std::time::Duration::from_millis(EXECUTION_TIMEOUT_MS),
-        ));
+        // Nothing to tick once epoch interruption is off; keeping the ticker
+        // alive in that mode would advance a counter nobody reads.
+        let epoch_ticker = if wall_clock_disabled {
+            None
+        } else {
+            Some(Arc::new(EpochTicker::spawn(
+                engine.clone(),
+                std::time::Duration::from_millis(EXECUTION_TIMEOUT_MS),
+            )))
+        };
 
         Ok(Self {
             engine,
@@ -629,30 +655,108 @@ mod tests {
         );
     }
 
-    /// 阴性对照：关掉墙钟后，同一个失控 guest 仍会被**别的上限**拦住。
+    /// 对照组：**只**关掉 store 上的 deadline，epoch 中断仍开启。
     ///
-    /// 这不是在说“关掉兜底就会挂死”，而是在固定一个关键事实：`infinite_loop`
-    /// 同时违反内存上限，所以无论如何都会 trap。区分两类 trap 的是 guest
-    /// 是否有机会跑到 deadline——开了兜底就跑到，没开就当场撞内存。
+    /// 这条固定的是 wasmtime 的一个反直觉行为，也是写这条注释的原因：
+    /// 只要 `epoch_interruption` 开着且引擎在被 tick，**任何**没设 deadline 的
+    /// store 都会 trap——不需要 guest 真的跑到哪里。
     ///
-    /// 没有这条，上面那条的耗时下界就无法证明自己测的是兜底：它可能只是
-    /// 撞上了内存上限很快返回。
+    /// 之前这条测试的注释说「关掉兜底后 guest 会当场撞内存上限」。那是**错的**：
+    /// `infinite_loop.wat` 根本没有 memory 导出，没有任何内存可供 grow。实测
+    /// （本仓库，wasmtime 48）在只跳过 `set_epoch_deadline` 时它约 20ms 就 trap
+    /// 了，而 epoch ticker 每 5s 才动一次——所以拦下它的绝不是内存上限。
+    ///
+    /// 那条错误归因有实际危害：它让人以为「关掉兜底只是换个上限拦」，于是不会
+    /// 想到「关掉 epoch 后是真的会挂死」。后者由
+    /// `test_runaway_guest_hangs_without_any_backstop` 真实测量。
     #[tokio::test]
-    async fn test_runaway_guest_stops_on_memory_limit_without_wall_clock_bound() {
+    async fn test_unarmed_store_traps_immediately_while_epoch_is_still_enabled() {
         let executor = test_executor();
-        let tick = std::time::Duration::from_millis(EXECUTION_TIMEOUT_MS);
+
+        // 无 memory 导出，所以内存上限这条路对它是封死的。
+        let wat = std::fs::read_to_string(
+            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .parent()
+                .and_then(|p| p.parent())
+                .expect("workspace root")
+                .join("tools")
+                .join("infinite_loop.wat"),
+        )
+        .expect("read infinite_loop.wat");
+        assert!(
+            !wat.contains("export \"memory\""),
+            "infinite_loop must stay memoryless for this test to mean anything"
+        );
 
         let start = Instant::now();
         let result = executor.execute_internal_unmetered("infinite_loop", 100, false).await;
         let elapsed = start.elapsed();
 
-        assert!(result.is_err(), "memory limit should still stop the guest");
+        assert!(result.is_err(), "the guest must still be stopped");
+        // 远低于一个 epoch 周期：它是被「未 arm 的 store」当场拦下的，
+        // 不是等到了截止时间。
         assert!(
-            elapsed < tick,
-            "without the wall-clock bound the guest should trap immediately on the \
-             memory limit, but took {elapsed:?} (>= one tick {tick:?}), which means it \
-             ran until the epoch deadline fired"
+            elapsed < std::time::Duration::from_secs(1),
+            "expected an immediate trap from the unarmed store, but it took {elapsed:?}"
         );
+    }
+
+    /// 阴性对照：**完全**关掉墙钟兜底后，失控 guest 真的挂死。
+    ///
+    /// 这才是前一条所缺的对照。构造方式必须是在 `Config` 层关掉
+    /// `epoch_interruption`，而不能只在 `arm_epoch_deadline` 里跳过——后者留下
+    /// 一个仍在 tick 的引擎，它会当场 trap（见上一条），根本到不了「挂死」。
+    ///
+    /// `infinite_loop` 不导出 memory，燃料又已拉满（等价于计账失效），排除掉
+    /// 内存与燃料之后，没有任何东西能停下它。
+    ///
+    /// 因为预期就是挂死，只能用「等不到返回」判定，所以自带超时——否则失败模式
+    /// 是整个测试套件被 CI 杀掉，而不是一条清晰的断言失败。
+    #[tokio::test]
+    async fn test_runaway_guest_hangs_without_any_backstop() {
+        let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let tools_path = manifest_dir.parent().unwrap().parent().unwrap().join("tools");
+        let executor = WasmToolExecutor::with_config_inner(Some(tools_path), None, true)
+            .expect("negative-control executor");
+        let ceiling = std::time::Duration::from_secs(10);
+
+        // 必须在**独立线程**上跑，不能用 `tokio::time::timeout` 包在本测试的
+        // runtime 上：wasmtime 的 `call` 是同步阻塞的，会占死那个 worker 线程，
+        // 于是超时定时器根本不会被调度。首次写成 async + timeout 的版本实测挂死
+        // 10 分钟后被外部取消——挂死是真的，但超时机制形同虚设。
+        //
+        // 这里同步等待 channel：worker 线程永不返回，所以 `recv_timeout` 必然
+        // 超时；反过来，如果它很快返回了（路径错、编译失败等），channel 会立刻
+        // 送达，测试就会失败并把真实错误打出来。
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let result = futures_block_on(executor.execute_internal_unmetered(
+                "infinite_loop",
+                u64::MAX,
+                true,
+            ));
+            let _ = tx.send(result);
+        });
+
+        match rx.recv_timeout(ceiling) {
+            Ok(result) => panic!(
+                "expected the guest to hang forever, but it returned: {:?}",
+                result.err()
+            ),
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {},
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                panic!("worker thread panicked instead of hanging")
+            },
+        }
+    }
+
+    /// Minimal blocking executor for a future that is known never to complete.
+    fn futures_block_on<F: std::future::Future>(fut: F) -> F::Output {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("runtime for the hanging worker")
+            .block_on(fut)
     }
 
     /// 内存计量必须真的有值，不能永远是 `None`。
