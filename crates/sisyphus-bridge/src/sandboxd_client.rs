@@ -525,6 +525,14 @@ mod tests {
             err.to_string().contains("ResourceExhausted"),
             "expected a ResourceExhausted shape, got: {err}"
         );
+        // Fuel is defeated here (`u64::MAX`), so the only thing that can have
+        // stopped the guest is the wall-clock backstop. Asserting the reason
+        // keeps that claim honest: a future change that let fuel metering clamp
+        // the budget back down would otherwise still pass the token check.
+        assert!(
+            err.to_string().contains("wall-clock deadline exceeded"),
+            "expected the wall-clock bound to be named as the cause, got: {err}"
+        );
 
         block_on(client.shutdown()).expect("shutdown");
     }

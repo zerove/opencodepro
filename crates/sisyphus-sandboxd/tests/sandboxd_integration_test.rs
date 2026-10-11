@@ -662,6 +662,13 @@ fn test_wall_clock_bound_stops_runaway_guest_when_fuel_metering_fails() {
         err.contains("ResourceExhausted"),
         "runaway guest should land in the ResourceExhausted shape, got: {err}"
     );
+    // 钉住具体是哪一道上限：墙钟 trap 归类为 `Interrupt`，若哪天 fuel 与墙钟的
+    // 分类被合并，这条会先红——因为下面那条相对耗时断言正是为了证明「拦住它的是
+    // 墙钟而不是 fuel」，分类却没跟上。
+    assert!(
+        err.contains("wall-clock deadline exceeded"),
+        "an epoch-interrupted guest must be attributed to the wall-clock bound, got: {err}"
+    );
 
     // 当场 trap（例如内存上限、未 arm 的 store）会与基线同量级；跑满一个 epoch
     // 周期则是秒级。相对判别比绝对阈值稳：它随机器速度一起缩放。

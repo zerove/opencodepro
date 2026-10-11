@@ -51,8 +51,55 @@ pub enum SandboxError {
     },
     #[error("No 'execute' export in module '{0}'")]
     MissingExecuteExport(String),
-    #[error("ResourceExhausted: {0}")]
+    /// The guest trapped for a reason the sandbox did not impose — an
+    /// `unreachable`, an out-of-bounds access, a stack overflow.
+    ///
+    /// This used to be the catch-all for *every* trap and carried a
+    /// `ResourceExhausted: ` prefix, which mislabelled guest bugs as resource
+    /// limits. The prefix is gone because the message now means what it says.
+    #[error("WASM execution failed: {0}")]
     ExecutionError(String),
+    /// A resource limit the sandbox imposed actually stopped the guest.
+    ///
+    /// Split out from [`SandboxError::ExecutionError`] because the two mean
+    /// opposite things to a caller: this one is the sandbox working, the other is
+    /// a misbehaving module. They used to be indistinguishable, because every
+    /// trap was wrapped in `ExecutionError`, whose `ResourceExhausted: ` prefix
+    /// labelled *all* of them as resource exhaustion — including a guest
+    /// `unreachable` and an out-of-bounds access, where the label simply lied.
+    #[error("ResourceExhausted: {tool_id} stopped the guest ({reason}): {details}")]
+    ResourceExhausted {
+        tool_id: String,
+        /// Stable, machine-comparable reason. Never parse the `details` string
+        /// for this: the wording of wasmtime's messages is not part of our API.
+        reason: &'static str,
+        details: String,
+    },
+}
+
+/// Classify a guest trap into the reason it actually stopped.
+///
+/// wasmtime 48 exposes no trap classifier on `Error` (`trap_code()` is gone),
+/// but `Error::downcast_ref::<Trap>()` still resolves the underlying trap, so
+/// the distinction is recoverable without parsing message text.
+fn classify_trap(trap: &Trap) -> &'static str {
+    match trap {
+        Trap::OutOfFuel => "fuel exhausted",
+        Trap::Interrupt => "wall-clock deadline exceeded",
+        Trap::StackOverflow => "guest stack overflow",
+        Trap::MemoryOutOfBounds => "guest memory out of bounds",
+        _ => "guest trap",
+    }
+}
+
+/// True when the trap is a *resource limit* rather than a guest fault.
+///
+/// Only these two are limits the sandbox imposed. `StackOverflow` is excluded
+/// deliberately: `max_wasm_stack` is a fixed 1 MB regardless of config, so it
+/// bounds the guest, but it is not one of the tunable per-execution limits and
+/// treating it as one would hide a genuinely buggy module.
+fn is_resource_limit(trap: &Trap) -> bool {
+    matches!(trap, Trap::OutOfFuel | Trap::Interrupt)
 }
 
 /// Knobs that exist so tests can defeat one limit at a time.
@@ -421,11 +468,31 @@ impl WasmToolExecutor {
         let mut results = vec![Val::I32(0)];
         let call_start = Instant::now();
         let call_result = execute_func.call(&mut store, &params, &mut results).map_err(|e| {
-            // Translate traps (fuel exhaustion, stack overflow, memory violation)
-            // into the ResourceExhausted format the tests expect.
+            // Translate traps into a reason a caller can act on. See
+            // `classify_trap` for why the `ResourceExhausted` prefix used to be
+            // applied unconditionally was wrong.
+            let reason =
+                e.downcast_ref::<Trap>().map(classify_trap).unwrap_or("non-trap execution failure");
+            let limit = e.downcast_ref::<Trap>().is_some_and(is_resource_limit);
+            tracing::warn!(
+                tool_id,
+                reason,
+                resource_limit = limit,
+                error = %e,
+                "WASM execution trapped"
+            );
+            let kind = if limit {
+                SandboxError::ResourceExhausted {
+                    tool_id: tool_id.to_string(),
+                    reason,
+                    details: e.to_string(),
+                }
+            } else {
+                SandboxError::ExecutionError(e.to_string())
+            };
             TypesError::ToolExecutionError {
                 tool_id: tool_id.to_string(),
-                details: SandboxError::ExecutionError(e.to_string()).to_string(),
+                details: kind.to_string(),
             }
         });
         let call_duration = call_start.elapsed();

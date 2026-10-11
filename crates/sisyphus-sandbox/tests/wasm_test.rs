@@ -17,29 +17,62 @@ async fn test_hello_wasm_tool() {
     assert_eq!(result_str, "Hello from WASM!");
 }
 
+/// The fuel limit must stop the guest, and say so.
+///
+/// The `ResourceExhausted` token is asserted deliberately, not incidentally:
+/// `sisyphus_intel::reflect::ErrorCategory::classify` scans error text for that
+/// exact substring to decide whether a failed node is worth evolving around. If
+/// a fuel trap stopped carrying it, fuel exhaustion would silently be filed as
+/// an ordinary failure and the reflection layer would lose its signal.
 #[tokio::test]
-async fn test_fuel_exhaustion() {
+async fn test_fuel_exhaustion_is_reported_as_a_resource_limit() {
     let executor = test_executor();
-    let result = executor.execute("infinite_loop", vec![], 100).await;
+    let err = executor
+        .execute("infinite_loop", vec![], 100)
+        .await
+        .expect_err("an unbounded loop must not survive a 100-fuel budget");
 
-    assert!(result.is_err());
-    assert!(result.unwrap_err().to_string().contains("ResourceExhausted"));
+    let text = err.to_string();
+    assert!(
+        text.contains("ResourceExhausted"),
+        "a fuel trap must stay classified as a resource limit, got: {text}"
+    );
+    assert!(
+        text.contains("fuel exhausted"),
+        "the reason must name the limit that fired, got: {text}"
+    );
+    assert!(
+        text.contains("infinite_loop"),
+        "the error must name the tool that failed, got: {text}"
+    );
 }
 
+/// A guest that traps on its own must NOT be reported as a resource limit.
+///
+/// This is the negative control for the test above. `infinite_loop` and this
+/// module both stop execution, but one is the sandbox working and the other is a
+/// broken guest — and the reflection layer treats them very differently
+/// (`ResourceExhausted` is a tunable signal; an ordinary failure is not).
+///
+/// Before trap classification existed, *every* trap was wrapped in an error whose
+/// text began `ResourceExhausted: `, so this test would have failed: a guest
+/// `unreachable` was indistinguishable from a fuel limit, and evolvers were told
+/// a buggy module had hit a resource ceiling.
 #[tokio::test]
-async fn test_memory_exhaustion() {
+async fn test_guest_trap_is_not_mislabelled_as_a_resource_limit() {
     let executor = test_executor();
-    let result = executor.execute("memory_hog", vec![], 1000).await;
+    let err = executor
+        .execute("trapping_guest", vec![], 10_000_000)
+        .await
+        .expect_err("a guest that executes `unreachable` must not report success");
 
-    assert!(result.is_err());
-    let err = result.unwrap_err();
-    // memory_hog tries memory.grow 1000, blocked by max_memory_size(10*65536)
-    let err_str = err.to_string();
+    let text = err.to_string();
     assert!(
-        err_str.contains("ResourceExhausted")
-            || err_str.contains("memory")
-            || err_str.contains("translation"),
-        "Expected memory-related error, got: {}",
-        err_str
+        !text.contains("ResourceExhausted"),
+        "a guest fault must not be labelled a resource limit, got: {text}"
+    );
+    assert!(
+        text.contains("WASM execution failed"),
+        "a guest fault must be reported as an execution failure, got: {text}"
     );
 }
