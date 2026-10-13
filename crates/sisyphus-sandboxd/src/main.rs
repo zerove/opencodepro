@@ -26,15 +26,69 @@
 //! ```json
 //! {"id": 1, "result": {"pong": true}}
 //! {"id": 2, "result": {"data": "base64_encoded_result", "fuel_consumed": 12345, "peak_memory_bytes": 65536}}
-//! {"id": 2, "error": "error message"}
 //! ```
+//!
+//! ## Errors
+//!
+//! A failed execute answers with a structured error, so the client learns which
+//! tool failed and why rather than receiving one opaque string:
+//!
+//! ```json
+//! {"id": 2, "error": {"tool_id": "evil", "kind": "fuel_exhausted", "message": "..."}}
+//! ```
+//!
+//! `message` carries the same human-readable text the v1 format put directly in
+//! `error`, so a client that only prints it loses nothing. See
+//! `sisyphus_types::ToolExecutionError` for the full contract.
 
 use clap::Parser;
 use sisyphus_sandbox::{SandboxError, WasmToolExecutor};
-use sisyphus_types::{ToolExecutor, TypesError};
+use sisyphus_types::{SandboxErrorKind, ToolExecutionError, ToolExecutor, TypesError};
 use std::path::PathBuf;
 use tokio::io::{stdin, stdout, AsyncBufReadExt, AsyncWriteExt, BufReader, BufWriter};
 use tracing::{error, info, warn};
+
+/// Recover a wire category from an already-rendered error message.
+///
+/// The executor hands back `TypesError`, whose `ToolExecutionError` variant holds
+/// a `details: String` rather than a typed cause — so the structured category has
+/// to be re-derived from text here. That is a real weakness of the current error
+/// plumbing, not a design choice: threading a typed error through
+/// `ToolExecutor::execute` would remove the need for this function entirely.
+///
+/// Within those limits it is still strictly better than the previous behaviour,
+/// which sent the string and no category at all. Every branch matches a fixed
+/// prefix emitted by `sisyphus_sandbox::SandboxError`, and anything unrecognised
+/// degrades to `Unknown` rather than guessing — a wrong category is worse than
+/// an absent one, because a caller may branch on it.
+fn kind_from_rendered_detail(detail: &str) -> SandboxErrorKind {
+    if detail.contains("ResourceExhausted:") {
+        // Both tunables render into this one variant; distinguish them so a
+        // caller can tell "needs more fuel" from "needs a faster host".
+        if detail.contains("wall-clock deadline exceeded") {
+            SandboxErrorKind::WallClockExceeded
+        } else if detail.contains("fuel exhausted") {
+            SandboxErrorKind::FuelExhausted
+        } else {
+            // A limit fired but we cannot say which — still a limit, so it must
+            // not be downgraded to `GuestTrap`.
+            SandboxErrorKind::SandboxUnavailable
+        }
+    } else if detail.contains("WASM execution failed") {
+        SandboxErrorKind::GuestTrap
+    } else if detail.contains("Failed to read WASM binary")
+        || detail.contains("Failed to compile WASM module")
+        || detail.contains("Failed to instantiate WASM module")
+    {
+        SandboxErrorKind::ToolLoadFailed
+    } else if detail.contains("No 'execute' export") {
+        SandboxErrorKind::MissingExport
+    } else if detail.contains("Failed to create Wasmtime Engine") {
+        SandboxErrorKind::SandboxUnavailable
+    } else {
+        SandboxErrorKind::Unknown
+    }
+}
 
 #[derive(Parser, Debug)]
 #[command(name = "sisyphus-sandboxd", version, about = "WASM sandbox daemon")]
@@ -107,9 +161,16 @@ enum Response {
         id: u64,
         result: ExecuteResult,
     },
+    /// A failed execute.
+    ///
+    /// The payload is a structured [`ToolExecutionError`] rather than a bare
+    /// string: the client needs the failing tool's id (it used to receive the
+    /// transport's name instead) and the category (it used to have to parse
+    /// English). `message` carries the same text the old wire format did, so a
+    /// client that only prints it loses nothing.
     ExecuteError {
         id: u64,
-        error: String,
+        error: ToolExecutionError,
     },
     /// `Notification` message variant in the daemon protocol.
     ///
@@ -217,7 +278,16 @@ async fn handle_request(
                 },
                 Err(e) => Response::ExecuteError {
                     id,
-                    error: e.to_string(),
+                    // `e` is a `TypesError`, not a `SandboxError`, so the category
+                    // has to be recovered from its rendered detail. That is not as
+                    // strong as carrying a typed variant end to end — see
+                    // `kind_from_rendered_detail` for why it is still strictly
+                    // better than sending prose alone.
+                    error: ToolExecutionError::new(
+                        &params.tool_id,
+                        kind_from_rendered_detail(&e.to_string()),
+                        e.to_string(),
+                    ),
                 },
             };
             let line =
@@ -306,7 +376,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let id = value.get("id").and_then(|v| v.as_u64()).unwrap_or(0);
                 let resp = Response::ExecuteError {
                     id,
-                    error: format!("Unknown method or malformed request: {e}"),
+                    error: ToolExecutionError::new(
+                        "unknown",
+                        SandboxErrorKind::Transport,
+                        format!("Unknown method or malformed request: {e}"),
+                    ),
                 };
                 if let Ok(line) = serde_json::to_string(&resp) {
                     let _ = writer.write_all((line + "\n").as_bytes()).await;

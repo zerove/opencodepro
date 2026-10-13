@@ -17,6 +17,7 @@ pub mod env_guard;
 pub mod errors;
 pub mod experience;
 pub mod roadmap;
+pub mod sandbox_error;
 pub mod tools;
 
 pub mod config;
@@ -62,6 +63,7 @@ pub use execution::*;
 pub use graph::*;
 pub use node::*;
 pub use roadmap::*;
+pub use sandbox_error::*;
 pub use types::*;
 
 // ── Cognitive Map Types ────────────────────────────────────

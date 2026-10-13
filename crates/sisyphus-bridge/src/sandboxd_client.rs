@@ -9,7 +9,10 @@
 //! See `crates/sisyphus-sandboxd/src/main.rs` for the full protocol spec.
 
 use async_trait::async_trait;
-use sisyphus_types::{CacheInvalidatable, ToolExecutor, ToolMetadata, TypesError};
+use sisyphus_types::{
+    CacheInvalidatable, SandboxErrorKind, ToolExecutionError, ToolExecutor, ToolMetadata,
+    TypesError,
+};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
@@ -93,7 +96,7 @@ impl SandboxdClient {
             "params": {},
         });
 
-        let response = self.send_request(id, &request).await?;
+        let response = self.send_request(id, &request, "ping").await?;
 
         if response.get("result").and_then(|r| r.get("pong")) != Some(&serde_json::json!(true)) {
             return Err(TypesError::ToolExecutionError {
@@ -105,10 +108,16 @@ impl SandboxdClient {
     }
 
     /// Send a request and wait for a matching response.
+    ///
+    /// `tool_id` is the tool this request targets. It is needed here rather than
+    /// only at the call site because a legacy daemon's error carries no tool id,
+    /// and the fallback for that case must be the real tool — not a synthetic
+    /// name for the transport.
     async fn send_request(
         &self,
         id: u64,
         request: &serde_json::Value,
+        tool_id: &str,
     ) -> Result<serde_json::Value, TypesError> {
         let mut conn = self.conn.lock().await;
 
@@ -151,12 +160,37 @@ impl SandboxdClient {
                     details: format!("Failed to parse sandboxd response: {e}"),
                 })?;
 
-            // Check if this response matches our request id
+            // A matching id with an `error` member: either the structured v2 object or
+            // the bare string an older daemon sends. Both are handled, so this
+            // client works against either side without a coordinated upgrade.
             if response.get("id").and_then(|v| v.as_u64()) == Some(id) {
-                if let Some(error) = response.get("error").and_then(|v| v.as_str()) {
+                if let Some(error) = response.get("error") {
+                    // An old daemon sends a plain string and no tool id. In that
+                    // case we fall back to the requested tool rather than to the
+                    // transport's name — `tool_id: "sandboxd"` told a caller
+                    // nothing about which of its tools had failed.
+                    let structured = if error.is_string() {
+                        ToolExecutionError::new(
+                            tool_id,
+                            SandboxErrorKind::from_wire(error.get("kind")),
+                            error.as_str().unwrap_or_default(),
+                        )
+                    } else {
+                        serde_json::from_value(error.clone()).map_err(|e| {
+                            TypesError::ToolExecutionError {
+                                tool_id: tool_id.to_string(),
+                                details: format!(
+                                    "Failed to parse sandboxd error payload: {e}; raw: {error}"
+                                ),
+                            }
+                        })?
+                    };
+
+                    // Preserve the real tool id on the returned error, which is
+                    // where a caller actually looks.
                     return Err(TypesError::ToolExecutionError {
-                        tool_id: "sandboxd".into(),
-                        details: error.to_string(),
+                        tool_id: tool_id.to_string(), // MUTATION: old behaviour
+                        details: structured.to_string(),
                     });
                 }
                 return Ok(response);
@@ -209,7 +243,7 @@ impl SandboxdClient {
             },
         });
 
-        let response = self.send_request(id, &request).await?;
+        let response = self.send_request(id, &request, tool_id).await?;
 
         // Decode base64 result data
         let data_b64 = response
@@ -532,6 +566,37 @@ mod tests {
         assert!(
             err.to_string().contains("wall-clock deadline exceeded"),
             "expected the wall-clock bound to be named as the cause, got: {err}"
+        );
+
+        block_on(client.shutdown()).expect("shutdown");
+    }
+
+    /// The failing tool's own id must reach the caller, not the transport's.
+    ///
+    /// This is the whole point of the structured error payload, and it is a
+    /// client-side property: the daemon tests can assert the wire bytes carry
+    /// `tool_id`, but only this can prove the id survives the client's own
+    /// deserialisation and is not overwritten on the way out.
+    ///
+    /// Before the change, `send_request` hard-coded `tool_id: "sandboxd"`, so a
+    /// caller with twenty registered tools learned nothing about which one
+    /// failed — and a mutation that restored that line would leave every other
+    /// test in this file green.
+    #[test]
+    fn an_error_names_the_failing_tool_not_the_transport() {
+        let client = spawn_client();
+
+        let err = block_on(client.execute("definitely_not_a_tool", vec![], 1000))
+            .expect_err("a missing tool must not succeed");
+
+        let rendered = err.to_string();
+        assert!(
+            rendered.contains("definitely_not_a_tool"),
+            "the requested tool's id must appear in the error, got: {rendered}"
+        );
+        assert!(
+            !rendered.contains("Tool execution error for 'sandboxd'"),
+            "the transport's name must not stand in for the tool's, got: {rendered}"
         );
 
         block_on(client.shutdown()).expect("shutdown");

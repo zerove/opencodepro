@@ -178,7 +178,12 @@ fn test_unknown_method() {
     let parsed: serde_json::Value = serde_json::from_str(&response).expect("Invalid JSON response");
 
     assert_eq!(parsed["id"], 42);
-    assert!(parsed["error"].as_str().unwrap().contains("Unknown method"));
+    // The error is now a structured object, not a bare string.
+    assert_eq!(parsed["error"]["kind"], "transport");
+    assert!(
+        parsed["error"]["message"].as_str().unwrap().contains("Unknown method"),
+        "the human-readable message must survive the structured encoding: {response}"
+    );
 
     let _ = child.kill();
     let _ = child.wait();
@@ -200,8 +205,19 @@ fn test_execute_missing_tool() {
     assert_eq!(parsed["id"], 7);
     // Should return an error since the tool doesn't exist
     assert!(
-        parsed["error"].as_str().is_some(),
+        parsed["error"]["message"].as_str().is_some(),
         "Expected error for missing tool, got: {response}"
+    );
+    // 关键断言：失败的工具名必须原样透传，而不是被换成传输层名字。
+    // 旧协议只发一个裸字符串，客户端拿不到 tool_id，只能自己填 `"sandboxd"`——
+    // 于是调用方看到的是传输层的名字，完全不知道是自己哪个工具挂了。
+    assert_eq!(
+        parsed["error"]["tool_id"], "nonexistent_tool",
+        "the failing tool's own id must cross the wire, got: {response}"
+    );
+    assert_eq!(
+        parsed["error"]["kind"], "tool_load_failed",
+        "a missing .wasm is a load failure, got: {response}"
     );
 
     let _ = child.kill();
@@ -657,7 +673,16 @@ fn test_wall_clock_bound_stops_runaway_guest_when_fuel_metering_fails() {
         parsed.get("result").is_none() || parsed["result"].is_null(),
         "runaway guest must be reported as an error, got: {response}"
     );
-    let err = parsed["error"].as_str().unwrap_or_default();
+    let err = parsed["error"]["message"].as_str().unwrap_or_default();
+    let kind = parsed["error"]["kind"].as_str().unwrap_or_default();
+    assert_eq!(
+        kind, "wall_clock_exceeded",
+        "an epoch-interrupted guest must be categorised as the wall-clock bound, got: {response}"
+    );
+    assert_eq!(
+        parsed["error"]["tool_id"], "infinite_loop",
+        "the failing tool's own id must cross the wire, got: {response}"
+    );
     assert!(
         err.contains("ResourceExhausted"),
         "runaway guest should land in the ResourceExhausted shape, got: {err}"

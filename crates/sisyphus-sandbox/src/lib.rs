@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use dashmap::DashMap;
 use sisyphus_metrics::record_wasm_execution;
-use sisyphus_types::ToolExecutor;
+use sisyphus_types::{SandboxErrorKind, ToolExecutor};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Instant;
@@ -67,39 +67,86 @@ pub enum SandboxError {
     /// trap was wrapped in `ExecutionError`, whose `ResourceExhausted: ` prefix
     /// labelled *all* of them as resource exhaustion — including a guest
     /// `unreachable` and an out-of-bounds access, where the label simply lied.
-    #[error("ResourceExhausted: {tool_id} stopped the guest ({reason}): {details}")]
+    #[error("ResourceExhausted: {tool_id} stopped the guest ({kind}): {details}")]
     ResourceExhausted {
         tool_id: String,
-        /// Stable, machine-comparable reason. Never parse the `details` string
-        /// for this: the wording of wasmtime's messages is not part of our API.
-        reason: &'static str,
+        /// Which limit fired. This *is* the reason — `SandboxErrorKind`'s
+        /// `Display` renders it — so there is no second, redundant field that
+        /// could disagree with it.
+        kind: SandboxErrorKind,
         details: String,
     },
 }
 
-/// Classify a guest trap into the reason it actually stopped.
+/// Classify a guest trap into the category it belongs to.
 ///
 /// wasmtime 48 exposes no trap classifier on `Error` (`trap_code()` is gone),
 /// but `Error::downcast_ref::<Trap>()` still resolves the underlying trap, so
 /// the distinction is recoverable without parsing message text.
-fn classify_trap(trap: &Trap) -> &'static str {
+///
+/// Every non-resource trap maps to [`SandboxErrorKind::GuestTrap`] rather than
+/// to a distinct kind per trap: from the caller's perspective `unreachable`,
+/// out-of-bounds, and stack overflow are the same thing — the module is broken —
+/// and the exact trap remains available in the rendered `details`.
+///
+/// The `_` arm is the load-bearing part: a trap wasmtime adds in a future
+/// version is, by definition, not one of the limits this sandbox configures, so
+/// it must not be mistaken for a resource limit.
+fn classify_trap(trap: &Trap) -> SandboxErrorKind {
     match trap {
-        Trap::OutOfFuel => "fuel exhausted",
-        Trap::Interrupt => "wall-clock deadline exceeded",
-        Trap::StackOverflow => "guest stack overflow",
-        Trap::MemoryOutOfBounds => "guest memory out of bounds",
-        _ => "guest trap",
+        Trap::OutOfFuel => SandboxErrorKind::FuelExhausted,
+        Trap::Interrupt => SandboxErrorKind::WallClockExceeded,
+        _ => SandboxErrorKind::GuestTrap,
     }
 }
 
-/// True when the trap is a *resource limit* rather than a guest fault.
-///
-/// Only these two are limits the sandbox imposed. `StackOverflow` is excluded
-/// deliberately: `max_wasm_stack` is a fixed 1 MB regardless of config, so it
-/// bounds the guest, but it is not one of the tunable per-execution limits and
-/// treating it as one would hide a genuinely buggy module.
-fn is_resource_limit(trap: &Trap) -> bool {
-    matches!(trap, Trap::OutOfFuel | Trap::Interrupt)
+impl SandboxError {
+    /// The wire category for this error.
+    ///
+    /// Every variant is mapped explicitly, including the ones that look alike.
+    /// That is deliberate: the previous state of this code had a single
+    /// catch-all, so a missing `.wasm`, a broken module, and an exhausted fuel
+    /// budget all reached the caller as one opaque string. An exhaustive `match`
+    /// makes the compiler flag a newly added variant instead of letting it
+    /// silently inherit a wrong category.
+    pub fn kind(&self) -> SandboxErrorKind {
+        match self {
+            // The engine itself could not be built — a sandbox problem, not a
+            // guest problem.
+            Self::EngineCreationFailed(_) => SandboxErrorKind::SandboxUnavailable,
+            Self::IoError { .. }
+            | Self::CompileError { .. }
+            | Self::InstantiationError { .. }
+            | Self::TaskJoinError(_) => SandboxErrorKind::ToolLoadFailed,
+            // Setting the fuel budget failed: the limit could not even be armed.
+            // Not the guest exhausting fuel — the sandbox failing to equip.
+            Self::FuelError { .. } => SandboxErrorKind::SandboxUnavailable,
+            Self::MissingExecuteExport(_) => SandboxErrorKind::MissingExport,
+            // This one carries the category chosen by `classify_trap`, so it is already
+            // decided by the time we get here.
+            Self::ResourceExhausted { kind, .. } => *kind,
+            Self::ExecutionError(_) => SandboxErrorKind::GuestTrap,
+        }
+    }
+
+    /// The failing tool's id, when this error knows it.
+    ///
+    /// Used to populate [`ToolExecutionError::tool_id`] on the wire. Errors that
+    /// precede compilation (engine creation) have no tool, which is why this is
+    /// an `Option` rather than an empty-string convention.
+    pub fn tool_id(&self) -> Option<&str> {
+        match self {
+            Self::IoError { tool_id, .. }
+            | Self::CompileError { tool_id, .. }
+            | Self::FuelError { tool_id, .. }
+            | Self::InstantiationError { tool_id, .. }
+            | Self::ResourceExhausted { tool_id, .. } => Some(tool_id),
+            Self::MissingExecuteExport(tool_id) => Some(tool_id),
+            Self::EngineCreationFailed(_) | Self::TaskJoinError(_) | Self::ExecutionError(_) => {
+                None
+            },
+        }
+    }
 }
 
 /// Knobs that exist so tests can defeat one limit at a time.
@@ -468,23 +515,22 @@ impl WasmToolExecutor {
         let mut results = vec![Val::I32(0)];
         let call_start = Instant::now();
         let call_result = execute_func.call(&mut store, &params, &mut results).map_err(|e| {
-            // Translate traps into a reason a caller can act on. See
-            // `classify_trap` for why the `ResourceExhausted` prefix used to be
-            // applied unconditionally was wrong.
-            let reason =
-                e.downcast_ref::<Trap>().map(classify_trap).unwrap_or("non-trap execution failure");
-            let limit = e.downcast_ref::<Trap>().is_some_and(is_resource_limit);
+            // Translate traps into a category a caller can act on. See `classify_trap`
+            // for why the `ResourceExhausted` prefix used to be applied
+            // unconditionally was wrong.
+            let kind = e.downcast_ref::<Trap>().map_or(SandboxErrorKind::GuestTrap, classify_trap);
+            let limit = kind.is_resource_limit();
             tracing::warn!(
                 tool_id,
-                reason,
+                kind = %kind,
                 resource_limit = limit,
                 error = %e,
                 "WASM execution trapped"
             );
-            let kind = if limit {
+            let wire = if limit {
                 SandboxError::ResourceExhausted {
                     tool_id: tool_id.to_string(),
-                    reason,
+                    kind,
                     details: e.to_string(),
                 }
             } else {
@@ -492,7 +538,7 @@ impl WasmToolExecutor {
             };
             TypesError::ToolExecutionError {
                 tool_id: tool_id.to_string(),
-                details: kind.to_string(),
+                details: wire.to_string(),
             }
         });
         let call_duration = call_start.elapsed();
