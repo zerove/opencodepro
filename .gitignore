@@ -68,3 +68,7 @@ crates/sisyphus-sandbox/proptest-regressions/
 .heavy2.end
 .bridge-state
 .bridge-state.log.*
+
+# opencode / sisyphus 代理运行时会话产物：指标采样与会话状态，
+# 属于本机状态而非仓库内容。
+.opencode/
