@@ -67,6 +67,7 @@ fn bench_dag_execution(c: &mut Criterion) {
                         tool_id: "mock_tool".into(),
                         fuel_limit: 1_000_000,
                         executor: tool_executor.clone(),
+                        args: Vec::new(),
                     }));
                     if let Some(prev) = prev_node {
                         graph.add_edge(prev, node);
@@ -229,7 +230,7 @@ fn bench_v2_adaptive_depth_controller(c: &mut Criterion) {
             &n_iter,
             |b, &n| {
                 b.iter(|| {
-                    let mut controller = AdaptiveDepthController::new(
+                    let controller = AdaptiveDepthController::new(
                         black_box(0.95), // target_confidence
                         black_box(0.01), // min_improvement
                         black_box(20),   // max_iterations
@@ -250,7 +251,7 @@ fn bench_v2_adaptive_depth_controller(c: &mut Criterion) {
     // Plateau detection benchmark
     group.bench_function("plateau_early_stop", |b| {
         b.iter(|| {
-            let mut controller = AdaptiveDepthController::new(black_box(0.95), 0.01, 20, 5);
+            let controller = AdaptiveDepthController::new(black_box(0.95), 0.01, 20, 5);
             // 10 iterations of flat 0.92 confidence → simulated plateau
             for _ in 0..10 {
                 let _ = controller.observe_iteration(black_box(0.92));
