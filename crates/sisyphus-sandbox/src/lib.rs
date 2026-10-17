@@ -426,9 +426,10 @@ impl WasmToolExecutor {
     async fn execute_internal(
         &self,
         tool_id: &str,
+        args: &[u8],
         fuel_limit: u64,
     ) -> Result<ExecOutcome, sisyphus_types::TypesError> {
-        self.execute_internal_opts(tool_id, fuel_limit, ExecOpts::DEFAULT).await
+        self.execute_internal_opts(tool_id, args, fuel_limit, ExecOpts::DEFAULT).await
     }
 
     #[cfg(test)]
@@ -440,6 +441,7 @@ impl WasmToolExecutor {
     ) -> Result<ExecOutcome, sisyphus_types::TypesError> {
         self.execute_internal_opts(
             tool_id,
+            &[],
             fuel_limit,
             ExecOpts {
                 metered: false,
@@ -449,9 +451,58 @@ impl WasmToolExecutor {
         .await
     }
 
+    /// Writes `args` into the guest's linear memory and returns its offset.
+    ///
+    /// Appended after the current data size so it cannot clobber the module's
+    /// own data segments, and NUL-terminated to match the return convention.
+    /// Returns 0 when the guest exports no `memory` or growth fails; the call
+    /// still proceeds with a null pointer, which is how guests without memory
+    /// behaved before.
+    ///
+    /// Note the input ABI differs from [`crate::custom_executor::CustomToolExecutor`]:
+    /// this executor allocates guest-side (host appends, then passes the
+    /// offset), while that one requires the guest to export
+    /// `alloc(size: i32) -> i32`. A module written for one will not receive
+    /// its arguments through the other.
+    fn write_args_to_guest(
+        &self,
+        store: &mut wasmtime::Store<()>,
+        instance: &wasmtime::Instance,
+        args: &[u8],
+    ) -> usize {
+        if args.is_empty() {
+            return 0;
+        }
+        let Some(memory) = instance.get_memory(&mut *store, "memory") else {
+            return 0;
+        };
+
+        let offset = memory.data_size(&*store);
+        let needed = offset + args.len() + 1;
+        const WASM_PAGE: usize = 65_536;
+        let have = (memory.size(&*store) as usize).saturating_mul(WASM_PAGE);
+        if needed > have {
+            let target_pages = needed.div_ceil(WASM_PAGE) as u64;
+            let grow = target_pages.saturating_sub(memory.size(&*store));
+            if grow > 0 && memory.grow(&mut *store, grow).is_err() {
+                return 0;
+            }
+        }
+
+        let mut buf = Vec::with_capacity(args.len() + 1);
+        buf.extend_from_slice(args);
+        buf.push(0);
+
+        match memory.write(&mut *store, offset, &buf) {
+            Ok(()) => offset,
+            Err(_) => 0,
+        }
+    }
+
     async fn execute_internal_opts(
         &self,
         tool_id: &str,
+        args: &[u8],
         fuel_limit: u64,
         opts: ExecOpts,
     ) -> Result<ExecOutcome, sisyphus_types::TypesError> {
@@ -463,34 +514,33 @@ impl WasmToolExecutor {
 
         let exec_start = Instant::now();
         let module = self.get_or_compile_module(tool_id).await.map_err(|e| {
-            TypesError::ToolExecutionError {
-                tool_id: tool_id.to_string(),
-                details: e.to_string(),
-            }
+            TypesError::sandbox(tool_id, SandboxErrorKind::ToolLoadFailed, e.to_string())
         })?;
 
         let linker = Linker::new(&self.engine);
         let mut store = Store::new(&self.engine, ());
         store.set_fuel(if opts.metered { fuel_limit } else { u64::MAX }).map_err(|e| {
-            TypesError::ToolExecutionError {
-                tool_id: tool_id.to_string(),
-                details: SandboxError::FuelError {
+            TypesError::sandbox(
+                tool_id,
+                SandboxErrorKind::SandboxUnavailable,
+                SandboxError::FuelError {
                     tool_id: tool_id.to_string(),
                     source: e,
                 }
                 .to_string(),
-            }
+            )
         })?;
 
         let instance = linker.instantiate(&mut store, &module).map_err(|e| {
-            TypesError::ToolExecutionError {
-                tool_id: tool_id.to_string(),
-                details: SandboxError::InstantiationError {
+            TypesError::sandbox(
+                tool_id,
+                SandboxErrorKind::ToolLoadFailed,
+                SandboxError::InstantiationError {
                     tool_id: tool_id.to_string(),
                     source: e,
                 }
                 .to_string(),
-            }
+            )
         })?;
 
         // Wall-clock backstop, independent of fuel. See the `epoch_interruption`
@@ -499,17 +549,31 @@ impl WasmToolExecutor {
 
         // 5. Look for the "execute" export with dynamic signature handling
         let execute_func = instance.get_func(&mut store, "execute").ok_or_else(|| {
-            TypesError::ToolExecutionError {
-                tool_id: tool_id.to_string(),
-                details: SandboxError::MissingExecuteExport(tool_id.to_string()).to_string(),
-            }
+            TypesError::sandbox(
+                tool_id,
+                SandboxErrorKind::MissingExport,
+                SandboxError::MissingExecuteExport(tool_id.to_string()).to_string(),
+            )
         })?;
 
-        // Build argument list based on the function's expected parameter count
+        // Build argument list based on the function's expected parameter count.
+        // ABI mirrors the return side: the guest returns an i32 pointer to a
+        // NUL-terminated string in exported `memory`. Input uses the same
+        // shape -- the host writes `args` into linear memory and passes the
+        // pointer as the first parameter. Previously every parameter was a
+        // hardcoded I32(0) and `args` was dropped outright, so WASM tools
+        // always ran with empty input.
         let func_ty = execute_func.ty(&store);
         let params: Vec<Val> = match func_ty.params().len() {
             0 => vec![],
-            n => vec![Val::I32(0); n],
+            n => {
+                let ptr = self.write_args_to_guest(&mut store, &instance, args);
+                let mut v = vec![Val::I32(ptr as i32); n];
+                for slot in v.iter_mut().skip(1) {
+                    *slot = Val::I32(0);
+                }
+                v
+            },
         };
 
         let mut results = vec![Val::I32(0)];
@@ -536,10 +600,9 @@ impl WasmToolExecutor {
             } else {
                 SandboxError::ExecutionError(e.to_string())
             };
-            TypesError::ToolExecutionError {
-                tool_id: tool_id.to_string(),
-                details: wire.to_string(),
-            }
+            // `wire` already knows its category; keeping it typed lets the
+            // daemon forward it instead of re-deriving it from this string.
+            TypesError::sandbox(tool_id, wire.kind(), wire.to_string())
         });
         let call_duration = call_start.elapsed();
 
@@ -610,22 +673,21 @@ impl ToolExecutor for WasmToolExecutor {
         args: Vec<u8>,
         fuel_limit: u64,
     ) -> Result<Vec<u8>, sisyphus_types::TypesError> {
-        let _ = args;
-        let (data, _, _) = self.execute_internal(tool_id, fuel_limit).await?;
+        let (data, _, _) = self.execute_internal(tool_id, &args, fuel_limit).await?;
         Ok(data)
     }
 
     async fn execute_measured(
         &self,
         tool_id: &str,
-        _args: Vec<u8>,
+        args: Vec<u8>,
         fuel_limit: u64,
     ) -> Result<(Vec<u8>, Option<sisyphus_types::ExecutionMeasurement>), sisyphus_types::TypesError>
     {
         use sisyphus_types::TypesError;
         let exec_start = Instant::now();
         let (data, fuel_consumed, peak_memory_bytes) =
-            self.execute_internal(tool_id, fuel_limit).await.map_err(|e: TypesError| e)?;
+            self.execute_internal(tool_id, &args, fuel_limit).await.map_err(|e: TypesError| e)?;
         Ok((
             data,
             Some(sisyphus_types::ExecutionMeasurement {
@@ -700,6 +762,34 @@ mod tests {
         assert!(result.is_ok());
         let output = String::from_utf8(result.unwrap()).unwrap();
         assert_eq!(output, "Hello from WASM!");
+    }
+
+    /// 回归：args 必须真的抵达 guest。
+    ///
+    /// 此前 `execute` 直接丢弃 `args`，并且把所有参数硬编码成 `I32(0)`，
+    /// 于是每个 WASM 工具都以空输入运行 —— 而资源限制相关测试只验证
+    /// "能否停下来"，全都不受影响。`echo_args` guest 原样返回收到的指针，
+    /// 宿主据此把参数读回来，因此本用例能观察到参数内容。
+    #[tokio::test]
+    async fn test_execute_passes_args_to_guest() {
+        let executor = test_executor();
+        let payload = br#"{"goal":"ship-it","n":42}"#;
+        let result = executor.execute("echo_args", payload.to_vec(), 100_000).await;
+        assert!(result.is_ok(), "execute failed: {:?}", result.err());
+        let output = String::from_utf8(result.unwrap()).unwrap();
+        assert_eq!(
+            output, "{\"goal\":\"ship-it\",\"n\":42}",
+            "guest must observe the exact args bytes"
+        );
+    }
+
+    /// 空 args 必须保持既有行为（指针为 0，不写入内存）。
+    #[tokio::test]
+    async fn test_execute_with_empty_args_is_safe() {
+        let executor = test_executor();
+        let result = executor.execute("echo_args", vec![], 100_000).await;
+        assert!(result.is_ok(), "execute failed: {:?}", result.err());
+        assert!(result.unwrap().is_empty());
     }
 
     #[tokio::test]
@@ -822,6 +912,30 @@ mod tests {
             elapsed >= floor,
             "returned after {elapsed:?}, not clearly slower than a normal execution \
              ({baseline:?}) — something else stopped the guest immediately"
+        );
+    }
+
+    /// 回归：trap 的类别必须以类型形式抵达调用方。
+    ///
+    /// 此前 `SandboxError` 被 `to_string()` 拍平，daemon 只能写
+    /// `kind_from_rendered_detail` 去匹配英文文案反推类别——而
+    /// `ResourceExhausted` 与 guest `unreachable` 这两种相反的结果曾经共用
+    /// 一个前缀。现在类别随错误一起传，文本匹配仅剩兜底。
+    #[tokio::test]
+    async fn trap_carries_its_kind_as_a_type() {
+        let executor = test_executor();
+        // Metered with a small budget so the fuel limit -- not the wall-clock
+        // backstop -- is what stops the guest.
+        let err = executor
+            .execute("infinite_loop", vec![], 100)
+            .await
+            .expect_err("runaway guest must fail");
+
+        let kind = err.sandbox_kind().expect("sandbox failure must carry a category");
+        assert_eq!(
+            kind,
+            SandboxErrorKind::FuelExhausted,
+            "fuel-limited guest must report FuelExhausted"
         );
     }
 
