@@ -37,6 +37,20 @@ fn unique_id(label: &str) -> String {
     format!("integration_test_{}_{}", label, std::process::id())
 }
 
+/// Count only the registry entries this test owns.
+///
+/// `tool_count()` reports the whole process-global registry, and these tests run
+/// in parallel against it. Any assertion about that total is therefore a race:
+/// another test registering *or removing* a tool between two snapshots changes
+/// the number without this test doing anything. An earlier version of
+/// `tool_count_reflects_registrations` tried to dodge this with `after > before`,
+/// which still fails whenever a parallel test happens to remove. Counting only
+/// our own unique ids removes the dependency on other tests entirely.
+fn own_entries(label: &str) -> usize {
+    let prefix = format!("integration_test_{label}_");
+    list_tools().iter().filter(|id| id.starts_with(&prefix)).count()
+}
+
 #[test]
 fn tool_output_json_wraps_value_with_no_state_update() {
     let out = ToolOutput::json(json!({"answer": 42}));
@@ -61,20 +75,29 @@ fn get_tool_returns_none_for_unknown_id() {
 #[test]
 fn tool_count_reflects_registrations() {
     let id = unique_id("count_test");
-    let before = tool_count();
+    assert_eq!(
+        own_entries("count_test"),
+        0,
+        "nothing of ours is registered yet"
+    );
     register_tool_as(&id, TestAddTool);
-    // rustc 1.98 clippy::int_plus_one 修复：`after > before` 等价。
-    // 注释保留：使用 `>`/`>=` 而非 `== before + 1` 是因为同一二进制中
-    // 可能有并行测试在 `before` 快照和 `after` 调用之间注册了其他工具。
-    let after = tool_count();
+    assert_eq!(
+        own_entries("count_test"),
+        1,
+        "registering must add exactly one entry of ours"
+    );
+    // The global total is still exercised, but only in a direction a parallel
+    // test cannot break: it can only ever be at least as large as our own slice.
     assert!(
-        after > before,
-        "register_tool_as should bump the count: before={before} after={after}"
+        tool_count() >= 1,
+        "a registered tool must be counted somewhere in the registry"
     );
     assert!(
         get_tool(&id).is_some(),
         "our just-registered tool should be retrievable"
     );
+    remove_tool(&id);
+    assert_eq!(own_entries("count_test"), 0, "remove must drop our entry");
 }
 
 #[test]
@@ -99,11 +122,11 @@ fn list_tools_includes_registered_id() {
 fn register_overwrites_previous_tool_with_same_id() {
     let id = unique_id("overwrite");
     register_tool_as(&id, TestAddTool);
-    let before_count = tool_count();
+    assert_eq!(own_entries("overwrite"), 1, "first registration lands");
     register_tool_as(&id, TestAddTool); // same id
-    let after_count = tool_count();
     assert_eq!(
-        before_count, after_count,
+        own_entries("overwrite"),
+        1,
         "re-registering with same id should not add a new entry"
     );
     assert!(get_tool(&id).is_some());
