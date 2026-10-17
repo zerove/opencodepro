@@ -32,7 +32,11 @@ pub(super) async fn list_available_skills_handler(
 ) -> impl IntoResponse {
     match state.bridge.skill_registry.fetch_available_skills().await {
         Ok(skills) => (StatusCode::OK, Json(skills)).into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(e.to_string())).into_response(),
+        Err(e) => (
+            crate::http::handlers_platform::status_for_typed(Some(&e), &e.to_string()),
+            Json(e.to_string()),
+        )
+            .into_response(),
     }
 }
 
@@ -42,7 +46,11 @@ pub(super) async fn install_remote_skill_handler(
 ) -> impl IntoResponse {
     match state.bridge.skill_registry.install_skill(&req.skill_id).await {
         Ok(_) => StatusCode::CREATED.into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(e.to_string())).into_response(),
+        Err(e) => (
+            crate::http::handlers_platform::status_for_typed(Some(&e), &e.to_string()),
+            Json(e.to_string()),
+        )
+            .into_response(),
     }
 }
 
@@ -51,7 +59,11 @@ pub(super) async fn list_installed_skills_handler(
 ) -> impl IntoResponse {
     match state.bridge.skill_registry.list_installed_skills().await {
         Ok(skills) => (StatusCode::OK, Json(skills)).into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(e.to_string())).into_response(),
+        Err(e) => (
+            crate::http::handlers_platform::status_for_typed(Some(&e), &e.to_string()),
+            Json(e.to_string()),
+        )
+            .into_response(),
     }
 }
 
@@ -61,7 +73,11 @@ pub(super) async fn uninstall_remote_skill_handler(
 ) -> impl IntoResponse {
     match state.bridge.skill_registry.uninstall_skill(&id).await {
         Ok(_) => StatusCode::NO_CONTENT.into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(e.to_string())).into_response(),
+        Err(e) => (
+            crate::http::handlers_platform::status_for_typed(Some(&e), &e.to_string()),
+            Json(e.to_string()),
+        )
+            .into_response(),
     }
 }
 
@@ -85,7 +101,11 @@ pub(super) async fn create_workspace_handler(
         .await
     {
         Ok(ws) => (StatusCode::CREATED, Json(ws)).into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(e.to_string())).into_response(),
+        Err(e) => (
+            crate::http::handlers_platform::status_for_typed(Some(&e), &e.to_string()),
+            Json(e.to_string()),
+        )
+            .into_response(),
     }
 }
 
@@ -95,7 +115,11 @@ pub(super) async fn switch_workspace_handler(
 ) -> impl IntoResponse {
     match state.bridge.workspace_manager.switch_workspace(&req.id).await {
         Ok(_) => StatusCode::OK.into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(e.to_string())).into_response(),
+        Err(e) => (
+            crate::http::handlers_platform::status_for_typed(Some(&e), &e.to_string()),
+            Json(e.to_string()),
+        )
+            .into_response(),
     }
 }
 
@@ -199,11 +223,12 @@ pub(super) async fn health_deep_handler(State(state): State<RestApiState>) -> im
     let token_snap = state.bridge.kernel().strategic_manager.token_budget.read().snapshot();
     let (all_ok, components) = health_deep_assess(
         &state.session_db,
-        state.shared_http.is_some(),
+        state.http_stats.is_some(),
         Some(&token_snap),
     );
     let body = serde_json::json!({
-        "status": if all_ok { "ok" } else { "degraded" },
+        // Previously this object listed "status" twice; serde_json silently keeps
+        // the last, so the response looked right by accident.
         "status": if all_ok { "ok" } else { "degraded" },
         "version": env!("CARGO_PKG_VERSION"),
         "components": components,
@@ -324,7 +349,7 @@ pub(super) async fn execute_goal_handler(
             },
         ),
         Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
+            crate::http::handlers_platform::status_for_typed(Some(&e), &e.to_string()),
             Json(serde_json::json!({ "error": e.to_string() })),
         ),
     }
@@ -379,7 +404,7 @@ pub(super) async fn goal_trace_handler(
             (StatusCode::OK, Json(GoalTraceResponse { sop_id, events })).into_response()
         },
         Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
+            crate::http::handlers_platform::status_for_typed(Some(&e), &e.to_string()),
             Json(serde_json::json!({ "error": e.to_string() })),
         )
             .into_response(),
@@ -414,7 +439,7 @@ pub(super) async fn cognitive_trace_history_handler(
     {
         Ok(entries) => (StatusCode::OK, Json(CognitiveTraceResponse { entries })).into_response(),
         Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
+            crate::http::handlers_platform::status_for_typed(Some(&e), &e.to_string()),
             Json(serde_json::json!({ "error": e.to_string() })),
         )
             .into_response(),
@@ -439,7 +464,7 @@ pub(super) async fn cognitive_trace_summary_handler(
     {
         Ok(summary) => (StatusCode::OK, Json(summary)).into_response(),
         Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
+            crate::http::handlers_platform::status_for_typed(Some(&e), &e.to_string()),
             Json(serde_json::json!({ "error": e.to_string() })),
         )
             .into_response(),
@@ -573,7 +598,11 @@ pub(super) async fn list_sops_handler(
     let kernel = state.bridge.kernel();
     match kernel.execution_manager.list_sops(workspace.project_id.as_deref()).await {
         Ok(sops) => (StatusCode::OK, Json(sops)).into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(e.to_string())).into_response(),
+        Err(e) => (
+            crate::http::handlers_platform::status_for_typed(Some(&e), &e.to_string()),
+            Json(e.to_string()),
+        )
+            .into_response(),
     }
 }
 
@@ -629,7 +658,11 @@ pub(super) async fn save_sop_handler(
     let sop_store = &state.bridge.kernel().execution_manager.sop_store;
     match sop_store.save_sop(&req.id, &project_id, &req.name, req.version, &req.config).await {
         Ok(_) => StatusCode::CREATED.into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(e.to_string())).into_response(),
+        Err(e) => (
+            crate::http::handlers_platform::status_for_error(&e.to_string()),
+            Json(e.to_string()),
+        )
+            .into_response(),
     }
 }
 
@@ -651,7 +684,11 @@ pub(super) async fn delete_sop_handler(
     let sop_store = &state.bridge.kernel().execution_manager.sop_store;
     match sop_store.delete_sop(&id, &project_id).await {
         Ok(_) => StatusCode::NO_CONTENT.into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(e.to_string())).into_response(),
+        Err(e) => (
+            crate::http::handlers_platform::status_for_error(&e.to_string()),
+            Json(e.to_string()),
+        )
+            .into_response(),
     }
 }
 
@@ -674,7 +711,11 @@ pub(super) async fn experience_similar_handler(
             Json(ExperienceSimilarResponse { experiences: exps }),
         )
             .into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(e.to_string())).into_response(),
+        Err(e) => (
+            crate::http::handlers_platform::status_for_typed(Some(&e), &e.to_string()),
+            Json(e.to_string()),
+        )
+            .into_response(),
     }
 }
 
@@ -689,7 +730,11 @@ pub(super) async fn roadmap_project_handler(
         axum::http::Method::GET => match rm.get_project(&id).await {
             Ok(Some(p)) => (StatusCode::OK, Json(p)).into_response(),
             Ok(None) => StatusCode::NOT_FOUND.into_response(),
-            Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(e.to_string())).into_response(),
+            Err(e) => (
+                crate::http::handlers_platform::status_for_typed(Some(&e), &e.to_string()),
+                Json(e.to_string()),
+            )
+                .into_response(),
         },
         axum::http::Method::POST => {
             let Some(Json(req)) = payload else {
@@ -697,7 +742,11 @@ pub(super) async fn roadmap_project_handler(
             };
             match rm.create_project(&req.id, &req.name, &req.description).await {
                 Ok(p) => (StatusCode::CREATED, Json(p)).into_response(),
-                Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(e.to_string())).into_response(),
+                Err(e) => (
+                    crate::http::handlers_platform::status_for_typed(Some(&e), &e.to_string()),
+                    Json(e.to_string()),
+                )
+                    .into_response(),
             }
         },
         _ => StatusCode::METHOD_NOT_ALLOWED.into_response(),
@@ -711,7 +760,11 @@ pub(super) async fn roadmap_milestone_handler(
     match state.bridge.kernel().roadmap_manager.add_milestone(&req.project_id, req.milestone).await
     {
         Ok(_) => StatusCode::CREATED.into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(e.to_string())).into_response(),
+        Err(e) => (
+            crate::http::handlers_platform::status_for_typed(Some(&e), &e.to_string()),
+            Json(e.to_string()),
+        )
+            .into_response(),
     }
 }
 
@@ -727,7 +780,11 @@ pub(super) async fn roadmap_phase_handler(
         .await
     {
         Ok(_) => StatusCode::CREATED.into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(e.to_string())).into_response(),
+        Err(e) => (
+            crate::http::handlers_platform::status_for_typed(Some(&e), &e.to_string()),
+            Json(e.to_string()),
+        )
+            .into_response(),
     }
 }
 
@@ -754,7 +811,11 @@ pub(super) async fn roadmap_goal_handler(
                 .await
             {
                 Ok(_) => StatusCode::OK.into_response(),
-                Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(e.to_string())).into_response(),
+                Err(e) => (
+                    crate::http::handlers_platform::status_for_typed(Some(&e), &e.to_string()),
+                    Json(e.to_string()),
+                )
+                    .into_response(),
             }
         },
         _ => StatusCode::METHOD_NOT_ALLOWED.into_response(),
@@ -767,7 +828,11 @@ pub(super) async fn roadmap_health_handler(
 ) -> impl IntoResponse {
     match state.bridge.kernel().roadmap_manager.evaluate_health(&project_id).await {
         Ok(health) => (StatusCode::OK, Json(health)).into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(e.to_string())).into_response(),
+        Err(e) => (
+            crate::http::handlers_platform::status_for_typed(Some(&e), &e.to_string()),
+            Json(e.to_string()),
+        )
+            .into_response(),
     }
 }
 
@@ -779,7 +844,11 @@ pub(super) async fn predict_completion_handler(
 ) -> impl IntoResponse {
     match state.bridge.kernel().roadmap_manager.predict_completion_time(&req.project_id).await {
         Ok(prediction) => (StatusCode::OK, Json(prediction)).into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(e.to_string())).into_response(),
+        Err(e) => (
+            crate::http::handlers_platform::status_for_typed(Some(&e), &e.to_string()),
+            Json(e.to_string()),
+        )
+            .into_response(),
     }
 }
 
@@ -795,7 +864,11 @@ pub(super) async fn check_delay_alerts_handler(
         .await
     {
         Ok(alerts) => (StatusCode::OK, Json(DelayAlertsResponse { alerts })).into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(e.to_string())).into_response(),
+        Err(e) => (
+            crate::http::handlers_platform::status_for_typed(Some(&e), &e.to_string()),
+            Json(e.to_string()),
+        )
+            .into_response(),
     }
 }
 
@@ -813,7 +886,11 @@ pub(super) async fn project_costs_handler(
         .await
     {
         Ok(projection) => (StatusCode::OK, Json(projection)).into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(e.to_string())).into_response(),
+        Err(e) => (
+            crate::http::handlers_platform::status_for_typed(Some(&e), &e.to_string()),
+            Json(e.to_string()),
+        )
+            .into_response(),
     }
 }
 
@@ -827,7 +904,11 @@ pub(super) async fn find_bottlenecks_handler(
             Json(FindBottlenecksResponse { bottlenecks }),
         )
             .into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(e.to_string())).into_response(),
+        Err(e) => (
+            crate::http::handlers_platform::status_for_typed(Some(&e), &e.to_string()),
+            Json(e.to_string()),
+        )
+            .into_response(),
     }
 }
 
@@ -841,7 +922,11 @@ pub(super) async fn suggest_parallel_execution_handler(
             Json(SuggestParallelExecutionResponse { opportunities }),
         )
             .into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(e.to_string())).into_response(),
+        Err(e) => (
+            crate::http::handlers_platform::status_for_typed(Some(&e), &e.to_string()),
+            Json(e.to_string()),
+        )
+            .into_response(),
     }
 }
 
@@ -861,7 +946,11 @@ pub(super) async fn estimate_goal_resources_handler(
             Json(EstimateGoalResourcesResponse { estimates }),
         )
             .into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(e.to_string())).into_response(),
+        Err(e) => (
+            crate::http::handlers_platform::status_for_typed(Some(&e), &e.to_string()),
+            Json(e.to_string()),
+        )
+            .into_response(),
     }
 }
 
@@ -874,7 +963,11 @@ pub(super) async fn list_proposals_handler(
     match state.bridge.kernel().roadmap_manager.proposal_manager().list_proposals(&project_id).await
     {
         Ok(proposals) => (StatusCode::OK, Json(ProposalListResponse { proposals })).into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(e.to_string())).into_response(),
+        Err(e) => (
+            crate::http::handlers_platform::status_for_typed(Some(&e), &e.to_string()),
+            Json(e.to_string()),
+        )
+            .into_response(),
     }
 }
 
@@ -896,7 +989,11 @@ pub(super) async fn get_proposal_handler(
             Json(serde_json::json!({ "error": "Proposal not found" })),
         )
             .into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(e.to_string())).into_response(),
+        Err(e) => (
+            crate::http::handlers_platform::status_for_typed(Some(&e), &e.to_string()),
+            Json(e.to_string()),
+        )
+            .into_response(),
     }
 }
 
@@ -923,7 +1020,11 @@ pub(super) async fn approve_proposal_handler(
             );
             StatusCode::OK.into_response()
         },
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(e.to_string())).into_response(),
+        Err(e) => (
+            crate::http::handlers_platform::status_for_typed(Some(&e), &e.to_string()),
+            Json(e.to_string()),
+        )
+            .into_response(),
     }
 }
 
@@ -950,7 +1051,11 @@ pub(super) async fn reject_proposal_handler(
             );
             StatusCode::OK.into_response()
         },
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(e.to_string())).into_response(),
+        Err(e) => (
+            crate::http::handlers_platform::status_for_typed(Some(&e), &e.to_string()),
+            Json(e.to_string()),
+        )
+            .into_response(),
     }
 }
 
@@ -983,7 +1088,7 @@ pub(super) async fn execute_handler(
             )
         },
         Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
+            crate::http::handlers_platform::status_for_typed(Some(&e), &e.to_string()),
             Json(ExecuteResponse {
                 status: format!("ERROR: {e}"),
                 result_json: String::new(),
@@ -1430,7 +1535,7 @@ pub(super) async fn health_live_handler() -> impl IntoResponse {
 /// 复用 `health_deep_assess`（无 token_budget 维度，保持轻量）。
 pub(super) async fn health_ready_handler(State(state): State<RestApiState>) -> impl IntoResponse {
     let (all_ok, components) =
-        health_deep_assess(&state.session_db, state.shared_http.is_some(), None);
+        health_deep_assess(&state.session_db, state.http_stats.is_some(), None);
     let body = serde_json::json!({
         "status": if all_ok { "ok" } else { "degraded" },
         "kind": "readiness",
@@ -1912,5 +2017,76 @@ mod health_deep_tests {
             health_deep_assess(std::path::Path::new("/tmp/x.db"), true, Some(&s));
         assert!(!all_ok);
         assert_eq!(components["token_budget"]["usage"], 950);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// /health/deep 契约固定件（跨 crate）
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod health_deep_contract_tests {
+    use super::health_deep_assess;
+
+    fn fixture_path(name: &str) -> std::path::PathBuf {
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../sisyphus-types/test-fixtures")
+            .join(name)
+    }
+
+    fn load(name: &str) -> serde_json::Value {
+        let path = fixture_path(name);
+        let raw = std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("cannot read fixture {}: {e}", path.display()));
+        serde_json::from_str(&raw).expect("fixture must be valid JSON")
+    }
+
+    /// 固定件里的组件名就是本 crate 必须产出的组件名。
+    ///
+    /// 固定件放在 `sisyphus-types/test-fixtures`，TUI 侧的
+    /// `parse_health_deep_response` 测试读同一份文件。两侧任一改动形状而
+    /// 忘记另一侧，两个 crate 的测试都会同时变红——这正是过去 TUI 读错
+    /// `all_ok` 字段时没有任何测试拦下来的原因。
+    #[test]
+    fn emitted_components_match_the_shared_fixture() {
+        let ok = load("health_deep_ok.json");
+        let expected: Vec<String> = ok["components"]
+            .as_object()
+            .expect("fixture components must be an object")
+            .keys()
+            .cloned()
+            .collect();
+
+        let dir =
+            std::env::temp_dir().join(format!("sisyphus-health-contract-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        // A real file inside an existing parent => session_db is ok.
+        let db = dir.join("sessions.db");
+        std::fs::write(&db, b"").expect("write db");
+
+        let (all_ok, components) = health_deep_assess(&db, false, None);
+        let mut emitted: Vec<String> = components.keys().cloned().collect();
+        emitted.sort();
+        let mut want = expected.clone();
+        want.sort();
+
+        // `token_budget` is the one optional component: the lightweight path
+        // passes no snapshot, so it is legitimately absent here.
+        let optional = ["token_budget"];
+        let mut emitted_required: Vec<String> =
+            emitted.iter().filter(|c| !optional.contains(&c.as_str())).cloned().collect();
+        let mut want_required: Vec<String> =
+            want.iter().filter(|c| !optional.contains(&c.as_str())).cloned().collect();
+        emitted_required.sort();
+        want_required.sort();
+
+        assert_eq!(
+            emitted_required, want_required,
+            "the components this handler emits have drifted from the shared \
+             fixture. Both this crate and sisyphus-cli parse that fixture, so a \
+             one-sided change would silently break the TUI health panel."
+        );
+        assert!(all_ok, "a healthy session db must not degrade the verdict");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

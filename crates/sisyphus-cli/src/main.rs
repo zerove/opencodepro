@@ -90,7 +90,7 @@ async fn main() -> Result<()> {
 
     // 交互式 TUI 模式
     if cli.interactive || cli.command.is_none() {
-        sisyphus_cli::tui::run(data_dir, bridge_addr)?;
+        sisyphus_cli::tui::run(data_dir, bridge_addr, sisyphus_cfg.http_address.clone())?;
         return Ok(());
     }
 

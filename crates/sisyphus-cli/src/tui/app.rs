@@ -290,6 +290,10 @@ pub(crate) struct App {
     pub(crate) boulder_dirty: bool,
     pub(crate) boulder_save_tick: u32,
     pub(crate) bridge_address: String,
+    /// Base URL for the bridge's REST API. Distinct from `bridge_address`,
+    /// which is the gRPC endpoint (different port, and already carries a
+    /// scheme — prefixing it again produced `http://http://...`).
+    pub(crate) rest_base: String,
     pub(crate) bridge_client: Option<crate::bridge::BridgeClient>,
 
     // 路由
@@ -455,7 +459,8 @@ pub(crate) const AUTO_REFRESH_INTERVAL: Duration = Duration::from_secs(5);
 pub(crate) const RALPH_IDLE_THRESHOLD: u32 = 50;
 
 impl App {
-    pub(crate) fn new(data_dir: PathBuf, bridge_address: String) -> Self {
+    pub(crate) fn new(data_dir: PathBuf, bridge_address: String, http_address: String) -> Self {
+        let rest_base = crate::tui::rest_base_from(&http_address);
         let boulder_path = data_dir.join(".omo").join("boulder.json");
         // 尝试初始连接到桥接
         let bridge_client =
@@ -467,6 +472,7 @@ impl App {
             boulder_dirty: false,
             boulder_save_tick: 0,
             bridge_address,
+            rest_base,
             bridge_client,
             view: View::Home,
             home_input: String::new(),
@@ -1255,8 +1261,8 @@ impl App {
         }
     }
     pub(crate) fn fetch_sop_trace(&mut self, sop_id: String) {
-        let bridge_addr = self.bridge_address.clone();
-        let rx = crate::tui::background::spawn_fetch_sop_trace(bridge_addr, sop_id);
+        let rest = self.rest_base.clone();
+        let rx = crate::tui::background::spawn_fetch_sop_trace(rest, sop_id);
         self.pending_op = Some(rx);
     }
 
@@ -1264,11 +1270,11 @@ impl App {
     /// 热缓冲（内存）或历史（SQL 持久化）取决于 cog_trace_history_mode。
     pub(crate) fn fetch_cognitive_trace(&mut self) {
         self.cog_trace_status = "connecting...".into();
-        let bridge_addr = self.bridge_address.clone();
+        let rest = self.rest_base.clone();
         let rx = if self.cog_trace_history_mode {
-            crate::tui::background::spawn_fetch_cognitive_trace_history(bridge_addr, None)
+            crate::tui::background::spawn_fetch_cognitive_trace_history(rest, None)
         } else {
-            crate::tui::background::spawn_fetch_cognitive_trace(bridge_addr)
+            crate::tui::background::spawn_fetch_cognitive_trace(rest)
         };
         self.pending_op = Some(rx);
     }
@@ -1284,16 +1290,16 @@ impl App {
     /// 拉取认知决策健康摘要（跨会话聚合）。
     pub(crate) fn fetch_cognitive_summary(&mut self) {
         self.cog_summary_status = "connecting...".into();
-        let bridge_addr = self.bridge_address.clone();
-        let rx = crate::tui::background::spawn_fetch_cognitive_summary(bridge_addr, None);
+        let rest = self.rest_base.clone();
+        let rx = crate::tui::background::spawn_fetch_cognitive_summary(rest, None);
         self.pending_op = Some(rx);
     }
 
     /// 拉取 bridge `/health/deep` 启动健康度（阶段 7.1）。
     pub(crate) fn fetch_health_deep(&mut self) {
         self.health_status = "connecting...".into();
-        let bridge_addr = self.bridge_address.clone();
-        let rx = crate::tui::background::spawn_fetch_health_deep(bridge_addr);
+        let rest = self.rest_base.clone();
+        let rx = crate::tui::background::spawn_fetch_health_deep(rest);
         self.pending_op = Some(rx);
     }
 }

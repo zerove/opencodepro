@@ -20,7 +20,11 @@ fn test_log_entry_entry_text() {
 
 #[tokio::test]
 async fn test_app_new_initial_state() {
-    let app = App::new(PathBuf::from("/tmp/test"), "localhost:50051".into());
+    let app = App::new(
+        PathBuf::from("/tmp/test"),
+        "localhost:50051".into(),
+        "http://[::1]:8080".into(),
+    );
     assert_eq!(app.view, View::Home);
     assert_eq!(app.session_mode, app::Mode::Select);
     assert_eq!(app.log.len(), 1); // welcome message
@@ -51,7 +55,11 @@ async fn test_app_new_initial_state() {
 
 #[tokio::test]
 async fn test_app_new_data_dir() {
-    let app = App::new(PathBuf::from("/my/data"), "127.0.0.1:9999".into());
+    let app = App::new(
+        PathBuf::from("/my/data"),
+        "127.0.0.1:9999".into(),
+        "http://[::1]:8080".into(),
+    );
     assert_eq!(app.data_dir, PathBuf::from("/my/data"));
     assert_eq!(app.bridge_address, "127.0.0.1:9999");
 }
@@ -60,7 +68,11 @@ async fn test_app_new_data_dir() {
 
 #[tokio::test]
 async fn test_add_log_appends_and_adjusts_scroll() {
-    let mut app = App::new(PathBuf::from("/tmp"), "addr".into());
+    let mut app = App::new(
+        PathBuf::from("/tmp"),
+        "addr".into(),
+        "http://[::1]:8080".into(),
+    );
     let initial_scroll = app.scroll;
 
     app.add_log(LogEntry::Info("test".into()));
@@ -77,7 +89,11 @@ async fn test_add_log_appends_and_adjusts_scroll() {
 
 #[tokio::test]
 async fn test_render_status_shows_opencode_format() {
-    let app = App::new(PathBuf::from("/tmp"), "addr".into());
+    let app = App::new(
+        PathBuf::from("/tmp"),
+        "addr".into(),
+        "http://[::1]:8080".into(),
+    );
     let rendered = render::render_status(&app).to_string();
     assert!(rendered.contains("SESSION") || rendered.contains("HOME"));
     assert!(rendered.contains("Context: 0%"));
@@ -86,7 +102,11 @@ async fn test_render_status_shows_opencode_format() {
 
 #[tokio::test]
 async fn test_render_status_home_help() {
-    let mut app = App::new(PathBuf::from("/tmp"), "addr".into());
+    let mut app = App::new(
+        PathBuf::from("/tmp"),
+        "addr".into(),
+        "http://[::1]:8080".into(),
+    );
     app.view = View::Home;
     let rendered = render::render_status(&app).to_string();
     assert!(rendered.contains("Enter: start session"));
@@ -94,7 +114,11 @@ async fn test_render_status_home_help() {
 
 #[tokio::test]
 async fn test_render_status_session_list_help() {
-    let mut app = App::new(PathBuf::from("/tmp"), "addr".into());
+    let mut app = App::new(
+        PathBuf::from("/tmp"),
+        "addr".into(),
+        "http://[::1]:8080".into(),
+    );
     app.view = View::Session;
     let rendered = render::render_status(&app).to_string();
     assert!(rendered.contains("Enter open"));
@@ -113,7 +137,11 @@ async fn test_render_status_diag_counts() {
             character: 1,
         },
     };
-    let mut app = App::new(PathBuf::from("/tmp"), "addr".into());
+    let mut app = App::new(
+        PathBuf::from("/tmp"),
+        "addr".into(),
+        "http://[::1]:8080".into(),
+    );
     app.lsp_diagnostics = vec![
         LspDiagnostic {
             range: rng.clone(),
@@ -139,13 +167,21 @@ async fn test_render_status_diag_counts() {
 
 #[tokio::test]
 async fn test_context_pct_no_session() {
-    let app = App::new(PathBuf::from("/tmp"), "addr".into());
+    let app = App::new(
+        PathBuf::from("/tmp"),
+        "addr".into(),
+        "http://[::1]:8080".into(),
+    );
     assert_eq!(render::context_pct(&app), 0);
 }
 
 #[tokio::test]
 async fn test_diag_counts_empty() {
-    let app = App::new(PathBuf::from("/tmp"), "addr".into());
+    let app = App::new(
+        PathBuf::from("/tmp"),
+        "addr".into(),
+        "http://[::1]:8080".into(),
+    );
     assert_eq!(render::diag_counts(&app), (0, 0, 0));
 }
 
@@ -154,7 +190,11 @@ async fn test_diag_counts_empty() {
 #[tokio::test]
 async fn test_refresh_todos_empty() {
     let dir = tempfile::tempdir().unwrap();
-    let mut app = App::new(dir.path().to_path_buf(), "addr".into());
+    let mut app = App::new(
+        dir.path().to_path_buf(),
+        "addr".into(),
+        "http://[::1]:8080".into(),
+    );
     // todo_dirty 初始为 true，因此 refresh 会读取文件
     assert!(app.todo_dirty);
     app.refresh_todos();
@@ -169,7 +209,11 @@ async fn test_refresh_todos_with_data() {
     // 通过公共 API 播种待办
     crate::tools::todo_add(&db, "write tests", crate::tools::TodoPriority::High).unwrap();
 
-    let mut app = App::new(dir.path().to_path_buf(), "addr".into());
+    let mut app = App::new(
+        dir.path().to_path_buf(),
+        "addr".into(),
+        "http://[::1]:8080".into(),
+    );
     app.todo_dirty = true;
     app.refresh_todos();
     assert_eq!(app.todo_items.len(), 1);
@@ -184,7 +228,11 @@ async fn test_toggle_todo_status_cycles() {
     let _item =
         crate::tools::todo_add(&db, "cycle test", crate::tools::TodoPriority::Medium).unwrap();
 
-    let mut app = App::new(dir.path().to_path_buf(), "addr".into());
+    let mut app = App::new(
+        dir.path().to_path_buf(),
+        "addr".into(),
+        "http://[::1]:8080".into(),
+    );
     app.todo_dirty = true;
     app.refresh_todos();
     assert_eq!(app.todo_items.len(), 1);
@@ -224,7 +272,11 @@ async fn test_delete_todo_requires_confirmation() {
     let db = dir.path().join("todos.json");
     let _item = crate::tools::todo_add(&db, "delete me", crate::tools::TodoPriority::Low).unwrap();
 
-    let mut app = App::new(dir.path().to_path_buf(), "addr".into());
+    let mut app = App::new(
+        dir.path().to_path_buf(),
+        "addr".into(),
+        "http://[::1]:8080".into(),
+    );
     app.todo_dirty = true;
     app.refresh_todos();
     assert_eq!(app.todo_items.len(), 1);
@@ -265,7 +317,11 @@ fn press(app: &mut App, code: KeyCode) {
 
 #[tokio::test]
 async fn test_delete_workspace_requires_confirmation() {
-    let mut app = App::new(PathBuf::from("/tmp/nonexistent"), "addr".into());
+    let mut app = App::new(
+        PathBuf::from("/tmp/nonexistent"),
+        "addr".into(),
+        "http://[::1]:8080".into(),
+    );
     app.workspaces = vec![crate::tui::app::WorkspaceEntry {
         id: "ws-1".to_string(),
         name: "my-workspace".to_string(),
@@ -293,7 +349,11 @@ async fn test_delete_workspace_requires_confirmation() {
 
 #[tokio::test]
 async fn test_toggle_todo_empty_no_panic() {
-    let mut app = App::new(PathBuf::from("/tmp/nonexistent"), "addr".into());
+    let mut app = App::new(
+        PathBuf::from("/tmp/nonexistent"),
+        "addr".into(),
+        "http://[::1]:8080".into(),
+    );
     app.todo_dirty = true;
     app.refresh_todos();
     app.toggle_todo_status(); // should not panic when empty
@@ -304,7 +364,11 @@ async fn test_toggle_todo_empty_no_panic() {
 #[tokio::test]
 async fn test_refresh_sessions_empty() {
     let dir = tempfile::tempdir().unwrap();
-    let mut app = App::new(dir.path().to_path_buf(), "addr".into());
+    let mut app = App::new(
+        dir.path().to_path_buf(),
+        "addr".into(),
+        "http://[::1]:8080".into(),
+    );
     assert!(app.session_dirty);
     app.refresh_sessions();
     assert!(app.sessions.is_empty());
@@ -317,7 +381,11 @@ async fn test_refresh_sessions_with_data() {
     let db = dir.path().join("sessions.json");
     let _session = crate::tools::session_create(&db, "test-session").unwrap();
 
-    let mut app = App::new(dir.path().to_path_buf(), "addr".into());
+    let mut app = App::new(
+        dir.path().to_path_buf(),
+        "addr".into(),
+        "http://[::1]:8080".into(),
+    );
     app.session_dirty = true;
     app.refresh_sessions();
     assert_eq!(app.sessions.len(), 1);
@@ -330,7 +398,11 @@ async fn test_select_session_loads_detail() {
     let db = dir.path().join("sessions.json");
     let session = crate::tools::session_create(&db, "detail-test").unwrap();
 
-    let mut app = App::new(dir.path().to_path_buf(), "addr".into());
+    let mut app = App::new(
+        dir.path().to_path_buf(),
+        "addr".into(),
+        "http://[::1]:8080".into(),
+    );
     app.session_dirty = true;
     app.refresh_sessions();
     assert_eq!(app.sessions.len(), 1);
@@ -345,7 +417,11 @@ async fn test_select_session_loads_detail() {
 
 #[tokio::test]
 async fn test_select_session_empty_noop() {
-    let mut app = App::new(PathBuf::from("/tmp/nonexistent"), "addr".into());
+    let mut app = App::new(
+        PathBuf::from("/tmp/nonexistent"),
+        "addr".into(),
+        "http://[::1]:8080".into(),
+    );
     app.select_session(); // should not panic when empty
     assert!(app.session_detail.is_none());
 }
@@ -460,4 +536,56 @@ fn test_cognitive_summary_row_deserialize_from_rest_contract() {
     assert_eq!(summary.total_token_cost, 430);
     assert_eq!(summary.decision_counts.get("ADJUST"), Some(&1));
     assert_eq!(summary.first_timestamp_ms, 1700000000000);
+}
+
+/// 回归：TUI 的 REST 调用曾拼出 `http://http://[::1]:50051/api/...`。
+/// 配置里的 bridge_address 自带 scheme，再加一层前缀 reqwest 直接拒绝解析，
+/// 于是健康检查/认知轨迹/技能/工作区全部静默失败。测试用生产默认配置值断言。
+#[test]
+fn rest_base_never_double_prefixes_scheme() {
+    let base = crate::tui::rest_base_from("http://[::1]:8080");
+    assert_eq!(base, "http://[::1]:8080");
+
+    let url = format!("{base}/health/deep");
+    assert_eq!(url, "http://[::1]:8080/health/deep");
+    assert!(!url.contains("http://http://"), "scheme must appear once");
+    assert!(reqwest::Url::parse(&url).is_ok(), "URL must parse");
+}
+
+/// 回归：REST 基址不得沿用 gRPC 端口。
+///
+/// TUI 的 REST 调用此前直接复用 `bridge_address`（gRPC，默认 50051），
+/// 而 REST 监听在 `http_address`（默认 8080）。修好 scheme 之后仍会打错端口，
+/// 所有 REST 功能依旧静默失败。
+#[test]
+fn rest_base_uses_rest_address_not_grpc_address() {
+    let from_grpc = crate::tui::rest_base_from("http://[::1]:50051");
+    let from_rest = crate::tui::rest_base_from("http://[::1]:8080");
+
+    assert_ne!(
+        from_grpc, from_rest,
+        "gRPC and REST addresses must yield different bases"
+    );
+    assert!(from_rest.contains(":8080"));
+    assert!(!from_rest.contains("50051"));
+    assert_eq!(
+        format!("{from_rest}/health/deep"),
+        "http://[::1]:8080/health/deep"
+    );
+}
+
+#[test]
+fn rest_base_accepts_bare_host_port() {
+    assert_eq!(
+        crate::tui::rest_base_from("127.0.0.1:9999"),
+        "http://127.0.0.1:9999"
+    );
+}
+
+#[test]
+fn rest_base_strips_trailing_slash() {
+    assert_eq!(
+        crate::tui::rest_base_from("http://localhost:8080/"),
+        "http://localhost:8080"
+    );
 }

@@ -377,10 +377,7 @@ pub fn spawn_fetch_sop_trace(
 ) -> tokio::sync::oneshot::Receiver<BgOp> {
     let (tx, rx) = tokio::sync::oneshot::channel();
     tokio::spawn(async move {
-        let url = format!(
-            "http://{}/api/execute/goal/{}/trace",
-            bridge_address, sop_id
-        );
+        let url = format!("{}/api/execute/goal/{}/trace", bridge_address, sop_id);
         let result = async {
             let resp = reqwest::get(&url).await.map_err(|e| format!("HTTP request failed: {e}"))?;
             if !resp.status().is_success() {
@@ -405,7 +402,7 @@ pub fn spawn_fetch_sop_trace(
 pub fn spawn_fetch_cognitive_trace(bridge_address: String) -> tokio::sync::oneshot::Receiver<BgOp> {
     let (tx, rx) = tokio::sync::oneshot::channel();
     tokio::spawn(async move {
-        let url = format!("http://{}/api/cognitive/trace?limit=100", bridge_address);
+        let url = format!("{}/api/cognitive/trace?limit=100", bridge_address);
         let result = async {
             let resp = reqwest::get(&url).await.map_err(|e| format!("HTTP request failed: {e}"))?;
             if !resp.status().is_success() {
@@ -433,10 +430,7 @@ pub fn spawn_fetch_cognitive_trace_history(
 ) -> tokio::sync::oneshot::Receiver<BgOp> {
     let (tx, rx) = tokio::sync::oneshot::channel();
     tokio::spawn(async move {
-        let mut url = format!(
-            "http://{}/api/cognitive/trace/history?limit=100",
-            bridge_address
-        );
+        let mut url = format!("{}/api/cognitive/trace/history?limit=100", bridge_address);
         if let Some(sop) = sop_id {
             // sop_id 仅含 ASCII 标识符（如 "sop-main"），直接拼接即可。
             url.push_str(&format!("&sop_id={sop}"));
@@ -468,7 +462,7 @@ pub fn spawn_fetch_cognitive_summary(
 ) -> tokio::sync::oneshot::Receiver<BgOp> {
     let (tx, rx) = tokio::sync::oneshot::channel();
     tokio::spawn(async move {
-        let mut url = format!("http://{}/api/cognitive/summary?limit=1000", bridge_address);
+        let mut url = format!("{}/api/cognitive/summary?limit=1000", bridge_address);
         if let Some(sop) = sop_id {
             // sop_id 仅含 ASCII 标识符（如 "sop-main"），直接拼接即可。
             url.push_str(&format!("&sop_id={sop}"));
@@ -497,7 +491,7 @@ pub fn spawn_fetch_available_skills(
 ) -> tokio::sync::oneshot::Receiver<BgOp> {
     let (tx, rx) = tokio::sync::oneshot::channel();
     tokio::spawn(async move {
-        let url = format!("http://{}/api/skills/available", bridge_address);
+        let url = format!("{}/api/skills/available", bridge_address);
         let result = async {
             let resp = reqwest::get(&url).await.map_err(|e| format!("HTTP request failed: {e}"))?;
             if !resp.status().is_success() {
@@ -524,7 +518,7 @@ pub fn spawn_fetch_installed_skills(
 ) -> tokio::sync::oneshot::Receiver<BgOp> {
     let (tx, rx) = tokio::sync::oneshot::channel();
     tokio::spawn(async move {
-        let url = format!("http://{}/api/skills/installed", bridge_address);
+        let url = format!("{}/api/skills/installed", bridge_address);
         let result = async {
             let resp = reqwest::get(&url).await.map_err(|e| format!("HTTP request failed: {e}"))?;
             if !resp.status().is_success() {
@@ -552,7 +546,7 @@ pub fn spawn_install_skill(
 ) -> tokio::sync::oneshot::Receiver<BgOp> {
     let (tx, rx) = tokio::sync::oneshot::channel();
     tokio::spawn(async move {
-        let url = format!("http://{}/api/skills/install", bridge_address);
+        let url = format!("{}/api/skills/install", bridge_address);
         let result = async {
             let client = reqwest::Client::new();
             let resp = client
@@ -588,7 +582,7 @@ pub fn spawn_uninstall_skill(
 ) -> tokio::sync::oneshot::Receiver<BgOp> {
     let (tx, rx) = tokio::sync::oneshot::channel();
     tokio::spawn(async move {
-        let url = format!("http://{}/api/skills/remote/{}", bridge_address, skill_id);
+        let url = format!("{}/api/skills/remote/{}", bridge_address, skill_id);
         let result = async {
             let client = reqwest::Client::new();
             let resp = client
@@ -620,7 +614,7 @@ pub fn spawn_uninstall_skill(
 pub fn spawn_list_workspaces(bridge_address: String) -> tokio::sync::oneshot::Receiver<BgOp> {
     let (tx, rx) = tokio::sync::oneshot::channel();
     tokio::spawn(async move {
-        let url = format!("http://{}/api/workspaces", bridge_address);
+        let url = format!("{}/api/workspaces", bridge_address);
         let result = async {
             let resp = reqwest::get(&url).await.map_err(|e| format!("HTTP request failed: {e}"))?;
             if !resp.status().is_success() {
@@ -649,7 +643,7 @@ pub fn spawn_switch_workspace(
 ) -> tokio::sync::oneshot::Receiver<BgOp> {
     let (tx, rx) = tokio::sync::oneshot::channel();
     tokio::spawn(async move {
-        let url = format!("http://{}/api/workspaces/switch", bridge_address);
+        let url = format!("{}/api/workspaces/switch", bridge_address);
         let result = async {
             let client = reqwest::Client::new();
             let resp = client
@@ -682,7 +676,7 @@ pub fn spawn_delete_workspace(
 ) -> tokio::sync::oneshot::Receiver<BgOp> {
     let (tx, rx) = tokio::sync::oneshot::channel();
     tokio::spawn(async move {
-        let url = format!("http://{}/api/workspaces/{}", bridge_address, workspace_id);
+        let url = format!("{}/api/workspaces/{}", bridge_address, workspace_id);
         let result = async {
             let client = reqwest::Client::new();
             let resp = client
@@ -712,7 +706,7 @@ pub fn spawn_delete_workspace(
 pub fn spawn_fetch_health_deep(bridge_address: String) -> tokio::sync::oneshot::Receiver<BgOp> {
     let (tx, rx) = tokio::sync::oneshot::channel();
     tokio::spawn(async move {
-        let url = format!("http://{}/health/deep", bridge_address);
+        let url = format!("{}/health/deep", bridge_address);
         let result = async {
             let resp = reqwest::get(&url).await.map_err(|e| format!("HTTP request failed: {e}"))?;
             // `/health/deep` 在组件降级时返回 207 Multi-Status；视作可解析的成功。
@@ -746,63 +740,144 @@ pub fn parse_health_deep_response(
     serde_json::Map<String, serde_json::Value>,
     serde_json::Value,
 )> {
-    let all_ok = raw.get("all_ok").and_then(|v| v.as_bool())?;
     let components = raw.get("components").and_then(|v| v.as_object())?.clone();
+
+    // The bridge reports the verdict as a top-level `status` of "ok" /
+    // "degraded"; it has no `all_ok` member. Prefer that, and otherwise
+    // derive it from the component statuses using the same rule the bridge
+    // applies -- "absent" is not a degradation (a CLI-mode bridge has no
+    // shared HTTP client by design).
+    let all_ok = match raw.get("status").and_then(|v| v.as_str()) {
+        Some("ok") => true,
+        Some("degraded") => false,
+        _ => components.values().all(|c| {
+            matches!(
+                c.get("status").and_then(|v| v.as_str()),
+                Some("ok") | Some("absent")
+            )
+        }),
+    };
+
     Some((all_ok, components, raw.clone()))
+}
+
+#[cfg(test)]
+mod health_deep_contract_tests {
+    use super::parse_health_deep_response;
+
+    fn fixture_path(name: &str) -> std::path::PathBuf {
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../sisyphus-types/test-fixtures")
+            .join(name)
+    }
+
+    fn load(name: &str) -> serde_json::Value {
+        let path = fixture_path(name);
+        let raw = std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("cannot read fixture {}: {e}", path.display()));
+        serde_json::from_str(&raw).expect("fixture must be valid JSON")
+    }
+
+    /// 与 bridge 侧读同一份固定件：handler 改了 `/health/deep` 的形状而这里
+    /// 没跟上时，这条会先红。
+    #[test]
+    fn parses_the_shared_ok_fixture() {
+        let raw = load("health_deep_ok.json");
+        let (all_ok, components, _) =
+            parse_health_deep_response(&raw).expect("ok fixture must parse");
+        assert!(all_ok, "an `ok` payload must not be reported as degraded");
+        for name in ["session_db", "shared_http", "kernel", "token_budget"] {
+            assert!(
+                components.contains_key(name),
+                "component `{name}` disappeared from the parsed payload; the bridge \
+                 contract changed"
+            );
+        }
+    }
+
+    #[test]
+    fn parses_the_shared_degraded_fixture() {
+        let raw = load("health_deep_degraded.json");
+        let (all_ok, _, _) = parse_health_deep_response(&raw).expect("degraded fixture must parse");
+        assert!(
+            !all_ok,
+            "a `degraded` payload must not be reported as healthy"
+        );
+    }
 }
 
 #[cfg(test)]
 mod health_deep_parse_tests {
     use super::parse_health_deep_response;
 
-    #[test]
-    fn parse_ok_response_extracts_components() {
-        let raw = serde_json::json!({
-            "all_ok": true,
+    /// Captured verbatim from `GET /health/deep` on a running bridge.
+    fn live_ok_payload() -> serde_json::Value {
+        serde_json::json!({
             "components": {
-                "session_db": {"status": "ok", "path": "/data/s.db"},
-                "shared_http": {"status": "absent"},
                 "kernel": {"status": "ok"},
-            }
-        });
-        let (all_ok, components, _back) = parse_health_deep_response(&raw).expect("parse");
-        assert!(all_ok);
-        assert_eq!(components.len(), 3);
-        assert_eq!(components["session_db"]["status"], "ok");
-        assert_eq!(components["shared_http"]["status"], "absent");
+                "session_db": {"path": "data/sessions.json", "status": "ok"},
+                "shared_http": {"status": "ok"},
+                "token_budget": {"cap": null, "exhausted": false, "status": "ok", "usage": 0},
+            },
+            "status": "ok",
+            "version": "0.1.0"
+        })
+    }
+
+    /// 回归：解析器曾读顶层 `all_ok` 布尔字段，而 bridge 从不返回该字段，
+    /// 于是 `:health` 面板永远显示 "DEGRADED (missing fields)" —— 尽管
+    /// 请求本身成功。夹具当时凭空捏造了 `all_ok`，把 bug 藏住了。
+    #[test]
+    fn parses_the_actual_live_response() {
+        let (all_ok, components, _back) =
+            parse_health_deep_response(&live_ok_payload()).expect("live payload must parse");
+        assert!(all_ok, "a healthy bridge must not render as degraded");
+        assert_eq!(components.len(), 4);
+        assert_eq!(components["kernel"]["status"], "ok");
+        assert_eq!(components["token_budget"]["status"], "ok");
     }
 
     #[test]
-    fn parse_degraded_response_keeps_all_ok_false() {
+    fn absent_component_is_not_a_degradation() {
         let raw = serde_json::json!({
-            "all_ok": false,
             "components": {
-                "session_db": {"status": "degraded"},
-                "shared_http": {"status": "ok"},
-                "kernel": {"status": "ok"},
-            }
+                "shared_http": {"status": "absent"},
+                "session_db": {"status": "ok"},
+            },
+            "status": "ok"
+        });
+        let (all_ok, _, _) = parse_health_deep_response(&raw).expect("parse");
+        assert!(all_ok);
+    }
+
+    #[test]
+    fn degraded_status_is_reported() {
+        let raw = serde_json::json!({
+            "components": {"session_db": {"status": "degraded"}},
+            "status": "degraded"
         });
         let (all_ok, components, _) = parse_health_deep_response(&raw).expect("parse");
         assert!(!all_ok);
         assert_eq!(components["session_db"]["status"], "degraded");
     }
 
+    /// No top-level `status`: fall back to deriving from components.
     #[test]
-    fn parse_missing_all_ok_returns_none() {
-        let raw = serde_json::json!({"components": {}});
-        assert!(parse_health_deep_response(&raw).is_none());
+    fn derives_verdict_when_status_absent() {
+        let ok = serde_json::json!({
+            "components": {"a": {"status": "ok"}, "b": {"status": "absent"}}
+        });
+        assert!(parse_health_deep_response(&ok).expect("parse").0);
+
+        let bad = serde_json::json!({
+            "components": {"a": {"status": "degraded"}}
+        });
+        assert!(!parse_health_deep_response(&bad).expect("parse").0);
     }
 
     #[test]
-    fn parse_missing_components_returns_none() {
-        let raw = serde_json::json!({"all_ok": true});
-        assert!(parse_health_deep_response(&raw).is_none());
-    }
-
-    #[test]
-    fn parse_all_ok_wrong_type_returns_none() {
-        // `all_ok` 必须是 bool；字符串应拒绝
-        let raw = serde_json::json!({"all_ok": "true", "components": {}});
+    fn missing_components_returns_none() {
+        let raw = serde_json::json!({"status": "ok"});
         assert!(parse_health_deep_response(&raw).is_none());
     }
 }

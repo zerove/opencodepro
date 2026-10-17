@@ -23,8 +23,26 @@ pub(crate) use render::ui;
 
 // ── 公开入口 ────────────────────────────────────────
 
+/// Derive a REST base URL from a gRPC bridge address.
+///
+/// The configured bridge address already carries a scheme (`http://[::1]:50051`),
+/// so prefixing another one yields `http://http://...` and reqwest rejects it.
+/// Strip any scheme so callers can concatenate paths directly.
+pub(crate) fn rest_base_from(bridge_address: &str) -> String {
+    let trimmed = bridge_address
+        .trim()
+        .trim_start_matches("http://")
+        .trim_start_matches("https://")
+        .trim_end_matches('/');
+    if bridge_address.trim_start().starts_with("https://") {
+        format!("https://{trimmed}")
+    } else {
+        format!("http://{trimmed}")
+    }
+}
+
 /// Run.
-pub fn run(data_dir: PathBuf, bridge_address: String) -> Result<()> {
+pub fn run(data_dir: PathBuf, bridge_address: String, http_address: String) -> Result<()> {
     // 确保数据目录存在（与 main.rs:1134 的 CLI 模式一致）
     std::fs::create_dir_all(&data_dir)?;
 
@@ -34,7 +52,7 @@ pub fn run(data_dir: PathBuf, bridge_address: String) -> Result<()> {
     crossterm::execute!(std::io::stdout(), crossterm::event::EnableMouseCapture)?;
 
     let perms = CliPermission::load(None).unwrap_or_default();
-    let mut app = App::new(data_dir, bridge_address);
+    let mut app = App::new(data_dir, bridge_address, http_address);
 
     // 加载会话列表（不自动创建或选择 — 从主页开始）
     let db = app.data_dir.join("sessions.json");
