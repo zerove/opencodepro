@@ -8,7 +8,9 @@
 // 本 crate 的 provider / client trait 全部经由该宏生成，无法逐个方法挂 allow。
 #![allow(clippy::double_must_use)]
 
-pub mod circuit_breaker;
+pub mod circuit_breaker {
+    pub use sisyphus_types::circuit_breaker::*;
+}
 pub mod http_client;
 pub mod llm;
 pub mod metis;

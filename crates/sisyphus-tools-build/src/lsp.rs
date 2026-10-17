@@ -61,8 +61,22 @@ impl LspClient {
                 match reader.read_line(&mut line).await {
                     Ok(0) | Err(_) => break,
                     Ok(_) => {
+                        // Keep only the tail: a chatty or wedged server would
+                        // otherwise grow this buffer without bound for the
+                        // lifetime of the client.
                         if let Ok(mut buf) = capture.lock() {
+                            const STDERR_TAIL_CAP: usize = 64 * 1024;
                             buf.push_str(&line);
+                            if buf.len() > STDERR_TAIL_CAP {
+                                let drop_to = buf.len() - STDERR_TAIL_CAP;
+                                let keep = drop_to
+                                    + (buf.as_bytes()[drop_to..]
+                                        .iter()
+                                        .position(|&b| b == b'\n')
+                                        .map(|i| i + 1)
+                                        .unwrap_or(0));
+                                buf.drain(..keep);
+                            }
                         }
                     },
                 }

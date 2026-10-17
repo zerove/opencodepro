@@ -1,6 +1,5 @@
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use std::sync::Arc;
 use thiserror::Error;
 
 // ── Types ──────────────────────────────────────────────────
@@ -20,51 +19,7 @@ impl From<sisyphus_types::TypesError> for MetisError {
     }
 }
 
-#[async_trait::async_trait]
-/// Llm Client.
-/// Abstraction over an LLM provider (OpenAI-compatible or local).
-///
-/// Implementations must be `Send + Sync` and safe to share across the SOP
-/// scheduler's worker pool. The `chat` and `generate` methods are expected
-/// to honour the per-agent rate limit and circuit breaker state exposed by
-/// [`Self::breaker`].
-pub trait LlmClient: Send + Sync {
-    /// Run a chat completion.
-    ///
-    /// * `system` - System prompt; prepended regardless of `json_mode`.
-    /// * `user` - The user message; if `json_mode` is true, the system prompt
-    ///   is augmented to instruct the model to reply with strict JSON.
-    /// * `json_mode` - Hint to enforce JSON output (e.g. for tool/function calling).
-    async fn chat(
-        &self,
-        system: &str,
-        user: &str,
-        json_mode: bool,
-    ) -> Result<String, sisyphus_types::TypesError>;
-    /// Run a single-prompt completion.
-    async fn generate(&self, prompt: &str) -> Result<String, sisyphus_types::TypesError>;
-    /// Resolve provider/model/api_key triple for the given agent id.
-    fn get_params_for(&self, agent_id: &str) -> (String, String, String);
-    /// Snapshot of the circuit breaker used to gate outbound LLM calls.
-    fn breaker(&self) -> crate::circuit_breaker::CircuitBreaker;
-
-    /// 优雅关闭 LLM 客户端及其共享 HTTP 池。
-    ///
-    /// 默认实现为空（多数测试 mock 不需要）；生产实现（如 DynamicLlmClient）
-    /// 应等待 in-flight 请求完成，最长  时长。
-    async fn shutdown(&self, _wait: std::time::Duration) -> Result<(), String> {
-        Ok(())
-    }
-
-    /// 返回底层共享 HTTP 客户端的 Arc 引用（如果持有）。
-    ///
-    /// 默认实现为 `None`（mock/test LLM 不暴露连接池）。
-    /// 生产实现（`DynamicLlmClient`）返回 `Some(Arc<SharedHttpClient>)`
-    /// 以便 bridge 等外部组件能拿到 Prometheus 指标源。
-    fn shared_http(&self) -> Option<Arc<crate::http_client::SharedHttpClient>> {
-        None
-    }
-}
+pub use sisyphus_types::LlmClient;
 
 /// A dummy LLM client for development and testing.
 ///

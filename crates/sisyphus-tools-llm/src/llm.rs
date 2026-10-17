@@ -13,11 +13,7 @@ pub mod budget;
 pub mod dynamic;
 pub mod openai;
 
-#[async_trait::async_trait]
-/// Embedding Client.
-pub trait EmbeddingClient: Send + Sync {
-    async fn embed(&self, text: &str) -> Result<Vec<f32>, sisyphus_types::TypesError>;
-}
+pub use sisyphus_types::EmbeddingClient;
 
 /// 测试/开发用伪嵌入客户端：由文本哈希生成正弦伪随机向量。
 ///
@@ -41,9 +37,10 @@ impl EmbeddingClient for DummyEmbeddingClient {
     }
 }
 
-pub use budget::{BudgetProvider, RequestContext};
+pub use budget::RequestContext;
 pub use dynamic::DynamicLlmClient;
 pub use openai::{OpenAiEmbeddingClient, OpenAiLlmClient};
+pub use sisyphus_types::BudgetProvider;
 
 #[cfg(test)]
 mod tests {

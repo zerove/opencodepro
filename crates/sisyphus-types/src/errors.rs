@@ -21,6 +21,25 @@ pub enum TypesError {
     NodeExecutionError(String),
     #[error("Tool execution error for '{tool_id}': {details}")]
     ToolExecutionError { tool_id: String, details: String },
+    /// Tool failure that kept its typed cause instead of flattening it into a
+    /// message. Prefer this over `ToolExecutionError`: transport layers can map
+    /// the kind without pattern-matching English text.
+    #[error("Tool execution error for '{tool_id}': {source}")]
+    Tool {
+        tool_id: String,
+        #[source]
+        source: crate::tool_error::ToolError,
+    },
+    /// Sandbox failure carrying its wire category.
+    ///
+    /// Without this the category has to be recovered by matching English prose
+    /// at the far end, which is exactly the round-trip `sandboxd` used to do.
+    #[error("Sandbox execution error for '{tool_id}': {message}")]
+    Sandbox {
+        tool_id: String,
+        kind: crate::sandbox_error::SandboxErrorKind,
+        message: String,
+    },
     #[error("Graph error: {0}")]
     GraphError(String),
     #[error("Config validation error: {0}")]
@@ -137,5 +156,46 @@ impl From<String> for IntelError {
 impl From<&str> for IntelError {
     fn from(msg: &str) -> Self {
         Self::Internal(msg.to_string())
+    }
+}
+
+impl TypesError {
+    /// Wrap a typed tool failure, preserving its kind for transport mapping.
+    pub fn tool(tool_id: impl Into<String>, source: crate::tool_error::ToolError) -> Self {
+        TypesError::Tool {
+            tool_id: tool_id.into(),
+            source,
+        }
+    }
+
+    /// The typed tool cause, when this error still carries one.
+    pub fn tool_source(&self) -> Option<&crate::tool_error::ToolError> {
+        match self {
+            TypesError::Tool { source, .. } => Some(source),
+            _ => None,
+        }
+    }
+}
+
+impl TypesError {
+    /// Build a sandbox failure that keeps its category.
+    pub fn sandbox(
+        tool_id: impl Into<String>,
+        kind: crate::sandbox_error::SandboxErrorKind,
+        message: impl Into<String>,
+    ) -> Self {
+        TypesError::Sandbox {
+            tool_id: tool_id.into(),
+            kind,
+            message: message.into(),
+        }
+    }
+
+    /// The sandbox category, when this error still carries one.
+    pub fn sandbox_kind(&self) -> Option<crate::sandbox_error::SandboxErrorKind> {
+        match self {
+            TypesError::Sandbox { kind, .. } => Some(*kind),
+            _ => None,
+        }
     }
 }

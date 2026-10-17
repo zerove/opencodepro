@@ -2,7 +2,6 @@ use sisyphus_tools_core::{ToolError, ToolResult};
 use std::collections::BTreeMap;
 use std::fmt::Debug;
 use std::path::Path;
-use std::process::Command;
 
 // ── Re-export submodules ──────────────────────────────
 
@@ -164,30 +163,26 @@ pub fn run_command(
 /// Env is set **on the child process** rather than via `std::env::set_var`:
 /// mutating the global environment from a multithreaded test binary is
 /// unsound (and would leak into sibling tests).
+/// Upper bound for one toolchain invocation (build, test, lint).
+const BUILD_TIMEOUT_SECS: u64 = 600;
+
 pub fn run_command_with_env(
     cmd: &str,
     args: &[&str],
     cwd: Option<&Path>,
     env: &[(&str, &str)],
 ) -> ToolResult<(String, String, bool)> {
-    let mut command = Command::new(cmd);
-    command.args(args);
+    let mut opts = sisyphus_tools_core::process::CommandOpts::default()
+        .with_timeout(std::time::Duration::from_secs(BUILD_TIMEOUT_SECS));
     for (k, v) in env {
-        command.env(k, v);
+        opts = opts.with_env(*k, *v);
     }
     if let Some(dir) = cwd {
-        command.current_dir(dir);
+        opts = opts.with_workdir(dir);
     }
-    let output = command.output().map_err(|e| {
-        if e.kind() == std::io::ErrorKind::NotFound {
-            ToolError::Generic(format!("`{cmd}` executable not found — is it installed?"))
-        } else {
-            ToolError::Io(e)
-        }
-    })?;
-    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-    Ok((stdout, stderr, output.status.success()))
+
+    let out = sisyphus_tools_core::process::run_command_blocking(cmd, args, opts)?;
+    Ok((out.stdout, out.stderr, out.exit_code == 0))
 }
 
 /// Run `cargo` with the given arguments.

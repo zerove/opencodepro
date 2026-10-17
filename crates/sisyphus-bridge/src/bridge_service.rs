@@ -50,6 +50,12 @@ pub struct MySisyphusBridge {
     pub(crate) event_bus: tokio::sync::broadcast::Sender<sisyphus_bridge_api::BridgeEvent>,
     pub(crate) consensus: Arc<dyn Consensus>,
     pub(crate) state_store: Arc<dyn sisyphus_types::StateStore>,
+    /// Concrete L2-backed store. `state_store` is a trait object, which hides
+    /// key-listing; the `/api/state` family needs it.
+    pub(crate) concrete_store: Arc<sisyphus_mem::store::MfsStore>,
+    /// Semantic index backing `/api/vector/search`.
+    pub(crate) vector_store: Arc<sisyphus_mem::VectorMemoryStore>,
+    pub(crate) embedding_client: Arc<dyn sisyphus_tools_llm::EmbeddingClient>,
     pub(crate) default_fuel: u64,
     pub(crate) agent_registry: Arc<AgentRegistry>,
     pub(crate) tool_registry: Arc<ToolRegistry>,
@@ -83,6 +89,9 @@ impl Clone for MySisyphusBridge {
             event_bus: self.event_bus.clone(),
             consensus: self.consensus.clone(),
             state_store: self.state_store.clone(),
+            concrete_store: self.concrete_store.clone(),
+            vector_store: self.vector_store.clone(),
+            embedding_client: self.embedding_client.clone(),
             default_fuel: self.default_fuel,
             agent_registry: self.agent_registry.clone(),
             tool_registry: self.tool_registry.clone(),
@@ -520,6 +529,7 @@ impl MySisyphusBridge {
         // 复用上方按 provider 配置构造的嵌入客户端（kernel 当前未消费
         // 该参数，但签名上应传入配置一致的实例而非无条件 Dummy）。
         let embedding_client = embedding_client.clone();
+        let bridge_embedding_client = embedding_client.clone();
 
         // ── SOP Structured Store Init & Migration ──────────────────────────────
         let sop_store = store.sop.clone();
@@ -557,9 +567,11 @@ impl MySisyphusBridge {
             vector_store.clone(),
             kernel_experience_bank,
             tool_executor,
+            Arc::new(sisyphus_tools_executor::executor::test_cmds::TestExecutor::new()),
             intel,
             dyn_llm_client.clone(),
             dyn_llm_client.clone(),
+            Arc::new(sisyphus_tools_llm_tools::expert_reviewer::DefaultExpertReviewer),
             synthesizer,
             meta_learner,
             consensus.clone(),
@@ -683,6 +695,9 @@ impl MySisyphusBridge {
         let bridge = MySisyphusBridge {
             kernel,
             state_store,
+            concrete_store: store.state.clone(),
+            vector_store,
+            embedding_client: bridge_embedding_client,
             default_fuel,
             agent_registry,
             tool_registry,
@@ -767,12 +782,19 @@ impl MySisyphusBridge {
         }
     }
 
-    /// 返回底层共享 HTTP 客户端（供 `/api/metrics` 等指标端点使用）。
+    /// 返回共享 HTTP 客户端的**实时**统计读取器（供 `/api/metrics` 使用）。
     ///
-    /// 委托给 LlmClient::shared_http()；DynamicLlmClient 透传 ProviderRegistry。
+    /// 刻意只暴露计数快照的读取闭包而非客户端句柄：`LlmClient` 定义在
+    /// `sisyphus-types`，而客户端内部包装 `reqwest`，让 trait 泄漏它会把
+    /// `reqwest` 引入被全 workspace 依赖的基础 crate（ADR-014 阶段 3）。
     /// None 表示桥接未启用 LLM（开发/CLI 模式）。
-    pub fn shared_http(&self) -> Option<Arc<sisyphus_tools_llm::http_client::SharedHttpClient>> {
-        self.llm_client.shared_http()
+    pub fn http_stats_provider(
+        &self,
+    ) -> Option<Arc<dyn Fn() -> sisyphus_types::HttpClientStats + Send + Sync>> {
+        let llm = self.llm_client.clone();
+        // No LLM configured means no client to read stats from.
+        llm.http_stats()?;
+        Some(Arc::new(move || llm.http_stats().unwrap_or_default()))
     }
     pub(crate) fn tool_registry(&self) -> &Arc<ToolRegistry> {
         &self.tool_registry

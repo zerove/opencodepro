@@ -23,13 +23,7 @@ sisyphus-sandbox = { version = "0.1.0", path = "../sisyphus-sandbox", optional =
 sisyphus-types = { version = "0.1.0", path = "../sisyphus-types" }
 sisyphus-mem = { version = "0.1.0", path = "../sisyphus-mem" }
 sisyphus-intel = { version = "0.1.0", path = "../sisyphus-intel" }
-sisyphus-tools-llm = { version = "0.1.0", path = "../sisyphus-tools-llm" }
-sisyphus-tools-llm-tools = { version = "0.1.0", path = "../sisyphus-tools-llm-tools" }
-sisyphus-tools-agent = { version = "0.1.0", path = "../sisyphus-tools-agent" }
 
-sisyphus-tools-system = { version = "0.1.0", path = "../sisyphus-tools-system" }
-sisyphus-tools-executor = { version = "0.1.0", path = "../sisyphus-tools-executor" }
-sisyphus-tools-build = { version = "0.1.0", path = "../sisyphus-tools-build" }
 sisyphus-roadmap = { version = "0.1.0", path = "../sisyphus-roadmap" }
 futures = "0.3"
 parking_lot = "0.12"
@@ -41,9 +35,17 @@ sisyphus-knowledge = { version = "0.1.0", path = "../sisyphus-knowledge" }
 sisyphus_visual = { version = "0.1.0", path = "../sisyphus-visual" }
 
 [dev-dependencies]
-proptest = "1.4"
-criterion = { version = "0.5", features = ["async_tokio"] }
+sisyphus-tools-llm-tools = { version = "0.1.0", path = "../sisyphus-tools-llm-tools" }
+sisyphus-tools-executor = { version = "0.1.0", path = "../sisyphus-tools-executor" }
+# Production code no longer depends on these; the test harness and benches
+# still construct real executors and clients.
+sisyphus-tools-system = { version = "0.1.0", path = "../sisyphus-tools-system" }
+# In-crate test doubles: DummyLlmClient, DummyEmbeddingClient.
 sisyphus-tools-llm = { version = "0.1.0", path = "../sisyphus-tools-llm" }
+
+proptest = "1.4"
+tracing-subscriber = "0.3"
+criterion = { version = "0.5", features = ["async_tokio"] }
 tempfile = "3.10"
 sqlx = { version = "0.8", features = ["sqlite", "runtime-tokio-rustls"] }
 

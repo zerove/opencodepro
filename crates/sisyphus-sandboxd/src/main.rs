@@ -50,17 +50,27 @@ use tracing::{error, info, warn};
 
 /// Recover a wire category from an already-rendered error message.
 ///
-/// The executor hands back `TypesError`, whose `ToolExecutionError` variant holds
-/// a `details: String` rather than a typed cause — so the structured category has
-/// to be re-derived from text here. That is a real weakness of the current error
-/// plumbing, not a design choice: threading a typed error through
-/// `ToolExecutor::execute` would remove the need for this function entirely.
+/// Fallback only. Sandbox failures now arrive with their category attached
+/// (`TypesError::sandbox_kind`), so this runs solely for older error shapes.
+/// It stays because those are a normal value, not an error condition.
 ///
 /// Within those limits it is still strictly better than the previous behaviour,
 /// which sent the string and no category at all. Every branch matches a fixed
 /// prefix emitted by `sisyphus_sandbox::SandboxError`, and anything unrecognised
 /// degrades to `Unknown` rather than guessing — a wrong category is worse than
 /// an absent one, because a caller may branch on it.
+/// Pick the wire category for a failure, preferring what the error actually
+/// says over what its text happens to look like.
+///
+/// The two can disagree: a guest `unreachable` renders as
+/// `WASM execution failed`, but so would a fuel stop if the caller had
+/// flattened it under the old `ResourceExhausted` prefix. When the error still
+/// carries its own category, that category is authoritative and the text is
+/// only ever a backstop for untyped shapes.
+fn wire_kind(e: &TypesError) -> SandboxErrorKind {
+    e.sandbox_kind().unwrap_or_else(|| kind_from_rendered_detail(&e.to_string()))
+}
+
 fn kind_from_rendered_detail(detail: &str) -> SandboxErrorKind {
     if detail.contains("ResourceExhausted:") {
         // Both tunables render into this one variant; distinguish them so a
@@ -278,16 +288,10 @@ async fn handle_request(
                 },
                 Err(e) => Response::ExecuteError {
                     id,
-                    // `e` is a `TypesError`, not a `SandboxError`, so the category
-                    // has to be recovered from its rendered detail. That is not as
-                    // strong as carrying a typed variant end to end — see
-                    // `kind_from_rendered_detail` for why it is still strictly
-                    // better than sending prose alone.
-                    error: ToolExecutionError::new(
-                        &params.tool_id,
-                        kind_from_rendered_detail(&e.to_string()),
-                        e.to_string(),
-                    ),
+                    // The sandbox carries its category on the error now, so no
+                    // text parsing is needed. The fallback stays only for
+                    // error shapes that still arrive untyped.
+                    error: ToolExecutionError::new(&params.tool_id, wire_kind(&e), e.to_string()),
                 },
             };
             let line =
@@ -397,4 +401,44 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     info!("sisyphus-sandboxd stopped");
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 判别性用例：类别与文案**故意**矛盾。
+    ///
+    /// 旧实现只按文案反推，于是这条错误会被报成 `FuelExhausted`；带类型的
+    /// 那条路必须报 `GuestTrap`。只有当 `wire_kind` 真的信任错误自带的类别时
+    /// 才能通过——这正是本次改动的全部意义。
+    #[test]
+    fn typed_kind_beats_the_rendered_text() {
+        let e = TypesError::sandbox(
+            "confused",
+            SandboxErrorKind::GuestTrap,
+            "ResourceExhausted: confused stopped the guest (fuel exhausted): wasm trap",
+        );
+        assert_eq!(
+            wire_kind(&e),
+            SandboxErrorKind::GuestTrap,
+            "text says fuel exhausted; the type must win"
+        );
+        // The text parser on its own really would have said otherwise — otherwise
+        // this test proves nothing.
+        assert_eq!(
+            kind_from_rendered_detail(&e.to_string()),
+            SandboxErrorKind::FuelExhausted
+        );
+    }
+
+    /// 无类别时才回退到文案，老路径不能就此消失。
+    #[test]
+    fn untyped_errors_still_fall_back_to_text() {
+        let e = TypesError::ToolExecutionError {
+            tool_id: "legacy".into(),
+            details: "Failed to read WASM binary 'legacy' (/x/y.wasm): nope".into(),
+        };
+        assert_eq!(wire_kind(&e), SandboxErrorKind::ToolLoadFailed);
+    }
 }

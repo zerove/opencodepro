@@ -25,11 +25,11 @@ use sisyphus_mem::{MfsStore, SopSqlStore};
 
 use sisyphus_roadmap::RoadmapManager;
 
-use sisyphus_tools_build::benchmark::ContinuousBenchmark;
+use sisyphus_types::ContinuousBenchmark;
 
-use sisyphus_tools_llm_tools::meta_learner::MetaLearner;
+use sisyphus_types::MetaLearner;
 
-use sisyphus_tools_system::agent_channel::AgentChannel;
+use sisyphus_types::AgentChannel;
 
 use sisyphus_types::AgentMessage;
 
@@ -73,7 +73,6 @@ pub mod swarm_coordinator;
 pub use swarm_coordinator::*;
 
 pub mod cognitive_dashboard;
-pub mod enhanced_dashboard;
 
 pub use execution_manager::*;
 
@@ -256,12 +255,12 @@ pub struct SisyphusKernel {
 /// ```no_run
 /// # use std::sync::Arc;
 /// # use sisyphus_core::{Consensus, KernelBuilder};
-/// # use sisyphus_tools_llm_tools::meta_learner::MetaLearner;
+/// # use sisyphus_types::MetaLearner;
 /// # fn demo(
 /// #     meta_learner: Arc<parking_lot::Mutex<MetaLearner>>,
 /// #     consensus: Arc<dyn Consensus>,
 /// #     store: Arc<sisyphus_mem::MfsStore>,
-/// #     llm: Arc<dyn sisyphus_tools_llm::LlmClient>,
+/// #     llm: Arc<dyn sisyphus_types::LlmClient>,
 /// #     exec: Arc<dyn sisyphus_types::ToolExecutor>,
 /// # ) {
 /// let kernel = KernelBuilder::new(meta_learner, consensus)
@@ -279,14 +278,16 @@ pub struct KernelBuilder {
     vector_store: Option<Arc<sisyphus_mem::VectorMemoryStore>>,
     experience_bank: Option<Arc<dyn sisyphus_types::experience::ExperienceBank>>,
     tool_executor: Option<Arc<dyn ToolExecutor>>,
+    test_executor: Option<Arc<dyn sisyphus_types::TestExecutor>>,
     intel: Option<Arc<SisyphusIntel>>,
-    llm_client: Option<Arc<dyn sisyphus_tools_llm::LlmClient>>,
-    fast_llm_client: Option<Arc<dyn sisyphus_tools_llm::LlmClient>>,
+    llm_client: Option<Arc<dyn sisyphus_types::LlmClient>>,
+    fast_llm_client: Option<Arc<dyn sisyphus_types::LlmClient>>,
+    expert_reviewer: Option<Arc<dyn sisyphus_types::ExpertReviewer>>,
     synthesizer: Option<Arc<dyn sisyphus_intel::FlowSynthesizer>>,
     meta_learner: Arc<parking_lot::Mutex<MetaLearner>>,
     consensus: Arc<dyn Consensus>,
     sql_store: Option<Arc<sisyphus_mem::RoadmapSqlStore>>,
-    embedding_client: Option<Arc<dyn sisyphus_tools_llm::EmbeddingClient>>,
+    embedding_client: Option<Arc<dyn sisyphus_types::EmbeddingClient>>,
 }
 
 macro_rules! builder_setter {
@@ -310,9 +311,11 @@ impl KernelBuilder {
             vector_store: None,
             experience_bank: None,
             tool_executor: None,
+            test_executor: None,
             intel: None,
             llm_client: None,
             fast_llm_client: None,
+            expert_reviewer: None,
             synthesizer: None,
             meta_learner,
             consensus,
@@ -329,15 +332,14 @@ impl KernelBuilder {
         Arc<dyn sisyphus_types::experience::ExperienceBank>
     );
     builder_setter!(tool_executor, Arc<dyn ToolExecutor>);
+    builder_setter!(test_executor, Arc<dyn sisyphus_types::TestExecutor>);
+    builder_setter!(expert_reviewer, Arc<dyn sisyphus_types::ExpertReviewer>);
     builder_setter!(intel, Arc<SisyphusIntel>);
-    builder_setter!(llm_client, Arc<dyn sisyphus_tools_llm::LlmClient>);
-    builder_setter!(fast_llm_client, Arc<dyn sisyphus_tools_llm::LlmClient>);
+    builder_setter!(llm_client, Arc<dyn sisyphus_types::LlmClient>);
+    builder_setter!(fast_llm_client, Arc<dyn sisyphus_types::LlmClient>);
     builder_setter!(synthesizer, Arc<dyn sisyphus_intel::FlowSynthesizer>);
     builder_setter!(sql_store, Arc<sisyphus_mem::RoadmapSqlStore>);
-    builder_setter!(
-        embedding_client,
-        Arc<dyn sisyphus_tools_llm::EmbeddingClient>
-    );
+    builder_setter!(embedding_client, Arc<dyn sisyphus_types::EmbeddingClient>);
 
     /// 消费构建器并生成 `SisyphusKernel`。
     ///
@@ -371,6 +373,14 @@ impl KernelBuilder {
             Some(v) => v,
             None => return required("tool_executor"),
         };
+        let test_executor = match self.test_executor {
+            Some(v) => v,
+            None => return required("test_executor"),
+        };
+        let expert_reviewer = match self.expert_reviewer {
+            Some(v) => v,
+            None => return required("expert_reviewer"),
+        };
         let intel = match self.intel {
             Some(v) => v,
             None => return required("intel"),
@@ -401,9 +411,11 @@ impl KernelBuilder {
             vector_store,
             experience_bank,
             tool_executor,
+            test_executor,
             intel,
             llm_client,
             fast_llm_client,
+            expert_reviewer,
             synthesizer,
             self.meta_learner,
             self.consensus,

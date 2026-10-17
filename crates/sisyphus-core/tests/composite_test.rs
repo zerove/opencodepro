@@ -64,9 +64,11 @@ async fn make_kernel() -> (Arc<SisyphusKernel>, Arc<CompositeMockExecutor>) {
         vector_store,
         experience_bank,
         tool_executor.clone(),
+        Arc::new(sisyphus_tools_executor::executor::test_cmds::TestExecutor::new()),
         intel,
         llm_client,
         fast_llm_client,
+        Arc::new(sisyphus_tools_llm_tools::expert_reviewer::DefaultExpertReviewer),
         synthesizer,
         Arc::new(parking_lot::Mutex::new(
             sisyphus_tools_llm_tools::meta_learner::MetaLearner::new(".omo/test_meta"),

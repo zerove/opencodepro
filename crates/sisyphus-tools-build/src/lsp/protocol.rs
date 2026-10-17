@@ -27,6 +27,15 @@ pub async fn read_message(
             let len: usize = len_str.trim().parse().map_err(|_| {
                 super::types::LspError::Protocol(format!("invalid Content-Length: {len_str}"))
             })?;
+            // The server is a separate process and may be buggy or hostile.
+            // Without a ceiling, a bogus `Content-Length` makes this allocate
+            // an arbitrary amount and abort the process.
+            const MAX_CONTENT_LENGTH: usize = 64 * 1024 * 1024;
+            if len > MAX_CONTENT_LENGTH {
+                return Err(super::types::LspError::Protocol(format!(
+                    "Content-Length {len} exceeds {MAX_CONTENT_LENGTH} byte cap"
+                )));
+            }
             let mut buf = vec![0u8; len];
             reader
                 .read_exact(&mut buf)

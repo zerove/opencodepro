@@ -467,6 +467,7 @@ async fn kernel_fixture(
         Arc::new(sisyphus_mem::VectorMemoryStore::new(pool).await.expect("向量库")),
         experiences,
         tools,
+        Arc::new(sisyphus_tools_executor::executor::test_cmds::TestExecutor::new()),
         Arc::new(sisyphus_intel::SisyphusIntel::new(
             Arc::new(Prediction),
             Arc::new(common::MockLogicalSimulator),
@@ -475,6 +476,7 @@ async fn kernel_fixture(
         )),
         llm.clone(),
         llm,
+        Arc::new(sisyphus_tools_llm_tools::expert_reviewer::DefaultExpertReviewer),
         Arc::new(common::MockSynthesizer),
         Arc::new(parking_lot::Mutex::new(
             sisyphus_tools_llm_tools::meta_learner::MetaLearner::new(

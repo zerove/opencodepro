@@ -1,6 +1,7 @@
 use async_trait::async_trait;
 use sisyphus_tools_core::ToolResult;
 use std::process::Stdio;
+use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, Command};
 
@@ -19,6 +20,13 @@ pub struct StdioTransport {
     writer: tokio::io::BufWriter<tokio::process::ChildStdin>,
 }
 
+/// Cap on retained server stderr.
+const STDERR_TAIL_CAP: usize = 64 * 1024;
+/// Ceiling on one JSON-RPC line, so a runaway server cannot exhaust memory.
+const MAX_RESPONSE_LINE: usize = 64 * 1024 * 1024;
+/// Upper bound on one request/response exchange.
+const REQUEST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120);
+
 impl StdioTransport {
     /// Spawn.
     pub fn spawn(command: &str, args: &[&str]) -> ToolResult<Self> {
@@ -36,6 +44,37 @@ impl StdioTransport {
         let stdin = child.stdin.take().ok_or_else(|| {
             sisyphus_tools_core::ToolError::Io(std::io::Error::other("failed to capture stdin"))
         })?;
+
+        // The pipe must be drained. Leaving stderr unread lets the server fill
+        // the pipe buffer and block forever, while we sit waiting on stdout for
+        // a response that will then never arrive.
+        if let Some(stderr) = child.stderr.take() {
+            let sink = Arc::new(parking_lot::Mutex::new(String::new()));
+            tokio::spawn(async move {
+                let mut reader = BufReader::new(stderr);
+                let mut line = String::new();
+                loop {
+                    line.clear();
+                    match reader.read_line(&mut line).await {
+                        Ok(0) | Err(_) => break,
+                        Ok(_) => {
+                            let mut buf = sink.lock();
+                            buf.push_str(&line);
+                            if buf.len() > STDERR_TAIL_CAP {
+                                let drop_to = buf.len() - STDERR_TAIL_CAP;
+                                let keep = drop_to
+                                    + (buf.as_bytes()[drop_to..]
+                                        .iter()
+                                        .position(|&b| b == b'\n')
+                                        .map(|i| i + 1)
+                                        .unwrap_or(0));
+                                buf.drain(..keep);
+                            }
+                        },
+                    }
+                }
+            });
+        }
 
         Ok(Self {
             child,
@@ -56,9 +95,22 @@ impl McpTransport for StdioTransport {
         self.writer.write_all(b"\n").await.map_err(sisyphus_tools_core::ToolError::Io)?;
         self.writer.flush().await.map_err(sisyphus_tools_core::ToolError::Io)?;
 
-        // Read the response line
         let mut line = String::new();
-        self.reader.read_line(&mut line).await.map_err(sisyphus_tools_core::ToolError::Io)?;
+        tokio::time::timeout(REQUEST_TIMEOUT, self.reader.read_line(&mut line))
+            .await
+            .map_err(|_| {
+                sisyphus_tools_core::ToolError::Io(std::io::Error::other(format!(
+                    "MCP server did not respond within {}s",
+                    REQUEST_TIMEOUT.as_secs()
+                )))
+            })?
+            .map_err(sisyphus_tools_core::ToolError::Io)?;
+
+        if line.len() > MAX_RESPONSE_LINE {
+            return Err(sisyphus_tools_core::ToolError::Io(std::io::Error::other(
+                format!("MCP response exceeds {MAX_RESPONSE_LINE} byte cap"),
+            )));
+        }
 
         Ok(line.trim_end().to_string())
     }

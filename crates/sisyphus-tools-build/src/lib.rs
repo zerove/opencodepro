@@ -6,7 +6,10 @@
 pub mod architecture;
 pub mod auto_doc;
 pub mod auto_fix;
-pub mod benchmark;
+pub mod benchmark {
+    pub use sisyphus_types::benchmark::*;
+}
+pub use sisyphus_types::benchmark::*;
 pub mod bug_fixer;
 pub mod build;
 pub mod lsp;

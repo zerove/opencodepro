@@ -83,20 +83,24 @@ impl sisyphus_types::ToolExecutor for MCPToolExecutor {
             match serde_json::from_slice(&args) {
                 Ok(v) => Some(v),
                 Err(e) => {
-                    return Err(sisyphus_types::TypesError::ToolExecutionError {
-                        tool_id: mcp_tool.to_string(),
-                        details: format!("invalid JSON args for MCP tool '{mcp_tool}': {e}"),
-                    })
+                    return Err(sisyphus_types::TypesError::tool(
+                        mcp_tool,
+                        sisyphus_tools_core::ToolError::InvalidInput(format!(
+                            "invalid JSON args for MCP tool '{mcp_tool}': {e}"
+                        )),
+                    ))
                 },
             }
         };
 
         let mut client = self.client.lock().await;
         let result = client.call_tool(mcp_tool, mcp_args).await.map_err(|e| {
-            sisyphus_types::TypesError::ToolExecutionError {
-                tool_id: mcp_tool.to_string(),
-                details: format!("MCP tool '{mcp_tool}' failed: {e}"),
-            }
+            sisyphus_types::TypesError::tool(
+                mcp_tool,
+                sisyphus_tools_core::ToolError::Generic(format!(
+                    "MCP tool '{mcp_tool}' failed: {e}"
+                )),
+            )
         })?;
 
         // Serialize response
@@ -137,9 +141,11 @@ impl sisyphus_types::ToolExecutor for MCPToolExecutor {
             json!({ "content": items, "is_error": result.is_error.unwrap_or(false) })
         };
 
-        serde_json::to_vec(&output).map_err(|e| sisyphus_types::TypesError::ToolExecutionError {
-            tool_id: mcp_tool.to_string(),
-            details: format!("serialize MCP result: {e}"),
+        serde_json::to_vec(&output).map_err(|e| {
+            sisyphus_types::TypesError::tool(
+                mcp_tool,
+                sisyphus_tools_core::ToolError::Generic(format!("serialize MCP result: {e}")),
+            )
         })
     }
 }
@@ -312,8 +318,15 @@ mod tests {
             MCPToolExecutor::from_transport(Box::new(transport)).await.unwrap()
         };
         let result = ex.execute("tool", b"not valid json".to_vec(), 0).await;
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("invalid JSON"));
+        let err = result.expect_err("malformed JSON args must fail");
+        // Not just "it failed": the caller sent bad JSON, so the bridge must be
+        // able to say 400 rather than 500. That distinction needs the type.
+        let source = err.tool_source().expect("error must carry a typed tool cause");
+        assert!(
+            matches!(source, sisyphus_tools_core::ToolError::InvalidInput(_)),
+            "expected ToolError::InvalidInput (-> 400), got {source:?}"
+        );
+        assert!(err.to_string().contains("invalid JSON"));
     }
 
     #[tokio::test]
@@ -417,5 +430,55 @@ mod tests {
         let result = ex.execute("shortcut", vec![], 0).await.unwrap();
         let v: Value = serde_json::from_slice(&result).unwrap();
         assert_eq!(v["content"], "via map");
+    }
+}
+
+/// Default [`McpExecutorFactory`], backed by the real MCP client.
+///
+/// `sisyphus-core` wires MCP servers through this trait instead of naming
+/// `MCPToolExecutor`, which is what keeps `sisyphus-tools-executor` out of
+/// core's production dependencies (ADR-014).
+#[derive(Debug, Default, Clone, Copy)]
+pub struct DefaultMcpExecutorFactory;
+
+impl sisyphus_types::McpExecutorFactory for DefaultMcpExecutorFactory {
+    fn connect_stdio(
+        &self,
+        command: String,
+        args: Vec<String>,
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<
+                    Output = Result<std::sync::Arc<dyn sisyphus_types::ToolExecutor>, String>,
+                > + Send
+                + '_,
+        >,
+    > {
+        Box::pin(async move {
+            let borrowed: Vec<&str> = args.iter().map(String::as_str).collect();
+            MCPToolExecutor::from_stdio(&command, &borrowed)
+                .await
+                .map(|e| std::sync::Arc::new(e) as std::sync::Arc<dyn sisyphus_types::ToolExecutor>)
+                .map_err(|e| e.to_string())
+        })
+    }
+
+    fn connect_url(
+        &self,
+        url: String,
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<
+                    Output = Result<std::sync::Arc<dyn sisyphus_types::ToolExecutor>, String>,
+                > + Send
+                + '_,
+        >,
+    > {
+        Box::pin(async move {
+            MCPToolExecutor::from_url(&url)
+                .await
+                .map(|e| std::sync::Arc::new(e) as std::sync::Arc<dyn sisyphus_types::ToolExecutor>)
+                .map_err(|e| e.to_string())
+        })
     }
 }

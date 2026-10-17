@@ -1,6 +1,7 @@
 use crate::executor::args::{ok_json, parse_args, str_arg, u64_arg};
 use metrics::counter;
 use serde_json::json;
+use sisyphus_types::ToolError;
 use std::path::Path;
 
 // ── bash & web command implementations ────────────────────────
@@ -17,7 +18,7 @@ use std::path::Path;
 /// **Security**: command is run via `bash -c`. Callers must validate
 /// `workdir` to be inside the project root, otherwise arbitrary command
 /// execution is possible.
-pub async fn cmd_bash_exec(args: Vec<u8>) -> Result<Vec<u8>, String> {
+pub async fn cmd_bash_exec(args: Vec<u8>) -> Result<Vec<u8>, ToolError> {
     let v = parse_args(&args)?;
     let command = str_arg(&v, "command")?;
     let workdir = crate::executor::args::opt_str_arg(&v, "workdir");
@@ -46,12 +47,11 @@ pub async fn cmd_bash_exec(args: Vec<u8>) -> Result<Vec<u8>, String> {
 /// - `num` (default 5): maximum number of results
 ///
 /// Returns JSON `{ results: [{ title, url, snippet }, ...] }`.
-pub async fn cmd_web_search(args: Vec<u8>) -> Result<Vec<u8>, String> {
+pub async fn cmd_web_search(args: Vec<u8>) -> Result<Vec<u8>, ToolError> {
     let v = parse_args(&args)?;
     let query = str_arg(&v, "query")?;
     let num = crate::executor::args::usize_arg(&v, "num").unwrap_or(5);
-    let results =
-        sisyphus_tools_system::web::websearch(&query, num).await.map_err(|e| e.to_string())?;
+    let results = sisyphus_tools_system::web::websearch(&query, num).await?;
     let list: Vec<serde_json::Value> = results
         .iter()
         .map(|r| {
@@ -72,10 +72,10 @@ pub async fn cmd_web_search(args: Vec<u8>) -> Result<Vec<u8>, String> {
 ///
 /// Returns JSON `{ content, content_type }`. Large responses may be
 /// truncated by the underlying HTTP client.
-pub async fn cmd_web_fetch(args: Vec<u8>) -> Result<Vec<u8>, String> {
+pub async fn cmd_web_fetch(args: Vec<u8>) -> Result<Vec<u8>, ToolError> {
     let v = parse_args(&args)?;
     let url = str_arg(&v, "url")?;
-    let result = sisyphus_tools_system::web::webfetch(&url).await.map_err(|e| e.to_string())?;
+    let result = sisyphus_tools_system::web::webfetch(&url).await?;
     ok_json(json!({
         "content": result.content,
         "content_type": result.content_type,

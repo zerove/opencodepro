@@ -5,7 +5,7 @@ use crate::{
     intelligence_manager::IntelligenceManager, strategic_manager::StrategicManager, CoreError,
 };
 use parking_lot::RwLock;
-use sisyphus_tools_system::agent_channel::AgentChannel;
+use sisyphus_types::AgentChannel;
 use sisyphus_types::SOPGraphConfig;
 use std::sync::Arc;
 

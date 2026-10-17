@@ -278,7 +278,7 @@ async fn test_execute_with_hooks_denied() {
     .await;
 
     assert!(result.is_err());
-    assert!(result.unwrap_err().contains("Not allowed"));
+    assert!(result.unwrap_err().to_string().contains("Not allowed"));
 }
 
 #[tokio::test]

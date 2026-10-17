@@ -1,7 +1,5 @@
 use sisyphus_intel::{ReflectionReport, SimulationResult, SisyphusIntel};
-use sisyphus_tools_llm_tools::{momus, oracle};
 use sisyphus_types::{ExecutionContext, SOPGraph};
-use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -10,7 +8,11 @@ use std::time::Duration;
 pub struct IntelligenceManager {
     pub intel: Arc<SisyphusIntel>,
     pub synthesizer: Arc<dyn sisyphus_intel::FlowSynthesizer>,
-    pub llm_client: Arc<dyn sisyphus_tools_llm::LlmClient>,
+    pub llm_client: Arc<dyn sisyphus_types::LlmClient>,
+    /// Deep semantic review. Injected rather than called directly: core used to
+    /// import `momus`/`oracle` here, which kept `sisyphus-tools-llm-tools` in
+    /// core's production dependencies (ADR-014).
+    pub expert_reviewer: Arc<dyn sisyphus_types::ExpertReviewer>,
 }
 
 /// 批判阶段的宽松默认结果：无发现、零风险、允许继续。
@@ -29,12 +31,14 @@ impl IntelligenceManager {
     pub fn new(
         intel: Arc<SisyphusIntel>,
         synthesizer: Arc<dyn sisyphus_intel::FlowSynthesizer>,
-        llm_client: Arc<dyn sisyphus_tools_llm::LlmClient>,
+        llm_client: Arc<dyn sisyphus_types::LlmClient>,
+        expert_reviewer: Arc<dyn sisyphus_types::ExpertReviewer>,
     ) -> Self {
         Self {
             intel,
             synthesizer,
             llm_client,
+            expert_reviewer,
         }
     }
 
@@ -85,69 +89,26 @@ impl IntelligenceManager {
         // 1. 核心反思器的基础反思
         let mut report = self.intel.reflector.reflect(trace, prediction, None).await?;
 
-        // 2. 使用专业工具的深度语义反思
-        let mut expert_suggestions = Vec::new();
+        // 2. 深度语义反思交给注入的专家评审器。
+        //
+        // 具体实现（Oracle 文件分析 + Momus 计划/代码评审）连同它的启发式判断
+        // 都在 tools 层；core 只负责把输入凑齐并把字符串收下。锁在 await 之前
+        // 就已释放，避免跨 await 持锁。
+        let modified_files: Vec<std::path::PathBuf> = ctx
+            .modified_files
+            .read()
+            .map(|files| files.iter().cloned().collect())
+            .unwrap_or_default();
+        let results: Vec<(String, String)> = ctx
+            .results
+            .iter()
+            .map(|entry| (entry.key().clone(), entry.value().to_string()))
+            .collect();
 
-        // a. Oracle 分析：检查所有被修改文件的复杂度与安全问题
-        if let Ok(files) = ctx.modified_files.read() {
-            for path in files.iter() {
-                if let Ok(analysis) = oracle::analyze_file(path) {
-                    for issue in analysis.issues {
-                        expert_suggestions.push(format!(
-                            "[{}] {} at {}:{}: {}",
-                            issue.severity,
-                            issue.message,
-                            path.display(),
-                            issue.line,
-                            issue.code.as_deref().unwrap_or("")
-                        ));
-                    }
-                }
-            }
-        }
-
-        // b. Momus 评审：审查结果中类计划或类代码的输出
-        for entry in ctx.results.iter() {
-            let node_name = entry.key();
-            let output = entry.value();
-            let content = output.to_string();
-
-            // 启发式规则：若节点名包含 'plan' 或输出较长且结构化，使用 Momus 计划评审
-            if node_name.contains("plan") || content.contains("## ") {
-                let review =
-                    momus::review_plan(self.llm_client.as_ref(), &content, node_name.as_str())
-                        .await;
-                for comment in review.comments {
-                    expert_suggestions.push(format!(
-                        "[{}] (Plan Review) {}: {} - Suggestion: {}",
-                        comment.severity,
-                        comment.category,
-                        comment.message,
-                        comment.suggestion.as_deref().unwrap_or("N/A")
-                    ));
-                }
-            }
-
-            // 若输出看起来像代码（含常见 Rust 关键字），使用 Momus 代码评审
-            if content.contains("fn ") || content.contains("pub struct") {
-                // review_code 需要路径。因数据在内存中，这里使用虚拟路径。
-                let path_str = format!("/virtual/{}", node_name);
-                let virtual_path = Path::new(&path_str);
-                if let Ok(review) =
-                    momus::review_code(self.llm_client.as_ref(), virtual_path, &content).await
-                {
-                    for comment in review.comments {
-                        expert_suggestions.push(format!(
-                            "[{}] (Code Review) {}: {} - Suggestion: {}",
-                            comment.severity,
-                            comment.category,
-                            comment.message,
-                            comment.suggestion.as_deref().unwrap_or("N/A")
-                        ));
-                    }
-                }
-            }
-        }
+        let expert_suggestions = self
+            .expert_reviewer
+            .suggestions(modified_files, results, self.llm_client.as_ref())
+            .await;
 
         // 将专家发现合并到报告中
         report.suggested_improvements.extend(expert_suggestions);

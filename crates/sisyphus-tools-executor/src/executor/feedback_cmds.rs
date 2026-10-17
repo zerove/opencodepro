@@ -1,5 +1,6 @@
 use crate::executor::args::{ok_json, parse_args, str_arg};
 use serde_json::json;
+use sisyphus_types::ToolError;
 use std::sync::Arc;
 
 // ── feedback command implementations ──────────────────────────
@@ -10,7 +11,7 @@ use std::sync::Arc;
 pub async fn cmd_feedback_save(
     store: Arc<sisyphus_tools_core::feedback::FeedbackStore>,
     args: Vec<u8>,
-) -> Result<Vec<u8>, String> {
+) -> Result<Vec<u8>, ToolError> {
     let v = parse_args(&args)?;
     let agent_id = str_arg(&v, "agent_id")?;
     let request = str_arg(&v, "request")?;
@@ -39,7 +40,7 @@ pub async fn cmd_feedback_save(
 pub async fn cmd_feedback_get(
     store: Arc<sisyphus_tools_core::feedback::FeedbackStore>,
     args: Vec<u8>,
-) -> Result<Vec<u8>, String> {
+) -> Result<Vec<u8>, ToolError> {
     let v = parse_args(&args)?;
     let agent_id = str_arg(&v, "agent_id")?;
     let limit = crate::executor::args::usize_arg(&v, "limit").unwrap_or(10);
@@ -58,7 +59,7 @@ pub async fn cmd_feedback_get(
 pub async fn cmd_feedback_query(
     store: Arc<sisyphus_tools_core::feedback::FeedbackStore>,
     args: Vec<u8>,
-) -> Result<Vec<u8>, String> {
+) -> Result<Vec<u8>, ToolError> {
     let v = parse_args(&args)?;
     let query = str_arg(&v, "query")?;
     let tags = v.get("tags").and_then(|t| t.as_array()).map(|t| {

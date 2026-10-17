@@ -1,46 +1,5 @@
 #![allow(clippy::cast_precision_loss)]
-use thiserror::Error;
-
-#[derive(Error, Debug)]
-/// Tool Error.
-pub enum ToolError {
-    #[error("IO error: {0}")]
-    Io(#[from] std::io::Error),
-    #[error("Generic error: {0}")]
-    Generic(String),
-    #[error("Path not found: {0}")]
-    NotFound(String),
-    #[error("Permission denied: {0}")]
-    PermissionDenied(String),
-    #[error("Edit failed: no match for old string")]
-    EditNoMatch,
-    #[error("Edit failed: multiple matches")]
-    EditAmbiguous,
-    #[error("Glob pattern error: {0}")]
-    GlobPattern(String),
-    #[error("Grep error: {0}")]
-    GrepError(String),
-    #[error("Operation timed out: {0}")]
-    Timeout(String),
-    #[error("Web error: {0}")]
-    WebError(String),
-    #[error("Todo error: {0}")]
-    TodoError(String),
-    #[error("Bash command failed (exit {code}): {stderr}")]
-    CommandFailed {
-        code: i32,
-        stdout: String,
-        stderr: String,
-    },
-}
-
-pub type ToolResult<T> = Result<T, ToolError>;
-
-impl From<String> for ToolError {
-    fn from(s: String) -> Self {
-        ToolError::Generic(s)
-    }
-}
+pub use sisyphus_types::{ToolError, ToolResult};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 /// Permission.
@@ -54,6 +13,7 @@ pub type PermissionRules = Vec<(String, Permission)>;
 
 pub mod feedback;
 pub mod hook;
+pub mod process;
 pub mod wisdom;
 
 pub mod bridge;
@@ -81,5 +41,23 @@ mod tests {
     fn test_tool_error_generic_display() {
         let err = ToolError::Generic("test error".to_string());
         assert_eq!(err.to_string(), "Generic error: test error");
+    }
+
+    /// ADR-014 phase 1 moved the definition to `sisyphus-types` and left a
+    /// re-export here. This pins the two paths to the *same* type: if a later
+    /// stage ever re-defines rather than re-exports, callers would silently
+    /// end up with two incompatible `ToolError`s.
+    #[test]
+    fn tool_error_is_reexported_from_types_not_redefined() {
+        let via_core: ToolError = ToolError::NotFound("x".into());
+        let via_types: sisyphus_types::ToolError = via_core;
+        assert_eq!(via_types.to_string(), "Path not found: x");
+
+        fn takes_core_result(_: ToolResult<u8>) {}
+        fn takes_types_result(_: sisyphus_types::ToolResult<u8>) {}
+        // Both signatures must name the same alias.
+        let r: ToolResult<u8> = Ok(1);
+        takes_core_result(r);
+        takes_types_result(Ok(1));
     }
 }

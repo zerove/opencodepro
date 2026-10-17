@@ -9,7 +9,7 @@ use sisyphus_bridge_api::{
     ListSoPsRequest, ListSoPsResponse, ListToolsRequest, ListToolsResponse, ListWorkspacesRequest,
     ListWorkspacesResponse, LoadPluginRequest, LoadPluginResponse, PluginDescriptor,
     RemoveSkillRequest, RemoveSkillResponse, ShowSkillRequest, ShowSkillResponse, SkillMetadata,
-    SwitchWorkspaceRequest, SwitchWorkspaceResponse, ToolMetadata, UnloadPluginRequest,
+    SopInfo, SwitchWorkspaceRequest, SwitchWorkspaceResponse, ToolMetadata, UnloadPluginRequest,
     UnloadPluginResponse, WorkspaceMetadata,
 };
 use tonic::{Request, Response, Status};
@@ -80,7 +80,29 @@ impl MySisyphusBridge {
         &self,
         _request: Request<ListSoPsRequest>,
     ) -> Result<Response<ListSoPsResponse>, Status> {
-        Ok(Response::new(ListSoPsResponse { sops: vec![] }))
+        let kernel = self.kernel.clone();
+        let ids = kernel
+            .execution_manager
+            .list_sops(None)
+            .await
+            .map_err(|e| Status::internal(e.to_string()))?;
+
+        let mut sops = Vec::with_capacity(ids.len());
+        for sop_id in ids {
+            // node_count needs the graph; a failed load degrades to 0 rather
+            // than dropping the SOP from the listing.
+            let node_count = match kernel.execution_manager.load_sop(&sop_id, "default").await {
+                Ok(graph) => graph.graph.node_count() as u32,
+                Err(_) => 0,
+            };
+            sops.push(SopInfo {
+                sop_id,
+                created_at: 0,
+                node_count,
+            });
+        }
+
+        Ok(Response::new(ListSoPsResponse { sops }))
     }
 
     pub(crate) async fn list_skills_impl(

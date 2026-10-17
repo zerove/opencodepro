@@ -74,7 +74,7 @@ pub struct SelfProgrammingManager {
 impl SelfProgrammingManager {
     /// New.
     pub fn new(
-        llm_client: Arc<dyn sisyphus_tools_llm::LlmClient>,
+        llm_client: Arc<dyn sisyphus_types::LlmClient>,
         execution_manager: Arc<ExecutionManager>,
         knowledge_manager: Arc<sisyphus_knowledge::AssetManager>,
         skill_store: Option<Arc<SkillStore>>,

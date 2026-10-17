@@ -1,7 +1,6 @@
 use serde::{Deserialize, Serialize};
 use sisyphus_tools_core::ToolResult;
 use sisyphus_tools_llm::metis::LlmClient;
-use std::process::Command;
 use std::sync::Arc;
 
 /// Representation of a GitHub Pull Request.
@@ -66,13 +65,14 @@ impl PrManager {
         Self::run_gh(&["pr", "checkout", &num_str])?;
 
         // Show recent log to confirm what was pulled
-        let log = Command::new("git")
-            .args(["log", "--oneline", "-5"])
-            .output()
-            .map_err(sisyphus_tools_core::ToolError::Io)?;
+        let log = sisyphus_tools_core::process::run_command_blocking(
+            "git",
+            ["log", "--oneline", "-5"],
+            sisyphus_tools_core::process::CommandOpts::default(),
+        )?;
 
         if !log.stdout.is_empty() {
-            println!("Recent commits:\n{}", String::from_utf8_lossy(&log.stdout));
+            tracing::info!(recent_commits = %log.stdout, "checked out PR");
         }
 
         Ok(())
@@ -122,23 +122,27 @@ Return your response as a clear, professional review with:
 
     /// Helper to run `gh` commands with error handling for missing binary.
     fn run_gh(args: &[&str]) -> ToolResult<String> {
-        let output = Command::new("gh").args(args).output().map_err(|e| {
-            if e.kind() == std::io::ErrorKind::NotFound {
-                sisyphus_tools_core::ToolError::Generic(
-                    "PR workflow requires GitHub CLI (gh). Install: https://cli.github.com/".into(),
-                )
-            } else {
-                sisyphus_tools_core::ToolError::Io(e)
-            }
+        let output = sisyphus_tools_core::process::run_command_blocking(
+            "gh",
+            args,
+            sisyphus_tools_core::process::CommandOpts::default(),
+        )
+        .map_err(|e| match e {
+            sisyphus_tools_core::ToolError::Generic(m) => {
+                sisyphus_tools_core::ToolError::Generic(format!(
+                    "{m}\nPR workflow requires GitHub CLI (gh). Install: https://cli.github.com/"
+                ))
+            },
+            other => other,
         })?;
 
-        if output.status.success() {
-            Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+        if output.exit_code == 0 {
+            Ok(output.stdout.clone())
         } else {
-            let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+            let stderr = output.stderr.clone();
             Err(sisyphus_tools_core::ToolError::CommandFailed {
-                code: output.status.code().unwrap_or(-1),
-                stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
+                code: output.exit_code,
+                stdout: output.stdout.clone(),
                 stderr,
             })
         }

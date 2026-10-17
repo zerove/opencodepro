@@ -795,7 +795,8 @@ pub struct RestApiState {
     pub sse_connection_limit: Arc<tokio::sync::Semaphore>,
     /// 共享 HTTP 客户端（来自 ProviderRegistry，暴露给 /api/metrics）。
     /// `None` = 桥接未启用 LLM（开发/CLI 模式）。
-    pub shared_http: Option<Arc<sisyphus_tools_llm::http_client::SharedHttpClient>>,
+    /// Live counter reader for the shared outbound HTTP client, if any.
+    pub http_stats: Option<Arc<dyn Fn() -> sisyphus_types::HttpClientStats + Send + Sync>>,
     /// 进程启动 unix 时间（秒），用于计算 uptime。首次构造时固化。
     pub metrics_started_at: Arc<tokio::sync::RwLock<u64>>,
 }
@@ -831,7 +832,7 @@ impl RestApiState {
             jwt_config: None,
             sse_broadcaster,
             sse_connection_limit,
-            shared_http: None,
+            http_stats: None,
             metrics_started_at: Arc::new(tokio::sync::RwLock::new(started_at)),
         }
     }
@@ -855,7 +856,7 @@ impl RestApiState {
             jwt_config: None,
             sse_broadcaster,
             sse_connection_limit,
-            shared_http: None,
+            http_stats: None,
             metrics_started_at: Arc::new(tokio::sync::RwLock::new(started_at)),
         }
     }
@@ -879,18 +880,18 @@ impl RestApiState {
             jwt_config: Some(jwt_config),
             sse_broadcaster,
             sse_connection_limit,
-            shared_http: None,
+            http_stats: None,
             metrics_started_at: Arc::new(tokio::sync::RwLock::new(started_at)),
         }
     }
 
     /// 注入共享 HTTP 客户端（让 `/api/metrics` 能读到 ProviderRegistry 的真实统计）。
     /// 通常在 main.rs 里 `bridge` 构造后、HTTP 服务器启动前调用。
-    pub fn with_shared_http(
+    pub fn with_http_stats(
         mut self,
-        client: Arc<sisyphus_tools_llm::http_client::SharedHttpClient>,
+        provider: Arc<dyn Fn() -> sisyphus_types::HttpClientStats + Send + Sync>,
     ) -> Self {
-        self.shared_http = Some(client);
+        self.http_stats = Some(provider);
         self
     }
 }

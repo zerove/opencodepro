@@ -7,8 +7,8 @@ pub mod types;
 
 pub use types::{LearningInsight, StrategyInsight, StrategyStats};
 
-use sisyphus_tools_core::{ToolError, ToolResult};
-use sisyphus_types::MetaLearningSample;
+use crate::MetaLearningSample;
+use crate::{ToolError, ToolResult};
 use std::collections::HashMap;
 use std::path::PathBuf;
 

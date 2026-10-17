@@ -172,14 +172,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     // 桥接持有的 shared_http（来自 LLM client 注册），暴露给 /api/metrics
-    let shared_http = bridge.shared_http();
+    let http_stats_provider = bridge.http_stats_provider();
     let rest_state = if !jwt_config.secret.is_empty() {
         crate::http::RestApiState::new_with_jwt(bridge.clone(), data_dir, jwt_config)
     } else {
         crate::http::RestApiState::new(bridge.clone(), data_dir)
     };
-    let rest_state = match shared_http {
-        Some(client) => rest_state.with_shared_http(client),
+    let rest_state = match http_stats_provider {
+        Some(provider) => rest_state.with_http_stats(provider),
         None => rest_state,
     };
 

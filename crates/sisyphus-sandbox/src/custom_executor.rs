@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use dashmap::DashMap;
 use serde_json::Value;
-use sisyphus_types::{CustomToolDefinition, ToolExecutor, TypesError};
+use sisyphus_types::{CustomToolDefinition, SandboxErrorKind, ToolExecutor, TypesError};
 use std::collections::HashMap;
 use std::sync::Arc;
 use wasmtime::*;
@@ -168,67 +168,78 @@ impl CustomToolExecutor {
         args: Vec<u8>,
         fuel_limit: u64,
     ) -> Result<(Vec<u8>, Option<u64>), TypesError> {
-        let def = self.tools.get(tool_id).ok_or_else(|| TypesError::ToolExecutionError {
-            tool_id: tool_id.to_string(),
-            details: "Custom tool not found".to_string(),
+        let def = self.tools.get(tool_id).ok_or_else(|| {
+            TypesError::sandbox(
+                tool_id,
+                SandboxErrorKind::ToolLoadFailed,
+                "Custom tool not found",
+            )
         })?;
 
         // 1. JSON Schema 校验
-        let args_value: Value =
-            serde_json::from_slice(&args).map_err(|e| TypesError::ToolExecutionError {
-                tool_id: tool_id.to_string(),
-                details: format!("Invalid JSON args: {e}"),
-            })?;
+        let args_value: Value = serde_json::from_slice(&args).map_err(|e| {
+            TypesError::sandbox(
+                tool_id,
+                SandboxErrorKind::Unknown,
+                format!("Invalid JSON args: {e}"),
+            )
+        })?;
 
         if let Err(e) = SchemaValidator::validate(&def.schema, &args_value) {
-            return Err(TypesError::ToolExecutionError {
-                tool_id: tool_id.to_string(),
-                details: format!("Argument validation failed: {e}"),
-            });
+            return Err(TypesError::sandbox(
+                tool_id,
+                SandboxErrorKind::Unknown,
+                format!("Argument validation failed: {e}"),
+            ));
         }
 
         // 2. WASM 模块准备
         let module = self.get_or_compile_module(tool_id).await.map_err(|e| {
-            TypesError::ToolExecutionError {
-                tool_id: tool_id.to_string(),
-                details: e.to_string(),
-            }
+            TypesError::sandbox(tool_id, SandboxErrorKind::ToolLoadFailed, e.to_string())
         })?;
 
         let linker = Linker::new(&self.engine);
         let mut store = Store::new(&self.engine, ());
-        store.set_fuel(fuel_limit).map_err(|e| TypesError::ToolExecutionError {
-            tool_id: tool_id.to_string(),
-            details: format!("Fuel error: {e}"),
+        store.set_fuel(fuel_limit).map_err(|e| {
+            TypesError::sandbox(
+                tool_id,
+                SandboxErrorKind::SandboxUnavailable,
+                format!("Fuel error: {e}"),
+            )
         })?;
 
         let instance = linker.instantiate(&mut store, &module).map_err(|e| {
-            TypesError::ToolExecutionError {
-                tool_id: tool_id.to_string(),
-                details: format!("Instantiation error: {e}"),
-            }
+            TypesError::sandbox(
+                tool_id,
+                SandboxErrorKind::ToolLoadFailed,
+                format!("Instantiation error: {e}"),
+            )
         })?;
 
         let execute_func = instance.get_func(&mut store, "execute").ok_or_else(|| {
-            TypesError::ToolExecutionError {
-                tool_id: tool_id.to_string(),
-                details: "WASM module missing 'execute' export".to_string(),
-            }
+            TypesError::sandbox(
+                tool_id,
+                SandboxErrorKind::MissingExport,
+                "WASM module missing 'execute' export".to_string(),
+            )
         })?;
 
         // 3. 写入参数到 WASM 内存
-        let args_json =
-            serde_json::to_string(&args_value).map_err(|e| TypesError::ToolExecutionError {
-                tool_id: tool_id.to_string(),
-                details: format!("Failed to serialize WASM args: {e}"),
-            })?;
+        let args_json = serde_json::to_string(&args_value).map_err(|e| {
+            TypesError::sandbox(
+                tool_id,
+                SandboxErrorKind::Unknown,
+                format!("Failed to serialize WASM args: {e}"),
+            )
+        })?;
         let args_bytes = args_json.as_bytes();
 
         let memory = instance.get_memory(&mut store, "memory").ok_or_else(|| {
-            TypesError::ToolExecutionError {
-                tool_id: tool_id.to_string(),
-                details: "WASM module missing 'memory' export".to_string(),
-            }
+            TypesError::sandbox(
+                tool_id,
+                SandboxErrorKind::MissingExport,
+                "WASM module missing 'memory' export".to_string(),
+            )
         })?;
 
         // 尝试调用 alloc 函数以获取安全的内存地址
@@ -240,32 +251,43 @@ impl CustomToolExecutor {
                     &[Val::I32(args_bytes.len() as i32)],
                     &mut alloc_results,
                 )
-                .map_err(|e| TypesError::ToolExecutionError {
-                    tool_id: tool_id.to_string(),
-                    details: format!("WASM alloc failed: {e}"),
+                .map_err(|e| {
+                    TypesError::sandbox(
+                        tool_id,
+                        SandboxErrorKind::ToolLoadFailed,
+                        format!("WASM alloc failed: {e}"),
+                    )
                 })?;
             alloc_results[0].unwrap_i32() as usize
         } else {
-            return Err(TypesError::ToolExecutionError {
-                tool_id: tool_id.to_string(),
-                details: "WASM module missing required 'alloc' export. Tools must export 'alloc(size: i32) -> i32' to safely receive arguments.".to_string(),
-            });
+            return Err(TypesError::sandbox(tool_id, SandboxErrorKind::MissingExport, "WASM module missing required 'alloc' export. Tools must export 'alloc(size: i32) -> i32' to safely receive arguments.".to_string()));
         };
 
-        memory.write(&mut store, arg_ptr, args_bytes).map_err(|e| {
-            TypesError::ToolExecutionError {
-                tool_id: tool_id.to_string(),
-                details: format!("Failed to write args to WASM memory at {}: {e}", arg_ptr),
-            }
+        // NUL-terminate. `execute` receives only a pointer and no length, so a
+        // guest that reads its argument as a C string has no way to know where
+        // the JSON ends. The host-write path in `lib.rs` already appends the
+        // terminator; this path did not, which made the two ABIs disagree on a
+        // detail the guest cannot discover.
+        let mut buf = Vec::with_capacity(args_bytes.len() + 1);
+        buf.extend_from_slice(args_bytes);
+        buf.push(0);
+
+        memory.write(&mut store, arg_ptr, &buf).map_err(|e| {
+            TypesError::sandbox(
+                tool_id,
+                SandboxErrorKind::SandboxUnavailable,
+                format!("Failed to write args to WASM memory at {}: {e}", arg_ptr),
+            )
         })?;
 
         // 4. 执行与读取结果
         let mut results = vec![Val::I32(0)];
         execute_func.call(&mut store, &[Val::I32(arg_ptr as i32)], &mut results).map_err(|e| {
-            TypesError::ToolExecutionError {
-                tool_id: tool_id.to_string(),
-                details: format!("WASM execution error: {e}"),
-            }
+            TypesError::sandbox(
+                tool_id,
+                SandboxErrorKind::GuestTrap,
+                format!("WASM execution error: {e}"),
+            )
         })?;
         let fuel_consumed = fuel_limit.saturating_sub(store.get_fuel().unwrap_or(0));
 
@@ -279,10 +301,11 @@ impl CustomToolExecutor {
                 .unwrap_or(data.len());
             Ok((data[result_ptr..end].to_vec(), Some(fuel_consumed)))
         } else {
-            Err(TypesError::ToolExecutionError {
-                tool_id: tool_id.to_string(),
-                details: "WASM returned invalid memory pointer".to_string(),
-            })
+            Err(TypesError::sandbox(
+                tool_id,
+                SandboxErrorKind::GuestTrap,
+                "WASM returned invalid memory pointer".to_string(),
+            ))
         }
     }
 }
@@ -332,7 +355,7 @@ impl ToolExecutor for CustomToolExecutor {
 
 #[cfg(test)]
 mod fuzz_tests {
-    use super::SchemaValidator;
+    use super::{CustomToolExecutor, SchemaValidator};
     use proptest::prelude::*;
     use serde_json::Value;
 
@@ -355,6 +378,123 @@ mod fuzz_tests {
             Just(serde_json::json!({"type": "number"})),
             Just(serde_json::json!({"type": "boolean"})),
         ]
+    }
+
+    // ── ABI 说明 ────────────────────────────────────────────────────
+    //
+    // 本执行器用 `alloc` ABI：宿主调 `alloc(size)` 拿指针，把 JSON 参数写在
+    // 该指针处，再调 `execute(ptr)`。`lib.rs` 里的 `WasmToolExecutor` 用的是另一
+    // 套：宿主直接把参数追加到线性内存末尾并回传偏移，不要求 `alloc`。
+    //
+    // 两者都合法，但**不通用**——`tools/echo_args.wat`（宿主写）与
+    // `tools/echo_alloc.wat`（`alloc`）各只适配一条。缺 `alloc` 时本执行器明确
+    // 报 `MissingExport`，不会静默按空参数执行。
+    //
+    // 两条路径都必须以 NUL 结尾：`execute` 只收指针、不收长度，guest 唯一的
+    // 找边界方式就是那个终止符。
+
+    /// 端到端覆盖 `alloc` ABI：alloc → 写参数 → execute → 读回。
+    ///
+    /// 这条 ABI 此前完全没有执行测试（文件里的 9 个用例全是 `SchemaValidator`
+    /// 的 proptest），于是「宿主写了参数、guest 真的收到了吗」从未被验证过。
+    /// `echo_alloc.wasm` 把 `execute` 收到的指针原样返回，所以宿主读回的字节
+    /// 必须正好等于它写进去的 JSON——alloc、写、执行、读回任一环节出错都会
+    /// 表现为内容不符，而不会被 guest 掩盖。
+    #[tokio::test]
+    async fn alloc_abi_round_trips_arguments() {
+        let wasm =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tools/echo_alloc.wasm");
+        assert!(wasm.exists(), "fixture missing: {}", wasm.display());
+
+        let def = sisyphus_types::CustomToolDefinition {
+            name: "echo_alloc".into(),
+            description: "ABI fixture".into(),
+            handler: wasm,
+            schema: serde_json::json!({}),
+            fuel_limit: 1_000_000,
+        };
+        let ex = CustomToolExecutor::new(vec![def]).expect("executor builds");
+
+        let args = br#"{"alpha":1,"beta":"two","gamma":[3,4]}"#.to_vec();
+        let (out, _fuel) = ex
+            .execute_internal("echo_alloc", args.clone(), 1_000_000)
+            .await
+            .expect("custom ABI execution must succeed");
+
+        let got: serde_json::Value =
+            serde_json::from_slice(&out).expect("guest must return the arguments as valid JSON");
+        let want: serde_json::Value = serde_json::from_slice(&args).unwrap();
+        assert_eq!(
+            got,
+            want,
+            "guest must receive exactly what the host wrote; got {} bytes",
+            out.len()
+        );
+    }
+
+    /// 参数必须以 NUL 结尾。`execute` 只拿到指针、拿不到长度，guest 唯一能
+    /// 找到参数结尾的办法就是那个终止符——宿主不写，C 风格的 guest 就会读过界。
+    #[tokio::test]
+    async fn alloc_abi_nul_terminates_the_argument() {
+        let wasm =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tools/echo_alloc.wasm");
+        let def = sisyphus_types::CustomToolDefinition {
+            name: "echo_alloc".into(),
+            description: "ABI fixture".into(),
+            handler: wasm,
+            schema: serde_json::json!({}),
+            fuel_limit: 1_000_000,
+        };
+        let ex = CustomToolExecutor::new(vec![def]).expect("executor builds");
+
+        let args = br#"{"k":"v"}"#.to_vec();
+        let expected_len = args.len();
+        let (out, _fuel) = ex
+            .execute_internal("echo_alloc", args, 1_000_000)
+            .await
+            .expect("custom ABI execution must succeed");
+
+        // 宿主读回时在第一个 NUL 处截断。fixture 的 `alloc` 在参数之后填了
+        // 0xAA，所以这里能真正观测到终止符：若宿主没写 NUL，读回会越过参数
+        // 继续吃掉 0xAA，长度就会超过 expected_len。全新线性内存是填零的，
+        // 没有这层毒化就观测不到差别。
+        assert_eq!(
+            out.len(),
+            expected_len,
+            "read-back must stop at the NUL right after the argument; got {} bytes of which the tail is not 0xAA",
+            out.len()
+        );
+    }
+
+    /// 缺 `alloc` 导出必须明确报错，而不是静默丢参数。
+    ///
+    /// `echo_args.wasm` 用的是另一套 ABI（宿主直接追加写入），它没有 `alloc`；
+    /// 把它塞进这条路径，正确行为是拒绝并说明缺什么。
+    #[tokio::test]
+    async fn missing_alloc_export_is_reported_not_silently_empty() {
+        let wasm =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tools/echo_args.wasm");
+        if !wasm.exists() {
+            return; // 该 fixture 属于另一条 ABI，缺失时跳过
+        }
+        let def = sisyphus_types::CustomToolDefinition {
+            name: "no_alloc".into(),
+            description: "wrong ABI".into(),
+            handler: wasm,
+            schema: serde_json::json!({}),
+            fuel_limit: 1_000_000,
+        };
+        let ex = CustomToolExecutor::new(vec![def]).expect("executor builds");
+
+        let err = ex
+            .execute_internal("no_alloc", br#"{"a":1}"#.to_vec(), 1_000_000)
+            .await
+            .expect_err("a guest with no alloc export must be rejected");
+        assert_eq!(
+            err.sandbox_kind(),
+            Some(sisyphus_types::SandboxErrorKind::MissingExport),
+            "missing alloc must be MissingExport, got {err:?}"
+        );
     }
 
     proptest! {

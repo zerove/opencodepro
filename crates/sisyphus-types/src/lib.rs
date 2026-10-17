@@ -12,17 +12,25 @@
 // `Pin<Box<dyn Future>>` 也被视为 must_use，新版 nightly clippy
 // 会对此误报 `double_must_use`。此处按 clippy 建议统一放行。
 #![allow(clippy::double_must_use)]
+pub mod agent_channel;
 pub mod asset;
+pub mod benchmark;
 pub mod env_guard;
 pub mod errors;
 pub mod experience;
+pub mod expert;
+pub mod http_stats;
 pub mod roadmap;
 pub mod sandbox_error;
+pub mod tool_error;
 pub mod tools;
 
+pub mod circuit_breaker;
 pub mod config;
 pub mod execution;
 pub mod graph;
+pub mod llm_traits;
+pub mod meta_learner;
 pub mod node;
 pub mod skill;
 pub mod types;
@@ -57,13 +65,21 @@ pub trait GoldenDataset: Send + Sync {
     ) -> Result<bool, TypesError>;
 }
 
+pub use agent_channel::*;
+pub use benchmark::*;
+pub use circuit_breaker::*;
 pub use config::*;
 pub use errors::*;
 pub use execution::*;
+pub use expert::*;
 pub use graph::*;
+pub use http_stats::*;
+pub use llm_traits::*;
+pub use meta_learner::*;
 pub use node::*;
 pub use roadmap::*;
 pub use sandbox_error::*;
+pub use tool_error::*;
 pub use types::*;
 
 // ── Cognitive Map Types ────────────────────────────────────

@@ -16,14 +16,16 @@ impl SisyphusKernel {
         _vector_store: Arc<sisyphus_mem::VectorMemoryStore>,
         experience_bank: Arc<dyn sisyphus_types::experience::ExperienceBank>,
         tool_executor: Arc<dyn ToolExecutor>,
+        test_executor: Arc<dyn sisyphus_types::TestExecutor>,
         intel: Arc<SisyphusIntel>,
-        llm_client: Arc<dyn sisyphus_tools_llm::LlmClient>,
-        fast_llm_client: Arc<dyn sisyphus_tools_llm::LlmClient>,
+        llm_client: Arc<dyn sisyphus_types::LlmClient>,
+        fast_llm_client: Arc<dyn sisyphus_types::LlmClient>,
+        expert_reviewer: Arc<dyn sisyphus_types::ExpertReviewer>,
         synthesizer: Arc<dyn sisyphus_intel::FlowSynthesizer>,
         meta_learner: Arc<parking_lot::Mutex<MetaLearner>>,
         consensus: Arc<dyn Consensus>,
         sql_store: Arc<sisyphus_mem::RoadmapSqlStore>,
-        _embedding_client: Arc<dyn sisyphus_tools_llm::EmbeddingClient>,
+        _embedding_client: Arc<dyn sisyphus_types::EmbeddingClient>,
     ) -> Self {
         let pm = Arc::new(sisyphus_roadmap::proposal_manager::ProposalManager::new(
             state_store.clone(),
@@ -33,9 +35,6 @@ impl SisyphusKernel {
             sql_store,
             pm.clone(),
         ));
-
-        let test_executor =
-            Arc::new(sisyphus_tools_executor::executor::test_cmds::TestExecutor::new());
 
         // A4 同类断层修复：此前此处用默认参数重建 LlmLogicalSimulator，
         // 架空了调用方（bridge）注入的配置超时实例；改为与其他组件
@@ -49,6 +48,7 @@ impl SisyphusKernel {
             )),
             synthesizer,
             llm_client.clone(),
+            expert_reviewer,
         ));
 
         let knowledge_manager = Arc::new(sisyphus_knowledge::AssetManager::new(
@@ -97,6 +97,7 @@ impl SisyphusKernel {
             intervention_manager.clone(),
             internalization_manager.clone(),
             Some(visual_manager.clone()),
+            test_executor.clone(),
         ));
 
         let swarm_coordinator = Arc::new(SwarmCoordinator::new(
@@ -148,11 +149,7 @@ impl SisyphusKernel {
     }
 
     /// 附加 StrategicReflector 用于 LLM 增强的路线图分析。
-    pub fn with_strategic_reflector(
-        mut self,
-
-        llm: Arc<dyn sisyphus_tools_llm::metis::LlmClient>,
-    ) -> Self {
+    pub fn with_strategic_reflector(mut self, llm: Arc<dyn sisyphus_types::LlmClient>) -> Self {
         self.strategic_reflector = Some(Arc::new(
             sisyphus_roadmap::strategic_reflection::StrategicReflector::new(llm),
         ));
@@ -161,11 +158,7 @@ impl SisyphusKernel {
     }
 
     /// 附加 MilestoneGenerator 用于 LLM 驱动的路线图创建。
-    pub fn with_milestone_generator(
-        mut self,
-
-        llm: Arc<dyn sisyphus_tools_llm::metis::LlmClient>,
-    ) -> Self {
+    pub fn with_milestone_generator(mut self, llm: Arc<dyn sisyphus_types::LlmClient>) -> Self {
         self.milestone_generator = Some(Arc::new(
             sisyphus_roadmap::milestone_generator::MilestoneGenerator::new(llm),
         ));
@@ -190,6 +183,7 @@ impl SisyphusKernel {
     pub async fn init_mcp_executors(
         &self,
         config: &sisyphus_types::config::McpConfig,
+        factory: &dyn sisyphus_types::McpExecutorFactory,
     ) -> Result<(), CoreError> {
         for (prefix, cmd_str) in &config.stdio_servers {
             let parts: Vec<&str> = cmd_str.split_whitespace().collect();
@@ -204,11 +198,10 @@ impl SisyphusKernel {
 
             let args = &parts[1..];
 
-            match sisyphus_tools_executor::executor_mcp::MCPToolExecutor::from_stdio(command, args)
-                .await
-            {
+            let owned_args: Vec<String> = args.iter().map(|a| a.to_string()).collect();
+            match factory.connect_stdio(command.to_string(), owned_args).await {
                 Ok(executor) => {
-                    self.register_tool_executor(prefix, Arc::new(executor))?;
+                    self.register_tool_executor(prefix, executor)?;
 
                     tracing::info!(prefix = %prefix, "Registered MCP stdio executor");
                 },
@@ -220,9 +213,9 @@ impl SisyphusKernel {
         }
 
         for (prefix, url) in &config.http_servers {
-            match sisyphus_tools_executor::executor_mcp::MCPToolExecutor::from_url(url).await {
+            match factory.connect_url(url.clone()).await {
                 Ok(executor) => {
-                    self.register_tool_executor(prefix, Arc::new(executor))?;
+                    self.register_tool_executor(prefix, executor)?;
 
                     tracing::info!(prefix = %prefix, "Registered MCP HTTP executor");
                 },

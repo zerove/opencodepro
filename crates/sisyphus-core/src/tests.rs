@@ -158,7 +158,7 @@ impl sisyphus_types::experience::ExperienceBank for MockExperienceBank {
 
 /// 使用 mock 依赖构建测试用 `Executor`。
 fn build_executor() -> Executor {
-    let llm: Arc<dyn sisyphus_tools_llm::LlmClient> = Arc::new(sisyphus_tools_llm::DummyLlmClient);
+    let llm: Arc<dyn sisyphus_types::LlmClient> = Arc::new(sisyphus_tools_llm::DummyLlmClient);
     let knowledge = Arc::new(sisyphus_knowledge::AssetManager::new(
         std::path::PathBuf::from(".omo/test_knowledge"),
     ));
@@ -585,7 +585,7 @@ async fn build_test_kernel() -> SisyphusKernel {
         sisyphus_intel::GoalDrivenSynthesizer::new(tool_executor.clone()),
     );
 
-    let llm: Arc<dyn sisyphus_tools_llm::LlmClient> = Arc::new(sisyphus_tools_llm::DummyLlmClient);
+    let llm: Arc<dyn sisyphus_types::LlmClient> = Arc::new(sisyphus_tools_llm::DummyLlmClient);
 
     SisyphusKernel::new(
         state_store,
@@ -593,13 +593,15 @@ async fn build_test_kernel() -> SisyphusKernel {
         Arc::new(sisyphus_mem::VectorMemoryStore::new(pool.clone()).await.expect("vector store")),
         Arc::new(MockExperienceBank),
         tool_executor,
+        Arc::new(sisyphus_tools_executor::executor::test_cmds::TestExecutor::new()),
         intel,
         llm.clone(),
         llm,
+        Arc::new(sisyphus_tools_llm_tools::expert_reviewer::DefaultExpertReviewer),
         synthesizer,
-        Arc::new(parking_lot::Mutex::new(
-            sisyphus_tools_llm_tools::meta_learner::MetaLearner::new(".omo/test_meta"),
-        )),
+        Arc::new(parking_lot::Mutex::new(sisyphus_types::MetaLearner::new(
+            ".omo/test_meta",
+        ))),
         Arc::new(MockConsensus),
         Arc::new({
             let store =
@@ -781,7 +783,7 @@ struct SlowLlmClient {
 }
 
 #[async_trait::async_trait]
-impl sisyphus_tools_llm::LlmClient for SlowLlmClient {
+impl sisyphus_types::LlmClient for SlowLlmClient {
     async fn chat(
         &self,
         _system: &str,
@@ -803,8 +805,8 @@ impl sisyphus_tools_llm::LlmClient for SlowLlmClient {
         ("m".into(), "http://localhost".into(), "k".into())
     }
 
-    fn breaker(&self) -> sisyphus_tools_llm::circuit_breaker::CircuitBreaker {
-        sisyphus_tools_llm::circuit_breaker::CircuitBreaker::default()
+    fn breaker(&self) -> sisyphus_types::CircuitBreaker {
+        sisyphus_types::CircuitBreaker::default()
     }
 }
 
@@ -846,7 +848,7 @@ impl sisyphus_intel::Simulator for CritiqueStubSimulator {
     }
 }
 
-async fn critique_manager(llm: Arc<dyn sisyphus_tools_llm::LlmClient>) -> IntelligenceManager {
+async fn critique_manager(llm: Arc<dyn sisyphus_types::LlmClient>) -> IntelligenceManager {
     // 其余三个组件用空 trait 对象占位，仅满足类型约束。
     struct NopLogical;
     #[async_trait::async_trait]
@@ -896,7 +898,12 @@ async fn critique_manager(llm: Arc<dyn sisyphus_tools_llm::LlmClient>) -> Intell
     let synthesizer: Arc<dyn sisyphus_intel::FlowSynthesizer> = Arc::new(
         sisyphus_intel::GoalDrivenSynthesizer::new(Arc::new(MockToolExecutor)),
     );
-    IntelligenceManager::new(intel, synthesizer, llm)
+    IntelligenceManager::new(
+        intel,
+        synthesizer,
+        llm,
+        Arc::new(sisyphus_tools_llm_tools::expert_reviewer::DefaultExpertReviewer),
+    )
 }
 
 #[tokio::test]
@@ -939,7 +946,7 @@ async fn test_critique_zero_timeout_disables_stage() {
     let called = Arc::new(std::sync::atomic::AtomicBool::new(false));
     struct ProbeLlm(Arc<std::sync::atomic::AtomicBool>);
     #[async_trait::async_trait]
-    impl sisyphus_tools_llm::LlmClient for ProbeLlm {
+    impl sisyphus_types::LlmClient for ProbeLlm {
         async fn chat(
             &self,
             _: &str,
@@ -955,12 +962,12 @@ async fn test_critique_zero_timeout_disables_stage() {
         fn get_params_for(&self, _: &str) -> (String, String, String) {
             ("m".into(), "e".into(), "k".into())
         }
-        fn breaker(&self) -> sisyphus_tools_llm::circuit_breaker::CircuitBreaker {
-            sisyphus_tools_llm::circuit_breaker::CircuitBreaker::default()
+        fn breaker(&self) -> sisyphus_types::CircuitBreaker {
+            sisyphus_types::CircuitBreaker::default()
         }
     }
     let probe = Arc::new(ProbeLlm(called.clone()));
-    let mgr = critique_manager(probe as Arc<dyn sisyphus_tools_llm::LlmClient>).await;
+    let mgr = critique_manager(probe as Arc<dyn sisyphus_types::LlmClient>).await;
     let (report, prediction) = critique_fixture();
     let start = std::time::Instant::now();
     let result = mgr.critique_reflection(&report, &prediction, 0).await.unwrap();
@@ -1088,7 +1095,7 @@ async fn test_cognitive_loop_receives_goal_text_not_project_id() {
         sisyphus_intel::GoalDrivenSynthesizer::new(tool_executor.clone()),
     );
 
-    let llm: Arc<dyn sisyphus_tools_llm::LlmClient> = Arc::new(sisyphus_tools_llm::DummyLlmClient);
+    let llm: Arc<dyn sisyphus_types::LlmClient> = Arc::new(sisyphus_tools_llm::DummyLlmClient);
 
     let kernel = SisyphusKernel::new(
         state_store,
@@ -1096,13 +1103,15 @@ async fn test_cognitive_loop_receives_goal_text_not_project_id() {
         Arc::new(sisyphus_mem::VectorMemoryStore::new(pool.clone()).await.expect("vector store")),
         recorder.clone(),
         tool_executor,
+        Arc::new(sisyphus_tools_executor::executor::test_cmds::TestExecutor::new()),
         intel,
         llm.clone(),
         llm,
+        Arc::new(sisyphus_tools_llm_tools::expert_reviewer::DefaultExpertReviewer),
         synthesizer,
-        Arc::new(parking_lot::Mutex::new(
-            sisyphus_tools_llm_tools::meta_learner::MetaLearner::new(".omo/test_meta"),
-        )),
+        Arc::new(parking_lot::Mutex::new(sisyphus_types::MetaLearner::new(
+            ".omo/test_meta",
+        ))),
         Arc::new(MockConsensus),
         Arc::new({
             let store =
@@ -1260,7 +1269,7 @@ impl sisyphus_intel::simulation::LogicalSimulator for CriticalFlawSimulator {
 struct ScriptedLlmClient;
 
 #[async_trait::async_trait]
-impl sisyphus_tools_llm::LlmClient for ScriptedLlmClient {
+impl sisyphus_types::LlmClient for ScriptedLlmClient {
     async fn generate(&self, _prompt: &str) -> Result<String, sisyphus_types::TypesError> {
         Ok(r#"{"critical_findings": [], "risk_score": 0.1, "suggested_refinement": "none", "should_proceed": true}"#.into())
     }
@@ -1298,8 +1307,8 @@ impl sisyphus_tools_llm::LlmClient for ScriptedLlmClient {
         )
     }
 
-    fn breaker(&self) -> sisyphus_tools_llm::circuit_breaker::CircuitBreaker {
-        sisyphus_tools_llm::circuit_breaker::CircuitBreaker::default()
+    fn breaker(&self) -> sisyphus_types::CircuitBreaker {
+        sisyphus_types::CircuitBreaker::default()
     }
 }
 
@@ -1325,7 +1334,7 @@ async fn test_execute_goal_blocks_when_critical_flaws_persist() {
         sisyphus_intel::GoalDrivenSynthesizer::new(tool_executor.clone()),
     );
 
-    let llm: Arc<dyn sisyphus_tools_llm::LlmClient> = Arc::new(ScriptedLlmClient);
+    let llm: Arc<dyn sisyphus_types::LlmClient> = Arc::new(ScriptedLlmClient);
 
     let kernel = SisyphusKernel::new(
         state_store,
@@ -1333,13 +1342,15 @@ async fn test_execute_goal_blocks_when_critical_flaws_persist() {
         Arc::new(sisyphus_mem::VectorMemoryStore::new(pool.clone()).await.expect("vector store")),
         Arc::new(MockExperienceBank),
         tool_executor.clone(),
+        Arc::new(sisyphus_tools_executor::executor::test_cmds::TestExecutor::new()),
         intel,
         llm.clone(),
         llm,
+        Arc::new(sisyphus_tools_llm_tools::expert_reviewer::DefaultExpertReviewer),
         synthesizer,
-        Arc::new(parking_lot::Mutex::new(
-            sisyphus_tools_llm_tools::meta_learner::MetaLearner::new(".omo/test_meta"),
-        )),
+        Arc::new(parking_lot::Mutex::new(sisyphus_types::MetaLearner::new(
+            ".omo/test_meta",
+        ))),
         Arc::new(MockConsensus),
         Arc::new({
             let store =
@@ -1397,7 +1408,7 @@ async fn test_execute_goal_streaming_blocks_when_critical_flaws_persist() {
         sisyphus_intel::GoalDrivenSynthesizer::new(tool_executor.clone()),
     );
 
-    let llm: Arc<dyn sisyphus_tools_llm::LlmClient> = Arc::new(ScriptedLlmClient);
+    let llm: Arc<dyn sisyphus_types::LlmClient> = Arc::new(ScriptedLlmClient);
 
     let kernel = SisyphusKernel::new(
         state_store,
@@ -1405,13 +1416,15 @@ async fn test_execute_goal_streaming_blocks_when_critical_flaws_persist() {
         Arc::new(sisyphus_mem::VectorMemoryStore::new(pool.clone()).await.expect("vector store")),
         Arc::new(MockExperienceBank),
         tool_executor.clone(),
+        Arc::new(sisyphus_tools_executor::executor::test_cmds::TestExecutor::new()),
         intel,
         llm.clone(),
         llm,
+        Arc::new(sisyphus_tools_llm_tools::expert_reviewer::DefaultExpertReviewer),
         synthesizer,
-        Arc::new(parking_lot::Mutex::new(
-            sisyphus_tools_llm_tools::meta_learner::MetaLearner::new(".omo/test_meta"),
-        )),
+        Arc::new(parking_lot::Mutex::new(sisyphus_types::MetaLearner::new(
+            ".omo/test_meta",
+        ))),
         Arc::new(MockConsensus),
         Arc::new({
             let store =
@@ -1464,7 +1477,7 @@ async fn build_recording_kernel(
         sisyphus_intel::GoalDrivenSynthesizer::new(tool_executor.clone()),
     );
 
-    let llm: Arc<dyn sisyphus_tools_llm::LlmClient> = Arc::new(ScriptedLlmClient);
+    let llm: Arc<dyn sisyphus_types::LlmClient> = Arc::new(ScriptedLlmClient);
 
     SisyphusKernel::new(
         state_store,
@@ -1472,13 +1485,15 @@ async fn build_recording_kernel(
         Arc::new(sisyphus_mem::VectorMemoryStore::new(pool.clone()).await.expect("vector store")),
         recorder,
         tool_executor,
+        Arc::new(sisyphus_tools_executor::executor::test_cmds::TestExecutor::new()),
         intel,
         llm.clone(),
         llm,
+        Arc::new(sisyphus_tools_llm_tools::expert_reviewer::DefaultExpertReviewer),
         synthesizer,
-        Arc::new(parking_lot::Mutex::new(
-            sisyphus_tools_llm_tools::meta_learner::MetaLearner::new(".omo/test_meta"),
-        )),
+        Arc::new(parking_lot::Mutex::new(sisyphus_types::MetaLearner::new(
+            ".omo/test_meta",
+        ))),
         Arc::new(MockConsensus),
         Arc::new({
             let store =
@@ -1921,12 +1936,17 @@ async fn setup_manager(probs: Vec<f64>) -> StrategicManager {
         Arc::new(MockEvolver),
     ));
 
-    let llm: Arc<dyn sisyphus_tools_llm::LlmClient> = Arc::new(sisyphus_tools_llm::DummyLlmClient);
+    let llm: Arc<dyn sisyphus_types::LlmClient> = Arc::new(sisyphus_tools_llm::DummyLlmClient);
     let synthesizer: Arc<dyn sisyphus_intel::FlowSynthesizer> = Arc::new(
         sisyphus_intel::GoalDrivenSynthesizer::new(Arc::new(MockToolExecutor)),
     );
 
-    let intelligence_manager = Arc::new(IntelligenceManager::new(intel, synthesizer, llm.clone()));
+    let intelligence_manager = Arc::new(IntelligenceManager::new(
+        intel,
+        synthesizer,
+        llm.clone(),
+        Arc::new(sisyphus_tools_llm_tools::expert_reviewer::DefaultExpertReviewer),
+    ));
 
     let state_store = Arc::new(
         sisyphus_mem::MfsStore::new("sqlite::memory:", &sisyphus_types::CacheConfig::default())
@@ -1964,11 +1984,11 @@ async fn setup_manager(probs: Vec<f64>) -> StrategicManager {
     };
 
     let benchmark = Arc::new(parking_lot::Mutex::new(
-        sisyphus_tools_build::benchmark::ContinuousBenchmark::new(".omo/test_bench"),
+        sisyphus_types::ContinuousBenchmark::new(".omo/test_bench"),
     ));
-    let meta_learner = Arc::new(parking_lot::Mutex::new(
-        sisyphus_tools_llm_tools::meta_learner::MetaLearner::new(".omo/test_meta"),
-    ));
+    let meta_learner = Arc::new(parking_lot::Mutex::new(sisyphus_types::MetaLearner::new(
+        ".omo/test_meta",
+    )));
     let roadmap = Arc::new(sisyphus_roadmap::RoadmapManager::new(
         state_store.clone(),
         Arc::new({
@@ -1995,6 +2015,7 @@ async fn setup_manager(probs: Vec<f64>) -> StrategicManager {
         intervention,
         internalization,
         None,
+        Arc::new(sisyphus_tools_executor::executor::test_cmds::TestExecutor::new()),
     )
 }
 
@@ -2043,12 +2064,17 @@ async fn setup_manager_with_reflector(deviation: f64) -> StrategicManager {
         Arc::new(MockEvolver),
     ));
 
-    let llm: Arc<dyn sisyphus_tools_llm::LlmClient> = Arc::new(sisyphus_tools_llm::DummyLlmClient);
+    let llm: Arc<dyn sisyphus_types::LlmClient> = Arc::new(sisyphus_tools_llm::DummyLlmClient);
     let synthesizer: Arc<dyn sisyphus_intel::FlowSynthesizer> = Arc::new(
         sisyphus_intel::GoalDrivenSynthesizer::new(Arc::new(MockToolExecutor)),
     );
 
-    let intelligence_manager = Arc::new(IntelligenceManager::new(intel, synthesizer, llm.clone()));
+    let intelligence_manager = Arc::new(IntelligenceManager::new(
+        intel,
+        synthesizer,
+        llm.clone(),
+        Arc::new(sisyphus_tools_llm_tools::expert_reviewer::DefaultExpertReviewer),
+    ));
 
     let state_store = Arc::new(
         sisyphus_mem::MfsStore::new("sqlite::memory:", &sisyphus_types::CacheConfig::default())
@@ -2086,11 +2112,11 @@ async fn setup_manager_with_reflector(deviation: f64) -> StrategicManager {
     };
 
     let benchmark = Arc::new(parking_lot::Mutex::new(
-        sisyphus_tools_build::benchmark::ContinuousBenchmark::new(".omo/test_bench_pivot"),
+        sisyphus_types::ContinuousBenchmark::new(".omo/test_bench_pivot"),
     ));
-    let meta_learner = Arc::new(parking_lot::Mutex::new(
-        sisyphus_tools_llm_tools::meta_learner::MetaLearner::new(".omo/test_meta_pivot"),
-    ));
+    let meta_learner = Arc::new(parking_lot::Mutex::new(sisyphus_types::MetaLearner::new(
+        ".omo/test_meta_pivot",
+    )));
     let roadmap = Arc::new(sisyphus_roadmap::RoadmapManager::new(
         state_store.clone(),
         Arc::new({
@@ -2117,6 +2143,7 @@ async fn setup_manager_with_reflector(deviation: f64) -> StrategicManager {
         intervention,
         internalization,
         None,
+        Arc::new(sisyphus_tools_executor::executor::test_cmds::TestExecutor::new()),
     )
 }
 
@@ -2244,12 +2271,17 @@ async fn setup_manager_with_real_reflector(knowledge_dir: &str) -> StrategicMana
         Arc::new(MockEvolver),
     ));
 
-    let llm: Arc<dyn sisyphus_tools_llm::LlmClient> = Arc::new(sisyphus_tools_llm::DummyLlmClient);
+    let llm: Arc<dyn sisyphus_types::LlmClient> = Arc::new(sisyphus_tools_llm::DummyLlmClient);
     let synthesizer: Arc<dyn sisyphus_intel::FlowSynthesizer> = Arc::new(
         sisyphus_intel::GoalDrivenSynthesizer::new(Arc::new(MockToolExecutor)),
     );
 
-    let intelligence_manager = Arc::new(IntelligenceManager::new(intel, synthesizer, llm.clone()));
+    let intelligence_manager = Arc::new(IntelligenceManager::new(
+        intel,
+        synthesizer,
+        llm.clone(),
+        Arc::new(sisyphus_tools_llm_tools::expert_reviewer::DefaultExpertReviewer),
+    ));
 
     let state_store = Arc::new(
         sisyphus_mem::MfsStore::new("sqlite::memory:", &sisyphus_types::CacheConfig::default())
@@ -2287,11 +2319,11 @@ async fn setup_manager_with_real_reflector(knowledge_dir: &str) -> StrategicMana
     };
 
     let benchmark = Arc::new(parking_lot::Mutex::new(
-        sisyphus_tools_build::benchmark::ContinuousBenchmark::new(".omo/test_bench_real_refl"),
+        sisyphus_types::ContinuousBenchmark::new(".omo/test_bench_real_refl"),
     ));
-    let meta_learner = Arc::new(parking_lot::Mutex::new(
-        sisyphus_tools_llm_tools::meta_learner::MetaLearner::new(".omo/test_meta_real_refl"),
-    ));
+    let meta_learner = Arc::new(parking_lot::Mutex::new(sisyphus_types::MetaLearner::new(
+        ".omo/test_meta_real_refl",
+    )));
     let roadmap = Arc::new(sisyphus_roadmap::RoadmapManager::new(
         state_store.clone(),
         Arc::new({
@@ -2318,6 +2350,7 @@ async fn setup_manager_with_real_reflector(knowledge_dir: &str) -> StrategicMana
         intervention,
         internalization,
         None,
+        Arc::new(sisyphus_tools_executor::executor::test_cmds::TestExecutor::new()),
     )
 }
 
@@ -2546,12 +2579,17 @@ async fn setup_manager_with_seq_threshold(
         Arc::new(MockEvolver),
     ));
 
-    let llm: Arc<dyn sisyphus_tools_llm::LlmClient> = Arc::new(sisyphus_tools_llm::DummyLlmClient);
+    let llm: Arc<dyn sisyphus_types::LlmClient> = Arc::new(sisyphus_tools_llm::DummyLlmClient);
     let synthesizer: Arc<dyn sisyphus_intel::FlowSynthesizer> = Arc::new(
         sisyphus_intel::GoalDrivenSynthesizer::new(Arc::new(MockToolExecutor)),
     );
 
-    let intelligence_manager = Arc::new(IntelligenceManager::new(intel, synthesizer, llm.clone()));
+    let intelligence_manager = Arc::new(IntelligenceManager::new(
+        intel,
+        synthesizer,
+        llm.clone(),
+        Arc::new(sisyphus_tools_llm_tools::expert_reviewer::DefaultExpertReviewer),
+    ));
 
     let state_store = Arc::new(
         sisyphus_mem::MfsStore::new("sqlite::memory:", &sisyphus_types::CacheConfig::default())
@@ -2589,11 +2627,11 @@ async fn setup_manager_with_seq_threshold(
     };
 
     let benchmark = Arc::new(parking_lot::Mutex::new(
-        sisyphus_tools_build::benchmark::ContinuousBenchmark::new(".omo/test_bench_seq"),
+        sisyphus_types::ContinuousBenchmark::new(".omo/test_bench_seq"),
     ));
-    let meta_learner = Arc::new(parking_lot::Mutex::new(
-        sisyphus_tools_llm_tools::meta_learner::MetaLearner::new(".omo/test_meta_seq"),
-    ));
+    let meta_learner = Arc::new(parking_lot::Mutex::new(sisyphus_types::MetaLearner::new(
+        ".omo/test_meta_seq",
+    )));
     let roadmap = Arc::new(sisyphus_roadmap::RoadmapManager::new(
         state_store.clone(),
         Arc::new({
@@ -2620,6 +2658,7 @@ async fn setup_manager_with_seq_threshold(
         intervention,
         internalization,
         None,
+        Arc::new(sisyphus_tools_executor::executor::test_cmds::TestExecutor::new()),
     )
 }
 
@@ -2872,12 +2911,17 @@ async fn setup_manager_with_critical_flaw_reflector(deviation: f64) -> Strategic
         Arc::new(MockEvolver),
     ));
 
-    let llm: Arc<dyn sisyphus_tools_llm::LlmClient> = Arc::new(sisyphus_tools_llm::DummyLlmClient);
+    let llm: Arc<dyn sisyphus_types::LlmClient> = Arc::new(sisyphus_tools_llm::DummyLlmClient);
     let synthesizer: Arc<dyn sisyphus_intel::FlowSynthesizer> = Arc::new(
         sisyphus_intel::GoalDrivenSynthesizer::new(Arc::new(MockToolExecutor)),
     );
 
-    let intelligence_manager = Arc::new(IntelligenceManager::new(intel, synthesizer, llm.clone()));
+    let intelligence_manager = Arc::new(IntelligenceManager::new(
+        intel,
+        synthesizer,
+        llm.clone(),
+        Arc::new(sisyphus_tools_llm_tools::expert_reviewer::DefaultExpertReviewer),
+    ));
 
     let state_store = Arc::new(
         sisyphus_mem::MfsStore::new("sqlite::memory:", &sisyphus_types::CacheConfig::default())
@@ -2915,11 +2959,11 @@ async fn setup_manager_with_critical_flaw_reflector(deviation: f64) -> Strategic
     };
 
     let benchmark = Arc::new(parking_lot::Mutex::new(
-        sisyphus_tools_build::benchmark::ContinuousBenchmark::new(".omo/test_bench_flaw"),
+        sisyphus_types::ContinuousBenchmark::new(".omo/test_bench_flaw"),
     ));
-    let meta_learner = Arc::new(parking_lot::Mutex::new(
-        sisyphus_tools_llm_tools::meta_learner::MetaLearner::new(".omo/test_meta_flaw"),
-    ));
+    let meta_learner = Arc::new(parking_lot::Mutex::new(sisyphus_types::MetaLearner::new(
+        ".omo/test_meta_flaw",
+    )));
     let roadmap = Arc::new(sisyphus_roadmap::RoadmapManager::new(
         state_store.clone(),
         Arc::new({
@@ -2946,5 +2990,46 @@ async fn setup_manager_with_critical_flaw_reflector(deviation: f64) -> Strategic
         intervention,
         internalization,
         None,
+        Arc::new(sisyphus_tools_executor::executor::test_cmds::TestExecutor::new()),
     )
+}
+
+// ---------------------------------------------------------------------------
+// 配置接线回归：apply_cognitive_loop_config 不得自死锁
+// ---------------------------------------------------------------------------
+
+/// 回归测试：`apply_cognitive_loop_config` 曾把同一个 `parking_lot::Mutex`
+/// 在一条 `tracing::info!` 语句里连续锁三次（三个字段各一次）。Rust 会把
+/// 语句内的临时值保持到语句结束，因此三个 guard 同时存活，而
+/// `parking_lot::Mutex` 不可重入 —— 第二次 lock 永久阻塞。
+///
+/// 后果不是单元测试失败，而是 **bridge 启动即挂死**：该函数由
+/// `MySisyphusBridge::new` 在绑定 HTTP/gRPC 监听之前调用，所以两个端口
+/// 都不会 listen，进程静默卡住。
+#[test]
+fn apply_cognitive_loop_config_completes_without_deadlock() {
+    let (tx, rx) = std::sync::mpsc::channel();
+
+    std::thread::spawn(move || {
+        let subscriber = tracing_subscriber::fmt()
+            .with_max_level(tracing::Level::INFO)
+            .with_writer(std::io::sink)
+            .finish();
+        let _guard = tracing::subscriber::set_default(subscriber);
+
+        let rt = match tokio::runtime::Runtime::new() {
+            Ok(rt) => rt,
+            Err(_) => return,
+        };
+        rt.block_on(async {
+            let manager = setup_manager(vec![0.5]).await;
+            manager.apply_cognitive_loop_config(CognitiveLoopConfig::default());
+        });
+        let _ = tx.send(());
+    });
+
+    assert!(
+        rx.recv_timeout(std::time::Duration::from_secs(20)).is_ok(),
+        "apply_cognitive_loop_config deadlocked"
+    );
 }

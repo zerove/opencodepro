@@ -1,0 +1,22 @@
+{
+  "status": "ok",
+  "version": "0.1.0",
+  "components": {
+    "session_db": {
+      "status": "ok",
+      "path": "/tmp/sisyphus/sessions.db"
+    },
+    "shared_http": {
+      "status": "absent"
+    },
+    "kernel": {
+      "status": "ok"
+    },
+    "token_budget": {
+      "status": "ok",
+      "usage": 12,
+      "cap": 1000,
+      "exhausted": false
+    }
+  }
+}

@@ -1,4 +1,5 @@
 use sisyphus_tools_core::bridge::BridgeClient;
+use sisyphus_tools_core::ToolError;
 use sisyphus_tools_llm::metis::LlmClient;
 use std::sync::Arc;
 
@@ -87,62 +88,58 @@ impl sisyphus_types::ToolExecutor for BuiltinToolExecutor {
                         // ── utility commands ──────────────────────────
                         "json_query" => {
                             let v = serde_json::from_slice(&enriched_args)
-                                .map_err(|e| e.to_string())?;
-                            util_cmds::cmd_json_query(v).map_err(|e| e.to_string())
+                                .map_err(|e| ToolError::InvalidInput(e.to_string()))?;
+                            util_cmds::cmd_json_query(v)
                         },
                         "base64_convert" => {
                             let v = serde_json::from_slice(&enriched_args)
-                                .map_err(|e| e.to_string())?;
-                            util_cmds::cmd_base64_convert(v).map_err(|e| e.to_string())
+                                .map_err(|e| ToolError::InvalidInput(e.to_string()))?;
+                            util_cmds::cmd_base64_convert(v)
                         },
                         "time_convert" => {
                             let v = serde_json::from_slice(&enriched_args)
-                                .map_err(|e| e.to_string())?;
-                            util_cmds::cmd_time_convert(v).map_err(|e| e.to_string())
+                                .map_err(|e| ToolError::InvalidInput(e.to_string()))?;
+                            util_cmds::cmd_time_convert(v)
                         },
                         "url_convert" => {
                             let v = serde_json::from_slice(&enriched_args)
-                                .map_err(|e| e.to_string())?;
-                            util_cmds::cmd_url_convert(v).map_err(|e| e.to_string())
+                                .map_err(|e| ToolError::InvalidInput(e.to_string()))?;
+                            util_cmds::cmd_url_convert(v)
                         },
                         "path_expand" => {
                             let v = serde_json::from_slice(&enriched_args)
-                                .map_err(|e| e.to_string())?;
-                            util_cmds::cmd_path_expand(v).map_err(|e| e.to_string())
+                                .map_err(|e| ToolError::InvalidInput(e.to_string()))?;
+                            util_cmds::cmd_path_expand(v)
                         },
                         "lsp_symbol_search" => {
                             let v = serde_json::from_slice(&enriched_args)
-                                .map_err(|e| e.to_string())?;
-                            util_cmds::cmd_lsp_symbol_search(&self_ref, v)
-                                .await
-                                .map_err(|e| e.to_string())
+                                .map_err(|e| ToolError::InvalidInput(e.to_string()))?;
+                            util_cmds::cmd_lsp_symbol_search(&self_ref, v).await
                         },
                         "dependency_graph" => {
                             let v = serde_json::from_slice(&enriched_args)
-                                .map_err(|e| e.to_string())?;
-                            util_cmds::cmd_dependency_graph(v).await.map_err(|e| e.to_string())
+                                .map_err(|e| ToolError::InvalidInput(e.to_string()))?;
+                            util_cmds::cmd_dependency_graph(v).await
                         },
                         "doc_sync_check" => {
                             let v = serde_json::from_slice(&enriched_args)
-                                .map_err(|e| e.to_string())?;
-                            util_cmds::cmd_doc_sync_check(&client, v)
-                                .await
-                                .map_err(|e| e.to_string())
+                                .map_err(|e| ToolError::InvalidInput(e.to_string()))?;
+                            util_cmds::cmd_doc_sync_check(&client, v).await
                         },
                         "coverage_analyze" => {
                             let v = serde_json::from_slice(&enriched_args)
-                                .map_err(|e| e.to_string())?;
-                            util_cmds::cmd_coverage_analyze(v).await.map_err(|e| e.to_string())
+                                .map_err(|e| ToolError::InvalidInput(e.to_string()))?;
+                            util_cmds::cmd_coverage_analyze(v).await
                         },
                         "git_blame" => {
                             let v = serde_json::from_slice(&enriched_args)
-                                .map_err(|e| e.to_string())?;
-                            util_cmds::cmd_git_blame(v).await.map_err(|e| e.to_string())
+                                .map_err(|e| ToolError::InvalidInput(e.to_string()))?;
+                            util_cmds::cmd_git_blame(v).await
                         },
                         "type_check" => {
                             let v = serde_json::from_slice(&enriched_args)
-                                .map_err(|e| e.to_string())?;
-                            util_cmds::cmd_type_check(v).await.map_err(|e| e.to_string())
+                                .map_err(|e| ToolError::InvalidInput(e.to_string()))?;
+                            util_cmds::cmd_type_check(v).await
                         },
 
                         // ── feedback commands ─────────────────────────
@@ -214,16 +211,15 @@ impl sisyphus_types::ToolExecutor for BuiltinToolExecutor {
                                 .await
                         },
 
-                        other => Err(format!("unknown builtin tool: {other}")),
+                        other => Err(sisyphus_tools_core::ToolError::NotFound(format!(
+                            "unknown builtin tool: {other}",
+                        ))),
                     }
                 }
             },
         )
         .await
-        .map_err(|e| sisyphus_types::TypesError::ToolExecutionError {
-            tool_id: tool_id.to_string(),
-            details: e,
-        })
+        .map_err(|e| sisyphus_types::TypesError::tool(tool_id, e))
     }
 }
 
@@ -291,6 +287,105 @@ mod tests {
         let result = ex.execute("no_such_tool", vec![], 0).await;
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("unknown builtin tool"));
+    }
+
+    /// 回归：未知工具必须以类型化的 `ToolError::NotFound` 出错，而不是
+    /// 一条需要被 HTTP 层猜字符串的消息。此前 bridge 只能靠匹配
+    /// "unknown builtin tool" 判定 404，措辞一改就退化成 500。
+    #[tokio::test]
+    async fn unknown_tool_is_a_typed_not_found() {
+        let ex = make_executor();
+        let err = ex.execute("no_such_tool", vec![], 0).await.expect_err("unknown tool must fail");
+        let source = err.tool_source().expect("error must carry a typed tool cause");
+        assert!(
+            matches!(source, sisyphus_tools_core::ToolError::NotFound(_)),
+            "expected ToolError::NotFound, got {source:?}"
+        );
+    }
+
+    /// 回归：调用方给错参数必须报 `InvalidInput`，不能是 `Generic`。
+    ///
+    /// 这不是洁癖：bridge 的 `status_for_typed` 把 `InvalidInput` 映射成
+    /// 400 `BAD_REQUEST`，而把 `Generic` 映射成 500。旧代码把
+    /// 「Missing required param」拍平成文本，落到 `Generic` 分支，于是
+    /// **客户端的错误被报成了服务端故障**。
+    #[tokio::test]
+    async fn missing_param_is_invalid_input_not_generic() {
+        let ex = make_executor();
+        // `json_query` requires `path` and `json`; send neither.
+        let err = ex
+            .execute("json_query", br#"{"nope": 1}"#.to_vec(), 0)
+            .await
+            .expect_err("a request with no params must fail");
+        let source = err.tool_source().expect("error must carry a typed tool cause");
+        assert!(
+            matches!(source, sisyphus_tools_core::ToolError::InvalidInput(_)),
+            "expected ToolError::InvalidInput (-> 400), got {source:?}"
+        );
+    }
+
+    /// 未闭合的 JSON 同样属于调用方的错，不是内部故障。
+    #[tokio::test]
+    async fn malformed_json_is_invalid_input() {
+        let ex = make_executor();
+        let err = ex
+            .execute("json_query", b"not json at all".to_vec(), 0)
+            .await
+            .expect_err("malformed JSON must fail");
+        let source = err.tool_source().expect("error must carry a typed tool cause");
+        assert!(
+            matches!(source, sisyphus_types::ToolError::InvalidInput(_)),
+            "expected ToolError::InvalidInput (-> 400), got {source:?}"
+        );
+    }
+
+    /// 回归：读一个不存在的文件必须报 `NotFound`（404），而不是 500。
+    ///
+    /// `sisyphus_tools_system::file::read` 本来就返回 `ToolError::Io`，
+    /// 旧代码用 `.map_err(|e| e.to_string())` 把类型拍平成文本，落到
+    /// `Generic` 分支——调用方看到的是服务端故障，而事实是路径不存在。
+    #[tokio::test]
+    async fn missing_file_is_not_found_not_an_internal_error() {
+        let ex = make_executor();
+        let args = br#"{"path":"/definitely/not/here.txt"}"#.to_vec();
+        let err =
+            ex.execute("file_read", args, 0).await.expect_err("reading a missing file must fail");
+        let source = err.tool_source().expect("error must carry a typed tool cause");
+        assert!(
+            matches!(source, sisyphus_tools_core::ToolError::NotFound(_)),
+            "expected ToolError::NotFound (-> 404), got {source:?}"
+        );
+    }
+
+    /// 同一批 helper 现在直接返回 `ToolError`，所以缺参数是调用方的错（400）。
+    #[tokio::test]
+    async fn file_cmd_missing_param_is_invalid_input() {
+        let ex = make_executor();
+        let err = ex
+            .execute("file_read", b"{}".to_vec(), 0)
+            .await
+            .expect_err("a call with no path must fail");
+        let source = err.tool_source().expect("error must carry a typed tool cause");
+        assert!(
+            matches!(source, sisyphus_tools_core::ToolError::InvalidInput(_)),
+            "expected ToolError::InvalidInput (-> 400), got {source:?}"
+        );
+    }
+
+    /// scribe 拒绝写受保护路径：这是权限问题（403），不是内部错误。
+    #[tokio::test]
+    async fn protected_path_is_permission_denied() {
+        let ex = make_executor();
+        let args = br#"{"path":"Cargo.toml","content":"x"}"#.to_vec();
+        let err = ex
+            .execute("scribe/apply_update", args, 0)
+            .await
+            .expect_err("writing to a protected path must be refused");
+        let source = err.tool_source().expect("error must carry a typed tool cause");
+        assert!(
+            matches!(source, sisyphus_tools_core::ToolError::PermissionDenied(_)),
+            "expected ToolError::PermissionDenied (-> 403), got {source:?}"
+        );
     }
 
     #[tokio::test]

@@ -259,19 +259,21 @@ async fn setup_kernel(db_url: Option<&str>) -> SisyphusKernel {
     let consensus: Arc<dyn Consensus> = Arc::new(DummyConsensus);
 
     SisyphusKernel::new(
-        state_store,        // 1. state_store
-        sop_store,          // 2. sop_store
-        vector_store,       // 3. vector_store
-        experience_bank,    // 4. experience_bank
-        tool_executor,      // 5. tool_executor
-        intel,              // 6. intel
-        llm_client.clone(), // 7. llm_client
-        llm_client.clone(), // 8. fast_llm_client
-        synthesizer,        // 9. synthesizer
-        meta_learner,       // 10. meta_learner
-        consensus,          // 11. consensus
-        roadmap_store,      // 12. sql_store
-        embedding_client,   // 13. embedding_client
+        state_store,     // 1. state_store
+        sop_store,       // 2. sop_store
+        vector_store,    // 3. vector_store
+        experience_bank, // 4. experience_bank
+        tool_executor,   // 5. tool_executor
+        Arc::new(sisyphus_tools_executor::executor::test_cmds::TestExecutor::new()), // 6. test_executor
+        intel,                                                                       // 7. intel
+        llm_client.clone(), // 8. llm_client
+        llm_client.clone(), // 9. fast_llm_client
+        Arc::new(sisyphus_tools_llm_tools::expert_reviewer::DefaultExpertReviewer), // 10. expert_reviewer
+        synthesizer,      // 11. synthesizer
+        meta_learner,     // 12. meta_learner
+        consensus,        // 13. consensus
+        roadmap_store,    // 14. sql_store
+        embedding_client, // 15. embedding_client
     )
 }
 

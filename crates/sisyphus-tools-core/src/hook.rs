@@ -189,17 +189,19 @@ pub async fn execute_with_hooks<F, Fut>(
     args: Vec<u8>,
     registry: &HookRegistry,
     executor: F,
-) -> Result<Vec<u8>, String>
+) -> Result<Vec<u8>, crate::ToolError>
 where
     F: FnOnce(Vec<u8>) -> Fut,
-    Fut: std::future::Future<Output = Result<Vec<u8>, String>>,
+    Fut: std::future::Future<Output = Result<Vec<u8>, crate::ToolError>>,
 {
     // 1. Before hooks
     let before = registry.run_before(tool_id);
 
     if !before.allowed {
         let reason = before.deny_reason.unwrap_or_else(|| "Blocked by hook".into());
-        return Err(format!("Hook denied: {reason}"));
+        return Err(crate::ToolError::PermissionDenied(format!(
+            "Hook denied: {reason}"
+        )));
     }
 
     // If hooks injected instructions, we pass them as a side-channel
@@ -246,7 +248,8 @@ where
                         ),
                     );
                 }
-                return serde_json::to_vec(&v).map_err(|e| format!("serialize: {e}"));
+                return serde_json::to_vec(&v)
+                    .map_err(|e| crate::ToolError::Generic(format!("serialize: {e}")));
             }
         }
     }

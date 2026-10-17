@@ -92,6 +92,11 @@ pub struct StrategicManager {
     pub intervention_manager: Arc<crate::intervention_manager::InterventionManager>,
     pub internalization_manager: Arc<crate::internalization_manager::InternalizationManager>,
     pub visual_manager: Option<Arc<sisyphus_visual::VisualPerceptionManager>>,
+    /// Injected test runner. Previously `run_cognitive_loop` constructed a
+    /// concrete one from `sisyphus-tools-executor`, which is why core had to
+    /// depend on that crate in production for a role unrelated to tool
+    /// execution. The kernel now hands down the instance it was given.
+    pub test_executor: Arc<dyn sisyphus_types::TestExecutor>,
     /// 使用蒙特卡洛仿真结果的概率路径规划器
     pub probabilistic_planner: ProbabilisticPlanner,
     /// 用于针对性 SOP 演进的失败模式库
@@ -125,6 +130,7 @@ impl StrategicManager {
         intervention_manager: Arc<crate::intervention_manager::InterventionManager>,
         internalization_manager: Arc<crate::internalization_manager::InternalizationManager>,
         visual_manager: Option<Arc<sisyphus_visual::VisualPerceptionManager>>,
+        test_executor: Arc<dyn sisyphus_types::TestExecutor>,
     ) -> Self {
         Self {
             intelligence_manager: intelligence_manager.clone(),
@@ -148,6 +154,7 @@ impl StrategicManager {
             intervention_manager,
             internalization_manager,
             visual_manager,
+            test_executor,
             probabilistic_planner: ProbabilisticPlanner::new(PlannerConfig::default()),
             failure_pattern_library: Arc::new(parking_lot::RwLock::new(
                 FailurePatternLibrary::new(),
@@ -195,14 +202,22 @@ impl StrategicManager {
         // 使用 Arc::new 替换字段，旧引用继续观察历史 usage 直到 drop
         *self.token_budget.write() = new_tracker;
 
+        let an_thresholds = {
+            let d = self.anomaly_detector.lock();
+            (
+                d.fuel_threshold,
+                d.duration_threshold,
+                d.error_rate_threshold,
+            )
+        };
         tracing::info!(
             max_iterations = cl.max_iterations,
             convergence_threshold = cl.convergence_threshold,
             initial_budget = ad.initial_budget,
             decay = ad.decay,
-            anomaly_fuel_threshold = self.anomaly_detector.lock().fuel_threshold,
-            anomaly_duration_threshold = self.anomaly_detector.lock().duration_threshold,
-            anomaly_error_rate_threshold = self.anomaly_detector.lock().error_rate_threshold,
+            anomaly_fuel_threshold = an_thresholds.0,
+            anomaly_duration_threshold = an_thresholds.1,
+            anomaly_error_rate_threshold = an_thresholds.2,
             token_budget_cap = ?tb.cap,
             token_budget_reserve = tb.reserve_ratio,
             "Cognitive loop config applied"

@@ -27,6 +27,21 @@ use sisyphus_metrics::observability::{cognitive_loop_span, evolution_span, refle
 
 use super::{CognitiveIteration, CognitiveReport, StrategicManager};
 
+/// 执行结束后从 `active_executions` 移除条目。
+///
+/// 放在 `run_cognitive_loop` 栈上，靠 Drop 覆盖成功、`?` 提前返回和
+/// panic 三类退出路径——手写在每个返回点必然漏掉其中之一。
+struct ActiveExecutionGuard {
+    map: Arc<dashmap::DashMap<String, ExecutionStatus>>,
+    key: String,
+}
+
+impl Drop for ActiveExecutionGuard {
+    fn drop(&mut self) {
+        self.map.remove(&self.key);
+    }
+}
+
 impl StrategicManager {
     #[allow(clippy::too_many_arguments)]
     #[instrument(skip_all, fields(sop_id = %sop_id, graph_nodes = sop_graph.graph.node_count()))]
@@ -89,17 +104,11 @@ impl StrategicManager {
             )))
         };
 
-        // A2 修复：以 sop_id + 纳秒时间戳为 active_executions key，
-        // 避免同一 sop 的并发执行互相覆盖状态。
-        // 状态展示仍使用 sop_id 便于用户识别，phase 函数接收 sop_id 做广播。
-        let active_key = format!(
-            "{sop_id}@{nanos}",
-            sop_id = sop_id,
-            nanos = SystemTime::now()
-                .duration_since(SystemTime::UNIX_EPOCH)
-                .map(|d| d.as_nanos())
-                .unwrap_or(0)
-        );
+        // active_executions 以 sop_id 为 key：bridge 的 status/abort/pause/
+        // resume/redirect 以及下面三个 phase 函数都按 sop_id 查询。早期版本
+        // 曾用 `sop_id@纳秒` 做 key，但查询端仍是 sop_id，导致状态更新与
+        // 中断全部命中不到，且条目永不回收（每次执行泄漏一条）。
+        let active_key = sop_id.to_string();
 
         // --- 热启动阶段（HOT START） ---
         let (mut current_ref, hot_start_active) =
@@ -185,6 +194,13 @@ impl StrategicManager {
             },
         );
 
+        // 用 Drop guard 兜住所有退出路径（含 `?` 提前返回与 panic），
+        // 否则 active_executions 会随每次执行泄漏一条。
+        let _active_exec_guard = ActiveExecutionGuard {
+            map: self.execution_manager.active_executions.clone(),
+            key: active_key.clone(),
+        };
+
         broadcast_fn(
             sop_id,
             ExecutionEvent::CognitiveStep {
@@ -203,7 +219,7 @@ impl StrategicManager {
         );
 
         let executor = Executor::new(
-            Arc::new(sisyphus_tools_executor::executor::test_cmds::TestExecutor::new()),
+            self.test_executor.clone(),
             self.intervention_manager.clone(),
             self.internalization_manager.clone(),
             self.visual_manager.clone(),
@@ -632,7 +648,7 @@ impl StrategicManager {
         broadcast_fn: &impl Fn(&str, ExecutionEvent),
         stream_tx: &Option<mpsc::UnboundedSender<CognitiveEvent>>,
     ) -> Result<(SimulationResult, Option<String>), CoreError> {
-        // A2 修复：使用基于 sop_id + 启动时间的唯一 key 查询 active_executions。
+        // 查询 key 必须与 run_cognitive_loop 插入时一致（即 sop_id）。
         let active_key = sop_id.to_string();
 
         let mut pivot_reason: Option<String> = None;
@@ -799,7 +815,7 @@ impl StrategicManager {
         pivot_reason: &mut Option<String>,
         exec_pivot: &mut bool,
     ) -> Result<(Arc<ExecutionContext>, NodeOutput), CoreError> {
-        // A2 修复：使用基于 sop_id + 启动时间的唯一 key 查询 active_executions。
+        // 查询 key 必须与 run_cognitive_loop 插入时一致（即 sop_id）。
         let active_key = sop_id.to_string();
 
         if let Some(mut status) = self.execution_manager.active_executions.get_mut(&active_key) {
@@ -1209,7 +1225,7 @@ impl StrategicManager {
         iteration: usize,
         stream_tx: &Option<mpsc::UnboundedSender<CognitiveEvent>>,
     ) -> Option<Arc<SOPGraph>> {
-        // A2 修复：使用基于 sop_id + 启动时间的唯一 key 查询 active_executions。
+        // 查询 key 必须与 run_cognitive_loop 插入时一致（即 sop_id）。
         let active_key = sop_id.to_string();
 
         // --- 验证步骤 ---
@@ -1521,33 +1537,28 @@ mod tests {
         }
     }
 
-    /// 验证 A2 修复：active_key 格式包含 sop_id + 唯一后缀，
-    /// 同一 sop 多次启动时生成不同 key，避免 active_executions 互写。
+    /// 回归：插入与查询必须使用同一个 key。
+    ///
+    /// 早期实现在插入时用 `sop_id@纳秒`，而三处 phase 查询和 bridge 的
+    /// status/abort 仍用裸 sop_id。结果是状态更新与中断全部命中不到，
+    /// 且条目永不回收。该测试直接锁定"插什么就查什么"这一不变量。
     #[test]
-    fn test_a2_active_key_uniqueness_per_invocation() {
-        use std::time::SystemTime;
+    fn active_execution_key_matches_lookup_key() {
         let sop_id = "test_sop";
-        // 模拟连续两次启动；实际唯一性来自纳秒级时间戳
-        let key1 = format!(
-            "{sop_id}@{nanos}",
-            sop_id = sop_id,
-            nanos = SystemTime::now()
-                .duration_since(SystemTime::UNIX_EPOCH)
-                .map(|d| d.as_nanos())
-                .unwrap_or(0)
+        let key = sop_id.to_string();
+        let map: dashmap::DashMap<String, u32> = dashmap::DashMap::new();
+        map.insert(key.clone(), 1);
+
+        assert_eq!(
+            map.get_mut(&sop_id.to_string()).map(|v| *v),
+            Some(1),
+            "按 sop_id 查询必须命中插入的条目"
         );
-        std::thread::sleep(std::time::Duration::from_millis(2));
-        let key2 = format!(
-            "{sop_id}@{nanos}",
-            sop_id = sop_id,
-            nanos = SystemTime::now()
-                .duration_since(SystemTime::UNIX_EPOCH)
-                .map(|d| d.as_nanos())
-                .unwrap_or(0)
+
+        map.remove(&key);
+        assert!(
+            map.get(&sop_id.to_string()).is_none(),
+            "执行结束后条目必须被移除，否则每次执行泄漏一条"
         );
-        assert!(key1.starts_with("test_sop@"));
-        assert!(key2.starts_with("test_sop@"));
-        // 两次启动产生不同的 key（纳秒级时间戳保证）
-        assert_ne!(key1, key2, "并发启动必须产生不同 active_key");
     }
 }

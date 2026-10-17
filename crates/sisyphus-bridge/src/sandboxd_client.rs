@@ -19,6 +19,12 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, Command};
 use tracing::{info, warn};
 
+/// Upper bound on one daemon request/response cycle.
+///
+/// The sandbox enforces a wall-clock limit per execution, so anything
+/// materially above that is a wedged daemon rather than a slow one.
+const DAEMON_REQUEST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+
 struct SandboxdConnection {
     child: Child,
     stdin: tokio::io::BufWriter<tokio::process::ChildStdin>,
@@ -121,6 +127,30 @@ impl SandboxdClient {
     ) -> Result<serde_json::Value, TypesError> {
         let mut conn = self.conn.lock().await;
 
+        // The whole request/response cycle must be bounded: this method holds
+        // the single connection mutex, so a wedged daemon would otherwise block
+        // every later execution forever instead of failing this one.
+        tokio::time::timeout(
+            DAEMON_REQUEST_TIMEOUT,
+            self.exchange(&mut conn, id, request, tool_id),
+        )
+        .await
+        .map_err(|_| TypesError::ToolExecutionError {
+            tool_id: tool_id.into(),
+            details: format!(
+                "sandboxd did not respond within {}s (daemon may be wedged)",
+                DAEMON_REQUEST_TIMEOUT.as_secs()
+            ),
+        })?
+    }
+
+    async fn exchange(
+        &self,
+        conn: &mut SandboxdConnection,
+        id: u64,
+        request: &serde_json::Value,
+        tool_id: &str,
+    ) -> Result<serde_json::Value, TypesError> {
         // Write request line
         let line = serde_json::to_string(request).map_err(|e| TypesError::ToolExecutionError {
             tool_id: "serialize".into(),

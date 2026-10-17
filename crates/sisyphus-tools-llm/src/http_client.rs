@@ -181,19 +181,7 @@ impl SharedHttpClientConfig {
     }
 }
 
-/// 共享 HTTP 客户端的运行时统计。
-#[derive(Debug, Default, Clone)]
-pub struct HttpClientStats {
-    /// 自启动以来发起的总请求数。
-    pub requests_total: u64,
-    /// 自启动以来的失败请求数（非 2xx 或 transport 错误）。
-    pub errors_total: u64,
-    /// 当前 in-flight 请求数（已发出未收到响应）。
-    pub in_flight: u64,
-    /// 已完成的优雅关闭次数。
-    pub shutdowns_total: u64,
-}
-
+pub use sisyphus_types::HttpClientStats;
 /// 共享 HTTP 客户端，包装 `reqwest::Client` 并提供统计/关闭能力。
 ///
 /// 内部使用 `Arc` 共享给所有 provider；连接池与 TLS 会话只存在一份。

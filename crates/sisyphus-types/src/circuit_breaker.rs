@@ -1,5 +1,5 @@
+use crate::CircuitState;
 use serde::{Deserialize, Serialize};
-use sisyphus_types::CircuitState;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};

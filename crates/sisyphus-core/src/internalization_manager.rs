@@ -12,14 +12,14 @@ pub struct InternalizationRequest {
 
 /// Internalization Manager.
 pub struct InternalizationManager {
-    llm_client: Arc<dyn sisyphus_tools_llm::LlmClient>,
+    llm_client: Arc<dyn sisyphus_types::LlmClient>,
     knowledge_manager: Arc<sisyphus_knowledge::AssetManager>,
 }
 
 impl InternalizationManager {
     /// New.
     pub fn new(
-        llm_client: Arc<dyn sisyphus_tools_llm::LlmClient>,
+        llm_client: Arc<dyn sisyphus_types::LlmClient>,
         knowledge_manager: Arc<sisyphus_knowledge::AssetManager>,
     ) -> Self {
         Self {

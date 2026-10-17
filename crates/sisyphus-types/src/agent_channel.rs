@@ -1,6 +1,6 @@
+use crate::AgentMessage;
+use crate::ToolResult;
 use serde_json::Value;
-use sisyphus_tools_core::ToolResult;
-use sisyphus_types::AgentMessage;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
@@ -38,18 +38,20 @@ impl AgentChannel {
                 let _ = tx.send(msg.clone());
             }
         }
-        let mut inboxes = self.inboxes.write().map_err(|e| {
-            sisyphus_tools_core::ToolError::Generic(format!("AgentChannel lock poisoned: {e}"))
-        })?;
+        let mut inboxes = self
+            .inboxes
+            .write()
+            .map_err(|e| crate::ToolError::Generic(format!("AgentChannel lock poisoned: {e}")))?;
         inboxes.entry(msg.to.clone()).or_default().push(msg);
         Ok(())
     }
 
     /// Receive all pending messages for an agent (drains the inbox).
     pub fn receive(&self, agent_id: &str) -> ToolResult<Vec<AgentMessage>> {
-        let mut inboxes = self.inboxes.write().map_err(|e| {
-            sisyphus_tools_core::ToolError::Generic(format!("AgentChannel lock poisoned: {e}"))
-        })?;
+        let mut inboxes = self
+            .inboxes
+            .write()
+            .map_err(|e| crate::ToolError::Generic(format!("AgentChannel lock poisoned: {e}")))?;
         Ok(inboxes.remove(agent_id).unwrap_or_default())
     }
 
@@ -63,7 +65,7 @@ impl AgentChannel {
     ) -> ToolResult<AgentMessage> {
         let notify_tx = {
             let mut notify = self.notify.write().map_err(|e| {
-                sisyphus_tools_core::ToolError::Generic(format!("AgentChannel lock poisoned: {e}"))
+                crate::ToolError::Generic(format!("AgentChannel lock poisoned: {e}"))
             })?;
             let (tx, _) = broadcast::channel(16);
             notify.insert(correlation_id.to_string(), tx.clone());
@@ -83,10 +85,10 @@ impl AgentChannel {
 
         tokio::select! {
             res = rx.recv() => {
-                res.map_err(|e| sisyphus_tools_core::ToolError::Generic(format!("Broadcast error: {e}")))
+                res.map_err(|e| crate::ToolError::Generic(format!("Broadcast error: {e}")))
             }
             _ = tokio::time::sleep(timeout) => {
-                Err(sisyphus_tools_core::ToolError::Generic("Request timed out".into()))
+                Err(crate::ToolError::Generic("Request timed out".into()))
             }
         }
     }
@@ -95,14 +97,14 @@ impl AgentChannel {
     pub fn publish(&self, topic: &str, msg: AgentMessage) -> ToolResult<()> {
         let subscribers = {
             let topics = self.topics.read().map_err(|e| {
-                sisyphus_tools_core::ToolError::Generic(format!("AgentChannel lock poisoned: {e}"))
+                crate::ToolError::Generic(format!("AgentChannel lock poisoned: {e}"))
             })?;
             topics.get(topic).cloned().unwrap_or_default()
         };
 
         for agent_id in subscribers {
             let mut inboxes = self.inboxes.write().map_err(|e| {
-                sisyphus_tools_core::ToolError::Generic(format!("AgentChannel lock poisoned: {e}"))
+                crate::ToolError::Generic(format!("AgentChannel lock poisoned: {e}"))
             })?;
             inboxes.entry(agent_id).or_default().push(msg.clone());
         }

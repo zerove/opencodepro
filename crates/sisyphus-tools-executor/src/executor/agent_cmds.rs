@@ -3,6 +3,7 @@ use crate::executor::args::{
 };
 use serde_json::json;
 use sisyphus_tools_llm::metis::LlmClient;
+use sisyphus_types::ToolError;
 use std::path::Path;
 
 // ── librarian commands ──────────────────────────────────────
@@ -13,7 +14,7 @@ use std::path::Path;
 /// - `query` (or `content`): research question
 /// - `scope` (default "web"): one of `web` | `docs` | `local`
 /// - `num` (default 5): max results to return
-pub async fn cmd_librarian_research(args: Vec<u8>) -> Result<Vec<u8>, String> {
+pub async fn cmd_librarian_research(args: Vec<u8>) -> Result<Vec<u8>, ToolError> {
     let v = parse_args(&args)?;
     let query = flexible_str_arg(&v, "query", "content")?;
     let scope_str = str_arg(&v, "scope").unwrap_or_else(|_| "web".into());
@@ -29,7 +30,7 @@ pub async fn cmd_librarian_research(args: Vec<u8>) -> Result<Vec<u8>, String> {
 /// Librarian command: fetch a single documentation page by URL.
 ///
 /// Args (JSON): { `url`: target documentation URL }
-pub async fn cmd_librarian_fetch_docs(args: Vec<u8>) -> Result<Vec<u8>, String> {
+pub async fn cmd_librarian_fetch_docs(args: Vec<u8>) -> Result<Vec<u8>, ToolError> {
     let v = parse_args(&args)?;
     let url = str_arg(&v, "url")?;
     let page = sisyphus_tools_llm_tools::librarian::fetch_documentation(&url)
@@ -43,7 +44,7 @@ pub async fn cmd_librarian_fetch_docs(args: Vec<u8>) -> Result<Vec<u8>, String> 
 /// Args (JSON):
 /// - `query` (or `content`): example search query
 /// - `language` (default "rust"): target language
-pub async fn cmd_librarian_examples(args: Vec<u8>) -> Result<Vec<u8>, String> {
+pub async fn cmd_librarian_examples(args: Vec<u8>) -> Result<Vec<u8>, ToolError> {
     let v = parse_args(&args)?;
     let query = flexible_str_arg(&v, "query", "content")?;
     let language = str_arg(&v, "language").unwrap_or_else(|_| "rust".into());
@@ -60,7 +61,7 @@ pub async fn cmd_librarian_examples(args: Vec<u8>) -> Result<Vec<u8>, String> {
 pub async fn cmd_librarian_synthesise(
     client: &dyn LlmClient,
     args: Vec<u8>,
-) -> Result<Vec<u8>, String> {
+) -> Result<Vec<u8>, ToolError> {
     let v = parse_args(&args)?;
     let findings_val = v.get("findings").ok_or_else(|| "missing 'findings' arg".to_string())?;
     let findings: Vec<sisyphus_tools_llm_tools::librarian::ResearchFinding> =
@@ -79,7 +80,10 @@ pub async fn cmd_librarian_synthesise(
 /// Metis command: analyze a free-form request and produce a structured plan/spec.
 ///
 /// Args (JSON): { `request` (or `content`): task description }
-pub async fn cmd_metis_analyse(client: &dyn LlmClient, args: Vec<u8>) -> Result<Vec<u8>, String> {
+pub async fn cmd_metis_analyse(
+    client: &dyn LlmClient,
+    args: Vec<u8>,
+) -> Result<Vec<u8>, ToolError> {
     let v = parse_args(&args)?;
     let request = flexible_str_arg(&v, "request", "content")?;
     let analysis =
@@ -97,7 +101,7 @@ pub async fn cmd_metis_analyse(client: &dyn LlmClient, args: Vec<u8>) -> Result<
 pub async fn cmd_momus_review_plan(
     client: &dyn LlmClient,
     args: Vec<u8>,
-) -> Result<Vec<u8>, String> {
+) -> Result<Vec<u8>, ToolError> {
     let v = parse_args(&args)?;
     let plan_text = flexible_str_arg_multi(&v, &["plan_text", "artifact", "content"])?;
     let plan_name = str_arg(&v, "plan_name").unwrap_or_else(|_| "unnamed".into());
@@ -111,7 +115,7 @@ pub async fn cmd_momus_review_plan(
 pub async fn cmd_momus_review_code(
     client: &dyn LlmClient,
     args: Vec<u8>,
-) -> Result<Vec<u8>, String> {
+) -> Result<Vec<u8>, ToolError> {
     let v = parse_args(&args)?;
     let path_str = flexible_str_arg_multi(&v, &["path", "file", "content"])?;
     let content = flexible_str_arg_multi(&v, &["content", "artifact", "code", "path"])?;
@@ -128,7 +132,7 @@ pub async fn cmd_momus_review_code(
 pub async fn cmd_momus_review_code_batch(
     client: &dyn LlmClient,
     args: Vec<u8>,
-) -> Result<Vec<u8>, String> {
+) -> Result<Vec<u8>, ToolError> {
     let v = parse_args(&args)?;
     let files_val = v.get("files").ok_or_else(|| "missing 'files' arg".to_string())?;
     let files: Vec<serde_json::Value> = serde_json::from_value(files_val.clone())
@@ -157,7 +161,7 @@ pub async fn cmd_momus_review_code_batch(
 pub async fn cmd_momus_review_arch(
     client: &dyn LlmClient,
     args: Vec<u8>,
-) -> Result<Vec<u8>, String> {
+) -> Result<Vec<u8>, ToolError> {
     let v = parse_args(&args)?;
     let arch_text = flexible_str_arg_multi(&v, &["arch_text", "artifact", "content"])?;
     let review = sisyphus_tools_llm_tools::momus::review_architecture(client, &arch_text).await;
@@ -172,7 +176,7 @@ pub async fn cmd_momus_review_arch(
 pub async fn cmd_scribe_generate_adr(
     client: &dyn LlmClient,
     args: Vec<u8>,
-) -> Result<Vec<u8>, String> {
+) -> Result<Vec<u8>, ToolError> {
     let v = parse_args(&args)?;
     let context = flexible_str_arg(&v, "context", "content")?;
     let adr = sisyphus_tools_llm_tools::scribe::generate_adr(client, &context)
@@ -187,7 +191,7 @@ pub async fn cmd_scribe_generate_adr(
 pub async fn cmd_scribe_update_docs(
     client: &dyn LlmClient,
     args: Vec<u8>,
-) -> Result<Vec<u8>, String> {
+) -> Result<Vec<u8>, ToolError> {
     let v = parse_args(&args)?;
     let doc_content = flexible_str_arg(&v, "doc_content", "content")?;
     let changes = str_arg(&v, "changes")?;
@@ -199,8 +203,8 @@ pub async fn cmd_scribe_update_docs(
 
 /// Scribe command: apply a previously generated documentation update patch to a target file.
 ///
-/// Args (JSON): { `patch_id`, `target_path` }
-pub fn cmd_scribe_apply_update(args: Vec<u8>) -> Result<Vec<u8>, String> {
+/// Args (JSON): { `path`, `content` }
+pub fn cmd_scribe_apply_update(args: Vec<u8>) -> Result<Vec<u8>, ToolError> {
     let v = parse_args(&args)?;
     let path_str = path_arg(&v, "path")?;
     let content = str_arg(&v, "content")?;
@@ -209,9 +213,9 @@ pub fn cmd_scribe_apply_update(args: Vec<u8>) -> Result<Vec<u8>, String> {
     let forbidden = ["Cargo.toml", "Cargo.lock", ".env", ".git/"];
     for f in forbidden {
         if path_str.contains(f) {
-            return Err(format!(
+            return Err(ToolError::PermissionDenied(format!(
                 "writing to {f} is forbidden for scribe/apply_update"
-            ));
+            )));
         }
     }
 
@@ -248,7 +252,7 @@ pub fn cmd_scribe_apply_update(args: Vec<u8>) -> Result<Vec<u8>, String> {
         }
         ok_json(json!({"applied_edits": applied_count}))
     } else {
-        sisyphus_tools_system::file::write(path, &content).map_err(|e| e.to_string())?;
+        sisyphus_tools_system::file::write(path, &content)?;
         ok_json(json!({"bytes_written": content.len()}))
     }
 }
@@ -261,7 +265,7 @@ pub fn cmd_scribe_apply_update(args: Vec<u8>) -> Result<Vec<u8>, String> {
 pub async fn cmd_security_audit_code(
     client: &dyn LlmClient,
     args: Vec<u8>,
-) -> Result<Vec<u8>, String> {
+) -> Result<Vec<u8>, ToolError> {
     let v = parse_args(&args)?;
     let path_str =
         flexible_str_arg_multi(&v, &["path", "file"]).unwrap_or_else(|_| "snippet.rs".to_string());
@@ -279,7 +283,7 @@ pub async fn cmd_security_audit_code(
 pub async fn cmd_security_threat_model(
     client: &dyn LlmClient,
     args: Vec<u8>,
-) -> Result<Vec<u8>, String> {
+) -> Result<Vec<u8>, ToolError> {
     let v = parse_args(&args)?;
     let arch_text = flexible_str_arg_multi(&v, &["arch_text", "artifact", "content"])?;
     let report = sisyphus_tools_llm_tools::security::threat_model(client, &arch_text)

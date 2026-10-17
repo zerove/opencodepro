@@ -1,0 +1,22 @@
+{
+  "status": "degraded",
+  "version": "0.1.0",
+  "components": {
+    "session_db": {
+      "status": "degraded",
+      "path": "/nonexistent/path/sessions.db"
+    },
+    "shared_http": {
+      "status": "ok"
+    },
+    "kernel": {
+      "status": "ok"
+    },
+    "token_budget": {
+      "status": "degraded",
+      "usage": 990,
+      "cap": 1000,
+      "exhausted": false
+    }
+  }
+}

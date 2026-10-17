@@ -14,7 +14,6 @@ pub use types::{
 
 use sisyphus_tools_llm::metis::LlmClient;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::sync::Arc;
 use tokio::task::JoinSet;
 use types::EditRequest;
@@ -137,21 +136,20 @@ Return ONLY the JSON object."#;
                 .map(|()| format!("Edited file: {path}"))
                 .map_err(|e| e.to_string())?,
             DevAction::RunCommand { command, dir } => {
-                let mut cmd = Command::new("sh");
-                cmd.arg("-c").arg(command);
+                let mut opts = sisyphus_tools_core::process::CommandOpts::default();
                 if let Some(d) = dir {
-                    cmd.current_dir(d);
+                    opts = opts.with_workdir(d);
                 }
-                let output = cmd.output().map_err(|e| e.to_string())?;
-                if output.status.success() {
-                    String::from_utf8_lossy(&output.stdout).to_string()
+                let output =
+                    sisyphus_tools_core::process::run_command_blocking("sh", ["-c", command], opts)
+                        .map_err(|e| e.to_string())?;
+                if output.exit_code == 0 {
+                    output.stdout.clone()
                 } else {
                     return Ok(StepResult {
                         step_id: step.id,
-                        status: StepStatus::Failed(
-                            String::from_utf8_lossy(&output.stderr).to_string(),
-                        ),
-                        output: String::from_utf8_lossy(&output.stdout).to_string(),
+                        status: StepStatus::Failed(output.stderr.clone()),
+                        output: output.stdout.clone(),
                         verification_output: None,
                     });
                 }
@@ -196,36 +194,26 @@ Return ONLY the JSON object."#;
     }
 
     /// Verify step.
+    /// Run a verification command and report whether it exited cleanly.
+    fn run_verification(command: &str) -> Result<bool, String> {
+        let out = sisyphus_tools_core::process::run_command_blocking(
+            "sh",
+            ["-c", command],
+            sisyphus_tools_core::process::CommandOpts::default(),
+        )
+        .map_err(|e| e.to_string())?;
+        Ok(out.exit_code == 0)
+    }
+
     pub async fn verify_step(&self, step: &DevStep, result: &StepResult) -> Result<bool, String> {
         match &step.verification {
-            VerificationMethod::CargoCheck => {
-                let output = Command::new("sh")
-                    .arg("-c")
-                    .arg("cargo check 2>&1")
-                    .output()
-                    .map_err(|e| e.to_string())?;
-                Ok(output.status.success())
-            },
-            VerificationMethod::CargoTest => {
-                let output = Command::new("sh")
-                    .arg("-c")
-                    .arg("cargo test 2>&1")
-                    .output()
-                    .map_err(|e| e.to_string())?;
-                Ok(output.status.success())
-            },
+            VerificationMethod::CargoCheck => Ok(Self::run_verification("cargo check")?),
+            VerificationMethod::CargoTest => Ok(Self::run_verification("cargo test")?),
             VerificationMethod::LspDiagnostics { path: _ } => {
                 // Not implemented in CLI context; assume pass
                 Ok(true)
             },
-            VerificationMethod::Command { command } => {
-                let output = Command::new("sh")
-                    .arg("-c")
-                    .arg(command)
-                    .output()
-                    .map_err(|e| e.to_string())?;
-                Ok(output.status.success())
-            },
+            VerificationMethod::Command { command } => Ok(Self::run_verification(command)?),
             VerificationMethod::LlmReview { criteria } => {
                 let system_prompt = "You are a QA engineer. Review the provided output against the criteria. Answer ONLY 'yes' or 'no'.";
                 let user_prompt = format!(

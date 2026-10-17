@@ -206,15 +206,17 @@ impl AutoFixer {
     async fn run_cargo_check(source_file: &str) -> String {
         // Try to find the Cargo.toml and run cargo check
         let manifest_path = Self::find_manifest(source_file);
-        let output = tokio::process::Command::new("cargo")
-            .args(["check", "--manifest-path", &manifest_path, "-q"])
-            .output()
-            .await;
+        let output = sisyphus_tools_core::process::run_command(
+            "cargo",
+            ["check", "--manifest-path", &manifest_path, "-q"],
+            sisyphus_tools_core::process::CommandOpts::default(),
+        )
+        .await;
 
         match output {
             Ok(out) => {
-                let stderr = String::from_utf8_lossy(&out.stderr).to_string();
-                if out.status.success() {
+                let stderr = out.stderr.clone();
+                if out.exit_code == 0 {
                     String::new()
                 } else {
                     stderr

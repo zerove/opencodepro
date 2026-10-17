@@ -565,7 +565,7 @@ pub async fn metrics_handler(State(state): State<RestApiState>) -> impl IntoResp
     let uptime_secs = now.saturating_sub(started_at);
 
     // 拿 shared_http（如果 bridge 持有 ProviderRegistry 间接的）
-    let stats = state.shared_http.as_ref().map(|c| c.stats()).unwrap_or_default();
+    let stats = state.http_stats.as_ref().map(|f| f()).unwrap_or_default();
 
     // SSE 活跃连接数 = SSE_MAX_CONNECTIONS - 剩余许可
     let sse_max = crate::http::types::SSE_MAX_CONNECTIONS;
@@ -1433,7 +1433,7 @@ mod tests {
 
     /// 构造一个最小 RestApiState 供 metrics handler 测试
     async fn make_test_state(
-        shared_http: Option<Arc<sisyphus_tools_llm::http_client::SharedHttpClient>>,
+        http_stats: Option<Arc<dyn Fn() -> sisyphus_types::HttpClientStats + Send + Sync>>,
     ) -> RestApiState {
         use crate::bridge_service::MySisyphusBridge;
         use sisyphus_types::Config;
@@ -1448,8 +1448,8 @@ mod tests {
         let bridge =
             Arc::new(MySisyphusBridge::new(cfg, None, None).await.expect("构造 test bridge"));
         let state = RestApiState::new(bridge, std::path::PathBuf::from("/tmp"));
-        match shared_http {
-            Some(c) => state.with_shared_http(c),
+        match http_stats {
+            Some(p) => state.with_http_stats(p),
             None => state,
         }
     }
@@ -1480,8 +1480,13 @@ mod tests {
         // shared_http 注入后，stats 仍为 0 (无实际请求); 主要验证"读到" 不是 panic
         use sisyphus_tools_llm::http_client::{SharedHttpClient, SharedHttpClientConfig};
         let cfg = SharedHttpClientConfig::default();
-        let client = SharedHttpClient::new(cfg).expect("构造 client");
-        let state = make_test_state(Some(Arc::new(client))).await;
+        let client = Arc::new(SharedHttpClient::new(cfg).expect("构造 client"));
+        let reader = {
+            let client = client.clone();
+            Arc::new(move || client.stats())
+                as Arc<dyn Fn() -> sisyphus_types::HttpClientStats + Send + Sync>
+        };
+        let state = make_test_state(Some(reader)).await;
         let resp = metrics_handler(State(state)).await.into_response();
         assert_eq!(resp.status(), axum::http::StatusCode::OK);
         let body = axum::body::to_bytes(resp.into_body(), 4096).await.unwrap();

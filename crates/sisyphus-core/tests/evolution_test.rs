@@ -61,9 +61,11 @@ async fn setup_kernel(tool_executor: Arc<MockExecutor>) -> SisyphusKernel {
         Arc::new(sisyphus_mem::VectorMemoryStore::new(pool.clone()).await.unwrap()),
         Arc::new(common::MockExperienceBank),
         tool_executor as Arc<dyn ToolExecutor>,
+        Arc::new(sisyphus_tools_executor::executor::test_cmds::TestExecutor::new()),
         intel,
         llm_client.clone() as Arc<dyn sisyphus_tools_llm::LlmClient>,
         llm_client as Arc<dyn sisyphus_tools_llm::LlmClient>,
+        Arc::new(sisyphus_tools_llm_tools::expert_reviewer::DefaultExpertReviewer),
         synthesizer as Arc<dyn sisyphus_intel::FlowSynthesizer>,
         Arc::new(parking_lot::Mutex::new(
             sisyphus_tools_llm_tools::meta_learner::MetaLearner::new(".omo/test_meta"),

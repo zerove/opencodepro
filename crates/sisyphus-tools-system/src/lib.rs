@@ -1,4 +1,7 @@
-pub mod agent_channel;
+pub mod agent_channel {
+    pub use sisyphus_types::AgentChannel;
+}
+pub use sisyphus_types::AgentChannel;
 pub mod bash;
 pub mod config_store;
 pub mod dep_manager;

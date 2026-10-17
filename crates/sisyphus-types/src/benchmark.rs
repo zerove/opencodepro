@@ -1,6 +1,6 @@
+use crate::BenchmarkRun;
+use crate::ToolResult;
 use serde::{Deserialize, Serialize};
-use sisyphus_tools_core::ToolResult;
-use sisyphus_types::BenchmarkRun;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
@@ -154,11 +154,11 @@ impl ContinuousBenchmark {
     }
 
     fn save_trends(&self) -> ToolResult<()> {
-        std::fs::create_dir_all(&self.storage_path).map_err(sisyphus_tools_core::ToolError::Io)?;
+        std::fs::create_dir_all(&self.storage_path).map_err(crate::ToolError::Io)?;
         let file_path = self.storage_path.join("benchmarks.json");
         let content = serde_json::to_string_pretty(&self.trends)
-            .map_err(|e| sisyphus_tools_core::ToolError::Generic(e.to_string()))?;
-        std::fs::write(&file_path, content).map_err(sisyphus_tools_core::ToolError::Io)
+            .map_err(|e| crate::ToolError::Generic(e.to_string()))?;
+        std::fs::write(&file_path, content).map_err(crate::ToolError::Io)
     }
 }
 

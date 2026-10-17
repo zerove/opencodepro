@@ -56,7 +56,11 @@ pub(super) async fn show_skill_handler(
             }),
         )
             .into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(e.to_string())).into_response(),
+        Err(e) => (
+            super::handlers_platform::status_for_typed(Some(&e), &e.to_string()),
+            Json(e.to_string()),
+        )
+            .into_response(),
     }
 }
 
@@ -68,7 +72,11 @@ pub(super) async fn search_skills_handler(
 ) -> impl IntoResponse {
     match state.bridge.skill_market.search(&req.q).await {
         Ok(results) => (StatusCode::OK, Json(SkillSearchResponse { results })).into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(e.to_string())).into_response(),
+        Err(e) => (
+            super::handlers_platform::status_for_typed(Some(&e), &e.to_string()),
+            Json(e.to_string()),
+        )
+            .into_response(),
     }
 }
 
@@ -92,7 +100,7 @@ pub(super) async fn publish_skill_handler(
         },
         Err(e) => {
             return (
-                StatusCode::INTERNAL_SERVER_ERROR,
+                super::handlers_platform::status_for_typed(Some(&e), &e.to_string()),
                 Json(PublishSkillResponse {
                     success: false,
                     entry: None,
@@ -115,7 +123,7 @@ pub(super) async fn publish_skill_handler(
         )
             .into_response(),
         Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
+            super::handlers_platform::status_for_typed(Some(&e), &e.to_string()),
             Json(PublishSkillResponse {
                 success: false,
                 entry: None,
@@ -134,7 +142,11 @@ pub(super) async fn peer_list_skills_handler(
 ) -> impl IntoResponse {
     match state.bridge.skill_store.list().await {
         Ok(skills) => (StatusCode::OK, Json(PeerSkillListResponse { skills })).into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(e.to_string())).into_response(),
+        Err(e) => (
+            super::handlers_platform::status_for_typed(Some(&e), &e.to_string()),
+            Json(e.to_string()),
+        )
+            .into_response(),
     }
 }
 
@@ -150,7 +162,11 @@ pub(super) async fn peer_get_skill_handler(
             Json(serde_json::json!({ "error": "Skill not found" })),
         )
             .into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(e.to_string())).into_response(),
+        Err(e) => (
+            super::handlers_platform::status_for_typed(Some(&e), &e.to_string()),
+            Json(e.to_string()),
+        )
+            .into_response(),
     }
 }
 
@@ -161,7 +177,11 @@ pub(super) async fn peer_publish_skill_handler(
 ) -> impl IntoResponse {
     match state.bridge.skill_store.install(bundle).await {
         Ok(_) => StatusCode::CREATED.into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(e.to_string())).into_response(),
+        Err(e) => (
+            super::handlers_platform::status_for_typed(Some(&e), &e.to_string()),
+            Json(e.to_string()),
+        )
+            .into_response(),
     }
 }
 
@@ -196,7 +216,7 @@ pub(super) async fn execute_tool_handler(
                 .into_response()
         },
         Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
+            super::handlers_platform::status_for_typed(Some(&e), &e.to_string()),
             Json(ExecuteToolResponse {
                 status: format!("ERROR: {e}"),
                 result_json: String::new(),
@@ -269,7 +289,7 @@ pub(super) async fn delegate_cognitive_task_handler(
                 .into_response()
         },
         Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
+            super::handlers_platform::status_for_typed(Some(&e), &e.to_string()),
             Json(DelegateCognitiveTaskResponse {
                 success: false,
                 error: e.to_string(),
@@ -315,7 +335,7 @@ pub(super) async fn submit_feedback_handler(
                 .into_response()
         },
         Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
+            super::handlers_platform::status_for_typed(Some(&e), &e.to_string()),
             Json(SubmitFeedbackResponse {
                 success: false,
                 error: e.to_string(),
@@ -355,7 +375,7 @@ pub(super) async fn capture_experience_handler(
         )
             .into_response(),
         Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
+            super::handlers_platform::status_for_typed(Some(&e), &e.to_string()),
             Json(CaptureExperienceResponse {
                 success: false,
                 error: e.to_string(),
@@ -379,7 +399,7 @@ pub(super) async fn share_experience_handler(
         )
             .into_response(),
         Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
+            super::handlers_platform::status_for_typed(Some(&e), &e.to_string()),
             Json(ShareExperienceResponse {
                 success: false,
                 error: e.to_string(),
@@ -417,7 +437,7 @@ pub(super) async fn unshare_experience_handler(
         )
             .into_response(),
         Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
+            super::handlers_platform::status_for_typed(Some(&e), &e.to_string()),
             Json(ShareExperienceResponse {
                 success: false,
                 error: e.to_string(),
@@ -436,7 +456,11 @@ pub(super) async fn list_shared_experiences_handler(
             Json(SharedExperiencesResponse { experiences }),
         )
             .into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(e.to_string())).into_response(),
+        Err(e) => (
+            super::handlers_platform::status_for_typed(Some(&e), &e.to_string()),
+            Json(e.to_string()),
+        )
+            .into_response(),
     }
 }
 
@@ -540,7 +564,7 @@ pub(super) async fn load_plugin_handler(
         )
             .into_response(),
         Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
+            super::handlers_platform::status_for_error(&e),
             Json(LoadPluginResponse {
                 success: false,
                 error: e,
@@ -564,7 +588,7 @@ pub(super) async fn unload_plugin_handler(
         )
             .into_response(),
         Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
+            super::handlers_platform::status_for_error(&e),
             Json(UnloadPluginResponse {
                 success: false,
                 error: e,
@@ -610,7 +634,7 @@ pub(super) async fn call_jcode_handler(
                 .into_response()
         },
         Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
+            super::handlers_platform::status_for_error(&e.to_string()),
             Json(CallJcodeResponse {
                 success: false,
                 result: String::new(),
@@ -780,7 +804,7 @@ pub(super) async fn delete_workspace_handler(
         )
             .into_response(),
         Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
+            super::handlers_platform::status_for_typed(Some(&e), &e.to_string()),
             Json(DeleteWorkspaceResponse {
                 success: false,
                 error: e.to_string(),
