@@ -265,8 +265,23 @@ async fn test_unload_plugin_nonexistent() {
         .await
         .expect("UnloadPlugin failed");
     let inner = response.into_inner();
-    // Unload a non-existent plugin may return success (idempotent) or error
-    assert!(inner.success || !inner.error.is_empty());
+    // Unloading a plugin that was never registered is a client error, not an
+    // idempotent success.
+    //
+    // The previous assertion here was `inner.success || !inner.error.is_empty()`,
+    // which is a tautology: it holds for *every* possible response, so it could
+    // never have caught the handler returning `200 {"success": true}` for an
+    // unknown plugin. Assert the specific outcome instead.
+    assert!(
+        !inner.success,
+        "unloading an unregistered plugin must not report success: {:?}",
+        inner.error
+    );
+    assert!(
+        inner.error.contains("not found"),
+        "the error should say the plugin is missing, got: {}",
+        inner.error
+    );
     server.abort();
 }
 

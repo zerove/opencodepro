@@ -64,11 +64,20 @@ impl PluginManager {
     /// Returns an error string if no plugin with that name is registered.
     pub fn unload_plugin(&self, name: &str) -> Result<(), String> {
         debug!(plugin = %name, "Unloading plugin");
-        if let Some((_, desc)) = self.plugins.remove(name) {
-            // Invalidate cache in executor
-            self.executor.module_cache.remove(&desc.tool_id);
-            info!(plugin = %name, tool_id = %desc.tool_id, "Plugin unloaded and cache invalidated");
-        }
+        let Some((_, desc)) = self.plugins.remove(name) else {
+            // Previously this returned `Ok(())` unconditionally, which
+            // contradicted this function's own doc comment and told the caller a
+            // nonexistent plugin had been unloaded. The bridge surfaced that as
+            // `200 {"success": true}`.
+            //
+            // The wording carries "not found" deliberately: the HTTP layer maps
+            // that to 404 via `status_for_error`, so an unknown plugin reads as
+            // the client error it is rather than an internal fault.
+            return Err(format!("plugin '{name}' not found"));
+        };
+        // Invalidate cache in executor
+        self.executor.module_cache.remove(&desc.tool_id);
+        info!(plugin = %name, tool_id = %desc.tool_id, "Plugin unloaded and cache invalidated");
         Ok(())
     }
 
@@ -206,6 +215,16 @@ mod tests {
 
         manager.unload_plugin("test-plugin").unwrap();
         assert_eq!(manager.list_plugins().len(), 0);
+
+        // Unloading it again must now fail: the doc comment promises an error for
+        // an unregistered name, and the old body silently returned Ok.
+        let err = manager
+            .unload_plugin("test-plugin")
+            .expect_err("a second unload must not report success");
+        assert!(
+            err.contains("not found"),
+            "the error should identify the missing plugin, got: {err}"
+        );
     }
 
     #[tokio::test]
