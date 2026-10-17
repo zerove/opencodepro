@@ -93,7 +93,7 @@ describe('SisyphusClient', () => {
 
     await client.setState('proj1', 'k1', { foo: 'bar' });
     expect(mockFn).toHaveBeenCalledWith(
-      expect.stringContaining('/api/v1/state/k1'),
+      expect.stringContaining('/api/state/k1'),
       expect.objectContaining({ method: 'PUT' }),
     );
   });
@@ -120,7 +120,7 @@ describe('SisyphusClient', () => {
     expect(result).toEqual(fakeResults);
     // 验证请求体包含 query 和 top_k
     expect(mockFn).toHaveBeenCalledWith(
-      expect.stringContaining('/api/v1/vector/search'),
+      expect.stringContaining('/api/vector/search'),
       expect.objectContaining({
         method: 'POST',
         body: expect.stringContaining('"query"'),

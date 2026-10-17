@@ -567,6 +567,119 @@ pub(crate) async fn openapi_json() -> impl IntoResponse {
             },
 
             // ── Experience Engine ────────────────────────────────────────
+            "/api/roadmap/delay-alerts": {
+                "post": {
+                    "summary": "Check milestones for schedule-slippage risk",
+                    "operationId": "checkDelayAlerts",
+                    "responses": {"200": {"description": "Delay alerts"}}
+                }
+            },
+            "/api/roadmap/parallel-execution": {
+                "post": {
+                    "summary": "Suggest goals that could run concurrently",
+                    "operationId": "suggestParallelExecution",
+                    "responses": {"200": {"description": "Suggestions"}}
+                }
+            },
+            "/api/roadmap/goal-resources": {
+                "post": {
+                    "summary": "Estimate resource needs for a goal",
+                    "operationId": "estimateGoalResources",
+                    "responses": {"200": {"description": "Estimate"}}
+                }
+            },
+            "/api/roadmap/proposals/{project_id}": {
+                "get": {
+                    "summary": "List roadmap change proposals",
+                    "operationId": "listProposals",
+                    "parameters": [{"name": "project_id", "in": "path", "required": true, "schema": {"type": "string"}}],
+                    "responses": {"200": {"description": "Proposals"}}
+                }
+            },
+            "/api/roadmap/proposals/{project_id}/{proposal_id}": {
+                "get": {
+                    "summary": "Fetch one roadmap change proposal",
+                    "operationId": "getProposal",
+                    "parameters": [{"name": "project_id", "in": "path", "required": true, "schema": {"type": "string"}}],
+                    "responses": {"200": {"description": "Proposal"}}
+                }
+            },
+            "/api/roadmap/proposals/approve": {
+                "post": {
+                    "summary": "Approve a roadmap change proposal",
+                    "operationId": "approveProposal",
+                    "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object"}}}},
+                    "responses": {"200": {"description": "Approved"}}
+                }
+            },
+            "/api/roadmap/proposals/reject": {
+                "post": {
+                    "summary": "Reject a roadmap change proposal",
+                    "operationId": "rejectProposal",
+                    "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object"}}}},
+                    "responses": {"200": {"description": "Rejected"}}
+                }
+            },
+            "/api/cognitive/delegate": {
+                "post": {
+                    "summary": "Delegate a cognitive task to a specialised agent",
+                    "operationId": "delegateCognitiveTask",
+                    "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object"}}}},
+                    "responses": {"200": {"description": "Delegated"}}
+                }
+            },
+            "/api/state": {
+                "get": {
+                    "summary": "List all state entries for a project",
+                    "operationId": "listState",
+                    "parameters": [{"name": "project_id", "in": "query", "required": false, "schema": {"type": "string", "default": "default"}}],
+                    "responses": {
+                        "200": {"description": "State entries", "content": {"application/json": {"schema": {"type": "array", "items": {"$ref": "#/components/schemas/StateEntry"}}}}}
+                    }
+                }
+            },
+            "/api/state/{key}": {
+                "get": {
+                    "summary": "Read a single state entry",
+                    "operationId": "getState",
+                    "parameters": [{"name": "key", "in": "path", "required": true, "schema": {"type": "string"}}, {"name": "project_id", "in": "query", "required": false, "schema": {"type": "string", "default": "default"}}],
+                    "responses": {
+                        "200": {"description": "State entry", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/StateEntry"}}}},
+                        "404": {"description": "No such key"}
+                    }
+                },
+                "put": {
+                    "summary": "Create or replace a state entry",
+                    "operationId": "setState",
+                    "parameters": [{"name": "key", "in": "path", "required": true, "schema": {"type": "string"}}],
+                    "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "required": ["value"], "properties": {"project_id": {"type": "string"}, "value": {}}}}}},
+                    "responses": {"204": {"description": "Stored"}}
+                }
+            },
+            "/api/vector/search": {
+                "post": {
+                    "summary": "Semantic search over stored vectors",
+                    "operationId": "vectorSearch",
+                    "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "required": ["query"], "properties": {"query": {"type": "string"}, "top_k": {"type": "integer", "default": 5}}}}}},
+                    "responses": {
+                        "200": {"description": "Scored matches", "content": {"application/json": {"schema": {"type": "array", "items": {"type": "object", "properties": {"key": {"type": "string"}, "score": {"type": "number", "format": "float"}, "metadata": {"type": "object"}}}}}}},
+                        "400": {"description": "Empty query"},
+                        "503": {"description": "Embedding provider unavailable"}
+                    }
+                }
+            },
+            "/api/auth/validate": {
+                "post": {
+                    "summary": "Validate API credentials before issuing requests",
+                    "operationId": "validateAuth",
+                    "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "required": ["api_key"], "properties": {"api_key": {"type": "string"}}}}}},
+                    "responses": {
+                        "200": {"description": "Credentials accepted", "content": {"application/json": {"schema": {"type": "object", "properties": {"valid": {"type": "boolean"}, "message": {"type": "string"}}}}}},
+                        "400": {"description": "Missing api_key"},
+                        "401": {"description": "Invalid credentials"}
+                    }
+                }
+            },
             "/api/experience/similar": {
                 "post": {
                     "summary": "Query similar experiences",
@@ -1295,7 +1408,8 @@ pub(crate) async fn openapi_json() -> impl IntoResponse {
                     }
                 },
 
-                "ExperienceQueryRequest": {
+                "StateEntry": {"type": "object", "required": ["key", "value"], "properties": {"key": {"type": "string"}, "value": {}}},
+            "ExperienceQueryRequest": {
                     "type": "object",
                     "required": ["query_text"],
                     "properties": {
@@ -1999,24 +2113,58 @@ mod tests {
 
         // 从路由表读取真实注册的路径
         let mod_src = include_str!("http/mod.rs");
+
+        // `.route(...)` 的实参经常跨行书写。只看单行会漏掉它们，于是这些
+        // 路由既没进文档、门禁也看不见 —— 门禁静默失去覆盖。先把整段
+        // `.route(` … `)` 收成一条逻辑记录再解析。
+        fn methods_in(body: &str) -> Vec<String> {
+            const METHODS: [&str; 6] = ["get", "post", "put", "delete", "patch", "head"];
+            let mut out = Vec::new();
+            // The method is the identifier immediately preceding '(' — e.g.
+            // `get(list_sops_handler).post(save_sop_handler)`. Scanning inside
+            // the parentheses instead would read handler names, not methods.
+            for ident in body.split('(').map(|chunk| {
+                chunk
+                    .rsplit(|c: char| !(c.is_alphanumeric() || c == '_'))
+                    .next()
+                    .unwrap_or_default()
+            }) {
+                if METHODS.contains(&ident.to_ascii_lowercase().as_str()) {
+                    out.push(ident.to_uppercase());
+                }
+            }
+            out
+        }
+
         let mut routes: Vec<(String, String)> = Vec::new();
-        for line in mod_src.lines() {
-            let line = line.trim();
-            let Some(rest) = line.strip_prefix(".route(") else {
-                continue;
+        let mut pending: Option<String> = None;
+        for raw in mod_src.lines() {
+            let line = raw.trim();
+            let chunk = match pending.take() {
+                Some(mut buf) => {
+                    buf.push(' ');
+                    buf.push_str(line);
+                    Some(buf)
+                },
+                None => line.strip_prefix(".route(").map(|rest| rest.to_string()),
             };
-            let Some((path, method)) = rest.split_once(',') else {
+            let Some(buf) = chunk else { continue };
+            if !buf.ends_with(')') {
+                pending = Some(buf);
+                continue;
+            }
+            let Some((path, body)) = buf.split_once(',') else {
                 continue;
             };
             let path = path.trim().trim_matches('"').to_string();
-            // nest_service / ServeDir 不是 API 端点
             if path.starts_with("/dashboard") || path.is_empty() {
                 continue;
             }
-            let method =
-                method.trim().split(['(', ',']).next().unwrap_or_default().trim().to_uppercase();
-            routes.push((method, path));
+            for m in methods_in(body) {
+                routes.push((m, path.clone()));
+            }
         }
+
         assert!(
             routes.len() > 30,
             "路由解析明显失败，只读到 {} 条",

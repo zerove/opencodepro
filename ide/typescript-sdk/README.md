@@ -39,16 +39,16 @@ console.log(result.status, result.iterations);
 | 方法 | 端点 | 说明 |
 |------|------|------|
 | `health()` | GET /health | 健康检查 |
-| `listSessions()` | GET /api/v1/sessions | 列出所有会话 |
-| `getSession(id)` | GET /api/v1/sessions/{id} | 获取单个会话 |
-| `createSession(name)` | POST /api/v1/sessions | 创建会话 |
-| `addMessage(id, role, content)` | POST /api/v1/sessions/{id}/messages | 添加消息 |
-| `search(query, topK)` | POST /api/v1/vector/search | 向量搜索 |
-| `executeSOP(sopId, context)` | POST /api/v1/execute | 执行 SOP |
-| `listSops()` | GET /api/v1/sops | 列出所有 SOP |
-| `getDag(sopId)` | GET /api/v1/sops/{id}/dag | 获取 DAG |
-| `listSkills()` | GET /api/v1/skills | 列出技能 |
-| `installSkill(id)` | POST /api/v1/skills/install | 安装技能 |
+| `listSessions()` | GET /api/sessions | 列出所有会话 |
+| `getSession(id)` | GET /api/sessions/{id} | 获取单个会话 |
+| `createSession(name)` | POST /api/sessions | 创建会话 |
+| `addMessage(id, role, content)` | POST /api/sessions/{id}/messages | 添加消息 |
+| `search(query, topK)` | POST /api/vector/search | 向量搜索 |
+| `executeSOP(sopId, context)` | POST /api/execute | 执行 SOP |
+| `listSops()` | GET /api/sops | 列出所有 SOP |
+| `getDag(sopId)` | GET /api/sops/{id} | 获取 DAG |
+| `listSkills()` | GET /api/skills | 列出技能 |
+| `installSkill(id)` | POST /api/skills/install | 安装技能 |
 | `validateAuth(key)` | POST /api/auth/validate | 验证 API key |
 
 ## 测试

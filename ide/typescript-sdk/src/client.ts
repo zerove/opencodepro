@@ -74,7 +74,7 @@ export class SisyphusClient {
     try {
       return await this.request<StateEntry>(
         'GET',
-        `/api/v1/state/${encodeURIComponent(key)}?project_id=${encodeURIComponent(projectId)}`,
+        `/api/state/${encodeURIComponent(key)}?project_id=${encodeURIComponent(projectId)}`,
       );
     } catch (e: any) {
       if (e.message?.includes('404')) return null;
@@ -87,7 +87,7 @@ export class SisyphusClient {
     key: string,
     value: unknown,
   ): Promise<void> {
-    await this.request('PUT', `/api/v1/state/${encodeURIComponent(key)}`, {
+    await this.request('PUT', `/api/state/${encodeURIComponent(key)}`, {
       project_id: projectId,
       value,
     });
@@ -96,7 +96,7 @@ export class SisyphusClient {
   async listState(projectId: string): Promise<StateEntry[]> {
     return this.request<StateEntry[]>(
       'GET',
-      `/api/v1/state?project_id=${encodeURIComponent(projectId)}`,
+      `/api/state?project_id=${encodeURIComponent(projectId)}`,
     );
   }
 
@@ -106,7 +106,7 @@ export class SisyphusClient {
     query: string,
     topK: number = 5,
   ): Promise<SearchResult[]> {
-    return this.request<SearchResult[]>('POST', '/api/v1/vector/search', {
+    return this.request<SearchResult[]>('POST', '/api/vector/search', {
       query,
       top_k: topK,
     });
@@ -115,14 +115,14 @@ export class SisyphusClient {
   // ── 会话 ────────────────────────────────────
 
   async listSessions(): Promise<Session[]> {
-    return this.request<Session[]>('GET', '/api/v1/sessions');
+    return this.request<Session[]>('GET', '/api/sessions');
   }
 
   async getSession(id: string): Promise<Session | null> {
     try {
       return await this.request<Session>(
         'GET',
-        `/api/v1/sessions/${encodeURIComponent(id)}`,
+        `/api/sessions/${encodeURIComponent(id)}`,
       );
     } catch (e: any) {
       if (e.message?.includes('404')) return null;
@@ -136,7 +136,7 @@ export class SisyphusClient {
     sopId: string,
     context?: Record<string, unknown>,
   ): Promise<ExecutionResult> {
-    return this.request<ExecutionResult>('POST', '/api/v1/execute', {
+    return this.request<ExecutionResult>('POST', '/api/execute', {
       sop_id: sopId,
       context: context || {},
     });

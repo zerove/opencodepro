@@ -843,14 +843,14 @@ async fn fetch_health(state: &AppState) -> HealthResponse {
 }
 
 async fn fetch_sessions(state: &AppState) -> Vec<Session> {
-    match state.client.get(format!("{}/api/v1/sessions", state.bridge_url)).send().await {
+    match state.client.get(format!("{}/api/sessions", state.bridge_url)).send().await {
         Ok(r) => r.json::<Vec<Session>>().await.unwrap_or_default(),
         Err(_) => vec![],
     }
 }
 
 async fn fetch_session_detail(state: &AppState, id: &str) -> SessionDetail {
-    match state.client.get(format!("{}/api/v1/sessions/{id}", state.bridge_url)).send().await {
+    match state.client.get(format!("{}/api/sessions/{id}", state.bridge_url)).send().await {
         Ok(r) => r.json::<SessionDetail>().await.unwrap_or(SessionDetail {
             id: id.into(),
             name: "unknown".into(),
@@ -869,7 +869,7 @@ async fn fetch_session_detail(state: &AppState, id: &str) -> SessionDetail {
 async fn create_session(state: &AppState, name: &str) -> Session {
     match state
         .client
-        .post(format!("{}/api/v1/sessions", state.bridge_url))
+        .post(format!("{}/api/sessions", state.bridge_url))
         .json(&serde_json::json!({"name": name}))
         .send()
         .await
@@ -899,10 +899,7 @@ async fn add_message(
 ) -> Result<ChatMessage, reqwest::Error> {
     state
         .client
-        .post(format!(
-            "{}/api/v1/sessions/{sid}/messages",
-            state.bridge_url
-        ))
+        .post(format!("{}/api/sessions/{sid}/messages", state.bridge_url))
         .json(&serde_json::json!({"role": role, "content": content}))
         .send()
         .await?
@@ -913,7 +910,7 @@ async fn add_message(
 async fn search_memory(state: &AppState, query: &str, top_k: usize) -> Vec<SearchResult> {
     match state
         .client
-        .post(format!("{}/api/v1/vector/search", state.bridge_url))
+        .post(format!("{}/api/vector/search", state.bridge_url))
         .json(&serde_json::json!({"query": query, "top_k": top_k}))
         .send()
         .await
@@ -928,20 +925,20 @@ async fn execute_sop(
     sop_id: &str,
     context: Option<&serde_json::Value>,
 ) -> Result<ExecuteResult, reqwest::Error> {
-    state.client.post(format!("{}/api/v1/execute", state.bridge_url))
+    state.client.post(format!("{}/api/execute", state.bridge_url))
         .json(&serde_json::json!({"sop_id": sop_id, "context": context.unwrap_or(&serde_json::json!({}))}))
         .send().await?.json::<ExecuteResult>().await
 }
 
 async fn fetch_sop_list(state: &AppState) -> Vec<SopInfo> {
-    match state.client.get(format!("{}/api/v1/sops", state.bridge_url)).send().await {
+    match state.client.get(format!("{}/api/sops", state.bridge_url)).send().await {
         Ok(r) => r.json::<Vec<SopInfo>>().await.unwrap_or_default(),
         Err(_) => vec![],
     }
 }
 
 async fn fetch_dag_graph(state: &AppState, sop_id: &str) -> DagGraph {
-    match state.client.get(format!("{}/api/v1/sops/{sop_id}/dag", state.bridge_url)).send().await {
+    match state.client.get(format!("{}/api/sops/{sop_id}", state.bridge_url)).send().await {
         Ok(r) => r.json::<DagGraph>().await.unwrap_or(DagGraph {
             nodes: vec![],
             edges: vec![],
@@ -958,7 +955,7 @@ async fn fetch_dag_graph(state: &AppState, sop_id: &str) -> DagGraph {
 }
 
 async fn fetch_skill_list(state: &AppState) -> Vec<SkillEntry> {
-    match state.client.get(format!("{}/api/v1/skills", state.bridge_url)).send().await {
+    match state.client.get(format!("{}/api/skills", state.bridge_url)).send().await {
         Ok(r) => r.json::<Vec<SkillEntry>>().await.unwrap_or_default(),
         Err(_) => vec![],
     }

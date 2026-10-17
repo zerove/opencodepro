@@ -8,6 +8,7 @@
 
 pub(crate) mod handlers;
 pub(crate) mod handlers_ext;
+pub(crate) mod handlers_platform;
 pub(crate) mod sse_handlers;
 pub mod types;
 
@@ -28,6 +29,7 @@ use super::http_openapi;
 
 use handlers::*;
 use handlers_ext::*;
+use handlers_platform::*;
 use sse_handlers::*;
 
 /// JWT authentication middleware for the REST API.
@@ -170,6 +172,16 @@ pub fn build_router(state: RestApiState) -> Router {
             get(get_current_workspace_handler),
         )
         .route("/api/sops", get(list_sops_handler).post(save_sop_handler))
+        .route(
+            "/api/state",
+            get(get_state_handler),
+        )
+        .route(
+            "/api/state/:key",
+            get(get_state_key_handler).put(put_state_key_handler),
+        )
+        .route("/api/vector/search", post(vector_search_handler))
+        .route("/api/auth/validate", post(auth_validate_handler))
         .route(
             "/api/sops/:id",
             get(get_sop_handler).delete(delete_sop_handler),

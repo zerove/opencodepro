@@ -49,16 +49,16 @@ health = await async_health("http://localhost:8080")
 | 方法 | 端点 | 说明 |
 |------|------|------|
 | `health()` | GET /health | 健康检查 |
-| `list_sessions()` | GET /api/v1/sessions | 列出所有会话 |
-| `get_session(id)` | GET /api/v1/sessions/{id} | 获取单个会话 |
-| `create_session(name)` | POST /api/v1/sessions | 创建会话 |
-| `add_message(id, role, content)` | POST /api/v1/sessions/{id}/messages | 添加消息 |
-| `search(query, top_k)` | POST /api/v1/vector/search | 向量搜索 |
-| `execute_sop(sop_id, context)` | POST /api/v1/execute | 执行 SOP |
-| `list_sops()` | GET /api/v1/sops | 列出所有 SOP |
-| `get_dag(sop_id)` | GET /api/v1/sops/{id}/dag | 获取 DAG |
-| `list_skills()` | GET /api/v1/skills | 列出技能 |
-| `install_skill(skill_id)` | POST /api/v1/skills/install | 安装技能 |
+| `list_sessions()` | GET /api/sessions | 列出所有会话 |
+| `get_session(id)` | GET /api/sessions/{id} | 获取单个会话 |
+| `create_session(name)` | POST /api/sessions | 创建会话 |
+| `add_message(id, role, content)` | POST /api/sessions/{id}/messages | 添加消息 |
+| `search(query, top_k)` | POST /api/vector/search | 向量搜索 |
+| `execute_sop(sop_id, context)` | POST /api/execute | 执行 SOP |
+| `list_sops()` | GET /api/sops | 列出所有 SOP |
+| `get_dag(sop_id)` | GET /api/sops/{id} | 获取 DAG |
+| `list_skills()` | GET /api/skills | 列出技能 |
+| `install_skill(skill_id)` | POST /api/skills/install | 安装技能 |
 | `validate_auth(api_key)` | POST /api/auth/validate | 验证 API key |
 
 ## 测试

@@ -41,7 +41,7 @@ impl SisyphusClient {
     pub async fn get_state(&self, key: &str) -> Result<StateResponse, SdkError> {
         let resp = self
             .http
-            .get(self.url(&format!("/api/v1/state/{}", key)))
+            .get(self.url(&format!("/api/state/{}", key)))
             .send()
             .await?;
 
@@ -59,7 +59,7 @@ impl SisyphusClient {
     pub async fn set_state(&self, key: &str, value: Value) -> Result<StateResponse, SdkError> {
         let resp = self
             .http
-            .post(self.url(&format!("/api/v1/state/{}", key)))
+            .post(self.url(&format!("/api/state/{}", key)))
             .json(&SetStateRequest { value })
             .send()
             .await?;
@@ -70,7 +70,7 @@ impl SisyphusClient {
     pub async fn delete_state(&self, key: &str) -> Result<(), SdkError> {
         let resp = self
             .http
-            .delete(self.url(&format!("/api/v1/state/{}", key)))
+            .delete(self.url(&format!("/api/state/{}", key)))
             .send()
             .await?;
         match resp.status().as_u16() {
@@ -89,7 +89,7 @@ impl SisyphusClient {
         limit: Option<i64>,
         offset: Option<i64>,
     ) -> Result<ListStateResponse, SdkError> {
-        let mut url = self.url("/api/v1/state");
+        let mut url = self.url("/api/state");
         let mut params = Vec::new();
         if let Some(l) = limit {
             params.push(format!("limit={}", l));
@@ -114,7 +114,7 @@ impl SisyphusClient {
     ) -> Result<VectorSearchResponse, SdkError> {
         let resp = self
             .http
-            .post(self.url("/api/v1/vectors/search"))
+            .post(self.url("/api/vector/search"))
             .json(&VectorSearchRequest {
                 query: query.to_vec(),
                 top_k: Some(top_k),
@@ -140,8 +140,8 @@ mod tests {
     fn test_url_construction() {
         let client = SisyphusClient::new("http://localhost:3000");
         assert_eq!(
-            client.url("/api/v1/state"),
-            "http://localhost:3000/api/v1/state"
+            client.url("/api/state"),
+            "http://localhost:3000/api/state"
         );
         // Trailing slash should be normalized
         let client2 = SisyphusClient::new("http://localhost:3000/");

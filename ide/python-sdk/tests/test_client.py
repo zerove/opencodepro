@@ -102,7 +102,7 @@ class TestSessions:
         from urllib.error import HTTPError
 
         mock_urlopen.side_effect = HTTPError(
-            "http://test.local/api/v1/sessions/bad",
+            "http://test.local/api/sessions/bad",
             404,
             "Not Found",
             {},
@@ -150,12 +150,12 @@ class TestSearch:
         assert result[0].score == 0.95
 
     def test_search_sends_post_request(self, client, mock_urlopen):
-        """search() 应该发送 POST 请求到 /api/v1/vector/search"""
+        """search() 应该发送 POST 请求到 /api/vector/search"""
         mock_urlopen.return_value = mock_response([])
         client.search("my query", top_k=3)
         req = mock_urlopen.call_args[0][0]
         assert req.method == "POST"
-        assert "/api/v1/vector/search" in req.full_url
+        assert "/api/vector/search" in req.full_url
         body = json.loads(req.data.decode())
         assert body["query"] == "my query"
         assert body["top_k"] == 3

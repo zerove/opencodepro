@@ -96,7 +96,7 @@ func (c *Client) Health() (*HealthResponse, error) {
 // ListSessions 返回所有会话。
 func (c *Client) ListSessions() ([]Session, error) {
 	var sessions []Session
-	if err := c.get("/api/v1/sessions", &sessions); err != nil {
+	if err := c.get("/api/sessions", &sessions); err != nil {
 		return nil, err
 	}
 	return sessions, nil
@@ -105,7 +105,7 @@ func (c *Client) ListSessions() ([]Session, error) {
 // CreateSession 创建新会话。
 func (c *Client) CreateSession(name string) (*Session, error) {
 	var s Session
-	if err := c.post("/api/v1/sessions", map[string]string{"name": name}, &s); err != nil {
+	if err := c.post("/api/sessions", map[string]string{"name": name}, &s); err != nil {
 		return nil, err
 	}
 	return &s, nil
@@ -115,7 +115,7 @@ func (c *Client) CreateSession(name string) (*Session, error) {
 func (c *Client) SearchMemory(query string, topK int) ([]SearchResult, error) {
 	var results []SearchResult
 	body := map[string]interface{}{"query": query, "top_k": topK}
-	if err := c.post("/api/v1/vector/search", body, &results); err != nil {
+	if err := c.post("/api/vector/search", body, &results); err != nil {
 		return nil, err
 	}
 	return results, nil
@@ -125,7 +125,7 @@ func (c *Client) SearchMemory(query string, topK int) ([]SearchResult, error) {
 func (c *Client) ExecuteSOP(sopID string, context map[string]interface{}) (*ExecuteResult, error) {
 	var r ExecuteResult
 	body := map[string]interface{}{"sop_id": sopID, "context": context}
-	if err := c.post("/api/v1/execute", body, &r); err != nil {
+	if err := c.post("/api/execute", body, &r); err != nil {
 		return nil, err
 	}
 	return &r, nil
@@ -134,7 +134,7 @@ func (c *Client) ExecuteSOP(sopID string, context map[string]interface{}) (*Exec
 // ListSOPs 返回可用的 SOP 列表。
 func (c *Client) ListSOPs() ([]SopInfo, error) {
 	var sops []SopInfo
-	if err := c.get("/api/v1/sops", &sops); err != nil {
+	if err := c.get("/api/sops", &sops); err != nil {
 		return nil, err
 	}
 	return sops, nil
@@ -143,7 +143,7 @@ func (c *Client) ListSOPs() ([]SopInfo, error) {
 // ListSkills 返回可用的技能列表。
 func (c *Client) ListSkills() ([]SkillEntry, error) {
 	var skills []SkillEntry
-	if err := c.get("/api/v1/skills", &skills); err != nil {
+	if err := c.get("/api/skills", &skills); err != nil {
 		return nil, err
 	}
 	return skills, nil
@@ -151,7 +151,7 @@ func (c *Client) ListSkills() ([]SkillEntry, error) {
 
 // InstallSkill 按 ID 安装技能。
 func (c *Client) InstallSkill(skillID string) error {
-	return c.post("/api/v1/skills/install", map[string]string{"skill_id": skillID}, nil)
+	return c.post("/api/skills/install", map[string]string{"skill_id": skillID}, nil)
 }
 
 // ValidateAuth 检查 API 密钥是否有效。

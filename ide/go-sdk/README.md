@@ -47,16 +47,16 @@ func main() {
 | 方法 | 端点 | 说明 |
 |------|------|------|
 | `Health()` | GET /health | 健康检查 |
-| `ListSessions()` | GET /api/v1/sessions | 列出所有会话 |
-| `GetSession(id)` | GET /api/v1/sessions/{id} | 获取单个会话 |
-| `CreateSession(name)` | POST /api/v1/sessions | 创建会话 |
-| `AddMessage(id, role, content)` | POST /api/v1/sessions/{id}/messages | 添加消息 |
-| `Search(query, topK)` | POST /api/v1/vector/search | 向量搜索 |
-| `ExecuteSOP(id, context)` | POST /api/v1/execute | 执行 SOP |
-| `ListSops()` | GET /api/v1/sops | 列出所有 SOP |
-| `GetDAG(id)` | GET /api/v1/sops/{id}/dag | 获取 DAG |
-| `ListSkills()` | GET /api/v1/skills | 列出技能 |
-| `InstallSkill(id)` | POST /api/v1/skills/install | 安装技能 |
+| `ListSessions()` | GET /api/sessions | 列出所有会话 |
+| `GetSession(id)` | GET /api/sessions/{id} | 获取单个会话 |
+| `CreateSession(name)` | POST /api/sessions | 创建会话 |
+| `AddMessage(id, role, content)` | POST /api/sessions/{id}/messages | 添加消息 |
+| `Search(query, topK)` | POST /api/vector/search | 向量搜索 |
+| `ExecuteSOP(id, context)` | POST /api/execute | 执行 SOP |
+| `ListSops()` | GET /api/sops | 列出所有 SOP |
+| `GetDAG(id)` | GET /api/sops/{id} | 获取 DAG |
+| `ListSkills()` | GET /api/skills | 列出技能 |
+| `InstallSkill(id)` | POST /api/skills/install | 安装技能 |
 | `ValidateAuth(key)` | POST /api/auth/validate | 验证 API key |
 
 ## 测试

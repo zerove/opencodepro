@@ -111,28 +111,28 @@ class SisyphusClient:
     # ── 会话 ───────────────────────────────────
 
     def list_sessions(self) -> list[Session]:
-        data = self._request("GET", "/api/v1/sessions")
+        data = self._request("GET", "/api/sessions")
         return [Session(**s) for s in data]
 
     def get_session(self, session_id: str) -> Optional[Session]:
         try:
-            data = self._request("GET", f"/api/v1/sessions/{session_id}")
+            data = self._request("GET", f"/api/sessions/{session_id}")
             return Session(**data)
         except SisyphusError:
             return None
 
     def create_session(self, name: str) -> Session:
-        data = self._request("POST", "/api/v1/sessions", {"name": name})
+        data = self._request("POST", "/api/sessions", {"name": name})
         return Session(**data)
 
     def add_message(self, session_id: str, role: str, content: str) -> dict:
-        return self._request("POST", f"/api/v1/sessions/{session_id}/messages",
+        return self._request("POST", f"/api/sessions/{session_id}/messages",
                              {"role": role, "content": content})
 
     # ── 搜索 ─────────────────────────────────
 
     def search(self, query: str, top_k: int = 10) -> list[SearchResult]:
-        data = self._request("POST", "/api/v1/vector/search",
+        data = self._request("POST", "/api/vector/search",
                              {"query": query, "top_k": top_k})
         return [SearchResult(**r) for r in data]
 
@@ -140,27 +140,27 @@ class SisyphusClient:
 
     def execute_sop(self, sop_id: str,
                     context: Optional[dict] = None) -> ExecuteResult:
-        data = self._request("POST", "/api/v1/execute",
+        data = self._request("POST", "/api/execute",
                              {"sop_id": sop_id, "context": context or {}})
         return ExecuteResult(**data)
 
     # ── SOP 管理 ───────────────────────────────
 
     def list_sops(self) -> list[SopInfo]:
-        data = self._request("GET", "/api/v1/sops")
+        data = self._request("GET", "/api/sops")
         return [SopInfo(**s) for s in data]
 
     def get_dag(self, sop_id: str) -> dict:
-        return self._request("GET", f"/api/v1/sops/{sop_id}/dag")
+        return self._request("GET", f"/api/sops/{sop_id}")
 
     # ── 技能 ─────────────────────────────────
 
     def list_skills(self) -> list[SkillEntry]:
-        data = self._request("GET", "/api/v1/skills")
+        data = self._request("GET", "/api/skills")
         return [SkillEntry(**s) for s in data]
 
     def install_skill(self, skill_id: str) -> dict:
-        return self._request("POST", "/api/v1/skills/install",
+        return self._request("POST", "/api/skills/install",
                              {"skill_id": skill_id})
 
     # ── 认证 ───────────────────────────────────
