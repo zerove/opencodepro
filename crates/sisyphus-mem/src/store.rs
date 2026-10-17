@@ -422,17 +422,26 @@ impl MfsStore {
     }
 
     /// Captures a point-in-time snapshot of the current state.
-    pub fn take_snapshot(&self) -> Result<Snapshot> {
+    pub async fn take_snapshot(&self) -> Result<Snapshot> {
         let span = tracing::info_span!("mem.snapshot.take");
         let _enter = span.enter();
 
         let start = Instant::now();
-        let cache = self.l1.lock();
-        let mut data = std::collections::HashMap::new();
-        for (key, value) in cache.iter() {
-            data.insert(key.clone(), value.clone());
+        // Read L2, not L1: the cache is capacity-bounded, so anything evicted
+        // from it is still valid state on disk but would be missing from a
+        // snapshot built off L1 — silent data loss that only appears once the
+        // working set outgrows the cache.
+        self.flush().await?;
+        let rows: Vec<(String, String)> = sqlx::query_as("SELECT key, value FROM state")
+            .fetch_all(&self.l2)
+            .await
+            .context("Failed to read state for snapshot")?;
+        let mut data = std::collections::HashMap::with_capacity(rows.len());
+        for (key, value_str) in rows {
+            let value: serde_json::Value = serde_json::from_str(&value_str)
+                .with_context(|| format!("corrupt JSON in state row {key}"))?;
+            data.insert(key, value);
         }
-        drop(cache);
         let duration = start.elapsed();
         tracing::info!(
             keys = data.len(),

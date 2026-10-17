@@ -1,3 +1,4 @@
+#![cfg(feature = "alt-sql-store")]
 //! SqlStore 基础集成测试 (ADR-007 §2: 公共 API 必带测试)
 //!
 //! 覆盖:

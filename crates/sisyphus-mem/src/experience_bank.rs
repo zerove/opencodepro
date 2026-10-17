@@ -400,47 +400,51 @@ impl ExperienceBank for VectorExperienceBank {
         }
 
         // 3. De-duplicate and Filter
-        let mut experiences = Vec::new();
         let mut seen_keys = std::collections::HashSet::new();
 
         // Sort candidates by score (this is a simplification, in a real system we'd normalize scores)
         all_candidates
             .sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
 
-        for sv in all_candidates {
-            let metadata = sv.record.metadata;
-            let exp_key = metadata
-                .get("exp_key")
-                .and_then(|v| v.as_str())
-                .ok_or_else(|| TypesError::ExperienceError("missing exp_key in metadata".into()))?;
-
-            if seen_keys.contains(exp_key) {
-                continue;
-            }
-
-            if let Some(exp) =
-                self.store.get_experience(exp_key).await.map_err(|e| {
-                    TypesError::ExperienceError(format!("get experience failed: {e}"))
-                })?
+        // One round trip for every candidate instead of one per candidate.
+        let mut wanted: Vec<String> = Vec::new();
+        for sv in &all_candidates {
+            if let Some(key) = sv.record.metadata.get("exp_key").and_then(|v| v.as_str())
+                && seen_keys.insert(key.to_string())
             {
-                // Project-based filtering:
-                #[allow(clippy::collapsible_if)]
-                if let Some(ref pid) = query.project_id {
-                    if exp.project_id.as_ref() != Some(pid) && exp.project_id.is_some() {
-                        continue;
-                    }
-                }
-
-                #[allow(clippy::collapsible_if)]
-                if let Some(ref action_id) = query.action_id {
-                    if exp.action_id != *action_id {
-                        continue;
-                    }
-                }
-
-                experiences.push(exp);
-                seen_keys.insert(exp_key.to_string());
+                wanted.push(key.to_string());
             }
+        }
+
+        let loaded = self.load_by_keys(&wanted).await?;
+        let by_key: std::collections::HashMap<String, ExperienceTuple> =
+            loaded.into_iter().collect();
+
+        let mut experiences = Vec::new();
+        for sv in all_candidates {
+            let Some(exp_key) = sv.record.metadata.get("exp_key").and_then(|v| v.as_str()) else {
+                continue;
+            };
+            let Some(exp) = by_key.get(exp_key) else {
+                continue;
+            };
+
+            // Project-based filtering:
+            #[allow(clippy::collapsible_if)]
+            if let Some(ref pid) = query.project_id {
+                if exp.project_id.as_ref() != Some(pid) && exp.project_id.is_some() {
+                    continue;
+                }
+            }
+
+            #[allow(clippy::collapsible_if)]
+            if let Some(ref action_id) = query.action_id {
+                if exp.action_id != *action_id {
+                    continue;
+                }
+            }
+
+            experiences.push(exp.clone());
         }
 
         Ok(experiences.into_iter().take(query.limit).collect())

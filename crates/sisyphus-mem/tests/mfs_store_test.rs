@@ -85,7 +85,7 @@ async fn test_snapshot_restore() {
     store.flush().await.unwrap();
 
     // Take snapshot
-    let snapshot = store.take_snapshot().expect("Snapshot failed");
+    let snapshot = store.take_snapshot().await.expect("Snapshot failed");
     assert_eq!(snapshot.data.len(), 2);
 
     // Modify state

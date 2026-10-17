@@ -117,41 +117,9 @@ impl RoadmapManager {
         milestone: Milestone,
     ) -> Result<(), RoadmapError> {
         self.sql_store
-            .insert_milestone(
-                &milestone.id,
-                project_id,
-                &milestone.name,
-                &milestone.status.to_string(),
-            )
+            .insert_milestone_tree(project_id, &milestone)
             .await
             .map_err(|e| RoadmapError::Internal(e.to_string()))?;
-
-        for phase in &milestone.phases {
-            let deps = phase.depends_on.join(",");
-            self.sql_store
-                .insert_phase(
-                    project_id,
-                    &phase.id,
-                    &milestone.id,
-                    &phase.name,
-                    Some(deps),
-                )
-                .await
-                .map_err(|e| RoadmapError::Internal(e.to_string()))?;
-
-            for goal in &phase.goals {
-                self.sql_store
-                    .insert_goal(
-                        project_id,
-                        &goal.goal_id,
-                        &phase.id,
-                        &goal.description,
-                        &goal.status.to_string(),
-                    )
-                    .await
-                    .map_err(|e| RoadmapError::Internal(e.to_string()))?;
-            }
-        }
         Ok(())
     }
 

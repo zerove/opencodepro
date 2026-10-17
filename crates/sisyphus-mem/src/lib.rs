@@ -6,7 +6,19 @@ pub mod golden_dataset;
 pub mod retrieval;
 pub mod sop_store;
 pub use sop_store::SopSqlStore;
+/// Alternative AnyPool-backed store (PostgreSQL / pgvector).
+///
+/// Unused by every production path — the bridge builds [`store::MfsStore`] via
+/// [`manager::SisyphusStore`] — so it is behind an opt-in feature to keep 1340
+/// lines out of the default build.
+///
+/// Warning: its DDL for `projects`/`milestones`/`phases`/`goals`/`sops` differs
+/// from the live schema in `sop_store.rs` and `roadmap_store.rs`. Pointing both
+/// at one database means whichever `CREATE TABLE IF NOT EXISTS` runs first
+/// wins and the other side fails on missing columns.
+#[cfg(feature = "alt-sql-store")]
 pub mod sql_store;
+#[cfg(feature = "alt-sql-store")]
 pub use sql_store::{SqlStore, SqlStoreConfig, SqliteSynchronous};
 pub mod store;
 pub use store::MfsStore;

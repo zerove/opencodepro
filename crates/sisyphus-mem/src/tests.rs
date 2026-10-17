@@ -74,7 +74,7 @@ async fn test_update_then_revert() {
 
     store.set_state_json(PROJECT_ID, "k", json!("v1")).await.expect("写入 v1 失败");
 
-    let snap = store.take_snapshot().expect("创建快照失败");
+    let snap = store.take_snapshot().await.expect("创建快照失败");
 
     store.set_state_json(PROJECT_ID, "k", json!("v2")).await.expect("写入 v2 失败");
     assert_eq!(
@@ -95,7 +95,7 @@ async fn test_snapshot_restore() {
     store.set_state_json(PROJECT_ID, "k1", json!(1)).await.expect("写入 k1 失败");
     store.set_state_json(PROJECT_ID, "k2", json!(2)).await.expect("写入 k2 失败");
 
-    let snapshot = store.take_snapshot().expect("创建快照失败");
+    let snapshot = store.take_snapshot().await.expect("创建快照失败");
 
     store.set_state_json(PROJECT_ID, "k1", json!(10)).await.expect("覆盖 k1 失败");
     store.set_state_json(PROJECT_ID, "k3", json!(3)).await.expect("新增 k3 失败");
@@ -139,4 +139,36 @@ async fn test_concurrent_access() {
             .expect("并发写入的键必须全部可读");
         assert_eq!(val, json!(i));
     }
+}
+
+/// 回归：快照必须覆盖已从 L1 淘汰但仍存在于 L2 的键。
+///
+/// `take_snapshot` 曾只遍历容量受限的 L1 LRU。键一旦被淘汰，快照就静默
+/// 丢失该键，而既有测试只写 2~3 个键，永远触发不到容量边界。
+#[tokio::test]
+async fn snapshot_includes_keys_evicted_from_l1() {
+    let mut config = sisyphus_types::CacheConfig::default();
+    config.l1_capacity = 4;
+    let store = MfsStore::new("sqlite::memory:", &config).await.expect("初始化内存状态库失败");
+
+    for i in 0..12 {
+        store.set_state_json(PROJECT_ID, &format!("k{i}"), json!(i)).await.expect("写入失败");
+    }
+
+    let snapshot = store.take_snapshot().await.expect("创建快照失败");
+
+    assert_eq!(
+        snapshot.data.len(),
+        12,
+        "快照必须包含全部键，而不只是仍在 L1 中的那几个"
+    );
+    // Stored keys carry a project_id prefix.
+    assert_eq!(
+        snapshot.data.get(&format!("{PROJECT_ID}:k0")),
+        Some(&json!(0))
+    );
+    assert_eq!(
+        snapshot.data.get(&format!("{PROJECT_ID}:k11")),
+        Some(&json!(11))
+    );
 }

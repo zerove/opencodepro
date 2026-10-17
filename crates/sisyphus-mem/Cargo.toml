@@ -6,6 +6,9 @@ authors = ["Sisyphus Team"]
 description = "Memory-First State: DashMap L1 + SQLite L2 with snapshot/restore"
 license = "MIT"
 
+[features]
+alt-sql-store = []
+
 [dependencies]
 lru = "0.12"
 parking_lot = "0.12"

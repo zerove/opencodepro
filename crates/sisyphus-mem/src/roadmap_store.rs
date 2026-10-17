@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
 use sqlx::SqlitePool;
+use std::collections::HashMap;
 
 use sisyphus_types::{GoalRef, Milestone, MilestoneStatus, Phase, Project};
 
@@ -132,67 +133,63 @@ impl RoadmapSqlStore {
         .fetch_all(&self.pool)
         .await?;
 
-        let mut milestones = Vec::new();
-        for (m_id, m_name, m_status_str) in milestones_rows {
-            let m_status = match m_status_str.as_str() {
-                "Completed" => MilestoneStatus::Completed,
-                "Blocked" => MilestoneStatus::Blocked,
-                "InProgress" => MilestoneStatus::InProgress,
-                _ => MilestoneStatus::Pending,
-            };
+        // Three fixed queries regardless of project size. The previous form
+        // issued one query per milestone and then one per phase, so loading a
+        // project with M milestones and P phases each cost 1 + M + M*P round
+        // trips.
+        let phases_rows = sqlx::query_as::<_, (String, String, String, Option<String>)>(
+            "SELECT id, name, milestone_id, depends_on FROM phases WHERE project_id = ?",
+        )
+        .bind(id)
+        .fetch_all(&self.pool)
+        .await?;
 
-            let phases_rows = sqlx::query_as::<_, (String, String, Option<String>)>(
-                "SELECT id, name, depends_on FROM phases WHERE milestone_id = ? AND project_id = ?",
-            )
-            .bind(&m_id)
-            .bind(id)
-            .fetch_all(&self.pool)
-            .await?;
+        let goals_rows = sqlx::query_as::<_, (String, String, String, String)>(
+            "SELECT id, description, status, phase_id FROM goals WHERE project_id = ?",
+        )
+        .bind(id)
+        .fetch_all(&self.pool)
+        .await?;
 
-            let mut phases = Vec::new();
-            for (p_id, p_name, p_deps_str) in phases_rows {
-                let depends_on = p_deps_str
-                    .map(|s| s.split(',').filter(|x| !x.is_empty()).map(String::from).collect())
-                    .unwrap_or_default();
+        let decode_status = |raw: &str| match raw {
+            "Completed" => MilestoneStatus::Completed,
+            "Blocked" => MilestoneStatus::Blocked,
+            "InProgress" => MilestoneStatus::InProgress,
+            _ => MilestoneStatus::Pending,
+        };
 
-                let goals_rows = sqlx::query_as::<_, (String, String, String)>("SELECT id, description, status FROM goals WHERE phase_id = ? AND project_id = ?")
-                    .bind(&p_id)
-                    .bind(id)
-                    .fetch_all(&self.pool)
-                    .await?;
-
-                let goals = goals_rows
-                    .into_iter()
-                    .map(|(g_id, g_desc, g_status_str)| {
-                        let g_status = match g_status_str.as_str() {
-                            "Completed" => MilestoneStatus::Completed,
-                            "Blocked" => MilestoneStatus::Blocked,
-                            "InProgress" => MilestoneStatus::InProgress,
-                            _ => MilestoneStatus::Pending,
-                        };
-                        GoalRef {
-                            goal_id: g_id,
-                            description: g_desc,
-                            status: g_status,
-                        }
-                    })
-                    .collect();
-
-                phases.push(Phase {
-                    id: p_id,
-                    name: p_name,
-                    goals,
-                    depends_on,
-                });
-            }
-
-            milestones.push(Milestone {
-                id: m_id,
-                name: m_name,
-                status: m_status,
-                phases,
+        let mut goals_by_phase: HashMap<String, Vec<GoalRef>> = HashMap::new();
+        for (g_id, g_desc, g_status, phase_id) in goals_rows {
+            goals_by_phase.entry(phase_id).or_default().push(GoalRef {
+                goal_id: g_id,
+                description: g_desc,
+                status: decode_status(&g_status),
             });
         }
+
+        let mut phases_by_milestone: HashMap<String, Vec<Phase>> = HashMap::new();
+        for (p_id, p_name, milestone_id, p_deps) in phases_rows {
+            let depends_on = p_deps
+                .map(|s| s.split(',').filter(|x| !x.is_empty()).map(String::from).collect())
+                .unwrap_or_default();
+            let goals = goals_by_phase.remove(&p_id).unwrap_or_default();
+            phases_by_milestone.entry(milestone_id).or_default().push(Phase {
+                id: p_id,
+                name: p_name,
+                goals,
+                depends_on,
+            });
+        }
+
+        let milestones = milestones_rows
+            .into_iter()
+            .map(|(m_id, m_name, m_status_str)| Milestone {
+                id: m_id.clone(),
+                name: m_name,
+                status: decode_status(&m_status_str),
+                phases: phases_by_milestone.remove(&m_id).unwrap_or_default(),
+            })
+            .collect();
 
         Ok(Some(Project {
             id: pid,
@@ -293,6 +290,67 @@ impl RoadmapSqlStore {
             .bind(status)
             .execute(&self.pool)
             .await?;
+        Ok(())
+    }
+
+    /// Insert a milestone with all its phases and goals in one transaction.
+    ///
+    /// The manager's per-row inserts committed individually, so a failure part
+    /// way through left a milestone with only some of its phases, and a large
+    /// roadmap cost one round trip per row.
+    pub async fn insert_milestone_tree(
+        &self,
+        project_id: &str,
+        milestone: &sisyphus_types::roadmap::Milestone,
+    ) -> Result<()> {
+        use sqlx::Acquire;
+        let mut conn = self.pool.acquire().await?;
+
+        let mut tx = conn.begin().await?;
+
+        sqlx::query(
+            "INSERT INTO milestones (id, project_id, name, status) VALUES (?, ?, ?, ?)
+             ON CONFLICT(id, project_id) DO UPDATE SET name=excluded.name, status=excluded.status",
+        )
+        .bind(&milestone.id)
+        .bind(project_id)
+        .bind(&milestone.name)
+        .bind(milestone.status.to_string())
+        .execute(&mut *tx)
+        .await?;
+
+        for phase in &milestone.phases {
+            let deps = phase.depends_on.join(",");
+            sqlx::query(
+                "INSERT INTO phases (id, project_id, milestone_id, name, depends_on)
+                 VALUES (?, ?, ?, ?, ?)
+                 ON CONFLICT(id, project_id) DO UPDATE SET name=excluded.name, depends_on=excluded.depends_on",
+            )
+            .bind(&phase.id)
+            .bind(project_id)
+            .bind(&milestone.id)
+            .bind(&phase.name)
+            .bind(&deps)
+            .execute(&mut *tx)
+            .await?;
+
+            for goal in &phase.goals {
+                sqlx::query(
+                    "INSERT INTO goals (id, project_id, phase_id, description, status)
+                     VALUES (?, ?, ?, ?, ?)
+                     ON CONFLICT(id, project_id) DO UPDATE SET description=excluded.description, status=excluded.status",
+                )
+                .bind(&goal.goal_id)
+                .bind(project_id)
+                .bind(&phase.id)
+                .bind(&goal.description)
+                .bind(goal.status.to_string())
+                .execute(&mut *tx)
+                .await?;
+            }
+        }
+
+        tx.commit().await?;
         Ok(())
     }
 

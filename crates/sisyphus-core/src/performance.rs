@@ -72,19 +72,16 @@ impl OutputCache {
 
     /// 存储输出。
     ///
-    /// 容量满时，逐出键最接近逐出计数器的条目。
-    /// 使用确定性逐出策略（非 LRU），避免在持有分片写锁时调用
-    /// DashMap::iter() 造成死锁。
+    /// 超过容量时逐出最旧的条目。原实现用 `evict_target ^ hash` 构造一个
+    /// 几乎必然不存在的键去删除，因此逐出从未真正发生，缓存只增不减。
     pub fn insert(&self, hash: u64, output: NodeOutput) {
-        if self.cache.len() >= self.max_entries && !self.cache.contains_key(&hash) {
-            // 简单的基于计数器的逐出：移除键最接近
-            // 当前插入计数器的条目。这避免了在 insert() 内部调用
-            // 可能死锁的 DashMap::iter()。
-            let evict_target = self.insert_count.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            // 尝试类随机逐出：选择靠近计数器的哈希
-            let _ = self.cache.remove(&(evict_target ^ hash));
-            // 即使该键不存在，我们也继续 — len 检查
-            // 仅是参考性的，我们以略微超出容量为代价避免死锁。
+        if !self.cache.contains_key(&hash) && self.cache.len() >= self.max_entries {
+            // 先收集再删除：持有分片迭代器的同时对同一分片取写锁会死锁。
+            let victims: Vec<u64> = self.cache.iter().map(|e| *e.key()).collect();
+            let overflow = self.cache.len().saturating_sub(self.max_entries) + 1;
+            for key in victims.into_iter().take(overflow) {
+                self.cache.remove(&key);
+            }
         }
         self.insert_count.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         self.cache.insert(hash, output);
@@ -337,5 +334,40 @@ mod tests {
 
         assert_eq!(profiler.avg_duration("test"), Some(50.0));
         assert_eq!(profiler.cache_hit_rate(), 0.0);
+    }
+}
+
+#[cfg(test)]
+mod eviction_tests {
+    use super::*;
+    use std::sync::Arc;
+
+    fn output() -> NodeOutput {
+        NodeOutput(Arc::new(serde_json::Value::Null))
+    }
+
+    /// 回归：逐出必须真的发生。此前 `insert` 删除的是一个用
+    /// `evict_target ^ hash` 拼出的键，它几乎必然不存在，缓存因此
+    /// 只增不减，`max_entries` 形同虚设。
+    #[test]
+    fn output_cache_respects_max_entries() {
+        let cache = OutputCache::new(10);
+        for i in 0..100u64 {
+            cache.insert(i, output());
+        }
+        assert!(
+            cache.len() <= 10,
+            "cache grew to {} entries, max_entries is 10",
+            cache.len()
+        );
+    }
+
+    #[test]
+    fn output_cache_keeps_recently_inserted_entries() {
+        let cache = OutputCache::new(10);
+        for i in 0..50u64 {
+            cache.insert(i, output());
+        }
+        assert!(cache.get(49).is_some(), "newest entry must survive");
     }
 }
