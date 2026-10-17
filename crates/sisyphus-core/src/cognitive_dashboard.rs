@@ -4,12 +4,30 @@
 //! 格式化的终端输出，使 AI 的"思考"过程可观测。
 
 use sisyphus_types::{CognitiveMetrics, ExecutionEvent};
+use std::sync::atomic::{AtomicBool, Ordering};
+
+/// Off by default: `broadcast_event` calls `render` for every event, so a
+/// library that printed unconditionally wrote to whatever stdout the embedding
+/// process had, with no way to turn it off.
+static ENABLED: AtomicBool = AtomicBool::new(false);
 
 pub struct CognitiveDashboard;
 
 impl CognitiveDashboard {
+    /// Enable or disable terminal rendering for all instances.
+    pub fn set_enabled(enabled: bool) {
+        ENABLED.store(enabled, Ordering::Relaxed);
+    }
+
+    pub fn is_enabled() -> bool {
+        ENABLED.load(Ordering::Relaxed)
+    }
+
     /// 以富格式将执行事件渲染到终端。
     pub fn render(event: &ExecutionEvent) {
+        if !Self::is_enabled() {
+            return;
+        }
         match event {
             ExecutionEvent::CognitiveStep {
                 step,
@@ -19,24 +37,24 @@ impl CognitiveDashboard {
                 Self::render_cognitive_step(step, message, metrics);
             },
             ExecutionEvent::NodeStarted { node_name } => {
-                println!("  🚀 [NODE START] {}", node_name);
+                tracing::info!("  🚀 [NODE START] {}", node_name);
             },
             ExecutionEvent::NodeCompleted {
                 node_name, output, ..
             } => {
-                println!("  ✅ [NODE DONE] {}: {}", node_name, output);
+                tracing::info!("  ✅ [NODE DONE] {}: {}", node_name, output);
             },
             ExecutionEvent::NodeFailed {
                 node_name, error, ..
             } => {
-                println!("  ❌ [NODE FAIL] {}: {}", node_name, error);
+                tracing::info!("  ❌ [NODE FAIL] {}: {}", node_name, error);
             },
             ExecutionEvent::ExecutionComplete { result } => {
-                println!("\n🎯 [FINAL RESULT] {}", result);
+                tracing::info!("\n🎯 [FINAL RESULT] {}", result);
             },
             ExecutionEvent::CognitiveComplete { report } => {
-                println!("\n🏁 [COGNITIVE LOOP CONVERGED]");
-                println!("📊 Report: {}", report);
+                tracing::info!("\n🏁 [COGNITIVE LOOP CONVERGED]");
+                tracing::info!("📊 Report: {}", report);
             },
             ExecutionEvent::MicroReflection {
                 node_name,
@@ -52,15 +70,15 @@ impl CognitiveDashboard {
                     "PIVOT" => "🔴",
                     _ => "⚪",
                 };
-                println!("  {} [MICR0-REFLECT] Node: {}", icon, node_name);
-                println!("    - 🔮 Expect: {}", prediction);
-                println!("    - 📝 Actual : {}", actual);
-                println!("    - ⚖️ Decision: {}", decision);
+                tracing::info!("  {} [MICR0-REFLECT] Node: {}", icon, node_name);
+                tracing::info!("    - 🔮 Expect: {}", prediction);
+                tracing::info!("    - 📝 Actual : {}", actual);
+                tracing::info!("    - ⚖️ Decision: {}", decision);
                 if let Some(u) = updates {
-                    println!("    - 🛠️  Adjustments: {:?}", u);
+                    tracing::info!("    - 🛠️  Adjustments: {:?}", u);
                 }
                 if let Some(r) = reason {
-                    println!("    - ⚠️  Pivot Reason: {}", r);
+                    tracing::info!("    - ⚠️  Pivot Reason: {}", r);
                 }
             },
             _ => {},
@@ -80,7 +98,7 @@ impl CognitiveDashboard {
 
         if let Some(m) = metrics {
             let progress_bar = Self::create_progress_bar(m.progress);
-            println!(
+            tracing::info!(
                 "{} | Iter: {} | Dev: {:.4} | Conf: {:.2}% | {}",
                 progress_bar,
                 m.iteration,
@@ -89,7 +107,7 @@ impl CognitiveDashboard {
                 message
             );
         } else {
-            println!("{}", message);
+            tracing::info!("{}", message);
         }
     }
 

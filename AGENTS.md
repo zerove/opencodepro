@@ -51,7 +51,7 @@ opencodepro/
 
 | 任务 | 位置 | 备注 |
 |------|----------|-------|
-| 认知循环核心逻辑 | `crates/sisyphus-core/src/` | DAG 执行、cognitive loop v1/v2 |
+| 认知循环核心逻辑 | `crates/sisyphus-core/src/` | DAG 执行、cognitive loop |
 | TUI 界面 | `crates/sisyphus-cli/src/tui/` | ratatui 组件 |
 | gRPC 服务 | `crates/sisyphus-bridge/src/` | tonic services |
 | REST API | `crates/sisyphus-bridge/src/http.rs` | axum + OpenAPI 3.1（独立 sisyphus-api 已归档至 ide/api）|

@@ -11,7 +11,7 @@ Sisyphus 是一个**认知计算引擎 (Cognitive Computation Engine)**，实现
 - **核心能力**:
   - 认知循环 v1+v2（自适应深度控制、并行分支预测、运行时异常检测）
   - WASM 沙箱（wasmtime + 燃料计量 + 内存限制）双模式：嵌入式 + sandboxd 守护进程
-  - gRPC bridge（34 RPC）+ REST API（49 端点 + OpenAPI 3.1）
+  - gRPC bridge（34 RPC）+ REST API（53 端点 + OpenAPI 3.1）
   - 双层存储（L1 DashMap + L2 SQLite/PostgreSQL + pgvector 语义检索）
   - 混沌工程（故障注入 + 自动修复管线）
   - 自编程闭环（缺口检测 → 工具生成 → 部署 → 注册）
@@ -41,6 +41,7 @@ Sisyphus 是一个**认知计算引擎 (Cognitive Computation Engine)**，实现
 | gRPC 桥接 | `crates/sisyphus-bridge/src/` (grpc_handlers.rs, http.rs) |
 | TUI | `crates/sisyphus-cli/src/tui/` |
 | 存储层 | `crates/sisyphus-mem/src/` (store.rs, vector_memory.rs) |
+| REST 路由 | `crates/sisyphus-bridge/src/http/` (mod.rs 注册, handlers*.rs 实现) |
 | 战略定义 | `docs/ROADMAP.md` |
 | 决策记录 | `docs/adr/` (002-phase-3b ~ 006-configuration-system) |
 | 演进计划 | `docs/EVOLUTION_PLAN.md` |

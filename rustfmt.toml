@@ -1,14 +1,9 @@
-# Sisyphus rustfmt configuration (forward-looking).
+# Sisyphus rustfmt configuration.
 #
-# These settings document the formatting standard for new code. The
-# existing codebase has not been regenerated with this config — running
-# `cargo fmt --all` on it would produce thousands of diffs because the
-# project predates the `chain_width = 100` default that came with
-# rustfmt 2.x.
-#
-# To bring existing code into compliance, do it incrementally per-file
-# via `cargo fmt -p <crate> -- <path>` after editing. Do not run
-# `cargo fmt --all` in a single commit.
+# The whole workspace is formatted against this config today: CI runs
+# `cargo fmt --check` as a blocking job and it passes. (It previously
+# claimed the codebase had never been regenerated and that `cargo fmt
+# --all` would produce thousands of diffs — that was stale.)
 #
 # Stable options only. The unstable options we'd like (imports_granularity,
 # group_imports, etc.) are gated on nightly and would produce warnings on
