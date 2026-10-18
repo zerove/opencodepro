@@ -58,7 +58,6 @@ use_sandboxd = false
 [jwt]
 secret = "your-256-bit-secret"
 access_ttl_secs = 900
-refresh_ttl_secs = 604800
 issuer = "sisyphus-bridge"
 ```
 
@@ -68,7 +67,6 @@ issuer = "sisyphus-bridge"
 |-------|------|---------|-------------|
 | `secret` | `string` | `""` | 签名密钥。生产环境必须设置；为空时不启用 JWT 认证 |
 | `access_ttl_secs` | `i64` | `900` | Access token 有效期（秒），默认 15 分钟 |
-| `refresh_ttl_secs` | `i64` | `604800` | Refresh token 有效期（秒），默认 7 天 |
 | `issuer` | `string` | `"sisyphus-bridge"` | Token 签发者标识 |
 
 ## OpenTelemetry 分布式追踪
@@ -169,7 +167,6 @@ sample_rate = 1.0
 | `SISYPHUS_AUTH_TOKEN` | `auth_token` | string | `""` |
 | `SISYPHUS_JWT_SECRET` | `jwt.secret` | string | `""` |
 | `SISYPHUS_JWT_ACCESS_TTL_SECS` | `jwt.access_ttl_secs` | i64 | `900` |
-| `SISYPHUS_JWT_REFRESH_TTL_SECS` | `jwt.refresh_ttl_secs` | i64 | `604800` |
 | `SISYPHUS_JWT_ISSUER` | `jwt.issuer` | string | `"sisyphus-bridge"` |
 | `SISYPHUS_BRIDGE_ADDRESS` | `bridge_address` | string | `"http://[::1]:50051"` |
 | `SISYPHUS_HTTP_ADDRESS` | `http_address` | string | `"http://[::1]:8080"` |

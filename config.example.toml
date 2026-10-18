@@ -158,11 +158,6 @@ auth_token = ""
 # 类型: i64 | 默认: 900（15 分钟）
 # access_ttl_secs = 900
 
-# Refresh token 有效期（秒）
-# 环境变量: SISYPHUS_JWT_REFRESH_TTL_SECS
-# 类型: i64 | 默认: 604800（7 天）
-# refresh_ttl_secs = 604800
-
 # Token 签发者
 # 环境变量: SISYPHUS_JWT_ISSUER
 # 类型: string | 默认: "sisyphus-bridge"

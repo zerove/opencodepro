@@ -96,9 +96,6 @@ pub struct JwtConfig {
     /// Access token TTL in seconds (default: 900 = 15 minutes)
     #[serde(default = "default_jwt_access_ttl")]
     pub access_ttl_secs: i64,
-    /// Refresh token TTL in seconds (default: 604800 = 7 days)
-    #[serde(default = "default_jwt_refresh_ttl")]
-    pub refresh_ttl_secs: i64,
     /// Token issuer (default: "sisyphus-bridge")
     #[serde(default = "default_jwt_issuer")]
     pub issuer: String,
@@ -106,10 +103,6 @@ pub struct JwtConfig {
 
 fn default_jwt_access_ttl() -> i64 {
     900
-}
-
-fn default_jwt_refresh_ttl() -> i64 {
-    604800
 }
 
 fn default_jwt_issuer() -> String {
@@ -121,7 +114,6 @@ impl Default for JwtConfig {
         Self {
             secret: String::new(), // Empty = must be configured via env or config file
             access_ttl_secs: default_jwt_access_ttl(),
-            refresh_ttl_secs: default_jwt_refresh_ttl(),
             issuer: default_jwt_issuer(),
         }
     }
@@ -323,9 +315,6 @@ impl Config {
         }
         if let Some(v) = env_u64("SISYPHUS_JWT_ACCESS_TTL_SECS") {
             self.jwt.access_ttl_secs = v as i64;
-        }
-        if let Some(v) = env_u64("SISYPHUS_JWT_REFRESH_TTL_SECS") {
-            self.jwt.refresh_ttl_secs = v as i64;
         }
         if let Some(v) = env_string("SISYPHUS_JWT_ISSUER") {
             self.jwt.issuer = v;
@@ -738,13 +727,12 @@ sandbox = { max_memory_pages = 10, default_fuel = 1000000, wasm_tools_dir = "too
 
     #[test]
     fn test_apply_env_overrides_llm_timeouts_and_jwt() {
-        static PAIRS: [(&str, &str); 7] = [
+        static PAIRS: [(&str, &str); 6] = [
             ("SISYPHUS_LLM_FAST_FAIL_COOLING_SECS", "60"),
             ("SISYPHUS_LLM_REQUEST_TIMEOUT_SECS", "10"),
             ("SISYPHUS_LLM_CONNECT_TIMEOUT_SECS", "3"),
             ("SISYPHUS_JWT_SECRET", "test-secret"),
             ("SISYPHUS_JWT_ACCESS_TTL_SECS", "1800"),
-            ("SISYPHUS_JWT_REFRESH_TTL_SECS", "1209600"),
             ("SISYPHUS_JWT_ISSUER", "test-issuer"),
         ];
         // SAFETY: 单线程测试，变量名均为配置覆盖专用。
@@ -756,7 +744,6 @@ sandbox = { max_memory_pages = 10, default_fuel = 1000000, wasm_tools_dir = "too
         assert_eq!(config.llm.connect_timeout_secs, 3);
         assert_eq!(config.jwt.secret, "test-secret");
         assert_eq!(config.jwt.access_ttl_secs, 1800);
-        assert_eq!(config.jwt.refresh_ttl_secs, 1209600);
         assert_eq!(config.jwt.issuer, "test-issuer");
     }
 
