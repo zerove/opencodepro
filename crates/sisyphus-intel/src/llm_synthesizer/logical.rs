@@ -41,8 +41,8 @@ impl LogicalSOPSynthesizer {
         }
     }
 
-    pub(super) async fn retrieve_lessons(&self, goal: &str) -> String {
-        match self.retriever.retrieve_relevant(goal, 5).await {
+    pub(super) async fn retrieve_lessons(&self, goal: &str, project_id: &str) -> String {
+        match self.retriever.retrieve_relevant(goal, 5, Some(project_id)).await {
             Ok(lessons) => {
                 if lessons.is_empty() {
                     return "No relevant historical lessons found.".to_string();
@@ -69,11 +69,18 @@ impl LogicalSOPSynthesizer {
         }
     }
 
-    async fn save_lesson(&self, goal: &str, sop_json: &str, feedback: &str, success: bool) {
+    async fn save_lesson(
+        &self,
+        goal: &str,
+        sop_json: &str,
+        feedback: &str,
+        success: bool,
+        project_id: &str,
+    ) {
         let exp = sisyphus_types::experience::ExperienceTuple {
             context_text: goal.to_string(),
             context_hash: format!("{:x}", md5::compute(goal)),
-            project_id: None,
+            project_id: Some(project_id.to_string()),
             action_id: sop_json.to_string(),
             visual_embedding: None,
             outcome_success: success,
@@ -180,8 +187,9 @@ Plan: <updated strategy>"#,
         &self,
         sub_goal: &str,
         tools: &str,
+        project_id: &str,
     ) -> Result<sisyphus_types::SOPGraphConfig, String> {
-        let lessons = self.retrieve_lessons(sub_goal).await;
+        let lessons = self.retrieve_lessons(sub_goal, project_id).await;
         let (_, json_str, _) = self.propose(sub_goal, tools, &lessons).await?;
         serde_json::from_str(&json_str).map_err(|e| format!("Invalid sub-graph JSON: {}", e))
     }
@@ -190,8 +198,9 @@ Plan: <updated strategy>"#,
         &self,
         goal: &str,
         tools: &str,
+        project_id: &str,
     ) -> Result<SynthesisResult, sisyphus_types::IntelError> {
-        let lessons = self.retrieve_lessons(goal).await;
+        let lessons = self.retrieve_lessons(goal, project_id).await;
 
         let system_prompt = format!(
             r#"
@@ -230,7 +239,7 @@ Plan: <high-level strategy>"#,
         for node in &mut config.nodes {
             if let sisyphus_types::NodeKind::SubGraph { config: sub_cfg } = &mut node.kind {
                 let sub_goal = node.name.clone();
-                let detailed_cfg = self.synthesize_subgraph(&sub_goal, tools).await?;
+                let detailed_cfg = self.synthesize_subgraph(&sub_goal, tools, project_id).await?;
                 **sub_cfg = detailed_cfg;
             }
         }
@@ -260,7 +269,7 @@ impl FlowSynthesizer for LogicalSOPSynthesizer {
         &self,
         goal: &str,
         _context: &ExecutionContext,
-        _project_id: &str,
+        project_id: &str,
         _mode: sisyphus_types::WorkMode,
         _insights: Option<&str>,
     ) -> Result<SynthesisResult, sisyphus_types::IntelError> {
@@ -283,7 +292,7 @@ impl FlowSynthesizer for LogicalSOPSynthesizer {
 
         if is_complex {
             tracing::info!(goal = %goal, "Goal detected as complex. Using hierarchical synthesis.");
-            return self.synthesize_hierarchical(goal, &tools_list).await;
+            return self.synthesize_hierarchical(goal, &tools_list, project_id).await;
         }
 
         let mut current_json = String::new();
@@ -293,7 +302,7 @@ impl FlowSynthesizer for LogicalSOPSynthesizer {
         let max_attempts = 3;
 
         while current_attempt < max_attempts {
-            let lessons = self.retrieve_lessons(goal).await;
+            let lessons = self.retrieve_lessons(goal, project_id).await;
 
             let (_, json_str, plan_desc) = if current_attempt == 0 {
                 let res = self.propose(goal, &tools_list, &lessons).await?;
@@ -342,6 +351,7 @@ impl FlowSynthesizer for LogicalSOPSynthesizer {
                 &current_json,
                 &eval_res.feedback,
                 eval_res.is_acceptable,
+                project_id,
             )
             .await;
 

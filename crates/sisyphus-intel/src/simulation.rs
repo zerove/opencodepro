@@ -523,7 +523,7 @@ impl MonteCarloSimulator {
                             let query = sisyphus_types::experience::ExperienceQuery {
                                 query_text: query_text.to_string(),
                                 context_hash,
-                                project_id: None,
+                                project_id: Some(project_id.to_string()),
                                 action_id: Some(format!("{:?}", node_idx)),
                                 visual_embedding: None,
                                 limit: 10,

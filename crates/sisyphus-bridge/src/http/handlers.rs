@@ -700,7 +700,7 @@ pub(super) async fn experience_similar_handler(
     let query = sisyphus_types::experience::ExperienceQuery {
         query_text: req.query_text,
         context_hash: String::new(),
-        project_id: Some(String::new()),
+        project_id: req.project_id.filter(|p| !p.trim().is_empty()),
         action_id: req.action_id,
         visual_embedding: None,
         limit: req.limit.unwrap_or(5),

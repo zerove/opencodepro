@@ -35,6 +35,7 @@ pub struct SisyphusSupervisor {
     threshold: f64,
     experience_bank: Arc<dyn sisyphus_types::experience::ExperienceBank>,
     goal_text: String,
+    project_id: String,
 }
 
 impl SisyphusSupervisor {
@@ -46,6 +47,7 @@ impl SisyphusSupervisor {
         threshold: f64,
         experience_bank: Arc<dyn sisyphus_types::experience::ExperienceBank>,
         goal_text: String,
+        project_id: String,
     ) -> Self {
         Self {
             reflector,
@@ -54,6 +56,7 @@ impl SisyphusSupervisor {
             threshold,
             experience_bank,
             goal_text,
+            project_id,
         }
     }
 
@@ -136,7 +139,7 @@ impl RuntimeSupervisor for SisyphusSupervisor {
         let exp_query = sisyphus_types::experience::ExperienceQuery {
             query_text: self.goal_text.clone(),
             context_hash: format!("{:x}", md5::compute(&self.goal_text)),
-            project_id: None,
+            project_id: Some(self.project_id.clone()),
             action_id: Some(node_name.to_string()),
             visual_embedding: None,
             limit: 5,

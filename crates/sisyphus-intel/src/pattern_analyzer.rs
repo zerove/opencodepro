@@ -174,12 +174,13 @@ impl SemanticPatternAnalyzer {
         &self,
         bank: &dyn sisyphus_types::experience::ExperienceBank,
         current_goal: &str,
+        project_id: Option<&str>,
     ) -> Result<Option<ClusterAnalysis>, String> {
         // 1. 检索与当前目标相关的大量经验
         let query = sisyphus_types::experience::ExperienceQuery {
             query_text: current_goal.to_string(),
             context_hash: "".to_string(), // Broad search
-            project_id: None,
+            project_id: project_id.map(str::to_string),
             action_id: None,
             visual_embedding: None,
             limit: 50,

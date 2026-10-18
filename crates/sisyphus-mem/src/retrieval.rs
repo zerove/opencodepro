@@ -21,11 +21,12 @@ impl ExperienceRetriever for BankRetriever {
         &self,
         query: &str,
         limit: usize,
+        project_id: Option<&str>,
     ) -> Result<Vec<ExperienceTuple>, sisyphus_types::TypesError> {
         let q = ExperienceQuery {
             query_text: query.to_string(),
             context_hash: format!("{:x}", md5::compute(query)),
-            project_id: None,
+            project_id: project_id.map(str::to_string),
             action_id: None,
             visual_embedding: None,
             limit,

@@ -133,6 +133,7 @@ impl StrategicManager {
                 self.experience_bank.clone(),
                 &current_ref,
                 goal_text.unwrap_or(sop_id),
+                project_id,
             )
             .await;
 
@@ -296,6 +297,7 @@ impl StrategicManager {
                     &prediction,
                     sop_id,
                     goal_text,
+                    project_id,
                     iteration,
                     max_iterations,
                     convergence_threshold,
@@ -475,6 +477,7 @@ impl StrategicManager {
                 .analyze_failure_clusters(
                     self.experience_bank.as_ref(),
                     goal_text.unwrap_or(sop_id),
+                    project_id,
                 )
                 .await
             {
@@ -659,6 +662,7 @@ impl StrategicManager {
             self.experience_bank.clone(),
             current_ref,
             goal_text.unwrap_or(sop_id),
+            project_id,
         )
         .await;
 
@@ -804,6 +808,7 @@ impl StrategicManager {
         prediction: &SimulationResult,
         sop_id: &str,
         goal_text: Option<&str>,
+        project_id: Option<&str>,
         iteration: usize,
         max_iterations: usize,
         convergence_threshold: f64,
@@ -846,6 +851,7 @@ impl StrategicManager {
             trace_rx,
             self.execution_manager.state_store.clone(),
             sop_id.to_string(),
+            project_id.unwrap_or("default").to_string(),
             event_tx.clone(),
             anomaly_detector.clone(),
             Some(self.execution_manager.cognitive_trace.clone()),
@@ -867,6 +873,7 @@ impl StrategicManager {
                     convergence_threshold,
                     self.experience_bank.clone(),
                     goal_text.unwrap_or(sop_id).to_string(),
+                    project_id.unwrap_or("default").to_string(),
                 ))),
                 micro_reflector,
                 self.visual_manager.clone(),
@@ -1309,6 +1316,7 @@ fn spawn_trace_recorder(
     mut trace_rx: mpsc::UnboundedReceiver<ExecutionEvent>,
     store_clone: Arc<MfsStore>,
     sop_id_clone: String,
+    project_id: String,
     user_event_tx: Option<mpsc::UnboundedSender<ExecutionEvent>>,
     anomaly_det: Arc<Mutex<AnomalyDetector>>,
     cognitive_trace: Option<Arc<crate::execution_manager::CognitiveTraceBuffer>>,
@@ -1355,6 +1363,7 @@ fn spawn_trace_recorder(
                 } => {
                     let _ = store_clone
                         .record_trace_event(
+                            &project_id,
                             &sop_id_clone,
                             node_name,
                             "ok",
@@ -1372,6 +1381,7 @@ fn spawn_trace_recorder(
                 } => {
                     let _ = store_clone
                         .record_trace_event(
+                            &project_id,
                             &sop_id_clone,
                             node_name,
                             "error",

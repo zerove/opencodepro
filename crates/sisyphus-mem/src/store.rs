@@ -81,8 +81,13 @@ fn experience_tuple_from_row(
 ) -> sisyphus_types::experience::ExperienceTuple {
     let ctx_text: String = row.try_get("context_text").unwrap_or_default();
     let ctx_hash: String = row.try_get("context_hash").unwrap_or_default();
-    let action_id: Option<String> = row.try_get("action_id").ok();
-    let proj_id: Option<String> = row.try_get("project_id").ok();
+    // NULL 解码：`try_get::<String>().ok()` 会把 SQLite NULL 误读成 `Some("")`，
+    // 与元组路径（`Option<String>` 正确得 None）不一致——共享经验
+    //（project_id = NULL）经反熵路径读回成 "" 后对任何租户查询都不可见。
+    let action_id: Option<String> =
+        row.try_get::<Option<String>, _>("action_id").unwrap_or_default();
+    let proj_id: Option<String> =
+        row.try_get::<Option<String>, _>("project_id").unwrap_or_default();
     let success: bool = row.try_get("outcome_success").unwrap_or(false);
     let dev: f64 = row.try_get("deviation_score").unwrap_or(0.0);
     let cost: i64 = row.try_get("cost").unwrap_or(0);
@@ -213,6 +218,7 @@ impl MfsStore {
         sqlx::query(
             "CREATE TABLE IF NOT EXISTS execution_traces (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                project_id TEXT NOT NULL DEFAULT 'default',
                 sop_id TEXT NOT NULL,
                 node_id TEXT NOT NULL,
                 status TEXT NOT NULL,
@@ -221,6 +227,35 @@ impl MfsStore {
                 duration_ms INTEGER,
                 timestamp INTEGER NOT NULL
             )",
+        )
+        .execute(&pool)
+        .await?;
+
+        // P0 修复：旧库 `execution_traces` 缺 `project_id` 列，而
+        // `get_traces_for_sop` 的查询引用它 → 端点恒 500。
+        // 与下方 experiences 迁移同模式：pragma 检查 + ALTER TABLE 补列。
+        let trace_columns = sqlx::query_as::<_, (String,)>(
+            "SELECT name FROM pragma_table_info('execution_traces')",
+        )
+        .fetch_all(&pool)
+        .await
+        .map_err(|e| MemError::Sqlx {
+            context: "query execution_traces schema",
+            source: e,
+        })?;
+        if !trace_columns.iter().any(|(name,)| name == "project_id") {
+            sqlx::query(
+                "ALTER TABLE execution_traces ADD COLUMN project_id TEXT NOT NULL DEFAULT 'default'",
+            )
+            .execute(&pool)
+            .await
+            .map_err(|e| MemError::Sqlx {
+                context: "add execution_traces.project_id column",
+                source: e,
+            })?;
+        }
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_traces_sop ON execution_traces(project_id, sop_id);",
         )
         .execute(&pool)
         .await?;
@@ -383,22 +418,25 @@ impl MfsStore {
     async fn flush_batch(pool: &SqlitePool, buffer: &mut Vec<WriteOp>) -> Result<()> {
         let mut tx = pool.begin().await.context("Failed to begin transaction")?;
 
-        for op in buffer.drain(..) {
+        // P0 ⑤：先遍历引用、commit 成功后才清空 buffer。原实现在循环首处
+        // `buffer.drain(..)`，事务中途失败（`?` 早退）会静默丢弃批内剩余操作；
+        // 保留 buffer 供下一轮重试（ON CONFLICT / DELETE 均幂等，重放安全）。
+        for op in buffer.iter() {
             match op {
                 WriteOp::Set { key, value } => {
-                    let value_str = serde_json::to_string(&value)?;
+                    let value_str = serde_json::to_string(value)?;
                     sqlx::query(
                         "INSERT INTO state (key, value) VALUES (?, ?)
                              ON CONFLICT(key) DO UPDATE SET value = excluded.value",
                     )
-                    .bind(key)
+                    .bind(key.as_str())
                     .bind(&value_str)
                     .execute(&mut *tx)
                     .await?;
                 },
                 WriteOp::Delete { key } => {
                     sqlx::query("DELETE FROM state WHERE key = ?")
-                        .bind(key)
+                        .bind(key.as_str())
                         .execute(&mut *tx)
                         .await?;
                 },
@@ -409,6 +447,7 @@ impl MfsStore {
         }
 
         tx.commit().await.context("Failed to commit batch transaction")?;
+        buffer.clear();
         Ok(())
     }
 
@@ -495,6 +534,7 @@ impl MfsStore {
     /// enable retrospective queries like [`Self::get_most_failed_nodes`].
     pub async fn record_trace_event(
         &self,
+        project_id: &str,
         sop_id: &str,
         node_id: &str,
         status: &str,
@@ -508,9 +548,10 @@ impl MfsStore {
             .unwrap_or(0);
 
         sqlx::query(
-            "INSERT INTO execution_traces (sop_id, node_id, status, output, fuel_consumed, duration_ms, timestamp) 
-             VALUES (?, ?, ?, ?, ?, ?, ?)"
+            "INSERT INTO execution_traces (project_id, sop_id, node_id, status, output, fuel_consumed, duration_ms, timestamp) 
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         )
+        .bind(project_id)
         .bind(sop_id)
         .bind(node_id)
         .bind(status)
@@ -1305,6 +1346,56 @@ mod tests {
             result,
             Some(val_a),
             "Isolation failed: Project B overwrote Project A's state"
+        );
+    }
+
+    /// P0 ⑤ 回归：事务失败不得丢批——失败时 buffer 保留，重试后完整落库。
+    /// 旧实现 `buffer.drain(..)` 在循环首处清空，事务中途 `?` 早退会永久
+    /// 丢弃批内剩余操作（本测试的 `buffer.len()==3` 断言在旧实现下为 0）。
+    #[tokio::test]
+    async fn test_flush_batch_retains_buffer_on_failure_then_retry_persists() {
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .expect("test pool");
+        sqlx::query("CREATE TABLE state (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+            .execute(&pool)
+            .await
+            .expect("create state");
+
+        let mut buffer = vec![
+            WriteOp::Set {
+                key: "a".into(),
+                value: serde_json::json!(1),
+            },
+            WriteOp::Set {
+                key: "b".into(),
+                value: serde_json::json!(2),
+            },
+            WriteOp::Delete { key: "c".into() },
+        ];
+
+        sqlx::query("DROP TABLE state").execute(&pool).await.expect("drop state");
+        let failed = MfsStore::flush_batch(&pool, &mut buffer).await;
+        assert!(failed.is_err(), "表被删后 flush 应当失败");
+        assert_eq!(buffer.len(), 3, "失败后 buffer 必须保留全部操作，不得丢批");
+
+        sqlx::query("CREATE TABLE state (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+            .execute(&pool)
+            .await
+            .expect("recreate state");
+        MfsStore::flush_batch(&pool, &mut buffer).await.expect("retry flush");
+        assert!(buffer.is_empty(), "成功提交后 buffer 应清空");
+
+        let keys: Vec<String> = sqlx::query_scalar("SELECT key FROM state ORDER BY key")
+            .fetch_all(&pool)
+            .await
+            .expect("query state");
+        assert_eq!(
+            keys,
+            vec!["a".to_string(), "b".to_string()],
+            "重试后数据完整落库"
         );
     }
 

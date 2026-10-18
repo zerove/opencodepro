@@ -38,6 +38,7 @@ impl ComplexityAnalyzer {
         experience_bank: Arc<dyn ExperienceBank>,
         sop_graph: &SOPGraph,
         goal_text: &str,
+        project_id: Option<&str>,
     ) -> CognitiveDepth {
         // 1. 结构复杂度（0.0 到 1.0）
         let node_count = sop_graph.graph.node_count();
@@ -57,7 +58,7 @@ impl ComplexityAnalyzer {
         let query = sisyphus_types::experience::ExperienceQuery {
             query_text: goal_text.to_string(),
             context_hash: String::new(),
-            project_id: None,
+            project_id: project_id.map(str::to_string),
             action_id: None,
             visual_embedding: None,
             limit: 10,

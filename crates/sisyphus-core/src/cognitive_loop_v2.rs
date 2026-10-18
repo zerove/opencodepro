@@ -349,8 +349,10 @@ impl AdaptiveDepthController {
         experience_bank: Arc<dyn ExperienceBank>,
         sop_graph: &SOPGraph,
         goal_text: &str,
+        project_id: Option<&str>,
     ) -> usize {
-        let depth = ComplexityAnalyzer::analyze(experience_bank, sop_graph, goal_text).await;
+        let depth =
+            ComplexityAnalyzer::analyze(experience_bank, sop_graph, goal_text, project_id).await;
         let (d_max, _) = depth.to_config();
         self.budget_from_depth(d_max)
     }

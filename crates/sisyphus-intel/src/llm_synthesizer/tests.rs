@@ -156,7 +156,7 @@ mod adversarial_tests {
             .await;
 
         // 2. 验证教训已保存
-        let lessons = synthesizer.retrieve_lessons("memory goal").await;
+        let lessons = synthesizer.retrieve_lessons("memory goal", "test").await;
         assert!(
             lessons.contains("SOP:"),
             "Should have saved a failed SOP as a lesson. Actual lessons: {}",
@@ -231,12 +231,22 @@ mod adversarial_tests {
             &self,
             query: &str,
             _limit: usize,
+            project_id: Option<&str>,
         ) -> Result<Vec<sisyphus_types::experience::ExperienceTuple>, sisyphus_types::TypesError>
         {
-            // Mock 简单检索：返回与查询匹配的经验
+            // Mock 简单检索：返回与查询匹配的经验，并遵循真实租户可见性语义
+            //（本人项目 + 共享 None 行可见；查询无租户时不过滤）。
             let experiences = self.experiences.lock().unwrap();
-            let filtered: Vec<_> =
-                experiences.iter().filter(|e| e.context_text.contains(query)).cloned().collect();
+            let filtered: Vec<_> = experiences
+                .iter()
+                .filter(|e| {
+                    e.context_text.contains(query)
+                        && (e.project_id.is_none()
+                            || project_id.is_none()
+                            || e.project_id.as_deref() == project_id)
+                })
+                .cloned()
+                .collect();
             Ok(filtered)
         }
         async fn record_experience(

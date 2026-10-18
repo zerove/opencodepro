@@ -206,6 +206,7 @@ pub struct ExperienceQueryRequest {
     pub query_text: String,
     pub action_id: Option<String>,
     pub limit: Option<usize>,
+    pub project_id: Option<String>,
 }
 
 #[derive(Serialize)]

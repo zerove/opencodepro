@@ -376,7 +376,7 @@ pub async fn sse_handler(
     Query(query): Query<SseQuery>,
 ) -> Response {
     // 并发连接数限制：超过上限直接返回 429，避免无限连接耗尽资源
-    let _permit = match state.sse_connection_limit.clone().try_acquire_owned() {
+    let permit = match state.sse_connection_limit.clone().try_acquire_owned() {
         Ok(permit) => permit,
         Err(_) => {
             return (
@@ -410,6 +410,9 @@ pub async fn sse_handler(
 
     // 从广播接收器创建事件流
     let stream = async_stream::stream! {
+        // P0 ⑥：permit 随流生命周期持有——作为 handler 局部变量时会在返回
+        // Response 后即释放，连接上限形同虚设；移入流内直至连接关闭才归还。
+        let _permit = permit;
         let mut receiver = receiver;
         let mut last_heartbeat = std::time::Instant::now();
 
@@ -1427,6 +1430,48 @@ mod tests {
         let p4 = semaphore.clone().try_acquire_owned();
         assert!(p4.is_ok());
         drop(p4);
+    }
+
+    /// P0 ⑥ 回归：走真实 handler 验证 permit 覆盖连接全程。
+    /// 旧实现 permit 是 handler 局部变量，返回 Response 时即释放，
+    /// 本测试第二个请求会得到 200（上限形同虚设）而非 429。
+    #[tokio::test]
+    async fn test_sse_permit_held_for_response_lifetime() {
+        let mut state = make_test_state(None).await;
+        state.sse_connection_limit = Arc::new(tokio::sync::Semaphore::new(1));
+
+        let query = || {
+            Query(SseQuery {
+                events: None,
+                project_id: None,
+                sop_id: None,
+                session_id: None,
+                last_event_id: None,
+                heartbeat: None,
+            })
+        };
+
+        let resp1 = sse_handler(State(state.clone()), query()).await;
+        assert_eq!(
+            resp1.status(),
+            axum::http::StatusCode::OK,
+            "首个连接应被接纳"
+        );
+
+        let resp2 = sse_handler(State(state.clone()), query()).await;
+        assert_eq!(
+            resp2.status(),
+            SSE_LIMIT_REACHED,
+            "持有一个活跃连接时第二个连接必须 429"
+        );
+
+        drop(resp1);
+        let resp3 = sse_handler(State(state.clone()), query()).await;
+        assert_eq!(
+            resp3.status(),
+            axum::http::StatusCode::OK,
+            "响应销毁后 permit 应归还"
+        );
     }
 
     // ── /api/metrics 端点测试 ──────────────────────────────────
