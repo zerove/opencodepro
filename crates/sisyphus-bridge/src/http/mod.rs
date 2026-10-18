@@ -133,7 +133,10 @@ pub fn build_router(state: RestApiState) -> Router {
         .route("/openapi.json", get(http_openapi::openapi_json))
         .route("/swagger-ui/*rest", get(http_openapi::swagger_ui_handler))
         .route("/api/events/health", get(sse_health_handler))
-        .route("/api/metrics", get(metrics_handler));
+        .route("/api/metrics", get(metrics_handler))
+        // 凭据探测端点必须公开可达：JWT 模式下调用方尚无有效 token，
+        // 若置于受保护路由则中间件先于 handler 拒绝，探测永远失败。
+        .route("/api/auth/validate", post(auth_validate_handler));
 
     let protected_routes = Router::new()
         .route("/api/skills/available", get(list_available_skills_handler))
@@ -181,7 +184,6 @@ pub fn build_router(state: RestApiState) -> Router {
             get(get_state_key_handler).put(put_state_key_handler),
         )
         .route("/api/vector/search", post(vector_search_handler))
-        .route("/api/auth/validate", post(auth_validate_handler))
         .route(
             "/api/sops/:id",
             get(get_sop_handler).delete(delete_sop_handler),

@@ -379,7 +379,10 @@ pub fn spawn_fetch_sop_trace(
     tokio::spawn(async move {
         let url = format!("{}/api/execute/goal/{}/trace", bridge_address, sop_id);
         let result = async {
-            let resp = reqwest::get(&url).await.map_err(|e| format!("HTTP request failed: {e}"))?;
+            let resp = crate::bridge::with_bearer_auth(reqwest::Client::new().get(&url))
+                .send()
+                .await
+                .map_err(|e| format!("HTTP request failed: {e}"))?;
             if !resp.status().is_success() {
                 return Err(format!("Bridge returned error status: {}", resp.status()));
             }
@@ -404,7 +407,10 @@ pub fn spawn_fetch_cognitive_trace(bridge_address: String) -> tokio::sync::onesh
     tokio::spawn(async move {
         let url = format!("{}/api/cognitive/trace?limit=100", bridge_address);
         let result = async {
-            let resp = reqwest::get(&url).await.map_err(|e| format!("HTTP request failed: {e}"))?;
+            let resp = crate::bridge::with_bearer_auth(reqwest::Client::new().get(&url))
+                .send()
+                .await
+                .map_err(|e| format!("HTTP request failed: {e}"))?;
             if !resp.status().is_success() {
                 return Err(format!("Bridge returned error status: {}", resp.status()));
             }
@@ -436,7 +442,10 @@ pub fn spawn_fetch_cognitive_trace_history(
             url.push_str(&format!("&sop_id={sop}"));
         }
         let result = async {
-            let resp = reqwest::get(&url).await.map_err(|e| format!("HTTP request failed: {e}"))?;
+            let resp = crate::bridge::with_bearer_auth(reqwest::Client::new().get(&url))
+                .send()
+                .await
+                .map_err(|e| format!("HTTP request failed: {e}"))?;
             if !resp.status().is_success() {
                 return Err(format!("Bridge returned error status: {}", resp.status()));
             }
@@ -468,7 +477,10 @@ pub fn spawn_fetch_cognitive_summary(
             url.push_str(&format!("&sop_id={sop}"));
         }
         let result = async {
-            let resp = reqwest::get(&url).await.map_err(|e| format!("HTTP request failed: {e}"))?;
+            let resp = crate::bridge::with_bearer_auth(reqwest::Client::new().get(&url))
+                .send()
+                .await
+                .map_err(|e| format!("HTTP request failed: {e}"))?;
             if !resp.status().is_success() {
                 return Err(format!("Bridge returned error status: {}", resp.status()));
             }
@@ -493,7 +505,10 @@ pub fn spawn_fetch_available_skills(
     tokio::spawn(async move {
         let url = format!("{}/api/skills/available", bridge_address);
         let result = async {
-            let resp = reqwest::get(&url).await.map_err(|e| format!("HTTP request failed: {e}"))?;
+            let resp = crate::bridge::with_bearer_auth(reqwest::Client::new().get(&url))
+                .send()
+                .await
+                .map_err(|e| format!("HTTP request failed: {e}"))?;
             if !resp.status().is_success() {
                 return Err(format!("Bridge returned error status: {}", resp.status()));
             }
@@ -520,7 +535,10 @@ pub fn spawn_fetch_installed_skills(
     tokio::spawn(async move {
         let url = format!("{}/api/skills/installed", bridge_address);
         let result = async {
-            let resp = reqwest::get(&url).await.map_err(|e| format!("HTTP request failed: {e}"))?;
+            let resp = crate::bridge::with_bearer_auth(reqwest::Client::new().get(&url))
+                .send()
+                .await
+                .map_err(|e| format!("HTTP request failed: {e}"))?;
             if !resp.status().is_success() {
                 return Err(format!("Bridge returned error status: {}", resp.status()));
             }
@@ -548,9 +566,7 @@ pub fn spawn_install_skill(
     tokio::spawn(async move {
         let url = format!("{}/api/skills/install", bridge_address);
         let result = async {
-            let client = reqwest::Client::new();
-            let resp = client
-                .post(&url)
+            let resp = crate::bridge::with_bearer_auth(reqwest::Client::new().post(&url))
                 .json(&serde_json::json!({ "skill_id": skill_id }))
                 .send()
                 .await
@@ -584,9 +600,7 @@ pub fn spawn_uninstall_skill(
     tokio::spawn(async move {
         let url = format!("{}/api/skills/remote/{}", bridge_address, skill_id);
         let result = async {
-            let client = reqwest::Client::new();
-            let resp = client
-                .delete(&url)
+            let resp = crate::bridge::with_bearer_auth(reqwest::Client::new().delete(&url))
                 .send()
                 .await
                 .map_err(|e| format!("HTTP request failed: {e}"))?;
@@ -616,7 +630,10 @@ pub fn spawn_list_workspaces(bridge_address: String) -> tokio::sync::oneshot::Re
     tokio::spawn(async move {
         let url = format!("{}/api/workspaces", bridge_address);
         let result = async {
-            let resp = reqwest::get(&url).await.map_err(|e| format!("HTTP request failed: {e}"))?;
+            let resp = crate::bridge::with_bearer_auth(reqwest::Client::new().get(&url))
+                .send()
+                .await
+                .map_err(|e| format!("HTTP request failed: {e}"))?;
             if !resp.status().is_success() {
                 return Err(format!("Bridge returned error status: {}", resp.status()));
             }
@@ -645,9 +662,7 @@ pub fn spawn_switch_workspace(
     tokio::spawn(async move {
         let url = format!("{}/api/workspaces/switch", bridge_address);
         let result = async {
-            let client = reqwest::Client::new();
-            let resp = client
-                .post(&url)
+            let resp = crate::bridge::with_bearer_auth(reqwest::Client::new().post(&url))
                 .json(&serde_json::json!({ "id": workspace_id }))
                 .send()
                 .await
@@ -678,9 +693,7 @@ pub fn spawn_delete_workspace(
     tokio::spawn(async move {
         let url = format!("{}/api/workspaces/{}", bridge_address, workspace_id);
         let result = async {
-            let client = reqwest::Client::new();
-            let resp = client
-                .delete(&url)
+            let resp = crate::bridge::with_bearer_auth(reqwest::Client::new().delete(&url))
                 .send()
                 .await
                 .map_err(|e| format!("HTTP request failed: {e}"))?;
@@ -708,7 +721,10 @@ pub fn spawn_fetch_health_deep(bridge_address: String) -> tokio::sync::oneshot::
     tokio::spawn(async move {
         let url = format!("{}/health/deep", bridge_address);
         let result = async {
-            let resp = reqwest::get(&url).await.map_err(|e| format!("HTTP request failed: {e}"))?;
+            let resp = crate::bridge::with_bearer_auth(reqwest::Client::new().get(&url))
+                .send()
+                .await
+                .map_err(|e| format!("HTTP request failed: {e}"))?;
             // `/health/deep` 在组件降级时返回 207 Multi-Status；视作可解析的成功。
             let status = resp.status();
             if !(status.is_success() || status.as_u16() == 207) {

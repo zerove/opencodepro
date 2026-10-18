@@ -77,7 +77,7 @@ impl SisyphusKernel {
 
             action_id: None,
 
-            project_id: None,
+            project_id: Some(project_id.to_string()),
             visual_embedding: None,
 
             limit: 5,
@@ -497,14 +497,26 @@ impl SisyphusKernel {
         event_tx: Option<mpsc::UnboundedSender<ExecutionEvent>>,
         project_id: &str,
     ) -> Result<CompositeOutput, CoreError> {
+        // P0 修复：环检测必须始终执行，即使提供了 execution_order。
+        // 否则循环依赖跳过校验，调度器因 in_degree 永不归零而静默返回空结果。
+        let resolved_order = DependencyResolver::resolve(composite)?;
         let order = if composite.execution_order.is_empty() {
-            DependencyResolver::resolve(composite)?
+            resolved_order
         } else {
             composite.execution_order.clone()
         };
 
         let order_len = order.len();
         let project_id_owned = project_id.to_string();
+
+        // P1 修复：复合执行同时运行的 SOP 上限。每个 SOP 的认知循环会
+        // 独立创建 Executor（各自持有 16 个节点并发许可），不设上限时
+        // N 个并行 SOP 会放大为 16N 并发节点与同等规模的并行 LLM 管线。
+        const MAX_CONCURRENT_SOPS: usize = 8;
+        let sop_gate = Arc::new(tokio::sync::Semaphore::new(MAX_CONCURRENT_SOPS));
+
+        let mut failures: Vec<(String, String)> = Vec::new();
+        let mut blocked: Vec<String> = Vec::new();
 
         let mut results: HashMap<String, (NodeOutput, String)> = HashMap::with_capacity(order_len);
 
@@ -608,7 +620,16 @@ impl SisyphusKernel {
                     let sid = sop_id.clone();
 
                     let pid = project_id_owned.clone();
+                    let gate = Arc::clone(&sop_gate);
                     join_set.spawn(async move {
+                        let Ok(_sop_permit) = gate.acquire().await else {
+                            return (
+                                sid,
+                                Err(CoreError::Internal(
+                                    "SOP concurrency gate closed unexpectedly".into(),
+                                )),
+                            );
+                        };
                         let dep_ctx = build_dep_ctx_for(&sid, &composite_ref, &acc);
 
                         let result = kernel
@@ -624,7 +645,40 @@ impl SisyphusKernel {
         while let Some(res) = join_set.join_next().await {
             let (completed_id, outcome) = res.map_err(|e| CoreError::Internal(e.to_string()))?;
 
-            let (node_output, report_obj, _evolved) = outcome?;
+            let (node_output, report_obj, _evolved) = match outcome {
+                Ok(triple) => triple,
+                Err(e) => {
+                    // P1 修复：单个 SOP 失败不再连坐中止兄弟 SOP。记录失败，
+                    // 并把其传递闭包内的下游标记为 blocked（它们的输入已不可
+                    // 能齐备）；无关分支跑完后由聚合错误统一报告。
+                    // 旧行为：`?` 提前返回，JoinSet 被 drop，所有在跑的兄弟
+                    // SOP 随之中止（副作用已提交、无清理、无报告）。
+                    failures.push((completed_id.clone(), e.to_string()));
+                    let mut queue: Vec<String> = composite
+                        .dependencies
+                        .iter()
+                        .filter(|d| d.source_sop_id == completed_id)
+                        .map(|d| d.target_sop_id.clone())
+                        .collect();
+                    while let Some(sid) = queue.pop() {
+                        if blocked.contains(&sid)
+                            || results.contains_key(&sid)
+                            || failures.iter().any(|(id, _)| *id == sid)
+                        {
+                            continue;
+                        }
+                        blocked.push(sid.clone());
+                        queue.extend(
+                            composite
+                                .dependencies
+                                .iter()
+                                .filter(|d| d.source_sop_id == sid)
+                                .map(|d| d.target_sop_id.clone()),
+                        );
+                    }
+                    continue;
+                },
+            };
 
             let report = format!(
                 "Converged: {}, Iterations: {}",
@@ -664,7 +718,16 @@ impl SisyphusKernel {
                     let tx = event_tx.clone();
 
                     let pid = project_id_owned.clone();
+                    let gate = Arc::clone(&sop_gate);
                     join_set.spawn(async move {
+                        let Ok(_sop_permit) = gate.acquire().await else {
+                            return (
+                                sid,
+                                Err(CoreError::Internal(
+                                    "SOP concurrency gate closed unexpectedly".into(),
+                                )),
+                            );
+                        };
                         let dep_ctx = build_dep_ctx_for(&sid, &composite_ref, &acc);
 
                         let result = kernel
@@ -675,6 +738,33 @@ impl SisyphusKernel {
                     });
                 }
             }
+        }
+
+        // P0 修复：调度停摆（依赖指向 execution_order 之外的图等）时
+        // in_degree 永不归零、join_set 提前排空 —— 必须显式报错，
+        // 不得静默返回部分结果。
+        let accounted = results.len() + failures.len() + blocked.len();
+        if accounted != order_len {
+            return Err(CoreError::Internal(format!(
+                "Composite execution stalled: {}/{} SOPs accounted \
+                 (check dependencies against the execution set)",
+                accounted, order_len
+            )));
+        }
+
+        // P1 修复：SOP 失败在兄弟跑完后聚合报告（见失败处理分支）。
+        if !failures.is_empty() {
+            let details = failures
+                .iter()
+                .map(|(id, err)| format!("{id}: {err}"))
+                .collect::<Vec<_>>()
+                .join(" | ");
+            return Err(CoreError::CompositeExecutionFailed {
+                failed: failures.len(),
+                blocked: blocked.len(),
+                succeeded: results.len(),
+                details,
+            });
         }
 
         Ok(CompositeOutput {

@@ -202,9 +202,21 @@ pub(super) async fn auth_validate_handler(
             .into_response();
     };
 
-    let valid = match &state.auth_token {
-        Some(expected) => api_key == expected,
-        None => true,
+    let valid = if let Some(jwt_config) = &state.jwt_config {
+        // JWT 模式：api_key 按 access token 校验，与 jwt_auth_middleware 同路径。
+        // 空 secret 与中间件语义一致（视为未启用认证）。
+        // 旧行为在 JWT 模式恒 valid=true，SDK 探测到坏凭据也被告知可用。
+        if jwt_config.secret.is_empty() {
+            true
+        } else {
+            crate::auth_jwt::JwtService::new(jwt_config.clone())
+                .map(|service| service.validate_access_token(api_key).is_ok())
+                .unwrap_or(false)
+        }
+    } else if let Some(expected) = &state.auth_token {
+        api_key == expected
+    } else {
+        true
     };
 
     let message = if valid {

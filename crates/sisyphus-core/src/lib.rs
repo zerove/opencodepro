@@ -169,6 +169,16 @@ pub enum CoreError {
     #[error("Graph {0} has no nodes")]
     GraphEmpty(String),
 
+    /// 复合执行部分失败：兄弟 SOP 已各自跑完（不再连坐中止），
+    /// 聚合报告失败、被跳过与成功的数量及明细。
+    #[error("Composite execution failed: {failed} failed, {blocked} blocked, {succeeded} succeeded; {details}")]
+    CompositeExecutionFailed {
+        failed: usize,
+        blocked: usize,
+        succeeded: usize,
+        details: String,
+    },
+
     #[error("Strategic Pivot triggered: {0}")]
     StrategicPivot(String),
 

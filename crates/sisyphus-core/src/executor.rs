@@ -184,12 +184,19 @@ impl Executor {
 
                     let start_time = Instant::now();
                     let result = async {
-                        let _permit = sem.acquire().await.map_err(|e| sisyphus_types::TypesError::NodeExecutionError(format!("Semaphore acquire failed: {e}")))?;
+                        let permit = sem.acquire().await.map_err(|e| sisyphus_types::TypesError::NodeExecutionError(format!("Semaphore acquire failed: {e}")))?;
 
                         if let Some(tx) = tx.as_ref() {
                             if let Err(e) = tx.send(ExecutionEvent::NodeStarted { node_name: name.clone() }) {
                                 tracing::warn!(node = %name, error = %e, "Failed to send NodeStarted event");
                             }
+                        }
+
+                        // P0 ③ 并发不变量：子图节点在等待子图执行前释放并发许可，
+                        // 因为子节点需从同一信号量取许可；父节点持许可等待子节点
+                        // 会形成 hold-and-wait 死锁（≥16 个并发子图时必现）。
+                        if node_ref.as_any().is::<sisyphus_types::SubGraphSOPNode>() {
+                            drop(permit);
                         }
 
                         exec_self.execute_node_cognitively(
@@ -384,10 +391,37 @@ impl Executor {
             tracing::debug!(node = %name, "Node result stored");
 
             let chosen_target = if let Some(node_weight) = sop_graph.graph.node_weight(node) {
-                if let Some(_branch_node) =
-                    node_weight.as_any().downcast_ref::<sisyphus_types::BranchSOPNode>()
-                {
-                    output.as_f64().map(|idx| NodeIndex::new(idx as usize))
+                if node_weight.as_any().downcast_ref::<sisyphus_types::BranchSOPNode>().is_some() {
+                    // P1 修复：分支决策必须解析为真实出边目标。旧行为把任意
+                    // 数值（NaN、越界、非整数）静默转成 NodeIndex；匹配不到
+                    // 出边时会递减全部出边且不放行任何节点 —— 调度静默停摆。
+                    let raw = output.as_f64().ok_or_else(|| CoreError::NodeExecutionFailed {
+                        node_name: name.to_string(),
+                        source: Box::new(sisyphus_types::TypesError::NodeExecutionError(format!(
+                            "branch node produced non-numeric decision: {output}"
+                        ))),
+                    })?;
+                    if !raw.is_finite() || raw < 0.0 || raw.fract() != 0.0 {
+                        return Err(CoreError::NodeExecutionFailed {
+                            node_name: name.to_string(),
+                            source: Box::new(sisyphus_types::TypesError::NodeExecutionError(format!(
+                                "branch node produced invalid decision {raw} (must be a non-negative integer)"
+                            ))),
+                        });
+                    }
+                    let candidate = NodeIndex::new(raw as usize);
+                    if !sop_graph.graph.edges(node).any(|e| e.target() == candidate) {
+                        return Err(CoreError::NodeExecutionFailed {
+                            node_name: name.to_string(),
+                            source: Box::new(sisyphus_types::TypesError::NodeExecutionError(
+                                format!(
+                                    "branch decision {} does not match any outgoing edge",
+                                    raw as usize
+                                ),
+                            )),
+                        });
+                    }
+                    Some(candidate)
                 } else {
                     None
                 }
@@ -429,12 +463,19 @@ impl Executor {
 
                             let start_time = Instant::now();
                             let result = async {
-                                let _permit = sem.acquire().await.map_err(|e| sisyphus_types::TypesError::NodeExecutionError(format!("Semaphore acquire failed: {e}")))?;
+                                let permit = sem.acquire().await.map_err(|e| sisyphus_types::TypesError::NodeExecutionError(format!("Semaphore acquire failed: {e}")))?;
 
                                 if let Some(tx) = tx.as_ref() {
                                     if let Err(e) = tx.send(ExecutionEvent::NodeStarted { node_name: name.clone() }) {
                                         tracing::warn!(node = %name, error = %e, "Failed to send NodeStarted event");
                                     }
+                                }
+
+                                // P0 ③ 并发不变量：子图节点在等待子图执行前释放并发许可，
+                                // 因为子节点需从同一信号量取许可；父节点持许可等待子节点
+                                // 会形成 hold-and-wait 死锁（≥16 个并发子图时必现）。
+                                if node_ref.as_any().is::<sisyphus_types::SubGraphSOPNode>() {
+                                    drop(permit);
                                 }
 
                                 exec_self.execute_node_cognitively(

@@ -310,3 +310,13 @@ impl BridgeClient {
         Ok(rx)
     }
 }
+
+/// 为 TUI 的 REST 调用注入与 gRPC 相同的 `SISYPHUS_AUTH_TOKEN` Bearer 认证。
+/// bridge 同时暴露 gRPC 与 REST；两种传输必须来自同一 token 源，否则开启
+/// 认证后 `/api/*`、`/health/deep` 等 REST 端点会全部 401。
+pub(crate) fn with_bearer_auth(req: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
+    match std::env::var("SISYPHUS_AUTH_TOKEN") {
+        Ok(token) if !token.is_empty() => req.bearer_auth(token),
+        _ => req,
+    }
+}
