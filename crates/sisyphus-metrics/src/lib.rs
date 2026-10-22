@@ -47,18 +47,17 @@ pub fn record_cognitive_iteration(
     converged: bool,
     duration_secs: f64,
 ) {
-    metrics::increment_counter!("cognitive_loop_iterations_total", "sop_id" => sop_id.to_string());
+    metrics::counter!("cognitive_loop_iterations_total", "sop_id" => sop_id.to_string())
+        .increment(1);
     metrics::histogram!(
         "cognitive_loop_iteration_duration_seconds",
-        duration_secs,
         "sop_id" => sop_id.to_string()
-    );
-    metrics::gauge!("cognitive_loop_deviation", deviation, "sop_id" => sop_id.to_string());
+    )
+    .record(duration_secs);
+    metrics::gauge!("cognitive_loop_deviation", "sop_id" => sop_id.to_string()).set(deviation);
     if converged {
-        metrics::increment_counter!(
-            "cognitive_loop_convergence_total",
-            "sop_id" => sop_id.to_string()
-        );
+        metrics::counter!("cognitive_loop_convergence_total", "sop_id" => sop_id.to_string())
+            .increment(1);
     }
 }
 
@@ -68,16 +67,14 @@ pub fn record_cognitive_iteration(
 /// - `sop_executions_total` (counter, sop_id/success)
 /// - `sop_execution_duration_seconds` (histogram, sop_id)
 pub fn record_sop_execution(sop_id: &str, success: bool, duration_secs: f64) {
-    metrics::increment_counter!(
+    metrics::counter!(
         "sop_executions_total",
         "sop_id" => sop_id.to_string(),
         "success" => success.to_string()
-    );
-    metrics::histogram!(
-        "sop_execution_duration_seconds",
-        duration_secs,
-        "sop_id" => sop_id.to_string()
-    );
+    )
+    .increment(1);
+    metrics::histogram!("sop_execution_duration_seconds", "sop_id" => sop_id.to_string())
+        .record(duration_secs);
 }
 
 /// Record WASM execution metric.
@@ -87,17 +84,15 @@ pub fn record_sop_execution(sop_id: &str, success: bool, duration_secs: f64) {
 /// - `wasm_execution_duration_seconds` (histogram, tool_id)
 /// - `wasm_fuel_used` (gauge, tool_id)
 pub fn record_wasm_execution(tool_id: &str, success: bool, duration_secs: f64, fuel_used: u64) {
-    metrics::increment_counter!(
+    metrics::counter!(
         "wasm_executions_total",
         "tool_id" => tool_id.to_string(),
         "success" => success.to_string()
-    );
-    metrics::histogram!(
-        "wasm_execution_duration_seconds",
-        duration_secs,
-        "tool_id" => tool_id.to_string()
-    );
-    metrics::gauge!("wasm_fuel_used", fuel_used as f64, "tool_id" => tool_id.to_string());
+    )
+    .increment(1);
+    metrics::histogram!("wasm_execution_duration_seconds", "tool_id" => tool_id.to_string())
+        .record(duration_secs);
+    metrics::gauge!("wasm_fuel_used", "tool_id" => tool_id.to_string()).set(fuel_used as f64);
 }
 
 /// Record memory operation metric.
@@ -106,18 +101,19 @@ pub fn record_wasm_execution(tool_id: &str, success: bool, duration_secs: f64, f
 /// - `mem_operations_total` (counter, op/layer/hit)
 /// - `mem_operation_duration_seconds` (histogram, op/layer)
 pub fn record_mem_operation(op: &str, layer: &str, hit: bool, duration_secs: f64) {
-    metrics::increment_counter!(
+    metrics::counter!(
         "mem_operations_total",
         "op" => op.to_string(),
         "layer" => layer.to_string(),
         "hit" => hit.to_string()
-    );
+    )
+    .increment(1);
     metrics::histogram!(
         "mem_operation_duration_seconds",
-        duration_secs,
         "op" => op.to_string(),
         "layer" => layer.to_string()
-    );
+    )
+    .record(duration_secs);
 }
 
 /// Record simulation metric.
@@ -127,21 +123,16 @@ pub fn record_mem_operation(op: &str, layer: &str, hit: bool, duration_secs: f64
 /// - `simulation_duration_seconds` (histogram, sop_id)
 /// - `simulation_estimated_cost` (gauge, sop_id)
 pub fn record_simulation(sop_id: &str, success: bool, duration_secs: f64, estimated_cost: u64) {
-    metrics::increment_counter!(
+    metrics::counter!(
         "simulations_total",
         "sop_id" => sop_id.to_string(),
         "success" => success.to_string()
-    );
-    metrics::histogram!(
-        "simulation_duration_seconds",
-        duration_secs,
-        "sop_id" => sop_id.to_string()
-    );
-    metrics::gauge!(
-        "simulation_estimated_cost",
-        estimated_cost as f64,
-        "sop_id" => sop_id.to_string()
-    );
+    )
+    .increment(1);
+    metrics::histogram!("simulation_duration_seconds", "sop_id" => sop_id.to_string())
+        .record(duration_secs);
+    metrics::gauge!("simulation_estimated_cost", "sop_id" => sop_id.to_string())
+        .set(estimated_cost as f64);
 }
 
 /// Record reflection metric.
@@ -151,13 +142,10 @@ pub fn record_simulation(sop_id: &str, success: bool, duration_secs: f64, estima
 /// - `reflection_duration_seconds` (histogram, sop_id)
 /// - `reflection_deviation` (gauge, sop_id)
 pub fn record_reflection(sop_id: &str, deviation: f64, duration_secs: f64) {
-    metrics::increment_counter!("reflections_total", "sop_id" => sop_id.to_string());
-    metrics::histogram!(
-        "reflection_duration_seconds",
-        duration_secs,
-        "sop_id" => sop_id.to_string()
-    );
-    metrics::gauge!("reflection_deviation", deviation, "sop_id" => sop_id.to_string());
+    metrics::counter!("reflections_total", "sop_id" => sop_id.to_string()).increment(1);
+    metrics::histogram!("reflection_duration_seconds", "sop_id" => sop_id.to_string())
+        .record(duration_secs);
+    metrics::gauge!("reflection_deviation", "sop_id" => sop_id.to_string()).set(deviation);
 }
 
 /// Record evolution metric.
@@ -167,21 +155,17 @@ pub fn record_reflection(sop_id: &str, deviation: f64, duration_secs: f64) {
 /// - `evolution_duration_seconds` (histogram, sop_id)
 /// - `evolution_fuel_changes_total` (counter, sop_id; only if fuel_changed)
 pub fn record_evolution(sop_id: &str, evolved: bool, duration_secs: f64, fuel_changed: bool) {
-    metrics::increment_counter!(
+    metrics::counter!(
         "evolutions_total",
         "sop_id" => sop_id.to_string(),
         "evolved" => evolved.to_string()
-    );
-    metrics::histogram!(
-        "evolution_duration_seconds",
-        duration_secs,
-        "sop_id" => sop_id.to_string()
-    );
+    )
+    .increment(1);
+    metrics::histogram!("evolution_duration_seconds", "sop_id" => sop_id.to_string())
+        .record(duration_secs);
     if fuel_changed {
-        metrics::increment_counter!(
-            "evolution_fuel_changes_total",
-            "sop_id" => sop_id.to_string()
-        );
+        metrics::counter!("evolution_fuel_changes_total", "sop_id" => sop_id.to_string())
+            .increment(1);
     }
 }
 
@@ -191,8 +175,8 @@ pub fn record_evolution(sop_id: &str, evolved: bool, duration_secs: f64, fuel_ch
 /// - `bridge_requests_total` (counter, success)
 /// - `bridge_request_duration_seconds` (histogram, no labels)
 pub fn record_bridge_request(success: bool, duration_secs: f64) {
-    metrics::increment_counter!("bridge_requests_total", "success" => success.to_string());
-    metrics::histogram!("bridge_request_duration_seconds", duration_secs);
+    metrics::counter!("bridge_requests_total", "success" => success.to_string()).increment(1);
+    metrics::histogram!("bridge_request_duration_seconds").record(duration_secs);
 }
 
 #[derive(Error, Debug)]

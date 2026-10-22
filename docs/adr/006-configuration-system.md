@@ -31,13 +31,15 @@ pub struct Config {
     pub registry: RegistryConfig,
     pub jcode: JcodeConfig,
     pub chaos: ChaosConfig,
+    pub cluster: ClusterConfig,
+    pub jwt: JwtConfig,
     pub auth_token: String,
     pub bridge_address: String,
     pub http_address: String,
 }
 ```
 
-Each sub-config lives in `config/sub.rs` under `sisyphus-types`.
+Each sub-config lives under `config/` in `sisyphus-types` (`sub.rs` for most; `llm.rs` for LLM).
 Environment variables are applied in `Config::apply_env_overrides()`.
 
 ### Env Var Convention
@@ -67,4 +69,4 @@ config.apply_env_overrides();
 
 **Negative:**
 - `apply_env_overrides()` needs manual maintenance when adding new fields
-- No hot-reload (requires restart)
+- No hot-reload for services: `Config::watch()` / `ConfigWatcher` exists in `config/mod.rs`, but the bridge does not consume it (restart required)

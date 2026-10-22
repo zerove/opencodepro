@@ -1,18 +1,22 @@
+use crate::sisyphus_bridge_client::SisyphusBridgeClient;
+use crate::ExecuteToolRequest;
 use metrics::counter;
 use serde_json::Value;
-use sisyphus_bridge_api::sisyphus_bridge_client::SisyphusBridgeClient;
-use sisyphus_bridge_api::ExecuteToolRequest;
 use std::sync::Arc;
 use tonic::{transport::Channel, Request};
 
+/// Shared client for invoking registered tools through the gRPC bridge.
+///
+/// The generated [`SisyphusBridgeClient`] is wrapped in an `Arc<RwLock<_>>`
+/// so a connected client can be cloned cheaply and shared across executor
+/// tasks.
 #[derive(Clone)]
-/// Bridge Client.
 pub struct BridgeClient {
     client: Arc<tokio::sync::RwLock<SisyphusBridgeClient<Channel>>>,
 }
 
 impl BridgeClient {
-    /// New.
+    /// Connect to a bridge endpoint such as `http://[::1]:50051`.
     pub async fn new(endpoint: String) -> Result<Self, String> {
         let channel = Channel::from_shared(endpoint)
             .map_err(|e| format!("Invalid bridge endpoint: {e}"))?
@@ -25,7 +29,6 @@ impl BridgeClient {
         })
     }
 
-    /// Execute tool.
     /// Execute a registered tool via the bridge gRPC service.
     ///
     /// Serialises `args` to JSON and dispatches to `execute_tool` on the

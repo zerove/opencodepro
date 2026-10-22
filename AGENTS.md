@@ -54,7 +54,7 @@ opencodepro/
 | 认知循环核心逻辑 | `crates/sisyphus-core/src/` | DAG 执行、cognitive loop |
 | TUI 界面 | `crates/sisyphus-cli/src/tui/` | ratatui 组件 |
 | gRPC 服务 | `crates/sisyphus-bridge/src/` | tonic services |
-| REST API | `crates/sisyphus-bridge/src/http.rs` | axum + OpenAPI 3.1（独立 sisyphus-api 已归档至 ide/api）|
+| REST API | `crates/sisyphus-bridge/src/http/` | axum + OpenAPI 3.1（独立 sisyphus-api 已归档至 ide/api）|
 | Web 仪表盘 | `webui/` | axum + HTMX + SSE |
 | Rust SDK | `ide/sdk/`（已归档） | REST 客户端；活跃 SDK 见 ide/python-sdk、ide/go-sdk、ide/typescript-sdk |
 | TypeScript SDK | `ide/typescript-sdk/` | vitest, npm 包，CI 跑 build + test |

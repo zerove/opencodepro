@@ -6,7 +6,7 @@
 
 ```
 sisyphus/
-├── crates/           # 28 个 Rust crate
+├── crates/           # 25 个 Rust crate
 │   ├── sisyphus-core/        # DAG 执行、认知循环、SOP 编排
 │   ├── sisyphus-cli/         # TUI 客户端 (ratatui + crossterm)
 │   ├── sisyphus-bridge/      # gRPC + REST 桥接服务 (tonic + axum)
@@ -15,8 +15,6 @@ sisyphus/
 │   ├── sisyphus-intel/       # 情报分析 (仿真、反思、演进)
 │   ├── sisyphus-tools-*/     # 工具 crate (agent、build、executor、llm、mcp、scm、session、system)
 │   ├── sisyphus-roadmap/     # 战略规划 (Project → Milestone → Phase → Goal)
-│   ├── sisyphus-api/         # REST API 处理器 (axum + OpenAPI 3.1)
-│   ├── sisyphus-sdk/         # Rust SDK 客户端
 │   ├── sisyphus-knowledge/   # 知识图谱与认知资产存储
 │   ├── sisyphus-visual/      # 视觉感知与嵌入
 │   ├── sisyphus-wasm-sdk/    # WASM 工具 SDK (guest crate)

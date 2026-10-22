@@ -1,17 +1,17 @@
 # Sisyphus Mem Agent Knowledge Base
 
 ## OVERVIEW
-Tiered storage layer: L1 (DashMap in-memory cache) + L2 (SQLite persistent store) with snapshot/restore.
+Tiered storage layer: L1 (LRU in-memory cache) + L2 (SQLite persistent store) with snapshot/restore.
 
 ## WHERE TO LOOK
 - Store implementation: `store.rs` (MfsStore, L1/L2 coordination)
-- Snapshot: `snapshot.rs` (serialize/deserialize state)
-- Schema: inline in store.rs (SQLite table definitions)
+- Snapshot: `take_snapshot` / `restore_snapshot` in `store.rs` (types in `types.rs`)
+- Schema: SQLite DDL is per-module (`store.rs`, `sop_store.rs`, `skill_store.rs`, `roadmap_store.rs`, `vector_memory.rs`)
 
 ## CONVENTIONS
-- Write-through: writes go to both L1 and L2 atomically
-- Snapshot uses postcard serialization for compactness
-- MfsStore behind `Arc<dyn Mfs>` for testability
+- Writes: L1 is updated immediately; L2 writes are buffered (`WriteOp` channel) and flushed in batches by a worker
+- State is persisted as JSON via serde_json (no binary codec)
+- Test doubles via `Arc<dyn EmbeddingClient>` / `Arc<dyn ExperienceBank>`; `MfsStore` itself is a concrete struct
 - All operations async via tokio
 
 ## COMMANDS

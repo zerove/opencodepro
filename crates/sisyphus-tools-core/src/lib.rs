@@ -16,8 +16,6 @@ pub mod hook;
 pub mod process;
 pub mod wisdom;
 
-pub mod bridge;
-
 #[cfg(test)]
 mod tests {
     use super::*;

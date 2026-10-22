@@ -390,7 +390,7 @@ check-stress-test:
 # — core benchmarks (isolated, sandbox feature required) —
 
 bench-core:
-	cargo bench -p sisyphus-core --features sandbox -- --warm-up-time 1 --measurement-time 2 --sample-size 10
+	cargo bench -p sisyphus-core --features sandbox
 
 # — performance analysis (run benchmarks + critcmp comparison) —
 #
@@ -566,7 +566,7 @@ test-ci:
 	@echo "━━━ 12/14 Test Integration ━━━"
 	cargo test -p sisyphus-tests --lib
 	@echo "━━━ 13/14 Bench Core ━━━"
-	cargo bench -p sisyphus-core --features sandbox -- --warm-up-time 1 --measurement-time 2 --sample-size 10
+	cargo bench -p sisyphus-core --features sandbox
 	@echo "━━━ 14/14 CLI Build ━━━"
 	cargo build --release -p sisyphus-cli
 	@echo "━━━ CI simulation complete ━━━"

@@ -57,7 +57,7 @@ impl OutputCache {
         node_name.hash(&mut hasher);
         // 对输入排序以保证哈希确定性
         let mut sorted: Vec<_> = inputs.iter().collect();
-        sorted.sort_by_key(|(k, _)| (*k).clone());
+        sorted.sort_unstable_by(|a, b| a.0.cmp(b.0));
         for (k, v) in sorted {
             k.hash(&mut hasher);
             v.hash(&mut hasher);
@@ -72,14 +72,15 @@ impl OutputCache {
 
     /// 存储输出。
     ///
-    /// 超过容量时逐出最旧的条目。原实现用 `evict_target ^ hash` 构造一个
-    /// 几乎必然不存在的键去删除，因此逐出从未真正发生，缓存只增不减。
+    /// 容量已满时按迭代顺序采样逐出少量条目：只收集溢出数量的受害键，
+    /// 不做全量扫描。不保证 LRU 语义，仅保证容量上界。
+    /// 逐出回归测试见 `eviction_tests`。
     pub fn insert(&self, hash: u64, output: NodeOutput) {
         if !self.cache.contains_key(&hash) && self.cache.len() >= self.max_entries {
-            // 先收集再删除：持有分片迭代器的同时对同一分片取写锁会死锁。
-            let victims: Vec<u64> = self.cache.iter().map(|e| *e.key()).collect();
             let overflow = self.cache.len().saturating_sub(self.max_entries) + 1;
-            for key in victims.into_iter().take(overflow) {
+            // 先收集再删除：持有分片迭代器的同时对同一分片取写锁会死锁。
+            let victims: Vec<u64> = self.cache.iter().take(overflow).map(|e| *e.key()).collect();
+            for key in victims {
                 self.cache.remove(&key);
             }
         }
@@ -173,7 +174,7 @@ impl ContextCompressor {
     /// 当值超过阈值时进行压缩。
     /// 返回 (compressed_value, was_compressed)。
     pub fn compress(&self, value: &serde_json::Value) -> (serde_json::Value, bool) {
-        let size = serde_json::to_string(value).map(|s| s.len()).unwrap_or(0);
+        let size = estimate_json_size(value);
 
         if size <= self.threshold_bytes {
             return (value.clone(), false);
@@ -182,7 +183,12 @@ impl ContextCompressor {
         // 对大型字符串值：截断并添加标记
         if let serde_json::Value::String(s) = value {
             if s.len() > self.threshold_bytes {
-                let truncated = &s[..self.threshold_bytes];
+                // 回退到最近的 UTF-8 字符边界再截断，避免切断多字节字符 panic
+                let mut end = self.threshold_bytes;
+                while end > 0 && !s.is_char_boundary(end) {
+                    end -= 1;
+                }
+                let truncated = &s[..end];
                 return (
                     serde_json::Value::String(format!(
                         "{truncated}...[compressed, original {size} bytes]"
@@ -202,6 +208,33 @@ impl ContextCompressor {
         }
 
         (value.clone(), false)
+    }
+}
+
+/// 估算 JSON 值的序列化字节数 — 避免为测量大小而分配完整序列化字符串。
+/// 结果为近似值（用于阈值判断），嵌套结构递归累加各部分的近似长度。
+fn estimate_json_size(value: &serde_json::Value) -> usize {
+    match value {
+        serde_json::Value::Null => 4,
+        serde_json::Value::Bool(b) => {
+            if *b {
+                4
+            } else {
+                5
+            }
+        },
+        // 数字的显示长度即为序列化长度
+        serde_json::Value::Number(n) => n.to_string().len(),
+        // 字符串需要一对引号
+        serde_json::Value::String(s) => s.len() + 2,
+        serde_json::Value::Array(items) => {
+            2 + items.iter().map(estimate_json_size).sum::<usize>() + items.len().saturating_sub(1)
+        },
+        // 每个键值对额外计 3 字节：`"k":v` 的引号与冒号
+        serde_json::Value::Object(map) => {
+            2 + map.iter().map(|(k, v)| k.len() + 3 + estimate_json_size(v)).sum::<usize>()
+                + map.len().saturating_sub(1)
+        },
     }
 }
 
@@ -317,6 +350,20 @@ mod tests {
         assert!(was_compressed);
         if let serde_json::Value::String(s) = compressed {
             assert!(s.len() < 200);
+            assert!(s.contains("compressed"));
+        }
+    }
+
+    #[test]
+    fn test_context_compressor_multibyte_truncation() {
+        let compressor = ContextCompressor::new(100);
+        // "中" 每个占 3 字节：150 字节的字符串在 100 处不是字符边界，
+        // 旧实现 `&s[..100]` 会 panic。
+        let large = serde_json::Value::String("中".repeat(50));
+        let (compressed, was_compressed) = compressor.compress(&large);
+        assert!(was_compressed);
+        if let serde_json::Value::String(s) = compressed {
+            assert!(s.len() < 150);
             assert!(s.contains("compressed"));
         }
     }

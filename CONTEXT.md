@@ -7,12 +7,12 @@ Sisyphus 是一个**认知计算引擎 (Cognitive Computation Engine)**，实现
 ## 🎯 当前状态
 
 - **Workspace**: 27 个成员（`crates/` 下 25 个 crate + `webui` + `evals`，`sisyphus-tools` 拆分为 10 个子 crate）
-- **测试基线**: **1415 个测试全绿**（lib + bin + doctests + 集成），0 失败 0 忽略（除需真实 LLM/网络的 4 个）
+- **测试基线**: **3000+ 个测试全绿**（lib + bin + doctests + 集成），0 失败 0 忽略（除需真实 LLM/网络的 4 个）
 - **核心能力**:
   - 认知循环 v1+v2（自适应深度控制、并行分支预测、运行时异常检测）
   - WASM 沙箱（wasmtime + 燃料计量 + 内存限制）双模式：嵌入式 + sandboxd 守护进程
   - gRPC bridge（34 RPC）+ REST API（53 端点 + OpenAPI 3.1）
-  - 双层存储（L1 DashMap + L2 SQLite/PostgreSQL + pgvector 语义检索）
+  - 双层存储（L1 LRU + L2 SQLite/PostgreSQL + pgvector 语义检索）
   - 混沌工程（故障注入 + 自动修复管线）
   - 自编程闭环（缺口检测 → 工具生成 → 部署 → 注册）
   - 多租户隔离（workspace-aware，基于 project_id）
@@ -38,12 +38,12 @@ Sisyphus 是一个**认知计算引擎 (Cognitive Computation Engine)**，实现
 | 模块 | 路径 |
 |------|------|
 | 认知循环核心 | `crates/sisyphus-core/src/` (cognitive_loop*.rs, strategic_manager.rs) |
-| gRPC 桥接 | `crates/sisyphus-bridge/src/` (grpc_handlers.rs, http.rs) |
+| gRPC 桥接 | `crates/sisyphus-bridge/src/` (grpc_handlers.rs, bridge_service.rs, http/) |
 | TUI | `crates/sisyphus-cli/src/tui/` |
 | 存储层 | `crates/sisyphus-mem/src/` (store.rs, vector_memory.rs) |
 | REST 路由 | `crates/sisyphus-bridge/src/http/` (mod.rs 注册, handlers*.rs 实现) |
 | 战略定义 | `docs/ROADMAP.md` |
-| 决策记录 | `docs/adr/` (002-phase-3b ~ 006-configuration-system) |
+| 决策记录 | `docs/adr/` (002-phase-3b ~ 014-break-core-tools-dependency) |
 | 演进计划 | `docs/EVOLUTION_PLAN.md` |
 
 ## 🧪 常用命令

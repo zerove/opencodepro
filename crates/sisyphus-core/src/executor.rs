@@ -5,7 +5,9 @@ use petgraph::algo::toposort;
 use petgraph::graph::NodeIndex;
 use petgraph::visit::{Dfs, EdgeRef};
 use serde_json::Value;
+use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
+use std::hash::Hasher;
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::mpsc;
@@ -13,6 +15,21 @@ use tokio::task::JoinSet;
 
 use crate::{CoreError, ExecutionContext, ExecutionEvent, NodeOutput, SOPGraph};
 use sisyphus_types::{RuntimeSupervisor, SupervisorDecision};
+
+/// 将序列化输出直接喂给 `Hasher` 的 `Write` 适配器 — 用于在不分配
+/// 完整 JSON 字符串的情况下生成缓存键。
+struct HashWriter<'a, H: Hasher>(&'a mut H);
+
+impl<H: Hasher> std::io::Write for HashWriter<'_, H> {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.0.write(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
 
 /// 基于 DAG 的执行器，以并行节点调度运行 SOP 图谱，
 /// 并支持可选的事件流。
@@ -102,6 +119,10 @@ impl Executor {
             let target = edge.target();
             if let Some(node_ref) = sop_graph.graph.node_weight(target) {
                 let name = node_ref.name().to_string();
+                // 推测预测先查缓存：已有预测则跳过，避免重复 LLM 调用。
+                if self.prediction_cache.contains_key(&name) {
+                    continue;
+                }
                 let reflector_clone = Arc::clone(reflector);
                 let ctx_clone = Arc::clone(&ctx);
                 let cache_clone = Arc::clone(&self.prediction_cache);
@@ -573,11 +594,15 @@ impl Executor {
         let output = if let Some(subgraph_node) =
             node_ref.as_any().downcast_ref::<sisyphus_types::SubGraphSOPNode>()
         {
-            let config_key = serde_json::to_string(&subgraph_node.config).map_err(|e| {
+            // 缓存键取配置内容的哈希：直接序列化进哈希器，避免为每次
+            // 节点执行分配完整 JSON 字符串（配置可能很大）。
+            let mut hasher = DefaultHasher::new();
+            serde_json::to_writer(HashWriter(&mut hasher), &subgraph_node.config).map_err(|e| {
                 sisyphus_types::TypesError::NodeExecutionError(format!(
                     "Config serialization failed: {e}"
                 ))
             })?;
+            let config_key = format!("{:016x}", hasher.finish());
             let subgraph = if let Some(cached) = self.graph_cache.get(&config_key) {
                 cached.clone()
             } else {

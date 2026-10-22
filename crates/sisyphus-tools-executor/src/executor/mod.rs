@@ -1,4 +1,4 @@
-use sisyphus_tools_core::bridge::BridgeClient;
+use sisyphus_bridge_api::client::BridgeClient;
 use sisyphus_tools_core::ToolError;
 use sisyphus_tools_llm::metis::LlmClient;
 use std::sync::Arc;

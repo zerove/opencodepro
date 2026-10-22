@@ -13,7 +13,7 @@ sisyphus-tools-llm = { version = "0.1.0", path = "../sisyphus-tools-llm" }
 sisyphus-tools-llm-tools = { version = "0.1.0", path = "../sisyphus-tools-llm-tools" }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
-md5 = "0.7"
+md5 = "0.8.0"
 async-trait = { workspace = true }
 rand = { version = "0.8", features = ["small_rng"] }
 rayon = "1.7"

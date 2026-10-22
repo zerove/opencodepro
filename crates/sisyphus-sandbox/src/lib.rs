@@ -886,13 +886,12 @@ mod tests {
         let executor = test_executor();
         let ceiling = std::time::Duration::from_millis(EXECUTION_TIMEOUT_MS * 6);
 
-        // 同进程基线：一次正常执行。
-        let warmup = Instant::now();
-        let warmup_result = executor.execute_internal_unmetered("hello", 1_000, true).await;
-        let baseline = warmup.elapsed();
-        warmup_result.expect("baseline call must succeed");
-
-        let floor = baseline.saturating_mul(10).max(std::time::Duration::from_millis(1));
+        // 对照调用：证明正常的 guest 不会被 trap，即墙钟上限没有误伤。
+        // 它**不**用作耗时基准，原因见下面那条注释。
+        executor
+            .execute_internal_unmetered("hello", 1_000, true)
+            .await
+            .expect("control call must succeed");
 
         let start = Instant::now();
         let result = executor.execute_internal_unmetered("infinite_loop", 100, true).await;
@@ -906,13 +905,16 @@ mod tests {
             elapsed < ceiling,
             "wall-clock bound did not engage: took {elapsed:?}, ceiling {ceiling:?}"
         );
-        // 当场 trap（内存上限、未 arm 的 store）会与基线同量级；跑满一个 epoch
-        // 周期则是秒级。相对判别比绝对阈值稳。
-        assert!(
-            elapsed >= floor,
-            "returned after {elapsed:?}, not clearly slower than a normal execution \
-             ({baseline:?}) — something else stopped the guest immediately"
-        );
+        // 这里曾经还有一条 `elapsed >= baseline * 10` 的下界断言，同样是错的：
+        // ticker 间隔就是 EXECUTION_TIMEOUT_MS，而 `set_epoch_deadline(1)` 只等
+        // 一个 tick，等待时间在 (0, interval] 之间近似均匀；而分母 `baseline`
+        // 是一次 CPU 密集调用，负载越重越大，于是下界被推高——机器越忙越容易
+        // 失败。epoch 等待是 sleep，与 CPU 负载并不同向，用相对基线反推它本身
+        // 就是错误的前提。
+        //
+        // 因果关系由上面 `result.is_err()` 加上 daemon 侧的 kind 断言承担：
+        // `Trap::Interrupt` 在 wasmtime 里只由 epoch 到期产生。因此上面那条
+        // ceiling 是这里唯一的耗时断言。
     }
 
     /// 回归：trap 的类别必须以类型形式抵达调用方。

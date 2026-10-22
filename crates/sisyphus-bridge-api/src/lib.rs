@@ -34,6 +34,8 @@ pub mod cluster_proto {
 pub use cluster_proto::*;
 pub use proto::*;
 
+pub mod client;
+
 /// Convenience function to connect to the Sisyphus bridge.
 /// Tries IPv6 first, falls back to IPv4 for [::1] addresses.
 /// Each attempt has a 3-second timeout.
