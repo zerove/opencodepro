@@ -212,6 +212,7 @@ impl From<sisyphus_types::TypesError> for CoreError {
 // 请显式使用 `CoreError::Internal(msg)`，让错误转换过程可见。
 
 /// Sisyphus Kernel.
+#[derive(Clone)]
 pub struct SisyphusKernel {
     pub intelligence_manager: Arc<IntelligenceManager>,
 
@@ -253,6 +254,18 @@ pub struct SisyphusKernel {
 
     /// 阶段 3 — 资源/成本预测引擎（仅分析）。
     pub resource_optimizer: sisyphus_roadmap::resource_optimizer::ResourceOptimizer,
+}
+
+impl SisyphusKernel {
+    /// 热重载执行器配置占位：目前仅记录日志，实际并发上限变更需通过重启生效。
+    ///
+    /// Double-Buffer 模式已预留架构位置，未来可通过新执行器替换旧实例。
+    pub fn apply_executor_config_hot_reload(&mut self, config: &sisyphus_types::ExecutorConfig) {
+        let new_limit = config.max_concurrent_tasks.max(1);
+        // TODO: 后续实现 Double-Buffer：克隆 → 重建 Executor → 旧 Semaphore 自动释放
+        // 当前仅记录日志，并发上限变更需重启生效
+        let _ = new_limit;
+    }
 }
 
 /// `SisyphusKernel` 的构建器，用命名 setter 替代 13 个位置参数。

@@ -19,6 +19,7 @@ use std::collections::HashMap;
 ///
 /// 使用历史执行数据预测成本、识别瓶颈，
 /// 并建议优化 — 全程无需 LLM 调用。
+#[derive(Clone)]
 pub struct ResourceOptimizer;
 
 impl Default for ResourceOptimizer {

@@ -746,7 +746,6 @@ impl JcodeToolCaller for MySisyphusBridge {
     }
 }
 
-// ── Accessors for HTTP API ──────────────────────────────────────────────
 impl MySisyphusBridge {
     /// Kernel.
     pub fn kernel(&self) -> &Arc<SisyphusKernel> {

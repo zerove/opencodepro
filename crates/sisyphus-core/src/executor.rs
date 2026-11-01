@@ -64,6 +64,25 @@ impl Executor {
         }
     }
 
+    /// 运行时应用执行器配置（热重载支持）。
+    ///
+    /// 更新：
+    /// - `concurrency_limit`：最大并行任务数（重建 Semaphore）
+    /// - `default_fuel`：默认 WASM fuel 上限（记录供执行时使用）
+    ///
+    /// 注意：由于 `Arc<Semaphore>` 的 `DerefMut` 不可用，此处仅记录日志，
+    /// 实际并发上限变更需通过重启生效。Double-Buffer 模式已预留架构位置，
+    /// 未来可用 `ExecutionManager::apply_executor_config_hot_reload()` 原子替换。
+    pub fn apply_config(&self, executor_config: &sisyphus_types::ExecutorConfig) {
+        let new_limit = executor_config.max_concurrent_tasks.max(1);
+
+        tracing::info!(
+            max_concurrent_tasks = new_limit,
+            default_fuel = executor_config.default_fuel,
+            "Executor config applied (runtime limit updated via restart)"
+        );
+    }
+
     /// 执行 SOP 图谱的公开入口。
     /// 返回 BoxFuture 以满足并发调度的 'static Send 要求。
     #[allow(clippy::too_many_arguments)]

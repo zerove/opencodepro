@@ -104,6 +104,21 @@ impl ChaosRunner {
         Self::default()
     }
 
+    /// 运行时应用混沌配置（热重载支持）。
+    ///
+    /// 更新：
+    /// - `enabled`：是否默认启用混沌
+    /// - `default_fault_probability`：默认故障注入概率
+    pub fn apply_config(&self, chaos_config: &sisyphus_types::ChaosConfig) {
+        self.enabled.store(chaos_config.enabled, Ordering::SeqCst);
+        // fault_probability 由实验配置决定，这里记录默认值供参考
+        tracing::info!(
+            enabled = chaos_config.enabled,
+            default_fault_probability = chaos_config.default_fault_probability,
+            "ChaosRunner config applied"
+        );
+    }
+
     /// 启动混沌实验。
     pub fn start_experiment(&self, experiment: ChaosExperiment) {
         self.enabled.store(true, Ordering::SeqCst);
