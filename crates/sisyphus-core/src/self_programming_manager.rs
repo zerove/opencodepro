@@ -312,6 +312,9 @@ impl SelfProgrammingManager {
         let mut failures = Vec::new();
         let mut total = 0u64;
         let mut passed = 0u64;
+        // 真实结果标记（不依赖 failures 文本嗅探）
+        let mut unit_ok = true;
+        let mut integration_ok = true;
 
         // --- 单元测试 ---
         // 若 spec 中指定了测试命令，则尝试运行单元测试
@@ -330,6 +333,7 @@ impl SelfProgrammingManager {
                     info!("Unit test passed for tool {}", tool_id);
                 },
                 Ok(result) => {
+                    unit_ok = false;
                     failures.push(format!(
                         "Unit test failed: {}",
                         result.error_summary.unwrap_or_default()
@@ -337,6 +341,7 @@ impl SelfProgrammingManager {
                     warn!("Unit test failed for tool {}: {}", tool_id, result.stderr);
                 },
                 Err(e) => {
+                    unit_ok = false;
                     failures.push(format!("Unit test error: {}", e));
                     warn!("Unit test error for tool {}: {}", tool_id, e);
                 },
@@ -376,6 +381,7 @@ impl SelfProgrammingManager {
                 info!("Integration test passed for tool {}", tool_id);
             },
             Ok(r) => {
+                integration_ok = false;
                 let err_msg = r.error_summary.unwrap_or_default();
                 failures.push(format!("Integration test: {}", err_msg));
                 warn!("Integration test for {}: {}", tool_id, err_msg);
@@ -390,11 +396,16 @@ impl SelfProgrammingManager {
 
         RegressionTestResult {
             tool_id: tool_id.clone(),
-            unit_tests_passed: failures.iter().any(|f| f.contains("Unit test")),
-            integration_tests_passed: failures.iter().any(|f| f.contains("Integration test")),
+            // 注意：这两个字段必须来自执行过程的真实结果标记，
+            // 不能从 failures 文本里“嗅探”关键词——早期实现写成
+            // `failures.iter().any(|f| f.contains("Unit test"))`，
+            // 语义正好相反（有失败才 true），导致质量报告把
+            // “全绿”报成“未通过”、把“失败”报成“通过”。
+            unit_tests_passed: unit_ok,
+            integration_tests_passed: integration_ok,
             total_tests: total,
             passed,
-            failed: total - passed,
+            failed: total.saturating_sub(passed),
             duration_ms: duration.as_millis() as u64,
             failures,
         }
