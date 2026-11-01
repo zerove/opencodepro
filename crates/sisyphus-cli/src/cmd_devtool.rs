@@ -60,6 +60,11 @@ pub enum ToolCommands {
     },
     /// 列出配置中注册的所有工具
     List,
+    /// 从预置模板一键自举本地工具（无需联网 LLM）
+    Bootstrap {
+        ///预置工具模板 ID（例如 "local/log_analyzer" 或 "local/json_formatter"）
+        template_id: String,
+    },
 }
 
 #[derive(Subcommand)]

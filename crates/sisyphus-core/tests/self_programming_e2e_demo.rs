@@ -7,8 +7,8 @@
 //! 4. 自动化技能包打包与注册 (`SkillStore`)
 
 use sisyphus_core::self_programming_manager::RegressionTestResult;
-use sisyphus_types::tools::ToolSpec;
 use sisyphus_types::skill::{SkillBundle, SkillMetadata};
+use sisyphus_types::tools::ToolSpec;
 
 #[test]
 fn test_self_programming_quality_evaluation_matrix() {
@@ -38,7 +38,11 @@ fn test_self_programming_quality_evaluation_matrix() {
     };
 
     // 验证成功率及稳定性判断
-    let stability_score = if perfect_regression.failed == 0 { 0.95 } else { 0.5 };
+    let stability_score = if perfect_regression.failed == 0 {
+        0.95
+    } else {
+        0.5
+    };
     assert_eq!(stability_score, 0.95);
 }
 

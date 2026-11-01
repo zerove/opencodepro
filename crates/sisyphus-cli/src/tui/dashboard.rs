@@ -82,29 +82,40 @@ fn render_status_cards(app: &App) -> Vec<(Block<'static>, u16)> {
     let cog_active = app.dashboard_cog_active;
     let anomaly_count = app.dashboard_anomaly_count;
     let chaos_running = app.dashboard_chaos_running;
-    let quality_score = 85u16; // placeholder until quality monitor is wired
-    let sp_pending = 0usize; // placeholder
+    // 质量与自编程卡片由已安装技能（含自编程注册的 quality:<n> 标签）驱动；
+    // 无数据时显式显示 "n/a" 而不是伪造一个分数。
+    let sp_stats = app.dashboard_sp_stats;
+    let quality_score = sp_stats.average_quality;
+    let sp_count = sp_stats.self_programmed;
 
-    let states: [(u16, &str); 5] = [
+    let states: [(u16, String); 5] = [
         (
             if cog_active { 75 } else { 10 },
-            if cog_active { "active" } else { "idle" },
+            if cog_active { "active" } else { "idle" }.to_string(),
         ),
         (
             ((anomaly_count as u16).min(10).saturating_sub(1) * 10).min(100),
-            if anomaly_count > 0 { "alert" } else { "normal" },
+            if anomaly_count > 0 { "alert" } else { "normal" }.to_string(),
         ),
         (
             if chaos_running { 90 } else { 10 },
-            if chaos_running { "running" } else { "stopped" },
+            if chaos_running { "running" } else { "stopped" }.to_string(),
         ),
         (
-            quality_score,
-            if quality_score > 70 { "good" } else { "poor" },
+            quality_score.unwrap_or(0),
+            match quality_score {
+                Some(q) if q > 70 => format!("good {q}%"),
+                Some(q) => format!("poor {q}%"),
+                None => "n/a".to_string(),
+            },
         ),
         (
-            if sp_pending > 0 { 50 } else { 10 },
-            if sp_pending > 0 { "pending" } else { "idle" },
+            if sp_count > 0 { 100 } else { 10 },
+            if sp_count > 0 {
+                format!("{sp_count} skills")
+            } else {
+                "idle".to_string()
+            },
         ),
     ];
 
@@ -112,11 +123,14 @@ fn render_status_cards(app: &App) -> Vec<(Block<'static>, u16)> {
         .iter()
         .enumerate()
         .map(|(i, label)| {
-            let (pct, status) = states[i];
-            let fg = match status {
-                "active" | "good" | "running" | "normal" => theme.success,
-                "alert" | "pending" | "poor" => theme.warning,
-                "idle" | "stopped" => theme.muted,
+            let (pct, status) = &states[i];
+            let fg = match status.as_str() {
+                "active" | "running" | "normal" => theme.success,
+                "alert" | "pending" => theme.warning,
+                "idle" | "stopped" | "n/a" => theme.muted,
+                s if s.starts_with("good") => theme.success,
+                s if s.starts_with("poor") => theme.warning,
+                s if s.ends_with("skills") => theme.secondary,
                 _ => theme.fg,
             };
             let block = Block::default()
@@ -128,11 +142,11 @@ fn render_status_cards(app: &App) -> Vec<(Block<'static>, u16)> {
                         Style::default().fg(theme.fg).add_modifier(Modifier::BOLD),
                     ),
                     Span::raw("  "),
-                    Span::styled(status, Style::default().fg(fg)),
+                    Span::styled(status.clone(), Style::default().fg(fg)),
                 ]))
                 .title_alignment(ratatui::layout::Alignment::Center)
                 .to_owned();
-            (block, pct)
+            (block, *pct)
         })
         .collect()
 }

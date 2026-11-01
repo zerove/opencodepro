@@ -556,8 +556,20 @@ pub(super) fn render_skill_market_dialog(frame: &mut ratatui::Frame, area: Rect,
     .split(area);
 
     // 1. 状态
+    let sp = app.dashboard_sp_stats;
+    let sp_summary = if sp.self_programmed == 0 {
+        String::new()
+    } else {
+        match sp.average_quality {
+            Some(q) => format!(
+                " | self-programmed: {} (avg quality {q}%)",
+                sp.self_programmed
+            ),
+            None => format!(" | self-programmed: {}", sp.self_programmed),
+        }
+    };
     let status_text = Text::from(Line::from(Span::styled(
-        format!(" Status: {} ", app.skill_market_status),
+        format!(" Status: {} {sp_summary}", app.skill_market_status),
         Style::default().fg(theme.info),
     )));
     frame.render_widget(
@@ -629,6 +641,10 @@ pub(super) fn render_skill_market_dialog(frame: &mut ratatui::Frame, area: Rect,
                 Span::styled(
                     format!(" v{} by {} ", s.version, s.author),
                     Style::default().fg(theme.muted),
+                ),
+                Span::styled(
+                    crate::tui::widgets::self_programmed_badge(s),
+                    Style::default().fg(theme.success),
                 ),
                 Span::styled(format!("\n  {}", s.description), style),
             ]))

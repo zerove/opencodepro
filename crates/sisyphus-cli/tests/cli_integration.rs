@@ -730,6 +730,40 @@ fn test_skill_show_nonexistent() {
     assert!(stderr.contains("not found"));
 }
 
+// ── Tool bootstrap (self-programming presets) ─────────────
+
+#[test]
+fn test_tool_bootstrap_known_preset() {
+    let stdout = run_cli_success(&["tool", "bootstrap", "local/log_analyzer"]);
+    assert!(stdout.contains("local/log_analyzer"));
+    assert!(stdout.contains("Parse log files"));
+    assert!(stdout.contains("Returns valid JSON object"));
+}
+
+#[test]
+fn test_tool_bootstrap_second_preset() {
+    let stdout = run_cli_success(&["tool", "bootstrap", "local/json_formatter"]);
+    assert!(stdout.contains("local/json_formatter"));
+    assert!(stdout.contains("Pretty-print and validate JSON"));
+}
+
+#[test]
+fn test_tool_bootstrap_unknown_preset_fails() {
+    let out = run_cli(&["tool", "bootstrap", "local/does_not_exist"]);
+    assert!(!out.status.success(), "unknown preset must exit non-zero");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("Unknown preset template"));
+    // 错误信息必须列出可用模板，便于用户纠正
+    assert!(stderr.contains("local/log_analyzer"));
+}
+
+#[test]
+fn test_tool_list_shows_presets() {
+    let stdout = run_cli_success(&["tool", "list"]);
+    assert!(stdout.contains("local/log_analyzer"));
+    assert!(stdout.contains("local/json_formatter"));
+}
+
 #[test]
 fn test_skill_help() {
     let stdout = run_cli_success(&["skill", "--help"]);

@@ -56,32 +56,6 @@ impl From<String> for ToolError {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn string_converts_to_generic() {
-        let e: ToolError = "boom".to_string().into();
-        assert!(matches!(e, ToolError::Generic(ref s) if s == "boom"));
-    }
-
-    #[test]
-    fn io_error_converts_via_from() {
-        let io = std::io::Error::new(std::io::ErrorKind::NotFound, "gone");
-        let e: ToolError = io.into();
-        assert!(matches!(e, ToolError::Io(_)));
-    }
-
-    #[test]
-    fn display_is_stable_for_diagnostics() {
-        assert_eq!(
-            ToolError::NotFound("a/b".into()).to_string(),
-            "Path not found: a/b"
-        );
-    }
-}
-
 // ── MCP executor construction ────────────────────────────────────────────
 
 /// Builds [`ToolExecutor`] instances for configured MCP servers.
@@ -121,4 +95,30 @@ pub trait McpExecutorFactory: Send + Sync {
                 + '_,
         >,
     >;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn string_converts_to_generic() {
+        let e: ToolError = "boom".to_string().into();
+        assert!(matches!(e, ToolError::Generic(ref s) if s == "boom"));
+    }
+
+    #[test]
+    fn io_error_converts_via_from() {
+        let io = std::io::Error::new(std::io::ErrorKind::NotFound, "gone");
+        let e: ToolError = io.into();
+        assert!(matches!(e, ToolError::Io(_)));
+    }
+
+    #[test]
+    fn display_is_stable_for_diagnostics() {
+        assert_eq!(
+            ToolError::NotFound("a/b".into()).to_string(),
+            "Path not found: a/b"
+        );
+    }
 }

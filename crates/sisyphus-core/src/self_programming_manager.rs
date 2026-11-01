@@ -37,6 +37,73 @@ pub struct QualityReport {
     pub recommendations: Vec<String>,
 }
 
+/// 技能注册的最低加权总分。
+pub const REGISTRATION_MIN_OVERALL: f64 = 0.6;
+/// 技能注册的最低规范完整度。
+///
+/// 规范完整度是**硬前置条件**而非仅参与加权：一个没有 `success_criteria`
+/// 的工具无法被判定“是否正确”，即使测试恰好通过也不应自动注册为技能。
+pub const REGISTRATION_MIN_SPEC: f64 = 0.8;
+
+impl QualityReport {
+    /// 取某个轴的分值（轴缺失时返回 0.0）。
+    pub fn axis_score(&self, name: &str) -> f64 {
+        self.axes.iter().find(|a| a.name == name).map(|a| a.score).unwrap_or(0.0)
+    }
+
+    /// 规范完整度轴分值。
+    pub fn spec_completeness(&self) -> f64 {
+        self.axis_score("spec_completeness")
+    }
+
+    /// 是否达到自动注册为技能的门槛。
+    ///
+    /// 需同时满足：加权总分 ≥ [`REGISTRATION_MIN_OVERALL`] 且
+    /// 规范完整度 ≥ [`REGISTRATION_MIN_SPEC`]。
+    pub fn meets_registration_bar(&self) -> bool {
+        self.overall_score >= REGISTRATION_MIN_OVERALL
+            && self.spec_completeness() >= REGISTRATION_MIN_SPEC
+    }
+
+    /// 未达标的原因（达标时返回 `None`），用于日志与用户可见诊断。
+    pub fn rejection_reason(&self) -> Option<String> {
+        if self.overall_score < REGISTRATION_MIN_OVERALL {
+            return Some(format!(
+                "overall score {:.3} below {:.1}",
+                self.overall_score, REGISTRATION_MIN_OVERALL
+            ));
+        }
+        let spec = self.spec_completeness();
+        if spec < REGISTRATION_MIN_SPEC {
+            return Some(format!(
+                "spec completeness {spec:.2} below {REGISTRATION_MIN_SPEC:.1} \
+                 (add success_criteria and an input/output contract)"
+            ));
+        }
+        None
+    }
+}
+
+/// 规范完整度评分（纯函数，供 `evaluate_quality` 与测试共用）。
+///
+/// 分级语义：
+/// - 无 `required_capability` → 0.0（规范没有说明“要做什么”）
+/// - 无 `success_criteria` → 0.2（无法判定“做对了没有”）
+/// - 输入/输出契约不是对象 → 0.5（下游无法按字段绑定参数）
+/// - 三者齐备 → 0.9
+pub fn spec_completeness_score(spec: &ToolSpec) -> f64 {
+    if spec.required_capability.trim().is_empty() {
+        return 0.0;
+    }
+    if spec.success_criteria.trim().is_empty() {
+        return 0.2;
+    }
+    if !spec.expected_input.is_object() || !spec.expected_output.is_object() {
+        return 0.5;
+    }
+    0.9
+}
+
 /// 回归测试执行的结果。
 #[derive(Debug, Clone)]
 pub struct RegressionTestResult {
@@ -191,14 +258,16 @@ impl SelfProgrammingManager {
                 })
                 .await;
 
-                if quality.overall_score >= 0.6 {
+                if quality.meets_registration_bar() {
                     // 8. 质量合格时自动注册为技能
                     self.register_skill(&gap, &quality).await;
                 } else {
                     warn!(
                         tool_id = %gap.suggested_tool_spec.tool_id,
                         quality = quality.overall_score,
-                        "Tool quality below threshold; skipping skill registration"
+                        spec_completeness = quality.spec_completeness(),
+                        reason = ?quality.rejection_reason(),
+                        "Tool quality below registration bar; skipping skill registration"
                     );
                 }
 
@@ -354,16 +423,7 @@ impl SelfProgrammingManager {
         });
 
         // 轴 2：规范完整度
-        let spec_score = if !spec.required_capability.is_empty() {
-            let criteria_present = !spec.success_criteria.is_empty();
-            if criteria_present {
-                0.9
-            } else {
-                0.6
-            }
-        } else {
-            0.3
-        };
+        let spec_score = spec_completeness_score(spec);
         axes.push(QualityAxis {
             name: "spec_completeness".into(),
             score: spec_score,
@@ -503,35 +563,11 @@ impl SelfProgrammingManager {
     }
 }
 
-/// 预置的常用本地工具模板库（用于加速标准工具的自编程自举）
-pub struct PresetToolTemplates;
-
-impl PresetToolTemplates {
-    /// 获取常见工具规格预设（如日志解析、JSON 格式化、文本 diff）
-    pub fn get_preset(tool_id: &str) -> Option<ToolSpec> {
-        match tool_id {
-            "local/log_analyzer" => Some(ToolSpec {
-                tool_id: "local/log_analyzer".into(),
-                required_capability: "Parse log files and aggregate error frequency".into(),
-                expected_input: serde_json::json!({"log_path": "string"}),
-                expected_output: serde_json::json!({"error_counts": "object"}),
-                success_criteria: "Returns valid JSON object with error frequency stats".into(),
-                test_command: Some("cargo test -p sisyphus-core".into()),
-                workdir: None,
-            }),
-            "local/json_formatter" => Some(ToolSpec {
-                tool_id: "local/json_formatter".into(),
-                required_capability: "Pretty-print and validate JSON content".into(),
-                expected_input: serde_json::json!({"raw": "string"}),
-                expected_output: serde_json::json!({"formatted": "string", "valid": "bool"}),
-                success_criteria: "Validates JSON syntax and formats output".into(),
-                test_command: Some("cargo test -p sisyphus-core".into()),
-                workdir: None,
-            }),
-            _ => None,
-        }
-    }
-}
+/// 预置的常用本地工具模板库（用于加速标准工具的自编程自举）。
+///
+/// 定义已下沉到依赖根 `sisyphus-types`（纯数据），此处仅作 re-export，
+/// 保持 `sisyphus_core::self_programming_manager::PresetToolTemplates` 路径可用。
+pub use sisyphus_types::tools::PresetToolTemplates;
 
 // ---------------------------------------------------------------
 // 测试
@@ -638,15 +674,7 @@ mod tests {
         // 可以通过检查总分是加权平均值来验证权重分布正确
         // 总分是各轴分数的加权平均。
         let test_score = regression.success_rate(); // 1.0
-        let spec_score = if !spec.required_capability.is_empty() {
-            if !spec.success_criteria.is_empty() {
-                0.9
-            } else {
-                0.6
-            }
-        } else {
-            0.3
-        }; // 0.9 (capability + criteria)
+        let spec_score = spec_completeness_score(&spec); // 0.9 (capability + criteria + 对象契约)
         let stability_score = if regression.failed == 0 { 0.95 } else { 0.7 }; // 0.95
         let efficiency_score = 0.5; // no test command
 
@@ -668,6 +696,88 @@ mod tests {
     }
 
     #[test]
+    fn spec_completeness_tiers_are_ordered() {
+        let full = make_test_spec("full"); // capability + criteria + 对象契约
+        assert_eq!(spec_completeness_score(&full), 0.9);
+
+        let no_criteria = ToolSpec {
+            success_criteria: String::new(),
+            ..make_test_spec("no_criteria")
+        };
+        assert_eq!(spec_completeness_score(&no_criteria), 0.2);
+
+        let no_capability = ToolSpec {
+            required_capability: String::new(),
+            ..make_test_spec("no_capability")
+        };
+        assert_eq!(spec_completeness_score(&no_capability), 0.0);
+
+        let non_object_contract = ToolSpec {
+            expected_input: serde_json::json!("just a string"),
+            ..make_test_spec("non_object")
+        };
+        assert_eq!(spec_completeness_score(&non_object_contract), 0.5);
+
+        // 空白字符串等同于缺失（避免用空格骗过门禁）
+        let whitespace = ToolSpec {
+            success_criteria: "   ".into(),
+            ..make_test_spec("whitespace")
+        };
+        assert_eq!(spec_completeness_score(&whitespace), 0.2);
+    }
+
+    fn report_with(overall: f64, spec: f64) -> QualityReport {
+        QualityReport {
+            tool_id: "t".into(),
+            overall_score: overall,
+            axes: vec![
+                QualityAxis {
+                    name: "test_coverage".into(),
+                    score: 1.0,
+                    weight: 0.35,
+                },
+                QualityAxis {
+                    name: "spec_completeness".into(),
+                    score: spec,
+                    weight: 0.25,
+                },
+            ],
+            unit_tests_passed: true,
+            integration_tests_passed: true,
+            recommendations: vec![],
+        }
+    }
+
+    #[test]
+    fn registration_bar_requires_both_overall_and_spec() {
+        assert!(report_with(0.8, 0.9).meets_registration_bar());
+        // 总分够但规范不足 → 拒绝（这是本次加固的核心）
+        assert!(!report_with(0.9, 0.2).meets_registration_bar());
+        // 规范够但总分不足 → 拒绝
+        assert!(!report_with(0.5, 0.9).meets_registration_bar());
+        // 边界：恰好等于阈值视为达标
+        assert!(
+            report_with(REGISTRATION_MIN_OVERALL, REGISTRATION_MIN_SPEC).meets_registration_bar()
+        );
+    }
+
+    #[test]
+    fn rejection_reason_names_the_failing_dimension() {
+        assert_eq!(report_with(0.9, 0.9).rejection_reason(), None);
+        let low_overall = report_with(0.4, 0.9).rejection_reason().unwrap_or_default();
+        assert!(low_overall.contains("overall score"), "{low_overall}");
+        let low_spec = report_with(0.9, 0.2).rejection_reason().unwrap_or_default();
+        assert!(low_spec.contains("spec completeness"), "{low_spec}");
+    }
+
+    #[test]
+    fn axis_score_missing_axis_is_zero() {
+        let report = report_with(0.8, 0.9);
+        assert_eq!(report.axis_score("nonexistent"), 0.0);
+        assert_eq!(report.spec_completeness(), 0.9);
+    }
+
+    #[test]
     fn test_quality_axes_low_spec() {
         // 规范完整度低应拉低总分
         let spec_no_criteria = ToolSpec {
@@ -680,16 +790,11 @@ mod tests {
             workdir: None,
         };
 
-        let spec_score = if !spec_no_criteria.required_capability.is_empty() {
-            if !spec_no_criteria.success_criteria.is_empty() {
-                0.9
-            } else {
-                0.6
-            }
-        } else {
-            0.3
-        };
-        assert_eq!(spec_score, 0.3, "Empty spec should get 0.3");
+        assert_eq!(
+            spec_completeness_score(&spec_no_criteria),
+            0.0,
+            "Empty spec must score 0.0"
+        );
     }
 
     #[test]

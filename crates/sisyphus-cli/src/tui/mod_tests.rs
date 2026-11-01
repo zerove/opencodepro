@@ -1,4 +1,5 @@
 use super::*;
+use crate::tui::app::{RemoteSkillEntry, SelfProgrammingStats};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use tokio;
 
@@ -588,4 +589,115 @@ fn rest_base_strips_trailing_slash() {
         crate::tui::rest_base_from("http://localhost:8080/"),
         "http://localhost:8080"
     );
+}
+
+// ── 自编程统计（仪表盘数据源） ────────────────────────
+
+fn skill(id: &str, author: &str, tags: &[&str]) -> RemoteSkillEntry {
+    RemoteSkillEntry {
+        id: id.into(),
+        name: id.into(),
+        description: String::new(),
+        author: author.into(),
+        version: "0.1.0".into(),
+        tags: tags.iter().map(|t| (*t).to_string()).collect(),
+    }
+}
+
+#[test]
+fn sp_stats_empty_list_has_no_quality() {
+    let stats = SelfProgrammingStats::from_skills(&[]);
+    assert_eq!(stats.self_programmed, 0);
+    assert_eq!(stats.average_quality, None);
+}
+
+#[test]
+fn sp_stats_counts_self_programmed_by_tag() {
+    let skills = vec![
+        skill("a", "human", &["manual"]),
+        skill(
+            "b",
+            "sisyphus-self-programming",
+            &["auto-generated", "self-programming", "quality:80"],
+        ),
+        skill("c", "someone", &["self-programming", "quality:60"]),
+    ];
+    let stats = SelfProgrammingStats::from_skills(&skills);
+    assert_eq!(stats.self_programmed, 2);
+    assert_eq!(stats.average_quality, Some(70));
+}
+
+#[test]
+fn sp_stats_counts_self_programmed_by_author_when_tag_missing() {
+    // register_skill 同时写 author 与 tag；只有 author 时也必须识别
+    let skills = vec![skill("b", "sisyphus-self-programming", &["quality:90"])];
+    let stats = SelfProgrammingStats::from_skills(&skills);
+    assert_eq!(stats.self_programmed, 1);
+    assert_eq!(stats.average_quality, Some(90));
+}
+
+#[test]
+fn sp_stats_ignores_manual_skill_quality_tags() {
+    // 非自编程技能即使带 quality 标签也不参与均值
+    let skills = vec![
+        skill("a", "human", &["quality:100"]),
+        skill(
+            "b",
+            "sisyphus-self-programming",
+            &["self-programming", "quality:40"],
+        ),
+    ];
+    let stats = SelfProgrammingStats::from_skills(&skills);
+    assert_eq!(stats.self_programmed, 1);
+    assert_eq!(stats.average_quality, Some(40));
+}
+
+#[test]
+fn sp_stats_quality_tag_parsing_rejects_bad_values() {
+    assert_eq!(skill("x", "a", &["quality:abc"]).quality_score(), None);
+    assert_eq!(skill("x", "a", &["quality:101"]).quality_score(), None);
+    assert_eq!(skill("x", "a", &["quality:"]).quality_score(), None);
+    assert_eq!(skill("x", "a", &["quality:0"]).quality_score(), Some(0));
+    assert_eq!(skill("x", "a", &["quality:100"]).quality_score(), Some(100));
+    assert_eq!(skill("x", "a", &["other"]).quality_score(), None);
+}
+
+#[test]
+fn sp_stats_self_programmed_without_quality_tags_yields_none_average() {
+    let skills = vec![skill(
+        "b",
+        "sisyphus-self-programming",
+        &["self-programming"],
+    )];
+    let stats = SelfProgrammingStats::from_skills(&skills);
+    assert_eq!(stats.self_programmed, 1);
+    assert_eq!(
+        stats.average_quality, None,
+        "no quality tags must not fabricate a score"
+    );
+}
+
+#[test]
+fn self_programmed_badge_empty_for_manual_skill() {
+    let s = skill("a", "human", &["quality:90"]);
+    assert_eq!(crate::tui::widgets::self_programmed_badge(&s), "");
+}
+
+#[test]
+fn self_programmed_badge_includes_quality_when_present() {
+    let s = skill(
+        "b",
+        "sisyphus-self-programming",
+        &["self-programming", "quality:88"],
+    );
+    assert_eq!(
+        crate::tui::widgets::self_programmed_badge(&s),
+        " ⚙ auto q88% "
+    );
+}
+
+#[test]
+fn self_programmed_badge_without_quality_tag() {
+    let s = skill("b", "sisyphus-self-programming", &["self-programming"]);
+    assert_eq!(crate::tui::widgets::self_programmed_badge(&s), " ⚙ auto ");
 }

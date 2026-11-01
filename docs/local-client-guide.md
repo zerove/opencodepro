@@ -28,6 +28,15 @@ sisyphus init
 - `.sisyphus/` 目录：存放本地状态数据库、知识资产与缓存。
 - `sisyphus.toml`：单机配置文件模板（包含 LLM 供应商设置、认知循环参数、沙箱配置）。
 
+### 3. 查看与自举预置工具（离线可用）
+```bash
+sisyphus tool list                    # 列出 MCP 工具与可用的自编程预置模板
+sisyphus tool bootstrap local/log_analyzer   # 查看预置模板的输入/输出契约
+```
+
+预置模板是纯数据（`ToolSpec`），无需联网即可查询；当后续任务需要该能力时，
+自编程循环会按模板契约生成、编译、验证并注册工具。
+
 ---
 
 ## 二、 启动单机交互式 TUI 客户端
@@ -63,7 +72,7 @@ OpenCodePro 最强大的特性之一是**自主扩展工具链 (Self-Programming
 [ 3. 沙箱验证与回归测试 (ToolVerifier & TestRunner) ]
          │
          ▼
-[ 4. 质量评分评估 (QualityReport >= 0.6) ]
+[ 4. 质量评分评估 (总分 >= 0.6 且规范完整度 >= 0.8) ]
          │
          ▼
 [ 5. 知识资产沉淀 & 技能动态注册 (AssetManager & SkillStore) ]

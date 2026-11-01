@@ -55,43 +55,18 @@ pub fn render_list(
     );
 }
 
-// ── 自编程状态与质量评估卡片 ─────────────────────────
+// ── 自编程技能徽标 ──────────────────────────────
 
-/// 渲染自编程状态与质量评估摘要卡片
-pub fn render_self_programming_card(
-    frame: &mut ratatui::Frame,
-    area: Rect,
-    tool_id: &str,
-    quality_score: f64,
-    status_msg: &str,
-    theme: &Theme,
-) {
-    use ratatui::{
-        text::{Line, Span},
-        widgets::{Paragraph, Wrap},
-    };
-    let text = vec![
-        Line::from(vec![
-            Span::styled("Tool ID: ", Style::default().fg(theme.primary)),
-            Span::raw(tool_id),
-        ]),
-        Line::from(vec![
-            Span::styled("Quality Score: ", Style::default().fg(theme.primary)),
-            Span::raw(format!("{:.1}%", quality_score * 100.0)),
-        ]),
-        Line::from(vec![
-            Span::styled("Status: ", Style::default().fg(theme.primary)),
-            Span::styled(status_msg, Style::default().fg(theme.secondary)),
-        ]),
-    ];
-    let paragraph = Paragraph::new(text)
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title(" Self-Programming Status ")
-                .border_style(Style::default().fg(theme.primary)),
-        )
-        .wrap(Wrap { trim: true });
-    frame.render_widget(paragraph, area);
+/// 为自编程注册的技能渲染质量徽标（无质量标签时返回空串）。
+///
+/// 标签由 `SelfProgrammingManager::register_skill` 写入（`quality:<0-100>`），
+/// 因此这里展示的是真实评分而非占位值。
+pub fn self_programmed_badge(entry: &crate::tui::app::RemoteSkillEntry) -> String {
+    if !entry.is_self_programmed() {
+        return String::new();
+    }
+    match entry.quality_score() {
+        Some(q) => format!(" ⚙ auto q{q}% "),
+        None => " ⚙ auto ".to_string(),
+    }
 }
-

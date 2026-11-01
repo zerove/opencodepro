@@ -13,12 +13,71 @@ use super::theme;
 // ── 技能市场 DTO ────────────────────────────────
 #[derive(Debug, Clone, Serialize, Deserialize)]
 /// Remote Skill Entry.
+///
+/// 对应桥接 `GET /api/skills/installed` 返回的 `SkillMetadata`。
+/// `tags` 参与仪表盘统计：自编程注册的技能带 `self-programming` 与
+/// `quality:<0-100>` 标签（见 `SelfProgrammingManager::register_skill`）。
 pub struct RemoteSkillEntry {
     pub id: String,
     pub name: String,
     pub description: String,
     pub author: String,
     pub version: String,
+    #[serde(default)]
+    pub tags: Vec<String>,
+}
+
+/// 自编程技能的质量标签前缀。
+const QUALITY_TAG_PREFIX: &str = "quality:";
+/// 自编程注册的技能固定带此标签。
+const SELF_PROGRAMMING_TAG: &str = "self-programming";
+
+impl RemoteSkillEntry {
+    /// 是否由自我编程循环注册。
+    pub fn is_self_programmed(&self) -> bool {
+        self.tags.iter().any(|t| t == SELF_PROGRAMMING_TAG)
+            || self.author == "sisyphus-self-programming"
+    }
+
+    /// 解析 `quality:<n>` 标签（越界值被忽略，返回 None）。
+    pub fn quality_score(&self) -> Option<u16> {
+        self.tags.iter().find_map(|t| {
+            t.strip_prefix(QUALITY_TAG_PREFIX)
+                .and_then(|n| n.trim().parse::<u16>().ok())
+                .filter(|n| *n <= 100)
+        })
+    }
+}
+
+/// 已安装技能集合的自编程统计快照。
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct SelfProgrammingStats {
+    /// 由自编程循环注册的技能数量。
+    pub self_programmed: usize,
+    /// 这些技能质量标签的均值（无标签时为 None）。
+    pub average_quality: Option<u16>,
+}
+
+impl SelfProgrammingStats {
+    /// 从已安装技能列表计算统计。
+    pub(crate) fn from_skills(skills: &[RemoteSkillEntry]) -> Self {
+        let scores: Vec<u16> = skills
+            .iter()
+            .filter(|s| s.is_self_programmed())
+            .filter_map(|s| s.quality_score())
+            .collect();
+        let self_programmed = skills.iter().filter(|s| s.is_self_programmed()).count();
+        let average_quality = if scores.is_empty() {
+            None
+        } else {
+            let sum: u32 = scores.iter().map(|s| u32::from(*s)).sum();
+            Some((sum / scores.len() as u32) as u16)
+        };
+        Self {
+            self_programmed,
+            average_quality,
+        }
+    }
 }
 
 // ── 工作区 DTO ────────────────────────────────────
@@ -446,6 +505,8 @@ pub(crate) struct App {
     pub(crate) dashboard_anomaly_count: usize,
     pub(crate) dashboard_chaos_running: bool,
     pub(crate) dashboard_cog_active: bool,
+    /// 已安装技能中的自编程统计（驱动仪表盘 Self-Programming / Quality 卡片）。
+    pub(crate) dashboard_sp_stats: SelfProgrammingStats,
 
     // 流式事件缓冲区
     pub(crate) stream_events: Vec<StreamEvent>,
@@ -588,6 +649,7 @@ impl App {
             dashboard_anomaly_count: 0,
             dashboard_chaos_running: false,
             dashboard_cog_active: false,
+            dashboard_sp_stats: SelfProgrammingStats::default(),
 
             stream_events: Vec::new(),
             stream_show: false,
@@ -1177,6 +1239,7 @@ impl App {
                 self.skill_market_status = "available skills loaded".into();
             },
             crate::tui::background::BgOp::SkillsInstalled { skills } => {
+                self.dashboard_sp_stats = SelfProgrammingStats::from_skills(&skills);
                 self.skill_market_installed = skills;
                 self.skill_market_status = "installed skills loaded".into();
             },

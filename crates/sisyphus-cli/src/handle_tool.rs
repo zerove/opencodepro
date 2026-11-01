@@ -68,6 +68,35 @@ pub(crate) fn handle_tool(
                     println!("    {prefix}: {url}");
                 }
             }
+            println!("\nAvailable self-programming presets (use `tool bootstrap <id>`):");
+            for id in sisyphus_types::tools::PresetToolTemplates::ALL_IDS {
+                println!("    {id}");
+            }
+        },
+        ToolCommands::Bootstrap { template_id } => {
+            match sisyphus_types::tools::PresetToolTemplates::get_preset(template_id) {
+                Some(spec) => {
+                    println!("✅ Resolved preset template: {}", spec.tool_id);
+                    println!("   Capability : {}", spec.required_capability);
+                    println!("   Success    : {}", spec.success_criteria);
+                    println!(
+                        "   Input      : {}",
+                        serde_json::to_string(&spec.expected_input).unwrap_or_default()
+                    );
+                    println!(
+                        "   Output     : {}",
+                        serde_json::to_string(&spec.expected_output).unwrap_or_default()
+                    );
+                    println!("\nNext: run a goal that needs this capability; the self-programming");
+                    println!("loop will compile and register it automatically.");
+                },
+                None => {
+                    let available = sisyphus_types::tools::PresetToolTemplates::ALL_IDS.join(", ");
+                    anyhow::bail!(
+                        "Unknown preset template: {template_id} (available: {available})"
+                    );
+                },
+            }
         },
     }
     Ok(())
