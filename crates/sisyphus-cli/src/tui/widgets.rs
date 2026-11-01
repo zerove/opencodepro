@@ -54,3 +54,44 @@ pub fn render_list(
         &mut ratatui::widgets::ListState::default().with_selected(Some(sel)),
     );
 }
+
+// ── 自编程状态与质量评估卡片 ─────────────────────────
+
+/// 渲染自编程状态与质量评估摘要卡片
+pub fn render_self_programming_card(
+    frame: &mut ratatui::Frame,
+    area: Rect,
+    tool_id: &str,
+    quality_score: f64,
+    status_msg: &str,
+    theme: &Theme,
+) {
+    use ratatui::{
+        text::{Line, Span},
+        widgets::{Paragraph, Wrap},
+    };
+    let text = vec![
+        Line::from(vec![
+            Span::styled("Tool ID: ", Style::default().fg(theme.primary)),
+            Span::raw(tool_id),
+        ]),
+        Line::from(vec![
+            Span::styled("Quality Score: ", Style::default().fg(theme.primary)),
+            Span::raw(format!("{:.1}%", quality_score * 100.0)),
+        ]),
+        Line::from(vec![
+            Span::styled("Status: ", Style::default().fg(theme.primary)),
+            Span::styled(status_msg, Style::default().fg(theme.secondary)),
+        ]),
+    ];
+    let paragraph = Paragraph::new(text)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(" Self-Programming Status ")
+                .border_style(Style::default().fg(theme.primary)),
+        )
+        .wrap(Wrap { trim: true });
+    frame.render_widget(paragraph, area);
+}
+

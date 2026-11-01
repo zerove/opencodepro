@@ -503,6 +503,36 @@ impl SelfProgrammingManager {
     }
 }
 
+/// 预置的常用本地工具模板库（用于加速标准工具的自编程自举）
+pub struct PresetToolTemplates;
+
+impl PresetToolTemplates {
+    /// 获取常见工具规格预设（如日志解析、JSON 格式化、文本 diff）
+    pub fn get_preset(tool_id: &str) -> Option<ToolSpec> {
+        match tool_id {
+            "local/log_analyzer" => Some(ToolSpec {
+                tool_id: "local/log_analyzer".into(),
+                required_capability: "Parse log files and aggregate error frequency".into(),
+                expected_input: serde_json::json!({"log_path": "string"}),
+                expected_output: serde_json::json!({"error_counts": "object"}),
+                success_criteria: "Returns valid JSON object with error frequency stats".into(),
+                test_command: Some("cargo test -p sisyphus-core".into()),
+                workdir: None,
+            }),
+            "local/json_formatter" => Some(ToolSpec {
+                tool_id: "local/json_formatter".into(),
+                required_capability: "Pretty-print and validate JSON content".into(),
+                expected_input: serde_json::json!({"raw": "string"}),
+                expected_output: serde_json::json!({"formatted": "string", "valid": "bool"}),
+                success_criteria: "Validates JSON syntax and formats output".into(),
+                test_command: Some("cargo test -p sisyphus-core".into()),
+                workdir: None,
+            }),
+            _ => None,
+        }
+    }
+}
+
 // ---------------------------------------------------------------
 // 测试
 // ---------------------------------------------------------------
