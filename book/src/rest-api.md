@@ -225,3 +225,67 @@ OpenAPI 规范位于 [`/openapi.json`](/openapi.json)，也可通过 Swagger UI 
 ### `GET /api/roadmap/health/{project_id}`
 
 评估项目健康分数。
+
+## 异常观测
+
+### `GET /api/anomaly?sop_id={sop_id}`
+
+读取认知循环观测到的异常（来源：`StrategicManager.anomaly_log`，有界 256 条）。
+
+- `sop_id` 可省略：省略时返回全部作用域；未知作用域返回空数组（不是错误）。
+
+响应为数组：
+
+```json
+[
+  {
+    "node_name": "node_compile",
+    "severity": "high",
+    "metric": "duration",
+    "observed": 42.0,
+    "expected": 10.0,
+    "description": "duration deviation",
+    "timestamp": 1700000000
+  }
+]
+```
+
+`severity` 取值：`low` / `medium` / `high` / `critical`。
+
+## 经验共享
+
+### `POST /api/experience/share`
+
+```json
+{ "exp_key": "exp:1700000000" }
+```
+
+响应：`{ "success": true, "error": "" }`。
+
+### `POST /api/experience/unshare`
+
+`project_id` **必填**（缺失返回 400），用于限定取消共享的作用域：
+
+```json
+{ "exp_key": "exp:1700000000", "project_id": "proj-1" }
+```
+
+### `GET /api/experience/shared`
+
+响应：`{ "experiences": [ ... ] }`（`ExperienceTuple` 数组）。
+
+## 指标
+
+### `GET /api/metrics`
+
+Prometheus 文本格式（`text/plain; version=0.0.4`）。除 HTTP / SSE / chaos 计数外，还暴露认知循环与执行器的实时 gauge：
+
+| 指标 | 类型 | 说明 |
+|--------|------|-------------|
+| `sisyphus_anomaly_log_entries` | gauge | 异常日志当前保留条数 |
+| `sisyphus_token_budget_usage` | gauge | LLM 阶段累计消耗的估算 token |
+| `sisyphus_token_budget_capped` | gauge | 是否配置了 token 上限（1/0） |
+| `sisyphus_token_budget_exhausted` | gauge | 剩余预算是否低于保留阈值（1/0） |
+| `sisyphus_token_budget_remaining` | gauge | 距上限的剩余 token（仅配置上限时出现） |
+| `sisyphus_executor_concurrency_limit` | gauge | 节点并发上限（支持热重载） |
+| `sisyphus_executor_available_permits` | gauge | 执行器信号量中的空闲许可 |

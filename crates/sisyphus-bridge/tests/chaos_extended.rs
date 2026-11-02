@@ -298,6 +298,13 @@ async fn prometheus_metrics_exposes_standard_names() {
         "sisyphus_uptime_seconds",
         "sisyphus_sse_connections_active",
         "sisyphus_chaos_faults_total",
+        // 认知循环 / 执行器子系统（阶段 7.1 补充）
+        "sisyphus_anomaly_log_entries",
+        "sisyphus_token_budget_usage",
+        "sisyphus_token_budget_capped",
+        "sisyphus_token_budget_exhausted",
+        "sisyphus_executor_concurrency_limit",
+        "sisyphus_executor_available_permits",
     ] {
         assert!(
             text.contains(name),

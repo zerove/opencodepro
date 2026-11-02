@@ -15,6 +15,9 @@ from sisyphus_sdk import (
     SopInfo,
     SkillEntry,
     SisyphusError,
+    AnomalyReport,
+    SharedExperience,
+    ExperienceShareResult,
 )
 
 
@@ -271,6 +274,116 @@ class TestAuth:
             {"valid": False, "message": "invalid"}
         )
         assert client.validate_auth("bad-key") is False
+
+
+# ── 认知循环可观测性 ──────────────────────────────
+
+
+class TestAnomalyReports:
+    """异常观测端点测试"""
+
+    def test_anomaly_reports_without_scope(self, client, mock_urlopen):
+        """不带 sop_id 时不应该拼查询参数"""
+        mock_urlopen.return_value = mock_response(
+            [
+                {
+                    "node_name": "node_a",
+                    "severity": "high",
+                    "metric": "duration",
+                    "observed": 42.0,
+                    "expected": 10.0,
+                    "description": "duration deviation",
+                    "timestamp": 1_700_000_000,
+                }
+            ]
+        )
+        reports = client.anomaly_reports()
+        assert len(reports) == 1
+        assert isinstance(reports[0], AnomalyReport)
+        assert reports[0].node_name == "node_a"
+        assert reports[0].severity == "high"
+        assert reports[0].observed == 42.0
+        req = mock_urlopen.call_args[0][0]
+        assert req.full_url.endswith("/api/anomaly")
+
+    def test_anomaly_reports_with_scope_encodes_sop_id(self, client, mock_urlopen):
+        """sop_id 应该被 URL 编码后作为查询参数"""
+        mock_urlopen.return_value = mock_response([])
+        reports = client.anomaly_reports("sop live/1")
+        assert reports == []
+        req = mock_urlopen.call_args[0][0]
+        assert "sop_id=sop%20live%2F1" in req.full_url
+
+
+# ── 经验共享 ──────────────────────────────────────
+
+
+class TestExperienceSharing:
+    """经验共享端点测试"""
+
+    def test_list_shared_experiences_unwraps_experiences(self, client, mock_urlopen):
+        """list_shared_experiences() 应该解包 experiences 字段"""
+        mock_urlopen.return_value = mock_response(
+            {
+                "experiences": [
+                    {
+                        "context_text": "ctx",
+                        "context_hash": "hash",
+                        "action_id": "act",
+                        "outcome_success": True,
+                        "deviation_score": 0.0,
+                        "cost": 12,
+                        "timestamp": 1_700_000_000,
+                        "version": 1,
+                        "vector_clock": {"node_a": 1},
+                    }
+                ]
+            }
+        )
+        experiences = client.list_shared_experiences()
+        assert len(experiences) == 1
+        assert isinstance(experiences[0], SharedExperience)
+        assert experiences[0].action_id == "act"
+        assert experiences[0].vector_clock == {"node_a": 1}
+
+    def test_list_shared_experiences_empty(self, client, mock_urlopen):
+        """服务端返回空数组时不应该报错"""
+        mock_urlopen.return_value = mock_response({"experiences": []})
+        assert client.list_shared_experiences() == []
+
+    def test_share_experience_posts_exp_key(self, client, mock_urlopen):
+        """share_experience() 应该 POST exp_key"""
+        mock_urlopen.return_value = mock_response(
+            {"success": True, "error": ""}
+        )
+        result = client.share_experience("exp:1")
+        assert isinstance(result, ExperienceShareResult)
+        assert result.success is True
+        req = mock_urlopen.call_args[0][0]
+        assert req.full_url.endswith("/api/experience/share")
+        assert json.loads(req.data.decode()) == {"exp_key": "exp:1"}
+
+    def test_unshare_experience_sends_project_id(self, client, mock_urlopen):
+        """unshare_experience() 应该同时发送 exp_key 与 project_id"""
+        mock_urlopen.return_value = mock_response(
+            {"success": True, "error": ""}
+        )
+        client.unshare_experience("exp:1", "proj1")
+        req = mock_urlopen.call_args[0][0]
+        assert req.full_url.endswith("/api/experience/unshare")
+        assert json.loads(req.data.decode()) == {
+            "exp_key": "exp:1",
+            "project_id": "proj1",
+        }
+
+    def test_unshare_experience_failure_is_reported(self, client, mock_urlopen):
+        """失败时 success=False 且 error 非空"""
+        mock_urlopen.return_value = mock_response(
+            {"success": False, "error": "experience not found"}
+        )
+        result = client.unshare_experience("missing", "proj1")
+        assert result.success is False
+        assert result.error == "experience not found"
 
 
 # ── 错误处理 ──────────────────────────────────────

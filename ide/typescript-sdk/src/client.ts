@@ -7,6 +7,9 @@ import type {
   SearchResult,
   Session,
   ExecutionResult,
+  AnomalyReport,
+  SharedExperience,
+  ExperienceShareResult,
 } from './types';
 
 const DEFAULT_BASE_URL = 'http://localhost:8080';
@@ -140,6 +143,55 @@ export class SisyphusClient {
       sop_id: sopId,
       context: context || {},
     });
+  }
+
+  // ── 认知循环可观测性 ──────────────────────────
+
+  /**
+   * 读取认知循环观测到的异常。
+   *
+   * `sopId` 为空时返回全部作用域内的异常；服务端对未知作用域返回空数组，
+   * 不会报错。
+   */
+  async anomalyReports(sopId?: string): Promise<AnomalyReport[]> {
+    const query = sopId ? `?sop_id=${encodeURIComponent(sopId)}` : '';
+    return this.request<AnomalyReport[]>('GET', `/api/anomaly${query}`);
+  }
+
+  // ── 经验共享 ────────────────────────────────
+
+  /** 列出所有已跨项目共享的经验。 */
+  async listSharedExperiences(): Promise<SharedExperience[]> {
+    const resp = await this.request<{ experiences: SharedExperience[] }>(
+      'GET',
+      '/api/experience/shared',
+    );
+    return resp.experiences ?? [];
+  }
+
+  /** 把一条本地经验标记为跨项目共享。 */
+  async shareExperience(expKey: string): Promise<ExperienceShareResult> {
+    return this.request<ExperienceShareResult>(
+      'POST',
+      '/api/experience/share',
+      { exp_key: expKey },
+    );
+  }
+
+  /**
+   * 取消某项目的经验共享。
+   *
+   * `projectId` 必填（服务端缺少时返回 400），用于限定取消共享的作用域。
+   */
+  async unshareExperience(
+    expKey: string,
+    projectId: string,
+  ): Promise<ExperienceShareResult> {
+    return this.request<ExperienceShareResult>(
+      'POST',
+      '/api/experience/unshare',
+      { exp_key: expKey, project_id: projectId },
+    );
   }
 }
 

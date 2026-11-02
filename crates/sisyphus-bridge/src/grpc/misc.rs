@@ -291,7 +291,6 @@ impl MySisyphusBridge {
         // 异常观测的可观测性来源是战略管理器上的旁路日志（AnomalyLog），
         // 检测器本身只做 per-run 控制决策。
         let anomaly_log = self.kernel.strategic_manager.anomaly_log.clone();
-        let detector = self.kernel.strategic_manager.anomaly_detector.clone();
         let event_bus = self.event_bus.clone();
 
         // Spawn a background task that periodically pushes new anomalies.
@@ -301,10 +300,10 @@ impl MySisyphusBridge {
             let mut last_seq = 0u64;
             loop {
                 let observed = anomaly_log.recent(None);
-                for entry in observed {
-                    if entry.seq < last_seq {
-                        continue;
-                    }
+                // 本轮推送的新异常（seq ≥ 游标）；数量同时驱动状态事件。
+                let new_entries: Vec<_> =
+                    observed.into_iter().filter(|entry| entry.seq >= last_seq).collect();
+                for entry in &new_entries {
                     last_seq = entry.seq.saturating_add(1);
                     let severity_str = match entry.anomaly.severity {
                         sisyphus_core::AnomalySeverity::Low => "low",
@@ -326,20 +325,23 @@ impl MySisyphusBridge {
                     }
                 }
 
-                // Also bridge-publish a compact status event
-                let report = detector.lock().generate_report();
+                // Also bridge-publish a compact status event. 必须读 AnomalyLog：
+                // per-run 检测器的 `generate_report()` 永远是空报告
+                //（共享检测器不再被喂），用它会导致仪表盘永远显示 0。
+                let new_count = new_entries.len();
+                let latest_severity = new_entries.last().map(|entry| entry.anomaly.severity);
                 let _ = event_bus.send(sisyphus_bridge_api::BridgeEvent {
                     event: Some(sisyphus_bridge_api::bridge_event::Event::OpUpdate(
                         sisyphus_bridge_api::OperationUpdate {
                             op_id: "anomaly_detector".into(),
-                            status: if report.should_extra_reflect {
+                            status: if latest_severity.is_some() {
                                 "ANOMALY"
                             } else {
                                 "NORMAL"
                             }
                             .into(),
-                            result: format!("{} anomalies", report.anomalies.len()),
-                            success: !report.should_extra_reflect,
+                            result: format!("{new_count} anomalies"),
+                            success: latest_severity.is_none(),
                         },
                     )),
                 });

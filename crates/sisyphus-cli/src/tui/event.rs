@@ -99,6 +99,8 @@ pub(crate) fn handle_event(event: Event, app: &mut App, _perms: &CliPermission) 
                 app.view = View::Dashboard;
                 app.dialog = None;
                 app.boulder_dirty = true;
+                // 进入仪表盘时拉取一次真实异常明细（REST /api/anomaly）。
+                app.fetch_dashboard_anomalies();
                 return Ok(false);
             }
 

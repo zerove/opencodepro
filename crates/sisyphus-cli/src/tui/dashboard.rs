@@ -18,8 +18,11 @@ const STATUS_LABELS: &[&str] = &[
     "Self-Programming",
 ];
 
-pub(crate) fn handle_dashboard_key(_key: crossterm::event::KeyEvent, _app: &mut App) {
-    // 仪表盘目前只读；未来：T/F 过滤异常类型
+pub(crate) fn handle_dashboard_key(key: crossterm::event::KeyEvent, app: &mut App) {
+    // 仪表盘只读；`r` 手动刷新异常明细（REST /api/anomaly）。
+    if key.code == crossterm::event::KeyCode::Char('r') {
+        app.fetch_dashboard_anomalies();
+    }
 }
 
 pub(crate) fn render_dashboard(frame: &mut ratatui::Frame, area: Rect, app: &App) {
@@ -153,45 +156,68 @@ fn render_status_cards(app: &App) -> Vec<(Block<'static>, u16)> {
 
 fn render_anomaly_table(frame: &mut ratatui::Frame, area: Rect, app: &App) {
     let theme = app.theme();
-    let rows: Vec<Row> = if app.dashboard_anomaly_count > 0 {
+    let rows: Vec<Row> = if app.dashboard_anomalies.is_empty() {
+        // 无异常（或尚未拉取到）时只显示一行真实状态，不再伪造演示数据——
+        // 之前用 fuel_spike / fail_rate 占位会让运维误以为系统真的在报警。
+        let status = if app.dashboard_anomaly_status.is_empty() {
+            "no anomalies".to_string()
+        } else {
+            app.dashboard_anomaly_status.clone()
+        };
         vec![Row::new(vec![
-            Cell::from(Span::styled("detected", Style::default().fg(theme.fg))),
-            Cell::from(Span::styled(
-                format!("{} anomalies", app.dashboard_anomaly_count),
-                Style::default().fg(theme.warning),
-            )),
-            Cell::from(Span::styled("active", Style::default().fg(theme.warning))),
+            Cell::from(Span::styled("—", Style::default().fg(theme.muted))),
+            Cell::from(Span::styled(status, Style::default().fg(theme.muted))),
+            Cell::from(Span::styled("—", Style::default().fg(theme.muted))),
+            Cell::from(Span::styled("—", Style::default().fg(theme.muted))),
         ])]
     } else {
-        // 无桥接数据时使用占位演示行
-        vec![
-            Row::new(vec![
-                Cell::from(Span::styled("—", Style::default().fg(theme.muted))),
-                Cell::from(Span::styled("—", Style::default().fg(theme.muted))),
-                Cell::from(Span::styled("—", Style::default().fg(theme.muted))),
-            ]),
-            Row::new(vec![
-                Cell::from(Span::styled("fuel_spike", Style::default().fg(theme.fg))),
-                Cell::from(Span::styled("node_compile", Style::default().fg(theme.fg))),
-                Cell::from(Span::styled("medium", Style::default().fg(theme.warning))),
-            ]),
-            Row::new(vec![
-                Cell::from(Span::styled("fail_rate", Style::default().fg(theme.fg))),
-                Cell::from(Span::styled("node_test", Style::default().fg(theme.fg))),
-                Cell::from(Span::styled("low", Style::default().fg(theme.success))),
-            ]),
-        ]
+        // 最新的在最后：倒序遍历，最多展示 5 条。
+        app.dashboard_anomalies
+            .iter()
+            .rev()
+            .take(5)
+            .map(|row| {
+                let severity_color = match row.severity.as_str() {
+                    "critical" | "high" => theme.error,
+                    "medium" => theme.warning,
+                    "low" => theme.success,
+                    _ => theme.fg,
+                };
+                let delta = if row.expected.abs() > f64::EPSILON {
+                    format!("{:.1}x", row.observed / row.expected)
+                } else {
+                    format!("{:.1}", row.observed)
+                };
+                Row::new(vec![
+                    Cell::from(Span::styled(
+                        row.severity.clone(),
+                        Style::default().fg(severity_color),
+                    )),
+                    Cell::from(Span::styled(
+                        row.node_name.clone(),
+                        Style::default().fg(theme.fg),
+                    )),
+                    Cell::from(Span::styled(
+                        row.metric.clone(),
+                        Style::default().fg(theme.fg),
+                    )),
+                    Cell::from(Span::styled(delta, Style::default().fg(severity_color))),
+                ])
+            })
+            .collect()
     };
 
+    let title = format!(" Anomalies ({} shown) ", app.dashboard_anomaly_count.min(5));
     let table = Table::new(
         rows,
         [
+            Constraint::Length(9),
             Constraint::Length(16),
-            Constraint::Length(16),
-            Constraint::Length(10),
+            Constraint::Length(12),
+            Constraint::Min(8),
         ],
     )
-    .block(Block::default().title(" Anomalies (last 5) "));
+    .block(Block::default().title(title));
     frame.render_widget(table, area);
 }
 

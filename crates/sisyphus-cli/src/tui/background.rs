@@ -23,6 +23,18 @@ pub struct CognitiveTraceRow {
     pub event: sisyphus_types::ExecutionEvent,
 }
 
+/// REST 异常观测条目（与 `sisyphus-bridge` 的 `/api/anomaly` 响应对齐）。
+#[derive(Debug, Clone, Default, serde::Deserialize)]
+pub struct AnomalyRow {
+    pub node_name: String,
+    pub severity: String,
+    pub metric: String,
+    pub observed: f64,
+    pub expected: f64,
+    pub description: String,
+    pub timestamp: u64,
+}
+
 /// REST 认知决策健康摘要（与 `sisyphus_types::CognitiveTraceSummary` 对齐）。
 #[derive(Debug, Clone, Default, serde::Deserialize)]
 pub struct CognitiveSummaryRow {
@@ -74,6 +86,11 @@ pub enum BgOp {
     },
     CognitiveSummaryFailed(String),
     CognitiveTraceFailed(String),
+    /// 仪表盘异常明细（REST `/api/anomaly`）拉取结果。
+    AnomalyReportFetched {
+        rows: Vec<AnomalyRow>,
+    },
+    AnomalyReportFailed(String),
     RoadmapFetched {
         projection: String,
         bottlenecks: String,
@@ -492,6 +509,34 @@ pub fn spawn_fetch_cognitive_summary(
         let _ = tx.send(match result {
             Ok(summary) => BgOp::CognitiveSummaryFetched { summary },
             Err(e) => BgOp::CognitiveSummaryFailed(e),
+        });
+    });
+    rx
+}
+
+/// 拉取仪表盘异常明细（REST `/api/anomaly`）。
+///
+/// 不带 `sop_id` 时返回全部作用域内的异常；服务端对空日志返回空数组。
+pub fn spawn_fetch_anomaly_report(bridge_address: String) -> tokio::sync::oneshot::Receiver<BgOp> {
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    tokio::spawn(async move {
+        let url = format!("{}/api/anomaly", bridge_address);
+        let result = async {
+            let resp = crate::bridge::with_bearer_auth(reqwest::Client::new().get(&url))
+                .send()
+                .await
+                .map_err(|e| format!("HTTP request failed: {e}"))?;
+            if !resp.status().is_success() {
+                return Err(format!("Bridge returned error status: {}", resp.status()));
+            }
+            let rows: Vec<AnomalyRow> =
+                resp.json().await.map_err(|e| format!("JSON parse failed: {e}"))?;
+            Ok(rows)
+        }
+        .await;
+        let _ = tx.send(match result {
+            Ok(rows) => BgOp::AnomalyReportFetched { rows },
+            Err(e) => BgOp::AnomalyReportFailed(e),
         });
     });
     rx

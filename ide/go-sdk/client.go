@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"time"
 )
 
@@ -28,18 +29,18 @@ func NewClient(baseURL, authToken string) *Client {
 
 // HealthResponse 来自 /health 端点。
 type HealthResponse struct {
-	Status    string `json:"status"`
-	Version   string `json:"version"`
+	Status     string `json:"status"`
+	Version    string `json:"version"`
 	UptimeSecs uint64 `json:"uptime_secs"`
 }
 
 // Session 表示一个对话会话。
 type Session struct {
-	ID               string    `json:"id"`
-	Name             string    `json:"name"`
-	MessageCount     int       `json:"message_count"`
-	CreatedAt        *string   `json:"created_at,omitempty"`
-	ParentSessionID  *string   `json:"parent_session_id,omitempty"`
+	ID              string  `json:"id"`
+	Name            string  `json:"name"`
+	MessageCount    int     `json:"message_count"`
+	CreatedAt       *string `json:"created_at,omitempty"`
+	ParentSessionID *string `json:"parent_session_id,omitempty"`
 }
 
 // Message 是会话中的一条消息。
@@ -82,6 +83,48 @@ type SkillEntry struct {
 	Version     string  `json:"version"`
 	Downloads   uint64  `json:"downloads"`
 	Rating      float64 `json:"rating"`
+}
+
+// AnomalyReport 是认知循环观测到的一条异常（GET /api/anomaly）。
+type AnomalyReport struct {
+	NodeName    string  `json:"node_name"`
+	Severity    string  `json:"severity"`
+	Metric      string  `json:"metric"`
+	Observed    float64 `json:"observed"`
+	Expected    float64 `json:"expected"`
+	Description string  `json:"description"`
+	// Timestamp 是检测到异常的 Unix 时间戳（秒）。
+	Timestamp uint64 `json:"timestamp"`
+}
+
+// SharedExperience 是跨项目共享的经验条目（GET /api/experience/shared）。
+type SharedExperience struct {
+	ContextText     string    `json:"context_text"`
+	ContextHash     string    `json:"context_hash"`
+	ActionID        string    `json:"action_id"`
+	ProjectID       *string   `json:"project_id,omitempty"`
+	OutcomeSuccess  bool      `json:"outcome_success"`
+	DeviationScore  float64   `json:"deviation_score"`
+	Cost            uint64    `json:"cost"`
+	Timestamp       uint64    `json:"timestamp"`
+	Embedding       []float32 `json:"embedding,omitempty"`
+	VisualEmbedding []float32 `json:"visual_embedding,omitempty"`
+	Insight         *string   `json:"insight,omitempty"`
+	// Version 是 CRDT 本地版本号。
+	Version uint64 `json:"version"`
+	// VectorClock 是 CRDT vector clock：node_id → 最近版本。
+	VectorClock map[string]uint64 `json:"vector_clock"`
+}
+
+// sharedExperiencesResponse 是 /api/experience/shared 的响应包装。
+type sharedExperiencesResponse struct {
+	Experiences []SharedExperience `json:"experiences"`
+}
+
+// ExperienceShareResult 是经验分享 / 取消分享结果。
+type ExperienceShareResult struct {
+	Success bool   `json:"success"`
+	Error   string `json:"error"`
 }
 
 // Health 检查 bridge 状态。
@@ -164,6 +207,55 @@ func (c *Client) ValidateAuth(apiKey string) (bool, error) {
 		return false, err
 	}
 	return resp.Valid, nil
+}
+
+// ── 认知循环可观测性 ────────────────────
+
+// AnomalyReports 读取认知循环观测到的异常。
+//
+// sopID 为空时返回全部作用域；服务端对未知作用域返回空切片，不会报错。
+func (c *Client) AnomalyReports(sopID string) ([]AnomalyReport, error) {
+	path := "/api/anomaly"
+	if sopID != "" {
+		path += "?sop_id=" + url.QueryEscape(sopID)
+	}
+	var reports []AnomalyReport
+	if err := c.get(path, &reports); err != nil {
+		return nil, err
+	}
+	return reports, nil
+}
+
+// ── 经验共享 ────────────────────────────
+
+// ListSharedExperiences 列出所有已跨项目共享的经验。
+func (c *Client) ListSharedExperiences() ([]SharedExperience, error) {
+	var resp sharedExperiencesResponse
+	if err := c.get("/api/experience/shared", &resp); err != nil {
+		return nil, err
+	}
+	return resp.Experiences, nil
+}
+
+// ShareExperience 把一条本地经验标记为跨项目共享。
+func (c *Client) ShareExperience(expKey string) (*ExperienceShareResult, error) {
+	var resp ExperienceShareResult
+	if err := c.post("/api/experience/share", map[string]string{"exp_key": expKey}, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+// UnshareExperience 取消某项目的经验共享。
+//
+// projectID 必填（服务端缺少时返回 400），用于限定取消共享的作用域。
+func (c *Client) UnshareExperience(expKey, projectID string) (*ExperienceShareResult, error) {
+	body := map[string]string{"exp_key": expKey, "project_id": projectID}
+	var resp ExperienceShareResult
+	if err := c.post("/api/experience/unshare", body, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
 }
 
 // ── 内部辅助 ──────────────────────────

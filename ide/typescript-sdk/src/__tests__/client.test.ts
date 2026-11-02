@@ -196,6 +196,98 @@ describe('SisyphusClient', () => {
     expect(result.status).toBe('completed');
   });
 
+  // ── 认知循环可观测性 ─────────────────────────
+
+  it('anomalyReports() 应该带 sop_id 查询参数并返回异常列表', async () => {
+    const fakeReports = [
+      {
+        node_name: 'node_a',
+        severity: 'high',
+        metric: 'duration',
+        observed: 42,
+        expected: 10,
+        description: 'duration deviation',
+        timestamp: 1_700_000_000,
+      },
+    ];
+    const mockFn = vi.fn().mockResolvedValue(createMockResponse(fakeReports));
+    vi.stubGlobal('fetch', mockFn);
+
+    const result = await client.anomalyReports('sop-live');
+    expect(result).toEqual(fakeReports);
+    expect(mockFn).toHaveBeenCalledWith(
+      expect.stringContaining('/api/anomaly?sop_id=sop-live'),
+      expect.objectContaining({ method: 'GET' }),
+    );
+  });
+
+  it('anomalyReports() 不带 sopId 时不应该拼查询参数', async () => {
+    const mockFn = vi.fn().mockResolvedValue(createMockResponse([]));
+    vi.stubGlobal('fetch', mockFn);
+
+    const result = await client.anomalyReports();
+    expect(result).toEqual([]);
+    const calledUrl = mockFn.mock.calls[0]?.[0] as string;
+    expect(calledUrl).toMatch(/\/api\/anomaly$/);
+  });
+
+  // ── 经验共享 ────────────────────────────────
+
+  it('listSharedExperiences() 应该解包 experiences 字段', async () => {
+    const fakeExperience = {
+      context_text: 'ctx',
+      context_hash: 'hash',
+      action_id: 'act',
+      outcome_success: true,
+      deviation_score: 0.0,
+      cost: 12,
+      timestamp: 1_700_000_000,
+      version: 1,
+      vector_clock: { node_a: 1 },
+    };
+    const mockFn = vi
+      .fn()
+      .mockResolvedValue(createMockResponse({ experiences: [fakeExperience] }));
+    vi.stubGlobal('fetch', mockFn);
+
+    const result = await client.listSharedExperiences();
+    expect(result).toHaveLength(1);
+    expect(result[0]?.action_id).toBe('act');
+    expect(mockFn).toHaveBeenCalledWith(
+      expect.stringContaining('/api/experience/shared'),
+      expect.objectContaining({ method: 'GET' }),
+    );
+  });
+
+  it('shareExperience() 应该 POST exp_key', async () => {
+    const mockFn = vi
+      .fn()
+      .mockResolvedValue(createMockResponse({ success: true, error: '' }));
+    vi.stubGlobal('fetch', mockFn);
+
+    const result = await client.shareExperience('exp:1');
+    expect(result.success).toBe(true);
+    expect(mockFn).toHaveBeenCalledWith(
+      expect.stringContaining('/api/experience/share'),
+      expect.objectContaining({
+        method: 'POST',
+        body: expect.stringContaining('"exp:1"'),
+      }),
+    );
+  });
+
+  it('unshareExperience() 应该同时发送 exp_key 与 project_id', async () => {
+    const mockFn = vi
+      .fn()
+      .mockResolvedValue(createMockResponse({ success: true, error: '' }));
+    vi.stubGlobal('fetch', mockFn);
+
+    await client.unshareExperience('exp:1', 'proj1');
+    const body = mockFn.mock.calls[0]?.[1] as { body: string };
+    const parsed = JSON.parse(body.body);
+    expect(parsed).toEqual({ exp_key: 'exp:1', project_id: 'proj1' });
+  });
+
   // ── 错误处理 ─────────────────────────────────
 
   it('非 404 错误应该抛出异常', async () => {

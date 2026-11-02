@@ -147,8 +147,10 @@ async fn test_concurrent_access() {
 /// 丢失该键，而既有测试只写 2~3 个键，永远触发不到容量边界。
 #[tokio::test]
 async fn snapshot_includes_keys_evicted_from_l1() {
-    let mut config = sisyphus_types::CacheConfig::default();
-    config.l1_capacity = 4;
+    let config = sisyphus_types::CacheConfig {
+        l1_capacity: 4,
+        ..Default::default()
+    };
     let store = MfsStore::new("sqlite::memory:", &config).await.expect("初始化内存状态库失败");
 
     for i in 0..12 {

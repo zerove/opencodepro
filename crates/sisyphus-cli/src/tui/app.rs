@@ -503,6 +503,13 @@ pub(crate) struct App {
 
     // 仪表盘状态
     pub(crate) dashboard_anomaly_count: usize,
+    /// 异常明细（来自 REST `/api/anomaly`），驱动仪表盘异常表。
+    pub(crate) dashboard_anomalies: Vec<crate::tui::background::AnomalyRow>,
+    /// 异常明细拉取状态（idle / loading / 错误信息）。
+    pub(crate) dashboard_anomaly_status: String,
+    /// 仪表盘专用的后台拉取通道，避免与 `pending_op` 争用同一槽位。
+    pub(crate) pending_dashboard_op:
+        Option<tokio::sync::oneshot::Receiver<crate::tui::background::BgOp>>,
     pub(crate) dashboard_chaos_running: bool,
     pub(crate) dashboard_cog_active: bool,
     /// 已安装技能中的自编程统计（驱动仪表盘 Self-Programming / Quality 卡片）。
@@ -647,6 +654,9 @@ impl App {
             dev_focus: DevFocus::Goal,
 
             dashboard_anomaly_count: 0,
+            dashboard_anomalies: Vec::new(),
+            dashboard_anomaly_status: "idle".into(),
+            pending_dashboard_op: None,
             dashboard_chaos_running: false,
             dashboard_cog_active: false,
             dashboard_sp_stats: SelfProgrammingStats::default(),
@@ -1046,6 +1056,13 @@ impl App {
                 self.pending_op = Some(rx);
             }
         }
+        if let Some(mut rx) = self.pending_dashboard_op.take() {
+            if let Ok(op) = rx.try_recv() {
+                ops.push(op);
+            } else {
+                self.pending_dashboard_op = Some(rx);
+            }
+        }
         for op in ops {
             self.apply_bg_op(op);
         }
@@ -1128,6 +1145,17 @@ impl App {
                 self.add_log(LogEntry::Error(format!(
                     "Failed to fetch cognitive trace: {e}"
                 )));
+            },
+            crate::tui::background::BgOp::AnomalyReportFetched { rows } => {
+                self.dashboard_anomaly_count = rows.len();
+                self.dashboard_anomaly_status = format!("connected ({} anomalies)", rows.len());
+                self.dashboard_cog_active = true;
+                self.dashboard_anomalies = rows;
+            },
+            crate::tui::background::BgOp::AnomalyReportFailed(e) => {
+                // 保留上一次成功拉取的明细，只更新状态，避免界面瞬间清空。
+                self.dashboard_anomaly_status = format!("failed: {e}");
+                self.add_log(LogEntry::Error(format!("Failed to fetch anomalies: {e}")));
             },
             crate::tui::background::BgOp::HealthDeepFetched {
                 all_ok,
@@ -1364,5 +1392,15 @@ impl App {
         let rest = self.rest_base.clone();
         let rx = crate::tui::background::spawn_fetch_health_deep(rest);
         self.pending_op = Some(rx);
+    }
+
+    /// 拉取仪表盘异常明细（REST `/api/anomaly`）。
+    ///
+    /// 使用独立槽位 `pending_dashboard_op`，不会挤掉正在进行的其他后台操作。
+    pub(crate) fn fetch_dashboard_anomalies(&mut self) {
+        self.dashboard_anomaly_status = "connecting...".into();
+        let rest = self.rest_base.clone();
+        let rx = crate::tui::background::spawn_fetch_anomaly_report(rest);
+        self.pending_dashboard_op = Some(rx);
     }
 }

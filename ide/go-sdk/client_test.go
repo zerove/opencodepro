@@ -47,8 +47,8 @@ func TestNewClientWithAuth(t *testing.T) {
 func TestHealth(t *testing.T) {
 	// health() 应该返回正确的健康状态
 	srv := mockServer(t, 200, HealthResponse{
-		Status:    "ok",
-		Version:   "1.0.0",
+		Status:     "ok",
+		Version:    "1.0.0",
 		UptimeSecs: 42,
 	})
 	defer srv.Close()
@@ -139,7 +139,7 @@ func TestExecuteSOP(t *testing.T) {
 	// executeSOP() 应该返回执行结果
 	srv := mockServer(t, 200, ExecuteResult{
 		SopID:      "sop1",
-		Status:      "completed",
+		Status:     "completed",
 		Iterations: 3,
 		Deviation:  0.1,
 	})
@@ -254,6 +254,148 @@ func TestValidateAuth(t *testing.T) {
 	}
 	if invalid {
 		t.Error("期望 valid=false，得到 true")
+	}
+}
+
+// ── 认知循环可观测性 ────────────────────────
+
+func TestAnomalyReports(t *testing.T) {
+	// 带 sop_id 时应拼查询参数，并解析异常列表
+	var gotQuery string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotQuery = r.URL.Query().Get("sop_id")
+		json.NewEncoder(w).Encode([]AnomalyReport{{
+			NodeName:    "node_a",
+			Severity:    "high",
+			Metric:      "duration",
+			Observed:    42,
+			Expected:    10,
+			Description: "duration deviation",
+			Timestamp:   1_700_000_000,
+		}})
+	}))
+	defer srv.Close()
+
+	c := NewClient(srv.URL, "")
+	reports, err := c.AnomalyReports("sop live/1")
+	if err != nil {
+		t.Fatalf("AnomalyReports() 返回错误: %v", err)
+	}
+	if gotQuery != "sop live/1" {
+		t.Errorf("期望 sop_id='sop live/1'，得到 %q", gotQuery)
+	}
+	if len(reports) != 1 {
+		t.Fatalf("期望 1 条异常，得到 %d", len(reports))
+	}
+	if reports[0].NodeName != "node_a" {
+		t.Errorf("期望 NodeName=node_a，得到 %s", reports[0].NodeName)
+	}
+}
+
+func TestAnomalyReportsWithoutScope(t *testing.T) {
+	// 不传 sopID 时不应拼查询参数
+	var gotRawQuery string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotRawQuery = r.URL.RawQuery
+		json.NewEncoder(w).Encode([]AnomalyReport{})
+	}))
+	defer srv.Close()
+
+	c := NewClient(srv.URL, "")
+	reports, err := c.AnomalyReports("")
+	if err != nil {
+		t.Fatalf("AnomalyReports() 返回错误: %v", err)
+	}
+	if len(reports) != 0 {
+		t.Errorf("期望空列表，得到 %d 条", len(reports))
+	}
+	if gotRawQuery != "" {
+		t.Errorf("期望无查询参数，得到 %q", gotRawQuery)
+	}
+}
+
+// ── 经验共享 ────────────────────────────
+
+func TestListSharedExperiences(t *testing.T) {
+	// 响应是 {experiences: [...]} 包装，方法应该解包
+	srv := mockServer(t, 200, sharedExperiencesResponse{
+		Experiences: []SharedExperience{{
+			ContextText:    "ctx",
+			ContextHash:    "hash",
+			ActionID:       "act",
+			OutcomeSuccess: true,
+			DeviationScore: 0,
+			Cost:           12,
+			Timestamp:      1_700_000_000,
+			Version:        1,
+			VectorClock:    map[string]uint64{"node_a": 1},
+		}},
+	})
+	defer srv.Close()
+
+	c := NewClient(srv.URL, "")
+	experiences, err := c.ListSharedExperiences()
+	if err != nil {
+		t.Fatalf("ListSharedExperiences() 返回错误: %v", err)
+	}
+	if len(experiences) != 1 {
+		t.Fatalf("期望 1 条经验，得到 %d", len(experiences))
+	}
+	if experiences[0].ActionID != "act" {
+		t.Errorf("期望 ActionID=act，得到 %s", experiences[0].ActionID)
+	}
+	if experiences[0].VectorClock["node_a"] != 1 {
+		t.Errorf("期望 vector_clock[node_a]=1，得到 %d", experiences[0].VectorClock["node_a"])
+	}
+}
+
+func TestShareExperience(t *testing.T) {
+	// 应该 POST {"exp_key": ...} 并返回成功标志
+	var gotBody map[string]string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewDecoder(r.Body).Decode(&gotBody)
+		json.NewEncoder(w).Encode(ExperienceShareResult{Success: true})
+	}))
+	defer srv.Close()
+
+	c := NewClient(srv.URL, "")
+	result, err := c.ShareExperience("exp:1")
+	if err != nil {
+		t.Fatalf("ShareExperience() 返回错误: %v", err)
+	}
+	if !result.Success {
+		t.Error("期望 Success=true，得到 false")
+	}
+	if gotBody["exp_key"] != "exp:1" {
+		t.Errorf("期望 exp_key=exp:1，得到 %q", gotBody["exp_key"])
+	}
+}
+
+func TestUnshareExperience(t *testing.T) {
+	// 应该同时发送 exp_key 与 project_id，并透传失败信息
+	var gotBody map[string]string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewDecoder(r.Body).Decode(&gotBody)
+		json.NewEncoder(w).Encode(ExperienceShareResult{
+			Success: false,
+			Error:   "experience not found",
+		})
+	}))
+	defer srv.Close()
+
+	c := NewClient(srv.URL, "")
+	result, err := c.UnshareExperience("exp:1", "proj1")
+	if err != nil {
+		t.Fatalf("UnshareExperience() 返回错误: %v", err)
+	}
+	if gotBody["exp_key"] != "exp:1" || gotBody["project_id"] != "proj1" {
+		t.Errorf("期望 exp_key/project_id 都被发送，得到 %v", gotBody)
+	}
+	if result.Success {
+		t.Error("期望 Success=false，得到 true")
+	}
+	if result.Error != "experience not found" {
+		t.Errorf("期望 Error='experience not found'，得到 %q", result.Error)
 	}
 }
 

@@ -15,6 +15,7 @@ import json
 from dataclasses import dataclass, field
 from typing import Any, Optional
 from urllib.request import Request, urlopen
+from urllib.parse import quote
 from urllib.error import HTTPError
 
 
@@ -67,6 +68,43 @@ class SkillEntry:
     version: str
     downloads: int
     rating: float
+
+
+@dataclass
+class AnomalyReport:
+    """认知循环观测到的一条异常（GET /api/anomaly）。"""
+    node_name: str
+    severity: str
+    metric: str
+    observed: float
+    expected: float
+    description: str
+    timestamp: int
+
+
+@dataclass
+class SharedExperience:
+    """跨项目共享的经验条目（GET /api/experience/shared）。"""
+    context_text: str
+    context_hash: str
+    action_id: str
+    outcome_success: bool
+    deviation_score: float
+    cost: int
+    timestamp: int
+    version: int = 0
+    vector_clock: dict = field(default_factory=dict)
+    project_id: Optional[str] = None
+    embedding: Optional[list] = None
+    visual_embedding: Optional[list] = None
+    insight: Optional[str] = None
+
+
+@dataclass
+class ExperienceShareResult:
+    """经验分享 / 取消分享结果。"""
+    success: bool
+    error: str = ""
 
 
 class SisyphusError(Exception):
@@ -169,6 +207,44 @@ class SisyphusClient:
         data = self._request("POST", "/api/auth/validate",
                              {"api_key": api_key})
         return data.get("valid", False)
+
+    # ── 认知循环可观测性 ─────────────────────────
+
+    def anomaly_reports(self, sop_id: Optional[str] = None) -> list[AnomalyReport]:
+        """读取认知循环观测到的异常。
+
+        `sop_id` 为空时返回全部作用域；服务端对未知作用域返回空列表，
+        不会报错。
+        """
+        path = "/api/anomaly"
+        if sop_id:
+            path = f"{path}?sop_id={quote(sop_id, safe='')}"
+        data = self._request("GET", path)
+        return [AnomalyReport(**r) for r in data]
+
+    # ── 经验共享 ────────────────────────────────
+
+    def list_shared_experiences(self) -> list[SharedExperience]:
+        """列出所有已跨项目共享的经验。"""
+        data = self._request("GET", "/api/experience/shared")
+        experiences = data.get("experiences", []) if isinstance(data, dict) else []
+        return [SharedExperience(**exp) for exp in experiences]
+
+    def share_experience(self, exp_key: str) -> ExperienceShareResult:
+        """把一条本地经验标记为跨项目共享。"""
+        data = self._request("POST", "/api/experience/share",
+                             {"exp_key": exp_key})
+        return ExperienceShareResult(**data)
+
+    def unshare_experience(self, exp_key: str,
+                           project_id: str) -> ExperienceShareResult:
+        """取消某项目的经验共享。
+
+        `project_id` 必填（服务端缺少时返回 400），用于限定取消共享的作用域。
+        """
+        data = self._request("POST", "/api/experience/unshare",
+                             {"exp_key": exp_key, "project_id": project_id})
+        return ExperienceShareResult(**data)
 
 
 # ── 便捷异步封装 ──────────────────

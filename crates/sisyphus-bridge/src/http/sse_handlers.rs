@@ -625,6 +625,88 @@ pub async fn metrics_handler(State(state): State<RestApiState>) -> impl IntoResp
     let _ = writeln!(out, "# TYPE sisyphus_chaos_faults_total counter");
     let _ = writeln!(out, "sisyphus_chaos_faults_total {}", chaos_total);
 
+    // ── 认知循环 / 执行器子系统 ────────────────────────────────────
+    // 这些量此前只能通过 /health/deep 的 JSON 或 /api/anomaly 查询，
+    // 无法被 Prometheus 抓取。
+    let kernel = state.bridge.kernel();
+    let anomaly_entries = kernel.strategic_manager.anomaly_log.len();
+    let budget = {
+        // 立刻释放读锁，避免守卫跨越后续代码。
+        let guard = kernel.strategic_manager.token_budget.read();
+        guard.snapshot()
+    };
+    let (exec_limit, exec_available) = kernel
+        .execution_manager
+        .get_executor()
+        .map(|ex| {
+            (
+                ex.configured_limit(),
+                ex.concurrency_limit.available_permits(),
+            )
+        })
+        .unwrap_or((0, 0));
+
+    let _ = writeln!(
+        out,
+        "# HELP sisyphus_anomaly_log_entries Anomalies currently retained in the bounded anomaly log"
+    );
+    let _ = writeln!(out, "# TYPE sisyphus_anomaly_log_entries gauge");
+    let _ = writeln!(out, "sisyphus_anomaly_log_entries {}", anomaly_entries);
+    let _ = writeln!(
+        out,
+        "# HELP sisyphus_token_budget_usage Estimated tokens consumed by LLM stages"
+    );
+    let _ = writeln!(out, "# TYPE sisyphus_token_budget_usage gauge");
+    let _ = writeln!(out, "sisyphus_token_budget_usage {}", budget.usage);
+    let _ = writeln!(
+        out,
+        "# HELP sisyphus_token_budget_capped Whether a token budget cap is configured (1) or unbounded (0)"
+    );
+    let _ = writeln!(out, "# TYPE sisyphus_token_budget_capped gauge");
+    let _ = writeln!(
+        out,
+        "sisyphus_token_budget_capped {}",
+        if budget.cap.is_some() { 1 } else { 0 }
+    );
+    let _ = writeln!(
+        out,
+        "# HELP sisyphus_token_budget_exhausted Whether remaining budget is below the reserve threshold (1) or not (0)"
+    );
+    let _ = writeln!(out, "# TYPE sisyphus_token_budget_exhausted gauge");
+    let _ = writeln!(
+        out,
+        "sisyphus_token_budget_exhausted {}",
+        if budget.exhausted { 1 } else { 0 }
+    );
+    if let Some(cap) = budget.cap {
+        let _ = writeln!(
+            out,
+            "# HELP sisyphus_token_budget_remaining Remaining tokens before the configured cap"
+        );
+        let _ = writeln!(out, "# TYPE sisyphus_token_budget_remaining gauge");
+        let _ = writeln!(
+            out,
+            "sisyphus_token_budget_remaining {}",
+            cap.saturating_sub(budget.usage)
+        );
+    }
+    let _ = writeln!(
+        out,
+        "# HELP sisyphus_executor_concurrency_limit Configured node concurrency limit"
+    );
+    let _ = writeln!(out, "# TYPE sisyphus_executor_concurrency_limit gauge");
+    let _ = writeln!(out, "sisyphus_executor_concurrency_limit {}", exec_limit);
+    let _ = writeln!(
+        out,
+        "# HELP sisyphus_executor_available_permits Idle node slots in the executor semaphore"
+    );
+    let _ = writeln!(out, "# TYPE sisyphus_executor_available_permits gauge");
+    let _ = writeln!(
+        out,
+        "sisyphus_executor_available_permits {}",
+        exec_available
+    );
+
     (
         StatusCode::OK,
         [(

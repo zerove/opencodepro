@@ -539,6 +539,28 @@ fn test_cognitive_summary_row_deserialize_from_rest_contract() {
     assert_eq!(summary.first_timestamp_ms, 1700000000000);
 }
 
+/// 契约测试：与 REST `/api/anomaly` 返回结构对齐（bridge 的 AnomalyReport JSON）。
+#[test]
+fn test_anomaly_row_deserialize_from_rest_contract() {
+    let json = serde_json::json!({
+        "node_name": "node_a",
+        "severity": "high",
+        "metric": "duration",
+        "observed": 42.0,
+        "expected": 10.0,
+        "description": "duration deviation",
+        "timestamp": 1700000000_u64
+    });
+    let row: background::AnomalyRow =
+        serde_json::from_value(json).expect("anomaly contract parse failed");
+    assert_eq!(row.node_name, "node_a");
+    assert_eq!(row.severity, "high");
+    assert_eq!(row.metric, "duration");
+    assert!((row.observed - 42.0).abs() < 1e-9);
+    assert!((row.expected - 10.0).abs() < 1e-9);
+    assert_eq!(row.timestamp, 1_700_000_000);
+}
+
 /// 回归：TUI 的 REST 调用曾拼出 `http://http://[::1]:50051/api/...`。
 /// 配置里的 bridge_address 自带 scheme，再加一层前缀 reqwest 直接拒绝解析，
 /// 于是健康检查/认知轨迹/技能/工作区全部静默失败。测试用生产默认配置值断言。

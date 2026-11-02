@@ -10,4 +10,7 @@ export type {
   SOPNode,
   SOPGraph,
   ExecutionResult,
+  AnomalyReport,
+  SharedExperience,
+  ExperienceShareResult,
 } from './types';
