@@ -103,3 +103,79 @@ fn shrink_while_permits_are_held_is_completed_on_next_call() {
     );
     drop(a);
 }
+
+/// 持续压测：一边有大量任务抢/还许可，一边反复热重载并发上限。
+///
+/// 这是热重载最容易出错的地方——`forget_permits` 只能回收当前空闲的许可，
+/// 如果记账有偏差（例如 pending_reduction 覆盖而不是累加、或在增长时忽略
+/// 待回收量），压测结束后闸门容量就会与配置值永久偏离，表现为「并发上限
+/// 越调越大」或「许可慢性泄漏直到饿死」。
+///
+/// 用 `try_acquire`（而非 `acquire().await`）保证在 1 许可窗口里 worker
+/// 不会阻塞，测试不会因为上限被压到 1 而死锁。
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn hot_reload_under_concurrent_load_keeps_gate_consistent() {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::time::Duration;
+
+    let executor = Arc::new(make_executor());
+    executor.apply_config(&cfg(8));
+
+    let stop = Arc::new(AtomicBool::new(false));
+
+    let mut workers = Vec::new();
+    for _ in 0..32 {
+        let exec = Arc::clone(&executor);
+        let stop = Arc::clone(&stop);
+        workers.push(tokio::spawn(async move {
+            let mut acquired = 0u64;
+            while !stop.load(Ordering::Relaxed) {
+                if let Ok(permit) = exec.concurrency_limit.try_acquire() {
+                    acquired += 1;
+                    tokio::task::yield_now().await;
+                    drop(permit);
+                } else {
+                    tokio::task::yield_now().await;
+                }
+            }
+            acquired
+        }));
+    }
+
+    // 限幅反复横跳：先缩到 1（在途许可无法立刻回收），再放大，再缩……
+    let limits = [1usize, 16, 4, 48, 2];
+    let deadline = tokio::time::Instant::now() + Duration::from_millis(300);
+    let mut round = 0usize;
+    while tokio::time::Instant::now() < deadline {
+        executor.apply_config(&cfg(limits[round % limits.len()]));
+        round += 1;
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+
+    stop.store(true, Ordering::Relaxed);
+    let mut acquired_total = 0u64;
+    for worker in workers {
+        acquired_total += worker.await.expect("worker task must not panic");
+    }
+    assert!(
+        acquired_total > 0,
+        "workers must have acquired at least one permit"
+    );
+
+    // 收尾：所有许可已归还，重新应用目标配置把待回收差额补齐。
+    // 调用两次是刻意为之——第一次消化 pending_reduction，第二次验证幂等。
+    executor.apply_config(&cfg(8));
+    executor.apply_config(&cfg(8));
+
+    assert_eq!(executor.configured_limit(), 8);
+    assert_eq!(
+        executor.concurrency_limit.available_permits(),
+        8,
+        "gate capacity must converge back to the configured limit (no leaked/stolen permits)"
+    );
+
+    // 容量确实只有 8：拿满后不应再有空闲许可。
+    let all = executor.concurrency_limit.try_acquire_many(8).expect("8 permits");
+    assert!(executor.concurrency_limit.try_acquire().is_err());
+    drop(all);
+}

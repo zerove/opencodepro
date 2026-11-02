@@ -338,3 +338,143 @@ async fn test_storage_contended_keys() {
     let result = store.get_state_json("project", &key).await.unwrap();
     assert!(result.is_some(), "Key should exist after concurrent writes");
 }
+
+// ---------------------------------------------------------------------------
+// Sustained mixed-load soak (bounded wall-clock budget)
+// ---------------------------------------------------------------------------
+
+/// 持续混合负载：混沌注入 + 状态存储读写 + 异常观测同时跑约 800ms。
+///
+/// 既有用例都是「短脉冲」——几个操作跑完就断言，累积性问题（计数器回绕、
+/// 句柄/许可泄漏、锁粒度导致的惊群）永远暴露不出来。这里用固定 wall-clock
+/// 预算 + 多线程并发做一次有界 soak：CI 里秒级完成，但确实覆盖了「持续」
+/// 这一维度。无故障延迟类混沌（`RandomDelay`）被刻意排除，否则耗时由
+/// 注入延迟而非负载决定。
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn test_sustained_mixed_load_soak() {
+    use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+
+    let runner = Arc::new(ChaosRunner::new());
+    runner.start_experiment(ChaosExperiment {
+        name: "soak".into(),
+        fault_types: vec![FaultType::LlmTimeout],
+        // 1.0 让每个混沌操作都必然命中，便于精确核对计数。
+        fault_probability: 1.0,
+        duration: Duration::from_secs(30),
+        target_operations: None,
+    });
+
+    let store = Arc::new(
+        sisyphus_mem::MfsStore::new("sqlite::memory:", &sisyphus_types::CacheConfig::default())
+            .await
+            .expect("Store init failed"),
+    );
+    let detector = Arc::new(AnomalyDetector::default());
+
+    let stop = Arc::new(AtomicBool::new(false));
+    let chaos_ops = Arc::new(AtomicU64::new(0));
+    let storage_ops = Arc::new(AtomicU64::new(0));
+    let anomaly_obs = Arc::new(AtomicU64::new(0));
+
+    let mut handles = Vec::new();
+
+    // 2 个混沌 worker：每次注入都必然失败（LlmTimeout）。
+    for _ in 0..2 {
+        let runner = Arc::clone(&runner);
+        let stop = Arc::clone(&stop);
+        let counter = Arc::clone(&chaos_ops);
+        handles.push(tokio::spawn(async move {
+            while !stop.load(Ordering::Relaxed) {
+                assert!(
+                    runner.maybe_inject("soak_op").is_some(),
+                    "prob=1.0 must always inject"
+                );
+                counter.fetch_add(1, Ordering::Relaxed);
+                tokio::task::yield_now().await;
+            }
+        }));
+    }
+
+    // 2 个存储 worker：各写自己的键并读回，验证持续读写不丢不脏。
+    for worker in 0..2 {
+        let store = Arc::clone(&store);
+        let stop = Arc::clone(&stop);
+        let counter = Arc::clone(&storage_ops);
+        handles.push(tokio::spawn(async move {
+            let mut n = 0u64;
+            while !stop.load(Ordering::Relaxed) {
+                let key = format!("soak_{worker}_{}", n % 16);
+                let value = serde_json::json!({"worker": worker, "n": n});
+                store
+                    .set_state_json("soak_project", &key, value.clone())
+                    .await
+                    .expect("write must succeed");
+                let read = store
+                    .get_state_json("soak_project", &key)
+                    .await
+                    .expect("read must succeed")
+                    .expect("written key must be readable");
+                assert_eq!(read, value, "read-after-write must match");
+                n += 1;
+                counter.fetch_add(1, Ordering::Relaxed);
+            }
+        }));
+    }
+
+    // 2 个异常观测 worker：稳定基线 + 周期性尖峰，持续喂检测器。
+    for worker in 0..2 {
+        let detector = Arc::clone(&detector);
+        let stop = Arc::clone(&stop);
+        let counter = Arc::clone(&anomaly_obs);
+        handles.push(tokio::spawn(async move {
+            let node = format!("soak_node_{worker}");
+            let mut n = 0u64;
+            while !stop.load(Ordering::Relaxed) {
+                let fuel = if n % 50 == 49 { 10_000 } else { 100 };
+                let _ = detector.observe(&node, fuel, 50, !n.is_multiple_of(7));
+                n += 1;
+                counter.fetch_add(1, Ordering::Relaxed);
+                // 必须让出执行权：`observe` 是纯同步函数，缺了这个 await
+                // 该任务会永久占住 worker 线程，把 timer driver 一起饿死，
+                // 于是 `sleep` 永远不返回（本用例初版就是这样自锁的）。
+                tokio::task::yield_now().await;
+            }
+        }));
+    }
+
+    // ── 持续 800ms ──
+    tokio::time::sleep(Duration::from_millis(800)).await;
+    stop.store(true, Ordering::Relaxed);
+    for h in handles {
+        h.await.expect("soak worker must not panic");
+    }
+
+    // 计数一致性：混沌计数来自 AtomicU64，必须等于成功注入的次数。
+    let result = runner.stop_experiment().expect("experiment must have been running");
+    let attempted = result.operations_attempted;
+    let injected = chaos_ops.load(Ordering::Relaxed);
+    assert_eq!(
+        attempted, injected,
+        "runner op_count must match observed injections"
+    );
+    assert_eq!(
+        result.faults_injected, injected,
+        "prob=1.0 means every op faults"
+    );
+
+    assert!(
+        storage_ops.load(Ordering::Relaxed) > 0,
+        "storage workers must make progress"
+    );
+    assert!(
+        anomaly_obs.load(Ordering::Relaxed) > 0,
+        "anomaly workers must make progress"
+    );
+
+    // 停止后不再注入；检测器仍能生成报告（不 panic）。
+    assert!(
+        runner.maybe_inject("after_stop").is_none(),
+        "stopped runner must not inject"
+    );
+    let _ = detector.generate_report();
+}
