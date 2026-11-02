@@ -257,14 +257,13 @@ pub struct SisyphusKernel {
 }
 
 impl SisyphusKernel {
-    /// 热重载执行器配置占位：目前仅记录日志，实际并发上限变更需通过重启生效。
+    /// 热重载执行器配置（并发上限 / 默认 fuel）。
     ///
-    /// Double-Buffer 模式已预留架构位置，未来可通过新执行器替换旧实例。
+    /// 就地调整执行器的信号量许可数，无需重启进程，也不影响在途节点
+    /// （它们持有的是同一个闸门）。此前这个方法只打一行日志、什么都不做，
+    /// 却对外表现为「已支持热重载」。
     pub fn apply_executor_config_hot_reload(&mut self, config: &sisyphus_types::ExecutorConfig) {
-        let new_limit = config.max_concurrent_tasks.max(1);
-        // TODO: 后续实现 Double-Buffer：克隆 → 重建 Executor → 旧 Semaphore 自动释放
-        // 当前仅记录日志，并发上限变更需重启生效
-        let _ = new_limit;
+        self.execution_manager.apply_executor_config(config);
     }
 }
 

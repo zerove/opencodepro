@@ -1,11 +1,18 @@
 //! Sisyphus 自编程循环的编排器。
 //!
 //! ## 能力
-//! - **工具缺口解决**：生成 → 编译 → 验证 → 部署 → 回归 → 注册
-//! - **自动回归测试**：对新部署的工具运行单元 + 集成测试
-//! - **质量评估**：多轴质量评分（测试通过率、稳定性、精确度）
+//! - **工具缺口解决**：生成 → 真实编译 → 静态/语义验证 → 行为探针 → 部署 → 回归 → 注册
+//! - **自动回归测试**：只运行 spec 里声明的测试命令，没有就如实报告「无 harness」
+//! - **质量评估**：多轴质量评分（行为探针、测试通过率、规范完整度、稳定性、效率）
 //! - **自动化技能注册**：将已部署工具打包为 SkillBundle 并注册到
 //!   SkillStore，使系统能够发现它们
+//!
+//! ## 为什么每一步都必须有真实证据
+//! 早期实现里编译是 mock、`unit_tests_passed` 恒为 `true`、回归失败被
+//! 「soft pass」吞掉，于是自编程循环永远成功——即使产物根本不能被沙箱加载。
+//! 现在每道关卡都要求可验证的证据：rustc 真的产出 wasm、模块真的导出
+//! `memory` + `execute`、沙箱真的执行一次并返回可用载荷。任何一步拿不到
+//! 证据，就当作失败并重试，绝不算通过。
 
 use crate::ExecutionManager;
 use sisyphus_intel::{ToolCoder, ToolGap, WasmCompiler};
@@ -17,6 +24,56 @@ use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::mpsc;
 use tracing::{info, warn};
+
+/// 行为探针允许消耗的燃料上限。
+pub const PROBE_FUEL_LIMIT: u64 = 1_000_000;
+
+/// 行为探针的结论。
+///
+/// 「拿不到证据」与「证据表明失败」是两件事，必须分开：
+/// 前者说明环境没有能力验证（例如默认执行器不是 WASM 沙箱），
+/// 后者说明工具真的跑不通。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ProbeOutcome {
+    /// 沙箱真实执行成功，返回了非空、非错误载荷。
+    Passed {
+        /// 输出字节数。
+        output_len: usize,
+        /// 沙箱报告的燃料消耗（0 表示执行器未计量）。
+        fuel_consumed: u64,
+    },
+    /// 沙箱调用失败，或返回了错误载荷。
+    Failed {
+        /// 面向人的失败原因。
+        reason: String,
+    },
+    /// 没有能证明「真的在沙箱里跑过」的执行器，无法验证行为。
+    Unavailable {
+        /// 为什么无法验证。
+        reason: String,
+    },
+}
+
+impl ProbeOutcome {
+    /// 是否拿到了「工具可用」的正面证据。
+    pub fn is_passed(&self) -> bool {
+        matches!(self, Self::Passed { .. })
+    }
+
+    /// 单行描述，用于日志与回灌给代码生成器。
+    pub fn describe(&self) -> String {
+        match self {
+            Self::Passed {
+                output_len,
+                fuel_consumed,
+            } => {
+                format!("probe passed ({output_len} bytes, {fuel_consumed} fuel)")
+            },
+            Self::Failed { reason } => format!("probe failed: {reason}"),
+            Self::Unavailable { reason } => format!("probe unavailable: {reason}"),
+        }
+    }
+}
 
 /// 单个质量评分轴。
 #[derive(Debug, Clone)]
@@ -34,6 +91,11 @@ pub struct QualityReport {
     pub axes: Vec<QualityAxis>,
     pub unit_tests_passed: bool,
     pub integration_tests_passed: bool,
+    /// 阻止自动注册的硬失败（行为探针失败、声明的测试失败）。
+    ///
+    /// 加权总分可以「用其他轴补回来」，但这两类失败是**证据层面的否定**，
+    /// 不允许被规范完整度或效率分抵消。
+    pub blockers: Vec<String>,
     pub recommendations: Vec<String>,
 }
 
@@ -58,15 +120,20 @@ impl QualityReport {
 
     /// 是否达到自动注册为技能的门槛。
     ///
-    /// 需同时满足：加权总分 ≥ [`REGISTRATION_MIN_OVERALL`] 且
+    /// 需同时满足：没有硬失败（[`QualityReport::blockers`] 为空）、
+    /// 加权总分 ≥ [`REGISTRATION_MIN_OVERALL`]、
     /// 规范完整度 ≥ [`REGISTRATION_MIN_SPEC`]。
     pub fn meets_registration_bar(&self) -> bool {
-        self.overall_score >= REGISTRATION_MIN_OVERALL
+        self.blockers.is_empty()
+            && self.overall_score >= REGISTRATION_MIN_OVERALL
             && self.spec_completeness() >= REGISTRATION_MIN_SPEC
     }
 
     /// 未达标的原因（达标时返回 `None`），用于日志与用户可见诊断。
     pub fn rejection_reason(&self) -> Option<String> {
+        if !self.blockers.is_empty() {
+            return Some(format!("hard failure: {}", self.blockers.join("; ")));
+        }
         if self.overall_score < REGISTRATION_MIN_OVERALL {
             return Some(format!(
                 "overall score {:.3} below {:.1}",
@@ -105,11 +172,17 @@ pub fn spec_completeness_score(spec: &ToolSpec) -> f64 {
 }
 
 /// 回归测试执行的结果。
+///
+/// 只有 `spec.test_command` 声明的命令会真的被执行；没有声明时
+/// `harness_available = false`，`total_tests = 0`。**不存在**「没测试算通过」
+/// 这种状态——那正是旧实现让质量门禁形同虚设的原因。
 #[derive(Debug, Clone)]
 pub struct RegressionTestResult {
     pub tool_id: String,
+    /// 是否真的跑过声明的测试命令。
+    pub harness_available: bool,
+    /// 声明的测试命令是否通过（没有 harness 时恒为 `false`）。
     pub unit_tests_passed: bool,
-    pub integration_tests_passed: bool,
     pub total_tests: u64,
     pub passed: u64,
     pub failed: u64,
@@ -118,12 +191,30 @@ pub struct RegressionTestResult {
 }
 
 impl RegressionTestResult {
-    /// Success rate.
+    /// 通过率。
+    ///
+    /// `total_tests == 0` 时返回 1.0 —— 语义是「没有证据表明失败」，
+    /// 而不是「已验证通过」。判断质量时请结合 [`Self::harness_available`]，
+    /// 不要把这个值当作满分证据。
     pub fn success_rate(&self) -> f64 {
         if self.total_tests == 0 {
             return 1.0;
         }
         self.passed as f64 / self.total_tests as f64
+    }
+
+    /// 没有 harness 的空结果。
+    fn without_harness(tool_id: &str, reason: String, duration_ms: u64) -> Self {
+        Self {
+            tool_id: tool_id.to_string(),
+            harness_available: false,
+            unit_tests_passed: false,
+            total_tests: 0,
+            passed: 0,
+            failed: 0,
+            duration_ms,
+            failures: vec![reason],
+        }
     }
 }
 
@@ -162,6 +253,19 @@ impl SelfProgrammingManager {
         *self.event_tx.lock() = Some(tx);
     }
 
+    /// 覆盖生成产物的落盘目录。
+    ///
+    /// 必须与沙箱执行器的 `tools_path` 一致，否则探针读不到刚编译的产物。
+    /// bridge 用 `sandbox.wasm_tools_dir` 调用它完成接线。
+    pub fn set_tools_dir(&self, dir: impl Into<std::path::PathBuf>) {
+        self.compiler.set_tools_dir(dir);
+    }
+
+    /// 当前生成产物目录。
+    pub fn tools_dir(&self) -> std::path::PathBuf {
+        self.compiler.tools_dir()
+    }
+
     async fn notify(&self, event: CognitiveEvent) {
         if let Some(tx) = self.event_tx.lock().clone() {
             let _ = tx.send(event);
@@ -173,19 +277,26 @@ impl SelfProgrammingManager {
     // ---------------------------------------------------------------
 
     /// 为检测到的缺口执行完整的自编程循环，包括
-    /// 部署后的回归测试与自动化技能注册。
+    /// 真实编译、静态/语义验证、行为探针、部署后回归与自动化技能注册。
+    ///
+    /// # Errors
+    /// 三次尝试都没拿到「可部署 + 探针通过」的证据时返回
+    /// [`crate::CoreError::Internal`]，并把最后一次失败原因带上。
+    /// LLM 调用本身失败则直接返回错误（重试没有意义）。
     pub async fn resolve_gap(&self, gap: ToolGap) -> Result<(), crate::CoreError> {
-        info!(gap_id = %gap.gap_id, "Starting self-programming loop to resolve tool gap");
+        let tool_id = gap.suggested_tool_spec.tool_id.clone();
+        info!(gap_id = %gap.gap_id, tool_id = %tool_id, "Starting self-programming loop to resolve tool gap");
 
         let mut feedback: Option<String> = None;
         let max_retries = 3;
+        let mut last_error = String::from("no attempt produced a result");
 
         for attempt in 1..=max_retries {
             info!("Self-programming attempt {}/{}", attempt, max_retries);
 
             // 1. 通知开始
             self.notify(CognitiveEvent::ToolGenerationStarted {
-                tool_id: gap.suggested_tool_spec.tool_id.clone(),
+                tool_id: tool_id.clone(),
                 capability: gap.required_capability.clone(),
             })
             .await;
@@ -197,216 +308,285 @@ impl SelfProgrammingManager {
                 .await
                 .map_err(|e| crate::CoreError::Internal(e.to_string()))?;
 
-            // 3. 编译为 WASM
-            let wasm_path = self
-                .compiler
-                .compile(&gap.suggested_tool_spec.tool_id, &code)
-                .await
-                .map_err(|e| crate::CoreError::Internal(e.to_string()))?;
+            // 3. 真实编译。编译失败是最常见的生成问题，必须可重试——
+            //    把 rustc 的 stderr 原样回灌给 coder，否则下一轮只会重复同样的错误。
+            let wasm_path = match self.compiler.compile(&tool_id, &code).await {
+                Ok(path) => path,
+                Err(e) => {
+                    warn!(attempt, tool_id = %tool_id, error = %e, "WASM compilation failed");
+                    last_error = e.to_string();
+                    feedback = Some(format!("Attempt {attempt} failed to compile:\n{e}"));
+                    continue;
+                },
+            };
 
-            // 4. 验证工具
+            // 4. 静态契约 + 语义审计
             let v_report = self
                 .verifier
-                .verify(&gap.suggested_tool_spec, &wasm_path)
+                .verify(&gap.suggested_tool_spec, &code, &wasm_path)
                 .await
                 .map_err(|e| crate::CoreError::Internal(e.to_string()))?;
 
-            if v_report.confidence_score >= 0.7 {
-                self.notify(CognitiveEvent::ToolVerified {
-                    tool_id: gap.suggested_tool_spec.tool_id.clone(),
-                    score: v_report.confidence_score as f64,
-                })
-                .await;
-                info!(
-                    "Tool verified successfully (score: {:.2})",
-                    v_report.confidence_score
+            if !v_report.is_deployable() {
+                warn!(
+                    attempt,
+                    tool_id = %tool_id,
+                    score = v_report.confidence_score,
+                    failures = ?v_report.failures,
+                    "Tool verification failed"
                 );
-
-                // 5. 部署并沉淀（Sediment）
-                let asset_id = self
-                    .knowledge_manager
-                    .sediment_tool(gap.suggested_tool_spec.clone(), wasm_path)
-                    .await
-                    .map_err(|e| crate::CoreError::Internal(e.to_string()))?;
-
-                self.notify(CognitiveEvent::ToolDeployed {
-                    tool_id: gap.suggested_tool_spec.tool_id.clone(),
-                    asset_id: asset_id.clone(),
-                })
-                .await;
-                self.execution_manager.notify_tool_deployed(&gap.suggested_tool_spec.tool_id);
-
-                info!(
-                    "Tool deployed (asset_id: {}). Running regression tests...",
-                    asset_id
-                );
-
-                // 6. 对已部署工具运行回归测试
-                let regress_result =
-                    self.run_regression_tests(&gap.suggested_tool_spec, &asset_id).await;
-
-                // 7. 评估质量
-                let quality =
-                    self.evaluate_quality(&gap.suggested_tool_spec, &regress_result).await;
-
-                self.notify(CognitiveEvent::QualityEvaluation {
-                    tool_id: gap.suggested_tool_spec.tool_id.clone(),
-                    unit_tests_passed: quality.unit_tests_passed,
-                    integration_tests_passed: quality.integration_tests_passed,
-                    regression_score: regress_result.success_rate(),
-                    quality_score: quality.overall_score,
-                })
-                .await;
-
-                if quality.meets_registration_bar() {
-                    // 8. 质量合格时自动注册为技能
-                    self.register_skill(&gap, &quality).await;
-                } else {
-                    warn!(
-                        tool_id = %gap.suggested_tool_spec.tool_id,
-                        quality = quality.overall_score,
-                        spec_completeness = quality.spec_completeness(),
-                        reason = ?quality.rejection_reason(),
-                        "Tool quality below registration bar; skipping skill registration"
-                    );
-                }
-
-                info!(
-                    "Successfully resolved tool gap {}. Tool {} deployed, tested, and quality-scored.",
-                    gap.gap_id, gap.suggested_tool_spec.tool_id
-                );
-                return Ok(());
+                last_error = v_report.failures.join("; ");
+                feedback = Some(format!(
+                    "Attempt {attempt} verification failures:\n{}",
+                    v_report.failures.join("\n")
+                ));
+                continue;
             }
 
-            warn!(
-                "Attempt {} failed (score: {:.2}). Failures: {:?}",
-                attempt, v_report.confidence_score, v_report.failures
+            // 5. 行为探针：让沙箱真的执行一次刚编译出来的模块。
+            //    先失效缓存，保证读到的是本轮产物而不是上一轮的。
+            self.execution_manager.notify_tool_deployed(&tool_id);
+            let probe = self.probe_tool(&gap.suggested_tool_spec).await;
+            if !probe.is_passed() {
+                warn!(attempt, tool_id = %tool_id, probe = %probe.describe(), "Behavioral probe did not pass");
+                last_error = probe.describe();
+                feedback = Some(format!(
+                    "Attempt {attempt} behavioral probe: {}",
+                    probe.describe()
+                ));
+                continue;
+            }
+
+            self.notify(CognitiveEvent::ToolVerified {
+                tool_id: tool_id.clone(),
+                score: v_report.confidence_score as f64,
+            })
+            .await;
+            info!(
+                "Tool verified (score {:.2}) and probed: {}",
+                v_report.confidence_score,
+                probe.describe()
             );
-            feedback = Some(format!(
-                "Attempt {} failures:\n{}",
-                attempt,
-                v_report.failures.join("\n")
-            ));
+
+            // 6. 部署并沉淀（Sediment）
+            let asset_id = self
+                .knowledge_manager
+                .sediment_tool(gap.suggested_tool_spec.clone(), wasm_path)
+                .await
+                .map_err(|e| crate::CoreError::Internal(e.to_string()))?;
+
+            self.notify(CognitiveEvent::ToolDeployed {
+                tool_id: tool_id.clone(),
+                asset_id: asset_id.clone(),
+            })
+            .await;
+            self.execution_manager.notify_tool_deployed(&tool_id);
+
+            info!(
+                "Tool deployed (asset_id: {}). Running regression tests...",
+                asset_id
+            );
+
+            // 7. 对已部署工具运行回归测试
+            let regress_result =
+                self.run_regression_tests(&gap.suggested_tool_spec, &asset_id).await;
+
+            // 8. 评估质量
+            let quality =
+                self.evaluate_quality(&gap.suggested_tool_spec, &regress_result, &probe).await;
+
+            self.notify(CognitiveEvent::QualityEvaluation {
+                tool_id: tool_id.clone(),
+                unit_tests_passed: quality.unit_tests_passed,
+                integration_tests_passed: quality.integration_tests_passed,
+                regression_score: regress_result.success_rate(),
+                quality_score: quality.overall_score,
+            })
+            .await;
+
+            if quality.meets_registration_bar() {
+                // 9. 质量合格时自动注册为技能
+                self.register_skill(&gap, &quality).await;
+            } else {
+                warn!(
+                    tool_id = %tool_id,
+                    quality = quality.overall_score,
+                    spec_completeness = quality.spec_completeness(),
+                    reason = ?quality.rejection_reason(),
+                    "Tool quality below registration bar; skipping skill registration"
+                );
+            }
+
+            info!(
+                "Successfully resolved tool gap {}. Tool {tool_id} deployed, probed, tested, and quality-scored.",
+                gap.gap_id
+            );
+            return Ok(());
         }
 
+        // 所有尝试都失败：清掉半成品，避免沙箱把一个行为错误的模块当成可用工具。
+        self.remove_artifact(&tool_id).await;
+
         Err(crate::CoreError::Internal(format!(
-            "Failed to resolve gap after {} attempts",
-            max_retries
+            "Failed to resolve gap after {max_retries} attempts; last error: {last_error}"
         )))
+    }
+
+    /// 删除本工具的落盘产物（尽力而为，失败只记日志）。
+    async fn remove_artifact(&self, tool_id: &str) {
+        let path = match sisyphus_intel::artifact_path(&self.tools_dir(), tool_id) {
+            Ok(path) => path,
+            Err(reason) => {
+                warn!(tool_id = %tool_id, %reason, "Cannot compute artifact path for cleanup");
+                return;
+            },
+        };
+        match tokio::fs::remove_file(&path).await {
+            Ok(()) => {
+                info!(tool_id = %tool_id, path = %path.display(), "Removed failed tool artifact")
+            },
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {},
+            Err(e) => {
+                warn!(tool_id = %tool_id, path = %path.display(), error = %e, "Failed to remove artifact")
+            },
+        }
+    }
+
+    /// 在沙箱里真实执行一次工具，作为「它确实能用」的证据。
+    ///
+    /// 用 `execute_measured` 而不是 `execute`：只有能报告测量的执行器
+    /// （`WasmToolExecutor` / `SandboxdClient`）才证明模块真的跑过。
+    /// 默认实现的 `measurement = None` 意味着执行器可能是任意 mock，
+    /// 此时如实返回 [`ProbeOutcome::Unavailable`]，而不是假装通过。
+    pub async fn probe_tool(&self, spec: &ToolSpec) -> ProbeOutcome {
+        let input = serde_json::to_vec(&spec.expected_input).unwrap_or_else(|_| b"{}".to_vec());
+
+        let outcome = self
+            .execution_manager
+            .tool_router
+            .default
+            .execute_measured(&spec.tool_id, input, PROBE_FUEL_LIMIT)
+            .await;
+
+        let (data, measurement) = match outcome {
+            Ok(pair) => pair,
+            Err(e) => {
+                return ProbeOutcome::Failed {
+                    reason: format!("sandbox call failed: {e}"),
+                }
+            },
+        };
+
+        let Some(measurement) = measurement else {
+            return ProbeOutcome::Unavailable {
+                reason: "the registered default executor reports no execution measurement, \
+                         so the probe cannot prove the wasm sandbox actually ran"
+                    .into(),
+            };
+        };
+
+        if data.is_empty() {
+            return ProbeOutcome::Failed {
+                reason: "tool returned an empty payload".into(),
+            };
+        }
+
+        // 生成代码用 `{"error": "..."}` 表达业务失败（见编译器的 ABI 适配层）。
+        let text = String::from_utf8_lossy(&data);
+        if let Ok(serde_json::Value::Object(map)) = serde_json::from_str::<serde_json::Value>(&text)
+        {
+            if let Some(err) = map.get("error").and_then(serde_json::Value::as_str) {
+                return ProbeOutcome::Failed {
+                    reason: format!("tool reported an error: {err}"),
+                };
+            }
+        }
+
+        ProbeOutcome::Passed {
+            output_len: data.len(),
+            fuel_consumed: measurement.fuel_consumed,
+        }
     }
 
     // ---------------------------------------------------------------
     // 回归测试
     // ---------------------------------------------------------------
 
-    /// 对已部署工具运行自动化回归测试（单元 + 集成）。
-    /// 使用 ExecutionManager 的测试执行器运行工具专属的测试命令。
+    /// 对已部署工具运行自动化回归测试。
+    ///
+    /// 只执行 `spec.test_command` 声明的命令。旧实现会在没有声明时
+    /// 自己拼一个 `cargo test --test {tool_id}_test`，跑不通还记成通过
+    /// （"soft pass"）——于是「没有测试」和「测试全绿」在质量报告里完全
+    /// 无法区分。现在没有 harness 就如实返回 `harness_available = false`。
     pub async fn run_regression_tests(
         &self,
         spec: &ToolSpec,
         _asset_id: &str,
     ) -> RegressionTestResult {
         let start = std::time::Instant::now();
-
         let tool_id = &spec.tool_id;
+
+        let Some(test_cmd) = spec.test_command.as_deref().map(str::trim) else {
+            info!(tool_id = %tool_id, "No test_command declared; skipping regression harness");
+            return RegressionTestResult::without_harness(
+                tool_id,
+                "No test_command declared; nothing was executed".into(),
+                start.elapsed().as_millis() as u64,
+            );
+        };
+
+        if test_cmd.is_empty() {
+            info!(tool_id = %tool_id, "Empty test_command; skipping regression harness");
+            return RegressionTestResult::without_harness(
+                tool_id,
+                "test_command is empty; nothing was executed".into(),
+                start.elapsed().as_millis() as u64,
+            );
+        }
+
         let mut failures = Vec::new();
         let mut total = 0u64;
         let mut passed = 0u64;
-        // 真实结果标记（不依赖 failures 文本嗅探）
-        let mut unit_ok = true;
-        let mut integration_ok = true;
 
-        // --- 单元测试 ---
-        // 若 spec 中指定了测试命令，则尝试运行单元测试
-        if let Some(ref test_cmd) = spec.test_command {
-            total += 1;
-            let test_result = self
-                .execution_manager
-                .executor
-                .test_executor
-                .run_test(test_cmd, spec.workdir.as_deref())
-                .await;
-
-            match test_result {
-                Ok(result) if result.success => {
-                    passed += 1;
-                    info!("Unit test passed for tool {}", tool_id);
-                },
-                Ok(result) => {
-                    unit_ok = false;
-                    failures.push(format!(
-                        "Unit test failed: {}",
-                        result.error_summary.unwrap_or_default()
-                    ));
-                    warn!("Unit test failed for tool {}: {}", tool_id, result.stderr);
-                },
-                Err(e) => {
-                    unit_ok = false;
-                    failures.push(format!("Unit test error: {}", e));
-                    warn!("Unit test error for tool {}: {}", tool_id, e);
-                },
-            }
-        } else {
-            // 没有显式测试命令；尝试运行常见的测试模式
-            let default_cmd = format!("cargo test --test {}_test", tool_id);
-            total += 1;
-            let result =
-                self.execution_manager.executor.test_executor.run_test(&default_cmd, None).await;
-
-            match result {
-                Ok(r) if r.success => {
-                    passed += 1;
-                },
-                Ok(r) => {
-                    // 测试 crate 可能不存在；将其视为软失败
-                    info!(
-                        "No dedicated unit test found for {}: {}",
-                        tool_id,
-                        r.error_summary.unwrap_or_default()
-                    );
-                    passed += 1; // Soft pass — no test is not a regression
-                },
-                Err(_e) => {
-                    passed += 1; // Soft pass — no test harness, not a regression
-                },
-            }
-        }
-
-        // --- 集成测试 ---
-        let integration_cmd = format!("cargo test -p sisyphus-tests --test {}_test", tool_id);
         total += 1;
-        match self.execution_manager.executor.test_executor.run_test(&integration_cmd, None).await {
-            Ok(r) if r.success => {
+        let unit_ok = match self
+            .execution_manager
+            .executor
+            .test_executor
+            .run_test(test_cmd, spec.workdir.as_deref())
+            .await
+        {
+            Ok(result) if result.success => {
                 passed += 1;
-                info!("Integration test passed for tool {}", tool_id);
+                info!(tool_id = %tool_id, command = %test_cmd, "Declared test command passed");
+                true
             },
-            Ok(r) => {
-                integration_ok = false;
-                let err_msg = r.error_summary.unwrap_or_default();
-                failures.push(format!("Integration test: {}", err_msg));
-                warn!("Integration test for {}: {}", tool_id, err_msg);
+            Ok(result) => {
+                let detail = result.error_summary.unwrap_or_else(|| {
+                    format!("exit code {}; stderr: {}", result.exit_code, result.stderr)
+                });
+                failures.push(format!("Declared test command failed: {detail}"));
+                warn!(tool_id = %tool_id, command = %test_cmd, %detail, "Declared test command failed");
+                false
             },
             Err(e) => {
-                info!("No integration test suite for {}: {}", tool_id, e);
-                passed += 1; // Soft pass
+                failures.push(format!("Declared test command could not run: {e}"));
+                warn!(tool_id = %tool_id, command = %test_cmd, error = %e, "Test harness unavailable");
+                false
             },
-        }
-
-        let duration = start.elapsed();
+        };
 
         RegressionTestResult {
             tool_id: tool_id.clone(),
-            // 注意：这两个字段必须来自执行过程的真实结果标记，
-            // 不能从 failures 文本里“嗅探”关键词——早期实现写成
-            // `failures.iter().any(|f| f.contains("Unit test"))`，
-            // 语义正好相反（有失败才 true），导致质量报告把
-            // “全绿”报成“未通过”、把“失败”报成“通过”。
+            harness_available: true,
+            // 这个标记必须来自执行过程的真实结果，不能从 failures 文本里
+            // “嗅探”关键词——早期实现写成
+            // `failures.iter().any(|f| f.contains("Unit test"))`，语义正好相反。
             unit_tests_passed: unit_ok,
-            integration_tests_passed: integration_ok,
             total_tests: total,
             passed,
             failed: total.saturating_sub(passed),
-            duration_ms: duration.as_millis() as u64,
+            duration_ms: start.elapsed().as_millis() as u64,
             failures,
         }
     }
@@ -417,23 +597,46 @@ impl SelfProgrammingManager {
 
     /// 从多个轴评估工具质量。
     /// 返回结构化报告，含总分（0.0 - 1.0）。
+    ///
+    /// 权重分配的依据是「证据强度」：行为探针是唯一直接证明工具可用的
+    /// 信号，权重最高；测试通过率只在声明了 harness 时才有意义；
+    /// 规范完整度既是加权项也是独立硬门禁。
     pub async fn evaluate_quality(
         &self,
         spec: &ToolSpec,
         regression: &RegressionTestResult,
+        probe: &ProbeOutcome,
     ) -> QualityReport {
         let mut axes = Vec::new();
         let mut recommendations = Vec::new();
+        let mut blockers = Vec::new();
 
-        // 轴 1：测试通过率
-        let test_score = regression.success_rate();
+        // 轴 1：行为探针
+        let probe_score = match probe {
+            ProbeOutcome::Passed { .. } => 1.0,
+            ProbeOutcome::Failed { .. } => 0.0,
+            // 没验证成不等于失败，但也绝不是通过；给中性分并给出建议。
+            ProbeOutcome::Unavailable { .. } => 0.5,
+        };
         axes.push(QualityAxis {
-            name: "test_coverage".into(),
-            score: test_score,
+            name: "behavioral_probe".into(),
+            score: probe_score,
             weight: 0.35,
         });
 
-        // 轴 2：规范完整度
+        // 轴 2：声明的测试命令通过率（无 harness 时给中性分，不是满分）
+        let test_score = if regression.harness_available {
+            regression.success_rate()
+        } else {
+            0.5
+        };
+        axes.push(QualityAxis {
+            name: "test_coverage".into(),
+            score: test_score,
+            weight: 0.15,
+        });
+
+        // 轴 3：规范完整度
         let spec_score = spec_completeness_score(spec);
         axes.push(QualityAxis {
             name: "spec_completeness".into(),
@@ -441,52 +644,70 @@ impl SelfProgrammingManager {
             weight: 0.25,
         });
 
-        // 轴 3：验证得到的稳定性
-        let stability_score = if regression.failed == 0 {
-            0.95
-        } else if regression.success_rate() > 0.8 {
-            0.7
-        } else {
-            0.4
+        // 轴 4：稳定性 —— 探针通过且测试无失败才算稳
+        let stability_score = match probe {
+            ProbeOutcome::Passed { .. } if regression.failed == 0 => 0.95,
+            ProbeOutcome::Passed { .. } => 0.7,
+            ProbeOutcome::Unavailable { .. } => 0.5,
+            ProbeOutcome::Failed { .. } => 0.1,
         };
         axes.push(QualityAxis {
             name: "stability".into(),
             score: stability_score,
-            weight: 0.25,
+            weight: 0.15,
         });
 
-        // 轴 4：执行效率（燃料/性能代理）
-        let efficiency_score = if let Some(ref test_cmd) = spec.test_command {
-            if test_cmd.len() < 100 {
-                0.9
-            } else {
-                0.6
-            }
-        } else {
-            0.5
+        // 轴 5：执行效率 —— 用探针测到的真实燃料消耗，而不是命令字符串长度
+        let efficiency_score = match probe {
+            ProbeOutcome::Passed {
+                fuel_consumed: 0, ..
+            } => 0.5,
+            ProbeOutcome::Passed { fuel_consumed, .. } if *fuel_consumed < 10_000 => 1.0,
+            ProbeOutcome::Passed { fuel_consumed, .. } if *fuel_consumed < 200_000 => 0.8,
+            ProbeOutcome::Passed { .. } => 0.5,
+            _ => 0.5,
         };
         axes.push(QualityAxis {
             name: "efficiency".into(),
             score: efficiency_score,
-            weight: 0.15,
+            weight: 0.10,
         });
 
         // 计算加权总分
         let overall_score: f64 = axes.iter().map(|a| a.score * a.weight).sum();
 
         // 生成建议
+        match probe {
+            ProbeOutcome::Failed { reason } => {
+                blockers.push(format!("behavioral probe failed: {reason}"));
+                recommendations.push(format!(
+                    "Fix the behavioral failure before deployment: {reason}"
+                ));
+            },
+            ProbeOutcome::Unavailable { .. } => recommendations.push(
+                "Wire a measuring tool executor (wasm sandbox) so the probe can prove the tool runs"
+                    .to_string(),
+            ),
+            ProbeOutcome::Passed { .. } => {},
+        }
+        if regression.harness_available && regression.failed > 0 {
+            blockers.push(format!(
+                "declared test command reported {} failing test(s)",
+                regression.failed
+            ));
+        }
+        if !regression.harness_available {
+            recommendations.push("Declare a test_command to get regression coverage".to_string());
+        }
         if regression.failed > 0 {
             recommendations.push("Fix failing tests before deployment to production".to_string());
         }
-        if spec.success_criteria.is_empty() {
+        if spec.success_criteria.trim().is_empty() {
             recommendations.push("Add explicit success criteria to the tool spec".to_string());
         }
         if overall_score < 0.5 {
             recommendations
                 .push("Consider regenerating the tool with more detailed spec".to_string());
-        }
-        if stability_score < 0.7 {
-            recommendations.push("Run additional sandbox stability checks".to_string());
         }
 
         QualityReport {
@@ -494,7 +715,8 @@ impl SelfProgrammingManager {
             overall_score,
             axes,
             unit_tests_passed: regression.unit_tests_passed,
-            integration_tests_passed: regression.integration_tests_passed,
+            integration_tests_passed: probe.is_passed(),
+            blockers,
             recommendations,
         }
     }
@@ -601,32 +823,68 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_quality_evaluation_perfect_score() {
-        let _spec = make_test_spec("perfect_tool");
-        let regression = RegressionTestResult {
-            tool_id: "perfect_tool".into(),
-            unit_tests_passed: true,
-            integration_tests_passed: true,
-            total_tests: 5,
-            passed: 5,
-            failed: 0,
-            duration_ms: 100,
-            failures: vec![],
-        };
+    fn probe_passed() -> ProbeOutcome {
+        ProbeOutcome::Passed {
+            output_len: 32,
+            fuel_consumed: 1_500,
+        }
+    }
 
-        // evaluate_quality 是异步的，需要异步运行时
-        // 但在测试中可以使用更简单的直接方式
-        let score = regression.success_rate();
-        assert_eq!(score, 1.0);
+    fn probe_failed() -> ProbeOutcome {
+        ProbeOutcome::Failed {
+            reason: "sandbox call failed: trap".into(),
+        }
+    }
+
+    fn probe_unavailable() -> ProbeOutcome {
+        ProbeOutcome::Unavailable {
+            reason: "executor reports no measurement".into(),
+        }
+    }
+
+    fn clean_regression(tool_id: &str) -> RegressionTestResult {
+        RegressionTestResult {
+            tool_id: tool_id.into(),
+            harness_available: true,
+            unit_tests_passed: true,
+            total_tests: 1,
+            passed: 1,
+            failed: 0,
+            duration_ms: 10,
+            failures: vec![],
+        }
+    }
+
+    fn no_harness_regression(tool_id: &str) -> RegressionTestResult {
+        RegressionTestResult {
+            tool_id: tool_id.into(),
+            harness_available: false,
+            unit_tests_passed: false,
+            total_tests: 0,
+            passed: 0,
+            failed: 0,
+            duration_ms: 0,
+            failures: vec!["No test_command declared".into()],
+        }
     }
 
     #[test]
-    fn test_regression_result_success_rate() {
+    fn probe_outcome_classification() {
+        assert!(probe_passed().is_passed());
+        assert!(!probe_failed().is_passed());
+        assert!(
+            !probe_unavailable().is_passed(),
+            "an unrun probe must never count as a pass"
+        );
+        assert!(probe_unavailable().describe().contains("unavailable"));
+    }
+
+    #[test]
+    fn regression_result_success_rate() {
         let r = RegressionTestResult {
             tool_id: "t".into(),
-            unit_tests_passed: true,
-            integration_tests_passed: false,
+            harness_available: true,
+            unit_tests_passed: false,
             total_tests: 10,
             passed: 7,
             failed: 3,
@@ -637,26 +895,23 @@ mod tests {
     }
 
     #[test]
-    fn test_regression_result_empty() {
-        let r = RegressionTestResult {
-            tool_id: "empty".into(),
-            unit_tests_passed: true,
-            integration_tests_passed: true,
-            total_tests: 0,
-            passed: 0,
-            failed: 0,
-            duration_ms: 0,
-            failures: vec![],
-        };
-        assert_eq!(r.success_rate(), 1.0, "Empty test suite should return 1.0");
+    fn regression_result_empty() {
+        let r = no_harness_regression("empty");
+        assert_eq!(
+            r.success_rate(),
+            1.0,
+            "no evidence of failure, not proof of success"
+        );
+        assert!(!r.harness_available);
+        assert_eq!(r.total_tests, 0);
     }
 
     #[test]
-    fn test_regression_result_all_fail() {
+    fn regression_result_all_fail() {
         let r = RegressionTestResult {
             tool_id: "fail_all".into(),
+            harness_available: true,
             unit_tests_passed: false,
-            integration_tests_passed: false,
             total_tests: 3,
             passed: 0,
             failed: 3,
@@ -666,44 +921,109 @@ mod tests {
         assert_eq!(r.success_rate(), 0.0);
     }
 
-    #[test]
-    fn test_quality_axes_weight_sums_to_one() {
-        // 验证 evaluate_quality 中的权重之和约为 1.0
-        // 此测试聚焦于逻辑本身，无需异步
+    #[tokio::test]
+    async fn weights_sum_to_one_and_probe_dominates() {
         let spec = make_test_spec("sum_check");
-        let regression = RegressionTestResult {
-            tool_id: "sum_check".into(),
-            unit_tests_passed: true,
-            integration_tests_passed: true,
+        let manager = manager_with_noop_executors().await;
+
+        let report =
+            manager.evaluate_quality(&spec, &clean_regression("sum_check"), &probe_passed()).await;
+        let weight_sum: f64 = report.axes.iter().map(|a| a.weight).sum();
+        assert!(
+            (weight_sum - 1.0).abs() < 1e-9,
+            "weights must sum to 1.0, got {weight_sum}"
+        );
+
+        let probe_axis = report.axes.iter().find(|a| a.name == "behavioral_probe").expect("axis");
+        assert!(
+            probe_axis.weight >= 0.3,
+            "the only direct evidence must carry the most weight"
+        );
+
+        // 满分：探针通过 + 测试全绿 + 规范齐备
+        assert!(report.overall_score > 0.9, "{}", report.overall_score);
+        assert!(report.integration_tests_passed);
+    }
+
+    #[tokio::test]
+    async fn failed_probe_fails_the_registration_bar() {
+        let manager = manager_with_noop_executors().await;
+        let spec = make_test_spec("probe_fail");
+        let report =
+            manager.evaluate_quality(&spec, &clean_regression("probe_fail"), &probe_failed()).await;
+
+        assert_eq!(report.axis_score("behavioral_probe"), 0.0);
+        assert!(
+            !report.meets_registration_bar(),
+            "a tool whose probe failed must not be registered (score {:.3})",
+            report.overall_score
+        );
+        assert!(!report.integration_tests_passed);
+        assert!(report.recommendations.iter().any(|r| r.contains("behavioral failure")));
+        assert!(
+            report.rejection_reason().is_some_and(|r| r.contains("behavioral probe failed")),
+            "the rejection reason must name the hard failure"
+        );
+    }
+
+    #[tokio::test]
+    async fn unavailable_probe_is_neutral_not_full_marks() {
+        let manager = manager_with_noop_executors().await;
+        let spec = make_test_spec("probe_na");
+        let report = manager
+            .evaluate_quality(&spec, &clean_regression("probe_na"), &probe_unavailable())
+            .await;
+
+        assert_eq!(report.axis_score("behavioral_probe"), 0.5);
+        assert!(
+            !report.integration_tests_passed,
+            "unverified is not verified"
+        );
+        assert!(report.recommendations.iter().any(|r| r.contains("measuring tool executor")));
+    }
+
+    #[tokio::test]
+    async fn missing_harness_does_not_score_full_test_coverage() {
+        let manager = manager_with_noop_executors().await;
+        let spec = make_test_spec("no_harness");
+        let with_harness =
+            manager.evaluate_quality(&spec, &clean_regression("no_harness"), &probe_passed()).await;
+        let without_harness = manager
+            .evaluate_quality(&spec, &no_harness_regression("no_harness"), &probe_passed())
+            .await;
+
+        assert_eq!(with_harness.axis_score("test_coverage"), 1.0);
+        assert_eq!(without_harness.axis_score("test_coverage"), 0.5);
+        assert!(
+            without_harness.overall_score < with_harness.overall_score,
+            "no tests must score strictly lower than green tests"
+        );
+        assert!(without_harness.recommendations.iter().any(|r| r.contains("test_command")));
+    }
+
+    #[tokio::test]
+    async fn failing_declared_tests_block_registration_even_with_a_green_probe() {
+        let manager = manager_with_noop_executors().await;
+        let spec = make_test_spec("tests_fail");
+        let failing = RegressionTestResult {
+            tool_id: "tests_fail".into(),
+            harness_available: true,
+            unit_tests_passed: false,
             total_tests: 1,
-            passed: 1,
-            failed: 0,
-            duration_ms: 10,
-            failures: vec![],
+            passed: 0,
+            failed: 1,
+            duration_ms: 5,
+            failures: vec!["boom".into()],
         };
+        let report = manager.evaluate_quality(&spec, &failing, &probe_passed()).await;
 
-        // 可以通过检查总分是加权平均值来验证权重分布正确
-        // 总分是各轴分数的加权平均。
-        let test_score = regression.success_rate(); // 1.0
-        let spec_score = spec_completeness_score(&spec); // 0.9 (capability + criteria + 对象契约)
-        let stability_score = if regression.failed == 0 { 0.95 } else { 0.7 }; // 0.95
-        let efficiency_score = 0.5; // no test command
-
-        let expected = test_score * 0.35
-            + spec_score * 0.25
-            + stability_score * 0.25
-            + efficiency_score * 0.15;
-        let weight_sum: f64 = 0.35 + 0.25 + 0.25 + 0.15;
+        // 加权分可以很高（探针通过了），但声明的测试失败是硬失败。
         assert!(
-            (weight_sum - 1.0).abs() < 0.001,
-            "Weights should sum to 1.0, got {}",
-            weight_sum
+            !report.meets_registration_bar(),
+            "a declared-but-failing test suite must block registration (score {:.3})",
+            report.overall_score
         );
-        assert!(
-            (expected - 0.8875).abs() < 0.001,
-            "Expected score ~0.8875, got {}",
-            expected
-        );
+        assert!(report.rejection_reason().is_some_and(|r| r.contains("hard failure")));
     }
 
     #[test]
@@ -743,7 +1063,7 @@ mod tests {
             overall_score: overall,
             axes: vec![
                 QualityAxis {
-                    name: "test_coverage".into(),
+                    name: "behavioral_probe".into(),
                     score: 1.0,
                     weight: 0.35,
                 },
@@ -755,6 +1075,7 @@ mod tests {
             ],
             unit_tests_passed: true,
             integration_tests_passed: true,
+            blockers: vec![],
             recommendations: vec![],
         }
     }
@@ -806,36 +1127,6 @@ mod tests {
             0.0,
             "Empty spec must score 0.0"
         );
-    }
-
-    #[test]
-    fn test_quality_recommendations_for_failures() {
-        let _spec = make_test_spec("failing_tool");
-        let regression = RegressionTestResult {
-            tool_id: "failing_tool".into(),
-            unit_tests_passed: false,
-            integration_tests_passed: false,
-            total_tests: 2,
-            passed: 0,
-            failed: 2,
-            duration_ms: 100,
-            failures: vec!["test_a failed".into(), "test_b failed".into()],
-        };
-
-        let test_score = regression.success_rate();
-        let stability_score = if regression.failed == 0 {
-            0.95
-        } else if regression.success_rate() > 0.8 {
-            0.7
-        } else {
-            0.4
-        };
-
-        assert!(
-            stability_score < 0.5,
-            "High failure rate should reduce stability"
-        );
-        assert_eq!(test_score, 0.0);
     }
 
     #[tokio::test]
@@ -903,5 +1194,144 @@ mod tests {
 
         assert_eq!(bundle.sub_sops.len(), 1);
         assert_eq!(bundle.required_tools.len(), 1);
+    }
+
+    // ── 探针语义 ────────────────────────────────────────────────
+
+    /// 不报告测量的执行器 → `Unavailable`，绝不能算通过。
+    struct PlainExecutor;
+
+    #[async_trait::async_trait]
+    impl sisyphus_types::ToolExecutor for PlainExecutor {
+        async fn execute(
+            &self,
+            _tool_id: &str,
+            _args: Vec<u8>,
+            _fuel: u64,
+        ) -> Result<Vec<u8>, sisyphus_types::TypesError> {
+            Ok(b"looks fine".to_vec())
+        }
+    }
+
+    /// 报告测量但返回错误载荷的执行器 → `Failed`。
+    struct ErrorPayloadExecutor;
+
+    #[async_trait::async_trait]
+    impl sisyphus_types::ToolExecutor for ErrorPayloadExecutor {
+        async fn execute(
+            &self,
+            _tool_id: &str,
+            _args: Vec<u8>,
+            _fuel: u64,
+        ) -> Result<Vec<u8>, sisyphus_types::TypesError> {
+            Ok(b"{\"error\":\"bad input\"}".to_vec())
+        }
+
+        async fn execute_measured(
+            &self,
+            tool_id: &str,
+            args: Vec<u8>,
+            fuel: u64,
+        ) -> Result<
+            (Vec<u8>, Option<sisyphus_types::ExecutionMeasurement>),
+            sisyphus_types::TypesError,
+        > {
+            let data = self.execute(tool_id, args, fuel).await?;
+            Ok((
+                data,
+                Some(sisyphus_types::ExecutionMeasurement {
+                    fuel_consumed: 1_000,
+                    duration_ms: 1,
+                    peak_memory_bytes: None,
+                }),
+            ))
+        }
+    }
+
+    async fn manager_with_executor(
+        executor: Arc<dyn sisyphus_types::ToolExecutor>,
+    ) -> SelfProgrammingManager {
+        let state_store = Arc::new(
+            sisyphus_mem::MfsStore::new("sqlite::memory:", &sisyphus_types::CacheConfig::default())
+                .await
+                .expect("state store"),
+        );
+        let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.expect("pool");
+        let sop_store = Arc::new(sisyphus_mem::SopSqlStore::new(pool).await.expect("sop store"));
+
+        struct NoopTest;
+        #[async_trait::async_trait]
+        impl sisyphus_types::TestExecutor for NoopTest {
+            async fn run_test(
+                &self,
+                _command: &str,
+                _workdir: Option<&str>,
+            ) -> Result<sisyphus_types::TestResult, sisyphus_types::TypesError> {
+                Ok(sisyphus_types::TestResult {
+                    success: true,
+                    stdout: String::new(),
+                    stderr: String::new(),
+                    exit_code: 0,
+                    duration_ms: 0,
+                    error_summary: None,
+                })
+            }
+        }
+
+        let exec_manager = Arc::new(crate::ExecutionManager::new(
+            state_store,
+            sop_store,
+            executor,
+            Arc::new(NoopTest),
+            Arc::new(crate::intervention_manager::InterventionManager::new()),
+            Arc::new(crate::internalization_manager::InternalizationManager::new(
+                Arc::new(sisyphus_tools_llm::metis::DummyLlmClient),
+                Arc::new(sisyphus_knowledge::AssetManager::new(
+                    ".omo/test_self_programming_unit".into(),
+                )),
+            )),
+            None,
+        ));
+
+        SelfProgrammingManager::new(
+            Arc::new(sisyphus_tools_llm::metis::DummyLlmClient),
+            exec_manager,
+            Arc::new(sisyphus_knowledge::AssetManager::new(
+                ".omo/test_self_programming_unit".into(),
+            )),
+            None,
+        )
+    }
+
+    async fn manager_with_noop_executors() -> SelfProgrammingManager {
+        manager_with_executor(Arc::new(PlainExecutor)).await
+    }
+
+    #[tokio::test]
+    async fn probe_without_measurement_is_unavailable() {
+        let manager = manager_with_noop_executors().await;
+        let outcome = manager.probe_tool(&make_test_spec("plain")).await;
+        assert!(
+            matches!(outcome, ProbeOutcome::Unavailable { .. }),
+            "{outcome:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn probe_detects_error_payload() {
+        let manager = manager_with_executor(Arc::new(ErrorPayloadExecutor)).await;
+        let outcome = manager.probe_tool(&make_test_spec("err")).await;
+        match outcome {
+            ProbeOutcome::Failed { reason } => assert!(reason.contains("bad input"), "{reason}"),
+            other => panic!("expected Failed, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn tools_dir_can_be_redirected() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let manager = manager_with_noop_executors().await;
+        manager.set_tools_dir(dir.path());
+        assert_eq!(manager.tools_dir(), dir.path());
     }
 }

@@ -35,6 +35,11 @@ impl<H: Hasher> std::io::Write for HashWriter<'_, H> {
 /// 并支持可选的事件流。
 pub struct Executor {
     pub concurrency_limit: Arc<tokio::sync::Semaphore>,
+    /// 当前配置的并发上限。`Semaphore::available_permits()` 会被在途节点
+    /// 占用，不能当作上限使用，因此单独跟踪目标值以支持热重载。
+    configured_limit: Arc<std::sync::atomic::AtomicUsize>,
+    /// 上次缩减上限时因许可被占用而没能回收的数量（见 [`Executor::apply_config`]）。
+    pending_reduction: Arc<std::sync::atomic::AtomicUsize>,
     pub graph_cache: Arc<dashmap::DashMap<String, Arc<SOPGraph>>>,
     pub prediction_cache: Arc<dashmap::DashMap<String, String>>,
     pub output_cache: Arc<crate::performance::OutputCache>,
@@ -54,6 +59,8 @@ impl Executor {
     ) -> Self {
         Self {
             concurrency_limit: Arc::new(tokio::sync::Semaphore::new(16)), // Default limit: 16 concurrent nodes
+            configured_limit: Arc::new(std::sync::atomic::AtomicUsize::new(16)),
+            pending_reduction: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
             graph_cache: Arc::new(dashmap::DashMap::new()),
             prediction_cache: Arc::new(dashmap::DashMap::new()),
             output_cache: Arc::new(crate::performance::OutputCache::new(1000)),
@@ -64,23 +71,50 @@ impl Executor {
         }
     }
 
-    /// 运行时应用执行器配置（热重载支持）。
+    /// 运行时应用执行器配置（热重载）。
     ///
-    /// 更新：
-    /// - `concurrency_limit`：最大并行任务数（重建 Semaphore）
-    /// - `default_fuel`：默认 WASM fuel 上限（记录供执行时使用）
+    /// 通过增删 [`Semaphore`] 的许可数调整并发上限，**不替换** `Arc`：
+    /// 已经在执行的批次持有的是同一个闸门，因此热重载对在途执行同样生效
+    /// （旧实现只打一行 “restart required” 日志，配置根本不生效）。
     ///
-    /// 注意：由于 `Arc<Semaphore>` 的 `DerefMut` 不可用，此处仅记录日志，
-    /// 实际并发上限变更需通过重启生效。Double-Buffer 模式已预留架构位置，
-    /// 未来可用 `ExecutionManager::apply_executor_config_hot_reload()` 原子替换。
+    /// 缩减上限时若部分许可正被在途节点占用，[`Semaphore::forget_permits`]
+    /// 无法立即回收它们；差额会记在 `pending_reduction` 上，由后续
+    /// `apply_config` 调用继续回收，直到与目标值一致。
     pub fn apply_config(&self, executor_config: &sisyphus_types::ExecutorConfig) {
-        let new_limit = executor_config.max_concurrent_tasks.max(1);
+        let target = executor_config.max_concurrent_tasks.max(1);
+        let previous = self.configured_limit.swap(target, std::sync::atomic::Ordering::AcqRel);
+        let pending = self.pending_reduction.swap(0, std::sync::atomic::Ordering::AcqRel);
+
+        // 闸门的实际容量 = 已配置上限 + 上次没能回收的缩减量。
+        let nominal = previous.saturating_add(pending);
+        if target > nominal {
+            self.concurrency_limit.add_permits(target - nominal);
+        } else if target < nominal {
+            let want = nominal - target;
+            let removed = self.concurrency_limit.forget_permits(want);
+            let leftover = want.saturating_sub(removed);
+            if leftover > 0 {
+                self.pending_reduction.store(leftover, std::sync::atomic::Ordering::Release);
+                tracing::info!(
+                    target,
+                    pending = leftover,
+                    "Executor concurrency limit reduced partially; \
+                     remaining permits are held by in-flight nodes"
+                );
+            }
+        }
 
         tracing::info!(
-            max_concurrent_tasks = new_limit,
+            max_concurrent_tasks = target,
             default_fuel = executor_config.default_fuel,
-            "Executor config applied (runtime limit updated via restart)"
+            "Executor config applied (concurrency limit updated in place)"
         );
+    }
+
+    /// 当前配置的并发上限（不等于 `Semaphore::available_permits()`：
+    /// 后者会被在途节点占用）。
+    pub fn configured_limit(&self) -> usize {
+        self.configured_limit.load(std::sync::atomic::Ordering::Acquire)
     }
 
     /// 执行 SOP 图谱的公开入口。
@@ -99,6 +133,8 @@ impl Executor {
     ) -> BoxFuture<'static, Result<Arc<ExecutionContext>, CoreError>> {
         let executor = Arc::new(Executor {
             concurrency_limit: Arc::clone(&self.concurrency_limit),
+            configured_limit: Arc::clone(&self.configured_limit),
+            pending_reduction: Arc::clone(&self.pending_reduction),
             graph_cache: Arc::clone(&self.graph_cache),
             prediction_cache: Arc::clone(&self.prediction_cache),
             output_cache: Arc::clone(&self.output_cache),

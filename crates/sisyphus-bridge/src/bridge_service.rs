@@ -587,6 +587,14 @@ impl MySisyphusBridge {
             .strategic_manager
             .apply_cognitive_loop_config(config_snapshot.cognitive_loop.clone());
 
+        // ── 自编程产物目录接线 ────────────────────────────────────────
+        // 自编程编译出的 wasm 必须落在沙箱读取的同一个目录，否则行为探针
+        // 加载不到刚编译的模块（`WasmCompiler` 的默认值只是 `tools`）。
+        kernel
+            .strategic_manager
+            .sp_manager
+            .set_tools_dir(PathBuf::from(&config_snapshot.sandbox.wasm_tools_dir));
+
         strategic_executor.set_kernel(Arc::downgrade(&kernel));
 
         // Create and populate the agent registry
@@ -882,8 +890,18 @@ impl MySisyphusBridge {
             }
 
             // ── Auto-fix: spawn background repair when faults exceed 3 ──
-            if total > 3 {
-                self.chaos_auto_fix_triggered.store(true, Ordering::Relaxed);
+            //
+            // `compare_exchange` 而不是 `store`：chaos 故障是并发的，
+            // 两个请求可能同时越过阈值，各自 spawn 一个自编程循环
+            // （每次都要 LLM + rustc + 沙箱，成本极高）。
+            // 标志位是**闩锁**语义（`chaos_auto_fix_was_triggered` 表示
+            // “是否曾触发”），因此任务结束后不复位——一次性安全阀。
+            if total > 3
+                && self
+                    .chaos_auto_fix_triggered
+                    .compare_exchange(false, true, Ordering::AcqRel, Ordering::Relaxed)
+                    .is_ok()
+            {
                 let kernel = self.kernel.clone();
                 let enabled = self.chaos_enabled;
                 let ft_for_spawn = fault_type.clone();

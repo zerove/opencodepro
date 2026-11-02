@@ -1,3 +1,14 @@
+//! 自编程端到端测试：真实编译 + 真实沙箱执行 + 真实质量评估。
+//!
+//! 与旧的 e2e 测试的关键区别：
+//! - 生成的代码按真实契约写（`pub fn run(input: &str) -> Result<String, String>`）；
+//! - `WasmCompiler` 真的调用 rustc 产出 wasm；
+//! - 探针通过 `WasmToolExecutor` 真的在 wasmtime 里执行一次；
+//! - 断言产物落盘、事件顺序、以及工具确实可被沙箱调用。
+//!
+//! 如果 rustc 的 wasm 目标没装，测试会跳过（并说明原因）——那是环境缺失，
+//! 不是代码缺陷。
+
 use async_trait::async_trait;
 use sisyphus_core::execution_manager::ExecutionManager;
 use sisyphus_core::SelfProgrammingManager;
@@ -7,66 +18,35 @@ use sisyphus_mem::SisyphusStore;
 use sisyphus_tools_llm::{circuit_breaker::CircuitBreaker, LlmClient};
 use sisyphus_types::errors::TypesError;
 use sisyphus_types::TestResult;
-use sisyphus_types::{
-    node::{TestExecutor, ToolExecutor},
-    tools::ToolSpec,
-    CognitiveEvent,
-};
+use sisyphus_types::{node::TestExecutor, tools::ToolSpec, CognitiveEvent};
 use std::sync::Arc;
 use tokio::sync::mpsc;
 
-/// A simple mock executor that implements both Tool and Test traits.
-struct MockExecutor;
-
-#[async_trait]
-impl ToolExecutor for MockExecutor {
-    async fn execute(
-        &self,
-        _tool_id: &str,
-        _args: Vec<u8>,
-        _fuel: u64,
-    ) -> Result<Vec<u8>, TypesError> {
-        Ok(b"mock success".to_vec())
-    }
-}
-
-#[async_trait]
-impl TestExecutor for MockExecutor {
-    async fn run_test(
-        &self,
-        _command: &str,
-        _workdir: Option<&str>,
-    ) -> Result<TestResult, TypesError> {
-        Ok(TestResult {
-            success: true,
-            stdout: "Test passed".into(),
-            stderr: "".into(),
-            exit_code: 0,
-            duration_ms: 10,
-            error_summary: None,
-        })
-    }
-}
-
-/// A programmable LLM client that returns pre-defined responses based on the prompt.
+/// 按系统提示分派的假 LLM：代码生成返回实现，语义审计返回满分。
 struct ProgrammableLlmClient {
-    pub responses: std::collections::HashMap<String, String>,
+    code: String,
 }
 
 #[async_trait]
 impl LlmClient for ProgrammableLlmClient {
     async fn chat(
         &self,
-        _sys: &str,
+        system: &str,
         prompt: &str,
         _stream: bool,
     ) -> Result<String, sisyphus_types::TypesError> {
-        for (key, val) in &self.responses {
-            if prompt.contains(key) {
-                return Ok(val.clone());
-            }
+        if system.contains("Tool Auditor") {
+            return Ok("0.95".into());
         }
-        Ok("I don't know how to do that.".into())
+        if system.contains("Rust Engineer") {
+            // 证明提示词真的把规范喂给了模型（而不是硬编码模板）。
+            assert!(
+                prompt.contains("SymmetryAnalysis"),
+                "the coder prompt must carry the capability from the spec"
+            );
+            return Ok(format!("```rust\n{}\n```", self.code));
+        }
+        Ok("unexpected agent".into())
     }
 
     async fn generate(&self, _prompt: &str) -> Result<String, sisyphus_types::TypesError> {
@@ -86,49 +66,70 @@ impl LlmClient for ProgrammableLlmClient {
     }
 }
 
+/// 不执行任何测试命令的占位测试执行器（spec 未声明 test_command）。
+struct NoopTestExecutor;
+
+#[async_trait]
+impl TestExecutor for NoopTestExecutor {
+    async fn run_test(
+        &self,
+        _command: &str,
+        _workdir: Option<&str>,
+    ) -> Result<TestResult, TypesError> {
+        Ok(TestResult {
+            success: true,
+            stdout: String::new(),
+            stderr: String::new(),
+            exit_code: 0,
+            duration_ms: 0,
+            error_summary: None,
+        })
+    }
+}
+
+/// 生成代码：std-only，入口签名符合契约。
+const GENERATED_CODE: &str = r#"
+pub fn run(input: &str) -> Result<String, String> {
+    if input.is_empty() {
+        return Err("empty input".to_string());
+    }
+    let score = 0.95_f64;
+    Ok(format!(
+        "{{\"status\":\"success\",\"symmetry_score\":{score},\"input_len\":{}}}",
+        input.len()
+    ))
+}
+"#;
+
 #[tokio::test]
 async fn test_self_evolution_e2e() {
-    // 1. Setup LLM with a specific Rust tool implementation for the gap
-    let mut responses = std::collections::HashMap::new();
+    if !sisyphus_intel::wasm_compiler::wasm_target_installed().await {
+        eprintln!("skipping e2e_self_evolution: wasm32-unknown-unknown is not installed");
+        return;
+    }
 
-    let rust_code = r#"
-        use sisyphus_wasm_sdk::{SisyphusTool, ToolContext, ToolOutput};
-        use serde_json::json;
+    // 1. LLM：生成代码 + 语义审计满分
+    let llm_client = Arc::new(ProgrammableLlmClient {
+        code: GENERATED_CODE.to_string(),
+    });
 
-        struct SymmetryAnalyzer;
-
-        impl SisyphusTool for SymmetryAnalyzer {
-            fn execute(&self, ctx: &ToolContext) -> Result<ToolOutput, String> {
-                Ok(ToolOutput::json(json!({
-                    "status": "success",
-                    "symmetry_score": 0.95,
-                    "analysis": "High symmetry detected"
-                })))
-            }
-        }
-
-        fn main() {
-            sisyphus_wasm_sdk::register_tool(SymmetryAnalyzer);
-        }
-    "#;
-
-    responses.insert(
-        "SymmetryAnalysis".to_string(),
-        format!("```rust\n{}\n```", rust_code),
-    );
-    let llm_client = Arc::new(ProgrammableLlmClient { responses });
-
-    // 2. Setup persistence
+    // 2. 持久化
     let store = SisyphusStore::new("sqlite::memory:", &sisyphus_types::Config::default())
         .await
         .expect("Store init failed");
 
-    // 3. Setup core components
+    // 3. 真实的 WASM 执行器，工具目录指向临时目录
+    let tools_dir = tempfile::tempdir().expect("tools dir");
+    let wasm_executor = Arc::new(
+        sisyphus_sandbox::WasmToolExecutor::with_config(Some(tools_dir.path().to_path_buf()), None)
+            .expect("wasm executor"),
+    );
+
     let execution_manager = Arc::new(ExecutionManager::new(
         store.state.clone(),
         store.sop.clone(),
-        Arc::new(MockExecutor),
-        Arc::new(MockExecutor),
+        wasm_executor,
+        Arc::new(NoopTestExecutor),
         Arc::new(sisyphus_core::intervention_manager::InterventionManager::new()),
         Arc::new(
             sisyphus_core::internalization_manager::InternalizationManager::new(
@@ -152,8 +153,10 @@ async fn test_self_evolution_e2e() {
         asset_manager.clone(),
         None,
     );
+    // 编译产物必须落在沙箱读取的同一个目录，探针才能看到它。
+    sp_manager.set_tools_dir(tools_dir.path());
 
-    // 4. Define a tool gap
+    // 4. 工具缺口
     let gap = ToolGap {
         gap_id: "gap_123".into(),
         failing_node: "node_123".into(),
@@ -161,33 +164,32 @@ async fn test_self_evolution_e2e() {
         suggested_tool_spec: ToolSpec {
             tool_id: "symmetry_analyzer".into(),
             required_capability: "SymmetryAnalysis".into(),
-            expected_input: "Symmetry Analysis of object X".into(),
-            expected_output: "Symmetry score and analysis".into(),
+            expected_input: serde_json::json!({"object": "X"}),
+            expected_output: serde_json::json!({"status": "string", "symmetry_score": "number"}),
             success_criteria: "Score between 0 and 1".into(),
             test_command: None,
             workdir: None,
         },
     };
 
-    // 5. Monitor the event stream
+    // 5. 事件流
     let (tx, mut rx) = mpsc::unbounded_channel::<CognitiveEvent>();
     sp_manager.set_event_sender(tx);
 
-    // 6. Execute the self-programming loop
+    // 6. 执行自编程循环
     let resolve_handle = tokio::spawn(async move { sp_manager.resolve_gap(gap).await });
 
-    // 7. Assert the event sequence
     let mut events = Vec::new();
     while let Some(event) = rx.recv().await {
-        events.push(event.clone());
-        if let CognitiveEvent::ToolDeployed { .. } = event {
+        let done = matches!(event, CognitiveEvent::ToolDeployed { .. });
+        events.push(event);
+        if done {
             break;
         }
     }
 
     resolve_handle.await.expect("Join error").expect("Self-programming failed");
 
-    // Verify the events were emitted in order
     assert!(
         events.iter().any(|e| matches!(e, CognitiveEvent::ToolGenerationStarted { .. })),
         "Should start generation"
@@ -199,6 +201,35 @@ async fn test_self_evolution_e2e() {
     assert!(
         events.iter().any(|e| matches!(e, CognitiveEvent::ToolDeployed { .. })),
         "Should deploy tool"
+    );
+
+    // 7. 产物必须真实存在且能被沙箱再次调用
+    let artifact = tools_dir.path().join("symmetry_analyzer.wasm");
+    assert!(
+        artifact.exists(),
+        "compiled artifact missing at {}",
+        artifact.display()
+    );
+
+    let bytes = std::fs::read(&artifact).expect("artifact readable");
+    let info = sisyphus_intel::inspect_wasm(&bytes).expect("artifact satisfies the ABI");
+    assert!(info.has_export("memory", sisyphus_intel::ExportKind::Memory));
+    assert!(info.has_export("execute", sisyphus_intel::ExportKind::Func));
+
+    let out = execution_manager
+        .tool_router
+        .default
+        .execute(
+            "symmetry_analyzer",
+            br#"{"object":"X"}"#.to_vec(),
+            1_000_000,
+        )
+        .await
+        .expect("deployed tool must be callable");
+    let text = String::from_utf8_lossy(&out);
+    assert!(
+        text.contains("symmetry_score"),
+        "unexpected tool output: {text}"
     );
 
     println!("E2E Self-Evolution verified successfully!");

@@ -15,18 +15,28 @@
 cargo build --release -p sisyphus-cli
 ```
 
-编译产物位于 `target/release/sisyphus-cli`。可将其软链或加入系统 `PATH`。
+编译产物位于 `target/release/sisyphus`（crate 名是 `sisyphus-cli`，**二进制名是
+`sisyphus`**）。可将其软链或加入系统 `PATH`。
 
-### 2. 工作区初始化
-在您的项目根目录下运行初始化命令：
+### 2. 配置与数据目录
+
+引擎**没有** `sisyphus init` 之类的“工作区初始化”命令（`sisyphus init` 是从模板
+生成新 Rust 项目，与引擎配置无关）。配置按以下顺序生效：
+
+1. 内置默认值（`sisyphus_types::Config::default()`）；
+2. `--config <path>`（或环境变量 `SISYPHUS_CONFIG`）指定的 TOML 文件；
+3. `SISYPHUS_*` 环境变量覆盖（见 [配置文档](../book/src/configuration.md)）。
+
+需要一份可编辑的配置模板时，直接复制仓库根目录的 `config.example.toml`：
 
 ```bash
-sisyphus init
+cp config.example.toml sisyphus.toml
+sisyphus --config sisyphus.toml tool list
 ```
 
-该命令将自动为您创建：
-- `.sisyphus/` 目录：存放本地状态数据库、知识资产与缓存。
-- `sisyphus.toml`：单机配置文件模板（包含 LLM 供应商设置、认知循环参数、沙箱配置）。
+数据目录由 `--data-dir`（或 `SISYPHUS_DATA_DIR`）决定；未指定时取
+`cache.database_url` 的父目录，默认配置下是 `data/`（`sqlite:data/sisyphus.db`）。
+待办与会话分别落在该目录下的 `todos.json`、`sessions.json`。
 
 ### 3. 查看与自举预置工具（离线可用）
 ```bash
@@ -44,7 +54,7 @@ sisyphus tool bootstrap local/log_analyzer   # 查看预置模板的输入/输�
 通过终端一键启动基于 Ratatui 的精美 TUI 界面：
 
 ```bash
-sisyphus-cli --interactive
+sisyphus --interactive
 ```
 
 ### 核心功能区：

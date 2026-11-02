@@ -9,8 +9,8 @@ use sisyphus_core::self_programming_manager::{QualityAxis, QualityReport, Regres
 fn make_result(passed: u64, total: u64) -> RegressionTestResult {
     RegressionTestResult {
         tool_id: "t1".to_string(),
+        harness_available: total > 0,
         unit_tests_passed: total == passed,
-        integration_tests_passed: total == passed,
         total_tests: total,
         passed,
         failed: total.saturating_sub(passed),
@@ -67,7 +67,7 @@ fn result_field_access() {
     let r = make_result(5, 10);
     assert_eq!(r.tool_id, "t1");
     assert!(!r.unit_tests_passed);
-    assert!(!r.integration_tests_passed);
+    assert!(r.harness_available);
     assert_eq!(r.total_tests, 10);
     assert_eq!(r.passed, 5);
     assert_eq!(r.failed, 5);
@@ -79,8 +79,8 @@ fn result_field_access() {
 fn result_with_failures() {
     let r = RegressionTestResult {
         tool_id: "t".to_string(),
+        harness_available: true,
         unit_tests_passed: false,
-        integration_tests_passed: false,
         total_tests: 3,
         passed: 1,
         failed: 2,
@@ -164,6 +164,7 @@ fn quality_report_construction() {
         ],
         unit_tests_passed: true,
         integration_tests_passed: false,
+        blockers: vec![],
         recommendations: vec!["add tests".to_string()],
     };
     assert_eq!(r.tool_id, "t");
@@ -182,6 +183,7 @@ fn quality_report_empty_axes() {
         axes: vec![],
         unit_tests_passed: true,
         integration_tests_passed: true,
+        blockers: vec![],
         recommendations: vec![],
     };
     assert!(r.axes.is_empty());
@@ -197,6 +199,7 @@ fn quality_report_clone() {
         axes: vec![],
         unit_tests_passed: true,
         integration_tests_passed: true,
+        blockers: vec![],
         recommendations: vec!["r1".to_string()],
     };
     let r2 = r.clone();
@@ -226,8 +229,8 @@ fn success_rate_three_of_seven() {
 fn success_rate_max_u64() {
     let r = RegressionTestResult {
         tool_id: "t".into(),
+        harness_available: true,
         unit_tests_passed: true,
-        integration_tests_passed: true,
         total_tests: u64::MAX,
         passed: u64::MAX - 1,
         failed: 1,
@@ -242,8 +245,8 @@ fn success_rate_max_u64() {
 fn result_with_zero_duration() {
     let r = RegressionTestResult {
         tool_id: "instant".into(),
+        harness_available: true,
         unit_tests_passed: true,
-        integration_tests_passed: true,
         total_tests: 1,
         passed: 1,
         failed: 0,
@@ -258,8 +261,8 @@ fn result_with_zero_duration() {
 fn result_with_many_failures() {
     let r = RegressionTestResult {
         tool_id: "noisy".into(),
+        harness_available: true,
         unit_tests_passed: false,
-        integration_tests_passed: false,
         total_tests: 100,
         passed: 50,
         failed: 50,
@@ -274,8 +277,8 @@ fn result_with_many_failures() {
 fn result_unicode_tool_id() {
     let r = RegressionTestResult {
         tool_id: "工具-α".into(),
+        harness_available: true,
         unit_tests_passed: true,
-        integration_tests_passed: true,
         total_tests: 1,
         passed: 1,
         failed: 0,
@@ -325,6 +328,7 @@ fn quality_report_recommendations_unicode() {
         axes: vec![],
         unit_tests_passed: true,
         integration_tests_passed: true,
+        blockers: vec![],
         recommendations: vec!["改进性能".into(), "增加文档".into()],
     };
     assert_eq!(r.recommendations.len(), 2);
@@ -339,6 +343,7 @@ fn quality_report_empty_recommendations() {
         axes: vec![],
         unit_tests_passed: true,
         integration_tests_passed: true,
+        blockers: vec![],
         recommendations: vec![],
     };
     assert!(r.recommendations.is_empty());

@@ -1033,6 +1033,44 @@ fn test_token_budget_config_serde_roundtrip() {
     assert!((back.reserve_ratio - 0.2).abs() < 1e-9);
 }
 
+/// 回归：生产路径曾从不调用 `TokenBudgetTracker::record()`，`usage` 恒为 0，
+/// 于是有限的 cap 永远触发不了 `should_skip_llm()`——整个预算配置是死配置。
+/// 认知循环现在在每个 LLM 阶段后记账，这里锁定「记账 → 触发跳过」的闭环。
+#[tokio::test]
+async fn test_token_budget_usage_is_recorded_by_llm_stages() {
+    use sisyphus_types::config::sub::TokenBudgetConfig;
+
+    let manager = setup_manager(vec![0.9]).await;
+    manager.apply_cognitive_loop_config(CognitiveLoopConfig {
+        max_iterations: 1,
+        convergence_threshold: 0.01,
+        llm_stage_timeout_secs: 30,
+        adaptive_depth: sisyphus_types::config::AdaptiveDepthConfig::default(),
+        anomaly_detector: sisyphus_types::config::AnomalyDetectorConfig::default(),
+        token_budget: TokenBudgetConfig {
+            cap: Some(10_000),
+            reserve_ratio: 0.5,
+        },
+    });
+
+    assert_eq!(manager.token_budget.read().usage(), 0);
+    assert!(!manager.token_budget.read().should_skip_llm());
+
+    // payload 可见时按字节估算（4000 字节 ≈ 1000 token）
+    manager.record_llm_stage_usage(Some(4_000));
+    assert_eq!(manager.token_budget.read().usage(), 1_000);
+
+    // payload 不可见时退回固定估算，并最终越过 cap*(1-reserve) 阈值
+    for _ in 0..5 {
+        manager.record_llm_stage_usage(None);
+    }
+    assert!(
+        manager.token_budget.read().should_skip_llm(),
+        "usage {} must eventually cross the reserve threshold",
+        manager.token_budget.read().usage()
+    );
+}
+
 // ---------------------------------------------------------------------------
 // 参数顺序回归：goal_text 与 project_id 不得错位（评审 P0-0）
 // ---------------------------------------------------------------------------

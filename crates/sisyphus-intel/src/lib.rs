@@ -9,6 +9,7 @@ pub mod pattern_analyzer;
 pub mod tool_coder;
 pub mod tool_verifier;
 pub mod wasm_compiler;
+pub mod wasm_validate;
 use std::sync::Arc;
 
 pub use sisyphus_types::errors::IntelError;
@@ -48,7 +49,8 @@ pub use synthesis::{
 };
 pub use tool_coder::ToolCoder;
 pub use tool_verifier::{ToolVerifier, VerificationReport};
-pub use wasm_compiler::WasmCompiler;
+pub use wasm_compiler::{artifact_path, WasmCompiler, DEFAULT_TOOLS_DIR, TOOLS_DIR_ENV};
+pub use wasm_validate::{inspect_wasm, ExportKind, WasmExport, WasmMemoryLimits, WasmModuleInfo};
 
 pub use deep_reflector::{
     CognitiveCorrection, CorrectionPriority, DeepDeviationReport, DeepReflector,

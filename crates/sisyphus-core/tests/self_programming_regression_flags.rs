@@ -1,20 +1,25 @@
 //! 回归测试结果标记的正确性（`run_regression_tests`）。
 //!
-//! 回归背景：早期实现把 `unit_tests_passed` 写成
+//! 回归背景一：早期实现把 `unit_tests_passed` 写成
 //! `failures.iter().any(|f| f.contains("Unit test"))`，语义正好相反——
 //! 有失败才 `true`、全绿反而 `false`，并把错误状态灌进
 //! `CognitiveEvent::QualityEvaluation` 与 TUI 仪表盘。
 //!
+//! 回归背景二：没有 `test_command` 时旧实现自己拼一个
+//! `cargo test --test {tool_id}_test`，跑不通还记成通过（"soft pass"）。
+//! 于是「没有测试」与「测试全绿」在质量报告里无法区分。
+//!
 //! 本文件用可控的假测试执行器锁定正确语义：
-//! - 全绿 → 两个标记都为 true
-//! - 单元失败 → unit=false, integration=true
-//! - 集成失败 → unit=true, integration=false
+//! - 声明了命令且通过 → `harness_available` + `unit_tests_passed` 都为 true
+//! - 声明了命令但失败 → `unit_tests_passed = false`
+//! - 没声明命令 → `harness_available = false`，且**不执行任何命令**
 //! - 失败信息文本里出现 "Unit test" 字样不得影响标记（防回退到嗅探）
 
 use async_trait::async_trait;
 use sisyphus_core::self_programming_manager::SelfProgrammingManager;
 use sisyphus_types::tools::ToolSpec;
 use sisyphus_types::{TestExecutor, TestResult, ToolExecutor, TypesError};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
 struct NoopToolExecutor;
@@ -31,12 +36,13 @@ impl ToolExecutor for NoopToolExecutor {
     }
 }
 
-/// 按命令内容决定成败的假测试执行器。
+/// 按命令内容决定成败的假测试执行器，并记录调用次数。
 ///
-/// - 命令含 `unit-fail` → 单元测试失败
-/// - 命令含 `integration-fail` → 集成测试失败
+/// - 命令含 `fail` → 失败
 /// - 其它 → 成功
-struct ScriptedTestExecutor;
+struct ScriptedTestExecutor {
+    calls: AtomicUsize,
+}
 
 #[async_trait]
 impl TestExecutor for ScriptedTestExecutor {
@@ -45,12 +51,8 @@ impl TestExecutor for ScriptedTestExecutor {
         command: &str,
         _workdir: Option<&str>,
     ) -> Result<TestResult, TypesError> {
-        let is_integration = command.contains("sisyphus-tests");
-        let should_fail = if is_integration {
-            command.contains("integration-fail")
-        } else {
-            command.contains("unit-fail")
-        };
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        let should_fail = command.contains("fail");
         // 注意：失败摘要刻意包含 "Unit test"/"Integration test" 字样，
         // 用来证明标记不依赖文本嗅探。
         Ok(TestResult {
@@ -72,7 +74,7 @@ impl TestExecutor for ScriptedTestExecutor {
     }
 }
 
-async fn manager() -> SelfProgrammingManager {
+async fn manager() -> (SelfProgrammingManager, Arc<ScriptedTestExecutor>) {
     let state_store = Arc::new(
         sisyphus_mem::MfsStore::new("sqlite::memory:", &sisyphus_types::CacheConfig::default())
             .await
@@ -80,11 +82,14 @@ async fn manager() -> SelfProgrammingManager {
     );
     let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.expect("pool");
     let sop_store = Arc::new(sisyphus_mem::SopSqlStore::new(pool).await.expect("sop store"));
+    let test_executor = Arc::new(ScriptedTestExecutor {
+        calls: AtomicUsize::new(0),
+    });
     let exec_manager = Arc::new(sisyphus_core::ExecutionManager::new(
         state_store,
         sop_store,
         Arc::new(NoopToolExecutor),
-        Arc::new(ScriptedTestExecutor),
+        test_executor.clone(),
         Arc::new(sisyphus_core::intervention_manager::InterventionManager::new()),
         Arc::new(
             sisyphus_core::internalization_manager::InternalizationManager::new(
@@ -96,32 +101,38 @@ async fn manager() -> SelfProgrammingManager {
         ),
         None,
     ));
-    SelfProgrammingManager::new(
+    let manager = SelfProgrammingManager::new(
         Arc::new(sisyphus_tools_llm::metis::DummyLlmClient),
         exec_manager,
         Arc::new(sisyphus_knowledge::AssetManager::new(
             ".omo/test_regression_flags".into(),
         )),
         None,
-    )
+    );
+    (manager, test_executor)
 }
 
-fn spec_with_unit_cmd(cmd: &str) -> ToolSpec {
+fn spec_with_cmd(cmd: Option<&str>) -> ToolSpec {
     ToolSpec {
         tool_id: "flag_probe".into(),
         required_capability: "probe regression flags".into(),
         expected_input: serde_json::json!({}),
         expected_output: serde_json::json!({}),
         success_criteria: "flags are reported truthfully".into(),
-        test_command: Some(cmd.to_string()),
+        test_command: cmd.map(str::to_string),
         workdir: None,
     }
 }
 
 #[tokio::test]
-async fn all_green_run_reports_both_passed() {
-    let m = manager().await;
-    let r = m.run_regression_tests(&spec_with_unit_cmd("cargo test unit-ok"), "asset").await;
+async fn green_command_reports_harness_and_pass() {
+    let (m, _calls) = manager().await;
+    let r = m.run_regression_tests(&spec_with_cmd(Some("cargo test ok")), "asset").await;
+
+    assert!(
+        r.harness_available,
+        "a declared command must be reported as available"
+    );
     assert!(
         r.failures.is_empty(),
         "unexpected failures: {:?}",
@@ -129,64 +140,76 @@ async fn all_green_run_reports_both_passed() {
     );
     assert!(
         r.unit_tests_passed,
-        "all-green run must report unit tests passed"
+        "all-green run must report the suite passed"
     );
-    assert!(
-        r.integration_tests_passed,
-        "all-green run must report integration tests passed"
-    );
+    assert_eq!(r.total_tests, 1);
     assert_eq!(r.passed, r.total_tests);
     assert_eq!(r.failed, 0);
 }
 
 #[tokio::test]
-async fn unit_failure_flips_only_the_unit_flag() {
-    let m = manager().await;
-    let r = m.run_regression_tests(&spec_with_unit_cmd("cargo test unit-fail"), "asset").await;
-    assert!(!r.unit_tests_passed, "unit failure must be reported");
+async fn failing_command_is_reported_truthfully() {
+    let (m, _calls) = manager().await;
+    let r = m.run_regression_tests(&spec_with_cmd(Some("cargo test fail")), "asset").await;
+
+    assert!(r.harness_available);
     assert!(
-        r.integration_tests_passed,
-        "integration suite still green must stay true"
+        !r.unit_tests_passed,
+        "a failing command must be reported as failed"
     );
     assert_eq!(r.failed, 1);
     assert_eq!(r.failures.len(), 1);
 }
 
 #[tokio::test]
-async fn integration_failure_flips_only_the_integration_flag() {
-    // 集成命令由 tool_id 拼装（`--test {tool_id}_test`），
-    // 因此把 tool_id 设为 integration-fail 即可让假执行器失败。
-    let m = manager().await;
-    let mut spec = spec_with_unit_cmd("cargo test unit-ok");
-    spec.tool_id = "integration-fail".into();
-    let r = m.run_regression_tests(&spec, "asset").await;
+async fn missing_command_runs_nothing_and_reports_no_harness() {
+    let (m, calls) = manager().await;
+    let r = m.run_regression_tests(&spec_with_cmd(None), "asset").await;
+
+    assert!(!r.harness_available, "no declared command means no harness");
     assert!(
-        !r.integration_tests_passed,
-        "integration failure must be reported"
+        !r.unit_tests_passed,
+        "no tests is not the same as passing tests"
     );
-    assert!(r.unit_tests_passed, "unit suite still green must stay true");
-    assert_eq!(r.failed, 1);
+    assert_eq!(r.total_tests, 0);
+    assert_eq!(r.passed, 0);
+    assert_eq!(r.failed, 0);
+    assert_eq!(
+        calls.calls.load(Ordering::SeqCst),
+        0,
+        "the runner must not invent a command when none is declared"
+    );
+    assert!(r.failures.iter().any(|f| f.contains("No test_command")));
+}
+
+#[tokio::test]
+async fn empty_command_is_treated_as_missing() {
+    let (m, calls) = manager().await;
+    let r = m.run_regression_tests(&spec_with_cmd(Some("   ")), "asset").await;
+
+    assert!(!r.harness_available);
+    assert_eq!(calls.calls.load(Ordering::SeqCst), 0);
+    assert!(r.failures.iter().any(|f| f.contains("empty")));
 }
 
 #[tokio::test]
 async fn failure_text_containing_markers_does_not_flip_green_flags() {
     // 假执行器在失败时把 "Unit test"/"Integration test" 塞进摘要；
-    // 全绿路径下摘要为空，但我们要证明标记不是靠文本判定的：
-    // 单元失败时文本含两种标记，integration 标记仍必须为 true。
-    let m = manager().await;
-    let r = m.run_regression_tests(&spec_with_unit_cmd("cargo test unit-fail"), "asset").await;
+    // 我们要证明标记不是靠文本判定的。
+    let (m, _calls) = manager().await;
+    let r = m.run_regression_tests(&spec_with_cmd(Some("cargo test fail")), "asset").await;
     let joined = r.failures.join("\n");
     assert!(joined.contains("Unit test"));
     assert!(
-        r.integration_tests_passed,
-        "text containing 'Integration test' must not flip the integration flag"
+        !r.unit_tests_passed,
+        "the flag must come from the exit status, not the text"
     );
 }
 
 #[tokio::test]
 async fn failed_count_never_underflows() {
-    let m = manager().await;
-    let r = m.run_regression_tests(&spec_with_unit_cmd("cargo test unit-ok"), "asset").await;
+    let (m, _calls) = manager().await;
+    let r = m.run_regression_tests(&spec_with_cmd(Some("cargo test ok")), "asset").await;
     assert_eq!(r.failed, r.total_tests.saturating_sub(r.passed));
     assert!(r.passed <= r.total_tests);
 }

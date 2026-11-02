@@ -287,33 +287,39 @@ impl MySisyphusBridge {
         let _req = request.into_inner();
         let (tx, rx) = mpsc::unbounded_channel::<sisyphus_bridge_api::AnomalyReport>();
 
-        // Access the AnomalyDetector from the kernel's strategic manager
+        // Access the AnomalyLog from the kernel's strategic manager.
+        // 异常观测的可观测性来源是战略管理器上的旁路日志（AnomalyLog），
+        // 检测器本身只做 per-run 控制决策。
+        let anomaly_log = self.kernel.strategic_manager.anomaly_log.clone();
         let detector = self.kernel.strategic_manager.anomaly_detector.clone();
         let event_bus = self.event_bus.clone();
 
-        // Spawn a background task that periodically polls the detector
+        // Spawn a background task that periodically pushes new anomalies.
+        // 只推送新检测到的异常：日志里的 `seq` 单调递增，用它做游标
+        // 就不会每 5 秒把同一批异常重发一遍。
         tokio::spawn(async move {
+            let mut last_seq = 0u64;
             loop {
-                // Generate current anomaly report
-                let report = detector.lock().generate_report();
-                for anomaly in &report.anomalies {
-                    let severity_str = match anomaly.severity {
+                let observed = anomaly_log.recent(None);
+                for entry in observed {
+                    if entry.seq < last_seq {
+                        continue;
+                    }
+                    last_seq = entry.seq.saturating_add(1);
+                    let severity_str = match entry.anomaly.severity {
                         sisyphus_core::AnomalySeverity::Low => "low",
                         sisyphus_core::AnomalySeverity::Medium => "medium",
                         sisyphus_core::AnomalySeverity::High => "high",
                         sisyphus_core::AnomalySeverity::Critical => "critical",
                     };
                     let proto_anomaly = sisyphus_bridge_api::AnomalyReport {
-                        node_name: anomaly.node_name.clone(),
+                        node_name: entry.anomaly.node_name.clone(),
                         severity: severity_str.into(),
-                        metric: anomaly.metric.clone(),
-                        observed: anomaly.observed,
-                        expected: anomaly.expected,
-                        description: anomaly.description.clone(),
-                        timestamp: std::time::SystemTime::now()
-                            .duration_since(std::time::UNIX_EPOCH)
-                            .unwrap_or_default()
-                            .as_secs(),
+                        metric: entry.anomaly.metric.clone(),
+                        observed: entry.anomaly.observed,
+                        expected: entry.anomaly.expected,
+                        description: entry.anomaly.description.clone(),
+                        timestamp: entry.detected_at,
                     };
                     if tx.send(proto_anomaly).is_err() {
                         return; // client disconnected
@@ -321,6 +327,7 @@ impl MySisyphusBridge {
                 }
 
                 // Also bridge-publish a compact status event
+                let report = detector.lock().generate_report();
                 let _ = event_bus.send(sisyphus_bridge_api::BridgeEvent {
                     event: Some(sisyphus_bridge_api::bridge_event::Event::OpUpdate(
                         sisyphus_bridge_api::OperationUpdate {

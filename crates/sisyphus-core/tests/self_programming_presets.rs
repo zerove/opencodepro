@@ -8,7 +8,7 @@
 
 use async_trait::async_trait;
 use sisyphus_core::self_programming_manager::{
-    PresetToolTemplates, RegressionTestResult, SelfProgrammingManager,
+    PresetToolTemplates, ProbeOutcome, RegressionTestResult, SelfProgrammingManager,
 };
 use sisyphus_intel::ToolGap;
 use sisyphus_types::tools::ToolSpec;
@@ -88,13 +88,21 @@ async fn build_manager() -> SelfProgrammingManager {
 fn clean_regression(tool_id: &str) -> RegressionTestResult {
     RegressionTestResult {
         tool_id: tool_id.to_string(),
+        harness_available: true,
         unit_tests_passed: true,
-        integration_tests_passed: true,
         total_tests: 2,
         passed: 2,
         failed: 0,
         duration_ms: 10,
         failures: vec![],
+    }
+}
+
+/// 沙箱探针通过的占位结论（本文件只验证质量评估，不真的跑工具）。
+fn probe_passed() -> ProbeOutcome {
+    ProbeOutcome::Passed {
+        output_len: 64,
+        fuel_consumed: 1_200,
     }
 }
 
@@ -128,7 +136,7 @@ async fn preset_passes_quality_gate_with_clean_regression() {
     let manager = build_manager().await;
     for spec in PresetToolTemplates::all() {
         let regression = clean_regression(&spec.tool_id);
-        let report = manager.evaluate_quality(&spec, &regression).await;
+        let report = manager.evaluate_quality(&spec, &regression, &probe_passed()).await;
         assert!(
             report.overall_score >= 0.6,
             "{} scored {:.3}, below the 0.6 skill-registration gate",
@@ -136,7 +144,15 @@ async fn preset_passes_quality_gate_with_clean_regression() {
             report.overall_score
         );
         assert!(report.unit_tests_passed);
-        assert!(report.integration_tests_passed);
+        assert!(
+            report.integration_tests_passed,
+            "the probe passed, so integration must be true"
+        );
+        assert!(
+            report.blockers.is_empty(),
+            "unexpected blockers: {:?}",
+            report.blockers
+        );
         assert!(
             report.recommendations.is_empty(),
             "{} should need no remediation: {:?}",
@@ -154,7 +170,9 @@ async fn preset_without_success_criteria_falls_below_gate() {
         success_criteria: String::new(),
         ..spec
     };
-    let report = manager.evaluate_quality(&hollow, &clean_regression(&hollow.tool_id)).await;
+    let report = manager
+        .evaluate_quality(&hollow, &clean_regression(&hollow.tool_id), &probe_passed())
+        .await;
     // 缺少成功标准的工具无法被判定“是否正确”，即使测试全绿也不得自动注册。
     assert!(
         !report.meets_registration_bar(),
@@ -170,7 +188,9 @@ async fn preset_without_success_criteria_falls_below_gate() {
 async fn preset_with_clean_regression_clears_registration_bar() {
     let manager = build_manager().await;
     for spec in PresetToolTemplates::all() {
-        let report = manager.evaluate_quality(&spec, &clean_regression(&spec.tool_id)).await;
+        let report = manager
+            .evaluate_quality(&spec, &clean_regression(&spec.tool_id), &probe_passed())
+            .await;
         assert!(
             report.meets_registration_bar(),
             "{} must clear the bar: overall {:.3}, spec {:.2}",
@@ -188,22 +208,26 @@ async fn failing_regression_lowers_preset_quality() {
     let spec = PresetToolTemplates::get_preset("local/log_analyzer").expect("preset");
     let failing = RegressionTestResult {
         tool_id: spec.tool_id.clone(),
+        harness_available: true,
         unit_tests_passed: false,
-        integration_tests_passed: false,
         total_tests: 2,
         passed: 0,
         failed: 2,
         duration_ms: 10,
         failures: vec!["unit failed".into(), "integration failed".into()],
     };
-    let report = manager.evaluate_quality(&spec, &failing).await;
+    let report = manager.evaluate_quality(&spec, &failing, &probe_passed()).await;
+    // 探针能通过，但声明的测试全红 → 硬失败，不得自动注册。
     assert!(
-        report.overall_score < 0.6,
+        !report.meets_registration_bar(),
         "score {:.3}",
         report.overall_score
     );
     assert!(!report.unit_tests_passed);
-    assert!(!report.integration_tests_passed);
+    assert!(
+        !report.blockers.is_empty(),
+        "failing tests must be a blocker"
+    );
     assert!(report.recommendations.iter().any(|r| r.contains("Fix failing tests")));
 }
 

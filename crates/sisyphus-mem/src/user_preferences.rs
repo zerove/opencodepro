@@ -145,12 +145,17 @@ impl UserPreferenceStore {
 
     /// Clear all preferences for this project.
     ///
-    /// Currently a no-op stub: the underlying [`MfsStore`] does not expose
-    /// prefix-scoped deletion. A full implementation would maintain a side
-    /// index of preference keys and remove them individually.
-    pub fn clear_preferences(&self) -> Result<()> {
-        // MfsStore doesn't have a prefix-based delete.
-        // In a real system, we'd maintain a list of preference keys.
+    /// 先 `flush` 把待写队列落盘，再按 `pref:` 前缀枚举并逐个删除。
+    /// 顺序很重要：`list_keys_with_prefix` 只查 L2，未落盘的偏好会漏掉，
+    /// 于是「清空成功」但值还在（旧实现干脆什么都不做，直接返回 `Ok`）。
+    pub async fn clear_preferences(&self) -> Result<()> {
+        self.store.flush().await?;
+        let keys = self.store.list_keys_with_prefix(Some(&self.project_id), self.prefix).await?;
+        for key in &keys {
+            self.store.delete_state(&self.project_id, key).await?;
+        }
+        // 让删除对随后的读取立即可见（L2 是批量异步写的）。
+        self.store.flush().await?;
         Ok(())
     }
 }
@@ -230,5 +235,50 @@ mod tests {
 
         let inferred = pref_store.infer_preferences_from_feedback(feedback).unwrap();
         assert_eq!(inferred, vec!["dark_mode", "concise"]);
+    }
+
+    #[tokio::test]
+    async fn clear_preferences_removes_every_key() {
+        let (pref_store, store) = setup_store().await;
+        pref_store.record_preference("theme", json!("dark"), 1.0).await.unwrap();
+        pref_store.record_preference("lang", json!("en"), 1.0).await.unwrap();
+        pref_store.record_preference("font", json!("Mono"), 1.0).await.unwrap();
+
+        pref_store.clear_preferences().await.unwrap();
+
+        for key in ["theme", "lang", "font"] {
+            assert_eq!(
+                pref_store.get_preference(key).await.unwrap(),
+                None,
+                "preference `{key}` must be gone after clear_preferences"
+            );
+        }
+        // 底层键也必须真的删掉，而不只是从 L1 里消失。
+        let keys = store.list_keys_with_prefix(Some("test_project"), "pref:").await.unwrap();
+        assert!(keys.is_empty(), "leftover keys after clear: {keys:?}");
+    }
+
+    #[tokio::test]
+    async fn clear_preferences_is_scoped_to_its_project() {
+        let (pref_store, store) = setup_store().await;
+        let other = UserPreferenceStore::new(store.clone(), "other_project".into());
+
+        pref_store.record_preference("theme", json!("dark"), 1.0).await.unwrap();
+        other.record_preference("theme", json!("light"), 1.0).await.unwrap();
+
+        pref_store.clear_preferences().await.unwrap();
+
+        assert_eq!(pref_store.get_preference("theme").await.unwrap(), None);
+        assert_eq!(
+            other.get_preference("theme").await.unwrap(),
+            Some(json!("light")),
+            "clearing one project must not touch another"
+        );
+    }
+
+    #[tokio::test]
+    async fn clear_preferences_on_empty_store_is_ok() {
+        let (pref_store, _) = setup_store().await;
+        pref_store.clear_preferences().await.unwrap();
     }
 }

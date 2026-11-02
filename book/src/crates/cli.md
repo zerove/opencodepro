@@ -6,8 +6,10 @@ CLI 二进制提供了从终端直接访问 Sisyphus 工具与代理的能力，
 
 ```bash
 cargo build --release -p sisyphus-cli
-./target/release/sisyphus-cli --help
+./target/release/sisyphus --help
 ```
+
+> 注意：crate 名是 `sisyphus-cli`，产物二进制名是 `sisyphus`。
 
 ## 命令结构
 
@@ -20,7 +22,7 @@ sisyphus [OPTIONS] <COMMAND>
 | 标志 | 环境变量 | 说明 |
 |------|-----|-------------|
 | `-i`, `--interactive` | | 启动交互式 TUI 模式 |
-| `-b`, `--bridge` | `SISYPHUS_BRIDGE` | Bridge gRPC 地址（默认：`http://[::1]:50051`） |
+| `-b`, `--bridge` | `SISYPHUS_BRIDGE_ADDRESS` | Bridge gRPC 地址（默认：`http://[::1]:50051`） |
 | `--data-dir` | `SISYPHUS_DATA_DIR` | 待办/会话存储的数据目录 |
 | `--config` | `SISYPHUS_CONFIG` | TOML 配置文件路径 |
 

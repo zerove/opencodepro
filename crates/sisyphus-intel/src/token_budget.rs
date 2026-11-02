@@ -1,11 +1,22 @@
 //! Token budget tracking for LLM calls.
 //!
 //! Provides a shared, thread-safe tracker that counts cumulative LLM token
-//! usage and exposes "budget remaining" semantics. The reflect/evolve
-//! stages query `TokenBudgetTracker::should_skip_llm()` before invoking
-//! the LLM; when remaining budget is below the configured threshold,
-//! the stage falls back to deterministic logic instead of issuing a
-//! costly LLM call.
+//! usage and exposes "budget remaining" semantics.
+//!
+//! ## Where it is consulted
+//!
+//! The cognitive loop records an estimate after every LLM-backed stage
+//! (simulate / reflect / critique) and consults
+//! [`TokenBudgetTracker::should_skip_llm`] before the *optional* critique
+//! call: when remaining budget is below the configured reserve, that stage
+//! is skipped and the loop continues with its deterministic fallback.
+//! Mandatory stages (reflection itself) are not gated — silently degrading
+//! them would change the loop's semantics rather than its cost.
+//!
+//! Token counts are estimates: [`sisyphus_types::LlmClient`] returns text
+//! only and does not surface provider-reported `usage`, so callers pass the
+//! payload size (bytes / 4) or fall back to
+//! [`DEFAULT_ESTIMATED_TOKENS_PER_CALL`].
 //!
 //! ## Use
 //!

@@ -19,7 +19,7 @@ use sisyphus_mem::MfsStore;
 use sisyphus_types::SOPGraph;
 use sisyphus_types::{CognitiveEvent, CognitiveMetrics, ExecutionTrace};
 
-use crate::cognitive_loop_v2::{AdaptiveDepthController, AnomalyDetector};
+use crate::cognitive_loop_v2::{AdaptiveDepthController, AnomalyDetector, AnomalyLog};
 use crate::{CoreError, ExecutionContext, ExecutionEvent, ExecutionStatus, Executor, NodeOutput};
 
 // OpenTelemetry span helpers
@@ -493,7 +493,7 @@ impl StrategicManager {
                 }
 
                 // 作为战略提案正式提交给路线图
-                let _ = self
+                match self
                     .roadmap_manager
                     .submit_strategic_shift(
                         project_id.unwrap_or("default"),
@@ -501,13 +501,36 @@ impl StrategicManager {
                         cluster.evidence_count,
                         &cluster.suggested_shift,
                     )
-                    .await;
-
-                tracing::warn!(
-                    cluster = %cluster.goal_cluster,
-                    mode = %cluster.common_failure_mode,
-                    "Strategic failure cluster detected! Proposal submitted: {}", cluster.suggested_shift
-                );
+                    .await
+                {
+                    Ok(()) => tracing::warn!(
+                        cluster = %cluster.goal_cluster,
+                        mode = %cluster.common_failure_mode,
+                        "Strategic failure cluster detected! Proposal submitted: {}",
+                        cluster.suggested_shift
+                    ),
+                    // 提案没落库必须可见：此前用 `let _ = ...` 吞掉错误，
+                    // 日志仍然宣称 “Proposal submitted”，运维完全无法发现
+                    // 人在回路（human-in-the-loop）的入口已经失效。
+                    Err(e) => {
+                        tracing::error!(
+                            cluster = %cluster.goal_cluster,
+                            mode = %cluster.common_failure_mode,
+                            error = %e,
+                            "Failed to submit strategic shift proposal"
+                        );
+                        if let Some(ref tx) = stream_tx {
+                            let _ = tx.send(CognitiveEvent::CognitiveStep {
+                                step: "StrategicShiftSubmitFailed".into(),
+                                message: format!(
+                                    "Proposal for cluster `{}` was not persisted: {e}",
+                                    cluster.goal_cluster
+                                ),
+                                metrics: None,
+                            });
+                        }
+                    },
+                }
             }
         }
 
@@ -702,7 +725,8 @@ impl StrategicManager {
                     }),
                 },
             );
-            self.intelligence_manager
+            let prediction = self
+                .intelligence_manager
                 .intel
                 .simulator
                 .simulate(
@@ -714,7 +738,10 @@ impl StrategicManager {
                 )
                 .instrument(tracing::info_span!("simulate", iteration))
                 .await
-                .map_err(|e| CoreError::Internal(e.to_string()))?
+                .map_err(|e| CoreError::Internal(e.to_string()))?;
+            // 仿真内部构造提示词，调用方看不到 payload 大小 → 用固定估算。
+            self.record_llm_stage_usage(None);
+            prediction
         };
 
         // 1.5 逻辑仿真（白盒）
@@ -854,6 +881,7 @@ impl StrategicManager {
             project_id.unwrap_or("default").to_string(),
             event_tx.clone(),
             anomaly_detector.clone(),
+            Arc::clone(&self.anomaly_log),
             Some(self.execution_manager.cognitive_trace.clone()),
         );
 
@@ -961,11 +989,15 @@ impl StrategicManager {
                 records: vec![],
             }
         } else {
-            self.intelligence_manager
+            let reflection = self
+                .intelligence_manager
                 .reflect_on_trace(&trace, prediction, final_ctx)
                 .instrument(tracing::info_span!("reflect_on_trace", iteration))
                 .await
-                .map_err(|e| CoreError::Internal(e.to_string()))?
+                .map_err(|e| CoreError::Internal(e.to_string()))?;
+            // 反思提示词的主体就是执行轨迹，用它的字节数估算输入侧成本。
+            self.record_llm_stage_usage(Some(trace.len()));
+            reflection
         };
 
         // ── 深度反思分析 ──────────────────────────────────────
@@ -1054,6 +1086,10 @@ impl StrategicManager {
                 .critique_reflection(&reflection, prediction, llm_stage_timeout_secs)
                 .await
                 .map_err(|e| CoreError::Internal(e.to_string()))?;
+            // 批判提示词包含序列化后的反思报告，按它的字节数估算。
+            let critique_payload =
+                serde_json::to_string(&reflection).map(|s| s.len()).unwrap_or_default();
+            self.record_llm_stage_usage(Some(critique_payload));
             reflection
                 .suggested_improvements
                 .push(format!("[CRITIQUE] {}", critique.suggested_refinement));
@@ -1319,6 +1355,7 @@ fn spawn_trace_recorder(
     project_id: String,
     user_event_tx: Option<mpsc::UnboundedSender<ExecutionEvent>>,
     anomaly_det: Arc<Mutex<AnomalyDetector>>,
+    anomaly_log: Arc<AnomalyLog>,
     cognitive_trace: Option<Arc<crate::execution_manager::CognitiveTraceBuffer>>,
 ) {
     tokio::spawn(async move {
@@ -1331,12 +1368,13 @@ fn spawn_trace_recorder(
                     duration_ms,
                     ..
                 } => {
-                    anomaly_det.lock().observe(
+                    let anomalies = anomaly_det.lock().observe(
                         node_name,
                         *fuel_consumed as u64,
                         *duration_ms as u64,
                         true,
                     );
+                    anomaly_log.record(&anomalies, &sop_id_clone);
                 },
                 ExecutionEvent::NodeFailed {
                     node_name,
@@ -1344,12 +1382,13 @@ fn spawn_trace_recorder(
                     duration_ms,
                     ..
                 } => {
-                    anomaly_det.lock().observe(
+                    let anomalies = anomaly_det.lock().observe(
                         node_name,
                         *fuel_consumed as u64,
                         *duration_ms as u64,
                         false,
                     );
+                    anomaly_log.record(&anomalies, &sop_id_clone);
                 },
                 _ => {},
             }

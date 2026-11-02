@@ -780,14 +780,41 @@ pub(super) async fn chaos_status_handler(
 }
 
 pub(super) async fn anomaly_report_handler(
-    State(_state): State<RestApiState>,
+    State(state): State<RestApiState>,
     req: axum::extract::Query<AnomalyRequest>,
 ) -> impl IntoResponse {
-    // Note: Anomaly detection is available via sisyphus_intel::AnomalyDetector.
-    // The kernel's intelligence_manager has access to it, but requires downcasting.
-    // For now, return empty list; extend IntelligenceManager trait if needed.
-    let _ = req; // suppress unused warning
-    (StatusCode::OK, Json(Vec::<AnomalyReport>::new())).into_response()
+    // 真实数据来源：认知循环运行时把 `AnomalyDetector::observe` 检测到的
+    // 异常写入 `StrategicManager.anomaly_log`（带 `sop_id` 作用域）。
+    // 此前这里直接读共享检测器上挂的 `recent` 缓冲，且从未被写入。
+    let requested_scope = req.sop_id.trim();
+    let scope = if requested_scope.is_empty() {
+        None
+    } else {
+        Some(requested_scope)
+    };
+    let anomaly_log = state.bridge.kernel().strategic_manager.anomaly_log.clone();
+    let observed = anomaly_log.recent(scope);
+
+    let reports: Vec<AnomalyReport> = observed
+        .into_iter()
+        .map(|entry| AnomalyReport {
+            node_name: entry.anomaly.node_name,
+            severity: match entry.anomaly.severity {
+                sisyphus_core::AnomalySeverity::Low => "low",
+                sisyphus_core::AnomalySeverity::Medium => "medium",
+                sisyphus_core::AnomalySeverity::High => "high",
+                sisyphus_core::AnomalySeverity::Critical => "critical",
+            }
+            .into(),
+            metric: entry.anomaly.metric,
+            observed: entry.anomaly.observed,
+            expected: entry.anomaly.expected,
+            description: entry.anomaly.description,
+            timestamp: entry.detected_at,
+        })
+        .collect();
+
+    (StatusCode::OK, Json(reports)).into_response()
 }
 
 pub(super) async fn delete_workspace_handler(

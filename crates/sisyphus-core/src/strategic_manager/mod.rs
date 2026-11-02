@@ -16,7 +16,7 @@ use sisyphus_intel::{
 use sisyphus_types::config::CognitiveLoopConfig;
 use sisyphus_types::{ExecutionTrace, SOPGraph};
 
-use crate::cognitive_loop_v2::{AdaptiveDepthController, AnomalyDetector};
+use crate::cognitive_loop_v2::{AdaptiveDepthController, AnomalyDetector, AnomalyLog};
 use crate::{
     execution_manager::ExecutionManager, CoreError, ExecutionContext, IntelligenceManager,
 };
@@ -105,6 +105,11 @@ pub struct StrategicManager {
     pub deep_reflector: Arc<parking_lot::RwLock<DeepReflector>>,
     /// 认知循环 v2：运行时异常检测
     pub anomaly_detector: Arc<Mutex<AnomalyDetector>>,
+    /// 认知循环 v2：异常观测日志（`/api/anomaly` 与 gRPC 流的数据来源）。
+    ///
+    /// 与 `anomaly_detector` 分离：检测器是 per-run 的有状态基线，不能共享；
+    /// 这条只追加的旁路日志才承载对外可观测性。
+    pub anomaly_log: Arc<AnomalyLog>,
     /// 认知循环 v2：自适应深度控制
     pub depth_controller: AdaptiveDepthController,
     /// 反思/演进阶段 token 预算（review P2-8 step 2 接线）。
@@ -161,6 +166,7 @@ impl StrategicManager {
             )),
             deep_reflector: Arc::new(parking_lot::RwLock::new(DeepReflector::new())),
             anomaly_detector: Arc::new(Mutex::new(AnomalyDetector::default())),
+            anomaly_log: Arc::new(AnomalyLog::new()),
             depth_controller: AdaptiveDepthController::default(),
             token_budget: Arc::new(parking_lot::RwLock::new(TokenBudgetTracker::unbounded())),
         }
@@ -192,14 +198,15 @@ impl StrategicManager {
         );
 
         // 反思/演进阶段 token 预算（review P2-8 step 2 接线）。
-        // 配置变化时重建 tracker（reset 共享 Arc），保留累计 usage 与 cap 切换语义。
+        // 配置变化时重建 tracker：`*lock = new_tracker` 换掉的是锁内值，
+        // 共享的 `Arc<RwLock<TokenBudgetTracker>>` 句柄不变，因此所有持有
+        // 该句柄的调用方会立刻看到新的 cap/reserve。重建意味着累计 usage
+        // 归零——这符合「重新应用配置 = 重新开始计量」的语义。
         let tb = &cl.token_budget;
         let new_tracker = match tb.cap {
             Some(cap) => TokenBudgetTracker::new(cap, tb.reserve_ratio),
             None => TokenBudgetTracker::unbounded(),
         };
-        // 替换内部 tracker（保留旧 tracker 仍可读，但所有新检查走新实例）
-        // 使用 Arc::new 替换字段，旧引用继续观察历史 usage 直到 drop
         *self.token_budget.write() = new_tracker;
 
         let an_thresholds = {
@@ -222,6 +229,24 @@ impl StrategicManager {
             token_budget_reserve = tb.reserve_ratio,
             "Cognitive loop config applied"
         );
+    }
+
+    /// 记录一次 LLM 阶段的 token 消耗。
+    ///
+    /// `LlmClient` 只返回文本，不透出 provider 报的 `usage` 字段，因此这里
+    /// 按「实际 payload 字节数 / 4」估算（UTF-8 下中英文混排大致落在
+    /// 3-5 字节/token）；payload 在调用方不可见时退回
+    /// [`sisyphus_intel::token_budget::DEFAULT_ESTIMATED_TOKENS_PER_CALL`]。
+    ///
+    /// 这不是精确计费，但它让 `should_skip_llm()` 的预算语义真正生效：
+    /// 在此之前生产路径从不调用 `record()`，`usage` 恒为 0，有限的 cap
+    /// 永远触发不了跳过，整个预算配置是死配置。
+    pub(crate) fn record_llm_stage_usage(&self, payload_bytes: Option<usize>) {
+        let tokens = match payload_bytes {
+            Some(bytes) => (bytes as u64 / 4).max(1),
+            None => sisyphus_intel::token_budget::DEFAULT_ESTIMATED_TOKENS_PER_CALL,
+        };
+        self.token_budget.read().record(tokens);
     }
 
     fn build_cog_map(

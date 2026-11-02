@@ -143,6 +143,19 @@ pub enum IntelError {
     #[error("Node '{name}' not found in graph")]
     NodeNotFound { name: String },
 
+    // ── 自编程：编译与模块校验 ──
+    #[error("tool '{tool_id}' failed to compile to wasm: {reason}")]
+    CompilationFailed {
+        tool_id: String,
+        /// 面向人的一句话原因（含 rustc 摘要）。
+        reason: String,
+        /// rustc 的原始 stderr，用于回灌给代码生成器。
+        stderr: String,
+    },
+
+    #[error("tool '{tool_id}' produced an unusable wasm module: {reason}")]
+    InvalidModule { tool_id: String, reason: String },
+
     #[error("internal error: {0}")]
     Internal(String),
 }

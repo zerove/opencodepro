@@ -47,7 +47,9 @@ pub async fn handle_search(query: &str, num: usize) -> Result<()> {
     let results = sisyphus_cli::tools::web::websearch(query, num).await?;
     for (i, r) in results.iter().enumerate() {
         println!("[{i}] {} -- {}", r.title, r.url);
-        println!("    {}", &r.snippet[..r.snippet.len().min(120)]);
+        // 按字符数安全截断 snippet，避免字节索引切在 UTF-8 多字节字符边界上引发 panic。
+        let snippet: String = r.snippet.chars().take(120).collect();
+        println!("    {snippet}");
     }
     Ok(())
 }

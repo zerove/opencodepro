@@ -638,6 +638,24 @@ impl MfsStore {
         Ok(results)
     }
 
+    /// 删除一个 state 条目：L1 立即失效，L2 通过写队列异步删除。
+    ///
+    /// [`sisyphus_types::StateStore`] trait 没有删除语义（多数实现只追加），
+    /// 因此以 inherent 方法提供。需要「按前缀清理」的调用方先
+    /// [`MfsStore::list_keys_with_prefix`] 再逐个删除。
+    pub async fn delete_state(&self, project_id: &str, key: &str) -> Result<()> {
+        let full_key = format!("{project_id}:{key}");
+        {
+            let mut cache = self.l1.lock();
+            // 必须先失效 L1：否则下一次 get 会命中缓存，看起来没删掉。
+            let _ = cache.pop(&full_key);
+        }
+        self.write_tx
+            .send(WriteOp::Delete { key: full_key })
+            .map_err(|e| anyhow::anyhow!("Failed to queue state delete: {e}"))?;
+        Ok(())
+    }
+
     /// Persist a structured [`ExperienceEntry`] for later retrieval by
     /// the experience bank.
     pub async fn record_experience(

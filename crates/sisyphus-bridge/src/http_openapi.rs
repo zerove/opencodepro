@@ -4,6 +4,25 @@ use axum::response::IntoResponse;
 use axum::Json;
 
 pub(crate) async fn openapi_json() -> impl IntoResponse {
+    match build_document() {
+        Ok(doc) => Json(doc).into_response(),
+        // 文档构造失败是服务端缺陷，必须显式暴露成 500：
+        // 早期版本在这里用 `unreachable!`，一旦某块 json! 少了包装键，
+        // 请求会 panic 而不是返回可诊断的错误（且会被 no-panic 检查判红）。
+        Err(e) => (
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            format!("OpenAPI document construction failed: {e}"),
+        )
+            .into_response(),
+    }
+}
+
+/// 构造完整的 OpenAPI 文档。
+///
+/// 每个分块都必须带自己的顶层包装键（`paths` / `schemas`），
+/// 缺失说明分块写错了 —— 返回 `Err` 而不是静默丢弃，
+/// 否则 Swagger UI 会莫名少掉一整批端点。
+fn build_document() -> Result<serde_json::Value, String> {
     // 这份文档不能用单个 `json!` 字面量表达：serde_json 的 muncher 对每个 key
     // 都吃掉一层宏展开深度，而 lib.rs 固定了 `#![recursion_limit = "256"]`。
     // 一份完整的 OpenAPI 文档（全部路径 + 全部 schema）远超这个上限，
@@ -910,11 +929,11 @@ pub(crate) async fn openapi_json() -> impl IntoResponse {
             "/api/anomaly": {
                 "get": {
                     "summary": "Anomaly reports for an SOP",
-                    "description": "Anomaly detection lives in sisyphus_intel::AnomalyDetector behind the IntelligenceManager trait, which the bridge cannot downcast, so this endpoint currently returns an empty array. The sop_id query parameter is accepted but unused.",
+                    "description": "Returns the anomalies detected by the cognitive loop's AnomalyDetector (fuel, duration and error-rate deviations), newest last. The detector keeps a bounded buffer of the most recent detections; results are scoped to the supplied sop_id. An empty array means the loop observed no anomalies for that run.",
                     "operationId": "getAnomalyReports",
-                    "parameters": [{"name": "sop_id", "in": "query", "required": true, "schema": {"type": "string"}, "description": "SOP to analyse; accepted but not currently applied"}],
+                    "parameters": [{"name": "sop_id", "in": "query", "required": true, "schema": {"type": "string"}, "description": "Cognitive-loop run to report on (the sop_id passed to run_cognitive_loop)"}],
                     "responses": {
-                        "200": {"description": "Anomaly reports (currently always an empty array)", "content": {"application/json": {"schema": {"type": "array", "items": {"$ref": "#/components/schemas/AnomalyReport"}}}}}
+                        "200": {"description": "Anomaly reports for the run (possibly empty)", "content": {"application/json": {"schema": {"type": "array", "items": {"$ref": "#/components/schemas/AnomalyReport"}}}}}
                     }
                 }
             },
@@ -1012,15 +1031,18 @@ pub(crate) async fn openapi_json() -> impl IntoResponse {
         chunk: serde_json::Value,
         key: &str,
         into: &mut serde_json::Map<String, serde_json::Value>,
-    ) {
+    ) -> Result<(), String> {
         match chunk.get(key).and_then(serde_json::Value::as_object) {
-            Some(block) => into.extend(block.iter().map(|(k, v)| (k.clone(), v.clone()))),
-            None => unreachable!("每个分块的顶层包装键恒为 {key}"),
+            Some(block) => {
+                into.extend(block.iter().map(|(k, v)| (k.clone(), v.clone())));
+                Ok(())
+            },
+            None => Err(format!("OpenAPI 分块缺少顶层包装键 `{key}`")),
         }
     }
     let mut all_paths = serde_json::Map::new();
     for chunk in path_chunks {
-        flatten(chunk, "paths", &mut all_paths);
+        flatten(chunk, "paths", &mut all_paths)?;
     }
 
     let mut schema_chunks: Vec<serde_json::Value> = Vec::new();
@@ -1946,10 +1968,10 @@ pub(crate) async fn openapi_json() -> impl IntoResponse {
 
     let mut all_schemas = serde_json::Map::new();
     for chunk in schema_chunks {
-        flatten(chunk, "schemas", &mut all_schemas);
+        flatten(chunk, "schemas", &mut all_schemas)?;
     }
 
-    Json(serde_json::json!({
+    Ok(serde_json::json!({
         "openapi": "3.1.0",
         "info": {
             "title": "Sisyphus Bridge REST API",

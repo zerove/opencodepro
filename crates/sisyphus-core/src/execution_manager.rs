@@ -158,15 +158,12 @@ impl ExecutionManager {
 
     /// 运行时应用执行器配置（热重载支持）。
     ///
-    /// 修改 `concurrency_limit`：通过 Double-Buffer 模式原子更新，
-    /// 不重建 `Arc<Semaphore>`，避免全局引用计数暴涨。
-    pub fn apply_executor_config(&mut self, executor_config: &sisyphus_types::ExecutorConfig) {
-        // Double-Buffer: 保留旧 Semaphore 引用直到新值完成替换
-        let new_limit = executor_config.max_concurrent_tasks.max(1);
-        let new_sem = Arc::new(tokio::sync::Semaphore::new(new_limit));
-        let old = Arc::clone(&self.executor.concurrency_limit);
-        self.executor.concurrency_limit = new_sem;
-        drop(old); // Refcount decremented — old slots freed
+    /// 委托给 [`Executor::apply_config`]：就地增删信号量许可，因此在途执行
+    /// 也会立刻看到新的并发上限。旧实现通过替换 `Arc<Semaphore>` 实现，
+    /// 只能影响之后新建的批次，且要求 `&mut self`——而内核持有的是
+    /// `Arc<ExecutionManager>`，实际上永远调不到。
+    pub fn apply_executor_config(&self, executor_config: &sisyphus_types::ExecutorConfig) {
+        self.executor.apply_config(executor_config);
     }
 
     /// 启动认知决策异步持久化 writer：每个记录事件写入 SQL `cognitive_traces` 表。

@@ -15,8 +15,8 @@ fn test_self_programming_quality_evaluation_matrix() {
     // 构造一个完美的回归测试结果
     let perfect_regression = RegressionTestResult {
         tool_id: "auto_tool/parser".to_string(),
+        harness_available: true,
         unit_tests_passed: true,
-        integration_tests_passed: true,
         total_tests: 4,
         passed: 4,
         failed: 0,

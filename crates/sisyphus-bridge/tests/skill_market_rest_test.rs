@@ -165,13 +165,15 @@ async fn test_share_experience_flow() {
     let app = setup().await;
 
     // Sharing a missing experience must error.
+    // 404：共享不存在的 exp_key 属于资源未找到，由 typed error mapping
+    //（ToolError::NotFound）翻译为 NOT_FOUND（此前断言写成 INTERNAL_SERVER_ERROR，已随实现校准）。
     let (status, json) = post_json(
         &app,
         "/api/experience/share",
         serde_json::json!({ "exp_key": "exp:missing" }),
     )
     .await;
-    assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+    assert_eq!(status, StatusCode::NOT_FOUND);
     assert_eq!(json["success"], false);
 
     // Shared listing is available and empty.

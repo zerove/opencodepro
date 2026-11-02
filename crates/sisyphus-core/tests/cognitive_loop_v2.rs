@@ -8,7 +8,9 @@
 //! The AdaptiveDepthController tracks iteration confidence and
 //! decides whether to keep going.
 
-use sisyphus_core::cognitive_loop_v2::{AdaptiveDepthController, AnomalyDetector};
+use sisyphus_core::cognitive_loop_v2::{
+    AdaptiveDepthController, AnomalyDetector, AnomalyLog, NodeAnomaly, RECENT_ANOMALY_CAPACITY,
+};
 
 // ---------------------------------------------------------------------------
 // AnomalyDetector
@@ -161,4 +163,112 @@ fn depth_controller_apply_config_changes_state() {
     // State is private; just verify the call doesn't panic.
     let _ = ctrl.confidence_history();
     let _ = ctrl.observe_iteration(0.5);
+}
+
+// ---------------------------------------------------------------------------
+// 可观测性缓冲（`/api/anomaly` 的数据来源）
+// ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// 可观测性缓冲（`/api/anomaly` 的数据来源）
+// ---------------------------------------------------------------------------
+
+/// 触发一次 fuel 异常：先建立基线，再用 10x 燃料消耗观测，返回检测结果。
+fn trigger_fuel_anomaly(det: &AnomalyDetector, node: &str) -> Vec<NodeAnomaly> {
+    det.observe(node, 5, 100, true);
+    det.observe(node, 500, 100, true)
+}
+
+#[test]
+fn anomaly_log_records_detected_anomalies() {
+    let det = AnomalyDetector::new(2.0, 100.0, 0.3);
+    let log = AnomalyLog::new();
+    assert!(log.recent(None).is_empty(), "nothing observed yet");
+
+    let anomalies = trigger_fuel_anomaly(&det, "n1");
+    assert!(!anomalies.is_empty(), "fuel anomaly expected");
+    log.record(&anomalies, "sop-1");
+
+    let recent = log.recent(Some("sop-1"));
+    assert_eq!(recent.len(), 1, "one anomaly must be retained: {recent:?}");
+    assert_eq!(recent[0].anomaly.node_name, "n1");
+    assert_eq!(recent[0].anomaly.metric, "fuel");
+    assert_eq!(recent[0].scope, "sop-1");
+    assert!(recent[0].detected_at > 0);
+    assert!(recent[0].seq < u64::MAX, "seq must be allocated");
+}
+
+#[test]
+fn anomaly_log_filters_by_scope() {
+    let det = AnomalyDetector::new(2.0, 100.0, 0.3);
+    let log = AnomalyLog::new();
+
+    let a1 = trigger_fuel_anomaly(&det, "n1");
+    log.record(&a1, "run-a");
+    let a2 = trigger_fuel_anomaly(&det, "n2");
+    log.record(&a2, "run-b");
+
+    let run_a = log.recent(Some("run-a"));
+    let run_b = log.recent(Some("run-b"));
+    assert_eq!(run_a.len(), 1, "{run_a:?}");
+    assert_eq!(run_b.len(), 1, "{run_b:?}");
+    assert_eq!(run_a[0].anomaly.node_name, "n1");
+    assert_eq!(run_b[0].anomaly.node_name, "n2");
+    assert_eq!(log.recent(Some("missing")).len(), 0);
+    assert_eq!(log.recent(None).len(), 2, "unscoped view sees everything");
+}
+
+#[test]
+fn anomaly_log_sequence_is_monotonic() {
+    let det = AnomalyDetector::new(2.0, 100.0, 0.3);
+    let log = AnomalyLog::new();
+
+    let a1 = trigger_fuel_anomaly(&det, "a");
+    log.record(&a1, "run-x");
+    let a2 = trigger_fuel_anomaly(&det, "b");
+    log.record(&a2, "run-x");
+
+    let recent = log.recent(Some("run-x"));
+    assert_eq!(recent.len(), 2);
+    assert!(
+        recent[0].seq < recent[1].seq,
+        "stream cursors rely on monotonic seq"
+    );
+}
+
+#[test]
+fn anomaly_log_is_bounded() {
+    let det = AnomalyDetector::new(2.0, 100.0, 0.3);
+    let log = AnomalyLog::new();
+
+    // 每个节点两次观测触发一次异常，多跑一些以越过容量上限。
+    for i in 0..(RECENT_ANOMALY_CAPACITY + 50) {
+        let anomalies = trigger_fuel_anomaly(&det, &format!("node_{i}"));
+        log.record(&anomalies, "sop-bound");
+    }
+    let recent = log.recent(Some("sop-bound"));
+    assert_eq!(
+        recent.len(),
+        RECENT_ANOMALY_CAPACITY,
+        "the buffer must stay bounded"
+    );
+    // FIFO：最早的记录被淘汰，保留的是最后写入的。
+    assert_eq!(
+        recent.last().map(|e| e.anomaly.node_name.as_str()),
+        Some(format!("node_{}", RECENT_ANOMALY_CAPACITY + 49).as_str())
+    );
+}
+
+#[test]
+fn anomaly_log_reset_clears_recent() {
+    let det = AnomalyDetector::new(2.0, 100.0, 0.3);
+    let log = AnomalyLog::new();
+
+    let anomalies = trigger_fuel_anomaly(&det, "n1");
+    log.record(&anomalies, "sop-1");
+    assert!(!log.recent(None).is_empty());
+    log.clear();
+    assert!(
+        log.recent(None).is_empty(),
+        "reset must clear observability state"
+    );
 }

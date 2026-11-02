@@ -14,9 +14,16 @@ use parking_lot::Mutex;
 use sisyphus_intel::ComplexityAnalyzer;
 use sisyphus_types::experience::ExperienceBank;
 use sisyphus_types::SOPGraph;
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use tracing::{info, instrument, warn};
+
+/// 异常观测环形缓冲的容量。
+///
+/// 端点只做「最近发生了什么」的可观测性展示，不需要无限历史；
+/// 有界缓冲可以避免长时间运行的进程把内存耗在异常列表上。
+pub const RECENT_ANOMALY_CAPACITY: usize = 256;
 
 // ---------------------------------------------------------------------------
 // AnomalyDetector（异常检测器）
@@ -48,6 +55,112 @@ pub struct AnomalyReport {
     pub anomalies: Vec<NodeAnomaly>,
     pub should_extra_reflect: bool,
     pub overall_severity: AnomalySeverity,
+}
+
+/// 一条带上下文的异常观测记录。
+///
+/// [`AnomalyDetector::observe`] 的返回值只在调用点短暂存在，无法支撑
+/// `/api/anomaly` 之类的查询端点。认知循环因此把每次检测到的异常额外
+/// 记进 [`AnomalyLog`]，附带产生它的运行标识（`sop_id`）与检测时刻。
+#[derive(Debug, Clone)]
+pub struct ObservedAnomaly {
+    pub anomaly: NodeAnomaly,
+    /// 产生该异常的认知循环运行标识（`sop_id`）。
+    pub scope: String,
+    /// 检测时刻（Unix 秒）。
+    pub detected_at: u64,
+    /// 日志内单调递增的序号，供流式端点做增量推送（避免重复）。
+    pub seq: u64,
+}
+
+/// 有界的异常观测日志，供 `/api/anomaly` 与 gRPC 流式端点读取。
+///
+/// 它与 [`AnomalyDetector`] **刻意分离**：检测器是有状态的 EWMA 基线，
+/// 每次认知循环运行都持有自己的实例，从而让并发运行互不污染基线
+/// （见 `test_concurrent_loops_have_independent_depth_history`）。
+/// 把观测镜像进共享检测器会破坏这一隔离，因此可观测性走这条只追加的
+/// 旁路日志：per-run 检测器照旧做控制决策，结果写入这里供外部查询。
+pub struct AnomalyLog {
+    recent: Mutex<VecDeque<ObservedAnomaly>>,
+    next_seq: AtomicU64,
+}
+
+impl AnomalyLog {
+    /// 新建一个空的异常日志。
+    pub fn new() -> Self {
+        Self {
+            recent: Mutex::new(VecDeque::with_capacity(RECENT_ANOMALY_CAPACITY)),
+            next_seq: AtomicU64::new(0),
+        }
+    }
+
+    /// 记录一批检测结果（`scope` 是产生它们的运行标识，通常是 `sop_id`）。
+    ///
+    /// 空切片是常态（大多数观测不触发异常），直接返回。
+    pub fn record(&self, anomalies: &[NodeAnomaly], scope: &str) {
+        if anomalies.is_empty() {
+            return;
+        }
+        let detected_at = now_unix_secs();
+        let mut recent = self.recent.lock();
+        for anomaly in anomalies {
+            while recent.len() >= RECENT_ANOMALY_CAPACITY {
+                recent.pop_front();
+            }
+            recent.push_back(ObservedAnomaly {
+                anomaly: anomaly.clone(),
+                scope: scope.to_string(),
+                detected_at,
+                seq: self.next_seq.fetch_add(1, Ordering::Relaxed),
+            });
+        }
+    }
+
+    /// 最近的异常观测（按检测顺序，最旧在前）。
+    ///
+    /// `scope` 为 `Some` 时只返回该运行标识（`sop_id`）下的记录。
+    pub fn recent(&self, scope: Option<&str>) -> Vec<ObservedAnomaly> {
+        let recent = self.recent.lock();
+        recent
+            .iter()
+            .filter(|entry| match scope {
+                Some(scope) => entry.scope == scope,
+                None => true,
+            })
+            .cloned()
+            .collect()
+    }
+
+    /// 当前保存的记录条数（不超过 [`RECENT_ANOMALY_CAPACITY`]）。
+    pub fn len(&self) -> usize {
+        self.recent.lock().len()
+    }
+
+    /// 日志是否为空。
+    pub fn is_empty(&self) -> bool {
+        self.recent.lock().is_empty()
+    }
+
+    /// 清空日志并重置序号。
+    pub fn clear(&self) {
+        self.recent.lock().clear();
+        self.next_seq.store(0, Ordering::Relaxed);
+    }
+}
+
+impl Default for AnomalyLog {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl std::fmt::Debug for AnomalyLog {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AnomalyLog")
+            .field("len", &self.len())
+            .field("next_seq", &self.next_seq.load(Ordering::Relaxed))
+            .finish()
+    }
 }
 
 /// 跟踪每个节点的指标并在运行时检测执行异常。
@@ -217,6 +330,8 @@ impl AnomalyDetector {
 
         let mut total_exec = self.total_executions.lock();
         *total_exec += 1;
+        drop(total_exec);
+        drop(history);
 
         anomalies
     }
@@ -278,9 +393,15 @@ impl AnomalyDetector {
     pub fn reset(&self) {
         let mut history = self.history.lock();
         history.clear();
+        drop(history);
         let mut total = self.total_executions.lock();
         *total = 0;
     }
+}
+
+/// 当前 Unix 时间戳（秒）。
+fn now_unix_secs() -> u64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs()
 }
 
 // ---------------------------------------------------------------------------
