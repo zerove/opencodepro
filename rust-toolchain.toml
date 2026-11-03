@@ -1,2 +1,14 @@
+# rustup toolchain override —— 注意必须放在 [toolchain] 表内。
+#
+# 2026-11-01 曾提交过缺少 `[toolchain]` 表头的版本（顶层 `channel = "nightly"`
+# + 非法 profile `"stable"`），rustup 解析直接报
+#   error: could not parse override file: ... missing field `toolchain`
+# 因为本地 shell 设置了 RUSTUP_TOOLCHAIN 环境变量会完全绕过该文件，本地
+# cargo fmt / clippy / test 全部正常，CI 里却**每一个** cargo step 都失败
+# （fmt / deny / check / test 全线红，连续 40 次 run 0 成功）。改这个文件后
+# 务必用 `env -u RUSTUP_TOOLCHAIN cargo --version` 验证解析结果。
+[toolchain]
 channel = "nightly"
-profile = "stable"
+# 合法值只有 minimal / default / complete（"stable" 是 channel 名，不是 profile）。
+# default 含 rustfmt + clippy + rust-docs，本地开发与 CI 检查都需要。
+profile = "default"

@@ -50,6 +50,11 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+      # audit_workflows.py 依赖 PyYAML。setup-python 带的解释器**不含** PyYAML，
+      # 缺了会在最后一步直接失败（"需要 PyYAML：pip install pyyaml"），而前面三个
+      # 脚本不需要 yaml 会全部通过——所以这个依赖以前一直没暴露，直到本 job 变红。
+      - name: Install audit dependencies
+        run: pip install pyyaml
       - name: Scan for source files never referenced by any crate
         run: python3 scripts/audit_orphans.py
       - name: Audit #[ignore] reasons
