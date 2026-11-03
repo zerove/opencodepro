@@ -1,7 +1,10 @@
 [package]
 name = "sisyphus-tools-scm"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
+repository.workspace = true
+description = "Source control (git) tools"
+authors.workspace = true
 license = "MIT OR Apache-2.0"
 
 [dependencies]
@@ -12,4 +15,4 @@ metrics = "0.24"
 tempfile = "3"
 chrono = "0.4"
 serde_yaml = "0.9"
-sisyphus-tools-core = { version = "0.1.0", path = "../sisyphus-tools-core" }
+sisyphus-tools-core = { version = "0.2.0", path = "../sisyphus-tools-core" }

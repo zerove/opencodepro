@@ -1,7 +1,9 @@
 [package]
 name = "sisyphus-bridge-api"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
+repository.workspace = true
+authors.workspace = true
 license = "MIT"
 description = "Shared gRPC types, client wrapper, and server trait for the Sisyphus Bridge protocol"
 

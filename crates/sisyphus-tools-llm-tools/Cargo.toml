@@ -1,16 +1,19 @@
 [package]
 name = "sisyphus-tools-llm-tools"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
+repository.workspace = true
+description = "High-level LLM tools (oracle, momus, metis, librarian)"
+authors.workspace = true
 license = "MIT OR Apache-2.0"
 
 [dependencies]
 async-trait = { workspace = true }
-sisyphus-tools-core = { version = "0.1.0", path = "../sisyphus-tools-core" }
-sisyphus-tools-llm = { version = "0.1.0", path = "../sisyphus-tools-llm" }
-sisyphus-tools-build = { version = "0.1.0", path = "../sisyphus-tools-build" }
-sisyphus-tools-system = { version = "0.1.0", path = "../sisyphus-tools-system" }
-sisyphus-types = { version = "0.1.0", path = "../sisyphus-types" }
+sisyphus-tools-core = { version = "0.2.0", path = "../sisyphus-tools-core" }
+sisyphus-tools-llm = { version = "0.2.0", path = "../sisyphus-tools-llm" }
+sisyphus-tools-build = { version = "0.2.0", path = "../sisyphus-tools-build" }
+sisyphus-tools-system = { version = "0.2.0", path = "../sisyphus-tools-system" }
+sisyphus-types = { version = "0.2.0", path = "../sisyphus-types" }
 regex = "1.0"
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }

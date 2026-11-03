@@ -6,23 +6,24 @@
 > **说明**: 本仓库 2026-08-31 之前的 320+ 个本地提交以边界测试扩充为主，
 > 未在此追溯。本 CHANGELOG 自 v0.x 起从此日期开始记录。
 
-## 发布流程（v0.2.0 模板）
+## 发布流程（通用模板）
 
 发版时按以下步骤整理 CHANGELOG：
 
-1. **合并 Unreleased → 版本段**：将 `## [Unreleased]` 改名为 `## [v0.2.0] - <YYYY-MM-DD>`
+1. **合并 Unreleased → 版本段**：将 `## [Unreleased]` 改名为 `## [vX.Y.Z] - <YYYY-MM-DD>`
 2. **校验分组**：Unreleased 段下应只有 `### Added` / `### Fixed` / `### Changed` / `### Deprecated` / `### Removed` / `### Security` 子段
    （keep-a-changelog 规范）。如出现不属于这 6 类的内容，重写为正确分类
 3. **生成 Verified 段**：在版本段底部加 `### Verified`，列出关键 CI 验证（如 `cargo test-all: 4689/4689 通过`）
 4. **创建新 Unreleased**：在版本段**之前**插入空的 `## [Unreleased]` 段（保持工作流）
-5. **git tag**：本地 `git tag -a v0.2.0 -m "Release v0.2.0"`，推到 origin 触发 `.github/workflows/release.yml`
+5. **git tag**：本地 `git tag -a vX.Y.Z -m "Release vX.Y.Z"`，推到 origin 触发 `.github/workflows/release.yml`
+   （打 tag 前先跑 `make release-check` 校验版本/CHANGELOG/metadata 一致性）
 6. **GitHub Release**：release.yml 会自动从 `git log` 生成 release notes（`generate_release_notes: true`），
-   此 CHANGELOG 段作为 v0.2.0 的引用存档
+   此 CHANGELOG 段作为该版本的引用存档
 
 ### 模板骨架
 
 ```markdown
-## [v0.2.0] - 2026-XX-XX
+## [vX.Y.Z] - YYYY-MM-DD
 
 > 阶段 8 收尾：可观测性 + 开发者体验 + 文档 + 供应链加固
 
@@ -46,6 +47,18 @@
 ---
 
 ## [Unreleased]
+
+### Added
+
+### Changed
+
+### Fixed
+
+## [v0.2.0] - 2026-11-04
+
+> 自 v0.1.0（2026-09-03）以来累积 261 个 commit：认知循环深化、工具链拆分、
+> gRPC/REST 桥接、WASM 沙箱、Web 仪表盘与路线图可视化看板。
+> 下列条目保留原始的日期/主题标注以维持可追溯性。
 
 ### Added (2026-11-04, Cleanup & New Feature)
 - **Roadmap Dashboard API（可视化看板新功能）** (phase 2, 2026-11-04):
@@ -530,3 +543,11 @@
 - cargo test-all: 4653/4653 通过
 - cargo clippy --workspace --all-targets -- -D warnings: 0 警告
 - git tag v0.1.0 创建成功
+
+### Verified (v0.2.0 release gate, 2026-11-04)
+- `cargo test-all`: **4934 passed / 0 failed / 26 ignored**
+- `cargo check-all`: 通过（0 error）
+- `cargo check -p sisyphus-bridge -p sisyphus-sandbox -p sisyphus-sandboxd -p sisyphus-tests`: 通过
+- `cargo test -p sisyphus-webui`: 11 passed
+- `make release-check`: 通过（版本 0.2.0 一致 / metadata 齐全 / CHANGELOG 已切段 / tag 未创建）
+- 全部 27 个 crate 版本统一为 `0.2.0`，141 处内部 path 依赖版本约束同步更新

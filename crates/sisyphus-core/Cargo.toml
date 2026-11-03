@@ -1,7 +1,8 @@
 [package]
 name = "sisyphus-core"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
+repository.workspace = true
 authors = ["Sisyphus Team"]
 description = "Kernel orchestrator: DAG-based async SOP execution with predictive cognition"
 license = "MIT"
@@ -17,30 +18,30 @@ async-trait = { workspace = true }
 serde_json = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 tracing = { workspace = true, features = ["attributes"] }
-sisyphus-metrics = { version = "0.1.0", path = "../sisyphus-metrics" }
-sisyphus-sandbox = { version = "0.1.0", path = "../sisyphus-sandbox", optional = true }
-sisyphus-types = { version = "0.1.0", path = "../sisyphus-types" }
-sisyphus-mem = { version = "0.1.0", path = "../sisyphus-mem" }
-sisyphus-intel = { version = "0.1.0", path = "../sisyphus-intel" }
+sisyphus-metrics = { version = "0.2.0", path = "../sisyphus-metrics" }
+sisyphus-sandbox = { version = "0.2.0", path = "../sisyphus-sandbox", optional = true }
+sisyphus-types = { version = "0.2.0", path = "../sisyphus-types" }
+sisyphus-mem = { version = "0.2.0", path = "../sisyphus-mem" }
+sisyphus-intel = { version = "0.2.0", path = "../sisyphus-intel" }
 
-sisyphus-roadmap = { version = "0.1.0", path = "../sisyphus-roadmap" }
+sisyphus-roadmap = { version = "0.2.0", path = "../sisyphus-roadmap" }
 futures = "0.3"
 parking_lot = "0.12"
 thiserror = { workspace = true }
 dashmap = { workspace = true }
 md5 = "0.8.0"
 uuid = "1.23.5"
-sisyphus-knowledge = { version = "0.1.0", path = "../sisyphus-knowledge" }
-sisyphus_visual = { version = "0.1.0", path = "../sisyphus-visual" }
+sisyphus-knowledge = { version = "0.2.0", path = "../sisyphus-knowledge" }
+sisyphus_visual = { version = "0.2.0", path = "../sisyphus-visual" }
 
 [dev-dependencies]
-sisyphus-tools-llm-tools = { version = "0.1.0", path = "../sisyphus-tools-llm-tools" }
-sisyphus-tools-executor = { version = "0.1.0", path = "../sisyphus-tools-executor" }
+sisyphus-tools-llm-tools = { version = "0.2.0", path = "../sisyphus-tools-llm-tools" }
+sisyphus-tools-executor = { version = "0.2.0", path = "../sisyphus-tools-executor" }
 # Production code no longer depends on these; the test harness and benches
 # still construct real executors and clients.
-sisyphus-tools-system = { version = "0.1.0", path = "../sisyphus-tools-system" }
+sisyphus-tools-system = { version = "0.2.0", path = "../sisyphus-tools-system" }
 # In-crate test doubles: DummyLlmClient, DummyEmbeddingClient.
-sisyphus-tools-llm = { version = "0.1.0", path = "../sisyphus-tools-llm" }
+sisyphus-tools-llm = { version = "0.2.0", path = "../sisyphus-tools-llm" }
 
 proptest = "1.4"
 tracing-subscriber = "0.3"

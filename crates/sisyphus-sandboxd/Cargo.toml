@@ -1,7 +1,8 @@
 [package]
 name = "sisyphus-sandboxd"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
+repository.workspace = true
 authors = ["Sisyphus Team"]
 description = "Standalone WASM sandbox daemon (stdio JSON-line protocol)"
 license = "MIT"
@@ -11,8 +12,8 @@ wat = "1"
 
 [dependencies]
 tokio = { version = "1", features = ["full"] }
-sisyphus-sandbox = { version = "0.1.0", path = "../sisyphus-sandbox" }
-sisyphus-types = { version = "0.1.0", path = "../sisyphus-types" }
+sisyphus-sandbox = { version = "0.2.0", path = "../sisyphus-sandbox" }
+sisyphus-types = { version = "0.2.0", path = "../sisyphus-types" }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 tracing = { workspace = true }

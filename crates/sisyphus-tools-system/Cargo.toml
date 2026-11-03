@@ -1,13 +1,16 @@
 [package]
 name = "sisyphus-tools-system"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
+repository.workspace = true
+description = "System tools: files, bash, web, permissions, dependency management"
+authors.workspace = true
 license = "MIT OR Apache-2.0"
 
 [dependencies]
 async-trait = "0.1"
-sisyphus-tools-core = { version = "0.1.0", path = "../sisyphus-tools-core" }
-sisyphus-types = { version = "0.1.0", path = "../sisyphus-types" }
+sisyphus-tools-core = { version = "0.2.0", path = "../sisyphus-tools-core" }
+sisyphus-types = { version = "0.2.0", path = "../sisyphus-types" }
 tokio = { version = "1.0", features = ["process", "fs", "io-util", "time", "rt", "macros"] }
 glob = "0.3"
 serde = { workspace = true, features = ["derive"] }

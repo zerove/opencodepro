@@ -112,7 +112,7 @@ curl http://[::1]:8080/health
 预期响应：
 
 ```json
-{"status":"ok","version":"0.1.0"}
+{"status":"ok","version":"0.2.0"}
 ```
 
 ## 简单示例：执行一个 SOP

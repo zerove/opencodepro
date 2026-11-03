@@ -1,7 +1,8 @@
 [package]
 name = "sisyphus-metrics"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
+repository.workspace = true
 authors = ["Sisyphus Team"]
 description = "Metrics and observability for Sisyphus cognitive engine"
 license = "MIT"
@@ -16,7 +17,7 @@ opentelemetry = { workspace = true, optional = true }
 opentelemetry-otlp = { workspace = true, optional = true }
 opentelemetry_sdk = { workspace = true, optional = true }
 opentelemetry-semantic-conventions = { workspace = true, optional = true }
-sisyphus-types = { version = "0.1.0", path = "../sisyphus-types" }
+sisyphus-types = { version = "0.2.0", path = "../sisyphus-types" }
 thiserror = { workspace = true }
 
 [features]

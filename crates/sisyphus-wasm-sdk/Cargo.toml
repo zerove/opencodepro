@@ -1,7 +1,10 @@
 [package]
 name = "sisyphus-wasm-sdk"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
+repository.workspace = true
+description = "WASM guest SDK for developing SOP tool nodes"
+authors.workspace = true
 license = "MIT OR Apache-2.0"
 
 [dependencies]

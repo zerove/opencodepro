@@ -1,10 +1,11 @@
 [package]
 name = "sisyphus-webui"
-version = "0.1.0"
+version = "0.2.0"
 description = "Sisyphus web dashboard (axum + HTMX + SSE + WebSocket)"
 authors = ["Sisyphus Team"]
 license = "MIT"
 edition = "2021"
+repository.workspace = true
 
 [dependencies]
 axum = { version = "0.8", features = ["ws"] }

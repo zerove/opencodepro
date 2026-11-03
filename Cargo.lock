@@ -1286,7 +1286,7 @@ dependencies = [
 
 [[package]]
 name = "eval-runner"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4364,7 +4364,7 @@ dependencies = [
 
 [[package]]
 name = "sisyphus-bridge"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -4413,7 +4413,7 @@ dependencies = [
 
 [[package]]
 name = "sisyphus-bridge-api"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "futures",
@@ -4428,7 +4428,7 @@ dependencies = [
 
 [[package]]
 name = "sisyphus-cli"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "arboard",
@@ -4469,7 +4469,7 @@ dependencies = [
 
 [[package]]
 name = "sisyphus-core"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "async-trait",
  "criterion",
@@ -4504,7 +4504,7 @@ dependencies = [
 
 [[package]]
 name = "sisyphus-intel"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "async-trait",
  "criterion",
@@ -4529,7 +4529,7 @@ dependencies = [
 
 [[package]]
 name = "sisyphus-knowledge"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4548,7 +4548,7 @@ dependencies = [
 
 [[package]]
 name = "sisyphus-mem"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4575,7 +4575,7 @@ dependencies = [
 
 [[package]]
 name = "sisyphus-metrics"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "metrics",
  "metrics-exporter-prometheus",
@@ -4593,7 +4593,7 @@ dependencies = [
 
 [[package]]
 name = "sisyphus-roadmap"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4611,7 +4611,7 @@ dependencies = [
 
 [[package]]
 name = "sisyphus-sandbox"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "async-trait",
  "dashmap",
@@ -4631,7 +4631,7 @@ dependencies = [
 
 [[package]]
 name = "sisyphus-sandboxd"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "clap",
  "serde",
@@ -4647,7 +4647,7 @@ dependencies = [
 
 [[package]]
 name = "sisyphus-tests"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "async-trait",
  "parking_lot",
@@ -4678,7 +4678,7 @@ dependencies = [
 
 [[package]]
 name = "sisyphus-tools-agent"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4704,7 +4704,7 @@ dependencies = [
 
 [[package]]
 name = "sisyphus-tools-build"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "ignore",
  "metrics",
@@ -4722,7 +4722,7 @@ dependencies = [
 
 [[package]]
 name = "sisyphus-tools-core"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -4735,7 +4735,7 @@ dependencies = [
 
 [[package]]
 name = "sisyphus-tools-executor"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -4760,7 +4760,7 @@ dependencies = [
 
 [[package]]
 name = "sisyphus-tools-llm"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "async-trait",
  "metrics",
@@ -4778,7 +4778,7 @@ dependencies = [
 
 [[package]]
 name = "sisyphus-tools-llm-tools"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "async-trait",
  "metrics",
@@ -4797,7 +4797,7 @@ dependencies = [
 
 [[package]]
 name = "sisyphus-tools-mcp"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "async-trait",
  "metrics",
@@ -4816,7 +4816,7 @@ dependencies = [
 
 [[package]]
 name = "sisyphus-tools-scm"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "chrono",
  "metrics",
@@ -4830,7 +4830,7 @@ dependencies = [
 
 [[package]]
 name = "sisyphus-tools-session"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "base64 0.22.1",
  "chrono",
@@ -4849,7 +4849,7 @@ dependencies = [
 
 [[package]]
 name = "sisyphus-tools-system"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -4873,7 +4873,7 @@ dependencies = [
 
 [[package]]
 name = "sisyphus-types"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "async-trait",
  "dashmap",
@@ -4893,7 +4893,7 @@ dependencies = [
 
 [[package]]
 name = "sisyphus-wasm-sdk"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "async-trait",
  "metrics",
@@ -4904,7 +4904,7 @@ dependencies = [
 
 [[package]]
 name = "sisyphus-webui"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "askama",
  "axum 0.8.9",
@@ -4921,7 +4921,7 @@ dependencies = [
 
 [[package]]
 name = "sisyphus_visual"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "async-trait",

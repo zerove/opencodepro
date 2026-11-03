@@ -42,6 +42,13 @@ default-members = [
 ]
 resolver = "2"
 
+# 发布元数据统一在 workspace 层维护；各 crate 通过 `repository.workspace = true`
+# 继承（cargo 要求显式 opt-in）。注意：这些 crate 目前**未发布到 crates.io**，
+# 因此不声明 `documentation`（docs.rs 链接会失效），只声明事实性 `repository`。
+[workspace.package]
+repository = "https://github.com/zerove/opencodepro"
+authors = ["Sisyphus Team"]
+
 [workspace.dependencies]
 tracing = { version = "0.1" }
 tracing-subscriber = { version = "0.3" }

@@ -1,12 +1,15 @@
 [package]
 name = "sisyphus_visual"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
+repository.workspace = true
+description = "Visual perception and embedding primitives"
+authors.workspace = true
 license = "MIT OR Apache-2.0"
 
 [dependencies]
-sisyphus-types = { version = "0.1.0", path = "../sisyphus-types" }
-sisyphus-intel = { version = "0.1.0", path = "../sisyphus-intel" }
+sisyphus-types = { version = "0.2.0", path = "../sisyphus-types" }
+sisyphus-intel = { version = "0.2.0", path = "../sisyphus-intel" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 metrics = "0.24"
@@ -14,6 +17,6 @@ tokio = { version = "1.0", features = ["full"] }
 async-trait = "0.1"
 thiserror = "1.0"
 anyhow = "1.0"
-sisyphus-tools-llm = { version = "0.1.0", path = "../sisyphus-tools-llm" }
+sisyphus-tools-llm = { version = "0.2.0", path = "../sisyphus-tools-llm" }
 tracing.workspace = true
 reqwest = { version = "0.12", features = ["json"] }
