@@ -346,6 +346,21 @@ audit: audit-orphans audit-ignored audit-test-state audit-workflows
 
 .PHONY: audit-orphans audit-ignored audit-test-state audit-workflows audit
 
+# — 发布前置检查 —
+#
+# 打 tag 之前跑：校验全部 crate 版本一致、发布 metadata 齐全、
+# CHANGELOG 有对应版本段、该版本尚未打 tag、工作区干净。
+# 只做本地可验证的检查；`git tag` / `git push` 仍需人工执行
+# （会触发 .github/workflows/release.yml 的跨平台构建）。
+release-check:
+	@scripts/release-check.sh
+
+# 指定版本校验（用于确认打 tag 前的目标版本）
+release-check-version:
+	@scripts/release-check.sh --version $(VERSION)
+
+.PHONY: release-check release-check-version
+
 # — bridge crate (nightly+, no workaround needed) —
 
 check-bridge: $(BRIDGE_DEPS)

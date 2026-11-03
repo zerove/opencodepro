@@ -232,14 +232,25 @@ Closes: #123
 
 ## 发布流程
 
-1. 更新 `CHANGELOG.md`：`[Unreleased]` → `[v0.x.x] - <日期>`
-2. 更新 `book/src/configuration.md` 的版本号引用
-3. 打 git tag：`git tag -a v0.x.x -m "..."`
-4. 推送 tag 触发 `.github/workflows/release.yml`：跨平台构建 + GitHub Release 自动生成
-5. Docker 镜像：推送 tag 自动触发 `.github/workflows/docker-release.yml`
+0. **发布前置检查**：`make release-check` —— 校验全部 crate 版本一致、
+   发布 metadata（description / authors / license / repository）齐全、
+   `CHANGELOG.md` 存在对应版本段、目标版本尚未打 tag、工作区干净。
+   任一失败会以非零退出，**不要带着失败项打 tag**
+1. **bump 版本**：`crates/*/Cargo.toml` 与 `webui/Cargo.toml`、`evals/Cargo.toml`
+   的 `[package] version` 以及内部 path 依赖的 `version = "x.y.z"` 约束需同步修改
+2. 更新 `CHANGELOG.md`：`[Unreleased]` → `[vx.y.x] - <日期>`，并在其**之前**
+   插入新的空 `[Unreleased]` 段
+3. 更新 `book/src/configuration.md` 的版本号引用
+4. 打 git tag：`git tag -a vx.y.z -m "..."`
+5. 推送 tag 触发 `.github/workflows/release.yml`：跨平台构建 + GitHub Release 自动生成
+6. Docker 镜像：推送 tag 自动触发 `.github/workflows/docker-release.yml`
    - 多平台构建（linux/amd64 + linux/arm64）
-   - 推送至 `ghcr.io/zerove/sisyphus-bridge:v0.x.x`
-   - 验证：`docker pull ghcr.io/zerove/sisyphus-bridge:v0.x.x`
+   - 推送至 `ghcr.io/zerove/sisyphus-bridge:vx.y.z`
+   - 验证：`docker pull ghcr.io/zerove/sisyphus-bridge:vx.y.z`
+
+> **已知限制**：内部 crate（`sisyphus-bridge-api` / `sisyphus-metrics` 等）未发布到
+> crates.io，因此 `cargo package`（非 `--list`）会因无法解析内部依赖而失败。
+> 本仓库的发布产物是**平台二进制 + Docker 镜像**，不是 crates.io 包。
 
 ## 联系方式
 
