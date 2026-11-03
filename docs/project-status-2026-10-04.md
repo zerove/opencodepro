@@ -880,6 +880,28 @@ pub enum TestOutcome {
 根治方案见 5.4（三选一，**均未实测**）。
 **本项目不改系统级 `overcommit_*` 设置**（需 root，且会影响该机器所有用户）。
 
+### 7.6 架构深化系列收官（2026-11-04）
+
+本轮启动 `improve-codebase-architecture` 深化审计，三项候选结论与处置：
+
+- **C1（双认知循环实现）→ 已实施**：`SisyphusKernel::execute_with_cognition`
+  （facade）与 `StrategicManager::run_cognitive_loop`（引擎）的「双实现」
+  问题，经 CognitiveEngine seam 深化正式收口 —— 新增
+  `strategic_manager::CognitiveEngine` trait（async `run<F>`），
+  `StrategicManager` 作为 adapter 实现并委托 `run_cognitive_loop`；
+  kernel facade 经 trait seam 调用。async_trait 要求泛型
+  `F: Fn(&str, ExecutionEvent) + Send + Sync` 写法（`impl Fn` 直接写在
+  async fn 参数位置不兼容 async_trait 的 desugaring）。
+  → commit `38e0518`，check/clippy/core-test/full-test 全绿。
+- **C2（`SisyphusKernel` god-object）→ 已解决**：orchestration 方法已下沉至
+  `kernel/{execution,feedback,construction,project}.rs` 子模块，
+  `lib.rs` impl 区块仅剩小而窄的热重载方法。
+- **C3（Backend trait + runner seam）→ 已解决**：外部命令执行已内聚于
+  `sisyphus-tools-core::process`（`run_command` + `CommandOpts`：
+  timeout / max_output_bytes / workdir / envs）。
+
+深化系列结论：**C1 实施 / C2 核实 / C3 核实，全部闭环。**
+
 ## 8. 明确不在本次范围
 
 - bridge / sandbox / sandboxd / tests crate（工作区排除，见 `.cargo/config.toml`）
