@@ -836,6 +836,46 @@ pub(super) async fn roadmap_health_handler(
     }
 }
 
+// --- Roadmap Dashboard Handler ---
+
+/// Aggregate a project's roadmap dashboard view: project metadata,
+/// milestone/phase/goal structure, computed progress, and health snapshot.
+///
+/// Web dashboard 前端一次拉齐「项目 + 里程碑 + 进度 + 健康」四个信号，
+/// 替代前端自行跨端点拼装。
+pub(super) async fn roadmap_dashboard_handler(
+    State(state): State<RestApiState>,
+    Path(project_id): Path<String>,
+) -> impl IntoResponse {
+    let rm = &state.bridge.kernel().roadmap_manager;
+    let project = match rm.get_project(&project_id).await {
+        Ok(Some(p)) => p,
+        Ok(None) => return StatusCode::NOT_FOUND.into_response(),
+        Err(e) => {
+            return (
+                crate::http::handlers_platform::status_for_typed(Some(&e), &e.to_string()),
+                Json(e.to_string()),
+            )
+                .into_response();
+        },
+    };
+
+    let milestones = project.roadmap.milestones.clone();
+    let progress = rm.calculate_progress(&project_id).await.unwrap_or(0.0);
+    let health = rm.evaluate_health(&project_id).await.ok();
+
+    (
+        StatusCode::OK,
+        Json(serde_json::json!({
+            "project": project,
+            "milestones": milestones,
+            "progress": progress,
+            "health": health,
+        })),
+    )
+        .into_response()
+}
+
 // --- Roadmap Prediction Handlers ---
 
 pub(super) async fn predict_completion_handler(

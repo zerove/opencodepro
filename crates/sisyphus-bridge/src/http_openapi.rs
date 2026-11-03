@@ -834,6 +834,18 @@ fn build_document() -> Result<serde_json::Value, String> {
                     }
                 }
             },
+            "/api/roadmap/dashboard/{project_id}": {
+                "get": {
+                    "summary": "Aggregate project roadmap dashboard",
+                    "description": "Single-call dashboard payload: project metadata, milestone/phase/goal structure, computed progress, and health snapshot.",
+                    "operationId": "getRoadmapDashboard",
+                    "parameters": [{"name": "project_id", "in": "path", "required": true, "schema": {"type": "string"}}],
+                    "responses": {
+                        "200": {"description": "Dashboard aggregate"},
+                        "404": {"description": "Project not found"}
+                    }
+                }
+            },
 
             "/api/roadmap/predict": {
                 "post": {

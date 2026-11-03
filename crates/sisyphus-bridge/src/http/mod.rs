@@ -211,6 +211,10 @@ pub fn build_router(state: RestApiState) -> Router {
             "/api/roadmap/health/:project_id",
             get(roadmap_health_handler),
         )
+        .route(
+            "/api/roadmap/dashboard/:project_id",
+            get(roadmap_dashboard_handler),
+        )
         .route("/api/roadmap/predict", post(predict_completion_handler))
         .route(
             "/api/roadmap/delay-alerts",
