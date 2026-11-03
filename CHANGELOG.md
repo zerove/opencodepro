@@ -47,6 +47,28 @@
 
 ## [Unreleased]
 
+### Added (2026-11-04, Cleanup & New Feature)
+- **Roadmap Dashboard API（可视化看板新功能）** (phase 2, 2026-11-04):
+  - Bridge: `GET /api/roadmap/dashboard/:project_id` — 聚合项目 + milestones +
+    progress + health 单一 payload；OpenAPI 同步登记
+  - Webui: `/api/roadmap/dashboard/{project_id}` API handler + bridge client fetch
+  - Webui: `/htmx/roadmap/dashboard/{project_id}` HMX partial + dashboard 页面卡片
+  - 全链验证：`cargo test -p sisyphus-bridge --no-default-features --lib` 139/139 +
+    `cargo test -p sisyphus-webui` 11/11
+- **CognitiveEngine seam** (phase 3 deepening, 2026-11-04):
+  - `strategic_manager::CognitiveEngine` trait（async `run<F>`）+ StrategicManager
+    adapter；kernel facade 经 seam 调用
+  - mock adapter 第二实现验证端口可替换（`cognitive_engine_seam_accepts_second_adapter`）
+
+### Fixed (2026-11-04)
+- **sisyphus-bridge no-sandbox build**：`use std::path::PathBuf;` 由
+  `#[cfg(feature = "sandbox")]` 门控改为 unconditional — no-sandbox clippy /
+  test 此前 E0433 必挂（bridge-check / bridge test --no-default 回归）
+
+### Verified (2026-11-04)
+- `cargo test-all`: 4934 passed / 0 failed / 26 ignored
+- fmt / clippy / check / no-panic / deny / audits / release build — 全绿
+
 ### Added
 - **Experience CRDT（LWW-Element-Set + vector clock）** (TODO 8.3.2 / ADR-009 § 2, 2026-09-05):
   - `ExperienceTuple` 加 `version: u64` + `vector_clock: BTreeMap<String, u64>` 字段
