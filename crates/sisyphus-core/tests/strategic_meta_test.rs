@@ -1,5 +1,3 @@
-#![cfg(feature = "broken_tests")]
-use async_trait::async_trait;
 use parking_lot::Mutex;
 use sisyphus_core::Consensus;
 use sisyphus_core::SisyphusKernel;
@@ -21,14 +19,19 @@ use common::{MockExperienceBank, MockLogicalSimulator};
 struct MockLlmClient;
 #[async_trait::async_trait]
 impl LlmClient for MockLlmClient {
-    async fn generate(&self, prompt: &str) -> Result<String, String> {
+    async fn generate(&self, prompt: &str) -> Result<String, sisyphus_types::TypesError> {
         if prompt.contains("critical_findings") || prompt.contains("Task: Identify") {
             return Ok(r#"{"critical_findings": [], "risk_score": 0.1, "suggested_refinement": "none", "should_proceed": true}"#.to_string());
         }
         Ok(r#"{"nodes": [{"name": "standard_node", "kind": {"Wasm": {"tool_id": "fast_tool", "fuel_limit": 1000000}}}], "edges": []}"#.to_string())
     }
 
-    async fn chat(&self, _system: &str, user: &str, _stream: bool) -> Result<String, String> {
+    async fn chat(
+        &self,
+        _system: &str,
+        user: &str,
+        _stream: bool,
+    ) -> Result<String, sisyphus_types::TypesError> {
         // Review requests: return AuditReview
         if user.contains("Please review this proposal")
             || user.contains("Return a JSON object with fields 'approved'")

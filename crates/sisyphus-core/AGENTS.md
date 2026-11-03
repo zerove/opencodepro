@@ -18,7 +18,7 @@ Core cognitive engine: DAG execution, cognitive loop, SOP orchestration.
 - Goal execution pipeline: `lib.rs` (`execute_goal`, `execute_goals`, `execute_and_record`)
 - Strategic planning: `lib.rs` (`strategic_reflect`, `generate_milestones`, `project_costs`)
 - Composite execution: `lib.rs` (`execute_composite`, uses `dag::DependencyResolver`)
-- Integration tests: `tests/` (cognitive_loop_test, composite_test, executor_test, etc.)
+- Integration tests: `tests/` (cognitive_lifecycle_test, composite_test, executor_test, etc.)
 
 ## CONVENTIONS
 - All async functions use `tokio` + `async-trait`

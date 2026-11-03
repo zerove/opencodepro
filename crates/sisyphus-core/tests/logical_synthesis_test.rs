@@ -1,11 +1,8 @@
-#![cfg(feature = "broken_tests")]
 use sisyphus_core::SisyphusKernel;
-use sisyphus_intel::{
-    GoalDrivenSynthesizer, MonteCarloSimulator, SisyphusIntel, StandardEvolver, StandardReflector,
-};
+use sisyphus_intel::{GoalDrivenSynthesizer, MonteCarloSimulator, SisyphusIntel};
 use sisyphus_mem::MfsStore;
 use sisyphus_tools_llm_tools::meta_learner::MetaLearner;
-use sisyphus_types::{NodeOutput, TypesError};
+use sisyphus_types::TypesError;
 use std::sync::Arc;
 
 mod common;
@@ -31,21 +28,17 @@ impl sisyphus_types::ToolExecutor for MockExecutor {
 }
 
 /// Smart mock LLM that returns different JSON based on prompt content.
-struct SmartMockLlm {
-    call_count: std::sync::atomic::AtomicU32,
-}
+struct SmartMockLlm;
 
 impl SmartMockLlm {
     fn new() -> Self {
-        Self {
-            call_count: std::sync::atomic::AtomicU32::new(0),
-        }
+        Self
     }
 }
 
 #[async_trait]
 impl sisyphus_tools_llm::LlmClient for SmartMockLlm {
-    async fn generate(&self, prompt: &str) -> Result<String, String> {
+    async fn generate(&self, prompt: &str) -> Result<String, sisyphus_types::TypesError> {
         if prompt.contains("critical_findings") || prompt.contains("Task: Identify") {
             return Ok(r#"{"critical_findings": [], "risk_score": 0.1, "suggested_refinement": "none", "should_proceed": true}"#.to_string());
         }
@@ -57,7 +50,7 @@ impl sisyphus_tools_llm::LlmClient for SmartMockLlm {
         _system_prompt: &str,
         user_message: &str,
         _json_mode: bool,
-    ) -> Result<String, String> {
+    ) -> Result<String, sisyphus_types::TypesError> {
         if user_message.contains("Please review this proposal")
             || user_message.contains("Return a JSON object with fields 'approved'")
         {

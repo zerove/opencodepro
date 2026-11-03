@@ -1,4 +1,3 @@
-#![cfg(feature = "broken_tests")]
 //! Cognitive Benchmark Suite
 //!
 //! This test suite evaluates the convergence and success rate of the Sisyphus cognitive loop
@@ -12,7 +11,7 @@ use sisyphus_intel::{
 };
 use sisyphus_mem::MfsStore;
 use sisyphus_tools_llm::metis::DummyLlmClient;
-use sisyphus_types::{ExecutionContext, SOPGraph, TypesError};
+use sisyphus_types::{ExecutionContext, TypesError};
 use std::sync::Arc;
 
 mod common;
@@ -135,7 +134,7 @@ async fn test_cognitive_convergence_benchmark() {
         let synthesis = kernel
             .intelligence_manager
             .synthesize_goal(
-                &goal.description,
+                goal.description,
                 &ctx,
                 "default",
                 sisyphus_types::WorkMode::UltraWork,

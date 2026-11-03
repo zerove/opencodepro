@@ -1,4 +1,3 @@
-#![cfg(feature = "broken_tests")]
 use async_trait::async_trait;
 use sisyphus_core::{SOPGraph, SisyphusKernel, WasmSOPNode};
 use sisyphus_intel::{MonteCarloSimulator, SisyphusIntel, StandardEvolver, StandardReflector};
@@ -90,9 +89,10 @@ async fn test_sop_evolution_fuel_increase() {
         name: "node_1".into(),
         tool_id: "tool_1".into(),
         fuel_limit: 1_000_000,
+        args: Vec::new(),
         executor: tool_executor.clone(),
     });
-    let start_node = graph.add_node(node);
+    let _start_node = graph.add_node(node);
 
     // First run: may produce a pivot, ResourceExhausted, or Success depending on simulation
     let (result, _report, _evolved) = kernel

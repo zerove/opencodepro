@@ -1,7 +1,5 @@
-#![cfg(feature = "broken_tests")]
-use async_trait::async_trait;
 use parking_lot::Mutex;
-use sisyphus_core::{Consensus, SOPGraph, SisyphusKernel};
+use sisyphus_core::{Consensus, SisyphusKernel};
 use sisyphus_intel::{
     GoalDrivenSynthesizer, MonteCarloSimulator, SisyphusIntel, StandardEvolver, StandardReflector,
     StrategicSopSynthesizer,
@@ -24,7 +22,7 @@ struct MockLlmClient {
 }
 #[async_trait::async_trait]
 impl LlmClient for MockLlmClient {
-    async fn generate(&self, prompt: &str) -> Result<String, String> {
+    async fn generate(&self, prompt: &str) -> Result<String, sisyphus_types::TypesError> {
         if prompt.contains("Robustness") {
             Ok(r#"{"nodes": [{"id": "n1", "name": "robust_node", "tool_id": "fast_tool", "args": {}}], "edges": [], "start_node": "n1"}"#.to_string())
         } else if prompt.contains("Efficiency") {
@@ -37,7 +35,12 @@ impl LlmClient for MockLlmClient {
         }
     }
 
-    async fn chat(&self, system: &str, _user: &str, _stream: bool) -> Result<String, String> {
+    async fn chat(
+        &self,
+        system: &str,
+        _user: &str,
+        _stream: bool,
+    ) -> Result<String, sisyphus_types::TypesError> {
         if system.contains("senior engineering director") {
             Ok(r#"{
                 "health_assessment": "The project is at critical risk due to repeated failures in core infrastructure access.",
@@ -55,7 +58,7 @@ impl LlmClient for MockLlmClient {
             }"#.to_string())
         } else {
             let count = self.call_count.fetch_add(1, Ordering::SeqCst);
-            if count % 2 == 0 {
+            if count.is_multiple_of(2) {
                 // Even calls: proposal (SOPGraphConfig) - must have at least one node
                 Ok(r#"{"nodes": [{"name": "mock_node", "kind": {"Wasm": {"tool_id": "mock_tool", "fuel_limit": 1000000}}}], "edges": []}"#.to_string())
             } else {

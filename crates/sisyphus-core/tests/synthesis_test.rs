@@ -1,11 +1,8 @@
-#![cfg(feature = "broken_tests")]
-use async_trait::async_trait;
 use sisyphus_core::SisyphusKernel;
 use sisyphus_intel::{MonteCarloSimulator, SisyphusIntel, StandardEvolver, StandardReflector};
 use sisyphus_mem::MfsStore;
 use sisyphus_tools_llm::metis::LlmClient;
 use sisyphus_types::ToolExecutor;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
 mod common;
@@ -16,14 +13,19 @@ use common::{MockConsensus, MockExperienceBank, MockLogicalSimulator};
 struct MockLlmClient;
 #[async_trait::async_trait]
 impl LlmClient for MockLlmClient {
-    async fn generate(&self, prompt: &str) -> Result<String, String> {
+    async fn generate(&self, prompt: &str) -> Result<String, sisyphus_types::TypesError> {
         if prompt.contains("critical_findings") || prompt.contains("Task: Identify") {
             return Ok(r#"{"critical_findings": [], "risk_score": 0.1, "suggested_refinement": "none", "should_proceed": true}"#.to_string());
         }
         Ok(r#"{"nodes": [{"name": "standard_node", "kind": {"Wasm": {"tool_id": "fast_tool", "fuel_limit": 1000000}}}], "edges": []}"#.to_string())
     }
 
-    async fn chat(&self, _system: &str, user: &str, _stream: bool) -> Result<String, String> {
+    async fn chat(
+        &self,
+        _system: &str,
+        user: &str,
+        _stream: bool,
+    ) -> Result<String, sisyphus_types::TypesError> {
         if user.contains("Please review this proposal")
             || user.contains("Return a JSON object with fields 'approved'")
         {

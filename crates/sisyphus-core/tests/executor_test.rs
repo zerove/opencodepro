@@ -1,4 +1,3 @@
-#![cfg(feature = "broken_tests")]
 use async_trait::async_trait;
 use serde_json::Value;
 use sisyphus_core::{Executor, NodeOutput, SOPGraph};
@@ -56,6 +55,7 @@ impl SOPNode for MockNode {
         sisyphus_types::NodeKind::Wasm {
             tool_id: "mock".into(),
             fuel_limit: 100,
+            args: Vec::new(),
         }
     }
 }
@@ -176,8 +176,22 @@ async fn test_node_error_propagated() {
     let n1 = graph.add_node(Arc::new(MockNode::failing("crash")));
     let executor = make_executor();
 
-    let ctx = executor.execute(Arc::new(graph), n1, Arc::new(MockToolExecutor)).await.unwrap();
-    let out = ctx.get_result("crash").unwrap();
-    // Error is stored as a Value::String containing the error message
-    assert!(out.to_string().contains("ResourceExhausted"));
+    // 当前契约：节点失败中止整个执行并**向上传播错误**，而不是把错误塞进
+    // 上下文当作正常结果——「错误即成功」会让上层把全失败误报为 SUCCESS。
+    // 覆盖 streaming / 重试 / 恢复分支的完整矩阵见
+    // executor_failure_semantics.rs。
+    let err = executor
+        .execute(Arc::new(graph), n1, Arc::new(MockToolExecutor))
+        .await
+        .expect_err("a failing node must abort the run");
+    match err {
+        sisyphus_core::CoreError::NodeExecutionFailed { node_name, source } => {
+            assert_eq!(node_name, "crash");
+            assert!(
+                source.to_string().contains("ResourceExhausted"),
+                "propagated error must keep its cause, got: {source}"
+            );
+        },
+        other => panic!("unexpected error variant: {other:?}"),
+    }
 }

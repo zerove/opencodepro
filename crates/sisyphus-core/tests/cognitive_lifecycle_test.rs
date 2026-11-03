@@ -1,4 +1,3 @@
-#![cfg(feature = "broken_tests")]
 use sisyphus_core::*;
 use sisyphus_intel::{MonteCarloSimulator, SisyphusIntel, StandardEvolver, StandardReflector};
 use sisyphus_mem::MfsStore;
@@ -13,10 +12,15 @@ use common::{MockConsensus, MockExperienceBank, MockLogicalSimulator};
 struct MockLlmClient;
 #[async_trait::async_trait]
 impl sisyphus_tools_llm::LlmClient for MockLlmClient {
-    async fn generate(&self, prompt: &str) -> Result<String, String> {
+    async fn generate(&self, prompt: &str) -> Result<String, sisyphus_types::TypesError> {
         Ok(format!("Mock response to: {}", prompt))
     }
-    async fn chat(&self, _system: &str, _user: &str, _stream: bool) -> Result<String, String> {
+    async fn chat(
+        &self,
+        _system: &str,
+        _user: &str,
+        _stream: bool,
+    ) -> Result<String, sisyphus_types::TypesError> {
         Ok("Mock chat response".into())
     }
     fn get_params_for(&self, _agent_id: &str) -> (String, String, String) {
