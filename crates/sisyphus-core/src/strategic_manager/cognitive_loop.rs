@@ -1668,4 +1668,74 @@ mod tests {
             "执行结束后条目必须被移除，否则每次执行泄漏一条"
         );
     }
+
+    // ── CognitiveEngine seam（deepening 系列收尾）─────────────
+
+    /// 测试用 mock adapter：证明 `CognitiveEngine` 端口可以被第二个实现
+    /// 替换，调用方（kernel facade）只依赖 trait 即可驱动认知循环。
+    struct MockCognitiveEngine {
+        last_sop_id: Mutex<String>,
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    #[async_trait::async_trait]
+    impl CognitiveEngine for MockCognitiveEngine {
+        async fn run<F>(
+            &self,
+            _sop_graph: Arc<SOPGraph>,
+            sop_id: &str,
+            _goal_text: Option<&str>,
+            _project_id: Option<&str>,
+            _initial_ctx: Option<Arc<ExecutionContext>>,
+            _event_tx: Option<mpsc::UnboundedSender<ExecutionEvent>>,
+            _broadcast_fn: F,
+            _stream_tx: Option<mpsc::UnboundedSender<CognitiveEvent>>,
+            _micro_reflector: Option<Arc<dyn sisyphus_types::MicroReflector>>,
+        ) -> Result<(NodeOutput, CognitiveReport, Option<Arc<SOPGraph>>), CoreError>
+        where
+            F: Fn(&str, ExecutionEvent) + Send + Sync,
+        {
+            *self.last_sop_id.lock() = sop_id.to_string();
+            Ok((
+                NodeOutput(Arc::new(Value::Null)),
+                CognitiveReport {
+                    iterations: 0,
+                    converged: true,
+                    final_deviation: 0.0,
+                    history: Vec::new(),
+                    traces: Vec::new(),
+                },
+                None,
+            ))
+        }
+    }
+
+    /// 深化收官验证：trait 端口可被 mock adapter 二次实现，且泛型
+    /// broadcast hook 参数（F）正确穿透到引擎 trait 方法。
+    #[tokio::test]
+    async fn cognitive_engine_seam_accepts_second_adapter() {
+        let engine = MockCognitiveEngine {
+            last_sop_id: Mutex::new(String::new()),
+        };
+        let graph = Arc::new(SOPGraph::default());
+
+        let (_node_output, report, returned_graph) = CognitiveEngine::run(
+            &engine,
+            graph,
+            "sop-seam-mock",
+            None,      // goal_text
+            None,      // project_id
+            None,      // initial_ctx
+            None,      // event_tx
+            |_, _| {}, // broadcast_fn
+            None,      // stream_tx
+            None,      // micro_reflector
+        )
+        .await
+        .expect("mock cognitive engine should run");
+
+        assert_eq!(engine.last_sop_id.lock().as_str(), "sop-seam-mock");
+        assert!(report.converged);
+        assert!(returned_graph.is_none());
+    }
 }
