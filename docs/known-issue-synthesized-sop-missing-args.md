@@ -1,13 +1,12 @@
-# 已知阻塞：合成 SOP 缺少工具参数，`execute_goal` 必然失败
+# 已解决：合成 SOP 缺少工具参数（原「`execute_goal` 必然失败」）
 
-**状态**：未修复（需产品决策）
-**影响面**：CI `test-integration` job 红灯；生产 API `POST /api/execute/goal` 不可用
+**状态**：✅ 已修复（2026-11-04 验证）
+**影响面**：曾导致 CI `test-integration` job 红灯、生产 API `POST /api/execute/goal` 不可用
 **首次定位**：2026-10-06
+**解决方式**：方案 A——给节点类型增加参数字段，合成阶段生成默认参数
 
-> **修复所需规模超出单次缺陷修复**：需给公开类型 `WasmSOPNode` /
-> `NodeKind::Wasm` / `SOPNodeConfig` 增加参数字段，牵涉 71 处构造点，
-> 属公开 API 变更，须先决定参数来源（LLM 合成 / 用户输入 / 上下文推导）。
-> 本文只做定位与方案记录，未实施任何代码改动。
+> 本文保留为历史记录：上半部分是当时的定位与方案分析（结论仍准确），
+> 文末「解决记录」列出实际落地的改动与验证结果。
 
 ## 现象
 
@@ -128,3 +127,17 @@ SOPNodeConfig { name, kind }          // graph.rs:103  —— 无参数
 - ❌ 网络不可达 / 反爬——失败发生在请求发起前；
 - ❌ `DummyLlmClient` 恒返 0.1——该路径用的是 `StandardReflector`，与桩无关；
 - ❌ supervisor 阈值塌缩——已在 41e6033 修复，但单独修复不足以让用例转绿。
+
+## 解决记录（2026-11-04）
+
+方案 A 已落地：
+
+1. `WasmSOPNode` 新增 `args: Vec<u8>`（`crates/sisyphus-types/src/node.rs`）。
+   构造时默认空值，兼容大量只关心 `tool_id` 的 mock/测试构造点；
+   `execute` 改用 `self.args`，不再硬编码 `Vec::new()`。
+2. `NodeKind::Wasm` 与 `SOPNodeConfig` 同步增加 `args`，图定义可携带参数。
+3. `GoalDrivenSynthesizer` 通过 `default_args_for_action`
+   （`crates/sisyphus-intel/src/synthesis.rs`）为每个动作生成默认参数；
+   `DynamicSopSynthesizer`（LLM 路径）保留 LLM 给出的 args。
+4. 回归验证：`cargo test -p sisyphus-tests --lib` → 11 passed / 0 failed，
+   其中 `test_full_pipeline` 与 `test_concurrent_execution` 均转为绿色。
