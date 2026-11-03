@@ -430,12 +430,16 @@ async fn roadmap_dashboard_htmx(
     Path(project_id): Path<String>,
 ) -> Response {
     let data = fetch_roadmap_dashboard(&state, &project_id).await;
-    let pretty = serde_json::to_string_pretty(&data).unwrap_or_else(|_| "{}".to_string());
-    Html(format!(
-        r#"<div class="card"><h2>路线图仪表盘</h2><pre class="muted" style="white-space:pre-wrap;">{}</pre></div>"#,
-        pretty
-    ))
-    .into_response()
+    let inner = if data.is_null() {
+        r#"<div class="card"><h2>路线图仪表盘</h2><p class="muted">加载失败：bridge 不可达或接口错误。</p></div>"#.to_string()
+    } else {
+        let pretty = serde_json::to_string_pretty(&data).unwrap_or_else(|_| "{}".to_string());
+        format!(
+            r#"<div class="card"><h2>路线图仪表盘</h2><pre class="muted" style="white-space:pre-wrap;">{}</pre></div>"#,
+            pretty
+        )
+    };
+    Html(inner).into_response()
 }
 
 async fn sessions_htmx(State(state): State<Arc<AppState>>) -> Response {
