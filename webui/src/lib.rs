@@ -308,6 +308,10 @@ fn dashboard_body() -> &'static str {
     <span class="muted">等待 bridge 事件...</span>
   </div>
 </div>
+<div class="card">
+  <h2>路线图</h2>
+  <div id="roadmap-dashboard" hx-get="/htmx/roadmap/dashboard/default" hx-trigger="load, every 15s" hx-swap="innerHTML">加载中...</div>
+</div>
 "#
 }
 
@@ -419,6 +423,19 @@ async fn dashboard_htmx(State(state): State<Arc<AppState>>) -> Response {
     );
 
     Html(html).into_response()
+}
+
+async fn roadmap_dashboard_htmx(
+    State(state): State<Arc<AppState>>,
+    Path(project_id): Path<String>,
+) -> Response {
+    let data = fetch_roadmap_dashboard(&state, &project_id).await;
+    let pretty = serde_json::to_string_pretty(&data).unwrap_or_else(|_| "{}".to_string());
+    Html(format!(
+        r#"<div class="card"><h2>路线图仪表盘</h2><pre class="muted" style="white-space:pre-wrap;">{}</pre></div>"#,
+        pretty
+    ))
+    .into_response()
 }
 
 async fn sessions_htmx(State(state): State<Arc<AppState>>) -> Response {
@@ -1123,6 +1140,7 @@ pub fn app_with_token(bridge_url: String, auth_token: Option<String>) -> Router 
         .route("/chaos", get(chaos_page))
         .route("/cogmap", get(cogmap_page))
         .route("/htmx/dashboard", get(dashboard_htmx))
+        .route("/htmx/roadmap/dashboard/{project_id}", get(roadmap_dashboard_htmx))
         .route("/htmx/sessions", get(sessions_htmx))
         .route("/htmx/session/{id}/detail", get(session_detail_htmx))
         .route("/htmx/dag", get(dag_htmx))
