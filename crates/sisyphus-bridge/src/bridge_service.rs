@@ -2,7 +2,6 @@
 use crate::jcode_caller::DebugSocketToolCaller;
 use async_trait::async_trait;
 use std::collections::HashMap;
-#[cfg(feature = "sandbox")]
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, RwLock};
