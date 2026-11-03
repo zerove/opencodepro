@@ -4,7 +4,8 @@
 //! 认知循环主体位于 [`cognitive_loop`] 子模块；本模块
 //! 持有管理器状态、构建逻辑与支撑类型。
 
-mod cognitive_loop;
+pub mod cognitive_loop;
+pub use cognitive_loop::CognitiveEngine;
 
 use parking_lot::{Mutex, RwLock};
 use std::sync::Arc;

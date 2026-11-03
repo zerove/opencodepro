@@ -38,18 +38,18 @@ impl SisyphusKernel {
             .ok()
             .flatten();
 
-        self.strategic_manager
-            .run_cognitive_loop(
-                sop_graph,
-                sop_id,
-                goal_text.as_deref(),
-                project_id,
-                initial_ctx,
-                event_tx,
-                |sid, event| self.broadcast_event(sid, event),
-                stream_tx,
-                self.micro_reflector.clone(),
-            )
-            .await
+        crate::strategic_manager::CognitiveEngine::run(
+            self.strategic_manager.as_ref(),
+            sop_graph,
+            sop_id,
+            goal_text.as_deref(),
+            project_id,
+            initial_ctx,
+            event_tx,
+            |sid, event| self.broadcast_event(sid, event),
+            stream_tx,
+            self.micro_reflector.clone(),
+        )
+        .await
     }
 }

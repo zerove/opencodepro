@@ -57,7 +57,7 @@ pub mod cognitive_loop;
 pub mod cognitive_loop_v2;
 pub use cognitive_loop_v2::*;
 
-pub use strategic_manager::{CognitiveIteration, CognitiveReport};
+pub use strategic_manager::{CognitiveEngine, CognitiveIteration, CognitiveReport};
 
 pub mod execution_manager;
 

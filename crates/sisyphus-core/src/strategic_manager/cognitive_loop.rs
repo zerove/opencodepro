@@ -42,6 +42,64 @@ impl Drop for ActiveExecutionGuard {
     }
 }
 
+/// 认知循环引擎（deepening seam）。
+///
+/// 把「预测 → 执行 → 反思 → 演进」的循环主体收敛为一个可替换的执行引擎
+/// 接口；[`StrategicManager`] 作为 adapter 实现本 trait，而调用方（
+/// `SisyphusKernel`）只依赖 trait，便于未来以第二个 adapter 替换而不改调用方。
+#[async_trait::async_trait]
+pub trait CognitiveEngine: Send + Sync {
+    /// Run the full cognitive loop: predict → execute → reflect → evolve.
+    #[allow(clippy::too_many_arguments)]
+    async fn run<F>(
+        &self,
+        sop_graph: Arc<SOPGraph>,
+        sop_id: &str,
+        goal_text: Option<&str>,
+        project_id: Option<&str>,
+        initial_ctx: Option<Arc<ExecutionContext>>,
+        event_tx: Option<mpsc::UnboundedSender<ExecutionEvent>>,
+        broadcast_fn: F,
+        stream_tx: Option<mpsc::UnboundedSender<CognitiveEvent>>,
+        micro_reflector: Option<Arc<dyn sisyphus_types::MicroReflector>>,
+    ) -> Result<(NodeOutput, CognitiveReport, Option<Arc<SOPGraph>>), CoreError>
+    where
+        F: Fn(&str, ExecutionEvent) + Send + Sync;
+}
+
+#[async_trait::async_trait]
+impl CognitiveEngine for StrategicManager {
+    #[allow(clippy::too_many_arguments)]
+    async fn run<F>(
+        &self,
+        sop_graph: Arc<SOPGraph>,
+        sop_id: &str,
+        goal_text: Option<&str>,
+        project_id: Option<&str>,
+        initial_ctx: Option<Arc<ExecutionContext>>,
+        event_tx: Option<mpsc::UnboundedSender<ExecutionEvent>>,
+        broadcast_fn: F,
+        stream_tx: Option<mpsc::UnboundedSender<CognitiveEvent>>,
+        micro_reflector: Option<Arc<dyn sisyphus_types::MicroReflector>>,
+    ) -> Result<(NodeOutput, CognitiveReport, Option<Arc<SOPGraph>>), CoreError>
+    where
+        F: Fn(&str, ExecutionEvent) + Send + Sync,
+    {
+        self.run_cognitive_loop(
+            sop_graph,
+            sop_id,
+            goal_text,
+            project_id,
+            initial_ctx,
+            event_tx,
+            broadcast_fn,
+            stream_tx,
+            micro_reflector,
+        )
+        .await
+    }
+}
+
 impl StrategicManager {
     #[allow(clippy::too_many_arguments)]
     #[instrument(skip_all, fields(sop_id = %sop_id, graph_nodes = sop_graph.graph.node_count()))]
