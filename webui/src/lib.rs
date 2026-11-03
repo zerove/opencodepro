@@ -825,6 +825,13 @@ async fn api_skill_install(
     ))
 }
 
+async fn api_roadmap_dashboard(
+    State(state): State<Arc<AppState>>,
+    Path(project_id): Path<String>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    Ok(Json(fetch_roadmap_dashboard(&state, &project_id).await))
+}
+
 // ── Bridge 客户端辅助函数 ─────────────────────
 
 async fn fetch_health(state: &AppState) -> HealthResponse {
@@ -839,6 +846,21 @@ async fn fetch_health(state: &AppState) -> HealthResponse {
             version: "unknown".into(),
             uptime_secs: 0,
         },
+    }
+}
+
+async fn fetch_roadmap_dashboard(state: &AppState, project_id: &str) -> serde_json::Value {
+    match state
+        .client
+        .get(format!(
+            "{}/api/roadmap/dashboard/{}",
+            state.bridge_url, project_id
+        ))
+        .send()
+        .await
+    {
+        Ok(r) => r.json::<serde_json::Value>().await.unwrap_or(serde_json::Value::Null),
+        Err(_) => serde_json::Value::Null,
     }
 }
 
@@ -1123,6 +1145,10 @@ pub fn app_with_token(bridge_url: String, auth_token: Option<String>) -> Router 
         .route("/api/skills", get(api_skill_list))
         .route("/api/skills/install", post(api_skill_install))
         .route("/api/auth/validate", post(auth_validate))
+        .route(
+            "/api/roadmap/dashboard/{project_id}",
+            get(api_roadmap_dashboard),
+        )
         // 用 `from_fn_with_state` 而非 `from_fn`：token 作为中间件 State
         // 直接传入，不依赖请求 extensions——后者在 `.layer()` 先于
         // `with_state()` 调用时取不到值，会静默退化成「永不校验」。
