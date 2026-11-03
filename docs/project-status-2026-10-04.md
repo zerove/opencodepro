@@ -786,6 +786,12 @@ pub enum TestOutcome {
 
 让调用方不再需要「靠 failed==0 反推有没有跑过」。
 
+**（2026-11-04 实施完毕）**：`sisyphus-tools-build` 新增
+`TestOutcome` 枚举 + `TestResults::outcome()` 判定方法；
+`sisyphus-cli` 的 `test_status_label()` 改走 `outcome()` 判定。
+`outcome()` 对「Ran / NoTests」有显式实现；`NotExecuted` 由后端
+错误路径语义承载（成功结果不会进入结构体）。
+
 ### 7.2 e2e 测试进 CI（已完成）
 
 原先这 13 条全是 `#[ignore]` 且**无任何 CI job 跑它们**——

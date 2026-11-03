@@ -1,7 +1,7 @@
 use anyhow::Result;
 use std::path::PathBuf;
 
-use crate::tools::build::TestResults;
+use crate::tools::build::{TestOutcome, TestResults};
 
 /// 从 `--lang` 选项字符串解析语言后端，并在未指定时按项目特征自动检测。
 ///
@@ -146,13 +146,19 @@ pub const STATUS_NO_TESTS: &str = "no tests ran";
 /// 「零用例」本身不算失败（`frontend` 后端就没有测试步骤，空 rust/go/python 工程
 /// 也合法），所以只改**展示**、不改退出码；但绝不能再谎报为 `ok`。
 fn test_status_label(r: &TestResults) -> &'static str {
-    if r.failed > 0 {
-        return STATUS_FAILED;
+    match r.outcome() {
+        TestOutcome::Ran { failed, .. } => {
+            if failed > 0 {
+                STATUS_FAILED
+            } else {
+                STATUS_OK
+            }
+        },
+        TestOutcome::NoTests => STATUS_NO_TESTS,
+        // `backend.test` 在收集失败时会提前返回 Err（NotExecuted），
+        // `run_test` 据此失败而不再拿到结果；此处防御性兜底（不会出现）。
+        TestOutcome::NotExecuted => STATUS_NO_TESTS,
     }
-    if r.passed == 0 && r.ignored == 0 && r.measured == 0 {
-        return STATUS_NO_TESTS;
-    }
-    STATUS_OK
 }
 
 /// 零用例时的诊断提示。

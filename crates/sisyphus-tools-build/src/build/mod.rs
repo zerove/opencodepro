@@ -27,6 +27,83 @@ pub struct TestResults {
     pub raw_stderr: String,
 }
 
+/// 显式判定测试结果的执行状态。
+///
+/// 不能只看 `failed == 0` 反推「是否真的跑过用例」：零失败有三种截然不同的
+/// 情形 —— 有用例通过（`Ran`）、跑完但零用例（`NoTests`）、根本没执行到
+/// （`NotExecuted`，由后端 `test()` 的错误路径返回 Err，结果不会进入结构体）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TestOutcome {
+    /// 确实执行了用例（通过 / 失败 / 跳过 / 测量）。
+    Ran { passed: usize, failed: usize },
+    /// 执行完了，但零个用例命中（空工程 / 过滤器漏掉 / 无测试步骤）。
+    NoTests,
+    /// 未执行（收集 / 编译 / 加载失败）。
+    NotExecuted,
+}
+
+impl TestResults {
+    /// 显式判定执行状态。
+    ///
+    /// `failed > 0 || passed > 0 || ignored > 0 || measured > 0` 表示本次
+    /// 执行有实际发生（含全部被 skip）。全为 0 时判定为 `NoTests`。
+    pub fn outcome(&self) -> TestOutcome {
+        if self.failed > 0 || self.passed > 0 || self.ignored > 0 || self.measured > 0 {
+            TestOutcome::Ran {
+                passed: self.passed,
+                failed: self.failed,
+            }
+        } else {
+            TestOutcome::NoTests
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn results(passed: usize, failed: usize, ignored: usize, measured: usize) -> TestResults {
+        TestResults {
+            passed,
+            failed,
+            ignored,
+            measured,
+            filtered_out: 0,
+            failures: Vec::new(),
+            raw_stdout: String::new(),
+            raw_stderr: String::new(),
+        }
+    }
+
+    #[test]
+    fn outcome_is_ran_when_tests_passed() {
+        assert_eq!(
+            results(2, 0, 0, 0).outcome(),
+            TestOutcome::Ran {
+                passed: 2,
+                failed: 0
+            }
+        );
+    }
+
+    #[test]
+    fn outcome_is_ran_when_tests_failed() {
+        assert_eq!(
+            results(1, 1, 0, 0).outcome(),
+            TestOutcome::Ran {
+                passed: 1,
+                failed: 1
+            }
+        );
+    }
+
+    #[test]
+    fn outcome_is_no_tests_when_nothing_ran() {
+        assert_eq!(results(0, 0, 0, 0).outcome(), TestOutcome::NoTests);
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 /// Test Failure.
 pub struct TestFailure {
