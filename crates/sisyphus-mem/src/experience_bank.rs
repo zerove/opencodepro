@@ -77,6 +77,12 @@ pub struct VectorExperienceBank {
     /// `version` 一并回退，远端节点按 CRDT 版本裁决会把这些**新**写入当成
     /// 旧版本丢弃——比主键碰撞更隐蔽，因为它丢的是刚发生的经验。
     local_seq: std::sync::atomic::AtomicU64,
+    /// 版本向量摘要缓存（ADR-010 反熵 + 版本向量导出接口）。
+    ///
+    /// `export_version_vector` / `digest` 在重连补齐、周期性快照等高频调用
+    /// 场景下避免每次重复执行 `SELECT id FROM experiences` 全表扫描；写入
+    /// （`record_with_id` / `apply_remote`）成功后由调用方侧整体失效。
+    digest_cache: std::sync::Mutex<Option<sisyphus_types::experience::ExperienceDigest>>,
 }
 
 impl VectorExperienceBank {
@@ -114,6 +120,7 @@ impl VectorExperienceBank {
             vector_store,
             embedding_client,
             local_seq: std::sync::atomic::AtomicU64::new(recovered),
+            digest_cache: std::sync::Mutex::new(None),
         })
     }
 
@@ -135,10 +142,28 @@ impl VectorExperienceBank {
     /// 返回 (node_id → 最大写入计数)。dial 方把它随 `SyncRequest` 发给对端，
     /// 对端据此算出自己该补发哪些行。
     pub async fn digest(&self) -> Result<sisyphus_types::experience::ExperienceDigest, TypesError> {
-        self.store
-            .experience_digest()
-            .await
-            .map_err(|e| TypesError::ExperienceError(format!("experience digest failed: {e}")))
+        // 版本向量摘要缓存：写入成功后由调用方侧失效，故命中即返回。
+        if let Some(digest) = self.cached_digest() {
+            return Ok(digest);
+        }
+        let digest =
+            self.store.experience_digest().await.map_err(|e| {
+                TypesError::ExperienceError(format!("experience digest failed: {e}"))
+            })?;
+        if let Ok(mut cache) = self.digest_cache.lock() {
+            *cache = Some(digest.clone());
+        }
+        Ok(digest)
+    }
+
+    fn cached_digest(&self) -> Option<sisyphus_types::experience::ExperienceDigest> {
+        let Ok(cache) = self.digest_cache.lock() else {
+            return None;
+        };
+        if let Some(digest) = cache.as_ref() {
+            return Some(digest.clone());
+        }
+        None
     }
 
     /// 列出全部经验主键（ADR-010 反熵差量筛选）。
@@ -228,6 +253,11 @@ impl VectorExperienceBank {
                 .store_embedding(&key, text_embedding, metadata)
                 .await
                 .map_err(|e| TypesError::ExperienceError(format!("vector store failed: {e}")))?;
+        }
+
+        // 应用成功 → 版本向量摘要缓存失效，下次导出重新扫描。
+        if let Ok(mut cache) = self.digest_cache.lock() {
+            *cache = None;
         }
 
         Ok(outcome)
@@ -346,6 +376,11 @@ impl VectorExperienceBank {
                 .map_err(|e| {
                     TypesError::ExperienceError(format!("visual vector store failed: {e}"))
                 })?;
+        }
+
+        // 写入成功 → 版本向量摘要缓存失效，下次导出重新扫描。
+        if let Ok(mut cache) = self.digest_cache.lock() {
+            *cache = None;
         }
 
         Ok(key)
