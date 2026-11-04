@@ -353,7 +353,7 @@ audit: audit-orphans audit-ignored audit-test-state audit-workflows
 # 只做本地可验证的检查；`git tag` / `git push` 仍需人工执行
 # （会触发 .github/workflows/release.yml 的跨平台构建）。
 release-check:
-	@scripts/release-check.sh
+	@scripts/release-check.sh $(RELEASE_CHECK_ARGS)
 
 # 指定版本校验（用于确认打 tag 前的目标版本）
 release-check-version:

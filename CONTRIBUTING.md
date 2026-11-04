@@ -235,7 +235,8 @@ Closes: #123
 0. **发布前置检查**：`make release-check` —— 校验全部 crate 版本一致、
    发布 metadata（description / authors / license / repository）齐全、
    `CHANGELOG.md` 存在对应版本段、目标版本尚未打 tag、工作区干净。
-   任一失败会以非零退出，**不要带着失败项打 tag**
+   任一失败会以非零退出，**不要带着失败项打 tag**。
+   若上次发布失败且 Release workflow 未产出任何 artifact，可`make release-check RELEASE_CHECK_ARGS=--retag` 后重打同名 tag。
 1. **bump 版本**：`crates/*/Cargo.toml` 与 `webui/Cargo.toml`、`evals/Cargo.toml`
    的 `[package] version` 以及内部 path 依赖的 `version = "x.y.z"` 约束需同步修改
 2. 更新 `CHANGELOG.md`：`[Unreleased]` → `[vx.y.x] - <日期>`，并在其**之前**

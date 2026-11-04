@@ -23,8 +23,15 @@
 set -uo pipefail
 
 VERSION_OVERRIDE=""
+RETAG=0
 while [ $# -gt 0 ]; do
     case "$1" in
+        --retag)
+            # 上次发布失败（Release workflow 没产出任何 artifact）时，允许重打
+            # 同名 tag 而不 bump 版本。默认关闭：tag 一旦被消费就不该被移动。
+            RETAG=1
+            shift
+            ;;
         --version)
             VERSION_OVERRIDE="${2:-}"
             [ -n "$VERSION_OVERRIDE" ] || {
@@ -170,7 +177,11 @@ fi
 # ── 5. 版本是否已打 tag ──────────────────────────────
 if git rev-parse --git-dir >/dev/null 2>&1; then
     if git rev-parse -q --verify "refs/tags/v${VERSION}" >/dev/null; then
-        fail "tag v${VERSION} 已存在 → 需先 bump 版本再发布"
+        if [ "$RETAG" -eq 1 ]; then
+            warn "tag v${VERSION} 已存在；--retag 允许重打（确认上次发布未产出 artifact）"
+        else
+            fail "tag v${VERSION} 已存在 → 需先 bump 版本；若上次发布失败且无产物，加 --retag"
+        fi
     else
         pass "tag v${VERSION} 尚未创建（可直接 git tag）"
     fi
