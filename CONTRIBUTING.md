@@ -20,9 +20,10 @@ cd opencodepro
 # 命令面板 → "Dev Containers: Reopen in Container"
 # 详见 .devcontainer/devcontainer.json
 
-# 或本地手动配置（nightly Rust 必需）
-rustup toolchain install nightly --component rustfmt clippy rust-src
-rustup default nightly
+# 或本地手动配置：工具链版本由 rust-toolchain.toml 决定，不要手动装浮动 nightly
+#（rustup 会按该文件自动安装 pin 住的版本；显式安装只是让首次构建更快）
+rustup toolchain install "$(sed -n 's/^channel[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' rust-toolchain.toml)" \
+    --component rustfmt --component clippy
 
 # 预热依赖
 cargo fetch

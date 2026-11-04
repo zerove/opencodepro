@@ -19,8 +19,14 @@ jobs:
         with:
           fetch-depth: 0
 
+      # 用仓库固定的工具链（rust-toolchain.toml），不要写 @stable / @nightly：
+      # 仓库里有 rust-toolchain.toml 时 cargo 一律按它解析，action 另装的工具链
+      # 只会造成「装的组件在 A 上、cargo 去 B 里找」的错配。
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: ./.github/actions/setup-rust
+
+      # sisyphus-cli 依赖 sisyphus-bridge-api，其 build script 需要 protoc
+      - uses: ./.github/actions/setup-protoc
 
       - name: Rust cache
         uses: Swatinem/rust-cache@v2

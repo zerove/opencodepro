@@ -115,9 +115,11 @@ cargo bench -p sisyphus-core   # 认知循环 benchmark
 
 - 工具链：仓库**有** `rust-toolchain.toml`，channel 固定为
   `nightly-2026-08-08`（不是浮动的 `nightly`）。原因是 rustfmt 的换行启发式
-  随 nightly 漂移，浮动版本会让「本地 fmt 绿、CI fmt 红」。**升级工具链时
-  必须同时改** `rust-toolchain.toml` 与 `ci.yml` 的 fmt job，
-  再 `cargo fmt --all` 重新格式化并在两种工具链下各跑一次 `--check`。
+  随 nightly 漂移，浮动版本会让「本地 fmt 绿、CI fmt 红」。
+  这是**唯一**的工具链来源：workflow 一律 `uses: ./.github/actions/setup-rust`，
+  由它读 `rust-toolchain.toml` 的 channel 再交给 `dtolnay/rust-toolchain` 安装；
+  Dockerfile 同样从该文件取版本。**升级时只改这一处**，再
+  `cargo fmt --all` 重新格式化并在旧/新工具链下各跑一次 `--check`。
 - 历史坑（务必记住）：该文件曾因缺少 `[toolchain]` 表头（且 `profile =
   "stable"` 不是合法 profile）导致 rustup 解析失败，CI 里**每一个** cargo
   step 全红，而本地因为 `RUSTUP_TOOLCHAIN` 环境变量会**完全绕过**该文件，
@@ -127,9 +129,13 @@ cargo bench -p sisyphus-core   # 认知循环 benchmark
   因此**pre-commit hook 实际用 stable 1.99.1 的 rustfmt/clippy**。
   已确认 stable 1.99.1 与 nightly-2026-08-08 对本仓库格式化结果一致。
   排查构建问题前先确认 `rustc --version`，不要假设在用哪个工具链。
-- CI（`.github/workflows/ci.yml`）的**非 fmt** job 仍用 `dtolnay/rust-toolchain@nightly`
-  （=最新 nightly）；只有 fmt job 锁日期。若未来某个 latest nightly 引入新的
-  clippy lint 导致 lint job 变红，按同样思路把对应 job 也锁到同一日期。
+- 为什么 workflow 里不能直接写 `dtolnay/rust-toolchain@nightly`：那样装的是
+  **浮动 nightly**，而 cargo 按仓库 pin 去找 `nightly-2026-08-08`，两者不是
+  同一个工具链 —— clippy / rustfmt / target 全装在用不到的那个上，cargo 报
+  `not installed for the toolchain` 或 `can't find crate for core`。release 的
+  四个平台构建就是这样挂过一次。`scripts/audit_workflows.py` 现在会拒绝
+  任何直写 `dtolnay/rust-toolchain@` 的 workflow，也会拒绝缺少 `[toolchain]`
+  表头或 channel 浮动的 `rust-toolchain.toml`（CI `Audit sources` job 执行）。
 - **`cargo test-all` 不等于完整 workspace 验收**：该 alias 显式
   `--exclude sisyphus-bridge --exclude sisyphus-sandbox --exclude
   sisyphus-sandboxd --exclude sisyphus-tests`（见 `.cargo/config.toml`），

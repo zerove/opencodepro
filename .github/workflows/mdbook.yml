@@ -43,6 +43,11 @@ jobs:
           # 完整历史（mdbook preprocessor 可能引用 git log）
           fetch-depth: 0
 
+      # 仓库有 rust-toolchain.toml，cargo 会按它解析工具链。显式先装好，
+      # 避免 `cargo install` 在构建中途才发现要下载一整个 nightly。
+      - name: Install Rust toolchain
+        uses: ./.github/actions/setup-rust
+
       - name: Install mdbook
         run: |
           # mdbook 0.5+ 支持增量构建：增量检测由 mdbook 自身完成

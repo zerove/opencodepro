@@ -42,7 +42,10 @@ jobs:
   docker:
     name: Build & Push Multi-Arch Docker Image
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # 首次冷构建（amd64 原生 + arm64 QEMU 模拟，依赖层含 wasmtime/cranelift）
+    # 实测远超 30 分钟；缓存命中后才会降到个位数。给 120 分钟是让首次发布
+    # 能跑完——超时会让「镜像发布」这件事看起来像是代码坏了。
+    timeout-minutes: 120
     steps:
       - name: Resolve version
         id: version

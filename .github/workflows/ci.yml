@@ -28,15 +28,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      # 固定日期的 nightly，而不是 `@nightly`（=最新 nightly）。rustfmt 的换行
-      # 启发式随 nightly 漂移：2026-11 的 nightly 会把
-      # crates/sisyphus-bridge/src/http/mod.rs 里 `.route(...)` 链改写成多行，
-      # 而仓库现状（本地 stable 1.99.1 与 nightly-2026-08-08 一致判定为单行）
-      # 是单行 → 「本地 fmt 绿、CI fmt 红」。同一个文件不可能同时满足两种
-      # 输出，所以这里必须与 rust-toolchain.toml 的 channel 锁死在同一日期。
-      - uses: dtolnay/rust-toolchain@master
+      # 工具链来自 rust-toolchain.toml（由 setup-rust 读取），不在这里写死版本。
+      # 只有一个来源是刻意的：rustfmt 的换行启发式随 nightly 漂移，2026-11 的
+      # nightly 会把 crates/sisyphus-bridge/src/http/mod.rs 里 `.route(...)` 链
+      # 改写成多行，而仓库现状（stable 1.99.1 与 nightly-2026-08-08 都判定为
+      # 单行）是单行 → 「本地 fmt 绿、CI fmt 红」。升级工具链时改
+      # rust-toolchain.toml 一处即可，所有 workflow 自动跟随。
+      - uses: ./.github/actions/setup-rust
         with:
-          toolchain: nightly-2026-08-08
           components: rustfmt
       - uses: Swatinem/rust-cache@v2
       - run: cargo fmt --check
@@ -75,6 +74,15 @@ jobs:
           python3 scripts/audit_workflows.py
           python3 scripts/audit_workflows.py --self-check
 
+      # Dockerfile 的依赖缓存层与 .dockerignore 必须和 workspace 成员一致。
+      # 这两类缺陷**只在镜像内**复现：本地 cargo 一切正常，镜像里却
+      # `failed to load manifest for workspace member`——多架构镜像发布
+      # 因此静默失败了很久。
+      - name: Audit Dockerfile deps layer vs workspace
+        run: |
+          python3 scripts/audit_dockerfile.py
+          python3 scripts/audit_dockerfile.py --self-check
+
       # GitHub Actions 的 JSON Schema 校验。check-jsonschema 内置了官方
       # workflow schema，不需要联网拉取（actions 官方 schema 托管在
       # SchemaStore，CI 环境拉不到就会静默跳过校验——那正是它要防的情况）。
@@ -98,7 +106,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@nightly
+      - uses: ./.github/actions/setup-rust
       - name: Install cargo-deny
         uses: taiki-e/install-action@cargo-deny
       - name: Run cargo deny check
@@ -112,7 +120,7 @@ jobs:
     needs: fmt
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@nightly
+      - uses: ./.github/actions/setup-rust
         with:
           components: clippy
       - uses: Swatinem/rust-cache@v2
@@ -137,7 +145,11 @@ jobs:
     needs: fmt
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@nightly
+      - uses: ./.github/actions/setup-rust
+      # eval-runner 传递依赖 sisyphus-bridge-api，后者的 build script 需要 protoc
+      # 生成 gRPC 桩。缺这一步时 `cargo test -p eval-runner --bin no-panic-check`
+      # 在编译阶段就死在 `Could not find protoc`，no-panic 扫描根本没机会跑。
+      - uses: ./.github/actions/setup-protoc
       - uses: Swatinem/rust-cache@v2
       - name: Build + self-test
         run: cargo test -p eval-runner --bin no-panic-check
@@ -152,7 +164,7 @@ jobs:
     needs: fmt
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@nightly
+      - uses: ./.github/actions/setup-rust
         with:
           components: clippy
       - uses: Swatinem/rust-cache@v2
@@ -166,7 +178,7 @@ jobs:
     needs: fmt
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@nightly
+      - uses: ./.github/actions/setup-rust
         with:
           components: clippy
       - uses: Swatinem/rust-cache@v2
@@ -180,7 +192,7 @@ jobs:
     needs: fmt
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@nightly
+      - uses: ./.github/actions/setup-rust
         with:
           components: clippy
       - uses: Swatinem/rust-cache@v2
@@ -195,7 +207,7 @@ jobs:
     needs: lint-light
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@nightly
+      - uses: ./.github/actions/setup-rust
         with:
           components: clippy
       - uses: Swatinem/rust-cache@v2
@@ -212,7 +224,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@nightly
+      - uses: ./.github/actions/setup-rust
       - uses: Swatinem/rust-cache@v2
       - uses: ./.github/actions/setup-protoc
       - run: cargo test -p sisyphus-bridge --no-default-features --test bridge_integration_test
@@ -230,7 +242,7 @@ jobs:
     needs: [lint-light, lint-sandbox, lint-tests]
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@nightly
+      - uses: ./.github/actions/setup-rust
         with:
           # sisyphus-tools-build 的 fmt_check 测试调用 `cargo fmt`，需要 rustfmt 组件
           components: rustfmt
@@ -252,7 +264,7 @@ jobs:
     needs: [lint-light, lint-sandbox, lint-tests]
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@nightly
+      - uses: ./.github/actions/setup-rust
       - uses: Swatinem/rust-cache@v2
       - uses: ./.github/actions/setup-protoc
       - run: cargo test -p sisyphus-core
@@ -265,7 +277,7 @@ jobs:
     needs: [lint-light, lint-sandbox, lint-tests]
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@nightly
+      - uses: ./.github/actions/setup-rust
       - uses: Swatinem/rust-cache@v2
       - uses: ./.github/actions/setup-protoc
       - run: cargo test -p sisyphus-sandbox --lib
@@ -278,7 +290,7 @@ jobs:
     needs: [lint-light, lint-sandbox, lint-tests]
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@nightly
+      - uses: ./.github/actions/setup-rust
       - uses: Swatinem/rust-cache@v2
       - uses: ./.github/actions/setup-protoc
       - run: cargo test -p sisyphus-tests --lib
@@ -291,7 +303,7 @@ jobs:
     needs: [lint-sandboxd]
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@nightly
+      - uses: ./.github/actions/setup-rust
       - uses: Swatinem/rust-cache@v2
       - uses: ./.github/actions/setup-protoc
       - run: cargo test -p sisyphus-sandboxd
@@ -304,7 +316,7 @@ jobs:
     needs: [lint-light, lint-sandboxd, bridge-integration-test]
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@nightly
+      - uses: ./.github/actions/setup-rust
         with:
           components: clippy
       - uses: Swatinem/rust-cache@v2
@@ -322,7 +334,7 @@ jobs:
     needs: lint-light
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@nightly
+      - uses: ./.github/actions/setup-rust
       - uses: Swatinem/rust-cache@v2
       - uses: ./.github/actions/setup-protoc
       - run: cargo test -p sisyphus-cli
@@ -347,7 +359,7 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@nightly
+      - uses: ./.github/actions/setup-rust
       - uses: Swatinem/rust-cache@v2
       - uses: ./.github/actions/setup-protoc
 
@@ -421,7 +433,7 @@ jobs:
     needs: [bridge-test-full]
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@nightly
+      - uses: ./.github/actions/setup-rust
       - uses: Swatinem/rust-cache@v2
       - uses: ./.github/actions/setup-protoc
       # Build both bridge and stress_test binary
@@ -452,7 +464,7 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@nightly
+      - uses: ./.github/actions/setup-rust
       - uses: Swatinem/rust-cache@v2
       - uses: ./.github/actions/setup-protoc
       - name: Build bridge with sandboxd
@@ -512,7 +524,7 @@ jobs:
     needs: [lint-light]
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@nightly
+      - uses: ./.github/actions/setup-rust
       - uses: Swatinem/rust-cache@v2
       - uses: ./.github/actions/setup-protoc
 
@@ -645,7 +657,7 @@ jobs:
     needs: [test-light, test-core, test-sandbox, test-integration, bridge-check, toolchain-e2e]
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@nightly
+      - uses: ./.github/actions/setup-rust
       - uses: Swatinem/rust-cache@v2
       - uses: ./.github/actions/setup-protoc
       - run: cargo build --release -p sisyphus-cli
@@ -661,7 +673,7 @@ jobs:
     needs: [lint-sandboxd]
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@nightly
+      - uses: ./.github/actions/setup-rust
       - uses: Swatinem/rust-cache@v2
       - uses: ./.github/actions/setup-protoc
       - run: cargo build --release -p sisyphus-sandboxd
@@ -677,7 +689,7 @@ jobs:
     needs: [test-light, test-core, test-sandbox, test-integration]
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@nightly
+      - uses: ./.github/actions/setup-rust
         with:
           targets: aarch64-apple-darwin
       - uses: Swatinem/rust-cache@v2
@@ -695,7 +707,7 @@ jobs:
     needs: [test-light, test-core, test-sandbox, test-integration]
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@nightly
+      - uses: ./.github/actions/setup-rust
       - uses: Swatinem/rust-cache@v2
       - uses: ./.github/actions/setup-protoc
       - run: cargo build --release -p sisyphus-cli
@@ -748,7 +760,7 @@ jobs:
     needs: lint-light
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@nightly
+      - uses: ./.github/actions/setup-rust
         with:
           components: clippy
       - uses: Swatinem/rust-cache@v2

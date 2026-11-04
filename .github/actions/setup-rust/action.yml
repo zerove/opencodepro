@@ -1,0 +1,49 @@
+name: "Setup Rust (pinned)"
+description: >
+  Install the Rust toolchain pinned by rust-toolchain.toml (single source of
+  truth). Use this instead of `dtolnay/rust-toolchain@nightly` — see the
+  comment in the first step for why that difference is load-bearing.
+
+inputs:
+  components:
+    description: "Comma-separated rustup components (e.g. clippy, rustfmt)."
+    required: false
+    default: ""
+  targets:
+    description: "Comma-separated target triples (e.g. aarch64-apple-darwin)."
+    required: false
+    default: ""
+
+runs:
+  using: "composite"
+  steps:
+    # 为什么不能直接用 `dtolnay/rust-toolchain@nightly`：
+    #
+    # 该 action 装的是**浮动的 `nightly`**，而仓库根目录的 rust-toolchain.toml
+    # 会把 cargo 重定向到它固定的 `nightly-YYYY-MM-DD`。两个名字不等于同一个
+    # 工具链，于是 action 装的 clippy / rustfmt / target 全落在 `nightly` 上，
+    # cargo 却在 `nightly-2026-08-08` 里找不到它们，报
+    #   error: 'cargo-clippy' is not installed for the toolchain 'nightly-...'
+    # 或 `can't find crate for core`（target 没装）。**每一个** cargo step 都会红
+    # 而本地永远不会复现（本地 shell 里的 RUSTUP_TOOLCHAIN 直接绕过该文件）。
+    #
+    # 所以这里从 rust-toolchain.toml 读出 channel 再交给 action 安装：装出来的
+    # 工具链与 cargo 实际使用的**必然**是同一个，且只有一处需要维护。
+    - name: Read pinned channel from rust-toolchain.toml
+      id: channel
+      shell: bash
+      run: |
+        set -euo pipefail
+        channel="$(sed -n 's/^channel[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' rust-toolchain.toml | head -n 1)"
+        if [ -z "$channel" ]; then
+          echo "::error file=rust-toolchain.toml::找不到 [toolchain] channel；所有 CI cargo 步骤都会失败"
+          exit 1
+        fi
+        echo "channel=$channel" >> "$GITHUB_OUTPUT"
+        echo "使用 rust-toolchain.toml 固定的工具链：$channel"
+
+    - uses: dtolnay/rust-toolchain@master
+      with:
+        toolchain: ${{ steps.channel.outputs.channel }}
+        components: ${{ inputs.components }}
+        targets: ${{ inputs.targets }}

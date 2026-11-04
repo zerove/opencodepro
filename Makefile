@@ -341,10 +341,16 @@ audit-workflows:
 	@python3 scripts/audit_workflows.py
 	@python3 scripts/audit_workflows.py --self-check
 
-# 全部结构审计（不需编译）
-audit: audit-orphans audit-ignored audit-test-state audit-workflows
+# Dockerfile 的依赖缓存层必须覆盖 workspace 的全部成员，且 .dockerignore
+# 不能排除任何成员——这两类缺陷只在镜像里复现，本地 cargo 全绿。
+audit-dockerfile:
+	@python3 scripts/audit_dockerfile.py
+	@python3 scripts/audit_dockerfile.py --self-check
 
-.PHONY: audit-orphans audit-ignored audit-test-state audit-workflows audit
+# 全部结构审计（不需编译）
+audit: audit-orphans audit-ignored audit-test-state audit-workflows audit-dockerfile
+
+.PHONY: audit-orphans audit-ignored audit-test-state audit-workflows audit-dockerfile audit
 
 # — 发布前置检查 —
 #

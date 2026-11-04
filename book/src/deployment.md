@@ -17,7 +17,8 @@ docker pull ghcr.io/zerove/sisyphus-bridge:v0.2.0
 ```
 
 镜像基于 `Dockerfile`（multi-stage）：
-- Builder: `rust:nightly-slim-bookworm`
+- Builder: `rust:1.99.1-slim-bookworm`（宿主）+ `rustup` 安装 `rust-toolchain.toml`
+  pin 住的工具链（Docker 官方 rust 镜像已不再发布 nightly 标签）
 - Runtime: `debian:bookworm-slim`
 - 暴露端口：50051 (gRPC) + 8080 (HTTP/REST)
 - 数据卷：`/app/data`（持久化 SQLite/PostgreSQL 数据）

@@ -38,8 +38,11 @@ docker-compose.yml
 book/
 docs/
 
-# Evaluation data
-evals/
+# 注意：不要忽略 evals/。它是 workspace 成员（根 Cargo.toml 的 members 里有
+# "evals"），任何 member 的 manifest 缺失时 cargo 会直接拒绝加载整个 workspace：
+#   error: failed to load manifest for workspace member `/app/evals`
+# 于是 `cargo build -p sisyphus-bridge` 在 Docker 里必然失败——即使桥接本身
+# 根本不依赖 evals。整个目录只有 ~300KB，留在上下文里成本可忽略。
 
 # Environment and local config
 .env

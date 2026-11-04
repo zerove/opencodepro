@@ -25,7 +25,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@nightly
+      - uses: ./.github/actions/setup-rust
+      - uses: ./.github/actions/setup-protoc
       - uses: Swatinem/rust-cache@v2
       - run: cargo build --release -p sisyphus-cli
       - run: cp target/release/sisyphus-cli sisyphus-cli-linux-x86_64
@@ -40,9 +41,10 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@nightly
+      - uses: ./.github/actions/setup-rust
         with:
           targets: aarch64-apple-darwin
+      - uses: ./.github/actions/setup-protoc
       - uses: Swatinem/rust-cache@v2
       - run: cargo build --release -p sisyphus-cli --target aarch64-apple-darwin
       - run: cp target/aarch64-apple-darwin/release/sisyphus-cli sisyphus-cli-macos-arm64
@@ -57,7 +59,8 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@nightly
+      - uses: ./.github/actions/setup-rust
+      - uses: ./.github/actions/setup-protoc
       - uses: Swatinem/rust-cache@v2
       - run: cargo build --release -p sisyphus-cli
       - run: cp target/release/sisyphus-cli.exe sisyphus-cli-windows-x86_64.exe
@@ -72,7 +75,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@nightly
+      - uses: ./.github/actions/setup-rust
       - uses: Swatinem/rust-cache@v2
       - run: cargo build --release -p sisyphus-sandboxd
       - run: cp target/release/sisyphus-sandboxd sisyphus-sandboxd-linux-x86_64

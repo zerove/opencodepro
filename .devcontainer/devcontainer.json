@@ -2,7 +2,7 @@
   // ── Sisyphus 开发容器 (TODO 8.4 第一项) ────────────────────
   //
   // VS Code Remote Containers 一键搭建完整开发环境：
-  // 1. 安装 nightly Rust toolchain (与 CI 一致)
+  // 1. 按 rust-toolchain.toml 安装 pin 住的 Rust 工具链（与 CI 同一个来源）
   // 2. 安装 rustfmt + clippy + rust-analyzer 组件
   // 3. 安装 cargo-deny (供应链审计)
   // 4. 暴露 bridge gRPC (50051) + HTTP (8080) 端口
@@ -10,13 +10,14 @@
   // 用法：
   //   - 安装 VS Code + "Dev Containers" 扩展
   //   - 命令面板 (Ctrl+Shift+P) → "Dev Containers: Reopen in Container"
-  //   - 首次构建约 5-8 分钟（拉镜像 + 装 nightly + 缓存索引）
+  //   - 首次构建约 5-8 分钟（拉镜像 + 装工具链 + 缓存索引）
   //
   // 注意：base image 是 rust:1-bookworm (含 stable rust)。
-  // postCreateCommand 用 rustup 切换到 nightly，与 .github/workflows/ci.yml
-  // 保持一致 — 这样本地与 CI 用同一 toolchain，避免 "works on my machine"。
+  // 工具链版本**不在这里写死**：postCreateCommand 只跑 `rustup show`，
+  // rustup 会按仓库的 rust-toolchain.toml 安装 pin 住的版本（与 CI 的
+  // ./.github/actions/setup-rust 同源），避免本地与 CI 用不同 toolchain。
 
-  "name": "Sisyphus Rust (nightly)",
+  "name": "Sisyphus Rust (pinned)",
   "image": "mcr.microsoft.com/devcontainers/rust:1-bookworm",
 
   "customizations": {
@@ -54,8 +55,9 @@
   },
 
   "postCreateCommand": {
-    // 切换到 nightly toolchain（与 CI 一致）+ 装 rustfmt / clippy / rust-src
-    "setup-toolchain": "rustup toolchain install nightly --profile minimal --component rustfmt clippy rust-src && rustup default nightly && rustc --version && cargo --version",
+    // 按 rust-toolchain.toml 安装/切换工具链（rustup show 会触发自动安装），
+    // 再补 rust-src（rust-analyzer / 标准库源码跳转需要，profile 里不含）
+    "setup-toolchain": "rustup show && rustup component add rust-src && rustc --version && cargo --version",
     // cargo-deny 用于供应链审计（CI 在 .github/workflows/ci.yml 中使用）
     "install-tools": "cargo install --locked cargo-deny 2>/dev/null || echo 'cargo-deny install skipped (may already be present)'",
     // 预下载依赖（vscode 启动后第一次 build 不会卡 download）

@@ -26,7 +26,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@nightly
+      - uses: ./.github/actions/setup-rust
+      - uses: ./.github/actions/setup-protoc
       - uses: Swatinem/rust-cache@v2
       - run: cargo build --release -p sisyphus-cli
       - uses: actions/upload-artifact@v4
@@ -42,7 +43,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@nightly
+      - uses: ./.github/actions/setup-rust
       - uses: Swatinem/rust-cache@v2
       - run: cargo build --release -p sisyphus-sandboxd
       - uses: actions/upload-artifact@v4
@@ -58,9 +59,10 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@nightly
+      - uses: ./.github/actions/setup-rust
         with:
           targets: aarch64-apple-darwin
+      - uses: ./.github/actions/setup-protoc
       - uses: Swatinem/rust-cache@v2
       - run: cargo build --release -p sisyphus-cli --target aarch64-apple-darwin
       - uses: actions/upload-artifact@v4
@@ -76,7 +78,8 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@nightly
+      - uses: ./.github/actions/setup-rust
+      - uses: ./.github/actions/setup-protoc
       - uses: Swatinem/rust-cache@v2
       - run: cargo build --release -p sisyphus-cli
       - uses: actions/upload-artifact@v4
@@ -132,7 +135,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@nightly
+      - uses: ./.github/actions/setup-rust
+      - uses: ./.github/actions/setup-protoc
       - uses: Swatinem/rust-cache@v2
       - run: cargo run --release -p eval-runner --bin golden-sop-eval
       - uses: actions/upload-artifact@v4
@@ -156,7 +160,8 @@ jobs:
         with:
           # 拉取历史 jsonl 当基线；fetch-depth 0 保留全部 commit
           fetch-depth: 0
-      - uses: dtolnay/rust-toolchain@nightly
+      - uses: ./.github/actions/setup-rust
+      - uses: ./.github/actions/setup-protoc
       - uses: Swatinem/rust-cache@v2
       - name: Run benchmark
         run: cargo run --release -p eval-runner --bin http-client-bench
@@ -178,7 +183,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@nightly
+      - uses: ./.github/actions/setup-rust
+      - uses: ./.github/actions/setup-protoc
       - uses: Swatinem/rust-cache@v2
       - name: Build
         run: cargo build -p eval-runner --bin no-panic-check

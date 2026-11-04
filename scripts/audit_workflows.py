@@ -1208,6 +1208,48 @@ jobs:
                 "_swallowed_gates(%s): 期望 %r，实际 %r" % (desc, expect, got)
             )
 
+    # 工具链来源一致性：验证判别力，而不是验证副本
+    with tempfile.TemporaryDirectory() as td:
+        action_path = os.path.join(".github", "actions", "setup-rust", "action.yml")
+        good_tc = '[toolchain]\nchannel = "nightly-2026-08-08"\nprofile = "default"\n'
+        tc_path = os.path.join(td, "rust-toolchain.toml")
+        wf_path = os.path.join(td, "w.yml")
+
+        def run_pin(tc_text, wf_text):
+            with open(tc_path, "w", encoding="utf-8") as fh:
+                fh.write(tc_text)
+            return toolchain_pin_problems(
+                {wf_path: wf_text}, tc_path=tc_path, action_path=action_path
+            )
+
+        clean = run_pin(good_tc, "steps:\n  - uses: ./.github/actions/setup-rust\n")
+        if clean:
+            failures.append(
+                "toolchain_pin_problems(合法配置): 期望 []，实际 %r" % (clean,)
+            )
+        got = run_pin(
+            '[toolchain]\nchannel = "nightly"\n',
+            "steps:\n  - uses: ./.github/actions/setup-rust\n",
+        )
+        if not any("浮动" in g for g in got):
+            failures.append(
+                "toolchain_pin_problems(浮动 channel): 未检出，实际 %r" % (got,)
+            )
+        got = run_pin(
+            'channel = "nightly-2026-08-08"\nprofile = "stable"\n',
+            "steps:\n  - uses: ./.github/actions/setup-rust\n",
+        )
+        if not any("[toolchain]" in g for g in got):
+            failures.append(
+                "toolchain_pin_problems(缺 [toolchain] 表头): 未检出，实际 %r" % (got,)
+            )
+        got = run_pin(good_tc, "steps:\n  - uses: dtolnay/rust-toolchain@nightly\n")
+        if not any("setup-rust" in g for g in got):
+            failures.append(
+                "toolchain_pin_problems(直接写 dtolnay@nightly): 未检出，实际 %r"
+                % (got,)
+            )
+
     if failures:
         print("自检失败：", file=sys.stderr)
         for f in failures:
@@ -1226,6 +1268,109 @@ def _gate_script_globs():
         os.path.join(AUDIT_SCRIPT_DIR, "audit_*.py"),
         os.path.join(AUDIT_SCRIPT_DIR, "scan_*.py"),
     )
+
+
+def toolchain_pin_problems(
+    wf_texts, tc_path="rust-toolchain.toml", action_path=None
+):
+    """检查「CI 装的工具链」与「cargo 实际解析到的工具链」是否同一个。
+
+    两次真实事故，都在本地完全无法复现：
+
+    1. `rust-toolchain.toml` 曾把 `channel` / `profile` 写在顶层、且缺
+       `[toolchain]` 表头（`profile = "stable"` 也不是合法 profile，合法值
+       只有 minimal/default/complete）。rustup 直接拒绝解析
+       （`missing field 'toolchain'`），CI 里**每一个** cargo step 全红
+       ——连续 40 次 run 0 成功。本地因为 shell 设了 `RUSTUP_TOOLCHAIN`
+       **完全绕过**该文件，所以 fmt/clippy/test 一直绿。
+
+    2. workflow 里写 `dtolnay/rust-toolchain@nightly` 装的是浮动的
+       `nightly`，而仓库 pin 的是 `nightly-YYYY-MM-DD`。两个名字不是同一个
+       工具链：clippy / rustfmt / target 全装在用不到的那个上，cargo 报
+       `not installed for the toolchain 'nightly-...'` 或
+       `can't find crate for core`。release 的四个平台构建就是这样挂的。
+
+    因此强制：工具链只有一个来源（rust-toolchain.toml），workflow 一律
+    `uses: ./.github/actions/setup-rust`，由它把文件里的 channel 交给 action。
+    """
+    problems = []
+    valid_profiles = {"minimal", "default", "complete"}
+
+    if action_path is None:
+        action_path = os.path.join(".github", "actions", "setup-rust", "action.yml")
+
+    if not os.path.isfile(tc_path):
+        problems.append(
+            "%s 不存在：CI 与本地会各自解析到不同工具链（fmt 结果会漂移）" % tc_path
+        )
+    else:
+        with open(tc_path, encoding="utf-8") as fh:
+            text = fh.read()
+        # 顶层写了 channel/profile 却没有表头 —— 正是事故 1 的形态。
+        # 单独判一次，因为 tomllib 能"成功"解析这种文件（当成顶层键）。
+        has_table = re.search(r"(?m)^\[toolchain\]\s*$", text) is not None
+        if not has_table:
+            problems.append(
+                "%s 缺少 [toolchain] 表头：rustup 会报 missing field `toolchain`，"
+                "CI 所有 cargo step 全红（本地因 RUSTUP_TOOLCHAIN 无感）" % tc_path
+            )
+        try:
+            import tomllib
+        except ImportError:  # pragma: no cover - Python < 3.11
+            tomllib = None
+        if tomllib is not None:
+            try:
+                doc = tomllib.loads(text)
+            except Exception as exc:  # noqa: BLE001
+                problems.append("%s 无法被 TOML 解析：%s" % (tc_path, exc))
+                doc = None
+            if doc is not None and has_table:
+                section = doc.get("toolchain")
+                channel = str((section or {}).get("channel") or "").strip()
+                if not channel:
+                    problems.append("%s 的 [toolchain] 没有 channel" % tc_path)
+                elif channel in ("nightly", "stable", "beta"):
+                    problems.append(
+                        "%s 的 channel 是浮动的 %r：rustfmt 换行启发式随 nightly "
+                        "漂移，会让「本地 fmt 绿、CI fmt 红」。固定到具体日期"
+                        "（如 nightly-2026-08-08）" % (tc_path, channel)
+                    )
+                profile = (section or {}).get("profile")
+                if profile is not None and profile not in valid_profiles:
+                    problems.append(
+                        "%s 的 profile=%r 非法（合法值只有 %s）"
+                        % (tc_path, profile, "/".join(sorted(valid_profiles)))
+                    )
+
+    if not os.path.isfile(action_path):
+        problems.append(
+            "%s 不存在：workflow 无处从 rust-toolchain.toml 取工具链" % action_path
+        )
+    else:
+        with open(action_path, encoding="utf-8") as fh:
+            body = fh.read()
+        for needle, why in (
+            ("rust-toolchain.toml", "未从 rust-toolchain.toml 读取 channel"),
+            (
+                "steps.channel.outputs.channel",
+                "未把读到的 channel 交给 dtolnay/rust-toolchain 安装",
+            ),
+        ):
+            if needle not in body:
+                problems.append("%s %s" % (action_path, why))
+
+    for path, text in sorted(wf_texts.items()):
+        for line_no, line in enumerate(text.splitlines(), 1):
+            if line.lstrip().startswith("#"):
+                continue
+            if "dtolnay/rust-toolchain@" in line:
+                problems.append(
+                    "%s:%d: 直接使用 dtolnay/rust-toolchain@...；应改为 "
+                    "`uses: ./.github/actions/setup-rust`（否则装的是浮动 nightly，"
+                    "与 rust-toolchain.toml 的 pin 不是同一个工具链）"
+                    % (os.path.relpath(path), line_no)
+                )
+    return problems
 
 
 def main() -> int:
@@ -1320,6 +1465,10 @@ def main() -> int:
                     % (script, os.path.relpath(path))
                 )
 
+    # 工具链来源一致性：CI 装的工具链必须与 cargo 实际解析到的是同一个。
+    for p in toolchain_pin_problems(wf_texts):
+        problems.append(p)
+
     if problems:
         print("", file=sys.stderr)
         for p in problems:
@@ -1347,6 +1496,14 @@ def main() -> int:
             "未设 timeout-minutes 的 job 不会报错也不会变红，但卡住时会"
             "静默占用 runner 达 GitHub 默认的 360 分钟上限，期间 PR 一"
             "直显示「检查进行中」。",
+            file=sys.stderr,
+        )
+        print(
+            "工具链必须只有一个来源：workflow 一律 `uses: ./.github/actions/setup-rust`，"
+            "它从 rust-toolchain.toml 读 channel 再交给 dtolnay/rust-toolchain 安装。"
+            "直接写 `dtolnay/rust-toolchain@nightly` 装的是浮动 nightly，而 cargo 按"
+            "仓库 pin 找 `nightly-YYYY-MM-DD` —— 两者不是同一个工具链，"
+            "clippy/rustfmt/target 会全装在用不到的那一个上。",
             file=sys.stderr,
         )
         return 2
