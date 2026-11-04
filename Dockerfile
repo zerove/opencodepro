@@ -15,9 +15,21 @@
 FROM rust:1.99.1-slim-bookworm AS builder
 
 # Install build dependencies (pkg-config for openssl-sys, libssl-dev for tonic)
+#
+# protobuf-compiler 是**必需**的：`sisyphus-bridge-api` 的 build script 用
+# tonic-build 从 bridge.proto 生成代码，缺 protoc 时镜像里报
+#
+#   error: failed to run custom build command for `sisyphus-bridge-api`
+#   Error: Custom { kind: NotFound, error: "Could not find `protoc`" }
+#
+# 而 `cargo build --release -p sisyphus-bridge` 在本地主机上不会暴露它——
+# 本机早就装了 protoc（也因为 CI 各 job 是显式 setup-protoc 装的）。
+# scripts/audit_dockerfile.py 会校验：只要有成员在 build-dependencies 里用
+# tonic-build，这里就必须装 protobuf-compiler。
 RUN apt-get update && apt-get install -y \
     pkg-config \
     libssl-dev \
+    protobuf-compiler \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

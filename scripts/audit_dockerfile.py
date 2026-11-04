@@ -204,6 +204,38 @@ def dockerignore_excludes(patterns, member):
     return hit
 
 
+BUILD_DEPS_WITH_PROTOC = ("tonic-build", "tonic_build", "prost-build", "prost_build")
+
+
+def needs_protoc(root, members):
+    """是否有成员在 build script 里用 tonic-build/prost-build 生成代码。
+
+    这类 crate 编译时需要 `protoc`。Dockerfile 里缺它时镜像构建报
+    `Could not find protoc`，而本地主机几乎总是已经装好了 protoc（CI 各 job
+    也显式 setup-protoc），所以本地怎么跑都发现不了。
+    """
+    if tomllib is None:  # pragma: no cover
+        return False
+    scanned = [os.path.join(root, "Cargo.toml")] + [
+        os.path.join(root, m, "Cargo.toml") for m in members
+    ]
+    for manifest in scanned:
+        if not os.path.isfile(manifest):
+            continue
+        try:
+            with open(manifest, "rb") as fh:
+                doc = tomllib.load(fh)
+        except Exception:  # noqa: BLE001
+            continue
+        sections = [(doc.get("build-dependencies") or {})]
+        sections.append(((doc.get("workspace") or {}).get("dependencies") or {}))
+        for block in sections:
+            for name in BUILD_DEPS_WITH_PROTOC:
+                if name in block:
+                    return True
+    return False
+
+
 def check(root="."):
     problems = []
     dockerfile = os.path.join(root, "Dockerfile")
@@ -262,6 +294,13 @@ def check(root="."):
     code = "\n".join(
         line for line in block.splitlines() if not line.lstrip().startswith("#")
     )
+    if needs_protoc(root, members) and "protobuf-compiler" not in text:
+        problems.append(
+            "有成员用 tonic-build/prost-build 生成代码（需要 protoc），但 "
+            "Dockerfile 没有安装 protobuf-compiler：镜像构建会在 "
+            "`Could not find protoc` 处失败"
+        )
+
     if "|| true" in code:
         problems.append(
             "依赖层里有 `|| true`：它会把「workspace 加载失败」吞成成功，"
@@ -297,18 +336,18 @@ members = ["crates/a", "evals"]
         '[package]\nname = "e"\nversion = "0.1.0"\n\n[[bin]]\nname = "r"\npath = "runner.rs"\n'
     )
 
-    def build(tc_text, block, ignore_text="target/\n"):
+    def build(tc_text, block, ignore_text="target/\n", member_extra="", prefix="FROM scratch\n"):
         td = tempfile.mkdtemp()
         os.makedirs(os.path.join(td, "crates", "a"), exist_ok=True)
         os.makedirs(os.path.join(td, "evals"), exist_ok=True)
         with open(os.path.join(td, "Cargo.toml"), "w", encoding="utf-8") as fh:
             fh.write(tc_text)
         with open(os.path.join(td, "crates", "a", "Cargo.toml"), "w", encoding="utf-8") as fh:
-            fh.write(a_manifest)
+            fh.write(a_manifest + member_extra)
         with open(os.path.join(td, "evals", "Cargo.toml"), "w", encoding="utf-8") as fh:
             fh.write(evals_manifest)
         with open(os.path.join(td, "Dockerfile"), "w", encoding="utf-8") as fh:
-            fh.write("FROM scratch\n" + block + "\n")
+            fh.write(prefix + block + "\n")
         with open(os.path.join(td, ".dockerignore"), "w", encoding="utf-8") as fh:
             fh.write(ignore_text)
         return check(td)
@@ -333,12 +372,28 @@ members = ["crates/a", "evals"]
     if not any("|| true" in g for g in got):
         failures.append("依赖层 || true: 未检出，实际 %r" % (got,))
 
+    # 需要 protoc 的成员：Dockerfile 必须装 protobuf-compiler。
+    # 真实事故：镜像构建死在 `Could not find protoc`（bridge-api 的 build script），
+    # 而本机与 CI 各 job 都有 protoc，本地永远复现不了。
+    tonic_dep = '\n[build-dependencies]\ntonic-build = "0.12"\n'
+    got = build(cargo, good_block, member_extra=tonic_dep)
+    if not any("protobuf-compiler" in g for g in got):
+        failures.append("缺 protoc（有 tonic-build 但 Dockerfile 不装）: 未检出，实际 %r" % (got,))
+    got = build(
+        cargo,
+        good_block,
+        member_extra=tonic_dep,
+        prefix="FROM debian\nRUN apt-get install -y protobuf-compiler\n",
+    )
+    if any("protobuf-compiler" in g for g in got):
+        failures.append("已装 protoc: 误报，实际 %r" % (got,))
+
     if failures:
         print("❌ 自检失败：")
         for f in failures:
             print("  -", f)
         return 1
-    print(f"✅ 自检通过（{5} 个判别用例）")
+    print(f"✅ 自检通过（{7} 个判别用例）")
     return 0
 
 
