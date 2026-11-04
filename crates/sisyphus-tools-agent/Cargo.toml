@@ -18,7 +18,10 @@ sisyphus-mem = { version = "0.2.0", path = "../sisyphus-mem" }
 tokio = { version = "1.0", features = ["process", "fs", "io-util", "time", "rt", "macros"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
-serde_yaml = "0.9"
+# serde_yaml 0.9 上游已 deprecated，其 unsafe-libyaml 依赖被标记 unmaintained
+# (RUSTSEC-2024-0449)。serde_norway 是维护中的 fork，API 与 0.9 兼容，
+# 用 package 别名迁移后业务代码无需改动。
+serde_yaml = { package = "serde_norway", version = "0.9" }
 toml = "0.8"
 anyhow = { workspace = true }
 reqwest = { version = "0.12", features = ["json"] }

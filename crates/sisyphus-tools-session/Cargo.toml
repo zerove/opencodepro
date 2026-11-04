@@ -18,7 +18,10 @@ chrono = "0.4"
 tracing = { workspace = true }
 metrics = "0.24"
 base64 = "0.22"
-serde_yaml = "0.9"
+# serde_yaml 0.9 上游已 deprecated，其 unsafe-libyaml 依赖被标记 unmaintained
+# (RUSTSEC-2024-0449)。serde_norway 是维护中的 fork，API 与 0.9 兼容，
+# 用 package 别名迁移后业务代码无需改动。
+serde_yaml = { package = "serde_norway", version = "0.9" }
 thiserror = { workspace = true }
 
 [dev-dependencies]
