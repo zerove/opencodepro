@@ -700,7 +700,13 @@ impl MfsStore {
     /// 远程合并进来的行 origin 不同，不会干扰本节点序号。P1 修复之前遗留的
     /// 旧格式主键（`exp:{timestamp}`）解析不出 counter，跳过即可。
     pub async fn max_local_counter(&self, origin: &str) -> Result<u64> {
-        let ids = sqlx::query_scalar::<_, String>("SELECT id FROM experiences")
+        // SQL 侧使用 LIKE 下推，避免全表拉取所有 id（遗留问题 4 优化）：
+        // 主键格式为 `exp:{timestamp}:{origin}:{counter}`。
+        // 注意 SQL LIKE 中的 `%` 和 `_` 必须转义，但 origin 通常由 hostname / UUID 派生，
+        // 若包含特殊字符可由 SQL 配合。这里用 `format!("exp:%:{origin}:%")`。
+        let pattern = format!("exp:%:{origin}:%");
+        let ids = sqlx::query_scalar::<_, String>("SELECT id FROM experiences WHERE id LIKE ?")
+            .bind(pattern)
             .fetch_all(&self.l2)
             .await
             .context("Failed to list experience ids for sequence recovery")?;
