@@ -402,8 +402,16 @@ fn maven_project(dir: &Path, broken: bool) {
   <version>1.0</version>
   <packaging>jar</packaging>
   <properties>
-    <maven.compiler.source>21</maven.compiler.source>
-    <maven.compiler.target>21</maven.compiler.target>
+    <!-- 语言级别必须跟随**运行中的** JDK，不能写死。
+         曾写死 21：CI 装的是 temurin 17，mvn 直接报
+         `Fatal error compiling: error: invalid target release: 21`，
+         于是 maven_compile_failure_returns_err（要的是 javac 的
+         cannot find symbol）与 maven_passing_project_counts_passed（要的是
+         1 passed）双双失败——本地 JDK 25 却全绿，属于典型的
+         「只在 CI 复现」。
+         ${java.specification.version} 由 JVM 提供（17 / 21 / 25 …），
+         任何 JDK 上都能编译本探针。 -->
+    <maven.compiler.release>${java.specification.version}</maven.compiler.release>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
   </properties>
   <dependencies>

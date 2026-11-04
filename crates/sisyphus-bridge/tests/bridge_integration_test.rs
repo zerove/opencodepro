@@ -277,9 +277,23 @@ async fn test_unload_plugin_nonexistent() {
         "unloading an unregistered plugin must not report success: {:?}",
         inner.error
     );
+    // 断言**具体**错误文本，而不是 `success || !error.is_empty()` 那种恒真式。
+    // 两种 feature 组合下的失败原因不同，必须分开断言：
+    //   - 默认（有 sandbox）：插件确实不存在 → "not found"
+    //   - --no-default-features：插件子系统整体是 noop → "Sandbox disabled"
+    // 之前只断言了后者，导致 CI 的 `Bridge Integration Tests (no sandbox)`
+    // job 稳定失败（本地默认 feature 下跑又能过）。
+    #[cfg(feature = "sandbox")]
     assert!(
         inner.error.contains("not found"),
         "the error should say the plugin is missing, got: {}",
+        inner.error
+    );
+    #[cfg(not(feature = "sandbox"))]
+    assert!(
+        inner.error.contains("Sandbox disabled"),
+        "with the sandbox feature off the handler must report the disabled \
+         subsystem instead of inventing a plugin-missing error, got: {}",
         inner.error
     );
     server.abort();
