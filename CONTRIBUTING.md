@@ -229,7 +229,10 @@ Closes: #123
 
 - `book/` 用 mdbook：`cd book && mdbook serve` 本地预览
 - `docs/` 直接编辑 `.md` 文件
-- 提交后 CI 触发 mdbook 构建 + kubeconform 校验
+- 提交后 CI 触发 mdbook 构建 + kubeconform 校验。**文档站部署**只在仓库变量
+  `ENABLE_PAGES=true` 时执行：GitHub Pages 需要在仓库设置里启用，而当前
+  计划不支持（`POST /repos/<o>/<r>/pages` 返回 422），因此 deploy 步骤
+  目前被跳过并输出 notice，书籍 HTML 仍作为 `github-pages` artifact 上传。
 
 ## 发布流程
 

@@ -109,8 +109,28 @@ jobs:
         with:
           path: book/book
 
+      # 部署要求仓库启用了 GitHub Pages。本仓库当前**没有**启用，而且启用不了：
+      #
+      #   POST /repos/zerove/opencodepro/pages → 422
+      #   "Your current plan does not support GitHub Pages for this repository."
+      #
+      # 无条件部署的后果是每一步都红：构建成功、artifact 上传成功，只有
+      # deploy-pages 报 `HttpError: Not Found`。长期红灯会把真失败一起淹掉
+      # （和 `|| true` 是同一类问题，只是方向相反）。
+      #
+      # 因此部署只在仓库变量 ENABLE_PAGES=true 时才跑；未启用时输出
+      # ::notice:: 说明「站点未发布」，而不是假装成功。计划升级或迁移到
+      # 支持 Pages 的仓库后，设置该变量即可，无需改本文件。
       - name: Deploy to GitHub Pages
+        if: vars.ENABLE_PAGES == 'true'
         uses: actions/deploy-pages@v4
+
+      - name: Pages not enabled
+        if: vars.ENABLE_PAGES != 'true'
+        run: |
+          echo "::notice::跳过 GitHub Pages 部署（仓库变量 ENABLE_PAGES 未设为 true）。"
+          echo "文档站未发布；书籍 HTML 见本 run 的 github-pages artifact。"
+          echo "仓库计划不支持 Pages 时 API 返回 422: Your current plan does not support GitHub Pages for this repository."
 
   # 失败时自动诊断：节省 5-10 min 排查时间
   build-only:
