@@ -48,6 +48,7 @@ from __future__ import annotations
 
 import fnmatch
 import os
+import re
 import sys
 
 try:
@@ -294,6 +295,22 @@ def check(root="."):
     code = "\n".join(
         line for line in block.splitlines() if not line.lstrip().startswith("#")
     )
+    # `COPY . .` 之后的源码 mtime 必须晚于空壳层。
+    # 不做这一步时 cargo 认为真实源码「更旧」→ 一个 workspace crate 都不重编
+    # → 链接到空壳 rlib → 73 个 `unresolved import`。日志里 `Compiling
+    # sisyphus-types` 出现 0 次就是它的指纹。
+    copy_match = re.search(r"(?m)^COPY\s+\.\s+\.\s*$", text)
+    if copy_match:
+        tail = text[copy_match.end():]
+        final_build = tail.find("cargo build --release")
+        region = tail if final_build == -1 else tail[:final_build]
+        if "touch" not in region or "*.rs" not in region:
+            problems.append(
+                "`COPY . .` 之后没有把源码 mtime 刷新（缺 `touch ... -name '*.rs'`）："
+                "cargo 会认为真实源码比空壳更旧，一个 workspace crate 都不重编，"
+                "镜像里最终链接到空壳 rlib（表现为一堆 unresolved import）"
+            )
+
     if needs_protoc(root, members) and "protobuf-compiler" not in text:
         problems.append(
             "有成员用 tonic-build/prost-build 生成代码（需要 protoc），但 "
@@ -336,7 +353,14 @@ members = ["crates/a", "evals"]
         '[package]\nname = "e"\nversion = "0.1.0"\n\n[[bin]]\nname = "r"\npath = "runner.rs"\n'
     )
 
-    def build(tc_text, block, ignore_text="target/\n", member_extra="", prefix="FROM scratch\n"):
+    def build(
+        tc_text,
+        block,
+        ignore_text="target/\n",
+        member_extra="",
+        prefix="FROM scratch\n",
+        tail="",
+    ):
         td = tempfile.mkdtemp()
         os.makedirs(os.path.join(td, "crates", "a"), exist_ok=True)
         os.makedirs(os.path.join(td, "evals"), exist_ok=True)
@@ -347,7 +371,7 @@ members = ["crates/a", "evals"]
         with open(os.path.join(td, "evals", "Cargo.toml"), "w", encoding="utf-8") as fh:
             fh.write(evals_manifest)
         with open(os.path.join(td, "Dockerfile"), "w", encoding="utf-8") as fh:
-            fh.write(prefix + block + "\n")
+            fh.write(prefix + block + "\n" + tail)
         with open(os.path.join(td, ".dockerignore"), "w", encoding="utf-8") as fh:
             fh.write(ignore_text)
         return check(td)
@@ -388,12 +412,30 @@ members = ["crates/a", "evals"]
     if any("protobuf-compiler" in g for g in got):
         failures.append("已装 protoc: 误报，实际 %r" % (got,))
 
+    # `COPY . .` 之后的 mtime 刷新：缺了它 cargo 会直接复用空壳 rlib。
+    # 真实事故：镜像失败日志里 `Compiling sisyphus-types` 出现 0 次。
+    copy_tail = 'COPY . .\nRUN cargo build --release -p sisyphus-bridge\n'
+    got = build(cargo, good_block, tail=copy_tail)
+    if not any("mtime" in g or "touch" in g for g in got):
+        failures.append("缺 mtime 刷新（COPY . . 后不 touch）: 未检出，实际 %r" % (got,))
+    got = build(
+        cargo,
+        good_block,
+        tail=(
+            "COPY . .\n"
+            "RUN find . -name '*.rs' -print0 | xargs -0 touch\n"
+            "RUN cargo build --release -p sisyphus-bridge\n"
+        ),
+    )
+    if any("mtime" in g for g in got):
+        failures.append("已刷新 mtime: 误报，实际 %r" % (got,))
+
     if failures:
         print("❌ 自检失败：")
         for f in failures:
             print("  -", f)
         return 1
-    print(f"✅ 自检通过（{7} 个判别用例）")
+    print(f"✅ 自检通过（{9} 个判别用例）")
     return 0
 
 

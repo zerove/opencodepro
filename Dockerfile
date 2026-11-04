@@ -133,6 +133,22 @@ RUN cargo build --release -p sisyphus-bridge
 # Now copy the full source and rebuild (only changed crates recompile)
 COPY . .
 
+# 必须把源码的 mtime 推到「现在」，否则**空壳会被当成最新**：
+#
+# `COPY` 保留构建上下文里的 mtime（git checkout 的时刻），而上一层的空壳
+# `src/lib.rs` 是**更晚**创建/缓存出来的。cargo 按 mtime 判断是否需要重编，
+# 于是真实源码看起来比缓存指纹更旧 → 一个 workspace crate 都不重编，直接
+# 链接空壳的 rlib，最后 73 个错误：
+#
+#   error[E0432]: unresolved import `sisyphus_types::ToolError`
+#   error[E0405]: cannot find trait `ToolExecutor` in crate `sisyphus_types`
+#
+# 证据：失败日志里 `Compiling sisyphus-types` 出现 0 次。touch 之后外部依赖
+# （~/.cargo/registry）的指纹不受影响，仍然命中缓存，只有 workspace 源码重编。
+RUN find . -path ./target -prune -o \
+        \( -name '*.rs' -o -name 'Cargo.toml' -o -name 'Cargo.lock' -o -name '*.proto' \) \
+        -print0 | xargs -0 touch
+
 # Build the bridge service in release mode
 RUN cargo build --release -p sisyphus-bridge
 
