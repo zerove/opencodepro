@@ -449,6 +449,14 @@ impl ExperienceBank for VectorExperienceBank {
 
         Ok(experiences.into_iter().take(query.limit).collect())
     }
+
+    async fn export_version_vector(
+        &self,
+    ) -> Result<sisyphus_types::experience::ExperienceDigest, TypesError> {
+        // 复用自身的紧凑摘要导出：dial 方用这个回答「我有什么」，
+        // 再随 SyncRequest 发给对端（ADR-010）。
+        self.digest().await
+    }
 }
 
 impl VectorExperienceBank {

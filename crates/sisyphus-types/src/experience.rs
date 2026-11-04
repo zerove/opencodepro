@@ -241,6 +241,14 @@ pub trait ExperienceBank: Send + Sync {
         &self,
         query: ExperienceQuery,
     ) -> Result<Vec<ExperienceTuple>, TypesError>;
+
+    /// 导出本地经验库的紧凑版本向量摘要（ADR-010 反熵）。
+    ///
+    /// 回答「我有什么」而不只是「我写了什么」：返回 `(node_id → OriginDigest)` 的
+    /// 紧凑摘要，只依赖行主键而不依赖行内容，因此可作为 `SyncRequest` 的载荷。
+    /// dial 方导出本摘要后随流发出，对端据此算出自己应补发哪些行
+    /// （见 `missing_keys` / `anti_entropy::serve_sync_request`）。
+    async fn export_version_vector(&self) -> Result<ExperienceDigest, TypesError>;
 }
 
 // ---------------------------------------------------------------------------

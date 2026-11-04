@@ -49,6 +49,12 @@
 ## [Unreleased]
 
 ### Added
+- **版本向量导出接口**（阶段 C / ADR-010 实施收尾）：`ExperienceBank` trait 新增
+  `async fn export_version_vector(&self) -> Result<ExperienceDigest, TypesError>`，使引擎
+  能回答「我有什么」（node → `OriginDigest` 紧凑摘要）而不只是「我写了什么」。实现方委托
+  既有 `VectorExperienceBank::digest` / `MfsStore::experience_digest`，
+  `PeerBroadcastExperienceBank` 转发；反熵侧 `anti_entropy::serve_sync_request` 继续
+  消费该摘要完成差量回送。trait/impl/test mock 全实现，check + 相关测试全绿。
 - **TODO 勾选门禁**（`scripts/audit_todo.py` + `make todo-audit` + CI `audit-sources`）：
   `- [x]` 视为「已验证」声明，必须附可解析证据——引用的 `path.rs::test_fn` 要真实
   存在、带测试属性、且未被 `#[ignore]`（或已由 `--ignored` job 执行）；`make <目标>`

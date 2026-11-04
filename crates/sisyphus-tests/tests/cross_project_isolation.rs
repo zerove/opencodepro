@@ -64,6 +64,14 @@ impl sisyphus_types::experience::ExperienceBank for MockExperienceBank {
     ) -> Result<Vec<ExperienceTuple>, TypesError> {
         Ok(vec![])
     }
+
+    async fn export_version_vector(
+        &self,
+    ) -> Result<sisyphus_types::experience::ExperienceDigest, TypesError> {
+        Err(TypesError::ExperienceError(
+            "mock experience bank: export_version_vector not supported".into(),
+        ))
+    }
 }
 
 /// Setup a complete Sisyphus kernel with in-memory database for testing.

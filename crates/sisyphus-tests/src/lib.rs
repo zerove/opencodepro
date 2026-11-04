@@ -41,6 +41,14 @@ impl ExperienceBank for DummyExperienceBank {
     ) -> Result<Vec<ExperienceTuple>, TypesError> {
         Ok(vec![])
     }
+
+    async fn export_version_vector(
+        &self,
+    ) -> Result<sisyphus_types::experience::ExperienceDigest, TypesError> {
+        Err(TypesError::ExperienceError(
+            "dummy experience bank: export_version_vector not supported".into(),
+        ))
+    }
 }
 
 struct DummyToolExecutor;

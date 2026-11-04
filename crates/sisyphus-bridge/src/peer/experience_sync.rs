@@ -95,6 +95,13 @@ impl ExperienceBank for PeerBroadcastExperienceBank {
     ) -> Result<Vec<ExperienceTuple>, TypesError> {
         self.inner.query_similar(query).await
     }
+
+    async fn export_version_vector(
+        &self,
+    ) -> Result<sisyphus_types::experience::ExperienceDigest, TypesError> {
+        // ADR-010：装饰者转发「我有什么」导出，语义与底层一致。
+        self.inner.export_version_vector().await
+    }
 }
 
 /// ExperienceSyncHandler：订阅 PeerManager 的**入站**事件，将远程 experience 写入本地 bank

@@ -154,6 +154,14 @@ impl sisyphus_types::experience::ExperienceBank for MockExperienceBank {
     ) -> Result<Vec<sisyphus_types::experience::ExperienceTuple>, sisyphus_types::TypesError> {
         Ok(vec![])
     }
+
+    async fn export_version_vector(
+        &self,
+    ) -> Result<sisyphus_types::experience::ExperienceDigest, sisyphus_types::TypesError> {
+        Err(sisyphus_types::TypesError::ExperienceError(
+            "mock experience bank: export_version_vector not supported".into(),
+        ))
+    }
 }
 
 /// 使用 mock 依赖构建测试用 `Executor`。
@@ -1107,6 +1115,14 @@ impl sisyphus_types::experience::ExperienceBank for RecordingExperienceBank {
         *self.last_query.lock() = Some(query.query_text);
         Ok(vec![])
     }
+
+    async fn export_version_vector(
+        &self,
+    ) -> Result<sisyphus_types::experience::ExperienceDigest, sisyphus_types::TypesError> {
+        Err(sisyphus_types::TypesError::ExperienceError(
+            "recording experience bank: export_version_vector not supported".into(),
+        ))
+    }
 }
 
 #[tokio::test]
@@ -1690,6 +1706,14 @@ impl sisyphus_types::experience::ExperienceBank for FailingExperienceBank {
         _: sisyphus_types::experience::ExperienceQuery,
     ) -> Result<Vec<sisyphus_types::experience::ExperienceTuple>, sisyphus_types::TypesError> {
         Ok(vec![])
+    }
+
+    async fn export_version_vector(
+        &self,
+    ) -> Result<sisyphus_types::experience::ExperienceDigest, sisyphus_types::TypesError> {
+        Err(sisyphus_types::TypesError::ExperienceError(
+            "failing experience bank: export_version_vector not supported".into(),
+        ))
     }
 }
 

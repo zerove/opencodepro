@@ -445,6 +445,14 @@ impl sisyphus_types::experience::ExperienceBank for Experiences {
     ) -> Result<Vec<sisyphus_types::experience::ExperienceTuple>, TypesError> {
         Ok(vec![])
     }
+
+    async fn export_version_vector(
+        &self,
+    ) -> Result<sisyphus_types::experience::ExperienceDigest, TypesError> {
+        Err(TypesError::ExperienceError(
+            "experiences mock: export_version_vector not supported".into(),
+        ))
+    }
 }
 
 async fn kernel_fixture(

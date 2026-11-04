@@ -130,6 +130,14 @@ impl sisyphus_types::experience::ExperienceBank for MockExperienceBank {
     ) -> Result<Vec<ExperienceTuple>, sisyphus_types::TypesError> {
         Ok(vec![])
     }
+
+    async fn export_version_vector(
+        &self,
+    ) -> Result<sisyphus_types::experience::ExperienceDigest, sisyphus_types::TypesError> {
+        Err(sisyphus_types::TypesError::ExperienceError(
+            "mock experience bank: export_version_vector not supported".into(),
+        ))
+    }
 }
 
 // ---------------------------------------------------------------------------
