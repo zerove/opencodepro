@@ -19,6 +19,31 @@ fn local_node_id() -> String {
         .unwrap_or_else(|_| std::env::var("HOSTNAME").unwrap_or_else(|_| "local-node".to_string()))
 }
 
+/// 经验是否满足查询的项目/动作过滤条件。
+///
+/// 两条检索路径（向量召回与词法回退）必须使用**同一份**判定：过滤规则
+/// 复制两份时，一次只改其中一侧就会让同一查询在嵌入可用/降级时返回不同
+/// 结果，而这种漂移在测试里通常只覆盖其中一条路径。
+///
+/// 语义：
+/// - 指定 `project_id` 时，有归属的经验必须匹配；无归属（`None`）仍保留
+///   ——历史行为如此，未归属的经验不因项目过滤而消失。
+/// - 指定 `action_id` 时必须精确相等。
+fn matches_query_filters(exp: &ExperienceTuple, query: &ExperienceQuery) -> bool {
+    if let Some(ref pid) = query.project_id
+        && exp.project_id.is_some()
+        && exp.project_id.as_ref() != Some(pid)
+    {
+        return false;
+    }
+    if let Some(ref action_id) = query.action_id
+        && exp.action_id != *action_id
+    {
+        return false;
+    }
+    true
+}
+
 /// 词元集合的 Jaccard 相似度：|A∩B| / |A∪B|。
 ///
 /// 伪嵌入降级路径（P2-7）的词法打分基元：小写化后按非
@@ -166,12 +191,38 @@ impl VectorExperienceBank {
         None
     }
 
+    /// 让版本向量摘要缓存失效。
+    ///
+    /// **必须在数据库变更成功后立即调用**，而不是放在写入函数的末尾：
+    /// `record_with_id` / `apply_remote` 在落库之后还要写向量索引，那一步
+    /// 可能失败并提前返回。若失效放在末尾，失败路径会留下「库里已有新行、
+    /// 缓存仍是旧摘要」的状态——本节点于是向对端少报自己持有的经验，
+    /// 反熵反复做无用补齐。这是性能缓存唯一会破坏正确性的失败模式。
+    fn invalidate_digest_cache(&self) {
+        if let Ok(mut cache) = self.digest_cache.lock() {
+            *cache = None;
+        }
+    }
+
     /// 列出全部经验主键（ADR-010 反熵差量筛选）。
     pub async fn keys(&self) -> Result<Vec<String>, TypesError> {
         self.store
             .experience_keys()
             .await
             .map_err(|e| TypesError::ExperienceError(format!("experience keys failed: {e}")))
+    }
+
+    /// 列出严格大于 `cursor` 的经验主键（ADR-012 游标分页的 keyset 扫描）。
+    ///
+    /// 反熵服务端每页都从游标处继续，而不是把全表键读进内存再切片：
+    /// 后者把「每页成本」变成 O(总行数)，翻 P 页就是 O(P × N)。`id` 是
+    /// 主键，`WHERE id > ? ORDER BY id LIMIT ?` 走索引区间扫描，单页成本
+    /// 与库大小无关。
+    pub async fn keys_after(&self, cursor: &str, limit: usize) -> Result<Vec<String>, TypesError> {
+        self.store
+            .experience_keys_after(cursor, limit)
+            .await
+            .map_err(|e| TypesError::ExperienceError(format!("experience keys scan failed: {e}")))
     }
 
     /// 按主键批量读取经验的完整载荷（ADR-010 反熵差量回送）。
@@ -237,6 +288,9 @@ impl VectorExperienceBank {
             })?;
 
         if matches!(outcome, ApplyResult::Applied) {
+            // 落库已改变摘要可达集合 → 立刻失效。后续向量索引写入若失败，
+            // 也不能把旧摘要留给导出路径（理由见 `invalidate_digest_cache`）。
+            self.invalidate_digest_cache();
             let text_embedding = self
                 .embedding_client
                 .embed(&exp.context_text)
@@ -253,11 +307,6 @@ impl VectorExperienceBank {
                 .store_embedding(&key, text_embedding, metadata)
                 .await
                 .map_err(|e| TypesError::ExperienceError(format!("vector store failed: {e}")))?;
-        }
-
-        // 应用成功 → 版本向量摘要缓存失效，下次导出重新扫描。
-        if let Ok(mut cache) = self.digest_cache.lock() {
-            *cache = None;
         }
 
         Ok(outcome)
@@ -347,6 +396,10 @@ impl VectorExperienceBank {
             .await
             .map_err(|e| TypesError::ExperienceError(format!("store record failed: {e}")))?;
 
+        // 落库已改变摘要可达集合 → 立刻失效（不放在函数末尾，理由见
+        // `invalidate_digest_cache`）。
+        self.invalidate_digest_cache();
+
         // 3. Store the text embedding in the optimized VectorMemoryStore
         let metadata = serde_json::json!({
             "exp_key": key,
@@ -378,11 +431,7 @@ impl VectorExperienceBank {
                 })?;
         }
 
-        // 写入成功 → 版本向量摘要缓存失效，下次导出重新扫描。
-        if let Ok(mut cache) = self.digest_cache.lock() {
-            *cache = None;
-        }
-
+        // 写入成功 → 版本向量摘要缓存已在落库后失效，这里不再重复。
         Ok(key)
     }
 }
@@ -465,18 +514,8 @@ impl ExperienceBank for VectorExperienceBank {
             };
 
             // Project-based filtering:
-            #[allow(clippy::collapsible_if)]
-            if let Some(ref pid) = query.project_id {
-                if exp.project_id.as_ref() != Some(pid) && exp.project_id.is_some() {
-                    continue;
-                }
-            }
-
-            #[allow(clippy::collapsible_if)]
-            if let Some(ref action_id) = query.action_id {
-                if exp.action_id != *action_id {
-                    continue;
-                }
+            if !matches_query_filters(exp, &query) {
+                continue;
             }
 
             experiences.push(exp.clone());
@@ -526,18 +565,9 @@ impl VectorExperienceBank {
 
         let mut results = Vec::new();
         for (_score, exp) in scored {
-            // 项目与动作过滤与主路径语义一致
-            #[allow(clippy::collapsible_if)]
-            if let Some(ref pid) = query.project_id {
-                if exp.project_id.as_ref() != Some(pid) && exp.project_id.is_some() {
-                    continue;
-                }
-            }
-            #[allow(clippy::collapsible_if)]
-            if let Some(ref action_id) = query.action_id {
-                if exp.action_id != *action_id {
-                    continue;
-                }
+            // 项目与动作过滤与主路径共用同一判定，避免两条检索路径语义漂移。
+            if !matches_query_filters(&exp, query) {
+                continue;
             }
             // 排序已完成；ExperienceTuple 无分数字段，保持接口不变
             results.push(exp);

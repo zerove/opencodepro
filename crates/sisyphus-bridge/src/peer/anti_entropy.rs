@@ -23,8 +23,9 @@
 use sisyphus_bridge_api::cluster_proto::{ClusterEvent, ExperienceSync};
 use sisyphus_mem::experience_bank::VectorExperienceBank;
 use sisyphus_types::experience::{
-    missing_keys, sorted_missing_keys, ExperienceDigest, ExperienceTuple,
+    is_key_missing, missing_keys, sorted_missing_keys, ExperienceDigest, ExperienceTuple,
 };
+use std::collections::HashMap;
 use std::sync::Arc;
 
 /// 单次 `SyncResponse` 的条目上界。
@@ -54,13 +55,18 @@ pub fn build_sync_page(
     let keys: Vec<&str> = remote_rows.iter().map(|(id, _)| id.as_str()).collect();
     let delta = sorted_missing_keys(missing_keys(local, keys));
 
+    // 一次建索引，避免对每个差量键线性扫描整页（原先 O(page_size²)）。
+    // 键在同一页内不会重复：调用方用 `id IN (...)` 取行，同一主键只有一行。
+    let by_key: HashMap<&str, &ExperienceTuple> =
+        remote_rows.iter().map(|(id, exp)| (id.as_str(), exp)).collect();
+
     let page = &delta[offset.min(delta.len())..];
     let take = &page[..page.len().min(page_size)];
 
     let experiences = take
         .iter()
         .filter_map(|key| {
-            let (_, exp) = remote_rows.iter().find(|(id, _)| id == key)?;
+            let exp = *by_key.get(key)?;
             // 序列化失败（如 NaN 浮点）不应中断整页同步：跳过该条并继续。
             // 反熵是尽力而为的旁路，一条坏数据不该挡住其余经验的补齐。
             let payload = match serde_json::to_vec(exp) {
@@ -113,47 +119,104 @@ pub struct SyncPage {
 /// 分页游标：上一页最后一个已送达的主键；空串表示从头开始。
 pub type SyncCursor = String;
 
+/// keyset 扫描的批大小。
+///
+/// 与 [`SYNC_PAGE_SIZE`] 解耦：游标之后的键里可能夹着大量对端已持有的行
+/// （最常见的是「只缺尾部几条」），这些行只参与摘要比对、不占页容量。
+/// 批量取键让它们只花少数几次索引区间扫描，而不是每页一次全表扫描。
+///
+/// 取 512 与 `load_experiences_by_keys` 的分批上限同量级：键很短，
+/// 512 条键的内存占用远低于一页经验载荷。
+const KEY_SCAN_BATCH: usize = 512;
+
 /// 服务端角色：算出 dial 方缺的差量并分页回送。
 ///
 /// 复用同一批 `ExperienceSync` 载荷 → dial 端 `ExperienceSyncHandler` 的处理
 /// 路径与实时广播完全相同，不引入第二套合并语义，因此天然幂等。
 ///
-/// 分页是**无状态**的：每次都从本地库重新计算完整差量，再取游标之后的
+/// 分页是**无状态**的：每次都从本地库重新计算差量，再取游标之后的
 /// `page_size` 条。差量集合会随 dial 方接收而缩短，但游标是内容而非下标，
 /// 因此缩短只影响「还剩多少条」，不影响「从哪一条继续」——这是 ADR-010
 /// 用 `offset` 下标时丢失尾部行的根因。
+///
+/// 差量扫描走**主键区间**（`id > cursor ORDER BY id LIMIT n`），不是把全表键
+/// 读进内存再切片。后者让每页成本都是 O(库大小)，翻 P 页即 O(P × N)；
+/// 而 keyset 扫描的单页成本只与本页实际扫过的键数有关。
 pub async fn serve_sync_request(
     experience_bank: &Arc<VectorExperienceBank>,
     requested: &ExperienceDigest,
     cursor: &str,
     page_size: usize,
 ) -> Result<SyncPage, String> {
-    let all_keys = experience_bank.keys().await.map_err(|e| {
-        tracing::warn!(error = %e, "anti-entropy: failed to list local experience keys");
-        format!("key listing failed: {e}")
-    })?;
+    // `page_size = 0` 会让「多收一条」的判定恒真：收到第一条缺失键就判定
+    // `more = true`，但页随即被截断成空、游标不前进。拨号器是完全按 `more`
+    // 翻页的（见 `fallback.rs` 的 paging 循环），于是它会用同一个游标无限
+    // 重发同一页——一个没有进展的死循环，且只表现为「同步卡住」。
+    // 这里直接返回空页：配置错误应当表现为「同步不到东西」，而不是死循环。
+    if page_size == 0 {
+        tracing::warn!("anti-entropy: page_size = 0, returning an empty page");
+        return Ok(SyncPage {
+            experiences: Vec::new(),
+            more: false,
+            next_cursor: cursor.to_string(),
+        });
+    }
 
-    let delta = sorted_missing_keys(missing_keys(requested, all_keys.iter().map(|s| s.as_str())));
+    // 1. 从游标处按主键区间扫描，收集对端确实缺失的键。
+    //    多收一条用于判定 `more`：只有确知后面还有缺失行，才让 dial 方继续翻页。
+    let mut page_keys: Vec<String> =
+        Vec::with_capacity(page_size.min(KEY_SCAN_BATCH).saturating_add(1));
+    let mut scan_cursor = cursor.to_string();
 
-    // 差量已按主键字典序排序，因此「严格大于游标」等价于游标之后的全部。
-    // 游键不在差量里也没关系：比如它已被 dial 方持有而被本轮差量排除，
-    // 二分查找仍然给出正确的插入点。
-    let start = delta.partition_point(|k| *k <= cursor);
-    let page_keys: Vec<String> =
-        delta[start..].iter().take(page_size).map(|k| (*k).to_string()).collect();
+    loop {
+        let batch =
+            experience_bank.keys_after(&scan_cursor, KEY_SCAN_BATCH).await.map_err(|e| {
+                tracing::warn!(error = %e, "anti-entropy: failed to scan local experience keys");
+                format!("key listing failed: {e}")
+            })?;
+        if batch.is_empty() {
+            break;
+        }
 
+        for key in &batch {
+            // 主键解析不出 origin/counter 的旧格式行永远不会被请求；这与
+            // `missing_keys` 的取舍一致，且由 `is_key_missing` 单点保证。
+            if !is_key_missing(requested, key) {
+                continue;
+            }
+            page_keys.push(key.clone());
+            if page_keys.len() > page_size {
+                break;
+            }
+        }
+
+        if page_keys.len() > page_size {
+            break;
+        }
+        // 本批不足一批 → 已到表尾，不会再有缺失行。
+        let Some(last) = batch.last() else {
+            break;
+        };
+        scan_cursor = last.clone();
+        if batch.len() < KEY_SCAN_BATCH {
+            break;
+        }
+    }
+
+    let more = page_keys.len() > page_size;
+    page_keys.truncate(page_size);
+
+    // 2. 只取这一页的完整载荷。
     let rows = experience_bank.load_by_keys(&page_keys).await.map_err(|e| {
         tracing::warn!(error = %e, "anti-entropy: failed to load delta rows");
         format!("row load failed: {e}")
     })?;
 
-    let (experiences, _) = build_sync_page(requested, &rows, 0, page_size);
     // `build_sync_page` 会再用 `requested` 过滤一遍 `rows`：若并发删除使某键消失，
     // 过滤会把它剔除而不会发出一条悬空引用。因此实际发出条数可能少于
     // `page_keys`，而游标必须按**请求区间**而非 `experiences.len()` 推进——
     // 否则每页都会因过滤少一条而反复重算同一段，永远翻不到下一页。
-    let consumed = start + page_keys.len();
-    let more = consumed < delta.len();
+    let (experiences, _) = build_sync_page(requested, &rows, 0, page_size);
 
     // 游标取本区间最后一个**差量主键**（而非实际发出的最后一条）：
     // 前者在过滤发生后仍然正确地把位置推过整段，后者在「末条被过滤」时
@@ -166,7 +229,6 @@ pub async fn serve_sync_request(
         .unwrap_or_else(|| cursor.to_string());
 
     tracing::debug!(
-        delta_total = delta.len(),
         page_len = experiences.len(),
         more,
         next_cursor = %next_cursor,

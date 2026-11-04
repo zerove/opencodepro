@@ -197,20 +197,26 @@ pub fn missing_keys<'a, I>(local: &ExperienceDigest, remote_keys: I) -> Vec<&'a 
 where
     I: IntoIterator<Item = &'a str>,
 {
-    remote_keys
-        .into_iter()
-        .filter(|key| {
-            let (Some(origin), Some(counter)) = (
-                experience_origin_from_key(key),
-                experience_counter_from_key(key),
-            ) else {
-                return false;
-            };
-            let known = local.get(origin);
-            // 摘要里没有这个 origin，就等于一条也没有（`None` 时 `holds` 恒假）。
-            !known.is_some_and(|d| d.holds(counter))
-        })
-        .collect()
+    remote_keys.into_iter().filter(|key| is_key_missing(local, key)).collect()
+}
+
+/// 单条主键是否不在 `local` 摘要的「确认持有」范围内。
+///
+/// 与 [`missing_keys`] 是同一判定的两种入口：批量差量计算用前者，反熵服务端
+/// 的 keyset 扫描（ADR-012）逐条判断用本函数。两者若各写一份，空洞语义迟早
+/// 会漂移——ADR-011 的教训正是「差量判定只能有一处」。
+///
+/// 主键解析不出 origin/counter（旧格式 `exp:{timestamp}`）时返回 `false`：
+/// 这类行既不参与摘要也不参与补齐，这是已记录的取舍。
+pub fn is_key_missing(local: &ExperienceDigest, key: &str) -> bool {
+    let (Some(origin), Some(counter)) = (
+        experience_origin_from_key(key),
+        experience_counter_from_key(key),
+    ) else {
+        return false;
+    };
+    // 摘要里没有这个 origin，就等于一条也没有（`None` 时 `holds` 恒假）。
+    !local.get(origin).is_some_and(|d| d.holds(counter))
 }
 
 /// 按字典序排好差量，让分页在多次请求间保持稳定。
@@ -656,6 +662,42 @@ mod anti_entropy_tests {
         let local = ExperienceDigest::new();
         let missing = sorted_missing_keys(missing_keys(&local, ["exp:1600000000"]));
         assert!(missing.is_empty());
+    }
+
+    /// 单键判定必须与批量差量完全一致（keyset 扫描依赖这一条）。
+    ///
+    /// 反熵服务端改为按游标逐条扫描后，用 `is_key_missing` 代替
+    /// `missing_keys` 的过滤。两者语义若有一点偏差，翻页就会重复或漏发。
+    #[test]
+    fn single_key_missing_matches_batch_delta() {
+        let local = digest_from_keys([
+            "exp:1:node-a:1",
+            "exp:2:node-a:2",
+            // 缺 3
+            "exp:4:node-a:4",
+        ]);
+        let remote = [
+            "exp:1:node-a:1",
+            "exp:2:node-a:2",
+            "exp:3:node-a:3", // 空洞 → 缺失
+            "exp:4:node-a:4",
+            "exp:5:node-a:5", // 超出 max → 缺失
+            "exp:9:node-b:1", // 未知 origin → 缺失
+            "exp:1600000000", // 旧格式 → 两边都不请求
+        ];
+
+        let batch: std::collections::BTreeSet<&str> =
+            missing_keys(&local, remote).into_iter().collect();
+        for key in remote {
+            assert_eq!(
+                is_key_missing(&local, key),
+                batch.contains(key),
+                "单键判定与批量差量在 {key} 上不一致"
+            );
+        }
+        assert!(is_key_missing(&local, "exp:3:node-a:3"));
+        assert!(!is_key_missing(&local, "exp:2:node-a:2"));
+        assert!(!is_key_missing(&local, "exp:1600000000"));
     }
 
     /// 排序必须稳定，否则无状态分页会重复或漏发。

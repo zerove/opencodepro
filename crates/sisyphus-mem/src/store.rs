@@ -773,6 +773,28 @@ impl MfsStore {
             .context("Failed to list experience keys")
     }
 
+    /// 列出严格大于 `cursor` 的经验主键，最多 `limit` 条（ADR-012 keyset 扫描）。
+    ///
+    /// 反熵服务端原先每页都调用 [`Self::experience_keys`] 取全表键再在内存里
+    /// 排序切片，成本随库大小线性增长，翻 P 页就是 O(P × N)。`id` 是主键，
+    /// 这条查询只需在索引上做区间扫描，单页成本与库大小无关。
+    ///
+    /// 游标语义与 [`sisyphus_types::experience::sorted_missing_keys`] 的排序
+    /// 一致：主键按字节序比较，严格大于游标即「游标之后的全部」。
+    pub async fn experience_keys_after(&self, cursor: &str, limit: usize) -> Result<Vec<String>> {
+        if limit == 0 {
+            return Ok(Vec::new());
+        }
+        sqlx::query_scalar::<_, String>(
+            "SELECT id FROM experiences WHERE id > ? ORDER BY id LIMIT ?",
+        )
+        .bind(cursor)
+        .bind(limit as i64)
+        .fetch_all(&self.l2)
+        .await
+        .context("Failed to list experience keys after cursor")
+    }
+
     /// 按主键集合批量读取经验的完整载荷（ADR-010 反熵差量回送）。
     ///
     /// 单独查询每行会比一次取回多一个数量级的往返；差量应回送 N 条时这里只发
@@ -811,7 +833,12 @@ impl MfsStore {
                 .await
                 .context("Failed to load experiences for anti-entropy delta")?;
             for row in rows {
-                let id: String = row.try_get("id").unwrap_or_default();
+                // 读取失败必须向上传播：`unwrap_or_default` 会把列漂移折叠成
+                // 空主键，调用方按 id 恢复顺序时那一行会静默消失，反熵于是
+                // 永远补不齐它，且没有任何错误可查。
+                let id: String = row
+                    .try_get("id")
+                    .context("Failed to read experience id for anti-entropy delta")?;
                 out.push((id, experience_tuple_from_row(row)));
             }
         }

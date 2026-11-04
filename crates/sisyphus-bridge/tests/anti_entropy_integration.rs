@@ -463,3 +463,54 @@ async fn empty_peer_bank_serves_empty_page() {
         "空页不应移动游标，否则 dial 方会跳过尚未送达的行"
     );
 }
+
+/// keyset 扫描必须跳过游标之前的大量「已持有」键，并补齐尾部差量。
+///
+/// 这是 `serve_sync_request` 从「每页全表取键」改为「主键区间扫描」后的
+/// 直接覆盖：600 行里前 550 行都在 dial 方摘要内，扫描要跨过一个完整的
+/// 512 键批次才能找到尾部 50 条缺失。若扫描在第一批后停止、或把已持有的
+/// 键算进页容量，本用例会漏发。
+#[tokio::test]
+async fn keyset_scan_skips_held_prefix_and_delivers_tail() {
+    let peer = setup_bank("peer").await;
+    let seeded = seed(&peer, 600).await;
+
+    // dial 方持有前 550 条：差量只剩尾部 50 条。
+    let held = digest_from_keys(seeded[..550].iter().map(|s| s.as_str()));
+    assert_eq!(held.len(), 1, "单节点写入应折叠成一个 origin");
+
+    let received = drain_sync(&peer, &held).await;
+
+    assert_eq!(
+        received.len(),
+        50,
+        "应恰好补齐尾部 50 条，实际 {} 条——keyset 扫描可能提前停止或误算了页容量",
+        received.len()
+    );
+    let expected: HashSet<&String> = seeded[550..].iter().collect();
+    let got: HashSet<&String> = received.iter().collect();
+    assert_eq!(got, expected, "补齐的必须是尾部缺失行，不能重复也不能漏");
+}
+
+/// `page_size = 0` 必须收敛，而不是让拨号器陷入无进展的死循环。
+///
+/// 拨号器完全按服务端的 `more` 标志决定是否再请求一页，并把游标置为
+/// `next_cursor`。若零页大小被当成正常分页处理，服务端会给出「还有下一页 +
+/// 游标不变」的组合，拨号器于是无限重发同一页——现象是同步卡住且没有任何
+/// 错误。零大小是配置错误，正确表现是空页收尾。
+#[tokio::test]
+async fn zero_page_size_terminates_without_looping() {
+    let peer = setup_bank("peer").await;
+    seed(&peer, 3).await;
+
+    let page = anti_entropy::serve_sync_request(&peer, &ExperienceDigest::new(), "", 0)
+        .await
+        .expect("serve sync request");
+
+    assert!(page.experiences.is_empty(), "零页大小不应回送任何经验");
+    assert!(
+        !page.more,
+        "零页大小必须表示「没有下一页」，否则拨号器会死循环"
+    );
+    assert_eq!(page.next_cursor, "", "游标不应凭空前进或重置到未确认的位置");
+}

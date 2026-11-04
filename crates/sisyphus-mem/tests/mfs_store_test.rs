@@ -157,3 +157,62 @@ async fn test_concurrent_access() {
     store.flush().await.unwrap();
     assert_eq!(store.len(), 10);
 }
+
+/// keyset 扫描：严格大于游标、按主键升序、受 limit 限制。
+///
+/// 反熵分页（ADR-012）依赖这三条：`>` 决定不重发，升序决定游标可推进，
+/// limit 决定单页有界。任何一条错了都会表现为「翻页重复」或「尾部丢行」。
+#[tokio::test]
+async fn experience_keys_after_is_keyset_ordered_and_bounded() {
+    let store = MfsStore::new("sqlite::memory:", &sisyphus_types::CacheConfig::default())
+        .await
+        .expect("Failed to create store");
+
+    for i in 1..=5u64 {
+        let exp = sisyphus_types::experience::ExperienceTuple {
+            context_text: format!("ctx-{i}"),
+            context_hash: format!("hash-{i}"),
+            action_id: "act".into(),
+            project_id: None,
+            outcome_success: true,
+            deviation_score: 0.0,
+            cost: i,
+            timestamp: 1_700_000_000 + i,
+            embedding: None,
+            visual_embedding: None,
+            insight: None,
+            version: i,
+            vector_clock: Default::default(),
+        };
+        store
+            .record_experience(&exp, &format!("exp:170000000{i}:node-a:{i}"))
+            .await
+            .expect("record experience");
+    }
+
+    assert_eq!(
+        store.experience_keys_after("", 3).await.expect("first page"),
+        vec![
+            "exp:1700000001:node-a:1".to_string(),
+            "exp:1700000002:node-a:2".to_string(),
+            "exp:1700000003:node-a:3".to_string(),
+        ],
+        "首页应按主键升序、受 limit 限制"
+    );
+    assert_eq!(
+        store.experience_keys_after("exp:1700000003:node-a:3", 2).await.expect("second page"),
+        vec![
+            "exp:1700000004:node-a:4".to_string(),
+            "exp:1700000005:node-a:5".to_string(),
+        ],
+        "游标必须严格排除（不重发已送达的键）"
+    );
+    assert!(
+        store.experience_keys_after("exp:1700000005:node-a:5", 10).await.expect("tail").is_empty(),
+        "游标之后无键时应为空"
+    );
+    assert!(
+        store.experience_keys_after("", 0).await.expect("zero limit").is_empty(),
+        "limit=0 不应返回任何键"
+    );
+}
