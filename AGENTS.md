@@ -113,25 +113,34 @@ cargo bench -p sisyphus-core   # 认知循环 benchmark
 
 ## 备注
 
-- 工具链：仓库**没有** `rust-toolchain.toml`，不固定版本。实测 stable 与
-  nightly 均可编译（含 `sisyphus-bridge`、`sisyphus-sandboxd` 的
-  `--all-targets`），代码里也没有 nightly 专属的 `#![feature(...)]` 或
-  cargo feature。
-- 本机 `rustup override` 指向 `nightly`，但环境变量 `RUSTUP_TOOLCHAIN=1.99.0`
-  会覆盖它，因此**实际生效的是 stable `rustc 1.99.0` / `cargo 1.99.0`**。
-  排查构建问题前先确认 `rustc --version`，不要假设在用 nightly。
-- CI（`.github/workflows/ci.yml`）、`Dockerfile`、`CONTRIBUTING.md` 仍统一
-  使用 nightly。若要在 stable 上开发，本地需显式设置 `RUSTUP_TOOLCHAIN`，
-  否则会与 CI 的编译器版本不一致。
+- 工具链：仓库**有** `rust-toolchain.toml`，channel 固定为
+  `nightly-2026-08-08`（不是浮动的 `nightly`）。原因是 rustfmt 的换行启发式
+  随 nightly 漂移，浮动版本会让「本地 fmt 绿、CI fmt 红」。**升级工具链时
+  必须同时改** `rust-toolchain.toml` 与 `ci.yml` 的 fmt job，
+  再 `cargo fmt --all` 重新格式化并在两种工具链下各跑一次 `--check`。
+- 历史坑（务必记住）：该文件曾因缺少 `[toolchain]` 表头（且 `profile =
+  "stable"` 不是合法 profile）导致 rustup 解析失败，CI 里**每一个** cargo
+  step 全红，而本地因为 `RUSTUP_TOOLCHAIN` 环境变量会**完全绕过**该文件，
+  连续 40 次 run 0 成功却毫无感知。改这个文件后请用
+  `env -u RUSTUP_TOOLCHAIN rustc --version` 验证，不要只信本地 `cargo`。
+- 本机 shell 设置了 `RUSTUP_TOOLCHAIN=1.99.1`（stable），会覆盖仓库 pin，
+  因此**pre-commit hook 实际用 stable 1.99.1 的 rustfmt/clippy**。
+  已确认 stable 1.99.1 与 nightly-2026-08-08 对本仓库格式化结果一致。
+  排查构建问题前先确认 `rustc --version`，不要假设在用哪个工具链。
+- CI（`.github/workflows/ci.yml`）的**非 fmt** job 仍用 `dtolnay/rust-toolchain@nightly`
+  （=最新 nightly）；只有 fmt job 锁日期。若未来某个 latest nightly 引入新的
+  clippy lint 导致 lint job 变红，按同样思路把对应 job 也锁到同一日期。
 - **`cargo test-all` 不等于完整 workspace 验收**：该 alias 显式
   `--exclude sisyphus-bridge --exclude sisyphus-sandbox --exclude
   sisyphus-sandboxd --exclude sisyphus-tests`（见 `.cargo/config.toml`），
   这 4 个重型 crate 默认不参与。需单独跑：
   `cargo test -p sisyphus-tests -p sisyphus-sandbox -p sisyphus-sandboxd -p sisyphus-bridge`
 - Bridge 默认绑定 `[::1]:50051`，有 IPv6→IPv4 自动回退
-- 内部 crate 的路径依赖均带 `version = "0.1.0"`，这是 `cargo package` 的
+- 内部 crate 的路径依赖均带显式 `version = "0.2.0"`，这是 `cargo package` 的
   硬性要求（缺 version 会报 “all dependencies must have a version
-  requirement specified when packaging”）。全部内部 crate 当前都是 0.1.0。
+  requirement specified when packaging”）。全部 27 个 crate 当前都是 0.2.0
+  （v0.1.0 → v0.2.0 一次性 bump 了 27 个 `[package] version` 与 141 处内部
+  依赖版本约束）。发版前跑 `make release-check`，见 CONTRIBUTING §发布流程。
 - **当前仍无法完成打包**：manifest 校验已通过，但 `cargo package` 会去
   crates.io 查 `sisyphus-bridge-api` / `sisyphus-metrics` 等内部 crate 而
   失败（“no matching package named ... found”）。仓库没有任何发布流程
