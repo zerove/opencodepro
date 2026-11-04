@@ -222,6 +222,12 @@ jobs:
       - uses: ./.github/actions/setup-protoc
       - run: cargo check -p sisyphus-bridge --no-default-features
       - run: cargo clippy -p sisyphus-bridge --no-default-features -- -A clippy::double-must-use -D warnings
+      # `sandboxd_client::tests::*` 会**真的拉起** sisyphus-sandboxd 子进程来验证
+      # 客户端与服务端的契约（错误命名、超时上界、真实工具执行）。这个 job 只
+      # 编译 bridge 本身，target/debug/sisyphus-sandboxd 并不存在，于是三条测试
+      # 在 `sandboxd_bin()` 里 panic（`sisyphus-sandboxd binary not found`）。
+      # 本地一直是绿的——因为本机 target 里早就有那个二进制。
+      - run: cargo build -p sisyphus-sandboxd
       - run: cargo test -p sisyphus-bridge --no-default-features --lib
 
   # ── Bridge integration tests (no sandbox, --no-default-features) ─────
@@ -427,10 +433,15 @@ jobs:
           stripped = re.sub(r'r#".*?"#', '', src, flags=re.S)
           ignored = re.findall(r'#\[ignore[^\]]*\]\s*(?:#\[[^\]]*\]\s*)*fn\s+(\w+)', stripped)
           if ignored:
-              print(f"::error::rust_backend_test_e2e.rs 不得给这些测试加 #[ignore]：{', '.join(ignored)}")
+              # 注意：f-string 的表达式部分不能含反斜杠（Python < 3.12 直接
+              # SyntaxError）。这里曾写 `{', '.join(ignored)}` —— 本地 Python
+              # 3.12+ 允许，CI 的 3.11 直接崩在解析阶段，整个 job 红而本地全绿。
+              names = ", ".join(ignored)
+              print(f"::error::rust_backend_test_e2e.rs 不得给这些测试加 #[ignore]：{names}")
               print("它们已在 test-light job 中执行，加 #[ignore] 会静默失去真实 cargo test 覆盖。")
               sys.exit(1)
-          print(f"OK: 自身 {len(re.findall(r'#\[test\]', stripped))} 条测试均未被 #[ignore]（探针源码内的 #[ignore] 已排除）")
+          test_count = len(re.findall(r'#\[test\]', stripped))
+          print(f"OK: 自身 {test_count} 条测试均未被 #[ignore]（探针源码内的 #[ignore] 已排除）")
           PY
 
   # ── E2E smoke test: start bridge → run stress_test --quick → verify ──
