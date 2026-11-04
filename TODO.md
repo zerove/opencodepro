@@ -4,6 +4,13 @@
 
 ## 已完成 (Done)
 
+> **勾选约定（2026-11-04 起）**：`- [x]` 表示「已验证」，必须附可验证证据——
+> `path/to/file.rs::test_name`（测试须真实存在、带测试属性、未被 `#[ignore]`，
+> 或已由 `--ignored` job 执行）、`make <target>`、`scripts/x.py`。
+> `make todo-audit` 与 CI 的 `audit-sources` job 会交叉核对。确无自动化测试时写
+> `（无测试：理由）`，不要让勾选本身充当证据。历史勾选项登记在
+> `scripts/todo_baseline.txt`（ratchet，只减不增）。
+
 ### 阶段 1: 基础设施维护与代码卫生 (Maintenance & Hygiene)
 - [x] **清除重构残留**: 修复 `cargo check` 报告的所有未使用导入和变量 (2026-08, 已由 nightly clippy 全量验证)
 - [x] **死代码清理**: 移除未使用的结构体、方法和常量 (2026-08, clippy 全量通过)
@@ -535,7 +542,7 @@
 - [x] **修复 `sisyphus-cli` `resolve_backend` 三份副本**: `build.rs`/`run.rs`/`diagnose.rs` 各一份 36 行副本且已漂移，收敛为 `build.rs` 的 `pub(crate)` 单一实现
 - [ ] **重复实现扫描（尝试失败，未采用）**: 正则 + 字节级比对抓不住「复制后各自加注释」这一真实漂移形态；需 `syn` 级 AST 比对。详见状态报告 6.1
 - [ ] **文档示例围栏审计（尝试失败，未采用）**: 「围栏前须有理由」无法区分理由与普通说明文字，合成用例即证伪；不可判定的门禁只会制造已覆盖的错觉。详见状态报告 6.2
-- [ ] **TODO 勾选门禁**: 勾选项须附带测试名，`make todo-audit` 交叉核对是否真实存在且在跑
+- [x] **TODO 勾选门禁**（2026-11-04）: `scripts/audit_todo.py` + `make todo-audit` + CI `audit-sources`。勾选项必须附可解析证据（真实测试名 / make 目标 / 脚本）：引用的测试须真实存在、带测试属性、未被 `#[ignore]`；新增勾选无证据即拦截，历史条目登记在 `scripts/todo_baseline.txt`（ratchet，只减不增）。自检 14 个判别用例：`scripts/audit_todo.py --self-check`
 
 ### 10.2 阶段 9 剩余
 > 协议已定：见 [ADR-010](docs/adr/010-experience-anti-entropy.md)（版本向量反熵，挂进现有双向 `Stream`，不新增 RPC）
@@ -543,11 +550,12 @@
 
 - [x] **ADR-010**: 跨节点经验的反熵补偿方案——dial 方发版本向量，peer 只回送差量，分页有界
 - [x] **P1 经验行标识碰撞，同秒写入静默丢数据**: 主键改为 `exp:{ts}:{origin}:{counter}`，接收端采用发送方主键；并连带修掉「本地 CRDT 时钟退化」（version 恒为 1、vc 计数恒为 1）。新增 `experience_id_collision.rs` 两例回归。详见 ADR-010「前置缺陷 P1」
-  - [ ] **已知局限跟进**: 进程重启后本地序号归零，需从存储层恢复最大计数；存量行保留旧主键，需决定是否清库或写迁移
-- [ ] **启动时全量 sync**: 新节点 Join 后向 peer 拉取全量经验（依赖上一项先修）
-- [ ] **断线补偿**: 重连后按 vector clock 差量补齐
-- [ ] **`ExperienceSyncHandler` 关闭语义加固**: 所有 sender 丢弃时接收端会静默退出，接口层缺少防护
-- [ ] **入站事件转发收敛**: 当前靠自过滤终止回弹，属约定而非结构保证
+  - [x] **重启后序号恢复**: `VectorExperienceBank::new` 从 `store.max_local_counter(origin)` 恢复，写入计数不再归零；回归 `sisyphus-mem/tests/experience_id_collision.rs::sequence_resumes_from_store_after_restart`
+  - [ ] **存量旧主键**: `exp:{timestamp}` 旧行不参与反熵摘要；0.x 采用清库而非迁移，需在发版说明中提示
+- [x] **启动时全量 sync**: 由 ADR-010 版本向量反熵覆盖——流建立后 dial 方立即发 `SyncRequest`，peer 只回送差量；`cluster_integration.rs::test_new_node_pulls_history_via_anti_entropy`
+- [x] **断线补偿**: 重连后按 vector clock 补差量；`anti_entropy_integration.rs::reconnect_delivers_only_the_gap` + `cluster_integration.rs::catchup_signal_sent_while_reconnecting_is_still_consumed`
+- [x] **`ExperienceSyncHandler` 关闭语义加固**: 任务全程持有 `Arc<PeerManager>`，Sender 存活由类型系统保证；`Closed` 分支由 `warn!` 提升为 `error!`
+- [x] **入站事件转发收敛**: `event_tx`（本地产生，拨号器订阅）与 `inbound_tx`（远端收到，仅 handler 订阅）分离，回弹在结构上不可达
 - [ ] **3 节点 Docker Compose** / **网络分区恢复** 验证
 
 ### 10.3 工具链
@@ -561,17 +569,17 @@
 - [x] **Python 解析器：全部通过却报 `passed=0`**: `strip_suffix(" passed")` 对 `1 passed in 0.36s` 永不命中（整行以 ` in 0.36s` 结尾）。改为逗号切分取数字+标签，`error` 归 failed、`skipped` 归 ignored
 - [x] **vitest 解析器：混合结果报 `passed=2 failed=0`**: `Tests 1 failed | 1 passed (2)` 同一行兼含两词，旧代码先匹配 `passed`。重写为优先解析权威汇总行，且只认 `Tests` 行（`Test Files` 行格式相同但语义是文件级）
 - [x] **vitest 套件加载失败守卫从不触发**: `Failed Suites` 在 stderr 且带 ANSI，原守卫只看 stdout。改为合并 stdout/stderr、解析前内部去色
-- [x] **真实工具链 e2e 回归**: 新增 `tests/language_backend_guards.rs`，11 条真实拉起 `go` / `python3 -m pytest`，覆盖 Go 单包/多包/通过/失败、Python 全过/混合/跳过/两类收集错误/fixture 报错/失败
-- [ ] **`TestResults` 增加执行状态维度**（治本，建议单独立项）: 引入 `TestOutcome { Ran, NoTests, NotExecuted }`，让调用方不再靠 `failed == 0` 反推测试是否跑过。这是本次全部缺陷的放大器，不修的话每加一个语言后端都要重踩
-- [ ] **e2e 纳入 CI**: 11 条 e2e 目前全 `#[ignore]`，依赖 go/pytest 工具链。建议 CI 增设带工具链的 job 跑 `--ignored`，而不是长期挂着
-- [ ] **清理环境告警**: `sisyphus-core/tests/executor_failure_semantics.rs:48` 的 `fetch_update` 弃用告警；`.cargo/config.toml` 的 `test-all` 补 `CARGO_BUILD_JOBS=1`（Makefile 已加，直接敲 `cargo test-all` 仍会撞并行链接 OOM）
+- [x] **真实工具链 e2e 回归**: 新增 `tests/language_backend_guards.rs`，13 条真实拉起 `go` / `python3 -m pytest` / `mvn`，覆盖 Go 单包/多包/通过/失败、Python 全过/混合/跳过/两类收集错误/fixture 报错/失败、Maven 编译失败/全通过
+- [x] **`TestResults` 增加执行状态维度**（治本）: `TestOutcome { Ran, NoTests, NotExecuted }` + `TestResults::outcome()`；CLI `test_status_label` 改为 `match outcome()`，不再靠 `failed == 0` 反推。commit `fd7cca7`，3 条 outcome 单测 + 9 条 CLI 判定单测
+- [x] **e2e 纳入 CI**: `ci.yml` 新增 `toolchain-e2e` job，13 条 `#[ignore]` 用例以 `--ignored --test-threads=1` 在装有 go / python+pytest / JDK / Maven 的 runner 上执行
+- [x] **清理环境告警**: `executor_failure_semantics.rs` 已由 `fetch_update` 改用 `try_update`（clippy 无弃用告警）；`.cargo/config.toml` 的 `test-all` 别名补 `-j 1`（嵌套 cargo 仍由 `make test-all` 的 `CARGO_BUILD_JOBS=1` 覆盖）
 
 ---
 
-**更新日期**: 2026-10-04
-**当前重点**: 10.4 多语言测试守卫收尾（治本的 `TestOutcome` 改造待立项）
+**更新日期**: 2026-11-04
+**当前重点**: 10.1 勾选门禁已落地（`make todo-audit`）；剩余为 3 节点 Docker Compose / 网络分区验证、mutation/fuzz 扩展
 **前置条件**:
 - 阶段 9.1 经验同步生产链路已打通并有端到端验证 ✅
 - 跨节点经验同步相关缺陷全部修复并回归通过 ✅
 - 工作区全量回归 4750 通过 / 0 失败（`cargo test-all -j 2`，排除 bridge/sandbox）✅
-- 多语言测试守卫 5 缺陷修复 + 11 条真实工具链 e2e 全绿 ✅
+- 多语言测试守卫 5 缺陷修复 + 13 条真实工具链 e2e 全绿，并接入 CI ✅

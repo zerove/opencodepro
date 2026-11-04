@@ -136,6 +136,11 @@ cargo bench -p sisyphus-core   # 认知循环 benchmark
   四个平台构建就是这样挂过一次。`scripts/audit_workflows.py` 现在会拒绝
   任何直写 `dtolnay/rust-toolchain@` 的 workflow，也会拒绝缺少 `[toolchain]`
   表头或 channel 浮动的 `rust-toolchain.toml`（CI `Audit sources` job 执行）。
+- **`- [x]` 现在是有门禁的**：`scripts/audit_todo.py`（`make todo-audit`，CI
+  `Audit sources`）要求每个勾选项附可解析证据——真实存在、带测试属性、未被
+  `#[ignore]` 的 `path.rs::test_fn`，或真实存在的 `make` 目标 / `scripts/x.py`。
+  历史勾选项登记在 `scripts/todo_baseline.txt`（ratchet，只减不增）；确无自动化
+  测试时写 `（无测试：理由）`。改写旧条目文字会让它「变成新条目」，需补证据。
 - **`cargo test-all` 不等于完整 workspace 验收**：该 alias 显式
   `--exclude sisyphus-bridge --exclude sisyphus-sandbox --exclude
   sisyphus-sandboxd --exclude sisyphus-tests`（见 `.cargo/config.toml`），

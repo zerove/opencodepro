@@ -49,10 +49,23 @@
 ## [Unreleased]
 
 ### Added
+- **TODO 勾选门禁**（`scripts/audit_todo.py` + `make todo-audit` + CI `audit-sources`）：
+  `- [x]` 视为「已验证」声明，必须附可解析证据——引用的 `path.rs::test_fn` 要真实
+  存在、带测试属性、且未被 `#[ignore]`（或已由 `--ignored` job 执行）；`make <目标>`
+  与 `scripts/x.py` 要真实存在。历史勾选项登记在 `scripts/todo_baseline.txt`
+  （ratchet，只减不增），新增勾选无证据即失败。自检 14 个判别用例。
 
 ### Changed
+- `cargo test-all` 别名补 `-j 1`：直接敲别名时不再按 nproc 并行链接多个
+  测试二进制（19.5 GiB 机器上会 OOM）。嵌套 cargo 仍由 `make test-all` 的
+  `CARGO_BUILD_JOBS=1` 覆盖。
 
 ### Fixed
+- **Docker 镜像链接到空壳 rlib**：`COPY . .` 保留了构建上下文里的旧 mtime，
+  而依赖缓存层的空壳源码更晚创建，cargo 因此认为真实源码更旧、一个
+  workspace crate 都不重编，最终报 73 个 `unresolved import`。现在
+  `COPY . .` 之后先把源码 mtime 推到当前时间再构建，并在
+  `scripts/audit_dockerfile.py` 增加门禁（缺 touch 即失败，含自检用例）。
 
 ## [v0.2.0] - 2026-11-04
 

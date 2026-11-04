@@ -1,0 +1,112 @@
+# TODO 勾选门禁的历史豁免（scripts/audit_todo.py）
+#
+# 落地门禁之前就已勾选、且没有可验证证据的条目。它们不证明任何事，
+# 只是「不追溯」，避免为了过门禁而编造证据。只减不增：新增条目必须
+# 附真实测试名 / make 目标 / 脚本，或写明（无测试：理由）。
+# 重新生成：python3 scripts/audit_todo.py --update-baseline
+**2 节点 sync 测试**: `cluster_integration.rs` 扩展（2026-10-02）
+**6 处从不编译的文档示例改为 `no_run`**: `peer/service.rs`、`config_store.rs`(2)、`node.rs`、`core/lib.rs`、`formal_verification.rs`。查出 3 处真实文档缺陷（`.await` 用在同步函数 `ConfigStore::load` 上、示例变量未定义、缺导入），并修掉 `ExecutorRouter::register` 重复的文档注释
+**ADR-010**: 跨节点经验的反熵补偿方案——dial 方发版本向量，peer 只回送差量，分页有界
+**CHANGELOG v0.2.0 changelog 模板** (2026-09-04): 发布流程文档化
+**CI `toolchain-e2e` 会直接失败：已修** (2026-10-04): 移除 `cache: maven`
+**CI 监控**: nightly 滚动可能引入新 clippy lint, 定期检查 — clippy 无警告，全量测试通过
+**CLI 启动并行化** (2026-09-05): multi-thread runtime + spawn_blocking
+**DagRenderer 大规模压力测试** (2026-09-05): 1000-5000 节点 bench + 算法优化
+**Docker Hub 镜像** (2026-09-04): ghcr.io 自动发布 workflow
+**ExperienceSync 事件广播**: `PeerBroadcastExperienceBank` 装饰器，本地落库成功后广播（先落库后广播，广播失败不影响本地结果）
+**ExperienceSyncHandler**: 订阅 PeerManager 事件，按 CRDT 合并（`apply_remote`）写入本地库，跟随关闭信号优雅停止
+**GitHub Actions CI 全绿** (2026-08-09, 27/27 jobs; 修复 linker/clippy/protoc/组件缺失)
+**GitHub Release Notes** (2026-09-05): release.yml 已自动生成
+**Go 守卫：多包部分构建失败被漏判**: `go test ./...` 在某包构建失败时仍执行其余包，stdout 同时有 `--- PASS` 与 `FAIL\t<pkg> [build failed]`，「没有 PASS 行」判据必然漏判。改用明确的 `[build failed]` 标记
+**IDE Rust Analyzer 配置** (2026-08-31): `.rust-analyzer.json` 排除 4 个重型 crate
+**Otel 导出端点配置化**: 当前 otel 配置散落，`OpenTelemetryConfig` 缺少完整 env override 链
+**P1 经验行标识碰撞，同秒写入静默丢数据**: 主键改为 `exp:{ts}:{origin}:{counter}`，接收端采用发送方主键；并连带修掉「本地 CRDT 时钟退化」（version 恒为 1、vc 计数恒为 1）。新增 `experience_id_collision.rs` 两例回归。详见 ADR-010「前置缺陷 P1」
+**Python 解析器：全部通过却报 `passed=0`**: `strip_suffix(" passed")` 对 `1 passed in 0.36s` 永不命中（整行以 ` in 0.36s` 结尾）。改为逗号切分取数字+标签，`error` 归 failed、`skipped` 归 ignored
+**REST API 接口层** (axum + OpenAPI 3.1):
+**SIGABRT 成因已查明** (2026-10-04 晚): 崩在**链接期 rust-lld**，抛 `EAGAIN «Resource temporarily unavailable»`
+**SIGABRT 根治手段：三个候选全部实测完毕，均不能在仓库内根治** (2026-10-04)
+**TUI `:health` 面板** (2026-09-01): `palette` `health`/`:health`/`h`/`:h` 调起；`r` 刷新、`Esc`/`q` 关闭、`j`/`k` 翻 raw JSON；渲染三层（顶部 OK/DEGRADED 状态条 + 组件表（按 ok→absent→degraded 排序）+ Raw components JSON）；后台 `spawn_fetch_health_deep` 解析 `/health/deep`（接受 200/207 Multi-Status）；纯函数 `parse_health_deep_response` + 5 个单元测试 + 1 个集成测试 `test_health_deep_no_bridge_graceful_error`
+**TUI 启动时间**: 冷启动 < 200ms 目标，profile `sisyphus-cli` 入口 (2026-09-05)
+**WebUI 中文化**
+**`/health/deep` 单元测试** (2026-08-31): 5 个测试覆盖 DB 文件/父目录/不存在/absent 不算降级/三组件键（重构 health_deep_handler → 薄包装 + 纯函数 health_deep_assess）
+**`ExperienceSyncHandler` 关闭语义加固**: 任务全程持有 `Arc<PeerManager>`，Sender 存活由类型系统保证；`Closed` 分支由 `warn!` 提升为 `error!`
+**`TestResults` 增加执行状态维度**（治本）: `TestOutcome { Ran, NoTests, NotExecuted }` + `TestResults::outcome()`；CLI `test_status_label` 改为 `match outcome()`，不再靠 `failed == 0` 反推。commit `fd7cca7`，3 条 outcome 单测 + 9 条 CLI 判定单测
+**`just` 适配层** (2026-08-31): `justfile` 镜像 Makefile 关键目标，跨平台友好（Windows / macOS / Linux），不强制 set shell 保留各平台默认行为
+**`language_backend_guards.rs` 注释说「拉起 vitest」，实际无 vitest 用例** (2026-10-04)
+**`sisyphus-bridge` 的 7 个 clippy 错误，已修** (2026-10-04): `cargo clippy -p sisyphus-bridge --all-targets -- -D warnings` 现为 **0 错误**
+**`test_persist_survives_buffer_recreation` 竞态，已修复** (2026-10-04): 确定性复现 5/30 轮丢失 → 修复后 0/30
+**bench 趋势 dashboard** (2026-09-04): criterion HTML 报告 + 入口索引
+**book/ 添加 tutorial 章节** (2026-09-04): `book/src/tutorial.md` 端到端教程
+**bridge gRPC 流式响应** (2026-09-05): 大 payload 检测 + 推荐 streaming
+**bridge 启动自检端点** (2026-08-31): `GET /health/deep` 报告 session_db/shared_http/kernel 组件级状态；返回 200/207 Multi-Status；OpenAPI 文档 + HealthDeepResponse schema
+**bridge 集成测试 CI 化**: `sisyphus-bridge/tests/bridge_integration_test.rs` 当前 `#[ignore]`
+**cargo-deny 配置强化** (2026-09-04): 主动审计 + 文档化当前 advisory
+**clippy 7 处 -D warnings 编译错误** (rustc 1.98 新增 lint)
+**devcontainer.json** (2026-09-04): VS Code Remote Container 一键搭建
+**e2e 纳入 CI**: `ci.yml` 新增 `toolchain-e2e` job，13 条 `#[ignore]` 用例以 `--ignored --test-threads=1` 在装有 go / python+pytest / JDK / Maven 的 runner 上执行
+**eval 真实模式接入**: 接入真实 LLM provider 跑分 (当前 mock) — mock 模式验证通过，真实模式需外部 API 凭证
+**eval 评测套件** (57 例, schema 校验 + mock/真实双模式)
+**experience bank 跨实例同步**: CRDT 或 last-writer-wins 策略 (2026-09-05)
+**metrics Prometheus 端点** (2026-09-04): `/api/metrics` 暴露 Prometheus 0.0.4 文本格式
+**mutation testing 试点**: `cargo-mutants` 在 `sisyphus-types` 跑一轮，验证测试质量
+**peer 协议骨架实施** (TODO 8.3.1 / ADR-009 § 1 Phase A, 2026-09-05)
+**rustfmt 1.98 链式格式变更**: `cargo fmt --all` 应用，376 文件风格统一，行为不变
+**token_budget 端到端补齐**:
+**tracing span 覆盖率** (2026-09-04): 关键路径 100% 覆盖 (execute_goal / execute_sop / token_budget 检查)
+**vitest 套件加载失败守卫从不触发**: `Failed Suites` 在 stderr 且带 ANSI，原守卫只看 stdout。改为合并 stdout/stderr、解析前内部去色
+**vitest 解析器：混合结果报 `passed=2 failed=0`**: `Tests 1 failed | 1 passed (2)` 同一行兼含两词，旧代码先匹配 `passed`。重写为优先解析权威汇总行，且只认 `Tests` 行（`Test Files` 行格式相同但语义是文件级）
+**wasm 沙箱的 proptest**: `sisyphus-sandbox` 缺属性测试，添加 host function 边界覆盖
+**「112s 慢测试」是我的误判** (2026-10-04): 测试实跑 2.80s，54s 全是编译
+**依赖升级审计**: `cargo outdated` / `cargo deny check` 定期巡检
+**修复 `sisyphus-cli` `resolve_backend` 三份副本**: `build.rs`/`run.rs`/`diagnose.rs` 各一份 36 行副本且已漂移，收敛为 `build.rs` 的 `pub(crate)` 单一实现
+**健康度端点扩展** (2026-09-04): 增加 `/health/live` (liveness) + `/health/ready` (readiness) 分离
+**入站事件投递**: `PeerManager::deliver_inbound_experience_sync` 把远端事件投递到本地总线（不用 `broadcast_`，避免集群内回弹）；转换函数收敛为 `service.rs` 单一实现，删除 `fallback.rs` 副本
+**入站事件转发收敛**: `event_tx`（本地产生，拨号器订阅）与 `inbound_tx`（远端收到，仅 handler 订阅）分离，回弹在结构上不可达
+**共识机制 benchmark** (2026-09-05): ClusterConsensus 5 节点 latency bench
+**可解释性**: 认知循环决策可视化 (2026-08-11)
+**多工作区支持 (Multi-Workspace)**:
+**多智能体协作**: 增强 Agent 间委托协议 (2026-08-11)
+**多语言测试守卫的 6 个解析器缺陷修复** (2026-10-04)
+**嵌套 cargo 撞同一堵墙（第一轮修错，第二轮才修对）** (2026-10-04)
+**并行链接保护**: 实测 19.5 GiB 下 `-j 2` 仍会 OOM、`-j 1` 稳定；`test-all`/`test-tools`/`test-bridge*`/`test-cli-handlers` 已统一带 `CARGO_BUILD_JOBS=1`，Makefile 头部记录约束（直接敲 `cargo test` 仍需自行加 `-j 1`）
+**性能基准基线** (`docs/benchmarks/v2-baseline-2026-08-09.md`)
+**技能市场 (Skill Market)**:
+**文档同步**: `book/` 与 `docs/` 反映最新的 crate 拆分架构与中文化
+**概率引导规划**: 蒙特卡洛模拟路径概率集成到 `Predict` 阶段 (MonteCarloSimulator 已集成)
+**死代码清理**: 移除未使用的结构体、方法和常量 (2026-08, clippy 全量通过)
+**测试判定式根治** (2026-10-04): `sisyphus-cli/src/build.rs` 的 `if r.failed == 0 { "ok" }` → `test_status_label()`，区分 `ok` / `FAILED` / `no tests ran`，9 条单测 + 真实 CLI 四路径验证（空工程 / 通过 / 失败 / frontend）
+**深度反思机制**: 偏差评分算法优化 (`AnomalyDetector` / `BranchPredictor`)
+**混沌测试扩展**: 当前仅 fault injection 覆盖，缺网络延迟/超时/并发竞态场景
+**清除重构残留**: 修复 `cargo check` 报告的所有未使用导入和变量 (2026-08, 已由 nightly clippy 全量验证)
+**真实工具链 e2e 回归**: 新增 `tests/language_backend_guards.rs`，13 条真实拉起 `go` / `python3 -m pytest` / `mvn`，覆盖 Go 单包/多包/通过/失败、Python 全过/混合/跳过/两类收集错误/fixture 报错/失败、Maven 编译失败/全通过
+**真实工具链 e2e** (2026-10-04): `language_backend_guards.rs` 11 → 13 条（新增 Maven 编译失败 / 全通过），并**接入 CI**（新增 `toolchain-e2e` job，装 go/python/pytest/JDK/Maven）
+**示例工程 `examples/`** (2026-09-04): 2 个可编译 cargo examples
+**解除 2 处失效的 `#[ignore]`**: `bridge_integration_test` 中两处 `#[ignore = "requires dedicated runner"]` 的真实原因是测试失败（内核未注入、失败被吞成成功），本轮修复后已自包含通过；保持忽略会让本轮修复的失败传播语义在 CI 中零覆盖
+**认知循环 v2 异常检测器调优** (2026-08-31): `AnomalyDetector` 阈值从 Config 加载
+**贡献者指南完善** (2026-09-04): CONTRIBUTING.md + PR/Issue 模板
+**运行时增量 sync**: 本地 store 变更后主动广播到 peer
+**部署脚本**: 缺 systemd unit / Docker compose / k8s manifest
+**错误处理审计**: 生产代码 `unwrap()`/`expect()` 审计完成 (2026-08-09, 残余均为 build.rs/测试基础设施/文档示例)
+**高级 SOP 演进**: 失败模式库 → 智能图突变 (SOP Mutation)
+6 个新测试 (94 lib 测试全绿, clippy 干净)
+REST 接口: `GET /api/cognitive/trace?limit=N` (默认 100, 上限 200) 暴露最近决策链
+TUI 面板: `:cogtrace` 命令打开决策链视图，表格渲染 (时间/SOP/事件/摘要)，偏差与拒绝着色，Enter 查看预测↔实际与理由/指标，`r` 刷新
+`DelegationPolicy` (retries / timeout_ms / fallback_agents)，经任务 `args["_delegation"]` 约定生效
+gRPC 往返隔离验证（`test_experience_sync_survives_grpc_round_trip`）
+健康摘要: `GET /api/cognitive/summary?sop_id=&limit=` 跨会话聚合 (决策分布/偏差/置信度/稳定性/信息增益均值、token 成本、时间窗口)；TUI `:cogsum` 面板含决策分布条形图与健康判定 (STABLE/CAUTION/DRIFTING)；mem 2 测试 + bridge 2 测试 + 契约测试 (2026-08-11)
+在 `MfsStore` 中实现工作区级路径隔离
+实现 OpenAPI/Swagger 文档自动生成 (`http_openapi.rs`)
+实现从远程/本地仓库安装新工具的能力
+将 gRPC `ExecuteGoal`/`ExecuteSop` 映射为 HTTP 接口
+并发写入冲突：CRDT 版本高低裁决（`test_newer_remote_version_wins_concurrent_write`）
+成功结果注入 `_delegated_agent` 标注实际执行代理（可观测性）
+扩展 `RoadmapManager` 支持多项目 ID 隔离
+持久化: 决策写入 SQL (`cognitive_traces` 表)，跨会话留存；`GET /api/cognitive/trace/history?sop_id=&limit=` 历史检索 (上限 1000)；TUI `h` 切换热缓冲 ⇄ SQL 历史 (历史行显示本地时钟时间)；重启恢复集成测试验证 (2026-08-11)
+数据侧: `CognitiveTraceBuffer` 环形缓冲 (容量 200)，`CognitiveStep`/`MicroReflection` 双路径捕获，`ExecutionManager::recent_cognitive_trace` 查询接口
+更新 CLI 支持工作区切换
+生产拨号器真的把事件送到对端（`test_shipped_dialer_delivers_events_to_peer`，直接锁定三处丢弃缺陷）
+节点 A 写入 → 节点 B 可见，且反向亦然（`test_two_node_experience_sync_round_trip_persists`）
+设计动态技能加载协议
+调度器实现委托循环: 重试 → 超时 → 回退代理顺序接管；回退代理预验证 (注册 + 工具前缀匹配)
+选择框架 (Axum) 并搭建基础服务
+重复投递幂等（`test_duplicate_delivery_does_not_duplicate_experience`）

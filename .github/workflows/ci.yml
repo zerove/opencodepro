@@ -41,11 +41,11 @@ jobs:
       - run: cargo fmt --check
 
   # ── 结构审计：孤儿源文件 / 忽略测试理由（无需 Rust 工具链）──────────
-  # 两者都是纯静态扫描，放在格式检查之后作为快速反馈。
+  # 全部是纯静态扫描，放在格式检查之后作为快速反馈。
   audit-sources:
     name: Audit sources
     runs-on: ubuntu-latest
-    # 四个审计脚本本地实测合计约 20 秒（脚本本身），加 rust/action 缓存
+    # 六个审计脚本本地实测合计约 20 秒（脚本本身），加 rust/action 缓存
     # 未命中与 checkout 通常在 1 分钟内。给 5 分钟是十几倍余量，同时仍远低于
     # GitHub 默认的 360 分钟——第八轮实测剪枝前的 audit_orphans 要跑 924.7
     # 秒，正是这种「门禁不报错、只是不动」的退化态。超时要留出来，否则它会
@@ -67,6 +67,14 @@ jobs:
         run: python3 scripts/audit_ignored.py
       - name: Audit process-global state in tests
         run: python3 scripts/audit_test_global_state.py
+      # TODO 勾选门禁：`- [x]` 声明「已验证」，必须附可解析证据（真实存在且
+      # 未被 #[ignore] 的测试、真实存在的 make 目标或脚本）。本项目栽过的
+      # 那一跤是 9.1 被勾选「完成」而生产链路从未跑通——靠人记拦不住。
+      # 历史条目登记在 scripts/todo_baseline.txt（ratchet），新增勾选无证据即红。
+      - name: Audit TODO checkbox evidence
+        run: |
+          python3 scripts/audit_todo.py
+          python3 scripts/audit_todo.py --self-check
       # workflow 自身的引用完整性。放在本 job 里是刻意的：它只需要
       # checkout 出来的 YAML 与 PyYAML，不需要编译，几秒就能跑完。
       - name: Audit workflow step references

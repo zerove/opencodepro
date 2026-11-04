@@ -237,6 +237,31 @@ def needs_protoc(root, members):
     return False
 
 
+def logical_instructions(text):
+    """把 Dockerfile 的物理行合成逻辑指令，并丢掉注释行。
+
+    子串匹配物理行会被两件事骗过，且都在真实 Dockerfile 上发生过：
+
+    * 注释里解释了 `touch` / `*.rs`（本仓库的注释就是这么写的）；
+    * `RUN` 用反斜杠续行，删掉最后一行 `xargs -0 touch` 后，
+      前面的 `-name '*.rs'` 仍然留在文件里。
+    """
+    buf = ""
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        if stripped.endswith("\\"):
+            buf += stripped[:-1].rstrip() + " "
+            continue
+        buf += stripped
+        if buf.strip():
+            yield buf.strip()
+        buf = ""
+    if buf.strip():
+        yield buf.strip()
+
+
 def check(root="."):
     problems = []
     dockerfile = os.path.join(root, "Dockerfile")
@@ -304,9 +329,15 @@ def check(root="."):
         tail = text[copy_match.end():]
         final_build = tail.find("cargo build --release")
         region = tail if final_build == -1 else tail[:final_build]
-        if "touch" not in region or "*.rs" not in region:
+        # 只认**可执行的** RUN：注释里提到 touch、或删剩的续行里有 '*.rs'，
+        # 都不算刷新过 mtime（真实 Dockerfile 上两者同时存在过）。
+        touched = any(
+            inst.startswith("RUN ") and "touch" in inst and "*.rs" in inst
+            for inst in logical_instructions(region)
+        )
+        if not touched:
             problems.append(
-                "`COPY . .` 之后没有把源码 mtime 刷新（缺 `touch ... -name '*.rs'`）："
+                "`COPY . .` 之后没有把源码 mtime 刷新（缺可执行的 `touch ... -name '*.rs'`）："
                 "cargo 会认为真实源码比空壳更旧，一个 workspace crate 都不重编，"
                 "镜像里最终链接到空壳 rlib（表现为一堆 unresolved import）"
             )
@@ -430,12 +461,42 @@ members = ["crates/a", "evals"]
     if any("mtime" in g for g in got):
         failures.append("已刷新 mtime: 误报，实际 %r" % (got,))
 
+    # 真实 Dockerfile 的失败形态：注释里本来就有 `touch` / `*.rs`，删掉
+    # 最后一行后还会留下 `-name '*.rs'` 的续行。按物理行做子串匹配会假绿
+    # ——这条用例就是被真实文件证伪后补的。
+    got = build(
+        cargo,
+        good_block,
+        tail=(
+            "COPY . .\n"
+            "# 这里解释一下 touch '*.rs' 为什么必要\n"
+            "RUN find . -path ./target -prune -o \\\n"
+            "        \\( -name '*.rs' -o -name 'Cargo.toml' \\) \\\n"
+            "RUN cargo build --release -p sisyphus-bridge\n"
+        ),
+    )
+    if not any("mtime" in g for g in got):
+        failures.append("注释+残缺续行冒充 mtime 刷新: 未检出，实际 %r" % (got,))
+
+    # 注释里同时出现两个关键词、但没有任何 RUN —— 同样不算。
+    got = build(
+        cargo,
+        good_block,
+        tail=(
+            "COPY . .\n"
+            "# touch -name '*.rs'\n"
+            "RUN cargo build --release -p sisyphus-bridge\n"
+        ),
+    )
+    if not any("mtime" in g for g in got):
+        failures.append("仅注释提到 touch: 未检出，实际 %r" % (got,))
+
     if failures:
         print("❌ 自检失败：")
         for f in failures:
             print("  -", f)
         return 1
-    print(f"✅ 自检通过（{9} 个判别用例）")
+    print(f"✅ 自检通过（{11} 个判别用例）")
     return 0
 
 

@@ -305,13 +305,13 @@ rustc-abort-forensics:
 
 # — 结构审计（不需要编译，纯静态扫描）—
 #
-# 本地目标 vs CI：这三个审计在 CI 里**有**强制——ci.yml 的 `audit-sources`
+# 本地目标 vs CI：这些审计在 CI 里**有**强制——ci.yml 的 `audit-sources`
 # job 直接调用对应的 python 脚本（本 job 只需 checkout + python，无需
 # Rust 工具链）。但它们**不在** .githooks/pre-commit 里，所以本地提交时
-# 不会自动跑，只有手动执行这三个 make 目标才会生效。
+# 不会自动跑，只有手动执行这些 make 目标才会生效。
 #
-# 本地实测单次耗时：orphans 3.8s、ignored 2.5s、test-state 9.2s
-# （均为热缓存；首次扫描更慢）。三个合计约 15s，接进 pre-commit 成本很低。
+# 本地实测单次耗时：orphans 3.8s、ignored 2.5s、test-state 9.2s、
+# todo 1.3s（均为热缓存；首次扫描更慢）。合计约 17s，接进 pre-commit 成本很低。
 
 # 孤儿源文件：src/ 下从未被 mod 引入的文件，不参与编译。
 # 曾出现 crates/sisyphus-mem/src/tests.rs（227 行 7 个用例）从未被引用，
@@ -347,10 +347,19 @@ audit-dockerfile:
 	@python3 scripts/audit_dockerfile.py
 	@python3 scripts/audit_dockerfile.py --self-check
 
-# 全部结构审计（不需编译）
-audit: audit-orphans audit-ignored audit-test-state audit-workflows audit-dockerfile
+# TODO 勾选门禁：`- [x]` 声明「已验证」，必须附能被解析的证据——引用的
+# `path.rs::test_fn` 要真实存在、带测试属性、且没被 `#[ignore]` 挂着；
+# `make <目标>` 与 `scripts/x.py` 要真实存在。本项目栽过的那一跤（9.1 被
+# 勾选完成，生产链路却从未跑通）靠人记是拦不住的。历史条目登记在
+# scripts/todo_baseline.txt（ratchet，只减不增），新增勾选无证据直接失败。
+todo-audit:
+	@python3 scripts/audit_todo.py
+	@python3 scripts/audit_todo.py --self-check
 
-.PHONY: audit-orphans audit-ignored audit-test-state audit-workflows audit-dockerfile audit
+# 全部结构审计（不需编译）
+audit: audit-orphans audit-ignored audit-test-state audit-workflows audit-dockerfile todo-audit
+
+.PHONY: audit-orphans audit-ignored audit-test-state audit-workflows audit-dockerfile todo-audit audit
 
 # — 发布前置检查 —
 #

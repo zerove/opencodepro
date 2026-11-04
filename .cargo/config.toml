@@ -24,7 +24,11 @@ ct-tools   = "test -p sisyphus-tools-core -p sisyphus-tools-llm -p sisyphus-tool
 #     sisyphus-bridge、sisyphus-sandbox、sisyphus-tests 需单独编译
 check-all  = "check --workspace --exclude sisyphus-bridge --exclude sisyphus-sandbox --exclude sisyphus-sandboxd --exclude sisyphus-tests"
 build-all  = "build --workspace --exclude sisyphus-bridge --exclude sisyphus-sandbox --exclude sisyphus-sandboxd --exclude sisyphus-tests"
-test-all   = "test --workspace --exclude sisyphus-bridge --exclude sisyphus-sandbox --exclude sisyphus-sandboxd --exclude sisyphus-tests"
+# `-j 1` 不是保险：本机 19.5 GiB 下默认并行链接多个测试二进制会 OOM
+# （`linking with cc failed`），见 Makefile 头部。别名无法设置环境变量，
+# 所以用等价的 `-j`；但**它传不进测试内部再拉起的嵌套 cargo**（如
+# `rust_tests`），那条路径仍需要 `make test-all` 的 CARGO_BUILD_JOBS=1。
+test-all   = "test --workspace --exclude sisyphus-bridge --exclude sisyphus-sandbox --exclude sisyphus-sandboxd --exclude sisyphus-tests -j 1"
 
 # ── 单独 crates ──────────────────────────────────────────
 ch-cli     = "check -p sisyphus-cli"
