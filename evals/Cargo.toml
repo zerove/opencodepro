@@ -15,12 +15,12 @@ tokio = { version = "1.0", features = ["full"] }
 async-trait = "0.1"
 regex = "1.10"
 jsonschema = "0.17"
-sisyphus-tools-core = { path = "../crates/sisyphus-tools-core" }
-sisyphus-tools-llm = { path = "../crates/sisyphus-tools-llm" }
-sisyphus-tools-executor = { path = "../crates/sisyphus-tools-executor" }
-sisyphus-types = { path = "../crates/sisyphus-types" }
-sisyphus-intel = { path = "../crates/sisyphus-intel" }
-sisyphus-mem = { path = "../crates/sisyphus-mem" }
+sisyphus-tools-core = { version = "0.2.0", path = "../crates/sisyphus-tools-core" }
+sisyphus-tools-llm = { version = "0.2.0", path = "../crates/sisyphus-tools-llm" }
+sisyphus-tools-executor = { version = "0.2.0", path = "../crates/sisyphus-tools-executor" }
+sisyphus-types = { version = "0.2.0", path = "../crates/sisyphus-types" }
+sisyphus-intel = { version = "0.2.0", path = "../crates/sisyphus-intel" }
+sisyphus-mem = { version = "0.2.0", path = "../crates/sisyphus-mem" }
 anyhow = "1.0"
 prettytable-rs = "0.10"
 reqwest = { version = "0.11", features = ["json"] }

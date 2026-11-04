@@ -115,9 +115,6 @@ skip = [
     # Different petgraph versions from wasmtime vs prost-build
     { name = "petgraph", version = "0.6" },
     { name = "petgraph", version = "0.7" },
-    # Two metrics versions coexist (0.21 for our code, 0.22 by exporter)
-    { name = "metrics", version = "0.21" },
-    { name = "metrics", version = "0.22" },
     # fixedbitset duplicated via petgraph versions
     { name = "fixedbitset", version = "0.4" },
     { name = "fixedbitset", version = "0.5" },
