@@ -232,7 +232,8 @@
 - [x] **`just` 适配层** (2026-08-31): `justfile` 镜像 Makefile 关键目标，跨平台友好（Windows / macOS / Linux），不强制 set shell 保留各平台默认行为
 
 #### 7.5 文档与运维
-- [ ] **CHANGELOG.md 启动**: 当前 320 个本地提交无 CHANGELOG，按 keep-a-changelog 格式补 0.x.x
+- [x] **CHANGELOG.md 启动**: 当前 320 个本地提交无 CHANGELOG，按 keep-a-changelog 格式补 0.x.x（无测试：文档条目，由 `make release-check` 覆盖一致性）
+  - 已建立根目录 `CHANGELOG.md`（keep-a-changelog 1.1.0 + SemVer），含发布流程模板；发版前 `make release-check` 校验版本/CHANGELOG 一致性
 - [ ] **book 增量构建**: `mdbook` 当前每次全量编译，CI 缓存复用
 - [x] **部署脚本**: 缺 systemd unit / Docker compose / k8s manifest
 
@@ -467,7 +468,7 @@
 - [x] **ExperienceSync 事件广播**: `PeerBroadcastExperienceBank` 装饰器，本地落库成功后广播（先落库后广播，广播失败不影响本地结果）
 - [x] **ExperienceSyncHandler**: 订阅 PeerManager 事件，按 CRDT 合并（`apply_remote`）写入本地库，跟随关闭信号优雅停止
 - [x] **入站事件投递**: `PeerManager::deliver_inbound_experience_sync` 把远端事件投递到本地总线（不用 `broadcast_`，避免集群内回弹）；转换函数收敛为 `service.rs` 单一实现，删除 `fallback.rs` 副本
-- [ ] **启动时全量 sync**: 新节点加入时请求所有 peer 的 experience
+- [x] **启动时全量 sync**: 新节点加入时请求所有 peer 的 experience —— 证据：`crates/sisyphus-bridge/tests/cluster_integration.rs::test_new_node_pulls_history_via_anti_entropy`（新节点经 ADR-010 版本向量反熵拉齐既有多条经验）
 - [x] **运行时增量 sync**: 本地 store 变更后主动广播到 peer
 
 #### 9.1.2 端到端集成测试
@@ -478,8 +479,8 @@
   - [x] 并发写入冲突：CRDT 版本高低裁决（`test_newer_remote_version_wins_concurrent_write`）
   - [x] 重复投递幂等（`test_duplicate_delivery_does_not_duplicate_experience`）
 - [ ] **3 节点 Docker Compose**: 本地多节点验证
-- [ ] **断线补偿**: 重连后按 vector clock 差量补齐（事件即发即失，断线期间的经验会永久丢失）
-- [ ] **chaos 扩展**: 网络分区 + 节点重启后 sync 恢复
+- [x] **断线补偿**: 重连后按 vector clock 差量补齐（事件即发即失，断线期间的经验会永久丢失）—— 证据：`crates/sisyphus-bridge/tests/anti_entropy_integration.rs::reconnect_delivers_only_the_gap`（只补断线期间的缺口，不重传已持有的行）
+- [x] **chaos 扩展**: 网络分区 + 节点重启后 sync 恢复 —— 证据：`crates/sisyphus-bridge/tests/anti_entropy_partition_convergence.rs::partition_heal_converges_both_sides_via_bidirectional_sync`（分区痊愈后双侧并集收敛）、`crates/sisyphus-mem/tests/experience_id_collision.rs::sequence_resumes_from_store_after_restart`（序号从 store 恢复，重启后不会归零导致主键碰撞丢行）
 
 ### 9.2 认知循环 v3 研究（探索性）
 
@@ -517,7 +518,9 @@
 
 #### 9.4.2 文档优化
 - [ ] **mdbook 增量构建**: CI 缓存优化
-- [ ] **ADR 索引**: 文档化所有架构决策
+- [x] **ADR 索引**: 文档化所有架构决策（无测试：文档条目，见 `docs/adr/README.md`）
+  - 已建立 `docs/adr/README.md`：14 份 ADR 的状态/日期索引、编号冲突说明（`0005` vs `005`，不重命名）、反熵链路阅读顺序
+  - 已接入 `book/src/architecture.md` 的 ADR 表（含 007–014），链接改为绝对 URL（mdbook 相对链接会 404）
 - [ ] **API 参考更新**: 同步 REST/gRPC 最新接口
 
 ---

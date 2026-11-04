@@ -69,6 +69,14 @@
 - `cargo test-all` 别名补 `-j 1`：直接敲别名时不再按 nproc 并行链接多个
   测试二进制（19.5 GiB 机器上会 OOM）。嵌套 cargo 仍由 `make test-all` 的
   `CARGO_BUILD_JOBS=1` 覆盖。
+- **反熵分页改为主键区间扫描**（ADR-012 的 keyset 落地）：`serve_sync_request`
+  原先每页都 `experience_keys()` 全表取键、内存排序切片，翻 P 页即 O(P × N)。
+  新增 `MfsStore::experience_keys_after` / `VectorExperienceBank::keys_after`
+  （`id > ? ORDER BY id LIMIT ?`，批 512），差量判定抽出 `is_key_missing()` 供
+  单键与批量两条入口共用；`build_sync_page` 的线性查找改为 `HashMap` 索引。
+- **检索过滤判定单点化**：`query_similar` 与 `lexical_fallback` 共用
+  `matches_query_filters()`；4 处 `#[allow(clippy::collapsible_if)]` 改 let-chain
+  后删除。
 
 ### Fixed
 - **Docker 镜像链接到空壳 rlib**：`COPY . .` 保留了构建上下文里的旧 mtime，
@@ -76,6 +84,18 @@
   workspace crate 都不重编，最终报 73 个 `unresolved import`。现在
   `COPY . .` 之后先把源码 mtime 推到当前时间再构建，并在
   `scripts/audit_dockerfile.py` 增加门禁（缺 touch 即失败，含自检用例）。
+- **版本向量摘要缓存的失效时机**：失效原先写在 `record_with_id` /
+  `apply_remote` 函数末尾，而落库成功后还有一次向量索引写入，那一步失败会
+  提前返回，留下「库里已有新行、缓存仍是旧摘要」——本节点向对端少报自己持有
+  的经验。现在抽出 `invalidate_digest_cache()`，在落库成功后**立即**调用；新增
+  `sisyphus-mem/tests/experience_digest_cache.rs`（3 例，含向量写入失败路径，
+  已做变异验证）。
+- **反熵按主键回取经验时静默丢行**：`load_experiences_by_keys` 用
+  `try_get("id").unwrap_or_default()` 把读取失败折叠成空主键，列漂移时那一行
+  既不报错也不返回。改为 `.context(...)?` 向上传播。
+- **`page_size = 0` 的死循环风险**：keyset 扫描下零页大小会让「多收一条」的
+  判定恒真、页被截断成空而游标不动，拨号器按 `more` 会无限重发同一页。现在
+  直接返回空页收尾，并有用例锁定。
 
 ## [v0.2.0] - 2026-11-04
 

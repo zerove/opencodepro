@@ -131,12 +131,25 @@ Bridge 启动时生成 `sisyphus-sandboxd` 作为受管子进程，优雅关闭�
 
 ## 架构决策记录
 
-重要的架构决策以 ADR 形式记录在 `docs/adr/`：
+重要的架构决策以 ADR 形式记录在 `docs/adr/`。完整索引（含状态、日期、编号说明
+与反熵链路阅读顺序）见 [`docs/adr/README.md`](https://github.com/zerove/opencodepro/blob/master/docs/adr/README.md)。
 
 | ADR | 标题 | 状态 |
 |-----|-------|--------|
-| [002-phase-3b-agent-team-architecture](docs/adr/002-phase-3b-agent-team-architecture.md) | 阶段 3b 多代理团队架构 | 提案 |
-| [003-modular-restructure](docs/adr/003-modular-restructure.md) | 单体到模块化重构 | 已接受 |
-| [004-workspace-isolation](docs/adr/004-workspace-isolation.md) | 多租户工作区隔离 | 已接受 |
-| [005-sandboxd-daemon-architecture](docs/adr/005-sandboxd-daemon-architecture.md) | Sandboxd 守护进程架构 | 已接受 |
-| [006-configuration-system](docs/adr/006-configuration-system.md) | 配置系统 | 已接受 |
+| [002](https://github.com/zerove/opencodepro/blob/master/docs/adr/002-phase-3b-agent-team-architecture.md) | 阶段 3b 多代理团队架构 | 提案 |
+| [003](https://github.com/zerove/opencodepro/blob/master/docs/adr/003-modular-restructure.md) | 单体到模块化重构 | 已接受 |
+| [004](https://github.com/zerove/opencodepro/blob/master/docs/adr/004-workspace-isolation.md) | 多租户工作区隔离 | 已接受 |
+| [005](https://github.com/zerove/opencodepro/blob/master/docs/adr/005-sandboxd-daemon-architecture.md) | Sandboxd 守护进程架构 | 已接受 |
+| [0005](https://github.com/zerove/opencodepro/blob/master/docs/adr/0005-cognitive-loop-v2.md) | 认知循环 v2（自适应深度 / 分支评估 / 异常检测） | 已修订（分支预测器已移除） |
+| [006](https://github.com/zerove/opencodepro/blob/master/docs/adr/006-configuration-system.md) | 配置系统 | 已接受 |
+| [007](https://github.com/zerove/opencodepro/blob/master/docs/adr/007-production-grade-standards.md) | 最终产品开发标准 | 已接受 |
+| [008](https://github.com/zerove/opencodepro/blob/master/docs/adr/008-shared-http-client.md) | 生产级共享 HTTP 客户端 | 已接受 |
+| [009](https://github.com/zerove/opencodepro/blob/master/docs/adr/009-distributed-v2-architecture.md) | 分布式 v2 架构（peer 协议 + CRDT + 共识） | 已实施 |
+| [010](https://github.com/zerove/opencodepro/blob/master/docs/adr/010-experience-anti-entropy.md) | 跨节点经验的反熵补偿 | 已实施 |
+| [011](https://github.com/zerove/opencodepro/blob/master/docs/adr/011-lagged-catchup-and-digest-holes.md) | 广播 Lagged 的闭合与摘要空洞 | 已实施 |
+| [012](https://github.com/zerove/opencodepro/blob/master/docs/adr/012-keyset-pagination-cursor.md) | 反熵分页改用主键游标 | 已接受 |
+| [013](https://github.com/zerove/opencodepro/blob/master/docs/adr/013-reuse-catchup-receiver-across-reconnect.md) | 补齐信号跨重连复用接收器 | 已实施 |
+| [014](https://github.com/zerove/opencodepro/blob/master/docs/adr/014-break-core-tools-dependency.md) | 解除 core 对 tools-\* 的反向依赖 | 已接受 |
+
+> 编号说明：`0005` 与 `005` 是两份**不同**决策，历史上出现过四位补零写法。
+> 为避免已发布链接失效，不重命名；新 ADR 从 `015` 起按三位编号。
