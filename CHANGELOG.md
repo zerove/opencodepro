@@ -54,6 +54,10 @@
   存在、带测试属性、且未被 `#[ignore]`（或已由 `--ignored` job 执行）；`make <目标>`
   与 `scripts/x.py` 要真实存在。历史勾选项登记在 `scripts/todo_baseline.txt`
   （ratchet，只减不增），新增勾选无证据即失败。自检 14 个判别用例。
+  - **「测试名」书写约定**（阶段 E 前提，本次补齐）：引用的 `test_name` 限定为
+    `test_*` 前缀；文件级回归测试允许在 `tests/` 目录下的文件里以任意 fn 名
+    全路径引用，不强制前缀。src/ 内单元测试须 `test_*`，tests/ 内回归测试放宽。
+    自检由 14 例扩展至 17 例（新增 src 命名拦截 / tests 回归放宽 / src 合法前缀各一）。
 
 ### Changed
 - `cargo test-all` 别名补 `-j 1`：直接敲别名时不再按 nproc 并行链接多个

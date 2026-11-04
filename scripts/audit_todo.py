@@ -14,6 +14,9 @@
    必须真的在 Makefile 里定义；`scripts/x.py` 必须存在。引用写错、文件改名、
    测试被删，都会在这里暴露。
 2. **新增勾选项必须附证据**。没有证据、也没写显式豁免的勾选项会被拦下。
+3. **测试名书写约定**：引用的 `test_name` 限定为 `test_*` 前缀；文件级回归测试
+   允许在 `tests/` 目录下的文件里以任意 fn 名引用（全路径形式），不强制 `test_`
+   前缀。src/ 内（单元测试）必须 `test_*`，tests/ 内（文件级回归）可放宽。
 
 `#[ignore]` 的例外：若该测试文件在某个 workflow 里以 `--ignored` 显式执行
 （例如 `toolchain-e2e` job 跑 `language_backend_guards`），它确实在 CI 里跑，
@@ -279,6 +282,11 @@ def resolve_test(
             f"{owner.relative_to(root)}:{meta['line']} 的 {name} 不是测试函数"
             "（缺 #[test] 属性）"
         )
+    if not name.startswith("test_") and "tests" not in owner.relative_to(root).parts:
+        return (
+            f"{owner.relative_to(root)}:{meta['line']} 的 {name} 不符合测试命名约定"
+            "（fn test_* 前缀；文件级回归测试请在 tests/ 目录内以全路径引用）"
+        )
     if meta["ignored"]:
         if allow_ignored_inline or owner.stem in ignored_harnesses:
             return None
@@ -409,6 +417,9 @@ def _self_check() -> list[str]:
                     "fn ignored_by_harness() {}",
                     "",
                     "fn helper() {}",
+                    "",
+                    "#[test]",
+                    "fn regression_sequence_resumes() {}",
                 ]
             ),
             encoding="utf-8",
@@ -428,6 +439,19 @@ def _self_check() -> list[str]:
         )
         (root / ".github" / "workflows" / "ci.yml").write_text(
             "run: cargo test --test foo -- --ignored --test-threads=1\n",
+            encoding="utf-8",
+        )
+        (root / "crates" / "a" / "src").mkdir(parents=True, exist_ok=True)
+        (root / "crates" / "a" / "src" / "lib.rs").write_text(
+            "\n".join(
+                [
+                    "#[test]",
+                    "fn internal_unit_helper() {}",
+                    "",
+                    "#[test]",
+                    "fn test_internal_ok() {}",
+                ]
+            ),
             encoding="utf-8",
         )
 
@@ -466,6 +490,15 @@ def _self_check() -> list[str]:
         expect_clean("显式豁免", "- [x] 纯文档（无测试：只改 markdown）\n")
         expect_blocked("空豁免理由", "- [x] 纯文档（无测试：）\n")
         expect_clean("未勾选条目不校验", "- [ ] 未来测试 `foo.rs::future_test`\n")
+        expect_clean(
+            "src 内 test_ 前缀",
+            "- [x] 有测试 `crates/a/src/lib.rs::test_internal_ok`\n",
+        )
+        expect_blocked("src 内非 test_ 前缀", "- [x] 内部 `crates/a/src/lib.rs::internal_unit_helper`\n")
+        expect_clean(
+            "文件级回归测试（tests/ 内非 test_ 前缀）",
+            "- [x] 有回归 `crates/a/tests/foo.rs::regression_sequence_resumes`\n",
+        )
 
         r = run("- [x] 有测试 `foo.rs::real_test`\n", baseline="已经删掉的条目\n")
         if not r["stale"]:
@@ -488,7 +521,7 @@ def main() -> int:
             print(f"  - {f}", file=sys.stderr)
         return 2
     if args.self_check:
-        print("✅ 自检通过（14 个判别用例）")
+        print("✅ 自检通过（17 个判别用例）")
         return 0
 
     result = audit(ROOT)

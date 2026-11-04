@@ -10,6 +10,8 @@
 > `make todo-audit` 与 CI 的 `audit-sources` job 会交叉核对。确无自动化测试时写
 > `（无测试：理由）`，不要让勾选本身充当证据。历史勾选项登记在
 > `scripts/todo_baseline.txt`（ratchet，只减不增）。
+> 测试名约定：引用的测试 fn 须 `fn test_*` 前缀；文件级回归测试允许在 `tests/`
+> 目录下的文件以任意 fn 名全路径引用。
 
 ### 阶段 1: 基础设施维护与代码卫生 (Maintenance & Hygiene)
 - [x] **清除重构残留**: 修复 `cargo check` 报告的所有未使用导入和变量 (2026-08, 已由 nightly clippy 全量验证)
