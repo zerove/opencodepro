@@ -33,7 +33,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: sisyphus-cli-linux
-          path: target/release/sisyphus-cli
+          path: target/release/sisyphus
           retention-days: 7
 
   # ── Build Sandboxd (Linux x86_64) ─────────────────────────────────
@@ -68,7 +68,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: sisyphus-cli-macos-arm64
-          path: target/aarch64-apple-darwin/release/sisyphus-cli
+          path: target/aarch64-apple-darwin/release/sisyphus
           retention-days: 7
 
   # ── Build CLI (Windows x86_64) ────────────────────────────────────
@@ -85,7 +85,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: sisyphus-cli-windows
-          path: target/release/sisyphus-cli.exe
+          path: target/release/sisyphus.exe
           retention-days: 7
 
   # ── Build & Push Docker Image ─────────────────────────────────────

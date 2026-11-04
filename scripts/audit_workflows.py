@@ -1250,6 +1250,62 @@ jobs:
                 % (got,)
             )
 
+    # 产物名：包名 != target 名，作业只 cp 后者。判别力直接打生产函数。
+    with tempfile.TemporaryDirectory() as td:
+        os.makedirs(os.path.join(td, "crates", "cli"), exist_ok=True)
+        with open(os.path.join(td, "Cargo.toml"), "w", encoding="utf-8") as fh:
+            fh.write('[workspace]\nmembers = ["crates/cli"]\n')
+        with open(
+            os.path.join(td, "crates", "cli", "Cargo.toml"), "w", encoding="utf-8"
+        ) as fh:
+            fh.write(
+                '[package]\nname = "my-cli"\nversion = "0.2.0"\n\n'
+                '[[bin]]\nname = "mybin"\npath = "src/main.rs"\n'
+            )
+        wf = os.path.join(td, "w.yml")
+
+        good = artifact_path_problems(
+            {wf: "run: cp target/release/mybin out\n"}, root=td
+        )
+        if good:
+            failures.append(
+                "artifact_path_problems(正确产物名): 期望 []，实际 %r" % (good,)
+            )
+        # 真实事故的形态：用包名当产物名
+        got = artifact_path_problems(
+            {wf: "run: cp target/release/my-cli out\n"}, root=td
+        )
+        if not any("my-cli" in g for g in got):
+            failures.append(
+                "artifact_path_problems(包名当产物名): 未检出，实际 %r" % (got,)
+            )
+        # 带 target triple 的路径（macOS 交叉编译那条）
+        got = artifact_path_problems(
+            {wf: "path: target/aarch64-apple-darwin/release/my-cli\n"}, root=td
+        )
+        if not any("my-cli" in g for g in got):
+            failures.append(
+                "artifact_path_problems(带 triple 的错误产物名): 未检出，实际 %r"
+                % (got,)
+            )
+        # Windows 的 .exe 后缀不应被当成不同名字
+        ok_exe = artifact_path_problems(
+            {wf: "run: cp target/release/mybin.exe out.exe\n"}, root=td
+        )
+        if ok_exe:
+            failures.append(
+                "artifact_path_problems(.exe 后缀): 期望 []，实际 %r" % (ok_exe,)
+            )
+        # 注释里的旧名字不该报错（否则注释一提到历史就误报）
+        ok_comment = artifact_path_problems(
+            {wf: "#  曾写 cp target/release/my-cli ...\nrun: cp target/release/mybin o\n"},
+            root=td,
+        )
+        if ok_comment:
+            failures.append(
+                "artifact_path_problems(注释): 期望 []，实际 %r" % (ok_comment,)
+            )
+
     if failures:
         print("自检失败：", file=sys.stderr)
         for f in failures:
@@ -1373,6 +1429,97 @@ def toolchain_pin_problems(
     return problems
 
 
+# `target/<triple>/release/<bin>` 或 `target/release/<bin>`。
+# 只认 release/ 后面的部分：那才是真正被 cp / upload 的产物名。
+ARTIFACT_PATH = re.compile(r"target/(?:[^/\s]+/)?release/([A-Za-z0-9_.+-]+)")
+
+
+def workspace_bin_names(root="."):
+    """返回 workspace 里所有**可执行产物**的名字。
+
+    cargo 的产物名是 target 名（`[[bin]] name`），**不是**包名。两者可以
+    不同——`sisyphus-cli` 这个包的 `[[bin]] name = "sisyphus"`，于是
+    `cargo build -p sisyphus-cli` 产出的是 `target/release/sisyphus`。
+    """
+    names = set()
+    manifests = [os.path.join(root, "Cargo.toml")]
+    for pattern in ("crates/*/Cargo.toml", "*/Cargo.toml"):
+        manifests.extend(sorted(glob.glob(os.path.join(root, pattern))))
+
+    try:
+        import tomllib
+    except ImportError:  # pragma: no cover - Python < 3.11
+        tomllib = None
+
+    for path in manifests:
+        if not os.path.isfile(path):
+            continue
+        if tomllib is None:  # pragma: no cover
+            break
+        try:
+            with open(path, "rb") as fh:
+                doc = tomllib.load(fh)
+        except Exception:  # noqa: BLE001
+            continue
+        package = doc.get("package") or {}
+        pkg_name = package.get("name")
+        bins = doc.get("bin")
+        if isinstance(bins, dict):
+            bins = [bins]
+        explicit = [b.get("name") for b in (bins or []) if isinstance(b, dict)]
+        explicit = [b for b in explicit if isinstance(b, str)]
+        if explicit:
+            names.update(explicit)
+            continue
+        # 没写 [[bin]] 时，cargo 只在 src/main.rs 存在时产出一个与包同名的 bin
+        if isinstance(pkg_name, str) and os.path.isfile(
+            os.path.join(os.path.dirname(path), "src", "main.rs")
+        ):
+            names.add(pkg_name)
+        # `src/bin/*.rs` 会被自动发现（名为文件名）
+        bindir = os.path.join(os.path.dirname(path), "src", "bin")
+        for src in glob.glob(os.path.join(bindir, "*.rs")):
+            names.add(os.path.splitext(os.path.basename(src))[0])
+    return names
+
+
+def artifact_path_problems(texts, root="."):
+    """workflow 里 cp / upload 的 `target/.../release/<x>` 必须真的存在。
+
+    真实事故：release.yml 三个平台都写 `cp target/release/sisyphus-cli ...`，
+    而 `sisyphus-cli` 包的 `[[bin]] name = "sisyphus"` —— 产物根本叫
+    `sisyphus`。`cp: ... No such file or directory`，构建本身**成功**却仍判红。
+    这类错误在本地同样不会暴露：本地只会 `cargo build`，不会去 cp 那个名字。
+    """
+    bins = workspace_bin_names(root)
+    if not bins:  # pragma: no cover - 仓库结构异常
+        return []
+
+    problems = []
+    for path, text in sorted(texts.items()):
+        for line_no, line in enumerate(text.splitlines(), 1):
+            stripped = line.lstrip()
+            if stripped.startswith("#"):
+                continue
+            for match in ARTIFACT_PATH.finditer(line):
+                name = match.group(1)
+                # Windows 产物带 .exe；cargo 在 Linux/macOS 上不带
+                stem = name[:-4] if name.endswith(".exe") else name
+                if stem in bins:
+                    continue
+                problems.append(
+                    "%s:%d: 引用了不存在的产物 `%s`（cargo 的产物名是 target 名，"
+                    "不是包名；当前 workspace 的 bin：%s）"
+                    % (
+                        os.path.relpath(path),
+                        line_no,
+                        name,
+                        ", ".join(sorted(bins)) or "（无）",
+                    )
+                )
+    return problems
+
+
 def main() -> int:
     if "--self-check" in sys.argv:
         return _self_check()
@@ -1467,6 +1614,10 @@ def main() -> int:
 
     # 工具链来源一致性：CI 装的工具链必须与 cargo 实际解析到的是同一个。
     for p in toolchain_pin_problems(wf_texts):
+        problems.append(p)
+
+    # 产物名必须与 cargo 的 target 名一致（包名 != 产物名）。
+    for p in artifact_path_problems(wf_texts):
         problems.append(p)
 
     if problems:

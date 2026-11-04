@@ -664,7 +664,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: sisyphus-cli-linux
-          path: target/release/sisyphus-cli
+          path: target/release/sisyphus
 
   build-sandboxd:
     timeout-minutes: 40
@@ -698,7 +698,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: sisyphus-cli-macos-arm64
-          path: target/aarch64-apple-darwin/release/sisyphus-cli
+          path: target/aarch64-apple-darwin/release/sisyphus
 
   build-windows:
     timeout-minutes: 40
@@ -714,7 +714,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: sisyphus-cli-windows
-          path: target/release/sisyphus-cli.exe
+          path: target/release/sisyphus.exe
 
   # ── SDK builds ──────────────────────────────────────────────────────
   sdk-typescript:

@@ -142,6 +142,12 @@ cargo bench -p sisyphus-core   # 认知循环 benchmark
   这 4 个重型 crate 默认不参与。需单独跑：
   `cargo test -p sisyphus-tests -p sisyphus-sandbox -p sisyphus-sandboxd -p sisyphus-bridge`
 - Bridge 默认绑定 `[::1]:50051`，有 IPv6→IPv4 自动回退
+- **cargo 的产物名是 target 名（`[[bin]] name`），不是包名**：
+  `sisyphus-cli` 包产出的是 `target/release/sisyphus`。release/nightly/ci 里
+  曾 9 处写成 `release/sisyphus-cli`，`cp` 直接 `No such file or directory`
+  ——构建成功却判红，本地只 `cargo build` 时完全看不出来。
+  `scripts/audit_workflows.py` 现在会拿 workspace 实际 bin 名单校验
+  workflow 里所有 `target/.../release/<name>`（已接进 `make audit` 与 CI）
 - 内部 crate 的路径依赖均带显式 `version = "0.2.0"`，这是 `cargo package` 的
   硬性要求（缺 version 会报 “all dependencies must have a version
   requirement specified when packaging”）。全部 27 个 crate 当前都是 0.2.0
