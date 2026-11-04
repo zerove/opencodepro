@@ -8,7 +8,12 @@
 # （fmt / deny / check / test 全线红，连续 40 次 run 0 成功）。改这个文件后
 # 务必用 `env -u RUSTUP_TOOLCHAIN cargo --version` 验证解析结果。
 [toolchain]
-channel = "nightly"
+# 固定日期的 nightly（不是浮动的 "nightly"）。rustfmt 换行启发式会随 nightly
+# 漂移，浮动版本会导致「本地 fmt 绿、CI fmt 红」。日期必须与 ci.yml 里
+# fmt job 的 `toolchain:` 输入保持一致。
+# 升级方式：同时改这里和 ci.yml 的 fmt job，然后 `cargo fmt --all` 重新格式化，
+# 并在两种工具链下都跑一遍 `cargo fmt --all --check`。
+channel = "nightly-2026-08-08"
 # 合法值只有 minimal / default / complete（"stable" 是 channel 名，不是 profile）。
 # default 含 rustfmt + clippy + rust-docs，本地开发与 CI 检查都需要。
 profile = "default"
