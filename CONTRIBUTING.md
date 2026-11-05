@@ -243,6 +243,8 @@ Closes: #123
    若上次发布失败且 Release workflow 未产出任何 artifact，可`make release-check RELEASE_CHECK_ARGS=--retag` 后重打同名 tag。
 1. **bump 版本**：`crates/*/Cargo.toml` 与 `webui/Cargo.toml`、`evals/Cargo.toml`
    的 `[package] version` 以及内部 path 依赖的 `version = "x.y.z"` 约束需同步修改
+   ——用 `make bump-version VERSION=x.y.z`（先加 `DRY=1` 看 diff），不要手改：
+   版本号在仓库里出现 147 处，漏一处 `make release-check` 才会红
 2. 更新 `CHANGELOG.md`：`[Unreleased]` → `[vx.y.x] - <日期>`，并在其**之前**
    插入新的空 `[Unreleased]` 段
 3. 更新 `book/src/configuration.md` 的版本号引用

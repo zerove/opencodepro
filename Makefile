@@ -357,9 +357,22 @@ todo-audit:
 	@python3 scripts/audit_todo.py --self-check
 
 # 全部结构审计（不需编译）
-audit: audit-orphans audit-ignored audit-test-state audit-workflows audit-dockerfile todo-audit
+audit: audit-orphans audit-ignored audit-test-state audit-workflows audit-dockerfile todo-audit version-tool
 
-.PHONY: audit-orphans audit-ignored audit-test-state audit-workflows audit-dockerfile todo-audit audit
+# 版本 bump 脚本的判别用例。版本号在仓库里出现 147 处（27 个 [package]
+# version + 内部 path 依赖约束），手改必漏；而脚本本身最危险的失败模式是
+# **把第三方依赖的版本当成自己的改掉**——那种错误编译期发现不了。
+version-tool:
+	@python3 scripts/bump_version.py --self-check
+
+.PHONY: audit-orphans audit-ignored audit-test-state audit-workflows audit-dockerfile todo-audit version-tool audit
+
+# 统一 bump workspace 版本号（[package] version + 内部 path 依赖约束）。
+# 先 --dry-run 看改动，再实际写入，最后 `make release-check` 复核。
+# 用法：make bump-version VERSION=0.3.0 [DRY=1]
+bump-version:
+	@python3 scripts/bump_version.py $(VERSION) $(if $(DRY),--dry-run,)
+	@[ -n "$(DRY)" ] || python3 scripts/bump_version.py $(VERSION) --check
 
 # — 发布前置检查 —
 #

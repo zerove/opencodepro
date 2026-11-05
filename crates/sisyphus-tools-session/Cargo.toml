@@ -1,6 +1,6 @@
 [package]
 name = "sisyphus-tools-session"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 repository.workspace = true
 description = "Session management tools"
@@ -8,8 +8,8 @@ authors.workspace = true
 license = "MIT OR Apache-2.0"
 
 [dependencies]
-sisyphus-tools-core = { version = "0.2.0", path = "../sisyphus-tools-core" }
-sisyphus-types = { version = "0.2.0", path = "../sisyphus-types" }
+sisyphus-tools-core = { version = "0.3.0", path = "../sisyphus-tools-core" }
+sisyphus-types = { version = "0.3.0", path = "../sisyphus-types" }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 toml = "0.8"

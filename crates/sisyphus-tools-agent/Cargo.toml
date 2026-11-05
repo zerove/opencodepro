@@ -1,6 +1,6 @@
 [package]
 name = "sisyphus-tools-agent"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 repository.workspace = true
 description = "Agent registry and delegation tools"
@@ -8,13 +8,13 @@ authors.workspace = true
 license = "MIT OR Apache-2.0"
 
 [dependencies]
-sisyphus-tools-core = { version = "0.2.0", path = "../sisyphus-tools-core" }
-sisyphus-tools-executor = { version = "0.2.0", path = "../sisyphus-tools-executor" }
-sisyphus-tools-llm = { version = "0.2.0", path = "../sisyphus-tools-llm" }
-sisyphus-tools-llm-tools = { version = "0.2.0", path = "../sisyphus-tools-llm-tools" }
-sisyphus-tools-system = { version = "0.2.0", path = "../sisyphus-tools-system" }
-sisyphus-types = { version = "0.2.0", path = "../sisyphus-types" }
-sisyphus-mem = { version = "0.2.0", path = "../sisyphus-mem" }
+sisyphus-tools-core = { version = "0.3.0", path = "../sisyphus-tools-core" }
+sisyphus-tools-executor = { version = "0.3.0", path = "../sisyphus-tools-executor" }
+sisyphus-tools-llm = { version = "0.3.0", path = "../sisyphus-tools-llm" }
+sisyphus-tools-llm-tools = { version = "0.3.0", path = "../sisyphus-tools-llm-tools" }
+sisyphus-tools-system = { version = "0.3.0", path = "../sisyphus-tools-system" }
+sisyphus-types = { version = "0.3.0", path = "../sisyphus-types" }
+sisyphus-mem = { version = "0.3.0", path = "../sisyphus-mem" }
 tokio = { version = "1.0", features = ["process", "fs", "io-util", "time", "rt", "macros"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }

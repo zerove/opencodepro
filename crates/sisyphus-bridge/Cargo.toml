@@ -1,6 +1,6 @@
 [package]
 name = "sisyphus-bridge"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 repository.workspace = true
 authors = ["Sisyphus Team"]
@@ -8,26 +8,26 @@ description = "gRPC bridge server for Sisyphus cognitive engine"
 license = "MIT"
 
 [dependencies]
-sisyphus-bridge-api = { version = "0.2.0", path = "../sisyphus-bridge-api" }
+sisyphus-bridge-api = { version = "0.3.0", path = "../sisyphus-bridge-api" }
 tonic = "0.12"
 tokio = { version = "1", features = ["full"] }
 tokio-stream = { version = "0.1", features = ["sync"] }
-sisyphus-types = { version = "0.2.0", path = "../sisyphus-types" }
-sisyphus-core = { version = "0.2.0", path = "../sisyphus-core" }
-sisyphus-sandbox = { version = "0.2.0", path = "../sisyphus-sandbox", optional = true }
-sisyphus-tools-core = { version = "0.2.0", path = "../sisyphus-tools-core" }
-sisyphus-tools-llm = { version = "0.2.0", path = "../sisyphus-tools-llm" }
-sisyphus-tools-system = { version = "0.2.0", path = "../sisyphus-tools-system" }
-sisyphus-tools-mcp = { version = "0.2.0", path = "../sisyphus-tools-mcp" }
-sisyphus-tools-session = { version = "0.2.0", path = "../sisyphus-tools-session" }
-sisyphus-tools-agent = { version = "0.2.0", path = "../sisyphus-tools-agent" }
-sisyphus-tools-executor = { version = "0.2.0", path = "../sisyphus-tools-executor" }
-sisyphus-tools-build = { version = "0.2.0", path = "../sisyphus-tools-build" }
-sisyphus-mem = { version = "0.2.0", path = "../sisyphus-mem" }
-sisyphus-intel = { version = "0.2.0", path = "../sisyphus-intel" }
-sisyphus-tools-llm-tools = { version = "0.2.0", path = "../sisyphus-tools-llm-tools" }
-sisyphus-metrics = { version = "0.2.0", path = "../sisyphus-metrics" }
-sisyphus-roadmap = { version = "0.2.0", path = "../sisyphus-roadmap" }
+sisyphus-types = { version = "0.3.0", path = "../sisyphus-types" }
+sisyphus-core = { version = "0.3.0", path = "../sisyphus-core" }
+sisyphus-sandbox = { version = "0.3.0", path = "../sisyphus-sandbox", optional = true }
+sisyphus-tools-core = { version = "0.3.0", path = "../sisyphus-tools-core" }
+sisyphus-tools-llm = { version = "0.3.0", path = "../sisyphus-tools-llm" }
+sisyphus-tools-system = { version = "0.3.0", path = "../sisyphus-tools-system" }
+sisyphus-tools-mcp = { version = "0.3.0", path = "../sisyphus-tools-mcp" }
+sisyphus-tools-session = { version = "0.3.0", path = "../sisyphus-tools-session" }
+sisyphus-tools-agent = { version = "0.3.0", path = "../sisyphus-tools-agent" }
+sisyphus-tools-executor = { version = "0.3.0", path = "../sisyphus-tools-executor" }
+sisyphus-tools-build = { version = "0.3.0", path = "../sisyphus-tools-build" }
+sisyphus-mem = { version = "0.3.0", path = "../sisyphus-mem" }
+sisyphus-intel = { version = "0.3.0", path = "../sisyphus-intel" }
+sisyphus-tools-llm-tools = { version = "0.3.0", path = "../sisyphus-tools-llm-tools" }
+sisyphus-metrics = { version = "0.3.0", path = "../sisyphus-metrics" }
+sisyphus-roadmap = { version = "0.3.0", path = "../sisyphus-roadmap" }
 serde_json = { workspace = true }
 async-trait = { workspace = true }
 tracing = { workspace = true }
