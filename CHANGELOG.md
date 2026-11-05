@@ -59,6 +59,21 @@
 > 全连接双侧分区混沌用例。**破坏性变更**：`ExperienceBank` trait 新增
 > `export_version_vector()`，外部实现方需补该方法的实现（本仓库内实现均已补齐）。
 
+### Verified (v0.3.0 release gate, 2026-11-05)
+- `cargo test-all`: **4939 passed / 0 failed / 26 ignored**（227 个 test target）
+- `cargo check-all` / `cargo fmt --all --check` / `cargo clippy -p sisyphus-bridge --all-targets -- -D warnings`: 通过
+- bridge 重型测试（不在 `cargo test-all` 覆盖范围）：
+  `cluster_integration` 21 + `anti_entropy_integration` 12 +
+  `anti_entropy_partition_convergence` 1 + `chaos_partition_convergence` 1 +
+  `webui_contract` 2，全通过
+- `cargo deny check`: advisories / bans / licenses / sources 全 ok
+- `make audit`: 全绿（含 `audit_docker_release` 8 例自检、`audit_todo` 121 条勾选、
+  `bump_version` 5 例自检）
+- `make release-check`: 通过（27 个 crate 版本一致 0.3.0 / metadata 齐全 /
+  CHANGELOG 已切段 / tag 未创建）
+- 版本号：147 处（27 个 `[package] version` + 内部 path 依赖约束）全部为 `0.3.0`，
+  `Cargo.lock` 在 `--locked` 下可解析
+
 ### Added
 - **WebUI → Bridge REST 契约门禁**：`crates/sisyphus-bridge/tests/webui_contract.rs`
   把 `webui/src/lib.rs` 里的 `format!("{}/…")` 调用点解析成 (method, path)，逐条要求
