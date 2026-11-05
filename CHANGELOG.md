@@ -49,6 +49,19 @@
 ## [Unreleased]
 
 ### Added
+- **WebUI → Bridge REST 契约门禁**：`crates/sisyphus-bridge/tests/webui_contract.rs`
+  把 `webui/src/lib.rs` 里的 `format!("{}/…")` 调用点解析成 (method, path)，逐条要求
+  它同时存在于 axum 路由表与真实服务返回的 OpenAPI 文档中。两个方向都断言，是因为
+  只查文档会漏掉「文档停留在旧路径」，只查路由会漏掉「端点从 Swagger 里消失」。
+  路径参数名不参与比较（webui 写 `{sop_id}`、axum 写 `:id`、OpenAPI 写 `{id}`），
+  只比**形状**：参数改名不失败，路径改名必定失败。三处变异（改路径 / 删文档条目 /
+  改期望清单）均验证过失败路径。
+- **全连接双侧反复分区混沌用例**：`crates/sisyphus-bridge/tests/chaos_partition_convergence.rs`
+  （`full_mesh_repeated_partitions_converge_exactly`）。每轮关两侧 Join 闸门并断开两条
+  已建立的流 → 在**无连接**窗口内两侧各写 4 条 → 重连后断言两个方向都真的发出反熵
+  请求，终局断言「无丢失 / 无重复 / 内容与主键逐条一致」。单独成文件是因为用例需要
+  按节点切换 `SISYPHUS_CLUSTER_NODE_ID`（进程级），与并行用例共处一个进程会互相污染。
+  变异验证：禁用拨号器的首轮反熵拉取后，用例在「首连未完成」处失败。
 - **版本向量导出接口**（阶段 C / ADR-010 实施收尾）：`ExperienceBank` trait 新增
   `async fn export_version_vector(&self) -> Result<ExperienceDigest, TypesError>`，使引擎
   能回答「我有什么」（node → `OriginDigest` 紧凑摘要）而不只是「我写了什么」。实现方委托

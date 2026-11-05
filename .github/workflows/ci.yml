@@ -245,6 +245,8 @@ jobs:
       - run: cargo test -p sisyphus-bridge --no-default-features --test anti_entropy_integration
       - run: cargo test -p sisyphus-bridge --no-default-features --test cluster_integration
       - run: cargo test -p sisyphus-bridge --no-default-features --test chaos_extended
+      - run: cargo test -p sisyphus-bridge --no-default-features --test chaos_partition_convergence
+      - run: cargo test -p sisyphus-bridge --no-default-features --test webui_contract
       - run: cargo test -p sisyphus-bridge --no-default-features --test cognitive_trace_rest_test
       - run: cargo test -p sisyphus-bridge --no-default-features --test hook_overhead
 
