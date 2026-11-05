@@ -50,6 +50,15 @@
 
 ### Added
 
+- **单机全功能端到端集成测试**（Phase 1 of the single-node full-functionality
+  follow-up）：`crates/sisyphus-tests/tests/single_node_full_stack.rs` 新增
+  `single_node_full_stack_end_to_end`，在无集群条件下驱动真实 `SisyphusKernel`
+  「目标合成 → 认知循环执行 → 反思/批判 → swarm audit → 经验引导再次执行」全主链路。
+  当前处于实现推进中（mock LLM 按 critic/swarm audit prompt 分支返回合法 JSON、
+  mock DAG 合成器构造含 start node 的图），验证证据：
+  `cargo check -p sisyphus-tests --tests` ✅ / 单测 `1 passed` ✅ /
+  fmt + clippy `-D warnings` ✅。
+
 <!-- 下一轮的变更从这里开始写。发版时整段改名为 `## [vX.Y.Z] - <日期>`，
      并在其**之前**插入新的空 `[Unreleased]` 段（见上方发布流程）。 -->
 
