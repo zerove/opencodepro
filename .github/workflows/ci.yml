@@ -91,6 +91,15 @@ jobs:
           python3 scripts/audit_dockerfile.py
           python3 scripts/audit_dockerfile.py --self-check
 
+      # Docker 发布契约：镜像名（workflow / compose / 文档三处必须同一个）
+      # 与 tag 集合（文档承诺的 :vX.Y.Z / :X.Y.Z / :X.Y / :X / :latest 必须
+      # 真的会被 metadata-action 产出）。这两类缺陷不会让任何 Rust 测试失败，
+      # 只在用户 `docker pull` 那一刻变成 404。
+      - name: Audit Docker release contract
+        run: |
+          python3 scripts/audit_docker_release.py
+          python3 scripts/audit_docker_release.py --self-check
+
       # GitHub Actions 的 JSON Schema 校验。check-jsonschema 内置了官方
       # workflow schema，不需要联网拉取（actions 官方 schema 托管在
       # SchemaStore，CI 环境拉不到就会静默跳过校验——那正是它要防的情况）。

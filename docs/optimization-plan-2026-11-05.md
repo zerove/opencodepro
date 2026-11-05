@@ -130,6 +130,7 @@ O-03 的第三例是本轮唯一针对**失效时机**的断言，因此做了�
 | 严格 clippy（轻量 crate） | `make dev-clippy` | ✅ 0 warning（`-D warnings`） |
 | 供应链 | `cargo deny check` | ✅ advisories / bans / licenses / sources 全 ok；仅剩 duplicate 版本提示（既有，非本轮引入） |
 | 源码审计 | `make audit` | ✅ 全绿 |
+| Docker 发布契约 | `make audit-docker-release` | ✅ 镜像名（workflow / compose / 文档）一致；`:vX.Y.Z` / `:X.Y.Z` / `:X.Y` / `:X` / `:latest` 均可由 metadata-action 产出，且仅稳定版打 `:latest`（8 例自检 + 6 处变异验证） |
 | TODO 证据 | `python3 scripts/audit_todo.py` | ✅ 121 条勾选 / 30 条未勾选（可验证 14、显式豁免 1、历史基线 106） |
 
 ### 5.5 测试数字

@@ -14,7 +14,9 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: ghcr.io/${GITHUB_REPOSITORY_OWNER:-opencodepro}/sisyphus-bridge:${TAG:-latest}
+    # 默认 owner 必须是真实推送该包的账号（ghcr.io/zerove/...）：workflows 里
+    # IMAGE_NAME 是 `${{ github.repository_owner }}/sisyphus-bridge`，产品名固定。
+    image: ghcr.io/${GITHUB_REPOSITORY_OWNER:-zerove}/sisyphus-bridge:${TAG:-latest}
     ports:
       - "50051:50051"
       - "8080:8080"

@@ -12,7 +12,13 @@ on:
 env:
   CARGO_TERM_COLOR: always
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
+  # 与 docker-release.yml 保持一致的字面量镜像名：`${{ github.repository }}` 展开成
+  # `zerove/opencodepro`，推上去的包名和文档里所有 `docker pull .../sisyphus-bridge`
+  # 都不是同一个包。scripts/audit_docker_release.py 会校验这处一致性。
+  # owner 用表达式（fork 后仍指向自己的 registry），产品名必须是字面量。
+  # ghcr 的镜像路径是 <registry>/<owner>/<name>，只写 name 会得到
+  # `ghcr.io/sisyphus-bridge`——不是合法仓库路径，push 直接失败。
+  IMAGE_NAME: ${{ github.repository_owner }}/sisyphus-bridge
 
 permissions:
   contents: read
@@ -112,11 +118,13 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          # 只推 nightly 专属 tag，**不动 `:latest`**：`docker pull :latest` 必须是
+          # 最近一次稳定发布（docker-release.yml 的 flavor latest=auto）。两条流水线
+          # 都写 `:latest` 时，用户拿到的到底是哪个版本取决于谁最后跑完。
           tags: |
             type=schedule,pattern=nightly-{{date 'YYYYMMDD'}}
             type=raw,value=nightly
             type=sha,prefix=nightly-
-            type=raw,value=latest,enable={{is_default_branch}}
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v6

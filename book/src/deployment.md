@@ -11,7 +11,7 @@ Sisyphus 支持多种部署方式：从源码 `cargo run`、预编译二进制�
 docker pull ghcr.io/zerove/sisyphus-bridge:latest
 
 # 拉取特定版本
-docker pull ghcr.io/zerove/sisyphus-bridge:v0.2.0
+docker pull ghcr.io/zerove/sisyphus-bridge:v0.3.0
 
 # 多平台：linux/amd64 + linux/arm64（Apple Silicon / Raspberry Pi / Graviton）
 ```
@@ -45,9 +45,11 @@ docker compose --profile db up -d
 `.github/workflows/docker-release.yml` 在推送 `v*` tag 时自动：
 
 1. 多平台构建（linux/amd64 + linux/arm64 via QEMU）
-2. 推送至 ghcr.io，tags：
-   - `v0.2.0` → `:v0.2.0`, `:0.2`, `:0`, `:latest`
-   - `v0.2.0-rc.1` → `:v0.2.0-rc.1`（预发布标记）
+2. 推送至 `ghcr.io/zerove/sisyphus-bridge`，tags（以 `v0.3.0` 为例）：
+   - 稳定版 → `:v0.3.0`（原样 tag）、`:0.3.0`、`:0.3`、`:0`、`:latest`
+   - 预发布 `v0.3.0-rc.1` → `:v0.3.0-rc.1`、`:0.3.0-rc.1`（**不打** `:latest`）
+   - `:latest` 只由稳定发布写入；nightly 流水线只推 `:nightly` /
+     `:nightly-YYYYMMDD` / `:nightly-<sha>`
 3. 缓存层用 GitHub Actions cache（`type=gha,mode=max`）减少重复构建时间
 
 ## Kubernetes

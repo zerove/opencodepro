@@ -2,10 +2,20 @@
 # 触发条件：push tag `v*` 或手动 dispatch（含 version 输入）。
 # 构建多平台 Docker 镜像（linux/amd64 + linux/arm64），推送至 ghcr.io。
 #
-# Tag 策略：
-# - v0.2.0           → :v0.2.0, :0.2, :0, :latest
-# - v0.2.0-rc.1      → :v0.2.0-rc.1, :0.2.0-rc.1 (预发布)
-# - v0.2.0-beta      → :v0.2.0-beta (预发布)
+# Tag 策略（以 v0.3.0 为例，`:v` 前缀与去前缀两种写法都产出，文档里两种都出现）：
+# - 稳定版 v0.3.0        → :v0.3.0, :0.3.0, :0.3, :0, :latest
+# - 预发布 v0.3.0-rc.1   → :v0.3.0-rc.1, :0.3.0-rc.1（**不打** :latest）
+#
+# `:latest` 归**稳定版**所有（flavor latest=auto）。nightly.yml 不再推送
+# `:latest`——两条流水线抢同一个可变 tag 时，用户 `docker pull :latest`
+# 到底拿到稳定版还是某个 nightly 快照，取决于哪条流水线最后跑完。
+#
+# 镜像名是 `${{ github.repository_owner }}/sisyphus-bridge`，不能写成
+# `${{ github.repository }}`：后者展开成 `zerove/opencodepro`，推上去的包名与
+# README / book / docker-compose 里所有 `docker pull
+# ghcr.io/zerove/sisyphus-bridge:<tag>` 都不是同一个包。产品名必须是字面量
+# （owner 用表达式是为了 fork 后仍推自己的 registry）。
+# scripts/audit_docker_release.py 会拿这条约束去校验 docs 与 compose。
 #
 # 用法：
 # - 推送 tag 自动触发
@@ -27,7 +37,10 @@ on:
 env:
   CARGO_TERM_COLOR: always
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
+  # owner 用表达式（fork 后仍推自己的 registry），**产品名必须是字面量**。
+  # 不能整体写成 ${{ github.repository }}（那是仓库名），也不能只写产品名
+  # （会拼出不合法的 `ghcr.io/sisyphus-bridge`）。详见文件头注释。
+  IMAGE_NAME: ${{ github.repository_owner }}/sisyphus-bridge
 
 permissions:
   contents: read
@@ -77,19 +90,22 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
-            # 完整版本: v0.2.0 → :v0.2.0, :v0.2
+            # 原样 tag：v0.3.0 → :v0.3.0（README / book 里 `docker pull` 用的就是这种写法）
+            # 只在 tag 触发时启用：workflow_dispatch 的 {{tag}} 为空
+            type=raw,value={{tag}},enable=${{ startsWith(github.ref, 'refs/tags/') }}
+            # 浮动次版本：只对 x.y.0 生效，v0.3.1 不会把 :0.3 指回旧版
             type=match,pattern=^v(\d+\.\d+)\.0$,group=1
-            type=match,pattern=^v(\d+\.\d+)$,group=1
-            # 预发布: v0.2.0-rc.1 → :v0.2.0-rc.1
+            # 去 v 前缀：v0.3.0 → :0.3.0；预发布 v0.3.0-rc.1 → :0.3.0-rc.1
             type=match,pattern=^v(.+)$,group=1
             # SemVer 元数据
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=semver,pattern={{major}}
-          # 预发布自动标记为 prerelease
+          # latest=auto：只有**非预发布**的 semver tag 才额外打 :latest。
+          # 之前写成 latest=false，于是文档承诺的 `docker pull :latest` 永远 404。
           bake-target: docker-container
           flavor: |
-            latest=false
+            latest=auto
           labels: |
             org.opencontainers.image.title=Sisyphus Bridge
             org.opencontainers.image.description=Cognitive execution engine with gRPC + REST API

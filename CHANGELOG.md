@@ -108,6 +108,25 @@
   后删除。
 
 ### Fixed
+- **Docker 发布的镜像名与 tag 与文档不一致**（照着 README 拉不到镜像）：
+  - `IMAGE_NAME` 原为 `${{ github.repository }}`，在 `zerove/opencodepro` 下展开成
+    `ghcr.io/zerove/opencodepro`；而 README / `book/src/deployment.md` /
+    `docker-compose.yml` 里每一处 `docker pull` 写的都是
+    `ghcr.io/zerove/sisyphus-bridge`。推上去和拉下来的不是同一个包。现改为
+    `${{ github.repository_owner }}/sisyphus-bridge`（owner 用表达式以便 fork，
+    产品名必须是字面量；裸产品名会拼出不合法的 `ghcr.io/sisyphus-bridge`），
+    compose 的默认 owner 也从 `opencodepro` 改为 `zerove`。
+  - 文档承诺 `:v0.3.0` 与 `:latest`，实际产出的是去前缀的 `0.3.0` 且
+    `flavor: latest=false` 让 `:latest` 永不出现。补 `type=raw,value={{tag}}`
+    （`:v0.3.0`）并改 `latest=auto`（预发布不打 `:latest`）。
+  - nightly 原本也推 `:latest`，与稳定发布抢同一个可变 tag——用户拿到哪个版本
+    取决于谁最后跑完。nightly 现在只推 `:nightly` / `:nightly-YYYYMMDD` /
+    `:nightly-<sha>`。
+  - 新增 `scripts/audit_docker_release.py`（接入 `make audit` 与 CI
+    `audit-sources`）：按 metadata-action 语义把 tag 集合**算出来**，与文档承诺、
+    compose 引用逐条比对；未知 type/模板/enable 直接报错而不是静默跳过。
+    4 处变异验证过失败路径（改回 `github.repository` / `latest=false` /
+    删 `{{tag}}` 规则 / nightly 抢 `:latest`）。
 - **Docker 镜像链接到空壳 rlib**：`COPY . .` 保留了构建上下文里的旧 mtime，
   而依赖缓存层的空壳源码更晚创建，cargo 因此认为真实源码更旧、一个
   workspace crate 都不重编，最终报 73 个 `unresolved import`。现在

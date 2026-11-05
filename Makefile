@@ -347,6 +347,14 @@ audit-dockerfile:
 	@python3 scripts/audit_dockerfile.py
 	@python3 scripts/audit_dockerfile.py --self-check
 
+# Docker 发布契约：镜像名（workflow / compose / 文档三处必须一致）与 tag 集合
+# （文档承诺的 :vX.Y.Z / :X.Y.Z / :X.Y / :X / :latest 必须真的会被产出）。
+# 这两类缺陷不会让任何 Rust 测试失败，只在 `docker pull` 那一刻变成 404；
+# `latest=false` + `IMAGE_NAME: ${{ github.repository }}` 就曾同时存在。
+audit-docker-release:
+	@python3 scripts/audit_docker_release.py
+	@python3 scripts/audit_docker_release.py --self-check
+
 # TODO 勾选门禁：`- [x]` 声明「已验证」，必须附能被解析的证据——引用的
 # `path.rs::test_fn` 要真实存在、带测试属性、且没被 `#[ignore]` 挂着；
 # `make <目标>` 与 `scripts/x.py` 要真实存在。本项目栽过的那一跤（9.1 被
@@ -357,7 +365,7 @@ todo-audit:
 	@python3 scripts/audit_todo.py --self-check
 
 # 全部结构审计（不需编译）
-audit: audit-orphans audit-ignored audit-test-state audit-workflows audit-dockerfile todo-audit version-tool
+audit: audit-orphans audit-ignored audit-test-state audit-workflows audit-dockerfile audit-docker-release todo-audit version-tool
 
 # 版本 bump 脚本的判别用例。版本号在仓库里出现 147 处（27 个 [package]
 # version + 内部 path 依赖约束），手改必漏；而脚本本身最危险的失败模式是
@@ -365,7 +373,7 @@ audit: audit-orphans audit-ignored audit-test-state audit-workflows audit-docker
 version-tool:
 	@python3 scripts/bump_version.py --self-check
 
-.PHONY: audit-orphans audit-ignored audit-test-state audit-workflows audit-dockerfile todo-audit version-tool audit
+.PHONY: audit-orphans audit-ignored audit-test-state audit-workflows audit-dockerfile audit-docker-release todo-audit version-tool audit
 
 # 统一 bump workspace 版本号（[package] version + 内部 path 依赖约束）。
 # 先 --dry-run 看改动，再实际写入，最后 `make release-check` 复核。
