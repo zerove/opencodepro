@@ -79,6 +79,12 @@ pub struct ClusterServiceImpl {
     /// 裸 `UnboundedReceiverStream`，生产路径每条消息省下整个 `async_stream` +
     /// `select!` 包装。
     break_hook_enabled: bool,
+    /// ADR-015：本节点作为**服务端**发起的反熵拉取计数（流建立后的主动反向拉取
+    /// 与翻页续拉都计入）。
+    ///
+    /// 存在理由与 `sync_requests_seen` 相同：它把「对端拉我」与「我拉对端」区分
+    /// 开，测试才能断言反向拉取真的在跑，而不是只看数据是否到位。
+    outbound_sync_requests: Arc<std::sync::atomic::AtomicU64>,
 }
 
 impl ClusterServiceImpl {
@@ -113,6 +119,7 @@ impl ClusterServiceImpl {
             join_wake: tokio::sync::broadcast::Sender::new(1),
             // 生产构造不启用断流钩子：每条消息都不该为测试设施付费。
             break_hook_enabled: false,
+            outbound_sync_requests: Arc::new(std::sync::atomic::AtomicU64::new(0)),
         }
     }
 
@@ -141,12 +148,14 @@ impl ClusterServiceImpl {
             join_wake: tokio::sync::broadcast::Sender::new(1),
             // 只有测试构造启用断流钩子。
             break_hook_enabled: true,
+            outbound_sync_requests: Arc::new(std::sync::atomic::AtomicU64::new(0)),
         };
         let handle = JoinGateHandle {
             gate: Arc::clone(&service.join_admit),
             wake: service.join_wake.clone(),
             seen: Arc::clone(&service.sync_requests_seen),
             attempts: Arc::clone(&service.join_attempts_seen),
+            outbound_sync_requests: Arc::clone(&service.outbound_sync_requests),
             break_tx: service.stream_break.clone(),
             break_ack_tx: service.break_ack_tx.clone(),
             break_ack_seen: Arc::clone(&service.break_ack_seen),
@@ -157,6 +166,11 @@ impl ClusterServiceImpl {
     /// ADR-013：已收到的 `SyncRequest` 总数。
     pub fn sync_requests_seen(&self) -> u64 {
         self.sync_requests_seen.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    /// ADR-015：本节点作为**服务端**发起的反熵拉取次数（初始反向拉取 + 翻页续拉）。
+    pub fn outbound_sync_requests_seen(&self) -> u64 {
+        self.outbound_sync_requests.load(std::sync::atomic::Ordering::SeqCst)
     }
 
     /// ADR-013：本实例是否启用了断流钩子。
@@ -179,6 +193,8 @@ pub struct JoinGateHandle {
     break_tx: tokio::sync::broadcast::Sender<()>,
     break_ack_tx: tokio::sync::broadcast::Sender<()>,
     break_ack_seen: Arc<std::sync::atomic::AtomicBool>,
+    /// ADR-015：本节点主动发起的反熵拉取计数（服务端角色）。
+    outbound_sync_requests: Arc<std::sync::atomic::AtomicU64>,
 }
 
 impl JoinGateHandle {
@@ -202,6 +218,11 @@ impl JoinGateHandle {
     /// 服务端已收到的 `SyncRequest` 总数。
     pub fn sync_requests_seen(&self) -> u64 {
         self.seen.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    /// ADR-015：本节点主动发起的反熵拉取次数（服务端角色）。
+    pub fn outbound_sync_requests_seen(&self) -> u64 {
+        self.outbound_sync_requests.load(std::sync::atomic::Ordering::SeqCst)
     }
 
     /// 服务端被调用过的 `Join` 总次数（含被闸门挡住而挂起的）。
@@ -338,7 +359,24 @@ impl Cluster for ClusterServiceImpl {
         let bank_for_inbound = self.experience_bank.clone();
         // ADR-013：计数器要 clone 进这个 task（它 'static'，不能借用 self）。
         let sync_requests_seen = Arc::clone(&self.sync_requests_seen);
+        // ADR-015（反向反熵）：本节点发起的拉取游标。
+        //
+        // 流建立后本节点会主动发起一次初始拉取（把本地摘要发给 dialer，由 dialer
+        // 回送差量）；之后每收到一页的 `SyncPageEnd` 就用 `next_cursor` 发下一页，
+        // 直到 `more = false`。初始拉取用空游标发起，`None` 表示当前没有进行中的
+        // 拉取。失败时清零——与拨号侧「拉取失败只记日志」的失败语义一致。
+        let mut outbound_pull_cursor: Option<String> = None;
+        if let Some(bank) = self.experience_bank.clone() {
+            if let Err(e) = anti_entropy::request_sync(&bank, &out_tx_sync, "").await {
+                tracing::warn!(error = %e, "anti-entropy: outbound initial sync request failed");
+            } else {
+                self.outbound_sync_requests.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                outbound_pull_cursor = Some(String::new());
+            }
+        }
+        let outbound_sync_requests = Arc::clone(&self.outbound_sync_requests);
         tokio::spawn(async move {
+            let mut outbound_pull_cursor = outbound_pull_cursor;
             while let Some(result) = inbound.next().await {
                 match result {
                     Ok(proto_evt) => {
@@ -367,8 +405,45 @@ impl Cluster for ClusterServiceImpl {
                             ).await;
                             continue;
                         }
-                        // `SyncPageEnd` 是 dial 方发来的控制消息（本节点作为
-                        // dial 方时的翻页信号），服务端不消费它。
+                        // ADR-015（反向反熵）：本节点发起的拉取由对端驱动，由本节点
+                        // 的 `outbound_pull_cursor` 状态机跟进——流建立后本节点会主动
+                        // 向对端发起一次初始拉取，之后收到对端回来的
+                        // `SyncPageEnd` 就按 `next_cursor` 继续发请求，直到 `more=false`。
+                        // 「本节点应答对端拉取」不产生 inbound 标记（应答本身就是把 page +
+                        // SyncPageEnd 写回 outbound），因此这里只需要消费本节点自己发起
+                        // 拉取的回执。
+                        if let Some(marker) = sync_page_end_of(&proto_evt) {
+                            if outbound_pull_cursor.is_some() {
+                                if marker.more {
+                                    let next_cursor = marker.next_cursor.clone();
+                                    outbound_pull_cursor = Some(next_cursor.clone());
+                                    if let Some(bank) = bank_for_inbound.as_ref() {
+                                        if let Err(e) = anti_entropy::request_sync(
+                                            bank,
+                                            &out_tx_sync,
+                                            &next_cursor,
+                                        )
+                                        .await
+                                        {
+                                            tracing::warn!(
+                                                error = %e,
+                                                cursor = %next_cursor,
+                                                "anti-entropy: outbound paging request failed"
+                                            );
+                                            outbound_pull_cursor = None;
+                                        } else {
+                                            outbound_sync_requests
+                                                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                                        }
+                                    } else {
+                                        outbound_pull_cursor = None;
+                                    }
+                                } else {
+                                    outbound_pull_cursor = None;
+                                }
+                            }
+                        }
+                        // `SyncPageEnd` 是拉取协议的控制标记（ADR-010），不进入 manager 事件总线。
                         if is_page_end(&proto_evt) {
                             continue;
                         }
@@ -436,13 +511,29 @@ impl Cluster for ClusterServiceImpl {
 
 /// 判定事件是否为反熵页尾标记（纯控制消息，不进入 manager 事件总线）。
 pub(crate) fn is_page_end(evt: &ProtoEvent) -> bool {
-    matches!(
-        evt.event,
-        Some(sisyphus_bridge_api::cluster_proto::cluster_event::Event::SyncPageEnd(_))
-    )
+    sync_page_end_of(evt).is_some()
+}
+
+/// 提取 inbound 事件里的 `SyncPageEnd` 控制标记。
+///
+/// ADR-015（反向反熵）：流建立后本节点会主动发起拉取，对端驱动分页并以这个标记
+/// 回执；拨号方自己发起的拉取也照常消费它。提取到单一定点后，`is_page_end` 与
+/// 各侧分页状态机复用同一份判定，避免「应答」与「翻页」两条路径各自长出一套 matcher。
+pub(crate) fn sync_page_end_of(
+    evt: &ProtoEvent,
+) -> Option<sisyphus_bridge_api::cluster_proto::SyncPageEnd> {
+    evt.event.as_ref().and_then(|e| match e {
+        sisyphus_bridge_api::cluster_proto::cluster_event::Event::SyncPageEnd(m) => Some(m.clone()),
+        _ => None,
+    })
 }
 
 /// ADR-010：应答一条 `SyncRequest`，把差量分页回写给请求方。
+///
+/// **方向无关**：本节点既可能是 dial 方（收到对端回应分差量），也可能在流建立后
+/// 主动发出的拉取中充当应答方（收到 dial 方/对端的请求并回送差量）。调用方
+/// （拨号侧 `run_stream` 或服务端流任务）决定谁在发请求、谁在应答，本函数只
+/// 负责「收到请求 → 算差量 → 分页回写 + `SyncPageEnd`」。
 ///
 /// **差量以既有 `ExperienceSync` 事件的形式发送**，因此请求方的
 /// `ExperienceSyncHandler` 用与实时广播**完全相同**的路径接收并落库——
@@ -453,7 +544,7 @@ pub(crate) fn is_page_end(evt: &ProtoEvent) -> bool {
 ///
 /// 单页有界是有意为之：经验库随运行时间单调增长，无界回灌会让单条 gRPC
 /// 消息超出默认 4MB 限制，整条流被拒——反而比不同步更糟。
-async fn handle_sync_request(
+pub(crate) async fn handle_sync_request(
     experience_bank: Option<&Arc<sisyphus_mem::experience_bank::VectorExperienceBank>>,
     request: &sisyphus_bridge_api::cluster_proto::SyncRequest,
     out_tx: &mpsc::UnboundedSender<ProtoEvent>,

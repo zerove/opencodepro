@@ -1,6 +1,10 @@
 # ADR-010: 跨节点经验的反熵补偿（重连补齐）
 
 **Status**: Implemented (2026-10-02) — 选项 A 已实施并通过验证
+**Amended（2026-11-05）**: 拉取发起方从「仅 dial 方」扩展为「服务端流建立后主动拉
+dialer」（见 [ADR-015](./015-reverse-anti-entropy-pull.md)）。触发点改为双方建连后
+各自发一次拉取；全连接拓扑下已同步时回空页、行为不变；单侧拨号拓扑下由此闭合被
+拨方断连期间写入的回流缺口。摘要语义、分页与幂等决策均未改动。
 **Deciders**: core team
 **Supersedes**: 无（补充 ADR-009 Risk 2 未实施的缓解措施）
 **Related**: ADR-009 § 2 Experience CRDT、§ 1 peer 协议

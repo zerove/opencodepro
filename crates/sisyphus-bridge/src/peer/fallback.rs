@@ -16,7 +16,9 @@ use crate::peer::manager::PeerManager;
 // 拨号器（生产路径走的正是这里）仍在静默丢弃 ExperienceSync，
 // 导致跨节点经验同步从未真正打通。单一实现消除这类漂移。
 use crate::peer::anti_entropy;
-use crate::peer::service::{apply_mgr_event, is_page_end, mgr_event_to_proto, proto_to_mgr_event};
+use crate::peer::service::{
+    apply_mgr_event, handle_sync_request, is_page_end, mgr_event_to_proto, proto_to_mgr_event,
+};
 use sisyphus_bridge_api::cluster_proto::cluster_client::ClusterClient;
 use sisyphus_bridge_api::cluster_proto::{ClusterEvent as ProtoEvent, JoinRequest};
 use sisyphus_mem::experience_bank::VectorExperienceBank;
@@ -307,6 +309,29 @@ async fn run_stream(
                 };
                 match result {
                     Ok(proto_evt) => {
+                        // ADR-015（反向反熵）：对端（服务端）在流建立后会主动发起拉取，
+                        // 用与 dial 方发起的 `SyncRequest` 同一套协议表达。本节点作为
+                        // dialer 本身也可能在发自己的拉取——两种角色共用双向流，统一走
+                        // 「收到 SyncRequest → 应答差量页 + SyncPageEnd」的路径。
+                        //
+                        // 应答不影响本节点的分页会话状态：`paging` 只由**本节点自己**
+                        // 发起的拉取的 `SyncPageEnd` 推进；对端拉取的应答会经 outbound 回
+                        // 给对端，由对端自己的状态机驱动。这里只是把请求落库，不改游标。
+                        if let Some(sync_request) =
+                            match proto_evt.event.clone() {
+                                Some(
+                                    sisyphus_bridge_api::cluster_proto::cluster_event::Event::SyncRequest(
+                                        req,
+                                    ),
+                                ) => Some(req),
+                                _ => None,
+                            }
+                        {
+                            if let Some(bank) = experience_bank {
+                                handle_sync_request(Some(bank), &sync_request, &sync_tx).await;
+                            }
+                            continue;
+                        }
                         // 反熵应答与实时广播都是 ExperienceSync，接收侧无法从事件本身
                         // 分辨。因此翻页完全由服务端下发的 `SyncPageEnd{ more }` 控制，
                         // 而不是本地计数——否则实时广播会被误计入页内，使游标偏移错乱。
@@ -486,12 +511,7 @@ impl PagingCursor {
         &mut self,
         evt: &ProtoEvent,
     ) -> Option<sisyphus_bridge_api::cluster_proto::SyncPageEnd> {
-        match &evt.event {
-            Some(sisyphus_bridge_api::cluster_proto::cluster_event::Event::SyncPageEnd(marker)) => {
-                Some(marker.clone())
-            },
-            _ => None,
-        }
+        crate::peer::service::sync_page_end_of(evt)
     }
 }
 

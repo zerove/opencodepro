@@ -19,6 +19,7 @@
 | [012](./012-keyset-pagination-cursor.md) | 反熵分页改用主键游标 | Accepted | 2026-10-02 |
 | [013](./013-reuse-catchup-receiver-across-reconnect.md) | 补齐信号跨重连复用接收器 | Implemented（修正记录） | 2026-10-02 |
 | [014](./014-break-core-tools-dependency.md) | 解除 sisyphus-core 对 sisyphus-tools-* 的反向依赖 | Accepted（四阶段完成） | — |
+| [015](./015-reverse-anti-entropy-pull.md) | 反向反熵拉取（服务端流建立后主动拉 dialer） | Implemented（2026-11-05） | 2026-11-05 |
 
 ## 编号说明
 
@@ -34,6 +35,7 @@
 3. **ADR-011** — 摘要必须能表达空洞（`Lagged` 打破「连续前缀」前提）。
 4. **ADR-012** — 分页必须用主键游标（差量会随接收缩短，下标会漂移）。
 5. **ADR-013** — 补齐信号必须复用接收器（否则信号根本没进拨号器）。
+6. **ADR-015** — 服务端在流建立后主动拉 dialer（反向反熵；闭合单侧拨号拓扑的回流缺口）。
 
 对应实现与测试：
 
@@ -41,4 +43,5 @@
 - 接收与应用：`crates/sisyphus-bridge/src/peer/experience_sync.rs`
 - 摘要与空洞：`crates/sisyphus-types/src/experience.rs`
 - 端到端：`crates/sisyphus-bridge/tests/anti_entropy_integration.rs`、
-  `anti_entropy_partition_convergence.rs`、`cluster_integration.rs`
+  `anti_entropy_partition_convergence.rs`、`cluster_integration.rs`、
+  `chaos_partition_convergence.rs`、`chaos_one_sided_reverse_pull.rs`

@@ -144,6 +144,7 @@ O-03 的第三例是本轮唯一针对**失效时机**的断言，因此做了�
 | `cargo test -p sisyphus-bridge --test anti_entropy_integration` | 12 passed（原 10 + 新增 2） |
 | `cargo test -p sisyphus-bridge --test anti_entropy_partition_convergence` | 1 passed |
 | `cargo test -p sisyphus-bridge --test chaos_partition_convergence` | 1 passed（全连接双侧反复分区，3 轮 × 双侧 4 条写入） |
+| `cargo test -p sisyphus-bridge --test chaos_one_sided_reverse_pull` | 1 passed（单侧拨号 + 反复分区，反向反熵拉取收敛，变异验证已闭环） |
 | `cargo test -p sisyphus-bridge --test webui_contract` | 2 passed（webui 10 个调用点逐条对齐路由表与 OpenAPI） |
 | `cargo test -p sisyphus-mem --test lexical_fallback --test jaccard_similarity --test experience_id_collision` | 17 + 6 + 3 passed（O-07 重构后两条检索路径语义未漂移） |
 
@@ -153,4 +154,4 @@ O-03 的第三例是本轮唯一针对**失效时机**的断言，因此做了�
 |----|------|
 | O-11 3 节点 Docker Compose | **代码侧已由 `chaos_partition_convergence.rs` 覆盖**：全连接 + 双侧反复断流，断言两个方向都发起反熵拉取并收敛到并集（无丢失/无重复/主键逐条一致）。容器编排版仍是可选部署验证，需 Docker 运行时；本机已确认容器运行时可用，但仓库内没有 3 节点 compose 编排，价值低于同等的 in-process 真实 gRPC 用例 |
 | O-06、摘要 SQL 下推、`http_openapi.rs` 拆分、联邦学习 | 见 §4，本轮不做，理由已记录 |
-| 单侧拨号拓扑的收敛边界 | ADR-010 明确「由 dial 方发起 pull」，因此被拨方在断连期间的写入没有回流路径（既无实时通道，也无人拉取）。生产为全连接拓扑，不受影响；`chaos_partition_convergence.rs` 的注释记录了这一边界，避免后续把「单侧拓扑也能收敛」当成既有保证 |
+| 单侧拨号拓扑的收敛边界 | **已闭合（2026-11-05，ADR-015）**：服务端流建立后主动发起反向反熵拉取，被 dial 方断连期间的写入随重连后的反向拉取带回。新增 `crates/sisyphus-bridge/tests/chaos_one_sided_reverse_pull.rs::one_sided_dialer_reverse_pull_converges_after_partition`（单侧拨号 + 反复分区，变异验证：禁用反向拉取 → 用例稳定失败；还原 → 全绿） |

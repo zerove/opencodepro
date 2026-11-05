@@ -50,6 +50,10 @@
 
 ### Added
 
+- bridge（ADR-015）：服务端在双向流建立后主动发起反熵 `SyncRequest`（反向反熵拉取），由
+  dialer 侧应答差量分页。`crates/sisyphus-bridge/tests/chaos_one_sided_reverse_pull.rs` 新增
+  单侧拨号 + 反复分区的收敛用例（变异验证：禁用反向拉取 → 稳定失败 → 还原全绿）。
+
 <!-- 下一轮的变更从这里开始写。发版时整段改名为 `## [vX.Y.Z] - <日期>`，
      并在其**之前**插入新的空 `[Unreleased]` 段（见上方发布流程）。 -->
 
