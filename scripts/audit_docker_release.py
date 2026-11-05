@@ -57,7 +57,17 @@ ROOT = Path(__file__).resolve().parent.parent
 RELEASE_WF = ".github/workflows/docker-release.yml"
 COMPOSE = "docker-compose.yml"
 DOCS = ("README.md", "book/src/deployment.md")
-SCAN_WORKFLOWS = (".github/workflows/docker-release.yml", ".github/workflows/nightly.yml")
+
+
+def all_workflows() -> list[str]:
+    """全部 workflow（相对仓库根）。
+
+    不写死文件清单：新增一条推镜像的流水线时，门禁必须自动覆盖它，而不是
+    因为「名单里没有」而静默跳过。
+    """
+    return sorted(
+        str(p.relative_to(ROOT)) for p in (ROOT / ".github/workflows").glob("*.yml")
+    )
 
 SEMVER_RE = re.compile(r"^v?(?P<major>\d+)\.(?P<minor>\d+)\.(?P<patch>\d+)(?:-(?P<pre>[0-9A-Za-z.-]+))?$")
 
@@ -310,13 +320,6 @@ def image_parts(raw: str) -> tuple[str, str]:
     return m.group(1), m.group(2)
 
 
-def image_name(workflow: dict) -> str:
-    raw = str(workflow.get("env", {}).get("IMAGE_NAME", ""))
-    if not raw:
-        raise ValueError("workflow 未声明 env.IMAGE_NAME")
-    return image_parts(raw)[1]
-
-
 def workspace_version() -> str:
     versions = set()
     meta = tomllib.loads((ROOT / "Cargo.toml").read_text(encoding="utf-8"))
@@ -349,8 +352,13 @@ def documented_images() -> tuple[set[str], set[str]]:
 
 def check_image_name() -> list[str]:
     problems: list[str] = []
-    parts = {rel: image_parts(str(load_workflow(rel).get("env", {}).get("IMAGE_NAME", "")))
-             for rel in SCAN_WORKFLOWS}
+    parts = {}
+    for rel in all_workflows():
+        raw = load_workflow(rel).get("env", {}).get("IMAGE_NAME")
+        if raw:
+            parts[rel] = image_parts(str(raw))
+    if RELEASE_WF not in parts:
+        problems.append(f"{RELEASE_WF} 未声明 env.IMAGE_NAME——发布链路没有可校验的目标")
     products = {name for _, name in parts.values()}
     if len(products) != 1:
         problems.append(f"workflow 之间的产品名不一致：{parts}")
@@ -397,7 +405,7 @@ def check_release_tags() -> list[str]:
 def check_latest_owner() -> list[str]:
     """`:latest` 只能由 release 流水线产出。"""
     problems: list[str] = []
-    for rel in SCAN_WORKFLOWS:
+    for rel in all_workflows():
         if rel == RELEASE_WF:
             continue
         wf = load_workflow(rel)
