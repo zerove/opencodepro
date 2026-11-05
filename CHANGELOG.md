@@ -50,10 +50,6 @@
 
 ### Added
 
-- bridge（ADR-015）：服务端在双向流建立后主动发起反熵 `SyncRequest`（反向反熵拉取），由
-  dialer 侧应答差量分页。`crates/sisyphus-bridge/tests/chaos_one_sided_reverse_pull.rs` 新增
-  单侧拨号 + 反复分区的收敛用例（变异验证：禁用反向拉取 → 稳定失败 → 还原全绿）。
-
 <!-- 下一轮的变更从这里开始写。发版时整段改名为 `## [vX.Y.Z] - <日期>`，
      并在其**之前**插入新的空 `[Unreleased]` 段（见上方发布流程）。 -->
 
@@ -112,6 +108,12 @@
     `test_*` 前缀；文件级回归测试允许在 `tests/` 目录下的文件里以任意 fn 名
     全路径引用，不强制前缀。src/ 内单元测试须 `test_*`，tests/ 内回归测试放宽。
     自检由 14 例扩展至 17 例（新增 src 命名拦截 / tests 回归放宽 / src 合法前缀各一）。
+
+- **反向反熵拉取**（ADR-015）：服务端在双向流建立后主动发起反熵 `SyncRequest`
+  （反向反熵拉取），由 dialer 侧应答差量分页；闭合「单侧拨号拓扑下被拨方断连期间
+  写入没有回流路径」的缺口。新增
+  `crates/sisyphus-bridge/tests/chaos_one_sided_reverse_pull.rs::one_sided_dialer_reverse_pull_converges_after_partition`
+  （变异验证：禁用反向拉取 → 稳定失败 → 还原全绿）。
 
 ### Changed
 - `cargo test-all` 别名补 `-j 1`：直接敲别名时不再按 nproc 并行链接多个
