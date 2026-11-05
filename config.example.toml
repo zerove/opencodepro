@@ -272,6 +272,64 @@ convergence_threshold = 0.15
 # 类型: u64 | 默认: 300
 # default_duration_seconds = 300
 
+# ── 集群 peer 协议（ADR-009 / ADR-016）────────────────────
+[cluster]
+# 是否启用集群 peer 协议（mDNS discovery + 静态 peer fallback）
+# 环境变量: SISYPHUS_CLUSTER_ENABLED
+# 类型: bool | 默认: false
+# enabled = false
+
+# 本节点唯一 ID（留空 = 启动时从 SISYPHUS_CLUSTER_NODE_ID / HOSTNAME 派生）
+# 环境变量: SISYPHUS_CLUSTER_NODE_ID
+# 类型: string | 默认: ""
+# node_id = ""
+
+# 集群名（多套集群并存时区分）
+# 环境变量: SISYPHUS_CLUSTER_NAME
+# 类型: string | 默认: "_sisyphus-bridge"
+# cluster_name = "_sisyphus-bridge"
+
+# mDNS 服务类型（RFC 6763）
+# 类型: string | 默认: "_sisyphus-bridge._tcp.local"
+# mdns_service_type = "_sisyphus-bridge._tcp.local"
+
+# 静态 peer 列表（K8s 等多播受限环境 fallback）
+# 类型: ["host:port", ...] | 默认: []
+# peers = ["node-1:50051", "node-2:50051"]
+
+# Join 超时（秒），须 ≥ 1
+# 环境变量: SISYPHUS_CLUSTER_JOIN_TIMEOUT_SECS
+# 类型: u64 | 默认: 10
+# join_timeout_secs = 10
+
+# Peer TTL（秒）：超过此时间无心跳视为离线，须 ≥ 5 且 > join_timeout_secs
+# 环境变量: SISYPHUS_CLUSTER_PEER_TTL_SECS
+# 类型: u64 | 默认: 30
+# peer_ttl_secs = 30
+
+# 联邦经验聚合（v0.4.0 Phase A）：对入站 peer 经验按质量分过滤。
+# 默认关闭——关闭时入站经验全量进入 CRDT 合并，行为与 v0.3.0 一致。
+[cluster.federated]
+# 是否启用入站经验质量门槛
+# 环境变量: SISYPHUS_CLUSTER_FEDERATED_ENABLED
+# 类型: bool | 默认: false
+# enabled = false
+
+# 允许合并的最低质量分（[0.0, 1.0]）；低于此分的远端经验被丢弃并记 warn 日志
+# 环境变量: SISYPHUS_CLUSTER_FEDERATED_MIN_QUALITY_SCORE
+# 类型: f64 | 默认: 0.2
+# min_quality_score = 0.2
+
+# 成功经验基础权重（≥ 0）
+# 环境变量: SISYPHUS_CLUSTER_FEDERATED_SUCCESS_WEIGHT
+# 类型: f64 | 默认: 0.7
+# success_weight = 0.7
+
+# 偏差扣分权重（≥ 0）
+# 环境变量: SISYPHUS_CLUSTER_FEDERATED_DEVIATION_WEIGHT
+# 类型: f64 | 默认: 0.3
+# deviation_weight = 0.3
+
 # ── DAG 执行器参数 ────────────────────────────────────────
 [executor]
 # 最大并行任务数（JoinSet 并发上限）

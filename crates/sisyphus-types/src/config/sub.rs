@@ -656,6 +656,12 @@ pub struct ClusterConfig {
     /// Peer TTL（秒）：超过此时间无心跳视为离线。
     #[serde(default = "default_cluster_peer_ttl_secs")]
     pub peer_ttl_secs: u64,
+
+    /// 联邦经验聚合策略（v0.4.0 Phase A，ADR-016）。
+    ///
+    /// 默认 `enabled = false`：入站经验全量进入 CRDT 合并，行为与 v0.3.0 一致。
+    #[serde(default)]
+    pub federated: crate::experience::FederatedAggregatorConfig,
 }
 
 fn default_cluster_name() -> String {
@@ -684,6 +690,7 @@ impl Default for ClusterConfig {
             peers: Vec::new(),
             join_timeout_secs: default_cluster_join_timeout_secs(),
             peer_ttl_secs: default_cluster_peer_ttl_secs(),
+            federated: crate::experience::FederatedAggregatorConfig::default(),
         }
     }
 }
@@ -695,6 +702,10 @@ impl ClusterConfig {
     /// - join_timeout_secs ≥ 1
     /// - peer_ttl_secs ≥ 5（避免误判瞬时网络抖动）
     /// - peer_ttl_secs > join_timeout_secs（heartbeat 间隔应大于 join 超时）
+    /// - 联邦聚合参数（`cluster.federated.*`）见
+    ///   [`crate::experience::FederatedAggregatorConfig::validate`]；仅在
+    ///   `federated.enabled` 时校验——未启用时这些字段不参与任何判定，
+    ///   让它们拦住启动只会制造「改了个没用的值就起不来」的困惑。
     pub fn validate(&self) -> Result<(), crate::errors::TypesError> {
         use crate::errors::TypesError;
         if self.join_timeout_secs < 1 {
@@ -711,6 +722,9 @@ impl ClusterConfig {
             return Err(TypesError::ConfigValidationError(
                 "cluster.peer_ttl_secs must be > join_timeout_secs".into(),
             ));
+        }
+        if self.federated.enabled {
+            self.federated.validate()?;
         }
         Ok(())
     }

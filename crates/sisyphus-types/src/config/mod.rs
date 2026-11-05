@@ -349,6 +349,18 @@ impl Config {
         if let Some(v) = env_u64("SISYPHUS_CLUSTER_PEER_TTL_SECS") {
             self.cluster.peer_ttl_secs = v;
         }
+        if let Some(v) = env_bool("SISYPHUS_CLUSTER_FEDERATED_ENABLED") {
+            self.cluster.federated.enabled = v;
+        }
+        if let Some(v) = env_f64("SISYPHUS_CLUSTER_FEDERATED_MIN_QUALITY_SCORE") {
+            self.cluster.federated.min_quality_score = v;
+        }
+        if let Some(v) = env_f64("SISYPHUS_CLUSTER_FEDERATED_SUCCESS_WEIGHT") {
+            self.cluster.federated.success_weight = v;
+        }
+        if let Some(v) = env_f64("SISYPHUS_CLUSTER_FEDERATED_DEVIATION_WEIGHT") {
+            self.cluster.federated.deviation_weight = v;
+        }
         if let Some(v) = env_f64("SISYPHUS_COGNITIVE_LOOP_ADAPTIVE_DEPTH_INITIAL_BUDGET") {
             self.cognitive_loop.adaptive_depth.initial_budget = v;
         }
@@ -854,5 +866,73 @@ sandbox = { max_memory_pages = 10, default_fuel = 1000000, wasm_tools_dir = "too
         assert!((config.cognitive_loop.anomaly_detector.duration_threshold - 3.0).abs() < 1e-9);
         assert!((config.cognitive_loop.anomaly_detector.error_rate_threshold - 0.3).abs() < 1e-9);
         assert_eq!(config.cognitive_loop.anomaly_detector.history_window, 20);
+    }
+
+    // ── 联邦经验聚合配置（v0.4.0 Phase A）──────────────────────────
+
+    /// TOML 中的 `[cluster.federated]` 必须真正被解析到 `ClusterConfig`。
+    ///
+    /// 光有字段没有接线是这类「策略开关」最常见的失败模式：配置写了、
+    /// 启动日志也说开了，但 `main` 读到的还是 `Default`。
+    #[test]
+    fn test_cluster_federated_parsed_from_toml() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        fs::write(
+            &path,
+            r#"
+[cluster]
+enabled = true
+[cluster.federated]
+enabled = true
+min_quality_score = 0.45
+success_weight = 0.8
+deviation_weight = 0.2
+"#,
+        )
+        .unwrap();
+
+        let config = Config::from_file(path.to_str().expect("utf-8 path")).expect("parse config");
+
+        assert!(config.cluster.federated.enabled);
+        assert!((config.cluster.federated.min_quality_score - 0.45).abs() < 1e-9);
+        assert!((config.cluster.federated.success_weight - 0.8).abs() < 1e-9);
+        assert!((config.cluster.federated.deviation_weight - 0.2).abs() < 1e-9);
+    }
+
+    /// 缺省（无 `[cluster.federated]`）时默认关闭，且默认参数是干净的。
+    #[test]
+    fn test_cluster_federated_defaults_disabled() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        fs::write(&path, "[cluster]\nenabled = false\n").unwrap();
+
+        let config = Config::from_file(path.to_str().expect("utf-8 path")).expect("parse config");
+
+        assert!(!config.cluster.federated.enabled, "默认必须关闭过滤");
+        assert!((config.cluster.federated.min_quality_score - 0.2).abs() < 1e-9);
+        assert!(config.cluster.federated.validate().is_ok());
+    }
+
+    /// 环境变量能覆盖联邦聚合的全部四个字段。
+    #[test]
+    fn test_apply_env_overrides_cluster_federated() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        static PAIRS: [(&str, &str); 4] = [
+            ("SISYPHUS_CLUSTER_FEDERATED_ENABLED", "true"),
+            ("SISYPHUS_CLUSTER_FEDERATED_MIN_QUALITY_SCORE", "0.55"),
+            ("SISYPHUS_CLUSTER_FEDERATED_SUCCESS_WEIGHT", "0.9"),
+            ("SISYPHUS_CLUSTER_FEDERATED_DEVIATION_WEIGHT", "0.1"),
+        ];
+        // SAFETY: ENV_LOCK 已串行化同二进制的环境变量测试。
+        let _env = unsafe { crate::env_guard::env_var_guards(&PAIRS) };
+
+        let mut config = Config::default();
+        config.apply_env_overrides();
+
+        assert!(config.cluster.federated.enabled);
+        assert!((config.cluster.federated.min_quality_score - 0.55).abs() < 1e-9);
+        assert!((config.cluster.federated.success_weight - 0.9).abs() < 1e-9);
+        assert!((config.cluster.federated.deviation_weight - 0.1).abs() < 1e-9);
     }
 }

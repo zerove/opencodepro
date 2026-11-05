@@ -20,6 +20,7 @@
 | [013](./013-reuse-catchup-receiver-across-reconnect.md) | 补齐信号跨重连复用接收器 | Implemented（修正记录） | 2026-10-02 |
 | [014](./014-break-core-tools-dependency.md) | 解除 sisyphus-core 对 sisyphus-tools-* 的反向依赖 | Accepted（四阶段完成） | — |
 | [015](./015-reverse-anti-entropy-pull.md) | 反向反熵拉取（服务端流建立后主动拉 dialer） | Implemented（2026-11-05） | 2026-11-05 |
+| [016](./016-federated-experience-aggregation.md) | 联邦经验聚合（入站经验质量门槛） | Implemented（2026-11-05） | 2026-11-05 |
 
 ## 编号说明
 
@@ -45,3 +46,15 @@
 - 端到端：`crates/sisyphus-bridge/tests/anti_entropy_integration.rs`、
   `anti_entropy_partition_convergence.rs`、`cluster_integration.rs`、
   `chaos_partition_convergence.rs`、`chaos_one_sided_reverse_pull.rs`
+
+## 联邦经验聚合阅读顺序
+
+理解「入站经验要不要收」，读：
+
+1. **ADR-010 / 011 / 013 / 015** — 先保证「一条都不丢」（差量、空洞、补齐、
+   反向拉取）。
+2. **ADR-016** — 再决定「哪些不该收」（质量门槛，默认关闭）。
+
+实现：`crates/sisyphus-types/src/experience.rs`（评分纯函数）、
+`crates/sisyphus-bridge/src/peer/experience_sync.rs`（门槛接入）、
+`crates/sisyphus-types/src/config/sub.rs`（`[cluster.federated]`）。

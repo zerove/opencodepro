@@ -267,3 +267,44 @@ if let Some(shared) = registry.shared_http() {
 | `llm_stage_timeout_secs` | `SISYPHUS_COGNITIVE_LOOP_LLM_STAGE_TIMEOUT_SECS` | integer | 30 |
 
 `llm_stage_timeout_secs=0` 禁用反思/演进阶段的 LLM 调用（用于降级/纯启发式模式）。
+
+## 集群与联邦经验聚合配置
+
+`[cluster]` 段控制 peer 协议（ADR-009）与联邦经验聚合（ADR-016）。默认全关，
+单机启动行为不变。
+
+| 字段 | 环境变量 | 类型 | 默认 |
+|------|----------|------|------|
+| `enabled` | `SISYPHUS_CLUSTER_ENABLED` | bool | false |
+| `node_id` | `SISYPHUS_CLUSTER_NODE_ID` | string | `""`（由 `HOSTNAME` 派生） |
+| `cluster_name` | `SISYPHUS_CLUSTER_NAME` | string | `_sisyphus-bridge` |
+| `mdns_service_type` | — | string | `_sisyphus-bridge._tcp.local` |
+| `peers` | — | array | `[]` |
+| `join_timeout_secs` | `SISYPHUS_CLUSTER_JOIN_TIMEOUT_SECS` | integer | 10 |
+| `peer_ttl_secs` | `SISYPHUS_CLUSTER_PEER_TTL_SECS` | integer | 30 |
+
+`peer_ttl_secs` 必须 ≥ 5 且严格大于 `join_timeout_secs`。
+
+### `[cluster.federated]` 字段
+
+入站经验在 CRDT 合并**之前**按质量分过滤。质量分算法见
+`sisyphus_types::experience::evaluate_experience_quality`：
+
+```
+quality = clamp(
+    if outcome_success { success_weight } else { 0.0 }
+        - deviation_weight * clamp(deviation_score, 0.0, 1.0),
+    0.0, 1.0)
+```
+
+| 字段 | 环境变量 | 类型 | 默认 |
+|------|----------|------|------|
+| `enabled` | `SISYPHUS_CLUSTER_FEDERATED_ENABLED` | bool | **false** |
+| `min_quality_score` | `SISYPHUS_CLUSTER_FEDERATED_MIN_QUALITY_SCORE` | float `[0,1]` | 0.2 |
+| `success_weight` | `SISYPHUS_CLUSTER_FEDERATED_SUCCESS_WEIGHT` | float ≥ 0 | 0.7 |
+| `deviation_weight` | `SISYPHUS_CLUSTER_FEDERATED_DEVIATION_WEIGHT` | float ≥ 0 | 0.3 |
+
+**默认关闭**：过滤会改变收敛结果集，关闭时入站经验全量合并，与 v0.3.0 行为
+完全一致。仅在 `enabled = true` 时校验这些参数（未启用时它们不参与任何判定）。
+被拒绝的经验会记 `warn` 日志并携带 `quality` / `min_quality_score`，不会静默丢弃。
+参数在启动时装配，热重载不改变已启动的同步处理器。

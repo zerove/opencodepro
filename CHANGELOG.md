@@ -59,6 +59,19 @@
   `cargo check -p sisyphus-tests --tests` ✅ / 单测 `1 passed` ✅ /
   fmt + clippy `-D warnings` ✅。
 
+- **联邦经验聚合：入站经验质量门槛**（v0.4.0 Phase A，ADR-016）。
+  `sisyphus_types::experience::evaluate_experience_quality` 提供纯函数质量评分，
+  `FederatedAggregatorConfig` 提供 `enabled` / `min_quality_score` /
+  `success_weight` / `deviation_weight` 四个参数（默认 **关闭**）；
+  桥接入站同步路径在 CRDT 合并前按门槛过滤，被拒绝的经验记 `warn` 并携带分数。
+  配置段 `[cluster.federated]`，环境变量 `SISYPHUS_CLUSTER_FEDERATED_*`。
+  默认关闭保证单机与既有集群部署行为不变。验证：
+  `cargo test -p sisyphus-types --lib` 135 passed（新增 6）；
+  `peer::experience_sync` 6 passed（新增 3，含变异验证：门槛置恒假后对应用例稳定失败）；
+  反熵/混沌集成用例全绿（`cluster_integration` 21、`anti_entropy_integration` 12、
+  `anti_entropy_partition_convergence` 1、`chaos_partition_convergence` 1、
+  `chaos_one_sided_reverse_pull` 1）。
+
 <!-- 下一轮的变更从这里开始写。发版时整段改名为 `## [vX.Y.Z] - <日期>`，
      并在其**之前**插入新的空 `[Unreleased]` 段（见上方发布流程）。 -->
 

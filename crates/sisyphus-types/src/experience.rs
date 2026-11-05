@@ -743,3 +743,183 @@ mod anti_entropy_tests {
         assert_eq!(experience_counter_from_key(key), Some(42));
     }
 }
+
+// ---------------------------------------------------------------------------
+// 联邦经验加权与聚合策略（Federated Learning / Experience Aggregation）
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+/// 联邦经验聚合配置。
+pub struct FederatedAggregatorConfig {
+    /// 是否启用入站经验质量门槛。
+    ///
+    /// 默认 `false`：入站经验全量进入 CRDT 合并，行为与 v0.3.0 完全一致。
+    /// 过滤会改变收敛结果集，因此必须显式开启。
+    #[serde(default)]
+    pub enabled: bool,
+    /// 允许入站同步的最低质量分（0.0 ~ 1.0）。低于此分的远端经验将被视为噪声过滤。
+    #[serde(default = "default_min_quality_score")]
+    pub min_quality_score: f64,
+    /// 成功经验基础权重
+    #[serde(default = "default_success_weight")]
+    pub success_weight: f64,
+    /// 偏差扣分权重
+    #[serde(default = "default_deviation_weight")]
+    pub deviation_weight: f64,
+}
+
+fn default_min_quality_score() -> f64 {
+    0.2
+}
+
+fn default_success_weight() -> f64 {
+    0.7
+}
+
+fn default_deviation_weight() -> f64 {
+    0.3
+}
+
+impl Default for FederatedAggregatorConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            min_quality_score: default_min_quality_score(),
+            success_weight: default_success_weight(),
+            deviation_weight: default_deviation_weight(),
+        }
+    }
+}
+
+impl FederatedAggregatorConfig {
+    /// 校验聚合参数。
+    ///
+    /// 校验：
+    /// - `min_quality_score` 必须是 [0.0, 1.0] 内的有限数
+    /// - `success_weight` / `deviation_weight` 必须 ≥ 0 且有限
+    ///
+    /// `NaN` 会让所有比较恒为 false（门槛永不触发、扣分永不生效），
+    /// 是最难察觉的配置错误，因此单独拒绝。
+    pub fn validate(&self) -> Result<(), crate::errors::TypesError> {
+        use crate::errors::TypesError;
+        if !self.min_quality_score.is_finite() || !(0.0..=1.0).contains(&self.min_quality_score) {
+            return Err(TypesError::ConfigValidationError(
+                "cluster.federated.min_quality_score must be a finite number in [0.0, 1.0]".into(),
+            ));
+        }
+        for (name, value) in [
+            ("success_weight", self.success_weight),
+            ("deviation_weight", self.deviation_weight),
+        ] {
+            if !value.is_finite() || value < 0.0 {
+                return Err(TypesError::ConfigValidationError(format!(
+                    "cluster.federated.{name} must be a finite number ≥ 0.0"
+                )));
+            }
+        }
+        Ok(())
+    }
+}
+
+/// 计算单条经验的联邦质量分（0.0 ~ 1.0）。
+///
+/// 算法：
+/// - 若 `outcome_success` 为 true，基础分为 `success_weight`；若为 false，基础分为 0.0。
+/// - 结合 `deviation_score`（0.0 为无偏差，1.0 为最大偏差）：扣除 `deviation_weight * deviation_score`。
+/// - 最终归一化并夹紧在 [0.0, 1.0]。
+pub fn evaluate_experience_quality(
+    exp: &ExperienceTuple,
+    config: &FederatedAggregatorConfig,
+) -> f64 {
+    let base = if exp.outcome_success {
+        config.success_weight
+    } else {
+        0.0
+    };
+    let deviation_penalty = config.deviation_weight * exp.deviation_score.clamp(0.0, 1.0);
+    (base - deviation_penalty).clamp(0.0, 1.0)
+}
+
+#[cfg(test)]
+mod federated_tests {
+    use super::*;
+
+    #[test]
+    fn test_evaluate_experience_quality() {
+        let cfg = FederatedAggregatorConfig::default();
+
+        let good_exp = ExperienceTuple {
+            outcome_success: true,
+            deviation_score: 0.1,
+            ..Default::default()
+        };
+        let q_good = evaluate_experience_quality(&good_exp, &cfg);
+        assert!(q_good >= 0.6, "成功且低偏差应获高质评分: {q_good}");
+
+        let bad_exp = ExperienceTuple {
+            outcome_success: false,
+            deviation_score: 0.9,
+            ..Default::default()
+        };
+        let q_bad = evaluate_experience_quality(&bad_exp, &cfg);
+        assert!(q_bad <= 0.3, "失败且高偏差应获低质评分: {q_bad}");
+    }
+
+    /// 质量分必须落在 [0, 1]：偏差 > 1 视作最大偏差，负偏差视作无偏差。
+    ///
+    /// 这里刻意**不**让越界偏差把分数推出边界：偏差来自远端节点，
+    /// 不能假定它守规矩。
+    #[test]
+    fn quality_is_clamped_for_out_of_range_deviation() {
+        let cfg = FederatedAggregatorConfig::default();
+
+        let over = ExperienceTuple {
+            outcome_success: true,
+            deviation_score: 5.0,
+            ..Default::default()
+        };
+        // 偏差夹紧到 1.0 → 0.7 - 0.3 * 1.0
+        assert!((evaluate_experience_quality(&over, &cfg) - 0.4).abs() < 1e-9);
+
+        let negative = ExperienceTuple {
+            outcome_success: true,
+            deviation_score: -3.0,
+            ..Default::default()
+        };
+        // 偏差夹紧到 0.0 → 不扣分
+        assert!((evaluate_experience_quality(&negative, &cfg) - 0.7).abs() < 1e-9);
+    }
+
+    /// `enabled` 默认 false —— 关掉过滤是默认行为，不能靠调用方记得设。
+    #[test]
+    fn default_config_is_disabled() {
+        assert!(!FederatedAggregatorConfig::default().enabled);
+    }
+
+    /// 非有限/越界参数必须被拒绝。
+    ///
+    /// `NaN` 是最危险的一种：所有比较恒为 false，门槛永不触发、扣分永不生效，
+    /// 配置看起来生效了但实际什么都没做。
+    #[test]
+    fn validate_rejects_non_finite_or_out_of_range_values() {
+        assert!(FederatedAggregatorConfig::default().validate().is_ok());
+
+        let nan_threshold = FederatedAggregatorConfig {
+            min_quality_score: f64::NAN,
+            ..Default::default()
+        };
+        assert!(nan_threshold.validate().is_err(), "NaN 门槛必须被拒绝");
+
+        let too_high = FederatedAggregatorConfig {
+            min_quality_score: 1.5,
+            ..Default::default()
+        };
+        assert!(too_high.validate().is_err(), "门槛 > 1.0 必须被拒绝");
+
+        let negative_weight = FederatedAggregatorConfig {
+            success_weight: -0.1,
+            ..Default::default()
+        };
+        assert!(negative_weight.validate().is_err(), "负权重必须被拒绝");
+    }
+}

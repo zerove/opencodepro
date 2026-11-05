@@ -19,7 +19,8 @@ use async_trait::async_trait;
 use sisyphus_mem::experience_bank::VectorExperienceBank;
 use sisyphus_mem::store::ApplyResult;
 use sisyphus_types::experience::{
-    experience_origin_from_key, ExperienceBank, ExperienceQuery, ExperienceTuple,
+    evaluate_experience_quality, experience_origin_from_key, ExperienceBank, ExperienceQuery,
+    ExperienceTuple, FederatedAggregatorConfig,
 };
 use sisyphus_types::TypesError;
 use std::sync::Arc;
@@ -118,6 +119,8 @@ pub struct ExperienceSyncHandler {
     /// `None` 表示不启用（例如测试里只关心合并路径）。拨号器侧订阅它，
     /// 收到后向自己的 peer 重发一次 `SyncRequest`。
     catchup_tx: Option<broadcast::Sender<()>>,
+    /// 联邦经验聚合策略（v0.4.0 Phase A）。`None` = 不过滤，保持既有行为。
+    federated: Option<FederatedAggregatorConfig>,
 }
 
 impl ExperienceSyncHandler {
@@ -132,7 +135,22 @@ impl ExperienceSyncHandler {
             peer_manager,
             self_node_id: self_node_id.into(),
             catchup_tx: None,
+            federated: None,
         }
+    }
+
+    /// 启用联邦经验聚合（v0.4.0 Phase A）。
+    ///
+    /// 开启后，入站经验在进入 CRDT 合并之前先按
+    /// [`evaluate_experience_quality`] 打分，低于 `min_quality_score` 的经验
+    /// 被判定为噪声并丢弃（记 `warn` 日志，不静默）。
+    ///
+    /// 默认**不启用**（`federated = None`）：过滤会改变收敛结果集，既有反熵/
+    /// 混沌收敛用例与「经验全量同步」语义都建立在不过滤之上。开关式接入保证
+    /// 单机与既有集群部署行为不变。
+    pub fn with_federated_aggregation(mut self, cfg: FederatedAggregatorConfig) -> Self {
+        self.federated = Some(cfg);
+        self
     }
 
     /// 开启 Lagged 补齐：入站事件被丢弃时通知拨号器重新拉取差量。
@@ -165,6 +183,7 @@ impl ExperienceSyncHandler {
         let experience_bank = self.experience_bank;
         let self_node_id = self.self_node_id;
         let catchup_tx = self.catchup_tx;
+        let federated = self.federated;
 
         tokio::spawn(async move {
             // 持有一个强引用，保证 Sender 不会在本任务存活期间被丢弃。
@@ -199,6 +218,7 @@ impl ExperienceSyncHandler {
                                                 version,
                                                 &vector_clock_json,
                                                 payload,
+                                                federated.as_ref(),
                                             ).await;
                                         }
                                         Ok(_) => {
@@ -256,6 +276,7 @@ impl ExperienceSyncHandler {
         remote_version: u64,
         vector_clock_json: &str,
         payload: Vec<u8>,
+        federated: Option<&FederatedAggregatorConfig>,
     ) {
         // 解析 payload
         let remote_exp: ExperienceTuple = match serde_json::from_slice(&payload) {
@@ -282,6 +303,29 @@ impl ExperienceSyncHandler {
             tracing::warn!(
                 exp_key = %exp_key,
                 "experience sync vector_clock envelope is not a clock map",
+            );
+        }
+
+        // ── 联邦经验聚合（v0.4.0 Phase A）──────────────────────────────
+        // 只影响「是否合并」，不改变合并规则：通过门槛的经验仍走下面的
+        // CRDT 判定，因此并发冲突语义不受影响。`None` = 不过滤（默认）。
+        if let Some(cfg) = federated {
+            let quality = evaluate_experience_quality(&remote_exp, cfg);
+            if quality < cfg.min_quality_score {
+                tracing::warn!(
+                    exp_key = %exp_key,
+                    quality,
+                    min_quality_score = cfg.min_quality_score,
+                    outcome_success = remote_exp.outcome_success,
+                    deviation_score = remote_exp.deviation_score,
+                    "federated aggregation rejected low-quality remote experience",
+                );
+                return;
+            }
+            tracing::debug!(
+                exp_key = %exp_key,
+                quality,
+                "federated aggregation accepted remote experience",
             );
         }
 
@@ -399,5 +443,112 @@ mod tests {
             "peers 为空时没有任何接收器，`catchup_tx.send(())` 本应返回 \
              Err(SendError)，实际却成功了——说明存在预期之外的订阅者"
         );
+    }
+
+    // ── 联邦经验聚合（v0.4.0 Phase A）────────────────────────────────
+    //
+    // 聚合门槛只决定「是否合并」，不改变 CRDT 判定本身。因此这里全部走真实的
+    // `handle_remote_sync` + 真实 `VectorExperienceBank`（内存 sqlite），
+    // 断言落在**库里到底有没有那一行**，而不是断言某个返回值——
+    // 否则过滤分支被误删也能「看起来通过」。
+
+    /// 在内存 sqlite 上建一个真实经验库，与生产路径同一类型。
+    async fn make_bank(node_id: &str) -> Arc<VectorExperienceBank> {
+        let mut config = sisyphus_types::Config::default();
+        config.cluster.node_id = node_id.to_string();
+        let store =
+            sisyphus_mem::SisyphusStore::new("sqlite::memory:", &config).await.expect("store init");
+        let state_store = store.state.clone();
+        let vector_store = Arc::new(
+            sisyphus_mem::VectorMemoryStore::new(store.pool()).await.expect("vector store init"),
+        );
+        Arc::new(
+            VectorExperienceBank::new(
+                state_store,
+                vector_store,
+                Arc::new(sisyphus_tools_llm::DummyEmbeddingClient),
+            )
+            .await
+            .expect("exp bank init"),
+        )
+    }
+
+    /// 构造一条远端经验，返回 `(主键, 序列化 payload)`。
+    fn remote_payload(counter: u64, success: bool, deviation: f64) -> (String, Vec<u8>) {
+        let key = format!("exp:1700000000:node-b:{counter}");
+        let exp = ExperienceTuple {
+            context_text: format!("remote ctx {counter}"),
+            context_hash: format!("remote hash {counter}"),
+            action_id: "act".into(),
+            outcome_success: success,
+            deviation_score: deviation,
+            cost: counter,
+            timestamp: 1_700_000_000 + counter,
+            version: counter,
+            ..Default::default()
+        };
+        (key, serde_json::to_vec(&exp).expect("serialize payload"))
+    }
+
+    /// 低质量经验（失败 + 高偏差）在开启聚合后被拒绝：库里没有这一行。
+    #[tokio::test]
+    async fn federated_aggregation_rejects_low_quality_experience() {
+        let bank = make_bank("node-a").await;
+        let (key, payload) = remote_payload(1, false, 0.9);
+        assert!(
+            bank.keys().await.expect("keys").is_empty(),
+            "前置条件：新建库应为空"
+        );
+
+        ExperienceSyncHandler::handle_remote_sync(
+            &bank,
+            &key,
+            1,
+            "{}",
+            payload,
+            Some(&FederatedAggregatorConfig::default()),
+        )
+        .await;
+
+        let keys = bank.keys().await.expect("keys");
+        assert!(
+            keys.is_empty(),
+            "低质量经验应在聚合门槛处被丢弃，实际入库: {keys:?}"
+        );
+    }
+
+    /// 高质量经验（成功 + 低偏差）在开启聚合后照常合并入库。
+    #[tokio::test]
+    async fn federated_aggregation_accepts_high_quality_experience() {
+        let bank = make_bank("node-a").await;
+        let (key, payload) = remote_payload(2, true, 0.1);
+
+        ExperienceSyncHandler::handle_remote_sync(
+            &bank,
+            &key,
+            2,
+            "{}",
+            payload,
+            Some(&FederatedAggregatorConfig::default()),
+        )
+        .await;
+
+        let keys = bank.keys().await.expect("keys");
+        assert_eq!(keys, vec![key], "高质量经验应被合并入库");
+    }
+
+    /// 未配置聚合（`None`）时行为与改造前完全一致：同样的低质量经验照样入库。
+    ///
+    /// 这是向后兼容的硬约束——既有反熵/混沌收敛用例写入的经验多为
+    /// `outcome_success = false`，若默认开启过滤，那些用例会变成「不收敛」。
+    #[tokio::test]
+    async fn federated_none_keeps_unfiltered_behavior() {
+        let bank = make_bank("node-a").await;
+        let (key, payload) = remote_payload(3, false, 0.9);
+
+        ExperienceSyncHandler::handle_remote_sync(&bank, &key, 3, "{}", payload, None).await;
+
+        let keys = bank.keys().await.expect("keys");
+        assert_eq!(keys, vec![key], "未开启聚合时不应过滤任何经验（默认关闭）");
     }
 }

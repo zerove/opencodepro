@@ -300,13 +300,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // 经验同步接收端：把 peer 广播来的经验按 CRDT 合并进本地库。
         // 处理器持有的是未装饰的 VectorExperienceBank，远程应用不会再次广播。
         let (sync_shutdown_tx, sync_shutdown_rx) = tokio::sync::broadcast::channel(1);
-        let sync_handle = ExperienceSyncHandler::new(
+        // 联邦经验聚合（v0.4.0 Phase A）：默认关闭，开启后低质入站经验在
+        // CRDT 合并前被丢弃。关闭时完全不接入，行为与 v0.3.0 一致。
+        let sync_handler = ExperienceSyncHandler::new(
             experience_bank,
             runtime.peer_manager.clone(),
             runtime.node_id.clone(),
         )
-        .with_catchup_signal(catchup_tx)
-        .spawn(sync_shutdown_rx);
+        .with_catchup_signal(catchup_tx);
+        let sync_handler = if cfg.federated.enabled {
+            info!(
+                min_quality_score = cfg.federated.min_quality_score,
+                success_weight = cfg.federated.success_weight,
+                deviation_weight = cfg.federated.deviation_weight,
+                "Federated experience aggregation enabled"
+            );
+            sync_handler.with_federated_aggregation(cfg.federated.clone())
+        } else {
+            sync_handler
+        };
+        let sync_handle = sync_handler.spawn(sync_shutdown_rx);
 
         info!(
             node_id = %runtime.node_id,
