@@ -49,6 +49,17 @@
 ## [Unreleased]
 
 ### Added
+
+<!-- 下一轮的变更从这里开始写。发版时整段改名为 `## [vX.Y.Z] - <日期>`，
+     并在其**之前**插入新的空 `[Unreleased]` 段（见上方发布流程）。 -->
+
+## [v0.3.0] - 2026-11-05
+
+> 自 v0.2.0 以来：反熵（ADR-010..013）落地、供应链清理、WebUI 契约门禁、
+> 全连接双侧分区混沌用例。**破坏性变更**：`ExperienceBank` trait 新增
+> `export_version_vector()`，外部实现方需补该方法的实现（本仓库内实现均已补齐）。
+
+### Added
 - **WebUI → Bridge REST 契约门禁**：`crates/sisyphus-bridge/tests/webui_contract.rs`
   把 `webui/src/lib.rs` 里的 `format!("{}/…")` 调用点解析成 (method, path)，逐条要求
   它同时存在于 axum 路由表与真实服务返回的 OpenAPI 文档中。两个方向都断言，是因为
@@ -62,6 +73,11 @@
   请求，终局断言「无丢失 / 无重复 / 内容与主键逐条一致」。单独成文件是因为用例需要
   按节点切换 `SISYPHUS_CLUSTER_NODE_ID`（进程级），与并行用例共处一个进程会互相污染。
   变异验证：禁用拨号器的首轮反熵拉取后，用例在「首连未完成」处失败。
+- **版本 bump 脚本**（`scripts/bump_version.py`）：版本号在仓库里出现 147 处
+  （27 个 `[package] version` + 内部 path 依赖的 `version` 约束），手改必漏——
+  `evals/` 的 6 处 path 依赖就曾漏掉约束，`cargo package` 报错而 `cargo check`
+  完全看不到。脚本支持 `--dry-run` / `--check` / `--self-check`（5 个判别用例 +
+  幂等与变更性检查）；内部依赖**缺** version 约束时直接报错而不是静默补上。
 - **版本向量导出接口**（阶段 C / ADR-010 实施收尾）：`ExperienceBank` trait 新增
   `async fn export_version_vector(&self) -> Result<ExperienceDigest, TypesError>`，使引擎
   能回答「我有什么」（node → `OriginDigest` 紧凑摘要）而不只是「我写了什么」。实现方委托

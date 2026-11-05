@@ -91,6 +91,15 @@ docker build -t my-sisyphus:latest .
 
 ## 升级路径
 
+v0.2.0 → v0.3.0 升级时注意：
+
+1. **Trait 变更**：`ExperienceBank` 新增 `export_version_vector()`；若你有本仓库外的
+   实现，需补该方法（仓库内实现均已更新）
+2. **配置 schema**：无变化，`v0.2.0` 的 `config.toml` 可直接使用
+3. **依赖镜像 tag 升级**：`docker pull ghcr.io/zerove/sisyphus-bridge:v0.3.0` 后重启
+4. **经验主键**：无需迁移。`v0.2.0` 之前的旧格式主键（`exp:{timestamp}`）仍可读，
+   只是不参与序号恢复
+
 v0.1.0 → v0.2.0 升级时注意：
 
 1. **配置 schema 变化**：见 `CHANGELOG.md [v0.2.0]` 段（如有破坏性变更）
