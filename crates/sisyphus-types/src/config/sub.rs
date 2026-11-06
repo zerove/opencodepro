@@ -657,6 +657,12 @@ pub struct ClusterConfig {
     #[serde(default = "default_cluster_peer_ttl_secs")]
     pub peer_ttl_secs: u64,
 
+    /// 联邦策略权重发布周期（秒，v0.4.0 Phase B，ADR-017）。
+    ///
+    /// 0 = 只消费入站、不发布（仅暴露共享视图的场景）。默认 60。
+    #[serde(default = "default_strategy_sync_interval_secs")]
+    pub strategy_sync_interval_secs: u64,
+
     /// 联邦经验聚合策略（v0.4.0 Phase A，ADR-016）。
     ///
     /// 默认 `enabled = false`：入站经验全量进入 CRDT 合并，行为与 v0.3.0 一致。
@@ -680,6 +686,10 @@ fn default_cluster_peer_ttl_secs() -> u64 {
     30
 }
 
+fn default_strategy_sync_interval_secs() -> u64 {
+    60
+}
+
 impl Default for ClusterConfig {
     fn default() -> Self {
         Self {
@@ -690,6 +700,7 @@ impl Default for ClusterConfig {
             peers: Vec::new(),
             join_timeout_secs: default_cluster_join_timeout_secs(),
             peer_ttl_secs: default_cluster_peer_ttl_secs(),
+            strategy_sync_interval_secs: default_strategy_sync_interval_secs(),
             federated: crate::experience::FederatedAggregatorConfig::default(),
         }
     }
@@ -721,6 +732,11 @@ impl ClusterConfig {
         if self.peer_ttl_secs <= self.join_timeout_secs {
             return Err(TypesError::ConfigValidationError(
                 "cluster.peer_ttl_secs must be > join_timeout_secs".into(),
+            ));
+        }
+        if self.strategy_sync_interval_secs != 0 && self.strategy_sync_interval_secs < 1 {
+            return Err(TypesError::ConfigValidationError(
+                "cluster.strategy_sync_interval_secs must be 0 or ≥ 1".into(),
             ));
         }
         if self.federated.enabled {

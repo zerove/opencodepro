@@ -7,9 +7,11 @@
 
 use sisyphus_bridge::peer::manager::{ClusterEvent, PeerInfo, PeerManager};
 use sisyphus_bridge::peer::service::ClusterServiceImpl;
+use sisyphus_bridge::peer::strategy_weights::StrategyWeightsHandler;
 use sisyphus_bridge_api::cluster_proto::cluster_client::ClusterClient;
 use sisyphus_bridge_api::cluster_proto::cluster_server::ClusterServer;
 use sisyphus_bridge_api::cluster_proto::{ClusterEvent as ProtoEvent, JoinRequest};
+use sisyphus_types::strategy_weights::FederatedStrategyWeights;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::time::timeout;
@@ -247,6 +249,16 @@ struct SyncNode {
     /// `SyncRequest` 计数——这是区分「信号被消费」与「靠建连全量拉取补齐」
     /// 的唯一可观测手段（两者最终都收敛，数据上看不出差别）。
     gate: Option<sisyphus_bridge::peer::JoinGateHandle>,
+    /// 联邦策略权重共享视图（v0.4.0 Phase B，ADR-017）。
+    /// 本地发布写入、入站合并更新，REST `/api/strategy/weights` 与测试断言
+    /// 都读这里。
+    pub strategy_weights: Arc<parking_lot::RwLock<FederatedStrategyWeights>>,
+    /// 本节点 MetaLearner：策略快照的来源。
+    pub meta_learner: Arc<parking_lot::Mutex<sisyphus_tools_llm_tools::meta_learner::MetaLearner>>,
+    /// 策略权重 handler 的关闭信源。必须随节点一起持有：handler 的任务只持接收端，
+    /// 信源不活跃时 `shutdown_rx.recv()` 会立刻 Closed → 任务静默退出，同步循环
+    /// 就退化成「只跑了一次」。
+    _strategy_shutdown: tokio::sync::broadcast::Sender<()>,
 }
 
 impl SyncNode {
@@ -350,6 +362,22 @@ async fn start_sync_node_inner(
         .with_catchup_signal(catchup_tx)
         .spawn(shutdown_rx);
 
+    // ADR-017：策略权重同步 handler。周期快照 + 入站合并，与生产装配保持一致
+    // （唯一差异：周期缩短到 50ms 用于测试内的确定性等待）。
+    let strategy_meta_learner = Arc::new(parking_lot::Mutex::new(
+        sisyphus_tools_llm_tools::meta_learner::MetaLearner::new(&temp_meta_dir(node_id)),
+    ));
+    let strategy_weights = Arc::new(parking_lot::RwLock::new(FederatedStrategyWeights::default()));
+    let (strategy_shutdown_tx, strategy_shutdown_rx) = tokio::sync::broadcast::channel(1);
+    let _strategy = StrategyWeightsHandler::new(
+        manager.clone(),
+        node_id,
+        strategy_meta_learner.clone(),
+        strategy_weights.clone(),
+    )
+    .with_interval(Duration::from_millis(50))
+    .spawn(strategy_shutdown_rx);
+
     if !dial_peers.is_empty() {
         let cfg = StaticPeerConfig {
             peers: dial_peers,
@@ -372,8 +400,24 @@ async fn start_sync_node_inner(
         events,
         catchup_rx: observer_rx,
         gate,
+        strategy_weights,
+        meta_learner: strategy_meta_learner,
         _shutdown: shutdown_tx,
+        _strategy_shutdown: strategy_shutdown_tx,
     }
+}
+
+/// 测试专用临时目录（避免多个节点污染仓库内的 `.omo/meta`）。
+fn temp_meta_dir(node_id: &str) -> String {
+    std::env::temp_dir()
+        .join(format!(
+            "sisyphus-strategy-sync-{}-{}",
+            node_id,
+            std::process::id()
+        ))
+        .to_str()
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| ".omo/meta".to_string())
 }
 
 fn experience(timestamp: u64, text: &str) -> ExperienceTuple {
@@ -1440,5 +1484,121 @@ async fn break_hook_enabled_only_for_gated_construction() {
         gated.break_hook_enabled(),
         "`gated` 构造未启用断流钩子，断流窗口无法制造——\
          catchup_signal_sent_while_reconnecting_is_still_consumed 会因此失效"
+    );
+}
+
+// ── 9.1.x 端到端：联邦策略权重同步（v0.4.0 Phase B，ADR-017）────────────────
+
+use sisyphus_types::MetaLearningSample;
+
+/// 构造一条策略学习样本。
+fn meta_sample(strategy: &str, success: bool, duration_secs: f64) -> MetaLearningSample {
+    MetaLearningSample {
+        context: serde_json::json!({ "goal": "strategy-probe" }),
+        strategy: strategy.into(),
+        params: serde_json::json!({}),
+        success,
+        duration_secs,
+        timestamp: 1_700_000_100,
+    }
+}
+
+/// 等到 `target` 节点持有 `source` 节点**包含目标策略**的策略快照。
+///
+/// 只等 `generation > 0` 是不够的：handler 启动后的第一次 tick 立刻发生
+/// （interval 的首个 tick 是即时的），此时 `record_outcome` 还没跑，
+/// 发布的是空快照。若只按 generation 判定，会拿到那份空快照然后断言失败。
+/// 因此等待条件必须是「快照里出现目标策略」——它同时覆盖了传播完成与统计
+/// 就位两件事。
+async fn wait_until_strategy_snapshot(
+    target: &SyncNode,
+    source: &str,
+    strategy: &str,
+    expected_uses: u64,
+) -> Option<sisyphus_types::strategy_weights::NodeStrategySnapshot> {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+    loop {
+        // 注意作用域：读守卫必须在任何 `await` 之前释放，否则会把 handler 的
+        // 写锁挡在门外（parking_lot 非重入，长持读守卫会让发布线程饿死）。
+        let snap = {
+            let view = target.strategy_weights.read();
+            view.node_snapshot(source)
+                .filter(|s| s.strategies.get(strategy).is_some_and(|st| st.uses == expected_uses))
+                .cloned()
+        };
+        if snap.is_some() {
+            return snap;
+        }
+        if std::time::Instant::now() > deadline {
+            return None;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn test_two_node_strategy_weights_propagate_and_merge() {
+    let node_a = start_sync_node("node-a", vec![]).await;
+    let node_b = start_sync_node("node-ab", vec![node_a.grpc_addr.clone()]).await;
+
+    wait_for_link(&node_a.manager, &node_b.manager).await;
+
+    // A 产出两次深度优先成功样本；B 产出一次深度优先失败样本。
+    // 聚合预期：uses = 3, successes = 2（按 uses 加权的跨节点统计）。
+    node_a
+        .meta_learner
+        .lock()
+        .record_outcome(meta_sample("depth-first", true, 1.0))
+        .expect("A 记策略样本");
+    node_a
+        .meta_learner
+        .lock()
+        .record_outcome(meta_sample("depth-first", true, 2.0))
+        .expect("A 记策略样本");
+    node_b
+        .meta_learner
+        .lock()
+        .record_outcome(meta_sample("depth-first", false, 3.0))
+        .expect("B 记策略样本");
+
+    // B ← A：A 的快照经集群事件广播、gRPC 流、入站交付、合并三跳后到达 B。
+    let snap_on_b = tokio::time::timeout(
+        Duration::from_secs(20),
+        wait_until_strategy_snapshot(&node_b, "node-a", "depth-first", 2),
+    )
+    .await
+    .expect("B 收策略快照超时")
+    .expect("B 应持有 A 的、含 depth-first 的策略快照");
+    assert_eq!(
+        snap_on_b.strategies["depth-first"].uses, 2,
+        "A 快照里的 depth-first uses 应为 2"
+    );
+    assert_eq!(
+        snap_on_b.strategies["depth-first"].successes, 2,
+        "A 快照里的 depth-first successes 应为 2"
+    );
+
+    // B 的聚合视图：A(2 uses, 2 succ) + B(1 use, 0 succ) = uses 3, successes 2。
+    // 读守卫收在块内：parking_lot 的守卫不是 Send，跨 await 持有会被
+    // `clippy::await_holding_lock` 拒绝，也会挡住 handler 的写锁。
+    let agg = {
+        let b_view = node_b.strategy_weights.read();
+        b_view.aggregate()
+    };
+    assert_eq!(agg["depth-first"].uses, 3);
+    assert_eq!(agg["depth-first"].successes, 2);
+    assert!((agg["depth-first"].success_rate() - 2.0 / 3.0).abs() < 1e-9);
+
+    // A ← B：反向传播对称成立——A 也应当持有 B 的快照（B 自己刚发布过一次）。
+    let snap_on_a = tokio::time::timeout(
+        Duration::from_secs(20),
+        wait_until_strategy_snapshot(&node_a, "node-ab", "depth-first", 1),
+    )
+    .await
+    .expect("A 收策略快照超时")
+    .expect("A 应持有 B 的、含 depth-first 的策略快照");
+    assert_eq!(
+        snap_on_a.strategies["depth-first"].uses, 1,
+        "B 快照里的 depth-first uses 应为 1"
     );
 }

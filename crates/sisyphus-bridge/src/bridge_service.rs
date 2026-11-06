@@ -79,6 +79,12 @@ pub struct MySisyphusBridge {
     pub(crate) chaos_fault_type_counters: Arc<parking_lot::Mutex<HashMap<String, u64>>>,
     /// Set to true when auto-fix is triggered (for testing).
     pub(crate) chaos_auto_fix_triggered: Arc<AtomicBool>,
+    /// 联邦策略权重聚合视图（v0.4.0 Phase B，ADR-017）。
+    ///
+    /// `StrategyWeightsHandler` 持有这份共享视图：本地发布写入、入站合并更新。
+    /// 挂载在桥接上而非 `RestApiState`，避免改 `RestApiState` 的 3 处构造点。
+    pub(crate) strategy_weights:
+        Arc<parking_lot::RwLock<sisyphus_types::strategy_weights::FederatedStrategyWeights>>,
 }
 
 impl Clone for MySisyphusBridge {
@@ -110,6 +116,7 @@ impl Clone for MySisyphusBridge {
             chaos_fault_counter: self.chaos_fault_counter.clone(),
             chaos_fault_type_counters: self.chaos_fault_type_counters.clone(),
             chaos_auto_fix_triggered: self.chaos_auto_fix_triggered.clone(),
+            strategy_weights: self.strategy_weights.clone(),
         }
     }
 }
@@ -736,6 +743,9 @@ impl MySisyphusBridge {
             chaos_fault_counter: Arc::new(AtomicU64::new(0)),
             chaos_fault_type_counters: Arc::new(parking_lot::Mutex::new(HashMap::new())),
             chaos_auto_fix_triggered: Arc::new(AtomicBool::new(false)),
+            strategy_weights: Arc::new(parking_lot::RwLock::new(
+                sisyphus_types::strategy_weights::FederatedStrategyWeights::default(),
+            )),
         };
 
         let bridge_arc = Arc::new(bridge);
@@ -843,6 +853,16 @@ impl MySisyphusBridge {
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
         COUNTER.fetch_add(1, Ordering::Relaxed).hash(&mut hasher);
         (hasher.finish() as f64) / (u64::MAX as f64)
+    }
+
+    /// 联邦策略权重聚合视图（v0.4.0 Phase B，ADR-017）。
+    ///
+    /// 共享视图由 [`crate::peer::StrategyWeightsHandler`] 持有：本地发布写入、
+    /// 入站合并更新。暴露给 REST `/api/strategy/weights` 读取。
+    pub fn strategy_weights(
+        &self,
+    ) -> &Arc<parking_lot::RwLock<sisyphus_types::strategy_weights::FederatedStrategyWeights>> {
+        &self.strategy_weights
     }
 
     /// If chaos is enabled, randomly inject a delay or error with the

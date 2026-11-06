@@ -321,6 +321,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         };
         let sync_handle = sync_handler.spawn(sync_shutdown_rx);
 
+        // 联邦策略权重同步（v0.4.0 Phase B，ADR-017）：周期性发布本节点策略快照，
+        // 消费对端 StateProposal 并合并进共享视图。默认周期 60s；0 = 只收不发。
+        // 关闭时与经验同步处理器一样跟随 sig_rx 通知退出。
+        let strategy_weights = bridge.strategy_weights().clone();
+        let strategy_sync_interval_secs = cfg.strategy_sync_interval_secs;
+        let (strategy_shutdown_tx, strategy_shutdown_rx) = tokio::sync::broadcast::channel(1);
+        let strategy_handler = if strategy_sync_interval_secs == 0 {
+            None
+        } else {
+            Some(
+                sisyphus_bridge::peer::StrategyWeightsHandler::new(
+                    runtime.peer_manager.clone(),
+                    runtime.node_id.clone(),
+                    bridge.kernel().meta_learner.clone(),
+                    strategy_weights,
+                )
+                .with_interval(std::time::Duration::from_secs(strategy_sync_interval_secs)),
+            )
+        };
+        let strategy_handle = strategy_handler.map(|h| h.spawn(strategy_shutdown_rx));
+
         info!(
             node_id = %runtime.node_id,
             cluster = %cfg.cluster_name,
@@ -336,6 +357,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let _ = sync_sig_rx.changed().await;
             let _ = sync_shutdown_tx.send(());
             let _ = tokio::time::timeout(std::time::Duration::from_secs(5), sync_handle).await;
+            if let Some(handle) = strategy_handle {
+                let _ = strategy_shutdown_tx.send(());
+                let _ = tokio::time::timeout(std::time::Duration::from_secs(5), handle).await;
+            }
         });
     }
 

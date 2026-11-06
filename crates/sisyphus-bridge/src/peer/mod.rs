@@ -17,9 +17,14 @@ pub mod experience_sync;
 pub mod fallback;
 pub mod manager;
 pub mod service;
+pub mod strategy_weights;
 
 pub use experience_sync::{
     broadcast_experience, ExperienceSyncHandler, PeerBroadcastExperienceBank,
+};
+
+pub use strategy_weights::{
+    StrategyWeightsHandler, DEFAULT_PUBLISH_INTERVAL_SECS, STRATEGY_WEIGHTS_KEY,
 };
 
 pub use anti_entropy::{

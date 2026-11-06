@@ -315,6 +315,21 @@ impl PeerManager {
             payload,
         });
     }
+
+    /// 把从远端收到的 `StateProposal` 投递到**入站**事件总线（ADR-017）。
+    ///
+    /// 与 [`PeerManager::broadcast_state_proposal`] 的区别同上：本方法只写
+    /// `inbound_tx`，拨号器不订阅该通道，因此不会回流到集群。
+    ///
+    /// 在此之前入站 `StateProposal` 在 `proto_to_mgr_event` 就被丢弃了（注释写
+    /// 「handled separately」，实际没有消费方），于是任何依赖它传播的集群状态
+    /// 都只出去不回来。
+    pub fn deliver_inbound_state_proposal(&self, key: impl Into<String>, value: Vec<u8>) {
+        let _ = self.inbound_tx.send(ClusterEvent::StateProposal {
+            key: key.into(),
+            value,
+        });
+    }
 }
 
 #[cfg(test)]

@@ -307,6 +307,12 @@ convergence_threshold = 0.15
 # 类型: u64 | 默认: 30
 # peer_ttl_secs = 30
 
+# 策略权重同步周期（秒）。0 = 只消费入站不发布（仅暴露共享视图）。
+# 默认 60：MetaLearner 统计变化率低，分钟级足够让 REST 视图与收敛断言生效。
+# 环境变量: SISYPHUS_CLUSTER_STRATEGY_SYNC_INTERVAL_SECS
+# 类型: u64 | 默认: 60
+# strategy_sync_interval_secs = 60
+
 # 联邦经验聚合（v0.4.0 Phase A）：对入站 peer 经验按质量分过滤。
 # 默认关闭——关闭时入站经验全量进入 CRDT 合并，行为与 v0.3.0 一致。
 [cluster.federated]

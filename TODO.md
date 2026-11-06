@@ -195,9 +195,16 @@
 
 ### 阶段 6: 分布式支持 (延后, 待单机全功能稳定后再启动)
 - [ ] **联邦学习**: 跨实例经验共享 (peer protocol 已有基础)
-  - 进行中（v0.4.0 Phase A，ADR-016）：入站经验质量门槛已落地
-    （`evaluate_experience_quality` + `[cluster.federated]`，默认关闭）；
-    剩余：策略成功率共识（Phase B）与多节点联邦收敛测试（Phase C）。
+  - Phase A ✅（v0.4.0，ADR-016）：入站经验质量门槛
+    （`evaluate_experience_quality` + `[cluster.federated]`，默认关闭）。
+  - Phase B ✅（v0.4.0，ADR-017）：集群策略权重同步
+    （`sisyphus_types::strategy_weights` + `StrategyWeightsHandler`，
+    经 `StateProposal` 双向传播，`GET /api/strategy/weights` 暴露聚合视图）。
+    证据：`sisyphus_types::strategy_weights::tests::merge_is_idempotent`、
+    `sisyphus_bridge::peer::strategy_weights::tests::apply_remote_merges_remote_snapshot`、
+    `cluster_integration.rs::test_two_node_strategy_weights_propagate_and_merge`。
+  - 剩余：Phase C —— 3 节点联邦收敛集成测试 + 变异验证（含乱序/重复投递）；
+    以及让执行路径消费 `best_strategy`（需先定 `min_uses`）。
 - [ ] 多实例协调与共识、经验聚合服务
 
 ### 阶段 7: 近期优先级 (2026-08-31 起, 1-2 周窗口)

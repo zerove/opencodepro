@@ -188,6 +188,39 @@ OpenAPI 规范位于 [`/openapi.json`](/openapi.json)，也可通过 Swagger UI 
 { "query_text": "error during build", "action_id": "compile", "limit": 5 }
 ```
 
+## 联邦策略权重
+
+### `GET /api/strategy/weights`
+
+返回集群级策略权重聚合视图（ADR-017）。每个节点按
+`cluster.strategy_sync_interval_secs` 周期发布本地 `MetaLearner` 的策略统计，
+对端按 `generation` 合并；本端点读取的是合并后的共享视图。
+
+响应：
+
+```json
+{
+  "node_count": 2,
+  "nodes": [
+    { "node_id": "node-a", "generation": 1762345678901,
+      "strategies": { "depth-first": { "uses": 2, "successes": 2, "avg_duration_secs": 1.5 } } },
+    { "node_id": "node-b", "generation": 1762345678950,
+      "strategies": { "depth-first": { "uses": 1, "successes": 0, "avg_duration_secs": 3.0 } } }
+  ],
+  "aggregate": {
+    "depth-first": { "uses": 3, "successes": 2, "success_rate": 0.6667, "avg_duration_secs": 2.0 }
+  },
+  "best": { "strategy": "depth-first", "success_rate": 0.6667, "uses": 3 }
+}
+```
+
+- 未启用集群或尚无节点上报时：`node_count = 0`、`nodes = []`、
+  `aggregate = {}`、`best = null`（不是 404）。
+- `aggregate` 的 `uses` / `successes` 是**跨节点求和**，因此不等于集群里
+  真实执行次数（同一策略在 3 个节点各跑 10 次会显示 30）。
+- `best` 由 `best_strategy(1)` 计算：`min_uses = 1`，成功率相同时按策略名
+  字典序取前。它只是展示，执行路径尚未消费该推荐。
+
 ## 路线图
 
 ### `GET /api/roadmap/project/{id}`

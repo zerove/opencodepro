@@ -349,6 +349,9 @@ impl Config {
         if let Some(v) = env_u64("SISYPHUS_CLUSTER_PEER_TTL_SECS") {
             self.cluster.peer_ttl_secs = v;
         }
+        if let Some(v) = env_u64("SISYPHUS_CLUSTER_STRATEGY_SYNC_INTERVAL_SECS") {
+            self.cluster.strategy_sync_interval_secs = v;
+        }
         if let Some(v) = env_bool("SISYPHUS_CLUSTER_FEDERATED_ENABLED") {
             self.cluster.federated.enabled = v;
         }
@@ -934,5 +937,37 @@ deviation_weight = 0.2
         assert!((config.cluster.federated.min_quality_score - 0.55).abs() < 1e-9);
         assert!((config.cluster.federated.success_weight - 0.9).abs() < 1e-9);
         assert!((config.cluster.federated.deviation_weight - 0.1).abs() < 1e-9);
+    }
+
+    /// 策略权重同步周期：env 覆盖 + 默认值。
+    #[test]
+    fn test_apply_env_overrides_cluster_strategy_sync_interval_secs() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        static PAIRS: [(&str, &str); 1] = [("SISYPHUS_CLUSTER_STRATEGY_SYNC_INTERVAL_SECS", "25")];
+        // SAFETY: ENV_LOCK 已串行化同二进制的环境变量测试。
+        let _env = unsafe { crate::env_guard::env_var_guards(&PAIRS) };
+
+        let mut config = Config::default();
+        config.apply_env_overrides();
+        assert_eq!(config.cluster.strategy_sync_interval_secs, 25);
+    }
+
+    /// 策略权重同步周期默认值（60），且 0 表示「只收不发」是合法的。
+    #[test]
+    fn test_cluster_strategy_sync_interval_default_and_zero_allowed() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        const KEYS: [&str; 1] = ["SISYPHUS_CLUSTER_STRATEGY_SYNC_INTERVAL_SECS"];
+        // SAFETY: ENV_LOCK 已串行化同二进制的环境变量测试。
+        let _env = KEYS
+            .iter()
+            .map(|k| unsafe { crate::env_guard::EnvVarGuard::unset(k) })
+            .collect::<Vec<_>>();
+
+        let config = Config::default();
+        assert_eq!(config.cluster.strategy_sync_interval_secs, 60);
+
+        let mut disabled = Config::default();
+        disabled.cluster.strategy_sync_interval_secs = 0;
+        assert!(disabled.cluster.validate().is_ok());
     }
 }

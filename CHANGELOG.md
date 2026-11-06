@@ -72,6 +72,29 @@
   `anti_entropy_partition_convergence` 1、`chaos_partition_convergence` 1、
   `chaos_one_sided_reverse_pull` 1）。
 
+- **集群策略权重同步**（v0.4.0 Phase B，ADR-017）：每个节点周期性把本地
+  `MetaLearner` 的策略统计打包成 `NodeStrategySnapshot`（`generation` 取 unix
+  毫秒并与上次 +1 取大），经 `StateProposal` 集群事件广播；对端按 `generation`
+  **严格取新**合并进 `FederatedStrategyWeights`，聚合按 `uses` 求和、
+  `avg_duration` 按 `uses` 加权。合并幂等、可交换，重复投递与乱序到达都安全。
+  - 传输层补上入站缺口：`proto_to_mgr_event` 此前**丢弃** `Event::StateProposal`，
+    现在保留并由 `apply_mgr_event` 投递到入站总线
+    （`PeerManager::deliver_inbound_state_proposal`，用 `deliver_` 而非
+    `broadcast_` 避免回环）。这也是不走 `Consensus::propose` 的原因——生产装配
+    里 proposer 是 `None`，`propose()` 只写日志。
+  - 配置 `ClusterConfig.strategy_sync_interval_secs`（默认 60，`0` = 只收不发），
+    env `SISYPHUS_CLUSTER_STRATEGY_SYNC_INTERVAL_SECS`；发布周期内首 tick 即发。
+  - REST `GET /api/strategy/weights` 暴露聚合视图（`node_count` / `nodes` /
+    `aggregate` / `best`），已进 OpenAPI（`operationId: getStrategyWeights`）。
+  - 验证：`cargo test -p sisyphus-types --lib` **146 passed**（新增 11）；
+    `peer::` **60 passed**（`peer::strategy_weights` 5 + `peer::service` 新增 2）；
+    `cluster_integration` **22 passed**（新增 2 节点端到端
+    `test_two_node_strategy_weights_propagate_and_merge`）；
+    `strategy_weights_rest_test` **2 passed**（新增：空视图返回 200、
+    合并视图的聚合与 `best` 契约）；反熵/混沌/契约用例全绿。
+    **变异验证 3 处**（`merge` 的 `>=` → `>`、删自回环过滤、`publish_once` 不广播）
+    各自稳定触发对应用例失败，还原后全绿。
+
 <!-- 下一轮的变更从这里开始写。发版时整段改名为 `## [vX.Y.Z] - <日期>`，
      并在其**之前**插入新的空 `[Unreleased]` 段（见上方发布流程）。 -->
 

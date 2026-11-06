@@ -21,6 +21,7 @@
 | [014](./014-break-core-tools-dependency.md) | 解除 sisyphus-core 对 sisyphus-tools-* 的反向依赖 | Accepted（四阶段完成） | — |
 | [015](./015-reverse-anti-entropy-pull.md) | 反向反熵拉取（服务端流建立后主动拉 dialer） | Implemented（2026-11-05） | 2026-11-05 |
 | [016](./016-federated-experience-aggregation.md) | 联邦经验聚合（入站经验质量门槛） | Implemented（2026-11-05） | 2026-11-05 |
+| [017](./017-strategy-weights-consensus.md) | 集群策略权重同步（每节点快照 + generation 取新） | Implemented（2026-11-06） | 2026-11-06 |
 
 ## 编号说明
 
@@ -58,3 +59,19 @@
 实现：`crates/sisyphus-types/src/experience.rs`（评分纯函数）、
 `crates/sisyphus-bridge/src/peer/experience_sync.rs`（门槛接入）、
 `crates/sisyphus-types/src/config/sub.rs`（`[cluster.federated]`）。
+
+## 集群策略权重阅读顺序
+
+理解「集群里哪个策略真的有效」，读：
+
+1. **ADR-009** — 集群事件总线（`StateProposal` 是既有的双向消息类型）。
+2. **ADR-016** — 先有「单条经验要不要收」，才有「跨节点策略统计」的需求。
+3. **ADR-017** — 每节点一份快照 + `generation` 取新；为什么不用
+   `Consensus::propose`（生产无 proposer，只写日志）。
+
+实现：`crates/sisyphus-types/src/strategy_weights.rs`（合并/聚合纯函数）、
+`crates/sisyphus-bridge/src/peer/strategy_weights.rs`（周期发布 + 入站合并）、
+`crates/sisyphus-bridge/src/peer/service.rs`（入站 `StateProposal` 投递）、
+`GET /api/strategy/weights`（`crates/sisyphus-bridge/src/http/handlers.rs`）。
+端到端：`crates/sisyphus-bridge/tests/cluster_integration.rs`
+（`test_two_node_strategy_weights_propagate_and_merge`）。

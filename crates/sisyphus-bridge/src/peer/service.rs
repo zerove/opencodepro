@@ -675,7 +675,13 @@ pub(crate) fn proto_to_mgr_event(evt: ProtoEvent) -> Option<MgrEvent> {
             node_id: pl.node_id,
             reason: pl.reason,
         }),
-        Event::StateProposal(_) => None, // state proposal inbound handled separately
+        // ADR-017：入站状态提案必须进事件总线，否则集群策略权重只有「出去」
+        // 没有「回来」——生产里 `Consensus::propose` 没有注入 proposer，这条
+        // 流是策略权重唯一的传播路径。
+        Event::StateProposal(sp) => Some(MgrEvent::StateProposal {
+            key: sp.key,
+            value: sp.value,
+        }),
         Event::ExperienceSync(e) => Some(MgrEvent::ExperienceSync {
             exp_key: e.exp_key,
             version: e.version,
@@ -697,8 +703,10 @@ pub(crate) fn apply_mgr_event(manager: &PeerManager, evt: MgrEvent) {
         MgrEvent::PeerLeft { node_id, reason } => {
             let _ = manager.on_peer_left(&node_id, reason);
         },
-        MgrEvent::StateProposal { .. } => {
-            // 状态提案尚无消费方（TODO 8.3.3 共识），保持丢弃。
+        MgrEvent::StateProposal { key, value } => {
+            // ADR-017：投递到入站总线，由 StrategyWeightsHandler 消费。
+            // 用 deliver_ 而非 broadcast_：事件已来自远端，再广播会形成回环。
+            manager.deliver_inbound_state_proposal(key, value);
         },
         MgrEvent::ExperienceSync {
             exp_key,
@@ -857,5 +865,66 @@ mod tests {
             },
         );
         assert_eq!(mgr.cluster_size(), 1);
+    }
+
+    /// ADR-017：入站 `StateProposal` 必须被保留并投递到入站总线。
+    ///
+    /// 这条断言锁的是「集群策略权重能不能从对端到达本地」——此前该分支
+    /// 返回 `None`，于是整条联邦策略路径在不报错的情况下永远收不到数据。
+    #[test]
+    fn test_proto_to_mgr_event_keeps_inbound_state_proposal() {
+        let proto = ProtoEvent {
+            event: Some(
+                sisyphus_bridge_api::cluster_proto::cluster_event::Event::StateProposal(
+                    sisyphus_bridge_api::cluster_proto::StateProposal {
+                        key: "strategy-weights".into(),
+                        value: vec![7, 8, 9],
+                        vector_clock: Default::default(),
+                    },
+                ),
+            ),
+        };
+
+        let mgr = proto_to_mgr_event(proto).expect("StateProposal 不应被丢弃");
+        match mgr {
+            MgrEvent::StateProposal { key, value } => {
+                assert_eq!(key, "strategy-weights");
+                assert_eq!(value, vec![7, 8, 9]);
+            },
+            other => panic!("expected StateProposal, got {other:?}"),
+        }
+    }
+
+    /// 入站 `StateProposal` 必须出现在 `subscribe_inbound()` 上，
+    /// 且**不得**回灌到本地广播通道（否则拨号器会把它转发回集群）。
+    #[tokio::test]
+    async fn test_apply_mgr_event_delivers_state_proposal_to_inbound_only() {
+        let mgr = Arc::new(PeerManager::new("node-a", Duration::from_secs(30)));
+        let mut inbound = mgr.subscribe_inbound();
+        let mut local = mgr.subscribe();
+
+        apply_mgr_event(
+            &mgr,
+            MgrEvent::StateProposal {
+                key: "strategy-weights".into(),
+                value: vec![1, 2],
+            },
+        );
+
+        let evt = inbound.recv().await.expect("入站通道应收到 StateProposal");
+        match evt {
+            MgrEvent::StateProposal { key, value } => {
+                assert_eq!(key, "strategy-weights");
+                assert_eq!(value, vec![1, 2]);
+            },
+            other => panic!("expected StateProposal, got {other:?}"),
+        }
+
+        // 本地广播通道不该有这个事件：它已经来自远端。
+        match local.try_recv() {
+            Err(tokio::sync::broadcast::error::TryRecvError::Empty) => {},
+            Ok(other) => panic!("入站事件不得回流到本地广播通道，收到 {other:?}"),
+            Err(e) => panic!("本地通道意外状态: {e:?}"),
+        }
     }
 }

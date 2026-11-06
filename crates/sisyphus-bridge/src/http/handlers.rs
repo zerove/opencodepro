@@ -719,6 +719,16 @@ pub(super) async fn experience_similar_handler(
     }
 }
 
+pub(super) async fn strategy_weights_handler(
+    State(state): State<RestApiState>,
+) -> impl IntoResponse {
+    // v0.4.0 Phase B（ADR-017）：返回本节点 + 已收到的对端策略快照的聚合视图。
+    // 共享视图挂在 MySisyphusBridge 上（而非 RestApiState），避免改动其构造点。
+    // 读守卫在语句结束即释放：`to_json()` 返回自有值，不存在跨 await 持有。
+    let body = state.bridge.strategy_weights().read().to_json();
+    (StatusCode::OK, Json(body)).into_response()
+}
+
 pub(super) async fn roadmap_project_handler(
     State(state): State<RestApiState>,
     method: axum::http::Method,

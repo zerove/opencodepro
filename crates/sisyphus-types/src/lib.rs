@@ -33,6 +33,7 @@ pub mod llm_traits;
 pub mod meta_learner;
 pub mod node;
 pub mod skill;
+pub mod strategy_weights;
 pub mod types;
 
 use async_trait::async_trait;

@@ -767,6 +767,18 @@ fn build_document() -> Result<serde_json::Value, String> {
                 }
             },
 
+            // ── 联邦策略权重（v0.4.0 Phase B，ADR-017）────────────────────
+            "/api/strategy/weights": {
+                "get": {
+                    "summary": "Get the federated strategy weights view",
+                    "description": "Returns the cluster-wide strategy weight snapshot: per-node strategy statistics plus the aggregated view. Each node reports strategy statistics through the StateProposal cluster event and the bridge merges them by generation. An empty view means no node has reported yet.",
+                    "operationId": "getStrategyWeights",
+                    "responses": {
+                        "200": {"description": "Federated strategy weights", "content": {"application/json": {"schema": {"type": "object", "description": "node_count (integer), nodes (array), aggregate (object of strategy stats), best (strategy pick or null)"}}}}
+                    }
+                }
+            },
+
             // ── Roadmap ──────────────────────────────────────────────────
         }
     }));

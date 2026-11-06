@@ -282,8 +282,24 @@ if let Some(shared) = registry.shared_http() {
 | `peers` | — | array | `[]` |
 | `join_timeout_secs` | `SISYPHUS_CLUSTER_JOIN_TIMEOUT_SECS` | integer | 10 |
 | `peer_ttl_secs` | `SISYPHUS_CLUSTER_PEER_TTL_SECS` | integer | 30 |
+| `strategy_sync_interval_secs` | `SISYPHUS_CLUSTER_STRATEGY_SYNC_INTERVAL_SECS` | integer | 60 |
 
-`peer_ttl_secs` 必须 ≥ 5 且严格大于 `join_timeout_secs`。
+`peer_ttl_secs` 必须 ≥ 5 且严格大于 `join_timeout_secs`；
+`strategy_sync_interval_secs` 为 0 时表示「只消费入站策略快照、不主动发布」。
+
+### 集群策略权重同步（ADR-017）
+
+集群启用后，每个节点按周期把本地 `MetaLearner` 的策略统计打包成
+`NodeStrategySnapshot`（`generation` = unix 毫秒），经 `StateProposal` 集群事件
+广播；对端按 `generation` 取新合并进共享视图，聚合结果通过
+`GET /api/strategy/weights` 查看。
+
+| 字段 | 环境变量 | 类型 | 默认 |
+|------|----------|------|------|
+| `strategy_sync_interval_secs` | `SISYPHUS_CLUSTER_STRATEGY_SYNC_INTERVAL_SECS` | integer ≥ 0 | 60 |
+
+发布周期建议 ≥ 1；0 关闭主动发布（保留仅聚合视图的消费者）。发布与收发走同一套
+入站事件总线，避免回环。快照合并幂等、可交换（同节点按更大 `generation` 取新）。
 
 ### `[cluster.federated]` 字段
 
