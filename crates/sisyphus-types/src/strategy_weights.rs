@@ -126,6 +126,20 @@ impl FederatedStrategyWeights {
         }
     }
 
+    /// 移除某个节点的槽位，返回是否真的移除（ADR-017 Amendment 2）。
+    ///
+    /// 语义刻意选择「**丢弃**」而不是「标记离线」：视图回答的问题是
+    /// 「当前集群里哪些策略真的有效」，把一台已下线机器的历史累计留在
+    /// 聚合里，会让推荐结果被一个不再参与工作的节点持续影响。节点重启后
+    /// 会用自己的 `MetaLearner` 重新发布全量快照，数据不会永久丢失。
+    ///
+    /// 注意分区场景：链路短暂断开（`PeerLeft` 由 TTL 或断流触发）会先移除
+    /// 槽位，重连后的下一拍快照再加回。因此聚合值在分区期间会**变小**，
+    /// 这符合「当前视图」而非「历史流水」的定义。
+    pub fn remove_node(&mut self, node_id: &str) -> bool {
+        self.nodes.remove(node_id).is_some()
+    }
+
     /// 已收录的节点数。
     pub fn node_count(&self) -> usize {
         self.nodes.len()
@@ -259,6 +273,35 @@ mod tests {
         let agg = weights.aggregate();
         assert_eq!(agg["depth-first"].uses, 4, "重复合并不得放大 uses");
         assert_eq!(agg["depth-first"].successes, 3);
+    }
+
+    /// 节点离开后槽位必须被回收，且不影响其他节点（Amendment 2）。
+    #[test]
+    fn remove_node_drops_only_that_slot() {
+        let mut weights = FederatedStrategyWeights::default();
+        weights.merge(snapshot("node-a", 1, &[("depth-first", 2, 2, 1.0)]));
+        weights.merge(snapshot("node-b", 1, &[("hybrid", 3, 1, 2.0)]));
+        assert_eq!(weights.node_count(), 2);
+
+        assert!(weights.remove_node("node-a"), "已存在的槽位应被移除");
+        assert!(!weights.remove_node("node-a"), "重复移除必须是 no-op");
+        assert!(
+            !weights.remove_node("node-zzz"),
+            "不存在的节点必须返回 false"
+        );
+
+        assert_eq!(weights.node_count(), 1);
+        let agg = weights.aggregate();
+        assert!(
+            !agg.contains_key("depth-first"),
+            "被移除节点的策略不得留在聚合里"
+        );
+        assert_eq!(agg["hybrid"].uses, 3);
+
+        // 重新加入（节点重启）后可再次合并，且从初始 generation 起算。
+        assert!(weights.merge(snapshot("node-a", 1, &[("depth-first", 1, 1, 1.0)])));
+        assert_eq!(weights.node_count(), 2);
+        assert_eq!(weights.aggregate()["depth-first"].uses, 1);
     }
 
     /// 旧 generation 不得覆盖新内容（乱序到达是网络常态）。

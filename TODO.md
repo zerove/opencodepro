@@ -207,8 +207,12 @@
     （`apply_remote` 接受后转发，多跳传播）+ 变异验证 2 处。
     证据：`cluster_integration.rs::test_three_node_strategy_weights_converge_across_chain_topology`、
     `sisyphus_bridge::peer::strategy_weights::tests::apply_remote_forwards_only_accepted_snapshots`。
-  - 剩余：让执行路径消费 `best_strategy`（需先定 `min_uses`）；节点槽位 TTL
-    （消费 `PeerLeft`）；大集群下的转发放大量化（当前全连接 O(N²)）。
+  - Phase D ✅（v0.4.0，ADR-017 Amendment 2）：节点槽位 TTL——收到 `PeerLeft`
+    时丢弃该节点槽位（视图代表当前集群，非历史流水）。证据：
+    `sisyphus_types::strategy_weights::tests::remove_node_drops_only_that_slot`、
+    `sisyphus_bridge::peer::strategy_weights::tests::peer_left_drops_node_slot_and_keeps_others`。
+  - 剩余：让执行路径消费 `best_strategy`（需先定 `min_uses`）；大集群下的转发
+    放大量化（当前全连接 O(N²)）；`Lagged` 漏 `PeerLeft` 时的视图对账。
 - [ ] 多实例协调与共识、经验聚合服务
 
 ### 阶段 7: 近期优先级 (2026-08-31 起, 1-2 周窗口)

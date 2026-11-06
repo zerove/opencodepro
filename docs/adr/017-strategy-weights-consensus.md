@@ -151,6 +151,9 @@ REST handler 共用。挂在这里而不是 `RestApiState`，是为了避免改
   会偏大。**Phase C 仍未加**：要判断「离线」需要消费 `PeerLeft`，而策略视图
   目前只订阅 `StateProposal`。
 
+> **Phase D 修正**：已回收。见文末
+> [Amendment 2](#amendment-22026-11-06phase-d节点离开回收槽位)。
+
 ## Amendment（2026-11-06，Phase C）：多跳转发
 
 ### 触发问题
@@ -211,6 +214,50 @@ if accepted {
 
 还原后：`cluster_integration` 23 passed、`peer::` 61 passed。
 
+## Amendment 2（2026-11-06，Phase D）：节点离开回收槽位
+
+### 触发问题
+
+Phase B/C 的视图只从 `StateProposal` 学习，因此**只增不减**：一台机器退出后，
+它最后一份快照会永久留在 `nodes` 里。`GET /api/strategy/weights` 的
+`node_count` 于是回答的是「历史上曾有几个节点报过数」，而不是「当前集群里有
+几个节点」——两个都合理的语义，但 REST 的调用方（运维面板、健康检查）要的
+是后者。
+
+### 修正
+
+`FederatedStrategyWeights::remove_node` + handler 的 `forget_node`，在收到
+`PeerLeft` 时丢弃该节点的槽位。
+
+**语义选择「丢弃」而不是「标记离线」**：视图回答的是「当前集群里哪些策略真的
+有效」。保留一台已下线机器的历史累计，会让推荐被一个不再参与工作的节点持续
+影响。数据不会永久丢失——节点重启后由它自己的 `MetaLearner` 重新发布全量
+快照，槽位从初始 `generation` 重新开始。
+
+**必须额外订阅本地通道**：这是本次改动唯一的真坑。`PeerLeft` 只出现在
+`event_tx` 上——`on_peer_left` 与 `evict_expired` 都发它，入站通道
+`inbound_tx` 里根本没有。此前 handler 只 `subscribe_inbound()`，也就是说
+「消费 `PeerLeft`」这件事在结构上不可能发生。修正为同时订阅
+`peer_manager.subscribe()` 作为 `members`。
+
+副作用：本地通道上还能看到**自己发布的** `StateProposal`（`publish_once`
+走 `event_tx`）。`members` 分支必须忽略它，否则每拍都会把自己的快照再处理
+一遍（虽然会被合并逻辑当"同 generation"拒掉，但会白跑一遍反序列化与日志）。
+
+### 分区语义
+
+链路断开（TTL 过期或断流）→ `PeerLeft` → 槽位移除；重连后下一拍快照加回。
+因此**聚合值在分区期间会变小**，收敛后才恢复。这符合「当前视图」的定义，
+但与「历史累计」不同，写进 `book/src/rest-api.md` 以免调用方误读。
+
+### 验证
+
+| 变异 | 预期失败用例 | 结果 |
+|------|--------------|------|
+| `PeerLeft` 分支不调用 `forget_node` | `peer::strategy_weights::tests::peer_left_drops_node_slot_and_keeps_others` | ✅ **稳定失败**（「必须触发槽位回收，实际仍剩 2 个节点」） |
+
+还原后：`peer::strategy_weights` 7 passed、`sisyphus-types` 该模块 10 passed。
+
 ## 实施结果（2026-11-06）
 
 | 位置 | 内容 |
@@ -229,6 +276,8 @@ if accepted {
 | `crates/sisyphus-bridge/tests/strategy_weights_rest_test.rs` | REST 端点接线用例 2 个（空视图 200 / 合并视图 JSON 契约） |
 | `crates/sisyphus-bridge/src/peer/strategy_weights.rs`（Amendment） | `apply_remote` 接受后转发（多跳传播）+ 单测 `apply_remote_forwards_only_accepted_snapshots` |
 | `crates/sisyphus-bridge/tests/cluster_integration.rs`（Amendment） | 3 节点链式拓扑收敛用例 `test_three_node_strategy_weights_converge_across_chain_topology` |
+| `crates/sisyphus-types/src/strategy_weights.rs`（Amendment 2） | `remove_node` + 单测 `remove_node_drops_only_that_slot` |
+| `crates/sisyphus-bridge/src/peer/strategy_weights.rs`（Amendment 2） | `forget_node` + 订阅本地成员通道 + 单测 `peer_left_drops_node_slot_and_keeps_others` |
 | `config.example.toml` / `book/src/configuration.md` | `strategy_sync_interval_secs` 文档 |
 | `book/src/rest-api.md` | `GET /api/strategy/weights` 响应示例与语义说明 |
 
@@ -246,6 +295,7 @@ if accepted {
 | `strategy_weights_rest_test` | ✅ 2 passed（空视图返回 200 而非 404；合并视图的 `node_count` / 聚合求和 / `best` 契约） |
 | `cluster_integration`（Phase C） | ✅ 23 passed（新增 3 节点链式收敛用例：含线上重放幂等断言） |
 | `peer::strategy_weights`（Phase C） | ✅ 6 passed（新增 `apply_remote_forwards_only_accepted_snapshots`） |
+| `peer::strategy_weights`（Amendment 2） | ✅ 7 passed（新增 `peer_left_drops_node_slot_and_keeps_others`，走真实 `on_peer_left` → 本地通道 → handler） |
 | `webui_contract` | ✅ 2 passed |
 | `openapi_live_contract` | ✅ 3 passed（新路由必须进 OpenAPI，否则 `every_route_is_documented` 失败） |
 | `cargo fmt --all` | ✅ 无 diff |
@@ -292,10 +342,14 @@ if accepted {
 
 - **Phase C 已完成**（Amendment）：3 节点链式拓扑收敛 + 线上重放幂等已由
   `cluster_integration` 覆盖，两处变异验证过。**未覆盖**：乱序到达（已被
-  `generation` 语义覆盖于单测）、节点下线后槽位不回收的影响评估。
+  `generation` 语义覆盖于单测）。
+- **Phase D 已完成**（Amendment 2）：节点离开回收槽位。**未覆盖**：集群整体
+  重启（所有节点同时 `PeerLeft` 后视图归零，再由各自快照重建）的端到端用例。
 - **转发放大未量化**：全连接拓扑下 O(N²) 次发送只在 3 节点上验证过；
   更大集群需要先量化再决定是否改为按对端定向转发。
 - **执行路径尚未消费聚合结果**：目前只有 REST 视图，`best_strategy` 没有接入
   策略选择。接入前必须先定 `min_uses` 与「集群推荐 vs 本地经验」的优先级。
-- **节点槽位无 TTL**（见「负面」）。
+- **节点槽位 TTL 已加**（Amendment 2），但溢出的 `Lagged` 会漏掉 `PeerLeft`
+  → 槽位残留（已记 warn，未做对账）。治本方案是用 `list_peers()` 定期
+  对账视图里的节点集合。
 - **全量快照**：策略名规模暴涨时需改增量或 top-K（`/v2`）。

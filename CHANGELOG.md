@@ -114,6 +114,26 @@
     **变异验证 2 处**（删转发 → 链式用例失败且诊断信息指出「node-a 停在 2 节点」；
     改为无条件转发 → 单测失败）还原后全绿。
 
+- **策略视图回收离线节点槽位**（v0.4.0 Phase D，ADR-017 Amendment 2）：
+  此前 `GET /api/strategy/weights` 的 `node_count` 只增不减，机器退出后其最后
+  一份快照永久留在视图里——回答的是「历史上曾有几个节点报过数」而非「当前有
+  几个」。现在收到 `PeerLeft` 时**丢弃**该节点槽位（不是标记离线）：视图代表
+  当前集群里真正有效的策略，节点重启后由自己的 `MetaLearner` 全量快照加回。
+  - 关键坑：`PeerLeft` 只出现在**本地**通道——`on_peer_left` 与
+    `evict_expired` 都发 `event_tx`，入站通道 `inbound_tx` 里没有。handler
+    此前只订阅入站，「消费 `PeerLeft`」在结构上不可能发生。现在额外订阅
+    `peer_manager.subscribe()` 作为成员通道，并忽略本地通道上的自己的
+    `StateProposal`（避免每拍重复处理自己的快照）。
+  - 语义变化：分区期间 `node_count` / `aggregate` 会**先变小**，重连后恢复
+    （已写入 `book/src/rest-api.md`）。
+  - 新增 `FederatedStrategyWeights::remove_node` + 单测
+    `remove_node_drops_only_that_slot`；handler 侧单测
+    `peer_left_drops_node_slot_and_keeps_others` 走真实
+    `on_peer_left` → 本地通道 → handler 全链路。
+  - 验证：`peer::strategy_weights` **7 passed**、`sisyphus-types` 策略模块
+    **10 passed**；**变异验证 1 处**（`PeerLeft` 分支不调 `forget_node` →
+    用例稳定失败并打印「实际仍剩 2 个节点」）还原后全绿。
+
 <!-- 下一轮的变更从这里开始写。发版时整段改名为 `## [vX.Y.Z] - <日期>`，
      并在其**之前**插入新的空 `[Unreleased]` 段（见上方发布流程）。 -->
 

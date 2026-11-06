@@ -122,6 +122,23 @@ impl StrategyWeightsHandler {
         accepted
     }
 
+    /// 节点离开时回收其槽位，返回是否真的移除了槽位（ADR-017 Amendment 2）。
+    ///
+    /// 语义见 [`FederatedStrategyWeights::remove_node`]：视图代表**当前**集群，
+    /// 不保留已下线节点的历史累计。分区期间会先移除、重连后由下一拍快照加回。
+    fn forget_node(&self, node_id: &str) -> bool {
+        let removed = self.shared.write().remove_node(node_id);
+        if removed {
+            tracing::info!(node_id = %node_id, "strategy weights: dropped slot of departed node");
+        } else {
+            tracing::trace!(
+                node_id = %node_id,
+                "strategy weights: peer left without a strategy slot"
+            );
+        }
+        removed
+    }
+
     /// 处理一条入站 `StateProposal`，返回是否被合并。
     ///
     /// 返回 `false` 的情况都是**正常**的（key 不匹配 / 自回环 / 旧 generation），
@@ -192,6 +209,11 @@ impl StrategyWeightsHandler {
     pub fn spawn(self, mut shutdown_rx: broadcast::Receiver<()>) -> JoinHandle<()> {
         let peer_manager = self.peer_manager.clone();
         let mut events = peer_manager.subscribe_inbound();
+        // 成员事件（PeerLeft/PeerJoined）只出现在**本地**通道上：
+        // `on_peer_left` 与 `evict_expired` 都发到 `event_tx`，
+        // 入站通道 `inbound_tx` 里根本没有它们。只订阅入站会让「节点下线后
+        // 回收槽位」变成永远不触发——又一个「代码看着接好了」的坑。
+        let mut members = peer_manager.subscribe();
 
         let mut ticker = if self.publish_interval.is_zero() {
             None
@@ -215,6 +237,36 @@ impl StrategyWeightsHandler {
                     }
                     _ = tick(&mut ticker) => {
                         self.publish_once();
+                    }
+                    result = members.recv() => {
+                        match result {
+                            Ok(MgrEvent::PeerLeft { node_id, reason }) => {
+                                tracing::debug!(
+                                    node_id = %node_id,
+                                    reason = %reason,
+                                    "strategy weights: peer left"
+                                );
+                                self.forget_node(&node_id);
+                            },
+                            // 本地通道上还会看到自己发布的 StateProposal（publish_once
+                            // 走 event_tx）。策略合并只认入站事件，这里必须忽略，
+                            // 否则每拍都会把自己的快照再处理一遍。
+                            Ok(_) => {},
+                            Err(broadcast::error::RecvError::Closed) => {
+                                tracing::error!(
+                                    "StrategyWeightsHandler: local channel closed, stopping"
+                                );
+                                break;
+                            },
+                            Err(broadcast::error::RecvError::Lagged(n)) => {
+                                // 丢成员事件意味着可能漏掉 PeerLeft → 槽位残留。
+                                // 记 warn 而不是静默：残留会体现为聚合里多一个节点。
+                                tracing::warn!(
+                                    dropped = n,
+                                    "StrategyWeightsHandler: local channel lagged"
+                                );
+                            },
+                        }
                     }
                     result = events.recv() => {
                         match result {
@@ -409,6 +461,53 @@ mod tests {
             "损坏载荷不得被接受"
         );
         assert_eq!(shared.read().node_count(), 0);
+    }
+
+    /// 节点离开后必须回收其槽位，且只影响该节点（ADR-017 Amendment 2）。
+    ///
+    /// 走真实装配：`on_peer_left` 把 `PeerLeft` 发到本地通道，handler 的
+    /// `members` 分支消费它。只测 `remove_node` 是不够的——入站通道里
+    /// 根本没有成员事件，若忘了订阅本地通道，单测全绿而功能永不触发。
+    #[tokio::test]
+    async fn peer_left_drops_node_slot_and_keeps_others() {
+        let shared = Arc::new(RwLock::new(FederatedStrategyWeights::default()));
+        let (manager, h) = handler("node-a", temp_learner("ttl"), shared.clone());
+
+        // 视图里已有两个远端节点（模拟此前收到的快照）。
+        let remote = |node: &str| NodeStrategySnapshot::from_insight(node, 10, &empty_insight());
+        assert!(shared.write().merge(remote("node-b")));
+        assert!(shared.write().merge(remote("node-c")));
+        assert_eq!(shared.read().node_count(), 2);
+
+        // 先让 node-b 进入成员表，否则 `on_peer_left` 不会发事件。
+        assert!(
+            manager.on_peer_joined(crate::peer::manager::PeerInfo::new("node-b", "127.0.0.1:1"))
+        );
+
+        let (shutdown_tx, shutdown_rx) = broadcast::channel(1);
+        let _handle = h.with_interval(Duration::ZERO).spawn(shutdown_rx);
+
+        manager.on_peer_left("node-b", "test_disconnect");
+
+        let dropped = tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                if shared.read().node_count() == 1 {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await;
+        assert!(
+            dropped.is_ok(),
+            "PeerLeft 必须触发槽位回收，实际仍剩 {} 个节点",
+            shared.read().node_count()
+        );
+        assert!(
+            shared.read().node_snapshot("node-c").is_some(),
+            "只应移除 node-b，node-c 的槽位必须保留"
+        );
+        drop(shutdown_tx);
     }
 
     /// 现有快照不会被「同一节点更旧的 generation」覆盖（乱序到达）。
