@@ -211,8 +211,12 @@
     时丢弃该节点槽位（视图代表当前集群，非历史流水）。证据：
     `sisyphus_types::strategy_weights::tests::remove_node_drops_only_that_slot`、
     `sisyphus_bridge::peer::strategy_weights::tests::peer_left_drops_node_slot_and_keeps_others`。
-  - 剩余：让执行路径消费 `best_strategy`（需先定 `min_uses`）；大集群下的转发
-    放大量化（当前全连接 O(N²)）；`Lagged` 漏 `PeerLeft` 时的视图对账。
+  - Phase E ✅（v0.4.0，ADR-017 Amendment 3）：执行路径消费 `best_strategy`
+    （`[cluster.strategy_selection]`，默认关闭，`min_uses = 5`；决策矩阵见
+    `sisyphus_types::strategy_weights::select_strategy`）。
+    证据：`strategy_weights::tests` 决策矩阵 10 个、`MetaLearningSynthesizer`
+    执行路径单测 3 个（`crates/sisyphus-intel/src/synthesis.rs::tests::test_meta_synth_*`）。
+  - 剩余：大集群下的转发放大量化（当前全连接 O(N²)）；`Lagged` 漏 `PeerLeft` 时的视图对账。
 - [ ] 多实例协调与共识、经验聚合服务
 
 ### 阶段 7: 近期优先级 (2026-08-31 起, 1-2 周窗口)

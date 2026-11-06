@@ -219,7 +219,12 @@ OpenAPI 规范位于 [`/openapi.json`](/openapi.json)，也可通过 Swagger UI 
 - `aggregate` 的 `uses` / `successes` 是**跨节点求和**，因此不等于集群里
   真实执行次数（同一策略在 3 个节点各跑 10 次会显示 30）。
 - `best` 由 `best_strategy(1)` 计算：`min_uses = 1`，成功率相同时按策略名
-  字典序取前。它只是展示，执行路径尚未消费该推荐。
+  字典序取前。它只是**展示**（v0.3.0）；
+- **执行路径消费**（v0.4.0 Phase E，ADR-017 Amendment 3）：通过
+  `[cluster.strategy_selection] enabled = true` 启用。决策优先级为「本地证据充分
+  → 本地；集群证据充分 → 集群；两侧不足 → 回退本地薄证据」，默认 `min_uses = 5`。
+  启用路径下 REST 的 `best` 只是**候选**（`min_uses = 1`），实际执行时以
+  `min_uses` 为准。
 - **`nodes` 只含当前已知的节点**：收到 `PeerLeft`（对端断流或 TTL 过期）时该
   节点的槽位会被**丢弃**，而不是标记离线。因此分区期间 `node_count` 与
   `aggregate` 会**先变小**，重连后由该节点下一拍快照加回。视图回答的是

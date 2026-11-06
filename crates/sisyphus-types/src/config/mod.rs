@@ -352,6 +352,12 @@ impl Config {
         if let Some(v) = env_u64("SISYPHUS_CLUSTER_STRATEGY_SYNC_INTERVAL_SECS") {
             self.cluster.strategy_sync_interval_secs = v;
         }
+        if let Some(v) = env_bool("SISYPHUS_CLUSTER_STRATEGY_SELECTION_ENABLED") {
+            self.cluster.strategy_selection.enabled = v;
+        }
+        if let Some(v) = env_u64("SISYPHUS_CLUSTER_STRATEGY_SELECTION_MIN_USES") {
+            self.cluster.strategy_selection.min_uses = v;
+        }
         if let Some(v) = env_bool("SISYPHUS_CLUSTER_FEDERATED_ENABLED") {
             self.cluster.federated.enabled = v;
         }
@@ -950,6 +956,45 @@ deviation_weight = 0.2
         let mut config = Config::default();
         config.apply_env_overrides();
         assert_eq!(config.cluster.strategy_sync_interval_secs, 25);
+    }
+
+    /// 执行路径消费集群权重：env 覆盖 + 默认关闭。
+    #[test]
+    fn test_apply_env_overrides_cluster_strategy_selection() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        static PAIRS: [(&str, &str); 2] = [
+            ("SISYPHUS_CLUSTER_STRATEGY_SELECTION_ENABLED", "true"),
+            ("SISYPHUS_CLUSTER_STRATEGY_SELECTION_MIN_USES", "9"),
+        ];
+        // SAFETY: ENV_LOCK 已串行化同二进制的环境变量测试。
+        let _env = unsafe { crate::env_guard::env_var_guards(&PAIRS) };
+
+        let mut config = Config::default();
+        assert!(!config.cluster.strategy_selection.enabled, "默认必须关闭");
+        config.apply_env_overrides();
+        assert!(config.cluster.strategy_selection.enabled);
+        assert_eq!(config.cluster.strategy_selection.min_uses, 9);
+    }
+
+    /// 启用后 `min_uses = 0` 必须被校验拒绝；未启用时同一取值不影响启动。
+    #[test]
+    fn test_cluster_strategy_selection_validation() {
+        let mut config = Config::default();
+        config.cluster.strategy_selection.min_uses = 0;
+        assert!(
+            config.cluster.validate().is_ok(),
+            "未启用时不应因不参与判定的字段拦住启动"
+        );
+
+        config.cluster.strategy_selection.enabled = true;
+        let err = config.cluster.validate().expect_err("启用后 min_uses = 0 必须被拒");
+        assert!(
+            err.to_string().contains("strategy_selection.min_uses"),
+            "错误信息应指明是哪个字段：{err}"
+        );
+
+        config.cluster.strategy_selection.min_uses = 1;
+        assert!(config.cluster.validate().is_ok(), "1 是合法下限");
     }
 
     /// 策略权重同步周期默认值（60），且 0 表示「只收不发」是合法的。

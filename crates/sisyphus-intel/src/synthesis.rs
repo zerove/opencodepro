@@ -438,9 +438,24 @@ pub async fn synthesize_composite(
 }
 
 /// Meta Learning Synthesizer.
+///
+/// 默认只依据本地 `MetaLearner`。装上 [`Self::with_federated_selection`] 后，
+/// 当本地证据不足时可以改用集群聚合出的策略（v0.4.0 Phase E，ADR-017
+/// Amendment 3）。
 pub struct MetaLearningSynthesizer {
     pub inner: Arc<dyn FlowSynthesizer>,
     pub meta_learner: Arc<parking_lot::Mutex<sisyphus_tools_llm_tools::meta_learner::MetaLearner>>,
+    /// 集群策略权重视图。`None` = 不消费集群证据。
+    ///
+    /// 与 `StrategyWeightsHandler` 共享同一个 `Arc`：handler 写（本地发布 /
+    /// 入站合并），这里只读。锁序固定为「先 `meta_learner`、后视图」，且都在
+    /// `await` 之前释放——`parking_lot` 的守卫不是 Send，跨 await 也过不了
+    /// clippy 的 `await_holding_lock`。
+    federated_weights: Option<
+        Arc<parking_lot::RwLock<sisyphus_types::strategy_weights::FederatedStrategyWeights>>,
+    >,
+    /// 决策优先级与证据门槛。
+    selection: sisyphus_types::strategy_weights::StrategySelectionConfig,
 }
 
 impl MetaLearningSynthesizer {
@@ -452,6 +467,73 @@ impl MetaLearningSynthesizer {
         Self {
             inner,
             meta_learner,
+            federated_weights: None,
+            selection: sisyphus_types::strategy_weights::StrategySelectionConfig::default(),
+        }
+    }
+
+    /// 接入集群策略权重视图（v0.4.0 Phase E，ADR-017 Amendment 3）。
+    ///
+    /// `config.enabled = false` 时与不调用本方法完全等价：关闭的开关必须真的
+    /// 关闭，而不是「读了但不采纳」。
+    pub fn with_federated_selection(
+        mut self,
+        weights: Arc<
+            parking_lot::RwLock<sisyphus_types::strategy_weights::FederatedStrategyWeights>,
+        >,
+        config: sisyphus_types::strategy_weights::StrategySelectionConfig,
+    ) -> Self {
+        self.federated_weights = Some(weights);
+        self.selection = config;
+        self
+    }
+
+    /// 计算本次执行要提示的策略（纯决策，见 `select_strategy`）。
+    fn decide_strategy(
+        &self,
+        goal: &str,
+    ) -> Option<sisyphus_types::strategy_weights::StrategyDecision> {
+        use sisyphus_types::strategy_weights::{select_strategy, StrategyStat};
+
+        // 本地侧：先取「最优策略名」，再取该策略的统计。两者取自同一把锁的
+        // 同一次持锁区间，避免中间被 `record_outcome` 插入而看到半新半旧。
+        let local = {
+            let ml = self.meta_learner.lock();
+            ml.best_strategy_params(&serde_json::json!({ "goal": goal })).map(|(name, params)| {
+                let stats = ml.strategy_stats(&name);
+                (
+                    name,
+                    params,
+                    StrategyStat {
+                        uses: stats.total_uses,
+                        successes: stats.successes,
+                        avg_duration_secs: stats.avg_duration,
+                    },
+                )
+            })
+        };
+
+        // 集群侧只在启用时读锁。
+        let cluster = if self.selection.enabled {
+            self.federated_weights
+                .as_ref()
+                .and_then(|view| view.read().best_strategy(self.selection.effective_min_uses()))
+        } else {
+            None
+        };
+
+        let params = local.as_ref().map(|(_, params, _)| params.clone());
+        let decision = select_strategy(
+            local.as_ref().map(|(name, _, stat)| (name.as_str(), *stat)),
+            cluster,
+            &self.selection,
+        );
+        // 参数只对本地来源有意义：集群快照不同步参数。
+        match decision {
+            Some(d) if d.source == sisyphus_types::strategy_weights::StrategySource::Local => {
+                Some(d.with_params(params.unwrap_or_else(|| serde_json::json!({}))))
+            },
+            other => other,
         }
     }
 }
@@ -466,18 +548,37 @@ impl FlowSynthesizer for MetaLearningSynthesizer {
         mode: sisyphus_types::WorkMode,
         insights: Option<&str>,
     ) -> Result<SynthesisResult, sisyphus_types::IntelError> {
-        let best_strategy = {
-            let ml = self.meta_learner.lock();
-            ml.best_strategy_params(&serde_json::json!({ "goal": goal }))
+        let decision = self.decide_strategy(goal);
+
+        // 本地路径保持原有字符串不变（外部可能据此做匹配/断言）；集群路径用
+        // 独立文案，并在提示里带上样本量——否则模型无从判断推荐的可信度。
+        let augmented_goal = match decision.as_ref() {
+            Some(d) if d.source == sisyphus_types::strategy_weights::StrategySource::Cluster => {
+                format!(
+                    "Goal: {}\n(Hint: Based on cluster-wide evidence ({} successes out of {} runs across all nodes, {:.0}% success), the strategy '{}' is recommended for similar goals)",
+                    goal,
+                    d.successes,
+                    d.uses,
+                    d.success_rate() * 100.0,
+                    d.strategy
+                )
+            },
+            Some(d) => format!(
+                "Goal: {}\n(Hint: Based on historical success, the strategy '{:?}' is recommended for similar goals)",
+                goal,
+                (d.strategy.as_str(), d.params.clone().unwrap_or_else(|| serde_json::json!({})))
+            ),
+            None => goal.to_string(),
         };
 
-        let augmented_goal = if let Some(ref strategy) = best_strategy {
-            format!("Goal: {}\n(Hint: Based on historical success, the strategy '{:?}' is recommended for similar goals)", goal, strategy)
-        } else {
-            goal.to_string()
-        };
-
-        tracing::info!(goal = %goal, hint = ?best_strategy, "Synthesizing with meta-learning hint");
+        tracing::info!(
+            goal = %goal,
+            strategy = decision.as_ref().map(|d| d.strategy.as_str()),
+            source = decision.as_ref().map(|d| d.source.as_str()),
+            uses = decision.as_ref().map(|d| d.uses),
+            success_rate = decision.as_ref().map(|d| d.success_rate()),
+            "Synthesizing with meta-learning hint"
+        );
 
         self.inner.synthesize(&augmented_goal, context, project_id, mode, insights).await
     }
@@ -848,5 +949,220 @@ mod tests {
             .unwrap();
         // 回退到 "default" 单节点
         assert_eq!(result.graph.graph.node_count(), 1);
+    }
+
+    // -----------------------------------------------------------------------
+    // MetaLearningSynthesizer 消费集群策略权重（v0.4.0 Phase E，ADR-017 Amendment 3）
+    // -----------------------------------------------------------------------
+
+    struct CapturingSynthesizer {
+        augmented_goals: Arc<parking_lot::Mutex<Vec<String>>>,
+    }
+
+    #[async_trait::async_trait]
+    impl FlowSynthesizer for CapturingSynthesizer {
+        async fn synthesize(
+            &self,
+            goal: &str,
+            _context: &ExecutionContext,
+            _project_id: &str,
+            _mode: sisyphus_types::WorkMode,
+            _insights: Option<&str>,
+        ) -> Result<SynthesisResult, sisyphus_types::IntelError> {
+            let mut goals = self.augmented_goals.lock();
+            goals.push(goal.to_string());
+            Err(sisyphus_types::IntelError::SynthesisFailed {
+                goal: goal.to_string(),
+                reason: "captured".to_string(),
+            })
+        }
+    }
+
+    fn capturing_syn() -> Arc<CapturingSynthesizer> {
+        Arc::new(CapturingSynthesizer {
+            augmented_goals: Arc::new(parking_lot::Mutex::new(Vec::new())),
+        })
+    }
+
+    fn temp_meta_learner(
+    ) -> Arc<parking_lot::Mutex<sisyphus_tools_llm_tools::meta_learner::MetaLearner>> {
+        let dir = tempfile::tempdir().expect("temp dir").keep().to_string_lossy().into_owned();
+        Arc::new(parking_lot::Mutex::new(
+            sisyphus_tools_llm_tools::meta_learner::MetaLearner::new(&dir),
+        ))
+    }
+
+    fn record(
+        meta_learner: &Arc<parking_lot::Mutex<sisyphus_tools_llm_tools::meta_learner::MetaLearner>>,
+        strategy: &str,
+        uses: u64,
+        successes: u64,
+    ) {
+        let mut ml = meta_learner.lock();
+        for i in 0..uses {
+            ml.record_outcome(sisyphus_types::MetaLearningSample {
+                context: serde_json::json!({ "goal": "fetch ai news" }),
+                strategy: strategy.into(),
+                params: serde_json::json!({}),
+                success: i < successes,
+                duration_secs: 1.0,
+                timestamp: 0,
+            })
+            .expect("record outcome");
+        }
+    }
+
+    fn capture_syn(
+        meta_learner: Arc<parking_lot::Mutex<sisyphus_tools_llm_tools::meta_learner::MetaLearner>>,
+        weights: Arc<
+            parking_lot::RwLock<sisyphus_types::strategy_weights::FederatedStrategyWeights>,
+        >,
+        selection: sisyphus_types::strategy_weights::StrategySelectionConfig,
+    ) -> (
+        Arc<MetaLearningSynthesizer>,
+        Arc<parking_lot::Mutex<Vec<String>>>,
+    ) {
+        let capturing = capturing_syn();
+        let augmented_goals = capturing.augmented_goals.clone();
+        let inner: Arc<dyn FlowSynthesizer> = capturing;
+        let syn = MetaLearningSynthesizer::new(inner, meta_learner.clone());
+        (
+            Arc::new(syn.with_federated_selection(weights, selection)),
+            augmented_goals,
+        )
+    }
+
+    async fn last_augmented_goal(
+        syn: &Arc<MetaLearningSynthesizer>,
+        augmented_goals: &Arc<parking_lot::Mutex<Vec<String>>>,
+    ) -> String {
+        let _ = syn
+            .synthesize(
+                "fetch ai news",
+                &ExecutionContext::new(),
+                "test",
+                sisyphus_types::WorkMode::Standard,
+                None,
+            )
+            .await;
+        augmented_goals.lock().pop().expect("augmented goal should have been captured")
+    }
+
+    fn cluster_view(
+        cluster_strategies: &[(&str, u64, u64)],
+    ) -> Arc<parking_lot::RwLock<sisyphus_types::strategy_weights::FederatedStrategyWeights>> {
+        let view = Arc::new(parking_lot::RwLock::new(
+            sisyphus_types::strategy_weights::FederatedStrategyWeights::default(),
+        ));
+        if let Some((name, uses, successes)) = cluster_strategies.iter().max_by_key(|(_, u, _)| *u)
+        {
+            let insight = sisyphus_types::LearningInsight {
+                total_samples: *uses,
+                overall_success_rate: if *uses > 0 {
+                    *successes as f64 / *uses as f64
+                } else {
+                    0.0
+                },
+                strategies: vec![sisyphus_types::StrategyInsight {
+                    strategy: (*name).to_string(),
+                    total_uses: *uses,
+                    successes: *successes,
+                    failures: *uses - *successes,
+                    avg_duration_secs: 2.0,
+                    success_rate: if *uses > 0 {
+                        *successes as f64 / *uses as f64
+                    } else {
+                        0.0
+                    },
+                }],
+                trend: "stable".into(),
+            };
+            let snapshot = sisyphus_types::strategy_weights::NodeStrategySnapshot::from_insight(
+                "node-x", 1, &insight,
+            );
+            view.write().merge(snapshot);
+        }
+        view
+    }
+
+    #[tokio::test]
+    async fn test_meta_synth_disabled_uses_local_only() {
+        let ml = temp_meta_learner();
+        record(&ml, "local-strong", 10, 10);
+
+        let (syn, augmented_goals) = capture_syn(
+            ml.clone(),
+            cluster_view(&[]),
+            sisyphus_types::strategy_weights::StrategySelectionConfig::default(),
+        );
+
+        let goal = last_augmented_goal(&syn, &augmented_goals).await;
+        assert!(
+            goal.contains("Based on historical success"),
+            "关闭时必须用本地提示"
+        );
+        assert!(
+            !goal.contains("cluster-wide evidence"),
+            "关闭时不允许出现集群提示"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_meta_synth_enabled_uses_cluster_when_local_thin() {
+        let ml = temp_meta_learner();
+        // 本地只有 2 个样本 < min_uses=5，证据不足。
+        record(&ml, "local-thin", 2, 2);
+
+        let (syn, augmented_goals) = capture_syn(
+            ml.clone(),
+            cluster_view(&[("cluster-proven", 40, 36)]),
+            sisyphus_types::strategy_weights::StrategySelectionConfig {
+                enabled: true,
+                min_uses: 5,
+            },
+        );
+
+        let goal = last_augmented_goal(&syn, &augmented_goals).await;
+        assert!(
+            goal.contains("cluster-wide evidence"),
+            "应出现集群 hint：{}",
+            goal
+        );
+        assert!(
+            goal.contains("cluster-proven"),
+            "应命中集群推荐策略：{}",
+            goal
+        );
+        assert!(
+            !goal.contains("Based on historical success"),
+            "集群来源不应复用本地提示文案：{}",
+            goal
+        );
+    }
+
+    #[tokio::test]
+    async fn test_meta_synth_enabled_local_sufficient_skips_cluster() {
+        let ml = temp_meta_learner();
+        // 本地 10 个样本 ≥ min_uses=5，证据充分，不应改用集群。
+        record(&ml, "local-strong", 10, 10);
+
+        let (syn, augmented_goals) = capture_syn(
+            ml.clone(),
+            cluster_view(&[("cluster-proven", 40, 36)]),
+            sisyphus_types::strategy_weights::StrategySelectionConfig {
+                enabled: true,
+                min_uses: 5,
+            },
+        );
+
+        let goal = last_augmented_goal(&syn, &augmented_goals).await;
+        assert!(
+            goal.contains("Based on historical success"),
+            "本地充分时应走本地提示"
+        );
+        assert!(
+            !goal.contains("cluster-wide evidence"),
+            "本地充分时不应走集群"
+        );
     }
 }

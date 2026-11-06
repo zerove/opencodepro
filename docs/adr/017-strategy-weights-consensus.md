@@ -1,6 +1,7 @@
 # ADR-017: 集群策略权重同步——每节点快照 + generation 取新
 
-**Status**: Implemented（2026-11-06，v0.4.0 Phase B；同日 Phase C Amendment：多跳转发）
+**Status**: Implemented（2026-11-06，v0.4.0 Phase B；Amendment 2（Phase D）：节点离开回收槽位；
+Amendment 3（Phase E）：执行路径消费集群权重）
 **Deciders**: core team
 **Related**: ADR-009（分布式 v2 架构 / 集群事件总线）、ADR-010（反熵补偿）、ADR-016（联邦经验聚合，Phase A）
 
@@ -258,6 +259,48 @@ Phase B/C 的视图只从 `StateProposal` 学习，因此**只增不减**：一�
 
 还原后：`peer::strategy_weights` 7 passed、`sisyphus-types` 该模块 10 passed。
 
+## Amendment 3（2026-11-06，Phase E）：执行路径消费集群权重
+
+### 背景
+
+Phase B 落地「节点快照 + 集群聚合视图 + REST 暴露」，但**聚合结果从未进入
+执行路径**：`crates/sisyphus-core/src/strategic_manager/cognitive_loop.rs` 里
+`best_strategy_params` 的结果被赋值进未使用变量（`_current_strategy` /
+`_current_params`），真正产生提示的入口是 `sisyphus-intel` 的
+`MetaLearningSynthesizer::synthesize`，它只看本地 `MetaLearner`。
+
+结果是：即使三个节点已经通过 Phase C 收敛到一致视图，每次执行仍然只参考
+本机历史——联邦只在「对外展示」生效，没有实际把「更好的策略」交给执行。
+
+### 决策
+
+通过配置 `[cluster.strategy_selection]`（默认 `enabled = false`）把消费接上。
+新增纯函数 `sisyphus_types::strategy_weights::select_strategy`，显式锁定优先级：
+
+1. 本地证据充分（`local.uses >= min_uses`）→ 用本地；
+2. 集群证据充分（`cluster.uses >= min_uses`）→ 用集群；
+3. 两侧不足 → 回退本地薄证据；否则 `None`。
+
+`MetaLearningSynthesizer` 在决策后拼入提示文本；本地来源保持原提示字符串不变，
+集群来源使用独立文案并带样本量（让 LLM 能判断推荐的可信度）。
+
+### 取舍
+
+- **默认关闭**：v0.3.0 行为零回归；联邦增强是显式、可回退的运营开关。
+- **`min_uses = 5` 默认**：3 次成功在二项分布下置信下界仅 ~0.29，把这种量级当
+  结论正是 ADR-017 要避免的错误。
+- **门槛按来源各自适用**：本地 10 次与集群 40 次，各自用自己的阈值判；用聚合总数
+  同时判会导致「同一策略在 3 个节点各跑 10 次」（聚合 30）被误判。
+
+### 验证
+
+- 新增纯函数单测 10 个：默认关闭 / 关闭忽略集群 / 本地充分胜集群 / 局部薄让位集群 /
+  两侧薄回退本地 / 无本地补位集群 / 无证据 None / 边界含 / 部分 TOML 解析。
+- 新增执行路径单测 3 个（`MetaLearningSynthesizer` + capturing mock）：
+  关闭 → 本地；局部薄 → 集群；本地充分 → 本地。
+- **变异验证 2 处**：启用后忽略本地充分门槛（变 `local.uses >= min_uses` 为恒真）
+  → 本地充分用例稳定失败；两侧不足时回退改给集群 → 回退用例稳定失败。还原后全绿。
+
 ## 实施结果（2026-11-06）
 
 | 位置 | 内容 |
@@ -278,6 +321,8 @@ Phase B/C 的视图只从 `StateProposal` 学习，因此**只增不减**：一�
 | `crates/sisyphus-bridge/tests/cluster_integration.rs`（Amendment） | 3 节点链式拓扑收敛用例 `test_three_node_strategy_weights_converge_across_chain_topology` |
 | `crates/sisyphus-types/src/strategy_weights.rs`（Amendment 2） | `remove_node` + 单测 `remove_node_drops_only_that_slot` |
 | `crates/sisyphus-bridge/src/peer/strategy_weights.rs`（Amendment 2） | `forget_node` + 订阅本地成员通道 + 单测 `peer_left_drops_node_slot_and_keeps_others` |
+| `crates/sisyphus-types/src/strategy_weights.rs`（Amendment 3） | `StrategySelectionConfig` + `StrategyDecision` + `select_strategy` + 10 个决策单测 |
+| `crates/sisyphus-intel/src/synthesis.rs`（Amendment 3） | `MetaLearningSynthesizer::with_federated_selection` + 3 个执行路径单测 |
 | `config.example.toml` / `book/src/configuration.md` | `strategy_sync_interval_secs` 文档 |
 | `book/src/rest-api.md` | `GET /api/strategy/weights` 响应示例与语义说明 |
 
@@ -296,6 +341,8 @@ Phase B/C 的视图只从 `StateProposal` 学习，因此**只增不减**：一�
 | `cluster_integration`（Phase C） | ✅ 23 passed（新增 3 节点链式收敛用例：含线上重放幂等断言） |
 | `peer::strategy_weights`（Phase C） | ✅ 6 passed（新增 `apply_remote_forwards_only_accepted_snapshots`） |
 | `peer::strategy_weights`（Amendment 2） | ✅ 7 passed（新增 `peer_left_drops_node_slot_and_keeps_others`，走真实 `on_peer_left` → 本地通道 → handler） |
+| `strategy_weights::tests`（Amendment 3） | ✅ 20 passed（新增决策矩阵 10 个）；
+  `synthesis::tests::test_meta_synth` 3 passed（新增 3 个） |
 | `webui_contract` | ✅ 2 passed |
 | `openapi_live_contract` | ✅ 3 passed（新路由必须进 OpenAPI，否则 `every_route_is_documented` 失败） |
 | `cargo fmt --all` | ✅ 无 diff |
@@ -345,10 +392,11 @@ Phase B/C 的视图只从 `StateProposal` 学习，因此**只增不减**：一�
   `generation` 语义覆盖于单测）。
 - **Phase D 已完成**（Amendment 2）：节点离开回收槽位。**未覆盖**：集群整体
   重启（所有节点同时 `PeerLeft` 后视图归零，再由各自快照重建）的端到端用例。
+- **Phase E 已完成**（Amendment 3）：执行路径消费集群权重（默认关闭，`min_uses = 5`；
+  决策矩阵见上）。**未覆盖**：启用后跨节点协商（谁的本地证据更强、谁的集群快照更早），
+  当前策略是「本地优先、集群只补位」，天然单参。
 - **转发放大未量化**：全连接拓扑下 O(N²) 次发送只在 3 节点上验证过；
   更大集群需要先量化再决定是否改为按对端定向转发。
-- **执行路径尚未消费聚合结果**：目前只有 REST 视图，`best_strategy` 没有接入
-  策略选择。接入前必须先定 `min_uses` 与「集群推荐 vs 本地经验」的优先级。
 - **节点槽位 TTL 已加**（Amendment 2），但溢出的 `Lagged` 会漏掉 `PeerLeft`
   → 槽位残留（已记 warn，未做对账）。治本方案是用 `list_peers()` 定期
   对账视图里的节点集合。

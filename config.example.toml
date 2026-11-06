@@ -313,6 +313,21 @@ convergence_threshold = 0.15
 # 类型: u64 | 默认: 60
 # strategy_sync_interval_secs = 60
 
+# 执行路径是否消费集群策略权重（v0.4.0 Phase E，ADR-017 Amendment 3）。
+# 默认关闭——关闭时策略提示只依据本地 MetaLearner，与 v0.3.0 行为一致。
+# 环境变量: SISYPHUS_CLUSTER_STRATEGY_SELECTION_ENABLED
+# 环境变量: SISYPHUS_CLUSTER_STRATEGY_SELECTION_MIN_USES
+[cluster.strategy_selection]
+# 是否让执行路径参考集群聚合结果
+# 环境变量: SISYPHUS_CLUSTER_STRATEGY_SELECTION_ENABLED
+# 类型: bool | 默认: false
+# enabled = false
+
+# 判定「证据充分」所需的最小 uses（本地与集群各自适用）
+# 环境变量: SISYPHUS_CLUSTER_STRATEGY_SELECTION_MIN_USES
+# 类型: u64 | 默认: 5
+# min_uses = 5
+
 # 联邦经验聚合（v0.4.0 Phase A）：对入站 peer 经验按质量分过滤。
 # 默认关闭——关闭时入站经验全量进入 CRDT 合并，行为与 v0.3.0 一致。
 [cluster.federated]

@@ -324,3 +324,25 @@ quality = clamp(
 完全一致。仅在 `enabled = true` 时校验这些参数（未启用时它们不参与任何判定）。
 被拒绝的经验会记 `warn` 日志并携带 `quality` / `min_quality_score`，不会静默丢弃。
 参数在启动时装配，热重载不改变已启动的同步处理器。
+
+### `[cluster.strategy_selection]` 字段（v0.4.0 Phase E，ADR-017 Amendment 3）
+
+执行路径消费集群策略权重的开关。`enabled = false`（默认）时策略提示只依据本地
+`MetaLearner`，与 v0.3.0 行为完全一致。
+
+| 字段 | 环境变量 | 类型 | 默认 |
+|------|----------|------|------|
+| `enabled` | `SISYPHUS_CLUSTER_STRATEGY_SELECTION_ENABLED` | bool | **false** |
+| `min_uses` | `SISYPHUS_CLUSTER_STRATEGY_SELECTION_MIN_USES` | integer ≥ 1 | 5 |
+
+启用后（`enabled = true`）的决策优先级（实现见 `sisyphus_types::strategy_weights` 的
+`select_strategy`，纯函数 + 单测锁定）：
+
+1. **本地证据充分**（`local.uses >= min_uses`）→ 用本地；
+   本地样本最能反映本节点模型版本 / 工具链 / 负载，集群证据反而会稀释它。
+2. **集群证据充分**（`cluster.uses >= min_uses`）→ 用集群；
+   这是联邦的收益：新节点本地没有样本时不必自己踩一遍坑。
+3. **两侧都不足** → 回退本地薄证据（有就用）；两边都没有 → 不注入提示。
+
+边界是**含**的（`>=`）：恰好 `min_uses` 个样本就视为充分；`min_uses = 0` 被启动校验
+拒绝（运行时会被 `effective_min_uses()` 静默改成 1，故零值必须显式挡在外）。

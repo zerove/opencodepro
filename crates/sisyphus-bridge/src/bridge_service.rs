@@ -516,12 +516,29 @@ impl MySisyphusBridge {
         let meta_learner = Arc::new(parking_lot::Mutex::new(
             sisyphus_tools_llm_tools::meta_learner::MetaLearner::new(".omo/meta"),
         ));
-        let meta_synthesizer = Arc::new(MetaLearningSynthesizer::new(
-            Arc::new(sisyphus_intel::GoalDrivenSynthesizer::new(
-                tool_executor.clone(),
-            )),
-            meta_learner.clone(),
+        // 联邦策略权重视图（v0.4.0 Phase B/E，ADR-017）：必须**提前**构造。
+        // 此前它只在末尾的 struct literal 里内联创建，synthesizer 拿不到同一个
+        // Arc，于是「执行路径消费集群权重」只能是空话——读的是一份永远为空的
+        // 视图。现在 handler 写、synthesizer 读的是同一份。
+        let strategy_weights = Arc::new(parking_lot::RwLock::new(
+            sisyphus_types::strategy_weights::FederatedStrategyWeights::default(),
         ));
+        let strategy_selection = config_snapshot.cluster.strategy_selection;
+        if strategy_selection.enabled {
+            tracing::info!(
+                min_uses = strategy_selection.min_uses,
+                "Cluster strategy selection enabled: execution path may use federated weights"
+            );
+        }
+        let meta_synthesizer = Arc::new(
+            MetaLearningSynthesizer::new(
+                Arc::new(sisyphus_intel::GoalDrivenSynthesizer::new(
+                    tool_executor.clone(),
+                )),
+                meta_learner.clone(),
+            )
+            .with_federated_selection(strategy_weights.clone(), strategy_selection),
+        );
         let synthesizer = Arc::new(sisyphus_intel::StrategicSopSynthesizer::new(
             meta_synthesizer,
             simulator.clone(),
@@ -743,9 +760,7 @@ impl MySisyphusBridge {
             chaos_fault_counter: Arc::new(AtomicU64::new(0)),
             chaos_fault_type_counters: Arc::new(parking_lot::Mutex::new(HashMap::new())),
             chaos_auto_fix_triggered: Arc::new(AtomicBool::new(false)),
-            strategy_weights: Arc::new(parking_lot::RwLock::new(
-                sisyphus_types::strategy_weights::FederatedStrategyWeights::default(),
-            )),
+            strategy_weights,
         };
 
         let bridge_arc = Arc::new(bridge);

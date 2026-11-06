@@ -134,6 +134,18 @@
     **10 passed**；**变异验证 1 处**（`PeerLeft` 分支不调 `forget_node` →
     用例稳定失败并打印「实际仍剩 2 个节点」）还原后全绿。
 
+- **执行路径消费集群策略权重**（v0.4.0 Phase E，ADR-017 Amendment 3）：联邦只到
+  REST 展示为止。现在通过 `[cluster.strategy_selection]` 接入执行路径（默认关闭）：
+  `MetaLearningSynthesizer` 持共享视图 + 决策配置，由纯函数
+  `select_strategy` 产出 `StrategyDecision`。
+  - 优先级：`min_uses` 本地充分 → 本地；集群充分 → 集群；两侧不足 → 回退本地薄证据。
+  - 本地路径提示文案保持原样；集群路径独立文案并带 `successes / uses` 样本量。
+  - 新增 `[cluster.strategy_selection]`（env `SISYPHUS_CLUSTER_STRATEGY_SELECTION_ENABLED` /
+    `SISYPHUS_CLUSTER_STRATEGY_SELECTION_MIN_USES`，默认 `enabled = false, min_uses = 5`）；
+    启用后 `min_uses = 0` 启动校验拒绝。
+  - 新增单测：`strategy_weights` 决策矩阵 10 个、`MetaLearningSynthesizer` 执行路径
+    单测 3 个；桥接装配把 `strategy_weights` Arc 提前构造并传给 synthesizer。
+
 <!-- 下一轮的变更从这里开始写。发版时整段改名为 `## [vX.Y.Z] - <日期>`，
      并在其**之前**插入新的空 `[Unreleased]` 段（见上方发布流程）。 -->
 

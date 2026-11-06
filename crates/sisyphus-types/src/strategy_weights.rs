@@ -230,6 +230,156 @@ impl FederatedStrategyWeights {
     }
 }
 
+/// 执行路径如何消费集群策略权重（v0.4.0 Phase E，ADR-017 Amendment 3）。
+///
+/// `enabled = false`（默认）时，策略选择完全由本地 `MetaLearner` 决定，
+/// 与 v0.3.0 行为逐字节一致。打开后集群证据只在**本地证据不足**时补位——
+/// 见 [`select_strategy`] 的优先级。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StrategySelectionConfig {
+    /// 是否让执行路径参考集群聚合结果。
+    #[serde(default)]
+    pub enabled: bool,
+    /// 判定「证据充分」所需的最小 `uses`（本地与集群各自适用）。
+    ///
+    /// 默认 5：3 次成功在二项分布下 95% 置信下界仍只有 ~0.29，把这种量级
+    /// 当结论正是 ADR-017 要避免的错误。`0` 会在运行时被当作 1（见
+    /// [`StrategySelectionConfig::effective_min_uses`]），配置校验会拒绝它。
+    #[serde(default = "default_strategy_selection_min_uses")]
+    pub min_uses: u64,
+}
+
+/// 默认最小样本数。
+pub const DEFAULT_STRATEGY_SELECTION_MIN_USES: u64 = 5;
+
+fn default_strategy_selection_min_uses() -> u64 {
+    DEFAULT_STRATEGY_SELECTION_MIN_USES
+}
+
+impl Default for StrategySelectionConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            min_uses: DEFAULT_STRATEGY_SELECTION_MIN_USES,
+        }
+    }
+}
+
+impl StrategySelectionConfig {
+    /// 实际参与比较的阈值（下限 1）。
+    ///
+    /// 单独暴露而不是在内部 `max(1)`，是为了让「配了 0」这件事可被日志/校验
+    /// 观察到——静默修正会让人以为 0 有特殊含义。
+    pub fn effective_min_uses(&self) -> u64 {
+        self.min_uses.max(1)
+    }
+}
+
+/// 策略推荐的证据来源。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StrategySource {
+    /// 仅来自本节点的 `MetaLearner`。
+    Local,
+    /// 来自跨节点聚合（本地证据不足，由集群补位）。
+    Cluster,
+}
+
+impl StrategySource {
+    /// 稳定的短名，用于日志与提示文本。
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Local => "local",
+            Self::Cluster => "cluster",
+        }
+    }
+}
+
+/// 一次策略选择的完整结果（含证据来源与样本量，供日志与提示文本使用）。
+#[derive(Debug, Clone, PartialEq)]
+pub struct StrategyDecision {
+    pub strategy: String,
+    pub source: StrategySource,
+    /// 支撑该决策的样本数（**来源侧**的 uses，不是聚合总数）。
+    pub uses: u64,
+    pub successes: u64,
+    /// 该策略最近一次成功执行所用的参数。
+    ///
+    /// 只有 [`StrategySource::Local`] 会带值——集群快照只同步统计，不同步
+    /// 参数（`NodeStrategySnapshot` 里没有这个字段）。因此 `Cluster` 来源的
+    /// 决策必须回落到空参数，而不是假装知道对端用了什么。
+    pub params: Option<serde_json::Value>,
+}
+
+impl StrategyDecision {
+    /// 成功率；`uses == 0` 时为 0.0。
+    pub fn success_rate(&self) -> f64 {
+        if self.uses == 0 {
+            0.0
+        } else {
+            self.successes as f64 / self.uses as f64
+        }
+    }
+
+    fn new(strategy: &str, source: StrategySource, stat: StrategyStat) -> Self {
+        Self {
+            strategy: strategy.to_string(),
+            source,
+            uses: stat.uses,
+            successes: stat.successes,
+            params: None,
+        }
+    }
+
+    /// 附上本地策略参数（仅 [`StrategySource::Local`] 有意义）。
+    pub fn with_params(mut self, params: serde_json::Value) -> Self {
+        self.params = Some(params);
+        self
+    }
+}
+
+/// 选出本次执行应提示的策略（纯函数，无 IO、无锁）。
+///
+/// 优先级（`enabled = true` 时）：
+/// 1. **本地证据充分**（`local.uses >= min_uses`）→ 用本地。
+///    本地样本最能代表本节点的模型版本/工具链/负载，集群证据反而会把它稀释。
+/// 2. **集群证据充分**（`cluster.uses >= min_uses`）→ 用集群。
+///    这是联邦的收益点：新节点本地没有样本时，不必自己踩一遍坑。
+/// 3. **两边都不足** → 回退本地薄证据（有就用），否则 `None`。
+///    薄证据比没有强，但它排在自己集群旁证之后——这正是「门槛」的含义。
+///
+/// `enabled = false` 时退化为「有本地就用本地，否则 `None`」，不读集群。
+///
+/// `cluster` 由调用方用 `best_strategy(min_uses)` 得到时已过滤过一次；本函数
+/// 仍会再判 `uses >= min_uses`，让它是**自足**的（调用方传未过滤的值也不会
+/// 让弱证据越级）。
+pub fn select_strategy(
+    local: Option<(&str, StrategyStat)>,
+    cluster: Option<(String, StrategyStat)>,
+    config: &StrategySelectionConfig,
+) -> Option<StrategyDecision> {
+    let min_uses = config.effective_min_uses();
+    let cluster_eligible = || cluster.as_ref().filter(|(_, stat)| stat.uses >= min_uses);
+
+    match local {
+        // 关闭联邦时与历史行为一致：有本地证据就用，不看集群。
+        Some((name, stat)) if !config.enabled || stat.uses >= min_uses => {
+            Some(StrategyDecision::new(name, StrategySource::Local, stat))
+        },
+        Some((name, stat)) => match cluster_eligible() {
+            Some((cluster_name, cluster_stat)) => Some(StrategyDecision::new(
+                cluster_name,
+                StrategySource::Cluster,
+                *cluster_stat,
+            )),
+            None => Some(StrategyDecision::new(name, StrategySource::Local, stat)),
+        },
+        None if !config.enabled => None,
+        // 本地完全没有相关样本：允许集群补位（联邦的主要价值所在）。
+        None => cluster_eligible()
+            .map(|(name, stat)| StrategyDecision::new(name, StrategySource::Cluster, *stat)),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -473,5 +623,161 @@ mod tests {
         assert_eq!(json["node_count"], 0);
         assert_eq!(json["nodes"].as_array().expect("nodes 必须是数组").len(), 0);
         assert!(json["best"].is_null());
+    }
+
+    // ── 决策矩阵（Amendment 3）────────────────────────────────────────────
+
+    fn stat(uses: u64, successes: u64) -> StrategyStat {
+        StrategyStat {
+            uses,
+            successes,
+            avg_duration_secs: 1.0,
+        }
+    }
+
+    fn enabled(min_uses: u64) -> StrategySelectionConfig {
+        StrategySelectionConfig {
+            enabled: true,
+            min_uses,
+        }
+    }
+
+    /// 默认关闭：行为必须与 v0.3.0 一致（只看本地，不读集群）。
+    #[test]
+    fn selection_defaults_are_disabled_and_min_uses_five() {
+        let cfg = StrategySelectionConfig::default();
+        assert!(!cfg.enabled, "默认必须关闭，否则升级即改变执行行为");
+        assert_eq!(cfg.min_uses, 5);
+        assert_eq!(cfg.effective_min_uses(), 5);
+
+        // 配了 0 时不能静默当成「没有门槛」以外的含义：实际按 1 处理。
+        assert_eq!(enabled(0).effective_min_uses(), 1);
+    }
+
+    /// 关闭状态下即使本地证据很薄、集群证据很强，也必须选本地。
+    #[test]
+    fn disabled_ignores_cluster_even_with_thin_local_evidence() {
+        let decision = select_strategy(
+            Some(("local-thin", stat(1, 1))),
+            Some(("cluster-strong".to_string(), stat(100, 99))),
+            &StrategySelectionConfig::default(),
+        )
+        .expect("有本地证据就应有决策");
+        assert_eq!(decision.strategy, "local-thin");
+        assert_eq!(decision.source, StrategySource::Local);
+    }
+
+    /// 关闭状态下本地没样本就返回 None——不能因为集群有数据就补位。
+    #[test]
+    fn disabled_without_local_returns_none() {
+        assert!(select_strategy(
+            None,
+            Some(("cluster-strong".to_string(), stat(100, 99))),
+            &StrategySelectionConfig::default(),
+        )
+        .is_none());
+    }
+
+    /// 本地证据充分时优先本地：集群成功率高也不换（本地最能代表本节点环境）。
+    #[test]
+    fn sufficient_local_wins_over_stronger_cluster() {
+        let decision = select_strategy(
+            Some(("local-proven", stat(10, 9))),
+            Some(("cluster-perfect".to_string(), stat(100, 100))),
+            &enabled(5),
+        )
+        .expect("应有决策");
+        assert_eq!(decision.strategy, "local-proven");
+        assert_eq!(decision.source, StrategySource::Local);
+        assert_eq!(decision.uses, 10, "uses 必须是来源侧的样本数，不是聚合总数");
+    }
+
+    /// 本地薄证据让位给集群充分证据——联邦的收益点。
+    #[test]
+    fn thin_local_yields_to_cluster_evidence() {
+        let decision = select_strategy(
+            Some(("local-thin", stat(2, 1))),
+            Some(("cluster-proven".to_string(), stat(40, 30))),
+            &enabled(5),
+        )
+        .expect("应有决策");
+        assert_eq!(decision.strategy, "cluster-proven");
+        assert_eq!(decision.source, StrategySource::Cluster);
+        assert_eq!(decision.uses, 40);
+        assert_eq!(decision.successes, 30);
+    }
+
+    /// 两边都不足时回退本地薄证据，而不是 None，也不是集群。
+    #[test]
+    fn thin_local_and_thin_cluster_falls_back_to_local() {
+        let decision = select_strategy(
+            Some(("local-thin", stat(2, 2))),
+            Some(("cluster-thin".to_string(), stat(3, 3))),
+            &enabled(5),
+        )
+        .expect("薄证据也应给出决策");
+        assert_eq!(decision.strategy, "local-thin");
+        assert_eq!(decision.source, StrategySource::Local);
+    }
+
+    /// 本地完全没有相关样本时，集群证据可以补位（新节点不必自己踩一遍坑）。
+    #[test]
+    fn cluster_backfills_when_local_has_no_samples() {
+        let decision = select_strategy(
+            None,
+            Some(("cluster-proven".to_string(), stat(12, 11))),
+            &enabled(5),
+        )
+        .expect("集群证据充分时应补位");
+        assert_eq!(decision.strategy, "cluster-proven");
+        assert_eq!(decision.source, StrategySource::Cluster);
+        assert!((decision.success_rate() - 11.0 / 12.0).abs() < 1e-9);
+    }
+
+    /// 两边都没有证据 → None（调用方据此使用原始 goal，不注入提示）。
+    #[test]
+    fn no_evidence_returns_none() {
+        assert!(select_strategy(None, None, &enabled(5)).is_none());
+        // 集群有数据但不足门槛，本地也没有 → 仍然 None。
+        assert!(select_strategy(
+            None,
+            Some(("cluster-thin".to_string(), stat(4, 4))),
+            &enabled(5)
+        )
+        .is_none());
+    }
+
+    /// 越过门槛的边界必须严格（`>=`），否则「差一个样本」会被当成充分。
+    #[test]
+    fn min_uses_boundary_is_inclusive() {
+        // 恰好 5 个样本：本地算充分，不换集群。
+        let at_threshold = select_strategy(
+            Some(("local", stat(5, 5))),
+            Some(("cluster".to_string(), stat(50, 50))),
+            &enabled(5),
+        )
+        .expect("应有决策");
+        assert_eq!(at_threshold.source, StrategySource::Local);
+
+        // 4 个样本：不充分，让位给集群。
+        let below_threshold = select_strategy(
+            Some(("local", stat(4, 4))),
+            Some(("cluster".to_string(), stat(5, 5))),
+            &enabled(5),
+        )
+        .expect("应有决策");
+        assert_eq!(below_threshold.source, StrategySource::Cluster);
+    }
+
+    /// 配置必须能从 TOML 局部字段解析出来（`min_uses` 缺省为 5）。
+    #[test]
+    fn config_deserializes_partial_section() {
+        let cfg: StrategySelectionConfig =
+            toml::from_str("enabled = true").expect("部分字段应可解析");
+        assert!(cfg.enabled);
+        assert_eq!(cfg.min_uses, 5);
+
+        let empty: StrategySelectionConfig = toml::from_str("").expect("空表应可解析");
+        assert_eq!(empty, StrategySelectionConfig::default());
     }
 }

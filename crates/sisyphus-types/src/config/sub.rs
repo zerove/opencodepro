@@ -668,6 +668,14 @@ pub struct ClusterConfig {
     /// 默认 `enabled = false`：入站经验全量进入 CRDT 合并，行为与 v0.3.0 一致。
     #[serde(default)]
     pub federated: crate::experience::FederatedAggregatorConfig,
+
+    /// 执行路径是否消费集群策略权重（v0.4.0 Phase E，ADR-017 Amendment 3）。
+    ///
+    /// 默认 `enabled = false`：策略提示只依据本地 `MetaLearner`，与 v0.3.0
+    /// 行为一致。打开后集群聚合结果只在**本地证据不足**时补位，优先级见
+    /// [`crate::strategy_weights::select_strategy`]。
+    #[serde(default)]
+    pub strategy_selection: crate::strategy_weights::StrategySelectionConfig,
 }
 
 fn default_cluster_name() -> String {
@@ -702,6 +710,7 @@ impl Default for ClusterConfig {
             peer_ttl_secs: default_cluster_peer_ttl_secs(),
             strategy_sync_interval_secs: default_strategy_sync_interval_secs(),
             federated: crate::experience::FederatedAggregatorConfig::default(),
+            strategy_selection: crate::strategy_weights::StrategySelectionConfig::default(),
         }
     }
 }
@@ -741,6 +750,14 @@ impl ClusterConfig {
         }
         if self.federated.enabled {
             self.federated.validate()?;
+        }
+        // 与 `federated` 同样的取舍：未启用时不校验，避免「改了个不参与判定的
+        // 值就起不来」。启用后 `min_uses = 0` 必须拒绝——它会让「证据门槛」
+        // 这个概念消失（运行时会被 max(1) 静默改成 1）。
+        if self.strategy_selection.enabled && self.strategy_selection.min_uses == 0 {
+            return Err(TypesError::ConfigValidationError(
+                "cluster.strategy_selection.min_uses must be ≥ 1 when enabled".into(),
+            ));
         }
         Ok(())
     }
