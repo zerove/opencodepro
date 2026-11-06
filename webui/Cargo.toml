@@ -1,6 +1,6 @@
 [package]
 name = "sisyphus-webui"
-version = "0.3.0"
+version = "0.4.0"
 description = "Sisyphus web dashboard (axum + HTMX + SSE + WebSocket)"
 authors = ["Sisyphus Team"]
 license = "MIT"

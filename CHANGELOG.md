@@ -50,6 +50,11 @@
 
 ### Added
 
+
+## [v0.4.0] - 2026-11-06
+
+### Added
+
 - **单机全功能端到端集成测试**（Phase 1 of the single-node full-functionality
   follow-up）：`crates/sisyphus-tests/tests/single_node_full_stack.rs` 新增
   `single_node_full_stack_end_to_end`，在无集群条件下驱动真实 `SisyphusKernel`
@@ -154,6 +159,14 @@
   - 新增单测 `test_peer_manager_state_proposal_broadcast_counter`、
     `publish_skips_broadcast_when_snapshot_unchanged`；**变异验证 2 处**（计数器失效 /
     去抖恒真）稳定失败并还原。
+
+### Verified
+
+- v0.4.0 发布门禁：`cargo test-all` 退出码 0；`cargo check-all`、
+  `cargo fmt --all --check`、`cargo clippy --all-targets -D warnings`、
+  `make audit`、`make todo-audit` 全绿；bridge 侧策略权重集成测试
+  （`cluster_integration` 23 / `strategy_weights_rest_test` 2 /
+  `webui_contract` 2 / `openapi_live_contract` 3）与反熵/混沌用例全绿。
 
 <!-- 下一轮的变更从这里开始写。发版时整段改名为 `## [vX.Y.Z] - <日期>`，
      并在其**之前**插入新的空 `[Unreleased]` 段（见上方发布流程）。 -->
