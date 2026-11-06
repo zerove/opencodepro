@@ -1,6 +1,6 @@
 # ADR-017: 集群策略权重同步——每节点快照 + generation 取新
 
-**Status**: Implemented（2026-11-06，v0.4.0 Phase B）
+**Status**: Implemented（2026-11-06，v0.4.0 Phase B；同日 Phase C Amendment：多跳转发）
 **Deciders**: core team
 **Related**: ADR-009（分布式 v2 架构 / 集群事件总线）、ADR-010（反熵补偿）、ADR-016（联邦经验聚合，Phase A）
 
