@@ -146,6 +146,15 @@
   - 新增单测：`strategy_weights` 决策矩阵 10 个、`MetaLearningSynthesizer` 执行路径
     单测 3 个；桥接装配把 `strategy_weights` Arc 提前构造并传给 synthesizer。
 
+- **联邦转发放大量化 + 发送计数**（v0.4.0 Phase F，ADR-017 遗留收口）：
+  - `PeerManager` 新增累计发送数 `state_proposal_broadcasts`（与 `broadcast_state_proposal`
+    同处计数，观察 O(N²) 放大用）。
+  - `StrategyWeightsHandler::publish_once` 内容未变时跳过广播（只更新本地视图 generation），
+    避免每拍照发无变化快照。
+  - 新增单测 `test_peer_manager_state_proposal_broadcast_counter`、
+    `publish_skips_broadcast_when_snapshot_unchanged`；**变异验证 2 处**（计数器失效 /
+    去抖恒真）稳定失败并还原。
+
 <!-- 下一轮的变更从这里开始写。发版时整段改名为 `## [vX.Y.Z] - <日期>`，
      并在其**之前**插入新的空 `[Unreleased]` 段（见上方发布流程）。 -->
 

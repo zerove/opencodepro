@@ -395,8 +395,16 @@ Phase B 落地「节点快照 + 集群聚合视图 + REST 暴露」，但**聚�
 - **Phase E 已完成**（Amendment 3）：执行路径消费集群权重（默认关闭，`min_uses = 5`；
   决策矩阵见上）。**未覆盖**：启用后跨节点协商（谁的本地证据更强、谁的集群快照更早），
   当前策略是「本地优先、集群只补位」，天然单参。
-- **转发放大未量化**：全连接拓扑下 O(N²) 次发送只在 3 节点上验证过；
-  更大集群需要先量化再决定是否改为按对端定向转发。
+- **Phase F（v0.4.0）：转发放大已部分缓解 + 已量化**。交付：
+  - `PeerManager` 累计发出去的 `StateProposal` 事件数（`state_proposal_broadcasts`），
+    与发送动作同处计数，供 O(N²) 放大分析。
+  - handler 在本地快照**内容未变化**时跳过广播（只更新本节点视图 generation）。
+  - 验证：`peer::manager::tests::test_peer_manager_state_proposal_broadcast_counter`、
+    `peer::strategy_weights::tests::publish_skips_broadcast_when_snapshot_unchanged`；
+    **变异验证 2 处**（去抖恒真 / 计数器失效）各自稳定失败并还原。
+  **未完成**：按对端**定向转发**（per-destination 出站通道或 `StateProposal` 加
+  `target_node_id` 让拨号器过滤）。在 broadcast-channel 架构下定向发送需要
+  按 peer 拆分子通道，属结构性改动，留待 Phase G 评估。
 - **节点槽位 TTL 已加**（Amendment 2），但溢出的 `Lagged` 会漏掉 `PeerLeft`
   → 槽位残留（已记 warn，未做对账）。治本方案是用 `list_peers()` 定期
   对账视图里的节点集合。

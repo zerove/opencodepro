@@ -120,6 +120,12 @@ pub struct PeerManager {
     peer_ttl: Duration,
     /// 每个 peer 的最后心跳时间（与 peers 同步维护）
     last_seen: Arc<RwLock<BTreeMap<String, Instant>>>,
+    /// 累计发出去的 `StateProposal` 事件数（v0.4.0 Phase F：转发放大量化）。
+    ///
+    /// 广播本身是 fan-out（一个事件 → 所有订阅者 / 每个 dialer 一条 outbound），
+    /// 这里按「事件发出」计数，是观察 O(N²) 放大时「发送次数」的入口指标。
+    /// 与 [`Self::broadcast_state_proposal`] 同处，天然对齐发送动作。
+    state_proposal_broadcasts: std::sync::atomic::AtomicU64,
 }
 
 impl PeerManager {
@@ -134,6 +140,7 @@ impl PeerManager {
             inbound_tx,
             peer_ttl,
             last_seen: Arc::new(RwLock::new(BTreeMap::new())),
+            state_proposal_broadcasts: std::sync::atomic::AtomicU64::new(0),
         }
     }
 
@@ -267,10 +274,20 @@ impl PeerManager {
 
     /// 广播一个 StateProposal 事件
     pub fn broadcast_state_proposal(&self, key: impl Into<String>, value: Vec<u8>) {
+        self.state_proposal_broadcasts.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         let _ = self.event_tx.send(ClusterEvent::StateProposal {
             key: key.into(),
             value,
         });
+    }
+
+    /// 累计发出去的 `StateProposal` 事件数（v0.4.0 Phase F：转发放大量化）。
+    ///
+    /// 用于量化「全连接集群下每接受一份快照会产生多少次发送」：全连接时一个
+    /// 快照从任一节点发出 = (N-1) 条 outbound；链式拓扑下经中间节点转发一次 =
+    /// 多条。与 [`Self::broadcast_state_proposal`] 同处计数，避免双重统计。
+    pub fn state_proposal_broadcasts(&self) -> u64 {
+        self.state_proposal_broadcasts.load(std::sync::atomic::Ordering::SeqCst)
     }
 
     /// 广播一个本地产生的 `ExperienceSync` 事件。
@@ -498,6 +515,20 @@ mod tests {
             .kind(),
             "state_proposal"
         );
+    }
+
+    #[test]
+    fn test_peer_manager_state_proposal_broadcast_counter() {
+        let mgr = PeerManager::new("node-a", Duration::from_secs(30));
+        assert_eq!(mgr.state_proposal_broadcasts(), 0, "初始计数为 0");
+
+        mgr.broadcast_state_proposal("sisyphus.strategy-weights/v1", vec![1]);
+        mgr.broadcast_state_proposal("sisyphus.strategy-weights/v1", vec![2]);
+        assert_eq!(mgr.state_proposal_broadcasts(), 2);
+
+        // 入站通道不计数：它只走 inbound_tx，不构成「发出」。
+        mgr.deliver_inbound_state_proposal("sisyphus.strategy-weights/v1", vec![3]);
+        assert_eq!(mgr.state_proposal_broadcasts(), 2);
     }
 
     #[test]

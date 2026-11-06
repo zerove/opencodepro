@@ -216,7 +216,9 @@
     `sisyphus_types::strategy_weights::select_strategy`）。
     证据：`strategy_weights::tests` 决策矩阵 10 个、`MetaLearningSynthesizer`
     执行路径单测 3 个（`crates/sisyphus-intel/src/synthesis.rs::tests::test_meta_synth_*`）。
-  - 剩余：大集群下的转发放大量化（当前全连接 O(N²)）；`Lagged` 漏 `PeerLeft` 时的视图对账。
+  - Phase F ✅（v0.4.0）：转发放大量化第一步——发送计数 + 内容未变跳过广播。
+    剩余：按对端定向转发（per-destination 出站通道 / proto `target_node_id`）。
+  - 剩余：`Lagged` 漏 `PeerLeft` 时的视图对账。
 - [ ] 多实例协调与共识、经验聚合服务
 
 ### 阶段 7: 近期优先级 (2026-08-31 起, 1-2 周窗口)

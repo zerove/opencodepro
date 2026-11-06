@@ -56,6 +56,12 @@ pub struct StrategyWeightsHandler {
     shared: Arc<RwLock<FederatedStrategyWeights>>,
     /// 发布周期；`Duration::ZERO` = 只收不发（便于只要聚合视图的场景）。
     publish_interval: Duration,
+    /// 上次发布的快照内容；用于跳过「统计没变化」的重复广播（v0.4.0 Phase F）。
+    ///
+    /// 发布周期（默认 60s）理论上是分钟级的，但两次发布内容相同仍会照发：
+    /// 每次照发都会把一份无变化的快照 fan-out 给整个集群（全连接时 O(N²)）。
+    /// 内容（策略统计）未变时跳过发送，只更新本地视图的 generation。
+    last_published: parking_lot::Mutex<Option<NodeStrategySnapshot>>,
 }
 
 impl StrategyWeightsHandler {
@@ -72,6 +78,7 @@ impl StrategyWeightsHandler {
             meta_learner,
             shared,
             publish_interval: Duration::from_secs(DEFAULT_PUBLISH_INTERVAL_SECS),
+            last_published: parking_lot::Mutex::new(None),
         }
     }
 
@@ -115,10 +122,24 @@ impl StrategyWeightsHandler {
             },
         };
 
-        let accepted = self.shared.write().merge(snapshot);
+        let accepted = self.shared.write().merge(snapshot.clone());
         // 广播的是「刚生成的那份」，即使本地合并被拒（理论上不会）也照样发出：
         // 对端有自己的槽位，不依赖本地的接受结果。
-        self.peer_manager.broadcast_state_proposal(STRATEGY_WEIGHTS_KEY, payload);
+        //
+        // Phase F：本地快照内容未变化时跳过广播（仅更新本节点视图 generation），
+        // 避免每拍照发一份无变化的快照把全连接集群的 O(N²) 放大滚雪球。
+        let changed = {
+            let mut last = self.last_published.lock();
+            let changed =
+                last.as_ref().map(|s| s.strategies != snapshot.strategies).unwrap_or(true);
+            if changed {
+                *last = Some(snapshot.clone());
+            }
+            changed
+        };
+        if changed {
+            self.peer_manager.broadcast_state_proposal(STRATEGY_WEIGHTS_KEY, payload);
+        }
         accepted
     }
 
@@ -387,6 +408,39 @@ mod tests {
             },
             other => panic!("expected StateProposal, got {other:?}"),
         }
+    }
+
+    /// Phase F：本地快照内容未变化时跳过广播（不发无变化的快照）。
+    ///
+    /// 与「必须广播」的单测互补：前者锁住「首次发布照发」，后者锁住「同内容
+    /// 二次发布不照发」。计数走 `PeerManager::state_proposal_broadcasts`，
+    /// 与实际 outbound 量同源，避免在 handler 里再造一座计数器。
+    #[tokio::test]
+    async fn publish_skips_broadcast_when_snapshot_unchanged() {
+        let learner = temp_learner("noop");
+        learner.lock().record_outcome(sample("depth-first", true, 2.0)).expect("record outcome");
+
+        let shared = Arc::new(RwLock::new(FederatedStrategyWeights::default()));
+        let (manager, h) = handler("node-a", learner, shared.clone());
+
+        assert!(h.publish_once(), "首次发布应被接受");
+        assert_eq!(
+            manager.state_proposal_broadcasts(),
+            1,
+            "首次发布内容变化，照发"
+        );
+
+        // 同一次学习周期内第二次 publish：generation 会变（自增），但
+        // 策略统计内容不变 → 必须跳过广播，不得把无变化的快照又送一遍集群。
+        assert!(
+            h.publish_once(),
+            "内容未变时仍应返回接受（generation 更新）"
+        );
+        assert_eq!(
+            manager.state_proposal_broadcasts(),
+            1,
+            "统计内容未变化时不得再广播"
+        );
     }
 
     /// 入站快照必须被合并进共享视图（这是 REST 视图能看到对端数据的前提）。
