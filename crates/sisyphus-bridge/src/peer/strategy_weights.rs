@@ -21,6 +21,9 @@
 //! 严格取新，因此**重复投递、乱序到达都是安全的**。这一点是必要的——
 //! `StateProposal` 走的是「每个已建立的双向流各发一次」，节点数一多，
 //! 同一份快照会通过多条流重复到达。
+//!
+//! 入站快照在**被接受后**会再转发一次（见 [`StrategyWeightsHandler::apply_remote`]），
+//! 因此链式/星形拓扑也能收敛，而不要求全连接。幂等规则同时充当回环断路器。
 
 use crate::peer::manager::{ClusterEvent as MgrEvent, PeerManager};
 use parking_lot::RwLock;
@@ -156,6 +159,21 @@ impl StrategyWeightsHandler {
                 strategies = snapshot.strategies.len(),
                 "strategy weights: merged remote snapshot"
             );
+            // 多跳传播（ADR-017 Amendment）：**只在「新一代被接受」时**转发。
+            //
+            // 不转发就无法覆盖静态 peer 的常见拓扑：`peers` 通常只列种子节点
+            // （星形），叶子之间没有直连流，叶子 A 的快照永远到不了叶子 B。
+            // 直连可达性因此不是「收敛」的前提。
+            //
+            // 转发次数有界、不成环，靠三条已有的性质：
+            // 1. 同一节点对同一 generation 只接受一次 → 同一份快照在每节点
+            //    至多转发一次（重复到达不会再触发转发）；
+            // 2. 快照回到源节点时被 `self_node_id` 自过滤挡下；
+            // 3. generation 严格递增 → 不存在「越转越新」的正反馈。
+            //
+            // 代价是多跳拓扑下每条边可能多传一次同一份快照（O(节点数) 跳、
+            // 全连接时 O(N²) 次发送）。载荷是分钟级的策略统计，可接受。
+            self.peer_manager.broadcast_state_proposal(STRATEGY_WEIGHTS_KEY, value.to_vec());
         } else {
             tracing::trace!(
                 node_id = %snapshot.node_id,
@@ -424,8 +442,71 @@ mod tests {
         assert_eq!(shared.read().aggregate()["depth-first"].uses, 10);
     }
 
+    /// 被接受的入站快照必须再转发一次，被拒的不得转发（ADR-017 Amendment）。
+    ///
+    /// 转发是链式/星形拓扑能收敛的唯一原因：叶子之间没有直连流，快照必须
+    /// 经中间节点搬运。同时它必须**恰好**跟着「接受」发生——否则拒绝路径
+    /// （重放 / 自回环 / 旧 generation）会变成广播风暴的源头。
+    #[tokio::test]
+    async fn apply_remote_forwards_only_accepted_snapshots() {
+        let shared = Arc::new(RwLock::new(FederatedStrategyWeights::default()));
+        let (manager, h) = handler("node-a", temp_learner("forward"), shared.clone());
+        let mut local = manager.subscribe();
+
+        let remote = NodeStrategySnapshot::from_insight("node-b", 500, &empty_insight());
+        let payload = serde_json::to_vec(&remote).expect("serialize");
+
+        assert!(
+            h.apply_remote(STRATEGY_WEIGHTS_KEY, &payload),
+            "首次到达应被接受"
+        );
+        let forwarded = tokio::time::timeout(Duration::from_secs(2), local.recv())
+            .await
+            .expect("转发事件应出现在本地广播通道")
+            .expect("本地广播通道应可读");
+        match forwarded {
+            MgrEvent::StateProposal { key, value } => {
+                assert_eq!(key, STRATEGY_WEIGHTS_KEY);
+                assert_eq!(
+                    value, payload,
+                    "转发必须原样搬运载荷，而不是重新序列化本地视图"
+                );
+            },
+            other => panic!("expected forwarded StateProposal, got {other:?}"),
+        }
+
+        // 同 generation 重放：拒绝，且**不得**再转发。
+        assert!(
+            !h.apply_remote(STRATEGY_WEIGHTS_KEY, &payload),
+            "同 generation 重放应被拒绝"
+        );
+        match local.try_recv() {
+            Err(broadcast::error::TryRecvError::Empty) => {},
+            Ok(evt) => panic!("被拒绝的快照不得转发，却收到 {evt:?}"),
+            Err(e) => panic!("本地通道意外状态: {e:?}"),
+        }
+
+        // 自回环：拒绝，且不得转发（否则自己的快照会被集群原样送回）。
+        let own = serde_json::to_vec(&NodeStrategySnapshot::from_insight(
+            "node-a",
+            900,
+            &empty_insight(),
+        ))
+        .expect("serialize");
+        assert!(
+            !h.apply_remote(STRATEGY_WEIGHTS_KEY, &own),
+            "自回环应被拒绝"
+        );
+        match local.try_recv() {
+            Err(broadcast::error::TryRecvError::Empty) => {},
+            Ok(evt) => panic!("自回环不得转发，却收到 {evt:?}"),
+            Err(e) => panic!("本地通道意外状态: {e:?}"),
+        }
+    }
+
     /// 周期发布后对端能收到（同一进程内两个 manager 用广播通道直连，
-    /// 传输层的真实 gRPC 传播由 `tests/strategy_weights_sync.rs` 覆盖）。
+    /// 传输层的真实 gRPC 传播由 `tests/cluster_integration.rs` 的
+    /// `test_two_node_strategy_weights_propagate_and_merge` 覆盖）。
     #[tokio::test]
     async fn spawn_publishes_periodically_and_stops_on_shutdown() {
         let learner = temp_learner("spawn");

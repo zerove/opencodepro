@@ -81,6 +81,10 @@ let generation = current_generation_plus_one.max(now_ms);
 拨号器转发回集群，形成回环。回环虽然会被 `generation` 幂等挡住，但会白白放大
 广播量（与 ADR-016 中经验同步的 `deliver_inbound_experience_sync` 同一处理）。
 
+> **Phase C 修正**：上面说的是「**落地即回灌**」不行。Phase C 发现只做到这一步
+> 无法在非全连接拓扑下收敛，因此改为「**被接受后转发**」。见文末
+> [Amendment](#amendment2026-11-06phase-c多跳转发)。
+
 ### 4. handler 订阅入站、周期发布
 
 `StrategyWeightsHandler::spawn` 启动后：
@@ -144,7 +148,68 @@ REST handler 共用。挂在这里而不是 `RestApiState`，是为了避免改
   否则会把「1 次成功」当结论——这正是 ADR-016 背景下要避免的错误。
 - **节点下线后其槽位不回收**：没有 TTL。视图会一直包含已离线节点的最后一份
   快照。影响有限（统计是历史累计），但「当前集群里谁在报数」这个问题的答案
-  会偏大。留待 Phase C 视需要再加。
+  会偏大。**Phase C 仍未加**：要判断「离线」需要消费 `PeerLeft`，而策略视图
+  目前只订阅 `StateProposal`。
+
+## Amendment（2026-11-06，Phase C）：多跳转发
+
+### 触发问题
+
+Phase B 的入站处理是「合并进本地视图，到此为止」。这在**全连接**拓扑下足够：
+每个节点都与其他节点有直连流，一份快照一次直达。但集群的连通性由
+`[cluster].peers` 静态列表决定，生产里常见的是**只列种子节点**：
+
+```
+node-a: peers = []                      # 种子
+node-b: peers = ["node-a:50051"]
+node-c: peers = ["node-b:50051"]        # 只知道 B，不知道 A
+```
+
+此时 A 与 C 之间没有任何流。A 的快照只能到 B，C 的快照只能到 B——
+**两端永远看不到对方**，「联邦」退化成「每个节点只认识自己和一个邻居」。
+Phase C 的 3 节点用例在**不转发**的实现上稳定失败：`node-a` 的
+`node_count()` 停在 2（自己 + B），聚合里没有 C 的 `breadth-first`。
+
+### 修正
+
+`StrategyWeightsHandler::apply_remote` 在**快照被接受**后，把**原始载荷**再
+广播一次：
+
+```rust
+let accepted = self.shared.write().merge(snapshot.clone());
+if accepted {
+    self.peer_manager.broadcast_state_proposal(STRATEGY_WEIGHTS_KEY, value.to_vec());
+}
+```
+
+三条性质保证「转发次数有界、不成环」，全部是**已有的**，没有新增状态：
+
+1. **同节点同 `generation` 只接受一次** → 每份快照在每个节点至多转发一次；
+   重复到达直接拒绝，不会再触发转发。
+2. **源节点自过滤**（`snapshot.node_id == self_node_id`）→ 快照绕一圈回到
+   源节点时被丢弃，不会无限循环。
+3. **`generation` 严格递增** → 不存在「越转越新」的正反馈。
+
+载荷原样搬运（`value.to_vec()`）而不是重新序列化本地视图，是为了让接收方
+仍然按「某节点的快照」语义处理；如果转发的是聚合视图，节点数会随跳数增加。
+
+### 代价
+
+- **放大**：全连接拓扑下每条快照从 O(N) 次发送涨到 O(N²)；链式拓扑下是
+  O(N) 跳。载荷是分钟级的策略统计（KB 以内），可接受；但节点数很大时需要
+  重新评估（可改为只转发给「未持有该节点槽位」的对端，但那需要按对端定向发送
+  的能力，当前 `broadcast_state_proposal` 没有）。
+- **语义仍是「最终收敛」而非「有界时延」**：链路断开期间不转发，靠下一拍
+  全量快照补上——与反熵的即时补差量不同，这里没有补齐信号。
+
+### 验证
+
+| 变异 | 预期失败用例 | 结果 |
+|------|--------------|------|
+| 删掉「接受后转发」 | `test_three_node_strategy_weights_converge_across_chain_topology` | ✅ **稳定失败**（`node-a` 的 `node_count()` 停在 2，断言消息指出链式拓扑需要转发） |
+| 改为「无条件转发」（拒绝路径也转发） | `peer::strategy_weights::tests::apply_remote_forwards_only_accepted_snapshots` | ✅ **稳定失败**（重放的同 generation 快照被转发） |
+
+还原后：`cluster_integration` 23 passed、`peer::` 61 passed。
 
 ## 实施结果（2026-11-06）
 
@@ -162,6 +227,8 @@ REST handler 共用。挂在这里而不是 `RestApiState`，是为了避免改
 | `crates/sisyphus-bridge/src/http_openapi.rs` | 对应 path + `operationId: getStrategyWeights` |
 | `crates/sisyphus-bridge/tests/cluster_integration.rs` | 2 节点收敛用例（gRPC 全链路） |
 | `crates/sisyphus-bridge/tests/strategy_weights_rest_test.rs` | REST 端点接线用例 2 个（空视图 200 / 合并视图 JSON 契约） |
+| `crates/sisyphus-bridge/src/peer/strategy_weights.rs`（Amendment） | `apply_remote` 接受后转发（多跳传播）+ 单测 `apply_remote_forwards_only_accepted_snapshots` |
+| `crates/sisyphus-bridge/tests/cluster_integration.rs`（Amendment） | 3 节点链式拓扑收敛用例 `test_three_node_strategy_weights_converge_across_chain_topology` |
 | `config.example.toml` / `book/src/configuration.md` | `strategy_sync_interval_secs` 文档 |
 | `book/src/rest-api.md` | `GET /api/strategy/weights` 响应示例与语义说明 |
 
@@ -177,6 +244,8 @@ REST handler 共用。挂在这里而不是 `RestApiState`，是为了避免改
 | `cargo test -p sisyphus-bridge --no-default-features --test anti_entropy_integration` | ✅ 12 passed |
 | `anti_entropy_partition_convergence` / `chaos_partition_convergence` / `chaos_one_sided_reverse_pull` | ✅ 各 1 passed |
 | `strategy_weights_rest_test` | ✅ 2 passed（空视图返回 200 而非 404；合并视图的 `node_count` / 聚合求和 / `best` 契约） |
+| `cluster_integration`（Phase C） | ✅ 23 passed（新增 3 节点链式收敛用例：含线上重放幂等断言） |
+| `peer::strategy_weights`（Phase C） | ✅ 6 passed（新增 `apply_remote_forwards_only_accepted_snapshots`） |
 | `webui_contract` | ✅ 2 passed |
 | `openapi_live_contract` | ✅ 3 passed（新路由必须进 OpenAPI，否则 `every_route_is_documented` 失败） |
 | `cargo fmt --all` | ✅ 无 diff |
@@ -221,8 +290,11 @@ REST handler 共用。挂在这里而不是 `RestApiState`，是为了避免改
 
 ## 遗留
 
-- **Phase C**：3 节点联邦收敛集成测试 + 变异验证（含乱序/重复投递、
-  节点下线后槽位不回收的影响评估）。
+- **Phase C 已完成**（Amendment）：3 节点链式拓扑收敛 + 线上重放幂等已由
+  `cluster_integration` 覆盖，两处变异验证过。**未覆盖**：乱序到达（已被
+  `generation` 语义覆盖于单测）、节点下线后槽位不回收的影响评估。
+- **转发放大未量化**：全连接拓扑下 O(N²) 次发送只在 3 节点上验证过；
+  更大集群需要先量化再决定是否改为按对端定向转发。
 - **执行路径尚未消费聚合结果**：目前只有 REST 视图，`best_strategy` 没有接入
   策略选择。接入前必须先定 `min_uses` 与「集群推荐 vs 本地经验」的优先级。
 - **节点槽位无 TTL**（见「负面」）。

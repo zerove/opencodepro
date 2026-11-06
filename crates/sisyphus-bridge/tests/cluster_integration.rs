@@ -1602,3 +1602,129 @@ async fn test_two_node_strategy_weights_propagate_and_merge() {
         "B 快照里的 depth-first uses 应为 1"
     );
 }
+
+// ── 9.1.y Phase C：3 节点联邦收敛（链式拓扑，ADR-017 Amendment）──────────────
+
+/// 等到视图同时满足「节点数」与「每策略 uses」。
+///
+/// 与 `wait_until_strategy_snapshot` 分开写，是因为两者的失败含义不同：
+/// 那边等的是「某一份快照到没到」，这边等的是「聚合结果对不对」——
+/// 后者才代表集群收敛，前者可能到了却被拒绝（generation 更旧）。
+async fn wait_until_federated(
+    target: &SyncNode,
+    expected_nodes: usize,
+    expected: &[(&str, u64)],
+) -> bool {
+    let deadline = std::time::Instant::now() + Duration::from_secs(30);
+    loop {
+        let matched = {
+            let view = target.strategy_weights.read();
+            view.node_count() == expected_nodes
+                && expected
+                    .iter()
+                    .all(|(name, uses)| view.aggregate().get(*name).map(|s| s.uses) == Some(*uses))
+        };
+        if matched {
+            return true;
+        }
+        if std::time::Instant::now() > deadline {
+            return false;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+}
+
+/// 3 节点链式拓扑：A ← B ← C（A 的静态 peer 为空，C 只拨 B）。
+///
+/// **A 与 C 之间没有任何直连流**，因此这条用例只有在快照被中间节点 B
+/// 转发时才可能通过——这正是 ADR-017 Amendment 要锁住的行为。只用全连接
+/// 拓扑验证是不够的：那时每条快照都走直连，转发逻辑即使被删掉也全绿。
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn test_three_node_strategy_weights_converge_across_chain_topology() {
+    let node_a = start_sync_node("node-a", vec![]).await;
+    let node_b = start_sync_node("node-b", vec![node_a.grpc_addr.clone()]).await;
+    let node_c = start_sync_node("node-c", vec![node_b.grpc_addr.clone()]).await;
+
+    wait_for_link(&node_a.manager, &node_b.manager).await;
+    wait_for_link(&node_b.manager, &node_c.manager).await;
+
+    // 三个节点各自只跑一种策略，aggregate 里必须同时出现三条。
+    let record =
+        |learner: &Arc<parking_lot::Mutex<sisyphus_tools_llm_tools::meta_learner::MetaLearner>>,
+         strategy: &str,
+         outcomes: &[(bool, f64)]| {
+            for (success, duration) in outcomes {
+                learner
+                    .lock()
+                    .record_outcome(meta_sample(strategy, *success, *duration))
+                    .expect("记策略样本");
+            }
+        };
+    record(
+        &node_a.meta_learner,
+        "depth-first",
+        &[(true, 1.0), (true, 2.0), (false, 3.0)],
+    );
+    record(&node_b.meta_learner, "hybrid", &[(true, 0.5), (true, 0.6)]);
+    record(&node_c.meta_learner, "breadth-first", &[(false, 4.0)]);
+
+    let expected: [(&str, u64); 3] = [("depth-first", 3), ("hybrid", 2), ("breadth-first", 1)];
+
+    // 三个节点都必须看到同一个三节点聚合视图。C 的视角要经过 B 转发才可能齐全，
+    // A 的视角同样要经过 B。
+    for (label, node) in [
+        ("node-a", &node_a),
+        ("node-b", &node_b),
+        ("node-c", &node_c),
+    ] {
+        let ok = tokio::time::timeout(
+            Duration::from_secs(35),
+            wait_until_federated(node, 3, &expected),
+        )
+        .await
+        .expect("等待联邦收敛超时");
+        assert!(
+            ok,
+            "{label} 未收敛到 3 节点视图；当前节点数 {}，聚合 {:?}——\
+             链式拓扑下快照必须被中间节点转发，否则端点节点永远看不到对方",
+            node.strategy_weights.read().node_count(),
+            node.strategy_weights.read().aggregate()
+        );
+    }
+
+    // 聚合正确性 + best：hybrid 2/2（100%）高于 depth-first 2/3。
+    let agg = node_c.strategy_weights.read().aggregate();
+    assert_eq!(agg["depth-first"].successes, 2, "A 的失败样本必须计入分母");
+    assert_eq!(agg["hybrid"].successes, 2);
+    assert_eq!(agg["breadth-first"].successes, 0);
+    assert_eq!(
+        node_c.strategy_weights.read().best_strategy(1).map(|(name, _)| name).as_deref(),
+        Some("hybrid"),
+        "best_strategy 必须选出 100% 成功率的 hybrid"
+    );
+
+    // 线上重放幂等：把 A 的快照原样再广播两次，聚合计数不得翻倍。
+    // 单测覆盖的是「同进程 merge 幂等」，这里覆盖的是「同一份载荷经多条流
+    // 重复到达时仍然幂等」——这正是重复投递真正发生的位置。
+    let payload = {
+        let view = node_a.strategy_weights.read();
+        let snap = view.node_snapshot("node-a").expect("A 必须持有自己的快照").clone();
+        drop(view);
+        serde_json::to_vec(&snap).expect("快照应可序列化")
+    };
+    for _ in 0..2 {
+        node_a.manager.broadcast_state_proposal(
+            sisyphus_bridge::peer::strategy_weights::STRATEGY_WEIGHTS_KEY,
+            payload.clone(),
+        );
+    }
+    tokio::time::sleep(Duration::from_millis(400)).await;
+
+    let after = node_b.strategy_weights.read().aggregate();
+    assert_eq!(
+        after["depth-first"].uses, 3,
+        "重放同一 generation 不得放大 uses"
+    );
+    assert_eq!(after["depth-first"].successes, 2);
+    assert_eq!(node_b.strategy_weights.read().node_count(), 3);
+}

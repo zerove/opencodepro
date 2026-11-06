@@ -95,6 +95,25 @@
     **变异验证 3 处**（`merge` 的 `>=` → `>`、删自回环过滤、`publish_once` 不广播）
     各自稳定触发对应用例失败，还原后全绿。
 
+- **集群策略权重的多跳传播**（v0.4.0 Phase C，ADR-017 Amendment）：Phase B 的
+  「入站只合并、不转发」只在**全连接**拓扑下收敛——静态 `[cluster].peers`
+  常只列种子节点，叶子之间没有直连流，两端永远看不到对方。现在
+  `StrategyWeightsHandler::apply_remote` 在**快照被接受后**把原始载荷再广播一次，
+  链式/星形拓扑也能收敛。
+  - 不成环、次数有界，靠三条既有性质：同节点同 `generation` 只接受一次
+    （每份快照每节点至多转发一次）、源节点自过滤（绕回即丢弃）、`generation`
+    严格递增（无「越转越新」正反馈）。代价是全连接下 O(N²) 次发送（载荷为
+    分钟级 KB 级统计）。
+  - 新增 3 节点**链式**拓扑收敛用例
+    `test_three_node_strategy_weights_converge_across_chain_topology`（A 的静态
+    peer 为空、C 只拨 B，A 与 C 无任何直连）：三节点聚合一致、`best_strategy`
+    选出 100% 成功率的策略、线上重放同一载荷两次不放大计数。
+  - 新增单测 `apply_remote_forwards_only_accepted_snapshots`：接受必转发、
+    重放/自回环必不转发。
+  - 验证：`cluster_integration` **23 passed**、`peer::` **61 passed**；
+    **变异验证 2 处**（删转发 → 链式用例失败且诊断信息指出「node-a 停在 2 节点」；
+    改为无条件转发 → 单测失败）还原后全绿。
+
 <!-- 下一轮的变更从这里开始写。发版时整段改名为 `## [vX.Y.Z] - <日期>`，
      并在其**之前**插入新的空 `[Unreleased]` 段（见上方发布流程）。 -->
 

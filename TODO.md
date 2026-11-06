@@ -203,8 +203,12 @@
     证据：`sisyphus_types::strategy_weights::tests::merge_is_idempotent`、
     `sisyphus_bridge::peer::strategy_weights::tests::apply_remote_merges_remote_snapshot`、
     `cluster_integration.rs::test_two_node_strategy_weights_propagate_and_merge`。
-  - 剩余：Phase C —— 3 节点联邦收敛集成测试 + 变异验证（含乱序/重复投递）；
-    以及让执行路径消费 `best_strategy`（需先定 `min_uses`）。
+  - Phase C ✅（v0.4.0，ADR-017 Amendment）：3 节点链式拓扑收敛
+    （`apply_remote` 接受后转发，多跳传播）+ 变异验证 2 处。
+    证据：`cluster_integration.rs::test_three_node_strategy_weights_converge_across_chain_topology`、
+    `sisyphus_bridge::peer::strategy_weights::tests::apply_remote_forwards_only_accepted_snapshots`。
+  - 剩余：让执行路径消费 `best_strategy`（需先定 `min_uses`）；节点槽位 TTL
+    （消费 `PeerLeft`）；大集群下的转发放大量化（当前全连接 O(N²)）。
 - [ ] 多实例协调与共识、经验聚合服务
 
 ### 阶段 7: 近期优先级 (2026-08-31 起, 1-2 周窗口)
