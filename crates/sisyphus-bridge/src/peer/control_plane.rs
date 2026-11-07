@@ -412,3 +412,284 @@ mod tests {
         assert!(!c.accepted);
     }
 }
+
+use crate::peer::manager::PeerManager;
+use sisyphus_bridge_api::cluster_proto::{cluster_client::ClusterClient, ControlProposeRequest};
+use std::sync::Arc;
+
+/// 6.5 租约多数派协调结果（v1：多数派 ack；超时/不确定=错误，不判定成功）。
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LeaseQuorumOutcome {
+    pub decision: ControlDecision,
+    /// 达成 accepted 的节点数（含本地，若本地 apply 计入）。
+    pub accepts: usize,
+    /// 参与判定的集群规模（含 self）。
+    pub cluster_size: usize,
+    /// 是否因超时/连接失败等产生不确定性（此时不应判定成功）。
+    pub uncertain: bool,
+}
+
+pub struct ControlPlaneCoordinator {
+    peer_manager: Arc<PeerManager>,
+    state: Arc<ControlPlaneState>,
+    propose_timeout: Duration,
+}
+
+impl ControlPlaneCoordinator {
+    pub fn new(
+        peer_manager: Arc<PeerManager>,
+        state: Arc<ControlPlaneState>,
+        propose_timeout: Duration,
+    ) -> Self {
+        Self {
+            peer_manager,
+            state,
+            propose_timeout,
+        }
+    }
+
+    pub fn state(&self) -> &Arc<ControlPlaneState> {
+        &self.state
+    }
+
+    /// 通过多数派提交租约操作。`self` 先本地 apply（计入票数），再并发请求其他 peers。
+    /// 任一导致多数派不确定的超时/错误 => `uncertain=true` 且不返回成功。
+    pub async fn propose_lease(
+        &self,
+        request_id: &str,
+        key: &str,
+        operation: &str,
+        payload_json: &[u8],
+        expected_generation: u64,
+        min_ttl_secs: u64,
+        max_ttl_secs: u64,
+    ) -> LeaseQuorumOutcome {
+        let cluster_size = self.peer_manager.cluster_size().max(1);
+        let majority = cluster_size / 2 + 1;
+        let local = self.state.apply(
+            request_id,
+            key,
+            operation,
+            payload_json,
+            expected_generation,
+            min_ttl_secs,
+            max_ttl_secs,
+        );
+        // idempotent replay of accepted local decision is fine to count
+        let mut accepts = usize::from(local.accepted);
+        let mut uncertain = false;
+        let local_decision = local.clone();
+
+        let self_id = self.peer_manager.self_node_id().to_string();
+        let peers: Vec<_> = self
+            .peer_manager
+            .list_peers()
+            .into_iter()
+            .filter(|p| {
+                p.node_id != self_id && p.grpc_addr != "self" && !p.grpc_addr.trim().is_empty()
+            })
+            .collect();
+
+        let req = ControlProposeRequest {
+            request_id: request_id.to_string(),
+            key: key.to_string(),
+            operation: operation.to_string(),
+            payload_json: payload_json.to_vec(),
+            source_node_id: self_id.clone(),
+            expected_generation,
+        };
+
+        let mut tasks = Vec::new();
+        for p in peers {
+            let mut endpoint = p.grpc_addr.clone();
+            if !endpoint.starts_with("http://") && !endpoint.starts_with("https://") {
+                endpoint = format!("http://{endpoint}");
+            }
+            let req = req.clone();
+            let timeout = self.propose_timeout;
+            tasks.push(tokio::spawn(async move {
+                let connect = tokio::time::timeout(timeout, ClusterClient::connect(endpoint)).await;
+                let mut client = match connect {
+                    Ok(Ok(c)) => c,
+                    _ => return Err(()),
+                };
+                match tokio::time::timeout(timeout, client.propose_control(req)).await {
+                    Ok(Ok(resp)) => Ok(resp.into_inner().accepted),
+                    _ => Err(()),
+                }
+            }));
+        }
+
+        for t in tasks {
+            match t.await {
+                Ok(Ok(true)) => accepts += 1,
+                Ok(Ok(false)) => {},
+                _ => {
+                    uncertain = true;
+                },
+            }
+        }
+
+        // If local rejected, don't report success; but peers may have accepted (we already sent) -
+        // v1: coordinator returns local decision context; uncertainty dominates.
+        if uncertain {
+            // Can we still prove majority? only if accepts already >= majority despite uncertainty -
+            // but uncertainty means some peers' state unknown; safer to report uncertain.
+            return LeaseQuorumOutcome {
+                decision: if local_decision.accepted && accepts >= majority {
+                    // majority known accepted, but had uncertainties; still conservative on "uncertain"
+                    let mut d = local_decision;
+                    d.accepted = false;
+                    d.error_code = "CONTROL_PLANE_UNCERTAIN".to_string();
+                    d.error_message = format!("uncertain peer responses; accepts={accepts} majority={majority} cluster_size={cluster_size}");
+                    d
+                } else {
+                    ControlDecision::err("CONTROL_PLANE_UNCERTAIN", format!("uncertain peer responses; accepts={accepts} majority={majority} cluster_size={cluster_size}"), local_decision.current_generation)
+                },
+                accepts,
+                cluster_size,
+                uncertain: true,
+            };
+        }
+
+        if (local_decision.accepted && accepts >= majority) || !local_decision.accepted {
+            LeaseQuorumOutcome {
+                decision: local_decision,
+                accepts,
+                cluster_size,
+                uncertain: false,
+            }
+        } else {
+            LeaseQuorumOutcome {
+                decision: ControlDecision::err(
+                    "QUORUM_NOT_REACHED",
+                    format!("accepts={accepts} majority={majority} cluster_size={cluster_size}"),
+                    local_decision.current_generation,
+                ),
+                accepts,
+                cluster_size,
+                uncertain: false,
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod quorum_tests {
+    use super::*;
+    use crate::peer::service::ClusterServiceImpl;
+    use sisyphus_bridge_api::cluster_proto::cluster_server::ClusterServer;
+    use std::time::Duration;
+    use tokio::net::TcpListener;
+    use tonic::transport::Server;
+
+    async fn serve_node(
+        node_id: &str,
+        enabled: bool,
+    ) -> (
+        Arc<PeerManager>,
+        Arc<ControlPlaneState>,
+        String,
+        tokio::task::JoinHandle<()>,
+    ) {
+        let mgr = Arc::new(PeerManager::new(node_id, Duration::from_secs(30)));
+        let state = Arc::new(ControlPlaneState::new());
+        let svc = ClusterServiceImpl::with_control_plane(mgr.clone(), None, state.clone(), enabled);
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = format!("http://{}", listener.local_addr().unwrap());
+        let incoming = tokio_stream::wrappers::TcpListenerStream::new(listener);
+        let h = tokio::spawn(async move {
+            let _ = Server::builder()
+                .add_service(ClusterServer::new(svc))
+                .serve_with_incoming(incoming)
+                .await;
+        });
+        tokio::time::sleep(Duration::from_millis(30)).await;
+        (mgr, state, addr, h)
+    }
+
+    fn lease_payload(owner: &str, ttl: u64) -> Vec<u8> {
+        serde_json::to_vec(&serde_json::json!({"owner": owner, "ttl_secs": ttl})).unwrap()
+    }
+
+    #[tokio::test]
+    async fn n3_quorum_acquire_succeeds_with_majority() {
+        let (m1, s1, a1, _h1) = serve_node("n1", true).await;
+        let (m2, s2, a2, _h2) = serve_node("n2", true).await;
+        let (m3, s3, a3, _h3) = serve_node("n3", true).await;
+        // n1 knows n2,n3
+        let _ = m1.on_peer_joined(crate::peer::manager::PeerInfo::new("n2", a2));
+        let _ = m1.on_peer_joined(crate::peer::manager::PeerInfo::new("n3", a3));
+        // others know n1 (not required for this coordinator call, but realistic)
+        let _ = m2.on_peer_joined(crate::peer::manager::PeerInfo::new("n1", a1.clone()));
+        let _ = m3.on_peer_joined(crate::peer::manager::PeerInfo::new("n1", a1));
+
+        let coord = ControlPlaneCoordinator::new(m1, s1.clone(), Duration::from_secs(2));
+        let out = coord
+            .propose_lease(
+                "r1",
+                "lease:task/x",
+                "lease.acquire",
+                &lease_payload("n1", 30),
+                0,
+                1,
+                3600,
+            )
+            .await;
+        assert!(out.decision.accepted, "{out:?}");
+        assert!(!out.uncertain, "{out:?}");
+        assert!(out.accepts >= 2, "{out:?}");
+        // at least local applied; remote peers apply via RPC handler
+        assert!(s1.get("lease:task/x").is_some());
+        assert!(
+            s2.get("lease:task/x").is_some() || s3.get("lease:task/x").is_some(),
+            "majority peers should apply"
+        );
+    }
+
+    #[tokio::test]
+    async fn n3_quorum_fails_when_majority_unreachable() {
+        let (m1, s1, _a1, _h1) = serve_node("n1", true).await;
+        // peers point to closed ports -> connect fails/uncertain
+        let _ = m1.on_peer_joined(crate::peer::manager::PeerInfo::new(
+            "n2",
+            "http://127.0.0.1:1",
+        ));
+        let _ = m1.on_peer_joined(crate::peer::manager::PeerInfo::new(
+            "n3",
+            "http://127.0.0.1:1",
+        ));
+        let coord = ControlPlaneCoordinator::new(m1, s1, Duration::from_millis(300));
+        let out = coord
+            .propose_lease(
+                "r1",
+                "lease:task/y",
+                "lease.acquire",
+                &lease_payload("n1", 30),
+                0,
+                1,
+                3600,
+            )
+            .await;
+        assert!(!out.decision.accepted, "{out:?}");
+        assert!(
+            out.uncertain || out.decision.error_code == "QUORUM_NOT_REACHED",
+            "{out:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn n3_request_id_idempotent_across_coordinator() {
+        let (m1, s1, _a1, _h1) = serve_node("n1", true).await;
+        let coord = ControlPlaneCoordinator::new(m1, s1, Duration::from_secs(2));
+        let p = lease_payload("n1", 30);
+        let a = coord.propose_lease("same-r", "lease:z", "lease.acquire", &p, 0, 1, 3600).await;
+        assert!(a.decision.accepted);
+        let b = coord.propose_lease("same-r", "lease:z", "lease.acquire", &p, 0, 1, 3600).await;
+        assert!(b.decision.accepted);
+        assert!(
+            b.decision.idempotent_replay
+                || b.decision.applied_generation == a.decision.applied_generation
+        );
+    }
+}
