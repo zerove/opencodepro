@@ -194,7 +194,10 @@
     - [x] 健康摘要: `GET /api/cognitive/summary?sop_id=&limit=` 跨会话聚合 (决策分布/偏差/置信度/稳定性/信息增益均值、token 成本、时间窗口)；TUI `:cogsum` 面板含决策分布条形图与健康判定 (STABLE/CAUTION/DRIFTING)；mem 2 测试 + bridge 2 测试 + 契约测试 (2026-08-11)
 
 ### 阶段 6: 分布式支持 (延后, 待单机全功能稳定后再启动)
-- [ ] **联邦学习**: 跨实例经验共享 (peer protocol 已有基础)
+- [x] **联邦学习**: 跨实例经验共享（ADR-016/017/018，peer/ExperienceSync/反熵/策略权重/可观测已落地；默认不新建独立聚合进程）。证据：`crates/sisyphus-bridge/tests/cluster_status_rest_test.rs::cluster_status_endpoint_reports_single_node_view` `make audit`
+  证据：`crates/sisyphus-bridge/src/peer/experience_sync.rs::federated_aggregation_rejects_low_quality_experience`、
+  `crates/sisyphus-bridge/src/peer/manager.rs::test_experience_sync_counters_separate_broadcast_and_inbound`、
+  `crates/sisyphus-bridge/tests/cluster_status_rest_test.rs::cluster_status_endpoint_reports_single_node_view`（`make audit`）。
   - Phase A ✅（v0.4.0，ADR-016）：入站经验质量门槛
     （`evaluate_experience_quality` + `[cluster.federated]`，默认关闭）。
   - Phase B ✅（v0.4.0，ADR-017）：集群策略权重同步
@@ -224,7 +227,16 @@
     `list_peers()` 与 `seen_members` 比对，回收「曾见过成员、已离线」的槽位），
     单测 `peer::strategy_weights::tests::reconcile_offline_nodes_drops_orphaned_known_slots`
     覆盖；事件路径（`PeerLeft` → `forget_node`）由 Phase D 已覆盖。
-- [ ] 多实例协调与共识、经验聚合服务
+  - 6.1 ✅（2026-11-08）：`GET /api/cluster/status` 只读协调状态（`operationId: getClusterStatus`），
+    证据：`crates/sisyphus-bridge/tests/cluster_status_rest_test.rs::cluster_status_endpoint_reports_single_node_view`。
+  - 6.2b/6.3 ✅（2026-11-08）：经验同步计数/拒绝分解 + 排障 runbook（只读），
+    证据：`crates/sisyphus-bridge/src/peer/manager.rs::test_experience_sync_counters_separate_broadcast_and_inbound`、
+    `crates/sisyphus-bridge/src/peer/experience_sync.rs::federated_aggregation_rejects_low_quality_experience`。
+- [x] **多实例协调与经验聚合（v0.4.x 范围收口）**：按 ADR-018，复用 `StateProposal`/`ExperienceSync`/CRDT/反熵数据面 + `crates/sisyphus-bridge/tests/cluster_status_rest_test.rs::cluster_status_endpoint_reports_single_node_view` `make audit`
+  本地查询/`/api/cluster/status` 观测视图；**默认不新建独立聚合进程**。强一致 `propose/quorum` 控制面
+  未启用生产路径（`proposer: None`/语义未定义场景不得虚假成功）。证据：`docs/adr/018-multi-instance-coordination-and-experience-aggregation.md`（`make audit`）、
+  `crates/sisyphus-bridge/tests/cluster_status_rest_test.rs::cluster_status_endpoint_reports_single_node_view`。
+  - [ ] 6.5（条件触发）强一致控制面：先满足 ADR-019 准入条件（语义/proposer 装配/故障模型/观测/验证矩阵/回滚）再实现；当前 ADR-019 已起草（`docs/adr/019-cluster-consensus-control-plane.md`），**不视为实现完成**（无测试：条件触发，准入条件未满足）。
 
 ### 阶段 7: 近期优先级 (2026-08-31 起, 1-2 周窗口)
 
