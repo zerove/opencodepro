@@ -64,3 +64,9 @@ ADR-017/018 已确立：集群内**策略/经验类同步**走 `StateProposal`/`
 
 - 满足第 3 节全部准入条件，附证据（测试/ADR/配置/文档）。
 - 生产路径默认安全（未显式启用控制面时，不产生虚假提交成功）。
+
+
+## 实现状态（2026-11-08，v1 默认方案：分布式任务租约）
+
+- 已完成：`ClusterConsensus::propose` 无 proposer 时返回明确错误（消除虚假成功）；`[cluster.control_plane].enabled`（默认 `false`，env/example/book/`/api/cluster/status.config.control_plane_enabled`）；`cluster.proto` `ProposeControl` RPC；`peer::control_plane::ControlPlaneState`（`lease.acquire/renew/release`，`request_id` 幂等、TTL、fencing generation）；`ClusterServiceImpl::propose_control` 门禁/UNAVAILABLE/DISABLED 拒绝；`consensus::GrpcPeerProposer`；`main.rs` 门禁装配；单元测试（`control_plane` 3、`consensus` 12 含 Mock N=3/禁用门禁 gRPC 测试）、`cluster_status_rest_test` 更新。
+- 未完成（阻塞生产启用）：gRPC `PeerProposer` 与 `PeerManager` 地址解析/成员变更/连接池的生产装配；租约操作经 `ClusterConsensus` quorum 的端到端多节点提交路径；N=3 真实网络分区、少数派不可提交、leader 变更安全、重复提交幂等（跨节点）、超时不确定语义、混沌/重启矩阵；回滚演练；REST 控制面写入（如需）+ OpenAPI/webui 契约。

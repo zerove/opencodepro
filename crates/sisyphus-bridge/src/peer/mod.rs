@@ -12,6 +12,7 @@
 //! - `client`: 主动 dial 其他 peer 的 gRPC client
 
 pub mod anti_entropy;
+pub mod control_plane;
 pub mod discovery;
 pub mod experience_sync;
 pub mod fallback;
@@ -35,3 +36,5 @@ pub use anti_entropy::{
 pub use fallback::{spawn_static_peers, spawn_static_peers_with_catchup, StaticPeerConfig};
 pub use manager::{ClusterEvent as MgrEvent, PeerInfo, PeerManager, PeerStatus};
 pub use service::{ClusterServiceImpl, JoinGateHandle};
+
+pub use control_plane::ControlPlaneState;

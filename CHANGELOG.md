@@ -77,6 +77,15 @@
   1000 ops / 4.63s，216 ops/s；`--lib bench_consensus_5_nodes --nocapture`）于
   `docs/benchmarks/consensus-control-plane-baseline-2026-11-08.md`；未发现需代码优化的
   触发证据，符合 ADR-018 6.4。
+- **6.5 默认实施（租约控制面，门禁关闭）**：按“分布式任务租约”触发用例落地 v1 基础：
+  `cluster.proto` 新增 `ProposeControl` unary RPC（`ControlProposeRequest/Response`）；
+  `peer::control_plane::ControlPlaneState` 提供本地租约状态机（`lease.acquire/renew/release`，
+  `request_id` 幂等、TTL、fencing `generation`、过期处理）；`ClusterServiceImpl` 实现
+  `propose_control`（`cluster.control_plane.enabled=false`/未装配时拒绝，返回 `DISABLED`/
+  `UNAVAILABLE`，无虚假成功）；`GrpcPeerProposer` 实现 gRPC `PeerProposer`（超时/不确定视为失败）；
+  `main.rs` 在启用门禁时装配 `ControlPlaneState`（仍默认关闭）。
+  **未完成（ADR-019 准入条件）**：生产多节点 proposer 地址解析/连接池与成员变更集成、
+  N=3 真实网络分区/leader 变更/混沌矩阵、REST 控制面写入（如需）、完整回滚演练。
 
 - **联邦来源标注与一致性校验**（ADR-017 Amendment 4，Phase G，v0.4.0 后续）：
   - `ClusterEvent::StateProposal` / proto `StateProposal.source_node_id`（field 4）

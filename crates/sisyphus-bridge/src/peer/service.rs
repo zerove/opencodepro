@@ -11,8 +11,9 @@
 use crate::peer::anti_entropy;
 use crate::peer::manager::{ClusterEvent as MgrEvent, PeerInfo, PeerManager};
 use sisyphus_bridge_api::cluster_proto::{
-    cluster_server::Cluster, ClusterEvent as ProtoEvent, ExperienceSync, JoinRequest, JoinResponse,
-    PeerInfo as ProtoPeerInfo, PeerJoined, PeerLeft, StateProposal,
+    cluster_server::Cluster, ClusterEvent as ProtoEvent, ControlProposeRequest,
+    ControlProposeResponse, ExperienceSync, JoinRequest, JoinResponse, PeerInfo as ProtoPeerInfo,
+    PeerJoined, PeerLeft, StateProposal,
 };
 use std::pin::Pin;
 use std::sync::Arc;
@@ -85,6 +86,10 @@ pub struct ClusterServiceImpl {
     /// 存在理由与 `sync_requests_seen` 相同：它把「对端拉我」与「我拉对端」区分
     /// 开，测试才能断言反向拉取真的在跑，而不是只看数据是否到位。
     outbound_sync_requests: Arc<std::sync::atomic::AtomicU64>,
+    /// ADR-019：控制面状态（租约/幂等）。`None` = 未装配（拒绝控制提案）。
+    control_plane: Option<Arc<crate::peer::control_plane::ControlPlaneState>>,
+    /// ADR-019：控制面门禁（默认 false）。与 `ClusterConfig.control_plane.enabled` 对齐。
+    control_plane_enabled: bool,
 }
 
 impl ClusterServiceImpl {
@@ -106,6 +111,15 @@ impl ClusterServiceImpl {
         manager: Arc<PeerManager>,
         experience_bank: Option<Arc<sisyphus_mem::experience_bank::VectorExperienceBank>>,
     ) -> Self {
+        Self::with_gate_and_control(manager, experience_bank, None, false)
+    }
+
+    fn with_gate_and_control(
+        manager: Arc<PeerManager>,
+        experience_bank: Option<Arc<sisyphus_mem::experience_bank::VectorExperienceBank>>,
+        control_plane: Option<Arc<crate::peer::control_plane::ControlPlaneState>>,
+        control_plane_enabled: bool,
+    ) -> Self {
         // ADR-013：生产路径闸门恒开，因此 Join 不受任何额外延迟影响。
         Self {
             manager,
@@ -120,7 +134,24 @@ impl ClusterServiceImpl {
             // 生产构造不启用断流钩子：每条消息都不该为测试设施付费。
             break_hook_enabled: false,
             outbound_sync_requests: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            control_plane,
+            control_plane_enabled,
         }
+    }
+
+    /// ADR-019：装配控制面（门禁 + 状态）。默认仍应保持 `enabled=false` 除非显式配置且满足准入条件。
+    pub fn with_control_plane(
+        manager: Arc<PeerManager>,
+        experience_bank: Option<Arc<sisyphus_mem::experience_bank::VectorExperienceBank>>,
+        control_plane: Arc<crate::peer::control_plane::ControlPlaneState>,
+        control_plane_enabled: bool,
+    ) -> Self {
+        Self::with_gate_and_control(
+            manager,
+            experience_bank,
+            Some(control_plane),
+            control_plane_enabled,
+        )
     }
 
     /// ADR-013：构造一个**闸门关闭**的服务（Join 会一直挂起）。
@@ -149,6 +180,8 @@ impl ClusterServiceImpl {
             // 只有测试构造启用断流钩子。
             break_hook_enabled: true,
             outbound_sync_requests: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            control_plane: None,
+            control_plane_enabled: false,
         };
         let handle = JoinGateHandle {
             gate: Arc::clone(&service.join_admit),
@@ -506,6 +539,52 @@ impl Cluster for ClusterServiceImpl {
             Box::pin(raw.map(Ok))
         };
         Ok(Response::new(pinned))
+    }
+    async fn propose_control(
+        &self,
+        request: Request<ControlProposeRequest>,
+    ) -> Result<Response<ControlProposeResponse>, Status> {
+        let req = request.into_inner();
+        if !self.control_plane_enabled {
+            return Ok(Response::new(ControlProposeResponse {
+                accepted: false,
+                applied_generation: 0,
+                current_generation: 0,
+                error_code: "DISABLED".to_string(),
+                error_message: "cluster.control_plane.enabled is false (ADR-019 gate)".to_string(),
+                idempotent_replay: false,
+            }));
+        }
+        let Some(state) = &self.control_plane else {
+            return Ok(Response::new(ControlProposeResponse {
+                accepted: false,
+                applied_generation: 0,
+                current_generation: 0,
+                error_code: "UNAVAILABLE".to_string(),
+                error_message: "control plane state not configured".to_string(),
+                idempotent_replay: false,
+            }));
+        };
+        // v1 TTL bounds (ADR-019 默认实施；后续可配置化)
+        const MIN_TTL_SECS: u64 = 1;
+        const MAX_TTL_SECS: u64 = 3600;
+        let d = state.apply(
+            &req.request_id,
+            &req.key,
+            &req.operation,
+            &req.payload_json,
+            req.expected_generation,
+            MIN_TTL_SECS,
+            MAX_TTL_SECS,
+        );
+        Ok(Response::new(ControlProposeResponse {
+            accepted: d.accepted,
+            applied_generation: d.applied_generation,
+            current_generation: d.current_generation,
+            error_code: d.error_code,
+            error_message: d.error_message,
+            idempotent_replay: d.idempotent_replay,
+        }))
     }
 }
 

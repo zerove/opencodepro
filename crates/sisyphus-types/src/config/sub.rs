@@ -626,17 +626,11 @@ impl McpConfig {
 /// 默认 `enabled = false`：不启用任何强一致控制面提交路径。即使启用，也仅在满足
 /// ADR-019 准入条件（proposer 装配、故障模型、验证矩阵、回滚）后才可产生实际效果；
 /// 当前未实现生产 proposer/RPC，启用不应被解释为“控制面可用”。
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct ClusterControlPlaneConfig {
     /// 是否启用控制面门禁（默认 false）。
     #[serde(default)]
     pub enabled: bool,
-}
-
-impl Default for ClusterControlPlaneConfig {
-    fn default() -> Self {
-        Self { enabled: false }
-    }
 }
 
 /// Cluster peer protocol configuration (ADR-009 § 1).

@@ -273,10 +273,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         };
         // ADR-010：service 挂上经验库，以便应答对端的 `SyncRequest`。
         let experience_bank = bridge.experience_bank().clone();
-        let service = ClusterServiceImpl::with_experience_bank(
-            runtime.peer_manager.clone(),
-            experience_bank.clone(),
-        );
+        let control_plane_state = if cfg.control_plane.enabled {
+            tracing::warn!(
+                "cluster.control_plane.enabled=true: ADR-019 control plane gate is on;                  production quorum requires configured PeerProposer/RPC wiring and admission criteria.                  ProposeControl RPC will accept local lease evaluation when state is present."
+            );
+            Some(std::sync::Arc::new(
+                sisyphus_bridge::peer::ControlPlaneState::new(),
+            ))
+        } else {
+            None
+        };
+        let service = if let Some(cp) = control_plane_state {
+            ClusterServiceImpl::with_control_plane(
+                runtime.peer_manager.clone(),
+                Some(experience_bank.clone()),
+                cp,
+                cfg.control_plane.enabled,
+            )
+        } else {
+            ClusterServiceImpl::with_experience_bank(
+                runtime.peer_manager.clone(),
+                experience_bank.clone(),
+            )
+        };
         grpc_server = grpc_server.add_service(
             sisyphus_bridge_api::cluster_proto::cluster_server::ClusterServer::new(service),
         );

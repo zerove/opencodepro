@@ -236,7 +236,7 @@
   本地查询/`/api/cluster/status` 观测视图；**默认不新建独立聚合进程**。强一致 `propose/quorum` 控制面
   未启用生产路径（`proposer: None`/语义未定义场景不得虚假成功）。证据：`docs/adr/018-multi-instance-coordination-and-experience-aggregation.md`（`make audit`）、
   `crates/sisyphus-bridge/tests/cluster_status_rest_test.rs::cluster_status_endpoint_reports_single_node_view`。
-  - [ ] 6.5（条件触发）强一致控制面：先满足 ADR-019 准入条件（语义/proposer 装配/故障模型/观测/验证矩阵/回滚）再实现；当前 ADR-019 已起草（`docs/adr/019-cluster-consensus-control-plane.md`），**不视为实现完成**（无测试：条件触发，准入条件未满足）。
+  - [ ] 6.5（条件触发）强一致控制面（默认租约方案进行中，门禁关闭）：已落地 ADR-019、`cluster.control_plane.enabled` 门禁、`ProposeControl` gRPC + 租约状态机（`request_id` 幂等/TTL/fencing）+ `ClusterServiceImpl` 门禁拒绝 + `GrpcPeerProposer` + 单元/Mock N=3/禁用门禁 RPC 测试。**仍待 ADR-019 准入**：生产 proposer 地址解析与成员变更集成、真实 N=3 分区/leader 变更/混沌矩阵、REST 写入面（如需）、回滚演练；未满足前不得生产启用。
 
 ### 阶段 7: 近期优先级 (2026-08-31 起, 1-2 周窗口)
 

@@ -17,6 +17,10 @@ service Cluster {
   // 服务端推送 PeerJoined / PeerLeft / ExperienceSync
   // 客户端推送 StateProposal / ExperienceSync
   rpc Stream (stream ClusterEvent) returns (stream ClusterEvent);
+
+  // ADR-019 控制面提案（unary，peer-to-peer）。受 `[cluster.control_plane].enabled` 门禁；
+  // 未启用/不满足准入条件时返回拒绝，不得虚假成功。
+  rpc ProposeControl (ControlProposeRequest) returns (ControlProposeResponse);
 }
 
 // Join 请求
@@ -169,3 +173,45 @@ message ExperienceSync {
   // 序列化 payload (ExperienceTuple JSON)
   bytes payload = 4;
 }
+
+//
+// ── Control Plane (ADR-019, Phase 6.5；默认门禁关闭) ─────────────────────────
+//
+// 强一致控制面提案。与 `StateProposal`/`ExperienceSync` 数据面分离：
+// - 不走 `ClusterEvent` 双向流的最终一致合并；
+// - 由 leader 通过 `PeerProposer` 向对端发起 `ProposeControl`，按多数派判定；
+// - 超时/不确定 = 显式错误，不判定成功；生产路径受 `[cluster.control_plane].enabled` 门禁。
+//
+// v1 触发用例：分布式任务租约（acquire/renew/release），`request_id` 幂等，
+// `generation` fencing，TTL 过期。未实现自动续约、跨集群、动态成员变更共识。
+
+// 控制面提案请求（peer-to-peer unary，由 proposer 调用对端）。
+message ControlProposeRequest {
+  // 客户端/提案幂等键（同 key+request_id 重放返回幂等结果）。
+  string request_id = 1;
+  // 控制对象键（如租约键 `lease:<resource>`）。
+  string key = 2;
+  // 操作类型：`lease.acquire` / `lease.renew` / `lease.release`。
+  string operation = 3;
+  // JSON payload（操作参数，如 owner/ttl_secs）。
+  bytes payload_json = 4;
+  // 提案来源节点。
+  string source_node_id = 5;
+  // 期望/已知 fencing generation（renew/release 可用于防护旧持有者；acquire 可为 0）。
+  uint64 expected_generation = 6;
+}
+
+// 控制面提案响应（对端本地判定结果；多数派 accepted 才视为提交成功）。
+message ControlProposeResponse {
+  bool accepted = 1;
+  // 应用后的 generation（fencing token）。
+  uint64 applied_generation = 2;
+  // 当前已知 generation（拒绝时用于诊断）。
+  uint64 current_generation = 3;
+  // 机器可读错误码（空=无错），如 `NOT_LEADER_PATH`/`FENCING_MISMATCH`/`LEASE_HELD`/`EXPIRED`/`DISABLED`。
+  string error_code = 4;
+  string error_message = 5;
+  // 是否为 `request_id` 幂等重放。
+  bool idempotent_replay = 6;
+}
+

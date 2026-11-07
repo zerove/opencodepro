@@ -362,4 +362,176 @@ mod tests {
         // sanity: 单次 propose < 1ms（mock 零延迟）
         assert!(per_op < Duration::from_millis(10));
     }
+
+    #[tokio::test]
+    async fn test_grpc_peer_proposer_propose_control_disabled_gate() {
+        use crate::peer::{ClusterServiceImpl, PeerManager};
+        use sisyphus_bridge_api::cluster_proto::cluster_server::ClusterServer;
+        use std::time::Duration;
+        use tokio::net::TcpListener;
+        use tonic::transport::Server;
+
+        let mgr = Arc::new(PeerManager::new("n1", Duration::from_secs(30)));
+        // control plane present but disabled gate -> DISABLED
+        let cp = Arc::new(crate::peer::control_plane::ControlPlaneState::new());
+        let svc = ClusterServiceImpl::with_control_plane(mgr, None, cp, false);
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let incoming = tokio_stream::wrappers::TcpListenerStream::new(listener);
+        tokio::spawn(async move {
+            let _ = Server::builder()
+                .add_service(ClusterServer::new(svc))
+                .serve_with_incoming(incoming)
+                .await;
+        });
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        let endpoint = format!("http://{addr}");
+        let proposer = GrpcPeerProposer::new(
+            move |_peer: &str| Some(endpoint.clone()),
+            Duration::from_secs(2),
+        );
+        let v = serde_json::json!({"request_id":"r1","operation":"lease.acquire","payload":{"owner":"n1","ttl_secs":30},"expected_generation":0});
+        let ok = proposer.send_proposal("peer-x", "lease:a", &v).await;
+        assert!(!ok, "disabled gate must reject");
+    }
+
+    #[tokio::test]
+    async fn test_grpc_peer_proposer_quorum_n3_mock() {
+        // ADR-019 矩阵（可行子集）：N=3 多数派成功、少数派失败（MockProposer）。
+        let proposer_ok = Arc::new(MockProposer {
+            acks: vec![true],
+            delay: Duration::from_millis(0),
+        });
+        let c = ClusterConsensus::with_proposer(
+            "node-a".into(),
+            vec!["node-b".into(), "node-c".into()],
+            Some(proposer_ok),
+            Duration::from_secs(1),
+        );
+        c.propose("lease:x", serde_json::json!({"request_id":"r1"})).await.expect("majority");
+
+        let proposer_no = Arc::new(MockProposer {
+            acks: vec![false],
+            delay: Duration::from_millis(0),
+        });
+        let c2 = ClusterConsensus::with_proposer(
+            "node-a".into(),
+            vec!["node-b".into(), "node-c".into()],
+            Some(proposer_no),
+            Duration::from_secs(1),
+        );
+        assert!(
+            c2.propose("lease:x", serde_json::json!({"request_id":"r2"})).await.is_err(),
+            "minority/none must fail"
+        );
+    }
+}
+
+/// ADR-019：基于 gRPC `ProposeControl` 的 `PeerProposer` 实现（v1）。
+///
+/// `resolve` 将 peer/node 标识映射为 gRPC endpoint（如 `http://127.0.0.1:50051`）。
+/// 失败/超时/拒绝统一返回 `false`，由 `ClusterConsensus` 按多数派判定；调用方应将
+/// 超时视为“不确定”，不得判定提交成功。
+pub struct GrpcPeerProposer<F>
+where
+    F: Fn(&str) -> Option<String> + Send + Sync,
+{
+    resolve: F,
+    timeout: Duration,
+}
+
+impl<F> GrpcPeerProposer<F>
+where
+    F: Fn(&str) -> Option<String> + Send + Sync,
+{
+    pub fn new(resolve: F, timeout: Duration) -> Self {
+        Self { resolve, timeout }
+    }
+}
+
+#[async_trait]
+impl<F> PeerProposer for GrpcPeerProposer<F>
+where
+    F: Fn(&str) -> Option<String> + Send + Sync,
+{
+    async fn send_proposal(&self, peer: &str, key: &str, value: &Value) -> bool {
+        let Some(endpoint) = (self.resolve)(peer) else {
+            tracing::warn!(peer = %peer, "GrpcPeerProposer: cannot resolve peer endpoint");
+            return false;
+        };
+        let connect = match tokio::time::timeout(
+            self.timeout,
+            sisyphus_bridge_api::cluster_proto::cluster_client::ClusterClient::connect(
+                endpoint.clone(),
+            ),
+        )
+        .await
+        {
+            Ok(Ok(c)) => c,
+            Ok(Err(e)) => {
+                tracing::warn!(peer = %peer, endpoint = %endpoint, error = %e, "GrpcPeerProposer: connect failed");
+                return false;
+            },
+            Err(_) => {
+                tracing::warn!(peer = %peer, endpoint = %endpoint, "GrpcPeerProposer: connect timeout");
+                return false;
+            },
+        };
+        let mut client = connect;
+        let (request_id, operation, payload_json, expected_generation) =
+            match control_proposal_from_value(key, value) {
+                Ok(v) => v,
+                Err(e) => {
+                    tracing::warn!(peer = %peer, key = %key, error = %e, "GrpcPeerProposer: invalid proposal value");
+                    return false;
+                },
+            };
+        let req = sisyphus_bridge_api::cluster_proto::ControlProposeRequest {
+            request_id,
+            key: key.to_string(),
+            operation,
+            payload_json,
+            source_node_id: String::new(),
+            expected_generation,
+        };
+        match tokio::time::timeout(self.timeout, client.propose_control(req)).await {
+            Ok(Ok(resp)) => {
+                let r = resp.into_inner();
+                if !r.accepted {
+                    tracing::debug!(peer = %peer, code = %r.error_code, msg = %r.error_message, "GrpcPeerProposer: rejected");
+                }
+                r.accepted
+            },
+            Ok(Err(e)) => {
+                tracing::warn!(peer = %peer, error = %e, "GrpcPeerProposer: RPC failed");
+                false
+            },
+            Err(_) => {
+                tracing::warn!(peer = %peer, "GrpcPeerProposer: RPC timeout (uncertain; treated as failure)");
+                false
+            },
+        }
+    }
+}
+
+/// 将 `Consensus::propose(key, value)` 的 JSON value 映射为控制面请求字段。
+/// 约定：`{"request_id":"...","operation":"lease.acquire","payload":{...},"expected_generation":0}`
+fn control_proposal_from_value(
+    key: &str,
+    value: &Value,
+) -> Result<(String, String, Vec<u8>, u64), String> {
+    let request_id =
+        value.get("request_id").and_then(|v| v.as_str()).ok_or("missing request_id")?.to_string();
+    let operation =
+        value.get("operation").and_then(|v| v.as_str()).unwrap_or("lease.acquire").to_string();
+    let payload = value
+        .get("payload")
+        .cloned()
+        .unwrap_or_else(|| serde_json::json!({"owner":"","ttl_secs":30}));
+    let payload_json = serde_json::to_vec(&payload).map_err(|e| e.to_string())?;
+    let expected_generation =
+        value.get("expected_generation").and_then(|v| v.as_u64()).unwrap_or(0);
+    let _ = key; // key carried separately
+    Ok((request_id, operation, payload_json, expected_generation))
 }

@@ -50,3 +50,10 @@ GET /api/cluster/status
 - 经验/策略同步为**最终一致**（CRDT + generation + 反熵）；短暂不一致不等于故障。
 - 强一致 `propose/quorum` 控制面**未在生产路径启用**（ADR-018）；不要将 `leader`/`is_leader` 解释为互斥提交成功。
 - 非目标（当前不做）：跨节点策略协商、定向转发（除非满足触发条件）、独立经验聚合进程。
+
+
+## 5. 控制面（ADR-019，门禁关闭）
+
+- `cluster.control_plane.enabled` / `SISYPHUS_CLUSTER_CONTROL_PLANE_ENABLED` 默认 `false`；`GET /api/cluster/status` 的 `config.control_plane_enabled` 反映门禁状态。
+- gRPC `Cluster.ProposeControl`：门禁关闭或状态未装配时返回 `accepted=false` + `DISABLED`/`UNAVAILABLE`，**不是**提交成功。
+- v1 租约操作（`lease.acquire/renew/release`）具备 `request_id` 幂等、TTL、fencing generation；生产多节点 quorum/分区/混沌验证与 REST 写入面尚未完成前不得生产启用。
