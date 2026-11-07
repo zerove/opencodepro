@@ -50,6 +50,19 @@
 
 ### Added
 
+- **联邦来源标注与一致性校验**（ADR-017 Amendment 4，Phase G，v0.4.0 后续）：
+  - `ClusterEvent::StateProposal` / proto `StateProposal.source_node_id`（field 4）
+    在全链路透传（manager → outbound → inbound → handler）。
+  - `apply_remote` 在解析载荷前识别自回环、并在源与载荷 `node_id` 不一致时拒绝：
+    来源即自身 → 早退丢弃；不一致 → warn + 丢弃（视图分槽依据是载荷，source 只作标注）。
+  - 空来源（旧版本对端）→ 跳过交叉校验，滚动升级期间不丢数据。
+  - 定向转发评估结论：**推迟**（需每流握手/拆通道，属结构性改动；N≤10 量化后可忽略）。
+
+- **联邦成员槽位对账治本**（ADR-017 遗留闭环，Phase D 之后）：`StrategyWeightsHandler`
+  周期对账用 `list_peers()` 与 `seen_members` 比对成员集合，回收「曾见过成员、已离线」
+  的策略槽位（`Lagged` 漏 `PeerLeft` 时的槽位残留治本解）。单测
+  `reconcile_offline_nodes_drops_orphaned_known_slots`；**变异验证 1 处**（条件取反）稳定失败
+  并还原。
 
 ## [v0.4.0] - 2026-11-06
 
@@ -167,19 +180,6 @@
   `make audit`、`make todo-audit` 全绿；bridge 侧策略权重集成测试
   （`cluster_integration` 23 / `strategy_weights_rest_test` 2 /
   `webui_contract` 2 / `openapi_live_contract` 3）与反熵/混沌用例全绿。
-
-- **联邦来源标注与一致性校验**（v0.4.0 Phase G，ADR-017 Amendment 4）：
-  - `ClusterEvent::StateProposal` / proto `StateProposal.source_node_id`（field 4）
-    在全链路透传（manager → outbound → inbound → handler）。
-  - `apply_remote` 在解析载荷前识别自回环、并在源与载荷 `node_id` 不一致时拒绝：
-    来源即自身 → 早退丢弃；不一致 → warn + 丢弃（视图分槽依据是载荷，source 只作标注）。
-  - 空来源（旧版本对端）→ 跳过交叉校验，滚动升级期间不丢数据。
-
-- **联邦成员槽位对账治本**（v0.4.0 Phase D 遗留闭环，ADR-017 同段）：`StrategyWeightsHandler`
-  周期对账用 `list_peers()` 与 `seen_members` 比对成员集合，回收「曾见过成员、已离线」
-  的策略槽位（`Lagged` 漏 `PeerLeft` 时的槽位残留的治本解）。单测
-  `reconcile_offline_nodes_drops_orphaned_known_slots`；**变异验证 1 处**（条件取反）稳定失败
-  并还原。
 
 <!-- 下一轮的变更从这里开始写。发版时整段改名为 `## [vX.Y.Z] - <日期>`，
      并在其**之前**插入新的空 `[Unreleased]` 段（见上方发布流程）。 -->
