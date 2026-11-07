@@ -432,6 +432,11 @@ test-bridge-full: $(BRIDGE_DEPS)
 test-bridge-dedicated: $(BRIDGE_DEPS)
 	CARGO_BUILD_JOBS=1 cargo test -p sisyphus-bridge --no-default-features --test bridge_integration_test -- --include-ignored --test-threads=1 $(if $(FILTER),$(FILTER) --exact,)
 
+# ADR-019 控制面专用运行器矩阵（in-process gRPC + 本地端口/时序；见 docs/benchmarks/control-plane-dedicated-runner-evidence-*.md）
+.PHONY: test-control-plane-dedicated
+test-control-plane-dedicated:
+	CARGO_BUILD_JOBS=1 cargo test -p sisyphus-bridge --no-default-features --lib quorum_tests -- --ignored --test-threads=1 --nocapture $(if $(FILTER),$(FILTER),)
+
 test-cli-handlers:
 	CARGO_BUILD_JOBS=1 cargo test -p sisyphus-cli --lib
 

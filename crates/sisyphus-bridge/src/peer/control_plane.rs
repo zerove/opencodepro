@@ -778,7 +778,7 @@ mod quorum_tests {
         let (m1, s1, _a1, _h1) = serve_node("n1", true).await;
         let (_m2, _s2, a2, _h2) = serve_node("n2", true).await;
         let (_m3, _s3, _a3, _h3) = serve_node("n3", true).await;
-        let _ = m1.on_peer_joined(crate::peer::manager::PeerInfo::new("n2", a2));
+        let _ = m1.on_peer_joined(crate::peer::manager::PeerInfo::new("n2", a2.clone()));
         // n3 initially unreachable
         let _ = m1.on_peer_joined(crate::peer::manager::PeerInfo::new(
             "n3",
@@ -791,11 +791,16 @@ mod quorum_tests {
         // majority (n1+n2) should succeed despite n3 unreachable
         assert!(out.decision.accepted || out.uncertain, "{out:?}");
         // heal: update n3 address (PeerManager::on_peer_joined overwrites)
-        let (_m3b, _s3b, a3b, _h3b) = serve_node("n3-healed", true).await;
+        let (_m3b, s3b, a3b, _h3b) = serve_node("n3-healed", true).await;
         let _ = m1.on_peer_joined(crate::peer::manager::PeerInfo::new("n3", a3b));
         // different key to avoid lease-held; proves coordinator uses updated membership
         let out2 = coord.propose_lease("r2", "lease:heal2", "lease.acquire", &p, 0, 1, 3600).await;
-        assert!(out2.decision.accepted, "{out2:?}");
+        assert!(
+            out2.decision.accepted,
+            "{out2:?} s2={:?} s3b={:?}",
+            _s2.get("lease:heal2"),
+            s3b.get("lease:heal2")
+        );
     }
 
     /// ADR-019 矩阵：回滚/门禁 — gate off 时 RPC 拒绝（DISABLED），不假成功。

@@ -219,16 +219,21 @@ impl PeerManager {
     }
 
     /// 处理一个 peer 加入事件。返回是否真的新增（已存在返回 false）。
+    ///
+    /// 已存在时更新 `PeerInfo`（支持地址变更/分区愈合）并刷新 `last_seen`，不重复广播 `PeerJoined`。
     pub fn on_peer_joined(&self, info: PeerInfo) -> bool {
         let mut peers = self.peers.write();
         let mut last_seen = self.last_seen.write();
         if peers.contains_key(&info.node_id) {
-            // 已存在：刷新 last_seen（视为重连 / 心跳）
-            last_seen.insert(info.node_id.clone(), Instant::now());
+            // 已存在：更新地址/元数据 + 刷新 last_seen（重连/心跳/分区愈合）
+            let node_id = info.node_id.clone();
+            peers.insert(node_id.clone(), info);
+            last_seen.insert(node_id, Instant::now());
             return false;
         }
-        peers.insert(info.node_id.clone(), info.clone());
-        last_seen.insert(info.node_id.clone(), Instant::now());
+        let node_id = info.node_id.clone();
+        peers.insert(node_id.clone(), info.clone());
+        last_seen.insert(node_id, Instant::now());
         // 广播事件（忽略 NoActiveReceivers 错误：可能没有订阅者）
         let _ = self.event_tx.send(ClusterEvent::PeerJoined(info));
         true

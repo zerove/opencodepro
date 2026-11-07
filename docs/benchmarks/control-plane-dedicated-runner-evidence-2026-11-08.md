@@ -39,3 +39,19 @@ env -u RUSTUP_TOOLCHAIN cargo test -p sisyphus-bridge --no-default-features --li
 - **回滚演练记录**：`cluster.control_plane.enabled=false` 后写入拒绝、只读观测可用（含 `/api/cluster/status.config.control_plane_enabled`）。
 
 执行后将命令、commit、环境、输出摘要追加到本文档或新增 `control-plane-dedicated-runner-run-<date>.md`。
+
+## 执行记录（2026-11-08，本地环境，in-process gRPC）
+
+**命令**：
+```bash
+env -u RUSTUP_TOOLCHAIN cargo test -p sisyphus-bridge --no-default-features --lib quorum_tests -- --ignored --test-threads=1
+# make test-control-plane-dedicated
+```
+
+**结果**：`3 passed; 0 failed; 0 ignored`（`peer::control_plane::quorum_tests::*`）
+- `n3_minority_cannot_commit_when_quorum_unreachable` ... ok
+- `n3_partition_heal_rejoin_address_update` ... ok（配套修复：`PeerManager::on_peer_joined` 已存在 peer 时更新 `PeerInfo`/地址并刷新 `last_seen`，支持分区愈合地址恢复；返回值语义保持 `false`=非新增）
+- `rollback_gate_off_rejects_control_plane_writes` ... ok
+
+**覆盖范围（诚实）**：in-process N=3 gRPC、本地 ephemeral 端口、可控不可达地址/门禁；验证多数派不可达 fail-closed（无假成功）、成员地址恢复后协调可用、门禁关闭写入拒绝+无状态写入。  
+**未覆盖（仍需专用 runner/生产环境证据）**：真实跨进程/跨主机网络分区、丢包/延迟混沌、进程崩溃重启、leader 变更的网络级安全性、TLS/mTLS、连接池耗尽/成员抖动长稳、回滚演练在真实部署配置下的操作证据。ADR-019 生产启用仍阻塞于上述证据与生产网络装配。
