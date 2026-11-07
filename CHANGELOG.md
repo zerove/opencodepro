@@ -56,12 +56,12 @@
   与 consensus trait 视图（leader/is_leader）。不改变传播、合并或决策路径；为「多实例协调与共识」
   后续工作提供可观测基础。已接入 OpenAPI，集成测试 `cluster_status_rest_test` 覆盖单节点快照契约。
 
-- **经验同步计数可观测**（Phase 6.2b，只读）：`PeerManager` 新增经验同步原子计数（与
+- **经验同步计数可观测**（Phase 6.2b/6.3，只读）：`PeerManager` 新增经验同步原子计数（与
   `state_proposal_broadcasts` 对齐）：`experience_sync_broadcasts`（本地广播）、
   `experience_sync_inbound_delivered`（入站投递）；`ExperienceSyncHandler` 在不改变合并语义的前提下
-  记录 `experience_sync_inbound_applied`（CRDT Applied）与 `experience_sync_inbound_rejected`
-  （反序列化/联邦质量拒绝/落库错误；Kept/Equal 不计为拒绝）。计数通过 `/api/cluster/status`
-  暴露。
+  记录 `experience_sync_inbound_applied`（CRDT Applied）与 `inbound_rejected` 总数及分解
+  （`inbound_rejected_deserialize`/`quality`/`apply`；Kept/Equal 不计为拒绝）。计数通过
+  `/api/cluster/status` 暴露；新增 `book/src/cluster-troubleshooting.md` 排障 runbook。
 
 - **联邦来源标注与一致性校验**（ADR-017 Amendment 4，Phase G，v0.4.0 后续）：
   - `ClusterEvent::StateProposal` / proto `StateProposal.source_node_id`（field 4）

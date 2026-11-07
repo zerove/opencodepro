@@ -137,9 +137,12 @@ pub struct PeerManager {
     experience_sync_inbound_delivered: std::sync::atomic::AtomicU64,
     /// Phase 6.2b：入站经验被 CRDT 合并实际写入本地（Applied）的次数。
     experience_sync_inbound_applied: std::sync::atomic::AtomicU64,
-    /// Phase 6.2b：入站经验被拒绝/丢弃的次数（反序列化失败、联邦质量拒绝、落库错误）。
+    /// Phase 6.2b/6.3：入站经验被拒绝/丢弃的总次数（= deserialize + quality + apply）。
     /// Kept/Equal（幂等/本地更新）不计入 rejected，以免与“拒绝”语义混淆。
     experience_sync_inbound_rejected: std::sync::atomic::AtomicU64,
+    experience_sync_inbound_rejected_deserialize_count: std::sync::atomic::AtomicU64,
+    experience_sync_inbound_rejected_quality_count: std::sync::atomic::AtomicU64,
+    experience_sync_inbound_rejected_apply_count: std::sync::atomic::AtomicU64,
 }
 
 impl PeerManager {
@@ -159,6 +162,11 @@ impl PeerManager {
             experience_sync_inbound_delivered: std::sync::atomic::AtomicU64::new(0),
             experience_sync_inbound_applied: std::sync::atomic::AtomicU64::new(0),
             experience_sync_inbound_rejected: std::sync::atomic::AtomicU64::new(0),
+            experience_sync_inbound_rejected_deserialize_count: std::sync::atomic::AtomicU64::new(
+                0,
+            ),
+            experience_sync_inbound_rejected_quality_count: std::sync::atomic::AtomicU64::new(0),
+            experience_sync_inbound_rejected_apply_count: std::sync::atomic::AtomicU64::new(0),
         }
     }
 
@@ -329,9 +337,23 @@ impl PeerManager {
         self.experience_sync_inbound_applied.load(std::sync::atomic::Ordering::SeqCst)
     }
 
-    /// Phase 6.2b：累计入站经验拒绝次数（解析/联邦质量/落库错误）。
+    /// Phase 6.2b/6.3：累计入站经验拒绝总次数（= deserialize + quality + apply）。
     pub fn experience_sync_inbound_rejected(&self) -> u64 {
         self.experience_sync_inbound_rejected.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    pub fn experience_sync_inbound_rejected_deserialize(&self) -> u64 {
+        self.experience_sync_inbound_rejected_deserialize_count
+            .load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    pub fn experience_sync_inbound_rejected_quality(&self) -> u64 {
+        self.experience_sync_inbound_rejected_quality_count
+            .load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    pub fn experience_sync_inbound_rejected_apply(&self) -> u64 {
+        self.experience_sync_inbound_rejected_apply_count.load(std::sync::atomic::Ordering::SeqCst)
     }
 
     /// Phase 6.2b：记录入站经验应用结果（由 handler 调用，不改变合并语义）。
@@ -339,9 +361,21 @@ impl PeerManager {
         self.experience_sync_inbound_applied.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
     }
 
-    /// Phase 6.2b：记录入站经验拒绝（由 handler 调用，不改变合并语义）。
-    pub(crate) fn record_experience_sync_rejected(&self) {
+    fn bump_rejected(&self, kind: &std::sync::atomic::AtomicU64) {
+        kind.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         self.experience_sync_inbound_rejected.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    pub(crate) fn record_experience_sync_rejected_deserialize(&self) {
+        self.bump_rejected(&self.experience_sync_inbound_rejected_deserialize_count);
+    }
+
+    pub(crate) fn record_experience_sync_rejected_quality(&self) {
+        self.bump_rejected(&self.experience_sync_inbound_rejected_quality_count);
+    }
+
+    pub(crate) fn record_experience_sync_rejected_apply(&self) {
+        self.bump_rejected(&self.experience_sync_inbound_rejected_apply_count);
     }
 
     /// 广播一个本地产生的 `ExperienceSync` 事件。
@@ -355,8 +389,7 @@ impl PeerManager {
         vector_clock_json: impl Into<String>,
         payload: Vec<u8>,
     ) {
-        self.experience_sync_broadcasts
-            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        self.experience_sync_broadcasts.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         let _ = self.event_tx.send(ClusterEvent::ExperienceSync {
             exp_key: exp_key.into(),
             version,
@@ -699,8 +732,13 @@ mod tests {
         assert_eq!(mgr.experience_sync_inbound_delivered(), 1);
 
         mgr.record_experience_sync_applied();
-        mgr.record_experience_sync_rejected();
+        mgr.record_experience_sync_rejected_deserialize();
+        mgr.record_experience_sync_rejected_quality();
+        mgr.record_experience_sync_rejected_apply();
         assert_eq!(mgr.experience_sync_inbound_applied(), 1);
-        assert_eq!(mgr.experience_sync_inbound_rejected(), 1);
+        assert_eq!(mgr.experience_sync_inbound_rejected(), 3);
+        assert_eq!(mgr.experience_sync_inbound_rejected_deserialize(), 1);
+        assert_eq!(mgr.experience_sync_inbound_rejected_quality(), 1);
+        assert_eq!(mgr.experience_sync_inbound_rejected_apply(), 1);
     }
 }

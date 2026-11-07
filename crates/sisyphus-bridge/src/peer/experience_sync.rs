@@ -288,7 +288,7 @@ impl ExperienceSyncHandler {
             Err(e) => {
                 tracing::warn!(error = %e, exp_key = %exp_key, "failed to deserialize remote experience");
                 if let Some(pm) = peer_manager {
-                    pm.record_experience_sync_rejected();
+                    pm.record_experience_sync_rejected_deserialize();
                 }
                 return;
             },
@@ -328,7 +328,7 @@ impl ExperienceSyncHandler {
                     "federated aggregation rejected low-quality remote experience",
                 );
                 if let Some(pm) = peer_manager {
-                    pm.record_experience_sync_rejected();
+                    pm.record_experience_sync_rejected_quality();
                 }
                 return;
             }
@@ -370,7 +370,7 @@ impl ExperienceSyncHandler {
             Err(e) => {
                 tracing::error!(error = %e, exp_key = %exp_key, "failed to apply remote experience");
                 if let Some(pm) = peer_manager {
-                    pm.record_experience_sync_rejected();
+                    pm.record_experience_sync_rejected_apply();
                 }
             },
         }

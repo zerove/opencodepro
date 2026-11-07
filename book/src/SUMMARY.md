@@ -31,6 +31,7 @@
   - [Python](./sdk-python.md)
   - [Go](./sdk-go.md)
 - [REST API](./rest-api.md)
+- [集群排障](./cluster-troubleshooting.md)
 - [性能](./performance.md)
   - [Bench Dashboard](./bench-dashboard.md)
 - [评测套件](./eval-suite.md)

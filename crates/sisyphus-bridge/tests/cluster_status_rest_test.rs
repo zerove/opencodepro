@@ -55,6 +55,9 @@ async fn cluster_status_endpoint_reports_single_node_view() {
     assert_eq!(exp["inbound_delivered"], 0, "{json:?}");
     assert_eq!(exp["inbound_applied"], 0, "{json:?}");
     assert_eq!(exp["inbound_rejected"], 0, "{json:?}");
+    assert_eq!(exp["inbound_rejected_deserialize"], 0, "{json:?}");
+    assert_eq!(exp["inbound_rejected_quality"], 0, "{json:?}");
+    assert_eq!(exp["inbound_rejected_apply"], 0, "{json:?}");
     assert!(json["peers"].is_array(), "peers 应为数组: {json:?}");
     assert!(json["peers"].as_array().expect("array").is_empty());
     // consensus trait view 始终存在（桥接持有 Arc<dyn Consensus>）

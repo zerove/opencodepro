@@ -760,6 +760,9 @@ pub(super) async fn cluster_status_handler(State(state): State<RestApiState>) ->
                     "inbound_delivered": pm.experience_sync_inbound_delivered(),
                     "inbound_applied": pm.experience_sync_inbound_applied(),
                     "inbound_rejected": pm.experience_sync_inbound_rejected(),
+                    "inbound_rejected_deserialize": pm.experience_sync_inbound_rejected_deserialize(),
+                    "inbound_rejected_quality": pm.experience_sync_inbound_rejected_quality(),
+                    "inbound_rejected_apply": pm.experience_sync_inbound_rejected_apply(),
                 },
             });
             (serde_json::Value::Array(peers), view)
@@ -777,6 +780,9 @@ pub(super) async fn cluster_status_handler(State(state): State<RestApiState>) ->
                     "inbound_delivered": 0,
                     "inbound_applied": 0,
                     "inbound_rejected": 0,
+                    "inbound_rejected_deserialize": 0,
+                    "inbound_rejected_quality": 0,
+                    "inbound_rejected_apply": 0,
                 },
             }),
         ),
