@@ -175,6 +175,12 @@
     来源即自身 → 早退丢弃；不一致 → warn + 丢弃（视图分槽依据是载荷，source 只作标注）。
   - 空来源（旧版本对端）→ 跳过交叉校验，滚动升级期间不丢数据。
 
+- **联邦成员槽位对账治本**（v0.4.0 Phase D 遗留闭环，ADR-017 同段）：`StrategyWeightsHandler`
+  周期对账用 `list_peers()` 与 `seen_members` 比对成员集合，回收「曾见过成员、已离线」
+  的策略槽位（`Lagged` 漏 `PeerLeft` 时的槽位残留的治本解）。单测
+  `reconcile_offline_nodes_drops_orphaned_known_slots`；**变异验证 1 处**（条件取反）稳定失败
+  并还原。
+
 <!-- 下一轮的变更从这里开始写。发版时整段改名为 `## [vX.Y.Z] - <日期>`，
      并在其**之前**插入新的空 `[Unreleased]` 段（见上方发布流程）。 -->
 

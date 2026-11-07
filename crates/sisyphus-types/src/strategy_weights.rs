@@ -140,6 +140,14 @@ impl FederatedStrategyWeights {
         self.nodes.remove(node_id).is_some()
     }
 
+    /// 已收录的节点 ID 列表（与 `node_count` 并用：数 + 列）。
+    ///
+    /// ADR-017 遗留的治本方案需要「对账」——用当前成员集合逐个核对视图里
+    /// 哪些槽位应还活着。这里提供有序遍历，调用方据此做周期性回收。
+    pub fn node_ids(&self) -> Vec<String> {
+        self.nodes.keys().cloned().collect()
+    }
+
     /// 已收录的节点数。
     pub fn node_count(&self) -> usize {
         self.nodes.len()

@@ -220,7 +220,10 @@
   - Phase G ✅（v0.4.0，ADR-017 Amendment 4）：来源标注（proto `source_node_id`）+ 自回环早退
     + 来源/载荷一致性校验 + 空来源兼容；**按对端定向转发仍推迟**（见 ADR-017 Amendment 4
     评估结论：结构性改动，量化后不推荐在当前规模实施）。
-  - 剩余：`Lagged` 漏 `PeerLeft` 时的视图对账。
+  - Phase D 遗留（治本方案）✅：`StrategyWeightsHandler` 周期对账已实现（
+    `list_peers()` 与 `seen_members` 比对，回收「曾见过成员、已离线」的槽位），
+    单测 `peer::strategy_weights::tests::reconcile_offline_nodes_drops_orphaned_known_slots`
+    覆盖；事件路径（`PeerLeft` → `forget_node`）由 Phase D 已覆盖。
 - [ ] 多实例协调与共识、经验聚合服务
 
 ### 阶段 7: 近期优先级 (2026-08-31 起, 1-2 周窗口)

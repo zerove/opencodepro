@@ -62,6 +62,10 @@ pub struct StrategyWeightsHandler {
     /// 每次照发都会把一份无变化的快照 fan-out 给整个集群（全连接时 O(N²)）。
     /// 内容（策略统计）未变时跳过发送，只更新本地视图的 generation。
     last_published: parking_lot::Mutex<Option<NodeStrategySnapshot>>,
+    /// 已知成员集合（治本对账用）。启动时从 manager 同步一次现场成员，
+    /// Join/Leave 成员事件在此更新。对账只回收「曾见过成员、现在已离线」
+    /// 的槽位，避免清洗从未见过的节点。
+    seen_members: parking_lot::Mutex<std::collections::HashSet<String>>,
 }
 
 impl StrategyWeightsHandler {
@@ -72,6 +76,9 @@ impl StrategyWeightsHandler {
         meta_learner: Arc<parking_lot::Mutex<MetaLearner>>,
         shared: Arc<RwLock<FederatedStrategyWeights>>,
     ) -> Self {
+        let seen_members = std::collections::HashSet::from_iter(
+            peer_manager.list_peers().into_iter().map(|p| p.node_id),
+        );
         Self {
             peer_manager,
             self_node_id: self_node_id.into(),
@@ -79,6 +86,7 @@ impl StrategyWeightsHandler {
             shared,
             publish_interval: Duration::from_secs(DEFAULT_PUBLISH_INTERVAL_SECS),
             last_published: parking_lot::Mutex::new(None),
+            seen_members: parking_lot::Mutex::new(seen_members),
         }
     }
 
@@ -261,6 +269,47 @@ impl StrategyWeightsHandler {
         accepted
     }
 
+    /// ADR-017 遗留的治本方案：用 `list_peers()` 对账视图里的节点集合，
+    /// 回收「曾见过成员、现在已离线的槽位」。
+    ///
+    /// 背景：成员事件只走本地通道；订阅者因广播 `Lagged` 丢掉了 `PeerLeft`
+    /// 时，`forget_node` 没被触发，视图里就会残留已离线的槽位（聚合被污染）。
+    /// 与周期发布并列跑一次本对账，不依赖事件恰好送达。
+    ///
+    /// 只回收 `seen_members` 里记录过、但已不在当前成员集合里的节点槽位
+    /// （自身除外）；从未见过（`seen_members` 未收录）的槽位一律保留，避免清洗
+    /// 异常状态下的正常远端数据。
+    ///
+    /// 幂等：对账只删槽位，不重建。
+    fn reconcile_offline_nodes(&self) -> usize {
+        let live: std::collections::HashSet<String> = self
+            .peer_manager
+            .list_peers()
+            .into_iter()
+            .map(|p| p.node_id)
+            .chain(std::iter::once(self.self_node_id.clone()))
+            .collect();
+        let seen = self.seen_members.lock().clone();
+        let mut dropped = 0usize;
+        let managed: Vec<String> = self.shared.read().node_ids();
+        for node_id in managed {
+            if node_id == self.self_node_id {
+                continue;
+            }
+            let known = seen.contains(&node_id);
+            let online = live.contains(&node_id);
+            if known && !online && self.shared.write().remove_node(&node_id) {
+                dropped += 1;
+                tracing::info!(
+                    node_id = %node_id,
+                    "strategy weights: reconciled stale slot after member lag"
+                );
+            }
+        }
+        *self.seen_members.lock() = live;
+        dropped
+    }
+
     /// 启动同步循环：周期发布本地快照 + 消费入站快照。
     ///
     /// 与 [`crate::peer::ExperienceSyncHandler::spawn`] 一致，订阅的是
@@ -289,6 +338,8 @@ impl StrategyWeightsHandler {
             // 存活才不会收到 `Closed`。此处与经验同步一致，避免任务静默退出。
             let _keep_manager_alive = peer_manager;
             loop {
+                // ADR-017 遗留治本方案：周期性对账成员集合，回收漏掉 `PeerLeft` 的槽位。
+                self.reconcile_offline_nodes();
                 tokio::select! {
                     biased;
                     _ = shutdown_rx.recv() => {
@@ -300,12 +351,16 @@ impl StrategyWeightsHandler {
                     }
                     result = members.recv() => {
                         match result {
+                            Ok(MgrEvent::PeerJoined(info)) => {
+                                self.seen_members.lock().insert(info.node_id.clone());
+                            },
                             Ok(MgrEvent::PeerLeft { node_id, reason }) => {
                                 tracing::debug!(
                                     node_id = %node_id,
                                     reason = %reason,
                                     "strategy weights: peer left"
                                 );
+                                self.seen_members.lock().remove(&node_id);
                                 self.forget_node(&node_id);
                             },
                             // 本地通道上还会看到自己发布的 StateProposal（publish_once
@@ -615,11 +670,39 @@ mod tests {
         assert_eq!(shared.read().node_count(), 1);
     }
 
+    /// ADR-017 遗留治本方案：对账只回收「曾见过成员、现在已离线的槽位」。
+    ///
+    /// 已知成员 `node-b` 已离（不在当前成员集合），槽位必须被回收；
+    /// 从未见过的节点槽位不参与清理（避免误删）。
+    #[test]
+    fn reconcile_offline_nodes_drops_orphaned_known_slots() {
+        let shared = Arc::new(RwLock::new(FederatedStrategyWeights::default()));
+        let (_manager, h) = handler("node-a", temp_learner("reconcile"), shared.clone());
+
+        let remote = NodeStrategySnapshot::from_insight("node-b", 10, &empty_insight());
+        assert!(shared.write().merge(remote));
+        assert_eq!(shared.read().node_count(), 1);
+
+        // 模拟「曾见过 node-b 但已离线」：成员簿里不含 node-b，而 seen 里有。
+        h.seen_members.lock().insert("node-b".to_string());
+
+        let dropped = h.reconcile_offline_nodes();
+        assert_eq!(dropped, 1, "已离线的 known 成员槽位应被回收");
+        assert_eq!(shared.read().node_count(), 0);
+
+        // 从未见过的节点：不清理。
+        let remote2 = NodeStrategySnapshot::from_insight("node-zzz", 3, &empty_insight());
+        assert!(shared.write().merge(remote2));
+        assert_eq!(shared.read().node_count(), 1);
+        assert_eq!(h.reconcile_offline_nodes(), 0, "从未见过的节点不应被回收");
+        assert_eq!(shared.read().node_count(), 1);
+    }
+
     /// 节点离开后必须回收其槽位，且只影响该节点（ADR-017 Amendment 2）。
     ///
     /// 走真实装配：`on_peer_left` 把 `PeerLeft` 发到本地通道，handler 的
     /// `members` 分支消费它。只测 `remove_node` 是不够的——入站通道里
-    /// 根本没有成员事件，若忘了订阅本地通道，单测全绿而功能永不触发。
+    /// 根本没有成员事件，若忘了订阅本地通道，单测全绿和功能永不触发.
     #[tokio::test]
     async fn peer_left_drops_node_slot_and_keeps_others() {
         let shared = Arc::new(RwLock::new(FederatedStrategyWeights::default()));

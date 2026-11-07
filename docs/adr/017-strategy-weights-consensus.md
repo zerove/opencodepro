@@ -456,6 +456,9 @@ Phase G 两处变异还原后各重跑单测全绿（10 passed / 1 passed）。
   **Phase G 评估已闭环**：已决定**推迟实施**（见 Amendment 4）。来源标注
   （`source_node_id`）与一致性校验已交付，为未来定向转发做好前提。
 - **节点槽位 TTL 已加**（Amendment 2），但溢出的 `Lagged` 会漏掉 `PeerLeft`
-  → 槽位残留（已记 warn，未做对账）。治本方案是用 `list_peers()` 定期
-  对账视图里的节点集合。
+  → 槽位残留（已记 warn，未做对账）。**治本方案已实施**（Phase G 之后随联邦闭环
+  落地）：`StrategyWeightsHandler` 周期对账用 `list_peers()` 与内部 `seen_members`
+  比对，回收「曾见过成员、现在已离线」的槽位；事件路径（`PeerLeft` → `forget_node`）
+  由 Phase D 覆盖。单测 `reconcile_offline_nodes_drops_orphaned_known_slots`；
+  **变异验证 1 处**（条件取反）稳定失败并还原。
 - **全量快照**：策略名规模暴涨时需改增量或 top-K（`/v2`）。
