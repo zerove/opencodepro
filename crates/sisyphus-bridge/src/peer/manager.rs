@@ -67,7 +67,12 @@ pub enum ClusterEvent {
         reason: String,
     },
     /// 跨节点状态提案（CRDT 同步等）
-    StateProposal { key: String, value: Vec<u8> },
+    StateProposal {
+        /// 本提案描述的是哪个节点的策略快照（v0.4.0 Phase G：定向转发用）
+        source_node_id: String,
+        key: String,
+        value: Vec<u8>,
+    },
     /// Experience sync 事件（TODO 8.3.2 + 8.3.1 集成）
     ExperienceSync {
         exp_key: String,
@@ -273,9 +278,15 @@ impl PeerManager {
     }
 
     /// 广播一个 StateProposal 事件
-    pub fn broadcast_state_proposal(&self, key: impl Into<String>, value: Vec<u8>) {
+    pub fn broadcast_state_proposal(
+        &self,
+        source_node_id: impl Into<String>,
+        key: impl Into<String>,
+        value: Vec<u8>,
+    ) {
         self.state_proposal_broadcasts.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         let _ = self.event_tx.send(ClusterEvent::StateProposal {
+            source_node_id: source_node_id.into(),
             key: key.into(),
             value,
         });
@@ -341,8 +352,14 @@ impl PeerManager {
     /// 在此之前入站 `StateProposal` 在 `proto_to_mgr_event` 就被丢弃了（注释写
     /// 「handled separately」，实际没有消费方），于是任何依赖它传播的集群状态
     /// 都只出去不回来。
-    pub fn deliver_inbound_state_proposal(&self, key: impl Into<String>, value: Vec<u8>) {
+    pub fn deliver_inbound_state_proposal(
+        &self,
+        source_node_id: impl Into<String>,
+        key: impl Into<String>,
+        value: Vec<u8>,
+    ) {
         let _ = self.inbound_tx.send(ClusterEvent::StateProposal {
+            source_node_id: source_node_id.into(),
             key: key.into(),
             value,
         });
@@ -509,6 +526,7 @@ mod tests {
         );
         assert_eq!(
             ClusterEvent::StateProposal {
+                source_node_id: "node-b".into(),
                 key: "k".into(),
                 value: vec![]
             }
@@ -522,12 +540,12 @@ mod tests {
         let mgr = PeerManager::new("node-a", Duration::from_secs(30));
         assert_eq!(mgr.state_proposal_broadcasts(), 0, "初始计数为 0");
 
-        mgr.broadcast_state_proposal("sisyphus.strategy-weights/v1", vec![1]);
-        mgr.broadcast_state_proposal("sisyphus.strategy-weights/v1", vec![2]);
+        mgr.broadcast_state_proposal("node-a", "sisyphus.strategy-weights/v1", vec![1]);
+        mgr.broadcast_state_proposal("node-a", "sisyphus.strategy-weights/v1", vec![2]);
         assert_eq!(mgr.state_proposal_broadcasts(), 2);
 
         // 入站通道不计数：它只走 inbound_tx，不构成「发出」。
-        mgr.deliver_inbound_state_proposal("sisyphus.strategy-weights/v1", vec![3]);
+        mgr.deliver_inbound_state_proposal("node-a", "sisyphus.strategy-weights/v1", vec![3]);
         assert_eq!(mgr.state_proposal_broadcasts(), 2);
     }
 
@@ -535,10 +553,15 @@ mod tests {
     fn test_peer_manager_broadcast_state_proposal() {
         let mgr = PeerManager::new("node-a", Duration::from_secs(30));
         let mut rx = mgr.subscribe();
-        mgr.broadcast_state_proposal("config:foo", vec![1, 2, 3]);
+        mgr.broadcast_state_proposal("node-a", "config:foo", vec![1, 2, 3]);
         let evt = rx.try_recv().expect("event");
         match evt {
-            ClusterEvent::StateProposal { key, value } => {
+            ClusterEvent::StateProposal {
+                source_node_id,
+                key,
+                value,
+            } => {
+                assert_eq!(source_node_id, "node-a");
                 assert_eq!(key, "config:foo");
                 assert_eq!(value, vec![1, 2, 3]);
             },

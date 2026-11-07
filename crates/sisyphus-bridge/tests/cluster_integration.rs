@@ -1714,6 +1714,7 @@ async fn test_three_node_strategy_weights_converge_across_chain_topology() {
     };
     for _ in 0..2 {
         node_a.manager.broadcast_state_proposal(
+            node_a.manager.self_node_id(),
             sisyphus_bridge::peer::strategy_weights::STRATEGY_WEIGHTS_KEY,
             payload.clone(),
         );

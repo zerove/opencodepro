@@ -217,7 +217,9 @@
     证据：`strategy_weights::tests` 决策矩阵 10 个、`MetaLearningSynthesizer`
     执行路径单测 3 个（`crates/sisyphus-intel/src/synthesis.rs::tests::test_meta_synth_*`）。
   - Phase F ✅（v0.4.0）：转发放大量化第一步——发送计数 + 内容未变跳过广播。
-    剩余：按对端定向转发（per-destination 出站通道 / proto `target_node_id`）。
+  - Phase G ✅（v0.4.0，ADR-017 Amendment 4）：来源标注（proto `source_node_id`）+ 自回环早退
+    + 来源/载荷一致性校验 + 空来源兼容；**按对端定向转发仍推迟**（见 ADR-017 Amendment 4
+    评估结论：结构性改动，量化后不推荐在当前规模实施）。
   - 剩余：`Lagged` 漏 `PeerLeft` 时的视图对账。
 - [ ] 多实例协调与共识、经验聚合服务
 

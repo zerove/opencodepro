@@ -1,7 +1,7 @@
 # ADR-017: 集群策略权重同步——每节点快照 + generation 取新
 
 **Status**: Implemented（2026-11-06，v0.4.0 Phase B；Amendment 2（Phase D）：节点离开回收槽位；
-Amendment 3（Phase E）：执行路径消费集群权重）
+Amendment 3（Phase E）：执行路径消费集群权重；Amendment 4（Phase G）：来源标注 + 一致性校验）
 **Deciders**: core team
 **Related**: ADR-009（分布式 v2 架构 / 集群事件总线）、ADR-010（反熵补偿）、ADR-016（联邦经验聚合，Phase A）
 
@@ -301,6 +301,51 @@ Phase B 落地「节点快照 + 集群聚合视图 + REST 暴露」，但**聚�
 - **变异验证 2 处**：启用后忽略本地充分门槛（变 `local.uses >= min_uses` 为恒真）
   → 本地充分用例稳定失败；两侧不足时回退改给集群 → 回退用例稳定失败。还原后全绿。
 
+## Amendment 4（2026-11-06，Phase G）：来源标注 + 一致性校验，定向转发评估结论
+
+### 背景
+
+Phase F 留下的最后一项工作是「按对端定向转发」。在 broadcast-channel 架构下
+它**不是**一个小改动：每条出站路径（拨号器 outbound task / 服务端 outbound task）订阅的是同一个
+`broadcast::Sender`，且 `Cluster::Stream` 是**独立 RPC**（与 `Join` 不共享上下文），
+服务端拿不到对端 node_id；客户端拨号侧只拿配置里 `grpc_addr`（对端可能用
+`0.0.0.0:50051` / hostname，与拨号地址不同——靠解析猜，不安全）。
+
+于是 Phase G 先做了「来源标注」的协议/事件层铺垫，并用它落地两个**安全、可测**的收窄：
+
+1. `proto/cluster.proto` 的 `StateProposal.source_node_id`（field 4） + 事件内携带，
+   全链路透传（manager → dialer outbound → server outbound → inbound → handler）。
+2. `StrategyWeightsHandler::apply_remote(source_node_id, key, value)`：
+   - 自回环：在**解析 JSON 之前**就按线上来源识别并丢弃；
+   - 一致性：来源与载荷 `node_id` 不一致 → warn + 拒绝；
+   - 空来源（旧版本对端）→ 跳过交叉校验，滚动升级期间不丢数据。
+
+### 决策
+
+- **不把 `source_node_id` 当视图分槽的事实来源**。`FederatedStrategyWeights`
+  （以及 payload 里的 `NodeStrategySnapshot.node_id`）才是唯一的事实来源；source 字段
+  只做「来源标注 + 一致性校验」。
+- **不引入新的去重状态机**——定向判断一律建立在「同一节点只被接受一次」
+  （generation 幂等）的基础上。
+
+### 定向转发的评估结论（推迟实施）
+
+- 要真做 per-destination 定向发送，需要（a）每流握手加入 peer node_id，或
+  （b）按 peer 拆分子广播通道。两者均属架构级改动。
+- 量化：全连接 N 节点、每节点每周期发布一次（Phase F 已去抖）→ 单次发布全网
+  N(N-1) 条消息。N=3 → 6，N=5 → 20，N=10 → 90；默认周期 60s。
+- **结论**：当前规模下定向转发节省的只是已知冗余的一份转发，风险（过滤错误导致
+  收敛丢失）大于收益；Phase F 去抖+计数后放大已降到可忽略。
+- **触发条件**（未来再评估）：N ≥ 16 或载荷变大。
+
+### 验证
+
+- 来源不一致 → 拒绝；空来源兼容；来源即自身 → 忽略（早退路径）。
+- `peer::manager::tests::test_peer_manager_broadcast_state_proposal` source 断言；
+  两个 service 转换测试 source 断言。
+- **变异验证 2 处**：删除来源一致性校验 → 不一致用例稳定失败；
+  取消空来源豁免 → 兼容用例稳定失败。还原后全绿。
+
 ## 实施结果（2026-11-06）
 
 | 位置 | 内容 |
@@ -323,6 +368,10 @@ Phase B 落地「节点快照 + 集群聚合视图 + REST 暴露」，但**聚�
 | `crates/sisyphus-bridge/src/peer/strategy_weights.rs`（Amendment 2） | `forget_node` + 订阅本地成员通道 + 单测 `peer_left_drops_node_slot_and_keeps_others` |
 | `crates/sisyphus-types/src/strategy_weights.rs`（Amendment 3） | `StrategySelectionConfig` + `StrategyDecision` + `select_strategy` + 10 个决策单测 |
 | `crates/sisyphus-intel/src/synthesis.rs`（Amendment 3） | `MetaLearningSynthesizer::with_federated_selection` + 3 个执行路径单测 |
+| `crates/sisyphus-bridge-api/proto/cluster.proto`（Amendment 4） | `StateProposal.source_node_id`（field 4） |
+| `crates/sisyphus-bridge/src/peer/manager.rs`（Amendment 4） | `ClusterEvent::StateProposal.source_node_id` / `broadcast_state_proposal(source, key, value)` / `deliver_inbound_state_proposal(source, key, value)` + source 断言 |
+| `crates/sisyphus-bridge/src/peer/service.rs`（Amendment 4） | `mgr_event_to_proto` / `proto_to_mgr_event` / `apply_mgr_event` source 透传 + 断言 |
+| `crates/sisyphus-bridge/src/peer/strategy_weights.rs`（Amendment 4） | `apply_remote(source_node_id, key, value)`：自回环早退 + 一致性校验 + 空来源兼容 |
 | `config.example.toml` / `book/src/configuration.md` | `strategy_sync_interval_secs` 文档 |
 | `book/src/rest-api.md` | `GET /api/strategy/weights` 响应示例与语义说明 |
 
@@ -343,6 +392,8 @@ Phase B 落地「节点快照 + 集群聚合视图 + REST 暴露」，但**聚�
 | `peer::strategy_weights`（Amendment 2） | ✅ 7 passed（新增 `peer_left_drops_node_slot_and_keeps_others`，走真实 `on_peer_left` → 本地通道 → handler） |
 | `strategy_weights::tests`（Amendment 3） | ✅ 20 passed（新增决策矩阵 10 个）；
   `synthesis::tests::test_meta_synth` 3 passed（新增 3 个） |
+| `peer::strategy_weights`（Amendment 4） | ✅ 10 passed（来源不一致拒绝 / 空来源兼容 / 自回环早退 + 早退内含自过滤测试） |
+| `peer::manager` / `peer::service`（Amendment 4） | ✅ source 透传断言（broadcast、proto 转换、apply_mgr_event） |
 | `webui_contract` | ✅ 2 passed |
 | `openapi_live_contract` | ✅ 3 passed（新路由必须进 OpenAPI，否则 `every_route_is_documented` 失败） |
 | `cargo fmt --all` | ✅ 无 diff |
@@ -379,7 +430,7 @@ Phase B 落地「节点快照 + 集群聚合视图 + REST 暴露」，但**聚�
 | 删掉 `apply_remote` 的自回环过滤 | `peer::strategy_weights::tests::apply_remote_rejects_self_echo_other_keys_and_garbage` | ✅ **稳定失败** |
 | `publish_once` 不调用 `broadcast_state_proposal`（只写本地视图） | `test_two_node_strategy_weights_propagate_and_merge` | ✅ **稳定失败**（20s 超时等不到 A 的快照） |
 
-三处变异还原后各自重跑：`9 passed` / `5 passed` / `1 passed`。
+Phase G 两处变异还原后各重跑单测全绿（10 passed / 1 passed）。
 
 结论：这些断言锁住的是**行为本身**（幂等、自过滤、传播链），而不是「看起来
 通过」的返回值。第三条尤其重要——没有它，「只写本地视图、从不广播」这种退化
@@ -402,9 +453,8 @@ Phase B 落地「节点快照 + 集群聚合视图 + REST 暴露」，但**聚�
   - 验证：`peer::manager::tests::test_peer_manager_state_proposal_broadcast_counter`、
     `peer::strategy_weights::tests::publish_skips_broadcast_when_snapshot_unchanged`；
     **变异验证 2 处**（去抖恒真 / 计数器失效）各自稳定失败并还原。
-  **未完成**：按对端**定向转发**（per-destination 出站通道或 `StateProposal` 加
-  `target_node_id` 让拨号器过滤）。在 broadcast-channel 架构下定向发送需要
-  按 peer 拆分子通道，属结构性改动，留待 Phase G 评估。
+  **Phase G 评估已闭环**：已决定**推迟实施**（见 Amendment 4）。来源标注
+  （`source_node_id`）与一致性校验已交付，为未来定向转发做好前提。
 - **节点槽位 TTL 已加**（Amendment 2），但溢出的 `Lagged` 会漏掉 `PeerLeft`
   → 槽位残留（已记 warn，未做对账）。治本方案是用 `list_peers()` 定期
   对账视图里的节点集合。

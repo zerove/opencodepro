@@ -145,6 +145,17 @@ message StateProposal {
   bytes value = 2;
   // Vector clock (CRDT) — 每个 node_id 的最近 seen version
   map<string, uint64> vector_clock = 3;
+  // 来源节点 ID（v0.4.0 Phase G）：本提案描述的是哪个节点的策略快照。
+  //
+  // 接收方在解析载荷前用它做两件事：
+  //   1. 识别自回环——被对端原样回送的本节点快照直接丢弃，不必解析；
+  //   2. 与载荷里的 `NodeStrategySnapshot.node_id` 交叉校验，拒绝
+  //      「事件声称来自 A、载荷却写 B」的错位数据（否则视图分槽会永久错位）。
+  //
+  // 空字符串表示旧版本发送方（proto3 默认值）：接收方跳过交叉校验，
+  // 只按载荷处理——滚动升级期间不能因为字段缺失丢掉对端数据。
+  // 载荷仍是唯一事实来源；本字段只做来源标注与一致性校验。
+  string source_node_id = 4;
 }
 
 // Experience sync（CRDT 同步事件，TODO 8.3.2 + 8.3.1 集成）

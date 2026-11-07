@@ -138,7 +138,11 @@ impl StrategyWeightsHandler {
             changed
         };
         if changed {
-            self.peer_manager.broadcast_state_proposal(STRATEGY_WEIGHTS_KEY, payload);
+            self.peer_manager.broadcast_state_proposal(
+                self.self_node_id.clone(),
+                STRATEGY_WEIGHTS_KEY,
+                payload,
+            );
         }
         accepted
     }
@@ -162,11 +166,30 @@ impl StrategyWeightsHandler {
 
     /// 处理一条入站 `StateProposal`，返回是否被合并。
     ///
-    /// 返回 `false` 的情况都是**正常**的（key 不匹配 / 自回环 / 旧 generation），
-    /// 调用方不应把它当错误。
-    fn apply_remote(&self, key: &str, value: &[u8]) -> bool {
+    /// 返回 `false` 的情况都是**正常**的（key 不匹配 / 自回环 / 旧 generation /
+    /// 来源与载荷不一致），调用方不应把它当错误。
+    ///
+    /// `source_node_id` 是**线上声明**的来源（v0.4.0 Phase G）。它有两处用途：
+    /// 1. 在解析 JSON **之前**识别自回环——省掉一次全量解析，也让「谁在回送
+    ///    我的快照」在 trace 日志里可定位；
+    /// 2. 与载荷里的 `snapshot.node_id` 交叉校验。载荷是唯一的事实来源（视图
+    ///    按它分槽），但「事件声称来自 A、载荷却写着 B」只可能是对端实现有 bug
+    ///    或在伪造来源，两种都不该并入视图。
+    ///
+    /// 空 `source_node_id` 表示对端是旧版本（字段默认值），此时跳过交叉校验，
+    /// 只按载荷处理——滚动升级期间不能因为字段缺失就丢掉对端数据。
+    fn apply_remote(&self, source_node_id: &str, key: &str, value: &[u8]) -> bool {
         if key != STRATEGY_WEIGHTS_KEY {
             tracing::trace!(key = %key, "strategy weights: ignoring unrelated state proposal");
+            return false;
+        }
+
+        if !source_node_id.is_empty() && source_node_id == self.self_node_id {
+            // 线上来源即自己：这条事件必然是被对端原样回送的，不必解析。
+            tracing::trace!(
+                node_id = %source_node_id,
+                "strategy weights: skipping own snapshot by wire source"
+            );
             return false;
         }
 
@@ -186,6 +209,18 @@ impl StrategyWeightsHandler {
         if snapshot.node_id == self.self_node_id {
             // 防御性自过滤：入站通道本应只有远端事件。
             tracing::trace!(node_id = %snapshot.node_id, "strategy weights: skipping own snapshot");
+            return false;
+        }
+
+        if !source_node_id.is_empty() && snapshot.node_id != source_node_id {
+            // 来源与载荷不一致：视图按 `snapshot.node_id` 分槽，若放过就会让
+            // 事件声称的来源与实际归属永久错位（定向转发的判断依据也会失真）。
+            tracing::warn!(
+                wire_source = %source_node_id,
+                payload_node = %snapshot.node_id,
+                generation = snapshot.generation,
+                "strategy weights: dropping snapshot whose payload disagrees with wire source"
+            );
             return false;
         }
 
@@ -211,7 +246,11 @@ impl StrategyWeightsHandler {
             //
             // 代价是多跳拓扑下每条边可能多传一次同一份快照（O(节点数) 跳、
             // 全连接时 O(N²) 次发送）。载荷是分钟级的策略统计，可接受。
-            self.peer_manager.broadcast_state_proposal(STRATEGY_WEIGHTS_KEY, value.to_vec());
+            self.peer_manager.broadcast_state_proposal(
+                snapshot.node_id.clone(),
+                STRATEGY_WEIGHTS_KEY,
+                value.to_vec(),
+            );
         } else {
             tracing::trace!(
                 node_id = %snapshot.node_id,
@@ -291,8 +330,8 @@ impl StrategyWeightsHandler {
                     }
                     result = events.recv() => {
                         match result {
-                            Ok(MgrEvent::StateProposal { key, value }) => {
-                                self.apply_remote(&key, &value);
+                            Ok(MgrEvent::StateProposal { source_node_id, key, value }) => {
+                                self.apply_remote(&source_node_id, &key, &value);
                             },
                             Ok(_) => {
                                 // 其他事件类型不处理
@@ -399,7 +438,7 @@ mod tests {
         // guard 随表达式结束即释放，不跨后续写操作
         let evt = local.recv().await.expect("本地广播通道应收到 StateProposal");
         match evt {
-            MgrEvent::StateProposal { key, value } => {
+            MgrEvent::StateProposal { key, value, .. } => {
                 assert_eq!(key, STRATEGY_WEIGHTS_KEY);
                 let snap: NodeStrategySnapshot =
                     serde_json::from_slice(&value).expect("载荷应为快照 JSON");
@@ -469,7 +508,7 @@ mod tests {
         let payload = serde_json::to_vec(&remote).expect("serialize");
 
         assert!(
-            h.apply_remote(STRATEGY_WEIGHTS_KEY, &payload),
+            h.apply_remote("node-b", STRATEGY_WEIGHTS_KEY, &payload),
             "新节点的快照必须被接受"
         );
         assert_eq!(shared.read().node_count(), 1);
@@ -478,7 +517,7 @@ mod tests {
         // 同一 generation 重放 -> 拒绝（幂等），计数不得翻倍。
         // 注意：此处不能持有 `shared.read()` 的 guard 跨过写操作——
         // parking_lot RwLock 不支持写期间读，持读守卫跨越写锁会自死锁。
-        assert!(!h.apply_remote(STRATEGY_WEIGHTS_KEY, &payload));
+        assert!(!h.apply_remote("node-b", STRATEGY_WEIGHTS_KEY, &payload));
         assert_eq!(shared.read().aggregate()["hybrid"].uses, 3);
     }
 
@@ -491,8 +530,15 @@ mod tests {
         // 自己的快照（模拟被对端原样回送）
         let own = NodeStrategySnapshot::from_insight("node-a", 99, &empty_insight());
         let payload = serde_json::to_vec(&own).expect("serialize");
+        // 线上来源即自己：无论载荷是否合法都必须被忽略（实现上在解析前早退，
+        // 但早退本身不改变可观测结果，这里锁的是行为而不是路径）。
         assert!(
-            !h.apply_remote(STRATEGY_WEIGHTS_KEY, &payload),
+            !h.apply_remote("node-a", STRATEGY_WEIGHTS_KEY, b"not even json"),
+            "线上来源为本节点时必须被忽略"
+        );
+        // 空来源（旧版本对端）+ 载荷是自己：仍要被载荷级自过滤挡下。
+        assert!(
+            !h.apply_remote("", STRATEGY_WEIGHTS_KEY, &payload),
             "自回环必须被忽略"
         );
         assert_eq!(shared.read().node_count(), 0);
@@ -505,16 +551,68 @@ mod tests {
         ))
         .expect("serialize");
         assert!(
-            !h.apply_remote("some.other/v1", &foreign),
+            !h.apply_remote("node-b", "some.other/v1", &foreign),
             "无关 key 必须被忽略"
         );
 
         // 损坏载荷
         assert!(
-            !h.apply_remote(STRATEGY_WEIGHTS_KEY, b"not json"),
+            !h.apply_remote("node-b", STRATEGY_WEIGHTS_KEY, b"not json"),
             "损坏载荷不得被接受"
         );
         assert_eq!(shared.read().node_count(), 0);
+    }
+
+    /// Phase G：线上声明的来源必须与载荷里的 `node_id` 一致。
+    ///
+    /// 视图按载荷的 `node_id` 分槽，而「来源」是转发与去重判断的依据。两者
+    /// 不一致只可能是对端实现有 bug 或在伪造来源——两种都不该并入视图，
+    /// 否则同一节点会被记到别人的槽位上，且永远无法自愈（后续 generation
+    /// 更高的快照只会让错误归属更牢固）。
+    #[test]
+    fn apply_remote_rejects_wire_source_payload_mismatch() {
+        let shared = Arc::new(RwLock::new(FederatedStrategyWeights::default()));
+        let (_manager, h) = handler("node-a", temp_learner("mismatch"), shared.clone());
+
+        let payload = serde_json::to_vec(&NodeStrategySnapshot::from_insight(
+            "node-b",
+            100,
+            &empty_insight(),
+        ))
+        .expect("serialize");
+
+        assert!(
+            !h.apply_remote("node-c", STRATEGY_WEIGHTS_KEY, &payload),
+            "来源与载荷不一致必须被拒绝"
+        );
+        assert_eq!(shared.read().node_count(), 0, "视图里不得留下任何槽位");
+
+        // 同一载荷、来源一致时必须被接受——证明拒绝的是不一致，而不是载荷本身。
+        assert!(h.apply_remote("node-b", STRATEGY_WEIGHTS_KEY, &payload));
+        assert_eq!(shared.read().node_count(), 1);
+    }
+
+    /// 滚动升级：旧版本对端的 `source_node_id` 是空字符串（proto3 默认值）。
+    ///
+    /// 此时**不能**当成「来源不一致」丢掉——那会让升级期间的对端数据全部消失。
+    /// 空来源只跳过交叉校验，载荷仍按原有语义处理。
+    #[test]
+    fn apply_remote_accepts_empty_wire_source_for_backward_compat() {
+        let shared = Arc::new(RwLock::new(FederatedStrategyWeights::default()));
+        let (_manager, h) = handler("node-a", temp_learner("compat"), shared.clone());
+
+        let payload = serde_json::to_vec(&NodeStrategySnapshot::from_insight(
+            "node-b",
+            100,
+            &empty_insight(),
+        ))
+        .expect("serialize");
+
+        assert!(
+            h.apply_remote("", STRATEGY_WEIGHTS_KEY, &payload),
+            "空来源（旧版本对端）必须被接受"
+        );
+        assert_eq!(shared.read().node_count(), 1);
     }
 
     /// 节点离开后必须回收其槽位，且只影响该节点（ADR-017 Amendment 2）。
@@ -587,9 +685,9 @@ mod tests {
             serde_json::to_vec(&snap).expect("serialize")
         };
 
-        assert!(h.apply_remote(STRATEGY_WEIGHTS_KEY, &make(500, 10)));
+        assert!(h.apply_remote("node-b", STRATEGY_WEIGHTS_KEY, &make(500, 10)));
         assert!(
-            !h.apply_remote(STRATEGY_WEIGHTS_KEY, &make(100, 1)),
+            !h.apply_remote("node-b", STRATEGY_WEIGHTS_KEY, &make(100, 1)),
             "更旧的 generation 必须被丢弃"
         );
         assert_eq!(shared.read().aggregate()["depth-first"].uses, 10);
@@ -610,7 +708,7 @@ mod tests {
         let payload = serde_json::to_vec(&remote).expect("serialize");
 
         assert!(
-            h.apply_remote(STRATEGY_WEIGHTS_KEY, &payload),
+            h.apply_remote("node-b", STRATEGY_WEIGHTS_KEY, &payload),
             "首次到达应被接受"
         );
         let forwarded = tokio::time::timeout(Duration::from_secs(2), local.recv())
@@ -618,7 +716,7 @@ mod tests {
             .expect("转发事件应出现在本地广播通道")
             .expect("本地广播通道应可读");
         match forwarded {
-            MgrEvent::StateProposal { key, value } => {
+            MgrEvent::StateProposal { key, value, .. } => {
                 assert_eq!(key, STRATEGY_WEIGHTS_KEY);
                 assert_eq!(
                     value, payload,
@@ -630,7 +728,7 @@ mod tests {
 
         // 同 generation 重放：拒绝，且**不得**再转发。
         assert!(
-            !h.apply_remote(STRATEGY_WEIGHTS_KEY, &payload),
+            !h.apply_remote("node-b", STRATEGY_WEIGHTS_KEY, &payload),
             "同 generation 重放应被拒绝"
         );
         match local.try_recv() {
@@ -647,7 +745,7 @@ mod tests {
         ))
         .expect("serialize");
         assert!(
-            !h.apply_remote(STRATEGY_WEIGHTS_KEY, &own),
+            !h.apply_remote("node-a", STRATEGY_WEIGHTS_KEY, &own),
             "自回环应被拒绝"
         );
         match local.try_recv() {

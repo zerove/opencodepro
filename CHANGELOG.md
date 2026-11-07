@@ -168,6 +168,13 @@
   （`cluster_integration` 23 / `strategy_weights_rest_test` 2 /
   `webui_contract` 2 / `openapi_live_contract` 3）与反熵/混沌用例全绿。
 
+- **联邦来源标注与一致性校验**（v0.4.0 Phase G，ADR-017 Amendment 4）：
+  - `ClusterEvent::StateProposal` / proto `StateProposal.source_node_id`（field 4）
+    在全链路透传（manager → outbound → inbound → handler）。
+  - `apply_remote` 在解析载荷前识别自回环、并在源与载荷 `node_id` 不一致时拒绝：
+    来源即自身 → 早退丢弃；不一致 → warn + 丢弃（视图分槽依据是载荷，source 只作标注）。
+  - 空来源（旧版本对端）→ 跳过交叉校验，滚动升级期间不丢数据。
+
 <!-- 下一轮的变更从这里开始写。发版时整段改名为 `## [vX.Y.Z] - <日期>`，
      并在其**之前**插入新的空 `[Unreleased]` 段（见上方发布流程）。 -->
 

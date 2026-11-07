@@ -633,13 +633,18 @@ pub(crate) fn mgr_event_to_proto(evt: MgrEvent) -> Option<ProtoEvent> {
                 }),
             ),
         }),
-        MgrEvent::StateProposal { key, value } => Some(ProtoEvent {
+        MgrEvent::StateProposal {
+            source_node_id,
+            key,
+            value,
+        } => Some(ProtoEvent {
             event: Some(
                 sisyphus_bridge_api::cluster_proto::cluster_event::Event::StateProposal(
                     StateProposal {
                         key,
                         value,
                         vector_clock: Default::default(),
+                        source_node_id,
                     },
                 ),
             ),
@@ -679,6 +684,7 @@ pub(crate) fn proto_to_mgr_event(evt: ProtoEvent) -> Option<MgrEvent> {
         // 没有「回来」——生产里 `Consensus::propose` 没有注入 proposer，这条
         // 流是策略权重唯一的传播路径。
         Event::StateProposal(sp) => Some(MgrEvent::StateProposal {
+            source_node_id: sp.source_node_id,
             key: sp.key,
             value: sp.value,
         }),
@@ -703,10 +709,15 @@ pub(crate) fn apply_mgr_event(manager: &PeerManager, evt: MgrEvent) {
         MgrEvent::PeerLeft { node_id, reason } => {
             let _ = manager.on_peer_left(&node_id, reason);
         },
-        MgrEvent::StateProposal { key, value } => {
+        MgrEvent::StateProposal {
+            source_node_id,
+            key,
+            value,
+        } => {
             // ADR-017：投递到入站总线，由 StrategyWeightsHandler 消费。
             // 用 deliver_ 而非 broadcast_：事件已来自远端，再广播会形成回环。
-            manager.deliver_inbound_state_proposal(key, value);
+            // Phase G：`source_node_id` 随事件一起进总线，供定向判断使用。
+            manager.deliver_inbound_state_proposal(source_node_id, key, value);
         },
         MgrEvent::ExperienceSync {
             exp_key,
@@ -796,6 +807,7 @@ mod tests {
     #[test]
     fn test_mgr_event_to_proto_state_proposal() {
         let evt = MgrEvent::StateProposal {
+            source_node_id: "node-a".into(),
             key: "k".into(),
             value: vec![1, 2, 3],
         };
@@ -804,6 +816,8 @@ mod tests {
             Some(sisyphus_bridge_api::cluster_proto::cluster_event::Event::StateProposal(sp)) => {
                 assert_eq!(sp.key, "k");
                 assert_eq!(sp.value, vec![1, 2, 3]);
+                // Phase G：来源节点必须随 proto 一起出去，否则对端无法做定向判断
+                assert_eq!(sp.source_node_id, "node-a");
             },
             _ => panic!("expected StateProposal"),
         }
@@ -880,6 +894,7 @@ mod tests {
                         key: "strategy-weights".into(),
                         value: vec![7, 8, 9],
                         vector_clock: Default::default(),
+                        source_node_id: "remote-node".into(),
                     },
                 ),
             ),
@@ -887,7 +902,12 @@ mod tests {
 
         let mgr = proto_to_mgr_event(proto).expect("StateProposal 不应被丢弃");
         match mgr {
-            MgrEvent::StateProposal { key, value } => {
+            MgrEvent::StateProposal {
+                source_node_id,
+                key,
+                value,
+            } => {
+                assert_eq!(source_node_id, "remote-node");
                 assert_eq!(key, "strategy-weights");
                 assert_eq!(value, vec![7, 8, 9]);
             },
@@ -908,12 +928,18 @@ mod tests {
             MgrEvent::StateProposal {
                 key: "strategy-weights".into(),
                 value: vec![1, 2],
+                source_node_id: "remote-node".into(),
             },
         );
 
         let evt = inbound.recv().await.expect("入站通道应收到 StateProposal");
         match evt {
-            MgrEvent::StateProposal { key, value } => {
+            MgrEvent::StateProposal {
+                source_node_id,
+                key,
+                value,
+            } => {
+                assert_eq!(source_node_id, "remote-node");
                 assert_eq!(key, "strategy-weights");
                 assert_eq!(value, vec![1, 2]);
             },
