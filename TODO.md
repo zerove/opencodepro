@@ -248,6 +248,7 @@
 
 #### 7.3 性能
 - [x] **基准基线刷新**: 轻量基准已刷新（`docs/benchmarks/lightweight-baseline-2026-11-08-post-v040.md`，post-v0.4.0；500 节点 DAG ~1.2–1.3ms，无 lazy-load 需求）。完整 `make perf-analyze`/critcmp 同机对比留待固定 runner（无测试：性能快照文档，非行为断言）。
+- [x] **TUI/CLI 冷启动 profile**: release `sisyphus` 非交互启动 `--help/--version` ~0.00s wall、~8.4–8.9MB RSS，16M 二进制（`docs/benchmarks/cli-startup-profile-2026-11-08.md`）。交互式 TUI 首帧需 PTY harness，留待后续（无测试：性能快照文档，非行为断言）。
 - [ ] **DAG 渲染 SVG 性能**: 大型 SOP (>200 节点) 当前渲染慢，需 lazy load + viewport
 - [x] **TUI 启动时间**: 冷启动 < 200ms 目标，profile `sisyphus-cli` 入口 (2026-09-05)
   - Release 模式中位数 10 ms（5 次测量）；Debug 模式中位数 22 ms
@@ -286,7 +287,7 @@
 - 7.2: bridge CI 化 ✅ / mutation testing ✅ / wasm proptest ✅ / 混沌扩展 ✅ (race/load/payload/reconnect)
 - 7.1: Otel 端点配置化扫尾（已基本就绪）
 - 7.2: bridge CI 化 ✅ / mutation testing ✅ / wasm proptest ✅ / 混沌扩展 ✅ (race/load/payload/reconnect)
-- 7.3: ✅ 基准基线刷新（2026-11-08 轻量快照）/ DAG 渲染性能 / TUI 冷启动 profile
+- 7.3: ✅ 基准基线刷新（2026-11-08）/ DAG 渲染（基准已覆盖）/ ✅ TUI/CLI 冷启动 profile（2026-11-08）
 - 7.5: mdbook 缓存 / 部署脚本（systemd / Docker compose / k8s）
 
 **后续 1-2 周路线（基于当前实际状态）**:
