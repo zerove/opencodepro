@@ -135,17 +135,37 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             };
             let peer_ttl = std::time::Duration::from_secs(cfg.peer_ttl_secs);
             let manager = std::sync::Arc::new(PeerManager::new(self_node_id.clone(), peer_ttl));
+            let (control_plane_state, control_plane_coordinator) = if cfg.control_plane.enabled {
+                use sisyphus_bridge::peer::control_plane::{
+                    ControlPlaneCoordinator, ControlPlaneState,
+                };
+                tracing::warn!(
+                    "cluster.control_plane.enabled=true: ADR-019 gate on; production multi-node quorum requires full admission criteria (resolver/member-change/chaos/rollback)."
+                );
+                let state = std::sync::Arc::new(ControlPlaneState::new());
+                let coord = std::sync::Arc::new(ControlPlaneCoordinator::new(
+                    manager.clone(),
+                    state.clone(),
+                    std::time::Duration::from_secs(2),
+                ));
+                (Some(state), Some(coord))
+            } else {
+                (None, None)
+            };
             info!(
                 node_id = %self_node_id,
                 cluster = %cfg.cluster_name,
                 peer_ttl_secs = cfg.peer_ttl_secs,
                 static_peers = cfg.peers.len(),
+                control_plane = cfg.control_plane.enabled,
                 "Cluster peer protocol enabled (peer manager created before kernel)"
             );
             Some(sisyphus_bridge::bridge_service::ClusterRuntime {
                 peer_manager: manager,
                 node_id: self_node_id,
                 cluster_config: cfg,
+                control_plane_state,
+                control_plane_coordinator,
             })
         }
     };

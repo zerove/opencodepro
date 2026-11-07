@@ -236,7 +236,7 @@
   本地查询/`/api/cluster/status` 观测视图；**默认不新建独立聚合进程**。强一致 `propose/quorum` 控制面
   未启用生产路径（`proposer: None`/语义未定义场景不得虚假成功）。证据：`docs/adr/018-multi-instance-coordination-and-experience-aggregation.md`（`make audit`）、
   `crates/sisyphus-bridge/tests/cluster_status_rest_test.rs::cluster_status_endpoint_reports_single_node_view`。
-  - [ ] 6.5（条件触发）强一致控制面（默认租约方案进行中，门禁关闭）：已落地 ADR-019、`cluster.control_plane.enabled` 门禁、`ProposeControl` gRPC + 租约状态机（`request_id` 幂等/TTL/fencing）+ `ClusterServiceImpl` 门禁拒绝 + `GrpcPeerProposer` + 单元/Mock N=3/禁用门禁 RPC 测试。**仍待 ADR-019 准入**：生产 proposer 地址解析与成员变更集成、真实 N=3 分区/leader 变更/混沌矩阵、REST 写入面（如需）、回滚演练；未满足前不得生产启用。
+  - [ ] 6.5（条件触发）强一致控制面（默认租约方案进行中，门禁关闭；A=gRPC/内部+只读状态，B=不接入调度器）：ADR-019/门禁/`ProposeControl`/租约状态机+`ControlPlaneCoordinator`+`GrpcPeerProposer`+`ClusterRuntime`/`main`/`MySisyphusBridge` 装配已落地。快 CI：`control_plane.rs::{ControlPlaneState::apply,acquire_renew_release_and_fencing,acquire_rejected_when_held,request_id_idempotent_replay}` + `quorum_tests::{n3_quorum_acquire_succeeds_with_majority,n3_quorum_fails_when_majority_unreachable,n3_request_id_idempotent_across_coordinator,n3_renew_release_and_fencing_via_coordinator}`；`consensus.rs::{test_propose_rejected_as_leader_without_proposer,test_grpc_peer_proposer_propose_control_disabled_gate,test_grpc_peer_proposer_quorum_n3_mock}`；专用运行器 `#[ignore=requires dedicated runner]`：`control_plane.rs::quorum_tests::{n3_partition_heal_rejoin_address_update,rollback_gate_off_rejects_control_plane_writes,n3_minority_cannot_commit_when_quorum_unreachable}`。**仍待 ADR-019 准入**：协调节点 `(key,request_id)`/不确定提交指引、生产连接池/TLS/成员变更深度集成与受门禁调用入口、专用运行器分区/leader 变更/混沌/重启证据与回滚演练、REST 写入（如需）；`cluster.control_plane.enabled=false` 默认，未满足前不得生产启用。
 
 ### 阶段 7: 近期优先级 (2026-08-31 起, 1-2 周窗口)
 

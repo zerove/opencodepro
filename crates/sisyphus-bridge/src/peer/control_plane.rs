@@ -578,7 +578,9 @@ impl ControlPlaneCoordinator {
 mod quorum_tests {
     use super::*;
     use crate::peer::service::ClusterServiceImpl;
+    use sisyphus_bridge_api::cluster_proto::cluster_client::ClusterClient;
     use sisyphus_bridge_api::cluster_proto::cluster_server::ClusterServer;
+    use sisyphus_bridge_api::cluster_proto::ControlProposeRequest;
     use std::time::Duration;
     use tokio::net::TcpListener;
     use tonic::transport::Server;
@@ -691,5 +693,120 @@ mod quorum_tests {
             b.decision.idempotent_replay
                 || b.decision.applied_generation == a.decision.applied_generation
         );
+    }
+
+    /// ADR-019 矩阵：renew/release/fencing 经协调器（快测，in-process gRPC）。
+    #[tokio::test]
+    async fn n3_renew_release_and_fencing_via_coordinator() {
+        let (m1, s1, a1, _h1) = serve_node("n1", true).await;
+        let (_m2, _s2, a2, _h2) = serve_node("n2", true).await;
+        let (_m3, _s3, a3, _h3) = serve_node("n3", true).await;
+        let _ = m1.on_peer_joined(crate::peer::manager::PeerInfo::new("n2", a2));
+        let _ = m1.on_peer_joined(crate::peer::manager::PeerInfo::new("n3", a3));
+        let _ = _m2.on_peer_joined(crate::peer::manager::PeerInfo::new("n1", a1));
+        let coord = ControlPlaneCoordinator::new(m1, s1.clone(), Duration::from_secs(2));
+        let p = lease_payload("n1", 30);
+        let acq = coord.propose_lease("r1", "lease:t", "lease.acquire", &p, 0, 1, 3600).await;
+        assert!(acq.decision.accepted, "{acq:?}");
+        let gen = acq.decision.applied_generation;
+        let renew = coord.propose_lease("r2", "lease:t", "lease.renew", &p, gen, 1, 3600).await;
+        assert!(renew.decision.accepted, "{renew:?}");
+        assert!(renew.decision.applied_generation > gen);
+        let bad = coord.propose_lease("r3", "lease:t", "lease.renew", &p, gen, 1, 3600).await;
+        assert!(!bad.decision.accepted);
+        assert_eq!(bad.decision.error_code, "FENCING_MISMATCH");
+        let rel = coord
+            .propose_lease(
+                "r4",
+                "lease:t",
+                "lease.release",
+                &p,
+                renew.decision.applied_generation,
+                1,
+                3600,
+            )
+            .await;
+        assert!(rel.decision.accepted, "{rel:?}");
+        assert!(s1.get("lease:t").is_none());
+    }
+
+    /// ADR-019 矩阵：分区愈合模拟（成员地址从不可达恢复）— 依赖本地 network 端口绑定与稳定时序。
+    #[tokio::test]
+    #[ignore = "requires dedicated runner with local network port binding and stable timing (ADR-019 partition-heal matrix)"]
+    async fn n3_partition_heal_rejoin_address_update() {
+        let (m1, s1, _a1, _h1) = serve_node("n1", true).await;
+        let (_m2, _s2, a2, _h2) = serve_node("n2", true).await;
+        let (_m3, _s3, _a3, _h3) = serve_node("n3", true).await;
+        let _ = m1.on_peer_joined(crate::peer::manager::PeerInfo::new("n2", a2));
+        // n3 initially unreachable
+        let _ = m1.on_peer_joined(crate::peer::manager::PeerInfo::new(
+            "n3",
+            "http://127.0.0.1:1",
+        ));
+        let coord =
+            ControlPlaneCoordinator::new(m1.clone(), s1.clone(), Duration::from_millis(500));
+        let p = lease_payload("n1", 30);
+        let out = coord.propose_lease("r1", "lease:heal", "lease.acquire", &p, 0, 1, 3600).await;
+        // majority (n1+n2) should succeed despite n3 unreachable
+        assert!(out.decision.accepted || out.uncertain, "{out:?}");
+        // heal: update n3 address (PeerManager::on_peer_joined overwrites)
+        let (_m3b, _s3b, a3b, _h3b) = serve_node("n3-healed", true).await;
+        let _ = m1.on_peer_joined(crate::peer::manager::PeerInfo::new("n3", a3b));
+        // different key to avoid lease-held; proves coordinator uses updated membership
+        let out2 = coord.propose_lease("r2", "lease:heal2", "lease.acquire", &p, 0, 1, 3600).await;
+        assert!(out2.decision.accepted, "{out2:?}");
+    }
+
+    /// ADR-019 矩阵：回滚/门禁 — gate off 时 RPC 拒绝（DISABLED），不假成功。
+    #[tokio::test]
+    #[ignore = "requires dedicated runner with local network port binding (ADR-019 rollback drill)"]
+    async fn rollback_gate_off_rejects_control_plane_writes() {
+        let (_m, state, addr, _h) = serve_node("n1", false).await;
+        let mut client = ClusterClient::connect(addr).await.unwrap();
+        let resp = client
+            .propose_control(ControlProposeRequest {
+                request_id: "r1".into(),
+                key: "lease:rb".into(),
+                operation: "lease.acquire".into(),
+                payload_json: lease_payload("n1", 30),
+                source_node_id: "t".into(),
+                expected_generation: 0,
+            })
+            .await
+            .unwrap()
+            .into_inner();
+        assert!(!resp.accepted);
+        assert_eq!(resp.error_code, "DISABLED");
+        assert!(state.get("lease:rb").is_none());
+    }
+
+    /// ADR-019 矩阵：少数派/分区下不可提交（双不可达）。
+    #[tokio::test]
+    #[ignore = "requires dedicated runner with local network port binding and stable timing (ADR-019 minority-unavailable matrix)"]
+    async fn n3_minority_cannot_commit_when_quorum_unreachable() {
+        let (m1, s1, _a1, _h1) = serve_node("n1", true).await;
+        let _ = m1.on_peer_joined(crate::peer::manager::PeerInfo::new(
+            "n2",
+            "http://127.0.0.1:1",
+        ));
+        let _ = m1.on_peer_joined(crate::peer::manager::PeerInfo::new(
+            "n3",
+            "http://127.0.0.1:1",
+        ));
+        let coord = ControlPlaneCoordinator::new(m1, s1.clone(), Duration::from_millis(200));
+        let out = coord
+            .propose_lease(
+                "r1",
+                "lease:min",
+                "lease.acquire",
+                &lease_payload("n1", 30),
+                0,
+                1,
+                3600,
+            )
+            .await;
+        assert!(!out.decision.accepted);
+        // local apply may have happened; but outcome is uncertain/failure (no quorum proof) - v1 conservative
+        assert!(out.uncertain || out.accepts < out.cluster_size / 2 + 1);
     }
 }

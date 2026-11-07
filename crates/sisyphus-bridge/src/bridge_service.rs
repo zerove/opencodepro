@@ -89,6 +89,10 @@ pub struct MySisyphusBridge {
     pub(crate) peer_manager: Option<Arc<crate::peer::PeerManager>>,
     /// 集群配置快照（只读，用于状态端点）。
     pub(crate) cluster_config: sisyphus_types::ClusterConfig,
+    /// ADR-019：控制面协调器（门禁装配时可用；A=gRPC/内部路径）。
+    pub(crate) control_plane_coordinator:
+        Option<Arc<crate::peer::control_plane::ControlPlaneCoordinator>>,
+    pub(crate) control_plane_state: Option<Arc<crate::peer::control_plane::ControlPlaneState>>,
 }
 
 impl Clone for MySisyphusBridge {
@@ -123,6 +127,8 @@ impl Clone for MySisyphusBridge {
             strategy_weights: self.strategy_weights.clone(),
             peer_manager: self.peer_manager.clone(),
             cluster_config: self.cluster_config.clone(),
+            control_plane_coordinator: self.control_plane_coordinator.clone(),
+            control_plane_state: self.control_plane_state.clone(),
         }
     }
 }
@@ -135,9 +141,28 @@ pub struct ClusterRuntime {
     pub node_id: String,
     /// 集群配置快照（用于 `/api/cluster/status` 可观测，不改变行为）。
     pub cluster_config: sisyphus_types::ClusterConfig,
+    /// ADR-019：控制面租约状态（`cluster.control_plane.enabled` 时装配）。
+    pub control_plane_state: Option<Arc<crate::peer::control_plane::ControlPlaneState>>,
+    /// ADR-019：多数派租约协调器（门禁/装配就绪时可用）。
+    pub control_plane_coordinator: Option<Arc<crate::peer::control_plane::ControlPlaneCoordinator>>,
 }
 
 impl MySisyphusBridge {
+    /// ADR-019：多数派租约协调器（`cluster.control_plane.enabled` 且装配就绪时可用）。
+    /// A=gRPC/内部路径使用；未启用/未就绪时返回 `None`。
+    pub fn control_plane_coordinator(
+        &self,
+    ) -> Option<&Arc<crate::peer::control_plane::ControlPlaneCoordinator>> {
+        self.control_plane_coordinator.as_ref()
+    }
+
+    /// ADR-019：控制面租约状态（门禁装配时可用）。
+    pub fn control_plane_state(
+        &self,
+    ) -> Option<&Arc<crate::peer::control_plane::ControlPlaneState>> {
+        self.control_plane_state.as_ref()
+    }
+
     /// New.
     ///
     /// `cluster` 传入集群运行时（peer 管理器 + 本节点 ID）时，内核的经验库
@@ -731,10 +756,16 @@ impl MySisyphusBridge {
             (config.chaos.enabled, config.chaos.default_fault_probability)
         };
 
-        let (peer_manager, cluster_config) = match cluster.as_ref() {
-            Some(rt) => (Some(rt.peer_manager.clone()), rt.cluster_config.clone()),
-            None => (None, config_snapshot.cluster.clone()),
-        };
+        let (peer_manager, cluster_config, control_plane_coordinator, control_plane_state) =
+            match cluster.as_ref() {
+                Some(rt) => (
+                    Some(rt.peer_manager.clone()),
+                    rt.cluster_config.clone(),
+                    rt.control_plane_coordinator.clone(),
+                    rt.control_plane_state.clone(),
+                ),
+                None => (None, config_snapshot.cluster.clone(), None, None),
+            };
 
         let bridge = MySisyphusBridge {
             kernel,
@@ -776,6 +807,8 @@ impl MySisyphusBridge {
             strategy_weights,
             peer_manager,
             cluster_config,
+            control_plane_coordinator,
+            control_plane_state,
         };
 
         let bridge_arc = Arc::new(bridge);
